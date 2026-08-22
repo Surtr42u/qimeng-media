@@ -12,7 +12,7 @@
 - 错误统一 `Error{code, message}`；`code` 机器可读（如 PATH_ESCAPE / TOO_LARGE / INVALID_TYPE）
 - 媒体直链（/media/**）不走 header 鉴权，用短期 HMAC 签名 URL（默认 6h），参数 `exp`（过期时间戳）+ `sig`
 
-## 端点分组速览（37 路径）
+## 端点分组速览（36 路径）
 
 | 分组 | 端点 | 说明 |
 |---|---|---|
@@ -20,7 +20,7 @@
 | 库管理 | GET/POST /libraries、POST /libraries/{id}/scan | 注册媒体目录、触发全量扫描（进度走 SSE） |
 | 实时推送 | GET /events | SSE：scan.progress / library.changed / thumbnail.progress / upload.done |
 | 资产浏览 | GET /assets、GET/DELETE /assets/{id} | 唯一列表口径（筛选/排序/搜索全参数化）；DELETE=进回收站 |
-| 媒体文件 | GET /media/orig、/media/thumb（size=sm/md/lg）、/media/preview（?w=） | 签名直链：原图支持 Range 拖动；缩略图 immutable 缓存；预览按需缩放副本（永不改原图） |
+| 媒体文件 | GET /media/orig、/media/thumb（size=sm/md/lg） | 签名直链：原图/视频支持 Range 拖动，**查看永远发原件（无缩放副本）**；缩略图 immutable 缓存 |
 | 上传整理 | POST /assets/upload、POST /assets/{id}/move、GET/POST /dirs | 直传 NAS（四道校验）；移动/重命名保关联；目录树与新建 |
 | 回收站 | GET /trash、POST /trash/{id}/restore、DELETE /trash/{id}、DELETE /trash | 恢复（冲突自动重命名）/单个物理删除/清空（均二次确认场景） |
 | 行为上报 | POST /events/view、PUT /assets/{id}/like、PUT /assets/{id}/favorite | ViewEvent 只追加（sessionId 会话去重）；点赞 toggle 每日一次；收藏布尔 |

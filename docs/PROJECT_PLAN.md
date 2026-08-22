@@ -20,7 +20,7 @@
 
 ## M1 · 服务端核心闭环
 
-**目标**：手机浏览器已经能看片（虽然界面简陋）。
+**目标**：手机浏览器已经能浏览媒体（图片与视频，虽然界面简陋）。
 
 - [ ] 配置系统（env + yaml：库目录、数据目录、token）
 - [ ] SQLite + sqlc + golang-migrate 初始化；核心表（见 ARCHITECTURE §6：assets/users/tags/authors/view_events/favorites/likes/timeline_tags/trash）
@@ -48,7 +48,7 @@
 - [ ] 监控仪表盘 `/admin`（OBSERVABILITY.md 内置指标）
 - [ ] PWA：可安装、离线壳
 
-**验收**：日常"浏览-看片-整理"全部在浏览器完成；Lighthouse PWA 可安装；手机浏览器体验流畅。
+**验收**：日常"浏览-看图看视频-整理"全部在浏览器完成；Lighthouse PWA 可安装；手机浏览器体验流畅。
 
 ## M3 · 算法移植与领域完整
 

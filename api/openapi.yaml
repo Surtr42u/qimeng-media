@@ -136,17 +136,6 @@ paths:
         - { name: sig, in: query, required: true, schema: { type: string } }
       responses:
         "200": { description: WebP 缩略图 }
-  /media/preview/{assetId}:
-    get:
-      summary: 按需缩放预览图（?w= 目标宽；不改原图，生成副本）
-      security: []
-      parameters:
-        - { $ref: "#/components/parameters/AssetId" }
-        - { name: w,   in: query, schema: { type: integer, default: 1080 } }
-        - { name: exp, in: query, required: true, schema: { type: integer } }
-        - { name: sig, in: query, required: true, schema: { type: string } }
-      responses:
-        "200": { description: 缩放副本 }
 
   # ---------- 上传与文件管理 ----------
   /api/v1/assets/upload:
@@ -508,8 +497,7 @@ components:
             playCount:    { type: integer }
             totalBrowseSeconds: { type: integer }
             lastViewedAt: { type: [string, "null"], format: date-time }
-            origUrl:      { type: string, description: 签名原图/视频直链 }
-            previewUrl:   { type: string, description: 签名预览直链 }
+            origUrl:      { type: string, description: 签名原图/视频直链（查看永远发原件，无缩放副本） }
 
     MoveRequest:
       type: object
