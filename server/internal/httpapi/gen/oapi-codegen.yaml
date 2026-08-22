@@ -1,0 +1,12 @@
+# oapi-codegen 生成配置（协议先行的 Go 侧入口）
+# 为什么单独放配置文件：生成选项显式版本化，避免 Makefile 内联 flags 漂移。
+# 重新生成：make sdk（内部执行 oapi-codegen -config 本文件 api/openapi.yaml）
+# 产物 types.gen.go 是生成物，禁止手改；协议变更先改 api/openapi.yaml 再重新生成。
+package: gen
+generate:
+  # std-http-server：基于 net/http 1.22+ 路由模式的服务端接口（ServerInterface + Handler）
+  std-http-server: true
+  # models：请求/响应 types
+  models: true
+# 注意：output 相对运行目录（Makefile 固定 cd server 后执行），产物必须落在 gen/ 内
+output: internal/httpapi/gen/types.gen.go

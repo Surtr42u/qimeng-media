@@ -1,0 +1,37 @@
+/**
+ * 设计 token（ADR-0008 / web/README.md 铁律）
+ * 颜色/间距/圆角/动效时长的唯一来源；组件禁止硬编码颜色，一律引用 var(--qm-*)。
+ *
+ * 为什么初值大多桥接 shadcn 主题变量（--background/--primary 等）：
+ * shadcn 组件内部消费的是它自己的主题变量层，把 --qm-* 映射到同一来源，
+ * 后续品牌化（绮梦配色）只需改这一处映射或 shadcn 的 :root 值，两层同时生效。
+ */
+
+:root {
+  /* ---- 颜色 ---- */
+  --qm-bg: var(--background);
+  --qm-text: var(--foreground);
+  --qm-text-muted: var(--muted-foreground);
+  --qm-primary: var(--primary);
+  --qm-primary-foreground: var(--primary-foreground);
+  --qm-border: var(--border);
+  --qm-destructive: var(--destructive);
+
+  /* ---- 圆角 ----
+   * 全站圆角随 shadcn --radius（0.625rem）缩放，换视觉风格只改一个变量 */
+  --qm-radius: var(--radius);
+
+  /* ---- 间距节奏 ----
+   * 4px 基数，与 Tailwind spacing（1 unit = 0.25rem）对齐，布局仍可用 utility 类 */
+  --qm-space-1: 0.25rem;
+  --qm-space-2: 0.5rem;
+  --qm-space-3: 1rem;
+  --qm-space-4: 1.5rem;
+  --qm-space-5: 2.5rem;
+
+  /* ---- 动效时长 ----
+   * 统一三档，后续 Framer Motion 动画引用，避免各处随手写时长造成节奏混乱 */
+  --qm-duration-fast: 120ms;
+  --qm-duration-base: 200ms;
+  --qm-duration-slow: 360ms;
+}

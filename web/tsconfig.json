@@ -1,0 +1,13 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.node.json" }
+  ],
+  // 根 tsconfig 也声明 @/ 别名：shadcn CLI 从根配置解析路径；TS 6.0 已废弃 baseUrl，故只写 paths
+  "compilerOptions": {
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  }
+}

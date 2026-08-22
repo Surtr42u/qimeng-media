@@ -12,7 +12,7 @@
 - **Go 1.27 + chi + sqlc + SQLite + golang-migrate** 服务端（模块化单体）
 - **React + Vite + TS + shadcn/ui + Tailwind + TanStack Query + Framer Motion** Web/PWA
 - **Kotlin + Jetpack Compose + Coil 3 + Media3** Android 客户端
-- **OpenAPI 3.1 协议宪法**：`api/openapi.yaml` 唯一事实源，oapi-codegen 生成 Go 接口层，openapi-generator 生成 TS/Kotlin 客户端
+- **OpenAPI 3.1 协议宪法**：`api/openapi.yaml` 唯一事实源，oapi-codegen 生成 Go 接口层，@hey-api/openapi-ts 生成 TS 客户端，openapi-generator 生成 Kotlin 客户端（2026-08-22 M0 实施定案：TS 生成器由 openapi-generator 改为 @hey-api——对 OpenAPI 3.1 支持更完整，产物零外部运行时依赖；生成链见根 Makefile `make sdk`）
 - **monorepo**（api/server/web/android/docs 同仓库）：协议一改，AI 单任务同步三端
 
 ## 理由

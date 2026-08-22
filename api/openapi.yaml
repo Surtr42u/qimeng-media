@@ -1,7 +1,7 @@
 openapi: "3.1.0"
 info:
   title: qimeng-media API
-  version: "0.1.0-draft"
+  version: "0.1.0"
   description: |
     绮梦影库 NAS 多端版服务端协议（协议宪法）。
     本文件是三端（Go 服务端 / TS Web / Kotlin Android）SDK 的唯一生成源。
@@ -73,14 +73,18 @@ paths:
   /api/v1/assets:
     get:
       summary: 资产列表（分页/筛选/排序/搜索，语义见 DOMAIN_RULES §3）
+      description: 唯一列表口径。默认排除 COS 作者关联文件（DOMAIN_RULES §6，COS 有独立入口）。
       parameters:
         - { name: cursor,      in: query, schema: { type: string }, description: 分页游标 }
         - { name: limit,       in: query, schema: { type: integer, default: 60, maximum: 200 } }
         - { name: libraryId,   in: query, schema: { type: string } }
+        - { name: sort,        in: query, schema: { type: string, enum: [default, fileDate, addedDate, viewCount, playCount, sizeBytes, name], default: default }, description: 排序键（DOMAIN_RULES §3 七种） }
+        - { name: order,       in: query, schema: { type: string, enum: [asc, desc], default: desc }, description: 顺位 }
         - { name: mediaType,   in: query, schema: { $ref: "#/components/schemas/MediaType" } }
         - { name: source,      in: query, schema: { type: string }, description: 出处分区（含 '其他'） }
         - { name: character,   in: query, schema: { type: string }, description: 角色（'a+b' 多角色） }
         - { name: authorId,    in: query, schema: { type: string } }
+        - { name: includeCos,  in: query, schema: { type: boolean, default: false }, description: 含 COS 作者关联文件（默认排除，COS 走独立入口） }
         - { name: tagIds,      in: query, schema: { type: array, items: { type: string } } }
         - { name: tagMode,     in: query, schema: { type: string, enum: [fuzzy, exact], default: fuzzy } }
         - { name: viewRange,   in: query, schema: { $ref: "#/components/schemas/CountRange" } }
@@ -102,6 +106,11 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/AssetDetail" } } } }
         "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      summary: 删除（一律进回收站，非物理删除）
+      parameters: [ { $ref: "#/components/parameters/AssetId" } ]
+      responses:
+        "200": { description: 已移入回收站 }
 
   # ---------- 媒体文件服务（签名直链） ----------
   /media/orig/{assetId}:
@@ -118,10 +127,11 @@ paths:
         "403": { description: 签名无效或过期 }
   /media/thumb/{assetId}:
     get:
-      summary: 缩略图（生成策略见 DOMAIN_RULES §11；缓存 immutable）
+      summary: 缩略图（生成策略见 DOMAIN_RULES §11；缓存 immutable，缓存键含 size）
       security: []
       parameters:
         - { $ref: "#/components/parameters/AssetId" }
+        - { name: size, in: query, schema: { type: string, enum: [sm, md, lg], default: md }, description: 网格/列表/大图三档（缓存键组成部分） }
         - { name: exp, in: query, required: true, schema: { type: integer } }
         - { name: sig, in: query, required: true, schema: { type: string } }
       responses:
@@ -166,12 +176,6 @@ paths:
       responses:
         "200": { description: OK }
         "409": { $ref: "#/components/responses/Conflict" }
-  /api/v1/assets/{assetId}:
-    delete:
-      summary: 删除（一律进回收站，非物理删除）
-      parameters: [ { $ref: "#/components/parameters/AssetId" } ]
-      responses:
-        "200": { description: 已移入回收站 }
   /api/v1/dirs:
     get:
       summary: 目录树（文件整理用）
@@ -192,6 +196,10 @@ paths:
       summary: 回收站列表（含可恢复信息）
       responses:
         "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/TrashItem" } } } } }
+    delete:
+      summary: 清空回收站（物理删除全部；二次确认的显式管理操作）
+      responses:
+        "204": { description: 已清空 }
   /api/v1/trash/{trashId}/restore:
     post:
       summary: 从回收站恢复
@@ -218,7 +226,7 @@ paths:
         "202": { description: 已接受 }
   /api/v1/assets/{assetId}/like:
     put:
-      summary: 点赞（每资产每日一次，服务端判定）
+      summary: 点赞（toggle：当日已赞则本请求为取消今日赞；每资产每日一次，服务端判定）
       parameters: [ { $ref: "#/components/parameters/AssetId" } ]
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/LikeState" } } } }
@@ -249,6 +257,12 @@ paths:
             schema: { type: object, required: [name], properties: { name: { type: string } } }
       responses:
         "201": { description: 已创建, content: { application/json: { schema: { $ref: "#/components/schemas/Tag" } } } }
+  /api/v1/tags/{tagId}:
+    delete:
+      summary: 删除标签（级联清理全部文件关联，DOMAIN_RULES §7；不动媒体文件本身）
+      parameters: [ { name: tagId, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "204": { description: 已删除并清理关联 }
   /api/v1/assets/{assetId}/tags:
     put:
       summary: 替换资产标签集合
@@ -275,6 +289,17 @@ paths:
             schema: { type: object, required: [content], properties: { filename: { type: string }, content: { type: string } } }
       responses:
         "200": { description: 导入结果统计, content: { application/json: { schema: { $ref: "#/components/schemas/TxtImportResult" } } } }
+  /api/v1/authors/{authorId}/follow:
+    put:
+      summary: 设置/取消关注作者（DOMAIN_RULES §5 布尔标记）
+      parameters: [ { name: authorId, in: path, required: true, schema: { type: string } } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [follow], properties: { follow: { type: boolean } } }
+      responses:
+        "204": { description: OK }
   /api/v1/assets/{assetId}/timeline-tags:
     get:
       summary: 视频时间轴标签列表
@@ -291,6 +316,14 @@ paths:
             schema: { type: object, required: [timeMillis, name], properties: { timeMillis: { type: integer, format: int64 }, name: { type: string } } }
       responses:
         "201": { description: 已创建, content: { application/json: { schema: { $ref: "#/components/schemas/TimelineTag" } } } }
+  /api/v1/assets/{assetId}/timeline-tags/{tagId}:
+    delete:
+      summary: 删除时间轴标签
+      parameters:
+        - { $ref: "#/components/parameters/AssetId" }
+        - { name: tagId, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: 已删除 }
 
   # ---------- 推荐 / 排行 / 统计 ----------
   /api/v1/recommendations:
@@ -383,7 +416,7 @@ components:
 
   responses:
     BadRequest:  { description: 参数错误, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
-    Unauthorized:{ description: 未认证,   content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    Unauthorized: { description: 未认证,   content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
     NotFound:    { description: 不存在,   content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
     Conflict:    { description: 冲突,     content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
 
@@ -426,8 +459,8 @@ components:
         name:      { type: string }
         rootPath:  { type: string, description: 服务端本地路径（仅管理端展示） }
         fileCount: { type: integer }
-        videoCount:{ type: integer }
-        imageCount:{ type: integer }
+        videoCount: { type: integer }
+        imageCount: { type: integer }
         scanState: { type: string, enum: [idle, scanning, error] }
 
     LibraryCreate:
@@ -456,7 +489,7 @@ components:
       type: object
       properties:
         items:        { type: array, items: { $ref: "#/components/schemas/AssetSummary" } }
-        nextCursor:   { type: string, nullable: true }
+        nextCursor:   { type: [string, "null"] }
         totalMatched: { type: integer }
 
     AssetDetail:
@@ -474,7 +507,7 @@ components:
             viewCount:    { type: integer }
             playCount:    { type: integer }
             totalBrowseSeconds: { type: integer }
-            lastViewedAt: { type: string, format: date-time, nullable: true }
+            lastViewedAt: { type: [string, "null"], format: date-time }
             origUrl:      { type: string, description: 签名原图/视频直链 }
             previewUrl:   { type: string, description: 签名预览直链 }
 
@@ -490,7 +523,7 @@ components:
       properties:
         id:          { type: string }
         fileName:    { type: string }
-        originalPath:{ type: string }
+        originalPath: { type: string }
         deletedAt:   { type: string, format: date-time }
         sizeBytes:   { type: integer, format: int64 }
         expiresAt:   { type: string, format: date-time }
@@ -500,16 +533,17 @@ components:
       properties:
         path:     { type: string }
         dirs:     { type: array, items: { $ref: "#/components/schemas/DirTree" } }
-        fileCount:{ type: integer }
+        fileCount: { type: integer }
 
     ViewEventReport:
       type: object
-      required: [assetId, kind, startedAt]
+      required: [assetId, kind, startedAt, sessionId]
       properties:
         assetId:   { type: string, format: uuid }
         kind:      { type: string, enum: [open, play, dwell] }
         startedAt: { type: string, format: date-time }
         seconds:   { type: number, description: dwell 时的停留秒数 }
+        sessionId: { type: string, description: "客户端会话标识（App 启动/Web 标签页生成，UUID 即可）；服务端按 assetId+kind+sessionId+当日 会话级去重（DOMAIN_RULES §5）" }
 
     LikeState:
       type: object
@@ -537,7 +571,7 @@ components:
       type: object
       properties:
         id:        { type: string }
-        timeMillis:{ type: integer, format: int64 }
+        timeMillis: { type: integer, format: int64 }
         name:      { type: string }
 
     TxtImportResult:
@@ -570,7 +604,7 @@ components:
       type: object
       properties:
         tagRelevance: { type: number, default: 0.22 }
-        tagCollection:{ type: number, default: 0.15 }
+        tagCollection: { type: number, default: 0.15 }
         engagement:   { type: number, default: 0.10 }
         recency:      { type: number, default: 0.15 }
         likeScore:    { type: number, default: 0.05 }

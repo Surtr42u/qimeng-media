@@ -8,13 +8,13 @@
 
 **目标**：一切开发的前置设施就绪。
 
-- [ ] 安装开发工具（见 `..\dev-tools\TOOLCHAIN_GUIDE.md`）
-- [ ] `server/` Go 模块初始化（go.mod、目录骨架、chi、slog、config 加载）
-- [ ] `web/` Vite + React + TS + Tailwind + shadcn 初始化
-- [ ] `api/openapi.yaml` v0 实例化（本仓库已有草案，评审后定稿）
-- [ ] Makefile：`make sdk` 打通 oapi-codegen + openapi-generator 三端生成链
-- [ ] GitHub 仓库 + Actions CI（lint + test 骨架）
-- [ ] `docs/GUIDE_API.md`（端点使用说明，随协议演进）
+- [x] 安装开发工具（2026-08-22：Go 1.27 / Node 24 / JDK17 免安装 / make 4.4.1 ✅；Docker Desktop 按计划 M1 末手动下载安装；VirtualBox 按 M5）
+- [x] `server/` Go 模块初始化（2026-08-22：module qimeng-media/server，chi+slog+config（yaml+env，默认 :8420），12 个 internal 包骨架+doc.go，healthz 闭环，build/vet/test 全绿）
+- [x] `web/` Vite + React + TS + Tailwind + shadcn 初始化（2026-08-22：Tailwind v4 + shadcn(radix/nova) + TanStack Query + --qm-* 设计 token（tokens.css），build/tsc 全绿）
+- [x] `api/openapi.yaml` v0 实例化（2026-08-22：评审定稿 v0.1.0——补排序/顺位/includeCos/sessionId/标签删除/时间轴删除/作者关注/回收站清空/缩略图尺寸等 9 处，redocly 0 error）
+- [x] Makefile：`make sdk` 打通 oapi-codegen + TS + Kotlin 三端生成链（2026-08-22：oapi-codegen v2.8.0 → Go 接口层；@hey-api/openapi-ts 0.99.0 → TS 客户端；openapi-generator + 免安装 JDK → Kotlin SDK，三端全部实际生成通过）
+- [ ] GitHub 仓库 + Actions CI（lint + test 骨架）——待用户确认建仓方式
+- [x] `docs/GUIDE_API.md`（2026-08-22：37 端点分组速览 + 关键机制导读）
 
 **验收**：`make sdk` 一条命令生成三端 SDK 且全部编译通过；CI 在空测试下全绿。
 
