@@ -1,0 +1,52 @@
+# ===== qimeng-media monorepo =====
+
+# 依赖与构建产物
+node_modules/
+dist/
+build/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Go
+server/bin/
+server/tmp/
+coverage.out
+*.test
+
+# SQLite 本地开发库与数据
+*.sqlite
+*.sqlite3
+*.db-wal
+*.db-shm
+/data/
+
+# 前端
+web/dist/
+web/.vite/
+*.local
+
+# Android
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+*.apk
+*.aab
+*.keystore
+!debug.keystore
+
+# IDE 与系统
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# 环境与密钥（配置模板可提交，真实配置不提交）
+.env
+config/*.local.yaml
+
+# 日志
+*.log

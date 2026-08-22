@@ -1,0 +1,22 @@
+# M5 部署样例（fnOS 虚拟机 / 真 NAS 通用）
+# M5 里程碑时随 docker-build 一并完善；此为架构约定的目标形态。
+
+services:
+  qimeng:
+    image: qimeng-media:latest        # CI 构建的双架构镜像
+    container_name: qimeng-media
+    restart: unless-stopped
+    user: "1000:1000"                  # 非 root 运行（SECURITY.md）
+    ports:
+      - "8420:8420"
+    environment:
+      QM_CONFIG: /etc/qimeng/config.yaml
+    volumes:
+      - /volume1/media:/media          # 媒体库（可写但仅受控操作；删除走回收站）
+      - /volume1/docker/qimeng/data:/data   # 数据库/缩略图/回收站（服务端私有）
+      - ./config.yaml:/etc/qimeng/config.yaml:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8420/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

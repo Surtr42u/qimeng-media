@@ -1,0 +1,592 @@
+openapi: "3.1.0"
+info:
+  title: qimeng-media API
+  version: "0.1.0-draft"
+  description: |
+    绮梦影库 NAS 多端版服务端协议（协议宪法）。
+    本文件是三端（Go 服务端 / TS Web / Kotlin Android）SDK 的唯一生成源。
+    规则：
+    1. 先改本文件 → make sdk 重新生成 → 按编译错误适配代码。禁止手写客户端。
+    2. 所有路径带 /api/v1 版本前缀；破坏性变更必须升版本或加兼容字段。
+    3. 分页统一 cursor 式；错误统一 Error 结构。
+    4. 领域语义（推荐/统计/匹配）见 docs/DOMAIN_RULES.md，本文件只定义传输结构。
+servers:
+  - url: "{scheme}://{host}:{port}"
+    variables:
+      scheme: { default: http, enum: [http, https] }
+      host:   { default: nas.local }
+      port:   { default: "8420" }
+
+security:
+  - bearerAuth: []
+
+paths:
+  # ---------- 认证 ----------
+  /api/v1/auth/setup:
+    post:
+      summary: 首次初始化（设置管理密码，返回一次性显示的 token）
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AuthSetupRequest" }
+      responses:
+        "201": { description: 创建成功，返回 token（仅此一次明文显示）, content: { application/json: { schema: { $ref: "#/components/schemas/AuthToken" } } } }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/v1/auth/verify:
+    post:
+      summary: 校验 token 有效性
+      responses:
+        "204": { description: 有效 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  # ---------- 库（媒体目录） ----------
+  /api/v1/libraries:
+    get:
+      summary: 库列表（含文件计数与扫描状态）
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Library" } } } } }
+    post:
+      summary: 注册媒体目录（服务端本地路径，需存在）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LibraryCreate" }
+      responses:
+        "201": { description: 已创建, content: { application/json: { schema: { $ref: "#/components/schemas/Library" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /api/v1/libraries/{libraryId}/scan:
+    post:
+      summary: 触发全量扫描（异步，进度走 SSE）
+      parameters: [ { $ref: "#/components/parameters/LibraryId" } ]
+      responses:
+        "202": { description: 已触发 }
+  /api/v1/events:
+    get:
+      summary: SSE 事件流（scan.progress / library.changed / thumbnail.progress / upload.done）
+      responses:
+        "200": { description: text/event-stream }
+
+  # ---------- 资产浏览 ----------
+  /api/v1/assets:
+    get:
+      summary: 资产列表（分页/筛选/排序/搜索，语义见 DOMAIN_RULES §3）
+      parameters:
+        - { name: cursor,      in: query, schema: { type: string }, description: 分页游标 }
+        - { name: limit,       in: query, schema: { type: integer, default: 60, maximum: 200 } }
+        - { name: libraryId,   in: query, schema: { type: string } }
+        - { name: mediaType,   in: query, schema: { $ref: "#/components/schemas/MediaType" } }
+        - { name: source,      in: query, schema: { type: string }, description: 出处分区（含 '其他'） }
+        - { name: character,   in: query, schema: { type: string }, description: 角色（'a+b' 多角色） }
+        - { name: authorId,    in: query, schema: { type: string } }
+        - { name: tagIds,      in: query, schema: { type: array, items: { type: string } } }
+        - { name: tagMode,     in: query, schema: { type: string, enum: [fuzzy, exact], default: fuzzy } }
+        - { name: viewRange,   in: query, schema: { $ref: "#/components/schemas/CountRange" } }
+        - { name: playRange,   in: query, schema: { $ref: "#/components/schemas/CountRange" } }
+        - { name: sizeRange,   in: query, schema: { $ref: "#/components/schemas/SizeRange" } }
+        - { name: dateFrom,    in: query, schema: { type: string, format: date } }
+        - { name: dateTo,      in: query, schema: { type: string, format: date } }
+        - { name: yearFrom,    in: query, schema: { type: integer } }
+        - { name: yearTo,      in: query, schema: { type: integer } }
+        - { name: favorite,    in: query, schema: { type: boolean } }
+        - { name: q,           in: query, schema: { type: string }, description: 全文搜索（FTS5：文件名/标签/作者/出处） }
+        - { name: groupByDate, in: query, schema: { type: boolean, default: true }, description: 按日期分组返回（DOMAIN_RULES §8 标签规则） }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/AssetPage" } } } }
+  /api/v1/assets/{assetId}:
+    get:
+      summary: 资产详情（含元数据/标签/作者/统计/时间轴标签/签名直链）
+      parameters: [ { $ref: "#/components/parameters/AssetId" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/AssetDetail" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # ---------- 媒体文件服务（签名直链） ----------
+  /media/orig/{assetId}:
+    get:
+      summary: 原图/原视频直链（HTTP Range 支持；签名参数校验；永不转码）
+      security: []
+      parameters:
+        - { $ref: "#/components/parameters/AssetId" }
+        - { name: exp, in: query, required: true, schema: { type: integer }, description: 过期时间戳 }
+        - { name: sig, in: query, required: true, schema: { type: string }, description: HMAC 签名 }
+      responses:
+        "200": { description: 文件内容（Content-Type 按实际类型） }
+        "206": { description: Range 分片 }
+        "403": { description: 签名无效或过期 }
+  /media/thumb/{assetId}:
+    get:
+      summary: 缩略图（生成策略见 DOMAIN_RULES §11；缓存 immutable）
+      security: []
+      parameters:
+        - { $ref: "#/components/parameters/AssetId" }
+        - { name: exp, in: query, required: true, schema: { type: integer } }
+        - { name: sig, in: query, required: true, schema: { type: string } }
+      responses:
+        "200": { description: WebP 缩略图 }
+  /media/preview/{assetId}:
+    get:
+      summary: 按需缩放预览图（?w= 目标宽；不改原图，生成副本）
+      security: []
+      parameters:
+        - { $ref: "#/components/parameters/AssetId" }
+        - { name: w,   in: query, schema: { type: integer, default: 1080 } }
+        - { name: exp, in: query, required: true, schema: { type: integer } }
+        - { name: sig, in: query, required: true, schema: { type: string } }
+      responses:
+        "200": { description: 缩放副本 }
+
+  # ---------- 上传与文件管理 ----------
+  /api/v1/assets/upload:
+    post:
+      summary: 上传文件（流式；四道安全校验见 SECURITY.md；原样落盘永不转码）
+      parameters:
+        - { name: dir, in: query, required: true, schema: { type: string }, description: 目标目录（库内相对路径） }
+        - { name: filename, in: query, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        "201": { description: 上传成功并已入库, content: { application/json: { schema: { $ref: "#/components/schemas/AssetDetail" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "413": { description: 超过大小上限 }
+  /api/v1/assets/{assetId}/move:
+    post:
+      summary: 移动/重命名（更新路径属性，关联数据无感保留）
+      parameters: [ { $ref: "#/components/parameters/AssetId" } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MoveRequest" }
+      responses:
+        "200": { description: OK }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /api/v1/assets/{assetId}:
+    delete:
+      summary: 删除（一律进回收站，非物理删除）
+      parameters: [ { $ref: "#/components/parameters/AssetId" } ]
+      responses:
+        "200": { description: 已移入回收站 }
+  /api/v1/dirs:
+    get:
+      summary: 目录树（文件整理用）
+      parameters: [ { name: libraryId, in: query, schema: { type: string } } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/DirTree" } } } }
+    post:
+      summary: 新建目录
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [path], properties: { path: { type: string }, libraryId: { type: string } } }
+      responses:
+        "201": { description: 已创建 }
+  /api/v1/trash:
+    get:
+      summary: 回收站列表（含可恢复信息）
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/TrashItem" } } } } }
+  /api/v1/trash/{trashId}/restore:
+    post:
+      summary: 从回收站恢复
+      parameters: [ { $ref: "#/components/parameters/TrashId" } ]
+      responses:
+        "200": { description: 已恢复（冲突时自动重命名） }
+  /api/v1/trash/{trashId}:
+    delete:
+      summary: 物理删除回收站内单个文件（二次确认场景）
+      parameters: [ { $ref: "#/components/parameters/TrashId" } ]
+      responses:
+        "204": { description: 已物理删除 }
+
+  # ---------- 行为上报 ----------
+  /api/v1/events/view:
+    post:
+      summary: 上报浏览事件（ViewEvent 只追加；服务端负责会话级去重判断所需信息）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ViewEventReport" }
+      responses:
+        "202": { description: 已接受 }
+  /api/v1/assets/{assetId}/like:
+    put:
+      summary: 点赞（每资产每日一次，服务端判定）
+      parameters: [ { $ref: "#/components/parameters/AssetId" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/LikeState" } } } }
+  /api/v1/assets/{assetId}/favorite:
+    put:
+      summary: 设置/取消收藏
+      parameters: [ { $ref: "#/components/parameters/AssetId" } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [favorite], properties: { favorite: { type: boolean } } }
+      responses:
+        "204": { description: OK }
+
+  # ---------- 标签 / 作者 / 时间轴 ----------
+  /api/v1/tags:
+    get:
+      summary: 标签列表（含每个标签的关联文件数）
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Tag" } } } } }
+    post:
+      summary: 新建标签
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [name], properties: { name: { type: string } } }
+      responses:
+        "201": { description: 已创建, content: { application/json: { schema: { $ref: "#/components/schemas/Tag" } } } }
+  /api/v1/assets/{assetId}/tags:
+    put:
+      summary: 替换资产标签集合
+      parameters: [ { $ref: "#/components/parameters/AssetId" } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [tagIds], properties: { tagIds: { type: array, items: { type: string } } } }
+      responses:
+        "204": { description: OK }
+  /api/v1/authors:
+    get:
+      summary: 作者列表（常规与 COS 统一返回，type 区分；排序与筛选见 DOMAIN_RULES §6）
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Author" } } } } }
+  /api/v1/authors/import-txt:
+    post:
+      summary: 导入作者 TXT（三种格式自动识别；统一重建语义）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [content], properties: { filename: { type: string }, content: { type: string } } }
+      responses:
+        "200": { description: 导入结果统计, content: { application/json: { schema: { $ref: "#/components/schemas/TxtImportResult" } } } }
+  /api/v1/assets/{assetId}/timeline-tags:
+    get:
+      summary: 视频时间轴标签列表
+      parameters: [ { $ref: "#/components/parameters/AssetId" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/TimelineTag" } } } } }
+    post:
+      summary: 添加时间轴标签
+      parameters: [ { $ref: "#/components/parameters/AssetId" } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [timeMillis, name], properties: { timeMillis: { type: integer, format: int64 }, name: { type: string } } }
+      responses:
+        "201": { description: 已创建, content: { application/json: { schema: { $ref: "#/components/schemas/TimelineTag" } } } }
+
+  # ---------- 推荐 / 排行 / 统计 ----------
+  /api/v1/recommendations:
+    get:
+      summary: 推荐流（10 维算法见 DOMAIN_RULES §1；seed 控制同分桶打散）
+      parameters:
+        - { name: seed,  in: query, schema: { type: integer, format: int64, default: 0 }, description: 0=稳定排序；>0=刷新打散 }
+        - { name: limit, in: query, schema: { type: integer, default: 60, maximum: 200 } }
+        - { name: mediaType, in: query, schema: { $ref: "#/components/schemas/MediaType" } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/AssetSummary" } } } } }
+  /api/v1/rankings:
+    get:
+      summary: 排行榜（热度=view+play+like；周期过滤）
+      parameters:
+        - { name: period, in: query, schema: { type: string, enum: [day, week, month, year, all], default: week } }
+        - { name: limit,  in: query, schema: { type: integer, default: 50 } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/AssetSummary" } } } } }
+  /api/v1/stats/overview:
+    get:
+      summary: 总览（文件数/类型分布/累计浏览/今日浏览/库容量等）
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StatsOverview" } } } }
+  /api/v1/stats/trends:
+    get:
+      summary: 浏览趋势（分桶口径见 DOMAIN_RULES §5：动态周/月/季全量不丢弃）
+      parameters:
+        - { name: range, in: query, schema: { type: string, enum: [day, week, month, quarter, year, all], default: month } }
+        - { name: mediaType, in: query, schema: { $ref: "#/components/schemas/MediaType" } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/TrendBucket" } } } } }
+  /api/v1/recommendations/prefs:
+    get:
+      summary: 读取推荐偏好（9 维权重）
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/RecommendPrefs" } } } }
+    put:
+      summary: 更新推荐偏好
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RecommendPrefs" }
+      responses:
+        "204": { description: OK }
+
+  # ---------- 系统 ----------
+  /healthz:
+    get:
+      summary: 存活探针（免鉴权）
+      security: []
+      responses:
+        "200": { description: alive }
+  /readyz:
+    get:
+      summary: 就绪探针（库可达/磁盘余量）
+      responses:
+        "200": { description: ready }
+        "503": { description: 未就绪 }
+  /metrics:
+    get:
+      summary: Prometheus 指标（管理权限）
+      responses:
+        "200": { description: text/plain 指标输出 }
+  /api/v1/system/status:
+    get:
+      summary: 系统面板数据（负载/流量/磁盘，OBSERVABILITY.md）
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/SystemStatus" } } } }
+  /api/v1/import/qimeng-backup:
+    post:
+      summary: 旧版数据迁移（qimeng_backup.json，映射见 DOMAIN_RULES §10，幂等）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        "200": { description: 迁移结果统计 }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: "QM token" }
+
+  parameters:
+    LibraryId: { name: libraryId, in: path, required: true, schema: { type: string } }
+    AssetId:   { name: assetId,   in: path, required: true, schema: { type: string, format: uuid } }
+    TrashId:   { name: trashId,   in: path, required: true, schema: { type: string } }
+
+  responses:
+    BadRequest:  { description: 参数错误, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    Unauthorized:{ description: 未认证,   content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    NotFound:    { description: 不存在,   content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    Conflict:    { description: 冲突,     content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:    { type: string, description: 机器可读错误码（PATH_ESCAPE/TOO_LARGE/INVALID_TYPE/...） }
+        message: { type: string, description: 人类可读信息（不含内部路径） }
+
+    AuthSetupRequest:
+      type: object
+      required: [password]
+      properties:
+        password: { type: string, minLength: 8 }
+
+    AuthToken:
+      type: object
+      properties:
+        token: { type: string, description: 仅 setup 响应中明文返回一次 }
+
+    MediaType:
+      type: string
+      enum: [image, animated_image, video]
+
+    CountRange:
+      type: string
+      enum: [all, none, low, mid, high]
+      description: none=0 次；low=1-5；mid=5-20；high=>20
+
+    SizeRange:
+      type: string
+      enum: [all, lt1m, m1to10, m10to50, gt50m]
+
+    Library:
+      type: object
+      properties:
+        id:        { type: string }
+        name:      { type: string }
+        rootPath:  { type: string, description: 服务端本地路径（仅管理端展示） }
+        fileCount: { type: integer }
+        videoCount:{ type: integer }
+        imageCount:{ type: integer }
+        scanState: { type: string, enum: [idle, scanning, error] }
+
+    LibraryCreate:
+      type: object
+      required: [name, rootPath]
+      properties:
+        name:     { type: string }
+        rootPath: { type: string, description: 服务端可访问的绝对路径 }
+
+    AssetSummary:
+      type: object
+      properties:
+        id:          { type: string, format: uuid }
+        fileName:    { type: string }
+        mediaType:   { $ref: "#/components/schemas/MediaType" }
+        sizeBytes:   { type: integer, format: int64 }
+        modifiedAt:  { type: string, format: date-time }
+        addedAt:     { type: string, format: date-time }
+        source:      { type: string, description: 出处分区（匹配引擎产出） }
+        characters:  { type: array, items: { type: string } }
+        isFavorite:  { type: boolean }
+        likeCount:   { type: integer }
+        thumbUrl:    { type: string, description: 签名缩略图 URL }
+
+    AssetPage:
+      type: object
+      properties:
+        items:        { type: array, items: { $ref: "#/components/schemas/AssetSummary" } }
+        nextCursor:   { type: string, nullable: true }
+        totalMatched: { type: integer }
+
+    AssetDetail:
+      allOf:
+        - $ref: "#/components/schemas/AssetSummary"
+        - type: object
+          properties:
+            relPath:      { type: string }
+            directory:    { type: string }
+            durationMs:   { type: integer, format: int64, description: 视频时长 }
+            width:        { type: integer }
+            height:       { type: integer }
+            tags:         { type: array, items: { $ref: "#/components/schemas/Tag" } }
+            authors:      { type: array, items: { $ref: "#/components/schemas/Author" } }
+            viewCount:    { type: integer }
+            playCount:    { type: integer }
+            totalBrowseSeconds: { type: integer }
+            lastViewedAt: { type: string, format: date-time, nullable: true }
+            origUrl:      { type: string, description: 签名原图/视频直链 }
+            previewUrl:   { type: string, description: 签名预览直链 }
+
+    MoveRequest:
+      type: object
+      required: [targetDir]
+      properties:
+        targetDir: { type: string, description: 库内目标目录（相对路径） }
+        newName:   { type: string, description: 可选重命名 }
+
+    TrashItem:
+      type: object
+      properties:
+        id:          { type: string }
+        fileName:    { type: string }
+        originalPath:{ type: string }
+        deletedAt:   { type: string, format: date-time }
+        sizeBytes:   { type: integer, format: int64 }
+        expiresAt:   { type: string, format: date-time }
+
+    DirTree:
+      type: object
+      properties:
+        path:     { type: string }
+        dirs:     { type: array, items: { $ref: "#/components/schemas/DirTree" } }
+        fileCount:{ type: integer }
+
+    ViewEventReport:
+      type: object
+      required: [assetId, kind, startedAt]
+      properties:
+        assetId:   { type: string, format: uuid }
+        kind:      { type: string, enum: [open, play, dwell] }
+        startedAt: { type: string, format: date-time }
+        seconds:   { type: number, description: dwell 时的停留秒数 }
+
+    LikeState:
+      type: object
+      properties:
+        likedToday: { type: boolean }
+        likeCount:  { type: integer }
+
+    Tag:
+      type: object
+      properties:
+        id:        { type: string }
+        name:      { type: string }
+        fileCount: { type: integer }
+
+    Author:
+      type: object
+      properties:
+        id:        { type: string, description: 常规=generateAuthorId 规则；COS=cos_ 前缀 }
+        displayName: { type: string }
+        type:      { type: string, enum: [regular, cos] }
+        fileCount: { type: integer }
+        followed:  { type: boolean }
+
+    TimelineTag:
+      type: object
+      properties:
+        id:        { type: string }
+        timeMillis:{ type: integer, format: int64 }
+        name:      { type: string }
+
+    TxtImportResult:
+      type: object
+      properties:
+        authorsImported: { type: integer }
+        filesMatched:    { type: integer }
+
+    StatsOverview:
+      type: object
+      properties:
+        totalFiles:  { type: integer }
+        imageCount:  { type: integer }
+        videoCount:  { type: integer }
+        totalSizeBytes: { type: integer, format: int64 }
+        todayViews:  { type: integer }
+        totalViews:  { type: integer, format: int64 }
+
+    TrendBucket:
+      type: object
+      properties:
+        label:     { type: string, description: 周/月/季标签（口径见 DOMAIN_RULES §5） }
+        start:     { type: string, format: date }
+        end:       { type: string, format: date }
+        viewCount: { type: integer }
+        playCount: { type: integer }
+        seconds:   { type: integer }
+
+    RecommendPrefs:
+      type: object
+      properties:
+        tagRelevance: { type: number, default: 0.22 }
+        tagCollection:{ type: number, default: 0.15 }
+        engagement:   { type: number, default: 0.10 }
+        recency:      { type: number, default: 0.15 }
+        likeScore:    { type: number, default: 0.05 }
+        discovery:    { type: number, default: 0.20 }
+        freshness:    { type: number, default: 0.05 }
+        browseDepth:  { type: number, default: 0.03 }
+        maxRandom:    { type: number, default: 0.30 }
+
+    SystemStatus:
+      type: object
+      properties:
+        cpuPercent:    { type: number }
+        memUsedBytes:  { type: integer, format: int64 }
+        memTotalBytes: { type: integer, format: int64 }
+        disks:         { type: array, items: { type: object, properties: { mount: { type: string }, usedBytes: { type: integer, format: int64 }, totalBytes: { type: integer, format: int64 } } } }
+        netRxBytes:    { type: integer, format: int64, description: 自启动累计下行 }
+        netTxBytes:    { type: integer, format: int64, description: 自启动累计上行（媒体流量主项） }
+        uptimeSeconds: { type: integer, format: int64 }
+        version:       { type: string }
