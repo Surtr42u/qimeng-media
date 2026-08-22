@@ -22,17 +22,18 @@
 
 **目标**：手机浏览器已经能浏览媒体（图片与视频，虽然界面简陋）。
 
-- [ ] 配置系统（env + yaml：库目录、数据目录、token）
-- [ ] SQLite + sqlc + golang-migrate 初始化；核心表（见 ARCHITECTURE §6：assets/users/tags/authors/view_events/favorites/likes/timeline_tags/trash）
-- [ ] scanner：全量扫描 + fsnotify 增量 + 轮询兜底 + 移动合并启发式
-- [ ] 身份机制：asset_id 生成、路径规范化、size/mtime 变更检测
-- [ ] thumbnail：工作池 + ffmpeg 抽帧（黑帧检测）+ 图片缩放 + 缓存键
-- [ ] httpapi：鉴权、库管理、资产列表（分页/筛选/排序/搜索 FTS5）、资产详情、媒体直链（Range）、缩略图/预览端点
-- [ ] SSE：扫描进度推送
-- [ ] **内置极简验收页**（服务端内嵌单页 HTML，无框架）：扫描进度/文件列表/原图查看/视频播放——用于 M1 全功能验收与日常调试，正式 UI 由 M2 承担，验收页永久保留作为调试工具
-- [ ] 单元测试：身份机制、移动合并、分页、路径安全（SECURITY.md 六条全过）
+- [x] 配置系统（2026-08-22：yaml + QIMENG_* env，DataDir/DbPath/TokenTTL/MediaSecret；直链密钥持久化 dataDir）
+- [x] SQLite + sqlc + golang-migrate 初始化；核心表 ×14（2026-08-22：modernc 纯 Go 驱动 WAL；view_events 只追加无外键——ADR-0005 实现澄清；keyset 分页零 OFFSET）
+- [x] scanner：全量扫描 + fsnotify 增量 + 轮询兜底（5min）+ 移动合并启发式（2026-08-22：size+mtime 变更检测；数据目录自噬防御两道防线——注册互斥校验 + scanner SkipDir；Watch 增量删除不做合并属 M1 基线，见 watch.go 注释）
+- [x] 身份机制：asset_id（UUIDv7）、路径规范化、size/mtime 变更检测（2026-08-22：移动合并真机验证通过——改名后 asset_id 不变）
+- [x] thumbnail：ffmpeg 抽帧（黑帧检测"全部采样制"语义已澄清入 DOMAIN_RULES §11）+ 图片缩放 + 缓存键 + 三档 sm=256/md=512/lg=1024
+- [x] httpapi：鉴权（argon2id+token 哈希）、库管理、资产列表（分页/筛选/排序；q=FTS5 搜索移至 M2）、详情、媒体直链（Range/206）、缩略图端点（immutable+ETag+304）
+- [x] SSE：扫描进度推送 + 事件总线（慢订阅者丢弃隔离）
+- [x] 内置极简验收页（中文界面：setup→注册库→扫描进度→日期分组网格→原图→视频播放；永久保留作调试工具）
+- [x] 单元测试：9 包全绿（含路径穿越/签名防伪/Range/移动合并/每日点赞 toggle 端到端用例）
+- [x] 附带交付（M2 提前件）：filing 安全件（路径穿越/MIME 魔数/上传四道校验/回收站布局，142 子用例）、sysmon 监控采集层（gopsutil+prometheus，指标名入 OBSERVABILITY）
 
-**验收**：PC 起服务端，手机浏览器访问 → 配置目录 → 扫描 → 按日期浏览列表 → 看原图 → 播放视频（拖动进度无缝）。
+**验收**：PC 侧全链已验（setup→注册→扫描→列表→原图 200 全量→视频 Range 206 拖动无缝→缩略图懒生成→移动合并身份保持）。手机真机浏览器验收待用户执行（PC 同 WiFi 访问 http://<PC局域网IP>:8420，Windows 防火墙放行后）。
 
 ## M2 · Web 端完整体验
 

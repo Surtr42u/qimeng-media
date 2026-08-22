@@ -1,0 +1,17 @@
+# sqlc 配置：SQL 先写，Go 类型安全代码生成（adr/0003）。
+# 生成命令（版本锁定，禁止随手升级——生成器升级可能改变全部生成代码）：
+#   cd server && go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 generate
+# schema 直接指向 migrations 目录：sqlc 按文件名识别 golang-migrate 格式，
+# 只应用 up migration（官方文档 Modifying the database schema），down 自动忽略。
+version: "2"
+sql:
+  - engine: "sqlite"
+    queries: "internal/store/queries"
+    schema: "migrations"
+    gen:
+      go:
+        package: "db"
+        out: "internal/store/db"
+        # 时间戳等 TEXT 字段保持 string/sql.NullString——格式约定由 store 包
+        # 的 FormatTimestamp 统一保证，不在此做类型 override（少一层映射，规则集中一处）
+        emit_json_tags: false

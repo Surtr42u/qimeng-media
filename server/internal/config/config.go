@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"strconv"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -25,6 +26,9 @@ const defaultDataDir = "./data"
 // 为什么定 512：覆盖手机列表页与 Web 网格两种展示密度，文件体积约几十 KB，
 // 是"清晰度"与"流量/存储成本"的折中，后续可通过配置调整。
 const defaultThumbnailLongSide = 512
+
+// defaultTokenTTL 是签名直链默认有效期（docs/SECURITY.md 红线 5：6h）。
+const defaultTokenTTL = 6 * time.Hour
 
 // ThumbnailConfig 缩略图管线配置。
 type ThumbnailConfig struct {
@@ -47,6 +51,16 @@ type Config struct {
 	LogLevel string `yaml:"log_level"`
 	// Thumbnail 是缩略图管线配置。
 	Thumbnail ThumbnailConfig `yaml:"thumbnail"`
+	// DbPath 是 SQLite 库文件路径；空 = DataDir/qimeng.db（M1 组装约定：
+	// 数据库跟随数据目录走，显式配置可单独放置）。
+	DbPath string `yaml:"db_path"`
+	// TokenTTL 是签名媒体直链（/media/**）的有效期，默认 6h（SECURITY
+	// 红线 5）。注意命名的 Token 指 URL 内的 exp 凭据；Bearer token
+	// 无过期时间（只有显式重置一条吊销路径）。
+	TokenTTL time.Duration `yaml:"token_ttl"`
+	// MediaSecret 是直链 HMAC 密钥；空 = main 启动时生成并持久化到
+	// DataDir 下的密钥文件（重启后既有直链仍然有效）。
+	MediaSecret string `yaml:"media_secret"`
 }
 
 // Load 按优先级加载配置：内置默认值 < yaml 文件 < 环境变量。
@@ -60,6 +74,7 @@ func Load(path string) (*Config, error) {
 		DataDir:   defaultDataDir,
 		LogLevel:  "info",
 		Thumbnail: ThumbnailConfig{Workers: 0, LongSide: defaultThumbnailLongSide},
+		TokenTTL:  defaultTokenTTL,
 	}
 
 	if path != "" {
@@ -105,6 +120,19 @@ func applyEnv(cfg *Config) error {
 			return fmt.Errorf("环境变量 QIMENG_THUMBNAIL_WORKERS=%q 不是合法整数: %w", v, err)
 		}
 		cfg.Thumbnail.Workers = n
+	}
+	if v := os.Getenv("QIMENG_DB_PATH"); v != "" {
+		cfg.DbPath = v
+	}
+	if v := os.Getenv("QIMENG_TOKEN_TTL"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			return fmt.Errorf("环境变量 QIMENG_TOKEN_TTL=%q 不是合法时长（如 6h、30m）: %w", v, err)
+		}
+		cfg.TokenTTL = d
+	}
+	if v := os.Getenv("QIMENG_MEDIA_SECRET"); v != "" {
+		cfg.MediaSecret = v
 	}
 	return nil
 }

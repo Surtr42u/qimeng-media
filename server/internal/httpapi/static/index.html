@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>绮梦影库 · M1 验收页</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, "Microsoft YaHei", sans-serif; background: #14161a; color: #e6e6e6; }
+  header { padding: 12px 16px; background: #1c1f26; border-bottom: 1px solid #2a2e37; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  header h1 { font-size: 16px; margin: 0 12px 0 0; }
+  section { padding: 16px; max-width: 960px; margin: 0 auto; }
+  .card { background: #1c1f26; border: 1px solid #2a2e37; border-radius: 8px; padding: 12px 16px; margin-bottom: 12px; }
+  .card h2 { font-size: 14px; margin: 0 0 8px; color: #9fc3ff; }
+  input[type=text], input[type=password] { background: #101216; color: #e6e6e6; border: 1px solid #333945; border-radius: 6px; padding: 6px 8px; }
+  button { background: #2c4a7c; color: #fff; border: 0; border-radius: 6px; padding: 6px 14px; cursor: pointer; }
+  button:disabled { background: #333945; cursor: default; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 6px; }
+  .muted { color: #8b93a3; font-size: 12px; }
+  .mono { font-family: ui-monospace, Consolas, monospace; font-size: 12px; word-break: break-all; }
+  #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+  .group-label { grid-column: 1 / -1; color: #9fc3ff; font-size: 13px; margin: 12px 0 2px; border-bottom: 1px solid #2a2e37; padding-bottom: 4px; }
+  .cell { position: relative; border-radius: 6px; overflow: hidden; background: #101216; aspect-ratio: 1; cursor: pointer; }
+  .cell img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .cell .name { position: absolute; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.65); font-size: 11px; padding: 3px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cell .badge { position: absolute; top: 4px; right: 4px; background: rgba(0,0,0,.65); font-size: 11px; padding: 2px 6px; border-radius: 4px; }
+  #layer { position: fixed; inset: 0; background: rgba(0,0,0,.92); display: none; align-items: center; justify-content: center; flex-direction: column; z-index: 10; }
+  #layer .bar { width: min(92vw, 1100px); display: flex; justify-content: space-between; align-items: center; padding: 8px; }
+  #layer img.big { max-width: 92vw; max-height: 80vh; object-fit: contain; }
+  #layer video { max-width: 92vw; max-height: 80vh; }
+  #status { position: fixed; right: 10px; bottom: 10px; font-size: 12px; color: #8b93a3; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1>绮梦影库 · M1 验收页</h1>
+  <span class="muted" id="authState">未初始化</span>
+  <button id="btnReload" title="重新拉取列表">刷新列表</button>
+</header>
+
+<!-- ① 首次 setup -->
+<section id="secSetup" class="hidden">
+  <div class="card">
+    <h2>① 首次初始化</h2>
+    <div class="row">
+      <input type="password" id="setupPwd" placeholder="设置管理密码（至少 8 位）" style="width: 260px">
+      <button id="btnSetup">初始化并获取 token</button>
+    </div>
+    <div class="row mono" id="setupTokenOut"></div>
+    <p class="muted">token 只显示这一次，将自动存入本页 localStorage。</p>
+  </div>
+</section>
+
+<!-- ② 库注册 + ③ 扫描 -->
+<section>
+  <div class="card">
+    <h2>② 注册媒体目录（服务端本地路径）</h2>
+    <div class="row">
+      <input type="text" id="libName" placeholder="库名（如：主库）" style="width: 160px">
+      <input type="text" id="libPath" placeholder="服务端绝对路径（如 D:\media 或 /mnt/media）" style="width: 380px">
+      <button id="btnLib">注册</button>
+    </div>
+    <div id="libList" class="muted"></div>
+  </div>
+  <div class="card">
+    <h2>③ 扫描</h2>
+    <div class="row">
+      <button id="btnScan">扫描全部库</button>
+      <span class="muted" id="scanOut">SSE 就绪后此处显示扫描进度</span>
+    </div>
+  </div>
+</section>
+
+<!-- ④ 文件列表 -->
+<section>
+  <div class="card">
+    <h2>④ 文件列表（缩略图网格 · 日期分组）</h2>
+    <div id="grid"></div>
+    <div class="row" style="margin-top:10px">
+      <button id="btnMore">加载更多</button>
+      <span class="muted" id="pageInfo"></span>
+    </div>
+  </div>
+</section>
+
+<!-- ⑤⑥ 大图层 -->
+<div id="layer">
+  <div class="bar">
+    <span id="layerName" class="mono"></span>
+    <button id="btnClose">关闭</button>
+  </div>
+  <div id="layerBody"></div>
+  <p class="muted">视频可拖动进度条 —— 拖动顺畅即 Range 分片（206）生效</p>
+</div>
+
+<div id="status">SSE 未连接</div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const TOKEN_KEY = "qimeng_token";
+let nextCursor = null;
+let totalMatched = -1;
+let loadedCount = 0;
+
+// ---------- 基础请求 ----------
+async function api(path, opts = {}) {
+  const headers = Object.assign({}, opts.headers || {});
+  const token = localStorage.getItem(TOKEN_KEY);
+  if (token) headers["Authorization"] = "Bearer " + token;
+  if (opts.body) headers["Content-Type"] = "application/json";
+  const resp = await fetch(path, Object.assign({}, opts, { headers }));
+  return resp;
+}
+
+function setStatus(text) { $("status").textContent = text; }
+
+// ---------- 启动流程 ----------
+async function boot() {
+  // setup 面板只在未初始化时显示：拿一个假 token 打 verify，401 且从未
+  // setup 过则展示初始化面板（简化判定：有本地 token 就 verify，成功
+  // 进入主界面；无 token 先试 setup 是否可用）。
+  const token = localStorage.getItem(TOKEN_KEY);
+  if (token) {
+    const r = await api("/api/v1/auth/verify", { method: "POST" });
+    if (r.status === 204) { enterMain(); return; }
+    localStorage.removeItem(TOKEN_KEY);
+  }
+  $("authState").textContent = "未初始化";
+  $("secSetup").classList.remove("hidden");
+}
+
+async function enterMain() {
+  $("secSetup").classList.add("hidden");
+  $("authState").textContent = "已鉴权";
+  await Promise.all([loadLibraries(), loadAssets(true)]);
+  connectSSE();
+}
+
+// ---------- ① setup ----------
+$("btnSetup").addEventListener("click", async () => {
+  const pwd = $("setupPwd").value;
+  if (pwd.length < 8) { alert("密码至少 8 位"); return; }
+  const r = await api("/api/v1/auth/setup", { method: "POST", body: JSON.stringify({ password: pwd }) });
+  if (r.status === 409) { alert("系统已初始化过，不能再 setup"); return; }
+  if (!r.ok) { alert("setup 失败：" + r.status); return; }
+  const data = await r.json();
+  localStorage.setItem(TOKEN_KEY, data.token);
+  $("setupTokenOut").textContent = "token（仅此一次）：" + data.token;
+  await enterMain();
+});
+
+// ---------- ② 库注册 ----------
+$("btnLib").addEventListener("click", async () => {
+  const name = $("libName").value.trim(), rootPath = $("libPath").value.trim();
+  if (!name || !rootPath) { alert("库名与路径必填"); return; }
+  const r = await api("/api/v1/libraries", { method: "POST", body: JSON.stringify({ name, rootPath }) });
+  if (r.status === 201) { $("libName").value = ""; loadLibraries(); }
+  else { const e = await r.json().catch(() => ({})); alert("注册失败：" + (e.message || r.status)); }
+});
+
+async function loadLibraries() {
+  const r = await api("/api/v1/libraries");
+  if (!r.ok) { $("libList").textContent = "库列表加载失败 " + r.status; return; }
+  const libs = await r.json();
+  $("libList").innerHTML = libs.length
+    ? libs.map(l => `<div>${l.name} — <span class="mono">${l.rootPath}</span>　文件 ${l.fileCount ?? 0}（图 ${l.imageCount ?? 0} / 视频 ${l.videoCount ?? 0}）　状态 ${l.scanState}</div>`).join("")
+    : "（尚无库）";
+  return libs;
+}
+
+// ---------- ③ 扫描 + SSE ----------
+$("btnScan").addEventListener("click", async () => {
+  const libs = await loadLibraries();
+  for (const l of libs) {
+    const r = await api(`/api/v1/libraries/${l.id}/scan`, { method: "POST" });
+    if (r.status === 202) $("scanOut").textContent = "已触发扫描：" + l.name;
+    else if (r.status === 503) $("scanOut").textContent = "扫描器未装配（M1 占位）";
+    else $("scanOut").textContent = "扫描触发失败 " + r.status;
+  }
+});
+
+// 用 fetch 流式读取 SSE（浏览器 EventSource 无法带 Authorization 头，
+// 服务端因此不需要开 query 参数鉴权的例外口子）。
+function connectSSE() {
+  const token = localStorage.getItem(TOKEN_KEY);
+  const ctrl = new AbortController();
+  fetch("/api/v1/events", { headers: { "Authorization": "Bearer " + token }, signal: ctrl.signal })
+    .then(async (resp) => {
+      if (!resp.ok) { setStatus("SSE 连接失败 " + resp.status); return; }
+      setStatus("SSE 已连接");
+      const reader = resp.body.getReader();
+      const dec = new TextDecoder();
+      let buf = "";
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let idx;
+        while ((idx = buf.indexOf("\n\n")) >= 0) {
+          handleSSERaw(buf.slice(0, idx));
+          buf = buf.slice(idx + 2);
+        }
+      }
+      setStatus("SSE 已断开（重试中）");
+      setTimeout(connectSSE, 3000);
+    })
+    .catch(() => { setStatus("SSE 已断开（重试中）"); setTimeout(connectSSE, 3000); });
+}
+
+function handleSSERaw(raw) {
+  let event = "message", data = "";
+  for (const line of raw.split("\n")) {
+    if (line.startsWith("event:")) event = line.slice(6).trim();
+    else if (line.startsWith("data:")) data += line.slice(5).trim();
+  }
+  if (event === "scan.progress" && data) {
+    try {
+      const p = JSON.parse(data);
+      $("scanOut").textContent = `扫描中：已扫描 ${p.scanned ?? "?"} · 新增 ${p.added ?? "?"}`;
+    } catch { /* 非常规负载忽略 */ }
+  } else if (event === "library.changed") {
+    loadAssets(true);
+    loadLibraries();
+  }
+}
+
+// ---------- ④ 列表（分页 + 日期分组） ----------
+async function loadAssets(reset) {
+  if (reset) { nextCursor = null; loadedCount = 0; $("grid").innerHTML = ""; }
+  const q = new URLSearchParams({ limit: "30" });
+  if (nextCursor) q.set("cursor", nextCursor);
+  const r = await api("/api/v1/assets?" + q.toString());
+  if (r.status === 401) { localStorage.removeItem(TOKEN_KEY); location.reload(); return; }
+  if (!r.ok) { $("pageInfo").textContent = "列表加载失败 " + r.status; return; }
+  const page = await r.json();
+  if (page.totalMatched != null) totalMatched = page.totalMatched;
+  appendCells(page.items || []);
+  nextCursor = page.nextCursor || null;
+  loadedCount += (page.items || []).length;
+  $("btnMore").disabled = !nextCursor;
+  $("pageInfo").textContent = `已加载 ${loadedCount} / 共 ${totalMatched}`;
+}
+
+// 日期分组标签：今天 / 昨天 / 周一~周日（2~6 天前）/ yyyy-MM-dd
+//（DOMAIN_RULES §8 的客户端侧实现）
+function dayLabel(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return "未知日期";
+  const now = new Date();
+  const day0 = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.round((day0(now) - day0(d)) / 86400000);
+  if (diff === 0) return "今天";
+  if (diff === 1) return "昨天";
+  if (diff >= 2 && diff <= 6) return "周" + "日一二三四五六".charAt(d.getDay());
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+function appendCells(items) {
+  const grid = $("grid");
+  for (const it of items) {
+    const label = dayLabel(it.modifiedAt);
+    let head = grid.querySelector(".group-label[data-day='" + label + "']");
+    if (!head) {
+      head = document.createElement("div");
+      head.className = "group-label";
+      head.dataset.day = label;
+      head.textContent = label;
+      grid.appendChild(head);
+    }
+    const cell = document.createElement("div");
+    cell.className = "cell";
+    const badge = it.mediaType === "video" ? "▶" : (it.mediaType === "animated_image" ? "动" : "");
+    cell.innerHTML = `<img loading="lazy" src="${it.thumbUrl}" alt="">` +
+      (badge ? `<span class="badge">${badge}</span>` : "") +
+      `<span class="name">${escapeHtml(it.fileName || "")}</span>`;
+    cell.addEventListener("click", () => openLayer(it));
+    grid.appendChild(cell);
+  }
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+$("btnMore").addEventListener("click", () => loadAssets(false));
+$("btnReload").addEventListener("click", () => loadAssets(true));
+
+// ---------- ⑤⑥ 大图层：图片原图 / 视频播放 ----------
+async function openLayer(item) {
+  const r = await api("/api/v1/assets/" + item.id);
+  if (!r.ok) { alert("详情加载失败 " + r.status); return; }
+  const d = await r.json();
+  $("layerName").textContent = d.fileName || "";
+  const body = $("layerBody");
+  body.innerHTML = "";
+  if (d.mediaType === "video") {
+    const v = document.createElement("video");
+    v.src = d.origUrl; v.controls = true; v.autoplay = true;
+    body.appendChild(v);
+    // 播放行为上报（视频 playCount 口径）
+    v.addEventListener("play", () => {
+      api("/api/v1/events/view", { method: "POST", body: JSON.stringify({
+        assetId: d.id, kind: "play", startedAt: new Date().toISOString(), sessionId: sessionId(),
+      }) });
+    });
+  } else {
+    const img = document.createElement("img");
+    img.className = "big";
+    img.src = d.origUrl;
+    body.appendChild(img);
+    // 打开行为上报（图片 viewCount 口径）
+    api("/api/v1/events/view", { method: "POST", body: JSON.stringify({
+      assetId: d.id, kind: "open", startedAt: new Date().toISOString(), sessionId: sessionId(),
+    }) });
+  }
+  $("layer").style.display = "flex";
+}
+$("btnClose").addEventListener("click", () => {
+  $("layer").style.display = "none";
+  $("layerBody").innerHTML = ""; // 停掉后台视频解码
+});
+
+// 会话标识：每个标签页一个（openapi ViewEventReport.sessionId 语义）
+function sessionId() {
+  let s = sessionStorage.getItem("qimeng_sid");
+  if (!s) { s = crypto.randomUUID(); sessionStorage.setItem("qimeng_sid", s); }
+  return s;
+}
+
+boot();
+</script>
+</body>
+</html>

@@ -1,0 +1,116 @@
+package store
+
+import (
+	"database/sql"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/golang-migrate/migrate/v4"
+	gmsqlite "github.com/golang-migrate/migrate/v4/database/sqlite"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
+	// 纯 Go SQLite 驱动（无 CGO，交叉编译无痛，adr/0003）。blank import：
+	// 向 database/sql 注册 "sqlite" 驱动名。
+	_ "modernc.org/sqlite"
+
+	"qimeng-media/server/migrations"
+)
+
+// TimestampLayout 是全库统一的时间戳格式（详见 migrations/0001_init.up.sql 文件头）：
+// UTC + RFC3339 固定毫秒。统一格式的根本原因：同格式 TEXT 的字典序 == 时间序，
+// keyset 分页 (created_at, asset_id) 复合排序的正确性直接依赖这一性质。
+// 所有写库代码（本包之外的 scanner/httpapi 等）都必须经由这两个函数生成
+// 时间字符串，禁止各处手拼格式。
+const (
+	TimestampLayout = "2006-01-02T15:04:05.000Z07:00"
+	DayLayout       = "2006-01-02" // 「日」字段格式，服务器本地时区日界
+)
+
+// FormatTimestamp 把时间格式化为全库统一时间戳（UTC + 毫秒）。
+func FormatTimestamp(t time.Time) string {
+	return t.UTC().Format(TimestampLayout)
+}
+
+// FormatDay 把时间格式化为「日」字段（YYYY-MM-DD，本地时区）。
+// 点赞每日重置、每日展示计数都以用户所在日历日为界（DOMAIN_RULES §5/§1.4）。
+func FormatDay(t time.Time) string {
+	return t.Local().Format(DayLayout)
+}
+
+// Open 打开（必要时创建）SQLite 数据库并应用连接级 PRAGMA。
+//
+// PRAGMA 全部通过 DSN 的 _pragma 参数下发——它们是「每个连接」生效的，
+// database/sql 连接池新建连接时靠 DSN 自动带上，比在 Open 后手写
+// "PRAGMA ..." 语句可靠（后者只作用于恰好执行它的那一条连接）：
+//
+//   - journal_mode(WAL)：读写不互斥（adr/0003 选 SQLite 的前提——单机
+//     数万 QPS 读的前提就是 WAL）；WAL 本身持久化在库文件里，但每个新连接
+//     重复声明无害且幂等。
+//   - busy_timeout(5000)：写锁被占时等待 5 秒再返回 SQLITE_BUSY，而不是
+//     立刻失败——单进程多协程（扫描器+API）偶发写碰撞靠它吸收。
+//   - foreign_keys(1)：SQLite 默认关闭外键约束，必须逐连接显式开启，
+//     否则 migration 里精心设计的 CASCADE 全部形同虚设。
+func Open(path string) (*sql.DB, error) {
+	dsn := "file:" + path +
+		"?_pragma=busy_timeout(5000)" +
+		"&_pragma=journal_mode(WAL)" +
+		"&_pragma=foreign_keys(1)"
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return nil, fmt.Errorf("store: 打开数据库 %s: %w", path, err)
+	}
+	// sql.Open 是惰性的：立即 Ping 触发真实连接，把 DSN/路径错误暴露在此处
+	// 而不是推迟到第一次查询（那时定位困难）。
+	if err := db.Ping(); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("store: 连接数据库 %s: %w", path, err)
+	}
+	return db, nil
+}
+
+// Migrate 把嵌入的 migration 全部应用到当前库（幂等，已迁移的版本自动跳过）。
+// migration 文件由 server/migrations 包 embed 进二进制（单文件部署，Docker
+// 镜像无需 COPY SQL 文件）；演进只能新增 migration 文件（AI_README_FIRST「迁移唯一」）。
+func Migrate(db *sql.DB) error {
+	m, err := newMigrator(db)
+	if err != nil {
+		return err
+	}
+	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		return fmt.Errorf("store: 迁移到最新版本: %w", err)
+	}
+	return nil
+}
+
+// MigrateDown 回退最近 steps 个 migration。仅供测试与灾备使用——
+// 生产库禁止回退（down 会 DROP 表）。steps=1 即回退一个版本。
+func MigrateDown(db *sql.DB, steps int) error {
+	m, err := newMigrator(db)
+	if err != nil {
+		return err
+	}
+	if err := m.Steps(-steps); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		return fmt.Errorf("store: 回退 %d 个迁移: %w", steps, err)
+	}
+	return nil
+}
+
+// newMigrator 组装 golang-migrate 实例：
+//   - source = iofs（embed FS）；数据库驱动复用 Open 打开的 *sql.DB
+//     （WithInstance 模式，连接上已带 WAL/foreign_keys 等 PRAGMA），
+//     避免第二次独立开连接造成 PRAGMA 状态不一致。
+func newMigrator(db *sql.DB) (*migrate.Migrate, error) {
+	src, err := iofs.New(migrations.FS, ".")
+	if err != nil {
+		return nil, fmt.Errorf("store: 读取内嵌 migrations: %w", err)
+	}
+	driver, err := gmsqlite.WithInstance(db, &gmsqlite.Config{})
+	if err != nil {
+		return nil, fmt.Errorf("store: 初始化迁移驱动: %w", err)
+	}
+	m, err := migrate.NewWithInstance("iofs", src, "sqlite", driver)
+	if err != nil {
+		return nil, fmt.Errorf("store: 组装迁移器: %w", err)
+	}
+	return m, nil
+}

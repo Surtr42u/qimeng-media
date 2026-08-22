@@ -18,15 +18,21 @@
 
 ### 业务指标（服务端自身埋点，prometheus client_golang）
 
-| 指标 | 说明 |
+实现落位 `server/internal/sysmon/metrics.go`（独立 Registry，promauto 标准用法，接线 /metrics 时直接用 `sysmon.Default.Handler()`）：
+
+| 指标名（prometheus） | 说明 |
 |---|---|
-| 请求 QPS | 按 端点×方法×状态码 分维 |
-| 响应延迟 | p50/p95/p99 直方图 |
-| 在线客户端 | 活跃 token 使用数、SSE 连接数 |
-| 扫描 | 上次全量扫描耗时、库内文件数/图片数/视频数、待生成缩略图队列深度 |
-| 媒体流量 | 原图/缩略图/视频直链各自累计字节数（用户最关心的"流量"） |
-| 回收站 | 当前条目数、占用空间 |
-| 上传 | 成功/失败计数、累计字节数 |
+| http_requests_total{endpoint,method,code} | 请求 QPS 分维计数 |
+| http_request_duration_seconds{endpoint} | 延迟直方图（buckets 5ms~60s，内网取值） |
+| media_bytes_total{kind=orig\|thumb\|video} | 媒体流量累计（用户最关心的"流量"） |
+| upload_total{result=ok\|fail} / upload_bytes_total | 上传成功/失败与累计字节 |
+| sse_connections（Gauge） | SSE 在线连接数 |
+| scan_duration_seconds（Gauge） | 上次全量扫描耗时 |
+| library_files{type=image\|video}（Gauge） | 库内文件数 |
+| thumb_queue_depth（Gauge） | 待生成缩略图队列深度 |
+| trash_items / trash_bytes（Gauge） | 回收站条目数与占用 |
+
+系统快照 `sysmon.Collector.Snapshot()` 输出与 openapi SystemStatus 对齐；PerCore（按核 CPU 明细）已在快照中实现，**待接线 /api/v1/system/status 时补进协议并 make sdk**（此处记待办，2026-08-22）。
 
 ### 展示（两种）
 

@@ -1,32 +1,47 @@
 // qimeng 是绮梦媒体库服务端入口。
 //
-// M0 阶段只做最小可运行闭环：配置加载 → JSON 日志 → /healthz → 优雅退出。
-// 业务模块（scanner/thumbnail/store 等）在后续里程碑装配进来，
-// 装配位置固定在 main：依赖注入只在入口发生，业务包之间不互相 new。
+// M1 组装：配置加载 → JSON 日志 → store（SQLite + 迁移）→ 事件总线 →
+// 缩略图编排器 → httpapi（鉴权/浏览闭环/直链/SSE/验收页）→ 优雅退出。
+// 依赖注入只在 main 发生，业务包之间不互相 new（ARCHITECTURE §5）。
+// 扫描器由并行任务实现：当前注入 httpapi 的 noScanner 占位
+// （扫描端点返回 503），真实 scanner 就绪后在组装处替换。
 package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
-	"github.com/go-chi/chi/v5"
-
 	"qimeng-media/server/internal/config"
+	"qimeng-media/server/internal/events"
 	"qimeng-media/server/internal/httpapi"
+	"qimeng-media/server/internal/scanner"
+	"qimeng-media/server/internal/store"
+	"qimeng-media/server/internal/store/db"
+	"qimeng-media/server/internal/thumbnail"
 )
 
 // shutdownTimeout 是优雅退出的最长等待时间。
 // 为什么定 10s：覆盖慢客户端把响应读完 + 在途缩略图任务让出，
 // 同时给容器编排（默认 30s 强杀）留出余量。
 const shutdownTimeout = 10 * time.Second
+
+// mediaSecretFile 是直链 HMAC 密钥的持久化文件名（DataDir 下）。
+// 为什么落盘：密钥每次随机会让重启后全部存量直链立即失效（浏览器
+// 已打开页面的图全裂）；持久化后"换密钥 = 吊销全部直链"的应急语义
+// 也依然成立（删掉文件重启即换新）。
+const mediaSecretFile = "media-secret"
 
 func main() {
 	// 临时 logger 兜底启动早期错误：真正的 JSON logger 要等配置加载完才能建，
@@ -46,14 +61,65 @@ func main() {
 		Level: cfg.SlogLevel(),
 	}))
 	slog.SetDefault(logger)
-	r := chi.NewRouter()
-	// healthz 处理函数属于接口层（httpapi），main 只做装配挂载——
-	// 后续 oapi-codegen 生成的路由也从 httpapi 接入，依赖方向保持 httpapi 在最外层。
-	r.Get("/healthz", httpapi.Healthz)
+
+	// DataDir 必须先就位（库文件/缩略图/密钥文件都落在它下面）。
+	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
+		logger.Error("创建数据目录失败", "error", err, "dataDir", cfg.DataDir)
+		os.Exit(1)
+	}
+
+	dbPath := cfg.DbPath
+	if dbPath == "" {
+		dbPath = filepath.Join(cfg.DataDir, "qimeng.db")
+	}
+	conn, err := store.Open(dbPath)
+	if err != nil {
+		logger.Error("打开数据库失败", "error", err, "dbPath", dbPath)
+		os.Exit(1)
+	}
+	if err := store.Migrate(conn); err != nil {
+		logger.Error("数据库迁移失败", "error", err)
+		os.Exit(1)
+	}
+	queries := db.New(conn)
+
+	secret, err := loadOrCreateMediaSecret(cfg, logger)
+	if err != nil {
+		logger.Error("准备直链密钥失败", "error", err)
+		os.Exit(1)
+	}
+
+	bus := events.NewBus(logger, events.DefaultBuffer)
+	thumbs := thumbnail.NewGenerator(cfg.DataDir, logger)
+
+	apiSrv, err := httpapi.New(httpapi.Deps{
+		Conn:        conn,
+		Queries:     queries,
+		Bus:         bus,
+		Cfg:         cfg,
+		Thumbs:      thumbs,
+		Scanner:     nil, // 下面用真扫描器适配器覆盖（先建 Server 再接 FinishScan 钩子）
+		MediaSecret: secret,
+		TokenTTL:    cfg.TokenTTL,
+		Logger:      logger,
+		Version:     "0.1.0",
+	})
+	if err != nil {
+		logger.Error("组装 HTTP 服务失败", "error", err)
+		os.Exit(1)
+	}
+
+	// 真扫描器：同步实现 + 异步适配器（触发即返回，终态回写 Server）。
+	// dataDir 传入做自噬防御（缩略图缓存是 webp 白名单格式，数据目录若被
+	// 配置进库内绝不能扫进库）。
+	scan := scanner.New(queries, bus, logger, cfg.DataDir)
+	apiSrv.SetScanner(newScannerAdapter(scan, queries, apiSrv, logger))
+
+	handler := apiSrv.Handler()
 
 	srv := &http.Server{
-		Addr: cfg.Listen,
-		Handler: r,
+		Addr:    cfg.Listen,
+		Handler: handler,
 		// 读超时只限 header：媒体直链依赖长连接与大响应体，
 		// 不能设全局 ReadTimeout/WriteTimeout 一刀切掐掉大文件传输。
 		ReadHeaderTimeout: 10 * time.Second,
@@ -62,6 +128,15 @@ func main() {
 	// signal.NotifyContext：Ctrl+C / SIGTERM 时 ctx 取消，主流程进入优雅关闭。
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// 轮询兜底：定时全量扫描全部注册库（fsnotify 的 Windows 行为差异与
+	// "建目录+立即写入"事件缺口由它补齐，见 scanner/watch.go 注释）。
+	// M1 只挂轮询；按库 Watch 在 M2 文件管理接线时挂（新注册库动态加入）。
+	go func() {
+		if err := scan.StartBackground(ctx, 5*time.Minute); err != nil && ctx.Err() == nil {
+			logger.Error("轮询扫描退出", "err", err)
+		}
+	}()
 
 	// errCh 把 goroutine 里的监听错误传回主流程——不允许 err 悄悄丢失。
 	errCh := make(chan error, 1)
@@ -87,5 +162,36 @@ func main() {
 		logger.Error("优雅关闭超时或失败", "error", err)
 		os.Exit(1)
 	}
+	// 总线先关：让 SSE 订阅者立即收流结束，再关库连接，顺序反了会出现
+	// "关库后总线还在投递"的竞态窗口。
+	bus.Close()
+	if err := conn.Close(); err != nil {
+		logger.Error("关闭数据库失败", "error", err)
+	}
 	logger.Info("已完全退出")
+}
+
+// loadOrCreateMediaSecret 取直链 HMAC 密钥：配置显式指定 > DataDir 下
+// 的密钥文件（无则生成 32 字节随机并以 0600 落盘）。
+func loadOrCreateMediaSecret(cfg *config.Config, logger *slog.Logger) ([]byte, error) {
+	if cfg.MediaSecret != "" {
+		return []byte(cfg.MediaSecret), nil
+	}
+	path := filepath.Join(cfg.DataDir, mediaSecretFile)
+	if b, err := os.ReadFile(path); err == nil && len(b) >= 32 {
+		return b, nil
+	} else if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, fmt.Errorf("读取直链密钥文件 %s: %w", path, err)
+	}
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return nil, fmt.Errorf("生成直链密钥: %w", err)
+	}
+	hexKey := []byte(hex.EncodeToString(buf))
+	// 0600：密钥文件只有服务进程可读（同机其他用户不可窥探）。
+	if err := os.WriteFile(path, hexKey, 0o600); err != nil {
+		return nil, fmt.Errorf("持久化直链密钥 %s: %w", path, err)
+	}
+	logger.Info("已生成新的直链签名密钥（旧直链若有则全部失效）", "file", mediaSecretFile)
+	return hexKey, nil
 }
