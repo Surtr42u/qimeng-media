@@ -6,6 +6,7 @@
 
 - 前身「绮梦影库」是一个功能完整的 Android 单机媒体库（100% AI 生成，2.4 万行），本项目是它的 NAS 多端继任者。
 - 动机：媒体全存 NAS，解放手机/电脑存储；手机下载的资源通过 App 直传 NAS。
+- **接手先读 `docs/HANDOVER.md`（交接说明：当前进度/剩余工作/特色纪律），进度看 `docs/PROJECT_PLAN.md` 勾选状态，历史变更与 AI 署名看 `docs/CHANGELOG.md`。**
 - 完整架构见 `docs/ARCHITECTURE.md`，领域规则（要实现什么）见 `docs/DOMAIN_RULES.md`。
 
 ## 开发流程总纲（每个任务必走）
