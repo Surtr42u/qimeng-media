@@ -22,6 +22,12 @@ coverage.out
 *.db-shm
 /data/
 
+# 本地运行数据目录（数据库+缩略图+直链签名密钥，严禁入库）
+qimeng-data/
+
+# Mimosa 钩子产物
+.mimosa/
+
 # 前端
 web/dist/
 web/.vite/

@@ -53,4 +53,4 @@ UI（M2 前半 + M4 Android）与上述后端并行推进。
 
 ## 领域知识库（旧项目）
 
-`<旧项目目录>`（Android 单机版，2.4 万行）：**领域规则照搬、实现代码禁止搬运**。算法细节参考其 `docs/GUIDE_ALGORITHM.md`、`GUIDE_AUTHOR.md`（SourceMatcher 131 表源数据）、M4 交互规格参考 `GUIDE_UI.md`。
+`<旧项目目录>`（Android 单机版，2.4 万行）：**领域规则照搬、实现代码禁止搬运**。算法细节参考其 `docs/GUIDE_ALGORITHM.md`、`GUIDE_AUTHOR.md`（SourceMatcher 131 表源数据）、M4 交互规格参考 `GUIDE_UI.md`；近期审查/修复沉淀的需求级结论见本仓库 `docs/LEGACY_REQUIREMENTS.md`（标签管理/缩略图代表帧/搜索作者维度/统计口径等，M2~M4 实现前对照）。

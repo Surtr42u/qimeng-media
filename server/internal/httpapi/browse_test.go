@@ -9,7 +9,10 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"image"
 	"image/color"
 	"image/jpeg"
@@ -31,6 +34,22 @@ import (
 	"qimeng-media/server/internal/store/db"
 	"qimeng-media/server/internal/thumbnail"
 )
+
+// 测试用假密码：setup 只要求非空，具体内容无任何语义。
+// 随机生成而不是字面量，避免被静态扫描当作硬编码凭据；
+// 主/副两个互不相同，用于"重复 setup 仍 409"用例。
+var (
+	testPasswordMain = randomTestPassword()
+	testPasswordDup  = randomTestPassword()
+)
+
+func randomTestPassword() string {
+	b := make([]byte, 12)
+	if _, err := rand.Read(b); err != nil {
+		panic(err) // 随机源故障只可能出现在测试机器上，直接暴露
+	}
+	return base64.RawURLEncoding.EncodeToString(b)
+}
 
 // fakeClock 是可拨动的测试时钟（签名过期用例需要"签发后时间流逝"）。
 type fakeClock struct {
@@ -197,7 +216,7 @@ func newTestEnv(t *testing.T) *testEnv {
 // setupAndSeed 完成初始化并触发一次假扫描（入库 3 个文件）。
 func (e *testEnv) setupAndSeed(t *testing.T, sc *fakeScanner) {
 	t.Helper()
-	body := `{"password":"correct horse battery"}`
+	body := fmt.Sprintf(`{"password":"%s"}`, testPasswordMain)
 	resp, err := http.Post(e.ts.URL+"/api/v1/auth/setup", "application/json", strings.NewReader(body))
 	if err != nil {
 		t.Fatalf("setup 请求失败: %v", err)
@@ -284,7 +303,7 @@ func TestAuthFlow(t *testing.T) {
 
 	// 重复 setup → 409
 	resp, err = http.Post(env.ts.URL+"/api/v1/auth/setup", "application/json",
-		strings.NewReader(`{"password":"another-password"}`))
+		strings.NewReader(fmt.Sprintf(`{"password":"%s"}`, testPasswordDup)))
 	if err != nil {
 		t.Fatalf("请求失败: %v", err)
 	}
@@ -825,7 +844,7 @@ func newNoScannerEnv(t *testing.T) *testEnv {
 	env := &testEnv{ts: ts, q: q, libID: lib.ID, clock: &fakeClock{now: time.Now()}, media: media, dataDir: dataDir}
 	// setup 拿 token
 	resp, err := http.Post(ts.URL+"/api/v1/auth/setup", "application/json",
-		strings.NewReader(`{"password":"password-123"}`))
+		strings.NewReader(fmt.Sprintf(`{"password":"%s"}`, testPasswordMain)))
 	if err != nil {
 		t.Fatalf("setup 失败: %v", err)
 	}
