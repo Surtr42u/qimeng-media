@@ -24,6 +24,9 @@ jobs:
     defaults: { run: { working-directory: server } }
     steps:
       - uses: actions/checkout@v5
+      # 端到端测试需要真实 ffmpeg 生成视频缩略图（生产镜像同样内置 ffmpeg）
+      - name: 安装 ffmpeg（缩略图端到端测试依赖）
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - uses: actions/setup-go@v6
         with: { go-version: "1.27.x", cache-dependency-path: server/go.sum }
       # 协议生成物不入库（.gitignore），编译前先重建 Go 接口层；
