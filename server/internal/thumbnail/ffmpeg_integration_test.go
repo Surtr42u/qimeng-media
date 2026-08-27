@@ -68,7 +68,7 @@ func makeBlackRedVideo(t *testing.T, dir string) string {
 }
 
 // makeTwoColorGif 合成"红 0.4s + 蓝 0.4s"的动图：验证首帧提取取的是第一帧
-//（若取到末帧会得到蓝，测试当场失败）。
+// （若取到末帧会得到蓝，测试当场失败）。
 func makeTwoColorGif(t *testing.T, dir string) string {
 	t.Helper()
 	out := filepath.Join(dir, "redblue.gif")
@@ -263,7 +263,7 @@ func TestGeneratorEnsureIntegration(t *testing.T) {
 	requireFFmpeg(t)
 	dir := t.TempDir()
 	dataDir := filepath.Join(dir, "data")
-	gen := NewGenerator(dataDir, nil)
+	gen := NewGenerator(dataDir, nil, Options{})
 
 	video := makeSolidVideo(t, dir, "red", 2)
 	gif := makeTwoColorGif(t, dir)

@@ -1,0 +1,40 @@
+# qimeng-media（绮梦影库·NAS 多端版）
+
+> 自托管家庭媒体库：Go 单体服务端 + React Web(PWA) + Kotlin/Compose Android 薄客户端，OpenAPI 协议先行，全部代码由 AI 生成、文档体系驱动协作。
+
+## 先读（AI 协作入口）
+
+- [AGENTS.md](AGENTS.md)：任务 → 文档路由表 + 十条铁律 + 回复签名约定
+- [AI_README_FIRST.md](AI_README_FIRST.md)：协作强制规则（自审清单、文档同步、冲突优先级、警戒线）
+- [README.md](README.md)：项目总览与开发命令（make sdk / server-run / server-test / web-dev / web-test / lint）
+- [docs/HANDOVER.md](docs/HANDOVER.md)：AI 交接说明（当前进度/剩余工作/特色纪律）
+
+## 核心文档（docs/）
+
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)：架构唯一权威（技术选型、模块边界强制 §5.1、数据身份、CI 四 job）
+- [docs/DOMAIN_RULES.md](docs/DOMAIN_RULES.md)：领域规则唯一权威（推荐算法/筛选/统计/作者/缩略图，标注「逐字遵守」的公式禁止擅改）
+- [docs/CAPABILITY_MAP.md](docs/CAPABILITY_MAP.md)：能力地图（对标 Jellyfin/Immich/Plex 的现状与缺口，AI 主动提案的依据）
+- [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md)：里程碑 M0-M6+ 与验收标准（进度唯一真相）
+- [docs/GUIDE_API.md](docs/GUIDE_API.md)：API 端点人读版导读（协议权威是 api/openapi.yaml）
+- [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md)：监控指标、健康检查（/healthz /readyz 免鉴权）、日志
+- [docs/SECURITY.md](docs/SECURITY.md)：安全红线（鉴权/路径穿越/上传/回收站/远程访问）
+- [docs/CHANGELOG.md](docs/CHANGELOG.md)：历次变更 + AI 署名
+- [docs/LEGACY_REQUIREMENTS.md](docs/LEGACY_REQUIREMENTS.md)：旧项目需求级结论沉淀（M2-M4 实现前对照）
+
+## 决策记录（docs/adr/）
+
+- [docs/adr/INDEX.md](docs/adr/INDEX.md)：ADR 决策索引（编号 | 一句话决策 | 受影响文件）
+- [docs/adr/0001-技术栈与monorepo.md](docs/adr/0001-技术栈与monorepo.md) 至 [docs/adr/0011-数据库演进式迁移纪律.md](docs/adr/0011-数据库演进式迁移纪律.md)：ADR-0001~0011（0009 SDK 生成物不入库 / 0010 模块边界三层强制 / 0011 迁移纪律）
+- [docs/templates/adr-template.md](docs/templates/adr-template.md)：ADR 模板（Nygard 五段）
+
+## 协议与工程
+
+- [api/openapi.yaml](api/openapi.yaml)：协议宪法（三端 SDK 唯一事实源；先改协议再生成代码）
+- [Makefile](Makefile)：一键命令（sdk / lint / server-run / server-test / web-dev / web-test / docker-build）
+- [docker-compose.yml](docker-compose.yml)：部署目标形态样例（M5 完善）
+
+## 子目录入口
+
+- [server/](server/README.md)：Go 服务端（模块化单体，internal 包边界 + depguard 红线，见 server/.golangci.yml）
+- [web/](web/README.md)：React + Vite + shadcn/ui PWA（设计 token 规范）
+- [android/](android/README.md)：Kotlin + Compose 薄客户端（SDK 生成物 android/sdk/ 不入库）

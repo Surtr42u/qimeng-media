@@ -6,12 +6,12 @@ import (
 )
 
 var (
-	jpgHead  = []byte{0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 'J', 'F', 'I', 'F', 0x00}
-	pngHead  = []byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0x0D}
-	exeHead  = []byte{'M', 'Z', 0x90, 0x00, 0x03, 0x00, 0x00, 0x00}
-	movHead  = ftypHead("qt  ")
-	mp4Head  = ftypHead("isom")
-	aviHead  = append([]byte("RIFF\x24\x00\x00\x00AVI LIST"), 0x00)
+	jpgHead = []byte{0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 'J', 'F', 'I', 'F', 0x00}
+	pngHead = []byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0x0D}
+	exeHead = []byte{'M', 'Z', 0x90, 0x00, 0x03, 0x00, 0x00, 0x00}
+	movHead = ftypHead("qt  ")
+	mp4Head = ftypHead("isom")
+	aviHead = append([]byte("RIFF\x24\x00\x00\x00AVI LIST"), 0x00)
 )
 
 const mb = 1 << 20
@@ -67,7 +67,7 @@ func TestValidateUpload(t *testing.T) {
 }
 
 // TestValidateUploadErrorsDistinct 四道错误必须可用 errors.Is 互相区分
-//（handler 依赖它映射 400/413 与 openapi Error.code）。
+// （handler 依赖它映射 400/413 与 openapi Error.code）。
 func TestValidateUploadErrorsDistinct(t *testing.T) {
 	all := []error{ErrUploadExtension, ErrUploadMimeMismatch, ErrUploadTooLarge, ErrUploadFilename}
 	for i, a := range all {

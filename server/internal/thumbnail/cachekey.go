@@ -14,10 +14,13 @@ type Size int
 // 预设档位。为什么以像素值而非语义名（"grid"等）进键：像素值是缩略图的真实身份，
 // 调整档位像素 = 新键 = 新文件（旧文件自然成为孤儿，交给对账清理）；若用语义名，
 // 改像素会让同名键被新内容覆盖，HTTP ETag 的 immutable 语义反而变复杂。
-// SizeGrid 与 config.Thumbnail.LongSide 默认值 512 对齐（列表网格档）。
+// 本表是缩略图档位像素的单一来源：api/openapi.yaml /media/thumb size 枚举
+// （sm/md/lg）与 gen 枚举 Sm/Md/Lg 一一对应本表，任何改动双同步。
+// SizeGrid 是网格默认档（md）的回落像素：Generator 构造时 Options.LongSide<=0
+// 落到它，配置覆盖后的生效像素经 Generator.GridLongSide() 读取。
 const (
 	SizeSmall   Size = 256  // 小网格档（openapi size=sm）
-	SizeGrid    Size = 512  // 列表网格档（默认档，与 config.Thumbnail.LongSide 默认值对齐）
+	SizeGrid    Size = 512  // 列表网格默认档（openapi size=md；LongSide 未配置时的回落值）
 	SizePreview Size = 1024 // 详情大图档（openapi size=lg）
 )
 
@@ -25,7 +28,7 @@ const (
 const thumbsDirName = "thumbs"
 
 // CacheKey 计算缩略图缓存键：SHA-256(assetID + ":" + size) 的 hex 编码
-//【逐字遵守 DOMAIN_RULES §11：SHA-256(assetId+size) 前缀 hex，存数据目录】。
+// 【逐字遵守 DOMAIN_RULES §11：SHA-256(assetId+size) 前缀 hex，存数据目录】。
 // 为什么插 ":" 分隔符：防止纯拼接的边界歧义——理论上 assetID="a"+size 串 "bc"
 // 与 assetID="ab"+size 串 "c" 会撞键；固定分隔符彻底排除。
 // 键的稳定性由单测黄金向量锁定：键是磁盘缓存与 HTTP 缓存头的公共名字，

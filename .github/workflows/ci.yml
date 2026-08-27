@@ -35,7 +35,17 @@ jobs:
         run: |
           go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.8.0
           "$(go env GOPATH)/bin/oapi-codegen" -config internal/httpapi/gen/oapi-codegen.yaml ../api/openapi.yaml
+      # 模块边界强制（server/.golangci.yml depguard：gen 只许 httpapi 用、业务包禁止反向依赖 httpapi）
+      # 版本与本机一致（见 Makefile 顶部 GOLANGCI_LINT 注释）
+      - name: golangci-lint（静态检查 + 模块边界）
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.13.1
+          working-directory: server
       - run: go vet ./...
+      # gofmt 门禁：格式不一致即失败（golangci-lint 默认不含 gofmt 检查）
+      - name: gofmt 格式校验
+        run: test -z "$(gofmt -l .)"
       - run: go test ./... -race -count=1
       - run: go build ./...
 

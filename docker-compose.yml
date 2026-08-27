@@ -9,8 +9,10 @@ services:
     user: "1000:1000"                  # 非 root 运行（SECURITY.md）
     ports:
       - "8420:8420"
-    environment:
-      QM_CONFIG: /etc/qimeng/config.yaml
+    # 配置路径不在此声明：服务端只认 -config flag 或 QIMENG_* 前缀环境变量
+    #（见 server/internal/config/config.go 与 cmd/qimeng/main.go），
+    # 无配置文件路径的环境变量形态。启动参数由 M5 Dockerfile 的入口一并定案，
+    # 挂载的 /etc/qimeng/config.yaml 届时由入口 -config 指向。
     volumes:
       - /volume1/media:/media          # 媒体库（可写但仅受控操作；删除走回收站）
       - /volume1/docker/qimeng/data:/data   # 数据库/缩略图/回收站（服务端私有）

@@ -1,0 +1,119 @@
+# golangci-lint v2 配置：server 模块静态检查 + 模块边界强制（ARCHITECTURE §5）
+#
+# 安装（版本锁定 v2.13.1，与 .github/workflows/ci.yml 保持一致）：
+#   go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.1
+#
+# 模块边界两条红线（depguard 强制执行，依赖方向 httpapi → 业务模块 → store）：
+#   1. httpapi/gen 是 oapi-codegen 从 api/openapi.yaml 生成的协议接口层，只允许 httpapi 包引用；
+#   2. 业务包禁止反向依赖 httpapi 包；唯一例外是 cmd/qimeng（main 组合根，依赖注入只在 main 发生）。
+version: "2"
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - depguard
+    - gosec
+    - revive
+    - misspell
+    - unconvert
+    - gocritic
+
+  settings:
+    errcheck:
+      # 生产代码的 Close 错误无法恢复，检查了也只能 log（与历史默认一致）；
+      # 测试代码的 Close 噪音由下方 exclusions 处理。其余错误检查全部保留。
+      exclude-functions:
+        - "(*github.com/fsnotify/fsnotify.Watcher).Close" # errcheck verbose 显示的 FuncName 全限定形式
+
+    gosec:
+      # 排除与现状设计冲突的规则（详见每行注释）；其余安全规则（G201/G202/G401/G501 等）全部保留。
+      excludes:
+        - G115 # 整数宽度转换：auth/filing 的小数值转换均有范围检查，纯噪音
+        - G118 # wire.go 后台 goroutine 用 context.Background 是服务端长期任务设计
+        - G204 # thumbnail 调 ffmpeg 是核心功能；exec.Command 参数列表式调用，无 shell 拼接
+        - G301 # 缩略图缓存目录 0755 是媒体数据目录语义（非凭证目录）
+        - G304 # 文件路径来自配置/数据库是文件服务核心场景；路径安全校验在 filing 包
+        - G602 # scanner pickMergeCandidate 中 best<0 短路后才取下标，静态误报
+
+    staticcheck:
+      # golangci-lint 默认排除过强风格项（ST1000/ST1003/ST1016/ST1020-1022），此处保持并追加排除 QF* 快速修复建议；
+      # ST1003 必须排除：oapi-codegen 生成的接口方法名（GetApiV1Events 等）由协议固定，实现代码无法改名。
+      checks:
+        - "all"
+        - "-ST1000"
+        - "-ST1003"
+        - "-ST1016"
+        - "-ST1020"
+        - "-ST1021"
+        - "-ST1022"
+        - "-QF*"
+
+    revive:
+      rules:
+        # 以下规则与 oapi-codegen 生成的接口签名/既有注释风格冲突，关闭：
+        - name: var-naming
+          disabled: true # 实现 oapi-codegen 接口必须沿用其 ApiV1/AssetId 命名
+        - name: unused-parameter
+          disabled: true # HTTP handler 签名由接口固定，参数不可删
+        - name: package-comments
+          disabled: true # 包注释集中在 doc.go（revive 只认包声明文件的注释）
+        - name: exported
+          disabled: true # 导出符号注释非本项目红线（包注释约定以 doc.go 为准）
+
+    gocritic:
+      disabled-checks:
+        - commentFormatting # //无空格注释是既有中文注释风格
+        - unlambda # 风格建议，不阻塞
+        - exitAfterDefer # main 的 os.Exit(1) 分支在 signal.NotifyContext 的 defer 之前，无法规避
+
+    depguard:
+      rules:
+        # 红线 1：gen 只能 httpapi 用（$all 覆盖全部文件，否定式排除 httpapi 自身）。
+        # files glob 是 gobwas/glob，匹配对象可能是绝对/相对路径、Windows 下是反斜杠分隔，
+        # 因此每种排除同时写正斜杠与反斜杠两种形式（'**/' 前缀吸收任意绝对路径前缀）。
+        gen-httpapi-only:
+          files:
+            - "$all"
+            - "!**/internal/httpapi/**"
+            - '!**\internal\httpapi\**'
+          deny:
+            - pkg: qimeng-media/server/internal/httpapi/gen
+              desc: "oapi-codegen 生成的协议接口层只允许 httpapi 包引用（ARCHITECTURE §5）"
+
+        # 红线 2：业务包禁止反向依赖 httpapi；唯一例外 cmd/（main 组合根）。
+        # 用 $all + 否定式排除，同时覆盖 sysmon 与未来新增业务包，无需逐包列举。
+        no-httpapi-in-business:
+          files:
+            - "$all"
+            - "!**/internal/httpapi/**"
+            - '!**\internal\httpapi\**'
+            - "!**/cmd/**"
+            - '!**\cmd\**'
+          deny:
+            - pkg: qimeng-media/server/internal/httpapi
+              desc: "依赖方向是 httpapi→业务模块（ARCHITECTURE §5），业务包禁止反向依赖 httpapi"
+
+  exclusions:
+    rules:
+      # gosec 对测试代码不阻塞（测试的权限/URL/硬编码数据是惯用法；CI 与本机一致）
+      - linters:
+          - gosec
+        path: _test\.go
+      # 测试代码里 resp.Body.Close / f.Close 等未检查无害（t.Cleanup/defer 模式），不阻塞
+      - linters:
+          - errcheck
+        path: _test\.go
+        text: "Close` is not checked"
+      # 现状遗留（不改源码，排除留痕）：
+      - linters:
+          - unconvert
+        path: internal/httpapi/assets\.go
+        text: "unnecessary conversion" # assets.go:535 显式 UUID 转换冗余
+      - linters:
+          - unused
+        path: internal/filing/upload_test\.go
+        text: "pngHead" # 测试辅助变量未使用

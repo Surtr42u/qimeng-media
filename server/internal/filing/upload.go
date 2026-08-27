@@ -49,7 +49,7 @@ func AllowedExtension(ext string) bool {
 }
 
 // ValidateUpload 在写盘前执行四道校验，按①→④顺序短路返回，错误可区分
-//（errors.Is），供 handler 映射 400/413 与 openapi Error.code。
+// （errors.Is），供 handler 映射 400/413 与 openapi Error.code。
 //
 //	① 扩展名白名单（大小写不敏感）；
 //	② 魔数嗅探与扩展名交叉验证：SniffMagic(head) 必须成功且等于白名单映射的

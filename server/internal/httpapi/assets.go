@@ -5,7 +5,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -228,7 +230,7 @@ func (s *Server) GetApiV1Assets(w http.ResponseWriter, r *http.Request, params g
 			CursorKey: nullStr(cur.K),
 			CursorID:  sql.NullString{String: cur.I, Valid: cur.K != ""},
 		}
-		applyFiltersAsc(&p, filters)
+		applyFilters(&p, filters)
 		rows, err := s.q.ListAssetsFilteredAsc(r.Context(), p)
 		if err != nil {
 			s.logger.Error("查询资产列表失败", "err", err)
@@ -252,7 +254,7 @@ func (s *Server) GetApiV1Assets(w http.ResponseWriter, r *http.Request, params g
 			CursorKey: nullStr(cur.K),
 			CursorID:  sql.NullString{String: cur.I, Valid: cur.K != ""},
 		}
-		applyFiltersDesc(&p, filters)
+		applyFilters(&p, filters)
 		rows, err := s.q.ListAssetsFilteredDesc(r.Context(), p)
 		if err != nil {
 			s.logger.Error("查询资产列表失败", "err", err)
@@ -281,7 +283,7 @@ func (s *Server) GetApiV1Assets(w http.ResponseWriter, r *http.Request, params g
 	//——翻页时总数不变，省一次全量计数。
 	if cur.K == "" {
 		var cp db.CountAssetsFilteredParams
-		applyFiltersCount(&cp, filters)
+		applyFilters(&cp, filters)
 		total, err := s.q.CountAssetsFiltered(r.Context(), cp)
 		if err != nil {
 			s.logger.Error("统计资产总数失败", "err", err)
@@ -319,30 +321,28 @@ func buildSummary(s *Server, assetID, fileName, mediaType string, sizeBytes int6
 	}
 }
 
-// ---- 参数复制（Asc/Desc/Count 三个 sqlc 参数结构同构，逐字段赋值） ----
+// ---- 参数分发（Asc/Desc/Count 三个 sqlc 参数结构体同构，按字段名对齐复制） ----
+//
+// 17 个筛选字段只有一个组装来源（newAssetFilters），但 sqlc 为三种查询
+// 生成了三个独立结构体（ListAssetsFilteredAsc/Desc、CountAssetsFiltered），
+// 筛选字段一一同名同型。这里按 assetFilters 的字段名反射落进目标结构体，
+// 取代三份逐字段复制的 applyFiltersAsc/Desc/Count：协议加一个筛选参数
+// 只需改 newAssetFilters 与 SQL，不再有"改一漏二"的静默漂移。
+// 目标结构体缺字段（三胞胎不同步）或类型不匹配会在运行期立即 panic
+// ——编程错误当场暴露（测试兜底），好过漏赋值悄悄丢筛选条件。
 
-func applyFiltersAsc(p *db.ListAssetsFilteredAscParams, f assetFilters) {
-	p.LibraryID, p.MediaType, p.Source, p.SourceIsOther = f.LibraryID, f.MediaType, f.Source, f.SourceIsOther
-	p.IncludeCos, p.CharactersJson, p.AuthorID = f.IncludeCos, f.CharactersJson, f.AuthorID
-	p.TagIdsJson, p.TagMode, p.Favorite = f.TagIdsJson, f.TagMode, f.Favorite
-	p.MtimeFrom, p.MtimeTo, p.YearFrom, p.YearTo = f.MtimeFrom, f.MtimeTo, f.YearFrom, f.YearTo
-	p.ViewRange, p.PlayRange, p.SizeRange = f.ViewRange, f.PlayRange, f.SizeRange
-}
-
-func applyFiltersDesc(p *db.ListAssetsFilteredDescParams, f assetFilters) {
-	p.LibraryID, p.MediaType, p.Source, p.SourceIsOther = f.LibraryID, f.MediaType, f.Source, f.SourceIsOther
-	p.IncludeCos, p.CharactersJson, p.AuthorID = f.IncludeCos, f.CharactersJson, f.AuthorID
-	p.TagIdsJson, p.TagMode, p.Favorite = f.TagIdsJson, f.TagMode, f.Favorite
-	p.MtimeFrom, p.MtimeTo, p.YearFrom, p.YearTo = f.MtimeFrom, f.MtimeTo, f.YearFrom, f.YearTo
-	p.ViewRange, p.PlayRange, p.SizeRange = f.ViewRange, f.PlayRange, f.SizeRange
-}
-
-func applyFiltersCount(p *db.CountAssetsFilteredParams, f assetFilters) {
-	p.LibraryID, p.MediaType, p.Source, p.SourceIsOther = f.LibraryID, f.MediaType, f.Source, f.SourceIsOther
-	p.IncludeCos, p.CharactersJson, p.AuthorID = f.IncludeCos, f.CharactersJson, f.AuthorID
-	p.TagIdsJson, p.TagMode, p.Favorite = f.TagIdsJson, f.TagMode, f.Favorite
-	p.MtimeFrom, p.MtimeTo, p.YearFrom, p.YearTo = f.MtimeFrom, f.MtimeTo, f.YearFrom, f.YearTo
-	p.ViewRange, p.PlayRange, p.SizeRange = f.ViewRange, f.PlayRange, f.SizeRange
+func applyFilters(dst any, f assetFilters) {
+	dv := reflect.ValueOf(dst).Elem()
+	fv := reflect.ValueOf(f)
+	ft := fv.Type()
+	for i := 0; i < fv.NumField(); i++ {
+		name := ft.Field(i).Name
+		df := dv.FieldByName(name)
+		if !df.IsValid() {
+			panic(fmt.Sprintf("httpapi: 筛选目标结构体缺少字段 %s（sqlc 三参数结构不同步）", name))
+		}
+		df.Set(fv.Field(i)) // 类型不一致时 Set 直接 panic（编程错误，测试兜底）
+	}
 }
 
 // GetApiV1AssetsAssetId 资产详情：组装全部关联数据与签名直链。
@@ -487,21 +487,24 @@ func (s *Server) signedMediaURL(path string) string {
 
 // thumbURL 生成缩略图签名直链（size 作为普通查询参数附在签名之后）。
 //
-// size 档位映射（openapi sm/md/lg → thumbnail 像素档）：sm=256（小网格）、
-// md=512（网格默认档）、lg=1024（大图档）。
+// size 档位（openapi sm/md/lg）到像素的换算见 thumbSize；档位像素的
+// 单一来源是 thumbnail 包的 Size 常量（cachekey.go），md 档像素由
+// Thumbnail 配置 LongSide 决定（未配置回落 SizeGrid）。
 func (s *Server) thumbURL(assetID, size string) string {
 	return s.signedMediaURL("/media/thumb/"+assetID) + "&size=" + size
 }
 
-// thumbSize 把 openapi size 枚举映射到 thumbnail.Size（同 thumbURL 注释）。
-func thumbSize(size gen.GetMediaThumbAssetIdParamsSize) thumbnail.Size {
+// thumbSize 把 openapi size 枚举映射到 thumbnail.Size：
+// sm→SizeSmall、lg→SizePreview；md（默认档）→ Generator.GridLongSide()
+// （LongSide 配置的接线出口，保证请求缓存键与生成尺寸一致）。
+func (s *Server) thumbSize(size gen.GetMediaThumbAssetIdParamsSize) thumbnail.Size {
 	switch size {
 	case gen.Sm:
 		return thumbnail.SizeSmall
 	case gen.Lg:
 		return thumbnail.SizePreview
 	default:
-		return thumbnail.SizeGrid // md（默认档）
+		return thumbnail.Size(s.thumbs.GridLongSide()) // md（默认档）
 	}
 }
 

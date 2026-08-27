@@ -14,6 +14,11 @@ GOBIN_DIR ?= $(HOME)/go/bin
 REDOCLY := npx -y @redocly/cli
 OAPI_CODEGEN_VERSION := v2.8.0
 
+# golangci-lint（配置在 server/.golangci.yml，模块边界 depguard 强制见 ARCHITECTURE §5）。
+# 版本锁定 v2.13.1，与 .github/workflows/ci.yml 的 golangci-lint-action 一致。首次安装：
+#   go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.1
+GOLANGCI_LINT ?= $(GOBIN_DIR)/golangci-lint
+
 .PHONY: help sdk sdk-validate sdk-go sdk-ts sdk-kotlin server-run server-test web-dev web-test docker-build lint
 
 help: ## 显示全部命令
@@ -63,22 +68,30 @@ sdk-kotlin:
 		echo "    Java not found (PATH or ../dev-tools/jdk17): Kotlin SDK generation SKIPPED"; \
 	fi
 
-server-run: ## 本地运行服务端（读取 config/local.yaml）
-	@echo "TODO(M0): go run ./server/cmd/qimeng"
+server-run: ## 本地运行服务端（:8420；自定义配置直接 go run ./server/cmd/qimeng -config <yaml>）
+	cd server && go run ./cmd/qimeng
 
-server-test: ## 服务端全部测试
-	@echo "TODO(M0): go test ./..."
+server-test: ## 服务端全部测试（-race 由 CI 跑；本机 Windows 无 gcc 编译器）
+	cd server && go test ./... -count=1
 
-web-dev: ## Web 开发服务器
-	@echo "TODO(M0): npm --prefix web run dev"
+web-dev: ## Web 开发服务器（vite dev）
+	npm --prefix web run dev
 
-web-test: ## Web 检查与测试
-	@echo "TODO(M0): npm --prefix web run check"
+web-test: ## Web 检查（tsc 类型检查 + oxlint；package.json 无独立 check script，组合 build+lint）
+	@test -d web/node_modules || npm --prefix web install
+	npm --prefix web run build
+	npm --prefix web run lint
 
-docker-build: ## 构建双架构镜像（amd64+arm64，含 ffmpeg）
-	@echo "TODO(M5): docker buildx build --platform linux/amd64,linux/arm64"
+docker-build: ## 双架构镜像（amd64+arm64，含 ffmpeg）——未实现
+	@echo "TODO(M5): image delivery not implemented yet; see PROJECT_PLAN M5 (docker buildx build --platform linux/amd64,linux/arm64)"
 
-lint: ## 全部静态检查（openapi 协议 + Go vet + golangci-lint + TS）
+lint: ## 全部静态检查（openapi 协议 + Go gofmt/golangci-lint + TS）
 	@echo "==> openapi spec lint (redocly; errors fail the build)"
 	$(REDOCLY) lint api/openapi.yaml
-	@echo "==> Go vet / golangci-lint / TS: TODO(M0)"
+	@echo "==> Go gofmt（格式不一致即失败）"
+	@cd server && test -z "$$(gofmt -l .)" || (echo "gofmt required:" && gofmt -l . && exit 1)
+	@echo "==> Go golangci-lint (server; config server/.golangci.yml)"
+	cd server && "$(GOLANGCI_LINT)" run
+	@echo "==> TS check (web)"
+	npm --prefix web run build
+	npm --prefix web run lint

@@ -66,6 +66,13 @@ paths:
   /api/v1/events:
     get:
       summary: SSE 事件流（scan.progress / library.changed / thumbnail.progress / upload.done）
+      description: |
+        text/event-stream 流（WHATWG SSE 帧格式：event/data/id 行 + 空行）。
+        首帧为 retry（重连等待毫秒）与 hello（data 为 {"version": string} JSON）。
+        业务事件 data 为 JSON，载荷类型见 components/schemas：
+        - scan.progress   → ScanProgressEvent
+        - library.changed → LibraryChangedEvent
+        - thumbnail.progress / upload.done → 载荷契约待对应功能接线时补入本文件
       responses:
         "200": { description: text/event-stream }
 
@@ -131,7 +138,7 @@ paths:
       security: []
       parameters:
         - { $ref: "#/components/parameters/AssetId" }
-        - { name: size, in: query, schema: { type: string, enum: [sm, md, lg], default: md }, description: 网格/列表/大图三档（缓存键组成部分） }
+        - { name: size, in: query, schema: { type: string, enum: [sm, md, lg], default: md }, description: 网格/列表/大图三档（缓存键组成部分）；像素档位单一来源 server/internal/thumbnail/cachekey.go 的 SizeSmall/SizeGrid/SizePreview 常量（md 档像素由 Thumbnail 配置 LongSide 决定，未配置回落 SizeGrid），改动双同步 }
         - { name: exp, in: query, required: true, schema: { type: integer } }
         - { name: sig, in: query, required: true, schema: { type: string } }
       responses:
@@ -280,7 +287,7 @@ paths:
         "200": { description: 导入结果统计, content: { application/json: { schema: { $ref: "#/components/schemas/TxtImportResult" } } } }
   /api/v1/authors/{authorId}/follow:
     put:
-      summary: 设置/取消关注作者（DOMAIN_RULES §5 布尔标记）
+      summary: 设置/取消关注作者（DOMAIN_RULES §6/§7 关注语义）
       parameters: [ { name: authorId, in: path, required: true, schema: { type: string } } ]
       requestBody:
         required: true
@@ -370,6 +377,7 @@ paths:
   /readyz:
     get:
       summary: 就绪探针（库可达/磁盘余量）
+      security: []
       responses:
         "200": { description: ready }
         "503": { description: 未就绪 }
@@ -587,6 +595,30 @@ components:
         viewCount: { type: integer }
         playCount: { type: integer }
         seconds:   { type: integer }
+
+    # SSE 事件载荷（/api/v1/events 业务事件 data 帧 JSON）。
+    # 字段与 server/internal/scanner/scanner.go 的事件构造结构体一一对应，
+    # 改动必须双同步（协议先行：先改本文件再改代码，见 AI_README_FIRST.md）。
+    ScanProgressEvent:
+      type: object
+      required: [libraryId, scanned, total, added, updated, phase]
+      properties:
+        libraryId: { type: string }
+        scanned:   { type: integer }
+        total:     { type: integer, description: 估算值（首扫 0 起步随 scanned 增长，复扫以库内记录数为基数） }
+        added:     { type: integer }
+        updated:   { type: integer }
+        phase:     { type: string, enum: [walking, reconciling] }
+    LibraryChangedEvent:
+      type: object
+      description: library.changed 事件 data 载荷。广播型触发帧（如扫描结束的 FinishScan 仅发刷新通知，见 server/internal/httpapi/libraries.go）不携带计数，此时 data 为 null；客户端须容忍 null。
+      required: [libraryId, added, updated, moved, removed]
+      properties:
+        libraryId: { type: string }
+        added:     { type: integer }
+        updated:   { type: integer }
+        moved:     { type: integer }
+        removed:   { type: integer }
 
     RecommendPrefs:
       type: object

@@ -32,16 +32,57 @@ const frameTimeout = 60 * time.Second
 type Generator struct {
 	dataDir string
 	logger  *slog.Logger
+	// longSide 是网格默认档（md）的生成像素：来自 config.Thumbnail.LongSide，
+	// <=0 时回落 SizeGrid（档位像素单一来源见 cachekey.go 的 Size 常量）。
+	longSide int
+	// pool 是本编排器自建的工作池（workers 来自 config.Thumbnail.Workers，
+	// <=0 按 CPU 核数，见 NewWorkerPool）。懒生成/首屏预热经 Submit 提交；
+	// 应用停机路径必须调用 Close 优雅收池。
+	pool *WorkerPool
+}
+
+// Options 是 Generator 的构造配置。字段语义与 config.ThumbnailConfig 对应，
+// 但以基础类型解耦：thumbnail 是业务模块，不反向依赖 config 包
+// （依赖方向 httpapi→业务模块→store，ARCHITECTURE §5；config 由组装层读取后传入）。
+type Options struct {
+	// Workers 工作池大小；<=0 按 CPU 核数（NewWorkerPool 语义）。
+	Workers int
+	// LongSide 网格默认档（md）像素；<=0 回落 SizeGrid（512）。
+	LongSide int
 }
 
 // NewGenerator 创建编排器。dataDir 是服务端数据根目录
-//（缩略图落在 dataDir/thumbs 下，见 ThumbPath；绝不写媒体库目录）。
-func NewGenerator(dataDir string, logger *slog.Logger) *Generator {
+// （缩略图落在 dataDir/thumbs 下，见 ThumbPath；绝不写媒体库目录）。
+// opts.LongSide<=0 时回落 SizeGrid（默认 512，维持既有档位行为）；
+// opts.Workers<=0 时按 CPU 核数建池。返回的 Generator 持有一个常驻工作池，
+// 停机时调用方必须 Close 等任务排空。
+func NewGenerator(dataDir string, logger *slog.Logger, opts Options) *Generator {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Generator{dataDir: dataDir, logger: logger}
+	if opts.LongSide <= 0 {
+		opts.LongSide = int(SizeGrid)
+	}
+	g := &Generator{dataDir: dataDir, logger: logger, longSide: opts.LongSide}
+	g.pool = NewWorkerPool(context.Background(), opts.Workers, 0, g.handle, logger)
+	return g
 }
+
+// handle 把池任务转成 Ensure 调用（WorkerPool 的 handle 签名）。
+func (g *Generator) handle(ctx context.Context, t Task) error {
+	return g.Ensure(ctx, t.AssetID, t.SourcePath, t.Kind, t.Sizes)
+}
+
+// Submit 非阻塞提交一个生成任务（ErrQueueFull/ErrPoolClosed 语义见 WorkerPool）。
+// 懒生成端点与扫描入库的预热接线经此入口；任务幂等（Ensure 命中缓存即跳过）。
+func (g *Generator) Submit(t Task) error { return g.pool.Submit(t) }
+
+// Close 优雅关闭内置工作池（等已入队任务执行完；重复调用安全）。
+func (g *Generator) Close() { g.pool.Close() }
+
+// GridLongSide 返回网格默认档（md）当前生效的像素：LongSide 配置的接线出口，
+// HTTP 侧把 openapi size=md 换算成它，保证请求缓存键与生成尺寸一致。
+func (g *Generator) GridLongSide() int { return g.longSide }
 
 // Ensure 幂等保证资产在 sizes 每个尺寸下的缩略图存在（已存在直接跳过——
 // 键即内容身份，存在即有效，本期无失效逻辑）。按媒体类型分派：
@@ -58,6 +99,12 @@ func (g *Generator) Ensure(ctx context.Context, assetID, srcPath string, kind Ki
 }
 
 func (g *Generator) ensureOne(ctx context.Context, assetID, srcPath string, kind Kind, size Size) error {
+	// 网格默认档（md）的像素由 LongSide 配置决定（<=0 已在构造时回落
+	// SizeGrid）：size 常量只是档位占位，生成与缓存键都用换算后的像素，
+	// 保证"调整配置像素 = 新键 = 新文件"的缓存语义成立（cachekey.go 注释）。
+	if size == SizeGrid {
+		size = Size(g.longSide)
+	}
 	dst := ThumbPath(g.dataDir, CacheKey(assetID, size))
 	if _, err := os.Stat(dst); err == nil {
 		return nil // 缓存命中

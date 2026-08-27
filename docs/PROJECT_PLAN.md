@@ -1,8 +1,9 @@
 # PROJECT_PLAN - 里程碑计划
 
 > 每个里程碑都是**可用闭环**（做完就能用/验收），不做"半成品堆叠"。开发顺序经过依赖推理，禁止跳级。
-> 通用纪律：每个功能完成 = 代码 + 测试 + 文档同步 + CI 全绿，四件套缺一不可。
-> 最后更新：2026-08-22
+> 通用纪律：每个功能完成 = 代码 + 测试 + 文档同步 + 门禁全绿，四件套缺一不可；门禁 = CI 四 job + golangci-lint（本机 `make lint` 同配置）。
+> 重构后新增纪律（ADR-0009/0010/0011）：**生成物不手改**（只改 openapi.yaml 后 make sdk）、**新迁移只加文件**（只加不改不删）、**重大决策先写 ADR**（并同步 docs/adr/INDEX.md）。
+> 最后更新：2026-08-26（M2-M4 验收标准与底层重构对齐；2026-08-22 制定）
 
 ## M0 · 地基（协议与工具链）
 
@@ -13,7 +14,7 @@
 - [x] `web/` Vite + React + TS + Tailwind + shadcn 初始化（2026-08-22：Tailwind v4 + shadcn(radix/nova) + TanStack Query + --qm-* 设计 token（tokens.css），build/tsc 全绿）
 - [x] `api/openapi.yaml` v0 实例化（2026-08-22：评审定稿 v0.1.0——补排序/顺位/includeCos/sessionId/标签删除/时间轴删除/作者关注/回收站清空/缩略图尺寸等 9 处，redocly 0 error）
 - [x] Makefile：`make sdk` 打通 oapi-codegen + TS + Kotlin 三端生成链（2026-08-22：oapi-codegen v2.8.0 → Go 接口层；@hey-api/openapi-ts 0.99.0 → TS 客户端；openapi-generator + 免安装 JDK → Kotlin SDK，三端全部实际生成通过）
-- [ ] GitHub 仓库 + Actions CI（lint + test 骨架）——待用户确认建仓方式
+- [x] GitHub 仓库 + Actions CI（2026-08-22：私有仓库 Surtr42u/qimeng-media 建立，四 job 首跑全绿；2026-08-26 重构后 server job 增 golangci-lint 门禁）
 - [x] `docs/GUIDE_API.md`（2026-08-22：37 端点分组速览 + 关键机制导读）
 
 **验收**：`make sdk` 一条命令生成三端 SDK 且全部编译通过；CI 在空测试下全绿。
@@ -30,7 +31,7 @@
 - [x] httpapi：鉴权（argon2id+token 哈希）、库管理、资产列表（分页/筛选/排序；q=FTS5 搜索移至 M2）、详情、媒体直链（Range/206）、缩略图端点（immutable+ETag+304）
 - [x] SSE：扫描进度推送 + 事件总线（慢订阅者丢弃隔离）
 - [x] 内置极简验收页（中文界面：setup→注册库→扫描进度→日期分组网格→原图→视频播放；永久保留作调试工具）
-- [x] 单元测试：9 包全绿（含路径穿越/签名防伪/Range/移动合并/每日点赞 toggle 端到端用例）
+- [x] 单元测试：9 包全绿（含路径穿越/签名防伪/Range/移动合并/每日点赞 toggle 端到端用例；口径：9 个有代码包 = auth/config/events/filing/httpapi/scanner/store/sysmon/thumbnail，recommend/search/stats 三个 doc.go 空壳包暂无测试）
 - [x] 附带交付（M2 提前件）：filing 安全件（路径穿越/MIME 魔数/上传四道校验/回收站布局，142 子用例）、sysmon 监控采集层（gopsutil+prometheus，指标名入 OBSERVABILITY）
 
 **验收**：PC 侧全链已验（setup→注册→扫描→列表→原图 200 全量→视频 Range 206 拖动无缝→缩略图懒生成→移动合并身份保持）。手机真机浏览器验收待用户执行（PC 同 WiFi 访问 http://<PC局域网IP>:8420，Windows 防火墙放行后）。
@@ -41,15 +42,16 @@
 
 - [ ] 布局系统 + 导航（首页推荐/全部/相册/统计/管理）
 - [ ] 设计 token 体系（明暗主题、间距、圆角、动效时长统一变量）
-- [ ] 列表页：网格 + 日期分组 + 筛选面板 + 排序 + 搜索 + 无限滚动
+- [ ] 列表页：网格 + 日期分组 + 筛选面板 + 排序 + 搜索（search 包填充：FTS5 索引维护与查询，doc.go 空壳已存在）+ 无限滚动
 - [ ] 详情页：图片（缩放/预加载）、视频播放器（手势/倍速/时间轴标记）
 - [ ] 推荐流 + 排行榜（调用 M3 前先用热度排序占位）
 - [ ] 上传（拖拽 + 文件选择 + 进度）与文件整理（移动/重命名/回收站）
 - [ ] 标签/收藏/点赞交互
+- [ ] sysmon 接线：/metrics、/system/status（PerCore 快照补进协议 + make sdk；采集层 M1 已提前交付）
 - [ ] 监控仪表盘 `/admin`（OBSERVABILITY.md 内置指标）
 - [ ] PWA：可安装、离线壳
 
-**验收**：日常"浏览-看图看视频-整理"全部在浏览器完成；Lighthouse PWA 可安装；手机浏览器体验流畅。
+**验收**：日常"浏览-看图看视频-整理"全部在浏览器完成；Lighthouse PWA 可安装；手机浏览器体验流畅；golangci-lint 门禁绿、生成物不手改、新迁移只加文件、决策先写 ADR。
 
 ## M3 · 算法移植与领域完整
 
@@ -62,7 +64,7 @@
 - [ ] 旧数据迁移端点（qimeng_backup.json，映射表 DOMAIN_RULES §10）
 - [ ] 推荐偏好设置页（9 维权重 + 4 预设）
 
-**验收**：迁移旧备份后，推荐/排行/统计行为与旧 App 口径一致（对比测试通过）。
+**验收**：迁移旧备份后，推荐/排行/统计行为与旧 App 口径一致（对比测试通过）；golangci-lint 门禁绿、生成物不手改、新迁移只加文件、决策先写 ADR。
 
 ## M4 · Android 客户端
 
@@ -76,7 +78,7 @@
 - [ ] **上传**：系统分享接收 + 文件选择 + 目标目录浏览 + 队列与进度（手机采集端主通道）
 - [ ] 缓存策略（上限可设 LRU）
 
-**验收**：手机完整日常使用；上传手机文件 → Web 端立即可见；离线时行为数据不丢。
+**验收**：手机完整日常使用；上传手机文件 → Web 端立即可见；离线时行为数据不丢；golangci-lint 门禁绿、生成物不手改、新迁移只加文件、决策先写 ADR。
 
 ## M5 · NAS 部署验收
 
@@ -98,3 +100,9 @@
 
 - 里程碑内容变更需用户确认并在本文更新（记日期）。
 - 每完成一项勾选一项并注明 commit；禁止"做完不勾"或"没做先勾"。
+
+## 常驻任务（每轮 AI 工作结束前自检，不计入里程碑勾选）
+
+1. **文档漂移检测**：对照代码核对本文勾选状态、ARCHITECTURE 模块边界表、GUIDE_API 端点清单、OBSERVABILITY 指标表与实现是否一致；发现漂移即修复或记录待办。
+2. **能力地图维护**：`docs/CAPABILITY_MAP.md` 三态（已有/规划中/明确不做）随里程碑验收同步勾选；用户新拍板的能力立即更新。
+3. **ADR 索引维护**：新增 ADR 后同步 `docs/adr/INDEX.md` 索引行与受影响文档引用。

@@ -8,6 +8,7 @@ import (
 )
 
 // 黑帧检测【逐字遵守 docs/DOMAIN_RULES.md §11】：
+//
 //	采样 100 像素亮度 <15 判黑；候选时间点 0s→1s→2s→3s→5s 逐点尝试，
 //	直到取到非黑帧。常量与候选序列禁止改动（要改必须先让用户确认并同步测试）。
 const (
@@ -41,7 +42,7 @@ func CandidateTimepoints() []time.Duration {
 // （全黑/全白/恰好 15/99 黑 1 亮）由单测锁定，选帧逻辑的变化不会牵连判定语义。
 //
 // 为什么是"全部 <15"而非"多数 <15"：99/100 黑说明画面已有可见内容
-//（片头淡入的残影、角落台标），不该跳过；只有整帧没有任何可疑亮点的纯黑
+// （片头淡入的残影、角落台标），不该跳过；只有整帧没有任何可疑亮点的纯黑
 // 才值得换下一个候选点。
 // 空样本返回 false（无证据不判黑）：探测失败应由调用方按错误路径处理。
 func IsBlackFrame(samples []byte) bool {
@@ -86,7 +87,7 @@ func PickFrameTime(ctx context.Context, videoPath string) (time.Duration, error)
 // lumaSamplesAt 用 ffmpeg 取视频在 at 时刻的 10×10 灰度采样（stdout 100 字节）。
 // 参数语义（ffmpeg 9 实测）：
 //   - scale=10:10 把整帧拉伸到 10×10 网格，即"采样 100 像素"的字面实现
-//    （宽高比被拉伸不影响黑帧判定）；
+//     （宽高比被拉伸不影响黑帧判定）；
 //   - out_range=full 显式声明 full-range 输出。实测当前 ffmpeg 的 gray rawvideo
 //     输出已是 full range（纯黑=0x00、红=0x4c、白=0xff），显式参数防止未来版本
 //     swscale 行为漂移（比如输出 limited range 的黑=16）导致纯黑视频漏判；

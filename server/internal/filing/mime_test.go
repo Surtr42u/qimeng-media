@@ -10,7 +10,7 @@ func ftypHead(brand string) []byte {
 // mkvHead 构造带 DocType 的最小 EBML 头。
 func mkvHead(docType string) []byte {
 	h := []byte{0x1A, 0x45, 0xDF, 0xA3}
-	h = append(h, 0x42, 0x86, 0x81, 0x01)            // EBMLVersion 元素 = 1
+	h = append(h, 0x42, 0x86, 0x81, 0x01)              // EBMLVersion 元素 = 1
 	h = append(h, 0x42, 0x82, byte(0x80|len(docType))) // DocType 元素（ID 0x4282）
 	h = append(h, docType...)
 	return h
@@ -18,9 +18,9 @@ func mkvHead(docType string) []byte {
 
 func TestSniffMagicKnown(t *testing.T) {
 	tests := []struct {
-		name  string
-		head  []byte
-		want  MediaType
+		name string
+		head []byte
+		want MediaType
 	}{
 		{"JPEG", []byte{0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 'J', 'F', 'I', 'F', 0x00}, ImageJPEG},
 		{"PNG", []byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0x0D}, ImagePNG},

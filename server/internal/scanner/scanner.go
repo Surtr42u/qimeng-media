@@ -33,6 +33,10 @@ const (
 )
 
 // ScanResult 一次全量扫描的计数汇总（同时是 library.changed 事件 payload）。
+// 字段与 api/openapi.yaml components/schemas/LibraryChangedEvent 一一对应
+// （json tag 即协议字段名），改动双同步。为什么不直接引用 httpapi/gen 生成的
+// 类型：依赖方向是 httpapi→业务模块（ARCHITECTURE §5），scanner 反向引用
+// 协议生成层会把 openapi 泄漏进离线管线（与 thumbnail 包 Kind 的决策一致）。
 type ScanResult struct {
 	LibraryID string `json:"libraryId"`
 	Added     int    `json:"added"`
@@ -43,8 +47,10 @@ type ScanResult struct {
 	Scanned int `json:"-"`
 }
 
-// scanProgressPayload scan.progress 事件 payload（字段与任务基线一致；
-// total 是估算值——首扫为 0 起步随 scanned 增长，复扫以库内记录数为基数）。
+// scanProgressPayload scan.progress 事件 payload。
+// 字段与 api/openapi.yaml components/schemas/ScanProgressEvent 一一对应，
+// 改动双同步（json tag 即协议字段名）；total 是估算值——首扫为 0 起步随
+// scanned 增长，复扫以库内记录数为基数。
 type scanProgressPayload struct {
 	LibraryID string `json:"libraryId"`
 	Scanned   int    `json:"scanned"`

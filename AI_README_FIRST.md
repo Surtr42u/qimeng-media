@@ -7,14 +7,14 @@
 - 前身「绮梦影库」是一个功能完整的 Android 单机媒体库（100% AI 生成，2.4 万行），本项目是它的 NAS 多端继任者。
 - 动机：媒体全存 NAS，解放手机/电脑存储；手机下载的资源通过 App 直传 NAS。
 - **接手先读 `docs/HANDOVER.md`（交接说明：当前进度/剩余工作/特色纪律），进度看 `docs/PROJECT_PLAN.md` 勾选状态，历史变更与 AI 署名看 `docs/CHANGELOG.md`。**
-- 完整架构见 `docs/ARCHITECTURE.md`，领域规则（要实现什么）见 `docs/DOMAIN_RULES.md`。
+- 完整架构见 `docs/ARCHITECTURE.md`，领域规则（要实现什么）见 `docs/DOMAIN_RULES.md`，能力现状与缺口见 `docs/CAPABILITY_MAP.md`（对标 Jellyfin/Immich/Plex 的能力地图，**新功能提案前先对照它找缺口**）。
 
 ## 开发流程总纲（每个任务必走）
 
 1. **读路由**：打开 `AGENTS.md` 的任务→文档路由表，读命中的文档。
 2. **读官方文档**：涉及不熟悉的库/框架/API，先搜索官方文档确认用法（版本号也要确认），禁止凭训练记忆直接写。找不到可靠文档的技术禁止引入。
 3. **协议先行**：任何接口改动，第一步改 `api/openapi.yaml`，第二步 `make sdk` 重新生成三端客户端，第三步按编译错误适配各端。禁止跳过协议直接写接口代码。
-4. **迁移唯一**：数据库结构改动只能新增 migration 文件（`server/migrations/`，顺序编号），禁止改历史 migration，禁止手改运行中的库。
+4. **迁移唯一**：数据库结构改动只能新增 migration 文件（`server/migrations/`，编号 = 现存最大值 + 1，禁止跳号）；**只加不改不删**（ADR-0011）——改/删既有结构走 expand-migrate-contract 两步迁移（先扩后收），禁止改历史 migration，禁止手改运行中的库。
 5. **测试锁定**：领域逻辑（推荐算法、统计聚合、匹配引擎）改动前先跑既有测试，改动后测试必须全绿；新增领域逻辑必须同步新增测试。行为变化 = 先改 `docs/DOMAIN_RULES.md` 再改代码。
 6. **自审**：回复前过一遍自审清单（见下）。
 7. **文档同步**：代码与文档同一 commit 提交。
@@ -26,7 +26,7 @@
 | 协议一致 | 是否先改了 openapi.yaml？三端 SDK 是否重新生成？ |
 | 数据安全 | migration 是否新增文件而非修改历史？是否兼容既有数据？ |
 | 安全红线 | 路径参数是否规范化+根内限制？上传是否过四道校验？删除是否走回收站？ |
-| 架构边界 | 领域逻辑是否保持纯函数（无 IO）？UI 组件是否调了 API？模块间是否直调（应走事件）？ |
+| 架构边界 | 领域逻辑是否保持纯函数（无 IO）？UI 组件是否调了 API？模块间是否直调（应走事件）？是否越过 depguard 红线或手改了 SDK 生成物（ADR-0009/0010）？ |
 | 性能 | 是否引入全量加载？列表接口是否分页？大文件是否流式处理？ |
 | 测试 | 领域逻辑改动是否带测试？`go test ./...` 是否全绿？ |
 | 文档 | 对应文档是否同步？ADR 是否需要新增？ |
@@ -39,11 +39,12 @@
 |---|---|
 | API 增删改 | `api/openapi.yaml` + `docs/GUIDE_API.md` |
 | 领域规则变化（算法/口径/匹配） | `docs/DOMAIN_RULES.md`（唯一权威） |
-| 数据库结构 | `docs/adr/0003`、migration 文件自身注释 |
+| 数据库结构 | `docs/adr/0011`、migration 文件自身注释（只加文件） |
 | 安全机制 | `docs/SECURITY.md` |
 | 监控指标 | `docs/OBSERVABILITY.md` |
-| 新增重大技术选型 | `docs/adr/` 新增 ADR |
-| 模块/文件增删移动 | 对应模块 GUIDE 文档 |
+| 新增重大技术选型 | `docs/adr/` 新增 ADR + `docs/adr/INDEX.md` 索引行 |
+| 模块/文件增删移动 | 对应模块 GUIDE 文档 + `docs/ARCHITECTURE.md` §5（边界表） |
+| 能力缺口评估/新功能提案 | `docs/CAPABILITY_MAP.md`（能力地图三态） |
 
 ## 回复签名（强制）
 
@@ -65,7 +66,7 @@
 ## git 约束
 
 - 代码 + 文档 + migration 同一个 commit。
-- commit 格式：`类型(模块): 简述 | 文档: 已更新XXX`（如 `feat(api): 新增回收站恢复端点 | 文档: openapi.yaml, GUIDE_API.md`）。
+- commit 格式：`类型(scope): 简述 | 文档: 已更新XXX`——scope 区分端：`api`（协议）/`web`（Web 端）/`app`（Android 端）/`server`（服务端）/`docs`（纯文档）。示例：`feat(api): 新增回收站恢复端点 | 文档: openapi.yaml, GUIDE_API.md`、`feat(web): 列表页筛选面板 | 文档: GUIDE_WEB.md`、`feat(app): 系统分享接收上传 | 文档: GUIDE_APP.md`。
 - 提交前 `git pull`。
 
 ## 禁止行为
@@ -78,15 +79,32 @@
 - 禁止修改 `docs/DOMAIN_RULES.md` 里标记「逐字遵守」的公式常量（除非用户明确要求并同步更新测试）。
 - 禁止通读完整源码文件来理解项目——通过文档定位，只读必要片段。
 - 禁止完成修改后不自审就回复。
+- 禁止手改 SDK 生成物（`server/internal/httpapi/gen/*.gen.go`、`web/src/api/generated/`、`android/sdk/**`）——协议改动只改 openapi.yaml 后 `make sdk`（ADR-0009）。
+- 禁止违反 depguard 模块边界或为其开豁免——被 lint 拦截只能按依赖方向重构（ADR-0010）。
+- 禁止修改历史 migration 文件——schema 演进只加文件（ADR-0011）。
 
 ## 冲突优先级
 
 1. 用户最新要求
 2. 本文件
-3. `docs/ARCHITECTURE.md`
-4. `docs/DOMAIN_RULES.md`
-5. 其他 `docs/GUIDE_*.md`
+3. `docs/adr/` 已接受（Accepted）的决策
+4. `docs/ARCHITECTURE.md`
+5. `docs/DOMAIN_RULES.md`
+6. 其他 `docs/GUIDE_*.md`
 
 发现自己没读对应文档时，停止实现，先补读。
 
-> 最后更新：2026-08-22（项目创立日）
+## 警戒线（软约束，超线不禁止但须注释理由）
+
+代码规模警戒线——超过即拆分，确有理由（复杂算法/协议生成接口签名）超线时在代码注释写明原因：
+
+| 端 | 单位 | 警戒值 |
+|---|---|---|
+| Go（server） | 单个函数/方法 | ≤ 100 行（超过一屏即拆） |
+| Go（server） | 单个文件 | ≤ 600 行 |
+| Go（server） | internal 包 | 单职责；doc.go 说明职责与边界（ARCHITECTURE §5） |
+| React（web） | 单个组件 | ≤ 300 行渲染逻辑（数据获取必须走 TanStack Query hooks，不得让组件继续膨胀） |
+| React（web） | 单个文件 | ≤ 500 行 |
+| 通用 | 相似逻辑复制粘贴 | 第 2 次出现即抽共享函数，禁止第 3 次粘贴 |
+
+> 最后更新：2026-08-26（模块边界/迁移纪律/能力地图/生成物禁手改/警戒线增补；2026-08-22 项目创立）

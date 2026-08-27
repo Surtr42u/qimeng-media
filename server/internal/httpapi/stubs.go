@@ -114,7 +114,7 @@ func (s *Server) GetApiV1StatsTrends(w http.ResponseWriter, r *http.Request, par
 }
 
 func (s *Server) GetApiV1SystemStatus(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w) // M4：系统面板
+	notImplemented(w) // M2：系统面板（sysmon 采集层已随 M1 提前交付，接线见 PROJECT_PLAN M2）
 }
 
 func (s *Server) PostApiV1ImportQimengBackup(w http.ResponseWriter, r *http.Request) {
@@ -122,5 +122,5 @@ func (s *Server) PostApiV1ImportQimengBackup(w http.ResponseWriter, r *http.Requ
 }
 
 func (s *Server) GetMetrics(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w) // M4：Prometheus 指标
+	notImplemented(w) // M2：Prometheus 指标（OBSERVABILITY.md 内置监控，随 M2 监控仪表盘接线）
 }

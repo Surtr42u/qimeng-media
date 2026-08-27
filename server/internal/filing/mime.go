@@ -10,16 +10,16 @@ type MediaType string
 
 // 白名单内媒体类型（IANA 风格 MIME 字符串）。
 const (
-	ImageJPEG      MediaType = "image/jpeg"        // .jpg/.jpeg
-	ImagePNG       MediaType = "image/png"         // .png
-	ImageGIF       MediaType = "image/gif"         // .gif
+	ImageJPEG      MediaType = "image/jpeg"       // .jpg/.jpeg
+	ImagePNG       MediaType = "image/png"        // .png
+	ImageGIF       MediaType = "image/gif"        // .gif
 	ImageWEBP      MediaType = "image/webp"       // .webp
 	ImageAVIF      MediaType = "image/avif"       // .avif
-	VideoMP4       MediaType = "video/mp4"         // .mp4/.m4v
-	VideoQuickTime MediaType = "video/quicktime"   // .mov
-	VideoMatroska  MediaType = "video/x-matroska"  // .mkv
-	VideoWEBM      MediaType = "video/webm"        // .webm
-	VideoAVI       MediaType = "video/x-msvideo"   // .avi
+	VideoMP4       MediaType = "video/mp4"        // .mp4/.m4v
+	VideoQuickTime MediaType = "video/quicktime"  // .mov
+	VideoMatroska  MediaType = "video/x-matroska" // .mkv
+	VideoWEBM      MediaType = "video/webm"       // .webm
+	VideoAVI       MediaType = "video/x-msvideo"  // .avi
 )
 
 // RecommendedHeadBytes 是做一次可靠嗅探建议读取的文件头长度。
@@ -135,7 +135,7 @@ func matroskaDocType(head []byte) string {
 }
 
 // readEBMLVint 读取一个 EBML 变长整数。stripMarker 指示是否剥离首字节的 marker 位
-//（尺寸 vint 需要剥离，元素 ID 保留全部位）。返回值、消耗字节数、是否合法。
+// （尺寸 vint 需要剥离，元素 ID 保留全部位）。返回值、消耗字节数、是否合法。
 func readEBMLVint(b []byte, stripMarker bool) (uint64, int, bool) {
 	if len(b) == 0 || b[0] == 0 {
 		return 0, 0, false // 首字节为 0 非法（EBML 要求 marker 落在首字节）

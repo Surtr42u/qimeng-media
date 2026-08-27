@@ -48,7 +48,7 @@
 
 ## 健康检查
 
-`GET /healthz`（免鉴权）：进程存活；`GET /readyz`（需 token）：数据库可读写 + 媒体库目录可达 + 磁盘余量告警阈值。Docker healthcheck 与 fnOS 部署都用它。
+`GET /healthz`（免鉴权）：进程存活；`GET /readyz`（免鉴权，与 /healthz 同样在 `api/openapi.yaml` 标 `security: []`，见 openapi.yaml:380）：数据库可读写 + 媒体库目录可达 + 磁盘余量告警阈值。Docker healthcheck 与 fnOS 部署都用它。
 
 ## 后置可选：Grafana 增强包（不进默认部署）
 

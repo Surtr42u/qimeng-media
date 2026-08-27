@@ -7,7 +7,7 @@
 
 ## 全局约定
 
-- 前缀 `/api/v1`；除 `/healthz` 外全部要求 `Authorization: Bearer <token>`
+- 前缀 `/api/v1`；除 `/healthz`、`/readyz` 两个探针外全部要求 `Authorization: Bearer <token>`（探针在 openapi.yaml 标 `security: []`，其余端点继承全局 bearerAuth）
 - 分页统一 cursor 式：响应带 `nextCursor`，为 null 表示到底
 - 错误统一 `Error{code, message}`；`code` 机器可读（如 PATH_ESCAPE / TOO_LARGE / INVALID_TYPE）
 - 媒体直链（/media/**）不走 header 鉴权，用短期 HMAC 签名 URL（默认 6h），参数 `exp`（过期时间戳）+ `sig`
@@ -29,7 +29,7 @@
 | 时间轴 | GET/POST /assets/{id}/timeline-tags、DELETE /assets/{id}/timeline-tags/{tagId} | 视频内时间点标记，独立于文件标签 |
 | 推荐排行 | GET /recommendations、GET /rankings、GET/PUT /recommendations/prefs | 10 维算法（seed 控制打散）；纯热度排行（日/周/月/年/总）；9 维权重偏好 |
 | 统计 | GET /stats/overview、GET /stats/trends | 总览面板；趋势分桶（动态周/月/季全量不丢弃） |
-| 系统 | /healthz、/readyz、/metrics、GET /system/status | 探针免鉴权；Prometheus；负载/流量面板 |
+| 系统 | /healthz、/readyz、/metrics、GET /system/status | 探针（healthz/readyz）免鉴权（openapi.yaml:374/380 `security: []`）；/metrics 与 /system/status 要求管理 token；负载/流量面板 |
 | 迁移 | POST /import/qimeng-backup | 旧版备份一次性导入，幂等 |
 
 ## 关键机制
@@ -37,4 +37,4 @@
 - **排序**：`sort` 七键（default/fileDate/addedDate/viewCount/playCount/sizeBytes/name）+ `order`，语义见 DOMAIN_RULES §3
 - **COS 隔离**：列表默认排除 COS 作者关联文件（独立入口），`includeCos=true` 才包含
 - **会话去重**：`ViewEventReport.sessionId` 由客户端生成（App 会话/浏览器标签页），服务端按 (assetId, kind, sessionId, 当日) 去重（DOMAIN_RULES §5）
-- **搜索与筛选叠加**：`q`（FTS5 全文）与全部筛选参数同时生效
+- **搜索与筛选叠加**：`q`（FTS5 全文）与全部筛选参数同时生效（DOMAIN_RULES §3）。实现状态：协议先行——`q` 参数 M1 已入协议；服务端 FTS5 检索 M2 实现（`server/internal/search` 包，当前仅 doc.go 空壳，见 PROJECT_PLAN M2）

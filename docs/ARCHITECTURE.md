@@ -1,7 +1,7 @@
 # ARCHITECTURE - 架构总纲
 
 > 本文是 qimeng-media 的架构唯一权威文档。技术选型的"为什么"见 `docs/adr/`，业务规则见 `docs/DOMAIN_RULES.md`。
-> 最后更新：2026-08-22（v0，项目创立）
+> 最后更新：2026-08-26（底层重构对齐：§5.1 模块边界强制、§10 CI 四 job 实况、Makefile 命令名；2026-08-22 v0 项目创立）
 
 ## 1. 需求起源与产品定位
 
@@ -65,7 +65,7 @@
 | Web | React + Vite + TypeScript + shadcn/ui + Tailwind + TanStack Query + Framer Motion | AI 语料最大；组件生态解决 UI 美观；动效生态成熟 |
 | Android | Kotlin + Jetpack Compose + Coil 3 + Media3 | 用户 Kotlin 经验延续；Coil/ExoPlayer 原生支持 HTTP 直链 |
 | 客户端 SDK | openapi-generator（TS: @hey-api；Kotlin: 生成器） | 协议改动三端自动同步（adr/0001） |
-| 部署 | Docker buildx 双架构（linux/amd64 + linux/arm64） | 开发 PC → fnOS 虚拟机 → 真 NAS 零改动迁移 |
+| 部署 | Docker buildx 双架构（linux/amd64 + linux/arm64） | 开发 PC → fnOS 虚拟机 → 真 NAS 零改动迁移（M5 交付，`make docker-build` 当前未实现） |
 
 ## 4. 三层 UI 解耦（需求 #2 的落地）
 
@@ -93,6 +93,21 @@
 | `config` | 配置加载（env + yaml） | 任何硬编码路径 |
 
 依赖方向：`httpapi → 各业务模块 → store`；业务模块之间通过 `events` 解耦；`recommend`/`stats` 不依赖任何其他模块（只依赖领域类型定义包）。
+
+### 5.1 模块边界强制与防漂移（ADR-0010 / ADR-0009 / ADR-0011）
+
+边界不是口头约定，是**三层机器强制**（决策见 ADR-0010）：
+
+1. **Go `internal/` 编译器边界**：所有业务包都在 `server/internal/` 下，Go 编译器保证仓库外任何模块无法 import——物理隔离第一层。
+2. **depguard 两条红线**（`server/.golangci.yml`，golangci-lint v2.13.1 强制执行）：
+   - `httpapi/gen`（oapi-codegen 生成接口层）只允许 `httpapi` 包引用；
+   - 业务包与 sysmon **禁止反向依赖 `httpapi`**，唯一例外 `cmd/qimeng`（main 组合根，依赖注入只在 main 发生）。
+3. **golangci-lint 门禁**：11 个 linter 进 CI server job 与本机 `make lint`，违规即失败（见 §10）。
+
+防漂移配套纪律：
+
+- **SDK 生成物不入库**（ADR-0009）：`server/internal/httpapi/gen/*.gen.go`、`web/src/api/generated/`、`android/sdk/**` 全部 .gitignore；CI `sdk-chain` job 从 `api/openapi.yaml` 重建验证可生成。**AI 禁止手改任何生成物**——协议改动只改 openapi.yaml 后 `make sdk`。
+- **迁移纪律**（ADR-0011）：schema 演进只经 golang-migrate **新增**文件（只加不改不删）；改/删既有结构走 expand-migrate-contract 两步迁移，禁止手改历史迁移文件与运行中的库。
 
 ## 6. 数据身份机制（adr/0004，本项目最重要的设计）
 
@@ -128,17 +143,23 @@
 
 ## 9. 部署与运行环境
 
-- **开发期**：PC 直跑（`go run` / `npm run dev`），媒体目录指向小样本库，手机同 WiFi 联调
+- **开发期**：PC 直跑（`make server-run` / `make web-dev`，见根 Makefile），媒体目录指向小样本库，手机同 WiFi 联调
 - **验收期**：fnOS 虚拟机（VirtualBox 桥接）+ Docker Compose 部署，手机真机访问虚拟机 IP
 - **生产期**：真 NAS 上 Docker 部署，compose 卷：`/media`（媒体库，可写但受控）、`/data`（数据库+缩略图+回收站，服务端私有）
 - **远程**：Tailscale 隧道，服务端零改动（adr/0006）
 
 ## 10. 工程基础设施
 
-- CI（GitHub Actions）：Go lint + test、TS typecheck + test、openapi 校验、双架构镜像构建、安全测试（401/路径穿越/超限上传）全绿才许合并
-- 依赖更新：Dependabot 自动 PR
-- Makefile 一键命令：`make sdk / server-run / web-dev / docker-build / test`
-- 版本策略：API `/api/v1` 前缀；镜像 semver tag
+- **CI（GitHub Actions，`.github/workflows/ci.yml`）四 job**，push/PR 全绿才许合并：
+  1. `openapi`：redocly 协议校验（error 失败，warning 不阻塞）
+  2. `server`：oapi-codegen 重建 Go 接口层 → golangci-lint（静态检查 + depguard 模块边界）→ go vet → go test（-race）→ go build
+  3. `web`：npm ci → tsc --noEmit → npm run build
+  4. `sdk-chain`：`make sdk` 三端生成链可重建（生成物防漂移的结构性门禁，ADR-0009）
+- **安全测试无独立 job**：401/路径穿越/签名防伪/超限上传等安全用例以单元测试形式随 server job 的 `go test` 运行
+- **双架构镜像构建未落地**：`make docker-build` 为 TODO(M5) 占位，镜像交付属 M5（如实记录，不提前宣称）
+- **依赖更新**：Dependabot 自动 PR（计划中，尚未配置）
+- **Makefile 一键命令**：`make sdk / lint / server-run / server-test / web-dev / web-test / docker-build`（lint = redocly + golangci-lint + TS 三连）
+- **版本策略**：API `/api/v1` 前缀；镜像 semver tag（M5 落地）
 
 ## 11. 与旧项目的数据迁移
 

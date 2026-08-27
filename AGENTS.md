@@ -18,25 +18,33 @@
 |---|---|
 | 任何 API 改动 | `api/openapi.yaml` + `docs/GUIDE_API.md`（建立后）+ `docs/adr/0001` |
 | 推荐算法/筛选/统计 | `docs/DOMAIN_RULES.md`（唯一权威，逐字遵守公式与口径） |
-| 数据库改动 | `docs/adr/0003`、`docs/adr/0004`（身份机制）+ migrations 规则 |
+| 数据库改动 | `docs/adr/0003`、`docs/adr/0004`（身份机制）、`docs/adr/0011`（迁移纪律）+ migrations 规则 |
 | 安全相关（鉴权/上传/文件操作） | `docs/SECURITY.md`（红线清单） |
 | 监控/指标 | `docs/OBSERVABILITY.md` |
 | UI 开发（web/android） | `docs/adr/0008`（UI 解耦策略）+ 对应端 GUIDE（建立后） |
+| 新增 Go 包 / 模块边界 | `docs/adr/0010` + `docs/ARCHITECTURE.md` §5.1 |
+| 能力缺口评估 / 新功能提案 | `docs/CAPABILITY_MAP.md`（能力地图）+ `docs/adr/INDEX.md` |
 | 部署/Docker/NAS | `docs/PROJECT_PLAN.md` M5 + 仓库外 `..\dev-tools\TOOLCHAIN_GUIDE.md` |
 | 了解"为什么这么选" | `docs/adr/` 全部 |
 
 ## 铁律（违反任何一条都是事故）
 
-1. **先改 openapi.yaml，再生成代码**——禁止手写客户端 SDK。
-2. **数据库结构只能通过 migration 文件改**——禁止手改库、禁止跳过迁移直接建表。
+1. **先改 openapi.yaml，再生成代码**——禁止手写客户端 SDK，禁止手改生成物（`*.gen.go`/`*.gen.ts`/`android/sdk/**`，ADR-0009）。
+2. **数据库结构只能通过 migration 文件改**——只加不改不删（ADR-0011）；改/删既有结构走 expand-migrate-contract 两步迁移；禁止手改历史迁移文件、禁止手改运行中的库。
 3. **推荐算法/统计聚合是纯函数**——不碰 IO，行为由单元测试锁定，改动必须先看 `docs/DOMAIN_RULES.md` 的公式。
 4. **媒体文件操作必须走回收站**——`DELETE` 语义 = 移入回收站，物理删除是独立的管理操作。
 5. **上传必须白名单校验**——扩展名 + MIME + 大小上限 + 目标路径穿越检查，四道缺一不可。
 6. **路径参数必须规范化并限制在 Library 根内**——任何 handler 禁止直接拼接用户输入的路径。
 7. **UI 组件禁止直接调 API、禁止内嵌业务规则**——逻辑在服务端或客户端逻辑层。
 8. **新技术先读官方文档再写代码**——不确定的 API 用法必须搜索确认，禁止凭记忆写。
-9. **每个重大决策写 ADR**——`docs/adr/` 新增编号文件，格式见 `docs/templates/adr-template.md`。
-10. **改代码必同步文档，同一 commit 提交**——commit 格式 `类型(模块): 简述 | 文档: 已更新XXX`。
+9. **每个重大决策写 ADR**——`docs/adr/` 新增编号文件（编号顺延，格式见 `docs/templates/adr-template.md`），并同步 `docs/adr/INDEX.md`。
+10. **改代码必同步文档，同一 commit 提交**——commit 格式 `类型(scope): 简述 | 文档: 已更新XXX`，scope 区分端：api/web/app/server/docs（如 `feat(api)`、`feat(web)`、`feat(app)`）。
+11. **模块边界不可违反**——depguard 两条红线（`httpapi/gen` 只许 httpapi 用；业务包与 sysmon 禁反向依赖 httpapi，cmd 组合根例外）+ Go internal 编译器边界（ADR-0010）。被 lint 拦截只能按依赖方向重构，禁止开豁免。
+12. **新功能先对照能力地图找缺口**——主动提案的依据是 `docs/CAPABILITY_MAP.md`（对标 Jellyfin/Immich/Plex 的现状与缺口），不是等用户撞到问题。
+
+## 警戒线（软约束）
+
+代码规模警戒线（函数/文件行数等 Go/React 适用值）见 `AI_README_FIRST.md`「警戒线」一节，此处只留索引不重复。
 
 ## 与旧项目（QimengMedia）的关系
 

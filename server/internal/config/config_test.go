@@ -34,14 +34,14 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.LogLevel != "info" {
 		t.Errorf("默认 LogLevel = %q, 期望 %q", cfg.LogLevel, "info")
 	}
-	if cfg.Thumbnail.LongSide <= 0 {
-		t.Errorf("默认 Thumbnail.LongSide = %d, 应为正数", cfg.Thumbnail.LongSide)
+	if cfg.Thumbnail.LongSide != 0 {
+		t.Errorf("默认 Thumbnail.LongSide = %d, 期望 0（0=回落 thumbnail 包默认档 SizeGrid，档位像素单一来源不在 config）", cfg.Thumbnail.LongSide)
 	}
 }
 
 // TestLoadYAMLOverride 验证 yaml 文件能覆盖默认值，且未写的字段保留默认值。
 func TestLoadYAMLOverride(t *testing.T) {
-	path := writeYAML(t, "listen: \":9999\"\ntoken: \"secret\"\n")
+	path := writeYAML(t, "listen: \":9999\"\ndb_path: \"/tmp/test.db\"\n")
 	cfg, err := Load(path)
 	if err != nil {
 		t.Fatalf("Load 报错: %v", err)
@@ -49,8 +49,8 @@ func TestLoadYAMLOverride(t *testing.T) {
 	if cfg.Listen != ":9999" {
 		t.Errorf("Listen = %q, 期望被 yaml 覆盖为 :9999", cfg.Listen)
 	}
-	if cfg.Token != "secret" {
-		t.Errorf("Token = %q, 期望 %q", cfg.Token, "secret")
+	if cfg.DbPath != "/tmp/test.db" {
+		t.Errorf("DbPath = %q, 期望 %q", cfg.DbPath, "/tmp/test.db")
 	}
 	// 未在 yaml 中出现的字段必须保留默认值（yaml 只覆盖出现的字段）。
 	if cfg.LogLevel != "info" {

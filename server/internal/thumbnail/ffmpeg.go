@@ -16,7 +16,7 @@ import (
 
 // webpQuality 是 libwebp 有损质量参数（0-100，ffmpeg 默认 75）。
 // 为什么定 80：缩略图体积与肉眼质量的常用折中——再低会出现块状伪影
-//（列表页密集展示时明显），再高对几十 KB 的缩略图收益递减。后续可提为配置项。
+// （列表页密集展示时明显），再高对几十 KB 的缩略图收益递减。后续可提为配置项。
 const webpQuality = 80
 
 // stderrTailLen 是截进错误信息的 stderr 尾部长度上限（字节）。
@@ -53,7 +53,7 @@ func stderrTail(s string) string {
 // 拿到半张图；同目录保证 rename 不跨文件系统（跨盘 rename 退化为拷贝，失去原子性）。
 // 临时文件名保留目标扩展名（ffmpeg 靠扩展名推断输出封装格式）；
 // 正因临时文件已被 CreateTemp 创建，各 ffmpeg 命令的 "-y" 必不可少
-//（ffmpeg 对已存在的输出文件默认拒绝覆盖）。
+// （ffmpeg 对已存在的输出文件默认拒绝覆盖）。
 func writeAtomically(dst string, build func(tmp string) error) (retErr error) {
 	dir := filepath.Dir(dst)
 	ext := filepath.Ext(dst)
@@ -164,7 +164,7 @@ type ffprobeJSON struct {
 }
 
 // parseDurationField 解析 ffprobe 的字符串时长字段；缺失或非法返回 0
-//（由 ProbeVideo 的取值优先级兜底，不在这里报错）。
+// （由 ProbeVideo 的取值优先级兜底，不在这里报错）。
 func parseDurationField(s string) float64 {
 	if s == "" {
 		return 0

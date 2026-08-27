@@ -83,9 +83,9 @@ func (s *Server) GetMediaThumbAssetId(w http.ResponseWriter, r *http.Request, as
 		writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
 		return
 	}
-	size := thumbSize(gen.Md) // openapi 默认 md
+	size := s.thumbSize(gen.Md) // openapi 默认 md
 	if params.Size != nil {
-		size = thumbSize(*params.Size)
+		size = s.thumbSize(*params.Size)
 	}
 	abs := filepath.Join(row.RootPath, filepath.FromSlash(row.RelPath))
 	if !filing.PathWithinRoot(row.RootPath, abs) {

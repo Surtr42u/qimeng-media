@@ -9,6 +9,9 @@ import (
 
 // 主题常量与 api/openapi.yaml 的 /api/v1/events 事件定义对齐；
 // 若增删主题必须先改 openapi 再改这里（协议先行，见 AI_README_FIRST.md）。
+// 各主题 data 帧的 JSON 载荷 schema 见 openapi components/schemas
+// （scan.progress→ScanProgressEvent、library.changed→LibraryChangedEvent；
+// thumbnail.progress/upload.done 的载荷契约待对应功能接线时补入协议）。
 const (
 	TopicScanProgress      = "scan.progress"      // 扫描进度（尽力而为，允许丢帧）
 	TopicLibraryChanged    = "library.changed"    // 库内容变更（增删改后通知各端刷新）

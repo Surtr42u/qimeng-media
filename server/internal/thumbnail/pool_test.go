@@ -61,7 +61,7 @@ func TestWorkerPoolQueueFullDrops(t *testing.T) {
 
 	pool := NewWorkerPool(context.Background(), 1, 1, func(_ context.Context, _ Task) error {
 		once.Do(func() { close(started) }) // 通知测试：worker 已开始处理第 1 个任务
-		<-gate                              // 人为卡住 worker，制造队列满条件
+		<-gate                             // 人为卡住 worker，制造队列满条件
 		done.Add(1)
 		return nil
 	}, nil)

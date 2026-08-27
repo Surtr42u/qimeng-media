@@ -199,7 +199,7 @@ func newTestEnv(t *testing.T) *testEnv {
 	fscan := &fakeScanner{q: q, libID: lib.ID}
 	apisrv, err := New(Deps{
 		Conn: conn, Queries: q, Bus: events.NewBus(nil, 0), Cfg: cfg,
-		Thumbs: thumbnail.NewGenerator(dataDir, nil), Scanner: fscan,
+		Thumbs: thumbnail.NewGenerator(dataDir, nil, thumbnail.Options{}), Scanner: fscan,
 		MediaSecret: secret, Now: clock.Now,
 	})
 	if err != nil {
@@ -833,7 +833,7 @@ func newNoScannerEnv(t *testing.T) *testEnv {
 	cfg := &config.Config{DataDir: dataDir, Thumbnail: config.ThumbnailConfig{LongSide: 512}}
 	apisrv, err := New(Deps{
 		Conn: conn, Queries: q, Bus: events.NewBus(nil, 0), Cfg: cfg,
-		Thumbs:      thumbnail.NewGenerator(dataDir, nil),
+		Thumbs:      thumbnail.NewGenerator(dataDir, nil, thumbnail.Options{}),
 		Scanner:     noScanner{}, // 显式占位（nil 也会落到它，这里测显式路径）
 		MediaSecret: []byte("noscanner-secret-0123456789abcdef"),
 	})

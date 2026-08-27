@@ -197,11 +197,14 @@ func (t *topRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	p := r.URL.Path
 	switch {
 	case p == "/healthz" || p == "/readyz" || p == "/" || p == "/index.html":
-		// 探针与验收页：放行（healthz 语义见 healthz.go；readyz 自查库）。
+		// 探针与验收页：放行。免鉴权清单以 api/openapi.yaml 的
+		// security: [] 元数据为准（/healthz openapi.yaml:374、
+		// /readyz openapi.yaml:380），本处与协议保持同步；
+		// 验收页 / 与 /index.html 是静态 HTML 不走协议（页面内数据请求照常走 Bearer）。
 		t.api.ServeHTTP(w, r)
 	case p == "/api/v1/auth/setup":
-		// 首次初始化免鉴权（库中已有用户时 handler 自己回 409，
-		// 免鉴权不构成攻击面：最多换来一个 409）。
+		// 首次初始化免鉴权（api/openapi.yaml:28 security: []，与协议一致；
+		// 库中已有用户时 handler 自己回 409，免鉴权不构成攻击面：最多换来一个 409）。
 		t.api.ServeHTTP(w, r)
 	case strings.HasPrefix(p, "/media/"):
 		// 媒体直链：Bearer 管不了 <img>/<video> 标签，走 HMAC 签名

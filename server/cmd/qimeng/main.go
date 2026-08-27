@@ -90,7 +90,12 @@ func main() {
 	}
 
 	bus := events.NewBus(logger, events.DefaultBuffer)
-	thumbs := thumbnail.NewGenerator(cfg.DataDir, logger)
+	// 缩略图配置接线：Workers/LongSide 在此从 config 传入 Generator（内部建池），
+	// 档位像素单一来源在 thumbnail 包（LongSide<=0 回落 SizeGrid）。
+	thumbs := thumbnail.NewGenerator(cfg.DataDir, logger, thumbnail.Options{
+		Workers:  cfg.Thumbnail.Workers,
+		LongSide: cfg.Thumbnail.LongSide,
+	})
 
 	apiSrv, err := httpapi.New(httpapi.Deps{
 		Conn:        conn,
@@ -162,8 +167,9 @@ func main() {
 		logger.Error("优雅关闭超时或失败", "error", err)
 		os.Exit(1)
 	}
-	// 总线先关：让 SSE 订阅者立即收流结束，再关库连接，顺序反了会出现
-	// "关库后总线还在投递"的竞态窗口。
+	// 工作池先收：等在途缩略图任务排空；再关总线让 SSE 订阅者收流结束，
+	// 最后关库连接——顺序反了会出现"关库后任务/总线还在投递"的竞态窗口。
+	thumbs.Close()
 	bus.Close()
 	if err := conn.Close(); err != nil {
 		logger.Error("关闭数据库失败", "error", err)

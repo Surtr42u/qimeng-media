@@ -52,23 +52,30 @@ qimeng-media/
 
 ```bash
 make help          # 查看全部命令
-make sdk           # 从 openapi.yaml 重新生成三端 SDK
-make server-run    # 本地跑服务端
+make sdk           # 从 openapi.yaml 重新生成三端 SDK（生成物不入库，改协议后必跑）
+make server-run    # 本地跑服务端（:8420）
+make server-test   # 服务端全部测试（go test ./...）
 make web-dev       # 本地跑 Web 开发服务器
-make docker-build  # 构建双架构镜像
+make web-test      # Web 检查（tsc 类型检查 + lint）
+make lint          # 全部静态检查（redocly + golangci-lint + TS）
+make docker-build  # 双架构镜像（TODO(M5)：尚未实现，见 PROJECT_PLAN M5）
 ```
+
+CI（GitHub Actions 四 job：openapi 协议校验 / server vet+test+build+golangci-lint / web tsc+build / sdk-chain 生成链重建）与 `make lint` 同源同配置，本地全绿 ≈ CI 全绿。
 
 ## 文档导航
 
 | 文档 | 内容 |
 |---|---|
 | `AI_README_FIRST.md` | AI 协作强制规则（先读这个） |
+| `llms.txt` | 文档导航总索引（LLM 抓取入口，llms.txt v2 格式） |
 | `docs/ARCHITECTURE.md` | 架构总纲与技术选型 |
 | `docs/DOMAIN_RULES.md` | 领域规则（推荐算法/筛选/统计/作者——从旧项目继承的完整规格） |
+| `docs/CAPABILITY_MAP.md` | 能力地图（对标 Jellyfin/Immich/Plex 的现状与缺口，AI 主动提案依据） |
 | `docs/SECURITY.md` | 安全设计（鉴权/路径穿越/上传防护/回收站/远程访问） |
 | `docs/OBSERVABILITY.md` | 监控与仪表盘 |
-| `docs/PROJECT_PLAN.md` | 里程碑 M0-M5 与验收标准 |
-| `docs/adr/` | 架构决策记录（每个重大决策的"为什么"） |
+| `docs/PROJECT_PLAN.md` | 里程碑 M0-M6+ 与验收标准 |
+| `docs/adr/` | 架构决策记录（每个重大决策的"为什么"，索引见 `docs/adr/INDEX.md`） |
 
 ## License
 

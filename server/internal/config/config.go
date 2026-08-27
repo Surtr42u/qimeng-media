@@ -22,10 +22,9 @@ const defaultListen = ":8420"
 // 生产环境由 yaml 或环境变量显式指定（Docker 内为 /data）。
 const defaultDataDir = "./data"
 
-// defaultThumbnailLongSide 是缩略图最长边像素数。
-// 为什么定 512：覆盖手机列表页与 Web 网格两种展示密度，文件体积约几十 KB，
-// 是"清晰度"与"流量/存储成本"的折中，后续可通过配置调整。
-const defaultThumbnailLongSide = 512
+// defaultThumbnailLongSide 已并入 thumbnail 包单一来源：网格默认档像素
+// 由 thumbnail.SizeGrid 常量定义（512），config 只负责透传覆盖值；
+// LongSide 为 0 时回落 thumbnail 包默认档——档位像素绝不在此重复硬编码。
 
 // defaultTokenTTL 是签名直链默认有效期（docs/SECURITY.md 红线 5：6h）。
 const defaultTokenTTL = 6 * time.Hour
@@ -35,7 +34,9 @@ type ThumbnailConfig struct {
 	// Workers 是缩略图工作池大小；0 表示按 CPU 核数自动决定（交由 runtime 决策，
 	// 避免在未知硬件上写死并发数导致过载）。
 	Workers int `yaml:"workers"`
-	// LongSide 是缩略图最长边像素（短边按比例缩放）。
+	// LongSide 是缩略图最长边像素（网格默认档 md 的像素，短边按比例缩放）。
+	// 0 = 回落 thumbnail 包默认档 SizeGrid（512）；档位像素的单一来源是
+	// server/internal/thumbnail/cachekey.go 的 Size 常量，本字段只做覆盖。
 	LongSide int `yaml:"long_side"`
 }
 
@@ -45,8 +46,6 @@ type Config struct {
 	Listen string `yaml:"listen"`
 	// DataDir 是服务端私有数据根目录（数据库/缩略图/回收站），绝不能指向媒体库目录。
 	DataDir string `yaml:"data_dir"`
-	// Token 是访问令牌（M0 阶段的朴素鉴权；正式签发/校验归 internal/auth 包）。
-	Token string `yaml:"token"`
 	// LogLevel 是日志级别：debug/info/warn/error（默认 info）。
 	LogLevel string `yaml:"log_level"`
 	// Thumbnail 是缩略图管线配置。
@@ -73,7 +72,7 @@ func Load(path string) (*Config, error) {
 		Listen:    defaultListen,
 		DataDir:   defaultDataDir,
 		LogLevel:  "info",
-		Thumbnail: ThumbnailConfig{Workers: 0, LongSide: defaultThumbnailLongSide},
+		Thumbnail: ThumbnailConfig{Workers: 0, LongSide: 0},
 		TokenTTL:  defaultTokenTTL,
 	}
 
@@ -107,9 +106,6 @@ func applyEnv(cfg *Config) error {
 	}
 	if v := os.Getenv("QIMENG_DATA_DIR"); v != "" {
 		cfg.DataDir = v
-	}
-	if v := os.Getenv("QIMENG_TOKEN"); v != "" {
-		cfg.Token = v
 	}
 	if v := os.Getenv("QIMENG_LOG_LEVEL"); v != "" {
 		cfg.LogLevel = v
