@@ -40,6 +40,18 @@ type ThumbnailConfig struct {
 	LongSide int `yaml:"long_side"`
 }
 
+// UploadConfig 上传管线配置（DOMAIN_RULES §9：单文件大小上限可配置）。
+type UploadConfig struct {
+	// MaxBytes 是单文件大小上限（字节）；0 = 用 defaultUploadMaxBytes。
+	// 上限只在"下载上传流"路径强制（MaxBytesReader），不影响其他端点。
+	MaxBytes int64 `yaml:"max_bytes"`
+}
+
+// defaultUploadMaxBytes 是单文件上传上限默认值（2GB）。
+// 手机拍摄视频普遍 1~4GB，2GB 覆盖绝大多数短视频/截图场景又不至于
+// 让一次误传拖垮磁盘；真有超大文件需求由部署方显式调大。
+const DefaultUploadMaxBytes = int64(2) << 30
+
 // Config 是服务端全部配置的最小集。新增配置项时同步更新 Load 的 env 覆盖表。
 type Config struct {
 	// Listen 是 HTTP 监听地址（默认 ":8420"，见 defaultListen）。
@@ -50,6 +62,8 @@ type Config struct {
 	LogLevel string `yaml:"log_level"`
 	// Thumbnail 是缩略图管线配置。
 	Thumbnail ThumbnailConfig `yaml:"thumbnail"`
+	// Upload 是上传管线配置。
+	Upload UploadConfig `yaml:"upload"`
 	// DbPath 是 SQLite 库文件路径；空 = DataDir/qimeng.db（M1 组装约定：
 	// 数据库跟随数据目录走，显式配置可单独放置）。
 	DbPath string `yaml:"db_path"`
@@ -73,6 +87,7 @@ func Load(path string) (*Config, error) {
 		DataDir:   defaultDataDir,
 		LogLevel:  "info",
 		Thumbnail: ThumbnailConfig{Workers: 0, LongSide: 0},
+		Upload:    UploadConfig{MaxBytes: DefaultUploadMaxBytes},
 		TokenTTL:  defaultTokenTTL,
 	}
 
@@ -126,6 +141,13 @@ func applyEnv(cfg *Config) error {
 			return fmt.Errorf("环境变量 QIMENG_TOKEN_TTL=%q 不是合法时长（如 6h、30m）: %w", v, err)
 		}
 		cfg.TokenTTL = d
+	}
+	if v := os.Getenv("QIMENG_UPLOAD_MAX_BYTES"); v != "" {
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || n < 1 {
+			return fmt.Errorf("环境变量 QIMENG_UPLOAD_MAX_BYTES=%q 不是合法正整数: %w", v, err)
+		}
+		cfg.Upload.MaxBytes = n
 	}
 	if v := os.Getenv("QIMENG_MEDIA_SECRET"); v != "" {
 		cfg.MediaSecret = v

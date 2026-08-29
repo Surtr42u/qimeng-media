@@ -1,0 +1,104 @@
+// filing.go：移动/重命名端点（ADR-0004 身份机制的正面应用——
+// 移动=改路径属性，asset_id/created_at/全部关联数据零改动）。
+// 路径安全校验统一走 filing 包（本包存在的意义，见 filing doc.go）。
+package httpapi
+
+import (
+	"database/sql"
+	"errors"
+	"net/http"
+	"os"
+	"path"
+	"path/filepath"
+
+	"qimeng-media/server/internal/filing"
+	"qimeng-media/server/internal/httpapi/gen"
+	"qimeng-media/server/internal/store"
+	"qimeng-media/server/internal/store/db"
+)
+
+// PostApiV1AssetsAssetIdMove 移动/重命名。
+//
+// 冲突语义（协议 409）：目标位置已有同名文件（文件系统或库行任一存在）
+// 即拒绝——移动不覆盖，覆盖属删除+移动的组合操作，必须显式分步执行。
+//
+// 顺序约束：先动文件后改库行。中途失败的最坏情形是"文件已挪、行还指
+// 旧路径"——扫描器的移动合并启发式（size+mtime 一致）会把行修正过来；
+// 反过来"行指新路径、文件在旧位置"则成为对账黑洞。
+func (s *Server) PostApiV1AssetsAssetIdMove(w http.ResponseWriter, r *http.Request, assetID gen.AssetId) {
+	row, err := s.q.GetAssetWithLibrary(r.Context(), assetID.String())
+	if errors.Is(err, sql.ErrNoRows) {
+		writeErr(w, http.StatusNotFound, "NOT_FOUND", "资产不存在")
+		return
+	}
+	if err != nil {
+		s.internalErr(w, "查询资产", err)
+		return
+	}
+	var req gen.MoveRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	// 目标目录：空 = 库根（目录语义，与"资产路径必须非空"的
+	// NormalizeRelPath 语义不同——空串是合法目录值）；非空则过
+	// NormalizeRelPath（SECURITY 红线 1：所有写库路径的统一入口）。
+	dir := req.TargetDir
+	if dir != "" {
+		dir, err = filing.NormalizeRelPath(dir)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "INVALID_PARAM", "目标目录不合法")
+			return
+		}
+	}
+	// 文件名：显式传入才清洗改名；不传保留原名（原名入库前已经过扫描器
+	// 校验，直接信任库值——重复清洗反而可能改动历史合法名）。
+	name := path.Base(row.RelPath)
+	if req.NewName != nil && *req.NewName != "" {
+		name, err = filing.SanitizeFilename(*req.NewName)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "INVALID_FILENAME", "新文件名不合法")
+			return
+		}
+	}
+	newRel := path.Join(dir, name)
+	if newRel == row.RelPath {
+		w.WriteHeader(http.StatusOK) // 幂等：目标即当前位置，无事可做
+		return
+	}
+	// 冲突双查：文件系统（真实占用）与库行（唯一索引占位，可能是
+	// 库/磁盘漂移的残留行）。命中任一 → 409。
+	targetAbs := filepath.Join(row.RootPath, filepath.FromSlash(newRel))
+	if _, err := os.Stat(targetAbs); err == nil {
+		writeErr(w, http.StatusConflict, "TARGET_EXISTS", "目标位置已有同名文件")
+		return
+	}
+	if _, err := s.q.GetAssetByPath(r.Context(), db.GetAssetByPathParams{LibraryID: row.LibraryID, RelPath: newRel}); err == nil {
+		writeErr(w, http.StatusConflict, "TARGET_EXISTS", "目标位置已被占用")
+		return
+	}
+	srcAbs := filepath.Join(row.RootPath, filepath.FromSlash(row.RelPath))
+	if err := os.MkdirAll(filepath.Dir(targetAbs), 0o755); err != nil {
+		s.internalErr(w, "创建目标目录", err)
+		return
+	}
+	if err := os.Rename(srcAbs, targetAbs); err != nil {
+		s.internalErr(w, "移动文件", err)
+		return
+	}
+	if _, err := s.q.MoveAssetPath(r.Context(), db.MoveAssetPathParams{
+		RelPath: newRel, FileName: name,
+		UpdatedAt: store.FormatTimestamp(s.now()),
+		AssetID:   row.AssetID,
+	}); err != nil {
+		// 库行没动、文件已挪：回滚文件移动恢复原状，两边一致好过
+		// 靠扫描器自愈的中间态（自愈是兜底不是常态路径）。
+		if rbErr := os.Rename(targetAbs, srcAbs); rbErr != nil {
+			s.logger.Error("移动库行失败且回滚文件失败（待扫描器合并修正）",
+				"err", err, "rollbackErr", rbErr, "assetId", row.AssetID)
+		}
+		s.internalErr(w, "更新资产路径", err)
+		return
+	}
+	s.publishLibraryChanged()
+	w.WriteHeader(http.StatusOK)
+}

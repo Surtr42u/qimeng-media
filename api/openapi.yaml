@@ -149,7 +149,8 @@ paths:
     post:
       summary: 上传文件（流式；四道安全校验见 SECURITY.md；原样落盘永不转码）
       parameters:
-        - { name: dir, in: query, required: true, schema: { type: string }, description: 目标目录（库内相对路径） }
+        - { name: libraryId, in: query, required: true, schema: { type: string }, description: 目标库 ID（多库场景必须显式指定） }
+        - { name: dir, in: query, required: true, schema: { type: string }, description: 目标目录（库内相对路径；空 = 库根） }
         - { name: filename, in: query, required: true, schema: { type: string } }
       requestBody:
         required: true
@@ -637,6 +638,7 @@ components:
       type: object
       properties:
         cpuPercent:    { type: number }
+        perCore:       { type: array, items: { type: number }, description: 按逻辑核心的 CPU 使用率明细（0~100），首次采样前为全 0 }
         memUsedBytes:  { type: integer, format: int64 }
         memTotalBytes: { type: integer, format: int64 }
         disks:         { type: array, items: { type: object, properties: { mount: { type: string }, usedBytes: { type: integer, format: int64 }, totalBytes: { type: integer, format: int64 } } } }

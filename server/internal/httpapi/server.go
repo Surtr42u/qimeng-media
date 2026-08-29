@@ -17,6 +17,7 @@ import (
 	"qimeng-media/server/internal/events"
 	"qimeng-media/server/internal/httpapi/gen"
 	"qimeng-media/server/internal/store/db"
+	"qimeng-media/server/internal/sysmon"
 	"qimeng-media/server/internal/thumbnail"
 )
 
@@ -65,6 +66,13 @@ type Deps struct {
 	Thumbs *thumbnail.Generator
 	// Scanner 扫描器；nil 时落到 noScanner 占位。
 	Scanner Scanner
+	// SysStatus 系统快照采集函数（sysmon.Collector.Snapshot 的装配期适配，
+	// 挂载点与版本号由 main 决定）；nil 时 /system/status 返回 503，
+	// 与 noScanner 同语义：显式错误优于隐式 nil panic。
+	SysStatus func(ctx context.Context) (sysmon.SystemStatus, error)
+	// Metrics 是 Prometheus 文本输出 handler（sysmon.Default.Handler()）；
+	// nil 时 /metrics 返回 503。
+	Metrics http.HandlerFunc
 	// MediaSecret 是媒体直链 HMAC 密钥（换密钥 = 吊销全部存量直链）。
 	MediaSecret []byte
 	// TokenTTL 直链有效期；<=0 用 DefaultTokenTTL。注意命名的 Token 指
@@ -81,16 +89,18 @@ type Deps struct {
 
 // Server 实现 gen.ServerInterface，并持有跨 handler 共享的状态。
 type Server struct {
-	conn    *sql.DB
-	q       *db.Queries
-	bus     *events.Bus
-	cfg     *config.Config
-	thumbs  *thumbnail.Generator
-	scanner Scanner
-	secret  []byte
-	ttl     time.Duration
-	now     func() time.Time
-	logger  *slog.Logger
+	conn      *sql.DB
+	q         *db.Queries
+	bus       *events.Bus
+	cfg       *config.Config
+	thumbs    *thumbnail.Generator
+	scanner   Scanner
+	sysStatus func(ctx context.Context) (sysmon.SystemStatus, error)
+	metrics   http.HandlerFunc
+	secret    []byte
+	ttl       time.Duration
+	now       func() time.Time
+	logger    *slog.Logger
 
 	authState  *authState
 	sse        *events.Handler
@@ -137,6 +147,8 @@ func New(deps Deps) (*Server, error) {
 		cfg:        deps.Cfg,
 		thumbs:     deps.Thumbs,
 		scanner:    sc,
+		sysStatus:  deps.SysStatus,
+		metrics:    deps.Metrics,
 		secret:     deps.MediaSecret,
 		ttl:        ttl,
 		now:        now,

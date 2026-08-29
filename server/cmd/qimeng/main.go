@@ -29,8 +29,13 @@ import (
 	"qimeng-media/server/internal/scanner"
 	"qimeng-media/server/internal/store"
 	"qimeng-media/server/internal/store/db"
+	"qimeng-media/server/internal/sysmon"
 	"qimeng-media/server/internal/thumbnail"
 )
+
+// version 是服务版本号的唯一来源：SSE hello 帧回显、系统面板 version
+// 字段共用它（M5 镜像交付时改为 -ldflags 注入点，消费方零改动）。
+const version = "0.1.0"
 
 // shutdownTimeout 是优雅退出的最长等待时间。
 // 为什么定 10s：覆盖慢客户端把响应读完 + 在途缩略图任务让出，
@@ -90,6 +95,9 @@ func main() {
 	}
 
 	bus := events.NewBus(logger, events.DefaultBuffer)
+	// 系统监控采集器尽早创建：startedAt 即进程启动近似时刻，CPU/网络
+	// 的差分基线也从这里起算（见 sysmon.NewCollector 注释）。
+	sysCollector := sysmon.NewCollector()
 	// 缩略图配置接线：Workers/LongSide 在此从 config 传入 Generator（内部建池），
 	// 档位像素单一来源在 thumbnail 包（LongSide<=0 回落 SizeGrid）。
 	thumbs := thumbnail.NewGenerator(cfg.DataDir, logger, thumbnail.Options{
@@ -104,10 +112,12 @@ func main() {
 		Cfg:         cfg,
 		Thumbs:      thumbs,
 		Scanner:     nil, // 下面用真扫描器适配器覆盖（先建 Server 再接 FinishScan 钩子）
+		SysStatus:   newSysStatusAdapter(sysCollector, queries, cfg.DataDir, version).snapshot,
+		Metrics:     sysmon.Default.Handler(),
 		MediaSecret: secret,
 		TokenTTL:    cfg.TokenTTL,
 		Logger:      logger,
-		Version:     "0.1.0",
+		Version:     version,
 	})
 	if err != nil {
 		logger.Error("组装 HTTP 服务失败", "error", err)

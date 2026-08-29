@@ -3,7 +3,7 @@
 > 本文是 `api/openapi.yaml`（协议宪法）的人读版导读：端点怎么用、机制怎么运作。
 > 传输结构的唯一权威是 openapi.yaml 本身；本文解释意图与用法，两者冲突以 openapi.yaml 为准。
 > 三端 SDK 由 `make sdk` 自动生成：Go 接口层（server/internal/httpapi/gen/）、TS 客户端（web/src/api/generated/）、Kotlin 客户端（android/sdk/）。生成物不入库，改协议后重跑即可。
-> 最后更新：2026-08-22（协议 v0.1.0，M0 定稿）
+> 最后更新：2026-08-29（M2 后端：上传端点补 libraryId 必填参数、移动 409 语义、标签/时间轴/推荐占位/目录树接线说明；协议 v0.1.0）
 
 ## 全局约定
 
@@ -21,7 +21,7 @@
 | 实时推送 | GET /events | SSE：scan.progress / library.changed / thumbnail.progress / upload.done |
 | 资产浏览 | GET /assets、GET/DELETE /assets/{id} | 唯一列表口径（筛选/排序/搜索全参数化）；DELETE=进回收站 |
 | 媒体文件 | GET /media/orig、/media/thumb（size=sm/md/lg） | 签名直链：原图/视频支持 Range 拖动，**查看永远发原件（无缩放副本）**；缩略图 immutable 缓存 |
-| 上传整理 | POST /assets/upload、POST /assets/{id}/move、GET/POST /dirs | 直传 NAS（四道校验）；移动/重命名保关联；目录树与新建 |
+| 上传整理 | POST /assets/upload、POST /assets/{id}/move、GET/POST /dirs | 直传 NAS（流式；四道校验；libraryId 必填查询参数，同名自动重命名 "名 (2).ext"，上限 upload.max_bytes 默认 2GB）；移动/重命名保关联（目标冲突 409）；目录树与新建（幂等） |
 | 回收站 | GET /trash、POST /trash/{id}/restore、DELETE /trash/{id}、DELETE /trash | 恢复（冲突自动重命名）/单个物理删除/清空（均二次确认场景） |
 | 行为上报 | POST /events/view、PUT /assets/{id}/like、PUT /assets/{id}/favorite | ViewEvent 只追加（sessionId 会话去重）；点赞 toggle 每日一次；收藏布尔 |
 | 标签 | GET/POST /tags、DELETE /tags/{id}、PUT /assets/{id}/tags | 全局池；删除级联清理关联；替换式绑定 |

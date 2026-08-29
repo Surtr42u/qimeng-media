@@ -32,7 +32,7 @@
 | thumb_queue_depth（Gauge） | 待生成缩略图队列深度 |
 | trash_items / trash_bytes（Gauge） | 回收站条目数与占用 |
 
-系统快照 `sysmon.Collector.Snapshot()` 输出与 openapi SystemStatus 对齐；PerCore（按核 CPU 明细）已在快照中实现，**待接线 /api/v1/system/status 时补进协议并 make sdk**（此处记待办，2026-08-22）。
+系统快照 `sysmon.Collector.Snapshot()` 输出与 openapi SystemStatus 对齐；PerCore（按核 CPU 明细）已补进协议并接线 `/api/v1/system/status` 与 `/metrics`（Bearer 鉴权，httpapi/system.go，2026-08-27 M2 后端）。
 
 ### 展示（两种）
 

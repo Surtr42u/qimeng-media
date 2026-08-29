@@ -114,6 +114,7 @@ type testEnv struct {
 	clock   *fakeClock
 	media   string // 库根目录
 	dataDir string
+	cfg     *config.Config // 暴露给测试按用例调整（如上传大小上限）
 }
 
 // testFiles 是三个测试资产：两图一视频（视频用小 mp4 头字节占位——
@@ -208,7 +209,7 @@ func newTestEnv(t *testing.T) *testEnv {
 	ts := httptest.NewServer(apisrv.Handler())
 	t.Cleanup(ts.Close)
 
-	env := &testEnv{ts: ts, q: q, libID: lib.ID, clock: clock, media: media, dataDir: dataDir}
+	env := &testEnv{ts: ts, q: q, libID: lib.ID, clock: clock, media: media, dataDir: dataDir, cfg: cfg}
 	env.setupAndSeed(t, fscan)
 	return env
 }
@@ -765,8 +766,8 @@ func TestProbesPageAndStubs(t *testing.T) {
 		t.Fatalf("验收页 Content-Type 不符：%s", ct)
 	}
 
-	// 未实现端点 → 501
-	resp = env.do(t, "GET", "/api/v1/tags", "")
+	// 未实现端点 → 501（样本取仍处占位态的 M3 端点；接线即从本处换样本）
+	resp = env.do(t, "GET", "/api/v1/authors", "")
 	closeBody(resp)
 	if resp.StatusCode != http.StatusNotImplemented {
 		t.Fatalf("未实现端点期望 501，得到 %d", resp.StatusCode)

@@ -1,20 +1,19 @@
-// wire.go 是组装层的扫描适配器：把 internal/scanner 的同步扫描实现
-// 适配到 httpapi.Scanner 的"触发即返回"契约上。
-//
-// 为什么需要适配层而不是让 scanner 直接实现接口：scanner.Scan 是同步
-// 阻塞语义（大库几十秒），而扫描端点契约是 202 立即返回、进度走 SSE。
-// 两者的语义差（同步/异步、db.Library/libraryID）收窄在这一处消化，
+// wire.go 是组装层的适配器集合：把业务包的同步实现适配到 httpapi
+// 依赖注入的最小接口上。语义差（同步/异步、装配参数）在这一处消化，
 // 两边的包互不感知（依赖倒置，见 httpapi.Scanner 注释）。
 package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 
 	"qimeng-media/server/internal/httpapi"
 	"qimeng-media/server/internal/scanner"
 	"qimeng-media/server/internal/store/db"
+	"qimeng-media/server/internal/sysmon"
 )
 
 // scannerAdapter 实现 httpapi.Scanner。
@@ -67,4 +66,40 @@ func (a *scannerAdapter) release(libraryID string) {
 	a.mu.Lock()
 	delete(a.running, libraryID)
 	a.mu.Unlock()
+}
+
+// sysStatusAdapter 把 sysmon.Collector 适配成 httpapi.Deps.SysStatus 闭包。
+//
+// 挂载点每次快照现查库表（DataDir + 全部库根）：库增删后磁盘面板自动
+// 跟随，无需重启或注册回调；快照频率 = 面板轮询频率（秒级），单表查询
+// 无性能顾虑。查库失败降级为只报 DataDir、错误并入聚合返回——面板部分
+// 可用优于整体 500（与 sysmon.Snapshot 同一错误哲学）。
+type sysStatusAdapter struct {
+	collector *sysmon.Collector
+	q         *db.Queries
+	dataDir   string
+	version   string
+}
+
+func newSysStatusAdapter(c *sysmon.Collector, q *db.Queries, dataDir, version string) *sysStatusAdapter {
+	return &sysStatusAdapter{collector: c, q: q, dataDir: dataDir, version: version}
+}
+
+// snapshot 采集一次系统快照。CPUInterval=0：与上次调用差分（面板 3s
+// 轮询即得 3s 窗口均值），首调返回 0 由前端渲染"采样中"。
+func (a *sysStatusAdapter) snapshot(ctx context.Context) (sysmon.SystemStatus, error) {
+	mounts := []string{a.dataDir}
+	var libsErr error
+	if libs, err := a.q.ListLibraries(ctx); err != nil {
+		libsErr = fmt.Errorf("查询库挂载点: %w", err)
+	} else {
+		for _, l := range libs {
+			mounts = append(mounts, l.RootPath)
+		}
+	}
+	st, snapErr := a.collector.Snapshot(ctx, sysmon.Options{
+		Mounts:  mounts,
+		Version: a.version,
+	})
+	return st, errors.Join(libsErr, snapErr)
 }

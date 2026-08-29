@@ -22,7 +22,9 @@ const (
 // 文件本体只是 payload，与 meta 同生命周期（删除/恢复/清理永远成对操作）。
 type TrashMeta struct {
 	AssetID      string    `json:"asset_id"`
+	LibraryID    string    `json:"library_id"`    // 恢复目标库（删除时刻快照；恢复按它查库根）
 	OriginalPath string    `json:"original_path"` // 库内相对路径（Clean 后、/ 分隔）
+	MediaType    string    `json:"media_type"`    // image/video（恢复重建库行快照，避免按扩展名重猜）
 	DeletedAt    time.Time `json:"deleted_at"`
 }
 
