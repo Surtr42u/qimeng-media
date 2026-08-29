@@ -192,13 +192,9 @@ func splitCharacters(s string) []string {
 // 语义唯一权威是 docs/DOMAIN_RULES §3；SQL 侧的取舍见
 // internal/store/queries/browse.sql 文件头。
 func (s *Server) GetApiV1Assets(w http.ResponseWriter, r *http.Request, params gen.GetApiV1AssetsParams) {
-	limit := 60 // openapi 默认
-	if params.Limit != nil {
-		if *params.Limit < 1 || *params.Limit > 200 {
-			writeErr(w, http.StatusBadRequest, "INVALID_PARAM", "limit 取值范围 1..200")
-			return
-		}
-		limit = *params.Limit
+	limit, ok := resolvePageLimit(w, params.Limit)
+	if !ok {
+		return
 	}
 	sortKey := "default"
 	if params.Sort != nil {
@@ -451,7 +447,7 @@ func (s *Server) GetApiV1AssetsAssetId(w http.ResponseWriter, r *http.Request, a
 		PlayCount:          ptr(playCount),
 		TotalBrowseSeconds: ptr(toInt(seconds)),
 	}
-	orig := s.signedMediaURL("/media/orig/" + row.AssetID)
+	orig := s.signedMediaURL(mediaPathOrig + row.AssetID)
 	detail.OrigUrl = &orig
 	thumb := s.thumbURL(row.AssetID, "lg")
 	detail.ThumbUrl = &thumb
@@ -491,7 +487,7 @@ func (s *Server) signedMediaURL(path string) string {
 // 单一来源是 thumbnail 包的 Size 常量（cachekey.go），md 档像素由
 // Thumbnail 配置 LongSide 决定（未配置回落 SizeGrid）。
 func (s *Server) thumbURL(assetID, size string) string {
-	return s.signedMediaURL("/media/thumb/"+assetID) + "&size=" + size
+	return s.signedMediaURL(mediaPathThumb+assetID) + "&size=" + size
 }
 
 // thumbSize 把 openapi size 枚举映射到 thumbnail.Size：

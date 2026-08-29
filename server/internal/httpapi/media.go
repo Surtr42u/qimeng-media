@@ -14,6 +14,11 @@ import (
 	"qimeng-media/server/internal/thumbnail"
 )
 
+// thumbCacheControl 缩略图直链的缓存策略：max-age 一年 + immutable。
+// 缓存键 = SHA-256(assetId+size)，键即内容身份（见 GetMediaThumbAssetId
+// 注释），不存在"同键变内容"，激进缓存语义才成立（DOMAIN_RULES §11）。
+const thumbCacheControl = "public, max-age=31536000, immutable"
+
 // GetMediaOrigAssetId 原图/原视频直链。
 //
 // 签名已由 mediaSignature 中间件校验过（403 语义在那里），本 handler
@@ -113,7 +118,7 @@ func (s *Server) GetMediaThumbAssetId(w http.ResponseWriter, r *http.Request, as
 			s.logger.Warn("关闭缩略图文件失败", "err", cerr)
 		}
 	}()
-	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	w.Header().Set("Cache-Control", thumbCacheControl)
 	etag := `"` + key + `"`
 	w.Header().Set("ETag", etag)
 	// ServeContent 不处理 ETag 条件请求，If-None-Match 命中手动回 304

@@ -203,7 +203,7 @@ func (s *Server) PostApiV1AssetsUpload(w http.ResponseWriter, r *http.Request, p
 		Tags:       ptr([]gen.Tag{}),
 		Authors:    ptr([]gen.Author{}),
 	}
-	orig := s.signedMediaURL("/media/orig/" + asset.AssetID)
+	orig := s.signedMediaURL(mediaPathOrig + asset.AssetID)
 	detail.OrigUrl = &orig
 	if asset.DurationMs.Valid {
 		detail.DurationMs = ptr(asset.DurationMs.Int64)

@@ -16,13 +16,9 @@ import (
 
 // GetApiV1Recommendations 推荐流（M2 热度占位：浏览量降序）。
 func (s *Server) GetApiV1Recommendations(w http.ResponseWriter, r *http.Request, params gen.GetApiV1RecommendationsParams) {
-	limit := 60 // openapi 默认
-	if params.Limit != nil {
-		if *params.Limit < 1 || *params.Limit > 200 {
-			writeErr(w, http.StatusBadRequest, "INVALID_PARAM", "limit 取值范围 1..200")
-			return
-		}
-		limit = *params.Limit
+	limit, ok := resolvePageLimit(w, params.Limit)
+	if !ok {
+		return
 	}
 	var filters assetFilters
 	if params.MediaType != nil {

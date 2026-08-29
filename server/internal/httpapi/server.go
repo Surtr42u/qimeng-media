@@ -51,6 +51,23 @@ func (noScanner) Scan(context.Context, string) error { return ErrScannerUnavaila
 // DefaultTokenTTL 是签名媒体直链的默认有效期（6h，docs/SECURITY.md 红线 5）。
 const DefaultTokenTTL = 6 * time.Hour
 
+// 媒体直链路径前缀：签名协议的组成部分（auth.SignMediaURL 按 path 逐字节
+// 签名），改任一前缀 = 存量直链全部失效 + 三端全炸。生成侧（signedMediaURL
+// 调用点）与分发侧（topRouter 免 Bearer 判定）必须引用这里的常量，禁止手抄
+// 字符串——字符串一致性靠单一来源保证，不靠人肉（AI_README_FIRST 代码卫生 4）。
+const (
+	// mediaPathPrefix 直链家族总前缀（topRouter 免 Bearer 判定用）。
+	mediaPathPrefix = "/media/"
+	// mediaPathOrig 原图/原视频直链前缀。
+	mediaPathOrig = "/media/orig/"
+	// mediaPathThumb 缩略图直链前缀（thumbURL 生成侧）。
+	mediaPathThumb = "/media/thumb/"
+)
+
+// readyzTimeout 就绪探针的数据库 Ping 上限：探针必须快速失败，
+// 不能拖垮编排系统秒级周期的探活。
+const readyzTimeout = 3 * time.Second
+
 // Deps 是组装 httpapi.Server 的全部外部依赖（依赖注入只在 main 发生，
 // 业务包之间禁止互相 new——ARCHITECTURE §5）。
 type Deps struct {
@@ -218,7 +235,7 @@ func (t *topRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// 首次初始化免鉴权（api/openapi.yaml:28 security: []，与协议一致；
 		// 库中已有用户时 handler 自己回 409，免鉴权不构成攻击面：最多换来一个 409）。
 		t.api.ServeHTTP(w, r)
-	case strings.HasPrefix(p, "/media/"):
+	case strings.HasPrefix(p, mediaPathPrefix):
 		// 媒体直链：Bearer 管不了 <img>/<video> 标签，走 HMAC 签名
 		//（SECURITY 红线 5：禁止裸直链）。
 		t.s.mediaSignature(t.api).ServeHTTP(w, r)
@@ -273,7 +290,7 @@ func (s *Server) mediaSignature(next http.Handler) http.Handler {
 // GetReadyz 就绪探针：检查数据库可达（SECURITY：探针不放行无鉴权
 // 业务流量，只回答"依赖是否健康"）。
 func (s *Server) GetReadyz(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), readyzTimeout)
 	defer cancel()
 	if err := s.conn.PingContext(ctx); err != nil {
 		writeErr(w, http.StatusServiceUnavailable, "DB_UNREACHABLE", "数据库不可达")
