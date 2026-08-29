@@ -136,6 +136,9 @@ func (s *Server) PutApiV1AssetsAssetIdTags(w http.ResponseWriter, r *http.Reques
 	for _, id := range ids {
 		if err := qtx.AddAssetTag(r.Context(), db.AddAssetTagParams{
 			AssetID: assetID.String(), TagID: id,
+			// 关联时间 = 本次替换时刻（LEGACY_REQUIREMENTS §A：详情页标签
+			// 按"最近添加置顶"；替换式 PUT 重插每行，重添加即置顶）。
+			CreatedAt: store.FormatTimestamp(s.now()),
 		}); err != nil {
 			s.internalErr(w, "挂载资产标签", err)
 			return

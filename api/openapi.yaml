@@ -119,6 +119,17 @@ paths:
       parameters: [ { $ref: "#/components/parameters/AssetId" } ]
       responses:
         "200": { description: 已移入回收站 }
+  /api/v1/sources:
+    get:
+      summary: 出处列表（按规范名分组的文件计数；相册按出处分组用）
+      description: |
+        按出处（source 规范名）分组统计文件数，按 fileCount 降序；name 为 null
+        表示无出处文件（前端兜底显示"其他"）。口径与 GET /assets 一致：
+        默认排除 COS 作者关联文件（DOMAIN_RULES §3/§6），includeCos=true 重新包含。
+      parameters:
+        - { name: includeCos, in: query, schema: { type: boolean, default: false }, description: 含 COS 作者关联文件（默认排除，COS 走独立入口） }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/SourceCount" } } } } }
 
   # ---------- 媒体文件服务（签名直链） ----------
   /media/orig/{assetId}:
@@ -490,6 +501,13 @@ components:
         items:        { type: array, items: { $ref: "#/components/schemas/AssetSummary" } }
         nextCursor:   { type: [string, "null"] }
         totalMatched: { type: integer }
+
+    SourceCount:
+      type: object
+      description: 出处分组的文件计数（GET /api/v1/sources 响应条目）
+      properties:
+        name:      { type: [string, "null"], description: 出处规范名；null = 无出处文件（前端兜底显示"其他"） }
+        fileCount: { type: integer }
 
     AssetDetail:
       allOf:

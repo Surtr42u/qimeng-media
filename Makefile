@@ -19,7 +19,7 @@ OAPI_CODEGEN_VERSION := v2.8.0
 #   go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.1
 GOLANGCI_LINT ?= $(GOBIN_DIR)/golangci-lint
 
-.PHONY: help sdk sdk-validate sdk-go sdk-ts sdk-kotlin server-run server-test web-dev web-test docker-build lint
+.PHONY: help sdk sdk-validate sdk-go sdk-ts sdk-kotlin server-run server-test web-build web-dev web-test docker-build lint
 
 help: ## 显示全部命令
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -73,6 +73,9 @@ server-run: ## 本地运行服务端（:8420；自定义配置直接 go run ./se
 
 server-test: ## 服务端全部测试（-race 由 CI 跑；本机 Windows 无 gcc 编译器）
 	cd server && go test ./... -count=1
+
+web-build: ## 构建 Web 前端产物（web/dist）——服务端 SPA 托管依赖此产物（默认 web.static_dir=../web/dist，见 server/internal/config）；未构建时服务端回退内嵌验收页，页面功能不完整但服务不挂
+	npm --prefix web run build
 
 web-dev: ## Web 开发服务器（vite dev）
 	npm --prefix web run dev

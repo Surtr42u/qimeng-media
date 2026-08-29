@@ -121,6 +121,27 @@ func FirstFrame(ctx context.Context, src string, dst string) error {
 	})
 }
 
+// ExtractAttachedPic 提取视频容器内的内嵌封面流（cover art），输出 PNG 到 dst
+// （原子落盘）。选流按原始流索引 streamIndex（ProbeVideo 探测出的 attached_pic
+// 流索引）而非 -map 0:v:N：后者 N 是"视频类流序号"而非容器流索引——纯音频+
+// 封面的容器里唯一视频流序号恒为 0，而 ffprobe 的 attached_pic 落在索引 1 上，
+// 按类内序号选流必然错选；用原始索引才与探测侧同源。
+func ExtractAttachedPic(ctx context.Context, src string, streamIndex int, dst string) error {
+	if streamIndex < 0 {
+		return fmt.Errorf("内嵌封面流索引非法: %d", streamIndex)
+	}
+	return writeAtomically(dst, func(tmp string) error {
+		var out bytes.Buffer
+		return run(ctx, "ffmpeg", &out,
+			"-y",
+			"-i", src,
+			"-map", "0:"+strconv.Itoa(streamIndex),
+			"-frames:v", "1",
+			tmp,
+		)
+	})
+}
+
 // ScaleToWebP 把图片等比缩放到最长边 longSide，输出 WebP 到 dst（原子落盘）。
 // 为什么用 scale=W:W:force_original_aspect_ratio=decrease 而非字面 scale=w:-1：
 // 实测 20x100 竖图在 scale=32:-1 下得到 32x160，最长边反而超出目标；
@@ -151,12 +172,17 @@ func ScaleToWebP(ctx context.Context, src string, longSide int, dst string) erro
 // 增删字段不会破坏解析。
 // 注意 duration 是字符串（ffprobe 的 json writer 对浮点固定带引号输出，
 // 实测形如 "2.000000"），不能声明为 float64，否则 Unmarshal 直接报错。
+// disposition.attached_pic 标记内嵌封面流（cover art）：DOMAIN_RULES §11
+// "内嵌封面优先"的探测基础（0=普通流，1=封面流）。
 type ffprobeJSON struct {
 	Streams []struct {
-		CodecType string `json:"codec_type"`
-		Width     int    `json:"width"`
-		Height    int    `json:"height"`
-		Duration  string `json:"duration"`
+		CodecType   string `json:"codec_type"`
+		Width       int    `json:"width"`
+		Height      int    `json:"height"`
+		Duration    string `json:"duration"`
+		Disposition struct {
+			AttachedPic int `json:"attached_pic"`
+		} `json:"disposition"`
 	} `json:"streams"`
 	Format struct {
 		Duration string `json:"duration"`
@@ -181,6 +207,11 @@ type ProbeResult struct {
 	Duration time.Duration
 	Width    int
 	Height   int
+	// AttachedPic 表示容器内含带 attached_pic disposition 的视频流（内嵌
+	// 封面/cover art）；AttachedPicStream 是该流的 0 基索引用途：PickFrameTime
+	// 据此返回封面优先选点，ExtractAttachedPic 按同索引抽流。
+	AttachedPic       bool
+	AttachedPicStream int // AttachedPic=false 时为 -1
 }
 
 // secondsToDuration 把 ffprobe json 里的浮点秒转 Duration。
@@ -193,6 +224,10 @@ func secondsToDuration(sec float64) time.Duration {
 // 共用一份 ffprobe 封装，避免两处各写一套解析渐行渐远（任务约定）。
 // 时长优先取 format.duration：部分封装的 stream 级 duration 缺失，
 // format 级是容器聚合值（实测 mp4 两者一致）。
+// 同时探测内嵌封面（disposition.attached_pic=1）：时长/宽高取第一个
+// 非封面视频流（封面流是自己的时长/尺寸，取值无意义——mkv 封面常是
+// 第 0 号视频流但真实视频在第 1 号）；整个容器只有一个封面流的极端情形
+// （纯音频+封面）时用封面流兜底返回。
 func ProbeVideo(ctx context.Context, path string) (*ProbeResult, error) {
 	var out bytes.Buffer
 	if err := run(ctx, "ffprobe", &out,
@@ -208,19 +243,34 @@ func ProbeVideo(ctx context.Context, path string) (*ProbeResult, error) {
 	if err := json.Unmarshal(out.Bytes(), &probe); err != nil {
 		return nil, fmt.Errorf("解析 %s 的 ffprobe 输出: %w", path, err)
 	}
-	for _, s := range probe.Streams {
+	attachedPic := false
+	attachedIdx := -1
+	for i, s := range probe.Streams {
 		if s.CodecType != "video" {
 			continue
 		}
+		if s.Disposition.AttachedPic == 1 {
+			attachedPic = true
+			attachedIdx = i
+			continue
+		}
+		// 第一个非封面视频流：真实视频的时长与尺寸。
 		dur := parseDurationField(probe.Format.Duration)
 		if dur == 0 {
 			dur = parseDurationField(s.Duration)
 		}
 		return &ProbeResult{
-			Duration: secondsToDuration(dur),
-			Width:    s.Width,
-			Height:   s.Height,
+			Duration:          secondsToDuration(dur),
+			Width:             s.Width,
+			Height:            s.Height,
+			AttachedPic:       attachedPic,
+			AttachedPicStream: attachedIdx,
 		}, nil
+	}
+	if attachedPic {
+		// 容器只有封面流（纯音频+封面）没有真实视频流：封面信息仍有效，
+		// 时长只能由 format 级兜底（通常为 0，选点侧按短路 0ms 处理）。
+		return &ProbeResult{AttachedPic: true, AttachedPicStream: attachedIdx}, nil
 	}
 	return nil, fmt.Errorf("ffprobe 未在 %s 中找到视频流", path)
 }

@@ -22,9 +22,10 @@ const (
 	KindVideo         Kind = "video"
 )
 
-// frameTimeout 是单个尺寸生成全流程（视频最多 5 次黑帧探针 + 抽帧 + 缩放）的
-// 兜底超时。为什么必须有：没有它，一个卡死解码的 ffmpeg 进程会永久占住一个
-// worker，池吞吐被单个坏文件耗尽；60s 对 NAS 上大多数片源的黑帧探测足够宽裕。
+// frameTimeout 是单个尺寸生成全流程（视频 1 次 ffprobe 探测 + 最多 8 个
+// 候选点灰度采样 + 抽帧 + 缩放）的兜底超时。为什么必须有：没有它，一个
+// 卡死解码的 ffmpeg 进程会永久占住一个 worker，池吞吐被单个坏文件耗尽；
+// 60s 对 NAS 上大多数片源的探测+抽帧足够宽裕。
 const frameTimeout = 60 * time.Second
 
 // Generator 缩略图编排器：把 ffmpeg 各能力组合成
@@ -85,10 +86,12 @@ func (g *Generator) Close() { g.pool.Close() }
 func (g *Generator) GridLongSide() int { return g.longSide }
 
 // Ensure 幂等保证资产在 sizes 每个尺寸下的缩略图存在（已存在直接跳过——
-// 键即内容身份，存在即有效，本期无失效逻辑）。按媒体类型分派：
-// 图片→等比缩放；动图→首帧静帧再缩放；视频→黑帧检测选点抽帧再缩放。
-// DOMAIN_RULES §11 的"视频内嵌封面（cover art）优先"需要入库元数据配合，
-// 属于接线任务的职责；本期管线件只负责"给定源文件产出缩略图"。
+// 键即内容身份（含策略版本段，见 cachekey.go），存在即有效）。
+// 按媒体类型分派：图片→等比缩放；动图→首帧静帧再缩放；视频→DOMAIN_RULES §11
+// 抽帧策略（内嵌封面优先 → 无则 35% 代表帧 → 黑/白扩散序列纠偏）选点抽帧再缩放。
+// 性能分工（§11："列表/详情实时显示用首帧、代表帧只用于预生成缓存"）：
+// M3 预留——本批保持懒生成统一管线（首请求同步生成），届时首帧走快速档、
+// 代表帧走工作池预热，本函数的分派点不变。
 func (g *Generator) Ensure(ctx context.Context, assetID, srcPath string, kind Kind, sizes []Size) error {
 	for _, size := range sizes {
 		if err := g.ensureOne(ctx, assetID, srcPath, kind, size); err != nil {
@@ -141,11 +144,17 @@ func (g *Generator) ensureOne(ctx context.Context, assetID, srcPath string, kind
 				return err
 			}
 		} else {
-			at, err := PickFrameTime(ctx, srcPath)
+			pick, err := PickFrameTime(ctx, srcPath)
 			if err != nil {
 				return err
 			}
-			if err := ExtractFrame(ctx, srcPath, at, frame); err != nil {
+			if pick.AttachedPic {
+				// 内嵌封面优先（DOMAIN_RULES §11）：封面是发行方/作者选定的
+				// 画面，无需黑白纠偏，直接按探测出的流索引抽取。
+				if err := ExtractAttachedPic(ctx, srcPath, pick.AttachedPicStream, frame); err != nil {
+					return err
+				}
+			} else if err := ExtractFrame(ctx, srcPath, pick.At, frame); err != nil {
 				return err
 			}
 		}

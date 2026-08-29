@@ -1,7 +1,7 @@
 # HANDOVER - AI 交接说明
 
 > 写给下一位接手的 AI（任何模型/工具）。人类用户无编程基础，全部代码由 AI 生成。
-> 最后更新：2026-08-29（M2 后端先行收尾完成时点）
+> 最后更新：2026-08-29（M2 UI 段页面组装+集成冒烟完成；提交策略待用户确认）
 
 ## 接手第一步
 
@@ -13,8 +13,9 @@
 ## 当前进度（2026-08-29）
 
 - **M0 地基 ✅**、**M1 服务端核心闭环 ✅**、**M2 后端先行全部完成 ✅**（用户拍板：M2 拆为后端先行、UI 后置，见 PROJECT_PLAN M2 节）
-- **M2 后端先行全部完成 ✅**（2026-08-29）：sysmon 接线、移动/重命名、回收站五端点、推荐流热度占位、目录树、上传（四道校验+流式+上限配置，协议补 libraryId）、标签池/资产标签/时间轴标签、**FTS5 全文搜索收尾**（迁移 0002 trigram 索引+触发器自动同步；browse 三查询 q 谓词；search 包 ParseQuery/RebuildIndex；upload.done SSE 载荷 schema 补协议）
-- **分工定案（2026-08-29 用户拍板）**：M2 UI 段（Web 端）后置——用户另开 AI 路线承接；**M3 后端算法由下一会话/new AI 承接**（本会话只做了 M3 调研，见下方「M3 接手速览」）；未完成的 UI 段不阻塞 M3
+- **M2 UI 段（Web）✅（2026-08-29 完成，未提交）**：页面组装全部落地（Detail/Organize/Stats/Trash 四页从占位补齐 + 31 个中间态构建报错清零 + 集成检查五项全过 + MoveDialog 目录树 libraryId 接线 bug 修复）；browser 冒烟通过（登录/注册库/扫描/列表/详情视频播放/点赞收藏标签/移动/删除/回收站恢复/统计 501 空态/仪表盘/相册分组）；build+lint 全绿（10 个 lint 警告为基建层遗留、非本次引入）、go test 全绿。**遗留：git 提交策略待用户确认**（工作树混有并行 M3 后端改动，见下方「提交待办」）
+- **M2 UI 段随附后端 ✅（2026-08-29）**：缩略图抽帧策略对齐 DOMAIN_RULES §11（内嵌封面优先→35% 代表帧→黑白扩散序列；缓存键升 "v2" 版本段，旧缓存自动失效重建；性能分工 M3 预留）、标签排序（列表名字序/详情关联时间倒序，migration 0004 为 asset_tags 补 created_at）、GET /sources 出处列表端点、服务端 SPA 托管 web/dist（web.static_dir 配置 + Makefile web-build 目标 + /_debug/ 验收页固定挂载）
+- **分工定案（2026-08-29 用户拍板）**：M2 UI 段（Web 端）后置——已由另一 AI 路线承接并**于同日完成**（见下方「M2 UI 段完成记录」，提交待用户确认策略）；**M3 后端算法由下一会话/new AI 承接**（前会话已做 M3 调研，见下方「M3 接手速览」）
 - **下一步：M3（推荐算法 10 维/统计/SourceMatcher/作者体系/迁移端点）** → M4 Android → M5 部署；M2 UI 段（Web 用户界面）与 M3 并行不依赖
 
 ## M2 后端任务（2026-08-29：全部完成 ✅）
@@ -37,10 +38,33 @@ M3 及以后的任务表不变（推荐算法/统计/SourceMatcher/作者体系/
 
 > 推荐算法照旧项目测试用例翻译：核心行为锁定点如「同 seed 可复现」「每日惩罚 -0.8×shownCount（随次数递增）」「视频/图片自然混合按剩余比例」「同分桶 ±0.05 打散」等，翻译时必须保留原测试断言语义。
 
+## M2 UI 段（Web）完成记录（2026-08-29，未提交）
+
+> 前会话「开做 m2 剩下的 web ui」因额度暂停于 executor-C/D 中间态（31 个构建报错 + 4 页占位），本次会话接手完成。reviewer 全新上下文对抗审查**通过**（build/lint/go test 独立重跑核验）。
+
+### 本次完成
+
+1. **31 个构建报错清零**（6 文件）：Dashboard `const { data } = useSystemStatus()`、RecommendPage `hotItems/favoriteItems` undefined 保护 + `(_, index)`、labels.ts 从 `Library['scanState']` 派生 `LibraryScanState`（generated 无独立导出）、3 处 unused 删除。
+2. **4 个占位页组装**：DetailPage（主 AI 亲写——媒体区双分支 + chrome 互动行 + 批次导航 + open/dwell 打点 + 四弹层；key=assetId 复位模式过 React Compiler lint）+ Organize/Trash/Stats（executor——目录树/上传队列、回收站全套确认弹窗、501 空态设计）。
+3. **集成检查五项全过**：Toaster 已挂 main.tsx、SSE 单连接引用计数多实例安全、error-text 统一口径、相册跳转 source 参数经 parseFilters 闭环、MoveDialog 接线（修复 `/dirs` libraryId 业务必填的接线 bug——MoveDialog 增 `libraryId?` prop，DetailPage 传第一库 id）。
+4. **browser 冒烟通过**（隔离实例 8421 + ffmpeg 造数）：设密→注册库→扫描→列表分组/缩略图→视频播放（TimelineBar/倍速/默认静音）→点赞/收藏/标签增删→目录新建→移动→删除→回收站恢复→统计 501 空态→仪表盘真数据→相册兜底分组。上传 UI 受 IAB 无 file chooser 限制，XHR 通道页面内直调验证 201。
+5. reviewer 观察项处置：注释口径修正（服务端打点当前不去重，勿假设）；`find` 冗余简化。其余记账：StatsPage isError 不分流错误码（M3 分流）、openapi `/dirs` libraryId 未标 required 的协议债（铁律 1 视角应修协议或改实现，M3 处理）。
+
+### 提交待办（需用户确认策略）
+
+工作树同时含**并行 M3 后端改动**（server/internal/recommend/*、httpapi/rankings.go、prefs.go、daily_shown/settings/recommend.sql 等）。建议拆两笔：`feat(web): M2 UI 段`（web/** + 本次文档）与 M3 段另行走 M3 会话流程；store/db/*.sql.go 与 generated 为生成物、含双方变更，归属需用户拍板。**当前未做任何 commit。**
+
+### 关键事实速查（M2 UI 实现依据）
+
+- 交互规格 = 旧项目 GUIDE_UI 验证语义的 Web 对齐版（@ 本仓库根 AGENTS.md/README，实现要点已由方案基线固化到各页面 prompt——现不在文件里，fallback 依据：LEGACY_REQUIREMENTS.md + DOMAIN_RULES §3/§8/§11 + 旧项目 docs/GUIDE_UI.md）。
+- 协议事实清单（字段级，含实现差异与 501 stub 表）：`<本地用户目录>\AppData\Local\Temp\qm-research-api.md`（临时文件，可能已被清——依据为准的是 api/openapi.yaml + server/internal/httpapi/stubs.go + DOMAIN_RULES）。
+- 关键约定：日期分组客户端按 modifiedAt 折叠；列表排序 default=addedDate desc（M1 占位）；tagIds 多选+tagMode；sources 端点 name=null 兜底"其他"；上传 XHR（octet-stream）；SSE 必须 fetch 流式；localStorage token key `qimeng_token`、sessionId 用 sessionStorage UUID。
+
 ## 怎么跑起来
 
 - **一键启动**：双击根目录 `启动服务端.bat`（端口 8420，数据目录 `qimeng-data/`）
-- **验收页**：浏览器开 `http://127.0.0.1:8420`（中文界面：设密码→注册媒体目录→扫描→浏览→播放）
+- **Web 页面**：服务端存在 Web 构建产物（默认 `../web/dist`，`make web-build` 生成）时 `/` 提供 Web UI；未构建时 `/` 与 `/_debug/` 回退内嵌验收页（功能受限于 M1 范围，服务本身不挂）
+- **验收页**：浏览器开 `http://127.0.0.1:8420/_debug/`（中文界面：设密码→注册媒体目录→扫描→浏览→播放）
 - **测试**：`cd server && go test ./...`（9 包全绿是底线）；Web：`cd web && npx tsc --noEmit`
 - **协议改动**：先改 `api/openapi.yaml` → `make sdk` → 按编译错误适配三端（铁律 1）
 - CI 在 GitHub Actions（push 自动跑四道门禁），仓库：`Surtr42u/qimeng-media`（私有，gh 已登录）

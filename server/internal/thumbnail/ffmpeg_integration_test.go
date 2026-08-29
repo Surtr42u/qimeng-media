@@ -170,45 +170,70 @@ func TestProbeVideoIntegration(t *testing.T) {
 	}
 }
 
-// TestPickFrameTimeIntegration 用真实视频验证选帧逻辑的三个分支：
-// 首点命中 / 跳过黑帧命中后点 / 纯黑兜底到最后有效点。
+// TestPickFrameTimeIntegration 用真实视频验证选帧逻辑的分支：
+// 35% 首点命中 / 黑白扩散序列跳过黑帧 / 纯黑兜底最后成功点 /
+// 纯白同样触发兜底 / 探测失败（文件不存在）短路 0ms 仍报错。
 func TestPickFrameTimeIntegration(t *testing.T) {
 	requireFFmpeg(t)
 	dir := t.TempDir()
 
-	t.Run("红视频首点命中", func(t *testing.T) {
+	t.Run("红视频35命中", func(t *testing.T) {
 		video := makeSolidVideo(t, dir, "red", 2)
-		at, err := PickFrameTime(context.Background(), video)
+		pick, err := PickFrameTime(context.Background(), video)
 		if err != nil {
 			t.Fatalf("PickFrameTime: %v", err)
 		}
-		if at != 0 {
-			t.Errorf("红视频 0s 即非黑，应返回 0，得到 %v", at)
+		// 2s 视频的第一候选点 = 35% = 700ms（红帧非黑非白，直接中选）；
+		// 旧策略的"0s 起步"已废弃（DOMAIN_RULES §11：35% 代表帧）。
+		if pick.AttachedPic || pick.At != 700*time.Millisecond {
+			t.Errorf("红 2s 视频应选中 700ms（35%% 首点），得到 %+v", pick)
 		}
 	})
 
-	t.Run("黑红视频跳过黑帧", func(t *testing.T) {
+	t.Run("黑红视频扩散序列跳过黑帧", func(t *testing.T) {
 		video := makeBlackRedVideo(t, dir) // 0~1.5s 黑，1.5~3s 红
-		at, err := PickFrameTime(context.Background(), video)
+		pick, err := PickFrameTime(context.Background(), video)
 		if err != nil {
 			t.Fatalf("PickFrameTime: %v", err)
 		}
-		// 0s、1s 黑（1.0s < 1.5s 红段起点），2s 落入红段。
-		if at != 2*time.Second {
-			t.Errorf("黑红视频应选中 2s（首个非黑候选点），得到 %v", at)
+		// 3s 视频按扩散序列：35%=1050ms 黑、25%=750ms 黑、45%=1350ms 黑、
+		// 15%=450ms 黑，55%=1650ms 落入红段 → 中选。
+		if pick.AttachedPic || pick.At != 1650*time.Millisecond {
+			t.Errorf("黑红 3s 视频应选中 1650ms（55%% 扩散点），得到 %+v", pick)
 		}
 	})
 
-	t.Run("纯黑视频兜底到最后有效点", func(t *testing.T) {
+	t.Run("纯黑视频兜底最后成功点", func(t *testing.T) {
 		video := makeSolidVideo(t, dir, "black", 2)
-		at, err := PickFrameTime(context.Background(), video)
+		pick, err := PickFrameTime(context.Background(), video)
 		if err != nil {
 			t.Fatalf("PickFrameTime: %v", err)
 		}
-		// 实测 -ss 2 恰好等于时长时 ffmpeg 输出 0 字节（该点无帧被跳过），
-		// 3s/5s 超界同样跳过；0s/1s 取到帧但全黑 → 兜底返回最后有效点 1s。
-		if at != 1*time.Second {
-			t.Errorf("纯黑 2s 视频应兜底到 1s（最后有效取帧点），得到 %v", at)
+		// 全部候选点都黑：扩散序列最后一个是 0ms（永不缺帧），兜底返回 0ms。
+		if pick.AttachedPic || pick.At != 0 {
+			t.Errorf("纯黑 2s 视频应兜底到 0ms（最后成功取帧点），得到 %+v", pick)
+		}
+	})
+
+	t.Run("纯白视频触发白帧判定兜底", func(t *testing.T) {
+		video := makeSolidVideo(t, dir, "white", 2)
+		pick, err := PickFrameTime(context.Background(), video)
+		if err != nil {
+			t.Fatalf("PickFrameTime: %v", err)
+		}
+		// 白帧判定（全部 >240）必须与黑帧对称：全白视频同样跳过全部候选点，
+		// 兜底 0ms（旧策略只有黑帧判定会让全白视频选出 35% 的白帧）。
+		if pick.AttachedPic || pick.At != 0 {
+			t.Errorf("纯白 2s 视频应兜底到 0ms（白帧判定生效），得到 %+v", pick)
+		}
+	})
+
+	t.Run("探测失败短路0ms仍报错", func(t *testing.T) {
+		// 文件不存在：ffprobe 失败 → 短路 0ms 采样也失败（无视频流可取）→ 报错。
+		// 覆盖"无 ffprobe/无时长回退路径"的最终错误分支；0ms 采样成功的分支
+		// 由单元用例（candidateTimes 短路）与上述真实视频用例覆盖。
+		if _, err := PickFrameTime(context.Background(), filepath.Join(dir, "no-such.mp4")); err == nil {
+			t.Fatal("不存在文件应报错（探测失败短路后采样仍失败）")
 		}
 	})
 }
@@ -253,6 +278,62 @@ func TestFirstFrameIntegration(t *testing.T) {
 
 	if err := FirstFrame(context.Background(), gif, dst); err != nil {
 		t.Fatalf("FirstFrame: %v", err)
+	}
+	assertRedPixel(t, decodePNG(t, dst))
+}
+
+// makeCoverArtM4A 合成"音频流 + 内嵌封面视频流"的 m4a（音频是第 0 号流、
+// attached_pic 封面是第 1 号流——纯音频+封面容器的典型形态）：验证内嵌封面
+// 优先策略与按原始流索引选流（-map 0:v:N 按类内序号会错选音频）。
+func makeCoverArtM4A(t *testing.T, dir string) string {
+	t.Helper()
+	cover := filepath.Join(dir, "cover.png")
+	var buf bytes.Buffer
+	if err := run(context.Background(), "ffmpeg", &buf,
+		"-y",
+		"-f", "lavfi", "-i", "color=red:size=32x32:rate=1",
+		"-frames:v", "1",
+		"-an", "-c:v", "png",
+		cover,
+	); err != nil {
+		t.Fatalf("合成封面图失败: %v", err)
+	}
+	out := filepath.Join(dir, "cover.m4a")
+	buf.Reset()
+	if err := run(context.Background(), "ffmpeg", &buf,
+		"-y",
+		"-i", cover,
+		"-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo",
+		"-map", "0:v", "-map", "1:a",
+		"-c:v", "png", "-c:a", "aac",
+		"-disposition:v:0", "attached_pic",
+		"-shortest",
+		out,
+	); err != nil {
+		t.Fatalf("合成带内嵌封面的 m4a 失败: %v", err)
+	}
+	return out
+}
+
+// TestAttachedPicIntegration 内嵌封面优先（DOMAIN_RULES §11 优先级首位）：
+// PickFrameTime 必须命中封面流（而不是按比例选点/黑白检测）；
+// ExtractAttachedPic 必须抽出真正的封面像素（红色 32x32）。
+func TestAttachedPicIntegration(t *testing.T) {
+	requireFFmpeg(t)
+	dir := t.TempDir()
+	coverFile := makeCoverArtM4A(t, dir)
+
+	pick, err := PickFrameTime(context.Background(), coverFile)
+	if err != nil {
+		t.Fatalf("PickFrameTime: %v", err)
+	}
+	if !pick.AttachedPic || pick.AttachedPicStream != 1 {
+		t.Fatalf("含内嵌封面流（第 1 号流）的容器应优先选中封面，得到 %+v", pick)
+	}
+
+	dst := filepath.Join(dir, "cover-frame.png")
+	if err := ExtractAttachedPic(context.Background(), coverFile, pick.AttachedPicStream, dst); err != nil {
+		t.Fatalf("ExtractAttachedPic: %v", err)
 	}
 	assertRedPixel(t, decodePNG(t, dst))
 }

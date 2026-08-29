@@ -3,7 +3,7 @@
 > 本文是 `api/openapi.yaml`（协议宪法）的人读版导读：端点怎么用、机制怎么运作。
 > 传输结构的唯一权威是 openapi.yaml 本身；本文解释意图与用法，两者冲突以 openapi.yaml 为准。
 > 三端 SDK 由 `make sdk` 自动生成：Go 接口层（server/internal/httpapi/gen/）、TS 客户端（web/src/api/generated/）、Kotlin 客户端（android/sdk/）。生成物不入库，改协议后重跑即可。
-> 最后更新：2026-08-29（M2 后端：上传端点补 libraryId 必填参数、移动 409 语义、标签/时间轴/推荐占位/目录树接线说明；协议 v0.1.0）
+> 最后更新：2026-08-29（M2 UI 段随附后端：缩略图抽帧策略对齐 §11、标签排序、GET /sources 出处列表端点、SPA 托管与 /_debug/；协议 v0.1.0）
 
 ## 全局约定
 
@@ -11,15 +11,16 @@
 - 分页统一 cursor 式：响应带 `nextCursor`，为 null 表示到底
 - 错误统一 `Error{code, message}`；`code` 机器可读（如 PATH_ESCAPE / TOO_LARGE / INVALID_TYPE）
 - 媒体直链（/media/**）不走 header 鉴权，用短期 HMAC 签名 URL（默认 6h），参数 `exp`（过期时间戳）+ `sig`
+- **页面投放**：服务端存在 Web 构建产物（`web.static_dir`，默认 `../web/dist`）时 `/` 与 `/index.html` 托管 SPA（静态资源直发 + 前端路由回退）；产物缺失时回退内嵌验收页。内嵌验收页另挂 `/_debug/`（永远可访问，调试用）。页面均为免鉴权静态资源，页面内数据请求照常走 Bearer
 
-## 端点分组速览（36 路径）
+## 端点分组速览（37 路径）
 
 | 分组 | 端点 | 说明 |
 |---|---|---|
 | 认证 | POST /auth/setup、POST /auth/verify | 首次设密码领 token（只显示一次）；校验 token |
 | 库管理 | GET/POST /libraries、POST /libraries/{id}/scan | 注册媒体目录、触发全量扫描（进度走 SSE） |
 | 实时推送 | GET /events | SSE：scan.progress / library.changed / thumbnail.progress / upload.done |
-| 资产浏览 | GET /assets、GET/DELETE /assets/{id} | 唯一列表口径（筛选/排序/搜索全参数化）；DELETE=进回收站 |
+| 资产浏览 | GET /assets、GET/DELETE /assets/{id}、GET /sources | 唯一列表口径（筛选/排序/搜索全参数化）；DELETE=进回收站；出处列表（按规范名分组的文件计数，fileCount 降序，name=null=无出处文件，默认排除 COS） |
 | 媒体文件 | GET /media/orig、/media/thumb（size=sm/md/lg） | 签名直链：原图/视频支持 Range 拖动，**查看永远发原件（无缩放副本）**；缩略图 immutable 缓存 |
 | 上传整理 | POST /assets/upload、POST /assets/{id}/move、GET/POST /dirs | 直传 NAS（流式；四道校验；libraryId 必填查询参数，同名自动重命名 "名 (2).ext"，上限 upload.max_bytes 默认 2GB）；移动/重命名保关联（目标冲突 409）；目录树与新建（幂等） |
 | 回收站 | GET /trash、POST /trash/{id}/restore、DELETE /trash/{id}、DELETE /trash | 恢复（冲突自动重命名）/单个物理删除/清空（均二次确认场景） |
@@ -35,6 +36,7 @@
 ## 关键机制
 
 - **排序**：`sort` 七键（default/fileDate/addedDate/viewCount/playCount/sizeBytes/name）+ `order`，语义见 DOMAIN_RULES §3
+- **标签排序**：`GET /tags` 按名称升序（筛选面板等）；资产详情 `tags` 按关联时间倒序（详情弹窗"最近添加置顶"——PUT 整体替换即刷新全部关联时间，LEGACY_REQUIREMENTS §A），两者口径不同不要混用
 - **COS 隔离**：列表默认排除 COS 作者关联文件（独立入口），`includeCos=true` 才包含
 - **会话去重**：`ViewEventReport.sessionId` 由客户端生成（App 会话/浏览器标签页），服务端按 (assetId, kind, sessionId, 当日) 去重（DOMAIN_RULES §5）
 - **搜索与筛选叠加**：`q`（FTS5 全文）与全部筛选参数同时生效。实现状态：M2 已实现（2026-08-29）——迁移 0002 建 FTS5 trigram 索引+聚合视图+触发器全集自动同步，`internal/search` 负责关键词解析与索引重建；详细语义见 DOMAIN_RULES §3 全文搜索口径

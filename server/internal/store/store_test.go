@@ -232,11 +232,34 @@ func idForIndex(i int) string {
 
 // TestMigrateDownThenUp：down migration 必须可执行（生产禁用，测试与灾备依赖），
 // 且 down 后能再次 up（幂等重建）。migration 演进后回退步数随之变化：
-// 第一步验证 0002 down（FTS 对象删除、业务表保留），第二步验证 0001 down（业务表全删）。
+// 第一步验证 0004 down（asset_tags.created_at 删除、0003 对象保留），
+// 第二步验证 0003 down（kv_settings 删除、0002 对象保留），
+// 第三步验证 0002 down（FTS 对象删除、业务表保留），
+// 第四步验证 0001 down（业务表全删）。
 func TestMigrateDownThenUp(t *testing.T) {
 	conn, _ := openTestDB(t) // 已 up
 	if err := MigrateDown(conn, 1); err != nil {
 		t.Fatalf("MigrateDown 失败: %v", err)
+	}
+	if columnExists(t, conn, "asset_tags", "created_at") {
+		t.Error("0004 down 后 asset_tags.created_at 仍存在（0004 down 缺 DROP COLUMN）")
+	}
+	if !tableExists(t, conn, "kv_settings") {
+		t.Error("0004 down 后 kv_settings 应保留（只回退了一个版本）")
+	}
+	if err := MigrateDown(conn, 1); err != nil {
+		t.Fatalf("MigrateDown 第二次失败: %v", err)
+	}
+	if tableExists(t, conn, "kv_settings") {
+		t.Error("0003 down 后 kv_settings 仍存在（0003 down 缺 DROP）")
+	}
+	for _, obj := range searchObjects {
+		if !objExists(t, conn, obj.typ, obj.name) {
+			t.Errorf("0003 down 后 0002 对象 %s %s 应保留（只回退了两个版本）", obj.typ, obj.name)
+		}
+	}
+	if err := MigrateDown(conn, 1); err != nil {
+		t.Fatalf("MigrateDown 第三次失败: %v", err)
 	}
 	for _, obj := range searchObjects {
 		if objExists(t, conn, obj.typ, obj.name) {
@@ -249,7 +272,7 @@ func TestMigrateDownThenUp(t *testing.T) {
 		}
 	}
 	if err := MigrateDown(conn, 1); err != nil {
-		t.Fatalf("MigrateDown 第二次失败: %v", err)
+		t.Fatalf("MigrateDown 第四次失败: %v", err)
 	}
 	for _, table := range businessTables {
 		if tableExists(t, conn, table) {
@@ -264,6 +287,34 @@ func TestMigrateDownThenUp(t *testing.T) {
 			t.Errorf("二次迁移后缺少表 %s", table)
 		}
 	}
+	if !tableExists(t, conn, "kv_settings") {
+		t.Error("二次迁移后缺少表 kv_settings")
+	}
+	if !columnExists(t, conn, "asset_tags", "created_at") {
+		t.Error("二次迁移后缺少 asset_tags.created_at（0004 未应用）")
+	}
+}
+
+// columnExists 查 PRAGMA table_info 判断表是否含指定列（0004 列增删验证用）。
+func columnExists(t *testing.T, conn *sql.DB, table, col string) bool {
+	t.Helper()
+	rows, err := conn.Query("PRAGMA table_info(" + table + ")")
+	if err != nil {
+		t.Fatalf("查询 %s 列信息失败: %v", table, err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var cid, notnull, pk int
+		var name, typ string
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
+			t.Fatalf("扫描列信息失败: %v", err)
+		}
+		if name == col {
+			return true
+		}
+	}
+	return false
 }
 
 // assertUniqueViolation 断言错误是 UNIQUE 约束拒绝（约束存在性用例的公共断言）。

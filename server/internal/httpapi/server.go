@@ -122,7 +122,10 @@ type Server struct {
 	authState  *authState
 	sse        *events.Handler
 	scanStates *scanStateMap // 库扫描态（内存跟踪；库表无此列，scanner 接线后回写）
-	handler    http.Handler  // New() 组装完成的完整路由（Handler() 返回它）
+	// spa 是 Web SPA 构建产物处理器（nil = 静态目录不可用，回退内嵌验收页）。
+	// topRouter 的免鉴权判定依赖它是否存在（见 topRouter.ServeHTTP 注释）。
+	spa     *spaHandler
+	handler http.Handler // New() 组装完成的完整路由（Handler() 返回它）
 }
 
 // New 组装 HTTP 服务。返回 *Server；main 用 Handler() 拿到带完整
@@ -193,7 +196,35 @@ func New(deps Deps) (*Server, error) {
 		},
 	})
 	// 极简验收页（免鉴权静态 HTML；页面内所有数据请求照常走 Bearer）。
-	mux.HandleFunc("GET /{$}", serveIndex)
+	// SPA 优先（M2 起服务端随附托管 Web 构建产物）：web.static_dir 指向的
+	// 目录存在且 index.html 可读时托管该目录（静态资源直发 + 前端路由
+	// 回退 index.html）；目录缺失/不可用回退内嵌验收页（M1 行为不变——
+	// 本机没有 dist 或未构建时服务不挂）。验收页另挂 /_debug/（SPA 可用
+	// 时也可访问，serveIndex 见 page.go）。
+	{
+		dir := deps.Cfg.Web.StaticDir
+		if spaReady(dir) {
+			spa, err := newSPAHandler(dir, logger)
+			if err != nil {
+				// OpenRoot 失败（目录被并发删除/权限拒绝）：日志留痕并
+				// 回退验收页，不因此拒绝启动。
+				logger.Warn("SPA 静态目录初始化失败，回退内嵌验收页", "dir", dir, "err", err)
+			} else {
+				s.spa = spa
+				mux.Handle("/", spa)
+			}
+		} else if dir != "" {
+			logger.Info("未找到 Web 构建产物（web/dist），/ 使用内嵌验收页", "dir", dir)
+		}
+	}
+	if s.spa == nil {
+		// 无 SPA：M1 行为不变——/（mux 的 GET /{$} 精确匹配）与 /index.html
+		// 都是验收页（topRouter 的免鉴权清单与这里双同步）。
+		mux.HandleFunc("GET /{$}", serveIndex)
+		mux.HandleFunc("GET /index.html", serveIndex)
+	}
+	// 验收页固定挂 /_debug/：调试入口不随 SPA 是否可用而变。
+	mux.HandleFunc("GET /_debug/", serveIndex)
 	s.handler = &topRouter{s: s, api: api}
 	return s, nil
 }
@@ -225,11 +256,13 @@ type topRouter struct {
 func (t *topRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	p := r.URL.Path
 	switch {
-	case p == "/healthz" || p == "/readyz" || p == "/" || p == "/index.html":
-		// 探针与验收页：放行。免鉴权清单以 api/openapi.yaml 的
+	case p == "/healthz" || p == "/readyz" || p == "/" || p == "/index.html" ||
+		p == "/_debug" || strings.HasPrefix(p, "/_debug/"):
+		// 探针与页面：放行。免鉴权清单以 api/openapi.yaml 的
 		// security: [] 元数据为准（/healthz openapi.yaml:374、
 		// /readyz openapi.yaml:380），本处与协议保持同步；
-		// 验收页 / 与 /index.html 是静态 HTML 不走协议（页面内数据请求照常走 Bearer）。
+		// 页面（验收页 / 与 /index.html、固定调试挂载点 /_debug/、
+		// SPA 模式下的入口）是静态 HTML 不走协议（页面内数据请求照常走 Bearer）。
 		t.api.ServeHTTP(w, r)
 	case p == "/api/v1/auth/setup":
 		// 首次初始化免鉴权（api/openapi.yaml:28 security: []，与协议一致；
@@ -239,6 +272,12 @@ func (t *topRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// 媒体直链：Bearer 管不了 <img>/<video> 标签，走 HMAC 签名
 		//（SECURITY 红线 5：禁止裸直链）。
 		t.s.mediaSignature(t.api).ServeHTTP(w, r)
+	case t.s.spa != nil && !strings.HasPrefix(p, "/api/") && p != "/metrics":
+		// SPA 静态托管：构建产物与前端路由（无 /api/ 前缀）免 Bearer——
+		// 浏览器直接加载 <script src="/assets/xxx.js"> 带不了 header；
+		// API 路径不在此列（拼错的 /api/ 地址保持 401/404 语义，不被
+		// SPA 回退吞掉），/metrics 保持管理鉴权（非 security: []）。
+		t.api.ServeHTTP(w, r)
 	default:
 		// 其余全部要求 Bearer token（含 SSE：浏览器 EventSource 无法带
 		// header，验收页用 fetch 流式读 SSE 而不是开 query 参数口子）。

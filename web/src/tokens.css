@@ -8,7 +8,7 @@
  */
 
 :root {
-  /* ---- 颜色 ---- */
+  /* ---- 颜色（语义映射 shadcn 变量：组件一律用 --qm-*，不直接消费 shadcn 层） ---- */
   --qm-bg: var(--background);
   --qm-text: var(--foreground);
   --qm-text-muted: var(--muted-foreground);
@@ -16,6 +16,23 @@
   --qm-primary-foreground: var(--primary-foreground);
   --qm-border: var(--border);
   --qm-destructive: var(--destructive);
+
+  /** 卡片/面板表面（= shadcn card）：白色卡面、深色卡面 */
+  --qm-surface: var(--card);
+  /** 略深一档的表面（= shadcn secondary）：次级区域/悬浮层底 */
+  --qm-surface-soft: var(--secondary);
+  /** 胶囊/标签/提示条的底色（= shadcn muted）：弱化背景，前景用 --qm-text-muted */
+  --qm-chip-bg: var(--muted);
+  /** 品牌强调（= shadcn accent）：hover 高亮面、选项高亮 */
+  --qm-accent: var(--accent);
+  /** 分割线/描边（= shadcn border）：与 --qm-border 同源，语义区分用途 */
+  --qm-divider: var(--border);
+  /**
+   * 主色的透明版：primary 在 10% 透明度下的浅色底（选中态背景/扫码光晕等）。
+   * 为什么用 color-mix 而非单独起色值：跟随 --primary 联动（品牌改色只动一处），
+   * 为什么色空间用 oklab：与主题变量同色域，混合结果无 sRGB 色调偏移。
+   */
+  --qm-primary-soft: color-mix(in oklab, var(--primary) 10%, transparent);
 
   /* ---- 圆角 ----
    * 全站圆角随 shadcn --radius（0.625rem）缩放，换视觉风格只改一个变量 */
@@ -28,6 +45,11 @@
   --qm-space-3: 1rem;
   --qm-space-4: 1.5rem;
   --qm-space-5: 2.5rem;
+  --qm-space-6: 4rem;
+
+  /* ---- 控件尺寸 ----
+   * 胶囊高度 30px（交互规格定值：筛选 chip 统一高度）；tailwind 无对应档位，token 收口 */
+  --qm-chip-height: 1.875rem;
 
   /* ---- 动效时长 ----
    * 统一三档，后续 Framer Motion 动画引用，避免各处随手写时长造成节奏混乱 */

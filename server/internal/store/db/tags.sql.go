@@ -10,16 +10,20 @@ import (
 )
 
 const addAssetTag = `-- name: AddAssetTag :exec
-INSERT INTO asset_tags (asset_id, tag_id) VALUES (?, ?)
+INSERT INTO asset_tags (asset_id, tag_id, created_at) VALUES (?, ?, ?)
 `
 
 type AddAssetTagParams struct {
-	AssetID string
-	TagID   string
+	AssetID   string
+	TagID     string
+	CreatedAt string
 }
 
+// created_at = association time: the replace-style PUT re-inserts every
+// row, so re-adding a tag bumps it to the top of the detail-page list
+// (LEGACY_REQUIREMENTS A; column added in 0004).
 func (q *Queries) AddAssetTag(ctx context.Context, arg AddAssetTagParams) error {
-	_, err := q.db.ExecContext(ctx, addAssetTag, arg.AssetID, arg.TagID)
+	_, err := q.db.ExecContext(ctx, addAssetTag, arg.AssetID, arg.TagID, arg.CreatedAt)
 	return err
 }
 
@@ -132,13 +136,50 @@ func (q *Queries) InsertTimelineTag(ctx context.Context, arg InsertTimelineTagPa
 	return i, err
 }
 
+const listAllAssetTags = `-- name: ListAllAssetTags :many
+SELECT at.asset_id, t.name
+FROM asset_tags at
+JOIN tags t ON t.id = at.tag_id
+ORDER BY at.asset_id, t.name
+`
+
+type ListAllAssetTagsRow struct {
+	AssetID string
+	Name    string
+}
+
+// Full-library tag map (asset_id -> tag names) consumed by the
+// recommendation algorithm's tag relevance/collection scoring.
+func (q *Queries) ListAllAssetTags(ctx context.Context) ([]ListAllAssetTagsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listAllAssetTags)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAllAssetTagsRow
+	for rows.Next() {
+		var i ListAllAssetTagsRow
+		if err := rows.Scan(&i.AssetID, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTags = `-- name: ListTags :many
 
 SELECT t.id, t.name, COUNT(at.asset_id) AS file_count
 FROM tags t
 LEFT JOIN asset_tags at ON at.tag_id = t.id
 GROUP BY t.id
-ORDER BY t.created_at, t.id
+ORDER BY t.name
 `
 
 type ListTagsRow struct {
@@ -151,6 +192,9 @@ type ListTagsRow struct {
 // Cascade semantics via FKs: deleting a tags row clears asset_tags refs;
 // deleting an assets row clears bindings and timeline tags (0001_init.up.sql).
 // Tag pool + per-tag file count (LEFT JOIN keeps zero-ref tags).
+// Order: name ASC -- filter panels and other non-detail scenes use
+// name order (LEGACY_REQUIREMENTS A: only the detail-page tag popup
+// uses association-time order, which is ListAssetTagRefs in browse.sql).
 func (q *Queries) ListTags(ctx context.Context) ([]ListTagsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listTags)
 	if err != nil {

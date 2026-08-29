@@ -7,9 +7,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 	"testing"
+	"time"
 
 	"qimeng-media/server/internal/httpapi/gen"
+	"qimeng-media/server/internal/store"
 )
 
 func createTag(t *testing.T, env *testEnv, name string) string {
@@ -53,6 +56,12 @@ func TestTagPoolLifecycle(t *testing.T) {
 	}
 	if len(tags) != 2 {
 		t.Fatalf("标签池期望 2 个，得到 %d", len(tags))
+	}
+	// 名字序（LEGACY_REQUIREMENTS §A：筛选面板等非详情场景一律名字序）。
+	// UTF-8 字节序下"猫"(U+732B) < "风景"(U+98CE)，与创建顺序（风景先建）相反，
+	// 正好证明排序键是名称而非创建时间。
+	if *tags[0].Name != "猫" || *tags[1].Name != "风景" {
+		t.Fatalf("标签列表应按名称升序 [猫, 风景]，得到 [%s, %s]", *tags[0].Name, *tags[1].Name)
 	}
 	for _, tg := range tags {
 		if tg.FileCount == nil || *tg.FileCount != 0 {
@@ -123,6 +132,59 @@ func TestAssetTagsReplace(t *testing.T) {
 	// 重复 ID 幂等收敛
 	if code := put(`{"tagIds":["` + id1 + `","` + id1 + `"]}`); code != http.StatusNoContent {
 		t.Errorf("重复 ID 期望 204，得到 %d", code)
+	}
+}
+
+// TestAssetTagsDetailOrder 详情页标签按关联时间倒序（LEGACY_REQUIREMENTS §A：
+// 详情标签弹窗"最近添加置顶"）。替换式 PUT 一次写入全部行并刷新全部关联
+// 时间（整体替换 = 重添加也置顶）；同批毫秒内按标签创建时间倒序 tie-break
+// （后创建的标签在前），跨批次由刷新后的关联时间主导。
+func TestAssetTagsDetailOrder(t *testing.T) {
+	env := newTestEnv(t)
+	id1 := createTag(t, env, "标签一") // t0
+	env.clock.advance(time.Hour)
+	id2 := createTag(t, env, "标签二") // t0+1h（后创建 → 批次内 tie-break 排前）
+	asset, ok := env.assetIDByName(t, "a.jpg")
+	if !ok {
+		t.Fatal("测试前置失败：a.jpg 不在列表")
+	}
+	put := func(t *testing.T, ids ...string) {
+		t.Helper()
+		body := `{"tagIds":["` + strings.Join(ids, `","`) + `"]}`
+		resp := env.do(t, http.MethodPut, "/api/v1/assets/"+asset+"/tags", body)
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusNoContent {
+			t.Fatalf("绑定期望 204，得到 %d", resp.StatusCode)
+		}
+	}
+	names := func(t *testing.T) []string {
+		t.Helper()
+		d := env.assetDetail(t, asset)
+		out := make([]string, 0, len(*d.Tags))
+		for _, tg := range *d.Tags {
+			out = append(out, *tg.Name)
+		}
+		return out
+	}
+	put(t, id1, id2)
+	if got := names(t); len(got) != 2 || got[0] != "标签二" || got[1] != "标签一" {
+		t.Fatalf("详情应按关联时间倒序（同批按标签创建时间）[标签二, 标签一]，得到 %v", got)
+	}
+	// 关联时间随替换刷新：再次替换后两行的 created_at 都等于当前时钟
+	//（整体替换语义，替换即刷新——"重添加也置顶"的数据基础）。
+	env.clock.advance(time.Hour) // t0+2h
+	put(t, id1, id2)
+	latest := store.FormatTimestamp(env.clock.Now())
+	for _, tagID := range []string{id1, id2} {
+		var ts string
+		if err := env.conn.QueryRow(
+			"SELECT created_at FROM asset_tags WHERE asset_id = ? AND tag_id = ?",
+			asset, tagID).Scan(&ts); err != nil {
+			t.Fatalf("查询关联时间失败: %v", err)
+		}
+		if ts != latest {
+			t.Fatalf("替换后关联时间应刷新为 %s，实际 %s", latest, ts)
+		}
 	}
 }
 

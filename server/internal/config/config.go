@@ -52,6 +52,22 @@ type UploadConfig struct {
 // 让一次误传拖垮磁盘；真有超大文件需求由部署方显式调大。
 const DefaultUploadMaxBytes = int64(2) << 30
 
+// defaultWebStaticDir 是 SPA 构建产物（Web 端 web/dist）的默认目录。
+// 为什么默认相对路径 "../web/dist"：server 的工作目录约定是 server/
+// （Makefile server-run 与 启动服务端.bat 都 cd 进去再启动），相对路径
+// 在开发期零配置即命中；容器/其他部署方式用 yaml 或环境变量显式指定。
+const defaultWebStaticDir = "../web/dist"
+
+// WebConfig Web 前端静态资源（SPA 托管）配置。
+type WebConfig struct {
+	// StaticDir 是 SPA 构建产物目录（含 index.html）。空字符串 = 禁用 SPA
+	// 托管（M1 行为：/ 与 /index.html 回退内嵌验收页）。目录存在且
+	// index.html 可读时服务端托管该目录（静态资源直发 + 非文件路径回退
+	// index.html），否则同样回退内嵌验收页——本机未构建 web/dist 是常态，
+	// 服务不因缺前端产物挂掉（见 httpapi/spa.go）。
+	StaticDir string `yaml:"static_dir"`
+}
+
 // Config 是服务端全部配置的最小集。新增配置项时同步更新 Load 的 env 覆盖表。
 type Config struct {
 	// Listen 是 HTTP 监听地址（默认 ":8420"，见 defaultListen）。
@@ -64,6 +80,8 @@ type Config struct {
 	Thumbnail ThumbnailConfig `yaml:"thumbnail"`
 	// Upload 是上传管线配置。
 	Upload UploadConfig `yaml:"upload"`
+	// Web 是 Web 静态资源（SPA 托管）配置。
+	Web WebConfig `yaml:"web"`
 	// DbPath 是 SQLite 库文件路径；空 = DataDir/qimeng.db（M1 组装约定：
 	// 数据库跟随数据目录走，显式配置可单独放置）。
 	DbPath string `yaml:"db_path"`
@@ -88,6 +106,7 @@ func Load(path string) (*Config, error) {
 		LogLevel:  "info",
 		Thumbnail: ThumbnailConfig{Workers: 0, LongSide: 0},
 		Upload:    UploadConfig{MaxBytes: DefaultUploadMaxBytes},
+		Web:       WebConfig{StaticDir: defaultWebStaticDir},
 		TokenTTL:  defaultTokenTTL,
 	}
 
@@ -151,6 +170,12 @@ func applyEnv(cfg *Config) error {
 	}
 	if v := os.Getenv("QIMENG_MEDIA_SECRET"); v != "" {
 		cfg.MediaSecret = v
+	}
+	// 注意 QIMENG_WEB_STATIC_DIR 置空值（""）等于未设置、保留默认值：
+	// 显式禁用 SPA 托管请走 yaml（web.static_dir: ""），env 的语义是覆盖
+	// 为"默认不可见"，空串在 os.Getenv 层面无法与"未设置"区分。
+	if v := os.Getenv("QIMENG_WEB_STATIC_DIR"); v != "" {
+		cfg.Web.StaticDir = v
 	}
 	return nil
 }

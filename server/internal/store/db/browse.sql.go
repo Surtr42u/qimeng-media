@@ -311,7 +311,7 @@ const listAssetTagRefs = `-- name: ListAssetTagRefs :many
 SELECT t.id, t.name
 FROM asset_tags at JOIN tags t ON t.id = at.tag_id
 WHERE at.asset_id = ?
-ORDER BY t.name
+ORDER BY at.created_at DESC, t.created_at DESC, t.id
 `
 
 type ListAssetTagRefsRow struct {
@@ -319,6 +319,17 @@ type ListAssetTagRefsRow struct {
 	Name string
 }
 
+// Detail-assembly tag list: NEWEST ASSOCIATION FIRST (LEGACY_REQUIREMENTS A:
+// the detail-page tag popup sorts by association time, newest on top; the
+// replace-style PUT re-inserts every row, refreshing created_at on each
+// re-add). A single PUT writes the whole batch in one clock tick, so all
+// rows of an asset share the same association millisecond; the tie-break
+// is TAG creation time DESC (newer-created tag first) -- meaningful within
+// a batch, while across PUTs the refreshed association time dominates
+// (an older tag re-added in a later PUT still lands on top). id is the
+// last deterministic tie-break. (rowid ordering is NOT usable: sqlc
+// v1.31.1 validates ORDER BY columns against the schema and rowid is not
+// a schema column, see _probe notes.)
 func (q *Queries) ListAssetTagRefs(ctx context.Context, assetID string) ([]ListAssetTagRefsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listAssetTagRefs, assetID)
 	if err != nil {

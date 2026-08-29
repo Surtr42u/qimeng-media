@@ -27,14 +27,25 @@ const (
 // thumbsDirName 是 dataDir 下缩略图缓存根目录名。
 const thumbsDirName = "thumbs"
 
-// CacheKey 计算缩略图缓存键：SHA-256(assetID + ":" + size) 的 hex 编码
-// 【逐字遵守 DOMAIN_RULES §11：SHA-256(assetId+size) 前缀 hex，存数据目录】。
+// cacheKeyStrategyVersion 是缩略图内容策略版本段：参与缓存键哈希输入。
+// 为什么需要它（DOMAIN_RULES §11："抽帧位置策略变更后旧缩略图缓存必须
+// 失效重建"）：2026-08-29 抽帧策略对齐 §11（内嵌封面优先→35% 代表帧→
+// 黑/白扩散序列），抽帧产物内容已变，旧键（裸 assetId:size）下的缓存文件
+// 全是新策略的过期产物；键内嵌版本 = 升级即换键 = 旧文件自然变孤儿
+// （交给对账清理，符合"永不因数量上限删除有效缓存"），无需启动时全量删除。
+// 契约：任何改变抽帧/缩放产物内容的策略变更（阈值、候选序列、封面优先级、
+// WebP 质量等）都必须再升版本段并同步 cachekey_test 的黄金向量。
+const cacheKeyStrategyVersion = "v2"
+
+// CacheKey 计算缩略图缓存键：SHA-256(版本段 + ":" + assetID + ":" + size) 的
+// hex 编码【逐字遵守 DOMAIN_RULES §11：SHA-256(assetId+size) 前缀 hex，存
+// 数据目录——版本段仅仅是哈希输入的前缀，键形态不变】。
 // 为什么插 ":" 分隔符：防止纯拼接的边界歧义——理论上 assetID="a"+size 串 "bc"
-// 与 assetID="ab"+size 串 "c" 会撞键；固定分隔符彻底排除。
+// 与 assetID="ab"+size 串 "c" 会撞键；固定分隔符彻底排除（版本段同理）。
 // 键的稳定性由单测黄金向量锁定：键是磁盘缓存与 HTTP 缓存头的公共名字，
-// 算法意外变更会让全库缩略图一夜之间变成孤儿。
+// 算法意外变更会让全库缩略图一夜之间变成孤儿——升级版本段是唯一的有意变更。
 func CacheKey(assetID string, size Size) string {
-	sum := sha256.Sum256([]byte(assetID + ":" + strconv.Itoa(int(size))))
+	sum := sha256.Sum256([]byte(cacheKeyStrategyVersion + ":" + assetID + ":" + strconv.Itoa(int(size))))
 	return hex.EncodeToString(sum[:])
 }
 

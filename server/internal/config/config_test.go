@@ -102,6 +102,51 @@ func TestLoadMalformedYAML(t *testing.T) {
 	}
 }
 
+// TestLoadWebStaticDirDefault 锁定 SPA 托管默认目录 "../web/dist"：
+// 相对 server 启动工作目录（Makefile server-run 与 启动服务端.bat 都
+// cd 进 server/ 再启动），开发期零配置即命中构建产物。
+func TestLoadWebStaticDirDefault(t *testing.T) {
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load(\"\") 报错: %v", err)
+	}
+	if cfg.Web.StaticDir != "../web/dist" {
+		t.Errorf("默认 Web.StaticDir = %q, 期望 %q", cfg.Web.StaticDir, "../web/dist")
+	}
+}
+
+// TestLoadWebStaticDirOverrides 验证 web.static_dir 的 yaml/env 覆盖与
+// 空串禁用语义（yaml 显式空串 = 禁用 SPA 托管）。
+func TestLoadWebStaticDirOverrides(t *testing.T) {
+	path := writeYAML(t, "web:\n  static_dir: \"/data/web/dist\"\n")
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load 报错: %v", err)
+	}
+	if cfg.Web.StaticDir != "/data/web/dist" {
+		t.Errorf("Web.StaticDir = %q, 期望 yaml 覆盖 /data/web/dist", cfg.Web.StaticDir)
+	}
+	// env 优先于 yaml。
+	t.Setenv("QIMENG_WEB_STATIC_DIR", "/from-env/dist")
+	cfg, err = Load(path)
+	if err != nil {
+		t.Fatalf("Load 报错: %v", err)
+	}
+	if cfg.Web.StaticDir != "/from-env/dist" {
+		t.Errorf("Web.StaticDir = %q, 期望 env 值 /from-env/dist", cfg.Web.StaticDir)
+	}
+	// yaml 显式空串 = 禁用 SPA 托管（env 已设时被 env 覆盖；先清 env 验证 yaml 语义）。
+	t.Setenv("QIMENG_WEB_STATIC_DIR", "")
+	path = writeYAML(t, "web:\n  static_dir: \"\"\n")
+	cfg, err = Load(path)
+	if err != nil {
+		t.Fatalf("Load 报错: %v", err)
+	}
+	if cfg.Web.StaticDir != "" {
+		t.Errorf("显式空 static_dir 应禁用 SPA 托管（空字符串），得到 %q", cfg.Web.StaticDir)
+	}
+}
+
 // TestLoadInvalidEnvWorkers 整数型环境变量给非法值必须报错，
 // 不允许静默回退默认值掩盖问题。
 func TestLoadInvalidEnvWorkers(t *testing.T) {

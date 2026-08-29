@@ -48,22 +48,22 @@
 > **M2 UI 段（Web 端）后置**——由用户另开的 AI 路线承接，不阻塞 M3；**M3 后端算法为下一会话主线**。
 > UI 段（列表/详情的"前端展示"）是否完全按 Web 端做、或日后复用 Android 端（旧版交互复刻），以用户后续拍板为准。
 
-- [ ] 布局系统 + 导航（首页推荐/全部/相册/统计/管理）【后置】
-- [ ] 设计 token 体系（明暗主题、间距、圆角、动效时长统一变量）【后置】
+- [x] 布局系统 + 导航（首页推荐/全部/相册/统计/管理）（2026-08-29：AppShell 5 Tab + AuthGate/RootLayout/SseBridge/LoginGate/router 8 页懒加载 + Toaster 挂载；UI 段随附 executor-B 产出，本次集成冒烟确认）
+- [x] 设计 token 体系（明暗主题、间距、圆角、动效时长统一变量）（2026-08-29：tokens.css 语义 token 补充；暗色仅跟随系统）
 - [x] 后端：全文搜索 FTS5（2026-08-29：迁移 0002 trigram 索引 + 聚合视图 + 11 个同步触发器（assets/标签/作者/角色全写路径自动加索引，存量回填）；browse.sql 三查询 q 谓词——instr 子串语义（trigram MATCH 不支持 2 字短词，SQLite 3.53.3 实测锁定）；search 包 ParseQuery/RebuildIndex；协议 q 描述更新 + upload.done SSE 载荷 schema 补齐（UploadDoneEvent）；13 个新用例，go test 全绿）
-- [ ] 列表页：网格 + 日期分组 + 筛选面板 + 排序 + 搜索 + 无限滚动【搜索后端已完成，UI 后置】
-- [ ] 详情页：图片（缩放/预加载）、视频播放器（手势/倍速/时间轴标记）【后置】
-- [ ] 推荐流 + 排行榜（调用 M3 前先用热度排序占位）【热度占位为后端项，其余后置】
+- [x] 列表页：网格 + 日期分组 + 筛选面板 + 排序 + 搜索 + 无限滚动（2026-08-29：AllAssetsPage URL searchParams 状态 + q 防抖 + FilterSheet + GroupedAssetGrid；修复 31 个中间态构建报错后冒烟通过）
+- [x] 详情页：图片（缩放/预加载）、视频播放器（手势/倍速/时间轴标记）（2026-08-29：DetailPage 组装——ImageViewer/VideoPlayer 两态+chrome 互动行+TagManager/InfoSheet/MoveDialog/删除确认+批次导航 replace+open/dwell 打点；key=assetId 复位模式；修复 MoveDialog 目录树缺 libraryId 必填参数的接线 bug）
+- [x] 推荐流 + 排行榜（调用 M3 前先用热度排序占位）（2026-08-29：RecommendPage 三 Tab——推荐（本地轮转换一批）/浏览热度/收藏 cursor 无限滚动；undefined 保护修复）
   - [x] 后端：推荐流热度占位端点（2026-08-29：viewCount 降序复用 browse.sql 既有排序键，seed 参数 M2 忽略、M3 十维算法接入时只换实现；3 用例）
-- [ ] 上传（拖拽 + 文件选择 + 进度）与文件整理（移动/重命名/回收站）【端点接线为后端项，UI 后置】
+- [x] 上传（拖拽 + 文件选择 + 进度）与文件整理（移动/重命名/回收站）（2026-08-29：OrganizePage（库选择/DirTree/新建目录/DropZone+队列）+ TrashPage（恢复/单删/清空全二次确认）+ DetailPage 更多操作接 MoveDialog；上传 UI 交互冒烟受环境限制，XHR 通道与服务端链路已验证 201）
   - [x] 后端：移动/重命名端点 + 删除→回收站 + 回收站列表/恢复/物理删除/清空五端点（2026-08-27：httpapi/filing.go + trash.go；身份保持、冲突 409、恢复冲突自动重命名、TrashMeta 扩 LibraryID/MediaType、遍历两遍式 os.Root 防 TOCTOU；12 用例全过、golangci 0 issues；恢复语义与已知限制入 DOMAIN_RULES §9）
   - [x] 后端：上传端点（2026-08-29：流式接收 + 四道校验 + config upload.max_bytes（默认 2GB，env QIMENG_UPLOAD_MAX_BYTES）+ 冲突自动重命名 + 视频探测同 scanner 语义 + media_type 用 scanner.ClassifyMedia 唯一口径；协议补 libraryId 必填参数（多库定位）并 make sdk 三端重建；upload.done 事件以最小载荷发布、SSE 载荷 schema 待补；7 用例）
   - [x] 后端：目录树端点（2026-08-29：GET 遍历磁盘（目录是文件系统现实，空目录可作整理目标）+ POST 幂等新建 + 穿越拒绝；3 用例）
-- [ ] 标签/收藏/点赞交互【端点接线为后端项，交互 UI 后置】
+- [x] 标签/收藏/点赞交互（2026-08-29：TagManager 弹窗（当前/其他分组+新建+级联删除确认）/useLike 基线/useFavorite 乐观更新；详情页冒烟通过）
   - [x] 后端：标签池/资产标签（替换式，事务）/时间轴标签三件套（2026-08-29：store 新增 tags.sql 十查询（sqlc 注释须纯 ASCII——多字节文本使解析器报错，已验证）；重名 409、删除级联、跨资产时间轴删除隔离；6 用例）
 - [x] sysmon 接线：/metrics、/system/status（PerCore 快照补进协议 + make sdk；采集层 M1 已提前交付）（2026-08-27：协议补 perCore → make sdk-go → httpapi/system.go 两端点接线（Bearer 鉴权、未装配 503、部分采集失败仍 200）→ main/wire 装配（挂载点动态=DataDir+全部库根、version 常量单一来源）→ 7 用例 + 真机冒烟（20 核差分/真实磁盘容量/metrics 文本输出）全过）
-- [ ] 监控仪表盘 `/admin`（OBSERVABILITY.md 内置指标）【后置】
-- [ ] PWA：可安装、离线壳【后置】
+- [x] 监控仪表盘 `/admin`（OBSERVABILITY.md 内置指标）（2026-08-29：Dashboard 修复 data 解构后真机数据渲染确认——perCore/内存/磁盘/运行时长/网络速率 sparkline）
+- [x] PWA：可安装、离线壳（2026-08-29：vite-plugin-pwa autoUpdate + navigateFallback + denylist /api + 图标全套生成；sw.js 产物构建确认）
 
 **验收**：日常"浏览-看图看视频-整理"全部在浏览器完成；Lighthouse PWA 可安装；手机浏览器体验流畅；golangci-lint 门禁绿、生成物不手改、新迁移只加文件、决策先写 ADR。
 

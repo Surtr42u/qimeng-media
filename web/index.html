@@ -4,8 +4,36 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>qimeng-web</title>
+    <link rel="apple-touch-icon" href="/apple-touch-icon-180x180.png" />
+    <!-- viewport-fit=cover：PWA 全屏场景下内容铺满刘海/圆角区域，配合 CSS env(safe-area-inset-*) -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="description" content="绮梦影库：媒体全存 NAS 的 Web 客户端，多设备随时随地浏览你的媒体库" />
+    <!-- PWA meta：iOS 添加到主屏幕后按独立应用启动（无地址栏，黑色半透明状态栏贴合沉浸设计） -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="绮梦影库" />
+    <!-- 初始浅色；暗色值由下方内联脚本按系统主题切换（浏览器对 theme-color 只取单值，无法写 CSS 变量） -->
+    <meta name="theme-color" content="#ffffff" />
+    <title>绮梦影库</title>
+    <script>
+      // 首帧防闪白 + theme-color 同步：在应用 JS 加载前设置 html.dark，
+      // 避免暗色用户看到白屏闪烁；系统主题变化时同步 class 与 meta。
+      // 与 main.tsx 的 matchMedia 逻辑双写——此处保证首帧，main.tsx 保证后续变更。
+      // 色值：dark #0a0a0a = oklch(0.145 0 0)（Tailwind neutral-950，index.css .dark --background）。
+      ;(function () {
+        var query = window.matchMedia('(prefers-color-scheme: dark)')
+        function apply(dark) {
+          document.documentElement.classList.toggle('dark', dark)
+          var meta = document.querySelector('meta[name="theme-color"]')
+          if (meta) meta.setAttribute('content', dark ? '#0a0a0a' : '#ffffff')
+        }
+        apply(query.matches)
+        query.addEventListener('change', function (event) {
+          apply(event.matches)
+        })
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

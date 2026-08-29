@@ -40,8 +40,9 @@ type AssetSearchText struct {
 }
 
 type AssetTag struct {
-	AssetID string
-	TagID   string
+	AssetID   string
+	TagID     string
+	CreatedAt string
 }
 
 type AssetsFt struct {
@@ -65,6 +66,12 @@ type DailyShown struct {
 type Favorite struct {
 	AssetID   string
 	CreatedAt string
+}
+
+type KvSetting struct {
+	Key       string
+	Value     string
+	UpdatedAt string
 }
 
 type Library struct {
