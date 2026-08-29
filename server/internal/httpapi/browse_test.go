@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -110,6 +111,7 @@ type testEnv struct {
 	ts      *httptest.Server
 	token   string
 	q       *db.Queries
+	conn    *sql.DB
 	libID   string
 	clock   *fakeClock
 	media   string // 库根目录
@@ -209,7 +211,7 @@ func newTestEnv(t *testing.T) *testEnv {
 	ts := httptest.NewServer(apisrv.Handler())
 	t.Cleanup(ts.Close)
 
-	env := &testEnv{ts: ts, q: q, libID: lib.ID, clock: clock, media: media, dataDir: dataDir, cfg: cfg}
+	env := &testEnv{ts: ts, q: q, conn: conn, libID: lib.ID, clock: clock, media: media, dataDir: dataDir, cfg: cfg}
 	env.setupAndSeed(t, fscan)
 	return env
 }

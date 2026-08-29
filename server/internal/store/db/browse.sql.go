@@ -78,6 +78,14 @@ WHERE
             WHEN 'gt50m'   THEN a.size_bytes >= 52428800
             ELSE 1
         END))
+    -- Full-text search (DOMAIN_RULES 3) -- keep in sync with the two list
+    -- queries above (same AND clause).
+    AND (?18 IS NULL OR NOT EXISTS (
+        SELECT 1 FROM json_each(?18) qk
+        WHERE NOT EXISTS (
+            SELECT 1 FROM assets_fts f
+            WHERE f.rowid = a.rowid
+              AND instr(lower(f.all_text), lower(qk.value)) > 0)))
 `
 
 type CountAssetsFilteredParams struct {
@@ -98,6 +106,7 @@ type CountAssetsFilteredParams struct {
 	ViewRange      interface{}
 	PlayRange      interface{}
 	SizeRange      interface{}
+	QJson          interface{}
 }
 
 // Same filter matrix minus cursor/order/limit (totalMatched field of
@@ -122,6 +131,7 @@ func (q *Queries) CountAssetsFiltered(ctx context.Context, arg CountAssetsFilter
 		arg.ViewRange,
 		arg.PlayRange,
 		arg.SizeRange,
+		arg.QJson,
 	)
 	var count int64
 	err := row.Scan(&count)
@@ -416,8 +426,16 @@ WHERE
             WHEN 'gt50m'   THEN a.size_bytes >= 52428800
             ELSE 1
         END))
+    -- Full-text search (DOMAIN_RULES 3) -- keep in sync with the DESC
+    -- variant above (same AND clause; see its comment for semantics).
+    AND (?19 IS NULL OR NOT EXISTS (
+        SELECT 1 FROM json_each(?19) qk
+        WHERE NOT EXISTS (
+            SELECT 1 FROM assets_fts f
+            WHERE f.rowid = a.rowid
+              AND instr(lower(f.all_text), lower(qk.value)) > 0)))
     -- keyset cursor (ASC variant).
-    AND (?19 IS NULL
+    AND (?20 IS NULL
         OR (CASE
                 WHEN ?1 = 'fileDate'  THEN a.mtime
                 WHEN ?1 = 'name'      THEN a.file_name
@@ -425,7 +443,7 @@ WHERE
                 WHEN ?1 = 'viewCount' THEN printf('%020d', (SELECT COUNT(*) FROM view_events v6 WHERE v6.asset_id = a.asset_id AND v6.kind = 'open'))
                 WHEN ?1 = 'playCount' THEN printf('%020d', (SELECT COUNT(*) FROM view_events v7 WHERE v7.asset_id = a.asset_id AND v7.kind = 'play'))
                 ELSE a.created_at
-            END) > ?19
+            END) > ?20
         OR ((CASE
                 WHEN ?1 = 'fileDate'  THEN a.mtime
                 WHEN ?1 = 'name'      THEN a.file_name
@@ -433,10 +451,10 @@ WHERE
                 WHEN ?1 = 'viewCount' THEN printf('%020d', (SELECT COUNT(*) FROM view_events v6 WHERE v6.asset_id = a.asset_id AND v6.kind = 'open'))
                 WHEN ?1 = 'playCount' THEN printf('%020d', (SELECT COUNT(*) FROM view_events v7 WHERE v7.asset_id = a.asset_id AND v7.kind = 'play'))
                 ELSE a.created_at
-            END) = ?19
-            AND a.asset_id > ?20))
+            END) = ?20
+            AND a.asset_id > ?21))
 ORDER BY sort_key ASC, a.asset_id ASC
-LIMIT ?21
+LIMIT ?22
 `
 
 type ListAssetsFilteredAscParams struct {
@@ -458,6 +476,7 @@ type ListAssetsFilteredAscParams struct {
 	ViewRange      interface{}
 	PlayRange      interface{}
 	SizeRange      interface{}
+	QJson          interface{}
 	CursorKey      interface{}
 	CursorID       sql.NullString
 	RowLimit       int64
@@ -504,6 +523,7 @@ func (q *Queries) ListAssetsFilteredAsc(ctx context.Context, arg ListAssetsFilte
 		arg.ViewRange,
 		arg.PlayRange,
 		arg.SizeRange,
+		arg.QJson,
 		arg.CursorKey,
 		arg.CursorID,
 		arg.RowLimit,
@@ -649,9 +669,25 @@ WHERE
             WHEN 'gt50m'   THEN a.size_bytes >= 52428800
             ELSE 1
         END))
+    -- Full-text search (DOMAIN_RULES 3): q is split on spaces by the
+    -- caller (internal/search) into a JSON array; keywords are
+    -- AND-combined and each one must substring-match at least one
+    -- dimension (file/folder/tags/author/characters/source). instr +
+    -- lower is a literal substring match: LIKE wildcards %/_ in user
+    -- input have no magic meaning, and ASCII case is folded by lower().
+    -- assets_fts is maintained by triggers (migrations/0002_search_fts);
+    -- the trigram index currently only backs fast terms -- the instr
+    -- scan is bounded by library size, measured ~100ms @ 30k rows
+    -- (2026-08-29); revisit with MATCH if profiling says so.
+    AND (?19 IS NULL OR NOT EXISTS (
+        SELECT 1 FROM json_each(?19) qk
+        WHERE NOT EXISTS (
+            SELECT 1 FROM assets_fts f
+            WHERE f.rowid = a.rowid
+              AND instr(lower(f.all_text), lower(qk.value)) > 0)))
     -- keyset cursor (DESC variant): strict (sort_key, asset_id) tuple
     -- comparison. The sort_key CASE repeats inline (parser rule 3).
-    AND (?19 IS NULL
+    AND (?20 IS NULL
         OR (CASE
                 WHEN ?1 = 'fileDate'  THEN a.mtime
                 WHEN ?1 = 'name'      THEN a.file_name
@@ -659,7 +695,7 @@ WHERE
                 WHEN ?1 = 'viewCount' THEN printf('%020d', (SELECT COUNT(*) FROM view_events v6 WHERE v6.asset_id = a.asset_id AND v6.kind = 'open'))
                 WHEN ?1 = 'playCount' THEN printf('%020d', (SELECT COUNT(*) FROM view_events v7 WHERE v7.asset_id = a.asset_id AND v7.kind = 'play'))
                 ELSE a.created_at
-            END) < ?19
+            END) < ?20
         OR ((CASE
                 WHEN ?1 = 'fileDate'  THEN a.mtime
                 WHEN ?1 = 'name'      THEN a.file_name
@@ -667,10 +703,10 @@ WHERE
                 WHEN ?1 = 'viewCount' THEN printf('%020d', (SELECT COUNT(*) FROM view_events v6 WHERE v6.asset_id = a.asset_id AND v6.kind = 'open'))
                 WHEN ?1 = 'playCount' THEN printf('%020d', (SELECT COUNT(*) FROM view_events v7 WHERE v7.asset_id = a.asset_id AND v7.kind = 'play'))
                 ELSE a.created_at
-            END) = ?19
-            AND a.asset_id < ?20))
+            END) = ?20
+            AND a.asset_id < ?21))
 ORDER BY sort_key DESC, a.asset_id DESC
-LIMIT ?21
+LIMIT ?22
 `
 
 type ListAssetsFilteredDescParams struct {
@@ -692,6 +728,7 @@ type ListAssetsFilteredDescParams struct {
 	ViewRange      interface{}
 	PlayRange      interface{}
 	SizeRange      interface{}
+	QJson          interface{}
 	CursorKey      interface{}
 	CursorID       sql.NullString
 	RowLimit       int64
@@ -790,6 +827,7 @@ func (q *Queries) ListAssetsFilteredDesc(ctx context.Context, arg ListAssetsFilt
 		arg.ViewRange,
 		arg.PlayRange,
 		arg.SizeRange,
+		arg.QJson,
 		arg.CursorKey,
 		arg.CursorID,
 		arg.RowLimit,

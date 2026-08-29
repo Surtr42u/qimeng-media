@@ -150,6 +150,22 @@ WHERE
             WHEN 'gt50m'   THEN a.size_bytes >= 52428800
             ELSE 1
         END))
+    -- Full-text search (DOMAIN_RULES 3): q is split on spaces by the
+    -- caller (internal/search) into a JSON array; keywords are
+    -- AND-combined and each one must substring-match at least one
+    -- dimension (file/folder/tags/author/characters/source). instr +
+    -- lower is a literal substring match: LIKE wildcards %/_ in user
+    -- input have no magic meaning, and ASCII case is folded by lower().
+    -- assets_fts is maintained by triggers (migrations/0002_search_fts);
+    -- the trigram index currently only backs fast terms -- the instr
+    -- scan is bounded by library size, measured ~100ms @ 30k rows
+    -- (2026-08-29); revisit with MATCH if profiling says so.
+    AND (sqlc.narg(q_json) IS NULL OR NOT EXISTS (
+        SELECT 1 FROM json_each(sqlc.narg(q_json)) qk
+        WHERE NOT EXISTS (
+            SELECT 1 FROM assets_fts f
+            WHERE f.rowid = a.rowid
+              AND instr(lower(f.all_text), lower(qk.value)) > 0)))
     -- keyset cursor (DESC variant): strict (sort_key, asset_id) tuple
     -- comparison. The sort_key CASE repeats inline (parser rule 3).
     AND (sqlc.narg(cursor_key) IS NULL
@@ -257,6 +273,14 @@ WHERE
             WHEN 'gt50m'   THEN a.size_bytes >= 52428800
             ELSE 1
         END))
+    -- Full-text search (DOMAIN_RULES 3) -- keep in sync with the DESC
+    -- variant above (same AND clause; see its comment for semantics).
+    AND (sqlc.narg(q_json) IS NULL OR NOT EXISTS (
+        SELECT 1 FROM json_each(sqlc.narg(q_json)) qk
+        WHERE NOT EXISTS (
+            SELECT 1 FROM assets_fts f
+            WHERE f.rowid = a.rowid
+              AND instr(lower(f.all_text), lower(qk.value)) > 0)))
     -- keyset cursor (ASC variant).
     AND (sqlc.narg(cursor_key) IS NULL
         OR (CASE
@@ -349,7 +373,15 @@ WHERE
             WHEN 'm10to50' THEN a.size_bytes >= 10485760 AND a.size_bytes < 52428800
             WHEN 'gt50m'   THEN a.size_bytes >= 52428800
             ELSE 1
-        END));
+        END))
+    -- Full-text search (DOMAIN_RULES 3) -- keep in sync with the two list
+    -- queries above (same AND clause).
+    AND (sqlc.narg(q_json) IS NULL OR NOT EXISTS (
+        SELECT 1 FROM json_each(sqlc.narg(q_json)) qk
+        WHERE NOT EXISTS (
+            SELECT 1 FROM assets_fts f
+            WHERE f.rowid = a.rowid
+              AND instr(lower(f.all_text), lower(qk.value)) > 0)));
 
 -- GetAssetWithLibrary: detail/media-serving join -- serving /media/**
 -- needs the library root to rebuild the absolute path. Explicit column

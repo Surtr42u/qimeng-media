@@ -34,9 +34,19 @@ type AssetCharacter struct {
 	CharacterName string
 }
 
+type AssetSearchText struct {
+	AssetID string
+	AllText interface{}
+}
+
 type AssetTag struct {
 	AssetID string
 	TagID   string
+}
+
+type AssetsFt struct {
+	AllText string
+	AssetID string
 }
 
 type Author struct {

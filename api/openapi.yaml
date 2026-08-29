@@ -72,7 +72,8 @@ paths:
         业务事件 data 为 JSON，载荷类型见 components/schemas：
         - scan.progress   → ScanProgressEvent
         - library.changed → LibraryChangedEvent
-        - thumbnail.progress / upload.done → 载荷契约待对应功能接线时补入本文件
+        - thumbnail.progress → 载荷契约待对应功能接线时补入本文件
+        - upload.done → UploadDoneEvent
       responses:
         "200": { description: text/event-stream }
 
@@ -102,7 +103,7 @@ paths:
         - { name: yearFrom,    in: query, schema: { type: integer } }
         - { name: yearTo,      in: query, schema: { type: integer } }
         - { name: favorite,    in: query, schema: { type: boolean } }
-        - { name: q,           in: query, schema: { type: string }, description: 全文搜索（FTS5：文件名/标签/作者/出处） }
+        - { name: q,           in: query, schema: { type: string }, description: 全文搜索（空格分词；多词 AND；子串匹配文件名/文件夹路径/标签/作者/角色/出处任一维度；与全部筛选叠加） }
         - { name: groupByDate, in: query, schema: { type: boolean, default: true }, description: 按日期分组返回（DOMAIN_RULES §8 标签规则） }
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/AssetPage" } } } }
@@ -620,6 +621,12 @@ components:
         updated:   { type: integer }
         moved:     { type: integer }
         removed:   { type: integer }
+    UploadDoneEvent:
+      type: object
+      description: upload.done 事件 data 载荷。字段与 server/internal/events/events_events.go 的 UploadDoneEvent 结构体一一对应，改动必须双同步（协议先行：先改本文件再改代码）。
+      required: [assetId]
+      properties:
+        assetId: { type: string, format: uuid, description: 已入库资产 ID（下载 SDK 代码项目的 assetId） }
 
     RecommendPrefs:
       type: object

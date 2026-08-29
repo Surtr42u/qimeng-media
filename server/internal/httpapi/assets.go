@@ -17,6 +17,7 @@ import (
 
 	"qimeng-media/server/internal/auth"
 	"qimeng-media/server/internal/httpapi/gen"
+	"qimeng-media/server/internal/search"
 	"qimeng-media/server/internal/store"
 	"qimeng-media/server/internal/store/db"
 	"qimeng-media/server/internal/thumbnail"
@@ -105,6 +106,7 @@ type assetFilters struct {
 	ViewRange      any
 	PlayRange      any
 	SizeRange      any
+	QJson          any
 }
 
 // newAssetFilters 把 openapi 参数映射成筛选集。语义备注：
@@ -170,6 +172,11 @@ func newAssetFilters(params gen.GetApiV1AssetsParams) assetFilters {
 	if params.SizeRange != nil {
 		f.SizeRange = nullStr(string(*params.SizeRange))
 	}
+	if params.Q != nil {
+		// 全文搜索：词法与语义（空格分词、多词 AND）见 search.ParseQuery；
+		// 谓词语义（instr 子串）见 browse.sql 的 q_json 注释。
+		f.QJson = jsonString(search.ParseQuery(*params.Q))
+	}
 	return f
 }
 
@@ -211,8 +218,8 @@ func (s *Server) GetApiV1Assets(w http.ResponseWriter, r *http.Request, params g
 		}
 		cur = c
 	}
-	// q（全文搜索）：FTS5 索引在 M2/M3 接入，M1 收到即忽略、不报错——
-	// 前端可以先带参数，服务端能力就绪后自动生效。
+	// q（全文搜索）：语义与词法见 search.ParseQuery 与 DOMAIN_RULES §3；
+	// 谓词在 browse.sql 三查询内，与全部筛选叠加生效（AND）。
 	// groupByDate：AssetPage 响应结构无分组字段，日期分组标签
 	//（DOMAIN_RULES §8）由客户端按 modifiedAt 折叠，服务端无动作。
 	filters := newAssetFilters(params)

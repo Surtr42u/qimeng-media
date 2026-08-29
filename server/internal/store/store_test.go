@@ -63,6 +63,32 @@ func tableExists(t *testing.T, conn *sql.DB, table string) bool {
 	return n > 0
 }
 
+// searchObjects 是 0002 migration 创建的对象（FTS 表/聚合视图/同步触发器）。
+type schemaObj struct {
+	typ  string
+	name string
+}
+
+var searchObjects = []schemaObj{
+	{"trigger", "assets_fts_ai"}, {"trigger", "assets_fts_au"}, {"trigger", "assets_fts_ad"},
+	{"trigger", "asset_tags_fts_ai"}, {"trigger", "asset_tags_fts_ad"}, {"trigger", "tags_fts_u"},
+	{"trigger", "asset_characters_fts_ai"}, {"trigger", "asset_characters_fts_ad"},
+	{"trigger", "asset_authors_fts_ai"}, {"trigger", "asset_authors_fts_ad"}, {"trigger", "authors_fts_u"},
+	{"table", "assets_fts"}, {"view", "asset_search_text"},
+}
+
+func objExists(t *testing.T, conn *sql.DB, typ, name string) bool {
+	t.Helper()
+	var n int
+	err := conn.QueryRow(
+		"SELECT COUNT(*) FROM sqlite_master WHERE type = ? AND name = ?", typ, name,
+	).Scan(&n)
+	if err != nil {
+		t.Fatalf("查询 sqlite_master 失败: %v", err)
+	}
+	return n > 0
+}
+
 func TestOpenAndMigrateCreatesAllTables(t *testing.T) {
 	conn, _ := openTestDB(t)
 	for _, table := range businessTables {
@@ -205,11 +231,25 @@ func idForIndex(i int) string {
 }
 
 // TestMigrateDownThenUp：down migration 必须可执行（生产禁用，测试与灾备依赖），
-// 且 down 后能再次 up（幂等重建）。
+// 且 down 后能再次 up（幂等重建）。migration 演进后回退步数随之变化：
+// 第一步验证 0002 down（FTS 对象删除、业务表保留），第二步验证 0001 down（业务表全删）。
 func TestMigrateDownThenUp(t *testing.T) {
 	conn, _ := openTestDB(t) // 已 up
 	if err := MigrateDown(conn, 1); err != nil {
 		t.Fatalf("MigrateDown 失败: %v", err)
+	}
+	for _, obj := range searchObjects {
+		if objExists(t, conn, obj.typ, obj.name) {
+			t.Errorf("down 后 0002 对象 %s %s 仍存在（down.sql 缺 DROP）", obj.typ, obj.name)
+		}
+	}
+	for _, table := range businessTables {
+		if !tableExists(t, conn, table) {
+			t.Errorf("0002 down 后业务表 %s 应保留（0001 未回滚）", table)
+		}
+	}
+	if err := MigrateDown(conn, 1); err != nil {
+		t.Fatalf("MigrateDown 第二次失败: %v", err)
 	}
 	for _, table := range businessTables {
 		if tableExists(t, conn, table) {

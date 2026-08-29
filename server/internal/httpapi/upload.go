@@ -171,9 +171,9 @@ func (s *Server) PostApiV1AssetsUpload(w http.ResponseWriter, r *http.Request, p
 		s.internalErr(w, "入库上传资产", err)
 		return
 	}
-	// upload.done 载荷契约（assetId 字符串）待协议补 schema（events/bus.go
-	// 预留说明）；先以最小载荷发布，SSE 客户端据此做上传完成刷新。
-	if err := s.bus.Publish(events.Event{Topic: events.TopicUploadDone, Payload: asset.AssetID}); err != nil {
+	// upload.done 载荷型为 events.UploadDoneEvent（协议：UploadDoneEvent schema）；
+	// SSE 客户端据此做上传完成刵新。
+	if err := s.bus.Publish(events.Event{Topic: events.TopicUploadDone, Payload: events.UploadDoneEvent{AssetID: asset.AssetID}}); err != nil {
 		s.logger.Warn("发布上传完成事件失败", "err", err)
 	}
 	s.publishLibraryChanged()

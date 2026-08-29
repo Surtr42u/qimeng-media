@@ -37,4 +37,4 @@
 - **排序**：`sort` 七键（default/fileDate/addedDate/viewCount/playCount/sizeBytes/name）+ `order`，语义见 DOMAIN_RULES §3
 - **COS 隔离**：列表默认排除 COS 作者关联文件（独立入口），`includeCos=true` 才包含
 - **会话去重**：`ViewEventReport.sessionId` 由客户端生成（App 会话/浏览器标签页），服务端按 (assetId, kind, sessionId, 当日) 去重（DOMAIN_RULES §5）
-- **搜索与筛选叠加**：`q`（FTS5 全文）与全部筛选参数同时生效（DOMAIN_RULES §3）。实现状态：协议先行——`q` 参数 M1 已入协议；服务端 FTS5 检索 M2 实现（`server/internal/search` 包，当前仅 doc.go 空壳，见 PROJECT_PLAN M2）
+- **搜索与筛选叠加**：`q`（FTS5 全文）与全部筛选参数同时生效。实现状态：M2 已实现（2026-08-29）——迁移 0002 建 FTS5 trigram 索引+聚合视图+触发器全集自动同步，`internal/search` 负责关键词解析与索引重建；详细语义见 DOMAIN_RULES §3 全文搜索口径
