@@ -10,23 +10,32 @@
 3. 读 `docs/CHANGELOG.md`（历次变更 + AI 署名）
 4. 按任务类型查 `AGENTS.md` 的任务→文档路由表
 
-## 当前进度（2026-08-27）
+## 当前进度（2026-08-29）
 
-- **M0 地基 ✅**、**M1 服务端核心闭环 ✅**、**M2 后端先行接近完成**（用户拍板：M2 拆为后端先行、UI 后置，见 PROJECT_PLAN M2 节）
+- **M0 地基 ✅**、**M1 服务端核心闭环 ✅**、**M2 后端先行全部完成 ✅**（用户拍板：M2 拆为后端先行、UI 后置，见 PROJECT_PLAN M2 节）
 - **M2 后端先行全部完成 ✅**（2026-08-29）：sysmon 接线、移动/重命名、回收站五端点、推荐流热度占位、目录树、上传（四道校验+流式+上限配置，协议补 libraryId）、标签池/资产标签/时间轴标签、**FTS5 全文搜索收尾**（迁移 0002 trigram 索引+触发器自动同步；browse 三查询 q 谓词；search 包 ParseQuery/RebuildIndex；upload.done SSE 载荷 schema 补协议）
-- **下一步：M2 UI 段（布局/设计 token/列表页/详情页/仪表盘/PWA，见 PROJECT_PLAN M2 后置项）**，之后 M3（推荐算法 10 维/统计/SourceMatcher/作者体系/迁移端点）→ M4 Android → M5 部署
+- **分工定案（2026-08-29 用户拍板）**：M2 UI 段（Web 端）后置——用户另开 AI 路线承接；**M3 后端算法由下一会话/new AI 承接**（本会话只做了 M3 调研，见下方「M3 接手速览」）；未完成的 UI 段不阻塞 M3
+- **下一步：M3（推荐算法 10 维/统计/SourceMatcher/作者体系/迁移端点）** → M4 Android → M5 部署；M2 UI 段（Web 用户界面）与 M3 并行不依赖
 
-## M2 剩余后端任务（2026-08-29 更新：只剩一项）
+## M2 后端任务（2026-08-29：全部完成 ✅）
 
-| 任务 | 规模 | 落点提示 |
-|---|---|---|
-**M2 后端任务全部完成（2026-08-29）——见上方进度；FTS5 搜索与 upload.done 载荷 schema 均已交付。**
-
-M3 及以后的任务表不变（推荐算法/统计/SourceMatcher/作者体系/迁移端点），见 PROJECT_PLAN。
+**M2 后端任务全部完成**——见上方进度；FTS5 搜索与 upload.done 载荷 schema 均已交付（commit 338c281）。
 
 M3 及以后的任务表不变（推荐算法/统计/SourceMatcher/作者体系/迁移端点），见 PROJECT_PLAN。
 
-UI（M2 后半 + M4 Android）在上述后端完成后启动。
+## M3 接手速览（2026-08-29 调研结果，新 AI 直接可用）
+
+| 事项 | 现状 |
+|---|---|
+| 权威口径 | `docs/DOMAIN_RULES.md` §1（10 维公式+自适应回收+预设表+三个后处理）、§5（统计口径/趋势分桶）、§10（旧数据映射）——逐字遵守，改前必须用户确认 |
+| recommend 包 | `server/internal/recommend/` 仅 doc.go 空壳；statsby 同（`internal/stats/` 空壳）。**纯函数**（无 IO，ARCHITECTURE §5 边界） |
+| 协议端点 | 已全部定义：`GET /recommendations`（seed/limit/mediaType）、`GET /rankings`（period/limit）、`GET /stats/overview`、`GET /stats/trends`、`GET+PUT /recommendations/prefs`（RecommendPrefs 9 维 schema 已在协议 components）——`make sdk` 生成物三端已含 |
+| 热度占位 | `server/internal/httpapi/recommendations.go`（M2 占位：viewCount 降序，seed 忽略）——M3 只换实现，参数面不变；`recommendations_test.go` 已有占位用例 |
+| 数据基础 | daily_shown 表（每日展示计数，§1.4 输入）已在 0001 建好；view_events/likes/favorites 齐备；`db` 查询层已有 CountAssetEvents/SumBrowseSeconds/LastViewedAt 等 |
+| 旧项目测试（照译） | `<旧项目目录>\app\src\test\java\com\qimeng\media\`：MediaBrowserLogicRecommendTest.kt（推荐核心）、MediaBrowserLogicTest.kt、SourceMatcherTest.kt、AuthorImportUseCaseTest.kt、AppPrefsImportSanitizeTest.kt（迁移） |
+| 旧项目算法文档 | `<旧项目目录>\docs\GUIDE_ALGORITHM.md`（applyFilter/recommend/rank/SourceMatcher 细节）——只搬领域规则与公式逻辑，禁止搬 Kotlin 实现 |
+
+> 推荐算法照旧项目测试用例翻译：核心行为锁定点如「同 seed 可复现」「每日惩罚 -0.8×shownCount（随次数递增）」「视频/图片自然混合按剩余比例」「同分桶 ±0.05 打散」等，翻译时必须保留原测试断言语义。
 
 ## 怎么跑起来
 
