@@ -102,9 +102,17 @@ client.setConfig({
  * 设计为 async（吃 Promise）：queryFn/mutationFn 直接透传 SDK 调用即可，无需调用点 await 两次。
  */
 export async function unwrapSdkResult<T>(
-  res: Promise<{ data?: T; error?: unknown }>,
+  res: Promise<{ data?: T; error?: unknown; response?: Response }>,
 ): Promise<T> {
   const result = await res
-  if (result.error !== undefined) throw result.error
+  if (result.error !== undefined) {
+    // hey-api 把 HTTP 状态码放在原生 Response 上，错误体只有 {code,message}——
+    // 把 status 并进错误对象再抛，调用方才能按状态码分流（LoginGate 409=
+    // 已初始化切登录模式；实测缺失时 409 被误判成"初始化失败"）。
+    const status = result.response?.status
+    throw (status !== undefined && result.error && typeof result.error === 'object'
+      ? Object.assign(result.error as object, { status })
+      : result.error)
+  }
   return result.data as T
 }
