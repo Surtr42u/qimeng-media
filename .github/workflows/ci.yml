@@ -58,6 +58,9 @@ jobs:
       - uses: actions/setup-node@v5
         with: { node-version: 24 }
       - run: npm ci
+      # generated/ 不入库（.gitignore），类型检查前必须先从 openapi.yaml 重建——
+      # 否则 SDK 缺失被 TS 解析为 {}，连锁出百余个假类型错误（2026-08-30 CI 实测）
+      - run: npx openapi-ts -f src/api/openapi-ts.config.ts
       - run: npx tsc --noEmit
       - run: npm run build
 
