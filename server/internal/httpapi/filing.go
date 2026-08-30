@@ -99,6 +99,13 @@ func (s *Server) PostApiV1AssetsAssetIdMove(w http.ResponseWriter, r *http.Reque
 		s.internalErr(w, "更新资产路径", err)
 		return
 	}
+	// 改名/移动改变出处匹配输入而 size+mtime 不变（不会触发重 ingest），
+	// 写入路径显式重算富化；失败只警告——富化可由重扫自愈，不阻塞移动。
+	if err := s.scanner.EnrichAsset(r.Context(), row.LibraryID, row.AssetID); err != nil {
+		if !errors.Is(err, ErrScannerUnavailable) {
+			s.logger.Warn("移动后重算出处失败（可重扫自愈）", "err", err, "assetId", row.AssetID)
+		}
+	}
 	s.publishLibraryChanged()
 	w.WriteHeader(http.StatusOK)
 }

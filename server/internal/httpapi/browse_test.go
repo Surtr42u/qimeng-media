@@ -190,6 +190,7 @@ func newTestEnv(t *testing.T) *testEnv {
 	q := db.New(conn)
 	lib, err := q.CreateLibrary(context.Background(), db.CreateLibraryParams{
 		ID: uuid.NewString(), Name: "测试库", RootPath: media,
+		Kind:      "normal",
 		CreatedAt: store.FormatTimestamp(time.Now()),
 	})
 	if err != nil {
@@ -768,12 +769,9 @@ func TestProbesPageAndStubs(t *testing.T) {
 		t.Fatalf("验收页 Content-Type 不符：%s", ct)
 	}
 
-	// 未实现端点 → 501（样本取仍处占位态的 M3 端点；接线即从本处换样本）
-	resp = env.do(t, "GET", "/api/v1/authors", "")
-	closeBody(resp)
-	if resp.StatusCode != http.StatusNotImplemented {
-		t.Fatalf("未实现端点期望 501，得到 %d", resp.StatusCode)
-	}
+	// 未实现端点 → 501 的样本断言随作者体系三端点接线（M3）移除：
+	// openapi 已定义的全部端点至此均已实现，stubs.go 不再持有占位方法；
+	// 若未来新增未接线端点，恢复样本断言（notImplemented 语义见 errors.go）。
 }
 
 // ---------- 辅助 ----------
@@ -828,6 +826,7 @@ func newNoScannerEnv(t *testing.T) *testEnv {
 	q := db.New(conn)
 	lib, err := q.CreateLibrary(context.Background(), db.CreateLibraryParams{
 		ID: uuid.NewString(), Name: "空库", RootPath: media,
+		Kind:      "normal",
 		CreatedAt: store.FormatTimestamp(time.Now()),
 	})
 	if err != nil {

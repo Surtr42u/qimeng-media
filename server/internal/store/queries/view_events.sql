@@ -33,3 +33,42 @@ SELECT asset_id, kind, COUNT(*) AS cnt
 FROM view_events
 WHERE kind IN ('open', 'play')
 GROUP BY asset_id, kind;
+
+-- ExistsViewEventOnDay: session-level dedup check (DOMAIN_RULES 5 --
+-- one open/play per asset+kind+session within the same local calendar
+-- day). dayStart/dayEnd are the UTC timestamp strings (store format,
+-- migrations/0001 header) of the event's local day 00:00 and next-day
+-- 00:00; the RFC3339 TEXT layout keeps lexicographic order ==
+-- chronological order, so the two-sided bound is exact. dwell never
+-- consults this query: dwell seconds always accumulate.
+
+-- name: ExistsViewEventOnDay :one
+SELECT COUNT(*) FROM view_events
+WHERE asset_id = ? AND kind = ? AND session_id = ?
+  AND started_at >= ? AND started_at < ?;
+
+-- CountOpenEventsAll: lifetime open count (stats overview totalViews).
+-- view_events has no FK and may reference deleted assets (adr/0005);
+-- counting the stream directly is intentional -- deleted-asset history
+-- still counts as real views.
+
+-- name: CountOpenEventsAll :one
+SELECT COUNT(*) FROM view_events WHERE kind = 'open';
+
+-- CountOpenEventsOnDay: open count within [dayStart, dayEnd) timestamp
+-- strings (stats overview todayViews; bounds built by the caller from
+-- the server clock's local calendar day, same format as started_at).
+
+-- name: CountOpenEventsOnDay :one
+SELECT COUNT(*) FROM view_events
+WHERE kind = 'open' AND started_at >= ? AND started_at < ?;
+
+-- ListAllViewEvents: full-stream scan for the materialized-table
+-- rebuild (httpapi.RebuildAssetDailyStatsFromEvents). Append-only
+-- table, so id order == insertion order; seconds is NULL for open/play
+-- and only meaningful for dwell.
+
+-- name: ListAllViewEvents :many
+SELECT asset_id, kind, session_id, started_at, seconds
+FROM view_events
+ORDER BY id;

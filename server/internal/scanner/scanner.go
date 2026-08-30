@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 
 	"qimeng-media/server/internal/events"
+	"qimeng-media/server/internal/sourcematcher"
 	"qimeng-media/server/internal/store"
 	"qimeng-media/server/internal/store/db"
 	"qimeng-media/server/internal/thumbnail"
@@ -103,6 +104,10 @@ type Scanner struct {
 	// 根内部，walk 与 watch 都必须跳过它——否则缩略图缓存（webp 是白名单
 	// 格式）会被自己扫进库，系统自噬（M1 集成验收实测发现）。空串=不排除。
 	dataDir string
+	// matcher 出处/角色匹配引擎实例（DOMAIN_RULES §4「匹配发生在服务端
+	// 扫描入库时」的持有方，enrich.go 落地）。构造时从 kv_settings 装载
+	// 用户自定义出处；并发安全，按库/路径复用同一实例（匹配结果带缓存）。
+	matcher *sourcematcher.Matcher
 
 	gates sync.Map // libraryID -> *libraryGate
 }
@@ -114,7 +119,7 @@ func New(q *db.Queries, bus *events.Bus, logger *slog.Logger, dataDir string) *S
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Scanner{
+	s := &Scanner{
 		q:                q,
 		bus:              bus,
 		logger:           logger,
@@ -123,7 +128,14 @@ func New(q *db.Queries, bus *events.Bus, logger *slog.Logger, dataDir string) *S
 		progressMinEvery: time.Second,
 		watchDebounce:    DefaultDebounce,
 		dataDir:          dataDir,
+		matcher:          sourcematcher.New(0),
 	}
+	// 自定义出处装载（DOMAIN_RULES §4）：构造期一次性读取 kv_settings；
+	// 无记录/失败用空集（内置表完整可用），见 enrich.go loadCustomSources。
+	if names := loadCustomSources(context.Background(), q, logger); len(names) > 0 {
+		s.matcher.UpdateCustomSources(names)
+	}
+	return s
 }
 
 // gate 取（或建）某库的闸门。sync.Map 而非锁+map：Scan 是热路径上的
@@ -282,7 +294,10 @@ func (s *Scanner) Scan(ctx context.Context, lib db.Library) (ScanResult, error) 
 }
 
 // ingestFile 探测并入库单个文件（UpsertAsset 的身份保持语义——冲突时
-// asset_id/created_at 不覆盖——在 SQL 内实现，这里只负责组装参数）。
+// asset_id/created_at 不覆盖——在 SQL 内实现，这里只负责组装参数），并按
+// 库类型分派作者体系富化（enrich.go：normal=SourceMatcher 出处/角色，
+// cos=COS 作者目录映射）。全量扫描（Scan）与增量处理（watch.processFile）
+// 共用本路径，两条入口的富化行为天然一致。
 //
 // 元数据探测策略（M1）：
 //   - 仅 VIDEO 调 ffprobe（时长/宽高来自视频流，列表页与播放器立即要用）；
@@ -315,7 +330,12 @@ func (s *Scanner) ingestFile(ctx context.Context, lib db.Library, absPath, rel, 
 			params.Height = sql.NullInt64{Int64: int64(probeRes.Height), Valid: true}
 		}
 	}
-	return s.q.UpsertAsset(ctx, params)
+	// 作者体系富化分派（enrich.go；kind 由 0005 CHECK 约束只可能为
+	// normal/cos，default 按 normal 兜底）。
+	if lib.Kind == LibraryKindCos {
+		return s.ingestCosFile(ctx, params, rel)
+	}
+	return s.ingestNormalFile(ctx, params, info.Name())
 }
 
 // reconcile 扫描收尾对账：对"库内有记录但文件树没看到"的消失集执行

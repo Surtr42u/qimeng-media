@@ -68,6 +68,12 @@ func (a *scannerAdapter) release(libraryID string) {
 	a.mu.Unlock()
 }
 
+// EnrichAsset 单资产重富化（同步）：移动/重命名写入路径的伴随调用，
+// 快速纯计算+少量写，无需异步化。
+func (a *scannerAdapter) EnrichAsset(ctx context.Context, libraryID, assetID string) error {
+	return a.sc.EnrichAsset(ctx, libraryID, assetID)
+}
+
 // sysStatusAdapter 把 sysmon.Collector 适配成 httpapi.Deps.SysStatus 闭包。
 //
 // 挂载点每次快照现查库表（DataDir + 全部库根）：库增删后磁盘面板自动

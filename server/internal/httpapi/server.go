@@ -32,6 +32,11 @@ import (
 // scan.progress 主题推送）；返回错误表示"触发失败"（如扫描器未装配）。
 type Scanner interface {
 	Scan(ctx context.Context, libraryID string) error
+	// EnrichAsset 单资产重富化（出处/角色重算，M3 SourceMatcher）：
+	// 移动/重命名端点写入成功后调用——文件名变了而 size+mtime 没变，
+	// 扫描器不会重 ingest，必须由写入路径显式触发（失败调用方降级，
+	// 重扫自愈）。
+	EnrichAsset(ctx context.Context, libraryID, assetID string) error
 }
 
 // ErrScannerUnavailable 表示扫描器尚未装配（M1 占位实现返回它）。
@@ -47,6 +52,8 @@ var ErrScanAlreadyRunning = errors.New("httpapi: 该库扫描进行中")
 type noScanner struct{}
 
 func (noScanner) Scan(context.Context, string) error { return ErrScannerUnavailable }
+
+func (noScanner) EnrichAsset(context.Context, string, string) error { return ErrScannerUnavailable }
 
 // DefaultTokenTTL 是签名媒体直链的默认有效期（6h，docs/SECURITY.md 红线 5）。
 const DefaultTokenTTL = 6 * time.Hour

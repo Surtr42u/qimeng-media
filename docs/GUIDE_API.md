@@ -3,7 +3,7 @@
 > 本文是 `api/openapi.yaml`（协议宪法）的人读版导读：端点怎么用、机制怎么运作。
 > 传输结构的唯一权威是 openapi.yaml 本身；本文解释意图与用法，两者冲突以 openapi.yaml 为准。
 > 三端 SDK 由 `make sdk` 自动生成：Go 接口层（server/internal/httpapi/gen/）、TS 客户端（web/src/api/generated/）、Kotlin 客户端（android/sdk/）。生成物不入库，改协议后重跑即可。
-> 最后更新：2026-08-29（M2 UI 段随附后端：缩略图抽帧策略对齐 §11、标签排序、GET /sources 出处列表端点、SPA 托管与 /_debug/；协议 v0.1.0）
+> 最后更新：2026-08-30（M3 后端：统计/作者/SourceMatcher/迁移端点全量接线、事件会话去重落地、库 kind 参数；协议 v0.2.0 增量——LegacyBackupImport 17 段 schema、Library.kind）
 
 ## 全局约定
 
@@ -18,20 +18,20 @@
 | 分组 | 端点 | 说明 |
 |---|---|---|
 | 认证 | POST /auth/setup、POST /auth/verify | 首次设密码领 token（只显示一次）；校验 token |
-| 库管理 | GET/POST /libraries、POST /libraries/{id}/scan | 注册媒体目录、触发全量扫描（进度走 SSE） |
+| 库管理 | GET/POST /libraries、POST /libraries/{id}/scan | 注册媒体目录、触发全量扫描（进度走 SSE）；POST 可选 `kind`（normal 默认 / cos——COS 作者库按 `作者/作品/文件` 目录结构扫描建 cos_ 作者，DOMAIN_RULES §6） |
 | 实时推送 | GET /events | SSE：scan.progress / library.changed / thumbnail.progress / upload.done |
 | 资产浏览 | GET /assets、GET/DELETE /assets/{id}、GET /sources | 唯一列表口径（筛选/排序/搜索全参数化）；DELETE=进回收站；出处列表（按规范名分组的文件计数，fileCount 降序，name=null=无出处文件，默认排除 COS） |
 | 媒体文件 | GET /media/orig、/media/thumb（size=sm/md/lg） | 签名直链：原图/视频支持 Range 拖动，**查看永远发原件（无缩放副本）**；缩略图 immutable 缓存 |
 | 上传整理 | POST /assets/upload、POST /assets/{id}/move、GET/POST /dirs | 直传 NAS（流式；四道校验；libraryId 必填查询参数，同名自动重命名 "名 (2).ext"，上限 upload.max_bytes 默认 2GB）；移动/重命名保关联（目标冲突 409）；目录树与新建（幂等） |
 | 回收站 | GET /trash、POST /trash/{id}/restore、DELETE /trash/{id}、DELETE /trash | 恢复（冲突自动重命名）/单个物理删除/清空（均二次确认场景） |
-| 行为上报 | POST /events/view、PUT /assets/{id}/like、PUT /assets/{id}/favorite | ViewEvent 只追加（sessionId 会话去重）；点赞 toggle 每日一次；收藏布尔 |
+| 行为上报 | POST /events/view、PUT /assets/{id}/like、PUT /assets/{id}/favorite | ViewEvent 只追加（open/play 按 assetId+kind+sessionId+当日去重，dwell 不去重——秒数每次有效）；点赞 toggle 每日一次；收藏布尔；打点同步累加 asset_daily_stats 物化表（可由事件流重建） |
 | 标签 | GET/POST /tags、DELETE /tags/{id}、PUT /assets/{id}/tags | 全局池；删除级联清理关联；替换式绑定 |
 | 作者 | GET /authors、POST /authors/import-txt、PUT /authors/{id}/follow | 常规/COS 双体系（type 区分）；TXT 三格式自动识别统一重建；关注布尔 |
 | 时间轴 | GET/POST /assets/{id}/timeline-tags、DELETE /assets/{id}/timeline-tags/{tagId} | 视频内时间点标记，独立于文件标签 |
 | 推荐排行 | GET /recommendations、GET /rankings、GET/PUT /recommendations/prefs | 10 维算法（seed 控制打散）；纯热度排行（日/周/月/年/总）；9 维权重偏好 |
-| 统计 | GET /stats/overview、GET /stats/trends | 总览面板；趋势分桶（动态周/月/季全量不丢弃） |
+| 统计 | GET /stats/overview、GET /stats/trends | 总览面板（animated_image 计入 imageCount；计数直接数事件流，含已删资产历史——事件流无 FK 设计）；趋势按 asset_daily_stats 物化表（仅现存资产，随资产删除级联清理、可由事件流全量重建）；分桶：range=day/week/month/quarter/year 固定粒度，all 按数据跨度动态选粒度（≤12 周周 / 12 周~24 月月 / 更长季）全量不丢弃、总和守恒（DOMAIN_RULES §5） |
 | 系统 | /healthz、/readyz、/metrics、GET /system/status | 探针（healthz/readyz）免鉴权（openapi.yaml:374/380 `security: []`）；/metrics 与 /system/status 要求管理 token；负载/流量面板 |
-| 迁移 | POST /import/qimeng-backup | 旧版备份一次性导入，幂等 |
+| 迁移 | POST /import/qimeng-backup | 旧版备份一次性导入：作者/标签/关联/时间轴按唯一键 upsert，统计转 ViewEvent 回放（dailyBrowse 全量 + mediaStats 差额 + history 补漏）；幂等 = 同 exportedAtMillis 批次事件只回放一次 + 段级 upsert 不翻倍；scanSources/settings/albumRules 不导入进 warnings（TXT 请重走 import-txt） |
 
 ## 关键机制
 
@@ -40,3 +40,4 @@
 - **COS 隔离**：列表默认排除 COS 作者关联文件（独立入口），`includeCos=true` 才包含
 - **会话去重**：`ViewEventReport.sessionId` 由客户端生成（App 会话/浏览器标签页），服务端按 (assetId, kind, sessionId, 当日) 去重（DOMAIN_RULES §5）
 - **搜索与筛选叠加**：`q`（FTS5 全文）与全部筛选参数同时生效。实现状态：M2 已实现（2026-08-29）——迁移 0002 建 FTS5 trigram 索引+聚合视图+触发器全集自动同步，`internal/search` 负责关键词解析与索引重建；详细语义见 DOMAIN_RULES §3 全文搜索口径
+- **出处/角色富化**（M3）：扫描入库与移动/重命名时服务端按文件名匹配 130 组内置出处表（`internal/sourcematcher`），写 `assets.source` 与 `asset_characters`；未命中 source 为 NULL，显示层兜底"其他"。作者双体系（TXT 导入 + COS 目录扫描）见 DOMAIN_RULES §6，作者端点已全量接线（501 已清零）

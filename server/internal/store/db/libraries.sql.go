@@ -11,14 +11,15 @@ import (
 
 const createLibrary = `-- name: CreateLibrary :one
 
-INSERT INTO libraries (id, name, root_path, created_at) VALUES (?, ?, ?, ?)
-RETURNING id, name, root_path, created_at
+INSERT INTO libraries (id, name, root_path, kind, created_at) VALUES (?, ?, ?, ?, ?)
+RETURNING id, name, root_path, created_at, kind
 `
 
 type CreateLibraryParams struct {
 	ID        string
 	Name      string
 	RootPath  string
+	Kind      string
 	CreatedAt string
 }
 
@@ -31,6 +32,7 @@ func (q *Queries) CreateLibrary(ctx context.Context, arg CreateLibraryParams) (L
 		arg.ID,
 		arg.Name,
 		arg.RootPath,
+		arg.Kind,
 		arg.CreatedAt,
 	)
 	var i Library
@@ -39,6 +41,7 @@ func (q *Queries) CreateLibrary(ctx context.Context, arg CreateLibraryParams) (L
 		&i.Name,
 		&i.RootPath,
 		&i.CreatedAt,
+		&i.Kind,
 	)
 	return i, err
 }
@@ -57,7 +60,7 @@ func (q *Queries) DeleteLibrary(ctx context.Context, id string) error {
 }
 
 const getLibrary = `-- name: GetLibrary :one
-SELECT id, name, root_path, created_at FROM libraries WHERE id = ?
+SELECT id, name, root_path, created_at, kind FROM libraries WHERE id = ?
 `
 
 func (q *Queries) GetLibrary(ctx context.Context, id string) (Library, error) {
@@ -68,12 +71,13 @@ func (q *Queries) GetLibrary(ctx context.Context, id string) (Library, error) {
 		&i.Name,
 		&i.RootPath,
 		&i.CreatedAt,
+		&i.Kind,
 	)
 	return i, err
 }
 
 const listLibraries = `-- name: ListLibraries :many
-SELECT id, name, root_path, created_at FROM libraries ORDER BY created_at DESC
+SELECT id, name, root_path, created_at, kind FROM libraries ORDER BY created_at DESC
 `
 
 func (q *Queries) ListLibraries(ctx context.Context) ([]Library, error) {
@@ -90,6 +94,7 @@ func (q *Queries) ListLibraries(ctx context.Context) ([]Library, error) {
 			&i.Name,
 			&i.RootPath,
 			&i.CreatedAt,
+			&i.Kind,
 		); err != nil {
 			return nil, err
 		}
@@ -107,7 +112,7 @@ func (q *Queries) ListLibraries(ctx context.Context) ([]Library, error) {
 const updateLibrary = `-- name: UpdateLibrary :one
 
 UPDATE libraries SET name = ?, root_path = ? WHERE id = ?
-RETURNING id, name, root_path, created_at
+RETURNING id, name, root_path, created_at, kind
 `
 
 type UpdateLibraryParams struct {
@@ -127,6 +132,7 @@ func (q *Queries) UpdateLibrary(ctx context.Context, arg UpdateLibraryParams) (L
 		&i.Name,
 		&i.RootPath,
 		&i.CreatedAt,
+		&i.Kind,
 	)
 	return i, err
 }

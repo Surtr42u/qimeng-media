@@ -35,6 +35,7 @@ func newLibrary(t *testing.T, q *db.Queries) string {
 		ID:        uuid.NewString(),
 		Name:      "测试库",
 		RootPath:  "/media/test",
+		Kind:      "normal",
 		CreatedAt: FormatTimestamp(time.Now()),
 	})
 	if err != nil {
@@ -232,34 +233,52 @@ func idForIndex(i int) string {
 
 // TestMigrateDownThenUp：down migration 必须可执行（生产禁用，测试与灾备依赖），
 // 且 down 后能再次 up（幂等重建）。migration 演进后回退步数随之变化：
-// 第一步验证 0004 down（asset_tags.created_at 删除、0003 对象保留），
-// 第二步验证 0003 down（kv_settings 删除、0002 对象保留），
-// 第三步验证 0002 down（FTS 对象删除、业务表保留），
-// 第四步验证 0001 down（业务表全删）。
+// 第一步验证 0005 down（物化表/关注列/COS 库列删除、0004 对象保留），
+// 第二步验证 0004 down（asset_tags.created_at 删除、0003 对象保留），
+// 第三步验证 0003 down（kv_settings 删除、0002 对象保留），
+// 第四步验证 0002 down（FTS 对象删除、业务表保留），
+// 第五步验证 0001 down（业务表全删）。
 func TestMigrateDownThenUp(t *testing.T) {
 	conn, _ := openTestDB(t) // 已 up
+	// 第一步：0005 down（物化表/关注列/COS 库列删除、0004 对象保留）
 	if err := MigrateDown(conn, 1); err != nil {
 		t.Fatalf("MigrateDown 失败: %v", err)
+	}
+	if tableExists(t, conn, "asset_daily_stats") {
+		t.Error("0005 down 后 asset_daily_stats 仍存在（0005 down 缺 DROP）")
+	}
+	if columnExists(t, conn, "authors", "followed") {
+		t.Error("0005 down 后 authors.followed 仍存在（0005 down 缺 DROP COLUMN）")
+	}
+	if columnExists(t, conn, "libraries", "kind") {
+		t.Error("0005 down 后 libraries.kind 仍存在（0005 down 缺 DROP COLUMN）")
+	}
+	if !columnExists(t, conn, "asset_tags", "created_at") {
+		t.Error("0005 down 后 asset_tags.created_at 应保留（只回退了一个版本）")
+	}
+	// 第二步：0004 down（asset_tags.created_at 删除、0003 对象保留）
+	if err := MigrateDown(conn, 1); err != nil {
+		t.Fatalf("MigrateDown 第二次失败: %v", err)
 	}
 	if columnExists(t, conn, "asset_tags", "created_at") {
 		t.Error("0004 down 后 asset_tags.created_at 仍存在（0004 down 缺 DROP COLUMN）")
 	}
 	if !tableExists(t, conn, "kv_settings") {
-		t.Error("0004 down 后 kv_settings 应保留（只回退了一个版本）")
+		t.Error("0004 down 后 kv_settings 应保留（只回退了两个版本）")
 	}
 	if err := MigrateDown(conn, 1); err != nil {
-		t.Fatalf("MigrateDown 第二次失败: %v", err)
+		t.Fatalf("MigrateDown 第三次失败: %v", err)
 	}
 	if tableExists(t, conn, "kv_settings") {
 		t.Error("0003 down 后 kv_settings 仍存在（0003 down 缺 DROP）")
 	}
 	for _, obj := range searchObjects {
 		if !objExists(t, conn, obj.typ, obj.name) {
-			t.Errorf("0003 down 后 0002 对象 %s %s 应保留（只回退了两个版本）", obj.typ, obj.name)
+			t.Errorf("0003 down 后 0002 对象 %s %s 应保留（只回退了三个版本）", obj.typ, obj.name)
 		}
 	}
 	if err := MigrateDown(conn, 1); err != nil {
-		t.Fatalf("MigrateDown 第三次失败: %v", err)
+		t.Fatalf("MigrateDown 第四次失败: %v", err)
 	}
 	for _, obj := range searchObjects {
 		if objExists(t, conn, obj.typ, obj.name) {
@@ -272,7 +291,7 @@ func TestMigrateDownThenUp(t *testing.T) {
 		}
 	}
 	if err := MigrateDown(conn, 1); err != nil {
-		t.Fatalf("MigrateDown 第四次失败: %v", err)
+		t.Fatalf("MigrateDown 第五次失败: %v", err)
 	}
 	for _, table := range businessTables {
 		if tableExists(t, conn, table) {

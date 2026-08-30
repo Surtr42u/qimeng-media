@@ -3,7 +3,7 @@
 > 每个里程碑都是**可用闭环**（做完就能用/验收），不做"半成品堆叠"。开发顺序经过依赖推理，禁止跳级。
 > 通用纪律：每个功能完成 = 代码 + 测试 + 文档同步 + 门禁全绿，四件套缺一不可；门禁 = CI 四 job + golangci-lint（本机 `make lint` 同配置）。
 > 重构后新增纪律（ADR-0009/0010/0011）：**生成物不手改**（只改 openapi.yaml 后 make sdk）、**新迁移只加文件**（只加不改不删）、**重大决策先写 ADR**（并同步 docs/adr/INDEX.md）。
-> 最后更新：2026-08-27（M2 拆分后端先行/UI 后置 + sysmon 接线完成；2026-08-26 M2-M4 验收标准与底层重构对齐；2026-08-22 制定）
+> 最后更新：2026-08-30（M3 后端五项完成：推荐/统计/SourceMatcher/作者体系/迁移端点全量接线；2026-08-27 M2 拆分后端先行/UI 后置 + sysmon 接线完成；2026-08-26 M2-M4 验收标准与底层重构对齐；2026-08-22 制定）
 
 ## M0 · 地基（协议与工具链）
 
@@ -71,12 +71,12 @@
 
 **目标**：旧项目的灵魂（推荐与统计）在新系统复活。
 
-- [ ] recommend 模块：DOMAIN_RULES §1 全部公式 + 自适应权重 + 三个后处理机制 + 单测（照旧项目测试用例翻译）
-- [ ] stats 模块：ViewEvent 聚合、按天聚合物化、趋势分桶口径（§5）
-- [ ] SourceMatcher 移植：131 SourceGroup 检索表翻译 + 服务端入库时匹配 + 增补规范
-- [ ] 作者体系：TXT 三格式导入 + 统一重建语义 + COS 目录扫描双体系
-- [ ] 旧数据迁移端点（qimeng_backup.json，映射表 DOMAIN_RULES §10）
-- [ ] 推荐偏好设置页（9 维权重 + 4 预设）
+- [x] recommend 模块：DOMAIN_RULES §1 全部公式 + 自适应权重 + 三个后处理 + 单测（照旧项目测试用例翻译）（2026-08-29 随并行后端完成：`internal/recommend` 十维评分+权重回收+混合打散+排行，14 用例；2026-08-30 补同分桶打散测试；`/recommendations` `/rankings` `/recommendations/prefs` 端点接线）
+- [x] stats 模块：ViewEvent 聚合、按天聚合物化、趋势分桶口径（§5）（2026-08-30：migration 0005 建 asset_daily_stats 文件×天物化表（可由事件流全量重建）+ 打点路径同步累加 + open/play 会话去重；`internal/stats` BuildTrendBuckets 纯函数——周一对齐/动态分桶/总和守恒，旧项目 StatsFormatHelperTest 7 例全译+6 补充；/stats/overview /stats/trends 接线）
+- [x] SourceMatcher 移植：130 SourceGroup 检索表翻译 + 服务端入库时匹配 + 增补规范（2026-08-30：`internal/sourcematcher` 整表翻译（130 组/475 变体/1388 角色——旧文档记 131 系把 data class 定义行误计，已勘误 §4）+ 匹配引擎（长度降序前缀/角色剥离数字保护/多出处分段/缓存）；scanner 入库富化 + 移动/重命名显式重算；旧 23 例照译+7 新增）
+- [x] 作者体系：TXT 三格式导入 + 统一重建语义 + COS 目录扫描双体系（2026-08-30：`internal/authoring` 解析/匹配/authorId 生成（旧 AuthorImportUseCaseTest 13 例照译，分片存储系旧 Android CursorWindow 规避不实现）；authors.sql + /authors 三端点接线（列表/导入-txt 统一重建/关注）；scanner 按 libraries.kind 分派——normal SourceMatcher 富化、cos 目录结构建 cos_ 作者（migration 0005 加 kind 列））
+- [x] 旧数据迁移端点（qimeng_backup.json，映射表 DOMAIN_RULES §10）（2026-08-30：协议补 LegacyBackupImport 17 段 schema + LegacyImportResult（此前零建模）+ make sdk；实现：文件名匹配映射（folderName 消歧）/作者 cos_ 前缀保留/标签/时间轴/收藏/关注 upsert + 事件回放（dailyBrowse 全量+mediaStats 差额+history 补漏，总量守恒）+ 同批次幂等锚点（kv_settings）+ 不导入段进 warnings；4 用例）
+- [ ] 推荐偏好设置页（9 维权重 + 4 预设）（UI 段——按用户指示不动 UI，后置到 UI 路线；后端 GET/PUT /recommendations/prefs 已就绪）
 
 **验收**：迁移旧备份后，推荐/排行/统计行为与旧 App 口径一致（对比测试通过）；golangci-lint 门禁绿、生成物不手改、新迁移只加文件、决策先写 ADR。
 

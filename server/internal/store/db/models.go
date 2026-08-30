@@ -34,6 +34,14 @@ type AssetCharacter struct {
 	CharacterName string
 }
 
+type AssetDailyStat struct {
+	AssetID       string
+	Day           string
+	ViewCount     int64
+	PlayCount     int64
+	BrowseSeconds int64
+}
+
 type AssetSearchText struct {
 	AssetID string
 	AllText interface{}
@@ -55,6 +63,7 @@ type Author struct {
 	DisplayName string
 	Type        string
 	CreatedAt   string
+	Followed    int64
 }
 
 type DailyShown struct {
@@ -79,6 +88,7 @@ type Library struct {
 	Name      string
 	RootPath  string
 	CreatedAt string
+	Kind      string
 }
 
 type Like struct {

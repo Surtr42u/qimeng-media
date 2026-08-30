@@ -12,10 +12,18 @@ import (
 
 // PostApiV1EventsView 上报浏览事件。
 //
-// M1 简化：插入即 202，不做会话去重判断——去重口径（assetId+kind+
-// sessionId+当日，DOMAIN_RULES §5）在 M3 统计侧统一裁决，事件流保持
-// 只追加的原始记录（adr/0005：判定规则集中一处，不散落写入点）。
-// seconds 仅 dwell 事件携带，open/play 落库为 NULL。
+// 会话去重（DOMAIN_RULES §5「同一会话内只计一次」）：open/play 事件先查
+// ExistsViewEventOnDay（assetId+kind+sessionId+事件发生日），当日该会话
+// 已有同类事件 → 直接 202 不插入（横滑切走切回不重复计）。dwell 例外：
+// 停留时长每次都有效（时长是累加量而非计数，去重会丢真实停留时间），
+// 逐条插入并把秒数累加进物化表。
+//
+// 去重窗口与物化表 day 同源：都按 started_at 的本地日历日取界（而不是
+// 服务器当前时间），保证「当日已存在判定」与「聚合行落在哪一天」口径
+// 自洽——客户端传昨日时间即参与昨日的去重与昨日聚合行。
+//
+// 事件插入与 asset_daily_stats 累加在同一事务：物化表是事件流的缓存
+// （migrations/0005 表注释），半写状态会让统计口径漂移。
 func (s *Server) PostApiV1EventsView(w http.ResponseWriter, r *http.Request) {
 	var req gen.PostApiV1EventsViewJSONRequestBody
 	if !decodeJSON(w, r, &req) {
@@ -25,15 +33,63 @@ func (s *Server) PostApiV1EventsView(w http.ResponseWriter, r *http.Request) {
 	if req.Kind == gen.Dwell && req.Seconds != nil {
 		seconds = sql.NullInt64{Int64: int64(*req.Seconds), Valid: true}
 	}
-	if err := s.q.InsertViewEvent(r.Context(), db.InsertViewEventParams{
+	startedAt := store.FormatTimestamp(req.StartedAt)
+
+	// open/play 会话去重：当日同会话已有同类事件 → 原样 202（幂等语义）
+	if req.Kind == gen.Open || req.Kind == gen.Play {
+		dayStart, dayEnd := localDayBoundsUTC(req.StartedAt)
+		exists, err := s.q.ExistsViewEventOnDay(r.Context(), db.ExistsViewEventOnDayParams{
+			AssetID:     req.AssetId.String(),
+			Kind:        string(req.Kind),
+			SessionID:   req.SessionId,
+			StartedAt:   dayStart,
+			StartedAt_2: dayEnd,
+		})
+		if err != nil {
+			s.internalErr(w, "查询会话去重", err)
+			return
+		}
+		if exists > 0 {
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+	}
+
+	// 事务：事件流（唯一真相源）+ 物化聚合表同步累加
+	tx, err := s.conn.BeginTx(r.Context(), nil)
+	if err != nil {
+		s.internalErr(w, "开启事件事务", err)
+		return
+	}
+	defer func() { _ = tx.Rollback() }()
+	qtx := s.q.WithTx(tx)
+	if err := qtx.InsertViewEvent(r.Context(), db.InsertViewEventParams{
 		AssetID:   req.AssetId.String(),
 		Kind:      string(req.Kind),
 		SessionID: req.SessionId,
-		StartedAt: store.FormatTimestamp(req.StartedAt),
+		StartedAt: startedAt,
 		Seconds:   seconds,
 	}); err != nil {
-		s.logger.Error("写入浏览事件失败", "err", err)
-		writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
+		s.internalErr(w, "写入浏览事件", err)
+		return
+	}
+	var delta db.UpsertAssetDailyStatsParams
+	delta.AssetID = req.AssetId.String()
+	delta.Day = store.FormatDay(req.StartedAt)
+	switch req.Kind {
+	case gen.Open: // 图片 viewCount：当日同会话去重后 +1
+		delta.ViewCount = 1
+	case gen.Play: // 视频 playCount：当日同会话去重后 +1
+		delta.PlayCount = 1
+	default: // dwell：秒数累加（不去重，见函数头注释）
+		delta.BrowseSeconds = seconds.Int64
+	}
+	if err := qtx.UpsertAssetDailyStats(r.Context(), delta); err != nil {
+		s.internalErr(w, "累加按天统计", err)
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		s.internalErr(w, "提交浏览事件", err)
 		return
 	}
 	w.WriteHeader(http.StatusAccepted)

@@ -76,6 +76,7 @@ func (s *Server) GetApiV1Libraries(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		state := gen.LibraryScanState(s.scanStates.get(l.ID))
+		kind := gen.LibraryKind(l.Kind)
 		out = append(out, gen.Library{
 			Id:         &l.ID,
 			Name:       &l.Name,
@@ -84,6 +85,7 @@ func (s *Server) GetApiV1Libraries(w http.ResponseWriter, r *http.Request) {
 			ImageCount: &imageCount,
 			VideoCount: &videoCount,
 			ScanState:  &state,
+			Kind:       &kind,
 		})
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -123,10 +125,21 @@ func (s *Server) PostApiV1Libraries(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "DATA_DIR_CONFLICT", "库目录不能包含也不能位于服务端数据目录内")
 		return
 	}
+	// kind：openapi 缺省 normal；仅接受协议枚举值（生成物 Valid 校验），
+	// COS 作者库传 "cos"（DOMAIN_RULES §6 双体系，扫描分派依据）。
+	kind := "normal"
+	if req.Kind != nil {
+		if !req.Kind.Valid() {
+			writeErr(w, http.StatusBadRequest, "INVALID_PARAM", "kind 只允许 normal 或 cos")
+			return
+		}
+		kind = string(*req.Kind)
+	}
 	lib, err := s.q.CreateLibrary(r.Context(), db.CreateLibraryParams{
 		ID:        uuid.NewString(),
 		Name:      req.Name,
 		RootPath:  filepath.Clean(req.RootPath),
+		Kind:      kind,
 		CreatedAt: store.FormatTimestamp(s.now()),
 	})
 	if err != nil {
@@ -141,12 +154,14 @@ func (s *Server) PostApiV1Libraries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id, name, root := lib.ID, lib.Name, lib.RootPath
+	createdKind := gen.LibraryKind(lib.Kind)
 	state := gen.LibraryScanState("idle")
 	writeJSON(w, http.StatusCreated, gen.Library{
 		Id:        &id,
 		Name:      &name,
 		RootPath:  &root,
 		ScanState: &state,
+		Kind:      &createdKind,
 	})
 }
 

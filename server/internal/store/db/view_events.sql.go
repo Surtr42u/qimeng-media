@@ -92,6 +92,78 @@ func (q *Queries) CountAssetEvents(ctx context.Context, assetID string) ([]Count
 	return items, nil
 }
 
+const countOpenEventsAll = `-- name: CountOpenEventsAll :one
+
+SELECT COUNT(*) FROM view_events WHERE kind = 'open'
+`
+
+// CountOpenEventsAll: lifetime open count (stats overview totalViews).
+// view_events has no FK and may reference deleted assets (adr/0005);
+// counting the stream directly is intentional -- deleted-asset history
+// still counts as real views.
+func (q *Queries) CountOpenEventsAll(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countOpenEventsAll)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countOpenEventsOnDay = `-- name: CountOpenEventsOnDay :one
+
+SELECT COUNT(*) FROM view_events
+WHERE kind = 'open' AND started_at >= ? AND started_at < ?
+`
+
+type CountOpenEventsOnDayParams struct {
+	StartedAt   string
+	StartedAt_2 string
+}
+
+// CountOpenEventsOnDay: open count within [dayStart, dayEnd) timestamp
+// strings (stats overview todayViews; bounds built by the caller from
+// the server clock's local calendar day, same format as started_at).
+func (q *Queries) CountOpenEventsOnDay(ctx context.Context, arg CountOpenEventsOnDayParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countOpenEventsOnDay, arg.StartedAt, arg.StartedAt_2)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const existsViewEventOnDay = `-- name: ExistsViewEventOnDay :one
+
+SELECT COUNT(*) FROM view_events
+WHERE asset_id = ? AND kind = ? AND session_id = ?
+  AND started_at >= ? AND started_at < ?
+`
+
+type ExistsViewEventOnDayParams struct {
+	AssetID     string
+	Kind        string
+	SessionID   string
+	StartedAt   string
+	StartedAt_2 string
+}
+
+// ExistsViewEventOnDay: session-level dedup check (DOMAIN_RULES 5 --
+// one open/play per asset+kind+session within the same local calendar
+// day). dayStart/dayEnd are the UTC timestamp strings (store format,
+// migrations/0001 header) of the event's local day 00:00 and next-day
+// 00:00; the RFC3339 TEXT layout keeps lexicographic order ==
+// chronological order, so the two-sided bound is exact. dwell never
+// consults this query: dwell seconds always accumulate.
+func (q *Queries) ExistsViewEventOnDay(ctx context.Context, arg ExistsViewEventOnDayParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, existsViewEventOnDay,
+		arg.AssetID,
+		arg.Kind,
+		arg.SessionID,
+		arg.StartedAt,
+		arg.StartedAt_2,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const insertViewEvent = `-- name: InsertViewEvent :exec
 
 
@@ -124,4 +196,52 @@ func (q *Queries) InsertViewEvent(ctx context.Context, arg InsertViewEventParams
 		arg.Seconds,
 	)
 	return err
+}
+
+const listAllViewEvents = `-- name: ListAllViewEvents :many
+
+SELECT asset_id, kind, session_id, started_at, seconds
+FROM view_events
+ORDER BY id
+`
+
+type ListAllViewEventsRow struct {
+	AssetID   string
+	Kind      string
+	SessionID string
+	StartedAt string
+	Seconds   sql.NullInt64
+}
+
+// ListAllViewEvents: full-stream scan for the materialized-table
+// rebuild (httpapi.RebuildAssetDailyStatsFromEvents). Append-only
+// table, so id order == insertion order; seconds is NULL for open/play
+// and only meaningful for dwell.
+func (q *Queries) ListAllViewEvents(ctx context.Context) ([]ListAllViewEventsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listAllViewEvents)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAllViewEventsRow
+	for rows.Next() {
+		var i ListAllViewEventsRow
+		if err := rows.Scan(
+			&i.AssetID,
+			&i.Kind,
+			&i.SessionID,
+			&i.StartedAt,
+			&i.Seconds,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

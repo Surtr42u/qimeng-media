@@ -3,6 +3,7 @@ package scanner
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"errors"
 	"io"
 	"log/slog"
@@ -50,10 +51,11 @@ func (p *probeStub) call(ctx context.Context, path string) (*thumbnail.ProbeResu
 
 // testEnv 一个测试环境：真实 SQLite 库 + 临时目录文件树 + 静音日志的扫描器。
 type testEnv struct {
-	s   *Scanner
-	q   *db.Queries
-	bus *events.Bus
-	lib db.Library
+	s    *Scanner
+	q    *db.Queries
+	bus  *events.Bus
+	lib  db.Library
+	conn *sql.DB // 富化测试需要置 libraries.kind（COS 库）等库级操作
 }
 
 func newTestEnv(t *testing.T, probe ProbeFunc) *testEnv {
@@ -73,6 +75,7 @@ func newTestEnv(t *testing.T, probe ProbeFunc) *testEnv {
 		ID:        uuid.NewString(),
 		Name:      "测试库",
 		RootPath:  root,
+		Kind:      LibraryKindNormal,
 		CreatedAt: store.FormatTimestamp(time.Now()),
 	})
 	if err != nil {
@@ -84,7 +87,7 @@ func newTestEnv(t *testing.T, probe ProbeFunc) *testEnv {
 	s := New(q, bus, slog.New(slog.NewTextHandler(io.Discard, nil)), "")
 	s.probe = probe
 	s.progressMinEvery = 0 // 每文件发进度，测试可稳定收到事件
-	return &testEnv{s: s, q: q, bus: bus, lib: lib}
+	return &testEnv{s: s, q: q, bus: bus, lib: lib, conn: conn}
 }
 
 // writeFile 在库内相对路径写入指定字节的文件（自动建父目录）。

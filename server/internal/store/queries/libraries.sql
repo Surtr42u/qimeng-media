@@ -4,7 +4,7 @@
 -- migrations/0001_init.up.sql for Chinese explanations.
 
 -- name: CreateLibrary :one
-INSERT INTO libraries (id, name, root_path, created_at) VALUES (?, ?, ?, ?)
+INSERT INTO libraries (id, name, root_path, kind, created_at) VALUES (?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: GetLibrary :one

@@ -11,6 +11,7 @@ package recommend
 //     本类断言全是性质断言（全排列/相对顺序/可复现），不依赖具体随机序列。
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -328,3 +329,80 @@ func TestRank_dayPeriod_onlyIncludesPeriodFiles(t *testing.T) {
 }
 
 func ptrTime(t time.Time) *time.Time { return &t }
+
+// ---------- 同分桶打散（DOMAIN_RULES §1.4 机制 2） ----------
+//
+// 机制确认（mixing.go/shuffleBuckets）：seed>0 时按「score < 桶内最小分 −
+// 0.05 开新桶」分组，桶内种子 RNG 洗牌；±0.05 分差内视为同桶逐字遵守。
+// 测试锁定：同桶打散生效（顺序偏离纯分数序）、桶间不交叉、同 seed 可复现。
+
+// TestRecommend_bucketShuffle_spreadsTiedScores：零权重偏好下全部条目同分
+// （差 0 < 0.05 同桶），seed>0 时打散使顺序偏离纯分数序，且同 seed 可复现。
+// 全部构造为图片，排除 balanceVideoImage 的类型交错干扰——顺序变化只能
+// 来自 shuffleBuckets，断言精确指向被测机制。
+func TestRecommend_bucketShuffle_spreadsTiedScores(t *testing.T) {
+	items := make([]Item, 0, 12)
+	for i := 0; i < 12; i++ {
+		items = append(items, makeItem(fmt.Sprintf("key%02d", i), "image", fixedNow))
+	}
+	tied := Params{Prefs: &Weights{}, Now: fixedNow} // 零权重 → 全部同分
+
+	stable := Recommend(items, tied) // seed=0：纯分数序（无打散）
+	shuffled := Recommend(items, Params{Seed: 42, Prefs: &Weights{}, Now: fixedNow})
+	if len(stable) != 12 || len(shuffled) != 12 {
+		t.Fatalf("期望各 12 条，得到 %d/%d", len(stable), len(shuffled))
+	}
+	if !containsAll(ids(shuffled), ids(items)) {
+		t.Fatalf("打散后必须是输入的全排列，得到 %v", ids(shuffled))
+	}
+	// 打散生效：seed=42 的顺序与纯分数序不同（12 项同桶洗牌回到原序的概率
+	// 1/12!，锁定的 seed 下为确定事实）
+	if reflect.DeepEqual(ids(shuffled), ids(stable)) {
+		t.Fatalf("seed>0 应打散同分桶（顺序偏离纯分数序），得到 %v", ids(shuffled))
+	}
+	// 可复现：同 seed 两次逐位一致
+	again := Recommend(items, Params{Seed: 42, Prefs: &Weights{}, Now: fixedNow})
+	if !reflect.DeepEqual(ids(shuffled), ids(again)) {
+		t.Fatalf("同 seed 打散必须可复现：\n第一次 %v\n第二次 %v", ids(shuffled), ids(again))
+	}
+}
+
+// TestRecommend_bucketShuffle_bucketsDoNotInterleave：分差 > 0.05 的两组
+// 各自成桶、桶间不交叉——打散只在桶内进行，分数序在桶边界上保持
+// （未展示组 -0.8 惩罚的展示组分差 0.8，远超桶宽）。
+func TestRecommend_bucketShuffle_bucketsDoNotInterleave(t *testing.T) {
+	shown := []Item{
+		makeItem("shownA", "image", fixedNow),
+		makeItem("shownB", "image", fixedNow),
+		makeItem("shownC", "image", fixedNow),
+	}
+	for i := range shown {
+		shown[i].ShownToday = 1 // dailyPenalty −0.8 → 与未展示组分差 0.8
+	}
+	items := append([]Item{
+		makeItem("freshA", "image", fixedNow),
+		makeItem("freshB", "image", fixedNow),
+		makeItem("freshC", "image", fixedNow),
+	}, shown...)
+	got := Recommend(items, Params{Seed: 7, Prefs: &Weights{}, Now: fixedNow})
+	if len(got) != 6 {
+		t.Fatalf("期望 6 条，得到 %d", len(got))
+	}
+	// 前 3 位必须恰好是未展示组（桶间保持分数序），展示组不会掺进前段
+	freshSet := map[string]bool{"freshA": true, "freshB": true, "freshC": true}
+	for i, it := range got[:3] {
+		if !freshSet[it.AssetID] {
+			t.Fatalf("前 3 位应为未展示组，第 %d 位是 %s（全序 %v）", i, it.AssetID, ids(got))
+		}
+	}
+	// 展示组 3 项全部落在后段（桶间不交叉）
+	tail := map[string]bool{}
+	for _, it := range got[3:] {
+		tail[it.AssetID] = true
+	}
+	for _, it := range shown {
+		if !tail[it.AssetID] {
+			t.Fatalf("展示组 %s 应全部在后段（桶间不交叉），全序 %v", it.AssetID, ids(got))
+		}
+	}
+}

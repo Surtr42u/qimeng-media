@@ -1,0 +1,71 @@
+package authoring
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"strings"
+	"unicode"
+)
+
+// kv_settings 键名（migrations/0003；跨包共享所以定义在纯函数包，读写方
+// 均须引用此常量，禁止手抄字符串——AI_README_FIRST 代码卫生约束）。
+const (
+	// SettingKeyCustomSources 存用户自定义出处分区名 JSON 数组（DOMAIN_RULES
+	// §4「用户手动添加的分区名自动加入识别」）。读取方：scanner（构造
+	// Matcher 时装载）；写入方：出处管理端点（后续任务接线）。
+	SettingKeyCustomSources = "custom_sources"
+
+	// SettingKeyImportedTxtSources 存全部已导入 TXT 片段 JSON 数组
+	//（元素 {filename, content}，统一重建素材，DOMAIN_RULES §6「TXT 导入
+	// 以全部已导入 TXT 统一重建为语义」）。读写方：httpapi TXT 导入端点。
+	SettingKeyImportedTxtSources = "imported_txt_sources"
+)
+
+// 作者类型存储值（migrations/0001 authors.type CHECK 约束；scanner/httpapi
+// 共用，禁止手抄字符串）。
+const (
+	AuthorTypeRegular = "regular"
+	AuthorTypeCos     = "cos"
+)
+
+// CosAuthorIDPrefix 是 COS 作者 authorId 的隔离前缀（DOMAIN_RULES §6：
+// 前缀隔离使两套来源同名不冲突）。
+const CosAuthorIDPrefix = "cos_"
+
+// hashFallbackPrefix 是清洗后为空时哈希兜底 ID 的前缀（GUIDE_DATA：
+// `author_abc12345` 形态）。
+const hashFallbackPrefix = "author_"
+
+// GenerateAuthorID 按显示名生成 authorId（GUIDE_DATA「COS 数据规则」，
+// DOMAIN_RULES §6 逐字规则）：
+//   - 保留中文/日文等 Unicode 字母与数字（Go unicode.IsLetter/IsDigit 覆盖
+//     CJK；示例 `rioko凉凉子` → `rioko凉凉子`）；
+//   - 下划线保留（常见作者名连接符，如 kamihikoki_mmd，去除会破坏可辨识性）；
+//   - 半角空格转下划线；其余特殊符号删除；
+//   - 转小写（`水淼Aqua` → `水淼aqua`）；
+//   - 清洗后为空用哈希兜底：`author_` + 显示名 SHA-256 前 8 位 hex。
+func GenerateAuthorID(displayName string) string {
+	var b strings.Builder
+	for _, r := range displayName {
+		switch {
+		case unicode.IsLetter(r) || unicode.IsDigit(r):
+			b.WriteRune(r)
+		case r == '_':
+			b.WriteByte('_')
+		case r == ' ':
+			b.WriteByte('_')
+		}
+	}
+	id := strings.ToLower(b.String())
+	if id == "" {
+		sum := sha256.Sum256([]byte(displayName))
+		id = hashFallbackPrefix + hex.EncodeToString(sum[:])[:8]
+	}
+	return id
+}
+
+// GenerateCosAuthorID 是 COS 作者的 authorId：同规则加 cos_ 前缀
+// （如 `rioko凉凉子` → `cos_rioko凉凉子`）。
+func GenerateCosAuthorID(displayName string) string {
+	return CosAuthorIDPrefix + GenerateAuthorID(displayName)
+}

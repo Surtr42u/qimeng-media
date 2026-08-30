@@ -407,13 +407,20 @@ paths:
   /api/v1/import/qimeng-backup:
     post:
       summary: 旧版数据迁移（qimeng_backup.json，映射见 DOMAIN_RULES §10，幂等）
+      description: |
+        按「文件名匹配」把旧备份的作者/标签/统计/时间轴导入新库：mediaStats/dailyBrowse/likes/favorites/history
+        转换为 ViewEvent 回放（统计从事件重建）；幂等语义 = 同一 exportedAtMillis 批次只回放一次事件，
+        作者/标签/关联按唯一键 upsert 天然幂等，重复导入不翻倍。
+        scanSources/settings 段不导入（SAF 目录概念不存在，响应 warnings 提示重新配置库）；
+        albumRules 段无对应能力，忽略。
       requestBody:
         required: true
         content:
           application/json:
-            schema: { type: object }
+            schema: { $ref: "#/components/schemas/LegacyBackupImport" }
       responses:
-        "200": { description: 迁移结果统计 }
+        "200": { description: 迁移结果统计, content: { application/json: { schema: { $ref: "#/components/schemas/LegacyImportResult" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
 
 components:
   securitySchemes:
@@ -472,6 +479,7 @@ components:
         videoCount: { type: integer }
         imageCount: { type: integer }
         scanState: { type: string, enum: [idle, scanning, error] }
+        kind:      { type: string, enum: [normal, cos], default: normal, description: 库类型——normal 常规媒体库；cos COS 作者库（按 作者/作品/文件 目录结构扫描建 cos_ 作者，DOMAIN_RULES §6），COS 文件不进常规浏览流 }
 
     LibraryCreate:
       type: object
@@ -479,6 +487,7 @@ components:
       properties:
         name:     { type: string }
         rootPath: { type: string, description: 服务端可访问的绝对路径 }
+        kind:     { type: string, enum: [normal, cos], default: normal, description: 缺省 normal；COS 作者库传 cos }
 
     AssetSummary:
       type: object
@@ -671,3 +680,202 @@ components:
         netTxBytes:    { type: integer, format: int64, description: 自启动累计上行（媒体流量主项） }
         uptimeSeconds: { type: integer, format: int64 }
         version:       { type: string }
+
+    # ---- 旧版迁移（qimeng_backup.json）：字段级权威定义在旧仓库 DATA_MIGRATION_SPEC.md，
+    # ---- 段级映射见 DOMAIN_RULES §10；可选字段缺省语义（旧备份可能缺后加字段），导入端不假设全字段存在。
+    LegacyBackupImport:
+      type: object
+      required: [format, schemaVersion, appIdentifier, data]
+      properties:
+        format:           { type: string, description: 恒为 qimeng_backup，不符则 400 }
+        schemaVersion:    { type: integer }
+        appIdentifier:    { type: string }
+        exportedAtMillis: { type: integer, format: int64, description: 导出时刻毫秒，幂等批次键 }
+        data:             { $ref: "#/components/schemas/LegacyBackupData" }
+
+    LegacyBackupData:
+      type: object
+      properties:
+        mediaFiles:        { type: array, items: { $ref: "#/components/schemas/LegacyMediaFile" } }
+        settings:          { type: array, items: { $ref: "#/components/schemas/LegacySetting" } }
+        authors:           { type: array, items: { $ref: "#/components/schemas/LegacyAuthor" } }
+        authorMediaRefs:   { type: array, items: { $ref: "#/components/schemas/LegacyAuthorMediaRef" } }
+        tags:              { type: array, items: { $ref: "#/components/schemas/LegacyTag" } }
+        mediaTagRefs:      { type: array, items: { $ref: "#/components/schemas/LegacyMediaTagRef" } }
+        mediaStats:        { type: array, items: { $ref: "#/components/schemas/LegacyMediaStats" } }
+        dailyBrowse:       { type: array, items: { $ref: "#/components/schemas/LegacyDailyBrowse" } }
+        history:           { type: array, items: { $ref: "#/components/schemas/LegacyHistoryEntry" } }
+        scanSources:       { type: array, items: { $ref: "#/components/schemas/LegacyScanSource" } }
+        timelineTags:      { type: array, items: { $ref: "#/components/schemas/LegacyTimelineTag" } }
+        cosWorks:          { type: array, items: { $ref: "#/components/schemas/LegacyCosWork" } }
+        likes:             { type: array, items: { $ref: "#/components/schemas/LegacyLike" } }
+        favorites:         { type: array, items: { type: string }, description: recordKey 列表 }
+        followedAuthorIds: { type: array, items: { type: string }, description: 已关注作者 authorId 列表 }
+        albumRules:        { type: array, items: { type: object, additionalProperties: true }, description: 新架构无对应能力，忽略并计入 warnings }
+        appPrefs:          { $ref: "#/components/schemas/LegacyAppPrefs" }
+
+    LegacyMediaFile:
+      type: object
+      required: [recordKey, fileName, mediaType, sizeBytes, modifiedAtMillis]
+      properties:
+        recordKey:        { type: string, description: "旧库关联键（文件名 / 文件名 @ 文件夹 / 追加 #路径哈希）" }
+        fileName:         { type: string }
+        displayName:      { type: string }
+        extension:        { type: string }
+        mediaType:        { type: string, enum: [image, video, animated_image] }
+        uriString:        { type: string }
+        folderName:       { type: string }
+        pathHash:         { type: string }
+        sizeBytes:        { type: integer, format: int64 }
+        modifiedAtMillis: { type: integer, format: int64 }
+        width:            { type: [integer, "null"] }
+        height:           { type: [integer, "null"] }
+        durationMillis:   { type: [integer, "null"], format: int64 }
+        isDuplicateName:  { type: boolean }
+        isCosFile:        { type: boolean }
+        indexedAtMillis:  { type: integer, format: int64 }
+        sourceUri:        { type: [string, "null"] }
+
+    LegacySetting:
+      type: object
+      required: [key, value]
+      properties:
+        key:              { type: string }
+        value:            { type: string }
+        updatedAtMillis:  { type: integer, format: int64 }
+
+    LegacyAuthor:
+      type: object
+      required: [authorId, displayName]
+      properties:
+        authorId:         { type: string, description: 常规作者原样；COS 作者带 cos_ 前缀原样保留 }
+        displayName:      { type: string }
+        createdAtMillis:  { type: integer, format: int64 }
+        updatedAtMillis:  { type: integer, format: int64 }
+
+    LegacyAuthorMediaRef:
+      type: object
+      required: [authorId, recordKey, fileName]
+      properties:
+        authorId:         { type: string }
+        recordKey:        { type: string }
+        fileName:         { type: string }
+        isMatched:        { type: boolean, description: TXT 自动匹配标志；旧备份可能缺省 }
+
+    LegacyTag:
+      type: object
+      required: [name]
+      properties:
+        tagId:            { type: integer, format: int64, description: 导入时忽略，按 name 去重 }
+        name:             { type: string }
+        createdAtMillis:  { type: integer, format: int64 }
+
+    LegacyMediaTagRef:
+      type: object
+      required: [recordKey, tagName]
+      properties:
+        recordKey:        { type: string }
+        tagName:          { type: string, description: 冗余关联 tags.name（非 tagId） }
+        createdAtMillis:  { type: [integer, "null"], format: int64, description: v1.19 起可选；缺省时导入回退导入时刻 }
+
+    LegacyMediaStats:
+      type: object
+      required: [recordKey, fileName]
+      properties:
+        recordKey:          { type: string }
+        fileName:           { type: string }
+        viewCount:          { type: integer }
+        playCount:          { type: integer }
+        totalBrowseSeconds: { type: integer, format: int64 }
+        lastOpenedAtMillis: { type: [integer, "null"], format: int64 }
+        updatedAtMillis:    { type: integer, format: int64 }
+
+    LegacyDailyBrowse:
+      type: object
+      required: [recordKey, fileName, mediaType, dayStartMillis]
+      properties:
+        recordKey:          { type: string }
+        fileName:           { type: string }
+        mediaType:          { type: string, enum: [image, video, animated_image] }
+        dayStartMillis:     { type: integer, format: int64, description: 当天零点毫秒（天粒度分桶键） }
+        viewCount:          { type: integer }
+        playCount:          { type: integer }
+        totalBrowseSeconds: { type: integer, format: int64 }
+        updatedAtMillis:    { type: integer, format: int64 }
+
+    LegacyHistoryEntry:
+      type: object
+      required: [recordKey, fileName, mediaType, openedAtMillis]
+      properties:
+        recordKey:      { type: string }
+        fileName:       { type: string }
+        mediaType:      { type: string, enum: [image, video, animated_image] }
+        openedAtMillis: { type: integer, format: int64 }
+
+    LegacyScanSource:
+      type: object
+      required: [uriString, displayName]
+      properties:
+        uriString:          { type: string, description: Android SAF 目录 URI，新架构不导入 }
+        displayName:        { type: string }
+        isBackupDirectory:  { type: boolean }
+        isCosDirectory:     { type: boolean, description: true 时可提示用户以 cos kind 重新注册该库 }
+        addedAtMillis:      { type: integer, format: int64 }
+        lastScannedAtMillis: { type: [integer, "null"], format: int64 }
+
+    LegacyTimelineTag:
+      type: object
+      required: [recordKey, fileName, timeMillis, name]
+      properties:
+        recordKey:       { type: string }
+        fileName:        { type: string }
+        timeMillis:      { type: integer, format: int64, description: 视频内毫秒 }
+        name:            { type: string }
+        createdAtMillis: { type: integer, format: int64 }
+
+    LegacyCosWork:
+      type: object
+      required: [authorName, workName]
+      properties:
+        authorName:      { type: string }
+        workName:        { type: string }
+        folderUri:       { type: string }
+        fileCount:       { type: integer }
+        indexedAtMillis: { type: integer, format: int64 }
+        sourceUri:       { type: string }
+
+    LegacyLike:
+      type: object
+      required: [recordKey]
+      properties:
+        recordKey:    { type: string }
+        likeCount:    { type: integer, description: 累计点赞数 }
+        lastLikeDate: { type: [string, "null"], description: yyyy-MM-dd，最后一次点赞日 }
+
+    LegacyAppPrefs:
+      type: object
+      description: 旧版应用偏好；新架构只导入 recommendationPrefs（进 kv_settings），其余字段忽略并计入 warnings
+      additionalProperties: true
+      properties:
+        version:            { type: integer }
+        recommendationPrefs: { $ref: "#/components/schemas/RecommendPrefs" }
+
+    LegacyImportResult:
+      type: object
+      description: 迁移结果统计；各段计数为本次实际写入量（幂等重复导入时事件段为 0）
+      properties:
+        mediaFilesTotal:        { type: integer, description: 备份内文件总数 }
+        assetsMatched:          { type: integer, description: 按文件名匹配到现有库内资产的文件数 }
+        authorsImported:        { type: integer }
+        authorRefsImported:     { type: integer, description: 关联写入数（含因资产未匹配而跳过之外的净写入） }
+        authorRefsSkipped:      { type: integer, description: 关联因资产未匹配而跳过数 }
+        tagsImported:           { type: integer }
+        tagRefsImported:        { type: integer }
+        tagRefsSkipped:         { type: integer }
+        eventsReplayed:         { type: integer, description: ViewEvent 回放条数；同批次重复导入为 0 }
+        likesImported:          { type: integer }
+        favoritesImported:      { type: integer }
+        timelineTagsImported:   { type: integer }
+        followedAuthorsMarked:  { type: integer }
+        prefsImported:          { type: boolean, description: recommendationPrefs 是否写入 }
+        warnings:               { type: array, items: { type: string }, description: settings/scanSources 重新配置提示、albumRules 忽略说明等 }

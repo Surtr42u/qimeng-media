@@ -23,11 +23,9 @@ func writeErr(w http.ResponseWriter, status int, code, message string) {
 	writeJSON(w, status, map[string]string{"code": code, "message": message})
 }
 
-// notImplemented 是 M1 未接线端点的统一响应：501 + 固定错误码，
-// 让客户端能区分"功能未到里程碑"与"路由不存在"（404）。
-func notImplemented(w http.ResponseWriter) {
-	writeErr(w, http.StatusNotImplemented, "NOT_IMPLEMENTED", "该端点尚未在当前里程碑实现")
-}
+// notImplemented 机制（M1 未接线端点统一 501 + NOT_IMPLEMENTED）已随
+// openapi 全部端点接线完毕而移除；如未来新增未接线端点，从 git 历史恢复
+// 此函数并在 stubs.go 挂占位方法（语义说明见 stubs.go 注释）。
 
 // decodeJSON 读取限制大小后的 JSON body。返回 false 时响应已写完。
 func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {

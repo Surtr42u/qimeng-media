@@ -33,6 +33,8 @@
 未来: TV/桌面壳     ───┤  ├─ search     FTS5 全文检索            │
                       │  ├─ recommend 推荐算法(纯函数)           │
                       │  ├─ stats      统计聚合(纯函数)           │
+                      │  ├─ sourcematcher 出处/角色匹配(纯函数)   │
+                      │  ├─ authoring  作者TXT解析/匹配(纯函数)   │
                       │  ├─ filing     文件操作(上传/移动/回收站)  │
                       │  ├─ httpapi    oapi-codegen 生成的接口层  │
                       │  ├─ store      sqlc 数据访问 + migrations │
@@ -85,6 +87,8 @@
 | `search` | FTS5 索引维护与查询 | — |
 | `recommend` | 推荐/排行算法 | **任何 IO**（纯函数，输入输出领域结构体） |
 | `stats` | 统计聚合、趋势分桶 | **任何 IO** |
+| `sourcematcher` | 出处/角色匹配引擎（130 组内置检索表 + 前缀匹配） | **任何 IO**（纯函数；内置表数据文件除外） |
+| `authoring` | 作者 TXT 三格式解析、作者-文件匹配规则、authorId 生成 | **任何 IO**（纯函数） |
 | `filing` | 上传、移动、重命名、回收站 | 绕过路径安全校验 |
 | `store` | sqlc 生成代码 + migrations | SQL 字符串拼接 |
 | `events` | 进程内事件总线、SSE | 模块间直接函数调用（跨模块通知走事件） |
@@ -92,7 +96,7 @@
 | `sysmon` | 系统指标采集 | — |
 | `config` | 配置加载（env + yaml） | 任何硬编码路径 |
 
-依赖方向：`httpapi → 各业务模块 → store`；业务模块之间通过 `events` 解耦；`recommend`/`stats` 不依赖任何其他模块（只依赖领域类型定义包）。
+依赖方向：`httpapi → 各业务模块 → store`；业务模块之间通过 `events` 解耦；`recommend`/`stats`/`sourcematcher`/`authoring` 不依赖任何其他业务模块（只依赖领域类型定义包）。scanner 在扫描入库时调用 sourcematcher/authoring 做出处/角色/作者富化（§4/§6「匹配发生在服务端扫描入库时」）。
 
 ### 5.1 模块边界强制与防漂移（ADR-0010 / ADR-0009 / ADR-0011）
 

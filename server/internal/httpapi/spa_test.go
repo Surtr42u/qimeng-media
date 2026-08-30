@@ -66,6 +66,7 @@ func newSPAEnv(t *testing.T, distDir string) *httptest.Server {
 	q := db.New(conn)
 	if _, err := q.CreateLibrary(context.Background(), db.CreateLibraryParams{
 		ID: uuid.NewString(), Name: "SPA 库", RootPath: media,
+		Kind:      "normal",
 		CreatedAt: store.FormatTimestamp(time.Now()),
 	}); err != nil {
 		t.Fatalf("建库失败: %v", err)

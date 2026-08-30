@@ -41,7 +41,8 @@ func TestRebuildIndex(t *testing.T) {
 	q := db.New(conn)
 	ctx := context.Background()
 	if _, err := q.CreateLibrary(ctx, db.CreateLibraryParams{
-		ID: "lib1", Name: "库", RootPath: "/media", CreatedAt: store.FormatTimestamp(time.Now()),
+		ID: "lib1", Name: "库", RootPath: "/media", Kind: "normal",
+		CreatedAt: store.FormatTimestamp(time.Now()),
 	}); err != nil {
 		t.Fatalf("建库失败: %v", err)
 	}
