@@ -271,9 +271,11 @@ func (t *topRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// 页面（验收页 / 与 /index.html、固定调试挂载点 /_debug/、
 		// SPA 模式下的入口）是静态 HTML 不走协议（页面内数据请求照常走 Bearer）。
 		t.api.ServeHTTP(w, r)
-	case p == "/api/v1/auth/setup":
-		// 首次初始化免鉴权（api/openapi.yaml:28 security: []，与协议一致；
-		// 库中已有用户时 handler 自己回 409，免鉴权不构成攻击面：最多换来一个 409）。
+	case p == "/api/v1/auth/setup" || p == "/api/v1/auth/login":
+		// 首次初始化与密码登录免鉴权（api/openapi.yaml security: []，与协议
+		// 一致；协议侧改动须同步此处，反之亦然）。login 本身就是凭据校验
+		// （argon2 比对 + 401），免鉴权不构成攻击面：错密码只换来 401，
+		// setup 在已有用户时 handler 自己回 409。
 		t.api.ServeHTTP(w, r)
 	case strings.HasPrefix(p, mediaPathPrefix):
 		// 媒体直链：Bearer 管不了 <img>/<video> 标签，走 HMAC 签名

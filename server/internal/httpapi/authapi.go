@@ -126,3 +126,57 @@ func (s *Server) PostApiV1AuthSetup(w http.ResponseWriter, r *http.Request) {
 func (s *Server) PostApiV1AuthVerify(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// PostApiV1AuthLogin 密码登录：密码换新 token（换设备/清缓存找回访问权）。
+//
+// 单用户单 token 模型：登录成功即重铸 token（新哈希覆盖旧哈希），旧
+// token 随之失效——同机换浏览器后旧浏览器需重新登录，换来的是"token
+/// 丢失时总有密码这条找回路径"（openapi /auth/login description 语义）。
+// 未初始化（无用户行）返回 401：与 verify 的未初始化行为一致，不泄露
+// "系统是否已初始化"之外的信息。
+func (s *Server) PostApiV1AuthLogin(w http.ResponseWriter, r *http.Request) { //nolint:revive // 生成接口要求的方法名
+	var req gen.PostApiV1AuthLoginJSONRequestBody
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if req.Password == "" {
+		writeErr(w, http.StatusUnauthorized, "UNAUTHORIZED", "密码错误")
+		return
+	}
+	u, err := s.q.GetFirstUser(r.Context())
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeErr(w, http.StatusUnauthorized, "UNAUTHORIZED", "系统未初始化")
+			return
+		}
+		s.logger.Error("auth login: 查询用户失败", "err", err)
+		writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
+		return
+	}
+	ok, err := auth.VerifyPassword(req.Password, u.PasswordHash)
+	if err != nil {
+		// 哈希损坏是数据问题而非认证失败——不能伪装成 401 混过去
+		s.logger.Error("auth login: 校验密码哈希失败", "err", err)
+		writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
+		return
+	}
+	if !ok {
+		writeErr(w, http.StatusUnauthorized, "UNAUTHORIZED", "密码错误")
+		return
+	}
+	token, err := auth.GenerateToken()
+	if err != nil {
+		s.logger.Error("auth login: 生成 token 失败", "err", err)
+		writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
+		return
+	}
+	if err := s.q.UpdateUserTokenHash(r.Context(), auth.TokenHash(token)); err != nil {
+		s.logger.Error("auth login: 更新 token 失败", "err", err)
+		writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
+		return
+	}
+	s.authState.mu.Lock()
+	s.authState.tokenHash = auth.TokenHash(token)
+	s.authState.mu.Unlock()
+	writeJSON(w, http.StatusOK, gen.AuthToken{Token: &token})
+}

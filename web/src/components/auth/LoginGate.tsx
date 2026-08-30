@@ -3,20 +3,20 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Copy, KeyRound, ShieldCheck } from 'lucide-react'
-import { useAuthSetup, useAuthVerify } from '@/hooks/use-session'
-import { clearToken, setToken } from '@/lib/api-client'
+import { useAuthLogin, useAuthSetup } from '@/hooks/use-session'
+import { setToken } from '@/lib/api-client'
 
 /** 密码最短长度：与 M1 验收页一致（server/internal/httpapi/static/index.html 校验 >= 8） */
 const MIN_PASSWORD_LENGTH = 8
 
 /** 登录面板提示文案 */
-const HINT_INITIALIZED = '系统已初始化过，请输入访问 token 验证身份'
-const HINT_TOKEN_INVALID = 'token 无效或已过期，请检查后重试'
+const HINT_INITIALIZED = '系统已初始化过，请输入管理密码登录'
+const HINT_LOGIN_FAILED = '密码错误，请重试'
 const HINT_SETUP_FAILED = '初始化失败，请重试'
 const HINT_COPIED = 'token 已复制，请妥善保存（仅此一次明文展示）'
 const TOKEN_NOT_SHOWN = 'token 未返回，请查看服务端日志'
 
-type Mode = 'setup' | 'verify'
+type Mode = 'setup' | 'login'
 
 /**
  * 登录/首次初始化二合一面板。
@@ -29,19 +29,20 @@ type Mode = 'setup' | 'verify'
  * 成功后面板展示 token（可复制）+ 用户点"进入应用"才继续，避免用户
  * 未备份 token 就悄无声息地失去找回途径（M1 验收页直接进主界面是简化行为）。
  *
- * 鉴权机制说明：/auth/verify 的请求体为空，token 走 Authorization 头
- * （SDK 自动从 store 取），因此验证前必须先 setToken 让 store 持有输入值。
+ * 登录机制说明：已初始化后走 POST /auth/login 用密码换新 token（单用户
+ * 单 token 模型，登录会重铸 token 使旧 token 失效）——不再要求用户粘贴
+ * 当年的 setup token（换设备/清缓存后无从找回）。/auth/verify 仅由
+ * AuthGate 启动校验使用，请求体为空、token 走 Authorization 头。
  */
 export function LoginGate() {
   const [mode, setMode] = useState<Mode>('setup')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
-  const [tokenInput, setTokenInput] = useState('')
   /** setup 成功后保存的一次性 token（明文展示阶段） */
   const [issuedToken, setIssuedToken] = useState<string | null>(null)
 
   const setup = useAuthSetup()
-  const verify = useAuthVerify()
+  const login = useAuthLogin()
 
   const handleSetup = (event: React.FormEvent) => {
     event.preventDefault()
@@ -65,7 +66,7 @@ export function LoginGate() {
       // 409 = 已初始化：切 verify 模式（协议 PostApiV1AuthSetupErrors.409）
       onError: (error) => {
         if (is409(error)) {
-          setMode('verify')
+          setMode('login')
           toast.info(HINT_INITIALIZED)
         } else {
           toast.error(HINT_SETUP_FAILED)
@@ -74,22 +75,24 @@ export function LoginGate() {
     })
   }
 
-  const handleVerify = (event: React.FormEvent) => {
+  const handleLogin = (event: React.FormEvent) => {
     event.preventDefault()
-    const raw = tokenInput.trim()
-    if (!raw) {
-      toast.warning('请输入 token')
+    if (!password) {
+      toast.warning('请输入管理密码')
       return
     }
-    // 先落 token（store），SDK 的 verify 请求用它带 Authorization 头
-    setToken(raw)
-    verify.mutate(undefined, {
-      onError: () => {
-        // 验证失败：清掉刚写入的 token，避免残留导致下次进应用被误放行
-        clearToken()
-        toast.error(HINT_TOKEN_INVALID)
+    login.mutate(password, {
+      onSuccess: (result) => {
+        const token = result.token
+        if (!token) {
+          toast.error(TOKEN_NOT_SHOWN)
+          return
+        }
+        // token 落 store（localStorage 持久），之后无需再输密码
+        setToken(token)
       },
-      // onSuccess 无需处理：store 更新会触发 AuthGate 重渲染放行
+      onError: () => toast.error(HINT_LOGIN_FAILED),
+      // onSuccess 无需其他处理：store 更新会触发 AuthGate 重渲染放行
     })
   }
 
@@ -128,13 +131,13 @@ export function LoginGate() {
         </div>
       ) : (
         <form
-          onSubmit={mode === 'setup' ? handleSetup : handleVerify}
+          onSubmit={mode === 'setup' ? handleSetup : handleLogin}
           className="flex w-full max-w-md flex-col gap-[var(--qm-space-3)] rounded-lg border bg-[var(--qm-surface)] p-6 shadow-sm"
         >
           <div className="flex items-center gap-2">
             <KeyRound className="size-4 text-[var(--qm-text-muted)]" />
             <h2 className="text-sm font-semibold">
-              {mode === 'setup' ? '首次初始化：设置管理密码' : '验证访问 token'}
+              {mode === 'setup' ? '首次初始化：设置管理密码' : '登录'}
             </h2>
           </div>
 
@@ -163,14 +166,14 @@ export function LoginGate() {
             <>
               <Input
                 type="password"
-                placeholder="粘贴访问 token"
-                value={tokenInput}
-                onChange={(e) => setTokenInput(e.target.value)}
-                autoComplete="off"
+                placeholder="管理密码"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
                 autoFocus
               />
-              <Button type="submit" disabled={verify.isPending}>
-                {verify.isPending ? '验证中…' : '验证并进入'}
+              <Button type="submit" disabled={login.isPending}>
+                {login.isPending ? '登录中…' : '登录'}
               </Button>
             </>
           )}

@@ -4,7 +4,7 @@
 
 import { useCallback, useState, useSyncExternalStore } from 'react'
 import { useMutation } from '@tanstack/react-query'
-import { postApiV1AuthSetup, postApiV1AuthVerify } from '@/api/generated'
+import { postApiV1AuthLogin, postApiV1AuthSetup, postApiV1AuthVerify } from '@/api/generated'
 import {
   clearToken as clearStoredToken,
   getToken,
@@ -62,6 +62,16 @@ export function useAuthVerify() {
   return useMutation({
     mutationFn: () => unwrapSdkResult(postApiV1AuthVerify()),
     // verify 失败不重试：401 是业务预期（token 无效），重试无意义
+    retry: 0,
+  })
+}
+
+/** 密码登录：POST /auth/login，密码换新 token（换设备/清缓存后的找回通道）；401 = 密码错误 */
+export function useAuthLogin() {
+  return useMutation({
+    mutationFn: (password: string) =>
+      unwrapSdkResult(postApiV1AuthLogin({ body: { password } })),
+    // 登录失败不重试：401 是业务预期（密码错误），重试无意义
     retry: 0,
   })
 }

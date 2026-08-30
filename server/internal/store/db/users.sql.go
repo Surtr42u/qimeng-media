@@ -71,3 +71,14 @@ func (q *Queries) GetFirstUser(ctx context.Context) (User, error) {
 	)
 	return i, err
 }
+
+const updateUserTokenHash = `-- name: UpdateUserTokenHash :exec
+UPDATE users SET token_hash = ? WHERE id = (SELECT id FROM users ORDER BY created_at LIMIT 1)
+`
+
+// Token re-issue on password login: single-user single-token model --
+// the new token invalidates the old one by replacing its hash.
+func (q *Queries) UpdateUserTokenHash(ctx context.Context, tokenHash string) error {
+	_, err := q.db.ExecContext(ctx, updateUserTokenHash, tokenHash)
+	return err
+}

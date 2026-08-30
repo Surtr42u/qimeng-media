@@ -40,6 +40,22 @@ paths:
       responses:
         "204": { description: 有效 }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/auth/login:
+    post:
+      summary: 密码登录（换发 token；换设备/清浏览器缓存后找回访问权）
+      description: |
+        用管理密码换取新 token——解决「token 仅 setup 明文一次」在换浏览器、
+        清缓存、新设备场景下的死锁。单用户单 token 模型：登录成功即重铸
+        token，旧 token 随之失效（旧浏览器需重新登录）。
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AuthSetupRequest" }
+      responses:
+        "200": { description: 登录成功，返回新 token, content: { application/json: { schema: { $ref: "#/components/schemas/AuthToken" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
 
   # ---------- 库（媒体目录） ----------
   /api/v1/libraries:

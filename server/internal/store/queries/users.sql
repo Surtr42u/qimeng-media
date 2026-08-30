@@ -15,3 +15,8 @@ SELECT * FROM users ORDER BY created_at LIMIT 1;
 -- name: CreateUser :exec
 INSERT INTO users (id, name, password_hash, role, token_hash, created_at)
 VALUES (?, ?, ?, ?, ?, ?);
+
+-- name: UpdateUserTokenHash :exec
+-- Token re-issue on password login: single-user single-token model --
+-- the new token invalidates the old one by replacing its hash.
+UPDATE users SET token_hash = ? WHERE id = (SELECT id FROM users ORDER BY created_at LIMIT 1);
