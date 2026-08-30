@@ -41,7 +41,9 @@ const TEXT_EMPTY_LIBRARY_HINT = '请到管理页添加媒体库并扫描'
 const TEXT_EMPTY_FILTERED = '没有符合筛选条件的媒体'
 const TEXT_EMPTY_FILTERED_HINT = '试试调整筛选条件或清除搜索'
 const TEXT_GO_ADMIN = '去管理页'
-const TEXT_COLUMNS_TEMPLATE = '{n} 列'
+// 列数按钮文案：不显示具体列数——列数是断点映射的（移动 2~5 循环、桌面 5~8 随视口，
+// 见 use-grid-columns），数字在另一断点下必然失真；按钮只承担"切一档密度"语义
+const TEXT_COLUMNS_ACTION = '列数'
 const TEXT_SORT_ASC = '升序'
 const TEXT_SORT_DESC = '降序'
 
@@ -171,7 +173,14 @@ export default function AllAssetsPage() {
     return () => clearTimeout(timer)
   }, [qDraft, searchParams, setSearchParams])
 
-  const assetsQuery = useAssets({ ...filters, sort: sort as AssetFilters['sort'], order: order as AssetFilters['order'] })
+  // q 是服务端搜索谓词（FTS/instr 子串口径，DOMAIN_RULES §3），与筛选并列进查询；
+  // 空串传 undefined 避免无谓查询参数（否则每次空搜索都会造出一个 queryKey 变体）
+  const assetsQuery = useAssets({
+    ...filters,
+    q: q || undefined,
+    sort: sort as AssetFilters['sort'],
+    order: order as AssetFilters['order'],
+  })
 
   /** 筛选面板 onChange → 写 URL（即改即刷新；Sheet 不关闭，交互规格） */
   const handleFiltersChange = (next: AssetFilters) => {
@@ -249,11 +258,11 @@ export default function AllAssetsPage() {
           size="sm"
           variant="secondary"
           onClick={cycle}
-          aria-label={TEXT_COLUMNS_TEMPLATE.replace('{n}', String(columns))}
-          title={TEXT_COLUMNS_TEMPLATE.replace('{n}', String(columns))}
+          aria-label={TEXT_COLUMNS_ACTION}
+          title={TEXT_COLUMNS_ACTION}
         >
           <LayoutGrid className="size-3.5" aria-hidden />
-          {TEXT_COLUMNS_TEMPLATE.replace('{n}', String(columns))}
+          {TEXT_COLUMNS_ACTION}
         </Button>
         <Button size="sm" onClick={() => setFilterOpen(true)}>
           {TEXT_FILTER}

@@ -129,4 +129,28 @@
   html {
     @apply font-sans;
     }
+}/* Tremor Dialog 开场动画（官方 docs「Update globals.css」段逐字收录）：
+ * data-[state=open] 时触发 scale+fade，关闭不做动画（Radix 默认行为）。 */
+@theme {
+    --animate-dialog-overlay-show: dialogOverlayShow 150ms cubic-bezier(0.16, 1, 0.3, 1);
+    --animate-dialog-content-show: dialogContentShow 150ms cubic-bezier(0.16, 1, 0.3, 1);
+
+    @keyframes dialogOverlayShow {
+        from {
+            opacity: 0;
+        }
+        to {
+            opacity: 1;
+        }
+    }
+    @keyframes dialogContentShow {
+        from {
+            opacity: 0;
+            transform: translate(-50%, -45%) scale(0.95);
+        }
+        to {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1);
+        }
+    }
 }

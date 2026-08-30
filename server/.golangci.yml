@@ -37,6 +37,8 @@ linters:
         - G204 # thumbnail 调 ffmpeg 是核心功能；exec.Command 参数列表式调用，无 shell 拼接
         - G301 # 缩略图缓存目录 0755 是媒体数据目录语义（非凭证目录）
         - G304 # 文件路径来自配置/数据库是文件服务核心场景；路径安全校验在 filing 包
+        - G404 # recommend 混洗/混合的确定性伪随机（DOMAIN_RULES §1.1「同 seed 可复现，禁止纯随机」）；
+               # crypto/rand 无种子不可复现，与公式冲突，种子化 math/rand 是设计选择
         - G602 # scanner pickMergeCandidate 中 best<0 短路后才取下标，静态误报
 
     staticcheck:

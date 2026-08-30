@@ -1,10 +1,14 @@
 package httpapi
 
-// 推荐流端点（M2 热度占位）测试：热度排序（viewCount 降序）、
-// limit 生效、mediaType 过滤。占位语义锁定：M3 换实现时这些
-// 用例是回归底线（排序基准可变，参数契约不可变）。
+// 推荐流端点（M3 十维算法）测试。
+//
+// 契约面（换实现不可变）：返回全部资产、参数校验（limit 越界 400）、
+// mediaType 过滤、同 seed 可复现；算法序不再是热度序——「顺序」只由
+// 确定性算法保证同 seed 一致，不锁具体排列。
+// 行为面：每日展示计数落库（先读后写：展示前惩罚、展示后 +1）。
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"testing"
@@ -27,30 +31,46 @@ func recList(t *testing.T, env *testEnv, query string) []gen.AssetSummary {
 	return items
 }
 
-func TestRecommendationsByHeat(t *testing.T) {
-	env := newTestEnv(t)
-	// 给 c.mp4 上报 3 次浏览（不同 sessionId），b.jpg 1 次，a.jpg 0 次
-	for i, name := range []string{"c.mp4", "c.mp4", "c.mp4", "b.jpg"} {
-		id, ok := env.assetIDByName(t, name)
-		if !ok {
-			t.Fatalf("测试前置失败：%s 不在列表", name)
-		}
-		resp := env.do(t, http.MethodPost, "/api/v1/events/view",
-			`{"assetId":"`+id+`","kind":"open","startedAt":"2026-08-27T10:00:00Z","sessionId":"s`+string(rune('0'+i))+`"}`)
-		_ = resp.Body.Close()
-		if resp.StatusCode != http.StatusAccepted {
-			t.Fatalf("view 上报期望 202，得到 %d", resp.StatusCode)
+// fileNames 取响应的文件名集合（去重，断言用）。
+func fileNames(items []gen.AssetSummary) map[string]bool {
+	names := make(map[string]bool, len(items))
+	for _, it := range items {
+		if it.FileName != nil {
+			names[*it.FileName] = true
 		}
 	}
+	return names
+}
+
+// TestRecommendationsReturnsAllAssetsAsSet：契约测试——返回全部资产
+// 作为集合（M3 十维算法后顺序不再按热度，锁集合不锁顺序）。
+func TestRecommendationsReturnsAllAssetsAsSet(t *testing.T) {
+	env := newTestEnv(t)
 	items := recList(t, env, "")
 	if len(items) != 3 {
 		t.Fatalf("推荐流期望 3 条，得到 %d", len(items))
 	}
-	// 热度降序：c.mp4(3) > b.jpg(1) > a.jpg(0)
-	want := []string{"c.mp4", "b.jpg", "a.jpg"}
-	for i, name := range want {
-		if items[i].FileName == nil || *items[i].FileName != name {
-			t.Errorf("推荐流第 %d 位 = %v, 期望 %s（热度降序）", i, items[i].FileName, name)
+	got := fileNames(items)
+	for _, name := range []string{"a.jpg", "b.jpg", "c.mp4"} {
+		if !got[name] {
+			t.Errorf("推荐流缺少 %s（返回 %v）", name, got)
+		}
+	}
+}
+
+// TestRecommendationsSeedReproducible：同 seed 两次调用顺序一致
+// （算法确定性承诺：FNV-1a + 种子化 RNG，DOMAIN_RULES §1.1）。
+func TestRecommendationsSeedReproducible(t *testing.T) {
+	env := newTestEnv(t)
+	first := recList(t, env, "?seed=7")
+	second := recList(t, env, "?seed=7")
+	if len(first) != 3 || len(second) != 3 {
+		t.Fatalf("两次调用都期望 3 条，得到 %d/%d", len(first), len(second))
+	}
+	for i := range first {
+		if first[i].FileName == nil || second[i].FileName == nil ||
+			*first[i].FileName != *second[i].FileName {
+			t.Fatalf("第 %d 位顺序漂移：%v vs %v", i, first[i].FileName, second[i].FileName)
 		}
 	}
 }
@@ -74,4 +94,56 @@ func TestRecommendationsBadLimit(t *testing.T) {
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("limit=500 期望 400，得到 %d", resp.StatusCode)
 	}
+}
+
+// TestRecommendationsDailyShown：展示计数先读后写——拉取一次后库内
+// 恰好 3 行各 count=1，再拉取各 count=2（刷新不清零当日计数）。
+func TestRecommendationsDailyShown(t *testing.T) {
+	env := newTestEnv(t)
+	if got := len(recList(t, env, "")); got != 3 {
+		t.Fatalf("首次拉取期望 3 条，得到 %d", got)
+	}
+	first := readDailyShown(t, env)
+	if len(first) != 3 {
+		t.Fatalf("首次拉取后期望 daily_shown 3 行，得到 %d", len(first))
+	}
+	for id, c := range first {
+		if c != 1 {
+			t.Errorf("首次拉取后 %s 期望 count=1，得到 %d", id, c)
+		}
+	}
+	recList(t, env, "")
+	second := readDailyShown(t, env)
+	if len(second) != 3 {
+		t.Fatalf("二次拉取后期望 daily_shown 3 行，得到 %d", len(second))
+	}
+	for id, c := range second {
+		if c != 2 {
+			t.Errorf("二次拉取后 %s 期望 count=2，得到 %d", id, c)
+		}
+	}
+}
+
+// readDailyShown 直接查 daily_shown 表（asset_id → count）。
+func readDailyShown(t *testing.T, env *testEnv) map[string]int {
+	t.Helper()
+	rows, err := env.conn.QueryContext(context.Background(),
+		"SELECT asset_id, count FROM daily_shown")
+	if err != nil {
+		t.Fatalf("查询 daily_shown 失败: %v", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := make(map[string]int)
+	for rows.Next() {
+		var id string
+		var count int
+		if err := rows.Scan(&id, &count); err != nil {
+			t.Fatalf("读取 daily_shown 行失败: %v", err)
+		}
+		out[id] = count
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("遍历 daily_shown 失败: %v", err)
+	}
+	return out
 }

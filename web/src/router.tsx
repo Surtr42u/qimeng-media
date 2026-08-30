@@ -1,4 +1,4 @@
-import { createBrowserRouter } from 'react-router'
+import { createBrowserRouter, Navigate } from 'react-router'
 import { AuthGate } from '@/components/layout/AuthGate'
 import { AppShell } from '@/components/layout/AppShell'
 import { RootLayout } from '@/components/layout/RootLayout'
@@ -26,6 +26,26 @@ function lazyPage(importer: () => Promise<{ default: React.ComponentType }>) {
 }
 
 export const router = createBrowserRouter([
+  {
+    // 管理面板（Tremor Raw 组件 + mock 数据，已拍板为正式 UI 结构）：
+    // 与 AuthGate 平级的顶层分支，不走登录门禁；正式植入位置待后续迁移
+    path: 'panel-demo',
+    lazy: lazyPage(() => import('@/panel-demo/PanelLayout')),
+    children: [
+      // 五项主导航：首页（推荐流）/ 相册（全量浏览）/ 我的（数据+历史）/ 维护（性能+工具）/ 设置
+      { index: true, lazy: lazyPage(() => import('@/panel-demo/HomePage')) },
+      { path: 'gallery', lazy: lazyPage(() => import('@/panel-demo/GalleryPage')) },
+      { path: 'mine', lazy: lazyPage(() => import('@/panel-demo/MinePage')) },
+      { path: 'maintenance', lazy: lazyPage(() => import('@/panel-demo/MaintenancePage')) },
+      { path: 'settings', lazy: lazyPage(() => import('@/panel-demo/SettingsPage')) },
+      // 旧 /data 索引路由：数据总览已并入「我的」页数据 Tab，重定向保旧链接兼容
+      { path: 'data', element: <Navigate to="/panel-demo/mine" replace /> },
+      // 榜单详情页（保留）：我的页排行卡「查看全部」进入（type ∈ content|tags|authors）
+      { path: 'data/rank/:type', lazy: lazyPage(() => import('@/panel-demo/RankPage')) },
+      // 内容浏览页（保留）：榜单条目浏览（kind ∈ content|tag|author，id = 条目名）
+      { path: 'data/browse/:kind/:id', lazy: lazyPage(() => import('@/panel-demo/BrowsePage')) },
+    ],
+  },
   {
     // AuthGate：无 UI，只做放行/门禁（其内部渲染 Outlet）
     element: <AuthGate />,

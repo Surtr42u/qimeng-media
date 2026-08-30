@@ -25,18 +25,6 @@ func (s *Server) PutApiV1AuthorsAuthorIdFollow(w http.ResponseWriter, r *http.Re
 	notImplemented(w)
 }
 
-func (s *Server) GetApiV1Rankings(w http.ResponseWriter, r *http.Request, params gen.GetApiV1RankingsParams) {
-	notImplemented(w) // M3：排行榜
-}
-
-func (s *Server) GetApiV1RecommendationsPrefs(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w) // M3：推荐偏好
-}
-
-func (s *Server) PutApiV1RecommendationsPrefs(w http.ResponseWriter, r *http.Request) {
-	notImplemented(w)
-}
-
 func (s *Server) GetApiV1StatsOverview(w http.ResponseWriter, r *http.Request) {
 	notImplemented(w) // M3：统计总览
 }

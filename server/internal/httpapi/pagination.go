@@ -14,6 +14,13 @@ const (
 	defaultPageLimit = 60
 	// maxPageLimit 单页大小上限（openapi limit maximum）。
 	maxPageLimit = 200
+	// defaultRankingLimit 排行榜默认条数（api/openapi.yaml /rankings limit
+	// default=50；协议侧改默认值必须同步这里，反之亦然）。
+	defaultRankingLimit = 50
+	// maxRankingLimit 排行榜防御性上限：openapi /rankings 未声明 maximum，
+	// 但排行榜不分页且按热度全表排序，服务端仍需单次响应上限（与推荐流
+	// maxPageLimit 同值 200）——协议侧若给 maximum 必须同步这里。
+	maxRankingLimit = 200
 )
 
 // resolvePageLimit 应用 openapi 默认值并校验范围（1..maxPageLimit）；
@@ -25,6 +32,20 @@ func resolvePageLimit(w http.ResponseWriter, limit *int) (int, bool) {
 	if *limit < 1 || *limit > maxPageLimit {
 		writeErr(w, http.StatusBadRequest, "INVALID_PARAM",
 			fmt.Sprintf("limit 取值范围 1..%d", maxPageLimit))
+		return 0, false
+	}
+	return *limit, true
+}
+
+// resolveRankingLimit 排行榜的 limit 语义（默认/校验），与 resolvePageLimit
+// 同构但默认值不同（协议 default=50，见 defaultRankingLimit 注释）。
+func resolveRankingLimit(w http.ResponseWriter, limit *int) (int, bool) {
+	if limit == nil {
+		return defaultRankingLimit, true
+	}
+	if *limit < 1 || *limit > maxRankingLimit {
+		writeErr(w, http.StatusBadRequest, "INVALID_PARAM",
+			fmt.Sprintf("limit 取值范围 1..%d", maxRankingLimit))
 		return 0, false
 	}
 	return *limit, true
