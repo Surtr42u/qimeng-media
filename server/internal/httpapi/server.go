@@ -37,6 +37,12 @@ type Scanner interface {
 	// 扫描器不会重 ingest，必须由写入路径显式触发（失败调用方降级，
 	// 重扫自愈）。
 	EnrichAsset(ctx context.Context, libraryID, assetID string) error
+	// UpdateCustomSources 运行期替换用户自定义出处（PUT /sources/custom
+	// 在持久化之后同步调用）：立即对后续匹配生效（含清匹配缓存）。
+	UpdateCustomSources(ctx context.Context, names []string) error
+	// RecomputeEnrichment 对单库全部资产重算富化（自定义出处变更后的
+	// 存量传导）：库内资产 size+mtime 未变时全量扫描只跳过，必须显式重算。
+	RecomputeEnrichment(ctx context.Context, libraryID string) error
 }
 
 // ErrScannerUnavailable 表示扫描器尚未装配（M1 占位实现返回它）。
@@ -54,6 +60,14 @@ type noScanner struct{}
 func (noScanner) Scan(context.Context, string) error { return ErrScannerUnavailable }
 
 func (noScanner) EnrichAsset(context.Context, string, string) error { return ErrScannerUnavailable }
+
+func (noScanner) UpdateCustomSources(context.Context, []string) error {
+	return ErrScannerUnavailable
+}
+
+func (noScanner) RecomputeEnrichment(context.Context, string) error {
+	return ErrScannerUnavailable
+}
 
 // DefaultTokenTTL 是签名媒体直链的默认有效期（6h，docs/SECURITY.md 红线 5）。
 const DefaultTokenTTL = 6 * time.Hour

@@ -368,3 +368,9 @@ func derefVal(p *int) int {
 
 // EnrichAsset 测试假扫描器的富化空实现（真实重算由 scanner 包 enrich_test 覆盖）。
 func (f *fakeScanner) EnrichAsset(context.Context, string, string) error { return nil }
+
+// UpdateCustomSources 测试假扫描器的自定义出处空实现（真实逻辑在 scanner 包）。
+func (f *fakeScanner) UpdateCustomSources(context.Context, []string) error { return nil }
+
+// RecomputeEnrichment 测试假扫描器的存量重算空实现（真实逻辑在 scanner 包）。
+func (f *fakeScanner) RecomputeEnrichment(context.Context, string) error { return nil }

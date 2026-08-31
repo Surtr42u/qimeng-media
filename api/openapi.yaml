@@ -146,6 +146,28 @@ paths:
         - { name: includeCos, in: query, schema: { type: boolean, default: false }, description: 含 COS 作者关联文件（默认排除，COS 走独立入口） }
       responses:
         "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/SourceCount" } } } } }
+  /api/v1/sources/custom:
+    get:
+      summary: 读取用户自定义出处名单（匹配引擎增量，DOMAIN_RULES §4）
+      description: |
+        返回当前生效的用户自定义出处名列表。无记录 = 空数组（内置检索表仍完整可用；
+        这与匹配引擎的"无自定义出处"等价，不是缺少配置）。
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CustomSources" } } } }
+    put:
+      summary: 整体替换用户自定义出处名单
+      description: |
+        整体替换语义（与匹配引擎 UpdateCustomSources 对齐）：提交的列表就是生效
+        名单，重复项/空项在服务端去重后按名称升序持久化；空数组 = 清空全部用户
+        自定义出处。成功后运行中的匹配引擎立即生效，并由服务端异步对全部常规库
+        资产重算出处/角色（已入库资产随全量扫描不会被重 ingest，必须显式重算）。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CustomSources" }
+      responses:
+        "204": { description: 已保存并触发存量重算 }
 
   # ---------- 媒体文件服务（签名直链） ----------
   /media/orig/{assetId}:
@@ -204,7 +226,7 @@ paths:
   /api/v1/dirs:
     get:
       summary: 目录树（文件整理用）
-      parameters: [ { name: libraryId, in: query, schema: { type: string } } ]
+      parameters: [ { name: libraryId, in: query, required: true, schema: { type: string } } ]
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/DirTree" } } } }
     post:
@@ -213,7 +235,7 @@ paths:
         required: true
         content:
           application/json:
-            schema: { type: object, required: [path], properties: { path: { type: string }, libraryId: { type: string } } }
+            schema: { type: object, required: [path, libraryId], properties: { path: { type: string }, libraryId: { type: string } } }
       responses:
         "201": { description: 已创建 }
   /api/v1/trash:
@@ -534,11 +556,19 @@ components:
         name:      { type: [string, "null"], description: 出处规范名；null = 无出处文件（前端兜底显示"其他"） }
         fileCount: { type: integer }
 
+    CustomSources:
+      type: object
+      description: 用户自定义出处名单（GET/PUT /api/v1/sources/custom 载荷；持久化键 kv_settings.custom_sources）
+      required: [names]
+      properties:
+        names: { type: array, items: { type: string }, description: 自定义出处名列表（整体替换；空数组 = 清空） }
+
     AssetDetail:
       allOf:
         - $ref: "#/components/schemas/AssetSummary"
         - type: object
           properties:
+            libraryId:    { type: string, description: 所属库 ID（多库场景客户端定位整理目标用） }
             relPath:      { type: string }
             directory:    { type: string }
             durationMs:   { type: integer, format: int64, description: 视频时长 }

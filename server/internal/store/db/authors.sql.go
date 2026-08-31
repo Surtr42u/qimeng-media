@@ -48,6 +48,17 @@ func (q *Queries) AddAssetCharacter(ctx context.Context, arg AddAssetCharacterPa
 	return err
 }
 
+const deleteAssetAuthorsByAssetID = `-- name: DeleteAssetAuthorsByAssetID :exec
+DELETE FROM asset_authors WHERE asset_id = ?
+`
+
+// Single-asset link removal (EnrichAsset COS branch recompute:
+// delete-then-insert, same overwrite semantics as asset_characters).
+func (q *Queries) DeleteAssetAuthorsByAssetID(ctx context.Context, assetID string) error {
+	_, err := q.db.ExecContext(ctx, deleteAssetAuthorsByAssetID, assetID)
+	return err
+}
+
 const deleteAssetAuthorsByAuthorIds = `-- name: DeleteAssetAuthorsByAuthorIds :exec
 DELETE FROM asset_authors
 WHERE author_id IN (/*SLICE:author_ids*/?)
@@ -86,6 +97,61 @@ DELETE FROM asset_characters WHERE asset_id = ?
 func (q *Queries) DeleteAssetCharacters(ctx context.Context, assetID string) error {
 	_, err := q.db.ExecContext(ctx, deleteAssetCharacters, assetID)
 	return err
+}
+
+const deleteOrphanCosAuthors = `-- name: DeleteOrphanCosAuthors :execrows
+DELETE FROM authors
+WHERE type = 'cos'
+  AND NOT EXISTS (SELECT 1 FROM asset_authors aa WHERE aa.author_id = authors.id)
+`
+
+// Post-scan garbage collection: COS authors arise from scanned directory
+// structure; once every file of an author directory is gone (rename/delete
+// at the filesystem level), the author row has zero links and must be
+// removed (old-project deleteOrphanCosAuthors semantics; the authors.type
+// CHECK on 'cos' is more reliable than a LIKE 'cos\\_%' prefix).
+func (q *Queries) DeleteOrphanCosAuthors(ctx context.Context) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteOrphanCosAuthors)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const listAssetsForEnrichmentByLibrary = `-- name: ListAssetsForEnrichmentByLibrary :many
+SELECT asset_id, file_name, rel_path FROM assets WHERE library_id = ?
+`
+
+type ListAssetsForEnrichmentByLibraryRow struct {
+	AssetID  string
+	FileName string
+	RelPath  string
+}
+
+// Full-library asset rows for explicit recomputation (custom_sources
+// change: already-ingested assets are skipped by a rescan because
+// size+mtime match, so enrichment must be recomputed on the write path).
+func (q *Queries) ListAssetsForEnrichmentByLibrary(ctx context.Context, libraryID string) ([]ListAssetsForEnrichmentByLibraryRow, error) {
+	rows, err := q.db.QueryContext(ctx, listAssetsForEnrichmentByLibrary, libraryID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAssetsForEnrichmentByLibraryRow
+	for rows.Next() {
+		var i ListAssetsForEnrichmentByLibraryRow
+		if err := rows.Scan(&i.AssetID, &i.FileName, &i.RelPath); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listAuthors = `-- name: ListAuthors :many

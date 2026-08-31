@@ -88,3 +88,24 @@ ON CONFLICT (asset_id, character_name) DO NOTHING;
 -- the file name changes but size+mtime do not, so no re-ingest would
 -- happen; the write path must recompute explicitly).
 UPDATE assets SET source = ?, updated_at = ? WHERE asset_id = ?;
+
+-- name: DeleteAssetAuthorsByAssetID :exec
+-- Single-asset link removal (EnrichAsset COS branch recompute:
+-- delete-then-insert, same overwrite semantics as asset_characters).
+DELETE FROM asset_authors WHERE asset_id = ?;
+
+-- name: DeleteOrphanCosAuthors :execrows
+-- Post-scan garbage collection: COS authors arise from scanned directory
+-- structure; once every file of an author directory is gone (rename/delete
+-- at the filesystem level), the author row has zero links and must be
+-- removed (old-project deleteOrphanCosAuthors semantics; the authors.type
+-- CHECK on 'cos' is more reliable than a LIKE 'cos\\_%' prefix).
+DELETE FROM authors
+WHERE type = 'cos'
+  AND NOT EXISTS (SELECT 1 FROM asset_authors aa WHERE aa.author_id = authors.id);
+
+-- name: ListAssetsForEnrichmentByLibrary :many
+-- Full-library asset rows for explicit recomputation (custom_sources
+-- change: already-ingested assets are skipped by a rescan because
+-- size+mtime match, so enrichment must be recomputed on the write path).
+SELECT asset_id, file_name, rel_path FROM assets WHERE library_id = ?;

@@ -8,11 +8,19 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync/atomic"
+
+	"golang.org/x/sync/errgroup"
 
 	"qimeng-media/server/internal/authoring"
+	"qimeng-media/server/internal/events"
 	"qimeng-media/server/internal/store"
 	"qimeng-media/server/internal/store/db"
 )
+
+// enrichRecomputeConcurrency 存量富化重算的并发度（RecomputeEnrichment）。
+// SQLite 单写者，全靠并发只会放大争用；4 路已覆盖本地库的写耗时。
+const enrichRecomputeConcurrency = 4
 
 // enrich.go：扫描入库时的作者体系富化挂接（M3，DOMAIN_RULES §4/§6）。
 //
@@ -30,14 +38,21 @@ import (
 //     excluded.source，mtime 变化重 ingest 天然按新文件名重算覆盖；
 //   - 角色行：DeleteAssetCharacters + AddAssetCharacter 先删后插，
 //     每次重 ingest 全量重算；
-//   - 移动合并路径（applyMoveMerge）不重算：合并条件是 size+mtime 完全
-//     一致（rename/move 不改内容），文件名不变则出处/角色匹配结果不变，
-//     旧身份的富化数据继续有效；
+//   - 移动合并路径（applyMoveMerge）：normal 库不重算——合并条件是
+//     size+mtime 完全一致（rename/move 不改内容），文件名不变则出处/角色
+//     匹配结果不变，旧身份的富化数据继续有效；cos 库重算作者关联（作者
+//     目录整体改名时首段目录变化，不重算会留下旧作者挂载、新作者缺失）；
+//   - API 移动/重命名（filing）后 EnrichAsset 显式重算：normal=出处/角色
+//     （文件名变而 size+mtime 不变，扫描不会重 ingest）、cos=作者关联
+//     （目录首段语义同上）；
 //   - cos 作者与资产关联经 AddAssetAuthor 幂等 DO NOTHING，重扫不翻倍。
 //
 // 自定义出处（§4「用户手动添加的分区名自动加入识别」）：Scanner 构造时从
 // kv_settings（key=authoring.SettingKeyCustomSources）一次性装载；无记录
-// 用空集（内置表仍完整可用）。
+// 用空集（内置表仍完整可用）。运行期经 UpdateCustomSources 整体替换（写入
+// 端点先持久化再同步），并靠 RecomputeEnrichment 对常规库存量资产显式重算
+// ——资产 size+mtime 未变时全量扫描只会跳过（见 scanner.go 变更检测），
+// 自定义出处变更不会自然传导到已入库的 source 列。
 
 // LibraryKind 是 libraries.kind 的两个存储值（migrations/0005 CHECK 约束；
 // 富化分派依据，禁止手抄字符串）。
@@ -136,7 +151,7 @@ func firstDirSegment(rel string) string {
 // EnrichAsset 单资产重富化：API 移动/重命名（filing）成功后调用。文件名
 // 变化会改变出处/角色匹配结果，而移动不改 size+mtime，下次扫描不会重
 // ingest（移动合并路径见文件头注释），必须在写入路径显式重算。
-// COS 库不重算（作者关联按目录维度，目录变更的映射修正随全量扫描对账）。
+// normal 库按文件名重算出处/角色；cos 库按当前 rel 首段目录重算作者关联。
 func (s *Scanner) EnrichAsset(ctx context.Context, libraryID, assetID string) error {
 	asset, err := s.q.GetAsset(ctx, assetID)
 	if err != nil {
@@ -147,26 +162,129 @@ func (s *Scanner) EnrichAsset(ctx context.Context, libraryID, assetID string) er
 		return fmt.Errorf("scanner: 查询待富化库 %s: %w", libraryID, err)
 	}
 	if lib.Kind == LibraryKindCos {
-		return nil
+		return s.recomputeCosAuthor(ctx, asset.AssetID, asset.RelPath)
 	}
-	source, chars := s.matcher.MatchAll(asset.FileName)
+	return s.recomputeNormalEnrichment(ctx, asset.AssetID, asset.FileName)
+}
+
+// recomputeNormalEnrichment 按文件名重算单资产的出处/角色（覆盖语义：
+// 先删后插角色 + UpdateAssetSource，与 ingestNormalFile 的结果形态一致）。
+// EnrichAsset（API 移动/改名）与 RecomputeEnrichment（自定义出处变更）
+// 共用；非单事务的中断窗口内角色缺失，下次重算自愈（同 ingestNormalFile
+// 的容错注释）。
+func (s *Scanner) recomputeNormalEnrichment(ctx context.Context, assetID, fileName string) error {
+	source, chars := s.matcher.MatchAll(fileName)
 	if err := s.q.UpdateAssetSource(ctx, db.UpdateAssetSourceParams{
 		Source:    sql.NullString{String: source, Valid: source != ""},
 		UpdatedAt: store.FormatTimestamp(s.now()),
 		AssetID:   assetID,
 	}); err != nil {
-		return fmt.Errorf("scanner: 更新出处 %s: %w", asset.FileName, err)
+		return fmt.Errorf("scanner: 更新出处 %s: %w", fileName, err)
 	}
-	// 角色覆盖（先删后插，语义同 ingestNormalFile）。
 	if err := s.q.DeleteAssetCharacters(ctx, assetID); err != nil {
-		return fmt.Errorf("scanner: 清理角色 %s: %w", asset.FileName, err)
+		return fmt.Errorf("scanner: 清理角色 %s: %w", fileName, err)
 	}
 	for _, c := range chars {
 		if err := s.q.AddAssetCharacter(ctx, db.AddAssetCharacterParams{
 			AssetID: assetID, CharacterName: c,
 		}); err != nil {
-			return fmt.Errorf("scanner: 写入角色 %s/%s: %w", asset.FileName, c, err)
+			return fmt.Errorf("scanner: 写入角色 %s/%s: %w", fileName, c, err)
 		}
 	}
 	return nil
+}
+
+// recomputeCosAuthor 按当前 rel 首段目录重载单资产的 COS 作者关联
+// （先删后插覆盖，语义同角色行）：目录变了就挂新作者、清旧作者；
+// 库根直放（无目录段）只清不挂——文件不属于任何作者目录。
+func (s *Scanner) recomputeCosAuthor(ctx context.Context, assetID, rel string) error {
+	if err := s.q.DeleteAssetAuthorsByAssetID(ctx, assetID); err != nil {
+		return fmt.Errorf("scanner: 清理 COS 作者关联 %s: %w", assetID, err)
+	}
+	authorDir := firstDirSegment(rel)
+	if authorDir == "" {
+		return nil
+	}
+	authorID := authoring.GenerateCosAuthorID(authorDir)
+	if err := s.q.UpsertAuthor(ctx, db.UpsertAuthorParams{
+		ID:          authorID,
+		DisplayName: authorDir,
+		Type:        authoring.AuthorTypeCos,
+		CreatedAt:   store.FormatTimestamp(s.now()),
+	}); err != nil {
+		return fmt.Errorf("scanner: upsert COS 作者 %s: %w", authorDir, err)
+	}
+	if err := s.q.AddAssetAuthor(ctx, db.AddAssetAuthorParams{
+		AssetID: assetID, AuthorID: authorID,
+	}); err != nil {
+		return fmt.Errorf("scanner: 关联 COS 作者 %s: %w", authorDir, err)
+	}
+	return nil
+}
+
+// UpdateCustomSources 运行期整体替换用户自定义出处（写入端点调用；
+// 构造期装载见 New/loadCustomSources）。落 matcher 即对后续全部匹配生效
+// （含缓存清空），持久化由写入端点负责——此处保持无 IO。
+func (s *Scanner) UpdateCustomSources(_ context.Context, names []string) {
+	s.matcher.UpdateCustomSources(names)
+}
+
+// RecomputeEnrichment 对单库全部资产重算富化（自定义出处变更后的存量
+// 重算：资产 size+mtime 未变，全量扫描只跳过不会重 ingest，必须显式触发）。
+// normal 库重算出处/角色；cos 库无来源匹配语义，跳过。
+// 与库扫描并发时不取闸门：两者写入的富化列同源（同一 matcher 实例），
+// 交错不会破坏最终一致性；这是低频管理操作，不值得为它阻塞扫描。
+func (s *Scanner) RecomputeEnrichment(ctx context.Context, libraryID string) error {
+	lib, err := s.q.GetLibrary(ctx, libraryID)
+	if err != nil {
+		return fmt.Errorf("scanner: 查询待重算库 %s: %w", libraryID, err)
+	}
+	if lib.Kind == LibraryKindCos {
+		return nil
+	}
+	rows, err := s.q.ListAssetsForEnrichmentByLibrary(ctx, libraryID)
+	if err != nil {
+		return fmt.Errorf("scanner: 载入库 %s 待重算资产: %w", libraryID, err)
+	}
+	var updated atomic.Int64
+	g := errgroup.Group{}
+	g.SetLimit(enrichRecomputeConcurrency)
+	for _, r := range rows {
+		r := r
+		g.Go(func() error {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if err := s.recomputeNormalEnrichment(ctx, r.AssetID, r.FileName); err != nil {
+				s.logger.Warn("scanner: 重算富化失败，跳过", "assetId", r.AssetID, "err", err)
+				return nil
+			}
+			updated.Add(1)
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return err
+	}
+	if n := updated.Load(); n > 0 {
+		s.publish(events.TopicLibraryChanged, ScanResult{LibraryID: libraryID, Updated: int(n)})
+	}
+	return nil
+}
+
+// cleanupOrphanCosAuthors 清理孤立 COS 作者（作者目录的文件全部消失后
+// 残留的零关联作者行）。全库范围：COS 作者只可能由 COS 库扫描产生，且
+// 隔离口径下正常库资产不会关联 cos_ 作者，无需按库限定——
+// 旧项目 deleteOrphanCosAuthors 即扫描后全库清理（GUIDE_DATA 语义）。
+// 扫描收尾与增量删除路径都会调用（目录改名成孤立的作者立即被清，
+// 不依赖轮询周期）。
+func (s *Scanner) cleanupOrphanCosAuthors(ctx context.Context) {
+	n, err := s.q.DeleteOrphanCosAuthors(ctx)
+	if err != nil {
+		s.logger.Warn("scanner: 清理孤立 COS 作者失败", "err", err)
+		return
+	}
+	if n > 0 {
+		s.logger.Info("scanner: 清理孤立 COS 作者", "count", n)
+	}
 }

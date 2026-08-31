@@ -74,6 +74,18 @@ func (a *scannerAdapter) EnrichAsset(ctx context.Context, libraryID, assetID str
 	return a.sc.EnrichAsset(ctx, libraryID, assetID)
 }
 
+// UpdateCustomSources 运行期替换自定义出处（同步，纯内存操作）。
+func (a *scannerAdapter) UpdateCustomSources(ctx context.Context, names []string) error {
+	a.sc.UpdateCustomSources(ctx, names)
+	return nil
+}
+
+// RecomputeEnrichment 单库存量富化重算（同步调用、扫描器内部并发跑）：
+// PUT /sources/custom 的伴随任务，由 httpapi 侧起 goroutine 逐库调用。
+func (a *scannerAdapter) RecomputeEnrichment(ctx context.Context, libraryID string) error {
+	return a.sc.RecomputeEnrichment(ctx, libraryID)
+}
+
 // sysStatusAdapter 把 sysmon.Collector 适配成 httpapi.Deps.SysStatus 闭包。
 //
 // 挂载点每次快照现查库表（DataDir + 全部库根）：库增删后磁盘面板自动

@@ -496,6 +496,9 @@ func TestAssetDetail(t *testing.T) {
 	if d.RelPath == nil || *d.RelPath != "a.jpg" || d.Directory == nil || *d.Directory != "" {
 		t.Fatalf("路径字段不符：%v %v", d.RelPath, d.Directory)
 	}
+	if d.LibraryId == nil || *d.LibraryId != env.libID {
+		t.Fatalf("详情应携带归属库 ID：%v, want %s", d.LibraryId, env.libID)
+	}
 	if d.Source == nil || *d.Source != "其他" {
 		t.Fatalf("无出处资产应显示 其他：%v", d.Source)
 	}

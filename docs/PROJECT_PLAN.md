@@ -3,7 +3,7 @@
 > 每个里程碑都是**可用闭环**（做完就能用/验收），不做"半成品堆叠"。开发顺序经过依赖推理，禁止跳级。
 > 通用纪律：每个功能完成 = 代码 + 测试 + 文档同步 + 门禁全绿，四件套缺一不可；门禁 = CI 四 job + golangci-lint（本机 `make lint` 同配置）。
 > 重构后新增纪律（ADR-0009/0010/0011）：**生成物不手改**（只改 openapi.yaml 后 make sdk）、**新迁移只加文件**（只加不改不删）、**重大决策先写 ADR**（并同步 docs/adr/INDEX.md）。
-> 最后更新：2026-08-30（M3 后端五项完成：推荐/统计/SourceMatcher/作者体系/迁移端点全量接线；2026-08-27 M2 拆分后端先行/UI 后置 + sysmon 接线完成；2026-08-26 M2-M4 验收标准与底层重构对齐；2026-08-22 制定）
+> 最后更新：2026-08-31（M3 后端收尾：遗留三项清零——COS 孤立作者清理/custom_sources 写入端点/filing cos 库映射修正，协议债两项；2026-08-30 M3 后端五项完成；2026-08-27 M2 拆分后端先行/UI 后置 + sysmon 接线完成；2026-08-26 M2-M4 验收标准与底层重构对齐；2026-08-22 制定）
 
 ## M0 · 地基（协议与工具链）
 
@@ -77,6 +77,7 @@
 - [x] 作者体系：TXT 三格式导入 + 统一重建语义 + COS 目录扫描双体系（2026-08-30：`internal/authoring` 解析/匹配/authorId 生成（旧 AuthorImportUseCaseTest 13 例照译，分片存储系旧 Android CursorWindow 规避不实现）；authors.sql + /authors 三端点接线（列表/导入-txt 统一重建/关注）；scanner 按 libraries.kind 分派——normal SourceMatcher 富化、cos 目录结构建 cos_ 作者（migration 0005 加 kind 列））
 - [x] 旧数据迁移端点（qimeng_backup.json，映射表 DOMAIN_RULES §10）（2026-08-30：协议补 LegacyBackupImport 17 段 schema + LegacyImportResult（此前零建模）+ make sdk；实现：文件名匹配映射（folderName 消歧）/作者 cos_ 前缀保留/标签/时间轴/收藏/关注 upsert + 事件回放（dailyBrowse 全量+mediaStats 差额+history 补漏，总量守恒）+ 同批次幂等锚点（kv_settings）+ 不导入段进 warnings；4 用例）
 - [ ] 推荐偏好设置页（9 维权重 + 4 预设）（UI 段——按用户指示不动 UI，后置到 UI 路线；后端 GET/PUT /recommendations/prefs 已就绪）
+- [x] M3 后端收尾（2026-08-31，非里程碑项，遗留清零）：COS 孤立作者清理（扫描收尾/增量删除后自动对账）、custom_sources 写入端点（GET/PUT /sources/custom + 运行中 matcher 刷新 + 全库存量重算）、filing 移动/改名 cos 库作者映射重算（EnrichAsset 与扫描移动合并两路径）；协议债：/dirs libraryId 标 required、AssetDetail 补 libraryId | 文档: CHANGELOG(HANDOVER/GUIDE_API/DOMAIN_RULES/CAPABILITY_MAP) 本条
 
 **验收**：迁移旧备份后，推荐/排行/统计行为与旧 App 口径一致（对比测试通过）；golangci-lint 门禁绿、生成物不手改、新迁移只加文件、决策先写 ADR。
 

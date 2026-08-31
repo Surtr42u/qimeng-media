@@ -445,6 +445,7 @@ func (s *Server) GetApiV1AssetsAssetId(w http.ResponseWriter, r *http.Request, a
 		SizeBytes:  base.SizeBytes,
 		Source:     base.Source,
 		// AssetDetail 扩展字段
+		LibraryId:          ptr(row.LibraryID),
 		Authors:            &authors,
 		Characters:         &charNames,
 		Tags:               &tags,

@@ -131,7 +131,7 @@ func (s *Server) PostApiV1AuthVerify(w http.ResponseWriter, r *http.Request) {
 //
 // 单用户单 token 模型：登录成功即重铸 token（新哈希覆盖旧哈希），旧
 // token 随之失效——同机换浏览器后旧浏览器需重新登录，换来的是"token
-/// 丢失时总有密码这条找回路径"（openapi /auth/login description 语义）。
+// / 丢失时总有密码这条找回路径"（openapi /auth/login description 语义）。
 // 未初始化（无用户行）返回 401：与 verify 的未初始化行为一致，不泄露
 // "系统是否已初始化"之外的信息。
 func (s *Server) PostApiV1AuthLogin(w http.ResponseWriter, r *http.Request) { //nolint:revive // 生成接口要求的方法名

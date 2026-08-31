@@ -55,7 +55,7 @@
 | 层 | 选型 | 一句话理由（详见对应 ADR） |
 |---|---|---|
 | 服务端语言 | Go 1.27 | 单二进制、低内存、交叉编译、AI 生成质量最稳（PhotoPrism/Gitea/Syncthing 同路线） |
-| HTTP 路由 | chi | 轻量、标准库风格 |
+| HTTP 路由 | 标准库 Go 1.22+ ServeMux | oapi-codegen std-http-server 生成模式直接注册（v0 曾选 chi，代码已无引用、go.mod 2026-08-31 tidy 移除，此处如实记录） |
 | 接口层生成 | oapi-codegen | 从 openapi.yaml 生成 server 接口与类型 |
 | 数据库 | SQLite（modernc.org/sqlite 纯 Go 驱动） | 零运维单文件；无 CGO 交叉编译无痛（adr/0003） |
 | 数据访问 | sqlc | SQL 先写，类型安全 Go 代码生成 |

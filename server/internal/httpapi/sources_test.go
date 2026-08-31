@@ -1,13 +1,16 @@
 package httpapi
 
 // sources 端点端到端测试：出处分组计数/降序/无出处归组/COS 隔离与
-// includeCos 切换。口径与 GET /assets 列表一致（DOMAIN_RULES §3/§6）。
+// includeCos 切换。口径与 GET /assets 列表一致（DOMAIN_RULES §3/§6）；
+// users 自定义出处端点见 TestCustomSourcesEndpoints（§4）。
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"testing"
 
+	"qimeng-media/server/internal/authoring"
 	"qimeng-media/server/internal/httpapi/gen"
 )
 
@@ -74,5 +77,60 @@ func TestSourcesEndpoint(t *testing.T) {
 	if len(items) != 2 || items[0].Name == nil || *items[0].Name != "铁拳" ||
 		items[1].Name != nil || *items[1].FileCount != 1 {
 		t.Fatalf("includeCos=true 应包含 COS 文件并归入 null 桶，得到 %+v", items)
+	}
+}
+
+// TestCustomSourcesEndpoints：custom 端点闭环——初始空数组 → PUT 乱序/
+// 重复/夹空白名单 → GET 回读规范化（trim+去空+去重+升序）且持久化形态
+// 与回读一致（扫描器构造期按存储值装载）→ PUT 空数清空。
+func TestCustomSourcesEndpoints(t *testing.T) {
+	env := newTestEnv(t)
+	get := func(t *testing.T) gen.CustomSources {
+		t.Helper()
+		resp := env.do(t, http.MethodGet, "/api/v1/sources/custom", "")
+		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("GET custom 期望 200，得到 %d", resp.StatusCode)
+		}
+		var body gen.CustomSources
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			t.Fatalf("解析 custom 响应失败: %v", err)
+		}
+		return body
+	}
+	put := func(t *testing.T, payload string) int {
+		t.Helper()
+		resp := env.do(t, http.MethodPut, "/api/v1/sources/custom", payload)
+		defer func() { _ = resp.Body.Close() }()
+		return resp.StatusCode
+	}
+
+	// ① 初始无记录 = 空数组（匹配引擎侧无自定义出处即等价，非错误信号）。
+	if got := get(t); len(got.Names) != 0 {
+		t.Fatalf("初始自定义出处应为空数组，得到 %+v", got.Names)
+	}
+
+	// ② PUT 乱序 + 重复 + 夹空白 → 规范化为 [火影忍者, 钢之炼金术]（升序）。
+	if code := put(t, `{"names":["  火影忍者 ","钢之炼金术","火影忍者","","钢之炼金术"]}`); code != http.StatusNoContent {
+		t.Fatalf("PUT custom 期望 204，得到 %d", code)
+	}
+	got := get(t)
+	if len(got.Names) != 2 || got.Names[0] != "火影忍者" || got.Names[1] != "钢之炼金术" {
+		t.Fatalf("回读不规范：%+v, want [火影忍者 钢之炼金术]", got.Names)
+	}
+	stored, err := env.q.GetSetting(context.Background(), authoring.SettingKeyCustomSources)
+	if err != nil {
+		t.Fatalf("读取持久化自定义出处失败: %v", err)
+	}
+	if stored != `["火影忍者","钢之炼金术"]` {
+		t.Errorf("持久化形态与回读不一致：%s", stored)
+	}
+
+	// ③ PUT 空数组 = 清空。
+	if code := put(t, `{"names":[]}`); code != http.StatusNoContent {
+		t.Fatalf("清空 PUT 期望 204，得到 %d", code)
+	}
+	if got := get(t); len(got.Names) != 0 {
+		t.Fatalf("清空后应为空，得到 %+v", got.Names)
 	}
 }

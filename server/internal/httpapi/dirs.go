@@ -14,14 +14,15 @@ import (
 	"qimeng-media/server/internal/httpapi/gen"
 )
 
-// GetApiV1Dirs 目录树。libraryId 业务必填（协议未标 required 但
-// 目录树必须锚定单一库根，缺省无明确语义），缺失 400、库不存在 404。
+// GetApiV1Dirs 目录树。libraryId 协议必填（目录树必须锚定单一库根，
+// 缺省无明确语义；openapi 已标 required，此处校验是防御性兜底），
+// 库不存在 404。
 func (s *Server) GetApiV1Dirs(w http.ResponseWriter, r *http.Request, params gen.GetApiV1DirsParams) {
-	if params.LibraryId == nil || *params.LibraryId == "" {
+	if params.LibraryId == "" {
 		writeErr(w, http.StatusBadRequest, "INVALID_PARAM", "libraryId 必填（目录树锚定单一库）")
 		return
 	}
-	lib, err := s.q.GetLibrary(r.Context(), *params.LibraryId)
+	lib, err := s.q.GetLibrary(r.Context(), params.LibraryId)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeErr(w, http.StatusNotFound, "NOT_FOUND", "库不存在")
 		return

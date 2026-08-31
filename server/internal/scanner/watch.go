@@ -255,6 +255,9 @@ func (w *watcher) removeIfPresent(ctx context.Context, rel string) {
 	w.s.publish(events.TopicLibraryChanged, ScanResult{
 		LibraryID: w.lib.ID, Removed: 1,
 	})
+	// 增量删除同样可能让 COS 作者变孤立（作者目录最后一个文件被删），
+	// 顺手清理，不等下一次轮询扫描（与 Scan 收尾的清理同一语义）。
+	w.s.cleanupOrphanCosAuthors(ctx)
 }
 
 // StartBackground 轮询兜底：每 interval 对全部注册库做一次全量扫描。

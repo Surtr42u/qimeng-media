@@ -284,6 +284,9 @@ func (s *Scanner) Scan(ctx context.Context, lib db.Library) (ScanResult, error) 
 	if err := s.reconcile(ctx, lib, existing, seen, added, &res); err != nil {
 		return res, err
 	}
+	// 收尾清理：作者目录文件全消失后残留的孤立 COS 作者（随删空目录/
+	// 改名目录一起消失的旧作者行），与 reconcile 的资产删除联动。
+	s.cleanupOrphanCosAuthors(ctx)
 
 	// 只在有实际变更时发 library.changed：轮询兜底每 5 分钟一次全量扫描，
 	// 无条件广播会驱动所有在线端做无意义刷新。
@@ -383,7 +386,7 @@ func (s *Scanner) reconcile(ctx context.Context, lib db.Library, existing []db.A
 		}
 		cand := candidates[idx]
 		candidates = append(candidates[:idx], candidates[idx+1:]...)
-		if err := s.applyMoveMerge(ctx, gone, cand); err != nil {
+		if err := s.applyMoveMerge(ctx, lib, gone, cand); err != nil {
 			return err
 		}
 		res.Moved++
@@ -405,7 +408,10 @@ func (s *Scanner) deleteGone(ctx context.Context, lib db.Library, gone db.Asset)
 // applyMoveMerge 把消失记录的身份搬到新路径（ARCHITECTURE §6 启发式）。
 // 顺序严格：先删新插入的记录释放 (library_id, rel_path) 唯一索引，
 // 再 UPDATE 旧身份的路径属性；颠倒会撞唯一约束。
-func (s *Scanner) applyMoveMerge(ctx context.Context, gone, cand db.Asset) error {
+// cos 库在改路径后按新 rel 重算作者关联（作者目录整体改名是移动合并的
+// 典型场景：旧目录文件消失+新目录文件出现且 size+mtime 一致）；normal
+// 库不重算——文件名不变，出处/角色匹配结果不变（文件头注释）。
+func (s *Scanner) applyMoveMerge(ctx context.Context, lib db.Library, gone, cand db.Asset) error {
 	if err := s.q.DeleteAsset(ctx, cand.AssetID); err != nil {
 		return fmt.Errorf("scanner: 移动合并-删除新记录 %s: %w", cand.RelPath, err)
 	}
@@ -417,6 +423,14 @@ func (s *Scanner) applyMoveMerge(ctx context.Context, gone, cand db.Asset) error
 	})
 	if err != nil {
 		return fmt.Errorf("scanner: 移动合并-改路径 %s→%s: %w", gone.RelPath, cand.RelPath, err)
+	}
+	if lib.Kind == LibraryKindCos {
+		// 新路径的作者目录可能不同于旧目录：重算保证映射正确；失败只
+		// 警告——重扫自愈（重扫按目录重建关联，见 ingestCosFile）。
+		if err := s.recomputeCosAuthor(ctx, gone.AssetID, cand.RelPath); err != nil {
+			s.logger.Warn("scanner: 移动合并后重算 COS 作者失败（重扫自愈）",
+				"assetId", gone.AssetID, "err", err)
+		}
 	}
 	// 审计日志（adr/0004「合并操作记录审计日志（可追溯）」）。
 	s.logger.Info("scanner: 移动合并（身份保留，路径属性更新）",

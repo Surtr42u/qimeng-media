@@ -1,7 +1,7 @@
 # HANDOVER - AI 交接说明
 
 > 写给下一位接手的 AI（任何模型/工具）。人类用户无编程基础，全部代码由 AI 生成。
-> 最后更新：2026-08-29（M2 UI 段页面组装+集成冒烟完成；提交策略待用户确认）
+> 最后更新：2026-08-31（M3 后端遗留清零：COS 孤立作者清理/custom_sources 写入端点/filing cos 库映射修正 + 协议债两项；测试残留 server/data 已清理）
 
 ## 接手第一步
 
@@ -14,6 +14,7 @@
 
 - **M0 地基 ✅**、**M1 服务端核心闭环 ✅**、**M2 后端先行全部完成 ✅**、**M2 UI 段（Web）✅（2026-08-29，commit 82f1935 存档含并行 M3 后端件）**、**M3 后端五项 ✅（2026-08-30，推荐算法/统计/SourceMatcher/作者体系/迁移端点全量接线，见下方 M3 完成记录）**
 - **M3 剩余仅 1 项 UI**：推荐偏好设置页（9 维权重+4 预设）——按用户指示不动 UI，后置到 UI 路线（后端 GET/PUT /recommendations/prefs 已就绪）
+- **M3 后端遗留已清零（2026-08-31）**：① 孤立 COS 作者清理（扫描收尾+增量删除后自动，旧项目 deleteOrphanCosAuthors 语义）；② custom_sources 写入端点（GET/PUT /sources/custom，整体替换+后台全库存量重算，已入库资产不依赖重扫）；③ filing 改名/移动的 cos 库作者映射修正（EnrichAsset/移动合并两条路径都按新目录首段重算）。协议债两项同清：/dirs 的 libraryId 标 required、AssetDetail 补 libraryId。细节见 CHANGELOG「M3 后端收尾」条目
 - **UI 路线现状（另一条 AI 路线，2026-08-30 定稿）**：`web/src/panel-demo/`（Tremor 风格五页面板）为正式 UI 基底，全部 mock——接真实数据待办中「数据页依赖 M3 统计」**本次已解锁**（/stats/overview /stats/trends 可用），其余待办见 CHANGELOG「UI 方向定稿」条目
 - **下一步：M4 Android 客户端** → M5 NAS 部署验收（M4 为 UI 重的任务，与 Web UI 路线一样待用户拍板启动时机）
 - **501 stub 已全部清零**（notImplemented 机制退役，errors.go 该函数已删——新端点接线模式：实现进各自文件、无 stub 可删）
@@ -34,9 +35,11 @@ M3 完成后当天就在用户 PC 上实机跑通全流程，明天的活从这�
 
 ### 明天待办（用户拍板节奏，按序）
 
-1. **panel-demo 新面板接真实数据**（用户已确认方向：新面板"做好了但没接入"，今天就到此为止）——首页/相册接资产列表+签名直链缩略图、我的数据页接 /stats/*（M3 已解锁）、维护页接 /system/status；完成后替换现有用户端壳（AppShell 底部导航五页）。注意：接数据属 UI 路线工作，改前端时**顺带补集成冒烟**（本次实机暴露的 409 误判就是缺这类测试）
-2. **未导入内容**（用户未拍板，做新面板前问一句）：`<本地相册目录>\2 收藏`（内含 `收藏\` 一层）与 `<本地相册目录>\相册`（个人照片 2013~2025）是否注册为库；旧备份 `<旧项目目录>\qimeng_backup.json` 的行为数据（浏览历史/点赞/收藏）是否走 POST /import/qimeng-backup 补进新库
+1. **panel-demo 新面板接真实数据**（用户已确认方向，前端 UI 完善后启动；2026-08-31 用户拍板"先不做 UI 接入"）——首页/相册接资产列表+签名直链缩略图、我的数据页接 /stats/*（M3 已解锁）、维护页接 /system/status；完成后替换现有用户端壳（AppShell 底部导航五页）。注意：接数据属 UI 路线工作，改前端时**顺带补集成冒烟**（实机暴露的 409 误判就是缺这类测试）。
+2. **未导入内容**（用户未拍板，做新面板/注册前问一句）：`<本地相册目录>\2 收藏`（内含 `收藏\` 一层）与 `<本地相册目录>\相册`（个人照片 2013~2025）是否注册为库（相册若按 COS 目录结构需选库类型）；旧备份 `<旧项目目录>\qimeng_backup.json` 的行为数据（浏览历史/点赞/收藏）是否走 POST /import/qimeng-backup 补进新库
 3. panel-demo 接入完成后再议 M4 Android / M5 NAS 部署
+
+> 环境已清理（2026-08-31）：`server/data/` 测试残留已删除（config 默认 `./data` 的裸启动空库产物；正式数据目录是仓库根的 `qimeng-data/`）。实机库经查只注册了 1 个正式库（测试收藏库）——若再看到第二个数据目录，先确认不是某个裸启动又没带 `QIMENG_DATA_DIR` 产生的，再删。
 
 ## M2 后端任务（2026-08-29：全部完成 ✅）
 
@@ -79,7 +82,7 @@ M3 及以后的任务表不变（推荐算法/统计/SourceMatcher/作者体系/
 ### 关键事实速查（M2 UI 实现依据）
 
 - 交互规格 = 旧项目 GUIDE_UI 验证语义的 Web 对齐版（@ 本仓库根 AGENTS.md/README，实现要点已由方案基线固化到各页面 prompt——现不在文件里，fallback 依据：LEGACY_REQUIREMENTS.md + DOMAIN_RULES §3/§8/§11 + 旧项目 docs/GUIDE_UI.md）。
-- 协议事实清单（字段级，含实现差异与 501 stub 表）：`<本地用户目录>\AppData\Local\Temp\qm-research-api.md`（临时文件，可能已被清——依据为准的是 api/openapi.yaml + server/internal/httpapi/stubs.go + DOMAIN_RULES）。
+- 协议事实清单（字段级，含实现差异）：以 `api/openapi.yaml` + `server/internal/httpapi/gen/` + DOMAIN_RULES 为准。
 - 关键约定：日期分组客户端按 modifiedAt 折叠；列表排序 default=addedDate desc（M1 占位）；tagIds 多选+tagMode；sources 端点 name=null 兜底"其他"；上传 XHR（octet-stream）；SSE 必须 fetch 流式；localStorage token key `qimeng_token`、sessionId 用 sessionStorage UUID。
 
 ## 怎么跑起来
