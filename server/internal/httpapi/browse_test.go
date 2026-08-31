@@ -152,7 +152,9 @@ func writeTestJPG(t *testing.T, path string, w, h int) {
 	}
 }
 
-func newTestEnv(t *testing.T) *testEnv {
+// newTestEnvRaw 组装基础测试环境（迁移/建库/服务就绪，但不 setup 初始化、
+// 不扫描——初始化时序交给用例自己控制）。
+func newTestEnvRaw(t *testing.T) *testEnv {
 	t.Helper()
 	root := t.TempDir()
 	media := filepath.Join(root, "media")
@@ -213,8 +215,15 @@ func newTestEnv(t *testing.T) *testEnv {
 	t.Cleanup(ts.Close)
 
 	env := &testEnv{ts: ts, q: q, conn: conn, libID: lib.ID, clock: clock, media: media, dataDir: dataDir, cfg: cfg}
-	env.setupAndSeed(t, fscan)
 	return env
+}
+
+// newTestEnv 标准测试环境：组装 + setup 初始化 + 一次假扫描（3 个文件入库）。
+// 需要自定义初始化时序（如 dev 模式免密登录）的用例用 newTestEnvRaw。
+func newTestEnv(t *testing.T) *testEnv {
+	e := newTestEnvRaw(t)
+	e.setupAndSeed(t, &fakeScanner{q: e.q, libID: e.libID})
+	return e
 }
 
 // setupAndSeed 完成初始化并触发一次假扫描（入库 3 个文件）。

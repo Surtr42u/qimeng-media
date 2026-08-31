@@ -18,6 +18,7 @@
 | 分组 | 端点 | 说明 |
 |---|---|---|
 | 认证 | POST /auth/setup、POST /auth/login、POST /auth/verify | 首次设密码领 token（只显示一次）；密码登录换新 token（换设备/清缓存找回通道，登录即重铸旧 token 失效）；校验 token |
+| 认证（开发专用） | POST /auth/dev-login | 仅服务端 `auth_dev_mode=true` 时可用：免密码直接签发 token（未初始化自动建 admin 占位）。404 = 未开启，生产零行为变化；仅限本机调试，禁止配合公网/隧道（SECURITY.md「开发模式」） |
 | 库管理 | GET/POST /libraries、POST /libraries/{id}/scan | 注册媒体目录、触发全量扫描（进度走 SSE）；POST 可选 `kind`（normal 默认 / cos——COS 作者库按 `作者/作品/文件` 目录结构扫描建 cos_ 作者，DOMAIN_RULES §6） |
 | 实时推送 | GET /events | SSE：scan.progress / library.changed / thumbnail.progress / upload.done |
 | 资产浏览 | GET /assets、GET/DELETE /assets/{id}、GET /sources、GET/PUT /sources/custom | 唯一列表口径（筛选/排序/搜索全参数化）；DELETE=进回收站；出处列表（按规范名分组的文件计数，fileCount 降序，name=null=无出处文件，默认排除 COS）；自定义出处整体替换（见「关键机制」） |

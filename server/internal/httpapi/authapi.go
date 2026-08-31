@@ -180,3 +180,70 @@ func (s *Server) PostApiV1AuthLogin(w http.ResponseWriter, r *http.Request) { //
 	s.authState.mu.Unlock()
 	writeJSON(w, http.StatusOK, gen.AuthToken{Token: &token})
 }
+
+// PostApiV1AuthDevLogin 开发模式免密登录：免密码直接签发 token。
+//
+// 安全边界（SECURITY.md「开发模式」节）：仅 config.AuthDevMode=true 时
+// 生效，否则恒 404——生产环境该端点"不存在于语义层面"，前端据此回退
+// 正常 setup/login 表单。与 /auth/login 同语义：签发即重铸，旧 token
+// 失效；未初始化时自动创建 admin 占位用户，保证"免密码直奔 UI"的
+// 开发体验（用户约定：项目未完成前不要密码流程）。
+func (s *Server) PostApiV1AuthDevLogin(w http.ResponseWriter, r *http.Request) { //nolint:revive // 生成接口要求的方法名
+	if !s.cfg.AuthDevMode {
+		writeErr(w, http.StatusNotFound, "DEV_DISABLED", "开发模式未开启")
+		return
+	}
+
+	s.authState.mu.Lock()
+	defer s.authState.mu.Unlock()
+	// 未初始化：自动创建占位 admin（随机密码仅作哈希占位——dev 登录不经
+	// 密码校验，明文无需可找回；行存在即可，与 setup 的 409 语义隔离）。
+	if s.authState.tokenHash == "" {
+		if err := s.ensureDevUser(r.Context()); err != nil {
+			s.logger.Error("dev login: 自动初始化失败", "err", err)
+			writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
+			return
+		}
+	}
+	token, err := auth.GenerateToken()
+	if err != nil {
+		s.logger.Error("dev login: 生成 token 失败", "err", err)
+		writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
+		return
+	}
+	if err := s.q.UpdateUserTokenHash(r.Context(), auth.TokenHash(token)); err != nil {
+		s.logger.Error("dev login: 更新 token 失败", "err", err)
+		writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
+		return
+	}
+	s.authState.tokenHash = auth.TokenHash(token)
+	writeJSON(w, http.StatusOK, gen.AuthToken{Token: &token})
+}
+
+// ensureDevUser 在 dev 模式未初始化时创建占位 admin 用户。
+// 随机密码（GenerateToken 的 64 hex，> 8 位）仅作哈希占位。
+func (s *Server) ensureDevUser(ctx context.Context) error {
+	n, err := s.q.CountUsers(ctx)
+	if err != nil {
+		return err
+	}
+	if n > 0 {
+		return nil // 官方链路（setup/login）已建用户，无需占位
+	}
+	pass, err := auth.GenerateToken()
+	if err != nil {
+		return err
+	}
+	phc, err := auth.HashPassword(pass)
+	if err != nil {
+		return err
+	}
+	return s.q.CreateUser(ctx, db.CreateUserParams{
+		ID:           uuid.NewString(),
+		Name:         "admin",
+		PasswordHash: phc,
+		Role:         "admin",
+		TokenHash:    auth.TokenHash(pass),
+		CreatedAt:    store.FormatTimestamp(s.now()),
+	})
+}

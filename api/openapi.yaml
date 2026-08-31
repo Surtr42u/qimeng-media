@@ -57,6 +57,22 @@ paths:
         "200": { description: 登录成功，返回新 token, content: { application/json: { schema: { $ref: "#/components/schemas/AuthToken" } } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  # ---------- 认证（开发专用，勿用于生产） ----------
+  /api/v1/auth/dev-login:
+    post:
+      summary: 开发模式免密登录（仅 auth_dev_mode 开启时可用）
+      description: |
+        仅服务端 config/auth_dev_mode=true 时启用：免密码直接签发 token
+        （与 /auth/login 同语义：签发即重铸，旧 token 随之失效；未初始化时
+        自动创建 admin 占位用户）。未开启时一律 404——生产环境该端点不存在
+        于语义层面，前端据此回退正常 setup/login 表单，行为零变化。
+        仅限本机开发调试（用户约定：项目未完成前免密码直奔 UI），
+        禁止配合公网/隧道使用（SECURITY.md 红线 5 单点例外说明）。
+      security: []
+      responses:
+        "200": { description: 签发成功，返回新 token, content: { application/json: { schema: { $ref: "#/components/schemas/AuthToken" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   # ---------- 库（媒体目录） ----------
   /api/v1/libraries:
     get:

@@ -92,6 +92,12 @@ type Config struct {
 	// MediaSecret 是直链 HMAC 密钥；空 = main 启动时生成并持久化到
 	// DataDir 下的密钥文件（重启后既有直链仍然有效）。
 	MediaSecret string `yaml:"media_secret"`
+	// AuthDevMode 开发模式免密登录开关（默认 false）。开启时
+	// POST /api/v1/auth/dev-login 免密码直接签发 token（未初始化自动建
+	// admin 占位用户），前端据此直进 UI——用户约定：项目未完成前不要密码
+	// 流程，调试 UI 用。仅限本机开发，生产必须关闭；SECURITY 红线 5 的
+	// 单点例外，说明见 docs/SECURITY.md「开发模式」节。
+	AuthDevMode bool `yaml:"auth_dev_mode"`
 }
 
 // Load 按优先级加载配置：内置默认值 < yaml 文件 < 环境变量。
@@ -176,6 +182,13 @@ func applyEnv(cfg *Config) error {
 	// 为"默认不可见"，空串在 os.Getenv 层面无法与"未设置"区分。
 	if v := os.Getenv("QIMENG_WEB_STATIC_DIR"); v != "" {
 		cfg.Web.StaticDir = v
+	}
+	if v := os.Getenv("QIMENG_AUTH_DEV_MODE"); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return fmt.Errorf("环境变量 QIMENG_AUTH_DEV_MODE=%q 不是合法布尔值（1/true/0/false）: %w", v, err)
+		}
+		cfg.AuthDevMode = b
 	}
 	return nil
 }

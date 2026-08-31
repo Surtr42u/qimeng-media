@@ -24,6 +24,13 @@
 - **签名直链**：`/media/orig/...?exp=...&sig=HMAC(路径+过期时间, 服务端密钥)`——浏览器/播放器无需带 header 即可加载，但链接有时效。
 - token 泄露应急：管理端「重置 token」一键吊销全部直链。
 
+## 开发模式（红线 5 的单点例外，仅限本机）
+
+- **默认关闭**：`config.auth_dev_mode`（env `QIMENG_AUTH_DEV_MODE`）默认 false；关闭时 `POST /api/v1/auth/dev-login` 恒 404，所有 API 依旧要求 Bearer token——生产/默认部署零行为变化。
+- **开启时语义**：`/auth/dev-login` 免密码直接签发 token（未初始化自动创建 admin 占位用户；签发即重铸，与 /auth/login 同语义）。
+- **边界**：仅限开发阶段本机调试（用户约定：项目未完成前免密码直奔 UI）；**禁止**与 `listen: ":0.0.0.0"`、公网、Tailscale 等任何远程访问组合使用——它等价于"无凭据登录通道"，必须保持在内网受信主机之内。
+- 部署清单检查项：docker-compose / 生产 yaml **不得**出现 `auth_dev_mode: true`（CI 不做强制 gate，靠部署者自查 + 文档双签）。
+
 ## 上传安全（对应需求：手机直传 NAS）
 
 - 白名单：图片 jpg/jpeg/png/gif/webp/avif；视频 mp4/mkv/webm/mov/m4v/avi。

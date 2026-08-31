@@ -2,6 +2,10 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
+/* Immich 官方 UI 主题包（@immich/ui@0.86.0, MIT）：--immich-ui-* 全套色阶
+   light/dark 双套 okLCH；组件语义（primary/success/danger/warning/info）与
+   中性色（light/dark/muted/gray/default-border）的唯一来源 */
+@import "@immich/ui/theme/default.css";
 /* 设计 token（--qm-*）：组件颜色的唯一合法来源，详见 tokens.css 注释 */
 @import "./tokens.css";
 
@@ -50,73 +54,76 @@
     --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* 浅色主题：全部颜色引用 @immich/ui 官方 token（MIT），语义值随包升级自动跟随；
+   primary-foreground 是 Immich 未定义的本项目约定（白字在 #4250af 上） */
 :root {
-    --background: oklch(1 0 0);
-    --foreground: oklch(0.145 0 0);
-    --card: oklch(1 0 0);
-    --card-foreground: oklch(0.145 0 0);
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.205 0 0);
-    --primary-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.97 0 0);
-    --secondary-foreground: oklch(0.205 0 0);
-    --muted: oklch(0.97 0 0);
-    --muted-foreground: oklch(0.556 0 0);
-    --accent: oklch(0.97 0 0);
-    --accent-foreground: oklch(0.205 0 0);
-    --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.922 0 0);
-    --input: oklch(0.922 0 0);
-    --ring: oklch(0.708 0 0);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
-    --radius: 0.625rem;
-    --sidebar: oklch(0.985 0 0);
-    --sidebar-foreground: oklch(0.145 0 0);
-    --sidebar-primary: oklch(0.205 0 0);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.97 0 0);
-    --sidebar-accent-foreground: oklch(0.205 0 0);
-    --sidebar-border: oklch(0.922 0 0);
-    --sidebar-ring: oklch(0.708 0 0);
+    --background: var(--immich-ui-light);
+    --foreground: var(--immich-ui-dark);
+    --card: var(--immich-ui-light);
+    --card-foreground: var(--immich-ui-dark);
+    --popover: var(--immich-ui-light);
+    --popover-foreground: var(--immich-ui-dark);
+    --primary: var(--immich-ui-primary-500);
+    --primary-foreground: oklch(1 0 0);
+    --secondary: var(--immich-ui-gray);
+    --secondary-foreground: var(--immich-ui-dark);
+    --muted: var(--immich-ui-gray);
+    --muted-foreground: var(--immich-ui-muted);
+    --accent: var(--immich-ui-gray);
+    --accent-foreground: var(--immich-ui-dark);
+    --destructive: var(--immich-ui-danger-500);
+    --border: var(--immich-ui-default-border);
+    --input: var(--immich-ui-default-border);
+    --ring: var(--immich-ui-primary-400);
+    --chart-1: var(--immich-ui-primary-500);
+    --chart-2: var(--immich-ui-info-500);
+    --chart-3: var(--immich-ui-success-500);
+    --chart-4: var(--immich-ui-warning-500);
+    --chart-5: var(--immich-ui-danger-500);
+    --radius: 0.75rem;
+    --sidebar: var(--immich-ui-gray);
+    --sidebar-foreground: var(--immich-ui-dark);
+    --sidebar-primary: var(--immich-ui-primary-500);
+    --sidebar-primary-foreground: oklch(1 0 0);
+    --sidebar-accent: var(--immich-ui-gray);
+    --sidebar-accent-foreground: var(--immich-ui-dark);
+    --sidebar-border: var(--immich-ui-default-border);
+    --sidebar-ring: var(--immich-ui-primary-400);
 }
 
+/* 深色主题：全部引用 @immich/ui 官方 token 的 .dark 档（default.css 自带 .dark 覆盖） */
 .dark {
-    --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.205 0 0);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.205 0 0);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.922 0 0);
-    --primary-foreground: oklch(0.205 0 0);
-    --secondary: oklch(0.269 0 0);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
-    --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 10%);
+    --background: var(--immich-ui-light);
+    --foreground: var(--immich-ui-dark);
+    --card: var(--immich-ui-light);
+    --card-foreground: var(--immich-ui-dark);
+    --popover: var(--immich-ui-light);
+    --popover-foreground: var(--immich-ui-dark);
+    --primary: var(--immich-ui-primary-500);
+    --primary-foreground: var(--immich-ui-primary-950);
+    --secondary: var(--immich-ui-gray);
+    --secondary-foreground: var(--immich-ui-dark);
+    --muted: var(--immich-ui-gray);
+    --muted-foreground: var(--immich-ui-muted);
+    --accent: var(--immich-ui-gray);
+    --accent-foreground: var(--immich-ui-dark);
+    --destructive: var(--immich-ui-danger-500);
+    --border: var(--immich-ui-default-border);
     --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0 0);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
-    --sidebar: oklch(0.205 0 0);
-    --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.488 0.243 264.376);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.269 0 0);
-    --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.556 0 0);
+    --ring: var(--immich-ui-primary-500);
+    --chart-1: var(--immich-ui-primary-500);
+    --chart-2: var(--immich-ui-info-500);
+    --chart-3: var(--immich-ui-success-500);
+    --chart-4: var(--immich-ui-warning-500);
+    --chart-5: var(--immich-ui-danger-500);
+    --sidebar: var(--immich-ui-gray);
+    --sidebar-foreground: var(--immich-ui-dark);
+    --sidebar-primary: var(--immich-ui-primary-500);
+    --sidebar-primary-foreground: var(--immich-ui-primary-950);
+    --sidebar-accent: var(--immich-ui-gray);
+    --sidebar-accent-foreground: var(--immich-ui-dark);
+    --sidebar-border: var(--immich-ui-default-border);
+    --sidebar-ring: var(--immich-ui-primary-500);
 }
 
 @layer base {

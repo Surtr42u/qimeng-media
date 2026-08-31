@@ -4,7 +4,7 @@
 
 import { useCallback, useState, useSyncExternalStore } from 'react'
 import { useMutation } from '@tanstack/react-query'
-import { postApiV1AuthLogin, postApiV1AuthSetup, postApiV1AuthVerify } from '@/api/generated'
+import { postApiV1AuthDevLogin, postApiV1AuthLogin, postApiV1AuthSetup, postApiV1AuthVerify } from '@/api/generated'
 import {
   clearToken as clearStoredToken,
   getToken,
@@ -72,6 +72,20 @@ export function useAuthLogin() {
     mutationFn: (password: string) =>
       unwrapSdkResult(postApiV1AuthLogin({ body: { password } })),
     // 登录失败不重试：401 是业务预期（密码错误），重试无意义
+    retry: 0,
+  })
+}
+
+/**
+ * 开发模式免密登录：POST /auth/dev-login。
+ * 仅服务端 config/auth_dev_mode=true 时可用；404 = 未开启（生产零行为
+ * 变化），LoginGate 据此静默回退正常 setup/login 表单。用户约定：
+ * 项目未完成前不要密码流程，调试 UI 直接用。
+ */
+export function useDevLogin() {
+  return useMutation({
+    mutationFn: () => unwrapSdkResult(postApiV1AuthDevLogin()),
+    // 404/409 是业务预期（dev 模式未开启），重试无意义
     retry: 0,
   })
 }

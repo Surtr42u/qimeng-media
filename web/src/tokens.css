@@ -35,7 +35,8 @@
   --qm-primary-soft: color-mix(in oklab, var(--primary) 10%, transparent);
 
   /* ---- 圆角 ----
-   * 全站圆角随 shadcn --radius（0.625rem）缩放，换视觉风格只改一个变量 */
+   * 全站圆角随 shadcn --radius（0.75rem）缩放，换视觉风格只改一个变量；
+   * 0.75rem 对齐 Immich 媒体卡片 12px 口径（@immich/ui, MIT） */
   --qm-radius: var(--radius);
 
   /* ---- 间距节奏 ----

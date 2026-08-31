@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Copy, KeyRound, ShieldCheck } from 'lucide-react'
-import { useAuthLogin, useAuthSetup } from '@/hooks/use-session'
+import { useAuthLogin, useAuthSetup, useDevLogin } from '@/hooks/use-session'
 import { setToken } from '@/lib/api-client'
 
 /** 密码最短长度：与 M1 验收页一致（server/internal/httpapi/static/index.html 校验 >= 8） */
@@ -43,6 +43,21 @@ export function LoginGate() {
 
   const setup = useAuthSetup()
   const login = useAuthLogin()
+  const devLogin = useDevLogin()
+
+  // 用户约定（项目未完成前）：先试开发免密通道，命中即直进 UI——服务端
+  // auth_dev_mode 未开启时返回 404/401，静默回退正常表单（生产零变化）。
+  useEffect(() => {
+    devLogin.mutate(undefined, {
+      onSuccess: (result) => {
+        const token = result.token
+        if (token) setToken(token)
+      },
+      // 未开启 dev 模式：不打扰用户，按原流程展示初始化/登录表单
+      onError: () => {},
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅挂载时尝试一次
+  }, [])
 
   const handleSetup = (event: React.FormEvent) => {
     event.preventDefault()
