@@ -8,8 +8,8 @@
  * - 行为：选择目录（单选，可展开）+ 可选"重命名"输入 → POST /assets/{id}/move；
  *   成功 toast + 关闭（失效 assets/asset-detail 由 useAssetMove 完成）；
  *   409 TARGET_EXISTS → apiErrorText 转"目标位置已有同名文件"（服务端错误码映射）。
- * - 已知限制（见报告缺口清单）：目标目录树取默认库（useDirTree() 无 libraryId）；
- *   AssetDetail 不携带 libraryId，主 AI 集成多库时需扩展 props。
+ * - libraryId：M3 收尾后 AssetDetail 已携带 libraryId，调用方（DetailPage）
+ *   优先传详情库 ID、加载瞬态用第一库兜底；未传时目录树查询禁用（协议必填）。
  */
 
 import { useState } from 'react'

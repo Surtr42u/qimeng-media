@@ -95,8 +95,8 @@ function DetailAssetView({ assetId }: { assetId: string }) {
   const { mutate: reportViewMutate } = useReportView()
   const like = useLike(assetId)
   const favorite = useFavorite(assetId)
-  // MoveDialog 目标树锚定库（/dirs 必填 libraryId）；AssetDetail 不携带 libraryId
-  // （协议缺口），M2 以单库为主取第一个库，多库场景遗留待协议补字段
+  // MoveDialog 目标树锚定库（/dirs 必填 libraryId）：优先用详情携带的
+  // libraryId（M3 收尾协议已补），库列表加载的瞬态用第一库兜底
   const libraries = useLibraries()
   const defaultLibraryId = (libraries.data ?? [])[0]?.id
 
@@ -274,7 +274,7 @@ function DetailAssetView({ assetId }: { assetId: string }) {
           open={moveOpen}
           onOpenChange={setMoveOpen}
           settled
-          libraryId={defaultLibraryId}
+          libraryId={detail.libraryId ?? defaultLibraryId}
         />
       )}
       <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
