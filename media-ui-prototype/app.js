@@ -106,33 +106,22 @@ function renderCard(v) {
 const grid = document.getElementById("grid");
 grid.innerHTML = VIDEOS.map(renderCard).join("");
 
-/* 顶栏 tab 切换：热门 tab 下显示二级导航（综合热门/排行榜），其余隐藏 */
-const subnav = document.getElementById("subnav");
+/* 顶栏 tab 切换：排行榜 tab 下显示榜单周期行（日榜/月榜/周榜/年榜），其余隐藏 */
 const rankPanel = document.getElementById("rankPanel");
-
-function resetSubnav() {
-  document.querySelectorAll(".subtab").forEach((s) =>
-    s.classList.toggle("active", s.dataset.sub === "hot"),
-  );
-  rankPanel.hidden = true;
-}
 
 document.querySelectorAll(".tab").forEach((tab) => {
   tab.addEventListener("click", () => {
     document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
     tab.classList.add("active");
-    const isHot = tab.dataset.tab === "hot";
-    subnav.hidden = !isHot;
-    if (isHot) resetSubnav(); // 切回热门时恢复默认二级页
-  });
-});
-
-/* 二级导航：排行榜 → 展开 日/月/周/年 面板（静态原型：仅样式） */
-document.querySelectorAll(".subtab").forEach((s) => {
-  s.addEventListener("click", () => {
-    document.querySelectorAll(".subtab").forEach((t) => t.classList.remove("active"));
-    s.classList.add("active");
-    rankPanel.hidden = s.dataset.sub !== "rank";
+    const isRank = tab.dataset.tab === "hot";
+    // 排行榜态：tab 行保持可见，榜单周期行显示在顶栏下方独立行
+    rankPanel.hidden = !isRank;
+    if (isRank) {
+      // 进入排行榜默认日榜
+      document.querySelectorAll(".rank-tab").forEach((t, i) =>
+        t.classList.toggle("active", i === 0),
+      );
+    }
   });
 });
 
@@ -144,24 +133,121 @@ document.querySelectorAll(".rank-tab").forEach((t) => {
 });
 
 /* 侧边栏导航切换：active 高亮 + 对应页面显示/隐藏（页面由 data-page 映射到 #page-*）；
-   顶栏「推荐/cos/热门」与热门二级导航只在首页显示 */
-function showPage(pageId) {
+   顶栏「推荐/cos/排行榜」与榜单周期行只在首页显示 */
+let currentPageId = "home";
+const navHistory = []; // 页面历史栈：返回按钮用
+
+function showPage(pageId, isBack = false) {
   const page = document.getElementById(`page-${pageId}`);
   if (page) {
+    if (!isBack && pageId !== currentPageId) navHistory.push(currentPageId);
+    currentPageId = pageId;
     document.querySelectorAll(".page").forEach((p) => (p.hidden = p !== page));
     document.querySelector(".content").scrollTop = 0;
+    // 顶栏 tab 只在首页显示；榜单周期行跟随顶栏 tab 激活态（仅首页+排行榜 tab 显示）
     document.querySelector(".tabs").hidden = pageId !== "home";
-    // 首页时 subnav 跟随顶栏 tab 激活态（热门才显示），其余页面一律隐藏
-    document.getElementById("subnav").hidden =
-      pageId !== "home" || document.querySelector(".tab.active")?.dataset.tab !== "hot";
-    if (pageId === "home" && document.querySelector(".tab.active")?.dataset.tab === "hot") {
-      document.querySelectorAll(".subtab").forEach((s) =>
-        s.classList.toggle("active", s.dataset.sub === "hot"),
-      );
-      document.getElementById("rankPanel").hidden = true;
-    }
+    const showRank =
+      pageId === "home" && document.querySelector(".tab.active")?.dataset.tab === "hot";
+    document.getElementById("rankPanel").hidden = !showRank;
   }
 }
+
+/* 侧栏顶部返回按钮：回退到上一个页面（搜索页/普通切页均可），无历史时不动 */
+document.querySelector(".sidebar--back").addEventListener("click", () => {
+  const prev = navHistory.pop();
+  if (prev) showPage(prev, true);
+});
+
+/* 数据页排行卡「查看全部」→ 对应榜单的完整子页（进入历史栈，侧栏返回按钮回退）；
+   子页只显示点进来的那一个榜（data-panel 匹配） */
+const RANK_PAGE_TITLES = { content: "内容榜", tags: "标签榜", authors: "作者榜" };
+document.querySelectorAll(".rank-more").forEach((a) => {
+  a.addEventListener("click", (e) => {
+    e.preventDefault();
+    const which = a.dataset.rank;
+    document.getElementById("rankPageTitle").textContent = RANK_PAGE_TITLES[which] ?? "完整榜单";
+    document.querySelectorAll("#page-ranks .rank-card").forEach((c) => {
+      c.hidden = c.dataset.panel !== which;
+    });
+    showPage("ranks");
+  });
+});
+
+/* 数据页「作者总览」卡「管理」→ 作者管理页（全部作者 + 分区胶囊 + 搜索），侧栏高亮保持「数据」 */
+document.getElementById("authorManage").addEventListener("click", (e) => {
+  e.preventDefault();
+  showPage("authors");
+});
+
+/* 作者管理页（mock）：全量作者列表，体系胶囊（常规/COS）+ 名字搜索 + 旧版排序
+   （默认=数组序 / 经常浏览=浏览数降序 / 文件数量=作品数降序），关注按钮内存态 toggle */
+const AUTHORS = [
+  { name: "绮梦", type: "常规", works: 126, browse: 9200, followed: true },
+  { name: "夜空机位", type: "常规", works: 88, browse: 6100, followed: true },
+  { name: "舞台捕手", type: "常规", works: 57, browse: 4400, followed: true },
+  { name: "展会实录", type: "常规", works: 41, browse: 3900, followed: false },
+  { name: "样例日记", type: "常规", works: 33, browse: 5200, followed: false },
+  { name: "快门手", type: "常规", works: 29, browse: 2800, followed: false },
+  { name: "镜头后", type: "常规", works: 24, browse: 3500, followed: false },
+  { name: "夜行者", type: "cos", works: 21, browse: 1900, followed: false },
+  { name: "布光师", type: "常规", works: 18, browse: 2600, followed: false },
+  { name: "场记", type: "常规", works: 15, browse: 1500, followed: false },
+  { name: "追焦", type: "常规", works: 12, browse: 3100, followed: false },
+  { name: "侧台", type: "cos", works: 10, browse: 900, followed: false },
+  { name: "观众席", type: "cos", works: 8, browse: 1200, followed: false },
+  { name: "通宵剪", type: "常规", works: 6, browse: 760, followed: false },
+  { name: "档案员", type: "常规", works: 4, browse: 420, followed: false },
+];
+let aZone = "全部";
+let aKeyword = "";
+let aSort = "default";
+const A_SORTERS = {
+  default: () => 0, // 默认 = 数组原序（作者榜热度序）
+  browse: (a, b) => b.browse - a.browse, // 经常浏览 = 浏览数降序
+  works: (a, b) => b.works - a.works, // 文件数量 = 作品数降序
+};
+
+function renderAuthors() {
+  const kw = aKeyword.trim();
+  const rows = AUTHORS
+    .filter((a) => (aZone === "全部" || a.type === aZone) && (!kw || a.name.includes(kw)))
+    .slice()
+    .sort(A_SORTERS[aSort]);
+  document.getElementById("aList").innerHTML = rows.map((a) => `
+    <li>
+      <span class="rank-name">${a.name}</span>
+      <button class="follow-btn${a.followed ? "" : " follow-btn--idle"}" type="button">${a.followed ? "已关注" : "关注"}</button>
+    </li>`).join("");
+  document.getElementById("aEmpty").hidden = rows.length > 0;
+  document.querySelectorAll("#aList .follow-btn").forEach((btn, i) => {
+    btn.addEventListener("click", () => {
+      rows[i].followed = !rows[i].followed;
+      renderAuthors();
+    });
+  });
+}
+renderAuthors();
+
+document.querySelectorAll("#aZones .stype").forEach((b) => {
+  b.addEventListener("click", () => {
+    document.querySelectorAll("#aZones .stype").forEach((x) => x.classList.remove("active"));
+    b.classList.add("active");
+    aZone = b.dataset.zone;
+    renderAuthors();
+  });
+});
+document.querySelectorAll("#aSort .sort-pill").forEach((b) => {
+  b.addEventListener("click", () => {
+    document.querySelectorAll("#aSort .sort-pill").forEach((x) => x.classList.remove("active"));
+    b.classList.add("active");
+    aSort = b.dataset.sort;
+    renderAuthors();
+  });
+});
+document.getElementById("aSearch").addEventListener("input", (e) => {
+  aKeyword = e.target.value;
+  renderAuthors();
+});
 
 document.querySelectorAll(".nav-item").forEach((item) => {
   item.addEventListener("click", () => {
@@ -219,6 +305,7 @@ const ALBUM_FILES = [
   { name: "Cosplay 舞台巡礼", cover: "covers/c-mc-s.webp", duration: "35:00", up: "@ 舞台捕手", date: "8-10", views: "402", tags: { partition: "Cosplay", work: "舞台巡礼", character: "青鸟", type: "视频" } },
   { name: "创作整理 · B 卷", cover: "covers/c-milk.webp", duration: "17 张", up: "@ 绮梦", date: "8-08", views: "355", tags: { partition: "创作", work: "舞台摄影", character: "小祥", type: "图片" } },
   { name: "日常随拍 · 一周", cover: "covers/c-rural.webp", duration: "9:00", up: "@ 绮梦", date: "8-06", views: "298", tags: { partition: "日常", work: "日常随拍", character: "小祥", type: "视频" } },
+  { name: "现场录音 · 安可段", cover: "covers/c-jet.webp", duration: "03:45", up: "@ 绮梦", date: "8-02", views: "210", tags: { partition: "样例", work: "返场演出", character: "青鸟", type: "音频" } },
 ];
 
 /** 媒体卡模板：与首页卡片同款（封面 + 时长角标 + 标题 + 作者·日期） */
@@ -356,20 +443,18 @@ document.addEventListener("click", (e) => {
   if (!e.target.closest(".search")) closeSearchPop();
 });
 
-/* 历史词点击 → 填入搜索框并收起（原型不做真实搜索） */
+/* 历史词点击 → 直接进入搜索结果页 */
 document.querySelectorAll(".pop-chip").forEach((el) => {
   el.addEventListener("click", (e) => {
     e.preventDefault();
-    searchInput.value = el.textContent.trim();
-    closeSearchPop();
+    openSearchPage(el.textContent.trim());
   });
 });
 
-/* 清空搜索历史（隐藏历史区与「展开更多」） */
+/* 清空搜索历史（整个历史块隐藏，本会话内保持为空） */
 document.getElementById("popClear").addEventListener("click", (e) => {
   e.stopPropagation();
-  document.getElementById("popHistory").hidden = true;
-  document.getElementById("popMore").hidden = true;
+  document.getElementById("popHistoryBlock").hidden = true;
 });
 
 /* 展开/收起更多历史词 */
@@ -381,4 +466,286 @@ popMore.addEventListener("click", (e) => {
   more.forEach((chip) => (chip.hidden = expanded));
   popMore.dataset.expanded = expanded ? "0" : "1";
   popMore.querySelector(".pop-more-text").textContent = expanded ? "展开更多" : "收起";
+});
+
+/* 右下角悬浮刷新（静态原型）：点击图标旋转一圈作反馈，未接真实刷新 */
+const refreshFab = document.getElementById("refreshFab");
+refreshFab.addEventListener("click", () => {
+  refreshFab.classList.remove("spinning");
+  void refreshFab.offsetWidth; // 重置动画，连点可重复触发
+  refreshFab.classList.add("spinning");
+});
+refreshFab.addEventListener("animationend", () => refreshFab.classList.remove("spinning"));
+
+/* ===== 搜索结果页：顶栏搜索框回车（或点历史词）进入 =====
+   排序行只保留 综合排序/最多点击（用户拍板）；「更多筛选」面板精简为（用户拍板 2026-09-02）：
+   顺位/播放次数/文件大小/时间范围（「按年份区间」展开起止年下拉）/标签（模糊·精确/多选）。
+   区间类筛选（播放/大小/时间/年份）原型无对应 mock 数据，仅切换样式不改变结果。 */
+const SEARCH_STATE = {
+  type: "综合",
+  sort: "综合排序",
+  order: "降序", plays: "全部", size: "全部", time: "全部",
+  tagMode: "模糊", tags: [],
+  yearFrom: "2016", yearTo: "2026",
+};
+const SEARCH_TAGS = ["样例", "摄影", "同人", "Cosplay", "风景", "日常", "创作", "舞台"];
+
+/* 基础池 = 标签叠加后的集合；类型 tabs 计数与结果网格都基于它 */
+function searchPool() {
+  const s = SEARCH_STATE;
+  const hitTag = (f, t) => Object.values(f.tags).includes(t) || f.name.includes(t);
+  return ALBUM_FILES.filter(
+    (f) =>
+      s.tags.length === 0 ||
+      (s.tagMode === "精确" ? s.tags.every((t) => hitTag(f, t)) : s.tags.some((t) => hitTag(f, t))),
+  );
+}
+
+function renderSearchTypes() {
+  const pool = searchPool();
+  document.querySelectorAll("#stypeRow .stype").forEach((btn) => {
+    const t = btn.dataset.stype;
+    const n = t === "综合" ? pool.length : pool.filter((f) => f.tags.type === t).length;
+    btn.classList.toggle("active", SEARCH_STATE.type === t);
+    const badge = btn.querySelector(".stype-count"); // 「综合」无计数徽标（参照截图）
+    if (badge) badge.textContent = n;
+  });
+}
+
+function renderSearchGrid() {
+  let files = searchPool();
+  if (SEARCH_STATE.type !== "综合") files = files.filter((f) => f.tags.type === SEARCH_STATE.type);
+  if (SEARCH_STATE.sort === "最多点击")
+    files = [...files].sort(
+      (a, b) => parseInt(b.views.replace(/,/g, ""), 10) - parseInt(a.views.replace(/,/g, ""), 10),
+    );
+  if (SEARCH_STATE.order === "升序") files = [...files].reverse();
+  document.getElementById("searchGrid").innerHTML = files.length
+    ? files.map(mediaCardHtml).join("")
+    : '<p class="grid-empty">没有匹配的内容，放宽一点筛选条件试试。</p>';
+}
+
+const fPill = (value, key, current) =>
+  `<button class="pill ${current === value ? "active" : ""}" data-fk="${key}" data-fv="${value}" type="button">${value}</button>`;
+
+/* 标签池管理（DOMAIN_RULES §7 口径）：添加=浏览中新标签自动入池；删除=级联清理筛选选中态。
+   原型为内存态，刷新即还原；筛选面板展示按名称升序（DOMAIN_RULES 标签排序口径） */
+function addTag(raw) {
+  const v = raw.trim().replace(/[<>&"']/g, "");
+  if (!v || SEARCH_TAGS.includes(v)) return;
+  SEARCH_TAGS.push(v);
+}
+
+function removeTag(tag) {
+  const i = SEARCH_TAGS.indexOf(tag);
+  if (i < 0) return;
+  SEARCH_TAGS.splice(i, 1);
+  const j = SEARCH_STATE.tags.indexOf(tag); // 级联：从筛选选中态里一并清除
+  if (j >= 0) SEARCH_STATE.tags.splice(j, 1);
+}
+
+const sortedTags = () => [...SEARCH_TAGS].sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
+
+const tagPill = (t, active) =>
+  `<button class="pill pill-tag ${active ? "active" : ""}" data-fk="tag" data-fv="${t}" type="button">${t}<span class="tag-x" data-tag-x data-tag-name="${t}" title="删除标签">×</span></button>`;
+
+const SEARCH_YEARS = Array.from({ length: 11 }, (_, i) => String(2026 - i));
+
+/* 「按年份区间」选中时展开起止年下拉（原型无年份 mock 数据，仅样式） */
+function yearRangeHtml(s) {
+  const opts = (sel) =>
+    SEARCH_YEARS.map((y) => `<option value="${y}" ${y === sel ? "selected" : ""}>${y} 年</option>`).join("");
+  return `<span class="f-years">
+    <select data-fy="yearFrom" aria-label="起始年份">${opts(s.yearFrom)}</select>
+    <span class="f-years-sep">至</span>
+    <select data-fy="yearTo" aria-label="结束年份">${opts(s.yearTo)}</select>
+  </span>`;
+}
+
+function renderSearchFilters() {
+  const s = SEARCH_STATE;
+  const rows = [
+    ["顺位", ["降序", "升序"].map((v) => fPill(v, "order", s.order))],
+    ["播放次数", ["全部", "未播放", "1-5", "5-20", ">20"].map((v) => fPill(v, "plays", s.plays))],
+    ["文件大小", ["全部", "<1MB", "1-10MB", "10-50MB", ">50MB"].map((v) => fPill(v, "size", s.size))],
+    ["时间范围", [
+      ...["全部", "今天", "本周", "本月", "近三月", "本年", "按年份区间"].map((v) => fPill(v, "time", s.time)),
+      ...(s.time === "按年份区间" ? [yearRangeHtml(s)] : []),
+    ]],
+    ["标签模式", ["模糊", "精确"].map((v) => fPill(v, "tagMode", s.tagMode))],
+    ["标签", [
+      ...sortedTags().map((t) => tagPill(t, s.tags.includes(t))),
+      `<button class="pill pill-add" data-fk="tagAdd" type="button">+ 添加</button>`,
+      `<input class="tag-input" data-tag-input type="text" placeholder="新标签，回车添加" maxlength="12" hidden>`,
+    ]],
+  ];
+  document.getElementById("filterRows").innerHTML = rows
+    .map(([label, pills]) => `<div class="f-row"><span class="f-label">${label}</span><div class="f-opts">${pills.join("")}</div></div>`)
+    .join("");
+}
+
+document.getElementById("filterRows").addEventListener("click", (e) => {
+  // 标签删除 ×（优先于筛选切换）
+  const x = e.target.closest("[data-tag-x]");
+  if (x) {
+    removeTag(x.dataset.tagName);
+    renderSearchFilters();
+    renderSearchTypes();
+    renderSearchGrid();
+    return;
+  }
+  // 「+ 添加」→ 切换为内联输入
+  const addBtn = e.target.closest('[data-fk="tagAdd"]');
+  if (addBtn) {
+    addBtn.hidden = true;
+    const input = document.querySelector("[data-tag-input]");
+    input.hidden = false;
+    input.focus();
+    return;
+  }
+  const btn = e.target.closest("[data-fk]");
+  if (!btn) return;
+  const { fk, fv } = btn.dataset;
+  if (fk === "tag") {
+    const i = SEARCH_STATE.tags.indexOf(fv);
+    if (i >= 0) SEARCH_STATE.tags.splice(i, 1);
+    else SEARCH_STATE.tags.push(fv);
+  } else {
+    SEARCH_STATE[fk] = fv;
+  }
+  renderSearchFilters();
+  renderSearchTypes();
+  renderSearchGrid();
+});
+
+/* 标签内联输入：回车/失焦有词即入池，Esc 或失焦空词还原为「+ 添加」 */
+function collapseTagInput() {
+  const input = document.querySelector("[data-tag-input]");
+  if (input) input.hidden = true;
+  const add = document.querySelector('[data-fk="tagAdd"]');
+  if (add) add.hidden = false;
+}
+
+document.getElementById("filterRows").addEventListener("keydown", (e) => {
+  const input = e.target.closest("[data-tag-input]");
+  if (!input) return;
+  if (e.key === "Enter") {
+    addTag(input.value);
+    renderSearchFilters();
+    renderSearchTypes();
+    renderSearchGrid();
+  } else if (e.key === "Escape") {
+    collapseTagInput();
+  }
+});
+
+document.getElementById("filterRows").addEventListener("focusout", (e) => {
+  if (!e.target.closest || !e.target.closest("[data-tag-input]")) return;
+  if (e.target.value.trim()) {
+    addTag(e.target.value);
+    renderSearchFilters();
+    renderSearchTypes();
+    renderSearchGrid();
+  } else {
+    collapseTagInput();
+  }
+});
+
+document.getElementById("filterRows").addEventListener("change", (e) => {
+  const sel = e.target.closest("[data-fy]");
+  if (!sel) return;
+  SEARCH_STATE[sel.dataset.fy] = sel.value; // 年份区间仅记录，不参与 mock 过滤
+});
+
+document.getElementById("stypeRow").addEventListener("click", (e) => {
+  const btn = e.target.closest(".stype");
+  if (!btn) return;
+  SEARCH_STATE.type = btn.dataset.stype;
+  renderSearchTypes();
+  renderSearchGrid();
+});
+
+document.getElementById("sSort").addEventListener("click", (e) => {
+  const btn = e.target.closest(".sort-pill");
+  if (!btn) return;
+  SEARCH_STATE.sort = btn.dataset.sort;
+  document.querySelectorAll("#sSort .sort-pill").forEach((b) => b.classList.toggle("active", b === btn));
+  renderSearchGrid();
+});
+
+document.getElementById("moreFilter").addEventListener("click", () => {
+  const panel = document.getElementById("searchFilters");
+  panel.hidden = !panel.hidden;
+  document.getElementById("moreFilter").classList.toggle("open", !panel.hidden);
+});
+
+/* 每次新搜索重置筛选态与工具栏 UI（真实客户端语义：新查询不继承旧筛选） */
+function resetSearchState() {
+  Object.assign(SEARCH_STATE, {
+    type: "综合", sort: "综合排序",
+    order: "降序", plays: "全部", size: "全部", time: "全部",
+    tagMode: "模糊", tags: [],
+    yearFrom: "2016", yearTo: "2026",
+  });
+  document.querySelectorAll("#sSort .sort-pill").forEach((b) =>
+    b.classList.toggle("active", b.dataset.sort === "综合排序"),
+  );
+  document.getElementById("searchFilters").hidden = true;
+  document.getElementById("moreFilter").classList.remove("open");
+}
+
+/* 进入搜索结果页：query 写回搜索框（显示清除按钮），默认综合 tab + 综合排序、筛选面板收起 */
+function openSearchPage(q) {
+  if (!q) return;
+  resetSearchState();
+  searchInput.value = q;
+  searchClear.hidden = false;
+  closeSearchPop();
+  searchInput.blur();
+  renderSearchTypes();
+  renderSearchFilters();
+  renderSearchGrid();
+  showPage("search");
+}
+
+searchInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") openSearchPage(searchInput.value.trim());
+});
+
+/* 搜索框清除按钮：有词显示，点击清空并回焦 */
+const searchClear = document.getElementById("searchClear");
+searchInput.addEventListener("input", () => {
+  searchClear.hidden = searchInput.value.length === 0;
+});
+searchClear.addEventListener("click", () => {
+  searchInput.value = "";
+  searchClear.hidden = true;
+  searchInput.focus();
+});
+
+/* ===== 我的页交互 ===== */
+/* 关注按钮：已关注（灰描边）↔ 关注（主色实底）切换 */
+document.getElementById("mpane-follow").addEventListener("click", (e) => {
+  const btn = e.target.closest(".follow-btn");
+  if (!btn) return;
+  const isIdle = btn.classList.contains("follow-btn--idle"); // 当前=未关注
+  btn.classList.toggle("follow-btn--idle", !isIdle);         // 点击后状态取反
+  btn.textContent = !isIdle ? "关注" : "已关注";
+});
+
+/* 历史搜索：按标题/作者子串过滤历史卡（不区分大小写），整组无命中连组标题隐藏 */
+const histSearch = document.getElementById("histSearch");
+histSearch.addEventListener("input", () => {
+  const q = histSearch.value.trim().toLowerCase();
+  document.querySelectorAll("#mpane-history .hist-group2").forEach((group) => {
+    let visible = 0;
+    group.querySelectorAll(".hist-card").forEach((card) => {
+      const text =
+        card.querySelector(".hc-title").textContent + " " + card.querySelector(".hc-up").textContent;
+      const hit = !q || text.toLowerCase().includes(q);
+      card.hidden = !hit;
+      if (hit) visible++;
+    });
+    group.hidden = visible === 0;
+  });
 });

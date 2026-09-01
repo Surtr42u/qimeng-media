@@ -59,15 +59,18 @@
         <nav class="tabs" id="tabs">
           <button class="tab active" data-tab="recommend">推荐</button>
           <button class="tab" data-tab="cos">cos</button>
-          <button class="tab" data-tab="hot">热门</button>
+          <button class="tab" data-tab="hot">排行榜</button>
         </nav>
       </div>
       <div class="search">
         <input id="searchInput" type="text" placeholder="搜索你感兴趣的视频" autocomplete="off">
+        <button class="search-clear" id="searchClear" type="button" aria-label="清空搜索词" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="7" y1="7" x2="17" y2="17"/><line x1="17" y1="7" x2="7" y2="17"/></svg>
+        </button>
         <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         <!-- 搜索下拉面板：聚焦搜索框显示，点击面板外收起（数据为静态 mock，样式参照桌面客户端） -->
         <div class="search-pop" id="searchPop" hidden>
-          <div class="pop-block">
+          <div class="pop-block" id="popHistoryBlock">
             <div class="pop-head">
               <h3 class="pop-title">搜索历史</h3>
               <button class="pop-clear" id="popClear" type="button">清空</button>
@@ -103,19 +106,13 @@
       </div>
     </header>
 
-    <!-- 热门 tab 的二级导航（综合热门 / 排行榜）：固定在顶栏下方，不随卡片流滚动（参照 热门页） -->
-    <div class="subnav" id="subnav" hidden>
-      <div class="subnav-tabs">
-        <button class="subtab active" data-sub="hot" type="button">综合热门</button>
-        <button class="subtab" data-sub="rank" type="button">排行榜</button>
-      </div>
-      <div class="rank-panel" id="rankPanel" hidden>
-        <div class="rank-tabs">
-          <button class="rank-tab active" type="button">日</button>
-          <button class="rank-tab" type="button">月</button>
-          <button class="rank-tab" type="button">周</button>
-          <button class="rank-tab" type="button">年</button>
-        </div>
+    <!-- 排行榜 tab 的榜单周期行（日榜/月榜/周榜/年榜）：顶栏下方独立行，行中心对齐侧栏「首页」项（用户拍板） -->
+    <div class="rank-panel" id="rankPanel" hidden>
+      <div class="rank-tabs">
+        <button class="rank-tab active" type="button">日榜</button>
+        <button class="rank-tab" type="button">月榜</button>
+        <button class="rank-tab" type="button">周榜</button>
+        <button class="rank-tab" type="button">年榜</button>
       </div>
     </div>
 
@@ -149,7 +146,6 @@
       <!-- 我的页：头部资料卡 + Tabs（数据 / 浏览历史） -->
       <div class="page" id="page-mine" hidden>
         <section class="profile-card">
-          <div class="avatar-placeholder">绮</div>
           <div class="profile-main">
             <h2>绮梦</h2>
             <p>本地管理员 · mock 数据</p>
@@ -169,28 +165,23 @@
         <div class="m-pane" id="mpane-follow">
           <div class="follow-list">
             <article class="follow-card">
-              <span class="follow-avatar">K</span>
-              <div class="follow-info"><p class="follow-name">Kokorooo_</p><p class="follow-sub">视频创作 · 62 个作品</p></div>
+              <div class="follow-info"><p class="follow-name">Kokorooo_</p><p class="follow-sub">62 个作品</p></div>
               <button class="follow-btn" type="button">已关注</button>
             </article>
             <article class="follow-card">
-              <span class="follow-avatar">纪</span>
-              <div class="follow-info"><p class="follow-name">纪录片bro</p><p class="follow-sub">纪录片 · 141 个作品</p></div>
+              <div class="follow-info"><p class="follow-name">纪录片bro</p><p class="follow-sub">141 个作品</p></div>
               <button class="follow-btn" type="button">已关注</button>
             </article>
             <article class="follow-card">
-              <span class="follow-avatar">韩</span>
-              <div class="follow-info"><p class="follow-name">韩比迪</p><p class="follow-sub">生活 · 38 个作品</p></div>
+              <div class="follow-info"><p class="follow-name">韩比迪</p><p class="follow-sub">38 个作品</p></div>
               <button class="follow-btn follow-btn--idle" type="button">关注</button>
             </article>
             <article class="follow-card">
-              <span class="follow-avatar">红</span>
-              <div class="follow-info"><p class="follow-name">红星视频</p><p class="follow-sub">新闻 · 210 个作品</p></div>
+              <div class="follow-info"><p class="follow-name">红星视频</p><p class="follow-sub">210 个作品</p></div>
               <button class="follow-btn" type="button">已关注</button>
             </article>
             <article class="follow-card">
-              <span class="follow-avatar">骡</span>
-              <div class="follow-info"><p class="follow-name">关于转生成骡姬这档事</p><p class="follow-sub">游戏 · 19 个作品</p></div>
+              <div class="follow-info"><p class="follow-name">关于转生成骡姬这档事</p><p class="follow-sub">19 个作品</p></div>
               <button class="follow-btn follow-btn--idle" type="button">关注</button>
             </article>
           </div>
@@ -204,7 +195,7 @@
           <div class="hist-toolbar">
             <p class="m-note">按观看时间分组（mock 数据）</p>
             <div class="hist-search">
-              <input type="text" placeholder="搜索你的历史记录">
+              <input type="text" id="histSearch" placeholder="搜索你的历史记录">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             </div>
           </div>
@@ -213,7 +204,7 @@
             <div class="hist-grid">
               <article class="hist-card">
                 <div class="hc-cover">
-                  <span>缩略占位</span>
+                  <img src="covers/c-avatar.webp" alt="">
                   <span class="hc-done">已看完</span>
                   <span class="hc-time">今天 00:10</span>
                 </div>
@@ -227,7 +218,7 @@
             <div class="hist-grid">
               <article class="hist-card">
                 <div class="hc-cover">
-                  <span>缩略占位</span>
+                  <img src="covers/c-dlss.webp" alt="">
                   <span class="hc-time">昨天 23:59</span>
                   <span class="hc-duration">00:14/06:53</span>
                 </div>
@@ -236,7 +227,7 @@
               </article>
               <article class="hist-card">
                 <div class="hc-cover">
-                  <span>缩略占位</span>
+                  <img src="covers/c-tokyo.webp" alt="">
                   <span class="hc-time">昨天 23:45</span>
                   <span class="hc-duration">00:46/07:44</span>
                 </div>
@@ -245,7 +236,7 @@
               </article>
               <article class="hist-card">
                 <div class="hc-cover">
-                  <span>缩略占位</span>
+                  <img src="covers/c-box.webp" alt="">
                   <span class="hc-time">昨天 23:44</span>
                   <span class="hc-duration">00:12/04:10</span>
                 </div>
@@ -254,7 +245,7 @@
               </article>
               <article class="hist-card">
                 <div class="hc-cover">
-                  <span>缩略占位</span>
+                  <img src="covers/c-rural.webp" alt="">
                   <span class="hc-time">昨天 23:44</span>
                   <span class="hc-duration">00:03/00:39</span>
                 </div>
@@ -327,39 +318,67 @@
             </div>
           </div>
         </div>
-        <div class="rank-grid">
+        <div class="rank-stack">
           <div class="rank-card">
-            <div class="rank-head"><h3>内容榜</h3><a href="#">查看全部</a></div>
+            <div class="rank-head"><h3>内容榜</h3><a href="#" class="rank-more" data-rank="content">查看全部</a></div>
             <p class="rank-note">Top 5 · 按浏览量</p>
-            <ul>
-              <li><span class="rank-badge r1">1</span><span class="rank-name">样例 2017 高画质合集</span><b>3,241</b></li>
-              <li><span class="rank-badge r2">2</span><span class="rank-name">舞台摄影 · 第一组</span><b>1,982</b></li>
-              <li><span class="rank-badge r3">3</span><span class="rank-name">场外随拍 · 机动展区</span><b>1,540</b></li>
-              <li><span class="rank-badge">4</span><span class="rank-name">角色特写 · 第三辑</span><b>1,207</b></li>
-              <li><span class="rank-badge">5</span><span class="rank-name">返场演出 · 完整版</span><b>986</b></li>
-            </ul>
+            <div class="rank-cards">
+              <div class="rank-item">
+                <div class="rank-cover"><img src="covers/c-dlss.webp" alt="" loading="lazy"><span class="rank-views">3,241</span></div>
+                <p class="rank-title">样例 2017 高画质合集</p>
+              </div>
+              <div class="rank-item">
+                <div class="rank-cover"><img src="covers/c-tokyo.webp" alt="" loading="lazy"><span class="rank-views">1,982</span></div>
+                <p class="rank-title">舞台摄影 · 第一组</p>
+              </div>
+              <div class="rank-item">
+                <div class="rank-cover"><img src="covers/c-frog.webp" alt="" loading="lazy"><span class="rank-views">1,540</span></div>
+                <p class="rank-title">场外随拍 · 机动展区</p>
+              </div>
+              <div class="rank-item">
+                <div class="rank-cover"><img src="covers/c-jet.webp" alt="" loading="lazy"><span class="rank-views">1,207</span></div>
+                <p class="rank-title">角色特写 · 第三辑</p>
+              </div>
+              <div class="rank-item">
+                <div class="rank-cover"><img src="covers/c-mc.webp" alt="" loading="lazy"><span class="rank-views">986</span></div>
+                <p class="rank-title">返场演出 · 完整版</p>
+              </div>
+            </div>
           </div>
-          <div class="rank-card">
-            <div class="rank-head"><h3>标签榜</h3><a href="#">查看全部</a></div>
-            <p class="rank-note">Top 5 · 按关联文件数</p>
-            <ul>
-              <li><span class="rank-badge r1">1</span><span class="rank-name">高清</span><b>1,892</b></li>
-              <li><span class="rank-badge r2">2</span><span class="rank-name">样例</span><b>1,470</b></li>
-              <li><span class="rank-badge r3">3</span><span class="rank-name">舞台</span><b>866</b></li>
-              <li><span class="rank-badge">4</span><span class="rank-name">Cosplay</span><b>724</b></li>
-              <li><span class="rank-badge">5</span><span class="rank-name">夜景</span><b>410</b></li>
-            </ul>
-          </div>
-          <div class="rank-card">
-            <div class="rank-head"><h3>作者榜</h3><a href="#">查看全部</a></div>
-            <p class="rank-note">Top 5 · 按作品数</p>
-            <ul>
-              <li><span class="rank-badge r1">1</span><span class="rank-name">绮梦</span><b>126</b></li>
-              <li><span class="rank-badge r2">2</span><span class="rank-name">夜空机位</span><b>88</b></li>
-              <li><span class="rank-badge r3">3</span><span class="rank-name">舞台捕手</span><b>57</b></li>
-              <li><span class="rank-badge">4</span><span class="rank-name">展会实录</span><b>41</b></li>
-              <li><span class="rank-badge">5</span><span class="rank-name">样例日记</span><b>33</b></li>
-            </ul>
+          <div class="rank-grid rank-grid--2">
+            <div class="rank-card">
+              <div class="rank-head"><h3>标签榜</h3><a href="#" class="rank-more" data-rank="tags">查看全部</a></div>
+              <p class="rank-note">Top 5 · 按关联文件数</p>
+              <ul>
+                <li><span class="rank-name">高清</span><b>1,892</b></li>
+                <li><span class="rank-name">样例</span><b>1,470</b></li>
+                <li><span class="rank-name">舞台</span><b>866</b></li>
+                <li><span class="rank-name">Cosplay</span><b>724</b></li>
+                <li><span class="rank-name">夜景</span><b>410</b></li>
+              </ul>
+            </div>
+            <div class="rank-card">
+              <div class="rank-head"><h3>作者榜</h3><a href="#" class="rank-more" data-rank="authors">查看全部</a></div>
+              <p class="rank-note">Top 5 · 按作品数</p>
+              <ul>
+                <li><span class="rank-name">绮梦</span><b>126</b></li>
+                <li><span class="rank-name">夜空机位</span><b>88</b></li>
+                <li><span class="rank-name">舞台捕手</span><b>57</b></li>
+                <li><span class="rank-name">展会实录</span><b>41</b></li>
+                <li><span class="rank-name">样例日记</span><b>33</b></li>
+              </ul>
+            </div>
+            <div class="rank-card">
+              <div class="rank-head"><h3>作者总览</h3><a href="#" id="authorManage">管理</a></div>
+              <p class="rank-note">15 位作者 · 已关注 3</p>
+              <ul>
+                <li><span class="rank-name">绮梦</span><b>126</b></li>
+                <li><span class="rank-name">夜空机位</span><b>88</b></li>
+                <li><span class="rank-name">舞台捕手</span><b>57</b></li>
+                <li><span class="rank-name">展会实录</span><b>41</b></li>
+                <li><span class="rank-name">样例日记</span><b>33</b></li>
+              </ul>
+            </div>
           </div>
         </div>
       </div>
@@ -480,9 +499,183 @@
           <span class="save-tip" id="saveTip" hidden>已保存（原型演示，未真实写入）</span>
         </div>
       </div>
+      <!-- 搜索结果页：顶栏搜索框回车/点历史词后进入（类型 tabs + 排序行 + 更多筛选面板 + 结果网格） -->
+      <div class="page" id="page-search" hidden>
+        <div class="stype-row" id="stypeRow">
+          <button class="stype active" data-stype="综合" type="button">综合</button>
+          <button class="stype" data-stype="视频" type="button">视频 <span class="stype-count">0</span></button>
+          <button class="stype" data-stype="图片" type="button">图片 <span class="stype-count">0</span></button>
+          <button class="stype" data-stype="音频" type="button">音频 <span class="stype-count">0</span></button>
+        </div>
+        <div class="s-toolbar">
+          <div class="s-sort" id="sSort">
+            <button class="sort-pill active" data-sort="综合排序" type="button">综合排序</button>
+            <button class="sort-pill" data-sort="最多点击" type="button">最多点击</button>
+          </div>
+          <button class="more-filter" id="moreFilter" type="button">更多筛选
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+        </div>
+        <!-- 更多筛选：旧版筛选全表（DOMAIN_RULES §3），行内容由 JS 渲染进 #filterRows -->
+        <div class="search-filters" id="searchFilters" hidden>
+          <div id="filterRows"></div>
+        </div>
+        <div class="grid" id="searchGrid"></div>
+      </div>
+
+      <!-- 完整榜单页：数据页排行卡「查看全部」进入（侧栏返回按钮回退，navHistory） -->
+      <div class="page" id="page-ranks" hidden>
+        <div class="page-head">
+          <h2 id="rankPageTitle">内容榜</h2>
+          <p>全量排行 · mock 数据</p>
+        </div>
+        <div class="rank-card" data-panel="content">
+          <div class="rank-head"><h3>内容榜</h3></div>
+          <p class="rank-note">按浏览量</p>
+          <div class="rank-cards">
+            <div class="rank-item">
+              <div class="rank-cover"><img src="covers/c-dlss.webp" alt="" loading="lazy"><span class="rank-views">3,241</span></div>
+              <p class="rank-title">样例 2017 高画质合集</p>
+            </div>
+            <div class="rank-item">
+              <div class="rank-cover"><img src="covers/c-tokyo.webp" alt="" loading="lazy"><span class="rank-views">1,982</span></div>
+              <p class="rank-title">舞台摄影 · 第一组</p>
+            </div>
+            <div class="rank-item">
+              <div class="rank-cover"><img src="covers/c-frog.webp" alt="" loading="lazy"><span class="rank-views">1,540</span></div>
+              <p class="rank-title">场外随拍 · 机动展区</p>
+            </div>
+            <div class="rank-item">
+              <div class="rank-cover"><img src="covers/c-jet.webp" alt="" loading="lazy"><span class="rank-views">1,207</span></div>
+              <p class="rank-title">角色特写 · 第三辑</p>
+            </div>
+            <div class="rank-item">
+              <div class="rank-cover"><img src="covers/c-mc.webp" alt="" loading="lazy"><span class="rank-views">986</span></div>
+              <p class="rank-title">返场演出 · 完整版</p>
+            </div>
+            <div class="rank-item">
+              <div class="rank-cover"><img src="covers/c-milk.webp" alt="" loading="lazy"><span class="rank-views">874</span></div>
+              <p class="rank-title">夜景长曝光精选</p>
+            </div>
+            <div class="rank-item">
+              <div class="rank-cover"><img src="covers/c-rural.webp" alt="" loading="lazy"><span class="rank-views">763</span></div>
+              <p class="rank-title">同人作品 · 春季场</p>
+            </div>
+            <div class="rank-item">
+              <div class="rank-cover"><img src="covers/c-box.webp" alt="" loading="lazy"><span class="rank-views">658</span></div>
+              <p class="rank-title">后台花絮合辑</p>
+            </div>
+            <div class="rank-item">
+              <div class="rank-cover"><img src="covers/c-crab.webp" alt="" loading="lazy"><span class="rank-views">571</span></div>
+              <p class="rank-title">首日入场实况</p>
+            </div>
+            <div class="rank-item">
+              <div class="rank-cover"><img src="covers/c-frog-s.webp" alt="" loading="lazy"><span class="rank-views">489</span></div>
+              <p class="rank-title">舞台灯光全记录</p>
+            </div>
+            <div class="rank-item">
+              <div class="rank-cover"><img src="covers/c-mc-s.webp" alt="" loading="lazy"><span class="rank-views">421</span></div>
+              <p class="rank-title">特写镜头补录</p>
+            </div>
+            <div class="rank-item">
+              <div class="rank-cover"><img src="covers/c-avatar.webp" alt="" loading="lazy"><span class="rank-views">366</span></div>
+              <p class="rank-title">应援夜全景</p>
+            </div>
+            <div class="rank-item">
+              <div class="rank-cover"><img src="covers/c-dlss.webp" alt="" loading="lazy"><span class="rank-views">302</span></div>
+              <p class="rank-title">场刊扫描合集</p>
+            </div>
+            <div class="rank-item">
+              <div class="rank-cover"><img src="covers/c-tokyo.webp" alt="" loading="lazy"><span class="rank-views">254</span></div>
+              <p class="rank-title">路人视角混剪</p>
+            </div>
+            <div class="rank-item">
+              <div class="rank-cover"><img src="covers/c-frog.webp" alt="" loading="lazy"><span class="rank-views">187</span></div>
+              <p class="rank-title">收摊散场记录</p>
+            </div>
+          </div>
+          </div>
+          <div class="rank-card" data-panel="tags">
+            <div class="rank-head"><h3>标签榜</h3></div>
+            <p class="rank-note">按关联文件数</p>
+            <ul>
+              <li><span class="rank-name">高清</span><b>1,892</b></li>
+              <li><span class="rank-name">样例</span><b>1,470</b></li>
+              <li><span class="rank-name">舞台</span><b>866</b></li>
+              <li><span class="rank-name">Cosplay</span><b>724</b></li>
+              <li><span class="rank-name">夜景</span><b>410</b></li>
+              <li><span class="rank-name">摄影</span><b>388</b></li>
+              <li><span class="rank-name">同人</span><b>356</b></li>
+              <li><span class="rank-name">特写</span><b>301</b></li>
+              <li><span class="rank-name">日常</span><b>276</b></li>
+              <li><span class="rank-name">布景</span><b>243</b></li>
+              <li><span class="rank-name">户外</span><b>215</b></li>
+              <li><span class="rank-name">合集</span><b>187</b></li>
+              <li><span class="rank-name">随拍</span><b>154</b></li>
+              <li><span class="rank-name">演出</span><b>132</b></li>
+              <li><span class="rank-name">纪实</span><b>98</b></li>
+            </ul>
+          </div>
+          <div class="rank-card" data-panel="authors">
+            <div class="rank-head"><h3>作者榜</h3></div>
+            <p class="rank-note">按作品数</p>
+            <ul>
+              <li><span class="rank-name">绮梦</span><b>126</b></li>
+              <li><span class="rank-name">夜空机位</span><b>88</b></li>
+              <li><span class="rank-name">舞台捕手</span><b>57</b></li>
+              <li><span class="rank-name">展会实录</span><b>41</b></li>
+              <li><span class="rank-name">样例日记</span><b>33</b></li>
+              <li><span class="rank-name">快门手</span><b>29</b></li>
+              <li><span class="rank-name">镜头后</span><b>24</b></li>
+              <li><span class="rank-name">夜行者</span><b>21</b></li>
+              <li><span class="rank-name">布光师</span><b>18</b></li>
+              <li><span class="rank-name">场记</span><b>15</b></li>
+              <li><span class="rank-name">追焦</span><b>12</b></li>
+              <li><span class="rank-name">侧台</span><b>10</b></li>
+              <li><span class="rank-name">观众席</span><b>8</b></li>
+              <li><span class="rank-name">通宵剪</span><b>6</b></li>
+              <li><span class="rank-name">档案员</span><b>4</b></li>
+            </ul>
+          </div>
+      </div>
+
+      <!-- 作者管理页：数据页「作者总览·管理」进入（全部作者 + 分区胶囊 + 搜索过滤） -->
+      <div class="page" id="page-authors" hidden>
+        <div class="page-head">
+          <h2>作者管理</h2>
+          <p>全部作者 · mock 数据</p>
+        </div>
+        <div class="a-toolbar">
+          <div class="a-zones" id="aZones">
+            <button class="stype active" data-zone="全部" type="button">全部</button>
+            <button class="stype" data-zone="常规" type="button">常规</button>
+            <button class="stype" data-zone="cos" type="button">COS</button>
+          </div>
+          <div class="hist-search">
+            <input id="aSearch" type="text" placeholder="搜索作者">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/></svg>
+          </div>
+        </div>
+        <div class="a-sortrow" id="aSort">
+          <button class="sort-pill active" data-sort="default" type="button">默认</button>
+          <button class="sort-pill" data-sort="browse" type="button">经常浏览</button>
+          <button class="sort-pill" data-sort="works" type="button">文件数量</button>
+        </div>
+        <div class="rank-card a-list">
+          <ul id="aList"></ul>
+          <p class="a-empty" id="aEmpty" hidden>没有匹配的作者</p>
+        </div>
+      </div>
     </main>
   </div>
 </div>
+<!-- 右下角悬浮刷新（参照客户端）：白底圆角卡 + 深色刷新图标，全页面常显；静态原型点击仅旋转反馈 -->
+<button class="refresh-fab" id="refreshFab" title="刷新" type="button">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/>
+    <path d="M21 3v5h-5"/>
+  </svg>
+</button>
 <script src="app.js"></script>
 </body>
 </html>

@@ -32,18 +32,17 @@
   --text-mid: #a8adb3;
   --faint: #3a3a3f;
   --hover-bg: #1f1f1f;
-  --elev: var(--elev); /* 深色下表层面（占位封面 / 输入框） */
+  --elev: #26262a; /* 深色下表层面（占位封面 / 输入框），与 .pop-chip 共用 */
   --border: #2a2a2a;
 }
 
 /* 深色下少量硬编码浅色背景的覆盖 */
 .dark .card--cover { background: var(--elev); }
-.dark .pop-chip { background: #26262a; }
+.dark .pop-chip { background: var(--elev); }
 .dark .pop-chip:hover { background: #2f2f34; }
 .dark .sidebar--back:hover, .dark .settings-item:hover, .dark .win-btn:hover { background: var(--hover-bg); }
 .dark .search input { background: var(--elev); }
 .dark .search input::placeholder { color: #5a5f66; }
-.dark .subnav { border-bottom-color: var(--border); }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -76,6 +75,8 @@ button { font-family: var(--font); border: none; background: none; cursor: point
   }
 
 .sidebar--back {
+  /* 下移 6px：按钮中心与顶栏 tab 行中心对齐（用户拍板：返回箭头 ↔ 顶栏 tab 同一水平线） */
+  margin-top: 6px;
   width: 44px;
   height: 34px;
   display: flex;
@@ -91,7 +92,8 @@ button { font-family: var(--font); border: none; background: none; cursor: point
   display: flex;
   flex-direction: column;
   align-items: center;
-  margin-top: 12px;
+  /* 14px：使「首页」项中心(94)对齐排行榜周期行（日榜/月榜/周榜/年榜）胶囊中心（用户拍板） */
+  margin-top: 14px;
   width: 100%;
 }
 
@@ -154,9 +156,8 @@ button { font-family: var(--font); border: none; background: none; cursor: point
 .header--left { display: flex; align-items: center; gap: 34px; }
 
 .tabs { display: flex; align-items: center; gap: 10px; height: 44px; }
-/* 推荐/cos/热门 只在首页显示（用户拍板），其余页面隐藏 */
+/* 推荐/cos/排行榜 只在首页显示（用户拍板），其余页面隐藏 */
 .tabs[hidden] { display: none; }
-.subnav[hidden] { display: none; }
 .rank-panel[hidden] { display: none; }
 
 .tab {
@@ -173,7 +174,8 @@ button { font-family: var(--font); border: none; background: none; cursor: point
   content: "";
   position: absolute;
   left: 50%;
-  bottom: 8px;
+  /* 参照桌面客户端：横线悬在文字下方一段间隔处（约 0.9 倍字高），非贴着文字 */
+  bottom: -6px;
   transform: translateX(-50%);
   width: 22px;
   height: 3px;
@@ -292,33 +294,17 @@ button { font-family: var(--font); border: none; background: none; cursor: point
 .content {
   flex: 1;
   overflow: auto;
+  /* 预留滚动条位：有/无滚动条的页面内容等宽，切页不跳宽 */
+  scrollbar-gutter: stable;
   padding: 12px 24px 40px;
 }
 
-/* 热门二级导航（综合热门 / 排行榜）：固定在顶栏下方、不随内容滚动，左缘与顶栏 tabs 对齐 */
-.subnav {
+/* 排行榜 tab 的榜单周期行（日榜/月榜/周榜/年榜）：顶栏下方独立行；
+   上内边距 2px 使胶囊行中心(≈94)对齐侧栏「首页」项中心，左缘随内容区 24px（用户拍板） */
+.rank-panel {
   flex-shrink: 0;
-  background: var(--bg);
-  /* 底部全宽分隔线（热门页：导航条与内容间的横线） */
-  border-bottom: 1px solid var(--faint);
-  /* 上内边距取 5.5px：二级导航行与侧栏「首页」项水平对齐 */
-  padding: 5.5px 24px 12px;
+  padding: 2px 24px 0;
 }
-.subnav-tabs { display: flex; align-items: center; gap: 8px; }
-.subtab {
-  padding: 8px 18px;
-  border-radius: 999px;
-  font-size: 14px;
-  color: var(--text-mid);
-}
-.subtab:hover { color: var(--accent-deep); }
-.subtab.active {
-  background: color-mix(in oklab, var(--accent) 10%, transparent);
-  color: var(--accent);
-  font-weight: 500;
-}
-/* 排行榜：与二级导航统一胶囊形态；上间距取 5px 使日月周年行与侧栏「全部」项对齐 */
-.rank-panel { margin-top: 5px; }
 .rank-tabs { display: flex; align-items: center; gap: 8px; }
 .rank-tab {
   padding: 8px 18px;
@@ -333,6 +319,31 @@ button { font-family: var(--font); border: none; background: none; cursor: point
   font-weight: 500;
 }
 
+/* ===== 右下角悬浮刷新（参照客户端）：白底圆角卡 + 深色刷新图标，固定于视口右下、不随内容滚动 ===== */
+.refresh-fab {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 40; /* 高于内容卡片与顶栏搜索面板，悬浮常显 */
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background: var(--bg);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12), 0 1px 4px rgba(0, 0, 0, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-main);
+}
+.refresh-fab svg { width: 24px; height: 24px; }
+.refresh-fab:hover { box-shadow: 0 6px 20px rgba(0, 0, 0, 0.16), 0 2px 6px rgba(0, 0, 0, 0.1); }
+.refresh-fab.spinning svg { animation: fab-spin 0.6s ease; }
+@keyframes fab-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.dark .refresh-fab { background: #26262a; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5); }
+
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
@@ -345,6 +356,7 @@ button { font-family: var(--font); border: none; background: none; cursor: point
 .page { display: flex; flex-direction: column; gap: 16px; }
 /* display:flex 会覆盖 hidden 属性默认的 display:none，须显式声明 */
 .page[hidden] { display: none; }
+.pop-block[hidden], .hist-card[hidden], .hist-group2[hidden] { display: none; }
 .page:not([hidden]) { animation: page-in .18s ease-out; }
 @keyframes page-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 
@@ -361,7 +373,8 @@ button { font-family: var(--font); border: none; background: none; cursor: point
 .entry-card > p, .entry-sub, .settings-card > p { font-size: 12px; color: var(--text-sub); margin-top: 4px; }
 
 /* 两段式胶囊 */
-.filter-card { padding-top: 14px; }
+/* 相册筛选区：去卡片盒（用户拍板对齐）——行缘与网格/内容线同线 */
+.filter-card { padding: 0; border: none; background: none; border-radius: 0; }
 .pill-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .pill {
   padding: 5px 12px;
@@ -399,20 +412,14 @@ button { font-family: var(--font); border: none; background: none; cursor: point
 
 /* 我的页：资料卡 + Tabs */
 .profile-card { display: flex; align-items: center; gap: 16px; }
-.avatar-placeholder {
-  width: 56px; height: 56px; flex-shrink: 0;
-  border-radius: 50%;
-  display: grid; place-items: center;
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  color: var(--invert); font-size: 22px; font-weight: 600;
-}
 .profile-main h2 { font-size: 16px; font-weight: 600; }
 .profile-main p { margin-top: 4px; font-size: 12px; color: var(--text-sub); }
 .profile-stats { display: flex; gap: 32px; margin-left: auto; text-align: center; }
 .profile-stats dd { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .profile-stats dt { margin-top: 2px; font-size: 12px; color: var(--text-sub); }
 
-.tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
+/* 我的页 Tab（限定作用域：避免与顶栏 .tabs 撞名——曾致顶栏 tab 行多出全宽底线且按钮上移） */
+#page-mine .tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
 .tab-btn {
   padding: 7px 18px;
   border-radius: 999px;
@@ -471,28 +478,80 @@ button { font-family: var(--font); border: none; background: none; cursor: point
 
 /* 排行榜卡 */
 .rank-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.rank-stack { display: flex; flex-direction: column; gap: 16px; }
 .rank-head { display: flex; align-items: center; justify-content: space-between; }
 .rank-head a { font-size: 12px; color: var(--text-sub); text-decoration: none; }
 .rank-head a:hover { color: var(--accent-deep); }
 .rank-card ul { list-style: none; margin-top: 8px; }
 .rank-card li {
-  display: flex; align-items: center; gap: 10px;
-  padding: 8px 2px; font-size: 13px;
+  display: flex; align-items: center; gap: 12px;
+  padding: 6px 2px; font-size: 13px;
   border-bottom: 1px solid var(--border);
   cursor: pointer;
 }
 .rank-card li:last-child { border-bottom: none; }
 .rank-card li:hover { background: color-mix(in oklab, var(--accent) 5%, transparent); }
-.rank-badge {
-  width: 18px; height: 18px; flex-shrink: 0;
-  display: grid; place-items: center;
-  border-radius: 5px;
-  background: var(--border); color: var(--text-sub);
-  font-size: 11px; font-weight: 600;
+/* 内容榜：首页同款迷你封面卡（16:9 封面 + 右下数值徽标 + 两行标题） */
+.rank-cards { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; }
+.rank-item { cursor: pointer; min-width: 0; }
+.rank-cover {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--border);
 }
-.rank-badge.r1 { background: #e0392e; color: var(--invert); }
-.rank-badge.r2 { background: #f2872e; color: var(--invert); }
-.rank-badge.r3 { background: var(--accent-3); color: var(--invert); }
+.rank-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.rank-cover::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(0,0,0,.08) 0%, transparent 30%, transparent 55%, rgba(0,0,0,.55) 100%);
+}
+.rank-views {
+  position: absolute;
+  right: 8px;
+  bottom: 6px;
+  font-size: 12px;
+  color: var(--invert);
+  z-index: 2;
+  font-variant-numeric: tabular-nums;
+}
+.rank-item .rank-title {
+  margin-top: 10px;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--text-main);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-all;
+}
+.rank-item:hover .rank-title { color: var(--accent-deep); }
+
+/* 作者管理页：分区胶囊 + 搜索框 + 全量作者列表（数据页「作者总览·管理」进入） */
+/* -13.8px：大标题与侧栏首页图标块（26px）顶部对齐（视觉对齐基准=图标块顶 81，
+   而非 nav-item 整体中心；静止态实测定值） */
+#page-authors .page-head { margin-top: -13.8px; }
+.a-toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-top: 14px; padding: 2px 24px 0;
+}
+.a-zones { display: flex; align-items: center; gap: 24px; }
+.a-list { margin-top: 12px; }
+.a-list ul { list-style: none; }
+.a-list li {
+  display: flex; align-items: center; gap: 12px;
+  padding: 8px 2px; font-size: 13px;
+  border-bottom: 1px solid var(--border);
+}
+.a-list li:last-child { border-bottom: none; }
+.a-list li:hover { background: color-mix(in oklab, var(--accent) 5%, transparent); }
+.a-sortrow { display: flex; align-items: center; gap: 6px; margin-top: 10px; padding: 0 24px; }
+.a-list .follow-btn { margin-left: 4px; }
+.a-empty { padding: 16px 2px; font-size: 13px; color: var(--text-sub); }
+.a-empty[hidden] { display: none; }
 .rank-name { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .rank-card li > b { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
 
@@ -542,13 +601,6 @@ button { font-family: var(--font); border: none; background: none; cursor: point
   border-radius: 10px;
   padding: 10px 14px;
 }
-.follow-avatar {
-  width: 40px; height: 40px; flex-shrink: 0;
-  border-radius: 50%;
-  display: grid; place-items: center;
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  color: var(--invert); font-size: 16px; font-weight: 600;
-}
 .follow-info { flex: 1; min-width: 0; }
 .follow-name { font-size: 14px; font-weight: 500; }
 .follow-sub { margin-top: 2px; font-size: 12px; color: var(--text-sub); }
@@ -591,6 +643,7 @@ button { font-family: var(--font); border: none; background: none; cursor: point
 }
 .hist-card { cursor: pointer; min-width: 0; }
 .hc-cover {
+  /* 真实封面（与首页一致）：图铺满、徽标浮层在上 */
   position: relative;
   aspect-ratio: 16 / 9;
   border-radius: 8px;
@@ -624,6 +677,7 @@ button { font-family: var(--font); border: none; background: none; cursor: point
   position: absolute; right: 8px; bottom: 6px;
   font-size: 12px; color: var(--invert);
 }
+.hc-cover img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .hc-cover::after {
   content: "";
   position: absolute; inset: 0;
@@ -763,3 +817,168 @@ button { font-family: var(--font); border: none; background: none; cursor: point
 @media (max-width: 900px) {
   .search { width: 200px; }
 }
+
+/* ===== 搜索结果页（顶栏搜索回车进入）：类型 tabs + 排序行 + 更多筛选面板 =====
+   纵向对齐（用户拍板，同首页导航纪律）：类型行文字中心 ↔ 侧栏「首页」项中心，
+   排序行胶囊中心 ↔ 侧栏「相册」项中心 */
+.stype-row {
+  display: flex;
+  align-items: center;
+  gap: 36px;
+  /* 负 margin 上提：使类型按钮中心与侧栏「首页」项中心(94)同高（静止态实测定值；
+     旧 -20px 系 page-in 动画进行中测得的假值，动画 translateY 4px 会污染切换瞬间实测） */
+  margin-top: -14.9px;
+  padding: 2px 24px 0;
+  border-bottom: 1px solid var(--border);
+}
+.stype {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 15px;
+  color: var(--text-main);
+  padding: 10px 2px 12px;
+}
+.stype:hover { color: var(--accent-deep); }
+.stype.active { color: var(--accent); font-weight: 600; }
+.stype.active::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 6px;
+  transform: translateX(-50%);
+  width: 24px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.stype-count {
+  font-size: 12px;
+  line-height: 1;
+  padding: 4px 7px;
+  border-radius: 9px;
+  background: var(--hover-bg);
+  color: var(--text-sub);
+  font-weight: 400;
+}
+.stype.active .stype-count {
+  background: color-mix(in oklab, var(--accent) 10%, transparent);
+  color: var(--accent);
+}
+
+.s-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  /* 上内边距 2px：排序胶囊中心与侧栏「相册」项中心(152)同高（实测定值） */
+  padding: 2px 24px 0;
+}
+.s-sort { display: flex; align-items: center; gap: 6px; }
+.sort-pill { padding: 8px 16px; border-radius: 8px; font-size: 14px; color: var(--text-main); }
+.sort-pill:hover { color: var(--accent-deep); }
+.sort-pill.active {
+  background: color-mix(in oklab, var(--accent) 10%, transparent);
+  color: var(--accent);
+  font-weight: 500;
+}
+.more-filter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--text-main);
+}
+.more-filter svg { width: 14px; height: 14px; transition: transform 0.15s; }
+.more-filter.open svg { transform: rotate(180deg); }
+.more-filter:hover { color: var(--accent-deep); border-color: var(--accent); }
+
+.search-filters {
+  /* 左右边缘与类型行/工具栏/结果网格同线（内容区 24px 内缩线），不留额外缩进 */
+  margin: 12px 0 0;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.f-row { display: flex; align-items: flex-start; gap: 12px; }
+.f-row + .f-row { margin-top: 10px; }
+.f-label { flex-shrink: 0; width: 56px; padding-top: 7px; font-size: 13px; color: var(--text-sub); }
+.f-opts { display: flex; flex-wrap: wrap; gap: 8px; }
+/* 搜索框清除按钮（有搜索词时显示，位于放大镜左侧） */
+.search-clear {
+  position: absolute;
+  right: 38px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--faint);
+  color: var(--invert);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.search-clear svg { width: 10px; height: 10px; }
+.search-clear:hover { background: var(--text-sub); }
+/* display:flex 会覆盖 hidden 的 UA 默认 none，必须显式声明（同 .page/.tabs 教训） */
+.search-clear[hidden] { display: none; }
+
+/* 年份区间选择器（「按年份区间」选中时展开） */
+.f-years { display: flex; align-items: center; gap: 6px; margin-left: 4px; }
+.f-years select {
+  height: 27px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 12px;
+  font-family: var(--font);
+  color: var(--text-main);
+  background: var(--bg);
+  outline: none;
+}
+.f-years select:focus { border-color: var(--accent); }
+.f-years-sep { font-size: 12px; color: var(--text-sub); }
+
+/* 标签池胶囊：hover 显示删除 ×；「+ 添加」虚线胶囊与内联输入 */
+.pill-tag { display: inline-flex; align-items: center; gap: 5px; }
+.tag-x {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--faint);
+  color: var(--invert);
+  font-size: 11px;
+  line-height: 1;
+}
+.pill-tag:hover .tag-x { display: flex; }
+.tag-x:hover { background: var(--text-sub); }
+.pill-add { color: var(--text-sub); border-style: dashed; }
+.pill-add:hover { color: var(--text-mid); border-color: var(--text-sub); }
+.tag-input {
+  width: 120px;
+  height: 27px;
+  padding: 0 10px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  font-size: 12px;
+  font-family: var(--font);
+  color: var(--text-main);
+  background: var(--bg);
+  outline: none;
+}
+
+/* ===== 首行贴侧栏节奏（用户拍板，同搜索页纪律）=====
+   细行（胶囊/分段行）中心 ↔ 侧栏「首页」项中心(94)；高卡片顶沿贴顶栏下缘(75)，改行高需连锁重算 */
+#page-albums .filter-card { margin-top: -5.9px; }
+#page-data > .seg-row:first-child { margin-top: -5.8px; }
+#page-mine .profile-card, #page-settings .settings-card { margin-top: -11.6px; }
+#page-home .grid { margin-top: -11.5px; }
+#page-maintenance .page-head { margin-top: -13.8px; }
+#page-ranks .page-head { margin-top: -13.8px; }
