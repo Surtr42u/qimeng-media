@@ -9,19 +9,22 @@ import (
 )
 
 type Asset struct {
-	AssetID    string
-	LibraryID  string
-	RelPath    string
-	FileName   string
-	MediaType  string
-	SizeBytes  int64
-	Mtime      string
-	DurationMs sql.NullInt64
-	Width      sql.NullInt64
-	Height     sql.NullInt64
-	Source     sql.NullString
-	CreatedAt  string
-	UpdatedAt  string
+	AssetID             string
+	LibraryID           string
+	RelPath             string
+	FileName            string
+	MediaType           string
+	SizeBytes           int64
+	Mtime               string
+	DurationMs          sql.NullInt64
+	Width               sql.NullInt64
+	Height              sql.NullInt64
+	Source              sql.NullString
+	CreatedAt           string
+	UpdatedAt           string
+	LastPositionSeconds sql.NullFloat64
+	VideoCodec          sql.NullString
+	AudioCodec          sql.NullString
 }
 
 type AssetAuthor struct {

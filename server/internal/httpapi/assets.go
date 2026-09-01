@@ -468,6 +468,15 @@ func (s *Server) GetApiV1AssetsAssetId(w http.ResponseWriter, r *http.Request, a
 	if row.Height.Valid {
 		detail.Height = ptr(int(row.Height.Int64))
 	}
+	if row.LastPositionSeconds.Valid {
+		detail.LastPositionSeconds = ptr(float32(row.LastPositionSeconds.Float64))
+	}
+	if row.VideoCodec.Valid {
+		detail.VideoCodec = ptr(row.VideoCodec.String)
+	}
+	if row.AudioCodec.Valid {
+		detail.AudioCodec = ptr(row.AudioCodec.String)
+	}
 	if lv, ok := lastViewed.(string); ok && lv != "" {
 		t := parseStoreTime(lv)
 		detail.LastViewedAt = &t

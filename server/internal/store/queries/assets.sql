@@ -16,9 +16,10 @@
 -- name: UpsertAsset :one
 INSERT INTO assets (
     asset_id, library_id, rel_path, file_name, media_type,
-    size_bytes, mtime, duration_ms, width, height, source,
+    size_bytes, mtime, duration_ms, width, height,
+    video_codec, audio_codec, source,
     created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (library_id, rel_path) DO UPDATE SET
     file_name    = excluded.file_name,
     media_type   = excluded.media_type,
@@ -27,9 +28,23 @@ ON CONFLICT (library_id, rel_path) DO UPDATE SET
     duration_ms  = excluded.duration_ms,
     width        = excluded.width,
     height       = excluded.height,
+    video_codec  = excluded.video_codec,
+    audio_codec  = excluded.audio_codec,
     source       = excluded.source,
     updated_at   = excluded.updated_at
 RETURNING *;
+
+-- UpdatePlaybackProgress: resume-position state write (PUT /assets/{id}/progress).
+-- NOT an event-stream insert: ADR-0005 untouched, only the latest value is
+-- kept (rationale in migrations/0006_playback.up.sql header). Handler maps
+-- RowsAffected==0 to 404 (assets rows are hard-deleted into trash, DOMAIN_RULES
+-- recovery semantics). updated_at deliberately NOT bumped: progress is player
+-- state, not a content change (list freshness relies on mtime/created_at only).
+
+-- name: UpdatePlaybackProgress :execrows
+UPDATE assets
+SET last_position_seconds = ?
+WHERE asset_id = ?;
 
 -- name: GetAsset :one
 SELECT * FROM assets WHERE asset_id = ?;

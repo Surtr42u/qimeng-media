@@ -11,7 +11,7 @@ import (
 )
 
 const getAsset = `-- name: GetAsset :one
-SELECT asset_id, library_id, rel_path, file_name, media_type, size_bytes, mtime, duration_ms, width, height, source, created_at, updated_at FROM assets WHERE asset_id = ?
+SELECT asset_id, library_id, rel_path, file_name, media_type, size_bytes, mtime, duration_ms, width, height, source, created_at, updated_at, last_position_seconds, video_codec, audio_codec FROM assets WHERE asset_id = ?
 `
 
 func (q *Queries) GetAsset(ctx context.Context, assetID string) (Asset, error) {
@@ -31,13 +31,16 @@ func (q *Queries) GetAsset(ctx context.Context, assetID string) (Asset, error) {
 		&i.Source,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.LastPositionSeconds,
+		&i.VideoCodec,
+		&i.AudioCodec,
 	)
 	return i, err
 }
 
 const getAssetByPath = `-- name: GetAssetByPath :one
 
-SELECT asset_id, library_id, rel_path, file_name, media_type, size_bytes, mtime, duration_ms, width, height, source, created_at, updated_at FROM assets WHERE library_id = ? AND rel_path = ?
+SELECT asset_id, library_id, rel_path, file_name, media_type, size_bytes, mtime, duration_ms, width, height, source, created_at, updated_at, last_position_seconds, video_codec, audio_codec FROM assets WHERE library_id = ? AND rel_path = ?
 `
 
 type GetAssetByPathParams struct {
@@ -65,12 +68,15 @@ func (q *Queries) GetAssetByPath(ctx context.Context, arg GetAssetByPathParams) 
 		&i.Source,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.LastPositionSeconds,
+		&i.VideoCodec,
+		&i.AudioCodec,
 	)
 	return i, err
 }
 
 const listAssetsAfterCursor = `-- name: ListAssetsAfterCursor :many
-SELECT asset_id, library_id, rel_path, file_name, media_type, size_bytes, mtime, duration_ms, width, height, source, created_at, updated_at FROM assets
+SELECT asset_id, library_id, rel_path, file_name, media_type, size_bytes, mtime, duration_ms, width, height, source, created_at, updated_at, last_position_seconds, video_codec, audio_codec FROM assets
 WHERE created_at < ? OR (created_at = ? AND asset_id < ?)
 ORDER BY created_at DESC, asset_id DESC
 LIMIT ?
@@ -111,6 +117,9 @@ func (q *Queries) ListAssetsAfterCursor(ctx context.Context, arg ListAssetsAfter
 			&i.Source,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.LastPositionSeconds,
+			&i.VideoCodec,
+			&i.AudioCodec,
 		); err != nil {
 			return nil, err
 		}
@@ -127,7 +136,7 @@ func (q *Queries) ListAssetsAfterCursor(ctx context.Context, arg ListAssetsAfter
 
 const listAssetsFirstPage = `-- name: ListAssetsFirstPage :many
 
-SELECT asset_id, library_id, rel_path, file_name, media_type, size_bytes, mtime, duration_ms, width, height, source, created_at, updated_at FROM assets
+SELECT asset_id, library_id, rel_path, file_name, media_type, size_bytes, mtime, duration_ms, width, height, source, created_at, updated_at, last_position_seconds, video_codec, audio_codec FROM assets
 ORDER BY created_at DESC, asset_id DESC
 LIMIT ?
 `
@@ -163,6 +172,9 @@ func (q *Queries) ListAssetsFirstPage(ctx context.Context, limit int64) ([]Asset
 			&i.Source,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.LastPositionSeconds,
+			&i.VideoCodec,
+			&i.AudioCodec,
 		); err != nil {
 			return nil, err
 		}
@@ -177,14 +189,41 @@ func (q *Queries) ListAssetsFirstPage(ctx context.Context, limit int64) ([]Asset
 	return items, nil
 }
 
+const updatePlaybackProgress = `-- name: UpdatePlaybackProgress :execrows
+
+UPDATE assets
+SET last_position_seconds = ?
+WHERE asset_id = ?
+`
+
+type UpdatePlaybackProgressParams struct {
+	LastPositionSeconds sql.NullFloat64
+	AssetID             string
+}
+
+// UpdatePlaybackProgress: resume-position state write (PUT /assets/{id}/progress).
+// NOT an event-stream insert: ADR-0005 untouched, only the latest value is
+// kept (rationale in migrations/0006_playback.up.sql header). Handler maps
+// RowsAffected==0 to 404 (assets rows are hard-deleted into trash, DOMAIN_RULES
+// recovery semantics). updated_at deliberately NOT bumped: progress is player
+// state, not a content change (list freshness relies on mtime/created_at only).
+func (q *Queries) UpdatePlaybackProgress(ctx context.Context, arg UpdatePlaybackProgressParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, updatePlaybackProgress, arg.LastPositionSeconds, arg.AssetID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const upsertAsset = `-- name: UpsertAsset :one
 
 
 INSERT INTO assets (
     asset_id, library_id, rel_path, file_name, media_type,
-    size_bytes, mtime, duration_ms, width, height, source,
+    size_bytes, mtime, duration_ms, width, height,
+    video_codec, audio_codec, source,
     created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (library_id, rel_path) DO UPDATE SET
     file_name    = excluded.file_name,
     media_type   = excluded.media_type,
@@ -193,9 +232,11 @@ ON CONFLICT (library_id, rel_path) DO UPDATE SET
     duration_ms  = excluded.duration_ms,
     width        = excluded.width,
     height       = excluded.height,
+    video_codec  = excluded.video_codec,
+    audio_codec  = excluded.audio_codec,
     source       = excluded.source,
     updated_at   = excluded.updated_at
-RETURNING asset_id, library_id, rel_path, file_name, media_type, size_bytes, mtime, duration_ms, width, height, source, created_at, updated_at
+RETURNING asset_id, library_id, rel_path, file_name, media_type, size_bytes, mtime, duration_ms, width, height, source, created_at, updated_at, last_position_seconds, video_codec, audio_codec
 `
 
 type UpsertAssetParams struct {
@@ -209,6 +250,8 @@ type UpsertAssetParams struct {
 	DurationMs sql.NullInt64
 	Width      sql.NullInt64
 	Height     sql.NullInt64
+	VideoCodec sql.NullString
+	AudioCodec sql.NullString
 	Source     sql.NullString
 	CreatedAt  string
 	UpdatedAt  string
@@ -239,6 +282,8 @@ func (q *Queries) UpsertAsset(ctx context.Context, arg UpsertAssetParams) (Asset
 		arg.DurationMs,
 		arg.Width,
 		arg.Height,
+		arg.VideoCodec,
+		arg.AudioCodec,
 		arg.Source,
 		arg.CreatedAt,
 		arg.UpdatedAt,
@@ -258,6 +303,9 @@ func (q *Queries) UpsertAsset(ctx context.Context, arg UpsertAssetParams) (Asset
 		&i.Source,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.LastPositionSeconds,
+		&i.VideoCodec,
+		&i.AudioCodec,
 	)
 	return i, err
 }

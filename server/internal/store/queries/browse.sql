@@ -390,7 +390,8 @@ WHERE
 -- name: GetAssetWithLibrary :one
 SELECT
     a.asset_id, a.library_id, a.rel_path, a.file_name, a.media_type,
-    a.size_bytes, a.mtime, a.duration_ms, a.width, a.height, a.source,
+    a.size_bytes, a.mtime, a.duration_ms, a.width, a.height,
+    a.video_codec, a.audio_codec, a.last_position_seconds, a.source,
     a.created_at, a.updated_at, l.root_path
 FROM assets a
 JOIN libraries l ON l.id = a.library_id

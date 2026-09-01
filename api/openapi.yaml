@@ -304,6 +304,24 @@ paths:
             schema: { type: object, required: [favorite], properties: { favorite: { type: boolean } } }
       responses:
         "204": { description: OK }
+  /api/v1/assets/{assetId}/progress:
+    put:
+      summary: 上报播放进度（断点续播状态；只保留最新值，非事件流）
+      description: |
+        播放器心跳式上报（建议 10s 间隔，暂停/离开播放页时各补一次）。
+        进度是"最新状态"而非统计事实：服务端只保留每资产最新位置
+        （assets.last_position_seconds），不写入 ViewEvent 事件流、不参与
+        playCount 口径（DOMAIN_RULES §5 播放计数走 POST /events/view 的
+        play 事件，同会话当日去重）。
+      parameters: [ { $ref: "#/components/parameters/AssetId" } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProgressUpdate" }
+      responses:
+        "204": { description: 已记录 }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   # ---------- 标签 / 作者 / 时间轴 ----------
   /api/v1/tags:
@@ -557,6 +575,8 @@ components:
         isFavorite:  { type: boolean }
         likeCount:   { type: integer }
         thumbUrl:    { type: string, description: 签名缩略图 URL }
+        durationMs:  { type: integer, format: int64, description: 视频时长（图片/动图无值；仅 VIDEO 扫描时探测） }
+        lastPositionSeconds: { type: [number, "null"], description: '断点续播位置（秒；未播过/图片=null）。播放器经 PUT /assets/{assetId}/progress 上报；已看完口径 = >= durationMs/1000，由客户端推导' }
 
     AssetPage:
       type: object
@@ -587,7 +607,8 @@ components:
             libraryId:    { type: string, description: 所属库 ID（多库场景客户端定位整理目标用） }
             relPath:      { type: string }
             directory:    { type: string }
-            durationMs:   { type: integer, format: int64, description: 视频时长 }
+            videoCodec:   { type: [string, "null"], description: '视频编码（ffprobe codec_name，如 h264/hevc/av1；Web 端据此判断浏览器直链兼容性。探测失败/存量资产未重探=null）' }
+            audioCodec:   { type: [string, "null"], description: '音频编码（如 aac/flac/opus；无音轨/未知=null）' }
             width:        { type: integer }
             height:       { type: integer }
             tags:         { type: array, items: { $ref: "#/components/schemas/Tag" } }
@@ -631,6 +652,12 @@ components:
         startedAt: { type: string, format: date-time }
         seconds:   { type: number, description: dwell 时的停留秒数 }
         sessionId: { type: string, description: "客户端会话标识（App 启动/Web 标签页生成，UUID 即可）；服务端按 assetId+kind+sessionId+当日 会话级去重（DOMAIN_RULES §5）" }
+
+    ProgressUpdate:
+      type: object
+      required: [positionSeconds]
+      properties:
+        positionSeconds: { type: number, minimum: 0, description: 当前播放位置（秒；视频实际进度而非停留时长，与 dwell.seconds 的停留语义区分） }
 
     LikeState:
       type: object

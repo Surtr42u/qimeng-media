@@ -233,16 +233,33 @@ func idForIndex(i int) string {
 
 // TestMigrateDownThenUp：down migration 必须可执行（生产禁用，测试与灾备依赖），
 // 且 down 后能再次 up（幂等重建）。migration 演进后回退步数随之变化：
-// 第一步验证 0005 down（物化表/关注列/COS 库列删除、0004 对象保留），
-// 第二步验证 0004 down（asset_tags.created_at 删除、0003 对象保留），
-// 第三步验证 0003 down（kv_settings 删除、0002 对象保留），
-// 第四步验证 0002 down（FTS 对象删除、业务表保留），
-// 第五步验证 0001 down（业务表全删）。
+// 第一步验证 0006 down（播放进度/编码列删除、0005 对象保留），
+// 第二步验证 0005 down（物化表/关注列/COS 库列删除、0004 对象保留），
+// 第三步验证 0004 down（asset_tags.created_at 删除、0003 对象保留），
+// 第四步验证 0003 down（kv_settings 删除、0002 对象保留），
+// 第五步验证 0002 down（FTS 对象删除、业务表保留），
+// 第六步验证 0001 down（业务表全删）。
 func TestMigrateDownThenUp(t *testing.T) {
 	conn, _ := openTestDB(t) // 已 up
-	// 第一步：0005 down（物化表/关注列/COS 库列删除、0004 对象保留）
+	// 第一步：0006 down（播放端列删除、0005 对象保留）
 	if err := MigrateDown(conn, 1); err != nil {
 		t.Fatalf("MigrateDown 失败: %v", err)
+	}
+	if columnExists(t, conn, "assets", "last_position_seconds") {
+		t.Error("0006 down 后 assets.last_position_seconds 仍存在（0006 down 缺 DROP COLUMN）")
+	}
+	if columnExists(t, conn, "assets", "video_codec") {
+		t.Error("0006 down 后 assets.video_codec 仍存在（0006 down 缺 DROP COLUMN）")
+	}
+	if columnExists(t, conn, "assets", "audio_codec") {
+		t.Error("0006 down 后 assets.audio_codec 仍存在（0006 down 缺 DROP COLUMN）")
+	}
+	if !tableExists(t, conn, "asset_daily_stats") {
+		t.Error("0006 down 后 asset_daily_stats 应保留（只回退了一个版本）")
+	}
+	// 第二步：0005 down（物化表/关注列/COS 库列删除、0004 对象保留）
+	if err := MigrateDown(conn, 1); err != nil {
+		t.Fatalf("MigrateDown 第二次失败: %v", err)
 	}
 	if tableExists(t, conn, "asset_daily_stats") {
 		t.Error("0005 down 后 asset_daily_stats 仍存在（0005 down 缺 DROP）")
@@ -254,7 +271,7 @@ func TestMigrateDownThenUp(t *testing.T) {
 		t.Error("0005 down 后 libraries.kind 仍存在（0005 down 缺 DROP COLUMN）")
 	}
 	if !columnExists(t, conn, "asset_tags", "created_at") {
-		t.Error("0005 down 后 asset_tags.created_at 应保留（只回退了一个版本）")
+		t.Error("0005 down 后 asset_tags.created_at 应保留（只回退了两个版本）")
 	}
 	// 第二步：0004 down（asset_tags.created_at 删除、0003 对象保留）
 	if err := MigrateDown(conn, 1); err != nil {

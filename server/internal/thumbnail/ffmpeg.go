@@ -177,6 +177,7 @@ func ScaleToWebP(ctx context.Context, src string, longSide int, dst string) erro
 type ffprobeJSON struct {
 	Streams []struct {
 		CodecType   string `json:"codec_type"`
+		CodecName   string `json:"codec_name"`
 		Width       int    `json:"width"`
 		Height      int    `json:"height"`
 		Duration    string `json:"duration"`
@@ -207,6 +208,11 @@ type ProbeResult struct {
 	Duration time.Duration
 	Width    int
 	Height   int
+	// VideoCodec/AudioCodec 为 ffprobe codec_name（如 h264/hevc/av1/aac），
+	// 空串 = 未探到（消费侧转 NULL）；AudioCodec 取第一个音频流，
+	// 与视频流遍历无关（音频流可能排在视频流之后，须全流扫描）。
+	VideoCodec string
+	AudioCodec string
 	// AttachedPic 表示容器内含带 attached_pic disposition 的视频流（内嵌
 	// 封面/cover art）；AttachedPicStream 是该流的 0 基索引用途：PickFrameTime
 	// 据此返回封面优先选点，ExtractAttachedPic 按同索引抽流。
@@ -224,10 +230,11 @@ func secondsToDuration(sec float64) time.Duration {
 // 共用一份 ffprobe 封装，避免两处各写一套解析渐行渐远（任务约定）。
 // 时长优先取 format.duration：部分封装的 stream 级 duration 缺失，
 // format 级是容器聚合值（实测 mp4 两者一致）。
-// 同时探测内嵌封面（disposition.attached_pic=1）：时长/宽高取第一个
+// 同时探测内嵌封面（disposition.attached_pic=1）与编码名：时长/宽高取第一个
 // 非封面视频流（封面流是自己的时长/尺寸，取值无意义——mkv 封面常是
 // 第 0 号视频流但真实视频在第 1 号）；整个容器只有一个封面流的极端情形
-// （纯音频+封面）时用封面流兜底返回。
+// （纯音频+封面）时用封面流兜底返回。codec 提取需要全流扫描（音频流可能
+// 排在视频流之后），因此先收集后构造，不再循环内提前 return。
 func ProbeVideo(ctx context.Context, path string) (*ProbeResult, error) {
 	var out bytes.Buffer
 	if err := run(ctx, "ffprobe", &out,
@@ -245,24 +252,37 @@ func ProbeVideo(ctx context.Context, path string) (*ProbeResult, error) {
 	}
 	attachedPic := false
 	attachedIdx := -1
+	videoIdx := -1
+	var audioCodec string
 	for i, s := range probe.Streams {
-		if s.CodecType != "video" {
-			continue
+		switch s.CodecType {
+		case "audio":
+			if audioCodec == "" {
+				audioCodec = s.CodecName
+			}
+		case "video":
+			if s.Disposition.AttachedPic == 1 {
+				attachedPic = true
+				attachedIdx = i
+				continue
+			}
+			if videoIdx < 0 {
+				videoIdx = i // 第一个非封面视频流：真实视频的时长与尺寸
+			}
 		}
-		if s.Disposition.AttachedPic == 1 {
-			attachedPic = true
-			attachedIdx = i
-			continue
-		}
-		// 第一个非封面视频流：真实视频的时长与尺寸。
+	}
+	if videoIdx >= 0 {
+		vs := probe.Streams[videoIdx]
 		dur := parseDurationField(probe.Format.Duration)
 		if dur == 0 {
-			dur = parseDurationField(s.Duration)
+			dur = parseDurationField(vs.Duration)
 		}
 		return &ProbeResult{
 			Duration:          secondsToDuration(dur),
-			Width:             s.Width,
-			Height:            s.Height,
+			Width:             vs.Width,
+			Height:            vs.Height,
+			VideoCodec:        vs.CodecName,
+			AudioCodec:        audioCodec,
 			AttachedPic:       attachedPic,
 			AttachedPicStream: attachedIdx,
 		}, nil
@@ -270,7 +290,7 @@ func ProbeVideo(ctx context.Context, path string) (*ProbeResult, error) {
 	if attachedPic {
 		// 容器只有封面流（纯音频+封面）没有真实视频流：封面信息仍有效，
 		// 时长只能由 format 级兜底（通常为 0，选点侧按短路 0ms 处理）。
-		return &ProbeResult{AttachedPic: true, AttachedPicStream: attachedIdx}, nil
+		return &ProbeResult{AttachedPic: true, AttachedPicStream: attachedIdx, AudioCodec: audioCodec}, nil
 	}
 	return nil, fmt.Errorf("ffprobe 未在 %s 中找到视频流", path)
 }

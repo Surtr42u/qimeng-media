@@ -168,6 +168,40 @@ func TestProbeVideoIntegration(t *testing.T) {
 	if got.Width != 64 || got.Height != 64 {
 		t.Errorf("宽高 = %dx%d，期望 64x64", got.Width, got.Height)
 	}
+	// codec 提取（migration 0006）：lavfi 合成 mp4 默认 libx264，无音轨。
+	if got.VideoCodec != "h264" {
+		t.Errorf("VideoCodec = %q，期望 h264", got.VideoCodec)
+	}
+	if got.AudioCodec != "" {
+		t.Errorf("AudioCodec = %q，期望空（合成视频无音轨）", got.AudioCodec)
+	}
+}
+
+// TestProbeVideoWithAudioIntegration 验证音频流编码提取：音频流在 ffprobe
+// 输出中可能排在视频流之后，ProbeVideo 必须全流扫描（migration 0006）。
+func TestProbeVideoWithAudioIntegration(t *testing.T) {
+	requireFFmpeg(t)
+	dir := t.TempDir()
+	out := filepath.Join(dir, "av.mp4")
+	var buf bytes.Buffer
+	if err := run(context.Background(), "ffmpeg", &buf,
+		"-y",
+		"-f", "lavfi", "-i", "color=gray:size=32x32:rate=10:duration=1",
+		"-f", "lavfi", "-i", "sine=frequency=440:duration=1",
+		"-pix_fmt", "yuv420p",
+		"-c:a", "aac",
+		"-shortest",
+		out,
+	); err != nil {
+		t.Fatalf("合成带音轨视频失败: %v", err)
+	}
+	got, err := ProbeVideo(context.Background(), out)
+	if err != nil {
+		t.Fatalf("ProbeVideo: %v", err)
+	}
+	if got.VideoCodec != "h264" || got.AudioCodec != "aac" {
+		t.Errorf("codec = %s/%s，期望 h264/aac", got.VideoCodec, got.AudioCodec)
+	}
 }
 
 // TestPickFrameTimeIntegration 用真实视频验证选帧逻辑的分支：

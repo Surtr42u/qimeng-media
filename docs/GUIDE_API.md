@@ -3,7 +3,7 @@
 > 本文是 `api/openapi.yaml`（协议宪法）的人读版导读：端点怎么用、机制怎么运作。
 > 传输结构的唯一权威是 openapi.yaml 本身；本文解释意图与用法，两者冲突以 openapi.yaml 为准。
 > 三端 SDK 由 `make sdk` 自动生成：Go 接口层（server/internal/httpapi/gen/）、TS 客户端（web/src/api/generated/）、Kotlin 客户端（android/sdk/）。生成物不入库，改协议后重跑即可。
-> 最后更新：2026-08-31（M3 收尾：/sources/custom 写入端点、/dirs libraryId 必填、AssetDetail.libraryId；2026-08-30 M3 后端五件套）
+> 最后更新：2026-09-02（M4 播放端协议基座：PUT /assets/{id}/progress 断点续播 + AssetSummary/Detail 播放字段；此前 2026-08-31 M3 收尾：/sources/custom 写入端点、/dirs libraryId 必填、AssetDetail.libraryId）
 
 ## 全局约定
 
@@ -26,6 +26,7 @@
 | 上传整理 | POST /assets/upload、POST /assets/{id}/move、GET/POST /dirs | 直传 NAS（流式；四道校验；libraryId 必填查询参数，同名自动重命名 "名 (2).ext"，上限 upload.max_bytes 默认 2GB）；移动/重命名保关联（目标冲突 409）；目录树与新建（幂等） |
 | 回收站 | GET /trash、POST /trash/{id}/restore、DELETE /trash/{id}、DELETE /trash | 恢复（冲突自动重命名）/单个物理删除/清空（均二次确认场景） |
 | 行为上报 | POST /events/view、PUT /assets/{id}/like、PUT /assets/{id}/favorite | ViewEvent 只追加（open/play 按 assetId+kind+sessionId+当日去重，dwell 不去重——秒数每次有效）；点赞 toggle 每日一次；收藏布尔；打点同步累加 asset_daily_stats 物化表（可由事件流重建） |
+| 播放 | PUT /assets/{id}/progress | 断点续播进度上报（心跳式，只保留最新值；**不进事件流、不计 playCount**，与 ViewEvent 的分工见「关键机制」） |
 | 标签 | GET/POST /tags、DELETE /tags/{id}、PUT /assets/{id}/tags | 全局池；删除级联清理关联；替换式绑定 |
 | 作者 | GET /authors、POST /authors/import-txt、PUT /authors/{id}/follow | 常规/COS 双体系（type 区分）；TXT 三格式自动识别统一重建；关注布尔 |
 | 时间轴 | GET/POST /assets/{id}/timeline-tags、DELETE /assets/{id}/timeline-tags/{tagId} | 视频内时间点标记，独立于文件标签 |
@@ -40,6 +41,7 @@
 - **标签排序**：`GET /tags` 按名称升序（筛选面板等）；资产详情 `tags` 按关联时间倒序（详情弹窗"最近添加置顶"——PUT 整体替换即刷新全部关联时间，LEGACY_REQUIREMENTS §A），两者口径不同不要混用
 - **COS 隔离**：列表默认排除 COS 作者关联文件（独立入口），`includeCos=true` 才包含
 - **会话去重**：`ViewEventReport.sessionId` 由客户端生成（App 会话/浏览器标签页），服务端按 (assetId, kind, sessionId, 当日) 去重（DOMAIN_RULES §5）
+- **播放进度与编码字段**（M4 播放端基座，migration 0006）：`PUT /assets/{id}/progress` 心跳式上报断点续播位置（建议 10s 间隔 + 暂停/离开播放页各补一次），服务端只保留 `assets.last_position_seconds` 最新值——**进度是"最新状态"而非统计事实**，不写 ViewEvent 事件流、不参与 playCount（播放计数仍走 play 事件 + 会话去重），上报也不 bump updated_at；"已看完"徽标 = lastPositionSeconds >= durationMs/1000，由客户端推导。AssetSummary/AssetDetail 新增播放字段：`durationMs`（上移至 Summary，列表/详情同源）、`lastPositionSeconds`（Summary，未播过=null）、`videoCodec`/`audioCodec`（Detail，ffprobe codec_name）——codec 仅 VIDEO 扫描时探测，探测失败/存量资产未重探（size+mtime 变更检测跳过 ffprobe）=null，消费方按"尝试播放、失败再兜底"处理
 - **搜索与筛选叠加**：`q`（FTS5 全文）与全部筛选参数同时生效。实现状态：M2 已实现（2026-08-29）——迁移 0002 建 FTS5 trigram 索引+聚合视图+触发器全集自动同步，`internal/search` 负责关键词解析与索引重建；详细语义见 DOMAIN_RULES §3 全文搜索口径
 - **出处/角色富化**（M3）：扫描入库与移动/重命名时服务端按文件名匹配 130 组内置出处表（`internal/sourcematcher`），写 `assets.source` 与 `asset_characters`；未命中 source 为 NULL，显示层兜底"其他"。作者双体系（TXT 导入 + COS 目录扫描）见 DOMAIN_RULES §6，作者端点已全量接线（501 已清零）
 - **自定义出处**（`GET/PUT /sources/custom`，M3 收尾）：用户手动添加的分区名自动加入识别（DOMAIN_RULES §4）。PUT 为整体替换，服务端规范化（trim+去空+去重+升序）后持久化到 kv_settings `custom_sources`，存储形态=匹配引擎生效形态；空数组=清空。PUT 成功后：运行中匹配引擎立即替换，且服务端**后台自动对全部常规库资产重算出处/角色**（资产 size+mtime 未变时全量扫描只跳过，不显式重算 stock 数据不会更新）——重算完成发 `library.changed` 事件，客户端收到后刷新即可；重算期间源/角色写以匹配引擎当前名单为准，与扫描并发不破坏最终一致性

@@ -26,7 +26,7 @@ func (q *Queries) DeleteAsset(ctx context.Context, assetID string) error {
 const listAssetsByLibrary = `-- name: ListAssetsByLibrary :many
 
 
-SELECT asset_id, library_id, rel_path, file_name, media_type, size_bytes, mtime, duration_ms, width, height, source, created_at, updated_at FROM assets WHERE library_id = ?
+SELECT asset_id, library_id, rel_path, file_name, media_type, size_bytes, mtime, duration_ms, width, height, source, created_at, updated_at, last_position_seconds, video_codec, audio_codec FROM assets WHERE library_id = ?
 `
 
 // scanner queries (M1: full-scan reconciliation -- diff / move-merge / delete).
@@ -62,6 +62,9 @@ func (q *Queries) ListAssetsByLibrary(ctx context.Context, libraryID string) ([]
 			&i.Source,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.LastPositionSeconds,
+			&i.VideoCodec,
+			&i.AudioCodec,
 		); err != nil {
 			return nil, err
 		}
@@ -81,7 +84,7 @@ const moveAssetPath = `-- name: MoveAssetPath :one
 UPDATE assets
 SET rel_path = ?, file_name = ?, updated_at = ?
 WHERE asset_id = ?
-RETURNING asset_id, library_id, rel_path, file_name, media_type, size_bytes, mtime, duration_ms, width, height, source, created_at, updated_at
+RETURNING asset_id, library_id, rel_path, file_name, media_type, size_bytes, mtime, duration_ms, width, height, source, created_at, updated_at, last_position_seconds, video_codec, audio_codec
 `
 
 type MoveAssetPathParams struct {
@@ -121,6 +124,9 @@ func (q *Queries) MoveAssetPath(ctx context.Context, arg MoveAssetPathParams) (A
 		&i.Source,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.LastPositionSeconds,
+		&i.VideoCodec,
+		&i.AudioCodec,
 	)
 	return i, err
 }

@@ -179,7 +179,8 @@ const getAssetWithLibrary = `-- name: GetAssetWithLibrary :one
 
 SELECT
     a.asset_id, a.library_id, a.rel_path, a.file_name, a.media_type,
-    a.size_bytes, a.mtime, a.duration_ms, a.width, a.height, a.source,
+    a.size_bytes, a.mtime, a.duration_ms, a.width, a.height,
+    a.video_codec, a.audio_codec, a.last_position_seconds, a.source,
     a.created_at, a.updated_at, l.root_path
 FROM assets a
 JOIN libraries l ON l.id = a.library_id
@@ -187,20 +188,23 @@ WHERE a.asset_id = ?
 `
 
 type GetAssetWithLibraryRow struct {
-	AssetID    string
-	LibraryID  string
-	RelPath    string
-	FileName   string
-	MediaType  string
-	SizeBytes  int64
-	Mtime      string
-	DurationMs sql.NullInt64
-	Width      sql.NullInt64
-	Height     sql.NullInt64
-	Source     sql.NullString
-	CreatedAt  string
-	UpdatedAt  string
-	RootPath   string
+	AssetID             string
+	LibraryID           string
+	RelPath             string
+	FileName            string
+	MediaType           string
+	SizeBytes           int64
+	Mtime               string
+	DurationMs          sql.NullInt64
+	Width               sql.NullInt64
+	Height              sql.NullInt64
+	VideoCodec          sql.NullString
+	AudioCodec          sql.NullString
+	LastPositionSeconds sql.NullFloat64
+	Source              sql.NullString
+	CreatedAt           string
+	UpdatedAt           string
+	RootPath            string
 }
 
 // GetAssetWithLibrary: detail/media-serving join -- serving /media/**
@@ -220,6 +224,9 @@ func (q *Queries) GetAssetWithLibrary(ctx context.Context, assetID string) (GetA
 		&i.DurationMs,
 		&i.Width,
 		&i.Height,
+		&i.VideoCodec,
+		&i.AudioCodec,
+		&i.LastPositionSeconds,
 		&i.Source,
 		&i.CreatedAt,
 		&i.UpdatedAt,

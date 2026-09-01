@@ -331,6 +331,13 @@ func (s *Scanner) ingestFile(ctx context.Context, lib db.Library, absPath, rel, 
 			params.DurationMs = sql.NullInt64{Int64: probeRes.Duration.Milliseconds(), Valid: true}
 			params.Width = sql.NullInt64{Int64: int64(probeRes.Width), Valid: true}
 			params.Height = sql.NullInt64{Int64: int64(probeRes.Height), Valid: true}
+			// 编码名（migration 0006）：空串转 NULL（消费侧 null = 未知）
+			if probeRes.VideoCodec != "" {
+				params.VideoCodec = sql.NullString{String: probeRes.VideoCodec, Valid: true}
+			}
+			if probeRes.AudioCodec != "" {
+				params.AudioCodec = sql.NullString{String: probeRes.AudioCodec, Valid: true}
+			}
 		}
 	}
 	// 作者体系富化分派（enrich.go；kind 由 0005 CHECK 约束只可能为
