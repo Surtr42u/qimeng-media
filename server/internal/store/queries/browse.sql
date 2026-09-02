@@ -69,7 +69,11 @@ SELECT
     END AS sort_key
 FROM assets a
 WHERE
-    (sqlc.narg(library_id) IS NULL OR a.library_id = sqlc.narg(library_id))
+    -- library kill-switch: disabled libraries vanish from browse/search/
+    -- recommend lists; all records are kept (migration 0007, adr/0012)
+    EXISTS (SELECT 1 FROM libraries le
+                WHERE le.id = a.library_id AND le.enabled = 1)
+    AND (sqlc.narg(library_id) IS NULL OR a.library_id = sqlc.narg(library_id))
     AND (sqlc.narg(media_type) IS NULL OR a.media_type = sqlc.narg(media_type))
     -- "no source group" is stored as NULL; the caller translates the
     -- user-facing OTHER bucket into source_is_other = 1 (keeps SQL
@@ -208,7 +212,11 @@ SELECT
     END AS sort_key
 FROM assets a
 WHERE
-    (sqlc.narg(library_id) IS NULL OR a.library_id = sqlc.narg(library_id))
+    -- library kill-switch: disabled libraries vanish from browse/search/
+    -- recommend lists; all records are kept (migration 0007, adr/0012)
+    EXISTS (SELECT 1 FROM libraries le
+                WHERE le.id = a.library_id AND le.enabled = 1)
+    AND (sqlc.narg(library_id) IS NULL OR a.library_id = sqlc.narg(library_id))
     AND (sqlc.narg(media_type) IS NULL OR a.media_type = sqlc.narg(media_type))
     AND (sqlc.narg(source) IS NULL
          OR (sqlc.arg(source_is_other) = 1 AND a.source IS NULL)
@@ -309,7 +317,11 @@ LIMIT sqlc.arg(row_limit);
 -- list queries above.
 SELECT COUNT(*) FROM assets a
 WHERE
-    (sqlc.narg(library_id) IS NULL OR a.library_id = sqlc.narg(library_id))
+    -- library kill-switch: disabled libraries vanish from browse/search/
+    -- recommend lists; all records are kept (migration 0007, adr/0012)
+    EXISTS (SELECT 1 FROM libraries le
+                WHERE le.id = a.library_id AND le.enabled = 1)
+    AND (sqlc.narg(library_id) IS NULL OR a.library_id = sqlc.narg(library_id))
     AND (sqlc.narg(media_type) IS NULL OR a.media_type = sqlc.narg(media_type))
     AND (sqlc.narg(source) IS NULL
          OR (sqlc.arg(source_is_other) = 1 AND a.source IS NULL)

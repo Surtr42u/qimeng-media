@@ -424,6 +424,76 @@ func TestDeleteLibrary(t *testing.T) {
 	closeBody(resp)
 }
 
+// TestLibraryEnabledFilter 库开关：停用仅隐藏浏览面（列表/计数），记录与详情保留。
+func TestLibraryEnabledFilter(t *testing.T) {
+	env := newTestEnv(t)
+
+	// 取停用前的首个资产 id（详情不过滤断言用：签名直链/已获取 assetId 保持稳定）
+	resp0 := env.do(t, "GET", "/api/v1/assets", "")
+	var pageBefore gen.AssetPage
+	if err := decodeBody(resp0, &pageBefore); err != nil {
+		t.Fatalf("解析失败: %v", err)
+	}
+	if pageBefore.Items == nil || len(*pageBefore.Items) == 0 {
+		t.Fatal("停用前应先拿到资产列表")
+	}
+	firstAssetID := (*pageBefore.Items)[0].Id.String()
+
+	// 停用唯一库 → 204
+	resp := env.do(t, "PUT", "/api/v1/libraries/"+env.libID+"/enabled", `{"enabled":false}`)
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("停用期望 204，得到 %d", resp.StatusCode)
+	}
+	closeBody(resp)
+
+	// 浏览列表隐藏（空页）
+	resp = env.do(t, "GET", "/api/v1/assets", "")
+	var page gen.AssetPage
+	if err := decodeBody(resp, &page); err != nil {
+		t.Fatalf("解析失败: %v", err)
+	}
+	if page.Items != nil && len(*page.Items) != 0 {
+		t.Fatalf("停用后期望 0 资产，得到 %d", len(*page.Items))
+	}
+	// 详情不过滤：停用后已获取的 assetId 仍可访问（签名直链稳定）
+	resp = env.do(t, "GET", "/api/v1/assets/"+firstAssetID, "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("停用后详情期望 200，得到 %d", resp.StatusCode)
+	}
+	closeBody(resp)
+
+	// 管理面库列表不过滤：库仍在且带 enabled=false
+	resp = env.do(t, "GET", "/api/v1/libraries", "")
+	var libs []gen.Library
+	if err := decodeBody(resp, &libs); err != nil {
+		t.Fatalf("解析失败: %v", err)
+	}
+	if len(libs) != 1 || libs[0].Enabled == nil || *libs[0].Enabled {
+		t.Fatalf("停用后库应保留且 enabled=false： %+v", libs)
+	}
+
+	// 重新启用 → 浏览列表恢复
+	resp = env.do(t, "PUT", "/api/v1/libraries/"+env.libID+"/enabled", `{"enabled":true}`)
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("启用期望 204，得到 %d", resp.StatusCode)
+	}
+	closeBody(resp)
+	resp = env.do(t, "GET", "/api/v1/assets", "")
+	if err := decodeBody(resp, &page); err != nil {
+		t.Fatalf("解析失败: %v", err)
+	}
+	if page.Items == nil || len(*page.Items) == 0 {
+		t.Fatal("启用后浏览列表应恢复")
+	}
+
+	// 停用不存在的库 → 404
+	resp = env.do(t, "PUT", "/api/v1/libraries/00000000-0000-0000-0000-000000000000/enabled", `{"enabled":false}`)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("停用未知库期望 404，得到 %d", resp.StatusCode)
+	}
+	closeBody(resp)
+}
+
 // quote 输出 JSON 字符串字面量（路径含反斜杠需转义）。
 func quote(s string) string {
 	b, _ := json.Marshal(s)

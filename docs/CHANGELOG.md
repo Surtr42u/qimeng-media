@@ -10,6 +10,37 @@
 
 ---
 
+## 库启用/停用开关 + ADR-0012 库类型可扩展体系（2026-09-03）
+
+执行 AI：GLM-5.3-Flash（主代理，ZCode）
+
+用户需求：②库加开启/关闭选项——**关闭但不删除任何记录**（停用=浏览面隐藏，可随时恢复）；③把"库 = 内容组织方式 + 识别方式 + 展示方式"的体系理解写入文档，方便以后 AI 按 ADR 接入全新文件夹方式的库。另确认①的既有讨论：浏览器直链不兼容的编码（HEVC/AV1 等）播不了——方案 = ffprobe 编码检测（协议 0006 已铺）+ 前端按 codec 提示，**不做转码**（与"永远发原件"强偏好一致，转码档位在 M6+ 储备）。
+
+### 数据库（migration 0007，只加不改 ADR-0011）
+
+- `libraries.enabled INTEGER NOT NULL DEFAULT 1`；down 逆序 DROP COLUMN。TestMigrateDownThenUp 插入 0007 第一步（后续步骤顺延）。
+
+### 协议（api/openapi.yaml → make sdk 重生成）
+
+- `Library.enabled: boolean`（default true）+ 新端点 `PUT /api/v1/libraries/{libraryId}/enabled`（body {enabled}，204/404）。
+
+### 服务端
+
+- 4 个用户面查询加库开关谓词（browse.sql 两个列表+计数、recommend.sql 推荐输入池——搜索谓词在 browse 主查询内一并覆盖）：停用库资产从浏览/搜索/推荐消失。
+- 有意不过滤的边界（migration 注释固化）：详情/签名直链（已获取 assetId 稳定）、管理面库列表（文件管理页需看到并重新启用）、磁盘文件/扫描、统计与事件流（用户拍板"不删记录"）。
+- handler `PutApiV1LibrariesLibraryIdEnabled`（先查存在性 → SetLibraryEnabled → 广播 library.changed）；ListLibraries 响应带 enabled。
+- 新增 `TestLibraryEnabledFilter`（停用→列表空/管理面保留 enabled=false/详情 200/启用恢复/未知库 404）+ TestMigrateDownThenUp 扩步；go test ./... 全绿。
+
+### Web
+
+- `use-libraries.ts` 加 `useSetLibraryEnabled`；文件管理页库表格加「启用」开关列（settings-switch 样式，toggle 即时生效 + toast 反馈）。
+
+### 踩坑记录
+
+- sqlc 对 SQL 注释/谓词顺序敏感：`WHERE AND EXISTS` 语法错误（谓词作首条件不带 AND）；flow mapping 内 description 含 `{libraryId}` 花括号被 YAML 解析为嵌套集合（redocly "missed comma"）——协议描述禁用花括号字面量。
+
+---
+
 ## 维护页实际功能：文件管理（库管理）+ 回收站子页（2026-09-03）
 
 执行 AI：GLM-5.3-Flash（主代理，ZCode）

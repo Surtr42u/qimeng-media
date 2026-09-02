@@ -27,3 +27,6 @@ RETURNING *;
 
 -- name: DeleteLibrary :exec
 DELETE FROM libraries WHERE id = ?;
+
+-- name: SetLibraryEnabled :exec
+UPDATE libraries SET enabled = ? WHERE id = ?;

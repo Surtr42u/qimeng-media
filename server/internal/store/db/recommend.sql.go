@@ -30,7 +30,11 @@ SELECT
         WHERE ds.asset_id = a.asset_id AND ds.day = ?1), 0)) AS shown_today
 FROM assets a
 WHERE
-    (?2 IS NULL OR a.media_type = ?2)
+    -- library kill-switch: disabled libraries vanish from browse/search/
+    -- recommend lists; all records are kept (migration 0007, adr/0012)
+    EXISTS (SELECT 1 FROM libraries le
+                WHERE le.id = a.library_id AND le.enabled = 1)
+    AND (?2 IS NULL OR a.media_type = ?2)
     -- COS exclusion (DOMAIN_RULES 6: COS files never appear in regular
     -- streams) -- same predicate as ListAssetsFilteredDesc in browse.sql.
     AND NOT EXISTS (

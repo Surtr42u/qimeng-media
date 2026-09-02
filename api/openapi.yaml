@@ -107,6 +107,27 @@ paths:
       parameters: [ { $ref: "#/components/parameters/LibraryId" } ]
       responses:
         "202": { description: 已触发 }
+  /api/v1/libraries/{libraryId}/enabled:
+    put:
+      summary: 库启用/停用开关（停用仅隐藏浏览面，记录全保留，二次确认场景）
+      description: |
+        enabled=false：该库资产从浏览列表/搜索/推荐中隐藏，但 assets 及关联、
+        view_events、统计物化、回收站、磁盘文件全部保留（migration 0007）；
+        详情与签名直链不过滤（已获取的 assetId/链接保持稳定）。
+        管理面（库列表）不受影响——文件管理页可看到并重新启用。
+      parameters: [ { $ref: "#/components/parameters/LibraryId" } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: { type: boolean }
+      responses:
+        "204": { description: 已更新 }
+        "404": { $ref: "#/components/responses/NotFound" }
   /api/v1/events:
     get:
       summary: SSE 事件流（scan.progress / library.changed / thumbnail.progress / upload.done）
@@ -563,6 +584,7 @@ components:
         videoCount: { type: integer }
         imageCount: { type: integer }
         scanState: { type: string, enum: [idle, scanning, error] }
+        enabled:   { type: boolean, default: true, description: 库启用开关（PUT 到本库的 enabled 子资源）——停用仅从浏览/搜索/推荐列表隐藏，资产记录/事件流/统计/磁盘文件全部保留（migration 0007，ADR-0012） }
         kind:      { type: string, enum: [normal, cos], default: normal, description: 库类型——normal 常规媒体库；cos COS 作者库（按 作者/作品/文件 目录结构扫描建 cos_ 作者，DOMAIN_RULES §6），COS 文件不进常规浏览流 }
 
     LibraryCreate:

@@ -13,7 +13,11 @@ import (
 const countAssetsFiltered = `-- name: CountAssetsFiltered :one
 SELECT COUNT(*) FROM assets a
 WHERE
-    (?1 IS NULL OR a.library_id = ?1)
+    -- library kill-switch: disabled libraries vanish from browse/search/
+    -- recommend lists; all records are kept (migration 0007, adr/0012)
+    EXISTS (SELECT 1 FROM libraries le
+                WHERE le.id = a.library_id AND le.enabled = 1)
+    AND (?1 IS NULL OR a.library_id = ?1)
     AND (?2 IS NULL OR a.media_type = ?2)
     AND (?3 IS NULL
          OR (?4 = 1 AND a.source IS NULL)
@@ -379,7 +383,11 @@ SELECT
     END AS sort_key
 FROM assets a
 WHERE
-    (?2 IS NULL OR a.library_id = ?2)
+    -- library kill-switch: disabled libraries vanish from browse/search/
+    -- recommend lists; all records are kept (migration 0007, adr/0012)
+    EXISTS (SELECT 1 FROM libraries le
+                WHERE le.id = a.library_id AND le.enabled = 1)
+    AND (?2 IS NULL OR a.library_id = ?2)
     AND (?3 IS NULL OR a.media_type = ?3)
     AND (?4 IS NULL
          OR (?5 = 1 AND a.source IS NULL)
@@ -606,7 +614,11 @@ SELECT
     END AS sort_key
 FROM assets a
 WHERE
-    (?2 IS NULL OR a.library_id = ?2)
+    -- library kill-switch: disabled libraries vanish from browse/search/
+    -- recommend lists; all records are kept (migration 0007, adr/0012)
+    EXISTS (SELECT 1 FROM libraries le
+                WHERE le.id = a.library_id AND le.enabled = 1)
+    AND (?2 IS NULL OR a.library_id = ?2)
     AND (?3 IS NULL OR a.media_type = ?3)
     -- "no source group" is stored as NULL; the caller translates the
     -- user-facing OTHER bucket into source_is_other = 1 (keeps SQL

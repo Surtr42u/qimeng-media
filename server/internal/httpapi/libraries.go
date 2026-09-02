@@ -77,6 +77,7 @@ func (s *Server) GetApiV1Libraries(w http.ResponseWriter, r *http.Request) {
 		}
 		state := gen.LibraryScanState(s.scanStates.get(l.ID))
 		kind := gen.LibraryKind(l.Kind)
+		enabled := l.Enabled == 1
 		out = append(out, gen.Library{
 			Id:         &l.ID,
 			Name:       &l.Name,
@@ -85,6 +86,7 @@ func (s *Server) GetApiV1Libraries(w http.ResponseWriter, r *http.Request) {
 			ImageCount: &imageCount,
 			VideoCount: &videoCount,
 			ScanState:  &state,
+			Enabled:    &enabled,
 			Kind:       &kind,
 		})
 	}
@@ -248,6 +250,43 @@ func (s *Server) DeleteApiV1LibrariesLibraryId(w http.ResponseWriter, r *http.Re
 		return
 	}
 	s.scanStates.set(string(libraryID), "idle")
+	if err := s.bus.Publish(events.Event{Topic: events.TopicLibraryChanged}); err != nil {
+		s.logger.Warn("广播 library.changed 失败", "err", err)
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// PutApiV1LibrariesLibraryIdEnabled 库启用/停用开关（openapi PUT 语义）。
+//
+// 停用仅作用于展示面（browse 列表/计数、推荐/排行输入池谓词，migration 0007）：
+// 资产及关联、事件流、统计物化、回收站、磁盘文件全部保留；详情/直链不过滤。
+// 更新后广播 library.changed 让各端刷新缓存。
+func (s *Server) PutApiV1LibrariesLibraryIdEnabled(w http.ResponseWriter, r *http.Request, libraryID gen.LibraryId) {
+	var req gen.PutApiV1LibrariesLibraryIdEnabledJSONRequestBody
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if _, err := s.q.GetLibrary(r.Context(), libraryID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeErr(w, http.StatusNotFound, "NOT_FOUND", "库不存在")
+			return
+		}
+		s.logger.Error("查询库失败", "err", err, "libraryId", libraryID)
+		writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
+		return
+	}
+	enabled := 0
+	if req.Enabled {
+		enabled = 1
+	}
+	if err := s.q.SetLibraryEnabled(r.Context(), db.SetLibraryEnabledParams{
+		Enabled: int64(enabled),
+		ID:      string(libraryID),
+	}); err != nil {
+		s.logger.Error("更新库开关失败", "err", err, "libraryId", libraryID)
+		writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
+		return
+	}
 	if err := s.bus.Publish(events.Event{Topic: events.TopicLibraryChanged}); err != nil {
 		s.logger.Warn("广播 library.changed 失败", "err", err)
 	}

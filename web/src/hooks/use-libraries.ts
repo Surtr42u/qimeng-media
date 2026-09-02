@@ -9,6 +9,7 @@ import {
   getApiV1Libraries,
   postApiV1Libraries,
   postApiV1LibrariesByLibraryIdScan,
+  putApiV1LibrariesByLibraryIdEnabled,
 } from '@/api/generated'
 import { unwrapSdkResult } from '@/lib/api-client'
 
@@ -48,6 +49,21 @@ export function useDeleteLibrary() {
   return useMutation({
     mutationFn: (libraryId: string) =>
       unwrapSdkResult(deleteApiV1LibrariesByLibraryId({ path: { libraryId } })),
+    onSuccess: () => qc.invalidateQueries({ queryKey: LIBRARIES_QUERY_KEY }),
+  })
+}
+
+/** 库启用/停用开关：停用仅隐藏浏览面，记录/事件流/统计全保留（migration 0007） */
+export function useSetLibraryEnabled() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (args: { libraryId: string; enabled: boolean }) =>
+      unwrapSdkResult(
+        putApiV1LibrariesByLibraryIdEnabled({
+          path: { libraryId: args.libraryId },
+          body: { enabled: args.enabled },
+        }),
+      ),
     onSuccess: () => qc.invalidateQueries({ queryKey: LIBRARIES_QUERY_KEY }),
   })
 }

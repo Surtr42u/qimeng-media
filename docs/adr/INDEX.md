@@ -16,3 +16,4 @@
 | ADR-0009 | SDK 生成物不入库，CI 从 openapi.yaml 重建防漂移；AI 禁止手改生成物 | `.gitignore`、`.github/workflows/ci.yml`（sdk-chain）、根 `Makefile`、`ARCHITECTURE.md` §5.1/§10、`AGENTS.md` 铁律 1 |
 | ADR-0010 | 模块边界三层强制：Go internal 编译器边界 + depguard 两条红线 + golangci-lint 门禁（不引 arch-go） | `server/.golangci.yml`、`.github/workflows/ci.yml`（server job）、根 `Makefile`、`ARCHITECTURE.md` §5.1 |
 | ADR-0011 | 数据库演进式迁移纪律：只加不改不删，改/删走 expand-migrate-contract，SQLite 删列默认不做 | `server/migrations/`、`ARCHITECTURE.md` §5.1、`AI_README_FIRST.md` 开发流程第 4 条 |
+| ADR-0012 | 库类型（kind）可扩展体系：识别器分派 + 配套展示，新 kind 接入清单；与 enabled 开关（0007）正交 | `docs/DOMAIN_RULES.md` §6、`server/internal/scanner/`、`api/openapi.yaml` | 已接受（2026-09-03） |

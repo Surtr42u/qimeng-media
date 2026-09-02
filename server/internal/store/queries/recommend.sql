@@ -32,7 +32,11 @@ SELECT
         WHERE ds.asset_id = a.asset_id AND ds.day = sqlc.arg(day)), 0)) AS shown_today
 FROM assets a
 WHERE
-    (sqlc.narg(media_type) IS NULL OR a.media_type = sqlc.narg(media_type))
+    -- library kill-switch: disabled libraries vanish from browse/search/
+    -- recommend lists; all records are kept (migration 0007, adr/0012)
+    EXISTS (SELECT 1 FROM libraries le
+                WHERE le.id = a.library_id AND le.enabled = 1)
+    AND (sqlc.narg(media_type) IS NULL OR a.media_type = sqlc.narg(media_type))
     -- COS exclusion (DOMAIN_RULES 6: COS files never appear in regular
     -- streams) -- same predicate as ListAssetsFilteredDesc in browse.sql.
     AND NOT EXISTS (

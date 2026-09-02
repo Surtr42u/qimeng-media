@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { toast } from 'sonner'
 import { LOCALE_ZH } from '@/lib/constants'
 import {
-  useDeleteLibrary, useLibraries, useRegisterLibrary, useScanLibrary,
+  useDeleteLibrary, useLibraries, useRegisterLibrary, useScanLibrary, useSetLibraryEnabled,
 } from '@/hooks/use-libraries'
 import type { DirTree, Library } from '@/api/generated'
 import { useQuery } from '@tanstack/react-query'
@@ -81,6 +81,7 @@ export default function LibraryManagePage() {
   const registerLib = useRegisterLibrary()
   const scanLib = useScanLibrary()
   const deleteLib = useDeleteLibrary()
+  const setEnabled = useSetLibraryEnabled()
 
   // 注册表单受控态
   const [name, setName] = useState('')
@@ -146,7 +147,7 @@ export default function LibraryManagePage() {
         ) : (
           <table className="log-table">
             <thead>
-              <tr><th>名称</th><th>类型</th><th>路径</th><th>文件</th><th>状态</th><th>操作</th></tr>
+              <tr><th>名称</th><th>类型</th><th>路径</th><th>文件</th><th>状态</th><th>启用</th><th>操作</th></tr>
             </thead>
             <tbody>
               {libraries.map((lib) => (
@@ -156,6 +157,26 @@ export default function LibraryManagePage() {
                   <td style={{ maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={lib.rootPath}>{lib.rootPath}</td>
                   <td>{(lib.fileCount ?? 0).toLocaleString(LOCALE_ZH)}</td>
                   <td>{scanStateText[lib.scanState ?? 'idle'] ?? lib.scanState}</td>
+                  <td>
+                    {/* 用户拍板：关闭=只隐藏浏览面，记录全保留（migration 0007） */}
+                    <label className="settings-switch" title={lib.enabled === false ? '已停用（点击启用）' : '已启用（点击停用）'}>
+                      <input
+                        type="checkbox"
+                        checked={lib.enabled !== false}
+                        onChange={() =>
+                          setEnabled.mutate(
+                            { libraryId: lib.id ?? '', enabled: lib.enabled === false },
+                            {
+                              onSuccess: () =>
+                                toast.success(lib.enabled === false ? `「${lib.name}」已启用` : `「${lib.name}」已停用（浏览面隐藏，记录保留）`),
+                              onError: (err) => toast.error(`操作失败：${err instanceof Error ? err.message : String(err)}`),
+                            },
+                          )
+                        }
+                      />
+                      <i aria-hidden="true" />
+                    </label>
+                  </td>
                   <td>
                     <button className="pill" type="button" onClick={() => rescan(lib)}>重新扫描</button>
                     <button className="pill" type="button" onClick={() => remove(lib)}>删除</button>

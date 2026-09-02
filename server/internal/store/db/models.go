@@ -92,6 +92,7 @@ type Library struct {
 	RootPath  string
 	CreatedAt string
 	Kind      string
+	Enabled   int64
 }
 
 type Like struct {

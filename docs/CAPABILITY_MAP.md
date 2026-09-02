@@ -30,6 +30,10 @@
 | 监控面板 | sysmon 指标采集 + /metrics + /system/status + 管理面板 /admin（内置指标） | 仪表盘并入 panel-demo 后其余 UI 支持 | 已有（M2） |
 | 部署 | Docker Compose 目标形态已定（docker-compose.yml 样例） | buildx 双架构镜像、fnOS 虚拟机彩排（M5） | 规划中（M5） |
 
+## 规划中
+
+- **库类型可扩展体系（新 kind 识别器）**：normal/cos 之外按「新 kind 接入清单」（ADR-0012）接入全新文件夹方式的库；库启用开关已落地（migration 0007）。
+
 ## 明确不做清单（AI 提案禁区）
 
 | 项 | 依据 |

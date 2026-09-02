@@ -117,6 +117,7 @@ media-ui-prototype/
 
 - **本轮改动已全部提交**（阶段 A 移植 + reviewer 修复 + 文档，commit 见 CHANGELOG「UI 原型移植 web 端 React 重建」条目）；上一轮 UI 原型二轮迭代与 M4 播放端基座也已在 cea4e9e / 9773213 提交。
 - **web 端新结构速查**：`styles/prototype.css`（原型 CSS 原样+追加段，须后于 index.css 导入）→ `components/shell/{AppShell,Sidebar,TopBar,icons}.tsx`（壳层）→ `components/media/MediaCard.tsx`（卡片共用）→ `pages/`（九页+mock.ts）→ `router.tsx`（/app 下懒加载）。主题在 `lib/theme.ts` + `web/index.html` 内联脚本（双写互指，key `qimeng_theme`）。
+- **库启用开关（2026-09-03）**：文件管理页每个库行有「启用」开关（`useSetLibraryEnabled`）——停用仅隐藏浏览面（首页/相册/搜索/推荐），记录/事件流/统计/磁盘全保留；管理面不过滤。体系背景见 ADR-0012（新 kind 接入清单，用户以后加全新文件夹方式的库按它执行）。
 - **维护页实际功能（2026-09-03，阶段 B 首批真数据页）**：文件管理卡 → `/app/maintenance/files`（`pages/LibraryManagePage.tsx`：库 CRUD + 注册后自动补扫 + 目录树，删库端点 `DELETE /libraries/{libraryId}` 本次新上协议）；回收站卡 → `/app/maintenance/trash`（`pages/TrashPage.tsx`：恢复/彻底删除/清空，confirm 二次确认待换原型风格弹窗）。hooks 在 `hooks/use-libraries.ts`、`use-trash.ts`。关注列表只显示已关注（用户拍板）。回收站 confirm/入口卡实测记录见 CHANGELOG 同日条目。
 - **集合子页（2026-09-03 用户需求，原型没有的新页）**：数据页/完整榜单页点标签/作者行 → `/app/collection/:kind/:name`（`pages/CollectionPage.tsx`，相册同款网格列出该标签/作者的所有文件——旧项目语义）。标签/作者榜单 mock 已改为 mock 池真实聚合（`TAG_AGG`/`AUTHOR_AGG`，保证点击必有内容）；内容榜 rank-item 点击未接（单文件详情页属阶段 B）。
 - 对齐纪律（§4.5）在 web 端同样适用；web 端实测注意：IAB/后台标签页 `document.hidden` 时 page-in 动画时钟冻结在 from 帧（translateY 4px 污染实测）——测量前禁动画（注入 `.page{animation:none!important}`）即静止态等价。
