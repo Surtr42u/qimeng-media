@@ -23,6 +23,8 @@ const SearchPage = lazy(() => import('@/pages/SearchPage'))
 const RanksPage = lazy(() => import('@/pages/RanksPage'))
 const AuthorsPage = lazy(() => import('@/pages/AuthorsPage'))
 const CollectionPage = lazy(() => import('@/pages/CollectionPage'))
+const LibraryManagePage = lazy(() => import('@/pages/LibraryManagePage'))
+const TrashPage = lazy(() => import('@/pages/TrashPage'))
 
 export const router = createBrowserRouter([
   // 根路径直达首页（应用主入口）
@@ -48,6 +50,8 @@ export const router = createBrowserRouter([
               { path: 'ranks/:rank', element: <Suspense fallback={null}><RanksPage /></Suspense> },
               { path: 'authors', element: <Suspense fallback={null}><AuthorsPage /></Suspense> },
               { path: 'collection/:kind/:name', element: <Suspense fallback={null}><CollectionPage /></Suspense> },
+              { path: 'maintenance/files', element: <Suspense fallback={null}><LibraryManagePage /></Suspense> },
+              { path: 'maintenance/trash', element: <Suspense fallback={null}><TrashPage /></Suspense> },
             ],
           },
         ],

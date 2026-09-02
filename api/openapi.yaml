@@ -89,6 +89,18 @@ paths:
       responses:
         "201": { description: 已创建, content: { application/json: { schema: { $ref: "#/components/schemas/Library" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
+  /api/v1/libraries/{libraryId}:
+    delete:
+      summary: 删除库（低频管理操作，二次确认场景）
+      description: |
+        删除库登记。级联语义（外键 ON DELETE CASCADE）：该库全部 assets 及其关联
+        （标签/作者关联、收藏、点赞、每日展示、每日统计物化）一并移除；
+        view_events 事件流保留（历史统计，与单资产物理删除同语义，见 migrations/0001 注释）；
+        磁盘媒体文件不动（文件删除只走回收站）；回收站内该库条目保留。
+      parameters: [ { $ref: "#/components/parameters/LibraryId" } ]
+      responses:
+        "204": { description: 已删除 }
+        "404": { description: 库不存在 }
   /api/v1/libraries/{libraryId}/scan:
     post:
       summary: 触发全量扫描（异步，进度走 SSE）

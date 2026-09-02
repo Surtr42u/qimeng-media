@@ -220,6 +220,40 @@ func (s *Server) PostApiV1LibrariesLibraryIdScan(w http.ResponseWriter, r *http.
 	w.WriteHeader(http.StatusAccepted)
 }
 
+// DeleteApiV1LibrariesLibraryId 删除库（低频管理操作，openapi DELETE 语义）。
+//
+// 删除 = 移除库登记行；该库全部 assets 及其关联（标签/作者关联、收藏、点赞、
+// 每日展示、每日统计物化）经外键 ON DELETE CASCADE 一并清除（migrations/0001）。
+// 两个刻意的不变量（与单资产物理删除同语义）：
+//   - view_events 事件流保留：历史统计数据，注释见 0001 migration（只追加表无外键）；
+//   - 磁盘媒体文件与回收站条目不动：文件删除只走回收站（铁律 4）。
+//
+// 已知限制：扫描进行中删除 → 扫描 goroutine 结束时 upsert 因外键失败自然终止
+// （scanState 留在内存最终被覆盖），调试场景可接受；生产如需"扫描锁内禁删"
+// 在此加 scanStates 检查即可。
+func (s *Server) DeleteApiV1LibrariesLibraryId(w http.ResponseWriter, r *http.Request, libraryID gen.LibraryId) {
+	// 先查存在性：DeleteLibrary 对不存在的 id 影响 0 行且不报错，无法事后区分 404。
+	if _, err := s.q.GetLibrary(r.Context(), libraryID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeErr(w, http.StatusNotFound, "NOT_FOUND", "库不存在")
+			return
+		}
+		s.logger.Error("查询库失败", "err", err, "libraryId", libraryID)
+		writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
+		return
+	}
+	if err := s.q.DeleteLibrary(r.Context(), string(libraryID)); err != nil {
+		s.logger.Error("删除库失败", "err", err, "libraryId", libraryID)
+		writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
+		return
+	}
+	s.scanStates.set(string(libraryID), "idle")
+	if err := s.bus.Publish(events.Event{Topic: events.TopicLibraryChanged}); err != nil {
+		s.logger.Warn("广播 library.changed 失败", "err", err)
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // FinishScan 由扫描适配层在扫描结束时回调（置终态并广播库变更）。
 // main 的适配器把真实扫描器的完成钩子接到这里（导出方法：适配器在
 // cmd 包，跨包调用必须是导出的）。

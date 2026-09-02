@@ -23,12 +23,12 @@ interface FollowAuthor {
   followed: boolean
 }
 
+// 用户拍板（2026-09-03）：关注作者列表只显示已关注的，未关注者不出现在这里
+// （全部作者的浏览/管理在作者管理页）
 const FOLLOW_AUTHORS: FollowAuthor[] = [
   { name: 'Kokorooo_', works: 62, followed: true },
   { name: '纪录片bro', works: 141, followed: true },
-  { name: '韩比迪', works: 38, followed: false },
   { name: '红星视频', works: 210, followed: true },
-  { name: '关于转生成骡姬这档事', works: 19, followed: false },
 ]
 
 /** 收藏作品 = 内容池固定下标（与原型 FAV_WORK_INDEXES 一致） */

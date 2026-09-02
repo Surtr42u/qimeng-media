@@ -383,6 +383,47 @@ func TestLibraryEndpoints(t *testing.T) {
 	closeBody(resp)
 }
 
+// TestDeleteLibrary 删库端点：204 + 列表移除 + 级联清资产 + 404 幂等。
+// view_events 保留语义由实现保证：DeleteLibrary 仅 DELETE libraries 一行，
+// 事件表无外键（0001 migration 注释），单表语句天然触碰不到它。
+func TestDeleteLibrary(t *testing.T) {
+	env := newTestEnv(t)
+
+	// 删除存在的库 → 204
+	resp := env.do(t, "DELETE", "/api/v1/libraries/"+env.libID, "")
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("删库期望 204，得到 %d", resp.StatusCode)
+	}
+	closeBody(resp)
+
+	// 库列表移除
+	resp = env.do(t, "GET", "/api/v1/libraries", "")
+	var libs []gen.Library
+	if err := decodeBody(resp, &libs); err != nil {
+		t.Fatalf("解析失败: %v", err)
+	}
+	if len(libs) != 0 {
+		t.Fatalf("删库后期望 0 库，得到 %d", len(libs))
+	}
+
+	// 级联：该库资产索引清空（browse 空数组）
+	resp = env.do(t, "GET", "/api/v1/assets", "")
+	var assets gen.AssetPage
+	if err := decodeBody(resp, &assets); err != nil {
+		t.Fatalf("解析失败: %v", err)
+	}
+	if assets.Items != nil && len(*assets.Items) != 0 {
+		t.Fatalf("删库后期望 0 资产，得到 %d", len(*assets.Items))
+	}
+
+	// 删除已删的库 → 404
+	resp = env.do(t, "DELETE", "/api/v1/libraries/"+env.libID, "")
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("重复删库期望 404，得到 %d", resp.StatusCode)
+	}
+	closeBody(resp)
+}
+
 // quote 输出 JSON 字符串字面量（路径含反斜杠需转义）。
 func quote(s string) string {
 	b, _ := json.Marshal(s)

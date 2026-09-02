@@ -10,6 +10,35 @@
 
 ---
 
+## 维护页实际功能：文件管理（库管理）+ 回收站子页（2026-09-03）
+
+执行 AI：GLM-5.3-Flash（主代理，ZCode）
+
+用户需求：①我的页关注列表不出现未关注作者；②维护页「文件管理」「回收站」两张入口卡从 mock 占位变成实际可用的子页面——文件管理 = 管理文件库（用户自己添加/删除库来测试的入口，2026-09-02 拍板）；③另回答了"早期局域网看视频"问题（验收页仍在，新 UI 接视频待拍板）。
+
+### 协议（api/openapi.yaml → make sdk 三端重生成）
+
+- 新端点 `DELETE /api/v1/libraries/{libraryId}`（删库此前协议/服务端均缺，M1 只建了 store 查询）：204/404。删除语义 = 库登记行级联清除该库全部 assets 及关联（外键 ON DELETE CASCADE，migrations/0001）；**view_events 事件流保留**（历史统计，0001 注释不变量）；**磁盘文件与回收站条目不动**（铁律 4）。
+
+### 服务端
+
+- httpapi/libraries.go `DeleteApiV1LibrariesLibraryId`：先查存在性（DeleteLibrary 对不存在 id 影响 0 行不报错，无法事后区分 404）→ 删行 → 广播 library.changed。已知限制：扫描进行中删除 → 扫描 goroutine 的 upsert 因外键失败自然终止（调试场景可接受，注释说明）。
+- browse_test.go `TestDeleteLibrary`：204 + 列表移除 + browse 空数组（级联断言）+ 重复删 404。go test ./... 全绿。
+
+### Web（阶段 B 首批真数据页面）
+
+- hooks：`use-libraries.ts`（列表/注册/重扫/删库）、`use-trash.ts`（列表/恢复/单删/清空）——TanStack Query + unwrapSdkResult，铁律 7 合规。
+- `pages/LibraryManagePage.tsx`（/app/maintenance/files）：库表格（名称/类型/路径/计数/扫描态 + 重新扫描/删除 confirm）+ 注册表单（名称/绝对路径/kind select，注册成功自动补发扫描——POST /libraries 语义不自动扫）+ 目录浏览卡（/dirs DirTree 递归，未选库禁用查询）。
+- `pages/TrashPage.tsx`（/app/maintenance/trash）：条目表格（原路径/大小/删除时间）+ 恢复（冲突自动重命名）+ 彻底删除 + 清空，三者全部 window.confirm 二次确认（原型风格弹窗阶段 B 后续替换）。
+- MaintenancePage：两卡接导航；文件管理卡去「接入点预留」badge；回收站卡计数改真实数据（useTrash）。
+- MinePage：关注作者列表只显示已关注（用户拍板）。prototype.css 追加段 +2 条最小样式（entry-card--link / settings-field select）。
+
+### 实测（临时测试库全链）
+
+注册「临时测试库」→ 列表即时出现 → 扫描 fileCount=3 → 目录树（根 2 + 子目录A 1）→ API 删 1 资产 → 回收站页 1 条（入口卡计数同步 1）→ UI 恢复 → 空态且文件归位磁盘 → 再删 → UI 彻底删除（confirm 文案正确）→ 空态 → 删库 204/重复 404 → 磁盘文件全部保持（恢复归位/彻底删除真物理删均符合语义）→ 临时目录清理。
+
+---
+
 ## 排行榜行点击 → 标签/作者集合子页（2026-09-03）
 
 执行 AI：GLM-5.3-Flash（主代理，ZCode）

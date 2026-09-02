@@ -992,3 +992,17 @@ body {
 @media (max-width: 900px) {
   .rank-cards { grid-template-columns: 1fr; }
 }
+
+/* ===== 维护子页（文件管理/回收站，2026-09-03 实际功能页新增，量最少原则）===== */
+/* 入口卡可点击态：链接语义 + 主色描边 hover（复用 .entry-card 底样式） */
+.entry-card--link { cursor: pointer; transition: border-color .15s; }
+.entry-card--link:hover { border-color: var(--qm-primary); }
+/* 注册库表单的 select：与 .settings-field input 同规格（原型只有 input 档） */
+.settings-field select {
+  width: 100%; height: 34px;
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 0 8px; font-size: 13px; font-family: var(--font);
+  background: var(--bg); color: var(--text-main);
+  outline: none;
+}
+.settings-field select:focus { border-color: var(--qm-primary); }

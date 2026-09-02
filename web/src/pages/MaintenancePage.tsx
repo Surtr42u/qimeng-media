@@ -1,4 +1,6 @@
+import { useNavigate } from 'react-router'
 import { FolderMonitorIcon, TrashIcon } from '@/components/shell/icons'
+import { useTrash } from '@/hooks/use-trash'
 
 /** 圆环卡数据（SVG stroke-dasharray 数值照搬原型，阶段 A 无实时刷新） */
 const GAUGES = [
@@ -27,6 +29,9 @@ const LOG_ROWS = [
  * 纯 mock 静态展示；库管理入口按交接说明不在此页添加（后续任务单独做）。
  */
 export default function MaintenancePage() {
+  const navigate = useNavigate()
+  // 回收站入口卡计数用真实数据（替代原型 mock 36 条）
+  const { data: trashItems = [] } = useTrash()
   return (
     <div className="page" id="page-maintenance">
       <div className="page-head">
@@ -73,26 +78,22 @@ export default function MaintenancePage() {
         <p>文件管理与客户端异常排查</p>
       </div>
       <div className="entry-grid">
-        <div className="entry-card">
+        <div className="entry-card entry-card--link" onClick={() => navigate('/app/maintenance/files')}>
           <div className="entry-head">
             <FolderMonitorIcon />
             <h3>文件管理</h3>
           </div>
-          <p>资产文件浏览、整理与去重（接入点预留）</p>
-          <span className="entry-badge">接入点预留</span>
+          <p>管理文件库：注册/删除媒体目录、触发扫描、浏览目录结构</p>
         </div>
-        <div className="entry-card">
+        <div className="entry-card entry-card--link" onClick={() => navigate('/app/maintenance/trash')}>
           <div className="entry-head">
             <TrashIcon />
             <h3>回收站</h3>
           </div>
           <p className="entry-count">
-            <b>36</b> 条待处理
+            <b>{trashItems.length}</b> 条待处理
           </p>
-          <div className="progress">
-            <i style={{ width: '18%' }} />
-          </div>
-          <p className="entry-sub">占用 0.9 GB · 容量 5 GB</p>
+          <p className="entry-sub">恢复或彻底清除都在回收站页</p>
         </div>
       </div>
       <div className="chart-card">
