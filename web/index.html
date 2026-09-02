@@ -13,24 +13,30 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="绮梦影库" />
-    <!-- 初始浅色；暗色值由下方内联脚本按系统主题切换（浏览器对 theme-color 只取单值，无法写 CSS 变量） -->
+    <!-- 初始浅色；暗色值由下方内联脚本按"手动选择 > 系统主题"切换（浏览器对 theme-color 只取单值，无法写 CSS 变量） -->
     <meta name="theme-color" content="#ffffff" />
     <title>绮梦影库</title>
     <script>
-      // 首帧防闪白 + theme-color 同步：在应用 JS 加载前设置 html.dark，
-      // 避免暗色用户看到白屏闪烁；系统主题变化时同步 class 与 meta。
-      // 与 main.tsx 的 matchMedia 逻辑双写——此处保证首帧，main.tsx 保证后续变更。
-      // 色值：dark #0a0a0a = oklch(0.145 0 0)（Tailwind neutral-950，index.css .dark --background）。
+      // 首帧防闪白 + theme-color 同步：在应用 JS 加载前设置 html.dark。
+      // 语义与 src/lib/theme.ts 一致（THEME_STORAGE_KEY='qimeng_theme' 双写，改动须两处同步）：
+      // 手动选择（localStorage）优先；无手动选择时跟随系统，且运行中系统变化仅在无手动选择时生效。
+      // 色值：dark #0f0f0f = 原型深色底（styles/prototype.css .dark --bg）；浅色 #ffffff。
       ;(function () {
+        var KEY = 'qimeng_theme'
         var query = window.matchMedia('(prefers-color-scheme: dark)')
         function apply(dark) {
           document.documentElement.classList.toggle('dark', dark)
           var meta = document.querySelector('meta[name="theme-color"]')
-          if (meta) meta.setAttribute('content', dark ? '#0a0a0a' : '#ffffff')
+          if (meta) meta.setAttribute('content', dark ? '#0f0f0f' : '#ffffff')
         }
-        apply(query.matches)
+        function stored() {
+          var v = localStorage.getItem(KEY)
+          return v === 'light' || v === 'dark' ? v : null
+        }
+        var s = stored()
+        apply(s !== null ? s === 'dark' : query.matches)
         query.addEventListener('change', function (event) {
-          apply(event.matches)
+          if (stored() === null) apply(event.matches)
         })
       })()
     </script>

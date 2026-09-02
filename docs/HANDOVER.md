@@ -16,7 +16,7 @@
 - **M0 地基 ✅**、**M1 服务端核心闭环 ✅**、**M2 后端先行全部完成 ✅**、**M2 UI 段（Web）✅（2026-08-29，commit 82f1935 存档含并行 M3 后端件）**、**M3 后端五项 ✅（2026-08-30，推荐算法/统计/SourceMatcher/作者体系/迁移端点全量接线，见下方 M3 完成记录）**
 - **M3 剩余仅 1 项 UI**：推荐偏好设置页（9 维权重+4 预设）——按用户指示不动 UI，后置到 UI 路线（后端 GET/PUT /recommendations/prefs 已就绪）
 - **M3 后端遗留已清零（2026-08-31）**：① 孤立 COS 作者清理（扫描收尾+增量删除后自动，旧项目 deleteOrphanCosAuthors 语义）；② custom_sources 写入端点（GET/PUT /sources/custom，整体替换+后台全库存量重算，已入库资产不依赖重扫）；③ filing 改名/移动的 cos 库作者映射修正（EnrichAsset/移动合并两条路径都按新目录首段重算）。协议债两项同清：/dirs 的 libraryId 标 required、AssetDetail 补 libraryId。细节见 CHANGELOG「M3 后端收尾」条目
-- **UI 路线现状（2026-09-02 二轮迭代收尾，UI 由独立路线主导）**：`media-ui-prototype/` 为原型主路线（静态 HTML/CSS/JS，六主页面 + 搜索结果页/完整榜单页/作者管理页三个子页 + 明暗主题）——v1 旧壳与 v2 panel-demo 均已于 2026-09-01 删除，web 端仅保留鉴权基建待原型敲定后重建；两轮迭代全部细节见 HANDOVER_UI.md（§4.5 对齐纪律为硬规则，第 5 条静止态实测）与 CHANGELOG「UI 原型对齐修正」「UI 原型：榜单改造 + 作者管理页」条目
+- **UI 路线现状（2026-09-02 三轮：原型已移植 web 重建（阶段 A mock），UI 由独立路线主导）**：`media-ui-prototype/` 原型（静态 HTML/CSS/JS，六主页面 + 三子页 + 明暗主题）已完成三轮迭代并**整体移植进 web 正式代码**（React 重建：web/src/pages/ 九页 + components/shell/ 壳层 + styles/prototype.css，访问 8420 即原型界面，mock 数据阶段 B 换真）；v1 旧壳与 v2 panel-demo 均已于 2026-09-01 删除。对齐纪律（HANDOVER_UI §4.5）在 web 端继续适用。**下一步 = 阶段 B 接真实数据 + 库管理入口 + 推荐偏好页**。细节见 HANDOVER_UI.md §5/§6 与 CHANGELOG「UI 原型移植 web 端 React 重建」条目
 - **下一步：M4 Android 客户端** → M5 NAS 部署验收（M4 为 UI 重的任务，与 Web UI 路线一样待用户拍板启动时机）
 - **501 stub 已全部清零**（notImplemented 机制退役，errors.go 该函数已删——新端点接线模式：实现进各自文件、无 stub 可删）
 

@@ -4,20 +4,20 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider } from 'react-router'
 import { Toaster } from '@/components/ui/sonner'
 import { router } from './router'
+import { initTheme } from './lib/theme'
 import './index.css'
+// 原型样式层（媒体库 UI 主题）：必须在 index.css 之后导入——原型 :root 的
+// --qm-primary/--border 与 tokens.css/index.css 同名变量按导入顺序覆盖，
+// 保证 UI 呈现与用户验收的原型逐像素一致
+import './styles/prototype.css'
 import './pwa'
 
 /**
- * 暗色模式：仅跟随系统（旧版项目决策——不提供手动切换入口，界面风格由系统设置统一）。
- * 首帧防闪白在 index.html 的内联脚本完成（先于应用代码），这里只负责后续
- * 系统切换同步（用户运行中改系统主题时即时生效）。
+ * 暗色模式（2026-09-02 随 UI 原型移植调整）：手动切换优先（侧栏月亮按钮，
+ * localStorage 持久化），无手动选择时跟随系统；见 lib/theme.ts。
+ * 首帧防闪白在 index.html 的内联脚本完成（先于应用代码）。
  */
-const darkQuery = window.matchMedia('(prefers-color-scheme: dark)')
-function applySystemTheme(matches: boolean): void {
-  document.documentElement.classList.toggle('dark', matches)
-}
-applySystemTheme(darkQuery.matches)
-darkQuery.addEventListener('change', (event) => applySystemTheme(event.matches))
+initTheme()
 
 /**
  * TanStack Query 全局客户端。

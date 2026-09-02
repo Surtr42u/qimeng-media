@@ -1,42 +1,54 @@
-import { createBrowserRouter } from 'react-router'
+import { Suspense, lazy } from 'react'
+import { createBrowserRouter, Navigate } from 'react-router'
 import { AuthGate } from '@/components/layout/AuthGate'
 import { RootLayout } from '@/components/layout/RootLayout'
+import { AppShell } from '@/components/shell/AppShell'
 
 /**
- * 路由骨架（2026-09-01：v1 旧壳与 v2 panel-demo 均已删除）。
+ * 路由（2026-09-02：UI 原型移植重建）。
  *
- * 当前状态：
- * - UI 主路线 = `media-ui-prototype/`（静态原型，独立访问 http://127.0.0.1:8099/）；
- * - web 端仅保留鉴权基建（AuthGate / RootLayout / SseBridge / LoginGate）与
- *   生成 SDK（api/）、共享工具（lib/），待原型敲定后移植功能重建页面。
+ * 页面懒加载（chunk 分包）；壳层结构：
+ *   /app（AuthGate 门禁）→ RootLayout（SSE 事件桥）→ AppShell（侧栏+顶栏+内容区）
+ *   → 九个业务页（六主导航页 + 搜索结果/完整榜单/作者管理三个子页）。
+ * 页面类名与原型逐字一致（styles/prototype.css 消费 #page-* id 选择器）。
  */
 
-/** 占位页：web 端暂无业务页面（UI 主路线在静态原型），仅提示入口 */
-function UiPlaceholder() {
-  return (
-    <main className="flex min-h-screen items-center justify-center bg-background text-foreground">
-      <div className="text-center">
-        <p className="text-lg font-semibold">绮梦影库</p>
-        <p className="mt-2 text-sm text-muted-foreground">
-          UI 主路线为 media-ui-prototype 静态原型，web 端页面待原型敲定后重建。
-        </p>
-      </div>
-    </main>
-  )
-}
+const HomePage = lazy(() => import('@/pages/HomePage'))
+const AlbumsPage = lazy(() => import('@/pages/AlbumsPage'))
+const MinePage = lazy(() => import('@/pages/MinePage'))
+const DataPage = lazy(() => import('@/pages/DataPage'))
+const MaintenancePage = lazy(() => import('@/pages/MaintenancePage'))
+const SettingsPage = lazy(() => import('@/pages/SettingsPage'))
+const SearchPage = lazy(() => import('@/pages/SearchPage'))
+const RanksPage = lazy(() => import('@/pages/RanksPage'))
+const AuthorsPage = lazy(() => import('@/pages/AuthorsPage'))
 
 export const router = createBrowserRouter([
-  // 默认入口：占位页（web 端暂无业务页面）
-  { index: true, element: <UiPlaceholder /> },
+  // 根路径直达首页（应用主入口）
+  { index: true, element: <Navigate to="/app/home" replace /> },
   {
-    // AuthGate：鉴权门禁（登录流程基建保留），后续页面挂这里
     path: 'app',
     element: <AuthGate />,
     children: [
       {
-        // 鉴权后内容层：事件桥 + 路由出口
+        // 鉴权后内容层：事件桥 + 壳层 + 路由出口
         element: <RootLayout />,
-        children: [],
+        children: [
+          {
+            element: <AppShell />,
+            children: [
+              { path: 'home', element: <Suspense fallback={null}><HomePage /></Suspense> },
+              { path: 'albums', element: <Suspense fallback={null}><AlbumsPage /></Suspense> },
+              { path: 'mine', element: <Suspense fallback={null}><MinePage /></Suspense> },
+              { path: 'data', element: <Suspense fallback={null}><DataPage /></Suspense> },
+              { path: 'maintenance', element: <Suspense fallback={null}><MaintenancePage /></Suspense> },
+              { path: 'settings', element: <Suspense fallback={null}><SettingsPage /></Suspense> },
+              { path: 'search', element: <Suspense fallback={null}><SearchPage /></Suspense> },
+              { path: 'ranks/:rank', element: <Suspense fallback={null}><RanksPage /></Suspense> },
+              { path: 'authors', element: <Suspense fallback={null}><AuthorsPage /></Suspense> },
+            ],
+          },
+        ],
       },
     ],
   },

@@ -51,6 +51,9 @@ export const SSE_MIN_RECONNECT_DELAY_MS = 1000
 /** SSE 重连延迟上限（ms）：retry: 帧指定的值夹在 [1s, 此值] 之间，防服务端异常值造成饥饿 */
 export const SSE_MAX_RECONNECT_DELAY_MS = 30_000
 
+/** 中文排序 locale（相册按名称排序/搜索标签池升序共用——与旧项目排序口径一致） */
+export const LOCALE_ZH = 'zh-Hans-CN'
+
 /** 系统状态轮询间隔（ms）：管理页 CPU/内存/网络卡片刷新周期；可被页面临时覆盖（暂停/恢复） */
 export const STATUS_POLL_INTERVAL_MS = 3000
 

@@ -10,6 +10,37 @@
 
 ---
 
+## UI 原型移植 web 端 React 重建（阶段 A · mock）（2026-09-02）
+
+执行 AI：GLM-5.3-Flash（主代理 + 2 执行子代理 + 1 审查子代理，ZCode）
+
+`media-ui-prototype/` 原型敲定后按既定顺序第 1 步：九页移植进 web 正式代码，视觉/交互与原型逐像素对齐；数据仍为 mock（阶段 B 接真实 API）。
+
+### 移植产出（web/）
+
+- `styles/prototype.css`：原型 style.css 原样迁移（类名/对齐负 margin 零改动），main.tsx 中后于 index.css 导入使原型变量层最后生效；追加段仅 2 条（#root 高度 + `.rank-cards` 窄屏单列回退——HANDOVER_UI §5 记账债）。审查修复：`*` reset 注释说明与 preflight 等价、`button` reset 收窄 `.layout`（原全局无层级规则会压过 shadcn utilities）、`--accent` 让位（原型激活色统一走 `--qm-primary`，不再改写基建层 hover 灰）。
+- `components/shell/`：AppShell（侧栏+顶栏+内容区+悬浮刷新，切页滚顶）、Sidebar（返回=历史回退/导航/主题月亮/维护/设置）、TopBar（推荐/cos/排行榜 tabs 挂 `/app/home?tab=` searchParams、搜索框+历史面板+窗口键装饰、排行榜周期行单选重置日榜）、icons（原型 SVG 逐字复刻）。
+- `components/media/MediaCard.tsx`：合并原型 renderCard/mediaCardHtml（HANDOVER_UI §5 记账债第二笔）。
+- `pages/` ×10：九页组件 + mock.ts（原型数据搬运，含 12 张首页卡全量、ALBUM 四维、AUTHORS 15 位、搜索标签池；阶段 B 接真数据时删减）。封面 14 张入 `web/public/covers/`，mock 引用根绝对路径 `/covers/...`（嵌套路由下相对路径会 404）。
+- `router.tsx`：九页 lazy 挂 `/app` 下 AppShell；根路径 Navigate 到 /app/home。
+- 主题：`lib/theme.ts` 手动选择优先（localStorage `qimeng_theme`，月亮按钮 toggle）+ 无选择跟随系统；**修 initTheme 不恢复 stored 选择的 bug**（刷新丢深色）；index.html 首帧内联脚本与 theme.ts 语义统一（读 stored、守卫系统同步、theme-color #0f0f0f/#ffffff 双写互指）。
+- 常量收敛：`LOCALE_ZH`（zh-Hans-CN ×2）、`RANK_CONTENT/TAGS/AUTHORS`（rank 键单一来源）。
+
+### 验证
+
+- tsc（`-p tsconfig.app.json`，注意根 tsconfig 是 solution-style 直接 `tsc --noEmit` 是假通过）+ vite build + PWA 全绿；oxlint 11 warnings 0 errors（9 条 router lazy fast-refresh + 1 条 SearchPage useEffect 重置态——语义所需已注释 + 1 条基线）。
+- 浏览器实测（IAB 1188×742，**禁 page-in 动画后测量=静止态等价**；IAB 文档恒 hidden 动画时钟冻结，属环境特性）：八页对齐纪律零偏差——首页网格 83.1、我的/设置卡 82.9、相册维度行 89.2、数据时段行 89.3、维护/榜单/作者 h2 顶 80.5，横向全部在 96.8 内容线上，搜索框中心与顶栏中心重合 629.2。
+- 交互冒烟（DOM 事件派发，IAB 吞合成输入属环境限制）：排行榜 tab→周期行 ✓、相册维度/值/排序/空态 ✓、数据页→榜单子页/作者管理 ✓、作者搜索/排序/关注 toggle/空态 ✓、搜索回车→类型计数/标签池增删级联 ✓、我的三 tab/历史搜索/关注 ✓、主题 toggle+持久化 ✓、保存提示 ✓。
+- reviewer 对抗审查：P0 首页 12 卡补回（误删 2 张广告卡——原型删的是卡内元素不是卡片）、P1 index.html/theme.ts 统一、prototype.css 全局污染收窄，全部修复复测。
+
+### 已知差异与记账
+
+- 顶栏 tab 激活态挂在 URL（离开首页即丢，回首页重置"推荐"）——原型 JS 态跨页保留，URL 驱动为 web 语义，已记录待用户裁决。
+- 作者页搜索图标复用统一 SearchIcon（r=8 vs 原型 7，差 ≤1px）；sonner toast 主题仍跟系统（next-themes 未接，记账）。
+- oxlint：router lazy fast-refresh 警告 ×9 属模式性警告，不修。
+
+---
+
 ## M4 播放端协议与服务端基座（2026-09-02）
 
 执行 AI：GLM-5.3-Flash（主代理，ZCode）

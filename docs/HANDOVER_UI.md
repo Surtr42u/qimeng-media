@@ -1,7 +1,7 @@
 # HANDOVER-UI - 桌面客户端风格媒体库 UI 交接说明
 
 > 写给下一位专做 UI 的 AI（任何模型/工具）。人类用户无编程基础，全部代码由 AI 生成。
-> 最后更新：2026-09-02（第二轮：数据页排行榜改造（内容榜封面卡/标签作者榜收窄/作者总览卡）+ 新增作者管理页 #page-authors + 完整榜单页 #page-ranks + **对齐实测动画污染修正**（§4.5 第 5 条，静止态重校 8 处负 margin）+ 标题行视觉对齐基准改为「图标块顶部」+ 首页网格顶沿贴顶 + reviewer 审查修复（--elev 自引用/死规则/冗余声明）；工作树未提交，§6 必读）
+> 最后更新：2026-09-02（**原型已移植进 web 端 React 重建（阶段 A mock）**：九页+壳层+主题全部上线，对齐纪律静止态零偏差，reviewer 审查修复后全绿——§1/§5/§6 已更新；变更细节见 CHANGELOG「UI 原型移植 web 端 React 重建」条目）
 > 用途：新开的 AI 会话直接读本文档即可接手 UI 工作，无需回看本会话记录。
 > 主交接文档（后端/进度/约定）仍以 `docs/HANDOVER.md` 为准，本文档只覆盖 UI 路线。
 
@@ -10,7 +10,7 @@
 1. 用户要求复刻桌面 PC 客户端 UI，并把这个界面的**侧边栏**移植进 qimeng-media 项目。
 2. **UI 主路线 = `media-ui-prototype/`**（桌面客户端风格的静态原型：纯 HTML/CSS/JS）。
 3. **v2（`web/src/panel-demo/`）也已删除（2026-09-01）**——web 端只保留鉴权基建（AuthGate/RootLayout/SseBridge/LoginGate）与生成 SDK、共享工具，首页为占位提示；
-   待原型敲定后把功能移植进 web 重建页面（**用户拍板"先不做 UI 接入"**，接真实数据等 UI 做完再启动）。
+   ~~待原型敲定后把功能移植进 web 重建页面~~ **已完成（2026-09-02，阶段 A mock）**：九页+壳层已用 React 重建进 web（`web/src/pages/`、`components/shell/`、`styles/prototype.css`），访问 `http://127.0.0.1:8420/` 即原型界面；**接真实数据（阶段 B）未启动**。
 4. **v1 旧壳与 v2 panel-demo 已于 2026-09-01 彻底删除**（v1：pages/、旧壳专属 components、旧 hooks、/legacy 与 /detail；v2：panel-demo/、components/tremor/、lib/tremor、相应依赖包），web 端仅保留鉴权基建与工具层。
 5. 原型内已**去除所有平台命名痕迹**（标题、注释、数据字段、任务书），措辞统一中性化；后续新代码同样不提及。
 
@@ -104,23 +104,21 @@ media-ui-prototype/
 
 ## 5. 待办与约定
 
-1. 原型各页达成视觉验收后 → 把功能移植进 web 端重建页面（web 当前为占位页 + 鉴权基建，v1/v2 已删）。
-2. 原型敲定后移植到 web 端重建页面，再接真实数据（资产列表 /stats/* /system/status）——已拍板先不做。
-3. 推荐偏好设置页（9 维权重+4 预设）：后端 GET/PUT `/recommendations/prefs` 已就绪。
+1. ~~原型各页达成视觉验收后 → 把功能移植进 web 端重建页面~~ **已完成（2026-09-02 阶段 A）**：web/src/pages/ 九页 + components/shell/ 壳层 + styles/prototype.css；记账债两笔已还（renderCard/mediaCardHtml 合并为 `components/media/MediaCard.tsx`；`.rank-cards` 窄屏单列回退已补进 prototype.css 追加段）。
+2. **接真实数据（阶段 B，下一步）**：首页/相册接资产列表+签名直链缩略图、我的接 /stats/*、维护接 /system/status + **库管理入口（用户 2026-09-02 拍板：注册库=旧 App 加文件夹路径，用户要自己在 UI 添加/删除库测试，维护页需有库管理卡：注册/删除/触发扫描/进度）**、搜索接 FTS5；接数据时删减 pages/mock.ts 对应段；改前端顺带补集成冒烟。推荐偏好设置页（9 维权重+4 预设，后端 GET/PUT /recommendations/prefs 已就绪）也在阶段 B。
+3. 阶段 A 交互与原型的已知差异（用户裁决项）：顶栏 tab 激活态挂 URL（离开首页即丢）；作者页搜索图标 r=8（原型 7，≤1px）；sonner toast 主题跟系统未跟月亮按钮（next-themes 未接）。
 4. 跑法：不要单独拉前端——统一访问 `http://127.0.0.1:8420`（后端托管 `web/dist`）；改前端先 `npm --prefix web run build`。
-   原型单独预览：`cd media-ui-prototype && node serve.mjs 8099`（或直接双击 index.html）。
-5. 铁律 7：UI 组件禁止直接调 API、禁止内嵌业务规则——接数据走 hooks/客户端逻辑层。
+   原型目录（media-ui-prototype/）保留作对照基准，单独预览：`cd media-ui-prototype && node serve.mjs 8099`。
+5. 铁律 7：UI 组件禁止直接调 API、禁止内嵌业务规则——接数据走 hooks/客户端逻辑层（阶段 A 已遵守：pages 内零 SDK 调用）。
 6. UI 工作另见 `docs/adr/0008`（UI 解耦策略）。
-7. 代码卫生（2026-09-02 reviewer 审查建议）：app.js 的 `renderCard` 与 `mediaCardHtml` 输出结构相同，移植进 web 前抽共享函数；`.rank-cards`（内容榜 5 列网格）未纳入窄屏单列回退，移植响应式时补。
+7. web 端类型检查必须用 `npx tsc --noEmit -p tsconfig.app.json`——根 tsconfig 是 solution-style，裸 `tsc --noEmit` 是假通过。
 
-## 6. 工作树现状（2026-09-02 二轮收尾，接手必读）
+## 6. 工作树现状（2026-09-02 三轮：原型移植 web 重建，接手必读）
 
-- **未提交改动共 19 M + 4 untracked，分两条任务线（commit 时按铁律 10 分两条提交，scope 分别用 web 和 api/server）**：
-  - **UI 线**（本线，scope=web）：`media-ui-prototype/{index.html, style.css, app.js}`（榜单改造/作者管理页/对齐修正/审查修复）+ `docs/HANDOVER_UI.md` + `docs/CHANGELOG.md`（「UI 原型：榜单改造 + 作者管理页 + 对齐实测动画污染修正（2026-09-02）」条目）；
-  - **M4 播放端后端线**（并行任务线，scope=api/server，与 UI 无关，勿混入 UI commit）：`api/openapi.yaml`、`server/**`（migration 0006_playback、playback.go 进度端点、ffprobe codec、store/sqlc/测试）+ `docs/GUIDE_API.md` + `docs/CHANGELOG.md` 的「M4 播放端协议与服务端基座（2026-09-02）」条目 + `docs/HANDOVER.md`。
-  - 两条线在 `docs/CHANGELOG.md` 各有独立条目，commit 拆分按条目对应文件归堆即可。
-- **用户尚未验收 commit**：验收后按铁律 10 提交。
-- 历史：v1/v2 旧 UI 删除与原型初版分别已在 0831184 / 978976c 提交。
+- **本轮改动已全部提交**（阶段 A 移植 + reviewer 修复 + 文档，commit 见 CHANGELOG「UI 原型移植 web 端 React 重建」条目）；上一轮 UI 原型二轮迭代与 M4 播放端基座也已在 cea4e9e / 9773213 提交。
+- **web 端新结构速查**：`styles/prototype.css`（原型 CSS 原样+追加段，须后于 index.css 导入）→ `components/shell/{AppShell,Sidebar,TopBar,icons}.tsx`（壳层）→ `components/media/MediaCard.tsx`（卡片共用）→ `pages/`（九页+mock.ts）→ `router.tsx`（/app 下懒加载）。主题在 `lib/theme.ts` + `web/index.html` 内联脚本（双写互指，key `qimeng_theme`）。
+- 对齐纪律（§4.5）在 web 端同样适用；web 端实测注意：IAB/后台标签页 `document.hidden` 时 page-in 动画时钟冻结在 from 帧（translateY 4px 污染实测）——测量前禁动画（注入 `.page{animation:none!important}`）即静止态等价。
+- 历史：v1/v2 旧 UI 删除（0831184）、原型初版（978976c）、二轮榜单+作者管理（cea4e9e）、M4 播放端基座（9773213）。
 
 ## 7. 给下一位 AI 的起点建议
 
