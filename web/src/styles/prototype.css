@@ -1006,3 +1006,27 @@ body {
   outline: none;
 }
 .settings-field select:focus { border-color: var(--qm-primary); }
+
+/* ===== 资产详情页（2026-09-03 新页：首页/相册卡片点击进入）===== */
+/* 媒体舞台：黑底 contain 居中（图片/视频通栏，高度受视口约束） */
+.asset-stage {
+  background: #000;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 360px;
+  max-height: 68vh;
+  overflow: hidden;
+}
+.asset-stage img,
+.asset-stage video { max-width: 100%; max-height: 68vh; object-fit: contain; display: block; }
+/* 编码兼容性提示条（hevc/av1 等直链不可播的显式提示，不转码） */
+.codec-warn {
+  padding: 9px 14px;
+  border-radius: 8px;
+  background: #fef3c7;
+  color: #b45309;
+  font-size: 13px;
+}
+.dark .codec-warn { background: #4a3208; color: #fbbf24; }

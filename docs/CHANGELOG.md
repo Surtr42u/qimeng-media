@@ -10,6 +10,35 @@
 
 ---
 
+## 阶段 B 浏览链路接真实数据：首页推荐流/相册/详情页（图片大图+视频直链播放）（2026-09-03）
+
+执行 AI：GLM-5.3-Flash（主代理，ZCode）
+
+用户需求："我自己添加库去测试，可以显示实际内容"——浏览面从 mock 换成真数据。服务端零改动（M1~M4 协议基座全就绪），纯 Web 接线。
+
+### Web 实现
+
+- `hooks/use-assets.ts`（浏览面数据层）：`useRecommendations`（GET /recommendations，M3 十维算法）、`useAssetsInfinite`（GET /assets 游标无限滚动，参数含 libraryId/mediaType/source/sort/order/q）、`useAssetDetail`（GET /assets/{id}，签名原件直链）、`useSources`（GET /sources 出处分组计数）、`useReportView`（POST /events/view 行为上报）。
+- `lib/format.ts`：formatDuration/formatShortDate/formatBytes（卡片角标与详情信息共用，纯函数）。
+- **HomePage**：推荐流真数据（60 张签名缩略图卡 + 真推荐排序），卡片点击进详情；mock 卡片数据退役（MOCK_HOME_CARDS 删除）。
+- **AlbumsPage**：真数据两段式筛选——分区维度=GET /sources（47 组真出处计数，null 名兜底"其他"）、类型维度=MediaType 三档；排序文案映射协议（精选=default/最新=最旧=fileDate/按名称=name）；「加载更多」游标分页。mock 的"作品/角色"维度待聚合端点（记账 HANDOVER_UI §5）。
+- **AssetDetailPage**（新，/app/asset/:assetId）：图片/动图=签名原件直链大图（.asset-stage 黑底 contain）；视频=原生 `<video controls>` 直链播放（ArtPlayer 播放器 UI 升级为独立后续任务）；**不兼容编码提示**（hevc/av1 等黄条提示，不转码——"永远发原件"约定）；进入即上报 open 事件（会话去重）；信息卡（文件名/大小/出处/时长/浏览播放次数）。prototype.css 追加段 +3 条（asset-stage/codec-warn）。
+- router 注册 /app/asset/:assetId； mock.ts 清理退役数据。
+
+### 实测（用户 PC 实机库：样例测试 90 图 + 测试收藏库 7355 文件/434 视频）
+
+- 首页 60 张卡全部签名缩略图渲染、0 坏图、真推荐排序；点卡片 → 详情大图（orig 直链 200）。
+- 相册分区维度真出处计数（守望先锋 242/火焰纹章 108/英雄联盟 67/崩坏 星穹铁道 59…）；类型=视频 → 434 个视频列表。
+- 视频详情页 `<video>` 直链播放（用户本人验证 OK）；open 打点入库。
+- 过程修复：类型维度点击值误用 label（"视频"）而非枚举（"video"）致筛选空——label/value 拆分；SW 旧缓存干扰实测（unregister+caches 清理后正常，属测试环境非产品问题）。
+
+### 已知限制（记账）
+
+- 存量视频 durationMs/codec 为 null（M4 已知限制：size+mtime 未变不触发重探）——卡片无时长角标、兼容性提示不生效（播放本身不受影响）。
+- 搜索页/集合页仍为 mock 池（其点击不产生真实资产跳转）；搜索接 FTS5、我的页 /stats 接线待做。
+
+---
+
 ## 库启用/停用开关 + ADR-0012 库类型可扩展体系（2026-09-03）
 
 执行 AI：GLM-5.3-Flash（主代理，ZCode）

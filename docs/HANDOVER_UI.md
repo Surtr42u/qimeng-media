@@ -105,7 +105,7 @@ media-ui-prototype/
 ## 5. 待办与约定
 
 1. ~~原型各页达成视觉验收后 → 把功能移植进 web 端重建页面~~ **已完成（2026-09-02 阶段 A）**：web/src/pages/ 九页 + components/shell/ 壳层 + styles/prototype.css；记账债两笔已还（renderCard/mediaCardHtml 合并为 `components/media/MediaCard.tsx`；`.rank-cards` 窄屏单列回退已补进 prototype.css 追加段）。
-2. **接真实数据（阶段 B，下一步）**：首页/相册接资产列表+签名直链缩略图、我的接 /stats/*、维护接 /system/status + **库管理入口（用户 2026-09-02 拍板：注册库=旧 App 加文件夹路径，用户要自己在 UI 添加/删除库测试，维护页需有库管理卡：注册/删除/触发扫描/进度）**、搜索接 FTS5；接数据时删减 pages/mock.ts 对应段；改前端顺带补集成冒烟。推荐偏好设置页（9 维权重+4 预设，后端 GET/PUT /recommendations/prefs 已就绪）也在阶段 B。
+2. **接真实数据（阶段 B，进行中 2026-09-03）**：✅ 已接——首页推荐流/相册列表/详情页（`hooks/use-assets.ts`、`pages/AssetDetailPage.tsx`、`lib/format.ts`；实测记录见 CHANGELOG 同日条目）+ 维护页文件管理（库 CRUD/目录树）/回收站（真数据，`hooks/use-libraries.ts`、`use-trash.ts`）。⏳ 待接——搜索页接 FTS5（q 参数已支持）、我的页接 /stats/*、数据页接真实聚合、ArtPlayer 播放器 UI（现用原生 video，协议/断点续播基座已就绪）、推荐偏好设置页（GET/PUT /recommendations/prefs 已就绪）、confirm 换原型风格弹窗、作品/角色聚合维度端点。接数据时删减 pages/mock.ts 对应段（MOCK_HOME_CARDS 已删）。
 3. 阶段 A 交互与原型的已知差异（用户裁决项）：顶栏 tab 激活态挂 URL（离开首页即丢）；作者页搜索图标 r=8（原型 7，≤1px）；sonner toast 主题跟系统未跟月亮按钮（next-themes 未接）。
 4. 跑法：不要单独拉前端——统一访问 `http://127.0.0.1:8420`（后端托管 `web/dist`）；改前端先 `npm --prefix web run build`。
    原型目录（media-ui-prototype/）保留作对照基准，单独预览：`cd media-ui-prototype && node serve.mjs 8099`。
