@@ -22,6 +22,7 @@ const SettingsPage = lazy(() => import('@/pages/SettingsPage'))
 const SearchPage = lazy(() => import('@/pages/SearchPage'))
 const RanksPage = lazy(() => import('@/pages/RanksPage'))
 const AuthorsPage = lazy(() => import('@/pages/AuthorsPage'))
+const CollectionPage = lazy(() => import('@/pages/CollectionPage'))
 
 export const router = createBrowserRouter([
   // 根路径直达首页（应用主入口）
@@ -46,6 +47,7 @@ export const router = createBrowserRouter([
               { path: 'search', element: <Suspense fallback={null}><SearchPage /></Suspense> },
               { path: 'ranks/:rank', element: <Suspense fallback={null}><RanksPage /></Suspense> },
               { path: 'authors', element: <Suspense fallback={null}><AuthorsPage /></Suspense> },
+              { path: 'collection/:kind/:name', element: <Suspense fallback={null}><CollectionPage /></Suspense> },
             ],
           },
         ],

@@ -10,6 +10,24 @@
 
 ---
 
+## 排行榜行点击 → 标签/作者集合子页（2026-09-03）
+
+执行 AI：GLM-5.3-Flash（主代理，ZCode）
+
+用户反馈：数据页排行卡与完整榜单页的标签/作者行点击无反应，应与旧项目一致——点击弹出类似相册的子页面，列出该标签/作者的所有文件。本次补齐该交互闭环（阶段 A mock 语义）。
+
+### 实现（web/）
+
+- 新集合子页 `pages/CollectionPage.tsx` + 路由 `/app/collection/:kind/:name`（kind=tag/author）：page-head（名称 + 「标签/作者 · N 个文件 · mock 数据」）+ 相册同款 `.media-grid` 媒体卡网格 + 空态；侧栏返回按钮走历史栈可回退。
+- 数据联动（mock 内自洽）：`pages/mock.ts` 新增 `TAG_AGG`（分区维度值 × 内容池计数，降序）、`AUTHOR_AGG`（MOCK_AUTHORS × up 出现次数，降序）、`filesByTag/filesByAuthor`（hitTag 同语义/up 子串）与 `COLLECTION_TAG/AUTHOR` kind 常量；数据页 Top5 与完整榜单页全量行的名称/数字改由聚合**派生**（原写死假数字与 mock 池脱节，点开必为空态；卡片样式零变化，阶段 B 换真聚合接口）。
+- 行点击接线：DataPage `RankList` 加 `onSelect`（标签榜/作者榜/作者总览三处）；RanksPage 行 onClick（内容榜 rank-item 不动——单文件详情页属阶段 B）。
+
+### 验证
+
+- tsc + build 全绿；浏览器实测：数据页点「样例」→ /app/collection/tag/样例 4 卡 ✓；点「绮梦」→ /app/collection/author/绮梦 3 卡 ✓；完整标签榜（7 行真实计数）点「摄影」→ 2 卡 ✓；侧栏返回回榜单页 ✓。
+
+---
+
 ## UI 原型移植 web 端 React 重建（阶段 A · mock）（2026-09-02）
 
 执行 AI：GLM-5.3-Flash（主代理 + 2 执行子代理 + 1 审查子代理，ZCode）

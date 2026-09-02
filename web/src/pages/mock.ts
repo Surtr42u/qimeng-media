@@ -202,7 +202,37 @@ export const MOCK_AUTHORS: MockAuthor[] = [
   { name: '档案员', type: '常规', works: 4, browse: 420, followed: false },
 ]
 
+/** 标签聚合（分区维度值 × 内容池出现次数，降序）：标签榜与标签集合页共用（阶段 B 换真聚合） */
+export const TAG_AGG: [string, number][] = Object.entries(
+  MOCK_ALBUM_FILES.reduce<Record<string, number>>((acc, f) => {
+    acc[f.tags.partition] = (acc[f.tags.partition] ?? 0) + 1
+    return acc
+  }, {}),
+).sort((a, b) => b[1] - a[1])
+
+/** 作者-作品数聚合：MOCK_AUTHORS 全量按其名在内容池（up="@ 作者名"）的出现次数降序，0 作品殿后保持原序 */
+export const AUTHOR_AGG: { name: string; works: number }[] = MOCK_AUTHORS.map((a) => ({
+  name: a.name,
+  works: MOCK_ALBUM_FILES.filter((f) => f.up.includes(a.name)).length,
+})).sort((x, y) => y.works - x.works)
+
+/** 标签集合页数据：该标签下的文件（四维标签值或名称命中，与搜索页 hitTag 同语义） */
+export function filesByTag(tag: string): MockAlbumFile[] {
+  return MOCK_ALBUM_FILES.filter(
+    (f) => Object.values(f.tags).includes(tag) || f.name.includes(tag),
+  )
+}
+
+/** 作者集合页数据：该作者名下的文件 */
+export function filesByAuthor(name: string): MockAlbumFile[] {
+  return MOCK_ALBUM_FILES.filter((f) => f.up.includes(name))
+}
+
 /** 完整榜单页标题映射（数据页「查看全部」按 data-rank 进入对应榜） */
+/** 集合子页 kind（路由段 /app/collection/:kind/:name）：DataPage/RanksPage/CollectionPage 共用 */
+export const COLLECTION_TAG = 'tag'
+export const COLLECTION_AUTHOR = 'author'
+
 /** 榜单键唯一来源：DataPage 入口与 RanksPage 路由段共用，禁再散写字面量 */
 export const RANK_CONTENT = 'content'
 export const RANK_TAGS = 'tags'

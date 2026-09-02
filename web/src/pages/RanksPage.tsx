@@ -1,5 +1,14 @@
-import { useParams } from 'react-router'
-import { RANK_AUTHORS, RANK_CONTENT, RANK_PAGE_TITLES, RANK_TAGS } from '@/pages/mock'
+import { useNavigate, useParams } from 'react-router'
+import {
+  AUTHOR_AGG,
+  COLLECTION_AUTHOR,
+  COLLECTION_TAG,
+  RANK_AUTHORS,
+  RANK_CONTENT,
+  RANK_PAGE_TITLES,
+  RANK_TAGS,
+  TAG_AGG,
+} from '@/pages/mock'
 
 type RankKey = typeof RANK_CONTENT | typeof RANK_TAGS | typeof RANK_AUTHORS
 
@@ -25,18 +34,10 @@ const CONTENT_ITEMS = [
 ]
 
 /** 标签榜 15 项：[名称, 关联文件数] */
-const TAG_ITEMS: [string, string][] = [
-  ['高清', '1,892'], ['样例', '1,470'], ['舞台', '866'], ['Cosplay', '724'], ['夜景', '410'],
-  ['摄影', '388'], ['同人', '356'], ['特写', '301'], ['日常', '276'], ['布景', '243'],
-  ['户外', '215'], ['合集', '187'], ['随拍', '154'], ['演出', '132'], ['纪实', '98'],
-]
+const TAG_ITEMS: [string, string][] = TAG_AGG.map(([n, c]) => [n, String(c)])
 
 /** 作者榜 15 项：[名称, 作品数] */
-const AUTHOR_ITEMS: [string, string][] = [
-  ['绮梦', '126'], ['夜空机位', '88'], ['舞台捕手', '57'], ['展会实录', '41'], ['样例日记', '33'],
-  ['快门手', '29'], ['镜头后', '24'], ['夜行者', '21'], ['布光师', '18'], ['场记', '15'],
-  ['追焦', '12'], ['侧台', '10'], ['观众席', '8'], ['通宵剪', '6'], ['档案员', '4'],
-]
+const AUTHOR_ITEMS: [string, string][] = AUTHOR_AGG.map((a) => [a.name, String(a.works)])
 
 /**
  * 完整榜单页（原型 #page-ranks 移植）：数据页排行卡「查看全部」按榜进入，
@@ -44,6 +45,7 @@ const AUTHOR_ITEMS: [string, string][] = [
  */
 export default function RanksPage() {
   const { rank } = useParams()
+  const navigate = useNavigate()
   const key: RankKey = RANK_KEYS.includes(rank ?? '') ? (rank as RankKey) : RANK_CONTENT
 
   return (
@@ -73,12 +75,19 @@ export default function RanksPage() {
       ) : (
         <div className="rank-card">
           <div className="rank-head">
-            <h3>{key === 'tags' ? '标签榜' : '作者榜'}</h3>
+            <h3>{key === RANK_TAGS ? '标签榜' : '作者榜'}</h3>
           </div>
-          <p className="rank-note">{key === 'tags' ? '按关联文件数' : '按作品数'}</p>
+          <p className="rank-note">{key === RANK_TAGS ? '按关联文件数' : '按作品数'}</p>
           <ul>
-            {(key === 'tags' ? TAG_ITEMS : AUTHOR_ITEMS).map(([name, count]) => (
-              <li key={name}>
+            {(key === RANK_TAGS ? TAG_ITEMS : AUTHOR_ITEMS).map(([name, count]) => (
+              <li
+                key={name}
+                onClick={() =>
+                  navigate(
+                    `/app/collection/${key === RANK_TAGS ? COLLECTION_TAG : COLLECTION_AUTHOR}/${encodeURIComponent(name)}`,
+                  )
+                }
+              >
                 <span className="rank-name">{name}</span>
                 <b>{count}</b>
               </li>

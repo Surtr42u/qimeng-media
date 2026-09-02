@@ -1,6 +1,14 @@
 import { useState, type MouseEvent } from 'react'
 import { useNavigate } from 'react-router'
-import { RANK_AUTHORS, RANK_CONTENT, RANK_TAGS } from '@/pages/mock'
+import {
+  AUTHOR_AGG,
+  COLLECTION_AUTHOR,
+  COLLECTION_TAG,
+  RANK_AUTHORS,
+  RANK_CONTENT,
+  RANK_TAGS,
+  TAG_AGG,
+} from '@/pages/mock'
 
 /**
  * 数据页（原型 #page-data 移植）：时段胶囊 + 6 指标 + 趋势线 + 双环分布 + 排行榜。
@@ -65,28 +73,18 @@ const CONTENT_RANK = [
   { cover: '/covers/c-mc.webp', views: '986', title: '返场演出 · 完整版' },
 ]
 
-const TAG_RANK: [string, string][] = [
-  ['高清', '1,892'],
-  ['样例', '1,470'],
-  ['舞台', '866'],
-  ['Cosplay', '724'],
-  ['夜景', '410'],
-]
+// Top5 = mock 内容池真实聚合（TAG_AGG/AUTHOR_AGG），与集合子页点击内容自洽（阶段 B 换真聚合接口）
+const TAG_RANK: [string, string][] = TAG_AGG.slice(0, 5).map(([n, c]) => [n, String(c)])
 
-const AUTHOR_RANK: [string, string][] = [
-  ['绮梦', '126'],
-  ['夜空机位', '88'],
-  ['舞台捕手', '57'],
-  ['展会实录', '41'],
-  ['样例日记', '33'],
-]
+const AUTHOR_RANK: [string, string][] = AUTHOR_AGG.slice(0, 5).map((a) => [a.name, String(a.works)])
 
 /** 行式榜单列表（标签榜/作者榜/作者总览共用） */
-function RankList({ rows }: { rows: [string, string][] }) {
+function RankList({ rows, onSelect }: { rows: [string, string][]; onSelect?: (name: string) => void }) {
   return (
     <ul>
       {rows.map(([name, num]) => (
-        <li key={name}>
+        // 旧项目语义：点标签/作者行 → 集合子页列出该标签/作者下所有文件
+        <li key={name} onClick={onSelect ? () => onSelect(name) : undefined}>
           <span className="rank-name">{name}</span>
           <b>{num}</b>
         </li>
@@ -201,7 +199,7 @@ export default function DataPage() {
               <a {...rankMoreProps(navigate, RANK_TAGS)}>查看全部</a>
             </div>
             <p className="rank-note">Top 5 · 按关联文件数</p>
-            <RankList rows={TAG_RANK} />
+            <RankList rows={TAG_RANK} onSelect={(n) => navigate(`/app/collection/${COLLECTION_TAG}/${encodeURIComponent(n)}`)} />
           </div>
           <div className="rank-card">
             <div className="rank-head">
@@ -209,7 +207,7 @@ export default function DataPage() {
               <a {...rankMoreProps(navigate, RANK_AUTHORS)}>查看全部</a>
             </div>
             <p className="rank-note">Top 5 · 按作品数</p>
-            <RankList rows={AUTHOR_RANK} />
+            <RankList rows={AUTHOR_RANK} onSelect={(n) => navigate(`/app/collection/${COLLECTION_AUTHOR}/${encodeURIComponent(n)}`)} />
           </div>
           <div className="rank-card">
             <div className="rank-head">
@@ -226,7 +224,7 @@ export default function DataPage() {
               </a>
             </div>
             <p className="rank-note">15 位作者 · 已关注 3</p>
-            <RankList rows={AUTHOR_RANK} />
+            <RankList rows={AUTHOR_RANK} onSelect={(n) => navigate(`/app/collection/${COLLECTION_AUTHOR}/${encodeURIComponent(n)}`)} />
           </div>
         </div>
       </div>
