@@ -3,22 +3,24 @@
 > 本文是 `api/openapi.yaml`（协议宪法）的人读版导读：端点怎么用、机制怎么运作。
 > 传输结构的唯一权威是 openapi.yaml 本身；本文解释意图与用法，两者冲突以 openapi.yaml 为准。
 > 三端 SDK 由 `make sdk` 自动生成：Go 接口层（server/internal/httpapi/gen/）、TS 客户端（web/src/api/generated/）、Kotlin 客户端（android/sdk/）。生成物不入库，改协议后重跑即可。
-> 最后更新：2026-09-03（第五笔：facets 作者/角色行语义修正——作者行=常规出处分组∪COS 作者（kind=source/author）、全部区角色行含 COS 作品（kind=work），GET/DELETE /authors/import-txt TXT 片段管理；当日 2026-09-03 相册四维聚合：新增 GET /assets/facets 候选计数端点（排自身口径）、/assets 加 cosOnly/work 参数与 COS 三态开关、migration 0008 落 cos_work 列；此前同日全部界面接真实数据服务端扩展：/assets 加 liked 点赞筛选与 sort=favoriteAt 收藏时间排序、新增 GET /history 观看历史、/stats/trends range 加 7d/90d、/rankings period 加 quarter、Ranking 响应 viewCount/playCount、Author.viewCount；此前 2026-09-02 M4 播放端协议基座、2026-08-31 M3 收尾）
+> 最后更新：2026-09-04（新增 GET/PUT /config 客户端配置与 POST/GET /client-logs 客户端异常上报通道；此前 2026-09-03 第五笔：facets 作者/角色行语义修正——作者行=常规出处分组∪COS 作者（kind=source/author）、全部区角色行含 COS 作品（kind=work），GET/DELETE /authors/import-txt TXT 片段管理；当日 2026-09-03 相册四维聚合：新增 GET /assets/facets 候选计数端点（排自身口径）、/assets 加 cosOnly/work 参数与 COS 三态开关、migration 0008 落 cos_work 列；此前同日全部界面接真实数据服务端扩展：/assets 加 liked 点赞筛选与 sort=favoriteAt 收藏时间排序、新增 GET /history 观看历史、/stats/trends range 加 7d/90d、/rankings period 加 quarter、Ranking 响应 viewCount/playCount、Author.viewCount；此前 2026-09-02 M4 播放端协议基座、2026-08-31 M3 收尾）
 
 ## 全局约定
 
-- 前缀 `/api/v1`；除 `/healthz`、`/readyz` 两个探针外全部要求 `Authorization: Bearer <token>`（探针在 openapi.yaml 标 `security: []`，其余端点继承全局 bearerAuth）
+- 前缀 `/api/v1`；除 `/api/v1/healthz`、`/api/v1/readyz` 两个探针外全部要求 `Authorization: Bearer <token>`（探针在 openapi.yaml 标 `security: []`，其余端点继承全局 bearerAuth；根路径 `/healthz`、`/readyz` 是运维探针别名，行为一致，不入协议面）
 - 分页统一 cursor 式：响应带 `nextCursor`，为 null 表示到底
 - 错误统一 `Error{code, message}`；`code` 机器可读（如 PATH_ESCAPE / TOO_LARGE / INVALID_TYPE）
 - 媒体直链（/media/**）不走 header 鉴权，用短期 HMAC 签名 URL（默认 6h），参数 `exp`（过期时间戳）+ `sig`
 - **页面投放**：服务端存在 Web 构建产物（`web.static_dir`，默认 `../web/dist`）时 `/` 与 `/index.html` 托管 SPA（静态资源直发 + 前端路由回退）；产物缺失时回退内嵌验收页。内嵌验收页另挂 `/_debug/`（永远可访问，调试用）。页面均为免鉴权静态资源，页面内数据请求照常走 Bearer
 
-## 端点分组速览（38 路径）
+## 端点分组速览（40 路径）
 
 | 分组 | 端点 | 说明 |
 |---|---|---|
 | 认证 | POST /auth/setup、POST /auth/login、POST /auth/verify | 首次设密码领 token（只显示一次）；密码登录换新 token（换设备/清缓存找回通道，登录即重铸旧 token 失效）；校验 token |
 | 认证（开发专用） | POST /auth/dev-login | 仅服务端 `auth_dev_mode=true` 时可用：免密码直接签发 token（未初始化自动建 admin 占位）。404 = 未开启，生产零行为变化；仅限本机调试，禁止配合公网/隧道（SECURITY.md「开发模式」） |
+| 客户端配置 | GET/PUT /config | 设置页扫描/上传卡持久化（kv_settings `client_config`）：GET 无记录回缺省（workers 2 / thumbEdge 800 / maxBytesMb 2048 / autoAccept true）；PUT 全量替换、须提交完整对象（四叶子键缺任一 400 INVALID_PARAM——防缺 autoAccept 被 bool 零值 false 静默关闸）、越界 400 INVALID_PARAM、成功回存储后全量。**生效范围**：upload.maxBytesMb（与配置文件 upload.max_bytes 取 min）、upload.autoAccept（false 时上传 403 UPLOAD_DISABLED）实时生效；scan.workers / scan.thumbEdge 为**预留字段**（暂未接入扫描器/缩略图管线，保存后暂不生效） |
+| 客户端异常 | POST/GET /client-logs | Web/Android 异常上报通道（kv_settings `client_logs` 环形缓冲最新 200 条，超出丢最旧）：POST 批量 1~50 条/请求、level 三枚举、message 超 2000 字 400（不截断）→ 204；GET 新→旧（维护页排查表数据源，Web 上报器 lib/client-logs.ts 写入） |
 | 库管理 | GET/POST /libraries、POST /libraries/{id}/scan | 注册媒体目录、触发全量扫描（进度走 SSE）；POST 可选 `kind`（normal 默认 / cos——COS 作者库按 `作者/作品/文件` 目录结构扫描建 cos_ 作者，DOMAIN_RULES §6） |
 | 实时推送 | GET /events | SSE：scan.progress / library.changed / thumbnail.progress / upload.done |
 | 资产浏览 | GET /assets、GET /assets/facets、GET/DELETE /assets/{id}、GET /sources、GET/PUT /sources/custom | 唯一列表口径（筛选/排序/搜索全参数化；2026-09-03 加 `liked` 点赞筛选与 `sort=favoriteAt` 收藏时间排序、`cosOnly`/`work` 参数——COS 隔离升级三态开关，见「关键机制」）；DELETE=进回收站；**facets**（2026-09-03 新增，第五笔语义修正）：相册四维筛选候选计数（partitions 恒三项 all/常规/COS、types 固定四项；**作者行=常规出处分组 ∪ COS 作者**〔常规分区只出处、COS 分区只 COS 作者、all 合并；出处分组排除 COS 关联资产，NULL source=「其他」桶；常规 TXT 作者不进本行〕、**角色行**〔常规=角色名、COS=cos_work 作品名、all 合并〕），每候选带 **kind**（source/author/character/work）=回传哪个筛选参数；**排自身口径**——计每维候选时忽略该维自身选择（source 与 authorId 同作者行一起忽略、character 与 work 同角色行一起忽略），前端每维独立请求各缺自身参数；出处列表（按规范名分组的文件计数，fileCount 降序，name=null=无出处文件，默认排除 COS）；自定义出处整体替换（见「关键机制」） |
@@ -33,7 +35,7 @@
 | 时间轴 | GET/POST /assets/{id}/timeline-tags、DELETE /assets/{id}/timeline-tags/{tagId} | 视频内时间点标记，独立于文件标签 |
 | 推荐排行 | GET /recommendations、GET /rankings、GET/PUT /recommendations/prefs | 10 维算法（seed 控制打散）；纯热度排行（日/周/月/年/季（近 90 天）/总，period=quarter 为 2026-09-03 新增；2026-09-03 起响应填充 viewCount/playCount 供卡片角标）；9 维权重偏好 |
 | 统计 | GET /stats/overview、GET /stats/trends | 总览面板（animated_image 计入 imageCount；计数直接数事件流，含已删资产历史——事件流无 FK 设计）；趋势按 asset_daily_stats 物化表（仅现存资产，随资产删除级联清理、可由事件流全量重建）；分桶：range=day/week/month/quarter/year 固定粒度 + 2026-09-03 新增 7d（近 7 天逐日）/90d（近 90 天逐日），all 按数据跨度动态选粒度（≤12 周周 / 12 周~24 月月 / 更长季）全量不丢弃、总和守恒（DOMAIN_RULES §5） |
-| 系统 | /healthz、/readyz、/metrics、GET /system/status | 探针（healthz/readyz）免鉴权（openapi.yaml:374/380 `security: []`）；/metrics 与 /system/status 要求管理 token；负载/流量面板 |
+| 系统 | /healthz、/readyz、/metrics、GET /system/status | 探针协议面为 `/api/v1/healthz`、`/api/v1/readyz`（免鉴权，openapi.yaml `security: []`；根路径 `/healthz` `/readyz` 是运维探针别名——docker/k8s 惯例，行为一致，不入协议面）；/metrics 与 /system/status 要求管理 token；负载/流量面板 |
 | 迁移 | POST /import/qimeng-backup | 旧版备份一次性导入：作者/标签/关联/时间轴按唯一键 upsert，统计转 ViewEvent 回放（dailyBrowse 全量 + mediaStats 差额 + history 补漏）；幂等 = 同 exportedAtMillis 批次事件只回放一次 + 段级 upsert 不翻倍；scanSources/settings/albumRules 不导入进 warnings（TXT 请重走 import-txt） |
 
 ## 关键机制

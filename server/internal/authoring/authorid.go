@@ -19,6 +19,16 @@ const (
 	//（元素 {filename, content}，统一重建素材，DOMAIN_RULES §6「TXT 导入
 	// 以全部已导入 TXT 统一重建为语义」）。读写方：httpapi TXT 导入端点。
 	SettingKeyImportedTxtSources = "imported_txt_sources"
+
+	// SettingKeyClientConfig 存客户端配置 JSON（openapi ClientConfig 结构，
+	// 设置页扫描/上传卡；读写方 httpapi config.go）。upload 两项实时生效；
+	// scan 两项为预留字段（暂未接入扫描器/缩略图管线，保存后暂不生效，
+	// openapi description 写明口径）。
+	SettingKeyClientConfig = "client_config"
+
+	// SettingKeyClientLogs 存客户端异常上报环形缓冲 JSON 数组（openapi
+	// ClientLogEntry 结构，容量 200 条超出丢最旧；读写方 httpapi clientlogs.go）。
+	SettingKeyClientLogs = "client_logs"
 )
 
 // 作者类型存储值（migrations/0001 authors.type CHECK 约束；scanner/httpapi

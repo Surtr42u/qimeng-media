@@ -308,6 +308,7 @@ paths:
       responses:
         "201": { description: 上传成功并已入库, content: { application/json: { schema: { $ref: "#/components/schemas/AssetDetail" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { description: 上传已关闭（PUT /config 的 upload.autoAccept=false）, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
         "413": { description: 超过大小上限 }
   /api/v1/assets/{assetId}/move:
     post:
@@ -562,16 +563,72 @@ paths:
       responses:
         "204": { description: OK }
 
+  # ---------- 客户端配置 / 异常上报 ----------
+  /api/v1/config:
+    get:
+      summary: 读取客户端配置（设置页扫描/上传卡的持久化值）
+      description: |
+        无存储记录时返回缺省值：scan.workers=2、scan.thumbEdge=800、
+        upload.maxBytesMb=2048、upload.autoAccept=true。
+        生效范围（诚实口径）：upload.maxBytesMb 与 upload.autoAccept
+        实时生效（上传端点每次请求时读取）；scan.workers / scan.thumbEdge
+        为预留字段——暂未接入扫描器/缩略图管线，保存后暂不生效
+        （接入管线前连重启也不生效，客户端 UI 不得宣传"重启后生效"）。
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ClientConfig" } } } }
+    put:
+      summary: 全量替换客户端配置（校验通过后落库，返回存储后全量）
+      description: |
+        提交对象即生效配置（全量替换语义），须提交完整对象：scan 与 upload
+        两组及其全部叶子键（workers/thumbEdge/maxBytesMb/autoAccept）缺任一
+        → 400 INVALID_PARAM（防 bool 缺键被零值 false 静默关闸）。任一数值
+        超出声明范围 → 400 INVALID_PARAM。成功后返回存储后全量
+        （=提交值经校验后的形态）。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ClientConfig" }
+      responses:
+        "200": { description: 已保存, content: { application/json: { schema: { $ref: "#/components/schemas/ClientConfig" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /api/v1/client-logs:
+    post:
+      summary: 客户端异常批量上报（1~50 条/请求）
+      description: |
+        Web/Android 客户端把未捕获异常与告警批量上报，服务端环形缓冲只保留
+        最新 200 条（超出丢最旧），供维护页「客户端异常」排查表读取。
+        批量条数 1~50，超出 400；level 非法 400；单条 message 超 2000 字
+        400（协议明确不截断——截断会静默破坏排障现场）。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ClientLogBatch" }
+      responses:
+        "204": { description: 已记录 }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    get:
+      summary: 已上报客户端异常列表（新→旧；环形缓冲最新 200 条）
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ClientLogPage" } } } }
+
   # ---------- 系统 ----------
-  /healthz:
+  /api/v1/healthz:
     get:
       summary: 存活探针（免鉴权）
+      description: |
+        免鉴权探活。服务端同时保留根路径 /healthz /readyz 作为运维探针别名
+        （docker/k8s 惯例），不属于 API 协议面；两边行为一致（200 + 同 body）。
       security: []
       responses:
         "200": { description: alive }
-  /readyz:
+  /api/v1/readyz:
     get:
       summary: 就绪探针（库可达/磁盘余量）
+      description: |
+        免鉴权探活。根路径 /healthz /readyz 是运维探针别名（docker/k8s 惯例），
+        不属于 API 协议面；两边行为一致。
       security: []
       responses:
         "200": { description: ready }
@@ -921,6 +978,77 @@ components:
         freshness:    { type: number, default: 0.05 }
         browseDepth:  { type: number, default: 0.03 }
         maxRandom:    { type: number, default: 0.30 }
+
+    ClientConfig:
+      type: object
+      description: 客户端配置（GET/PUT /api/v1/config 载荷；持久化键 kv_settings.client_config）。PUT 为全量替换语义，须提交完整对象
+      required: [scan, upload]
+      properties:
+        scan: { $ref: "#/components/schemas/ClientConfigScan" }
+        upload: { $ref: "#/components/schemas/ClientConfigUpload" }
+
+    ClientConfigScan:
+      type: object
+      description: 扫描管线参数（预留字段：暂未接入扫描器/缩略图管线，保存后暂不生效）
+      required: [workers, thumbEdge]
+      properties:
+        workers:
+          type: integer
+          minimum: 1
+          maximum: 4
+          default: 2
+          description: 扫描并发数（1–4，缺省 2，超出可能加重 NAS 负载）。预留字段：暂未接入扫描器管线，保存后暂不生效
+        thumbEdge:
+          type: integer
+          minimum: 200
+          maximum: 1600
+          default: 800
+          description: 缩略图长边像素（200–1600，缺省 800）。预留字段：暂未接入缩略图管线，保存后暂不生效
+
+    ClientConfigUpload:
+      type: object
+      description: 上传行为约束（实时生效：上传端点每次请求时读取）
+      required: [maxBytesMb, autoAccept]
+      properties:
+        maxBytesMb:
+          type: integer
+          minimum: 64
+          maximum: 8192
+          default: 2048
+          description: 单文件上传上限（MB，64–8192，缺省 2048）。实时生效：与配置文件 upload.max_bytes 取小者（min），部署方配置文件收紧时以更严者为准
+        autoAccept:
+          type: boolean
+          default: true
+          description: 自动接收上传开关（缺省 true）。false 时上传端点 403 UPLOAD_DISABLED，实时生效
+
+    ClientLogEntry:
+      type: object
+      description: 客户端异常上报条目（POST/GET /api/v1/client-logs；服务端环形缓冲最新 200 条，超出丢最旧）
+      required: [ts, level, message]
+      properties:
+        ts:     { type: integer, format: int64, description: 事件发生时刻（Unix 毫秒，客户端时钟） }
+        level:  { type: string, enum: [error, warn, info], description: 级别；非法值 400 }
+        message: { type: string, maxLength: 2000, description: 消息文本（超 2000 字 400，不截断） }
+        stack:  { type: string, description: 异常堆栈（可选；仅 error 级别通常携带） }
+        page:   { type: string, description: 发生页面（Web 端为 location.pathname，可选） }
+
+    ClientLogBatch:
+      type: object
+      description: POST /api/v1/client-logs 请求体（批量上报，1~50 条/请求）
+      required: [events]
+      properties:
+        events:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items: { $ref: "#/components/schemas/ClientLogEntry" }
+
+    ClientLogPage:
+      type: object
+      description: GET /api/v1/client-logs 响应（新→旧，环形缓冲最新 200 条）
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/ClientLogEntry" } }
 
     SystemStatus:
       type: object

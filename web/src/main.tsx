@@ -5,6 +5,7 @@ import { RouterProvider } from 'react-router'
 import { Toaster } from '@/components/ui/sonner'
 import { router } from './router'
 import { initTheme } from './lib/theme'
+import { installClientLogs } from './lib/client-logs'
 import './index.css'
 // 原型样式层（媒体库 UI 主题）：必须在 index.css 之后导入——原型 :root 的
 // --qm-primary/--border 与 tokens.css/index.css 同名变量按导入顺序覆盖，
@@ -18,6 +19,10 @@ import './pwa'
  * 首帧防闪白在 index.html 的内联脚本完成（先于应用代码）。
  */
 initTheme()
+
+// 客户端异常上报器（window.onerror / unhandledrejection → POST
+// /api/v1/client-logs，维护页排查表数据源）：应用一启动就挂监听。
+installClientLogs()
 
 /**
  * TanStack Query 全局客户端。

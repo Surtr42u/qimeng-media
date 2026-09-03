@@ -246,6 +246,12 @@ func New(deps Deps) (*Server, error) {
 	}
 	// 验收页固定挂 /_debug/：调试入口不随 SPA 是否可用而变。
 	mux.HandleFunc("GET /_debug/", serveIndex)
+	// 根路径探针别名（运维探针，docker/k8s 惯例）：与协议面 /api/v1/healthz、
+	// /api/v1/readyz 共用同一 handler，保证两边 200 + 同 body。别名不属于
+	// API 协议面（openapi.yaml 只定义 /api/v1 前缀路径），docker-compose
+	// healthcheck 与容器编排继续用根路径，三端 SDK 只看 /api/v1。
+	mux.HandleFunc("GET /healthz", Healthz)
+	mux.HandleFunc("GET /readyz", s.GetApiV1Readyz)
 	s.handler = &topRouter{s: s, api: api}
 	return s, nil
 }
@@ -277,13 +283,17 @@ type topRouter struct {
 func (t *topRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	p := r.URL.Path
 	switch {
-	case p == "/healthz" || p == "/readyz" || p == "/" || p == "/index.html" ||
+	case p == "/healthz" || p == "/readyz" ||
+		p == "/api/v1/healthz" || p == "/api/v1/readyz" ||
+		p == "/" || p == "/index.html" ||
 		p == "/_debug" || strings.HasPrefix(p, "/_debug/"):
-		// 探针与页面：放行。免鉴权清单以 api/openapi.yaml 的
-		// security: [] 元数据为准（/healthz openapi.yaml:374、
-		// /readyz openapi.yaml:380），本处与协议保持同步；
-		// 页面（验收页 / 与 /index.html、固定调试挂载点 /_debug/、
-		// SPA 模式下的入口）是静态 HTML 不走协议（页面内数据请求照常走 Bearer）。
+		// 探针与页面：放行。免鉴权清单以 api/openapi.yaml 的 security: []
+		// 元数据为准（/api/v1/healthz、/api/v1/readyz 均标 security: []），
+		// 本处与协议保持同步；根路径 /healthz /readyz 是运维探针别名
+		// （docker/k8s 惯例，New() 里挂 mux，与 /api/v1 版共用同一 handler），
+		// 不属于协议面。页面（验收页 / 与 /index.html、固定调试挂载点
+		// /_debug/、SPA 模式下的入口）是静态 HTML 不走协议（页面内数据
+		// 请求照常走 Bearer）。
 		t.api.ServeHTTP(w, r)
 	case p == "/api/v1/auth/setup" || p == "/api/v1/auth/login" || p == "/api/v1/auth/dev-login":
 		// 首次初始化与密码登录免鉴权（api/openapi.yaml security: []，与协议
@@ -350,9 +360,10 @@ func (s *Server) mediaSignature(next http.Handler) http.Handler {
 	})
 }
 
-// GetReadyz 就绪探针：检查数据库可达（SECURITY：探针不放行无鉴权
+// GetApiV1Readyz 就绪探针（协议面 GET /api/v1/readyz；根路径 /readyz 为
+// 运维别名，共用本 handler）：检查数据库可达（SECURITY：探针不放行无鉴权
 // 业务流量，只回答"依赖是否健康"）。
-func (s *Server) GetReadyz(w http.ResponseWriter, r *http.Request) {
+func (s *Server) GetApiV1Readyz(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), readyzTimeout)
 	defer cancel()
 	if err := s.conn.PingContext(ctx); err != nil {
@@ -363,8 +374,8 @@ func (s *Server) GetReadyz(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(`{"status":"ready"}`))
 }
 
-// GetHealthz 存活探针（复用既有实现，语义见 healthz.go）。
-func (s *Server) GetHealthz(w http.ResponseWriter, r *http.Request) {
+// GetApiV1Healthz 存活探针（复用既有实现，语义见 healthz.go）。
+func (s *Server) GetApiV1Healthz(w http.ResponseWriter, r *http.Request) {
 	Healthz(w, r)
 }
 

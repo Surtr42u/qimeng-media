@@ -18,6 +18,40 @@
 
 ---
 
+## 后端四缺口清零：上传富化 + 探针协议债归位 + 配置读写端点 + 客户端异常上报（2026-09-04 第十笔）
+
+执行 AI：GLM-5.3-Flash（主代理，ZCode；执行×3（含模型请求失败后 SendMessage 续跑原代理 1 次）+ 对抗审查×2 + 返工 1 轮）
+
+用户拍板清掉后端剩余 4 个记账缺口。执行子代理 A/B 并行、C 串行（共享 openapi.yaml）；两路 reviewer 对抗审查：A/B 合格，C 打回（P1 空态崩页 + P2×2 失实/缺防御），按「小修续跑原代理」规则 SendMessage 原代理一轮返工修复并补 4 个测试。
+
+### ① 上传富化（服务端既有缺口）
+
+- 上传落库后调用 `scanner.EnrichAsset`（尽力而为模式照回收站恢复：失败/扫描器未装配仅 Warn，不炸上传；下次该文件 size/mtime 变化重 ingest 自愈）——手动上传的文件从此有出处/角色（normal 库）与 COS 作者/cos_work（cos 库），与扫描口径一致；EnrichAsset 只写富化列，不碰上传时探测的 duration/宽高。
+- 测试：normal 命中（守望先锋_天使.jpg→出处+角色）、cos 库（作者目录→作者关联+cos_work+source 隔离）、noScanner 占位仍 201，共 3 用例。
+
+### ② 探针协议债归位
+
+- openapi `/healthz` `/readyz` 移至 `/api/v1/healthz` `/api/v1/readyz`（免鉴权白名单），协议自述「所有路径带 /api/v1」完全成立；根路径保留为运维探针别名（docker/k8s 惯例，共用同一 handler，503 DB_UNREACHABLE 行为一致）；make sdk 三端重生成（指纹比对零漂移）；docker-compose/GUIDE_API/OBSERVABILITY/llms.txt 引用同步。`/metrics` 根路径同族遗留另记账。
+
+### ③ 配置读写端点（设置页持久化依赖）
+
+- `GET/PUT /api/v1/config`（ClientConfig：scan.workers 1-4/thumbEdge 200-1600/upload.maxBytesMb 64-8192/autoAccept）存 kv_settings；PUT 影子结构验「两组+四叶子键齐全+类型正确」（缺 autoAccept 曾会 bool 零值静默关掉上传闸门——审查发现，已 400 拦截）后范围校验落库。
+- **生效范围（诚实口径）**：upload.maxBytesMb=min(配置文件, kv) 实时生效；autoAccept=false 实时 403 UPLOAD_DISABLED；scan.workers/thumbEdge 为**预留字段**——全库无消费点（审查实证，此前误称"重启后生效"），保存后暂不生效，UI/openapi/文档四处口径已统一，待接线后升级文案。
+- 测试：缺省/回读/越界/缺字段 7 例/边界值/上传上限覆盖/403/401。
+
+### ④ 客户端异常上报通道（维护页异常表数据源）
+
+- `POST/GET /api/v1/client-logs`：环形缓冲存 kv_settings（容量 200 丢最旧；解析失败按空表自愈不再 500）；POST 校验条数 1~50/level 枚举/message ≤2000 rune；GET 新→旧，**空态恒返回 `"items":[]`**（审查发现的 P1：null 会让维护页白屏，服务端+web select 双保险修复）。
+- Web：`lib/client-logs.ts` 全局 onerror/unhandledrejection 上报器（队列满 10 条或 30s flush，失败静默防递归）；维护页异常表接真数据（时间/级别/消息/页面四列）；设置页扫描/上传卡接 GET 回填+保存 PUT（toast 同步生效范围口径）。
+- 测试：存入读序/环形覆盖/校验/损坏自愈/空态/401。
+
+### 门禁与审查
+
+- make sdk 三端全过零漂移；go 14 包全绿（新增 16 用例）、golangci-lint 0、gofmt 干净；web tsc/build/lint 全绿（0 errors，存量 15 warnings 基线不变）。
+- 审查实证要点：白名单无路径变体绕过面；EnrichAsset 不碰探测元数据（逐条核 SQL）；scan 字段无消费点（推翻"重启后生效"）；413 构造手法（Expect: 100-continue）真实有效。
+
+---
+
 ## 常规作者关联丢失修复：TXT 匹配重放端点 + 文件管理页「重新匹配」按钮（2026-09-04 第八笔）
 
 执行 AI：GLM-5.3-Flash（主代理，ZCode；执行子代理实施 + 主代理数据恢复）

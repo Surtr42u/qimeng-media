@@ -48,7 +48,7 @@
 
 ## 健康检查
 
-`GET /healthz`（免鉴权）：进程存活；`GET /readyz`（免鉴权，与 /healthz 同样在 `api/openapi.yaml` 标 `security: []`，见 openapi.yaml:380）：数据库可读写 + 媒体库目录可达 + 磁盘余量告警阈值。Docker healthcheck 与 fnOS 部署都用它。
+`GET /api/v1/healthz`（免鉴权，`api/openapi.yaml` 标 `security: []`）：进程存活；`GET /api/v1/readyz`（免鉴权，同样 `security: []`）：数据库可读写 + 媒体库目录可达 + 磁盘余量告警阈值。服务端同时保留根路径 `/healthz`、`/readyz` 作为运维探针别名（docker/k8s 惯例，行为一致，不属于 API 协议面）——Docker healthcheck 与 fnOS 部署用根路径即可。
 
 ## 后置可选：Grafana 增强包（不进默认部署）
 

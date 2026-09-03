@@ -1,6 +1,13 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
-import type { RecommendPrefs } from '@/api/generated'
+import type { ClientConfig, RecommendPrefs } from '@/api/generated'
+import {
+  CONFIG_BOUNDS,
+  DEFAULT_CLIENT_CONFIG,
+  mergeClientConfig,
+  useConfig,
+  useSaveConfig,
+} from '@/hooks/use-config'
 import {
   DEFAULT_PREFS,
   PREFS_KEYS,
@@ -13,8 +20,18 @@ import {
  * 设置页（原型 #page-settings 移植）。
  * 阶段 B：新增「推荐偏好」卡（9 维权重，GET/PUT /recommendations/prefs，全量整体替换）——
  * 预设点击即保存；滑杆拖动后点「保存」才 PUT；GET 失败兜底「均衡推荐」默认（DOMAIN_RULES §1.3）。
- * 其余三卡（扫描/上传/界面）保持阶段 A 演示行为：保存只显示提示、不真实写入。
+ * 阶段 C（2026-09-04）：扫描/上传两卡接 GET/PUT /api/v1/config 真实持久化——
+ * 全量替换语义（四字段一并提交）；upload 两项服务端实时生效，scan 两项仅
+ * 持久化、重启后生效（保存 toast 与输入提示注明，不假装实时）；
+ * 界面卡维持静态说明。
  */
+
+/** 越界提示（协议 400 之前本地先拦，文案与 CONFIG_BOUNDS 对齐） */
+const BOUND_HINTS = {
+  workers: `扫描并发数须在 ${CONFIG_BOUNDS.workers.min}–${CONFIG_BOUNDS.workers.max}`,
+  thumbEdge: `缩略图长边须在 ${CONFIG_BOUNDS.thumbEdge.min}–${CONFIG_BOUNDS.thumbEdge.max} px`,
+  maxBytesMb: `单文件上限须在 ${CONFIG_BOUNDS.maxBytesMb.min}–${CONFIG_BOUNDS.maxBytesMb.max} MB`,
+} as const
 
 /** 9 维中文标签（顺序与 PREFS_KEYS 一致；维度名照 DOMAIN_RULES §1.3） */
 const PREFS_LABELS: Record<(typeof PREFS_KEYS)[number], string> = {
@@ -30,9 +47,55 @@ const PREFS_LABELS: Record<(typeof PREFS_KEYS)[number], string> = {
 }
 
 export default function SettingsPage() {
-  const [saved, setSaved] = useState(false)
   const { data } = usePrefs()
   const savePrefs = useSavePrefs()
+
+  // 客户端配置（扫描/上传卡）：GET 回填 + 本地草稿；保存按钮一次 PUT 全量四字段
+  const { data: cfgData } = useConfig()
+  const saveConfig = useSaveConfig()
+  const [cfgDraft, setCfgDraft] = useState<ClientConfig | null>(null)
+  const cfg: ClientConfig = cfgDraft ?? (cfgData ? mergeClientConfig(cfgData) : DEFAULT_CLIENT_CONFIG)
+
+  const setScan = (key: keyof ClientConfig['scan'], raw: string): void => {
+    // 清空/非法输入不更新草稿（受控值维持原样，用户续输即可覆盖）
+    const n = Number(raw)
+    if (raw.trim() === '' || !Number.isFinite(n)) return
+    setCfgDraft({ ...cfg, scan: { ...cfg.scan, [key]: n } })
+  }
+
+  const setUpload = (key: keyof ClientConfig['upload'], raw: string): void => {
+    const n = Number(raw)
+    if (raw.trim() === '' || !Number.isFinite(n)) return
+    setCfgDraft({ ...cfg, upload: { ...cfg.upload, [key]: n } })
+  }
+
+  const doSaveConfig = (): void => {
+    // 本地范围校验先拦（与服务端 400 INVALID_PARAM 同口径，省一次白打请求）
+    if (cfg.scan.workers < CONFIG_BOUNDS.workers.min || cfg.scan.workers > CONFIG_BOUNDS.workers.max) {
+      toast.error(BOUND_HINTS.workers)
+      return
+    }
+    if (cfg.scan.thumbEdge < CONFIG_BOUNDS.thumbEdge.min || cfg.scan.thumbEdge > CONFIG_BOUNDS.thumbEdge.max) {
+      toast.error(BOUND_HINTS.thumbEdge)
+      return
+    }
+    if (cfg.upload.maxBytesMb < CONFIG_BOUNDS.maxBytesMb.min || cfg.upload.maxBytesMb > CONFIG_BOUNDS.maxBytesMb.max) {
+      toast.error(BOUND_HINTS.maxBytesMb)
+      return
+    }
+    const scanChanged = cfgData !== undefined &&
+      (cfg.scan.workers !== cfgData.scan.workers || cfg.scan.thumbEdge !== cfgData.scan.thumbEdge)
+    saveConfig.mutate(cfg, {
+      onSuccess: () => {
+        setCfgDraft(null)
+        // scan 两项是预留字段（未接入扫描器/缩略图管线，暂不生效）——
+        // 变更时明确告知，绝不说"重启后生效"（那是假的）
+        toast.success(scanChanged ? '设置已保存（扫描参数为预留字段，暂不生效）' : '设置已保存')
+      },
+      onError: (err) =>
+        toast.error(`设置保存失败：${err instanceof Error ? err.message : String(err)}`),
+    })
+  }
 
   // 草稿态：null = 未改过（显示服务端值，缺字段/Miss 时兜底默认）；拖动/点预设后转本地草稿
   const [draft, setDraft] = useState<RecommendPrefs | null>(null)
@@ -64,30 +127,57 @@ export default function SettingsPage() {
     <div className="page" id="page-settings">
       <div className="settings-card">
         <h3>扫描</h3>
-        <p>媒体库扫描与缩略图生成</p>
+        <p>媒体库扫描与缩略图生成 · 参数为预留字段，暂不生效</p>
         <div className="settings-grid">
           <label className="settings-field">
             <span>扫描并发数</span>
-            <input type="number" defaultValue={2} min={1} max={4} />
-            <small>1–4，超出可能加重 NAS 负载</small>
+            <input
+              type="number"
+              min={CONFIG_BOUNDS.workers.min}
+              max={CONFIG_BOUNDS.workers.max}
+              step={1}
+              value={cfg.scan.workers}
+              onChange={(e) => setScan('workers', e.target.value)}
+            />
+            <small>1–4，超出可能加重 NAS 负载 · 预留字段，暂不生效</small>
           </label>
           <label className="settings-field">
             <span>缩略图长边</span>
-            <input type="number" defaultValue={800} min={200} max={1600} />
-            <small>200–1600 px</small>
+            <input
+              type="number"
+              min={CONFIG_BOUNDS.thumbEdge.min}
+              max={CONFIG_BOUNDS.thumbEdge.max}
+              step={1}
+              value={cfg.scan.thumbEdge}
+              onChange={(e) => setScan('thumbEdge', e.target.value)}
+            />
+            <small>200–1600 px · 预留字段，暂不生效</small>
           </label>
         </div>
       </div>
       <div className="settings-card">
         <h3>上传</h3>
-        <p>客户端上传行为约束</p>
+        <p>客户端上传行为约束 · 保存即生效</p>
         <label className="settings-field settings-single">
           <span>单文件上限</span>
-          <input type="number" defaultValue={2048} min={64} max={8192} />
-          <small>64–8192 MB</small>
+          <input
+            type="number"
+            min={CONFIG_BOUNDS.maxBytesMb.min}
+            max={CONFIG_BOUNDS.maxBytesMb.max}
+            step={1}
+            value={cfg.upload.maxBytesMb}
+            onChange={(e) => setUpload('maxBytesMb', e.target.value)}
+          />
+          <small>64–8192 MB（与配置文件上限取更严者）</small>
         </label>
         <label className="settings-switch">
-          <input type="checkbox" defaultChecked />
+          <input
+            type="checkbox"
+            checked={cfg.upload.autoAccept}
+            onChange={(e) =>
+              setCfgDraft({ ...cfg, upload: { ...cfg.upload, autoAccept: e.target.checked } })
+            }
+          />
           <i aria-hidden="true" />
           <span>自动接收上传</span>
         </label>
@@ -143,10 +233,14 @@ export default function SettingsPage() {
         </div>
       </div>
       <div className="settings-actions">
-        <button className="save-btn" type="button" onClick={() => setSaved(true)}>
-          保存设置
+        <button
+          className="save-btn"
+          type="button"
+          disabled={saveConfig.isPending}
+          onClick={doSaveConfig}
+        >
+          {saveConfig.isPending ? '保存中…' : '保存设置'}
         </button>
-        {saved ? <span className="save-tip">已保存（原型演示，未真实写入）</span> : null}
       </div>
     </div>
   )

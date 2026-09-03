@@ -70,10 +70,29 @@ func (s *Server) PostApiV1AssetsUpload(w http.ResponseWriter, r *http.Request, p
 		return
 	}
 
+	// 上传上限基线：配置文件 upload.max_bytes（部署方的物理红线）。
 	maxBytes := s.cfg.Upload.MaxBytes
 	if maxBytes <= 0 {
 		maxBytes = config.DefaultUploadMaxBytes
 	}
+
+	// 上传行为约束（PUT /config 持久化的客户端配置，实时生效——每次请求
+	// 现读 kv，无缓存）：autoAccept=false 整体关闸；maxBytesMb 与配置文件
+	// 上限取小者（min）。kv 无记录/读失败/解析失败时回落配置文件值、不设门
+	//（storedClientConfig 返回 nil = 无覆盖，见 config.go 注释）。
+	if kvCfg := s.storedClientConfig(r.Context()); kvCfg != nil {
+		if !kvCfg.Upload.AutoAccept {
+			sysmon.Default.IncUpload(sysmon.UploadFail)
+			writeErr(w, http.StatusForbidden, "UPLOAD_DISABLED", "上传已被关闭（设置页自动接收上传开关）")
+			return
+		}
+		if kvMax := int64(kvCfg.Upload.MaxBytesMb) << 20; kvMax > 0 && kvMax < maxBytes {
+			// kv 覆盖只在比配置文件上限更严时收窄（min 语义）：
+			// 设置页不能放大部署方在配置文件里收紧的上限。
+			maxBytes = kvMax
+		}
+	}
+
 	if r.ContentLength > maxBytes {
 		sysmon.Default.IncUpload(sysmon.UploadFail)
 		writeErr(w, http.StatusRequestEntityTooLarge, "UPLOAD_TOO_LARGE", "文件超过大小上限")
@@ -170,6 +189,17 @@ func (s *Server) PostApiV1AssetsUpload(w http.ResponseWriter, r *http.Request, p
 	if err != nil {
 		s.internalErr(w, "入库上传资产", err)
 		return
+	}
+	// 富化补齐（与 scanner ingest、trash 恢复同口径）：上方 UpsertAsset 只写
+	// 基础列 + 探测元数据，富化列（normal=出处/角色，cos=作者关联/cos_work）
+	// 缺失会让手动上传的资产在出处筛选、作者聚合里隐身。EnrichAsset 只写
+	// source/characters（UpdateAssetSource/DeleteAssetCharacters）与 cos 作者
+	// 关联/cos_work（UpdateAssetCosWork），不触碰 duration/宽高等探测列——
+	// 与上面的探测元数据互补不冲突。尽力而为：失败/扫描器未装配（noScanner）
+	// 都不让上传失败（文件已落盘、记录已入库），富化列缺失可由下次该文件
+	// size/mtime 变化重 ingest 自愈（同 trash 恢复语义）。
+	if err := s.scanner.EnrichAsset(r.Context(), lib.ID, asset.AssetID); err != nil && !errors.Is(err, ErrScannerUnavailable) {
+		s.logger.Warn("上传落库后富化失败（待重扫自愈）", "assetId", asset.AssetID, "err", err)
 	}
 	// upload.done 载荷型为 events.UploadDoneEvent（协议：UploadDoneEvent schema）；
 	// SSE 客户端据此做上传完成刵新。

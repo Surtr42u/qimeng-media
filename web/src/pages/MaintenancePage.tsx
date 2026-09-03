@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { FolderMonitorIcon, TrashIcon } from '@/components/shell/icons'
+import { useClientLogs } from '@/hooks/use-client-logs'
 import { useSystemStatus } from '@/hooks/use-system-status'
 import { useTrash } from '@/hooks/use-trash'
-import { formatBytes } from '@/lib/format'
+import { formatBytes, formatDateTime } from '@/lib/format'
 
 /** 曲线采样：最近 2 分钟、每 2 秒一点（60 点）；与轮询周期（2s）耦合 */
 const RATE_WINDOW = 60
@@ -19,14 +20,23 @@ interface RatePoint {
  * 维护页（原型 #page-maintenance 移植，2026-09-03 性能监控接真）。
  * 监控数据 = GET /system/status（2s 轮询）：4 圆环卡（CPU/内存/系统盘/存储合计）、
  * 4 指标卡（上下行速率=轮询差分本地计算、存储合计、运行时长）、网络负载曲线
- * （本地 60 点环形采样）；「客户端异常」无上报数据源（客户端错误上报通道未建），
- * 显示空态说明。
+ * （本地 60 点环形采样）；「客户端异常」表 = GET /client-logs（上报器写入，
+ * 服务端环形缓冲最新 200 条，2026-09-04 接真）。
  */
+
+/** 客户端异常级别中文标签（协议 level 枚举 error/warn/info） */
+const LOG_LEVEL_LABELS: Record<string, string> = {
+  error: '错误',
+  warn: '警告',
+  info: '信息',
+}
 export default function MaintenancePage() {
   const navigate = useNavigate()
   const { data: status } = useSystemStatus()
   // 回收站入口卡计数用真实数据
   const { data: trashItems = [] } = useTrash()
+  // 客户端异常排查表（新→旧，环形缓冲最新 200 条）
+  const { data: clientLogs = [] } = useClientLogs()
 
   // 速率环形缓冲：每帧拿 netRx/netTx 与上一帧累计值差分 → B/s（/2s=间隔）
   const [rates, setRates] = useState<RatePoint[]>([])
@@ -172,7 +182,31 @@ export default function MaintenancePage() {
       </div>
       <div className="chart-card">
         <h3>用户端崩溃 / 错误日志</h3>
-        <p className="grid-empty">暂无客户端异常上报（客户端错误上报通道未建，后续接入后此表生效）</p>
+        <p>客户端异常上报 · 服务端保留最新 200 条 · 新在上</p>
+        {clientLogs.length === 0 ? (
+          <p className="grid-empty">暂无客户端异常上报（环形缓冲为空——没出错就是好消息）</p>
+        ) : (
+          <table className="log-table">
+            <thead>
+              <tr>
+                <th style={{ width: 110 }}>时间</th>
+                <th style={{ width: 60 }}>级别</th>
+                <th>消息</th>
+                <th style={{ width: 180 }}>页面</th>
+              </tr>
+            </thead>
+            <tbody>
+              {clientLogs.map((e, i) => (
+                <tr key={`${e.ts}-${i}`}>
+                  <td>{formatDateTime(e.ts)}</td>
+                  <td>{LOG_LEVEL_LABELS[e.level] ?? e.level}</td>
+                  <td>{e.message}</td>
+                  <td>{e.page || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   )

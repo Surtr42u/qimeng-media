@@ -18,6 +18,9 @@ services:
       - /volume1/docker/qimeng/data:/data   # 数据库/缩略图/回收站（服务端私有）
       - ./config.yaml:/etc/qimeng/config.yaml:ro
     healthcheck:
+      # 运维探针：根路径 /healthz 是协议面 /api/v1/healthz 的运维别名
+      # （docker/k8s 惯例，两者行为一致；/api/v1/healthz 才属于 API 协议面，
+      # 见 api/openapi.yaml）。容器编排探活继续用根路径。
       test: ["CMD", "wget", "-qO-", "http://localhost:8420/healthz"]
       interval: 30s
       timeout: 5s
