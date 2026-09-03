@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
@@ -268,8 +269,12 @@ func (s *Server) GetApiV1Assets(w http.ResponseWriter, r *http.Request, params g
 		items = make([]gen.AssetSummary, 0, len(rows))
 		for i := range rows {
 			row := &rows[i]
-			items = append(items, buildSummary(s, row.AssetID, row.FileName, row.MediaType,
-				row.SizeBytes, row.Mtime, row.CreatedAt, row.Source, row.IsFavorite, row.LikeCount, nil, nil))
+			item := buildSummary(s, row.AssetID, row.FileName, row.MediaType,
+				row.SizeBytes, row.Mtime, row.CreatedAt, row.Source, row.IsFavorite, row.LikeCount, nil, nil)
+			if row.DurationMs.Valid {
+				item.DurationMs = ptr(row.DurationMs.Int64) // 卡片时长角标数据（仅视频有值）
+			}
+			items = append(items, item)
 			lastKey, lastID = toString(row.SortKey), row.AssetID
 		}
 	} else {
@@ -292,11 +297,19 @@ func (s *Server) GetApiV1Assets(w http.ResponseWriter, r *http.Request, params g
 		items = make([]gen.AssetSummary, 0, len(rows))
 		for i := range rows {
 			row := &rows[i]
-			items = append(items, buildSummary(s, row.AssetID, row.FileName, row.MediaType,
-				row.SizeBytes, row.Mtime, row.CreatedAt, row.Source, row.IsFavorite, row.LikeCount, nil, nil))
+			item := buildSummary(s, row.AssetID, row.FileName, row.MediaType,
+				row.SizeBytes, row.Mtime, row.CreatedAt, row.Source, row.IsFavorite, row.LikeCount, nil, nil)
+			if row.DurationMs.Valid {
+				item.DurationMs = ptr(row.DurationMs.Int64)
+			}
+			items = append(items, item)
 			lastKey, lastID = toString(row.SortKey), row.AssetID
 		}
 	}
+
+	// authorNames：列表响应的卡片作者行数据（常规∪COS），页大小一次
+	// 批量查询二次装配（协议 GET /assets 描述；搜索走本查询自然获得）。
+	s.fillListAuthorNames(r.Context(), items)
 
 	page := gen.AssetPage{Items: &items}
 	if hasMore {
@@ -349,6 +362,36 @@ func buildSummary(s *Server, assetID, fileName, mediaType string, sizeBytes int6
 		ThumbUrl:   &thumb,
 		ViewCount:  viewCount,
 		PlayCount:  playCount,
+	}
+}
+
+// fillListAuthorNames 批量装配列表条目的 authorNames（该资产全部作者
+// 显示名，常规∪COS——DOMAIN_RULES §6 两类作者统一进 asset_authors）。
+// 列表端点协议约定无作者 = 空数组（与"字段省略"区分，客户端据此回退
+// 出处展示）。查询失败不炸列表——作者行是展示性增强，记日志保持缺省。
+func (s *Server) fillListAuthorNames(ctx context.Context, items []gen.AssetSummary) {
+	if len(items) == 0 {
+		return
+	}
+	ids := make([]string, 0, len(items))
+	for i := range items {
+		ids = append(ids, items[i].Id.String())
+	}
+	rows, err := s.q.ListAuthorNamesForAssets(ctx, jsonString(ids))
+	if err != nil {
+		s.logger.Error("查询资产作者名失败", "err", err)
+		return
+	}
+	namesByAsset := make(map[string][]string, len(items))
+	for _, r := range rows {
+		namesByAsset[r.AssetID] = append(namesByAsset[r.AssetID], r.DisplayName)
+	}
+	for i := range items {
+		names := namesByAsset[items[i].Id.String()]
+		if names == nil {
+			names = []string{}
+		}
+		items[i].AuthorNames = &names
 	}
 }
 

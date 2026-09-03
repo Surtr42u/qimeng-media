@@ -126,9 +126,8 @@ UI（M2 前半 + M4 Android）与上述后端并行推进。
 3. **DOMAIN_RULES「逐字遵守」的常量/公式**：改动必须先经用户确认
 4. **用户强偏好**：查看媒体**永远发原件**（缩放副本方案已被否决，commit 4a1f3da）；措辞用"看视频/图片"不用"看片"
 5. **commit 格式**：`类型(模块): 简述 | 文档: 已更新XXX`，代码+文档同一 commit
-6. **并发子代理上限 2 个**（第 3 个会撞 user concurrency limit 直接失败）
-7. **Windows 环境**：无 winget；JDK 免安装在 `../dev-tools/jdk17`；bat/make 运行时输出必须纯 ASCII（cmd 代码页坑）
-8. 生成物（gen/generated/android-sdk）不入库，`make sdk` 重建
+6. **Windows 环境**：无 winget；JDK 免安装在 `../dev-tools/jdk17`；bat/make 运行时输出必须纯 ASCII（cmd 代码页坑）
+7. 生成物（gen/generated/android-sdk）不入库，`make sdk` 重建
 
 ## 领域知识库（旧项目）
 

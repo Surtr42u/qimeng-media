@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react'
 import type { Author } from '@/api/generated'
 import { SearchIcon } from '@/components/shell/icons'
 import { useAuthors, useToggleFollow } from '@/hooks/use-authors'
+import { LOCALE_ZH } from '@/lib/constants'
+import { authorDisplayName } from '@/lib/format'
 
 type AuthorZone = '全部' | '常规' | 'cos'
 type AuthorSort = 'default' | 'browse' | 'works'
@@ -108,9 +110,11 @@ export default function AuthorsPage() {
           <ul>
             {rows.map((a) => (
               <li key={a.id}>
-                <span className="rank-name">{a.displayName}</span>
-                {/* 作品数（复用 rank-card li > b 现有样式，不新增类） */}
-                <b>{a.fileCount ?? 0} 文件</b>
+                <span className="rank-name">{authorDisplayName(a)}</span>
+                {/* 副标题第二行「N 个文件 · 浏览 M 次」（原型 .a-sub，.a-list .a-sub order:1 让按钮留第一行右侧） */}
+                <span className="a-sub">
+                  {a.fileCount ?? 0} 个文件 · 浏览 {(a.viewCount ?? 0).toLocaleString(LOCALE_ZH)} 次
+                </span>
                 <button
                   type="button"
                   className={`follow-btn${a.followed ? '' : ' follow-btn--idle'}`}

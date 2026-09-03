@@ -9,11 +9,15 @@ package httpapi
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"testing"
 
+	"qimeng-media/server/internal/authoring"
 	"qimeng-media/server/internal/httpapi/gen"
+	"qimeng-media/server/internal/store"
+	"qimeng-media/server/internal/store/db"
 )
 
 // recList 拉推荐流。
@@ -146,4 +150,56 @@ func readDailyShown(t *testing.T, env *testEnv) map[string]int {
 		t.Fatalf("遍历 daily_shown 失败: %v", err)
 	}
 	return out
+}
+
+// TestRecommendationsCardExtras：推荐流是首页默认 tab 的卡片数据源，
+// 与 GET /assets 同口径返回卡片增强字段——authorNames（无作者=空数组）
+// 与视频 durationMs（图片无值）。作者/时长写入走 store 层（同 browse
+// 侧 TestAssetListAuthorNamesAndDuration 的构造方式）。
+func TestRecommendationsCardExtras(t *testing.T) {
+	env := newTestEnv(t)
+	a, c := testFiles[0], testFiles[2]
+	ctx := context.Background()
+	now := store.FormatTimestamp(env.clock.Now())
+
+	regID := authoring.GenerateAuthorID("画师C")
+	if err := env.q.UpsertAuthor(ctx, db.UpsertAuthorParams{
+		ID: regID, DisplayName: "画师C", Type: authoring.AuthorTypeRegular, CreatedAt: now,
+	}); err != nil {
+		t.Fatalf("UpsertAuthor 失败: %v", err)
+	}
+	if err := env.q.AddAssetAuthor(ctx, db.AddAssetAuthorParams{AssetID: a.id, AuthorID: regID}); err != nil {
+		t.Fatalf("AddAssetAuthor 失败: %v", err)
+	}
+	if _, err := env.q.UpsertAsset(ctx, db.UpsertAssetParams{
+		AssetID: c.id, LibraryID: env.libID, RelPath: c.relPath,
+		FileName: c.name, MediaType: c.mediaType, SizeBytes: c.size,
+		Mtime:      c.mtime,
+		DurationMs: sql.NullInt64{Int64: 125000, Valid: true},
+		CreatedAt:  now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("写入视频时长失败: %v", err)
+	}
+
+	for _, it := range recList(t, env, "") {
+		if it.FileName == nil {
+			continue
+		}
+		switch *it.FileName {
+		case "a.jpg":
+			if an := it.AuthorNames; an == nil || len(*an) != 1 || (*an)[0] != "画师C" {
+				t.Errorf("a.jpg authorNames 应为 [画师C]，得到 %v", it.AuthorNames)
+			}
+			if it.DurationMs != nil {
+				t.Errorf("图片 a.jpg 不应带 durationMs，得到 %v", *it.DurationMs)
+			}
+		case "c.mp4":
+			if an := it.AuthorNames; an == nil || len(*an) != 0 {
+				t.Errorf("c.mp4 无作者应为空数组，得到 %v", it.AuthorNames)
+			}
+			if d := it.DurationMs; d == nil || *d != 125000 {
+				t.Errorf("c.mp4 durationMs 应 125000，得到 %v", it.DurationMs)
+			}
+		}
+	}
 }

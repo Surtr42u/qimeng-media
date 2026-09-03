@@ -14,7 +14,7 @@ const listAssetsRecommendInput = `-- name: ListAssetsRecommendInput :many
 
 SELECT
     a.asset_id, a.library_id, a.rel_path, a.file_name, a.media_type,
-    a.size_bytes, a.mtime, a.source, a.created_at,
+    a.size_bytes, a.mtime, a.duration_ms, a.source, a.created_at,
     EXISTS(SELECT 1 FROM favorites fv WHERE fv.asset_id = a.asset_id) AS is_favorite,
     (SELECT COUNT(*) FROM likes l WHERE l.asset_id = a.asset_id) AS like_count,
     (SELECT COUNT(*) FROM view_events v WHERE v.asset_id = a.asset_id AND v.kind = 'open') AS view_count,
@@ -57,6 +57,7 @@ type ListAssetsRecommendInputRow struct {
 	MediaType     string
 	SizeBytes     int64
 	Mtime         string
+	DurationMs    sql.NullInt64
 	Source        sql.NullString
 	CreatedAt     string
 	IsFavorite    bool
@@ -99,6 +100,7 @@ func (q *Queries) ListAssetsRecommendInput(ctx context.Context, arg ListAssetsRe
 			&i.MediaType,
 			&i.SizeBytes,
 			&i.Mtime,
+			&i.DurationMs,
 			&i.Source,
 			&i.CreatedAt,
 			&i.IsFavorite,

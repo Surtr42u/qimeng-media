@@ -22,6 +22,21 @@ export function formatShortDate(iso?: string | null): string {
   return `${d.getMonth() + 1}-${d.getDate()}`
 }
 
+/** 卡片作者行文本（原型 #4：标题下作者行）：authorNames[0]，多作者压缩
+ *  为「名 等N」；无作者回退出处分区 source；两者皆无返回 undefined（不渲染）。 */
+export function formatCardUp(authorNames?: string[] | null, source?: string | null): string | undefined {
+  const first = authorNames?.[0]
+  if (!first) return source || undefined
+  const n = authorNames?.length ?? 1
+  return n > 1 ? `${first} 等${n}` : first
+}
+
+/** 作者行显示名（原型 authorDisplayName）：COS 作者追加「 ·COS」标识 */
+export function authorDisplayName(a: { displayName?: string | null; type?: string | null }): string {
+  const name = a.displayName ?? ''
+  return a.type === 'cos' ? `${name} ·COS` : name
+}
+
 /** 字节 → 人类可读大小（回收站/详情信息共用） */
 export function formatBytes(n: number): string {
   if (n >= 1024 ** 3) return `${(n / 1024 ** 3).toFixed(1)} GB`
@@ -49,6 +64,24 @@ export function formatDateTime(ts?: number | null): string {
   const hh = String(d.getHours()).padStart(2, '0')
   const mm = String(d.getMinutes()).padStart(2, '0')
   return `${d.getMonth() + 1}-${d.getDate()} ${hh}:${mm}`
+}
+
+/** ISO 日期 → 相册时间分区标签（原型 app.js dateLabel，复刻旧版 MediaBrowserLogic）：
+ *  今天 / 昨天 / 2~6 天前→周X（周一~周日）/ 更早→yyyy-MM-dd；
+ *  空值或非法日期返回空串（调用方不分组、不渲染组头）。 */
+export function dateLabel(iso?: string | null): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const day = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+  const diff = Math.round((today.getTime() - day.getTime()) / 86400000)
+  if (diff === 0) return '今天'
+  if (diff === 1) return '昨天'
+  if (diff >= 2 && diff <= 6) return ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][day.getDay()]
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${day.getFullYear()}-${p(day.getMonth() + 1)}-${p(day.getDate())}`
 }
 
 /** 本地日期键（y-m-d 数值串）：历史「今天/昨天/更早」按天分组用 */

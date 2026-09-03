@@ -28,6 +28,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"qimeng-media/server/internal/authoring"
 	"qimeng-media/server/internal/config"
 	"qimeng-media/server/internal/events"
 	"qimeng-media/server/internal/httpapi/gen"
@@ -588,6 +589,89 @@ func TestAssetListPaginationFilterSort(t *testing.T) {
 	closeBody(resp)
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("limit=500 期望 400，得到 %d", resp.StatusCode)
+	}
+}
+
+// TestAssetListAuthorNamesAndDuration：列表端点的卡片增强字段。
+// authorNames = 该资产全部作者显示名（常规∪COS，DOMAIN_RULES 6）；
+// 无作者 = 空数组（协议约定，与字段省略区分，客户端据此回退出处）。
+// durationMs 仅视频有值（时长角标数据，图片为 NULL 不序列化）。
+// 搜索（q 参数）走同一查询自然获得，不另设用例。
+func TestAssetListAuthorNamesAndDuration(t *testing.T) {
+	env := newTestEnv(t)
+	a, b, c := testFiles[0], testFiles[1], testFiles[2]
+	ctx := context.Background()
+	now := store.FormatTimestamp(env.clock.Now())
+
+	regX := authoring.GenerateAuthorID("作者甲")
+	regY := authoring.GenerateAuthorID("作者乙")
+	cosID := authoring.GenerateCosAuthorID("COS酱")
+	for _, au := range []db.UpsertAuthorParams{
+		{ID: regX, DisplayName: "作者甲", Type: authoring.AuthorTypeRegular, CreatedAt: now},
+		{ID: regY, DisplayName: "作者乙", Type: authoring.AuthorTypeRegular, CreatedAt: now},
+		{ID: cosID, DisplayName: "COS酱", Type: authoring.AuthorTypeCos, CreatedAt: now},
+	} {
+		if err := env.q.UpsertAuthor(ctx, au); err != nil {
+			t.Fatalf("UpsertAuthor %s 失败: %v", au.DisplayName, err)
+		}
+	}
+	link := func(assetID, authorID string) {
+		t.Helper()
+		if err := env.q.AddAssetAuthor(ctx, db.AddAssetAuthorParams{AssetID: assetID, AuthorID: authorID}); err != nil {
+			t.Fatalf("AddAssetAuthor 失败: %v", err)
+		}
+	}
+	link(a.id, regX)
+	link(a.id, regY)  // a.jpg：多作者（断言全部返回且按 display_name 升序）
+	link(b.id, cosID) // b.jpg：仅 COS 作者（常规∪COS 口径）
+	// c.mp4：无作者
+
+	// c.mp4 补视频时长：同路径 Upsert 刷新元数据（duration_ms 在 DO
+	// UPDATE 列里），asset_id 保持首见——与扫描器重探同路径。
+	if _, err := env.q.UpsertAsset(ctx, db.UpsertAssetParams{
+		AssetID: c.id, LibraryID: env.libID, RelPath: c.relPath,
+		FileName: c.name, MediaType: c.mediaType, SizeBytes: c.size,
+		Mtime:      c.mtime,
+		DurationMs: sql.NullInt64{Int64: 65000, Valid: true},
+		CreatedAt:  now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("写入视频时长失败: %v", err)
+	}
+
+	// includeCos=true：b.jpg 挂了 COS 作者，默认常规流会排除它（DOMAIN_RULES
+	// §6）；本用例要断言 COS 作者名，取全量。
+	resp := env.do(t, "GET", "/api/v1/assets?limit=10&includeCos=true", "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("列表期望 200，得到 %d", resp.StatusCode)
+	}
+	var page gen.AssetPage
+	if err := decodeBody(resp, &page); err != nil {
+		t.Fatalf("解析失败: %v", err)
+	}
+	closeBody(resp)
+	byName := map[string]gen.AssetSummary{}
+	for _, it := range deref(page.Items) {
+		if it.FileName != nil {
+			byName[*it.FileName] = it
+		}
+	}
+	// display_name 升序 = Unicode 码点序（SQL 默认二进制排序）：
+	// 「乙」U+4E59 < 「甲」U+7532，故作者乙在前。
+	if an := byName["a.jpg"].AuthorNames; an == nil || len(*an) != 2 ||
+		(*an)[0] != "作者乙" || (*an)[1] != "作者甲" {
+		t.Fatalf("a.jpg 应返回两位作者名（display_name 升序），得到 %v", byName["a.jpg"].AuthorNames)
+	}
+	if an := byName["b.jpg"].AuthorNames; an == nil || len(*an) != 1 || (*an)[0] != "COS酱" {
+		t.Fatalf("b.jpg 应返回 COS 作者名，得到 %v", byName["b.jpg"].AuthorNames)
+	}
+	if an := byName["c.mp4"].AuthorNames; an == nil || len(*an) != 0 {
+		t.Fatalf("c.mp4 无作者应为空数组，得到 %v", byName["c.mp4"].AuthorNames)
+	}
+	if d := byName["c.mp4"].DurationMs; d == nil || *d != 65000 {
+		t.Fatalf("c.mp4 durationMs 应 65000，得到 %v", byName["c.mp4"].DurationMs)
+	}
+	if d := byName["a.jpg"].DurationMs; d != nil {
+		t.Fatalf("图片 a.jpg 不应带 durationMs，得到 %v", *d)
 	}
 }
 

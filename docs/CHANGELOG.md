@@ -10,6 +10,37 @@
 
 ---
 
+## 原型七组缺陷 web 正式端移植（协议 AssetSummary.authorNames 全链路）+ 原型 CSS 双缺陷修复 + 归档会话质量审查（2026-09-03 第七笔）
+
+执行 AI：GLM-5.3-Flash（主代理，ZCode；执行×3 + 对抗审查×2 子代理）
+
+背景：用户发现第六笔修复做在 `media-ui-prototype/` 原型而日常使用的是 `web/` 正式端（8420），要求盘点 WorkBuddy 全部归档会话改动并对抗审查后完成移植。审查结论（4 笔现役提交）：4320f3e 含一处 P2（相册页缺省分区漏传 partition）但已被 7d638d5 自愈；7d638d5、8a6b63f 合格；265a1a8 原型层另有 2 处 CSS 实缺陷（TXT 导入面板样式选择器 id 脱靶、作者行副标题两行布局在 flex 单行下不成立）。本笔全部修复：
+
+### ① 协议扩展 + 卡片作者行/时长角标全链路（api+server+web）
+
+- **openapi.yaml 先行**：AssetSummary 新增 `authorNames: array<string>`（该资产全部作者显示名，常规∪COS；GET /assets、GET /recommendations 返回，无作者为空数组；详情/历史/排行榜端点省略）；`make sdk` 三端生成物重建（validate→go→ts→kotlin 四步全过，重跑零 diff 复核）。
+- **服务端**：`ListAuthorNamesForAssets`（json_each + narg 批量形状，ASCII-only 注释）+ handler `fillListAuthorNames` 装配（页大小一次批量查询无 N+1、失败仅记日志不炸列表、map miss 填空数组）；recommend.sql 补 `duration_ms` 列（推荐流角标数据）；新增 2 测试锁定多作者码点序/COS 作者/无作者空数组/视频图片 durationMs 差异。
+- **web**：`assetToCard` 收敛全站 6 个 MediaCard 调用方——up=作者行（`formatCardUp`：首作者、多作者「名 等N」、无作者回退 source）、duration 角标仅视频传（`formatDuration` m:ss / h:mm:ss，空值不渲染）；MediaCard meta 改两行结构（标题下作者行、日期次行），样式与原型第六笔逐字对齐。
+
+### ② 作者榜口径 + 作者副标题 + 相册时间分区移植（web）
+
+- **作者榜 = 常看作者**（DataPage/RanksPage）：过滤 viewCount>0、按浏览数降序（DataPage Top5，RanksPage 全量），行计数=浏览次数，note 改「按浏览」；标签榜 fileCount 口径未动。原实现按作品数排序且 0 浏览占位（旧缺陷，审查确认服务端 rankings 热度口径与"常看"是两套，前端口径修正）。
+- **作者总览/作者管理页行副标题**：RankRowList 扩展可选 sub 字段（两行结构，「N 个文件 · 浏览 M 次」，count 空串不渲染徽标）；AuthorsPage 行同步补副标题；`authorDisplayName` 助手给 COS 作者追加「 ·COS」标识（对照原型 authorDisplayName）。
+- **相册时间分区**：`dateLabel` 助手（今天/昨天/2~6 天→周X/更早 yyyy-MM-dd/空值不分组，复刻旧版 MediaBrowserLogic）；AlbumsPage 网格分组渲染（组内保持列表原序、组间按组首 modifiedAt 降序、空日期组固定最后且不渲染组头；分区/类型胶囊切换后分组纯函数自动正确，翻页同 label 归并）。
+
+### ③ media-ui-prototype CSS 双缺陷修复（style.css）
+
+- TXT 导入面板选择器 `#importAuthorFile/#importAuthorText` → `#authorImportFile/#authorImportText`（与 index.html/app.js 实际 id 对齐，面板样式恢复生效）。
+- 作者行副标题两行布局：`.a-list li`/`.rank-card li` 加 `flex-wrap:wrap`，`.a-sub,.rank-sub2` 加 `flex-basis:100%`，`.a-list .a-sub` 加 `order:1`（按钮留首行右侧）；无副标题的普通榜单行无副作用。
+
+### ④ 其他
+
+- `docs/HANDOVER.md` 「特色纪律」删除「并发子代理上限 2 个」条目（用户要求，编号重排）。
+- 修正第五笔 CHANGELOG「六查询」措辞（实为四查询补 source 谓词）。
+- 门禁：go test 14 包全绿、golangci-lint 0 issues、gofmt 干净、`make sdk`/`sqlc generate` 重跑零 diff、web tsc/build/lint 全绿（0 errors，15 warnings 全存量）；dateLabel 6 边界用例验证通过（web 无测试框架，脚本验证后清除）。
+
+---
+
 ## media-ui-prototype 七组缺陷修复：榜单浏览口径/作者关联副标题/首页卡片元信息/相册时间分区/COS 搜索与推荐词/作者 TXT 导入（2026-09-03 第六笔）
 
 执行 AI：DeepSeek-V4-Flash（主代理，WorkBuddy；执行子代理 ui-fix-dev@media-ui-fix）
@@ -44,7 +75,7 @@
 
 - **作者行语义（用户拍板，替代原 authorId 全量作者）**：作者行 = 常规**出处分组**（kind=source，含「其他」桶 = NULL source 且非 COS 关联；COS 资产永不进出处——browse.sql 的 source_is_other 谓词全查询加 NOT EXISTS cos 排除，与旧版 groupBySource(!isCosFile) 一致）∪ **COS 作者**（kind=author）按分区合并——常规分区只出处、COS 分区只 COS 作者、全部（all）分区两者合并。常规 TXT 作者表行**不进**作者行（作者体系保留在 /authors 与集合页）。FacetBucket 加 `kind` 枚举（source/author/character/work）——同一胶囊行混合两种候选时前端按 kind 分派筛选参数。
 - **角色行**：全部（all）分区 = 常规角色名（kind=character）∪ COS 作品名（kind=work）合并（第三笔只合并了 author 维度，角色维只在单分区各自生效——已修）；character 与 work 同属角色行，排自身时一起忽略。
-- **FacetSourceCounts 新查询**（facets.sql）：非 COS 关联资产按 source 分组（含 NULL 行=「其他」）；FacetAuthorCounts 收敛 `au.type='cos'`；六查询统一补 source 谓词（author 行选中对其他三维生效）与排自身维度表文件头。
+- **FacetSourceCounts 新查询**（facets.sql）：非 COS 关联资产按 source 分组（含 NULL 行=「其他」）；FacetAuthorCounts 收敛 `au.type='cos'`；其余四查询（角色/类型/分区两维）统一补 source 谓词（author 行选中对其他三维生效）与排自身维度表文件头。
 - **Web 相册页**：修分区默认值 bug——原 `partition !== regular ? {partition} : {}` 在缺省分区不传参，服务端按 all 处理致作者行语义错乱；现在 partition **恒显式传参**。作者/角色值行候选携带 kind，点出处胶囊→source 筛选、点 COS 作者→authorId、点角色→character、点 COS 作品→work；分区缺省改「全部」（= 旧版「全部」tab，两集合并排可见），切分区清作者/角色（候选命名空间随分区变化）。作者行/角色行前补「全部」胶囊（value='' 清除本行）。
 - 测试：facets_test 重写 2 用例 + 夹具补 source（a.jpg 无出处→「其他」、b.jpg kemono、c.mp4 视频无出处）锁定新口径（作者行 全部=其他2+kemono1+COS作者2、regular 只出处、cos 只 COS 作者、选角色后作者行=含该角色资产的出处、选出处后角色行排自身全量等）；go test 14 包全绿。
 

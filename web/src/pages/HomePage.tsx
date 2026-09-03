@@ -2,9 +2,8 @@ import { useNavigate, useSearchParams } from 'react-router'
 import { useMemo } from 'react'
 import { MediaCard } from '@/components/media/MediaCard'
 import { ContentRankGrid } from '@/components/data/ContentRankGrid'
-import { useAssetsInfinite, useRecommendations } from '@/hooks/use-assets'
+import { assetToCard, useAssetsInfinite, useRecommendations } from '@/hooks/use-assets'
 import { useRankings } from '@/hooks/use-stats'
-import { formatDuration, formatShortDate } from '@/lib/format'
 import { parseRankPeriod, type HomeTabKey } from '@/lib/home-tabs'
 
 /**
@@ -59,12 +58,7 @@ export default function HomePage() {
             : cosItems.map((a) => (
                 <MediaCard
                   key={a.id}
-                  id={a.id}
-                  cover={a.thumbUrl ?? ''}
-                  title={a.fileName ?? ''}
-                  duration={a.durationMs ? formatDuration(a.durationMs) : undefined}
-                  up={a.source ?? undefined}
-                  date={formatShortDate(a.modifiedAt)}
+                  {...assetToCard(a)}
                   onClick={() => openDetail(a.id)}
                 />
               ))}
@@ -99,12 +93,7 @@ function RecommendGrid({ onOpen }: { onOpen: (id?: string) => void }) {
       {items.map((a) => (
         <MediaCard
           key={a.id}
-          id={a.id}
-          cover={a.thumbUrl ?? ''}
-          title={a.fileName ?? ''}
-          duration={a.durationMs ? formatDuration(a.durationMs) : undefined}
-          up={a.source ?? undefined}
-          date={formatShortDate(a.modifiedAt)}
+          {...assetToCard(a)}
           onClick={() => onOpen(a.id)}
         />
       ))}

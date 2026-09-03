@@ -5,7 +5,8 @@ import { RankRowList } from '@/components/data/RankRowList'
 import { useAuthors } from '@/hooks/use-authors'
 import { useRankings } from '@/hooks/use-stats'
 import { useTags } from '@/hooks/use-tags'
-import { MAX_PAGE_SIZE } from '@/lib/constants'
+import { LOCALE_ZH, MAX_PAGE_SIZE } from '@/lib/constants'
+import { authorDisplayName } from '@/lib/format'
 import {
   COLLECTION_AUTHOR,
   COLLECTION_TAG,
@@ -33,7 +34,8 @@ export default function RanksPage() {
   const { data: tags = [] } = useTags()
   const { data: authors = [] } = useAuthors()
 
-  // 标签/作者全量按 fileCount 降序（行式列表；点击进集合子页）
+  // 标签全量按 fileCount 降序 / 作者榜 = 常看作者全量按浏览数降序（原型 rankAuthorsList：
+  // 仅浏览>0 入榜避免 0 浏览占位，行计数 = 累计浏览次数；点击进集合子页）
   const tagRows = useMemo(
     () =>
       tags
@@ -45,9 +47,10 @@ export default function RanksPage() {
   const authorRows = useMemo(
     () =>
       authors
+        .filter((a) => (a.viewCount ?? 0) > 0)
         .slice()
-        .sort((a, b) => (b.fileCount ?? 0) - (a.fileCount ?? 0))
-        .map((a) => ({ name: a.displayName ?? '', count: String(a.fileCount ?? 0) })),
+        .sort((a, b) => (b.viewCount ?? 0) - (a.viewCount ?? 0))
+        .map((a) => ({ name: authorDisplayName(a), count: (a.viewCount ?? 0).toLocaleString(LOCALE_ZH) })),
     [authors],
   )
 
@@ -73,7 +76,7 @@ export default function RanksPage() {
           <div className="rank-head">
             <h3>{key === RANK_TAGS ? '标签榜' : '作者榜'}</h3>
           </div>
-          <p className="rank-note">{key === RANK_TAGS ? '按关联文件数' : '按作品数'}</p>
+          <p className="rank-note">{key === RANK_TAGS ? '按关联文件数' : '按浏览'}</p>
           <RankRowList
             rows={key === RANK_TAGS ? tagRows : authorRows}
             onSelect={(n) =>

@@ -154,6 +154,48 @@ func (q *Queries) ListAssetsForEnrichmentByLibrary(ctx context.Context, libraryI
 	return items, nil
 }
 
+const listAuthorNamesForAssets = `-- name: ListAuthorNamesForAssets :many
+SELECT aa.asset_id, au.display_name
+FROM asset_authors aa JOIN authors au ON au.id = aa.author_id
+WHERE aa.asset_id IN (SELECT value FROM json_each(?1))
+ORDER BY aa.asset_id, au.display_name
+`
+
+type ListAuthorNamesForAssetsRow struct {
+	AssetID     string
+	DisplayName string
+}
+
+// Batch author-name lookup for list endpoints (AssetSummary.authorNames):
+// every author (regular + COS, no type filter) of the given assets, one
+// row per (asset_id, author) pair. asset_ids_json is a JSON array
+// consumed by json_each -- same parameter shape as the browse filter
+// params (see browse.sql header for the sqlc parser constraints that
+// dictate it). Names sort by display_name, same convention as the
+// detail-side ListAssetAuthorRefs.
+func (q *Queries) ListAuthorNamesForAssets(ctx context.Context, assetIdsJson interface{}) ([]ListAuthorNamesForAssetsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listAuthorNamesForAssets, assetIdsJson)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAuthorNamesForAssetsRow
+	for rows.Next() {
+		var i ListAuthorNamesForAssetsRow
+		if err := rows.Scan(&i.AssetID, &i.DisplayName); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAuthors = `-- name: ListAuthors :many
 
 SELECT au.id, au.display_name, au.type, au.followed,

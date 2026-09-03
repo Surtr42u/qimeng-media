@@ -104,9 +104,16 @@ func (s *Server) GetApiV1Recommendations(w http.ResponseWriter, r *http.Request,
 	out := make([]gen.AssetSummary, 0, len(ordered))
 	for _, it := range ordered {
 		row := rowByID[it.AssetID]
-		out = append(out, buildSummary(s, row.AssetID, row.FileName, row.MediaType,
-			row.SizeBytes, row.Mtime, row.CreatedAt, row.Source, row.IsFavorite, row.LikeCount, nil, nil))
+		item := buildSummary(s, row.AssetID, row.FileName, row.MediaType,
+			row.SizeBytes, row.Mtime, row.CreatedAt, row.Source, row.IsFavorite, row.LikeCount, nil, nil)
+		if row.DurationMs.Valid {
+			item.DurationMs = ptr(row.DurationMs.Int64) // 卡片时长角标数据（仅视频有值）
+		}
+		out = append(out, item)
 	}
+	// authorNames：推荐流是首页默认 tab 的卡片数据源，与 GET /assets
+	// 同口径填充作者行（协议 AssetSummary.authorNames 描述）。
+	s.fillListAuthorNames(r.Context(), out)
 	writeJSON(w, http.StatusOK, out)
 }
 

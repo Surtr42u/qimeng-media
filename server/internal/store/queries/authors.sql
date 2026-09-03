@@ -126,3 +126,16 @@ WHERE type = 'cos'
 -- change: already-ingested assets are skipped by a rescan because
 -- size+mtime match, so enrichment must be recomputed on the write path).
 SELECT asset_id, file_name, rel_path FROM assets WHERE library_id = ?;
+
+-- name: ListAuthorNamesForAssets :many
+-- Batch author-name lookup for list endpoints (AssetSummary.authorNames):
+-- every author (regular + COS, no type filter) of the given assets, one
+-- row per (asset_id, author) pair. asset_ids_json is a JSON array
+-- consumed by json_each -- same parameter shape as the browse filter
+-- params (see browse.sql header for the sqlc parser constraints that
+-- dictate it). Names sort by display_name, same convention as the
+-- detail-side ListAssetAuthorRefs.
+SELECT aa.asset_id, au.display_name
+FROM asset_authors aa JOIN authors au ON au.id = aa.author_id
+WHERE aa.asset_id IN (SELECT value FROM json_each(sqlc.narg(asset_ids_json)))
+ORDER BY aa.asset_id, au.display_name;

@@ -9,7 +9,7 @@ import { useAuthors } from '@/hooks/use-authors'
 import { useRankings, useStatsOverview, useTrends, type RankingPeriod, type TrendsRange } from '@/hooks/use-stats'
 import { useTags } from '@/hooks/use-tags'
 import { LOCALE_ZH } from '@/lib/constants'
-import { formatBytes } from '@/lib/format'
+import { authorDisplayName, formatBytes } from '@/lib/format'
 import { COLLECTION_AUTHOR, COLLECTION_TAG, RANK_AUTHORS, RANK_CONTENT, RANK_TAGS } from '@/lib/route-keys'
 
 /**
@@ -99,7 +99,7 @@ export default function DataPage() {
     ]
   }, [videoTrend.data, imageTrend.data])
 
-  // 标签/作者榜：按 fileCount 降序取 Top5（行式列表，点击进集合子页）
+  // 标签榜：按 fileCount 降序取 Top5（行式列表，点击进集合子页）
   const tagRows = useMemo(
     () =>
       tags
@@ -109,13 +109,28 @@ export default function DataPage() {
         .map((t) => ({ name: t.name ?? '', count: String(t.fileCount ?? 0) })),
     [tags],
   )
+  // 作者榜 = 常看作者（原型 topAuthorsByBrowse，旧版 renderTopAuthors 口径）：
+  // 仅浏览>0 的作者入榜（0 浏览不占位，DOMAIN_RULES 空数据口径），按浏览数降序 Top5，
+  // 行计数 = 累计浏览次数（Author.viewCount，格式对照原型 toLocaleString）
   const authorRows = useMemo(
     () =>
       authors
+        .filter((a) => (a.viewCount ?? 0) > 0)
         .slice()
-        .sort((a, b) => (b.fileCount ?? 0) - (a.fileCount ?? 0))
+        .sort((a, b) => (b.viewCount ?? 0) - (a.viewCount ?? 0))
         .slice(0, RANK_TOP_COUNT)
-        .map((a) => ({ name: a.displayName ?? '', count: String(a.fileCount ?? 0) })),
+        .map((a) => ({ name: authorDisplayName(a), count: (a.viewCount ?? 0).toLocaleString(LOCALE_ZH) })),
+    [authors],
+  )
+  // 作者总览卡（原型 renderAuthorOverview）：全部作者不过滤，两行结构=名 + 副标题
+  // 「N 个文件 · 浏览 M 次」（无计数徽标，count 传空串）
+  const authorOverviewRows = useMemo(
+    () =>
+      authors.map((a) => ({
+        name: authorDisplayName(a),
+        count: '',
+        sub: `${a.fileCount ?? 0} 个文件 · 浏览 ${(a.viewCount ?? 0).toLocaleString(LOCALE_ZH)} 次`,
+      })),
     [authors],
   )
   const followedCount = useMemo(() => authors.filter((a) => a.followed).length, [authors])
@@ -204,7 +219,7 @@ export default function DataPage() {
               <h3>作者榜</h3>
               <a {...rankMoreProps(navigate, RANK_AUTHORS)}>查看全部</a>
             </div>
-            <p className="rank-note">Top 5 · 按作品数</p>
+            <p className="rank-note">Top 5 · 按浏览</p>
             <RankRowList
               rows={authorRows}
               onSelect={(n) => navigate(`/app/collection/${COLLECTION_AUTHOR}/${encodeURIComponent(n)}`)}
@@ -228,7 +243,7 @@ export default function DataPage() {
               {authors.length} 位作者 · 已关注 {followedCount}
             </p>
             <RankRowList
-              rows={authorRows}
+              rows={authorOverviewRows}
               onSelect={(n) => navigate(`/app/collection/${COLLECTION_AUTHOR}/${encodeURIComponent(n)}`)}
             />
           </div>

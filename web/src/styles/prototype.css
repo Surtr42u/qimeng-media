@@ -485,7 +485,8 @@ body {
 .rank-head a:hover { color: var(--accent-deep); }
 .rank-card ul { list-style: none; margin-top: 8px; }
 .rank-card li {
-  display: flex; align-items: center; gap: 12px;
+  /* wrap + 行距 2px 列距 12px：带副标题的行（.rank-sub2）flex-basis:100% 独占第二行（原型 #2 修复） */
+  display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px;
   padding: 6px 2px; font-size: 13px;
   border-bottom: 1px solid var(--border);
   cursor: pointer;
@@ -543,7 +544,8 @@ body {
 .a-list { margin-top: 12px; }
 .a-list ul { list-style: none; }
 .a-list li {
-  display: flex; align-items: center; gap: 12px;
+  /* wrap + 行距 2px 列距 12px：副标题（.a-sub）独占第二行，关注按钮留在第一行右侧（原型 #2 修复） */
+  display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px;
   padding: 8px 2px; font-size: 13px;
   border-bottom: 1px solid var(--border);
 }
@@ -555,6 +557,12 @@ body {
 .a-empty[hidden] { display: none; }
 .rank-name { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .rank-card li > b { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* 作者行副标题：文件数 + 浏览数（作者管理页 .a-sub 与作者总览卡 .rank-sub2 共用，原型 #2）
+   flex-basis:100% 强制在 wrap 的 li 中独占第二行（标题行为第一行） */
+.a-sub, .rank-sub2 { display: block; flex-basis: 100%; font-size: 12px; line-height: 1.4; color: var(--text-sub); margin-top: 2px; }
+/* 作者管理行 DOM 顺序为 名称→副标题→按钮：副标题后移，按钮留在第一行右侧 */
+.a-list .a-sub { order: 1; }
 
 /* 性能圆环 */
 .gauge-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
@@ -788,25 +796,24 @@ body {
 }
 .card:hover .card--title { color: var(--accent-deep); }
 
+/* 元信息：作者单独成行（主色），日期为次行（浅色） */
 .card--meta {
   margin-top: 6px;
   display: flex;
-  align-items: center;
-  gap: 4px;
+  flex-direction: column;
+  gap: 2px;
   font-size: 12px;
   color: var(--text-mid);
   line-height: 16px;
 }
-.card--meta .dot { color: var(--faint); }
 .card--up {
-  display: flex;
-  align-items: center;
-  gap: 4px;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--text-mid);
 }
+.card--date { color: var(--text-sub); font-size: 11px; }
 
 
 /* 滚动条 */
@@ -1030,3 +1037,9 @@ body {
   font-size: 13px;
 }
 .dark .codec-warn { background: #4a3208; color: #fbbf24; }
+
+/* ===== 相册时间分区组（2026-09-03，原型 #5：今天/昨天/周X/yyyy-MM-dd 分组）===== */
+.album-group { margin-bottom: 18px; }
+.album-group-title { display: flex; align-items: baseline; gap: 8px; font-size: 15px; font-weight: 600; color: var(--text-main); }
+.album-group-count { font-size: 12px; font-weight: 400; color: var(--text-sub); }
+.album-group .media-grid { margin-top: 10px; }

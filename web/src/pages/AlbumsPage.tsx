@@ -1,13 +1,15 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
+import type { AssetSummary } from '@/api/generated'
 import { MediaCard } from '@/components/media/MediaCard'
 import { LOCALE_ZH } from '@/lib/constants'
+import { dateLabel } from '@/lib/format'
 import {
+  assetToCard,
   useAssetsInfinite, useAssetFacets, facetToOptions,
   type FacetOptionKind,
   type AssetSort, type MediaType, type Partition,
 } from '@/hooks/use-assets'
-import { formatDuration, formatShortDate } from '@/lib/format'
 
 /**
  * 相册页（原型 #page-albums 移植，阶段 B 四维聚合已接真实数据）：
@@ -28,6 +30,10 @@ import { formatDuration, formatShortDate } from '@/lib/format'
  * 请求各缺一个自己的参数，任何一维的徽标/值行都是排自身计数。
  * 排序映射（文案=原型）：精选=default / 最新=fileDate desc / 最旧=fileDate asc /
  * 按名称=name asc。
+ * 网格时间分区（原型 #5）：按 modifiedAt 的 dateLabel（今天/昨天/周X/yyyy-MM-dd）
+ * 分组渲染——分组键与「最新/最旧」的 fileDate 排序同源；同 label 归并同组（组头
+ * 只渲染一次），组内保持列表原序，组间按组首时间降序；胶囊切换只改变 items，
+ * 分组是其上的纯函数。
  */
 
 type DimKey = 'partition' | 'author' | 'character' | 'type'
@@ -109,6 +115,29 @@ export default function AlbumsPage() {
 
   const { data: pages, isFetching, fetchNextPage, hasNextPage } = useAssetsInfinite(listParams)
   const items = useMemo(() => pages?.pages.flatMap((p) => p.items ?? []) ?? [], [pages])
+
+  // 时间分区（原型 renderAlbumGrid）：分组键 = modifiedAt 的 dateLabel（与卡片日期、
+  // 协议 fileDate 排序同源的时间语义）；同 label 归并同组（组头只在该组首行前渲染
+  // 一次），组内保持列表原序，组间按组首 modifiedAt 降序；无日期（dateLabel 空串）
+  // 不分组语义——组固定最后且不渲染组头。
+  const groups = useMemo(() => {
+    const byLabel = new Map<string, AssetSummary[]>()
+    for (const a of items) {
+      const label = dateLabel(a.modifiedAt)
+      const bucket = byLabel.get(label)
+      if (bucket) bucket.push(a)
+      else byLabel.set(label, [a])
+    }
+    return [...byLabel.entries()]
+      .map(([label, assets]) => ({ label, assets }))
+      .sort((x, y) => {
+        if (!x.label) return 1
+        if (!y.label) return -1
+        const tx = Date.parse(x.assets[0]?.modifiedAt ?? '') || 0
+        const ty = Date.parse(y.assets[0]?.modifiedAt ?? '') || 0
+        return ty - tx
+      })
+  }, [items])
 
   // 四维 facets：每个请求"缺自身参数"（服务端排自身计数）。
   // partition 恒显式传参（不再依赖服务端缺省=all 的隐式行为）。
@@ -193,6 +222,15 @@ export default function AlbumsPage() {
     }
   }
 
+  // 卡片渲染（各组网格共用；调用形式与平铺版一致）
+  const renderCard = (a: AssetSummary) => (
+    <MediaCard
+      key={a.id}
+      {...assetToCard(a)}
+      onClick={() => a.id && navigate(`/app/asset/${a.id}`)}
+    />
+  )
+
   return (
     <div className="page" id="page-albums">
       <section className="filter-card">
@@ -248,20 +286,18 @@ export default function AlbumsPage() {
         </div>
       </section>
 
-      <div className="media-grid">
-        {items.map((a) => (
-          <MediaCard
-            key={a.id}
-            id={a.id}
-            cover={a.thumbUrl ?? ''}
-            title={a.fileName ?? ''}
-            duration={a.durationMs ? formatDuration(a.durationMs) : undefined}
-            up={a.source ?? undefined}
-            date={formatShortDate(a.modifiedAt)}
-            onClick={() => a.id && navigate(`/app/asset/${a.id}`)}
-          />
-        ))}
-      </div>
+      {/* 时间分区组：组头（今天/昨天/周X/yyyy-MM-dd + N 项）+ 组内网格（保持原序） */}
+      {groups.map((g) => (
+        <section className="album-group" key={g.label || '__no-date__'}>
+          {g.label ? (
+            <h3 className="album-group-title">
+              {g.label}
+              <span className="album-group-count">{g.assets.length} 项</span>
+            </h3>
+          ) : null}
+          <div className="media-grid">{g.assets.map(renderCard)}</div>
+        </section>
+      ))}
       {items.length === 0 && !isFetching ? (
         <p className="grid-empty">该筛选组合下暂无内容，换个胶囊试试。</p>
       ) : null}

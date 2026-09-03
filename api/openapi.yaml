@@ -705,6 +705,7 @@ components:
         likeCount:   { type: integer }
         thumbUrl:    { type: string, description: 签名缩略图 URL }
         durationMs:  { type: integer, format: int64, description: 视频时长（图片/动图无值；仅 VIDEO 扫描时探测） }
+        authorNames: { type: array, items: { type: string }, description: 该资产全部作者显示名（常规∪COS，DOMAIN_RULES §6）。列表类端点（GET /assets、GET /recommendations）返回，无作者为空数组；详情端点省略本字段（用 authors 完整对象） }
         lastPositionSeconds: { type: [number, "null"], description: '断点续播位置（秒；未播过/图片=null）。播放器经 PUT /assets/{assetId}/progress 上报；已看完口径 = >= durationMs/1000，由客户端推导' }
         viewCount:   { type: integer, description: 累计浏览次数（kind='open' 事件计数）。仅填充该字段的端点返回（排行榜等），列表端点可省略 }
         playCount:   { type: integer, description: 累计播放次数（kind='play' 事件计数）。填充约定同 viewCount }

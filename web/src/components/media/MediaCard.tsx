@@ -12,10 +12,11 @@ export interface MediaCardProps {
   id?: string
   cover: string
   title: string
-  /** 时长/张数角标（图片传"48 张"式计数，视频传 mm:ss） */
+  /** 时长角标（右下角，仅视频传 m:ss / h:mm:ss；图片/动图不传不渲染） */
   duration?: string
-  /** 作者行（@ 前缀由调用方拼好） */
+  /** 作者行（第一行，作者名/「名 等N」/出处回退值由调用方经 formatCardUp 组装） */
   up?: string
+  /** 日期（次行，浅色） */
   date?: string
   onClick?: () => void
 }
@@ -36,8 +37,7 @@ export function MediaCard({ id, cover, title, duration, up, date, onClick }: Med
       {up || date ? (
         <div className="card--meta">
           {up ? <span className="card--up">{up}</span> : null}
-          {up && date ? <span className="dot">·</span> : null}
-          {date ? <span>{date}</span> : null}
+          {date ? <span className="card--date">{date}</span> : null}
         </div>
       ) : null}
     </div>

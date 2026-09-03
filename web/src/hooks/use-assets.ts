@@ -21,7 +21,7 @@ import type { AssetFacets, FacetBucket, Partition } from '@/api/generated'
 export type { AssetFacets, FacetBucket, Partition }
 import type { MediaCardProps } from '@/components/media/MediaCard'
 import { unwrapSdkResult } from '@/lib/api-client'
-import { formatDuration, formatShortDate } from '@/lib/format'
+import { formatCardUp, formatDuration, formatShortDate } from '@/lib/format'
 
 export type MediaType = 'image' | 'animated_image' | 'video'
 export type AssetSort =
@@ -87,16 +87,17 @@ export function useAssetsTotal(mediaType?: MediaType) {
   })
 }
 
-/** AssetSummary → MediaCardProps（卡片展示字段映射唯一入口，搜索/集合页共用）。
- *  映射口径照 HomePage/AlbumsPage：封面=thumbUrl、标题=fileName、时长=视频 durationMs
- *  （图片省略）、up=出处 source、date=modifiedAt 短日期。 */
+/** AssetSummary → MediaCardProps（卡片展示字段映射唯一入口，搜索/集合页共用，
+ *  首页/相册页也复用）。映射口径（原型 #4）：封面=thumbUrl、标题=fileName、
+ *  时长=视频 durationMs（图片/动图省略，角标不渲染）、作者行=authorNames[0]
+ *  （多作者「名 等N」，无作者回退 source）、date=modifiedAt 短日期。 */
 export function assetToCard(a: AssetSummary): MediaCardProps {
   return {
     id: a.id,
     cover: a.thumbUrl ?? '',
     title: a.fileName ?? '',
-    duration: a.durationMs ? formatDuration(a.durationMs) : undefined,
-    up: a.source ?? undefined,
+    duration: a.mediaType === 'video' && a.durationMs ? formatDuration(a.durationMs) : undefined,
+    up: formatCardUp(a.authorNames, a.source),
     date: formatShortDate(a.modifiedAt),
   }
 }
