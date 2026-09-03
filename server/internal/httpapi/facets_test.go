@@ -6,10 +6,14 @@ package httpapi
 // （scanner 侧 cos_work 写入由 enrich_test.go 锁定）。
 //
 // 数据矩阵：
-//   常规库：A1 a.jpg 图片（画师A/天使）A2 b.jpg 图片（画师A/天使+黑百合）
-//           A3 c.mp4 视频（无作者无角色）
+//   常规库：A1 a.jpg 图片（画师A/天使，无出处 →「其他」桶）
+//           A2 b.jpg 图片（画师A/天使+黑百合，出处 kemono）
+//           A3 c.mp4 视频（无作者无角色，无出处 →「其他」桶）
 //   COS 库：C1 作者X/作品P/1.jpg（cos_work=作品P）C2 作者X/2.jpg（NULL 作品）
-// 两个库都启用——分区栏的 fixed 三项口径依赖全量计数。
+// 两个库都启用——分区栏的 fixed 三项口径依赖全量计数。作者栏口径（用户
+// 决策 2026-09-03，旧版「全部」页 作品行）：常规资产按出处分组（非 COS
+// 资产，NULL source =「其他」桶）+ COS 作者，按分区合并；常规作者表行
+// （画师A，TXT 导入产物）不进作者栏——authorId 仍作为其他维度过滤生效。
 
 import (
 	"context"
@@ -87,9 +91,27 @@ func seedFacetFixture(t *testing.T, e *testEnv) {
 		}
 	}
 
-	// 常规库三资产（newTestEnv 已播种 a.jpg/b.jpg/c.mp4 的库行，这里覆盖
-	// 富化列——直接再 Upsert 一遍同路径行会撞身份；改为用假扫描已入库的
-	// 现有行，按路径取回后补关联）。
+	// 常规库三资产（newTestEnv 假扫描已入库 a.jpg/b.jpg/c.mp4）：按路径
+	// 回写 source（UpsertAsset ON CONFLICT(library_id, rel_path) 只刷新
+	// 元数据，asset_id 保持首见——同路径重 Upsert 安全），再补关联。
+	setSource := func(rel, mediaType, src string) {
+		t.Helper()
+		a, err := e.q.UpsertAsset(ctx, db.UpsertAssetParams{
+			AssetID: uuid.NewString(), LibraryID: e.libID, RelPath: rel,
+			FileName: filepath.Base(rel), MediaType: mediaType, SizeBytes: 10,
+			Source: sql.NullString{String: src, Valid: src != ""},
+			Mtime:  now, CreatedAt: now, UpdatedAt: now,
+		})
+		if err != nil {
+			t.Fatalf("回写 source %s 失败: %v", rel, err)
+		}
+		_ = a
+	}
+	// a.jpg：图片 无出处（进「其他」桶）；b.jpg：图片 出处 kemono；
+	// c.mp4：视频 无出处（无作者无角色，假扫描已入库）。
+	setSource("a.jpg", "image", "")
+	setSource("b.jpg", "image", "kemono")
+	setSource("c.mp4", "video", "")
 	a1 := e.assetIDByPath(t, "a.jpg")
 	a2 := e.assetIDByPath(t, "b.jpg")
 	// a.jpg / b.jpg：图片，画师A；角色 天使 / 天使+黑百合
@@ -211,25 +233,33 @@ func TestFacetsPartitionPills(t *testing.T) {
 	}
 }
 
-// TestFacetsOtherDims：作者/角色/类型三栏在两种分区下的候选与计数；
-// COS 分区的角色栏必须是作品名（旧版「COS 角色=作品名」口径）。
+// TestFacetsOtherDims：作者/角色/类型三栏在两种分区下的候选与计数。
+// 作者栏 = 常规出处分组（含「其他」桶）∪ COS 作者，按分区合并：常规分区
+// 只有出处、COS 分区只有 COS 作者、全部分区两者合并（旧版 groupBySource
+// (!isCos) ∪ groupByCosAuthor(isCos) 口径）；常规作者表行（画师A）不进
+// 作者栏。COS 分区的角色栏必须是作品名（旧版「COS 角色=作品名」口径）。
 func TestFacetsOtherDims(t *testing.T) {
 	env := newTestEnv(t)
 	seedFacetFixture(t, env)
 	regAuthor := authoring.GenerateAuthorID("画师A")
 	cosAuthor := authoring.GenerateCosAuthorID("作者X")
 
-	// 缺省（=all 分区）：作者双体系一起列出；角色=匹配引擎角色名。
+	// 缺省（=all 分区）：作者栏 = 出处(a/b/c 无作者角色都参与:其他 2, kemono 1)
+	// ∪ COS 作者(2)；角色栏 = 匹配引擎角色名 ∪ COS 作品名（作品P）。
 	got := bucketMap(t, getFacets(t, env, ""), "authors")
-	assertCounts(t, got, map[string]int{cosAuthor: 2, regAuthor: 2}, "缺省作者栏")
+	assertCounts(t, got, map[string]int{sourceOtherLabel: 2, "kemono": 1, cosAuthor: 2}, "缺省作者栏（出处∪COS作者）")
+	if _, ok := got[regAuthor]; ok {
+		t.Errorf("作者栏不得含常规作者画师A（作者栏=出处+COS 作者）: %v", got)
+	}
 	got = bucketMap(t, getFacets(t, env, ""), "characters")
-	assertCounts(t, got, map[string]int{"天使": 2, "黑百合": 1}, "缺省角色栏")
+	assertCounts(t, got, map[string]int{"天使": 2, "黑百合": 1, "作品P": 1}, "缺省角色栏（角色∪作品）")
 	got = bucketMap(t, getFacets(t, env, ""), "types")
 	assertCounts(t, got, map[string]int{"all": 5, "image": 4, "video": 1, "animated_image": 0}, "缺省类型栏")
 
-	// regular 分区：只剩常规作者/常规资产。
+	// regular 分区：作者栏只剩出处分组（COS 作者与作品全部隔离）；角色栏
+	// 只剩常规角色。
 	got = bucketMap(t, getFacets(t, env, "?partition=regular"), "authors")
-	assertCounts(t, got, map[string]int{regAuthor: 2}, "regular 作者栏")
+	assertCounts(t, got, map[string]int{sourceOtherLabel: 2, "kemono": 1}, "regular 作者栏（只出处）")
 	got = bucketMap(t, getFacets(t, env, "?partition=regular"), "characters")
 	assertCounts(t, got, map[string]int{"天使": 2, "黑百合": 1}, "regular 角色栏")
 	got = bucketMap(t, getFacets(t, env, "?partition=regular"), "types")
@@ -237,7 +267,7 @@ func TestFacetsOtherDims(t *testing.T) {
 
 	// cos 分区：作者=COS 作者；角色栏=作品名；NULL 作品不列入。
 	got = bucketMap(t, getFacets(t, env, "?partition=cos"), "authors")
-	assertCounts(t, got, map[string]int{cosAuthor: 2}, "cos 作者栏")
+	assertCounts(t, got, map[string]int{cosAuthor: 2}, "cos 作者栏（只 COS 作者）")
 	got = bucketMap(t, getFacets(t, env, "?partition=cos"), "characters")
 	assertCounts(t, got, map[string]int{"作品P": 1}, "cos 角色栏（作品名，NULL 不列）")
 	got = bucketMap(t, getFacets(t, env, "?partition=cos"), "types")
@@ -245,36 +275,54 @@ func TestFacetsOtherDims(t *testing.T) {
 }
 
 // TestFacetsExcludeSelf：排自身口径——计某维候选时忽略该维自身选择。
+// 作者行 = source 与 authorId 两个参数（排自身时一起忽略）；角色行 =
+// character 与 work 两个参数（一起忽略）。
 func TestFacetsExcludeSelf(t *testing.T) {
 	env := newTestEnv(t)
 	seedFacetFixture(t, env)
 	regAuthor := authoring.GenerateAuthorID("画师A")
 	cosAuthor := authoring.GenerateCosAuthorID("作者X")
 
-	// 选了画师A：作者栏全量报告（排自身=忽略 authorId）；其余维按画师A
-	// 的资产算（无视频、无 COS）。
+	// 选了常规作者画师A（authorId 其他维度过滤仍生效）：作者栏排自身=全量
+	// 报告（source 与 authorId 同属作者行，一起忽略）；其余维按画师A 的
+	// 资产（a/b.jpg：无视频、无 COS）。
 	q := "?authorId=" + regAuthor
 	got := bucketMap(t, getFacets(t, env, q), "authors")
-	assertCounts(t, got, map[string]int{regAuthor: 2, cosAuthor: 2}, "选作者后作者栏（排自身=全量）")
+	assertCounts(t, got, map[string]int{sourceOtherLabel: 2, "kemono": 1, cosAuthor: 2}, "选作者后作者栏（排自身=全量）")
+	got = bucketMap(t, getFacets(t, env, q), "characters")
+	assertCounts(t, got, map[string]int{"天使": 2, "黑百合": 1}, "选作者后角色栏")
 	got = bucketMap(t, getFacets(t, env, q), "types")
 	assertCounts(t, got, map[string]int{"all": 2, "image": 2, "video": 0, "animated_image": 0}, "选作者后类型栏")
 	got = bucketMap(t, getFacets(t, env, q), "partitions")
 	assertCounts(t, got, map[string]int{"all": 2, "regular": 2, "cos": 0}, "选作者后分区栏")
 
-	// 选了视频：类型栏全量报告（排自身=忽略 mediaType）；视频无作者无
-	// 角色 → 作者/角色栏空。
+	// 选了出处 kemono（作者行内 pill）：作者栏排自身=忽略 source → 全量；
+	// 其余维按 kemono 资产（b.jpg 一个）。
+	q = "?source=kemono"
+	got = bucketMap(t, getFacets(t, env, q), "authors")
+	assertCounts(t, got, map[string]int{sourceOtherLabel: 2, "kemono": 1, cosAuthor: 2}, "选出处分组后作者栏（排自身=全量）")
+	got = bucketMap(t, getFacets(t, env, q), "characters")
+	assertCounts(t, got, map[string]int{"天使": 1, "黑百合": 1}, "选出处后角色栏（只 kemono 资产）")
+	got = bucketMap(t, getFacets(t, env, q), "types")
+	assertCounts(t, got, map[string]int{"all": 1, "image": 1, "video": 0, "animated_image": 0}, "选出处后类型栏")
+
+	// 选了视频：类型栏全量报告（排自身=忽略 mediaType）；作者栏 = 视频资产
+	// 的出处（c.mp4 无出处 →「其他」，COS 资产不占——c.mp4 无 COS 关联）；
+	// 角色栏空（视频无角色）。
 	got = bucketMap(t, getFacets(t, env, "?mediaType=video"), "types")
 	assertCounts(t, got, map[string]int{"all": 5, "image": 4, "video": 1, "animated_image": 0}, "选类型后类型栏（排自身=全量）")
 	got = bucketMap(t, getFacets(t, env, "?mediaType=video"), "authors")
-	assertCounts(t, got, map[string]int{}, "选类型后作者栏（视频无作者）")
+	assertCounts(t, got, map[string]int{sourceOtherLabel: 1}, "选类型后作者栏（视频无出处→其他，不含 COS）")
 	got = bucketMap(t, getFacets(t, env, "?mediaType=video"), "characters")
 	assertCounts(t, got, map[string]int{}, "选类型后角色栏（视频无角色）")
 
-	// 选了角色天使：角色栏计数不变；作者栏=含天使资产的作者。
-	got = bucketMap(t, getFacets(t, env, "?character=%E5%A4%A9%E4%BD%BF"), "characters")
-	assertCounts(t, got, map[string]int{"天使": 2, "黑百合": 1}, "选角色后角色栏（排自身）")
-	got = bucketMap(t, getFacets(t, env, "?character=%E5%A4%A9%E4%BD%BF"), "authors")
-	assertCounts(t, got, map[string]int{regAuthor: 2}, "选角色后作者栏")
+	// 选了角色天使：角色栏排自身（character 与 work 同属角色行，一起忽略）
+	// → 计数不变；作者栏 = 天使资产出处（a.jpg 其他 / b.jpg kemono 各 1）。
+	q = "?character=%E5%A4%A9%E4%BD%BF"
+	got = bucketMap(t, getFacets(t, env, q), "characters")
+	assertCounts(t, got, map[string]int{"天使": 2, "黑百合": 1, "作品P": 1}, "选角色后角色栏（排自身）")
+	got = bucketMap(t, getFacets(t, env, q), "authors")
+	assertCounts(t, got, map[string]int{sourceOtherLabel: 1, "kemono": 1}, "选角色后作者栏")
 }
 
 // TestAssetsCosPartitionParams：browse 侧三态开关与作品筛选（/assets 的

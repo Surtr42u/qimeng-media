@@ -120,7 +120,9 @@ export function useSources() {
 
 /** 相册四维筛选候选（分区/作者/角色/类型；GET /assets/facets，排自身口径）。
  *  params 里只传"其他维度"的当前选择——被渲染维自身的参数由调用方省略，
- *  服务端对每个维都是排自身计数（openapi 该端点 description）。 */
+ *  服务端对每个维都是排自身计数（openapi 该端点 description）。
+ *  source 与 authorId 同属「作者」行（排自身时两者都不传）；character 与
+ *  work 同属「角色」行（同理）。 */
 export function useAssetFacets(
   params: {
     partition?: Partition
@@ -128,6 +130,7 @@ export function useAssetFacets(
     character?: string
     authorId?: string
     work?: string
+    source?: string
   } = {},
 ) {
   return useQuery({
@@ -142,9 +145,17 @@ export function useAssetFacets(
   })
 }
 
-/** FacetBucket → 值行胶囊结构（label 用服务端显示名，count 带 fileCount） */
-export function facetToOptions(buckets: FacetBucket[]): { label: string; value: string; count: number }[] {
-  return buckets.map((b) => ({ label: b.name, value: b.key, count: b.fileCount }))
+/** 作者/角色行的胶囊混合候选类型：kind 决定回传哪个筛选参数
+ *  （source=GET /assets 的 source；author=authorId；character=character；
+ *  work=work——同一胶囊栏混合两种候选时前端按 kind 分派）。 */
+export type FacetOptionKind = NonNullable<FacetBucket['kind']>
+
+/** FacetBucket → 值行胶囊结构（label 用服务端显示名，count 带 fileCount，
+ *  kind 供作者/角色混合行分派筛选参数）。 */
+export function facetToOptions(
+  buckets: FacetBucket[],
+): { label: string; value: string; count: number; kind?: FacetOptionKind }[] {
+  return buckets.map((b) => ({ label: b.name, value: b.key, count: b.fileCount, kind: b.kind }))
 }
 
 /** 行为上报（DOMAIN_RULES §5：open/play/dwell；会话去重依赖每标签页 sessionId） */

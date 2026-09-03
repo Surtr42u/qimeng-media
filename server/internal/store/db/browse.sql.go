@@ -20,7 +20,11 @@ WHERE
     AND (?1 IS NULL OR a.library_id = ?1)
     AND (?2 IS NULL OR a.media_type = ?2)
     AND (?3 IS NULL
-         OR (?4 = 1 AND a.source IS NULL)
+         OR (?4 = 1 AND a.source IS NULL
+             AND NOT EXISTS (
+                 SELECT 1 FROM asset_authors aaoth
+                 JOIN authors auoth ON auoth.id = aaoth.author_id
+                 WHERE aaoth.asset_id = a.asset_id AND auoth.type = 'cos'))
          OR a.source = ?3)
     -- COS partition. Three-way switch shared by the browse default and the
     -- album partition pills (DOMAIN_RULES 6 isolation, migration 0008):
@@ -424,7 +428,11 @@ WHERE
     AND (?2 IS NULL OR a.library_id = ?2)
     AND (?3 IS NULL OR a.media_type = ?3)
     AND (?4 IS NULL
-         OR (?5 = 1 AND a.source IS NULL)
+         OR (?5 = 1 AND a.source IS NULL
+             AND NOT EXISTS (
+                 SELECT 1 FROM asset_authors aaoth
+                 JOIN authors auoth ON auoth.id = aaoth.author_id
+                 WHERE aaoth.asset_id = a.asset_id AND auoth.type = 'cos'))
          OR a.source = ?4)
     -- COS partition. Three-way switch shared by the browse default and the
     -- album partition pills (DOMAIN_RULES 6 isolation, migration 0008):
@@ -692,9 +700,18 @@ WHERE
     AND (?3 IS NULL OR a.media_type = ?3)
     -- "no source group" is stored as NULL; the caller translates the
     -- user-facing OTHER bucket into source_is_other = 1 (keeps SQL
-    -- literals ASCII for parser safety, see file header).
+    -- literals ASCII for parser safety, see file header). The OTHER
+    -- bucket is regular-only: COS assets never enter the source system
+    -- (enrich.go: cos libraries skip SourceMatcher), so a cos-linked
+    -- asset with NULL source is NOT "other" -- old-app groupBySource
+    -- filtered !isCosFile before grouping (same shape in all three
+    -- queries here and in facets.sql FacetSourceCounts).
     AND (?4 IS NULL
-         OR (?5 = 1 AND a.source IS NULL)
+         OR (?5 = 1 AND a.source IS NULL
+             AND NOT EXISTS (
+                 SELECT 1 FROM asset_authors aaoth
+                 JOIN authors auoth ON auoth.id = aaoth.author_id
+                 WHERE aaoth.asset_id = a.asset_id AND auoth.type = 'cos'))
          OR a.source = ?4)
     -- COS partition. Three-way switch shared by the browse default and the
     -- album partition pills (DOMAIN_RULES 6 isolation, migration 0008):

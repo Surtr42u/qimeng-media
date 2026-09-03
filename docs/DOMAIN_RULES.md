@@ -3,7 +3,7 @@
 > 本文是 qimeng-media 领域规则的**唯一权威**。这些规则在旧项目（绮梦影库单机版）中经过长期迭代验证，用户明确认可其行为，**实现技术全部重写，但规则语义必须保持**。
 > 标注「逐字遵守」的常量与公式禁止擅自改动；要改必须先让用户确认并同步测试。
 > 更细的旧版实现细节可参考旧仓库 `QimengMedia/docs/GUIDE_ALGORITHM.md`、`GUIDE_DATA.md`、`GUIDE_AUTHOR.md`（仅供参考，不是实现模板）。
-> 最后更新：2026-09-03（§3 增相册四维聚合端点 /assets/facets 排自身口径、§6 增 cos_work 列落库说明——相册作品/角色聚合维度上线；此前 2026-08-31 §4 自定义出处写入端点与存量重算语义、§6 COS 作者清理与目录变更重算、§9 cos 库移动映射——M3 收尾；2026-08-30 §4 内置检索表 131→130 勘误：整表翻译时实测旧源文件恰 130 组，131 系把 data class 定义行误计；§5/§11 规则内核 2026-08-26 对齐旧项目 v1.18~v1.19 真机验证结论，差异源见 `LEGACY_REQUIREMENTS.md`；其余仍为 v0 从 v1.17 提炼）
+> 最后更新：2026-09-03（§3 facets 作者/角色行口径修正——作者行=常规出处分组∪COS 作者、全部区角色行含 COS 作品（第五笔，对齐旧版「全部」tab）、§6 相册页=全部 tab 例外与 COS 浏览流表述；当日 2026-09-03 §3 增相册四维聚合端点 /assets/facets 排自身口径、§6 增 cos_work 列落库说明——相册作品/角色聚合维度上线；此前 2026-08-31 §4 自定义出处写入端点与存量重算语义、§6 COS 作者清理与目录变更重算、§9 cos 库移动映射——M3 收尾；2026-08-30 §4 内置检索表 131→130 勘误：整表翻译时实测旧源文件恰 130 组，131 系把 data class 定义行误计；§5/§11 规则内核 2026-08-26 对齐旧项目 v1.18~v1.19 真机验证结论，差异源见 `LEGACY_REQUIREMENTS.md`；其余仍为 v0 从 v1.17 提炼）
 
 ## 1. 推荐算法（10 维自适应加权评分）
 
@@ -94,7 +94,7 @@
 - **叠加**：搜索与 §3 全部其它筛选（排序/顺位/次数/大小/时间/标签/出处/角色/作者/收藏）以 AND 叠加；分页（keyset 游标）与 totalMatched 在搜索下与未搜索时口径一致。
 - **索引**：SQLite FTS5 trigram（migrations/0002_search_fts），由迁移触发器按写路径增量维护，业务代码不直接写索引；查询侧用 instr 子串（trigram 的 MATCH 不支持两字短词，2026-08-29 SQLite 3.53.3 实测后定案；性能基准 3 万行文本 <150ms/词）。
 - **出处列表端点（GET /sources）**：按出处规范名分组的文件计数，name=null 表示无出处文件（显示层兜底"其他"），按 fileCount 降序；口径与资产列表一致——默认排除 COS 作者关联文件（§6 隔离口径），includeCos=true 重新包含。
-- **相册四维聚合端点（GET /assets/facets，2026-09-03）**：分区/作者/角色/类型四维候选计数——partitions 恒三项（all/regular/cos，regular=all−cos）、authors（key=AuthorID）、characters、types 固定 all/image/animated_image/video 四项（key=MediaType 枚举值，可直接回传 GET /assets 的 mediaType）。**排自身口径**：计每维候选时忽略该维自身当前选择（character 与 work 同属「角色」维，两者一起忽略）——前端每维独立请求各缺自身参数。COS 分区（cos_only=1）下角色维=assets.cos_work 作品名（NULL 不列入，前端兜底「其他」），常规分区=角色规范名；COS 三态开关口径见 §6。
+- **相册四维聚合端点（GET /assets/facets，2026-09-03 第三笔建 / 第五笔语义修正）**：分区/作者/角色/类型四维候选计数——partitions 恒三项（all/regular/cos，regular=all−cos）；types 固定 all/image/animated_image/video 四项（key=MediaType 枚举值，可直接回传 GET /assets 的 mediaType）。**作者行 = 常规出处分组 ∪ COS 作者**（第五笔拍板，替代原 authorId 全量作者；= 旧版「全部」tab「作品」行的 groupBySource(!isCos) ∪ groupByCosAuthor(isCos) 合并口径）：常规分区只出处、COS 分区只 COS 作者、all 分区两者合并；出处分组只统计**非 COS 关联**资产（NULL source 行=用户侧「其他」桶，且 COS 关联资产永不落入——source_is_other 谓词含 NOT EXISTS cos 排除，browse.sql/source 口径一致），常规 TXT 作者表行不进本行。**角色行**：常规分区=角色规范名（key 回传 character）、COS 分区=cos_work 作品名（key 回传 work，NULL 不列入，前端兜底）、all 分区=两者合并（COS 作品进角色行）。每行候选带 **kind**（source/author/character/work）=回传哪个筛选参数（同一行混合两种候选时前端按 kind 分派）。**排自身口径**：计每维候选时忽略该维自身当前选择——source 与 authorId **同属作者行**一起忽略，character 与 work **同属角色行**一起忽略——前端每维独立请求各缺自身参数。COS 三态开关口径见 §6。
 
 ## 4. 出处与角色匹配引擎（SourceMatcher 规则）
 
@@ -134,7 +134,7 @@
 - 文件与作者多对多；删除作者保留文件，删除文件清理关联。
 - **关注作者（follow）**：关注是作者维度的布尔标记（无次数、取消即清除，口径同 §5 收藏/关注），`PUT /authors/{id}/follow` 设置/取消；取消关注不删除作者及其文件，仅清除标记。
 - **TXT 导入**：支持三种格式（旧版格式 A/B/C 自动识别）；导入与重新匹配以「全部已导入 TXT 统一重建」为语义（跨 TXT 同名作者关联取并集，禁止单 TXT 覆盖）；新文件入库后自动触发重新匹配。具体格式定义迁移时从旧仓库 `GUIDE_AUTHOR.md` 抄录为服务端解析器测试用例。
-- **COS 目录结构**：`作者/文件`、`作者/作品/文件`、`作者/作品/子目录/文件` 三种；作品名取目录名（folderName 覆写规则）；作品名落库 `assets.cos_work`（migration 0008：rel_path 第二段，扫描入库与作者关联重算两条路径维护，NULL=无作品子目录，部分索引 idx_assets_cos_work）——/assets 的 `work` 筛选与 facets COS 分区角色维的数据源；COS 文件不出现在常规浏览流（首页/全部/相册/收藏/历史），有独立入口。
+- **COS 目录结构**：`作者/文件`、`作者/作品/文件`、`作者/作品/子目录/文件` 三种；作品名取目录名（folderName 覆写规则）；作品名落库 `assets.cos_work`（migration 0008：rel_path 第二段，扫描入库与作者关联重算两条路径维护，NULL=无作品子目录，部分索引 idx_assets_cos_work）——/assets 的 `work` 筛选与 facets COS 分区角色维的数据源；COS 文件不出现在常规浏览流（首页推荐/收藏/历史/搜索默认排除 COS 作者关联文件），有独立入口（首页 cos tab、/assets cosOnly=true）。**例外：相册页 = 旧版「全部」tab 语义**——缺省「全部」分区常规∪COS 同流展示（作者行=出处∪COS 作者、角色行=角色∪作品合并可见），隔离浏览用「常规/COS」分区胶囊（第五笔用户拍板）。
 - **COS 作者清理与目录变更**：扫描收尾与增量删除后自动清理孤立 COS 作者（作者目录文件全部消失后残留的零关联行——旧项目 deleteOrphanCosAuthors 语义）；作者目录改名/文件移出目录时，作者映射沿移动路径重算（API 移动/改名与扫描移动合并两条路径都按新目录首段刷新），旧作者随之孤立被清。
 
 ## 7. 标签/收藏/点赞/时间轴

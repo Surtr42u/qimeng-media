@@ -4,6 +4,7 @@ import { MediaCard } from '@/components/media/MediaCard'
 import { LOCALE_ZH } from '@/lib/constants'
 import {
   useAssetsInfinite, useAssetFacets, facetToOptions,
+  type FacetOptionKind,
   type AssetSort, type MediaType, type Partition,
 } from '@/hooks/use-assets'
 import { formatDuration, formatShortDate } from '@/lib/format'
@@ -11,10 +12,17 @@ import { formatDuration, formatShortDate } from '@/lib/format'
 /**
  * 相册页（原型 #page-albums 移植，阶段 B 四维聚合已接真实数据）：
  * 四维胶囊筛选（分区/作者/角色/类型，GET /assets/facets 排自身口径）+ 内容网格。
- *   - 分区 = all/regular/cos 三态（DOMAIN_RULES §6 COS 隔离；旧版"出处"不再作
- *     为相册维度，出处分组留在搜索/集合入口）；
- *   - 作者 = 双体系作者（key=authorId 回传 GET /assets）；
- *   - 角色 = 常规分区=匹配引擎角色名，COS 分区=作品名（筛选走 work 参数）；
+ * 语义对齐全部分区 = 旧版「全部」tab 的四行胶囊（用户决策 2026-09-03）：
+ *   - 分区 = all/regular/cos 三态；缺省 = 全部（旧版「全部」tab 默认分区，
+ *     常规与 COS 同流展示；regular/cos 用于隔离浏览，DOMAIN_RULES §6）；
+ *   - 作者 = 常规出处分组（kind=source，含「其他」桶；=旧版「作品」行的
+ *     groupBySource）∪ COS 作者（kind=author，=groupByCosAuthor）——按分区
+ *     合并：常规分区只有出处、COS 分区只有 COS 作者、全部分区两者合并；
+ *     常规 TXT 作者表行不进作者栏。胶囊按 kind 分派筛选参数
+ *     （source / authorId 同属作者行，二选一）；
+ *   - 角色 = 常规分区=匹配引擎角色名（kind=character）、COS 分区=COS 作品名
+ *     （kind=work，=旧版「COS 角色=作品名」），全部分区两者合并；胶囊按
+ *     kind 分派 character / work（两参数同属角色行，二选一）；
  *   - 类型 = MediaType 四档（含全部）。
  * 计数口径：每个维的候选计数都"排自身"（忽略该维自身选择）——四个 facets
  * 请求各缺一个自己的参数，任何一维的徽标/值行都是排自身计数。
@@ -23,6 +31,9 @@ import { formatDuration, formatShortDate } from '@/lib/format'
  */
 
 type DimKey = 'partition' | 'author' | 'character' | 'type'
+
+/** 行内选中形态：作者行 kind=source|author、角色行 kind=character|work 二选一 */
+type RowSel = { kind: FacetOptionKind; value: string } | null
 
 const DIM_LABELS: Record<DimKey, string> = {
   partition: '分区',
@@ -42,73 +53,107 @@ const SORTS: { label: string; sort: AssetSort; order: 'asc' | 'desc' }[] = [
 /** 值行超过该数量（含「全部」）默认收起两行（原型交互阈值） */
 const VALUE_COLLAPSE_THRESHOLD = 9
 
-/** 分区缺省 = 常规：延续常规浏览流不含 COS 的历史口径（COS 走专属胶囊） */
-const DEFAULT_PARTITION: Partition = 'regular'
+/** 分区缺省 = 全部：相册页即旧版「全部」tab（COS 独立入口同流，
+ *  隔离浏览走 常规/COS 分区胶囊） */
+const DEFAULT_PARTITION: Partition = 'all'
 
 export default function AlbumsPage() {
   const navigate = useNavigate()
 
-  // 选择状态（四维互不重置；切分区清角色——两分区的角色键不同命名空间：
-  // 常规=匹配引擎角色名，COS=作品名）
+  // 选择状态（四维互不重置；切分区清作者/角色——两行候选的 kind 命名空间
+  // 随分区变化：常规=出处/角色，COS=COS 作者/作品名）
   const [dim, setDimState] = useState<DimKey>('partition')
   const [partition, setPartition] = useState<Partition>(DEFAULT_PARTITION)
-  const [authorId, setAuthorId] = useState<string | null>(null)
-  const [character, setCharacter] = useState<string | null>(null)
+  const [authorSel, setAuthorSel] = useState<RowSel>(null)
+  const [characterSel, setCharacterSel] = useState<RowSel>(null)
   const [mediaType, setMediaType] = useState<MediaType | null>(null)
   const [expanded, setExpanded] = useState(false)
   const [sortIdx, setSortIdx] = useState(0)
 
   const sort = SORTS[sortIdx]
-  // 角色选择在当前分区下的协议参数形态（COS=work，其余=character）
-  const characterParams =
-    character === null
-      ? {}
-      : partition === 'cos'
-        ? { work: character }
-        : { character }
+
+  // 作者行选中 → GET /assets 参数（source 与 authorId 二选一）
+  const authorParams = useMemo(
+    () =>
+      authorSel === null
+        ? {}
+        : authorSel.kind === 'source'
+          ? { source: authorSel.value }
+          : { authorId: authorSel.value },
+    [authorSel],
+  )
+  // 角色行选中 → 协议参数（character 与 work 二选一）
+  const characterParams = useMemo(
+    () =>
+      characterSel === null
+        ? {}
+        : characterSel.kind === 'work'
+          ? { work: characterSel.value }
+          : { character: characterSel.value },
+    [characterSel],
+  )
 
   // 内容网格：四维选择 → GET /assets 参数（分区三态开关映射见 hooks 注释）
   const listParams = useMemo(
     () => ({
       ...(partition === 'all' ? { includeCos: true } : partition === 'cos' ? { cosOnly: true } : {}),
-      ...(authorId ? { authorId } : {}),
+      ...authorParams,
       ...characterParams,
       ...(mediaType ? { mediaType } : {}),
       sort: sort.sort,
       order: sort.order,
       limit: 60,
     }),
-    [partition, authorId, character, mediaType, sort],
+    [partition, authorParams, characterParams, mediaType, sort],
   )
 
   const { data: pages, isFetching, fetchNextPage, hasNextPage } = useAssetsInfinite(listParams)
   const items = useMemo(() => pages?.pages.flatMap((p) => p.items ?? []) ?? [], [pages])
 
-  // 四维 facets（各缺自身参数 → 每维都是排自身计数；请求本地聚合，量级可控）
-  const facetPartition = useAssetFacets({ ...characterParams, ...(authorId ? { authorId } : {}), ...(mediaType ? { mediaType } : {}) })
-  const facetAuthor = useAssetFacets({ ...(partition !== DEFAULT_PARTITION ? { partition } : {}), ...characterParams, ...(mediaType ? { mediaType } : {}) })
-  const facetCharacter = useAssetFacets({ ...(partition !== DEFAULT_PARTITION ? { partition } : {}), ...(authorId ? { authorId } : {}), ...(mediaType ? { mediaType } : {}) })
-  const facetType = useAssetFacets({ ...(partition !== DEFAULT_PARTITION ? { partition } : {}), ...characterParams, ...(authorId ? { authorId } : {}) })
+  // 四维 facets：每个请求"缺自身参数"（服务端排自身计数）。
+  // partition 恒显式传参（不再依赖服务端缺省=all 的隐式行为）。
+  const facetPartition = useAssetFacets({ ...authorParams, ...characterParams, ...(mediaType ? { mediaType } : {}) })
+  const facetAuthor = useAssetFacets({ partition, ...characterParams, ...(mediaType ? { mediaType } : {}) })
+  const facetCharacter = useAssetFacets({ partition, ...authorParams, ...(mediaType ? { mediaType } : {}) })
+  const facetType = useAssetFacets({ partition, ...authorParams, ...characterParams })
 
-  // 活动维的值行数据 + 各维徽标（排自身候选数；分区/类型扣除「全部」桶）
-  const dimValues: { label: string; count?: number; value: string }[] = useMemo(() => {
+  // 「全部」胶囊计数 = 当前其他维度选择下的总文件数（分区栏 all 桶）
+  const total = facetPartition.data?.partitions.find((b) => b.key === 'all')?.fileCount
+
+  // 值行候选：作者/角色行在服务端候选前补「全部」胶囊（value=''=清除本行）
+  const dimValues: { label: string; value: string; count?: number; kind?: FacetOptionKind }[] = useMemo(() => {
     switch (dim) {
       case 'partition':
         return facetToOptions(facetPartition.data?.partitions ?? [])
       case 'author':
-        return facetToOptions(facetAuthor.data?.authors ?? [])
+        return [
+          { label: '全部', value: '', count: total },
+          ...facetToOptions(facetAuthor.data?.authors ?? []),
+        ]
       case 'character':
-        return facetToOptions(facetCharacter.data?.characters ?? [])
+        return [
+          { label: '全部', value: '', count: total },
+          ...facetToOptions(facetCharacter.data?.characters ?? []),
+        ]
       case 'type':
         return facetToOptions(facetType.data?.types ?? [])
     }
-  }, [dim, facetPartition.data, facetAuthor.data, facetCharacter.data, facetType.data])
+  }, [dim, facetPartition.data, facetAuthor.data, facetCharacter.data, facetType.data, total])
 
-  const currentValue =
-    dim === 'partition' ? partition
-      : dim === 'author' ? (authorId ?? '')
-        : dim === 'character' ? (character ?? '')
-          : (mediaType ?? '')
+  // 当前行激活判定：分区/类型行按 value 匹配；作者/角色行按 value+kind 匹配
+  // （出处与 COS 作者、角色与 COS 作品可能同名不同 kind）
+  const isActive = (v: { value: string; kind?: FacetOptionKind }): boolean => {
+    switch (dim) {
+      case 'partition':
+        return partition === v.value
+      case 'type':
+        return (mediaType ?? 'all') === v.value
+      case 'author':
+        return authorSel !== null && authorSel.value === v.value && authorSel.kind === v.kind
+      case 'character':
+        return characterSel !== null && characterSel.value === v.value && characterSel.kind === v.kind
+    }
+  }
 
   const badgeCount = (d: DimKey): number | undefined => {
     switch (d) {
@@ -128,21 +173,22 @@ export default function AlbumsPage() {
     setExpanded(false)
   }
 
-  const pickValue = (v: string): void => {
+  const pickValue = (opt: { value: string; kind?: FacetOptionKind }): void => {
     switch (dim) {
       case 'partition': {
-        setPartition(v as Partition)
-        setCharacter(null) // 角色键随分区切换换命名空间，重置
+        setPartition(opt.value as Partition)
+        setAuthorSel(null) // 作者/角色候选随分区换命名空间（kind 集合变），重置
+        setCharacterSel(null)
         break
       }
       case 'author':
-        setAuthorId(v === '' ? null : v)
+        setAuthorSel(opt.value === '' ? null : { kind: opt.kind ?? 'source', value: opt.value })
         break
       case 'character':
-        setCharacter(v === '' ? null : v)
+        setCharacterSel(opt.value === '' ? null : { kind: opt.kind ?? 'character', value: opt.value })
         break
       case 'type':
-        setMediaType(v === '' || v === 'all' ? null : (v as MediaType))
+        setMediaType(opt.value === '' || opt.value === 'all' ? null : (opt.value as MediaType))
         break
     }
   }
@@ -167,12 +213,12 @@ export default function AlbumsPage() {
         </div>
         {/* 值行：当前维度值胶囊（超阈值默认收起两行） */}
         <div className={`pill-row value-row${expanded ? ' expanded' : ''}`}>
-          {dimValues.map(({ label, count, value }) => (
+          {dimValues.map(({ label, count, ...opt }) => (
             <button
-              key={value}
-              className={`pill ${currentValue === value ? 'active' : ''}`}
+              key={`${opt.kind ?? ''}:${opt.value}`}
+              className={`pill ${isActive(opt) ? 'active' : ''}`}
               type="button"
-              onClick={() => pickValue(value)}
+              onClick={() => pickValue(opt)}
             >
               {label}
               {count !== undefined ? (

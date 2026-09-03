@@ -218,3 +218,82 @@ func TestAuthorsImportTxtValidation(t *testing.T) {
 		t.Errorf("空 content 期望 400，得到 %d", resp.StatusCode)
 	}
 }
+
+// listTxt GET /authors/import-txt → 文件名升序数组（旧版数据管理卡片数据）。
+func listTxt(t *testing.T, e *testEnv) []string {
+	t.Helper()
+	resp := e.do(t, "GET", "/api/v1/authors/import-txt", "")
+	defer closeBody(resp)
+	if resp.StatusCode != 200 {
+		t.Fatalf("TXT 列表期望 200，得到 %d", resp.StatusCode)
+	}
+	var items []struct {
+		Filename string `json:"filename"`
+	}
+	if err := decodeBody(resp, &items); err != nil {
+		t.Fatalf("解析 TXT 列表失败: %v", err)
+	}
+	names := make([]string, 0, len(items))
+	for _, it := range items {
+		names = append(names, it.Filename)
+	}
+	return names
+}
+
+// deleteTxt DELETE /authors/import-txt?filename=…，返回状态码。
+func deleteTxt(t *testing.T, e *testEnv, filename string) int {
+	t.Helper()
+	resp := e.do(t, "DELETE", "/api/v1/authors/import-txt?filename="+filename, "")
+	defer closeBody(resp)
+	return resp.StatusCode
+}
+
+// TestAuthorsTxtManageList：GET/DELETE TXT 片段（旧版数据管理「TXT导入
+// 作者」卡片）：列表升序；删除以「删除前全量」为删关联目标（作者只在被删
+// 片段出现时旧关联随删除清空）、以剩余片段重建并集关联；作者行保留不级联
+// 删除；不存在 404。
+func TestAuthorsTxtManageList(t *testing.T) {
+	env := newTestEnv(t)
+	kami := authoring.GenerateAuthorID("kamihikoki_mmd")
+	other := authoring.GenerateAuthorID("另一位作者")
+
+	// 两个片段：K 命中 a.jpg+c.mp4；另一位 命中 b.jpg。
+	importTXT(t, env, "f1.txt", "1  kamihikoki_mmd\n作品\na.jpg\nc.mp4\n")
+	importTXT(t, env, "f2.txt", "1  另一位作者\n作品\nb.jpg\n")
+
+	// GET 列表升序（f1 < f2）。
+	if got := listTxt(t, env); len(got) != 2 || got[0] != "f1.txt" || got[1] != "f2.txt" {
+		t.Fatalf("TXT 列表=%v, want [f1.txt f2.txt]", got)
+	}
+
+	// 删除 f2：另一位作者 只在该片段出现 → 关联清空（fileCount 0）、
+	// 作者行保留；K 的并集关联不受影响（a+c 仍 2）。
+	if code := deleteTxt(t, env, "f2.txt"); code != 204 {
+		t.Fatalf("删除 f2.txt 期望 204，得到 %d", code)
+	}
+	if a := findAuthor(t, listAuthors(t, env), kami); a.FileCount == nil || *a.FileCount != 2 {
+		t.Errorf("删 f2 后 K fileCount=%v, want 2（剩余片段并集不受影响）", a.FileCount)
+	}
+	if a := findAuthor(t, listAuthors(t, env), other); a.FileCount == nil || *a.FileCount != 0 {
+		t.Errorf("删 f2 后另一位作者 fileCount=%v, want 0（只在被删片段，关联清空）", a.FileCount)
+	}
+	if got := listTxt(t, env); len(got) != 1 || got[0] != "f1.txt" {
+		t.Fatalf("删 f2 后 TXT 列表=%v, want [f1.txt]", got)
+	}
+
+	// 删除最后一个片段：K 关联清空但作者行保留（重建后零关联不级联删行）。
+	if code := deleteTxt(t, env, "f1.txt"); code != 204 {
+		t.Fatalf("删除 f1.txt 期望 204，得到 %d", code)
+	}
+	if a := findAuthor(t, listAuthors(t, env), kami); a.FileCount == nil || *a.FileCount != 0 {
+		t.Errorf("删 f1 后 K fileCount=%v, want 0", a.FileCount)
+	}
+	if got := listTxt(t, env); len(got) != 0 {
+		t.Fatalf("删光后 TXT 列表=%v, want 空", got)
+	}
+
+	// 删除不存在的片段 → 404。
+	if code := deleteTxt(t, env, "ghost.txt"); code != 404 {
+		t.Errorf("删除不存在片段期望 404，得到 %d", code)
+	}
+}

@@ -80,9 +80,18 @@ WHERE
     AND (sqlc.narg(media_type) IS NULL OR a.media_type = sqlc.narg(media_type))
     -- "no source group" is stored as NULL; the caller translates the
     -- user-facing OTHER bucket into source_is_other = 1 (keeps SQL
-    -- literals ASCII for parser safety, see file header).
+    -- literals ASCII for parser safety, see file header). The OTHER
+    -- bucket is regular-only: COS assets never enter the source system
+    -- (enrich.go: cos libraries skip SourceMatcher), so a cos-linked
+    -- asset with NULL source is NOT "other" -- old-app groupBySource
+    -- filtered !isCosFile before grouping (same shape in all three
+    -- queries here and in facets.sql FacetSourceCounts).
     AND (sqlc.narg(source) IS NULL
-         OR (sqlc.arg(source_is_other) = 1 AND a.source IS NULL)
+         OR (sqlc.arg(source_is_other) = 1 AND a.source IS NULL
+             AND NOT EXISTS (
+                 SELECT 1 FROM asset_authors aaoth
+                 JOIN authors auoth ON auoth.id = aaoth.author_id
+                 WHERE aaoth.asset_id = a.asset_id AND auoth.type = 'cos'))
          OR a.source = sqlc.narg(source))
     -- COS partition. Three-way switch shared by the browse default and the
     -- album partition pills (DOMAIN_RULES 6 isolation, migration 0008):
@@ -250,7 +259,11 @@ WHERE
     AND (sqlc.narg(library_id) IS NULL OR a.library_id = sqlc.narg(library_id))
     AND (sqlc.narg(media_type) IS NULL OR a.media_type = sqlc.narg(media_type))
     AND (sqlc.narg(source) IS NULL
-         OR (sqlc.arg(source_is_other) = 1 AND a.source IS NULL)
+         OR (sqlc.arg(source_is_other) = 1 AND a.source IS NULL
+             AND NOT EXISTS (
+                 SELECT 1 FROM asset_authors aaoth
+                 JOIN authors auoth ON auoth.id = aaoth.author_id
+                 WHERE aaoth.asset_id = a.asset_id AND auoth.type = 'cos'))
          OR a.source = sqlc.narg(source))
     -- COS partition. Three-way switch shared by the browse default and the
     -- album partition pills (DOMAIN_RULES 6 isolation, migration 0008):
@@ -382,7 +395,11 @@ WHERE
     AND (sqlc.narg(library_id) IS NULL OR a.library_id = sqlc.narg(library_id))
     AND (sqlc.narg(media_type) IS NULL OR a.media_type = sqlc.narg(media_type))
     AND (sqlc.narg(source) IS NULL
-         OR (sqlc.arg(source_is_other) = 1 AND a.source IS NULL)
+         OR (sqlc.arg(source_is_other) = 1 AND a.source IS NULL
+             AND NOT EXISTS (
+                 SELECT 1 FROM asset_authors aaoth
+                 JOIN authors auoth ON auoth.id = aaoth.author_id
+                 WHERE aaoth.asset_id = a.asset_id AND auoth.type = 'cos'))
          OR a.source = sqlc.narg(source))
     -- COS partition. Three-way switch shared by the browse default and the
     -- album partition pills (DOMAIN_RULES 6 isolation, migration 0008):

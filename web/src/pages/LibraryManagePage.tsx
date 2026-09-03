@@ -1,9 +1,12 @@
-import { useState, type FormEvent } from 'react'
+import { useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { toast } from 'sonner'
 import { LOCALE_ZH } from '@/lib/constants'
 import {
   useDeleteLibrary, useLibraries, useRegisterLibrary, useScanLibrary, useSetLibraryEnabled,
 } from '@/hooks/use-libraries'
+import {
+  useDeleteImportedTxt, useImportAuthorTxt, useTxtImportedFiles,
+} from '@/hooks/use-authors'
 import type { DirTree, Library } from '@/api/generated'
 import { useQuery } from '@tanstack/react-query'
 import { getApiV1Dirs } from '@/api/generated'
@@ -12,9 +15,113 @@ import { unwrapSdkResult } from '@/lib/api-client'
 /**
  * 文件管理页（维护页「文件管理」入口卡 → /app/maintenance/files）。
  * 「管理文件库」的实际功能页：库列表（重扫/删除）+ 注册新库（= 旧 App
- * 添加媒体文件夹）+ 目录浏览。样式复用原型类（log-table/settings-card/pill）。
+ * 添加媒体文件夹）+ 目录浏览 + 作者 TXT 导入卡（= 旧版数据管理「TXT导入
+ * 作者」：列表 + 选择 txt 导入 + 删除片段重建关联）。样式复用原型类
+ * （log-table/settings-card/pill/rank-card）。
  * 目录浏览依赖生成 SDK getApiV1Dirs（libraryId 必填，协议 /api/v1/dirs）。
  */
+
+/**
+ * 作者 TXT 导入卡（旧版数据管理「TXT导入作者」的 web 对等物）：
+ * 选择 .txt → POST /authors/import-txt（三格式自动识别 + 从全部已导入
+ * 片段统一重建，DOMAIN_RULES §6）；列表 = 已导入片段名（同名覆盖）；
+ * 删除某片段 → 从剩余片段重建作者与文件关联（作者行保留）。
+ */
+function TxtAuthorImportCard() {
+  const { data: files = [], isLoading } = useTxtImportedFiles()
+  const importTxt = useImportAuthorTxt()
+  const deleteTxt = useDeleteImportedTxt()
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const onPick = (e: ChangeEvent<HTMLInputElement>): void => {
+    const f = e.target.files?.[0]
+    e.target.value = '' // 置空以允许连续导入同名文件
+    if (!f) return
+    if (!/\.txt$/i.test(f.name)) {
+      toast.error('仅支持 .txt 作者清单文件')
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      importTxt.mutate(
+        { filename: f.name, content: String(reader.result ?? '') },
+        {
+          onSuccess: (res) =>
+            toast.success(`「${f.name}」导入完成：作者 ${res.authorsImported ?? 0}，匹配文件 ${res.filesMatched ?? 0}`),
+          onError: (err) => toast.error(`导入失败：${err instanceof Error ? err.message : String(err)}`),
+        },
+      )
+    }
+    reader.onerror = () => toast.error('读取文件失败，请重试')
+    reader.readAsText(f)
+  }
+
+  const onDelete = (name: string): void => {
+    deleteTxt.mutate(name, {
+      onSuccess: () => toast.success(`已移除「${name}」，并从剩余片段重建作者关联`),
+      onError: (err) => toast.error(`移除失败：${err instanceof Error ? err.message : String(err)}`),
+    })
+  }
+
+  return (
+    <div className="rank-card">
+      <div className="rank-head">
+        <h3>作者 TXT 导入</h3>
+        <span className="rank-note">{files.length} 份片段</span>
+      </div>
+      <p className="rank-note">
+        把旧项目导出的作者清单 .txt 交还关联重建（格式 A/B/C 自动识别）：同名文件重复导入为覆盖；
+        删除某份后按「剩余片段全部」重算作者与文件关联，作者行保留。
+      </p>
+      <div style={{ margin: '10px 0 12px' }}>
+        <button
+          className="save-btn"
+          type="button"
+          disabled={importTxt.isPending}
+          onClick={() => inputRef.current?.click()}
+        >
+          {importTxt.isPending ? '导入中…' : '选择 TXT 导入'}
+        </button>
+        <input
+          ref={inputRef}
+          type="file"
+          accept=".txt,text/plain"
+          hidden
+          onChange={onPick}
+          aria-label="选择作者清单 TXT"
+        />
+      </div>
+      {isLoading ? (
+        <p className="grid-empty">加载中…</p>
+      ) : files.length === 0 ? (
+        <p className="grid-empty">还没有导入片段——选一个 .txt 开始。</p>
+      ) : (
+        <table className="log-table">
+          <thead>
+            <tr><th>片段文件</th><th style={{ width: 120 }}>操作</th></tr>
+          </thead>
+          <tbody>
+            {files.map((f) => (
+              <tr key={f.filename}>
+                <td>{f.filename === '' ? '（匿名导入）' : f.filename}</td>
+                <td>
+                  <button
+                    className="pill"
+                    type="button"
+                    disabled={deleteTxt.isPending}
+                    onClick={() => onDelete(f.filename)}
+                  >
+                    移除
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  )
+}
 
 /** 目录树递归节点（库根为顶，子目录缩进；fileCount 为该目录直接文件数） */
 function DirNode({ node, depth }: { node: DirTree; depth: number }) {
@@ -132,7 +239,7 @@ export default function LibraryManagePage() {
     <div className="page" id="page-maintenance-files">
       <div className="page-head">
         <h2>文件管理</h2>
-        <p>管理文件库：注册/删除媒体目录、触发扫描、浏览目录结构</p>
+        <p>管理文件库（注册/重扫/删除/目录浏览）与作者 TXT 导入（旧项目数据管理）</p>
       </div>
 
       <div className="rank-card">
@@ -217,6 +324,7 @@ export default function LibraryManagePage() {
       </form>
 
       <DirBrowser libraries={libraries} />
+      <TxtAuthorImportCard />
     </div>
   )
 }

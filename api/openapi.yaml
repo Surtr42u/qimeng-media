@@ -179,27 +179,31 @@ paths:
     get:
       summary: 相册四维筛选候选（分区/作者/角色/类型）及其文件计数
       description: |
-        供相册页四条胶囊栏渲染（旧版手机端「分区/作品/角色/类型」四栏语义，
-        LEGACY_REQUIREMENTS；其中旧版「作品」栏按用户确认改为**作者**栏，
-        出处不再作为相册维度）。
+        供相册页四条胶囊栏渲染，语义对齐旧版手机端「全部」页四栏
+        （LEGACY_REQUIREMENTS + 用户 2026-09-03 拍板）：
+
+        - 分区栏：固定 all/regular/cos 三项（DOMAIN_RULES §6 隔离口径）；
+        - **作者栏（旧版「作品」栏语义）**：候选 = 常规出处分组 + COS 作者，
+          两集合按分区合并——常规分区只有出处分组（含「其他」=未匹配出处
+          的常规文件），COS 分区只有 COS 作者，全部分区两者合并。
+          常规 TXT 作者不进本栏（旧版口径：出处+cos_ 作者，双桶 kind 区分）；
+        - **角色栏**：常规分区=匹配引擎角色名，COS 分区=COS 作品名
+          （`作者/作品/文件` 第二段），全部分区=两者合并（kind 区分）；
+        - 类型栏：固定 all/image/animated_image/video 四项
+          （key=MediaType 枚举值，可直接回传 GET /assets 的 mediaType）。
 
         计数口径 = 排自身（faceted search 惯例）：计算某一维候选的 fileCount 时，
-        忽略该维自身已选值，其余维度的当前选择全部生效。这等价于旧版
-        GUIDE_UI 的「分区→类型→作品→角色 逐层联动」，但在多维可交换筛选下
-        更自然——先选作者再选类型与先选类型再选作者，候选计数一致。
-
-        分区栏固定返回 all/regular/cos 三项（DOMAIN_RULES §6 隔离口径）；
-        类型栏固定返回 all/image/video/animation 四项。作者栏只列有文件的作者
-        （常规 TXT 作者 + COS 作者），key 为 authorId 可直接回传 GET /assets。
-        角色栏在常规分区下是匹配引擎产出的角色名，在 COS 分区下是 COS 作品名
-        （`作者/作品/文件` 的第二段）。空值候选（无作品目录的 COS 文件）不列入，
+        忽略该维自身已选值，其余维度的当前选择全部生效。作者栏的 source 与
+        authorId 同属「作者」维一起忽略；角色栏的 character 与 work 同属
+        「角色」维一起忽略。空值候选（无作品目录的 COS 文件）不列入，
         前端按需兜底「其他」。
       parameters:
         - { name: partition, in: query, schema: { $ref: "#/components/schemas/Partition" }, description: 当前分区（计算其他三维计数时生效；分区栏自身计数始终按排自身口径给出全量三分区计数） }
         - { name: mediaType, in: query, schema: { $ref: "#/components/schemas/MediaType" } }
-        - { name: character, in: query, schema: { type: string }, description: 当前角色/COS 作品（'a+b' 多角色） }
+        - { name: source,    in: query, schema: { type: string }, description: 当前出处/作品（作者栏的 source 类候选；'其他'=无出处常规文件，口径同 GET /assets） }
+        - { name: character, in: query, schema: { type: string }, description: 当前角色（'a+b' 多角色） }
         - { name: authorId,  in: query, schema: { type: string }, description: 当前作者 }
-        - { name: work,      in: query, schema: { type: string }, description: 当前 COS 作品（与 character 同源，COS 分区下二者等价；同时传入取交集） }
+        - { name: work,      in: query, schema: { type: string }, description: 当前 COS 作品（与 character 同属角色维，COS 分区下二者等价；同时传入取交集） }
         - { name: q,         in: query, schema: { type: string }, description: 全文搜索（口径同 GET /assets 的 q） }
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/AssetFacets" } } } }
@@ -448,6 +452,22 @@ paths:
             schema: { type: object, required: [content], properties: { filename: { type: string }, content: { type: string } } }
       responses:
         "200": { description: 导入结果统计, content: { application/json: { schema: { $ref: "#/components/schemas/TxtImportResult" } } } }
+    get:
+      summary: 已导入的 TXT 文件名列表（旧版数据管理「TXT导入作者」卡片）
+      description: 片段存于 kv_settings（imported_txt_sources）；同 filename 重导入为覆盖更新。
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/TxtImportedFile" } } } } }
+    delete:
+      summary: 移除一个已导入 TXT 片段并从剩余片段统一重建
+      description: |
+        旧版数据管理「TXT导入作者」删除语义：从 imported_txt_sources 移除该
+        片段，随后以「全部已导入 TXT 统一重建」口径从剩余片段重算作者与关联
+        （DOMAIN_RULES §6）。重建后零关联的常规作者保留（不级联删作者行）。
+      parameters:
+        - { name: filename, in: query, required: true, schema: { type: string } }
+      responses:
+        "204": { description: 已移除并重建 }
+        "404": { $ref: "#/components/responses/NotFound" }
   /api/v1/authors/{authorId}/follow:
     put:
       summary: 设置/取消关注作者（DOMAIN_RULES §6/§7 关注语义）
@@ -628,6 +648,7 @@ components:
         key:       { type: string, description: 回传筛选值（分区/类型枚举值、authorId、角色名或 COS 作品名） }
         name:      { type: string, description: 显示名（作者/角色/作品为原名，分区/类型为中文标签） }
         fileCount: { type: integer, description: 该文件数在当前「其他维度」选择下统计（排自身口径） }
+        kind:      { type: string, enum: [source, author, character, work], description: 该候选回传哪个筛选参数（source=GET /assets 的 source；author=authorId；character=character；work=work）。同一胶囊栏混合两种候选（作者栏=出处+COS 作者，全部分区角色栏=角色+作品）时前端按此分派 }
 
     AssetFacets:
       type: object
@@ -635,8 +656,8 @@ components:
       required: [partitions, authors, characters, types]
       properties:
         partitions: { type: array, items: { $ref: "#/components/schemas/FacetBucket" }, description: 固定 all/regular/cos 三项 }
-        authors:    { type: array, items: { $ref: "#/components/schemas/FacetBucket" }, description: 有文件的作者（常规 TXT 作者 + COS 作者），key=authorId，按 fileCount 降序 }
-        characters: { type: array, items: { $ref: "#/components/schemas/FacetBucket" }, description: 常规分区=角色名；COS 分区=COS 作品名。按 fileCount 降序 }
+        authors:    { type: array, items: { $ref: "#/components/schemas/FacetBucket" }, description: 作者栏候选（旧版「作品」栏语义）：常规出处分组（kind=source，含「其他」桶）+ COS 作者（kind=author）按分区合并，按 fileCount 降序。常规 TXT 作者不在此栏 }
+        characters: { type: array, items: { $ref: "#/components/schemas/FacetBucket" }, description: 常规分区=角色名（kind=character）；COS 分区=COS 作品名（kind=work）；全部分区=两者合并。按 fileCount 降序 }
         types:      { type: array, items: { $ref: "#/components/schemas/FacetBucket" }, description: 固定 all/image/animated_image/video 四项（key=MediaType 枚举值，可直接回传 GET /assets 的 mediaType） }
 
     CountRange:
@@ -817,6 +838,13 @@ components:
       properties:
         authorsImported: { type: integer }
         filesMatched:    { type: integer }
+
+    TxtImportedFile:
+      type: object
+      description: 已导入 TXT 片段（GET /api/v1/authors/import-txt 响应条目）
+      required: [filename]
+      properties:
+        filename: { type: string, description: 片段名（空串=匿名导入的最近一份） }
 
     StatsOverview:
       type: object

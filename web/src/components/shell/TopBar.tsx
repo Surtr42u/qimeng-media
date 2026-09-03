@@ -2,7 +2,8 @@
  * 顶栏（75px）：左侧分类 tabs（推荐/cos/排行榜）+ 居中搜索框（含下拉面板）+
  * 右侧窗口控件（浏览器环境纯装饰）。
  * - tabs 与榜单周期行只在首页显示（原型拍板）：由当前路由推导，非 JS 手动显隐；
- * - 排行榜 tab 激活时在顶栏下方渲染日/月/周/年榜周期行（rank-panel）；
+ * - tab/周期收敛到 URL 参数（?tab=/period=）：TopBar 只写、HomePage 只读，
+ *   刷新/直达不丢态；排行榜 tab 激活时在顶栏下方渲染日/月/周/年榜周期行；
  * - 搜索框回车/点历史词进入搜索结果页（/app/search?q=）；
  * - 搜索历史 = localStorage（最多 20 条去重最新在前，打开面板显示前 8 条）；
  * - 推荐搜索词 = 标签/作者按 fileCount 前若干名组合（真实数据，点击同历史词行为）。
@@ -12,17 +13,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router'
 import { useAuthors } from '@/hooks/use-authors'
 import { useTags } from '@/hooks/use-tags'
+import { HOME_TABS, RANK_PERIODS, parseRankPeriod } from '@/lib/home-tabs'
 import { ChevronDownIcon, ClearIcon, SearchIcon, WinCloseIcon, WinMaxIcon, WinMinIcon } from './icons'
-
-/** 顶栏分类 tab 定义（原型 data-tab 值；hot = 排行榜） */
-const HEADER_TABS = [
-  { key: 'recommend', label: '推荐' },
-  { key: 'cos', label: 'cos' },
-  { key: 'hot', label: '排行榜' },
-] as const
-
-/** 榜单周期胶囊（原型固定四档，阶段 A 仅切换高亮） */
-const RANK_PERIODS = ['日榜', '月榜', '周榜', '年榜']
 
 /** 搜索历史 localStorage 键名（本次接真引入，无协议联动） */
 const HISTORY_STORAGE_KEY = 'qimeng_search_history'
@@ -58,9 +50,8 @@ export function TopBar() {
 
   const isHome = pathname === '/app/home'
   const showRankPanel = isHome && activeTab === 'hot'
-
-  // 榜单周期胶囊单选（原型语义：点谁谁高亮，默认日榜）
-  const [rankPeriod, setRankPeriod] = useState(0)
+  // 周期行当前值 = URL ?period=（URL 驱动，刷新/直达不丢态；缺省日榜）
+  const rankPeriod = parseRankPeriod(searchParams.get('period'))
 
   // 搜索框状态：输入值 / 面板开关 / 历史块 / 历史展开
   const [query, setQuery] = useState('')
@@ -123,11 +114,12 @@ export function TopBar() {
   }
 
   const switchTab = (key: string): void => {
-    // 原型语义：每次进入排行榜态，周期行重置为日榜
-    if (key === 'hot') setRankPeriod(0)
     const next = new URLSearchParams(searchParams)
     if (key === 'recommend') next.delete('tab')
     else next.set('tab', key)
+    // 周期只在排行榜态有意义：离开 hot 时清掉（原型：每次重新进入重置日榜，
+    // 即不带 period 参数 = 日榜）
+    if (key !== 'hot') next.delete('period')
     setSearchParams(next, { replace: true })
   }
 
@@ -140,7 +132,7 @@ export function TopBar() {
       <header className="header">
         <div className="header--left">
           <nav className="tabs" hidden={!isHome}>
-            {HEADER_TABS.map((t) => (
+            {HOME_TABS.map((t) => (
               <button
                 key={t.key}
                 className={`tab${activeTab === t.key ? ' active' : ''}`}
@@ -255,14 +247,19 @@ export function TopBar() {
       {showRankPanel ? (
         <div className="rank-panel">
           <div className="rank-tabs">
-            {RANK_PERIODS.map((p, i) => (
+            {RANK_PERIODS.map((p) => (
               <button
-                key={p}
-                className={`rank-tab${rankPeriod === i ? ' active' : ''}`}
+                key={p.key}
+                className={`rank-tab${rankPeriod === p.key ? ' active' : ''}`}
                 type="button"
-                onClick={() => setRankPeriod(i)}
+                onClick={() => {
+                  const next = new URLSearchParams(searchParams)
+                  next.set('tab', 'hot')
+                  next.set('period', p.key)
+                  setSearchParams(next, { replace: true })
+                }}
               >
-                {p}
+                {p.label}
               </button>
             ))}
           </div>

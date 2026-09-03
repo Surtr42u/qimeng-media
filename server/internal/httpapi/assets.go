@@ -129,7 +129,7 @@ func newAssetFilters(params gen.GetApiV1AssetsParams) assetFilters {
 		f.MediaType = nullStr(string(*params.MediaType))
 	}
 	if params.Source != nil {
-		if *params.Source == "其他" {
+		if *params.Source == sourceOtherLabel {
 			f.SourceIsOther = 1
 		} else {
 			f.Source = nullStr(*params.Source)
@@ -558,12 +558,18 @@ func parseStoreTime(s string) time.Time {
 	return t
 }
 
+// sourceOtherLabel 「其他」出处桶的用户面名称（DOMAIN_RULES §4：未匹配出处的
+// 归「其他」）。GET /assets 与 GET /assets/facets 的 source 参数用它回传
+// source_is_other 标志，displaySource 用它兜底 NULL 显示——三处同一常量，
+// 改词必须三处同步（代码卫生约束第 2/3 条）。
+const sourceOtherLabel = "其他"
+
 // displaySource 把 NULL 出处显示为"其他"（DOMAIN_RULES §4 分区语义）。
 func displaySource(src sql.NullString) string {
 	if src.Valid && src.String != "" {
 		return src.String
 	}
-	return "其他"
+	return sourceOtherLabel
 }
 
 // uuidOrNil 解析资产 ID；库中主键由服务端生成，解析失败属数据损坏——

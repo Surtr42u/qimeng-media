@@ -10,9 +10,38 @@
 
 ---
 
-## 搜索页类型档加「动图」（2026-09-03 第四笔）
+## 相册作者/角色行语义修正（旧版「全部」tab 口径）+ 首页 cos/排行榜 + 文件管理 TXT 卡（2026-09-03 第五笔）
 
-执行 AI：GLM-5.3-Flash（主代理，ZCode）
+执行 AI：DeepSeek-V4-Flash（主代理，WorkBuddy）
+
+用户指出 4320f3e（第三笔）相册四维聚合没做完的三件事 + 署名排查：① 相册「作者」行应是 **COS 作者 + 常规出处分组两个集合**（现在只有 COS 作者）、角色行缺 COS（作品）；② 首页 cos/排行榜 tab 依旧不生效；③ 文件管理缺 TXT 单独卡片（旧项目「数据管理」）。另按项目记忆修正第三/四笔署名工具名 ZCode→WorkBuddy（实际运行环境）。
+
+### ① 相册作者/角色行语义对齐旧版「全部」tab（协议+服务端+Web 同改）
+
+- **作者行语义（用户拍板，替代原 authorId 全量作者）**：作者行 = 常规**出处分组**（kind=source，含「其他」桶 = NULL source 且非 COS 关联；COS 资产永不进出处——browse.sql 的 source_is_other 谓词全查询加 NOT EXISTS cos 排除，与旧版 groupBySource(!isCosFile) 一致）∪ **COS 作者**（kind=author）按分区合并——常规分区只出处、COS 分区只 COS 作者、全部（all）分区两者合并。常规 TXT 作者表行**不进**作者行（作者体系保留在 /authors 与集合页）。FacetBucket 加 `kind` 枚举（source/author/character/work）——同一胶囊行混合两种候选时前端按 kind 分派筛选参数。
+- **角色行**：全部（all）分区 = 常规角色名（kind=character）∪ COS 作品名（kind=work）合并（第三笔只合并了 author 维度，角色维只在单分区各自生效——已修）；character 与 work 同属角色行，排自身时一起忽略。
+- **FacetSourceCounts 新查询**（facets.sql）：非 COS 关联资产按 source 分组（含 NULL 行=「其他」）；FacetAuthorCounts 收敛 `au.type='cos'`；六查询统一补 source 谓词（author 行选中对其他三维生效）与排自身维度表文件头。
+- **Web 相册页**：修分区默认值 bug——原 `partition !== regular ? {partition} : {}` 在缺省分区不传参，服务端按 all 处理致作者行语义错乱；现在 partition **恒显式传参**。作者/角色值行候选携带 kind，点出处胶囊→source 筛选、点 COS 作者→authorId、点角色→character、点 COS 作品→work；分区缺省改「全部」（= 旧版「全部」tab，两集合并排可见），切分区清作者/角色（候选命名空间随分区变化）。作者行/角色行前补「全部」胶囊（value='' 清除本行）。
+- 测试：facets_test 重写 2 用例 + 夹具补 source（a.jpg 无出处→「其他」、b.jpg kemono、c.mp4 视频无出处）锁定新口径（作者行 全部=其他2+kemono1+COS作者2、regular 只出处、cos 只 COS 作者、选角色后作者行=含该角色资产的出处、选出处后角色行排自身全量等）；go test 14 包全绿。
+
+### ② 首页 cos/排行榜 tab 生效（Web，URL 驱动）
+
+- 根因：HomePage 忽略 `?tab=` 恒渲染推荐流；顶栏 rankPeriod 是 TopBar 私有 state，榜单数据无入口。修复：tab/周期收敛 URL 参数（`?tab=recommend|cos|hot`、`?period=day|week|month|year`，TopBar 只写、HomePage 只读，刷新直达不丢态）；`lib/home-tabs.ts` 双端共享常量。hot 内容榜 = ContentRankGrid + useRankings(period)（纯热度口径 DOMAIN_RULES §2，周期行缺省日榜）；cos = GET /assets cosOnly 浏览流（COS 独立入口落地）。
+
+### ③ 文件管理 TXT 卡片（旧项目数据管理「TXT导入作者」）
+
+- **服务端**：GET/DELETE `/api/v1/authors/import-txt`（openapi→make sdk→sqlc）——GET 返回已导入片段名升序；DELETE 移除片段并从**剩余片段**统一重建（204/404）。authors.go 重建核心拆 `mergeTxtSources/upsertMergedAuthors/insertLinks/rebuildAll` 四件套复用：删除路径以「删除前」全量片段为删关联目标（作者只出现在被删片段时旧关联一并清掉）、「删除后」剩余为重建来源；作者行保留不级联删（openapi 语义）。删关联**不按 type='regular' 全删**——旧项目迁移（import.go）也写 regular 关联，只能删已导入片段涉及作者的关联。
+- **Web**：use-authors 增 useTxtImportedFiles/useImportAuthorTxt/useDeleteImportedTxt；文件管理页（/app/maintenance/files）新增「作者 TXT 导入」卡——选 .txt 导入（读文件内容 POST，同名覆盖）、片段列表、逐份移除（toast 导入计数/成功反馈）。
+- 测试：TestAuthorsTxtManageList（GET 升序、删单片段并集不受影响、作者只在被删片段→关联清空行保留、删光→空列表、404）+ 既有导入全链回归。
+
+### 已知限制（记账）
+
+- 上传路径不做富化（source/角色/作者/cos_work，既有缺口）；ArtPlayer 播放器 UI、confirm 原型弹窗、设置页三卡持久化、客户端异常上报通道沿用记账。
+- 相册页徽标仍为 4 个独立 facets 请求（本地聚合量级可控，无合并端点需求）。
+
+---
+
+执行 AI：GLM-5.3-Flash（主代理，WorkBuddy）
 
 HANDOVER_UI §5 待办项：搜索页类型 tab 从 综合/视频/图片 三档扩为四档（+动图=mediaType animated_image，计数走 useAssetsTotal）——与相册页类型维、协议 MediaType 枚举（image/animated_image/video）对齐。纯前端小改（SearchPage.tsx 四处），协议零变化；tsc + build 通过。用户拍板暂停后续小任务（confirm 原型风格弹窗、上传路径富化两项仍记账待做）。
 
@@ -20,7 +49,7 @@ HANDOVER_UI §5 待办项：搜索页类型 tab 从 综合/视频/图片 三档�
 
 ## 相册四维聚合：GET /assets/facets + migration 0008 cos_work + 相册页四维胶囊（2026-09-03 第三笔）
 
-执行 AI：GLM-5.3-Flash（主代理，ZCode）
+执行 AI：GLM-5.3-Flash（主代理，WorkBuddy）
 
 上一会话半成品接续（HANDOVER_UI §5 待办「相册作品/角色聚合维度端点」：协议与 facets.sql/migration 0008 已写、停在生成链重建之前），本会话完成生成链、scanner 写入、handler、web 接入全链路。
 

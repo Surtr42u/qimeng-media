@@ -1,7 +1,8 @@
 // authors.go：作者体系端点（M3，DOMAIN_RULES §6）。
 //
-// 三个端点：作者列表（常规与 COS 统一返回）、TXT 导入（三格式自动识别 +
-// 统一重建语义）、关注置位/取消。
+// 端点：作者列表（常规与 COS 统一返回）、TXT 导入（POST 三格式自动识别 +
+// 统一重建）、已导入 TXT 列表（GET）/移除（DELETE，从剩余片段统一重建）、
+// 关注置位/取消。
 //
 // TXT 导入的存储与重建语义（GUIDE_AUTHOR「双向匹配机制」，DOMAIN_RULES
 // §6「TXT 导入以全部已导入 TXT 统一重建为语义」）：
@@ -16,6 +17,12 @@
 //     隔离口径排除（查询 ListNormalAssetsForAuthorMatch）；
 //   - 新文件入库后的自动重匹配由扫描路径外的本端点承担（重新导入/刷新即
 //     全量重建），scanner 不感知 TXT 片段（作者规则与扫描器解耦）。
+//
+// 删关联目标的口径（removeTxtSource）：regular 作者的关联不全是 TXT 产物
+// ——旧项目迁移（import.go）也会写 regular 作者关联，故重建**只能**删
+// 「已导入片段涉及作者」的关联（DeleteAssetAuthorsByAuthorIds），不得按
+// type='regular' 全删。删除路径以「删除前」全量片段为删关联目标（作者从
+// 剩余片段消失时旧关联一并清掉），以「删除后」剩余片段为重建来源。
 package httpapi
 
 import (
@@ -24,6 +31,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"sort"
 	"strings"
 
 	"qimeng-media/server/internal/authoring"
@@ -138,13 +146,132 @@ type rebuiltAuthor struct {
 	works       []string
 }
 
-// rebuildFromAllSources 统一重建（事务内调用）：
-// 存片段 → 全量解析合并 → upsert 作者 → 删相关作者旧关联 → 按作品名匹配
-// normal 库资产重插关联。返回「本次传入 content」的匹配文件数（计数只算
-// 本次导入的作品，不含历史片段贡献——响应是"本次导入结果统计"）。
+// persistTxtSources 把片段数组序列化写回 kv_settings（空数组也写入——
+// 删到零片段时保留空壳，GET 返回空列表）。
+func (s *Server) persistTxtSources(ctx context.Context, qtx *db.Queries, sources []txtSource) error {
+	raw, err := json.Marshal(sources)
+	if err != nil {
+		return err
+	}
+	return qtx.UpsertSetting(ctx, db.UpsertSettingParams{
+		Key:       authoring.SettingKeyImportedTxtSources,
+		Value:     string(raw),
+		UpdatedAt: store.FormatTimestamp(s.now()),
+	})
+}
+
+// mergeTxtSources 全量解析合并：authorId 相同的跨片段作者合并作品集
+// （显示名首遇保留——同名作者在多个编号行中合并关联文件，不合并别名列表）。
+func mergeTxtSources(sources []txtSource) map[string]*rebuiltAuthor {
+	merged := make(map[string]*rebuiltAuthor)
+	for _, src := range sources {
+		for _, b := range authoring.ParseAuthorBlocks(src.Content) {
+			if len(b.AuthorNames) == 0 {
+				continue
+			}
+			id := authoring.GenerateAuthorID(b.AuthorNames[0])
+			if ra, ok := merged[id]; ok {
+				ra.works = append(ra.works, b.Works...)
+				continue
+			}
+			merged[id] = &rebuiltAuthor{displayName: b.DisplayName, works: append([]string(nil), b.Works...)}
+		}
+	}
+	return merged
+}
+
+// orderedAuthorIDs 把合并集 id 排成确定性顺序（map 迭代无序，删除/重插的
+// 顺序稳定便于测试与回放）。
+func orderedAuthorIDs(merged map[string]*rebuiltAuthor) []string {
+	ids := make([]string, 0, len(merged))
+	for id := range merged {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+// upsertMergedAuthors 事务内：把合并集里的作者写成 regular 作者行（upsert
+// 幂等；格式 C 与旧项目迁移也可能建过同名行，覆盖不删）。
+func (s *Server) upsertMergedAuthors(ctx context.Context, qtx *db.Queries, merged map[string]*rebuiltAuthor) error {
+	now := store.FormatTimestamp(s.now())
+	for _, id := range orderedAuthorIDs(merged) {
+		ra := merged[id]
+		if err := qtx.UpsertAuthor(ctx, db.UpsertAuthorParams{
+			ID:          id,
+			DisplayName: ra.displayName,
+			Type:        authoring.AuthorTypeRegular,
+			CreatedAt:   now,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// insertLinks 事务内：以 merged 为重建来源，按作品名匹配 normal 库资产
+// 全量重插关联（调用方先负责删旧关联）。countWorks 非 nil 时累计
+// 「作品 ∈ countWorks[id]」的匹配文件数（导入响应口径=本次导入贡献）；
+// 删除路径传 nil 不计。
+func (s *Server) insertLinks(ctx context.Context, qtx *db.Queries, merged map[string]*rebuiltAuthor, countWorks map[string][]string) (int, error) {
+	rows, err := qtx.ListNormalAssetsForAuthorMatch(ctx)
+	if err != nil {
+		return 0, err
+	}
+	domain := make([]authoring.MediaFile, 0, len(rows))
+	for _, row := range rows {
+		domain = append(domain, authoring.MediaFile{AssetID: row.AssetID, FileName: row.FileName})
+	}
+
+	filesMatched := 0
+	for _, id := range orderedAuthorIDs(merged) {
+		ra := merged[id]
+		thisWorks := countWorks[id]
+		countSet := make(map[string]bool, len(thisWorks))
+		for _, w := range thisWorks {
+			countSet[w] = true
+		}
+		seenWork := make(map[string]bool, len(ra.works))
+		for _, w := range ra.works {
+			if seenWork[w] {
+				continue
+			}
+			seenWork[w] = true
+			matches := authoring.MatchWorks(w, domain)
+			for _, f := range matches {
+				if err := qtx.AddAssetAuthor(ctx, db.AddAssetAuthorParams{
+					AssetID: f.AssetID, AuthorID: id,
+				}); err != nil {
+					return 0, err
+				}
+			}
+			if countSet[w] {
+				filesMatched += len(matches)
+			}
+		}
+	}
+	return filesMatched, nil
+}
+
+// rebuildAll 统一重建事务内主流程：保证 merged（删关联目标）的作者行存在
+// → 删其全部旧关联 → 从 relink（重建来源）全量重插。常规路径 merged 与
+// relink 同集；删除路径 merged=删除前全量、relink=删除后剩余（作者从剩余
+// 片段消失时旧关联被一并清掉）。countWorks 见 insertLinks。
+func (s *Server) rebuildAll(ctx context.Context, qtx *db.Queries, merged, relink map[string]*rebuiltAuthor, countWorks map[string][]string) (int, error) {
+	if err := s.upsertMergedAuthors(ctx, qtx, merged); err != nil {
+		return 0, err
+	}
+	if err := qtx.DeleteAssetAuthorsByAuthorIds(ctx, orderedAuthorIDs(merged)); err != nil {
+		return 0, err
+	}
+	return s.insertLinks(ctx, qtx, relink, countWorks)
+}
+
+// rebuildFromAllSources 统一重建（导入路径，事务内调用）：先覆盖式 upsert
+// 本次片段（同 filename 覆盖内容；filename 空串也是合法键——匿名导入只保留
+// 最近一份），再对「全部已导入片段」统一重建。返回本次传入 content 的匹配
+// 文件数（filesMatched 只统计本次导入的作品，不含历史片段贡献）。
 func (s *Server) rebuildFromAllSources(ctx context.Context, qtx *db.Queries, currentBlocks []authoring.AuthorBlock, filename *string, content string) (int, error) {
-	// 1) 覆盖式 upsert 本次片段（同 filename 覆盖内容；filename 空串也是
-	// 一个合法键——匿名导入只保留最近一份）。
 	sources, err := loadTxtSources(ctx, qtx)
 	if err != nil {
 		return 0, err
@@ -164,100 +291,52 @@ func (s *Server) rebuildFromAllSources(ctx context.Context, qtx *db.Queries, cur
 	if !updated {
 		sources = append(sources, txtSource{Filename: thisName, Content: content})
 	}
-	raw, err := json.Marshal(sources)
-	if err != nil {
-		return 0, err
-	}
-	if err := qtx.UpsertSetting(ctx, db.UpsertSettingParams{
-		Key:       authoring.SettingKeyImportedTxtSources,
-		Value:     string(raw),
-		UpdatedAt: store.FormatTimestamp(s.now()),
-	}); err != nil {
+	if err := s.persistTxtSources(ctx, qtx, sources); err != nil {
 		return 0, err
 	}
 
-	// 2) 全量解析合并：authorId 相同的跨片段作者合并作品集（显示名首遇
-	// 保留——同名作者在多个编号行中合并关联文件，不合并别名列表）。
-	merged := make(map[string]*rebuiltAuthor)
-	for _, src := range sources {
-		for _, b := range authoring.ParseAuthorBlocks(src.Content) {
-			if len(b.AuthorNames) == 0 {
-				continue
-			}
-			id := authoring.GenerateAuthorID(b.AuthorNames[0])
-			if ra, ok := merged[id]; ok {
-				ra.works = append(ra.works, b.Works...)
-				continue
-			}
-			merged[id] = &rebuiltAuthor{displayName: b.DisplayName, works: append([]string(nil), b.Works...)}
-		}
-	}
-	// 本次导入的作品集（计数范围锚点：filesMatched 只统计本次 TXT 的作品
-	// 匹配到的文件，不含历史片段贡献——响应是"本次导入结果统计"）。
-	currentWorks := make(map[string][]string, len(currentBlocks))
+	merged := mergeTxtSources(sources)
+	// 本次导入的作品集（filesMatched 计数锚点）。
+	countWorks := make(map[string][]string, len(currentBlocks))
 	for _, b := range currentBlocks {
 		if len(b.AuthorNames) == 0 {
 			continue
 		}
 		id := authoring.GenerateAuthorID(b.AuthorNames[0])
-		currentWorks[id] = append(currentWorks[id], b.Works...)
+		countWorks[id] = append(countWorks[id], b.Works...)
 	}
+	return s.rebuildAll(ctx, qtx, merged, merged, countWorks)
+}
 
-	// 3) upsert 作者 + 删全部相关作者旧关联（统一重建先删后插）。
-	now := store.FormatTimestamp(s.now())
-	ids := make([]string, 0, len(merged))
-	for id, ra := range merged {
-		if err := qtx.UpsertAuthor(ctx, db.UpsertAuthorParams{
-			ID:          id,
-			DisplayName: ra.displayName,
-			Type:        authoring.AuthorTypeRegular,
-			CreatedAt:   now,
-		}); err != nil {
-			return 0, err
-		}
-		ids = append(ids, id)
-	}
-	if err := qtx.DeleteAssetAuthorsByAuthorIds(ctx, ids); err != nil {
-		return 0, err
-	}
+// errTxtSourceNotFound 是 DELETE 移除不存在的片段时的哨兵错误
+// （handler 映射 404；事务内判断，确保移除+重建原子）。
+var errTxtSourceNotFound = errors.New("txt source not found")
 
-	// 4) 匹配域装载一次（normal 库全部资产），逐作者逐作品匹配重插。
-	rows, err := qtx.ListNormalAssetsForAuthorMatch(ctx)
+// removeTxtSource 移除一个片段并从剩余片段统一重建（DELETE 路径，事务内
+// 调用）。删关联目标 = 删除前全量片段的作者集——作者只在被删片段出现时，
+// 其旧关联随删除清空；重建来源 = 删除后剩余片段。作者行保留不级联删除
+// （openapi：重建后零关联的常规作者保留）。
+func (s *Server) removeTxtSource(ctx context.Context, qtx *db.Queries, filename string) error {
+	before, err := loadTxtSources(ctx, qtx)
 	if err != nil {
-		return 0, err
+		return err
 	}
-	domain := make([]authoring.MediaFile, 0, len(rows))
-	for _, row := range rows {
-		domain = append(domain, authoring.MediaFile{AssetID: row.AssetID, FileName: row.FileName})
-	}
-
-	filesMatched := 0
-	for _, id := range ids {
-		ra := merged[id]
-		thisSet := make(map[string]bool, len(currentWorks[id]))
-		for _, w := range currentWorks[id] {
-			thisSet[w] = true
-		}
-		seenWork := make(map[string]bool, len(ra.works))
-		for _, w := range ra.works {
-			if seenWork[w] {
-				continue
-			}
-			seenWork[w] = true
-			matches := authoring.MatchWorks(w, domain)
-			for _, f := range matches {
-				if err := qtx.AddAssetAuthor(ctx, db.AddAssetAuthorParams{
-					AssetID: f.AssetID, AuthorID: id,
-				}); err != nil {
-					return 0, err
-				}
-			}
-			if thisSet[w] {
-				filesMatched += len(matches)
-			}
+	idx := -1
+	for i := range before {
+		if before[i].Filename == filename {
+			idx = i
+			break
 		}
 	}
-	return filesMatched, nil
+	if idx < 0 {
+		return errTxtSourceNotFound
+	}
+	remaining := append(append([]txtSource(nil), before[:idx]...), before[idx+1:]...)
+	if err := s.persistTxtSources(ctx, qtx, remaining); err != nil {
+		return err
+	}
+	_, err = s.rebuildAll(ctx, qtx, mergeTxtSources(before), mergeTxtSources(remaining), nil)
+	return err
 }
 
 // loadTxtSources 读全部已导入片段（无记录/空数组 → nil）。
@@ -274,6 +353,51 @@ func loadTxtSources(ctx context.Context, qtx *db.Queries) ([]txtSource, error) {
 		return nil, err
 	}
 	return sources, nil
+}
+
+// GetApiV1AuthorsImportTxt 已导入的 TXT 文件名列表（旧版数据管理
+// 「TXT导入作者」卡片；按文件名升序，匿名导入的空名排最前）。
+func (s *Server) GetApiV1AuthorsImportTxt(w http.ResponseWriter, r *http.Request) {
+	sources, err := loadTxtSources(r.Context(), s.q)
+	if err != nil {
+		s.internalErr(w, "查询已导入 TXT", err)
+		return
+	}
+	names := make([]string, 0, len(sources))
+	for _, src := range sources {
+		names = append(names, src.Filename)
+	}
+	sort.Strings(names)
+	out := make([]gen.TxtImportedFile, 0, len(names))
+	for _, n := range names {
+		out = append(out, gen.TxtImportedFile{Filename: n})
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// DeleteApiV1AuthorsImportTxt 移除一个已导入 TXT 片段并从剩余片段统一
+// 重建（204；不存在 → 404）。
+func (s *Server) DeleteApiV1AuthorsImportTxt(w http.ResponseWriter, r *http.Request, params gen.DeleteApiV1AuthorsImportTxtParams) {
+	tx, err := s.conn.BeginTx(r.Context(), nil)
+	if err != nil {
+		s.internalErr(w, "移除 TXT 片段", err)
+		return
+	}
+	defer func() { _ = tx.Rollback() }()
+	qtx := s.q.WithTx(tx)
+	if err := s.removeTxtSource(r.Context(), qtx, params.Filename); err != nil {
+		if errors.Is(err, errTxtSourceNotFound) {
+			writeErr(w, http.StatusNotFound, "NOT_FOUND", "TXT 片段不存在")
+			return
+		}
+		s.internalErr(w, "移除 TXT 片段", err)
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		s.internalErr(w, "移除 TXT 片段", err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // PutApiV1AuthorsAuthorIdFollow 设置/取消关注作者（DOMAIN_RULES §6/§7：
