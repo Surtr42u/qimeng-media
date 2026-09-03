@@ -10,6 +10,20 @@
 
 ---
 
+## 常规作者关联丢失修复：TXT 匹配重放端点 + 文件管理页「重新匹配」按钮（2026-09-04 第八笔）
+
+执行 AI：GLM-5.3-Flash（主代理，ZCode；执行子代理实施 + 主代理数据恢复）
+
+用户反馈卡片作者行只有 COS 文件生效、常规文件不显示。排查结论：**第七笔协议链路本身正确**（ListAuthorNamesForAssets 无 type 过滤、装配无过滤），根因在数据层——`asset_authors` 表 regular 关联为 0（qimeng.db.bak-20260831 备份中有 810 条），2026-09-03 重建库后 COS 关联由扫描器从目录结构自动重建（5558 条），而常规关联架构上只在 TXT 导入那一刻建立、无重放入口，TXT 片段虽完整保存在 kv_settings 却无人重放。
+
+- **`POST /authors/import-txt/rebuild`**（openapi 先行 + make sdk 三端重建）：幂等重放 kv_settings 已存全部 TXT 片段→事务内复用 `rebuildAll` 重建常规作者-文件关联；不新增/修改/删除片段；无片段返回零值。计数口径：authorsImported=合并后作者数、filesMatched=（作者,去重作品）对匹配数（与导入响应同口径）。
+- **web 文件管理页 TXT 卡**新增「重新匹配」按钮（`useRebuildAuthorTxt` hook，无片段禁用，成功 toast 作者/关联计数）。
+- 测试：TestAuthorsTxtRebuild（导入→手工清关联模拟丢失→重放恢复→再放幂等不翻倍→片段列表不变）+ TestAuthorsTxtRebuildEmpty（空片段 0/0）。
+- **真库数据恢复**（主代理执行）：触发重放恢复 122 位常规作者、关联 764 条（8-31 备份为 810，差异为当前库文件集自然演进）；冒烟验证常规文件 authorNames 返回真实作者名。
+- 文档：GUIDE_API 作者行补 rebuild 端点说明。
+
+---
+
 ## 原型七组缺陷 web 正式端移植（协议 AssetSummary.authorNames 全链路）+ 原型 CSS 双缺陷修复 + 归档会话质量审查（2026-09-03 第七笔）
 
 执行 AI：GLM-5.3-Flash（主代理，ZCode；执行×3 + 对抗审查×2 子代理）

@@ -14,6 +14,7 @@ import {
   getApiV1Authors,
   getApiV1AuthorsImportTxt,
   postApiV1AuthorsImportTxt,
+  postApiV1AuthorsImportTxtRebuild,
   putApiV1AuthorsByAuthorIdFollow,
 } from '@/api/generated'
 import { unwrapSdkResult } from '@/lib/api-client'
@@ -65,6 +66,19 @@ export function useImportAuthorTxt() {
       ),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: TXT_FILES_QUERY_KEY })
+      qc.invalidateQueries({ queryKey: AUTHORS_QUERY_KEY })
+    },
+  })
+}
+
+/** 重放全部已导入 TXT 片段重建常规作者-文件关联（POST /authors/import-txt/rebuild；
+ *  幂等修复入口：不新增/修改片段，库重建/关联丢失后重放恢复；无片段返回零值）。
+ *  onSuccess 由调用方注入（toast）；重放只改关联，失效作者列表。 */
+export function useRebuildAuthorTxt() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => unwrapSdkResult(postApiV1AuthorsImportTxtRebuild()),
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: AUTHORS_QUERY_KEY })
     },
   })

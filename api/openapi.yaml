@@ -468,6 +468,18 @@ paths:
       responses:
         "204": { description: 已移除并重建 }
         "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/authors/import-txt/rebuild:
+    post:
+      summary: 重放全部已导入 TXT 片段，重建常规作者-文件关联（幂等修复入口）
+      description: |
+        从 kv_settings（imported_txt_sources）载入全部已导入 TXT 片段，以
+        「全部已导入 TXT 统一重建」口径（DOMAIN_RULES §6）重建常规作者与
+        normal 资产的关联。幂等重放：不新增、不修改、不删除任何已存片段，
+        仅删旧关联后按片段并集全量重插——库重建/关联意外丢失后的修复入口。
+        authorsImported=片段合并后的作者数；filesMatched=本次重放匹配到的
+        文件关联数。无已存片段时返回零值（两个计数均为 0）。
+      responses:
+        "200": { description: 重建结果统计, content: { application/json: { schema: { $ref: "#/components/schemas/TxtImportResult" } } } }
   /api/v1/authors/{authorId}/follow:
     put:
       summary: 设置/取消关注作者（DOMAIN_RULES §6/§7 关注语义）

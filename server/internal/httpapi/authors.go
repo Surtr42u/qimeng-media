@@ -1,8 +1,8 @@
 // authors.go：作者体系端点（M3，DOMAIN_RULES §6）。
 //
 // 端点：作者列表（常规与 COS 统一返回）、TXT 导入（POST 三格式自动识别 +
-// 统一重建）、已导入 TXT 列表（GET）/移除（DELETE，从剩余片段统一重建）、
-// 关注置位/取消。
+// 统一重建）、已导入 TXT 列表（GET）/移除（DELETE，从剩余片段统一重建）/
+// 全量重放（POST rebuild，从已存片段重建关联）、关注置位/取消。
 //
 // TXT 导入的存储与重建语义（GUIDE_AUTHOR「双向匹配机制」，DOMAIN_RULES
 // §6「TXT 导入以全部已导入 TXT 统一重建为语义」）：
@@ -398,6 +398,49 @@ func (s *Server) DeleteApiV1AuthorsImportTxt(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// PostApiV1AuthorsImportTxtRebuild 重放全部已导入 TXT 片段并重建常规作者-文件
+// 关联（库重建/关联意外丢失后的修复入口）。幂等：片段内容不变，不调
+// persistTxtSources 写回，只按已存片段并集删旧关联再全量重插；无片段时
+// 直接返回零值。计数口径：authorsImported=片段合并后的作者数；
+// filesMatched=全部（作者, 去重作品）对的匹配文件数（countWorks 传每个
+// 作者的全部作品名 = 全量计数，insertLinks 内按作品去重不翻倍）。
+func (s *Server) PostApiV1AuthorsImportTxtRebuild(w http.ResponseWriter, r *http.Request) {
+	tx, err := s.conn.BeginTx(r.Context(), nil)
+	if err != nil {
+		s.internalErr(w, "重放 TXT 重建关联", err)
+		return
+	}
+	defer func() { _ = tx.Rollback() }()
+	qtx := s.q.WithTx(tx)
+
+	sources, err := loadTxtSources(r.Context(), qtx)
+	if err != nil {
+		s.internalErr(w, "重放 TXT 重建关联", err)
+		return
+	}
+	if len(sources) == 0 {
+		zero := 0
+		writeJSON(w, http.StatusOK, gen.TxtImportResult{AuthorsImported: &zero, FilesMatched: &zero})
+		return
+	}
+	merged := mergeTxtSources(sources)
+	countWorks := make(map[string][]string, len(merged))
+	for id, ra := range merged {
+		countWorks[id] = ra.works
+	}
+	filesMatched, err := s.rebuildAll(r.Context(), qtx, merged, merged, countWorks)
+	if err != nil {
+		s.internalErr(w, "重放 TXT 重建关联", err)
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		s.internalErr(w, "重放 TXT 重建关联", err)
+		return
+	}
+	imported := len(merged)
+	writeJSON(w, http.StatusOK, gen.TxtImportResult{AuthorsImported: &imported, FilesMatched: &filesMatched})
 }
 
 // PutApiV1AuthorsAuthorIdFollow 设置/取消关注作者（DOMAIN_RULES §6/§7：

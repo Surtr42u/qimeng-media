@@ -5,7 +5,7 @@ import {
   useDeleteLibrary, useLibraries, useRegisterLibrary, useScanLibrary, useSetLibraryEnabled,
 } from '@/hooks/use-libraries'
 import {
-  useDeleteImportedTxt, useImportAuthorTxt, useTxtImportedFiles,
+  useDeleteImportedTxt, useImportAuthorTxt, useRebuildAuthorTxt, useTxtImportedFiles,
 } from '@/hooks/use-authors'
 import type { DirTree, Library } from '@/api/generated'
 import { useQuery } from '@tanstack/react-query'
@@ -25,12 +25,15 @@ import { unwrapSdkResult } from '@/lib/api-client'
  * 作者 TXT 导入卡（旧版数据管理「TXT导入作者」的 web 对等物）：
  * 选择 .txt → POST /authors/import-txt（三格式自动识别 + 从全部已导入
  * 片段统一重建，DOMAIN_RULES §6）；列表 = 已导入片段名（同名覆盖）；
- * 删除某片段 → 从剩余片段重建作者与文件关联（作者行保留）。
+ * 删除某片段 → 从剩余片段重建作者与文件关联（作者行保留）；
+ * 重新匹配 → POST /authors/import-txt/rebuild（幂等重放已存片段重建关联，
+ * 库重建/关联丢失后的修复入口）。
  */
 function TxtAuthorImportCard() {
   const { data: files = [], isLoading } = useTxtImportedFiles()
   const importTxt = useImportAuthorTxt()
   const deleteTxt = useDeleteImportedTxt()
+  const rebuildTxt = useRebuildAuthorTxt()
   const inputRef = useRef<HTMLInputElement>(null)
 
   const onPick = (e: ChangeEvent<HTMLInputElement>): void => {
@@ -63,6 +66,14 @@ function TxtAuthorImportCard() {
     })
   }
 
+  const onRebuild = (): void => {
+    rebuildTxt.mutate(undefined, {
+      onSuccess: (res) =>
+        toast.success(`重放完成：${res.authorsImported ?? 0} 位作者 · 关联 ${res.filesMatched ?? 0} 个文件`),
+      onError: (err) => toast.error(`重放失败：${err instanceof Error ? err.message : String(err)}`),
+    })
+  }
+
   return (
     <div className="rank-card">
       <div className="rank-head">
@@ -81,6 +92,16 @@ function TxtAuthorImportCard() {
           onClick={() => inputRef.current?.click()}
         >
           {importTxt.isPending ? '导入中…' : '选择 TXT 导入'}
+        </button>
+        <button
+          className="pill"
+          type="button"
+          style={{ marginLeft: 8 }}
+          disabled={rebuildTxt.isPending || files.length === 0}
+          title="按已导入片段全量重放作者-文件关联（片段不变，幂等）"
+          onClick={onRebuild}
+        >
+          {rebuildTxt.isPending ? '重放中…' : '重新匹配'}
         </button>
         <input
           ref={inputRef}

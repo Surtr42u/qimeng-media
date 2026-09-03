@@ -29,7 +29,7 @@
 | 行为上报 | POST /events/view、PUT /assets/{id}/like、PUT /assets/{id}/favorite | ViewEvent 只追加（open/play 按 assetId+kind+sessionId+当日去重，dwell 不去重——秒数每次有效）；点赞 toggle 每日一次；收藏布尔；打点同步累加 asset_daily_stats 物化表（可由事件流重建） |
 | 播放 | PUT /assets/{id}/progress | 断点续播进度上报（心跳式，只保留最新值；**不进事件流、不计 playCount**，与 ViewEvent 的分工见「关键机制」） |
 | 标签 | GET/POST /tags、DELETE /tags/{id}、PUT /assets/{id}/tags | 全局池；删除级联清理关联；替换式绑定 |
-| 作者 | GET /authors、POST/GET/DELETE /authors/import-txt、PUT /authors/{id}/follow | 常规/COS 双体系（type 区分）；TXT 三格式自动识别统一重建（GET=已导入片段名升序、DELETE=移除片段并从剩余片段重建〔204/404〕，第五笔新增——旧版数据管理「TXT导入作者」卡数据源）；关注布尔；2026-09-03 响应加 viewCount（作者作品累计浏览次数） |
+| 作者 | GET /authors、POST/GET/DELETE /authors/import-txt、POST /authors/import-txt/rebuild、PUT /authors/{id}/follow | 常规/COS 双体系（type 区分）；TXT 三格式自动识别统一重建（GET=已导入片段名升序、DELETE=移除片段并从剩余片段重建〔204/404〕，第五笔新增——旧版数据管理「TXT导入作者」卡数据源；POST …/rebuild=用已存片段幂等重放重建关联〔不增删片段，2026-09-04 新增——库重建后常规关联丢失的自救入口〕）；关注布尔；2026-09-03 响应加 viewCount（作者作品累计浏览次数） |
 | 时间轴 | GET/POST /assets/{id}/timeline-tags、DELETE /assets/{id}/timeline-tags/{tagId} | 视频内时间点标记，独立于文件标签 |
 | 推荐排行 | GET /recommendations、GET /rankings、GET/PUT /recommendations/prefs | 10 维算法（seed 控制打散）；纯热度排行（日/周/月/年/季（近 90 天）/总，period=quarter 为 2026-09-03 新增；2026-09-03 起响应填充 viewCount/playCount 供卡片角标）；9 维权重偏好 |
 | 统计 | GET /stats/overview、GET /stats/trends | 总览面板（animated_image 计入 imageCount；计数直接数事件流，含已删资产历史——事件流无 FK 设计）；趋势按 asset_daily_stats 物化表（仅现存资产，随资产删除级联清理、可由事件流全量重建）；分桶：range=day/week/month/quarter/year 固定粒度 + 2026-09-03 新增 7d（近 7 天逐日）/90d（近 90 天逐日），all 按数据跨度动态选粒度（≤12 周周 / 12 周~24 月月 / 更长季）全量不丢弃、总和守恒（DOMAIN_RULES §5） |

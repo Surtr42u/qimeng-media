@@ -5,6 +5,7 @@ package httpapi
 // 复用 browse_test.go 的 newTestEnv（setup + 假扫描入库 a.jpg/b.jpg/c.mp4）。
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
@@ -295,5 +296,73 @@ func TestAuthorsTxtManageList(t *testing.T) {
 	// 删除不存在的片段 → 404。
 	if code := deleteTxt(t, env, "ghost.txt"); code != 404 {
 		t.Errorf("删除不存在片段期望 404，得到 %d", code)
+	}
+}
+
+// rebuildTxt POST /authors/import-txt/rebuild，返回 (imported, matched, 状态码)。
+func rebuildTxt(t *testing.T, e *testEnv) (int, int, int) {
+	t.Helper()
+	resp := e.do(t, "POST", "/api/v1/authors/import-txt/rebuild", "")
+	defer closeBody(resp)
+	var res genTxtImportResult
+	if err := decodeBody(resp, &res); err != nil {
+		t.Fatalf("解析重放结果失败: %v", err)
+	}
+	return res.imported(), res.matched(), resp.StatusCode
+}
+
+// TestAuthorsTxtRebuild：重放已导入 TXT 片段重建常规作者关联（库重建/关联
+// 丢失后的修复入口）——手工清空关联后重放恢复；幂等重放结果一致、关联不
+// 翻倍；重放不写回片段（列表不变）。
+func TestAuthorsTxtRebuild(t *testing.T) {
+	env := newTestEnv(t)
+	kami := authoring.GenerateAuthorID("kamihikoki_mmd")
+	other := authoring.GenerateAuthorID("另一位作者")
+
+	// 两个片段：K 命中 a.jpg+c.mp4；另一位 命中 b.jpg。
+	importTXT(t, env, "f1.txt", "1  kamihikoki_mmd\n作品\na.jpg\nc.mp4\n")
+	importTXT(t, env, "f2.txt", "1  另一位作者\n作品\nb.jpg\n")
+
+	// 模拟关联丢失：手工删掉全部常规作者关联（库重建后 TXT 关联无重放入口，
+	// 正是本端点修复的场景）。
+	if err := env.q.DeleteAssetAuthorsByAuthorIds(context.Background(), []string{kami, other}); err != nil {
+		t.Fatalf("清空关联失败: %v", err)
+	}
+	for _, a := range listAuthors(t, env) {
+		if a.FileCount != nil && *a.FileCount != 0 {
+			t.Fatalf("重放前关联未清空: %s fileCount=%v", *a.Id, *a.FileCount)
+		}
+	}
+
+	// 重放：片段不变（仍 2 份），关联恢复为两片段并集（2+1=3）。
+	if imported, matched, code := rebuildTxt(t, env); code != 200 || imported != 2 || matched != 3 {
+		t.Fatalf("重放得到 (%d, %d, code %d), want (2, 3, 200)", imported, matched, code)
+	}
+	if a := findAuthor(t, listAuthors(t, env), kami); a.FileCount == nil || *a.FileCount != 2 {
+		t.Errorf("重放后 K fileCount=%v, want 2", a.FileCount)
+	}
+	if a := findAuthor(t, listAuthors(t, env), other); a.FileCount == nil || *a.FileCount != 1 {
+		t.Errorf("重放后另一位作者 fileCount=%v, want 1", a.FileCount)
+	}
+
+	// 再调一次：幂等——结果一致、关联不翻倍。
+	if imported, matched, code := rebuildTxt(t, env); code != 200 || imported != 2 || matched != 3 {
+		t.Fatalf("幂等重放得到 (%d, %d, code %d), want (2, 3, 200)", imported, matched, code)
+	}
+	if a := findAuthor(t, listAuthors(t, env), kami); a.FileCount == nil || *a.FileCount != 2 {
+		t.Errorf("幂等重放后 K fileCount=%v, want 2（不翻倍）", a.FileCount)
+	}
+
+	// 重放不写回片段：列表不变。
+	if got := listTxt(t, env); len(got) != 2 {
+		t.Errorf("重放后 TXT 列表=%v, want 2 份（不新增不删除）", got)
+	}
+}
+
+// TestAuthorsTxtRebuildEmpty：无已存片段时重放返回零值（200，不报错）。
+func TestAuthorsTxtRebuildEmpty(t *testing.T) {
+	env := newTestEnv(t)
+	if imported, matched, code := rebuildTxt(t, env); code != 200 || imported != 0 || matched != 0 {
+		t.Fatalf("无片段重放得到 (%d, %d, code %d), want (0, 0, 200)", imported, matched, code)
 	}
 }
