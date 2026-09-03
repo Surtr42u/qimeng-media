@@ -410,6 +410,12 @@ button { font-family: var(--font); border: none; background: none; cursor: point
   gap: 16px;
 }
 
+/* 相册时间分区视图（#5）：组标题左对齐、加粗，灰色 N 项 */
+.album-group { margin-bottom: 18px; }
+.album-group-title { display: flex; align-items: baseline; gap: 8px; font-size: 15px; font-weight: 600; color: var(--text-main); }
+.album-group-count { font-size: 12px; font-weight: 400; color: var(--text-sub); }
+.album-group .media-grid { margin-top: 10px; }
+
 /* 我的页：资料卡 + Tabs */
 .profile-card { display: flex; align-items: center; gap: 16px; }
 .profile-main h2 { font-size: 16px; font-weight: 600; }
@@ -539,6 +545,33 @@ button { font-family: var(--font); border: none; background: none; cursor: point
   margin-top: 14px; padding: 2px 24px 0;
 }
 .a-zones { display: flex; align-items: center; gap: 24px; }
+.a-toolbar-right { display: flex; align-items: center; gap: 12px; }
+.import-btn {
+  padding: 5px 14px; border-radius: 999px;
+  border: 1px solid var(--accent); color: var(--accent);
+  font-size: 12px; background: var(--bg); white-space: nowrap;
+}
+.import-btn:hover { background: color-mix(in oklab, var(--accent) 10%, transparent); }
+.import-panel {
+  margin-top: 12px; padding: 14px 16px;
+  border: 1px solid var(--border); border-radius: 12px; background: var(--bg);
+  display: flex; flex-direction: column; gap: 10px;
+}
+.import-head { display: flex; align-items: center; justify-content: space-between; }
+.import-head h3 { font-size: 14px; font-weight: 600; }
+.import-close { font-size: 20px; line-height: 1; color: var(--text-sub); width: 28px; height: 28px; border-radius: 6px; }
+.import-close:hover { background: var(--hover-bg); color: var(--text-main); }
+.import-hint { font-size: 12px; color: var(--text-sub); }
+#importAuthorFile { font-size: 12px; color: var(--text-mid); }
+#importAuthorText {
+  width: 100%; min-height: 110px; resize: vertical;
+  border: 1px solid var(--border); border-radius: 8px; padding: 10px;
+  font-size: 13px; font-family: var(--font); color: var(--text-main);
+  background: var(--bg); outline: none;
+}
+#importAuthorText:focus { border-color: var(--accent); }
+.import-actions { display: flex; align-items: center; gap: 12px; }
+.import-result { font-size: 13px; color: var(--ok); }
 .a-list { margin-top: 12px; }
 .a-list ul { list-style: none; }
 .a-list li {
@@ -554,6 +587,9 @@ button { font-family: var(--font); border: none; background: none; cursor: point
 .a-empty[hidden] { display: none; }
 .rank-name { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .rank-card li > b { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* 作者副标题：文件数 + 浏览数（作者管理页与作者总览卡共用） */
+.a-sub, .rank-sub2 { display: block; font-size: 12px; line-height: 1.4; color: var(--text-sub); margin-top: 2px; }
 
 /* 性能圆环 */
 .gauge-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
@@ -787,25 +823,24 @@ button { font-family: var(--font); border: none; background: none; cursor: point
 }
 .card:hover .card--title { color: var(--accent-deep); }
 
+/* 元信息：作者单独成行（主色），日期为次行（浅色），#4 */
 .card--meta {
   margin-top: 6px;
   display: flex;
-  align-items: center;
-  gap: 4px;
+  flex-direction: column;
+  gap: 2px;
   font-size: 12px;
   color: var(--text-mid);
   line-height: 16px;
 }
-.card--meta .dot { color: var(--faint); }
 .card--up {
-  display: flex;
-  align-items: center;
-  gap: 4px;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--text-mid);
 }
+.card--date { color: var(--text-sub); font-size: 11px; }
 
 
 /* 滚动条 */

@@ -1,7 +1,7 @@
 # HANDOVER-UI - 桌面客户端风格媒体库 UI 交接说明
 
 > 写给下一位专做 UI 的 AI（任何模型/工具）。人类用户无编程基础，全部代码由 AI 生成。
-> 最后更新：2026-09-03（第五笔：相册作者/角色行语义修正为旧版「全部」tab 口径（作者=出处∪COS 作者、分区缺省改「全部」、角色行 all 合并 COS 作品）+ 首页 cos/排行榜 tab 落地（URL ?tab/period 驱动）+ 文件管理页「作者 TXT 导入」卡（旧项目数据管理）；变更细节见 CHANGELOG「相册作者/角色行语义修正」条目。此前同日：相册页四维胶囊接真数据——分区 all/常规/COS + 作者 + 角色·作品 + 类型，GET /assets/facets 排自身口径（第三笔，作者行语义已被第五笔修正取代）。此前 2026-09-02：原型移植进 web 端 React 重建（阶段 A mock））
+> 最后更新：2026-09-03（第六笔：media-ui-prototype 七组缺陷修复——榜单浏览口径（作者榜=常看作者过滤 0 浏览按浏览降序、内容榜只含已浏览）、作者总览/管理页补「文件数·浏览数」副标题、卡片标题下作者单独行+视频时长角标、相册按时间分区（今天/昨天/周几/日期）、搜索关键词真过滤+COS 命中+推荐词点击即搜、作者管理页补「导入 TXT」入口；详见 CHANGELOG「media-ui-prototype 七组缺陷修复」条目。此前 2026-09-03 第五笔：相册作者/角色行语义修正为旧版「全部」tab 口径（作者=出处∪COS 作者、分区缺省改「全部」、角色行 all 合并 COS 作品）+ 首页 cos/排行榜 tab 落地（URL ?tab/period 驱动）+ 文件管理页「作者 TXT 导入」卡（旧项目数据管理）。此前同日：相册页四维胶囊接真数据——分区 all/常规/COS + 作者 + 角色·作品 + 类型，GET /assets/facets 排自身口径（第三笔，作者行语义已被第五笔修正取代）。此前 2026-09-02：原型移植进 web 端 React 重建（阶段 A mock））
 > 用途：新开的 AI 会话直接读本文档即可接手 UI 工作，无需回看本会话记录。
 > 主交接文档（后端/进度/约定）仍以 `docs/HANDOVER.md` 为准，本文档只覆盖 UI 路线。
 
@@ -109,6 +109,7 @@ media-ui-prototype/
    - **第五笔（2026-09-03，相册/首页/文件管理三处收尾，见 CHANGELOG「相册作者/角色行语义修正」）**：相册作者行语义改为**旧版「全部」tab 口径**——作者行胶囊 = 常规出处分组 ∪ COS 作者（候选带 kind：source=筛选 source 参数、author=authorId；出处组「其他」桶=无出处常规文件恒排末尾），角色行 all 分区 = 角色 ∪ COS 作品（kind=character/work 分派 character/work 参数）；**分区缺省由「常规」改「全部」**（同流看两集合，隔离浏览切 常规/COS 分区；切分区清作者/角色选择——候选 kind 命名空间随分区变）；作者/角色值行候选前补「全部」胶囊（点它清本行）。实现要点：facets 请求 **partition 恒显式传**（此前缺省分区省略参数→服务端按 all 算，作者行语义错乱的根因）；同值不同 kind 的胶囊激活按 value+kind 判（角色与 COS 作品可能同名）。
    - **首页 cos/排行榜 tab 落地**（原恒渲染推荐流）：tab/周期收敛 URL（`?tab=recommend|cos|hot` + `?period=day|week|month|year`），`lib/home-tabs.ts` 双端共享常量，TopBar 只写 HomePage 只读（刷新/直达不丢态）；cos=GET /assets cosOnly 流（独立入口）；hot=ContentRankGrid + useRankings(period)，周期行缺省日榜。
    - **文件管理「作者 TXT 导入」卡**（`pages/LibraryManagePage.tsx`，旧项目数据管理「TXT导入作者」）：选 .txt 导入（POST，同名覆盖，toast 作者/匹配计数）+ 片段列表 + 逐份移除（DELETE 后从剩余片段重建关联）；hooks 在 `use-authors.ts`（useTxtImportedFiles/useImportAuthorTxt/useDeleteImportedTxt）。
+   - **第六笔（2026-09-03，media-ui-prototype 对照旧版逐页修复，见 CHANGELOG「media-ui-prototype 七组缺陷修复」）**：数据页作者榜=常看作者（浏览>0 降序 Top5，0 浏览不显示——旧实现按作品数排且未过滤）、内容榜=常看文件（只含已浏览）、作者总览=作者管理入口卡（每行「X 个文件 · 浏览 Y 次」+ COS 标识）、首页/相册/搜索卡片统一 `cardInner()`（标题下作者单独行，时长角标仅 `m:ss` 视频）、相册按时间分区（dateLabel：今天/昨天/周X/yyyy-MM-dd +「N 项」，筛选后重分组）、搜索关键词真正过滤（SEARCH_STATE.query + matchQuery 六维子串命中，搜 cos 命中 COS 内容）+ 推荐词点击即搜、作者管理页补「导入 TXT」（三格式解析，纯内存态）。⚠️ 这些是**原型层（mock）修复**，web 端阶段 B 已接真数据故多数口径天然成立（榜单过滤/搜索过滤已在服务端），**需对齐的是视觉与交互**：web 端首页/相册卡片结构与原型 `cardInner` 一致（MediaCard.tsx）、相册页是否有时间分区（当前 web 相册=四维胶囊筛选无日期分组——原型新增的时间分区若用户认可需移植 web）；原型改动未提交 git，待用户验收。
 3. 阶段 A 交互与原型的已知差异（用户裁决项）：顶栏 tab 激活态挂 URL（离开首页即丢）；作者页搜索图标 r=8（原型 7，≤1px）；sonner toast 主题跟系统未跟月亮按钮（next-themes 未接）。
 4. 跑法：不要单独拉前端——统一访问 `http://127.0.0.1:8420`（后端托管 `web/dist`）；改前端先 `npm --prefix web run build`。
    原型目录（media-ui-prototype/）保留作对照基准，单独预览：`cd media-ui-prototype && node serve.mjs 8099`。

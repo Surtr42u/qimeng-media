@@ -86,25 +86,49 @@ const VIDEOS = [
   },
 ];
 
-/* 卡片渲染：封面仅保留图片与时长角标；元信息仅保留 UP 主名与日期（用户拍板删除点赞数与头像） */
-function renderCard(v) {
+/* 卡片渲染：封面含图片与右下角时长角标（仅视频时长显示，图片/动图不显示，#4）；
+   标题下单独一行显示作者，日期作为次行（旧版作者管理副标题思路） */
+// 时长角标只在「时:分」格式时显示（视频），图片的"48 张"等非时长文本不显示（#4）
+function isTimeBadge(d) { return typeof d === "string" && /^\s*\d+:\d+/.test(d); }
+
+// 卡片内部结构（首页视频卡与相册/搜索/收藏媒体卡共用，避免两套重复模板，#4）
+function cardInner({ cover, title, up, date, duration }) {
   return `
-  <div class="card" data-id="${v.id}">
     <div class="card--cover">
-      <img src="${v.cover}" alt="${v.title}" loading="lazy">
-      ${v.duration ? `<span class="card--duration">${v.duration}</span>` : ""}
+      <img src="${cover}" alt="${title}" loading="lazy">
+      ${isTimeBadge(duration) ? `<span class="card--duration">${duration}</span>` : ""}
     </div>
-    <div class="card--title">${v.title}</div>
+    <div class="card--title">${title}</div>
     <div class="card--meta">
-      <span class="card--up">${v.up}</span>
-      <span class="dot">·</span>
-      <span>${v.date}</span>
-    </div>
-  </div>`;
+      <span class="card--up">${up}</span>
+      ${date ? `<span class="card--date">${date}</span>` : ""}
+    </div>`;
+}
+
+function renderCard(v) {
+  return `<div class="card" data-id="${v.id}">${cardInner({ cover: v.cover, title: v.title, up: v.up, date: v.date, duration: v.duration })}</div>`;
 }
 
 const grid = document.getElementById("grid");
-grid.innerHTML = VIDEOS.map(renderCard).join("");
+
+/* COS 内容标记：标注为 cos 的视频 id 集合（顶栏 cos tab 据此过滤，#6）。
+   原型不改动 VIDEOS 字面量结构，用 id 集合声明式标记。 */
+const COS_VIDEO_IDS = new Set([
+  "vid-1Qvtp6RE1c", // 异环/鸣潮 cos
+  "vid-1v3hg6eE8U", // 上海约玩 cosplay
+  "vid-18Q8C6HEBH", // 东京/首尔
+  "vid-1bJgc6yEUv", // 自助盒饭
+]);
+
+/* 首页卡片流：cos tab 下只渲染 cos 标记内容；推荐/排行榜恢复全量（#6） */
+let cosMode = false;
+function renderHomeGrid() {
+  const list = cosMode ? VIDEOS.filter((v) => COS_VIDEO_IDS.has(v.id)) : VIDEOS;
+  grid.innerHTML = list.length
+    ? list.map(renderCard).join("")
+    : '<p class="grid-empty">该分类下暂无内容。</p>';
+}
+renderHomeGrid();
 
 /* 顶栏 tab 切换：排行榜 tab 下显示榜单周期行（日榜/月榜/周榜/年榜），其余隐藏 */
 const rankPanel = document.getElementById("rankPanel");
@@ -113,7 +137,10 @@ document.querySelectorAll(".tab").forEach((tab) => {
   tab.addEventListener("click", () => {
     document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
     tab.classList.add("active");
-    const isRank = tab.dataset.tab === "hot";
+    const tabName = tab.dataset.tab;
+    // cos tab 进入 COS 内容过滤态；其余 tab 退出（#6）
+    cosMode = tabName === "cos";
+    const isRank = tabName === "hot";
     // 排行榜态：tab 行保持可见，榜单周期行显示在顶栏下方独立行
     rankPanel.hidden = !isRank;
     if (isRank) {
@@ -122,6 +149,8 @@ document.querySelectorAll(".tab").forEach((tab) => {
         t.classList.toggle("active", i === 0),
       );
     }
+    // 推荐/cos/hot 均按 cosMode 刷新首页卡片流（hot 即退出 cos 过滤，#6）
+    renderHomeGrid();
   });
 });
 
@@ -149,6 +178,8 @@ function showPage(pageId, isBack = false) {
     const showRank =
       pageId === "home" && document.querySelector(".tab.active")?.dataset.tab === "hot";
     document.getElementById("rankPanel").hidden = !showRank;
+    // 回到首页时按当前 cos 过滤态刷新卡片流（#6）
+    if (pageId === "home") renderHomeGrid();
   }
 }
 
@@ -213,9 +244,11 @@ function renderAuthors() {
     .filter((a) => (aZone === "全部" || a.type === aZone) && (!kw || a.name.includes(kw)))
     .slice()
     .sort(A_SORTERS[aSort]);
+  // 每行补「N 个文件 · 浏览 M 次」副标题，COS 作者名带 ·COS（#2，旧版作者管理副标题口径）
   document.getElementById("aList").innerHTML = rows.map((a) => `
     <li>
-      <span class="rank-name">${a.name}</span>
+      <span class="rank-name">${authorDisplayName(a)}</span>
+      <span class="a-sub">${a.works} 个文件 · 浏览 ${a.browse.toLocaleString("zh-CN")} 次</span>
       <button class="follow-btn${a.followed ? "" : " follow-btn--idle"}" type="button">${a.followed ? "已关注" : "关注"}</button>
     </li>`).join("");
   document.getElementById("aEmpty").hidden = rows.length > 0;
@@ -223,10 +256,118 @@ function renderAuthors() {
     btn.addEventListener("click", () => {
       rows[i].followed = !rows[i].followed;
       renderAuthors();
+      renderAuthorOverview(); // 关注数变化同步「作者总览」卡（#2）
     });
   });
 }
 renderAuthors();
+
+/* ===== 数据页「作者榜 / 作者总览」与完整榜单页「作者榜」渲染（#1 #2）=====
+   - 作者榜 = 常看作者：仅含浏览>0 的作者，按浏览数降序取 Top5（旧版 renderTopAuthors 口径）
+   - 作者总览 = 作者管理入口：每行体现文件数 + 浏览数双关联（旧版作者管理副标题口径） */
+
+// 作者名显示：COS 作者追加 ·COS 标识（可选，#2）
+function authorDisplayName(a) {
+  return a.type === "cos" ? `${a.name} ·COS` : a.name;
+}
+
+// 常看作者：浏览>0 降序
+function topAuthorsByBrowse() {
+  return AUTHORS.filter((a) => a.browse > 0).sort((x, y) => y.browse - x.browse);
+}
+
+function renderAuthorRankCard() {
+  const top5 = topAuthorsByBrowse().slice(0, 5);
+  document.getElementById("rankAuthorsNote").textContent = "Top 5 · 按浏览";
+  document.getElementById("rankAuthorsList").innerHTML = top5.map((a) => `
+    <li><span class="rank-name">${authorDisplayName(a)}</span><b>${a.browse.toLocaleString("zh-CN")}</b></li>`).join("");
+}
+
+function renderAuthorOverview() {
+  // 作者总览展示全部作者（入口卡，点击「管理」进作者管理页），每行文件数 + 浏览数
+  document.getElementById("authorOverviewNote").textContent =
+    `${AUTHORS.length} 位作者 · 已关注 ${AUTHORS.filter((a) => a.followed).length}`;
+  document.getElementById("authorOverviewList").innerHTML = AUTHORS.map((a) => `
+    <li>
+      <span class="rank-name">${authorDisplayName(a)}</span>
+      <span class="rank-sub2">${a.works} 个文件 · 浏览 ${a.browse.toLocaleString("zh-CN")} 次</span>
+    </li>`).join("");
+}
+
+function renderRanksAuthors() {
+  const list = topAuthorsByBrowse(); // 含浏览才入榜，避免 0 浏览作者占位
+  document.getElementById("ranksAuthorsNote").textContent = "按浏览";
+  document.getElementById("ranksAuthorsList").innerHTML = list.map((a) => `
+    <li><span class="rank-name">${authorDisplayName(a)}</span><b>${a.browse.toLocaleString("zh-CN")}</b></li>`).join("");
+}
+
+renderAuthorRankCard();
+renderAuthorOverview();
+renderRanksAuthors();
+
+/* ===== 作者管理页「导入 TXT」入口（#7）=====
+   解析参照旧版 AuthorImportUseCase 三种格式（兼容常见格式）：
+   ① 一行一个作者名；② "姓名,别名1,别名2" 取首段；③ "作者名：文件列表" 块取冒号前。
+   解析出的作者（去重）并入 AUTHORS 并刷新列表，给出导入结果提示（纯内存态）。 */
+function parseAuthorsFromText(text) {
+  const names = [];
+  for (let line of text.split(/\r?\n/)) {
+    line = line.trim();
+    if (!line) continue;
+    let name = line;
+    if (line.includes("：") || line.includes(":")) {
+      name = line.split(/[：:]/)[0].trim(); // 格式③ 块：取冒号前作者名
+    } else if (line.includes(",") || line.includes("，")) {
+      name = line.split(/[,，]/)[0].trim(); // 格式② 别名分隔取首
+    }
+    // 跳过纯文件名的行（候选名本身以扩展名结尾），但保留「作者名：文件列表」块行（#7）
+    if (/\.[a-z0-9]{1,5}$/i.test(name)) continue;
+    if (name) names.push(name);
+  }
+  return names;
+}
+
+function importAuthorsFromText(text) {
+  const raw = parseAuthorsFromText(text);
+  const existing = new Set(AUTHORS.map((a) => a.name.toLowerCase()));
+  let added = 0;
+  for (const name of raw) {
+    if (existing.has(name.toLowerCase())) continue; // 去重
+    existing.add(name.toLowerCase());
+    AUTHORS.push({ name, type: "常规", works: 0, browse: 0, followed: false });
+    added++;
+  }
+  renderAuthors();
+  renderAuthorOverview(); // 同步数据页「作者总览」卡
+  renderAuthorRankCard(); // 新作者 browse=0 不入「作者榜」，但刷新避免脏数据
+  return added;
+}
+
+(function setupAuthorImport() {
+  const btn = document.getElementById("authorImportBtn");
+  const panel = document.getElementById("authorImportPanel");
+  const close = document.getElementById("authorImportClose");
+  const fileInput = document.getElementById("authorImportFile");
+  const textArea = document.getElementById("authorImportText");
+  const doBtn = document.getElementById("authorImportDo");
+  const result = document.getElementById("authorImportResult");
+  if (!btn) return;
+  btn.addEventListener("click", () => { panel.hidden = !panel.hidden; result.hidden = true; });
+  close.addEventListener("click", () => { panel.hidden = true; });
+  // 选文件 → 读取文本落入 textarea 预览（#7）
+  fileInput.addEventListener("change", () => {
+    const file = fileInput.files && fileInput.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => { textArea.value = String(reader.result || ""); };
+    reader.readAsText(file);
+  });
+  doBtn.addEventListener("click", () => {
+    const n = importAuthorsFromText(textArea.value);
+    result.hidden = false;
+    result.textContent = n > 0 ? `成功导入 ${n} 位作者` : "没有新增作者（已存在或内容为空）";
+  });
+})();
 
 document.querySelectorAll("#aZones .stype").forEach((b) => {
   b.addEventListener("click", () => {
@@ -293,37 +434,68 @@ const ALBUM_DIMS = {
 const DIM_ORDER = ["partition", "work", "character", "type"];
 
 const ALBUM_FILES = [
-  { name: "样例 2017 实录 · 高画质合集", cover: "covers/c-avatar.webp", duration: "34:00", up: "@ 电子赛博月老", date: "8-28", views: "3,241", tags: { partition: "样例", work: "样例 2017", character: "小祥", type: "视频" } },
-  { name: "舞台摄影 · 第一组", cover: "covers/c-crab.webp", duration: "48 张", up: "@ 夜空机位", date: "8-26", views: "1,982", tags: { partition: "摄影", work: "舞台摄影", character: "虚空行者", type: "图片" } },
-  { name: "场外随拍 · 机动展区", cover: "covers/c-frog.webp", duration: "12:00", up: "@ 展会实录", date: "8-24", views: "1,540", tags: { partition: "样例", work: "样例 2017", character: "长颈鹿", type: "视频" } },
-  { name: "角色特写 · 第三辑", cover: "covers/c-frog-s.webp", duration: "26 张", up: "@ 舞台捕手", date: "8-22", views: "1,207", tags: { partition: "Cosplay", work: "角色特写", character: "小祥", type: "图片" } },
-  { name: "返场演出 · 完整版", cover: "covers/c-jet.webp", duration: "52:00", up: "@ 展会实录", date: "8-20", views: "986", tags: { partition: "同人", work: "返场演出", character: "青鸟", type: "视频" } },
-  { name: "展台搭建花絮", cover: "covers/c-dlss.webp", duration: "15 张", up: "@ 样例日记", date: "8-18", views: "774", tags: { partition: "摄影", work: "样例 2017", character: "长颈鹿", type: "图片" } },
-  { name: "互动环节 · 玩家现场", cover: "covers/c-tokyo.webp", duration: "28:00", up: "@ 展会实录", date: "8-16", views: "645", tags: { partition: "样例", work: "互动环节", character: "虚空行者", type: "视频" } },
-  { name: "夜景机位 · 收场", cover: "covers/c-box.webp", duration: "19 张", up: "@ 夜空机位", date: "8-14", views: "523", tags: { partition: "风景", work: "夜景机位", character: "小祥", type: "图片" } },
-  { name: "同人摊位 · 第二区", cover: "covers/c-mc.webp", duration: "22 张", up: "@ 同人社", date: "8-12", views: "466", tags: { partition: "同人", work: "同人社", character: "小祥", type: "图片" } },
-  { name: "Cosplay 舞台巡礼", cover: "covers/c-mc-s.webp", duration: "35:00", up: "@ 舞台捕手", date: "8-10", views: "402", tags: { partition: "Cosplay", work: "舞台巡礼", character: "青鸟", type: "视频" } },
-  { name: "创作整理 · B 卷", cover: "covers/c-milk.webp", duration: "17 张", up: "@ 绮梦", date: "8-08", views: "355", tags: { partition: "创作", work: "舞台摄影", character: "小祥", type: "图片" } },
-  { name: "日常随拍 · 一周", cover: "covers/c-rural.webp", duration: "9:00", up: "@ 绮梦", date: "8-06", views: "298", tags: { partition: "日常", work: "日常随拍", character: "小祥", type: "视频" } },
-  { name: "现场录音 · 安可段", cover: "covers/c-jet.webp", duration: "03:45", up: "@ 绮梦", date: "8-02", views: "210", tags: { partition: "样例", work: "返场演出", character: "青鸟", type: "音频" } },
+  { name: "样例 2017 实录 · 高画质合集", cover: "covers/c-avatar.webp", duration: "34:00", up: "@ 电子赛博月老", date: "8-28", fileDate: "2026-09-03", views: "3,241", cos: true, tags: { partition: "样例", work: "样例 2017", character: "小祥", type: "视频" } },
+  { name: "舞台摄影 · 第一组", cover: "covers/c-crab.webp", duration: "48 张", up: "@ 夜空机位", date: "8-26", fileDate: "2026-09-02", views: "1,982", cos: false, tags: { partition: "摄影", work: "舞台摄影", character: "虚空行者", type: "图片" } },
+  { name: "场外随拍 · 机动展区", cover: "covers/c-frog.webp", duration: "12:00", up: "@ 展会实录", date: "8-24", fileDate: "2026-08-31", views: "1,540", cos: false, tags: { partition: "样例", work: "样例 2017", character: "长颈鹿", type: "视频" } },
+  { name: "角色特写 · 第三辑", cover: "covers/c-frog-s.webp", duration: "26 张", up: "@ 舞台捕手", date: "8-22", fileDate: "2026-09-01", views: "1,207", cos: true, tags: { partition: "Cosplay", work: "角色特写", character: "小祥", type: "图片" } },
+  { name: "返场演出 · 完整版", cover: "covers/c-jet.webp", duration: "52:00", up: "@ 展会实录", date: "8-20", fileDate: "2026-08-30", views: "986", cos: false, tags: { partition: "同人", work: "返场演出", character: "青鸟", type: "视频" } },
+  { name: "展台搭建花絮", cover: "covers/c-dlss.webp", duration: "15 张", up: "@ 样例日记", date: "8-18", fileDate: "2026-08-29", views: "774", cos: false, tags: { partition: "摄影", work: "样例 2017", character: "长颈鹿", type: "图片" } },
+  { name: "互动环节 · 玩家现场", cover: "covers/c-tokyo.webp", duration: "28:00", up: "@ 展会实录", date: "8-16", fileDate: "2026-08-28", views: "645", cos: false, tags: { partition: "样例", work: "互动环节", character: "虚空行者", type: "视频" } },
+  { name: "夜景机位 · 收场", cover: "covers/c-box.webp", duration: "19 张", up: "@ 夜空机位", date: "8-14", fileDate: "2026-08-26", views: "523", cos: false, tags: { partition: "风景", work: "夜景机位", character: "小祥", type: "图片" } },
+  { name: "同人摊位 · 第二区", cover: "covers/c-mc.webp", duration: "22 张", up: "@ 同人社", date: "8-12", fileDate: "2026-09-03", views: "466", cos: true, tags: { partition: "同人", work: "同人社", character: "小祥", type: "图片" } },
+  { name: "Cosplay 舞台巡礼", cover: "covers/c-mc-s.webp", duration: "35:00", up: "@ 舞台捕手", date: "8-10", fileDate: "2026-08-25", views: "402", cos: true, tags: { partition: "Cosplay", work: "舞台巡礼", character: "青鸟", type: "视频" } },
+  { name: "创作整理 · B 卷", cover: "covers/c-milk.webp", duration: "17 张", up: "@ 绮梦", date: "8-08", fileDate: "2026-08-24", views: "355", cos: false, tags: { partition: "创作", work: "舞台摄影", character: "小祥", type: "图片" } },
+  { name: "日常随拍 · 一周", cover: "covers/c-rural.webp", duration: "9:00", up: "@ 绮梦", date: "8-06", fileDate: "2026-08-23", views: "298", cos: false, tags: { partition: "日常", work: "日常随拍", character: "小祥", type: "视频" } },
+  { name: "现场录音 · 安可段", cover: "covers/c-jet.webp", duration: "03:45", up: "@ 绮梦", date: "8-02", fileDate: "2026-08-20", views: "210", cos: false, tags: { partition: "样例", work: "返场演出", character: "青鸟", type: "音频" } },
 ];
 
-/** 媒体卡模板：与首页卡片同款（封面 + 时长角标 + 标题 + 作者·日期） */
+/** 媒体卡模板：与首页卡片同款，复用 cardInner 保证结构一致（#4），图片/动图不显示时长角标 */
 function mediaCardHtml(f) {
-  return `
-  <div class="card">
-    <div class="card--cover">
-      <img src="${f.cover}" alt="${f.name}" loading="lazy">
-      ${f.duration ? `<span class="card--duration">${f.duration}</span>` : ""}
-    </div>
-    <div class="card--title">${f.name}</div>
-    <div class="card--meta">
-      <span class="card--up">${f.up}</span>
-      <span class="dot">·</span>
-      <span>${f.date}</span>
-    </div>
-  </div>`;
+  return `<div class="card">${cardInner({ cover: f.cover, title: f.name, up: f.up, date: f.date, duration: f.duration })}</div>`;
 }
+
+/* ===== 数据页「内容榜」与完整榜单页「内容榜」渲染（#3）=====
+   内容榜 = 旧版「常看文件」：窗口内浏览>0 的内容按浏览聚合降序；未浏览不显示 */
+const CONTENT_RANKS = [
+  { title: "样例 2017 高画质合集", cover: "covers/c-dlss.webp", views: 3241 },
+  { title: "舞台摄影 · 第一组", cover: "covers/c-tokyo.webp", views: 1982 },
+  { title: "场外随拍 · 机动展区", cover: "covers/c-frog.webp", views: 1540 },
+  { title: "角色特写 · 第三辑", cover: "covers/c-jet.webp", views: 1207 },
+  { title: "返场演出 · 完整版", cover: "covers/c-mc.webp", views: 986 },
+  { title: "夜景长曝光精选", cover: "covers/c-milk.webp", views: 874 },
+  { title: "同人作品 · 春季场", cover: "covers/c-rural.webp", views: 763 },
+  { title: "后台花絮合辑", cover: "covers/c-box.webp", views: 658 },
+  { title: "首日入场实况", cover: "covers/c-crab.webp", views: 571 },
+  { title: "舞台灯光全记录", cover: "covers/c-frog-s.webp", views: 489 },
+  { title: "特写镜头补录", cover: "covers/c-mc-s.webp", views: 421 },
+  { title: "应援夜全景", cover: "covers/c-avatar.webp", views: 366 },
+  { title: "场刊扫描合集", cover: "covers/c-dlss.webp", views: 302 },
+  { title: "路人视角混剪", cover: "covers/c-tokyo.webp", views: 254 },
+  { title: "收摊散场记录", cover: "covers/c-frog.webp", views: 187 },
+];
+
+function contentItemHtml(c) {
+  return `
+    <div class="rank-item">
+      <div class="rank-cover"><img src="${c.cover}" alt="" loading="lazy"><span class="rank-views">${c.views.toLocaleString("zh-CN")}</span></div>
+      <p class="rank-title">${c.title}</p>
+    </div>`;
+}
+
+function renderContentRank() {
+  // 仅含浏览量>0 的内容，按浏览降序取 Top5（#3）
+  const top5 = CONTENT_RANKS.filter((c) => c.views > 0).sort((a, b) => b.views - a.views).slice(0, 5);
+  document.getElementById("rankContentNote").textContent = "Top 5 · 按浏览量";
+  document.getElementById("rankContentList").innerHTML = top5.map(contentItemHtml).join("");
+}
+
+function renderRanksContent() {
+  const list = CONTENT_RANKS.filter((c) => c.views > 0).sort((a, b) => b.views - a.views);
+  document.getElementById("ranksContentList").innerHTML = list.map(contentItemHtml).join("");
+}
+
+renderContentRank();
+renderRanksContent();
 
 const albumState = { dim: "partition", value: "全部", sort: "精选", expanded: false };
 const albumDims = document.getElementById("albumDims");
@@ -350,14 +522,44 @@ function renderAlbumValues() {
   albumToggle.textContent = albumState.expanded ? "收起 ⌃" : "展开 ⌄";
 }
 
+/* 时间分区标签：复刻旧版 MediaBrowserLogic.dateLabel（#5）
+   今天 / 昨天 / 周一~周日（距今天 2~6 天）/ yyyy-MM-dd / 未知日期 */
+function dateLabel(iso) {
+  if (!iso) return "未知日期";
+  const t = new Date();
+  const today = new Date(t.getFullYear(), t.getMonth(), t.getDate());
+  const d = new Date(iso + "T00:00:00");
+  const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const diff = Math.round((today - day) / 86400000);
+  if (diff === 0) return "今天";
+  if (diff === 1) return "昨天";
+  if (diff >= 2 && diff <= 6) return ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][day.getDay()];
+  const p = (n) => String(n).padStart(2, "0");
+  return `${day.getFullYear()}-${p(day.getMonth() + 1)}-${p(day.getDate())}`;
+}
+
 function renderAlbumGrid() {
   let files = albumState.value === "全部"
     ? [...ALBUM_FILES]
     : ALBUM_FILES.filter((f) => f.tags[albumState.dim] === albumState.value);
-  if (albumState.sort === "最新") files = [...files].reverse();
-  else if (albumState.sort === "按名称") files = [...files].sort((a, b) => a.name.localeCompare(b.name, "zh-Hans-CN"));
-  albumGrid.innerHTML = files.length
-    ? files.map(mediaCardHtml).join("")
+  // 组内排序（#5）
+  if (albumState.sort === "按名称") files = files.slice().sort((a, b) => a.name.localeCompare(b.name, "zh-Hans-CN"));
+  else if (albumState.sort === "最新") files = files.slice().sort((a, b) => (b.fileDate || "").localeCompare(a.fileDate || ""));
+  else if (albumState.sort === "最旧") files = files.slice().sort((a, b) => (a.fileDate || "").localeCompare(b.fileDate || ""));
+  // 按日期分区分组（默认视图），空组不渲染
+  const groups = new Map();
+  for (const f of files) {
+    const label = dateLabel(f.fileDate);
+    if (!groups.has(label)) groups.set(label, []);
+    groups.get(label).push(f);
+  }
+  const ordered = [...groups.entries()].sort((a, b) => (b[1][0].fileDate || "").localeCompare(a[1][0].fileDate || ""));
+  albumGrid.innerHTML = ordered.length
+    ? ordered.map(([label, items]) => `
+      <section class="album-group">
+        <h3 class="album-group-title">${label}<span class="album-group-count">${items.length} 项</span></h3>
+        <div class="media-grid">${items.map(mediaCardHtml).join("")}</div>
+      </section>`).join("")
     : '<p class="grid-empty">该筛选组合下暂无内容，换个胶囊试试。</p>';
 }
 
@@ -468,6 +670,18 @@ popMore.addEventListener("click", (e) => {
   popMore.querySelector(".pop-more-text").textContent = expanded ? "展开更多" : "收起";
 });
 
+/* 推荐搜索：从标签池/内容池生成 mock 推荐词 chips，点击即触发搜索（#6，旧版 SearchFragment 口径） */
+const RECOMMEND_WORDS = ["样例 2017", "角色特写", "舞台摄影", "同人", "Cosplay", "夜景", "返场演出", "互动环节"];
+function renderRecommendChips() {
+  const box = document.getElementById("popReco");
+  if (!box) return;
+  box.innerHTML = RECOMMEND_WORDS.map((w) => `<button class="pop-chip" type="button">${w}</button>`).join("");
+  box.querySelectorAll(".pop-chip").forEach((el) => {
+    el.addEventListener("click", () => openSearchPage(el.textContent.trim()));
+  });
+}
+renderRecommendChips();
+
 /* 右下角悬浮刷新（静态原型）：点击图标旋转一圈作反馈，未接真实刷新 */
 const refreshFab = document.getElementById("refreshFab");
 refreshFab.addEventListener("click", () => {
@@ -487,17 +701,40 @@ const SEARCH_STATE = {
   order: "降序", plays: "全部", size: "全部", time: "全部",
   tagMode: "模糊", tags: [],
   yearFrom: "2016", yearTo: "2026",
+  query: "", // 搜索关键词（#6 补：关键词参与结果过滤）
 };
 const SEARCH_TAGS = ["样例", "摄影", "同人", "Cosplay", "风景", "日常", "创作", "舞台"];
 
-/* 基础池 = 标签叠加后的集合；类型 tabs 计数与结果网格都基于它 */
+/* 基础池 = 标签叠加后的集合；类型 tabs 计数与结果网格都基于它。
+   关键词过滤（#6 补）：q 非空时，条目须在 文件名/作者/标签/作品/角色/类型 或 cos 标记 中
+   子串命中（大小写不敏感，中文直接 contains）才纳入结果。 */
 function searchPool() {
   const s = SEARCH_STATE;
   const hitTag = (f, t) => Object.values(f.tags).includes(t) || f.name.includes(t);
+  const q = (s.query || "").trim().toLowerCase();
+  // 六维子串命中（旧版口径）：文件名、作者、出处/分区、作品、角色、类型 + cos 标记
+  const matchQuery = (f) => {
+    if (!q) return true;
+    if (f.name && f.name.toLowerCase().includes(q)) return true;
+    // 作者名存为 "@ xxx" 格式，去掉 @ 再比
+    if (f.up && f.up.replace(/^@\s*/, "").toLowerCase().includes(q)) return true;
+    if (f.tags) {
+      const tagVals = [f.tags.partition, f.tags.work, f.tags.character, f.tags.type]
+        .filter(Boolean)
+        .map((v) => v.toLowerCase());
+      if (tagVals.some((v) => v.includes(q))) return true;
+    }
+    // cos 标记：搜 "cos"/"COS"/"Cosplay" 命中 cos:true 的条目
+    if (f.cos === true && /cos|cosplay/i.test(q)) return true;
+    return false;
+  };
   return ALBUM_FILES.filter(
     (f) =>
-      s.tags.length === 0 ||
-      (s.tagMode === "精确" ? s.tags.every((t) => hitTag(f, t)) : s.tags.some((t) => hitTag(f, t))),
+      // cos tab 下搜索结果也只出 COS 内容（#6）
+      (!cosMode || f.cos) &&
+      (s.tags.length === 0 ||
+        (s.tagMode === "精确" ? s.tags.every((t) => hitTag(f, t)) : s.tags.some((t) => hitTag(f, t)))) &&
+      matchQuery(f),
   );
 }
 
@@ -686,6 +923,7 @@ function resetSearchState() {
     order: "降序", plays: "全部", size: "全部", time: "全部",
     tagMode: "模糊", tags: [],
     yearFrom: "2016", yearTo: "2026",
+    query: "",
   });
   document.querySelectorAll("#sSort .sort-pill").forEach((b) =>
     b.classList.toggle("active", b.dataset.sort === "综合排序"),
@@ -698,6 +936,7 @@ function resetSearchState() {
 function openSearchPage(q) {
   if (!q) return;
   resetSearchState();
+  SEARCH_STATE.query = q; // #6 补：关键词参与结果过滤
   searchInput.value = q;
   searchClear.hidden = false;
   closeSearchPop();
@@ -719,6 +958,8 @@ searchInput.addEventListener("input", () => {
 });
 searchClear.addEventListener("click", () => {
   searchInput.value = "";
+  SEARCH_STATE.query = ""; // 清除关键词，恢复全量结果（#6 补）
+  renderSearchGrid();
   searchClear.hidden = true;
   searchInput.focus();
 });

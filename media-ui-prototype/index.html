@@ -93,7 +93,7 @@
           </div>
           <div class="pop-block">
             <h3 class="pop-title">推荐搜索</h3>
-            <p class="pop-reco-hint">推荐搜索词将在接入推荐参数后生成</p>
+            <div class="pop-reco" id="popReco"></div>
           </div>
         </div>
       </div>
@@ -321,8 +321,8 @@
         <div class="rank-stack">
           <div class="rank-card">
             <div class="rank-head"><h3>内容榜</h3><a href="#" class="rank-more" data-rank="content">查看全部</a></div>
-            <p class="rank-note">Top 5 · 按浏览量</p>
-            <div class="rank-cards">
+            <p class="rank-note" id="rankContentNote">Top 5 · 按浏览量</p>
+            <div class="rank-cards" id="rankContentList">
               <div class="rank-item">
                 <div class="rank-cover"><img src="covers/c-dlss.webp" alt="" loading="lazy"><span class="rank-views">3,241</span></div>
                 <p class="rank-title">样例 2017 高画质合集</p>
@@ -357,27 +357,15 @@
                 <li><span class="rank-name">夜景</span><b>410</b></li>
               </ul>
             </div>
-            <div class="rank-card">
+            <div class="rank-card" id="rankAuthorsCard">
               <div class="rank-head"><h3>作者榜</h3><a href="#" class="rank-more" data-rank="authors">查看全部</a></div>
-              <p class="rank-note">Top 5 · 按作品数</p>
-              <ul>
-                <li><span class="rank-name">绮梦</span><b>126</b></li>
-                <li><span class="rank-name">夜空机位</span><b>88</b></li>
-                <li><span class="rank-name">舞台捕手</span><b>57</b></li>
-                <li><span class="rank-name">展会实录</span><b>41</b></li>
-                <li><span class="rank-name">样例日记</span><b>33</b></li>
-              </ul>
+              <p class="rank-note" id="rankAuthorsNote">Top 5 · 按浏览</p>
+              <ul id="rankAuthorsList"></ul>
             </div>
-            <div class="rank-card">
+            <div class="rank-card" id="authorOverviewCard">
               <div class="rank-head"><h3>作者总览</h3><a href="#" id="authorManage">管理</a></div>
-              <p class="rank-note">15 位作者 · 已关注 3</p>
-              <ul>
-                <li><span class="rank-name">绮梦</span><b>126</b></li>
-                <li><span class="rank-name">夜空机位</span><b>88</b></li>
-                <li><span class="rank-name">舞台捕手</span><b>57</b></li>
-                <li><span class="rank-name">展会实录</span><b>41</b></li>
-                <li><span class="rank-name">样例日记</span><b>33</b></li>
-              </ul>
+              <p class="rank-note" id="authorOverviewNote">15 位作者</p>
+              <ul id="authorOverviewList"></ul>
             </div>
           </div>
         </div>
@@ -531,8 +519,8 @@
         </div>
         <div class="rank-card" data-panel="content">
           <div class="rank-head"><h3>内容榜</h3></div>
-          <p class="rank-note">按浏览量</p>
-          <div class="rank-cards">
+            <p class="rank-note">按浏览量</p>
+            <div class="rank-cards" id="ranksContentList">
             <div class="rank-item">
               <div class="rank-cover"><img src="covers/c-dlss.webp" alt="" loading="lazy"><span class="rank-views">3,241</span></div>
               <p class="rank-title">样例 2017 高画质合集</p>
@@ -618,8 +606,8 @@
           </div>
           <div class="rank-card" data-panel="authors">
             <div class="rank-head"><h3>作者榜</h3></div>
-            <p class="rank-note">按作品数</p>
-            <ul>
+            <p class="rank-note" id="ranksAuthorsNote">按浏览</p>
+            <ul id="ranksAuthorsList">
               <li><span class="rank-name">绮梦</span><b>126</b></li>
               <li><span class="rank-name">夜空机位</span><b>88</b></li>
               <li><span class="rank-name">舞台捕手</span><b>57</b></li>
@@ -651,9 +639,23 @@
             <button class="stype" data-zone="常规" type="button">常规</button>
             <button class="stype" data-zone="cos" type="button">COS</button>
           </div>
-          <div class="hist-search">
-            <input id="aSearch" type="text" placeholder="搜索作者">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/></svg>
+          <div class="a-toolbar-right">
+            <button class="import-btn" id="authorImportBtn" type="button">导入 TXT</button>
+            <div class="hist-search">
+              <input id="aSearch" type="text" placeholder="搜索作者">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/></svg>
+            </div>
+          </div>
+        </div>
+        <!-- 导入 TXT 面板：从文件读取或粘贴文本，解析作者后并入 AUTHORS（纯内存态，#7） -->
+        <div class="import-panel" id="authorImportPanel" hidden>
+          <div class="import-head"><h3>导入作者 TXT</h3><button class="import-close" id="authorImportClose" type="button" aria-label="关闭">×</button></div>
+          <p class="import-hint">支持三种格式：一行一个作者名；"姓名,别名1,别名2"；"作者名：文件列表"块</p>
+          <input type="file" id="authorImportFile" accept=".txt,text/plain">
+          <textarea id="authorImportText" placeholder="在此粘贴 TXT 内容，或点上方选择文件…"></textarea>
+          <div class="import-actions">
+            <button class="save-btn" id="authorImportDo" type="button">导入</button>
+            <span class="import-result" id="authorImportResult" hidden></span>
           </div>
         </div>
         <div class="a-sortrow" id="aSort">

@@ -10,6 +10,30 @@
 
 ---
 
+## media-ui-prototype 七组缺陷修复：榜单浏览口径/作者关联副标题/首页卡片元信息/相册时间分区/COS 搜索与推荐词/作者 TXT 导入（2026-09-03 第六笔）
+
+执行 AI：DeepSeek-V4-Flash（主代理，WorkBuddy；执行子代理 ui-fix-dev@media-ui-fix）
+
+用户对照旧版 Android 应用（QimengMedia）逐页验收 media-ui-prototype，报 7 组行为差异，要求"内容榜=常看文件、作者榜=常看作者、作者总览=作者管理"等旧版语义落地。仅改 `media-ui-prototype/`（app.js/index.html/style.css，纯 HTML/CSS/JS + mock，无框架/无后端）：
+
+1. **数据页作者榜 = 常看作者**：只显示浏览>0 的作者、按浏览数降序取 Top5（旧版 DataStatsFragment renderTopAuthors 口径——旧实现按作品数排且 0 浏览也显示）；完整榜页同步。
+2. **作者总览 = 作者管理入口卡**：每行补「X 个文件 · 浏览 Y 次」双关联副标题（旧版 AuthorListFragment onBindViewHolder 口径），COS 作者带 ·COS 标识；关注数变化实时同步。
+3. **内容榜 = 常看文件**：mock 15 条全为正浏览量、按浏览降序、0 浏览不显示（旧版 renderTopFiles 口径）。
+4. **首页/相册/搜索卡片元信息**：抽 `cardInner()` 统一模板——标题下作者单独一行、日期次行；视频时长角标仅 `m:ss` 格式显示（图片/动图/空串不显示，旧版卡片结构）。
+5. **相册页按时间分区**：复刻旧版 MediaBrowserLogic.dateLabel——今天/昨天/周一~周日（距今 2~6 天）/yyyy-MM-dd 分组标题 +「N 项」计数，筛选胶囊先过滤后分组、空组不渲染。
+6. **COS 内容生效 + 推荐搜索**：顶栏 cos tab 过滤卡片流/搜索池；搜索关键词真正参与结果过滤（补 SEARCH_STATE.query + matchQuery 六维子串命中：文件名/作者（去@前缀）/分区/作品/角色/类型 + cos 标记，搜 cos/COS/Cosplay 命中 cos:true 条目——根因：旧实现关键词从未接线，搜任意词结果相同）；推荐搜索区从占位文案改为 mock 推荐词 chips 点击即搜。
+7. **作者管理页「导入 TXT」入口**：原只有列表找不到添加方式。新增导入按钮+面板（选 .txt 文件读取 / 粘贴文本），解析兼容旧版 AuthorImportUseCase 三种格式（一行一作者/逗号别名取首/冒号文件列表取作者名），去重并入 mock 并实时刷新榜单/总览/列表，纯内存态。
+
+审查：主代理逐条核对 diff（333+/80-）、`node --check` 通过、56 处 DOM 引用无缺失（含打回一次：搜索关键词未参与过滤已补）、matchQuery 独立单测 ALL_PASS（cos 4 条/虚空行者 2/夜景 1/夜空机位 2/空词全量 13）、本地 8099 服务 curl 200。**待用户浏览器验收后决定是否保留；提交前未动 web/server/android。**
+
+### 已知限制（记账）
+
+- 原型层为 mock 数据：作者浏览聚合未模拟旧版时间窗口（用 browse 字段直排）、TXT 导入不持久化（刷新复原）——真实数据版本在 web 端（阶段 B/C）接入时需按 DOMAIN_RULES 口径实现时间窗聚合与持久化。
+- 上传路径不做富化（source/角色/作者/cos_work，既有缺口）；ArtPlayer 播放器 UI、confirm 原型弹窗、设置页三卡持久化、客户端异常上报通道沿用记账。
+- 相册页徽标仍为 4 个独立 facets 请求（本地聚合量级可控，无合并端点需求）。
+
+---
+
 ## 相册作者/角色行语义修正（旧版「全部」tab 口径）+ 首页 cos/排行榜 + 文件管理 TXT 卡（2026-09-03 第五笔）
 
 执行 AI：DeepSeek-V4-Flash（主代理，WorkBuddy）
