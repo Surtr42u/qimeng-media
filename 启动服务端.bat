@@ -2,6 +2,9 @@
 title Qimeng Media Server
 cd /d "%~dp0server"
 set QIMENG_DATA_DIR=%~dp0qimeng-data
+rem Dev-mode passwordless login (user agreement: no password flow until project is done).
+rem MUST be removed for production/remote deployment (see docs/SECURITY.md "Dev mode").
+set QIMENG_AUTH_DEV_MODE=1
 
 echo ================================================================
 echo   Qimeng Media Server (port 8420)
