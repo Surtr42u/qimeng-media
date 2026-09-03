@@ -10,6 +10,14 @@
 
 ---
 
+## 搜索页类型档加「动图」（2026-09-03 第四笔）
+
+执行 AI：GLM-5.3-Flash（主代理，ZCode）
+
+HANDOVER_UI §5 待办项：搜索页类型 tab 从 综合/视频/图片 三档扩为四档（+动图=mediaType animated_image，计数走 useAssetsTotal）——与相册页类型维、协议 MediaType 枚举（image/animated_image/video）对齐。纯前端小改（SearchPage.tsx 四处），协议零变化；tsc + build 通过。用户拍板暂停后续小任务（confirm 原型风格弹窗、上传路径富化两项仍记账待做）。
+
+---
+
 ## 相册四维聚合：GET /assets/facets + migration 0008 cos_work + 相册页四维胶囊（2026-09-03 第三笔）
 
 执行 AI：GLM-5.3-Flash（主代理，ZCode）

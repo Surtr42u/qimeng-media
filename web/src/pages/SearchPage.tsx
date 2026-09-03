@@ -18,15 +18,16 @@ import { SORT_TABS, newSearchState, type SearchFilterState } from './search-stat
 /**
  * 搜索结果页（原型 #page-search 移植）：顶栏搜索框回车进入，q 变化整体重置筛选。
  * 数据源 = GET /assets 全参数（q/类型/排序/顺位/区间/年份/标签全部真实传参，阶段 B 接真）；
- * 类型 tab 三档：综合（不传 mediaType）/视频/图片——协议无 audio 类型且数据库无音频
+ * 类型 tab 四档：综合（不传 mediaType）/视频/动图/图片——协议无 audio 类型且数据库无音频
  * 记录（旧 App 的音频档在数据模型里本就无实体，原型残留，见 DOMAIN_RULES 类型口径）。
  * 「更多筛选」拆分在 SearchFilters（本文件警戒线内）。
  */
 
-/** 类型 tab 文案 → 协议 MediaType（「综合」不传；无 audio：MediaType 枚举仅 image/animated_image/video） */
+/** 类型 tab 文案 → 协议 MediaType（「综合」不传；MediaType 枚举 image/animated_image/video，无 audio） */
 const TYPE_TO_MEDIA: Record<string, MediaType | undefined> = {
   综合: undefined,
   视频: 'video',
+  动图: 'animated_image',
   图片: 'image',
 }
 
@@ -95,6 +96,7 @@ export default function SearchPage() {
   // 数据源：标签池（全量）/类型徽标计数（limit=1 取 totalMatched）
   const { data: tagPool = [] } = useTags()
   const { data: totalVideo = 0 } = useAssetsTotal('video')
+  const { data: totalAnimated = 0 } = useAssetsTotal('animated_image')
   const { data: totalImage = 0 } = useAssetsTotal('image')
   const createTag = useCreateTag()
 
@@ -174,9 +176,10 @@ export default function SearchPage() {
     () => [
       { label: '综合', total: undefined },
       { label: '视频', total: totalVideo },
+      { label: '动图', total: totalAnimated },
       { label: '图片', total: totalImage },
     ],
-    [totalVideo, totalImage],
+    [totalVideo, totalAnimated, totalImage],
   )
 
   return (
