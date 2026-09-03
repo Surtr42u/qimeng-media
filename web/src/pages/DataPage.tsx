@@ -122,15 +122,21 @@ export default function DataPage() {
         .map((a) => ({ name: authorDisplayName(a), count: (a.viewCount ?? 0).toLocaleString(LOCALE_ZH) })),
     [authors],
   )
-  // 作者总览卡（原型 renderAuthorOverview）：全部作者不过滤，两行结构=名 + 副标题
-  // 「N 个文件 · 浏览 M 次」（无计数徽标，count 传空串）
+  // 作者总览卡（原型 renderAuthorOverview）：作者管理入口的预览卡——行数与相邻
+  // 榜单卡一致取 Top5（2026-09-04 用户反馈：真库 122 位作者全量渲染致栏目过长；
+  // 总量看头注「N 位作者 · 已关注 M」，完整列表走「管理」进作者管理页），
+  // 按文件数降序（作者管理页「文件数量」档同口径），两行副标题保留。
   const authorOverviewRows = useMemo(
     () =>
-      authors.map((a) => ({
-        name: authorDisplayName(a),
-        count: '',
-        sub: `${a.fileCount ?? 0} 个文件 · 浏览 ${(a.viewCount ?? 0).toLocaleString(LOCALE_ZH)} 次`,
-      })),
+      authors
+        .slice()
+        .sort((a, b) => (b.fileCount ?? 0) - (a.fileCount ?? 0))
+        .slice(0, RANK_TOP_COUNT)
+        .map((a) => ({
+          name: authorDisplayName(a),
+          count: '',
+          sub: `${a.fileCount ?? 0} 个文件 · 浏览 ${(a.viewCount ?? 0).toLocaleString(LOCALE_ZH)} 次`,
+        })),
     [authors],
   )
   const followedCount = useMemo(() => authors.filter((a) => a.followed).length, [authors])
