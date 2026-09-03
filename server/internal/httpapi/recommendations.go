@@ -105,7 +105,7 @@ func (s *Server) GetApiV1Recommendations(w http.ResponseWriter, r *http.Request,
 	for _, it := range ordered {
 		row := rowByID[it.AssetID]
 		out = append(out, buildSummary(s, row.AssetID, row.FileName, row.MediaType,
-			row.SizeBytes, row.Mtime, row.CreatedAt, row.Source, row.IsFavorite, row.LikeCount))
+			row.SizeBytes, row.Mtime, row.CreatedAt, row.Source, row.IsFavorite, row.LikeCount, nil, nil))
 	}
 	writeJSON(w, http.StatusOK, out)
 }

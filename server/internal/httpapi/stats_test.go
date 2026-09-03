@@ -206,6 +206,42 @@ func TestStatsTrendsRanges(t *testing.T) {
 	}
 }
 
+// TestStatsTrends7d90d：range=7d 收近 7 天行、range=90d 收近 90 天行，
+// 同逐日分桶（与 logic 的 day 同粒度），窗口裁剪后桶和 = 窗口内行和。
+func TestStatsTrends7d90d(t *testing.T) {
+	env := newTestEnv(t)
+	a := testFiles[0]
+	today := todayLocal(env)
+
+	// 造数跨三个窗口带：今天 / -3d（两档都在）/ -7d（7d 窗外、90d 窗内）/
+	// -100d（两档都窗外）。
+	seedDailyRow(t, env, a.id, store.FormatDay(today), 2, 1, 30)                    // view+play=3
+	seedDailyRow(t, env, a.id, store.FormatDay(today.AddDate(0, 0, -3)), 1, 0, 0)   // =1
+	seedDailyRow(t, env, a.id, store.FormatDay(today.AddDate(0, 0, -7)), 1, 0, 0)   // =1
+	seedDailyRow(t, env, a.id, store.FormatDay(today.AddDate(0, 0, -100)), 1, 0, 0) // 窗口外
+
+	// 7d：只收 -3d 与今天两行（和 4），桶从 -3d 铺到今天 = 4 个天桶。
+	b7 := getTrends(t, env, "?range=7d")
+	if len(b7) != 4 {
+		t.Fatalf("range=7d 期望 4 个天桶，得到 %d", len(b7))
+	}
+	if sum := trendViewPlaySum(b7); sum != 4 {
+		t.Fatalf("range=7d 桶之和期望 4，得到 %d", sum)
+	}
+	if *b7[len(b7)-1].ViewCount != 2 || *b7[len(b7)-1].PlayCount != 1 {
+		t.Fatalf("range=7d 末桶（今天）值错误：%+v", b7[len(b7)-1])
+	}
+
+	// 90d：收 -7d/-3d/今天三行（和 5），桶从 -7d 铺到今天 = 8 个天桶。
+	b90 := getTrends(t, env, "?range=90d")
+	if len(b90) != 8 {
+		t.Fatalf("range=90d 期望 8 个天桶，得到 %d", len(b90))
+	}
+	if sum := trendViewPlaySum(b90); sum != 5 {
+		t.Fatalf("range=90d 桶之和期望 5，得到 %d", sum)
+	}
+}
+
 // trendViewPlaySum 桶序列的 view+play 总和（守恒断言用）。
 func trendViewPlaySum(buckets []gen.TrendBucket) int64 {
 	var sum int64

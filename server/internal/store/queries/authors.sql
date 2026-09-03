@@ -13,11 +13,17 @@
 
 -- name: ListAuthors :many
 -- GET /authors: every author (regular + COS unified, DOMAIN_RULES 6)
--- with its linked-asset count and follow flag. Sort = display_name
--- ascending, same convention as GET /tags (ListTags ORDER BY t.name,
--- DOMAIN_RULES 7 name ordering).
+-- with its linked-asset count, cumulative view count and follow flag.
+-- Sort = display_name ascending, same convention as GET /tags
+-- (ListTags ORDER BY t.name, DOMAIN_RULES 7 name ordering).
+-- view_count = author's works' total kind='open' events (one scalar
+-- subquery per linked row; aa.asset_id NULL rows contribute 0, so the
+-- SUM never yields NULL; COALESCE keeps the aggregate defensive).
 SELECT au.id, au.display_name, au.type, au.followed,
-       COUNT(aa.asset_id) AS file_count
+       COUNT(aa.asset_id) AS file_count,
+       COALESCE(SUM(CASE WHEN aa.asset_id IS NULL THEN 0 ELSE
+           (SELECT COUNT(*) FROM view_events ve
+            WHERE ve.asset_id = aa.asset_id AND ve.kind = 'open') END), 0) AS view_count
 FROM authors au
 LEFT JOIN asset_authors aa ON aa.author_id = au.id
 GROUP BY au.id

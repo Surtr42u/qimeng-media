@@ -70,6 +70,7 @@ type genAuthor struct {
 	Type        *string `json:"type"`
 	FileCount   *int    `json:"fileCount"`
 	Followed    *bool   `json:"followed"`
+	ViewCount   *int    `json:"viewCount"`
 }
 
 func findAuthor(t *testing.T, list []genAuthor, id string) genAuthor {
@@ -148,6 +149,23 @@ func TestAuthorsImportTxtFullChain(t *testing.T) {
 	}
 	if a := findAuthor(t, list, authoring.GenerateAuthorID("纯粹作者甲")); a.FileCount == nil || *a.FileCount != 0 {
 		t.Errorf("格式 C 作者 fileCount=%v, want 0", a.FileCount)
+	}
+}
+
+// TestAuthorsViewCount：GET /authors 响应含 viewCount（作者全部作品累计
+// open 事件数；作者归因表 asset_authors join 口径）。
+func TestAuthorsViewCount(t *testing.T) {
+	env := newTestEnv(t)
+	kami := authoring.GenerateAuthorID("kamihikoki_mmd")
+	importTXT(t, env, "a.txt", "1  kamihikoki_mmd\n作品\na.jpg\n")
+
+	// 2 次 open（不同 session = 2 条计数；跨天无影响，session 去重只按当日）
+	reportOpenAt(t, env, testFiles[0].id, "2026-08-21T10:00:00Z", "av-s1")
+	reportOpenAt(t, env, testFiles[0].id, "2026-08-21T11:00:00Z", "av-s2")
+
+	a := findAuthor(t, listAuthors(t, env), kami)
+	if a.ViewCount == nil || *a.ViewCount != 2 {
+		t.Fatalf("作者 viewCount 期望 2，得到 %v", a.ViewCount)
 	}
 }
 

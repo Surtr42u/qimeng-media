@@ -6,24 +6,26 @@ import (
 )
 
 // 排行周期窗口（DOMAIN_RULES §2：按 ViewEvent 时间戳过滤；
-// day=24h week=7d month=30d year=365d，常量集中一处——与 httpapi 的
-// period 枚举值（openapi enum day/week/month/year/all）同步，协议侧
-// 改动须同步此处）。
+// day=24h week=7d month=30d quarter=90d year=365d，常量集中一处——与
+// httpapi 的 period 枚举值（openapi enum day/week/month/quarter/year/all）
+// 同步，协议侧改动须同步此处）。
 const (
-	PeriodDay   = "day"
-	PeriodWeek  = "week"
-	PeriodMonth = "month"
-	PeriodYear  = "year"
-	PeriodAll   = "all"
+	PeriodDay     = "day"
+	PeriodWeek    = "week"
+	PeriodMonth   = "month"
+	PeriodQuarter = "quarter"
+	PeriodYear    = "year"
+	PeriodAll     = "all"
 )
 
 // rankPeriodWindows 是各周期对应的过滤窗口；不存在的键（含 all）不
 // 过滤（总榜语义）。
 var rankPeriodWindows = map[string]time.Duration{
-	PeriodDay:   24 * time.Hour,
-	PeriodWeek:  7 * 24 * time.Hour,
-	PeriodMonth: 30 * 24 * time.Hour,
-	PeriodYear:  365 * 24 * time.Hour,
+	PeriodDay:     24 * time.Hour,
+	PeriodWeek:    7 * 24 * time.Hour,
+	PeriodMonth:   30 * 24 * time.Hour,
+	PeriodQuarter: 90 * 24 * time.Hour,
+	PeriodYear:    365 * 24 * time.Hour,
 }
 
 // Rank 热度排行（纯函数，无 IO）：

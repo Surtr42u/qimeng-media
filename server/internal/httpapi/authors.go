@@ -52,6 +52,7 @@ func (s *Server) GetApiV1Authors(w http.ResponseWriter, r *http.Request) {
 	for _, row := range rows {
 		t := gen.AuthorType(row.Type)
 		fileCount := int(row.FileCount)
+		viewCount := toInt(row.ViewCount) // 全部作品累计 open 事件（SQL 聚合；toInt 抹平 sqlc interface{}）
 		followed := row.Followed == 1
 		out = append(out, gen.Author{
 			Id:          &row.ID,
@@ -59,6 +60,7 @@ func (s *Server) GetApiV1Authors(w http.ResponseWriter, r *http.Request) {
 			Type:        &t,
 			FileCount:   &fileCount,
 			Followed:    &followed,
+			ViewCount:   ptr(viewCount),
 		})
 	}
 	writeJSON(w, http.StatusOK, out)

@@ -591,6 +591,85 @@ func TestAssetListPaginationFilterSort(t *testing.T) {
 	}
 }
 
+// TestAssetListLikedFilter：liked=true 只返回赞过（likes 表任意日行）的资产，
+// liked=false 返回从未赞过的资产（与 favorite 筛选同机关）。
+func TestAssetListLikedFilter(t *testing.T) {
+	env := newTestEnv(t)
+	a := testFiles[0]
+
+	// 直接写 likes 行（PUT /like 是当日 toggle，测试要的多日历史行用查询层写入）
+	if err := env.q.AddLike(context.Background(), db.AddLikeParams{
+		AssetID: a.id, Day: "2026-08-20", CreatedAt: store.FormatTimestamp(env.clock.Now()),
+	}); err != nil {
+		t.Fatalf("写赞失败: %v", err)
+	}
+
+	resp := env.do(t, "GET", "/api/v1/assets?liked=true", "")
+	var page gen.AssetPage
+	_ = decodeBody(resp, &page)
+	closeBody(resp)
+	if n := len(deref(page.Items)); n != 1 || *deref(page.Items)[0].FileName != "a.jpg" {
+		t.Fatalf("liked=true 应只含 a.jpg，得到 %v", page.Items)
+	}
+	if page.TotalMatched == nil || *page.TotalMatched != 1 {
+		t.Fatalf("liked=true totalMatched 应 1，得到 %v", page.TotalMatched)
+	}
+
+	resp = env.do(t, "GET", "/api/v1/assets?liked=false", "")
+	_ = decodeBody(resp, &page)
+	closeBody(resp)
+	if n := len(deref(page.Items)); n != 2 {
+		t.Fatalf("liked=false 应剩 2 条，得到 %d", n)
+	}
+	for _, it := range deref(page.Items) {
+		if *it.FileName == "a.jpg" {
+			t.Fatal("liked=false 不应含 a.jpg")
+		}
+	}
+}
+
+// TestAssetListSortFavoriteAt：sort=favoriteAt 按收藏时间排序（仅 favorite=true
+// 语义成立）；desc 新收藏在前，asc 旧收藏在前，未收藏资产不进结果。
+func TestAssetListSortFavoriteAt(t *testing.T) {
+	env := newTestEnv(t)
+	a, c := testFiles[0], testFiles[2]
+
+	addFav := func(assetID, created string) {
+		t.Helper()
+		if _, err := env.q.AddFavorite(context.Background(), db.AddFavoriteParams{
+			AssetID: assetID, CreatedAt: created,
+		}); err != nil {
+			t.Fatalf("写收藏失败: %v", err)
+		}
+	}
+	addFav(a.id, "2026-08-19T10:00:00.000Z")
+	addFav(c.id, "2026-08-21T10:00:00.000Z")
+
+	// desc：新收藏（c.mp4）在前
+	resp := env.do(t, "GET", "/api/v1/assets?sort=favoriteAt&favorite=true&order=desc", "")
+	var page gen.AssetPage
+	_ = decodeBody(resp, &page)
+	closeBody(resp)
+	if n := deref(page.Items); len(n) != 2 || *n[0].FileName != "c.mp4" || *n[1].FileName != "a.jpg" {
+		t.Fatalf("favoriteAt desc 顺序应为 c.mp4,a.jpg：%v", page.Items)
+	}
+
+	// asc：旧收藏（a.jpg）在前
+	resp = env.do(t, "GET", "/api/v1/assets?sort=favoriteAt&favorite=true&order=asc", "")
+	_ = decodeBody(resp, &page)
+	closeBody(resp)
+	if n := deref(page.Items); len(n) != 2 || *n[0].FileName != "a.jpg" || *n[1].FileName != "c.mp4" {
+		t.Fatalf("favoriteAt asc 顺序应为 a.jpg,c.mp4：%v", page.Items)
+	}
+
+	// favorite=true 未收藏的 b.jpg 不出现（favorite 筛选与 favoriteAt 组合语义）
+	for _, it := range deref(page.Items) {
+		if *it.FileName == "b.jpg" {
+			t.Fatal("favorite=true 不应含未收藏的 b.jpg")
+		}
+	}
+}
+
 // ---------- ④ 详情 ----------
 
 func TestAssetDetail(t *testing.T) {

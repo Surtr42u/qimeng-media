@@ -26,6 +26,8 @@ const (
 	trendMonthWindowMonths  = 24 // range=month：近 24 个月
 	trendQuarterWindowMonth = 24 // range=quarter：近 8 个季度（8×3 = 24 个月）
 	trendYearWindowYears    = 5  // range=year：近 5 年
+	trend7dWindowDays       = 7  // range=7d：近 7 天逐日桶
+	trend90dWindowDays      = 90 // range=90d：近 90 天逐日桶
 )
 
 // localDayBoundsUTC 返回 t 所在本地日历日 [00:00, 次日 00:00) 的 UTC 时间戳
@@ -81,7 +83,8 @@ func (s *Server) GetApiV1StatsTrends(w http.ResponseWriter, r *http.Request, par
 		rng = stats.Range(*params.Range)
 		switch rng {
 		case stats.RangeDay, stats.RangeWeek, stats.RangeMonth,
-			stats.RangeQuarter, stats.RangeYear, stats.RangeAll: // 合法
+			stats.RangeQuarter, stats.RangeYear, stats.RangeAll,
+			stats.Range7d, stats.Range90d: // 合法（openapi enum 与 stats.Range 双同步）
 		default:
 			writeErr(w, http.StatusBadRequest, "INVALID_PARAM", "range 取值不合法")
 			return
@@ -133,6 +136,10 @@ func trendWindowStart(rng stats.Range, today time.Time) time.Time {
 	switch rng {
 	case stats.RangeDay:
 		return local.AddDate(0, 0, -(trendDayWindowDays - 1))
+	case stats.Range7d:
+		return local.AddDate(0, 0, -(trend7dWindowDays - 1))
+	case stats.Range90d:
+		return local.AddDate(0, 0, -(trend90dWindowDays - 1))
 	case stats.RangeWeek:
 		return local.AddDate(0, 0, -(trendWeekWindowDays - 1))
 	case stats.RangeMonth:

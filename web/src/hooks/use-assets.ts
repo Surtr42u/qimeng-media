@@ -11,13 +11,20 @@ import {
   getApiV1Recommendations,
   getApiV1Sources,
   postApiV1EventsView,
+  type AssetSummary,
+  type CountRange,
+  type SizeRange,
 } from '@/api/generated'
+import type { MediaCardProps } from '@/components/media/MediaCard'
 import { unwrapSdkResult } from '@/lib/api-client'
+import { formatDuration, formatShortDate } from '@/lib/format'
 
 export type MediaType = 'image' | 'animated_image' | 'video'
-export type AssetSort = 'default' | 'fileDate' | 'addedDate' | 'viewCount' | 'playCount' | 'sizeBytes' | 'name'
+export type AssetSort =
+  | 'default' | 'fileDate' | 'addedDate' | 'viewCount' | 'playCount' | 'sizeBytes' | 'name' | 'favoriteAt'
 
-/** 资产列表查询参数（协议 GET /assets 的用户面子集；分页游标由无限滚动管理） */
+/** 资产列表查询参数（协议 GET /assets 的用户面子集；分页游标由无限滚动管理）。
+ *  区间值域与协议枚举一致（CountRange/SizeRange），不自行再造字符串。 */
 export interface AssetListParams {
   libraryId?: string
   mediaType?: MediaType
@@ -27,6 +34,19 @@ export interface AssetListParams {
   order?: 'asc' | 'desc'
   limit?: number
   q?: string
+  authorId?: string
+  tagIds?: string[]
+  tagMode?: 'fuzzy' | 'exact'
+  includeCos?: boolean
+  favorite?: boolean
+  liked?: boolean
+  viewRange?: CountRange
+  playRange?: CountRange
+  sizeRange?: SizeRange
+  dateFrom?: string
+  dateTo?: string
+  yearFrom?: number
+  yearTo?: number
 }
 
 /** 推荐流（M3 十维算法，seed=0 稳定排序；首页卡片流数据源） */
@@ -37,15 +57,40 @@ export function useRecommendations(limit = 60) {
   })
 }
 
-/** 资产列表无限滚动（游标分页；相册/搜索共用口径） */
-export function useAssetsInfinite(params: AssetListParams = {}) {
+/** 资产列表无限滚动（游标分页；相册/搜索/集合页共用口径）。
+ *  enabled=false 用于"无搜索词/未找到合集实体"时避免无效请求（q 为空仍要渲染空态）。 */
+export function useAssetsInfinite(params: AssetListParams = {}, enabled = true) {
   return useInfiniteQuery({
     queryKey: ['api/v1/assets', params],
     queryFn: ({ pageParam }) =>
       unwrapSdkResult(getApiV1Assets({ query: { ...params, cursor: pageParam } })),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextCursor ?? undefined,
+    enabled,
   })
+}
+
+/** 类型总数徽标（limit=1 只取 totalMatched；搜索页类型 tab 计数用，不带其他筛选） */
+export function useAssetsTotal(mediaType?: MediaType) {
+  return useQuery({
+    queryKey: ['api/v1/assets/total', mediaType ?? 'all'],
+    queryFn: () => unwrapSdkResult(getApiV1Assets({ query: { limit: 1, mediaType } })),
+    select: (page) => page.totalMatched ?? 0,
+  })
+}
+
+/** AssetSummary → MediaCardProps（卡片展示字段映射唯一入口，搜索/集合页共用）。
+ *  映射口径照 HomePage/AlbumsPage：封面=thumbUrl、标题=fileName、时长=视频 durationMs
+ *  （图片省略）、up=出处 source、date=modifiedAt 短日期。 */
+export function assetToCard(a: AssetSummary): MediaCardProps {
+  return {
+    id: a.id,
+    cover: a.thumbUrl ?? '',
+    title: a.fileName ?? '',
+    duration: a.durationMs ? formatDuration(a.durationMs) : undefined,
+    up: a.source ?? undefined,
+    date: formatShortDate(a.modifiedAt),
+  }
 }
 
 /** 资产详情（签名原件直链/编码信息/标签作者——详情页与播放兼容性判断数据源） */

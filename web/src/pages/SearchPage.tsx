@@ -1,177 +1,102 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useSearchParams } from 'react-router'
+import { useNavigate, useSearchParams } from 'react-router'
+import type { CountRange, SizeRange } from '@/api/generated'
 import { MediaCard } from '@/components/media/MediaCard'
 import { ChevronDownIcon } from '@/components/shell/icons'
-import { LOCALE_ZH } from '@/lib/constants'
-import { MOCK_ALBUM_FILES, MOCK_SEARCH_TAGS, type MockAlbumFile } from '@/pages/mock'
-
-/** 搜索筛选状态机（照 app.js SEARCH_STATE） */
-interface SearchFilterState {
-  type: string
-  sort: string
-  order: string
-  plays: string
-  size: string
-  time: string
-  tagMode: string
-  tags: string[]
-  yearFrom: string
-  yearTo: string
-}
-
-const STYPE_TABS = ['综合', '视频', '图片', '音频'] as const
-const SORT_TABS = ['综合排序', '最多点击'] as const
-const ORDER_OPTIONS = ['降序', '升序'] as const
-const PLAYS_OPTIONS = ['全部', '未播放', '1-5', '5-20', '>20'] as const
-const SIZE_OPTIONS = ['全部', '<1MB', '1-10MB', '10-50MB', '>50MB'] as const
-const TIME_OPTIONS = ['全部', '今天', '本周', '本月', '近三月', '本年', '按年份区间'] as const
-const TAG_MODE_OPTIONS = ['模糊', '精确'] as const
-
-// 2016~2026 倒序 11 个年份（照 app.js SEARCH_YEARS）
-const SEARCH_YEARS = Array.from({ length: 11 }, (_, i) => String(2026 - i))
-
-// 初值与「新搜索重置」共用同一份（照原型 resetSearchState：新查询不继承旧筛选）
-function newSearchState(): SearchFilterState {
-  return {
-    type: '综合',
-    sort: '综合排序',
-    order: '降序',
-    plays: '全部',
-    size: '全部',
-    time: '全部',
-    tagMode: '模糊',
-    tags: [],
-    yearFrom: '2016',
-    yearTo: '2026',
-  }
-}
-
-// 照 app.js hitTag：标签命中四维任一值或名称子串
-function hitTag(file: MockAlbumFile, tag: string): boolean {
-  return Object.values(file.tags).includes(tag) || file.name.includes(tag)
-}
-
-function FilterRow({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="f-row">
-      <span className="f-label">{label}</span>
-      <div className="f-opts">{children}</div>
-    </div>
-  )
-}
-
-function FilterPill({ value, active, onClick }: { value: string; active: boolean; onClick: () => void }) {
-  return (
-    <button type="button" className={`pill${active ? ' active' : ''}`} onClick={onClick}>
-      {value}
-    </button>
-  )
-}
-
-/** 年份区间下拉：仅记录不过滤（原型语义，区间类筛选无对应 mock 数据） */
-function YearRange({
-  from,
-  to,
-  onChange,
-}: {
-  from: string
-  to: string
-  onChange: (key: 'yearFrom' | 'yearTo', value: string) => void
-}) {
-  return (
-    <span className="f-years">
-      <select aria-label="起始年份" value={from} onChange={(e) => onChange('yearFrom', e.target.value)}>
-        {SEARCH_YEARS.map((y) => (
-          <option key={y} value={y}>
-            {y} 年
-          </option>
-        ))}
-      </select>
-      <span className="f-years-sep">至</span>
-      <select aria-label="结束年份" value={to} onChange={(e) => onChange('yearTo', e.target.value)}>
-        {SEARCH_YEARS.map((y) => (
-          <option key={y} value={y}>
-            {y} 年
-          </option>
-        ))}
-      </select>
-    </span>
-  )
-}
-
-interface TagRowProps {
-  pool: string[]
-  selected: string[]
-  inputOpen: boolean
-  onToggle: (tag: string) => void
-  onRemove: (tag: string) => void
-  onOpenInput: () => void
-  onCloseInput: () => void
-  onAdd: (raw: string) => void
-}
-
-/** 标签行：池 pill（× 删除级联）+ 「+ 添加」与内联输入互斥切换 */
-function TagRow({ pool, selected, inputOpen, onToggle, onRemove, onOpenInput, onCloseInput, onAdd }: TagRowProps) {
-  return (
-    <FilterRow label="标签">
-      {pool.map((t) => (
-        <button
-          key={t}
-          type="button"
-          className={`pill pill-tag${selected.includes(t) ? ' active' : ''}`}
-          onClick={() => onToggle(t)}
-        >
-          {t}
-          <span
-            className="tag-x"
-            title="删除标签"
-            onClick={(e) => {
-              e.stopPropagation()
-              onRemove(t)
-            }}
-          >
-            ×
-          </span>
-        </button>
-      ))}
-      {inputOpen ? (
-        <input
-          className="tag-input"
-          type="text"
-          placeholder="新标签，回车添加"
-          maxLength={12}
-          autoFocus
-          onKeyDown={(e) => {
-            // 回车入池并收起（原型 innerHTML 重渲染后输入框复位）；Esc 直接还原
-            if (e.key === 'Enter') onAdd(e.currentTarget.value)
-            if (e.key === 'Enter' || e.key === 'Escape') onCloseInput()
-          }}
-          onBlur={(e) => {
-            if (e.currentTarget.value.trim()) onAdd(e.currentTarget.value)
-            onCloseInput()
-          }}
-        />
-      ) : (
-        <button type="button" className="pill pill-add" onClick={onOpenInput}>
-          + 添加
-        </button>
-      )}
-    </FilterRow>
-  )
-}
+import {
+  assetToCard,
+  useAssetsInfinite,
+  useAssetsTotal,
+  type AssetListParams,
+  type MediaType,
+} from '@/hooks/use-assets'
+import { useCreateTag, useTags } from '@/hooks/use-tags'
+import { DEFAULT_PAGE_SIZE } from '@/lib/constants'
+import { SearchFilters } from './SearchFilters'
+import { SORT_TABS, newSearchState, type SearchFilterState } from './search-state'
 
 /**
  * 搜索结果页（原型 #page-search 移植）：顶栏搜索框回车进入，q 变化整体重置筛选。
- * 类型与标签筛选真实生效；区间类（播放/大小/时间/年份）仅切换样式不参与过滤
- * （原型明确语义：无对应 mock 数据）。阶段 A 纯内存态，不调 API。
+ * 数据源 = GET /assets 全参数（q/类型/排序/顺位/区间/年份/标签全部真实传参，阶段 B 接真）；
+ * 类型 tab 三档：综合（不传 mediaType）/视频/图片——协议无 audio 类型且数据库无音频
+ * 记录（旧 App 的音频档在数据模型里本就无实体，原型残留，见 DOMAIN_RULES 类型口径）。
+ * 「更多筛选」拆分在 SearchFilters（本文件警戒线内）。
  */
+
+/** 类型 tab 文案 → 协议 MediaType（「综合」不传；无 audio：MediaType 枚举仅 image/animated_image/video） */
+const TYPE_TO_MEDIA: Record<string, MediaType | undefined> = {
+  综合: undefined,
+  视频: 'video',
+  图片: 'image',
+}
+
+/** 播放/浏览次数档（文案=原型）→ 协议 CountRange；边界以 browse.sql 为准：none=0/low=1-5/mid=5-20/high=>20 */
+const PLAYS_TO_RANGE: Record<string, CountRange | undefined> = {
+  全部: undefined,
+  未播放: 'none',
+  '1-5': 'low',
+  '5-20': 'mid',
+  '>20': 'high',
+}
+
+/** 文件大小档（文案=原型）→ 协议 SizeRange；边界以 browse.sql 为准：lt1m<1MB/m1to10<10MB/m10to50<50MB/gt50m */
+const SIZE_TO_RANGE: Record<string, SizeRange | undefined> = {
+  全部: undefined,
+  '<1MB': 'lt1m',
+  '1-10MB': 'm1to10',
+  '10-50MB': 'm10to50',
+  '>50MB': 'gt50m',
+}
+
+/** 本地日历日 → yyyy-MM-dd（服务端语义：本地日历日，dateTo 含当日全天——assets.go newAssetFilters） */
+function localDate(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+/** 时间范围档 → dateFrom/dateTo（「全部」/「按年份区间」不产日期，年份走 yearFrom/yearTo） */
+function dateRangeFor(time: string): { dateFrom?: string; dateTo?: string } | undefined {
+  const today = new Date()
+  const to = localDate(today)
+  if (time === '今天') return { dateFrom: to, dateTo: to }
+  if (time === '本周') {
+    const monday = new Date(today)
+    monday.setDate(today.getDate() - ((today.getDay() + 6) % 7)) // 周一为一周之始（周日 getDay()=0 → 回 6 天）
+    return { dateFrom: localDate(monday), dateTo: to }
+  }
+  if (time === '本月') {
+    const first = new Date(today.getFullYear(), today.getMonth(), 1)
+    return { dateFrom: localDate(first), dateTo: to }
+  }
+  if (time === '近三月') {
+    const from = new Date(today)
+    from.setMonth(today.getMonth() - 3)
+    return { dateFrom: localDate(from), dateTo: to }
+  }
+  if (time === '本年') return { dateFrom: `${today.getFullYear()}-01-01`, dateTo: to }
+  return undefined
+}
+
+/** 新建标签前的名称清洗（照 app.js addTag：trim + 剔除危险字符；空名丢弃） */
+function cleanTagName(raw: string): string {
+  return raw.trim().replace(/[<>&"']/g, '')
+}
+
 export default function SearchPage() {
+  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const q = (searchParams.get('q') ?? '').trim()
   const [state, setState] = useState<SearchFilterState>(newSearchState)
   const [panelOpen, setPanelOpen] = useState(false)
-  const [tagPool, setTagPool] = useState<string[]>(MOCK_SEARCH_TAGS)
   const [tagInputOpen, setTagInputOpen] = useState(false)
+
+  // 数据源：标签池（全量）/类型徽标计数（limit=1 取 totalMatched）
+  const { data: tagPool = [] } = useTags()
+  const { data: totalVideo = 0 } = useAssetsTotal('video')
+  const { data: totalImage = 0 } = useAssetsTotal('image')
+  const createTag = useCreateTag()
 
   // 新搜索整体重置（数据态重置，非 DOM 操作，属 useEffect 合理场景）
   useEffect(() => {
@@ -183,71 +108,91 @@ export default function SearchPage() {
   const setFilter = <K extends keyof SearchFilterState>(key: K, value: SearchFilterState[K]) =>
     setState((s) => ({ ...s, [key]: value }))
 
-  const toggleTag = (tag: string) =>
+  const toggleTag = (tagId: string) =>
     setState((s) => ({
       ...s,
-      tags: s.tags.includes(tag) ? s.tags.filter((t) => t !== tag) : [...s.tags, tag],
+      tags: s.tags.includes(tagId) ? s.tags.filter((t) => t !== tagId) : [...s.tags, tagId],
     }))
 
-  // 照 app.js addTag：trim + 剔除危险字符 + 去重（浏览中新标签自动入池）
+  // 池来自服务端全量（useTags），× 语义调整为「取消选中」——删除全局标签是管理操作，不在筛选面板
+  const removeTag = (tagId: string) => setState((s) => ({ ...s, tags: s.tags.filter((t) => t !== tagId) }))
+
+  // 新标签：清洗 → 同名已存在则直接选中（服务端按 name 去重，避免重复创建）；否则 POST 后按返回 id 选中
   const addTag = (raw: string) => {
-    const v = raw.trim().replace(/[<>&"']/g, '')
+    const v = cleanTagName(raw)
     if (!v) return
-    setTagPool((pool) => (pool.includes(v) ? pool : [...pool, v]))
-  }
-
-  // 照 app.js removeTag：从池删除并级联清理筛选选中态
-  const removeTag = (tag: string) => {
-    setTagPool((pool) => pool.filter((t) => t !== tag))
-    setState((s) => ({ ...s, tags: s.tags.filter((t) => t !== tag) }))
-  }
-
-  // 池展示按名称升序（照 app.js sortedTags，DOMAIN_RULES 标签排序口径）
-  const sortedPool = useMemo(
-    () => [...tagPool].sort((a, b) => a.localeCompare(b, LOCALE_ZH)),
-    [tagPool],
-  )
-
-  // 基础池 = 标签叠加后的集合（照 app.js searchPool），类型计数与结果网格都基于它
-  const pool = useMemo(() => {
-    if (state.tags.length === 0) return MOCK_ALBUM_FILES
-    return MOCK_ALBUM_FILES.filter((f) =>
-      state.tagMode === '精确'
-        ? state.tags.every((t) => hitTag(f, t))
-        : state.tags.some((t) => hitTag(f, t)),
-    )
-  }, [state.tags, state.tagMode])
-
-  const files = useMemo(() => {
-    let list = pool
-    if (state.type !== '综合') list = list.filter((f) => f.tags.type === state.type)
-    if (state.sort === '最多点击') {
-      list = [...list].sort(
-        (a, b) => parseInt(b.views.replace(/,/g, ''), 10) - parseInt(a.views.replace(/,/g, ''), 10),
-      )
+    const existing = tagPool.find((t) => t.name === v)
+    if (existing?.id) {
+      setState((s) => (s.tags.includes(existing.id!) ? s : { ...s, tags: [...s.tags, existing.id!] }))
+      return
     }
-    if (state.order === '升序') list = [...list].reverse()
-    return list
-  }, [pool, state.type, state.sort, state.order])
+    void createTag
+      .mutateAsync(v)
+      .then((tag) => {
+        if (tag.id) setState((s) => (s.tags.includes(tag.id!) ? s : { ...s, tags: [...s.tags, tag.id!] }))
+      })
+      .catch(() => {
+        // 创建失败（如服务端拒绝）静默忽略：不打断搜索流程，标签输入框已收起
+      })
+  }
 
-  // 类型徽标计数：综合显示池总数，其余按类型统计（照 app.js renderSearchTypes）
-  const countFor = (t: string) =>
-    t === '综合' ? pool.length : pool.filter((f) => f.tags.type === t).length
+  /** 筛选状态 → GET /assets 参数（唯一组装点；q 为空时页码区不发起查询） */
+  const listParams = useMemo<AssetListParams>(() => {
+    const p: AssetListParams = { q, limit: DEFAULT_PAGE_SIZE }
+    const mt = TYPE_TO_MEDIA[state.type]
+    if (mt) p.mediaType = mt
+    // 排序：综合=default、最多点击=viewCount（顺位 order 真实传参）
+    p.sort = state.sort === '最多点击' ? 'viewCount' : 'default'
+    p.order = state.order === '升序' ? 'asc' : 'desc'
+    const vr = PLAYS_TO_RANGE[state.plays]
+    // 该行选项为「未播放/1-5/5-20/>20」——播放次数语义（play 事件），
+    // 映射 playRange 而非 viewRange（DOMAIN_RULES §3 观看/播放两行口径分开）
+    if (vr) p.playRange = vr
+    const sr = SIZE_TO_RANGE[state.size]
+    if (sr) p.sizeRange = sr
+    const dr = dateRangeFor(state.time)
+    if (dr) {
+      if (dr.dateFrom) p.dateFrom = dr.dateFrom
+      if (dr.dateTo) p.dateTo = dr.dateTo
+    }
+    if (state.time === '按年份区间') {
+      p.yearFrom = Number(state.yearFrom)
+      p.yearTo = Number(state.yearTo)
+    }
+    if (state.tags.length > 0) {
+      p.tagIds = state.tags
+      p.tagMode = state.tagMode === '精确' ? 'exact' : 'fuzzy'
+    }
+    return p
+  }, [q, state])
+
+  const { data: pages, isLoading, isFetching, fetchNextPage, hasNextPage } = useAssetsInfinite(listParams, q !== '')
+  const items = useMemo(() => pages?.pages.flatMap((pg) => pg.items ?? []) ?? [], [pages])
+
+  // 类型 tab 结构（综合无徽标照原型；徽标 = 该类型资产总数，与当前筛选无关）
+  const typeTabs = useMemo(
+    () => [
+      { label: '综合', total: undefined },
+      { label: '视频', total: totalVideo },
+      { label: '图片', total: totalImage },
+    ],
+    [totalVideo, totalImage],
+  )
 
   return (
     <div className="page" id="page-search">
       <div className="stype-row">
-        {STYPE_TABS.map((t) => (
+        {typeTabs.map((t) => (
           <button
-            key={t}
+            key={t.label}
             type="button"
-            className={`stype${state.type === t ? ' active' : ''}`}
-            data-stype={t}
-            onClick={() => setFilter('type', t)}
+            className={`stype${state.type === t.label ? ' active' : ''}`}
+            data-stype={t.label}
+            onClick={() => setFilter('type', t.label)}
           >
-            {t}
+            {t.label}
             {/* 「综合」无计数徽标（照原型） */}
-            {t !== '综合' ? <span className="stype-count">{countFor(t)}</span> : null}
+            {t.total !== undefined ? <span className="stype-count">{t.total}</span> : null}
           </button>
         ))}
       </div>
@@ -274,63 +219,48 @@ export default function SearchPage() {
           <ChevronDownIcon />
         </button>
       </div>
-      <div className="search-filters" hidden={!panelOpen}>
-        <div>
-          <FilterRow label="顺位">
-            {ORDER_OPTIONS.map((v) => (
-              <FilterPill key={v} value={v} active={state.order === v} onClick={() => setFilter('order', v)} />
-            ))}
-          </FilterRow>
-          <FilterRow label="播放次数">
-            {PLAYS_OPTIONS.map((v) => (
-              <FilterPill key={v} value={v} active={state.plays === v} onClick={() => setFilter('plays', v)} />
-            ))}
-          </FilterRow>
-          <FilterRow label="文件大小">
-            {SIZE_OPTIONS.map((v) => (
-              <FilterPill key={v} value={v} active={state.size === v} onClick={() => setFilter('size', v)} />
-            ))}
-          </FilterRow>
-          <FilterRow label="时间范围">
-            {TIME_OPTIONS.map((v) => (
-              <FilterPill key={v} value={v} active={state.time === v} onClick={() => setFilter('time', v)} />
-            ))}
-            {state.time === '按年份区间' ? (
-              <YearRange
-                from={state.yearFrom}
-                to={state.yearTo}
-                onChange={(key, value) => setFilter(key, value)}
-              />
-            ) : null}
-          </FilterRow>
-          <FilterRow label="标签模式">
-            {TAG_MODE_OPTIONS.map((v) => (
-              <FilterPill key={v} value={v} active={state.tagMode === v} onClick={() => setFilter('tagMode', v)} />
-            ))}
-          </FilterRow>
-          <TagRow
-            pool={sortedPool}
-            selected={state.tags}
-            inputOpen={tagInputOpen}
-            onToggle={toggleTag}
-            onRemove={removeTag}
-            onOpenInput={() => setTagInputOpen(true)}
-            onCloseInput={() => setTagInputOpen(false)}
-            onAdd={addTag}
-          />
-        </div>
-      </div>
+      <SearchFilters
+        hidden={!panelOpen}
+        state={state}
+        tagPool={tagPool}
+        tagInputOpen={tagInputOpen}
+        setFilter={setFilter}
+        onToggleTag={toggleTag}
+        onRemoveTag={removeTag}
+        onOpenTagInput={() => setTagInputOpen(true)}
+        onCloseTagInput={() => setTagInputOpen(false)}
+        onAddTag={addTag}
+      />
       <div className="grid">
         {q === '' ? (
           <p className="grid-empty">在顶部搜索框输入关键词开始搜索</p>
-        ) : files.length ? (
-          files.map((f) => (
-            <MediaCard key={f.name} cover={f.cover} title={f.name} duration={f.duration} up={f.up} date={f.date} />
+        ) : items.length ? (
+          items.map((a) => (
+            <MediaCard
+              key={a.id}
+              {...assetToCard(a)}
+              onClick={() => a.id && navigate(`/app/asset/${a.id}`)}
+            />
           ))
+        ) : isLoading ? (
+          <p className="grid-empty">加载中…</p>
         ) : (
           <p className="grid-empty">没有匹配的内容，放宽一点筛选条件试试。</p>
         )}
       </div>
+      {q !== '' && hasNextPage ? (
+        <p className="grid-empty">
+          <button
+            className="pill"
+            type="button"
+            disabled={isFetching}
+            onClick={() => fetchNextPage()}
+          >
+            {isFetching ? '加载中…' : '加载更多'}
+          </button>
+          <span className="pill-count">共 {items.length} 项</span>
+        </p>
+      ) : null}
     </div>
   )
 }

@@ -65,6 +65,9 @@ SELECT
         WHEN sqlc.arg(sort) = 'sizeBytes' THEN printf('%020d', a.size_bytes)
         WHEN sqlc.arg(sort) = 'viewCount' THEN printf('%020d', (SELECT COUNT(*) FROM view_events v2 WHERE v2.asset_id = a.asset_id AND v2.kind = 'open'))
         WHEN sqlc.arg(sort) = 'playCount' THEN printf('%020d', (SELECT COUNT(*) FROM view_events v3 WHERE v3.asset_id = a.asset_id AND v3.kind = 'play'))
+        -- favoriteAt: favorites.created_at (only meaningful with
+        -- favorite=true; no-favorite row -> NULL key sorts to the end).
+        WHEN sqlc.arg(sort) = 'favoriteAt' THEN (SELECT fv_sorted.created_at FROM favorites fv_sorted WHERE fv_sorted.asset_id = a.asset_id)
         ELSE a.created_at
     END AS sort_key
 FROM assets a
@@ -119,6 +122,15 @@ WHERE
             EXISTS(SELECT 1 FROM favorites fv2 WHERE fv2.asset_id = a.asset_id)
         ELSE
             NOT EXISTS(SELECT 1 FROM favorites fv2 WHERE fv2.asset_id = a.asset_id)
+        END))
+    -- liked filter (DOMAIN_RULES 5): asset liked on ANY day = likes table
+    -- has at least one row; same shape as the favorite filter above (and
+    -- keep in sync across the three queries in this file).
+    AND (sqlc.narg(liked) IS NULL OR (
+        CASE WHEN sqlc.narg(liked) = 1 THEN
+            EXISTS(SELECT 1 FROM likes lk WHERE lk.asset_id = a.asset_id)
+        ELSE
+            NOT EXISTS(SELECT 1 FROM likes lk WHERE lk.asset_id = a.asset_id)
         END))
     -- file-date window: TEXT comparison against the RFC3339-ms format;
     -- boundaries precomputed by the caller (dateFrom -> T00:00:00.000Z,
@@ -179,6 +191,7 @@ WHERE
                 WHEN sqlc.arg(sort) = 'sizeBytes' THEN printf('%020d', a.size_bytes)
                 WHEN sqlc.arg(sort) = 'viewCount' THEN printf('%020d', (SELECT COUNT(*) FROM view_events v6 WHERE v6.asset_id = a.asset_id AND v6.kind = 'open'))
                 WHEN sqlc.arg(sort) = 'playCount' THEN printf('%020d', (SELECT COUNT(*) FROM view_events v7 WHERE v7.asset_id = a.asset_id AND v7.kind = 'play'))
+                WHEN sqlc.arg(sort) = 'favoriteAt' THEN (SELECT fv_sorted.created_at FROM favorites fv_sorted WHERE fv_sorted.asset_id = a.asset_id)
                 ELSE a.created_at
             END) < sqlc.narg(cursor_key)
         OR ((CASE
@@ -187,6 +200,7 @@ WHERE
                 WHEN sqlc.arg(sort) = 'sizeBytes' THEN printf('%020d', a.size_bytes)
                 WHEN sqlc.arg(sort) = 'viewCount' THEN printf('%020d', (SELECT COUNT(*) FROM view_events v6 WHERE v6.asset_id = a.asset_id AND v6.kind = 'open'))
                 WHEN sqlc.arg(sort) = 'playCount' THEN printf('%020d', (SELECT COUNT(*) FROM view_events v7 WHERE v7.asset_id = a.asset_id AND v7.kind = 'play'))
+                WHEN sqlc.arg(sort) = 'favoriteAt' THEN (SELECT fv_sorted.created_at FROM favorites fv_sorted WHERE fv_sorted.asset_id = a.asset_id)
                 ELSE a.created_at
             END) = sqlc.narg(cursor_key)
             AND a.asset_id < sqlc.narg(cursor_id)))
@@ -208,6 +222,9 @@ SELECT
         WHEN sqlc.arg(sort) = 'sizeBytes' THEN printf('%020d', a.size_bytes)
         WHEN sqlc.arg(sort) = 'viewCount' THEN printf('%020d', (SELECT COUNT(*) FROM view_events v2 WHERE v2.asset_id = a.asset_id AND v2.kind = 'open'))
         WHEN sqlc.arg(sort) = 'playCount' THEN printf('%020d', (SELECT COUNT(*) FROM view_events v3 WHERE v3.asset_id = a.asset_id AND v3.kind = 'play'))
+        -- favoriteAt: favorites.created_at (only meaningful with
+        -- favorite=true; no-favorite row -> NULL key sorts to the end).
+        WHEN sqlc.arg(sort) = 'favoriteAt' THEN (SELECT fv_sorted.created_at FROM favorites fv_sorted WHERE fv_sorted.asset_id = a.asset_id)
         ELSE a.created_at
     END AS sort_key
 FROM assets a
@@ -253,6 +270,15 @@ WHERE
         ELSE
             NOT EXISTS(SELECT 1 FROM favorites fv2 WHERE fv2.asset_id = a.asset_id)
         END))
+    -- liked filter (DOMAIN_RULES 5): asset liked on ANY day = likes table
+    -- has at least one row; same shape as the favorite filter above (and
+    -- keep in sync across the three queries in this file).
+    AND (sqlc.narg(liked) IS NULL OR (
+        CASE WHEN sqlc.narg(liked) = 1 THEN
+            EXISTS(SELECT 1 FROM likes lk WHERE lk.asset_id = a.asset_id)
+        ELSE
+            NOT EXISTS(SELECT 1 FROM likes lk WHERE lk.asset_id = a.asset_id)
+        END))
     AND (sqlc.narg(mtime_from) IS NULL OR a.mtime >= sqlc.narg(mtime_from))
     AND (sqlc.narg(mtime_to) IS NULL OR a.mtime <= sqlc.narg(mtime_to))
     AND (sqlc.narg(year_from) IS NULL OR CAST(substr(a.mtime, 1, 4) AS INTEGER) >= sqlc.narg(year_from))
@@ -297,6 +323,7 @@ WHERE
                 WHEN sqlc.arg(sort) = 'sizeBytes' THEN printf('%020d', a.size_bytes)
                 WHEN sqlc.arg(sort) = 'viewCount' THEN printf('%020d', (SELECT COUNT(*) FROM view_events v6 WHERE v6.asset_id = a.asset_id AND v6.kind = 'open'))
                 WHEN sqlc.arg(sort) = 'playCount' THEN printf('%020d', (SELECT COUNT(*) FROM view_events v7 WHERE v7.asset_id = a.asset_id AND v7.kind = 'play'))
+                WHEN sqlc.arg(sort) = 'favoriteAt' THEN (SELECT fv_sorted.created_at FROM favorites fv_sorted WHERE fv_sorted.asset_id = a.asset_id)
                 ELSE a.created_at
             END) > sqlc.narg(cursor_key)
         OR ((CASE
@@ -305,6 +332,7 @@ WHERE
                 WHEN sqlc.arg(sort) = 'sizeBytes' THEN printf('%020d', a.size_bytes)
                 WHEN sqlc.arg(sort) = 'viewCount' THEN printf('%020d', (SELECT COUNT(*) FROM view_events v6 WHERE v6.asset_id = a.asset_id AND v6.kind = 'open'))
                 WHEN sqlc.arg(sort) = 'playCount' THEN printf('%020d', (SELECT COUNT(*) FROM view_events v7 WHERE v7.asset_id = a.asset_id AND v7.kind = 'play'))
+                WHEN sqlc.arg(sort) = 'favoriteAt' THEN (SELECT fv_sorted.created_at FROM favorites fv_sorted WHERE fv_sorted.asset_id = a.asset_id)
                 ELSE a.created_at
             END) = sqlc.narg(cursor_key)
             AND a.asset_id > sqlc.narg(cursor_id)))
@@ -357,6 +385,15 @@ WHERE
             EXISTS(SELECT 1 FROM favorites fv2 WHERE fv2.asset_id = a.asset_id)
         ELSE
             NOT EXISTS(SELECT 1 FROM favorites fv2 WHERE fv2.asset_id = a.asset_id)
+        END))
+    -- liked filter (DOMAIN_RULES 5): asset liked on ANY day = likes table
+    -- has at least one row; same shape as the favorite filter above (and
+    -- keep in sync across the three queries in this file).
+    AND (sqlc.narg(liked) IS NULL OR (
+        CASE WHEN sqlc.narg(liked) = 1 THEN
+            EXISTS(SELECT 1 FROM likes lk WHERE lk.asset_id = a.asset_id)
+        ELSE
+            NOT EXISTS(SELECT 1 FROM likes lk WHERE lk.asset_id = a.asset_id)
         END))
     AND (sqlc.narg(mtime_from) IS NULL OR a.mtime >= sqlc.narg(mtime_from))
     AND (sqlc.narg(mtime_to) IS NULL OR a.mtime <= sqlc.narg(mtime_to))

@@ -183,7 +183,7 @@ func (s *Server) PostApiV1AssetsUpload(w http.ResponseWriter, r *http.Request, p
 	// buildSummary 口径组装基础部分），客户端拿到最终 relPath 无需
 	// 再发一次详情请求。
 	base := buildSummary(s, asset.AssetID, asset.FileName, asset.MediaType, asset.SizeBytes,
-		asset.Mtime, asset.CreatedAt, sql.NullString{}, false, 0)
+		asset.Mtime, asset.CreatedAt, sql.NullString{}, false, 0, nil, nil)
 	detail := gen.AssetDetail{
 		AddedAt:    base.AddedAt,
 		FileName:   base.FileName,

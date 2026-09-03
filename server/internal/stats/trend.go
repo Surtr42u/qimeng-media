@@ -16,6 +16,8 @@ const (
 	RangeQuarter Range = "quarter" // 近 8 季按季
 	RangeYear    Range = "year"    // 近 5 年按年
 	RangeAll     Range = "all"     // 全跨度动态粒度（DOMAIN_RULES §5）
+	Range7d      Range = "7d"      // 近 7 天逐日（取数窗口宽度见 httpapi 常量）
+	Range90d     Range = "90d"     // 近 90 天逐日（取数窗口宽度见 httpapi 常量）
 )
 
 // 动态分桶粒度选择阈值（DOMAIN_RULES §5「趋势图『全部』分桶口径」逐字遵守：
@@ -178,7 +180,7 @@ func parseRows(rows []DailyRow) (earliest, latest time.Time, perDay []rowAgg) {
 // DOMAIN_RULES §5 阈值动态选择（≤12 周桶按周 / ≤24 自然月按月 / 更长按季）。
 func chooseGranularity(r Range, earliest, end time.Time) granularity {
 	switch r {
-	case RangeDay:
+	case RangeDay, Range7d, Range90d: // 7d/90d 与 day 同为逐日分桶
 		return granDay
 	case RangeWeek:
 		return granWeek

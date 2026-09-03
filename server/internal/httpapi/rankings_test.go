@@ -63,6 +63,43 @@ func TestRankingsDayPeriod_returnsViewedAsset(t *testing.T) {
 	}
 }
 
+// TestRankingsQuarterPeriod_fillsCounts：period=quarter（近 90 天）返回
+// 200 且 viewCount/playCount 填充真实值（openapi AssetSummary 新增字段的
+// 排行榜填充端点，数据源 ListAssetsRecommendInput 聚合）。
+func TestRankingsQuarterPeriod_fillsCounts(t *testing.T) {
+	env := newTestEnv(t)
+	id, ok := env.assetIDByName(t, "a.jpg")
+	if !ok {
+		t.Fatal("测试前置失败：a.jpg 不在列表")
+	}
+	// open ×1 + play ×1（kind 不同，会话去重互不影响）
+	reportView(t, env, id, "q-open")
+	postPlayEvent(t, env, id, "q-play")
+
+	items := rankList(t, env, "?period=quarter")
+	if len(items) != 1 {
+		t.Fatalf("quarter 榜应含 1 条，得到 %d", len(items))
+	}
+	if items[0].ViewCount == nil || *items[0].ViewCount != 1 {
+		t.Fatalf("viewCount 应 1：%v", items[0].ViewCount)
+	}
+	if items[0].PlayCount == nil || *items[0].PlayCount != 1 {
+		t.Fatalf("playCount 应 1：%v", items[0].PlayCount)
+	}
+}
+
+// postPlayEvent 上报一次 play 事件（同一会话当日同 kind 只计一次，
+// 这里每次用全新鲜 session 保证计入）。
+func postPlayEvent(t *testing.T, env *testEnv, assetID, session string) {
+	t.Helper()
+	resp := env.do(t, http.MethodPost, "/api/v1/events/view",
+		`{"assetId":"`+assetID+`","kind":"play","startedAt":"2026-08-22T10:00:00Z","sessionId":"`+session+`"}`)
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("play 上报期望 202，得到 %d", resp.StatusCode)
+	}
+}
+
 // TestRankingsLimit：limit 生效（热度高的 b.jpg 排在前面，limit=1 只出它）。
 func TestRankingsLimit(t *testing.T) {
 	env := newTestEnv(t)

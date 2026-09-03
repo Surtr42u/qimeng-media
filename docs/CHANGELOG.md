@@ -10,6 +10,77 @@
 
 ---
 
+## 全部界面接真实数据：搜索/我的/数据/榜单/集合/作者/顶栏/推荐偏好/维护监控（2026-09-03 第二笔）
+
+执行 AI：DeepSeek-V4-Flash-Vision-Exp（主代理，ZCode；研究×2、执行×3、审查×1 子代理）
+
+用户需求："现在把所有界面都接入数据，数据页面和我的页面以及搜索等等全部接入真实数据"——web 端剩余 mock 页面（pages/mock.ts 全量退役）。流程：研究（web 现状+后端能力核对）→ 方案基线（用户拍板：数据页 6 卡换真库数据、设置页扫描/上传/界面卡本次不动）→ 执行三片 → 对抗审查（需返工 3 项已修复）→ 实测。
+
+### 服务端协议扩展（7 点，先 openapi 后 make sdk，禁止手写 SDK）
+
+- `GET /assets` 加 `liked` 筛选（likes 表任意日行=已赞）；`sort` 枚举加 `favoriteAt`（favorites.created_at，仅 favorite=true 语义成立）——browse.sql 三查询同步谓词/排序键。
+- **新增 `GET /history`**：观看历史——每资产最近一次 open 事件时间倒序（每资产一条），FROM assets 锚定排除已删（事件流无 FK，ADR-0005）、默认排除 COS 作者关联（includeCos=true 包含）、keyset 游标 (last_viewed_at, asset_id) 分页；HistoryItem=AssetSummary+lastViewedAt+**durationMs/lastPositionSeconds**（已看完徽标数据源，reviewer 返工补齐）。
+- `GET /stats/trends` range 加 `7d`（近 7 天逐日）/`90d`（近 90 天逐日）；`GET /rankings` period 加 `quarter`（近 90 天窗口，语义沿用"窗口内活跃热度榜"）。
+- `AssetSummary` 加可选 `viewCount/playCount`（仅 rankings 填充实测值，浏览列表传 nil 保持轻量）；`Author` 加 `viewCount`（作者作品累计浏览次数，作者页"经常浏览"排序数据源）。
+- 新测试 8 用例（history 顺序/游标/COS/已删 + durationMs 返工补断言；liked 双向；favoriteAt 排序；7d/90d 桶数与守恒；quarter 计数；authors viewCount）——`go test ./...` 14 包全绿。
+
+### Web 接真（铁律 7：页面零 SDK 调用，数据全走 hooks）
+
+- **共享层**：`hooks/use-assets.ts`（AssetListParams 补全 13 个协议参数、`assetToCard` 摘要→卡片映射、`useAssetsTotal` 计数徽标）；新 hooks `use-authors`（列表+关注 PUT）/`use-tags`（列表+新建）/`use-stats`（overview/trends/rankings）/`use-history`（无限翻页）/`use-prefs`（9 维 GET/PUT+四预设常量）/`use-system-status`（2s 轮询）；`lib/format.ts` 补 formatCount/formatDateTime/localDateKey；路由键常量 迁移 `lib/route-keys.ts`，**`pages/mock.ts` 全量删除**。
+- **搜索页**：q 从"不参与过滤"修复为真传 FTS5（六维：文件名/路径/标签/角色/作者/出处）；类型/排序/顺位/播放次数（**playRange**，reviewer 指出原误用 viewRange 已修）/文件大小/时间范围/年份区间/标签池+模式全部真实传参；类型徽标=totalMatched 真计数；结果无限滚动+点击进详情；音频档删除（协议 MediaType 无 audio）+「+ 添加」标签=POST /tags 后选中。
+- **TopBar**：搜索历史 localStorage（key qimeng_search_history，20 条去重最新在前，清空按钮）；推荐搜索词=tag/作者 fileCount Top6 合并去重取 8。
+- **我的页**：资料卡（库数/文件总数/容量=useLibraries+stats/overview）；关注 Tab（followed 过滤+关注 toggle）；收藏 Tab（favorite=true + sort=favoriteAt + 加载更多）；浏览历史 Tab（今天/昨天/更早分组、已看完=lastPositionSeconds>=durationMs/1000、观看时间、标题过滤、点击进详情）。
+- **数据页**：6 指标卡真库数据（总文件/图片/视频/容量/今日浏览/累计浏览，用户拍板）；时段四档（近 7/30/90 天/全部）联动 trends（7d/day/90d/all）与内容榜（week/month/quarter/all）；双环（类型分布+浏览量占比近30天）；内容 Top5=rankings（formatCount 角标+点击详情）；标签/作者榜=/tags、/authors fileCount Top5（库存口径与原型一致）；作者总览=140 位真数+已关注。
+- **完整榜单页**：内容榜=rankings 全量（日/周/月/年周期由数据页入口决定，子页固定全周期——现状无周期胶囊）；标签/作者榜全量降序。
+- **集合子页**：tag/author 按名找实体→真资产网格（**includeCos=true 修复**：COS 作者如"蠢沫沫"2852 文件默认被排除导致空态，reviewer 实测覆盖）。
+- **作者管理页**：140 位真作者（10 位有文件）、体系胶囊 常规/COS、排序 默认/经常浏览(viewCount)/文件数量、关注 toggle PUT。
+- **设置页**：新增「推荐偏好」卡——4 预设（点击即保存）+9 维滑杆（拖动后保存），预设数值逐字抄 DOMAIN_RULES §1.3 表，PUT 全量 9 字段（协议整体替换语义）；其余三卡按用户拍板不动。
+- **维护页性能监控**：4 圆环（CPU/内存/系统盘/存储合计=system/status 实时）、指标卡（上下行速率=2s 轮询本地差分、存储合计、运行时长）、网络曲线（60 点环形采样）；客户端异常表改空态（无上报通道，记账）。
+- 新组件：`components/data/{TrendChart,DonutCard,ContentRankGrid,RankRowList}`、`pages/SearchFilters.tsx`+`search-state.ts`（搜索页拆 259 行内）；维护页速率曲线本地实现。
+
+### 实测（用户 PC 真库：4 库/6413 文件/188.9 GB）
+
+- 搜索 "2b" → 38 条"尼尔 机械纪元 2B"真资产；搜索"请不要带走我"（mock 历史词）→ 真无结果提示（证明链路真）；类型徽标 视频 392/图片 462。
+- 我的页：资料卡 4 库/6413 文件/188.9GB；收藏 0 空态；浏览历史"今天 · 7"条真记录（9-3 16:53~16:54 观看）。
+- 数据页：6 卡/趋势（09-02、09-03 两桶）/双环（图片 93.6%）/内容榜 Top5（最终幻想/拳皇/铁拳8/守望先锋）/作者榜（蠢沫沫 2852/橙子喵酱 451/…）/作者总览 140 位。
+- 集合页：作者"蠢沫沫"·2852 个文件真网格（修复前空态）。
+- 作者关注 toggle：关注↔已关注双向（PUT 生效+恢复原状）。
+- 推荐偏好：点"新鲜优先"→9 滑杆变 0.10/0.05/.../0.35（与预设表逐字一致）→恢复"均衡推荐"→GET 回读默认值；首页推荐流正常渲染。
+- 维护页：CPU 8%/内存 16.1/31.7GB/系统盘/存储合计 3382.2/4652.1GB/下行 7KB/s 上行 8KB/s/运行时长 0 天（重启后真实值）。
+- 顶栏：推荐搜索=蠢沫沫/橙子喵酱/…；输入 2b 回车→URL /app/search?q=2b+历史入库+重新聚焦显示"搜索历史 · 2b"。
+- 端点级：8 个新端点/参数 curl 全 200；history 返回 durationMs=14000（返工后）。
+
+### 对抗审查（reviewer，全新上下文）与返工
+
+- **需返工 3 项已修复**：① history 缺 durationMs/lastPositionSeconds→"已看完"徽标失效（history.sql SELECT 补列+组装+测试断言+curl 验证 14000）；② 维护页未交付（system/status 轮询+曲线+空态，本次补齐）；③ 搜索"播放次数"误映射 viewRange→playRange（DOMAIN_RULES §3 两行口径分开）。
+- 审查独立重跑：go test 14 包全绿、tsc 干净、生成物符号核验通过、mock 残留 0。
+
+### 已知限制（记账）
+
+- 搜索首查较慢（FTS5 子串 instr 全表扫描，非本次引入；6413 文件约 2-4s）。
+- 相册「作品/角色」聚合维度端点待做（阶段 B 已接分区+类型两维）；设置页三卡保存待配置端点；客户端异常上报通道未建（维护页空态）；ArtPlayer 播放器 UI 待做；SW 旧缓存会短暂显示旧 UI（PWA 特性，清缓存/等待新版接管）。
+- 数据页内容榜子页固定全周期（无周期胶囊）；"本周"按周一为起点。
+
+---
+
+## 本机启动脚本开启开发免密登录：QIMENG_AUTH_DEV_MODE=1（2026-09-03）
+
+执行 AI：DeepSeek-V4-Flash-Vision-Exp（主代理，ZCode）
+
+用户需求："客户端启动服务器登录就要密码，输入后还显示密码错误，在没彻底做好之前都不需要密码"。根因：服务端 `auth_dev_mode` 默认 false 且 `启动服务端.bat` 未设置该 env——web 端免密通道（LoginGate 挂载自动调 `/auth/dev-login`）404 后回退到密码表单，输错密码（管理密码记录为 test-password-001）即报"密码错误"。按 HANDOVER 用户约定（项目未完成前不要密码流程）恢复免密。
+
+### 变更
+
+- `启动服务端.bat`：新增 `set QIMENG_AUTH_DEV_MODE=1`（英文注释注明生产/远程部署必须移除，指向 docs/SECURITY.md「开发模式」节）。
+- 文档：SECURITY.md「开发模式」节新增"本机开发脚本"说明；HANDOVER.md 用户约定第 1 条同步（已默认写入启动脚本）。
+
+### 实测（用户 PC 实机）
+
+- 重启服务（旧的 qimeng.exe 进程已停止）后：`POST /api/v1/auth/dev-login` → 200 返回 64 位 hex token；带 token `POST /api/v1/auth/verify` → 204；首页 SPA 正常（title 绮梦影库）。
+- 用户浏览器刷新 `http://127.0.0.1:8420` 即免密直达 UI；旧 token 因 dev-login 重铸失效属预期（与 /auth/login 同语义，签发即重铸）。
+
+---
+
 ## 阶段 B 浏览链路接真实数据：首页推荐流/相册/详情页（图片大图+视频直链播放）（2026-09-03）
 
 执行 AI：GLM-5.3-Flash（主代理，ZCode）

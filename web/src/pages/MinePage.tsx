@@ -1,11 +1,21 @@
 import { useMemo, useState } from 'react'
+import { useNavigate } from 'react-router'
+import type { HistoryItem } from '@/api/generated'
 import { MediaCard } from '@/components/media/MediaCard'
 import { SearchIcon } from '@/components/shell/icons'
-import { MOCK_ALBUM_FILES } from '@/pages/mock'
+import { assetToCard, useAssetsInfinite } from '@/hooks/use-assets'
+import { useAuthors, useToggleFollow } from '@/hooks/use-authors'
+import { useHistoryInfinite } from '@/hooks/use-history'
+import { useLibraries } from '@/hooks/use-libraries'
+import { useStatsOverview } from '@/hooks/use-stats'
+import { LOCALE_ZH } from '@/lib/constants'
+import { formatBytes, formatDateTime, formatDuration, localDateKey } from '@/lib/format'
 
 /**
- * 我的页（原型 #page-mine 移植）：资料卡 + 三 Tab（关注/收藏/历史）。
- * 关注按钮为内存态双向切换；历史搜索按标题/作者子串过滤，整组无命中不渲染该组。
+ * 我的页（原型 #page-mine 移植）：资料卡 + 三 Tab（关注/收藏/历史），阶段 B 已接真实数据。
+ * 关注列表 = GET /authors 过滤 followed（用户拍板：只显示已关注，全部作者在作者管理页）；
+ * 收藏 = GET /assets favorite 筛选（favoriteAt 倒序）；历史 = GET /history 按 lastViewedAt
+ * 分「今天/昨天/更早」三组（已看完 = lastPositionSeconds >= durationMs/1000，GUIDE_API 口径）。
  */
 
 type MineTab = 'follow' | 'fav' | 'history'
@@ -16,111 +26,106 @@ const TABS: { key: MineTab; label: string }[] = [
   { key: 'history', label: '浏览历史' },
 ]
 
-/** 关注作者卡（原型 index.html 167-187 写死的 5 位作者，阶段 B 接真实关注列表） */
-interface FollowAuthor {
-  name: string
-  works: number
-  followed: boolean
+/** 历史分组（顺序固定：今天 → 昨天 → 更早；空组隐藏） */
+const HIST_GROUPS = [
+  { key: 'today', label: '今天' },
+  { key: 'yesterday', label: '昨天' },
+  { key: 'earlier', label: '更早' },
+] as const
+
+type HistGroupKey = (typeof HIST_GROUPS)[number]['key']
+
+/** 本地今天/昨天日期键（历史分组边界；跨零点后下次渲染自动更新） */
+function dayBoundaryKeys(): { today: string; yesterday: string } {
+  const now = new Date()
+  const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1)
+  return { today: localDateKey(now.getTime()), yesterday: localDateKey(yesterday.getTime()) }
 }
 
-// 用户拍板（2026-09-03）：关注作者列表只显示已关注的，未关注者不出现在这里
-// （全部作者的浏览/管理在作者管理页）
-const FOLLOW_AUTHORS: FollowAuthor[] = [
-  { name: 'Kokorooo_', works: 62, followed: true },
-  { name: '纪录片bro', works: 141, followed: true },
-  { name: '红星视频', works: 210, followed: true },
-]
-
-/** 收藏作品 = 内容池固定下标（与原型 FAV_WORK_INDEXES 一致） */
-const FAV_INDEXES = [0, 1, 3, 4, 5, 7]
-
-interface HistCard {
-  cover: string
-  title: string
-  up: string
-  done?: string
-  time: string
-  duration?: string
+function histGroupOf(ts: number, today: string, yesterday: string): HistGroupKey {
+  const k = localDateKey(ts)
+  if (k === today) return 'today'
+  if (k === yesterday) return 'yesterday'
+  return 'earlier'
 }
 
-const HIST_GROUPS: { label: string; cards: HistCard[] }[] = [
-  {
-    label: '今天',
-    cards: [
-      { cover: '/covers/c-avatar.webp', title: '【kkr】小祥指挥交通', up: '@ Kokorooo_', done: '已看完', time: '今天 00:10' },
-    ],
-  },
-  {
-    label: '昨天',
-    cards: [
-      {
-        cover: '/covers/c-dlss.webp',
-        title: '在没有 dlls 的游戏中逆编渲染管线实现原生接入 dlss5',
-        up: '@ 关于转生成骡姬这档事',
-        time: '昨天 23:59',
-        duration: '00:14/06:53',
-      },
-      {
-        cover: '/covers/c-tokyo.webp',
-        title: '大型纪录片《老农拼死护住儿子的救命钱》持续为您播出！',
-        up: '@ 纪录片bro',
-        time: '昨天 23:45',
-        duration: '00:46/07:44',
-      },
-      {
-        cover: '/covers/c-box.webp',
-        title: '《开学自我介绍666》',
-        up: '@ 韩比迪',
-        time: '昨天 23:44',
-        duration: '00:12/04:10',
-      },
-      {
-        cover: '/covers/c-rural.webp',
-        title: '马杜罗被强掳了8个月后 狱中近照首次曝光 身形消瘦现身纽约监狱…',
-        up: '@ 红星视频',
-        time: '昨天 23:44',
-        duration: '00:03/00:39',
-      },
-    ],
-  },
-]
+/** 历史卡渲染项：协议 HistoryItem + 客户端推导的「已看完」徽标 */
+type HistRenderItem = HistoryItem & { isDone?: boolean }
+
+/** 历史卡数据（结构照原型 HistCard：封面/标题/已看完徽标/观看时间/视频时长/出处） */
+function HistCardItem({ item, onClick }: { item: HistRenderItem; onClick?: () => void }) {
+  return (
+    <article className="hist-card" onClick={onClick} role={onClick ? 'button' : undefined}>
+      <div className="hc-cover">
+        <img src={item.thumbUrl ?? ''} alt="" />
+        {item.isDone ? <span className="hc-done">已看完</span> : null}
+        <span className="hc-time">{formatDateTime(item.lastViewedAt)}</span>
+        {item.durationMs ? <span className="hc-duration">{formatDuration(item.durationMs)}</span> : null}
+      </div>
+      <p className="hc-title">{item.fileName ?? ''}</p>
+      <p className="hc-up">{item.source ? `@ ${item.source}` : ''}</p>
+    </article>
+  )
+}
 
 export default function MinePage() {
+  const navigate = useNavigate()
   const [tab, setTab] = useState<MineTab>('follow')
-  const [follows, setFollows] = useState(FOLLOW_AUTHORS)
   const [query, setQuery] = useState('')
 
-  const toggleFollow = (name: string) =>
-    setFollows((list) => list.map((a) => (a.name === name ? { ...a, followed: !a.followed } : a)))
+  const { data: libraries } = useLibraries()
+  const { data: overview } = useStatsOverview()
+  const { data: authors = [], isLoading: authorsLoading } = useAuthors()
+  const toggleFollow = useToggleFollow()
 
-  const favItems = FAV_INDEXES.map((i) => MOCK_ALBUM_FILES[i])
+  // 收藏：favoriteAt 倒序（协议 sort=favoriteAt 仅在收藏筛选下语义成立，DOMAIN_RULES §3）
+  const favQuery = useAssetsInfinite({ favorite: true, sort: 'favoriteAt', order: 'desc' })
+  const favItems = useMemo(() => favQuery.data?.pages.flatMap((p) => p.items ?? []) ?? [], [favQuery.data])
 
+  const histQuery = useHistoryInfinite()
+  const histItems = useMemo(
+    () => histQuery.data?.pages.flatMap((p) => p.items ?? []) ?? [],
+    [histQuery.data],
+  )
+
+  // 仅显示已关注（用户拍板语义：未关注作者在作者管理页处理）
+  const followedAuthors = useMemo(() => authors.filter((a) => a.followed), [authors])
+
+  // 分组：组内按 lastViewedAt 倒序；标题子串（fileName）过滤；空组隐藏
   const histGroups = useMemo(() => {
     const q = query.trim().toLowerCase()
+    const { today, yesterday } = dayBoundaryKeys()
+    const matched = histItems.filter(
+      (h) =>
+        (h.lastViewedAt ?? 0) > 0 &&
+        (!q || (h.fileName ?? '').toLowerCase().includes(q)),
+    )
     return HIST_GROUPS.map((g) => ({
       ...g,
-      cards: g.cards.filter((c) => !q || `${c.title} ${c.up}`.toLowerCase().includes(q)),
-    })).filter((g) => g.cards.length > 0)
-  }, [query])
+      items: matched
+        .filter((h) => histGroupOf(h.lastViewedAt as number, today, yesterday) === g.key)
+        .sort((a, b) => (b.lastViewedAt ?? 0) - (a.lastViewedAt ?? 0)),
+    })).filter((g) => g.items.length > 0)
+  }, [histItems, query])
 
   return (
     <div className="page" id="page-mine">
       <section className="profile-card">
         <div className="profile-main">
           <h2>绮梦</h2>
-          <p>本地管理员 · mock 数据</p>
+          <p>本地管理员</p>
         </div>
         <dl className="profile-stats">
           <div>
-            <dd>1</dd>
+            <dd>{libraries?.length ?? 0}</dd>
             <dt>媒体库</dt>
           </div>
           <div>
-            <dd>7,347</dd>
+            <dd>{(overview?.totalFiles ?? 0).toLocaleString(LOCALE_ZH)}</dd>
             <dt>文件总数</dt>
           </div>
           <div>
-            <dd>128.4 GB</dd>
+            <dd>{formatBytes(overview?.totalSizeBytes ?? 0)}</dd>
             <dt>总大小</dt>
           </div>
         </dl>
@@ -140,34 +145,64 @@ export default function MinePage() {
       </div>
       {/* pane 显隐沿用原型 hidden 属性（CSS .m-pane[hidden] 已兜底 display:none） */}
       <div className="m-pane" id="mpane-follow" hidden={tab !== 'follow'}>
-        <div className="follow-list">
-          {follows.map((a) => (
-            <article className="follow-card" key={a.name}>
-              <div className="follow-info">
-                <p className="follow-name">{a.name}</p>
-                <p className="follow-sub">{a.works} 个作品</p>
-              </div>
-              <button
-                className={a.followed ? 'follow-btn' : 'follow-btn follow-btn--idle'}
-                type="button"
-                onClick={() => toggleFollow(a.name)}
-              >
-                {a.followed ? '已关注' : '关注'}
-              </button>
-            </article>
-          ))}
-        </div>
+        {authorsLoading ? (
+          <p className="a-empty">加载中…</p>
+        ) : followedAuthors.length ? (
+          <div className="follow-list">
+            {followedAuthors.map((a) => (
+              <article className="follow-card" key={a.id}>
+                <div className="follow-info">
+                  <p className="follow-name">{a.displayName}</p>
+                  <p className="follow-sub">{a.fileCount ?? 0} 个文件</p>
+                </div>
+                <button
+                  className={`follow-btn${a.followed ? '' : ' follow-btn--idle'}`}
+                  type="button"
+                  disabled={toggleFollow.isPending}
+                  onClick={() => a.id && toggleFollow.mutate({ authorId: a.id, follow: !a.followed })}
+                >
+                  {a.followed ? '已关注' : '关注'}
+                </button>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <p className="a-empty">暂无关注作者</p>
+        )}
       </div>
       <div className="m-pane" id="mpane-fav" hidden={tab !== 'fav'}>
+        <div className="hist-toolbar">
+          <p className="m-note">收藏 · {favQuery.data?.pages[0]?.totalMatched ?? 0}</p>
+        </div>
         <div className="media-grid" id="favGrid">
           {favItems.map((f) => (
-            <MediaCard key={f.name} cover={f.cover} title={f.name} duration={f.duration} up={f.up} date={f.date} />
+            <MediaCard
+              key={f.id}
+              {...assetToCard(f)}
+              onClick={() => f.id && navigate(`/app/asset/${f.id}`)}
+            />
           ))}
+          {favItems.length === 0 && !favQuery.isFetching ? (
+            <p className="grid-empty">暂无收藏内容</p>
+          ) : null}
         </div>
+        {favQuery.hasNextPage ? (
+          <p className="grid-empty">
+            <button
+              className="pill"
+              type="button"
+              disabled={favQuery.isFetching}
+              onClick={() => favQuery.fetchNextPage()}
+            >
+              {favQuery.isFetching ? '加载中…' : '加载更多'}
+            </button>
+            <span className="pill-count">共 {favItems.length} 项</span>
+          </p>
+        ) : null}
       </div>
       <div className="m-pane" id="mpane-history" hidden={tab !== 'history'}>
         <div className="hist-toolbar">
-          <p className="m-note">按观看时间分组（mock 数据）</p>
+          <p className="m-note">按观看时间分组</p>
           <div className="hist-search">
             <input
               type="text"
@@ -180,24 +215,41 @@ export default function MinePage() {
           </div>
         </div>
         {histGroups.map((g) => (
-          <div className="hist-group2" key={g.label}>
-            <h3>{g.label}</h3>
+          <div className="hist-group2" key={g.key}>
+            <h3>
+              {g.label} · {g.items.length}
+            </h3>
             <div className="hist-grid">
-              {g.cards.map((c) => (
-                <article className="hist-card" key={c.title}>
-                  <div className="hc-cover">
-                    <img src={c.cover} alt="" />
-                    {c.done ? <span className="hc-done">{c.done}</span> : null}
-                    <span className="hc-time">{c.time}</span>
-                    {c.duration ? <span className="hc-duration">{c.duration}</span> : null}
-                  </div>
-                  <p className="hc-title">{c.title}</p>
-                  <p className="hc-up">{c.up}</p>
-                </article>
+              {g.items.map((h) => (
+                <HistCardItem
+                  key={h.id}
+                  item={{
+                    ...h,
+                    isDone: h.durationMs != null && h.lastPositionSeconds != null
+                      && h.lastPositionSeconds * 1000 >= h.durationMs,
+                  }}
+                  onClick={() => h.id && navigate(`/app/asset/${h.id}`)}
+                />
               ))}
             </div>
           </div>
         ))}
+        {histGroups.length === 0 && !histQuery.isFetching ? (
+          <p className="grid-empty">{query.trim() ? '没有匹配的历史记录' : '暂无浏览记录'}</p>
+        ) : null}
+        {histQuery.hasNextPage ? (
+          <p className="grid-empty">
+            <button
+              className="pill"
+              type="button"
+              disabled={histQuery.isFetching}
+              onClick={() => histQuery.fetchNextPage()}
+            >
+              {histQuery.isFetching ? '加载中…' : '加载更多'}
+            </button>
+            <span className="pill-count">共 {histItems.length} 项</span>
+          </p>
+        ) : null}
       </div>
     </div>
   )

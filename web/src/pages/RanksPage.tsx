@@ -1,58 +1,61 @@
+import { useMemo } from 'react'
 import { useNavigate, useParams } from 'react-router'
+import { ContentRankGrid } from '@/components/data/ContentRankGrid'
+import { RankRowList } from '@/components/data/RankRowList'
+import { useAuthors } from '@/hooks/use-authors'
+import { useRankings } from '@/hooks/use-stats'
+import { useTags } from '@/hooks/use-tags'
+import { MAX_PAGE_SIZE } from '@/lib/constants'
 import {
-  AUTHOR_AGG,
   COLLECTION_AUTHOR,
   COLLECTION_TAG,
   RANK_AUTHORS,
   RANK_CONTENT,
   RANK_PAGE_TITLES,
   RANK_TAGS,
-  TAG_AGG,
-} from '@/pages/mock'
+} from '@/lib/route-keys'
 
 type RankKey = typeof RANK_CONTENT | typeof RANK_TAGS | typeof RANK_AUTHORS
 
 const RANK_KEYS: readonly string[] = [RANK_CONTENT, RANK_TAGS, RANK_AUTHORS]
 
-/** 内容榜 15 项（原型 #page-ranks data-panel=content 照搬） */
-const CONTENT_ITEMS = [
-  { cover: '/covers/c-dlss.webp', views: '3,241', title: '样例 2017 高画质合集' },
-  { cover: '/covers/c-tokyo.webp', views: '1,982', title: '舞台摄影 · 第一组' },
-  { cover: '/covers/c-frog.webp', views: '1,540', title: '场外随拍 · 机动展区' },
-  { cover: '/covers/c-jet.webp', views: '1,207', title: '角色特写 · 第三辑' },
-  { cover: '/covers/c-mc.webp', views: '986', title: '返场演出 · 完整版' },
-  { cover: '/covers/c-milk.webp', views: '874', title: '夜景长曝光精选' },
-  { cover: '/covers/c-rural.webp', views: '763', title: '同人作品 · 春季场' },
-  { cover: '/covers/c-box.webp', views: '658', title: '后台花絮合辑' },
-  { cover: '/covers/c-crab.webp', views: '571', title: '首日入场实况' },
-  { cover: '/covers/c-frog-s.webp', views: '489', title: '舞台灯光全记录' },
-  { cover: '/covers/c-mc-s.webp', views: '421', title: '特写镜头补录' },
-  { cover: '/covers/c-avatar.webp', views: '366', title: '应援夜全景' },
-  { cover: '/covers/c-dlss.webp', views: '302', title: '场刊扫描合集' },
-  { cover: '/covers/c-tokyo.webp', views: '254', title: '路人视角混剪' },
-  { cover: '/covers/c-frog.webp', views: '187', title: '收摊散场记录' },
-]
-
-/** 标签榜 15 项：[名称, 关联文件数] */
-const TAG_ITEMS: [string, string][] = TAG_AGG.map(([n, c]) => [n, String(c)])
-
-/** 作者榜 15 项：[名称, 作品数] */
-const AUTHOR_ITEMS: [string, string][] = AUTHOR_AGG.map((a) => [a.name, String(a.works)])
-
 /**
- * 完整榜单页（原型 #page-ranks 移植）：数据页排行卡「查看全部」按榜进入，
- * 只渲染点进的那一个榜（原型 data-panel 匹配语义），非法 rank 按 content 处理。
+ * 完整榜单页（原型 #page-ranks 移植，阶段 B 已接真实数据）：数据页排行卡「查看全部」
+ * 按榜进入，只渲染点进的那一个榜（原型 data-panel 匹配语义），非法 rank 按 content 处理。
+ * 内容榜固定全周期（现状无周期胶囊——任务说明：无则不新增）；标签/作者为全量降序列表。
  */
 export default function RanksPage() {
   const { rank } = useParams()
   const navigate = useNavigate()
   const key: RankKey = RANK_KEYS.includes(rank ?? '') ? (rank as RankKey) : RANK_CONTENT
 
+  const contentRank = useRankings('all', MAX_PAGE_SIZE)
+  const { data: tags = [] } = useTags()
+  const { data: authors = [] } = useAuthors()
+
+  // 标签/作者全量按 fileCount 降序（行式列表；点击进集合子页）
+  const tagRows = useMemo(
+    () =>
+      tags
+        .slice()
+        .sort((a, b) => (b.fileCount ?? 0) - (a.fileCount ?? 0))
+        .map((t) => ({ name: t.name ?? '', count: String(t.fileCount ?? 0) })),
+    [tags],
+  )
+  const authorRows = useMemo(
+    () =>
+      authors
+        .slice()
+        .sort((a, b) => (b.fileCount ?? 0) - (a.fileCount ?? 0))
+        .map((a) => ({ name: a.displayName ?? '', count: String(a.fileCount ?? 0) })),
+    [authors],
+  )
+
   return (
     <div className="page" id="page-ranks">
       <div className="page-head">
         <h2>{RANK_PAGE_TITLES[key]}</h2>
-        <p>全量排行 · mock 数据</p>
+        <p>全量排行</p>
       </div>
       {key === RANK_CONTENT ? (
         <div className="rank-card">
@@ -60,17 +63,10 @@ export default function RanksPage() {
             <h3>内容榜</h3>
           </div>
           <p className="rank-note">按浏览量</p>
-          <div className="rank-cards">
-            {CONTENT_ITEMS.map((it) => (
-              <div key={it.title} className="rank-item">
-                <div className="rank-cover">
-                  <img src={it.cover} alt="" loading="lazy" />
-                  <span className="rank-views">{it.views}</span>
-                </div>
-                <p className="rank-title">{it.title}</p>
-              </div>
-            ))}
-          </div>
+          <ContentRankGrid
+            items={contentRank.data ?? []}
+            onOpen={(a) => a.id && navigate(`/app/asset/${a.id}`)}
+          />
         </div>
       ) : (
         <div className="rank-card">
@@ -78,21 +74,14 @@ export default function RanksPage() {
             <h3>{key === RANK_TAGS ? '标签榜' : '作者榜'}</h3>
           </div>
           <p className="rank-note">{key === RANK_TAGS ? '按关联文件数' : '按作品数'}</p>
-          <ul>
-            {(key === RANK_TAGS ? TAG_ITEMS : AUTHOR_ITEMS).map(([name, count]) => (
-              <li
-                key={name}
-                onClick={() =>
-                  navigate(
-                    `/app/collection/${key === RANK_TAGS ? COLLECTION_TAG : COLLECTION_AUTHOR}/${encodeURIComponent(name)}`,
-                  )
-                }
-              >
-                <span className="rank-name">{name}</span>
-                <b>{count}</b>
-              </li>
-            ))}
-          </ul>
+          <RankRowList
+            rows={key === RANK_TAGS ? tagRows : authorRows}
+            onSelect={(n) =>
+              navigate(
+                `/app/collection/${key === RANK_TAGS ? COLLECTION_TAG : COLLECTION_AUTHOR}/${encodeURIComponent(n)}`,
+              )
+            }
+          />
         </div>
       )}
     </div>

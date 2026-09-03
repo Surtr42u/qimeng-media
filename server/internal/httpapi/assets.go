@@ -99,6 +99,7 @@ type assetFilters struct {
 	TagIdsJson     any
 	TagMode        any
 	Favorite       any
+	Liked          any
 	MtimeFrom      any
 	MtimeTo        any
 	YearFrom       any
@@ -150,6 +151,9 @@ func newAssetFilters(params gen.GetApiV1AssetsParams) assetFilters {
 	}
 	if params.Favorite != nil {
 		f.Favorite = nullBool(params.Favorite)
+	}
+	if params.Liked != nil {
+		f.Liked = nullBool(params.Liked)
 	}
 	if params.DateFrom != nil {
 		f.MtimeFrom = nullStr(store.FormatTimestamp(params.DateFrom.Time.UTC()))
@@ -248,7 +252,7 @@ func (s *Server) GetApiV1Assets(w http.ResponseWriter, r *http.Request, params g
 		for i := range rows {
 			row := &rows[i]
 			items = append(items, buildSummary(s, row.AssetID, row.FileName, row.MediaType,
-				row.SizeBytes, row.Mtime, row.CreatedAt, row.Source, row.IsFavorite, row.LikeCount))
+				row.SizeBytes, row.Mtime, row.CreatedAt, row.Source, row.IsFavorite, row.LikeCount, nil, nil))
 			lastKey, lastID = toString(row.SortKey), row.AssetID
 		}
 	} else {
@@ -272,7 +276,7 @@ func (s *Server) GetApiV1Assets(w http.ResponseWriter, r *http.Request, params g
 		for i := range rows {
 			row := &rows[i]
 			items = append(items, buildSummary(s, row.AssetID, row.FileName, row.MediaType,
-				row.SizeBytes, row.Mtime, row.CreatedAt, row.Source, row.IsFavorite, row.LikeCount))
+				row.SizeBytes, row.Mtime, row.CreatedAt, row.Source, row.IsFavorite, row.LikeCount, nil, nil))
 			lastKey, lastID = toString(row.SortKey), row.AssetID
 		}
 	}
@@ -300,8 +304,13 @@ func (s *Server) GetApiV1Assets(w http.ResponseWriter, r *http.Request, params g
 }
 
 // buildSummary 组装 AssetSummary（含签名缩略图直链，网格 md 档）。
+// viewCount/playCount 是 AssetSummary 的新增可选字段（openapi）：
+// 仅排行榜等需要展示计数的端点传实测值，浏览列表传 nil（字段省略，
+// 保持列表查询轻量——计数聚合不在列表 SQL 里）；detail 端点有自己的
+// 统计聚合路径，也传 nil。
 func buildSummary(s *Server, assetID, fileName, mediaType string, sizeBytes int64,
-	mtime, createdAt string, source sql.NullString, isFavorite bool, likeCount int64) gen.AssetSummary {
+	mtime, createdAt string, source sql.NullString, isFavorite bool, likeCount int64,
+	viewCount, playCount *int) gen.AssetSummary {
 	id := uuidOrNil(assetID)
 	mt := gen.MediaType(mediaType)
 	mod := parseStoreTime(mtime)
@@ -321,6 +330,8 @@ func buildSummary(s *Server, assetID, fileName, mediaType string, sizeBytes int6
 		IsFavorite: &fav,
 		LikeCount:  &like,
 		ThumbUrl:   &thumb,
+		ViewCount:  viewCount,
+		PlayCount:  playCount,
 	}
 }
 
@@ -432,7 +443,7 @@ func (s *Server) GetApiV1AssetsAssetId(w http.ResponseWriter, r *http.Request, a
 	// gen.AssetDetail 是 allOf 展平后的单层结构，先把 Summary 基础字段
 	// 复制过来再补扩展字段。
 	base := buildSummary(s, row.AssetID, row.FileName, row.MediaType, row.SizeBytes,
-		row.Mtime, row.CreatedAt, row.Source, isFav > 0, likeCount)
+		row.Mtime, row.CreatedAt, row.Source, isFav > 0, likeCount, nil, nil)
 	detail := gen.AssetDetail{
 		// AssetSummary 基础字段（allOf 展开）
 		AddedAt:    base.AddedAt,

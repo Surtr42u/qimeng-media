@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
+import type { Author } from '@/api/generated'
 import { SearchIcon } from '@/components/shell/icons'
-import { MOCK_AUTHORS, type MockAuthor } from '@/pages/mock'
+import { useAuthors, useToggleFollow } from '@/hooks/use-authors'
 
 type AuthorZone = '全部' | '常规' | 'cos'
 type AuthorSort = 'default' | 'browse' | 'works'
@@ -18,19 +19,27 @@ const SORTS: { key: AuthorSort; label: string }[] = [
   { key: 'works', label: '文件数量' },
 ]
 
-// 照 app.js A_SORTERS：默认=数组原序（作者榜热度序）、浏览数降序、作品数降序
-const A_SORTERS: Record<AuthorSort, (a: MockAuthor, b: MockAuthor) => number> = {
+/** 体系胶囊 → 协议 Author.type（「全部」不筛） */
+const ZONE_TO_TYPE: Record<AuthorZone, Author['type'] | undefined> = {
+  全部: undefined,
+  常规: 'regular',
+  cos: 'cos',
+}
+
+// 照 app.js A_SORTERS：默认=API 原序、浏览数降序、文件数降序
+const A_SORTERS: Record<AuthorSort, (a: Author, b: Author) => number> = {
   default: () => 0,
-  browse: (a, b) => b.browse - a.browse,
-  works: (a, b) => b.works - a.works,
+  browse: (a, b) => (b.viewCount ?? 0) - (a.viewCount ?? 0),
+  works: (a, b) => (b.fileCount ?? 0) - (a.fileCount ?? 0),
 }
 
 /**
- * 作者管理页（原型 #page-authors 移植）：体系胶囊 + 名字搜索 + 排序三项 +
- * 关注按钮内存态 toggle；关注状态复制进 state，不改 mock 源数组。
+ * 作者管理页（原型 #page-authors 移植，阶段 B 已接真实数据）：体系胶囊 + 名字搜索 +
+ * 排序三项 + 关注按钮（PUT /authors/{authorId}/follow，状态以服务端 followed 为准）。
  */
 export default function AuthorsPage() {
-  const [authors, setAuthors] = useState<MockAuthor[]>(() => MOCK_AUTHORS.map((a) => ({ ...a })))
+  const { data: authors = [], isLoading } = useAuthors()
+  const toggleFollow = useToggleFollow()
   const [zone, setZone] = useState<AuthorZone>('全部')
   const [keyword, setKeyword] = useState('')
   const [sort, setSort] = useState<AuthorSort>('default')
@@ -38,20 +47,22 @@ export default function AuthorsPage() {
   // 先 filter 后 sort，slice 避免原地排序污染 filter 结果顺序基准（照 app.js renderAuthors）
   const rows = useMemo(() => {
     const kw = keyword.trim()
+    const type = ZONE_TO_TYPE[zone]
     return authors
-      .filter((a) => (zone === '全部' || a.type === zone) && (!kw || a.name.includes(kw)))
+      .filter(
+        (a) =>
+          (type === undefined || a.type === type) &&
+          (!kw || (a.displayName ?? '').includes(kw)),
+      )
       .slice()
       .sort(A_SORTERS[sort])
   }, [authors, zone, keyword, sort])
-
-  const toggleFollow = (name: string) =>
-    setAuthors((list) => list.map((a) => (a.name === name ? { ...a, followed: !a.followed } : a)))
 
   return (
     <div className="page" id="page-authors">
       <div className="page-head">
         <h2>作者管理</h2>
-        <p>全部作者 · mock 数据</p>
+        <p>全部作者 · {authors.length} 位</p>
       </div>
       <div className="a-toolbar">
         <div className="a-zones">
@@ -91,15 +102,20 @@ export default function AuthorsPage() {
         ))}
       </div>
       <div className="rank-card a-list">
-        {rows.length ? (
+        {isLoading ? (
+          <p className="a-empty">加载中…</p>
+        ) : rows.length ? (
           <ul>
             {rows.map((a) => (
-              <li key={a.name}>
-                <span className="rank-name">{a.name}</span>
+              <li key={a.id}>
+                <span className="rank-name">{a.displayName}</span>
+                {/* 作品数（复用 rank-card li > b 现有样式，不新增类） */}
+                <b>{a.fileCount ?? 0} 文件</b>
                 <button
                   type="button"
                   className={`follow-btn${a.followed ? '' : ' follow-btn--idle'}`}
-                  onClick={() => toggleFollow(a.name)}
+                  disabled={toggleFollow.isPending}
+                  onClick={() => a.id && toggleFollow.mutate({ authorId: a.id, follow: !a.followed })}
                 >
                   {a.followed ? '已关注' : '关注'}
                 </button>

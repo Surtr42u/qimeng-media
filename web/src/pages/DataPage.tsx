@@ -1,96 +1,51 @@
-import { useState, type MouseEvent } from 'react'
+import { useMemo, useState, type MouseEvent } from 'react'
 import { useNavigate } from 'react-router'
-import {
-  AUTHOR_AGG,
-  COLLECTION_AUTHOR,
-  COLLECTION_TAG,
-  RANK_AUTHORS,
-  RANK_CONTENT,
-  RANK_TAGS,
-  TAG_AGG,
-} from '@/pages/mock'
+import type { StatsOverview, TrendBucket } from '@/api/generated'
+import { ContentRankGrid } from '@/components/data/ContentRankGrid'
+import { DonutCard, type DonutSlice } from '@/components/data/DonutCard'
+import { RankRowList } from '@/components/data/RankRowList'
+import { TrendChart } from '@/components/data/TrendChart'
+import { useAuthors } from '@/hooks/use-authors'
+import { useRankings, useStatsOverview, useTrends, type RankingPeriod, type TrendsRange } from '@/hooks/use-stats'
+import { useTags } from '@/hooks/use-tags'
+import { LOCALE_ZH } from '@/lib/constants'
+import { formatBytes } from '@/lib/format'
+import { COLLECTION_AUTHOR, COLLECTION_TAG, RANK_AUTHORS, RANK_CONTENT, RANK_TAGS } from '@/lib/route-keys'
 
 /**
- * 数据页（原型 #page-data 移植）：时段胶囊 + 6 指标 + 趋势线 + 双环分布 + 排行榜。
- * 阶段 A 全部为写死的 mock 数字（原型 index.html 260-384 照搬）；时段切换仅样式。
+ * 数据页（原型 #page-data 移植，阶段 B 已接真实数据）：时段胶囊 + 6 指标卡 +
+ * 趋势折线 + 双环分布 + 排行榜（Top5/标签/作者/作者总览）。
+ * 时段四档（近 7/30/90 天/全部）同档联动趋势 range 与内容榜 period，其余卡不随档变化；
+ * 指标/双环来自 GET /stats/overview 与 /stats/trends（DOMAIN_RULES §5 口径）。
  */
 
-const SEGMENTS = ['7 天', '30 天', '90 天', '全部']
-
-interface Metric {
-  label: string
-  value: string
-  /** 次要说明文案；有 delta 时渲染为「说明 + 涨跌箭头」 */
-  sub: string
-  delta?: string
-  trend?: 'up' | 'down'
-}
-
-const METRICS: Metric[] = [
-  { label: '浏览', value: '9,842', sub: '较上期', delta: '↑ 8.4%', trend: 'up' },
-  { label: '播放', value: '4,217', sub: '较上期', delta: '↓ 2.1%', trend: 'down' },
-  { label: '播放时长', value: '1,201 时', sub: '日均 40 时' },
-  { label: '点赞', value: '2,006', sub: '较上期', delta: '↑ 15.2%', trend: 'up' },
-  { label: '收藏', value: '737', sub: '较上期', delta: '↑ 6.0%', trend: 'up' },
-  { label: '独立访客', value: '1,053', sub: '均值 35 人/日' },
+/** 时段四档（用户拍板）：趋势 range → 内容榜 period 同档联动（映射依据 DOMAIN_RULES §5 窗口表） */
+const SEGMENTS: { label: string; note: string; trends: TrendsRange; period: RankingPeriod }[] = [
+  { label: '近 7 天', note: '近 7 天 · 逐日', trends: '7d', period: 'week' },
+  { label: '近 30 天', note: '近 30 天 · 逐日', trends: 'day', period: 'month' },
+  { label: '近 90 天', note: '近 90 天 · 逐日', trends: '90d', period: 'quarter' },
+  { label: '全部', note: '全部 · 动态分桶', trends: 'all', period: 'all' },
 ]
 
-interface DonutSlice {
-  dot: string
-  name: string
-  value: string
-  pct: string
-}
+/** 默认档（原型打开即「7 天」，此处映射近 7 天） */
+const DEFAULT_SEG = 0
 
-const DONUTS: { title: string; sub: string; arcs: string[]; legend: DonutSlice[] }[] = [
-  {
-    title: '内容类型分布',
-    sub: '按资产数量占比',
-    arcs: ['arc-1', 'arc-2', 'arc-3'],
-    legend: [
-      { dot: 'd1', name: '视频', value: '4,821', pct: '65.6%' },
-      { dot: 'd2', name: '图片', value: '2,213', pct: '30.1%' },
-      { dot: 'd3', name: '音频', value: '313', pct: '4.3%' },
-    ],
-  },
-  {
-    title: '浏览量占比',
-    sub: '按类型的浏览次数占比 · 近 30 天',
-    arcs: ['arc-4', 'arc-2', 'arc-3'],
-    legend: [
-      { dot: 'd4', name: '视频', value: '6,880', pct: '69.9%' },
-      { dot: 'd2', name: '图片', value: '2,540', pct: '25.8%' },
-      { dot: 'd3', name: '音频', value: '422', pct: '4.3%' },
-    ],
-  },
+/** 内容榜/标签榜/作者榜展示条数（Top 5） */
+const RANK_TOP_COUNT = 5
+
+/** 6 指标卡（label 固定；值全部来自 GET /stats/overview；无涨跌数据源，delta 不渲染） */
+const METRIC_DEFS: { label: string; pick: (s: StatsOverview) => string }[] = [
+  { label: '总文件', pick: (s) => (s.totalFiles ?? 0).toLocaleString(LOCALE_ZH) },
+  { label: '图片', pick: (s) => (s.imageCount ?? 0).toLocaleString(LOCALE_ZH) },
+  { label: '视频', pick: (s) => (s.videoCount ?? 0).toLocaleString(LOCALE_ZH) },
+  { label: '总容量', pick: (s) => formatBytes(s.totalSizeBytes ?? 0) },
+  { label: '今日浏览', pick: (s) => (s.todayViews ?? 0).toLocaleString(LOCALE_ZH) },
+  { label: '累计浏览', pick: (s) => (s.totalViews ?? 0).toLocaleString(LOCALE_ZH) },
 ]
 
-const CONTENT_RANK = [
-  { cover: '/covers/c-dlss.webp', views: '3,241', title: '样例 2017 高画质合集' },
-  { cover: '/covers/c-tokyo.webp', views: '1,982', title: '舞台摄影 · 第一组' },
-  { cover: '/covers/c-frog.webp', views: '1,540', title: '场外随拍 · 机动展区' },
-  { cover: '/covers/c-jet.webp', views: '1,207', title: '角色特写 · 第三辑' },
-  { cover: '/covers/c-mc.webp', views: '986', title: '返场演出 · 完整版' },
-]
-
-// Top5 = mock 内容池真实聚合（TAG_AGG/AUTHOR_AGG），与集合子页点击内容自洽（阶段 B 换真聚合接口）
-const TAG_RANK: [string, string][] = TAG_AGG.slice(0, 5).map(([n, c]) => [n, String(c)])
-
-const AUTHOR_RANK: [string, string][] = AUTHOR_AGG.slice(0, 5).map((a) => [a.name, String(a.works)])
-
-/** 行式榜单列表（标签榜/作者榜/作者总览共用） */
-function RankList({ rows, onSelect }: { rows: [string, string][]; onSelect?: (name: string) => void }) {
-  return (
-    <ul>
-      {rows.map(([name, num]) => (
-        // 旧项目语义：点标签/作者行 → 集合子页列出该标签/作者下所有文件
-        <li key={name} onClick={onSelect ? () => onSelect(name) : undefined}>
-          <span className="rank-name">{name}</span>
-          <b>{num}</b>
-        </li>
-      ))}
-    </ul>
-  )
+/** 分桶 viewCount 求和（浏览量占比用） */
+function sumViews(items?: TrendBucket[]): number {
+  return items?.reduce((acc, b) => acc + (b.viewCount ?? 0), 0) ?? 0
 }
 
 /** 「查看全部」跳完整榜单子页（保留原型 a 标签与 data-rank，拦截默认锚点跳转） */
@@ -108,70 +63,113 @@ function rankMoreProps(navigate: ReturnType<typeof useNavigate>, rank: string) {
 
 export default function DataPage() {
   const navigate = useNavigate()
-  const [seg, setSeg] = useState('7 天')
+  const [seg, setSeg] = useState(DEFAULT_SEG)
+
+  const current = SEGMENTS[seg]
+
+  const { data: overview, isPending: overviewPending } = useStatsOverview()
+  const trendQuery = useTrends(current.trends)
+  const videoTrend = useTrends('day', 'video')
+  const imageTrend = useTrends('day', 'image')
+  const contentRank = useRankings(current.period, RANK_TOP_COUNT)
+  const { data: tags = [] } = useTags()
+  const { data: authors = [] } = useAuthors()
+
+  // 内容类型分布：动画图计入 imageCount（DOMAIN_RULES/GUIDE_API 口径）
+  const typeSlices = useMemo<DonutSlice[]>(() => {
+    const total = overview?.totalFiles ?? 0
+    if (!total) return []
+    const video = overview?.videoCount ?? 0
+    const image = overview?.imageCount ?? 0
+    return [
+      { dot: 'd1', arc: 'arc-1', name: '视频', value: video.toLocaleString(LOCALE_ZH), pct: (video / total) * 100 },
+      { dot: 'd2', arc: 'arc-2', name: '图片', value: image.toLocaleString(LOCALE_ZH), pct: (image / total) * 100 },
+    ]
+  }, [overview])
+
+  // 浏览量占比：近 30 天口径（range=day）按类型分桶求和——随时段切换不联动（用户拍板）
+  const viewSlices = useMemo<DonutSlice[]>(() => {
+    const video = sumViews(videoTrend.data)
+    const image = sumViews(imageTrend.data)
+    const total = video + image
+    if (!total) return []
+    return [
+      { dot: 'd4', arc: 'arc-4', name: '视频', value: video.toLocaleString(LOCALE_ZH), pct: (video / total) * 100 },
+      { dot: 'd2', arc: 'arc-2', name: '图片', value: image.toLocaleString(LOCALE_ZH), pct: (image / total) * 100 },
+    ]
+  }, [videoTrend.data, imageTrend.data])
+
+  // 标签/作者榜：按 fileCount 降序取 Top5（行式列表，点击进集合子页）
+  const tagRows = useMemo(
+    () =>
+      tags
+        .slice()
+        .sort((a, b) => (b.fileCount ?? 0) - (a.fileCount ?? 0))
+        .slice(0, RANK_TOP_COUNT)
+        .map((t) => ({ name: t.name ?? '', count: String(t.fileCount ?? 0) })),
+    [tags],
+  )
+  const authorRows = useMemo(
+    () =>
+      authors
+        .slice()
+        .sort((a, b) => (b.fileCount ?? 0) - (a.fileCount ?? 0))
+        .slice(0, RANK_TOP_COUNT)
+        .map((a) => ({ name: a.displayName ?? '', count: String(a.fileCount ?? 0) })),
+    [authors],
+  )
+  const followedCount = useMemo(() => authors.filter((a) => a.followed).length, [authors])
+
+  // 趋势全 0（含空桶）→ 暂无趋势数据（DOMAIN_RULES §5 空数据口径）
+  const trendAllZero =
+    !trendQuery.data ||
+    trendQuery.data.every((b) => (b.viewCount ?? 0) === 0 && (b.playCount ?? 0) === 0)
 
   return (
     <div className="page" id="page-data">
       <div className="seg-row">
-        {SEGMENTS.map((s) => (
-          <button key={s} className={seg === s ? 'seg active' : 'seg'} type="button" onClick={() => setSeg(s)}>
-            {s}
+        {SEGMENTS.map((s, i) => (
+          <button
+            key={s.label}
+            className={seg === i ? 'seg active' : 'seg'}
+            type="button"
+            onClick={() => setSeg(i)}
+          >
+            {s.label}
           </button>
         ))}
-        <span className="seg-note">近 30 天 · mock 数据</span>
+        <span className="seg-note">{current.note}</span>
       </div>
       <div className="metric-grid">
-        {METRICS.map((m) => (
-          <div className="metric-card" key={m.label}>
-            <p className="m-label">{m.label}</p>
-            <p className="m-value">{m.value}</p>
-            {m.delta ? (
-              <p className="m-sub">
-                {m.sub} <b className={m.trend}>{m.delta}</b>
-              </p>
-            ) : (
-              <p className="m-sub">{m.sub}</p>
-            )}
-          </div>
-        ))}
+        {METRIC_DEFS.map((m) => {
+          const value = overview ? m.pick(overview) : '—'
+          return (
+            <div className="metric-card" key={m.label}>
+              <p className="m-label">{m.label}</p>
+              <p className="m-value">{value}</p>
+            </div>
+          )
+        })}
       </div>
       <div className="chart-card">
         <h3>浏览与播放趋势</h3>
-        <p>近 30 天 · mock 数据</p>
-        <svg className="trend-svg" viewBox="0 0 600 200" preserveAspectRatio="none" aria-label="浏览与播放趋势">
-          <polyline
-            points="0,150 60,132 120,140 180,110 240,118 300,86 360,96 420,64 480,76 540,48 600,60"
-            className="line-a"
-          />
-          <polyline
-            points="0,170 60,162 120,166 180,150 240,155 300,138 360,144 420,126 480,132 540,116 600,124"
-            className="line-b"
-          />
-        </svg>
+        <p>{current.note} · 按浏览/播放数</p>
+        {trendQuery.isPending ? (
+          <p className="m-note">加载中…</p>
+        ) : trendAllZero ? (
+          <p className="m-note">暂无趋势数据</p>
+        ) : (
+          <TrendChart buckets={trendQuery.data ?? []} />
+        )}
       </div>
       <div className="donut-grid">
-        {DONUTS.map((d) => (
-          <div className="donut-card" key={d.title}>
-            <h3>{d.title}</h3>
-            <p>{d.sub}</p>
-            <div className="donut-row">
-              <svg className="donut" viewBox="0 0 120 120" aria-hidden="true">
-                <circle cx="60" cy="60" r="44" className="ring" />
-                {d.arcs.map((arc) => (
-                  <circle key={arc} cx="60" cy="60" r="44" className={`arc ${arc}`} />
-                ))}
-              </svg>
-              <ul className="legend">
-                {d.legend.map((s) => (
-                  <li key={s.dot}>
-                    <i className={`dot ${s.dot}`} />
-                    {s.name} <b>{s.value}</b> <span>{s.pct}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        ))}
+        <DonutCard title="内容类型分布" sub="按资产数量占比" slices={typeSlices} loading={overviewPending} />
+        <DonutCard
+          title="浏览量占比"
+          sub="按类型的浏览次数占比 · 近 30 天"
+          slices={viewSlices}
+          loading={videoTrend.isPending || imageTrend.isPending}
+        />
       </div>
       <div className="rank-stack">
         <div className="rank-card">
@@ -179,18 +177,15 @@ export default function DataPage() {
             <h3>内容榜</h3>
             <a {...rankMoreProps(navigate, RANK_CONTENT)}>查看全部</a>
           </div>
-          <p className="rank-note">Top 5 · 按浏览量</p>
-          <div className="rank-cards">
-            {CONTENT_RANK.map((r) => (
-              <div className="rank-item" key={r.title}>
-                <div className="rank-cover">
-                  <img src={r.cover} alt="" loading="lazy" />
-                  <span className="rank-views">{r.views}</span>
-                </div>
-                <p className="rank-title">{r.title}</p>
-              </div>
-            ))}
-          </div>
+          <p className="rank-note">Top 5 · 按浏览量（{current.label}）</p>
+          {contentRank.isPending ? (
+            <p className="rank-note">加载中…</p>
+          ) : (
+            <ContentRankGrid
+              items={contentRank.data ?? []}
+              onOpen={(a) => a.id && navigate(`/app/asset/${a.id}`)}
+            />
+          )}
         </div>
         <div className="rank-grid rank-grid--2">
           <div className="rank-card">
@@ -199,7 +194,10 @@ export default function DataPage() {
               <a {...rankMoreProps(navigate, RANK_TAGS)}>查看全部</a>
             </div>
             <p className="rank-note">Top 5 · 按关联文件数</p>
-            <RankList rows={TAG_RANK} onSelect={(n) => navigate(`/app/collection/${COLLECTION_TAG}/${encodeURIComponent(n)}`)} />
+            <RankRowList
+              rows={tagRows}
+              onSelect={(n) => navigate(`/app/collection/${COLLECTION_TAG}/${encodeURIComponent(n)}`)}
+            />
           </div>
           <div className="rank-card">
             <div className="rank-head">
@@ -207,7 +205,10 @@ export default function DataPage() {
               <a {...rankMoreProps(navigate, RANK_AUTHORS)}>查看全部</a>
             </div>
             <p className="rank-note">Top 5 · 按作品数</p>
-            <RankList rows={AUTHOR_RANK} onSelect={(n) => navigate(`/app/collection/${COLLECTION_AUTHOR}/${encodeURIComponent(n)}`)} />
+            <RankRowList
+              rows={authorRows}
+              onSelect={(n) => navigate(`/app/collection/${COLLECTION_AUTHOR}/${encodeURIComponent(n)}`)}
+            />
           </div>
           <div className="rank-card">
             <div className="rank-head">
@@ -223,8 +224,13 @@ export default function DataPage() {
                 管理
               </a>
             </div>
-            <p className="rank-note">15 位作者 · 已关注 3</p>
-            <RankList rows={AUTHOR_RANK} onSelect={(n) => navigate(`/app/collection/${COLLECTION_AUTHOR}/${encodeURIComponent(n)}`)} />
+            <p className="rank-note">
+              {authors.length} 位作者 · 已关注 {followedCount}
+            </p>
+            <RankRowList
+              rows={authorRows}
+              onSelect={(n) => navigate(`/app/collection/${COLLECTION_AUTHOR}/${encodeURIComponent(n)}`)}
+            />
           </div>
         </div>
       </div>

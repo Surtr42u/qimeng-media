@@ -54,28 +54,37 @@ WHERE
         ELSE
             NOT EXISTS(SELECT 1 FROM favorites fv2 WHERE fv2.asset_id = a.asset_id)
         END))
-    AND (?11 IS NULL OR a.mtime >= ?11)
-    AND (?12 IS NULL OR a.mtime <= ?12)
-    AND (?13 IS NULL OR CAST(substr(a.mtime, 1, 4) AS INTEGER) >= ?13)
-    AND (?14 IS NULL OR CAST(substr(a.mtime, 1, 4) AS INTEGER) <= ?14)
-    AND (?15 IS NULL OR (
-        CASE ?15
+    -- liked filter (DOMAIN_RULES 5): asset liked on ANY day = likes table
+    -- has at least one row; same shape as the favorite filter above (and
+    -- keep in sync across the three queries in this file).
+    AND (?11 IS NULL OR (
+        CASE WHEN ?11 = 1 THEN
+            EXISTS(SELECT 1 FROM likes lk WHERE lk.asset_id = a.asset_id)
+        ELSE
+            NOT EXISTS(SELECT 1 FROM likes lk WHERE lk.asset_id = a.asset_id)
+        END))
+    AND (?12 IS NULL OR a.mtime >= ?12)
+    AND (?13 IS NULL OR a.mtime <= ?13)
+    AND (?14 IS NULL OR CAST(substr(a.mtime, 1, 4) AS INTEGER) >= ?14)
+    AND (?15 IS NULL OR CAST(substr(a.mtime, 1, 4) AS INTEGER) <= ?15)
+    AND (?16 IS NULL OR (
+        CASE ?16
             WHEN 'none' THEN (SELECT COUNT(*) FROM view_events v4 WHERE v4.asset_id = a.asset_id AND v4.kind = 'open') = 0
             WHEN 'low'  THEN (SELECT COUNT(*) FROM view_events v4 WHERE v4.asset_id = a.asset_id AND v4.kind = 'open') BETWEEN 1 AND 5
             WHEN 'mid'  THEN (SELECT COUNT(*) FROM view_events v4 WHERE v4.asset_id = a.asset_id AND v4.kind = 'open') BETWEEN 5 AND 20
             WHEN 'high' THEN (SELECT COUNT(*) FROM view_events v4 WHERE v4.asset_id = a.asset_id AND v4.kind = 'open') > 20
             ELSE 1
         END))
-    AND (?16 IS NULL OR (
-        CASE ?16
+    AND (?17 IS NULL OR (
+        CASE ?17
             WHEN 'none' THEN (SELECT COUNT(*) FROM view_events v5 WHERE v5.asset_id = a.asset_id AND v5.kind = 'play') = 0
             WHEN 'low'  THEN (SELECT COUNT(*) FROM view_events v5 WHERE v5.asset_id = a.asset_id AND v5.kind = 'play') BETWEEN 1 AND 5
             WHEN 'mid'  THEN (SELECT COUNT(*) FROM view_events v5 WHERE v5.asset_id = a.asset_id AND v5.kind = 'play') BETWEEN 5 AND 20
             WHEN 'high' THEN (SELECT COUNT(*) FROM view_events v5 WHERE v5.asset_id = a.asset_id AND v5.kind = 'play') > 20
             ELSE 1
         END))
-    AND (?17 IS NULL OR (
-        CASE ?17
+    AND (?18 IS NULL OR (
+        CASE ?18
             WHEN 'lt1m'    THEN a.size_bytes < 1048576
             WHEN 'm1to10'  THEN a.size_bytes >= 1048576 AND a.size_bytes < 10485760
             WHEN 'm10to50' THEN a.size_bytes >= 10485760 AND a.size_bytes < 52428800
@@ -84,8 +93,8 @@ WHERE
         END))
     -- Full-text search (DOMAIN_RULES 3) -- keep in sync with the two list
     -- queries above (same AND clause).
-    AND (?18 IS NULL OR NOT EXISTS (
-        SELECT 1 FROM json_each(?18) qk
+    AND (?19 IS NULL OR NOT EXISTS (
+        SELECT 1 FROM json_each(?19) qk
         WHERE NOT EXISTS (
             SELECT 1 FROM assets_fts f
             WHERE f.rowid = a.rowid
@@ -103,6 +112,7 @@ type CountAssetsFilteredParams struct {
 	TagIdsJson     interface{}
 	TagMode        interface{}
 	Favorite       interface{}
+	Liked          interface{}
 	MtimeFrom      interface{}
 	MtimeTo        interface{}
 	YearFrom       interface{}
@@ -128,6 +138,7 @@ func (q *Queries) CountAssetsFiltered(ctx context.Context, arg CountAssetsFilter
 		arg.TagIdsJson,
 		arg.TagMode,
 		arg.Favorite,
+		arg.Liked,
 		arg.MtimeFrom,
 		arg.MtimeTo,
 		arg.YearFrom,
@@ -379,6 +390,9 @@ SELECT
         WHEN ?1 = 'sizeBytes' THEN printf('%020d', a.size_bytes)
         WHEN ?1 = 'viewCount' THEN printf('%020d', (SELECT COUNT(*) FROM view_events v2 WHERE v2.asset_id = a.asset_id AND v2.kind = 'open'))
         WHEN ?1 = 'playCount' THEN printf('%020d', (SELECT COUNT(*) FROM view_events v3 WHERE v3.asset_id = a.asset_id AND v3.kind = 'play'))
+        -- favoriteAt: favorites.created_at (only meaningful with
+        -- favorite=true; no-favorite row -> NULL key sorts to the end).
+        WHEN ?1 = 'favoriteAt' THEN (SELECT fv_sorted.created_at FROM favorites fv_sorted WHERE fv_sorted.asset_id = a.asset_id)
         ELSE a.created_at
     END AS sort_key
 FROM assets a
@@ -424,28 +438,37 @@ WHERE
         ELSE
             NOT EXISTS(SELECT 1 FROM favorites fv2 WHERE fv2.asset_id = a.asset_id)
         END))
-    AND (?12 IS NULL OR a.mtime >= ?12)
-    AND (?13 IS NULL OR a.mtime <= ?13)
-    AND (?14 IS NULL OR CAST(substr(a.mtime, 1, 4) AS INTEGER) >= ?14)
-    AND (?15 IS NULL OR CAST(substr(a.mtime, 1, 4) AS INTEGER) <= ?15)
-    AND (?16 IS NULL OR (
-        CASE ?16
+    -- liked filter (DOMAIN_RULES 5): asset liked on ANY day = likes table
+    -- has at least one row; same shape as the favorite filter above (and
+    -- keep in sync across the three queries in this file).
+    AND (?12 IS NULL OR (
+        CASE WHEN ?12 = 1 THEN
+            EXISTS(SELECT 1 FROM likes lk WHERE lk.asset_id = a.asset_id)
+        ELSE
+            NOT EXISTS(SELECT 1 FROM likes lk WHERE lk.asset_id = a.asset_id)
+        END))
+    AND (?13 IS NULL OR a.mtime >= ?13)
+    AND (?14 IS NULL OR a.mtime <= ?14)
+    AND (?15 IS NULL OR CAST(substr(a.mtime, 1, 4) AS INTEGER) >= ?15)
+    AND (?16 IS NULL OR CAST(substr(a.mtime, 1, 4) AS INTEGER) <= ?16)
+    AND (?17 IS NULL OR (
+        CASE ?17
             WHEN 'none' THEN (SELECT COUNT(*) FROM view_events v4 WHERE v4.asset_id = a.asset_id AND v4.kind = 'open') = 0
             WHEN 'low'  THEN (SELECT COUNT(*) FROM view_events v4 WHERE v4.asset_id = a.asset_id AND v4.kind = 'open') BETWEEN 1 AND 5
             WHEN 'mid'  THEN (SELECT COUNT(*) FROM view_events v4 WHERE v4.asset_id = a.asset_id AND v4.kind = 'open') BETWEEN 5 AND 20
             WHEN 'high' THEN (SELECT COUNT(*) FROM view_events v4 WHERE v4.asset_id = a.asset_id AND v4.kind = 'open') > 20
             ELSE 1
         END))
-    AND (?17 IS NULL OR (
-        CASE ?17
+    AND (?18 IS NULL OR (
+        CASE ?18
             WHEN 'none' THEN (SELECT COUNT(*) FROM view_events v5 WHERE v5.asset_id = a.asset_id AND v5.kind = 'play') = 0
             WHEN 'low'  THEN (SELECT COUNT(*) FROM view_events v5 WHERE v5.asset_id = a.asset_id AND v5.kind = 'play') BETWEEN 1 AND 5
             WHEN 'mid'  THEN (SELECT COUNT(*) FROM view_events v5 WHERE v5.asset_id = a.asset_id AND v5.kind = 'play') BETWEEN 5 AND 20
             WHEN 'high' THEN (SELECT COUNT(*) FROM view_events v5 WHERE v5.asset_id = a.asset_id AND v5.kind = 'play') > 20
             ELSE 1
         END))
-    AND (?18 IS NULL OR (
-        CASE ?18
+    AND (?19 IS NULL OR (
+        CASE ?19
             WHEN 'lt1m'    THEN a.size_bytes < 1048576
             WHEN 'm1to10'  THEN a.size_bytes >= 1048576 AND a.size_bytes < 10485760
             WHEN 'm10to50' THEN a.size_bytes >= 10485760 AND a.size_bytes < 52428800
@@ -454,33 +477,35 @@ WHERE
         END))
     -- Full-text search (DOMAIN_RULES 3) -- keep in sync with the DESC
     -- variant above (same AND clause; see its comment for semantics).
-    AND (?19 IS NULL OR NOT EXISTS (
-        SELECT 1 FROM json_each(?19) qk
+    AND (?20 IS NULL OR NOT EXISTS (
+        SELECT 1 FROM json_each(?20) qk
         WHERE NOT EXISTS (
             SELECT 1 FROM assets_fts f
             WHERE f.rowid = a.rowid
               AND instr(lower(f.all_text), lower(qk.value)) > 0)))
     -- keyset cursor (ASC variant).
-    AND (?20 IS NULL
+    AND (?21 IS NULL
         OR (CASE
                 WHEN ?1 = 'fileDate'  THEN a.mtime
                 WHEN ?1 = 'name'      THEN a.file_name
                 WHEN ?1 = 'sizeBytes' THEN printf('%020d', a.size_bytes)
                 WHEN ?1 = 'viewCount' THEN printf('%020d', (SELECT COUNT(*) FROM view_events v6 WHERE v6.asset_id = a.asset_id AND v6.kind = 'open'))
                 WHEN ?1 = 'playCount' THEN printf('%020d', (SELECT COUNT(*) FROM view_events v7 WHERE v7.asset_id = a.asset_id AND v7.kind = 'play'))
+                WHEN ?1 = 'favoriteAt' THEN (SELECT fv_sorted.created_at FROM favorites fv_sorted WHERE fv_sorted.asset_id = a.asset_id)
                 ELSE a.created_at
-            END) > ?20
+            END) > ?21
         OR ((CASE
                 WHEN ?1 = 'fileDate'  THEN a.mtime
                 WHEN ?1 = 'name'      THEN a.file_name
                 WHEN ?1 = 'sizeBytes' THEN printf('%020d', a.size_bytes)
                 WHEN ?1 = 'viewCount' THEN printf('%020d', (SELECT COUNT(*) FROM view_events v6 WHERE v6.asset_id = a.asset_id AND v6.kind = 'open'))
                 WHEN ?1 = 'playCount' THEN printf('%020d', (SELECT COUNT(*) FROM view_events v7 WHERE v7.asset_id = a.asset_id AND v7.kind = 'play'))
+                WHEN ?1 = 'favoriteAt' THEN (SELECT fv_sorted.created_at FROM favorites fv_sorted WHERE fv_sorted.asset_id = a.asset_id)
                 ELSE a.created_at
-            END) = ?20
-            AND a.asset_id > ?21))
+            END) = ?21
+            AND a.asset_id > ?22))
 ORDER BY sort_key ASC, a.asset_id ASC
-LIMIT ?22
+LIMIT ?23
 `
 
 type ListAssetsFilteredAscParams struct {
@@ -495,6 +520,7 @@ type ListAssetsFilteredAscParams struct {
 	TagIdsJson     interface{}
 	TagMode        interface{}
 	Favorite       interface{}
+	Liked          interface{}
 	MtimeFrom      interface{}
 	MtimeTo        interface{}
 	YearFrom       interface{}
@@ -542,6 +568,7 @@ func (q *Queries) ListAssetsFilteredAsc(ctx context.Context, arg ListAssetsFilte
 		arg.TagIdsJson,
 		arg.TagMode,
 		arg.Favorite,
+		arg.Liked,
 		arg.MtimeFrom,
 		arg.MtimeTo,
 		arg.YearFrom,
@@ -610,6 +637,9 @@ SELECT
         WHEN ?1 = 'sizeBytes' THEN printf('%020d', a.size_bytes)
         WHEN ?1 = 'viewCount' THEN printf('%020d', (SELECT COUNT(*) FROM view_events v2 WHERE v2.asset_id = a.asset_id AND v2.kind = 'open'))
         WHEN ?1 = 'playCount' THEN printf('%020d', (SELECT COUNT(*) FROM view_events v3 WHERE v3.asset_id = a.asset_id AND v3.kind = 'play'))
+        -- favoriteAt: favorites.created_at (only meaningful with
+        -- favorite=true; no-favorite row -> NULL key sorts to the end).
+        WHEN ?1 = 'favoriteAt' THEN (SELECT fv_sorted.created_at FROM favorites fv_sorted WHERE fv_sorted.asset_id = a.asset_id)
         ELSE a.created_at
     END AS sort_key
 FROM assets a
@@ -665,25 +695,34 @@ WHERE
         ELSE
             NOT EXISTS(SELECT 1 FROM favorites fv2 WHERE fv2.asset_id = a.asset_id)
         END))
+    -- liked filter (DOMAIN_RULES 5): asset liked on ANY day = likes table
+    -- has at least one row; same shape as the favorite filter above (and
+    -- keep in sync across the three queries in this file).
+    AND (?12 IS NULL OR (
+        CASE WHEN ?12 = 1 THEN
+            EXISTS(SELECT 1 FROM likes lk WHERE lk.asset_id = a.asset_id)
+        ELSE
+            NOT EXISTS(SELECT 1 FROM likes lk WHERE lk.asset_id = a.asset_id)
+        END))
     -- file-date window: TEXT comparison against the RFC3339-ms format;
     -- boundaries precomputed by the caller (dateFrom -> T00:00:00.000Z,
     -- dateTo -> T23:59:59.999Z).
-    AND (?12 IS NULL OR a.mtime >= ?12)
-    AND (?13 IS NULL OR a.mtime <= ?13)
-    AND (?14 IS NULL OR CAST(substr(a.mtime, 1, 4) AS INTEGER) >= ?14)
-    AND (?15 IS NULL OR CAST(substr(a.mtime, 1, 4) AS INTEGER) <= ?15)
+    AND (?13 IS NULL OR a.mtime >= ?13)
+    AND (?14 IS NULL OR a.mtime <= ?14)
+    AND (?15 IS NULL OR CAST(substr(a.mtime, 1, 4) AS INTEGER) >= ?15)
+    AND (?16 IS NULL OR CAST(substr(a.mtime, 1, 4) AS INTEGER) <= ?16)
     -- viewRange / playRange buckets (DOMAIN_RULES 3 literal boundaries:
     -- low = 1-5, mid = 5-20 -- the value 5 falls in both, by the book).
-    AND (?16 IS NULL OR (
-        CASE ?16
+    AND (?17 IS NULL OR (
+        CASE ?17
             WHEN 'none' THEN (SELECT COUNT(*) FROM view_events v4 WHERE v4.asset_id = a.asset_id AND v4.kind = 'open') = 0
             WHEN 'low'  THEN (SELECT COUNT(*) FROM view_events v4 WHERE v4.asset_id = a.asset_id AND v4.kind = 'open') BETWEEN 1 AND 5
             WHEN 'mid'  THEN (SELECT COUNT(*) FROM view_events v4 WHERE v4.asset_id = a.asset_id AND v4.kind = 'open') BETWEEN 5 AND 20
             WHEN 'high' THEN (SELECT COUNT(*) FROM view_events v4 WHERE v4.asset_id = a.asset_id AND v4.kind = 'open') > 20
             ELSE 1
         END))
-    AND (?17 IS NULL OR (
-        CASE ?17
+    AND (?18 IS NULL OR (
+        CASE ?18
             WHEN 'none' THEN (SELECT COUNT(*) FROM view_events v5 WHERE v5.asset_id = a.asset_id AND v5.kind = 'play') = 0
             WHEN 'low'  THEN (SELECT COUNT(*) FROM view_events v5 WHERE v5.asset_id = a.asset_id AND v5.kind = 'play') BETWEEN 1 AND 5
             WHEN 'mid'  THEN (SELECT COUNT(*) FROM view_events v5 WHERE v5.asset_id = a.asset_id AND v5.kind = 'play') BETWEEN 5 AND 20
@@ -691,8 +730,8 @@ WHERE
             ELSE 1
         END))
     -- sizeRange buckets; MB = 1024*1024 (file-size convention).
-    AND (?18 IS NULL OR (
-        CASE ?18
+    AND (?19 IS NULL OR (
+        CASE ?19
             WHEN 'lt1m'    THEN a.size_bytes < 1048576
             WHEN 'm1to10'  THEN a.size_bytes >= 1048576 AND a.size_bytes < 10485760
             WHEN 'm10to50' THEN a.size_bytes >= 10485760 AND a.size_bytes < 52428800
@@ -709,34 +748,36 @@ WHERE
     -- the trigram index currently only backs fast terms -- the instr
     -- scan is bounded by library size, measured ~100ms @ 30k rows
     -- (2026-08-29); revisit with MATCH if profiling says so.
-    AND (?19 IS NULL OR NOT EXISTS (
-        SELECT 1 FROM json_each(?19) qk
+    AND (?20 IS NULL OR NOT EXISTS (
+        SELECT 1 FROM json_each(?20) qk
         WHERE NOT EXISTS (
             SELECT 1 FROM assets_fts f
             WHERE f.rowid = a.rowid
               AND instr(lower(f.all_text), lower(qk.value)) > 0)))
     -- keyset cursor (DESC variant): strict (sort_key, asset_id) tuple
     -- comparison. The sort_key CASE repeats inline (parser rule 3).
-    AND (?20 IS NULL
+    AND (?21 IS NULL
         OR (CASE
                 WHEN ?1 = 'fileDate'  THEN a.mtime
                 WHEN ?1 = 'name'      THEN a.file_name
                 WHEN ?1 = 'sizeBytes' THEN printf('%020d', a.size_bytes)
                 WHEN ?1 = 'viewCount' THEN printf('%020d', (SELECT COUNT(*) FROM view_events v6 WHERE v6.asset_id = a.asset_id AND v6.kind = 'open'))
                 WHEN ?1 = 'playCount' THEN printf('%020d', (SELECT COUNT(*) FROM view_events v7 WHERE v7.asset_id = a.asset_id AND v7.kind = 'play'))
+                WHEN ?1 = 'favoriteAt' THEN (SELECT fv_sorted.created_at FROM favorites fv_sorted WHERE fv_sorted.asset_id = a.asset_id)
                 ELSE a.created_at
-            END) < ?20
+            END) < ?21
         OR ((CASE
                 WHEN ?1 = 'fileDate'  THEN a.mtime
                 WHEN ?1 = 'name'      THEN a.file_name
                 WHEN ?1 = 'sizeBytes' THEN printf('%020d', a.size_bytes)
                 WHEN ?1 = 'viewCount' THEN printf('%020d', (SELECT COUNT(*) FROM view_events v6 WHERE v6.asset_id = a.asset_id AND v6.kind = 'open'))
                 WHEN ?1 = 'playCount' THEN printf('%020d', (SELECT COUNT(*) FROM view_events v7 WHERE v7.asset_id = a.asset_id AND v7.kind = 'play'))
+                WHEN ?1 = 'favoriteAt' THEN (SELECT fv_sorted.created_at FROM favorites fv_sorted WHERE fv_sorted.asset_id = a.asset_id)
                 ELSE a.created_at
-            END) = ?20
-            AND a.asset_id < ?21))
+            END) = ?21
+            AND a.asset_id < ?22))
 ORDER BY sort_key DESC, a.asset_id DESC
-LIMIT ?22
+LIMIT ?23
 `
 
 type ListAssetsFilteredDescParams struct {
@@ -751,6 +792,7 @@ type ListAssetsFilteredDescParams struct {
 	TagIdsJson     interface{}
 	TagMode        interface{}
 	Favorite       interface{}
+	Liked          interface{}
 	MtimeFrom      interface{}
 	MtimeTo        interface{}
 	YearFrom       interface{}
@@ -850,6 +892,7 @@ func (q *Queries) ListAssetsFilteredDesc(ctx context.Context, arg ListAssetsFilt
 		arg.TagIdsJson,
 		arg.TagMode,
 		arg.Favorite,
+		arg.Liked,
 		arg.MtimeFrom,
 		arg.MtimeTo,
 		arg.YearFrom,

@@ -64,8 +64,12 @@ func (s *Server) GetApiV1Rankings(w http.ResponseWriter, r *http.Request, params
 	out := make([]gen.AssetSummary, 0, len(ranked))
 	for _, it := range ranked {
 		row := rowByID[it.AssetID]
+		// 排行榜是 AssetSummary 新增 viewCount/playCount 字段的填充端点
+		//（数据源 ListAssetsRecommendInput 已含聚合；浏览列表保持省略，
+		// 口径见 assets.go buildSummary 注释）。
 		out = append(out, buildSummary(s, row.AssetID, row.FileName, row.MediaType,
-			row.SizeBytes, row.Mtime, row.CreatedAt, row.Source, row.IsFavorite, row.LikeCount))
+			row.SizeBytes, row.Mtime, row.CreatedAt, row.Source, row.IsFavorite, row.LikeCount,
+			ptr(int(row.ViewCount)), ptr(int(row.PlayCount))))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
