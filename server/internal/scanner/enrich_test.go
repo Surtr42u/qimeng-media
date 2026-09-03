@@ -77,17 +77,21 @@ func TestScanCosLibraryCreatesAuthors(t *testing.T) {
 	a3 := env.assetByPath(t, "守望先锋_天使/3.jpg")
 
 	for _, tc := range []struct {
-		name   string
-		dir    string
-		asset  db.Asset
-		wantID string
+		name     string
+		dir      string
+		asset    db.Asset
+		wantID   string
+		wantWork string // migration 0008 cos_work：结构 2 的第二段目录名
 	}{
-		{"结构2", "水淼Aqua", a1, authoring.GenerateCosAuthorID("水淼Aqua")},
-		{"结构1", "作者C", a2, authoring.GenerateCosAuthorID("作者C")},
-		{"组名目录", "守望先锋_天使", a3, authoring.GenerateCosAuthorID("守望先锋_天使")},
+		{"结构2", "水淼Aqua", a1, authoring.GenerateCosAuthorID("水淼Aqua"), "不知火舞"},
+		{"结构1", "作者C", a2, authoring.GenerateCosAuthorID("作者C"), ""},
+		{"组名目录", "守望先锋_天使", a3, authoring.GenerateCosAuthorID("守望先锋_天使"), ""},
 	} {
 		if got := tc.asset.Source; got.Valid {
 			t.Errorf("%s: cos 文件 source=%v, 必须为 NULL（隔离口径）", tc.name, got)
+		}
+		if got := tc.asset.CosWork; got.Valid != (tc.wantWork != "") || (got.Valid && got.String != tc.wantWork) {
+			t.Errorf("%s: cos_work=%v, want %q（migration 0008 作品列）", tc.name, got, tc.wantWork)
 		}
 		if got := characterNames(t, env, tc.asset.AssetID); len(got) != 0 {
 			t.Errorf("%s: cos 文件角色=%v, want 空", tc.name, got)
@@ -239,6 +243,33 @@ func TestEnrichAssetCosLibraryRecomputesAuthor(t *testing.T) {
 	newAuthor := authoring.GenerateCosAuthorID("作者B")
 	if len(refs) != 1 || refs[0].ID != newAuthor {
 		t.Errorf("移动后关联作者=%+v, want [{%s}]（旧作者 %s 应被清理）", refs, newAuthor, oldAuthor)
+	}
+	// cos_work 随作者关联一起重算（migration 0008）：新路径第二段 = 作品2。
+	moved, err := env.q.GetAsset(context.Background(), a.AssetID)
+	if err != nil {
+		t.Fatalf("GetAsset 失败: %v", err)
+	}
+	if !moved.CosWork.Valid || moved.CosWork.String != "作品2" {
+		t.Errorf("移动后 cos_work=%v, want 作品2（随 EnrichAsset 重算）", moved.CosWork)
+	}
+
+	// 再移到无作品子目录的形态（作者B/文件）：cos_work 必须清空（覆盖语义
+	// 含 NULL——文件移出作品目录即解除关联，UpdateAssetCosWork 注释）。
+	if _, err := env.q.MoveAssetPath(context.Background(), db.MoveAssetPathParams{
+		RelPath: "作者B/1.jpg", FileName: "1.jpg",
+		UpdatedAt: "2026-08-30T00:00:00.000Z", AssetID: a.AssetID,
+	}); err != nil {
+		t.Fatalf("MoveAssetPath 二次失败: %v", err)
+	}
+	if err := env.s.EnrichAsset(context.Background(), env.lib.ID, a.AssetID); err != nil {
+		t.Fatalf("EnrichAsset 二次失败: %v", err)
+	}
+	cleared, err := env.q.GetAsset(context.Background(), a.AssetID)
+	if err != nil {
+		t.Fatalf("GetAsset 二次失败: %v", err)
+	}
+	if cleared.CosWork.Valid {
+		t.Errorf("移出作品目录后 cos_work=%v, want NULL（覆盖语义含清空）", cleared.CosWork)
 	}
 }
 

@@ -11,7 +11,7 @@ import (
 )
 
 const getAsset = `-- name: GetAsset :one
-SELECT asset_id, library_id, rel_path, file_name, media_type, size_bytes, mtime, duration_ms, width, height, source, created_at, updated_at, last_position_seconds, video_codec, audio_codec FROM assets WHERE asset_id = ?
+SELECT asset_id, library_id, rel_path, file_name, media_type, size_bytes, mtime, duration_ms, width, height, source, created_at, updated_at, last_position_seconds, video_codec, audio_codec, cos_work FROM assets WHERE asset_id = ?
 `
 
 func (q *Queries) GetAsset(ctx context.Context, assetID string) (Asset, error) {
@@ -34,13 +34,14 @@ func (q *Queries) GetAsset(ctx context.Context, assetID string) (Asset, error) {
 		&i.LastPositionSeconds,
 		&i.VideoCodec,
 		&i.AudioCodec,
+		&i.CosWork,
 	)
 	return i, err
 }
 
 const getAssetByPath = `-- name: GetAssetByPath :one
 
-SELECT asset_id, library_id, rel_path, file_name, media_type, size_bytes, mtime, duration_ms, width, height, source, created_at, updated_at, last_position_seconds, video_codec, audio_codec FROM assets WHERE library_id = ? AND rel_path = ?
+SELECT asset_id, library_id, rel_path, file_name, media_type, size_bytes, mtime, duration_ms, width, height, source, created_at, updated_at, last_position_seconds, video_codec, audio_codec, cos_work FROM assets WHERE library_id = ? AND rel_path = ?
 `
 
 type GetAssetByPathParams struct {
@@ -71,12 +72,13 @@ func (q *Queries) GetAssetByPath(ctx context.Context, arg GetAssetByPathParams) 
 		&i.LastPositionSeconds,
 		&i.VideoCodec,
 		&i.AudioCodec,
+		&i.CosWork,
 	)
 	return i, err
 }
 
 const listAssetsAfterCursor = `-- name: ListAssetsAfterCursor :many
-SELECT asset_id, library_id, rel_path, file_name, media_type, size_bytes, mtime, duration_ms, width, height, source, created_at, updated_at, last_position_seconds, video_codec, audio_codec FROM assets
+SELECT asset_id, library_id, rel_path, file_name, media_type, size_bytes, mtime, duration_ms, width, height, source, created_at, updated_at, last_position_seconds, video_codec, audio_codec, cos_work FROM assets
 WHERE created_at < ? OR (created_at = ? AND asset_id < ?)
 ORDER BY created_at DESC, asset_id DESC
 LIMIT ?
@@ -120,6 +122,7 @@ func (q *Queries) ListAssetsAfterCursor(ctx context.Context, arg ListAssetsAfter
 			&i.LastPositionSeconds,
 			&i.VideoCodec,
 			&i.AudioCodec,
+			&i.CosWork,
 		); err != nil {
 			return nil, err
 		}
@@ -136,7 +139,7 @@ func (q *Queries) ListAssetsAfterCursor(ctx context.Context, arg ListAssetsAfter
 
 const listAssetsFirstPage = `-- name: ListAssetsFirstPage :many
 
-SELECT asset_id, library_id, rel_path, file_name, media_type, size_bytes, mtime, duration_ms, width, height, source, created_at, updated_at, last_position_seconds, video_codec, audio_codec FROM assets
+SELECT asset_id, library_id, rel_path, file_name, media_type, size_bytes, mtime, duration_ms, width, height, source, created_at, updated_at, last_position_seconds, video_codec, audio_codec, cos_work FROM assets
 ORDER BY created_at DESC, asset_id DESC
 LIMIT ?
 `
@@ -175,6 +178,7 @@ func (q *Queries) ListAssetsFirstPage(ctx context.Context, limit int64) ([]Asset
 			&i.LastPositionSeconds,
 			&i.VideoCodec,
 			&i.AudioCodec,
+			&i.CosWork,
 		); err != nil {
 			return nil, err
 		}
@@ -221,9 +225,9 @@ const upsertAsset = `-- name: UpsertAsset :one
 INSERT INTO assets (
     asset_id, library_id, rel_path, file_name, media_type,
     size_bytes, mtime, duration_ms, width, height,
-    video_codec, audio_codec, source,
+    video_codec, audio_codec, source, cos_work,
     created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (library_id, rel_path) DO UPDATE SET
     file_name    = excluded.file_name,
     media_type   = excluded.media_type,
@@ -236,7 +240,7 @@ ON CONFLICT (library_id, rel_path) DO UPDATE SET
     audio_codec  = excluded.audio_codec,
     source       = excluded.source,
     updated_at   = excluded.updated_at
-RETURNING asset_id, library_id, rel_path, file_name, media_type, size_bytes, mtime, duration_ms, width, height, source, created_at, updated_at, last_position_seconds, video_codec, audio_codec
+RETURNING asset_id, library_id, rel_path, file_name, media_type, size_bytes, mtime, duration_ms, width, height, source, created_at, updated_at, last_position_seconds, video_codec, audio_codec, cos_work
 `
 
 type UpsertAssetParams struct {
@@ -253,6 +257,7 @@ type UpsertAssetParams struct {
 	VideoCodec sql.NullString
 	AudioCodec sql.NullString
 	Source     sql.NullString
+	CosWork    sql.NullString
 	CreatedAt  string
 	UpdatedAt  string
 }
@@ -270,6 +275,10 @@ type UpsertAssetParams struct {
 // first-seen values (identity is for life; ingest time frozen for the
 // freshness scoring). Change detection (size+mtime) is the scanner's
 // job before calling this.
+// cos_work (migration 0008): COS work directory name, written only by the
+// COS ingest path; normal libraries pass NULL (author/work isolation,
+// DOMAIN_RULES 6). Refreshed on conflict like source -- a renamed work
+// directory must re-point the asset.
 func (q *Queries) UpsertAsset(ctx context.Context, arg UpsertAssetParams) (Asset, error) {
 	row := q.db.QueryRowContext(ctx, upsertAsset,
 		arg.AssetID,
@@ -285,6 +294,7 @@ func (q *Queries) UpsertAsset(ctx context.Context, arg UpsertAssetParams) (Asset
 		arg.VideoCodec,
 		arg.AudioCodec,
 		arg.Source,
+		arg.CosWork,
 		arg.CreatedAt,
 		arg.UpdatedAt,
 	)
@@ -306,6 +316,7 @@ func (q *Queries) UpsertAsset(ctx context.Context, arg UpsertAssetParams) (Asset
 		&i.LastPositionSeconds,
 		&i.VideoCodec,
 		&i.AudioCodec,
+		&i.CosWork,
 	)
 	return i, err
 }

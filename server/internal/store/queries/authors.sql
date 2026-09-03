@@ -95,6 +95,17 @@ ON CONFLICT (asset_id, character_name) DO NOTHING;
 -- happen; the write path must recompute explicitly).
 UPDATE assets SET source = ?, updated_at = ? WHERE asset_id = ?;
 
+-- name: UpdateAssetCosWork :exec
+-- Single-asset COS work refresh (migration 0008). recomputeCosAuthor calls
+-- it on every path that changes rel_path without re-ingesting (API
+-- move/rename via EnrichAsset, scan move-merge): the work is derived from
+-- rel_path, so it must be recomputed together with the author links.
+-- NULL work = file sits directly under the author directory (old-app
+-- "other" bucket, DOMAIN_RULES 6) -- the refresh is overwrite-in-full,
+-- including the NULL case, so a file moved out of a work directory
+-- unlinks from it.
+UPDATE assets SET cos_work = ?, updated_at = ? WHERE asset_id = ?;
+
 -- name: DeleteAssetAuthorsByAssetID :exec
 -- Single-asset link removal (EnrichAsset COS branch recompute:
 -- delete-then-insert, same overwrite semantics as asset_characters).

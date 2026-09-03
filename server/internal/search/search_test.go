@@ -68,7 +68,12 @@ func TestRebuildIndex(t *testing.T) {
 	}
 	items, err := q.ListAssetsFilteredDesc(ctx, db.ListAssetsFilteredDescParams{
 		Sort: "default", RowLimit: 10,
-		QJson: `["标题"]`,
+		// COS 分区三态开关（browse.sql）：直连 store 层必须显式传 0/1，
+		// NULL 会让三值逻辑把非 COS 行也排除（handler 侧恒传，见
+		// newAssetFilters 注释）；本测试走常规分区缺省。
+		IncludeCos: 0,
+		CosOnly:    0,
+		QJson:      `["标题"]`,
 	})
 	if err != nil {
 		t.Fatalf("搜索失败: %v", err)

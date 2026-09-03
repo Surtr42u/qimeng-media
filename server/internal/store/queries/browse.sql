@@ -84,12 +84,26 @@ WHERE
     AND (sqlc.narg(source) IS NULL
          OR (sqlc.arg(source_is_other) = 1 AND a.source IS NULL)
          OR a.source = sqlc.narg(source))
-    -- Default COS exclusion (DOMAIN_RULES 6: COS files never appear in
-    -- the regular browse stream); include_cos = 1 re-adds them.
-    AND (sqlc.arg(include_cos) = 1 OR NOT EXISTS (
-        SELECT 1 FROM asset_authors aa
-        JOIN authors au ON au.id = aa.author_id
-        WHERE aa.asset_id = a.asset_id AND au.type = 'cos'))
+    -- COS partition. Three-way switch shared by the browse default and the
+    -- album partition pills (DOMAIN_RULES 6 isolation, migration 0008):
+    --   include_cos = 1 -> no restriction (all partition);
+    --   cos_only    = 1 -> asset MUST link a cos author (cos partition);
+    --   both 0         -> asset must NOT link a cos author (regular, the
+    --                     historical default: COS never enters the regular
+    --                     browse stream).
+    AND (sqlc.arg(include_cos) = 1
+         OR (sqlc.arg(cos_only) = 1 AND EXISTS (
+             SELECT 1 FROM asset_authors aacos
+             JOIN authors aucos ON aucos.id = aacos.author_id
+             WHERE aacos.asset_id = a.asset_id AND aucos.type = 'cos'))
+         OR (sqlc.arg(cos_only) = 0 AND NOT EXISTS (
+             SELECT 1 FROM asset_authors aa
+             JOIN authors au ON au.id = aa.author_id
+             WHERE aa.asset_id = a.asset_id AND au.type = 'cos')))
+    -- COS work (migration 0008): second path segment of `author/work/file`.
+    -- The album character pill lists these under the cos partition (old-app
+    -- "COS character = work directory name", GUIDE_ALGORITHM).
+    AND (sqlc.narg(cos_work) IS NULL OR a.cos_work = sqlc.narg(cos_work))
     -- character filter: 'a+b' is split by the caller into a JSON array
     -- of canonical names; ALL names must be attached (multi-character
     -- group semantics).
@@ -238,10 +252,26 @@ WHERE
     AND (sqlc.narg(source) IS NULL
          OR (sqlc.arg(source_is_other) = 1 AND a.source IS NULL)
          OR a.source = sqlc.narg(source))
-    AND (sqlc.arg(include_cos) = 1 OR NOT EXISTS (
-        SELECT 1 FROM asset_authors aa
-        JOIN authors au ON au.id = aa.author_id
-        WHERE aa.asset_id = a.asset_id AND au.type = 'cos'))
+    -- COS partition. Three-way switch shared by the browse default and the
+    -- album partition pills (DOMAIN_RULES 6 isolation, migration 0008):
+    --   include_cos = 1 -> no restriction (all partition);
+    --   cos_only    = 1 -> asset MUST link a cos author (cos partition);
+    --   both 0         -> asset must NOT link a cos author (regular, the
+    --                     historical default: COS never enters the regular
+    --                     browse stream).
+    AND (sqlc.arg(include_cos) = 1
+         OR (sqlc.arg(cos_only) = 1 AND EXISTS (
+             SELECT 1 FROM asset_authors aacos
+             JOIN authors aucos ON aucos.id = aacos.author_id
+             WHERE aacos.asset_id = a.asset_id AND aucos.type = 'cos'))
+         OR (sqlc.arg(cos_only) = 0 AND NOT EXISTS (
+             SELECT 1 FROM asset_authors aa
+             JOIN authors au ON au.id = aa.author_id
+             WHERE aa.asset_id = a.asset_id AND au.type = 'cos')))
+    -- COS work (migration 0008): second path segment of `author/work/file`.
+    -- The album character pill lists these under the cos partition (old-app
+    -- "COS character = work directory name", GUIDE_ALGORITHM).
+    AND (sqlc.narg(cos_work) IS NULL OR a.cos_work = sqlc.narg(cos_work))
     AND (sqlc.narg(characters_json) IS NULL OR NOT EXISTS (
         SELECT 1 FROM json_each(sqlc.narg(characters_json)) c
         WHERE NOT EXISTS (
@@ -354,10 +384,26 @@ WHERE
     AND (sqlc.narg(source) IS NULL
          OR (sqlc.arg(source_is_other) = 1 AND a.source IS NULL)
          OR a.source = sqlc.narg(source))
-    AND (sqlc.arg(include_cos) = 1 OR NOT EXISTS (
-        SELECT 1 FROM asset_authors aa
-        JOIN authors au ON au.id = aa.author_id
-        WHERE aa.asset_id = a.asset_id AND au.type = 'cos'))
+    -- COS partition. Three-way switch shared by the browse default and the
+    -- album partition pills (DOMAIN_RULES 6 isolation, migration 0008):
+    --   include_cos = 1 -> no restriction (all partition);
+    --   cos_only    = 1 -> asset MUST link a cos author (cos partition);
+    --   both 0         -> asset must NOT link a cos author (regular, the
+    --                     historical default: COS never enters the regular
+    --                     browse stream).
+    AND (sqlc.arg(include_cos) = 1
+         OR (sqlc.arg(cos_only) = 1 AND EXISTS (
+             SELECT 1 FROM asset_authors aacos
+             JOIN authors aucos ON aucos.id = aacos.author_id
+             WHERE aacos.asset_id = a.asset_id AND aucos.type = 'cos'))
+         OR (sqlc.arg(cos_only) = 0 AND NOT EXISTS (
+             SELECT 1 FROM asset_authors aa
+             JOIN authors au ON au.id = aa.author_id
+             WHERE aa.asset_id = a.asset_id AND au.type = 'cos')))
+    -- COS work (migration 0008): second path segment of `author/work/file`.
+    -- The album character pill lists these under the cos partition (old-app
+    -- "COS character = work directory name", GUIDE_ALGORITHM).
+    AND (sqlc.narg(cos_work) IS NULL OR a.cos_work = sqlc.narg(cos_work))
     AND (sqlc.narg(characters_json) IS NULL OR NOT EXISTS (
         SELECT 1 FROM json_each(sqlc.narg(characters_json)) c
         WHERE NOT EXISTS (

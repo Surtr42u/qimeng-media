@@ -22,34 +22,50 @@ WHERE
     AND (?3 IS NULL
          OR (?4 = 1 AND a.source IS NULL)
          OR a.source = ?3)
-    AND (?5 = 1 OR NOT EXISTS (
-        SELECT 1 FROM asset_authors aa
-        JOIN authors au ON au.id = aa.author_id
-        WHERE aa.asset_id = a.asset_id AND au.type = 'cos'))
-    AND (?6 IS NULL OR NOT EXISTS (
-        SELECT 1 FROM json_each(?6) c
+    -- COS partition. Three-way switch shared by the browse default and the
+    -- album partition pills (DOMAIN_RULES 6 isolation, migration 0008):
+    --   include_cos = 1 -> no restriction (all partition);
+    --   cos_only    = 1 -> asset MUST link a cos author (cos partition);
+    --   both 0         -> asset must NOT link a cos author (regular, the
+    --                     historical default: COS never enters the regular
+    --                     browse stream).
+    AND (?5 = 1
+         OR (?6 = 1 AND EXISTS (
+             SELECT 1 FROM asset_authors aacos
+             JOIN authors aucos ON aucos.id = aacos.author_id
+             WHERE aacos.asset_id = a.asset_id AND aucos.type = 'cos'))
+         OR (?6 = 0 AND NOT EXISTS (
+             SELECT 1 FROM asset_authors aa
+             JOIN authors au ON au.id = aa.author_id
+             WHERE aa.asset_id = a.asset_id AND au.type = 'cos')))
+    -- COS work (migration 0008): second path segment of ` + "`" + `author/work/file` + "`" + `.
+    -- The album character pill lists these under the cos partition (old-app
+    -- "COS character = work directory name", GUIDE_ALGORITHM).
+    AND (?7 IS NULL OR a.cos_work = ?7)
+    AND (?8 IS NULL OR NOT EXISTS (
+        SELECT 1 FROM json_each(?8) c
         WHERE NOT EXISTS (
             SELECT 1 FROM asset_characters ac
             WHERE ac.asset_id = a.asset_id AND ac.character_name = c.value)))
-    AND (?7 IS NULL OR EXISTS (
+    AND (?9 IS NULL OR EXISTS (
         SELECT 1 FROM asset_authors aa2
-        WHERE aa2.asset_id = a.asset_id AND aa2.author_id = ?7))
-    AND (?8 IS NULL OR (
-        CASE WHEN ?9 = 'exact' THEN
+        WHERE aa2.asset_id = a.asset_id AND aa2.author_id = ?9))
+    AND (?10 IS NULL OR (
+        CASE WHEN ?11 = 'exact' THEN
             NOT EXISTS (
-                SELECT 1 FROM json_each(?8) jt
+                SELECT 1 FROM json_each(?10) jt
                 WHERE NOT EXISTS (
                     SELECT 1 FROM asset_tags at2
                     WHERE at2.asset_id = a.asset_id AND at2.tag_id = jt.value))
         ELSE
             EXISTS (
-                SELECT 1 FROM json_each(?8) jt
+                SELECT 1 FROM json_each(?10) jt
                 WHERE EXISTS (
                     SELECT 1 FROM asset_tags at2
                     WHERE at2.asset_id = a.asset_id AND at2.tag_id = jt.value))
         END))
-    AND (?10 IS NULL OR (
-        CASE WHEN ?10 = 1 THEN
+    AND (?12 IS NULL OR (
+        CASE WHEN ?12 = 1 THEN
             EXISTS(SELECT 1 FROM favorites fv2 WHERE fv2.asset_id = a.asset_id)
         ELSE
             NOT EXISTS(SELECT 1 FROM favorites fv2 WHERE fv2.asset_id = a.asset_id)
@@ -57,34 +73,34 @@ WHERE
     -- liked filter (DOMAIN_RULES 5): asset liked on ANY day = likes table
     -- has at least one row; same shape as the favorite filter above (and
     -- keep in sync across the three queries in this file).
-    AND (?11 IS NULL OR (
-        CASE WHEN ?11 = 1 THEN
+    AND (?13 IS NULL OR (
+        CASE WHEN ?13 = 1 THEN
             EXISTS(SELECT 1 FROM likes lk WHERE lk.asset_id = a.asset_id)
         ELSE
             NOT EXISTS(SELECT 1 FROM likes lk WHERE lk.asset_id = a.asset_id)
         END))
-    AND (?12 IS NULL OR a.mtime >= ?12)
-    AND (?13 IS NULL OR a.mtime <= ?13)
-    AND (?14 IS NULL OR CAST(substr(a.mtime, 1, 4) AS INTEGER) >= ?14)
-    AND (?15 IS NULL OR CAST(substr(a.mtime, 1, 4) AS INTEGER) <= ?15)
-    AND (?16 IS NULL OR (
-        CASE ?16
+    AND (?14 IS NULL OR a.mtime >= ?14)
+    AND (?15 IS NULL OR a.mtime <= ?15)
+    AND (?16 IS NULL OR CAST(substr(a.mtime, 1, 4) AS INTEGER) >= ?16)
+    AND (?17 IS NULL OR CAST(substr(a.mtime, 1, 4) AS INTEGER) <= ?17)
+    AND (?18 IS NULL OR (
+        CASE ?18
             WHEN 'none' THEN (SELECT COUNT(*) FROM view_events v4 WHERE v4.asset_id = a.asset_id AND v4.kind = 'open') = 0
             WHEN 'low'  THEN (SELECT COUNT(*) FROM view_events v4 WHERE v4.asset_id = a.asset_id AND v4.kind = 'open') BETWEEN 1 AND 5
             WHEN 'mid'  THEN (SELECT COUNT(*) FROM view_events v4 WHERE v4.asset_id = a.asset_id AND v4.kind = 'open') BETWEEN 5 AND 20
             WHEN 'high' THEN (SELECT COUNT(*) FROM view_events v4 WHERE v4.asset_id = a.asset_id AND v4.kind = 'open') > 20
             ELSE 1
         END))
-    AND (?17 IS NULL OR (
-        CASE ?17
+    AND (?19 IS NULL OR (
+        CASE ?19
             WHEN 'none' THEN (SELECT COUNT(*) FROM view_events v5 WHERE v5.asset_id = a.asset_id AND v5.kind = 'play') = 0
             WHEN 'low'  THEN (SELECT COUNT(*) FROM view_events v5 WHERE v5.asset_id = a.asset_id AND v5.kind = 'play') BETWEEN 1 AND 5
             WHEN 'mid'  THEN (SELECT COUNT(*) FROM view_events v5 WHERE v5.asset_id = a.asset_id AND v5.kind = 'play') BETWEEN 5 AND 20
             WHEN 'high' THEN (SELECT COUNT(*) FROM view_events v5 WHERE v5.asset_id = a.asset_id AND v5.kind = 'play') > 20
             ELSE 1
         END))
-    AND (?18 IS NULL OR (
-        CASE ?18
+    AND (?20 IS NULL OR (
+        CASE ?20
             WHEN 'lt1m'    THEN a.size_bytes < 1048576
             WHEN 'm1to10'  THEN a.size_bytes >= 1048576 AND a.size_bytes < 10485760
             WHEN 'm10to50' THEN a.size_bytes >= 10485760 AND a.size_bytes < 52428800
@@ -93,8 +109,8 @@ WHERE
         END))
     -- Full-text search (DOMAIN_RULES 3) -- keep in sync with the two list
     -- queries above (same AND clause).
-    AND (?19 IS NULL OR NOT EXISTS (
-        SELECT 1 FROM json_each(?19) qk
+    AND (?21 IS NULL OR NOT EXISTS (
+        SELECT 1 FROM json_each(?21) qk
         WHERE NOT EXISTS (
             SELECT 1 FROM assets_fts f
             WHERE f.rowid = a.rowid
@@ -107,6 +123,8 @@ type CountAssetsFilteredParams struct {
 	Source         interface{}
 	SourceIsOther  interface{}
 	IncludeCos     interface{}
+	CosOnly        interface{}
+	CosWork        interface{}
 	CharactersJson interface{}
 	AuthorID       interface{}
 	TagIdsJson     interface{}
@@ -133,6 +151,8 @@ func (q *Queries) CountAssetsFiltered(ctx context.Context, arg CountAssetsFilter
 		arg.Source,
 		arg.SourceIsOther,
 		arg.IncludeCos,
+		arg.CosOnly,
+		arg.CosWork,
 		arg.CharactersJson,
 		arg.AuthorID,
 		arg.TagIdsJson,
@@ -406,34 +426,50 @@ WHERE
     AND (?4 IS NULL
          OR (?5 = 1 AND a.source IS NULL)
          OR a.source = ?4)
-    AND (?6 = 1 OR NOT EXISTS (
-        SELECT 1 FROM asset_authors aa
-        JOIN authors au ON au.id = aa.author_id
-        WHERE aa.asset_id = a.asset_id AND au.type = 'cos'))
-    AND (?7 IS NULL OR NOT EXISTS (
-        SELECT 1 FROM json_each(?7) c
+    -- COS partition. Three-way switch shared by the browse default and the
+    -- album partition pills (DOMAIN_RULES 6 isolation, migration 0008):
+    --   include_cos = 1 -> no restriction (all partition);
+    --   cos_only    = 1 -> asset MUST link a cos author (cos partition);
+    --   both 0         -> asset must NOT link a cos author (regular, the
+    --                     historical default: COS never enters the regular
+    --                     browse stream).
+    AND (?6 = 1
+         OR (?7 = 1 AND EXISTS (
+             SELECT 1 FROM asset_authors aacos
+             JOIN authors aucos ON aucos.id = aacos.author_id
+             WHERE aacos.asset_id = a.asset_id AND aucos.type = 'cos'))
+         OR (?7 = 0 AND NOT EXISTS (
+             SELECT 1 FROM asset_authors aa
+             JOIN authors au ON au.id = aa.author_id
+             WHERE aa.asset_id = a.asset_id AND au.type = 'cos')))
+    -- COS work (migration 0008): second path segment of ` + "`" + `author/work/file` + "`" + `.
+    -- The album character pill lists these under the cos partition (old-app
+    -- "COS character = work directory name", GUIDE_ALGORITHM).
+    AND (?8 IS NULL OR a.cos_work = ?8)
+    AND (?9 IS NULL OR NOT EXISTS (
+        SELECT 1 FROM json_each(?9) c
         WHERE NOT EXISTS (
             SELECT 1 FROM asset_characters ac
             WHERE ac.asset_id = a.asset_id AND ac.character_name = c.value)))
-    AND (?8 IS NULL OR EXISTS (
+    AND (?10 IS NULL OR EXISTS (
         SELECT 1 FROM asset_authors aa2
-        WHERE aa2.asset_id = a.asset_id AND aa2.author_id = ?8))
-    AND (?9 IS NULL OR (
-        CASE WHEN ?10 = 'exact' THEN
+        WHERE aa2.asset_id = a.asset_id AND aa2.author_id = ?10))
+    AND (?11 IS NULL OR (
+        CASE WHEN ?12 = 'exact' THEN
             NOT EXISTS (
-                SELECT 1 FROM json_each(?9) jt
+                SELECT 1 FROM json_each(?11) jt
                 WHERE NOT EXISTS (
                     SELECT 1 FROM asset_tags at2
                     WHERE at2.asset_id = a.asset_id AND at2.tag_id = jt.value))
         ELSE
             EXISTS (
-                SELECT 1 FROM json_each(?9) jt
+                SELECT 1 FROM json_each(?11) jt
                 WHERE EXISTS (
                     SELECT 1 FROM asset_tags at2
                     WHERE at2.asset_id = a.asset_id AND at2.tag_id = jt.value))
         END))
-    AND (?11 IS NULL OR (
-        CASE WHEN ?11 = 1 THEN
+    AND (?13 IS NULL OR (
+        CASE WHEN ?13 = 1 THEN
             EXISTS(SELECT 1 FROM favorites fv2 WHERE fv2.asset_id = a.asset_id)
         ELSE
             NOT EXISTS(SELECT 1 FROM favorites fv2 WHERE fv2.asset_id = a.asset_id)
@@ -441,34 +477,34 @@ WHERE
     -- liked filter (DOMAIN_RULES 5): asset liked on ANY day = likes table
     -- has at least one row; same shape as the favorite filter above (and
     -- keep in sync across the three queries in this file).
-    AND (?12 IS NULL OR (
-        CASE WHEN ?12 = 1 THEN
+    AND (?14 IS NULL OR (
+        CASE WHEN ?14 = 1 THEN
             EXISTS(SELECT 1 FROM likes lk WHERE lk.asset_id = a.asset_id)
         ELSE
             NOT EXISTS(SELECT 1 FROM likes lk WHERE lk.asset_id = a.asset_id)
         END))
-    AND (?13 IS NULL OR a.mtime >= ?13)
-    AND (?14 IS NULL OR a.mtime <= ?14)
-    AND (?15 IS NULL OR CAST(substr(a.mtime, 1, 4) AS INTEGER) >= ?15)
-    AND (?16 IS NULL OR CAST(substr(a.mtime, 1, 4) AS INTEGER) <= ?16)
-    AND (?17 IS NULL OR (
-        CASE ?17
+    AND (?15 IS NULL OR a.mtime >= ?15)
+    AND (?16 IS NULL OR a.mtime <= ?16)
+    AND (?17 IS NULL OR CAST(substr(a.mtime, 1, 4) AS INTEGER) >= ?17)
+    AND (?18 IS NULL OR CAST(substr(a.mtime, 1, 4) AS INTEGER) <= ?18)
+    AND (?19 IS NULL OR (
+        CASE ?19
             WHEN 'none' THEN (SELECT COUNT(*) FROM view_events v4 WHERE v4.asset_id = a.asset_id AND v4.kind = 'open') = 0
             WHEN 'low'  THEN (SELECT COUNT(*) FROM view_events v4 WHERE v4.asset_id = a.asset_id AND v4.kind = 'open') BETWEEN 1 AND 5
             WHEN 'mid'  THEN (SELECT COUNT(*) FROM view_events v4 WHERE v4.asset_id = a.asset_id AND v4.kind = 'open') BETWEEN 5 AND 20
             WHEN 'high' THEN (SELECT COUNT(*) FROM view_events v4 WHERE v4.asset_id = a.asset_id AND v4.kind = 'open') > 20
             ELSE 1
         END))
-    AND (?18 IS NULL OR (
-        CASE ?18
+    AND (?20 IS NULL OR (
+        CASE ?20
             WHEN 'none' THEN (SELECT COUNT(*) FROM view_events v5 WHERE v5.asset_id = a.asset_id AND v5.kind = 'play') = 0
             WHEN 'low'  THEN (SELECT COUNT(*) FROM view_events v5 WHERE v5.asset_id = a.asset_id AND v5.kind = 'play') BETWEEN 1 AND 5
             WHEN 'mid'  THEN (SELECT COUNT(*) FROM view_events v5 WHERE v5.asset_id = a.asset_id AND v5.kind = 'play') BETWEEN 5 AND 20
             WHEN 'high' THEN (SELECT COUNT(*) FROM view_events v5 WHERE v5.asset_id = a.asset_id AND v5.kind = 'play') > 20
             ELSE 1
         END))
-    AND (?19 IS NULL OR (
-        CASE ?19
+    AND (?21 IS NULL OR (
+        CASE ?21
             WHEN 'lt1m'    THEN a.size_bytes < 1048576
             WHEN 'm1to10'  THEN a.size_bytes >= 1048576 AND a.size_bytes < 10485760
             WHEN 'm10to50' THEN a.size_bytes >= 10485760 AND a.size_bytes < 52428800
@@ -477,14 +513,14 @@ WHERE
         END))
     -- Full-text search (DOMAIN_RULES 3) -- keep in sync with the DESC
     -- variant above (same AND clause; see its comment for semantics).
-    AND (?20 IS NULL OR NOT EXISTS (
-        SELECT 1 FROM json_each(?20) qk
+    AND (?22 IS NULL OR NOT EXISTS (
+        SELECT 1 FROM json_each(?22) qk
         WHERE NOT EXISTS (
             SELECT 1 FROM assets_fts f
             WHERE f.rowid = a.rowid
               AND instr(lower(f.all_text), lower(qk.value)) > 0)))
     -- keyset cursor (ASC variant).
-    AND (?21 IS NULL
+    AND (?23 IS NULL
         OR (CASE
                 WHEN ?1 = 'fileDate'  THEN a.mtime
                 WHEN ?1 = 'name'      THEN a.file_name
@@ -493,7 +529,7 @@ WHERE
                 WHEN ?1 = 'playCount' THEN printf('%020d', (SELECT COUNT(*) FROM view_events v7 WHERE v7.asset_id = a.asset_id AND v7.kind = 'play'))
                 WHEN ?1 = 'favoriteAt' THEN (SELECT fv_sorted.created_at FROM favorites fv_sorted WHERE fv_sorted.asset_id = a.asset_id)
                 ELSE a.created_at
-            END) > ?21
+            END) > ?23
         OR ((CASE
                 WHEN ?1 = 'fileDate'  THEN a.mtime
                 WHEN ?1 = 'name'      THEN a.file_name
@@ -502,10 +538,10 @@ WHERE
                 WHEN ?1 = 'playCount' THEN printf('%020d', (SELECT COUNT(*) FROM view_events v7 WHERE v7.asset_id = a.asset_id AND v7.kind = 'play'))
                 WHEN ?1 = 'favoriteAt' THEN (SELECT fv_sorted.created_at FROM favorites fv_sorted WHERE fv_sorted.asset_id = a.asset_id)
                 ELSE a.created_at
-            END) = ?21
-            AND a.asset_id > ?22))
+            END) = ?23
+            AND a.asset_id > ?24))
 ORDER BY sort_key ASC, a.asset_id ASC
-LIMIT ?23
+LIMIT ?25
 `
 
 type ListAssetsFilteredAscParams struct {
@@ -515,6 +551,8 @@ type ListAssetsFilteredAscParams struct {
 	Source         interface{}
 	SourceIsOther  interface{}
 	IncludeCos     interface{}
+	CosOnly        interface{}
+	CosWork        interface{}
 	CharactersJson interface{}
 	AuthorID       interface{}
 	TagIdsJson     interface{}
@@ -563,6 +601,8 @@ func (q *Queries) ListAssetsFilteredAsc(ctx context.Context, arg ListAssetsFilte
 		arg.Source,
 		arg.SourceIsOther,
 		arg.IncludeCos,
+		arg.CosOnly,
+		arg.CosWork,
 		arg.CharactersJson,
 		arg.AuthorID,
 		arg.TagIdsJson,
@@ -656,41 +696,55 @@ WHERE
     AND (?4 IS NULL
          OR (?5 = 1 AND a.source IS NULL)
          OR a.source = ?4)
-    -- Default COS exclusion (DOMAIN_RULES 6: COS files never appear in
-    -- the regular browse stream); include_cos = 1 re-adds them.
-    AND (?6 = 1 OR NOT EXISTS (
-        SELECT 1 FROM asset_authors aa
-        JOIN authors au ON au.id = aa.author_id
-        WHERE aa.asset_id = a.asset_id AND au.type = 'cos'))
+    -- COS partition. Three-way switch shared by the browse default and the
+    -- album partition pills (DOMAIN_RULES 6 isolation, migration 0008):
+    --   include_cos = 1 -> no restriction (all partition);
+    --   cos_only    = 1 -> asset MUST link a cos author (cos partition);
+    --   both 0         -> asset must NOT link a cos author (regular, the
+    --                     historical default: COS never enters the regular
+    --                     browse stream).
+    AND (?6 = 1
+         OR (?7 = 1 AND EXISTS (
+             SELECT 1 FROM asset_authors aacos
+             JOIN authors aucos ON aucos.id = aacos.author_id
+             WHERE aacos.asset_id = a.asset_id AND aucos.type = 'cos'))
+         OR (?7 = 0 AND NOT EXISTS (
+             SELECT 1 FROM asset_authors aa
+             JOIN authors au ON au.id = aa.author_id
+             WHERE aa.asset_id = a.asset_id AND au.type = 'cos')))
+    -- COS work (migration 0008): second path segment of ` + "`" + `author/work/file` + "`" + `.
+    -- The album character pill lists these under the cos partition (old-app
+    -- "COS character = work directory name", GUIDE_ALGORITHM).
+    AND (?8 IS NULL OR a.cos_work = ?8)
     -- character filter: 'a+b' is split by the caller into a JSON array
     -- of canonical names; ALL names must be attached (multi-character
     -- group semantics).
-    AND (?7 IS NULL OR NOT EXISTS (
-        SELECT 1 FROM json_each(?7) c
+    AND (?9 IS NULL OR NOT EXISTS (
+        SELECT 1 FROM json_each(?9) c
         WHERE NOT EXISTS (
             SELECT 1 FROM asset_characters ac
             WHERE ac.asset_id = a.asset_id AND ac.character_name = c.value)))
-    AND (?8 IS NULL OR EXISTS (
+    AND (?10 IS NULL OR EXISTS (
         SELECT 1 FROM asset_authors aa2
-        WHERE aa2.asset_id = a.asset_id AND aa2.author_id = ?8))
+        WHERE aa2.asset_id = a.asset_id AND aa2.author_id = ?10))
     -- tag filter: fuzzy = ANY selected tag matches; exact = ALL
     -- selected tags must be attached (DOMAIN_RULES 3).
-    AND (?9 IS NULL OR (
-        CASE WHEN ?10 = 'exact' THEN
+    AND (?11 IS NULL OR (
+        CASE WHEN ?12 = 'exact' THEN
             NOT EXISTS (
-                SELECT 1 FROM json_each(?9) jt
+                SELECT 1 FROM json_each(?11) jt
                 WHERE NOT EXISTS (
                     SELECT 1 FROM asset_tags at2
                     WHERE at2.asset_id = a.asset_id AND at2.tag_id = jt.value))
         ELSE
             EXISTS (
-                SELECT 1 FROM json_each(?9) jt
+                SELECT 1 FROM json_each(?11) jt
                 WHERE EXISTS (
                     SELECT 1 FROM asset_tags at2
                     WHERE at2.asset_id = a.asset_id AND at2.tag_id = jt.value))
         END))
-    AND (?11 IS NULL OR (
-        CASE WHEN ?11 = 1 THEN
+    AND (?13 IS NULL OR (
+        CASE WHEN ?13 = 1 THEN
             EXISTS(SELECT 1 FROM favorites fv2 WHERE fv2.asset_id = a.asset_id)
         ELSE
             NOT EXISTS(SELECT 1 FROM favorites fv2 WHERE fv2.asset_id = a.asset_id)
@@ -698,8 +752,8 @@ WHERE
     -- liked filter (DOMAIN_RULES 5): asset liked on ANY day = likes table
     -- has at least one row; same shape as the favorite filter above (and
     -- keep in sync across the three queries in this file).
-    AND (?12 IS NULL OR (
-        CASE WHEN ?12 = 1 THEN
+    AND (?14 IS NULL OR (
+        CASE WHEN ?14 = 1 THEN
             EXISTS(SELECT 1 FROM likes lk WHERE lk.asset_id = a.asset_id)
         ELSE
             NOT EXISTS(SELECT 1 FROM likes lk WHERE lk.asset_id = a.asset_id)
@@ -707,22 +761,22 @@ WHERE
     -- file-date window: TEXT comparison against the RFC3339-ms format;
     -- boundaries precomputed by the caller (dateFrom -> T00:00:00.000Z,
     -- dateTo -> T23:59:59.999Z).
-    AND (?13 IS NULL OR a.mtime >= ?13)
-    AND (?14 IS NULL OR a.mtime <= ?14)
-    AND (?15 IS NULL OR CAST(substr(a.mtime, 1, 4) AS INTEGER) >= ?15)
-    AND (?16 IS NULL OR CAST(substr(a.mtime, 1, 4) AS INTEGER) <= ?16)
+    AND (?15 IS NULL OR a.mtime >= ?15)
+    AND (?16 IS NULL OR a.mtime <= ?16)
+    AND (?17 IS NULL OR CAST(substr(a.mtime, 1, 4) AS INTEGER) >= ?17)
+    AND (?18 IS NULL OR CAST(substr(a.mtime, 1, 4) AS INTEGER) <= ?18)
     -- viewRange / playRange buckets (DOMAIN_RULES 3 literal boundaries:
     -- low = 1-5, mid = 5-20 -- the value 5 falls in both, by the book).
-    AND (?17 IS NULL OR (
-        CASE ?17
+    AND (?19 IS NULL OR (
+        CASE ?19
             WHEN 'none' THEN (SELECT COUNT(*) FROM view_events v4 WHERE v4.asset_id = a.asset_id AND v4.kind = 'open') = 0
             WHEN 'low'  THEN (SELECT COUNT(*) FROM view_events v4 WHERE v4.asset_id = a.asset_id AND v4.kind = 'open') BETWEEN 1 AND 5
             WHEN 'mid'  THEN (SELECT COUNT(*) FROM view_events v4 WHERE v4.asset_id = a.asset_id AND v4.kind = 'open') BETWEEN 5 AND 20
             WHEN 'high' THEN (SELECT COUNT(*) FROM view_events v4 WHERE v4.asset_id = a.asset_id AND v4.kind = 'open') > 20
             ELSE 1
         END))
-    AND (?18 IS NULL OR (
-        CASE ?18
+    AND (?20 IS NULL OR (
+        CASE ?20
             WHEN 'none' THEN (SELECT COUNT(*) FROM view_events v5 WHERE v5.asset_id = a.asset_id AND v5.kind = 'play') = 0
             WHEN 'low'  THEN (SELECT COUNT(*) FROM view_events v5 WHERE v5.asset_id = a.asset_id AND v5.kind = 'play') BETWEEN 1 AND 5
             WHEN 'mid'  THEN (SELECT COUNT(*) FROM view_events v5 WHERE v5.asset_id = a.asset_id AND v5.kind = 'play') BETWEEN 5 AND 20
@@ -730,8 +784,8 @@ WHERE
             ELSE 1
         END))
     -- sizeRange buckets; MB = 1024*1024 (file-size convention).
-    AND (?19 IS NULL OR (
-        CASE ?19
+    AND (?21 IS NULL OR (
+        CASE ?21
             WHEN 'lt1m'    THEN a.size_bytes < 1048576
             WHEN 'm1to10'  THEN a.size_bytes >= 1048576 AND a.size_bytes < 10485760
             WHEN 'm10to50' THEN a.size_bytes >= 10485760 AND a.size_bytes < 52428800
@@ -748,15 +802,15 @@ WHERE
     -- the trigram index currently only backs fast terms -- the instr
     -- scan is bounded by library size, measured ~100ms @ 30k rows
     -- (2026-08-29); revisit with MATCH if profiling says so.
-    AND (?20 IS NULL OR NOT EXISTS (
-        SELECT 1 FROM json_each(?20) qk
+    AND (?22 IS NULL OR NOT EXISTS (
+        SELECT 1 FROM json_each(?22) qk
         WHERE NOT EXISTS (
             SELECT 1 FROM assets_fts f
             WHERE f.rowid = a.rowid
               AND instr(lower(f.all_text), lower(qk.value)) > 0)))
     -- keyset cursor (DESC variant): strict (sort_key, asset_id) tuple
     -- comparison. The sort_key CASE repeats inline (parser rule 3).
-    AND (?21 IS NULL
+    AND (?23 IS NULL
         OR (CASE
                 WHEN ?1 = 'fileDate'  THEN a.mtime
                 WHEN ?1 = 'name'      THEN a.file_name
@@ -765,7 +819,7 @@ WHERE
                 WHEN ?1 = 'playCount' THEN printf('%020d', (SELECT COUNT(*) FROM view_events v7 WHERE v7.asset_id = a.asset_id AND v7.kind = 'play'))
                 WHEN ?1 = 'favoriteAt' THEN (SELECT fv_sorted.created_at FROM favorites fv_sorted WHERE fv_sorted.asset_id = a.asset_id)
                 ELSE a.created_at
-            END) < ?21
+            END) < ?23
         OR ((CASE
                 WHEN ?1 = 'fileDate'  THEN a.mtime
                 WHEN ?1 = 'name'      THEN a.file_name
@@ -774,10 +828,10 @@ WHERE
                 WHEN ?1 = 'playCount' THEN printf('%020d', (SELECT COUNT(*) FROM view_events v7 WHERE v7.asset_id = a.asset_id AND v7.kind = 'play'))
                 WHEN ?1 = 'favoriteAt' THEN (SELECT fv_sorted.created_at FROM favorites fv_sorted WHERE fv_sorted.asset_id = a.asset_id)
                 ELSE a.created_at
-            END) = ?21
-            AND a.asset_id < ?22))
+            END) = ?23
+            AND a.asset_id < ?24))
 ORDER BY sort_key DESC, a.asset_id DESC
-LIMIT ?23
+LIMIT ?25
 `
 
 type ListAssetsFilteredDescParams struct {
@@ -787,6 +841,8 @@ type ListAssetsFilteredDescParams struct {
 	Source         interface{}
 	SourceIsOther  interface{}
 	IncludeCos     interface{}
+	CosOnly        interface{}
+	CosWork        interface{}
 	CharactersJson interface{}
 	AuthorID       interface{}
 	TagIdsJson     interface{}
@@ -887,6 +943,8 @@ func (q *Queries) ListAssetsFilteredDesc(ctx context.Context, arg ListAssetsFilt
 		arg.Source,
 		arg.SourceIsOther,
 		arg.IncludeCos,
+		arg.CosOnly,
+		arg.CosWork,
 		arg.CharactersJson,
 		arg.AuthorID,
 		arg.TagIdsJson,

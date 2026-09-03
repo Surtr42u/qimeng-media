@@ -10,6 +10,39 @@
 
 ---
 
+## 相册四维聚合：GET /assets/facets + migration 0008 cos_work + 相册页四维胶囊（2026-09-03 第三笔）
+
+执行 AI：GLM-5.3-Flash（主代理，ZCode）
+
+上一会话半成品接续（HANDOVER_UI §5 待办「相册作品/角色聚合维度端点」：协议与 facets.sql/migration 0008 已写、停在生成链重建之前），本会话完成生成链、scanner 写入、handler、web 接入全链路。
+
+### 服务端（先 openapi 后 make sdk，禁止手改生成物）
+
+- **migration 0008_cos_work**：assets 加 `cos_work` 列（COS 库 `作者/作品/文件` 第二段目录名；NULL=无作品子目录），instr/substr 存量回填（实测 5558 行 COS 资产 5557 命中、152 去重作品）+ 部分索引 idx_assets_cos_work（WHERE cos_work IS NOT NULL）。
+- **GET /assets/facets**：相册四维筛选候选端点——partitions（全部/常规/COS 恒三项，常规=全部−COS）、authors（key=AuthorID）、characters（常规分区=角色规范名、COS 分区=cos_work 作品名，NULL 不列入）、types（all/image/animated_image/video 固定四项，key 可直接回传 GET /assets 的 mediaType）；全部查询带分区/作者/角色/类型/搜索全参数。**排自身口径**：计每维候选时忽略该维自身当前选择（character 与 work 同属角色维，两者一起忽略）——前端每维独立请求各缺自身参数，即得「排除自己后还剩什么」的正确计数。
+- **GET /assets** 加 `cosOnly`（只要 COS）与 `work`（按 COS 作品名筛）参数；COS 隔离升级三态开关：includeCos=1→全量、cosOnly=1→只 COS、两者皆 0→常规（排除 COS，历史默认）；cosOnly 与 includeCos 同真时 cosOnly 优先（handler 层实现，SQL 三态谓词保持中立；sqlc 三值逻辑要求 cos_only 恒传 0/1——NULL 会把非 COS 行也排除）。
+- scanner：`ingestCosFile` 扫描入库写 cos_work；`recomputeCosAuthor` 作者关联重算同步覆盖 cos_work（含清空 NULL）——移动/改名后作品目录变化自动跟随。
+- 顺手修既有缺口：**回收站恢复后不做富化**（TrashMeta 不存 source/角色/作者关联，恢复后 mtime 未变重扫跳过）→ 恢复 UpsertAsset 后尽力而为 EnrichAsset 重算（失败仅告警，待重扫自愈）；**上传路径不做富化属同类既有缺口，本次未修记账**。
+
+### Web（铁律 7：hooks 层接数据，页面零 SDK 调用）
+
+- `hooks/use-assets.ts`：AssetListParams 加 work/cosOnly；新 `useAssetFacets`（GET /assets/facets）与 `facetToOptions` 助手；导出 Partition/FacetBucket/AssetFacets 类型。
+- `pages/AlbumsPage.tsx` 重写为协议四维（原两维：分区=出处+类型）：分区（全部/常规/COS，缺省「常规」延续历史口径）、作者、角色（常规分区=角色名 / COS 分区=作品名，切分区重置角色——两者命名空间不同）、类型；四个 useAssetFacets 请求各缺自身参数实现排自身徽标计数；filter-card 布局与对齐数值未动（CSS 零改动，维度行改为协议四维循环渲染）。
+
+### 测试与实测
+
+- go test 14 包全绿（新 facets_test 4 用例：分区栏恒三项 / 三分区四维候选 / 排自身口径 / COS 参数与 cosOnly 优先级；scanner 测试补 cos_work 断言；store 回退序列补 0008 步；search 测试显式传 cosOnly=0 防 NULL 三值逻辑）；golangci-lint 0 issues（顺手清 libraries.go 3 处既有 unconvert）；tsc（-p tsconfig.app.json）与 npm build 干净。
+- curl 实测（用户 PC 真库 6413 文件）：分区栏 全部 6413 / 常规 855 / COS 5558（和守恒）；COS 分区角色栏=作品名（崩坏星穹铁道 卡芙卡 286 / 黑天使 240 / …）；COS 作者栏 cos_ 前缀双体系（蠢沫沫 2852 / …）；类型栏 all=image+animated_image+video 守恒。
+- UI 浏览器静止态对齐实测未做（CSS 零改动、风险低；用户拍板自行打开 8420 验收）。
+
+### 已知限制（记账）
+
+- 相册页徽标 = 每维独立 facets 请求（共 4 个）各缺自身参数；本地聚合量级可控，暂无合并端点需求。
+- 上传路径不做富化（source/角色/作者/cos_work 全缺，既有缺口待做）。
+- `.tmp-verify/` 为上一会话验证残留目录（t8.db），未入库未删。
+
+---
+
 ## 全部界面接真实数据：搜索/我的/数据/榜单/集合/作者/顶栏/推荐偏好/维护监控（2026-09-03 第二笔）
 
 执行 AI：DeepSeek-V4-Flash-Vision-Exp（主代理，ZCode；研究×2、执行×3、审查×1 子代理）

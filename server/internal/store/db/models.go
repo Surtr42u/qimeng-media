@@ -25,6 +25,7 @@ type Asset struct {
 	LastPositionSeconds sql.NullFloat64
 	VideoCodec          sql.NullString
 	AudioCodec          sql.NullString
+	CosWork             sql.NullString
 }
 
 type AssetAuthor struct {

@@ -3,7 +3,7 @@
 > 本文是 `api/openapi.yaml`（协议宪法）的人读版导读：端点怎么用、机制怎么运作。
 > 传输结构的唯一权威是 openapi.yaml 本身；本文解释意图与用法，两者冲突以 openapi.yaml 为准。
 > 三端 SDK 由 `make sdk` 自动生成：Go 接口层（server/internal/httpapi/gen/）、TS 客户端（web/src/api/generated/）、Kotlin 客户端（android/sdk/）。生成物不入库，改协议后重跑即可。
-> 最后更新：2026-09-03（全部界面接真实数据服务端扩展：/assets 加 liked 点赞筛选与 sort=favoriteAt 收藏时间排序、新增 GET /history 观看历史、/stats/trends range 加 7d/90d、/rankings period 加 quarter、Ranking 响应 viewCount/playCount、Author.viewCount；此前 2026-09-02 M4 播放端协议基座、2026-08-31 M3 收尾）
+> 最后更新：2026-09-03（相册四维聚合：新增 GET /assets/facets 候选计数端点（排自身口径）、/assets 加 cosOnly/work 参数与 COS 三态开关、migration 0008 落 cos_work 列；此前同日全部界面接真实数据服务端扩展：/assets 加 liked 点赞筛选与 sort=favoriteAt 收藏时间排序、新增 GET /history 观看历史、/stats/trends range 加 7d/90d、/rankings period 加 quarter、Ranking 响应 viewCount/playCount、Author.viewCount；此前 2026-09-02 M4 播放端协议基座、2026-08-31 M3 收尾）
 
 ## 全局约定
 
@@ -13,7 +13,7 @@
 - 媒体直链（/media/**）不走 header 鉴权，用短期 HMAC 签名 URL（默认 6h），参数 `exp`（过期时间戳）+ `sig`
 - **页面投放**：服务端存在 Web 构建产物（`web.static_dir`，默认 `../web/dist`）时 `/` 与 `/index.html` 托管 SPA（静态资源直发 + 前端路由回退）；产物缺失时回退内嵌验收页。内嵌验收页另挂 `/_debug/`（永远可访问，调试用）。页面均为免鉴权静态资源，页面内数据请求照常走 Bearer
 
-## 端点分组速览（37 路径）
+## 端点分组速览（38 路径）
 
 | 分组 | 端点 | 说明 |
 |---|---|---|
@@ -21,7 +21,7 @@
 | 认证（开发专用） | POST /auth/dev-login | 仅服务端 `auth_dev_mode=true` 时可用：免密码直接签发 token（未初始化自动建 admin 占位）。404 = 未开启，生产零行为变化；仅限本机调试，禁止配合公网/隧道（SECURITY.md「开发模式」） |
 | 库管理 | GET/POST /libraries、POST /libraries/{id}/scan | 注册媒体目录、触发全量扫描（进度走 SSE）；POST 可选 `kind`（normal 默认 / cos——COS 作者库按 `作者/作品/文件` 目录结构扫描建 cos_ 作者，DOMAIN_RULES §6） |
 | 实时推送 | GET /events | SSE：scan.progress / library.changed / thumbnail.progress / upload.done |
-| 资产浏览 | GET /assets、GET/DELETE /assets/{id}、GET /sources、GET/PUT /sources/custom | 唯一列表口径（筛选/排序/搜索全参数化；2026-09-03 加 `liked` 点赞筛选与 `sort=favoriteAt` 收藏时间排序）；DELETE=进回收站；出处列表（按规范名分组的文件计数，fileCount 降序，name=null=无出处文件，默认排除 COS）；自定义出处整体替换（见「关键机制」） |
+| 资产浏览 | GET /assets、GET /assets/facets、GET/DELETE /assets/{id}、GET /sources、GET/PUT /sources/custom | 唯一列表口径（筛选/排序/搜索全参数化；2026-09-03 加 `liked` 点赞筛选与 `sort=favoriteAt` 收藏时间排序、`cosOnly`/`work` 参数——COS 隔离升级三态开关，见「关键机制」）；DELETE=进回收站；**facets**（2026-09-03 新增）：相册四维筛选候选计数（partitions 恒三项 all/常规/COS、authors、characters〔常规分区=角色名 / COS 分区=cos_work 作品名〕、types 固定四项），**排自身口径**——计每维候选时忽略该维自身当前选择（character 与 work 同属角色维一起忽略），前端每维独立请求各缺自身参数；出处列表（按规范名分组的文件计数，fileCount 降序，name=null=无出处文件，默认排除 COS）；自定义出处整体替换（见「关键机制」） |
 | 观看历史 | GET /history | 2026-09-03 新增：每资产最近一次 open 事件时间倒序（每资产一条），点击产生；排除已删资产与 COS（includeCos=true 包含），cursor 分页；响应 HistoryItem = AssetSummary + lastViewedAt |
 | 媒体文件 | GET /media/orig、/media/thumb（size=sm/md/lg） | 签名直链：原图/视频支持 Range 拖动，**查看永远发原件（无缩放副本）**；缩略图 immutable 缓存 |
 | 上传整理 | POST /assets/upload、POST /assets/{id}/move、GET/POST /dirs | 直传 NAS（流式；四道校验；libraryId 必填查询参数，同名自动重命名 "名 (2).ext"，上限 upload.max_bytes 默认 2GB）；移动/重命名保关联（目标冲突 409）；目录树与新建（幂等） |
@@ -40,7 +40,7 @@
 
 - **排序**：`sort` 八键（default/fileDate/addedDate/viewCount/playCount/sizeBytes/name/favoriteAt——favoriteAt=收藏时间，仅 favorite 筛选时语义成立）+ `order`，语义见 DOMAIN_RULES §3
 - **标签排序**：`GET /tags` 按名称升序（筛选面板等）；资产详情 `tags` 按关联时间倒序（详情弹窗"最近添加置顶"——PUT 整体替换即刷新全部关联时间，LEGACY_REQUIREMENTS §A），两者口径不同不要混用
-- **COS 隔离**：列表默认排除 COS 作者关联文件（独立入口），`includeCos=true` 才包含
+- **COS 隔离（三态开关，2026-09-03 起）**：`includeCos=1`→全量（不限制）、`cosOnly=1`→只 COS、两者皆 0→常规（排除 COS 作者关联文件，历史默认）；`cosOnly` 与 `includeCos` 同真时 **cosOnly 优先**。`work`（COS 作品名，migration 0008 `assets.cos_work` 列）与 `cosOnly` 组合即 COS 分区按作品筛。DOMAIN_RULES §6 隔离口径的端点面
 - **会话去重**：`ViewEventReport.sessionId` 由客户端生成（App 会话/浏览器标签页），服务端按 (assetId, kind, sessionId, 当日) 去重（DOMAIN_RULES §5）
 - **播放进度与编码字段**（M4 播放端基座，migration 0006）：`PUT /assets/{id}/progress` 心跳式上报断点续播位置（建议 10s 间隔 + 暂停/离开播放页各补一次），服务端只保留 `assets.last_position_seconds` 最新值——**进度是"最新状态"而非统计事实**，不写 ViewEvent 事件流、不参与 playCount（播放计数仍走 play 事件 + 会话去重），上报也不 bump updated_at；"已看完"徽标 = lastPositionSeconds >= durationMs/1000，由客户端推导。AssetSummary/AssetDetail 新增播放字段：`durationMs`（上移至 Summary，列表/详情同源）、`lastPositionSeconds`（Summary，未播过=null）、`videoCodec`/`audioCodec`（Detail，ffprobe codec_name）——codec 仅 VIDEO 扫描时探测，探测失败/存量资产未重探（size+mtime 变更检测跳过 ffprobe）=null，消费方按"尝试播放、失败再兜底"处理
 - **搜索与筛选叠加**：`q`（FTS5 全文）与全部筛选参数同时生效。实现状态：M2 已实现（2026-08-29）——迁移 0002 建 FTS5 trigram 索引+聚合视图+触发器全集自动同步，`internal/search` 负责关键词解析与索引重建；详细语义见 DOMAIN_RULES §3 全文搜索口径

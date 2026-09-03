@@ -1,7 +1,7 @@
 # HANDOVER-UI - 桌面客户端风格媒体库 UI 交接说明
 
 > 写给下一位专做 UI 的 AI（任何模型/工具）。人类用户无编程基础，全部代码由 AI 生成。
-> 最后更新：2026-09-02（**原型已移植进 web 端 React 重建（阶段 A mock）**：九页+壳层+主题全部上线，对齐纪律静止态零偏差，reviewer 审查修复后全绿——§1/§5/§6 已更新；变更细节见 CHANGELOG「UI 原型移植 web 端 React 重建」条目）
+> 最后更新：2026-09-03（相册页四维胶囊接真数据：分区 all/常规/COS + 作者 + 角色·作品 + 类型，GET /assets/facets 排自身口径——§5 已更新；变更细节见 CHANGELOG「相册四维聚合」条目。此前 2026-09-02：原型移植进 web 端 React 重建（阶段 A mock））
 > 用途：新开的 AI 会话直接读本文档即可接手 UI 工作，无需回看本会话记录。
 > 主交接文档（后端/进度/约定）仍以 `docs/HANDOVER.md` 为准，本文档只覆盖 UI 路线。
 
@@ -105,7 +105,7 @@ media-ui-prototype/
 ## 5. 待办与约定
 
 1. ~~原型各页达成视觉验收后 → 把功能移植进 web 端重建页面~~ **已完成（2026-09-02 阶段 A）**：web/src/pages/ 九页 + components/shell/ 壳层 + styles/prototype.css；记账债两笔已还（renderCard/mediaCardHtml 合并为 `components/media/MediaCard.tsx`；`.rank-cards` 窄屏单列回退已补进 prototype.css 追加段）。
-2. **接真实数据（阶段 B，2026-09-03 全部完成）**：✅ 已接——首页推荐流/相册列表/详情页（`hooks/use-assets.ts`、`pages/AssetDetailPage.tsx`、`lib/format.ts`）+ 维护页文件管理（库 CRUD/目录树）/回收站（`hooks/use-libraries.ts`、`use-trash.ts`）+ **搜索页（FTS5 多维筛选全真，q 已传后端）/我的页（资料卡/关注/收藏/浏览历史三 Tab 全真）/数据页（6 指标卡真库数据/趋势/双环/内容 Top5/标签榜/作者榜/作者总览）/完整榜单页/集合子页（tag/author 真网格，注意 COS 作者集合要 includeCos）/作者管理页（140 位真作者+关注 toggle）/顶栏搜索建议（localStorage 历史+tags/authors 推荐词）/设置页推荐偏好卡（9 维滑杆+4 预设）/维护页性能监控（system/status 2s 轮询+本地差分速率曲线）**。接数据时已删 `pages/mock.ts`（常量迁移 `lib/route-keys.ts`）。⏳ 待做——ArtPlayer 播放器 UI（现用原生 video）、相册「作品/角色」聚合维度端点、搜索页类型档是否加「动图」、confirm 换原型风格弹窗、设置页扫描/上传/界面卡持久化（需配置端点）、客户端异常上报通道（维护页异常表空态）。（本批服务端新增协议：/assets liked+favoriteAt、GET /history、trends 7d/90d、rankings quarter、AssetSummary viewCount/playCount、Author.viewCount——见 GUIDE_API/CHANGELOG。）
+2. **接真实数据（阶段 B，2026-09-03 全部完成）**：✅ 已接——首页推荐流/相册列表（2026-09-03 升级四维胶囊：分区 all/常规/COS + 作者 + 角色·作品 + 类型，GET /assets/facets 排自身口径，见 CHANGELOG「相册四维聚合」条目）/详情页（`hooks/use-assets.ts`、`pages/AssetDetailPage.tsx`、`lib/format.ts`）+ 维护页文件管理（库 CRUD/目录树）/回收站（`hooks/use-libraries.ts`、`use-trash.ts`）+ **搜索页（FTS5 多维筛选全真，q 已传后端）/我的页（资料卡/关注/收藏/浏览历史三 Tab 全真）/数据页（6 指标卡真库数据/趋势/双环/内容 Top5/标签榜/作者榜/作者总览）/完整榜单页/集合子页（tag/author 真网格，注意 COS 作者集合要 includeCos）/作者管理页（140 位真作者+关注 toggle）/顶栏搜索建议（localStorage 历史+tags/authors 推荐词）/设置页推荐偏好卡（9 维滑杆+4 预设）/维护页性能监控（system/status 2s 轮询+本地差分速率曲线）**。接数据时已删 `pages/mock.ts`（常量迁移 `lib/route-keys.ts`）。⏳ 待做——ArtPlayer 播放器 UI（现用原生 video）、搜索页类型档是否加「动图」、confirm 换原型风格弹窗、设置页扫描/上传/界面卡持久化（需配置端点）、客户端异常上报通道（维护页异常表空态）。（本批服务端新增协议：/assets liked+favoriteAt、GET /history、trends 7d/90d、rankings quarter、AssetSummary viewCount/playCount、Author.viewCount——见 GUIDE_API/CHANGELOG。）
 3. 阶段 A 交互与原型的已知差异（用户裁决项）：顶栏 tab 激活态挂 URL（离开首页即丢）；作者页搜索图标 r=8（原型 7，≤1px）；sonner toast 主题跟系统未跟月亮按钮（next-themes 未接）。
 4. 跑法：不要单独拉前端——统一访问 `http://127.0.0.1:8420`（后端托管 `web/dist`）；改前端先 `npm --prefix web run build`。
    原型目录（media-ui-prototype/）保留作对照基准，单独预览：`cd media-ui-prototype && node serve.mjs 8099`。

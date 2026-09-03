@@ -14,12 +14,16 @@
 -- job before calling this.
 
 -- name: UpsertAsset :one
+-- cos_work (migration 0008): COS work directory name, written only by the
+-- COS ingest path; normal libraries pass NULL (author/work isolation,
+-- DOMAIN_RULES 6). Refreshed on conflict like source -- a renamed work
+-- directory must re-point the asset.
 INSERT INTO assets (
     asset_id, library_id, rel_path, file_name, media_type,
     size_bytes, mtime, duration_ms, width, height,
-    video_codec, audio_codec, source,
+    video_codec, audio_codec, source, cos_work,
     created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (library_id, rel_path) DO UPDATE SET
     file_name    = excluded.file_name,
     media_type   = excluded.media_type,

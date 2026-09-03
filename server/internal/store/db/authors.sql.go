@@ -283,6 +283,29 @@ func (q *Queries) SetAuthorFollow(ctx context.Context, arg SetAuthorFollowParams
 	return result.RowsAffected()
 }
 
+const updateAssetCosWork = `-- name: UpdateAssetCosWork :exec
+UPDATE assets SET cos_work = ?, updated_at = ? WHERE asset_id = ?
+`
+
+type UpdateAssetCosWorkParams struct {
+	CosWork   sql.NullString
+	UpdatedAt string
+	AssetID   string
+}
+
+// Single-asset COS work refresh (migration 0008). recomputeCosAuthor calls
+// it on every path that changes rel_path without re-ingesting (API
+// move/rename via EnrichAsset, scan move-merge): the work is derived from
+// rel_path, so it must be recomputed together with the author links.
+// NULL work = file sits directly under the author directory (old-app
+// "other" bucket, DOMAIN_RULES 6) -- the refresh is overwrite-in-full,
+// including the NULL case, so a file moved out of a work directory
+// unlinks from it.
+func (q *Queries) UpdateAssetCosWork(ctx context.Context, arg UpdateAssetCosWorkParams) error {
+	_, err := q.db.ExecContext(ctx, updateAssetCosWork, arg.CosWork, arg.UpdatedAt, arg.AssetID)
+	return err
+}
+
 const updateAssetSource = `-- name: UpdateAssetSource :exec
 UPDATE assets SET source = ?, updated_at = ? WHERE asset_id = ?
 `

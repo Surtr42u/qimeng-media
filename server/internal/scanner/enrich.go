@@ -43,8 +43,8 @@ const enrichRecomputeConcurrency = 4
 //     匹配结果不变，旧身份的富化数据继续有效；cos 库重算作者关联（作者
 //     目录整体改名时首段目录变化，不重算会留下旧作者挂载、新作者缺失）；
 //   - API 移动/重命名（filing）后 EnrichAsset 显式重算：normal=出处/角色
-//     （文件名变而 size+mtime 不变，扫描不会重 ingest）、cos=作者关联
-//     （目录首段语义同上）；
+//     （文件名变而 size+mtime 不变，扫描不会重 ingest）、cos=作者关联与
+//     cos_work（migration 0008，作品名同样由 rel_path 推导，语义同上）；
 //   - cos 作者与资产关联经 AddAssetAuthor 幂等 DO NOTHING，重扫不翻倍。
 //
 // 自定义出处（§4「用户手动添加的分区名自动加入识别」）：Scanner 构造时从
@@ -110,9 +110,12 @@ func (s *Scanner) ingestNormalFile(ctx context.Context, params db.UpsertAssetPar
 
 // ingestCosFile COS 库入库：rel 首段目录 = 作者名（DOMAIN_RULES §6 COS 目录
 // 结构三种形态 `作者/文件`、`作者/作品/文件`、`作者/作品/子目录/文件` 的
-// 首段恒为作者），作品名不落库、保留在 relPath 中。
+// 首段恒为作者），第二段作品目录名落 cos_work 列（migration 0008——旧版
+// 手机端把作品名当 COS 的角色维度用，GUIDE_ALGORITHM「COS 角色 = 作品名」；
+// NULL = 无作品子目录，显示层兜底「其他」）。
 func (s *Scanner) ingestCosFile(ctx context.Context, params db.UpsertAssetParams, rel string) (db.Asset, error) {
 	// COS 文件不做 SourceMatcher 匹配（隔离口径见文件头注释）：source 留空。
+	params.CosWork = nullCosWork(cosWorkOf(rel))
 	asset, err := s.q.UpsertAsset(ctx, params)
 	if err != nil {
 		return db.Asset{}, fmt.Errorf("scanner: 资产入库 %s: %w", params.RelPath, err)
@@ -146,6 +149,28 @@ func firstDirSegment(rel string) string {
 		return rel[:i]
 	}
 	return ""
+}
+
+// cosWorkOf 取 rel 的第二段目录名（COS 作品，migration 0008 列语义：
+// `作者/作品/...` 去掉首段作者后的第一段）；`作者/文件` 与库根直放返回
+// 空串（落库为 NULL）。与 0008 迁移回填 SQL 的推导口径逐字一致
+// （instr/substr 两段定位），两处必须同步改。
+func cosWorkOf(rel string) string {
+	i := strings.IndexByte(rel, '/')
+	if i < 0 {
+		return ""
+	}
+	rest := rel[i+1:]
+	j := strings.IndexByte(rest, '/')
+	if j <= 0 {
+		return ""
+	}
+	return rest[:j]
+}
+
+// nullCosWork 把作品名包成可空列值：空串 = 无作品子目录 = NULL（不是空串）。
+func nullCosWork(work string) sql.NullString {
+	return sql.NullString{String: work, Valid: work != ""}
 }
 
 // EnrichAsset 单资产重富化：API 移动/重命名（filing）成功后调用。文件名
@@ -197,7 +222,17 @@ func (s *Scanner) recomputeNormalEnrichment(ctx context.Context, assetID, fileNa
 // recomputeCosAuthor 按当前 rel 首段目录重载单资产的 COS 作者关联
 // （先删后插覆盖，语义同角色行）：目录变了就挂新作者、清旧作者；
 // 库根直放（无目录段）只清不挂——文件不属于任何作者目录。
+// cos_work 列（migration 0008）随作者关联一起刷新：作品名由 rel_path
+// 推导，移动/改名改变了 rel_path 却不改变 size+mtime（不会重 ingest），
+// 必须在此显式覆盖（含清空情形——文件移出作品目录即解除关联）。
 func (s *Scanner) recomputeCosAuthor(ctx context.Context, assetID, rel string) error {
+	if err := s.q.UpdateAssetCosWork(ctx, db.UpdateAssetCosWorkParams{
+		CosWork:   nullCosWork(cosWorkOf(rel)),
+		UpdatedAt: store.FormatTimestamp(s.now()),
+		AssetID:   assetID,
+	}); err != nil {
+		return fmt.Errorf("scanner: 更新 COS 作品 %s: %w", rel, err)
+	}
 	if err := s.q.DeleteAssetAuthorsByAssetID(ctx, assetID); err != nil {
 		return fmt.Errorf("scanner: 清理 COS 作者关联 %s: %w", assetID, err)
 	}

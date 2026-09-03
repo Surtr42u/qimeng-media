@@ -94,6 +94,8 @@ type assetFilters struct {
 	Source         any
 	SourceIsOther  int64
 	IncludeCos     int64
+	CosOnly        int64
+	CosWork        any
 	CharactersJson any
 	AuthorID       any
 	TagIdsJson     any
@@ -135,6 +137,21 @@ func newAssetFilters(params gen.GetApiV1AssetsParams) assetFilters {
 	}
 	if params.IncludeCos != nil && *params.IncludeCos {
 		f.IncludeCos = 1
+	}
+	// COS 分区三态开关（browse.sql 注释）：include_cos=1 不限制（all）；
+	// cos_only=1 只要 COS（cos）；两者皆 0 排除 COS（regular，历史默认口径）。
+	// cos_only 协议默认 false = 常规分区，必须恒传 0/1——三态谓词里
+	// cos_only 为 NULL 会让非 COS 行落到三值逻辑 NULL 被整行排除。
+	// cosOnly 与 includeCos 同真时 cosOnly 优先（协议注释口径）。
+	f.CosOnly = 0
+	if params.CosOnly != nil && *params.CosOnly {
+		f.CosOnly = 1
+		f.IncludeCos = 0
+	}
+	if params.Work != nil && *params.Work != "" {
+		// COS 作品名（migration 0008）：`作者/作品/文件` 的第二段，
+		// COS 分区下的「角色」维度（DOMAIN_RULES §6）。
+		f.CosWork = nullStr(*params.Work)
 	}
 	if params.Character != nil && *params.Character != "" {
 		f.CharactersJson = jsonString(splitCharacters(*params.Character))

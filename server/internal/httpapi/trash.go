@@ -298,6 +298,14 @@ func (s *Server) PostApiV1TrashTrashIdRestore(w http.ResponseWriter, r *http.Req
 		s.internalErr(w, "重建资产记录", err)
 		return
 	}
+	// 重建库行只写基础列；富化列（normal=出处/角色，cos=作者关联+cos_work）
+	// 由扫描写入、meta 不存快照，恢复后必须显式重算——文件 mtime 未变，
+	// 之后的扫描只会跳过，不会自然补上。尽力而为：失败/扫描器未装配都不
+	// 恢复失败（记录已重建，下次该文件 size/mtime 变化重 ingest 时自愈）。
+	if err := s.scanner.EnrichAsset(r.Context(), lib.ID, e.meta.AssetID); err != nil && !errors.Is(err, ErrScannerUnavailable) {
+		s.logger.Warn("回收站恢复后富化重算失败（待重扫自愈）",
+			"assetId", e.meta.AssetID, "err", err)
+	}
 	s.publishLibraryChanged()
 	w.WriteHeader(http.StatusOK)
 }

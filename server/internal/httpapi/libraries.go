@@ -244,12 +244,12 @@ func (s *Server) DeleteApiV1LibrariesLibraryId(w http.ResponseWriter, r *http.Re
 		writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
 		return
 	}
-	if err := s.q.DeleteLibrary(r.Context(), string(libraryID)); err != nil {
+	if err := s.q.DeleteLibrary(r.Context(), libraryID); err != nil {
 		s.logger.Error("删除库失败", "err", err, "libraryId", libraryID)
 		writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
 		return
 	}
-	s.scanStates.set(string(libraryID), "idle")
+	s.scanStates.set(libraryID, "idle")
 	if err := s.bus.Publish(events.Event{Topic: events.TopicLibraryChanged}); err != nil {
 		s.logger.Warn("广播 library.changed 失败", "err", err)
 	}
@@ -281,7 +281,7 @@ func (s *Server) PutApiV1LibrariesLibraryIdEnabled(w http.ResponseWriter, r *htt
 	}
 	if err := s.q.SetLibraryEnabled(r.Context(), db.SetLibraryEnabledParams{
 		Enabled: int64(enabled),
-		ID:      string(libraryID),
+		ID:      libraryID,
 	}); err != nil {
 		s.logger.Error("更新库开关失败", "err", err, "libraryId", libraryID)
 		writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")

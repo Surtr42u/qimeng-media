@@ -158,6 +158,8 @@ paths:
         - { name: character,   in: query, schema: { type: string }, description: 角色（'a+b' 多角色） }
         - { name: authorId,    in: query, schema: { type: string } }
         - { name: includeCos,  in: query, schema: { type: boolean, default: false }, description: 含 COS 作者关联文件（默认排除，COS 走独立入口） }
+        - { name: cosOnly,     in: query, schema: { type: boolean, default: false }, description: 只要 COS 作者关联文件（分区胶囊「COS」语义；与 includeCos 互斥，两者同时为真时 cosOnly 优先） }
+        - { name: work,        in: query, schema: { type: string }, description: COS 作品名（COS 库 `作者/作品/文件` 目录结构的第二段，旧版「COS 角色」维度口径，见 DOMAIN_RULES §6） }
         - { name: tagIds,      in: query, schema: { type: array, items: { type: string } } }
         - { name: tagMode,     in: query, schema: { type: string, enum: [fuzzy, exact], default: fuzzy } }
         - { name: viewRange,   in: query, schema: { $ref: "#/components/schemas/CountRange" } }
@@ -173,6 +175,34 @@ paths:
         - { name: groupByDate, in: query, schema: { type: boolean, default: true }, description: 按日期分组返回（DOMAIN_RULES §8 标签规则） }
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/AssetPage" } } } }
+  /api/v1/assets/facets:
+    get:
+      summary: 相册四维筛选候选（分区/作者/角色/类型）及其文件计数
+      description: |
+        供相册页四条胶囊栏渲染（旧版手机端「分区/作品/角色/类型」四栏语义，
+        LEGACY_REQUIREMENTS；其中旧版「作品」栏按用户确认改为**作者**栏，
+        出处不再作为相册维度）。
+
+        计数口径 = 排自身（faceted search 惯例）：计算某一维候选的 fileCount 时，
+        忽略该维自身已选值，其余维度的当前选择全部生效。这等价于旧版
+        GUIDE_UI 的「分区→类型→作品→角色 逐层联动」，但在多维可交换筛选下
+        更自然——先选作者再选类型与先选类型再选作者，候选计数一致。
+
+        分区栏固定返回 all/regular/cos 三项（DOMAIN_RULES §6 隔离口径）；
+        类型栏固定返回 all/image/video/animation 四项。作者栏只列有文件的作者
+        （常规 TXT 作者 + COS 作者），key 为 authorId 可直接回传 GET /assets。
+        角色栏在常规分区下是匹配引擎产出的角色名，在 COS 分区下是 COS 作品名
+        （`作者/作品/文件` 的第二段）。空值候选（无作品目录的 COS 文件）不列入，
+        前端按需兜底「其他」。
+      parameters:
+        - { name: partition, in: query, schema: { $ref: "#/components/schemas/Partition" }, description: 当前分区（计算其他三维计数时生效；分区栏自身计数始终按排自身口径给出全量三分区计数） }
+        - { name: mediaType, in: query, schema: { $ref: "#/components/schemas/MediaType" } }
+        - { name: character, in: query, schema: { type: string }, description: 当前角色/COS 作品（'a+b' 多角色） }
+        - { name: authorId,  in: query, schema: { type: string }, description: 当前作者 }
+        - { name: work,      in: query, schema: { type: string }, description: 当前 COS 作品（与 character 同源，COS 分区下二者等价；同时传入取交集） }
+        - { name: q,         in: query, schema: { type: string }, description: 全文搜索（口径同 GET /assets 的 q） }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/AssetFacets" } } } }
   /api/v1/history:
     get:
       summary: 观看历史（每资产最近一次 open 事件时间倒序，每资产一条）
@@ -579,6 +609,35 @@ components:
     MediaType:
       type: string
       enum: [image, animated_image, video]
+
+    Partition:
+      type: string
+      enum: [all, regular, cos]
+      description: |
+        相册/筛选分区（DOMAIN_RULES §6 隔离口径）：
+        regular = 排除 COS 作者关联文件（GET /assets 默认口径）；
+        cos     = 只要 COS 作者关联文件；all = 两者都含。
+        分区胶囊固定这三项，与 GET /assets 的 includeCos/cosOnly 布尔是同一
+        语义的两种写法（facets/相册用枚举，底层筛选用布尔）。
+
+    FacetBucket:
+      type: object
+      description: 相册胶囊栏的一条候选及其文件计数
+      required: [key, name, fileCount]
+      properties:
+        key:       { type: string, description: 回传筛选值（分区/类型枚举值、authorId、角色名或 COS 作品名） }
+        name:      { type: string, description: 显示名（作者/角色/作品为原名，分区/类型为中文标签） }
+        fileCount: { type: integer, description: 该文件数在当前「其他维度」选择下统计（排自身口径） }
+
+    AssetFacets:
+      type: object
+      description: GET /api/v1/assets/facets 响应：四维候选，每维计数均排除该维自身选择
+      required: [partitions, authors, characters, types]
+      properties:
+        partitions: { type: array, items: { $ref: "#/components/schemas/FacetBucket" }, description: 固定 all/regular/cos 三项 }
+        authors:    { type: array, items: { $ref: "#/components/schemas/FacetBucket" }, description: 有文件的作者（常规 TXT 作者 + COS 作者），key=authorId，按 fileCount 降序 }
+        characters: { type: array, items: { $ref: "#/components/schemas/FacetBucket" }, description: 常规分区=角色名；COS 分区=COS 作品名。按 fileCount 降序 }
+        types:      { type: array, items: { $ref: "#/components/schemas/FacetBucket" }, description: 固定 all/image/animated_image/video 四项（key=MediaType 枚举值，可直接回传 GET /assets 的 mediaType） }
 
     CountRange:
       type: string
