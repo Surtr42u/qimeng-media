@@ -805,6 +805,7 @@ components:
         characters:  { type: array, items: { type: string } }
         isFavorite:  { type: boolean }
         likeCount:   { type: integer }
+        likedToday:  { type: boolean, description: '当日是否已点赞（本地日历日，每资产每日一次、次日重置——与 PUT /assets/{assetId}/like 的 LikeState.likedToday 同口径）。点赞按钮初始态；增量可选字段，由列表/详情端点填充，其余返回 AssetSummary 的端点可省略' }
         thumbUrl:    { type: string, description: 签名缩略图 URL }
         durationMs:  { type: integer, format: int64, description: 视频时长（图片/动图无值；仅 VIDEO 扫描时探测） }
         authorNames: { type: array, items: { type: string }, description: 该资产全部作者显示名（常规∪COS，DOMAIN_RULES §6）。列表类端点（GET /assets、GET /recommendations）返回，无作者为空数组；详情端点省略本字段（用 authors 完整对象） }

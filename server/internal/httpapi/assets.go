@@ -362,6 +362,13 @@ func (s *Server) GetApiV1Assets(w http.ResponseWriter, r *http.Request, params g
 	// 批量查询二次装配（协议 GET /assets 描述；搜索走本查询自然获得）。
 	s.fillListAuthorNames(r.Context(), items)
 
+	// likedToday：点赞按钮初始态（当日已赞判定，likes 表当日行存在性），
+	// 同为页大小一次批量查询二次装配。
+	if err := s.fillListLikedToday(r.Context(), items); err != nil {
+		s.internalErr(w, "查询当日点赞态", err)
+		return
+	}
+
 	page := gen.AssetPage{Items: &items}
 	if hasMore {
 		next := encodeCursor(lastKey, lastID)
@@ -446,7 +453,40 @@ func (s *Server) fillListAuthorNames(ctx context.Context, items []gen.AssetSumma
 	}
 }
 
-// ---- 参数分发（Asc/Desc/Count 三个 sqlc 参数结构体同构，按字段名对齐复制） ----
+// fillListLikedToday 批量装配列表条目的 likedToday（当日是否已点赞，
+// 点赞按钮初始态）。口径与 PUT /assets/{assetId}/like 完全一致：likes 表
+// 按 (asset_id, day) 判存在，day 是本地日历日（store.FormatDay）——批量
+// 查询只是 HasLikedOnDay 的 IN 形式，不引入新口径。页大小一次查询二次
+// 装配（同 fillListAuthorNames 模式）。查询失败向上返回 error（handler
+// 侧 500）而非记日志降级：该字段影响客户端点赞按钮初始态，静默缺失会让
+// "已赞"渲染成"未赞"、用户再点一次即被 toggle 成取消——错误状态有实际
+// 行为后果，不作展示性增强降级。
+func (s *Server) fillListLikedToday(ctx context.Context, items []gen.AssetSummary) error {
+	if len(items) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(items))
+	for i := range items {
+		ids = append(ids, items[i].Id.String())
+	}
+	rows, err := s.q.ListLikedTodayForAssets(ctx, db.ListLikedTodayForAssetsParams{
+		Day:          store.FormatDay(s.now()),
+		AssetIdsJson: jsonString(ids),
+	})
+	if err != nil {
+		return err
+	}
+	likedSet := make(map[string]struct{}, len(rows))
+	for _, id := range rows {
+		likedSet[id] = struct{}{}
+	}
+	for i := range items {
+		_, liked := likedSet[items[i].Id.String()]
+		items[i].LikedToday = ptr(liked)
+	}
+	return nil
+}
+
 //
 // 17 个筛选字段只有一个组装来源（newAssetFilters），但 sqlc 为三种查询
 // 生成了三个独立结构体（ListAssetsFilteredAsc/Desc、CountAssetsFiltered），

@@ -65,3 +65,43 @@ func (q *Queries) HasLikedOnDay(ctx context.Context, arg HasLikedOnDayParams) (i
 	err := row.Scan(&count)
 	return count, err
 }
+
+const listLikedTodayForAssets = `-- name: ListLikedTodayForAssets :many
+SELECT DISTINCT asset_id FROM likes
+WHERE day = ? AND asset_id IN (SELECT value FROM json_each(?2))
+`
+
+type ListLikedTodayForAssetsParams struct {
+	Day          string
+	AssetIdsJson interface{}
+}
+
+// ListLikedTodayForAssets: batch form of HasLikedOnDay for list pages --
+// the asset_ids among the given set that already have a like row on the
+// given day. Same table and same day convention as HasLikedOnDay
+// (day is YYYY-MM-DD in the server's local timezone). asset_ids_json is
+// a JSON array consumed by json_each -- same parameter shape as
+// ListAuthorNamesForAssets (see browse.sql header for the sqlc parser
+// constraints that dictate it).
+func (q *Queries) ListLikedTodayForAssets(ctx context.Context, arg ListLikedTodayForAssetsParams) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listLikedTodayForAssets, arg.Day, arg.AssetIdsJson)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var asset_id string
+		if err := rows.Scan(&asset_id); err != nil {
+			return nil, err
+		}
+		items = append(items, asset_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
