@@ -10,6 +10,15 @@
 
 ---
 
+## W-3 一致性复审：文档声明逐项核验 + play/dwell 打点缺口记账（2026-09-05 第二十九笔）
+
+执行 AI：GLM-5.3（主代理，ZCode）
+
+- **逐项核验通过（W-3 = 92f1a47）**：artplayer@5.4.0 exact 锁定（package.json/package-lock 一致）；video-player.tsx 实测 132 行——倍速静态档位表覆盖 0.5~3x（PLAYBACK_RATES 覆盖官方 `Artplayer.PLAYBACK_RATE`）/全屏/`ready` 续播 seek/highlight 打点/theme 运行时读 `--qm-primary`+MutationObserver 跟深色/StrictMode 三路清理（observer.disconnect+seek 修复解绑+art.destroy）；use-progress.ts——`PROGRESS_REPORT_INTERVAL_MS=5000` 具名常量含协议同步责任注释（严于协议建议 10s）、mutationFn 显式载荷+`{assetId,positionSeconds}` 配对、切资产以旧 id 补报后重置、卸载补报、timeline-tags select 升序；AssetDetailPage——已看完 `isWatched` 与协议口径逐字一致（`>= durationMs/1000`，openapi.yaml AssetDetail.lastPositionSeconds description 同文）、watched→起点 0+徽标、codec-warn 逻辑未动、key 切资产重建、tagsLoading 守卫、页面零 SDK 直调（铁律 7）；prototype.css W-3 段零颜色字面量（`--invert`/`--qm-primary` 均既有 token；`zoom:1.1`、68vh 两个前提实测成立）。
+- **三命令复跑全绿**：`npx tsc --noEmit -p tsconfig.app.json` 0 错、`npm run build` 成功、`npm run lint` 15 warnings 0 errors——全部位于存量文件（router.tsx×13、button.tsx、SearchPage.tsx 各 1），W-3 改动文件零告警，与第二十八笔声明一致。
+- **修补两处文档滞后**：HANDOVER_UI §5 第 2 条仍标「⏳ 待做——ArtPlayer 播放器 UI（现用原生 video）」→ 三待办划线全清（W-3 补 ✅ 注）；文头「最后更新」停留 09-04 未反映三批收官 → 刷新至 09-05。
+- **新记账（HANDOVER_UI §5 第 13 条，待拍板）**：web 从未上报 play/dwell 事件（全局只发 open，旧裸 video 时代同样未接）——playCount、浏览时长、排行热度公式的 playCount 项从 web 侧永远无贡献；W-3 任务书「dwell/play 打点沿用 useReportView」实际是保持现状而非已接线。M4 App 端任务书已含 play/dwell 接线（HANDOVER_APP），web 是否补齐待用户拍板。
+
 ## W-3 ArtPlayer 播放器：断点续播/倍速/时间轴打点/已看完徽标（2026-09-05 第二十八笔）
 
 执行 AI：GLM-5.3（主代理，ZCode 调度验收；编码与冒烟由 executor 子代理完成，reviewer 子代理对抗审查打回 1 轮后返工通过）
