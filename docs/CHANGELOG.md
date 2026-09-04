@@ -10,6 +10,17 @@
 
 ---
 
+## 搜索页 COS 分区入口补缺：搜索触达 COS 内容（2026-09-04 第十六笔）
+
+执行 AI：GLM-5.3（主代理，ZCode）
+
+用户反馈「首页搜索 cos 内容没返回」：
+
+- **根因**：DOMAIN_RULES §6 隔离口径下 COS 文件默认排除在搜索流之外（第五笔拍板），服务端 `/assets` 的 cosOnly/includeCos 三态参数早已就绪，但搜索页（SearchPage）组装参数时从未传分区参数、UI 也没有分区切换入口——COS 内容（5558 项）在搜索流完全不可触达；首页 cos tab 仅浏览流无搜索框，相册页第五笔已加分区胶囊而搜索页漏了同款入口。
+- **修复（复用相册页既有模式，默认口径不变）**：`search-state.ts` 状态机加 `partition` 档位（常规/COS/全部，默认常规=排除 COS 不推翻隔离口径）；`SearchPage.tsx` 类型 tab 上方加分区胶囊（复用 pill 样式）、listParams 唯一组装点映射三态（COS=cosOnly、全部=includeCos、常规=不传）；`use-assets.ts` 的 `useAssetsTotal` 加分区参数——类型徽标计数跟随分区口径，切 COS 后徽标不再是常规数字。
+- **端到端实证**（dev-login 后 curl）：搜 COS 文件名片段默认 0 条 / cosOnly 1 条 / includeCos 1 条；常规分区默认口径未受影响（765 条）。无协议改动（参数已在 openapi）。
+- **文档**：DOMAIN_RULES §3 全文搜索口径补「分区」条（三态开关 + 胶囊入口出处）。
+
 ## 手机局域网访问白屏修复：crypto.randomUUID 非安全上下文降级（2026-09-04 第十五笔）
 
 执行 AI：GLM-5.3（主代理，ZCode）

@@ -13,7 +13,7 @@ import {
 import { useCreateTag, useTags } from '@/hooks/use-tags'
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants'
 import { SearchFilters } from './SearchFilters'
-import { SORT_TABS, newSearchState, type SearchFilterState } from './search-state'
+import { SORT_TABS, PARTITION_OPTIONS, newSearchState, type SearchFilterState } from './search-state'
 
 /**
  * 搜索结果页（原型 #page-search 移植）：顶栏搜索框回车进入，q 变化整体重置筛选。
@@ -57,6 +57,11 @@ function localDate(d: Date): string {
   return `${y}-${m}-${day}`
 }
 
+/** 分区文案 → useAssetsTotal 的分区 key（列表参数的三态组装在 listParams 唯一组装点内联） */
+function partitionKey(p: string): 'regular' | 'cos' | 'all' {
+  return p === 'COS' ? 'cos' : p === '全部' ? 'all' : 'regular'
+}
+
 /** 时间范围档 → dateFrom/dateTo（「全部」/「按年份区间」不产日期，年份走 yearFrom/yearTo） */
 function dateRangeFor(time: string): { dateFrom?: string; dateTo?: string } | undefined {
   const today = new Date()
@@ -93,11 +98,12 @@ export default function SearchPage() {
   const [panelOpen, setPanelOpen] = useState(false)
   const [tagInputOpen, setTagInputOpen] = useState(false)
 
-  // 数据源：标签池（全量）/类型徽标计数（limit=1 取 totalMatched）
+  // 数据源：标签池（全量）/类型徽标计数（limit=1 取 totalMatched，跟随分区口径）
   const { data: tagPool = [] } = useTags()
-  const { data: totalVideo = 0 } = useAssetsTotal('video')
-  const { data: totalAnimated = 0 } = useAssetsTotal('animated_image')
-  const { data: totalImage = 0 } = useAssetsTotal('image')
+  const pk = partitionKey(state.partition)
+  const { data: totalVideo = 0 } = useAssetsTotal('video', pk)
+  const { data: totalAnimated = 0 } = useAssetsTotal('animated_image', pk)
+  const { data: totalImage = 0 } = useAssetsTotal('image', pk)
   const createTag = useCreateTag()
 
   // 新搜索整体重置（数据态重置，非 DOM 操作，属 useEffect 合理场景）
@@ -141,6 +147,10 @@ export default function SearchPage() {
   /** 筛选状态 → GET /assets 参数（唯一组装点；q 为空时页码区不发起查询） */
   const listParams = useMemo<AssetListParams>(() => {
     const p: AssetListParams = { q, limit: DEFAULT_PAGE_SIZE }
+    // 分区三态（DOMAIN_RULES §6）：常规=不传（默认排除 COS，历史口径）、
+    // COS=cosOnly、全部=includeCos；服务端 cosOnly 优先于 includeCos。
+    if (state.partition === 'COS') p.cosOnly = true
+    else if (state.partition === '全部') p.includeCos = true
     const mt = TYPE_TO_MEDIA[state.type]
     if (mt) p.mediaType = mt
     // 排序：综合=default、最多点击=viewCount（顺位 order 真实传参）
@@ -184,6 +194,20 @@ export default function SearchPage() {
 
   return (
     <div className="page" id="page-search">
+      {/* 分区胶囊（复用相册页 pill 样式）：常规=默认排除 COS（DOMAIN_RULES §6 口径）、
+          COS=cosOnly、全部=includeCos——搜索触达 COS 内容的唯一入口（首页 cos tab 无搜索框） */}
+      <div className="pill-row" role="group" aria-label="内容分区" style={{ padding: '10px 16px 0' }}>
+        {PARTITION_OPTIONS.map((pt) => (
+          <button
+            key={pt}
+            type="button"
+            className={`pill${state.partition === pt ? ' active' : ''}`}
+            onClick={() => setFilter('partition', pt)}
+          >
+            {pt}
+          </button>
+        ))}
+      </div>
       <div className="stype-row">
         {typeTabs.map((t) => (
           <button
