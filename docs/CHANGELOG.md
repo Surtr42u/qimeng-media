@@ -10,6 +10,17 @@
 
 ---
 
+## M4/M6 规划终审对抗审查与修补：交付前防线加固（2026-09-04 第二十二笔）
+
+执行 AI：GLM-5.3（主代理，ZCode；对抗审查由 reviewer 子代理完成，全部事实经 grep/read 独立重验）
+
+用户要求终审全部方案并加固技术约束（后续由 5.3 规划 + Flash 执行的双模型模式实施）。reviewer 子代理以执行 AI 视角审查 12 份文档，产出 18 项判定（3 P1/5 P2/10 P3，总评"修补后可交付"），全部修补：
+
+- **P1 三项**（均为"弱执行 AI 必踩"级）：① HANDOVER_APP 通用约束 4 补引 `LEGACY_REQUIREMENTS.md` M4 条目（标签管理/搜索维度/交互/空态/性能五组需求级结论此前执行链路读不到）；② 通用约束 7 补硬规——验收命令输出必须逐条粘贴进交付报告，未贴不算交付；③ M4-0 补"工程第一步先 `make sdk` 生成 android/sdk"（生成物 git 忽略、CI checkout 后不存在，缺此步 include ':sdk' 必挂且弱 AI 可能手写生成物）+ CI Android job 首步 make sdk（照抄 sdk-chain 模式）。
+- **P2 五项**：AGENTS 路由表 UI 行补 0014/HANDOVER_APP 指向（reviewer 报告的"正文未同步"经 grep 验证为误报，正文已是 ADR-0014 口径）；进度心跳 5s 注明"严于协议建议值 10s、协议允许"（消除与 openapi/GUIDE_API 的表面矛盾）；**M4-4 打点语义改写**——服务端仅 open/play 会话去重、**dwell 累加不去重**（原表述与 DOMAIN_RULES §5 实口径不符，弱照做会时长虚增），客户端保证一次停留恰好一条 dwell；断点续播"已看完"语义冻结（lastPositionSeconds ≥ durationMs/1000 从 0 重播+徽标，协议明文客户端推导）；HANDOVER_APP 补开工前置（服务端跑法/密码/8420 在线确认，见 HANDOVER 两节）。
+- **P3 十项**：版本纪律硬化（版本号须查官方来源锁定+交付报告附链接，禁凭记忆）；WorkManager 兜底周期注明 ≥15min 系统钳制；健康探测改协议面 `/api/v1/healthz`（根路径是运维别名）；M4-0 补应用图标（旧仓库 §应用图标 资产规格）；M4-0 交付物补"CI 四 job 字样→五"两处文档同步（PROJECT_PLAN 头部/HANDOVER）；ADR-0014 桥接白名单补同类自绘件（LineChartView）对齐 M4-6；INDEX 表头补状态列+0013 行注批次引用过期；HANDOVER 进度节日期残留修正；"第五笔"标签补出处；ADR-0013 废弃标注与引用关系核实协调。
+- 审查正面验证通过项（未改）：GUIDE_UI 19 节名引用逐条命中、协议端点/字段（progress/facets/config/lastPositionSeconds）与代码符号（INCOMPATIBLE_CODECS/useReportView）真实存在、minSdk 26 全兼容、ServerConfigDataSource 单点五处口径一致、M6 Termux/ffmpeg/gomobile 表述准确。
+
 ## M4 二次改道「先进优先」Compose 重建 + M6 单机形态（ADR-0014/0015）（2026-09-04 第二十一笔）
 
 执行 AI：GLM-5.3（主代理，ZCode）
