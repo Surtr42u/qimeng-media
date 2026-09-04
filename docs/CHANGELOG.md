@@ -10,6 +10,18 @@
 
 ---
 
+## 一致性审查：W-1/W-2/第十笔文档声明逐项核验 + 代码卫生修补（2026-09-05 第二十七笔）
+
+执行 AI：GLM-5.3（主代理，ZCode）
+
+用户要求核验已完成内容的文档描述与实现一致，并对代码审查：
+
+- **逐项核验通过（文档=实现）**：W-1（use-upload：XHR+octet-stream 流式/进度回调/单条 abort/上限前置读 config/白名单不前端复制/切路由 abort 整队/串行发送/三组查询失效键；UploadCard 184 行 ≤300/队列表四列/逐条 toast；DirTree 只读/选择双模式+根行「库根 N 文件」；DIRS/ASSETS/LIBRARIES 查询键常量；format.ts dirLabel；上传卡 CSS 段零颜色字面量）；W-2（radix-ui 统一包 ^1.6.7 零新装包；冻结 API+onOpenChange?；--overlay-bg/--dialog-shadow 双 token；TrashPage 彻底删除/清空 danger、删库非 danger；window.confirm 调用清零恰剩 3 处注释；不可达空回收站分支已删）；第十笔后端四项抽查（GET/PUT /api/v1/config、client-logs 环形 200、/api/v1/healthz|readyz 免鉴权+根路径别名、上传后自动 EnrichAsset@upload.go:201）。验收口径复测（W-3 WIP 出现前测得）：tsc 0 错、lint 15 warnings 0 errors，与两批交付时一致。SseBridge 失效键缺陷与 §5 第 9 条记账相符（仍在、未修、待拍板）。
+- **修补①（代码卫生，行为零变化）**：TrashPage 本地 `formatBytes` 与 `lib/format.ts` 导出版逐字重复（卫生约束#6 现有共享函数>复制粘贴；format.ts 注释本就写明「回收站/详情信息共用」，其余 5 个消费方全部走共享导入、唯独 TrashPage 自带副本）——删本地副本改 import。
+- **修补②（文档状态同步）**：HANDOVER「当前待办」第 1 条补 W-1/W-2 已交付标记（commit 号）与 W-3 当前批次指向——此前恢复入口文档未反映前两批完成，新会话按「当前待办继续下一批」会误派 W-1。
+- **工作树发现（不擅动）**：审查进行中观测到 W-3 会话正并发写入本工作树（夜间集群模式）——artplayer@5.4.0（经 npm 核实为最新稳定）依赖、video-player.tsx、use-progress.ts、AssetDetailPage 接线相继出现且未提交。本审查范围=已提交基线（至 2001a20），W-3 WIP 不在审查内、一律未触碰；复核时 lint 从 15→22 warnings，增量全部来自 W-3 在写文件（use-progress/video-player/AssetDetailPage），基线 15 与 W-2 交付声明一致。并发状态已同步进 HANDOVER 待办第 1 条。
+- **代码审查记账（不扩围，HANDOVER_UI §5 第 10 条）**：use-upload 队列条目未在入队时快照目标 libraryId/dir——上传中途切库/切目录会改变未开始条目的去向（uploadOne 发送时读实时 options），队列表也不显示目标库；快照语义更合用户预期，但属行为变化需重跑 W-1 冒烟，待用户拍板。
+
 ## W-2 confirm 换原型风格弹窗：window.confirm 全量退役（2026-09-04 第二十六笔）
 
 执行 AI：GLM-5.3（主代理，ZCode 调度验收；编码与冒烟由 executor 子代理完成）

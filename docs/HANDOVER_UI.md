@@ -119,6 +119,7 @@ media-ui-prototype/
 7. web 端类型检查必须用 `npx tsc --noEmit -p tsconfig.app.json`——根 tsconfig 是 solution-style，裸 `tsc --noEmit` 是假通过。
 8. **prototype.css 颜色 token 口径（2026-09-04 用户拍板：统一收敛、不影响 UI）**：规则体内禁止散落颜色字面量（hex/rgb/hsl/rgba 及含颜色的 shadow/gradient 整值）——新颜色一律先在 `:root` 定义语义化 token 再以 `var()` 引用；`.dark` 专属值用 `-dark` 后缀变量放 `:root`（覆盖规则保留原位，只把值换成 var 引用，勿删改既有规则结构）；平行 token 族（`--accent-*`/`--text-*` 等不带 `--qm-` 前缀）是原型层自有体系，属合法——与 tokens.css 的 shadcn 桥接 `--qm-*` 并存，靠 main.tsx 导入顺序保证原型覆盖。存量 30 处散落字面量已于 2026-09-04 全部等值收敛（视觉零变化，见 CHANGELOG「质量审查清债（Web 端）」条目）；组件层（.tsx/.ts）零硬编码颜色的既有状态继续维持。
 9. **SSE 跨端失效键存量缺陷（2026-09-04 W-1 执行中发现，待用户拍板后排批）**：`components/layout/SseBridge.tsx` 失效键 `['assets']/['libraries']/['tags']/['trash']` 与实际查询键 `['api/v1/…']` 形态不匹配，TanStack 数组前缀匹配一条不命中——其他端（Android/其他标签页）上传/库变更 → web 列表自动刷新目前是断的；本端操作刷新不受影响（use-upload 等已按正确键本地失效）。修复=统一查询键常量（涉全局 hooks），非 W 收尾三批范围。
+10. **上传队列中途切库/目录会改写未开始条目的目标（2026-09-05 一致性审查发现，待用户拍板后排批）**：`hooks/use-upload.ts` 的 `uploadOne` 发送时读实时 `optionsRef.current`——libraryId/dir 未在 enqueue 时快照进条目，批量上传进行中切换目标库/目录，排队未开始的条目会改传新目标；队列表也不显示目标库。修法=QueueEntry 入队快照目标（行为变化，需重跑 W-1 冒烟），是否修待拍板。
 
 ## 5.9 UI 收尾执行批次（2026-09-04 规划定稿，用户拍板启动）
 
