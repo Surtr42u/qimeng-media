@@ -10,6 +10,17 @@
 
 ---
 
+## 手机局域网访问白屏修复：crypto.randomUUID 非安全上下文降级（2026-09-04 第十五笔）
+
+执行 AI：GLM-5.3（主代理，ZCode）
+
+用户反馈同一网络手机打不开 Web UI（电脑 127.0.0.1 正常）：
+
+- **网络层诊断（无代码改动）**：服务端监听 `:8420`（全网卡）、防火墙有 qimeng.exe 入站 Allow 规则（专用网络）、本机 curl `http://192.0.2.2:8420` 返回 200——网络层全通；启动横幅 `http://YOUR_IP:8420` 是占位符提示（启动服务端.bat），真实局域网 IP 为 192.0.2.2（另两个 IPv4 为 VirtualBox/WSL 虚拟网卡）。
+- **根因**：手机浏览器经 `http://192.0.2.2`（HTTP + 非 localhost = 非安全上下文）访问时 `crypto.randomUUID` API 不存在，`use-session.ts` 的 `ensureSessionId()` 在 React useState 初始化路径直接调用，整应用白屏崩溃（电脑 localhost 属安全上下文故无感）。
+- **修复**：`web/src/hooks/use-session.ts` 新增私有 `randomUUID()`——守卫 `typeof crypto.randomUUID === 'function'`，缺失时降级 `crypto.getRandomValues` 拼 UUID v4（该 API 非安全上下文同样可用）；`web/dist` 已重新构建，服务端 SPA 托管按请求读盘（curl 实证返回新 hash 产物），手机刷新页面即生效、无需重启服务端。
+- **质量**：oxlint 0 errors（15 warnings 均为存量，与本次改动无关）；tsc 构建通过。
+
 ## 交接文档进度对齐：阶段 B 全量口径 + 上传 UI 缺口记账（2026-09-04 第十四笔）
 
 执行 AI：GLM-5.3（主代理，ZCode）
