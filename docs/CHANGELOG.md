@@ -10,6 +10,17 @@
 
 ---
 
+## 执行路线定稿：UI 收尾三批 + M4 八批次任务书（2026-09-04 第十九笔）
+
+执行 AI：GLM-5.3（主代理，ZCode）
+
+用户拍板当前路线 = Web UI 收尾三项 + M4 完整任务（未导入内容两项搁置，不催不问），要求产出可交给执行 AI 直接执行的规划与约束：
+
+- **新建 `docs/HANDOVER_APP.md`**：M4 拆八批次（M4-0 脚手架 ~ M4-7 整体验收）逐批任务书——冻结决策（applicationId=media.qimeng.app、minSdk 26、依赖白名单制、断点续播 5s 节流、上传队列并发=1、离线队列环形 5000 条等）、验收命令（make app-build/app-test/app-lint 三件套 + 每批单测）、存疑停手点九条总则；范围边界冻结=我的页/统计页不在 M4（用户拍板后可追加批次）。执行环境 2026-09-04 实测就绪（Android Studio jbr21/SDK build-tools 35/emulator WHPX 加速，仅缺 AVD 由 M4-0 首步创建）。
+- **HANDOVER_UI 新增 §5.9**：UI 收尾三批任务书（顺序冻结 W-1 上传入口 → W-2 confirm 弹窗 → W-3 ArtPlayer），逐批冻结设计（上传落点=文件管理页+切路由 abort 整队；弹窗=radix AlertDialog+原型 token、不引入红色 token；ArtPlayer=不建 ADR+官方 API 撑不起时间轴标记即停手）与验收标准。**发现项记账**：现版详情页为极简重建版（裸 img/裸 video），图片查看器/互动行/批次导航三件旧壳体验不在三项待办内，是否补齐待用户拍板。
+- **HANDOVER/PROJECT_PLAN 同步**：执行路线行（UI 收尾→M4→M5）、「当前待办」改写（未导入内容两项标搁置）、接手第一步补第 6 条（Android 读 HANDOVER_APP）、M4 节头指向批次表（本文件勾选仍为进度真相）。
+- **现状澄清**（规划调研结论）：android/ 零应用代码（仅 README 技术栈定论 + git 忽略的 sdk/ 生成物）；「M4 播放端基座」（commit 9773213）是服务端前置件（断点续播端点+ffprobe 元数据）而非 App 代码；CI 现四 job 无 Android job，由 M4-0 补第五个。
+
 ## 搜索页默认全部 + 对齐重校准：口径变更与锚定修复（2026-09-04 第十八笔）
 
 执行 AI：GLM-5.3（主代理，ZCode）

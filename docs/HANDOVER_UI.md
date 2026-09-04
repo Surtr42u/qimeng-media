@@ -1,7 +1,7 @@
 # HANDOVER-UI - 桌面客户端风格媒体库 UI 交接说明
 
 > 写给下一位专做 UI 的 AI（任何模型/工具）。人类用户无编程基础，全部代码由 AI 生成。
-> 最后更新：2026-09-04（第十笔：后端四缺口清零——上传路径富化（上传后自动 EnrichAsset）、探针协议债归位（/api/v1/healthz|readyz 免鉴权+根路径运维别名）、设置页配置持久化（GET/PUT /api/v1/config；scan 两项为预留字段暂未接入管线、保存后暂不生效；upload 两项实时生效）、客户端异常上报通道（POST/GET /api/v1/client-logs，维护页异常表接真数据）；对抗审查打回 1 轮（P1 空态崩页/scan 失实口径/autoAccept 缺键静默关闸）已返工修复。此前 09-03 第七笔：第六笔原型七组缺陷移植 web 正式端（AssetSummary.authorNames 全链路、卡片作者行+时长角标、作者榜浏览口径、作者副标题+·COS、相册时间分区）+ 原型 2 处 CSS 缺陷修复；后续 09-04 作者总览卡收敛 Top5 预览。此前第五/六笔见 CHANGELOG）
+> 最后更新：2026-09-04（§5.9 UI 收尾执行批次定稿：W-1 上传入口/W-2 弹窗/W-3 ArtPlayer 三批任务书 + 详情页发现项记账；用户拍板 UI 收尾后启动 M4，M4 任务书见 `docs/HANDOVER_APP.md`。第十笔：后端四缺口清零——上传路径富化（上传后自动 EnrichAsset）、探针协议债归位（/api/v1/healthz|readyz 免鉴权+根路径运维别名）、设置页配置持久化（GET/PUT /api/v1/config；scan 两项为预留字段暂未接入管线、保存后暂不生效；upload 两项实时生效）、客户端异常上报通道（POST/GET /api/v1/client-logs，维护页异常表接真数据）；对抗审查打回 1 轮（P1 空态崩页/scan 失实口径/autoAccept 缺键静默关闸）已返工修复。此前 09-03 第七笔：第六笔原型七组缺陷移植 web 正式端（AssetSummary.authorNames 全链路、卡片作者行+时长角标、作者榜浏览口径、作者副标题+·COS、相册时间分区）+ 原型 2 处 CSS 缺陷修复；后续 09-04 作者总览卡收敛 Top5 预览。此前第五/六笔见 CHANGELOG）
 > 用途：新开的 AI 会话直接读本文档即可接手 UI 工作，无需回看本会话记录。
 > 主交接文档（后端/进度/约定）仍以 `docs/HANDOVER.md` 为准，本文档只覆盖 UI 路线。
 
@@ -118,6 +118,42 @@ media-ui-prototype/
 6. UI 工作另见 `docs/adr/0008`（UI 解耦策略）。
 7. web 端类型检查必须用 `npx tsc --noEmit -p tsconfig.app.json`——根 tsconfig 是 solution-style，裸 `tsc --noEmit` 是假通过。
 8. **prototype.css 颜色 token 口径（2026-09-04 用户拍板：统一收敛、不影响 UI）**：规则体内禁止散落颜色字面量（hex/rgb/hsl/rgba 及含颜色的 shadow/gradient 整值）——新颜色一律先在 `:root` 定义语义化 token 再以 `var()` 引用；`.dark` 专属值用 `-dark` 后缀变量放 `:root`（覆盖规则保留原位，只把值换成 var 引用，勿删改既有规则结构）；平行 token 族（`--accent-*`/`--text-*` 等不带 `--qm-` 前缀）是原型层自有体系，属合法——与 tokens.css 的 shadcn 桥接 `--qm-*` 并存，靠 main.tsx 导入顺序保证原型覆盖。存量 30 处散落字面量已于 2026-09-04 全部等值收敛（视觉零变化，见 CHANGELOG「质量审查清债（Web 端）」条目）；组件层（.tsx/.ts）零硬编码颜色的既有状态继续维持。
+
+## 5.9 UI 收尾执行批次（2026-09-04 规划定稿，用户拍板启动）
+
+三项待办的执行级任务书，顺序冻结 **W-1 → W-2 → W-3**（功能缺口优先、最重殿后）；每批交付 = 代码 + 实机截图 + `npx tsc --noEmit -p web/tsconfig.app.json` + `npm --prefix web run build` + `npm --prefix web run lint` 全绿。通用约束：§4.5 对齐纪律（改布局必须静止态实测）、§5.8 颜色 token 口径、铁律 7（UI 组件禁直调 API，走 hooks）、AI_README_FIRST 代码卫生。
+
+### W-1 上传 UI 入口（功能缺口：后端全就绪、页面无入口）
+
+- **现状**：`POST /assets/upload` 四道校验 + 冲突自动重命名 + SSE `upload.done` 桥接 + 设置页上传配置（`use-config.ts`）全就绪；`lib/constants.ts` 的 `UPLOAD_PATH` 已定义未消费。
+- **落点（冻结设计）**：文件管理页（`pages/LibraryManagePage.tsx`）新增「上传」卡——选库（页面已有库上下文）→ 目录树选目标目录（复用既有目录树）→ 文件选择/拖拽 → 队列列表（文件名/大小/进度条/状态）→ 完成后 toast + 相关 query invalidate 刷新（SSE 事件已有桥接，不重复造轮子）。
+- **实现约束**：XHR + `application/octet-stream` 流式（沿用既有约定）+ libraryId 必填；上限前置提示读 `GET /api/v1/config` upload 项超限拦截（中文提示），类型白名单不在前端复制（服务端四道校验为唯一口径，4xx 透传服务端文案）；新 hook `hooks/use-upload.ts`（进度回调/abort）；组件 ≤300 行。
+- **取消语义（冻结）**：切路由自动 abort 整队——不做后台续传（Web 端无先例，用户未拍板；App 端上传才是主通道）。
+- **验收**：实机 8420 冒烟——传 1 图 + 1 视频：进度可见 → 完成toast → 目录树/列表出现新文件（截图）；新卡片过 §4.5 对齐自查（首行贴侧栏节奏，附实测数字）。
+- **存疑停手**：无。
+
+### W-2 confirm 换原型风格弹窗
+
+- **组件**：`components/ui/confirm-dialog.tsx`——radix `@radix-ui/react-alert-dialog`（shadcn 体系内，M0 技术栈定论覆盖，不算新重依赖；shadcn add 或手写以 web 现有配置为准）；样式全部走原型 token（`var(--accent-*)` 等），**禁止新增颜色字面量**（§5.8）。
+- **API（冻结）**：`ConfirmDialog { open, title, description, confirmText, cancelText, danger?, onConfirm }`。
+- **替换点**：已知 3 处 `window.confirm`——`TrashPage.tsx:35/48`、`LibraryManagePage.tsx:243`；执行时 `grep -rn "window.confirm" web/src` 兜底全量替换。
+- **danger 语义（冻结）**：物理删除/清空类主按钮深色强调，**不引入红色新 token**（原型色板无红），用户不满意再调。
+- **验收**：三处操作各一截图（含深色模式）+ 焦点环/ESC 关闭（radix 自带）+ 检查命令全绿。
+- **存疑停手**：无。
+
+### W-3 ArtPlayer 播放器 UI
+
+- **现状**：`pages/AssetDetailPage.tsx` 视频是裸 `<video controls>`（v1 旧壳的 VideoPlayer 已随 v1 删除，现版无倍速/无静音记忆/无标记）；断点续播协议基座已就绪（commit 9773213）。
+- **依赖**：npm `artplayer`（版本执行时查最新稳定，锁进 package.json）；**不建 ADR**——UI 可换层（ADR-0008 精神），CHANGELOG 记录选型即可。
+- **组件**：`components/media/video-player.tsx` 封装 ArtPlayer（React 封装注意实例销毁/unmount 清理），AssetDetailPage 替换 `<video>`。
+- **功能清单（冻结，"现状没有"的都要补齐）**：倍速菜单（0.5~3x）、静音、全屏；断点续播——进页取 detail 播放进度字段（字段名以生成 SDK 类型为准）为起点 + 播放中每 5s 节流 `PUT /assets/{id}/progress`（间隔具名常量，暂停/离开立即上报，新 hook `hooks/use-progress.ts`）；时间轴标签打点 + 点击 seek 跳转回看（端点以 GUIDE_API 为准，无标签不渲染该层）；dwell/play 打点沿用 `useReportView`；编码兼容提示保留（`codec-warn` 逻辑不动）。
+- **ArtPlayer 定制能力**（自定义进度条打点/控制栏）执行时读官方文档确认；**官方 API 若无法支撑时间轴标记 → 停手报用户**（候选方案：进度条上自绘绝对定位覆盖层）。
+- **验收**：实机播放各功能截图（倍速/静音/续播起点/标记跳转）+ 组件 ≤300 行 + 桌面/窄屏两档视口自检 + 检查命令全绿。
+- **存疑停手**：见上。
+
+### 发现项（不在本三批范围，待用户拍板，执行 AI 不擅自扩）
+
+2026-09-04 规划审查发现现版详情页为极简重建版，以下旧壳（M2 v1）曾有、原型版未建的体验**不在三项待办内**，是否补齐待用户拍板：图片查看器（双指缩放/双击还原/左右预加载/沉浸）；详情互动行（点赞/收藏/标签管理弹窗）；批次导航（上一件/下一件）。候选归宿：并入 W-3 一次做完整详情页，或 M4 后回补 Web。用户拍板前按三项待办范围执行。
 
 ## 6. 工作树现状（2026-09-02 三轮：原型移植 web 重建，接手必读）
 
