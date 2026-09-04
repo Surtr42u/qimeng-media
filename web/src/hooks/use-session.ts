@@ -16,6 +16,18 @@ import {
 import { SESSION_ID_STORAGE_KEY } from '@/lib/constants'
 
 /**
+ * 随机 UUID v4。crypto.randomUUID 只在安全上下文（HTTPS / localhost）暴露，
+ * 局域网 IP 直连（http://192.168.x.x）的手机浏览器没有该 API，直接调用会让
+ * 整个应用白屏崩溃；降级用 getRandomValues 拼 v4——它在非安全上下文同样可用。
+ */
+function randomUUID(): string {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+  return '10000000-1000-4000-8000-100000000000'.replace(/[018]/g, (c) =>
+    (+c ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (+c / 4)))).toString(16),
+  )
+}
+
+/**
  * 每标签页会话 ID：sessionStorage 存放（标签页关闭即弃）。
  * 为什么不用 localStorage：服务端按 assetId+kind+sessionId+当日 做会话级去重
  * （DOMAIN_RULES §5）——每标签页独立会话，同一天内重复打点不重复计数，
@@ -24,7 +36,7 @@ import { SESSION_ID_STORAGE_KEY } from '@/lib/constants'
 export function ensureSessionId(): string {
   const existing = sessionStorage.getItem(SESSION_ID_STORAGE_KEY)
   if (existing) return existing
-  const id = crypto.randomUUID()
+  const id = randomUUID()
   sessionStorage.setItem(SESSION_ID_STORAGE_KEY, id)
   return id
 }
