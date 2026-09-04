@@ -33,6 +33,8 @@ export interface VideoPlayerProps {
   onTimeUpdate?: (positionSeconds: number) => void
   /** 暂停（页面侧立即上报） */
   onPause?: (positionSeconds: number) => void
+  /** 起播（页面侧上报 play 事件；每次起播都派发，会话去重是服务端职责） */
+  onPlay?: () => void
 }
 
 /** 运行时读主题 token（§5.8 口径：色值禁止进 JS/配置，只认 --qm-primary） */
@@ -109,6 +111,7 @@ export default function VideoPlayer({
   highlights = [],
   onTimeUpdate,
   onPause,
+  onPlay,
 }: VideoPlayerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -119,9 +122,9 @@ export default function VideoPlayer({
   // 例外，走下方 ref 转发保持最新（lint 合规：ref 同步放 effect，且声明在建
   // 实例 effect 之前，首挂时先于建实例执行）。
   const [initial] = useState({ src, poster, startTime, highlights })
-  const handlersRef = useRef({ onTimeUpdate, onPause })
+  const handlersRef = useRef({ onTimeUpdate, onPause, onPlay })
   useEffect(() => {
-    handlersRef.current = { onTimeUpdate, onPause }
+    handlersRef.current = { onTimeUpdate, onPause, onPlay }
   })
 
   useEffect(() => {
@@ -163,6 +166,7 @@ export default function VideoPlayer({
     if (initial.startTime > 0) art.on('ready', () => (art.seek = initial.startTime))
     art.on('video:timeupdate', () => handlersRef.current.onTimeUpdate?.(art.currentTime))
     art.on('pause', () => handlersRef.current.onPause?.(art.currentTime))
+    art.on('play', () => handlersRef.current.onPlay?.())
 
     // 深色模式跟随 token：月亮按钮切 html class 时重读 --qm-primary
     const themeObserver = new MutationObserver(() => {
