@@ -17,3 +17,4 @@
 | ADR-0010 | 模块边界三层强制：Go internal 编译器边界 + depguard 两条红线 + golangci-lint 门禁（不引 arch-go） | `server/.golangci.yml`、`.github/workflows/ci.yml`（server job）、根 `Makefile`、`ARCHITECTURE.md` §5.1 |
 | ADR-0011 | 数据库演进式迁移纪律：只加不改不删，改/删走 expand-migrate-contract，SQLite 删列默认不做 | `server/migrations/`、`ARCHITECTURE.md` §5.1、`AI_README_FIRST.md` 开发流程第 4 条 |
 | ADR-0012 | 库类型（kind）可扩展体系：识别器分派 + 配套展示，新 kind 接入清单；与 enabled 开关（0007）正交 | `docs/DOMAIN_RULES.md` §6、`server/internal/scanner/`、`api/openapi.yaml` | 已接受（2026-09-03） |
+| ADR-0013 | M4 Android 走「旧 UI 照搬 + 数据层网络化」：ui/ 层整体搬入（ViewBinding/AppContainer/Coil 3/Media3），禁搬单机生态（scan/备份/本地缩略图管线/旧 repository 实现），算法不在客户端复算 | `android/`（README 技术栈定论、HANDOVER_APP 批次任务书）、`AGENTS.md`（旧项目关系节）、`AI_README_FIRST.md` 禁止行为、`docs/PROJECT_PLAN.md` M4、`docs/GUIDE_UI` 引用（旧仓库） | 已接受（2026-09-04） |

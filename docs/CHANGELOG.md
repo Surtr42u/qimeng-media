@@ -10,6 +10,18 @@
 
 ---
 
+## M4 路线改道：旧 UI 整体照搬 + 数据层网络化（ADR-0013）（2026-09-04 第二十笔）
+
+执行 AI：GLM-5.3（主代理，ZCode；旧项目架构调研由只读探索子代理完成）
+
+用户拍板「安卓端走完全旧 UI（照搬）」并问算法提取状态，经旧项目源码调研证实可行后全线改道：
+
+- **调研结论（照搬可行性依据）**：旧项目解耦规范——UI 全部经由单一 MediaLibraryViewModel 持有 LocalMediaRepository **接口**（实现可整体替换），实体纯 Kotlin 数据类，MediaBrowserLogic 为零 IO object 纯函数；技术栈 Coil 3.4 + Media3 1.8 + ViewBinding，与新端主力库一致。已知泄漏点：约 10 处 Fragment 直取 appPrefsManager、MediaDetailFragment 4 处 content:// URI 直消费、ViewModel 自带 contentResolver/MediaStoreObserver——均在移植批次任务书内逐条列明改造。
+- **ADR-0013 新建**：照搬范围（ui/ 层 15 Fragment/19 XML/5 自定义控件 + AppContainer + 主题，包名沿用 com.qimeng.media）+ 禁搬清单（scan//ScanUseCase/AutoSyncUseCase/BackupManager/本地缩略图解码管线/旧 repository 实现）+ 后果（放弃 Compose/Hilt 定论、minSdk 26→31、observe* Flow 需 Room 缓存桥接为最大实现风险）；INDEX.md 同步。
+- **HANDOVER_APP.md 按新路线重写**：八批次改序——M4-0 工程基建+登录 / M4-1 数据层网络化（风险点先行验证，接口按 UI 调用面渐进实现）/ M4-2 列表族 / M4-3 详情页（BiliPlayerView 837 行照搬+断点续播叠加+4 处 URI 消费点改造清单）/ M4-4 离线上报 / M4-5 上传 / M4-6 缓存+设置+统计页（照搬路线下统计/我的/作者页全部纳入，原"不在 M4 范围"边界作废）/ M4-7 验收；通用约束新增照搬纪律（算法不搬不复算、代码实测行为优先于规格书）。
+- **铁律口径收窄（原「禁止搬运旧项目实现代码」→「禁止搬运单机生态代码」）**：AGENTS.md（项目一句话 + 旧项目关系节）、AI_README_FIRST（禁止行为第 2 条 + Kotlin 代码规范行）、android/README.md（技术栈定论全面改写：View 照搬、AppContainer、包名沿用、禁搬清单）、PROJECT_PLAN M4 条目（「Compose 复刻交互」→「旧 UI 整体移植」）、HANDOVER（当前待办第 2 条 + 领域知识库节）六处同步。
+- **算法提取状态确认（用户问题答复，无代码改动）**：GUIDE_ALGORITHM 全部条目已在 M3 落进服务端并测试锁定（推荐十维+自适应回收+三后处理+冷启动/排行榜/筛选枚举/SourceMatcher 130 组/统计口径/作者双体系/日期分组/旧数据迁移）；缩略图三级解码被「服务端 ffmpeg 出图 + HTTP 直链」架构性替代，非缺失。
+
 ## 执行路线定稿：UI 收尾三批 + M4 八批次任务书（2026-09-04 第十九笔）
 
 执行 AI：GLM-5.3（主代理，ZCode）
