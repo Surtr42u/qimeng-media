@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 图标背景色：GUIDE_UI §应用图标 冻结资产规格（纯色 #DDBC98） -->
+    <color name="ic_launcher_background">#DDBC98</color>
+</resources>

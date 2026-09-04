@@ -1,7 +1,7 @@
 # ARCHITECTURE - 架构总纲
 
 > 本文是 qimeng-media 的架构唯一权威文档。技术选型的"为什么"见 `docs/adr/`，业务规则见 `docs/DOMAIN_RULES.md`。
-> 最后更新：2026-08-26（底层重构对齐：§5.1 模块边界强制、§10 CI 四 job 实况、Makefile 命令名；2026-08-22 v0 项目创立）
+> 最后更新：2026-09-05（§10 CI 第五 job android 门禁，M4-0）；2026-08-26（底层重构对齐：§5.1 模块边界强制、§10 CI 实况、Makefile 命令名；2026-08-22 v0 项目创立）
 
 ## 1. 需求起源与产品定位
 
@@ -154,11 +154,12 @@
 
 ## 10. 工程基础设施
 
-- **CI（GitHub Actions，`.github/workflows/ci.yml`）四 job**，push/PR 全绿才许合并：
+- **CI（GitHub Actions，`.github/workflows/ci.yml`）五 job**，push/PR 全绿才许合并：
   1. `openapi`：redocly 协议校验（error 失败，warning 不阻塞）
   2. `server`：oapi-codegen 重建 Go 接口层 → golangci-lint（静态检查 + depguard 模块边界）→ go vet → go test（-race）→ go build
   3. `web`：npm ci → tsc --noEmit → npm run build
   4. `sdk-chain`：`make sdk` 三端生成链可重建（生成物防漂移的结构性门禁，ADR-0009）
+  5. `android`：`make sdk` 重建 android/sdk → temurin 21 + gradle wrapper 缓存 → assembleDebug + testDebugUnitTest + lintDebug（M4-0 起）
 - **安全测试无独立 job**：401/路径穿越/签名防伪/超限上传等安全用例以单元测试形式随 server job 的 `go test` 运行
 - **双架构镜像构建未落地**：`make docker-build` 为 TODO(M5) 占位，镜像交付属 M5（如实记录，不提前宣称）
 - **依赖更新**：Dependabot 自动 PR（计划中，尚未配置）

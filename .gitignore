@@ -33,10 +33,9 @@ web/dist/
 web/.vite/
 *.local
 
-# Android
+# Android（build 目录多模块通配：app/core/feature 各模块一律忽略）
 android/.gradle/
-android/build/
-android/app/build/
+android/**/build/
 android/local.properties
 *.apk
 *.aab

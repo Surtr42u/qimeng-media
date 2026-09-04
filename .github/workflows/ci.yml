@@ -1,5 +1,5 @@
 # CI：每个 PR / push 到 master 必须全绿才允许合并（ARCHITECTURE §10）
-# 三道门禁：协议校验（宪法不容破坏）→ 服务端 → Web；外加 make sdk 生成链可跑通
+# 五道门禁：协议校验（宪法不容破坏）→ 服务端 → Web → Android 客户端；外加 make sdk 生成链可跑通
 name: ci
 
 on:
@@ -78,3 +78,28 @@ jobs:
         with: { distribution: temurin, java-version: 17 }
       - run: sudo apt-get update && sudo apt-get install -y make
       - run: make sdk
+
+  android:
+    name: Android 客户端（make sdk + assembleDebug + test + lint）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      # android/sdk 是 make sdk 生成物（.gitignore，checkout 后不存在）——构建第一步必须重建，
+      # 与 web job 先跑 openapi-ts、sdk-chain 跑 make sdk 同理（ADR-0009 生成物不入库）
+      - uses: actions/setup-node@v5
+        with: { node-version: 24 }
+      - uses: actions/setup-go@v6
+        with: { go-version: "1.27.x", cache-dependency-path: server/go.sum }
+      # JDK 21 与本机 Android Studio jbr 对齐（AGP 8.13 最低 17）；ubuntu runner 预装 Android SDK，
+      # platforms/build-tools 覆盖 compileSdk 36 所需，无需 sdkmanager（runner 镜像 Readme 为准）
+      - uses: actions/setup-java@v5
+        with: { distribution: temurin, java-version: 21 }
+      # wrapper 校验 + gradle-user-home 缓存；只调 ./gradlew，不碰 runner 预装 gradle
+      - uses: gradle/actions/setup-gradle@v4
+      - run: sudo apt-get update && sudo apt-get install -y make
+      - name: 生成三端 SDK（android/sdk 生成物重建）
+        run: make sdk
+      - name: 构建 + 单测 + Lint
+        run: |
+          cd android
+          ./gradlew assembleDebug testDebugUnitTest lintDebug

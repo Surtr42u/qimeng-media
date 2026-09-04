@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 应用名沿用规格书（旧仓库 GUIDE_UI）名称；改名属产品决策，走用户拍板 -->
+    <string name="app_name">绮梦影库</string>
+
+    <!-- 底部五 Tab（顺序见 TopLevelDestination，规格 = GUIDE_UI §导航结构） -->
+    <string name="tab_home">首页</string>
+    <string name="tab_all">全部</string>
+    <string name="tab_album">相册</string>
+    <string name="tab_stats">数据</string>
+    <string name="tab_settings">我的</string>
+</resources>

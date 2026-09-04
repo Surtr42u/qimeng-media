@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Manifest 层基础主题：Compose 接管全部绘制前避免默认 ActionBar 闪现。
+         窗口背景用品牌背景白，冷启动不闪系统灰。 -->
+    <style name="Theme.Qimeng" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@android:color/white</item>
+    </style>
+</resources>

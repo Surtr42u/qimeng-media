@@ -121,7 +121,7 @@ M3 及以后的任务表不变（推荐算法/统计/SourceMatcher/作者体系/
 - **验收页**：浏览器开 `http://127.0.0.1:8420/_debug/`（中文界面：设密码→注册媒体目录→扫描→浏览→播放）
 - **测试**：`cd server && go test ./...`（9 包全绿是底线）；Web：`cd web && npx tsc --noEmit`
 - **协议改动**：先改 `api/openapi.yaml` → `make sdk` → 按编译错误适配三端（铁律 1）
-- CI 在 GitHub Actions（push 自动跑四道门禁），仓库：`Surtr42u/qimeng-media`（私有，gh 已登录）
+- CI 在 GitHub Actions（push 自动跑五道门禁；M4-0 起含 Android 客户端 job），仓库：`Surtr42u/qimeng-media`（私有，gh 已登录）
 
 ## 后端还剩什么（重要：不是"只剩 UI"）
 
