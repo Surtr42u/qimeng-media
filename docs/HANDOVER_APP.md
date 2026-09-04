@@ -7,6 +7,7 @@
 ## 1. 路线定位与调研结论（2026-09-04）
 
 - **路线（ADR-0013，用户拍板）**：把旧项目（`<旧项目目录>`，2.4 万行）的 UI 层资产**整体照搬**进 `android/` 新工程，数据层从 Room 单机库换成「生成 SDK（HTTP）+ Room 缓存桥接」。不做 Compose 重建。
+- **照搬为基底、后续渐进改版（2026-09-04 用户补充表态，非终态）**：M4 八批次交付「能用的照搬版」为第一阶段；UI 改版为 M4 后独立阶段（方向待拍板，候选=对齐 Web 端桌面客户端视觉、主题层先行），逐项小步改、每步可回退，View/Compose 可共存逐页迁移。不做与旧项目的双向 UI 同步（知识库定位、双倍验证成本；个别页面一次性拷回自用不受限）。
 - **旧项目解耦事实（照搬可行性依据，只读子代理实测）**：UI 全部经由单一 `MediaLibraryViewModel`（670 行）持有 `LocalMediaRepository` **接口**（`data/repository/LocalMediaRepository.kt:20`），实现可整体替换（`AppContainer` 一处接线）；实体是纯 Kotlin 数据类；`MediaBrowserLogic` 是零 IO object 纯函数。已知泄漏点：约 10 处 Fragment 直取 `appContainer.appPrefsManager`；`MediaDetailFragment` 4 处直接消费 `content://` URI（图片加载 :489 / 播放器 :621 / 元数据 :747 / 输入流 :1082）；`MediaLibraryViewModel` 自带 contentResolver 读 TXT（:298）与 MediaStoreObserver 注册（:240-246）。
 - **旧项目技术栈（照搬基准）**：View/XML + ViewBinding + Fragment 单 Activity ×1 / Fragment ×15 / XML ×19 / 自定义控件 ×5（BiliPlayerView 837 行、ZoomImageView、FlowLayout、LineChartView、MaxHeightScrollView）；手写 AppContainer DI；Coil 3.4；Media3 1.8；Room 2.8；minSdk 31 / targetSdk 36；零网络库零 Service 零 WorkManager。
 - **服务端前置件已就绪**：断点续播 `PUT /assets/{id}/progress`（commit 9773213，migration 0006）、ffprobe 编码元数据、全部领域算法（M3 完成，客户端不复算）。
