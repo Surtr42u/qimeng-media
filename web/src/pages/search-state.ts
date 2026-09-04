@@ -31,10 +31,11 @@ export const TAG_MODE_OPTIONS = ['模糊', '精确'] as const
 export const SEARCH_YEARS = Array.from({ length: 11 }, (_, i) => String(new Date().getFullYear() - i))
 
 /** 初值与「新搜索重置」共用同一份（照原型 resetSearchState：新查询不继承旧筛选）。
- *  分区默认「常规」（DOMAIN_RULES §6 拍板：搜索默认排除 COS，隔离浏览靠分区胶囊切换）。 */
+ *  分区默认「全部」（2026-09-04 用户拍板：搜索默认常规∪COS——库内容大头是 COS，
+ *  默认排除会让多数搜索词 0 结果；要隔离的用户手动切「常规」，DOMAIN_RULES §3 口径同步）。 */
 export function newSearchState(): SearchFilterState {
   return {
-    partition: '常规',
+    partition: '全部',
     type: '综合',
     sort: '综合排序',
     order: '降序',

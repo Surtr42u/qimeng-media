@@ -194,21 +194,6 @@ export default function SearchPage() {
 
   return (
     <div className="page" id="page-search">
-      {/* 分区胶囊（复用相册页 pill 样式）：常规=默认排除 COS（DOMAIN_RULES §6 口径）、
-          COS=cosOnly、全部=includeCos——搜索触达 COS 内容的唯一入口（首页 cos tab 无搜索框）；
-          水平内边距 24px 与 .stype-row 对齐 */}
-      <div className="pill-row" role="group" aria-label="内容分区" style={{ padding: '10px 24px 0' }}>
-        {PARTITION_OPTIONS.map((pt) => (
-          <button
-            key={pt}
-            type="button"
-            className={`pill${state.partition === pt ? ' active' : ''}`}
-            onClick={() => setFilter('partition', pt)}
-          >
-            {pt}
-          </button>
-        ))}
-      </div>
       <div className="stype-row">
         {typeTabs.map((t) => (
           <button
@@ -246,6 +231,23 @@ export default function SearchPage() {
           更多筛选
           <ChevronDownIcon />
         </button>
+      </div>
+      {/* 分区胶囊（复用相册页 pill 样式，默认全部=常规∪COS，2026-09-04 用户拍板）：
+          全部=includeCos、常规=不传（DOMAIN_RULES §6 隔离口径，主动切换才排除）、COS=cosOnly。
+          位置在排序行之后——首两行是对齐锚（HANDOVER_UI §4.5 规则 3：类型行中心↔首页项中心、
+          排序行胶囊中心↔相册项中心），上方插行会把两行推离侧栏锚位；横向 24px 贴线（规则 1），
+          行距交给 .page gap 不加额外 padding */}
+      <div className="pill-row" role="group" aria-label="内容分区" style={{ padding: '0 24px' }}>
+        {PARTITION_OPTIONS.map((pt) => (
+          <button
+            key={pt}
+            type="button"
+            className={`pill${state.partition === pt ? ' active' : ''}`}
+            onClick={() => setFilter('partition', pt)}
+          >
+            {pt}
+          </button>
+        ))}
       </div>
       <SearchFilters
         hidden={!panelOpen}

@@ -881,12 +881,18 @@ body {
   display: flex;
   align-items: center;
   gap: 36px;
-  /* 负 margin 上提：使类型按钮中心与侧栏「首页」项中心(94)同高（静止态实测定值；
-     旧 -20px 系 page-in 动画进行中测得的假值，动画 translateY 4px 会污染切换瞬间实测） */
-  margin-top: -14.9px;
+  /* 负 margin 上提：使类型按钮中心与侧栏「首页」项中心同高（静止态实测定值；
+     -17.5px = 2026-09-04 重校——stype-count 徽标加入后行高增至 48.9px，旧 -14.9px
+     偏 +2.6px；窄屏溢出兜底 overflow-x，配合按钮 nowrap 防压缩换行破坏行高） */
+  margin-top: -17.5px;
   padding: 2px 24px 0;
   border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  /* 窄屏徽标全渲染后仍会差几十 px（可用 ~297px vs 需求 ~319px），横向滚动兜底；
+     滚动条必须视觉隐藏——否则占 ~15px 高度把下方排序行推离「相册」锚位 */
+  scrollbar-width: none;
 }
+.stype-row::-webkit-scrollbar { display: none; }
 .stype {
   position: relative;
   display: flex;
@@ -895,6 +901,10 @@ body {
   font-size: 15px;
   color: var(--text-main);
   padding: 10px 2px 12px;
+  /* 窄屏空间不足时 flex 默认压缩会把文字挤成竖排、行高暴涨（实测 73.7px），
+     行中心随之偏离侧栏锚位——文字禁换行 + 按钮不压缩（排序行两钮同理） */
+  white-space: nowrap;
+  flex: none;
 }
 .stype:hover { color: var(--accent-deep); }
 .stype.active { color: var(--qm-primary); font-weight: 600; }
@@ -927,11 +937,13 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  /* 上内边距 2px：排序胶囊中心与侧栏「相册」项中心(152)同高（实测定值） */
-  padding: 2px 24px 0;
+  /* 排序胶囊中心与侧栏「相册」项中心同高（静止态实测定值；2026-09-04 随类型行
+     重校连锁：padding 2px+无 margin → margin 1.5px，实测偏差 +0.5px） */
+  margin-top: 1.5px;
+  padding: 0 24px;
 }
 .s-sort { display: flex; align-items: center; gap: 6px; }
-.sort-pill { padding: 8px 16px; border-radius: 8px; font-size: 14px; color: var(--text-main); }
+.sort-pill { padding: 8px 16px; border-radius: 8px; font-size: 14px; color: var(--text-main); white-space: nowrap; flex: none; }
 .sort-pill:hover { color: var(--accent-deep); }
 .sort-pill.active {
   background: color-mix(in oklab, var(--qm-primary) 10%, transparent);
@@ -947,10 +959,20 @@ body {
   border-radius: 8px;
   font-size: 14px;
   color: var(--text-main);
+  white-space: nowrap;
+  flex: none;
 }
 .more-filter svg { width: 14px; height: 14px; transition: transform 0.15s; }
 .more-filter.open svg { transform: rotate(180deg); }
 .more-filter:hover { color: var(--accent-deep); border-color: var(--qm-primary); }
+
+/* 窄屏（≤499px，手机/应用内浏览器）：四个类型 tab+徽标加 36px 间距一行放不下
+   （内容需求 ~385px > 可用 ~297px），gap 收缩后实测 474px 视口溢出归零；
+   更窄由 .stype-row 的 overflow-x 横向滚动兜底（按钮 nowrap 不压缩，行高与
+   对齐不受影响）。宽屏保持 36px 宽间距视觉不变。 */
+@media (max-width: 499px) {
+  .stype-row { gap: 6px; }
+}
 
 .search-filters {
   /* 左右边缘与类型行/工具栏/结果网格同线（内容区 24px 内缩线），不留额外缩进 */
