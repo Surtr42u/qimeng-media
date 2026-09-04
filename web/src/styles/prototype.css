@@ -65,6 +65,9 @@
   --codec-warn-text: #b45309;
   --codec-warn-bg-dark: #4a3208;
   --codec-warn-text-dark: #fbbf24;
+  /* W-2 确认弹窗（ConfirmDialog）：遮罩与面板阴影（新用途新语义，不与既有同值 token 合并） */
+  --overlay-bg: rgba(15, 15, 15, .45); /* 弹窗遮罩 */
+  --dialog-shadow: 0 8px 28px rgba(0, 0, 0, .16); /* 弹窗面板阴影（暗色覆盖值见 .dark） */
   --sidebar-w: 64px; /* 窄栏宽度，.sidebar 与 .main 联动 */
   --header-h: 75px;
   --font: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif;
@@ -82,6 +85,8 @@
   --hover-bg: #1f1f1f;
   --elev: #26262a; /* 深色下表层面（占位封面 / 输入框），与 .pop-chip 共用 */
   --border: #2a2a2a;
+  --overlay-bg: rgba(0, 0, 0, .6); /* W-2 弹窗遮罩暗色加深 */
+  --dialog-shadow: 0 8px 28px rgba(0, 0, 0, .5); /* W-2 弹窗面板阴影暗色值 */
 }
 
 /* 深色下少量硬编码浅色背景的覆盖 */
@@ -1147,3 +1152,51 @@ body {
 /* 队列状态列：失败原因/成功态的小字（复用既有 --danger/--ok token，无新颜色） */
 .upload-err { margin-top: 2px; font-size: 12px; color: var(--danger); }
 .upload-done { color: var(--ok); }
+
+/* ===== W-2 确认弹窗（components/ui/confirm-dialog.tsx，radix AlertDialog 封装）=====
+   样式全走既有 token（§5.8 口径，本段零颜色字面量）；z-index 高于悬浮刷新(40)
+   与顶栏搜索面板(30)，弹窗置顶 */
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay-bg);
+  z-index: 50;
+}
+.confirm-panel {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(360px, calc(100vw - 48px));
+  padding: 20px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 14px; /* 与 settings-card 同圆角，卡片族节奏 */
+  box-shadow: var(--dialog-shadow);
+  z-index: 51;
+}
+.dark .confirm-panel { background: var(--elev); }
+.confirm-title { font-size: 15px; font-weight: 600; color: var(--text-main); }
+.confirm-desc {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-sub);
+  white-space: pre-line; /* 兼容原 window.confirm 文案中的 \n */
+}
+.confirm-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+.confirm-btn {
+  padding: 7px 18px;
+  border-radius: 999px; /* 胶囊按钮，与 .pill/.save-btn 同款 */
+  font-size: 13px;
+  font-weight: 500;
+}
+.confirm-btn:focus-visible { outline: 2px solid var(--qm-primary); outline-offset: 2px; }
+.confirm-btn--cancel { background: var(--hover-bg); color: var(--text-mid); }
+.confirm-btn--cancel:hover { color: var(--text-main); }
+.confirm-btn--primary { background: var(--qm-primary); color: var(--invert); }
+.confirm-btn--primary:hover { filter: brightness(1.08); } /* hover 提亮，与 .save-btn 同款 */
+/* danger（物理删除/清空类，冻结语义）：深色强调非红色——文本主色作底、页面底色作字，
+   浅色=黑底白字，深色模式随 token 自动反转为白底黑字（深色页面下最高对比强调） */
+.confirm-btn--danger { background: var(--text-main); color: var(--bg); }
+.confirm-btn--danger:hover { filter: brightness(1.08); }

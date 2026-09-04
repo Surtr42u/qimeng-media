@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 import { LOCALE_ZH } from '@/lib/constants'
 import { DirTreeNodes } from '@/components/manage/DirTree'
 import { UploadCard } from '@/components/manage/UploadCard'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import {
   useDeleteLibrary, useDirTree, useLibraries, useRegisterLibrary, useScanLibrary, useSetLibraryEnabled,
 } from '@/hooks/use-libraries'
@@ -190,6 +191,8 @@ export default function LibraryManagePage() {
   const [name, setName] = useState('')
   const [rootPath, setRootPath] = useState('')
   const [kind, setKind] = useState<'normal' | 'cos'>('normal')
+  // W-2：删库二次确认弹窗待确认目标（非 danger——索引清除，磁盘文件不受影响）
+  const [deleteTarget, setDeleteTarget] = useState<Library | null>(null)
 
   const submitRegister = (e: FormEvent) => {
     e.preventDefault()
@@ -221,8 +224,14 @@ export default function LibraryManagePage() {
   }
 
   const remove = (lib: Library): void => {
-    // 删除库为低频破坏性管理操作：confirm 二次确认（原型弹窗组件阶段 B 补）
-    if (!window.confirm(`删除库「${lib.name}」？\n该库 ${lib.fileCount ?? 0} 个文件的索引将被清除，磁盘文件不受影响。`)) return
+    // 删除库为低频破坏性管理操作：W-2 ConfirmDialog 原型风格二次确认（索引清除、磁盘文件不受影响）
+    setDeleteTarget(lib)
+  }
+
+  const confirmRemove = (): void => {
+    const lib = deleteTarget
+    setDeleteTarget(null)
+    if (!lib) return
     deleteLib.mutate(lib.id ?? '', {
       onSuccess: () => toast.success(`「${lib.name}」已删除`),
       onError: (err) => toast.error(`删除失败：${err instanceof Error ? err.message : String(err)}`),
@@ -322,6 +331,16 @@ export default function LibraryManagePage() {
       <DirBrowser libraries={libraries} />
       <UploadCard libraries={libraries} />
       <TxtAuthorImportCard />
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title={`删除库「${deleteTarget?.name ?? ''}」？`}
+        description={`该库 ${deleteTarget?.fileCount ?? 0} 个文件的索引将被清除，磁盘文件不受影响。`}
+        confirmText="删除"
+        cancelText="取消"
+        onConfirm={confirmRemove}
+        onOpenChange={(next) => { if (!next) setDeleteTarget(null) }}
+      />
     </div>
   )
 }
