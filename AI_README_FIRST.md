@@ -60,7 +60,7 @@
 
 - **Go（server）**：标准 Go 项目布局；错误必须处理（禁止 `_ =`）；并发用 `errgroup`；日志用 `slog` 结构化输出；每个 `internal/` 包有包注释说明职责。
 - **TypeScript（web）**：严格模式；组件只做渲染，数据获取一律走 TanStack Query hooks；样式只允许用设计 token（见 `docs/adr/0008`），禁止硬编码颜色。
-- **Kotlin（android）**：View/XML + ViewBinding + Fragment 单 Activity + 共享 ViewModel（ADR-0013 旧 UI 照搬路线，不引入 Compose/Hilt）；UI 不碰网络层，一律走生成的 SDK + Repository 网络实现。
+- **Kotlin（android）**：Compose(Material 3) + Hilt + 多模块（ADR-0014，Now in Android 范式：feature→core 单向依赖）；UI 不碰网络层，一律走生成的 SDK + Repository 层；服务器地址只经 ServerConfigDataSource 单点流转（ADR-0015 单机形态预留）。
 - **通用**：中文注释解释"为什么"而不是"做什么"；方法超过一屏要拆；禁止复制粘贴相似逻辑（抽共享函数）。
 
 ## 代码卫生约束（硬编码 / 重复 / 调度）
@@ -86,7 +86,7 @@
 ## 禁止行为
 
 - 禁止跳过文档直接写代码。
-- 禁止把旧项目（QimengMedia Android 版）的**单机生态实现**搬入本项目（scan/ScanUseCase/AutoSyncUseCase/BackupManager/本地缩略图解码管线/旧 repository 实现，禁搬清单见 ADR-0013）；M4 App 端 UI 层按 ADR-0013 走「旧 UI 照搬 + 数据层网络化」，算法不在客户端复算。
+- 禁止把旧项目（QimengMedia Android 版）的实现代码搬入本项目——M4 App 端按 ADR-0014 走 Compose 重建（交互规格照搬 GUIDE_UI，实现新写；复杂自绘控件 AndroidView 桥接除外，清单入交付报告）；算法已在服务端 M3 落地，客户端不复算。
 - 禁止引入 `docs/adr/` 未记录的新框架/大依赖。
 - 禁止物理删除媒体文件（删除 = 回收站）。
 - 禁止在公网暴露端口（远程访问只走隧道，见 `docs/SECURITY.md`）。

@@ -1,27 +1,24 @@
-# android/ — Android 客户端（M4 · 旧 UI 照搬路线，ADR-0013）
+# android/ — Android 客户端（M4 · Compose 重建路线，ADR-0014）
 
-> M4 里程碑在此开发。动手前必读：`../AI_README_FIRST.md`、`../docs/adr/0008`、`../docs/adr/0013`、`../docs/HANDOVER_APP.md`（批次任务书）。
+> M4 里程碑在此开发。动手前必读：`../AI_README_FIRST.md`、`../docs/adr/0008`、`../docs/adr/0014`（技术路线）、`../docs/adr/0015`（单机形态预留）、`../docs/HANDOVER_APP.md`（批次任务书）。
 
-## 技术栈（2026-09-04 定论，ADR-0013：旧 UI 照搬，非 Compose 重建）
+## 技术栈（2026-09-04 二次定论，ADR-0014：先进优先，Compose 全新实现）
 
-对齐旧项目（QimengMedia）实测技术栈，照搬为主：
-
-- Kotlin + View/XML + ViewBinding + Fragment 单 Activity（旧 UI 资产整体照搬：15 Fragment / 19 XML / 5 自定义控件）
-- 手写 AppContainer DI（旧项目同款，不引入 Hilt）
-- Coil 3（加载服务端签名直链——缩略图/原图；本地解码管线不搬）
-- Media3/ExoPlayer + BiliPlayerView（旧项目 837 行自写播放控件整体照搬：B 站式手势/时间轴标签）
-- Room（仅作客户端缓存与事件队列，非数据源；服务端才是唯一事实）
-- make sdk 生成的 Kotlin 客户端（`media.qimeng.sdk`）
-- 包名/namespace/applicationId 沿用旧项目 `com.qimeng.media`（照搬文件零包改动）
+- Kotlin + Jetpack Compose（Material 3）+ Hilt + Coroutine/Flow + Navigation Compose
+- Coil 3（签名直链：缩略图/原图）、Media3/ExoPlayer（直链播放；BiliPlayerView 手势语义 Compose 复刻或 AndroidView 桥接）
+- Room（客户端缓存/事件队列，非数据源）+ DataStore（登录/配置）+ WorkManager（队列）
+- make sdk 生成的 Kotlin 客户端（`media.qimeng.sdk`）；namespace `media.qimeng.app`；minSdk 26
+- 架构：Now in Android 范式多模块（`:app` + `:core:model/network/data/ui` + `:feature:*`），依赖单向 feature→core
 
 ## 职责边界（薄客户端纪律）
 
-- 列表/搜索/推荐/统计：调 API，客户端不复制任何算法——服务端 M3 已实现全部领域算法；`MediaBrowserLogic` 的 recommend/rank/applyFilter **不搬**，只搬纯展示 helper（formatSize/dateLabel 分组等）
+- 列表/搜索/推荐/统计：调 API，客户端不复制任何算法——服务端 M3 已实现全部领域算法
 - 图片/视频：签名直链交给 Coil / ExoPlayer，客户端不做解码管线
-- 行为上报：浏览/点赞/收藏事件本地排队，联网补传（离线不丢）
+- 行为上报：事件本地排队，联网补传（离线不丢）
 - 上传（核心功能）：系统分享接收 + 文件选择 + 目录浏览 + 队列进度——"手机采集端"主通道
 - 本地持久化三类：登录配置、可设上限的媒体缓存（LRU）、事件队列
+- 交互规格唯一来源：旧项目 `<旧项目目录>\docs\GUIDE_UI.md`——只继承交互语义，实现代码全部 Compose 新写（禁搬旧 Kotlin；复杂自绘控件允许 AndroidView 桥接，清单入交付报告）
 
-## 禁搬清单（单机生态，ADR-0013）
+## 单机形态预留（ADR-0015，M6 实施）
 
-旧项目以下代码禁止搬入，新实现一律走网络 SDK：`scan/` 全部、`domain/ScanUseCase`、`domain/AutoSyncUseCase`（本地自动扫描）、`backup/BackupManager`、`core/` 本地缩略图解码管线（ThumbnailCache / ThumbnailLoader / LargeImageDecoder / SpngDecoder）、`data/repository/DefaultLocalMediaRepository` 旧实现。对应 UI 页（数据备份/数据管理/扫描设置项）不搬。
+服务器地址只经 `ServerConfigDataSource`（M4-1）单点流转，支持 localhost——M6 单机形态（Go 服务端内嵌手机）时 UI 零改动切换。
