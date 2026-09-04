@@ -20,8 +20,8 @@
   --border: #e3e5e7;
   --bg: #ffffff;
   /* ===== 散落字面量收敛（2026-09-04）：原规则体内硬编码颜色等值搬入 token（视觉零变化）。
-     命名带 -dark 后缀 = .dark 覆盖规则专用值：覆盖规则保留原位不动，不改为 .dark 变量重定义
-     （避免删改既有规则结构）；同值不同语义不合并（如 codec-warn 与 log-badge 各自命名） ===== */
+     深色专属值统一放 .dark 块内覆盖定义（2026-09-05 拍板统一写法，原 -dark 后缀变量
+     入 :root 的写法退役）；同值不同语义不合并（如 codec-warn 与 log-badge 各自命名） ===== */
   /* 封面 / 舞台底面与遮罩 */
   --cover-placeholder: #f1f2f3; /* 卡片占位封面浅底（深色由 .dark .card--cover 覆盖为 --elev） */
   --stage-bg: #000; /* 资产详情媒体舞台黑底 */
@@ -32,20 +32,15 @@
   /* 交互态 / 滚动条 */
   --danger: #ff4d4f; /* 窗口关闭按钮 hover 危险红 */
   --pop-chip-hover-bg: #eaebed; /* 搜索面板历史胶囊 hover 底 */
-  --pop-chip-hover-bg-dark: #2f2f34; /* 同上，暗色覆盖值 */
   --scrollbar-thumb: #dcdee1; /* 内容区滚动条滑块 */
   /* 图表 / 图标 */
   --trend-line-sub: #b3b9c7; /* 趋势图副线（虚线对比序列） */
-  --trend-line-sub-dark: #4a4f5a; /* 同上，暗色覆盖值 */
   --entry-icon: #2563eb; /* 维护入口卡图标蓝 */
-  /* 悬浮刷新按钮（fab）三态阴影与暗色底 */
+  /* 悬浮刷新按钮（fab）三态阴影 */
   --fab-shadow: 0 4px 16px rgba(0, 0, 0, 0.12), 0 1px 4px rgba(0, 0, 0, 0.08);
   --fab-shadow-hover: 0 6px 20px rgba(0, 0, 0, 0.16), 0 2px 6px rgba(0, 0, 0, 0.1);
-  --fab-shadow-dark: 0 4px 16px rgba(0, 0, 0, 0.5);
-  --fab-bg-dark: #26262a; /* 暗色 FAB 底（与 --elev 同值但语义独立，不合并） */
-  /* 搜索面板阴影 / 暗色搜索占位 */
+  /* 搜索面板阴影 */
   --search-pop-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
-  --search-placeholder-dark: #5a5f66;
   /* 日志徽章（浅色） */
   --log-warn-bg: #fef3c7;
   --log-warn-text: #b45309;
@@ -53,18 +48,9 @@
   --log-info-text: #1d4ed8;
   --log-err-bg: #fee2e2;
   --log-err-text: #b91c1c;
-  /* 日志徽章（暗色覆盖值） */
-  --log-warn-bg-dark: #4a3208;
-  --log-warn-text-dark: #fbbf24;
-  --log-info-bg-dark: #102a4a;
-  --log-info-text-dark: #93c5fd;
-  --log-err-bg-dark: #4a1010;
-  --log-err-text-dark: #fca5a5;
   /* 编码兼容提示条（与日志徽章同值但独立语义，不合并） */
   --codec-warn-bg: #fef3c7;
   --codec-warn-text: #b45309;
-  --codec-warn-bg-dark: #4a3208;
-  --codec-warn-text-dark: #fbbf24;
   /* W-2 确认弹窗（ConfirmDialog）：遮罩与面板阴影（新用途新语义，不与既有同值 token 合并） */
   --overlay-bg: rgba(15, 15, 15, .45); /* 弹窗遮罩 */
   --dialog-shadow: 0 8px 28px rgba(0, 0, 0, .16); /* 弹窗面板阴影（暗色覆盖值见 .dark） */
@@ -73,7 +59,8 @@
   --font: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif;
 }
 
-/* 深色模式（明暗主题按钮切换）：主色与整体背景换深色 */
+/* 深色模式（明暗主题按钮切换）：主色与整体背景换深色；
+   深色专属 token 统一在本块内覆盖定义（2026-09-05 拍板统一写法） */
 .dark {
   --qm-primary: oklch(0.836 0.074 258.58);
   --accent-deep: oklch(0.75 0.09 258);
@@ -87,15 +74,29 @@
   --border: #2a2a2a;
   --overlay-bg: rgba(0, 0, 0, .6); /* W-2 弹窗遮罩暗色加深 */
   --dialog-shadow: 0 8px 28px rgba(0, 0, 0, .5); /* W-2 弹窗面板阴影暗色值 */
+  /* —— 散落字面量收敛（2026-09-04）的深色覆盖值，2026-09-05 自 -dark 后缀变量统一搬入本块 —— */
+  --pop-chip-hover-bg: #2f2f34; /* 搜索面板历史胶囊 hover 底 */
+  --trend-line-sub: #4a4f5a; /* 趋势图副线（虚线对比序列） */
+  --fab-shadow: 0 4px 16px rgba(0, 0, 0, 0.5); /* FAB 阴影暗色加深 */
+  --fab-bg: #26262a; /* FAB 底（与 --elev 同值但语义独立，不合并） */
+  --search-placeholder: #5a5f66; /* 搜索占位文字 */
+  --log-warn-bg: #4a3208;
+  --log-warn-text: #fbbf24;
+  --log-info-bg: #102a4a;
+  --log-info-text: #93c5fd;
+  --log-err-bg: #4a1010;
+  --log-err-text: #fca5a5;
+  --codec-warn-bg: #4a3208;
+  --codec-warn-text: #fbbf24;
 }
 
 /* 深色下少量硬编码浅色背景的覆盖 */
 .dark .card--cover { background: var(--elev); }
 .dark .pop-chip { background: var(--elev); }
-.dark .pop-chip:hover { background: var(--pop-chip-hover-bg-dark); }
+.dark .pop-chip:hover { background: var(--pop-chip-hover-bg); }
 .dark .sidebar--back:hover, .dark .settings-item:hover, .dark .win-btn:hover { background: var(--hover-bg); }
 .dark .search input { background: var(--elev); }
-.dark .search input::placeholder { color: var(--search-placeholder-dark); }
+.dark .search input::placeholder { color: var(--search-placeholder); }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 /* 上行与 Tailwind preflight（@layer base）等价，重复无害；下方 button reset 收窄到 .layout（无层级规则会压过 shadcn utilities）；--border/--bg 同名变量浅色值与 immich 主题一致，深色边框由原型层接管（有意行为） */
@@ -396,7 +397,7 @@ body {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
-.dark .refresh-fab { background: var(--fab-bg-dark); box-shadow: var(--fab-shadow-dark); }
+.dark .refresh-fab { background: var(--fab-bg); box-shadow: var(--fab-shadow); }
 
 .grid {
   display: grid;
@@ -509,7 +510,7 @@ body {
 .trend-svg { width: 100%; height: 220px; margin-top: 12px; }
 .trend-svg .line-a { fill: none; stroke: var(--qm-primary); stroke-width: 2; }
 .trend-svg .line-b { fill: none; stroke: var(--trend-line-sub); stroke-width: 2; stroke-dasharray: 4 4; }
-.dark .trend-svg .line-b { stroke: var(--trend-line-sub-dark); }
+.dark .trend-svg .line-b { stroke: var(--trend-line-sub); }
 
 /* 双环图 */
 .donut-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
@@ -648,9 +649,9 @@ body {
 .log-badge.warn { background: var(--log-warn-bg); color: var(--log-warn-text); }
 .log-badge.info { background: var(--log-info-bg); color: var(--log-info-text); }
 .log-badge.err { background: var(--log-err-bg); color: var(--log-err-text); }
-.dark .log-badge.warn { background: var(--log-warn-bg-dark); color: var(--log-warn-text-dark); }
-.dark .log-badge.info { background: var(--log-info-bg-dark); color: var(--log-info-text-dark); }
-.dark .log-badge.err { background: var(--log-err-bg-dark); color: var(--log-err-text-dark); }
+.dark .log-badge.warn { background: var(--log-warn-bg); color: var(--log-warn-text); }
+.dark .log-badge.info { background: var(--log-info-bg); color: var(--log-info-text); }
+.dark .log-badge.err { background: var(--log-err-bg); color: var(--log-err-text); }
 
 /* 关注作者（我的页） */
 .follow-list { display: flex; flex-direction: column; gap: 10px; }
@@ -1111,7 +1112,7 @@ body {
   color: var(--codec-warn-text);
   font-size: 13px;
 }
-.dark .codec-warn { background: var(--codec-warn-bg-dark); color: var(--codec-warn-text-dark); }
+.dark .codec-warn { background: var(--codec-warn-bg); color: var(--codec-warn-text); }
 
 /* ===== 相册时间分区组（2026-09-03，原型 #5：今天/昨天/周X/yyyy-MM-dd 分组）===== */
 .album-group { margin-bottom: 18px; }

@@ -10,6 +10,21 @@
 
 ---
 
+## 拍板批五项修复：SSE 跨端刷新/上传目标快照+真串行/拖拽 seek/倍速文案/深色 token 统一（2026-09-05 第三十笔）
+
+执行 AI：GLM-5.3（主代理，ZCode；用户四项拍板后单会话直修，隔离实例全量实机验收）
+
+HANDOVER_UI §5 第 9~12 条记账项经用户逐项拍板（SSE 修/上传快照修/小毛病全修/详情页发现项 M4 后回补），本轮全部落地：
+
+- **SSE 跨端失效键（§5 第 9 条）**：新增 `web/src/lib/query-keys.ts` 查询键唯一来源（根键常量 + 子键 `[...根键, '子族名', …]` 构造纪律——TanStack 前缀匹配按逐元素相等，子键另起 `'api/v1/assets/xxx'` 首段即脱离根键覆盖是原缺陷根因，口径入模块注释）；SseBridge 失效键全部换根键常量（library.changed → 资产/库/目录/标签/作者/出处/回收站；upload.done → 资产/库/目录/推荐流）；资产族子键 list/total/detail/facets/timeline-tags 在 use-assets/use-progress 重挂根键；use-libraries/use-tags/use-trash/use-authors 键定义收敛进 query-keys。实测：web 首页停留，curl 模拟另一端上传 → 页面未刷新卡片 3→4 自动出现（修复前整体是断的）。
+- **上传入队快照目标 + 队列表目标列（§5 第 10 条）**：`use-upload` 入队时刻快照 `targetLibraryId`/`targetDir`（渲染契约字段即发送依据，消除双写——执行中自查发现首版 `QueueEntry.target` 与渲染字段分离致目标列显示"—"，当即合并修复重建）；UploadCard 队列表新增「目标」列（库名/库内路径，库不可查回落 ID）。实测：选库 A 入队 → 「上传中 0%」窗口内切库 B → 落库 A、库 B 零资产、目标列恒显 `SmokeLibA/库根`。
+- **上传全队列真串行（§5 第 11 条①）**：drain(批) 模型改单泵（`drainingRef`），后入队批次只入列等待顺次拾取，任意时刻至多一路传输。实测：两批 12MB 文件（批 2 在批 1 传输中入队）performance 资源计时区间零重叠。
+- **拖拽 seek zoom 归一（§5 第 12 条①）**：video-player 捕获阶段拦 `mousedown` 接管官方拖拽臂（官方标志被拦不再起臂）+ document `mousemove` 视觉坐标 seek（与已验证的点击修复共用归一函数；悬停时间预览走官方自有 mousemove 不受影响）。实测：拖到视觉 70% 落点 83.9s/期望 84.0（带偏置应为 92.4）；点击回归 25% 落 29.9s/期望 30.0。
+- **倍速菜单文案修正（§5 第 12 条②）**：官方标签生成 `toFixed(1)` 致 0.75/1.25 显示 0.8/1.3——`art.setting.update({name:'playbackRate', html})` 按 name 合并替换内建条目只换标签文本（官方 update API 合并既有 option；选档/高亮逻辑读 `data-value` 不依赖文案，原样生效）。实测 0.75/1.25 正确显示、1 显「正常」。§5 第 12 条③（全局 zoom 与坐标类库系统性冲突）保留待评估。
+- **深色 token 写法统一（§5 第 11 条② / 第 8 条口径更新）**：13 个 `-dark` 后缀变量自 `:root` 等值迁入 `.dark` 块并改同名覆盖（与 `--bg/--elev` 同制），引用规则同步改基名——纯定义点搬移 + 引用改名，浅/深双态零视觉变化；`-dark` 口径自 HANDOVER_UI 第 8 条退役。
+- **详情页发现项拍板落档**：图片查看器/详情互动行/批次导航 → 用户拍板「M4 后回补 Web，不阻塞 M4 启动」（HANDOVER_UI §5.9 末尾）。
+- **验收**：`npx tsc --noEmit -p web/tsconfig.app.json` 0 错、`npm run build` 成功、`npm run lint` 15 warnings 0 errors（存量分布不变，改动文件 0 告警）；隔离实例（18420+临时数据目录，dev-login，两库 13 资产）全项实机走查，截图 %TEMP%/qimeng-decision-shots/（上传队列表含目标列 + 播放器 seek 后 00:29/02:00）。并行观测：本批执行期间磁盘出现 M4-0 Android 批次并发 WIP（server/android/CI 等）——本 commit 严格只含本批文件（web 12 文件 + HANDOVER_UI/CHANGELOG），未触碰他人 WIP；HANDOVER.md 待办让位并行批次后自行更新。
+
 ## W-3 一致性复审：文档声明逐项核验 + play/dwell 打点缺口记账（2026-09-05 第二十九笔）
 
 执行 AI：GLM-5.3（主代理，ZCode）

@@ -7,8 +7,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { getApiV1Tags, postApiV1Tags } from '@/api/generated'
 import { unwrapSdkResult } from '@/lib/api-client'
-
-export const TAGS_QUERY_KEY = ['api/v1/tags'] as const
+import { TAGS_QUERY_KEY } from '@/lib/query-keys'
 
 /** 标签池全量列表（名称/文件数） */
 export function useTags() {

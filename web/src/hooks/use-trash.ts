@@ -11,8 +11,7 @@ import {
   postApiV1TrashByTrashIdRestore,
 } from '@/api/generated'
 import { unwrapSdkResult } from '@/lib/api-client'
-
-export const TRASH_QUERY_KEY = ['api/v1/trash'] as const
+import { TRASH_QUERY_KEY } from '@/lib/query-keys'
 
 /** 回收站列表（含原路径/删除时间/大小） */
 export function useTrash() {

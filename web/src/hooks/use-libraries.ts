@@ -13,11 +13,7 @@ import {
   putApiV1LibrariesByLibraryIdEnabled,
 } from '@/api/generated'
 import { unwrapSdkResult } from '@/lib/api-client'
-
-export const LIBRARIES_QUERY_KEY = ['api/v1/libraries'] as const
-
-/** 目录树查询键根（前缀失效用：use-upload 上传成功后刷各库目录树；useDirTree 在此之上追加 libraryId） */
-export const DIRS_QUERY_KEY = ['api/v1/dirs'] as const
+import { DIRS_QUERY_KEY, LIBRARIES_QUERY_KEY } from '@/lib/query-keys'
 
 /** 库列表（含文件计数与扫描态） */
 export function useLibraries() {

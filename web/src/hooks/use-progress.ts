@@ -14,6 +14,7 @@ import {
   type TimelineTag,
 } from '@/api/generated'
 import { unwrapSdkResult } from '@/lib/api-client'
+import { ASSETS_QUERY_KEY } from '@/lib/query-keys'
 
 /**
  * 进度心跳间隔（毫秒）：5s——严于协议建议值 10s（api/openapi.yaml
@@ -28,7 +29,7 @@ export type AssetTimelineTag = TimelineTag
 /** 时间轴标签列表（按时间升序——进度条打点渲染与回看跳转依赖稳定时间序） */
 export function useTimelineTags(assetId?: string) {
   return useQuery({
-    queryKey: ['api/v1/assets/timeline-tags', assetId],
+    queryKey: [...ASSETS_QUERY_KEY, 'timeline-tags', assetId],
     queryFn: () =>
       unwrapSdkResult(getApiV1AssetsByAssetIdTimelineTags({ path: { assetId: assetId! } })),
     enabled: !!assetId,

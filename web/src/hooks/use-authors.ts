@@ -18,9 +18,7 @@ import {
   putApiV1AuthorsByAuthorIdFollow,
 } from '@/api/generated'
 import { unwrapSdkResult } from '@/lib/api-client'
-
-export const AUTHORS_QUERY_KEY = ['api/v1/authors'] as const
-export const TXT_FILES_QUERY_KEY = ['api/v1/authors/import-txt'] as const
+import { AUTHORS_QUERY_KEY, TXT_FILES_QUERY_KEY } from '@/lib/query-keys'
 
 /** 作者全量列表（含文件数/关注态/浏览数） */
 export function useAuthors() {

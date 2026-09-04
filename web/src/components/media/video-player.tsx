@@ -41,30 +41,65 @@ function readPrimaryColor(): string {
 }
 
 /**
- * 进度条点击 seek 归一：项目全局 `html { zoom: 1.1 }`（prototype.css，原型视口
- * 口径）下，ArtPlayer getPosFromEvent 以视觉 px（event.clientX）÷ 布局 px
- * （$progress.clientWidth）混算，seek 目标会系统性放大 ×zoom（实测点 45s 打点
- * 落在 49.5s，真实用户同样命中）。捕获阶段改用纯视觉坐标（clientX 与
- * getBoundingClientRect 同参照系）自行求目标时刻，再走官方 seek 写入。
+ * 进度条点击/拖拽 seek 归一：项目全局 `html { zoom: 1.1 }`（prototype.css，
+ * 原型视口口径）下，ArtPlayer 官方坐标换算（getPosFromEvent：event.clientX
+ * 视觉 px ÷ $progress.clientWidth 布局 px 混算）会把 seek 目标系统性放大
+ * ×zoom——点击实测点 45s 落 49.5s，拖拽同理（官方 mousedown 只置内部拖拽
+ * 标志、document mousemove 才按混算坐标 seek，已核对 5.4.0 打包源码）。
+ *
+ * 官方换算函数是模块内部实现无法补丁，故在事件层接管：捕获阶段拦下进度条
+ * 的 click/mousedown（官方 biased 处理不再执行），改用纯视觉坐标（clientX
+ * 与 getBoundingClientRect 同参照系）自行求目标时刻走官方 seek 写入；拖拽
+ * 期间在 document 层按自家标志补 mousemove seek（官方标志被拦永不起臂）。
+ * 悬停时间预览走 progress 元素自己的 mousemove，不受拦截影响。
  */
 function attachProgressSeekFix(container: HTMLElement, art: Artplayer): () => void {
-  const onClickCapture = (event: MouseEvent) => {
-    const target = event.target
-    if (!(target instanceof Element)) return
-    if (!target.closest('.art-control-progress')) return // 只接管进度条点击，其余控件照常
-    if (target.closest('.art-progress-indicator')) return // 与官方一致：指示器点击不 seek
+  let dragging = false
+
+  /** 视觉坐标 → seek（clamp 到 0..duration，拖到进度条外按端点处理，同官方语义） */
+  const seekToClientX = (clientX: number): void => {
     const $progress = container.querySelector<HTMLElement>('.art-control-progress')
     if (!$progress) return
     const rect = $progress.getBoundingClientRect()
     const duration = art.duration
     if (rect.width <= 0 || !Number.isFinite(duration) || duration <= 0) return
-    const fraction = (event.clientX - rect.left) / rect.width
-    if (fraction < 0 || fraction > 1) return
+    const fraction = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width))
     art.seek = fraction * duration
+  }
+
+  const inProgress = (target: EventTarget | null): target is Element =>
+    target instanceof Element && target.closest('.art-control-progress') !== null
+
+  const onClickCapture = (event: MouseEvent) => {
+    if (!inProgress(event.target)) return
+    if ((event.target as Element).closest('.art-progress-indicator')) return // 与官方一致：指示器点击不 seek
+    seekToClientX(event.clientX)
     event.stopPropagation() // 官方缩放偏置版 handler 不再执行
   }
+
+  // 拖拽臂：左键按下进度条（含指示器——它是拖拽手柄）改挂自家标志，官方标志不再启动
+  const onMouseDownCapture = (event: MouseEvent) => {
+    if (event.button !== 0 || !inProgress(event.target)) return
+    dragging = true
+    event.stopPropagation()
+  }
+  const onDocumentMouseMove = (event: MouseEvent) => {
+    if (dragging) seekToClientX(event.clientX)
+  }
+  const onDocumentMouseUp = () => {
+    dragging = false
+  }
+
   container.addEventListener('click', onClickCapture, true)
-  return () => container.removeEventListener('click', onClickCapture, true)
+  container.addEventListener('mousedown', onMouseDownCapture, true)
+  document.addEventListener('mousemove', onDocumentMouseMove)
+  document.addEventListener('mouseup', onDocumentMouseUp)
+  return () => {
+    container.removeEventListener('click', onClickCapture, true)
+    container.removeEventListener('mousedown', onMouseDownCapture, true)
+    document.removeEventListener('mousemove', onDocumentMouseMove)
+    document.removeEventListener('mouseup', onDocumentMouseUp)
+  }
 }
 
 export default function VideoPlayer({
@@ -105,6 +140,16 @@ export default function VideoPlayer({
       playbackRate: true,
       fullscreen: true,
       highlight: initial.highlights,
+    })
+
+    // 倍速菜单文案：官方标签生成用 toFixed(1)，0.75/1.25 显示成「0.8/1.3」
+    // （§5 第 12 条②；档位实际值走 data-value 本就正确）。按 name 合并替换
+    // 内建条目只换标签文本——内建选档/高亮逻辑读 data-value，不依赖文案，原样生效
+    art.setting.update({
+      name: 'playbackRate',
+      html: `${art.i18n.get('Play Speed')}: ${PLAYBACK_RATES.map(
+        (rate) => `<span data-value="${rate}">${rate === 1 ? art.i18n.get('Normal') : rate}</span>`,
+      ).join('')}`,
     })
 
     // 断点续播：元数据就绪后跳到起点（ready = 官方「首次可播」事件）
