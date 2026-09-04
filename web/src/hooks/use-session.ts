@@ -2,12 +2,13 @@
  * 会话与认证 hooks（AuthGate / 登录面板的消费入口）。
  */
 
-import { useCallback, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { postApiV1AuthDevLogin, postApiV1AuthLogin, postApiV1AuthSetup, postApiV1AuthVerify } from '@/api/generated'
 import {
   clearToken as clearStoredToken,
   getToken,
+  onAuthFailed,
   setToken as storeToken,
   subscribeToken,
   unwrapSdkResult,
@@ -47,6 +48,20 @@ export function useAuthState(): {
   const clearToken = useCallback(() => clearStoredToken(), [])
 
   return { token, sessionId, setToken, clearToken }
+}
+
+/**
+ * 订阅全局鉴权失败事件（401/403 广播，AuthGate 据此清 token 回门禁）。
+ * listener 存 ref：调用方传内联箭头（每次渲染都是新引用）也不会反复订阅/解绑。
+ */
+export function useOnAuthFailed(onFailed: () => void): void {
+  // ref 桥接最新闭包：订阅 effect 只跑一次，事件触发时读 ref 拿调用方当前回调
+  const listenerRef = useRef(onFailed)
+  useEffect(() => {
+    listenerRef.current = onFailed
+  })
+  // onAuthFailed 返回解绑函数，正好作为 effect cleanup（卸载即退订）
+  useEffect(() => onAuthFailed(() => listenerRef.current()), [])
 }
 
 /** 首次初始化（设置管理密码）：POST /auth/setup，成功返回一次性 token；409 = 已初始化 */

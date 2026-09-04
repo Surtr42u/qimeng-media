@@ -6,6 +6,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   deleteApiV1LibrariesByLibraryId,
+  getApiV1Dirs,
   getApiV1Libraries,
   postApiV1Libraries,
   postApiV1LibrariesByLibraryIdScan,
@@ -20,6 +21,19 @@ export function useLibraries() {
   return useQuery({
     queryKey: LIBRARIES_QUERY_KEY,
     queryFn: () => unwrapSdkResult(getApiV1Libraries()),
+  })
+}
+
+/**
+ * 目录树：GET /api/v1/dirs（libraryId 协议必填；enabled=false 时挂起不发请求）。
+ * 从 LibraryManagePage 的 DirBrowser 原样搬入——消除全应用唯一一处组件内联
+ * 数据获取（铁律 7 / ADR-0008：组件零请求代码，api-client 只许 hooks 消费）。
+ */
+export function useDirTree(libraryId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ['api/v1/dirs', libraryId],
+    queryFn: () => unwrapSdkResult(getApiV1Dirs({ query: { libraryId } })),
+    enabled,
   })
 }
 

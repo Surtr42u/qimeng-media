@@ -10,6 +10,16 @@
 
 ---
 
+## 质量审查清债（Web 端）：分层纪律收紧 + prototype.css 颜色收敛（2026-09-04 第十二笔）
+
+执行 AI：GLM-5.3-Flash（主代理，ZCode；执行子代理×1 实施 + 主代理独立验收）
+
+- **分层纪律（铁律 7 / ADR-0008 / api-client.ts 自述 import 禁令）**：LibraryManagePage 的 DirBrowser 内联 useQuery+SDK 直调迁入 use-libraries 的 `useDirTree`（全应用唯一不住在 hooks/ 的数据获取清零）；LoginGate 的 setToken 改走 `useAuthState()` 通道；AuthGate 的 401 订阅改走 use-session 新增 `useOnAuthFailed`（latest-ref 模式：调用方传内联箭头也不会反复订阅/解绑）。组件层 `lib/api-client` 引用 grep 清零（lib/hooks 层引用合法保留）。
+- **prototype.css 颜色收敛**（用户拍板：统一掉、不影响 UI）：规则体内 30 处散落颜色字面量（审查定位 22 处 + 全量 grep 新发现 8 处）等值搬入 `:root` token（新增 36 个语义化定义；`-dark` 后缀 = .dark 覆盖规则专用值，覆盖规则保留原位只把值换 var 引用；同值不同语义不强行合并）。值逐字符相同（含 rgba 空格/渐变逗号）、选择器与属性结构零改动——**视觉零变化**。口径已固化进 HANDOVER_UI §5（新增第 8 条）：此后规则体内禁止散落颜色字面量，新颜色一律先定义 token。
+- 门禁：`tsc --noEmit -p tsconfig.app.json` 零错误、`npm run build` 成功（dist 已更新供 8420 托管）、组件层 api-client 引用零命中、prototype.css 规则体散落颜色清零（剩余命中全部在 :root/.dark 定义块内）。
+
+---
+
 ## 质量审查清债（服务端）：assets.go 拆分 + main.go 常量收敛 + 写错误注释（2026-09-04 第十一笔）
 
 执行 AI：GLM-5.3-Flash（主代理，ZCode；审查=研究子代理×3 并行抽查 + 执行子代理×1 实施 + 主代理独立验收）

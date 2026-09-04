@@ -1,7 +1,5 @@
-import { useEffect } from 'react'
 import { Outlet } from 'react-router'
-import { onAuthFailed } from '@/lib/api-client'
-import { useAuthState } from '@/hooks/use-session'
+import { useAuthState, useOnAuthFailed } from '@/hooks/use-session'
 import { LoginGate } from '@/components/auth/LoginGate'
 
 /**
@@ -18,7 +16,8 @@ import { LoginGate } from '@/components/auth/LoginGate'
 export function AuthGate() {
   const { token, clearToken } = useAuthState()
 
-  useEffect(() => onAuthFailed(() => clearToken()), [clearToken])
+  // 订阅细节封装在 useOnAuthFailed（组件不 import api-client，分层纪律）
+  useOnAuthFailed(() => clearToken())
 
   if (!token) return <LoginGate />
   return <Outlet />

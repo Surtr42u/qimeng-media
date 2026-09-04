@@ -3,8 +3,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Copy, KeyRound, ShieldCheck } from 'lucide-react'
-import { useAuthLogin, useAuthSetup, useDevLogin } from '@/hooks/use-session'
-import { setToken } from '@/lib/api-client'
+import { useAuthLogin, useAuthSetup, useAuthState, useDevLogin } from '@/hooks/use-session'
 
 /** 密码最短长度：与 M1 验收页一致（server/internal/httpapi/static/index.html 校验 >= 8） */
 const MIN_PASSWORD_LENGTH = 8
@@ -44,6 +43,8 @@ export function LoginGate() {
   const setup = useAuthSetup()
   const login = useAuthLogin()
   const devLogin = useDevLogin()
+  // token 写入走 hooks 通道（分层纪律：组件不碰数据层底座；token 订阅归 AuthGate）
+  const { setToken } = useAuthState()
 
   // 用户约定（项目未完成前）：先试开发免密通道，命中即直进 UI——服务端
   // auth_dev_mode 未开启时返回 404/401，静默回退正常表单（生产零变化）。

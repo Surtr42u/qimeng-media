@@ -117,6 +117,7 @@ media-ui-prototype/
 5. 铁律 7：UI 组件禁止直接调 API、禁止内嵌业务规则——接数据走 hooks/客户端逻辑层（阶段 A 已遵守：pages 内零 SDK 调用）。
 6. UI 工作另见 `docs/adr/0008`（UI 解耦策略）。
 7. web 端类型检查必须用 `npx tsc --noEmit -p tsconfig.app.json`——根 tsconfig 是 solution-style，裸 `tsc --noEmit` 是假通过。
+8. **prototype.css 颜色 token 口径（2026-09-04 用户拍板：统一收敛、不影响 UI）**：规则体内禁止散落颜色字面量（hex/rgb/hsl/rgba 及含颜色的 shadow/gradient 整值）——新颜色一律先在 `:root` 定义语义化 token 再以 `var()` 引用；`.dark` 专属值用 `-dark` 后缀变量放 `:root`（覆盖规则保留原位，只把值换成 var 引用，勿删改既有规则结构）；平行 token 族（`--accent-*`/`--text-*` 等不带 `--qm-` 前缀）是原型层自有体系，属合法——与 tokens.css 的 shadcn 桥接 `--qm-*` 并存，靠 main.tsx 导入顺序保证原型覆盖。存量 30 处散落字面量已于 2026-09-04 全部等值收敛（视觉零变化，见 CHANGELOG「质量审查清债（Web 端）」条目）；组件层（.tsx/.ts）零硬编码颜色的既有状态继续维持。
 
 ## 6. 工作树现状（2026-09-02 三轮：原型移植 web 重建，接手必读）
 

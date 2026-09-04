@@ -2,15 +2,12 @@ import { useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { toast } from 'sonner'
 import { LOCALE_ZH } from '@/lib/constants'
 import {
-  useDeleteLibrary, useLibraries, useRegisterLibrary, useScanLibrary, useSetLibraryEnabled,
+  useDeleteLibrary, useDirTree, useLibraries, useRegisterLibrary, useScanLibrary, useSetLibraryEnabled,
 } from '@/hooks/use-libraries'
 import {
   useDeleteImportedTxt, useImportAuthorTxt, useRebuildAuthorTxt, useTxtImportedFiles,
 } from '@/hooks/use-authors'
 import type { DirTree, Library } from '@/api/generated'
-import { useQuery } from '@tanstack/react-query'
-import { getApiV1Dirs } from '@/api/generated'
-import { unwrapSdkResult } from '@/lib/api-client'
 
 /**
  * 文件管理页（维护页「文件管理」入口卡 → /app/maintenance/files）。
@@ -18,7 +15,7 @@ import { unwrapSdkResult } from '@/lib/api-client'
  * 添加媒体文件夹）+ 目录浏览 + 作者 TXT 导入卡（= 旧版数据管理「TXT导入
  * 作者」：列表 + 选择 txt 导入 + 删除片段重建关联）。样式复用原型类
  * （log-table/settings-card/pill/rank-card）。
- * 目录浏览依赖生成 SDK getApiV1Dirs（libraryId 必填，协议 /api/v1/dirs）。
+ * 目录浏览走 useDirTree（协议 /api/v1/dirs，libraryId 必填）。
  */
 
 /**
@@ -168,12 +165,8 @@ function DirNode({ node, depth }: { node: DirTree; depth: number }) {
 function DirBrowser({ libraries }: { libraries: Library[] }) {
   const [libId, setLibId] = useState('')
   const enabled = libId !== ''
-  // /dirs 的 libraryId 协议必填：未选库禁用查询（与旧 useDirTree 同纪律）
-  const { data: tree, isFetching } = useQuery({
-    queryKey: ['api/v1/dirs', libId],
-    queryFn: () => unwrapSdkResult(getApiV1Dirs({ query: { libraryId: libId } })),
-    enabled,
-  })
+  // /dirs 的 libraryId 协议必填：未选库 enabled=false 挂起查询（挂起语义见 useDirTree）
+  const { data: tree, isFetching } = useDirTree(libId, enabled)
 
   return (
     <div className="rank-card">
