@@ -1,3 +1,6 @@
+// assets.go：资产列表端点（GET /assets）与浏览侧共享小助手（游标、
+// 可空参数封装、筛选归一、AssetSummary 装配、签名直链、sqlc 标量抹平）。
+// 资产详情端点（GET /assets/{assetId}）拆在 assets_detail.go。
 package httpapi
 
 import (
@@ -5,7 +8,6 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -217,6 +219,66 @@ func splitCharacters(s string) []string {
 	return out
 }
 
+// ---- 列表行装配（Asc/Desc 去重） ----
+
+// listRowView 抹平 sqlc Asc/Desc 两胞胎 Row（同一 SQL 按方向生成两个
+// 字段同名同型的独立结构体），让截断探测与行→AssetSummary 装配只写
+// 一份（代码卫生：禁止复制粘贴）。只搬列表装配用到的字段；SortKey 是
+// sqlc 对动态排序列生成的 interface{} 列（sort_key 恒为 TEXT 非空，
+// 见 toString）。
+type listRowView struct {
+	AssetID    string
+	FileName   string
+	MediaType  string
+	SizeBytes  int64
+	Mtime      string
+	CreatedAt  string
+	Source     sql.NullString
+	IsFavorite bool
+	LikeCount  int64
+	DurationMs sql.NullInt64
+	SortKey    any
+}
+
+// listRowViewFromAsc 两胞胎 Row 的字段搬运，sqlc 固有成本：Asc/Desc 两
+// 结构体字段同名同型却无法用泛型收敛（接口无法约束结构体字段），只能
+// 各写一份逐字段复制。
+func listRowViewFromAsc(r db.ListAssetsFilteredAscRow) listRowView {
+	return listRowView{AssetID: r.AssetID, FileName: r.FileName, MediaType: r.MediaType,
+		SizeBytes: r.SizeBytes, Mtime: r.Mtime, CreatedAt: r.CreatedAt, Source: r.Source,
+		IsFavorite: r.IsFavorite, LikeCount: r.LikeCount, DurationMs: r.DurationMs, SortKey: r.SortKey}
+}
+
+// listRowViewFromDesc 同 listRowViewFromAsc，Desc 侧。
+func listRowViewFromDesc(r db.ListAssetsFilteredDescRow) listRowView {
+	return listRowView{AssetID: r.AssetID, FileName: r.FileName, MediaType: r.MediaType,
+		SizeBytes: r.SizeBytes, Mtime: r.Mtime, CreatedAt: r.CreatedAt, Source: r.Source,
+		IsFavorite: r.IsFavorite, LikeCount: r.LikeCount, DurationMs: r.DurationMs, SortKey: r.SortKey}
+}
+
+// buildListPage 收敛"多取 1 行探测 hasMore + 截断 + 行→AssetSummary
+// 装配 + 下一页游标锚点"——Asc/Desc 两分支只差查询本身，这段后处理
+// 完全对称。lastKey/lastID 是本页最后一行在当前排序下的锚点（keyset
+// 分页的全部信息）。
+func buildListPage(s *Server, rows []listRowView, limit int) (items []gen.AssetSummary, lastKey, lastID string, hasMore bool) {
+	hasMore = len(rows) > limit
+	if hasMore {
+		rows = rows[:limit] // 多取的那 1 行只用来证明还有下一页，不进本页
+	}
+	items = make([]gen.AssetSummary, 0, len(rows))
+	for i := range rows {
+		row := &rows[i]
+		item := buildSummary(s, row.AssetID, row.FileName, row.MediaType,
+			row.SizeBytes, row.Mtime, row.CreatedAt, row.Source, row.IsFavorite, row.LikeCount, nil, nil)
+		if row.DurationMs.Valid {
+			item.DurationMs = ptr(row.DurationMs.Int64) // 卡片时长角标数据（仅视频有值）
+		}
+		items = append(items, item)
+		lastKey, lastID = toString(row.SortKey), row.AssetID
+	}
+	return items, lastKey, lastID, hasMore
+}
+
 // GetApiV1Assets 资产列表：动态筛选 + 排序 + keyset 分页。
 // 语义唯一权威是 docs/DOMAIN_RULES §3；SQL 侧的取舍见
 // internal/store/queries/browse.sql 文件头。
@@ -246,9 +308,9 @@ func (s *Server) GetApiV1Assets(w http.ResponseWriter, r *http.Request, params g
 	//（DOMAIN_RULES §8）由客户端按 modifiedAt 折叠，服务端无动作。
 	filters := newAssetFilters(params)
 
-	var items []gen.AssetSummary
-	var lastKey, lastID string
-	hasMore := false
+	// Asc/Desc 两分支只保留"组参数 + 查询 + 行搬运"，截断探测与
+	// AssetSummary 装配收敛在 buildListPage（两分支的语义差异全在 SQL 侧）。
+	var rows []listRowView
 	if asc {
 		p := db.ListAssetsFilteredAscParams{
 			Sort: sortKey, RowLimit: int64(limit) + 1, // 多取 1 行探测下一页
@@ -256,56 +318,35 @@ func (s *Server) GetApiV1Assets(w http.ResponseWriter, r *http.Request, params g
 			CursorID:  sql.NullString{String: cur.I, Valid: cur.K != ""},
 		}
 		applyFilters(&p, filters)
-		rows, err := s.q.ListAssetsFilteredAsc(r.Context(), p)
+		raw, err := s.q.ListAssetsFilteredAsc(r.Context(), p)
 		if err != nil {
 			s.logger.Error("查询资产列表失败", "err", err)
 			writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
 			return
 		}
-		hasMore = len(rows) > limit
-		if hasMore {
-			rows = rows[:limit]
-		}
-		items = make([]gen.AssetSummary, 0, len(rows))
-		for i := range rows {
-			row := &rows[i]
-			item := buildSummary(s, row.AssetID, row.FileName, row.MediaType,
-				row.SizeBytes, row.Mtime, row.CreatedAt, row.Source, row.IsFavorite, row.LikeCount, nil, nil)
-			if row.DurationMs.Valid {
-				item.DurationMs = ptr(row.DurationMs.Int64) // 卡片时长角标数据（仅视频有值）
-			}
-			items = append(items, item)
-			lastKey, lastID = toString(row.SortKey), row.AssetID
+		rows = make([]listRowView, len(raw))
+		for i := range raw {
+			rows[i] = listRowViewFromAsc(raw[i])
 		}
 	} else {
 		p := db.ListAssetsFilteredDescParams{
-			Sort: sortKey, RowLimit: int64(limit) + 1,
+			Sort: sortKey, RowLimit: int64(limit) + 1, // 多取 1 行探测下一页
 			CursorKey: nullStr(cur.K),
 			CursorID:  sql.NullString{String: cur.I, Valid: cur.K != ""},
 		}
 		applyFilters(&p, filters)
-		rows, err := s.q.ListAssetsFilteredDesc(r.Context(), p)
+		raw, err := s.q.ListAssetsFilteredDesc(r.Context(), p)
 		if err != nil {
 			s.logger.Error("查询资产列表失败", "err", err)
 			writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
 			return
 		}
-		hasMore = len(rows) > limit
-		if hasMore {
-			rows = rows[:limit]
-		}
-		items = make([]gen.AssetSummary, 0, len(rows))
-		for i := range rows {
-			row := &rows[i]
-			item := buildSummary(s, row.AssetID, row.FileName, row.MediaType,
-				row.SizeBytes, row.Mtime, row.CreatedAt, row.Source, row.IsFavorite, row.LikeCount, nil, nil)
-			if row.DurationMs.Valid {
-				item.DurationMs = ptr(row.DurationMs.Int64)
-			}
-			items = append(items, item)
-			lastKey, lastID = toString(row.SortKey), row.AssetID
+		rows = make([]listRowView, len(raw))
+		for i := range raw {
+			rows[i] = listRowViewFromDesc(raw[i])
 		}
 	}
+	items, lastKey, lastID, hasMore := buildListPage(s, rows, limit)
 
 	// authorNames：列表响应的卡片作者行数据（常规∪COS），页大小一次
 	// 批量查询二次装配（协议 GET /assets 描述；搜索走本查询自然获得）。
@@ -417,147 +458,6 @@ func applyFilters(dst any, f assetFilters) {
 		}
 		df.Set(fv.Field(i)) // 类型不一致时 Set 直接 panic（编程错误，测试兜底）
 	}
-}
-
-// GetApiV1AssetsAssetId 资产详情：组装全部关联数据与签名直链。
-func (s *Server) GetApiV1AssetsAssetId(w http.ResponseWriter, r *http.Request, assetID gen.AssetId) {
-	row, err := s.q.GetAssetWithLibrary(r.Context(), assetID.String())
-	if errors.Is(err, sql.ErrNoRows) {
-		writeErr(w, http.StatusNotFound, "NOT_FOUND", "资产不存在")
-		return
-	}
-	if err != nil {
-		s.logger.Error("查询资产失败", "err", err)
-		writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
-		return
-	}
-	ctx := r.Context()
-
-	// 标签 / 作者 / 角色
-	tagRows, err := s.q.ListAssetTagRefs(ctx, row.AssetID)
-	if err != nil {
-		s.internalErr(w, "查询资产标签", err)
-		return
-	}
-	tags := make([]gen.Tag, 0, len(tagRows))
-	for _, t := range tagRows {
-		fc := 0 // 关联文件数：标签池级统计属 /tags 端点职责，详情处无意义
-		id, name := t.ID, t.Name
-		tags = append(tags, gen.Tag{Id: &id, Name: &name, FileCount: &fc})
-	}
-	authorRows, err := s.q.ListAssetAuthorRefs(ctx, row.AssetID)
-	if err != nil {
-		s.internalErr(w, "查询资产作者", err)
-		return
-	}
-	authors := make([]gen.Author, 0, len(authorRows))
-	for _, a := range authorRows {
-		fc := 0
-		id, name := a.ID, a.DisplayName
-		at := gen.AuthorType(a.Type)
-		authors = append(authors, gen.Author{Id: &id, DisplayName: &name, Type: &at, FileCount: &fc})
-	}
-	charNames, err := s.q.ListAssetCharacterNames(ctx, row.AssetID)
-	if err != nil {
-		s.internalErr(w, "查询资产角色", err)
-		return
-	}
-
-	// 统计：view/play 计数、最近浏览、累计停留秒、点赞、收藏
-	viewCount, playCount := 0, 0
-	cntRows, err := s.q.CountAssetEvents(ctx, row.AssetID)
-	if err != nil {
-		s.internalErr(w, "聚合资产事件", err)
-		return
-	}
-	for _, c := range cntRows {
-		switch c.Kind {
-		case "open":
-			viewCount = int(c.Cnt)
-		case "play":
-			playCount = int(c.Cnt)
-		}
-	}
-	lastViewed, err := s.q.LastViewedAt(ctx, row.AssetID)
-	if err != nil {
-		s.internalErr(w, "查询最近浏览时间", err)
-		return
-	}
-	seconds, err := s.q.SumBrowseSeconds(ctx, row.AssetID)
-	if err != nil {
-		s.internalErr(w, "累计停留秒数", err)
-		return
-	}
-	likeCount, err := s.q.CountAssetLikes(ctx, row.AssetID)
-	if err != nil {
-		s.internalErr(w, "统计点赞数", err)
-		return
-	}
-	isFav, err := s.q.IsFavorite(ctx, row.AssetID)
-	if err != nil {
-		s.internalErr(w, "查询收藏态", err)
-		return
-	}
-
-	// 签名直链（exp 默认 6h；orig 永不发转码副本，thumb 用大图档）。
-	// gen.AssetDetail 是 allOf 展平后的单层结构，先把 Summary 基础字段
-	// 复制过来再补扩展字段。
-	base := buildSummary(s, row.AssetID, row.FileName, row.MediaType, row.SizeBytes,
-		row.Mtime, row.CreatedAt, row.Source, isFav > 0, likeCount, nil, nil)
-	detail := gen.AssetDetail{
-		// AssetSummary 基础字段（allOf 展开）
-		AddedAt:    base.AddedAt,
-		FileName:   base.FileName,
-		Id:         base.Id,
-		IsFavorite: base.IsFavorite,
-		LikeCount:  base.LikeCount,
-		MediaType:  base.MediaType,
-		ModifiedAt: base.ModifiedAt,
-		SizeBytes:  base.SizeBytes,
-		Source:     base.Source,
-		// AssetDetail 扩展字段
-		LibraryId:          ptr(row.LibraryID),
-		Authors:            &authors,
-		Characters:         &charNames,
-		Tags:               &tags,
-		Directory:          ptr(dirOf(row.RelPath)),
-		RelPath:            ptr(row.RelPath),
-		ViewCount:          ptr(viewCount),
-		PlayCount:          ptr(playCount),
-		TotalBrowseSeconds: ptr(toInt(seconds)),
-	}
-	orig := s.signedMediaURL(mediaPathOrig + row.AssetID)
-	detail.OrigUrl = &orig
-	thumb := s.thumbURL(row.AssetID, "lg")
-	detail.ThumbUrl = &thumb
-	if row.DurationMs.Valid {
-		detail.DurationMs = ptr(row.DurationMs.Int64)
-	}
-	if row.Width.Valid {
-		detail.Width = ptr(int(row.Width.Int64))
-	}
-	if row.Height.Valid {
-		detail.Height = ptr(int(row.Height.Int64))
-	}
-	if row.LastPositionSeconds.Valid {
-		detail.LastPositionSeconds = ptr(float32(row.LastPositionSeconds.Float64))
-	}
-	if row.VideoCodec.Valid {
-		detail.VideoCodec = ptr(row.VideoCodec.String)
-	}
-	if row.AudioCodec.Valid {
-		detail.AudioCodec = ptr(row.AudioCodec.String)
-	}
-	if lv, ok := lastViewed.(string); ok && lv != "" {
-		t := parseStoreTime(lv)
-		detail.LastViewedAt = &t
-	}
-	writeJSON(w, http.StatusOK, detail)
-}
-
-func (s *Server) internalErr(w http.ResponseWriter, what string, err error) {
-	s.logger.Error(what+"失败", "err", err)
-	writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
 }
 
 // signedMediaURL 生成带 exp/sig 的签名直链（auth 包协议）。

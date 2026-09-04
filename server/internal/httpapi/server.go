@@ -371,6 +371,8 @@ func (s *Server) GetApiV1Readyz(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
+	// 写失败只可能发生在探针调用方已断开时（探针本就是调用方主动轮询，
+	// 无补救动作），忽略即可。
 	_, _ = w.Write([]byte(`{"status":"ready"}`))
 }
 

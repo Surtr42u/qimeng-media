@@ -14,6 +14,7 @@ const maxJSONBody = 1 << 20
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
+	// 编码/写失败即客户端已断开，此处已是终端响应，无补救动作，忽略。
 	_ = json.NewEncoder(w).Encode(v)
 }
 
@@ -21,6 +22,15 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 // message 必须是人类可读文案且不含内部路径/堆栈（SECURITY 红线 7）。
 func writeErr(w http.ResponseWriter, status int, code, message string) {
 	writeJSON(w, status, map[string]string{"code": code, "message": message})
+}
+
+// internalErr 记录服务端内部错误并输出统一 500 响应：what 是失败阶段名
+// （日志拼成"<what>失败"，让内部错误可定位到具体查询），err 原样进日志
+// 但不进响应（SECURITY 红线 7：错误响应不泄露内部信息）。包内各端点的
+// 查询/写库失败兜底统一走它。
+func (s *Server) internalErr(w http.ResponseWriter, what string, err error) {
+	s.logger.Error(what+"失败", "err", err)
+	writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
 }
 
 // notImplemented 机制（M1 未接线端点统一 501 + NOT_IMPLEMENTED）已随

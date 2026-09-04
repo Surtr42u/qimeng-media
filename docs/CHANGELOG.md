@@ -10,6 +10,19 @@
 
 ---
 
+## 质量审查清债（服务端）：assets.go 拆分 + main.go 常量收敛 + 写错误注释（2026-09-04 第十一笔）
+
+执行 AI：GLM-5.3-Flash（主代理，ZCode；审查=研究子代理×3 并行抽查 + 执行子代理×1 实施 + 主代理独立验收）
+
+背景：用户要求全面审查架构与代码质量。三路研究子代理抽查结论——纪律执行整体优秀（安全三红线/协议↔实现 60 操作双向一致/迁移零改史/生成物历史零入库全过），存在数处轻微偏离，本笔清服务端部分（2026-09-04 审查报告全文见当次会话记录）。
+
+- **assets.go 拆分**（原 658 行超 600 警戒线，内含 135/112 行两个超百行函数且无超线注释）：按列表/详情域拆为 assets.go（558 行）+ assets_detail.go（新建 172 行）。详情端点 135→79 行——标签/作者/角色三查询收敛 `fetchAssetRefs`、统计六查询收敛 `fetchAssetStats`（what 参数保留拆分前逐阶段日志文案）；列表端点 112→91 行——Asc/Desc 两分支对称的"截断探测+行装配"收敛 `buildListPage`，`listRowView` 抹平 sqlc 两胞胎 Row（同名字段无法泛型收敛，两个薄转换标注 sqlc 固有成本）消除重复装配。`internalErr` 迁 errors.go（包内约 20 处消费，公共错误 helper 归位，注释引 SECURITY 红线 7）。纯重构零行为变化。
+- **main.go 裸调度参数**（代码卫生约束 3/5 违例）：`ReadHeaderTimeout` 提为 `readHeaderTimeout` 具名常量（注释说明 Slowloris 防御语义，与 shutdownTimeout 同值属两个独立决策）；轮询周期裸 `5*time.Minute` 改复用 `scanner.DefaultPollInterval`（单一来源）。
+- **3 处忽略 HTTP 写错误补注释**（page.go/errors.go/server.go 的 `_ = w.Write`，措辞对齐 auth/middleware.go:87 既有先例）。
+- 门禁：go vet 0、go test 14 包全绿（httpapi 针对性用例复跑 PASS）、gofmt 干净；主代理 diff 逐行复核确认无逻辑变化（详情端点全部字段赋值与原实现逐一比对等价）。
+
+---
+
 ## 数据页「作者总览」卡行数收敛 Top5（2026-09-04 第九笔）
 
 执行 AI：GLM-5.3-Flash（主代理，ZCode）

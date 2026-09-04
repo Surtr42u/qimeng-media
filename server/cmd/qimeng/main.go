@@ -42,6 +42,14 @@ const version = "0.1.0"
 // 同时给容器编排（默认 30s 强杀）留出余量。
 const shutdownTimeout = 10 * time.Second
 
+// readHeaderTimeout 是客户端发完请求 header 的时间上限（Slowloris 防御：
+// 恶意客户端"连接后慢慢滴 header"占住连接不做事，不设上限连接池会被
+// 拖干）。只限 header、不限 body/响应体——大上传与大文件直链不受影响
+// （见 main 内 http.Server 组装处"不能设全局 ReadTimeout"注释）。
+// 与 shutdownTimeout 同值是两个独立决策（攻击防御上限 vs 优雅退出等待），
+// 不是共享值，可各自调整。
+const readHeaderTimeout = 10 * time.Second
+
 // mediaSecretFile 是直链 HMAC 密钥的持久化文件名（DataDir 下）。
 // 为什么落盘：密钥每次随机会让重启后全部存量直链立即失效（浏览器
 // 已打开页面的图全裂）；持久化后"换密钥 = 吊销全部直链"的应急语义
@@ -137,7 +145,7 @@ func main() {
 		Handler: handler,
 		// 读超时只限 header：媒体直链依赖长连接与大响应体，
 		// 不能设全局 ReadTimeout/WriteTimeout 一刀切掐掉大文件传输。
-		ReadHeaderTimeout: 10 * time.Second,
+		ReadHeaderTimeout: readHeaderTimeout,
 	}
 
 	// signal.NotifyContext：Ctrl+C / SIGTERM 时 ctx 取消，主流程进入优雅关闭。
@@ -148,7 +156,7 @@ func main() {
 	// "建目录+立即写入"事件缺口由它补齐，见 scanner/watch.go 注释）。
 	// M1 只挂轮询；按库 Watch 在 M2 文件管理接线时挂（新注册库动态加入）。
 	go func() {
-		if err := scan.StartBackground(ctx, 5*time.Minute); err != nil && ctx.Err() == nil {
+		if err := scan.StartBackground(ctx, scanner.DefaultPollInterval); err != nil && ctx.Err() == nil {
 			logger.Error("轮询扫描退出", "err", err)
 		}
 	}()
