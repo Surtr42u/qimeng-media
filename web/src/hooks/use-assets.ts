@@ -78,11 +78,25 @@ export function useAssetsInfinite(params: AssetListParams = {}, enabled = true) 
   })
 }
 
-/** 类型总数徽标（limit=1 只取 totalMatched；搜索页类型 tab 计数用，不带其他筛选） */
-export function useAssetsTotal(mediaType?: MediaType) {
+/** 类型总数徽标（limit=1 只取 totalMatched；搜索页类型 tab 计数用，不带其他筛选）。
+ *  partition 三态与列表口径一致：缺省=常规（默认排除 COS），'cos'=只要 COS，'all'=常规∪COS。 */
+export function useAssetsTotal(mediaType?: MediaType, partition?: 'regular' | 'cos' | 'all') {
   return useQuery({
-    queryKey: ['api/v1/assets/total', mediaType ?? 'all'],
-    queryFn: () => unwrapSdkResult(getApiV1Assets({ query: { limit: 1, mediaType } })),
+    queryKey: ['api/v1/assets/total', mediaType ?? 'all', partition ?? 'regular'],
+    queryFn: () =>
+      unwrapSdkResult(
+        getApiV1Assets({
+          query: {
+            limit: 1,
+            mediaType,
+            ...(partition === 'all'
+              ? { includeCos: true }
+              : partition === 'cos'
+                ? { cosOnly: true }
+                : {}),
+          },
+        }),
+      ),
     select: (page) => page.totalMatched ?? 0,
   })
 }

@@ -5,6 +5,7 @@
 
 /** 搜索筛选状态机（照 app.js SEARCH_STATE；tags 存协议 tagId 数组） */
 export interface SearchFilterState {
+  partition: string
   type: string
   sort: string
   order: string
@@ -18,6 +19,7 @@ export interface SearchFilterState {
 }
 
 /** 排序/顺位/区间档位选项（文案=原型） */
+export const PARTITION_OPTIONS = ['常规', 'COS', '全部'] as const
 export const SORT_TABS = ['综合排序', '最多点击'] as const
 export const ORDER_OPTIONS = ['降序', '升序'] as const
 export const PLAYS_OPTIONS = ['全部', '未播放', '1-5', '5-20', '>20'] as const
@@ -28,9 +30,11 @@ export const TAG_MODE_OPTIONS = ['模糊', '精确'] as const
 // 当前年倒推 11 个年份（照 app.js SEARCH_YEARS；以当前年份滚动生成，免维护）
 export const SEARCH_YEARS = Array.from({ length: 11 }, (_, i) => String(new Date().getFullYear() - i))
 
-/** 初值与「新搜索重置」共用同一份（照原型 resetSearchState：新查询不继承旧筛选） */
+/** 初值与「新搜索重置」共用同一份（照原型 resetSearchState：新查询不继承旧筛选）。
+ *  分区默认「常规」（DOMAIN_RULES §6 拍板：搜索默认排除 COS，隔离浏览靠分区胶囊切换）。 */
 export function newSearchState(): SearchFilterState {
   return {
+    partition: '常规',
     type: '综合',
     sort: '综合排序',
     order: '降序',
