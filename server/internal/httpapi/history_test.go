@@ -2,7 +2,9 @@ package httpapi
 
 // 观看历史端点（M3，DOMAIN_RULES §8 浏览面）端到端测试：
 // 每资产一条（取 MAX open 时间）、按最近浏览时间倒序、keyset 分页
-// cursor 可用、默认排除 COS 作者关联文件（includeCos=true 包含）。
+// cursor 可续读下一页；COS 分区缺省全部（2026-09-05 用户拍板），
+// includeCos=false 切常规、cosOnly=true 只 COS；mediaType/work/character
+// 筛选与 GET /assets 同语义。
 
 import (
 	"context"
@@ -11,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"qimeng-media/server/internal/authoring"
 	"qimeng-media/server/internal/httpapi/gen"
 	"qimeng-media/server/internal/store"
 	"qimeng-media/server/internal/store/db"
@@ -90,13 +93,15 @@ func TestHistoryOrderedOnePerAssetWithCursor(t *testing.T) {
 	}
 }
 
-// TestHistoryCosExclusion：默认排除 COS 作者关联文件（与 /assets 同口径），
-// includeCos=true 重新包含。
-func TestHistoryCosExclusion(t *testing.T) {
+// TestHistoryCosDefaultAllAndSwitches：COS 分区三态（2026-09-05 用户拍板，
+// 原缺省排除口径废止）——缺省全部（常规∪COS 合并）、includeCos=false 切
+// 常规（排除 COS）、cosOnly=true 只 COS（且与 includeCos 同真时优先）。
+func TestHistoryCosDefaultAllAndSwitches(t *testing.T) {
 	env := newTestEnv(t)
-	a := testFiles[0]
+	a, b := testFiles[0], testFiles[1]
 
-	// 给 a.jpg 挂 COS 作者（authors.type='cos'，COS 目录扫描产物同形态）。
+	// a.jpg 挂 COS 作者（authors.type='cos'，COS 目录扫描产物同形态）；
+	// b.jpg 保持常规。两者都造 open 事件。
 	if err := env.q.UpsertAuthor(context.Background(), db.UpsertAuthorParams{
 		ID: "cos_test_author", DisplayName: "COS作者", Type: "cos",
 		CreatedAt: store.FormatTimestamp(env.clock.Now()),
@@ -109,15 +114,104 @@ func TestHistoryCosExclusion(t *testing.T) {
 		t.Fatalf("关联失败: %v", err)
 	}
 	reportOpenAt(t, env, a.id, "2026-08-21T10:00:00Z", "cos-s1")
+	reportOpenAt(t, env, b.id, "2026-08-20T10:00:00Z", "cos-s2")
 
-	page := getHistory(t, env, "")
-	if n := len(deref(page.Items)); n != 0 {
-		t.Fatalf("默认应排除 COS 关联资产，得到 %d 条", n)
+	names := func(query string) []string {
+		t.Helper()
+		items := deref(getHistory(t, env, query).Items)
+		out := make([]string, 0, len(items))
+		for _, it := range items {
+			out = append(out, *it.FileName)
+		}
+		return out
 	}
-	page = getHistory(t, env, "?includeCos=true")
-	items := deref(page.Items)
-	if len(items) != 1 || *items[0].FileName != "a.jpg" {
-		t.Fatalf("includeCos=true 应包含 a.jpg，得到 %v", page.Items)
+	// 缺省（2026-09-05 用户拍板）：常规∪COS 合并，两资产都出现。
+	if got := names(""); len(got) != 2 {
+		t.Fatalf("缺省应为全部（含 COS），得到 %v", got)
+	}
+	// includeCos=false：切常规分区，只剩 b.jpg。
+	if got := names("?includeCos=false"); len(got) != 1 || got[0] != "b.jpg" {
+		t.Fatalf("includeCos=false 应只含 b.jpg，得到 %v", got)
+	}
+	// cosOnly=true：切 COS 分区，只剩 a.jpg。
+	if got := names("?cosOnly=true"); len(got) != 1 || got[0] != "a.jpg" {
+		t.Fatalf("cosOnly=true 应只含 a.jpg，得到 %v", got)
+	}
+	// cosOnly 与 includeCos 同真：cosOnly 优先。
+	if got := names("?includeCos=true&cosOnly=true"); len(got) != 1 || got[0] != "a.jpg" {
+		t.Fatalf("cosOnly 优先应只含 a.jpg，得到 %v", got)
+	}
+}
+
+// TestHistoryFilters：/history 新增筛选——mediaType / work / character
+// （'a+b' 全部命中语义），与缺省含 COS 的子集叠加生效。
+func TestHistoryFilters(t *testing.T) {
+	env := newTestEnv(t)
+	a, b, c := testFiles[0], testFiles[1], testFiles[2]
+	ctx := context.Background()
+	now := store.FormatTimestamp(env.clock.Now())
+
+	// b.jpg：挂 COS 作者 + cos_work=作品P + 双角色 天使+黑百合。cos_work 不在
+	// UpsertAsset 的 DO UPDATE 列里（migration 0008 由扫描器路径维护，测试
+	// 不走扫描链路），用与 duration_ms 用例同款的直改 UPDATE 写入。
+	cosID := authoring.GenerateCosAuthorID("历史酱")
+	if err := env.q.UpsertAuthor(ctx, db.UpsertAuthorParams{
+		ID: cosID, DisplayName: "历史酱", Type: authoring.AuthorTypeCos, CreatedAt: now,
+	}); err != nil {
+		t.Fatalf("建 COS 作者失败: %v", err)
+	}
+	if err := env.q.AddAssetAuthor(ctx, db.AddAssetAuthorParams{AssetID: b.id, AuthorID: cosID}); err != nil {
+		t.Fatalf("关联 COS 作者失败: %v", err)
+	}
+	if _, err := env.conn.Exec("UPDATE assets SET cos_work = ? WHERE asset_id = ?", "作品P", b.id); err != nil {
+		t.Fatalf("写 cos_work 失败: %v", err)
+	}
+	// a.jpg：单角色 天使；b.jpg：双角色（'a+b' 拆分后须全部命中）。
+	for _, ac := range []db.AddAssetCharacterParams{
+		{AssetID: a.id, CharacterName: "天使"},
+		{AssetID: b.id, CharacterName: "天使"},
+		{AssetID: b.id, CharacterName: "黑百合"},
+	} {
+		if err := env.q.AddAssetCharacter(ctx, ac); err != nil {
+			t.Fatalf("挂角色失败: %v", err)
+		}
+	}
+	reportOpenAt(t, env, a.id, "2026-08-23T10:00:00Z", "f-s1")
+	reportOpenAt(t, env, b.id, "2026-08-23T11:00:00Z", "f-s2")
+	reportOpenAt(t, env, c.id, "2026-08-23T12:00:00Z", "f-s3")
+
+	names := func(query string) []string {
+		t.Helper()
+		items := deref(getHistory(t, env, query).Items)
+		out := make([]string, 0, len(items))
+		for _, it := range items {
+			out = append(out, *it.FileName)
+		}
+		return out
+	}
+	// 缺省：三资产全部在历史（含 COS 的 b.jpg——2026-09-05 拍板缺省全部）。
+	if got := names(""); len(got) != 3 {
+		t.Fatalf("缺省应含全部三条（含 COS），得到 %v", got)
+	}
+	// mediaType=video：只剩 c.mp4。
+	if got := names("?mediaType=video"); len(got) != 1 || got[0] != "c.mp4" {
+		t.Fatalf("mediaType=video 应只含 c.mp4，得到 %v", got)
+	}
+	// work=作品P：只剩 b.jpg（COS 作品筛选）。
+	if got := names("?work=" + percentEncode("作品P")); len(got) != 1 || got[0] != "b.jpg" {
+		t.Fatalf("work=作品P 应只含 b.jpg，得到 %v", got)
+	}
+	// character=天使+黑百合：全部命中语义 → 只剩 b.jpg（a.jpg 缺黑百合）。
+	if got := names("?character=" + percentEncode("天使+黑百合")); len(got) != 1 || got[0] != "b.jpg" {
+		t.Fatalf("character=天使+黑百合 应只含 b.jpg，得到 %v", got)
+	}
+	// character=黑百合 单角色：b.jpg（a.jpg 无此角色）。
+	if got := names("?character=" + percentEncode("黑百合")); len(got) != 1 || got[0] != "b.jpg" {
+		t.Fatalf("character=黑百合 应只含 b.jpg，得到 %v", got)
+	}
+	// 组合：cosOnly=true&mediaType=image → 只剩 b.jpg（COS 且图片）。
+	if got := names("?cosOnly=true&mediaType=image"); len(got) != 1 || got[0] != "b.jpg" {
+		t.Fatalf("cosOnly+image 应只含 b.jpg，得到 %v", got)
 	}
 }
 

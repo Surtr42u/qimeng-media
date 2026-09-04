@@ -120,6 +120,7 @@ type assetFilters struct {
 //     避免 SQL 里出现非 ASCII 字面量（sqlc 解析器对多字节文本敏感，
 //     见 browse.sql 文件头）；
 //   - includeCos 默认 false = 排除 COS 作者关联文件（DOMAIN_RULES §6）；
+//     收藏流特例见下方 favorite 分支（2026-09-05 用户拍板）；
 //   - character 'a+b' 拆成集合，SQL 语义 = 全部命中（组合出镜）；
 //   - dateFrom/dateTo 是本地日历日，换算成与 mtime 存储格式同构的
 //     UTC 毫秒时间戳文本再做字典序比较（dateTo 含当日全天）。
@@ -150,6 +151,15 @@ func newAssetFilters(params gen.GetApiV1AssetsParams) assetFilters {
 	if params.CosOnly != nil && *params.CosOnly {
 		f.CosOnly = 1
 		f.IncludeCos = 0
+	}
+	// 收藏流缺省「全部」（2026-09-05 用户拍板 1A）：favorite=true 且调用方
+	// 未显式传分区参数 → 含 COS（收藏页与 /history 同步改为常规∪COS）。
+	// 协议侧 /assets includeCos schema default 保持 false（非收藏流缺省排除
+	// 不变，DOMAIN_RULES §6 隔离口径只对首页推荐等流保留），此分支为收藏流
+	// 特例；/history 的缺省全部是协议 schema default=true，两处口径不同勿混。
+	if params.Favorite != nil && *params.Favorite &&
+		params.IncludeCos == nil && params.CosOnly == nil {
+		f.IncludeCos = 1
 	}
 	if params.Work != nil && *params.Work != "" {
 		// COS 作品名（migration 0008）：`作者/作品/文件` 的第二段，
