@@ -120,6 +120,8 @@ media-ui-prototype/
 8. **prototype.css 颜色 token 口径（2026-09-04 用户拍板：统一收敛、不影响 UI）**：规则体内禁止散落颜色字面量（hex/rgb/hsl/rgba 及含颜色的 shadow/gradient 整值）——新颜色一律先在 `:root` 定义语义化 token 再以 `var()` 引用；`.dark` 专属值用 `-dark` 后缀变量放 `:root`（覆盖规则保留原位，只把值换成 var 引用，勿删改既有规则结构）；平行 token 族（`--accent-*`/`--text-*` 等不带 `--qm-` 前缀）是原型层自有体系，属合法——与 tokens.css 的 shadcn 桥接 `--qm-*` 并存，靠 main.tsx 导入顺序保证原型覆盖。存量 30 处散落字面量已于 2026-09-04 全部等值收敛（视觉零变化，见 CHANGELOG「质量审查清债（Web 端）」条目）；组件层（.tsx/.ts）零硬编码颜色的既有状态继续维持。
 9. **SSE 跨端失效键存量缺陷（2026-09-04 W-1 执行中发现，待用户拍板后排批）**：`components/layout/SseBridge.tsx` 失效键 `['assets']/['libraries']/['tags']/['trash']` 与实际查询键 `['api/v1/…']` 形态不匹配，TanStack 数组前缀匹配一条不命中——其他端（Android/其他标签页）上传/库变更 → web 列表自动刷新目前是断的；本端操作刷新不受影响（use-upload 等已按正确键本地失效）。修复=统一查询键常量（涉全局 hooks），非 W 收尾三批范围。
 10. **上传队列中途切库/目录会改写未开始条目的目标（2026-09-05 一致性审查发现，待用户拍板后排批）**：`hooks/use-upload.ts` 的 `uploadOne` 发送时读实时 `optionsRef.current`——libraryId/dir 未在 enqueue 时快照进条目，批量上传进行中切换目标库/目录，排队未开始的条目会改传新目标；队列表也不显示目标库。修法=QueueEntry 入队快照目标（行为变化，需重跑 W-1 冒烟），是否修待拍板。
+11. **上传「串行」口径补充 + 深色 token 写法并存（2026-09-05 W-1/W-2 复审 P3 记账）**：①串行保证仅限单批 drain——上传进行中再次拖入的新批次会与在传项并发（两路并行）；②W-2 新增深色 token 值放 `.dark` 块内覆盖而非本节第 8 条括注的 `-dark` 后缀入 `:root`，两种写法并存（与既有 `--bg/--elev` 一致、功能等价），统一口径待拍板。
+12. **W-3 播放器存疑点（2026-09-05，待用户拍板）**：①进度条**拖拽** seek 在全局 `html{zoom:1.1}` 下仍有官方混算 ×1.1 偏置（本批只修冻结要求的「点击」路径）；②倍速菜单文案沿用 ArtPlayer 内建 i18n 舍入显示（0.75 显「0.8」/1.25 显「1.3」，实际档位值正确）；③全局 `zoom:1.1` 与第三方坐标型类库存在系统性冲突（本次组件内打补丁，后续再引坐标类库建议评估收敛 zoom 口径）。
 
 ## 5.9 UI 收尾执行批次（2026-09-04 规划定稿，用户拍板启动）
 
@@ -148,6 +150,8 @@ media-ui-prototype/
 - **存疑停手**：无。
 
 ### W-3 ArtPlayer 播放器 UI
+
+> **✅ 完成（2026-09-05 夜间集群第三批·重批次含对抗审查）**：artplayer@5.4.0 精确锁定（npm 最新稳定，官方文档站+GitHub 源码核对；`highlight` 官方 API 支撑时间轴打点，未触发停手）。新增 `components/media/video-player.tsx`（132 行：倍速 0.5~3x 覆盖公开静态档位表/静音/全屏/续播起点/打点/theme 运行时读 `--qm-primary`+MutationObserver 跟深色）+ `hooks/use-progress.ts`（5s 节流具名常量/暂停 flush/卸载补报/切资产配对重置 + timeline-tags 升序）。AssetDetailPage 裸 video 替换+已看完徽标（`>=` 恰等边界实测）。隔离实例全冻结项实测（续播 20s/倍速菜单/静音/双标记点击 seek 44.97s/暂停 52.55→服务端 52.5467/离开补报/已看完 00:00 重播）+双视口 spread 0.0。执行中发现并修复两坑：全局 `zoom:1.1` 致进度条点击 seek ×1.1（捕获阶段视觉坐标归一修正）、已看完徽标被官方层覆盖（z-index:12+pointer-events:none）。reviewer 全新上下文对抗审查**打回 1 轮**（P1 详情→详情导航卸载补报跨资产进度污染——mutationFn 改显式载荷+{assetId,position} 配对+切资产以旧 id 补报重置，靶向实测 B 资产零污染；P2 注释失实已改实），返工后全量回归通过、三命令绿。存疑点记账 §5 第 12 条。
 
 - **现状**：`pages/AssetDetailPage.tsx` 视频是裸 `<video controls>`（v1 旧壳的 VideoPlayer 已随 v1 删除，现版无倍速/无静音记忆/无标记）；断点续播协议基座已就绪（commit 9773213）。
 - **依赖**：npm `artplayer`（版本执行时查最新稳定，锁进 package.json）；**不建 ADR**——UI 可换层（ADR-0008 精神），CHANGELOG 记录选型即可。

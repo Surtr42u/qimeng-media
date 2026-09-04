@@ -1200,3 +1200,22 @@ body {
    浅色=黑底白字，深色模式随 token 自动反转为白底黑字（深色页面下最高对比强调） */
 .confirm-btn--danger { background: var(--text-main); color: var(--bg); }
 .confirm-btn--danger:hover { filter: brightness(1.08); }
+
+/* ===== W-3 ArtPlayer 播放器（2026-09-04）：舞台定位/播放器容器/已看完徽标 =====
+   颜色全走既有 token（§5.8：禁止新增颜色字面量）；播放器自身 UI 由 ArtPlayer
+   注入样式，主题色经 --art-theme 由组件运行时读 --qm-primary 写入 */
+.asset-stage { position: relative; --stage-max-h: 68vh; } /* 徽标定位锚点；高度与上方既有 68vh 约束同源 */
+.video-player-box { width: 100%; height: var(--stage-max-h); }
+.watched-badge {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 12; /* 高于 ArtPlayer .art-video(10)/.art-poster(11)——其根不形成层叠上下文，这些 z 值直接入 root 层叠 */
+  pointer-events: none; /* 纯信息徽标，不挡播放器点击 */
+  padding: 3px 10px;
+  border-radius: 999px; /* 胶囊，与 .pill/.confirm-btn 同款 */
+  background: var(--qm-primary);
+  color: var(--invert);
+  font-size: 12px;
+  font-weight: 600;
+}
