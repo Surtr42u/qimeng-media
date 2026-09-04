@@ -155,3 +155,40 @@ func TestLoadInvalidEnvWorkers(t *testing.T) {
 		t.Fatal("QIMENG_THUMBNAIL_WORKERS 非法时应返回错误, 实际为 nil")
 	}
 }
+
+// TestLoadFFmpegBinPathOverrides 锁定 ffmpeg/ffprobe 二进制路径配置的三段语义：
+// 默认空（= PATH 自动发现，行为零变化）、yaml 覆盖、env 优先于 yaml。
+// 这是 M6 单机形态（ADR-0015）的配置通道，覆盖失效会让手机上的缩略图/探测
+// 全线静默回退占位图，必须在此锁定。
+func TestLoadFFmpegBinPathOverrides(t *testing.T) {
+	// 默认值：两个路径都是空串（空 = 回退裸命令名自动发现）。
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load(\"\") 报错: %v", err)
+	}
+	if cfg.Thumbnail.FFmpegPath != "" || cfg.Thumbnail.FFprobePath != "" {
+		t.Errorf("默认 FFmpegPath/FFprobePath 应为空（PATH 自动发现），得到 %q/%q",
+			cfg.Thumbnail.FFmpegPath, cfg.Thumbnail.FFprobePath)
+	}
+
+	// yaml 覆盖默认值。
+	path := writeYAML(t, "thumbnail:\n  ffmpeg_path: \"/opt/ffmpeg/bin/ffmpeg\"\n  ffprobe_path: \"/opt/ffmpeg/bin/ffprobe\"\n")
+	cfg, err = Load(path)
+	if err != nil {
+		t.Fatalf("Load 报错: %v", err)
+	}
+	if cfg.Thumbnail.FFmpegPath != "/opt/ffmpeg/bin/ffmpeg" || cfg.Thumbnail.FFprobePath != "/opt/ffmpeg/bin/ffprobe" {
+		t.Errorf("yaml 覆盖未生效，得到 %q/%q", cfg.Thumbnail.FFmpegPath, cfg.Thumbnail.FFprobePath)
+	}
+
+	// env 优先于 yaml。
+	t.Setenv("QIMENG_THUMBNAIL_FFMPEG_PATH", "/from-env/ffmpeg")
+	t.Setenv("QIMENG_THUMBNAIL_FFPROBE_PATH", "/from-env/ffprobe")
+	cfg, err = Load(path)
+	if err != nil {
+		t.Fatalf("Load 报错: %v", err)
+	}
+	if cfg.Thumbnail.FFmpegPath != "/from-env/ffmpeg" || cfg.Thumbnail.FFprobePath != "/from-env/ffprobe" {
+		t.Errorf("env 应优先于 yaml，得到 %q/%q", cfg.Thumbnail.FFmpegPath, cfg.Thumbnail.FFprobePath)
+	}
+}

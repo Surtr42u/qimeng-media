@@ -84,7 +84,7 @@ func newTestEnv(t *testing.T, probe ProbeFunc) *testEnv {
 
 	bus := events.NewBus(nil, 128)
 	t.Cleanup(bus.Close)
-	s := New(q, bus, slog.New(slog.NewTextHandler(io.Discard, nil)), "")
+	s := New(q, bus, slog.New(slog.NewTextHandler(io.Discard, nil)), "", nil)
 	s.probe = probe
 	s.progressMinEvery = 0 // 每文件发进度，测试可稳定收到事件
 	return &testEnv{s: s, q: q, bus: bus, lib: lib, conn: conn}

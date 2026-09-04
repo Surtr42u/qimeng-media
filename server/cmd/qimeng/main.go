@@ -108,9 +108,13 @@ func main() {
 	sysCollector := sysmon.NewCollector()
 	// 缩略图配置接线：Workers/LongSide 在此从 config 传入 Generator（内部建池），
 	// 档位像素单一来源在 thumbnail 包（LongSide<=0 回落 SizeGrid）。
+	// FFmpegPath/FFprobePath 空时 Generator 内部回退裸命令名走 PATH 自动发现
+	// （缺省行为零变化）；M6 单机形态用配置指向 App 打包的二进制（ADR-0015）。
 	thumbs := thumbnail.NewGenerator(cfg.DataDir, logger, thumbnail.Options{
-		Workers:  cfg.Thumbnail.Workers,
-		LongSide: cfg.Thumbnail.LongSide,
+		Workers:     cfg.Thumbnail.Workers,
+		LongSide:    cfg.Thumbnail.LongSide,
+		FFmpegPath:  cfg.Thumbnail.FFmpegPath,
+		FFprobePath: cfg.Thumbnail.FFprobePath,
 	})
 
 	apiSrv, err := httpapi.New(httpapi.Deps{
@@ -134,8 +138,9 @@ func main() {
 
 	// 真扫描器：同步实现 + 异步适配器（触发即返回，终态回写 Server）。
 	// dataDir 传入做自噬防御（缩略图缓存是 webp 白名单格式，数据目录若被
-	// 配置进库内绝不能扫进库）。
-	scan := scanner.New(queries, bus, logger, cfg.DataDir)
+	// 配置进库内绝不能扫进库）。探测函数注入 thumbs.ProbeVideo：扫描探测的
+	// ffprobe 路径与缩略图管线同源（thumbnail.ffprobe_path 单点解析）。
+	scan := scanner.New(queries, bus, logger, cfg.DataDir, thumbs.ProbeVideo)
 	apiSrv.SetScanner(newScannerAdapter(scan, queries, apiSrv, logger))
 
 	handler := apiSrv.Handler()

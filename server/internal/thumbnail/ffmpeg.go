@@ -22,6 +22,26 @@ const webpQuality = 80
 // stderrTailLen 是截进错误信息的 stderr 尾部长度上限（字节）。
 const stderrTailLen = 512
 
+// DefaultFFmpegBin / DefaultFFprobeBin 是未配置二进制路径时 exec 查找的裸命令名：
+// os/exec 按当前进程 PATH 解析——路径配置化之前唯一可用的语义，缺省配置下
+// 行为零变化。为什么需要可配置（M6 单机形态，ADR-0015）：服务端进手机后
+// ffmpeg/ffprobe 打包在 App 的 nativeLibraryDir，进程 PATH 未必可达，
+// 自动发现不可依赖，须由 config（thumbnail.ffmpeg_path/ffprobe_path）显式指定。
+const (
+	DefaultFFmpegBin  = "ffmpeg"
+	DefaultFFprobeBin = "ffprobe"
+)
+
+// resolveBin 二进制路径解析（显式配置优先 / 缺省回退自动发现）：
+// configured 非空原样采用，空串回退 fallback（裸命令名）。
+// 两分支行为由 binpath_test.go 锁定（含"配置值确实进 exec"的实证）。
+func resolveBin(configured, fallback string) string {
+	if configured != "" {
+		return configured
+	}
+	return fallback
+}
+
 // run 执行外部命令（ffmpeg/ffprobe 共用底座）：stdout 交还调用方、stderr 截进错误。
 // 为什么截 stderr 尾部而非全文：ffmpeg 对损坏文件可能输出几 MB 日志，
 // 尾部才是含结论的行（"Error opening ..." 等），既可排障又不撑爆错误信息。
@@ -93,10 +113,11 @@ func formatSeconds(d time.Duration) string {
 // ExtractFrame 抽取视频在 at 时刻的单帧，输出 PNG 到 dst（原子落盘）。
 // 参数组合语义（ffmpeg 9 实测确认）：-ss 前置于 -i 是快速 input seeking，
 // ffmpeg 定位到目标点前关键帧再解码丢弃至精确目标；-frames:v 1 只编码一帧。
-func ExtractFrame(ctx context.Context, video string, at time.Duration, dst string) error {
+// 二进制路径用 Generator 构造时解析的 g.ffmpegBin（显式配置优先/缺省裸命令名）。
+func (g *Generator) extractFrame(ctx context.Context, video string, at time.Duration, dst string) error {
 	return writeAtomically(dst, func(tmp string) error {
 		var out bytes.Buffer
-		return run(ctx, "ffmpeg", &out,
+		return run(ctx, g.ffmpegBin, &out,
 			"-y",
 			"-ss", formatSeconds(at),
 			"-i", video,
@@ -109,10 +130,10 @@ func ExtractFrame(ctx context.Context, video string, at time.Duration, dst strin
 // FirstFrame 取动图第一帧静帧，输出 PNG 到 dst（原子落盘）。
 // 为什么动图封面必须是首帧静帧（DOMAIN_RULES §11）：列表页若直接引用 gif，
 // 几百个动图同时播动既是流量事故也是渲染灾难。
-func FirstFrame(ctx context.Context, src string, dst string) error {
+func (g *Generator) firstFrame(ctx context.Context, src string, dst string) error {
 	return writeAtomically(dst, func(tmp string) error {
 		var out bytes.Buffer
-		return run(ctx, "ffmpeg", &out,
+		return run(ctx, g.ffmpegBin, &out,
 			"-y",
 			"-i", src,
 			"-frames:v", "1",
@@ -126,13 +147,13 @@ func FirstFrame(ctx context.Context, src string, dst string) error {
 // 流索引）而非 -map 0:v:N：后者 N 是"视频类流序号"而非容器流索引——纯音频+
 // 封面的容器里唯一视频流序号恒为 0，而 ffprobe 的 attached_pic 落在索引 1 上，
 // 按类内序号选流必然错选；用原始索引才与探测侧同源。
-func ExtractAttachedPic(ctx context.Context, src string, streamIndex int, dst string) error {
+func (g *Generator) extractAttachedPic(ctx context.Context, src string, streamIndex int, dst string) error {
 	if streamIndex < 0 {
 		return fmt.Errorf("内嵌封面流索引非法: %d", streamIndex)
 	}
 	return writeAtomically(dst, func(tmp string) error {
 		var out bytes.Buffer
-		return run(ctx, "ffmpeg", &out,
+		return run(ctx, g.ffmpegBin, &out,
 			"-y",
 			"-i", src,
 			"-map", "0:"+strconv.Itoa(streamIndex),
@@ -148,14 +169,14 @@ func ExtractAttachedPic(ctx context.Context, src string, streamIndex int, dst st
 // decrease 的语义是"在 W×W 框内等比缩小"，横图竖图都以 longSide 为最长边，
 // 与 config.Thumbnail.LongSide（最长边像素）的语义一致。
 // 质量参数见 webpQuality 常量注释。
-func ScaleToWebP(ctx context.Context, src string, longSide int, dst string) error {
+func (g *Generator) scaleToWebP(ctx context.Context, src string, longSide int, dst string) error {
 	if longSide <= 0 {
 		return fmt.Errorf("longSide 必须为正数，得到 %d", longSide)
 	}
 	side := strconv.Itoa(longSide)
 	return writeAtomically(dst, func(tmp string) error {
 		var out bytes.Buffer
-		return run(ctx, "ffmpeg", &out,
+		return run(ctx, g.ffmpegBin, &out,
 			"-y",
 			"-i", src,
 			"-vf", "scale="+side+":"+side+":force_original_aspect_ratio=decrease",
@@ -225,8 +246,25 @@ func secondsToDuration(sec float64) time.Duration {
 	return time.Duration(sec * float64(time.Second))
 }
 
-// ProbeVideo 用 ffprobe 探测视频时长与宽高（json 输出解析）。
-// 为什么导出在 thumbnail 包：scanner 入库也要时长/宽高（变更检测后重新探测），
+// ProbeVideo 用 PATH 自动发现的 ffprobe（裸命令名，DefaultFFprobeBin）探测视频，
+// 行为与路径配置化之前完全一致（缺省回退分支的语义化身）。
+// 生产路径统一走 Generator.ProbeVideo（配置单点解析），本函数保留给
+// scanner 的缺省探测兜底与集成测试。
+func ProbeVideo(ctx context.Context, path string) (*ProbeResult, error) {
+	return probeVideo(ctx, DefaultFFprobeBin, path)
+}
+
+// ProbeVideo 用本 Generator 生效的 ffprobe 路径探测视频元数据。
+// 扫描入库（scanner 经 main 装配注入）与上传探测（httpapi 直调）都经此出口，
+// 保证 ffprobe 路径只在 NewGenerator 一处解析（配置单一来源，不散落三方）。
+// 签名与包级 ProbeVideo 一致，可直接作为 scanner.ProbeFunc 注入。
+func (g *Generator) ProbeVideo(ctx context.Context, path string) (*ProbeResult, error) {
+	return probeVideo(ctx, g.ffprobeBin, path)
+}
+
+// probeVideo 是探测核心：ffprobeBin 为调用方解析好的二进制路径
+// （显式配置优先/缺省裸命令名，解析语义见 resolveBin）。
+// 为什么封装在 thumbnail 包：scanner 入库也要时长/宽高（变更检测后重新探测），
 // 共用一份 ffprobe 封装，避免两处各写一套解析渐行渐远（任务约定）。
 // 时长优先取 format.duration：部分封装的 stream 级 duration 缺失，
 // format 级是容器聚合值（实测 mp4 两者一致）。
@@ -235,9 +273,9 @@ func secondsToDuration(sec float64) time.Duration {
 // 第 0 号视频流但真实视频在第 1 号）；整个容器只有一个封面流的极端情形
 // （纯音频+封面）时用封面流兜底返回。codec 提取需要全流扫描（音频流可能
 // 排在视频流之后），因此先收集后构造，不再循环内提前 return。
-func ProbeVideo(ctx context.Context, path string) (*ProbeResult, error) {
+func probeVideo(ctx context.Context, ffprobeBin, path string) (*ProbeResult, error) {
 	var out bytes.Buffer
-	if err := run(ctx, "ffprobe", &out,
+	if err := run(ctx, ffprobeBin, &out,
 		"-v", "error",
 		"-print_format", "json",
 		"-show_format",

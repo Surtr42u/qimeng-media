@@ -24,7 +24,6 @@ import (
 	"qimeng-media/server/internal/store"
 	"qimeng-media/server/internal/store/db"
 	"qimeng-media/server/internal/sysmon"
-	"qimeng-media/server/internal/thumbnail"
 )
 
 // PostApiV1AssetsUpload 流式上传：四道校验 → 落盘 → 入库 → 广播。
@@ -177,7 +176,9 @@ func (s *Server) PostApiV1AssetsUpload(w http.ResponseWriter, r *http.Request, p
 		UpdatedAt: store.FormatTimestamp(s.now()),
 	}
 	if mediaType == scanner.MediaTypeVideo {
-		if probeRes, perr := thumbnail.ProbeVideo(r.Context(), targetAbs); perr != nil {
+		// 探测走 Generator 出口（s.thumbs 必填，见 Deps 校验）：ffprobe 路径
+		// 与缩略图管线/扫描探测同源（thumbnail.ffprobe_path，空=PATH 自动发现）。
+		if probeRes, perr := s.thumbs.ProbeVideo(r.Context(), targetAbs); perr != nil {
 			s.logger.Warn("上传视频元数据探测失败，留空待重探", "path", targetRel, "err", perr)
 		} else if probeRes != nil {
 			params_.DurationMs = sql.NullInt64{Int64: probeRes.Duration.Milliseconds(), Valid: true}

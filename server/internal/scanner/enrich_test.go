@@ -159,7 +159,7 @@ func TestCustomSourcesLoadedFromSettings(t *testing.T) {
 	}
 
 	// 重新构造扫描器（装载发生在 New）。
-	env2 := &testEnv{s: New(env.q, env.bus, nil, ""), q: env.q, bus: env.bus, lib: env.lib, conn: env.conn}
+	env2 := &testEnv{s: New(env.q, env.bus, nil, "", nil), q: env.q, bus: env.bus, lib: env.lib, conn: env.conn}
 	env2.s.probe = probe.call
 	env2.writeFile(t, "我的分区_某角色.jpg", 100)
 	if _, err := env2.s.Scan(context.Background(), env2.lib); err != nil {

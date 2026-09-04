@@ -38,6 +38,15 @@ type ThumbnailConfig struct {
 	// 0 = 回落 thumbnail 包默认档 SizeGrid（512）；档位像素的单一来源是
 	// server/internal/thumbnail/cachekey.go 的 Size 常量，本字段只做覆盖。
 	LongSide int `yaml:"long_side"`
+	// FFmpegPath 是 ffmpeg 可执行文件路径；空 = 裸命令名走 PATH 自动发现
+	//（缺省行为与路径配置化之前完全一致）。为什么需要显式路径：M6 单机形态
+	// （ADR-0015）服务端进手机后二进制打包在 App 的 nativeLibraryDir，进程
+	// PATH 未必可达，自动发现不可依赖；NAS/PC 形态缺省不配置即可。
+	FFmpegPath string `yaml:"ffmpeg_path"`
+	// FFprobePath 是 ffprobe 可执行文件路径；语义同 FFmpegPath（空 = PATH
+	// 自动发现）。消费方除缩略图管线外还有扫描入库与上传的视频探测——
+	// 三处共用 Generator 装配出的同一个解析结果（见 thumbnail.Generator）。
+	FFprobePath string `yaml:"ffprobe_path"`
 }
 
 // UploadConfig 上传管线配置（DOMAIN_RULES §9：单文件大小上限可配置）。
@@ -156,6 +165,14 @@ func applyEnv(cfg *Config) error {
 			return fmt.Errorf("环境变量 QIMENG_THUMBNAIL_WORKERS=%q 不是合法整数: %w", v, err)
 		}
 		cfg.Thumbnail.Workers = n
+	}
+	// 二进制路径是纯字符串（无非法值可判）：与 QIMENG_DB_PATH 同款直覆盖语义，
+	// 空值等于未设置、保留默认空（默认空 = PATH 自动发现，行为零变化）。
+	if v := os.Getenv("QIMENG_THUMBNAIL_FFMPEG_PATH"); v != "" {
+		cfg.Thumbnail.FFmpegPath = v
+	}
+	if v := os.Getenv("QIMENG_THUMBNAIL_FFPROBE_PATH"); v != "" {
+		cfg.Thumbnail.FFprobePath = v
 	}
 	if v := os.Getenv("QIMENG_DB_PATH"); v != "" {
 		cfg.DbPath = v

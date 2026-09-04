@@ -22,11 +22,20 @@ import (
 // 工作池）在任何环境都必须可跑。
 func requireFFmpeg(t *testing.T) {
 	t.Helper()
-	for _, bin := range []string{"ffmpeg", "ffprobe"} {
+	for _, bin := range []string{DefaultFFmpegBin, DefaultFFprobeBin} {
 		if _, err := exec.LookPath(bin); err != nil {
 			t.Skipf("环境缺少 %s，跳过真实集成测试: %v", bin, err)
 		}
 	}
+}
+
+// newTestGenerator 构造缺省解析的 Generator（裸命令名走 PATH 自动发现），
+// 供直接调用能力方法的集成测试使用；Close 挂 t.Cleanup 等池排空。
+func newTestGenerator(t *testing.T) *Generator {
+	t.Helper()
+	g := NewGenerator(t.TempDir(), nil, Options{})
+	t.Cleanup(g.Close)
+	return g
 }
 
 // makeSolidVideo 用 lavfi 纯色源合成测试视频（64x64@10fps）。
@@ -210,12 +219,13 @@ func TestProbeVideoWithAudioIntegration(t *testing.T) {
 func TestPickFrameTimeIntegration(t *testing.T) {
 	requireFFmpeg(t)
 	dir := t.TempDir()
+	gen := newTestGenerator(t)
 
 	t.Run("红视频35命中", func(t *testing.T) {
 		video := makeSolidVideo(t, dir, "red", 2)
-		pick, err := PickFrameTime(context.Background(), video)
+		pick, err := gen.pickFrameTime(context.Background(), video)
 		if err != nil {
-			t.Fatalf("PickFrameTime: %v", err)
+			t.Fatalf("pickFrameTime: %v", err)
 		}
 		// 2s 视频的第一候选点 = 35% = 700ms（红帧非黑非白，直接中选）；
 		// 旧策略的"0s 起步"已废弃（DOMAIN_RULES §11：35% 代表帧）。
@@ -226,9 +236,9 @@ func TestPickFrameTimeIntegration(t *testing.T) {
 
 	t.Run("黑红视频扩散序列跳过黑帧", func(t *testing.T) {
 		video := makeBlackRedVideo(t, dir) // 0~1.5s 黑，1.5~3s 红
-		pick, err := PickFrameTime(context.Background(), video)
+		pick, err := gen.pickFrameTime(context.Background(), video)
 		if err != nil {
-			t.Fatalf("PickFrameTime: %v", err)
+			t.Fatalf("pickFrameTime: %v", err)
 		}
 		// 3s 视频按扩散序列：35%=1050ms 黑、25%=750ms 黑、45%=1350ms 黑、
 		// 15%=450ms 黑，55%=1650ms 落入红段 → 中选。
@@ -239,9 +249,9 @@ func TestPickFrameTimeIntegration(t *testing.T) {
 
 	t.Run("纯黑视频兜底最后成功点", func(t *testing.T) {
 		video := makeSolidVideo(t, dir, "black", 2)
-		pick, err := PickFrameTime(context.Background(), video)
+		pick, err := gen.pickFrameTime(context.Background(), video)
 		if err != nil {
-			t.Fatalf("PickFrameTime: %v", err)
+			t.Fatalf("pickFrameTime: %v", err)
 		}
 		// 全部候选点都黑：扩散序列最后一个是 0ms（永不缺帧），兜底返回 0ms。
 		if pick.AttachedPic || pick.At != 0 {
@@ -251,9 +261,9 @@ func TestPickFrameTimeIntegration(t *testing.T) {
 
 	t.Run("纯白视频触发白帧判定兜底", func(t *testing.T) {
 		video := makeSolidVideo(t, dir, "white", 2)
-		pick, err := PickFrameTime(context.Background(), video)
+		pick, err := gen.pickFrameTime(context.Background(), video)
 		if err != nil {
-			t.Fatalf("PickFrameTime: %v", err)
+			t.Fatalf("pickFrameTime: %v", err)
 		}
 		// 白帧判定（全部 >240）必须与黑帧对称：全白视频同样跳过全部候选点，
 		// 兜底 0ms（旧策略只有黑帧判定会让全白视频选出 35% 的白帧）。
@@ -266,7 +276,7 @@ func TestPickFrameTimeIntegration(t *testing.T) {
 		// 文件不存在：ffprobe 失败 → 短路 0ms 采样也失败（无视频流可取）→ 报错。
 		// 覆盖"无 ffprobe/无时长回退路径"的最终错误分支；0ms 采样成功的分支
 		// 由单元用例（candidateTimes 短路）与上述真实视频用例覆盖。
-		if _, err := PickFrameTime(context.Background(), filepath.Join(dir, "no-such.mp4")); err == nil {
+		if _, err := gen.pickFrameTime(context.Background(), filepath.Join(dir, "no-such.mp4")); err == nil {
 			t.Fatal("不存在文件应报错（探测失败短路后采样仍失败）")
 		}
 	})
@@ -277,11 +287,12 @@ func TestPickFrameTimeIntegration(t *testing.T) {
 func TestExtractFrameIntegration(t *testing.T) {
 	requireFFmpeg(t)
 	dir := t.TempDir()
+	gen := newTestGenerator(t)
 	video := makeSolidVideo(t, dir, "red", 2)
 	dst := filepath.Join(dir, "frame.png")
 
-	if err := ExtractFrame(context.Background(), video, 500*time.Millisecond, dst); err != nil {
-		t.Fatalf("ExtractFrame: %v", err)
+	if err := gen.extractFrame(context.Background(), video, 500*time.Millisecond, dst); err != nil {
+		t.Fatalf("extractFrame: %v", err)
 	}
 	assertRedPixel(t, decodePNG(t, dst))
 }
@@ -291,11 +302,12 @@ func TestExtractFrameIntegration(t *testing.T) {
 func TestScaleToWebPIntegration(t *testing.T) {
 	requireFFmpeg(t)
 	dir := t.TempDir()
+	gen := newTestGenerator(t)
 	src := makeTallPNG(t, dir)
 	dst := filepath.Join(dir, "out.webp")
 
-	if err := ScaleToWebP(context.Background(), src, 32, dst); err != nil {
-		t.Fatalf("ScaleToWebP: %v", err)
+	if err := gen.scaleToWebP(context.Background(), src, 32, dst); err != nil {
+		t.Fatalf("scaleToWebP: %v", err)
 	}
 	w, h := ffprobeImageSize(t, dst)
 	if w != 6 || h != 32 {
@@ -307,11 +319,12 @@ func TestScaleToWebPIntegration(t *testing.T) {
 func TestFirstFrameIntegration(t *testing.T) {
 	requireFFmpeg(t)
 	dir := t.TempDir()
+	gen := newTestGenerator(t)
 	gif := makeTwoColorGif(t, dir)
 	dst := filepath.Join(dir, "first.png")
 
-	if err := FirstFrame(context.Background(), gif, dst); err != nil {
-		t.Fatalf("FirstFrame: %v", err)
+	if err := gen.firstFrame(context.Background(), gif, dst); err != nil {
+		t.Fatalf("firstFrame: %v", err)
 	}
 	assertRedPixel(t, decodePNG(t, dst))
 }
@@ -355,19 +368,20 @@ func makeCoverArtM4A(t *testing.T, dir string) string {
 func TestAttachedPicIntegration(t *testing.T) {
 	requireFFmpeg(t)
 	dir := t.TempDir()
+	gen := newTestGenerator(t)
 	coverFile := makeCoverArtM4A(t, dir)
 
-	pick, err := PickFrameTime(context.Background(), coverFile)
+	pick, err := gen.pickFrameTime(context.Background(), coverFile)
 	if err != nil {
-		t.Fatalf("PickFrameTime: %v", err)
+		t.Fatalf("pickFrameTime: %v", err)
 	}
 	if !pick.AttachedPic || pick.AttachedPicStream != 1 {
 		t.Fatalf("含内嵌封面流（第 1 号流）的容器应优先选中封面，得到 %+v", pick)
 	}
 
 	dst := filepath.Join(dir, "cover-frame.png")
-	if err := ExtractAttachedPic(context.Background(), coverFile, pick.AttachedPicStream, dst); err != nil {
-		t.Fatalf("ExtractAttachedPic: %v", err)
+	if err := gen.extractAttachedPic(context.Background(), coverFile, pick.AttachedPicStream, dst); err != nil {
+		t.Fatalf("extractAttachedPic: %v", err)
 	}
 	assertRedPixel(t, decodePNG(t, dst))
 }
@@ -378,7 +392,9 @@ func TestGeneratorEnsureIntegration(t *testing.T) {
 	requireFFmpeg(t)
 	dir := t.TempDir()
 	dataDir := filepath.Join(dir, "data")
+	// dataDir 参与缩略图落盘路径断言，须显式构造而非 newTestGenerator 的临时目录。
 	gen := NewGenerator(dataDir, nil, Options{})
+	t.Cleanup(gen.Close)
 
 	video := makeSolidVideo(t, dir, "red", 2)
 	gif := makeTwoColorGif(t, dir)

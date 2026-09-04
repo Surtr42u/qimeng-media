@@ -114,16 +114,22 @@ type Scanner struct {
 
 // New 构造扫描器。q/bus 必填（nil 会 panic 于首次使用，构造期不校验以保持
 // 签名简单——M1 唯一调用方 cmd 传的都非 nil）；logger 为 nil 用 slog.Default()；
-// dataDir 传服务端数据目录（防御嵌套配置，注册层另有互斥校验，这里是第二道防线）。
-func New(q *db.Queries, bus *events.Bus, logger *slog.Logger, dataDir string) *Scanner {
+// dataDir 传服务端数据目录（防御嵌套配置，注册层另有互斥校验，这里是第二道防线）；
+// probe 传视频元数据探测函数，nil = 默认 thumbnail.ProbeVideo（裸命令名走
+// PATH 自动发现，行为零变化）——装配层传 Generator.ProbeVideo 使 ffprobe
+// 路径配置（thumbnail.ffprobe_path）对扫描探测同样生效。
+func New(q *db.Queries, bus *events.Bus, logger *slog.Logger, dataDir string, probe ProbeFunc) *Scanner {
 	if logger == nil {
 		logger = slog.Default()
+	}
+	if probe == nil {
+		probe = thumbnail.ProbeVideo
 	}
 	s := &Scanner{
 		q:                q,
 		bus:              bus,
 		logger:           logger,
-		probe:            thumbnail.ProbeVideo,
+		probe:            probe,
 		now:              time.Now,
 		progressMinEvery: time.Second,
 		watchDebounce:    DefaultDebounce,
