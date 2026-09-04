@@ -30,7 +30,7 @@ M6 单机形态前置小改造（依据 ADR-0015 + 仓库外 m6-ffmpeg-memo/m6-p
 W-4 批次交付时由执行代理发现、移交主代理处置的仓库级基础设施问题：CI Android job 自 M4-0（cdc422e）起持续 `./gradlew: Permission denied`（exit 126）——`android/gradlew` 入库时丢可执行位（git index 100644），Linux runner 上 wrapper 无法执行，此后所有 push（含纯 docs 提交）的 CI 全红。
 
 - **修复**：仅改 index 文件模式为 100755（`git update-index --chmod=+x android/gradlew`），文件内容零改动；不涉三端代码与 workflow 逻辑。
-- **验证**：推送后以 `gh run` 复核 Android job 是否恢复绿（见后续条目/运行记录）。
+- **验证**：run 33918995510（本 commit 触发）五 job 全绿——Android job 7m31s 正常执行 wrapper，存量红清零，后续 push 恢复正常门禁。
 
 ## Web 端 play/dwell 行为打点补齐：playCount/浏览时长恢复 web 侧供数（2026-09-05 第三十八笔）
 
