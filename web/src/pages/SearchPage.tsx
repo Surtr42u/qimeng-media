@@ -195,8 +195,9 @@ export default function SearchPage() {
   return (
     <div className="page" id="page-search">
       {/* 分区胶囊（复用相册页 pill 样式）：常规=默认排除 COS（DOMAIN_RULES §6 口径）、
-          COS=cosOnly、全部=includeCos——搜索触达 COS 内容的唯一入口（首页 cos tab 无搜索框） */}
-      <div className="pill-row" role="group" aria-label="内容分区" style={{ padding: '10px 16px 0' }}>
+          COS=cosOnly、全部=includeCos——搜索触达 COS 内容的唯一入口（首页 cos tab 无搜索框）；
+          水平内边距 24px 与 .stype-row 对齐 */}
+      <div className="pill-row" role="group" aria-label="内容分区" style={{ padding: '10px 24px 0' }}>
         {PARTITION_OPTIONS.map((pt) => (
           <button
             key={pt}
