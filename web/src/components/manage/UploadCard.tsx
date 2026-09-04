@@ -133,34 +133,48 @@ export function UploadCard({ libraries }: { libraries: Library[] }) {
           <thead>
             <tr>
               <th>文件</th>
+              <th style={{ width: 140 }}>目标</th>
               <th style={{ width: 90 }}>大小</th>
               <th style={{ width: 130 }}>进度</th>
               <th style={{ width: 160 }}>状态</th>
             </tr>
           </thead>
           <tbody>
-            {queue.items.map((item) => (
-              <tr key={item.id}>
-                <td
-                  style={{ maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                  title={item.name}
-                >
-                  {item.name}
-                </td>
-                <td>{formatBytes(item.sizeBytes)}</td>
-                <td>
-                  <div className="progress">
-                    <i style={{ width: `${item.percent}%` }} />
-                  </div>
-                </td>
-                <td>
-                  <span className={item.status === 'done' ? 'upload-done' : undefined}>{statusText(item)}</span>
-                  {item.status === 'failed' && item.errorText && (
-                    <div className="upload-err" title={item.errorText}>{item.errorText}</div>
-                  )}
-                </td>
-              </tr>
-            ))}
+            {queue.items.map((item) => {
+              // 目标显示 = 入队快照（item.targetLibraryId/targetDir），不随当前选择器变化；
+              // 库被删等查不到名时回落显示 ID（仍是快照真值）
+              const libName = libraries.find((l) => l.id === item.targetLibraryId)?.name ?? item.targetLibraryId
+              const targetText =
+                item.targetLibraryId === undefined ? '—' : `${libName ?? ''}/${item.targetDir === '' || item.targetDir === undefined ? '库根' : item.targetDir}`
+              return (
+                <tr key={item.id}>
+                  <td
+                    style={{ maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                    title={item.name}
+                  >
+                    {item.name}
+                  </td>
+                  <td
+                    style={{ maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                    title={targetText}
+                  >
+                    {targetText}
+                  </td>
+                  <td>{formatBytes(item.sizeBytes)}</td>
+                  <td>
+                    <div className="progress">
+                      <i style={{ width: `${item.percent}%` }} />
+                    </div>
+                  </td>
+                  <td>
+                    <span className={item.status === 'done' ? 'upload-done' : undefined}>{statusText(item)}</span>
+                    {item.status === 'failed' && item.errorText && (
+                      <div className="upload-err" title={item.errorText}>{item.errorText}</div>
+                    )}
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       )}

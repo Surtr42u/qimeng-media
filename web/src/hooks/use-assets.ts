@@ -22,9 +22,12 @@ export type { AssetFacets, FacetBucket, Partition }
 import type { MediaCardProps } from '@/components/media/MediaCard'
 import { unwrapSdkResult } from '@/lib/api-client'
 import { formatCardUp, formatDuration, formatShortDate } from '@/lib/format'
-
-/** 资产列表查询键根（use-upload 上传成功后按前缀失效列表；useAssetsInfinite 在此之上追加 params） */
-export const ASSETS_LIST_QUERY_KEY = ['api/v1/assets'] as const
+import {
+  ASSETS_LIST_QUERY_KEY,
+  ASSETS_QUERY_KEY,
+  RECOMMENDATIONS_QUERY_KEY,
+  SOURCES_QUERY_KEY,
+} from '@/lib/query-keys'
 
 export type MediaType = 'image' | 'animated_image' | 'video'
 export type AssetSort =
@@ -63,7 +66,7 @@ export interface AssetListParams {
 /** 推荐流（M3 十维算法，seed=0 稳定排序；首页卡片流数据源） */
 export function useRecommendations(limit = 60) {
   return useQuery({
-    queryKey: ['api/v1/recommendations', limit],
+    queryKey: [...RECOMMENDATIONS_QUERY_KEY, limit],
     queryFn: () => unwrapSdkResult(getApiV1Recommendations({ query: { limit } })),
   })
 }
@@ -85,7 +88,7 @@ export function useAssetsInfinite(params: AssetListParams = {}, enabled = true) 
  *  partition 三态与列表口径一致：缺省=常规（默认排除 COS），'cos'=只要 COS，'all'=常规∪COS。 */
 export function useAssetsTotal(mediaType?: MediaType, partition?: 'regular' | 'cos' | 'all') {
   return useQuery({
-    queryKey: ['api/v1/assets/total', mediaType ?? 'all', partition ?? 'regular'],
+    queryKey: [...ASSETS_QUERY_KEY, 'total', mediaType ?? 'all', partition ?? 'regular'],
     queryFn: () =>
       unwrapSdkResult(
         getApiV1Assets({
@@ -122,7 +125,7 @@ export function assetToCard(a: AssetSummary): MediaCardProps {
 /** 资产详情（签名原件直链/编码信息/标签作者——详情页与播放兼容性判断数据源） */
 export function useAssetDetail(assetId?: string) {
   return useQuery({
-    queryKey: ['api/v1/assets/detail', assetId],
+    queryKey: [...ASSETS_QUERY_KEY, 'detail', assetId],
     queryFn: () => unwrapSdkResult(getApiV1AssetsByAssetId({ path: { assetId: assetId! } })),
     enabled: !!assetId,
   })
@@ -131,7 +134,7 @@ export function useAssetDetail(assetId?: string) {
 /** 出处分组计数（搜索页/集合页来源维度；null 名 = 前端兜底"其他"） */
 export function useSources() {
   return useQuery({
-    queryKey: ['api/v1/sources'],
+    queryKey: SOURCES_QUERY_KEY,
     queryFn: () => unwrapSdkResult(getApiV1Sources()),
   })
 }
@@ -152,7 +155,7 @@ export function useAssetFacets(
   } = {},
 ) {
   return useQuery({
-    queryKey: ['api/v1/assets/facets', params],
+    queryKey: [...ASSETS_QUERY_KEY, 'facets', params],
     queryFn: () => unwrapSdkResult(getApiV1AssetsFacets({ query: params })),
     select: (res): AssetFacets => ({
       partitions: res.partitions ?? [],
