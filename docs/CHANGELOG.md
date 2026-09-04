@@ -7,12 +7,13 @@
 - 每个变更条目标注实际执行该改动的 AI 模型（真实命名，品牌-版本），便于追溯每次改动由谁完成。
 - 每个条目单独署名；多 AI 协作时各条目自行署名。
 - 子代理执行的工作标注"（执行子代理）"，主对话直接完成的标注"（主代理）"。
+- 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
 
 ## 夜间集群晨间汇总：W 链 + M4-0 + S-1 + M6 POC 完成，多会话并行归档（2026-09-05 第三十四笔）
 
-执行 AI：GLM-5.3（主代理，ZCode 调度；各批次署名见对应条目）
+执行 AI：GLM-5.3-Flash（主代理，ZCode 调度；各批次署名见对应条目）
 
 夜间集群模式首次全程运行（本会话调度 M 链 + 用户另开两会话：S-1 服务端 / M6 POC + 审查会话）。完整盘点见仓库外《进度盘点-20260905晨.md》，收工快照：
 
@@ -24,7 +25,7 @@
 
 ## W-3 追加返工：倍速文案真修复 + 切路由整队取消补全（2026-09-05 第三十三笔）
 
-执行 AI：GLM-5.3（主代理调度验收；返工由原 W-3 执行子代理续聊完成）
+执行 AI：GLM-5.3-Flash（主代理调度验收；返工由原 W-3 执行子代理续聊完成）
 
 0a2f5d1（第三十笔）复审判定 5/6 通过，唯「倍速文案」项无效且引入缺陷，本笔纠正（原 W-3 执行代理续聊返工，因其握有该文件完整上下文）：
 
@@ -35,7 +36,7 @@
 
 ## M4-0 工程基建：Android Compose 多模块骨架 + 壳导航 + make/CI 第五门禁（2026-09-05 第三十二笔）
 
-执行 AI：GLM-5.3（执行子代理）
+执行 AI：GLM-5.3-Flash（执行子代理）
 
 按 HANDOVER_APP M4-0 任务书（ADR-0014 冻结设计）交付 Android 工程奠基石，全部验收命令与模拟器实测通过：
 
@@ -51,7 +52,7 @@
 
 ## 服务端协议扩展 S-1：/history 筛选、facets 子集计数、搜索补全端点、收藏/历史缺省全部（2026-09-05 第三十一笔）
 
-执行 AI：GLM-5.3（主代理，ZCode 调度验收；编码由 executor 子代理完成）
+执行 AI：GLM-5.3-Flash（主代理，ZCode 调度验收；编码由 executor 子代理完成）
 
 用户 2026-09-05 拍板 1A（收藏/历史缺省全部）+ 3B（搜索补全端点）落地，协议先行改 `api/openapi.yaml` 后 `make sdk` 重建三端生成物，再接线服务端（纯查询层，无 migration）：
 
@@ -65,7 +66,7 @@
 
 ## 拍板批五项修复：SSE 跨端刷新/上传目标快照+真串行/拖拽 seek/倍速文案/深色 token 统一（2026-09-05 第三十笔）
 
-执行 AI：GLM-5.3（主代理，ZCode；用户四项拍板后单会话直修，隔离实例全量实机验收）
+执行 AI：GLM-5.3-Flash（主代理，ZCode；用户四项拍板后单会话直修，隔离实例全量实机验收）
 
 HANDOVER_UI §5 第 9~12 条记账项经用户逐项拍板（SSE 修/上传快照修/小毛病全修/详情页发现项 M4 后回补），本轮全部落地：
 
@@ -80,7 +81,7 @@ HANDOVER_UI §5 第 9~12 条记账项经用户逐项拍板（SSE 修/上传快�
 
 ## W-3 一致性复审：文档声明逐项核验 + play/dwell 打点缺口记账（2026-09-05 第二十九笔）
 
-执行 AI：GLM-5.3（主代理，ZCode）
+执行 AI：GLM-5.3-Flash（主代理，ZCode）
 
 - **逐项核验通过（W-3 = 92f1a47）**：artplayer@5.4.0 exact 锁定（package.json/package-lock 一致）；video-player.tsx 实测 132 行——倍速静态档位表覆盖 0.5~3x（PLAYBACK_RATES 覆盖官方 `Artplayer.PLAYBACK_RATE`）/全屏/`ready` 续播 seek/highlight 打点/theme 运行时读 `--qm-primary`+MutationObserver 跟深色/StrictMode 三路清理（observer.disconnect+seek 修复解绑+art.destroy）；use-progress.ts——`PROGRESS_REPORT_INTERVAL_MS=5000` 具名常量含协议同步责任注释（严于协议建议 10s）、mutationFn 显式载荷+`{assetId,positionSeconds}` 配对、切资产以旧 id 补报后重置、卸载补报、timeline-tags select 升序；AssetDetailPage——已看完 `isWatched` 与协议口径逐字一致（`>= durationMs/1000`，openapi.yaml AssetDetail.lastPositionSeconds description 同文）、watched→起点 0+徽标、codec-warn 逻辑未动、key 切资产重建、tagsLoading 守卫、页面零 SDK 直调（铁律 7）；prototype.css W-3 段零颜色字面量（`--invert`/`--qm-primary` 均既有 token；`zoom:1.1`、68vh 两个前提实测成立）。
 - **三命令复跑全绿**：`npx tsc --noEmit -p tsconfig.app.json` 0 错、`npm run build` 成功、`npm run lint` 15 warnings 0 errors——全部位于存量文件（router.tsx×13、button.tsx、SearchPage.tsx 各 1），W-3 改动文件零告警，与第二十八笔声明一致。
@@ -89,7 +90,7 @@ HANDOVER_UI §5 第 9~12 条记账项经用户逐项拍板（SSE 修/上传快�
 
 ## W-3 ArtPlayer 播放器：断点续播/倍速/时间轴打点/已看完徽标（2026-09-05 第二十八笔）
 
-执行 AI：GLM-5.3（主代理，ZCode 调度验收；编码与冒烟由 executor 子代理完成，reviewer 子代理对抗审查打回 1 轮后返工通过）
+执行 AI：GLM-5.3-Flash（主代理，ZCode 调度验收；编码与冒烟由 executor 子代理完成，reviewer 子代理对抗审查打回 1 轮后返工通过）
 
 UI 收尾三批收官（HANDOVER_UI §5.9 任务书，重批次走对抗审查）：
 
@@ -102,7 +103,7 @@ UI 收尾三批收官（HANDOVER_UI §5.9 任务书，重批次走对抗审查�
 
 ## 一致性审查：W-1/W-2/第十笔文档声明逐项核验 + 代码卫生修补（2026-09-05 第二十七笔）
 
-执行 AI：GLM-5.3（主代理，ZCode）
+执行 AI：GLM-5.3-Flash（主代理，ZCode）
 
 用户要求核验已完成内容的文档描述与实现一致，并对代码审查：
 
@@ -114,7 +115,7 @@ UI 收尾三批收官（HANDOVER_UI §5.9 任务书，重批次走对抗审查�
 
 ## W-2 confirm 换原型风格弹窗：window.confirm 全量退役（2026-09-04 第二十六笔）
 
-执行 AI：GLM-5.3（主代理，ZCode 调度验收；编码与冒烟由 executor 子代理完成）
+执行 AI：GLM-5.3-Flash（主代理，ZCode 调度验收；编码与冒烟由 executor 子代理完成）
 
 UI 收尾三批第二笔（HANDOVER_UI §5.9 任务书）：
 
@@ -124,7 +125,7 @@ UI 收尾三批第二笔（HANDOVER_UI §5.9 任务书）：
 
 ## W-1 上传 UI 入口：文件管理页上传卡 + use-upload 队列 hook（2026-09-04 第二十五笔）
 
-执行 AI：GLM-5.3（主代理，ZCode 调度验收；编码与冒烟由 executor 子代理完成）
+执行 AI：GLM-5.3-Flash（主代理，ZCode 调度验收；编码与冒烟由 executor 子代理完成）
 
 UI 收尾三批第一笔（HANDOVER_UI §5.9 任务书，夜间集群模式首个写批次）：
 
