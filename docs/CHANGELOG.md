@@ -11,6 +11,17 @@
 
 ---
 
+## 服务端协议扩展 S-2：AssetSummary/AssetDetail 增 likedToday 点赞初始态字段（2026-09-05 第三十七笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理，S 车道 S-2 批次）
+
+Q2-1 拍板（A 方案）落地：给 M4-3 详情页点赞按钮提供初始态字段，协议先行三端生成。
+
+- **协议**（api/openapi.yaml）：AssetSummary 增可选布尔 `likedToday`，注释写明口径=当日（本地日历日）是否已点赞（每资产每日一次、次日重置，与 `PUT /assets/{assetId}/like` 响应 LikeState.likedToday 同口径）；AssetDetail 经 allOf 继承 Summary 同步获得（单点声明，避免生成物重复字段）。`make sdk` 全链重建通过（redocly → oapi-codegen → hey-api TS → openapi-generator Kotlin），三端生成物均含新字段。
+- **服务端接线**：① 列表出口 `GET /assets`——`fillListLikedToday` 页大小一次批量查询二次装配（同 fillListAuthorNames 模式），批量查询 `ListLikedTodayForAssets` 新增于 queries/likes.sql（HasLikedOnDay 的 IN 批量形式，同 likes 表同 day 口径，sqlc v1.31.1 重新生成）；② 详情出口 `GET /assets/{id}`——fetchAssetStats 直接复用点赞端点既有查询 `HasLikedOnDay`（day=store.FormatDay 本地日历日）。
+- **测试**：browse_test.go 增 `TestAssetLikedToday`——今日已赞/曾赞非今日/从未赞三态 × 列表/详情两出口，含"曾赞非今日 → likedToday=false 但 likeCount 保留"口径锁定与取消今日赞后两出口联动回 false；隔离实例（端口 8466 + 临时数据目录 + dev 模式，未触碰 8420 真库）curl 实测三态两出口全部正确。
+- **文档**：GUIDE_API.md「关键机制」增 likedToday 字段说明 + 头部更新行。
+
 ## 晨间拍板落档：Q1~Q4 全按建议——W-4 web 打点车道开跑、M4-3/M4-6 解锁、用户手动派发模式（2026-09-05 第三十六笔）
 
 执行 AI：GLM-5.3（主代理，ZCode 调度）

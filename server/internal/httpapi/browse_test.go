@@ -990,6 +990,90 @@ func TestEngagementEndpoints(t *testing.T) {
 	}
 }
 
+// TestAssetLikedToday：AssetSummary.likedToday（点赞按钮初始态）在列表与
+// 详情两出口的三态填充——今日已赞（true）/ 曾赞非今日（false，当日口径
+// 不含历史行）/ 从未赞（false）。造数：a 走真点赞端点（toggle 首点=今日
+// 赞），b 直接插昨日行（AddLike 与点赞端点同一张 likes 表），c 不造数。
+// 末段验证取消今日赞后两出口同步回 false（字段与 toggle 状态联动）。
+func TestAssetLikedToday(t *testing.T) {
+	env := newTestEnv(t)
+	a, b, c := testFiles[0], testFiles[1], testFiles[2]
+	ctx := context.Background()
+
+	// a.jpg：今日已赞（真端点造数）
+	resp := env.do(t, "PUT", "/api/v1/assets/"+a.id+"/like", "")
+	closeBody(resp)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("a 点赞期望 200，得到 %d", resp.StatusCode)
+	}
+	// b.jpg：曾赞非今日（昨日行，直接走点赞端点同一写入路径 AddLike）
+	yesterday := store.FormatDay(env.clock.Now().AddDate(0, 0, -1))
+	if err := env.q.AddLike(ctx, db.AddLikeParams{
+		AssetID: b.id, Day: yesterday, CreatedAt: store.FormatTimestamp(env.clock.Now()),
+	}); err != nil {
+		t.Fatalf("插入昨日点赞行失败: %v", err)
+	}
+
+	// 列表出口：三态断言
+	resp = env.do(t, "GET", "/api/v1/assets?limit=10", "")
+	var page gen.AssetPage
+	if err := decodeBody(resp, &page); err != nil {
+		t.Fatalf("解析列表失败: %v", err)
+	}
+	closeBody(resp)
+	byName := map[string]gen.AssetSummary{}
+	for _, it := range deref(page.Items) {
+		if it.FileName != nil {
+			byName[*it.FileName] = it
+		}
+	}
+	for name, want := range map[string]bool{"a.jpg": true, "b.jpg": false, "c.mp4": false} {
+		it, ok := byName[name]
+		if !ok {
+			t.Fatalf("列表缺少 %s", name)
+		}
+		if it.LikedToday == nil {
+			t.Fatalf("%s 的 likedToday 未填充（应为 %v）", name, want)
+		}
+		if *it.LikedToday != want {
+			t.Fatalf("%s 的 likedToday 应 %v，得到 %v", name, want, *it.LikedToday)
+		}
+	}
+	// 曾赞非今日：likedToday=false 但累计 likeCount 保留（两字段不混淆）
+	if lc := byName["b.jpg"].LikeCount; lc == nil || *lc != 1 {
+		t.Fatalf("b.jpg 累计 likeCount 应保留 1，得到 %v", byName["b.jpg"].LikeCount)
+	}
+
+	// 详情出口：三态断言
+	for id, want := range map[string]bool{a.id: true, b.id: false, c.id: false} {
+		d := env.detail(t, id)
+		if d.LikedToday == nil {
+			t.Fatalf("详情 %s 的 likedToday 未填充（应为 %v）", id, want)
+		}
+		if *d.LikedToday != want {
+			t.Fatalf("详情 %s 的 likedToday 应 %v，得到 %v", id, want, *d.LikedToday)
+		}
+	}
+
+	// 取消 a 的今日赞（toggle 另一半）→ 两出口同步回 false
+	resp = env.do(t, "PUT", "/api/v1/assets/"+a.id+"/like", "")
+	closeBody(resp)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("a 取消点赞期望 200，得到 %d", resp.StatusCode)
+	}
+	resp = env.do(t, "GET", "/api/v1/assets?limit=10", "")
+	_ = decodeBody(resp, &page)
+	closeBody(resp)
+	for _, it := range deref(page.Items) {
+		if it.Id != nil && it.Id.String() == a.id && it.LikedToday != nil && *it.LikedToday {
+			t.Fatal("取消点赞后列表 likedToday 应回 false")
+		}
+	}
+	if d := env.detail(t, a.id); d.LikedToday != nil && *d.LikedToday {
+		t.Fatal("取消点赞后详情 likedToday 应回 false")
+	}
+}
+
 // ---------- ⑧ 探针 / 验收页 / 未实现端点 ----------
 
 // TestSSEEndpoint：SSE 在鉴权链内——无 token 401；带 token 返回

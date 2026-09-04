@@ -21,3 +21,14 @@ SELECT COUNT(*) FROM likes WHERE asset_id = ? AND day = ?;
 
 -- name: CountAssetLikes :one
 SELECT COUNT(*) FROM likes WHERE asset_id = ?;
+
+-- ListLikedTodayForAssets: batch form of HasLikedOnDay for list pages --
+-- the asset_ids among the given set that already have a like row on the
+-- given day. Same table and same day convention as HasLikedOnDay
+-- (day is YYYY-MM-DD in the server's local timezone). asset_ids_json is
+-- a JSON array consumed by json_each -- same parameter shape as
+-- ListAuthorNamesForAssets (see browse.sql header for the sqlc parser
+-- constraints that dictate it).
+-- name: ListLikedTodayForAssets :many
+SELECT DISTINCT asset_id FROM likes
+WHERE day = ? AND asset_id IN (SELECT value FROM json_each(sqlc.narg(asset_ids_json)));
