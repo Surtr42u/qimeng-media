@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { LOCALE_ZH } from '@/lib/constants'
+import { formatBytes } from '@/lib/format'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import {
   useDeleteTrashItem, useEmptyTrash, useRestoreTrash, useTrash,
@@ -12,13 +13,6 @@ import type { TrashItem } from '@/api/generated'
  * 删除资产 = 移入回收站（铁律 4）；本页提供恢复 / 彻底删除 / 清空，
  * 后两者是显式的物理删除管理操作——全部 confirm 二次确认。
  */
-
-function formatBytes(n: number): string {
-  if (n >= 1024 ** 3) return `${(n / 1024 ** 3).toFixed(1)} GB`
-  if (n >= 1024 ** 2) return `${(n / 1024 ** 2).toFixed(1)} MB`
-  if (n >= 1024) return `${(n / 1024).toFixed(0)} KB`
-  return `${n} B`
-}
 
 export default function TrashPage() {
   const { data: items = [], isLoading } = useTrash()
