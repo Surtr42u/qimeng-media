@@ -4,7 +4,7 @@
 
 ## 项目一句话
 
-媒体全存 NAS 的多端媒体库：Go 单体服务端 + React Web(PWA) + Kotlin/Compose Android 薄客户端，协议先行（openapi.yaml 是三端唯一事实源）。
+媒体全存 NAS 的多端媒体库：Go 单体服务端 + React Web(PWA) + Kotlin/View Android 客户端（M4 走旧 UI 照搬路线，ADR-0013），协议先行（openapi.yaml 是三端唯一事实源）。
 
 ## 读取顺序
 
@@ -48,8 +48,8 @@
 
 ## 与旧项目（QimengMedia）的关系
 
-- 旧项目 = 领域知识库（推荐算法/筛选/统计/作者规则已提炼进 `docs/DOMAIN_RULES.md`）
-- **禁止**把旧项目的 Android 单机架构代码搬进来；领域规则照搬，实现全部重写
+- 旧项目 = 领域知识库（推荐算法/筛选/统计/作者规则已提炼进 `docs/DOMAIN_RULES.md`，服务端 M3 实现完毕）
+- **M4 App 端走「旧 UI 照搬 + 数据层网络化」路线（ADR-0013，2026-09-04 用户拍板）**：ui/ 层（Fragment/XML/自定义控件）+ AppContainer + 主题整体照搬；**禁止搬运的是单机生态代码**（scan/ 全部、ScanUseCase、AutoSyncUseCase、BackupManager、本地缩略图解码管线、DefaultLocalMediaRepository 旧实现——禁搬清单见 ADR-0013/android README）；算法不在客户端复算（服务端已算好）
 - 旧项目数据迁移：一次性导入端点，见 `docs/DOMAIN_RULES.md` §10
 
 ## 回复签名
