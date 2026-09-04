@@ -10,6 +10,22 @@
 
 ---
 
+## M4-0 工程基建：Android Compose 多模块骨架 + 壳导航 + make/CI 第五门禁（2026-09-05 第三十二笔）
+
+执行 AI：GLM-5.3（执行子代理）
+
+按 HANDOVER_APP M4-0 任务书（ADR-0014 冻结设计）交付 Android 工程奠基石，全部验收命令与模拟器实测通过：
+
+- **多模块骨架（冻结结构）**：`:app`（壳/导航/Hilt 装配，namespace `media.qimeng.app`）+ `:core:model`（纯 Kotlin）/`:core:network`（:sdk 封装层依赖接线）/`:core:data`（Repository 层依赖接线）/`:core:ui`（品牌主题+共享占位组件）+ `:feature:{home,all,album,favorite,history,search,author,detail,stats,settings,upload}` 空壳占位；minSdk 26 / compileSdk 36；版本唯一收口 `gradle/libs.versions.toml`（AGP 8.13.2 + Kotlin 2.3.21 + KSP 2.3.11 + Compose BOM 2026.06.01 + Hilt 2.58 等，逐项官方来源核查，链接在 toml 注释）。
+- **壳导航**：单 Activity + Navigation Compose + 底部五 Tab（首页/全部/相册/数据/我的，GUIDE_UI §导航结构），saveState/restoreState+launchSingleTop 实现 Tab 保活语义；Material 3 主题色板对照 web prototype.css 换算（#4250af 系 + .dark oklch 换算值，注释逐项标注 token 来源）；五 Tab 图标为自持矢量（Material Icons 官方 path data，零新依赖）。
+- **应用图标**：adaptive icon 一套按 GUIDE_UI §应用图标 资产规格接入（背景 #DDBC98 + 旧项目前景雕刻图 PNG 五密度——资产照规格书搬运，非实现代码搬运）；minSdk 26 无需 legacy mipmap。
+- **:sdk 生成物接线（本笔关键攻坚）**：生成器自带 build.gradle 的 `wrapper{}` 属 Gradle 7 DSL（Gradle 8 移除）且自带 Kotlin 2.4.0 独立 buildscript，与冻结的 Gradle 8.13/Kotlin 2.3.x 冲突且禁手改——settings.gradle.kts 以 `buildFileName` 指向工程侧 `android/sdk/sdk.gradle`，该文件由 `make sdk` 的 sdk-kotlin 步骤生成（`SDK_GRADLE_FILE`，纯 ASCII 防 make.exe 代码页转码），保持「生成物一律 make sdk 重建」不变式。另一生成器缺陷：协议 sort 枚举合法值 `name` 生成的枚举项与 `kotlin.Enum.name` 冲突无法编译——用官方 `--enum-name-mappings name=nameValue` 生成期改名（线上值不变，openapi-generator 官方 Customization 文档方案）。
+- **版本组合修正（预检备忘录两处建议不可行，已按实测落定）**：Compose BOM 2026.08.00 的 compose 1.12.0 要求 compileSdk 37（AAR 元数据硬门禁，assembleDebug 实测）→ 取 API 36 兼容线最新 BOM 2026.06.01（ui 1.11.4/material3 1.4.0）；同期 androidx 新 wave（navigation 2.10.0/lifecycle 2.11.0/androidx.hilt 1.4.0/activity 1.13.0）同要求 37 → 各退上一稳定线（2.9.8/2.10.0/1.3.0/1.12.4）；Hilt 2.60.1 强制 AGP 9+ → 退 2.58（AGP 8.x 兼容线末位，官方 release note）。升级统一走 AGP 9+Gradle 9+compileSdk 37 路线（后续批次决策）。
+- **构建接线**：Makefile 增 `app-build`/`app-test`/`app-lint`（wrapper 构建）；.gitignore 改 `android/**/build/`；`android/local.properties` 本机 SDK（不入库）。本机 dl.google.com 不可达，Gradle 镜像走机器级 `~/.gradle/init.d`（不入仓库，CI 直连官方源不受影响）；Gradle 8.13 发行包经腾讯镜像下载并校验官方 sha256 后种子进 wrapper 缓存。
+- **CI 第五 job**：`android`（checkout → make sdk 重建生成物 → temurin 21 → gradle/actions/setup-gradle@v4 → assembleDebug+testDebugUnitTest+lintDebug）；同步 PROJECT_PLAN「门禁 = CI 五 job」与 HANDOVER「五道门禁」。
+- **测试**：TopLevelDestinationTest 锁定五 Tab 顺序/路由唯一性；`make app-build && make app-test && make app-lint`、`make lint` 全绿；`make sdk` 删除 android/sdk 后干净重建验证通过。
+- **模拟器实测**：qimeng_api35 启动 → installDebug → 五 Tab 逐一切换截图（`%TEMP%\qimeng-m40-shots\01~05.png`）→ 关机。
+
 ## 服务端协议扩展 S-1：/history 筛选、facets 子集计数、搜索补全端点、收藏/历史缺省全部（2026-09-05 第三十一笔）
 
 执行 AI：GLM-5.3（主代理，ZCode 调度验收；编码由 executor 子代理完成）
