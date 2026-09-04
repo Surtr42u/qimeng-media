@@ -1,6 +1,7 @@
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { useParams } from 'react-router'
 import { useAssetDetail, useReportView } from '@/hooks/use-assets'
+import { useDwellReport } from '@/hooks/use-dwell-report'
 import { useProgress, useTimelineTags } from '@/hooks/use-progress'
 import VideoPlayer from '@/components/media/video-player'
 import { formatBytes, formatDuration, formatShortDate } from '@/lib/format'
@@ -11,7 +12,8 @@ import { ensureSessionId } from '@/hooks/use-session'
  * 图片/动图 = 签名原件直链大图（"查看永远发原件"）；视频 = ArtPlayer 播放器
  * （W-3：倍速 0.5~3x/静音/全屏/断点续播/时间轴标签打点回看，网络逻辑全在
  * hooks/use-progress.ts）。兼容性提示：ffprobe 编码（协议 0006）显示无法
- * 直链播放的编码提示，不转码。进入即上报 open 事件（DOMAIN_RULES §5 会话去重）。
+ * 直链播放的编码提示，不转码。打点（DOMAIN_RULES §5）：进入上报 open、
+ * 视频每次起播上报 play、停留时长上报 dwell（图片视频通用）。
  */
 
 /** 浏览器 <video> 直链不支持的主流编码（其余编码尝试播放，失败再兜底） */
@@ -56,6 +58,22 @@ export default function AssetDetailPage() {
     })
   }, [assetId, reportView])
 
+  // play 打点：视频每次起播如实上报一条（同会话当日重复起播的去重由服务端
+  // 判定，重复上报被其 202 幂等吸收——DOMAIN_RULES §5「同会话只计一次」）
+  const reportPlay = useCallback(() => {
+    if (!assetId) return
+    reportView.mutate({
+      assetId,
+      kind: 'play',
+      startedAt: new Date().toISOString(),
+      sessionId: ensureSessionId(),
+    })
+  }, [assetId, reportView])
+
+  // dwell 打点：进入计时、离开/页面隐藏 flush 恰好一条（累加口径的防重
+  // 闸门在 hook 内部；图片与视频详情页通用）
+  useDwellReport(assetId)
+
   if (!d) {
     return (
       <div className="page" id="page-asset">
@@ -88,6 +106,7 @@ export default function AssetDetailPage() {
                 .map((t) => ({ time: (t.timeMillis ?? 0) / 1000, text: t.name ?? '' }))}
               onTimeUpdate={progress.tick}
               onPause={progress.flush}
+              onPlay={reportPlay}
             />
           )
         ) : d.origUrl ? (

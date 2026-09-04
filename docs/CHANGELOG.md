@@ -11,6 +11,18 @@
 
 ---
 
+## Web 端 play/dwell 行为打点补齐：playCount/浏览时长恢复 web 侧供数（2026-09-05 第三十八笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理，W 车道 W-4 批次）
+
+W-4 批次（打点缺口补齐，任务书=仓库外《QimengNAS/派发任务书-20260905夜.md》）。**断点定位结论**：M2 记录「DetailPage open/dwell 打点」与实际不符——`useReportView`（hooks/use-assets.ts）三种 kind 均支持，但全库唯一调用点是 AssetDetailPage 进页的 `open`，play/dwell 从未接线（040df17 全库 playCount/浏览时长为零的直接原因，属"从未实现"而非"路径未生效"）。
+
+- **play**：`components/media/video-player.tsx` 新增 `onPlay` prop（`art.on('play')`；已核对 5.4.0 dist——该事件仅由 `art.play()` 发出，UI 大播放键 `.art-state`/控制条/空格键全走该路径，原生兜底层是 `video:play` 前缀事件不混用）；AssetDetailPage 每次起播如实逐条上报，同会话当日去重由服务端 202 幂等吸收（DOMAIN_RULES §5）。
+- **dwell**：新增 `hooks/use-dwell-report.ts`——进入详情页计时，离开（卸载/详情→详情切资产）与页面隐藏（visibilitychange hidden + pagehide 兜底）flush 恰好一条；segmentRef 单点持有、取走即置空（同段重复 flush 一律 no-op，防累加口径时长虚增）；隐藏期间不计停留、回可见开新段；<1s 停留段不上报（秒数四舍五入后为 0，防零值噪声事件，数值口径不受影响）。图片与视频通用（挂详情页层级，组件零参与）；sessionId 沿用 sessionStorage UUID（ensureSessionId）。
+- **隔离实例实机验收**（端口 18420+临时数据目录+dev-login+ffmpeg 造数 1 图 2 视频，未触碰 8420 真库）：headless Edge 走真实 UI 路径（点击 `.art-state` 起播）——视频起播→停留 13s→SPA 离开→图片停留 7s→离开→二次进入视频页模拟 hidden/visible 分段 3s+6s；8 条 `POST /events/view` 全 202；`GET /stats/trends?range=7d` 当日 `seconds=29`=13+7+3+6 精确吻合（无重复无遗漏）、video-a viewCount=1（两次 open 会话去重生效）/playCount=1、image-a viewCount=1/playCount=0、`GET /stats/overview` totalViews=2、`GET /rankings?period=day` 恢复供数（video-a 居首）。截图 %TEMP%/qimeng-w4-shots/（6 张：首页/起播前/播放中/离开后/图片详情/二次进入）。
+- **验收**：`npx tsc --noEmit -p web/tsconfig.app.json` 0 错；`npm --prefix web run build` 成功；`npm --prefix web run lint` 改动 3 文件 0 告警（全库存量 15 条不动）。
+- **文档**：HANDOVER_UI.md §5 第 13 条标记闭合 + 文头更新行。
+
 ## 服务端协议扩展 S-2：AssetSummary/AssetDetail 增 likedToday 点赞初始态字段（2026-09-05 第三十七笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理，S 车道 S-2 批次）
