@@ -16,6 +16,9 @@ import { unwrapSdkResult } from '@/lib/api-client'
 
 export const LIBRARIES_QUERY_KEY = ['api/v1/libraries'] as const
 
+/** 目录树查询键根（前缀失效用：use-upload 上传成功后刷各库目录树；useDirTree 在此之上追加 libraryId） */
+export const DIRS_QUERY_KEY = ['api/v1/dirs'] as const
+
 /** 库列表（含文件计数与扫描态） */
 export function useLibraries() {
   return useQuery({
@@ -31,7 +34,7 @@ export function useLibraries() {
  */
 export function useDirTree(libraryId: string, enabled: boolean) {
   return useQuery({
-    queryKey: ['api/v1/dirs', libraryId],
+    queryKey: [...DIRS_QUERY_KEY, libraryId],
     queryFn: () => unwrapSdkResult(getApiV1Dirs({ query: { libraryId } })),
     enabled,
   })
