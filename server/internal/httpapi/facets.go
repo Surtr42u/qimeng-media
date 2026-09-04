@@ -54,12 +54,15 @@ var facetMediaTypeLabels = map[gen.MediaType]string{
 // facetSourceBuckets 作者行的出处分组候选（常规/全部分区调用）。
 // 「其他」（NULL source）桶排在末尾（旧版 renderSourcePills 的「其他
 // 永远排在列表最下面」），key=sourceOtherLabel 可直接回传 GET /assets。
-func (s *Server) facetSourceBuckets(w http.ResponseWriter, r *http.Request, mediaType, charactersJson, cosWork, qJson any) ([]gen.FacetBucket, bool) {
+// 尾部两个 int64 是子集约束旗（恒 0/1，见 GetApiV1AssetsFacets 注释）。
+func (s *Server) facetSourceBuckets(w http.ResponseWriter, r *http.Request, mediaType, charactersJson, cosWork, qJson any, favoriteSubset, historySubset int64) ([]gen.FacetBucket, bool) {
 	rows, err := s.q.FacetSourceCounts(r.Context(), db.FacetSourceCountsParams{
 		MediaType:      mediaType,
 		CharactersJson: charactersJson,
 		CosWork:        cosWork,
 		QJson:          qJson,
+		FavoriteSubset: favoriteSubset,
+		HistorySubset:  historySubset,
 	})
 	if err != nil {
 		s.internalErr(w, "聚合作者行出处分组", err)
@@ -90,7 +93,7 @@ func (s *Server) facetSourceBuckets(w http.ResponseWriter, r *http.Request, medi
 }
 
 // facetCosAuthorBuckets 作者行的 COS 作者候选（COS/全部分区调用）。
-func (s *Server) facetCosAuthorBuckets(w http.ResponseWriter, r *http.Request, includeCos, cosOnly int64, mediaType, charactersJson, cosWork, qJson any) ([]gen.FacetBucket, bool) {
+func (s *Server) facetCosAuthorBuckets(w http.ResponseWriter, r *http.Request, includeCos, cosOnly int64, mediaType, charactersJson, cosWork, qJson any, favoriteSubset, historySubset int64) ([]gen.FacetBucket, bool) {
 	rows, err := s.q.FacetAuthorCounts(r.Context(), db.FacetAuthorCountsParams{
 		IncludeCos:     includeCos,
 		CosOnly:        cosOnly,
@@ -98,6 +101,8 @@ func (s *Server) facetCosAuthorBuckets(w http.ResponseWriter, r *http.Request, i
 		CharactersJson: charactersJson,
 		CosWork:        cosWork,
 		QJson:          qJson,
+		FavoriteSubset: favoriteSubset,
+		HistorySubset:  historySubset,
 	})
 	if err != nil {
 		s.internalErr(w, "聚合作者行 COS 作者", err)
@@ -171,10 +176,24 @@ func (s *Server) GetApiV1AssetsFacets(w http.ResponseWriter, r *http.Request, pa
 	if params.Q != nil && *params.Q != "" {
 		qJson = jsonString(search.ParseQuery(*params.Q))
 	}
+	// 子集约束（非四维之一，openapi 端点 description）：favorite=1 → 只
+	// 统计收藏资产，history=1 → 只统计有 open 事件的资产；对全部四维（含
+	// 分区栏）统一生效，不存在排自身问题。恒传 0/1——谓词形态
+	// sqlc.arg(x)=0 OR EXISTS（facets.sql 文件头），传 NULL 会落三值逻辑
+	// 整行排除。显式 false 与缺省同义（协议「缺省不约束」）。
+	favoriteSubset := int64(0)
+	if params.Favorite != nil && *params.Favorite {
+		favoriteSubset = 1
+	}
+	historySubset := int64(0)
+	if params.History != nil && *params.History {
+		historySubset = 1
+	}
 	ctx := r.Context()
 
 	// 分区栏：固定 all/regular/cos 三项。分区维排自身=全量报告，一次查询
 	// 同时给出全量与 COS 计数（常规 = 全量 - COS，facets.sql 单趟合并）。
+	// 子集约束传入时分区芯片 = 子集内的 all/regular/cos。
 	part, err := s.q.FacetPartitionCounts(ctx, db.FacetPartitionCountsParams{
 		MediaType:      mediaType,
 		CharactersJson: charactersJson,
@@ -183,6 +202,8 @@ func (s *Server) GetApiV1AssetsFacets(w http.ResponseWriter, r *http.Request, pa
 		SourceIsOther:  sourceIsOther,
 		AuthorID:       authorID,
 		QJson:          qJson,
+		FavoriteSubset: favoriteSubset,
+		HistorySubset:  historySubset,
 	})
 	if err != nil {
 		s.internalErr(w, "聚合分区维度", err)
@@ -199,14 +220,14 @@ func (s *Server) GetApiV1AssetsFacets(w http.ResponseWriter, r *http.Request, pa
 	//   常规分区=出处分组；COS 分区=COS 作者；全部分区=两者合并。
 	var authors []gen.FacetBucket
 	if !isCosPartition {
-		srcBuckets, ok := s.facetSourceBuckets(w, r, mediaType, charactersJson, cosWork, qJson)
+		srcBuckets, ok := s.facetSourceBuckets(w, r, mediaType, charactersJson, cosWork, qJson, favoriteSubset, historySubset)
 		if !ok {
 			return
 		}
 		authors = srcBuckets
 	}
 	if !isRegularPartition {
-		cosBuckets, ok := s.facetCosAuthorBuckets(w, r, includeCos, cosOnly, mediaType, charactersJson, cosWork, qJson)
+		cosBuckets, ok := s.facetCosAuthorBuckets(w, r, includeCos, cosOnly, mediaType, charactersJson, cosWork, qJson, favoriteSubset, historySubset)
 		if !ok {
 			return
 		}
@@ -233,13 +254,15 @@ func (s *Server) GetApiV1AssetsFacets(w http.ResponseWriter, r *http.Request, pa
 	var characters []gen.FacetBucket
 	if !isCosPartition {
 		charRows, err := s.q.FacetCharacterCounts(ctx, db.FacetCharacterCountsParams{
-			IncludeCos:    includeCos,
-			CosOnly:       cosOnly,
-			MediaType:     mediaType,
-			Source:        source,
-			SourceIsOther: sourceIsOther,
-			AuthorID:      authorID,
-			QJson:         qJson,
+			IncludeCos:     includeCos,
+			CosOnly:        cosOnly,
+			MediaType:      mediaType,
+			Source:         source,
+			SourceIsOther:  sourceIsOther,
+			AuthorID:       authorID,
+			QJson:          qJson,
+			FavoriteSubset: favoriteSubset,
+			HistorySubset:  historySubset,
 		})
 		if err != nil {
 			s.internalErr(w, "聚合角色维度", err)
@@ -255,13 +278,15 @@ func (s *Server) GetApiV1AssetsFacets(w http.ResponseWriter, r *http.Request, pa
 	}
 	if !isRegularPartition {
 		workRows, err := s.q.FacetCosWorkCounts(ctx, db.FacetCosWorkCountsParams{
-			IncludeCos:    includeCos,
-			CosOnly:       cosOnly,
-			MediaType:     mediaType,
-			Source:        source,
-			SourceIsOther: sourceIsOther,
-			AuthorID:      authorID,
-			QJson:         qJson,
+			IncludeCos:     includeCos,
+			CosOnly:        cosOnly,
+			MediaType:      mediaType,
+			Source:         source,
+			SourceIsOther:  sourceIsOther,
+			AuthorID:       authorID,
+			QJson:          qJson,
+			FavoriteSubset: favoriteSubset,
+			HistorySubset:  historySubset,
 		})
 		if err != nil {
 			s.internalErr(w, "聚合角色维度", err)
@@ -288,6 +313,8 @@ func (s *Server) GetApiV1AssetsFacets(w http.ResponseWriter, r *http.Request, pa
 		SourceIsOther:  sourceIsOther,
 		AuthorID:       authorID,
 		QJson:          qJson,
+		FavoriteSubset: favoriteSubset,
+		HistorySubset:  historySubset,
 	})
 	if err != nil {
 		s.internalErr(w, "聚合类型维度", err)

@@ -33,8 +33,8 @@ import (
 )
 
 // seedFacetFixture 在标准环境上补 COS 库 + 作者/角色/cos_work 关联。
-// 返回 COS 库 ID（当前断言不需要，留作扩展）。
-func seedFacetFixture(t *testing.T, e *testEnv) {
+// 返回 COS 库 ID（收藏子集/缺省全部用例按路径取 COS 资产 ID 用）。
+func seedFacetFixture(t *testing.T, e *testEnv) string {
 	t.Helper()
 	ctx := context.Background()
 	now := store.FormatTimestamp(time.Now())
@@ -128,6 +128,7 @@ func seedFacetFixture(t *testing.T, e *testEnv) {
 	c2 := upsert(cosLib.ID, "作者X/2.jpg", "2.jpg", "image", nil)
 	link(c1.AssetID, cosAuthorID)
 	link(c2.AssetID, cosAuthorID)
+	return cosLib.ID
 }
 
 // assetIDByPath 按库内相对路径取 asset_id（newTestEnv 播种行）。
@@ -379,6 +380,143 @@ func TestAssetsCosPartitionParams(t *testing.T) {
 	// work 作品筛选：与 includeCos 组合只中作品 P 一条。
 	if got = fetchIDs("?limit=50&includeCos=true&work=" + percentEncode("作品P")); len(got) != 1 {
 		t.Errorf("work=作品P 列表=%v, want 1 条", got)
+	}
+}
+
+// TestFacetsFavoriteHistorySubsets：子集约束（2026-09-05 S-1 批次）——
+// favorite=1 / history=1 对全部四维（含分区栏）统一收窄统计口径；与
+// mediaType 组合叠加；不带子集参数时行为与既有口径全同（回归由
+// TestFacetsPartitionPills / TestFacetsOtherDims / TestFacetsExcludeSelf
+// 三个既有用例持续锁定，本用例只补子集路径）。
+//
+// 数据基座 = seedFacetFixture 五资产，叠加行为数据：
+//
+//	收藏：a.jpg（常规图片）、C1（COS 图片，作品P）
+//	历史：b.jpg（常规图片）、c.mp4（常规视频）、C2（COS 图片，NULL 作品）
+func TestFacetsFavoriteHistorySubsets(t *testing.T) {
+	env := newTestEnv(t)
+	cosLibID := seedFacetFixture(t, env)
+	ctx := context.Background()
+	now := store.FormatTimestamp(time.Now())
+
+	regA := env.assetIDByPath(t, "a.jpg")
+	regB := env.assetIDByPath(t, "b.jpg")
+	regC := env.assetIDByPath(t, "c.mp4")
+	c1Row, err := env.q.GetAssetByPath(ctx, db.GetAssetByPathParams{LibraryID: cosLibID, RelPath: "作者X/作品P/1.jpg"})
+	if err != nil {
+		t.Fatalf("取 C1 失败: %v", err)
+	}
+	c2Row, err := env.q.GetAssetByPath(ctx, db.GetAssetByPathParams{LibraryID: cosLibID, RelPath: "作者X/2.jpg"})
+	if err != nil {
+		t.Fatalf("取 C2 失败: %v", err)
+	}
+
+	addFav := func(assetID string) {
+		t.Helper()
+		if _, err := env.q.AddFavorite(ctx, db.AddFavoriteParams{AssetID: assetID, CreatedAt: now}); err != nil {
+			t.Fatalf("写收藏失败: %v", err)
+		}
+	}
+	addFav(regA)
+	addFav(c1Row.AssetID)
+	reportOpenAt(t, env, regB, "2026-08-22T10:00:00Z", "fs-h1")
+	reportOpenAt(t, env, regC, "2026-08-22T11:00:00Z", "fs-h2")
+	reportOpenAt(t, env, c2Row.AssetID, "2026-08-22T12:00:00Z", "fs-h3")
+
+	cosAuthor := authoring.GenerateCosAuthorID("作者X")
+
+	// favorite=1：收藏子集 = a.jpg（常规/其他桶/天使/图片）+ C1（COS/作者X/作品P/图片）。
+	got := bucketMap(t, getFacets(t, env, "?favorite=1"), "partitions")
+	assertCounts(t, got, map[string]int{"all": 2, "regular": 1, "cos": 1}, "favorite=1 分区栏")
+	got = bucketMap(t, getFacets(t, env, "?favorite=1"), "authors")
+	assertCounts(t, got, map[string]int{sourceOtherLabel: 1, cosAuthor: 1}, "favorite=1 作者栏")
+	got = bucketMap(t, getFacets(t, env, "?favorite=1"), "characters")
+	assertCounts(t, got, map[string]int{"天使": 1, "作品P": 1}, "favorite=1 角色栏")
+	got = bucketMap(t, getFacets(t, env, "?favorite=1"), "types")
+	assertCounts(t, got, map[string]int{"all": 2, "image": 2, "video": 0, "animated_image": 0}, "favorite=1 类型栏")
+
+	// history=1：历史子集 = b.jpg（kemono/天使+黑百合/图片）+ c.mp4（其他/视频）
+	// + C2（作者X/NULL 作品不列/图片）。
+	got = bucketMap(t, getFacets(t, env, "?history=1"), "partitions")
+	assertCounts(t, got, map[string]int{"all": 3, "regular": 2, "cos": 1}, "history=1 分区栏")
+	got = bucketMap(t, getFacets(t, env, "?history=1"), "authors")
+	assertCounts(t, got, map[string]int{sourceOtherLabel: 1, "kemono": 1, cosAuthor: 1}, "history=1 作者栏")
+	got = bucketMap(t, getFacets(t, env, "?history=1"), "characters")
+	assertCounts(t, got, map[string]int{"天使": 1, "黑百合": 1}, "history=1 角色栏（C2 无作品不列）")
+	got = bucketMap(t, getFacets(t, env, "?history=1"), "types")
+	assertCounts(t, got, map[string]int{"all": 3, "image": 2, "video": 1, "animated_image": 0}, "history=1 类型栏")
+
+	// 与 mediaType 组合：分区/作者栏按历史∩视频收窄；类型栏排自身=忽略
+	// mediaType（mediaType 正是类型行自身维度），保持历史子集全量计数。
+	got = bucketMap(t, getFacets(t, env, "?history=1&mediaType=video"), "partitions")
+	assertCounts(t, got, map[string]int{"all": 1, "regular": 1, "cos": 0}, "history=1&video 分区栏")
+	got = bucketMap(t, getFacets(t, env, "?history=1&mediaType=video"), "authors")
+	assertCounts(t, got, map[string]int{sourceOtherLabel: 1}, "history=1&video 作者栏")
+	got = bucketMap(t, getFacets(t, env, "?history=1&mediaType=video"), "characters")
+	assertCounts(t, got, map[string]int{}, "history=1&video 角色栏（c.mp4 无角色）")
+	got = bucketMap(t, getFacets(t, env, "?history=1&mediaType=video"), "types")
+	assertCounts(t, got, map[string]int{"all": 3, "image": 2, "video": 1, "animated_image": 0}, "history=1&video 类型栏（排自身=历史子集全量）")
+}
+
+// TestAssetsFavoriteDefaultAll：收藏流缺省「全部」（2026-09-05 用户拍板
+// 1A）——favorite=true 且未显式传分区参数 → 含 COS 收藏；显式
+// includeCos=false 仍切常规；cosOnly 优先逻辑不变；不带 favorite 维持
+// 缺省排除 COS（防回归）。
+func TestAssetsFavoriteDefaultAll(t *testing.T) {
+	env := newTestEnv(t)
+	cosLibID := seedFacetFixture(t, env)
+	ctx := context.Background()
+	now := store.FormatTimestamp(time.Now())
+
+	regA := env.assetIDByPath(t, "a.jpg")
+	c1Row, err := env.q.GetAssetByPath(ctx, db.GetAssetByPathParams{LibraryID: cosLibID, RelPath: "作者X/作品P/1.jpg"})
+	if err != nil {
+		t.Fatalf("取 C1 失败: %v", err)
+	}
+	for _, id := range []string{regA, c1Row.AssetID} {
+		if _, err := env.q.AddFavorite(ctx, db.AddFavoriteParams{AssetID: id, CreatedAt: now}); err != nil {
+			t.Fatalf("写收藏失败: %v", err)
+		}
+	}
+
+	fetch := func(query string) map[string]bool {
+		t.Helper()
+		resp := e_doAssets(t, env, query)
+		defer closeBody(resp)
+		var page struct {
+			Items []struct {
+				ID       string `json:"id"`
+				FileName string `json:"fileName"`
+			} `json:"items"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
+			t.Fatalf("解析 assets 响应失败: %v", err)
+		}
+		got := make(map[string]bool, len(page.Items))
+		for _, it := range page.Items {
+			got[it.FileName] = true
+		}
+		return got
+	}
+	// favorite=1 缺省：常规∪COS 收藏全出（1A 拍板口径）。
+	got := fetch("?favorite=true&limit=50")
+	if len(got) != 2 || !got["a.jpg"] || !got["1.jpg"] {
+		t.Errorf("favorite=true 缺省应含 COS 收藏共 2 条，得到 %v", got)
+	}
+	// favorite=1&includeCos=false：显式切常规，只剩 a.jpg。
+	got = fetch("?favorite=true&includeCos=false&limit=50")
+	if len(got) != 1 || !got["a.jpg"] {
+		t.Errorf("favorite=true&includeCos=false 应只含 a.jpg，得到 %v", got)
+	}
+	// favorite=1&cosOnly=true：cosOnly 优先，只剩 C1。
+	got = fetch("?favorite=true&cosOnly=true&limit=50")
+	if len(got) != 1 || !got["1.jpg"] {
+		t.Errorf("favorite=true&cosOnly=true 应只含 1.jpg，得到 %v", got)
+	}
+	// 不带 favorite：维持缺省排除 COS（三分，防回归）。
+	got = fetch("?limit=50")
+	if len(got) != 3 || got["1.jpg"] || got["2.jpg"] {
+		t.Errorf("不带 favorite 应维持常规三分，得到 %v", got)
 	}
 }
 

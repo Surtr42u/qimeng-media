@@ -10,6 +10,20 @@
 
 ---
 
+## 服务端协议扩展 S-1：/history 筛选、facets 子集计数、搜索补全端点、收藏/历史缺省全部（2026-09-05 第三十一笔）
+
+执行 AI：GLM-5.3（主代理，ZCode 调度验收；编码由 executor 子代理完成）
+
+用户 2026-09-05 拍板 1A（收藏/历史缺省全部）+ 3B（搜索补全端点）落地，协议先行改 `api/openapi.yaml` 后 `make sdk` 重建三端生成物，再接线服务端（纯查询层，无 migration）：
+
+- **/history 筛选参数**：新增 `cosOnly`/`work`/`character`/`mediaType`（与 GET /assets 同名参数同语义，browse.sql 同型谓词复制进 history.sql），响应结构不变；`includeCos` schema default 改 **true**——缺省全部（常规∪COS 合并），显式 false 切常规分区、cosOnly=true 切 COS 分区。
+- **缺省分区改「全部」（1A）**：/history 缺省含 COS（includeCos 缺省映射 1）；/assets `favorite=true` 且未显式传分区参数时缺省含 COS（协议侧 /assets includeCos default 保持 false，收藏流特例在 newAssetFilters 服务端分支实现）。**范围红线守住**：GET /sources、GET /recommendations、/assets 非收藏流的缺省排除口径一律未动。
+- **/assets/facets 子集计数**：新增 `favorite`/`history` 两参数（子集约束非四维之一）——favorite=1 只统计收藏资产、history=1 只统计有 kind='open' 事件的资产；传入时对全部四维含分区栏统一收窄（收藏页分区芯片=收藏子集内 all/regular/cos），四维间仍按排自身口径互算；六个 facets 查询各加两谓词（恒传 0/1 避三值逻辑）。
+- **新增 GET /search/suggestions**（LEGACY §C + 3B）：搜索框补全，五维候选=出处/角色/COS 作者/COS 作品/常规作者；子串匹配 ASCII 大小写不敏感；UNION 全行去重=同维同名一条、跨维同名各保留（type 字段=类型徽标分派）；长度升序再名称字典序；作者维只返回实际有关联文件的作者（EXISTS asset_authors JOIN assets）；q 空（trim 后）返回空列表；limit 默认 10 上限 50。实现形态：单 UNION 包一层 FROM 子查询再 ORDER BY——SQLite 禁止 compound SELECT 的 ORDER BY 用表达式（`length(name)` 实测报 "1st ORDER BY term does not match any column"，2026-09-05），包裹后外层为普通 SELECT 可用表达式排序，sqlc v1.31.1 接受。
+- **口径变更**：收藏/历史缺省排除 COS 的旧口径就此废止（DOMAIN_RULES §6 同步改写）；首页推荐维持缺省排除。
+- **生成物重建**：`make sdk` 全链通过（redocly lint → oapi-codegen v2.8.0 → hey-api TS → openapi-generator kotlin）+ `sqlc generate`（history.sql 三态+筛选、facets.sql 六查询子集谓词、suggestions.sql 新查询）。
+- **测试**：httpapi 全量通过——history（缺省含 COS/includeCos=false/cosOnly/mediaType/work/character 'a+b' 全部命中）、facets（favorite/history 子集四维计数、与 mediaType 组合、排自身回归）、suggestions 新文件（五维命中/大小写折叠/同维去重/跨维同名/长度+字典序排序/默认 10 与 limit 覆写与越界 400/无文件作者不出现/空 q 空列表）、assets 收藏缺省全部+防回归；既有锁定旧口径的断言已按新拍板修正（测试注释注明 2026-09-05 用户拍板）。隔离实例 curl 实测通过（缺省 /history 含 COS、/assets?favorite=1 含 COS 收藏、facets favorite/history 子集计数、suggestions 五维与排序）。
+
 ## 拍板批五项修复：SSE 跨端刷新/上传目标快照+真串行/拖拽 seek/倍速文案/深色 token 统一（2026-09-05 第三十笔）
 
 执行 AI：GLM-5.3（主代理，ZCode；用户四项拍板后单会话直修，隔离实例全量实机验收）

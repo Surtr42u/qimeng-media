@@ -2,8 +2,10 @@
 //
 // 历史 = 每资产最近一次 kind='open' 的 ViewEvent 时间倒序，每资产一条
 // （GROUP BY asset_id 取 MAX 时间）；已删资产（事件流无 FK，ADR-0005）
-// 经 FROM assets 锚定自然排除；默认排除 COS 作者关联文件（与 /assets
-// 同口径，DOMAIN_RULES §6），includeCos=true 重新包含。
+// 经 FROM assets 锚定自然排除。COS 分区缺省全部 = 常规∪COS 合并
+// （2026-09-05 用户拍板，DOMAIN_RULES §6），显式 includeCos=false 切常规
+// 分区、cosOnly=true 切 COS 分区（三态开关与 /assets 同一套）；其余筛选
+// （mediaType/work/character）与 GET /assets 同名参数同语义。
 // 分页 keyset (last_viewed_at, asset_id)，游标形态复用 assets.go 的
 // encodeCursor/decodeCursor（k/i 即上一页最后一行的时间串与资产 ID，
 // 与前页可稳定续读）。
@@ -25,9 +27,32 @@ func (s *Server) GetApiV1History(w http.ResponseWriter, r *http.Request, params 
 	if !ok {
 		return
 	}
-	includeCos := int64(0)
-	if params.IncludeCos != nil && *params.IncludeCos {
-		includeCos = 1
+	// COS 分区三态（2026-09-05 用户拍板）：/history 缺省 = 全部——
+	// includeCos 缺省（nil）映射 1（常规∪COS 合并），显式 false 映射 0
+	// （常规分区，排除 COS）；cosOnly=true 映射 COS 分区且优先（同
+	// /assets 口径）。协议侧 openapi /history includeCos schema default=true
+	// 须与此处同步，反之亦然（注意 /assets 侧 default=false，勿混）。
+	includeCos := int64(1)
+	if params.IncludeCos != nil && !*params.IncludeCos {
+		includeCos = 0
+	}
+	cosOnly := int64(0)
+	if params.CosOnly != nil && *params.CosOnly {
+		cosOnly = 1
+		includeCos = 0
+	}
+	// 与 GET /assets 同名参数同语义的三维筛选（browse.sql 同型谓词）。
+	var mediaType any
+	if params.MediaType != nil {
+		mediaType = nullStr(string(*params.MediaType))
+	}
+	var cosWork any
+	if params.Work != nil && *params.Work != "" {
+		cosWork = nullStr(*params.Work)
+	}
+	var charactersJson any
+	if params.Character != nil && *params.Character != "" {
+		charactersJson = jsonString(splitCharacters(*params.Character))
 	}
 	var cur pageCursor
 	if params.Cursor != nil && *params.Cursor != "" {
@@ -39,10 +64,14 @@ func (s *Server) GetApiV1History(w http.ResponseWriter, r *http.Request, params 
 		cur = c
 	}
 	rows, err := s.q.ListHistory(r.Context(), db.ListHistoryParams{
-		RowLimit:   int64(limit) + 1, // 多取 1 行探测下一页
-		CursorKey:  nullStr(cur.K),
-		CursorID:   sql.NullString{String: cur.I, Valid: cur.K != ""},
-		IncludeCos: includeCos,
+		RowLimit:       int64(limit) + 1, // 多取 1 行探测下一页
+		CursorKey:      nullStr(cur.K),
+		CursorID:       sql.NullString{String: cur.I, Valid: cur.K != ""},
+		IncludeCos:     includeCos,
+		CosOnly:        cosOnly,
+		MediaType:      mediaType,
+		CosWork:        cosWork,
+		CharactersJson: charactersJson,
 	})
 	if err != nil {
 		s.logger.Error("查询观看历史失败", "err", err)

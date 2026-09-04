@@ -31,6 +31,16 @@
 --                             excluded together)
 --   FacetMediaTypeCounts  -> applies partition/character/work/author-or-source/q
 --
+-- ============ Subset constraints: favorite / history (2026-09-05) ============
+-- favorite_subset / history_subset are NOT one of the four dimensions.
+-- When the caller passes favorite=1 / history=1, EVERY query here (the
+-- partition pill included) narrows its counting scope to favorited
+-- assets / assets having a kind='open' view event respectively (same
+-- shapes as the browse favorite predicate and the history anchor). The
+-- handler always passes 0/1 (plain arg, no three-valued logic); the
+-- subquery aliases fvs/veh are file-unique. No exclude-self interaction:
+-- they are not a dimension, so nothing is excluded on their account.
+--
 -- ============ Shared predicate shapes ============
 -- The COS partition predicate is byte-identical in shape to browse.sql
 -- (include_cos / cos_only two-flag form) so both files stay reviewable
@@ -79,7 +89,14 @@ WHERE
         WHERE NOT EXISTS (
             SELECT 1 FROM assets_fts f
             WHERE f.rowid = a.rowid
-              AND instr(lower(f.all_text), lower(qk.value)) > 0)));
+              AND instr(lower(f.all_text), lower(qk.value)) > 0)))
+    -- subset constraints: favorite=1 -> only favorited assets; history=1
+    -- -> only assets with a kind='open' view event (see file header).
+    AND (sqlc.arg(favorite_subset) = 0 OR EXISTS (
+        SELECT 1 FROM favorites fvs WHERE fvs.asset_id = a.asset_id))
+    AND (sqlc.arg(history_subset) = 0 OR EXISTS (
+        SELECT 1 FROM view_events veh
+        WHERE veh.asset_id = a.asset_id AND veh.kind = 'open'));
 
 -- name: FacetSourceCounts :many
 -- Author-row SOURCE buckets: regular (non-cos-linked) assets grouped by
@@ -111,6 +128,13 @@ WHERE
             SELECT 1 FROM assets_fts f
             WHERE f.rowid = a.rowid
               AND instr(lower(f.all_text), lower(qk.value)) > 0)))
+    -- subset constraints (see file header): same two predicates as every
+    -- other query in this file.
+    AND (sqlc.arg(favorite_subset) = 0 OR EXISTS (
+        SELECT 1 FROM favorites fvs WHERE fvs.asset_id = a.asset_id))
+    AND (sqlc.arg(history_subset) = 0 OR EXISTS (
+        SELECT 1 FROM view_events veh
+        WHERE veh.asset_id = a.asset_id AND veh.kind = 'open'))
 GROUP BY a.source
 ORDER BY file_count DESC, a.source;
 
@@ -155,6 +179,12 @@ WHERE
             SELECT 1 FROM assets_fts f
             WHERE f.rowid = a.rowid
               AND instr(lower(f.all_text), lower(qk.value)) > 0)))
+    -- subset constraints (see file header).
+    AND (sqlc.arg(favorite_subset) = 0 OR EXISTS (
+        SELECT 1 FROM favorites fvs WHERE fvs.asset_id = a.asset_id))
+    AND (sqlc.arg(history_subset) = 0 OR EXISTS (
+        SELECT 1 FROM view_events veh
+        WHERE veh.asset_id = a.asset_id AND veh.kind = 'open'))
 GROUP BY au.id
 ORDER BY file_count DESC, au.display_name;
 
@@ -195,6 +225,12 @@ WHERE
             SELECT 1 FROM assets_fts f
             WHERE f.rowid = a.rowid
               AND instr(lower(f.all_text), lower(qk.value)) > 0)))
+    -- subset constraints (see file header).
+    AND (sqlc.arg(favorite_subset) = 0 OR EXISTS (
+        SELECT 1 FROM favorites fvs WHERE fvs.asset_id = a.asset_id))
+    AND (sqlc.arg(history_subset) = 0 OR EXISTS (
+        SELECT 1 FROM view_events veh
+        WHERE veh.asset_id = a.asset_id AND veh.kind = 'open'))
 GROUP BY ac.character_name
 ORDER BY file_count DESC, ac.character_name;
 
@@ -237,6 +273,12 @@ WHERE a.cos_work IS NOT NULL
           SELECT 1 FROM assets_fts f
           WHERE f.rowid = a.rowid
             AND instr(lower(f.all_text), lower(qk.value)) > 0)))
+  -- subset constraints (see file header).
+  AND (sqlc.arg(favorite_subset) = 0 OR EXISTS (
+      SELECT 1 FROM favorites fvs WHERE fvs.asset_id = a.asset_id))
+  AND (sqlc.arg(history_subset) = 0 OR EXISTS (
+      SELECT 1 FROM view_events veh
+      WHERE veh.asset_id = a.asset_id AND veh.kind = 'open'))
 GROUP BY a.cos_work
 ORDER BY file_count DESC, a.cos_work;
 
@@ -281,5 +323,11 @@ WHERE
           SELECT 1 FROM assets_fts f
           WHERE f.rowid = a.rowid
             AND instr(lower(f.all_text), lower(qk.value)) > 0)))
+  -- subset constraints (see file header).
+  AND (sqlc.arg(favorite_subset) = 0 OR EXISTS (
+      SELECT 1 FROM favorites fvs WHERE fvs.asset_id = a.asset_id))
+  AND (sqlc.arg(history_subset) = 0 OR EXISTS (
+      SELECT 1 FROM view_events veh
+      WHERE veh.asset_id = a.asset_id AND veh.kind = 'open'))
 GROUP BY a.media_type
 ORDER BY file_count DESC;

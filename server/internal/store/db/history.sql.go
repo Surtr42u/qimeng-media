@@ -22,25 +22,48 @@ SELECT
 FROM assets a
 WHERE EXISTS (SELECT 1 FROM view_events ve
               WHERE ve.asset_id = a.asset_id AND ve.kind = 'open')
-    AND (?1 = 1 OR NOT EXISTS (
-        SELECT 1 FROM asset_authors aa
-        JOIN authors au ON au.id = aa.author_id
-        WHERE aa.asset_id = a.asset_id AND au.type = 'cos'))
-    AND (?2 IS NULL
+    -- COS partition three-way switch: byte-identical shape to browse.sql
+    -- (include_cos / cos_only two-flag form, DOMAIN_RULES 6). The
+    -- handler maps a MISSING includeCos to 1 (default = all partition,
+    -- user decision 2026-09-05) and cos_only is always passed 0/1.
+    AND (?1 = 1
+         OR (?2 = 1 AND EXISTS (
+             SELECT 1 FROM asset_authors aacos
+             JOIN authors aucos ON aucos.id = aacos.author_id
+             WHERE aacos.asset_id = a.asset_id AND aucos.type = 'cos'))
+         OR (?2 = 0 AND NOT EXISTS (
+             SELECT 1 FROM asset_authors aa
+             JOIN authors au ON au.id = aa.author_id
+             WHERE aa.asset_id = a.asset_id AND au.type = 'cos')))
+    AND (?3 IS NULL OR a.media_type = ?3)
+    -- COS work (migration 0008): second path segment of ` + "`" + `author/work/file` + "`" + `.
+    AND (?4 IS NULL OR a.cos_work = ?4)
+    -- character filter: 'a+b' is split by the caller into a JSON array
+    -- of canonical names; ALL names must be attached (browse.sql shape).
+    AND (?5 IS NULL OR NOT EXISTS (
+        SELECT 1 FROM json_each(?5) c
+        WHERE NOT EXISTS (
+            SELECT 1 FROM asset_characters ac
+            WHERE ac.asset_id = a.asset_id AND ac.character_name = c.value)))
+    AND (?6 IS NULL
         OR (SELECT MAX(v2.started_at) FROM view_events v2
-            WHERE v2.asset_id = a.asset_id AND v2.kind = 'open') < ?2
+            WHERE v2.asset_id = a.asset_id AND v2.kind = 'open') < ?6
         OR ((SELECT MAX(v2.started_at) FROM view_events v2
-            WHERE v2.asset_id = a.asset_id AND v2.kind = 'open') = ?2
-            AND a.asset_id < ?3))
+            WHERE v2.asset_id = a.asset_id AND v2.kind = 'open') = ?6
+            AND a.asset_id < ?7))
 ORDER BY last_viewed_at DESC, a.asset_id DESC
-LIMIT ?4
+LIMIT ?8
 `
 
 type ListHistoryParams struct {
-	IncludeCos interface{}
-	CursorKey  interface{}
-	CursorID   sql.NullString
-	RowLimit   int64
+	IncludeCos     interface{}
+	CosOnly        interface{}
+	MediaType      interface{}
+	CosWork        interface{}
+	CharactersJson interface{}
+	CursorKey      interface{}
+	CursorID       sql.NullString
+	RowLimit       int64
 }
 
 type ListHistoryRow struct {
@@ -68,8 +91,16 @@ type ListHistoryRow struct {
 // Design notes (single-level pattern, see browse.sql header rules):
 //   - view_events has no FK and may reference deleted assets (adr/0005);
 //     the FROM assets a anchor drops them (INNER JOIN semantics).
-//   - COS exclusion predicate is the same as ListAssetsFilteredDesc in
-//     browse.sql (DOMAIN_RULES 6); include_cos = 1 re-adds them.
+//   - COS partition predicate is the three-way switch copied verbatim in
+//     shape from browse.sql (DOMAIN_RULES 6 isolation): include_cos=1 ->
+//     no restriction; cos_only=1 -> must link a cos author; both 0 ->
+//     must NOT link one (regular partition). /history DIFFERS from
+//     /assets only in the handler-side default: a MISSING includeCos
+//     maps to 1 (all partition -- user decision 2026-09-05: history
+//     defaults to regular UNION cos), an explicit false maps to 0.
+//   - media_type / cos_work / characters_json filters are the same
+//     predicate shapes as browse.sql; characters 'a+b' arrives as a
+//     JSON array the caller splits, and ALL names must be attached.
 //   - Keyset cursor = (last_viewed_at, asset_id) of the last row of the
 //     previous page; last_viewed_at is the RFC3339-ms TEXT kept in the
 //     store-wide format, so lexicographic order == chronological order
@@ -79,6 +110,10 @@ type ListHistoryRow struct {
 func (q *Queries) ListHistory(ctx context.Context, arg ListHistoryParams) ([]ListHistoryRow, error) {
 	rows, err := q.db.QueryContext(ctx, listHistory,
 		arg.IncludeCos,
+		arg.CosOnly,
+		arg.MediaType,
+		arg.CosWork,
+		arg.CharactersJson,
 		arg.CursorKey,
 		arg.CursorID,
 		arg.RowLimit,
