@@ -62,7 +62,7 @@ M3 完成后当天就在用户 PC 上实机跑通全流程，明天的活从这�
 
 ### 当前待办（2026-09-04 用户拍板：UI 收尾 + M4 完整任务，按序）
 
-1. **Web UI 收尾三批**（执行任务书 = HANDOVER_UI §5.9，一批一个会话）：✅ W-1 上传 UI 入口（2026-09-04，commit 6690b12）→ ✅ W-2 confirm 换原型风格弹窗（2026-09-05，commit 2001a20）→ **W-3 ArtPlayer 播放器（当前批次，进行中）**——2026-09-05 一致性审查会话观测到工作树已有本批未提交 WIP（artplayer@5.4.0 依赖、video-player.tsx、use-progress.ts、AssetDetailPage 接线），状态以磁盘为准。详情页发现项（图片查看器/互动行/批次导航是否补齐）待用户拍板，见 §5.9 末尾。改前端时**顺带补集成冒烟**的纪律继续有效（实机暴露的 409 误判就是缺这类测试）。
+1. **Web UI 收尾三批**（执行任务书 = HANDOVER_UI §5.9，一批一个会话）：✅ W-1 上传 UI 入口（2026-09-04，commit 6690b12）→ ✅ W-2 confirm 换原型风格弹窗（2026-09-05，commit 2001a20）→ ✅ W-3 ArtPlayer 播放器（2026-09-05，reviewer 打回 1 轮返工后通过；选型 artplayer 5.4.0）——**三批全部完成，下一批 = M4-0**（HANDOVER_APP.md）。详情页发现项（图片查看器/互动行/批次导航是否补齐）与播放器存疑点仍待用户拍板，见 HANDOVER_UI §5.9 末尾与 §5 第 9~12 条。改前端时**顺带补集成冒烟**的纪律继续有效（实机暴露的 409 误判就是缺这类测试）。
 2. **M4 Android 八批次·Compose 重建**（执行任务书 = HANDOVER_APP.md，M4-0 起按序）：**2026-09-04 用户二次拍板「先进方案优先」**（ADR-0014，废弃同日照搬路线 0013）——Compose(Material 3) + Hilt + Now in Android 多模块范式，交互规格照搬旧项目 GUIDE_UI，实现全部新写（复杂自绘控件允许 AndroidView 桥接）；ServerConfigDataSource 单点留 M6 单机形态口。
 3. **M6 Android 单机形态**（M4 后启动，优先于 M5；ADR-0015 + PROJECT_PLAN M6）：Go 服务端交叉编译进手机（modernc 纯 Go 红利，最大难点=ffmpeg 移动端方案），App 连 localhost，媒体存手机——**旧项目绮梦影库由此退役，只维护一个项目**（数据迁 POST /import/qimeng-backup + 媒体原地注册）。
 4. **M5 NAS 部署验收**（M4 后，PROJECT_PLAN M5；验收环境 = 用户 PC 上的 fnOS 虚拟机，见 PROJECT_PLAN M5 第一项）。

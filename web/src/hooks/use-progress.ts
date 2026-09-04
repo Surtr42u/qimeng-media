@@ -1,0 +1,118 @@
+/**
+ * 播放进度上报 + 时间轴标签 hooks（视频播放器专用网络层，铁律 7：组件不直调 API）。
+ *
+ * 进度走 PUT /assets/{id}/progress（心跳式，服务端只保留最新值；不进事件流、
+ * 不计 playCount——GUIDE_API「播放进度与编码字段」）；时间轴标签走
+ * GET /assets/{id}/timeline-tags（视频内时间点标记，独立于文件标签）。
+ */
+
+import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useMutation, useQuery } from '@tanstack/react-query'
+import {
+  getApiV1AssetsByAssetIdTimelineTags,
+  putApiV1AssetsByAssetIdProgress,
+  type TimelineTag,
+} from '@/api/generated'
+import { unwrapSdkResult } from '@/lib/api-client'
+
+/**
+ * 进度心跳间隔（毫秒）：5s——严于协议建议值 10s（api/openapi.yaml
+ * PUT /assets/{id}/progress description「建议 10s 间隔」，协议允许更密）。
+ * 协议侧建议值改动须同步此处，反之亦然。
+ */
+const PROGRESS_REPORT_INTERVAL_MS = 5000
+
+/** 时间轴标签（协议 TimelineTag；timeMillis 毫秒→播放器秒由消费方换算） */
+export type AssetTimelineTag = TimelineTag
+
+/** 时间轴标签列表（按时间升序——进度条打点渲染与回看跳转依赖稳定时间序） */
+export function useTimelineTags(assetId?: string) {
+  return useQuery({
+    queryKey: ['api/v1/assets/timeline-tags', assetId],
+    queryFn: () =>
+      unwrapSdkResult(getApiV1AssetsByAssetIdTimelineTags({ path: { assetId: assetId! } })),
+    enabled: !!assetId,
+    select: (tags) => [...tags].sort((a, b) => (a.timeMillis ?? 0) - (b.timeMillis ?? 0)),
+  })
+}
+
+/**
+ * 断点续播进度上报：tick = 播放中心跳（内部按 5s 节流）；
+ * flush = 暂停/离开立即上报最后已知位置（不受节流限制，可显式传位置）。
+ * 组件卸载时自动补报一次（协议语义：暂停/离开播放页各补一次）。
+ */
+export function useProgress(assetId: string) {
+  // 上报载荷必须带显式 assetId：详情→详情导航（同路由参数变化，组件不卸载）时
+  // mutationFn 闭包里的 assetId 会随 render 切到新资产——补报旧位置若走闭包，
+  // 就会把旧资产的进度写进新资产（跨资产数据污染）。
+  const mutation = useMutation({
+    mutationFn: (payload: { assetId: string; positionSeconds: number }) =>
+      unwrapSdkResult(
+        putApiV1AssetsByAssetIdProgress({
+          path: { assetId: payload.assetId },
+          body: { positionSeconds: payload.positionSeconds },
+        }),
+      ),
+  })
+
+  // 最后已知位置与「它所属的资产」配对存储：补报只允许写回配对里的那个资产
+  const lastRef = useRef<{ assetId: string; positionSeconds: number } | null>(null)
+  const lastSentAtRef = useRef(0)
+  const assetIdRef = useRef(assetId)
+
+  // latest-ref 模式（lint 合规：ref 更新放 effect）：send 无依赖，
+  // 经 ref 间接调用 mutate，避免对 useMutation result 对象的依赖抖动
+  const mutateRef = useRef(mutation.mutate)
+  useEffect(() => {
+    mutateRef.current = mutation.mutate
+  })
+
+  const send = useCallback((targetAssetId: string, positionSeconds: number) => {
+    lastSentAtRef.current = Date.now()
+    mutateRef.current({ assetId: targetAssetId, positionSeconds })
+  }, [])
+
+  // 切资产（详情→详情）：先用旧资产身份补报旧位置，再整体重置——新资产的
+  // 进度从零积累，旧位置不得在后续卸载补报中归属到新资产
+  useEffect(() => {
+    if (assetIdRef.current === assetId) return
+    const prev = lastRef.current
+    if (prev && prev.assetId === assetIdRef.current) send(prev.assetId, prev.positionSeconds)
+    lastRef.current = null
+    lastSentAtRef.current = 0
+    assetIdRef.current = assetId
+  }, [assetId, send])
+
+  const tick = useCallback(
+    (positionSeconds: number) => {
+      lastRef.current = { assetId: assetIdRef.current, positionSeconds }
+      if (Date.now() - lastSentAtRef.current >= PROGRESS_REPORT_INTERVAL_MS) {
+        send(assetIdRef.current, positionSeconds)
+      }
+    },
+    [send],
+  )
+
+  const flush = useCallback(
+    (positionSeconds?: number) => {
+      const last = lastRef.current
+      const position =
+        positionSeconds ??
+        (last && last.assetId === assetIdRef.current ? last.positionSeconds : null)
+      if (position !== null) send(assetIdRef.current, position)
+    },
+    [send],
+  )
+
+  // 离开播放页立即补报（协议语义：暂停/离开各补一次）：仅卸载时触发一次；
+  // 只认带资产配对的记录，配对归属谁就报给谁
+  useEffect(
+    () => () => {
+      const last = lastRef.current
+      if (last) mutateRef.current({ assetId: last.assetId, positionSeconds: last.positionSeconds })
+    },
+    [],
+  )
+
+  return useMemo(() => ({ tick, flush }), [tick, flush])
+}

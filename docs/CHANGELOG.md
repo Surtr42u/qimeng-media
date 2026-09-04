@@ -10,6 +10,19 @@
 
 ---
 
+## W-3 ArtPlayer 播放器：断点续播/倍速/时间轴打点/已看完徽标（2026-09-05 第二十八笔）
+
+执行 AI：GLM-5.3（主代理，ZCode 调度验收；编码与冒烟由 executor 子代理完成，reviewer 子代理对抗审查打回 1 轮后返工通过）
+
+UI 收尾三批收官（HANDOVER_UI §5.9 任务书，重批次走对抗审查）：
+
+- **选型**：artplayer 5.4.0（npm 最新稳定，package.json exact 锁定；官方文档站 option/event + GitHub 源码核对——`highlight` 即官方进度条打点、`PLAYBACK_RATE` 为公开静态档位表，时间轴标记无需停手方案）。CHANGELOG 记选型不建 ADR（任务书口径，UI 可换层属 ADR-0008 精神）。
+- **新增**：`components/media/video-player.tsx`（132 行——倍速 0.5~3x/静音/全屏/断点续播起点/打点/theme 运行时读 CSS 变量零色值进 JS + MutationObserver 跟深色切换/StrictMode 安全三路清理）；`hooks/use-progress.ts`（5s 节流具名常量严于协议建议 10s/暂停 flush/卸载补报/切资产重置 + timeline-tags 升序查询）。AssetDetailPage 裸 `<video>` 替换 + 已看完徽标（`lastPositionSeconds >= durationMs/1000` 客户端推导，恰等边界实测）。
+- **执行中发现并修复**：①全局 `html{zoom:1.1}` 下 ArtPlayer 进度条**点击** seek 系统性 ×1.1（官方 getPosFromEvent 视觉 px÷布局 px 混算）——捕获阶段按纯视觉坐标归一修正，实测点 45s 落 44.97s；②已看完徽标被官方 `.art-video`/`.art-poster` 层叠覆盖——z-index:12+pointer-events:none。
+- **对抗审查打回 1 轮（已返工验证）**：P1 详情→详情导航（同路由参数变化不卸载）时卸载补报把旧资产进度写进新资产（mutationFn 闭包随 render 切资产）——修法=mutationFn 收显式载荷+`{assetId, positionSeconds}` 配对存储+切资产 effect 以旧 id 补报后整体重置，靶向实测（A 播至 24s→SPA 切 B→离开：A=23.93 已报、B 无 lastPositionSeconds 污染）；P2 打点注释失实已改实并删死代码 highlightsRef。返工后全量冻结项回归通过。
+- **验收证据**：tsc/build/lint 全绿（改动文件 0 warning，存量 15 不变）；隔离实例 10 图+ev.log（%TEMP%/qimeng-w3-shots/）——续播 20s 起点、倍速菜单 0.5~3.0、静音、双标记点击 seek、暂停 52.55→服务端 52.5467、离开补报 55.21、已看完 00:00+徽标、双视口 spread 0.0/0.0。
+- **记账（HANDOVER_UI §5 第 11/12 条，待拍板）**：拖拽 seek 的 zoom 偏置未修（冻结只要求点击）；倍速菜单文案内建舍入（0.75 显 0.8）；全局 zoom 与坐标类库系统性冲突；上传串行仅单批+深色 token 写法并存。
+
 ## 一致性审查：W-1/W-2/第十笔文档声明逐项核验 + 代码卫生修补（2026-09-05 第二十七笔）
 
 执行 AI：GLM-5.3（主代理，ZCode）

@@ -1,24 +1,47 @@
 import { useEffect, useRef } from 'react'
 import { useParams } from 'react-router'
 import { useAssetDetail, useReportView } from '@/hooks/use-assets'
+import { useProgress, useTimelineTags } from '@/hooks/use-progress'
+import VideoPlayer from '@/components/media/video-player'
 import { formatBytes, formatDuration, formatShortDate } from '@/lib/format'
 import { ensureSessionId } from '@/hooks/use-session'
 
 /**
  * 资产详情页（/app/asset/:assetId，首页/相册卡片点击进入）。
- * 图片/动图 = 签名原件直链大图（"查看永远发原件"）；视频 = 原生 <video> 直链播放
- * （播放器 UI 升级 ArtPlayer 为独立任务，协议/断点续播基座已就绪）。
- * 兼容性提示：ffprobe 编码（协议 0006）显示无法直链播放的编码提示，不转码。
- * 进入即上报 open 事件（DOMAIN_RULES §5 会话去重）。
+ * 图片/动图 = 签名原件直链大图（"查看永远发原件"）；视频 = ArtPlayer 播放器
+ * （W-3：倍速 0.5~3x/静音/全屏/断点续播/时间轴标签打点回看，网络逻辑全在
+ * hooks/use-progress.ts）。兼容性提示：ffprobe 编码（协议 0006）显示无法
+ * 直链播放的编码提示，不转码。进入即上报 open 事件（DOMAIN_RULES §5 会话去重）。
  */
 
 /** 浏览器 <video> 直链不支持的主流编码（其余编码尝试播放，失败再兜底） */
 const INCOMPATIBLE_CODECS = /^(hevc|hvc1|hev1|av01|av1|vvc)$/i
 
+/** 已看完判定（协议明文口径，客户端推导）：lastPositionSeconds >= durationMs/1000 */
+function isWatched(
+  lastPositionSeconds: number | null | undefined,
+  durationMs: number | null | undefined,
+): boolean {
+  return (
+    lastPositionSeconds != null &&
+    durationMs != null &&
+    durationMs > 0 &&
+    lastPositionSeconds >= durationMs / 1000
+  )
+}
+
 export default function AssetDetailPage() {
   const { assetId } = useParams()
   const { data: d } = useAssetDetail(assetId)
+  const { data: timelineTags, isLoading: tagsLoading } = useTimelineTags(assetId)
   const reportView = useReportView()
+  // 进度上报：tick=播放中心跳（5s 节流）、flush=暂停/卸载立即上报（hooks/use-progress.ts）
+  const progress = useProgress(assetId ?? '')
+
+  // 已看完徽标与续播起点渲染期直接推导（协议明文口径，客户端推导）；
+  // 起点的「定格防 refetch 重建」由 VideoPlayer 挂载时冻结 + key 绑定资产实现
+  const watched = !!d && isWatched(d.lastPositionSeconds, d.durationMs)
+  const startTime = watched ? 0 : (d?.lastPositionSeconds ?? 0)
 
   // open 打点：每详情实例只报一次（会话去重由服务端按 assetId+kind+sessionId+当日）
   const reported = useRef(false)
@@ -52,8 +75,21 @@ export default function AssetDetailPage() {
         </div>
       ) : null}
       <div className="asset-stage">
+        {watched ? <span className="watched-badge">已看完</span> : null}
         {isVideo ? (
-          <video controls src={d.origUrl} poster={d.thumbUrl} />
+          tagsLoading ? null : (
+            <VideoPlayer
+              key={d.id ?? assetId}
+              src={d.origUrl ?? ''}
+              poster={d.thumbUrl}
+              startTime={startTime}
+              highlights={(timelineTags ?? [])
+                .filter((t) => t.timeMillis != null)
+                .map((t) => ({ time: (t.timeMillis ?? 0) / 1000, text: t.name ?? '' }))}
+              onTimeUpdate={progress.tick}
+              onPause={progress.flush}
+            />
+          )
         ) : d.origUrl ? (
           <img src={d.origUrl} alt={d.fileName} loading="eager" />
         ) : (
