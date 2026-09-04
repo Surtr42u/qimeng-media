@@ -146,7 +146,7 @@ media-ui-prototype/
 - **现状**：`pages/AssetDetailPage.tsx` 视频是裸 `<video controls>`（v1 旧壳的 VideoPlayer 已随 v1 删除，现版无倍速/无静音记忆/无标记）；断点续播协议基座已就绪（commit 9773213）。
 - **依赖**：npm `artplayer`（版本执行时查最新稳定，锁进 package.json）；**不建 ADR**——UI 可换层（ADR-0008 精神），CHANGELOG 记录选型即可。
 - **组件**：`components/media/video-player.tsx` 封装 ArtPlayer（React 封装注意实例销毁/unmount 清理），AssetDetailPage 替换 `<video>`。
-- **功能清单（冻结，"现状没有"的都要补齐）**：倍速菜单（0.5~3x）、静音、全屏；断点续播——进页取 detail 播放进度字段（字段名以生成 SDK 类型为准）为起点 + 播放中每 5s 节流 `PUT /assets/{id}/progress`（间隔具名常量，暂停/离开立即上报，新 hook `hooks/use-progress.ts`）；时间轴标签打点 + 点击 seek 跳转回看（端点以 GUIDE_API 为准，无标签不渲染该层）；dwell/play 打点沿用 `useReportView`；编码兼容提示保留（`codec-warn` 逻辑不动）。
+- **功能清单（冻结，"现状没有"的都要补齐）**：倍速菜单（0.5~3x）、静音、全屏；断点续播——进页取 detail 的 `lastPositionSeconds`（协议字段）为起点（**已看完判定**：`lastPositionSeconds >= durationMs/1000` 时从 0 重播并显示已看完徽标，客户端推导，协议明文）+ 播放中每 5s 节流 `PUT /assets/{id}/progress`（具名常量，严于协议建议值 10s、协议允许；暂停/离开立即上报，新 hook `hooks/use-progress.ts`）；时间轴标签打点 + 点击 seek 跳转回看（端点以 GUIDE_API 为准，无标签不渲染该层）；dwell/play 打点沿用 `useReportView`；编码兼容提示保留（`codec-warn` 逻辑不动）。
 - **ArtPlayer 定制能力**（自定义进度条打点/控制栏）执行时读官方文档确认；**官方 API 若无法支撑时间轴标记 → 停手报用户**（候选方案：进度条上自绘绝对定位覆盖层）。
 - **验收**：实机播放各功能截图（倍速/静音/续播起点/标记跳转）+ 组件 ≤300 行 + 桌面/窄屏两档视口自检 + 检查命令全绿。
 - **存疑停手**：见上。
