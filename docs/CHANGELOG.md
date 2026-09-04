@@ -10,6 +10,18 @@
 
 ---
 
+## M4 二次改道「先进优先」Compose 重建 + M6 单机形态（ADR-0014/0015）（2026-09-04 第二十一笔）
+
+执行 AI：GLM-5.3（主代理，ZCode）
+
+用户三项拍板：①「走先进方案为主，换 Compose」②「架构做足够先进和高度解耦，不考虑后果」③「电脑不长期开，希望手机本地顶替后端，不再维护两个项目」：
+
+- **ADR-0014 新建（取代同日 0013，0013 标废弃但调研结论保留）**：M4 走 Kotlin + Compose(Material 3) + Hilt + Now in Android 多模块范式（:app + :core:model/network/data/ui + :feature:*，feature→core 单向依赖）；交互规格照搬 GUIDE_UI、实现全部新写；复杂自绘控件（BiliPlayerView/ZoomImageView）允许 AndroidView 桥接（清单入交付报告）；minSdk 26 / namespace media.qimeng.app。
+- **ADR-0015 新建 + PROJECT_PLAN 新增 M6 里程碑（原储备顺延 M7+）**：Android 单机形态——Go 服务端交叉编译 android/arm64（modernc 纯 Go 无 CGO 为当初 ADR-0003 选型红利，数据库层零改动）+ App 连 localhost（UI 零改动）；两候选运行形态（Termux 宿主/App 内嵌 gomobile）；最大风险=ffmpeg 移动端方案（ffmpeg-kit 已停维护，Termux 形态用其包）；旧项目绮梦影库由此退役（数据迁 /import/qimeng-backup + 媒体原地注册）；实施排 M4 后、优先于 M5。
+- **HANDOVER_APP 第三次重写（Compose 版）**：八批次任务书（基建含多模块骨架/登录含 ServerConfigDataSource 单点=单机形态预留/列表族/详情页含断点续播+时间轴标签/离线上报/上传/缓存+统计/验收），通用约束十含「服务器地址只经 ServerConfigDataSource 流转」。
+- **配套同步**：AGENTS（项目一句话+旧项目关系节：Compose 重建+旧项目待退役口径）、AI_README_FIRST（禁止行为第 2 条+Kotlin 规范行）、android/README（技术栈二次定论+单机形态预留节）、HANDOVER（执行路线四段：UI 收尾→M4 Compose→M6 单机→M5 用户自测节奏）、INDEX（0013 废弃标注+0014/0015 两行）。
+- **Go 后端先进性评估结论（答复用户，无改动）**：现有选型（协议先行/纯函数领域层/事件流统计/sqlc/纯 Go SQLite）即现代 Go 最佳实践，且纯 Go 无 CGO 与配置化数据目录两个选型正是单机形态可行性的钥匙，无需变更。
+
 ## M4 路线改道：旧 UI 整体照搬 + 数据层网络化（ADR-0013）（2026-09-04 第二十笔）
 
 执行 AI：GLM-5.3（主代理，ZCode；旧项目架构调研由只读探索子代理完成）
