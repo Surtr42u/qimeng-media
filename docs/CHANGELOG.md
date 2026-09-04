@@ -10,6 +10,17 @@
 
 ---
 
+## W-3 追加返工：倍速文案真修复 + 切路由整队取消补全（2026-09-05 第三十三笔）
+
+执行 AI：GLM-5.3（主代理调度验收；返工由原 W-3 执行子代理续聊完成）
+
+0a2f5d1（第三十笔）复审判定 5/6 通过，唯「倍速文案」项无效且引入缺陷，本笔纠正（原 W-3 执行代理续聊返工，因其握有该文件完整上下文）：
+
+- **倍速菜单文案（真修复）**：0a2f5d1 的 `art.setting.update({ name: 'playbackRate', html })` 实为错配——`'playbackRate'` 是右键菜单条目名，设置面板内建倍速条目名为 `'playback-rate'`，面板 update 按 name 精确查找、未命中走 add 分支，导致舍入条目原样保留 + 新增一条无 click 处理器的死行；第三十笔「实测 0.75/1.25 正确显示」的记录与 dist 实装代码路径矛盾，**该记录作废**。本笔改按 `name: 'playback-rate'` 定位内建条目、仅替换 selector 各档位显示为精确值（0.5x/0.75x/正常/1.25x/1.5x/2x/3x），选档/高亮走内建 onSelect。实测：菜单恰 7 行无舍入无死行、点 0.75x 后 `video.playbackRate === 0.75`（截图 %TEMP%/qimeng-w3-shots/10、11）。
+- **切路由整队取消（W-1 冻结语义补全）**：W-1 起卸载 cleanup 只 abort 在传 XHR，串行泵会继续拾取 queued 条目后台续传，违反「切路由自动 abort 整队、不做后台续传」冻结语义——卸载时先把全部 queued 标 canceled 再 abort 在传，注释与行为对齐。
+- **顺带**：UploadCard 删除 targetLibraryId undefined 死分支，未选库拦截条目按目录语义显示「/库根」（注释注明）。
+- **验收**：tsc/build/lint 全绿（改动 3 文件 0 warning，存量 15 不变）；复审确认第 9/10/11①/12①/第 8 条五项修复真实有效（SSE 键收敛/入队快照/单泵真串行/拖拽 seek 归一/深色 token 统一）维持通过。
+
 ## M4-0 工程基建：Android Compose 多模块骨架 + 壳导航 + make/CI 第五门禁（2026-09-05 第三十二笔）
 
 执行 AI：GLM-5.3（执行子代理）
