@@ -50,7 +50,7 @@ func (s *Server) fetchAssetRefs(ctx context.Context, assetID string) (tags []gen
 }
 
 // assetStats 承载详情页的统计聚合值（fetchAssetStats 的返回体）。
-// 六项原本是主函数里的散局部变量，拆函数后由小结构体一次带回。
+// 七项原本是主函数里的散局部变量，拆函数后由小结构体一次带回。
 type assetStats struct {
 	viewCount  int   // 浏览数（open 事件计数）
 	playCount  int   // 播放数（play 事件计数）
@@ -65,7 +65,7 @@ type assetStats struct {
 // 累计停留秒、点赞、当日点赞态、收藏）。what 的语义同 fetchAssetRefs：
 // 失败阶段名，供 internalErr 写日志。
 func (s *Server) fetchAssetStats(ctx context.Context, assetID string) (st assetStats, what string, err error) {
-	// 统计：view/play 计数、最近浏览、累计停留秒、点赞、收藏
+	// 统计：view/play 计数、最近浏览、累计停留秒、点赞、当日点赞态、收藏
 	cntRows, err := s.q.CountAssetEvents(ctx, assetID)
 	if err != nil {
 		return st, "聚合资产事件", err
