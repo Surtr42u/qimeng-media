@@ -142,10 +142,10 @@ export function UploadCard({ libraries }: { libraries: Library[] }) {
           <tbody>
             {queue.items.map((item) => {
               // 目标显示 = 入队快照（item.targetLibraryId/targetDir），不随当前选择器变化；
-              // 库被删等查不到名时回落显示 ID（仍是快照真值）
+              // 库被删等查不到名时回落显示 ID（仍是快照真值）。未选库被拦截的条目
+              // targetLibraryId 是空串（无库名），目录语义仍在——照常显示「/库根」
               const libName = libraries.find((l) => l.id === item.targetLibraryId)?.name ?? item.targetLibraryId
-              const targetText =
-                item.targetLibraryId === undefined ? '—' : `${libName ?? ''}/${item.targetDir === '' || item.targetDir === undefined ? '库根' : item.targetDir}`
+              const targetText = `${libName || ''}/${item.targetDir === '' || item.targetDir === undefined ? '库根' : item.targetDir}`
               return (
                 <tr key={item.id}>
                   <td

@@ -71,7 +71,8 @@ let uploadSeq = 0
  * 新一批"的场景，新条目由同一泵顺次拾取，绝不两路并发；协议未约定并发度，
  * 这是客户端自行约束的最保守取值。NAS 磁盘/网带宽友好，进度条逐条可读）。
  * itemsRef 是权威副本（XHR 回调绕过 React 批处理写状态，闭包读 state 会拿到
- * 旧值），setState 只做渲染镜像；组件卸载 effect 清理时 abort 全部在传请求。
+ * 旧值），setState 只做渲染镜像；组件卸载 effect 清理时掐断整队（在传 abort +
+ * 排队标 canceled，不做后台续传——W-1 冻结）。
  */
 export function useUploadQueue(options: UploadQueueOptions) {
   const [items, setItemsState] = useState<UploadItem[]>([])
@@ -245,12 +246,16 @@ export function useUploadQueue(options: UploadQueueOptions) {
     writeItems((prev) => prev.filter((it) => it.status === 'queued' || it.status === 'uploading'))
   }, [writeItems])
 
-  // 切路由自动 abort 整队（W-1 冻结：不做后台续传）；卸载后状态随之丢弃
+  // 切路由自动 abort 整队（W-1 冻结：不做后台续传）——在传与排队必须一起掐断：
+  // 只 abort 在传 XHR 的话，串行泵发完在传条后会继续拾取 queued 条目后台续传。
+  // 排队条目先标 canceled（泵拾取自然落空退出），再 abort 在传（onabort 标 canceled）。
+  // 卸载后组件状态随之丢弃，writeItems 只是收尾同步渲染镜像。
   useEffect(
     () => () => {
+      writeItems((prev) => prev.map((it) => (it.status === 'queued' ? { ...it, status: 'canceled' } : it)))
       for (const xhr of xhrsRef.current.values()) xhr.abort()
     },
-    [],
+    [writeItems],
   )
 
   const isBusy = items.some((it) => it.status === 'queued' || it.status === 'uploading')

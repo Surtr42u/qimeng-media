@@ -142,14 +142,21 @@ export default function VideoPlayer({
       highlight: initial.highlights,
     })
 
-    // 倍速菜单文案：官方标签生成用 toFixed(1)，0.75/1.25 显示成「0.8/1.3」
-    // （§5 第 12 条②；档位实际值走 data-value 本就正确）。按 name 合并替换
-    // 内建条目只换标签文本——内建选档/高亮逻辑读 data-value，不依赖文案，原样生效
+    // 倍速菜单文案：官方 selector 标签生成用 toFixed(1)，0.75/1.25 显示成
+    // 「0.8/1.3」（§5 第 12 条②）。按内建条目名 'playback-rate' 定位做
+    // setting.update——面板 update 按 name 精确匹配、命中才 merge 重渲染，
+    // 未命中会把传入项当新条目 add 成无 click 的死行（'playbackRate' 是
+    // 右键菜单条目名，设置面板里不存在，此前用它属无效修复+死行来源）。
+    // 这里只换各档位显示文案为精确值；value/item.name/onSelect（官方选档、
+    // 勾选高亮与 tooltip 回填）结构原样保留，选档行为不受文案影响。
     art.setting.update({
-      name: 'playbackRate',
-      html: `${art.i18n.get('Play Speed')}: ${PLAYBACK_RATES.map(
-        (rate) => `<span data-value="${rate}">${rate === 1 ? art.i18n.get('Normal') : rate}</span>`,
-      ).join('')}`,
+      name: 'playback-rate',
+      selector: PLAYBACK_RATES.map((rate) => ({
+        value: rate,
+        name: `playback-rate-${rate}`,
+        default: rate === art.playbackRate,
+        html: rate === 1 ? art.i18n.get('Normal') : `${rate}x`,
+      })),
     })
 
     // 断点续播：元数据就绪后跳到起点（ready = 官方「首次可播」事件）
