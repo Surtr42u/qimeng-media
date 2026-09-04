@@ -36,6 +36,12 @@ type Generator struct {
 	// longSide 是网格默认档（md）的生成像素：来自 config.Thumbnail.LongSide，
 	// <=0 时回落 SizeGrid（档位像素单一来源见 cachekey.go 的 Size 常量）。
 	longSide int
+	// ffmpegBin/ffprobeBin 是实际执行的外部二进制路径：构造时经 resolveBin
+	// 从 Options.FFmpegPath/FFprobePath 解析（显式配置优先，空回退裸命令名
+	// DefaultFFmpegBin/DefaultFFprobeBin 走 PATH 自动发现）。解析只发生在这
+	// 一处，管线内所有 exec 与对外探测出口（Generator.ProbeVideo）统一取用。
+	ffmpegBin  string
+	ffprobeBin string
 	// pool 是本编排器自建的工作池（workers 来自 config.Thumbnail.Workers，
 	// <=0 按 CPU 核数，见 NewWorkerPool）。懒生成/首屏预热经 Submit 提交；
 	// 应用停机路径必须调用 Close 优雅收池。
@@ -50,11 +56,18 @@ type Options struct {
 	Workers int
 	// LongSide 网格默认档（md）像素；<=0 回落 SizeGrid（512）。
 	LongSide int
+	// FFmpegPath/FFprobePath 是外部二进制路径（来自 config.Thumbnail 同名
+	// 配置）；空 = 回退裸命令名走 PATH 自动发现（缺省行为零变化，M6 单机
+	// 形态靠显式路径指向 App 打包的二进制，见 DefaultFFmpegBin 注释）。
+	FFmpegPath  string
+	FFprobePath string
 }
 
 // NewGenerator 创建编排器。dataDir 是服务端数据根目录
 // （缩略图落在 dataDir/thumbs 下，见 ThumbPath；绝不写媒体库目录）。
 // opts.LongSide<=0 时回落 SizeGrid（默认 512，维持既有档位行为）；
+// opts.FFmpegPath/FFprobePath 空时回退裸命令名走 PATH 自动发现（维持既有
+// 行为），显式配置则原样进 exec（单点解析，见 Generator.ffmpegBin 注释）；
 // opts.Workers<=0 时按 CPU 核数建池。返回的 Generator 持有一个常驻工作池，
 // 停机时调用方必须 Close 等任务排空。
 func NewGenerator(dataDir string, logger *slog.Logger, opts Options) *Generator {
@@ -64,7 +77,13 @@ func NewGenerator(dataDir string, logger *slog.Logger, opts Options) *Generator 
 	if opts.LongSide <= 0 {
 		opts.LongSide = int(SizeGrid)
 	}
-	g := &Generator{dataDir: dataDir, logger: logger, longSide: opts.LongSide}
+	g := &Generator{
+		dataDir:    dataDir,
+		logger:     logger,
+		longSide:   opts.LongSide,
+		ffmpegBin:  resolveBin(opts.FFmpegPath, DefaultFFmpegBin),
+		ffprobeBin: resolveBin(opts.FFprobePath, DefaultFFprobeBin),
+	}
 	g.pool = NewWorkerPool(context.Background(), opts.Workers, 0, g.handle, logger)
 	return g
 }
@@ -125,7 +144,7 @@ func (g *Generator) ensureOne(ctx context.Context, assetID, srcPath string, kind
 	switch kind {
 	case KindImage:
 		// 原图永不转码：缩放输出是独立副本，源文件只读。
-		return ScaleToWebP(ctx, srcPath, int(size), dst)
+		return g.scaleToWebP(ctx, srcPath, int(size), dst)
 	case KindAnimatedImage, KindVideo:
 		// 动图取首帧静帧；视频经黑帧检测选点抽帧。中转帧放系统临时目录：
 		// 它只是 ffmpeg 的中间输入，不进缓存目录，也不污染数据目录布局。
@@ -140,25 +159,25 @@ func (g *Generator) ensureOne(ctx context.Context, assetID, srcPath string, kind
 			}
 		}()
 		if kind == KindAnimatedImage {
-			if err := FirstFrame(ctx, srcPath, frame); err != nil {
+			if err := g.firstFrame(ctx, srcPath, frame); err != nil {
 				return err
 			}
 		} else {
-			pick, err := PickFrameTime(ctx, srcPath)
+			pick, err := g.pickFrameTime(ctx, srcPath)
 			if err != nil {
 				return err
 			}
 			if pick.AttachedPic {
 				// 内嵌封面优先（DOMAIN_RULES §11）：封面是发行方/作者选定的
 				// 画面，无需黑白纠偏，直接按探测出的流索引抽取。
-				if err := ExtractAttachedPic(ctx, srcPath, pick.AttachedPicStream, frame); err != nil {
+				if err := g.extractAttachedPic(ctx, srcPath, pick.AttachedPicStream, frame); err != nil {
 					return err
 				}
-			} else if err := ExtractFrame(ctx, srcPath, pick.At, frame); err != nil {
+			} else if err := g.extractFrame(ctx, srcPath, pick.At, frame); err != nil {
 				return err
 			}
 		}
-		return ScaleToWebP(ctx, frame, int(size), dst)
+		return g.scaleToWebP(ctx, frame, int(size), dst)
 	default:
 		return fmt.Errorf("未知媒体类型 %q", kind)
 	}

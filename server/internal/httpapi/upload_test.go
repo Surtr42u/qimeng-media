@@ -240,7 +240,7 @@ func newRealScannerEnv(t *testing.T, kind string) *testEnv {
 	}
 	bus := events.NewBus(nil, 0)
 	cfg := &config.Config{DataDir: dataDir, Thumbnail: config.ThumbnailConfig{LongSide: 512}}
-	real := scanner.New(q, bus, nil, dataDir)
+	real := scanner.New(q, bus, nil, dataDir, nil)
 	apisrv, err := New(Deps{
 		Conn: conn, Queries: q, Bus: bus, Cfg: cfg,
 		Thumbs:      thumbnail.NewGenerator(dataDir, nil, thumbnail.Options{}),

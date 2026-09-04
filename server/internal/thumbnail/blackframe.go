@@ -116,7 +116,7 @@ type FramePick struct {
 	AttachedPicStream int
 }
 
-// PickFrameTime 为视频挑选封面帧（DOMAIN_RULES §11 抽帧策略）：
+// pickFrameTime 为视频挑选封面帧（DOMAIN_RULES §11 抽帧策略）：
 //
 //  1. ffprobe 探测：命中内嵌封面（attached_pic）→ 直接返回封面流
 //     （优先级：内嵌封面 > 代表帧）；
@@ -128,8 +128,10 @@ type FramePick struct {
 //     采样也失败（文件损坏/无视频流）→ 报错。
 //  4. 某个候选点超出有效范围（实测 ffmpeg 退出码 0 但输出 0 字节）→
 //     跳过该点继续。
-func PickFrameTime(ctx context.Context, videoPath string) (*FramePick, error) {
-	probe, probeErr := ProbeVideo(ctx, videoPath)
+//
+// 二进制用 Generator 构造时解析的路径（g.ffprobeBin/g.ffmpegBin）。
+func (g *Generator) pickFrameTime(ctx context.Context, videoPath string) (*FramePick, error) {
+	probe, probeErr := probeVideo(ctx, g.ffprobeBin, videoPath)
 	if probeErr == nil && probe.AttachedPic {
 		return &FramePick{AttachedPic: true, AttachedPicStream: probe.AttachedPicStream}, nil
 	}
@@ -143,7 +145,7 @@ func PickFrameTime(ctx context.Context, videoPath string) (*FramePick, error) {
 	var lastFrameAt time.Duration
 	gotAnyFrame := false
 	for _, at := range candidateTimes(duration) {
-		samples, err := lumaSamplesAt(ctx, videoPath, at)
+		samples, err := g.lumaSamplesAt(ctx, videoPath, at)
 		if err != nil {
 			return nil, fmt.Errorf("探测 %s 在 %s 处的灰度采样: %w", videoPath, at, err)
 		}
@@ -172,10 +174,10 @@ func PickFrameTime(ctx context.Context, videoPath string) (*FramePick, error) {
 //     swscale 行为漂移（比如输出 limited range 的黑=16）导致纯黑视频漏判；
 //   - ffmpeg 实测 black=0x00 恰在阈值 15 之下、white=0xff 恰在阈值 240 之上，
 //     字节数据可直接与阈值比较。
-func lumaSamplesAt(ctx context.Context, videoPath string, at time.Duration) ([]byte, error) {
+func (g *Generator) lumaSamplesAt(ctx context.Context, videoPath string, at time.Duration) ([]byte, error) {
 	grid := fmt.Sprintf("%d:%d", lumaSampleGrid, lumaSampleGrid)
 	var out bytes.Buffer
-	if err := run(ctx, "ffmpeg", &out,
+	if err := run(ctx, g.ffmpegBin, &out,
 		"-ss", formatSeconds(at),
 		"-i", videoPath,
 		"-vf", "scale="+grid+":out_range=full,format=gray",

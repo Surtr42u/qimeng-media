@@ -11,6 +11,18 @@
 
 ---
 
+## 服务端 M6 前置：ffmpeg/ffprobe 二进制路径配置化（2026-09-05 第四十笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理，S 车道 S-3 批次）
+
+M6 单机形态前置小改造（依据 ADR-0015 + 仓库外 m6-ffmpeg-memo/m6-poc 预研）：服务端进手机后 ffmpeg/ffprobe 打包在 App 的 nativeLibraryDir，进程 PATH 未必可达，二进制路径不能再靠裸命令名自动发现。**契约：默认空 = 裸命令名走 PATH 自动发现，缺省行为零变化**；纯配置扩展，无 migration。
+
+- **config**：`ThumbnailConfig` 增 `ffmpeg_path`/`ffprobe_path`（yaml 键 + env `QIMENG_THUMBNAIL_FFMPEG_PATH`/`QIMENG_THUMBNAIL_FFPROBE_PATH` 覆盖，沿用「默认值 < yaml < env」既有惯例；字符串直覆盖无非法值）。
+- **thumbnail**：新增命名常量 `DefaultFFmpegBin`/`DefaultFFprobeBin`（裸命令名单一来源）与 `resolveBin` 解析（显式配置优先/空回退自动发现）；解析收敛在 `NewGenerator` 单点——`Options` 增 `FFmpegPath`/`FFprobePath`，Generator 持有解析结果，ffmpeg/ffprobe 裸命令名全部 6 处调用点（抽帧/首帧/封面流/缩放/灰度采样/探测）改走 Generator 方法取用；`ProbeVideo` 拆为 `probeVideo(ctx, ffprobeBin, path)` 核心 + 包级 `ProbeVideo`（裸名回退语义）+ `(*Generator).ProbeVideo`（配置路径出口）。
+- **接线**：`scanner.New` 增 probe 参数（nil = 默认 `thumbnail.ProbeVideo` 回退语义），main 注入 `thumbs.ProbeVideo`——扫描入库与上传探测（httpapi upload 改走 `s.thumbs.ProbeVideo`）与缩略图管线共用同一 ffprobe 配置来源，路径只在装配处解析一次。
+- **测试**：thumbnail/binpath_test.go 锁两分支——「显式配置优先」（配置路径原样进 exec，构造字段与 exec 错误信息双重实证）与「缺省回退自动发现」（裸命令名进 exec）；config_test.go 锁默认空值/yaml 覆盖/env 优先；ffmpeg_integration_test.go 适配方法化签名（真 ffmpeg 行为断言不变，本机实跑通过）。
+- **验收**：`cd server && go test ./...` 全绿（含 thumbnail/config 现跑）；`make lint` 全绿（exit 0，TS 15 条警告为既有存量）。
+
 ## CI 修复：android/gradlew 补回可执行位——Android 门禁 job 存量红（2026-09-05 第三十九笔）
 
 执行 AI：GLM-5.3-Flash（主代理）
