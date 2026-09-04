@@ -10,6 +10,16 @@
 
 ---
 
+## W-2 confirm 换原型风格弹窗：window.confirm 全量退役（2026-09-04 第二十六笔）
+
+执行 AI：GLM-5.3（主代理，ZCode 调度验收；编码与冒烟由 executor 子代理完成）
+
+UI 收尾三批第二笔（HANDOVER_UI §5.9 任务书）：
+
+- **新增** `web/src/components/ui/confirm-dialog.tsx`：radix AlertDialog 封装（复用已有 `radix-ui` 统一包 ^1.6.7，零新装包）；冻结 API 原样 + 必要可选 prop `onOpenChange?`（radix 受控 open 响应 ESC 所必需，主会话裁决接受并记账）；样式全走原型 token，新增 `--overlay-bg`/`--dialog-shadow` 双语义 token（§5.8 口径，零颜色字面量）；danger 语义=主文字色反底（浅色黑胶囊/深色自动反转白底黑字），不引入红色 token。
+- **替换**：TrashPage 彻底删除/清空（danger）、LibraryManagePage 删库（非 danger——删库只清索引、磁盘文件不受影响，主色键）；`grep window.confirm` 实际调用清零。顺带删除 TrashPage 一处不可达空回收站分支（disabled 拦截下死代码，行为等价）。
+- **验收证据**：tsc/build/lint 全绿（本批文件 0 warning，存量 15 warnings 不变）；隔离实例三弹窗×浅/深双模式+焦点环+ESC 关闭+真确认链路 9 图（%TEMP%/qimeng-w2-shots/）；ESC 实测 7 次全过、焦点环 2px var(--qm-primary)、radix 初始焦点自动落取消键。
+
 ## W-1 上传 UI 入口：文件管理页上传卡 + use-upload 队列 hook（2026-09-04 第二十五笔）
 
 执行 AI：GLM-5.3（主代理，ZCode 调度验收；编码与冒烟由 executor 子代理完成）

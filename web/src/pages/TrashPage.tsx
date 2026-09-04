@@ -1,5 +1,7 @@
+import { useState } from 'react'
 import { toast } from 'sonner'
 import { LOCALE_ZH } from '@/lib/constants'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import {
   useDeleteTrashItem, useEmptyTrash, useRestoreTrash, useTrash,
 } from '@/hooks/use-trash'
@@ -32,7 +34,6 @@ export default function TrashPage() {
   }
 
   const doRemoveOne = (it: TrashItem): void => {
-    if (!window.confirm(`彻底删除「${it.fileName}」？\n物理删除不可恢复。`)) return
     removeOne.mutate(it.id ?? '', {
       onSuccess: () => toast.success('已彻底删除'),
       onError: (err) => toast.error(`删除失败：${err instanceof Error ? err.message : String(err)}`),
@@ -40,17 +41,15 @@ export default function TrashPage() {
   }
 
   const doEmpty = (): void => {
-    const total = items.length
-    if (total === 0) {
-      toast.info('回收站已经是空的')
-      return
-    }
-    if (!window.confirm(`清空回收站？\n${total} 个文件将被物理删除，不可恢复。`)) return
     emptyAll.mutate(undefined, {
       onSuccess: () => toast.success('回收站已清空'),
       onError: (err) => toast.error(`清空失败：${err instanceof Error ? err.message : String(err)}`),
     })
   }
+
+  // W-2：window.confirm 换 ConfirmDialog（原型风格二次确认），状态记待确认目标
+  const [removeTarget, setRemoveTarget] = useState<TrashItem | null>(null)
+  const [emptyConfirmOpen, setEmptyConfirmOpen] = useState(false)
 
   const totalBytes = items.reduce((acc, it) => acc + (it.sizeBytes ?? 0), 0)
 
@@ -62,7 +61,7 @@ export default function TrashPage() {
       </div>
 
       <div className="settings-actions">
-        <button className="save-btn" type="button" onClick={doEmpty} disabled={emptyAll.isPending || items.length === 0}>
+        <button className="save-btn" type="button" onClick={() => setEmptyConfirmOpen(true)} disabled={emptyAll.isPending || items.length === 0}>
           清空回收站
         </button>
         <span className="save-tip" hidden={emptyAll.isPending}>物理删除不可恢复</span>
@@ -87,7 +86,7 @@ export default function TrashPage() {
                   <td>{it.deletedAt ? new Date(it.deletedAt).toLocaleString(LOCALE_ZH) : '-'}</td>
                   <td>
                     <button className="pill" type="button" onClick={() => doRestore(it)}>恢复</button>
-                    <button className="pill" type="button" onClick={() => doRemoveOne(it)}>彻底删除</button>
+                    <button className="pill" type="button" onClick={() => setRemoveTarget(it)}>彻底删除</button>
                   </td>
                 </tr>
               ))}
@@ -95,6 +94,37 @@ export default function TrashPage() {
           </table>
         )}
       </div>
+
+      {/* 彻底删除（物理删除类 → danger 深色强调） */}
+      <ConfirmDialog
+        open={removeTarget !== null}
+        title={`彻底删除「${removeTarget?.fileName ?? ''}」？`}
+        description="物理删除不可恢复。"
+        confirmText="彻底删除"
+        cancelText="取消"
+        danger
+        onConfirm={() => {
+          const it = removeTarget
+          setRemoveTarget(null)
+          if (it) doRemoveOne(it)
+        }}
+        onOpenChange={(next) => { if (!next) setRemoveTarget(null) }}
+      />
+
+      {/* 清空回收站（清空类 → danger 深色强调）；空态由按钮 disabled 拦截，不进弹窗 */}
+      <ConfirmDialog
+        open={emptyConfirmOpen}
+        title="清空回收站？"
+        description={`${items.length} 个文件将被物理删除，不可恢复。`}
+        confirmText="清空"
+        cancelText="取消"
+        danger
+        onConfirm={() => {
+          setEmptyConfirmOpen(false)
+          doEmpty()
+        }}
+        onOpenChange={setEmptyConfirmOpen}
+      />
     </div>
   )
 }
