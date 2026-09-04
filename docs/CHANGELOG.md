@@ -10,6 +10,17 @@
 
 ---
 
+## W-1 上传 UI 入口：文件管理页上传卡 + use-upload 队列 hook（2026-09-04 第二十五笔）
+
+执行 AI：GLM-5.3（主代理，ZCode 调度验收；编码与冒烟由 executor 子代理完成）
+
+UI 收尾三批第一笔（HANDOVER_UI §5.9 任务书，夜间集群模式首个写批次）：
+
+- **新增**：`web/src/hooks/use-upload.ts`（XHR + octet-stream 流式上传队列：进度回调/单条 abort/大小上限前置拦截（读 GET /config upload 项，超限中文提示不入网）/类型白名单不前端复制（服务端四道校验唯一口径、4xx 文案透传）/切路由自动 abort 整队）；`web/src/components/manage/UploadCard.tsx`（选库→目录树选目标→点击/拖入→队列表（名称/大小/进度条/状态）→逐条 toast + libraries/dirs/assets 三组查询本地失效）；`web/src/components/manage/DirTree.tsx`（目录树渲染从 LibraryManagePage 抽共享：只读/选择双模式）。
+- **修改**：LibraryManagePage 接入上传卡；use-libraries/use-assets 提取 DIRS/ASSETS 查询键常量（字面量卫生）；format.ts 新增 dirLabel()；prototype.css 追加上传卡段（零新增颜色字面量，全 token 引用）。
+- **验收证据**：`npx tsc --noEmit -p tsconfig.app.json` / `npm --prefix web run build` / `npm --prefix web run lint`（0 errors，存量 15 warnings 不变）全绿；隔离实例（18420 端口+临时数据目录，真实库零接触）UI 实走 1 图+1 视频上传：进度 26% 中间态→完成 toast→目录树 7→8 文件→首页网格出现新卡，截图 5 张存 %TEMP%/qimeng-w1-shots/；§4.5 对齐静止态实测：上传卡与同页全部行级块横向 spread 0.0px、卡间距 17.59px 与全页节奏一致。
+- **发现并记账（不扩围）**：SseBridge 跨端失效键与实际查询键形态不匹配的存量缺陷（HANDOVER_UI §5 第 9 条，待拍板）；上传并发取串行（协议未约定，最保守值）；DirBrowser 根行改显「库根 N 文件」（共享抽取伴生小变化）。
+
 ## 夜间集群模式补入执行调度：主会话调度器 + 写串行读并行（2026-09-04 第二十四笔）
 
 执行 AI：GLM-5.3（主代理，ZCode）

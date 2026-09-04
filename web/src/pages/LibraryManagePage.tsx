@@ -1,21 +1,23 @@
 import { useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { toast } from 'sonner'
 import { LOCALE_ZH } from '@/lib/constants'
+import { DirTreeNodes } from '@/components/manage/DirTree'
+import { UploadCard } from '@/components/manage/UploadCard'
 import {
   useDeleteLibrary, useDirTree, useLibraries, useRegisterLibrary, useScanLibrary, useSetLibraryEnabled,
 } from '@/hooks/use-libraries'
 import {
   useDeleteImportedTxt, useImportAuthorTxt, useRebuildAuthorTxt, useTxtImportedFiles,
 } from '@/hooks/use-authors'
-import type { DirTree, Library } from '@/api/generated'
+import type { Library } from '@/api/generated'
 
 /**
  * 文件管理页（维护页「文件管理」入口卡 → /app/maintenance/files）。
  * 「管理文件库」的实际功能页：库列表（重扫/删除）+ 注册新库（= 旧 App
- * 添加媒体文件夹）+ 目录浏览 + 作者 TXT 导入卡（= 旧版数据管理「TXT导入
- * 作者」：列表 + 选择 txt 导入 + 删除片段重建关联）。样式复用原型类
- * （log-table/settings-card/pill/rank-card）。
- * 目录浏览走 useDirTree（协议 /api/v1/dirs，libraryId 必填）。
+ * 添加媒体文件夹）+ 目录浏览 + 上传卡（W-1：选库 → 选目录 → 传文件）+
+ * 作者 TXT 导入卡（= 旧版数据管理「TXT导入作者」：列表 + 选择 txt 导入 +
+ * 删除片段重建关联）。样式复用原型类（log-table/settings-card/pill/rank-card）。
+ * 目录浏览/上传的目标目录都走 useDirTree（协议 /api/v1/dirs，libraryId 必填）。
  */
 
 /**
@@ -141,27 +143,7 @@ function TxtAuthorImportCard() {
   )
 }
 
-/** 目录树递归节点（库根为顶，子目录缩进；fileCount 为该目录直接文件数） */
-function DirNode({ node, depth }: { node: DirTree; depth: number }) {
-  const seg = (node.path ?? '').split(/[\\/]/).filter(Boolean)
-  return (
-    <li>
-      <span className="rank-name" style={{ paddingLeft: depth * 14 }}>
-        {seg[seg.length - 1] || node.path}{' '}
-        <b style={{ color: 'var(--text-sub)', fontWeight: 400 }}>{node.fileCount ?? 0} 文件</b>
-      </span>
-      {(node.dirs ?? []).length > 0 && (
-        <ul style={{ listStyle: 'none' }}>
-          {(node.dirs ?? []).map((child) => (
-            <DirNode key={child.path} node={child} depth={depth + 1} />
-          ))}
-        </ul>
-      )}
-    </li>
-  )
-}
-
-/** 目录浏览卡（选库 → 拉取该库目录树） */
+/** 目录浏览卡（选库 → 拉取该库目录树；行渲染复用共享 DirTreeNodes 只读模式） */
 function DirBrowser({ libraries }: { libraries: Library[] }) {
   const [libId, setLibId] = useState('')
   const enabled = libId !== ''
@@ -188,7 +170,7 @@ function DirBrowser({ libraries }: { libraries: Library[] }) {
         <p className="grid-empty">加载中…</p>
       ) : tree ? (
         <ul>
-          <DirNode node={tree} depth={0} />
+          <DirTreeNodes node={tree} depth={0} />
         </ul>
       ) : (
         <p className="grid-empty">该库暂无目录。</p>
@@ -338,6 +320,7 @@ export default function LibraryManagePage() {
       </form>
 
       <DirBrowser libraries={libraries} />
+      <UploadCard libraries={libraries} />
       <TxtAuthorImportCard />
     </div>
   )

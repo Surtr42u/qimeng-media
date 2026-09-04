@@ -45,6 +45,12 @@ export function formatBytes(n: number): string {
   return `${n} B`
 }
 
+/** 目录树节点显示名（W-1 共享 DirTree 用）：路径末段；根（''）= 库根 */
+export function dirLabel(path?: string | null): string {
+  const seg = (path ?? '').split(/[\\/]/).filter(Boolean)
+  return seg[seg.length - 1] ?? '库根'
+}
+
 /** 展示计数（排行角标/统计数字）：万以上压缩为 x.x万（截尾 .0），其余千分位分组 */
 export function formatCount(n?: number | null): string {
   if (n === undefined || n === null || Number.isNaN(n)) return '0'

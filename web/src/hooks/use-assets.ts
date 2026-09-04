@@ -23,6 +23,9 @@ import type { MediaCardProps } from '@/components/media/MediaCard'
 import { unwrapSdkResult } from '@/lib/api-client'
 import { formatCardUp, formatDuration, formatShortDate } from '@/lib/format'
 
+/** 资产列表查询键根（use-upload 上传成功后按前缀失效列表；useAssetsInfinite 在此之上追加 params） */
+export const ASSETS_LIST_QUERY_KEY = ['api/v1/assets'] as const
+
 export type MediaType = 'image' | 'animated_image' | 'video'
 export type AssetSort =
   | 'default' | 'fileDate' | 'addedDate' | 'viewCount' | 'playCount' | 'sizeBytes' | 'name' | 'favoriteAt'
@@ -69,7 +72,7 @@ export function useRecommendations(limit = 60) {
  *  enabled=false 用于"无搜索词/未找到合集实体"时避免无效请求（q 为空仍要渲染空态）。 */
 export function useAssetsInfinite(params: AssetListParams = {}, enabled = true) {
   return useInfiniteQuery({
-    queryKey: ['api/v1/assets', params],
+    queryKey: [...ASSETS_LIST_QUERY_KEY, params],
     queryFn: ({ pageParam }) =>
       unwrapSdkResult(getApiV1Assets({ query: { ...params, cursor: pageParam } })),
     initialPageParam: undefined as string | undefined,

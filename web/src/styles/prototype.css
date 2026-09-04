@@ -1113,3 +1113,37 @@ body {
 .album-group-title { display: flex; align-items: baseline; gap: 8px; font-size: 15px; font-weight: 600; color: var(--text-main); }
 .album-group-count { font-size: 12px; font-weight: 400; color: var(--text-sub); }
 .album-group .media-grid { margin-top: 10px; }
+
+/* ===== 上传卡（2026-09-04 W-1：文件管理页上传入口）===== */
+/* 目标目录选择树（UploadCard）：覆盖 .rank-card li 的行样式，按钮行自绘 */
+.dir-tree ul { margin: 6px 0 0; padding: 0; }
+.dir-tree li { padding: 0; border-bottom: none; background: none; }
+.dir-tree li:hover { background: none; }
+.dir-node {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; text-align: left;
+  padding: 7px 8px; border: none; border-radius: 8px;
+  background: none; cursor: pointer;
+  font-family: var(--font); font-size: 13px; color: var(--text-main);
+}
+.dir-node:hover { background: var(--hover-bg); }
+.dir-node.selected {
+  background: color-mix(in oklab, var(--qm-primary) 8%, transparent);
+  color: var(--qm-primary); font-weight: 600;
+}
+.dir-node .dir-name { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.dir-node .dir-count { font-size: 12px; font-weight: 400; color: var(--text-sub); font-variant-numeric: tabular-nums; }
+/* 拖拽/点击上传区（点击=打开文件选择，拖入=整批入队） */
+.upload-drop {
+  margin-top: 10px; padding: 18px 12px;
+  border: 1.5px dashed var(--border); border-radius: 10px;
+  text-align: center; font-size: 13px; color: var(--text-sub);
+  cursor: pointer; user-select: none;
+}
+.upload-drop b { color: var(--text-main); }
+.upload-drop:hover, .upload-drop.over { border-color: var(--qm-primary); color: var(--qm-primary); }
+.upload-drop.disabled { cursor: not-allowed; opacity: .55; }
+.upload-drop.disabled:hover { border-color: var(--border); color: var(--text-sub); }
+/* 队列状态列：失败原因/成功态的小字（复用既有 --danger/--ok token，无新颜色） */
+.upload-err { margin-top: 2px; font-size: 12px; color: var(--danger); }
+.upload-done { color: var(--ok); }
