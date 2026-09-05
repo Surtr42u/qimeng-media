@@ -38,7 +38,8 @@ export default function HomePage() {
 
   return (
     <div className="page" id="page-home">
-      <div className="grid">
+      {/* 三 tab 共用一个 grid 容器；热榜带 grid--hot 修饰类（首行贴侧栏节奏的热榜例外，见 prototype.css） */}
+      <div className={`grid${tab === 'hot' ? ' grid--hot' : ''}`}>
         {tab === 'hot'
           ? <HotRankTab period={period} onOpen={openDetail} />
           : tab === 'recommend'

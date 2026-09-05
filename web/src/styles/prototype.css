@@ -1067,13 +1067,16 @@ body {
 }
 
 /* ===== 首行贴侧栏节奏（用户拍板，同搜索页纪律）=====
-   细行（胶囊/分段行）中心 ↔ 侧栏「首页」项中心(94)；高卡片顶沿贴顶栏下缘(75)，改行高需连锁重算 */
+   细行（胶囊/分段行）中心 ↔ 侧栏「首页」项中心(94)；高卡片顶沿贴顶栏下缘(75)，改行高需连锁重算；
+   热榜例外（2026-09-05 拍板）：周期行占住「首页」带，首行卡片顶沿下移对齐「相册」项顶沿(126) */
 #page-albums .filter-card { margin-top: -5.9px; }
 #page-data > .seg-row:first-child { margin-top: -5.8px; }
 #page-mine .profile-card, #page-settings .settings-card { margin-top: -11.6px; }
 #page-home .grid { margin-top: -11.5px; }
 #page-maintenance .page-head { margin-top: -13.8px; }
 #page-ranks .page-head { margin-top: -13.8px; }
+/* 热榜覆写：112.5(内容区顶=顶栏75+周期行0.5+37) + 12(内容区上内边距) + 1.5 = 126 = 「相册」项顶边 */
+#page-home .grid--hot { margin-top: 1.5px; }
 
 /* ===== web 移植补充（2026-09-02，React 重建）===== */
 /* React 挂载点占满视口：原型 body 直接子元素是 .layout，React 多包一层 #root */
