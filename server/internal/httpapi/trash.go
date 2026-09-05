@@ -26,6 +26,7 @@ import (
 	"qimeng-media/server/internal/httpapi/gen"
 	"qimeng-media/server/internal/store"
 	"qimeng-media/server/internal/store/db"
+	"qimeng-media/server/internal/sysmon"
 )
 
 // trashIDSep 是回收站条目 ID "<19位stamp>_<assetID>" 的分隔符。
@@ -39,6 +40,29 @@ func (s *Server) publishLibraryChanged() {
 	if err := s.bus.Publish(events.Event{Topic: events.TopicLibraryChanged}); err != nil {
 		s.logger.Warn("发布库变更事件失败", "err", err)
 	}
+}
+
+// refreshTrashMetrics 把 trash_items / trash_bytes gauge 刷新为回收站现状。
+// 真实源是磁盘 meta 文件（listTrash 遍历），不走库表——trash_items 表是
+// 历史迁移遗留的死表（迁移只加不删，留着但不读）。bytes 逐条 os.Stat 求和
+// 文件本体大小（与回收站面板 GetApiV1Trash 同口径，不含 meta 自身）。
+// 变更点推送刷新：删除入站/恢复/单条物理删除/清空四个时机各调一次，
+// 不做定时轮询（OBSERVABILITY 口径：推送刷新）。失败只记日志：指标刷新
+// 失败不影响业务路径的成功响应。
+func (s *Server) refreshTrashMetrics() {
+	entries, err := s.listTrash()
+	if err != nil {
+		s.logger.Warn("刷新回收站指标失败", "err", err)
+		return
+	}
+	var bytes int64
+	for _, e := range entries {
+		if fi, err := os.Stat(e.file); err == nil {
+			bytes += fi.Size()
+		}
+	}
+	sysmon.Default.SetTrashItems(int64(len(entries)))
+	sysmon.Default.SetTrashBytes(bytes)
 }
 
 // DeleteApiV1AssetsAssetId 删除资产：文件移入回收站 + 库行删除。
@@ -103,6 +127,9 @@ func (s *Server) DeleteApiV1AssetsAssetId(w http.ResponseWriter, r *http.Request
 		return
 	}
 	s.publishLibraryChanged()
+	// 删除落站改变了库内文件数与回收站占用：两个指标在此刷新（变更点推送）。
+	s.refreshLibraryFileMetrics()
+	s.refreshTrashMetrics()
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -307,6 +334,9 @@ func (s *Server) PostApiV1TrashTrashIdRestore(w http.ResponseWriter, r *http.Req
 			"assetId", e.meta.AssetID, "err", err)
 	}
 	s.publishLibraryChanged()
+	// 恢复改变了库内文件数与回收站占用：两个指标在此刷新（变更点推送）。
+	s.refreshLibraryFileMetrics()
+	s.refreshTrashMetrics()
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -324,6 +354,8 @@ func (s *Server) DeleteApiV1TrashTrashId(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	s.logger.Info("回收站条目已物理删除", "id", e.id, "originalPath", e.meta.OriginalPath)
+	// 库内文件数不变（条目早已出库），只刷回收站两 gauge（变更点推送）。
+	s.refreshTrashMetrics()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -339,5 +371,7 @@ func (s *Server) DeleteApiV1Trash(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.logger.Info("回收站已清空")
+	// 清空后回收站归零：gauge 显式 Set 回 0（变更点推送）。
+	s.refreshTrashMetrics()
 	w.WriteHeader(http.StatusNoContent)
 }

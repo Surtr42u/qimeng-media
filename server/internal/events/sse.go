@@ -47,6 +47,9 @@ type Handler struct {
 	maxConns  int64
 	heartbeat time.Duration
 	conns     atomic.Int64
+	// connGauge 活跃连接数回调（WithConnectionGauge 注入；nil = 不回调）。
+	// events 包不感知指标实现，装配层经它单点接线。
+	connGauge func(int64)
 }
 
 // Option Handler 配置项。
@@ -54,6 +57,13 @@ type Option func(*Handler)
 
 // WithVersion 覆盖 hello 事件携带的服务端版本。
 func WithVersion(v string) Option { return func(h *Handler) { h.version = v } }
+
+// WithConnectionGauge 注册活跃连接数回调（OBSERVABILITY sse_connections 的
+// 装配钩子）：占坑成功后与连接释放后各回调一次，参数为当前连接数绝对值
+// （Set 语义，多次回调不漂移）；503 拒绝（占坑失败即回退）不回调——被拒
+// 连接从未活跃过。回调在连接建立/断开路径上同步执行，必须快速非阻塞。
+// 传 nil 保持无回调（默认，测试零接线）。
+func WithConnectionGauge(f func(int64)) Option { return func(h *Handler) { h.connGauge = f } }
 
 // WithMaxConns 覆盖并发连接上限（<=0 保持默认）。
 func WithMaxConns(n int) Option {
@@ -97,6 +107,14 @@ func NewHandler(bus *Bus, opts ...Option) *Handler {
 	return h
 }
 
+// notifyConns 把当前活跃连接数推给装配期注册的 gauge 回调（绝对值 Set，
+// 并发下取 conns 的某一时刻快照，gauge 语义允许近似）。
+func (h *Handler) notifyConns() {
+	if h.connGauge != nil {
+		h.connGauge(h.conns.Load())
+	}
+}
+
 // ServeHTTP 处理 GET /api/v1/events（SSE 流）。
 // 生命周期：占坑（并发计数）→ 校验 → 订阅 → 首帧（retry+hello）→ 事件循环 → defer 清理。
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -105,9 +123,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.conns.Add(-1)
 		h.writeError(w, http.StatusServiceUnavailable,
 			"TOO_MANY_CONNECTIONS", "SSE 并发连接数已达上限，请关闭其他页面后重试")
-		return
+		return // 503 拒绝不回调 gauge：连接从未活跃（WithConnectionGauge 契约）
 	}
-	defer h.conns.Add(-1)
+	h.notifyConns()
+	defer func() {
+		h.conns.Add(-1)
+		h.notifyConns()
+	}()
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
