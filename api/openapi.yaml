@@ -172,7 +172,7 @@ paths:
         - { name: favorite,    in: query, schema: { type: boolean } }
         - { name: liked,       in: query, schema: { type: boolean }, description: 仅赞过（likes 表存在任意日行）的资产；false = 从未赞过 }
         - { name: q,           in: query, schema: { type: string }, description: 全文搜索（空格分词；多词 AND；子串匹配文件名/文件夹路径/标签/作者/角色/出处任一维度；与全部筛选叠加） }
-        - { name: directory,   in: query, schema: { type: string }, description: '库内相对目录精确匹配（路径规范化后等值比较），只返回该目录的直接子文件、不含递归子目录；空串=库根（与 GET /dirs 的 DirTree 根节点 path="" 语义对齐）；缺省=不过滤。文件管理页目录树「文件行」数据源；非法路径（绝对路径/盘符/../逃逸/保留设备名等）返回 400 INVALID_PARAM' }
+        - { name: directory,   in: query, schema: { type: string }, description: '库内相对目录精确匹配（路径规范化后等值比较），只返回该目录的直接子文件、不含递归子目录；空串=库根（与 GET /dirs 的 DirTree 根节点 path="" 语义对齐）；缺省=不过滤。文件管理页目录树「文件行」数据源；非法路径（绝对路径/盘符/../逃逸/保留设备名等）返回 400 INVALID_PARAM；`a/..` 这类规范化后收敛为库根的相对路径同样拒绝（400）' }
         - { name: groupByDate, in: query, schema: { type: boolean, default: true }, description: 按日期分组返回（DOMAIN_RULES §8 标签规则） }
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/AssetPage" } } } }
@@ -700,6 +700,7 @@ paths:
       responses:
         "200": { description: 迁移结果统计, content: { application/json: { schema: { $ref: "#/components/schemas/LegacyImportResult" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "413": { description: 请求体超 64MB 上限（备份导入 per-route 放宽值）, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
 
   /api/v1/export/qimeng-backup:
     get:
