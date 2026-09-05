@@ -11,6 +11,13 @@
 
 ---
 
+## fix(server): 删未使用常量 legacyHistoryLimit 清 make lint 红（500 上限单一来源归 legacy_export.sql）（2026-09-06 第七十五笔）
+
+执行 AI：GLM-5.3-Flash（B 会话·自审清偿批）
+
+- **完成项**：删除 `server/internal/httpapi/export.go` 的未使用常量 `legacyHistoryLimit`（commit 8344920 引入，即第七十一/七十三笔「遗留」反复记账的 `make lint` 主干既有红）及其注释行；原位置留一行指针注释「history 段 500 条上限的单一来源在 store/queries/legacy_export.sql（ExportRecentOpenEvents，对齐旧库 view_history）——SQL 侧改动须同步彼处注释」（代码卫生 7 双方注释互指；SQL 侧 legacy_export.sql 注释彼处本就有，本笔未动）。行为零变化，只删常量。
+- **验收**：`cd server && go build ./...` 过、`go vet ./internal/httpapi/` 过、`golangci-lint run internal/httpapi/...` 0 issues；仓库根 `make lint` exit 0（redocly + gofmt + golangci-lint + web build 全链，自 8344920 起首次全绿），TS 侧 17 条 warning 为既有存量非失败项。
+
 ## fix(web): B车道自审P3清偿（死类名/删除后目录树失效/条目措辞/时长token化）（2026-09-06 第七十四笔）
 
 执行 AI：GLM-5.3-Flash（B 会话·自审清偿批）

@@ -43,8 +43,7 @@ const (
 	legacyAppIdentifier = "com.qimeng.media"
 	legacySchemaVersion = 1
 
-	// history 段条数上限：旧库 view_history 固定 500 条（DATA_MIGRATION_SPEC §4）。
-	legacyHistoryLimit = 500
+	// history 段 500 条上限的单一来源在 store/queries/legacy_export.sql（ExportRecentOpenEvents，对齐旧库 view_history）——SQL 侧改动须同步彼处注释。
 
 	// recordKey 同名消歧分隔符（旧规则「文件名 @ 文件夹名」与「#路径哈希」）。
 	recordKeySep     = " @ "
