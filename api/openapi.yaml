@@ -700,6 +700,26 @@ paths:
         "200": { description: 迁移结果统计, content: { application/json: { schema: { $ref: "#/components/schemas/LegacyImportResult" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
 
+  /api/v1/export/qimeng-backup:
+    get:
+      summary: 导出旧版格式备份（qimeng_backup.json，DOMAIN_RULES §10 逆向映射）
+      description: |
+        把当前库导出为旧版「绮梦影库」单文件全量备份（DATA_MIGRATION_SPEC v1 格式），
+        可回灌旧版 App 或经 POST /import/qimeng-backup 幂等回环到其他新实例。
+        段级口径（与 §10 导入映射互为镜像）：settings/scanSources/albumRules/cosWorks
+        导出为空数组（SAF 目录为设备本机概念、COS 作品目录与出处均为派生信息）；
+        dailyBrowse 由事件流物化表（asset x day）导出；mediaStats 由事件流按资产聚合；
+        history 截取最近 500 条 open 事件（对齐旧库 view_history 上限）；点赞按点赞行
+        聚合为 { 累计次数, 最后点赞日 }；recommendationPrefs 从 kv_settings 原样导出。
+        recordKey 生成镜像导入消歧规则：文件名唯一 = 文件名；同名 = 「文件名 @ 文件夹名」；
+        同名同文件夹（跨库）再追加 #路径哈希。响应带 Content-Disposition: attachment。
+      responses:
+        "200":
+          description: qimeng_backup.json 全量备份
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LegacyBackupFile" }
+
 components:
   securitySchemes:
     bearerAuth: { type: http, scheme: bearer, bearerFormat: "QM token" }
@@ -1322,3 +1342,14 @@ components:
         followedAuthorsMarked:  { type: integer }
         prefsImported:          { type: boolean, description: recommendationPrefs 是否写入 }
         warnings:               { type: array, items: { type: string }, description: settings/scanSources 重新配置提示、albumRules 忽略说明等 }
+
+    LegacyBackupFile:
+      type: object
+      description: 旧版格式备份信封（GET /export/qimeng-backup 响应；与 LegacyBackupImport 同构，独立命名避免读写混用）
+      required: [format, schemaVersion, appIdentifier, data]
+      properties:
+        format:           { type: string, description: 恒为 qimeng_backup }
+        schemaVersion:    { type: integer, description: 恒为 1（当前格式版本） }
+        appIdentifier:    { type: string, description: 恒为 com.qimeng.media（旧版格式标识） }
+        exportedAtMillis: { type: integer, format: int64, description: 导出时刻毫秒（导入端幂等批次键） }
+        data:             { $ref: "#/components/schemas/LegacyBackupData" }
