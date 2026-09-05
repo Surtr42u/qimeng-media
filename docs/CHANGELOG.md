@@ -11,6 +11,17 @@
 
 ---
 
+## 搜索补全接线 + 推荐搜索随机化：对齐旧版搜索语义（2026-09-05 第四十八笔）
+
+执行 AI：GLM-5.3-Flash（主代理派发 executor 子代理端到端实施，主代理验收收尾）
+
+用户拍板「搜索逻辑和推荐显示和旧版不一致，修一下做个补全」。查实两处偏差：① `/search/suggestions` 端点（S-1 建）**web 前端零接线**——旧版输入时的五维补全列表在 web 缺失；② web 空态「推荐搜索」用标签/作者按文件数 Top N（每次固定），旧版是「名字索引随机取 10 条」。检索维度本身（文件名/目录段/标签/角色/作者/出处，asset_search_text 视图）已对齐旧版，不动。
+
+- **协议**：/search/suggestions 增 `recommend`（default false；true 且 q 空=随机五维候选 ≤limit；q 非空时忽略照常子串匹配）；make sdk 三端重建。
+- **服务端**：suggestions.sql 增五随机池查询（口径逐一照抄既有 UNION 分支；DISTINCT 套子查询规避 SQLite compound SELECT 的 ORDER BY 表达式限制）；handler 随机分支按池轮转交错合并——任一维缺货由其余维填满、五维有货时天然混合。新用例：recommend 随机（type 全法值、(type,name) 唯一、limit=50 全集精确、幽灵作者不入池）与 q 非空时 recommend 被忽略。
+- **Web**：新建 hooks/use-suggestions.ts（useSearchSuggestions 输入态 + useRecommendSearchWords 空态，后者 staleTime=0——每次打开面板换一批，随机语义的一部分）；TopBar 输入非空时下拉切换为补全列表（名称+右侧类型徽标，点行=填入并搜索，200ms 防抖、TanStack queryKey 隔离替代 AbortController）；空态推荐词改接 recommend 端点（删 Top N 逻辑）；prototype.css 尾部追加 pop-suggest-* 类（全走 token）。
+- **验收**：go test 14 包全绿、make lint 0 错误（16 告警既有存量）、tsc/build 绿；实机见同批验证记录。
+
 ## UI 微调：内容榜数值角标去除（2026-09-05 第四十七笔）
 
 执行 AI：GLM-5.3-Flash（主代理，用户实机拍板「内容榜的这个次数去除」）

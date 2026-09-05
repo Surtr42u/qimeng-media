@@ -112,3 +112,198 @@ func (q *Queries) ListSearchSuggestions(ctx context.Context, arg ListSearchSugge
 	}
 	return items, nil
 }
+
+const randomAuthorSuggestionPool = `-- name: RandomAuthorSuggestionPool :many
+SELECT name FROM (
+    SELECT DISTINCT reg.display_name AS name
+    FROM authors reg
+    WHERE reg.type = 'regular'
+      AND EXISTS (SELECT 1 FROM asset_authors aa
+                  JOIN assets a2 ON a2.asset_id = aa.asset_id
+                  WHERE aa.author_id = reg.id)
+)
+ORDER BY random()
+LIMIT ?1
+`
+
+func (q *Queries) RandomAuthorSuggestionPool(ctx context.Context, rowLimit int64) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, randomAuthorSuggestionPool, rowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		items = append(items, name)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const randomCharacterSuggestionPool = `-- name: RandomCharacterSuggestionPool :many
+SELECT name FROM (
+    SELECT DISTINCT ac.character_name AS name
+    FROM asset_characters ac
+)
+ORDER BY random()
+LIMIT ?1
+`
+
+func (q *Queries) RandomCharacterSuggestionPool(ctx context.Context, rowLimit int64) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, randomCharacterSuggestionPool, rowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		items = append(items, name)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const randomCosAuthorSuggestionPool = `-- name: RandomCosAuthorSuggestionPool :many
+SELECT name FROM (
+    SELECT DISTINCT au.display_name AS name
+    FROM authors au
+    WHERE au.type = 'cos'
+)
+ORDER BY random()
+LIMIT ?1
+`
+
+func (q *Queries) RandomCosAuthorSuggestionPool(ctx context.Context, rowLimit int64) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, randomCosAuthorSuggestionPool, rowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		items = append(items, name)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const randomCosWorkSuggestionPool = `-- name: RandomCosWorkSuggestionPool :many
+SELECT name FROM (
+    SELECT DISTINCT cw.cos_work AS name
+    FROM assets cw
+    WHERE cw.cos_work IS NOT NULL
+)
+ORDER BY random()
+LIMIT ?1
+`
+
+func (q *Queries) RandomCosWorkSuggestionPool(ctx context.Context, rowLimit int64) ([]sql.NullString, error) {
+	rows, err := q.db.QueryContext(ctx, randomCosWorkSuggestionPool, rowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []sql.NullString
+	for rows.Next() {
+		var name sql.NullString
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		items = append(items, name)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const randomSourceSuggestionPool = `-- name: RandomSourceSuggestionPool :many
+
+SELECT name FROM (
+    SELECT DISTINCT s.source AS name
+    FROM assets s
+    WHERE s.source IS NOT NULL
+)
+ORDER BY random()
+LIMIT ?1
+`
+
+// ============ Random pools (recommend=true, empty q) ============
+// The empty-state "recommended searches" mode (openapi recommend param,
+// LEGACY random semantics) draws RANDOM candidates from five name pools.
+// Shape: one query per dimension, each pool samples up to row_limit names
+// (handler passes the request limit as the per-pool cap), then the handler
+// round-robin interleaves the five pools and truncates to the request limit.
+// Why per-pool cap = the request limit (not limit/5): a library where some
+// dimensions are empty must still fill the full limit from the remaining
+// ones; mixing across dimensions is guaranteed by the handler interleave,
+// so per-pool caps beyond that would only throw candidates away.
+//
+// Each pool reuses the SAME candidate set as the matching branch of
+// ListSearchSuggestions above (same WHERE conditions):
+//   - source / cosWork: assets columns guarded IS NOT NULL (NULLs produce
+//     no candidates);
+//   - cosAuthor: authors.type = 'cos';
+//   - author: authors.type = 'regular' AND EXISTS(asset_authors JOIN
+//     assets) -- only authors actually linked to files qualify (trash
+//     deletion removes the assets row and disqualifies the author).
+//
+// DISTINCT dedups same-name rows WITHIN a dimension (the UNION played this
+// role in the single-query version); same names across dimensions survive
+// independently because pools are tagged with their type in the handler.
+// DISTINCT sits inside a FROM subquery and ORDER BY random() lives on the
+// outer plain SELECT: SQLite forbids non-column ORDER BY expressions on
+// DISTINCT/compound SELECTs directly (same wrapper trick as the main
+// query above, measured 2026-09-05).
+func (q *Queries) RandomSourceSuggestionPool(ctx context.Context, rowLimit int64) ([]sql.NullString, error) {
+	rows, err := q.db.QueryContext(ctx, randomSourceSuggestionPool, rowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []sql.NullString
+	for rows.Next() {
+		var name sql.NullString
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		items = append(items, name)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

@@ -4,15 +4,17 @@
  * - tabs 与榜单周期行只在首页显示（原型拍板）：由当前路由推导，非 JS 手动显隐；
  * - tab/周期收敛到 URL 参数（?tab=/period=）：TopBar 只写、HomePage 只读，
  *   刷新/直达不丢态；排行榜 tab 激活时在顶栏下方渲染日/月/周/年榜周期行；
- * - 搜索框回车/点历史词进入搜索结果页（/app/search?q=）；
+ * - 搜索框回车/点面板项进入搜索结果页（/app/search?q=）；
  * - 搜索历史 = localStorage（最多 20 条去重最新在前，打开面板显示前 8 条）；
- * - 推荐搜索词 = 标签/作者按 fileCount 前若干名组合（真实数据，点击同历史词行为）。
+ * - 下拉面板双形态（对齐旧版语义）：输入非空 = 补全列表（服务端五维候选，
+ *   一行 = 搜索图标 + 名称 + 类型徽标，点行即搜）；输入为空 = 搜索历史 +
+ *   推荐搜索（recommend=1 随机五维词，服务端随机、每次打开换一批）。
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router'
-import { useAuthors } from '@/hooks/use-authors'
-import { useTags } from '@/hooks/use-tags'
+import type { SearchSuggestion, SearchSuggestionType } from '@/api/generated'
+import { useRecommendSearchWords, useSearchSuggestions } from '@/hooks/use-suggestions'
 import { HOME_TABS, RANK_PERIODS, parseRankPeriod } from '@/lib/home-tabs'
 import { ChevronDownIcon, ClearIcon, SearchIcon, WinCloseIcon, WinMaxIcon, WinMinIcon } from './icons'
 
@@ -23,9 +25,17 @@ const HISTORY_MAX_ENTRIES = 20
 /** 面板默认展示条数（超出收进「展开更多」；MOCK 常量 SEARCH_HISTORY_VISIBLE_COUNT 已废弃） */
 const HISTORY_VISIBLE_COUNT = 8
 
-/** 推荐词取各池的 top N（tags 6 + authors 6，合并去重后最多展示 8 个） */
-const RECO_PER_SOURCE = 6
-const RECO_MAX_COUNT = 8
+/** 补全请求防抖（ms）：逐键请求是无意义的请求风暴，停顿 200ms 才取数 */
+const SUGGEST_DEBOUNCE_MS = 200
+
+/** 补全候选维度 → 徽标文案（协议 SearchSuggestionType 五个法值，缺一不可） */
+const SUGGEST_TYPE_LABELS: Record<SearchSuggestionType, string> = {
+  source: '出处',
+  character: '角色',
+  cosAuthor: 'COS作者',
+  cosWork: 'COS作品',
+  author: '作者',
+}
 
 /** 读取搜索历史（localStorage 损坏/类型不对时回退空数组，不抛中断渲染） */
 function loadHistory(): string[] {
@@ -40,6 +50,29 @@ function loadHistory(): string[] {
 /** 写回搜索历史（去重最新在前 + 上限截断） */
 function saveHistory(list: string[]): void {
   localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(list.slice(0, HISTORY_MAX_ENTRIES)))
+}
+
+/** 输入防抖：值稳定 delayMs 后才同步给消费方（TopBar 内联实现，仅此一处使用） */
+function useDebouncedValue<T>(value: T, delayMs: number): T {
+  const [debounced, setDebounced] = useState(value)
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), delayMs)
+    return () => clearTimeout(timer)
+  }, [value, delayMs])
+  return debounced
+}
+
+/** 推荐词去重：跨维同名（作者与角色同名等）在 chip 流里只保留一个词 */
+function uniqueNames(items: SearchSuggestion[]): string[] {
+  const seen = new Set<string>()
+  const names: string[] = []
+  for (const item of items) {
+    if (!seen.has(item.name)) {
+      seen.add(item.name)
+      names.push(item.name)
+    }
+  }
+  return names
 }
 
 export function TopBar() {
@@ -61,29 +94,19 @@ export function TopBar() {
   const searchBoxRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // 推荐搜索词：标签/作者按 fileCount 降序各取前 N，合并按名称去重（tag 名与作者名可能相同）
-  const { data: tags = [] } = useTags()
-  const { data: authors = [] } = useAuthors()
-  const recoWords = useMemo(() => {
-    const topTags = [...tags]
-      .sort((a, b) => (b.fileCount ?? 0) - (a.fileCount ?? 0))
-      .slice(0, RECO_PER_SOURCE)
-      .map((t) => t.name ?? '')
-      .filter(Boolean)
-    const topAuthors = [...authors]
-      .sort((a, b) => (b.fileCount ?? 0) - (a.fileCount ?? 0))
-      .slice(0, RECO_PER_SOURCE)
-      .map((a) => a.displayName ?? '')
-      .filter(Boolean)
-    const seen = new Set<string>()
-    return [...topTags, ...topAuthors]
-      .filter((w) => {
-        if (seen.has(w)) return false
-        seen.add(w)
-        return true
-      })
-      .slice(0, RECO_MAX_COUNT)
-  }, [tags, authors])
+  // 下拉双形态开关：输入非空（trim 后）= 补全列表态；空 = 历史 + 推荐词态
+  const suggestMode = popOpen && query.trim() !== ''
+
+  // 补全数据：防抖后取数。响应按 queryKey 隔离，慢响应不会污染新词的结果
+  // （TanStack 逐键缓存天然免乱序竞争，无需手动 AbortController）
+  const debouncedQuery = useDebouncedValue(query, SUGGEST_DEBOUNCE_MS)
+  const {
+    data: suggestions,
+    isPending: suggestionsPending,
+  } = useSearchSuggestions(debouncedQuery, popOpen)
+  // 推荐词只在空态面板需要（输入态切走即停取）
+  const { data: recoSuggestion } = useRecommendSearchWords(popOpen && !suggestMode)
+  const recoWords = uniqueNames(recoSuggestion?.items ?? [])
 
   // 点击面板外收起下拉（原型 document click 委托语义）
   useEffect(() => {
@@ -171,69 +194,94 @@ export function TopBar() {
           </button>
           <SearchIcon className="search-icon" />
           {popOpen ? (
-            <div className="search-pop">
-              {history.length > 0 ? (
-                <div className="pop-block">
-                  <div className="pop-head">
-                    <h3 className="pop-title">搜索历史</h3>
-                    <button
-                      className="pop-clear"
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        clearHistory()
-                      }}
-                    >
-                      清空
-                    </button>
-                  </div>
-                  <div className="pop-history">
-                    {visibleHistory.map((word) => (
+            suggestMode ? (
+              <div className="search-pop">
+                {suggestionsPending ? (
+                  <p className="pop-suggest-hint">正在获取补全…</p>
+                ) : suggestions && suggestions.items.length > 0 ? (
+                  <div className="pop-suggest-list">
+                    {suggestions.items.map((item) => (
                       <button
-                        key={word}
-                        className="pop-chip"
+                        key={`${item.type}|${item.name}`}
+                        className="pop-suggest-item"
                         type="button"
-                        onClick={() => enterSearch(word)}
+                        onClick={() => enterSearch(item.name)}
                       >
-                        {word}
-                      </button>
-                    ))}
-                  </div>
-                  {history.length > HISTORY_VISIBLE_COUNT ? (
-                    <button
-                      className="pop-more"
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setHistoryExpanded((v) => !v)
-                      }}
-                    >
-                      <span className="pop-more-text">{historyExpanded ? '收起' : '展开更多'}</span>
-                      <ChevronDownIcon />
-                    </button>
-                  ) : null}
-                </div>
-              ) : null}
-              <div className="pop-block">
-                <h3 className="pop-title">推荐搜索</h3>
-                {recoWords.length > 0 ? (
-                  <div className="pop-history">
-                    {recoWords.map((word) => (
-                      <button
-                        key={word}
-                        className="pop-chip"
-                        type="button"
-                        onClick={() => enterSearch(word)}
-                      >
-                        {word}
+                        <SearchIcon className="pop-suggest-icon" />
+                        <span className="pop-suggest-name">{item.name}</span>
+                        <span className="pop-suggest-badge">{SUGGEST_TYPE_LABELS[item.type]}</span>
                       </button>
                     ))}
                   </div>
                 ) : (
-                  <p className="pop-reco-hint">暂无推荐词——先扫描媒体库生成标签与作者</p>
+                  <p className="pop-suggest-hint">没有匹配的补全</p>
                 )}
               </div>
-            </div>
+            ) : (
+              <div className="search-pop">
+                {history.length > 0 ? (
+                  <div className="pop-block">
+                    <div className="pop-head">
+                      <h3 className="pop-title">搜索历史</h3>
+                      <button
+                        className="pop-clear"
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          clearHistory()
+                        }}
+                      >
+                        清空
+                      </button>
+                    </div>
+                    <div className="pop-history">
+                      {visibleHistory.map((word) => (
+                        <button
+                          key={word}
+                          className="pop-chip"
+                          type="button"
+                          onClick={() => enterSearch(word)}
+                        >
+                          {word}
+                        </button>
+                      ))}
+                    </div>
+                    {history.length > HISTORY_VISIBLE_COUNT ? (
+                      <button
+                        className="pop-more"
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setHistoryExpanded((v) => !v)
+                        }}
+                      >
+                        <span className="pop-more-text">{historyExpanded ? '收起' : '展开更多'}</span>
+                        <ChevronDownIcon />
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+                <div className="pop-block">
+                  <h3 className="pop-title">推荐搜索</h3>
+                  {recoWords.length > 0 ? (
+                    <div className="pop-history">
+                      {recoWords.map((word) => (
+                        <button
+                          key={word}
+                          className="pop-chip"
+                          type="button"
+                          onClick={() => enterSearch(word)}
+                        >
+                          {word}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="pop-reco-hint">暂无推荐词——先扫描媒体库生成补全索引</p>
+                  )}
+                </div>
+              </div>
+            )
           ) : null}
         </div>
         <div className="header--right">
