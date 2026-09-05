@@ -63,11 +63,13 @@ export interface AssetListParams {
   yearTo?: number
 }
 
-/** 推荐流（M3 十维算法，seed=0 稳定排序；首页卡片流数据源） */
-export function useRecommendations(limit = 60) {
+/** 推荐流（M3 十维算法，seed=0 稳定排序；首页卡片流数据源）。
+ *  seed>0 刷新打散（「换一批」）；cosOnly=true 走 COS 推荐模式——
+ *  候选集限定 COS 关联资产（首页 cos tab，DOMAIN_RULES §6）。 */
+export function useRecommendations(limit = 60, seed = 0, cosOnly = false) {
   return useQuery({
-    queryKey: [...RECOMMENDATIONS_QUERY_KEY, limit],
-    queryFn: () => unwrapSdkResult(getApiV1Recommendations({ query: { limit } })),
+    queryKey: [...RECOMMENDATIONS_QUERY_KEY, limit, seed, cosOnly],
+    queryFn: () => unwrapSdkResult(getApiV1Recommendations({ query: { limit, seed, cosOnly } })),
   })
 }
 
@@ -108,14 +110,15 @@ export function useAssetsTotal(mediaType?: MediaType, partition?: 'regular' | 'c
 }
 
 /** AssetSummary → MediaCardProps（卡片展示字段映射唯一入口，搜索/集合页共用，
- *  首页/相册页也复用）。映射口径（原型 #4）：封面=thumbUrl、标题=fileName、
+ *  首页/相册页也复用）。映射口径（原型 #4）：封面=thumbUrl、标题=cosWork 优先
+ *  （COS 作品子目录名，用户口径「COS 卡显示文件夹名」；null 回退 fileName）、
  *  时长=视频 durationMs（图片/动图省略，角标不渲染）、作者行=authorNames[0]
  *  （多作者「名 等N」，无作者回退 source）、date=modifiedAt 短日期。 */
 export function assetToCard(a: AssetSummary): MediaCardProps {
   return {
     id: a.id,
     cover: a.thumbUrl ?? '',
-    title: a.fileName ?? '',
+    title: a.cosWork ?? a.fileName ?? '',
     duration: a.mediaType === 'video' && a.durationMs ? formatDuration(a.durationMs) : undefined,
     up: formatCardUp(a.authorNames, a.source),
     date: formatShortDate(a.modifiedAt),

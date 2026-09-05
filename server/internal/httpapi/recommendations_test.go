@@ -203,3 +203,71 @@ func TestRecommendationsCardExtras(t *testing.T) {
 		}
 	}
 }
+
+// TestRecommendationsCosOnly：COS 推荐模式（协议 cosOnly=true，旧版
+// 「COS 推荐模式」语义，DOMAIN_RULES §6）——候选集限定 COS 作者关联
+// 资产，缺省常规流继续排除 COS；两条流同口径填充 cosWork（COS 卡片
+// 标题数据源；常规资产与无作品子目录的 COS 资产为 null，客户端回退
+// fileName）。
+func TestRecommendationsCosOnly(t *testing.T) {
+	env := newTestEnv(t)
+	ctx := context.Background()
+	now := store.FormatTimestamp(env.clock.Now())
+	a, b := testFiles[0], testFiles[1]
+
+	cosID := authoring.GenerateCosAuthorID("COS酱")
+	if err := env.q.UpsertAuthor(ctx, db.UpsertAuthorParams{
+		ID: cosID, DisplayName: "COS酱", Type: authoring.AuthorTypeCos, CreatedAt: now,
+	}); err != nil {
+		t.Fatalf("UpsertAuthor 失败: %v", err)
+	}
+	if err := env.q.AddAssetAuthor(ctx, db.AddAssetAuthorParams{AssetID: a.id, AuthorID: cosID}); err != nil {
+		t.Fatalf("AddAssetAuthor 失败: %v", err)
+	}
+	// a.jpg 落作品子目录名（COS 库扫描语义：rel_path 第二段，migration 0008）。
+	if _, err := env.q.UpsertAsset(ctx, db.UpsertAssetParams{
+		AssetID: a.id, LibraryID: env.libID, RelPath: a.relPath,
+		FileName: a.name, MediaType: a.mediaType, SizeBytes: a.size,
+		Mtime:     a.mtime,
+		CosWork:   sql.NullString{String: "8-24 手办", Valid: true},
+		CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("写入 cos_work 失败: %v", err)
+	}
+	// b.jpg：COS 关联但无作品子目录（结构一「作者/文件」平铺形态）。
+	if err := env.q.AddAssetAuthor(ctx, db.AddAssetAuthorParams{AssetID: b.id, AuthorID: cosID}); err != nil {
+		t.Fatalf("AddAssetAuthor 失败: %v", err)
+	}
+
+	// 缺省常规流：a/b（COS 关联）被隔离，只剩 c.mp4。
+	regular := recList(t, env, "")
+	got := fileNames(regular)
+	if len(regular) != 1 || got["a.jpg"] || got["b.jpg"] {
+		t.Errorf("常规流应排除 COS 关联资产（得到 %v）", got)
+	}
+	for _, it := range regular {
+		if it.CosWork != nil {
+			t.Errorf("常规资产 %s 不应带 cosWork，得到 %v", *it.FileName, *it.CosWork)
+		}
+	}
+
+	// COS 推荐模式：只要 COS 关联资产；有作品子目录的填充 cosWork，
+	// 平铺形态的保持 null（回退 fileName）。
+	cosItems := recList(t, env, "?cosOnly=true")
+	cosGot := fileNames(cosItems)
+	if len(cosItems) != 2 || !cosGot["a.jpg"] || !cosGot["b.jpg"] {
+		t.Fatalf("cosOnly=true 期望恰含 a.jpg/b.jpg，得到 %v", cosGot)
+	}
+	byName := map[string]gen.AssetSummary{}
+	for _, it := range cosItems {
+		if it.FileName != nil {
+			byName[*it.FileName] = it
+		}
+	}
+	if w := byName["a.jpg"].CosWork; w == nil || *w != "8-24 手办" {
+		t.Errorf("a.jpg cosWork 应为「8-24 手办」，得到 %v", byName["a.jpg"].CosWork)
+	}
+	if w := byName["b.jpg"].CosWork; w != nil {
+		t.Errorf("b.jpg（无作品子目录）cosWork 应为 null，得到 %v", *w)
+	}
+}

@@ -1245,3 +1245,57 @@ func TestLibraryDataDirConflict(t *testing.T) {
 		t.Fatal("空数据目录（未配置）：不应判冲突")
 	}
 }
+
+// TestAssetListCosWork：列表端点 cosWork 装配（COS 卡片标题数据源）——
+// 有作品子目录的 COS 资产返回作品名（assets.cos_work），常规资产字段
+// 缺省（协议 null 语义 = 客户端回退 fileName）。默认常规流排除 COS，
+// 取 includeCos 全量断言。
+func TestAssetListCosWork(t *testing.T) {
+	env := newTestEnv(t)
+	a := testFiles[0]
+	ctx := context.Background()
+	now := store.FormatTimestamp(env.clock.Now())
+
+	cosID := authoring.GenerateCosAuthorID("COS酱")
+	if err := env.q.UpsertAuthor(ctx, db.UpsertAuthorParams{
+		ID: cosID, DisplayName: "COS酱", Type: authoring.AuthorTypeCos, CreatedAt: now,
+	}); err != nil {
+		t.Fatalf("UpsertAuthor 失败: %v", err)
+	}
+	if err := env.q.AddAssetAuthor(ctx, db.AddAssetAuthorParams{AssetID: a.id, AuthorID: cosID}); err != nil {
+		t.Fatalf("AddAssetAuthor 失败: %v", err)
+	}
+	if _, err := env.q.UpsertAsset(ctx, db.UpsertAssetParams{
+		AssetID: a.id, LibraryID: env.libID, RelPath: a.relPath,
+		FileName: a.name, MediaType: a.mediaType, SizeBytes: a.size,
+		Mtime:     a.mtime,
+		CosWork:   sql.NullString{String: "8-24 手办", Valid: true},
+		CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("写入 cos_work 失败: %v", err)
+	}
+
+	resp := env.do(t, "GET", "/api/v1/assets?limit=10&includeCos=true", "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("列表期望 200，得到 %d", resp.StatusCode)
+	}
+	var page gen.AssetPage
+	if err := decodeBody(resp, &page); err != nil {
+		t.Fatalf("解析失败: %v", err)
+	}
+	closeBody(resp)
+	byName := map[string]gen.AssetSummary{}
+	for _, it := range deref(page.Items) {
+		if it.FileName != nil {
+			byName[*it.FileName] = it
+		}
+	}
+	if w := byName["a.jpg"].CosWork; w == nil || *w != "8-24 手办" {
+		t.Errorf("a.jpg cosWork 应为「8-24 手办」，得到 %v", byName["a.jpg"].CosWork)
+	}
+	for _, name := range []string{"b.jpg", "c.mp4"} {
+		if w := byName[name].CosWork; w != nil {
+			t.Errorf("%s（常规/无作品）cosWork 应缺省，得到 %v", name, *w)
+		}
+	}
+}

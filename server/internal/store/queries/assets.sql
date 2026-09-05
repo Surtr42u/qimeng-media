@@ -35,6 +35,7 @@ ON CONFLICT (library_id, rel_path) DO UPDATE SET
     video_codec  = excluded.video_codec,
     audio_codec  = excluded.audio_codec,
     source       = excluded.source,
+    cos_work     = excluded.cos_work,
     updated_at   = excluded.updated_at
 RETURNING *;
 
@@ -79,3 +80,18 @@ SELECT * FROM assets
 WHERE created_at < ? OR (created_at = ? AND asset_id < ?)
 ORDER BY created_at DESC, asset_id DESC
 LIMIT ?;
+
+-- name: ListCosWorkForAssets :many
+-- Batch cos_work lookup for list endpoints (AssetSummary.cosWork): the
+-- work subfolder name (rel_path second segment, migration 0008) of the
+-- given assets, one row per asset that has one. Only kind=cos library
+-- scans assign cos_work, so regular assets never match the IS NOT NULL
+-- filter and stay absent from the result (null on the wire = client
+-- falls back to fileName for the card title). asset_ids_json is a JSON
+-- array consumed by json_each -- same parameter shape as
+-- ListAuthorNamesForAssets (see browse.sql header for the sqlc parser
+-- constraints that dictate it).
+SELECT a.asset_id, a.cos_work
+FROM assets a
+WHERE a.cos_work IS NOT NULL
+  AND a.asset_id IN (SELECT value FROM json_each(sqlc.narg(asset_ids_json)));
