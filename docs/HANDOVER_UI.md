@@ -173,7 +173,7 @@ media-ui-prototype/
 2. **COS 作者反查修复**（E3）：CollectionPage 原按 displayName===name 精确匹配，COS 作者行名带「·COS」后缀必落空态——改两段式（精确→剥后缀，COS_DISPLAY_SUFFIX 模块常量与 format.ts authorDisplayName 字节级一致），数据页/榜单/相册页全部 /app/collection/author/{name} 入口一并修复。
 3. **作者页筛选胶囊**（E3，对齐旧版 GUIDE_UI 作者文件页）：常规作者=角色/类型、COS 作者=作品/类型，胶囊带计数（GET /assets/facets，排自身口径，authorId 恒传），点已选切换/不收起、「收起 ▲」折叠；**每维单选**（协议 work/character/mediaType 单值参数，旧版同维多选集合不可表达——记账为协议约束，需多选先扩协议）；作者切换经渲染期重置（React 官方模式，非 useEffect——清 set-state-in-effect 告警）。局部 hook use-collection-facets.ts 系并行冲突规避产物，与 useAssetFacets 近重复，后续可合并（reviewer 建议项 3，不阻塞）。
 4. **删「浏览 N 次」**（E3）：DataPage 作者总览行与 AuthorsPage 行副标题改「N 个文件」（旧版规格无次数元素，R2 核实）；AuthorsPage 行加点击进作者文件页（关注按钮 stopPropagation 防误跳）。
-5. **TXT 导入卡醒目化**（E4）：LibraryManagePage 导入入口复用 UploadCard 的 .upload-drop 虚线焦点区语言（图标+状态感知提示），说明改紧凑小列表，功能逻辑零改动。
+5. **TXT 导入卡醒目化**（E4）：LibraryManagePage 导入入口复用 UploadCard 的 .upload-drop 虚线焦点区语言（图标+状态感知提示），说明改紧凑小列表，功能逻辑零改动。**同日用户实机拍板去掉下方重复的 save-btn 按钮，导入区成唯一入口**（补 tabIndex+Enter/Space 键盘可达性，f039b98）。
 
 
 ## 6. 工作树现状（2026-09-02 三轮：原型移植 web 重建，接手必读）
