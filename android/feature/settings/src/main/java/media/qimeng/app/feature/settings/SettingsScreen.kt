@@ -46,6 +46,9 @@ private const val HINT_QUOTA = "重启应用后生效（缓存目录正在使用
 private const val EMPTY_FOLLOW = "暂无关注的作者"
 private const val VERSION_UNKNOWN = "未知"
 
+/** 写失败横幅消除按钮文案（P2-3） */
+private const val WRITE_ERROR_DISMISS = "知道了"
+
 /**
  * 「我的」Tab（M4-6 完整版，单页滚动列表，GUIDE_UI §我的页结构）：
  * 资料卡（服务器地址展示，改地址=退出重登语义）→ 关注列表（取关）→ 推荐偏好（BottomSheet
@@ -68,6 +71,11 @@ fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(Dimens.ScreenPadding),
     ) {
         item { Text(text = stringResource(R.string.settings_title), style = MaterialTheme.typography.headlineSmall) }
+
+        // 写操作失败反馈（P2-3）：横幅常驻直至点按消除，避免静默失败
+        state.writeError?.let { message ->
+            item { WriteErrorBanner(message = message, onDismiss = viewModel::dismissWriteError) }
+        }
 
         // 资料卡：服务器地址（单机形态预留点，ADR-0015；只展示不可改）
         item { ServerUrlCard(serverUrl = state.serverUrl) }
@@ -172,6 +180,28 @@ private fun SectionTitle(text: String) {
         style = MaterialTheme.typography.titleSmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
+}
+
+/** 写操作失败横幅（P2-3）：errorContainer 底 + 点按消除；文案由 ViewModel 给出（中文、可重试指向） */
+@Composable
+private fun WriteErrorBanner(message: String, onDismiss: () -> Unit) {
+    Surface(
+        color = MaterialTheme.colorScheme.errorContainer,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = onDismiss) { Text(text = WRITE_ERROR_DISMISS) }
+        }
+    }
 }
 
 @Composable

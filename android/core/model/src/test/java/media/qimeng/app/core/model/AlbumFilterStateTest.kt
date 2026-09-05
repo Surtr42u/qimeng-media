@@ -8,7 +8,8 @@ import org.junit.Test
 
 /**
  * 锁定四维筛选状态机（M4-2 拍板口径）：分区参数映射、kind 分派、切分区清下级、
- * 点击已选取消、key+kind 激活判定、排序组映射。
+ * 点击已选取消、key+kind 激活判定（排序组已按用户拍板移除：相册=旧版全部页完全一致，
+ * 排序恒为协议缺省 default 降序）。
  */
 class AlbumFilterStateTest {
 

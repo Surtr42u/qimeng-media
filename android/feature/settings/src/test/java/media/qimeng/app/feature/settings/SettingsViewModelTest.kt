@@ -26,6 +26,10 @@ import media.qimeng.app.core.model.toPrefsValues
 import media.qimeng.app.core.testing.FakeAuthRepository
 import media.qimeng.app.core.testing.MainDispatcherRule
 
+/** 与 SettingsViewModel 私有常量对齐的反馈文案（文案属反馈契约，ViewModel 侧改动须同步此处） */
+private const val SAVE_FAILED_TEXT = "保存失败，请重试"
+private const val UNFOLLOW_FAILED_TEXT = "取关失败，请重试"
+
 /**
  * 我的页 ViewModel 单测（M4-6）：登出会话闭环（M4-1 原语义）+ 关注列表过滤/取关（C4）+
  * 预设应用（C4）+ 档位持久化/清空（C5）+ 服务端版本（C6）。
@@ -44,9 +48,13 @@ class SettingsViewModelTest {
         private val rows = authors.toMutableList()
         val followCalls = mutableListOf<Pair<String, Boolean>>()
 
+        /** 可编程：非空时 setFollowed 抛出（P2-3 失败路径：静默吞错回归锁定） */
+        var unfollowError: Throwable? = null
+
         override suspend fun authors(): List<AuthorSummary> = rows.toList()
 
         override suspend fun setFollowed(authorId: String, followed: Boolean) {
+            unfollowError?.let { throw it }
             followCalls += authorId to followed
             rows.replaceAll { if (it.id == authorId) it.copy(followed = followed) else it }
         }
@@ -56,9 +64,13 @@ class SettingsViewModelTest {
         var current: RecommendPrefsValues? = RecommendPreset.BALANCED.toPrefsValues()
         val putCalls = mutableListOf<RecommendPrefsValues>()
 
+        /** 可编程：非空时 putPrefs 抛出（P2-3 失败路径） */
+        var putError: Throwable? = null
+
         override suspend fun prefs(): RecommendPrefsValues = current ?: RecommendPreset.BALANCED.toPrefsValues()
 
         override suspend fun putPrefs(values: RecommendPrefsValues) {
+            putError?.let { throw it }
             putCalls += values
             current = values
         }
@@ -71,9 +83,13 @@ class SettingsViewModelTest {
     private class FakeDiskCachePrefsRepository : DiskCachePrefsRepository {
         private val quotaFlow = MutableStateFlow(DiskCacheQuota.DEFAULT)
 
+        /** 可编程：非空时 setQuota 抛出（P2-3 失败路径） */
+        var setError: Throwable? = null
+
         override val quota: kotlinx.coroutines.flow.Flow<DiskCacheQuota> = quotaFlow
 
         override suspend fun setQuota(quota: DiskCacheQuota) {
+            setError?.let { throw it }
             quotaFlow.value = quota
         }
     }
@@ -102,9 +118,10 @@ class SettingsViewModelTest {
         version: String? = "v0.9.0",
         cachePrefs: DiskCachePrefsRepository = FakeDiskCachePrefsRepository(),
         cacheManager: CoilCacheManager = FakeCoilCacheManager(),
+        authorRepo: FakeAuthorRepository? = null,
     ): SettingsViewModel = SettingsViewModel(
         authRepository = auth,
-        authorRepository = FakeAuthorRepository(authors),
+        authorRepository = authorRepo ?: FakeAuthorRepository(authors),
         prefsRepository = prefs,
         systemInfoRepository = FakeSystemInfoRepository(version),
         diskCachePrefsRepository = cachePrefs,
@@ -154,6 +171,8 @@ class SettingsViewModelTest {
         assertEquals(1, prefs.putCalls.size)
         assertEquals(RecommendPreset.FRESH_FIRST.toPrefsValues(), prefs.putCalls.single())
         assertEquals(RecommendPreset.FRESH_FIRST, settingsViewModel.uiState.value.appliedPreset)
+        // 成功路径不产生写失败反馈（P2-3：成功不弹）
+        assertNull(settingsViewModel.uiState.value.writeError)
     }
 
     @Test
@@ -187,5 +206,57 @@ class SettingsViewModelTest {
         val noVersion = viewModel(version = null)
         advanceUntilIdle()
         assertNull(noVersion.uiState.value.serverVersion)
+    }
+
+    // ---------- P2-3 写失败反馈（原实现静默吞错的回归锁定） ----------
+
+    @Test
+    fun `应用预设失败给反馈且高亮保持原项`() = runTest {
+        val prefs = FakePrefsRepository().apply { putError = RuntimeException("network down") }
+        val settingsViewModel = viewModel(prefs = prefs)
+        advanceUntilIdle()
+        assertEquals(RecommendPreset.BALANCED, settingsViewModel.uiState.value.appliedPreset)
+
+        settingsViewModel.applyPreset(RecommendPreset.FRESH_FIRST)
+        advanceUntilIdle()
+        assertEquals(SAVE_FAILED_TEXT, settingsViewModel.uiState.value.writeError)
+        // 回滚语义：载荷未发出、高亮保持原项、行退出 applying
+        assertEquals(0, prefs.putCalls.size)
+        assertEquals(RecommendPreset.BALANCED, settingsViewModel.uiState.value.appliedPreset)
+        assertFalse(settingsViewModel.uiState.value.prefsApplying)
+        // 点按消除（一次性反馈）
+        settingsViewModel.dismissWriteError()
+        advanceUntilIdle()
+        assertNull(settingsViewModel.uiState.value.writeError)
+    }
+
+    @Test
+    fun `取关失败给反馈且列表保持原状`() = runTest {
+        val authorRepo = FakeAuthorRepository(
+            listOf(author("1", true), author("2", false), author("3", true)),
+        ).apply { unfollowError = RuntimeException("network down") }
+        val settingsViewModel = viewModel(authorRepo = authorRepo)
+        advanceUntilIdle()
+
+        settingsViewModel.unfollow("1")
+        advanceUntilIdle()
+        assertEquals(UNFOLLOW_FAILED_TEXT, settingsViewModel.uiState.value.writeError)
+        // 回滚语义：请求未触达仓库、列表保持原状（行不乐观移除）
+        assertEquals(0, authorRepo.followCalls.size)
+        assertEquals(listOf("作者1", "作者3"), settingsViewModel.uiState.value.followedAuthors.map { it.displayName })
+    }
+
+    @Test
+    fun `切档位失败给反馈且档位不动`() = runTest {
+        val cachePrefs = FakeDiskCachePrefsRepository().apply { setError = RuntimeException("disk io") }
+        val settingsViewModel = viewModel(cachePrefs = cachePrefs)
+        advanceUntilIdle()
+
+        settingsViewModel.setCacheQuota(DiskCacheQuota.GB2)
+        advanceUntilIdle()
+        assertEquals(SAVE_FAILED_TEXT, settingsViewModel.uiState.value.writeError)
+        // 回滚语义：DataStore 未写入，UI 跟随原档位
+        assertEquals(DiskCacheQuota.DEFAULT, cachePrefs.quota.first())
+        assertEquals(DiskCacheQuota.DEFAULT, settingsViewModel.uiState.value.cacheQuota)
     }
 }

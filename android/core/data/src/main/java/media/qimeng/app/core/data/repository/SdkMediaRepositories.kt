@@ -143,7 +143,7 @@ class SdkMediaRepository @Inject constructor(
     }
 
     private fun logRequest(endpoint: String, params: String) {
-        Log.d(LOG_TAG, "[v3] $endpoint $params")
+        Log.d(LOG_TAG, "$endpoint $params")
     }
 
     companion object {

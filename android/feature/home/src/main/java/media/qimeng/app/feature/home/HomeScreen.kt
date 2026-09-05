@@ -48,7 +48,7 @@ private const val HOME_TITLE = "首页"
 private const val HOME_ROUTE = "home"
 
 /**
- * 首页（M4-2）：顶行[标题][搜索框不可聚焦→跳搜索页][筛选图标][网格图标] +
+ * 首页（M4-2）：顶行[标题][搜索框不可聚焦→跳搜索页][网格图标] +
  * 推荐/COS/排行榜 三 tab（HorizontalPager 左右横滑切换）+ 各 tab 独立缓存 + 下拉刷新。
  */
 @OptIn(ExperimentalMaterial3Api::class)
