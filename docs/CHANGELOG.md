@@ -11,6 +11,14 @@
 
 ---
 
+## test(api): 目录过滤补不存在目录空列表用例（2026-09-06 第七十七笔）
+
+执行 AI：GLM-5.3-Flash（B 会话·B-4 审查跟进）
+
+- **背景**：B-4 批（第七十三笔）对抗审查通过后留 P3 一条——TestAssetListDirectoryFilter 缺「directory=不存在目录」用例，服务端该分支（200+空列表）仅有隔离实例 curl 证据（ev2）无单测锁定。
+- **改动**：browse_test.go 该测试 ③ 与 ④ 之间插 ③b 用例：`?directory=no-such-dir` → 200 + 空 items + totalMatched=0（目录树展开空目录的正常分支、非错误路径，与 curl ev2 行为对齐）。零生产代码改动，协议零变化。
+- **验收**：`cd server && go test ./internal/httpapi/ -count=1 -run TestAssetListDirectoryFilter -v` → `--- PASS (0.06s)`；`go test ./... -count=1` 全量全绿（httpapi 11.929s ok，各包无 FAIL）。改前核对 server/** 工作树干净（A 车道 android 改动未触碰），暂存区 `git diff --cached` 核对仅本批 2 文件。
+
 ## feat(web): 目录树文件行接线（消费 /assets directory 过滤）（2026-09-06 第七十六笔）
 
 执行 AI：GLM-5.3-Flash（B 会话·B-5 批）

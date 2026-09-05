@@ -1387,6 +1387,16 @@ func TestAssetListDirectoryFilter(t *testing.T) {
 		t.Fatalf("directory=sub&mediaType=video 应为空，得到 %v", names(p))
 	}
 
+	// ③b 不存在的目录 → 200 + 空 items + totalMatched=0（目录树展开空
+	// 目录的正常分支，非错误路径；与 B-4 隔离实例 curl 证据 ev2 对齐）
+	code, p, _ = fetch(t, "?directory=no-such-dir")
+	if code != http.StatusOK {
+		t.Fatalf("directory=no-such-dir 期望 200，得到 %d", code)
+	}
+	if n := len(deref(p.Items)); n != 0 || p.TotalMatched == nil || *p.TotalMatched != 0 {
+		t.Fatalf("directory=no-such-dir 应空列表 totalMatched=0，得到 %v / %v", names(p), p.TotalMatched)
+	}
+
 	// ④ 非法路径 → 400 INVALID_PARAM：../x 原文与 %2e%2e%2fx 转义形态
 	//（服务端解码一次后即 ../x，NormalizeRelPath 的 .. 逃逸检查兜住）
 	for _, q := range []string{"?directory=../x", "?directory=%2e%2e%2fx"} {
