@@ -218,13 +218,38 @@ func TestMatchWorksWorkWithDocExtTreatedAsNoExtension(t *testing.T) {
 
 // 照译 findMatchingMediaLight_workWithIndexedExt_exactMatchRequiresSameExtension：
 // 有扩展名时规则 1 精确匹配且扩展名一致；不做序号括号匹配。
+// X.png 为 2026-09-05 补强：原数据缺「同名不同扩展名」文件，没锁住扩展名
+// 检查，翻译版据此漏了该检查（见 TestMatchWorksExtCheckRealCase Kiriko 回归）。
 func TestMatchWorksWorkWithIndexedExtExactMatchRequiresSameExtension(t *testing.T) {
 	got := MatchWorks("X.mp4", []MediaFile{
 		mkFile("X.mp4"), mkFile("X.mp4 (1).mp4"), mkFile("X.mp4 (1).jpg"),
+		mkFile("X.png"),
 	})
 	want := []string{"X.mp4"}
 	if len(got) != 1 || got[0].FileName != want[0] {
 		t.Errorf("got=%v, want %v", got, want)
+	}
+}
+
+// 回归（2026-09-05 用户实机）：图集作者 TXT 写「守望先锋  雾子 3.png」、
+// 视频作者 TXT 写「守望先锋  雾子 3.mp4」，同名同基础名不同扩展名必须
+// 各归各——翻译版丢失旧算法的扩展名检查（mediaExt == ext），两个作者把
+// png+mp4 互相污染关联。扩展名检查必须区分大小写无关地比对（旧 equals
+// ignoreCase），且非媒体扩展名（X.txt 场景）不参与。
+func TestMatchWorksExtCheckRealCaseKiriko(t *testing.T) {
+	files := []MediaFile{
+		mkFile("守望先锋  雾子 3.png"),
+		mkFile("守望先锋  雾子 3.mp4"),
+	}
+	if got := MatchWorks("守望先锋  雾子 3.mp4", files); len(got) != 1 || got[0].FileName != "守望先锋  雾子 3.mp4" {
+		t.Errorf("视频作者作品命中=%v, want 仅 .mp4", got)
+	}
+	if got := MatchWorks("守望先锋  雾子 3.png", files); len(got) != 1 || got[0].FileName != "守望先锋  雾子 3.png" {
+		t.Errorf("图集作者作品命中=%v, want 仅 .png", got)
+	}
+	// 大小写不敏感（旧算法 ignoreCase）：扩展名与基础名大小写差异不挡匹配
+	if got := MatchWorks("X.MP4", []MediaFile{mkFile("x.mp4")}); len(got) != 1 {
+		t.Errorf("got=%v, want 大小写差异仍命中", got)
 	}
 }
 
