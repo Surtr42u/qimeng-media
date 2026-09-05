@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react'
+import { useNavigate } from 'react-router'
 import type { Author } from '@/api/generated'
 import { SearchIcon } from '@/components/shell/icons'
 import { useAuthors, useToggleFollow } from '@/hooks/use-authors'
-import { LOCALE_ZH } from '@/lib/constants'
 import { authorDisplayName } from '@/lib/format'
 
 type AuthorZone = '全部' | '常规' | 'cos'
@@ -38,8 +38,12 @@ const A_SORTERS: Record<AuthorSort, (a: Author, b: Author) => number> = {
 /**
  * 作者管理页（原型 #page-authors 移植，阶段 B 已接真实数据）：体系胶囊 + 名字搜索 +
  * 排序三项 + 关注按钮（PUT /authors/{authorId}/follow，状态以服务端 followed 为准）。
+ * 列表行可点（2026-09-05 补同族缺口）：进作者集合子页 /app/collection/author/{displayName}
+ * （原始 displayName 不带「 ·COS」展示后缀，URL 编码）；可点视觉复用现有类
+ * （.rank-card li 自带 cursor:pointer + 悬停底色，不发明新样式）。
  */
 export default function AuthorsPage() {
+  const navigate = useNavigate()
   const { data: authors = [], isLoading } = useAuthors()
   const toggleFollow = useToggleFollow()
   const [zone, setZone] = useState<AuthorZone>('全部')
@@ -109,17 +113,25 @@ export default function AuthorsPage() {
         ) : rows.length ? (
           <ul>
             {rows.map((a) => (
-              <li key={a.id}>
+              <li
+                key={a.id}
+                onClick={() =>
+                  a.displayName && navigate(`/app/collection/author/${encodeURIComponent(a.displayName)}`)
+                }
+              >
                 <span className="rank-name">{authorDisplayName(a)}</span>
-                {/* 副标题第二行「N 个文件 · 浏览 M 次」（原型 .a-sub，.a-list .a-sub order:1 让按钮留第一行右侧） */}
-                <span className="a-sub">
-                  {a.fileCount ?? 0} 个文件 · 浏览 {(a.viewCount ?? 0).toLocaleString(LOCALE_ZH)} 次
-                </span>
+                {/* 副标题第二行「N 个文件」（原型 .a-sub，.a-list .a-sub order:1 让按钮
+                    留第一行右侧）；浏览次数不展示（2026-09-05 反馈⑤，旧版无此元素） */}
+                <span className="a-sub">{a.fileCount ?? 0} 个文件</span>
                 <button
                   type="button"
                   className={`follow-btn${a.followed ? '' : ' follow-btn--idle'}`}
                   disabled={toggleFollow.isPending}
-                  onClick={() => a.id && toggleFollow.mutate({ authorId: a.id, follow: !a.followed })}
+                  onClick={(e) => {
+                    // 行本身可点进作者文件页：关注按钮拦截冒泡，避免误触发跳转
+                    e.stopPropagation()
+                    a.id && toggleFollow.mutate({ authorId: a.id, follow: !a.followed })
+                  }}
                 >
                   {a.followed ? '已关注' : '关注'}
                 </button>

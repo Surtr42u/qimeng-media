@@ -166,6 +166,16 @@ media-ui-prototype/
 
 2026-09-04 规划审查发现现版详情页为极简重建版，以下旧壳（M2 v1）曾有、原型版未建的体验**不在三项待办内**，是否补齐待用户拍板：图片查看器（双指缩放/双击还原/左右预加载/沉浸）；详情互动行（点赞/收藏/标签管理弹窗）；批次导航（上一件/下一件）。候选归宿：并入 W-3 一次做完整详情页，或 M4 后回补 Web。**【2026-09-05 用户拍板：M4 后回补 Web，不阻塞 M4 启动；回补批次待排】**
 
+### 六任务批（2026-09-05 用户 /subagent 并行派发，主代理调度 + reviewer 对抗审查）
+
+用户六项 UI 反馈一批清偿（E1 协议链另见 CHANGELOG 第四十三笔）：
+1. **全局刷新按钮生效化**（E2）：AppShell refresh 在 invalidateQueries 之外广播 `qm:refresh`（常量 QM_REFRESH_EVENT=lib/constants.ts 单一来源，对抗审查返工项）；HomePage 监听执行旧版 refreshSeed++ 重排（推荐/cos seed=Date.now() 回第一页、排行榜重置分页）——普通页 invalidate 重拉 + 首页显式重排，两通道分工注释在 AppShell。
+2. **COS 作者反查修复**（E3）：CollectionPage 原按 displayName===name 精确匹配，COS 作者行名带「·COS」后缀必落空态——改两段式（精确→剥后缀，COS_DISPLAY_SUFFIX 模块常量与 format.ts authorDisplayName 字节级一致），数据页/榜单/相册页全部 /app/collection/author/{name} 入口一并修复。
+3. **作者页筛选胶囊**（E3，对齐旧版 GUIDE_UI 作者文件页）：常规作者=角色/类型、COS 作者=作品/类型，胶囊带计数（GET /assets/facets，排自身口径，authorId 恒传），点已选切换/不收起、「收起 ▲」折叠；**每维单选**（协议 work/character/mediaType 单值参数，旧版同维多选集合不可表达——记账为协议约束，需多选先扩协议）；作者切换经渲染期重置（React 官方模式，非 useEffect——清 set-state-in-effect 告警）。局部 hook use-collection-facets.ts 系并行冲突规避产物，与 useAssetFacets 近重复，后续可合并（reviewer 建议项 3，不阻塞）。
+4. **删「浏览 N 次」**（E3）：DataPage 作者总览行与 AuthorsPage 行副标题改「N 个文件」（旧版规格无次数元素，R2 核实）；AuthorsPage 行加点击进作者文件页（关注按钮 stopPropagation 防误跳）。
+5. **TXT 导入卡醒目化**（E4）：LibraryManagePage 导入入口复用 UploadCard 的 .upload-drop 虚线焦点区语言（图标+状态感知提示），说明改紧凑小列表，功能逻辑零改动。
+
+
 ## 6. 工作树现状（2026-09-02 三轮：原型移植 web 重建，接手必读）
 
 - **本轮改动已全部提交**（阶段 A 移植 + reviewer 修复 + 文档，commit 见 CHANGELOG「UI 原型移植 web 端 React 重建」条目）；上一轮 UI 原型二轮迭代与 M4 播放端基座也已在 cea4e9e / 9773213 提交。

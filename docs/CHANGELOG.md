@@ -11,6 +11,17 @@
 
 ---
 
+## Web 四修：刷新广播/COS 作者反查/作者页筛选胶囊/TXT 导入卡（2026-09-05 第四十四笔）
+
+执行 AI：GLM-5.3-Flash（主代理派发 executor 子代理×3 并行执行；对抗审查通过后由主代理完成返工项）
+
+用户拍板六任务批的 web 侧余项（E1 协议链见第四十三笔）：
+
+- **E2 全局刷新**：AppShell refresh 广播 `qm:refresh`（invalidate 保留，普通页重拉 + 首页重排双通道）；返工项——事件名字面量 3 处手抄违反代码卫生约束 2，提为 lib/constants.ts QM_REFRESH_EVENT 单一来源（AppShell/HomePage 两端改引）。
+- **E3 作者链路**：CollectionPage COS 作者反查两段式修复（剥「·COS」后缀，字节级对齐 authorDisplayName）；新增筛选胶囊栏（常规=角色/类型、COS=作品/类型，facets 计数排自身、authorId 恒传；单选受协议单值参数约束，注释记账）；作者切换改渲染期重置（返工建议项，清 set-state-in-effect 告警，lint 告警回落 16 条既有存量）；AuthorsPage 行点击进文件页 + 删「浏览 M 次」；DataPage 作者总览 sub 改「N 个文件」。
+- **E4 TXT 导入卡**：导入入口复用 .upload-drop 虚线焦点区（图标+状态感知提示+说明小列表化），onPick/importTxt/rebuild 逻辑零改动。
+- **验收**：tsc/build/lint（16 告警 0 错误）/go test 全绿；reviewer 八项质询逐项 PASS（COS 后缀 od 字节级核对、offset=0 等价性 diff 对照、facets 排自身对照 AlbumsPage、越界清单零命中）。
+
 ## 首页三 tab 无限加载：/recommendations 与 /rankings 增 offset 翻页（2026-09-05 第四十三笔）
 
 执行 AI：GLM-5.3-Flash（主代理派发 executor 子代理执行，完整档六任务批之 E1；对抗审查通过后由主代理完成返工项）
