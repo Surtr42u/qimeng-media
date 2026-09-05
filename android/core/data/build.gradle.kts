@@ -33,6 +33,14 @@ dependencies {
     api(project(":core:model"))
     implementation(project(":core:network"))
 
+    // Flow/协程主源码直用（core:network 的同款依赖不传递到本模块编译类路径）
+    implementation(libs.kotlinx.coroutines.android)
+
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
+
+    // 登录流程走真实生成 SDK + JDK HttpServer 打全链路（okhttp 仅为测试内构造客户端）
+    testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.okhttp)
 }

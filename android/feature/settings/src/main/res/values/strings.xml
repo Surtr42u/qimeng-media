@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 设置页（我的 Tab）文案。M4-1 最小版只有标题与登出；资源名 settings_ 前缀避免合并冲突。 -->
+    <string name="settings_title">我的</string>
+    <string name="settings_logout">退出登录</string>
+</resources>

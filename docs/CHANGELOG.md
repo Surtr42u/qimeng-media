@@ -11,6 +11,16 @@
 
 ---
 
+## feat(app): M4-1 登录与服务端配置——DataStore token/401 事件跳登录/退出登录（2026-09-06 第七十一笔）
+
+执行 AI：GLM-5.3-Flash（夜2 A 车道·执行子代理）
+
+- **完成项（HANDOVER_APP §3 M4-1 批次）**：①`:core:network` 半成品编译修复（登录响应 token 可空兜底、DataStore 工厂 import）；②新增 `:feature:login`——登录页两字段（服务器地址记忆上次+占位 `http://192.168.x.x:8420`、密码掩码）、LoginViewModel（StateFlow，提交防重入、错误分类驱动文案），「地址不通」与「密码错误」中文文案分开；③`:feature:settings` 最小登出入口（M4-6 完整设置页前只交付会话闭环）；④`:app` 壳层会话分支（Loading/LoggedIn/LoggedOut）——token 流驱动起始页 + SessionEventBus 401 事件即时退登录页（重登成功复位过期标记），AndroidManifest 补 INTERNET 权限与 `usesCleartextTraffic`（targetSdk 36 默认禁明文，NAS 内网 http 为产品形态）；⑤新增 `:core:testing` 共享测试模块（FakeAuthRepository/MainDispatcherRule，NIA 范式，避免三处复制粘贴）。
+- **半成品测试可运行化（零新依赖）**：`AuthRepositoryImplTest`/`AuthInterceptorTest` 原用 JDK 内置 `com.sun.net.httpserver`，Android 库 unit test 编译类路径只有 android.jar 不含 com.sun.*——改 OkHttp 官方测试范式「fake 传输层拦截器」，8+5 用例语义与断言全保留（协议面路径路由锁定/错误分类/401 事件流）。
+- **新增单测**：LoginViewModelTest 6 用例、SettingsViewModelTest 1、MainViewModelTest 4（登录态分支/401 即时退页/重登复位）。全模块 35 用例零失败。
+- **实机验收（qimeng_api35 模拟器，文本证据协议）**：a. 登录 `http://10.0.2.2:8420` 成功进五 Tab 壳；b. 杀进程重启仍登录直进壳；c. 我的 Tab 退出登录回登录页且地址回填（记忆上次）；附加：错误密码实显「密码错误，请重新输入」（与地址不通分开）。证据目录 `%TEMP%\qimeng-m41-evidence\`。
+- **遗留**：`make lint` 败于 server 基线既有问题（`server/internal/httpapi/export.go:47` `legacyHistoryLimit` unused，commit 8344920 引入，本车道无 server 改动权限）；模拟器 5554 端口被第三方模拟器（MI 9）占用，qimeng_api35 以 `-port 5556` 启动后跨批保持运行。
+
 ## docs(docs): B-6 M6 前置深化备忘录——Termux 一键启动设计稿+ffmpeg 停维护后替代方案扫描（2026-09-06 第七十笔）
 
 执行 AI：GLM-5.3-Flash（B 会话·read-only 批，仓库外产出）

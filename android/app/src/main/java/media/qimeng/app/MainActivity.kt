@@ -6,11 +6,11 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import dagger.hilt.android.AndroidEntryPoint
 import media.qimeng.app.core.ui.theme.QimengTheme
-import media.qimeng.app.navigation.QimengNavHost
+import media.qimeng.app.navigation.QimengNavRoot
 
 /**
  * 全 App 唯一 Activity（壳）：enableEdgeToEdge 交给 Scaffold/NavigationBar 处理 insets。
- * M4-0 只承载五 Tab 壳导航；登录页（M4-1）接入后导航起点在 QimengNavHost 内按登录态切换。
+ * 登录态分支（M4-1）在 QimengNavRoot：未登录进登录页、已登录进五 Tab 主壳。
  */
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -20,7 +20,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             QimengTheme {
-                QimengNavHost()
+                QimengNavRoot()
             }
         }
     }
