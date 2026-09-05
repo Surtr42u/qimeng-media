@@ -2,7 +2,7 @@
 
 > 写给执行 M4 的 AI（任何模型/工具）。人类用户无编程基础，全部代码由 AI 生成。
 > 主交接文档（后端/进度/约定）以 `docs/HANDOVER.md` 为准，本文档只覆盖 M4 Android 路线。
-> 最后更新：2026-09-05 夜2（用户三处规格变更落档：①导航 5 Tab→4 Tab——「全部」更名「相册」（route all 不变只改 label）、原「相册」Tab 删除，M4-2 批落地；②M4-3 排版基准 = Web 现版 B站式双栏移动端移植（§3 M4-3「排版基准」块）；③验收证据协议改无截图——一律文本证据（§4 通用约束 7）。集群蓝本 = 仓库外《QimengNAS/派发任务书-20260905夜2.md》）。2026-09-04（M4 二次改道定稿：用户拍板「先进方案优先」走 Compose 重建（ADR-0014，废弃同日的照搬路线 0013）；架构标准对齐 Google Now in Android 多模块范式；单机形态（ADR-0015）预留接口）
+> 最后更新：2026-09-06（A-S1 构建接线收敛：模块公共 Gradle 配置抽入 build-logic convention 插件，见 §1 末行）。2026-09-05 夜2（用户三处规格变更落档：①导航 5 Tab→4 Tab——「全部」更名「相册」（route all 不变只改 label）、原「相册」Tab 删除，M4-2 批落地；②M4-3 排版基准 = Web 现版 B站式双栏移动端移植（§3 M4-3「排版基准」块）；③验收证据协议改无截图——一律文本证据（§4 通用约束 7）。集群蓝本 = 仓库外《QimengNAS/派发任务书-20260905夜2.md》）。2026-09-04（M4 二次改道定稿：用户拍板「先进方案优先」走 Compose 重建（ADR-0014，废弃同日的照搬路线 0013）；架构标准对齐 Google Now in Android 多模块范式；单机形态（ADR-0015）预留接口）
 
 ## 1. 路线定位（2026-09-04 二次改道后）
 
@@ -14,6 +14,7 @@
 - **单机形态预留（ADR-0015，M6 实施）**：M4-1 的「服务器地址」配置是唯一服务端定位点——单机形态只改这一处指向 localhost，UI 零改动。禁止在 ViewModel/Repository 之外散落服务端地址假设。
 - **执行环境（2026-09-04 实测就绪）**：Android Studio（jbr JDK 21）+ SDK `<AndroidSdk>`（build-tools 35，compileSdk 所需 platform 用 sdkmanager 补装）+ emulator（WHPX 加速）。**缺 AVD**——M4-0 首步创建。免安装 JDK17 备用 `..\dev-tools\jdk17`。**模拟器启动约定（2026-09-06 用户拍板，headless）**：`emulator.exe -avd qimeng_api35 -no-window -no-audio -gpu swiftshader_indirect -no-snapshot`（无窗口+禁音频；同 AVD 双开会被拒，启动前确认无实例；headless 下 uiautomator dump / adb input / logcat 一切照旧，验收证据协议=文本证据 §4.7）。
 - CI 现为四 job，**无 Android job**——M4-0 补第五个。
+- **构建接线（2026-09-06 A-S1 收敛，链条尾批·非 M4 批次）**：模块公共 Gradle 配置已抽入 `android/build-logic` included build 的 convention 插件（NIA 范式）：`qimeng.android.application` / `qimeng.android.library` / `qimeng.android.compose`（Kotlin Compose 编译器插件 + buildFeatures.compose + Compose BOM platform）/ `qimeng.android.hilt`（Hilt + KSP + hilt 依赖）/ `qimeng.jvm.library`（纯 JVM 模块，当前 = :core:model），统一收口 compileSdk 36 / minSdk 26 / Java-Kotlin 17。新模块在 plugins 块按需声明 `alias(libs.plugins.qimeng.*)` 即可，模块 build 文件只留 namespace 与依赖差异；真实插件（AGP/Kotlin/KSP/Hilt）版本仍由根 build.gradle.kts 的 apply false 收口，版本锚定唯一事实源 = libs.versions.toml（勿升）。同批 Makefile `app-test` 追加 `:core:model:test`——纯 JVM 模块的测试任务是 `test`，`testDebugUnitTest` 覆盖不到它。
 
 ## 2. 批次总表（一批 = 一个执行会话的量，按序执行）
 

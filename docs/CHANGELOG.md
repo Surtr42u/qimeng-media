@@ -11,6 +11,19 @@
 
 ---
 
+## refactor(app): build-logic convention 插件收敛 17 模块重复配置 + Makefile app-test 补 :core:model:test（2026-09-06 第八十七笔）
+
+执行 AI：GLM-5.3-Flash（A 车道·A-S1 批执行子代理）
+
+- **build-logic included build（NIA 范式，范式与 API 用法当场核对 android/nowinandroid main 源码后落笔）**：新增 `android/build-logic`（settings 复用主工程 `gradle/libs.versions.toml` 为 libs 目录；`convention` 子工程 kotlin-dsl，AGP/KGP API 走 compileOnly，运行期版本仍由根 build.gradle.kts 的 apply false 收口——convention 不携带运行时版本）。抽 5 个 convention 插件：`qimeng.android.application`（application+Kotlin Android+公共 Android 面）、`qimeng.android.library`（library+Kotlin Android+公共 Android 面）、`qimeng.android.compose`（Kotlin Compose 编译器插件+buildFeatures.compose+Compose BOM platform）、`qimeng.android.hilt`（Hilt+KSP+hilt-android/hilt-compiler 依赖）、`qimeng.jvm.library`（kotlin("jvm")+Java/Kotlin 17）。公共面收口：compileSdk 36 / minSdk 26 / compileOptions 17 / jvmTarget 17（build-logic 内具名常量 ANDROID_COMPILE_SDK/ANDROID_MIN_SDK）；AGP 8.13.2/Kotlin 2.3.21/Compose BOM 2026.06.01 等版本零变更。
+- **17 个模块 build.gradle.kts 迁移（零行为变更）**：:app（application+compose+hilt）、:core:model（jvm.library）、:core:network|data（library+hilt）、:core:ui（library+compose）、:core:testing（library）、10 个 feature（library+compose+hilt）。模块文件只留 namespace、targetSdk/versionName（:app）与依赖差异；重复的 android{} 公共块/kotlin{} jvmTarget/buildFeatures.compose/`platform(compose-bom)`/hilt 依赖对全部上收 convention。libs.versions.toml 增补：build-logic 编译期依赖 2 条（android-gradlePlugin/kotlin-gradlePlugin，版本锚定同 agp/kotlin）+ [plugins] 5 条 qimeng.* 别名（version "unspecified"，由 included build 提供）。无损失收敛注记：各模块既无 lint 配置也无 packaging 块（任务描述提及，实际不存在，无从保持）；依赖解析面不变——迁移后测试任务输入与迁移前命中同一构建缓存键（实测 UP-TO-DATE 直通），构成零行为变更的旁证。
+- **实现注记（与 NIA main 的差异，均为 AGP 8.13.2 环境适配）**：①NIA main 对 `CommonExtension` 用裸类型（其 compileOnly 实为 AGP 9 线），本项目 AGP 8.13.2 的 CommonExtension 仍带 6 个类型参数，按 `CommonExtension<*, *, *, *, *, *>` 星投影书写；②compose convention 内按泛型基类查扩展运行期匹配不到 AGP 注册的具体扩展，改为 ApplicationExtension→LibraryExtension 逐级 Class 回退（源自我实测报错，非凭记忆）。
+- **Makefile app-test 补账（一行）**：`:core:model` 是纯 JVM kotlin("jvm") 模块，测试任务为 `test`（无 testDebugUnitTest 变体），原 `app-test` 只跑 testDebugUnitTest 覆盖不到它——追加 `:core:model:test` 并注释原因。
+- **自测（全绿）**：`make app-build` BUILD SUCCESSFUL（561 tasks）；`make app-test` BUILD SUCCESSFUL，删缓存强制真实重跑核数：Android 模块 72 条 + :core:model 59 条，0 失败 0 错误（:core:model 用例数 59 为现场实测，此前口头口径 32 已过时——M4-5/M4-6 批次各追加过测试类）；`make app-lint` BUILD SUCCESSFUL（1m11s）；`make lint` exit 0（redocly/gofmt/golangci-lint/web build+lint 四段全过）。
+- 改动文件：android/build-logic/**（新增：settings.gradle.kts、convention/build.gradle.kts、convention/src/main/kotlin/media/qimeng/buildlogic/ 下 5 插件+KotlinAndroid.kt+AndroidCompose.kt+ProjectExtensions.kt）；android/settings.gradle.kts（pluginManagement.includeBuild）；android/gradle/libs.versions.toml（+7 条目）；17 个模块 build.gradle.kts；Makefile（仅 app-test 一处）；文档：HANDOVER_APP.md（§1 构建接线行）、CHANGELOG.md（本条）。
+
+---
+
 ## feat(app): M4-6 缓存策略与设置/统计/我的页——Coil 磁盘缓存 LRU 档位/趋势线/关注列表/推荐偏好（2026-09-06 第八十六笔）
 
 执行 AI：GLM-5.3-Flash（A 车道·M4-6 批执行子代理）

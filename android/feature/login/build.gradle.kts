@@ -1,37 +1,15 @@
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-
 // :feature:login —— 登录页（M4-1）：服务器地址 + 密码两字段，提交经 AuthRepository（探活→登录→持久化）。
 // 登录成功后壳层由登录态流自动进主壳，本模块不持有导航职责（UI 禁内嵌业务规则，ADR-0008 铁律 7）。
+// convention 插件（build-logic，NIA 范式）提供：android library + Kotlin Android + Java/Kotlin 17 +
+// compileSdk/minSdk + Compose（含 BOM platform）+ Hilt/KSP（含 hilt 依赖）。
 plugins {
-    alias(libs.plugins.android.library)
-    alias(libs.plugins.kotlin.android)
-    alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.ksp)
-    alias(libs.plugins.hilt)
+    alias(libs.plugins.qimeng.android.library)
+    alias(libs.plugins.qimeng.android.compose)
+    alias(libs.plugins.qimeng.android.hilt)
 }
 
 android {
     namespace = "media.qimeng.app.feature.login"
-    compileSdk = 36
-
-    defaultConfig {
-        minSdk = 26
-    }
-
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-
-    buildFeatures {
-        compose = true
-    }
-}
-
-kotlin {
-    compilerOptions {
-        jvmTarget.set(JvmTarget.JVM_17)
-    }
 }
 
 dependencies {
@@ -39,7 +17,6 @@ dependencies {
     implementation(project(":core:ui"))
     implementation(project(":core:data"))
 
-    implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
     implementation(libs.compose.foundation)
     implementation(libs.compose.material3)
@@ -51,9 +28,6 @@ dependencies {
     implementation(libs.androidx.hilt.navigation.compose)
 
     implementation(libs.kotlinx.coroutines.android)
-
-    implementation(libs.hilt.android)
-    ksp(libs.hilt.compiler)
 
     // ViewModel 状态机单测：共享替身与协程规则统一来自 :core:testing
     testImplementation(project(":core:testing"))

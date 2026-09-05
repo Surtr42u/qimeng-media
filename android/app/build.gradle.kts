@@ -1,40 +1,21 @@
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-
 // :app —— 组合根：单 Activity + Navigation Compose 壳导航 + Hilt 装配。
 // 只做导航与装配，不含业务规则（ADR-0008）；页面实现全部在各 feature 模块。
+// convention 插件（build-logic，NIA 范式）提供：application + Kotlin Android + Java/Kotlin 17 +
+// compileSdk/minSdk + Compose（含 BOM platform）+ Hilt/KSP（含 hilt 依赖）。模块差异留在下方。
 plugins {
-    alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
-    alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.ksp)
-    alias(libs.plugins.hilt)
+    alias(libs.plugins.qimeng.android.application)
+    alias(libs.plugins.qimeng.android.compose)
+    alias(libs.plugins.qimeng.android.hilt)
 }
 
 android {
     namespace = "media.qimeng.app"
-    compileSdk = 36
 
     defaultConfig {
         applicationId = "media.qimeng.app"
-        minSdk = 26
         targetSdk = 36
         versionCode = 1
         versionName = "0.2.0" // M4-2 列表族批次
-    }
-
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-
-    buildFeatures {
-        compose = true
-    }
-}
-
-kotlin {
-    compilerOptions {
-        jvmTarget.set(JvmTarget.JVM_17)
     }
 }
 
@@ -57,7 +38,6 @@ dependencies {
     implementation(project(":feature:settings"))
     implementation(project(":feature:upload"))
 
-    implementation(platform(libs.compose.bom))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
@@ -66,9 +46,6 @@ dependencies {
     implementation(libs.compose.ui)
     implementation(libs.compose.foundation)
     implementation(libs.compose.material3)
-
-    implementation(libs.hilt.android)
-    ksp(libs.hilt.compiler)
 
     // WorkManager 自定义初始化（M4-5 上传队列）：Application 直接引用 Configuration/HiltWorkerFactory
     implementation(libs.androidx.work.runtime.ktx)

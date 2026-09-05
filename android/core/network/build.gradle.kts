@@ -1,32 +1,14 @@
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-
 // :core:network —— make sdk 生成 SDK 的封装层 + OkHttp/AuthInterceptor（M4-1 落地）。
 // M4-0 只立骨架与依赖接线：依赖 :sdk 与 okhttp，保证生成物在工程内可编译（:sdk 编译不过=停手信号）。
+// convention 插件（build-logic，NIA 范式）提供：android library + Kotlin Android + Java/Kotlin 17 +
+// compileSdk/minSdk + Hilt/KSP（含 hilt 依赖）。
 plugins {
-    alias(libs.plugins.android.library)
-    alias(libs.plugins.kotlin.android)
-    alias(libs.plugins.ksp)
-    alias(libs.plugins.hilt)
+    alias(libs.plugins.qimeng.android.library)
+    alias(libs.plugins.qimeng.android.hilt)
 }
 
 android {
     namespace = "media.qimeng.app.core.network"
-    compileSdk = 36
-
-    defaultConfig {
-        minSdk = 26
-    }
-
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-}
-
-kotlin {
-    compilerOptions {
-        jvmTarget.set(JvmTarget.JVM_17)
-    }
 }
 
 dependencies {
@@ -40,9 +22,6 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
     // 协程（ADR-0014 技术栈：Coroutine/Flow）——拦截器 401 清 token / AuthApi IO 调度
     implementation(libs.kotlinx.coroutines.android)
-
-    implementation(libs.hilt.android)
-    ksp(libs.hilt.compiler)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

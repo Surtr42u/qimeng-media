@@ -1,31 +1,14 @@
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-
 // :core:testing —— 共享测试工具（Now in Android 范式的 core:testing 模块）：Repository 测试替身 +
 // 协程 Main 调度器规则。只进消费方的 testImplementation 类路径，绝不进生产代码。
 // 纯 android library（无 compose/hilt）：fake 只操作 core:data 接口与协程原语，无需 Android 组件。
+// convention 插件（build-logic，NIA 范式）提供：android library + Kotlin Android + Java/Kotlin 17 +
+// compileSdk/minSdk。
 plugins {
-    alias(libs.plugins.android.library)
-    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.qimeng.android.library)
 }
 
 android {
     namespace = "media.qimeng.app.core.testing"
-    compileSdk = 36
-
-    defaultConfig {
-        minSdk = 26
-    }
-
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-}
-
-kotlin {
-    compilerOptions {
-        jvmTarget.set(JvmTarget.JVM_17)
-    }
 }
 
 dependencies {
