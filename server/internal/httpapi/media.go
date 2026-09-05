@@ -3,6 +3,7 @@ package httpapi
 import (
 	"database/sql"
 	"errors"
+	"io"
 	"io/fs"
 	"net/http"
 	"os"
@@ -32,6 +33,23 @@ type countingResponseWriter struct {
 func (c *countingResponseWriter) Write(p []byte) (int, error) {
 	n, err := c.ResponseWriter.Write(p)
 	c.n += int64(n)
+	return n, err
+}
+
+// ReadFrom 透传 io.ReaderFrom：ServeContent 内部用 io.CopyN 输出 body，
+// wrapper 不实现该接口会让底层连接的 sendfile 零拷贝退化成用户态缓冲拷贝
+// （大文件直链白耗 CPU 与内存带宽）。委托底层 writer 的 ReadFrom（net/http
+// 的 response 实现了它），底层不支持时 io.Copy 兜底；两条路径都同步累计
+// 实发字节，media_bytes_total 口径不变。
+func (c *countingResponseWriter) ReadFrom(src io.Reader) (int64, error) {
+	var n int64
+	var err error
+	if rf, ok := c.ResponseWriter.(io.ReaderFrom); ok {
+		n, err = rf.ReadFrom(src)
+	} else {
+		n, err = io.Copy(c.ResponseWriter, src)
+	}
+	c.n += n
 	return n, err
 }
 

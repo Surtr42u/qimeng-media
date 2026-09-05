@@ -20,6 +20,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"qimeng-media/server/internal/events"
 	"qimeng-media/server/internal/filing"
@@ -42,6 +43,15 @@ func (s *Server) publishLibraryChanged() {
 	}
 }
 
+// trashMetricsRefreshTimeout 是 trash 指标刷新的耗时上限：刷新（WalkDir
+// 遍历 + 逐条 Stat）跑在删除/恢复请求路径上（变更点推送），回收站极大时
+// 不能拖住业务响应。listTrash 不接受 context（改签名会波及其全部调用点），
+// 取侵入最小的自我约束：刷新体放 goroutine，最多同步等待一个超时时长——
+// 超时即放弃等待，后台算完再 Set（gauge 是推送语义，晚到无害，指标保持
+// 上次值，下次变更点再刷新）。与 libraryMetricsRefreshTimeout 同值是两个
+// 独立决策（DB 查询上限 vs 磁盘遍历上限），可各自调整。
+const trashMetricsRefreshTimeout = 3 * time.Second
+
 // refreshTrashMetrics 把 trash_items / trash_bytes gauge 刷新为回收站现状。
 // 真实源是磁盘 meta 文件（listTrash 遍历），不走库表——trash_items 表是
 // 历史迁移遗留的死表（迁移只加不删，留着但不读）。bytes 逐条 os.Stat 求和
@@ -50,6 +60,23 @@ func (s *Server) publishLibraryChanged() {
 // 不做定时轮询（OBSERVABILITY 口径：推送刷新）。失败只记日志：指标刷新
 // 失败不影响业务路径的成功响应。
 func (s *Server) refreshTrashMetrics() {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		s.refreshTrashMetricsOnce()
+	}()
+	select {
+	case <-done:
+	case <-time.After(trashMetricsRefreshTimeout):
+		s.logger.Warn("刷新回收站指标超时，放弃等待（后台完成后自行 Set）",
+			"timeout", trashMetricsRefreshTimeout)
+	}
+}
+
+// refreshTrashMetricsOnce 是 refreshTrashMetrics 的实际刷新体（无超时保护，
+// 只应在刷新 goroutine 内调用；遍历与 Stat 均为只读操作，gauge Set 并发
+// 安全）。
+func (s *Server) refreshTrashMetricsOnce() {
 	entries, err := s.listTrash()
 	if err != nil {
 		s.logger.Warn("刷新回收站指标失败", "err", err)
