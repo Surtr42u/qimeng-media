@@ -1433,7 +1433,9 @@ button.select-trigger:disabled { cursor: not-allowed; opacity: .5; }
   display: flex;
   align-items: flex-start;
   gap: 20px;
-  max-width: 1360px; /* 大屏限宽：媒体区过宽失真，双栏整体保持阅读节奏 */
+  /* 自适应排版（2026-09-05 用户拍板）：无限宽纯流式，任意窗口都填满内容区——
+     切勿加 max-width/margin auto：flex 列子项带 auto 边距会退化为 fit-content
+     收缩（实测内容 1209 布局仅 814、双侧留白），固定限宽则全屏右侧留白 */
 }
 .detail-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
 .detail-side { width: 340px; flex: none; display: flex; flex-direction: column; gap: 16px; }
@@ -1541,3 +1543,12 @@ button.pill.detail-tag-manage { cursor: pointer; }
   .detail-layout { flex-direction: column; }
   .detail-side { width: 100%; }
 }
+
+/* 视频全屏修正（2026-09-05 用户反馈：全屏后画面只剩中间一小段、四周全黑）：
+   ① ArtPlayer 全屏的是播放器容器，<video> 本身仍是 .asset-stage 后代——上方
+   `.asset-stage video { max-height: 68vh }` 在全屏态照常生效，把画面压到屏高
+   68%。全屏内解除上限，恢复官方 absolute inset:0 + 100%×100% + contain 铺满。
+   ② 全局 html{zoom:1.1} 被全屏顶层元素继承，UA 的 100%×100% 全屏尺寸会再被
+   放大 1.1 倍（底部/右缘裁出屏外）。全屏应按物理屏幕 1:1 布局，子树 zoom 归一。 */
+.asset-stage :fullscreen video { max-height: none; }
+:fullscreen { zoom: 1; }
