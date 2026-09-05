@@ -1,32 +1,14 @@
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-
 // :core:data —— Repository 接口 + 实现（UI -> ViewModel -> Repository -> SDK 链路的中间层）。
 // M4-0 空壳起步：首个 Repository（AuthRepository/ServerConfigDataSource）随 M4-1 落地。
+// convention 插件（build-logic，NIA 范式）提供：android library + Kotlin Android + Java/Kotlin 17 +
+// compileSdk/minSdk + Hilt/KSP（含 hilt 依赖）。
 plugins {
-    alias(libs.plugins.android.library)
-    alias(libs.plugins.kotlin.android)
-    alias(libs.plugins.ksp)
-    alias(libs.plugins.hilt)
+    alias(libs.plugins.qimeng.android.library)
+    alias(libs.plugins.qimeng.android.hilt)
 }
 
 android {
     namespace = "media.qimeng.app.core.data"
-    compileSdk = 36
-
-    defaultConfig {
-        minSdk = 26
-    }
-
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-}
-
-kotlin {
-    compilerOptions {
-        jvmTarget.set(JvmTarget.JVM_17)
-    }
 }
 
 dependencies {
@@ -54,9 +36,6 @@ dependencies {
 
     // 上传响应/错误体解析（M4-5）：moshi 反射（SDK 生成物同款 KotlinJsonAdapterFactory，单版本原则）
     implementation(libs.moshi.kotlin)
-
-    implementation(libs.hilt.android)
-    ksp(libs.hilt.compiler)
 
     // 登录流程走真实生成 SDK + JDK HttpServer 打全链路（okhttp 仅为测试内构造客户端）
     testImplementation(libs.junit)

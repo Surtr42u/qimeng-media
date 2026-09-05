@@ -131,8 +131,10 @@ sdk-kotlin:
 app-build: ## Android Debug 构建（android/app/build/outputs/apk/debug/app-debug.apk）
 	cd android && ./gradlew assembleDebug
 
-app-test: ## Android 单元测试（全部模块 testDebugUnitTest）
-	cd android && ./gradlew testDebugUnitTest
+# :core:model 是纯 JVM kotlin("jvm") 模块，测试任务叫 test（没有 testDebugUnitTest 变体），
+# 只跑 testDebugUnitTest 覆盖不到它——故显式追加 :core:model:test（A-S1 补账）。
+app-test: ## Android 单元测试（Android 模块 testDebugUnitTest + :core:model 纯 JVM test）
+	cd android && ./gradlew testDebugUnitTest :core:model:test
 
 app-lint: ## Android Lint（全部模块 lintDebug，error 即失败）
 	cd android && ./gradlew lintDebug

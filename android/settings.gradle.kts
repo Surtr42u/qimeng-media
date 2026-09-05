@@ -3,6 +3,9 @@
 // checkout 后不存在——任何缺 :sdk 的报错先在仓库根跑 `make sdk`，禁止手改其内容。
 
 pluginManagement {
+    // convention 插件宿主（NIA 范式，A-S1 收敛）：qimeng.android.* / qimeng.jvm.library 由它提供；
+    // 必须放在 pluginManagement 内，插件才会经 included build 参与解析。
+    includeBuild("build-logic")
     repositories {
         google {
             content {

@@ -1,0 +1,4 @@
+# build-logic included build 的本地运行产物（与根 .gitignore 的 android/.gradle/ 同理，
+# 此目录是独立 Gradle 构建，有自己的 .gradle/ 与 build/）
+.gradle/
+build/

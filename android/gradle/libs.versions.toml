@@ -93,6 +93,10 @@ androidx-work-testing = { group = "androidx.work", name = "work-testing", versio
 androidx-hilt-work = { group = "androidx.hilt", name = "hilt-work", version.ref = "androidxHilt" }
 androidx-hilt-compiler = { group = "androidx.hilt", name = "hilt-compiler", version.ref = "androidxHilt" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
+# build-logic convention 插件的编译期依赖（compileOnly；版本锚定同上方 agp/kotlin，禁止单独升级）。
+# 运行期版本由主工程根 build.gradle.kts 的 apply false 收口，convention 不携带运行时版本。
+android-gradlePlugin = { group = "com.android.tools.build", name = "gradle", version.ref = "agp" }
+kotlin-gradlePlugin = { group = "org.jetbrains.kotlin", name = "kotlin-gradle-plugin", version.ref = "kotlin" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
@@ -103,3 +107,10 @@ kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
+# 本工程 build-logic 的 convention 插件（NIA 范式）：version unspecified = 由 android/build-logic
+# included build 提供；真实插件（AGP/Kotlin/KSP/Hilt）版本仍由上方别名经根 build.gradle.kts 收口。
+qimeng-android-application = { id = "qimeng.android.application", version = "unspecified" }
+qimeng-android-library = { id = "qimeng.android.library", version = "unspecified" }
+qimeng-android-compose = { id = "qimeng.android.compose", version = "unspecified" }
+qimeng-android-hilt = { id = "qimeng.android.hilt", version = "unspecified" }
+qimeng-jvm-library = { id = "qimeng.jvm.library", version = "unspecified" }
