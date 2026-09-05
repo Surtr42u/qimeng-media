@@ -39,6 +39,11 @@ data class MineUiState(
     /** 磁盘缓存当前已用字节（null = 未就绪）；清空后归零供核对 */
     val cacheSizeBytes: Long? = null,
     val serverVersion: String? = null,
+    /**
+     * 写操作失败反馈（自审 P2-3：applyPreset/unfollow/setCacheQuota 失败原实现静默吞错）。
+     * 非空时 UI 横幅展示，点按消除（[SettingsViewModel.dismissWriteError]）；成功路径永不产生。
+     */
+    val writeError: String? = null,
 )
 
 /**
@@ -78,11 +83,12 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    /** 取关（PUT /authors/{id}/follow followed=false）后刷新，行即消失 */
+    /** 取关（PUT /authors/{id}/follow followed=false）后刷新，行即消失；失败给反馈且列表保持原状（行不乐观移除=天然回滚） */
     fun unfollow(authorId: String) {
         viewModelScope.launch {
             runCatching { authorRepository.setFollowed(authorId, false) }
                 .onSuccess { refreshFollowed() }
+                .onFailure { _uiState.update { it.copy(writeError = UNFOLLOW_FAILED_MESSAGE) } }
         }
     }
 
@@ -97,7 +103,7 @@ class SettingsViewModel @Inject constructor(
 
     fun closePrefsSheet() = _uiState.update { it.copy(prefsSheetOpen = false) }
 
-    /** 整行点击应用预设（C4）：PUT 9 维载荷后本地推导高亮态（预设值即载荷值，无需重拉） */
+    /** 整行点击应用预设（C4）：PUT 9 维载荷后本地推导高亮态（预设值即载荷值，无需重拉）；失败给反馈且高亮保持原项 */
     fun applyPreset(preset: RecommendPreset) {
         if (_uiState.value.prefsApplying) return
         _uiState.update { it.copy(prefsApplying = true) }
@@ -107,11 +113,16 @@ class SettingsViewModel @Inject constructor(
                 preset.toPrefsValues()
             }.getOrNull()
             _uiState.update {
-                it.copy(
-                    prefsApplying = false,
-                    prefsValues = updated ?: it.prefsValues,
-                    appliedPreset = if (updated != null) preset else it.appliedPreset,
-                )
+                if (updated == null) {
+                    // 失败：prefValues/appliedPreset 均不动（高亮保持原项=回滚），给出反馈
+                    it.copy(prefsApplying = false, writeError = SAVE_FAILED_MESSAGE)
+                } else {
+                    it.copy(
+                        prefsApplying = false,
+                        prefsValues = updated,
+                        appliedPreset = preset,
+                    )
+                }
             }
         }
     }
@@ -119,12 +130,19 @@ class SettingsViewModel @Inject constructor(
     /**
      * 切换缓存档位（C5）：写 DataStore 持久化；**重启生效**——Coil 官方明言同一目录
      * 多个 DiskCache 实例并发会损坏缓存，运行中重建 ImageLoader 不做（UI 同步注明）。
+     * 失败给反馈且档位不动（UI 跟随 DataStore 流原值=回滚）。
      */
     fun setCacheQuota(quota: DiskCacheQuota) {
         viewModelScope.launch {
             runCatching { diskCachePrefsRepository.setQuota(quota) }
                 .onSuccess { _uiState.update { it.copy(cacheQuota = quota) } }
+                .onFailure { _uiState.update { it.copy(writeError = SAVE_FAILED_MESSAGE) } }
         }
+    }
+
+    /** 写失败横幅点按消除（一次性反馈语义：不自动消失，避免用户错过） */
+    fun dismissWriteError() {
+        _uiState.update { it.copy(writeError = null) }
     }
 
     /** 清空磁盘缓存（C5：清后容量归零核对）；IO 线程执行，完成后重读已用字节 */
@@ -160,5 +178,11 @@ class SettingsViewModel @Inject constructor(
     /** 退出登录（清 token 留地址；壳层登录态流自动回登录页） */
     fun logout() {
         viewModelScope.launch { authRepository.logout() }
+    }
+
+    private companion object {
+        /** 写失败反馈文案（P2-3）：中文、可重试指向；成功路径永不产生 */
+        const val SAVE_FAILED_MESSAGE = "保存失败，请重试"
+        const val UNFOLLOW_FAILED_MESSAGE = "取关失败，请重试"
     }
 }

@@ -11,6 +11,18 @@
 
 ---
 
+## fix(app): 自审返工——筛选请求代际防乱序/设置页写失败反馈/卫生清偿（含 M4-7 验收清单与 headless 启动脚本）（2026-09-06 第八十九笔）
+
+执行 AI：GLM-5.3-Flash（A 车道·夜2 返工批执行子代理）
+
+- **P2-1 相册页筛选请求乱序（AlbumViewModel）**：筛选变化递增代际号 `filterGeneration`，列表与四维候选请求发起时快照、响应落地前校验——旧代响应（含失败）一律丢弃，弱网下旧筛选响应不再覆盖新筛选态；筛选重载不再被 `isLoading` 拦截丢弃（在途的是旧代请求，其响应由代际校验兜底），分页/下拉刷新的防重语义保持原状。新增 `AlbumViewModelTest`（feature/all 首个 ViewModel 单测）锁行为：在途 A 未归时应用筛选 B → A 迟到响应被丢弃、最终为 B 结果；旧代失败不污染新筛选态；四维候选旧代整批不落地；分页在途防重+追加不丢页。配套删去 `onNearBottom` 里的重复 `Log.d("QimengApi", …)`（出网请求日志唯一源在 SdkMediaRepositories.logRequest；该行既重复又裸写魔法串，且 android.util.Log 未 mock 会阻断纯 JVM 单测）。
+- **P2-3 设置页写操作静默失败（SettingsViewModel/SettingsScreen）**：`MineUiState` 增 `writeError` 反馈位 + `dismissWriteError()`，UI 顶部横幅展示（errorContainer 底，「知道了」点按消除）；applyPreset/unfollow/setCacheQuota 失败时给出中文提示（「保存失败，请重试」/「取关失败，请重试」），成功路径永不产生。失败回滚语义：均不乐观更新——取关失败列表保持原状、档位失败跟随 DataStore 原值、预设失败高亮保持原项且退出 applying。SettingsViewModelTest 补三条失败路径用例 + 成功不弹断言（测试替身加可编程错误注入）。
+- **卫生 4 处**：QimengMediaGrid 重复 `import LaunchedEffect` 删一处；AllScreen/AlbumFilterStateTest 旧注释（声称含排序组——与 2026-09-06「相册=旧版全部页完全一致」拍板相反）修正；HomeScreen 顶行注释去「筛选图标」字样。
+- **[v3] 调试日志前缀清偿**：SdkMediaRepositories `logRequest` 去掉 `[v3]` 前缀标记（logcat 证据标签 `QimengApi` 不变，grep 口径不受影响）。
+- **M4-7 验收自查清单（HANDOVER_APP §3 M4-7 追加）**：对照 PROJECT_PLAN M4 验收标准逐条列检查项（完整日常使用/上传→Web 立即可见/离线不丢/门禁全绿/生成物不手改/新迁移只加文件/决策先写 ADR/GUIDE_UI 复刻抽查），并纳入 M4-5 审查观察项 5 条（content:// 授权持久化/dataSync FGS 6h 限时/分享路径通知权限/取消上传路径/100+ 文件多选）。
+- **headless 启动脚本**：新增 `android/启动模拟器-headless.bat`（内容注释纯 ASCII——Windows cmd 代码页坑）：先 `adb devices` 提示检查（不强制阻断），再启动 `emulator -avd qimeng_api35 -no-window -no-audio -gpu swiftshader_indirect -no-snapshot`（SDK 路径写死 `%LOCALAPPDATA%\Android\Sdk`）。
+- **A-S2/A-S3 备忘录落账（仓库外文件，本笔只记账）**：`<本地工作区>\a-s2-icon-strategy-memo.md`（应用图标策略备忘）与 `<本地工作区>\a-s3-agp9-upgrade-memo.md`（AGP9 升级前置约束备忘）已落档。
+
 ## ci(app): android job 补 :core:model:test——纯 JVM 模块 testDebugUnitTest 覆盖不到（2026-09-06 第八十八笔）
 
 执行 AI：GLM-5.3-Flash（A 车道·夜2 返工批执行子代理）

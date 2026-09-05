@@ -60,6 +60,13 @@ class AlbumViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(AlbumUiState())
     val uiState: StateFlow<AlbumUiState> = _uiState.asStateFlow()
 
+    /**
+     * 筛选代际号：筛选变化即递增。弱网下仓库响应可能乱序归位（自审 P2-1），
+     * 请求发起时快照代际、响应落地前校验——旧代响应（含失败）一律丢弃，
+     * 不再覆盖新筛选态。读写都发生在 Main（viewModelScope 与状态更新同线程），无需原子类。
+     */
+    private var filterGeneration = 0
+
     /** 相册网格列数（2~5 持久化，LEGACY §F） */
     val albumColumns: StateFlow<Int> = gridPrefs.albumColumns
         .stateIn(
@@ -112,7 +119,6 @@ class AlbumViewModel @Inject constructor(
     fun onNearBottom() {
         val state = _uiState.value
         if (state.isLoading || state.nextCursor == null) return
-        android.util.Log.d("QimengApi", "album loadMore cursor=${state.nextCursor}")
         loadItems(cursor = state.nextCursor, append = true)
     }
 
@@ -132,8 +138,9 @@ class AlbumViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(errorMessage = null)
     }
 
-    /** 筛选变化统一入口：重载第一页 + 重取四维候选（计数随其他维变化） */
+    /** 筛选变化统一入口：递增代际（作废在途旧响应）+ 重载第一页 + 重取四维候选（计数随其他维变化） */
     private fun applyFilter(filter: AlbumFilterState) {
+        filterGeneration += 1
         _uiState.value = _uiState.value.copy(filter = filter)
         reloadAll()
     }
@@ -145,7 +152,10 @@ class AlbumViewModel @Inject constructor(
 
     private fun loadItems(cursor: String?, append: Boolean, isRefresh: Boolean = false) {
         val state = _uiState.value
-        if (state.isLoading) return
+        // 防重语义（与代际防乱序正交）：分页/下拉刷新在途时照旧丢弃重复触发；
+        // 筛选重载不受 isLoading 拦截——在途的是旧代请求，其响应会被代际校验丢弃（自审 P2-1）
+        if ((append || isRefresh) && state.isLoading) return
+        val gen = filterGeneration
         _uiState.value = state.copy(isLoading = true, isRefreshing = isRefresh)
         viewModelScope.launch {
             runCatching {
@@ -153,6 +163,7 @@ class AlbumViewModel @Inject constructor(
                     AlbumFilter.toAssetQuery(state.filter, limit = PAGE_SIZE, cursor = cursor),
                 )
             }.onSuccess { page ->
+                if (gen != filterGeneration) return@onSuccess // 旧代迟到响应，丢弃
                 _uiState.value = _uiState.value.copy(
                     items = if (append) _uiState.value.items + page.items else page.items,
                     nextCursor = page.nextCursor,
@@ -161,6 +172,7 @@ class AlbumViewModel @Inject constructor(
                     isRefreshing = false,
                 )
             }.onFailure {
+                if (gen != filterGeneration) return@onFailure // 旧代失败不污染新筛选态
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     isRefreshing = false,
@@ -173,6 +185,7 @@ class AlbumViewModel @Inject constructor(
     /** 四维候选：四请求各缺自身参数（排自身计数）；partition 恒显式传。并行取，互不阻塞 */
     private fun loadFacets() {
         val filter = _uiState.value.filter
+        val gen = filterGeneration
         viewModelScope.launch {
             runCatching {
                 coroutineScope {
@@ -183,6 +196,7 @@ class AlbumViewModel @Inject constructor(
                     FacetsCombiner.collect(partition.await(), author.await(), character.await(), type.await())
                 }
             }.onSuccess { facets ->
+                if (gen != filterGeneration) return@onSuccess // 旧代迟到响应，丢弃
                 _uiState.value = _uiState.value.copy(
                     partitionOptions = facets.partitions,
                     authorOptions = facets.authors.withOtherBucketLast(),
@@ -191,6 +205,7 @@ class AlbumViewModel @Inject constructor(
                     totalForAllPill = facets.total,
                 )
             }.onFailure {
+                if (gen != filterGeneration) return@onFailure // 旧代失败不污染新筛选态
                 _uiState.value = _uiState.value.copy(errorMessage = LOAD_FAILED_MESSAGE)
             }
         }
