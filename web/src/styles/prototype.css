@@ -1255,3 +1255,66 @@ body {
   color: var(--text-sub);
   text-align: center;
 }
+
+/* ---- 折线图悬停反馈（数据页浏览/播放趋势、维护页网络负载共用，trend-hover.tsx）----
+   全部走既有 token；SVG 为 preserveAspectRatio=none 拉伸，参考线/圆点/提示
+   全用 HTML 绝对定位（放 SVG 内部会变形）。垂直锚定图表顶部，水平跟随光标。 */
+.trend-wrap {
+  position: relative;
+}
+.trend-guide {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--text-sub);
+  opacity: 0.35;
+  pointer-events: none;
+}
+.trend-dot {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.trend-tip {
+  position: absolute;
+  top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 9px;
+  border-radius: 6px;
+  background: var(--pop-chip-hover-bg);
+  color: var(--text-main);
+  font-size: 11px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 6;
+}
+.trend-tip-label {
+  color: var(--text-sub);
+  margin-right: 2px;
+}
+.trend-tip-series {
+  display: inline-flex;
+  align-items: center;
+}
+.trend-tip-series i,
+.trend-legend i {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 5px;
+}
+.trend-legend {
+  display: flex;
+  justify-content: flex-end;
+  gap: 14px;
+  font-size: 11px;
+  color: var(--text-sub);
+  margin-bottom: 4px;
+}
