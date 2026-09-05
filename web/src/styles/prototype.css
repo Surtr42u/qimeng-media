@@ -449,7 +449,8 @@ body {
 /* display:flex 会覆盖 hidden 属性默认的 display:none，须显式声明 */
 .page[hidden] { display: none; }
 .pop-block[hidden], .hist-card[hidden], .hist-group2[hidden] { display: none; }
-.page:not([hidden]) { animation: page-in .18s ease-out; }
+.page:not([hidden]) { animation: page-in var(--qm-duration-base) var(--qm-ease-out); }
+/* B-2（2026-09-06）：时长/缓动改走 token——.18s→200ms（--qm-duration-base，视觉等价档） */
 @keyframes page-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 
 /* 卡片通用 */
@@ -1612,3 +1613,105 @@ button.dir-action-btn:focus-visible { outline: 2px solid var(--qm-primary); outl
 }
 .move-name-row span { flex: none; }
 .move-name-row .tag-input { flex: 1; }
+
+/* ===== B-2 全局动效现代化（2026-09-06）：页面过渡/进场 stagger/弹层统一/reduced-motion =====
+   口径：纯 CSS 零新依赖（radix 只出行为，动画走 data-state——官方 Animation 指南
+   口径：closed 态动画期间 Presence 挂起卸载，动画结束才移除元素）；时长/缓动一律
+   引用 tokens.css 的 --qm-duration-* 三档 / --qm-ease-* 两档，禁止另起档位；
+   本段零颜色字面量（阴影整值按 §5.8 先入 :root token 再 var() 引用）；存量散点
+   transition（.pill/.detail-act/.dir-action-btn 等已有效果的）保持原值不动。
+   zoom 约束：html{zoom:1.1} 与 body>[data-radix-popper-content-wrapper]{zoom:
+   0.909…} 的补偿公式是既有约定，本段只用 opacity+transform，不碰 zoom 属性。 */
+
+/* ---- 阴影 token：卡片 hover 浮起用（浅/深双值仿 --fab-shadow 先例）---- */
+:root { --card-shadow-hover: 0 6px 16px rgba(0, 0, 0, 0.1); }
+.dark { --card-shadow-hover: 0 6px 16px rgba(0, 0, 0, 0.45); }
+
+/* ---- 卡片进场 stagger（.card = MediaCard，首页/搜索 .grid 与相册/集合/我的
+   .media-grid 直挂子元素共用；fade + 8px 上移，档差 40ms，第 13 张起封顶
+   480ms——长列表尾卡不至久等）。backwards：延迟期保持 from 帧（透明）不闪现。
+   卡片恒占容器前段子位：空态/加载提示只在无卡或卡后渲染，不影响阶梯。
+   无限滚动追加的新卡按自身序号重放属期望行为；transform/opacity 不参与布局，
+   静止态几何与改前零漂移 ---- */
+@keyframes qm-card-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.grid > .card, .media-grid > .card {
+  animation: qm-card-in var(--qm-duration-base) var(--qm-ease-out) backwards;
+}
+.grid > .card:nth-child(2), .media-grid > .card:nth-child(2) { animation-delay: 40ms; }
+.grid > .card:nth-child(3), .media-grid > .card:nth-child(3) { animation-delay: 80ms; }
+.grid > .card:nth-child(4), .media-grid > .card:nth-child(4) { animation-delay: 120ms; }
+.grid > .card:nth-child(5), .media-grid > .card:nth-child(5) { animation-delay: 160ms; }
+.grid > .card:nth-child(6), .media-grid > .card:nth-child(6) { animation-delay: 200ms; }
+.grid > .card:nth-child(7), .media-grid > .card:nth-child(7) { animation-delay: 240ms; }
+.grid > .card:nth-child(8), .media-grid > .card:nth-child(8) { animation-delay: 280ms; }
+.grid > .card:nth-child(9), .media-grid > .card:nth-child(9) { animation-delay: 320ms; }
+.grid > .card:nth-child(10), .media-grid > .card:nth-child(10) { animation-delay: 360ms; }
+.grid > .card:nth-child(11), .media-grid > .card:nth-child(11) { animation-delay: 400ms; }
+.grid > .card:nth-child(12), .media-grid > .card:nth-child(12) { animation-delay: 440ms; }
+.grid > .card:nth-child(n+13), .media-grid > .card:nth-child(n+13) { animation-delay: 480ms; }
+
+/* ---- 卡片微交互补缺：hover 轻浮起 + 封面阴影（原 hover 只有标题变色）。
+   阴影加在 .card--cover（有圆角的可视面）而非透明的 .card 盒上 ---- */
+.card { transition: transform var(--qm-duration-fast) var(--qm-ease-out); }
+.card:hover { transform: translateY(-2px); }
+.card--cover { transition: box-shadow var(--qm-duration-fast) var(--qm-ease-out); }
+.card:hover .card--cover { box-shadow: var(--card-shadow-hover); }
+
+/* ---- radix 弹层 data-state 进出场：confirm 弹窗 + 标签/新建目录/整理弹窗
+   （.detail-dialog 族，.move-dialog 只覆宽度随族生效）+ popover（搜索下拉）
+   + select（上传/目录浏览/年份区间等下拉）。只用 opacity + 小幅
+   scale/translateY。居中面板 keyframes 必须复算 translate(-50%,-50%) 定位——
+   动画帧整体覆盖 transform，漏掉会跳位；弹出层缩放锚点用 radix 注入的
+   组件级 transform-origin 变量（旧 --radix-popper-transform-origin 兜底，
+   均未注入时回落顶心）。注：confirm 系 Root 受控常驻，进出场都生效；
+   标签/新建/整理弹窗调用点为条件挂载（open=false 即卸载），closed 规则
+   对其自然不触发（关闭仍即时消失，与改前一致） ---- */
+@keyframes qm-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes qm-fade-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes qm-panel-in {
+  from { opacity: 0; transform: translate(-50%, calc(-50% + 8px)) scale(0.97); }
+  to { opacity: 1; transform: translate(-50%, -50%); }
+}
+@keyframes qm-panel-out {
+  from { opacity: 1; transform: translate(-50%, -50%); }
+  to { opacity: 0; transform: translate(-50%, calc(-50% + 8px)) scale(0.97); }
+}
+@keyframes qm-pop-in {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes qm-pop-out {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateY(-4px) scale(0.98); }
+}
+.confirm-overlay[data-state="open"], .detail-dialog-overlay[data-state="open"] { animation: qm-fade-in var(--qm-duration-base) var(--qm-ease-out); }
+.confirm-overlay[data-state="closed"], .detail-dialog-overlay[data-state="closed"] { animation: qm-fade-out var(--qm-duration-fast) var(--qm-ease-in); }
+.confirm-panel[data-state="open"], .detail-dialog[data-state="open"] { animation: qm-panel-in var(--qm-duration-base) var(--qm-ease-out); }
+.confirm-panel[data-state="closed"], .detail-dialog[data-state="closed"] { animation: qm-panel-out var(--qm-duration-fast) var(--qm-ease-in); }
+.search-pop--popper[data-state="open"], .select-content[data-state="open"] {
+  transform-origin: var(--radix-popover-content-transform-origin, var(--radix-popper-transform-origin, top center));
+  animation: qm-pop-in var(--qm-duration-fast) var(--qm-ease-out);
+}
+.search-pop--popper[data-state="closed"], .select-content[data-state="closed"] {
+  transform-origin: var(--radix-popover-content-transform-origin, var(--radix-popper-transform-origin, top center));
+  animation: qm-pop-out var(--qm-duration-fast) var(--qm-ease-in);
+}
+
+/* ---- prefers-reduced-motion 全局归零层 ----
+   覆盖本批新增+存量全部 animation/transition（含 infinite 循环强转 1 次、
+   stagger 延迟归零不留空窗）。0.01ms 而非 0s：保证 animationend/
+   transitionend 事件照常派发——详情页点赞弹跳靠 onAnimationEnd 复位、
+   radix Presence 靠动画结束才卸载 closed 弹层，归零后两者路径不变 ---- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
+    scroll-behavior: auto !important;
+  }
+}
