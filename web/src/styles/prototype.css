@@ -103,6 +103,11 @@
 
 /* 整体放大 10%（用户拍板：所有 UI 尺寸统一放大） */
 html { zoom: 1.1; }
+/* zoom 全局放大对 body 级 fixed 弹层（radix Portal 的 popper wrapper）会二次
+   应用——Floating UI 给的是视觉坐标，写进 zoom 上下文又乘一遍 1.1（实测面板
+   x=614→675、宽 370→407）。包装层反向缩放抵消，视觉坐标精确落位。
+   同类弹层（Popover/Select/未来 DropdownMenu）全部受益。 */
+body > [data-radix-popper-content-wrapper] { zoom: 0.9090909; }
 
 html, body { height: 100%; overflow: hidden; }
 
@@ -355,10 +360,13 @@ body {
 }
 
 /* 排行榜 tab 的榜单周期行（日榜/月榜/周榜/年榜）：顶栏下方独立行；
-   上内边距 2px 使胶囊行中心(≈94)对齐侧栏「首页」项中心，左缘随内容区 24px（用户拍板） */
+   上内边距 0.5px 使胶囊行中心精确对齐侧栏「首页」项中心 94（用户拍板）：
+   胶囊高 37 = 14px 字号 × 1.5 行高 + 8px × 2 内边距，75(顶栏) + 0.5 + 37/2 = 94；
+   旧值 2px 按胶囊高 34 推得，字号上调后行高变 37 未回校，中心下沉 1.5px 造成错位。
+   左缘随内容区 24px */
 .rank-panel {
   flex-shrink: 0;
-  padding: 2px 24px 0;
+  padding: 0.5px 24px 0;
 }
 .rank-tabs { display: flex; align-items: center; gap: 8px; }
 .rank-tab {
