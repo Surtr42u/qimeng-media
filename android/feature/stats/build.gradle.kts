@@ -36,11 +36,20 @@ kotlin {
 
 dependencies {
     implementation(project(":core:ui"))
+    implementation(project(":core:data"))
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.material3)
     implementation(libs.compose.ui.tooling.preview)
 
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.hilt.navigation.compose)
+
+    implementation(libs.kotlinx.coroutines.android)
+
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
+
+    testImplementation(project(":core:testing"))
 }

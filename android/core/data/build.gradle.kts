@@ -36,8 +36,15 @@ dependencies {
     // Flow/协程主源码直用（core:network 的同款依赖不传递到本模块编译类路径）
     implementation(libs.kotlinx.coroutines.android)
 
-    // 客户端本地偏好（搜索历史/网格列数）：DataStore 白名单依赖，与 :core:network 共用同一版本收口
+    // 客户端本地偏好（搜索历史/网格列数/缓存档位）：DataStore 白名单依赖，与 :core:network 共用同一版本收口
     implementation(libs.androidx.datastore.preferences)
+
+    // Coil ImageLoader 全局单例组装（M4-6 C5）：磁盘缓存档位读自本模块 DataStore，
+    // 组装必须与档位仓库同模块（依赖方向：core:data -> core:network 单向，network 无法反向依赖本模块）。
+    // GIF 解码器（coil-gif，同家族白名单）；coil-network-okhttp 取图器经 :core:ui 的 api 传递进
+    // APK classpath 由 ServiceLoader 注册，此处无需声明。
+    implementation(libs.coil.core)
+    implementation(libs.coil.gif)
 
     // 上传队列（M4-5）：WorkManager 白名单依赖 + @HiltWorker（androidx.hilt 同族接线）。
     // 官方来源与版本论证见 libs.versions.toml 的 work 版本注释。

@@ -152,6 +152,7 @@ fun QimengNavHost(
                     onOpenFavorite = { navController.navigate(Routes.FAVORITE) },
                     onOpenHistory = { navController.navigate(Routes.HISTORY) },
                     onOpenAuthors = { navController.navigate(Routes.AUTHORS) },
+                    onOpenUpload = { navController.navigate(Routes.UPLOAD) },
                 )
             }
             composable(Routes.SEARCH) { SearchScreen(onBack = { navController.popBackStack() }) }
