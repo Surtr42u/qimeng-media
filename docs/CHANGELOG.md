@@ -11,6 +11,15 @@
 
 ---
 
+## feat(web): 全局动效现代化——页面过渡 token 化/卡片进场 stagger/弹层统一进出场/reduced-motion 归零层（2026-09-06 第六十九笔）
+
+执行 AI：GLM-5.3-Flash（B 会话）
+
+- **完成项（四件套，纯 CSS 零 TSX 改动零新依赖，只动 `web/src/tokens.css` + `web/src/styles/prototype.css` 末尾 B-2 段）**：①新增缓动 token `--qm-ease-out`（easeOutCubic）/`--qm-ease-in`（easeInCubic）具名常量，时长一律复用既有 `--qm-duration-fast/base/slow` 三档（动效 token 此前全库零消费）；②`.page` page-in 改走 token（.18s→200ms 视觉等价档），13 页切页自动重放行为不变；③`.card`（首页/搜索/相册/集合/我的五页网格共用）进场 stagger——fade+8px 上移，animation-delay 40ms/档、第 13 张起封顶 480ms 防长列表尾卡久等，无限滚动追加卡按自身序号重放属期望行为；补 hover 微交互（translateY(-2px) 浮起 + 封面阴影，新 token `--card-shadow-hover` 浅/深双值，阴影加在 .card--cover 可视面而非透明盒）；④radix 弹层 data-state 进出场统一——confirm 弹窗/标签管理/新建目录/整理弹窗（.detail-dialog 族）+ 顶栏搜索 popover + select 下拉，只用 opacity+小幅 scale/translateY，html zoom:1.1 与 popper wrapper zoom:0.909 补偿公式零接触；closed 态动画经 radix 官方 Animation 指南确认（Presence 挂起卸载，动画完才移除）。
+- **reduced-motion**：新增 `@media (prefers-reduced-motion: reduce)` 全局归零层，覆盖本批新增+存量全部 animation/transition（含 infinite 循环强转 1 次、stagger 延迟一并归零防空窗）；用 0.01ms 而非 0s 保证 animationend/transitionend 照常派发——详情页点赞弹跳 onAnimationEnd 复位与 radix Presence 卸载路径不变。
+- **口径**：存量散点 transition（.pill/.detail-act/.dir-action-btn 等已有效果的）保持原值不动，本批不逐处改字面量规避视觉回归；radix 组件层零改动（className 指回 prototype.css 追加段）。
+- **验收结论**：`npx tsc --noEmit -p tsconfig.app.json` 0 错；`npm --prefix web run build` 成功；`npm --prefix web run lint` 存量 17 告警不属本批（本批改动为 CSS）。隔离实例（18422+新临时数据目录+dev 模式，未碰真实库）headless 文本实测：静止态零漂移（首页网格顶沿 83.05≈§4.5 静止态终值 83.1；首卡五元组 x96.78/y83.05/w263.2/h225.02 在案）；stagger 阶梯实读 0/0.04/0.08/0.12/0.16s；hover 后 transform=translateY(-2)+阴影+0.12s 过渡；confirm 弹窗 open 态 animation-name=qm-panel-in(0.2s)/遮罩 qm-fade-in、取消后 closed 态 qm-panel-out(0.12s) 且动画完才卸载（Presence 闭环实证）；emulate reduced-motion 后 page/card/存量 search 输入框 transition 全 0.01ms；html zoom=1.1 未动。证据目录 %TEMP%\qimeng-b2-evidence\（保留勿删）。
+
 ## feat(web): 文件管理目录树操作化（重命名/移动/删除入回收站/新建子目录）（2026-09-06 第六十八笔）
 
 执行 AI：GLM-5.3-Flash（B 会话·收尾交付）

@@ -57,4 +57,10 @@
   --qm-duration-fast: 120ms;
   --qm-duration-base: 200ms;
   --qm-duration-slow: 360ms;
+
+  /* ---- 动效缓动（B-2 全局动效现代化新增）----
+   * 具名常量（曲线取自 easings.net 标准 cubic 档），样式一律引用 var(--qm-ease-*)，
+   * 禁止散落手写曲线；时长一律复用上方三档 --qm-duration-*，禁止另起档位 */
+  --qm-ease-out: cubic-bezier(0.33, 1, 0.68, 1); /* easeOutCubic：进场/展开，先快后缓 */
+  --qm-ease-in: cubic-bezier(0.32, 0, 0.67, 0); /* easeInCubic：退场/收起，先缓后快 */
 }
