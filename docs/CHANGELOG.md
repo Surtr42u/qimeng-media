@@ -11,6 +11,15 @@
 
 ---
 
+## docs(docs): B 车道收工——夜2 B 链七批全部完成+三轮对抗审查通过（2026-09-06 第七十九笔）
+
+执行 AI：GLM-5.3-Flash（B 会话·调度落档）
+
+- **完成批次与 commit 链**：B-1 文件管理目录树操作化·续做收尾 36af094（两 stash 依序 pop 落地，tsc/build/lint 绿+隔离实例 curl 全链沿用 %TEMP%\qimeng-b1 证据）→ B-2 全局动效现代化 e6fac87（页面过渡 token 化/卡片进场 stagger/弹层 data-state 统一/reduced-motion 归零层，纯 CSS 零 TSX 零新依赖，headless 文本实测零漂移）→ B-3 小清偿 220aba3（facets hooks 合并+收藏页排序口径 favoriteAt desc 落档）→ B-4 /assets 目录过滤协议 26c2126（openapi→make sdk→browse.sql 三查询谓词→sqlc→四类单测→GUIDE_API，reviewer 通过）+ 跟进单测 5a472b5（不存在目录空列表用例）→ B-5 目录树文件行接线 53ba308（useAssetsInDirectory+DirFileList+FileOpsDialogs 共享抽取，重命名/删除/回收站 headless 全链证据）→ B-6 M6 备忘录（仓库外 m6-next-steps.md：Termux 启动设计稿+ffmpeg 停维护后替代方案 15 组来源核实，记账 0e1fd58）→ B-7 文档漂移检测 a1ca92e（GUIDE_API 两处漂移已修：库管理漏列 2 端点+路径计数 rot；OBSERVABILITY/PROJECT_PLAN 零漂移）。自审清偿两笔：5eebfbf（reviewer P3×5）+ 40862ea（删 legacyHistoryLimit 常量，make lint 自 8344920 起首次全绿）。
+- **审查结论**：reviewer 全新上下文对抗审查三轮（B-1~B-3 / B-4 / B-5+清偿）全部**通过**，零未决 P1/P2。
+- **待拍板存量**：仓库外《待拍板-20260905夜2.md》条目 1（✅ 已按建议口径落地 B-4/B-5，待用户翻拍可销）、条目 2（嵌套子树对齐存量问题）、条目 3（M6 ffmpeg 选型：Termux 先行+内嵌形态 jniLibs exec 三件套）；W-4 两条仍在《待拍板-20260905夜集群.md》；A 会话新增条目 4/5 由 A 车道落档。
+- **遗留移交**：①CAPABILITY_MAP 三处漂移（联想建议/推荐偏好页/相册视图已落地仍标缺口）与 openapi /import/qimeng-backup 413 声明缺口、指标埋点缺口（9 族注册恒零值）——均第七十八笔记账待后续批次；②26c2126 曾夹带 A 车道已 git rm 的 android/feature/album 两删除（内容与 M4-2 导航四化一致，仅历史归属瑕疵，已在该笔披露、不重写已推送历史），引用清理待 A 车道提交收尾。
+
 ## docs: B-7 文档漂移检测清偿（2026-09-06 第七十八笔）
 
 执行 AI：GLM-5.3-Flash（B 会话·B-7 批）
