@@ -21,7 +21,7 @@
   --bg: #ffffff;
   /* ===== 散落字面量收敛（2026-09-04）：原规则体内硬编码颜色等值搬入 token（视觉零变化）。
      深色专属值统一放 .dark 块内覆盖定义（2026-09-05 拍板统一写法，原 -dark 后缀变量
-     入 :root 的写法退役）；同值不同语义不合并（如 codec-warn 与 log-badge 各自命名） ===== */
+     入 :root 的写法退役）；同值不同语义不合并（如 log-badge 三组各自命名） ===== */
   /* 封面 / 舞台底面与遮罩 */
   --cover-placeholder: #f1f2f3; /* 卡片占位封面浅底（深色由 .dark .card--cover 覆盖为 --elev） */
   --stage-bg: #000; /* 资产详情媒体舞台黑底 */
@@ -48,9 +48,6 @@
   --log-info-text: #1d4ed8;
   --log-err-bg: #fee2e2;
   --log-err-text: #b91c1c;
-  /* 编码兼容提示条（与日志徽章同值但独立语义，不合并） */
-  --codec-warn-bg: #fef3c7;
-  --codec-warn-text: #b45309;
   /* W-2 确认弹窗（ConfirmDialog）：遮罩与面板阴影（新用途新语义，不与既有同值 token 合并） */
   --overlay-bg: rgba(15, 15, 15, .45); /* 弹窗遮罩 */
   --dialog-shadow: 0 8px 28px rgba(0, 0, 0, .16); /* 弹窗面板阴影（暗色覆盖值见 .dark） */
@@ -86,8 +83,6 @@
   --log-info-text: #93c5fd;
   --log-err-bg: #4a1010;
   --log-err-text: #fca5a5;
-  --codec-warn-bg: #4a3208;
-  --codec-warn-text: #fbbf24;
 }
 
 /* 深色下少量硬编码浅色背景的覆盖 */
@@ -1152,16 +1147,6 @@ button.more-filter,
 }
 .asset-stage img,
 .asset-stage video { max-width: 100%; max-height: 68vh; object-fit: contain; display: block; }
-/* 编码兼容性提示条（hevc/av1 等直链不可播的显式提示，不转码） */
-.codec-warn {
-  padding: 9px 14px;
-  border-radius: 8px;
-  background: var(--codec-warn-bg);
-  color: var(--codec-warn-text);
-  font-size: 13px;
-}
-.dark .codec-warn { background: var(--codec-warn-bg); color: var(--codec-warn-text); }
-
 /* ===== 相册时间分区组（2026-09-03，原型 #5：今天/昨天/周X/yyyy-MM-dd 分组）===== */
 .album-group { margin-bottom: 18px; }
 .album-group-title { display: flex; align-items: baseline; gap: 8px; font-size: 15px; font-weight: 600; color: var(--text-main); }
@@ -1453,7 +1438,7 @@ button.select-trigger:disabled { cursor: not-allowed; opacity: .5; }
 .detail-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
 .detail-side { width: 340px; flex: none; display: flex; flex-direction: column; gap: 16px; }
 /* 首行贴侧栏节奏（§4.5-3 全页首行同规则）：媒体舞台=高卡片顶沿贴顶栏下缘，
-   数值同首页网格 -11.5px；codec-warn 在前时舞台退为普通行不吃偏移 */
+   数值同首页网格 -11.5px */
 .detail-main > .asset-stage:first-child { margin-top: -11.5px; }
 
 /* 标题与信息行 */

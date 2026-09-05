@@ -187,6 +187,7 @@ media-ui-prototype/
 6. **连带修复 671db67 的 `.layout button` 重置存量回归**：重置 (0,1,1) 压过全部单类按钮的 border/background（实测 .follow-btn--idle 白底透明不可见）——pill/seg/more-filter/follow-btn(--idle)/save-btn/confirm-btn--cancel/--primary/--danger + detail-act 共 14 处选择器加 button 前缀提级（select-trigger 先例）；span 消费的 .pill 用选择器列表双写。同日 reviewer P3×2 已修：管理按钮手型提为 `button.pill.detail-tag-manage`、`.dark .upnext-thumb` 深色占位照 .dark .card--cover 模式补齐。
 7. **验收**：tsc/build/lint 全绿（新文件 0 告警）；隔离实例 curl 9 项（like toggle 计数翻转/favorite 双向/tags 替换/follow/recommendations）+ 浏览器全链路（浅/深/窄窗、交互回填、标签全流程、换一批、打点存活、对齐 spread=0.0/舞台顶 83.1）。
 8. **遗留**：图片查看器（缩放/沉浸）与批次导航仍按用户拍板后置；测试注意——PWA Service Worker 会缓存旧构建，改前端重 build 后浏览器要清 SW/缓存再验（本次实测踩坑：computed 样式陈旧+fullPage 截图错乱均源于此）。
+9. **编码兼容提示条已移除（2026-09-05 第五十七笔，用户拍板）**：用户浏览器可直放 hevc，详情页顶部 .codec-warn 黄条是常驻噪声——元素级移除（含 INCOMPATIBLE_CODECS 常量、.codec-warn 样式段、--codec-warn-* token 全清）；播放失败兜底交回 ArtPlayer 错误态。
 
 
 ## 6. 工作树现状（2026-09-02 三轮：原型移植 web 重建，接手必读）

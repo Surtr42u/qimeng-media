@@ -22,13 +22,11 @@ import { ensureSessionId } from '@/hooks/use-session'
  * 点赞/收藏互动行 → 标签行；右栏 = 作者卡（关注）+「接下来播放」推荐栏。
  * 图片/动图 = 签名原件直链大图（"查看永远发原件"）；视频 = ArtPlayer 播放器
  * （W-3：倍速/静音/全屏/断点续播/时间轴标签打点回看，网络逻辑全在
- * hooks/use-progress.ts）。兼容性提示：ffprobe 编码（协议 0006）显示无法
- * 直链播放的编码提示，不转码。打点（DOMAIN_RULES §5）：进入上报 open、
+ * hooks/use-progress.ts）。打点（DOMAIN_RULES §5）：进入上报 open、
  * 视频每次起播上报 play、停留时长上报 dwell（图片视频通用）。
+ * 编码兼容提示条已按用户拍板移除（2026-09-05：用户浏览器可直放 hevc，
+ * 提示条是常驻噪声；播放器播放失败时由 ArtPlayer 自身错误态兜底）。
  */
-
-/** 浏览器 <video> 直链不支持的主流编码（其余编码尝试播放，失败再兜底） */
-const INCOMPATIBLE_CODECS = /^(hevc|hvc1|hev1|av01|av1|vvc)$/i
 
 /** 已看完判定（协议明文口径，客户端推导）：lastPositionSeconds >= durationMs/1000 */
 function isWatched(
@@ -102,17 +100,11 @@ export default function AssetDetailPage() {
   }
 
   const isVideo = d.mediaType === 'video'
-  const codecWarn = isVideo && d.videoCodec && INCOMPATIBLE_CODECS.test(d.videoCodec)
 
   return (
     <div className="page" id="page-asset">
       <div className="detail-layout">
         <div className="detail-main">
-          {codecWarn ? (
-            <div className="codec-warn">
-              此视频编码为 {d.videoCodec}，当前浏览器可能无法直接播放（项目约定始终播放原件、不转码）。
-            </div>
-          ) : null}
           <div className="asset-stage">
             {watched ? <span className="watched-badge">已看完</span> : null}
             {isVideo ? (
