@@ -11,6 +11,17 @@
 
 ---
 
+## docs: B-7 文档漂移检测清偿（2026-09-06 第七十八笔）
+
+执行 AI：GLM-5.3-Flash（B 会话·B-7 批）
+
+- **范围**：四文档漂移检测（GUIDE_API↔openapi 端点集、OBSERVABILITY↔sysmon 指标注册点、CAPABILITY_MAP 三态↔实际能力、PROJECT_PLAN 勾选↔实际进度），只修文档零代码改动。
+- **GUIDE_API.md 直接修复（2 处漂移）**：①速览「库管理」行补齐 b2dc7d3（migration 0007 启停批）漏更的两端点——DELETE /libraries/{id}（删库登记，级联清资产及关联、事件流保留、磁盘与回收站不动）与 PUT /libraries/{id}/enabled（停用仅隐藏浏览面，记录/统计/磁盘全保留），措辞对齐 openapi.yaml:92-130 描述，服务端 handler 实在 libraries.go:236/264；②路径计数 41→50 校正（口径=openapi 全路径总数，4a1f3da 时 36↔36 对齐后 rot——7cee625 已 48 记 40、8344920 已 50 记 41；现与 openapi.yaml 50 路径/62 操作对齐，速览表覆盖全部 50）。
+- **OBSERVABILITY.md 零漂移**：指标表 9 行与 internal/sysmon/metrics.go 注册点一一对应（http_requests_total{endpoint,method,code}/duration 直方图 buckets 5ms~60s/media_bytes_total{kind}/upload_total{result}+upload_bytes_total/sse/scan/library_files/thumb_queue/trash_items+trash_bytes，11 个注册全数在册、无增删改名），不改动。**顺带发现（非文档漂移，接线缺口记账）**：除 upload 族（upload.go:84-159）外其余 9 个指标族全仓无埋点调用点（IncHTTPRequest/SetSSEConnections/SetScanDuration 等注册后零调用），/metrics 输出恒零值——属代码待接线项，待后续服务端批次清偿。
+- **CAPABILITY_MAP.md 三处漂移（不在 B 车道可写清单，记账待权限方修）**：①索引与检索行缺口「检索高亮/联想建议未做」——联想建议已落地（GET /search/suggestions + web 顶栏补全 eda96cf，web/src/hooks/use-suggestions.ts），缺口应余「检索高亮」；②推荐行缺口「推荐偏好设置页 UI（M3 剩余 1 项）」——已落地（PROJECT_PLAN M3 勾选 2026-09-03，web/src/pages/SettingsPage.tsx + use-prefs.ts）；③媒体库行缺口「相册视图」——已落地（AlbumsPage 消费 GET /assets/facets 四维筛选相册页，0d4c9df，web/src/pages/AlbumsPage.tsx）。
+- **PROJECT_PLAN.md 零漂移**：M0-M3 勾选与交付一致；M4 进行中（勾选属 A 车道，不动勿记）；M5/M6/M7+ 未动；本晚 B 链七批均无新里程碑勾选项。
+- **附带记录（协议面缺口，openapi.yaml 非本批可写清单）**：POST /import/qimeng-backup 实际超限回 413 TOO_LARGE（httpapi/errors.go:57，0977190 落地，GUIDE_API 已记）但 openapi.yaml 该端点 responses 未声明 413——待协议侧批次补记。
+
 ## test(api): 目录过滤补不存在目录空列表用例（2026-09-06 第七十七笔）
 
 执行 AI：GLM-5.3-Flash（B 会话·B-4 审查跟进）
