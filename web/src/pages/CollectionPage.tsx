@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { MediaCard } from '@/components/media/MediaCard'
+import { LoadMorePill } from '@/components/ui/load-more-pill'
+import { Pill } from '@/components/ui/pill'
 import {
   useAssetsInfinite,
   assetToCard,
@@ -165,23 +167,15 @@ export default function CollectionPage() {
           {/* 维度行：徽标=各维候选数（不含「全部/收起」——旧版芯片文字口径） */}
           <div className="pill-row" role="group">
             <span className="pill-row-item">
-              <button
-                className={`pill${dim === 'attr' ? ' active' : ''}`}
-                type="button"
-                onClick={() => dimClick('attr')}
-              >
+              <Pill active={dim === 'attr'} onClick={() => dimClick('attr')}>
                 {attrLabel} <span className="pill-count">{attrOptions.length}</span>
-              </button>
+              </Pill>
             </span>
             <span className="pill-row-item">
               <span className="pill-divider" aria-hidden="true" />
-              <button
-                className={`pill${dim === 'type' ? ' active' : ''}`}
-                type="button"
-                onClick={() => dimClick('type')}
-              >
+              <Pill active={dim === 'type'} onClick={() => dimClick('type')}>
                 类型 <span className="pill-count">{typeOptions.length}</span>
-              </button>
+              </Pill>
             </span>
           </div>
           {/* 值行：只展示当前维度胶囊；「收起 ▲」折叠后区域完全隐藏（旧版口径），
@@ -191,35 +185,29 @@ export default function CollectionPage() {
               <div className="pill-row value-row expanded">
                 {dim === 'attr'
                   ? attrOptions.map((o) => (
-                      <button
+                      <Pill
                         key={o.value}
-                        className={`pill${attrSel === o.value ? ' active' : ''}`}
-                        type="button"
+                        active={attrSel === o.value}
                         onClick={() => setAttrSel((v) => (v === o.value ? null : o.value))}
                       >
                         {o.label}
                         <span className="pill-count">{o.count.toLocaleString(LOCALE_ZH)}</span>
-                      </button>
+                      </Pill>
                     ))
                   : (
                     <>
-                      <button
-                        className={`pill${mediaType === null ? ' active' : ''}`}
-                        type="button"
-                        onClick={() => setMediaType(null)}
-                      >
+                      <Pill active={mediaType === null} onClick={() => setMediaType(null)}>
                         全部
-                      </button>
+                      </Pill>
                       {typeOptions.map((o) => (
-                        <button
+                        <Pill
                           key={o.key}
-                          className={`pill${mediaType === o.key ? ' active' : ''}`}
-                          type="button"
+                          active={mediaType === o.key}
                           onClick={() => setMediaType((v) => (v === o.key ? null : (o.key as MediaType)))}
                         >
                           {o.name}
                           <span className="pill-count">{o.fileCount.toLocaleString(LOCALE_ZH)}</span>
-                        </button>
+                        </Pill>
                       ))}
                     </>
                   )}
@@ -250,19 +238,12 @@ export default function CollectionPage() {
             : `该${kindLabel}下暂无内容。`}
         </p>
       )}
-      {found && hasNextPage ? (
-        <p className="grid-empty">
-          <button
-            className="pill"
-            type="button"
-            disabled={isFetching}
-            onClick={() => fetchNextPage()}
-          >
-            {isFetching ? '加载中…' : '加载更多'}
-          </button>
-          <span className="pill-count">共 {items.length} 项</span>
-        </p>
-      ) : null}
+      <LoadMorePill
+        when={found && hasNextPage}
+        fetching={isFetching}
+        count={items.length}
+        onNext={() => fetchNextPage()}
+      />
     </div>
   )
 }

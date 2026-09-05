@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
 import type { AssetSummary } from '@/api/generated'
 import { MediaCard } from '@/components/media/MediaCard'
+import { LoadMorePill } from '@/components/ui/load-more-pill'
+import { Pill } from '@/components/ui/pill'
 import { LOCALE_ZH } from '@/lib/constants'
 import { dateLabel } from '@/lib/format'
 import {
@@ -239,30 +241,25 @@ export default function AlbumsPage() {
           {(Object.keys(DIM_LABELS) as DimKey[]).map((d, i) => (
             <span key={d} className="pill-row-item">
               {i > 0 ? <span className="pill-divider" aria-hidden="true" /> : null}
-              <button
-                className={`pill ${dim === d ? 'active' : ''}`}
-                type="button"
-                onClick={() => setDim(d)}
-              >
+              <Pill active={dim === d} onClick={() => setDim(d)}>
                 {DIM_LABELS[d]} <span className="pill-count">{badgeCount(d)}</span>
-              </button>
+              </Pill>
             </span>
           ))}
         </div>
         {/* 值行：当前维度值胶囊（超阈值默认收起两行） */}
         <div className={`pill-row value-row${expanded ? ' expanded' : ''}`}>
           {dimValues.map(({ label, count, ...opt }) => (
-            <button
+            <Pill
               key={`${opt.kind ?? ''}:${opt.value}`}
-              className={`pill ${isActive(opt) ? 'active' : ''}`}
-              type="button"
+              active={isActive(opt)}
               onClick={() => pickValue(opt)}
             >
               {label}
               {count !== undefined ? (
                 <span className="pill-count">{count.toLocaleString(LOCALE_ZH)}</span>
               ) : null}
-            </button>
+            </Pill>
           ))}
         </div>
         {dimValues.length > VALUE_COLLAPSE_THRESHOLD ? (
@@ -274,14 +271,9 @@ export default function AlbumsPage() {
         <div className="pill-row sort-row">
           <span className="sort-label">排序</span>
           {SORTS.map((s, i) => (
-            <button
-              key={s.label}
-              className={`pill ${sortIdx === i ? 'active' : ''}`}
-              type="button"
-              onClick={() => setSortIdx(i)}
-            >
+            <Pill key={s.label} active={sortIdx === i} onClick={() => setSortIdx(i)}>
               {s.label}
-            </button>
+            </Pill>
           ))}
         </div>
       </section>
@@ -301,19 +293,12 @@ export default function AlbumsPage() {
       {items.length === 0 && !isFetching ? (
         <p className="grid-empty">该筛选组合下暂无内容，换个胶囊试试。</p>
       ) : null}
-      {hasNextPage ? (
-        <p className="grid-empty">
-          <button
-            className="pill"
-            type="button"
-            disabled={isFetching}
-            onClick={() => fetchNextPage()}
-          >
-            {isFetching ? '加载中…' : '加载更多'}
-          </button>
-          <span className="pill-count">共 {items.length} 项</span>
-        </p>
-      ) : null}
+      <LoadMorePill
+        when={hasNextPage}
+        fetching={isFetching}
+        count={items.length}
+        onNext={() => fetchNextPage()}
+      />
     </div>
   )
 }

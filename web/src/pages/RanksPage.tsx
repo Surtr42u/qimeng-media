@@ -5,8 +5,8 @@ import { RankRowList } from '@/components/data/RankRowList'
 import { useAuthors } from '@/hooks/use-authors'
 import { useRankings } from '@/hooks/use-stats'
 import { useTags } from '@/hooks/use-tags'
-import { LOCALE_ZH, MAX_PAGE_SIZE } from '@/lib/constants'
-import { authorDisplayName } from '@/lib/format'
+import { MAX_PAGE_SIZE } from '@/lib/constants'
+import { authorRankRows, tagRankRows } from '@/lib/rank-rows'
 import {
   COLLECTION_AUTHOR,
   COLLECTION_TAG,
@@ -34,25 +34,9 @@ export default function RanksPage() {
   const { data: tags = [] } = useTags()
   const { data: authors = [] } = useAuthors()
 
-  // 标签全量按 fileCount 降序 / 作者榜 = 常看作者全量按浏览数降序（原型 rankAuthorsList：
-  // 仅浏览>0 入榜避免 0 浏览占位，行计数 = 累计浏览次数；点击进集合子页）
-  const tagRows = useMemo(
-    () =>
-      tags
-        .slice()
-        .sort((a, b) => (b.fileCount ?? 0) - (a.fileCount ?? 0))
-        .map((t) => ({ name: t.name ?? '', count: String(t.fileCount ?? 0) })),
-    [tags],
-  )
-  const authorRows = useMemo(
-    () =>
-      authors
-        .filter((a) => (a.viewCount ?? 0) > 0)
-        .slice()
-        .sort((a, b) => (b.viewCount ?? 0) - (a.viewCount ?? 0))
-        .map((a) => ({ name: authorDisplayName(a), count: (a.viewCount ?? 0).toLocaleString(LOCALE_ZH) })),
-    [authors],
-  )
+  // 标签/作者行加工口径单源在 lib/rank-rows.ts（DOMAIN_RULES 口径）；完整榜单页全量展示
+  const tagRows = useMemo(() => tagRankRows(tags), [tags])
+  const authorRows = useMemo(() => authorRankRows(authors), [authors])
 
   return (
     <div className="page" id="page-ranks">

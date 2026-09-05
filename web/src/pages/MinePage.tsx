@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router'
 import type { HistoryItem } from '@/api/generated'
 import { MediaCard } from '@/components/media/MediaCard'
 import { SearchIcon } from '@/components/shell/icons'
+import { LoadMorePill } from '@/components/ui/load-more-pill'
 import { assetToCard, useAssetsInfinite } from '@/hooks/use-assets'
 import { useAuthors, useToggleFollow } from '@/hooks/use-authors'
 import { useHistoryInfinite } from '@/hooks/use-history'
@@ -186,19 +187,12 @@ export default function MinePage() {
             <p className="grid-empty">暂无收藏内容</p>
           ) : null}
         </div>
-        {favQuery.hasNextPage ? (
-          <p className="grid-empty">
-            <button
-              className="pill"
-              type="button"
-              disabled={favQuery.isFetching}
-              onClick={() => favQuery.fetchNextPage()}
-            >
-              {favQuery.isFetching ? '加载中…' : '加载更多'}
-            </button>
-            <span className="pill-count">共 {favItems.length} 项</span>
-          </p>
-        ) : null}
+        <LoadMorePill
+          when={favQuery.hasNextPage}
+          fetching={favQuery.isFetching}
+          count={favItems.length}
+          onNext={() => favQuery.fetchNextPage()}
+        />
       </div>
       <div className="m-pane" id="mpane-history" hidden={tab !== 'history'}>
         <div className="hist-toolbar">
@@ -237,19 +231,12 @@ export default function MinePage() {
         {histGroups.length === 0 && !histQuery.isFetching ? (
           <p className="grid-empty">{query.trim() ? '没有匹配的历史记录' : '暂无浏览记录'}</p>
         ) : null}
-        {histQuery.hasNextPage ? (
-          <p className="grid-empty">
-            <button
-              className="pill"
-              type="button"
-              disabled={histQuery.isFetching}
-              onClick={() => histQuery.fetchNextPage()}
-            >
-              {histQuery.isFetching ? '加载中…' : '加载更多'}
-            </button>
-            <span className="pill-count">共 {histItems.length} 项</span>
-          </p>
-        ) : null}
+        <LoadMorePill
+          when={histQuery.hasNextPage}
+          fetching={histQuery.isFetching}
+          count={histItems.length}
+          onNext={() => histQuery.fetchNextPage()}
+        />
       </div>
     </div>
   )

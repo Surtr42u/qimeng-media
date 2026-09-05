@@ -6,6 +6,7 @@
 
 import type { Tag } from '@/api/generated'
 import { LOCALE_ZH } from '@/lib/constants'
+import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
 import {
   ORDER_OPTIONS,
   PLAYS_OPTIONS,
@@ -45,21 +46,27 @@ function YearRange({
 }) {
   return (
     <span className="f-years">
-      <select aria-label="起始年份" value={from} onChange={(e) => onChange('yearFrom', e.target.value)}>
-        {SEARCH_YEARS.map((y) => (
-          <option key={y} value={y}>
-            {y} 年
-          </option>
-        ))}
-      </select>
+      <Select value={from} onValueChange={(v) => onChange('yearFrom', v)}>
+        <SelectTrigger aria-label="起始年份" />
+        <SelectContent>
+          {SEARCH_YEARS.map((y) => (
+            <SelectItem key={y} value={y}>
+              {y} 年
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
       <span className="f-years-sep">至</span>
-      <select aria-label="结束年份" value={to} onChange={(e) => onChange('yearTo', e.target.value)}>
-        {SEARCH_YEARS.map((y) => (
-          <option key={y} value={y}>
-            {y} 年
-          </option>
-        ))}
-      </select>
+      <Select value={to} onValueChange={(v) => onChange('yearTo', v)}>
+        <SelectTrigger aria-label="结束年份" />
+        <SelectContent>
+          {SEARCH_YEARS.map((y) => (
+            <SelectItem key={y} value={y}>
+              {y} 年
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </span>
   )
 }

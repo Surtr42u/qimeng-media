@@ -1265,3 +1265,128 @@ body {
   color: var(--text-sub);
   margin-bottom: 4px;
 }
+
+/* ===== shadcn/radix 行为组件原型化追加段（2026-09-05，只追加不改既有类）=====
+   口径同 .confirm-* 追加段：radix 只出行为层，组件 className 指回本文件；
+   颜色全走既有 token，零颜色字面量。radix Root/Trigger 是 button 元素，
+   选择器带 button 前缀以压过 .layout button 的 border:none/background:none
+   复位（同特异性，靠本段文件尾部后位取胜） */
+
+/* ---- Popover（TopBar 搜索下拉）：定位交给 radix popper（anchor 下方 8px、
+   水平居中、不翻转，参数由组件 prop 显式给出）；.search-pop 的手写绝对定位
+   与 popper wrapper 的 transform 定位冲突，在此清掉——面板底色/圆角/阴影/
+   内边距/宽度仍由既有 .search-pop 提供 ---- */
+.search-pop--popper {
+  position: relative;
+  top: auto;
+  left: auto;
+  transform: none;
+}
+
+/* ---- Switch（库启用 / 自动接收上传）：逐值复刻原 .settings-switch 隐藏
+   checkbox + <i> 滑块配方（36×20 轨道 / 16px 拇指 / 位移 16px / .15s 过渡） ---- */
+button.settings-switch-track {
+  width: 36px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--border);
+  position: relative;
+  flex-shrink: 0;
+  transition: background .15s;
+}
+button.settings-switch-track[data-state="checked"] { background: var(--qm-primary); }
+.settings-switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  display: block;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--invert);
+  transition: transform .15s;
+}
+button.settings-switch-track[data-state="checked"] .settings-switch-thumb { transform: translateX(16px); }
+button.settings-switch-track:focus-visible { outline: 2px solid var(--qm-primary); outline-offset: 2px; }
+
+/* ---- Select（上传目标库 / 目录浏览选库 / 库类型 / 年份区间 ×2）：trigger 逐值
+   复刻 .f-years select 配方（27px 高 / 8px 圆角 / 12px 字号）；内容面板借
+   .search-pop 同族语言（白底 + 1px 边 + 8px 圆角 + 面板阴影）；超高时内部滚动
+   由 radix viewport（overflow inline 自带）接管，max-height 用 popper 可用高度 ---- */
+button.select-trigger {
+  height: 27px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 12px;
+  font-family: var(--font);
+  color: var(--text-main);
+  background: var(--bg);
+  outline: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+button.select-trigger:focus-visible,
+button.select-trigger[data-state="open"] { border-color: var(--qm-primary); }
+button.select-trigger:disabled { cursor: not-allowed; opacity: .5; }
+.select-trigger-icon { display: inline-flex; flex-shrink: 0; }
+.select-trigger-icon svg { width: 12px; height: 12px; color: var(--icon-faint); }
+.select-content {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--search-pop-shadow);
+  padding: 4px;
+  max-height: var(--radix-select-content-available-height);
+  z-index: 50;
+}
+.select-item {
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: var(--font);
+  color: var(--text-main);
+  cursor: pointer;
+  outline: none;
+  user-select: none;
+}
+.select-item[data-highlighted] { background: var(--hover-bg); }
+.select-item[data-state="checked"] { color: var(--qm-primary); font-weight: 500; }
+
+/* ---- Slider（推荐偏好 9 维，替换原生 input[type=range]——原型层本无 range
+   样式，新语言全 token）：轨道 --border、已选段 --qm-primary、拇指 --qm-primary
+   （与开关 checked 主色同源），描边用页面底色使拇指在轨道上可辨 ---- */
+.slider-root {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 16px;
+  touch-action: none;
+  user-select: none;
+}
+.slider-track {
+  position: relative;
+  height: 6px;
+  width: 100%;
+  border-radius: 999px;
+  background: var(--border);
+}
+.slider-range {
+  position: absolute;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--qm-primary);
+}
+.slider-thumb {
+  display: block;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--qm-primary);
+  box-shadow: 0 0 0 2px var(--bg);
+  outline: none;
+}
+.slider-thumb:hover { background: var(--accent-deep); }
+.slider-thumb:focus-visible { outline: 2px solid var(--qm-primary); outline-offset: 2px; }

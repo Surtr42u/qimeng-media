@@ -16,6 +16,7 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router'
 import type { SearchSuggestion, SearchSuggestionType } from '@/api/generated'
 import { useRecommendSearchWords, useSearchSuggestions } from '@/hooks/use-suggestions'
 import { HOME_TABS, RANK_PERIODS, parseRankPeriod } from '@/lib/home-tabs'
+import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { ChevronDownIcon, ClearIcon, SearchIcon, WinCloseIcon, WinMaxIcon, WinMinIcon } from './icons'
 
 /** 搜索历史 localStorage 键名（本次接真引入，无协议联动） */
@@ -108,14 +109,9 @@ export function TopBar() {
   const { data: recoSuggestion } = useRecommendSearchWords(popOpen && !suggestMode)
   const recoWords = uniqueNames(recoSuggestion?.items ?? [])
 
-  // 点击面板外收起下拉（原型 document click 委托语义）
-  useEffect(() => {
-    const onDocClick = (e: MouseEvent): void => {
-      if (!searchBoxRef.current?.contains(e.target as Node)) setPopOpen(false)
-    }
-    document.addEventListener('click', onDocClick)
-    return () => document.removeEventListener('click', onDocClick)
-  }, [])
+  // 点外/ESC 关闭由 radix Popover 接管（onOpenChange 受控）——原手写 document
+  // click 委托监听已删；.search 包裹层内点击不关面板的语义见 PopoverContent
+  // 的 onInteractOutside 守卫
 
   const enterSearch = (raw: string): void => {
     const q = raw.trim()
@@ -150,6 +146,24 @@ export function TopBar() {
     ? history
     : history.slice(0, HISTORY_VISIBLE_COUNT)
 
+  // radix PopoverContent 公共参数 = 原手写 .search-pop 绝对定位的等价物：
+  // 搜索框（anchor）下方 8px、水平居中、宽度仍由 .search-pop（336px）提供、
+  // 不做碰撞翻转（原绝对定位从不翻转，窗口居中场景也到不了边）
+  const popContentProps = {
+    className: 'search-pop search-pop--popper',
+    side: 'bottom' as const,
+    align: 'center' as const,
+    sideOffset: 8,
+    avoidCollisions: false,
+    // 打开不抢焦点：焦点留在输入框继续打字（radix 默认会把焦点移进面板）
+    onOpenAutoFocus: (e: Event) => e.preventDefault(),
+    // .search 包裹层内点击（定位光标/清空按钮）不关面板——对齐原手写
+    // document click 委托只排除搜索框区域的语义；其余点外/ESC 交给 radix 关闭
+    onInteractOutside: (e: Event) => {
+      if (searchBoxRef.current?.contains(e.target as Node)) e.preventDefault()
+    },
+  }
+
   return (
     <>
       <header className="header">
@@ -167,123 +181,127 @@ export function TopBar() {
             ))}
           </nav>
         </div>
-        <div className="search" ref={searchBoxRef}>
-          <input
-            ref={inputRef}
-            type="text"
-            placeholder="搜索你感兴趣的视频"
-            autoComplete="off"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onFocus={() => setPopOpen(true)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') enterSearch(query)
-            }}
-          />
-          <button
-            className="search-clear"
-            type="button"
-            aria-label="清空搜索词"
-            hidden={query.length === 0}
-            onClick={() => {
-              setQuery('')
-              inputRef.current?.focus()
-            }}
-          >
-            <ClearIcon />
-          </button>
-          <SearchIcon className="search-icon" />
-          {popOpen ? (
-            suggestMode ? (
-              <div className="search-pop">
-                {suggestionsPending ? (
-                  <p className="pop-suggest-hint">正在获取补全…</p>
-                ) : suggestions && suggestions.items.length > 0 ? (
-                  <div className="pop-suggest-list">
-                    {suggestions.items.map((item) => (
-                      <button
-                        key={`${item.type}|${item.name}`}
-                        className="pop-suggest-item"
-                        type="button"
-                        onClick={() => enterSearch(item.name)}
-                      >
-                        <SearchIcon className="pop-suggest-icon" />
-                        <span className="pop-suggest-name">{item.name}</span>
-                        <span className="pop-suggest-badge">{SUGGEST_TYPE_LABELS[item.type]}</span>
-                      </button>
-                    ))}
-                  </div>
+        <Popover open={popOpen} onOpenChange={setPopOpen}>
+          <PopoverAnchor asChild>
+            <div className="search" ref={searchBoxRef}>
+              <input
+                ref={inputRef}
+                type="text"
+                placeholder="搜索你感兴趣的视频"
+                autoComplete="off"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onFocus={() => setPopOpen(true)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') enterSearch(query)
+                }}
+              />
+              <button
+                className="search-clear"
+                type="button"
+                aria-label="清空搜索词"
+                hidden={query.length === 0}
+                onClick={() => {
+                  setQuery('')
+                  inputRef.current?.focus()
+                }}
+              >
+                <ClearIcon />
+              </button>
+              <SearchIcon className="search-icon" />
+              {popOpen ? (
+                suggestMode ? (
+                  <PopoverContent {...popContentProps}>
+                    {suggestionsPending ? (
+                      <p className="pop-suggest-hint">正在获取补全…</p>
+                    ) : suggestions && suggestions.items.length > 0 ? (
+                      <div className="pop-suggest-list">
+                        {suggestions.items.map((item) => (
+                          <button
+                            key={`${item.type}|${item.name}`}
+                            className="pop-suggest-item"
+                            type="button"
+                            onClick={() => enterSearch(item.name)}
+                          >
+                            <SearchIcon className="pop-suggest-icon" />
+                            <span className="pop-suggest-name">{item.name}</span>
+                            <span className="pop-suggest-badge">{SUGGEST_TYPE_LABELS[item.type]}</span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="pop-suggest-hint">没有匹配的补全</p>
+                    )}
+                  </PopoverContent>
                 ) : (
-                  <p className="pop-suggest-hint">没有匹配的补全</p>
-                )}
-              </div>
-            ) : (
-              <div className="search-pop">
-                {history.length > 0 ? (
-                  <div className="pop-block">
-                    <div className="pop-head">
-                      <h3 className="pop-title">搜索历史</h3>
-                      <button
-                        className="pop-clear"
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          clearHistory()
-                        }}
-                      >
-                        清空
-                      </button>
-                    </div>
-                    <div className="pop-history">
-                      {visibleHistory.map((word) => (
-                        <button
-                          key={word}
-                          className="pop-chip"
-                          type="button"
-                          onClick={() => enterSearch(word)}
-                        >
-                          {word}
-                        </button>
-                      ))}
-                    </div>
-                    {history.length > HISTORY_VISIBLE_COUNT ? (
-                      <button
-                        className="pop-more"
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setHistoryExpanded((v) => !v)
-                        }}
-                      >
-                        <span className="pop-more-text">{historyExpanded ? '收起' : '展开更多'}</span>
-                        <ChevronDownIcon />
-                      </button>
+                  <PopoverContent {...popContentProps}>
+                    {history.length > 0 ? (
+                      <div className="pop-block">
+                        <div className="pop-head">
+                          <h3 className="pop-title">搜索历史</h3>
+                          <button
+                            className="pop-clear"
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              clearHistory()
+                            }}
+                          >
+                            清空
+                          </button>
+                        </div>
+                        <div className="pop-history">
+                          {visibleHistory.map((word) => (
+                            <button
+                              key={word}
+                              className="pop-chip"
+                              type="button"
+                              onClick={() => enterSearch(word)}
+                            >
+                              {word}
+                            </button>
+                          ))}
+                        </div>
+                        {history.length > HISTORY_VISIBLE_COUNT ? (
+                          <button
+                            className="pop-more"
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setHistoryExpanded((v) => !v)
+                            }}
+                          >
+                            <span className="pop-more-text">{historyExpanded ? '收起' : '展开更多'}</span>
+                            <ChevronDownIcon />
+                          </button>
+                        ) : null}
+                      </div>
                     ) : null}
-                  </div>
-                ) : null}
-                <div className="pop-block">
-                  <h3 className="pop-title">推荐搜索</h3>
-                  {recoWords.length > 0 ? (
-                    <div className="pop-history">
-                      {recoWords.map((word) => (
-                        <button
-                          key={word}
-                          className="pop-chip"
-                          type="button"
-                          onClick={() => enterSearch(word)}
-                        >
-                          {word}
-                        </button>
-                      ))}
+                    <div className="pop-block">
+                      <h3 className="pop-title">推荐搜索</h3>
+                      {recoWords.length > 0 ? (
+                        <div className="pop-history">
+                          {recoWords.map((word) => (
+                            <button
+                              key={word}
+                              className="pop-chip"
+                              type="button"
+                              onClick={() => enterSearch(word)}
+                            >
+                              {word}
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="pop-reco-hint">暂无推荐词——先扫描媒体库生成补全索引</p>
+                      )}
                     </div>
-                  ) : (
-                    <p className="pop-reco-hint">暂无推荐词——先扫描媒体库生成补全索引</p>
-                  )}
-                </div>
-              </div>
-            )
-          ) : null}
-        </div>
+                  </PopoverContent>
+                )
+              ) : null}
+            </div>
+          </PopoverAnchor>
+        </Popover>
         <div className="header--right">
           <div className="win-controls">
             <button className="win-btn" title="最小化" type="button"><WinMinIcon /></button>

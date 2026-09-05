@@ -3,6 +3,8 @@ import { useNavigate, useSearchParams } from 'react-router'
 import type { CountRange, SizeRange } from '@/api/generated'
 import { MediaCard } from '@/components/media/MediaCard'
 import { ChevronDownIcon } from '@/components/shell/icons'
+import { LoadMorePill } from '@/components/ui/load-more-pill'
+import { Pill } from '@/components/ui/pill'
 import {
   assetToCard,
   useAssetsInfinite,
@@ -239,14 +241,9 @@ export default function SearchPage() {
           行距交给 .page gap 不加额外 padding */}
       <div className="pill-row" role="group" aria-label="内容分区" style={{ padding: '0 24px' }}>
         {PARTITION_OPTIONS.map((pt) => (
-          <button
-            key={pt}
-            type="button"
-            className={`pill${state.partition === pt ? ' active' : ''}`}
-            onClick={() => setFilter('partition', pt)}
-          >
+          <Pill key={pt} active={state.partition === pt} onClick={() => setFilter('partition', pt)}>
             {pt}
-          </button>
+          </Pill>
         ))}
       </div>
       <SearchFilters
@@ -278,19 +275,12 @@ export default function SearchPage() {
           <p className="grid-empty">没有匹配的内容，放宽一点筛选条件试试。</p>
         )}
       </div>
-      {q !== '' && hasNextPage ? (
-        <p className="grid-empty">
-          <button
-            className="pill"
-            type="button"
-            disabled={isFetching}
-            onClick={() => fetchNextPage()}
-          >
-            {isFetching ? '加载中…' : '加载更多'}
-          </button>
-          <span className="pill-count">共 {items.length} 项</span>
-        </p>
-      ) : null}
+      <LoadMorePill
+        when={q !== '' && hasNextPage}
+        fetching={isFetching}
+        count={items.length}
+        onNext={() => fetchNextPage()}
+      />
     </div>
   )
 }

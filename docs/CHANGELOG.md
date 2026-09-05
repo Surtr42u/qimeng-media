@@ -11,6 +11,18 @@
 
 ---
 
+## UI 组件库化与共享组件收拢（2026-09-05 第五十一笔）
+
+执行 AI：GLM-5.3-Flash（主代理派发双路研究 + 三 executor 并行，全过程三次基础设施故障均按兜底续跑恢复；reviewer 全新上下文对抗审查通过）
+
+用户拍板「UI 尽量不手搓、组件库能用就用；同一实现收共享组件」。双路审计（手搓控件清单 + 重复实现簇）定位四类问题，三执行器并行清偿（文件互斥）：
+
+- **E-C 控件库化**：新建 ui/popover|select|slider|switch 四组件（radix-ui 统一包 + confirm-dialog 范本口径：headless 行为层 + prototype 类样式，零 tailwind/零颜色字面量）。TopBar 搜索下拉 Popover 化（手写 document click 监听删除，白得 ESC/焦点管理；面板内容逻辑一字不动）；Switch×2（库启用/自动接收上传）、Select×5（上传目标库/目录浏览/库类型/年份区间×2）、Slider×9（推荐偏好 9 维）全部接线，原生 checkbox/range/select 零残留。
+- **E-B 收拢**：新建 LoadMorePill（5 处手动翻页形态统一，when 参数消化各页渲染条件差异）与 Pill（9 处 className 拼接收拢）；四页 `pill${` 拼接 grep 清零。与首页 useAutoMore 触底自动是两种并存策略，注释互指。
+- **E-A 收拢**：chart-shared.tsx（TIP_STYLE + TrendLegend，修正上批 recharts 迁移的双写遗留）；lib/rank-rows.ts（榜单行加工纯函数，DOMAIN_RULES 口径注释单源——DataPage Top5/RanksPage 全量共用）；lib/pagination.ts（lengthCursorNext 游标判据，use-assets/use-stats 共用）。
+- **明确不做**：环形图两套（DonutCard N 扇区 vs gauge 单值环，形似语义不同，仅注释互指）；纯样式 tabs/胶囊（无行为逻辑）；SearchFilters/SettingsPage 的 pill 拼接（本轮范围外）。
+- **验收**：reviewer 亲跑门禁（tsc -b/build/lint 17 告警 0 错误）+ 六组 grep + 逐文件 diff 对照，全部 PASS；行为差异备案两处——TopBar 下拉新增 ESC 关闭（增强）、Select 无法选回空 placeholder（radix 语义），均与基线一致。MaintenancePage Tooltip labelStyle 视觉无差异为静态论证，待实机目检。
+
 ## 折线图换 recharts：悬停提示库内置，弃手搓覆盖层（2026-09-05 第五十笔）
 
 执行 AI：GLM-5.3-Flash（主代理；用户实机验收第四十九笔拍板「没和曲线对齐，干脆换个自带这个效果的来使用」）

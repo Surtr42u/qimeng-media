@@ -2,6 +2,7 @@ import { useRef, useState, type ChangeEvent, type DragEvent } from 'react'
 import { toast } from 'sonner'
 import type { Library } from '@/api/generated'
 import { DirTreeNodes } from '@/components/manage/DirTree'
+import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
 import { mergeClientConfig, useConfig } from '@/hooks/use-config'
 import { useDirTree } from '@/hooks/use-libraries'
 import { useUploadQueue, type UploadItem } from '@/hooks/use-upload'
@@ -82,12 +83,18 @@ export function UploadCard({ libraries }: { libraries: Library[] }) {
       <div className="rank-head">
         <h3>上传</h3>
         <span className="f-years">
-          <select value={libId} onChange={(e) => onLibChange(e.target.value)} aria-label="上传目标库">
-            <option value="">选择库…</option>
-            {libraries.map((l) => (
-              <option key={l.id} value={l.id}>{l.name}</option>
-            ))}
-          </select>
+          <Select value={libId} onValueChange={onLibChange}>
+            <SelectTrigger aria-label="上传目标库" placeholder="选择库…" />
+            <SelectContent>
+              {/* l.id 协议可选，radix SelectItem 要求非空 string：无 id 的库行
+                  （正常不会出现）本就无法作为上传目标，直接不进下拉 */}
+              {libraries.map((l) =>
+                l.id ? (
+                  <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>
+                ) : null,
+              )}
+            </SelectContent>
+          </Select>
         </span>
       </div>
       <p className="rank-note">

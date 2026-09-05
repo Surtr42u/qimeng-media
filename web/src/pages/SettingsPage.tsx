@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
 import type { ClientConfig, RecommendPrefs } from '@/api/generated'
+import { Slider } from '@/components/ui/slider'
+import { Switch } from '@/components/ui/switch'
 import {
   CONFIG_BOUNDS,
   DEFAULT_CLIENT_CONFIG,
@@ -171,14 +173,14 @@ export default function SettingsPage() {
           <small>64–8192 MB（与配置文件上限取更严者）</small>
         </label>
         <label className="settings-switch">
-          <input
-            type="checkbox"
+          {/* radix Switch 接管行为（Space 切换/aria-checked/焦点环），滑块视觉走
+              .settings-switch-track（复刻原隐藏 checkbox+<i>）；label 文字点击仍联动 */}
+          <Switch
             checked={cfg.upload.autoAccept}
-            onChange={(e) =>
-              setCfgDraft({ ...cfg, upload: { ...cfg.upload, autoAccept: e.target.checked } })
+            onCheckedChange={(checked) =>
+              setCfgDraft({ ...cfg, upload: { ...cfg.upload, autoAccept: checked } })
             }
           />
-          <i aria-hidden="true" />
           <span>自动接收上传</span>
         </label>
       </div>
@@ -209,13 +211,16 @@ export default function SettingsPage() {
         {PREFS_KEYS.map((key) => (
           <label className="settings-field settings-single" key={key}>
             <span>{PREFS_LABELS[key]}</span>
-            <input
-              type="range"
+            {/* radix Slider 替换 input[type=range]：value 单拇指 number[]、
+                onValueChange 取首位；方向键/Home/End/aria-valuenow 由 radix 自带，
+                aria-label 补上原生 label 关联不再命中的可访问名 */}
+            <Slider
               min={0}
               max={1}
               step={0.01}
-              value={prefs[key] ?? 0}
-              onChange={(e) => setPref(key, Number(e.target.value))}
+              value={[prefs[key] ?? 0]}
+              onValueChange={([v]) => setPref(key, v)}
+              aria-label={PREFS_LABELS[key]}
             />
             <small>{Math.round((prefs[key] ?? 0) * 100)}%</small>
           </label>
