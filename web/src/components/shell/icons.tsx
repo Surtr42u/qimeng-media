@@ -140,6 +140,15 @@ export function RefreshIcon({ className }: IconProps) {
   )
 }
 
+/** 回顶部按钮（backtop-fab）——实心三角 ▲，对齐用户参考样式 */
+export function BackTopIcon({ className }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 5.5l7.5 10h-15z" />
+    </svg>
+  )
+}
+
 /** 维护页「文件管理」入口图标（entry-card） */
 export function FolderMonitorIcon({ className }: IconProps) {
   return (

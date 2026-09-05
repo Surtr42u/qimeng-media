@@ -9,17 +9,35 @@ import { Outlet, useLocation } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { Sidebar } from './Sidebar'
 import { TopBar } from './TopBar'
-import { RefreshIcon } from './icons'
+import { RefreshIcon, BackTopIcon } from './icons'
+
+/** 内容区滚动超过该值（布局像素）显示「回到顶部」按钮（阈值用户授权实现自定） */
+const BACK_TOP_THRESHOLD = 400
 
 export function AppShell() {
   const { pathname } = useLocation()
   const contentRef = useRef<HTMLElement>(null)
   const queryClient = useQueryClient()
   const [spinning, setSpinning] = useState(false)
+  const [showBackTop, setShowBackTop] = useState(false)
 
   useEffect(() => {
     contentRef.current?.scrollTo(0, 0)
   }, [pathname])
+
+  // 滚动容器是 .content（window 不滚），显隐跟随其 scrollTop；切页 scrollTo(0,0) 会触发
+  // scroll 事件使按钮自动隐藏，已在顶部时无事件且状态本就为隐藏，无泄漏路径
+  useEffect(() => {
+    const el = contentRef.current
+    if (!el) return
+    const onScroll = (): void => setShowBackTop(el.scrollTop > BACK_TOP_THRESHOLD)
+    el.addEventListener('scroll', onScroll, { passive: true })
+    return () => el.removeEventListener('scroll', onScroll)
+  }, [])
+
+  const backToTop = (): void => {
+    contentRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+  }
 
   const refresh = (): void => {
     // 真实刷新，两条通道分工：
@@ -50,6 +68,16 @@ export function AppShell() {
         onAnimationEnd={() => setSpinning(false)}
       >
         <RefreshIcon />
+      </button>
+      <button
+        className={`backtop-fab${showBackTop ? ' shown' : ''}`}
+        title="回到顶部"
+        type="button"
+        onClick={backToTop}
+        tabIndex={showBackTop ? 0 : -1}
+      >
+        <BackTopIcon />
+        <p>顶部</p>
       </button>
     </div>
   )
