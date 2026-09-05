@@ -2,6 +2,8 @@ package media.qimeng.app
 
 import android.app.Application
 import android.os.Build
+import androidx.hilt.work.HiltWorkerFactory
+import androidx.work.Configuration
 import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
@@ -10,6 +12,7 @@ import coil3.gif.GifDecoder
 import coil3.memory.MemoryCache
 import coil3.request.crossfade
 import dagger.hilt.android.HiltAndroidApp
+import javax.inject.Inject
 
 /**
  * Hilt 应用入口：全 App 依赖注入的根（ADR-0014：新依赖一律走 Hilt，禁手写单例容器）。
@@ -19,9 +22,20 @@ import dagger.hilt.android.HiltAndroidApp
  *   走原件签名直链由 GIF 解码器逐帧渲染；image 类型照旧用服务端缩略图）；
  * - 网络取图器 coil-network-okhttp 经 ServiceLoader 自动注册（classpath 即生效）；
  * - 内存缓存 25% 堆（Coil 惯例档；动图原件体积大，内存缓存优先、磁盘缓存留 M4-6 C5 拍板档）。
+ *
+ * WorkManager 自定义初始化（M4-5 上传队列）：Application 实现 Configuration.Provider
+ * 注入 HiltWorkerFactory（@HiltWorker 官方姿势）；默认初始化器已在 manifest 用 merge rule 移除。
  */
 @HiltAndroidApp
-class QimengApplication : Application(), SingletonImageLoader.Factory {
+class QimengApplication : Application(), Configuration.Provider, SingletonImageLoader.Factory {
+
+    @Inject
+    lateinit var workerFactory: HiltWorkerFactory
+
+    override val workManagerConfiguration: Configuration
+        get() = Configuration.Builder()
+            .setWorkerFactory(workerFactory)
+            .build()
 
     override fun newImageLoader(context: PlatformContext): ImageLoader =
         ImageLoader.Builder(context)

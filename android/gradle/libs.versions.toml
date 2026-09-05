@@ -54,6 +54,13 @@ coroutines = "1.10.2"
 # 来源：https://repo1.maven.org/maven2/io/coil-kt/coil3/ + https://coil-kt.github.io/coil/。
 # 白名单内（ADR-0014 Coil 3），coil-gif 为同家族 GIF 解码模块。
 coil = "3.4.0"
+# WorkManager（2026-09-06 M4-5 引入，上传串行队列）。官方 release 页核查（2026-09-06，
+# https://developer.android.com/jetpack/androidx/releases/work，页面更新 2026-08-11）：
+#   stable 线最新 2.11.2（2.12.0 尚在 rc01，不取非稳定版）；minSdk 23+/compileSdk 33+，
+#   与冻结的 minSdk 26/compileSdk 36 兼容；2.11.2 修复 2.11.0/2.11.1 的网络约束误判
+#   （Android 15+ 断网时 constraint 误通过/后台网络调用失败）——上传队列依赖网络约束，
+#   必须落在此修复线。work-testing 为官方同家族测试件（HANDOVER_APP §4.9 允许口径）。
+work = "2.11.2"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -81,6 +88,10 @@ coil-core = { group = "io.coil-kt.coil3", name = "coil-core", version.ref = "coi
 coil-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coil" }
 coil-gif = { group = "io.coil-kt.coil3", name = "coil-gif", version.ref = "coil" }
 coil-network-okhttp = { group = "io.coil-kt.coil3", name = "coil-network-okhttp", version.ref = "coil" }
+androidx-work-runtime-ktx = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "work" }
+androidx-work-testing = { group = "androidx.work", name = "work-testing", version.ref = "work" }
+androidx-hilt-work = { group = "androidx.hilt", name = "hilt-work", version.ref = "androidxHilt" }
+androidx-hilt-compiler = { group = "androidx.hilt", name = "hilt-compiler", version.ref = "androidxHilt" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 
 [plugins]

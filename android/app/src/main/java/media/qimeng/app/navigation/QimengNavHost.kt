@@ -9,6 +9,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
@@ -33,6 +34,7 @@ import media.qimeng.app.feature.login.LoginScreen
 import media.qimeng.app.feature.search.SearchScreen
 import media.qimeng.app.feature.settings.SettingsScreen
 import media.qimeng.app.feature.stats.StatsScreen
+import media.qimeng.app.feature.upload.UploadScreen
 import media.qimeng.app.session.MainViewModel
 import media.qimeng.app.session.SessionState
 
@@ -49,6 +51,9 @@ object Routes {
 
     /** 覆盖页面：作者管理 */
     const val AUTHORS = "authors"
+
+    /** 覆盖页面：上传（M4-5；入口 = 系统分享接收 / 后续设置页入口，不进底栏） */
+    const val UPLOAD = "upload"
 }
 
 /**
@@ -61,10 +66,15 @@ object Routes {
 fun QimengNavRoot(modifier: Modifier = Modifier) {
     val mainViewModel: MainViewModel = hiltViewModel()
     val sessionState by mainViewModel.sessionState.collectAsStateWithLifecycle()
+    val pendingShareUris by mainViewModel.pendingShareUris.collectAsStateWithLifecycle()
     when (sessionState) {
         SessionState.Loading -> Surface(modifier = modifier.fillMaxSize()) {}
         SessionState.LoggedOut -> LoginScreen(modifier = modifier)
-        SessionState.LoggedIn -> QimengNavHost(modifier = modifier)
+        SessionState.LoggedIn -> QimengNavHost(
+            modifier = modifier,
+            sharedUris = pendingShareUris,
+            onSharedConsumed = mainViewModel::consumeSharedUris,
+        )
     }
 }
 
@@ -83,11 +93,20 @@ fun QimengNavRoot(modifier: Modifier = Modifier) {
 fun QimengNavHost(
     modifier: Modifier = Modifier,
     navController: NavHostController = rememberNavController(),
+    sharedUris: List<String> = emptyList(),
+    onSharedConsumed: () -> Unit = {},
 ) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
     // 双击回顶的上一击时间戳（400ms 窗口；壳层计时，列表页只听广播）
     var lastTabTapTimeMs by remember { mutableLongStateOf(0L) }
+
+    // 系统分享接收（M4-5）：未消费的分享 URI 存在即进上传流（登录后才可达——本组合在 LoggedIn 分支）
+    LaunchedEffect(sharedUris) {
+        if (sharedUris.isNotEmpty()) {
+            navController.navigate(Routes.UPLOAD) { launchSingleTop = true }
+        }
+    }
 
     Scaffold(
         modifier = modifier,
@@ -139,6 +158,13 @@ fun QimengNavHost(
             composable(Routes.FAVORITE) { FavoriteScreen(onBack = { navController.popBackStack() }) }
             composable(Routes.HISTORY) { HistoryScreen(onBack = { navController.popBackStack() }) }
             composable(Routes.AUTHORS) { AuthorScreen(onBack = { navController.popBackStack() }) }
+            composable(Routes.UPLOAD) {
+                UploadScreen(
+                    sharedUris = sharedUris,
+                    onSharedConsumed = onSharedConsumed,
+                    onDone = { navController.popBackStack() },
+                )
+            }
         }
     }
 }

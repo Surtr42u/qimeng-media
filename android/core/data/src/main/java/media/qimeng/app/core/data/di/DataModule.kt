@@ -62,6 +62,10 @@ interface DataModule {
     @Binds
     @Singleton
     fun bindGridPrefsRepository(impl: DataStoreGridPrefsRepository): GridPrefsRepository
+
+    @Binds
+    @Singleton
+    fun bindUploadRepository(impl: media.qimeng.app.core.data.repository.SdkUploadRepository): media.qimeng.app.core.data.repository.UploadRepository
 }
 
 /** 客户端本地偏好 DataStore 限定符（与 :core:network 的 server_config DataStore 区分绑定） */

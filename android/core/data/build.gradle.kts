@@ -39,6 +39,15 @@ dependencies {
     // 客户端本地偏好（搜索历史/网格列数）：DataStore 白名单依赖，与 :core:network 共用同一版本收口
     implementation(libs.androidx.datastore.preferences)
 
+    // 上传队列（M4-5）：WorkManager 白名单依赖 + @HiltWorker（androidx.hilt 同族接线）。
+    // 官方来源与版本论证见 libs.versions.toml 的 work 版本注释。
+    implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.androidx.hilt.work)
+    ksp(libs.androidx.hilt.compiler)
+
+    // 上传响应/错误体解析（M4-5）：moshi 反射（SDK 生成物同款 KotlinJsonAdapterFactory，单版本原则）
+    implementation(libs.moshi.kotlin)
+
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
 
