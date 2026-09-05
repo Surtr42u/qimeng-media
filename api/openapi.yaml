@@ -557,6 +557,7 @@ paths:
       parameters:
         - { name: seed,  in: query, schema: { type: integer, format: int64, default: 0 }, description: 0=稳定排序；>0=刷新打散 }
         - { name: limit, in: query, schema: { type: integer, default: 60, maximum: 200 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0, minimum: 0 }, description: '与 limit 组合做翻页切片：返回按当下打分排序后的 [offset, offset+limit) 切片（越界为空数组）。推荐流每次请求按当下打分重排，同流连续翻页可能混入已见项——由客户端按 assetId 去重兜底' }
         - { name: mediaType, in: query, schema: { $ref: "#/components/schemas/MediaType" } }
         - { name: cosOnly, in: query, schema: { type: boolean, default: false }, description: 'COS 推荐模式（首页 cos tab，对齐旧版「COS 推荐模式」语义）：true=候选集限定 COS 关联资产，同一套十维打分/权重回收/每日惩罚照跑；false=常规流（缺省排除 COS，DOMAIN_RULES §6 隔离）' }
       responses:
@@ -567,6 +568,7 @@ paths:
       parameters:
         - { name: period, in: query, schema: { type: string, enum: [day, week, month, quarter, year, all], default: week } }
         - { name: limit,  in: query, schema: { type: integer, default: 50 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0, minimum: 0 }, description: '与 limit 组合做翻页切片：返回热度降序的 [offset, offset+limit) 切片（越界为空数组）' }
       responses:
         "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/AssetSummary" } } } } }
   /api/v1/stats/overview:

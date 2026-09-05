@@ -100,6 +100,62 @@ func TestRecommendationsBadLimit(t *testing.T) {
 	}
 }
 
+// TestRecommendationsBadOffset：offset 负数 400（协议 minimum: 0）。
+func TestRecommendationsBadOffset(t *testing.T) {
+	env := newTestEnv(t)
+	resp := env.do(t, http.MethodGet, "/api/v1/recommendations?offset=-1", "")
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("offset=-1 期望 400，得到 %d", resp.StatusCode)
+	}
+}
+
+// TestRecommendationsOffsetPaging：offset 翻页无遗漏——page1
+// (offset=0&limit=2) ∪ page2 (offset=2&limit=2) == 全量前 4 条集合
+// （测试库恰 3 项，前 4 条=全量；越界末页自然截短/深越界为空数组）。
+//
+// 每次翻页请求前清空 daily_shown：推荐流每次请求按当下打分重排（协议
+// offset 描述），首页两项的展示回写（-0.8/次）会不均匀地改变后续请求的
+// 排序，令第二页合法地漂移出重复/缺项——那由客户端按 assetId 去重兜底，
+// 不属本用例锁定面。这里锁的是「切片本身无遗漏」：清零后各请求打分基线
+// 一致、序确定，并集必须严格覆盖全量。
+func TestRecommendationsOffsetPaging(t *testing.T) {
+	env := newTestEnv(t)
+	full := recList(t, env, "?limit=4")
+	if len(full) != 3 {
+		t.Fatalf("全量期望 3 条，得到 %d", len(full))
+	}
+	clearDailyShown(t, env)
+	page1 := recList(t, env, "?limit=2&offset=0")
+	clearDailyShown(t, env)
+	page2 := recList(t, env, "?limit=2&offset=2")
+	if len(page1) != 2 {
+		t.Fatalf("page1 期望 2 条，得到 %d", len(page1))
+	}
+	if len(page2) != 1 {
+		t.Fatalf("page2（末页截短）期望 1 条，得到 %d", len(page2))
+	}
+	union := fileNames(append(page1, page2...))
+	for name := range fileNames(full) {
+		if !union[name] {
+			t.Errorf("翻页并集缺少全量项 %s（并集 %v）", name, union)
+		}
+	}
+	// 深越界：offset 落在候选规模之后 → 空数组。
+	if got := recList(t, env, "?limit=2&offset=99"); len(got) != 0 {
+		t.Errorf("offset=99 期望空数组，得到 %d 条", len(got))
+	}
+}
+
+// clearDailyShown 清空当日展示计数（测试夹具操作，非运行库改动）：
+// 供翻页用例在各请求间重置打分基线，见 TestRecommendationsOffsetPaging 注释。
+func clearDailyShown(t *testing.T, env *testEnv) {
+	t.Helper()
+	if _, err := env.conn.ExecContext(context.Background(), "DELETE FROM daily_shown"); err != nil {
+		t.Fatalf("清空 daily_shown 失败: %v", err)
+	}
+}
+
 // TestRecommendationsDailyShown：展示计数先读后写——拉取一次后库内
 // 恰好 3 行各 count=1，再拉取各 count=2（刷新不清零当日计数）。
 func TestRecommendationsDailyShown(t *testing.T) {
