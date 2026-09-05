@@ -102,4 +102,6 @@ jobs:
       - name: 构建 + 单测 + Lint
         run: |
           cd android
-          ./gradlew assembleDebug testDebugUnitTest lintDebug
+          # :core:model 是纯 JVM 模块（kotlin("jvm")）只有 test 任务，testDebugUnitTest 覆盖不到——
+          # 与本机 Makefile app-test 的补账对齐（0ff017a）
+          ./gradlew assembleDebug testDebugUnitTest :core:model:test lintDebug
