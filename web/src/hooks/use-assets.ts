@@ -4,7 +4,7 @@
  * 详情带签名原件直链（origUrl，"查看永远发原件"）。
  */
 
-import { useInfiniteQuery, useMutation, useQuery } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   getApiV1Assets,
   getApiV1AssetsByAssetId,
@@ -12,6 +12,10 @@ import {
   getApiV1Recommendations,
   getApiV1Sources,
   postApiV1EventsView,
+  putApiV1AssetsByAssetIdFavorite,
+  putApiV1AssetsByAssetIdLike,
+  putApiV1AssetsByAssetIdTags,
+  type AssetDetail,
   type AssetSummary,
   type CountRange,
   type SizeRange,
@@ -28,6 +32,7 @@ import {
   ASSETS_QUERY_KEY,
   RECOMMENDATIONS_QUERY_KEY,
   SOURCES_QUERY_KEY,
+  TAGS_QUERY_KEY,
 } from '@/lib/query-keys'
 
 export type MediaType = 'image' | 'animated_image' | 'video'
@@ -203,5 +208,88 @@ export function useReportView() {
       sessionId: string
       seconds?: number
     }) => unwrapSdkResult(postApiV1EventsView({ body })),
+  })
+}
+
+/* ===== 详情页互动（2026-09-05 B站式排版大改：点赞/收藏/标签管理/接下来播放） ===== */
+
+/** 回填详情缓存的口径：互动响应即时回填详情（按钮零延迟反馈），再失效资产
+ *  根键让列表/推荐等旁路计数走服务端权威值——回填只 patch 已有缓存，不造数据。 */
+function patchDetail(
+  qc: ReturnType<typeof useQueryClient>,
+  assetId: string,
+  patch: Partial<AssetDetail>,
+) {
+  qc.setQueryData<AssetDetail>([...ASSETS_QUERY_KEY, 'detail', assetId], (old) =>
+    old ? { ...old, ...patch } : old,
+  )
+  qc.invalidateQueries({ queryKey: ASSETS_QUERY_KEY })
+}
+
+/** 点赞 toggle（PUT like 无 body）：当日已赞则本请求为取消（服务端判定当日，
+ *  前端不做当日限制）；响应 LikeState{likedToday, likeCount} 直接回填。 */
+export function useToggleLike() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (assetId: string) =>
+      unwrapSdkResult(putApiV1AssetsByAssetIdLike({ path: { assetId } })),
+    onSuccess: (state, assetId) =>
+      patchDetail(qc, assetId, { likedToday: state.likedToday, likeCount: state.likeCount }),
+  })
+}
+
+/** 收藏设置（PUT favorite 显式值，非 toggle——由 isFavorite 推导提交值） */
+export function useSetFavorite() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (args: { assetId: string; favorite: boolean }) =>
+      unwrapSdkResult(
+        putApiV1AssetsByAssetIdFavorite({
+          path: { assetId: args.assetId },
+          body: { favorite: args.favorite },
+        }),
+      ),
+    onSuccess: (_res, args) => patchDetail(qc, args.assetId, { isFavorite: args.favorite }),
+  })
+}
+
+/** 资产标签整体替换（PUT tags 是唯一标签端点——保留项也要一并提交，
+ *  DOMAIN_RULES §7；标签池 fileCount 随关联变化同步失效） */
+export function useReplaceAssetTags() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (args: { assetId: string; tagIds: string[] }) =>
+      unwrapSdkResult(
+        putApiV1AssetsByAssetIdTags({
+          path: { assetId: args.assetId },
+          body: { tagIds: args.tagIds },
+        }),
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ASSETS_QUERY_KEY })
+      qc.invalidateQueries({ queryKey: TAGS_QUERY_KEY })
+    },
+  })
+}
+
+/** 「接下来播放」单页（GET /recommendations，详情页右栏）：同类型收窄 +
+ *  seed 打散；seed 入缓存键——换一批即换 seed 重取（同 seed 可复现，
+ *  DOMAIN_RULES §1.1 禁止纯随机）。与首页 useRecommendations 同根键不同
+ *  子族，SSE upload.done 的根键失效同步覆盖本栏。 */
+export function useUpNextList(params: {
+  mediaType?: MediaType
+  cosOnly?: boolean
+  seed: number
+  limit?: number
+}) {
+  const { mediaType, cosOnly = false, seed, limit = 12 } = params
+  return useQuery({
+    queryKey: [...RECOMMENDATIONS_QUERY_KEY, 'upnext', mediaType ?? 'all', cosOnly, seed, limit],
+    queryFn: () =>
+      unwrapSdkResult(
+        getApiV1Recommendations({
+          query: { limit, seed, cosOnly, ...(mediaType ? { mediaType } : {}), offset: 0 },
+        }),
+      ),
   })
 }

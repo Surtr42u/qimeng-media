@@ -164,7 +164,7 @@ media-ui-prototype/
 
 ### 发现项（不在本三批范围，待用户拍板，执行 AI 不擅自扩）
 
-2026-09-04 规划审查发现现版详情页为极简重建版，以下旧壳（M2 v1）曾有、原型版未建的体验**不在三项待办内**，是否补齐待用户拍板：图片查看器（双指缩放/双击还原/左右预加载/沉浸）；详情互动行（点赞/收藏/标签管理弹窗）；批次导航（上一件/下一件）。候选归宿：并入 W-3 一次做完整详情页，或 M4 后回补 Web。**【2026-09-05 用户拍板：M4 后回补 Web，不阻塞 M4 启动；回补批次待排】**
+2026-09-04 规划审查发现现版详情页为极简重建版，以下旧壳（M2 v1）曾有、原型版未建的体验**不在三项待办内**，是否补齐待用户拍板：图片查看器（双指缩放/双击还原/左右预加载/沉浸）；详情互动行（点赞/收藏/标签管理弹窗）；批次导航（上一件/下一件）。候选归宿：并入 W-3 一次做完整详情页，或 M4 后回补 Web。**【2026-09-05 用户拍板：M4 后回补 Web，不阻塞 M4 启动；回补批次待排】**——**同日详情页 B站式排版大改已回补其中两项：详情互动行（点赞/收藏/标签管理弹窗）✅ + 推荐式浏览（「接下来播放」右栏替代批次导航）✅；仍后置：图片查看器、列表上下文批次导航（见上方「详情页 B站式双栏排版大改」节第 8 条）**
 
 ### 六任务批（2026-09-05 用户 /subagent 并行派发，主代理调度 + reviewer 对抗审查）
 
@@ -174,6 +174,19 @@ media-ui-prototype/
 3. **作者页筛选胶囊**（E3，对齐旧版 GUIDE_UI 作者文件页）：常规作者=角色/类型、COS 作者=作品/类型，胶囊带计数（GET /assets/facets，排自身口径，authorId 恒传），点已选切换/不收起、「收起 ▲」折叠；**每维单选**（协议 work/character/mediaType 单值参数，旧版同维多选集合不可表达——记账为协议约束，需多选先扩协议）；作者切换经渲染期重置（React 官方模式，非 useEffect——清 set-state-in-effect 告警）。局部 hook use-collection-facets.ts 系并行冲突规避产物，与 useAssetFacets 近重复，后续可合并（reviewer 建议项 3，不阻塞）。
 4. **删「浏览 N 次」**（E3）：DataPage 作者总览行与 AuthorsPage 行副标题改「N 个文件」（旧版规格无次数元素，R2 核实）；AuthorsPage 行加点击进作者文件页（关注按钮 stopPropagation 防误跳）。
 5. **TXT 导入卡醒目化**（E4）：LibraryManagePage 导入入口复用 UploadCard 的 .upload-drop 虚线焦点区语言（图标+状态感知提示），说明改紧凑小列表，功能逻辑零改动。**同日用户实机拍板去掉下方重复的 save-btn 按钮，导入区成唯一入口**（补 tabIndex+Enter/Space 键盘可达性，f039b98）。
+
+### 详情页 B站式双栏排版大改（2026-09-05，用户指定 B站详情页截图为排版参照，只学排版不学视觉）
+
+> ✅ 完成（第四十六笔；主代理兜底实现——executor 子代理模型并发限流 4 次不可用，researcher/reviewer 正常；reviewer 全新上下文对抗审查 1 轮打回后通过）
+
+1. **布局**：详情页从「舞台+log-table」极简版重写为双栏：左主列=媒体舞台→标题（cosWork ?? fileName 与卡片同口径）→meta 行（浏览·播放·大小·尺寸·日期·出处，间隔点）→点赞/收藏互动行→标签行；右栏=作者卡（displayName+·COS+关注，作者名点击进作者文件页，无作者不渲染）+「接下来播放」行式推荐栏（缩略图+时长角标+两行标题+作者副行，排除当前资产，换一批=换 seed，同类型 recommendations 流——协议无相似推荐参数，用户拍板口径）。窄窗 ≤1000px 单栏降级。新组件 `components/detail/{AuthorCard,AssetTagRow,UpNextList}.tsx`，新样式段在 prototype.css 末尾（.detail-* 前缀 + #page-asset 作用域）。
+2. **新 hooks**（use-assets.ts）：useToggleLike（PUT like 无 body，响应 LikeState 即时回填详情缓存 patchDetail+根键失效）/useSetFavorite（显式值非 toggle）/useReplaceAssetTags（整体替换+TAGS 池失效）/useUpNextList（recommendations 单页，seed 入缓存键，'upnext' 子族不与首页数字键碰撞）。
+3. **标签管理弹窗**（radix Dialog 统一包）：标签池点选+新建（新建自动入勾选），保存一次整体替换提交（DOMAIN_RULES §7）；弹窗按 open 条件挂载（useState 惰性初始化即复位，规避 set-state-in-effect）。
+4. **动效纯 CSS 零新依赖**：hover 提亮/active 0.94 缩放、点赞弹跳 keyframes（onAnimationEnd 复位重触发）、服务态主色实底+图标 fill、换一批图标旋转、radix 弹窗自带。
+5. **打点保真 + reviewer P1 修复**：open/play/dwell/进度上报原样搬移；P1=UpNextList 详情→详情导航同路由不重挂载，open 守卫 useRef(false) 永不重置→新资产 open 漏报——修为 `reportedFor.current` 记已上报资产 id，服务端实证（直进与右栏跳转两资产 viewCount 均=1）。
+6. **连带修复 671db67 的 `.layout button` 重置存量回归**：重置 (0,1,1) 压过全部单类按钮的 border/background（实测 .follow-btn--idle 白底透明不可见）——pill/seg/more-filter/follow-btn(--idle)/save-btn/confirm-btn--cancel/--primary/--danger + detail-act 共 14 处选择器加 button 前缀提级（select-trigger 先例）；span 消费的 .pill 用选择器列表双写。同日 reviewer P3×2 已修：管理按钮手型提为 `button.pill.detail-tag-manage`、`.dark .upnext-thumb` 深色占位照 .dark .card--cover 模式补齐。
+7. **验收**：tsc/build/lint 全绿（新文件 0 告警）；隔离实例 curl 9 项（like toggle 计数翻转/favorite 双向/tags 替换/follow/recommendations）+ 浏览器全链路（浅/深/窄窗、交互回填、标签全流程、换一批、打点存活、对齐 spread=0.0/舞台顶 83.1）。
+8. **遗留**：图片查看器（缩放/沉浸）与批次导航仍按用户拍板后置；测试注意——PWA Service Worker 会缓存旧构建，改前端重 build 后浏览器要清 SW/缓存再验（本次实测踩坑：computed 样式陈旧+fullPage 截图错乱均源于此）。
 
 
 ## 6. 工作树现状（2026-09-02 三轮：原型移植 web 重建，接手必读）
