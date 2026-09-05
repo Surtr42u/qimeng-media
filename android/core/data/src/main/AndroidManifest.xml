@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- 前台服务类型声明（M4-5，随使用方模块走）：API 34+ 长任务 Worker 必须 dataSync 类型，
+         覆盖 WorkManager 内部 SystemForegroundService 的类型声明（官方 foreground-service /
+         WorkManager 长任务文档姿势；lint SpecifyForegroundServiceType 在本模块检查此声明） -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+
+    <application>
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
+    </application>
+
+</manifest>

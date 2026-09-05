@@ -11,6 +11,21 @@
 
 ---
 
+## feat(app): M4-5 上传主通道——系统分享接收/SAF 多选/选库选目录/WorkManager 串行队列+前台通知（2026-09-06 第八十五笔）
+
+执行 AI：GLM-5.3-Flash（A 车道·M4-5 批执行子代理）
+
+- **入口两路（HANDOVER_APP §3 M4-5）**：①系统分享接收——MainActivity 增 SEND/SEND_MULTIPLE intent-filter（image/*+video/*，launchMode=singleTask 保冷/热两条路汇入 onNewIntent），流 URI 经 MainViewModel.pendingShareUris 暂存、壳层导航观察后进上传流（选库/选目录页，MIME 白名单不在 App 侧复制——服务端四道校验唯一口径）；②App 内 SAF `ACTION_OPEN_DOCUMENT` 多选（OpenMultipleDocuments，image/*+video/*）。
+- **目标目录**：GET /dirs（libraryId 必填）目录树递归渲染（展开/收起/点选，根=空串协议口径）+ POST /dirs 幂等新建（对话框输名 → UploadRules.joinDirPath 纯函数拼路径，客户端名单段卫生校验、服务端 NormalizeRelPath 仍唯一权威）。
+- **队列（冻结架构落地）**：WorkManager 2.11.2 串行 unique 链（`beginUniqueWork`+APPEND_OR_REPLACE，官方语义并发=1，避免服务端扫描压力）+ @HiltWorker CoroutineWorker（androidx.hilt:hilt-work 1.3.0 同族接线，Application 实现 Configuration.Provider 注入 HiltWorkerFactory，manifest 移除默认初始化器）+ OkHttp 流式 `application/octet-stream` 直传 content://（不拷缓存；SDK 上传方法只收 java.io.File 故按冻结口径走注入的 OkHttpClient，路径/参数注释与 openapi.yaml 双同步）；前台 dataSync 通知进度（API 34+ 类型声明+FOREGROUND_SERVICE_DATA_SYNC，setForeground 失败降级后台续跑）+ 完成/失败通知（POST_NOTIFICATIONS 33+ 运行时申请，拒绝只影响可见性）。断网/中断恢复走官方 retry 语义：IOException → Result.retry() 指数退避（MIN_BACKOFF_MILLIS 起，上限 MAX_RETRIES=3 次后终局失败）；不加 CONNECTED 约束——依赖系统 VALIDATED 判定会让任务在隔离网段悬置（2026-09-06 模拟器实测），retry 路径覆盖同一恢复语义。
+- **口径（冻结）**：大小上限读 GET /api/v1/config 的 upload.maxBytesMb（入队时现取现判，实时生效口径），超限本地拦截中文文案（「以下文件超过服务端上限 64 MB，已停止上传：m45_big.jpg」）不出网；类型白名单不复制，服务端 4xx Error{code,message} 文案透传展示；服务端冲突自动重命名——UI/完成通知展示最终文件名（m45_t1 (2).jpg 实测）。
+- **测试（新增 34 条单测全绿）**：core:model UploadModelsTest 9 条（超限判定边界/目录名合法性/路径拼装）；core:data UploadWorkSpecTest 9 条（入队载荷往返/缺失键兜底/tag 反查/失败重试状态机——成功携带最终名、4xx 终局透传、未耗尽 retry、耗尽转 failure/进度钳制）+ UploadApiBodiesTest 5 条（4xx 文案透传与非 JSON 兜底/最终名解析）；feature:upload UploadViewModelTest 11 条（拦截文案生成且不入网/部分超限放行其余/批量入队保序/去重/新建目录非法名不发起/切库重载/队列透传）。WorkManager 官方 work-testing 组件经评估未引入：TestListenableWorkerBuilder 需真机 Context，纯 JVM（禁 Robolectric，白名单外）不可用，串行/进度/重试的运行时行为由模拟器文本证据覆盖。
+- **自测（全绿）**：`make app-build`、`make app-test`（全模块 testDebugUnitTest，含 34 条新用例）、`make app-lint`、`make lint` 全部 BUILD SUCCESSFUL/exit 0。模拟器（headless qimeng_api35，adb 全程文本证据，证据存 %TEMP%\qimeng-m45-evidence\）：上传打隔离实例（:18420 临时端口+临时数据目录注册 M45-TestLib 测试库，HEAD 归档构建，8420 真库零接触）——a) 分享 t1 + SAF 多选 t2/big 三文件入队→串行完成→curl 隔离实例 GET /assets?directory=m45-test 立即见 2 新资产、GET /dirs 见 m45-test 节点（「Web 端立即可见」的 App 端替代口径：App 不走 SSE，SSE 失效键历史问题服务端 0a2f5d1 已修）；b) `am start -a android.intent.action.SEND --eu android.intent.extra.STREAM content://media/...` 分享单图→上传页预填→上传成功；c) config 调 64MB 后传 65MB 文件→拦截文案 dump 在案且 logcat 零 enqueue/零 worker start（未出网）；d) config autoAccept=false→上传 403→UI 队列与完成通知均展示透传文案「UPLOAD_DISABLED 上传已被关闭（设置页自动接收上传开关）」（logcat `rejected` 行）；e) `svc wifi disable; svc data disable` 后入队→logcat `start attempt=1`+`retry scheduled reason=网络异常`→恢复网络→10s 退避后 `start attempt=2` 成功，最终文件名 m45_t1 (2).jpg（冲突自动重命名顺带实证）；f) 串行时间线 logcat：08.758 start t1→08.818 success t1→08.862 start t2（t1 成功后才起 t2）。通知权限运行时弹窗实测 Allow；dumpsys notification 见 qm_upload 渠道「上传完成：m45_t2.jpg」等完成通知。
+- 依赖（白名单内 ADR-0014 WorkManager，版本当场锁官方来源）：androidx.work work-runtime-ktx/work-testing 2.11.2（release 页 2026-08-11 更新，stable 最新；2.11.2 含 2.11.0/2.11.1 网络约束误判修复，https://developer.android.com/jetpack/androidx/releases/work）；work-testing 本批评估后未引入（见测试节），toml 已登记供 M4-4 复用。androidx.hilt:hilt-work/hilt-compiler 1.3.0（既有锁版）。
+- 改动文件：android/gradle/libs.versions.toml；android/core/model/UploadModels.kt 与其单测；android/core/data/{build.gradle.kts、src/main/AndroidManifest.xml(新增)、src/main/res/drawable/qm_ic_stat_upload.xml(新增)、repository/UploadRepository.kt+SdkUploadRepository.kt(新增)、upload/UploadOutcome.kt+UploadWorkSpec.kt+AssetUploader.kt+UploadWorker.kt+UploadNotifications.kt(新增)、di/DataModule.kt(补绑定)、upload 两条单测(新增)}；android/core/testing/FakeUploadRepository.kt(新增)；android/feature/upload/{build.gradle.kts、UploadViewModel.kt(新增)、UploadScreen.kt(重写)、UploadViewModelTest.kt(新增)}；android/app/{build.gradle.kts、AndroidManifest.xml、MainActivity.kt、session/MainViewModel.kt、navigation/QimengNavHost.kt、QimengApplication.kt}；文档：HANDOVER_APP.md（批次表勾选）、CHANGELOG.md（本条）。
+
+---
+
 ## fix(server): 指标包装器补 ReaderFrom 委托与回收站刷新超时（埋点批P3清偿）（2026-09-06 第八十四笔）
 
 执行 AI：GLM-5.3-Flash（B 会话·埋点 P3 清偿批）

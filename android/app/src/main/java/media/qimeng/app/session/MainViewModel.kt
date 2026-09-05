@@ -6,6 +6,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -34,6 +35,10 @@ class MainViewModel @Inject constructor(
 
     private val sessionExpired = MutableStateFlow(false)
 
+    /** 待消费的系统分享 URI（M4-5 上传入口①）；壳层进上传流后消费清空 */
+    private val _pendingShareUris = MutableStateFlow<List<String>>(emptyList())
+    val pendingShareUris: StateFlow<List<String>> = _pendingShareUris.asStateFlow()
+
     val sessionState: StateFlow<SessionState> = combine(
         authRepository.isLoggedIn,
         sessionExpired,
@@ -53,5 +58,15 @@ class MainViewModel @Inject constructor(
                 if (loggedIn) sessionExpired.value = false
             }
         }
+    }
+
+    /** 系统分享到达（MainActivity 解包 SEND/SEND_MULTIPLE 后调用；覆盖上一次未消费的分享） */
+    fun receiveSharedUris(uris: List<String>) {
+        _pendingShareUris.value = uris
+    }
+
+    /** 上传流已接手分享内容（壳层导航进上传页后调用，避免重复触发） */
+    fun consumeSharedUris() {
+        _pendingShareUris.value = emptyList()
     }
 }

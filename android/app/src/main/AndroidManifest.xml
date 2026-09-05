@@ -1,8 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- 访问 NAS 服务端（局域网 http）必需；M4-1 起有真实网络请求（探活/登录） -->
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- 上传进度/完成通知（M4-5）：API 33+ 运行时申请，未授权只影响可见性不阻断上传 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- FGS 权限与 dataSync 类型声明在 :core:data（setForeground 使用方模块，随清单合并） -->
 
     <application
         android:name=".QimengApplication"
@@ -15,12 +20,35 @@
 
         <activity
             android:name=".MainActivity"
-            android:exported="true">
+            android:exported="true"
+            android:launchMode="singleTask">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- 系统分享接收（M4-5 上传入口①）：图片/视频的单个与批量分享 -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+                <data android:mimeType="video/*" />
+            </intent-filter>
         </activity>
+
+        <!-- WorkManager 自定义初始化（M4-5）：Application 实现 Configuration.Provider，
+             必须移除默认初始化器（官方 custom-configuration 文档口径，lint 规则
+             RemoveWorkManagerInitializer 同样要求） -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                android:value="androidx.startup"
+                tools:node="remove" />
+        </provider>
     </application>
 
 </manifest>
