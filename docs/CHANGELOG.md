@@ -11,7 +11,26 @@
 
 ---
 
-## feat(web): 详情页 B站式双栏排版大改——互动行/标签管理/作者卡/接下来播放 + 按钮类回归连带修复（2026-09-05 第五十六笔）
+## fix(server): 作者 TXT 匹配补扩展名检查——png/mp4 同基础名不再跨后缀污染（2026-09-05 第五十八笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- **用户实机报告**：详情页「守望先锋  雾子 3.mp4」出现两位作者（cakiiBB + rwt4184）。查 TXT 原文：图集作者.txt 的 rwt4184 块写「雾子 3.png」、视频作者.txt 的 cakiiBB 块写「雾子 3.mp4」——本应各归各，实际两人同时关联了 png+mp4。
+- **根因（用户指认方向正确）**：MatchWorks 翻译时丢失旧算法 `findMatchingMediaLight` 的扩展名检查（`if (hasExt) mediaExt == ext`）——基础名（去扩展名去空格）一致即命中，同名 png/mp4 跨后缀互相污染；且函数注释声称「作品名带扩展名时天然限定同名扩展名」与实现自相矛盾。连带发现既有测试 `RequiresSameExtension` 数据缺「同名不同扩展名」文件，没锁住该行为。
+- **修复**（internal/authoring/match.go）：规则 1 拆两支——作品带媒体扩展名：基础名一致 **且文件扩展名一致**（小写域）；作品不带：基础名一致即命中。比较改 EqualFold 对齐旧 equals ignoreCase。规则 2（无扩展名作品的序号括号容错）不变。
+- **测试**：新增 `TestMatchWorksExtCheckRealCaseKiriko`（实机数据回归：png/mp4 各归各 + 大小写不敏感命中）；补强 `RequiresSameExtension` 数据加 X.png。`go test ./...` 全绿。
+- **存量修正**：重启实机服务后 POST /authors/import-txt/rebuild 统一重建（122 作者/689 关联），雾子 3.png→仅 rwt4184、雾子 3.mp4→仅 cakiiBB，rwt4184 名下与 TXT 完全一致。
+- 文档：DOMAIN_RULES §6「关联方式」行补扩展名检查口径（用户实机拍板）。
+
+## fix(web): 移除 hevc 编码兼容提示条（2026-09-05 第五十七笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- 用户拍板：浏览器可直放 hevc，详情页顶部黄色「此视频编码为 hevc，当前浏览器可能无法直接播放…」提示条是常驻噪声，去除（元素级移除 + INCOMPATIBLE_CODECS 常量 + .codec-warn 样式段 + --codec-warn-* token 全清）。
+- 播放失败兜底交回 ArtPlayer 自身错误态；项目「始终播放原件、不转码」约定不变。
+- tsc / lint / build 全绿。
+
+
 
 执行 AI：GLM-5.3-Flash（主代理；executor 子代理因模型并发限流 4 次不可用，按兜底流程主代理亲自实现，researcher/reviewer 子代理正常派出）
 
