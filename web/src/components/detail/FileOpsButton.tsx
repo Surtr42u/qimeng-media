@@ -1,43 +1,22 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { FolderInput, Trash2 } from 'lucide-react'
-import { toast } from 'sonner'
 import type { AssetDetail } from '@/api/generated'
-import { MoveDialog } from '@/components/manage/MoveDialog'
-import { ConfirmDialog } from '@/components/ui/confirm-dialog'
-import { useDeleteAsset } from '@/hooks/use-file-ops'
+import { FileOpsDialogs } from '@/components/manage/FileOpsDialogs'
 
 /**
- * 详情页文件整理入口（B-1 文件管理操作化）——互动行「整理/删除」按钮 + 弹窗编排。
- * 背景：目录树协议（GET /dirs）只回目录与计数、GET /assets 无目录过滤，
- * 文件行操作在文件管理页无处挂载；详情页有 assetId/libraryId/directory 完整
- * 上下文，是文件三操作（重命名/移动/移入回收站）的可行挂载点（待拍板：
- * 目录树文件行需协议扩展，见 HANDOVER_UI §5）。
- * - 重命名/移动：MoveDialog（POST /move 一个端点两用）；
- * - 删除：ConfirmDialog danger 二次确认，文案明示「移入回收站」语义
- *   （铁律 4：DELETE 永不物理删，恢复走维护页回收站）。删除成功后
- *   navigate(-1) 离开详情（资产已不存在）；toast 挂在根 Toaster 上，
- *   组件卸载后仍可见。
+ * 详情页文件整理入口（B-1 文件管理操作化）——互动行「整理/删除」按钮。
+ * 背景：目录树协议（GET /dirs）只回目录与计数，文件行操作此前在文件管理页
+ * 无处挂载；详情页有 assetId/libraryId/directory 完整上下文，是文件三操作
+ * （重命名/移动/移入回收站）的可行挂载点（B-4 协议补 GET /assets directory
+ * 过滤后，文件管理页目录树文件行同款操作见 DirBrowser/DirFileList）。
+ * B-5：弹窗编排（MoveDialog/删除确认/toast/删除流）抽共享 FileOpsDialogs
+ * （目录树文件行复用同一份），本组件只保留触发按钮与「删除后 navigate(-1)
+ * 离开已删资产」的详情页收尾（toast 挂根 Toaster，跳转后仍可见）。
  */
 export function FileOpsButton({ asset }: { asset: AssetDetail }) {
   const [mode, setMode] = useState<'none' | 'move' | 'delete'>('none')
   const navigate = useNavigate()
-  const deleteAsset = useDeleteAsset()
-
-  const confirmDelete = (): void => {
-    const assetId = asset.id
-    const fileName = asset.fileName ?? ''
-    setMode('none')
-    if (!assetId) return
-    deleteAsset.mutate(assetId, {
-      onSuccess: () => {
-        toast.success(`「${fileName}」已移入回收站（可在维护页恢复）`)
-        navigate(-1)
-      },
-      onError: (err) =>
-        toast.error(`移入回收站失败：${err instanceof Error ? err.message : String(err)}`),
-    })
-  }
 
   return (
     <>
@@ -58,27 +37,16 @@ export function FileOpsButton({ asset }: { asset: AssetDetail }) {
         <b>删除</b>
       </button>
 
-      {mode === 'move' && asset.id && asset.libraryId ? (
-        <MoveDialog
-          open
-          assetId={asset.id}
-          libraryId={asset.libraryId}
-          currentDir={asset.directory ?? ''}
-          currentName={asset.fileName ?? ''}
-          onClose={() => setMode('none')}
-        />
-      ) : null}
-      <ConfirmDialog
-        open={mode === 'delete'}
-        title={`移入回收站「${asset.fileName ?? ''}」？`}
-        description={'文件将移入回收站并从媒体库移除（浏览/点赞等记录保留）。\n可在维护页「回收站」恢复。'}
-        confirmText="移入回收站"
-        cancelText="取消"
-        danger
-        onConfirm={confirmDelete}
-        onOpenChange={(next) => {
-          if (!next) setMode('none')
+      <FileOpsDialogs
+        mode={mode}
+        target={{
+          assetId: asset.id ?? '',
+          libraryId: asset.libraryId ?? '',
+          directory: asset.directory ?? '',
+          fileName: asset.fileName ?? '',
         }}
+        onClose={() => setMode('none')}
+        onDeleted={() => navigate(-1)}
       />
     </>
   )
