@@ -19,7 +19,7 @@ android {
         minSdk = 26
         targetSdk = 36
         versionCode = 1
-        versionName = "0.1.0" // M4-0 工程基建批次
+        versionName = "0.2.0" // M4-2 列表族批次
     }
 
     compileOptions {
@@ -48,7 +48,6 @@ dependencies {
     implementation(project(":feature:home"))
     implementation(project(":feature:login"))
     implementation(project(":feature:all"))
-    implementation(project(":feature:album"))
     implementation(project(":feature:favorite"))
     implementation(project(":feature:history"))
     implementation(project(":feature:search"))

@@ -36,6 +36,9 @@ dependencies {
     // Flow/协程主源码直用（core:network 的同款依赖不传递到本模块编译类路径）
     implementation(libs.kotlinx.coroutines.android)
 
+    // 客户端本地偏好（搜索历史/网格列数）：DataStore 白名单依赖，与 :core:network 共用同一版本收口
+    implementation(libs.androidx.datastore.preferences)
+
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
 

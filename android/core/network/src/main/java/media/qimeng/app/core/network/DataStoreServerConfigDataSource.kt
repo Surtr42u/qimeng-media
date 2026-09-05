@@ -29,10 +29,15 @@ class DataStoreServerConfigDataSource @Inject constructor(
     @Volatile
     private var cachedToken: String? = null
 
+    @Volatile
+    private var cachedServerUrl: String? = null
+
     init {
-        // 进程冷启动预热：把持久化的 token 灌进内存缓存（只取一次，后续靠写穿维持一致）
+        // 进程冷启动预热：把持久化的 token/地址灌进内存缓存（只取一次，后续靠写穿维持一致）
         appScope.launch {
-            cachedToken = dataStore.data.first()[KEY_TOKEN]
+            val snapshot = dataStore.data.first()
+            cachedToken = snapshot[KEY_TOKEN]
+            cachedServerUrl = snapshot[KEY_SERVER_URL]
         }
     }
 
@@ -42,8 +47,11 @@ class DataStoreServerConfigDataSource @Inject constructor(
 
     override fun currentToken(): String? = cachedToken
 
+    override fun currentServerUrl(): String? = cachedServerUrl
+
     override suspend fun updateServerUrl(url: String) {
         dataStore.edit { it[KEY_SERVER_URL] = url }
+        cachedServerUrl = url
     }
 
     override suspend fun updateToken(token: String) {

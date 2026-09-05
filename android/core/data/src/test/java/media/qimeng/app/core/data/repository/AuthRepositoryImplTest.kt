@@ -187,6 +187,7 @@ class AuthRepositoryImplTest {
         override val serverUrl: Flow<String> = url
         override val token: Flow<String?> = tokenState
         override fun currentToken(): String? = tokenState.value
+        override fun currentServerUrl(): String? = url.value.ifEmpty { null }
         override suspend fun updateServerUrl(url: String) { this.url.value = url }
         override suspend fun updateToken(token: String) { tokenState.value = token }
         override suspend fun clearToken() { tokenState.value = null }

@@ -26,6 +26,8 @@ class FakeServerConfigDataSource(
 
     override fun currentToken(): String? = cachedTokenForTest
 
+    override fun currentServerUrl(): String? = serverUrlState.value.ifEmpty { null }
+
     override suspend fun updateServerUrl(url: String) {
         serverUrlState.value = url
     }

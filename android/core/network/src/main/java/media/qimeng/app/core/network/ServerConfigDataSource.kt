@@ -26,6 +26,12 @@ interface ServerConfigDataSource {
      */
     fun currentToken(): String?
 
+    /**
+     * 同步读当前服务端 base URL（业务 Repository 构造 SDK API 用）；null = 从未配置。
+     * 与 [currentToken] 同一缓存机制：登录成功写穿 + 启动预热，业务请求零阻塞等待。
+     */
+    fun currentServerUrl(): String?
+
     /** 记住服务端地址（登录成功时调用；退出登录不清除——下次登录自动带出）。 */
     suspend fun updateServerUrl(url: String)
 
