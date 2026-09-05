@@ -2,13 +2,13 @@ import { useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { toast } from 'sonner'
 import { LOCALE_ZH } from '@/lib/constants'
 import { backupSummaryText, parseLegacyBackupFile, type LegacyBackupSummary } from '@/lib/backup'
-import { DirTreeNodes } from '@/components/manage/DirTree'
+import { DirBrowser } from '@/components/manage/DirBrowser'
 import { UploadCard } from '@/components/manage/UploadCard'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import {
-  useDeleteLibrary, useDirTree, useLibraries, useRegisterLibrary, useScanLibrary, useSetLibraryEnabled,
+  useDeleteLibrary, useLibraries, useRegisterLibrary, useScanLibrary, useSetLibraryEnabled,
 } from '@/hooks/use-libraries'
 import { useExportQimengBackup, useImportQimengBackup } from '@/hooks/use-backup'
 import {
@@ -323,47 +323,8 @@ function BackupCard() {
   )
 }
 
-/** 目录浏览卡（选库 → 拉取该库目录树；行渲染复用共享 DirTreeNodes 只读模式） */
-function DirBrowser({ libraries }: { libraries: Library[] }) {
-  const [libId, setLibId] = useState('')
-  const enabled = libId !== ''
-  // /dirs 的 libraryId 协议必填：未选库 enabled=false 挂起查询（挂起语义见 useDirTree）
-  const { data: tree, isFetching } = useDirTree(libId, enabled)
-
-  return (
-    <div className="rank-card">
-      <div className="rank-head">
-        <h3>目录浏览</h3>
-        <span className="f-years">
-          <Select value={libId} onValueChange={setLibId}>
-            <SelectTrigger aria-label="选择库" placeholder="选择库…" />
-            <SelectContent>
-              {/* l.id 协议可选，radix SelectItem 要求非空 string：无 id 的库行
-                  （正常不会出现）本就无法作为操作目标，直接不进下拉 */}
-              {libraries.map((l) =>
-                l.id ? (
-                  <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>
-                ) : null,
-              )}
-            </SelectContent>
-          </Select>
-        </span>
-      </div>
-      <p className="rank-note">按目录查看各库的文件分布（磁盘现实，含空目录）</p>
-      {!enabled ? (
-        <p className="grid-empty">先在上方选择一个库。</p>
-      ) : isFetching ? (
-        <p className="grid-empty">加载中…</p>
-      ) : tree ? (
-        <ul>
-          <DirTreeNodes node={tree} depth={0} />
-        </ul>
-      ) : (
-        <p className="grid-empty">该库暂无目录。</p>
-      )}
-    </div>
-  )
-}
+/** 目录浏览卡 B-1 拆出为 components/manage/DirBrowser.tsx（页面超 500 行警戒线，
+ *  目录树操作化增量——行内新建子目录——全部落在新组件内） */
 
 export default function LibraryManagePage() {
   const { data: libraries = [], isLoading } = useLibraries()

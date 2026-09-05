@@ -1560,3 +1560,55 @@ button.pill.detail-tag-manage { cursor: pointer; }
    放大 1.1 倍（底部/右缘裁出屏外）。全屏应按物理屏幕 1:1 布局，子树 zoom 归一。 */
 .asset-stage :fullscreen video { max-height: none; }
 :fullscreen { zoom: 1; }
+
+/* ===== B-1 文件管理操作化（2026-09-05）：目录行 hover 操作 + 整理弹窗 =====
+   颜色全走既有 token（§5.8 口径，本段零颜色字面量） */
+
+/* 目录浏览卡的只读行 + 行尾操作（DirTree.tsx renderActions 分支）：
+   行容器 flex（标签/计数沿用 .rank-name 视觉），操作区 hover/focus-within
+   才显示。flex:1 回填行宽——拆包前 .rank-name 是 li 的 flex:1 直接子元素，
+   不回填则行收缩、省略号与行尾错位。显隐只用 opacity 不用 visibility：
+   visibility:hidden 的按钮不可聚焦，:focus-within 永不触发（Tab 键盘
+   路径死路，实测证实）；opacity:0 保持可聚焦，聚焦即现身 */
+.dir-row { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
+.dir-row .rank-name { flex: 1; min-width: 0; }
+.dir-actions {
+  display: inline-flex; align-items: center; gap: 4px;
+  opacity: 0;
+  transition: opacity .15s;
+}
+.dir-row:hover .dir-actions,
+.dir-row:focus-within .dir-actions { opacity: 1; }
+button.dir-action-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 8px;
+  border-radius: 6px; /* 与 .select-item 同圆角节奏 */
+  font-family: var(--font); font-size: 12px; /* 与 .dir-count 同字号 */
+  color: var(--text-sub);
+  cursor: pointer;
+  transition: color .15s, background .15s;
+}
+button.dir-action-btn svg { width: 14px; height: 14px; }
+button.dir-action-btn:hover { color: var(--qm-primary); background: var(--hover-bg); }
+button.dir-action-btn:focus-visible { outline: 2px solid var(--qm-primary); outline-offset: 2px; }
+
+/* 整理弹窗（components/manage/MoveDialog.tsx）：面板复用 .detail-dialog 族，
+   加宽一档给目录树留视野；树区带边框内滚（上传卡 .dir-tree 的容器化变体，
+   类作用域限定在弹窗内，不影响 DirBrowser 的裸 <ul>） */
+.move-dialog { width: min(480px, calc(100vw - 48px)); }
+.move-dir-box {
+  margin-top: 12px;
+  max-height: 260px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px;
+}
+.move-dir-box ul { margin: 0; padding: 0; list-style: none; }
+.move-name-row {
+  display: flex; align-items: center; gap: 8px;
+  margin-top: 12px;
+  font-size: 13px; color: var(--text-sub);
+}
+.move-name-row span { flex: none; }
+.move-name-row .tag-input { flex: 1; }

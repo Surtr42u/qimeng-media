@@ -12,6 +12,7 @@ import { useProgress, useTimelineTags } from '@/hooks/use-progress'
 import VideoPlayer from '@/components/media/video-player'
 import { AuthorCard } from '@/components/detail/AuthorCard'
 import { AssetTagRow } from '@/components/detail/AssetTagRow'
+import { FileOpsButton } from '@/components/detail/FileOpsButton'
 import { UpNextList } from '@/components/detail/UpNextList'
 import { formatBytes, formatCount, formatShortDate } from '@/lib/format'
 import { ensureSessionId } from '@/hooks/use-session'
@@ -164,6 +165,9 @@ export default function AssetDetailPage() {
               <Star />
               <b>{d.isFavorite ? '已收藏' : '收藏'}</b>
             </button>
+            {/* B-1 文件管理操作化：整理（移动/重命名）+ 移入回收站。
+                挂详情页的原因与待拍板口径见 FileOpsButton 头注释 */}
+            <FileOpsButton asset={d} />
           </div>
           <AssetTagRow assetId={assetId!} tags={d.tags ?? []} />
         </div>
