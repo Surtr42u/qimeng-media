@@ -20,3 +20,4 @@
 | ADR-0013 | （废弃）M4 走「旧 UI 照搬 + 数据层网络化」——同日被用户二次拍板推翻，调研结论仍有效（内部批次引用已随 0014 重写过期） | 历史记录；调研结论被 `HANDOVER_APP.md` 引用 | **已废弃（2026-09-04，被 0014 取代）** |
 | ADR-0014 | M4 Android 走 Compose 重建（先进优先，Now in Android 多模块范式），交互规格照搬 GUIDE_UI，复杂自绘控件允许 AndroidView 桥接；minSdk 26 | `android/`（README、HANDOVER_APP 批次任务书）、`AGENTS.md`、`AI_README_FIRST.md`、`docs/PROJECT_PLAN.md` M4 | 已接受（2026-09-04） |
 | ADR-0015 | Android 单机形态：Go 服务端交叉编译进手机（modernc 纯 Go 红利），App 连 localhost，替代旧项目；Termux/App 内嵌两候选形态 | `docs/PROJECT_PLAN.md` M6、`server/`（构建目标）、`android/`（服务器地址配置）、旧项目退役安排 | 已接受（2026-09-04，实施排 M4 后先于 M5） |
+| ADR-0016 | Web 图表库选型 recharts 3.x：折线图悬停提示/参考线/高亮点库内置，主题色走 CSS 变量 token | `web/package.json`、`web/src/components/data/TrendChart.tsx`、`web/src/pages/MaintenancePage.tsx` | 已接受（2026-09-05） |

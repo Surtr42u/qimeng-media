@@ -11,6 +11,17 @@
 
 ---
 
+## 折线图换 recharts：悬停提示库内置，弃手搓覆盖层（2026-09-05 第五十笔）
+
+执行 AI：GLM-5.3-Flash（主代理；用户实机验收第四十九笔拍板「没和曲线对齐，干脆换个自带这个效果的来使用」）
+
+手搓 HTML 覆盖层的提示点与曲线对不齐（SVG preserveAspectRatio=none 拉伸坐标系里，光标位置与最近采样点在两层之间有偏差）。按铁律 9 引入新依赖同步写 ADR-0016：选型 recharts 3.10.1（npm 最新稳定，3.x 为 React 19 原生支持线，官方文档核对 Tooltip props；落选 Chart.js/ECharts/uPlot，理由见 ADR）。
+
+- 数据页趋势图与维护页网络图改 `LineChart/Line/Tooltip/XAxis/YAxis`：悬停提示、竖向参考线（cursor 虚线）、高亮点（activeDot）库内置、精确吸附采样点；主题色直接引用 --qm-primary/--trend-line-sub 变量；x 轴日期刻度由库自动抽稀（替代手写 label 采样行）。
+- 维护页网络图 `isAnimationActive={false}`——2s 滚动刷新防动画重放闪烁。
+- 删除手搓模块 components/data/trend-hover.tsx 与 prototype.css 对应覆盖层样式（.trend-legend 图例保留）；样式注释头同步。
+- 验收：tsc/build/make lint 全绿（16 告警既有存量）；悬停对齐性由库保证，待用户实机目检。
+
 ## 折线图悬停数值反馈 + 图例（2026-09-05 第四十九笔）
 
 执行 AI：GLM-5.3-Flash（主代理，用户实机拍板「没有数值、鼠标过去也不显示数据，要悬停显示所在位置数据」）

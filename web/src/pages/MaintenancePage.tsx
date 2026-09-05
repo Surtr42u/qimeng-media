@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { FolderMonitorIcon, TrashIcon } from '@/components/shell/icons'
-import { TrendHoverOverlay, useTrendHover } from '@/components/data/trend-hover'
 import { useClientLogs } from '@/hooks/use-client-logs'
 import { useSystemStatus } from '@/hooks/use-system-status'
 import { useTrash } from '@/hooks/use-trash'
 import { formatBytes, formatDateTime } from '@/lib/format'
+import { Line, LineChart, ResponsiveContainer, Tooltip, YAxis } from 'recharts'
 
 /** 曲线采样：最近 2 分钟、每 2 秒一点（60 点）；与轮询周期（2s）耦合 */
 const RATE_WINDOW = 60
@@ -107,17 +107,7 @@ export default function MaintenancePage() {
     ]
   }, [rates, status?.uptimeSeconds, diskUsed, diskTotal, diskPct])
 
-  /** 折扣线坐标：600×200 视口，按窗口峰值归一化（峰值 0 时保持底线） */
-  const polyline = (key: 'rx' | 'tx') => {
-    const arr = rates.map((r) => r[key])
-    const max = Math.max(1, ...arr)
-    const span = Math.max(1, arr.length - 1)
-    return arr
-      .map((v, i) => `${((i * 600) / span).toFixed(0)},${(190 - (v / max) * 170).toFixed(0)}`)
-      .join(' ')
-  }
-  // 网络负载曲线悬停取数（覆盖层渲染在 JSX 内，几何换算与 polyline 同公式）
-  const netHover = useTrendHover(rates.length)
+  // 网络负载图已换 recharts（ADR-0016），悬停提示/参考线/高亮点库内置
 
   return (
     <div className="page" id="page-maintenance">
@@ -165,47 +155,47 @@ export default function MaintenancePage() {
             上行
           </span>
         </div>
-        <div
-          className="trend-wrap"
-          ref={netHover.wrapRef}
-          onMouseMove={netHover.onMove}
-          onMouseLeave={netHover.onLeave}
-        >
-          <svg className="trend-svg" viewBox="0 0 600 200" preserveAspectRatio="none" aria-label="网络负载">
-            <polyline points={polyline('rx')} className="line-a" />
-            <polyline points={polyline('tx')} className="line-b" />
-          </svg>
-          {netHover.hover && rates[netHover.hover.idx] ? (
-            <TrendHoverOverlay
-              frac={netHover.hover.frac}
-              items={(() => {
-                // 与 polyline 同公式换算各系列在该点的 y（各按本系列窗口峰值归一化）
-                const point = rates[netHover.hover!.idx]
-                const yFrac = (key: 'rx' | 'tx'): number => {
-                  const arr = rates.map((r) => r[key])
-                  const max = Math.max(1, ...arr)
-                  return (190 - (point[key] / max) * 170) / 200
-                }
-                return [
-                  { yFrac: yFrac('rx'), color: 'var(--qm-primary)' },
-                  { yFrac: yFrac('tx'), color: 'var(--trend-line-sub)' },
-                ]
-              })()}
-              tip={
-                <>
-                  <span className="trend-tip-series">
-                    <i style={{ background: 'var(--qm-primary)' }} />
-                    下行 {formatBytes(rates[netHover.hover.idx].rx)}/s
-                  </span>
-                  <span className="trend-tip-series">
-                    <i style={{ background: 'var(--trend-line-sub)' }} />
-                    上行 {formatBytes(rates[netHover.hover.idx].tx)}/s
-                  </span>
-                </>
-              }
+        {/* recharts 实现（ADR-0016）：悬停提示/参考线/高亮点库内置；
+            isAnimationActive=false——2s 滚动刷新重放动画会持续闪烁 */}
+        <ResponsiveContainer width="100%" height={200}>
+          <LineChart data={rates.map((r) => ({ 下行: r.rx, 上行: r.tx }))} margin={{ top: 6, right: 8, left: 8, bottom: 0 }}>
+            <YAxis hide />
+            <Tooltip
+              cursor={{ stroke: 'var(--text-sub)', strokeDasharray: '4 4', strokeOpacity: 0.4 }}
+              contentStyle={{
+                background: 'var(--pop-chip-hover-bg)',
+                border: 'none',
+                borderRadius: 6,
+                fontSize: 11,
+                color: 'var(--text-main)',
+                padding: '4px 9px',
+              }}
+              itemStyle={{ padding: 0 }}
+              formatter={(value) => `${formatBytes(Number(value))}/s`}
             />
-          ) : null}
-        </div>
+            <Line
+              type="monotone"
+              dataKey="下行"
+              name="下行"
+              stroke="var(--qm-primary)"
+              strokeWidth={2}
+              dot={false}
+              activeDot={{ r: 4, fill: 'var(--qm-primary)' }}
+              isAnimationActive={false}
+            />
+            <Line
+              type="monotone"
+              dataKey="上行"
+              name="上行"
+              stroke="var(--trend-line-sub)"
+              strokeWidth={2}
+              strokeDasharray="4 4"
+              dot={false}
+              activeDot={{ r: 4, fill: 'var(--trend-line-sub)' }}
+              isAnimationActive={false}
+            />
+          </LineChart>
+        </ResponsiveContainer>
       </div>
       <div className="page-head">
         <h2>维护工具</h2>
