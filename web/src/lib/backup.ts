@@ -8,6 +8,11 @@
 
 import type { LegacyBackupImport } from '@/api/generated'
 
+/** 备份导入大小上限（与服务端 legacyImportMaxBody 双写，改动须两侧同步）：
+ * 服务端超限回 413，但浏览器在上传中途被掐断时只能看到 "Failed to fetch"，
+ * 这里前置拦截给可读文案 */
+export const BACKUP_MAX_BYTES = 64 * 1024 * 1024
+
 /** 导入确认摘要（计数取备份内原始条数，与旧版恢复确认弹窗同口径） */
 export interface LegacyBackupSummary {
   fileName: string
@@ -23,6 +28,9 @@ export async function parseLegacyBackupFile(file: File): Promise<{
   payload: LegacyBackupImport
   summary: LegacyBackupSummary
 }> {
+  if (file.size > BACKUP_MAX_BYTES) {
+    throw new Error(`备份文件超过 ${(BACKUP_MAX_BYTES / 1024 / 1024).toFixed(0)}MB 上限，请确认导出的是完整备份`)
+  }
   const text = await file.text()
   let parsed: unknown
   try {

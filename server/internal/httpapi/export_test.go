@@ -8,6 +8,7 @@ package httpapi
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -293,6 +294,33 @@ func TestExportHistoryCap500(t *testing.T) {
 	if file.Data.History == nil || len(*file.Data.History) != 500 {
 		t.Fatalf("history 应截取 500 条: %d", len(derefSlice(file.Data.History)))
 	}
+}
+
+// TestImportBodyAboveGlobalLimit 备份导入端点的 64MB 专属限额：>1MB 全局
+// JSON 上限的备份（6325 文件实测 ≈2.9MB）必须正常导入而非被红线拦截。
+// 修复前用户实测：MaxBytesReader 掐断连接 → 浏览器 "Failed to fetch"。
+func TestImportBodyAboveGlobalLimit(t *testing.T) {
+	e := newTestEnv(t)
+	// ~5000 条 × ~400B 字段 ≈ 2MB，稳定超 1MB 全局上限
+	files := make([]gen.LegacyMediaFile, 0, 5000)
+	for i := range 5000 {
+		name := fmt.Sprintf("file-%04d-%s.mp4", i, strings.Repeat("p", 200))
+		files = append(files, gen.LegacyMediaFile{
+			RecordKey: name, FileName: name,
+			MediaType:        gen.LegacyMediaFileMediaType("video"),
+			SizeBytes:        100,
+			ModifiedAtMillis: 1700000000000,
+		})
+	}
+	code, res := importBackup(t, e, gen.LegacyBackupImport{
+		Format: "qimeng_backup", SchemaVersion: 1, AppIdentifier: "com.qimeng.media",
+		Data: gen.LegacyBackupData{MediaFiles: &files},
+	})
+	if code != http.StatusOK {
+		t.Fatalf("大备份导入应成功，状态 %d", code)
+	}
+	assertCount(t, "mediaFilesTotal", res.MediaFilesTotal, 5000)
+	assertCount(t, "assetsMatched", res.AssetsMatched, 0) // 无同名资产，仅清单导入
 }
 
 // derefSlice 可选段安全取长（nil 记 -1 便于失败信息定位）。

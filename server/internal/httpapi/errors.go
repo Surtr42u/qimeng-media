@@ -2,11 +2,13 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 )
 
 // maxJSONBody 是 JSON 请求体上限（1MB，SECURITY 红线 6：请求体滥用防御）。
-// 本包所有 JSON 解析一律先过它。
+// 本包所有 JSON 解析一律先过它；大载荷端点的例外见 decodeJSONWithLimit。
 const maxJSONBody = 1 << 20
 
 // writeJSON 输出统一 JSON 响应。写失败只可能发生在客户端断开时，
@@ -39,9 +41,23 @@ func (s *Server) internalErr(w http.ResponseWriter, what string, err error) {
 
 // decodeJSON 读取限制大小后的 JSON body。返回 false 时响应已写完。
 func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJSONBody)).Decode(v); err != nil {
-		writeErr(w, http.StatusBadRequest, "INVALID_BODY", "请求体不是合法 JSON")
+	return decodeJSONWithLimit(w, r, v, maxJSONBody)
+}
+
+// decodeJSONWithLimit per-route 上限版本：大载荷端点（旧版备份导入，
+// legacyImportMaxBody）按自身限额放行，其余端点仍走 maxJSONBody 红线。
+// 超限返回 413 TOO_LARGE（区别于格式错误的 400）。
+func decodeJSONWithLimit(w http.ResponseWriter, r *http.Request, v any, maxBytes int64) bool {
+	err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBytes)).Decode(v)
+	if err == nil {
+		return true
+	}
+	var maxErr *http.MaxBytesError
+	if errors.As(err, &maxErr) {
+		writeErr(w, http.StatusRequestEntityTooLarge, "TOO_LARGE",
+			fmt.Sprintf("请求体超过 %d MB 上限", maxBytes>>20))
 		return false
 	}
-	return true
+	writeErr(w, http.StatusBadRequest, "INVALID_BODY", "请求体不是合法 JSON")
+	return false
 }

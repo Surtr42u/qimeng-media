@@ -51,6 +51,14 @@ const (
 	// 下会跨入相邻日界，秒级在日粒度聚合下无歧义）。
 	replayNoonOffset = 12 * time.Hour
 	replayStagger    = time.Second
+
+	// 旧版备份导入的请求体上限：单文件全量 JSON 随库规模增长（实测 6325
+	// 文件 ≈ 2.9MB，已超全局 maxJSONBody 1MB——用户实测表现为浏览器侧
+	// "Failed to fetch"），故本端点单独放宽到 64MB（约可容纳数十万文件级
+	// 库的备份，仍远低于上传通道的磁盘级上限）。
+	// 同步责任：web/src/lib/backup.ts 的 BACKUP_MAX_BYTES 前置拦截与此双写，
+	// 改动时两侧同步。SECURITY 红线 6 的显式例外。
+	legacyImportMaxBody = 64 << 20
 )
 
 // PostApiV1ImportQimengBackup 迁移主流程：匹配→作者→标签→事件回放→
@@ -58,7 +66,7 @@ const (
 // 幂等性保证修复后重跑不翻倍。
 func (s *Server) PostApiV1ImportQimengBackup(w http.ResponseWriter, r *http.Request) { //nolint:revive // 生成接口要求的方法名
 	var req gen.LegacyBackupImport
-	if !decodeJSON(w, r, &req) {
+	if !decodeJSONWithLimit(w, r, &req, legacyImportMaxBody) {
 		return
 	}
 	if req.Format != legacyBackupFormat { // 常量定义在 export.go（同包共用，单一来源）
