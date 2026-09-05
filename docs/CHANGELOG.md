@@ -11,6 +11,17 @@
 
 ---
 
+## 首页三 tab 无限加载：/recommendations 与 /rankings 增 offset 翻页（2026-09-05 第四十三笔）
+
+执行 AI：GLM-5.3-Flash（主代理派发 executor 子代理执行，完整档六任务批之 E1；对抗审查通过后由主代理完成返工项）
+
+用户拍板六任务批（并行子代理模式）之一：首页推荐/cos/排行榜三 tab 统一「下滑自动加载更多 + 刷新全量重排」（对齐旧版 GUIDE_UI：距底 ≤6 项提前加载不重排、下拉刷新 refreshSeed++、每日惩罚照跑）。此前两端点返回裸数组无分页字段，首页一次拉 60 到底即止。
+
+- **协议**：两端点各增 `offset`（default 0 / minimum 0，与 limit 组合翻页切片；推荐流注明每次请求按当下打分排序、同流翻页由客户端按 assetId 去重兜底）；make sdk 三端重建（android 无需改调用，offset 可选）。
+- **服务端**：handler 增 resolvePageOffset（负数 400，风格同 pagination.go）；推荐流 Recommend(Limit=offset+limit) 后 slicePage 切片、IncrementDailyShown 只回写返回项；rankings 同款切片（offset=0 与改前逐字节等价）。新增用例：翻页并集==全量、负 offset 400、rankings offset 翻页。
+- **Web**：useRecommendations 改 useInfiniteQuery（queryKey 根不变，SSE 失效仍覆盖）；新增 useRankingsInfinite 与 use-auto-more.ts（IntersectionObserver 哨兵，rootMargin=6×220px 提前量常量）；HomePage 三 tab 触底加载、推荐/cos 渲染前按 assetId 去重（服务端重打分跨页漂移兜底）、hasNextPage 用原始页长判据；qm:refresh 监听（推荐/cos seed=Date.now() 重排回第一页、排行榜 reloadKey 重置）——事件名经对抗审查返工提为 lib/constants.ts QM_REFRESH_EVENT 单一来源（AppShell 广播端同批接线）。
+- **验收**：go test 14 包全绿、make lint 0 错误（告警回落 16 条既有存量）、tsc/build 绿；reviewer 全新上下文对抗审查（门禁亲跑 + offset 语义/契约/回归/越界八项质询）仅 1 硬项（事件名字面量 3 处手抄）返工闭合。
+
 ## COS 卡片标题 + COS 推荐模式：首页 cos tab 两缺口修复（2026-09-05 第四十二笔）
 
 执行 AI：GLM-5.3-Flash（主代理，用户报障「COS 卡片应显示作品文件夹名」「cos tab 好像没做算法」后查实并拍板执行）

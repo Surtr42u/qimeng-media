@@ -2,8 +2,8 @@
 //
 // 数据流：ListAssetsRecommendInput（单行一聚合，含当日展示计数）+
 // ListAllAssetTags → 组装 []recommend.Item → Recommend（纯函数）→
-// 对返回项逐条写每日展示计数（先读后写：惩罚基于展示前计数，展示后 +1）
-// → buildSummary 输出。Assembly 层职责：行→Item 翻译、偏好装载、计数回写；
+// offset 翻页切片 [offset, offset+limit) → 对切片后返回项逐条写每日
+// 展示计数（先读后写：惩罚基于展示前计数，展示后 +1）→ buildSummary 输出。Assembly 层职责：行→Item 翻译、偏好装载、计数回写；
 // 算法本体在 internal/recommend（无 IO），与旧项目 App 的语义差异
 // （FNV/确定性 RNG 等）见该包 doc.go。
 package httpapi
@@ -26,6 +26,10 @@ import (
 // 视频图片混合（参数语义见 openapi：seed 0=稳定序 / >0=刷新打散）。
 func (s *Server) GetApiV1Recommendations(w http.ResponseWriter, r *http.Request, params gen.GetApiV1RecommendationsParams) {
 	limit, ok := resolvePageLimit(w, params.Limit)
+	if !ok {
+		return
+	}
+	offset, ok := resolvePageOffset(w, params.Offset)
 	if !ok {
 		return
 	}
@@ -90,14 +94,26 @@ func (s *Server) GetApiV1Recommendations(w http.ResponseWriter, r *http.Request,
 		})
 	}
 
+	// 翻页切片（协议 offset，默认 0）：Recommend 产出打分排序后的前
+	// offset+limit 条，再切当前页 [offset, offset+limit)。候选查询仍全量，
+	// ask 以候选规模为上界——深翻页（offset 超过候选数）自然得到空页，
+	// 同时规避 offset 巨大时的 int 溢出。
+	ask := offset + limit
+	if ask < 0 || ask > len(items) { // ask<0 = offset+limit 溢出，按候选全量处理
+		ask = len(items)
+	}
+
 	ordered := recommend.Recommend(items, recommend.Params{
-		Limit: limit,
+		Limit: ask,
 		Seed:  seed,
 		Prefs: s.recommendPrefsFromSettings(r.Context()),
 		Now:   s.now(),
 	})
+	ordered = slicePage(ordered, offset, limit)
 
 	// 展示计数回写：先读后写（惩罚基于展示前计数，展示后 +1）。
+	// 只对切片后真正返回给客户端的项执行——「展示过才 +1」，未展示的
+	// 深页候选不得提前计入当日展示（否则一次深翻页就把全库计入惩罚）。
 	// 失败只警告不阻塞响应——计数是缓存性质可丢弃重建（0001 表注释）；
 	// 单用户场景逐条写即可，不做事务。
 	for _, it := range ordered {
@@ -138,6 +154,36 @@ func parseLastViewed(v any) *time.Time {
 	}
 	t := parseStoreTime(str)
 	return &t
+}
+
+// resolvePageOffset 分页偏移公共语义（协议 offset default=0/minimum=0）：
+// 缺省 0；负数写 400 INVALID_PARAM（错误风格与 pagination.go 的 limit 族
+// 一致）。本应与 limit 族同居 pagination.go，但本次改动范围锁定在推荐/
+// 排行端点两文件，暂居于此——后续若第三个端点需要 offset 再迁。
+func resolvePageOffset(w http.ResponseWriter, offset *int) (int, bool) {
+	if offset == nil {
+		return 0, true
+	}
+	if *offset < 0 {
+		writeErr(w, http.StatusBadRequest, "INVALID_PARAM", "offset 取值范围 >=0")
+		return 0, false
+	}
+	return *offset, true
+}
+
+// slicePage 对已排序结果做 [offset : offset+limit) 切片（推荐/排行端点的
+// 翻页语义，openapi 两端点 offset 参数描述）。越界自然为空：offset 落在
+// 末页之后返回 nil（调用方输出层 make([]T, 0, ...) 保证 JSON 仍为 []，
+// 不落 null）；offset+limit 超出末尾按末页截短。
+func slicePage[T any](ordered []T, offset, limit int) []T {
+	if offset >= len(ordered) {
+		return nil
+	}
+	end := offset + limit
+	if end > len(ordered) {
+		end = len(ordered)
+	}
+	return ordered[offset:end]
 }
 
 // recommendPrefsFromSettings 从 KV 设置装载用户推荐偏好；无记录或解析

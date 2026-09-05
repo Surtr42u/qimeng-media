@@ -63,13 +63,25 @@ export interface AssetListParams {
   yearTo?: number
 }
 
-/** 推荐流（M3 十维算法，seed=0 稳定排序；首页卡片流数据源）。
- *  seed>0 刷新打散（「换一批」）；cosOnly=true 走 COS 推荐模式——
- *  候选集限定 COS 关联资产（首页 cos tab，DOMAIN_RULES §6）。 */
-export function useRecommendations(limit = 60, seed = 0, cosOnly = false) {
-  return useQuery({
+/** 推荐流无限分页（M3 十维算法，协议 GET /recommendations；首页推荐/cos
+ *  tab 触底增量加载的数据源）。
+ *  签名 (limit=60, seed=0, cosOnly=false, offset=0)：offset 是初始翻页偏移
+ *  （useInfiniteQuery 的 initialPageParam，默认 0 向后兼容——既有调用点
+ *  useRecommendations(60)/（60, seed, true）不动即从第一页起）。
+ *  queryKey 只含数据身份 [limit, seed, cosOnly]：offset 是分页游标，按
+ *  TanStack 惯例存于 pageParams 而非缓存键——seed/根键变化（换一批、
+ *  qm:refresh、SSE 失效）时整条流重置回第一页，正是旧版 refreshSeed++
+ *  全量重排语义。
+ *  续页判据 hasNextPage = 「原始返回页长度 === limit」（协议无总数
+ *  字段；渲染层的 assetId 去重会让列表变短，不能拿去判断到底）。 */
+export function useRecommendations(limit = 60, seed = 0, cosOnly = false, offset = 0) {
+  return useInfiniteQuery({
     queryKey: [...RECOMMENDATIONS_QUERY_KEY, limit, seed, cosOnly],
-    queryFn: () => unwrapSdkResult(getApiV1Recommendations({ query: { limit, seed, cosOnly } })),
+    queryFn: ({ pageParam }) =>
+      unwrapSdkResult(getApiV1Recommendations({ query: { limit, seed, cosOnly, offset: pageParam } })),
+    initialPageParam: offset,
+    getNextPageParam: (lastPage, _allPages, lastPageParam) =>
+      lastPage.length === limit ? lastPageParam + limit : undefined,
   })
 }
 

@@ -21,6 +21,10 @@ func (s *Server) GetApiV1Rankings(w http.ResponseWriter, r *http.Request, params
 	if !ok {
 		return
 	}
+	offset, ok := resolvePageOffset(w, params.Offset)
+	if !ok {
+		return
+	}
 	period := string(gen.GetApiV1RankingsParamsPeriodWeek)
 	if params.Period != nil {
 		period = string(*params.Period)
@@ -60,10 +64,11 @@ func (s *Server) GetApiV1Rankings(w http.ResponseWriter, r *http.Request, params
 		})
 	}
 
-	ranked := recommend.Rank(items, period, s.now())
-	if len(ranked) > limit {
-		ranked = ranked[:limit]
-	}
+	// 翻页切片（协议 offset，默认 0）：Rank 返回全量热度降序，当前页 =
+	// [offset, offset+limit)。offset=0 时与既有「截前 limit 条」行为一致；
+	// 越界（offset 落在末页之后）自然为空数组。排行榜不写每日展示计数，
+	// 无「切片后回写」一说。
+	ranked := slicePage(recommend.Rank(items, period, s.now()), offset, limit)
 	out := make([]gen.AssetSummary, 0, len(ranked))
 	for _, it := range ranked {
 		row := rowByID[it.AssetID]

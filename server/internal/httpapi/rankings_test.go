@@ -116,3 +116,30 @@ func TestRankingsLimit(t *testing.T) {
 		t.Fatalf("limit=1 期望只出热度最高的 b.jpg，得到 %v", items)
 	}
 }
+
+// TestRankingsOffsetPaging：offset 翻页切片（协议 offset，默认 0）——
+// 热度序 [b(2), c(1), a(0)]，page1 (offset=0&limit=1) ∪ page2
+// (offset=1&limit=1) == 前两条集合；深越界为空数组。排行榜无展示计数
+// 回写，各请求热度基线一致，无需清库即可锁并集无遗漏。
+func TestRankingsOffsetPaging(t *testing.T) {
+	env := newTestEnv(t)
+	bID, okB := env.assetIDByName(t, "b.jpg")
+	cID, okC := env.assetIDByName(t, "c.mp4")
+	if !okB || !okC {
+		t.Fatal("测试前置失败：测试资产缺失")
+	}
+	reportView(t, env, bID, "s-off1")
+	reportView(t, env, bID, "s-off2")
+	reportView(t, env, cID, "s-off3")
+	first := rankList(t, env, "?period=all&limit=1&offset=0")
+	second := rankList(t, env, "?period=all&limit=1&offset=1")
+	if len(first) != 1 || first[0].FileName == nil || *first[0].FileName != "b.jpg" {
+		t.Fatalf("offset=0 期望热度最高的 b.jpg，得到 %v", first)
+	}
+	if len(second) != 1 || second[0].FileName == nil || *second[0].FileName != "c.mp4" {
+		t.Fatalf("offset=1 期望次高的 c.mp4，得到 %v", second)
+	}
+	if got := rankList(t, env, "?period=all&limit=1&offset=50"); len(got) != 0 {
+		t.Errorf("offset=50（深越界）期望空数组，得到 %d 条", len(got))
+	}
+}
