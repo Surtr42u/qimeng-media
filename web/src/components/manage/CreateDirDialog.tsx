@@ -64,7 +64,7 @@ export function CreateDirDialog({ open, libraryId, parentPath, onClose }: Create
               }}
             />
             <button
-              className="confirm-btn confirm-btn--cancel dir-act-create"
+              className="confirm-btn confirm-btn--cancel"
               onClick={submit}
               disabled={!trimmed || createDir.isPending}
               title="新建子目录"

@@ -1576,7 +1576,7 @@ button.pill.detail-tag-manage { cursor: pointer; }
 .dir-actions {
   display: inline-flex; align-items: center; gap: 4px;
   opacity: 0;
-  transition: opacity .15s;
+  transition: opacity var(--qm-duration-fast);
 }
 .dir-row:hover .dir-actions,
 .dir-row:focus-within .dir-actions { opacity: 1; }
@@ -1587,7 +1587,7 @@ button.dir-action-btn {
   font-family: var(--font); font-size: 12px; /* 与 .dir-count 同字号 */
   color: var(--text-sub);
   cursor: pointer;
-  transition: color .15s, background .15s;
+  transition: color var(--qm-duration-fast), background var(--qm-duration-fast);
 }
 button.dir-action-btn svg { width: 14px; height: 14px; }
 button.dir-action-btn:hover { color: var(--qm-primary); background: var(--hover-bg); }
