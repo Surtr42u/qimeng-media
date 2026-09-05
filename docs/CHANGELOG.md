@@ -11,6 +11,14 @@
 
 ---
 
+## 文档漂移修复：PROJECT_PLAN M4 脚手架条目补勾（2026-09-05 第四十一笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+M4-0 工程基建已于 2026-09-05 交付（cdc422e，CHANGELOG 第三十二笔），但该 commit 对 PROJECT_PLAN.md 只更新了头部门禁描述（CI 四 job→五 job），M4 第一项「项目脚手架」勾选框漏勾——违反变更纪律「每完成一项勾选一项并注明 commit」。本次补勾并注明 commit（核对依据：HANDOVER_APP 批次表 M4-0 ✅ + android/ 工程骨架与 `:sdk` 生成物在盘 + commit 交付清单逐项对应）。纯文档修复，无代码改动。
+
+- `docs/PROJECT_PLAN.md`：M4「项目脚手架」条目 [x] 并注明 commit cdc422e 与交付内容；头部「最后更新」补 2026-09-05 行。
+
 ## 服务端 M6 前置：ffmpeg/ffprobe 二进制路径配置化（2026-09-05 第四十笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理，S 车道 S-3 批次）
