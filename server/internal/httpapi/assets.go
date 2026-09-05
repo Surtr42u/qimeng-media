@@ -362,6 +362,9 @@ func (s *Server) GetApiV1Assets(w http.ResponseWriter, r *http.Request, params g
 	// 批量查询二次装配（协议 GET /assets 描述；搜索走本查询自然获得）。
 	s.fillListAuthorNames(r.Context(), items)
 
+	// cosWork：COS 卡片标题数据源（COS 作品子目录名），同页大小批量装配。
+	s.fillListCosWork(r.Context(), items)
+
 	// likedToday：点赞按钮初始态（当日已赞判定，likes 表当日行存在性），
 	// 同为页大小一次批量查询二次装配。
 	if err := s.fillListLikedToday(r.Context(), items); err != nil {
@@ -450,6 +453,37 @@ func (s *Server) fillListAuthorNames(ctx context.Context, items []gen.AssetSumma
 			names = []string{}
 		}
 		items[i].AuthorNames = &names
+	}
+}
+
+// fillListCosWork 批量装配列表条目的 cosWork（COS 作品子目录名，COS
+// 卡片标题数据源）。仅 COS 库扫描赋值（查询按 cos_work IS NOT NULL
+// 过滤）：未命中条目保持 nil——协议 null 语义 = 客户端回退 fileName，
+// 常规库资产天然不命中。页大小一次查询二次装配（同 fillListAuthorNames
+// 模式）。展示性字段，查询失败记日志降级不阻塞响应（缺字段只影响
+// 卡片标题回退到文件名，无行为后果——与 likedToday 的强口径不同）。
+func (s *Server) fillListCosWork(ctx context.Context, items []gen.AssetSummary) {
+	if len(items) == 0 {
+		return
+	}
+	ids := make([]string, 0, len(items))
+	for i := range items {
+		ids = append(ids, items[i].Id.String())
+	}
+	rows, err := s.q.ListCosWorkForAssets(ctx, jsonString(ids))
+	if err != nil {
+		s.logger.Error("查询资产 COS 作品名失败", "err", err)
+		return
+	}
+	workByAsset := make(map[string]string, len(rows))
+	for _, r := range rows {
+		workByAsset[r.AssetID] = r.CosWork.String
+	}
+	for i := range items {
+		if w, ok := workByAsset[items[i].Id.String()]; ok {
+			ww := w
+			items[i].CosWork = &ww
+		}
 	}
 }
 

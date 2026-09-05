@@ -37,10 +37,20 @@ WHERE
     EXISTS (SELECT 1 FROM libraries le
                 WHERE le.id = a.library_id AND le.enabled = 1)
     AND (sqlc.narg(media_type) IS NULL OR a.media_type = sqlc.narg(media_type))
-    -- COS exclusion (DOMAIN_RULES 6: COS files never appear in regular
-    -- streams) -- same predicate as ListAssetsFilteredDesc in browse.sql.
-    AND NOT EXISTS (
-        SELECT 1 FROM asset_authors aa
-        JOIN authors au ON au.id = aa.author_id
-        WHERE aa.asset_id = a.asset_id AND au.type = 'cos')
+    -- COS isolation vs COS-only mode (DOMAIN_RULES 6): cos_only = 0 keeps
+    -- the historical regular-stream exclusion (COS never enters regular
+    -- streams); cos_only = 1 restricts candidates to COS-linked assets
+    -- (home cos tab = legacy "COS recommend mode": same scoring, same
+    -- daily-shown penalty). Two explicit branches keep the param strictly
+    -- 0/1 two-valued (no NULL three-valued-logic rows) -- same shape as
+    -- the browse partition predicate in browse.sql. Handler must always
+    -- pass 0 or 1 (never NULL).
+    AND ((sqlc.arg(cos_only) = 1 AND EXISTS (
+              SELECT 1 FROM asset_authors aacos
+              JOIN authors aucos ON aucos.id = aacos.author_id
+              WHERE aacos.asset_id = a.asset_id AND aucos.type = 'cos'))
+         OR (sqlc.arg(cos_only) = 0 AND NOT EXISTS (
+              SELECT 1 FROM asset_authors aa
+              JOIN authors au ON au.id = aa.author_id
+              WHERE aa.asset_id = a.asset_id AND au.type = 'cos')))
 ORDER BY a.asset_id;

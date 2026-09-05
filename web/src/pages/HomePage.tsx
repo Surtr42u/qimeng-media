@@ -1,8 +1,8 @@
 import { useNavigate, useSearchParams } from 'react-router'
-import { useMemo } from 'react'
+import { useState } from 'react'
 import { MediaCard } from '@/components/media/MediaCard'
 import { ContentRankGrid } from '@/components/data/ContentRankGrid'
-import { assetToCard, useAssetsInfinite, useRecommendations } from '@/hooks/use-assets'
+import { assetToCard, useRecommendations } from '@/hooks/use-assets'
 import { useRankings } from '@/hooks/use-stats'
 import { parseRankPeriod, type HomeTabKey } from '@/lib/home-tabs'
 
@@ -11,7 +11,8 @@ import { parseRankPeriod, type HomeTabKey } from '@/lib/home-tabs'
  * TopBar 只写、本页只读——刷新/直达不丢态）。
  *   - recommend（缺省）：推荐卡片流（GET /recommendations，M3 十维推荐算法，
  *     常规流不含 COS——DOMAIN_RULES §6 隔离）；
- *   - cos：COS 分区浏览流（GET /assets cosOnly=true；COS 资产独立入口）；
+ *   - cos：COS 推荐模式（GET /recommendations?cosOnly=true——旧版首页 COS
+ *     tab 语义，同一套十维打分/每日惩罚跑在 COS 子集上，seed 换一批）；
  *   - hot：内容榜（GET /rankings，?period= 周期由顶栏周期行写入，缺省日榜；
  *     纯热度口径 view+play+like，DOMAIN_RULES §2）。
  * 卡片点击进详情（图片大图/视频播放）。
@@ -20,19 +21,12 @@ export default function HomePage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const tab: HomeTabKey = (searchParams.get('tab') as HomeTabKey) ?? 'recommend'
-
-  // cos / hot 两个 tab 的流式数据（react-query 按 params 缓存；切换 tab 即换 key）
-  const cosStream = useAssetsInfinite({ cosOnly: true, sort: 'default', order: 'desc', limit: 60 }, tab === 'cos')
-  const cosItems = useMemo(() => cosStream.data?.pages.flatMap((p) => p.items ?? []) ?? [], [cosStream.data])
   const period = parseRankPeriod(searchParams.get('period'))
   const hotRank = useRankings(period, 60)
 
   const openDetail = (id?: string): void => {
     if (id) navigate(`/app/asset/${id}`)
   }
-  const cosActive = tab === 'cos'
-  const hotActive = tab === 'hot'
-  const isLoading = cosActive ? cosStream.isFetching : hotActive ? hotRank.isLoading : false
 
   return (
     <div className="page" id="page-home">
@@ -55,30 +49,7 @@ export default function HomePage() {
         <div className="grid">
           {tab === 'recommend'
             ? <RecommendGrid onOpen={openDetail} />
-            : cosItems.map((a) => (
-                <MediaCard
-                  key={a.id}
-                  {...assetToCard(a)}
-                  onClick={() => openDetail(a.id)}
-                />
-              ))}
-          {isLoading && cosActive && <p className="grid-empty">加载中…</p>}
-          {!isLoading && cosActive && cosItems.length === 0 && (
-            <p className="grid-empty">暂无 COS 内容——先到「维护 → 文件管理」注册 COS 媒体库并扫描。</p>
-          )}
-          {cosActive && cosStream.hasNextPage && (
-            <p className="grid-empty">
-              <button
-                className="pill"
-                type="button"
-                disabled={cosStream.isFetching}
-                onClick={() => cosStream.fetchNextPage()}
-              >
-                {cosStream.isFetching ? '加载中…' : '加载更多'}
-              </button>
-              <span className="pill-count">共 {cosItems.length} 项</span>
-            </p>
-          )}
+            : <CosRecommendGrid onOpen={openDetail} />}
         </div>
       )}
     </div>
@@ -100,6 +71,40 @@ function RecommendGrid({ onOpen }: { onOpen: (id?: string) => void }) {
       {isLoading && <p className="grid-empty">加载中…</p>}
       {!isLoading && items.length === 0 && (
         <p className="grid-empty">还没有内容——先到「维护 → 文件管理」注册一个媒体库并扫描。</p>
+      )}
+    </>
+  )
+}
+
+/** COS 推荐卡片区（cos tab）：旧版「COS 推荐模式」——同套算法跑 COS 子集；
+ *  seed>0 重新打散拉取（换一批），与服务端每日展示惩罚自然衔接。 */
+function CosRecommendGrid({ onOpen }: { onOpen: (id?: string) => void }) {
+  const [seed, setSeed] = useState(0)
+  const { data: items = [], isLoading } = useRecommendations(60, seed, true)
+  return (
+    <>
+      {items.map((a) => (
+        <MediaCard
+          key={a.id}
+          {...assetToCard(a)}
+          onClick={() => onOpen(a.id)}
+        />
+      ))}
+      {isLoading && <p className="grid-empty">加载中…</p>}
+      {!isLoading && items.length > 0 && (
+        <p className="grid-empty">
+          <button
+            className="pill"
+            type="button"
+            onClick={() => setSeed(Date.now())}
+          >
+            换一批
+          </button>
+          <span className="pill-count">共 {items.length} 项</span>
+        </p>
+      )}
+      {!isLoading && items.length === 0 && (
+        <p className="grid-empty">暂无 COS 内容——先到「维护 → 文件管理」注册 COS 媒体库并扫描。</p>
       )}
     </>
   )

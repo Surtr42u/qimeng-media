@@ -193,6 +193,50 @@ func (q *Queries) ListAssetsFirstPage(ctx context.Context, limit int64) ([]Asset
 	return items, nil
 }
 
+const listCosWorkForAssets = `-- name: ListCosWorkForAssets :many
+SELECT a.asset_id, a.cos_work
+FROM assets a
+WHERE a.cos_work IS NOT NULL
+  AND a.asset_id IN (SELECT value FROM json_each(?1))
+`
+
+type ListCosWorkForAssetsRow struct {
+	AssetID string
+	CosWork sql.NullString
+}
+
+// Batch cos_work lookup for list endpoints (AssetSummary.cosWork): the
+// work subfolder name (rel_path second segment, migration 0008) of the
+// given assets, one row per asset that has one. Only kind=cos library
+// scans assign cos_work, so regular assets never match the IS NOT NULL
+// filter and stay absent from the result (null on the wire = client
+// falls back to fileName for the card title). asset_ids_json is a JSON
+// array consumed by json_each -- same parameter shape as
+// ListAuthorNamesForAssets (see browse.sql header for the sqlc parser
+// constraints that dictate it).
+func (q *Queries) ListCosWorkForAssets(ctx context.Context, assetIdsJson interface{}) ([]ListCosWorkForAssetsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listCosWorkForAssets, assetIdsJson)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCosWorkForAssetsRow
+	for rows.Next() {
+		var i ListCosWorkForAssetsRow
+		if err := rows.Scan(&i.AssetID, &i.CosWork); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updatePlaybackProgress = `-- name: UpdatePlaybackProgress :execrows
 
 UPDATE assets
@@ -239,6 +283,7 @@ ON CONFLICT (library_id, rel_path) DO UPDATE SET
     video_codec  = excluded.video_codec,
     audio_codec  = excluded.audio_codec,
     source       = excluded.source,
+    cos_work     = excluded.cos_work,
     updated_at   = excluded.updated_at
 RETURNING asset_id, library_id, rel_path, file_name, media_type, size_bytes, mtime, duration_ms, width, height, source, created_at, updated_at, last_position_seconds, video_codec, audio_codec, cos_work
 `

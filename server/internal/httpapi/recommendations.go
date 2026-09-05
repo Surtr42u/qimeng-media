@@ -37,13 +37,20 @@ func (s *Server) GetApiV1Recommendations(w http.ResponseWriter, r *http.Request,
 	if params.MediaType != nil {
 		mediaType = sql.NullString{String: string(*params.MediaType), Valid: true}
 	}
+	// COS 推荐模式（协议 cosOnly，旧版「COS 推荐模式」语义）：恒传 0/1——
+	// recommend.sql 的双分支谓词依赖两值逻辑，NULL 会让两侧分支同时不成立、
+	// 整库被排除（browse.sql 三态开关注释同因）。
+	cosOnly := int64(0)
+	if params.CosOnly != nil && *params.CosOnly {
+		cosOnly = 1
+	}
 
 	// 当日展示计数的"日"（本地时区日界，0001「日」字段约定）；
 	// 一次调用内统一一个日界，跨零点请求不漂移。
 	day := store.FormatDay(s.now())
 
 	rows, err := s.q.ListAssetsRecommendInput(r.Context(), db.ListAssetsRecommendInputParams{
-		Day: day, MediaType: mediaType,
+		Day: day, MediaType: mediaType, CosOnly: cosOnly,
 	})
 	if err != nil {
 		s.internalErr(w, "查询推荐输入", err)
@@ -114,6 +121,9 @@ func (s *Server) GetApiV1Recommendations(w http.ResponseWriter, r *http.Request,
 	// authorNames：推荐流是首页默认 tab 的卡片数据源，与 GET /assets
 	// 同口径填充作者行（协议 AssetSummary.authorNames 描述）。
 	s.fillListAuthorNames(r.Context(), out)
+	// cosWork：COS 推荐模式（cos tab）卡片标题数据源，与 GET /assets
+	// 同口径批量装配（协议 AssetSummary.cosWork 描述）。
+	s.fillListCosWork(r.Context(), out)
 	writeJSON(w, http.StatusOK, out)
 }
 

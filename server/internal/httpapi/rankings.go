@@ -27,10 +27,13 @@ func (s *Server) GetApiV1Rankings(w http.ResponseWriter, r *http.Request, params
 	}
 
 	// 排行不参与每日展示计数，day 参数无实际用途；仍传当前日界避免
-	// 查询参数歧义（shown_today 仅推荐流消费）。
+	// 查询参数歧义（shown_today 仅推荐流消费）。CosOnly 恒传 0：排行榜
+	// 维持既有「常规流排除 COS」口径不变（recommend.sql 双分支谓词依赖
+	// 两值逻辑，缺省 NULL 会整库排除——与推荐端点同一约束）。
 	rows, err := s.q.ListAssetsRecommendInput(r.Context(), db.ListAssetsRecommendInputParams{
 		Day:       store.FormatDay(s.now()),
 		MediaType: nullStr(""),
+		CosOnly:   0,
 	})
 	if err != nil {
 		s.internalErr(w, "查询排行输入", err)

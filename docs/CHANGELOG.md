@@ -11,6 +11,19 @@
 
 ---
 
+## COS 卡片标题 + COS 推荐模式：首页 cos tab 两缺口修复（2026-09-05 第四十二笔）
+
+执行 AI：GLM-5.3-Flash（主代理，用户报障「COS 卡片应显示作品文件夹名」「cos tab 好像没做算法」后查实并拍板执行）
+
+两个缺口均查实为移植期偏差：① `assetToCard` 标题恒取 fileName，且协议 AssetSummary 根本没有 cosWork 字段（库里 `assets.cos_work` 落库正常，实测 facets COS 分区 152 作品行有值）——前端想显示也拿不到；② 旧版首页 COS chip 是「COS 推荐模式」（GUIDE_UI 首页节原文），web 移植时做成了 `GET /assets cosOnly=true` 的 addedDate 降序纯浏览流，十维算法未接入。
+
+- **协议**：openapi AssetSummary 增可空 `cosWork`（描述=客户端卡片标题优先取本字段、null 回退 fileName）；GET /recommendations 增 `cosOnly`（true=COS 推荐模式，候选集限定 COS 关联资产，同套打分/权重回收/每日惩罚照跑；false=常规流缺省排除不变）。`make sdk` 三端重建。
+- **服务端**：`recommend.sql` ListAssetsRecommendInput 的 COS 排除谓词改双分支（cos_only=1 走 EXISTS、=0 走 NOT EXISTS，恒两值无 NULL 三值逻辑）；rankings.go 复用同查询，显式补传 CosOnly:0（排行榜维持既有排除 COS 口径）——**首跑全量测试即被 rankings 三用例抓到漏传 NULL 整库排除，此坑注释有预警仍踩中，调用方约束升级为编译期可见的显式传参**；assets.sql 增 ListCosWorkForAssets（json_each 批量，同 ListAuthorNamesForAssets 模式）+ `fillListCosWork` 装配（/assets 与 /recommendations 两出口）；**顺带修存量缺口：UpsertAsset DO UPDATE 列表漏 `cos_work`，与 SQL 注释「Refreshed on conflict like source」明文承诺不符**，补列对齐。
+- **Web**：`assetToCard` 标题改 `cosWork ?? fileName`（共享组件，相册/收藏/搜索的 COS 卡统一生效）；首页 cos tab 换 `useRecommendations(60, seed, true)` COS 推荐流并新增「换一批」（seed=Date.now() 重新打散；推荐 tab 无此按钮系现状，不在本批扩围）；useRecommendations 签名扩 seed/cosOnly（queryKey 同步入 key）。
+- **测试**：新增 TestRecommendationsCosOnly（常规流隔离+COS 模式候选集+cosWork 填充/平铺 null 四断言）与 TestAssetListCosWork（/assets 出口装配）；`go test ./...` 14 包全绿、`make lint` 全绿（TS 15 警告既有存量）、`npx tsc --noEmit` 通过、web build 产物更新。
+- **实机验证**（8420 重启后）：/recommendations?cosOnly=true 返回 COS 资产且 cosWork 有值（萝莉身材/NO.324 沙希女警/修道院等），常规推荐流无 COS 资产无 cosWork；/assets?cosOnly=true 三条样本 cosWork=萝莉身材。
+- **文档**：DOMAIN_RULES §6（COS 卡片标题口径 + cos tab=COS 推荐模式，原纯浏览流口径废止）、GUIDE_API（/recommendations 参数行、cosWork 字段条目）。
+
 ## 文档漂移修复：PROJECT_PLAN M4 脚手架条目补勾（2026-09-05 第四十一笔）
 
 执行 AI：GLM-5.3-Flash（主代理）
