@@ -217,3 +217,78 @@ func TestSearchSuggestionsEmptyQ(t *testing.T) {
 		}
 	}
 }
+
+// TestSearchSuggestionsRecommendRandom：recommend=true 且 q 为空 → 随机推荐
+// 模式（openapi recommend 参数，LEGACY 随机语义）。随机只影响顺序不影响
+// 口径，故锁定确定性不变量：默认 10 条、(type,name) 唯一、type 全法值、
+// 无文件作者绝不入池；limit 覆写到候选全集时集合精确等于五维口径全集。
+func TestSearchSuggestionsRecommendRandom(t *testing.T) {
+	env := newTestEnv(t)
+	seedSuggestionFixture(t, env)
+
+	got := getSuggestions(t, env, "?q=&recommend=true")
+	if len(got) != 10 {
+		t.Fatalf("默认 limit 下随机推荐应返回 10 条，得到 %d", len(got))
+	}
+	legal := map[string]bool{"source": true, "character": true, "cosAuthor": true, "cosWork": true, "author": true}
+	seen := map[string]bool{}
+	for _, r := range got {
+		if !legal[r.Type] {
+			t.Fatalf("随机推荐出现非法 type %q（%v）", r.Type, r)
+		}
+		key := r.Type + "|" + r.Name
+		if seen[key] {
+			t.Fatalf("随机推荐 (type,name) 应唯一，重复 %s（%v）", key, got)
+		}
+		seen[key] = true
+		if r.Name == "幽灵作者" {
+			t.Fatalf("无文件作者不应进入随机推荐池，得到 %v", got)
+		}
+	}
+
+	// limit=50：候选全集 = source 1 + character 3 + cosAuthor 1 + cosWork 1
+	// + author 15（ZZAB/DVA/补全作者01..12，幽灵作者被口径排除）= 21 条，
+	// 集合断言与顺序无关（随机性只落在排列上）。
+	got = getSuggestions(t, env, "?q=&recommend=true&limit=50")
+	want := map[string]bool{
+		"source|AB":       true,
+		"character|XABCD": true, "character|天使": true, "character|DVA": true,
+		"cosAuthor|X酱": true,
+		"cosWork|作品W":  true,
+		"author|ZZAB":  true, "author|DVA": true,
+	}
+	for i := 1; i <= 12; i++ {
+		want["author|补全作者"+string([]byte{byte('0' + i/10), byte('0' + i%10)})] = true
+	}
+	if len(got) != len(want) {
+		t.Fatalf("limit=50 应返回全部 %d 条候选，得到 %d", len(want), len(got))
+	}
+	for _, r := range got {
+		key := r.Type + "|" + r.Name
+		if !want[key] {
+			t.Fatalf("随机推荐出现口径外候选 %s（%v）", key, got)
+		}
+		delete(want, key)
+	}
+	if len(want) != 0 {
+		t.Fatalf("随机推荐遗漏候选: %v", want)
+	}
+}
+
+// TestSearchSuggestionsRecommendIgnoredWhenQNotEmpty：q 非空时 recommend
+// 被忽略（协议口径：仅 q 为空时生效），照常子串匹配且排序不变。
+func TestSearchSuggestionsRecommendIgnoredWhenQNotEmpty(t *testing.T) {
+	env := newTestEnv(t)
+	seedSuggestionFixture(t, env)
+
+	got := getSuggestions(t, env, "?q=ab&recommend=true")
+	want := []suggRow{{"source", "AB"}, {"author", "ZZAB"}, {"character", "XABCD"}}
+	if len(got) != len(want) {
+		t.Fatalf("q 非空 + recommend 应照常子串匹配 3 条，得到 %v", got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("第 %d 条 = %v, want %v（子串匹配不受 recommend 影响）", i, got[i], want[i])
+		}
+	}
+}

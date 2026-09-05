@@ -1220,3 +1220,38 @@ body {
   font-size: 12px;
   font-weight: 600;
 }
+
+/* ===== 顶栏搜索补全列表（TopBar 输入态下拉，2026-09-05 对齐旧版语义）=====
+   一行 = 左搜索图标 + 名称 + 右类型徽标；颜色全走既有 token（无新增颜色
+   字面量）：行 hover 用 --hover-bg，徽标灰底胶囊用 --pop-chip-hover-bg
+   （该 token 深/浅模式各有定义，行 hover 后行底与徽标底仍有层次，无需 .dark 特判） */
+.pop-suggest-list { display: flex; flex-direction: column; }
+.pop-suggest-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px; /* 与 .pop-chip 同圆角节奏 */
+  font-size: 13px; /* 与 .pop-chip 同字号 */
+  color: var(--text-main);
+  text-align: left;
+}
+.pop-suggest-item:hover { background: var(--hover-bg); }
+.pop-suggest-icon { width: 14px; height: 14px; flex-shrink: 0; color: var(--icon-faint); }
+.pop-suggest-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pop-suggest-badge {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 999px; /* 小号灰底胶囊，与 .watched-badge 同款圆角 */
+  background: var(--pop-chip-hover-bg);
+  font-size: 12px;
+  color: var(--text-sub);
+}
+/* 加载中 / 无匹配的低调占位行（与 .pop-reco-hint 同族） */
+.pop-suggest-hint {
+  padding: 10px 0;
+  font-size: 13px;
+  color: var(--text-sub);
+  text-align: center;
+}

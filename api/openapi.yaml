@@ -248,10 +248,13 @@ paths:
         （type 字段即区分语义，前端渲染类型徽标）。作者维只返回实际有关联
         文件的作者（LEGACY §C：零关联作者行对补全无意义；回收站删除即移出
         assets 表，作者随之失去候选资格）；COS 作品维的 NULL 作品（无作品
-        子目录）不产生候选。q 为空（trim 后）返回空列表。
+        子目录）不产生候选。q 为空（trim 后）且未开 recommend 时返回空列表；
+        recommend=true 且 q 为空时返回随机抽取的五维候选合并共 limit 条
+        （空态「推荐搜索」数据源，LEGACY 随机语义：每次请求随机、五维混合）。
       parameters:
-        - { name: q,     in: query, required: true, schema: { type: string }, description: 补全关键词（子串匹配、大小写不敏感；空串返回空列表） }
+        - { name: q,     in: query, required: true, schema: { type: string }, description: 补全关键词（子串匹配、大小写不敏感；空串返回空列表；recommend=true 时空串切换为随机推荐模式） }
         - { name: limit, in: query, schema: { type: integer, default: 10, maximum: 50 }, description: 返回条数上限 }
+        - { name: recommend, in: query, schema: { type: boolean, default: false }, description: "推荐搜索词模式：true 且 q 为空（trim 后）时返回随机抽取的五维候选合并共 limit 条（type 照常；同维同名一条、跨维同名各保留）；q 非空时忽略本参数，照常子串匹配" }
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/SearchSuggestions" } } } }
   /api/v1/assets/{assetId}:
@@ -839,7 +842,7 @@ components:
 
     SearchSuggestions:
       type: object
-      description: GET /api/v1/search/suggestions 响应：五维合并去重排序后的补全候选（q 为空时 items 为空数组）
+      description: GET /api/v1/search/suggestions 响应：五维合并去重排序后的补全候选（q 为空且未开 recommend 时 items 为空数组；recommend=true 且 q 为空时为随机抽取的五维候选）
       required: [items]
       properties:
         items: { type: array, items: { $ref: "#/components/schemas/SearchSuggestion" } }

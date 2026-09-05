@@ -32,6 +32,11 @@ export const TAGS_QUERY_KEY = ['api/v1/tags'] as const
 
 export const AUTHORS_QUERY_KEY = ['api/v1/authors'] as const
 
+/** 搜索补全族根键（输入补全/随机推荐词两 hook 共用，按卫生约束第 2 条收敛；
+ * 无跨处失效需求——补全与推荐词不要求实时性，SSE 桥不失效，仅靠 staleTime
+ * 与 enabled 切换控制重取） */
+export const SEARCH_SUGGESTIONS_QUERY_KEY = ['api/v1/search/suggestions'] as const
+
 /** 已导入作者 TXT 片段列表（/authors/import-txt） */
 export const TXT_FILES_QUERY_KEY = [...AUTHORS_QUERY_KEY, 'import-txt'] as const
 
