@@ -51,11 +51,14 @@ func allHaveMediaExt(names []string) bool {
 }
 
 // MatchWorks 把一个 TXT 作品名与匹配域（normal 库资产）中的文件名匹配
-// （GUIDE_AUTHOR「文件名匹配规则」，两层按优先级）：
+// （GUIDE_AUTHOR「文件名匹配规则」，两层按优先级；逐字对齐旧项目
+// AuthorImportUseCase.findMatchingMediaLight）：
 //
-//   - 规则 1 精确匹配：作品名与文件名去掉扩展名和所有空格后完全一致。
-//     作品名带扩展名时因比较串含扩展名语义而天然限定同名扩展名。
-//   - 规则 2 序号括号容错（仅当作品名不带扩展名且自身不含 (N)）：文件名
+//   - 规则 1 精确匹配：基础名（去扩展名、去全部半角空格）一致；作品名带
+//     媒体扩展名时文件扩展名必须同名（旧算法的扩展名检查 mediaExt == ext
+//     ——写 "雾子 3.mp4" 不得命中 "雾子 3.png"，png/mp4 各归各）。比较
+//     大小写不敏感（旧 equals ignoreCase）。
+//   - 规则 2 序号括号容错（仅当作品名不带媒体扩展名且自身不含 (N)）：文件名
 //     比较串去掉尾部 (N) 后再比较——TXT 写基础名、实际文件带分页序号的
 //     情况，会把同一基础名的全部序号变体都关联上。
 //
@@ -68,13 +71,15 @@ func MatchWorks(work string, files []MediaFile) []MediaFile {
 		return nil
 	}
 	hasExt := hasMediaExt(work)
-	// 比较域 = 去扩展名（仅带扩展名时剥）+ 去全部半角空格；全角空格不折叠
+	// 比较域 = 去扩展名（仅带媒体扩展名时剥）+ 去全部半角空格；全角空格不折叠
 	//（与 sourcematcher collapse 的保真决策一致，规则权威同源）。
 	base := work
 	if hasExt {
 		base = strings.TrimSuffix(work, filepath.Ext(work))
 	}
 	workBase := strings.ReplaceAll(base, " ", "")
+	// 扩展名检查域（小写）：hasMediaExt=false 时为空串且不参与比较
+	workExt := strings.ToLower(filepath.Ext(work))
 
 	// 规则 2 触发条件：作品名自身不含序号括号（在去空格域检测——去空格
 	// 不影响 (N) 形态）。带扩展名的作品名不触发规则 2（GUIDE_AUTHOR：
@@ -84,11 +89,18 @@ func MatchWorks(work string, files []MediaFile) []MediaFile {
 	var exact, seq []MediaFile
 	for _, f := range files {
 		fileBase := strings.ReplaceAll(strings.TrimSuffix(f.FileName, filepath.Ext(f.FileName)), " ", "")
-		if fileBase == workBase {
+		if hasExt {
+			// 规则 1（带媒体扩展名作品）：基础名一致 + 扩展名一致
+			if strings.EqualFold(fileBase, workBase) && strings.ToLower(filepath.Ext(f.FileName)) == workExt {
+				exact = append(exact, f)
+				continue
+			}
+		} else if strings.EqualFold(fileBase, workBase) {
+			// 规则 1（无媒体扩展名作品）：基础名一致即命中（任意扩展名/无扩展名）
 			exact = append(exact, f)
 			continue
 		}
-		if seqTolerant && fileSuffixTailRe.ReplaceAllString(fileBase, "") == workBase {
+		if seqTolerant && strings.EqualFold(fileSuffixTailRe.ReplaceAllString(fileBase, ""), workBase) {
 			seq = append(seq, f)
 		}
 	}
