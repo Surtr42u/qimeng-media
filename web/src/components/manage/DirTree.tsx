@@ -13,10 +13,14 @@ import { dirLabel } from '@/lib/format'
  *   不传 renderActions，行内已有选中语义，不混入操作）。
  * 标签口径：取路径末段（协议 path 统一 '/' 分隔，兼容 Windows 反斜杠）；
  * 根节点（path = ''）无末段，显示「库根」（DirBrowser 根行原显示空串，统一为「库根」）。
+ * B-8：嵌套 <ul> 挂 .dir-tree-list（整行块 + li 横向 padding 归零，缩进唯一来源 =
+ * 本文件 DIR_TREE_INDENT_PX），修复嵌套子树与父行并排的存量对齐缺陷。
  */
 
-/** 目录树行缩进步长 px（与抽取前 DirNode 的 depth * 14 一致） */
-const DIR_TREE_INDENT_PX = 14
+/** 目录树行缩进步长 px（B-8 定版 16px/级；原抽取前 DirNode 为 depth * 14，
+ *  B-8 起统一 16/级并成为层级缩进唯一来源——配套 prototype.css .dir-tree-list
+ *  把嵌套 ul 压回父行下一行、归零 li 横向 padding，见该段注释） */
+const DIR_TREE_INDENT_PX = 16
 
 export interface DirTreeNodesProps {
   node: DirTree
@@ -78,7 +82,9 @@ export function DirTreeNodes({ node, depth, selectedPath, onSelect, renderAction
         </span>
       )}
       {(node.dirs ?? []).length > 0 && (
-        <ul style={{ listStyle: 'none' }}>
+        // .dir-tree-list（B-8）：嵌套子树压回父行下一行整行排——修复 .rank-card li
+        // flex 语境下子树与父行并排的存量缺陷（配套规则见 prototype.css B-8 段）
+        <ul className="dir-tree-list" style={{ listStyle: 'none' }}>
           {(node.dirs ?? []).map((child) => (
             <DirTreeNodes
               key={child.path}

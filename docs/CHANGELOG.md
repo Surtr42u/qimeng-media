@@ -11,6 +11,15 @@
 
 ---
 
+## fix(web): 目录树嵌套子树层级缩进对齐修复 + DirFileList 重取闪烁清偿（2026-09-06 第八十笔）
+
+执行 AI：GLM-5.3-Flash（B 会话·目录树对齐修复批，拍板来源=待拍板-20260905夜2 条目 2）
+
+- **问题与定性**：文件管理页目录浏览卡多级子目录展开后，子树行与父目录行/文件行**横向并排**呈楼梯状而非逐级缩进（存量对齐缺陷，B-1 批实测证实非当时回归，用户拍板修复）。隔离实例（18426+新临时数据目录+dev 模式，未碰真实库）造 4 层嵌套实测修复前各层行文字左缘 x：库根 117.56 → sub1 386.50 → sub1a 624.64 → sub1a-deep 886.09、sub2 跳回 386.50（页 zoom 1.1 口径），无任何逐级关系。
+- **根因**：DirTreeNodes 嵌套 `<ul>` 与行容器同为 `<li>` 直接子元素，`.rank-card li` 是 display:flex+flex-wrap——目录浏览卡的树裸 `<ul>` 无 `.dir-tree` 作用域（reset 只覆盖上传卡），嵌套子树成了水平 flex item 被排到父行右侧，行内 depth*步长 paddingLeft 在横排下失效。
+- **修法（零 DOM/零交互变化）**：① prototype.css B-8 段 `.dir-tree-list{flex-basis:100%;width:100%}` 嵌套 ul 压回父行下一行（DirBrowser 顶层 ul 与 DirTree.tsx 嵌套 ul 同挂此类）；② `.dir-tree-list li` 横向 padding 归零，缩进唯一来源=DirTree.tsx 具名常量 `DIR_TREE_INDENT_PX` 14→16/级；③ 顺带修 B-5 死规则：`.dir-file-row`（0-1-0）恒被 `.rank-card li`（0-1-1）压住，padding 7px 8px/hover 底从未生效，加 `li.` 前缀使 B-5 写定值真正渲染；④ DirFileList 重取闪烁（B-5 批 reviewer P3 清偿）：useAssetsInDirectory 加 `placeholderData: keepPreviousData` + 组件 isFetching→isLoading，失效重取/切目录期间保留旧列表。
+- **修复后数值**（headless 静止态实测，浅/深两态几何一致）：树行行盒左缘全部 115.38=卡片内容线；文字左缘 库根 124.17 → sub1 141.77 → sub1a 159.36 → sub1a-deep 176.97，逐级步长恒 17.6=16px×zoom1.1，sub2=141.77 与同级同线；文件行文字左缘 124.17 与库根行完全同线（§4.5 基准线）；上传卡共享组件同测通过、目录选中→文件清单切换交互零变化。tsc 0 错/build 成功/lint 改动文件 0 告警（存量 17 条不属本批）；证据目录 %TEMP%\qimeng-b8-evidence\（保留勿删）。改动文件：web/src/components/manage/{DirTree,DirBrowser,DirFileList}.tsx + web/src/hooks/use-assets.ts + web/src/styles/prototype.css；文档：HANDOVER_UI.md §5 第 18 条。
+
 ## docs(docs): B 车道收工——夜2 B 链七批全部完成+三轮对抗审查通过（2026-09-06 第七十九笔）
 
 执行 AI：GLM-5.3-Flash（B 会话·调度落档）

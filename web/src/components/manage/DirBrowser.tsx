@@ -60,7 +60,9 @@ export function DirBrowser({ libraries }: { libraries: Library[] }) {
       ) : isFetching ? (
         <p className="grid-empty">加载中…</p>
       ) : tree ? (
-        <ul>
+        // .dir-tree-list（B-8）：与 DirTree.tsx 嵌套层共用——顶层 li 横向 padding
+        // 归零，库根行与下方文件行同回 8px 基准线（prototype.css B-8 段）
+        <ul className="dir-tree-list">
           <DirTreeNodes
             node={tree}
             depth={0}

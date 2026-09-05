@@ -30,7 +30,10 @@ const MEDIA_TYPE_LABEL: Record<MediaType, string> = {
 const NO_TARGET: FileOpsTarget = { assetId: '', libraryId: '', directory: '', fileName: '' }
 
 export function DirFileList({ libraryId, directory }: { libraryId: string; directory: string }) {
-  const { data: files = [], isFetching } = useAssetsInDirectory(libraryId, directory, true)
+  // isLoading（非 isFetching，B-8 P3 清偿）：失效重取/切目录换键期间保留旧列表
+  // （hook 配 placeholderData: keepPreviousData），不再整段替换成「加载中…」闪烁；
+  // 仅首次无数据时显示加载态
+  const { data: files = [], isLoading } = useAssetsInDirectory(libraryId, directory, true)
   // 行内操作的打开弹窗态：mode + 操作目标（打开时刻快照，与上传队列表同口径）
   const [ops, setOps] = useState<{ mode: FileOpsMode; target: FileOpsTarget } | null>(null)
 
@@ -47,7 +50,7 @@ export function DirFileList({ libraryId, directory }: { libraryId: string; direc
         「{dirLabel(directory)}」的直接子文件
         <b>{files.length}</b>
       </p>
-      {isFetching ? (
+      {isLoading ? (
         <p className="grid-empty">加载中…</p>
       ) : files.length === 0 ? (
         <p className="grid-empty">该目录下暂无文件。</p>
