@@ -10,6 +10,7 @@ import { useRankings, useStatsOverview, useTrends, type RankingPeriod, type Tren
 import { useTags } from '@/hooks/use-tags'
 import { LOCALE_ZH } from '@/lib/constants'
 import { authorDisplayName, formatBytes } from '@/lib/format'
+import { authorRankRows, tagRankRows } from '@/lib/rank-rows'
 import { COLLECTION_AUTHOR, COLLECTION_TAG, RANK_AUTHORS, RANK_CONTENT, RANK_TAGS } from '@/lib/route-keys'
 
 /**
@@ -99,29 +100,9 @@ export default function DataPage() {
     ]
   }, [videoTrend.data, imageTrend.data])
 
-  // 标签榜：按 fileCount 降序取 Top5（行式列表，点击进集合子页）
-  const tagRows = useMemo(
-    () =>
-      tags
-        .slice()
-        .sort((a, b) => (b.fileCount ?? 0) - (a.fileCount ?? 0))
-        .slice(0, RANK_TOP_COUNT)
-        .map((t) => ({ name: t.name ?? '', count: String(t.fileCount ?? 0) })),
-    [tags],
-  )
-  // 作者榜 = 常看作者（原型 topAuthorsByBrowse，旧版 renderTopAuthors 口径）：
-  // 仅浏览>0 的作者入榜（0 浏览不占位，DOMAIN_RULES 空数据口径），按浏览数降序 Top5，
-  // 行计数 = 累计浏览次数（Author.viewCount，格式对照原型 toLocaleString）
-  const authorRows = useMemo(
-    () =>
-      authors
-        .filter((a) => (a.viewCount ?? 0) > 0)
-        .slice()
-        .sort((a, b) => (b.viewCount ?? 0) - (a.viewCount ?? 0))
-        .slice(0, RANK_TOP_COUNT)
-        .map((a) => ({ name: authorDisplayName(a), count: (a.viewCount ?? 0).toLocaleString(LOCALE_ZH) })),
-    [authors],
-  )
+  // 标签榜/作者榜行加工口径单源在 lib/rank-rows.ts（DOMAIN_RULES 口径），本页取 Top5
+  const tagRows = useMemo(() => tagRankRows(tags).slice(0, RANK_TOP_COUNT), [tags])
+  const authorRows = useMemo(() => authorRankRows(authors).slice(0, RANK_TOP_COUNT), [authors])
   // 作者总览卡（原型 renderAuthorOverview）：作者管理入口的预览卡——行数与相邻
   // 榜单卡一致取 Top5（2026-09-04 用户反馈：真库 122 位作者全量渲染致栏目过长；
   // 总量看头注「N 位作者 · 已关注 M」，完整列表走「管理」进作者管理页），

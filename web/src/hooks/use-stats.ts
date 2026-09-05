@@ -8,6 +8,7 @@ import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { getApiV1Rankings, getApiV1StatsOverview, getApiV1StatsTrends } from '@/api/generated'
 import { unwrapSdkResult } from '@/lib/api-client'
 import { MAX_PAGE_SIZE } from '@/lib/constants'
+import { lengthCursorNext } from '@/lib/pagination'
 import type { MediaType } from './use-assets'
 
 /** 趋势 range 枚举（协议 GET /stats/trends query.range；窗口口径见 DOMAIN_RULES §5 固定窗口表） */
@@ -57,8 +58,7 @@ export function useRankings(period: RankingPeriod | undefined, limit?: number, o
  * - reloadKey 进 queryKey：qm:refresh 收到后 +1 → 整条流重置回第一页重拉
  *   （「重置分页重拉」语义；排行榜是确定性排序，不需要 seed 打散）。
  * - period 变化即 queryKey 换档，分页天然重置，无需额外 state。
- * - hasNextPage 判据同推荐流：原始返回页长度 === limit（协议无总数
- *   字段，渲染层去重后的长度不代表到底）。
+ * - hasNextPage 判据同推荐流，口径单源在 lib/pagination.ts（lengthCursorNext）。
  */
 export function useRankingsInfinite(
   period: RankingPeriod | undefined,
@@ -70,7 +70,6 @@ export function useRankingsInfinite(
     queryFn: ({ pageParam }) =>
       unwrapSdkResult(getApiV1Rankings({ query: { period, limit, offset: pageParam || undefined } })),
     initialPageParam: 0,
-    getNextPageParam: (lastPage, _allPages, lastPageParam) =>
-      lastPage.length === limit ? lastPageParam + limit : undefined,
+    getNextPageParam: lengthCursorNext(limit),
   })
 }

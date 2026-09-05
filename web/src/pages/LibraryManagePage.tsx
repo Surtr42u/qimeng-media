@@ -4,6 +4,8 @@ import { LOCALE_ZH } from '@/lib/constants'
 import { DirTreeNodes } from '@/components/manage/DirTree'
 import { UploadCard } from '@/components/manage/UploadCard'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import {
   useDeleteLibrary, useDirTree, useLibraries, useRegisterLibrary, useScanLibrary, useSetLibraryEnabled,
 } from '@/hooks/use-libraries'
@@ -197,12 +199,18 @@ function DirBrowser({ libraries }: { libraries: Library[] }) {
       <div className="rank-head">
         <h3>目录浏览</h3>
         <span className="f-years">
-          <select value={libId} onChange={(e) => setLibId(e.target.value)} aria-label="选择库">
-            <option value="">选择库…</option>
-            {libraries.map((l) => (
-              <option key={l.id} value={l.id}>{l.name}</option>
-            ))}
-          </select>
+          <Select value={libId} onValueChange={setLibId}>
+            <SelectTrigger aria-label="选择库" placeholder="选择库…" />
+            <SelectContent>
+              {/* l.id 协议可选，radix SelectItem 要求非空 string：无 id 的库行
+                  （正常不会出现）本就无法作为操作目标，直接不进下拉 */}
+              {libraries.map((l) =>
+                l.id ? (
+                  <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>
+                ) : null,
+              )}
+            </SelectContent>
+          </Select>
         </span>
       </div>
       <p className="rank-note">按目录查看各库的文件分布（磁盘现实，含空目录）</p>
@@ -311,12 +319,13 @@ export default function LibraryManagePage() {
                   <td>{(lib.fileCount ?? 0).toLocaleString(LOCALE_ZH)}</td>
                   <td>{scanStateText[lib.scanState ?? 'idle'] ?? lib.scanState}</td>
                   <td>
-                    {/* 用户拍板：关闭=只隐藏浏览面，记录全保留（migration 0007） */}
+                    {/* 用户拍板：关闭=只隐藏浏览面，记录全保留（migration 0007）。
+                        radix Switch 接管行为（Space 切换/aria-checked/焦点环），
+                        滑块视觉走 .settings-switch-track（复刻原隐藏 checkbox+<i>） */}
                     <label className="settings-switch" title={lib.enabled === false ? '已停用（点击启用）' : '已启用（点击停用）'}>
-                      <input
-                        type="checkbox"
+                      <Switch
                         checked={lib.enabled !== false}
-                        onChange={() =>
+                        onCheckedChange={() =>
                           setEnabled.mutate(
                             { libraryId: lib.id ?? '', enabled: lib.enabled === false },
                             {
@@ -327,7 +336,6 @@ export default function LibraryManagePage() {
                           )
                         }
                       />
-                      <i aria-hidden="true" />
                     </label>
                   </td>
                   <td>
@@ -356,10 +364,13 @@ export default function LibraryManagePage() {
           </label>
           <label className="settings-field">
             <span>库类型</span>
-            <select value={kind} onChange={(e) => setKind(e.target.value === 'cos' ? 'cos' : 'normal')}>
-              <option value="normal">常规</option>
-              <option value="cos">COS 作者库</option>
-            </select>
+            <Select value={kind} onValueChange={(v) => setKind(v === 'cos' ? 'cos' : 'normal')}>
+              <SelectTrigger aria-label="库类型" />
+              <SelectContent>
+                <SelectItem value="normal">常规</SelectItem>
+                <SelectItem value="cos">COS 作者库</SelectItem>
+              </SelectContent>
+            </Select>
           </label>
         </div>
         <div className="settings-actions" style={{ marginTop: 12 }}>

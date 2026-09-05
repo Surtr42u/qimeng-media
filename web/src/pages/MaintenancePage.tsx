@@ -6,6 +6,7 @@ import { useSystemStatus } from '@/hooks/use-system-status'
 import { useTrash } from '@/hooks/use-trash'
 import { formatBytes, formatDateTime } from '@/lib/format'
 import { Line, LineChart, ResponsiveContainer, Tooltip, YAxis } from 'recharts'
+import { TIP_STYLE, TrendLegend } from '@/components/data/chart-shared'
 
 /** 曲线采样：最近 2 分钟、每 2 秒一点（60 点）；与轮询周期（2s）耦合 */
 const RATE_WINDOW = 60
@@ -145,34 +146,18 @@ export default function MaintenancePage() {
       <div className="chart-card">
         <h3>网络负载 · 实时</h3>
         <p>浏览流量上下行曲线 · 2s 采样 · 最近 2 分钟{rates.length < 2 ? '（采样中…）' : ''}</p>
-        <div className="trend-legend">
-          <span>
-            <i style={{ background: 'var(--qm-primary)' }} />
-            下行
-          </span>
-          <span>
-            <i style={{ background: 'var(--trend-line-sub)' }} />
-            上行
-          </span>
-        </div>
+        <TrendLegend
+          items={[
+            { label: '下行', color: 'var(--qm-primary)' },
+            { label: '上行', color: 'var(--trend-line-sub)' },
+          ]}
+        />
         {/* recharts 实现（ADR-0016）：悬停提示/参考线/高亮点库内置；
             isAnimationActive=false——2s 滚动刷新重放动画会持续闪烁 */}
         <ResponsiveContainer width="100%" height={200}>
           <LineChart data={rates.map((r) => ({ 下行: r.rx, 上行: r.tx }))} margin={{ top: 6, right: 8, left: 8, bottom: 0 }}>
             <YAxis hide />
-            <Tooltip
-              cursor={{ stroke: 'var(--text-sub)', strokeDasharray: '4 4', strokeOpacity: 0.4 }}
-              contentStyle={{
-                background: 'var(--pop-chip-hover-bg)',
-                border: 'none',
-                borderRadius: 6,
-                fontSize: 11,
-                color: 'var(--text-main)',
-                padding: '4px 9px',
-              }}
-              itemStyle={{ padding: 0 }}
-              formatter={(value) => `${formatBytes(Number(value))}/s`}
-            />
+            <Tooltip {...TIP_STYLE} formatter={(value) => `${formatBytes(Number(value))}/s`} />
             <Line
               type="monotone"
               dataKey="下行"

@@ -22,6 +22,7 @@ export type { AssetFacets, FacetBucket, Partition }
 import type { MediaCardProps } from '@/components/media/MediaCard'
 import { unwrapSdkResult } from '@/lib/api-client'
 import { formatCardUp, formatDuration, formatShortDate } from '@/lib/format'
+import { lengthCursorNext } from '@/lib/pagination'
 import {
   ASSETS_LIST_QUERY_KEY,
   ASSETS_QUERY_KEY,
@@ -72,16 +73,14 @@ export interface AssetListParams {
  *  TanStack 惯例存于 pageParams 而非缓存键——seed/根键变化（换一批、
  *  qm:refresh、SSE 失效）时整条流重置回第一页，正是旧版 refreshSeed++
  *  全量重排语义。
- *  续页判据 hasNextPage = 「原始返回页长度 === limit」（协议无总数
- *  字段；渲染层的 assetId 去重会让列表变短，不能拿去判断到底）。 */
+ *  续页判据 hasNextPage 口径单源在 lib/pagination.ts（lengthCursorNext）。 */
 export function useRecommendations(limit = 60, seed = 0, cosOnly = false, offset = 0) {
   return useInfiniteQuery({
     queryKey: [...RECOMMENDATIONS_QUERY_KEY, limit, seed, cosOnly],
     queryFn: ({ pageParam }) =>
       unwrapSdkResult(getApiV1Recommendations({ query: { limit, seed, cosOnly, offset: pageParam } })),
     initialPageParam: offset,
-    getNextPageParam: (lastPage, _allPages, lastPageParam) =>
-      lastPage.length === limit ? lastPageParam + limit : undefined,
+    getNextPageParam: lengthCursorNext(limit),
   })
 }
 

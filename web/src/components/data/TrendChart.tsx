@@ -14,21 +14,7 @@ import {
   YAxis,
 } from 'recharts'
 import type { TrendBucket } from '@/api/generated'
-
-/** Tooltip / cursor 共用样式（token 化，与卡片视觉一致） */
-const TIP_STYLE = {
-  contentStyle: {
-    background: 'var(--pop-chip-hover-bg)',
-    border: 'none',
-    borderRadius: 6,
-    fontSize: 11,
-    color: 'var(--text-main)',
-    padding: '4px 9px',
-  },
-  labelStyle: { color: 'var(--text-sub)', marginRight: 2 },
-  itemStyle: { padding: 0 },
-  cursor: { stroke: 'var(--text-sub)', strokeDasharray: '4 4', strokeOpacity: 0.4 },
-} as const
+import { TIP_STYLE, TrendLegend } from './chart-shared'
 
 export function TrendChart({ buckets }: { buckets: TrendBucket[] }) {
   if (!buckets.length) return <p className="rank-note">暂无数据</p>
@@ -40,14 +26,12 @@ export function TrendChart({ buckets }: { buckets: TrendBucket[] }) {
 
   return (
     <>
-      <div className="trend-legend">
-        <span>
-          <i style={{ background: 'var(--qm-primary)' }} />浏览
-        </span>
-        <span>
-          <i style={{ background: 'var(--trend-line-sub)' }} />播放
-        </span>
-      </div>
+      <TrendLegend
+        items={[
+          { label: '浏览', color: 'var(--qm-primary)' },
+          { label: '播放', color: 'var(--trend-line-sub)' },
+        ]}
+      />
       <ResponsiveContainer width="100%" height={210}>
         <LineChart data={data} margin={{ top: 6, right: 8, left: 8, bottom: 0 }}>
           <XAxis
