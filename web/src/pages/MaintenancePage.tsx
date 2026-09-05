@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { FolderMonitorIcon, TrashIcon } from '@/components/shell/icons'
+import { TrendHoverOverlay, useTrendHover } from '@/components/data/trend-hover'
 import { useClientLogs } from '@/hooks/use-client-logs'
 import { useSystemStatus } from '@/hooks/use-system-status'
 import { useTrash } from '@/hooks/use-trash'
@@ -115,6 +116,8 @@ export default function MaintenancePage() {
       .map((v, i) => `${((i * 600) / span).toFixed(0)},${(190 - (v / max) * 170).toFixed(0)}`)
       .join(' ')
   }
+  // 网络负载曲线悬停取数（覆盖层渲染在 JSX 内，几何换算与 polyline 同公式）
+  const netHover = useTrendHover(rates.length)
 
   return (
     <div className="page" id="page-maintenance">
@@ -152,10 +155,57 @@ export default function MaintenancePage() {
       <div className="chart-card">
         <h3>网络负载 · 实时</h3>
         <p>浏览流量上下行曲线 · 2s 采样 · 最近 2 分钟{rates.length < 2 ? '（采样中…）' : ''}</p>
-        <svg className="trend-svg" viewBox="0 0 600 200" preserveAspectRatio="none" aria-label="网络负载">
-          <polyline points={polyline('rx')} className="line-a" />
-          <polyline points={polyline('tx')} className="line-b" />
-        </svg>
+        <div className="trend-legend">
+          <span>
+            <i style={{ background: 'var(--qm-primary)' }} />
+            下行
+          </span>
+          <span>
+            <i style={{ background: 'var(--trend-line-sub)' }} />
+            上行
+          </span>
+        </div>
+        <div
+          className="trend-wrap"
+          ref={netHover.wrapRef}
+          onMouseMove={netHover.onMove}
+          onMouseLeave={netHover.onLeave}
+        >
+          <svg className="trend-svg" viewBox="0 0 600 200" preserveAspectRatio="none" aria-label="网络负载">
+            <polyline points={polyline('rx')} className="line-a" />
+            <polyline points={polyline('tx')} className="line-b" />
+          </svg>
+          {netHover.hover && rates[netHover.hover.idx] ? (
+            <TrendHoverOverlay
+              frac={netHover.hover.frac}
+              items={(() => {
+                // 与 polyline 同公式换算各系列在该点的 y（各按本系列窗口峰值归一化）
+                const point = rates[netHover.hover!.idx]
+                const yFrac = (key: 'rx' | 'tx'): number => {
+                  const arr = rates.map((r) => r[key])
+                  const max = Math.max(1, ...arr)
+                  return (190 - (point[key] / max) * 170) / 200
+                }
+                return [
+                  { yFrac: yFrac('rx'), color: 'var(--qm-primary)' },
+                  { yFrac: yFrac('tx'), color: 'var(--trend-line-sub)' },
+                ]
+              })()}
+              tip={
+                <>
+                  <span className="trend-tip-series">
+                    <i style={{ background: 'var(--qm-primary)' }} />
+                    下行 {formatBytes(rates[netHover.hover.idx].rx)}/s
+                  </span>
+                  <span className="trend-tip-series">
+                    <i style={{ background: 'var(--trend-line-sub)' }} />
+                    上行 {formatBytes(rates[netHover.hover.idx].tx)}/s
+                  </span>
+                </>
+              }
+            />
+          ) : null}
+        </div>
       </div>
       <div className="page-head">
         <h2>维护工具</h2>
