@@ -11,6 +11,16 @@
 
 ---
 
+## docs(api): /import/qimeng-backup 补 413 声明+directory 描述补全；能力地图三处过期缺口清偿（2026-09-06 第八十二笔）
+
+执行 AI：GLM-5.3-Flash（B 会话·协议补全批）
+
+- **openapi 补 413（第七十八笔记账的协议缺口）**：POST /import/qimeng-backup responses 增 "413" 条目（内联 content $ref schemas/Error，仿 /assets/upload 403 既有内联写法），description「请求体超 64MB 上限（备份导入 per-route 放宽值）」——行为早已存在（0977190 引入，import.go legacyImportMaxBody=64<<20 + errors.go decodeJSONWithLimit 超限 413 TOO_LARGE），本笔只补声明零行为变化；400 校验失败已声明核对无需补，500 全仓无声明惯例不补。GUIDE_API.md 40 行已有「64MB/超限 413 TOO_LARGE」说明核对一致不动。
+- **directory 参数描述补全（B-4 reviewer P3）**：GET /assets 的 directory 参数 description 末尾补「`a/..` 这类规范化后收敛为库根的相对路径同样拒绝（400）」——实读 filing/path.go 证实「./、a/.. 等 Clean 后收敛为库根本身」确在拒绝清单，非发明。
+- **CAPABILITY_MAP 三处过期缺口清偿（第七十八笔记账「待权限方修」，经用户授权本笔修）**：①媒体库行「相册视图」缺口→现状列（AlbumsPage 四维筛选，分区维承接 COS 能力，0d4c9df）；②索引与检索行「检索高亮/联想建议未做」→联想建议移现状列（GET /search/suggestions + web 顶栏补全 eda96cf），缺口余「检索高亮未做」；③推荐行「推荐偏好设置页 UI（M3 剩余 1 项）」→现状列（9 维滑杆+4 预设，2026-09-03 接真），缺口置「—」。只动三行，表头「最后更新」行未动（任务约束逐字最小修改）。
+- **自测**：`make sdk` 全链通过（redocly validate "spec OK" → go → ts → kotlin，生成物 git 忽略不入库）；`make lint` exit 0 全绿（golangci 0 issues；web 存量 17 warning 与 redocly 存量 112 warning 均不属本批，无 warning 指向本笔两处改动）；`cd server && go build ./...` 过。openapi diff 仅 /import/qimeng-backup responses 与 /assets directory description 两处。
+- 改动文件：api/openapi.yaml；文档：CAPABILITY_MAP.md（三行）、CHANGELOG.md（本条）。
+
 ## feat(server): 9 族指标埋点接线——http 中间件/媒体字节/SSE 连接/扫描/库文件/缩略图队列/回收站（2026-09-06 第八十一笔）
 
 执行 AI：GLM-5.3-Flash（B 会话·指标埋点清偿批，拍板来源=主会话接线口径定稿）
