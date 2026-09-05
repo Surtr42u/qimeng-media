@@ -4,7 +4,7 @@
  * 详情带签名原件直链（origUrl，"查看永远发原件"）。
  */
 
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   getApiV1Assets,
   getApiV1AssetsByAssetId,
@@ -124,6 +124,9 @@ export function useAssetsInDirectory(libraryId: string, directory: string, enabl
         getApiV1Assets({ query: { libraryId, directory, limit: DIR_FILES_LIMIT } }),
       ),
     enabled,
+    // B-8（reviewer P3 清偿）：query key 含 directory——切目录换键、失效重取期间
+    // 保留旧列表占位（TanStack 官方模式），消费方配 isLoading 只在真正无数据时显示加载态
+    placeholderData: keepPreviousData,
     select: (page) => page.items ?? [],
   })
 }

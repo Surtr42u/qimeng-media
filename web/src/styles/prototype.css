@@ -1733,13 +1733,33 @@ button.dir-action-btn:focus-visible { outline: 2px solid var(--qm-primary); outl
 }
 .dir-files-title b { font-variant-numeric: tabular-nums; color: var(--text-main); }
 .dir-file-list { margin: 6px 0 0; padding: 0; list-style: none; }
-.dir-file-row {
+/* li 前缀（B-8）：原 .dir-file-row 无元素选择器（0-1-0），padding/hover 恒被
+   .rank-card li（0-1-1，padding: 6px 2px + hover 主色底）压住成死规则——文件行
+   实际一直按 6px 2px 渲染、文字缩进与 .dir-node 的 8px 基准线差 6px。加 li
+   前缀到 0-1-1 且源序靠后者胜，B-5 写定的 7px 8px（与 .dir-node 同款行语言）
+   才真正生效，树行/文件行文字同回 8px 基准线 */
+li.dir-file-row {
   padding: 7px 8px; border-radius: 8px;
   font-family: var(--font); font-size: 13px; color: var(--text-main);
 }
-.dir-file-row:hover { background: var(--hover-bg); }
+li.dir-file-row:hover { background: var(--hover-bg); }
 .dir-file-row .dir-file-name { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .dir-file-row .dir-file-meta {
   flex: none;
   font-size: 12px; color: var(--text-sub); font-variant-numeric: tabular-nums;
 }
+
+/* ===== B-8 目录树嵌套子树层级对齐（2026-09-06，待拍板条目 2）=====
+   缺陷：目录浏览卡（.rank-card 语境）里 .rank-card li 是 display:flex; flex-wrap:wrap
+   （本文件 §排行榜卡），而 DirTreeNodes 的嵌套 <ul> 与行容器同为一个 <li> 的直接
+   子元素——子树成了水平 flex item，被排到父行右侧（多级逐层横向楼梯状"并排"，
+   行内 depth*步长 的 paddingLeft 在横排下不起作用）。修法：树列表（顶层 +
+   嵌套层共用 .dir-tree-list）统一改"整行块"——flex-basis:100% 强制换到父行的
+   下一行（flex-wrap:wrap 既有机制，零 DOM/交互改动），层级缩进唯一来源 =
+   行内 paddingLeft（DirTree.tsx 的 DIR_TREE_INDENT_PX，16px/级）；li 横向
+   padding 归零消掉每级 +2px 的叠加，树行文字与下方文件行（.dir-file-row
+   padding 8px）同回 8px 基准线（§4.5：容器外缘不动，只调内部缩进）。
+   零颜色字面量；UploadCard/MoveDialog 的树 li 本就 padding:0/无横排问题，
+   归一后仅步长 14→16 的变化。 */
+.dir-tree-list { flex-basis: 100%; width: 100%; }
+.dir-tree-list li { padding-left: 0; padding-right: 0; }
