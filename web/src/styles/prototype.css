@@ -1281,6 +1281,9 @@ body {
   top: auto;
   left: auto;
   transform: none;
+  /* 面板与输入框（PopoverAnchor）左对齐且同宽——对齐由 radix popper 定位保证 */
+  width: var(--radix-popper-anchor-width);
+  max-width: none;
 }
 
 /* ---- Switch（库启用 / 自动接收上传）：逐值复刻原 .settings-switch 隐藏

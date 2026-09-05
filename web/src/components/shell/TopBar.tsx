@@ -147,12 +147,13 @@ export function TopBar() {
     : history.slice(0, HISTORY_VISIBLE_COUNT)
 
   // radix PopoverContent 公共参数 = 原手写 .search-pop 绝对定位的等价物：
-  // 搜索框（anchor）下方 8px、水平居中、宽度仍由 .search-pop（336px）提供、
-  // 不做碰撞翻转（原绝对定位从不翻转，窗口居中场景也到不了边）
+  // anchor 是输入框本身（不是 .search 包裹层——后者含图标区域，居中会把面板
+  // 带偏），面板与输入框左对齐且同宽（.search-pop--popper 取 anchor 宽度），
+  // 下方 8px，不做碰撞翻转（原绝对定位从不翻转，窗口居中场景也到不了边）
   const popContentProps = {
     className: 'search-pop search-pop--popper',
     side: 'bottom' as const,
-    align: 'center' as const,
+    align: 'start' as const,
     sideOffset: 8,
     avoidCollisions: false,
     // 打开不抢焦点：焦点留在输入框继续打字（radix 默认会把焦点移进面板）
@@ -182,8 +183,8 @@ export function TopBar() {
           </nav>
         </div>
         <Popover open={popOpen} onOpenChange={setPopOpen}>
-          <PopoverAnchor asChild>
-            <div className="search" ref={searchBoxRef}>
+          <div className="search" ref={searchBoxRef}>
+            <PopoverAnchor asChild>
               <input
                 ref={inputRef}
                 type="text"
@@ -196,7 +197,8 @@ export function TopBar() {
                   if (e.key === 'Enter') enterSearch(query)
                 }}
               />
-              <button
+            </PopoverAnchor>
+            <button
                 className="search-clear"
                 type="button"
                 aria-label="清空搜索词"
@@ -300,7 +302,6 @@ export function TopBar() {
                 )
               ) : null}
             </div>
-          </PopoverAnchor>
         </Popover>
         <div className="header--right">
           <div className="win-controls">

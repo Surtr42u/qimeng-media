@@ -11,6 +11,14 @@
 
 ---
 
+## 首页排版三修：搜索面板对齐 + 排行榜卡片流统一（2026-09-05 第五十二笔）
+
+执行 AI：GLM-5.3-Flash（主代理，用户实机反馈三点：面板没和搜索栏对齐 / 内容榜标题壳去除 / 排行榜排版与推荐一致）
+
+- **搜索面板对齐**：PopoverAnchor 从 .search 包裹层（含图标区域，居中定位致面板右偏 80px）移到输入框本身，align 改 start，.search-pop--popper 宽度取 radix 注入的 anchor 宽——面板与输入框左对齐且同宽。
+- **排行榜排版统一**：hot tab 弃 ContentRankGrid 紧凑榜单卡与 rank-card「内容榜」标题壳，改用与推荐/cos 完全相同的 MediaCard 卡片流（StreamCards 复用：触底增量/去重/到底提示/刷新语义全保留）；ContentRankGrid 组件保留（数据页 Top5 与完整榜单页仍在用）。
+- 验收：tsc -b/build/make lint 全绿（17 告警既有存量）。
+
 ## UI 组件库化与共享组件收拢（2026-09-05 第五十一笔）
 
 执行 AI：GLM-5.3-Flash（主代理派发双路研究 + 三 executor 并行，全过程三次基础设施故障均按兜底续跑恢复；reviewer 全新上下文对抗审查通过）

@@ -3,7 +3,6 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 import type { AssetSummary } from '@/api/generated'
 import { MediaCard } from '@/components/media/MediaCard'
-import { ContentRankGrid } from '@/components/data/ContentRankGrid'
 import { assetToCard, useRecommendations } from '@/hooks/use-assets'
 import { useRankingsInfinite } from '@/hooks/use-stats'
 import { useAutoMore } from '@/hooks/use-auto-more'
@@ -39,15 +38,13 @@ export default function HomePage() {
 
   return (
     <div className="page" id="page-home">
-      {tab === 'hot' ? (
-        <HotRankTab period={period} onOpen={openDetail} />
-      ) : (
-        <div className="grid">
-          {tab === 'recommend'
+      <div className="grid">
+        {tab === 'hot'
+          ? <HotRankTab period={period} onOpen={openDetail} />
+          : tab === 'recommend'
             ? <RecommendTab onOpen={openDetail} />
             : <CosRecommendTab onOpen={openDetail} />}
-        </div>
-      )}
+      </div>
     </div>
   )
 }
@@ -192,9 +189,10 @@ function CosRecommendTab({ onOpen }: { onOpen: (id?: string) => void }) {
   )
 }
 
-/** 排行榜 tab（hot）：同触底加载。period 变化经 queryKey 换档天然重置
- *  分页；qm:refresh → reloadKey+1 重置分页重拉（排行榜是确定性排序，
- *  不需要 seed 打散）。 */
+/** 排行榜 tab（hot）：排版与推荐完全一致（MediaCard 卡片流 + 触底增量加载，
+ *  原 rank-card「内容榜」标题壳按用户拍板去除）。period 变化经 queryKey
+ *  换档天然重置分页；qm:refresh → reloadKey+1 重置分页重拉（排行榜是
+ *  确定性排序，不需要 seed 打散）。 */
 function HotRankTab({ period, onOpen }: { period: HomeRankPeriod; onOpen: (id?: string) => void }) {
   const [reloadKey, setReloadKey] = useState(0)
   useQmRefresh(() => setReloadKey((n) => n + 1))
@@ -203,22 +201,19 @@ function HotRankTab({ period, onOpen }: { period: HomeRankPeriod; onOpen: (id?: 
   const sentinelRef = useAutoMore(q.hasNextPage, () => {
     if (!q.isFetchingNextPage) void q.fetchNextPage()
   })
+  const stream: RecommendationStream = {
+    items,
+    isLoading: q.isLoading,
+    isFetchingNextPage: q.isFetchingNextPage,
+    hasNextPage: q.hasNextPage,
+    sentinelRef,
+  }
   return (
-    <div className="rank-card">
-      <div className="rank-head">
-        <h3>内容榜</h3>
-        <span className="rank-note">按浏览量</span>
-      </div>
-      {q.isLoading ? (
-        <p className="grid-empty">加载中…</p>
-      ) : (
-        <ContentRankGrid items={items} onOpen={(a) => onOpen(a.id)} />
-      )}
-      {q.isFetchingNextPage && <p className="grid-empty">加载中…</p>}
-      {!q.isLoading && items.length > 0 && !q.hasNextPage && (
-        <p className="grid-empty">到底了</p>
-      )}
-      {q.hasNextPage && <div ref={sentinelRef} style={{ height: 1 }} aria-hidden="true" />}
-    </div>
+    <StreamCards
+      stream={stream}
+      onOpen={onOpen}
+      emptyHint="暂无上榜内容。"
+      endHint={<p className="grid-empty">到底了</p>}
+    />
   )
 }
