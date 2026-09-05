@@ -5,6 +5,7 @@ import { LoadMorePill } from '@/components/ui/load-more-pill'
 import { Pill } from '@/components/ui/pill'
 import {
   useAssetsInfinite,
+  useAssetFacets,
   assetToCard,
   type AssetListParams,
   type MediaType,
@@ -12,7 +13,6 @@ import {
 import { useAuthors } from '@/hooks/use-authors'
 import { useTags } from '@/hooks/use-tags'
 import { DEFAULT_PAGE_SIZE, LOCALE_ZH } from '@/lib/constants'
-import { useCollectionFacets } from './use-collection-facets'
 
 /**
  * 集合子页（/app/collection/tag/:name 与 /app/collection/author/:name）：
@@ -26,7 +26,8 @@ import { useCollectionFacets } from './use-collection-facets'
  * 常规作者=「角色/类型」两组、COS 作者=「作品/类型」两组（旧版 COS 的角色即
  * 按作品名分组，统一用「作品」语义呈现；旧版常规作者的「作品」=出处概念，
  * web 协议无对应数据，不做）。胶囊计数经 GET /assets/facets（authorId 恒传，
- * 每维独立请求排自身口径——被渲染维自身参数省略，见 use-collection-facets.ts）；
+ * 每维独立请求排自身口径——被渲染维自身参数省略，见 hooks/use-assets.ts
+ * useAssetFacets，B-3 已合并原专用 use-collection-facets.ts）；
  * 选中状态拼进 useAssetsInfinite 参数（work/character/mediaType，协议单值参数，
  * 故每维单选：点已选胶囊取消、点同行另一胶囊切换）。交互对齐旧版：点值胶囊
  * 只更新选中不收起（多选不退出）、点「收起 ▲」折叠且区域完全隐藏、点维度胶囊
@@ -87,11 +88,11 @@ export default function CollectionPage() {
 
   // 胶囊计数（排自身口径）：作品/角色维请求缺自身参数（带类型选择），类型维
   // 请求缺 mediaType（带作品/角色选择）；authorId 恒传锁定该作者范围
-  const attrFacets = useCollectionFacets(
+  const attrFacets = useAssetFacets(
     { authorId, ...(mediaType ? { mediaType } : {}) },
     !!authorId,
   )
-  const typeFacets = useCollectionFacets(
+  const typeFacets = useAssetFacets(
     { authorId, ...(attrSel ? (isCosAuthor ? { work: attrSel } : { character: attrSel }) : {}) },
     !!authorId,
   )
