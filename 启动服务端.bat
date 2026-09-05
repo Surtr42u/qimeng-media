@@ -38,5 +38,17 @@ echo.
 echo  To stop the server: close this window (or press Ctrl+C)
 echo ================================================================
 echo.
-"C:\Program Files\Go\bin\go.exe" run ./cmd/qimeng
+rem Build to a FIXED path (not "go run") - go run creates a new random
+rem temp binary each start, which makes Windows Firewall treat it as an
+rem unknown app and pop the allow-dialog EVERY time. Fixed path + the
+rem port-level firewall rule (see docs/HANDOVER.md) = no more prompts.
+"C:\Program Files\Go\bin\go.exe" build -o qimeng-server.exe ./cmd/qimeng
+if errorlevel 1 (
+  echo.
+  echo [ERROR] Build failed - read the Go errors above, fix and retry.
+  echo Window stays open so you can read them.
+  pause
+  exit /b 1
+)
+qimeng-server.exe
 pause
