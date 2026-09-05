@@ -11,6 +11,14 @@
 
 ---
 
+## docs(docs): B-6 M6 前置深化备忘录——Termux 一键启动设计稿+ffmpeg 停维护后替代方案扫描（2026-09-06 第七十笔）
+
+执行 AI：GLM-5.3-Flash（B 会话·read-only 批，仓库外产出）
+
+- **产出**：仓库外《QimengNAS/m6-next-steps.md》（约 200 行）——①Termux 形态一键启动脚本设计稿（termux-setup-storage 授权流/二进制投放路径/三层保活/伪代码含失败兜底，未实测处逐条标注「设计稿·未实测」）；②App 内嵌形态 ffmpeg 方案扫描（官方主线 9.0.1 NDK 自编译 / gomobile 桥接 / 社区分支 FFmpegKitNext·ffmpegkit-maintained·hzw1199 预编译成品，各含成熟度/维护/成本/架构契合点）。
+- **关键事实（3 轮网络核实 15 组来源）**：arthenica/ffmpeg-kit 2026-07-02 归档；FFmpegKitNext 为官方续作（源码分发、Kotlin API、无 CLI）；ffmpeg 主线 9.0.1（2026-08-12）；Android 16KB 页对齐现行口径 2027-02-01。
+- **建议口径**已落仓库外《待拍板-20260905夜2.md》条目 3（Termux 先行第一根烟囱；内嵌形态 jniLibs exec 三件套；不采纳 gomobile bind 与 ffmpeg-kit 系 AAR）。本笔仓库零代码改动（read-only 批）。
+
 ## feat(web): 全局动效现代化——页面过渡 token 化/卡片进场 stagger/弹层统一进出场/reduced-motion 归零层（2026-09-06 第六十九笔）
 
 执行 AI：GLM-5.3-Flash（B 会话）
