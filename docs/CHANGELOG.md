@@ -11,6 +11,16 @@
 
 ---
 
+## feat(api): /assets 目录过滤参数（目录树文件行数据源）（2026-09-06 第七十三笔）
+
+执行 AI：GLM-5.3-Flash（B 会话·B-4 批）
+
+- **协议（openapi 先行）**：GET /assets 增可选 query 参数 `directory`——库内相对目录**精确匹配**，只返回该目录**直接子文件**、不含递归子目录；空串=库根（与 GET /dirs 的 DirTree 根节点 path="" 语义对齐）；缺省=不过滤（生成 `*string`，nil/非 nil 区分）；非法路径（绝对路径/盘符/../逃逸/保留设备名等）沿用本链路 400 INVALID_PARAM（不引入 422）。响应结构零改动（复用 AssetSummary/AssetPage）。用途=文件管理页目录树「文件行」数据源（web 接线属 B-5 批）。`make sdk` 三端重建通过。
+- **服务端**：①`browse.sql` 三查询（ListAssetsFilteredDesc/Asc、CountAssetsFiltered）同步插入同一谓词：`rel_path = CASE WHEN dir='' THEN file_name ELSE dir||'/'||file_name END`——file_name=rel_path 尾段不变量经 scanner/filing/upload 三写路径证实；谓词形态先经临时 probe 查询跑 sqlc v1.31.1 验证可解析（`sqlc.narg(directory)` 三处引用去重为单一 `?1` 占位符，CASE 分支内参数比较+`||` 拼接均合法，probe 件已删）；②`assets.go`：assetFilters 增 `Directory` 字段（直落 `sql.NullString{Valid:true}`，**不经 nullStr**——nullStr 把 "" 映射 NULL 会吞掉"空串=库根"；反射 applyFilters 同名落参零改动）；handler 侧先过 `filing.NormalizeRelPath`（SECURITY 红线 1 统一入口，失败 400「目录路径不合法」，filing.go move 的 targetDir 同款先例），空串不归一直接 Valid；③sqlc 重生成 browse.sql.go（git 入库生成物）。
+- **新增单测**：`TestAssetListDirectoryFilter` 四类用例（种子 sub/d.jpg + sub/deep/e.mp4 直插 UpsertAsset，不需要磁盘真文件）：`directory=sub` 精确命中不含递归孙文件；`directory=`（空串）只含库根文件；`directory=sub&mediaType=video` 组合叠加；`directory=../x` 与转义形态 `%2e%2e%2fx` 均 400 INVALID_PARAM。
+- **验收**：`cd server && go test ./... -count=1` 全绿；隔离实例（18424 端口+新临时数据目录+dev 模式，未碰 8420 真库）curl 实测：`directory=sub` 恰回 2 个直接子文件（deep/e.jpg 不入）、`directory=empty-dir` 空列表 totalMatched=0、`directory=sub&mediaType=image` 组合筛选恰中目标、`directory=`（空串）只回库根文件、`../x` 原文与 `%2e%2e%2fx` 均 400 INVALID_PARAM「目录路径不合法」。证据目录 `%TEMP%\qimeng-b4\`。
+- **遗留**：`make lint` 败于与第七十一笔相同的主干既有问题（`server/internal/httpapi/export.go:47` `legacyHistoryLimit` unused，commit 8344920 引入）——本批改动文件 gofmt/golangci-lint/redocly 全部干净（golangci-lint 仅此 1 issue）；按 B-4 口径不做 directory 谓词索引优化（表达式谓词走全扫，万级库实测无感，留档待 profiler 说话）。
+
 ## refactor(web): facets hooks 合并+收藏页排序口径落档（2026-09-06 第七十二笔）
 
 执行 AI：GLM-5.3-Flash（B 会话·B-3 小清偿批）

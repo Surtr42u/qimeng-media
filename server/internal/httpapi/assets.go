@@ -19,6 +19,7 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
 	"qimeng-media/server/internal/auth"
+	"qimeng-media/server/internal/filing"
 	"qimeng-media/server/internal/httpapi/gen"
 	"qimeng-media/server/internal/search"
 	"qimeng-media/server/internal/store"
@@ -113,6 +114,11 @@ type assetFilters struct {
 	PlayRange      any
 	SizeRange      any
 	QJson          any
+	// Directory 目录过滤（openapi GET /assets directory）：*请*用
+	// sql.NullString{Valid:true} 直接落值，禁止走 nullStr——nullStr 把
+	// "" 映射 NULL，而本参数的 "" 是合法值（=库根）；缺省（nil）才是
+	// 不过滤。归一化在 handler 侧完成后传入 newAssetFilters。
+	Directory any
 }
 
 // newAssetFilters 把 openapi 参数映射成筛选集。语义备注：
@@ -123,8 +129,11 @@ type assetFilters struct {
 //     收藏流特例见下方 favorite 分支（2026-09-05 用户拍板）；
 //   - character 'a+b' 拆成集合，SQL 语义 = 全部命中（组合出镜）；
 //   - dateFrom/dateTo 是本地日历日，换算成与 mtime 存储格式同构的
-//     UTC 毫秒时间戳文本再做字典序比较（dateTo 含当日全天）。
-func newAssetFilters(params gen.GetApiV1AssetsParams) assetFilters {
+//     UTC 毫秒时间戳文本再做字典序比较（dateTo 含当日全天）；
+//   - directory 由 handler 预校验归一（filing.NormalizeRelPath）后传入：
+//     nil=缺省不过滤；非 nil 含空串=库根（目录语义允许空，与资产路径
+//     必须非空不同——同 filing.go move 的 targetDir 先例）。
+func newAssetFilters(params gen.GetApiV1AssetsParams, directory *string) assetFilters {
 	var f assetFilters
 	if params.LibraryId != nil {
 		f.LibraryID = nullStr(*params.LibraryId)
@@ -210,6 +219,11 @@ func newAssetFilters(params gen.GetApiV1AssetsParams) assetFilters {
 		// 全文搜索：词法与语义（空格分词、多词 AND）见 search.ParseQuery；
 		// 谓词语义（instr 子串）见 browse.sql 的 q_json 注释。
 		f.QJson = jsonString(search.ParseQuery(*params.Q))
+	}
+	if directory != nil {
+		// 空串=库根，必须 Valid（rel_path=file_name 的尾段不变量，
+		// browse.sql directory 谓词注释）；绝不能过 nullStr（"" → NULL）。
+		f.Directory = sql.NullString{String: *directory, Valid: true}
 	}
 	return f
 }
@@ -316,7 +330,24 @@ func (s *Server) GetApiV1Assets(w http.ResponseWriter, r *http.Request, params g
 	// 谓词在 browse.sql 三查询内，与全部筛选叠加生效（AND）。
 	// groupByDate：AssetPage 响应结构无分组字段，日期分组标签
 	//（DOMAIN_RULES §8）由客户端按 modifiedAt 折叠，服务端无动作。
-	filters := newAssetFilters(params)
+	// directory（目录过滤，文件管理页目录树「文件行」数据源）：空串=库根
+	//（与 GET /dirs 的 DirTree 根节点 path="" 语义对齐）；非空过
+	// NormalizeRelPath（SECURITY 红线 1：一切来自请求的库内相对路径统一
+	// 入口，move 的 targetDir 同此先例），失败 400 INVALID_PARAM。
+	var directory *string
+	if params.Directory != nil {
+		dir := *params.Directory
+		if dir != "" {
+			norm, err := filing.NormalizeRelPath(dir)
+			if err != nil {
+				writeErr(w, http.StatusBadRequest, "INVALID_PARAM", "目录路径不合法")
+				return
+			}
+			dir = norm
+		}
+		directory = &dir
+	}
+	filters := newAssetFilters(params, directory)
 
 	// Asc/Desc 两分支只保留"组参数 + 查询 + 行搬运"，截断探测与
 	// AssetSummary 装配收敛在 buildListPage（两分支的语义差异全在 SQL 侧）。

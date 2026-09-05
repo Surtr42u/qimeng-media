@@ -119,6 +119,13 @@ WHERE
             SELECT 1 FROM assets_fts f
             WHERE f.rowid = a.rowid
               AND instr(lower(f.all_text), lower(qk.value)) > 0)))
+    -- directory filter -- keep in sync with the two list queries above
+    -- (same AND clause; see the DESC variant's comment for semantics).
+    AND (?22 IS NULL
+         OR a.rel_path = CASE
+             WHEN ?22 = '' THEN a.file_name
+             ELSE ?22 || '/' || a.file_name
+         END)
 `
 
 type CountAssetsFilteredParams struct {
@@ -143,6 +150,7 @@ type CountAssetsFilteredParams struct {
 	PlayRange      interface{}
 	SizeRange      interface{}
 	QJson          interface{}
+	Directory      interface{}
 }
 
 // Same filter matrix minus cursor/order/limit (totalMatched field of
@@ -171,6 +179,7 @@ func (q *Queries) CountAssetsFiltered(ctx context.Context, arg CountAssetsFilter
 		arg.PlayRange,
 		arg.SizeRange,
 		arg.QJson,
+		arg.Directory,
 	)
 	var count int64
 	err := row.Scan(&count)
@@ -527,8 +536,15 @@ WHERE
             SELECT 1 FROM assets_fts f
             WHERE f.rowid = a.rowid
               AND instr(lower(f.all_text), lower(qk.value)) > 0)))
-    -- keyset cursor (ASC variant).
+    -- directory filter -- keep in sync with the DESC variant above
+    -- (same AND clause; see its comment for semantics).
     AND (?23 IS NULL
+         OR a.rel_path = CASE
+             WHEN ?23 = '' THEN a.file_name
+             ELSE ?23 || '/' || a.file_name
+         END)
+    -- keyset cursor (ASC variant).
+    AND (?24 IS NULL
         OR (CASE
                 WHEN ?1 = 'fileDate'  THEN a.mtime
                 WHEN ?1 = 'name'      THEN a.file_name
@@ -537,7 +553,7 @@ WHERE
                 WHEN ?1 = 'playCount' THEN printf('%020d', (SELECT COUNT(*) FROM view_events v7 WHERE v7.asset_id = a.asset_id AND v7.kind = 'play'))
                 WHEN ?1 = 'favoriteAt' THEN (SELECT fv_sorted.created_at FROM favorites fv_sorted WHERE fv_sorted.asset_id = a.asset_id)
                 ELSE a.created_at
-            END) > ?23
+            END) > ?24
         OR ((CASE
                 WHEN ?1 = 'fileDate'  THEN a.mtime
                 WHEN ?1 = 'name'      THEN a.file_name
@@ -546,10 +562,10 @@ WHERE
                 WHEN ?1 = 'playCount' THEN printf('%020d', (SELECT COUNT(*) FROM view_events v7 WHERE v7.asset_id = a.asset_id AND v7.kind = 'play'))
                 WHEN ?1 = 'favoriteAt' THEN (SELECT fv_sorted.created_at FROM favorites fv_sorted WHERE fv_sorted.asset_id = a.asset_id)
                 ELSE a.created_at
-            END) = ?23
-            AND a.asset_id > ?24))
+            END) = ?24
+            AND a.asset_id > ?25))
 ORDER BY sort_key ASC, a.asset_id ASC
-LIMIT ?25
+LIMIT ?26
 `
 
 type ListAssetsFilteredAscParams struct {
@@ -575,6 +591,7 @@ type ListAssetsFilteredAscParams struct {
 	PlayRange      interface{}
 	SizeRange      interface{}
 	QJson          interface{}
+	Directory      interface{}
 	CursorKey      interface{}
 	CursorID       sql.NullString
 	RowLimit       int64
@@ -625,6 +642,7 @@ func (q *Queries) ListAssetsFilteredAsc(ctx context.Context, arg ListAssetsFilte
 		arg.PlayRange,
 		arg.SizeRange,
 		arg.QJson,
+		arg.Directory,
 		arg.CursorKey,
 		arg.CursorID,
 		arg.RowLimit,
@@ -825,9 +843,23 @@ WHERE
             SELECT 1 FROM assets_fts f
             WHERE f.rowid = a.rowid
               AND instr(lower(f.all_text), lower(qk.value)) > 0)))
+    -- directory filter (openapi GET /assets directory param; file-manager
+    -- directory-tree "file rows"): exact match on the library-relative
+    -- dir, DIRECT children only (no recursion). rel_path is rebuilt from
+    -- file_name: dir='' (library root) means rel_path IS the bare
+    -- file_name, else dir||'/'||file_name -- the file_name tail invariant
+    -- holds for all three write paths (scanner / filing move / upload).
+    -- NULL (param absent) = no filter; '' is a VALID value meaning the
+    -- library root. The caller normalizes the path (filing.NormalizeRelPath)
+    -- and maps invalid input to 400 before this query runs.
+    AND (?23 IS NULL
+         OR a.rel_path = CASE
+             WHEN ?23 = '' THEN a.file_name
+             ELSE ?23 || '/' || a.file_name
+         END)
     -- keyset cursor (DESC variant): strict (sort_key, asset_id) tuple
     -- comparison. The sort_key CASE repeats inline (parser rule 3).
-    AND (?23 IS NULL
+    AND (?24 IS NULL
         OR (CASE
                 WHEN ?1 = 'fileDate'  THEN a.mtime
                 WHEN ?1 = 'name'      THEN a.file_name
@@ -836,7 +868,7 @@ WHERE
                 WHEN ?1 = 'playCount' THEN printf('%020d', (SELECT COUNT(*) FROM view_events v7 WHERE v7.asset_id = a.asset_id AND v7.kind = 'play'))
                 WHEN ?1 = 'favoriteAt' THEN (SELECT fv_sorted.created_at FROM favorites fv_sorted WHERE fv_sorted.asset_id = a.asset_id)
                 ELSE a.created_at
-            END) < ?23
+            END) < ?24
         OR ((CASE
                 WHEN ?1 = 'fileDate'  THEN a.mtime
                 WHEN ?1 = 'name'      THEN a.file_name
@@ -845,10 +877,10 @@ WHERE
                 WHEN ?1 = 'playCount' THEN printf('%020d', (SELECT COUNT(*) FROM view_events v7 WHERE v7.asset_id = a.asset_id AND v7.kind = 'play'))
                 WHEN ?1 = 'favoriteAt' THEN (SELECT fv_sorted.created_at FROM favorites fv_sorted WHERE fv_sorted.asset_id = a.asset_id)
                 ELSE a.created_at
-            END) = ?23
-            AND a.asset_id < ?24))
+            END) = ?24
+            AND a.asset_id < ?25))
 ORDER BY sort_key DESC, a.asset_id DESC
-LIMIT ?25
+LIMIT ?26
 `
 
 type ListAssetsFilteredDescParams struct {
@@ -874,6 +906,7 @@ type ListAssetsFilteredDescParams struct {
 	PlayRange      interface{}
 	SizeRange      interface{}
 	QJson          interface{}
+	Directory      interface{}
 	CursorKey      interface{}
 	CursorID       sql.NullString
 	RowLimit       int64
@@ -976,6 +1009,7 @@ func (q *Queries) ListAssetsFilteredDesc(ctx context.Context, arg ListAssetsFilt
 		arg.PlayRange,
 		arg.SizeRange,
 		arg.QJson,
+		arg.Directory,
 		arg.CursorKey,
 		arg.CursorID,
 		arg.RowLimit,

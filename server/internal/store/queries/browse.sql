@@ -205,6 +205,20 @@ WHERE
             SELECT 1 FROM assets_fts f
             WHERE f.rowid = a.rowid
               AND instr(lower(f.all_text), lower(qk.value)) > 0)))
+    -- directory filter (openapi GET /assets directory param; file-manager
+    -- directory-tree "file rows"): exact match on the library-relative
+    -- dir, DIRECT children only (no recursion). rel_path is rebuilt from
+    -- file_name: dir='' (library root) means rel_path IS the bare
+    -- file_name, else dir||'/'||file_name -- the file_name tail invariant
+    -- holds for all three write paths (scanner / filing move / upload).
+    -- NULL (param absent) = no filter; '' is a VALID value meaning the
+    -- library root. The caller normalizes the path (filing.NormalizeRelPath)
+    -- and maps invalid input to 400 before this query runs.
+    AND (sqlc.narg(directory) IS NULL
+         OR a.rel_path = CASE
+             WHEN sqlc.narg(directory) = '' THEN a.file_name
+             ELSE sqlc.narg(directory) || '/' || a.file_name
+         END)
     -- keyset cursor (DESC variant): strict (sort_key, asset_id) tuple
     -- comparison. The sort_key CASE repeats inline (parser rule 3).
     AND (sqlc.narg(cursor_key) IS NULL
@@ -358,6 +372,13 @@ WHERE
             SELECT 1 FROM assets_fts f
             WHERE f.rowid = a.rowid
               AND instr(lower(f.all_text), lower(qk.value)) > 0)))
+    -- directory filter -- keep in sync with the DESC variant above
+    -- (same AND clause; see its comment for semantics).
+    AND (sqlc.narg(directory) IS NULL
+         OR a.rel_path = CASE
+             WHEN sqlc.narg(directory) = '' THEN a.file_name
+             ELSE sqlc.narg(directory) || '/' || a.file_name
+         END)
     -- keyset cursor (ASC variant).
     AND (sqlc.narg(cursor_key) IS NULL
         OR (CASE
@@ -493,7 +514,14 @@ WHERE
         WHERE NOT EXISTS (
             SELECT 1 FROM assets_fts f
             WHERE f.rowid = a.rowid
-              AND instr(lower(f.all_text), lower(qk.value)) > 0)));
+              AND instr(lower(f.all_text), lower(qk.value)) > 0)))
+    -- directory filter -- keep in sync with the two list queries above
+    -- (same AND clause; see the DESC variant's comment for semantics).
+    AND (sqlc.narg(directory) IS NULL
+         OR a.rel_path = CASE
+             WHEN sqlc.narg(directory) = '' THEN a.file_name
+             ELSE sqlc.narg(directory) || '/' || a.file_name
+         END);
 
 -- GetAssetWithLibrary: detail/media-serving join -- serving /media/**
 -- needs the library root to rebuild the absolute path. Explicit column

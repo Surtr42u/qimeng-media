@@ -1299,3 +1299,100 @@ func TestAssetListCosWork(t *testing.T) {
 		}
 	}
 }
+
+// ---------- directory 目录过滤（B-4：目录树「文件行」数据源） ----------
+
+// seedSubdirAssets 直插子目录种子资产：UpsertAsset 是 scanner/filing/upload
+// 三写路径共用的入库语句，relPath 含子目录段即可，列表查询只读库、
+// 不需要磁盘真文件。返回直接子文件与递归孙文件的资产 ID。
+func seedSubdirAssets(t *testing.T, e *testEnv) (direct, nested string) {
+	t.Helper()
+	now := store.FormatTimestamp(e.clock.Now())
+	mk := func(relPath, name, mediaType string) string {
+		id := uuid.NewString()
+		if _, err := e.q.UpsertAsset(context.Background(), db.UpsertAssetParams{
+			AssetID: id, LibraryID: e.libID, RelPath: relPath, FileName: name,
+			MediaType: mediaType, SizeBytes: 100, Mtime: now, CreatedAt: now, UpdatedAt: now,
+		}); err != nil {
+			t.Fatalf("种子资产入库失败: %v", err)
+		}
+		return id
+	}
+	return mk("sub/d.jpg", "d.jpg", "image"), mk("sub/deep/e.mp4", "e.mp4", "video")
+}
+
+// TestAssetListDirectoryFilter：directory 参数四类语义（B-4 拍板口径）——
+// 精确匹配只含该目录直接子文件（不含递归子目录）；空串=库根（库根文件
+// 且仅库根文件）；与 mediaType 等既有筛选叠加生效；非法路径（含转义
+// 形态的 ../）400 INVALID_PARAM。
+func TestAssetListDirectoryFilter(t *testing.T) {
+	env := newTestEnv(t)
+	seedSubdirAssets(t, env) // sub/d.jpg + sub/deep/e.mp4；库根另有 a.jpg/b.jpg/c.mp4
+
+	fetch := func(t *testing.T, query string) (int, gen.AssetPage, gen.Error) {
+		t.Helper()
+		resp := env.do(t, "GET", "/api/v1/assets"+query, "")
+		defer func() { _ = resp.Body.Close() }()
+		var page gen.AssetPage
+		var errResp gen.Error
+		if resp.StatusCode == http.StatusOK {
+			_ = decodeBody(resp, &page)
+		} else {
+			_ = decodeBody(resp, &errResp)
+		}
+		return resp.StatusCode, page, errResp
+	}
+	names := func(p gen.AssetPage) []string {
+		out := []string{}
+		for _, it := range deref(p.Items) {
+			if it.FileName != nil {
+				out = append(out, *it.FileName)
+			}
+		}
+		return out
+	}
+
+	// ① directory=sub：恰 d.jpg——不含递归子目录 deep/e.mp4、不含库根文件
+	code, p, _ := fetch(t, "?directory=sub")
+	if code != http.StatusOK {
+		t.Fatalf("directory=sub 期望 200，得到 %d", code)
+	}
+	if got := names(p); len(got) != 1 || got[0] != "d.jpg" {
+		t.Fatalf("directory=sub 应恰含 d.jpg（不含 deep/e.mp4），得到 %v", got)
+	}
+	if p.TotalMatched == nil || *p.TotalMatched != 1 {
+		t.Fatalf("directory=sub totalMatched 应 1，得到 %v", p.TotalMatched)
+	}
+
+	// ② directory=（空串）=库根：只含库根三文件，不含 sub 下两个种子
+	code, p, _ = fetch(t, "?directory=")
+	if code != http.StatusOK {
+		t.Fatalf("directory= 期望 200，得到 %d", code)
+	}
+	seen := map[string]bool{}
+	for _, n := range names(p) {
+		seen[n] = true
+	}
+	if len(deref(p.Items)) != 3 || !seen["a.jpg"] || !seen["b.jpg"] || !seen["c.mp4"] || seen["d.jpg"] || seen["e.mp4"] {
+		t.Fatalf("directory= 应只含库根 a/b/c，得到 %v", names(p))
+	}
+
+	// ③ 组合叠加：directory=sub + mediaType=video → 空（d.jpg 是 image；
+	// 递归孙文件 e.mp4 虽是 video 但不属于 sub 的直接子文件）
+	code, p, _ = fetch(t, "?directory=sub&mediaType=video")
+	if code != http.StatusOK {
+		t.Fatalf("directory=sub&mediaType=video 期望 200，得到 %d", code)
+	}
+	if n := len(deref(p.Items)); n != 0 {
+		t.Fatalf("directory=sub&mediaType=video 应为空，得到 %v", names(p))
+	}
+
+	// ④ 非法路径 → 400 INVALID_PARAM：../x 原文与 %2e%2e%2fx 转义形态
+	//（服务端解码一次后即 ../x，NormalizeRelPath 的 .. 逃逸检查兜住）
+	for _, q := range []string{"?directory=../x", "?directory=%2e%2e%2fx"} {
+		code, _, errResp := fetch(t, q)
+		if code != http.StatusBadRequest || errResp.Code != "INVALID_PARAM" {
+			t.Fatalf("%s 期望 400 INVALID_PARAM，得到 %d %q", q, code, errResp.Code)
+		}
+	}
+}
