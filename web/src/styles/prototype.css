@@ -382,11 +382,15 @@ body {
   font-weight: 500;
 }
 
-/* ===== 右下角悬浮刷新（参照客户端）：白底圆角卡 + 深色刷新图标，固定于视口右下、不随内容滚动 ===== */
-.refresh-fab {
+/* ===== 右下角悬浮刷新（参照客户端）：白底圆角卡 + 深色刷新图标，固定于视口右下、不随内容滚动；
+   bottom 88 = 24(底距) + 52(回顶部按钮高) + 12(间距)——为下方回顶部按钮让位，自身不随其显隐跳动。
+   选择器必须带 .layout：本文件 .layout button 重置(0,1,1) 会压过单类选择器(0,1,0)的 background，
+   浅色态实底失效变全透明（实测 computed rgba(0,0,0,0)，内容从按钮里透出）；暗色 .dark 前缀恰好多
+   一个类(0,2,0)侥幸压过。提到 (0,2,0) 保证不透明底（用户拍板：取消透明） ===== */
+.layout .refresh-fab {
   position: fixed;
   right: 24px;
-  bottom: 24px;
+  bottom: 88px;
   z-index: 40; /* 高于内容卡片与顶栏搜索面板，悬浮常显 */
   width: 52px;
   height: 52px;
@@ -406,6 +410,36 @@ body {
   to { transform: rotate(360deg); }
 }
 .dark .refresh-fab { background: var(--fab-bg); box-shadow: var(--fab-shadow); }
+
+/* 回顶部按钮：滚动超阈值出现（阈值 AppShell BACK_TOP_THRESHOLD=400），样式同刷新 FAB；
+   带 .layout 同刷新 FAB——压过 .layout button 重置的 background:none，实底不透明（用户拍板：取消透明）；
+   显隐走透明度+位移过渡，落位不透明；隐藏态 pointer-events none + tabIndex -1 不可误触 */
+.layout .backtop-fab {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 40;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background: var(--bg);
+  box-shadow: var(--fab-shadow);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  color: var(--text-main);
+  opacity: 0;
+  transform: translateY(8px);
+  pointer-events: none;
+  transition: opacity .16s ease, transform .16s ease;
+}
+.backtop-fab.shown { opacity: 1; transform: none; pointer-events: auto; }
+.backtop-fab:hover { box-shadow: var(--fab-shadow-hover); }
+.backtop-fab svg { width: 15px; height: 15px; }
+.backtop-fab p { font-size: 12px; line-height: 13px; }
+.dark .backtop-fab { background: var(--fab-bg); box-shadow: var(--fab-shadow); }
 
 .grid {
   display: grid;

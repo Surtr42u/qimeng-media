@@ -11,6 +11,16 @@
 
 ---
 
+## feat(web): 悬浮按钮组——刷新 FAB 上移让位 + 回顶部按钮滚动出现 + FAB 透明底根治（2026-09-05 第五十五笔）
+
+执行 AI：GLM-5.3-Flash（主代理，用户实机拍板「替代现在的刷新：取消透明、下滑后出现下面那个顶部，阈值实现自定」；参考图为旧版半透明样式，新版不复制透明）
+
+- **FAB 透明底根治（「取消透明」的实锤）**：用户报告属实——`.layout button` 重置（`background: none`，特异度 0,1,1）压过单类 `.refresh-fab`（0,1,0）的 `background: var(--bg)`，浅色模式 FAB 底色自上线起一直 computed 为 rgba(0,0,0,0)（内容从按钮里透出，仅靠阴影撑形态）；暗色 `.dark .refresh-fab`（0,2,0）侥幸压过故只有暗色正常。修复：FAB 基础规则作用域提升 `.layout .refresh-fab` / `.layout .backtop-fab`（0,2,0），实测底色 rgb(255,255,255)。
+- **回顶部按钮**：新增 `.backtop-fab` 固定右下 24（实心▲ +「顶部」文字，BackTopIcon 对齐参考样式），内容区滚动 >400px（AppShell `BACK_TOP_THRESHOLD`，阈值实现定的）淡入上移出现，点击平滑滚回顶部，回顶自动隐藏；隐藏态 pointer-events none + tabIndex -1 不可误触；短内容页无溢出永不出现（正确行为）。
+- **刷新 FAB 上移让位**：bottom 24→88（24 底距 + 52 顶钮高 + 12 间距），位置固定不随顶钮显隐跳动。
+- 滚动容器为 .content（window 不滚），监听挂 AppShell contentRef（passive）。
+- 验收：tsc -b / build / make lint 全绿；浏览器实测——滚动 600 → opacity 1 / 落位 bottom 26.4，点击 → scrollTop 0 + 自动隐藏，双 FAB 底色 rgb(255,255,255)，刷新钮位置全程不跳。
+
 ## UI 微调：热榜首行卡片顶边对齐侧栏「相册」项（2026-09-05 第五十四笔）
 
 执行 AI：GLM-5.3-Flash（主代理，用户实机拍板「这俩对齐」——侧栏相册项 ↔ 热榜首行卡片）
