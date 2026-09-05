@@ -12,7 +12,7 @@
 - **服务端前置件已就绪**：断点续播 `PUT /assets/{id}/progress`（commit 9773213）、ffprobe 编码元数据、全部领域算法（M3 完成，客户端不复算）。
 - **开工前置（每批验收依赖本机服务端在线）**：服务端跑法/管理密码/测试库状态见 `docs/HANDOVER.md`「怎么跑起来」「线上实机状态」两节（双击根目录 `启动服务端.bat`，端口 8420；dev 免密模式只影响 Web 端 LoginGate，App 一律走正常密码登录）；验收涉及真数据页面前先 curl 确认 8420 在线。
 - **单机形态预留（ADR-0015，M6 实施）**：M4-1 的「服务器地址」配置是唯一服务端定位点——单机形态只改这一处指向 localhost，UI 零改动。禁止在 ViewModel/Repository 之外散落服务端地址假设。
-- **执行环境（2026-09-04 实测就绪）**：Android Studio（jbr JDK 21）+ SDK `<AndroidSdk>`（build-tools 35，compileSdk 所需 platform 用 sdkmanager 补装）+ emulator（WHPX 加速）。**缺 AVD**——M4-0 首步创建。免安装 JDK17 备用 `..\dev-tools\jdk17`。
+- **执行环境（2026-09-04 实测就绪）**：Android Studio（jbr JDK 21）+ SDK `<AndroidSdk>`（build-tools 35，compileSdk 所需 platform 用 sdkmanager 补装）+ emulator（WHPX 加速）。**缺 AVD**——M4-0 首步创建。免安装 JDK17 备用 `..\dev-tools\jdk17`。**模拟器启动约定（2026-09-06 用户拍板，headless）**：`emulator.exe -avd qimeng_api35 -no-window -no-audio -gpu swiftshader_indirect -no-snapshot`（无窗口+禁音频；同 AVD 双开会被拒，启动前确认无实例；headless 下 uiautomator dump / adb input / logcat 一切照旧，验收证据协议=文本证据 §4.7）。
 - CI 现为四 job，**无 Android job**——M4-0 补第五个。
 
 ## 2. 批次总表（一批 = 一个执行会话的量，按序执行）
@@ -21,7 +21,7 @@
 |---|---|---|---|
 | M4-0 | 工程基建（AVD + 多模块骨架 + 壳导航 + make/CI）✅ 2026-09-05 完成（CHANGELOG 第三十二笔） | 无 | §导航结构 |
 | M4-1 | 登录与服务端配置（地址+token，单机形态预留点）✅ 2026-09-06 完成（CHANGELOG 第七十一笔；验收证据=文本协议存 %TEMP%\qimeng-m41-evidence\） | M4-0 | — |
-| M4-2 | 列表族（首页/相册(原全部)/收藏/历史/搜索/作者；2026-09-05 夜用户拍板：**导航 5 Tab→4 Tab**——「全部」更名「相册」只改 label（route all 不变）、原「相册」Tab 删除，feature:album 空壳模块一并移除） | M4-1 | §导航结构、§首页、§全部页、§搜索页、§芯片栏配置对比、§万能筛选组件、§药丸容器、§相册出处分区、§COS 模式、§下拉刷新、§浏览历史、§收藏页 |
+| M4-2 | 列表族（首页/相册(原全部)/收藏/历史/搜索/作者；2026-09-05 夜用户拍板：**导航 5 Tab→4 Tab**——「全部」更名「相册」只改 label（route all 不变）、原「相册」Tab 删除，feature:album 空壳模块一并移除）✅ 2026-09-06 完成（CHANGELOG 第八十笔；验收证据=文本协议存 %TEMP%\qimeng-m42-evidence\） | M4-1 | §导航结构、§首页、§全部页、§搜索页、§芯片栏配置对比、§万能筛选组件、§药丸容器、§相册出处分区、§COS 模式、§下拉刷新、§浏览历史、§收藏页 |
 | M4-3 | 详情页（图片缩放/预加载/沉浸 + Media3 视频手势 + 断点续播 + 时间轴标签 + 互动行） | M4-2 | §详情页、§详情页沉浸浏览、§BiliPlayerView 视频播放器、§缩略图加载 |
 | M4-4 | 行为上报离线队列 | M4-3 | —（事件口径 `docs/DOMAIN_RULES.md` §5） |
 | M4-5 | 上传主通道（分享接收/文件选择/队列） | M4-1 | —（服务端口径 `docs/GUIDE_API.md`） |
@@ -113,5 +113,5 @@
 6. **代码卫生（AI_README_FIRST）**：魔法值零容忍；同一字面量第 2 次出现提常量；调度参数禁内联；方法超一屏拆；中文注释写"为什么"。
 7. **验收命令（每批必全绿，且必须贴证）**：`make app-build && make app-test && make app-lint` + 本批新增单测 + `make lint`（全仓）——**交付报告逐条粘贴各命令的结尾输出原文**（成功/失败都要贴），未贴输出不算交付。**证据协议（2026-09-05 夜起用户明令：一律禁截图/录屏/视觉查看——敏感内容）**：实机/模拟器/UI 验收证据一律文本形态——`adb shell uiautomator dump` 文本层级树、logcat 关键行、curl JSON、单测输出、浏览器 DOM 数值实测；证据目录 `%TEMP%\qimeng-<批>-evidence\`；M4-7 的全流程录屏要求同此替换为交互自检清单+文本证据。
 8. **文档同步（铁律 10）**：每批完成更新本文件批次表勾选 + CHANGELOG 条目（真实模型署名）；协议改动同步 GUIDE_API/DOMAIN_RULES；commit 格式 `类型(app): 简述 | 文档: 已更新XXX`，代码+文档同一 commit，提交前 `git pull`。
-9. **测试纪律**：ViewModel/状态机/映射/纯逻辑必须单测；UI 以实机操作自检清单代验（清单进交付报告）。
+9. **测试纪律**：ViewModel/状态机/映射/纯逻辑必须单测；UI 以实机操作自检清单代验（清单进交付报告）。**全程不碰音量、默认静音**（2026-09-06 用户拍板：模拟器 -no-audio 启动，任何播放类测试也不调音量）。
 10. **存疑停手总则**：环境装不动/版本冲突/规格冲突/需要用户拍板的取舍——停手，交付报告写清现象、已试方案、候选方案，等用户；**禁止带病交付**。

@@ -33,6 +33,9 @@ kotlin {
 }
 
 dependencies {
+    // 网格卡片/分组段需要领域模型（core→core 单向依赖，feature 经此传递可见 :core:model）
+    api(project(":core:model"))
+
     // Compose 版本统一由 BOM 收口（模块内不写裸版本）
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
@@ -40,4 +43,10 @@ dependencies {
     implementation(libs.compose.foundation)
     implementation(libs.compose.material3)
     implementation(libs.compose.ui.tooling.preview)
+
+    // Coil 3（拍板：动图缩略图动画；api 传递给 feature 与 :app——AsyncImage 与单例 ImageLoader 装配）
+    api(libs.coil.core)
+    api(libs.coil.compose)
+    api(libs.coil.gif)
+    api(libs.coil.network.okhttp)
 }

@@ -17,3 +17,8 @@ java {
     sourceCompatibility = JavaVersion.VERSION_17
     targetCompatibility = JavaVersion.VERSION_17
 }
+
+dependencies {
+    // 领域纯逻辑单测（JVM 最快档；筛选状态机/分批/分组标签全在此锁定）
+    testImplementation(libs.junit)
+}

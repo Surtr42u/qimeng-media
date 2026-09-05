@@ -35,12 +35,22 @@ kotlin {
 }
 
 dependencies {
+    // feature 只许依赖 core（单向依赖，ADR-0014）；core:ui 已 api 传递 :core:model
     implementation(project(":core:ui"))
+    implementation(project(":core:data"))
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.material3)
+    implementation(libs.compose.foundation)
     implementation(libs.compose.ui.tooling.preview)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.hilt.navigation.compose)
 
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
+
+    testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(project(":core:testing"))
 }
