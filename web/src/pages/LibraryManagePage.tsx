@@ -87,10 +87,18 @@ function TxtAuthorImportCard() {
       <div
         className={`upload-drop${importTxt.isPending ? ' disabled' : ''}`}
         role="button"
+        tabIndex={importTxt.isPending ? -1 : 0}
         aria-disabled={importTxt.isPending}
         aria-label="选择作者清单 TXT 并导入"
         onClick={() => {
           if (!importTxt.isPending) inputRef.current?.click()
+        }}
+        onKeyDown={(e) => {
+          // 导入区现在是唯一入口（下方重复按钮已删），键盘可达性补齐：
+          // Enter/Space 触发文件选择，对齐原生 button 语义
+          if (importTxt.isPending || (e.key !== 'Enter' && e.key !== ' ')) return
+          e.preventDefault()
+          inputRef.current?.click()
         }}
       >
         {importTxt.isPending ? (
@@ -127,14 +135,6 @@ function TxtAuthorImportCard() {
         <span>· 删除某份后按「剩余片段全部」重算作者与文件关联，作者行保留</span>
       </div>
       <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-        <button
-          className="save-btn"
-          type="button"
-          disabled={importTxt.isPending}
-          onClick={() => inputRef.current?.click()}
-        >
-          {importTxt.isPending ? '导入中…' : '选择 TXT 导入'}
-        </button>
         <button
           className="pill"
           type="button"
