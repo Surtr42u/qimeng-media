@@ -1,7 +1,8 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
-// :feature:settings —— 设置页与我的页（M4-6；壳导航「我的」Tab 落点）。M4-0 空壳起步：只挂共享占位页，真页面随对应批次落地。
-// feature 只许依赖 core（单向依赖，ADR-0014）；本模块依赖面 = core:ui + Compose M3 + Hilt（ViewModel 预接线）。
+// :feature:settings —— 设置页与我的页（壳导航「我的」Tab 落点）。
+// M4-1 最小版：标题 + 退出登录入口（会话闭环）；完整设置页/我的页随 M4-6 落地。
+// feature 只许依赖 core（单向依赖，ADR-0014）。
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
@@ -36,11 +37,20 @@ kotlin {
 
 dependencies {
     implementation(project(":core:ui"))
+    implementation(project(":core:data"))
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.material3)
     implementation(libs.compose.ui.tooling.preview)
 
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.hilt.navigation.compose)
+
+    implementation(libs.kotlinx.coroutines.android)
+
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
+
+    testImplementation(project(":core:testing"))
 }

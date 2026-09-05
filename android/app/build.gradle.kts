@@ -46,6 +46,7 @@ dependencies {
     implementation(project(":core:ui"))
 
     implementation(project(":feature:home"))
+    implementation(project(":feature:login"))
     implementation(project(":feature:all"))
     implementation(project(":feature:album"))
     implementation(project(":feature:favorite"))
@@ -71,4 +72,5 @@ dependencies {
     ksp(libs.hilt.compiler)
 
     testImplementation(libs.junit)
+    testImplementation(project(":core:testing"))
 }
