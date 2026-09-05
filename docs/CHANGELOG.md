@@ -11,6 +11,12 @@
 
 ---
 
+## ci(app): android job 补 :core:model:test——纯 JVM 模块 testDebugUnitTest 覆盖不到（2026-09-06 第八十八笔）
+
+执行 AI：GLM-5.3-Flash（A 车道·夜2 返工批执行子代理）
+
+- CI android job 构建命令补 `:core:model:test`：:core:model 是纯 JVM 模块（`kotlin("jvm")`，qimeng.jvm.library convention），只有 `test` 任务，`testDebugUnitTest` 聚合覆盖不到——该模块的领域纯逻辑单测（筛选状态机/分组/分批）此前在 CI 从未执行。与本机 Makefile `app-test` 的同款补账对齐（0ff017a），只动 android job 一处。
+
 ## refactor(app): build-logic convention 插件收敛 17 模块重复配置 + Makefile app-test 补 :core:model:test（2026-09-06 第八十七笔）
 
 执行 AI：GLM-5.3-Flash（A 车道·A-S1 批执行子代理）
