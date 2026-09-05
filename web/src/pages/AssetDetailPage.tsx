@@ -1,16 +1,27 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router'
-import { useAssetDetail, useReportView } from '@/hooks/use-assets'
+import { Star, ThumbsUp } from 'lucide-react'
+import {
+  useAssetDetail,
+  useReportView,
+  useSetFavorite,
+  useToggleLike,
+} from '@/hooks/use-assets'
 import { useDwellReport } from '@/hooks/use-dwell-report'
 import { useProgress, useTimelineTags } from '@/hooks/use-progress'
 import VideoPlayer from '@/components/media/video-player'
-import { formatBytes, formatDuration, formatShortDate } from '@/lib/format'
+import { AuthorCard } from '@/components/detail/AuthorCard'
+import { AssetTagRow } from '@/components/detail/AssetTagRow'
+import { UpNextList } from '@/components/detail/UpNextList'
+import { formatBytes, formatCount, formatShortDate } from '@/lib/format'
 import { ensureSessionId } from '@/hooks/use-session'
 
 /**
  * 资产详情页（/app/asset/:assetId，首页/相册卡片点击进入）。
+ * B站式双栏排版（2026-09-05 大改）：左主列 = 媒体舞台 → 标题 → 信息行 →
+ * 点赞/收藏互动行 → 标签行；右栏 = 作者卡（关注）+「接下来播放」推荐栏。
  * 图片/动图 = 签名原件直链大图（"查看永远发原件"）；视频 = ArtPlayer 播放器
- * （W-3：倍速 0.5~3x/静音/全屏/断点续播/时间轴标签打点回看，网络逻辑全在
+ * （W-3：倍速/静音/全屏/断点续播/时间轴标签打点回看，网络逻辑全在
  * hooks/use-progress.ts）。兼容性提示：ffprobe 编码（协议 0006）显示无法
  * 直链播放的编码提示，不转码。打点（DOMAIN_RULES §5）：进入上报 open、
  * 视频每次起播上报 play、停留时长上报 dwell（图片视频通用）。
@@ -39,17 +50,22 @@ export default function AssetDetailPage() {
   const reportView = useReportView()
   // 进度上报：tick=播放中心跳（5s 节流）、flush=暂停/卸载立即上报（hooks/use-progress.ts）
   const progress = useProgress(assetId ?? '')
+  // 互动行（B站式）：点赞 toggle（响应 LikeState 回填）/ 收藏显式设置（hooks/use-assets.ts）
+  const toggleLike = useToggleLike()
+  const setFavorite = useSetFavorite()
 
   // 已看完徽标与续播起点渲染期直接推导（协议明文口径，客户端推导）；
   // 起点的「定格防 refetch 重建」由 VideoPlayer 挂载时冻结 + key 绑定资产实现
   const watched = !!d && isWatched(d.lastPositionSeconds, d.durationMs)
   const startTime = watched ? 0 : (d?.lastPositionSeconds ?? 0)
 
-  // open 打点：每详情实例只报一次（会话去重由服务端按 assetId+kind+sessionId+当日）
-  const reported = useRef(false)
+  // open 打点：每资产只报一次（会话去重由服务端按 assetId+kind+sessionId+当日）。
+  // ref 记「已上报资产」而非布尔：UpNextList 的详情→详情导航同路由只换参数、
+  // 组件不重挂载（reviewer P1），布尔守卫会让新资产 open 永不上报
+  const reportedFor = useRef<string | null>(null)
   useEffect(() => {
-    if (!assetId || reported.current) return
-    reported.current = true
+    if (!assetId || reportedFor.current === assetId) return
+    reportedFor.current = assetId
     reportView.mutate({
       assetId,
       kind: 'open',
@@ -74,6 +90,9 @@ export default function AssetDetailPage() {
   // 闸门在 hook 内部；图片与视频详情页通用）
   useDwellReport(assetId)
 
+  // 点赞图标弹跳动效：每次点击重触发（类挂上→动画结束复位），onAnimationEnd 冒泡到按钮
+  const [likeBounce, setLikeBounce] = useState(false)
+
   if (!d) {
     return (
       <div className="page" id="page-asset">
@@ -87,47 +106,79 @@ export default function AssetDetailPage() {
 
   return (
     <div className="page" id="page-asset">
-      {codecWarn ? (
-        <div className="codec-warn">
-          此视频编码为 {d.videoCodec}，当前浏览器可能无法直接播放（项目约定始终播放原件、不转码）。
-        </div>
-      ) : null}
-      <div className="asset-stage">
-        {watched ? <span className="watched-badge">已看完</span> : null}
-        {isVideo ? (
-          tagsLoading ? null : (
-            <VideoPlayer
-              key={d.id ?? assetId}
-              src={d.origUrl ?? ''}
-              poster={d.thumbUrl}
-              startTime={startTime}
-              highlights={(timelineTags ?? [])
-                .filter((t) => t.timeMillis != null)
-                .map((t) => ({ time: (t.timeMillis ?? 0) / 1000, text: t.name ?? '' }))}
-              onTimeUpdate={progress.tick}
-              onPause={progress.flush}
-              onPlay={reportPlay}
-            />
-          )
-        ) : d.origUrl ? (
-          <img src={d.origUrl} alt={d.fileName} loading="eager" />
-        ) : (
-          <p className="grid-empty">无法加载内容</p>
-        )}
-      </div>
-      <div className="rank-card">
-        <table className="log-table">
-          <tbody>
-            <tr><td style={{ width: 110, color: 'var(--text-sub)' }}>文件名</td><td>{d.fileName}</td></tr>
-            <tr><td style={{ color: 'var(--text-sub)' }}>大小</td><td>{formatBytes(d.sizeBytes ?? 0)}</td></tr>
-            <tr><td style={{ color: 'var(--text-sub)' }}>出处</td><td>{d.source ?? '未识别'}</td></tr>
+      <div className="detail-layout">
+        <div className="detail-main">
+          {codecWarn ? (
+            <div className="codec-warn">
+              此视频编码为 {d.videoCodec}，当前浏览器可能无法直接播放（项目约定始终播放原件、不转码）。
+            </div>
+          ) : null}
+          <div className="asset-stage">
+            {watched ? <span className="watched-badge">已看完</span> : null}
             {isVideo ? (
-              <tr><td style={{ color: 'var(--text-sub)' }}>时长</td><td>{d.durationMs ? formatDuration(d.durationMs) : '-'}</td></tr>
-            ) : null}
-            <tr><td style={{ color: 'var(--text-sub)' }}>浏览 / 播放</td><td>{d.viewCount ?? 0} / {d.playCount ?? 0}</td></tr>
-            <tr><td style={{ color: 'var(--text-sub)' }}>修改时间</td><td>{formatShortDate(d.modifiedAt)}</td></tr>
-          </tbody>
-        </table>
+              tagsLoading ? null : (
+                <VideoPlayer
+                  key={d.id ?? assetId}
+                  src={d.origUrl ?? ''}
+                  poster={d.thumbUrl}
+                  startTime={startTime}
+                  highlights={(timelineTags ?? [])
+                    .filter((t) => t.timeMillis != null)
+                    .map((t) => ({ time: (t.timeMillis ?? 0) / 1000, text: t.name ?? '' }))}
+                  onTimeUpdate={progress.tick}
+                  onPause={progress.flush}
+                  onPlay={reportPlay}
+                />
+              )
+            ) : d.origUrl ? (
+              <img src={d.origUrl} alt={d.fileName} loading="eager" />
+            ) : (
+              <p className="grid-empty">无法加载内容</p>
+            )}
+          </div>
+          <h1 className="detail-title">{d.cosWork ?? d.fileName}</h1>
+          <p className="detail-meta">
+            <span>浏览 {formatCount(d.viewCount)}</span>
+            <span>播放 {formatCount(d.playCount)}</span>
+            <span>{formatBytes(d.sizeBytes ?? 0)}</span>
+            {d.width ? <span>{d.width}×{d.height}</span> : null}
+            <span>{formatShortDate(d.modifiedAt)}</span>
+            {d.source ? <span>{d.source}</span> : null}
+          </p>
+          <div className="detail-actions">
+            <button
+              className={`detail-act${(d.likedToday ?? false) ? ' active' : ''}${likeBounce ? ' bounce' : ''}`}
+              onClick={() => {
+                if (!assetId) return
+                setLikeBounce(true)
+                toggleLike.mutate(assetId)
+              }}
+              onAnimationEnd={() => setLikeBounce(false)}
+              disabled={toggleLike.isPending || !assetId}
+              title={(d.likedToday ?? false) ? '取消今日赞' : '点赞（每资产每日一次）'}
+            >
+              <ThumbsUp />
+              <b>{formatCount(d.likeCount)}</b>
+            </button>
+            <button
+              className={`detail-act${d.isFavorite ? ' active' : ''}`}
+              onClick={() => {
+                if (!assetId) return
+                setFavorite.mutate({ assetId, favorite: !(d.isFavorite ?? false) })
+              }}
+              disabled={setFavorite.isPending || !assetId}
+              title={d.isFavorite ? '取消收藏' : '收藏'}
+            >
+              <Star />
+              <b>{d.isFavorite ? '已收藏' : '收藏'}</b>
+            </button>
+          </div>
+          <AssetTagRow assetId={assetId!} tags={d.tags ?? []} />
+        </div>
+        <aside className="detail-side">
+          <AuthorCard authors={d.authors ?? []} />
+          <UpNextList assetId={assetId!} mediaType={d.mediaType} cosWork={d.cosWork} />
+        </aside>
       </div>
     </div>
   )

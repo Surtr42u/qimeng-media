@@ -11,6 +11,19 @@
 
 ---
 
+## feat(web): 详情页 B站式双栏排版大改——互动行/标签管理/作者卡/接下来播放 + 按钮类回归连带修复（2026-09-05 第五十六笔）
+
+执行 AI：GLM-5.3-Flash（主代理；executor 子代理因模型并发限流 4 次不可用，按兜底流程主代理亲自实现，researcher/reviewer 子代理正常派出）
+
+- **排版（用户指定 B站详情页截图为参照，只学排版不学视觉，配色全走项目 token）**：详情页从「舞台+log-table」极简版重写为双栏——左主列=媒体舞台→标题（cosWork ?? fileName 与卡片同口径）→meta 行（浏览·播放·大小·尺寸·日期·出处）→点赞/收藏互动行→标签行；右栏=作者卡（displayName+·COS 标识+关注按钮，作者名点击进作者文件页，无作者不渲染）+「接下来播放」行式推荐栏（缩略图+时长角标+两行标题+作者副行；排除当前资产；换一批=换 seed；数据源=同类型 recommendations 流，协议无相似推荐参数，用户拍板口径）。窄窗 ≤1000px 单栏降级。新组件 `components/detail/{AuthorCard,AssetTagRow,UpNextList}.tsx`，新样式段 `.detail-*` 前缀追加 prototype.css 末尾。
+- **新 hooks**（use-assets.ts）：useToggleLike（PUT like 无 body，响应 LikeState 经 patchDetail 即时回填详情缓存+资产根键失效）/useSetFavorite（显式值非 toggle）/useReplaceAssetTags（整体替换+标签池失效）/useUpNextList（recommendations 单页，seed 入缓存键，'upnext' 子族不与首页数字键碰撞，SSE 根键失效天然覆盖）。
+- **标签管理弹窗**（radix Dialog 统一包封装）：标签池点选+新建（新建自动入勾选），保存一次整体替换提交（DOMAIN_RULES §7 口径，保留项一并带上）；弹窗按 open 条件挂载，勾选态 useState 惰性初始化即复位（规避 set-state-in-effect lint）。
+- **动效纯 CSS 零新依赖**：按钮 hover 提亮/active 0.94 缩放、点赞图标弹跳 keyframes（onAnimationEnd 复位支持连点重触发）、点赞/收藏服务态主色实底+图标填充、推荐行 hover 提亮、换一批图标旋转、弹窗 radix 自带动画。
+- **打点三件套保真 + reviewer P1 修复**：open/play/dwell 与播放进度上报原样搬移；reviewer 全新上下文对抗审查 1 轮打回——P1=UpNextList 的详情→详情导航同路由不重挂载，open 打点的 `useRef(false)` 守卫永不重置→新资产 open 永不上报（旧页面无此入口，本批新引入的路径）；修为 `reportedFor.current` 记录已上报资产 id，服务端实证直进与右栏跳转两资产 viewCount 均=1。
+- **连带修复 671db67 的 `.layout button` 重置存量回归**：该重置 (0,1,1) 压过全部单类按钮的 border/background——本批浏览器实测发现作者卡 `.follow-btn--idle` 白底透明不可见，顺藤排查同病类并一次根治：pill/seg/more-filter/follow-btn(--idle)/save-btn/confirm-btn--cancel/--primary/--danger 及本批 .detail-act 共 14 处选择器加 button 前缀提级（沿用 select-trigger 先例）；span 消费的 .pill 用选择器列表双写保住非按钮用法。reviewer 另打回 P3×2 已修：管理按钮手型被 `.detail-tags .pill` (0,2,0) 压死→提为 `button.pill.detail-tag-manage`；`.upnext-thumb` 补 `.dark` 深色占位（照 `.dark .card--cover` 既有模式）。
+- 验收：tsc / build / lint 全绿（新文件 0 告警）；隔离实例（18430+临时数据目录，未碰真实库）curl 9 项（like toggle 计数与当日态翻转、favorite 204 双向、tags PUT 后详情变化、follow 204、recommendations 非空）+ 浏览器全链路（浅/深/窄窗三态截图、点赞收藏关注状态回填、标签勾选保存、换一批重排、打点存活、对齐实测主列 spread=0.0/舞台顶 83.1 与首页贴顶栏节奏一致）。
+- 遗留：图片查看器（缩放/沉浸）与列表上下文批次导航仍按用户拍板后置（HANDOVER_UI §5.9 发现项）；测试纪律补账——**PWA Service Worker 缓存旧构建**，改前端重 build 后浏览器须清 SW/缓存再验（本次踩坑：computed 样式陈旧与 fullPage 截图错乱皆源于此，已记 HANDOVER_UI）。
+
 ## feat(web): 悬浮按钮组——刷新 FAB 上移让位 + 回顶部按钮滚动出现 + FAB 透明底根治（2026-09-05 第五十五笔）
 
 执行 AI：GLM-5.3-Flash（主代理，用户实机拍板「替代现在的刷新：取消透明、下滑后出现下面那个顶部，阈值实现自定」；参考图为旧版半透明样式，新版不复制透明）
