@@ -11,6 +11,13 @@
 
 ---
 
+## feat(web): 目录树文件行接线（消费 /assets directory 过滤）（2026-09-06 第七十六笔）
+
+执行 AI：GLM-5.3-Flash（B 会话·B-5 批）
+
+- **完成项**：文件管理页目录浏览卡「目录树文件行」接线（纯消费 B-4 第七十三笔的 GET /assets directory 过滤，协议零改动）：①`hooks/use-assets.ts` 新增 `useAssetsInDirectory(libraryId, directory, enabled)`——GET /assets 带 libraryId+directory+limit=200（协议上限具名常量 DIR_FILES_LIMIT，目录内直接子文件量级小一次拉全）；queryKey 含 libraryId+directory（切目录换键重取），挂在 ASSETS_QUERY_KEY 根键下（useMoveAsset/useDeleteAsset 的根键失效直接命中文件清单）；②`DirTree.tsx` 增「选择+行尾操作」组合模式（select 按钮与行尾操作并存——按钮不可嵌套，行容器走 .dir-row flex；上传卡/整理弹窗纯选择模式零变化）；③`DirBrowser.tsx` 目录行升级组合模式：点击目录（含根行「库根」）选中，树下方新增 `DirFileList.tsx` 列该目录直接子文件行（文件名 + 类型/大小 metric + 行内 hover 三操作 重命名/移动/删除；缺省选中库根，换库复位）；④弹窗编排抽共享 `components/manage/FileOpsDialogs.tsx`（MoveDialog + 删除确认「移入回收站」文案 + useDeleteAsset 删除流第二处出现即提取，代码卫生 6；详情页 `FileOpsButton` 改委托复用，删除后 navigate(-1) 收尾保留）——挂载形态与抽取前逐语义一致：MoveDialog 条件挂载（惰性初始化复位依赖条件挂载，首测常驻挂载翻车：预填名冻成空串、保存即误移库，已修并复测），ConfirmDialog 常驻受控（B-2 关闭动画依赖常驻挂载）；⑤prototype.css 追加 B-5 段（组合模式目录行 .dir-node flex 修正 + 文件行区样式，颜色全走既有 token，零新颜色字面量）。批量多选不做（既有待办不变）。
+- **验收**：`cd web && npx tsc --noEmit -p tsconfig.app.json` 0 错；`npm --prefix web run build` 成功；`npm --prefix web run lint` 改动文件 0 告警（存量 17 条不属本批）。隔离实例（18425+新临时数据目录+dev 模式，未碰 8420 真实库）headless 文本实测：选库后缺省「库根」选中、文件行 3 行（video-a.mp4 视频·31 B / image-a2.png 图片·70 B / image-a.png 图片·70 B，行内三操作齐）；点 sub1 → 文件行切 2 行（「sub1」的直接子文件2）；行内重命名 image-b.png→renamed-b.png 生效（弹窗预填正确、DOM 文本变化、刷新后保持）；删除 image-c.png（确认弹窗文案含「移入回收站」）→ 行消失、GET /trash 可查（originalPath=sub1/image-c.png）；静止态布局数值（文件管理页目录浏览卡区无历史基线，本批实测留档为基线）：page x=96.78/y=95.69/w=1118.83（y 与 B-3 批 h2 口径一致）、目录卡与 page 同宽（spread=0）、目录树首行 y=791.53/h=36.81、文件区标题 y=861.33、首文件行 y=891.56/h=40.58；证据目录 %TEMP%\qimeng-b5-evidence\（保留勿删）。
+
 ## fix(server): 删未使用常量 legacyHistoryLimit 清 make lint 红（500 上限单一来源归 legacy_export.sql）（2026-09-06 第七十五笔）
 
 执行 AI：GLM-5.3-Flash（B 会话·自审清偿批）

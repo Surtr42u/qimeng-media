@@ -102,6 +102,32 @@ export function useAssetsInfinite(params: AssetListParams = {}, enabled = true) 
   })
 }
 
+/** 目录树文件行单页上限：协议 GET /assets 的 limit 上限=200（openapi limit
+ *  maximum）。目录内直接子文件量级小，一次拉全不分页（协议侧改动须同步此处）。 */
+const DIR_FILES_LIMIT = 200
+
+/**
+ * 目录树选中目录的直接子文件清单（B-5 目录树文件行数据源；GET /assets 的
+ * directory 过滤是 B-4 协议扩展：库内相对目录精确匹配、只含直接子文件、
+ * 空串=库根、缺省不过滤——本 hook 恒传 directory，选中目录语义不含"不过滤"态）。
+ * queryKey 含 libraryId+directory：切目录即换键重取；挂在 ASSETS_QUERY_KEY
+ * 根键下，useMoveAsset/useDeleteAsset 的根键失效直接命中本清单（文件行
+ * 随操作结果即时刷新，目录树计数由 DIRS 失效同步）。enabled=false（未选库）
+ * 挂起不发请求（同 useDirTree 口径）。totalMatched>limit 的目录不翻页——
+ * 目录内文件量级远小于协议上限，超出属异常规模，暂按前 200 条展示。
+ */
+export function useAssetsInDirectory(libraryId: string, directory: string, enabled: boolean) {
+  return useQuery({
+    queryKey: [...ASSETS_QUERY_KEY, 'dir-files', libraryId, directory],
+    queryFn: () =>
+      unwrapSdkResult(
+        getApiV1Assets({ query: { libraryId, directory, limit: DIR_FILES_LIMIT } }),
+      ),
+    enabled,
+    select: (page) => page.items ?? [],
+  })
+}
+
 /** 类型总数徽标（limit=1 只取 totalMatched；搜索页类型 tab 计数用，不带其他筛选）。
  *  partition 三态与列表口径一致：缺省=常规（默认排除 COS），'cos'=只要 COS，'all'=常规∪COS。 */
 export function useAssetsTotal(mediaType?: MediaType, partition?: 'regular' | 'cos' | 'all') {

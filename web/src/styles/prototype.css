@@ -1715,3 +1715,31 @@ button.dir-action-btn:focus-visible { outline: 2px solid var(--qm-primary); outl
     scroll-behavior: auto !important;
   }
 }
+
+/* ===== B-5 目录树文件行接线（2026-09-06）：目录选中 + 文件行三操作 =====
+   颜色全走既有 token（§5.8 口径，本段零颜色字面量）；行视觉复用 B-1 的
+   .dir-row/.dir-action-btn（hover 显隐/hover 配色零重复定义） */
+
+/* 组合模式目录行（DirTree.tsx selectable+renderActions 分支）：.dir-node 原
+   width:100% 是"按钮独占行"语境（上传卡/整理弹窗选择模式）——进 .dir-row
+   flex 容器后改 flex:1 给行尾操作让位，min-width:0 保住省略号 */
+.dir-row .dir-node { flex: 1; min-width: 0; width: auto; }
+
+/* 文件行区（DirFileList）：标题行 + 直接子文件行列表 */
+.dir-files { margin-top: 14px; }
+.dir-files-title {
+  display: flex; align-items: baseline; gap: 8px;
+  font-size: 13px; color: var(--text-sub);
+}
+.dir-files-title b { font-variant-numeric: tabular-nums; color: var(--text-main); }
+.dir-file-list { margin: 6px 0 0; padding: 0; list-style: none; }
+.dir-file-row {
+  padding: 7px 8px; border-radius: 8px;
+  font-family: var(--font); font-size: 13px; color: var(--text-main);
+}
+.dir-file-row:hover { background: var(--hover-bg); }
+.dir-file-row .dir-file-name { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.dir-file-row .dir-file-meta {
+  flex: none;
+  font-size: 12px; color: var(--text-sub); font-variant-numeric: tabular-nums;
+}
