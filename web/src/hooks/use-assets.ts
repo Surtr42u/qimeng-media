@@ -166,8 +166,8 @@ export function useSources() {
  *  enabled=false 防无效请求（集合子页作者实体未定位时用）。B-3 合并：
  *  CollectionPage 原专用 use-collection-facets.ts（并行冲突规避产物）与本
  *  hook 逐语义重复，收敛后该文件消亡——其缓存键第三段 'collection' 一并
- *  去掉（同参数同响应，与相册页共享缓存无碍；两页参数形态天然互斥：
- *  相册页 partition 恒显式传、集合页无 partition，无键碰撞）。 */
+ *  去掉（同参数同响应，与相册页共享缓存无碍；两页参数形态不同键为主：
+ *  即使同键也同参数同响应共享缓存零行为差）。 */
 export function useAssetFacets(
   params: {
     partition?: Partition

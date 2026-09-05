@@ -59,6 +59,8 @@ export function useDeleteAsset() {
       qc.invalidateQueries({ queryKey: TRASH_QUERY_KEY })
       // 列表/推荐流的卡片集合少一项
       qc.invalidateQueries({ queryKey: RECOMMENDATIONS_QUERY_KEY })
+      // 目录树 fileCount 同步失效（与 useMoveAsset 对齐，消除本地即时性窗口）
+      qc.invalidateQueries({ queryKey: DIRS_QUERY_KEY })
     },
   })
 }

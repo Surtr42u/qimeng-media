@@ -11,6 +11,14 @@
 
 ---
 
+## fix(web): B车道自审P3清偿（死类名/删除后目录树失效/条目措辞/时长token化）（2026-09-06 第七十四笔）
+
+执行 AI：GLM-5.3-Flash（B 会话·自审清偿批）
+
+- **完成项**：reviewer 对抗审查 B-1~B-3 三笔通过后所列 P3 建议清偿 + 记账措辞订正，功能零变化：①`CreateDirDialog.tsx` 删死类名 `dir-act-create`（全仓库无 CSS 定义，按钮实际渲染 `confirm-btn--cancel` 样式）；②`use-file-ops.ts` useDeleteAsset onSuccess 补失效 `DIRS_QUERY_KEY`（与 useMoveAsset 对齐，消除删除资产后目录树 fileCount 的本地即时性窗口；DIRS_QUERY_KEY 本就在该文件 import）；③第六十八笔与 HANDOVER_UI §5 第 14 条完成项首句订正——原「文件管理页目录树文件行三操作」与实际不符（三操作实际挂详情页互动行，目录树只新增新建子目录），改为「详情页互动行文件三操作（重命名/移动/删除入回收站）+ 目录树新建子目录（目录树文件行操作待 B-4/B-5 协议扩展与接线）」，只改措辞不改条目结构；④B-3 合并注释口径订正（use-assets.ts + HANDOVER_UI §5 第 16 条同步）——原「相册页 partition 恒显式传、两页参数形态天然互斥」表述不准（AlbumsPage 的 facetPartition 路排自身口径不传 partition），改为「两页参数形态不同键为主；即使同键也同参数同响应共享缓存零行为差」；⑤prototype.css B-1 段两处裸 `transition: .15s` 时长改 `var(--qm-duration-fast)`（120ms，视觉档等价，对齐 B-2 段 token 化做法）。
+- **披露**：B-4 批 commit 26c2126 曾携带 A 车道已 git rm 的 2 个删除（android/feature/album，内容与 M4-2 导航四化一致，仅历史归属瑕疵；共享 master 不重写已推送历史，特此落档）。
+- **验收**：`npx tsc --noEmit -p tsconfig.app.json` 0 错；`npm --prefix web run build` 成功；`npm --prefix web run lint` 改动文件 0 告警（存量 17 条不属本批）。功能零变化（改的是失效键补齐/死类名/措辞/CSS 时长 token 化），未做隔离实例重测。
+
 ## feat(api): /assets 目录过滤参数（目录树文件行数据源）（2026-09-06 第七十三笔）
 
 执行 AI：GLM-5.3-Flash（B 会话·B-4 批）
@@ -61,7 +69,7 @@
 
 执行 AI：GLM-5.3-Flash（B 会话·收尾交付）
 
-- **完成项**：文件管理页目录树文件行三操作——重命名/移动（POST /assets/{id}/move，targetDir 必填 + newName 可选一端点两用：改名=同目录+新名、移动=新目录+原名；服务端保证 asset_id 与全部关联数据零改动，移动后自动重算出处/COS 富化）/删除=入回收站（DELETE /assets/{id}，铁律 4 DELETE 语义永不物理删，确认文案明示「移入回收站」）；目录行新建子目录（POST /dirs，幂等，已存在视为成功）。操作成功后目录树/回收站相关 query 失效（本地 onSuccess + 服务端 library.changed SSE 双保险，TanStack invalidate 幂等）；失败 toast 透传服务端文案。协议零改动（全走既有端点）。
+- **完成项**：详情页互动行文件三操作（重命名/移动/删除入回收站）+ 目录树新建子目录（目录树文件行操作待 B-4/B-5 协议扩展与接线）——重命名/移动（POST /assets/{id}/move，targetDir 必填 + newName 可选一端点两用：改名=同目录+新名、移动=新目录+原名；服务端保证 asset_id 与全部关联数据零改动，移动后自动重算出处/COS 富化）/删除=入回收站（DELETE /assets/{id}，铁律 4 DELETE 语义永不物理删，确认文案明示「移入回收站」）；目录行新建子目录（POST /dirs，幂等，已存在视为成功）。操作成功后目录树/回收站相关 query 失效（本地 onSuccess + 服务端 library.changed SSE 双保险，TanStack invalidate 幂等）；失败 toast 透传服务端文案。协议零改动（全走既有端点）。
 - **新增代码**：`hooks/use-file-ops.ts`（useMoveAsset/useDeleteAsset/useCreateDir，铁律 7 UI 组件禁直调 API）+ `components/manage/DirBrowser.tsx`/`MoveDialog.tsx`/`CreateDirDialog.tsx` + `components/detail/FileOpsButton.tsx`（详情页已接线）。
 - **验收结论**：`npx tsc --noEmit -p tsconfig.app.json` 0 错；`npm --prefix web run build` 成功；`npm --prefix web run lint` 改动 9 文件 0 告警（存量 17 告警在 router.tsx/SearchPage 等，不属本批不扩围）。隔离实例 curl 全链：新建目录 201 + 重放幂等、移动+重命名 200、目标已存在 409 TARGET_EXISTS、删除→回收站可查→恢复 200。证据目录 %TEMP%\qimeng-b1\（保留勿删）。
 - **待办与待拍板**：目录树批量多选本批不做记待办；两项待拍板见仓库外《QimengNAS/待拍板-20260905夜2.md》（条目 1=目录树文件行缺协议数据源→B-4 批解决；条目 2=嵌套子树对齐存量问题）。
