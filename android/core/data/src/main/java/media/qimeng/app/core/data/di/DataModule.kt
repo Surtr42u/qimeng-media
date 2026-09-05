@@ -11,6 +11,7 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -66,12 +67,37 @@ interface DataModule {
     @Binds
     @Singleton
     fun bindUploadRepository(impl: media.qimeng.app.core.data.repository.SdkUploadRepository): media.qimeng.app.core.data.repository.UploadRepository
+
+    @Binds
+    @Singleton
+    fun bindStatsRepository(impl: media.qimeng.app.core.data.repository.SdkStatsRepository): media.qimeng.app.core.data.repository.StatsRepository
+
+    @Binds
+    @Singleton
+    fun bindRecommendPrefsRepository(impl: media.qimeng.app.core.data.repository.SdkRecommendPrefsRepository): media.qimeng.app.core.data.repository.RecommendPrefsRepository
+
+    @Binds
+    @Singleton
+    fun bindSystemInfoRepository(impl: media.qimeng.app.core.data.repository.SdkSystemInfoRepository): media.qimeng.app.core.data.repository.SystemInfoRepository
+
+    @Binds
+    @Singleton
+    fun bindDiskCachePrefsRepository(impl: media.qimeng.app.core.data.repository.DataStoreDiskCachePrefsRepository): media.qimeng.app.core.data.repository.DiskCachePrefsRepository
+
+    @Binds
+    @Singleton
+    fun bindCoilCacheManager(impl: media.qimeng.app.core.data.di.RealCoilCacheManager): media.qimeng.app.core.data.repository.CoilCacheManager
 }
 
 /** 客户端本地偏好 DataStore 限定符（与 :core:network 的 server_config DataStore 区分绑定） */
 @Qualifier
 @Retention(AnnotationRetention.RUNTIME)
 annotation class ClientPrefsDataStore
+
+/** IO 调度器限定符（ViewModel 注入用——可测性：测试传测试调度器，不在产品代码硬引用 Dispatchers.IO） */
+@Qualifier
+@Retention(AnnotationRetention.RUNTIME)
+annotation class IoDispatcher
 
 /** 客户端本地偏好 DataStore（搜索历史/网格列数；与 server_config 分文件——语义域不同） */
 @Module
@@ -88,6 +114,10 @@ object ClientPrefsModule {
     ) {
         context.preferencesDataStoreFile(CLIENT_PREFS_FILE_NAME)
     }
+
+    @Provides
+    @IoDispatcher
+    fun provideIoDispatcher(): CoroutineDispatcher = Dispatchers.IO
 
     /** 客户端偏好持久化文件名（client_prefs.preferences_pb） */
     private const val CLIENT_PREFS_FILE_NAME = "client_prefs"
