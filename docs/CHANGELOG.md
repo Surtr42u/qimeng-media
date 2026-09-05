@@ -11,6 +11,15 @@
 
 ---
 
+## feat(web): 文件管理目录树操作化（重命名/移动/删除入回收站/新建子目录）（2026-09-06 第六十八笔）
+
+执行 AI：GLM-5.3-Flash（B 会话·收尾交付）
+
+- **完成项**：文件管理页目录树文件行三操作——重命名/移动（POST /assets/{id}/move，targetDir 必填 + newName 可选一端点两用：改名=同目录+新名、移动=新目录+原名；服务端保证 asset_id 与全部关联数据零改动，移动后自动重算出处/COS 富化）/删除=入回收站（DELETE /assets/{id}，铁律 4 DELETE 语义永不物理删，确认文案明示「移入回收站」）；目录行新建子目录（POST /dirs，幂等，已存在视为成功）。操作成功后目录树/回收站相关 query 失效（本地 onSuccess + 服务端 library.changed SSE 双保险，TanStack invalidate 幂等）；失败 toast 透传服务端文案。协议零改动（全走既有端点）。
+- **新增代码**：`hooks/use-file-ops.ts`（useMoveAsset/useDeleteAsset/useCreateDir，铁律 7 UI 组件禁直调 API）+ `components/manage/DirBrowser.tsx`/`MoveDialog.tsx`/`CreateDirDialog.tsx` + `components/detail/FileOpsButton.tsx`（详情页已接线）。
+- **验收结论**：`npx tsc --noEmit -p tsconfig.app.json` 0 错；`npm --prefix web run build` 成功；`npm --prefix web run lint` 改动 9 文件 0 告警（存量 17 告警在 router.tsx/SearchPage 等，不属本批不扩围）。隔离实例 curl 全链：新建目录 201 + 重放幂等、移动+重命名 200、目标已存在 409 TARGET_EXISTS、删除→回收站可查→恢复 200。证据目录 %TEMP%\qimeng-b1\（保留勿删）。
+- **待办与待拍板**：目录树批量多选本批不做记待办；两项待拍板见仓库外《QimengNAS/待拍板-20260905夜2.md》（条目 1=目录树文件行缺协议数据源→B-4 批解决；条目 2=嵌套子树对齐存量问题）。
+
 ## docs(docs): QimengNAS 工作区清理——删除重复/过时文件，拍板指针归一夜2（2026-09-06 第六十七笔）
 
 执行 AI：GLM-5.3（主代理·计划）
