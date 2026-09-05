@@ -188,7 +188,7 @@ media-ui-prototype/
 7. **验收**：tsc/build/lint 全绿（新文件 0 告警）；隔离实例 curl 9 项（like toggle 计数翻转/favorite 双向/tags 替换/follow/recommendations）+ 浏览器全链路（浅/深/窄窗、交互回填、标签全流程、换一批、打点存活、对齐 spread=0.0/舞台顶 83.1）。
 8. **遗留**：图片查看器（缩放/沉浸）与批次导航仍按用户拍板后置；测试注意——PWA Service Worker 会缓存旧构建，改前端重 build 后浏览器要清 SW/缓存再验（本次实测踩坑：computed 样式陈旧+fullPage 截图错乱均源于此）。
 9. **编码兼容提示条已移除（2026-09-05 第五十七笔，用户拍板）**：用户浏览器可直放 hevc，详情页顶部 .codec-warn 黄条是常驻噪声——元素级移除（含 INCOMPATIBLE_CODECS 常量、.codec-warn 样式段、--codec-warn-* token 全清）；播放失败兜底交回 ArtPlayer 错误态。
-10. **详情页自适应排版 + 视频全屏修复（2026-09-05 第五十九笔，用户拍板）**：①`.detail-layout` 去 1360 固定限宽改纯流式，**切勿再加 max-width/margin auto**——flex 列子项带 auto 边距会退化为 fit-content 收缩（实测内容 1209 布局 814、双侧留白，用户打回过），固定限宽则全屏右侧留白；1280/1920/2560 三档视口实测左右 spread=0。②视频全屏只显中间段修复：`.asset-stage :fullscreen video { max-height: none }`（68vh 上限曾把全屏画面压到屏高 68%）+ `:fullscreen { zoom: 1 }`（全局 zoom 1.1 被全屏顶层继承致边缘裁切），实测全屏层 video 铺满、zoom=1。③混合内容作者（M71Z30 47图+15视频）三入口验证全过：作者集合页视频卡带 m:ss 角标/图片卡无、图片详情 img 舞台+同类型推荐（0 角标）、视频详情 ArtPlayer+带角标推荐。全程零截图，纯 DOM 数值实测。
+10. **详情页自适应排版 + 视频全屏修复（2026-09-05 第五十九/六十笔，用户拍板）**：①`.detail-layout` 自适应=**`width:100%; max-width:1800px; margin-inline:auto` 三件套缺一不可**——≤1800 全填满（1080p 全屏零空白），更宽居中不放大（4K 上纯流式压迫感强、右栏过窄，用户打回）；只有 auto 边距没有显式宽度会退化 fit-content 收缩（实测内容 1209 布局 814 双侧留白，用户打回）；固定限宽不居中则全屏右侧留白（最初版，用户打回）。右栏 `.detail-side` = `clamp(340px, 22vw, 400px)`（1280 基准 340 不动）。上限 1800 是唯一调节旋钮。四档实测：1280 与基准逐像素一致/1920 全填/2560 居中各留 225/4K 居中各留 865、媒体 1518。②视频全屏只显中间段修复：`.asset-stage :fullscreen video { max-height: none }`（68vh 上限曾把全屏画面压到屏高 68%）+ `:fullscreen { zoom: 1 }`（全局 zoom 1.1 被全屏顶层继承致边缘裁切），实测全屏层 video 铺满、zoom=1。③混合内容作者（M71Z30 47图+15视频）三入口验证全过：作者集合页视频卡带 m:ss 角标/图片卡无、图片详情 img 舞台+同类型推荐（0 角标）、视频详情 ArtPlayer+带角标推荐。全程零截图，纯 DOM 数值实测。
 
 
 ## 6. 工作树现状（2026-09-02 三轮：原型移植 web 重建，接手必读）

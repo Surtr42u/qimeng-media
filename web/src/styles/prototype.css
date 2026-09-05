@@ -1433,12 +1433,20 @@ button.select-trigger:disabled { cursor: not-allowed; opacity: .5; }
   display: flex;
   align-items: flex-start;
   gap: 20px;
-  /* 自适应排版（2026-09-05 用户拍板）：无限宽纯流式，任意窗口都填满内容区——
-     切勿加 max-width/margin auto：flex 列子项带 auto 边距会退化为 fit-content
-     收缩（实测内容 1209 布局仅 814、双侧留白），固定限宽则全屏右侧留白 */
+  /* 自适应微调（2026-09-05 第六十笔，用户拍板）：填满到 1800 为止（1080p 全屏
+     内容区 ~1618 仍全填零空白），更宽（1440p/4K）整体居中、不再跟着分辨率
+     无限放大——纯流式时 4K 主媒体区近 3000px 压迫感强、右栏相对过窄。
+     width:100% 必须保留：flex 列子项只有 auto 边距会退化为 fit-content 收缩
+     （第五十九笔实测内容 1209 布局 814 双侧留白），显式宽度下 auto 边距
+     才是纯余量分配。上限 1800 是唯一调节旋钮 */
+  width: 100%;
+  max-width: 1800px;
+  margin-inline: auto;
 }
 .detail-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
-.detail-side { width: 340px; flex: none; display: flex; flex-direction: column; gap: 16px; }
+/* 右栏随视口微加宽（第六十笔）：小窗保 340 下限不动（1280 观感基准），
+   大屏放大到 400 缓解主媒体区变大后右栏过窄的失衡；≤1000px 断点仍整宽降级 */
+.detail-side { width: clamp(340px, 22vw, 400px); flex: none; display: flex; flex-direction: column; gap: 16px; }
 /* 首行贴侧栏节奏（§4.5-3 全页首行同规则）：媒体舞台=高卡片顶沿贴顶栏下缘，
    数值同首页网格 -11.5px */
 .detail-main > .asset-stage:first-child { margin-top: -11.5px; }
