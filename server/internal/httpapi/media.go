@@ -11,6 +11,8 @@ import (
 
 	"qimeng-media/server/internal/filing"
 	"qimeng-media/server/internal/httpapi/gen"
+	"qimeng-media/server/internal/scanner"
+	"qimeng-media/server/internal/sysmon"
 	"qimeng-media/server/internal/thumbnail"
 )
 
@@ -18,6 +20,29 @@ import (
 // 缓存键 = SHA-256(assetId+size)，键即内容身份（见 GetMediaThumbAssetId
 // 注释），不存在"同键变内容"，激进缓存语义才成立（DOMAIN_RULES §11）。
 const thumbCacheControl = "public, max-age=31536000, immutable"
+
+// countingResponseWriter 包装直链响应并累计实际写出的字节数（media_bytes_total
+// 是流量语义：304 空体计 0、Range 只计所发区间——不是文件大小语义）。
+// ServeContent 内部只经 Write 输出 body，覆写 Write 即覆盖全部字节出口。
+type countingResponseWriter struct {
+	http.ResponseWriter
+	n int64
+}
+
+func (c *countingResponseWriter) Write(p []byte) (int, error) {
+	n, err := c.ResponseWriter.Write(p)
+	c.n += int64(n)
+	return n, err
+}
+
+// mediaKindFor 把库内 media_type 归并进 media_bytes_total 的 kind 维度：
+// 视频走 video 直链计 video，图/动图计 orig（两类都从 /media/orig/ 直链出）。
+func mediaKindFor(mediaType string) sysmon.MediaKind {
+	if mediaType == scanner.MediaTypeVideo {
+		return sysmon.MediaVideo
+	}
+	return sysmon.MediaOrig
+}
 
 // GetMediaOrigAssetId 原图/原视频直链。
 //
@@ -66,7 +91,10 @@ func (s *Server) GetMediaOrigAssetId(w http.ResponseWriter, r *http.Request, ass
 	// modTime 参与条件请求（If-Modified-Since）；解析失败传零值，
 	// ServeContent 对零值 modTime 自动跳过时间条件。
 	// 文件名喂给 ServeContent 做扩展名→ContentType 推断（jpg/mp4/...）。
-	http.ServeContent(w, r, row.FileName, parseStoreTime(row.Mtime), f)
+	// 经计数器发出，返回后按 kind 累计实际输出字节（304/Range 只计实发）。
+	cw := &countingResponseWriter{ResponseWriter: w}
+	http.ServeContent(cw, r, row.FileName, parseStoreTime(row.Mtime), f)
+	sysmon.Default.AddMediaBytes(mediaKindFor(row.MediaType), float64(cw.n))
 }
 
 // GetMediaThumbAssetId 缩略图直链（懒生成）。
@@ -128,5 +156,8 @@ func (s *Server) GetMediaThumbAssetId(w http.ResponseWriter, r *http.Request, as
 		return
 	}
 	// 文件名带 .webp 扩展名让 ServeContent 推断出 image/webp。
-	http.ServeContent(w, r, "t.webp", time.Time{}, f)
+	// 缩略图恒计 thumb（304 手动返回路径在上方已 return，不进这里）。
+	cw := &countingResponseWriter{ResponseWriter: w}
+	http.ServeContent(cw, r, "t.webp", time.Time{}, f)
+	sysmon.Default.AddMediaBytes(sysmon.MediaThumb, float64(cw.n))
 }

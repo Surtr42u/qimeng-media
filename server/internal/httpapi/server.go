@@ -202,7 +202,10 @@ func New(deps Deps) (*Server, error) {
 	if err := s.authState.load(context.Background(), s.q); err != nil {
 		return nil, err
 	}
-	s.sse = events.NewHandler(deps.Bus, events.WithVersion(deps.Version))
+	// SSE 连接数 gauge（OBSERVABILITY sse_connections）经 Option 回调注入：
+	// events 包不感知 sysmon，装配期单点接线（绝对值 Set 语义在回调侧）。
+	s.sse = events.NewHandler(deps.Bus, events.WithVersion(deps.Version),
+		events.WithConnectionGauge(sysmon.Default.SetSSEConnections))
 
 	// gen 生成的路由基于 Go 1.22+ 的 net/http 方法+通配符模式
 	//（std-http-server 生成模式，见 gen/oapi-codegen.yaml），openapi
@@ -210,6 +213,9 @@ func New(deps Deps) (*Server, error) {
 	mux := http.NewServeMux()
 	api := gen.HandlerWithOptions(s, gen.StdHTTPServerOptions{
 		BaseRouter: mux,
+		// HTTP 请求指标中间件：一处覆盖全部 gen 路由，行为与排除清单
+		// 见 metrics_middleware.go 与 docs/OBSERVABILITY.md。
+		Middlewares: []gen.MiddlewareFunc{newMetricsMiddleware(sysmon.Default)},
 		// 绑定层错误（路径参数非法等）统一输出 Error JSON 而非裸文本，
 		// 与三端 SDK 的错误反序列化约定一致。
 		ErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {

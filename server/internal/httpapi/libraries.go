@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"net/http"
@@ -8,14 +9,23 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 
 	"qimeng-media/server/internal/events"
 	"qimeng-media/server/internal/httpapi/gen"
+	"qimeng-media/server/internal/scanner"
 	"qimeng-media/server/internal/store"
 	"qimeng-media/server/internal/store/db"
+	"qimeng-media/server/internal/sysmon"
 )
+
+// libraryMetricsRefreshTimeout 是 library_files 指标刷新的后台查询上限：
+// 刷新跑在业务请求路径上（变更点推送），必须限时，绝不能拖住删除/上传
+// 的响应。与 readyzTimeout 同值是两个独立决策（探针上限 vs 后台刷新上限），
+// 可各自调整。
+const libraryMetricsRefreshTimeout = 3 * time.Second
 
 // scanStateMap 是库扫描态的内存跟踪。
 //
@@ -303,8 +313,44 @@ func (s *Server) FinishScan(libraryID string, failed bool) {
 	}
 	s.scanStates.set(libraryID, state)
 	// 库内容可能已变化：广播 library.changed 让各端刷新（openapi
-	// /api/v1/events 事件清单）。
+	// /api/v1/events 事件清单）。扫描完成是 library_files 指标的刷新点
+	//（成败都刷：失败时磁盘现状同样变了，刷新反而更准）。
+	s.refreshLibraryFileMetrics()
 	if err := s.bus.Publish(events.Event{Topic: events.TopicLibraryChanged}); err != nil {
 		s.logger.Warn("广播 library.changed 失败", "err", err)
 	}
+}
+
+// refreshLibraryFileMetrics 把 library_files{type} gauge 刷新为库内现状：
+// ListLibraries + 逐库 CountLibraryMedia（现成查询），image/animated_image
+// 归 image 档——与 GetApiV1Libraries 的映射口径一致，两侧改动须双同步。
+// 变更点推送刷新（扫描完成/上传入库/删除进回收站/恢复四个时机各调一次），
+// 不做定时轮询：治理面板数据允许秒级陈旧，不值得为它加常驻扫描。
+// 失败只记日志：指标刷新失败不影响业务路径的成功响应。
+func (s *Server) refreshLibraryFileMetrics() {
+	ctx, cancel := context.WithTimeout(context.Background(), libraryMetricsRefreshTimeout)
+	defer cancel()
+	var image, video int64
+	libs, err := s.q.ListLibraries(ctx)
+	if err != nil {
+		s.logger.Warn("刷新 library_files 指标失败", "err", err)
+		return
+	}
+	for _, l := range libs {
+		counts, err := s.q.CountLibraryMedia(ctx, l.ID)
+		if err != nil {
+			s.logger.Warn("刷新 library_files 指标失败", "err", err, "libraryId", l.ID)
+			return
+		}
+		for _, c := range counts {
+			switch c.MediaType {
+			case scanner.MediaTypeImage, scanner.MediaTypeAnimatedImage:
+				image += c.Cnt
+			case scanner.MediaTypeVideo:
+				video += c.Cnt
+			}
+		}
+	}
+	sysmon.Default.SetLibraryFiles(sysmon.FileImage, image)
+	sysmon.Default.SetLibraryFiles(sysmon.FileVideo, video)
 }

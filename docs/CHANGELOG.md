@@ -11,6 +11,16 @@
 
 ---
 
+## feat(server): 9 族指标埋点接线——http 中间件/媒体字节/SSE 连接/扫描/库文件/缩略图队列/回收站（2026-09-06 第八十一笔）
+
+执行 AI：GLM-5.3-Flash（B 会话·指标埋点清偿批，拍板来源=主会话接线口径定稿）
+
+- **问题与定性**：docs/OBSERVABILITY.md 定义的 9 族业务指标在 server/internal/sysmon/metrics.go 已注册，但除 upload 族（M2）外全仓零埋点调用，/metrics 恒零值（第七十九笔遗留移交之"指标埋点缺口"）。本笔全量清偿：9 族全部接线，/metrics 出实数。
+- **接线落位**：①http_requests_total/http_request_duration_seconds 新增 httpapi/metrics_middleware.go（statusRecorder+中间件），挂 gen `StdHTTPServerOptions.Middlewares` 一处覆盖全部 gen 路由，endpoint 取 `r.Pattern` 去方法前缀（低基数路由模板，单测锁定）；②media_bytes_total：media.go 两处 `http.ServeContent` 外套 countingResponseWriter，304/Range 只计实发字节（隔离实测 orig 拉取 1602752B=文件大小、thumb 34248B=缩略图实发）；③sse_connections：events/sse.go 新增 `WithConnectionGauge` Option 回调（events 包不感知 sysmon，server.go 装配期注入 `sysmon.Default.SetSSEConnections`），占坑成功/释放后 Set 绝对值防漂移，503 拒绝不计，Flusher 透传保 SSE 不断流；④scan_duration_seconds：scanner.go `Scan` 成功返回前 Set（失败留旧值），API 触发与 watch 轮询单点覆盖；⑤library_files{type}：refreshLibraryFileMetrics（ListLibraries+逐库 CountLibraryMedia，animated_image 归 image 与库列表同口径），挂 FinishScan/上传入库/删除进回收站/恢复四个变更点；⑥thumb_queue_depth：pool.go Submit 入队与 work 取任务两处 Set（M3 预热接入前无生产者恒 0，属"接线完成待激活"）；⑦trash_items/trash_bytes：refreshTrashMetrics（listTrash 遍历磁盘 meta + 逐条 os.Stat 求和，不走死表），挂删除入站/恢复/单条物理删除/清空四个变更点。
+- **口径注记（OBSERVABILITY.md 新增权威小节）**：排除清单 /metrics、/api/v1/healthz、/api/v1/readyz、/api/v1/events 四条路由整条跳过 http 计数（events 长流由 sse_connections 单独覆盖）；http 指标不含参数绑定失败的 400（gen 绑定层在中间件之前短路）与未匹配路由 404；library_files 与 trash 两 gauge 为变更点推送刷新非定时采样。
+- **自测**：go build 过；`go test ./... -count=1` 全绿（新增 metrics_middleware_test.go 四用例：endpoint=路由模板/状态码捕获/排除清单不计数/SSE Flusher 保留）；`make lint` 全绿（0 issues，web 存量 17 warning 不属本批）。隔离实例（18427+新临时数据目录 %TEMP%\qimeng-b2+dev 模式，未碰 8420，测完收进程）实测：http_requests_total 全部为路由模板形态且不含 events//metrics 行、media_bytes_total 两 kind 有字节、sse_connections 开流 1/断开 0、trash_items 删除后 1、library_files 扫描后 1/删除后归 0、scan_duration_seconds 非零。
+- 改动文件：server/internal/httpapi/{metrics_middleware.go,metrics_middleware_test.go(新),server.go,media.go,libraries.go,upload.go,trash.go} + server/internal/events/sse.go + server/internal/scanner/scanner.go + server/internal/thumbnail/pool.go；文档：OBSERVABILITY.md（口径注记节）、CHANGELOG.md（本条）。
+
 ## fix(web): 目录树嵌套子树层级缩进对齐修复 + DirFileList 重取闪烁清偿（2026-09-06 第八十笔）
 
 执行 AI：GLM-5.3-Flash（B 会话·目录树对齐修复批，拍板来源=待拍板-20260905夜2 条目 2）

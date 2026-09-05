@@ -2,7 +2,7 @@
 
 > 对应用户需求 #9：「NAS 后端要有统计，比如负载、流量那种」。
 > 方案定论：**服务端内置轻量监控**（零外部依赖），Prometheus/Grafana 全家桶作为后置可选增强。
-> 最后更新：2026-08-22
+> 最后更新：2026-09-06（业务指标 9 族全部完成埋点接线，本节口径注记为权威口径）
 
 ## 内置监控（M2 交付）
 
@@ -33,6 +33,30 @@
 | trash_items / trash_bytes（Gauge） | 回收站条目数与占用 |
 
 系统快照 `sysmon.Collector.Snapshot()` 输出与 openapi SystemStatus 对齐；PerCore（按核 CPU 明细）已补进协议并接线 `/api/v1/system/status` 与 `/metrics`（Bearer 鉴权，httpapi/system.go，2026-08-27 M2 后端）。
+
+### 指标埋点接线与口径注记（2026-09-06，9 族全量接线）
+
+埋点落位（除 upload 族 M2 已接外，其余于 2026-09-06 全部接线完毕）：
+
+| 指标族 | 埋点位置 | 更新时机 |
+|---|---|---|
+| http_requests_total / http_request_duration_seconds | httpapi/metrics_middleware.go，挂 gen `StdHTTPServerOptions.Middlewares` 一处覆盖全部 gen 路由 | 每请求（经路由匹配后） |
+| media_bytes_total{kind} | httpapi/media.go 两处直链（orig/thumb）`http.ServeContent` 外套字节计数 | 每次直链输出后按实发字节 |
+| sse_connections | events/sse.go `WithConnectionGauge` 回调（server.go 装配期注入） | 连接建立/断开时 Set 绝对值 |
+| scan_duration_seconds | scanner/scanner.go `Scan` 成功返回前 | 每次全量扫描成功 |
+| upload_total / upload_bytes_total | httpapi/upload.go（M2 已接） | 上传成功/失败时 |
+| library_files{type} | httpapi/libraries.go `refreshLibraryFileMetrics` | 变更点推送刷新（见下） |
+| thumb_queue_depth | thumbnail/pool.go Submit 入队/work 取任务 | 队列每变化一次 |
+| trash_items / trash_bytes | httpapi/trash.go `refreshTrashMetrics` | 变更点推送刷新（见下） |
+
+**口径注记（改动埋点或解读指标前必读）**：
+
+1. **http 指标的 endpoint 是路由模板**（如 `/api/v1/assets/{assetId}`，取 `r.Pattern` 去方法前缀），不是实际 URL——低基数红线，禁改用 `r.URL.Path`（路径参数会撑爆时间序列）。
+2. **排除清单**：`/metrics`、`/api/v1/healthz`、`/api/v1/readyz`、`/api/v1/events` 四条路由即使命中处理也不进 http 计数与延迟直方图。`/api/v1/events` 是 SSE 分钟级长流，qps/duration 对它无意义（长尾污染），在线数由 sse_connections gauge 单独覆盖。佐证方式：请求若干业务端点后 `/metrics` 输出的 `http_requests_total` 中不含 events 路径行。
+3. **http 指标不覆盖两类请求**：参数绑定失败的 400（gen 绑定层在中间件之前短路返回）与未匹配路由的 404（ServeMux 直接兜底）。两者均不产生 http_requests_total / duration 序列，属既定口径而非缺陷。
+4. **scan_duration_seconds 仅在扫描成功返回时 Set**（与 help「上次全量扫描耗时」一致）：失败路径保留上次成功值。API 触发与 watch 轮询两条扫描入口汇聚在 `Scanner.Scan`，单点覆盖。
+5. **library_files 与 trash_items/trash_bytes 是变更点推送刷新**，不是定时采样：library_files 刷新时机 = 扫描完成（FinishScan）/上传入库/删除进回收站/回收站恢复四处；trash 刷新时机 = 删除入站/恢复/单条物理删除/清空回收站四处。两次变更之间指标保持上次值（秒级陈旧可接受）。trash 的真实数据源是磁盘 meta 文件遍历，不是库表（trash_items 表为历史迁移遗留，只留不读）。
+6. **thumb_queue_depth 已接线、当前恒 0**：工作池就绪但 M3 缩略图预热未接入，尚无生产者提交任务——属"接线完成待激活"，非故障；M3 预热接入后自动出数。
 
 ### 展示（两种）
 

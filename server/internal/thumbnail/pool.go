@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"runtime"
 	"sync"
+
+	"qimeng-media/server/internal/sysmon"
 )
 
 // defaultQueueSize 是带界队列的默认容量。为什么默认 256：足以吸收扫描入库的
@@ -80,6 +82,9 @@ func NewWorkerPool(ctx context.Context, workers, queueSize int, handle func(cont
 func (p *WorkerPool) work() {
 	defer p.wg.Done()
 	for task := range p.tasks {
+		// 取走一个任务后刷新队列深度 gauge（len 对 channel 是并发安全的
+		// 近似读，gauge 语义允许）。M3 预热接入前无生产者，恒 0 属预期。
+		sysmon.Default.SetThumbQueueDepth(int64(len(p.tasks)))
 		if err := p.handle(p.ctx, task); err != nil {
 			p.logger.Error("缩略图任务失败",
 				"assetId", task.AssetID, "source", task.SourcePath, "err", err)
@@ -101,6 +106,8 @@ func (p *WorkerPool) Submit(t Task) error {
 	}
 	select {
 	case p.tasks <- t:
+		// 入队成功刷新队列深度 gauge（队列满丢弃不刷新——队列长度未变）。
+		sysmon.Default.SetThumbQueueDepth(int64(len(p.tasks)))
 		return nil
 	default:
 		return ErrQueueFull

@@ -19,6 +19,7 @@ import (
 	"qimeng-media/server/internal/sourcematcher"
 	"qimeng-media/server/internal/store"
 	"qimeng-media/server/internal/store/db"
+	"qimeng-media/server/internal/sysmon"
 	"qimeng-media/server/internal/thumbnail"
 )
 
@@ -178,6 +179,7 @@ func (g *libraryGate) endScan() {
 //	  → 无候选则删除记录（view_events 故意无外键，事件流天然保留，adr/0005）
 //	→ 发 library.changed
 func (s *Scanner) Scan(ctx context.Context, lib db.Library) (ScanResult, error) {
+	start := s.now()
 	g := s.gate(lib.ID)
 	if !g.beginScan() {
 		return ScanResult{}, fmt.Errorf("库 %s(%s): %w", lib.Name, lib.ID, ErrAlreadyScanning)
@@ -299,6 +301,10 @@ func (s *Scanner) Scan(ctx context.Context, lib db.Library) (ScanResult, error) 
 	if res.Added+res.Updated+res.Moved+res.Removed > 0 {
 		s.publish(events.TopicLibraryChanged, res)
 	}
+	// 扫描成功返回才更新 scan_duration_seconds（help「上次全量扫描耗时」；
+	// 失败路径保留上次成功值，不污染语义）。API 触发与 watch 轮询两条入口
+	// 都汇聚在本函数，此处单点覆盖。Set 而非 Observe：它是 Gauge。
+	sysmon.Default.SetScanDuration(time.Since(start).Seconds())
 	return res, nil
 }
 

@@ -208,6 +208,9 @@ func (s *Server) PostApiV1AssetsUpload(w http.ResponseWriter, r *http.Request, p
 		s.logger.Warn("发布上传完成事件失败", "err", err)
 	}
 	s.publishLibraryChanged()
+	// 上传成功改变了库内文件数：library_files 指标在此刷新（变更点推送，
+	// 其余三个时机见 refreshLibraryFileMetrics 注释）。
+	s.refreshLibraryFileMetrics()
 
 	// 响应返回详情（协议 201 AssetDetail）：新上传资产没有标签/作者/
 	// 统计等关联数据，这里只填基础字段 + 签名直链（与详情端点同一
