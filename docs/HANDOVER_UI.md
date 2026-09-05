@@ -1,7 +1,7 @@
 # HANDOVER-UI - 桌面客户端风格媒体库 UI 交接说明
 
 > 写给下一位专做 UI 的 AI（任何模型/工具）。人类用户无编程基础，全部代码由 AI 生成。
-> 最后更新：2026-09-05（**W-4 web play/dwell 打点补齐交付，§5 第 13 条闭合**——新增 `hooks/use-dwell-report.ts` + VideoPlayer `onPlay` 派发，隔离实例实测 play/dwell 落库与分段恰一条）；当日 UI 收尾三批 W-1/W-2/W-3 全部交付（§5.9 各批 ✅ 注，W-3 reviewer 打回 1 轮返工后通过）；当日 W-3 一致性复审：文档声明逐项核验通过、tsc/build/lint 复跑全绿、修补 §5 第 2 条与文头两处滞后，新记账 §5 第 13 条 web 从未上报 play/dwell。2026-09-04 §5.9 UI 收尾执行批次定稿：W-1 上传入口/W-2 弹窗/W-3 ArtPlayer 三批任务书 + 详情页发现项记账；用户拍板 UI 收尾后启动 M4，M4 任务书见 `docs/HANDOVER_APP.md`。第十笔：后端四缺口清零——上传路径富化（上传后自动 EnrichAsset）、探针协议债归位（/api/v1/healthz|readyz 免鉴权+根路径运维别名）、设置页配置持久化（GET/PUT /api/v1/config；scan 两项为预留字段暂未接入管线、保存后暂不生效；upload 两项实时生效）、客户端异常上报通道（POST/GET /api/v1/client-logs，维护页异常表接真数据）；对抗审查打回 1 轮（P1 空态崩页/scan 失实口径/autoAccept 缺键静默关闸）已返工修复。此前 09-03 第七笔：第六笔原型七组缺陷移植 web 正式端（AssetSummary.authorNames 全链路、卡片作者行+时长角标、作者榜浏览口径、作者副标题+·COS、相册时间分区）+ 原型 2 处 CSS 缺陷修复；后续 09-04 作者总览卡收敛 Top5 预览。此前第五/六笔见 CHANGELOG）
+> 最后更新：2026-09-05（**第五十九笔：详情页自适应排版（去限宽纯流式，§5.9 详情页节第 10 条含 fit-content 教训）+ 视频全屏只显中间段修复（全屏层解除 68vh + zoom 归一）+ 混合内容作者三入口显示验证**；W-4 web play/dwell 打点补齐交付，§5 第 13 条闭合——新增 `hooks/use-dwell-report.ts` + VideoPlayer `onPlay` 派发，隔离实例实测 play/dwell 落库与分段恰一条）；当日 UI 收尾三批 W-1/W-2/W-3 全部交付（§5.9 各批 ✅ 注，W-3 reviewer 打回 1 轮返工后通过）；当日 W-3 一致性复审：文档声明逐项核验通过、tsc/build/lint 复跑全绿、修补 §5 第 2 条与文头两处滞后，新记账 §5 第 13 条 web 从未上报 play/dwell。2026-09-04 §5.9 UI 收尾执行批次定稿：W-1 上传入口/W-2 弹窗/W-3 ArtPlayer 三批任务书 + 详情页发现项记账；用户拍板 UI 收尾后启动 M4，M4 任务书见 `docs/HANDOVER_APP.md`。第十笔：后端四缺口清零——上传路径富化（上传后自动 EnrichAsset）、探针协议债归位（/api/v1/healthz|readyz 免鉴权+根路径运维别名）、设置页配置持久化（GET/PUT /api/v1/config；scan 两项为预留字段暂未接入管线、保存后暂不生效；upload 两项实时生效）、客户端异常上报通道（POST/GET /api/v1/client-logs，维护页异常表接真数据）；对抗审查打回 1 轮（P1 空态崩页/scan 失实口径/autoAccept 缺键静默关闸）已返工修复。此前 09-03 第七笔：第六笔原型七组缺陷移植 web 正式端（AssetSummary.authorNames 全链路、卡片作者行+时长角标、作者榜浏览口径、作者副标题+·COS、相册时间分区）+ 原型 2 处 CSS 缺陷修复；后续 09-04 作者总览卡收敛 Top5 预览。此前第五/六笔见 CHANGELOG）
 > 用途：新开的 AI 会话直接读本文档即可接手 UI 工作，无需回看本会话记录。
 > 主交接文档（后端/进度/约定）仍以 `docs/HANDOVER.md` 为准，本文档只覆盖 UI 路线。
 
@@ -188,6 +188,7 @@ media-ui-prototype/
 7. **验收**：tsc/build/lint 全绿（新文件 0 告警）；隔离实例 curl 9 项（like toggle 计数翻转/favorite 双向/tags 替换/follow/recommendations）+ 浏览器全链路（浅/深/窄窗、交互回填、标签全流程、换一批、打点存活、对齐 spread=0.0/舞台顶 83.1）。
 8. **遗留**：图片查看器（缩放/沉浸）与批次导航仍按用户拍板后置；测试注意——PWA Service Worker 会缓存旧构建，改前端重 build 后浏览器要清 SW/缓存再验（本次实测踩坑：computed 样式陈旧+fullPage 截图错乱均源于此）。
 9. **编码兼容提示条已移除（2026-09-05 第五十七笔，用户拍板）**：用户浏览器可直放 hevc，详情页顶部 .codec-warn 黄条是常驻噪声——元素级移除（含 INCOMPATIBLE_CODECS 常量、.codec-warn 样式段、--codec-warn-* token 全清）；播放失败兜底交回 ArtPlayer 错误态。
+10. **详情页自适应排版 + 视频全屏修复（2026-09-05 第五十九笔，用户拍板）**：①`.detail-layout` 去 1360 固定限宽改纯流式，**切勿再加 max-width/margin auto**——flex 列子项带 auto 边距会退化为 fit-content 收缩（实测内容 1209 布局 814、双侧留白，用户打回过），固定限宽则全屏右侧留白；1280/1920/2560 三档视口实测左右 spread=0。②视频全屏只显中间段修复：`.asset-stage :fullscreen video { max-height: none }`（68vh 上限曾把全屏画面压到屏高 68%）+ `:fullscreen { zoom: 1 }`（全局 zoom 1.1 被全屏顶层继承致边缘裁切），实测全屏层 video 铺满、zoom=1。③混合内容作者（M71Z30 47图+15视频）三入口验证全过：作者集合页视频卡带 m:ss 角标/图片卡无、图片详情 img 舞台+同类型推荐（0 角标）、视频详情 ArtPlayer+带角标推荐。全程零截图，纯 DOM 数值实测。
 
 
 ## 6. 工作树现状（2026-09-02 三轮：原型移植 web 重建，接手必读）
