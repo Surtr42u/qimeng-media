@@ -11,6 +11,19 @@
 
 ---
 
+## fix(server): 指标包装器补 ReaderFrom 委托与回收站刷新超时（埋点批P3清偿）（2026-09-06 第八十四笔）
+
+执行 AI：GLM-5.3-Flash（B 会话·埋点 P3 清偿批）
+
+- **sendfile 优化恢复（埋点批 reviewer P3-2）**：statusRecorder（metrics_middleware.go）与 countingResponseWriter（media.go）各自实现 `io.ReaderFrom.ReadFrom`——底层 ResponseWriter 实现 io.ReaderFrom（生产环境 net/http 的 response，sendfile 零拷贝）则委托其 ReadFrom，否则 io.Copy 兜底；此前两个 wrapper 只有 Write，`http.ServeContent` 内部 io.CopyN 检测不到 ReaderFrom，大文件直链退化成用户态缓冲拷贝。countingResponseWriter 的 ReadFrom 两条路径都同步累计实发字节（media_bytes_total 口径不变），statusRecorder 在 ReadFrom 路径补隐式 200（状态码捕获不丢）。
+- **trash 指标刷新限时（reviewer P3-4）**：refreshTrashMetrics 刷新体（WalkDir 遍历+逐条 Stat）挪进 goroutine，外层最多同步等待 `trashMetricsRefreshTimeout = 3 * time.Second`，超时放弃等待（后台算完自行 Set，gauge 推送语义晚到无害）。选型说明：listTrash 不接受 context，改签名会波及其全部调用点，取侵入最小的自我约束；删除入站/恢复/单条物理删除/清空四处挂点与同步刷新语义（正常耗时内响应返回时 gauge 已刷新）不变。
+- **测试**：新增 media_test.go（countingResponseWriter 的 ReadFrom 委托路径计数精确 + io.Copy 兜底路径计数口径，自建 rfRecorder fake——httptest.ResponseRecorder 无 ReadFrom 方法，go doc 实测无法用于验证委托）；metrics_middleware_test.go 新增 TestMetricsMiddleware_readFromDelegated（手动设 req.Pattern 复现 ServeMux 匹配后时序，断言委托发生+状态码捕获），SSE 用例补反向断言（/api/v1/events 开流后 registry 无任何 http_requests_total/duration 序列，reviewer P3-3）。
+- **文档**：OBSERVABILITY.md 口径注记 3「http 指标不覆盖」清单由两类扩为三类，补「方法不匹配的 405（同为 ServeMux 兜底，不经包装器）」（reviewer P3-5）；metrics_middleware.go 尾注同步（该文件头注明与 OBSERVABILITY 注记两侧同步修改）。
+- **自测（全绿）**：`cd server && go build ./...` 过；`go test ./... -count=1` 全部 ok（httpapi 含新用例 TestCountingResponseWriter_readFromDelegated/readFromFallback、TestMetricsMiddleware_readFromDelegated 全 PASS）；`make lint` exit 0（golangci 0 issues；redocly/web 存量 warning 不属本批）。隔离实例复验（:18428，全新临时数据目录+dev 模式，测完收进程）：注册库→扫描入库 5242880 字节 jpg→拉一次原件 200 下载 5242880 字节，/metrics `media_bytes_total{kind="orig"} 5.24288e+06` 与文件大小精确相等（ReadFrom 委托路径计数未丢）；删除资产后 trash_items=1/trash_bytes=5.24288e+06 立即刷新（超时 goroutine 化未破坏推送语义）；发一次 405 后 http_requests_total 序列中无 code="405"（注记 3 口径与行为一致）。
+- 改动文件：server/internal/httpapi/{metrics_middleware.go,media.go,trash.go,metrics_middleware_test.go,media_test.go}；文档：OBSERVABILITY.md、CHANGELOG.md（本条）。
+
+---
+
 ## feat(app): M4-2 列表族与导航四化——推荐流/相册四维胶囊/收藏/历史/搜索/作者+四 Tab（2026-09-06 第八十三笔）
 
 执行 AI：GLM-5.3-Flash（A 会话·M4-2 批执行子代理）

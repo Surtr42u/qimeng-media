@@ -8,6 +8,7 @@
 package httpapi
 
 import (
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -66,6 +67,21 @@ func (r *statusRecorder) Write(p []byte) (int, error) {
 	return r.ResponseWriter.Write(p)
 }
 
+// ReadFrom 透传 io.ReaderFrom：http.ServeContent 内部用 io.CopyN 输出 body，
+// wrapper 不实现该接口会让底层连接的 sendfile 零拷贝退化成用户态缓冲拷贝
+// （大文件直链白耗 CPU 与内存带宽）。委托底层 writer 的 ReadFrom，底层不
+// 支持时 io.Copy 兜底；两条路径都先补隐式 200（与 Write 同语义：第一次
+// 写出即隐式 200，状态码捕获不能丢）。
+func (r *statusRecorder) ReadFrom(src io.Reader) (int64, error) {
+	if r.status == 0 {
+		r.status = http.StatusOK
+	}
+	if rf, ok := r.ResponseWriter.(io.ReaderFrom); ok {
+		return rf.ReadFrom(src)
+	}
+	return io.Copy(r.ResponseWriter, src)
+}
+
 // Flush 透传 http.Flusher：中间件物理上包着全部 gen 路由（含 SSE
 // /api/v1/events——虽在排除清单不计数，但流仍经此链），丢掉 Flusher
 // 断言会让 events 包的 flusher 判定失败直接 500。
@@ -86,8 +102,9 @@ func (r *statusRecorder) statusCode() int {
 // newMetricsMiddleware 构造 gen 路由的指标中间件。参数化 metrics 实例
 // 便于单测用独立 registry 断言；进程装配传 sysmon.Default（server.go）。
 //
-// 已知口径（OBSERVABILITY.md 注记）：绑定层 400（query 参数校验失败）与
-// 未匹配路由 404 发生在中间件之前/之外，不进入 http 指标。
+// 已知口径（OBSERVABILITY.md 注记）：绑定层 400（query 参数校验失败）、
+// 未匹配路由 404 与方法不匹配 405（后两者 ServeMux 直接兜底）发生在
+// 中间件之前/之外，不进入 http 指标。
 func newMetricsMiddleware(m *sysmon.BusinessMetrics) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

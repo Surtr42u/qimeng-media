@@ -53,7 +53,7 @@
 
 1. **http 指标的 endpoint 是路由模板**（如 `/api/v1/assets/{assetId}`，取 `r.Pattern` 去方法前缀），不是实际 URL——低基数红线，禁改用 `r.URL.Path`（路径参数会撑爆时间序列）。
 2. **排除清单**：`/metrics`、`/api/v1/healthz`、`/api/v1/readyz`、`/api/v1/events` 四条路由即使命中处理也不进 http 计数与延迟直方图。`/api/v1/events` 是 SSE 分钟级长流，qps/duration 对它无意义（长尾污染），在线数由 sse_connections gauge 单独覆盖。佐证方式：请求若干业务端点后 `/metrics` 输出的 `http_requests_total` 中不含 events 路径行。
-3. **http 指标不覆盖两类请求**：参数绑定失败的 400（gen 绑定层在中间件之前短路返回）与未匹配路由的 404（ServeMux 直接兜底）。两者均不产生 http_requests_total / duration 序列，属既定口径而非缺陷。
+3. **http 指标不覆盖三类请求**：参数绑定失败的 400（gen 绑定层在中间件之前短路返回）、未匹配路由的 404（ServeMux 直接兜底）与方法不匹配的 405（同为 ServeMux 兜底，不经包装器）。三者均不产生 http_requests_total / duration 序列，属既定口径而非缺陷。
 4. **scan_duration_seconds 仅在扫描成功返回时 Set**（与 help「上次全量扫描耗时」一致）：失败路径保留上次成功值。API 触发与 watch 轮询两条扫描入口汇聚在 `Scanner.Scan`，单点覆盖。
 5. **library_files 与 trash_items/trash_bytes 是变更点推送刷新**，不是定时采样：library_files 刷新时机 = 扫描完成（FinishScan）/上传入库/删除进回收站/回收站恢复四处；trash 刷新时机 = 删除入站/恢复/单条物理删除/清空回收站四处。两次变更之间指标保持上次值（秒级陈旧可接受）。trash 的真实数据源是磁盘 meta 文件遍历，不是库表（trash_items 表为历史迁移遗留，只留不读）。
 6. **thumb_queue_depth 已接线、当前恒 0**：工作池就绪但 M3 缩略图预热未接入，尚无生产者提交任务——属"接线完成待激活"，非故障；M3 预热接入后自动出数。

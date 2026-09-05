@@ -8,6 +8,7 @@
 package httpapi
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -120,10 +121,56 @@ func TestMetricsMiddleware_excludedEndpoints(t *testing.T) {
 	}
 }
 
+// rfRecorder 是实现了 io.ReaderFrom 的底层 writer（模拟 net/http 的
+// response）：记录 ReadFrom 是否被委托到它。httptest.ResponseRecorder 没有
+// ReadFrom 方法（go doc 实测），无法用于验证委托路径，故自建。
+type rfRecorder struct {
+	http.ResponseWriter
+	readFromCalled bool
+	n              int64
+}
+
+func (w *rfRecorder) ReadFrom(src io.Reader) (int64, error) {
+	w.readFromCalled = true
+	n, err := io.Copy(io.Discard, src)
+	w.n += n
+	return n, err
+}
+
+// TestMetricsMiddleware_readFromDelegated 锁定 ReadFrom 委托：handler 经
+// ReadFrom 输出（http.ServeContent 的实际路径）时，statusRecorder 必须把
+// ReadFrom 转给底层 writer 的 ReadFrom（否则底层 sendfile 零拷贝退化为
+// 用户态缓冲拷贝），且状态码捕获在 ReadFrom 路径上不失效（隐式 200）。
+func TestMetricsMiddleware_readFromDelegated(t *testing.T) {
+	metrics := sysmon.NewBusinessMetrics()
+	h := newMetricsMiddleware(metrics)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		rf, ok := w.(io.ReaderFrom)
+		if !ok {
+			t.Fatal("statusRecorder 未实现 io.ReaderFrom，ServeContent 大文件发送将退化为用户态拷贝")
+		}
+		if _, err := rf.ReadFrom(strings.NewReader("payload")); err != nil {
+			t.Fatalf("ReadFrom 失败: %v", err)
+		}
+	}))
+	bottom := &rfRecorder{ResponseWriter: httptest.NewRecorder()}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/assets/abc-123", nil)
+	req.Pattern = "GET /api/v1/assets/{assetId}" // 复现 ServeMux 匹配后的时序
+	h.ServeHTTP(bottom, req)
+	if !bottom.readFromCalled {
+		t.Error("statusRecorder 未把 ReadFrom 委托给底层 writer 的 ReadFrom（sendfile 断路）")
+	}
+	out := metricsText(t, metrics)
+	want := `http_requests_total{code="200",endpoint="/api/v1/assets/{assetId}",method="GET"} 1`
+	if !strings.Contains(out, want) {
+		t.Errorf("ReadFrom 路径状态码捕获失效，应包含 %q，实际输出：\n%s", want, out)
+	}
+}
+
 // TestMetricsMiddleware_sseFlusherPreserved：/api/v1/events 虽不计数，
-// 但响应链必须保留 Flusher（SSE 逐帧 flush 依赖），且响应内容不被破坏。
+// 但响应链必须保留 Flusher（SSE 逐帧 flush 依赖），响应内容不被破坏，
+// 且整条路由（qps 与 duration）确认不产生任何序列（排除口径的反向断言）。
 func TestMetricsMiddleware_sseFlusherPreserved(t *testing.T) {
-	mux, _ := newMetricsTestMux(t)
+	mux, metrics := newMetricsTestMux(t)
 	res := httptest.NewRecorder()
 	mux.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/api/v1/events", nil))
 	if res.Code != http.StatusOK {
@@ -131,5 +178,12 @@ func TestMetricsMiddleware_sseFlusherPreserved(t *testing.T) {
 	}
 	if !strings.Contains(res.Body.String(), "event: hello") {
 		t.Errorf("SSE 首帧应原样写出，got %q", res.Body.String())
+	}
+	out := metricsText(t, metrics)
+	if strings.Contains(out, "http_requests_total") {
+		t.Errorf("SSE 排除路径不应产生 http_requests_total 序列，输出：\n%s", out)
+	}
+	if strings.Contains(out, "http_request_duration_seconds") {
+		t.Errorf("SSE 排除路径不应产生 duration 序列，输出：\n%s", out)
 	}
 }
