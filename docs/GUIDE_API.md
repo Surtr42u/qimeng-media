@@ -13,7 +13,7 @@
 - 媒体直链（/media/**）不走 header 鉴权，用短期 HMAC 签名 URL（默认 6h），参数 `exp`（过期时间戳）+ `sig`
 - **页面投放**：服务端存在 Web 构建产物（`web.static_dir`，默认 `../web/dist`）时 `/` 与 `/index.html` 托管 SPA（静态资源直发 + 前端路由回退）；产物缺失时回退内嵌验收页。内嵌验收页另挂 `/_debug/`（永远可访问，调试用）。页面均为免鉴权静态资源，页面内数据请求照常走 Bearer
 
-## 端点分组速览（40 路径）
+## 端点分组速览（41 路径）
 
 | 分组 | 端点 | 说明 |
 |---|---|---|
@@ -37,7 +37,7 @@
 | 推荐排行 | GET /recommendations、GET /rankings、GET/PUT /recommendations/prefs | 10 维算法（seed 控制打散；**2026-09-05 增 `cosOnly` 参数**（true=COS 推荐模式）；**同日增 `offset` 参数**（/recommendations 与 /rankings 各一，default 0/min 0，与 limit 组合翻页切片——首页三 tab 触底加载的数据面；推荐流每次请求按当下打分排序切片，同流连续翻页由客户端按 assetId 去重兜底）：true=COS 推荐模式——候选集限定 COS 关联资产，同套打分/权重回收/每日惩罚照跑，首页 cos tab 数据源；false=常规流缺省排除 COS）；纯热度排行（日/周/月/年/季（近 90 天）/总，period=quarter 为 2026-09-03 新增；2026-09-03 起响应填充 viewCount/playCount 供卡片角标）；9 维权重偏好 |
 | 统计 | GET /stats/overview、GET /stats/trends | 总览面板（animated_image 计入 imageCount；计数直接数事件流，含已删资产历史——事件流无 FK 设计）；趋势按 asset_daily_stats 物化表（仅现存资产，随资产删除级联清理、可由事件流全量重建）；分桶：range=day/week/month/quarter/year 固定粒度 + 2026-09-03 新增 7d（近 7 天逐日）/90d（近 90 天逐日），all 按数据跨度动态选粒度（≤12 周周 / 12 周~24 月月 / 更长季）全量不丢弃、总和守恒（DOMAIN_RULES §5） |
 | 系统 | /healthz、/readyz、/metrics、GET /system/status | 探针协议面为 `/api/v1/healthz`、`/api/v1/readyz`（免鉴权，openapi.yaml `security: []`；根路径 `/healthz` `/readyz` 是运维探针别名——docker/k8s 惯例，行为一致，不入协议面）；/metrics 与 /system/status 要求管理 token；负载/流量面板 |
-| 迁移 | POST /import/qimeng-backup | 旧版备份一次性导入：作者/标签/关联/时间轴按唯一键 upsert，统计转 ViewEvent 回放（dailyBrowse 全量 + mediaStats 差额 + history 补漏）；幂等 = 同 exportedAtMillis 批次事件只回放一次 + 段级 upsert 不翻倍；scanSources/settings/albumRules 不导入进 warnings（TXT 请重走 import-txt） |
+| 迁移 | POST /import/qimeng-backup、GET /export/qimeng-backup | 导入：旧版备份一次性导入：作者/标签/关联/时间轴按唯一键 upsert，统计转 ViewEvent 回放（dailyBrowse 全量 + mediaStats 差额 + history 补漏）；幂等 = 同 exportedAtMillis 批次事件只回放一次 + 段级 upsert 不翻倍；scanSources/settings/albumRules 不导入进 warnings（TXT 请重走 import-txt）。**导出（2026-09-05 第六十一笔）**：当前库 → 旧版单文件全量备份（qimeng_backup.json，响应带 Content-Disposition 附件头），§10 逆向映射——recordKey 生成镜像导入消歧（文件名 / 「名 @ 文件夹」/ 跨库同文件夹再 #哈希）、dailyBrowse 取物化表、mediaStats 事件流聚合、history 截 500、likes 聚合 {累计,最后日}、settings/scanSources/albumRules/cosWorks 恒空、appPrefs 只带 recommendationPrefs；与导入互为镜像可幂等回环 |
 
 ## 关键机制
 

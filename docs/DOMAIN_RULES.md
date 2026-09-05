@@ -178,6 +178,8 @@
 
 迁移端点幂等（重复导入按内容去重不翻倍）；幂等范围明示：作者/标签/关联/时间轴/收藏/点赞按唯一键或内容键 upsert 天然幂等，事件回放以 exportedAtMillis 为批次锚点——**同批次**重复导入事件只回放一次，导入**不同批次**（新备份文件）时事件按内容重新回放（事件流无内容唯一键，这是事件流架构下的可实现语义）；cosWorks 段不逐条导入（作品为 COS 目录派生信息、无文件级映射可迁），cos_ 作者由 authors 段建立、文件关联以 kind=cos 重新扫描重建。
 
+**导出（新库 → qimeng_backup.json，GET /api/v1/export/qimeng-backup，2026-09-05 第六十一笔）**：逆向映射与导入互为镜像，可经导入端点幂等回环——mediaFiles 全量导出（recordKey 生成规则：文件名唯一 = 文件名；同名 = 「文件名 @ 文件夹名」；同名同文件夹（跨库）追加 #路径哈希；folderName 恒取 rel_path 父目录段，与导入侧 pickAssetByFolder 消歧互认）；dailyBrowse 由事件流物化表（asset x day）导出、mediaStats 由事件流按资产聚合（事件流是唯一真相源，物化表仅派生缓存）；history 截取最近 500 条 open 事件（对齐旧库 view_history 上限）；likes 按点赞行（资产 x 日）聚合为 { 累计次数, 最后点赞日 }（旧格式无逐日明细，行数即最接近的累计值）；settings/scanSources/albumRules/cosWorks 恒导出空数组（SAF 目录为设备本机概念、COS 作品目录与出处均为派生信息，导入端对空段零警告）；appPrefs 只带 recommendationPrefs（kv_settings 原样 JSON）。
+
 ## 11. 媒体类型与缩略图
 
 - 类型：IMAGE / ANIMATED_IMAGE(gif) / VIDEO。

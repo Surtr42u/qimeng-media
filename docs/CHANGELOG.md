@@ -11,6 +11,17 @@
 
 ---
 
+## feat(api): 备份导入/导出——旧版格式导出端点 + 维护页备份卡；导入幂等修复（2026-09-05 第六十一笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- **协议先行**：openapi 新增 `GET /api/v1/export/qimeng-backup`（响应 `LegacyBackupFile` 信封，复用 Legacy* 组件族不重复定义 17 段）→ make sdk 三端重生成。格式权威 = 旧仓库 DATA_MIGRATION_SPEC v1，段级口径入 DOMAIN_RULES §10（导出与导入互为镜像、可幂等回环）。
+- **服务端**（httpapi/export.go + store/queries/legacy_export.sql）：mediaFiles 全量（recordKey 生成镜像导入 matchFiles 消歧：文件名 / 「名 @ 文件夹」/ 跨库同文件夹 #哈希）；dailyBrowse 取事件流物化表、mediaStats 事件流聚合、history 截 500、likes 聚合 {累计,最后日}；settings/scanSources/albumRules/cosWorks 恒空数组（导入端零警告）；appPrefs 只带 recommendationPrefs。
+- **连带修复（回环测试暴露）**：导入端标签关联原复用业务 `AddAssetTag`（裸 INSERT），同库重复导入撞 UNIQUE 约束 500，与 §10「关联按唯一键 upsert 幂等」承诺相悖——新增 `ImportAddAssetTag`（ON CONFLICT DO NOTHING）替换。
+- **web**：文件管理页新增「备份导入 / 导出」卡——导出=裸 fetch 原样字节 Blob 下载（不做二次序列化，复用 getAuthHeaders 旁路约定）；导入=lib/backup.ts 解析校验（format 前置校验早失败）→ 确认弹窗复刻旧版「检测到备份数据：X 个媒体文件 / Y 位作者 / Z 个标签 / W 条统计」语义 → SDK 导入 → 结果 toast（含 warnings 汇总）+ 资产/作者/标签/推荐/统计/排行/历史多根键失效。
+- **测试与验证**：新增 TestExportQimengBackupRoundTrip（A 库导出 → B 全新实例恢复，段级计数与事件总量守恒断言 + 同批次重导幂等）与 TestExportHistoryCap500；go test ./... 全绿、tsc/build/lint 全绿。实机验证：导出 6325 文件/140 作者/6247 关联（2896 KB，同名消歧与 isCosFile 正确）；UI 导出 toast + 注入合成备份走确认弹窗后取消（真实库零变更）。全程零截图。
+- **运维注意**：实机重启发现裸跑 `qimeng-server.exe`（cwd=server）会新建空 server/data 且 dev 模式关闭——服务端必须经 `启动服务端.bat` 启动（其设 QIMENG_DATA_DIR=qimeng-data + QIMENG_AUTH_DEV_MODE=1）；误启实例已清理。
+
 ## fix(web): 详情页自适应微调——1800 上限居中，4K 不再无限放大（2026-09-05 第六十笔）
 
 执行 AI：GLM-5.3-Flash（主代理）

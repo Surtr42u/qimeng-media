@@ -26,6 +26,26 @@ func (q *Queries) ImportAddAssetAuthor(ctx context.Context, arg ImportAddAssetAu
 	return err
 }
 
+const importAddAssetTag = `-- name: ImportAddAssetTag :exec
+INSERT INTO asset_tags (asset_id, tag_id, created_at) VALUES (?, ?, ?)
+ON CONFLICT (asset_id, tag_id) DO NOTHING
+`
+
+type ImportAddAssetTagParams struct {
+	AssetID   string
+	TagID     string
+	CreatedAt string
+}
+
+// Idempotent tag-ref import (S10 "associations upsert by unique key"):
+// the business AddAssetTag is a strict INSERT (runtime replace semantics),
+// re-importing the same backup batch must not fail on the
+// (asset_id, tag_id) PK. First association's created_at wins on re-import.
+func (q *Queries) ImportAddAssetTag(ctx context.Context, arg ImportAddAssetTagParams) error {
+	_, err := q.db.ExecContext(ctx, importAddAssetTag, arg.AssetID, arg.TagID, arg.CreatedAt)
+	return err
+}
+
 const importAddLike = `-- name: ImportAddLike :exec
 INSERT INTO likes (asset_id, day, created_at) VALUES (?, ?, ?)
 ON CONFLICT (asset_id, day) DO NOTHING

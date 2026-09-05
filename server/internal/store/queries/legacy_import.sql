@@ -50,3 +50,11 @@ WHERE NOT EXISTS (
     SELECT 1 FROM timeline_tags t
     WHERE t.asset_id = ? AND t.time_millis = ? AND t.name = ?
 );
+
+-- name: ImportAddAssetTag :exec
+-- Idempotent tag-ref import (S10 "associations upsert by unique key"):
+-- the business AddAssetTag is a strict INSERT (runtime replace semantics),
+-- re-importing the same backup batch must not fail on the
+-- (asset_id, tag_id) PK. First association's created_at wins on re-import.
+INSERT INTO asset_tags (asset_id, tag_id, created_at) VALUES (?, ?, ?)
+ON CONFLICT (asset_id, tag_id) DO NOTHING;

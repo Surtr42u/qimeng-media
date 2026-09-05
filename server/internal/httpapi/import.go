@@ -61,7 +61,7 @@ func (s *Server) PostApiV1ImportQimengBackup(w http.ResponseWriter, r *http.Requ
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	if req.Format != "qimeng_backup" {
+	if req.Format != legacyBackupFormat { // 常量定义在 export.go（同包共用，单一来源）
 		writeErr(w, http.StatusBadRequest, "BAD_REQUEST", "format 必须为 qimeng_backup")
 		return
 	}
@@ -263,7 +263,7 @@ func (imp *legacyImport) importTags(tags *[]gen.LegacyTag, refs *[]gen.LegacyMed
 			imp.bump(&imp.res.TagRefsSkipped)
 			continue
 		}
-		err := imp.s.q.AddAssetTag(imp.ctx, db.AddAssetTagParams{
+		err := imp.s.q.ImportAddAssetTag(imp.ctx, db.ImportAddAssetTagParams{
 			AssetID: assetID, TagID: tagID, CreatedAt: nowOrMillis(ref.CreatedAtMillis, imp.s.now()),
 		})
 		if err != nil {
