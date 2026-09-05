@@ -158,11 +158,16 @@ export function useSources() {
   })
 }
 
-/** 相册四维筛选候选（分区/作者/角色/类型；GET /assets/facets，排自身口径）。
+/** 筛选胶囊候选（分区/作者/角色/类型；GET /assets/facets，排自身口径）。
  *  params 里只传"其他维度"的当前选择——被渲染维自身的参数由调用方省略，
  *  服务端对每个维都是排自身计数（openapi 该端点 description）。
  *  source 与 authorId 同属「作者」行（排自身时两者都不传）；character 与
- *  work 同属「角色」行（同理）。 */
+ *  work 同属「角色」行（同理）。
+ *  enabled=false 防无效请求（集合子页作者实体未定位时用）。B-3 合并：
+ *  CollectionPage 原专用 use-collection-facets.ts（并行冲突规避产物）与本
+ *  hook 逐语义重复，收敛后该文件消亡——其缓存键第三段 'collection' 一并
+ *  去掉（同参数同响应，与相册页共享缓存无碍；两页参数形态天然互斥：
+ *  相册页 partition 恒显式传、集合页无 partition，无键碰撞）。 */
 export function useAssetFacets(
   params: {
     partition?: Partition
@@ -172,6 +177,7 @@ export function useAssetFacets(
     work?: string
     source?: string
   } = {},
+  enabled = true,
 ) {
   return useQuery({
     queryKey: [...ASSETS_QUERY_KEY, 'facets', params],
@@ -182,6 +188,7 @@ export function useAssetFacets(
       characters: res.characters ?? [],
       types: res.types ?? [],
     }),
+    enabled,
   })
 }
 

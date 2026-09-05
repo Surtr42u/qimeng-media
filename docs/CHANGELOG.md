@@ -11,6 +11,15 @@
 
 ---
 
+## refactor(web): facets hooks 合并+收藏页排序口径落档（2026-09-06 第七十二笔）
+
+执行 AI：GLM-5.3-Flash（B 会话·B-3 小清偿批）
+
+- **facets hooks 合并（reviewer 建议项清偿，HANDOVER_UI §5.9 六任务批第 3 条）**：`pages/use-collection-facets.ts`（作者集合页专用，系六任务批并行冲突规避产物）与 `hooks/use-assets.ts` 的 `useAssetFacets` 逐语义重复——收敛为单一 hook 参数化：`useAssetFacets(params, enabled = true)` 增可选 enabled（相册页 AlbumsPage 四路调用零改动），CollectionPage 改直调共享 hook，消亡文件已删除。合并前语义差异三点均保留在调用方传参、未借机改业务口径：参数面（共享版多 partition/source 两键）、enabled（集合页防无效请求需求，共享版本次补齐缺省 true）、缓存键（集合页版多 'collection' 命名空间段，去掉后同参数同响应共享缓存，两页参数形态天然互斥无键碰撞）。各页面行为零变化（铁律 7 照守：hooks 层调 API 不变）。
+- **收藏 tab 缺省排序口径落档（HANDOVER_UI §5 第 16 条②，A 车道 M4-2 批对齐基线）**：MinePage 收藏 tab = `GET /assets favorite=true, sort=favoriteAt, order=desc`——按收藏时间倒序（最新收藏在前）、服务端排序（协议 sort/order 参数，前端仅 flatMap 拼页零二次排序）、limit 协议缺省 60 游标分页；无用户可调排序 UI，恒定此参数。只记录现状未改排序行为。
+- **验收**：`npx tsc --noEmit -p tsconfig.app.json` 0 错、`npm run build` 成功、改动 3 文件 lint 0 告警（存量 17 条不属本批）；隔离实例（18423+新临时数据目录+dev 模式，未碰真实库）headless 文本实测：相册页四维胶囊渲染正常（分区2/作者2/角色2/类型3，值行 全部8/常规5/COS3）+点选「类型:图片」网格条数 8→7；作者集合页（COS 作者）筛选胶囊同测（作品2/类型3，点「作品A」网格 3→2）；首页网格顶沿复测 83.05 与 B-2 基线零漂移（§4.5 终值 83.1 口径），相册/集合页静止态数值在案。证据目录 `%TEMP%\qimeng-b3-evidence\`。
+- **记账编号注**：本笔顺延为第七十二笔——第七十一笔已被并行 A 车道 M4-1 批（commit 88af1b9）占用，避让防撞号。
+
 ## feat(app): M4-1 登录与服务端配置——DataStore token/401 事件跳登录/退出登录（2026-09-06 第七十一笔）
 
 执行 AI：GLM-5.3-Flash（夜2 A 车道·执行子代理）
