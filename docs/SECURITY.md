@@ -13,7 +13,7 @@
 | 3 | 媒体误删 | DELETE 一律进回收站；物理删除仅在回收站内显式操作；Docker 中媒体目录挂载可写但回收站兜底 |
 | 4 | 上传滥用 | 四道校验：扩展名白名单 + MIME 嗅探（读文件头）+ 单文件大小上限 + 目标路径穿越检查。写入用临时文件 + 原子 rename |
 | 5 | 无鉴权访问 | 除健康检查外全部 API 要求 Bearer token；媒体直链用短期 HMAC 签名 URL（默认 6h 有效），禁止裸直链 |
-| 6 | 请求体滥用 | JSON body 上限 1MB；分页 size 上限；SSE 连接数上限 |
+| 6 | 请求体滥用 | JSON body 上限 1MB（例外：旧版备份导入 64MB，errors.go decodeJSONWithLimit / legacyImportMaxBody，单文件全量备份随库规模增长）；分页 size 上限；SSE 连接数上限 |
 | 7 | 信息泄露 | 错误响应不含内部路径/堆栈；日志脱敏（token 只记前 4 位）；/metrics 面板独立管理权限 |
 | 8 | 公网暴露 | 永不开公网端口；远程访问只走 Tailscale/WireGuard 隧道（服务端零改动） |
 

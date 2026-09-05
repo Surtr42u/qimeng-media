@@ -21,6 +21,7 @@
 - **web**：文件管理页新增「备份导入 / 导出」卡——导出=裸 fetch 原样字节 Blob 下载（不做二次序列化，复用 getAuthHeaders 旁路约定）；导入=lib/backup.ts 解析校验（format 前置校验早失败）→ 确认弹窗复刻旧版「检测到备份数据：X 个媒体文件 / Y 位作者 / Z 个标签 / W 条统计」语义 → SDK 导入 → 结果 toast（含 warnings 汇总）+ 资产/作者/标签/推荐/统计/排行/历史多根键失效。
 - **测试与验证**：新增 TestExportQimengBackupRoundTrip（A 库导出 → B 全新实例恢复，段级计数与事件总量守恒断言 + 同批次重导幂等）与 TestExportHistoryCap500；go test ./... 全绿、tsc/build/lint 全绿。实机验证：导出 6325 文件/140 作者/6247 关联（2896 KB，同名消歧与 isCosFile 正确）；UI 导出 toast + 注入合成备份走确认弹窗后取消（真实库零变更）。全程零截图。
 - **运维注意**：实机重启发现裸跑 `qimeng-server.exe`（cwd=server）会新建空 server/data 且 dev 模式关闭——服务端必须经 `启动服务端.bat` 启动（其设 QIMENG_DATA_DIR=qimeng-data + QIMENG_AUTH_DEV_MODE=1）；误启实例已清理。
+- **回归修复（用户实测导入报 "Failed to fetch"）**：根因 = 全局 JSON 请求体上限 1MB（errors.go maxJSONBody，SECURITY 红线 6），真实备份 2.9MB 超限——MaxBytesReader 在服务端掐断连接时浏览器仍在上传，表现为 "Failed to fetch" 而非可读报错。修复：新增 `decodeJSONWithLimit`（per-route 限额 + 超限 413 TOO_LARGE），导入端点单独放宽到 `legacyImportMaxBody` 64MB（约数十万文件级库的余量；SECURITY 红线 6 的显式例外，已注记）；web 侧 lib/backup.ts 前置拦截同限额（BACKUP_MAX_BYTES 双写同步注记）。新增 TestImportBodyAboveGlobalLimit（~2MB 载荷导入成功）；隔离实例（18420+临时数据目录）用真实导出文件实测：2.9MB → HTTP 200、6325 文件清单 + 140 作者入账。真实库未做导入验证——导入语义是"新批次首导必回放事件"，往有统计的库导入会翻倍统计，导入只用于全新实例/迁移场景（§10 口径）。
 
 ## fix(web): 详情页自适应微调——1800 上限居中，4K 不再无限放大（2026-09-05 第六十笔）
 
