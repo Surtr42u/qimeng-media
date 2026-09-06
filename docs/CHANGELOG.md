@@ -11,6 +11,16 @@
 
 ---
 
+## feat(app): M4-3d 断点续播+时间轴标签+行为打点集成——策略层+VM 接线+壳层 manifest（2026-09-07 第一百零六笔）
+
+执行 AI：GLM-5.3-Flash（B 会话主代理调度；3d 纯逻辑+集成两轮执行子代理+对抗审查两轮，清偿复审 15/15 PASS）
+
+- **策略层（feature/detail/playback，21 单测）**：`WatchState`（已看完冻结判定 lastPositionSeconds≥durationMs/1000→起点归 0+徽标，客户端推导）；`ProgressThrottlePolicy`（5s 具名常量严于协议建议 10s+force 立即放行+reset 防旧值外泄）；`DwellSessionTracker`（**分段累加口径**：pause=flush 当前段并结束会话、resume 仅紧跟 pause 开新段（awaitingResume 门闩）、段内幂等——对齐服务端 engagement.go「dwell 不去重逐条累加」，推翻初版误读 openapi 注释的「恰一条」）；`DirectAnalyticsReporter`（open/play/dwell 直连，TODO(M4-4) 三处）。
+- **时间轴标签**：`TimelineTagColors`（❤→红/⭐→金 name 前缀约定，协议零改动）；VM 加载/新建/删除+重拉；VideoStage 映射桥接实体→updateTimelineTags 芯片（点击 seek 回看）+添加对话框（❤️/⭐ 快捷键+打开暂停 wasPlaying 快照恢复）+长按菜单（跳转/删除）。
+- **接线**：续播起点→VideoStage startPositionMs；进度 1s 轮询→节流→PUT progress+暂停/离开 force；打点 open（VM init）/play（起播回调）/dwell（Screen 生命周期）；sessionId=每详情实例 UUID（对齐 DOMAIN_RULES §5 会话去重）；DetailStage 解冻删穿墙（3b 冻结债）。
+- **壳层**：MainActivity configChanges（orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden）——修 3c 遗留「全屏旋转重建 Activity 杀播放器」。
+- **审查清偿**：P1 dwell 分段语义反转（含用例反转+两段累加用例）、DetailRepository 接口收拢抽象、标签增删失败路径 3 用例、P2 全屏方向常量、findActivity 单源等 15 项全 PASS。
+
 ## feat(app): M4-3c 视频态基座——media3 1.8.0 锁版+BiliPlayerView/TimelineTagEntity 桥接+G1~G9（2026-09-07 第一百零五笔）
 
 执行 AI：GLM-5.3-Flash（B 会话主代理调度；3c 执行子代理实施+对抗审查「可提交」+清偿复审）

@@ -8,6 +8,8 @@ import media.qimeng.app.core.model.LikeToggleResult
 import media.qimeng.app.core.model.MediaAsset
 import media.qimeng.app.core.model.MediaKind
 import media.qimeng.app.core.model.TagChip
+import media.qimeng.app.core.model.TimelineTag
+import media.qimeng.app.core.model.ViewEventKind
 import media.qimeng.sdk.apis.DefaultApi
 import media.qimeng.sdk.models.ApiV1AssetsAssetIdFavoritePutRequest
 import media.qimeng.sdk.models.ApiV1AssetsAssetIdTagsPutRequest
@@ -101,6 +103,67 @@ class SdkDetailRepository @Inject constructor(
         // 列表 DTO 映射复用 SdkMappers（同模块 internal 可见，零改动零复制）
         val baseUrl = apiFactory.currentBaseUrl()
         return items.map { SdkMappers.toMediaAsset(it, baseUrl) }
+    }
+
+    override suspend fun reportProgress(assetId: String, positionSeconds: Double) {
+        val api = apiFactory.create()
+        logRequest("PUT /assets/$assetId/progress", "position=$positionSeconds")
+        withContext(Dispatchers.IO) {
+            api.apiV1AssetsAssetIdProgressPut(
+                assetId = UUID.fromString(assetId),
+                progressUpdate = SdkDetailMappers.toProgressUpdate(positionSeconds),
+            )
+        }
+    }
+
+    /** 行为打点直连上报（每事件一次出网）。TODO(M4-4): 改走离线队列（批量+重试） */
+    override suspend fun reportViewEvent(
+        assetId: String,
+        kind: ViewEventKind,
+        startedAtMs: Long,
+        sessionId: String,
+        dwellSeconds: Long?,
+    ) {
+        val api = apiFactory.create()
+        logRequest("POST /events/view", "kind=$kind seconds=$dwellSeconds session=$sessionId")
+        withContext(Dispatchers.IO) {
+            api.apiV1EventsViewPost(
+                SdkDetailMappers.toViewEventReport(assetId, kind, startedAtMs, sessionId, dwellSeconds),
+            )
+        }
+    }
+
+    override suspend fun timelineTags(assetId: String): List<TimelineTag> {
+        val api = apiFactory.create()
+        logRequest("GET /assets/$assetId/timeline-tags", "list")
+        val tags = withContext(Dispatchers.IO) {
+            api.apiV1AssetsAssetIdTimelineTagsGet(UUID.fromString(assetId))
+        }
+        return SdkDetailMappers.toTimelineTags(tags)
+    }
+
+    override suspend fun addTimelineTag(assetId: String, timeMillis: Long, name: String): TimelineTag {
+        val api = apiFactory.create()
+        logRequest("POST /assets/$assetId/timeline-tags", "timeMillis=$timeMillis")
+        val tag = withContext(Dispatchers.IO) {
+            api.apiV1AssetsAssetIdTimelineTagsPost(
+                assetId = UUID.fromString(assetId),
+                apiV1AssetsAssetIdTimelineTagsPostRequest =
+                    SdkDetailMappers.toAddTimelineTagRequest(timeMillis, name),
+            )
+        }
+        return SdkDetailMappers.toTimelineTag(tag)
+    }
+
+    override suspend fun deleteTimelineTag(assetId: String, tagId: String) {
+        val api = apiFactory.create()
+        logRequest("DELETE /assets/$assetId/timeline-tags/$tagId", "delete")
+        withContext(Dispatchers.IO) {
+            api.apiV1AssetsAssetIdTimelineTagsTagIdDelete(
+                assetId = UUID.fromString(assetId),
+                tagId = tagId,
+            )
+        }
     }
 
     private fun logRequest(endpoint: String, params: String) {

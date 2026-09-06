@@ -68,7 +68,7 @@
 
 ### M4-3 详情页（图片 + 视频 + 互动，M4 最重批次）
 
-> **进度（2026-09-07 凌晨，B 会话 GLM-5.3-Flash）**：3a 骨架与排版 ✅（续前会话半成品；对抗审查两轮清偿后 commit；文本证据 `%TEMP%\qimeng-m43-3a-evidence\`；ImageStage/VideoStage 已拆独立占位桩文件供 3b/3c 并行认领；服务端 cosWork 缺陷见《待拍板-20260905夜2》#15）。3b/3c/3d 进行中。
+> **进度（2026-09-07 凌晨，B 会话 GLM-5.3-Flash）**：**M4-3 四子批代码全部完成**——3a 骨架与排版 ✅（412e81a，续前会话半成品+审查两轮；文本证据 `%TEMP%\qimeng-m43-3a-evidence\`）、3b 图片态 ✅（4a7c67f，ZoomImageView/GpuInfo 桥接+Size.ORIGINAL+预加载窗口+沉浸）、3c 视频态 ✅（19f278d，media3 1.8.0 双来源锁版+BiliPlayerView 桥接+G1~G9）、3d 续播+标签+打点 ✅（本笔，策略层 21 单测+VM 接线+dwell 分段累加口径+configChanges）。待办：整批自查+隔离实例写操作数字核对+M4-7 前置观察项（见任务B文档 §6）。上报项：服务端 cosWork 缺陷、openapi:951 dwell 注释勘误——《待拍板-20260905夜2》#15/#16。
 
 > **排版基准（2026-09-05 夜用户拍板：详情页使用 Web 现版显示排版移植到 Android）**：布局结构以 web 端 `pages/AssetDetailPage.tsx` 现版（B站式双栏，commit db6ac73）为唯一基准做移动端移植——竖屏单列堆叠顺序：媒体舞台 → 标题（cosWork ?? fileName）→ meta 行（浏览·播放·大小·尺寸·日期·出处）→ 点赞/收藏互动行 → 标签行 → 作者卡（displayName + ·COS + 关注）→ 「接下来播放」同类型推荐栏（缩略图+时长角标+两行标题，排除当前资产）。本节其余手势/播放器/续播/打点规格照旧（备忘录 G1~G9 为准）。
 
