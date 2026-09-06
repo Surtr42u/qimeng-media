@@ -189,7 +189,7 @@ media-ui-prototype/
 
 ### 详情页 B站式双栏排版大改（2026-09-05，用户指定 B站详情页截图为排版参照，只学排版不学视觉）
 
-> ✅ 完成（第四十六笔；主代理兜底实现——executor 子代理模型并发限流 4 次不可用，researcher/reviewer 正常；reviewer 全新上下文对抗审查 1 轮打回后通过）
+> ✅ 完成（第五十六笔；主代理兜底实现——executor 子代理模型并发限流 4 次不可用，researcher/reviewer 正常；reviewer 全新上下文对抗审查 1 轮打回后通过）
 
 1. **布局**：详情页从「舞台+log-table」极简版重写为双栏：左主列=媒体舞台→标题（cosWork ?? fileName 与卡片同口径）→meta 行（浏览·播放·大小·尺寸·日期·出处，间隔点）→点赞/收藏互动行→标签行；右栏=作者卡（displayName+·COS+关注，作者名点击进作者文件页，无作者不渲染）+「接下来播放」行式推荐栏（缩略图+时长角标+两行标题+作者副行，排除当前资产，换一批=换 seed，同类型 recommendations 流——协议无相似推荐参数，用户拍板口径）。窄窗 ≤1000px 单栏降级。新组件 `components/detail/{AuthorCard,AssetTagRow,UpNextList}.tsx`，新样式段在 prototype.css 末尾（.detail-* 前缀 + #page-asset 作用域）。
 2. **新 hooks**（use-assets.ts）：useToggleLike（PUT like 无 body，响应 LikeState 即时回填详情缓存 patchDetail+根键失效）/useSetFavorite（显式值非 toggle）/useReplaceAssetTags（整体替换+TAGS 池失效）/useUpNextList（recommendations 单页，seed 入缓存键，'upnext' 子族不与首页数字键碰撞）。
