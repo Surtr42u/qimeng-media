@@ -11,6 +11,19 @@
 
 ---
 
+## feat(app): 登录空密码走 dev-login 免密通道——测试环境免输密码（2026-09-06 第九十六笔）
+
+执行 AI：GLM-5.3（主代理）
+
+- **动机（用户拍板）**：密码输入在模拟器验证中反复阻塞任务测试（IME 逐字符输入+焦点漂移曾耗掉整段调试时间），拉长每批验收成本；用户指示项目密码暂时全关——服务端侧 `启动服务端.bat` 本就带 `QIMENG_AUTH_DEV_MODE=1`（Web 端已免密），本笔补齐 App 端通道。
+- **行为**：登录页**密码留空提交 → 走 `POST /auth/dev-login`**（协议端点 2026-09-03 即有，零协议改动）；密码非空路径完全不变。服务端未开启 dev 模式时恒 404 → 新增 `LoginError.DevLoginUnavailable`，App 提示「该服务器未开启免密模式，请输入密码登录」——生产/远程部署（dev 模式关）零影响，SECURITY.md 开发模式节已补 App 侧条目。
+- **改动面**：`:core:network` AuthApi 增 `devLogin()`（SDK `apiV1AuthDevLoginPost`）；`:core:data` AuthRepositoryImpl 登录编排空密码分支 + 404 映射（`HTTP_NOT_FOUND` 常量，协议侧改动须同步注释）；`:feature:login` 密码标签改「密码（开发模式服务器可留空）」+ 新错误文案资源。
+- **测试**：AuthRepositoryImplTest 新增 2 条——`空密码_走dev-login免密登录成功且不触密码端点`（含路由命中断言：dev-login=1 且 /auth/login=0）、`空密码_dev模式未开启_404返回DevLoginUnavailable不落盘`；fake 传输层路由表补 `/api/v1/auth/dev-login` 通道（开关变量模拟 auth_dev_mode）。
+- **验证**：模块单测全绿 → make app-test（BUILD SUCCESSFUL）→ make app-lint（BUILD SUCCESSFUL）→ 模拟器实测：pm clear 后仅输地址、密码留空、一键登录成功直进首页（隔离实例 18461 开 dev 模式，2026-09-06 晚实测）。
+- **配套（同日非本 commit）**：对照环境 `QimengNAS/ui-compare-harness/` 隔离服务端同步开 dev 模式（server.sh），M4-2A/M4-3 两批任务书已记录免密口径。
+
+---
+
 ## fix(app): 昨日(09-06)全量审查清偿·app 卷——筛选代际防乱序补齐同族四 VM+卫生项五处（2026-09-06 第九十五笔）
 
 执行 AI：GLM-5.3-Flash（主代理）

@@ -47,17 +47,21 @@ class AuthRepositoryImpl @Inject constructor(
             return LoginResult.Failure(LoginError.ServerUnreachable)
         }
 
-        // 第二步：密码登录；成功后先写地址再写 token（壳层由 token 流驱动跳壳，两键都落盘才算完成）
+        // 第二步：登录（密码非空走密码登录；空密码走 dev-login 免密通道——仅 dev 模式服务端可用）；
+        // 成功后先写地址再写 token（壳层由 token 流驱动跳壳，两键都落盘才算完成）
         return try {
-            val token = api.login(password)
+            val token = if (password.isEmpty()) api.devLogin() else api.login(password)
             serverConfig.updateServerUrl(baseUrl)
             serverConfig.updateToken(token)
             LoginResult.Success
         } catch (e: IOException) {
             LoginResult.Failure(LoginError.ServerUnreachable)
         } catch (e: ClientException) {
-            when (e.statusCode) {
-                HTTP_UNAUTHORIZED -> LoginResult.Failure(LoginError.WrongPassword)
+            when {
+                // dev-login 未开启时服务端恒 404（协议面语义，server auth_dev_test 锁定；协议侧改动须同步）
+                password.isEmpty() && e.statusCode == HTTP_NOT_FOUND ->
+                    LoginResult.Failure(LoginError.DevLoginUnavailable)
+                e.statusCode == HTTP_UNAUTHORIZED -> LoginResult.Failure(LoginError.WrongPassword)
                 else -> LoginResult.Failure(LoginError.Other("login client error ${e.statusCode}"))
             }
         } catch (e: ServerException) {
@@ -70,5 +74,8 @@ class AuthRepositoryImpl @Inject constructor(
     private companion object {
         /** 未认证状态码（openapi.yaml components.responses.Unauthorized；协议侧改动须同步）。 */
         const val HTTP_UNAUTHORIZED = 401
+
+        /** 资源不存在状态码（dev-login 未开启时服务端返回 404 不泄露信息；协议侧改动须同步）。 */
+        const val HTTP_NOT_FOUND = 404
     }
 }

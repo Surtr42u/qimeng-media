@@ -40,6 +40,9 @@ class AuthRepositoryImplTest {
     /** healthz 响应状态（默认 200；个别用例改 404 模拟「对端不是绮梦服务端」）。 */
     private var healthzStatus = 200
 
+    /** dev-login 免密通道开关（模拟服务端 auth_dev_mode；默认开=测试/开发环境口径）。 */
+    private var devLoginEnabled = true
+
     /** 各路径命中记录（断言登录端点未被触达等）。 */
     private val hitCounts = mutableMapOf<String, Int>()
 
@@ -54,6 +57,7 @@ class AuthRepositoryImplTest {
     @Before
     fun setUp() {
         healthzStatus = 200
+        devLoginEnabled = true
         hitCounts.clear()
     }
 
@@ -86,6 +90,15 @@ class AuthRepositoryImplTest {
                         }
                     }
 
+                    // 免密通道：开启时签发 token；关闭时恒 404 不泄露信息（对齐 server auth_dev_test 语义）
+                    "/api/v1/auth/dev-login" -> {
+                        if (devLoginEnabled) {
+                            testResponse(chain, 200, body = """{"token":"dev-minted-token"}""")
+                        } else {
+                            testResponse(chain, 404, body = """{"code":"NOT_FOUND"}""")
+                        }
+                    }
+
                     else -> testResponse(chain, 404, body = """{"code":"NOT_FOUND"}""")
                 }
             },
@@ -107,6 +120,28 @@ class AuthRepositoryImplTest {
         val result = repository.login(FAKE_BASE_URL, "wrong-password")
 
         assertEquals(LoginResult.Failure(LoginError.WrongPassword), result)
+        assertFalse(repository.isLoggedIn.first())
+        assertEquals(null, serverConfig.token.first())
+    }
+
+    @Test
+    fun `空密码_走dev-login免密登录成功且不触密码端点`() = runTest {
+        val result = repository.login(FAKE_BASE_URL, "")
+
+        assertEquals(LoginResult.Success, result)
+        assertEquals("dev-minted-token", serverConfig.token.first())
+        assertEquals(FAKE_BASE_URL, serverConfig.serverUrl.first())
+        assertEquals(1, hitCounts["/api/v1/auth/dev-login"] ?: 0)
+        assertEquals(0, hitCounts["/api/v1/auth/login"] ?: 0)
+    }
+
+    @Test
+    fun `空密码_dev模式未开启_404返回DevLoginUnavailable不落盘`() = runTest {
+        devLoginEnabled = false
+
+        val result = repository.login(FAKE_BASE_URL, "")
+
+        assertEquals(LoginResult.Failure(LoginError.DevLoginUnavailable), result)
         assertFalse(repository.isLoggedIn.first())
         assertEquals(null, serverConfig.token.first())
     }

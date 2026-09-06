@@ -13,6 +13,9 @@ sealed interface LoginError {
     /** 服务端明确拒绝：密码错误（POST /auth/login 401）。 */
     data object WrongPassword : LoginError
 
+    /** 免密不可用：空密码走 dev-login 但服务端未开启开发模式（404），提示改用密码登录（2026-09-06）。 */
+    data object DevLoginUnavailable : LoginError
+
     /** 其他失败（服务端 5xx 等），[detail] 用于日志排查不直接展示给用户。 */
     data class Other(val detail: String) : LoginError
 }
@@ -40,8 +43,11 @@ interface AuthRepository {
     val unauthorizedEvents: Flow<Unit>
 
     /**
-     * 登录：规范化地址 → `GET /api/v1/healthz` 探活 → `POST /auth/login` → 持久化地址+token。
+     * 登录：规范化地址 → `GET /api/v1/healthz` 探活 → 登录 → 持久化地址+token。
      * 探活在登录前：先确认「这是可达的绮梦服务端」，密码错误才不会被误报成地址不通。
+     * 密码非空走 `POST /auth/login`；**空密码走 `POST /auth/dev-login` 免密通道**（2026-09-06
+     * 用户拍板：测试环境免输密码；仅服务端开启 auth_dev_mode 时可用，未开启报
+     * [LoginError.DevLoginUnavailable]，生产/远程部署不受影响）。
      */
     suspend fun login(rawAddress: String, password: String): LoginResult
 
