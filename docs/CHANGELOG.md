@@ -11,6 +11,15 @@
 
 ---
 
+## feat(app): M4-3c 视频态基座——media3 1.8.0 锁版+BiliPlayerView/TimelineTagEntity 桥接+G1~G9（2026-09-07 第一百零五笔）
+
+执行 AI：GLM-5.3-Flash（B 会话主代理调度；3c 执行子代理实施+对抗审查「可提交」+清偿复审）
+
+- **依赖锁定（禁联网双来源）**：`media3=1.8.0`——旧项目 `gradle/libs.versions.toml:20`（BiliPlayerView 原生宿主，桥接兼容已验证）+本地 Gradle 缓存已解析构件；toml 注释标注「待联网复核」。
+- **桥接（ADR-0014 例外清单）**：旧仓 `ui/detail/BiliPlayerView.kt`（837 行）整文件搬运至 `feature/detail/video/`（包名/R/私有 dp 三处适配；TimelineTagEntity 由 Room 实体剥离为纯数据类，6 字段不变；搬运时补回 speedPopup 字段）；G4/G7 三档上限与倍速表抽 `PlayerMath` 纯函数（7 单测锁边界）；POSTER/PLAYING/ENDED 状态机（6 单测：幂等起播/ENDED 回 0）；`VideoPlayerState` ExoPlayer 生命周期（创建即静音 volume=0、handleAudioFocus、ON_PAUSE/RESUME 记忆恢复、onDispose 唯一释放点）+logcat TAG=QimengVideo 四态；12 个 drawable 逐字节一致。
+- **手势逐项**：G1 单击播停/G2 双击横屏/G3 长按 2x+锁速区/G4 水平拖进度（24dp 阈值+三档上限+非 READY 忽略）/G5 亮度音量=不做（旧版无）/G6 全屏（固定 LANDSCAPE 对齐旧版乱闪规避注释+800ms 防抖）/G7 倍速 0.5~2x/G8 默认静音/G9 控制器 5s 自动隐藏。
+- **lint 清偿**：UnstableApi opt-in 链（DetailStage/VideoPlayerState `@androidx.annotation.OptIn`）+update 块改 `LocalConfiguration.current`。
+
 ## feat(app): M4-3b 图片态——ZoomImageView/GpuInfo 桥接+原图直链+预加载窗口+沉浸 chrome（2026-09-07 第一百零四笔）
 
 执行 AI：GLM-5.3-Flash（B 会话主代理调度；3b 执行子代理实施+对抗审查两轮+清偿复审 15/15 PASS）
