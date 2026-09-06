@@ -11,6 +11,23 @@
 
 ---
 
+## fix(web): 昨日(09-06)全量审查清偿——web 页大小单源补净+Pill 模板全收拢 + 文档卷勘误补勾补账（2026-09-06 第九十四笔）
+
+执行 AI：deepseek-v4-flash-vision-exp（主代理）
+
+- **审查背景**：用户要求审查 2026-09-06 全部 33 笔提交（代码规范/功能一致/文档准确），四路对抗审查子代理并行（server+api / web / app / 文档）——发现 3×P1、4×P2 与若干 P3；本笔清偿 web+文档卷，app 卷见第九十五笔。
+- **页大小单源补净（第九十三笔宣称「页大小单源」，grep 证伪）**：`use-assets.ts` `useRecommendations(limit = 60, …)` 默认参数与 `AlbumsPage.tsx` `limit: 60` 两处裸字面量残留（第九十三笔只删了 HomePage 的 HOME_PAGE_SIZE）——均改引用 `DEFAULT_PAGE_SIZE`（constants.ts 既有常量，与 pagination.go 互指注释在），hook 签名注释同步改写；第九十三笔 CHANGELOG 内文本就诚实写了「消除三重定义之一」，标题为夸大，本笔补齐后成立。
+- **Pill 模板全部收拢**：`ui/pill` 组件增 `className` 变体参数（与 base 类拼接为 `pill <variant>[ active]`，注释明示禁止页面再手写模板）；SearchFilters 最后两处模板拼接（标签池 `pill pill-tag`、`+ 添加` `pill pill-add`）改用 Pill——第九十三笔「三处收拢」漏掉的第 4/5 处清零。
+- **M4-2 笔数错引勘误（P1）**：HANDOVER_APP 批次总表 M4-2 行「CHANGELOG 第八十笔」→「第八十三笔」——第八十笔实为 web 目录树缩进修复 8ed4b97，M4-2=4acb128=第八十三笔（CHANGELOG 自书一致，HANDOVER_APP 出生即错，昨日文档审查未抓到）。
+- **PROJECT_PLAN M4 补勾（P1）**：M4-5 上传（294a576）、M4-6 缓存策略（944cac5）两行补勾并注 commit；「登录+首页/列表/筛选/搜索」行补进度注（M4-1 88af1b9 + M4-2 4acb128 已交付）但**保持未勾**——「万能筛选面板」=M4-2.1（待拍板条目 11，M4-3 后独立批）未交付，整行勾选即失实，进度注替代之。
+- **d26999e 漏记补账（P2）**：晨间收尾后记（26c2126 夹带删除致 CI 红窗归因）此前在 CHANGELOG 零记载——按第九十一笔对 09-05 三笔漏记的同款判罚口径补记（其内容已存 HANDOVER.md 后记，本笔只补账）。
+- **三处笔误/失实勘误**：CHANGELOG 第八十七笔「10 个 feature」→「11 个 feature」（实测 feature 目录 11 个）；HANDOVER「CI 红约 2.5 小时」→「约 2 小时 15 分」（实测 26c2126 失败 01:36 → 874df6a 转绿 03:48）。
+- **文头「最后更新」刷新**：HANDOVER/HANDOVER_APP/CAPABILITY_MAP 三份文头补记（CAPABILITY_MAP 系 b0ee832 漏跟，按「表头未动」自披露补记）。
+- **验证**：`tsc --noEmit` 零错误 + `oxlint` 0 errors；grep 全库 `pill${` 模板拼接零残留、60 字面量仅剩具名常量。
+- 审查其余低优先发现（记录备查，不构成本批返工）：web 圆角/字号/尺寸 token 化系统性落差（ADR-0008 与原型惯例的历史欠账）；prototype.css 1718 行超 500 警戒线（存量持续增肥）；动效 stagger delay 13 处硬编码与段头自述矛盾；app 冷启动 token 预热竞态窗口；server scanner 注入时钟与 time.Since 混用、trash 刷新 goroutine 不可取消。
+
+---
+
 ## fix(web): 昨日审查清偿·web 卷——备份导入 stats 死键修复 + 查询键族收敛 + Pill 三处收拢/页大小单源（2026-09-06 第九十三笔）
 
 执行 AI：GLM-5.3（主代理）
@@ -78,7 +95,7 @@
 执行 AI：GLM-5.3-Flash（A 车道·A-S1 批执行子代理）
 
 - **build-logic included build（NIA 范式，范式与 API 用法当场核对 android/nowinandroid main 源码后落笔）**：新增 `android/build-logic`（settings 复用主工程 `gradle/libs.versions.toml` 为 libs 目录；`convention` 子工程 kotlin-dsl，AGP/KGP API 走 compileOnly，运行期版本仍由根 build.gradle.kts 的 apply false 收口——convention 不携带运行时版本）。抽 5 个 convention 插件：`qimeng.android.application`（application+Kotlin Android+公共 Android 面）、`qimeng.android.library`（library+Kotlin Android+公共 Android 面）、`qimeng.android.compose`（Kotlin Compose 编译器插件+buildFeatures.compose+Compose BOM platform）、`qimeng.android.hilt`（Hilt+KSP+hilt-android/hilt-compiler 依赖）、`qimeng.jvm.library`（kotlin("jvm")+Java/Kotlin 17）。公共面收口：compileSdk 36 / minSdk 26 / compileOptions 17 / jvmTarget 17（build-logic 内具名常量 ANDROID_COMPILE_SDK/ANDROID_MIN_SDK）；AGP 8.13.2/Kotlin 2.3.21/Compose BOM 2026.06.01 等版本零变更。
-- **17 个模块 build.gradle.kts 迁移（零行为变更）**：:app（application+compose+hilt）、:core:model（jvm.library）、:core:network|data（library+hilt）、:core:ui（library+compose）、:core:testing（library）、10 个 feature（library+compose+hilt）。模块文件只留 namespace、targetSdk/versionName（:app）与依赖差异；重复的 android{} 公共块/kotlin{} jvmTarget/buildFeatures.compose/`platform(compose-bom)`/hilt 依赖对全部上收 convention。libs.versions.toml 增补：build-logic 编译期依赖 2 条（android-gradlePlugin/kotlin-gradlePlugin，版本锚定同 agp/kotlin）+ [plugins] 5 条 qimeng.* 别名（version "unspecified"，由 included build 提供）。无损失收敛注记：各模块既无 lint 配置也无 packaging 块（任务描述提及，实际不存在，无从保持）；依赖解析面不变——迁移后测试任务输入与迁移前命中同一构建缓存键（实测 UP-TO-DATE 直通），构成零行为变更的旁证。
+- **17 个模块 build.gradle.kts 迁移（零行为变更）**：:app（application+compose+hilt）、:core:model（jvm.library）、:core:network|data（library+hilt）、:core:ui（library+compose）、:core:testing（library）、11 个 feature（library+compose+hilt）。模块文件只留 namespace、targetSdk/versionName（:app）与依赖差异；重复的 android{} 公共块/kotlin{} jvmTarget/buildFeatures.compose/`platform(compose-bom)`/hilt 依赖对全部上收 convention。libs.versions.toml 增补：build-logic 编译期依赖 2 条（android-gradlePlugin/kotlin-gradlePlugin，版本锚定同 agp/kotlin）+ [plugins] 5 条 qimeng.* 别名（version "unspecified"，由 included build 提供）。无损失收敛注记：各模块既无 lint 配置也无 packaging 块（任务描述提及，实际不存在，无从保持）；依赖解析面不变——迁移后测试任务输入与迁移前命中同一构建缓存键（实测 UP-TO-DATE 直通），构成零行为变更的旁证。
 - **实现注记（与 NIA main 的差异，均为 AGP 8.13.2 环境适配）**：①NIA main 对 `CommonExtension` 用裸类型（其 compileOnly 实为 AGP 9 线），本项目 AGP 8.13.2 的 CommonExtension 仍带 6 个类型参数，按 `CommonExtension<*, *, *, *, *, *>` 星投影书写；②compose convention 内按泛型基类查扩展运行期匹配不到 AGP 注册的具体扩展，改为 ApplicationExtension→LibraryExtension 逐级 Class 回退（源自我实测报错，非凭记忆）。
 - **Makefile app-test 补账（一行）**：`:core:model` 是纯 JVM kotlin("jvm") 模块，测试任务为 `test`（无 testDebugUnitTest 变体），原 `app-test` 只跑 testDebugUnitTest 覆盖不到它——追加 `:core:model:test` 并注释原因。
 - **自测（全绿）**：`make app-build` BUILD SUCCESSFUL（561 tasks）；`make app-test` BUILD SUCCESSFUL，删缓存强制真实重跑核数：Android 模块 72 条 + :core:model 59 条，0 失败 0 错误（:core:model 用例数 59 为现场实测，此前口头口径 32 已过时——M4-5/M4-6 批次各追加过测试类）；`make app-lint` BUILD SUCCESSFUL（1m11s）；`make lint` exit 0（redocly/gofmt/golangci-lint/web build+lint 四段全过）。
