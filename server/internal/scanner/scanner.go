@@ -32,6 +32,10 @@ var ErrAlreadyScanning = errors.New("scanner: 该库扫描进行中")
 const (
 	phaseWalking     = "walking"     // 遍历文件树+入库
 	phaseReconciling = "reconciling" // 差集+移动合并+清理
+
+	// defaultProgressMinEvery 扫描进度事件的最小发射间隔（节流默认值；
+	// 调度参数禁止内联，见 AI_README_FIRST 代码卫生约束 5）。
+	defaultProgressMinEvery = time.Second
 )
 
 // ScanResult 一次全量扫描的计数汇总（同时是 library.changed 事件 payload）。
@@ -132,7 +136,7 @@ func New(q *db.Queries, bus *events.Bus, logger *slog.Logger, dataDir string, pr
 		logger:           logger,
 		probe:            probe,
 		now:              time.Now,
-		progressMinEvery: time.Second,
+		progressMinEvery: defaultProgressMinEvery,
 		watchDebounce:    DefaultDebounce,
 		dataDir:          dataDir,
 		matcher:          sourcematcher.New(0),
@@ -178,6 +182,11 @@ func (g *libraryGate) endScan() {
 //	    size+mtime 完全一致判定为移动，保留旧 asset_id 只改路径属性
 //	  → 无候选则删除记录（view_events 故意无外键，事件流天然保留，adr/0005）
 //	→ 发 library.changed
+//
+// 超函数警戒线（>100 行）理由：扫描主线为顺序阶段流（载入→遍历→差集
+// →移动合并→删除→收尾），阶段间共享 existing/seen/added/res 一组累积
+// 状态；子步骤已拆 ingestFile/reconcile/deleteGone/applyMoveMerge，
+// 主线剩余的是阶段编排本身。
 func (s *Scanner) Scan(ctx context.Context, lib db.Library) (ScanResult, error) {
 	start := s.now()
 	g := s.gate(lib.ID)

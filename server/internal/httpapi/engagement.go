@@ -104,7 +104,7 @@ func (s *Server) PostApiV1EventsView(w http.ResponseWriter, r *http.Request) {
 func (s *Server) PutApiV1AssetsAssetIdLike(w http.ResponseWriter, r *http.Request, assetID gen.AssetId) {
 	if _, err := s.q.GetAsset(r.Context(), assetID.String()); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			writeErr(w, http.StatusNotFound, "NOT_FOUND", "资产不存在")
+			writeErr(w, http.StatusNotFound, codeNotFound, "资产不存在")
 			return
 		}
 		s.internalErr(w, "查询资产", err)
@@ -149,7 +149,7 @@ func (s *Server) PutApiV1AssetsAssetIdFavorite(w http.ResponseWriter, r *http.Re
 	}
 	if _, err := s.q.GetAsset(r.Context(), assetID.String()); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			writeErr(w, http.StatusNotFound, "NOT_FOUND", "资产不存在")
+			writeErr(w, http.StatusNotFound, codeNotFound, "资产不存在")
 			return
 		}
 		s.internalErr(w, "查询资产", err)

@@ -23,7 +23,7 @@ func serveIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Cache-Control", noCacheControl)
 	// 写失败只可能发生在客户端已断开时，静态页无重试语义，无补救动作，
 	// 忽略即可（net/http 会关连接）。
 	_, _ = w.Write(b)

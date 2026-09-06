@@ -24,6 +24,9 @@ import (
 
 // GetApiV1Recommendations 推荐流：十维自适应加权评分 + 同分桶打散 +
 // 视频图片混合（参数语义见 openapi：seed 0=稳定序 / >0=刷新打散）。
+// 超函数警戒线（>100 行）理由：oapi-codegen 生成的接口签名 + 单请求
+// 直线流（参数归一→SQL→打分→三后处理→分页切片→装配）；打分与后
+// 处理的复杂度已隔离在 recommend 纯函数包，此处是编排壳。
 func (s *Server) GetApiV1Recommendations(w http.ResponseWriter, r *http.Request, params gen.GetApiV1RecommendationsParams) {
 	limit, ok := resolvePageLimit(w, params.Limit)
 	if !ok {
@@ -165,7 +168,7 @@ func resolvePageOffset(w http.ResponseWriter, offset *int) (int, bool) {
 		return 0, true
 	}
 	if *offset < 0 {
-		writeErr(w, http.StatusBadRequest, "INVALID_PARAM", "offset 取值范围 >=0")
+		writeErr(w, http.StatusBadRequest, codeInvalidParam, "offset 取值范围 >=0")
 		return 0, false
 	}
 	return *offset, true

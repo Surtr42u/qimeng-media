@@ -43,11 +43,11 @@ func (s *Server) PostApiV1Tags(w http.ResponseWriter, r *http.Request) {
 	}
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
-		writeErr(w, http.StatusBadRequest, "INVALID_PARAM", "标签名不能为空")
+		writeErr(w, http.StatusBadRequest, codeInvalidParam, "标签名不能为空")
 		return
 	}
 	if _, err := s.q.GetTagByName(r.Context(), name); err == nil {
-		writeErr(w, http.StatusConflict, "TAG_EXISTS", "同名标签已存在")
+		writeErr(w, http.StatusConflict, codeTagExists, "同名标签已存在")
 		return
 	}
 	t, err := s.q.CreateTag(r.Context(), db.CreateTagParams{
@@ -67,7 +67,7 @@ func (s *Server) PostApiV1Tags(w http.ResponseWriter, r *http.Request) {
 // DeleteApiV1TagsTagId 删除标签（外键级联清理全部资产绑定；媒体文件不动）。
 func (s *Server) DeleteApiV1TagsTagId(w http.ResponseWriter, r *http.Request, tagID string) {
 	if _, err := s.q.GetTag(r.Context(), tagID); errors.Is(err, sql.ErrNoRows) {
-		writeErr(w, http.StatusNotFound, "NOT_FOUND", "标签不存在")
+		writeErr(w, http.StatusNotFound, codeNotFound, "标签不存在")
 		return
 	} else if err != nil {
 		s.internalErr(w, "查询标签", err)
@@ -94,7 +94,7 @@ func (s *Server) PutApiV1AssetsAssetIdTags(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if _, err := s.q.GetAsset(r.Context(), assetID.String()); errors.Is(err, sql.ErrNoRows) {
-		writeErr(w, http.StatusNotFound, "NOT_FOUND", "资产不存在")
+		writeErr(w, http.StatusNotFound, codeNotFound, "资产不存在")
 		return
 	} else if err != nil {
 		s.internalErr(w, "查询资产", err)
@@ -115,7 +115,7 @@ func (s *Server) PutApiV1AssetsAssetIdTags(w http.ResponseWriter, r *http.Reques
 	}
 	for _, id := range ids {
 		if _, err := s.q.GetTag(r.Context(), id); errors.Is(err, sql.ErrNoRows) {
-			writeErr(w, http.StatusBadRequest, "INVALID_PARAM", "标签不存在: "+id)
+			writeErr(w, http.StatusBadRequest, codeInvalidParam, "标签不存在: "+id)
 			return
 		} else if err != nil {
 			s.internalErr(w, "查询标签", err)
@@ -182,7 +182,7 @@ func (s *Server) PostApiV1AssetsAssetIdTimelineTags(w http.ResponseWriter, r *ht
 	}
 	name := strings.TrimSpace(req.Name)
 	if name == "" || req.TimeMillis < 0 {
-		writeErr(w, http.StatusBadRequest, "INVALID_PARAM", "timeMillis 与 name 必填（时间点非负）")
+		writeErr(w, http.StatusBadRequest, codeInvalidParam, "timeMillis 与 name 必填（时间点非负）")
 		return
 	}
 	if err := s.ensureAsset(w, r, assetID.String()); err != nil {
@@ -214,7 +214,7 @@ func (s *Server) DeleteApiV1AssetsAssetIdTimelineTagsTagId(w http.ResponseWriter
 		return
 	}
 	if n == 0 {
-		writeErr(w, http.StatusNotFound, "NOT_FOUND", "时间轴标签不存在")
+		writeErr(w, http.StatusNotFound, codeNotFound, "时间轴标签不存在")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -225,7 +225,7 @@ func (s *Server) DeleteApiV1AssetsAssetIdTimelineTagsTagId(w http.ResponseWriter
 func (s *Server) ensureAsset(w http.ResponseWriter, r *http.Request, assetID string) error {
 	_, err := s.q.GetAsset(r.Context(), assetID)
 	if errors.Is(err, sql.ErrNoRows) {
-		writeErr(w, http.StatusNotFound, "NOT_FOUND", "资产不存在")
+		writeErr(w, http.StatusNotFound, codeNotFound, "资产不存在")
 		return err
 	}
 	if err != nil {

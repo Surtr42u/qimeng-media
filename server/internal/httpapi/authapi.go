@@ -68,38 +68,38 @@ func (s *Server) PostApiV1AuthSetup(w http.ResponseWriter, r *http.Request) {
 	// minLength: 8（openapi AuthSetupRequest 约定；绑定层不校验 body
 	// schema，这里手动兜底）。
 	if len(req.Password) < 8 {
-		writeErr(w, http.StatusBadRequest, "WEAK_PASSWORD", "密码至少 8 位")
+		writeErr(w, http.StatusBadRequest, codeWeakPassword, "密码至少 8 位")
 		return
 	}
 
 	s.authState.mu.Lock()
 	defer s.authState.mu.Unlock()
 	if s.authState.tokenHash != "" {
-		writeErr(w, http.StatusConflict, "ALREADY_SETUP", "系统已初始化，禁止重复设置")
+		writeErr(w, http.StatusConflict, codeAlreadySetup, "系统已初始化，禁止重复设置")
 		return
 	}
 	// 双保险：内存态来自库，但为防多实例/外部写库的边角，落库前再查一次。
 	n, err := s.q.CountUsers(r.Context())
 	if err != nil {
 		s.logger.Error("auth setup: 查询用户数失败", "err", err)
-		writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
+		writeErr(w, http.StatusInternalServerError, codeInternal, "内部错误")
 		return
 	}
 	if n > 0 {
-		writeErr(w, http.StatusConflict, "ALREADY_SETUP", "系统已初始化，禁止重复设置")
+		writeErr(w, http.StatusConflict, codeAlreadySetup, "系统已初始化，禁止重复设置")
 		return
 	}
 
 	token, err := auth.GenerateToken()
 	if err != nil {
 		s.logger.Error("auth setup: 生成 token 失败", "err", err)
-		writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
+		writeErr(w, http.StatusInternalServerError, codeInternal, "内部错误")
 		return
 	}
 	phc, err := auth.HashPassword(req.Password)
 	if err != nil {
 		s.logger.Error("auth setup: 哈希密码失败", "err", err)
-		writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
+		writeErr(w, http.StatusInternalServerError, codeInternal, "内部错误")
 		return
 	}
 	if err := s.q.CreateUser(r.Context(), db.CreateUserParams{
@@ -111,7 +111,7 @@ func (s *Server) PostApiV1AuthSetup(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:    store.FormatTimestamp(s.now()),
 	}); err != nil {
 		s.logger.Error("auth setup: 写入用户失败", "err", err)
-		writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
+		writeErr(w, http.StatusInternalServerError, codeInternal, "内部错误")
 		return
 	}
 	s.authState.tokenHash = auth.TokenHash(token)
@@ -140,39 +140,39 @@ func (s *Server) PostApiV1AuthLogin(w http.ResponseWriter, r *http.Request) { //
 		return
 	}
 	if req.Password == "" {
-		writeErr(w, http.StatusUnauthorized, "UNAUTHORIZED", "密码错误")
+		writeErr(w, http.StatusUnauthorized, codeUnauthorized, "密码错误")
 		return
 	}
 	u, err := s.q.GetFirstUser(r.Context())
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			writeErr(w, http.StatusUnauthorized, "UNAUTHORIZED", "系统未初始化")
+			writeErr(w, http.StatusUnauthorized, codeUnauthorized, "系统未初始化")
 			return
 		}
 		s.logger.Error("auth login: 查询用户失败", "err", err)
-		writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
+		writeErr(w, http.StatusInternalServerError, codeInternal, "内部错误")
 		return
 	}
 	ok, err := auth.VerifyPassword(req.Password, u.PasswordHash)
 	if err != nil {
 		// 哈希损坏是数据问题而非认证失败——不能伪装成 401 混过去
 		s.logger.Error("auth login: 校验密码哈希失败", "err", err)
-		writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
+		writeErr(w, http.StatusInternalServerError, codeInternal, "内部错误")
 		return
 	}
 	if !ok {
-		writeErr(w, http.StatusUnauthorized, "UNAUTHORIZED", "密码错误")
+		writeErr(w, http.StatusUnauthorized, codeUnauthorized, "密码错误")
 		return
 	}
 	token, err := auth.GenerateToken()
 	if err != nil {
 		s.logger.Error("auth login: 生成 token 失败", "err", err)
-		writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
+		writeErr(w, http.StatusInternalServerError, codeInternal, "内部错误")
 		return
 	}
 	if err := s.q.UpdateUserTokenHash(r.Context(), auth.TokenHash(token)); err != nil {
 		s.logger.Error("auth login: 更新 token 失败", "err", err)
-		writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
+		writeErr(w, http.StatusInternalServerError, codeInternal, "内部错误")
 		return
 	}
 	s.authState.mu.Lock()
@@ -190,7 +190,7 @@ func (s *Server) PostApiV1AuthLogin(w http.ResponseWriter, r *http.Request) { //
 // 开发体验（用户约定：项目未完成前不要密码流程）。
 func (s *Server) PostApiV1AuthDevLogin(w http.ResponseWriter, r *http.Request) { //nolint:revive // 生成接口要求的方法名
 	if !s.cfg.AuthDevMode {
-		writeErr(w, http.StatusNotFound, "DEV_DISABLED", "开发模式未开启")
+		writeErr(w, http.StatusNotFound, codeDevDisabled, "开发模式未开启")
 		return
 	}
 
@@ -201,19 +201,19 @@ func (s *Server) PostApiV1AuthDevLogin(w http.ResponseWriter, r *http.Request) {
 	if s.authState.tokenHash == "" {
 		if err := s.ensureDevUser(r.Context()); err != nil {
 			s.logger.Error("dev login: 自动初始化失败", "err", err)
-			writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
+			writeErr(w, http.StatusInternalServerError, codeInternal, "内部错误")
 			return
 		}
 	}
 	token, err := auth.GenerateToken()
 	if err != nil {
 		s.logger.Error("dev login: 生成 token 失败", "err", err)
-		writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
+		writeErr(w, http.StatusInternalServerError, codeInternal, "内部错误")
 		return
 	}
 	if err := s.q.UpdateUserTokenHash(r.Context(), auth.TokenHash(token)); err != nil {
 		s.logger.Error("dev login: 更新 token 失败", "err", err)
-		writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
+		writeErr(w, http.StatusInternalServerError, codeInternal, "内部错误")
 		return
 	}
 	s.authState.tokenHash = auth.TokenHash(token)

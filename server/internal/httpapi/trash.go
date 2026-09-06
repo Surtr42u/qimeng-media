@@ -101,7 +101,7 @@ func (s *Server) refreshTrashMetricsOnce() {
 func (s *Server) DeleteApiV1AssetsAssetId(w http.ResponseWriter, r *http.Request, assetID gen.AssetId) {
 	row, err := s.q.GetAssetWithLibrary(r.Context(), assetID.String())
 	if errors.Is(err, sql.ErrNoRows) {
-		writeErr(w, http.StatusNotFound, "NOT_FOUND", "资产不存在")
+		writeErr(w, http.StatusNotFound, codeNotFound, "资产不存在")
 		return
 	}
 	if err != nil {
@@ -112,13 +112,13 @@ func (s *Server) DeleteApiV1AssetsAssetId(w http.ResponseWriter, r *http.Request
 	if _, err := os.Stat(src); err != nil {
 		// 库与磁盘漂移（文件已被外部移动/删除）：删除无从谈起，
 		// 404 让用户感知而不是 500——行还在库里的清理由扫描器负责。
-		writeErr(w, http.StatusNotFound, "FILE_MISSING", "库内文件不存在（可能已被外部移动）")
+		writeErr(w, http.StatusNotFound, codeFileMissing, "库内文件不存在（可能已被外部移动）")
 		return
 	}
 	now := s.now()
 	trashFile, metaFile, err := filing.TrashPathFor(s.cfg.DataDir, row.RelPath, now, row.AssetID)
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, "INVALID_PARAM", "资产路径不合法")
+		writeErr(w, http.StatusBadRequest, codeInvalidParam, "资产路径不合法")
 		return
 	}
 	if err := os.MkdirAll(filepath.Dir(trashFile), 0o755); err != nil {
@@ -293,17 +293,17 @@ func (s *Server) findTrashEntry(trashID string) (trashEntry, bool) {
 func (s *Server) PostApiV1TrashTrashIdRestore(w http.ResponseWriter, r *http.Request, trashID gen.TrashId) {
 	e, ok := s.findTrashEntry(trashID)
 	if !ok {
-		writeErr(w, http.StatusNotFound, "NOT_FOUND", "回收站条目不存在")
+		writeErr(w, http.StatusNotFound, codeNotFound, "回收站条目不存在")
 		return
 	}
 	lib, err := s.q.GetLibrary(r.Context(), e.meta.LibraryID)
 	if err != nil {
-		writeErr(w, http.StatusNotFound, "NOT_FOUND", "原库已不存在，无法恢复")
+		writeErr(w, http.StatusNotFound, codeNotFound, "原库已不存在，无法恢复")
 		return
 	}
 	origRel, err := filing.RestorePaths(e.meta)
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, "INVALID_META", "回收站元数据不合法，无法恢复")
+		writeErr(w, http.StatusBadRequest, codeInvalidMeta, "回收站元数据不合法，无法恢复")
 		return
 	}
 	// 冲突自动重命名（协议承诺）：原位置已被同名文件占用时按
@@ -371,7 +371,7 @@ func (s *Server) PostApiV1TrashTrashIdRestore(w http.ResponseWriter, r *http.Req
 func (s *Server) DeleteApiV1TrashTrashId(w http.ResponseWriter, r *http.Request, trashID gen.TrashId) {
 	e, ok := s.findTrashEntry(trashID)
 	if !ok {
-		writeErr(w, http.StatusNotFound, "NOT_FOUND", "回收站条目不存在")
+		writeErr(w, http.StatusNotFound, codeNotFound, "回收站条目不存在")
 		return
 	}
 	// stamp/<assetID>/ 子树里只有这一对文件+meta（一次删除一个文件），

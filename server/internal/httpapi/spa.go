@@ -16,16 +16,15 @@ import (
 	"time"
 )
 
-// spaAssetCacheControl 带内容哈希的构建产物（/assets/**、/icons/**）长缓存。
-// 为什么 immutable 语义成立：vite 构建输出 hash 文件名，文件名即内容身份
-// （"协议侧/约定"——这是 web 构建的约定，不是服务端与前端之间的协议，
-// 前端构建改名 = 换 URL，永远不会请求到旧文件；与 media.go 的
-// thumbCacheControl 常数风格一致）。
-const spaAssetCacheControl = "public, max-age=31536000, immutable"
+// 带内容哈希的构建产物（/assets/**、/icons/**）用 media.go 的
+// contentAddressedCacheControl：vite 构建输出 hash 文件名，文件名即内容
+// 身份（前端构建改名 = 换 URL，永远不会请求到旧文件），与缩略图缓存键
+// 同属"键即内容身份"，共用同一策略常量（单一来源，不再双写）。
 
-// spaIndexCacheControl 入口 HTML 不缓存：index.html 无 hash，构建后内容变化
-// 必须立即可见（短缓存会推迟发布；no-cache 是构建类静态站点的标准做法）。
-const spaIndexCacheControl = "no-cache"
+// noCacheControl 无 hash 入口页的缓存策略（SPA index.html 与内嵌验收页
+// page.go 共用单源）：内容变化必须立即可见，短缓存会推迟发布；no-cache
+// 是构建类静态站点的标准做法。
+const noCacheControl = "no-cache"
 
 // spaHandler 服务 web/dist 构建产物：命中文件直发，未命中的非文件路径
 // 回退 index.html（SPA 前端路由）。
@@ -123,9 +122,9 @@ func (h *spaHandler) serveFile(w http.ResponseWriter, r *http.Request, rel strin
 // spaCacheControl 判定单文件缓存头（见 serveFile 注释）。
 func spaCacheControl(rel string) string {
 	if strings.HasPrefix(rel, "assets/") || strings.HasPrefix(rel, "icons/") {
-		return spaAssetCacheControl
+		return contentAddressedCacheControl
 	}
-	return spaIndexCacheControl
+	return noCacheControl
 }
 
 // serveIndexFallback 回退路径：优先发 dist/index.html（前端路由入口页），
@@ -135,7 +134,7 @@ func (h *spaHandler) serveIndexFallback(w http.ResponseWriter, r *http.Request) 
 	f, err := h.root.Open("index.html")
 	if err == nil {
 		defer func() { _ = f.Close() }()
-		w.Header().Set("Cache-Control", spaIndexCacheControl)
+		w.Header().Set("Cache-Control", noCacheControl)
 		http.ServeContent(w, r, "index.html", time.Time{}, f)
 		return
 	}

@@ -19,12 +19,12 @@ import (
 // 库不存在 404。
 func (s *Server) GetApiV1Dirs(w http.ResponseWriter, r *http.Request, params gen.GetApiV1DirsParams) {
 	if params.LibraryId == "" {
-		writeErr(w, http.StatusBadRequest, "INVALID_PARAM", "libraryId 必填（目录树锚定单一库）")
+		writeErr(w, http.StatusBadRequest, codeInvalidParam, "libraryId 必填（目录树锚定单一库）")
 		return
 	}
 	lib, err := s.q.GetLibrary(r.Context(), params.LibraryId)
 	if errors.Is(err, sql.ErrNoRows) {
-		writeErr(w, http.StatusNotFound, "NOT_FOUND", "库不存在")
+		writeErr(w, http.StatusNotFound, codeNotFound, "库不存在")
 		return
 	}
 	if err != nil {
@@ -75,12 +75,12 @@ func (s *Server) PostApiV1Dirs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.LibraryID == "" {
-		writeErr(w, http.StatusBadRequest, "INVALID_PARAM", "libraryId 必填")
+		writeErr(w, http.StatusBadRequest, codeInvalidParam, "libraryId 必填")
 		return
 	}
 	lib, err := s.q.GetLibrary(r.Context(), req.LibraryID)
 	if errors.Is(err, sql.ErrNoRows) {
-		writeErr(w, http.StatusNotFound, "NOT_FOUND", "库不存在")
+		writeErr(w, http.StatusNotFound, codeNotFound, "库不存在")
 		return
 	}
 	if err != nil {
@@ -89,7 +89,7 @@ func (s *Server) PostApiV1Dirs(w http.ResponseWriter, r *http.Request) {
 	}
 	rel, err := filing.NormalizeRelPath(req.Path)
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, "INVALID_PARAM", "目录路径不合法")
+		writeErr(w, http.StatusBadRequest, codeInvalidParam, "目录路径不合法")
 		return
 	}
 	if err := os.MkdirAll(filepath.Join(lib.RootPath, filepath.FromSlash(rel)), 0o755); err != nil {

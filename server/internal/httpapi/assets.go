@@ -324,7 +324,7 @@ func (s *Server) GetApiV1Assets(w http.ResponseWriter, r *http.Request, params g
 	if params.Cursor != nil && *params.Cursor != "" {
 		c, err := decodeCursor(*params.Cursor)
 		if err != nil {
-			writeErr(w, http.StatusBadRequest, "INVALID_CURSOR", "分页游标不合法")
+			writeErr(w, http.StatusBadRequest, codeInvalidCursor, "分页游标不合法")
 			return
 		}
 		cur = c
@@ -343,7 +343,7 @@ func (s *Server) GetApiV1Assets(w http.ResponseWriter, r *http.Request, params g
 		if dir != "" {
 			norm, err := filing.NormalizeRelPath(dir)
 			if err != nil {
-				writeErr(w, http.StatusBadRequest, "INVALID_PARAM", "目录路径不合法")
+				writeErr(w, http.StatusBadRequest, codeInvalidParam, "目录路径不合法")
 				return
 			}
 			dir = norm
@@ -365,7 +365,7 @@ func (s *Server) GetApiV1Assets(w http.ResponseWriter, r *http.Request, params g
 		raw, err := s.q.ListAssetsFilteredAsc(r.Context(), p)
 		if err != nil {
 			s.logger.Error("查询资产列表失败", "err", err)
-			writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
+			writeErr(w, http.StatusInternalServerError, codeInternal, "内部错误")
 			return
 		}
 		rows = make([]listRowView, len(raw))
@@ -382,7 +382,7 @@ func (s *Server) GetApiV1Assets(w http.ResponseWriter, r *http.Request, params g
 		raw, err := s.q.ListAssetsFilteredDesc(r.Context(), p)
 		if err != nil {
 			s.logger.Error("查询资产列表失败", "err", err)
-			writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
+			writeErr(w, http.StatusInternalServerError, codeInternal, "内部错误")
 			return
 		}
 		rows = make([]listRowView, len(raw))
@@ -419,7 +419,7 @@ func (s *Server) GetApiV1Assets(w http.ResponseWriter, r *http.Request, params g
 		total, err := s.q.CountAssetsFiltered(r.Context(), cp)
 		if err != nil {
 			s.logger.Error("统计资产总数失败", "err", err)
-			writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
+			writeErr(w, http.StatusInternalServerError, codeInternal, "内部错误")
 			return
 		}
 		t := int(total)

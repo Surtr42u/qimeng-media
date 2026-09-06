@@ -62,7 +62,7 @@ func (s *Server) GetApiV1Libraries(w http.ResponseWriter, r *http.Request) {
 	libs, err := s.q.ListLibraries(r.Context())
 	if err != nil {
 		s.logger.Error("查询库列表失败", "err", err)
-		writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
+		writeErr(w, http.StatusInternalServerError, codeInternal, "内部错误")
 		return
 	}
 	out := make([]gen.Library, 0, len(libs))
@@ -70,7 +70,7 @@ func (s *Server) GetApiV1Libraries(w http.ResponseWriter, r *http.Request) {
 		counts, err := s.q.CountLibraryMedia(r.Context(), l.ID)
 		if err != nil {
 			s.logger.Error("统计库文件数失败", "err", err, "libraryId", l.ID)
-			writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
+			writeErr(w, http.StatusInternalServerError, codeInternal, "内部错误")
 			return
 		}
 		var fileCount, imageCount, videoCount int
@@ -114,27 +114,27 @@ func (s *Server) PostApiV1Libraries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Name == "" || req.RootPath == "" {
-		writeErr(w, http.StatusBadRequest, "INVALID_PARAM", "name 与 rootPath 均必填")
+		writeErr(w, http.StatusBadRequest, codeInvalidParam, "name 与 rootPath 均必填")
 		return
 	}
 	// openapi：rootPath 是"服务端可访问的绝对路径"。相对路径会让
 	// 服务进程的工作目录悄悄改变媒体根，部署事故极难排查。
 	if !filepath.IsAbs(req.RootPath) {
-		writeErr(w, http.StatusBadRequest, "INVALID_PARAM", "rootPath 必须是绝对路径")
+		writeErr(w, http.StatusBadRequest, codeInvalidParam, "rootPath 必须是绝对路径")
 		return
 	}
 	info, err := os.Stat(req.RootPath)
 	if err != nil || !info.IsDir() {
 		// 不区分"不存在"与"无权限"：错误文案不泄露服务端文件系统细节
 		//（SECURITY 红线 7；调用方只需知道"这个目录用不了"）。
-		writeErr(w, http.StatusBadRequest, "PATH_NOT_FOUND", "目录不存在或不可访问")
+		writeErr(w, http.StatusBadRequest, codePathNotFound, "目录不存在或不可访问")
 		return
 	}
 	// 库根与数据目录互斥（任何方向的嵌套都拒绝）：数据目录里有缩略图缓存
 	// （webp 是白名单格式）、回收站、数据库文件——落进库内会被扫描器自噬
 	// （scanner 侧有第二道 SkipDir 防御，这里从源头拒绝配置错误）。
 	if dirConflict(req.RootPath, s.cfg.DataDir) {
-		writeErr(w, http.StatusBadRequest, "DATA_DIR_CONFLICT", "库目录不能包含也不能位于服务端数据目录内")
+		writeErr(w, http.StatusBadRequest, codeDataDirConflict, "库目录不能包含也不能位于服务端数据目录内")
 		return
 	}
 	// kind：openapi 缺省 normal；仅接受协议枚举值（生成物 Valid 校验），
@@ -142,7 +142,7 @@ func (s *Server) PostApiV1Libraries(w http.ResponseWriter, r *http.Request) {
 	kind := "normal"
 	if req.Kind != nil {
 		if !req.Kind.Valid() {
-			writeErr(w, http.StatusBadRequest, "INVALID_PARAM", "kind 只允许 normal 或 cos")
+			writeErr(w, http.StatusBadRequest, codeInvalidParam, "kind 只允许 normal 或 cos")
 			return
 		}
 		kind = string(*req.Kind)
@@ -158,11 +158,11 @@ func (s *Server) PostApiV1Libraries(w http.ResponseWriter, r *http.Request) {
 		// UNIQUE(root_path)：同根目录注册第二个库 → 409；其余 DB 错误
 		// 是服务端故障 → 500（不能一律 409 掩盖真实故障）。
 		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
-			writeErr(w, http.StatusConflict, "CONFLICT", "该目录已注册为库")
+			writeErr(w, http.StatusConflict, codeConflict, "该目录已注册为库")
 			return
 		}
 		s.logger.Error("注册库失败", "err", err)
-		writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
+		writeErr(w, http.StatusInternalServerError, codeInternal, "内部错误")
 		return
 	}
 	id, name, root := lib.ID, lib.Name, lib.RootPath
@@ -207,25 +207,25 @@ func dirConflict(libraryRoot, dataDir string) bool {
 func (s *Server) PostApiV1LibrariesLibraryIdScan(w http.ResponseWriter, r *http.Request, libraryID gen.LibraryId) {
 	lib, err := s.q.GetLibrary(r.Context(), libraryID)
 	if errors.Is(err, sql.ErrNoRows) {
-		writeErr(w, http.StatusNotFound, "NOT_FOUND", "库不存在")
+		writeErr(w, http.StatusNotFound, codeNotFound, "库不存在")
 		return
 	}
 	if err != nil {
 		s.logger.Error("查询库失败", "err", err, "libraryId", libraryID)
-		writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
+		writeErr(w, http.StatusInternalServerError, codeInternal, "内部错误")
 		return
 	}
 	if err := s.scanner.Scan(r.Context(), lib.ID); err != nil {
 		if errors.Is(err, ErrScannerUnavailable) {
-			writeErr(w, http.StatusServiceUnavailable, "SCANNER_UNAVAILABLE", "扫描器尚未装配")
+			writeErr(w, http.StatusServiceUnavailable, codeScannerUnavailable, "扫描器尚未装配")
 			return
 		}
 		if errors.Is(err, ErrScanAlreadyRunning) {
-			writeErr(w, http.StatusConflict, "SCAN_IN_PROGRESS", "该库扫描进行中")
+			writeErr(w, http.StatusConflict, codeScanInProgress, "该库扫描进行中")
 			return
 		}
 		s.logger.Error("触发扫描失败", "err", err, "libraryId", lib.ID)
-		writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
+		writeErr(w, http.StatusInternalServerError, codeInternal, "内部错误")
 		return
 	}
 	s.scanStates.set(lib.ID, "scanning")
@@ -247,16 +247,16 @@ func (s *Server) DeleteApiV1LibrariesLibraryId(w http.ResponseWriter, r *http.Re
 	// 先查存在性：DeleteLibrary 对不存在的 id 影响 0 行且不报错，无法事后区分 404。
 	if _, err := s.q.GetLibrary(r.Context(), libraryID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			writeErr(w, http.StatusNotFound, "NOT_FOUND", "库不存在")
+			writeErr(w, http.StatusNotFound, codeNotFound, "库不存在")
 			return
 		}
 		s.logger.Error("查询库失败", "err", err, "libraryId", libraryID)
-		writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
+		writeErr(w, http.StatusInternalServerError, codeInternal, "内部错误")
 		return
 	}
 	if err := s.q.DeleteLibrary(r.Context(), libraryID); err != nil {
 		s.logger.Error("删除库失败", "err", err, "libraryId", libraryID)
-		writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
+		writeErr(w, http.StatusInternalServerError, codeInternal, "内部错误")
 		return
 	}
 	s.scanStates.set(libraryID, "idle")
@@ -278,11 +278,11 @@ func (s *Server) PutApiV1LibrariesLibraryIdEnabled(w http.ResponseWriter, r *htt
 	}
 	if _, err := s.q.GetLibrary(r.Context(), libraryID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			writeErr(w, http.StatusNotFound, "NOT_FOUND", "库不存在")
+			writeErr(w, http.StatusNotFound, codeNotFound, "库不存在")
 			return
 		}
 		s.logger.Error("查询库失败", "err", err, "libraryId", libraryID)
-		writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
+		writeErr(w, http.StatusInternalServerError, codeInternal, "内部错误")
 		return
 	}
 	enabled := 0
@@ -294,7 +294,7 @@ func (s *Server) PutApiV1LibrariesLibraryIdEnabled(w http.ResponseWriter, r *htt
 		ID:      libraryID,
 	}); err != nil {
 		s.logger.Error("更新库开关失败", "err", err, "libraryId", libraryID)
-		writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
+		writeErr(w, http.StatusInternalServerError, codeInternal, "内部错误")
 		return
 	}
 	if err := s.bus.Publish(events.Event{Topic: events.TopicLibraryChanged}); err != nil {

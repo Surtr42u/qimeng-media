@@ -69,8 +69,9 @@ func (noScanner) RecomputeEnrichment(context.Context, string) error {
 	return ErrScannerUnavailable
 }
 
-// DefaultTokenTTL 是签名媒体直链的默认有效期（6h，docs/SECURITY.md 红线 5）。
-const DefaultTokenTTL = 6 * time.Hour
+// DefaultTokenTTL 是签名媒体直链的默认有效期（6h，docs/SECURITY.md 红线 5），
+// 唯一来源在 config.DefaultTokenTTL——此处仅导出别名供 Deps 消费方引用。
+const DefaultTokenTTL = config.DefaultTokenTTL
 
 // 媒体直链路径前缀：签名协议的组成部分（auth.SignMediaURL 按 path 逐字节
 // 签名），改任一前缀 = 存量直链全部失效 + 三端全炸。生成侧（signedMediaURL
@@ -152,6 +153,9 @@ type Server struct {
 // New 组装 HTTP 服务。返回 *Server；main 用 Handler() 拿到带完整
 // 路由与鉴权链的 http.Handler 交给 http.Server，同时保留 Server 上的
 // 组装期钩子（如扫描适配器接 FinishScan）。
+// 超函数警戒线（>100 行）理由：构造器直线装配（Deps 校验→默认值
+// 兜底→子系统初始化→路由挂载），每子系统一段、无嵌套分支；拆分会把
+// 半组装的 Server 状态跨函数传递。
 func New(deps Deps) (*Server, error) {
 	if deps.Conn == nil || deps.Queries == nil {
 		return nil, errors.New("httpapi: Deps.Conn 与 Deps.Queries 必填")
@@ -219,7 +223,7 @@ func New(deps Deps) (*Server, error) {
 		// 绑定层错误（路径参数非法等）统一输出 Error JSON 而非裸文本，
 		// 与三端 SDK 的错误反序列化约定一致。
 		ErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
-			writeErr(w, http.StatusBadRequest, "INVALID_PARAM", "请求参数不合法")
+			writeErr(w, http.StatusBadRequest, codeInvalidParam, "请求参数不合法")
 		},
 	})
 	// 极简验收页（免鉴权静态 HTML；页面内所有数据请求照常走 Bearer）。
@@ -340,26 +344,26 @@ func (s *Server) mediaSignature(next http.Handler) http.Handler {
 		// 绕过面——统一在最前面按"解码后的原始形态"拒绝。
 		for _, seg := range strings.Split(r.URL.Path, "/") {
 			if seg == ".." {
-				writeErr(w, http.StatusForbidden, "PATH_ESCAPE", "路径不合法")
+				writeErr(w, http.StatusForbidden, codePathEscape, "路径不合法")
 				return
 			}
 		}
 		expStr := r.URL.Query().Get("exp")
 		sig := r.URL.Query().Get("sig")
 		if expStr == "" || sig == "" {
-			writeErr(w, http.StatusForbidden, "SIGNATURE_MISSING", "缺少签名参数")
+			writeErr(w, http.StatusForbidden, codeSignatureMissing, "缺少签名参数")
 			return
 		}
 		exp, err := strconv.ParseInt(expStr, 10, 64)
 		if err != nil {
-			writeErr(w, http.StatusForbidden, "SIGNATURE_INVALID", "签名参数不合法")
+			writeErr(w, http.StatusForbidden, codeSignatureInvalid, "签名参数不合法")
 			return
 		}
 		if err := auth.VerifyMediaSignature(r.URL.Path, exp, sig, s.secret, s.now); err != nil {
 			// 篡改与过期都映射 403，但日志区分（auth 包的两种哨兵错误），
 			// 便于区分攻击探测与正常的链接过期。
 			s.logger.Warn("媒体直链签名校验失败", "err", err, "path", r.URL.Path)
-			writeErr(w, http.StatusForbidden, "SIGNATURE_INVALID", "签名无效或已过期")
+			writeErr(w, http.StatusForbidden, codeSignatureInvalid, "签名无效或已过期")
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -373,7 +377,7 @@ func (s *Server) GetApiV1Readyz(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), readyzTimeout)
 	defer cancel()
 	if err := s.conn.PingContext(ctx); err != nil {
-		writeErr(w, http.StatusServiceUnavailable, "DB_UNREACHABLE", "数据库不可达")
+		writeErr(w, http.StatusServiceUnavailable, codeDbUnreachable, "数据库不可达")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

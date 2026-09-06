@@ -18,6 +18,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"unicode/utf8"
 
@@ -64,16 +65,18 @@ func (s *Server) PostApiV1ClientLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(body.Events) < clientLogsBatchMin || len(body.Events) > clientLogsBatchMax {
-		writeErr(w, http.StatusBadRequest, "INVALID_PARAM", "events 条数须在 1–50")
+		writeErr(w, http.StatusBadRequest, codeInvalidParam,
+			fmt.Sprintf("events 条数须在 %d–%d", clientLogsBatchMin, clientLogsBatchMax))
 		return
 	}
 	for _, e := range body.Events {
 		switch {
 		case !e.Level.Valid():
-			writeErr(w, http.StatusBadRequest, "INVALID_PARAM", "level 须为 error/warn/info")
+			writeErr(w, http.StatusBadRequest, codeInvalidParam, "level 须为 error/warn/info")
 			return
 		case utf8.RuneCountInString(e.Message) > clientLogMessageMaxRunes:
-			writeErr(w, http.StatusBadRequest, "INVALID_PARAM", "message 超 2000 字（不截断，整批拒绝）")
+			writeErr(w, http.StatusBadRequest, codeInvalidParam,
+				fmt.Sprintf("message 超 %d 字（不截断，整批拒绝）", clientLogMessageMaxRunes))
 			return
 		}
 	}

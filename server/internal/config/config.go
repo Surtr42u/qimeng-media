@@ -26,8 +26,9 @@ const defaultDataDir = "./data"
 // 由 thumbnail.SizeGrid 常量定义（512），config 只负责透传覆盖值；
 // LongSide 为 0 时回落 thumbnail 包默认档——档位像素绝不在此重复硬编码。
 
-// defaultTokenTTL 是签名直链默认有效期（docs/SECURITY.md 红线 5：6h）。
-const defaultTokenTTL = 6 * time.Hour
+// DefaultTokenTTL 是签名直链默认有效期的唯一来源（docs/SECURITY.md 红线 5：6h）。
+// httpapi.DefaultTokenTTL 是它的别名（代码卫生约束：同值不双写）。
+const DefaultTokenTTL = 6 * time.Hour
 
 // ThumbnailConfig 缩略图管线配置。
 type ThumbnailConfig struct {
@@ -122,7 +123,7 @@ func Load(path string) (*Config, error) {
 		Thumbnail: ThumbnailConfig{Workers: 0, LongSide: 0},
 		Upload:    UploadConfig{MaxBytes: DefaultUploadMaxBytes},
 		Web:       WebConfig{StaticDir: defaultWebStaticDir},
-		TokenTTL:  defaultTokenTTL,
+		TokenTTL:  DefaultTokenTTL,
 	}
 
 	if path != "" {

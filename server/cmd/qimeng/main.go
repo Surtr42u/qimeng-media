@@ -1,10 +1,8 @@
 // qimeng 是绮梦媒体库服务端入口。
 //
-// M1 组装：配置加载 → JSON 日志 → store（SQLite + 迁移）→ 事件总线 →
-// 缩略图编排器 → httpapi（鉴权/浏览闭环/直链/SSE/验收页）→ 优雅退出。
+// 组装：配置加载 → JSON 日志 → store（SQLite + 迁移）→ 事件总线 →
+// 缩略图编排器 → httpapi（全部协议端点）→ 扫描器适配器 → 优雅退出。
 // 依赖注入只在 main 发生，业务包之间不互相 new（ARCHITECTURE §5）。
-// 扫描器由并行任务实现：当前注入 httpapi 的 noScanner 占位
-// （扫描端点返回 503），真实 scanner 就绪后在组装处替换。
 package main
 
 import (
@@ -16,6 +14,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -56,6 +55,12 @@ const readHeaderTimeout = 10 * time.Second
 // 也依然成立（删掉文件重启即换新）。
 const mediaSecretFile = "media-secret"
 
+// main 组合根：config→db→密钥→总线→监控→缩略图→httpapi→扫描器→serve
+// 的直线装配。依赖注入只在 main 发生是模块边界的显式例外（ADR-0010
+// depguard 红线的唯一豁免点），拆分会扩散组合根。
+// 超函数警戒线（>100 行）理由：装配步骤顺序耦合（后者依赖前者产物），
+// 无嵌套分支复杂度；优雅关闭的编排顺序（工作池→总线→库连接）属收尾
+// 直线流的一部分，注释在原位。
 func main() {
 	// 临时 logger 兜底启动早期错误：真正的 JSON logger 要等配置加载完才能建，
 	// 在此之前出错也得有地方可看（stderr 直写）。
@@ -74,6 +79,15 @@ func main() {
 		Level: cfg.SlogLevel(),
 	}))
 	slog.SetDefault(logger)
+
+	// SECURITY「开发模式」边界的启动期提醒：dev 免密登录等价于无凭据登录
+	// 通道，而默认 listen ":8420" 绑定全部网卡（与 0.0.0.0 等价）——同网段
+	// 任意设备都能换到 admin token。只提醒不阻止（本机开发脚本
+	// 启动服务端.bat 的既定用法），生产/远程部署必须 auth_dev_mode=false
+	// 或显式配回环地址（SECURITY.md 开发模式节 + 部署清单）。
+	if cfg.AuthDevMode && !loopbackListen(cfg.Listen) {
+		logger.Warn("auth_dev_mode 开启且监听地址非回环：免密登录通道暴露给整个局域网，仅限本机受信环境", "listen", cfg.Listen)
+	}
 
 	// DataDir 必须先就位（库文件/缩略图/密钥文件都落在它下面）。
 	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
@@ -198,6 +212,21 @@ func main() {
 		logger.Error("关闭数据库失败", "error", err)
 	}
 	logger.Info("已完全退出")
+}
+
+// loopbackListen 判断监听地址是否只绑回环（SECURITY 开发模式边界提醒的
+// 判定输入）：host 为空 = 全部网卡（等价 0.0.0.0/[::]），不算回环；
+// 无法解析的地址按不安全处理。
+func loopbackListen(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // loadOrCreateMediaSecret 取直链 HMAC 密钥：配置显式指定 > DataDir 下

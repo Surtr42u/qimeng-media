@@ -82,7 +82,7 @@ func (s *Server) PostApiV1AuthorsImportTxt(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if strings.TrimSpace(body.Content) == "" {
-		writeErr(w, http.StatusBadRequest, "INVALID_PARAM", "content 不能为空")
+		writeErr(w, http.StatusBadRequest, codeInvalidParam, "content 不能为空")
 		return
 	}
 
@@ -387,7 +387,7 @@ func (s *Server) DeleteApiV1AuthorsImportTxt(w http.ResponseWriter, r *http.Requ
 	qtx := s.q.WithTx(tx)
 	if err := s.removeTxtSource(r.Context(), qtx, params.Filename); err != nil {
 		if errors.Is(err, errTxtSourceNotFound) {
-			writeErr(w, http.StatusNotFound, "NOT_FOUND", "TXT 片段不存在")
+			writeErr(w, http.StatusNotFound, codeNotFound, "TXT 片段不存在")
 			return
 		}
 		s.internalErr(w, "移除 TXT 片段", err)
@@ -464,7 +464,7 @@ func (s *Server) PutApiV1AuthorsAuthorIdFollow(w http.ResponseWriter, r *http.Re
 		return
 	}
 	if rows == 0 {
-		writeErr(w, http.StatusNotFound, "NOT_FOUND", "作者不存在")
+		writeErr(w, http.StatusNotFound, codeNotFound, "作者不存在")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

@@ -72,9 +72,9 @@ func (s *Server) fetchAssetStats(ctx context.Context, assetID string) (st assetS
 	}
 	for _, c := range cntRows {
 		switch c.Kind {
-		case "open":
+		case string(gen.Open):
 			st.viewCount = int(c.Cnt)
-		case "play":
+		case string(gen.Play):
 			st.playCount = int(c.Cnt)
 		}
 	}
@@ -104,12 +104,12 @@ func (s *Server) fetchAssetStats(ctx context.Context, assetID string) (st assetS
 func (s *Server) GetApiV1AssetsAssetId(w http.ResponseWriter, r *http.Request, assetID gen.AssetId) {
 	row, err := s.q.GetAssetWithLibrary(r.Context(), assetID.String())
 	if errors.Is(err, sql.ErrNoRows) {
-		writeErr(w, http.StatusNotFound, "NOT_FOUND", "资产不存在")
+		writeErr(w, http.StatusNotFound, codeNotFound, "资产不存在")
 		return
 	}
 	if err != nil {
 		s.logger.Error("查询资产失败", "err", err)
-		writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
+		writeErr(w, http.StatusInternalServerError, codeInternal, "内部错误")
 		return
 	}
 	ctx := r.Context()

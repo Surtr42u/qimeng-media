@@ -34,18 +34,25 @@ import (
 // 最终文件名以响应 AssetDetail.relPath 为准。
 //
 // 大小上限的双层执行：Content-Length 已知时先判（超限不收流）；
-// 未知长度（chunked）由 MaxBytesReader 在读流时截断（写盘失败即清理）。
+// 未知长度（chunked）由 MaxBytesReader 在读流时截断。
+// 落盘原子性（SECURITY 红线 4）：临时文件 + 原子 rename，见
+// receiveAndStore。
+//
+// 超函数警戒线（>100 行）理由：oapi-codegen 生成的接口签名 + 单请求
+// 直线流（校验→冲突解析→流式落盘→入库→富化→广播→响应装配），落盘
+// 段已拆出 receiveAndStore，剩余的局部状态（finalName/maxBytes/lib）
+// 贯穿装配响应全流程，再拆只会提升为结构体在函数间传递。
 func (s *Server) PostApiV1AssetsUpload(w http.ResponseWriter, r *http.Request, params gen.PostApiV1AssetsUploadParams) {
 	// 第④道前置：文件名清洗（落盘名的唯一来源；ValidateUpload 内部
 	// 校验的是同一规则，这里提前拿清洗结果构造后续路径）。
 	name, err := filing.SanitizeFilename(params.Filename)
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, "INVALID_FILENAME", "文件名不合法")
+		writeErr(w, http.StatusBadRequest, codeInvalidFilename, "文件名不合法")
 		return
 	}
 	mediaType, ok := scanner.ClassifyMedia(name)
 	if !ok {
-		writeErr(w, http.StatusBadRequest, "INVALID_EXTENSION", "扩展名不在白名单")
+		writeErr(w, http.StatusBadRequest, codeInvalidExtension, "扩展名不在白名单")
 		return
 	}
 	// 目标目录：空 = 库根（目录语义，与移动端点一致）；非空过安全校验。
@@ -53,7 +60,7 @@ func (s *Server) PostApiV1AssetsUpload(w http.ResponseWriter, r *http.Request, p
 	if dir != "" {
 		dir, err = filing.NormalizeRelPath(dir)
 		if err != nil {
-			writeErr(w, http.StatusBadRequest, "INVALID_PARAM", "目标目录不合法")
+			writeErr(w, http.StatusBadRequest, codeInvalidParam, "目标目录不合法")
 			return
 		}
 	}
@@ -61,7 +68,7 @@ func (s *Server) PostApiV1AssetsUpload(w http.ResponseWriter, r *http.Request, p
 	// 指定目标库，避免"唯一库"隐式约定在第二座库注册后静默漂移。
 	lib, err := s.q.GetLibrary(r.Context(), params.LibraryId)
 	if errors.Is(err, sql.ErrNoRows) || params.LibraryId == "" {
-		writeErr(w, http.StatusBadRequest, "LIBRARY_NOT_FOUND", "libraryId 必填且指向已注册库")
+		writeErr(w, http.StatusBadRequest, codeLibraryNotFound, "libraryId 必填且指向已注册库")
 		return
 	}
 	if err != nil {
@@ -82,7 +89,7 @@ func (s *Server) PostApiV1AssetsUpload(w http.ResponseWriter, r *http.Request, p
 	if kvCfg := s.storedClientConfig(r.Context()); kvCfg != nil {
 		if !kvCfg.Upload.AutoAccept {
 			sysmon.Default.IncUpload(sysmon.UploadFail)
-			writeErr(w, http.StatusForbidden, "UPLOAD_DISABLED", "上传已被关闭（设置页自动接收上传开关）")
+			writeErr(w, http.StatusForbidden, codeUploadDisabled, "上传已被关闭（设置页自动接收上传开关）")
 			return
 		}
 		if kvMax := int64(kvCfg.Upload.MaxBytesMb) << 20; kvMax > 0 && kvMax < maxBytes {
@@ -94,7 +101,7 @@ func (s *Server) PostApiV1AssetsUpload(w http.ResponseWriter, r *http.Request, p
 
 	if r.ContentLength > maxBytes {
 		sysmon.Default.IncUpload(sysmon.UploadFail)
-		writeErr(w, http.StatusRequestEntityTooLarge, "UPLOAD_TOO_LARGE", "文件超过大小上限")
+		writeErr(w, http.StatusRequestEntityTooLarge, codeUploadTooLarge, "文件超过大小上限")
 		return
 	}
 
@@ -111,52 +118,10 @@ func (s *Server) PostApiV1AssetsUpload(w http.ResponseWriter, r *http.Request, p
 		return
 	}
 
-	// 流接收：先读头做魔数校验（第②道），再接续写盘。
-	body := http.MaxBytesReader(w, r.Body, maxBytes)
-	head := make([]byte, filing.RecommendedHeadBytes)
-	n, err := io.ReadFull(body, head)
-	if err != nil && err != io.ErrUnexpectedEOF && err != io.EOF {
-		s.uploadFailCleanup(targetAbs, n)
-		writeUploadErr(w, err)
+	// 流式接收 + 落盘（含第②道魔数校验与临时文件原子 rename）。
+	if !s.receiveAndStore(w, r, params, targetAbs, maxBytes) {
 		return
 	}
-	head = head[:n]
-	if err := filing.ValidateUpload(params.Filename, min64(r.ContentLength, maxBytes), maxBytes, head); err != nil {
-		sysmon.Default.IncUpload(sysmon.UploadFail)
-		switch {
-		case errors.Is(err, filing.ErrUploadTooLarge):
-			writeErr(w, http.StatusRequestEntityTooLarge, "UPLOAD_TOO_LARGE", "文件超过大小上限")
-		case errors.Is(err, filing.ErrUploadExtension):
-			writeErr(w, http.StatusBadRequest, "INVALID_EXTENSION", "扩展名不在白名单")
-		case errors.Is(err, filing.ErrUploadMimeMismatch):
-			writeErr(w, http.StatusBadRequest, "MIME_MISMATCH", "文件内容与扩展名不符")
-		default: // ErrUploadFilename
-			writeErr(w, http.StatusBadRequest, "INVALID_FILENAME", "文件名不合法")
-		}
-		return
-	}
-	f, err := os.Create(targetAbs)
-	if err != nil {
-		s.internalErr(w, "创建上传文件", err)
-		return
-	}
-	_, err = f.Write(head)
-	// 头之外的全部内容流式接续写盘（不整读进内存）；err 全程用外层
-	// 变量，Write 与 Copy 的失败都落入下方统一清理/响应路径。
-	if err == nil && n == filing.RecommendedHeadBytes {
-		_, err = io.Copy(f, body)
-	}
-	if cerr := f.Close(); err == nil {
-		err = cerr
-	}
-	if err != nil {
-		s.uploadFailCleanup(targetAbs, -1)
-		sysmon.Default.IncUpload(sysmon.UploadFail)
-		writeUploadErr(w, err)
-		return
-	}
-	sysmon.Default.AddUploadBytes(float64(n))
-	sysmon.Default.IncUpload(sysmon.UploadOK)
 
 	// 元数据：size/mtime 以落盘事实为准；视频探测失败留空（scanner 同语义）。
 	fi, err := os.Stat(targetAbs)
@@ -164,6 +129,9 @@ func (s *Server) PostApiV1AssetsUpload(w http.ResponseWriter, r *http.Request, p
 		s.internalErr(w, "读取上传文件信息", err)
 		return
 	}
+	// 上传字节计量以落盘事实为准（fi.Size()）：此处曾只计魔数头字节数
+	// （≤512B），upload_bytes_total 严重少计（OBSERVABILITY「累计字节」口径）。
+	sysmon.Default.AddUploadBytes(float64(fi.Size()))
 	params_ := db.UpsertAssetParams{
 		AssetID:   newUploadAssetID(),
 		LibraryID: lib.ID,
@@ -251,21 +219,88 @@ func (s *Server) PostApiV1AssetsUpload(w http.ResponseWriter, r *http.Request, p
 	writeJSON(w, http.StatusCreated, detail)
 }
 
-// uploadFailCleanup 清理写盘失败的残留（n<0 = 删文件本体）。
-func (s *Server) uploadFailCleanup(target string, _ int) {
-	if err := os.Remove(target); err != nil && !os.IsNotExist(err) {
-		s.logger.Warn("清理上传残留失败", "path", target, "err", err)
+// 上传临时文件名的前后缀：与最终落盘名同目录（同卷才能原子 rename）。
+// .tmp 后缀在媒体扩展名白名单之外——进程崩溃留下的残留不会被扫描器
+// 误入库（隐藏前缀 .qm-upload- 便于人工辨识与清理）。
+const (
+	uploadTmpPrefix = ".qm-upload-"
+	uploadTmpSuffix = ".tmp"
+)
+
+// receiveAndStore 流式接收并落盘：读魔数头 → ValidateUpload 四道校验 →
+// 写同目录临时文件 → 原子 rename 到最终路径（SECURITY 红线 4「临时文件 +
+// 原子 rename」：并发同名上传不会交叉写坏同一文件，进程崩溃不会留下占用
+// 最终名的半成品——写入中途的失败只残留白名单外的 .tmp 文件）。
+// 失败时响应已写完并返回 false；upload 计数在成功 rename 后计入。
+func (s *Server) receiveAndStore(w http.ResponseWriter, r *http.Request, params gen.PostApiV1AssetsUploadParams, targetAbs string, maxBytes int64) bool {
+	body := http.MaxBytesReader(w, r.Body, maxBytes)
+	head := make([]byte, filing.RecommendedHeadBytes)
+	n, err := io.ReadFull(body, head)
+	if err != nil && err != io.ErrUnexpectedEOF && err != io.EOF {
+		writeUploadErr(w, err)
+		return false
 	}
+	head = head[:n]
+	if err := filing.ValidateUpload(params.Filename, min64(r.ContentLength, maxBytes), maxBytes, head); err != nil {
+		sysmon.Default.IncUpload(sysmon.UploadFail)
+		switch {
+		case errors.Is(err, filing.ErrUploadTooLarge):
+			writeErr(w, http.StatusRequestEntityTooLarge, codeUploadTooLarge, "文件超过大小上限")
+		case errors.Is(err, filing.ErrUploadExtension):
+			writeErr(w, http.StatusBadRequest, codeInvalidExtension, "扩展名不在白名单")
+		case errors.Is(err, filing.ErrUploadMimeMismatch):
+			writeErr(w, http.StatusBadRequest, codeMimeMismatch, "文件内容与扩展名不符")
+		default: // ErrUploadFilename
+			writeErr(w, http.StatusBadRequest, codeInvalidFilename, "文件名不合法")
+		}
+		return false
+	}
+	tmpAbs := filepath.Join(filepath.Dir(targetAbs), uploadTmpPrefix+uuid.NewString()+uploadTmpSuffix)
+	renamed := false
+	defer func() {
+		if !renamed {
+			if rmErr := os.Remove(tmpAbs); rmErr != nil && !os.IsNotExist(rmErr) {
+				s.logger.Warn("清理上传临时文件失败", "path", tmpAbs, "err", rmErr)
+			}
+		}
+	}()
+	f, err := os.Create(tmpAbs)
+	if err != nil {
+		s.internalErr(w, "创建上传临时文件", err)
+		return false
+	}
+	_, err = f.Write(head)
+	// 头之外的全部内容流式接续写盘（不整读进内存）；err 全程用外层
+	// 变量，Write 与 Copy 的失败都落入下方统一清理/响应路径。
+	if err == nil && n == filing.RecommendedHeadBytes {
+		_, err = io.Copy(f, body)
+	}
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		sysmon.Default.IncUpload(sysmon.UploadFail)
+		writeUploadErr(w, err)
+		return false
+	}
+	if err := os.Rename(tmpAbs, targetAbs); err != nil {
+		sysmon.Default.IncUpload(sysmon.UploadFail)
+		s.internalErr(w, "落盘上传文件", err)
+		return false
+	}
+	renamed = true
+	sysmon.Default.IncUpload(sysmon.UploadOK)
+	return true
 }
 
 // writeUploadErr 把读流错误映射为协议响应：超限 413、其余 400。
 func writeUploadErr(w http.ResponseWriter, err error) {
 	var mbe *http.MaxBytesError
 	if errors.As(err, &mbe) {
-		writeErr(w, http.StatusRequestEntityTooLarge, "UPLOAD_TOO_LARGE", "文件超过大小上限")
+		writeErr(w, http.StatusRequestEntityTooLarge, codeUploadTooLarge, "文件超过大小上限")
 		return
 	}
-	writeErr(w, http.StatusBadRequest, "INVALID_BODY", "上传流读取失败")
+	writeErr(w, http.StatusBadRequest, codeInvalidBody, "上传流读取失败")
 }
 
 func min64(a, b int64) int64 {

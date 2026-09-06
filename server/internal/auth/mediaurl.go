@@ -24,13 +24,21 @@ import (
 //
 // 用 "\n" 分隔而不是直接拼接：路径里可含任意字节，定界符保证
 // ("a\n1"+"2") 与 ("a\n"+"12") 之类的拼接歧义不可能出现。
-func SignMediaURL(path string, expiresAt time.Time, secret []byte) (exp int64, sig string) {
-	exp = expiresAt.Unix()
+// signMAC 计算签名消息的 HMAC 摘要：签发（SignMediaURL）与校验
+// （VerifyMediaSignature）必须共用同一构造——单侧改动会静默导致全部
+// 存量直链校验失配（安全敏感字符串只能有一处定义，AI_README_FIRST
+// 代码卫生约束 4：发现手抄即修）。
+func signMAC(secret []byte, path string, exp int64) []byte {
 	mac := hmac.New(sha256.New, secret)
 	mac.Write([]byte(path))
 	mac.Write([]byte("\n"))
 	mac.Write([]byte(strconv.FormatInt(exp, 10)))
-	return exp, hex.EncodeToString(mac.Sum(nil))
+	return mac.Sum(nil)
+}
+
+func SignMediaURL(path string, expiresAt time.Time, secret []byte) (exp int64, sig string) {
+	exp = expiresAt.Unix()
+	return exp, hex.EncodeToString(signMAC(secret, path, exp))
 }
 
 // 签名校验错误。分两类而不是笼统一个 error：handler 需要区分语义
@@ -48,11 +56,7 @@ var (
 // 校验顺序刻意为先签名后过期：签名不合法的数据不进入后续判断，
 // 避免攻击者用无效签名探测服务端的时间处理逻辑。
 func VerifyMediaSignature(path string, exp int64, sig string, secret []byte, now func() time.Time) error {
-	mac := hmac.New(sha256.New, secret)
-	mac.Write([]byte(path))
-	mac.Write([]byte("\n"))
-	mac.Write([]byte(strconv.FormatInt(exp, 10)))
-	expected := hex.EncodeToString(mac.Sum(nil))
+	expected := hex.EncodeToString(signMAC(secret, path, exp))
 	if subtle.ConstantTimeCompare([]byte(sig), []byte(expected)) != 1 {
 		return ErrSignatureInvalid
 	}

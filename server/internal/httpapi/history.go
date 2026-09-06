@@ -22,6 +22,8 @@ import (
 )
 
 // GetApiV1History 观看历史分页列表（最近浏览在前）。
+// 超函数警戒线（>100 行）理由：oapi-codegen 生成的接口签名 + 单请求
+// 直线流（参数归一→SQL→装配），与 GetApiV1Assets 同型的编排壳。
 func (s *Server) GetApiV1History(w http.ResponseWriter, r *http.Request, params gen.GetApiV1HistoryParams) {
 	limit, ok := resolvePageLimit(w, params.Limit)
 	if !ok {
@@ -58,7 +60,7 @@ func (s *Server) GetApiV1History(w http.ResponseWriter, r *http.Request, params 
 	if params.Cursor != nil && *params.Cursor != "" {
 		c, err := decodeCursor(*params.Cursor)
 		if err != nil {
-			writeErr(w, http.StatusBadRequest, "INVALID_CURSOR", "分页游标不合法")
+			writeErr(w, http.StatusBadRequest, codeInvalidCursor, "分页游标不合法")
 			return
 		}
 		cur = c
@@ -75,7 +77,7 @@ func (s *Server) GetApiV1History(w http.ResponseWriter, r *http.Request, params 
 	})
 	if err != nil {
 		s.logger.Error("查询观看历史失败", "err", err)
-		writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
+		writeErr(w, http.StatusInternalServerError, codeInternal, "内部错误")
 		return
 	}
 	hasMore := len(rows) > limit
