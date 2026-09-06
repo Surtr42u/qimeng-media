@@ -11,6 +11,15 @@
 
 ---
 
+## fix(server): 昨日审查清偿·server 卷——assets.go 拆 fillList* 族回文件警戒线内 + 主 handler 超线补理由注释（2026-09-06 第九十二笔）
+
+执行 AI：GLM-5.3（主代理）
+
+- **昨日审查发现**：assets.go 被 09-05 三笔 API 功能（likedToday/cosWork/收藏历史筛选）连日推过 600 行文件警戒线（558→642→673）且无超线理由注释；GetApiV1Assets 101→118 行同样越过 100 行函数线无注释。
+- **拆分**（纯函数搬移零行为变化）：fillListAuthorNames/fillListCosWork/fillListLikedToday 三函数族（列表条目批量字段装配，统一"页大小一次 IN 查询+二次装配"模式）整体搬到新文件 `internal/httpapi/assets_list_fill.go`（108 行，文件头注明职责与失败策略分级）；assets.go 673→582 行回线内，头注释补拆分去向。
+- **超线注释**：GetApiV1Assets 补理由——oapi-codegen 生成接口签名 + 单请求直线流（参数归一→游标→SQL→装配→响应），无嵌套分支复杂度，拆段只会把一串局部状态提升为结构体在函数间传递。
+- **验证**：`go build ./...` + `go test ./internal/httpapi/` 全绿 + `make lint` 四道（redocly/gofmt/golangci/oxlint）全过（昨日 8344920 漏跑 lint 致 CI 红的教训，本批补跑）。
+
 ## docs(docs): 昨日(09-05)全量审查清偿·文档卷——第五十六笔标题补回 + 三笔漏记勘误 + 两处笔误（2026-09-06 第九十一笔）
 
 执行 AI：GLM-5.3（主代理；四路对抗审查 reviewer 子代理并行：api+server / web / app / 文档一致性）
