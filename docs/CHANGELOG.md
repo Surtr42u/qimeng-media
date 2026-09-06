@@ -11,6 +11,17 @@
 
 ---
 
+## feat(app): M4-2A-B1 主题基座·旧版灰系换肤——深浅两套 24 token + Dimens.kt 建立（2026-09-06 第九十七笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理，主会话 GLM-5.3-Flash 派发与审查裁决）
+
+- **动机（任务书拍板 P4）**：M4-2A UI 对齐批（派发任务书-20260906-UI对齐.md）首批——新版主题从 Web 品牌蓝系（#4250af）整体换为旧版中性极简灰系，深浅两套都换，唯一来源=旧仓库 `res/values/colors.xml` + `values-night/colors.xml`（P2「外部视觉完全复刻旧版」的组成基座）。
+- **改动面**（仅 `core/ui/theme/` 三文件）：`Color.kt` 24 个 token（浅/夜 12 组）全量换值，逐 token 注释旧版 colors.xml 来源行号，另立 4 个带 alpha soft 常量（旧版底栏选中指示器/浸润底依赖）；`Theme.kt` M3 全槽位灰系重排（补 tertiary/secondaryContainer/inverse 族/surfaceContainer 族防 Material 默认紫粉漏出；error/scrim 留 M3 基线——旧版同样未定制，已注释声明）；新建 `Dimens.kt` 22 个尺寸常量（来源=旧 fragment_all_files.xml/styles.xml/drawable/组件现状，逐条注释文件+行号；旧仓库无 dimens.xml 已核实）。
+- **验证**：grep `Color(0x` 全仓仅 Color.kt 自身命中（feature/core/app 零散落——任务书预估「约 20 处散落」经查为 token 文件自身字面量数，M4-0 起组件层从未有硬编码）；make app-build/app-test/app-lint + make lint 四条全绿；对抗审查 B1-round1（色值逐位转录核对 22 token、alpha 换算手算复核、Dimens 22 常量来源行号 51 处全命中、越界零触碰）0 P1/P2，报告存 `QimengNAS/m42a-review/B1-round1.md`。
+- **注**：M4-2A 各批（B0~B6）的 HANDOVER_APP 批次表勾选按任务书 §6 统一在 B6 收口；本批表内进度以 CHANGELOG 为准。
+
+---
+
 ## feat(app): 登录空密码走 dev-login 免密通道——测试环境免输密码（2026-09-06 第九十六笔）
 
 执行 AI：GLM-5.3（主代理）
