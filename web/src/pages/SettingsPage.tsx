@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
 import type { ClientConfig, RecommendPrefs } from '@/api/generated'
+import { Pill } from '@/components/ui/pill'
 import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
 import {
@@ -197,15 +198,14 @@ export default function SettingsPage() {
         <p>作用于首页推荐流的 9 维权重；预设点击即保存，滑杆调整后点「保存推荐偏好」</p>
         <div className="settings-grid">
           {RECOMMEND_PRESETS.map((p) => (
-            <button
+            <Pill
               key={p.label}
-              type="button"
-              className={`pill${isActivePreset(p.prefs) ? ' active' : ''}`}
+              active={isActivePreset(p.prefs)}
               disabled={savePrefs.isPending}
               onClick={() => applyPreset(p.prefs)}
             >
               {p.label}
-            </button>
+            </Pill>
           ))}
         </div>
         {PREFS_KEYS.map((key) => (

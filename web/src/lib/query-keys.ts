@@ -9,10 +9,13 @@
  * 禁止另起 'api/v1/assets/xxx' 形态的首段（那会脱离根键失效范围——本文件
  * 存在之前 SseBridge 失效全部落空的根因）。
  *
- * 未收敛进本文件的键（config/prefs/client-logs/stats/rankings/history/
- * system-status）：无跨处失效需求、字面量仅出现一次，按卫生约束第 2 条
- * 「第 2 次出现才提取」留在各自 hooks。stats/rankings/history 由浏览行为
- * 驱动，SSE 桥不失效（库变更对它们的影响经 scan 完成后的页面重挂载体现）。
+ * 未收敛进本文件的键（config/prefs/client-logs/system-status）：无跨处
+ * 失效需求、字面量仅出现一次，按卫生约束第 2 条「第 2 次出现才提取」留在
+ * 各自 hooks。stats/rankings/history 由浏览行为驱动，SSE 桥不失效（库变更
+ * 对它们的影响经 scan 完成后的页面重挂载体现），但备份导入（use-backup）
+ * 会跨域失效这三族——2026-09-06 审查清偿时收敛（此前 use-backup 手写
+ * ['api/v1/stats'] 与 use-stats 的 ['api/v1/stats/overview'] 形态错配，
+ * 逐元素匹配下失效落空，即「死键」）。
  *
  * 协议侧改动须同步此处（键首段 = api/openapi.yaml 路径），反之亦然。
  */
@@ -47,3 +50,15 @@ export const RECOMMENDATIONS_QUERY_KEY = ['api/v1/recommendations'] as const
 
 /** 出处分组计数 */
 export const SOURCES_QUERY_KEY = ['api/v1/sources'] as const
+
+/** 统计族根键（overview/trends 子键由 use-stats 以 [...本键, 子族名] 构造） */
+export const STATS_QUERY_KEY = ['api/v1/stats'] as const
+
+/**
+ * 排行族根键（use-stats 两个 hook 的子键均以本键为首段；备份导入后整族失效）。
+ * 注意子键自带 'paged' 段区分整表/分页两种形态，根键失效两者都命中。
+ */
+export const RANKINGS_QUERY_KEY = ['api/v1/rankings'] as const
+
+/** 观看历史族根键（limit 追加为第二段；备份导入会重写历史，需整族失效） */
+export const HISTORY_QUERY_KEY = ['api/v1/history'] as const

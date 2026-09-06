@@ -20,7 +20,10 @@ import { getAuthHeaders, unwrapSdkResult } from '@/lib/api-client'
 import {
   ASSETS_QUERY_KEY,
   AUTHORS_QUERY_KEY,
+  HISTORY_QUERY_KEY,
+  RANKINGS_QUERY_KEY,
   RECOMMENDATIONS_QUERY_KEY,
+  STATS_QUERY_KEY,
   TAGS_QUERY_KEY,
 } from '@/lib/query-keys'
 
@@ -62,16 +65,18 @@ export function useImportQimengBackup() {
     mutationFn: (payload: LegacyBackupImport): Promise<LegacyImportResult> =>
       unwrapSdkResult(postApiV1ImportQimengBackup({ body: payload })),
     onSuccess: () => {
-      // 迁移写入面横跨多域：资产（含收藏/点赞详情）/作者/标签/推荐整族失效；
-      // 统计与浏览历史键未收敛进 query-keys（见该文件头注），按各自键首段前缀失效。
+      // 迁移写入面横跨多域：资产（含收藏/点赞详情）/作者/标签/推荐/统计/排行/
+      // 观看历史整族失效。stats 族此前手写 ['api/v1/stats'] 与 use-stats 的
+      // ['api/v1/stats/overview'] 形态错配致失效落空，2026-09-06 收敛进
+      // query-keys 单一来源后根键命中全部子键。
       for (const root of [
         ASSETS_QUERY_KEY,
         AUTHORS_QUERY_KEY,
         TAGS_QUERY_KEY,
         RECOMMENDATIONS_QUERY_KEY,
-        ['api/v1/stats'],
-        ['api/v1/rankings'],
-        ['api/v1/history'],
+        STATS_QUERY_KEY,
+        RANKINGS_QUERY_KEY,
+        HISTORY_QUERY_KEY,
       ]) {
         void qc.invalidateQueries({ queryKey: root })
       }

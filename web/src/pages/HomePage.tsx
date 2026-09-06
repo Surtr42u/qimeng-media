@@ -1,4 +1,4 @@
-import { QM_REFRESH_EVENT } from '@/lib/constants'
+import { DEFAULT_PAGE_SIZE, QM_REFRESH_EVENT } from '@/lib/constants'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 import type { AssetSummary } from '@/api/generated'
@@ -22,9 +22,6 @@ import { parseRankPeriod, type HomeRankPeriod, type HomeTabKey } from '@/lib/hom
  * qm:refresh 收到后重排回第一页（旧版 refreshSeed++ 全量重排语义）。
  * 卡片点击进详情（图片大图/视频播放）。
  */
-
-/** 首页触底加载页大小（协议 limit 默认值；与 useRecommendations 缺省一致） */
-const HOME_PAGE_SIZE = 60
 
 export default function HomePage() {
   const navigate = useNavigate()
@@ -51,10 +48,10 @@ export default function HomePage() {
 }
 
 /**
- * 订阅 AppShell 刷新按钮广播的 'qm:refresh'（事件名是与 AppShell 的契约，
- * 一字不改）。旧版 refreshSeed++ 语义的入口：回调里只做「换缓存键」——
- * 推荐/cos 换 seed（全量重排并回第一页）、排行榜换 reloadKey（重置分页
- * 重拉），具体由各 tab 自行决定。
+ * 订阅 AppShell 刷新按钮广播的 qm:refresh（事件名以 QM_REFRESH_EVENT 常量
+ * 为单一来源，派发侧 AppShell 同源引用，见 constants.ts）。旧版 refreshSeed++
+ * 语义的入口：回调里只做「换缓存键」——推荐/cos 换 seed（全量重排并回第一页）、
+ * 排行榜换 reloadKey（重置分页重拉），具体由各 tab 自行决定。
  */
 function useQmRefresh(onRefresh: () => void): void {
   const handlerRef = useRef(onRefresh)
@@ -97,7 +94,7 @@ function dedupeByAssetId(pages: AssetSummary[][]): AssetSummary[] {
  *  页大小 60）+ 渲染前去重 + 触底哨兵。seed/cosOnly 进 queryKey——
  *  seed 变化即整条流重置回第一页（换一批与刷新共用此机制）。 */
 function useRecommendationStream(seed: number, cosOnly: boolean) {
-  const q = useRecommendations(HOME_PAGE_SIZE, seed, cosOnly)
+  const q = useRecommendations(DEFAULT_PAGE_SIZE, seed, cosOnly)
   const items = useMemo(() => dedupeByAssetId(q.data?.pages ?? []), [q.data])
   const sentinelRef = useAutoMore(q.hasNextPage, () => {
     if (!q.isFetchingNextPage) void q.fetchNextPage()
@@ -197,7 +194,7 @@ function CosRecommendTab({ onOpen }: { onOpen: (id?: string) => void }) {
 function HotRankTab({ period, onOpen }: { period: HomeRankPeriod; onOpen: (id?: string) => void }) {
   const [reloadKey, setReloadKey] = useState(0)
   useQmRefresh(() => setReloadKey((n) => n + 1))
-  const q = useRankingsInfinite(period, HOME_PAGE_SIZE, reloadKey)
+  const q = useRankingsInfinite(period, DEFAULT_PAGE_SIZE, reloadKey)
   const items = useMemo(() => dedupeByAssetId(q.data?.pages ?? []), [q.data])
   const sentinelRef = useAutoMore(q.hasNextPage, () => {
     if (!q.isFetchingNextPage) void q.fetchNextPage()

@@ -6,6 +6,7 @@
 
 import type { Tag } from '@/api/generated'
 import { LOCALE_ZH } from '@/lib/constants'
+import { Pill } from '@/components/ui/pill'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
 import {
   ORDER_OPTIONS,
@@ -23,14 +24,6 @@ function FilterRow({ label, children }: { label: string; children: React.ReactNo
       <span className="f-label">{label}</span>
       <div className="f-opts">{children}</div>
     </div>
-  )
-}
-
-function FilterPill({ value, active, onClick }: { value: string; active: boolean; onClick: () => void }) {
-  return (
-    <button type="button" className={`pill${active ? ' active' : ''}`} onClick={onClick}>
-      {value}
-    </button>
   )
 }
 
@@ -169,22 +162,30 @@ export function SearchFilters({
       <div>
         <FilterRow label="顺位">
           {ORDER_OPTIONS.map((v) => (
-            <FilterPill key={v} value={v} active={state.order === v} onClick={() => setFilter('order', v)} />
+            <Pill key={v} active={state.order === v} onClick={() => setFilter('order', v)}>
+              {v}
+            </Pill>
           ))}
         </FilterRow>
         <FilterRow label="播放次数">
           {PLAYS_OPTIONS.map((v) => (
-            <FilterPill key={v} value={v} active={state.plays === v} onClick={() => setFilter('plays', v)} />
+            <Pill key={v} active={state.plays === v} onClick={() => setFilter('plays', v)}>
+              {v}
+            </Pill>
           ))}
         </FilterRow>
         <FilterRow label="文件大小">
           {SIZE_OPTIONS.map((v) => (
-            <FilterPill key={v} value={v} active={state.size === v} onClick={() => setFilter('size', v)} />
+            <Pill key={v} active={state.size === v} onClick={() => setFilter('size', v)}>
+              {v}
+            </Pill>
           ))}
         </FilterRow>
         <FilterRow label="时间范围">
           {TIME_OPTIONS.map((v) => (
-            <FilterPill key={v} value={v} active={state.time === v} onClick={() => setFilter('time', v)} />
+            <Pill key={v} active={state.time === v} onClick={() => setFilter('time', v)}>
+              {v}
+            </Pill>
           ))}
           {state.time === '按年份区间' ? (
             <YearRange
@@ -196,7 +197,9 @@ export function SearchFilters({
         </FilterRow>
         <FilterRow label="标签模式">
           {TAG_MODE_OPTIONS.map((v) => (
-            <FilterPill key={v} value={v} active={state.tagMode === v} onClick={() => setFilter('tagMode', v)} />
+            <Pill key={v} active={state.tagMode === v} onClick={() => setFilter('tagMode', v)}>
+              {v}
+            </Pill>
           ))}
         </FilterRow>
         <TagRow

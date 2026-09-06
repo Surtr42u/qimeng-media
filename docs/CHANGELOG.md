@@ -11,6 +11,17 @@
 
 ---
 
+## fix(web): 昨日审查清偿·web 卷——备份导入 stats 死键修复 + 查询键族收敛 + Pill 三处收拢/页大小单源（2026-09-06 第九十三笔）
+
+执行 AI：GLM-5.3（主代理）
+
+- **stats 死键修复（高优先，昨日 8344920 引入）**：use-backup 导入成功后失效 `['api/v1/stats']`，而 use-stats 实际键首段是完整路径 `'api/v1/stats/overview'`/`'api/v1/stats/trends'`——TanStack 逐元素匹配下前缀失效一条不命中，与 0a2f5d1 修掉的 SSE 键错配同类（"修完 A 留下 B"）。实际影响有界（全局 staleTime 20s 后自然重取）但意图失效静默落空。修法：query-keys 增 `STATS_QUERY_KEY`/`RANKINGS_QUERY_KEY`/`HISTORY_QUERY_KEY` 三根键，use-stats/use-history 子键一律 `[...根键, 子段]` 构造，use-backup 引用常量——stats 族键形态随之统一，根键命中全部子键。
+- **query-keys 头注豁免声明修正**：原头注声称 stats/rankings/history"字面量仅出现一次"留在各自 hooks——审查证伪（'api/v1/rankings' 已 3 处、'api/v1/history' 2 处，违反"第 2 次出现必须提常量"），本批收敛后声明同步改写。
+- **Pill 三处内联收拢**（b57076b 组件库化遗留）：SearchFilters 本地 FilterPill 组件删除、5 个调用点改用 `ui/pill`；SettingsPage 推荐预设按钮、AssetTagRow 标签选择按钮同收拢（含 AssetTagRow 顺带获得 type="button"）。
+- **页大小单源**：HomePage 本地 `HOME_PAGE_SIZE = 60` 删除改引用 `DEFAULT_PAGE_SIZE`（constants.ts 既有常量，消除 60 三重定义之一）；useQmRefresh 注释"事件名一字不改"措辞更新为 QM_REFRESH_EVENT 常量单一来源口径（提常量后残留）。
+- **验证**：`tsc -b` 零错误、`oxlint` 0 errors（17 warnings 为存量 router 等，与昨日交付时一致）；`make lint` TS 道全过。
+- 审查未采纳返工项说明：LibraryManagePage.tsx 昨日末态 535 行超线无注释，今日 36af094 目录树操作化重构后已 496 行回线内，无需处理。
+
 ## fix(server): 昨日审查清偿·server 卷——assets.go 拆 fillList* 族回文件警戒线内 + 主 handler 超线补理由注释（2026-09-06 第九十二笔）
 
 执行 AI：GLM-5.3（主代理）

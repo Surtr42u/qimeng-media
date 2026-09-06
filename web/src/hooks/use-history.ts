@@ -9,10 +9,11 @@ import { useInfiniteQuery } from '@tanstack/react-query'
 import { getApiV1History } from '@/api/generated'
 import { unwrapSdkResult } from '@/lib/api-client'
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants'
+import { HISTORY_QUERY_KEY } from '@/lib/query-keys'
 
 export function useHistoryInfinite(limit = DEFAULT_PAGE_SIZE) {
   return useInfiniteQuery({
-    queryKey: ['api/v1/history', limit],
+    queryKey: [...HISTORY_QUERY_KEY, limit],
     queryFn: ({ pageParam }) =>
       unwrapSdkResult(getApiV1History({ query: { cursor: pageParam, limit } })),
     initialPageParam: undefined as string | undefined,

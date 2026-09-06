@@ -9,6 +9,7 @@ import { getApiV1Rankings, getApiV1StatsOverview, getApiV1StatsTrends } from '@/
 import { unwrapSdkResult } from '@/lib/api-client'
 import { MAX_PAGE_SIZE } from '@/lib/constants'
 import { lengthCursorNext } from '@/lib/pagination'
+import { RANKINGS_QUERY_KEY, STATS_QUERY_KEY } from '@/lib/query-keys'
 import type { MediaType } from './use-assets'
 
 /** 趋势 range 枚举（协议 GET /stats/trends query.range；窗口口径见 DOMAIN_RULES §5 固定窗口表） */
@@ -20,7 +21,7 @@ export type RankingPeriod = 'day' | 'week' | 'month' | 'quarter' | 'year' | 'all
 /** 总览（文件数/类型分布/容量/今日与累计浏览；animated_image 计入 imageCount） */
 export function useStatsOverview() {
   return useQuery({
-    queryKey: ['api/v1/stats/overview'],
+    queryKey: [...STATS_QUERY_KEY, 'overview'],
     queryFn: () => unwrapSdkResult(getApiV1StatsOverview()),
   })
 }
@@ -31,7 +32,7 @@ export function useStatsOverview() {
  */
 export function useTrends(range: TrendsRange, mediaType?: MediaType) {
   return useQuery({
-    queryKey: ['api/v1/stats/trends', range, mediaType ?? 'all'],
+    queryKey: [...STATS_QUERY_KEY, 'trends', range, mediaType ?? 'all'],
     queryFn: () => unwrapSdkResult(getApiV1StatsTrends({ query: { range, mediaType } })),
   })
 }
@@ -45,7 +46,7 @@ export function useTrends(range: TrendsRange, mediaType?: MediaType) {
  */
 export function useRankings(period: RankingPeriod | undefined, limit?: number, offset = 0) {
   return useQuery({
-    queryKey: ['api/v1/rankings', period ?? 'all', limit ?? MAX_PAGE_SIZE, offset],
+    queryKey: [...RANKINGS_QUERY_KEY, period ?? 'all', limit ?? MAX_PAGE_SIZE, offset],
     queryFn: () =>
       unwrapSdkResult(getApiV1Rankings({ query: { period, limit, offset: offset || undefined } })),
   })
@@ -66,7 +67,7 @@ export function useRankingsInfinite(
   reloadKey = 0,
 ) {
   return useInfiniteQuery({
-    queryKey: ['api/v1/rankings', 'paged', period ?? 'all', limit, reloadKey],
+    queryKey: [...RANKINGS_QUERY_KEY, 'paged', period ?? 'all', limit, reloadKey],
     queryFn: ({ pageParam }) =>
       unwrapSdkResult(getApiV1Rankings({ query: { period, limit, offset: pageParam || undefined } })),
     initialPageParam: 0,
