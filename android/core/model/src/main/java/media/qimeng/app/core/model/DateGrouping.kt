@@ -23,6 +23,12 @@ fun dateLabel(epochMs: Long?, nowMs: Long): String {
 /** 「未知日期」组标签（无时间的条目归此组；DOMAIN_RULES §8，恒排最后） */
 const val UNKNOWN_DATE_LABEL = "未知日期"
 
+/**
+ * 组头格式（旧版实录逐字：`2026-09-05  2 项` / `尼尔 机械纪元  48 项`——
+ * 标签与计数间两个空格；M4-2A-B2 拍板四页同款，分组函数内统一加后缀）。
+ */
+fun groupHeaderLabel(label: String, count: Int): String = "$label  $count 项"
+
 /** 网格分组段：组头渲染一次、组内保持列表原序 */
 data class GridSection(
     val label: String,
@@ -33,6 +39,7 @@ data class GridSection(
  * 按日期标签分组（纯函数）：同标签归并同组（组头只渲染一次），
  * 组间按组首时间降序，「未知日期」组恒排最后（Web 相册页 groups 同款语义，
  * 组键用什么时间由调用方决定：相册/收藏/搜索=modifiedAt，历史页=lastViewedAt）。
+ * 组头带「N 项」后缀（[groupHeaderLabel]，旧版实录逐字口径）。
  */
 fun List<MediaAsset>.groupByDateLabel(nowMs: Long, timestamp: (MediaAsset) -> Long?): List<GridSection> {
     val byLabel = LinkedHashMap<String, MutableList<MediaAsset>>()
@@ -47,7 +54,7 @@ fun List<MediaAsset>.groupByDateLabel(nowMs: Long, timestamp: (MediaAsset) -> Lo
                     pair.second.maxOfOrNull { timestamp(it) ?: Long.MIN_VALUE } ?: Long.MIN_VALUE
                 },
         )
-        .map { (label, assets) -> GridSection(label, assets) }
+        .map { (label, assets) -> GridSection(groupHeaderLabel(label, assets.size), assets) }
 }
 
 /** 一天的起点（本地时区；与 Web new Date(y,m,d) 同义） */
@@ -78,4 +85,67 @@ private fun formatYmd(startOfDayMs: Long): String {
     val month = (calendar.get(java.util.Calendar.MONTH) + 1).toString().padStart(2, '0')
     val day = calendar.get(java.util.Calendar.DAY_OF_MONTH).toString().padStart(2, '0')
     return "${calendar.get(java.util.Calendar.YEAR)}-$month-$day"
+}
+
+/**
+ * 相册页四模式分组（M4-2A-B2 拍板口径，纯函数单测锁定；旧版「全部」页 MediaGroupHelper 语义）：
+ * - 分区/类型模式：沿用日期分组（DOMAIN_RULES §8）；
+ * - 作品模式：常规文件按 `source` 分组（空→「其他」）、COS 文件按 COS 作者名分组
+ *   （authorNames 首个，空→「其他」）。协议 AssetSummary 无 isCos 字段（零协议改动约束），
+ *   COS 判定用字段代理：authorNames 非空 → 按 COS 作者归组——服务端对未匹配出处的
+ *   常规文件与 COS 资产的 source 都填字面「其他」（非 null，不能以 source 有无判 COS），
+ *   而 authorNames 仅 COS 资产非空（DOMAIN_RULES §4 作者行 = 常规出处分组 ∪ COS 作者），
+ *   作者/文件平铺结构的 COS 资产（无作品子目录、cosWork=null）靠此归位作者组；
+ *   已知近似：常规资产若带 TXT 作者（真实载荷 authorNames 恒空，仅合成数据会出现）
+ *   会落入其作者组而非「其他」（该口径无协议字段可判，测试锁定所选规则）；
+ * - 角色模式：分组键 = characters∪cosWork（裁决 P9-5；与服务端角色行同口径，不以 source
+ *   有无作 COS 判别——source 为空但带 characters 的常规资产照常归角色组，不落「其他」）：
+ *   characters 首个优先（服务端 asset_characters 一行=该资产全部角色 "+" 拼接的规范名，
+ *   DOMAIN_RULES §4，故首个即完整组名），无角色按 `cosWork`，全空→「其他」（拍板条目 5）；
+ * 组间按组首元素位置序（服务端 default 降序原序，LinkedHashMap 保序），「其他」组恒排末位。
+ */
+fun List<MediaAsset>.groupByAlbumDim(dim: AlbumDim, nowMs: Long): List<GridSection> = when (dim) {
+    AlbumDim.PARTITION, AlbumDim.TYPE -> groupByDateLabel(nowMs) { it.modifiedAtMs }
+    AlbumDim.AUTHOR -> groupByFirstOccurrence { authorGroupKey(it) }
+    AlbumDim.CHARACTER -> groupByFirstOccurrence { characterGroupKey(it) }
+}
+
+/**
+ * 作品模式组键（判别序：authorNames 首个非空 → COS 作者组；否则 source 非空 → 出处组；
+ * 否则「其他」）。为什么 COS 作者优先：authorNames 仅 COS 资产非空（DOMAIN_RULES §4
+ * 作者行 = 常规出处分组 ∪ COS 作者），而 source 恒非空——服务端对未匹配出处的常规文件
+ * 与 COS 资产都填字面「其他」（非 null，/assets?includeCos=true 实测），source 有无不能作
+ * COS 判别依据；旧「source 优先」判别把全部资产吞进「其他」组、与服务端 facets 作者行
+ * 劈叉（P1 修复，真实载荷口径由测试锁定）。
+ */
+private fun authorGroupKey(asset: MediaAsset): String =
+    asset.authorNames.firstOrNull()?.takeIf { it.isNotBlank() }
+        ?: asset.source?.takeIf { it.isNotBlank() }
+        ?: OTHER_BUCKET_NAME
+
+/**
+ * 角色模式组键（裁决 P9-5：角色分组键 = characters∪cosWork，服务端角色行同口径）：
+ * characters 首个优先（服务端 asset_characters 一行=该资产全部角色 "+" 拼接的规范名，
+ * DOMAIN_RULES §4，故首个即完整组名），无角色按 cosWork，全空归「其他」。
+ * 为什么不再以 source 有无作 COS 判别：COS 资产恒无角色行（characters 为空），
+ * characters 优先不会把 COS 资产错挂常规角色组；而 source 缺失的常规资产
+ * （有 characters）按旧判别会错落「其他」——判别式只看数据行本身。
+ */
+private fun characterGroupKey(asset: MediaAsset): String =
+    asset.characters.firstOrNull()?.takeIf { it.isNotBlank() }
+        ?: asset.cosWork?.takeIf { it.isNotBlank() }
+        ?: OTHER_BUCKET_NAME
+
+/**
+ * 按组键分组：同键归并同组（组头只渲染一次），组内保持列表原序，
+ * 组间按组首元素位置序，「其他」组恒排末位（旧版「其他」药丸/组头置底同源口径）。
+ */
+private fun List<MediaAsset>.groupByFirstOccurrence(key: (MediaAsset) -> String): List<GridSection> {
+    val byKey = LinkedHashMap<String, MutableList<MediaAsset>>()
+    for (asset in this) {
+        byKey.getOrPut(key(asset)) { mutableListOf() }.add(asset)
+    }
+    return byKey.entries
+        .sortedWith(compareBy { it.key == OTHER_BUCKET_NAME })
+        .map { (label, assets) -> GridSection(groupHeaderLabel(label, assets.size), assets) }
 }

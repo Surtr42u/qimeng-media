@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 相册页文案（M4-2A-B2）。资源名 all_ 前缀避免合并冲突（home/login/settings 同款约定）。
+         页头统计行模板与列数图标描述已随 QimengTitleRow 迁 core/ui（ui_stat_files/ui_columns_icon_desc，
+         任务A §5.2：统计行/列数控件唯一实现于 :core:ui）。 -->
+
+    <!-- 页面标题（2026-09-05 导航四化：原「全部」页更名「相册」，route all 不变只改 label） -->
+    <string name="all_title">相册</string>
+</resources>

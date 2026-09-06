@@ -108,4 +108,9 @@ object QimengDimens {
 
     /** 96dp：加载占位顶部内边距（QimengScaffold QimengLoadingState L105，避开顶部标题区） */
     val LoadingTopPadding: Dp = 96.dp
+
+    // ---------- 图标 ----------
+
+    /** 24dp：矢量图标默认边长（Material 图标标准档；QimengIcons 全部自持矢量共用，M4-2A-B2 收编） */
+    val IconDefaultSize: Dp = 24.dp
 }

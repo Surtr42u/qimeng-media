@@ -46,6 +46,7 @@ internal object SdkMappers {
         viewCount = summary.viewCount,
         playCount = summary.playCount,
         lastViewedAtMs = null,
+        cosWork = summary.cosWork,
     )
 
     fun toHistoryEntry(item: HistoryItem, baseUrl: String): HistoryEntry = HistoryEntry(
@@ -64,6 +65,7 @@ internal object SdkMappers {
             viewCount = item.viewCount,
             playCount = item.playCount,
             lastViewedAtMs = item.lastViewedAt,
+            cosWork = item.cosWork,
         ),
     )
 

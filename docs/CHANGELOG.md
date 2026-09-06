@@ -11,6 +11,19 @@
 
 ---
 
+## feat(app): M4-2A-B2 相册四模式对齐——统计行/四维芯片/分组四模式/列数缩放/悬浮药丸（2026-09-07 第九十八笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理×4 轮，主会话 GLM-5.3-Flash 调度/验收/审查裁决）
+
+- **动机（任务A-UI对齐.md 批 B2）**：相册页外部行为完全对齐旧版——统计行「N 文件」（P9-1，totalMatched）、四维芯片字样「分区/作品/角色/类型」（P9-2/3）、分组四模式（分区与类型=日期分组 DOMAIN_RULES §8；作品=authorNames→source→其他；角色=characters∪cosWork，P9-5；「N 项」两空格组头、其他恒沉底 P10）、TitleRow 换 ic_grid_2~5 图标+双指缩放（≥2 指 calculateZoom、结束持久化一次、clamp 2..5）、药丸区改悬浮 overlay（4dp elevation/屏高限高/内部滚动，不推挤网格）。
+- **改动面**：`feature/all`（AllScreen 接线重写、AlbumViewModel +onDimChipClicked/pinch 列数、strings.xml 新建 all_title）、`core/model`（DateGrouping 分组四模式、FourDimPills 芯片/药丸纯函数、AlbumFilterState 维度字样、MediaAsset+cosWork）、`core/data`（SdkMappers 补 cosWork 映射，零协议改动）、`core/ui`（QimengMediaGrid 组头行、QimengPills 限高滚动变体、QimengGridPinchGesture 新建通用 Modifier、QimengTitleRow 新建并从 feature/all 收编单源、QimengIcons ic_grid_2~5、Dimens 补 IconDefaultSize、core/ui strings.xml 新建）。
+- **审查与修复**：对抗审查（reviewer 子代理，七维）初审 0 P1/4 P2 全清偿——P2-1 characterGroupKey 改 characters→cosWork→其他 +source 空边界测试；P2-2 删除零计数药丸隐藏（引据不存在的「拍板条目 4」，实录「角色 (0)」为据，药丸可见性只由数据行决定）；P2-3 TitleRow 迁 :core:ui 单源。elem_compare 全量重跑再揪出两深层缺陷并修复：**P1 authorGroupKey 与真实载荷不符**（服务端对未匹配出处与 COS 资产的 source 都填字面「其他」非 null，实测 `/assets?includeCos=true` 证实；组键改 authorNames 首个→source→其他，测试改镜像真实载荷+混排回归）；**切维滚动位置保留**（实录切维后首组恒在视口顶，AllScreen 补 `LaunchedEffect(activeDim){scrollToItem(0)}`）。
+- **验收工具校准**（`QimengNAS/ui-compare-harness/`，仓库外）：修复 elem_compare `do_tap` 空 regex 缺陷（B0 起 `("tap", 正则, "re:")` 写法下正则取自 mode 尾部为空串，点击落在首节点，**基线报告 S2/S3/S4 新版侧实为分区模式态**）；compare_scenes 签名按 P9 口径校准（统计行/芯片字样/组头两空格/列数 desc/S2S3 首组钉死单值+P10 豁免可见化），余红=筛选面板（B3）+已裁决口径差异（带可见 known_cause）+视觉裁片残差（B6 豁免清单收口）。
+- **测试**：新增 15 条（DateGrouping 7：四模式/两空格格式/真实载荷混排+沉底/空边界/source 空角色边界；FourDimPills 5：维度字样/类型折叠文案/零计数照常显示/类型行降序；AlbumViewModel 3：clamp 越界+持久化一次/无步进不落盘/芯片切换）；既有代际防乱序 14 条全绿；四命令（app-build/app-test/app-lint/lint）全绿；grep `Color(0x` 触达面零命中。
+- **记录**：旧 App 冷启重扫使对照数据 21→22 件（计数口径差异已消失，豁免文案留作历史注记）；点已激活维芯片=切换展开/折叠（GUIDE_UI.md:344/347 逐字核对为正确语义）；审查与校准全文存 `QimengNAS/m42a-review/B2-round1.md`。
+
+---
+
 ## feat(app): M4-2A-B1 主题基座·旧版灰系换肤——深浅两套 24 token + Dimens.kt 建立（2026-09-06 第九十七笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理，主会话 GLM-5.3-Flash 派发与审查裁决）

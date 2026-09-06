@@ -7,7 +7,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.addPathNodes
-import androidx.compose.ui.unit.dp
+import media.qimeng.app.core.ui.theme.QimengDimens
 
 /**
  * 界面图标：运行时解析 Material Icons 官方 path data（Apache-2.0，fonts.google.com/icons 同源）。
@@ -18,8 +18,8 @@ private const val ICON_VIEWPORT = 24f
 private fun materialIcon(name: String, pathData: String): ImageVector =
     ImageVector.Builder(
         name = name,
-        defaultWidth = 24.dp,
-        defaultHeight = 24.dp,
+        defaultWidth = QimengDimens.IconDefaultSize,
+        defaultHeight = QimengDimens.IconDefaultSize,
         viewportWidth = ICON_VIEWPORT,
         viewportHeight = ICON_VIEWPORT,
     ).apply {
@@ -35,6 +35,31 @@ private fun materialIcon(name: String, pathData: String): ImageVector =
             strokeLineJoin = StrokeJoin.Miter,
             strokeLineMiter = 4f,
         )
+    }.build()
+
+/** 多段 path 的图标（同 viewport 内多个实心形状，fillColor 统一由 Icon tint 着色） */
+private fun multiPathIcon(name: String, vararg pathData: String): ImageVector =
+    ImageVector.Builder(
+        name = name,
+        defaultWidth = QimengDimens.IconDefaultSize,
+        defaultHeight = QimengDimens.IconDefaultSize,
+        viewportWidth = ICON_VIEWPORT,
+        viewportHeight = ICON_VIEWPORT,
+    ).apply {
+        pathData.forEach { data ->
+            addPath(
+                pathData = addPathNodes(data),
+                pathFillType = PathFillType.NonZero,
+                fill = SolidColor(Color.Black),
+                fillAlpha = 1f,
+                stroke = null,
+                strokeAlpha = 1f,
+                strokeLineWidth = 1f,
+                strokeLineCap = StrokeCap.Butt,
+                strokeLineJoin = StrokeJoin.Miter,
+                strokeLineMiter = 4f,
+            )
+        }
     }.build()
 
 /** 首页（Material Icons "home"） */
@@ -78,3 +103,64 @@ val ClearIcon: ImageVector = materialIcon(
     name = "QimengClear",
     pathData = "M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z",
 )
+
+// ---------- 网格列数图标（旧版 drawable/ic_grid_2~5 的 pathData 逐字拷贝，M4-2A-B2） ----------
+
+/** 2 列（旧版 ic_grid_2：2x2 实心方块组） */
+val Grid2Icon: ImageVector = multiPathIcon(
+    name = "QimengGrid2",
+    "M3.5,3.5h8v8h-8Z",
+    "M12.5,3.5h8v8h-8Z",
+    "M3.5,12.5h8v8h-8Z",
+    "M12.5,12.5h8v8h-8Z",
+)
+
+/** 3 列（旧版 ic_grid_3：3x2 实心方块组） */
+val Grid3Icon: ImageVector = multiPathIcon(
+    name = "QimengGrid3",
+    "M2.5,3.5h6v8h-6Z",
+    "M9.5,3.5h5v8h-5Z",
+    "M15,3.5h6.5v8H15Z",
+    "M2.5,12.5h6v8h-6Z",
+    "M9.5,12.5h5v8h-5Z",
+    "M15,12.5h6.5v8H15Z",
+)
+
+/** 4 列（旧版 ic_grid_4：4x2 实心方块组） */
+val Grid4Icon: ImageVector = multiPathIcon(
+    name = "QimengGrid4",
+    "M2,3.5h4.5v8H2Z",
+    "M7,3.5h4.5v8H7Z",
+    "M12.5,3.5h4.5v8h-4.5Z",
+    "M18,3.5h4v8h-4Z",
+    "M2,12.5h4.5v8H2Z",
+    "M7,12.5h4.5v8H7Z",
+    "M12.5,12.5h4.5v8h-4.5Z",
+    "M18,12.5h4v8h-4Z",
+)
+
+/** 5 列（旧版 ic_grid_5：5x2 实心方块组） */
+val Grid5Icon: ImageVector = multiPathIcon(
+    name = "QimengGrid5",
+    "M1.5,3.5h3.5v8H1.5Z",
+    "M5.5,3.5h3.5v8H5.5Z",
+    "M9.5,3.5h5v8h-5Z",
+    "M15,3.5h3.5v8H15Z",
+    "M19,3.5h3.5v8H19Z",
+    "M1.5,12.5h3.5v8H1.5Z",
+    "M5.5,12.5h3.5v8H5.5Z",
+    "M9.5,12.5h5v8h-5Z",
+    "M15,12.5h3.5v8H15Z",
+    "M19,12.5h3.5v8H19Z",
+)
+
+/** 列数 → 网格图标（旧版「列数图标随列数切换」；越界 clamp 到 2..5 档） */
+fun gridIconFor(columns: Int): ImageVector = when (columns.coerceIn(MIN_GRID_ICON_COLUMNS, MAX_GRID_ICON_COLUMNS)) {
+    2 -> Grid2Icon
+    3 -> Grid3Icon
+    4 -> Grid4Icon
+    else -> Grid5Icon
+}
+
+private const val MIN_GRID_ICON_COLUMNS = 2
+private const val MAX_GRID_ICON_COLUMNS = 5

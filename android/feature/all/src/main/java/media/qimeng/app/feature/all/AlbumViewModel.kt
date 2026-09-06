@@ -87,6 +87,16 @@ class AlbumViewModel @Inject constructor(
         )
     }
 
+    /**
+     * 维度芯片点击入口（M4-2A-B2 起芯片行由页面直接接线，交互语义收进状态机——铁律 7
+     * 「组件禁业务规则」；旧版 QimengFourDimSection 内嵌同款规则，favorite/history 迁悬浮
+     * 药丸面板时（B5）应改走本入口后退役其内嵌逻辑）：
+     * 点已激活维=切换展开/折叠，点其他维=切维并默认展开（规格书 §药丸容器）。
+     */
+    fun onDimChipClicked(dim: AlbumDim) {
+        if (_uiState.value.activeDim == dim) toggleExpanded() else selectDim(dim)
+    }
+
     fun toggleExpanded() {
         val filter = _uiState.value.filter
         _uiState.value = _uiState.value.copy(filter = filter.copy(expanded = !filter.expanded))
@@ -131,6 +141,32 @@ class AlbumViewModel @Inject constructor(
                 current + 1
             }
             gridPrefs.setAlbumColumns(next)
+        }
+    }
+
+    /**
+     * 双指缩放期间的瞬时列数（null=无进行中手势，展示持久化值）。
+     * 手势逐事件步进只改内存、不落盘——DataStore 写有延迟，逐帧写会卡顿且无意义；
+     * 手势结束由 [commitPinchColumns] 统一持久化一次。
+     */
+    private val _pinchColumns = MutableStateFlow<Int?>(null)
+    val pinchColumns: StateFlow<Int?> = _pinchColumns.asStateFlow()
+
+    /** 双指缩放步进（delta=±1：放大减列、缩小加列，语义见 AllScreen 手势），clamp 2..5 */
+    fun adjustColumnsLive(delta: Int) {
+        val current = _pinchColumns.value ?: albumColumns.value
+        _pinchColumns.value = (current + delta).coerceIn(
+            DataStoreGridPrefsRepository.MIN_ALBUM_COLUMNS,
+            DataStoreGridPrefsRepository.MAX_ALBUM_COLUMNS,
+        )
+    }
+
+    /** 手势结束：缩放结果持久化一次（复用 [GridPrefsRepository.setAlbumColumns]，仓库内部再 clamp 2..5） */
+    fun commitPinchColumns() {
+        val target = _pinchColumns.value ?: return
+        _pinchColumns.value = null
+        if (target != albumColumns.value) {
+            viewModelScope.launch { gridPrefs.setAlbumColumns(target) }
         }
     }
 

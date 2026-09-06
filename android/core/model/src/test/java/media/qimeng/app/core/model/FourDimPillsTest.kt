@@ -78,4 +78,87 @@ class FourDimPillsTest {
         assertEquals(MediaKind.ANIMATED_IMAGE, FourDimPills.mediaKindFromKey("animated_image"))
         assertEquals("video", FourDimPills.mediaKindToKey(MediaKind.VIDEO))
     }
+
+    @Test
+    fun `维度字样为旧版芯片栏逐字口径`() {
+        // 旧版实录 all_partition.txt：「分区 (2)/作品 (61)/角色 (294)/类型 (3)」（P9-3 裁决）
+        assertEquals("分区", AlbumDim.PARTITION.label)
+        assertEquals("作品", AlbumDim.AUTHOR.label)
+        assertEquals("角色", AlbumDim.CHARACTER.label)
+        assertEquals("类型", AlbumDim.TYPE.label)
+    }
+
+    @Test
+    fun `MediaKind 类型名与服务端 facet 标签同源`() {
+        assertEquals("图片", FourDimPills.mediaKindLabel(MediaKind.IMAGE))
+        assertEquals("动图", FourDimPills.mediaKindLabel(MediaKind.ANIMATED_IMAGE))
+        assertEquals("视频", FourDimPills.mediaKindLabel(MediaKind.VIDEO))
+    }
+
+    @Test
+    fun `类型维折叠芯片显示当前类型名或全部`() {
+        // P9-4：折叠态「图片 ▼」（有选中）/「全部 ▼」（无选中）；展开或非激活维恢复计数式
+        fun model(mediaType: MediaKind?, expanded: Boolean, activeDim: AlbumDim = AlbumDim.TYPE) =
+            FourDimPillModel(
+                filter = AlbumFilterState(mediaType = mediaType, expanded = expanded),
+                activeDim = activeDim,
+                partitionOptions = emptyList(),
+                authorOptions = emptyList(),
+                characterOptions = emptyList(),
+                typeOptions = listOf(option("全部", 100), option("图片", 50)),
+                totalForAllPill = null,
+            )
+        assertEquals("图片 ▼", FourDimPills.dimChips(model(MediaKind.IMAGE, expanded = false)).last().text)
+        assertEquals("全部 ▼", FourDimPills.dimChips(model(null, expanded = false)).last().text)
+        // 展开态：恢复「类型 (N)」计数式
+        assertTrue(FourDimPills.dimChips(model(MediaKind.IMAGE, expanded = true)).last().text.endsWith("(1)"))
+        // 非激活维（即使容器折叠）：保持计数式
+        val otherDim = FourDimPills.dimChips(
+            model(MediaKind.IMAGE, expanded = false, activeDim = AlbumDim.PARTITION),
+        )
+        assertEquals("类型 (1)", otherDim.last().text)
+    }
+
+    @Test
+    fun `零计数药丸照常显示 全部胶囊恒保留`() {
+        // 旧版实录 album_tab.txt：零计数候选「角色 (0)」照常在列；GUIDE_UI 类型药丸列固定四项——
+        // 可见性只由数据行决定，不做计数过滤；「全部」胶囊=清行动作恒保留
+        val model = FourDimPillModel(
+            filter = AlbumFilterState(),
+            activeDim = AlbumDim.AUTHOR,
+            partitionOptions = emptyList(),
+            authorOptions = listOf(option("尼尔", 30), option("零号", 0)),
+            characterOptions = emptyList(),
+            typeOptions = emptyList(),
+            totalForAllPill = 22,
+        )
+        val pills = FourDimPills.pillsFor(model, AlbumDim.AUTHOR)
+        assertEquals(listOf("全部 (22)", "尼尔 (30)", "零号 (0)"), pills.map { it.text })
+        assertTrue(pills.last().text.endsWith("(0)"))
+    }
+
+    @Test
+    fun `类型行按计数降序 全部恒首位`() {
+        // 服务端类型候选恒固定枚举序（all/image/animated_image/video），旧版按计数降序展示——客户端重排
+        // （kind 仅作者/角色行分派用，类型行不消费，SOURCE 为占位）
+        val kind = FacetParamKind.SOURCE
+        val model = FourDimPillModel(
+            filter = AlbumFilterState(),
+            activeDim = AlbumDim.TYPE,
+            partitionOptions = emptyList(),
+            authorOptions = emptyList(),
+            characterOptions = emptyList(),
+            typeOptions = listOf(
+                FacetOption(key = "all", name = "全部", fileCount = 100, kind = kind),
+                FacetOption(key = "image", name = "图片", fileCount = 50, kind = kind),
+                FacetOption(key = "animated_image", name = "动图", fileCount = 20, kind = kind),
+                FacetOption(key = "video", name = "视频", fileCount = 30, kind = kind),
+            ),
+            totalForAllPill = 100,
+        )
+        val pills = FourDimPills.pillsFor(model, AlbumDim.TYPE)
+        assertEquals(listOf("全部 (100)", "图片 (50)", "视频 (30)", "动图 (20)"), pills.map { it.text })
+        assertNull(pills.first().payload)
+        assertEquals(MediaKind.IMAGE, pills[1].payload)
+    }
 }
