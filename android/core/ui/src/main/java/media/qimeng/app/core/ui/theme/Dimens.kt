@@ -113,4 +113,24 @@ object QimengDimens {
 
     /** 24dp：矢量图标默认边长（Material 图标标准档；QimengIcons 全部自持矢量共用，M4-2A-B2 收编） */
     val IconDefaultSize: Dp = 24.dp
+
+    // ---------- 筛选面板（M4-2A-B3；来源=旧仓库 MediaFilterSheet.kt 布局代码，无旧 dimens.xml） ----------
+
+    /** 0.62：滚动区最大高度占屏比（旧版 show()：scroll 高 = heightPixels * 0.62f；无量纲系数） */
+    const val FilterSheetHeightFraction: Float = 0.62f
+
+    /** 20dp：面板内容左右内边距（旧版 content setPadding(20,12,20,12) 横段） */
+    val FilterSheetPaddingHorizontal: Dp = 20.dp
+
+    /** 10dp：面板标题「筛选」下内边距（旧版 headerLabel setPadding(0,4,0,10) 下段；上段=SpaceXS） */
+    val FilterTitleBottomPadding: Dp = 10.dp
+
+    /** 14dp：分区标题上距（旧版 section setPadding(0,14,0,4) 上段；下段=SpaceXS） */
+    val FilterSectionTopSpacing: Dp = 14.dp
+
+    /** 24dp：底部按钮栏下内边距（旧版 footer setPadding(20,12,20,24) 下段；上段=SpaceL） */
+    val FilterFooterBottomPadding: Dp = 24.dp
+
+    /** 48dp：底部「重置/应用筛选」按钮高度（旧版 footer 按钮 LayoutParams height 48dp） */
+    val FilterButtonHeight: Dp = 48.dp
 }

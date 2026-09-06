@@ -1,5 +1,7 @@
 package media.qimeng.app.core.model
 
+import java.time.LocalDate
+
 /**
  * 四维筛选的维度行键（芯片栏顺序：分区/作品/角色/类型）。
  * 标签 = 旧版「全部」页芯片栏逐字口径（旧版实录 all_partition.txt「分区 (2)/作品 (61)/
@@ -31,6 +33,27 @@ data class AlbumFilterState(
     val mediaType: MediaKind? = null,
     /** 药丸容器展开态（切维度行时由调用方重置为 true） */
     val expanded: Boolean = true,
+    // ---- 万能筛选面板字段（M4-2A-B3；编辑态/映射语义见 AlbumPanelFilter.kt，默认值=协议缺省不传） ----
+
+    /** 排序键（面板「排序方式」七选；协议 sort） */
+    val sort: AssetSort = AssetSort.DEFAULT,
+    /** 顺位（面板「顺位」二选；协议 order） */
+    val order: SortOrder = SortOrder.DESC,
+    /** 观看次数档（协议 viewRange；ALL=不传） */
+    val viewRange: PanelCountRange = PanelCountRange.ALL,
+    /** 点击次数档（协议 playRange；ALL=不传） */
+    val playRange: PanelCountRange = PanelCountRange.ALL,
+    /** 文件大小档（协议 sizeRange；ALL=不传） */
+    val sizeRange: PanelSizeRange = PanelSizeRange.ALL,
+    /** 时间范围档（协议 dateFrom/dateTo 或 yearFrom/yearTo；ALL=不传） */
+    val dateRange: PanelDateRange = PanelDateRange.ALL,
+    /** 标签匹配模式（协议 tagMode；仅 tagIds 非空时传） */
+    val tagMode: PanelTagMode = PanelTagMode.FUZZY,
+    /** 选中标签 id 集（协议 tagIds；空=不传） */
+    val tagIds: List<String> = emptyList(),
+    /** 按年份筛选起始/结束年（仅 dateRange=YEAR_RANGE 且两者齐备时传） */
+    val yearFrom: Int? = null,
+    val yearTo: Int? = null,
 )
 
 object AlbumFilter {
@@ -61,22 +84,48 @@ object AlbumFilter {
      * 状态 → GET /assets 参数（相册页口径）：
      * 分区 全部=显式 includeCos=true / 常规=不传 / COS=cosOnly=true；
      * 作者行按 kind 分派 source|authorId，角色行分派 character|work。
-     * 排序 = 协议缺省 default 降序（2026-09-06 用户拍板：相册页=旧版「全部」页只改名，
-     * 不引入 Web 相册页排序组等规格书没有的元素）。
+     * 排序/顺位/观看/点击/大小/时间/标签 = 万能筛选面板字段展开（M4-2A-B3）：
+     * 默认档一律映射为不传（viewRange/playRange/sizeRange=ALL→null、tagIds 空→null、
+     * dateRange=ALL→不传日期；YEAR_RANGE→yearFrom/yearTo 且起止交叉归一 start=min/end=max，
+     * 旧版 footer 应用时交叉校验口径）；[today] 注入时间档区间计算（纯函数可单测）。
      */
-    fun toAssetQuery(state: AlbumFilterState, limit: Int? = null, cursor: String? = null): AssetQuery = AssetQuery(
-        cursor = cursor,
-        limit = limit,
-        includeCos = if (state.partition == Zone.ALL) true else null,
-        cosOnly = if (state.partition == Zone.COS) true else null,
-        mediaType = state.mediaType,
-        source = state.author?.takeIf { it.kind == FacetParamKind.SOURCE }?.key,
-        authorId = state.author?.takeIf { it.kind == FacetParamKind.AUTHOR }?.key,
-        character = state.character?.takeIf { it.kind == FacetParamKind.CHARACTER }?.key,
-        work = state.character?.takeIf { it.kind == FacetParamKind.WORK }?.key,
-        sort = AssetSort.DEFAULT,
-        order = SortOrder.DESC,
-    )
+    fun toAssetQuery(
+        state: AlbumFilterState,
+        limit: Int? = null,
+        cursor: String? = null,
+        today: LocalDate = LocalDate.now(),
+    ): AssetQuery {
+        val dateBounds = panelDateRangeBounds(state.dateRange, today)
+        // 按年份：起止交叉归一（旧版 buildFooter 口径 start=min/end=max）；年份不全=不传
+        val years: Pair<Int, Int>? =
+            if (state.dateRange == PanelDateRange.YEAR_RANGE && state.yearFrom != null && state.yearTo != null) {
+                minOf(state.yearFrom, state.yearTo) to maxOf(state.yearFrom, state.yearTo)
+            } else {
+                null
+            }
+        return AssetQuery(
+            cursor = cursor,
+            limit = limit,
+            includeCos = if (state.partition == Zone.ALL) true else null,
+            cosOnly = if (state.partition == Zone.COS) true else null,
+            mediaType = state.mediaType,
+            source = state.author?.takeIf { it.kind == FacetParamKind.SOURCE }?.key,
+            authorId = state.author?.takeIf { it.kind == FacetParamKind.AUTHOR }?.key,
+            character = state.character?.takeIf { it.kind == FacetParamKind.CHARACTER }?.key,
+            work = state.character?.takeIf { it.kind == FacetParamKind.WORK }?.key,
+            sort = state.sort,
+            order = state.order,
+            viewRange = state.viewRange.toQuery(),
+            playRange = state.playRange.toQuery(),
+            sizeRange = state.sizeRange.toQuery(),
+            dateFrom = dateBounds?.first,
+            dateTo = dateBounds?.second,
+            yearFrom = years?.first,
+            yearTo = years?.second,
+            tagIds = state.tagIds.ifEmpty { null },
+            tagMode = if (state.tagIds.isEmpty()) null else state.tagMode.toQuery(),
+        )
+    }
 
     /**
      * 四维候选请求（排自身计数）：每个请求缺自身维度的选择参数，
@@ -129,6 +178,13 @@ object AlbumFilter {
             clicked
         }
 }
+
+/** 「全部」档 → null（不传参数=协议缺省全量语义）；其余档原样进查询包（SDK 枚举映射在 :core:data） */
+private fun PanelCountRange.toQuery(): PanelCountRange? = if (this == PanelCountRange.ALL) null else this
+
+private fun PanelSizeRange.toQuery(): PanelSizeRange? = if (this == PanelSizeRange.ALL) null else this
+
+private fun PanelTagMode.toQuery(): PanelTagMode = this
 
 /**
  * 分区三态 → GET /history 参数（历史页口径；与 /assets 方向不同）：

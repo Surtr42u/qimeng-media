@@ -9,19 +9,26 @@ import media.qimeng.app.core.model.HistoryEntry
 import media.qimeng.app.core.model.MediaAsset
 import media.qimeng.app.core.model.MediaKind
 import media.qimeng.app.core.model.NameSuggestion
+import media.qimeng.app.core.model.PanelCountRange
+import media.qimeng.app.core.model.PanelSizeRange
+import media.qimeng.app.core.model.PanelTagMode
 import media.qimeng.app.core.model.RankingPeriod
 import media.qimeng.app.core.model.SortOrder
 import media.qimeng.app.core.model.SuggestionKind
+import media.qimeng.app.core.model.TagSummary
 import media.qimeng.app.core.model.Zone
 import media.qimeng.sdk.apis.DefaultApi
 import media.qimeng.sdk.models.AssetSummary
 import media.qimeng.sdk.models.Author
+import media.qimeng.sdk.models.CountRange
 import media.qimeng.sdk.models.FacetBucket
 import media.qimeng.sdk.models.HistoryItem
 import media.qimeng.sdk.models.MediaType
 import media.qimeng.sdk.models.Partition
 import media.qimeng.sdk.models.SearchSuggestion
 import media.qimeng.sdk.models.SearchSuggestionType
+import media.qimeng.sdk.models.SizeRange
+import media.qimeng.sdk.models.Tag
 
 /** SDK DTO → 领域模型映射（:core:data 独占；UI/ViewModel 不得接触 SDK 类型，ADR-0014 分层）。 */
 internal object SdkMappers {
@@ -106,6 +113,12 @@ internal object SdkMappers {
         },
     )
 
+    /** 标签映射（id 为协议必填字符串；DTO 可空字段防御性兜底空串，删除/选中链路以非空 id 为前提） */
+    fun toTagSummary(tag: Tag): TagSummary = TagSummary(
+        id = tag.id.orEmpty(),
+        name = tag.name.orEmpty(),
+    )
+
     private fun MediaType?.toDomainMediaKind(): MediaKind = when (this) {
         MediaType.animated_image -> MediaKind.ANIMATED_IMAGE
         MediaType.video -> MediaKind.VIDEO
@@ -155,4 +168,28 @@ internal fun RankingPeriod.toSdk(): DefaultApi.PeriodApiV1RankingsGet = when (th
     RankingPeriod.WEEK -> DefaultApi.PeriodApiV1RankingsGet.week
     RankingPeriod.MONTH -> DefaultApi.PeriodApiV1RankingsGet.month
     RankingPeriod.YEAR -> DefaultApi.PeriodApiV1RankingsGet.year
+}
+
+// ---- 万能筛选面板参数枚举（M4-2A-B3；协议枚举改动时此处编译期报漏） ----
+
+/** ALL 已在状态机归 null，此处只映射非缺省档（exhaustive 兜底分支为防御性回退） */
+internal fun PanelCountRange.toSdk(): CountRange = when (this) {
+    PanelCountRange.ALL -> CountRange.all
+    PanelCountRange.NONE -> CountRange.none
+    PanelCountRange.LOW -> CountRange.low
+    PanelCountRange.MID -> CountRange.mid
+    PanelCountRange.HIGH -> CountRange.high
+}
+
+internal fun PanelSizeRange.toSdk(): SizeRange = when (this) {
+    PanelSizeRange.ALL -> SizeRange.all
+    PanelSizeRange.LT_1M -> SizeRange.lt1m
+    PanelSizeRange.M_1_TO_10 -> SizeRange.m1to10
+    PanelSizeRange.M_10_TO_50 -> SizeRange.m10to50
+    PanelSizeRange.GT_50M -> SizeRange.gt50m
+}
+
+internal fun PanelTagMode.toSdk(): DefaultApi.TagModeApiV1AssetsGet = when (this) {
+    PanelTagMode.FUZZY -> DefaultApi.TagModeApiV1AssetsGet.fuzzy
+    PanelTagMode.EXACT -> DefaultApi.TagModeApiV1AssetsGet.exact
 }

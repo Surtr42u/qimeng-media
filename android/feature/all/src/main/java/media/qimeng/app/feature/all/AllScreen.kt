@@ -26,6 +26,7 @@ import media.qimeng.app.core.model.Zone
 import media.qimeng.app.core.model.groupByAlbumDim
 import media.qimeng.app.core.ui.component.QimengChipRow
 import media.qimeng.app.core.ui.component.QimengEmptyState
+import media.qimeng.app.core.ui.component.QimengFilterSheet
 import media.qimeng.app.core.ui.component.QimengFloatingPillPanel
 import media.qimeng.app.core.ui.component.QimengMediaGrid
 import media.qimeng.app.core.ui.component.QimengPill
@@ -48,6 +49,8 @@ private const val ALBUM_ROUTE = "all"
 fun AllScreen(viewModel: AlbumViewModel = hiltViewModel()) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val columns by viewModel.albumColumns.collectAsStateWithLifecycle()
+    // 万能筛选面板（M4-2A-B3）：面板开关/草稿/标签候选都在 VM 面板流里
+    val panelState by viewModel.panelState.collectAsStateWithLifecycle()
     // 双指缩放期间的瞬时列数优先展示（逐帧反馈在内存、手势结束才持久化一次——见 AlbumViewModel）
     val pinchColumns by viewModel.pinchColumns.collectAsStateWithLifecycle()
     val displayColumns = pinchColumns ?: columns
@@ -87,12 +90,15 @@ fun AllScreen(viewModel: AlbumViewModel = hiltViewModel()) {
     val activePills = FourDimPills.pillsFor(pillModel)
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // 页头唯一实现于 :core:ui（任务A §5.2，B5 收藏/历史页复用）——本页只做文案/参数接线
+        // 页头唯一实现于 :core:ui（任务A §5.2，B5 收藏/历史页复用）——本页只做文案/参数接线。
+        // 筛选入口只在相册页标题行（按实录判读：旧版实录仅全部页标题行有 allFilterButton 图标，
+        // favorite/history 实录无筛选图标；收藏/历史不传 onFilterClick 不显示，B5 接线时复核落档）
         QimengTitleRow(
             title = stringResource(R.string.all_title),
             statLine = state.totalMatched?.let { stringResource(CoreUiR.string.ui_stat_files, it) } ?: "",
             columns = displayColumns,
             onToggleColumns = viewModel::toggleColumns,
+            onFilterClick = viewModel::openFilterSheet,
         )
 
         // 维度芯片行常驻文档流（旧版在网格上方推挤布局）；「角色 | 类型」间竖分隔线=旧版
@@ -151,6 +157,28 @@ fun AllScreen(viewModel: AlbumViewModel = hiltViewModel()) {
                 modifier = Modifier.align(Alignment.TopStart),
             )
         }
+    }
+
+    // 万能筛选面板（M4-2A-B3）：唯一实现在 :core:ui，本页只接线；
+    // 组件收进 Column 之外保证覆盖全页（ModalBottomSheet 自带 scrim/手势关闭=丢弃草稿）；
+    // 面板操作反馈（P2-1）：VM 只发结构化语义，文案在此经 strings.xml 落地传给面板
+    if (panelState.visible) {
+        QimengFilterSheet(
+            draft = panelState.draft,
+            tags = panelState.tags,
+            message = panelState.message?.let { feedback ->
+                when (feedback) {
+                    is PanelFeedback.TagExists -> stringResource(CoreUiR.string.ui_filter_tag_exists, feedback.name)
+                    PanelFeedback.OpFailed -> stringResource(CoreUiR.string.ui_filter_op_failed)
+                }
+            },
+            onDraftChange = viewModel::updatePanelDraft,
+            onReset = viewModel::resetPanelDraft,
+            onApply = viewModel::applyPanelDraft,
+            onAddTag = viewModel::addTag,
+            onDeleteTag = viewModel::deleteTag,
+            onDismiss = viewModel::dismissFilterSheet,
+        )
     }
 }
 

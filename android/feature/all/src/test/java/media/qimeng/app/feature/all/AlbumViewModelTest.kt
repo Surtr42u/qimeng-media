@@ -24,6 +24,7 @@ import media.qimeng.app.core.model.MediaAsset
 import media.qimeng.app.core.model.MediaKind
 import media.qimeng.app.core.model.NameSuggestion
 import media.qimeng.app.core.model.RankingPeriod
+import media.qimeng.app.core.model.TagSummary
 import media.qimeng.app.core.model.Zone
 import media.qimeng.app.core.testing.MainDispatcherRule
 
@@ -65,6 +66,20 @@ class AlbumViewModelTest {
         override suspend fun suggestions(q: String, limit: Int, recommend: Boolean): List<NameSuggestion> = emptyList()
 
         override suspend fun assetOrigUrl(assetId: String): String? = null
+
+        // M4-2A-B3 万能筛选面板标签族：可变存储，供面板行为用例断言增删后候选刷新
+        val tagsStore = mutableListOf(TagSummary(id = "t1", name = "测试标签一"))
+
+        private var tagSeq = 2
+
+        override suspend fun tags(): List<TagSummary> = tagsStore.toList()
+
+        override suspend fun createTag(name: String): TagSummary =
+            TagSummary(id = "t${tagSeq++}", name = name).also { tagsStore += it }
+
+        override suspend fun deleteTag(tagId: String) {
+            tagsStore.removeAll { it.id == tagId }
+        }
 
         /**
          * 整批放行某一代的四维候选请求（loadFacets 每批固定并行 4 个——AlbumViewModel 实现细节，

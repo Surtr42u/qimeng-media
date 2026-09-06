@@ -21,6 +21,7 @@ import media.qimeng.app.core.model.MediaAsset
 import media.qimeng.app.core.model.MediaKind
 import media.qimeng.app.core.model.NameSuggestion
 import media.qimeng.app.core.model.RankingPeriod
+import media.qimeng.app.core.model.TagSummary
 import media.qimeng.app.core.model.Zone
 import media.qimeng.app.core.testing.MainDispatcherRule
 
@@ -62,6 +63,13 @@ class FavoriteViewModelTest {
         override suspend fun suggestions(q: String, limit: Int, recommend: Boolean): List<NameSuggestion> = emptyList()
 
         override suspend fun assetOrigUrl(assetId: String): String? = null
+
+        // M4-2A-B3 万能筛选面板标签族（本页不用面板，替身只补空实现满足接口）
+        override suspend fun tags(): List<TagSummary> = emptyList()
+
+        override suspend fun createTag(name: String): TagSummary = TagSummary(id = name, name = name)
+
+        override suspend fun deleteTag(tagId: String) = Unit
 
         /** 整批放行某一代的四维候选请求（loadFacets 每批固定并行 4 个——实现细节，只在此替身内约定） */
         fun completeFacetsBatch(batch: Int, result: FacetsResult) {
