@@ -25,6 +25,7 @@ import type { AssetFacets, FacetBucket, Partition } from '@/api/generated'
 export type { AssetFacets, FacetBucket, Partition }
 import type { MediaCardProps } from '@/components/media/MediaCard'
 import { unwrapSdkResult } from '@/lib/api-client'
+import { DEFAULT_PAGE_SIZE } from '@/lib/constants'
 import { formatCardUp, formatDuration, formatShortDate } from '@/lib/format'
 import { lengthCursorNext } from '@/lib/pagination'
 import {
@@ -71,15 +72,15 @@ export interface AssetListParams {
 
 /** 推荐流无限分页（M3 十维算法，协议 GET /recommendations；首页推荐/cos
  *  tab 触底增量加载的数据源）。
- *  签名 (limit=60, seed=0, cosOnly=false, offset=0)：offset 是初始翻页偏移
- *  （useInfiniteQuery 的 initialPageParam，默认 0 向后兼容——既有调用点
- *  useRecommendations(60)/（60, seed, true）不动即从第一页起）。
+ *  签名 (limit=DEFAULT_PAGE_SIZE, seed=0, cosOnly=false, offset=0)：offset
+ *  是初始翻页偏移（useInfiniteQuery 的 initialPageParam，默认 0 向后兼容
+ *  ——调用点 HomePage useRecommendations(DEFAULT_PAGE_SIZE, …) 即从第一页起）。
  *  queryKey 只含数据身份 [limit, seed, cosOnly]：offset 是分页游标，按
  *  TanStack 惯例存于 pageParams 而非缓存键——seed/根键变化（换一批、
  *  qm:refresh、SSE 失效）时整条流重置回第一页，正是旧版 refreshSeed++
  *  全量重排语义。
  *  续页判据 hasNextPage 口径单源在 lib/pagination.ts（lengthCursorNext）。 */
-export function useRecommendations(limit = 60, seed = 0, cosOnly = false, offset = 0) {
+export function useRecommendations(limit = DEFAULT_PAGE_SIZE, seed = 0, cosOnly = false, offset = 0) {
   return useInfiniteQuery({
     queryKey: [...RECOMMENDATIONS_QUERY_KEY, limit, seed, cosOnly],
     queryFn: ({ pageParam }) =>

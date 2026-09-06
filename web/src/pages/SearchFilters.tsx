@@ -80,10 +80,10 @@ function TagRow({ pool, selected, inputOpen, onToggle, onRemove, onOpenInput, on
   return (
     <FilterRow label="标签">
       {pool.map((t) => (
-        <button
+        <Pill
           key={t.id ?? t.name}
-          type="button"
-          className={`pill pill-tag${selected.includes(t.id ?? '') ? ' active' : ''}`}
+          className="pill-tag"
+          active={selected.includes(t.id ?? '')}
           onClick={() => onToggle(t.id ?? '')}
         >
           {t.name}
@@ -97,7 +97,7 @@ function TagRow({ pool, selected, inputOpen, onToggle, onRemove, onOpenInput, on
           >
             ×
           </span>
-        </button>
+        </Pill>
       ))}
       {inputOpen ? (
         <input
@@ -117,9 +117,9 @@ function TagRow({ pool, selected, inputOpen, onToggle, onRemove, onOpenInput, on
           }}
         />
       ) : (
-        <button type="button" className="pill pill-add" onClick={onOpenInput}>
+        <Pill className="pill-add" onClick={onOpenInput}>
           + 添加
-        </button>
+        </Pill>
       )}
     </FilterRow>
   )

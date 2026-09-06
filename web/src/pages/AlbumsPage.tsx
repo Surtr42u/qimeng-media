@@ -4,7 +4,7 @@ import type { AssetSummary } from '@/api/generated'
 import { MediaCard } from '@/components/media/MediaCard'
 import { LoadMorePill } from '@/components/ui/load-more-pill'
 import { Pill } from '@/components/ui/pill'
-import { LOCALE_ZH } from '@/lib/constants'
+import { DEFAULT_PAGE_SIZE, LOCALE_ZH } from '@/lib/constants'
 import { dateLabel } from '@/lib/format'
 import {
   assetToCard,
@@ -110,7 +110,7 @@ export default function AlbumsPage() {
       ...(mediaType ? { mediaType } : {}),
       sort: sort.sort,
       order: sort.order,
-      limit: 60,
+      limit: DEFAULT_PAGE_SIZE,
     }),
     [partition, authorParams, characterParams, mediaType, sort],
   )
