@@ -11,6 +11,19 @@
 
 ---
 
+## feat(app): M4-2A-B4 搜索页三态对齐——入口/建议/结果逐字复刻+删筛选芯片+返回族清词+列数内存态，harness 增 S6~S8（2026-09-07 第一百零七笔）
+
+执行 AI：GLM-5.3-Flash（任务A 会话主代理调度；执行子代理实现+reviewer 对抗审查两轮+修复轮+复审通过）
+
+- **范围（任务A-UI对齐 §2 B4）**：搜索页三态复刻——入口态（顶栏三件=返回 desc+placeholder 逐字「搜索文件、出处、角色、COS作者…」+文本按钮「搜索」；推荐搜索词丸流 q=""/recommend=true/limit10；搜索历史区+清除历史 desc 逐字）；建议态（行=icon desc「候选」+候选名+五维类型标签，/search/suggestions 从短到长）；结果态（仅日期分组网格，组头两空格格式；空态逐字「未找到相关内容」旧 XML 口径）。**删**：结果态两条筛选芯片（分区/类型——SearchViewModel 删 partition/mediaType 链路，固定 includeCos=true 纯 q 检索，标签/排序族已由 B3 承接）、顶栏清除 icon、QimengPullToRefresh（实录/旧 XML 均无）。
+- **返回族语义（round1 P1 纠偏，reviewer 亲读旧仓库 SearchFragment L253-270 铁证）**：系统返回与左上箭头同走 handleBack——结果/建议态一律**清词回入口态+重拉推荐词**，入口态退页；「点搜索栏」是独立点击路径（词保留回建议态，onFocusChange 语义）。初版误实现为词保留回建议态，已反转+测试锁死。**列数（round1 P2 纠偏）**：页内存态 3 列起步（旧版 ColumnsRef(3) 从不落盘）、双指缩放 clamp 2..5 只本页生效，删持久化注入。
+- **质量与审查**：round1（1 P1+1 P2+8 P3）→ 修复轮全清偿（P3 带走 4 项：未用 strings 删除/词保留用例正名/改词切建议直测/@OptIn）→ round2 复审通过（越界清单空、12 单测亲跑全绿、实机证据 18 件抽查属实）。返工期环境两坑自愈进 harness：elem_compare login_if_needed 加固（地址空盲触回填）+新增 stop op；compare_scenes search_reset 改 force-stop 冷复位。
+- **harness 扩展（B4 验收依赖）**：elem_compare run_steps 新增 ("text",…) 文本输入 op（adb input text 仅 ASCII→查询词用 M/A 命中虚构数据）；compare_scenes 新增 S6 入口/S7 建议/S8 结果三场景+search_reset 幂等复位（新侧定位全 text/desc；词丸随机/候选池环境差不签）。
+- **测试与证据**：SearchViewModelTest 12 用例（三态状态机/返回链三分支/防抖取消/空词 no-op/代际防乱序纯 submit 链/列数 clamp+内存态）；实机文本证据 B4-24 件+B4fix-18 件（`%TEMP%\qimeng-m42a-evidence\`，禁截图）；elem_compare S6/S7/S8 结构文本层全对齐（余红=视觉裁片差 B6 豁免域+S8 组头计数 CAUSE_GROUP/缩略图配对 CAUSE_THUMB 环境性已知豁免）。
+- **记录（不阻塞）**：结果态点栏后不自动拉焦点键盘（旧版有 showKeyboard，B6 实机体验项）；服务端 q 五维匹配范围核实（能力缺口候选，零协议改动红线内不修）。
+
+---
+
 ## feat(app): M4-3d 断点续播+时间轴标签+行为打点集成——策略层+VM 接线+壳层 manifest（2026-09-07 第一百零六笔）
 
 执行 AI：GLM-5.3-Flash（B 会话主代理调度；3d 纯逻辑+集成两轮执行子代理+对抗审查两轮，清偿复审 15/15 PASS）

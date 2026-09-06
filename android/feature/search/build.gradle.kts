@@ -20,6 +20,8 @@ dependencies {
     implementation(libs.compose.material3)
     implementation(libs.compose.foundation)
     implementation(libs.compose.ui.tooling.preview)
+    // BackHandler（三态返回消化，B4）：activity-compose 已在版本目录白名单（:app 同款），非新增依赖
+    implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.hilt.navigation.compose)

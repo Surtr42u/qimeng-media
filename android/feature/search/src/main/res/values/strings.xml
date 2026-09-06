@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 搜索页文案（M4-2A-B4，逐字=旧版实录 search_entry/suggest/results）。
+         资源名 search_ 前缀避免合并冲突（home/login/all 同款约定）。 -->
+
+    <!-- 顶栏三件（实录：返回 icon desc「返回」+ 输入框占位 + 右侧文本按钮「搜索」） -->
+    <string name="search_back_desc">返回</string>
+    <string name="search_hint">搜索文件、出处、角色、COS作者…</string>
+    <string name="search_action">搜索</string>
+
+    <!-- 入口态两区（实录：推荐搜索 / 搜索历史 + 右侧清除 icon desc「清除历史」） -->
+    <string name="search_section_recommend">推荐搜索</string>
+    <string name="search_section_history">搜索历史</string>
+    <string name="search_clear_history_desc">清除历史</string>
+
+    <!-- 建议态行左图标 desc（旧版 id=suggestIcon 无 desc；仅测试/无障碍定位锚，不渲染） -->
+    <string name="search_suggest_icon_desc">候选</string>
+
+    <!-- 结果态空态（旧布局 XML 口径「未找到相关内容」，替换旧文案「没有找到相关内容」） -->
+    <string name="search_empty_result">未找到相关内容</string>
+</resources>

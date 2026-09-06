@@ -96,6 +96,27 @@ fun QimengPillFlowRow(
 }
 
 /**
+ * 词丸流（旧版实录 search_entry：推荐搜索/搜索历史 ChipGroup 换行药丸流，M4-2A-B4）。
+ * 与 [QimengPillFlowRow] 的差别：无「收起 ▲」尾丸、无折叠语义——搜索页两区词丸
+ * 旧版全量平铺不折叠；胶囊渲染复用 [PillChip] 单源，禁各页自绘（铁律 7 / §5 组件单源）。
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun QimengWordPillFlow(
+    pills: List<QimengPill>,
+    onPillClick: (index: Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    FlowRow(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(QimengDimens.SpaceM),
+        verticalArrangement = Arrangement.spacedBy(QimengDimens.SpaceM),
+    ) {
+        pills.forEachIndexed { index, pill -> PillChip(pill = pill, onClick = { onPillClick(index) }) }
+    }
+}
+
+/**
  * 悬浮药丸面板（旧版 fragment_all_files.xml 药丸容器形态，M4-2A-B2）：悬浮在网格上方
  * （elevation 4dp + 页面底色，不推挤网格——旧版 FrameLayout 叠放）、最大高度=屏高一半
  * （旧版 MaxHeightScrollView.onMeasure：heightPixels/2 的 AT_MOST 语义）超出内部滚动、
