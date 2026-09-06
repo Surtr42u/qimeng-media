@@ -17,6 +17,8 @@
     <!-- 媒体舞台（3a 占位） -->
     <string name="detail_media_stage">媒体预览</string>
     <string name="detail_play_video">播放视频</string>
+    <!-- 图片舞台无障碍描述（3b ZoomImageView 桥接：手势语义入文案，TalkBack 用户可发现交互） -->
+    <string name="detail_image_zoom_desc">图片预览，双指缩放，左右滑动切换相邻</string>
 
     <!-- meta 行（对照 Web detail-meta：浏览/播放/大小/宽×高/日期/出处） -->
     <string name="detail_meta_views">浏览 %1$s</string>
