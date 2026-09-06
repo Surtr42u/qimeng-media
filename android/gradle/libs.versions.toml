@@ -61,6 +61,13 @@ coil = "3.4.0"
 #   （Android 15+ 断网时 constraint 误通过/后台网络调用失败）——上传队列依赖网络约束，
 #   必须落在此修复线。work-testing 为官方同家族测试件（HANDOVER_APP §4.9 允许口径）。
 work = "2.11.2"
+# Media3（2026-09-07 M4-3 3c 引入，视频播放器 BiliPlayerView 桥接）。离线批次锁版来源：
+#   ①旧项目 QimengMedia gradle/libs.versions.toml:20（BiliPlayerView 原生宿主版本，桥接兼容性已验证）；
+#   ②本地 Gradle 缓存 ~/.gradle/caches/modules-2/files-2.1/androidx.media3/ 已有完整 1.8.0 构件
+#     （media3-exoplayer/media3-ui 实测在列，离线可解析）。
+#   【待联网复核】下一批次联网时对照官方 release 页
+#   （https://developer.android.com/jetpack/androidx/releases/media3）复核 1.8.0 stable 定位后移除本标注。
+media3 = "1.8.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -92,6 +99,9 @@ androidx-work-runtime-ktx = { group = "androidx.work", name = "work-runtime-ktx"
 androidx-work-testing = { group = "androidx.work", name = "work-testing", version.ref = "work" }
 androidx-hilt-work = { group = "androidx.hilt", name = "hilt-work", version.ref = "androidxHilt" }
 androidx-hilt-compiler = { group = "androidx.hilt", name = "hilt-compiler", version.ref = "androidxHilt" }
+# Media3（M4-3 3c，白名单 ADR-0014）：ExoPlayer 内核 + PlayerView（BiliPlayerView 宿主），版本注释见 [versions]
+androidx-media3-exoplayer = { group = "androidx.media3", name = "media3-exoplayer", version.ref = "media3" }
+androidx-media3-ui = { group = "androidx.media3", name = "media3-ui", version.ref = "media3" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 # build-logic convention 插件的编译期依赖（compileOnly；版本锚定同上方 agp/kotlin，禁止单独升级）。
 # 运行期版本由主工程根 build.gradle.kts 的 apply false 收口，convention 不携带运行时版本。
