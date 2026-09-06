@@ -21,7 +21,10 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:launchMode="singleTask">
+            android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden">
+            <!-- 3c 遗留：全屏旋转重建 Activity 会杀播放器；声明后旋转不重建，Compose 自处理
+                 （3b 沉浸同样受益：旋转不再触发系统栏状态重置） -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

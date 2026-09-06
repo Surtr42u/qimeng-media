@@ -52,3 +52,17 @@ data class TagChip(val id: String, val name: String)
 
 /** 点赞 toggle 结果（PUT /assets/{id}/like → LikeState；服务端权威值回填防本地猜测） */
 data class LikeToggleResult(val likedToday: Boolean, val likeCount: Int)
+
+/**
+ * 时间轴标签（M4-3 3d，GET/POST /assets/{id}/timeline-tags）。
+ * id 为服务端生成主键（DELETE /assets/{id}/timeline-tags/{tagId} 用）；POST 返回体带回。
+ * @param timeMillis 标签指向播放位置（毫秒，从 0 起算）
+ */
+data class TimelineTag(val id: String, val timeMillis: Long, val name: String)
+
+/**
+ * 行为打点事件类别（POST /events/view 的 kind 枚举；DOMAIN_RULES §5 底层 ViewEvent 事件流）。
+ * open=进入详情页（同会话一次）、play=起播（同会话一次）、dwell=停留时长（带 seconds）。
+ * 服务端按 assetId+kind+sessionId+当日 会话级去重。
+ */
+enum class ViewEventKind { OPEN, PLAY, DWELL }

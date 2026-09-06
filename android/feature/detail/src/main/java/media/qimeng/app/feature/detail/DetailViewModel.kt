@@ -1,9 +1,11 @@
 package media.qimeng.app.feature.detail
 
+import android.os.Debug
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import java.util.UUID
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -14,7 +16,12 @@ import media.qimeng.app.core.data.repository.DetailRepository
 import media.qimeng.app.core.data.repository.MediaBatchIndex
 import media.qimeng.app.core.model.AssetDetail
 import media.qimeng.app.core.model.MediaAsset
+import media.qimeng.app.core.model.MediaKind
 import media.qimeng.app.core.model.TagChip
+import media.qimeng.app.core.model.TimelineTag
+import media.qimeng.app.feature.detail.playback.DirectAnalyticsReporter
+import media.qimeng.app.feature.detail.playback.ProgressThrottlePolicy
+import media.qimeng.app.feature.detail.playback.WatchState
 
 /**
  * 详情页 UI 状态（3a 骨架）。错误反馈照 home 的 errorMessage 横幅模式；
@@ -41,11 +48,40 @@ data class DetailUiState(
     val favoritePending: Boolean = false,
     /** 关注 toggle 进行中的作者 id（该行按钮 disabled；null = 无在途关注请求） */
     val followPendingAuthorId: String? = null,
+    /**
+     * 预加载目标（3b 拍板③窗口：前 1 后 2，距当前最近序）。url 取窗口内邻位详情——
+     * 图片=origUrl 原图、视频=thumbUrl 海报帧；url 缺失的邻位不出现在列表里。
+     * Coil 入队/取消在 UI 层（DetailScreen DisposableEffect），VM 只发目标清单。
+     */
+    val preloadTargets: List<DetailPreloadTarget> = emptyList(),
+    /**
+     * 视频续播起点毫秒（3d，[WatchState] 冻结口径）：未看完 = 断点秒×1000；
+     * 已看完 = 0（重播语义）。图片资产恒 0（不被消费）。
+     */
+    val videoStartPositionMs: Long = 0L,
+    /** 已看完徽标（3d，[WatchState] 冻结口径：lastPositionSeconds 与 durationMs 齐备且 ≥ 才真） */
+    val videoWatched: Boolean = false,
+    /** 时间轴标签（3d，仅视频资产加载；GET 按 timeMillis 升序，服务端排序） */
+    val timelineTags: List<TimelineTag> = emptyList(),
 )
 
 /**
- * 详情页 ViewModel（M4-3 3a）：详情读取、互动行（点赞/收藏/关注）、标签管理
- * （读-改-写一次提交）、「接下来播放」与批次导航数据链。滑动接线（3b）不在本批。
+ * 单个预加载目标（3b）。isVideo 决定 UI 侧请求形态：图片按原图尺寸（口径②不降采样），
+ * 视频海报帧是小缩略图按默认档即可。
+ */
+data class DetailPreloadTarget(
+    val assetId: String,
+    val url: String,
+    val isVideo: Boolean,
+)
+
+/**
+ * 详情页 ViewModel（M4-3）：3a 详情读取、互动行（点赞/收藏/关注）、标签管理
+ * （读-改-写一次提交）、「接下来播放」与批次导航数据链；3b 补兄弟资产切换取数
+ * （moveBy，UI 经 push 叠栈消费）与预加载窗口（拍板③：窗口计算=DetailPreloadPolicy
+ * 纯函数，本 VM 只做取数与目标发布）；3d 补播放接线三件：续播起点（WatchState 口径）、
+ * 进度上报（ProgressThrottlePolicy 5s 心跳节流 + 暂停/离开 force 补报）、行为打点
+ * （DirectAnalyticsReporter：open/play/dwell），以及时间轴标签增删查。
  * 互动/标签失败只置 errorMessage，不动 asset——已加载内容不因单次请求失败回退成空页。
  */
 @HiltViewModel
@@ -53,6 +89,7 @@ class DetailViewModel @Inject constructor(
     private val detailRepository: DetailRepository,
     private val authorRepository: AuthorRepository,
     private val batchIndex: MediaBatchIndex,
+    private val imageDimCache: DetailImageDimCache,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
@@ -62,10 +99,52 @@ class DetailViewModel @Inject constructor(
     /** 路由参数（键单源在 [DetailRoutes.KEY_ASSET_ID]）；缺参 = 错误态而非崩溃（深链容错） */
     private val assetId: String? = savedStateHandle[DetailRoutes.KEY_ASSET_ID]
 
+    /**
+     * 打点会话标识（3d）：**每 VM 实例一次 UUID**（实例生命周期 ≈ 一次详情停留）。
+     * 与协议口径对应：服务端按 assetId+kind+sessionId+当日 对 open/play 会话级去重，
+     * dwell 不去重逐条累加——同一停留会话全部事件（open/play/dwell）携带同一 sessionId，
+     * dwell 分段逐条上报由 DwellSessionTracker 保证（真实口径见其类注释）。
+     */
+    private val sessionId: String = UUID.randomUUID().toString()
+
+    /**
+     * 行为打点组装器（3d，DirectAnalyticsReporter 纯逻辑壳）：init 即 onDetailEntered()
+     * = open 打点一次 + 开 dwell 会话；起播/暂停/离开由 Screen 生命周期与起播回调驱动。
+     * 上报出网在回调内发 viewModelScope；失败静默（打点尽力而为，不影响浏览主链路）。
+     * assetId 缺参（错误态）为 null：无资产可打点，reporter 不创建、一切入口无害跳过。
+     */
+    private val analyticsReporter: DirectAnalyticsReporter? = assetId?.let { id ->
+        DirectAnalyticsReporter(
+            assetId = id,
+            sessionIdProvider = { sessionId },
+            report = { emission ->
+                viewModelScope.launch {
+                    runCatching {
+                        detailRepository.reportViewEvent(
+                            assetId = emission.assetId,
+                            kind = emission.kind,
+                            startedAtMs = emission.startedAtMs,
+                            sessionId = emission.sessionId,
+                            dwellSeconds = emission.dwellSeconds,
+                        )
+                    }.onFailure { /* 打点尽力而为：失败静默 */ }
+                }
+            },
+        )
+    }
+
+    /**
+     * 进度上报节流策略（3d，5s 心跳冻结口径）。internal var 供单测注入假时钟策略
+     * （同 heapUsedRatioProvider 惯例——生产默认真实时钟，VM init 不消费、无注入时序问题）。
+     */
+    internal var progressThrottle = ProgressThrottlePolicy()
+
     /** 推荐流当前 seed（初始 0；换一批 = 换成当前时间戳） */
     private var upNextSeed: Long = INITIAL_UP_NEXT_SEED
 
     init {
+        // 3d：进入详情 = open 打点一次 + 开 dwell 会话（open 每实例一次由 reporter 幂等保证）
+        analyticsReporter?.onDetailEntered()
         loadDetail(initial = true)
     }
 
@@ -99,7 +178,12 @@ class DetailViewModel @Inject constructor(
                         batchIndex = batchIndex.indexOf(id),
                         batchSize = batchIndex.size(),
                     )
+                    applyWatchState(detail)
+                    rememberDims(detail)
                     if (initial) refreshUpNext(INITIAL_UP_NEXT_SEED)
+                    schedulePreload()
+                    // 时间轴标签只对视频资产加载（3d；失败静默，不影响主内容）
+                    if (detail.mediaType == MediaKind.VIDEO) loadTimelineTags()
                 }
                 .onFailure {
                     _uiState.value = _uiState.value.copy(isLoading = false, errorMessage = ERROR_LOAD_DETAIL)
@@ -118,11 +202,30 @@ class DetailViewModel @Inject constructor(
                         batchIndex = batchIndex.indexOf(id),
                         batchSize = batchIndex.size(),
                     )
+                    applyWatchState(detail)
+                    rememberDims(detail)
+                    // 标签保存重拉后窗口可能因新learned尺寸收紧；prefetchedIds 去重防重复取数
+                    schedulePreload()
                 }
                 .onFailure {
                     _uiState.value = _uiState.value.copy(errorMessage = ERROR_LOAD_DETAIL)
                 }
         }
+    }
+
+    // ---------- 续播起点与已看完（3d，WatchState 冻结口径） ----------
+
+    /**
+     * 详情落地后按 [WatchState] 纯函数口径推导续播起点与已看完徽标并发布到 UiState：
+     * 未看完 → 起点 = 断点秒×1000；已看完 → 起点 0（重播语义）。进度上报也借本节流
+     * 策略实例，与续播起点无耦合（上报的是播放器实时位置，起点只在 prepare 时用一次）。
+     */
+    private fun applyWatchState(detail: AssetDetail) {
+        val watch = WatchState.of(detail.lastPositionSeconds, detail.durationMs)
+        _uiState.value = _uiState.value.copy(
+            videoStartPositionMs = (watch.resumeStartSeconds * 1000).toLong(),
+            videoWatched = watch.watched,
+        )
     }
 
     // ---------- 「接下来播放」 ----------
@@ -177,13 +280,97 @@ class DetailViewModel @Inject constructor(
     /**
      * 批次邻位切换取数（拍板③：详情页左右滑切换相邻资产）：基于批次快照以当前路由资产
      * 定位 index，返回 delta 偏移后的目标资产 id；路由缺参/当前资产不在批次内/目标越界
-     * 返回 null（UI 据此不动，不环绕）。3b 接线：滑动回调 → moveBy(±1) → 壳层导航，本批 UI 不调用。
+     * 返回 null（UI 据此不动，不环绕）。3b 已接线：ImageStage 横滑回调 → 本方法 → 壳层
+     * push 叠栈导航（批次清单不变，不经 upNextJump 换批）。
      */
     fun moveBy(delta: Int): String? {
         val id = assetId ?: return null
         val current = batchIndex.indexOf(id)
         if (current < 0) return null
         return batchIndex.assetIdAt(current, delta)
+    }
+
+    // ---------- 预加载窗口（拍板③，3b） ----------
+
+    /**
+     * 堆占用比例读取（超大图预载收紧依据）。internal var 供单测注入定值——
+     * 生产默认**双通道取 max**（旧版 isMemoryComfortable 口径）：Java 堆 (total-free)/max
+     * 与 native 堆 allocated/total——API26+ 大图 bitmap 像素数据在 native 堆，只看 Java 堆
+     * 会漏判真紧张（native 已涨爆而 Java 堆空闲）。native 读取 runCatching 兜底回 0
+     * （JVM 单测 android.jar stub 不可调，回退只看 Java 通道=宽松不收紧）。
+     */
+    internal var heapUsedRatioProvider: () -> Float = {
+        val runtime = Runtime.getRuntime()
+        val max = runtime.maxMemory().toFloat()
+        val javaRatio = if (max <= 0f) 0f else (runtime.totalMemory() - runtime.freeMemory()) / max
+        val nativeRatio = runCatching {
+            val nativeTotal = Debug.getNativeHeapSize().toFloat()
+            if (nativeTotal <= 0f) 0f else Debug.getNativeHeapAllocatedSize().toFloat() / nativeTotal
+        }.getOrDefault(0f)
+        maxOf(javaRatio, nativeRatio)
+    }
+
+    /** 窗口序（策略产出，目标发布按此序对齐「距当前最近优先」） */
+    private var preloadWindowOrder: List<String> = emptyList()
+
+    /** 窗口内邻位详情取到的目标（id → target；就绪一个发布一个） */
+    private val preloadTargetsById = mutableMapOf<String, DetailPreloadTarget>()
+
+    /** 本 VM 生命周期内已发起过详情取数的预载 id（去重：标签保存重拉不重复预载） */
+    private val prefetchedIds = mutableSetOf<String>()
+
+    /**
+     * 进入详情后对窗口（前 1 后 2）内 id 拉详情取直链，发布到 [DetailUiState.preloadTargets]，
+     * UI 层（DetailScreen DisposableEffect）对目标做 Coil 预取（图片 origUrl / 视频 thumbUrl
+     * 海报帧）。越界加载策略：只对已加载批次内 id 预取，不主动拉批次外资产（批次=列表页
+     * 内存传递，拍板④）。预载尽力而为：邻位详情拉取失败静默（不影响主内容浏览）；
+     * 在途取数随 viewModelScope 取消（onCleared 天然清理）。
+     */
+    private fun schedulePreload() {
+        val id = assetId ?: return
+        val current = batchIndex.indexOf(id)
+        if (current < 0) return // 无批次上下文：无窗口可预载
+        val window = DetailPreloadPolicy.computePreload(
+            currentIndex = current,
+            ids = batchIndex.ids,
+            sizeOf = imageDimCache::dimsOf,
+            heapUsedRatio = heapUsedRatioProvider(),
+        )
+        preloadWindowOrder = window
+        window.filterNot { it in prefetchedIds }.forEach { targetId ->
+            prefetchedIds += targetId
+            viewModelScope.launch {
+                runCatching { detailRepository.assetDetail(targetId) }
+                    .onSuccess { neighbor ->
+                        rememberDims(neighbor)
+                        val isVideo = neighbor.mediaType == MediaKind.VIDEO
+                        val url = if (isVideo) neighbor.thumbUrl else neighbor.origUrl
+                        if (url != null) {
+                            preloadTargetsById[neighbor.id] =
+                                DetailPreloadTarget(neighbor.id, url, isVideo)
+                            publishPreloadTargets()
+                        }
+                    }
+                    .onFailure { /* 预载尽力而为：静默（错误不进 errorMessage） */ }
+            }
+        }
+        publishPreloadTargets()
+    }
+
+    /** 按窗口序发布目标清单（只含 url 已就绪的邻位） */
+    private fun publishPreloadTargets() {
+        _uiState.value = _uiState.value.copy(
+            preloadTargets = preloadWindowOrder.mapNotNull(preloadTargetsById::get),
+        )
+    }
+
+    /** 详情落地后登记已知尺寸（预载策略超大图判定的数据源，进程级共享跨兄弟叠栈屏） */
+    private fun rememberDims(detail: AssetDetail) {
+        val w = detail.width
+        val h = detail.height
+        if (w != null && h != null && w > 0 && h > 0) {
+            imageDimCache.put(detail.id, ImageDims(w, h))
+        }
     }
 
     // ---------- 互动行 ----------
@@ -354,6 +541,114 @@ class DetailViewModel @Inject constructor(
         }
     }
 
+    // ---------- 播放进度上报（3d） ----------
+
+    /** 起播回调（VideoStage onIsPlayingChanged(true) 驱动）：play 打点一次（reporter 幂等去重） */
+    fun onPlaybackStarted() {
+        analyticsReporter?.onPlayStarted()
+    }
+
+    /**
+     * 播放进度 tick（VideoStage 播放中 1s 轮询喂入）：先 observe 覆盖最新位置，再问节流
+     * 策略是否放行——放行即 PUT progress（服务端只存最新值；窗口内被吞的中间 tick 由
+     * 「最新值覆盖」语义自然丢弃，不丢最近位置）。
+     */
+    fun onPositionChanged(positionSeconds: Double) {
+        progressThrottle.observe(positionSeconds)
+        consumeAndReportProgress()
+    }
+
+    /**
+     * 立即补报（暂停/离开：Screen onPause、onDispose 与 onCleared 兜底）：
+     * force 下次消费必放行，用策略内保留的最新位置发一次。
+     */
+    fun flushProgressNow() {
+        progressThrottle.force()
+        consumeAndReportProgress()
+    }
+
+    private fun consumeAndReportProgress() {
+        val id = assetId ?: return
+        val position = progressThrottle.consumeReportable() ?: return
+        viewModelScope.launch {
+            runCatching { detailRepository.reportProgress(id, position) }
+                .onFailure { /* 上报尽力而为：失败静默（服务端只存最新值，下一心跳/补报自然覆盖） */ }
+        }
+    }
+
+    // ---------- Screen 生命周期接线（3d；由 DetailScreen DisposableEffect 驱动） ----------
+
+    /** 进后台/切走（ON_PAUSE）：dwell flush 当前段并结束会话（resume 由 onScreenResumed 开新段，dwell 分段累加口径）+ 进度 force 立即补报 */
+    fun onScreenPaused() {
+        analyticsReporter?.onPaused()
+        flushProgressNow()
+    }
+
+    /** 回前台（ON_RESUME）：dwell 开新段（分段累加口径，见 DwellSessionTracker；未 pause 过则无害） */
+    fun onScreenResumed() {
+        analyticsReporter?.onResumed()
+    }
+
+    /**
+     * 舞台组合离场（onDispose；Navigation Compose 中先于 VM onCleared，此时 viewModelScope
+     * 仍存活，补报可送达）：dwell leave flush 当前段（幂等，会话关闭）+ 进度 force 补报。
+     * 弱网极端时序下 onCleared 取消协程可能掐断补报，尽力而为口径。
+     */
+    fun onScreenDisposed() {
+        analyticsReporter?.onDetailLeft()
+        flushProgressNow()
+    }
+
+    override fun onCleared() {
+        // 兜底链最后一环：destroy 内 dwell flush 若仍需出网，viewModelScope 已被取消、
+        // 不再送达——可靠路径是 onScreenDisposed（先于 onCleared 且 scope 存活）；
+        // 此处幂等 no-op 居多（onDispose 已 flush 过），只为「无组合即销毁」的极端时序兜底。
+        analyticsReporter?.destroy()
+        flushProgressNow()
+        super.onCleared()
+    }
+
+    // ---------- 时间轴标签（3d，视频资产核心体验） ----------
+
+    /** 拉时间轴标签（GET 按 timeMillis 升序）。失败静默：标签是增强体验，不阻塞播放主链路 */
+    private fun loadTimelineTags() {
+        val id = assetId ?: return
+        viewModelScope.launch {
+            runCatching { detailRepository.timelineTags(id) }
+                .onSuccess { tags -> _uiState.value = _uiState.value.copy(timelineTags = tags) }
+                .onFailure { /* 尽力而为：静默 */ }
+        }
+    }
+
+    /**
+     * 新建时间轴标签（timeMillis=VideoStage 采集的当前播放位置毫秒；name trim 非空才发）。
+     * 成功后重拉列表刷新芯片；失败进 errorMessage 横幅（与互动行同一反馈通道）。
+     */
+    fun addTimelineTag(timeMillis: Long, name: String) {
+        val id = assetId ?: return
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return
+        viewModelScope.launch {
+            runCatching { detailRepository.addTimelineTag(id, timeMillis, trimmed) }
+                .onSuccess { loadTimelineTags() }
+                .onFailure {
+                    _uiState.value = _uiState.value.copy(errorMessage = ERROR_ADD_TIMELINE_TAG)
+                }
+        }
+    }
+
+    /** 删除时间轴标签（长按菜单入口；成功后重拉列表刷新芯片，失败进 errorMessage） */
+    fun deleteTimelineTag(tagId: String) {
+        val id = assetId ?: return
+        viewModelScope.launch {
+            runCatching { detailRepository.deleteTimelineTag(id, tagId) }
+                .onSuccess { loadTimelineTags() }
+                .onFailure {
+                    _uiState.value = _uiState.value.copy(errorMessage = ERROR_DELETE_TIMELINE_TAG)
+                }
+        }
+    }
+
     companion object {
         /** 推荐栏初始 seed：0 = 协议不打散固定序（Web useUpNextList 初始 0 同款） */
         const val INITIAL_UP_NEXT_SEED = 0L
@@ -372,5 +667,7 @@ class DetailViewModel @Inject constructor(
         private const val ERROR_LOAD_TAGS = "标签列表加载失败"
         private const val ERROR_CREATE_TAG = "新建标签失败："
         private const val ERROR_SAVE_TAGS = "标签保存失败："
+        private const val ERROR_ADD_TIMELINE_TAG = "时间轴标签添加失败"
+        private const val ERROR_DELETE_TIMELINE_TAG = "时间轴标签删除失败"
     }
 }

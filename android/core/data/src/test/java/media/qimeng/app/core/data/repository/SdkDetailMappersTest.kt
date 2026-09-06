@@ -150,4 +150,74 @@ class SdkDetailMappersTest {
             domain.modifiedAtMs,
         )
     }
+
+    // ---------------- M4-3 3d：进度 / 打点 / 时间轴标签映射 ----------------
+
+    @Test
+    fun `时间轴标签映射与可空字段兜底`() {
+        val filled = SdkDetailMappers.toTimelineTag(
+            media.qimeng.sdk.models.TimelineTag(id = "tt1", timeMillis = 65000L, name = "高光"),
+        )
+        assertEquals("tt1", filled.id)
+        assertEquals(65000L, filled.timeMillis)
+        assertEquals("高光", filled.name)
+        // null 兜底：id/name 归空串、timeMillis 归 0（协议 required，null 仅防御）
+        val empty = SdkDetailMappers.toTimelineTag(
+            media.qimeng.sdk.models.TimelineTag(id = null, timeMillis = null, name = null),
+        )
+        assertEquals("", empty.id)
+        assertEquals(0L, empty.timeMillis)
+        assertEquals("", empty.name)
+        assertEquals(
+            2,
+            SdkDetailMappers.toTimelineTags(
+                listOf(
+                    media.qimeng.sdk.models.TimelineTag(id = "tt1", timeMillis = 1L, name = "a"),
+                    media.qimeng.sdk.models.TimelineTag(id = "tt2", timeMillis = 2L, name = "b"),
+                ),
+            ).size,
+        )
+    }
+
+    @Test
+    fun `进度上报请求体Double转BigDecimal`() {
+        val update = SdkDetailMappers.toProgressUpdate(125.75)
+        assertEquals(0, update.positionSeconds.compareTo(java.math.BigDecimal("125.75")))
+        // 整数秒不带小数尾巴
+        assertEquals(0, SdkDetailMappers.toProgressUpdate(90.0).positionSeconds.compareTo(java.math.BigDecimal("90")))
+    }
+
+    @Test
+    fun `行为打点报告映射kind与dwell秒`() {
+        val open = SdkDetailMappers.toViewEventReport(
+            "11111111-1111-1111-1111-111111111111",
+            media.qimeng.app.core.model.ViewEventKind.OPEN,
+            startedAtMs = 1_000L,
+            sessionId = "s-1",
+            dwellSeconds = null,
+        )
+        assertEquals(media.qimeng.sdk.models.ViewEventReport.Kind.`open`, open.kind)
+        assertNull(open.seconds)
+        assertEquals("s-1", open.sessionId)
+        assertEquals(1_000L, open.startedAt.toInstant().toEpochMilli())
+
+        val dwell = SdkDetailMappers.toViewEventReport(
+            "11111111-1111-1111-1111-111111111111",
+            media.qimeng.app.core.model.ViewEventKind.DWELL,
+            startedAtMs = 2_000L,
+            sessionId = "s-1",
+            dwellSeconds = 42L,
+        )
+        assertEquals(media.qimeng.sdk.models.ViewEventReport.Kind.dwell, dwell.kind)
+        assertEquals(0, dwell.seconds!!.compareTo(java.math.BigDecimal(42)))
+
+        val play = SdkDetailMappers.toViewEventReport(
+            "11111111-1111-1111-1111-111111111111",
+            media.qimeng.app.core.model.ViewEventKind.PLAY,
+            startedAtMs = 3_000L,
+            sessionId = "s-1",
+            dwellSeconds = null,
+        )
+        assertEquals(media.qimeng.sdk.models.ViewEventReport.Kind.play, play.kind)
+    }
 }

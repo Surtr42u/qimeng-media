@@ -6,11 +6,17 @@ import media.qimeng.app.core.model.DetailTag
 import media.qimeng.app.core.model.LikeToggleResult
 import media.qimeng.app.core.model.MediaKind
 import media.qimeng.app.core.model.TagChip
+import media.qimeng.app.core.model.TimelineTag
+import media.qimeng.app.core.model.ViewEventKind
+import media.qimeng.sdk.models.ApiV1AssetsAssetIdTimelineTagsPostRequest
 import media.qimeng.sdk.models.AssetDetail as SdkAssetDetail
 import media.qimeng.sdk.models.Author
 import media.qimeng.sdk.models.LikeState
 import media.qimeng.sdk.models.MediaType
+import media.qimeng.sdk.models.ProgressUpdate
 import media.qimeng.sdk.models.Tag
+import media.qimeng.sdk.models.TimelineTag as SdkTimelineTag
+import media.qimeng.sdk.models.ViewEventReport
 
 /** SDK DTO → 详情领域模型映射（:core:data 独占 internal；UI/ViewModel 不得接触 SDK 类型，ADR-0014 分层）。 */
 internal object SdkDetailMappers {
@@ -66,6 +72,51 @@ internal object SdkDetailMappers {
     fun toLikeToggleResult(state: LikeState): LikeToggleResult = LikeToggleResult(
         likedToday = state.likedToday ?: false,
         likeCount = state.likeCount ?: 0,
+    )
+
+    // ---------------- M4-3 3d：进度 / 打点 / 时间轴标签 ----------------
+
+    /** 时间轴标签映射（SDK 可空字段兜底：timeMillis 协议 required，null 仅防御性归 0） */
+    fun toTimelineTag(tag: SdkTimelineTag): TimelineTag = TimelineTag(
+        id = tag.id.orEmpty(),
+        timeMillis = tag.timeMillis ?: 0L,
+        name = tag.name.orEmpty(),
+    )
+
+    /** 时间轴标签列表映射 */
+    fun toTimelineTags(tags: List<SdkTimelineTag>): List<TimelineTag> = tags.map(::toTimelineTag)
+
+    /** 进度上报请求体（Double 秒 → BigDecimal；BigDecimal.valueOf 走 Double.toString 最短表示，无二进制尾差放大） */
+    fun toProgressUpdate(positionSeconds: Double): ProgressUpdate =
+        ProgressUpdate(positionSeconds = java.math.BigDecimal.valueOf(positionSeconds))
+
+    /** 新建时间轴标签请求体 */
+    fun toAddTimelineTagRequest(timeMillis: Long, name: String): ApiV1AssetsAssetIdTimelineTagsPostRequest =
+        ApiV1AssetsAssetIdTimelineTagsPostRequest(timeMillis = timeMillis, name = name)
+
+    /**
+     * 行为打点报告体（POST /events/view）。startedAt 统一转 UTC OffsetDateTime
+     * （客户端本地时区只用于展示，打点存绝对时刻）。
+     */
+    fun toViewEventReport(
+        assetId: String,
+        kind: ViewEventKind,
+        startedAtMs: Long,
+        sessionId: String,
+        dwellSeconds: Long?,
+    ): ViewEventReport = ViewEventReport(
+        assetId = java.util.UUID.fromString(assetId),
+        kind = when (kind) {
+            ViewEventKind.OPEN -> ViewEventReport.Kind.`open`
+            ViewEventKind.PLAY -> ViewEventReport.Kind.play
+            ViewEventKind.DWELL -> ViewEventReport.Kind.dwell
+        },
+        startedAt = java.time.OffsetDateTime.ofInstant(
+            java.time.Instant.ofEpochMilli(startedAtMs),
+            java.time.ZoneOffset.UTC,
+        ),
+        sessionId = sessionId,
+        seconds = dwellSeconds?.let(java.math.BigDecimal::valueOf),
     )
 
     private fun MediaType?.toDomainMediaKind(): MediaKind = when (this) {
