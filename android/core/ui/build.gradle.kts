@@ -26,4 +26,7 @@ dependencies {
     api(libs.coil.compose)
     api(libs.coil.gif)
     api(libs.coil.network.okhttp)
+
+    // 格式化纯函数单测（QimengFormatTest；口径冻结对照 web format.ts，JVM 最快档）
+    testImplementation(libs.junit)
 }

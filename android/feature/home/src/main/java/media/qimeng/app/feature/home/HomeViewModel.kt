@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import media.qimeng.app.core.data.repository.DataStoreGridPrefsRepository
 import media.qimeng.app.core.data.repository.GridPrefsRepository
+import media.qimeng.app.core.data.repository.MediaBatchIndex
 import media.qimeng.app.core.data.repository.MediaRepository
 import media.qimeng.app.core.data.repository.AssetOrigUrlResolver
 import media.qimeng.app.core.model.AssetSort
@@ -79,6 +80,7 @@ data class HomeUiState(
 class HomeViewModel @Inject constructor(
     private val mediaRepository: MediaRepository,
     private val gridPrefs: GridPrefsRepository,
+    private val batchIndex: MediaBatchIndex,
     val origUrlResolver: AssetOrigUrlResolver,
 ) : ViewModel() {
 
@@ -166,6 +168,20 @@ class HomeViewModel @Inject constructor(
 
     fun clearError() {
         _uiState.value = _uiState.value.copy(errorMessage = null)
+    }
+
+    /**
+     * 进详情前的批次上下文写入（详情页「i / N」序号与 3b 滑动切换的数据链）：
+     * 「已加载 = 当前显示清单」口径——recommend=pulled.take(revealed)（分批揭示的可见部分）、
+     * cos/rank=items（整页即显示）。快照式整体替换 [MediaBatchIndex.ids]。
+     */
+    fun enterDetail(assetId: String) {
+        val current = _uiState.value
+        batchIndex.ids = when (current.currentTab) {
+            HomeTab.RECOMMEND -> current.recommend.pulled.take(current.recommend.revealed).map { it.id }
+            HomeTab.COS -> current.cos.items.map { it.id }
+            HomeTab.RANK -> current.rank.items.map { it.id }
+        }
     }
 
     private fun loadRecommend(isInitial: Boolean, isRefresh: Boolean = false) {

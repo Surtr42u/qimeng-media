@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 详情页文案（M4-3 3a）。资源名 detail_ 前缀避免合并冲突（home/login 同款约定）。 -->
+    <!-- 排版基准 = Web AssetDetailPage.tsx（B站式）移动端移植；交互规格见 LEGACY_REQUIREMENTS §A（标签）。 -->
+
+    <!-- 顶行 -->
+    <string name="detail_back">返回</string>
+    <!-- 「i / N」批次序号（batchIndex>=0 时显示） -->
+    <string name="detail_batch_position">%1$d / %2$d</string>
+
+    <!-- 加载 / 错误 -->
+    <string name="detail_loading">加载中…</string>
+    <string name="detail_retry">重试</string>
+    <!-- 错误态兜底文案（errorMessage 缺失时显示；曾误用 detail_tag_empty「暂无标签」——修补归位） -->
+    <string name="detail_error_generic">加载失败，请重试</string>
+
+    <!-- 媒体舞台（3a 占位） -->
+    <string name="detail_media_stage">媒体预览</string>
+    <string name="detail_play_video">播放视频</string>
+
+    <!-- meta 行（对照 Web detail-meta：浏览/播放/大小/宽×高/日期/出处） -->
+    <string name="detail_meta_views">浏览 %1$s</string>
+    <string name="detail_meta_plays">播放 %1$s</string>
+    <string name="detail_meta_resolution">%1$d×%2$d</string>
+
+    <!-- 互动行 -->
+    <string name="detail_like">点赞</string>
+    <string name="detail_favorite">收藏</string>
+    <string name="detail_favorite_active">已收藏</string>
+
+    <!-- 标签行 / 标签管理弹窗（LEGACY §A：当前标签空态=暂无标签；弹窗外层可滚动） -->
+    <string name="detail_tag_manage">管理</string>
+    <string name="detail_tag_add">+ 添加标签</string>
+    <string name="detail_tag_sheet_title">标签管理</string>
+    <string name="detail_tag_sheet_desc">点选标签挂到本文件，保存时整体替换当前标签。</string>
+    <string name="detail_tag_section_current">当前标签</string>
+    <string name="detail_tag_section_other">其他标签</string>
+    <string name="detail_tag_empty">暂无标签</string>
+    <string name="detail_tag_new_placeholder">新建标签，回车确认</string>
+    <string name="detail_tag_create">新建</string>
+    <string name="detail_tag_remove_selection">移除勾选</string>
+    <string name="detail_save">保存</string>
+    <string name="detail_cancel">取消</string>
+
+    <!-- 作者卡（无作者不渲染；isCos 追加「 ·COS」在代码拼接——Web authorDisplayName 同口径） -->
+    <string name="detail_authors_title">作者</string>
+    <string name="detail_follow">+ 关注</string>
+    <string name="detail_followed">已关注</string>
+    <!-- 前导空格必须 \u0020 转义：AAPT 会裁掉字符串资源首尾空白（2026-09-07 模拟器文本证据发现渲染成「作者名·COS」缺空格） -->
+    <string name="detail_author_cos_suffix">\u0020·COS</string>
+
+    <!-- 接下来播放 -->
+    <string name="detail_upnext_title">接下来播放</string>
+    <string name="detail_upnext_shuffle">换一批</string>
+    <string name="detail_upnext_empty">暂无推荐</string>
+</resources>

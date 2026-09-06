@@ -68,6 +68,8 @@
 
 ### M4-3 详情页（图片 + 视频 + 互动，M4 最重批次）
 
+> **进度（2026-09-07 凌晨，B 会话 GLM-5.3-Flash）**：3a 骨架与排版 ✅（续前会话半成品；对抗审查两轮清偿后 commit；文本证据 `%TEMP%\qimeng-m43-3a-evidence\`；ImageStage/VideoStage 已拆独立占位桩文件供 3b/3c 并行认领；服务端 cosWork 缺陷见《待拍板-20260905夜2》#15）。3b/3c/3d 进行中。
+
 > **排版基准（2026-09-05 夜用户拍板：详情页使用 Web 现版显示排版移植到 Android）**：布局结构以 web 端 `pages/AssetDetailPage.tsx` 现版（B站式双栏，commit db6ac73）为唯一基准做移动端移植——竖屏单列堆叠顺序：媒体舞台 → 标题（cosWork ?? fileName）→ meta 行（浏览·播放·大小·尺寸·日期·出处）→ 点赞/收藏互动行 → 标签行 → 作者卡（displayName + ·COS + 关注）→ 「接下来播放」同类型推荐栏（缩略图+时长角标+两行标题，排除当前资产）。本节其余手势/播放器/续播/打点规格照旧（备忘录 G1~G9 为准）。
 
 - **图片（对照 §详情页/§详情页沉浸浏览）**：双指缩放、双击还原/放大、左右滑相邻预加载（窗口计算 ViewModel 单测）、沉浸模式（systemBars 隐藏+退出手势）、批次导航。原件签名直链（"查看永远发原件"）；Coil 下采样不禁用（内存保护）但**不请求缩放副本**。ZoomImageView 手势语义可用 Compose 自写（transformable/gesture）或 AndroidView 桥接旧控件，桥接则列入交付报告。

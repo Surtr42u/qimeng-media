@@ -18,10 +18,12 @@ import kotlinx.coroutines.SupervisorJob
 import media.qimeng.app.core.data.repository.AuthorRepository
 import media.qimeng.app.core.data.repository.DataStoreGridPrefsRepository
 import media.qimeng.app.core.data.repository.DataStoreSearchHistoryRepository
+import media.qimeng.app.core.data.repository.DetailRepository
 import media.qimeng.app.core.data.repository.GridPrefsRepository
 import media.qimeng.app.core.data.repository.HistoryRepository
 import media.qimeng.app.core.data.repository.MediaRepository
 import media.qimeng.app.core.data.repository.SdkAuthorRepository
+import media.qimeng.app.core.data.repository.SdkDetailRepository
 import media.qimeng.app.core.data.repository.SdkHistoryRepository
 import media.qimeng.app.core.data.repository.SdkMediaRepository
 import media.qimeng.app.core.data.repository.SearchHistoryRepository
@@ -49,6 +51,10 @@ interface DataModule {
     @Binds
     @Singleton
     fun bindAuthorRepository(impl: SdkAuthorRepository): AuthorRepository
+
+    @Binds
+    @Singleton
+    fun bindDetailRepository(impl: SdkDetailRepository): DetailRepository
 
     @Binds
     @Singleton
