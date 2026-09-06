@@ -17,10 +17,11 @@ import (
 	"qimeng-media/server/internal/thumbnail"
 )
 
-// thumbCacheControl 缩略图直链的缓存策略：max-age 一年 + immutable。
-// 缓存键 = SHA-256(assetId+size)，键即内容身份（见 GetMediaThumbAssetId
-// 注释），不存在"同键变内容"，激进缓存语义才成立（DOMAIN_RULES §11）。
-const thumbCacheControl = "public, max-age=31536000, immutable"
+// contentAddressedCacheControl 内容寻址资源的长缓存策略：max-age 一年
+// + immutable。缩略图直链（缓存键 = SHA-256，见 GetMediaThumbAssetId 注释，
+// DOMAIN_RULES §11）与 vite hash 构建产物（spa.go）两类消费方共用此单源
+// ——键/文件名即内容身份，不存在"同键变内容"，激进缓存语义才成立。
+const contentAddressedCacheControl = "public, max-age=31536000, immutable"
 
 // countingResponseWriter 包装直链响应并累计实际写出的字节数（media_bytes_total
 // 是流量语义：304 空体计 0、Range 只计所发区间——不是文件大小语义）。
@@ -73,12 +74,12 @@ func (s *Server) GetMediaOrigAssetId(w http.ResponseWriter, r *http.Request, ass
 	row, err := s.q.GetAssetWithLibrary(r.Context(), assetID.String())
 	if errors.Is(err, sql.ErrNoRows) {
 		// 签名有效但资产不存在（已删除/链接来自旧数据）：404。
-		writeErr(w, http.StatusNotFound, "NOT_FOUND", "资产不存在")
+		writeErr(w, http.StatusNotFound, codeNotFound, "资产不存在")
 		return
 	}
 	if err != nil {
 		s.logger.Error("查询资产失败", "err", err)
-		writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
+		writeErr(w, http.StatusInternalServerError, codeInternal, "内部错误")
 		return
 	}
 	// SECURITY 红线 1（路径穿越）的 handler 侧兜底：rel_path 来自库
@@ -87,18 +88,18 @@ func (s *Server) GetMediaOrigAssetId(w http.ResponseWriter, r *http.Request, ass
 	abs := filepath.Join(row.RootPath, filepath.FromSlash(row.RelPath))
 	if !filing.PathWithinRoot(row.RootPath, abs) {
 		s.logger.Error("资产相对路径越界，已拦截", "assetId", row.AssetID)
-		writeErr(w, http.StatusBadRequest, "PATH_ESCAPE", "路径不合法")
+		writeErr(w, http.StatusBadRequest, codePathEscape, "路径不合法")
 		return
 	}
 	f, err := os.Open(abs)
 	if errors.Is(err, fs.ErrNotExist) {
 		// 库里有记录但文件已不在（外部删改）：404 引导重扫。
-		writeErr(w, http.StatusNotFound, "FILE_MISSING", "文件不存在")
+		writeErr(w, http.StatusNotFound, codeFileMissing, "文件不存在")
 		return
 	}
 	if err != nil {
 		s.logger.Error("打开媒体文件失败", "err", err)
-		writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
+		writeErr(w, http.StatusInternalServerError, codeInternal, "内部错误")
 		return
 	}
 	defer func() {
@@ -126,12 +127,12 @@ func (s *Server) GetMediaOrigAssetId(w http.ResponseWriter, r *http.Request, ass
 func (s *Server) GetMediaThumbAssetId(w http.ResponseWriter, r *http.Request, assetID gen.AssetId, params gen.GetMediaThumbAssetIdParams) {
 	row, err := s.q.GetAssetWithLibrary(r.Context(), assetID.String())
 	if errors.Is(err, sql.ErrNoRows) {
-		writeErr(w, http.StatusNotFound, "NOT_FOUND", "资产不存在")
+		writeErr(w, http.StatusNotFound, codeNotFound, "资产不存在")
 		return
 	}
 	if err != nil {
 		s.logger.Error("查询资产失败", "err", err)
-		writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
+		writeErr(w, http.StatusInternalServerError, codeInternal, "内部错误")
 		return
 	}
 	size := s.thumbSize(gen.Md) // openapi 默认 md
@@ -141,14 +142,14 @@ func (s *Server) GetMediaThumbAssetId(w http.ResponseWriter, r *http.Request, as
 	abs := filepath.Join(row.RootPath, filepath.FromSlash(row.RelPath))
 	if !filing.PathWithinRoot(row.RootPath, abs) {
 		s.logger.Error("资产相对路径越界，已拦截", "assetId", row.AssetID)
-		writeErr(w, http.StatusBadRequest, "PATH_ESCAPE", "路径不合法")
+		writeErr(w, http.StatusBadRequest, codePathEscape, "路径不合法")
 		return
 	}
 	if err := s.thumbs.Ensure(r.Context(), row.AssetID, abs, thumbnail.Kind(row.MediaType), []thumbnail.Size{size}); err != nil {
 		// 生成失败（损坏文件/ffmpeg 异常）：给 404 占位语义——客户端
 		// 对缩略图缺失的常规处理就是显示占位块，不该当服务器故障处理。
 		s.logger.Warn("缩略图生成失败", "assetId", row.AssetID, "err", err)
-		writeErr(w, http.StatusNotFound, "THUMBNAIL_FAILED", "缩略图不可用")
+		writeErr(w, http.StatusNotFound, codeThumbnailFailed, "缩略图不可用")
 		return
 	}
 	key := thumbnail.CacheKey(row.AssetID, size)
@@ -156,7 +157,7 @@ func (s *Server) GetMediaThumbAssetId(w http.ResponseWriter, r *http.Request, as
 	f, err := os.Open(path)
 	if err != nil {
 		s.logger.Error("打开缩略图缓存失败", "err", err)
-		writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
+		writeErr(w, http.StatusInternalServerError, codeInternal, "内部错误")
 		return
 	}
 	defer func() {
@@ -164,7 +165,7 @@ func (s *Server) GetMediaThumbAssetId(w http.ResponseWriter, r *http.Request, as
 			s.logger.Warn("关闭缩略图文件失败", "err", cerr)
 		}
 	}()
-	w.Header().Set("Cache-Control", thumbCacheControl)
+	w.Header().Set("Cache-Control", contentAddressedCacheControl)
 	etag := `"` + key + `"`
 	w.Header().Set("ETag", etag)
 	// ServeContent 不处理 ETag 条件请求，If-None-Match 命中手动回 304

@@ -16,6 +16,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 
@@ -106,18 +107,18 @@ func (s *Server) GetApiV1Config(w http.ResponseWriter, r *http.Request) {
 func (s *Server) PutApiV1Config(w http.ResponseWriter, r *http.Request) {
 	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxJSONBody))
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, "INVALID_BODY", "请求体不是合法 JSON")
+		writeErr(w, http.StatusBadRequest, codeInvalidBody, "请求体不是合法 JSON")
 		return
 	}
 	var keys clientConfigKeys
 	if err := json.Unmarshal(raw, &keys); err != nil {
-		writeErr(w, http.StatusBadRequest, "INVALID_PARAM",
+		writeErr(w, http.StatusBadRequest, codeInvalidParam,
 			"须提交完整 ClientConfig 对象（scan.workers/thumbEdge、upload.maxBytesMb/autoAccept）")
 		return
 	}
 	if keys.Scan == nil || keys.Scan.Workers == nil || keys.Scan.ThumbEdge == nil ||
 		keys.Upload == nil || keys.Upload.MaxBytesMb == nil || keys.Upload.AutoAccept == nil {
-		writeErr(w, http.StatusBadRequest, "INVALID_PARAM",
+		writeErr(w, http.StatusBadRequest, codeInvalidParam,
 			"须提交完整 ClientConfig 对象（scan.workers/thumbEdge、upload.maxBytesMb/autoAccept）")
 		return
 	}
@@ -127,13 +128,16 @@ func (s *Server) PutApiV1Config(w http.ResponseWriter, r *http.Request) {
 	}
 	switch {
 	case body.Scan.Workers < scanWorkersMin || body.Scan.Workers > scanWorkersMax:
-		writeErr(w, http.StatusBadRequest, "INVALID_PARAM", "scan.workers 须在 1–4")
+		writeErr(w, http.StatusBadRequest, codeInvalidParam,
+			fmt.Sprintf("scan.workers 须在 %d–%d", scanWorkersMin, scanWorkersMax))
 		return
 	case body.Scan.ThumbEdge < scanThumbEdgeMin || body.Scan.ThumbEdge > scanThumbEdgeMax:
-		writeErr(w, http.StatusBadRequest, "INVALID_PARAM", "scan.thumbEdge 须在 200–1600")
+		writeErr(w, http.StatusBadRequest, codeInvalidParam,
+			fmt.Sprintf("scan.thumbEdge 须在 %d–%d", scanThumbEdgeMin, scanThumbEdgeMax))
 		return
 	case body.Upload.MaxBytesMb < uploadMaxMbMin || body.Upload.MaxBytesMb > uploadMaxMbMax:
-		writeErr(w, http.StatusBadRequest, "INVALID_PARAM", "upload.maxBytesMb 须在 64–8192")
+		writeErr(w, http.StatusBadRequest, codeInvalidParam,
+			fmt.Sprintf("upload.maxBytesMb 须在 %d–%d", uploadMaxMbMin, uploadMaxMbMax))
 		return
 	}
 	out, err := json.Marshal(body)

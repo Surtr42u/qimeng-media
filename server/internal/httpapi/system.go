@@ -16,7 +16,7 @@ import (
 // 有用（OBSERVABILITY 面板可用性优先）。
 func (s *Server) GetApiV1SystemStatus(w http.ResponseWriter, r *http.Request) {
 	if s.sysStatus == nil {
-		writeErr(w, http.StatusServiceUnavailable, "SYSMON_UNAVAILABLE", "系统监控未装配")
+		writeErr(w, http.StatusServiceUnavailable, codeSysmonUnavailable, "系统监控未装配")
 		return
 	}
 	st, err := s.sysStatus(r.Context())
@@ -30,7 +30,7 @@ func (s *Server) GetApiV1SystemStatus(w http.ResponseWriter, r *http.Request) {
 // （OBSERVABILITY.md 指标表），本层零加工——指标语义集中一处维护。
 func (s *Server) GetMetrics(w http.ResponseWriter, r *http.Request) {
 	if s.metrics == nil {
-		writeErr(w, http.StatusServiceUnavailable, "SYSMON_UNAVAILABLE", "系统监控未装配")
+		writeErr(w, http.StatusServiceUnavailable, codeSysmonUnavailable, "系统监控未装配")
 		return
 	}
 	s.metrics.ServeHTTP(w, r)

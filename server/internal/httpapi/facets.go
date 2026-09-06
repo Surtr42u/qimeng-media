@@ -141,6 +141,10 @@ func mergeFacetBuckets(groups ...[]gen.FacetBucket) []gen.FacetBucket {
 
 // GetApiV1AssetsFacets 四维候选聚合。各查询排除自身维度、应用其余全部
 // 当前选择（排自身口径，facets.sql 文件头有逐查询的维度表）。
+// 超函数警戒线（>100 行）理由：oapi-codegen 生成的接口签名 + 单请求
+// 直线流（十来个可选参数逐个归一为 SQL 谓词形态→四维逐个查询→合并
+// 响应）；参数归一与维度的对应关系直线可读，拆段要把半程状态提升为
+// 结构体，排自身口径的对照反而变难。
 func (s *Server) GetApiV1AssetsFacets(w http.ResponseWriter, r *http.Request, params gen.GetApiV1AssetsFacetsParams) {
 	includeCos, cosOnly := partitionFlags(params.Partition)
 	isCosPartition := params.Partition != nil && *params.Partition == gen.PartitionCos

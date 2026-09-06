@@ -30,7 +30,7 @@ func resolvePageLimit(w http.ResponseWriter, limit *int) (int, bool) {
 		return defaultPageLimit, true
 	}
 	if *limit < 1 || *limit > maxPageLimit {
-		writeErr(w, http.StatusBadRequest, "INVALID_PARAM",
+		writeErr(w, http.StatusBadRequest, codeInvalidParam,
 			fmt.Sprintf("limit 取值范围 1..%d", maxPageLimit))
 		return 0, false
 	}
@@ -44,7 +44,7 @@ func resolveRankingLimit(w http.ResponseWriter, limit *int) (int, bool) {
 		return defaultRankingLimit, true
 	}
 	if *limit < 1 || *limit > maxRankingLimit {
-		writeErr(w, http.StatusBadRequest, "INVALID_PARAM",
+		writeErr(w, http.StatusBadRequest, codeInvalidParam,
 			fmt.Sprintf("limit 取值范围 1..%d", maxRankingLimit))
 		return 0, false
 	}

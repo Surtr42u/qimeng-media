@@ -11,6 +11,24 @@
 
 ---
 
+## fix(server): 分割审查清偿·server 卷（Android 工作日不触 app/web/api）——上传原子落盘+指标字节修正+签名构造单源+错误码常量化+import 拆分+DOMAIN_RULES 七处勘误（2026-09-07 第一百零一笔）
+
+执行 AI：GLM-5.3（主代理；三路只读审查子代理并行调研：安全红线/代码卫生与架构边界/领域一致性）
+
+- **审查背景（用户指示）**：今日工作区在跑 Android M4-2A-B3（前端日），按「前端日只审后端」分割审查以避免影响在跑任务——本笔只动 server/** 与文档，未触碰 android/web/api，零协议改动零 SDK 重生成（工作区 android 未提交改动原样保留）。
+- **安全清偿（SECURITY 红线 4 落盘原子性，唯一行为变化）**：上传从「os.Create 直写最终路径」改为「同目录 .qm-upload-*.tmp 临时文件 + 原子 rename」（upload.go 拆出 receiveAndStore 子程）——进程崩溃不再留下占用最终名的半成品（残留 .tmp 在扫描白名单外不会入库），并发同名上传不再互相截断写坏；新增锁定测试 TestUploadAtomicNoTempResidue（成功路径无临时残留 + 断连路径最终名不出现/临时清理，失败路径同步直调子程避免异步竞态）。**顺带修正 upload_bytes_total 严重少计**：原只计魔数头字节（≤512B），改按落盘事实 fi.Size() 计（OBSERVABILITY「累计字节」口径）。
+- **签名构造单源（代码卫生约束 4「发现手抄即修」）**：auth/mediaurl.go 签发/校验两侧手抄的三行 MAC 消息构造抽共享 signMAC——单侧漂移会静默炸掉全部存量直链，现在物理上不可能只改一侧。
+- **错误码常量化（卫生约束 3）**：writeErr 的 32 种协议错误码从 ~120 处裸字面量收敛为 errors.go 常量族（code* 前缀），附「与 openapi Error.code 双写联动、改动须同步协议侧」注释；测试文件按豁免条款不动。
+- **import.go 拆分回警戒线内**：事件回放段（replayEvents/replayDailyBrowse/replayStatsGap/replayHistory 等 ~210 行）拆出 import_replay.go（639→435 行）；open/play 回放双循环逐字重复抽 replayKind 共享；事件 kind 字面量 9 处（import 两函数 + assets_detail switch）改用 gen.Open/Play/Dwell 协议常量。
+- **超线补注 7 处**：>100 行函数补「超函数警戒线理由」注释（upload/facets/recommendations/history 四 handler=oapi 生成签名+单请求直线流；main/Server.New=组合根直线装配；Scanner.Scan=阶段编排、子步骤已拆），assets.go:309 既有范式对齐；import.go 超线以拆分消除而非注释。
+- **P3 卫生批七项**：①直链 TTL 双源（config/httpapi 各写 6h）收敛 config.DefaultTokenTTL 单源+httpapi 别名；②immutable 年缓存双常量收敛 contentAddressedCacheControl、no-cache 三处收敛 noCacheControl（httpapi）+sseNoCache（events，跨包各自具名）；③config/clientlogs 五条校验文案改 Sprintf 引用常量（边界数值不再双写）；④httpapi/doc.go 与 main.go 头注释的「501 占位/M1」过时表述更新为全接线现状；⑤scanner progressMinEvery 内联默认提具名常量 defaultProgressMinEvery；⑥stats/doc.go 职责措辞收敛（事件流→物化表重建编排在 httpapi，不在本包）；⑦dev 免密模式+非回环监听组合启动打 Warn（SECURITY 开发模式边界，只提醒不阻止，loopbackListen 判定）。
+- **DOMAIN_RULES 七处勘误补记**（全部文档侧对齐既有锁定行为，零代码行为变化）：§2 同分排序键「最近活动时间」勘误为文件 mtime（TestRank_tieScore_newerModifiedAtFirst 锁定口径）；§1.1 tagRelevance 空默认 0.2 补记；§4「其他沉底」澄清为展示层约定（/sources 按 fileCount 降序）+数字保护 RE2 实现注+多出处同名角色合并例外；§6 媒体扩展名判定集合（§9 白名单∪wmv/bmp/svg/tiff/tif）；§10 表行拆分（likes/favorites 非事件回放）+回放去重三口径补记；§11 缓存键公式勘误为 SHA-256("v2:assetId:size") 带定界符形态。SECURITY.md 开发模式节同步补启动 Warn 条目。
+- **审查零发现项（三路子代理交叉确认）**：SECURITY 红线 1/2/3/5/6/7/8 全守住（路径三层防御 NormalizeRelPath/PathWithinRoot/os.Root、HMAC exp 入签+恒时比较、token 哈希存储+恒时比对、回收站语义与物理删除边界、body/分页/SSE 上限全覆盖、错误响应零内部信息）；depguard 两红线人工复核零违规；recommend/stats/sourcematcher/authoring 四纯函数包零 IO 零内部依赖；OBSERVABILITY 九族埋点口径零偏差；130 组内置检索表实测核实；十维权重/回收表/-0.8/分档值等「逐字遵守」常量全部一致。
+- **备查挂账不修项**：trash 指标刷新超时后的残余遍历 goroutine 与扫描 goroutine 的 ctx 编排（进程退出瞬间语义，涉及 shutdown 编排重设计，留专项）；upload/trash 两处 exists 闭包近似重复（4 行级，抽取收益低于扰动）。
+- **验证**：go build ./... + go vet ./... 全过；go test ./... 15 包全绿（httpapi 13s 实跑含新增原子性用例）；golangci-lint run 0 issues；本笔未跑 make sdk（无协议改动）。
+
+---
+
 ## docs: M4-2A B2 残留清理——任务A文档续作指引归档 + 并发纪律勘误「在跑子代理 ≤3」（2026-09-07 第九十九笔）
 
 执行 AI：GLM-5.3-Flash（主代理）

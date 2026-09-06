@@ -35,7 +35,7 @@ func (s *Server) GetApiV1SearchSuggestions(w http.ResponseWriter, r *http.Reques
 	limit := defaultSuggestionLimit
 	if params.Limit != nil {
 		if *params.Limit < 1 || *params.Limit > maxSuggestionLimit {
-			writeErr(w, http.StatusBadRequest, "INVALID_PARAM",
+			writeErr(w, http.StatusBadRequest, codeInvalidParam,
 				"limit 取值范围 1..50")
 			return
 		}

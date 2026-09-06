@@ -94,7 +94,7 @@ func (s *Server) PutApiV1SourcesCustom(w http.ResponseWriter, r *http.Request) {
 		// 扫描器未装配（noScanner 占位）：持久化已成功但匹配引擎没换——
 		// 显式 503 告知"已保存、未生效"（装配后重启按存储值装载，
 		// 见 Scanner.New 的 loadCustomSources），好过 204 后静默不生效。
-		writeErr(w, http.StatusServiceUnavailable, "SCANNER_UNAVAILABLE", "自定义出处已保存但扫描器未装配，暂未生效")
+		writeErr(w, http.StatusServiceUnavailable, codeScannerUnavailable, "自定义出处已保存但扫描器未装配，暂未生效")
 		return
 	}
 	s.recomputeAfterCustomSources()

@@ -30,7 +30,7 @@ func (s *Server) PutApiV1AssetsAssetIdProgress(w http.ResponseWriter, r *http.Re
 		return
 	}
 	if rows == 0 {
-		writeErr(w, http.StatusNotFound, "NOT_FOUND", "资产不存在")
+		writeErr(w, http.StatusNotFound, codeNotFound, "资产不存在")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

@@ -22,6 +22,10 @@ const (
 	DefaultHeartbeat = 15 * time.Second
 	// DefaultRetryMS 首帧下发的重连等待（毫秒）：客户端意外断线后按此间隔自动重连。
 	DefaultRetryMS = 3000
+	// sseNoCache SSE 流的缓存策略：事件帧是一次性推送，中间缓存只会把
+	// "实时"变"重放"（HTTP 惯例值，跨包不与 httpapi 共享常量——边界所限
+	// 各自具名即可）。
+	sseNoCache = "no-cache"
 )
 
 // allTopics SSE 端点固定开放全部四类事件（与 openapi /api/v1/events 定义一致）。
@@ -150,7 +154,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// 响应头必须在 WriteHeader 之前设置完毕。
 	hdr := w.Header()
 	hdr.Set("Content-Type", "text/event-stream; charset=utf-8")
-	hdr.Set("Cache-Control", "no-cache")
+	hdr.Set("Cache-Control", sseNoCache)
 	// 反向代理（nginx 等）默认缓冲响应，会把 SSE 帧攒成批、"实时"变"批量"，显式禁用。
 	hdr.Set("X-Accel-Buffering", "no")
 	w.WriteHeader(http.StatusOK)

@@ -28,7 +28,7 @@ import (
 func (s *Server) PostApiV1AssetsAssetIdMove(w http.ResponseWriter, r *http.Request, assetID gen.AssetId) {
 	row, err := s.q.GetAssetWithLibrary(r.Context(), assetID.String())
 	if errors.Is(err, sql.ErrNoRows) {
-		writeErr(w, http.StatusNotFound, "NOT_FOUND", "资产不存在")
+		writeErr(w, http.StatusNotFound, codeNotFound, "资产不存在")
 		return
 	}
 	if err != nil {
@@ -46,7 +46,7 @@ func (s *Server) PostApiV1AssetsAssetIdMove(w http.ResponseWriter, r *http.Reque
 	if dir != "" {
 		dir, err = filing.NormalizeRelPath(dir)
 		if err != nil {
-			writeErr(w, http.StatusBadRequest, "INVALID_PARAM", "目标目录不合法")
+			writeErr(w, http.StatusBadRequest, codeInvalidParam, "目标目录不合法")
 			return
 		}
 	}
@@ -56,7 +56,7 @@ func (s *Server) PostApiV1AssetsAssetIdMove(w http.ResponseWriter, r *http.Reque
 	if req.NewName != nil && *req.NewName != "" {
 		name, err = filing.SanitizeFilename(*req.NewName)
 		if err != nil {
-			writeErr(w, http.StatusBadRequest, "INVALID_FILENAME", "新文件名不合法")
+			writeErr(w, http.StatusBadRequest, codeInvalidFilename, "新文件名不合法")
 			return
 		}
 	}
@@ -69,11 +69,11 @@ func (s *Server) PostApiV1AssetsAssetIdMove(w http.ResponseWriter, r *http.Reque
 	// 库/磁盘漂移的残留行）。命中任一 → 409。
 	targetAbs := filepath.Join(row.RootPath, filepath.FromSlash(newRel))
 	if _, err := os.Stat(targetAbs); err == nil {
-		writeErr(w, http.StatusConflict, "TARGET_EXISTS", "目标位置已有同名文件")
+		writeErr(w, http.StatusConflict, codeTargetExists, "目标位置已有同名文件")
 		return
 	}
 	if _, err := s.q.GetAssetByPath(r.Context(), db.GetAssetByPathParams{LibraryID: row.LibraryID, RelPath: newRel}); err == nil {
-		writeErr(w, http.StatusConflict, "TARGET_EXISTS", "目标位置已被占用")
+		writeErr(w, http.StatusConflict, codeTargetExists, "目标位置已被占用")
 		return
 	}
 	srcAbs := filepath.Join(row.RootPath, filepath.FromSlash(row.RelPath))

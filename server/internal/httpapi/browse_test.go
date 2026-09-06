@@ -110,6 +110,7 @@ func (f *fakeScanner) Scan(ctx context.Context, libraryID string) error {
 // testEnv 是一套完整测试环境（独立临时目录/库/服务）。
 type testEnv struct {
 	ts      *httptest.Server
+	s       *Server // 暴露给测试直调内部方法（如上传落盘子程的原子性用例）
 	token   string
 	q       *db.Queries
 	conn    *sql.DB
@@ -215,7 +216,7 @@ func newTestEnvRaw(t *testing.T) *testEnv {
 	ts := httptest.NewServer(apisrv.Handler())
 	t.Cleanup(ts.Close)
 
-	env := &testEnv{ts: ts, q: q, conn: conn, libID: lib.ID, clock: clock, media: media, dataDir: dataDir, cfg: cfg}
+	env := &testEnv{s: apisrv, ts: ts, q: q, conn: conn, libID: lib.ID, clock: clock, media: media, dataDir: dataDir, cfg: cfg}
 	return env
 }
 

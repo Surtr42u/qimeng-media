@@ -11,6 +11,46 @@ import (
 // 本包所有 JSON 解析一律先过它；大载荷端点的例外见 decodeJSONWithLimit。
 const maxJSONBody = 1 << 20
 
+// 协议错误码常量（writeErr 的 code 参数唯一合法来源）。
+// 同步责任：这些值与 api/openapi.yaml（components.Error.code 的 description
+// 与各端点 4xx 响应 description）双写联动——新增/改名错误码必须同步协议侧
+// 与三端消费点，反之亦然；字符串一致性靠此单一来源保证，禁止在调用点
+// 手写字面量（代码卫生约束 3）。
+const (
+	codeInternal           = "INTERNAL"
+	codeInvalidParam       = "INVALID_PARAM"
+	codeNotFound           = "NOT_FOUND"
+	codeUploadTooLarge     = "UPLOAD_TOO_LARGE"
+	codeUnauthorized       = "UNAUTHORIZED"
+	codePathEscape         = "PATH_ESCAPE"
+	codeInvalidFilename    = "INVALID_FILENAME"
+	codeInvalidBody        = "INVALID_BODY"
+	codeTargetExists       = "TARGET_EXISTS"
+	codeSysmonUnavailable  = "SYSMON_UNAVAILABLE"
+	codeSignatureInvalid   = "SIGNATURE_INVALID"
+	codeScannerUnavailable = "SCANNER_UNAVAILABLE"
+	codeInvalidExtension   = "INVALID_EXTENSION"
+	codeInvalidCursor      = "INVALID_CURSOR"
+	codeFileMissing        = "FILE_MISSING"
+	codeAlreadySetup       = "ALREADY_SETUP"
+	codeWeakPassword       = "WEAK_PASSWORD"
+	codeUploadDisabled     = "UPLOAD_DISABLED"
+	codeTooLarge           = "TOO_LARGE"
+	codeThumbnailFailed    = "THUMBNAIL_FAILED"
+	codeTagExists          = "TAG_EXISTS"
+	codeSignatureMissing   = "SIGNATURE_MISSING"
+	codeScanInProgress     = "SCAN_IN_PROGRESS"
+	codePathNotFound       = "PATH_NOT_FOUND"
+	codeMimeMismatch       = "MIME_MISMATCH"
+	codeLibraryNotFound    = "LIBRARY_NOT_FOUND"
+	codeInvalidMeta        = "INVALID_META"
+	codeDevDisabled        = "DEV_DISABLED"
+	codeDbUnreachable      = "DB_UNREACHABLE"
+	codeDataDirConflict    = "DATA_DIR_CONFLICT"
+	codeConflict           = "CONFLICT"
+	codeBadRequest         = "BAD_REQUEST"
+)
+
 // writeJSON 输出统一 JSON 响应。写失败只可能发生在客户端断开时，
 // 无补救动作；调用方不需要处理该错误。
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -32,7 +72,7 @@ func writeErr(w http.ResponseWriter, status int, code, message string) {
 // 查询/写库失败兜底统一走它。
 func (s *Server) internalErr(w http.ResponseWriter, what string, err error) {
 	s.logger.Error(what+"失败", "err", err)
-	writeErr(w, http.StatusInternalServerError, "INTERNAL", "内部错误")
+	writeErr(w, http.StatusInternalServerError, codeInternal, "内部错误")
 }
 
 // notImplemented 机制（M1 未接线端点统一 501 + NOT_IMPLEMENTED）已随
@@ -54,10 +94,10 @@ func decodeJSONWithLimit(w http.ResponseWriter, r *http.Request, v any, maxBytes
 	}
 	var maxErr *http.MaxBytesError
 	if errors.As(err, &maxErr) {
-		writeErr(w, http.StatusRequestEntityTooLarge, "TOO_LARGE",
+		writeErr(w, http.StatusRequestEntityTooLarge, codeTooLarge,
 			fmt.Sprintf("请求体超过 %d MB 上限", maxBytes>>20))
 		return false
 	}
-	writeErr(w, http.StatusBadRequest, "INVALID_BODY", "请求体不是合法 JSON")
+	writeErr(w, http.StatusBadRequest, codeInvalidBody, "请求体不是合法 JSON")
 	return false
 }

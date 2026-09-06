@@ -7,7 +7,9 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -21,6 +23,7 @@ import (
 	"qimeng-media/server/internal/authoring"
 	"qimeng-media/server/internal/config"
 	"qimeng-media/server/internal/events"
+	"qimeng-media/server/internal/filing"
 	"qimeng-media/server/internal/httpapi/gen"
 	"qimeng-media/server/internal/scanner"
 	"qimeng-media/server/internal/store"
@@ -31,9 +34,15 @@ import (
 // uploadBytes 发起流式上传，返回响应（调用方负责 close）。
 func (e *testEnv) uploadBytes(t *testing.T, libraryID, dir, filename string, body []byte) *http.Response {
 	t.Helper()
+	return e.uploadReader(t, libraryID, dir, filename, strings.NewReader(string(body)))
+}
+
+// uploadReader 发起流式上传（body 为任意 io.Reader，供断连/中断模拟）。
+func (e *testEnv) uploadReader(t *testing.T, libraryID, dir, filename string, body io.Reader) *http.Response {
+	t.Helper()
 	url := e.ts.URL + "/api/v1/assets/upload?libraryId=" + libraryID +
 		"&dir=" + dir + "&filename=" + filename
-	req, err := http.NewRequest(http.MethodPost, url, strings.NewReader(string(body)))
+	req, err := http.NewRequest(http.MethodPost, url, body)
 	if err != nil {
 		t.Fatalf("构造上传请求失败: %v", err)
 	}
@@ -106,6 +115,67 @@ func TestUploadConflictRename(t *testing.T) {
 	}
 	if d.RelPath == nil || *d.RelPath != "same (2).jpg" {
 		t.Errorf("冲突重命名 relPath = %v, 期望 same (2).jpg", d.RelPath)
+	}
+}
+
+// flakyReader 先交出全部 head 字节再报错，模拟上传中途客户端断连
+// （head ≥512B 保证走 io.Copy 的失败路径，而非"短文件整体完成"分支）。
+type flakyReader struct {
+	head []byte
+}
+
+func (r *flakyReader) Read(p []byte) (int, error) {
+	if len(r.head) > 0 {
+		n := copy(p, r.head)
+		r.head = r.head[n:]
+		return n, nil
+	}
+	return 0, errors.New("模拟客户端断连")
+}
+
+// TestUploadAtomicNoTempResidue：SECURITY 红线 4 落盘原子性——成功上传
+// 后目标目录无 .qm-upload-* 临时残留；流中途断连（同步直调落盘子程）时
+// 最终名不出现、临时文件被清理。
+func TestUploadAtomicNoTempResidue(t *testing.T) {
+	env := newTestEnv(t)
+	jpg := makeJPG(t, t.TempDir(), 64, 64)
+
+	resp := env.uploadBytes(t, env.libID, "", "ok.jpg", jpg)
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("正常上传期望 201，得到 %d", resp.StatusCode)
+	}
+	assertNoUploadTemp(t, env.media)
+
+	// 失败路径：合法 JPEG 头（≥512B，保证走 io.Copy 失败分支而非"短文件
+	// 整体完成"分支）过魔数校验后读流中断。
+	head := append(append([]byte{}, jpg...), make([]byte, filing.RecommendedHeadBytes)...)[:filing.RecommendedHeadBytes]
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/assets/upload", &flakyReader{head: head})
+	w := httptest.NewRecorder()
+	if env.s.receiveAndStore(w, req, gen.PostApiV1AssetsUploadParams{Filename: "boom.jpg"},
+		filepath.Join(env.media, "boom.jpg"), 1<<20) {
+		t.Fatal("中断上传 receiveAndStore 应返回 false")
+	}
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("断连上传期望 400，得到 %d", w.Code)
+	}
+	if _, err := os.Stat(filepath.Join(env.media, "boom.jpg")); !os.IsNotExist(err) {
+		t.Error("中断上传不应出现最终名文件（原子性：半成品只可能是 .tmp）")
+	}
+	assertNoUploadTemp(t, env.media)
+}
+
+// assertNoUploadTemp 断言目录内无上传临时文件残留（.qm-upload-* 前缀）。
+func assertNoUploadTemp(t *testing.T, dir string) {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("读目录 %s 失败: %v", dir, err)
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), uploadTmpPrefix) {
+			t.Errorf("目录 %s 存在上传临时残留 %s", dir, e.Name())
+		}
 	}
 }
 

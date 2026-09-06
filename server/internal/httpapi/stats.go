@@ -86,7 +86,7 @@ func (s *Server) GetApiV1StatsTrends(w http.ResponseWriter, r *http.Request, par
 			stats.RangeQuarter, stats.RangeYear, stats.RangeAll,
 			stats.Range7d, stats.Range90d: // 合法（openapi enum 与 stats.Range 双同步）
 		default:
-			writeErr(w, http.StatusBadRequest, "INVALID_PARAM", "range 取值不合法")
+			writeErr(w, http.StatusBadRequest, codeInvalidParam, "range 取值不合法")
 			return
 		}
 	}
