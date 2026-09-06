@@ -12,6 +12,10 @@
     <!-- 列数控件图标无障碍描述（QimengTitleRow；旧版标题行右侧 id=allColumnText 图标按钮） -->
     <string name="ui_columns_icon_desc">列数</string>
 
+    <!-- 返回钮无障碍描述（QimengTitleRow M4-2A-B5 收编返回钮；旧版实录 favorite.txt L6 /
+         history.txt L6 头部首元素 ImageView desc=返回 逐字） -->
+    <string name="ui_back_desc">返回</string>
+
     <!-- ===== 万能筛选面板（M4-2A-B3 QimengFilterSheet；分区标题与选项逐字照旧版实录
          filter_sheet.txt / filter_sheet_rest.txt；选项值大小写/全半角括号均照抄，勿「规范化」） ===== -->
     <string name="ui_filter_title">筛选</string>

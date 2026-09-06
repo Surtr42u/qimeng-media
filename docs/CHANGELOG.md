@@ -11,6 +11,19 @@
 
 ---
 
+## feat(app): M4-2A-B5 收藏/历史跟随+空态——两页悬浮化迁移+TitleRow 可选返回/列数+QimengFourDimSection 退役（2026-09-07 第一百零八笔）
+
+执行 AI：GLM-5.3-Flash（任务A 会话主代理调度；执行子代理实现+reviewer 对抗审查+P2 清偿复核通过）
+
+- **范围（任务A-UI对齐 §2 B5）**：收藏/历史两页随共用状态机获得 B2/B3 改动——头部重排镜像 AllScreen（QimengTitleRow+QimengChipRow+QimengFloatingPillPanel 悬浮药丸+网格 bottomContentPadding）；两 VM 补 onDimChipClicked（点已激活维=切展开/折叠，镜像相册页）；收藏空态双行逐字「还没有收藏\n在详情页点击收藏按钮添加」（旧仓库 FavoriteFragment L376）+COS 分支，文案迁各页 strings.xml（emptyText:String→emptyTextRes）。
+- **主会话四项裁定落地**：①QimengTitleRow 加可选 onBack（实录两页有返回钮）；②列数图标改可选（实录两页无列数图标，相册页不受影响）；③双指缩放两页不接（不在 B5 清单，B6 裁决项）；④历史清除按钮=协议缺口只记录（/api/v1/history 仅 GET；旧版 historyClearBtn 无端点支撑，2026-09-05 拍板 2B 砍交互，补齐须先改 openapi.yaml）。
+- **组件退役**：QimengFourDimSection 迁移后全仓零代码调用，删除（Dimens 相关注释清理）；QimengTitleRow 唯一旧调用方 AllScreen 具名传参零改动兼容。
+- **质量与审查**：reviewer round1（唯一 P2=history 空态测试缺失而 KDoc 虚称已锁）→ 补镜像用例清偿 → 复核确认（越界清单空、S1/S2 对照零新增红、证据链闭环含 dumpsys GMT 时区考据）。
+- **测试与证据**：FavoriteViewModelTest 6+HistoryViewModelTest 6（芯片四态语义/空态分支/既有并发族）；四命令全绿（app-lint 全量本轮恢复可用）；实机文本证据 B5-*（收藏空态双行逐字/芯片四击/历史页分隔线对齐「角色|类型」/相册页回归）；elem_compare S1/S2 红项与 B3-round2 §5 登记集合零新增。
+- **记录（B6 收口项）**：统计行 TitleRow 右端 vs 实录独立整行=B2 遗留版式差（豁免候选）；两页统计行数据源 totalForAllPill（HistoryPageResult 无 totalMatched，数值等价）；历史页 3 维 vs 实录 4 维（缺「作品」chip，M4-2 协议缺口现状）；收藏/历史页对照场景 harness 尚未建（S1-S8 外）；历史带数据态未实测（列表点击进详情导航属 M4-2 既有缺口）。
+
+---
+
 ## feat(app): M4-2A-B4 搜索页三态对齐——入口/建议/结果逐字复刻+删筛选芯片+返回族清词+列数内存态，harness 增 S6~S8（2026-09-07 第一百零七笔）
 
 执行 AI：GLM-5.3-Flash（任务A 会话主代理调度；执行子代理实现+reviewer 对抗审查两轮+修复轮+复审通过）

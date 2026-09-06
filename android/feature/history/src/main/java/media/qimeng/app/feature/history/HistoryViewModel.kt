@@ -24,6 +24,7 @@ import media.qimeng.app.core.model.MediaKind
 import media.qimeng.app.core.model.Zone
 import media.qimeng.app.core.model.zoneToHistoryParams
 import media.qimeng.app.core.model.withOtherBucketLast
+import media.qimeng.app.feature.history.R
 
 /** 历史页维度子集：分区/角色·作品/类型（作者行无协议参数支撑——/history 无 source/authorId，见交付报告） */
 private val HISTORY_DIMS = listOf(AlbumDim.PARTITION, AlbumDim.CHARACTER, AlbumDim.TYPE)
@@ -41,9 +42,16 @@ data class HistoryUiState(
     val isRefreshing: Boolean = false,
     val errorMessage: String? = null,
 ) {
-    /** 空态文案区分（规格书 §浏览历史） */
-    val emptyText: String
-        get() = if (filter.partition == Zone.COS) "没有COS浏览记录" else "没有浏览记录"
+    /**
+     * 空态文案资源（规格书 §浏览历史，M4-2 已对齐原样随迁 strings.xml——§5.1 文案全 strings）：
+     * COS 分区「没有COS浏览记录」/其余「没有浏览记录」。分支选择由单测锁定。
+     */
+    val emptyTextRes: Int
+        get() = if (filter.partition == Zone.COS) {
+            R.string.history_empty_cos
+        } else {
+            R.string.history_empty_default
+        }
 
     /** 历史页维度子集（无作者行） */
     val dims: List<AlbumDim> = HISTORY_DIMS
@@ -80,6 +88,16 @@ class HistoryViewModel @Inject constructor(
             activeDim = dim,
             filter = _uiState.value.filter.copy(expanded = true), // 切维度默认展开（B8）
         )
+    }
+
+    /**
+     * 维度芯片点击入口（M4-2A-B5：芯片行随头部重排由页面直接接线，交互语义收进状态机——
+     * 铁律 7「组件禁业务规则」，镜像 AlbumViewModel 同名入口；QimengFourDimSection 内嵌
+     * 同款规则的旧组件随本批退役）：
+     * 点已激活维=切换展开/折叠，点其他维=切维并默认展开（规格书 §药丸容器）。
+     */
+    fun onDimChipClicked(dim: AlbumDim) {
+        if (_uiState.value.activeDim == dim) toggleExpanded() else selectDim(dim)
     }
 
     fun toggleExpanded() {

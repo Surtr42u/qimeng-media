@@ -12,6 +12,7 @@ import org.junit.Test
 import media.qimeng.app.core.data.repository.AssetOrigUrlResolver
 import media.qimeng.app.core.data.repository.HistoryRepository
 import media.qimeng.app.core.data.repository.MediaRepository
+import media.qimeng.app.core.model.AlbumDim
 import media.qimeng.app.core.model.AssetPageResult
 import media.qimeng.app.core.model.AssetQuery
 import media.qimeng.app.core.model.FacetOption
@@ -28,6 +29,7 @@ import media.qimeng.app.core.model.RankingPeriod
 import media.qimeng.app.core.model.TagSummary
 import media.qimeng.app.core.model.Zone
 import media.qimeng.app.core.testing.MainDispatcherRule
+import media.qimeng.app.feature.history.R
 
 /**
  * 历史页 ViewModel 单测（2026-09-06 审查清偿）：与相册页同族的筛选代际防乱序——
@@ -238,5 +240,40 @@ class HistoryViewModelTest {
         advanceUntilIdle()
         assertEquals(listOf("a", "b"), viewModel.uiState.value.items.map { it.id })
         assertNull(viewModel.uiState.value.nextCursor)
+    }
+
+    @Test
+    fun `维度芯片点击 已激活维切换展开 其他维切维并展开`() = runTest(mainDispatcherRule.testDispatcher) {
+        val viewModel = viewModel(FakeHistoryRepository(), FakeMediaRepository())
+        advanceUntilIdle()
+
+        // 点已激活维（默认分区、默认展开）→ 折叠；再点 → 展开（镜像 AlbumViewModelTest 同名用例；
+        // 历史页维度子集=分区/角色·作品/类型，无作者行）
+        viewModel.onDimChipClicked(AlbumDim.PARTITION)
+        assertFalse(viewModel.uiState.value.filter.expanded)
+        assertEquals(AlbumDim.PARTITION, viewModel.uiState.value.activeDim)
+        viewModel.onDimChipClicked(AlbumDim.PARTITION)
+        assertTrue(viewModel.uiState.value.filter.expanded)
+
+        // 点其他维（角色·作品）→ 切维并默认展开（B8 拍板保持）
+        viewModel.collapsePills()
+        viewModel.onDimChipClicked(AlbumDim.CHARACTER)
+        assertEquals(AlbumDim.CHARACTER, viewModel.uiState.value.activeDim)
+        assertTrue(viewModel.uiState.value.filter.expanded)
+    }
+
+    @Test
+    fun `空态文案分支 - 默认选没有浏览记录资源 COS分区选COS资源`() = runTest(mainDispatcherRule.testDispatcher) {
+        val viewModel = viewModel(FakeHistoryRepository(), FakeMediaRepository())
+        advanceUntilIdle()
+
+        // 默认分区 → 「没有浏览记录」分支；文案本体由 strings.xml history_empty_default 逐字锁定，
+        // 本断言锁定分支选择（VM 只发资源 id 结构化语义，镜像 FavoriteViewModelTest 同名用例）
+        assertEquals(R.string.history_empty_default, viewModel.uiState.value.emptyTextRes)
+
+        // COS 分区 → 「没有COS浏览记录」分支（规格书 §浏览历史）
+        viewModel.selectPartition(Zone.COS)
+        advanceUntilIdle()
+        assertEquals(R.string.history_empty_cos, viewModel.uiState.value.emptyTextRes)
     }
 }
