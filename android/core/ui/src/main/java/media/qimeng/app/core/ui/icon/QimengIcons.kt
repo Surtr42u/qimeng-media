@@ -162,5 +162,11 @@ fun gridIconFor(columns: Int): ImageVector = when (columns.coerceIn(MIN_GRID_ICO
     else -> Grid5Icon
 }
 
+/** 万能筛选面板入口（Material Icons "filter_list" 三横不等长线，M4-2A-B3 标题行筛选按钮） */
+val FilterListIcon: ImageVector = materialIcon(
+    name = "QimengFilterList",
+    pathData = "M10 18h4v-2h-4v2zM3 6v2h18V6H3zm3 7h12v-2H6v2z",
+)
+
 private const val MIN_GRID_ICON_COLUMNS = 2
 private const val MAX_GRID_ICON_COLUMNS = 5

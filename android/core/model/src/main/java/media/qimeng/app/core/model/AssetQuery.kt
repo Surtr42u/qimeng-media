@@ -19,6 +19,7 @@ enum class SortOrder { ASC, DESC }
  * GET /assets 请求参数包（领域侧；各列表页筛选状态机的输出）。
  * 分区三态不在这里出现——由调用方按页面口径展开为 includeCos/cosOnly
  * （/assets 与 /history 的缺省方向不同，见 [Zone] 注释）。
+ * viewRange 以下字段为 M4-2A-B3 万能筛选面板新增（协议侧改动须同步此处与 :core:data SDK 映射）。
  */
 data class AssetQuery(
     val cursor: String? = null,
@@ -34,6 +35,22 @@ data class AssetQuery(
     val q: String? = null,
     val sort: AssetSort = AssetSort.DEFAULT,
     val order: SortOrder = SortOrder.DESC,
+    /** 观看次数档（协议 viewRange=CountRange；null=不传） */
+    val viewRange: PanelCountRange? = null,
+    /** 点击次数档（协议 playRange=CountRange；null=不传） */
+    val playRange: PanelCountRange? = null,
+    /** 文件大小档（协议 sizeRange=SizeRange；null=不传） */
+    val sizeRange: PanelSizeRange? = null,
+    /** 文件日期区间起/止（协议 date 类型；时间范围档展开，null=不传） */
+    val dateFrom: java.time.LocalDate? = null,
+    val dateTo: java.time.LocalDate? = null,
+    /** 按年份筛选起/止（integer；仅「按年份」档传，null=不传） */
+    val yearFrom: Int? = null,
+    val yearTo: Int? = null,
+    /** 选中标签 id 集（协议 tagIds；null/空=不传） */
+    val tagIds: List<String>? = null,
+    /** 标签匹配模式（协议 tagMode；仅随 tagIds 一起传） */
+    val tagMode: PanelTagMode? = null,
 )
 
 /** GET /assets/facets 请求参数包（partition 恒显式传——不依赖服务端缺省的隐式行为） */

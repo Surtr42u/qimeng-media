@@ -14,9 +14,15 @@ import media.qimeng.app.core.model.MediaAsset
 import media.qimeng.app.core.model.MediaKind
 import media.qimeng.app.core.model.NameSuggestion
 import media.qimeng.app.core.model.RankingPeriod
+import media.qimeng.app.core.model.PanelCountRange
+import media.qimeng.app.core.model.PanelSizeRange
+import media.qimeng.app.core.model.PanelTagMode
+import media.qimeng.app.core.model.TagSummary
 import media.qimeng.app.core.network.ServerConfigDataSource
 import media.qimeng.sdk.apis.DefaultApi
+import media.qimeng.sdk.infrastructure.ClientException
 import media.qimeng.sdk.models.ApiV1AuthorsAuthorIdFollowPutRequest
+import media.qimeng.sdk.models.ApiV1TagsPostRequest
 import okhttp3.OkHttpClient
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -68,6 +74,16 @@ class SdkMediaRepository @Inject constructor(
                 work = query.work,
                 favorite = query.favorite,
                 q = query.q,
+                // 万能筛选面板参数族（M4-2A-B3）：null=不传（默认档已在状态机归 null）
+                tagIds = query.tagIds?.takeIf { it.isNotEmpty() },
+                tagMode = query.tagMode?.toSdk(),
+                viewRange = query.viewRange?.toSdk(),
+                playRange = query.playRange?.toSdk(),
+                sizeRange = query.sizeRange?.toSdk(),
+                dateFrom = query.dateFrom,
+                dateTo = query.dateTo,
+                yearFrom = query.yearFrom,
+                yearTo = query.yearTo,
             )
         }
         val baseUrl = apiFactory.currentBaseUrl()
@@ -142,6 +158,35 @@ class SdkMediaRepository @Inject constructor(
         return detail.origUrl?.let { apiFactory.currentBaseUrl().trimEnd('/') + it }
     }
 
+    override suspend fun tags(): List<TagSummary> {
+        val api = apiFactory.create()
+        logRequest("GET /tags", "")
+        val tags = withContext(Dispatchers.IO) { api.apiV1TagsGet() }
+        return tags.map(SdkMappers::toTagSummary)
+    }
+
+    override suspend fun createTag(name: String): TagSummary {
+        val api = apiFactory.create()
+        logRequest("POST /tags", "name=$name")
+        val tag = try {
+            withContext(Dispatchers.IO) {
+                api.apiV1TagsPost(ApiV1TagsPostRequest(name = name))
+            }
+        } catch (e: ClientException) {
+            // 服务端对重名标签返回 409——领域化上抛，调用方给「已存在」专门文案而非笼统失败
+            // （修复轮 P2-1：候选预查重之外的兜底通道）
+            if (e.statusCode == HTTP_CONFLICT) throw TagNameConflictException(name)
+            throw e
+        }
+        return SdkMappers.toTagSummary(tag)
+    }
+
+    override suspend fun deleteTag(tagId: String) {
+        val api = apiFactory.create()
+        logRequest("DELETE /tags/$tagId", "")
+        withContext(Dispatchers.IO) { api.apiV1TagsTagIdDelete(tagId = tagId) }
+    }
+
     private fun logRequest(endpoint: String, params: String) {
         Log.d(LOG_TAG, "$endpoint $params")
     }
@@ -149,6 +194,9 @@ class SdkMediaRepository @Inject constructor(
     companion object {
         /** logcat 证据标签（grep 'QimengApi' 即得全部出网请求清单） */
         const val LOG_TAG = "QimengApi"
+
+        /** HTTP 409：POST /tags 重名（服务端唯一语义化 4xx，领域化为 [TagNameConflictException]） */
+        private const val HTTP_CONFLICT = 409
     }
 }
 
@@ -217,6 +265,16 @@ private fun AssetQuery.toLogString(): String = buildString {
     favorite?.let { append("favorite=$it ") }
     q?.let { append("q=$it ") }
     append("sort=${sort.name} order=${order.name}")
+    // 万能筛选面板参数（M4-2A-B3）：只记非缺省项，null=未传
+    viewRange?.let { append(" viewRange=$it") }
+    playRange?.let { append(" playRange=$it") }
+    sizeRange?.let { append(" sizeRange=$it") }
+    dateFrom?.let { append(" dateFrom=$it") }
+    dateTo?.let { append(" dateTo=$it") }
+    yearFrom?.let { append(" yearFrom=$it") }
+    yearTo?.let { append(" yearTo=$it") }
+    tagIds?.let { append(" tagIds=$it") }
+    tagMode?.let { append(" tagMode=$it") }
 }
 
 private fun FacetsQuery.toLogString(): String = buildString {

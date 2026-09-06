@@ -11,6 +11,19 @@
 
 ---
 
+## feat(app): M4-2A-B3 万能筛选面板——底部筛选面板全参数族+标签增删+实录逐字对齐，PROJECT_PLAN M4-2 条目补勾（2026-09-07 第一百零三笔）
+
+执行 AI：GLM-5.3-Flash（任务A 会话主代理调度；执行子代理实现+reviewer 对抗审查两轮+修复轮+复审）
+
+- **范围（任务A-UI对齐 §2 B3）**：万能筛选面板（ModalBottomSheet 全开 0.62 占屏）落地相册页——8 分区逐字实录（排序 7 单选/顺位/观看 5 档/点击 5 档/大小 4 档/时间 7 档/标签模式/标签流）+「重置/应用筛选」底部双钮；编辑态=草稿（打开拷贝已应用值/下滑关闭丢弃/应用写入+applyFilter 代际刷新链）。协议映射零协议改动：sort/order/viewRange/playRange/sizeRange/dateFrom/dateTo/yearFrom/yearTo/tagIds/tagMode 全参数族（AssetQuery+AlbumFilterState 扩展，SdkMappers 枚举镜像，年份交叉归一 start=min）；时间档=滚动窗口口径（今天 00:00 / 本周 7 天 / 本月 30 天 / 近三月 90 天 / 本年 365 天，reviewer 亲核旧仓库 MediaBrowserLogic L488-491 证实，非自然周月年）；标签流多选+长按删（确认框+级联警示，恢复旧版 L239-250 行为）+「+ 添加标签」（预查重拦一道+服务端 409 兜底一道，反馈「标签「N」已存在」逐字旧版文案），走 /tags GET/POST/DELETE 三方法（MediaRepository 标签族，接口默认实现为避开任务B 在改的 DataModule，round1 P3 记录任务B 合并后收编）。
+- **入口裁定（落档 B3-round2 §7）**：筛选入口只在相册页标题行（QimengTitleRow 可选 onFilterClick）——旧版实录仅全部页有 allFilterButton（favorite/history 实录无），/history 协议亦无筛选参数族；任务书「相册/收藏/历史」三处入口与实录冲突处按任务书 §3 三重优先级（实录最高）裁实录。
+- **交互语义对抗审查揪清（round1 P1）**：「重置」从「草稿回默认不关面板」纠正为旧版三合一（回默认+立即应用+关面板，旧仓库 MediaFilterSheet L266-269 口径）+用例反转；年份初值 2020..当前年（旧版 MediaFilterState 缺省）；「按年份」双下拉（Compose 官方 API，零新依赖）。
+- **审查链**：round1（1 P1+5 P2+7 P3）→ 修复轮全清偿（含 compare_scenes.py S1-S4「筛选图标」定位 text→desc 假红修正、N1 测试假锁修正：conflictNames 注册先于 addTag+前置 TagExists 断言）→ round2 复审全项真实清偿、越界清单空；主会话裁定 S1-S4 首次启用的截图像素比对 69 条视觉红=旧 View vs 新 Compose 环境级渲染差，B6 豁免清单只免视觉列不免结构与文案列（B3-round2 §5/§7）。
+- **测试与证据**：新增 AlbumPanelFilterTest 19 条（映射/滚动窗口日期算术/年份往返）+AlbumFilterPanelTest 11 条（草稿拷贝/应用刷新链+参数/重置三合一/关闭丢弃/预查重/409 兜底/删已选标签移除/反馈清除真锁）；模块级全绿（全量 make app-test 时点受任务B detail 中间态影响无法复现全仓数，round2 §2 已注明归属）；实机文本证据（headless+18461，禁截图）：面板 8 分区逐字、应用「未观看+本周」统计行 22→17、重置三合一、重名拦截零请求、删除确认框逐字、年份 2020/2026，存 `%TEMP%\qimeng-m42a-evidence\` B3fix- 前缀；elem_compare 全量 S5 面板结构/文案双端全绿、S1-S4 假红消除，余红=视觉裁片差（B6 豁免清单）+Tab-全部（已豁免）。
+- **文档同步**：PROJECT_PLAN M4-2「登录/首页/列表/筛选/搜索」条目随本笔勾选（万能筛选面板=M4-2.1 缺口补齐）；HANDOVER_APP M4-2A 段 B3 勾选；任务A-UI对齐 §0 进度表同步（仓库外）。
+
+---
+
 ## feat(app): M4-3a 详情页骨架与排版——路由+竖屏堆叠排版全链+批次导航逻辑层+ImageStage/VideoStage 文件缝（2026-09-07 第一百零二笔）
 
 执行 AI：GLM-5.3-Flash（B 会话主代理调度；前会话半成品续作+三路只读调研子代理并行消化规格+执行/审查子代理多轮）

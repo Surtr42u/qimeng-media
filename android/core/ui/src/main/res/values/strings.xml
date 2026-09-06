@@ -11,4 +11,81 @@
 
     <!-- 列数控件图标无障碍描述（QimengTitleRow；旧版标题行右侧 id=allColumnText 图标按钮） -->
     <string name="ui_columns_icon_desc">列数</string>
+
+    <!-- ===== 万能筛选面板（M4-2A-B3 QimengFilterSheet；分区标题与选项逐字照旧版实录
+         filter_sheet.txt / filter_sheet_rest.txt；选项值大小写/全半角括号均照抄，勿「规范化」） ===== -->
+    <string name="ui_filter_title">筛选</string>
+    <string name="ui_filter_icon_desc">筛选</string>
+
+    <!-- 排序方式（7 单选） -->
+    <string name="ui_filter_sort_section">排序方式</string>
+    <string name="ui_filter_sort_default">默认</string>
+    <string name="ui_filter_sort_file_date">文件日期</string>
+    <string name="ui_filter_sort_added_date">添加日期</string>
+    <string name="ui_filter_sort_view_count">观看次数</string>
+    <string name="ui_filter_sort_play_count">点击次数</string>
+    <string name="ui_filter_sort_file_size">文件大小</string>
+    <string name="ui_filter_sort_name">名字</string>
+
+    <!-- 顺位（2 单选） -->
+    <string name="ui_filter_order_section">顺位</string>
+    <string name="ui_filter_order_desc">降序</string>
+    <string name="ui_filter_order_asc">升序</string>
+
+    <!-- 观看次数 / 点击次数（各 5 单选；两档共用区间文案） -->
+    <string name="ui_filter_view_section">观看次数</string>
+    <string name="ui_filter_play_section">点击次数</string>
+    <string name="ui_filter_range_all">全部</string>
+    <string name="ui_filter_range_none_viewed">未观看</string>
+    <string name="ui_filter_range_none_played">未点击</string>
+    <string name="ui_filter_range_low">1-5次</string>
+    <string name="ui_filter_range_mid">5-20次</string>
+    <string name="ui_filter_range_high">&gt;20次</string>
+
+    <!-- 文件大小（5 单选；分区标题「文件大小」以旧仓库 MediaFilterSheet.kt 实际字符串为准
+         ——实录 filter_sheet_rest.txt 该标题被滚动截断） -->
+    <string name="ui_filter_size_section">文件大小</string>
+    <string name="ui_filter_size_lt_1m">&lt;1MB</string>
+    <string name="ui_filter_size_m1_10">1-10MB</string>
+    <string name="ui_filter_size_m10_50">10-50MB</string>
+    <string name="ui_filter_size_gt_50m">&gt;50MB</string>
+
+    <!-- 时间范围（7 单选）+ 按年份起止选择 -->
+    <string name="ui_filter_date_section">时间范围</string>
+    <string name="ui_filter_date_today">今天</string>
+    <string name="ui_filter_date_week">本周</string>
+    <string name="ui_filter_date_month">本月</string>
+    <string name="ui_filter_date_quarter">近三月</string>
+    <string name="ui_filter_date_year">本年</string>
+    <string name="ui_filter_date_year_range">按年份</string>
+    <string name="ui_filter_year_dash">—</string>
+
+    <!-- 标签模式（2 单选；全角括号照实录） -->
+    <string name="ui_filter_tag_mode_section">标签模式</string>
+    <string name="ui_filter_tag_mode_fuzzy">模糊（含任一）</string>
+    <string name="ui_filter_tag_mode_exact">精确（含全部）</string>
+
+    <!-- 标签流（多选/长按删除/添加对话框） -->
+    <string name="ui_filter_tags_section">标签</string>
+    <string name="ui_filter_add_tag">+ 添加标签</string>
+    <string name="ui_filter_add_tag_dialog_title">添加标签</string>
+    <string name="ui_filter_add_tag_input_hint">标签名称</string>
+    <string name="ui_filter_add_tag_confirm">添加</string>
+    <string name="ui_filter_add_tag_cancel">取消</string>
+
+    <!-- 底部固定按钮（实录逐字：左「重置」右「应用筛选」） -->
+    <string name="ui_filter_reset">重置</string>
+    <string name="ui_filter_apply">应用筛选</string>
+
+    <!-- 面板内操作反馈（修复轮 P2-1 分流：不再冒充「加载失败」；重名文案逐字照旧版 v1.16
+         Toast——旧仓库 MediaFilterSheet.kt L199「标签「$name」已存在」） -->
+    <string name="ui_filter_tag_exists">标签「%1$s」已存在</string>
+    <string name="ui_filter_op_failed">操作失败，请重试</string>
+
+    <!-- 长按删除标签确认对话框（修复轮 P2-2b 恢复旧版 v1.16 口径：文案逐字照旧仓库
+         MediaFilterSheet.kt L239-250，正文含级联解除文件关联警示） -->
+    <string name="ui_filter_delete_tag_dialog_title">删除标签</string>
+    <string name="ui_filter_delete_tag_message">确定删除标签「%1$s」？删除后所有文件的该标签关联将一并移除。</string>
+    <string name="ui_filter_delete_tag_confirm">删除</string>
+    <string name="ui_filter_delete_tag_cancel">取消</string>
 </resources>
