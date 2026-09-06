@@ -13,6 +13,7 @@ import org.junit.Test
 import media.qimeng.app.core.data.repository.AssetOrigUrlResolver
 import media.qimeng.app.core.data.repository.GridPrefsRepository
 import media.qimeng.app.core.data.repository.MediaRepository
+import media.qimeng.app.core.model.AlbumDim
 import media.qimeng.app.core.model.AssetPageResult
 import media.qimeng.app.core.model.AssetQuery
 import media.qimeng.app.core.model.FacetOption
@@ -120,9 +121,12 @@ class AlbumViewModelTest {
         types = emptyList(),
     )
 
-    private fun viewModel(repo: FakeMediaRepository): AlbumViewModel = AlbumViewModel(
+    private fun viewModel(
+        repo: FakeMediaRepository,
+        prefs: FakeGridPrefs = FakeGridPrefs(),
+    ): AlbumViewModel = AlbumViewModel(
         mediaRepository = repo,
-        gridPrefs = FakeGridPrefs(),
+        gridPrefs = prefs,
         origUrlResolver = object : AssetOrigUrlResolver {
             override suspend fun origUrl(assetId: String): String? = null
         },
@@ -228,5 +232,60 @@ class AlbumViewModelTest {
         advanceUntilIdle()
         assertEquals(listOf("a", "b"), viewModel.uiState.value.items.map { it.id })
         assertNull(viewModel.uiState.value.nextCursor)
+    }
+
+    @Test
+    fun `双指缩放列数越界 clamp 2 到 5 手势结束持久化一次`() = runTest(mainDispatcherRule.testDispatcher) {
+        val repo = FakeMediaRepository()
+        val prefs = FakeGridPrefs() // 初始 3 列
+        val viewModel = viewModel(repo, prefs)
+        advanceUntilIdle()
+
+        // 放大方向越界：clamp 到上限 5
+        viewModel.adjustColumnsLive(+99)
+        assertEquals(5, viewModel.pinchColumns.value)
+        viewModel.commitPinchColumns()
+        advanceUntilIdle()
+        assertEquals(5, prefs.albumColumns.value)
+        assertNull(viewModel.pinchColumns.value) // 手势结束即复位，展示回落到持久化值
+
+        // 缩小方向越界：clamp 到下限 2
+        viewModel.adjustColumnsLive(-99)
+        assertEquals(2, viewModel.pinchColumns.value)
+        viewModel.commitPinchColumns()
+        advanceUntilIdle()
+        assertEquals(2, prefs.albumColumns.value)
+    }
+
+    @Test
+    fun `无步进手势结束不落盘`() = runTest(mainDispatcherRule.testDispatcher) {
+        val prefs = FakeGridPrefs()
+        val viewModel = viewModel(FakeMediaRepository(), prefs)
+        advanceUntilIdle()
+
+        // 手势结束但没有任何步进（pinchColumns 为 null）：不触发仓库写
+        viewModel.commitPinchColumns()
+        advanceUntilIdle()
+        assertEquals(3, prefs.albumColumns.value)
+        assertNull(viewModel.pinchColumns.value)
+    }
+
+    @Test
+    fun `维度芯片点击 已激活维切换展开 其他维切维并展开`() = runTest(mainDispatcherRule.testDispatcher) {
+        val viewModel = viewModel(FakeMediaRepository())
+        advanceUntilIdle()
+
+        // 点已激活维（默认分区、默认展开）→ 折叠；再点 → 展开
+        viewModel.onDimChipClicked(AlbumDim.PARTITION)
+        assertFalse(viewModel.uiState.value.filter.expanded)
+        assertEquals(AlbumDim.PARTITION, viewModel.uiState.value.activeDim)
+        viewModel.onDimChipClicked(AlbumDim.PARTITION)
+        assertTrue(viewModel.uiState.value.filter.expanded)
+
+        // 点其他维 → 切维并默认展开（B8 拍板保持）
+        viewModel.collapsePills()
+        viewModel.onDimChipClicked(AlbumDim.TYPE)
+        assertEquals(AlbumDim.TYPE, viewModel.uiState.value.activeDim)
+        assertTrue(viewModel.uiState.value.filter.expanded)
     }
 }

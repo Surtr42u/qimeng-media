@@ -1,8 +1,10 @@
 package media.qimeng.app.core.ui.component
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -30,32 +32,31 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import media.qimeng.app.core.model.GridSection
 import media.qimeng.app.core.model.MediaAsset
 import media.qimeng.app.core.model.MediaKind
+import media.qimeng.app.core.ui.theme.QimengDimens
 
 /** 距底预加载阈值（LEGACY §H：距底 ≤6 项提前加载；数值与 RecommendPaging.PRELOAD_DISTANCE 同语义，
  *  但网格组件不依赖具体业务模块，此处独立成 UI 常量） */
 private const val GRID_PRELOAD_DISTANCE = 6
 
-/** 网格横向间距 */
-private val GRID_SPACING = 8.dp
-
-/** 卡片圆角（旧版 §UI 约束：卡片 16dp） */
-private val CARD_CORNER_RADIUS = 16.dp
-
 /** 视频类型（时长角标仅视频渲染）——与领域 MediaKind.VIDEO 对应的本地引用 */
 private val DURATION_BADGE_TYPES = setOf(MediaKind.VIDEO)
 
 /**
- * 共享媒体网格：日期分组段组头（跨全列）+ 资产卡片 + 距底预载回调 + 列数可调。
+ * 共享媒体网格：分组段组头（跨全列）+ 资产卡片 + 距底预载回调 + 列数可调。
  * 相册/收藏/历史/搜索/首页 COS 流共用；首页推荐流的分批展示由调用方把已揭示条目
  * 组成单个无组头段（label 空串段不渲染组头）传入。
  *
  * @param sections 分组段；组内保持列表原序
  * @param loadThumbnail 字节加载器（透传给 [QimengThumbnail]）
  * @param onNearBottom 可见末项距列表尾 ≤[GRID_PRELOAD_DISTANCE] 项时回调（去重由调用方负责）
+ * @param bottomContentPadding 列表底部预留（clipToPadding=false 语义）——默认与网格间距同档；
+ *   相册页传 [QimengDimens.ListBottomContentPadding]（180dp，防悬浮药丸面板遮挡末行，
+ *   旧版 fragment_all_files.xml L149）
  */
 @Composable
 fun QimengMediaGrid(
@@ -64,6 +65,7 @@ fun QimengMediaGrid(
     animatedUrlResolver: suspend (String) -> String?,
     modifier: Modifier = Modifier,
     listState: LazyGridState = rememberLazyGridState(),
+    bottomContentPadding: Dp = QimengDimens.SpaceM,
     onAssetClick: (MediaAsset) -> Unit = {},
     onNearBottom: () -> Unit = {},
 ) {
@@ -95,9 +97,14 @@ fun QimengMediaGrid(
         state = listState,
         columns = GridCells.Fixed(columns),
         modifier = modifier.fillMaxSize(),
-        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(GRID_SPACING),
-        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(GRID_SPACING),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(GRID_SPACING),
+        horizontalArrangement = Arrangement.spacedBy(QimengDimens.SpaceM),
+        verticalArrangement = Arrangement.spacedBy(QimengDimens.SpaceM),
+        contentPadding = PaddingValues(
+            start = QimengDimens.SpaceM,
+            top = QimengDimens.SpaceM,
+            end = QimengDimens.SpaceM,
+            bottom = bottomContentPadding,
+        ),
     ) {
         items(cells, key = { cell -> cell.asset?.id ?: "header:${cell.header}" }) { cell ->
             val header = cell.header
@@ -108,7 +115,7 @@ fun QimengMediaGrid(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 4.dp),
+                        .padding(top = QimengDimens.SpaceXS),
                 )
             } else {
                 val asset = cell.asset
@@ -144,9 +151,9 @@ private fun AssetCard(
     }
     Surface(
         modifier = modifier.clickable(onClick = onClick),
-        shape = RoundedCornerShape(CARD_CORNER_RADIUS),
+        shape = RoundedCornerShape(QimengDimens.CardCornerRadius),
         color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 1.dp,
+        tonalElevation = QimengDimens.CardTonalElevation,
     ) {
         Column {
             Box(modifier = Modifier.fillMaxWidth().thumbnailAspectRatio()) {
@@ -164,9 +171,9 @@ private fun AssetCard(
                             color = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier
                                 .align(Alignment.BottomEnd)
-                                .padding(4.dp)
-                                .clip(RoundedCornerShape(4.dp))
-                                .padding(2.dp),
+                                .padding(QimengDimens.SpaceXS)
+                                .clip(RoundedCornerShape(QimengDimens.BadgeCornerRadius))
+                                .padding(QimengDimens.SpaceXXS),
                         )
                     }
                 }
@@ -176,9 +183,15 @@ private fun AssetCard(
                 style = MaterialTheme.typography.bodySmall,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                modifier = Modifier.padding(horizontal = QimengDimens.SpaceS, vertical = QimengDimens.SpaceXS),
             )
-            Row(modifier = Modifier.padding(start = 6.dp, end = 6.dp, bottom = 6.dp)) {
+            Row(
+                modifier = Modifier.padding(
+                    start = QimengDimens.SpaceS,
+                    end = QimengDimens.SpaceS,
+                    bottom = QimengDimens.SpaceS,
+                ),
+            ) {
                 val meta = asset.authorNames.firstOrNull() ?: asset.source
                 if (meta != null) {
                     Text(
@@ -189,7 +202,7 @@ private fun AssetCard(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                Spacer(modifier = Modifier.width(4.dp))
+                Spacer(modifier = Modifier.width(QimengDimens.SpaceXS))
             }
         }
     }

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 共享组件文案。资源名 ui_ 前缀避免合并冲突（feature 模块按各自 home_/all_ 等前缀约定）。 -->
+
+    <!-- 药丸容器「收起 ▲」固定文案（旧版 §药丸容器 收起药丸语言，实录 all_partition_pills.txt 逐字） -->
+    <string name="ui_pill_collapse">收起 ▲</string>
+
+    <!-- 库列表页头统计行模板（QimengTitleRow；旧版实录 all_partition.txt 逐字「6324 文件 · 189.6 GB」
+         的「N 文件」段；P9-1 裁决：新版只做「N 文件」用 totalMatched，GB 段协议无聚合数据不做） -->
+    <string name="ui_stat_files">%1$d 文件</string>
+
+    <!-- 列数控件图标无障碍描述（QimengTitleRow；旧版标题行右侧 id=allColumnText 图标按钮） -->
+    <string name="ui_columns_icon_desc">列数</string>
+</resources>

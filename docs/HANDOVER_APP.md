@@ -2,7 +2,7 @@
 
 > 写给执行 M4 的 AI（任何模型/工具）。人类用户无编程基础，全部代码由 AI 生成。
 > 主交接文档（后端/进度/约定）以 `docs/HANDOVER.md` 为准，本文档只覆盖 M4 Android 路线。
-> 最后更新：2026-09-06 晚（**登录免密通道落地，CHANGELOG 第九十六笔**：登录页密码留空即走 `POST /auth/dev-login`——仅服务端 `QIMENG_AUTH_DEV_MODE=1` 时可用（`启动服务端.bat` 与对照环境 18461 已开），未开启时提示改用密码；模拟器/测试验收不再需要输密码；**同日新增独立批次 M4-2A（UI 对齐批）任务书=仓库外《QimengNAS/派发任务书-20260906-UI对齐.md》**，与 M4-3 并行、文件集互斥（相册/收藏/历史/搜索+core/ui 既有组件 vs feature/detail+home），M4-3 开工前先读其并行边界；对照环境《QimengNAS/ui-compare-harness/》双 App 截图对照就绪）。前次：2026-09-06 下午（昨日审查清偿·app 卷：筛选请求代际防乱序从 Album 一处补齐到同族四 VM（Favorite/History/Search/Home）+ 各配行为测试；token 明文 DataStore 补取舍注释；「QimengCache」TAG 收敛/HomeTab 中文硬编码/refreshFollowed 静默失败/上传 401 终局注释等卫生项，详见 §2 与 CHANGELOG 第九十五笔）。2026-09-06（A-S1 构建接线收敛：模块公共 Gradle 配置抽入 build-logic convention 插件，见 §1 末行）。2026-09-05 夜2（用户三处规格变更落档：①导航 5 Tab→4 Tab——「全部」更名「相册」（route all 不变只改 label）、原「相册」Tab 删除，M4-2 批落地；②M4-3 排版基准 = Web 现版 B站式双栏移动端移植（§3 M4-3「排版基准」块）；③验收证据协议改无截图——一律文本证据（§4 通用约束 7）。集群蓝本 = 仓库外《QimengNAS/派发任务书-20260905夜2.md》）。2026-09-04（M4 二次改道定稿：用户拍板「先进方案优先」走 Compose 重建（ADR-0014，废弃同日的照搬路线 0013）；架构标准对齐 Google Now in Android 多模块范式；单机形态（ADR-0015）预留接口）
+> 最后更新：2026-09-07（仓库外任务文档精简重组：两份派发任务书+开工指引合并为《QimengNAS/任务A-UI对齐.md》（M4-2A）与《QimengNAS/任务B-详情页.md》（M4-3，含 3a~3d 子批拆分），旧文件已删除、本文件引用同步）。前次：2026-09-06 晚（**登录免密通道落地，CHANGELOG 第九十六笔**：登录页密码留空即走 `POST /auth/dev-login`——仅服务端 `QIMENG_AUTH_DEV_MODE=1` 时可用（`启动服务端.bat` 与对照环境 18461 已开），未开启时提示改用密码；模拟器/测试验收不再需要输密码；**同日新增独立批次 M4-2A（UI 对齐批）任务书=仓库外《QimengNAS/任务A-UI对齐.md》（2026-09-07 重组并入，原派发任务书-20260906 已删除）**，与 M4-3 并行、文件集互斥（相册/收藏/历史/搜索+core/ui 既有组件 vs feature/detail+home），M4-3 开工前先读其并行边界；对照环境《QimengNAS/ui-compare-harness/》双 App 截图对照就绪）。前次：2026-09-06 下午（昨日审查清偿·app 卷：筛选请求代际防乱序从 Album 一处补齐到同族四 VM（Favorite/History/Search/Home）+ 各配行为测试；token 明文 DataStore 补取舍注释；「QimengCache」TAG 收敛/HomeTab 中文硬编码/refreshFollowed 静默失败/上传 401 终局注释等卫生项，详见 §2 与 CHANGELOG 第九十五笔）。2026-09-06（A-S1 构建接线收敛：模块公共 Gradle 配置抽入 build-logic convention 插件，见 §1 末行）。2026-09-05 夜2（用户三处规格变更落档：①导航 5 Tab→4 Tab——「全部」更名「相册」（route all 不变只改 label）、原「相册」Tab 删除，M4-2 批落地；②M4-3 排版基准 = Web 现版 B站式双栏移动端移植（§3 M4-3「排版基准」块）；③验收证据协议改无截图——一律文本证据（§4 通用约束 7）。集群蓝本 = 仓库外《QimengNAS/派发任务书-20260905夜2.md》）。2026-09-04（M4 二次改道定稿：用户拍板「先进方案优先」走 Compose 重建（ADR-0014，废弃同日的照搬路线 0013）；架构标准对齐 Google Now in Android 多模块范式；单机形态（ADR-0015）预留接口）
 
 ## 1. 路线定位（2026-09-04 二次改道后）
 
@@ -32,6 +32,8 @@
 **范围**：旧 UI 全部页面族的交互语义（含统计/我的/作者页）；单机生态页（数据备份/数据管理/扫描）无对应服务端能力，不做。
 
 **2026-09-06 审查清偿·app 卷（CHANGELOG 第九十五笔）**：P1「筛选请求代际防乱序」从 Album 一处补齐到同族四 VM（Favorite/History/Search/Home——Home 为排行榜切周期），各配行为测试（14 条，CompletableDeferred 闸门时序构造，分页/刷新防重语义同锁）；卫生项五处——refreshFollowed 读失败不再静默清列表（入 writeError 反馈家族）、HomeTab 文案迁 feature/home strings.xml、「QimengCache」TAG 收敛文件级单源、token 明文 DataStore 取舍注释、上传 4xx/401 终局注释。
+
+**M4-2A UI 对齐批（进行中，2026-09-06 夜起）**：外部界面完全复刻旧版（规格=《QimengNAS/任务A-UI对齐.md》，批 B0~B6）。进度：B0 对照工具+基线报告 ✅（`QimengNAS/ui-compare-harness/`，测试数据已按用户明令全虚构化；2026-09-07 修复 do_tap 空 regex 缺陷并按 P9 校准签名，见 CHANGELOG 第九十八笔）、B1 主题灰系基座 ✅（c9828b5，CHANGELOG 第九十七笔）、B2 相册四模式 ✅（CHANGELOG 第九十八笔，审查档 `QimengNAS/m42a-review/B2-round1.md`：0 P1 终态——初审 4 P2 + elem_compare 重跑揪出的 authorGroupKey 真实载荷 P1 与切维保留滚动两缺陷均已清偿复验）、B3~B6 未开始。接手者先读《任务A-UI对齐.md》§0 进度表 + `m42a-review/` 审查档。
 
 ## 3. 各批次任务书
 

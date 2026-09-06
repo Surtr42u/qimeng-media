@@ -1,13 +1,15 @@
 package media.qimeng.app.core.model
 
 /**
- * 四维筛选的维度行键（芯片栏顺序：分区/作者/角色·作品/类型——Web 相册页同款）。
- * 「角色·作品」= 常规角色 ∪ COS 作品合并一行（kind 分派）。
+ * 四维筛选的维度行键（芯片栏顺序：分区/作品/角色/类型）。
+ * 标签 = 旧版「全部」页芯片栏逐字口径（旧版实录 all_partition.txt「分区 (2)/作品 (61)/
+ * 角色 (294)/类型 (3)」，M4-2A-B2 拍板：完全复刻优先于 Web 相册页的「作者/角色·作品」字样）。
+ * 「角色」行 = 常规角色 ∪ COS 作品合并一行（kind 分派）。
  */
 enum class AlbumDim(val label: String) {
     PARTITION("分区"),
-    AUTHOR("作者"),
-    CHARACTER("角色·作品"),
+    AUTHOR("作品"),
+    CHARACTER("角色"),
     TYPE("类型"),
 }
 

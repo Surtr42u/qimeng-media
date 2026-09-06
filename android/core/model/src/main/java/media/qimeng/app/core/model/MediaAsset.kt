@@ -34,4 +34,9 @@ data class MediaAsset(
     val playCount: Int?,
     /** 浏览时间 epoch 毫秒（仅历史页条目有值，其余来源为 null） */
     val lastViewedAtMs: Long?,
+    /**
+     * COS 作品子目录名（协议 AssetSummary.cosWork；仅 COS 库扫描赋值，DOMAIN_RULES §6）。
+     * 相册页角色模式分组键（M4-2A-B2）；非空即 COS 作品文件，null=常规资产或无作品子目录的 COS 资产。
+     */
+    val cosWork: String? = null,
 )
