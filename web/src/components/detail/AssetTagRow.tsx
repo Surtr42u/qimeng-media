@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Dialog } from 'radix-ui'
 import { toast } from 'sonner'
 import type { Tag } from '@/api/generated'
+import { Pill } from '@/components/ui/pill'
 import { useReplaceAssetTags } from '@/hooks/use-assets'
 import { useCreateTag, useTags } from '@/hooks/use-tags'
 
@@ -84,13 +85,13 @@ function TagDialog({ assetId, tags, onClose }: { assetId: string; tags: Tag[]; o
           </Dialog.Description>
           <div className="detail-dialog-body">
             {(pool ?? []).map((t) => (
-              <button
+              <Pill
                 key={t.id ?? t.name}
-                className={`pill${t.id && selected.includes(t.id) ? ' active' : ''}`}
+                active={Boolean(t.id && selected.includes(t.id))}
                 onClick={() => t.id && toggle(t.id)}
               >
                 {t.name}
-              </button>
+              </Pill>
             ))}
             {(pool ?? []).length === 0 ? <p className="grid-empty">暂无标签</p> : null}
           </div>
