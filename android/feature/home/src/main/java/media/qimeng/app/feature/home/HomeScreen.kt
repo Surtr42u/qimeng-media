@@ -33,6 +33,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import media.qimeng.app.core.model.GridSection
+import media.qimeng.app.core.model.MediaAsset
 import media.qimeng.app.core.model.RankingPeriod
 import media.qimeng.app.core.ui.component.QimengChipRow
 import media.qimeng.app.core.ui.component.QimengEmptyState
@@ -40,6 +41,7 @@ import media.qimeng.app.core.ui.component.QimengMediaGrid
 import media.qimeng.app.core.ui.component.QimengPill
 import media.qimeng.app.core.ui.component.QimengPullToRefresh
 import media.qimeng.app.core.ui.component.TabScrollController
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 
 /** 首页标题（GUIDE_UI §首页 顶行） */
@@ -63,6 +65,7 @@ private fun HomeTab.tabLabelRes(): Int = when (this) {
 @Composable
 fun HomeScreen(
     onOpenSearch: () -> Unit,
+    onOpenAsset: (assetId: String) -> Unit,
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -129,6 +132,11 @@ fun HomeScreen(
             state = pagerState,
             modifier = Modifier.weight(1f),
         ) { page ->
+            // 网格点击统一走：先写批次上下文（详情页 i/N 序号+3b 滑动切换数据链），再交壳层导航
+            val onAssetClick: (MediaAsset) -> Unit = { asset ->
+                viewModel.enterDetail(asset.id)
+                onOpenAsset(asset.id)
+            }
             when (HomeTab.entries[page]) {
                 HomeTab.RECOMMEND -> RecommendPage(
                     state = state.recommend,
@@ -137,6 +145,7 @@ fun HomeScreen(
                     animatedUrlResolver = animatedUrlResolver,
                     onRefresh = viewModel::refresh,
                     onNearBottom = viewModel::onNearBottom,
+                    onAssetClick = onAssetClick,
                 )
                 HomeTab.COS -> CosPage(
                     state = state.cos,
@@ -145,6 +154,7 @@ fun HomeScreen(
                     animatedUrlResolver = animatedUrlResolver,
                     onRefresh = viewModel::refresh,
                     onNearBottom = viewModel::onNearBottom,
+                    onAssetClick = onAssetClick,
                 )
                 HomeTab.RANK -> RankPage(
                     items = state.rank.items,
@@ -152,6 +162,7 @@ fun HomeScreen(
                     listState = rankListState,
                     animatedUrlResolver = animatedUrlResolver,
                     onRefresh = viewModel::refresh,
+                    onAssetClick = onAssetClick,
                 )
             }
         }
@@ -206,10 +217,11 @@ private fun HomeTopRow(
 private fun RecommendPage(
     state: RecommendState,
     columns: Int,
-    listState: androidx.compose.foundation.lazy.grid.LazyGridState,
+    listState: LazyGridState,
     animatedUrlResolver: suspend (String) -> String?,
     onRefresh: () -> Unit,
     onNearBottom: () -> Unit,
+    onAssetClick: (MediaAsset) -> Unit,
 ) {
     QimengPullToRefresh(isRefreshing = state.isRefreshing, onRefresh = onRefresh) {
         if (state.pulled.isEmpty()) {
@@ -224,6 +236,7 @@ private fun RecommendPage(
             animatedUrlResolver = animatedUrlResolver,
             listState = listState,
             onNearBottom = onNearBottom,
+            onAssetClick = onAssetClick,
         )
     }
 }
@@ -233,10 +246,11 @@ private fun RecommendPage(
 private fun CosPage(
     state: CosState,
     columns: Int,
-    listState: androidx.compose.foundation.lazy.grid.LazyGridState,
+    listState: LazyGridState,
     animatedUrlResolver: suspend (String) -> String?,
     onRefresh: () -> Unit,
     onNearBottom: () -> Unit,
+    onAssetClick: (MediaAsset) -> Unit,
 ) {
     QimengPullToRefresh(isRefreshing = state.isRefreshing, onRefresh = onRefresh) {
         if (state.items.isEmpty()) {
@@ -249,6 +263,7 @@ private fun CosPage(
             animatedUrlResolver = animatedUrlResolver,
             listState = listState,
             onNearBottom = onNearBottom,
+            onAssetClick = onAssetClick,
         )
     }
 }
@@ -256,11 +271,12 @@ private fun CosPage(
 /** 排行榜页：日/周/月/年周期（缺省日榜）；类型筛选为客户端投影 */
 @Composable
 private fun RankPage(
-    items: List<media.qimeng.app.core.model.MediaAsset>,
+    items: List<MediaAsset>,
     columns: Int,
-    listState: androidx.compose.foundation.lazy.grid.LazyGridState,
+    listState: LazyGridState,
     animatedUrlResolver: suspend (String) -> String?,
     onRefresh: () -> Unit,
+    onAssetClick: (MediaAsset) -> Unit,
 ) {
     QimengPullToRefresh(isRefreshing = false, onRefresh = onRefresh) {
         if (items.isEmpty()) {
@@ -272,6 +288,7 @@ private fun RankPage(
             columns = columns,
             animatedUrlResolver = animatedUrlResolver,
             listState = listState,
+            onAssetClick = onAssetClick,
         )
     }
 }

@@ -11,6 +11,16 @@
 
 ---
 
+## feat(app): M4-3a 详情页骨架与排版——路由+竖屏堆叠排版全链+批次导航逻辑层+ImageStage/VideoStage 文件缝（2026-09-07 第一百零二笔）
+
+执行 AI：GLM-5.3-Flash（B 会话主代理调度；前会话半成品续作+三路只读调研子代理并行消化规格+执行/审查子代理多轮）
+
+- **范围（任务B-详情页 §1 子批 3a）**：detail 路由接入（路由契约单源 DetailRoutes 下沉 feature:detail，故意不设 launchSingleTop 支持批次导航叠栈）；媒体舞台（图片/动图/视频海报占位，宽高比自适应兜底 16:9）；标题 cosWork??fileName；meta 行六字段（浏览·播放·大小·尺寸·日期·出处）；点赞收藏互动行（PUT 无 body 服务端 toggle + LikeState 权威回填 / 收藏显式布尔）；标签行+管理弹窗（读-改-写 PUT 整体替换）；作者卡（displayName+·COS+关注 toggle）；「接下来播放」推荐栏（limit=12/seed 换一批/cosOnly/同类型收窄/排除当前）；MediaBatchIndex 内存批次单点+moveBy 邻位解析（3 单测，UI 接线留 3b）。
+- **并行纪律**：只碰 feature/detail|home 与 core data/model/ui 的 detail 专属文件；任务A B3 在途文件（AlbumFilterState/QimengFilterSheet/SdkMediaRepositories 等）零接触零编译依赖（detail 走独立 DetailRepository 端口，QimengFormat.kt 追加函数经 diff 核验纯 detail 性质）。
+- **质量与审查**：对抗审查两轮（首轮判「不可提交」揪出 P1 大小格式化三处走样→新增 formatBytesForDetail 对齐 Web format.ts 口径+QimengFormatTest 11 用例锁死；复审 `--rerun-tasks` 全量重跑终判「可提交」）；DetailSections 728 行拆 6 文件（**ImageStage/VideoStage 占位桩为 3b/3c 并行批铺好文件缝**）；测试矩阵 DetailViewModel 11+SdkDetailMappers 6+MediaBatchIndex 3+QimengFormat 11 全绿（core/ui 建首个测试目录）。
+- **模拟器文本证据（18461 虚构数据+headless uiautomator，禁截图协议）**：图片/COS/视频三类详情页 dump 对照 Web 逐项通过——批次序号 i/N、meta 六字段（服务端 null 时正确省略/有值 960×540 正确显示）、作者卡 ·COS+关注双态、推荐栏同类型收窄+时长角标；证据驱动修复 AAPT 裁剪 `detail_author_cos_suffix` 前导空格（\u0020 转义）。证据存 `%TEMP%\qimeng-m43-3a-evidence\`。
+- **环境发现上报**：server AssetDetail.cosWork=null 而 AssetSummary 正常（detail 组装丢字段，Web 同受影响）→《待拍板-20260905夜2》#15；开发 token 短时效登出属 M4-1 设计行为非缺陷。
+
 ## fix(server): 分割审查清偿·server 卷（Android 工作日不触 app/web/api）——上传原子落盘+指标字节修正+签名构造单源+错误码常量化+import 拆分+DOMAIN_RULES 七处勘误（2026-09-07 第一百零一笔）
 
 执行 AI：GLM-5.3（主代理；三路只读审查子代理并行调研：安全红线/代码卫生与架构边界/领域一致性）

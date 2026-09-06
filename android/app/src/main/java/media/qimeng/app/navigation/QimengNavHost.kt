@@ -27,6 +27,8 @@ import androidx.navigation.compose.rememberNavController
 import media.qimeng.app.core.ui.component.TabScrollController
 import media.qimeng.app.feature.all.AllScreen
 import media.qimeng.app.feature.author.AuthorScreen
+import media.qimeng.app.feature.detail.DetailRoutes
+import media.qimeng.app.feature.detail.DetailScreen
 import media.qimeng.app.feature.favorite.FavoriteScreen
 import media.qimeng.app.feature.history.HistoryScreen
 import media.qimeng.app.feature.home.HomeScreen
@@ -38,7 +40,8 @@ import media.qimeng.app.feature.upload.UploadScreen
 import media.qimeng.app.session.MainViewModel
 import media.qimeng.app.session.SessionState
 
-/** 导航路由契约（壳层独占；feature 只暴露 Screen+回调，不持有路由字符串） */
+/** 导航路由契约（壳层独占；feature 只暴露 Screen+回调。例外：详情路由串/参数键单源在
+ *  feature:detail 的 [DetailRoutes]——feature 禁依赖 :app，壳层反向引用此处合法） */
 object Routes {
     /** 覆盖页面：搜索（首页搜索框进入；GUIDE_UI §导航结构 入栈隐藏底栏） */
     const val SEARCH = "search"
@@ -143,7 +146,10 @@ fun QimengNavHost(
             modifier = Modifier.padding(innerPadding),
         ) {
             composable(TopLevelDestination.HOME.route) {
-                HomeScreen(onOpenSearch = { navController.navigate(Routes.SEARCH) })
+                HomeScreen(
+                    onOpenSearch = { navController.navigate(Routes.SEARCH) },
+                    onOpenAsset = { assetId -> navController.navigate(DetailRoutes.detailRoute(assetId)) },
+                )
             }
             composable(TopLevelDestination.ALL.route) { AllScreen() }
             composable(TopLevelDestination.STATS.route) { StatsScreen() }
@@ -164,6 +170,18 @@ fun QimengNavHost(
                     sharedUris = sharedUris,
                     onSharedConsumed = onSharedConsumed,
                     onDone = { navController.popBackStack() },
+                )
+            }
+            // 详情页（M4-3）：不设 launchSingleTop——详情→详情（推荐栏跳转）保留返回栈，
+            // 返回键回到上一个资产（旧版内部浏览历史栈的导航层等价语义）
+            composable(DetailRoutes.DETAIL_ROUTE) { entry ->
+                DetailScreen(
+                    assetId = entry.arguments?.getString(DetailRoutes.KEY_ASSET_ID).orEmpty(),
+                    onBack = { navController.popBackStack() },
+                    onOpenAsset = { assetId, _ ->
+                        // 批次清单已由 DetailViewModel.upNextJump 换成推荐栏清单，壳层只管导航
+                        navController.navigate(DetailRoutes.detailRoute(assetId))
+                    },
                 )
             }
         }

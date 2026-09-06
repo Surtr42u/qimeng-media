@@ -13,6 +13,7 @@ import org.junit.Rule
 import org.junit.Test
 import media.qimeng.app.core.data.repository.AssetOrigUrlResolver
 import media.qimeng.app.core.data.repository.GridPrefsRepository
+import media.qimeng.app.core.data.repository.MediaBatchIndex
 import media.qimeng.app.core.data.repository.MediaRepository
 import media.qimeng.app.core.model.AssetPageResult
 import media.qimeng.app.core.model.AssetQuery
@@ -92,6 +93,7 @@ class HomeViewModelTest {
     private fun viewModel(repo: FakeMediaRepository): HomeViewModel = HomeViewModel(
         mediaRepository = repo,
         gridPrefs = FakeGridPrefsRepository(),
+        batchIndex = MediaBatchIndex(),
         origUrlResolver = object : AssetOrigUrlResolver {
             override suspend fun origUrl(assetId: String): String? = null
         },
