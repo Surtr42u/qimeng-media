@@ -1,0 +1,439 @@
+package media.qimeng.app.feature.detail.image
+
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Matrix
+import android.graphics.RectF
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Drawable
+import android.os.Build
+import android.util.AttributeSet
+import android.util.Log
+import android.view.GestureDetector
+import android.view.MotionEvent
+import android.view.ScaleGestureDetector
+import android.view.ViewTreeObserver
+import android.widget.ImageView
+import kotlin.math.abs
+import kotlin.math.min
+
+/**
+ * 双指缩放图片视图（ADR-0014 复杂自绘控件例外：AndroidView 桥接，2026-09-07 M4-3 3b 搬运）。
+ *
+ * 来源：QimengMedia 旧仓 app/src/main/java/com/qimeng/media/ui/detail/ZoomImageView.kt（v1.16，420 行），
+ * 整文件搬运。理由：矩阵手势体系（双指 0.5x~5x / 双击 toggle / 拖拽边界钳制 / 换图保持屏幕位置 /
+ * 按图尺寸智能切换 HARDWARE-SOFTWARE 渲染层）是旧版长期实测打磨的自绘逻辑，Compose 重写
+ * 风险高收益低——ADR-0014 明文允许复杂自绘控件走 AndroidView 互操作桥接。
+ *
+ * 公开面：onSingleTap / onSwipe / resetZoom / setImageDrawable。
+ * 手势语义（冻结）：双指 0.5x~5x、双击 toggle（normalizedScale>1.1f→resetZoom，否则 1.8x）、
+ * 单指横滑（>60dp 且横速度>800，未放大态）→ onSwipe(±1)，+1=左滑下一张 / -1=右滑上一张。
+ *
+ * 搬运适配（行为不变）：
+ * - 包名迁移到 media.qimeng.app.feature.detail.image；
+ * - AppCompatImageView → ImageView（本仓不引 appcompat；本控件只编程构造、只显示
+ *   Bitmap/AnimatedImageDrawable，AppCompat 的 tint/矢量兼容面用不到，行为等价）；
+ * - com.qimeng.media.core.AppLog → android.util.Log（TAG=QimengZoom，验收证据 grep 同名标签）；
+ * - dp 扩展取最小面（[dpFloat]，见 DpPx.kt）。
+ */
+class ZoomImageView @JvmOverloads constructor(
+    context: Context,
+    attrs: AttributeSet? = null,
+    defStyleAttr: Int = 0
+) : ImageView(context, attrs, defStyleAttr) {
+    var onSingleTap: (() -> Unit)? = null
+    var onSwipe: ((direction: Int) -> Unit)? = null
+
+    private val drawMatrix = Matrix()
+    private val mappedRect = RectF()
+    private val pendingScreenRect = RectF()
+    private val windowLocation = IntArray(2)
+    private var normalizedScale = 1f
+    private var lastWindowX = Int.MIN_VALUE
+    private var lastWindowY = Int.MIN_VALUE
+    private var hasPendingScreenRect = false
+    private var isGestureActive = false
+    private var hasDisallowedIntercept = false
+    private val resetLayerRunnable = Runnable {
+        // 手势结束后按当前图尺寸智能恢复层类型（大图保持 HARDWARE，超大图回 SOFTWARE）
+        if (!isGestureActive) {
+            applyOptimalLayerType(drawable)
+        }
+    }
+
+    private val scaleDetector = ScaleGestureDetector(
+        context,
+        object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+            override fun onScaleBegin(detector: ScaleGestureDetector): Boolean {
+                isGestureActive = true
+                removeCallbacks(resetLayerRunnable)
+                // 手势期间切硬件加速（GPU 矩阵变换消除卡顿），超大图（超 GPU 纹理上限）除外
+                if (shouldUseHardwareForCurrent()) {
+                    setLayerType(LAYER_TYPE_HARDWARE, null)
+                }
+                return true
+            }
+
+            override fun onScale(detector: ScaleGestureDetector): Boolean {
+                scaleBy(detector.scaleFactor, detector.focusX, detector.focusY)
+                if (!hasDisallowedIntercept) {
+                    parent?.requestDisallowInterceptTouchEvent(true)
+                    hasDisallowedIntercept = true
+                }
+                return true
+            }
+        }
+    )
+
+    private val gestureDetector = GestureDetector(
+        context,
+        object : GestureDetector.SimpleOnGestureListener() {
+            override fun onDown(e: MotionEvent): Boolean = true
+
+            override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+                performClick()
+                onSingleTap?.invoke()
+                return true
+            }
+
+            override fun onDoubleTap(e: MotionEvent): Boolean {
+                if (normalizedScale > 1.1f) {
+                    resetZoom()
+                } else {
+                    scaleTo(DOUBLE_TAP_SCALE, e.x, e.y)
+                }
+                return true
+            }
+
+            override fun onScroll(
+                e1: MotionEvent?,
+                e2: MotionEvent,
+                distanceX: Float,
+                distanceY: Float
+            ): Boolean {
+                if (normalizedScale <= 1.05f) return false
+                if (!isGestureActive) {
+                    isGestureActive = true
+                    removeCallbacks(resetLayerRunnable)
+                    // 手势期间切硬件加速，超大图（超 GPU 纹理上限）除外
+                    if (shouldUseHardwareForCurrent()) {
+                        setLayerType(LAYER_TYPE_HARDWARE, null)
+                    }
+                }
+                drawMatrix.postTranslate(-distanceX, -distanceY)
+                clampTranslation()
+                imageMatrix = drawMatrix
+                if (!hasDisallowedIntercept) {
+                    parent?.requestDisallowInterceptTouchEvent(true)
+                    hasDisallowedIntercept = true
+                }
+                return true
+            }
+
+            override fun onFling(
+                e1: MotionEvent?,
+                e2: MotionEvent,
+                velocityX: Float,
+                velocityY: Float
+            ): Boolean {
+                if (e1 == null || normalizedScale > 1.05f) return false
+                val dx = e2.x - e1.x
+                val dy = e2.y - e1.y
+                if (abs(dx) > SWIPE_DISTANCE_DP.dpFloat(context) && abs(dx) > abs(dy) && abs(velocityX) > SWIPE_VELOCITY) {
+                    onSwipe?.invoke(if (dx < 0f) 1 else -1)
+                    return true
+                }
+                return false
+            }
+        }
+    )
+
+    init {
+        scaleType = ScaleType.MATRIX
+        isClickable = true
+        clipToOutline = false
+        // 初始默认 SOFTWARE（首帧加载前无图，SOFTWARE 安全）；
+        // 加载图后由 applyOptimalLayerType 按尺寸智能切层：
+        //   长边 <= GPU 纹理上限（GpuInfo 运行时探测）→ HARDWARE（GPU 直渲，4096 图 ~50ms→~5ms）
+        //   长边 > GPU 上限 → SOFTWARE 回退（避免超 OpenGL 纹理限制渲染异常）
+        setLayerType(LAYER_TYPE_SOFTWARE, null)
+    }
+
+    private var lastDrawableWidth = 0
+    private var lastDrawableHeight = 0
+    private var overrideDrawableSize = false
+
+    override fun setImageDrawable(drawable: Drawable?) {
+        if (drawable == null) overrideDrawableSize = false
+        // 按图尺寸智能选层：GIF 用 HARDWARE（动画依赖硬件刷新）；
+        // 普通图长边 <= GPU 纹理上限 → HARDWARE（GPU 直渲），超限 → SOFTWARE 回退
+        if (!isGestureActive) {
+            applyOptimalLayerType(drawable)
+        }
+        super.setImageDrawable(drawable)
+        if (drawable == null || drawable.intrinsicWidth <= 0) {
+            log("setImageDrawable: drawable=null或尺寸无效 intrinsic=${drawable?.intrinsicWidth}x${drawable?.intrinsicHeight} override=$overrideDrawableSize")
+            return
+        }
+        val bmp = (drawable as? BitmapDrawable)?.bitmap
+        if (!overrideDrawableSize) {
+            lastDrawableWidth = drawable.intrinsicWidth
+            lastDrawableHeight = drawable.intrinsicHeight
+        }
+        log("setImageDrawable: intrinsic=${drawable.intrinsicWidth}x${drawable.intrinsicHeight} bitmap=${bmp?.width}x${bmp?.height} lastDrawable=${lastDrawableWidth}x${lastDrawableHeight} override=$overrideDrawableSize view=${width}x${height}")
+        if (width > 0 && height > 0) {
+            resetZoom()
+        } else {
+            log("setImageDrawable: view未就绪,注册onPreDraw延迟resetZoom view=${width}x${height}")
+            // view 未就绪时：注册前先移除已注册的监听器——否则每次 setImageDrawable 都 new 一个
+            // OnPreDrawListener 且引用不可达，快速连续换图会累积多个监听器（首个 preDraw 全部
+            // 触发、重复 resetZoom），视图 detach 时监听器滞留且 resetZoom 永不执行
+            viewTreeObserver.removeOnPreDrawListener(preDrawResetListener)
+            viewTreeObserver.addOnPreDrawListener(preDrawResetListener)
+        }
+    }
+
+    /** view 未就绪时延迟 resetZoom 的监听器（单例，避免累积） */
+    private val preDrawResetListener = object : ViewTreeObserver.OnPreDrawListener {
+        override fun onPreDraw(): Boolean {
+            viewTreeObserver.removeOnPreDrawListener(this)
+            log("onPreDraw触发: view=${width}x${height} drawable=${lastDrawableWidth}x${lastDrawableHeight}")
+            if (width > 0 && height > 0) resetZoom()
+            return true
+        }
+    }
+
+    override fun setImageBitmap(bm: Bitmap?) {
+        // 不在此处调 applyOptimalLayerType：super.setImageBitmap 内部会调 setImageDrawable，
+        // 由 setImageDrawable 统一负责选层，避免同一 BitmapDrawable 被判断两次（切图时冗余 ~0.3ms）
+        super.setImageBitmap(bm)
+    }
+
+    /**
+     * 按当前 drawable 尺寸智能选择渲染层类型。
+     * - GIF（AnimatedImageDrawable）→ LAYER_TYPE_HARDWARE（动画依赖硬件刷新帧）
+     * - 普通图长边 <= GPU 纹理上限（GpuInfo 探测）→ LAYER_TYPE_HARDWARE（GPU 直渲，大图 ~50ms→~5ms）
+     * - 普通图长边 > GPU 上限 → LAYER_TYPE_SOFTWARE 回退（避免超 OpenGL 纹理限制渲染异常）
+     */
+    private fun applyOptimalLayerType(drawable: Drawable?) {
+        if (containsAnimatedDrawable(drawable)) {
+            setLayerType(LAYER_TYPE_HARDWARE, null)
+            log("applyOptimalLayerType: GIF→HARDWARE longside=${drawableLongSide(drawable)} gpuMax=${GpuInfo.maxTextureSize()}")
+            return
+        }
+        val longside = drawableLongSide(drawable)
+        if (longside <= 0) {
+            // 无尺寸信息（图尚未解码），保守用 SOFTWARE
+            setLayerType(LAYER_TYPE_SOFTWARE, null)
+            log("applyOptimalLayerType: 无尺寸→SOFTWARE safeMax=$HARDWARE_RENDER_SAFE_SIZE gpuMax=${GpuInfo.maxTextureSize()}")
+            return
+        }
+        // 渲染层用安全阈值（4096）而非 GPU 纹理上限（maxTextureSize 探测值如 16384）：
+        // 超大 bitmap 走 HARDWARE 时厂商驱动无法正确应用 MATRIX 缩放，超大图必须走 SOFTWARE 保正确性
+        if (longside <= HARDWARE_RENDER_SAFE_SIZE) {
+            setLayerType(LAYER_TYPE_HARDWARE, null)
+            log("applyOptimalLayerType: longside=$longside ≤ safeMax=$HARDWARE_RENDER_SAFE_SIZE → HARDWARE (gpuMax=${GpuInfo.maxTextureSize()})")
+        } else {
+            setLayerType(LAYER_TYPE_SOFTWARE, null)
+            log("applyOptimalLayerType: longside=$longside > safeMax=$HARDWARE_RENDER_SAFE_SIZE → SOFTWARE (gpuMax=${GpuInfo.maxTextureSize()})")
+        }
+    }
+
+    /** 取 drawable 长边像素数；BitmapDrawable 用 bitmap 真实尺寸，其他用 intrinsicSize */
+    private fun drawableLongSide(drawable: Drawable?): Int {
+        if (drawable == null) return 0
+        val bmp = (drawable as? BitmapDrawable)?.bitmap
+        if (bmp != null) return maxOf(bmp.width, bmp.height)
+        val w = drawable.intrinsicWidth
+        val h = drawable.intrinsicHeight
+        return if (w > 0 && h > 0) maxOf(w, h) else 0
+    }
+
+    /**
+     * 当前图是否适合硬件渲染（供手势期间判断：超大图手势时也不切 HARDWARE）。
+     */
+    private fun shouldUseHardwareForCurrent(): Boolean {
+        val drawable = drawable ?: return false
+        if (containsAnimatedDrawable(drawable)) return true
+        val longside = drawableLongSide(drawable)
+        if (longside <= 0) return false
+        // 与 applyOptimalLayerType 同阈值：超大图手势期间也保持 SOFTWARE，避免 matrix 缩放失效
+        return longside <= HARDWARE_RENDER_SAFE_SIZE
+    }
+
+    override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+        val previousX = lastWindowX
+        val previousY = lastWindowY
+        super.onLayout(changed, left, top, right, bottom)
+        if (hasPendingScreenRect) {
+            restorePendingScreenRect()
+        } else {
+            preserveScreenPosition(previousX, previousY)
+        }
+    }
+
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        scaleDetector.onTouchEvent(event)
+        gestureDetector.onTouchEvent(event)
+        if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
+            clampScaleEnd()
+            isGestureActive = false
+            hasDisallowedIntercept = false
+            parent?.requestDisallowInterceptTouchEvent(false)
+            postDelayed(resetLayerRunnable, 100)
+        }
+        // 手势识别在 detector 回调中同步完成，必须消费事件以持续接收完整手势流，返回 true
+        return true
+    }
+
+    override fun performClick(): Boolean = super.performClick()
+
+    fun resetZoom() {
+        configureBaseMatrix()
+        imageMatrix = drawMatrix
+        log("resetZoom: scaleType=$scaleType drawable=${lastDrawableWidth}x${lastDrawableHeight} view=${width}x${height}")
+    }
+
+    private fun configureBaseMatrix() {
+        val dw = lastDrawableWidth
+        val dh = lastDrawableHeight
+        if (dw <= 0 || dh <= 0) return
+        val viewW = width - paddingLeft - paddingRight
+        val viewH = height - paddingTop - paddingBottom
+        if (viewW <= 0 || viewH <= 0) return
+        val scale = min(viewW.toFloat() / dw, viewH.toFloat() / dh)
+        val dx = (viewW - dw * scale) / 2f + paddingLeft
+        val dy = (viewH - dh * scale) / 2f + paddingTop
+        log("configureBaseMatrix: drawable=${dw}x${dh}, view=${width}x${height}, scale=$scale, dx=$dx, dy=$dy")
+        drawMatrix.reset()
+        drawMatrix.setScale(scale, scale)
+        drawMatrix.postTranslate(dx, dy)
+        normalizedScale = 1f
+    }
+
+    private fun preserveScreenPosition(previousX: Int, previousY: Int) {
+        getLocationOnScreen(windowLocation)
+        if (drawable != null && previousX != Int.MIN_VALUE && previousY != Int.MIN_VALUE) {
+            val dx = previousX - windowLocation[0]
+            val dy = previousY - windowLocation[1]
+            if (dx != 0 || dy != 0) {
+                drawMatrix.postTranslate(dx.toFloat(), dy.toFloat())
+                imageMatrix = drawMatrix
+            }
+        }
+        lastWindowX = windowLocation[0]
+        lastWindowY = windowLocation[1]
+    }
+
+    private fun restorePendingScreenRect() {
+        if (lastDrawableWidth <= 0 || lastDrawableHeight <= 0) {
+            hasPendingScreenRect = false
+            return
+        }
+        getLocationOnScreen(windowLocation)
+        mappedRect.set(0f, 0f, lastDrawableWidth.toFloat(), lastDrawableHeight.toFloat())
+        drawMatrix.mapRect(mappedRect)
+        val dx = pendingScreenRect.left - (mappedRect.left + windowLocation[0])
+        val dy = pendingScreenRect.top - (mappedRect.top + windowLocation[1])
+        if (dx != 0f || dy != 0f) {
+            drawMatrix.postTranslate(dx, dy)
+            imageMatrix = drawMatrix
+        }
+        hasPendingScreenRect = false
+        lastWindowX = windowLocation[0]
+        lastWindowY = windowLocation[1]
+    }
+
+    private fun clampScaleEnd() {
+        if (normalizedScale < MIN_SCALE) {
+            scaleTo(MIN_SCALE, width / 2f, height / 2f)
+        } else if (normalizedScale > END_MAX_SCALE) {
+            scaleTo(END_MAX_SCALE, width / 2f, height / 2f)
+        } else {
+            clampTranslation()
+            imageMatrix = drawMatrix
+        }
+    }
+
+    private fun clampTranslation() {
+        if (lastDrawableWidth <= 0 || lastDrawableHeight <= 0) return
+        mappedRect.set(0f, 0f, lastDrawableWidth.toFloat(), lastDrawableHeight.toFloat())
+        drawMatrix.mapRect(mappedRect)
+        val viewW = (width - paddingLeft - paddingRight).toFloat()
+        val viewH = (height - paddingTop - paddingBottom).toFloat()
+        var dx = 0f
+        var dy = 0f
+        if (mappedRect.width() <= viewW) {
+            dx = (viewW - mappedRect.width()) / 2f - mappedRect.left + paddingLeft
+        } else {
+            if (mappedRect.left > paddingLeft) dx = paddingLeft - mappedRect.left
+            if (mappedRect.right < viewW + paddingLeft) dx = viewW + paddingLeft - mappedRect.right
+        }
+        if (mappedRect.height() <= viewH) {
+            dy = (viewH - mappedRect.height()) / 2f - mappedRect.top + paddingTop
+        } else {
+            if (mappedRect.top > paddingTop) dy = paddingTop - mappedRect.top
+            if (mappedRect.bottom < viewH + paddingTop) dy = viewH + paddingTop - mappedRect.bottom
+        }
+        if (dx != 0f || dy != 0f) drawMatrix.postTranslate(dx, dy)
+    }
+
+    private fun scaleTo(targetScale: Float, px: Float, py: Float) {
+        val factor = targetScale / normalizedScale
+        scaleBy(factor, px, py)
+    }
+
+    private fun scaleBy(factor: Float, px: Float, py: Float) {
+        if (abs(factor - 1f) < 0.001f) return
+        val newScale = normalizedScale * factor
+        if (newScale < MIN_SCALE || newScale > MAX_SCALE) return
+        normalizedScale = newScale
+        drawMatrix.postScale(factor, factor, px, py)
+        clampTranslation()
+        imageMatrix = drawMatrix
+    }
+
+    /** 检查Drawable是否包含AnimatedImageDrawable（Coil 3 ScaleDrawable的child字段） */
+    private fun containsAnimatedDrawable(drawable: Drawable?): Boolean {
+        // AnimatedImageDrawable 为 API 28+ 类（本仓 minSdk 26）：低版本上该类不可能出现，
+        // 提前短路既满足 NewApi lint，行为也与高版本「GIF→HARDWARE 分层」天然一致
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return false
+        if (drawable == null) return false
+        if (drawable is android.graphics.drawable.AnimatedImageDrawable) return true
+        // Coil 3 的 ScaleDrawable 将 AnimatedImageDrawable 存在 child 字段中
+        try {
+            val childField = drawable.javaClass.getDeclaredField("child")
+            childField.isAccessible = true
+            if (childField.get(drawable) is android.graphics.drawable.AnimatedImageDrawable) return true
+        } catch (e: NoSuchFieldException) {
+            // 预期路径：非 Coil ScaleDrawable 的普通 Drawable（如 BitmapDrawable）没有 child 字段，静默
+        } catch (e: Exception) {
+            log("checkAnimatedDrawable 异常: ${e.message}")
+        }
+        return false
+    }
+
+    private fun log(message: String) {
+        Log.d(TAG, message)
+    }
+
+    companion object {
+        private const val TAG = "QimengZoom"
+        private const val MIN_SCALE = 0.5f
+        private const val MAX_SCALE = 5f
+        private const val END_MAX_SCALE = 5f
+        private const val DOUBLE_TAP_SCALE = 1.8f
+        private const val SWIPE_DISTANCE_DP = 60
+        private const val SWIPE_VELOCITY = 800f
+
+        // 硬件渲染安全阈值：长边超过此值的图走 LAYER_TYPE_SOFTWARE。
+        // GpuInfo.maxTextureSize() 返回 OpenGL 理论上限（如 Adreno 750 探测得 16384），但厂商 GPU 驱动
+        // 对超大 bitmap 无法正确应用 MATRIX 缩放（实测 8000x8000 走 HARDWARE 时图按原始像素从左上角
+        // 绘制，matrix 失效，表现为左上角小方块）。4096 是业界公认稳定值（Glide/Fresco 默认上限，
+        // Android Canvas 软件层 Skia MAXMIMUM_BITMAP_SIZE=32766 远大于此不会崩），与 GpuInfo 探测失败
+        // 回退值 DEFAULT_MAX_TEXTURE_SIZE=4096 一致。注意：此阈值仅用于渲染层选择，与预载策略的
+        // 超大图判定（DetailPreloadPolicy.HUGE_IMAGE_LONG_SIDE，同为 4096）口径对齐但职责独立。
+        private const val HARDWARE_RENDER_SAFE_SIZE = 4096
+    }
+
+}

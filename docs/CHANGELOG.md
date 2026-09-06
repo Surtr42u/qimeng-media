@@ -11,6 +11,16 @@
 
 ---
 
+## feat(app): M4-3b 图片态——ZoomImageView/GpuInfo 桥接+原图直链+预加载窗口+沉浸 chrome（2026-09-07 第一百零四笔）
+
+执行 AI：GLM-5.3-Flash（B 会话主代理调度；3b 执行子代理实施+对抗审查两轮+清偿复审 15/15 PASS）
+
+- **桥接（ADR-0014 例外清单）**：旧仓 `ui/detail/ZoomImageView.kt`（420 行）+`core/GpuInfo.kt` 整文件搬运至 `feature/detail/image/`（AppCompatImageView→ImageView、AppLog→Log 两处文档化适配；手势常量 0.5x~5x/双击 1.8x/60dp 滑动阈值逐值保留）；minSdk26 下 AnimatedImageDrawable(API28) 加版本短路（lint NewApi）。
+- **口径②原图直链**：图片舞台 Coil 显式 `Size.ORIGINAL`（不写 size 会被 Coil 按 View 尺寸自动降采样，违背「查看永远发原件」）；GPU 防护=搬运件长边>4096 SOFTWARE 分层。
+- **预加载窗口（拍板③）**：`DetailPreloadPolicy` 纯函数（前1后2/不含当前/超大图窗口限量1距最近/heap≥0.6 跳超大/未知按普通）+VM 接线（邻位详情拉取+Coil 预取 Disposable 取消链）+6 单测；heap provider 双通道（Java+native）。
+- **沉浸模式**：DetailScreen chromeVisible 单源+SystemBarsImmersiveEffect（只控显隐不触发重排，onDispose 恢复）。
+- **审查清偿**：P1 预载链 UI 消费缺失（DisposableEffect 补 Coil enqueue+dispose map）、P2 heap 丢 native 通道、P3 EGL 参数/重复 id 用例/超时防零。
+
 ## feat(app): M4-2A-B3 万能筛选面板——底部筛选面板全参数族+标签增删+实录逐字对齐，PROJECT_PLAN M4-2 条目补勾（2026-09-07 第一百零三笔）
 
 执行 AI：GLM-5.3-Flash（任务A 会话主代理调度；执行子代理实现+reviewer 对抗审查两轮+修复轮+复审）
