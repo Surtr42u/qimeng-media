@@ -100,6 +100,10 @@ class AssetUploader @Inject constructor(
                     )
 
                     response.code in CLIENT_ERROR_MIN..CLIENT_ERROR_MAX ->
+                        // 4xx 一律终局不重试（含 401，上传 401 终局口径）：token 失效时后台重试无意义——
+                        // 服务端登录即重铸 token，旧 token 的下一次请求必然再 401（SessionEventBus 口径），
+                        // 而 Worker 拿不到新凭据无法自愈，盲目重试只会烧满退避额度。401 时 AuthInterceptor
+                        // 已清 token 并广播事件跳登录，用户重登后重新入队即可
                         UploadOutcome.Permanent(
                             UploadApiBodies.serverErrorMessage(bodyText, response.code),
                         )

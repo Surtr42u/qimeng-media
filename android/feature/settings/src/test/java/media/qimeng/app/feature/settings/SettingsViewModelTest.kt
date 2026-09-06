@@ -29,6 +29,7 @@ import media.qimeng.app.core.testing.MainDispatcherRule
 /** 与 SettingsViewModel 私有常量对齐的反馈文案（文案属反馈契约，ViewModel 侧改动须同步此处） */
 private const val SAVE_FAILED_TEXT = "保存失败，请重试"
 private const val UNFOLLOW_FAILED_TEXT = "取关失败，请重试"
+private const val LOAD_FOLLOWED_FAILED_TEXT = "关注列表加载失败，请重试"
 
 /**
  * 我的页 ViewModel 单测（M4-6）：登出会话闭环（M4-1 原语义）+ 关注列表过滤/取关（C4）+
@@ -51,7 +52,13 @@ class SettingsViewModelTest {
         /** 可编程：非空时 setFollowed 抛出（P2-3 失败路径：静默吞错回归锁定） */
         var unfollowError: Throwable? = null
 
-        override suspend fun authors(): List<AuthorSummary> = rows.toList()
+        /** 可编程：非空时 authors 抛出（refreshFollowed 读失败路径锁定） */
+        var authorsError: Throwable? = null
+
+        override suspend fun authors(): List<AuthorSummary> {
+            authorsError?.let { throw it }
+            return rows.toList()
+        }
 
         override suspend fun setFollowed(authorId: String, followed: Boolean) {
             unfollowError?.let { throw it }
@@ -208,7 +215,33 @@ class SettingsViewModelTest {
         assertNull(noVersion.uiState.value.serverVersion)
     }
 
-    // ---------- P2-3 写失败反馈（原实现静默吞错的回归锁定） ----------
+    // ---------- P2-3 写失败反馈 + 读失败反馈（原实现静默吞错的回归锁定） ----------
+
+    @Test
+    fun `关注列表读失败给反馈且不清空既有列表`() = runTest {
+        val authorRepo = FakeAuthorRepository(
+            listOf(author("1", true), author("2", false), author("3", true)),
+        )
+        val settingsViewModel = viewModel(authorRepo = authorRepo)
+        advanceUntilIdle()
+        assertEquals(listOf("作者1", "作者3"), settingsViewModel.uiState.value.followedAuthors.map { it.displayName })
+
+        // 二次刷新失败：列表保持原状（修复前 getOrDefault(emptyList()) 把网络抖动伪装成「没有关注」），给反馈
+        authorRepo.authorsError = RuntimeException("network down")
+        settingsViewModel.refreshFollowed()
+        advanceUntilIdle()
+        assertEquals(LOAD_FOLLOWED_FAILED_TEXT, settingsViewModel.uiState.value.writeError)
+        assertEquals(listOf("作者1", "作者3"), settingsViewModel.uiState.value.followedAuthors.map { it.displayName })
+        assertFalse(settingsViewModel.uiState.value.followedLoading)
+
+        // 恢复后重刷：横幅可消除，列表正常落地
+        authorRepo.authorsError = null
+        settingsViewModel.dismissWriteError()
+        settingsViewModel.refreshFollowed()
+        advanceUntilIdle()
+        assertNull(settingsViewModel.uiState.value.writeError)
+        assertEquals(listOf("作者1", "作者3"), settingsViewModel.uiState.value.followedAuthors.map { it.displayName })
+    }
 
     @Test
     fun `应用预设失败给反馈且高亮保持原项`() = runTest {

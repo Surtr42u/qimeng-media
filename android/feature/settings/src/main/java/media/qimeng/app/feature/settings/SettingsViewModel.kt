@@ -42,6 +42,7 @@ data class MineUiState(
     /**
      * 写操作失败反馈（自审 P2-3：applyPreset/unfollow/setCacheQuota 失败原实现静默吞错）。
      * 非空时 UI 横幅展示，点按消除（[SettingsViewModel.dismissWriteError]）；成功路径永不产生。
+     * 2026-09-06 起同时承载关注列表**读**失败（refreshFollowed 静默失败修整，同族口径）。
      */
     val writeError: String? = null,
 )
@@ -73,13 +74,22 @@ class SettingsViewModel @Inject constructor(
         loadCacheState()
     }
 
-    /** 关注列表（C4：GET /authors 全量 → followed==true 客户端过滤，纯函数在 :core:model） */
+    /**
+     * 关注列表（C4：GET /authors 全量 → followed==true 客户端过滤，纯函数在 :core:model）。
+     * 读失败不清空既有列表（getOrDefault(emptyList()) 会把网络抖动伪装成「没有关注」——
+     * 2026-09-06 审查卫生项）：保持原列表 + 反馈横幅（writeError 家族口径，见 P2-3）。
+     */
     fun refreshFollowed() {
         viewModelScope.launch {
-            val followed = runCatching { authorRepository.authors() }
-                .getOrDefault(emptyList())
-                .filterFollowed()
-            _uiState.update { it.copy(followedAuthors = followed, followedLoading = false) }
+            runCatching { authorRepository.authors().filterFollowed() }
+                .onSuccess { followed ->
+                    _uiState.update { it.copy(followedAuthors = followed, followedLoading = false) }
+                }
+                .onFailure {
+                    _uiState.update {
+                        it.copy(followedLoading = false, writeError = LOAD_FOLLOWED_FAILED_MESSAGE)
+                    }
+                }
         }
     }
 
@@ -184,5 +194,8 @@ class SettingsViewModel @Inject constructor(
         /** 写失败反馈文案（P2-3）：中文、可重试指向；成功路径永不产生 */
         const val SAVE_FAILED_MESSAGE = "保存失败，请重试"
         const val UNFOLLOW_FAILED_MESSAGE = "取关失败，请重试"
+
+        /** 关注列表读失败反馈文案（2026-09-06 审查卫生项：refreshFollowed 静默失败修整） */
+        const val LOAD_FOLLOWED_FAILED_MESSAGE = "关注列表加载失败，请重试"
     }
 }

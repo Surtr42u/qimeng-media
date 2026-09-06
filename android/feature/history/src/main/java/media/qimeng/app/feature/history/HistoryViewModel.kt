@@ -63,6 +63,14 @@ class HistoryViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(HistoryUiState())
     val uiState: StateFlow<HistoryUiState> = _uiState.asStateFlow()
 
+    /**
+     * 筛选代际号：筛选变化即递增。弱网下仓库响应可能乱序归位（与相册页同族缺陷，
+     * 2026-09-06 审查清偿补齐），请求发起时快照代际、响应落地前校验——旧代响应
+     * （含失败）一律丢弃，不再覆盖新筛选态。读写都在 Main（viewModelScope 与
+     * 状态更新同线程），无需原子类。
+     */
+    private var filterGeneration = 0
+
     init {
         reloadAll()
     }
@@ -111,6 +119,7 @@ class HistoryViewModel @Inject constructor(
     }
 
     private fun applyFilter(filter: AlbumFilterState) {
+        filterGeneration += 1
         _uiState.value = _uiState.value.copy(filter = filter)
         reloadAll()
     }
@@ -122,7 +131,10 @@ class HistoryViewModel @Inject constructor(
 
     private fun loadItems(cursor: String?, append: Boolean, isRefresh: Boolean = false) {
         val state = _uiState.value
-        if (state.isLoading) return
+        // 防重语义（与代际防乱序正交）：分页/下拉刷新在途时照旧丢弃重复触发；
+        // 筛选重载不受 isLoading 拦截——在途的是旧代请求，其响应会被代际校验丢弃
+        if ((append || isRefresh) && state.isLoading) return
+        val gen = filterGeneration
         _uiState.value = state.copy(isLoading = true, isRefreshing = isRefresh)
         viewModelScope.launch {
             runCatching {
@@ -141,6 +153,7 @@ class HistoryViewModel @Inject constructor(
                     ),
                 )
             }.onSuccess { page ->
+                if (gen != filterGeneration) return@onSuccess // 旧代迟到响应，丢弃
                 _uiState.value = _uiState.value.copy(
                     items = if (append) _uiState.value.items + page.items.map { it.asset } else page.items.map { it.asset },
                     nextCursor = page.nextCursor,
@@ -148,6 +161,7 @@ class HistoryViewModel @Inject constructor(
                     isRefreshing = false,
                 )
             }.onFailure {
+                if (gen != filterGeneration) return@onFailure // 旧代失败不污染新筛选态
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     isRefreshing = false,
@@ -160,6 +174,7 @@ class HistoryViewModel @Inject constructor(
     /** 候选（facets 加 history=1 子集约束）：分区/角色/类型三维（无作者行） */
     private fun loadFacets() {
         val filter = _uiState.value.filter
+        val gen = filterGeneration
         viewModelScope.launch {
             runCatching {
                 coroutineScope {
@@ -174,6 +189,7 @@ class HistoryViewModel @Inject constructor(
                     )
                 }
             }.onSuccess { facets ->
+                if (gen != filterGeneration) return@onSuccess // 旧代迟到响应，丢弃
                 _uiState.value = _uiState.value.copy(
                     partitionOptions = facets.partitions,
                     characterOptions = facets.characters.withOtherBucketLast(),
@@ -181,6 +197,7 @@ class HistoryViewModel @Inject constructor(
                     totalForAllPill = facets.partitions.firstOrNull { it.key == PARTITION_KEY_ALL }?.fileCount,
                 )
             }.onFailure {
+                if (gen != filterGeneration) return@onFailure // 旧代失败不污染新筛选态
                 _uiState.value = _uiState.value.copy(errorMessage = LOAD_FAILED_MESSAGE)
             }
         }
