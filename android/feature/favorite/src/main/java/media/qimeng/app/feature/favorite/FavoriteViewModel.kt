@@ -24,6 +24,7 @@ import media.qimeng.app.core.model.MediaKind
 import media.qimeng.app.core.model.SortOrder
 import media.qimeng.app.core.model.Zone
 import media.qimeng.app.core.model.withOtherBucketLast
+import media.qimeng.app.feature.favorite.R
 
 /**
  * 收藏页状态：四维同相册口径 + 基础约束 favorite=true & sort=favoriteAt 降序
@@ -43,9 +44,18 @@ data class FavoriteUiState(
     val isRefreshing: Boolean = false,
     val errorMessage: String? = null,
 ) {
-    /** 空态文案（规格书 §收藏页：COS 分区「没有COS收藏」，其余「还没有收藏」） */
-    val emptyText: String
-        get() = if (filter.partition == Zone.COS) "没有COS收藏" else "还没有收藏"
+    /**
+     * 空态文案资源（旧仓库 FavoriteFragment.kt L370-380 逐字双分支）：COS 分区单行
+     * 「没有COS收藏」；其余双行「还没有收藏\n在详情页点击收藏按钮添加」（L376）。
+     * VM 只发资源 id 结构化语义，文案本体落地 strings.xml（§5.1 文案全 strings），
+     * 分支选择由单测锁定。
+     */
+    val emptyTextRes: Int
+        get() = if (filter.partition == Zone.COS) {
+            R.string.favorite_empty_cos
+        } else {
+            R.string.favorite_empty_default
+        }
 }
 
 /** 收藏页 ViewModel：相册同款四维状态机，facets 加 favorite 子集约束（收藏计数只数收藏） */
@@ -75,6 +85,16 @@ class FavoriteViewModel @Inject constructor(
             activeDim = dim,
             filter = _uiState.value.filter.copy(expanded = true), // 切维度默认展开（B8）
         )
+    }
+
+    /**
+     * 维度芯片点击入口（M4-2A-B5：芯片行随头部重排由页面直接接线，交互语义收进状态机——
+     * 铁律 7「组件禁业务规则」，镜像 AlbumViewModel 同名入口；QimengFourDimSection 内嵌
+     * 同款规则的旧组件随本批退役）：
+     * 点已激活维=切换展开/折叠，点其他维=切维并默认展开（规格书 §药丸容器）。
+     */
+    fun onDimChipClicked(dim: AlbumDim) {
+        if (_uiState.value.activeDim == dim) toggleExpanded() else selectDim(dim)
     }
 
     fun toggleExpanded() {

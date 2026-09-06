@@ -13,34 +13,39 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import media.qimeng.app.core.ui.R
+import media.qimeng.app.core.ui.icon.BackIcon
 import media.qimeng.app.core.ui.icon.FilterListIcon
 import media.qimeng.app.core.ui.icon.gridIconFor
 import media.qimeng.app.core.ui.theme.QimengDimens
 
 /**
- * 标题 + 统计行 + 列数控件行（库列表页页头唯一实现——任务A §5.2，相册/收藏/历史共用，
+ * 返回钮 + 标题 + 统计行 + 可选动作/列数控件行（库列表页页头唯一实现——任务A §5.2，相册/收藏/历史共用，
  * B5 收藏/历史页接线复用，禁止在 feature 各自手抄第 2 份）。
- * 列数控件=图标按钮，图标随列数换 ic_grid_2~5（旧版标题行右侧 allColumnText 同款）；
+ * 返回钮（M4-2A-B5 收编进本组件）：旧版实录 favorite.txt/history.txt 头部首元素均为返回图标
+ * （desc=返回，favorite.txt L6 / history.txt L6），收藏/历史页传 onBack，相册页不传（Tab 内无返回语义）。
+ * 列数控件=图标按钮，图标随列数换 ic_grid_2~5（旧版标题行右侧 allColumnText 同款）；为可选项——
+ * 旧版实录 favorite/history 两页标题行**无**列数图标（主会话 2026-09-07 裁定 2），两页不传即不显示。
  * 筛选按钮（M4-2A-B3）= 可选项，仅相册页传入（按实录判读：筛选入口只在相册页标题行——
  * 旧版 uiautomator 实录仅 all_partition.txt 有 allFilterButton 节点，favorite/history 实录
- * 无筛选图标，/history 协议亦不支持筛选参数；此判读待 B5 收藏/历史接线时复核落档，
- * 收藏/历史页不传 onFilterClick 即不显示）。
+ * 无筛选图标，/history 协议亦不支持筛选参数；B5 接线已复核落档）。
  *
  * @param title 页面标题（页私有文案，由调用方从各自 strings.xml 注入）
  * @param statLine 统计行文本（如「N 文件」；暂无数据传空串，占位仍保留右端对齐结构）
- * @param columns 当前列数（驱动图标档位，越界由 [gridIconFor] clamp）
- * @param onToggleColumns 列数步进回调（步进/持久化语义在调用方 ViewModel）
- * @param onFilterClick 筛选按钮回调（null=不显示筛选图标，M4-2A-B3 可选入口）
+ * @param onBack 返回按钮回调（null=不显示返回钮，M4-2A-B5 可选项）
  * @param modifier 行级外部布局参数（页面纵向上仍由调用方整体排布）
+ * @param onFilterClick 筛选按钮回调（null=不显示筛选图标，M4-2A-B3 可选入口）
+ * @param columns 当前列数（驱动图标档位，越界由 [gridIconFor] clamp；与 onToggleColumns 成对出现）
+ * @param onToggleColumns 列数步进回调（null=整组列数控件不显示，M4-2A-B5 可选项；步进/持久化语义在调用方 ViewModel）
  */
 @Composable
 fun QimengTitleRow(
     title: String,
     statLine: String,
-    columns: Int,
-    onToggleColumns: () -> Unit,
     modifier: Modifier = Modifier,
+    onBack: (() -> Unit)? = null,
     onFilterClick: (() -> Unit)? = null,
+    columns: Int? = null,
+    onToggleColumns: (() -> Unit)? = null,
 ) {
     Row(
         modifier = modifier
@@ -51,6 +56,14 @@ fun QimengTitleRow(
             ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (onBack != null) {
+            IconButton(onClick = onBack) {
+                Icon(
+                    imageVector = BackIcon,
+                    contentDescription = stringResource(R.string.ui_back_desc),
+                )
+            }
+        }
         Text(text = title, style = MaterialTheme.typography.titleLarge)
         Spacer(modifier = Modifier.weight(1f))
         Text(
@@ -66,11 +79,14 @@ fun QimengTitleRow(
                 )
             }
         }
-        IconButton(onClick = onToggleColumns) {
-            Icon(
-                imageVector = gridIconFor(columns),
-                contentDescription = stringResource(R.string.ui_columns_icon_desc),
-            )
+        // 列数控件=图标+回调成对出现：回调为 null（或未配列数）整组不显示，不渲染残缺控件
+        if (onToggleColumns != null && columns != null) {
+            IconButton(onClick = onToggleColumns) {
+                Icon(
+                    imageVector = gridIconFor(columns),
+                    contentDescription = stringResource(R.string.ui_columns_icon_desc),
+                )
+            }
         }
     }
 }

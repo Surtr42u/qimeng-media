@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 浏览历史页文案（M4-2A-B5 头部重排随迁）。资源名 history_ 前缀避免合并冲突
+         （home/all/search 同款约定）。 -->
+
+    <!-- 页面标题（旧版实录 history.txt L7 逐字「浏览历史」） -->
+    <string name="history_title">浏览历史</string>
+
+    <!-- 空态文案两分支（规格书 §浏览历史 口径，M4-2 已对齐原样随迁；
+         分支选择在 HistoryViewModel.emptyTextRes，单测锁定） -->
+    <string name="history_empty_cos">没有COS浏览记录</string>
+    <string name="history_empty_default">没有浏览记录</string>
+</resources>

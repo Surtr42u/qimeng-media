@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 收藏页文案（M4-2A-B5 头部重排随迁）。资源名 favorite_ 前缀避免合并冲突
+         （home/all/search 同款约定）。 -->
+
+    <!-- 页面标题（旧版实录 favorite.txt L7 逐字「收藏」） -->
+    <string name="favorite_title">收藏</string>
+
+    <!-- 空态文案两分支（旧仓库 FavoriteFragment.kt L373-378 逐字；COS 分支单行、
+         默认分支双行 \n 换行。分支选择在 FavoriteViewModel.emptyTextRes，单测锁定） -->
+    <string name="favorite_empty_cos">没有COS收藏</string>
+    <string name="favorite_empty_default">还没有收藏\n在详情页点击收藏按钮添加</string>
+</resources>
