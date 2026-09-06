@@ -33,7 +33,7 @@
 
 **2026-09-06 审查清偿·app 卷（CHANGELOG 第九十五笔）**：P1「筛选请求代际防乱序」从 Album 一处补齐到同族四 VM（Favorite/History/Search/Home——Home 为排行榜切周期），各配行为测试（14 条，CompletableDeferred 闸门时序构造，分页/刷新防重语义同锁）；卫生项五处——refreshFollowed 读失败不再静默清列表（入 writeError 反馈家族）、HomeTab 文案迁 feature/home strings.xml、「QimengCache」TAG 收敛文件级单源、token 明文 DataStore 取舍注释、上传 4xx/401 终局注释。
 
-**M4-2A UI 对齐批（进行中，2026-09-06 夜起）**：外部界面完全复刻旧版（规格=《QimengNAS/任务A-UI对齐.md》，批 B0~B6）。进度：B0 对照工具+基线报告 ✅（`QimengNAS/ui-compare-harness/`，测试数据已按用户明令全虚构化；2026-09-07 修复 do_tap 空 regex 缺陷并按 P9 校准签名，见 CHANGELOG 第九十八笔）、B1 主题灰系基座 ✅（c9828b5，CHANGELOG 第九十七笔）、B2 相册四模式 ✅（CHANGELOG 第九十八笔，审查档 `QimengNAS/m42a-review/B2-round1.md`：0 P1 终态——初审 4 P2 + elem_compare 重跑揪出的 authorGroupKey 真实载荷 P1 与切维保留滚动两缺陷均已清偿复验）、B3~B6 未开始。接手者先读《任务A-UI对齐.md》§0 进度表 + `m42a-review/` 审查档。
+**M4-2A UI 对齐批（进行中，2026-09-06 夜起）**：外部界面完全复刻旧版（规格=《QimengNAS/任务A-UI对齐.md》，批 B0~B6）。进度：B0 对照工具+基线报告 ✅（`QimengNAS/ui-compare-harness/`，测试数据已按用户明令全虚构化；2026-09-07 修复 do_tap 空 regex 缺陷并按 P9 校准签名，见 CHANGELOG 第九十八笔）、B1 主题灰系基座 ✅（c9828b5，CHANGELOG 第九十七笔）、B2 相册四模式 ✅（cdef8f1，CHANGELOG 第九十八笔，审查档 `QimengNAS/m42a-review/B2-round1.md`：0 P1 终态——初审 4 P2 + elem_compare 重跑揪出的 authorGroupKey 真实载荷 P1 与切维保留滚动两缺陷均已清偿复验）、B3~B6 未开始。2026-09-07 交接清理（CHANGELOG 第九十九笔）：任务A 文档 B2 残留（§1 续作指引归档、P11「一次一个子代理」限流条款删除）勘误为**在跑子代理 ≤3**；工作区在 cdef8f1 全净，下一批 **B3 万能筛选面板**（入口=相册/收藏/历史标题行，B2 已铺 QimengTitleRow 单源与悬浮药丸底座）。接手者先读《任务A-UI对齐.md》§0 进度表 + `m42a-review/` 审查档。
 
 ## 3. 各批次任务书
 
