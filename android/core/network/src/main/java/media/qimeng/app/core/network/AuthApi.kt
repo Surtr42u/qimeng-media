@@ -33,6 +33,15 @@ interface AuthApi {
      * @throws IOException 网络不通
      */
     suspend fun login(password: String): String
+
+    /**
+     * 开发模式免密登录 `POST /auth/dev-login`（2026-09-06 用户拍板：测试环境免输密码，
+     * 消除模拟器验证时人工敲密码的摩擦）。仅服务端开启 auth_dev_mode 时可用——
+     * 未开启时服务端恒 404 且不泄露信息（server auth_dev_test 锁定），生产/远程部署不受影响。
+     * @throws ClientException statusCode=404 表示服务端未开启免密模式
+     * @throws IOException 网络不通
+     */
+    suspend fun devLogin(): String
 }
 
 /** [AuthApi] 的生成 SDK 实现（阻塞调用挪到 IO 线程——OkHttp 同步 execute 不许占主线程）。 */
@@ -45,6 +54,10 @@ class SdkAuthApi(private val api: DefaultApi) : AuthApi {
         // 缺失说明对端行为异常，按 IOException 抛出→上层归入「地址不通」而非空指针
         api.apiV1AuthLoginPost(AuthSetupRequest(password = password)).token
             ?: throw IOException("登录响应缺少 token")
+    }
+
+    override suspend fun devLogin(): String = withContext(Dispatchers.IO) {
+        api.apiV1AuthDevLoginPost().token ?: throw IOException("登录响应缺少 token")
     }
 }
 

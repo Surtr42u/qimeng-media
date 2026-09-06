@@ -112,6 +112,7 @@ private fun LoginError.toMessageRes(): Int = when (this) {
     LoginError.InvalidAddress -> R.string.login_error_invalid_address
     LoginError.ServerUnreachable -> R.string.login_error_server_unreachable
     LoginError.WrongPassword -> R.string.login_error_wrong_password
+    LoginError.DevLoginUnavailable -> R.string.login_error_dev_unavailable
     is LoginError.Other -> R.string.login_error_other
 }
 
