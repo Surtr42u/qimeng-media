@@ -11,6 +11,22 @@
 
 ---
 
+## fix(app): 昨日(09-06)全量审查清偿·app 卷——筛选代际防乱序补齐同族四 VM+卫生项五处（2026-09-06 第九十五笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- **审查背景**：接第九十四笔（web+文档卷），本笔清偿 app 卷——P1 一项 + 卫生项五处，均为 2026-09-06 全量四路审查的发现。
+- **P1 筛选代际防乱序补齐（Album 范式四连）**：仿 AlbumViewModel 既有范式（代际号：筛选变化即递增，请求发起时快照、响应落地前校验；筛选重载绕过 isLoading 拦截，分页/下拉刷新防重保持原状）补齐同族四 VM——FavoriteViewModel（applyFilter 族）、HistoryViewModel（applyFilter）、SearchViewModel（submit/selectPartition/selectMediaType 三入口）、HomeViewModel（selectPeriod 排行榜周期切换：修复前在途日榜未归时切周期，重载会被 isLoading 拦截导致周榜请求根本不发出，迟到旧响应也无校验直接落地）。弱网下在途旧代响应（含失败）一律丢弃，不再覆盖新筛选态。
+- **行为测试 14 条锁定**：Favorite 4 + History 4 + Search 3 + Home 3，时序构造与 AlbumViewModelTest 同款——仓库请求挂 CompletableDeferred 闸门由测试决定放行顺序；每页锁三条语义：旧代迟到响应不落地（loading 不被旧代收走）、旧代失败不污染新筛选态、分页/刷新防重不回归。修正：favorite 测试初稿引用了不存在的 FavoriteUiState.totalMatched（收藏页无总数展示面），改为 items/loading 状态面断言。
+- **refreshFollowed 静默失败修整（P2）**：原实现 `runCatching.getOrDefault(emptyList())` 把读失败伪装成「没有关注」（清空既有列表）；改为失败保持原列表 + writeError 横幅（并入 P2-3 反馈家族，MineUiState KDoc 同步）；SettingsViewModelTest 补读失败路径锁定用例（失败保持原列表 → 恢复后正常落地）。
+- **HomeTab 文案迁字符串资源**：HomeTab 枚举去 label（UI 文案不进状态层），feature/home 新增 strings.xml（home_ 前缀，login/settings 同款约定），HomeScreen 以 tabLabelRes 映射 + stringResource 取文案。注：core:model 枚举族（RankingPeriod/RecommendPreset/StatsRangeOption 等）的 label 中文常量是全库既定口径，本笔不动（存量口径记录备查，如需统一资源化另立批）。
+- **「QimengCache」TAG 收敛**：TAG 常量从 CoilModule object 内上提文件级（改名 CACHE_LOG_TAG，CoilModule 与 RealCoilCacheManager 同文件共用），RealCoilCacheManager.clear() 两处裸字面量归零——验收证据协议 grep 'QimengCache' 不受影响。
+- **注释型卫生两处**：①token 明文 DataStore 取舍注释（DataStoreServerConfigDataSource KDoc：SECURITY.md 威胁模型=纯内网单用户不覆盖物理取证场景 + androidx security-crypto 全量弃用（官方发布页口径，当场核实）+ 服务端登录即重铸/重置 token 可吊销兜底——风险接受决策落档，远期多用户/公网面时此处为改造点）；②上传 4xx/401 终局注释（AssetUploader 分类点：登录即重铸 token 下旧 token 重试必再 401、Worker 拿不到新凭据无法自愈，401 已由 AuthInterceptor 广播跳登录，重登后重新入队）。
+- **验证（双门禁全绿）**：make app-test 全量 BUILD SUCCESSFUL（416 tasks，含 :core:model:test）；make app-lint BUILD SUCCESSFUL（1m06s）；受影响模块单测先行单跑逐个全绿。
+- **顺手清理**：Windows 下 exe 被占用重建遗留的 `server/qimeng-server.exe~` 备份产物未入 .gitignore（`*.exe` 规则不覆盖 `~` 后缀）——补 `*.exe~` 规则并删除陈旧备份（09-05 23:25 旧构建，现役 exe 为 09-06 11:37）。
+
+---
+
 ## fix(web): 昨日(09-06)全量审查清偿——web 页大小单源补净+Pill 模板全收拢 + 文档卷勘误补勾补账（2026-09-06 第九十四笔）
 
 执行 AI：deepseek-v4-flash-vision-exp（主代理）

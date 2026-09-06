@@ -24,6 +24,9 @@ import media.qimeng.app.core.data.repository.DiskCachePrefsRepository
 import media.qimeng.app.core.model.DiskCacheQuota
 import javax.inject.Singleton
 
+/** logcat 标签（验收证据协议：grep 'QimengCache' 看缓存装配/清空痕迹）；文件级单一定义，CoilModule 与 RealCoilCacheManager 共用 */
+private const val CACHE_LOG_TAG = "QimengCache"
+
 /**
  * Coil ImageLoader 全局单例装配（M4-6 C5；ADR-0014：全局单例走 Hilt）。
  *
@@ -70,10 +73,10 @@ object CoilModule {
             // 不在 App 启动关键路径上）。runBlocking 限此一处，读取失败回落默认档。
             val quotaBytes = runBlocking {
                 runCatching { diskCachePrefs.quota.first().bytes }
-                    .onFailure { Log.w(TAG, "读缓存档位失败，回落默认档", it) }
+                    .onFailure { Log.w(CACHE_LOG_TAG, "读缓存档位失败，回落默认档", it) }
                     .getOrDefault(DiskCacheQuota.DEFAULT.bytes)
             }
-            Log.i(TAG, "DiskCache 装配 maxSizeBytes=$quotaBytes")
+            Log.i(CACHE_LOG_TAG, "DiskCache 装配 maxSizeBytes=$quotaBytes")
             DiskCache.Builder()
                 // coil3.disk 的 File 重载扩展（官方 JVM 桥）：内部走 okio.Path
                 .directory(context.cacheDir.resolve(DISK_CACHE_DIR))
@@ -91,9 +94,6 @@ object CoilModule {
 
     /** 内存缓存占最大堆比例（Coil 默认 25% 惯例档，M4-2 起沿用） */
     private const val MEMORY_CACHE_PERCENT = 0.25
-
-    /** logcat 标签（验收证据协议：grep 'QimengCache' 看缓存装配/清空痕迹） */
-    private const val TAG = "QimengCache"
 }
 
 /** [CoilCacheManager] 实现：清空/容量委托单例 ImageLoader 的 DiskCache（容量读持久化档位） */
@@ -105,9 +105,9 @@ class RealCoilCacheManager @javax.inject.Inject constructor(
 
     override fun clear() {
         // 清空调用点已在 IO 线程（SettingsViewModel 调度）；这里只留证据日志
-        Log.i("QimengCache", "DiskCache.clear() 之前 size=${imageLoader.diskCache?.size}")
+        Log.i(CACHE_LOG_TAG, "DiskCache.clear() 之前 size=${imageLoader.diskCache?.size}")
         imageLoader.diskCache?.clear()
-        Log.i("QimengCache", "DiskCache.clear() 之后 size=${imageLoader.diskCache?.size}")
+        Log.i(CACHE_LOG_TAG, "DiskCache.clear() 之后 size=${imageLoader.diskCache?.size}")
     }
 
     override fun sizeBytes(): Long? = imageLoader.diskCache?.size

@@ -26,6 +26,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -46,6 +47,13 @@ private const val HOME_TITLE = "首页"
 
 /** 首页在壳导航里的路由（双击 Tab 回顶事件的过滤键） */
 private const val HOME_ROUTE = "home"
+
+/** tab → 文案资源映射（文案在 strings.xml；枚举不再携带 UI 文案——2026-09-06 审查卫生项） */
+private fun HomeTab.tabLabelRes(): Int = when (this) {
+    HomeTab.RECOMMEND -> R.string.home_tab_recommend
+    HomeTab.COS -> R.string.home_tab_cos
+    HomeTab.RANK -> R.string.home_tab_rank
+}
 
 /**
  * 首页（M4-2）：顶行[标题][搜索框不可聚焦→跳搜索页][网格图标] +
@@ -99,7 +107,7 @@ fun HomeScreen(
             onToggleColumns = viewModel::toggleHomeColumns,
         )
         QimengChipRow(
-            pills = HomeTab.entries.map { QimengPill(text = it.label, selected = it == state.currentTab) },
+            pills = HomeTab.entries.map { QimengPill(text = stringResource(it.tabLabelRes()), selected = it == state.currentTab) },
             onPillClick = { index -> viewModel.switchTab(HomeTab.entries[index]) },
             modifier = Modifier.padding(horizontal = 16.dp),
         )

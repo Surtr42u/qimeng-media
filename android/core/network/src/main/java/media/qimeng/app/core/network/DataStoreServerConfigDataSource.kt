@@ -19,6 +19,14 @@ import javax.inject.Singleton
  * token 内存缓存设计：`updateToken`/`clearToken` 写穿（写 DataStore 成功后立即刷新 @Volatile 缓存），
  * 启动时再从 DataStore 预热一次——保证 [currentToken] 在进程重启后的首批请求前已就绪，
  * 而 [AuthInterceptor] 全程零阻塞。
+ *
+ * **token 明文落盘的取舍（2026-09-06 审查补记，风险接受决策）**：DataStore Preferences 不提供加密，
+ * 本文件有意不引入加密层——①威胁模型按 SECURITY.md 是纯内网单用户，防御目标是局域网误访问与
+ * 横向渗透，不覆盖「物理拿到已解锁设备」的攻击者；该场景下明文 token 才构成实质风险；②官方加密
+ * 方案 androidx.security-crypto（EncryptedSharedPreferences）已整体弃用，官方指向 Android Keystore
+ * 自行封装——自造加密存储引入的出错面大于收益；③泄露可收敛：服务端登录即重铸 token，且管理端
+ * 「重置 token」一键吊销（SECURITY.md 鉴权设计）。远期若威胁模型升级（多用户/公网面），此处是
+ * 改造点：换 Keystore 加密包装的存储实现，接口不变。
  */
 @Singleton
 class DataStoreServerConfigDataSource @Inject constructor(

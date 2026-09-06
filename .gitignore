@@ -5,6 +5,8 @@ node_modules/
 dist/
 build/
 *.exe
+# Windows 下 exe 被占用重建时 go build 留下的旧版备份（rename 残留）
+*.exe~
 *.dll
 *.so
 *.dylib

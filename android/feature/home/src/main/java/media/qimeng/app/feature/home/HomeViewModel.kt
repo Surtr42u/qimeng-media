@@ -21,11 +21,11 @@ import media.qimeng.app.core.model.RankingPeriod
 import media.qimeng.app.core.model.RecommendPaging
 import media.qimeng.app.core.model.SortOrder
 
-/** 首页三 tab（GUIDE_UI §首页：推荐 / COS / 排行榜，左右横滑切换） */
-enum class HomeTab(val label: String) {
-    RECOMMEND("推荐"),
-    COS("COS"),
-    RANK("排行榜"),
+/** 首页三 tab（GUIDE_UI §首页：推荐 / COS / 排行榜，左右横滑切换）；展示文案在 feature strings.xml（tabLabelRes 映射），不进状态层 */
+enum class HomeTab {
+    RECOMMEND,
+    COS,
+    RANK,
 }
 
 /** 推荐流状态：一次拉满 200、本地分批揭示、滚到底换 seed 追加（拍板口径） */
@@ -85,6 +85,13 @@ class HomeViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
+    /**
+     * 排行榜周期代际号：切周期即递增。弱网下仓库响应可能乱序归位（与相册页同族
+     * 缺陷，2026-09-06 审查清偿补齐），请求发起时快照代际、响应落地前校验——
+     * 旧代响应（含失败）一律丢弃，不再覆盖新周期。读写都在 Main，无需原子类。
+     */
+    private var rankGeneration = 0
+
     /** 首页网格列数（1~2 列持久化，LEGACY §F） */
     val homeColumns: StateFlow<Int> = gridPrefs.homeColumns
         .stateIn(
@@ -110,6 +117,7 @@ class HomeViewModel @Inject constructor(
     fun selectPeriod(period: RankingPeriod) {
         val current = _uiState.value
         if (current.rank.period == period) return
+        rankGeneration += 1 // 新周期=新代际：在途旧周期响应一律作废
         _uiState.value = current.copy(rank = current.rank.copy(period = period))
         loadRank(isInitial = true)
     }
@@ -266,7 +274,10 @@ class HomeViewModel @Inject constructor(
 
     private fun loadRank(isInitial: Boolean, isRefresh: Boolean = false) {
         val current = _uiState.value
-        if (current.rank.isLoading) return
+        // 防重语义（与代际防乱序正交）：下拉刷新在途时照旧丢弃重复触发；
+        // 切周期重载不受 isLoading 拦截——在途的是旧代请求，其响应会被代际校验丢弃
+        if (isRefresh && current.rank.isLoading) return
+        val gen = rankGeneration
         _uiState.value = current.copy(rank = current.rank.copy(isLoading = true, isRefreshing = isRefresh))
         viewModelScope.launch {
             runCatching {
@@ -276,6 +287,7 @@ class HomeViewModel @Inject constructor(
                     offset = RANK_OFFSET_INITIAL,
                 )
             }.onSuccess { items ->
+                if (gen != rankGeneration) return@onSuccess // 旧代迟到响应，丢弃
                 _uiState.value = _uiState.value.copy(
                     rank = _uiState.value.rank.copy(
                         items = items,
@@ -285,6 +297,7 @@ class HomeViewModel @Inject constructor(
                     ),
                 )
             }.onFailure {
+                if (gen != rankGeneration) return@onFailure // 旧代失败不污染新周期
                 _uiState.value = _uiState.value.copy(
                     errorMessage = LOAD_FAILED_MESSAGE,
                     rank = _uiState.value.rank.copy(isLoading = false, isRefreshing = false),

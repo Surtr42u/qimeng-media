@@ -31,6 +31,8 @@
 
 **范围**：旧 UI 全部页面族的交互语义（含统计/我的/作者页）；单机生态页（数据备份/数据管理/扫描）无对应服务端能力，不做。
 
+**2026-09-06 审查清偿·app 卷（CHANGELOG 第九十五笔）**：P1「筛选请求代际防乱序」从 Album 一处补齐到同族四 VM（Favorite/History/Search/Home——Home 为排行榜切周期），各配行为测试（14 条，CompletableDeferred 闸门时序构造，分页/刷新防重语义同锁）；卫生项五处——refreshFollowed 读失败不再静默清列表（入 writeError 反馈家族）、HomeTab 文案迁 feature/home strings.xml、「QimengCache」TAG 收敛文件级单源、token 明文 DataStore 取舍注释、上传 4xx/401 终局注释。
+
 ## 3. 各批次任务书
 
 ### M4-0 工程基建（多模块骨架）
