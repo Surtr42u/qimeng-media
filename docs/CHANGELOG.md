@@ -11,6 +11,16 @@
 
 ---
 
+## fix(server): GET /assets/{id} 补 cosWork 映射（台账#15）+ openapi sessionId 口径注释勘误（#16）（2026-09-07 夜 第一百一十笔）
+
+执行 AI：GLM-5.3（主会话调度；执行子代理）
+
+- **#15（用户可见缺陷）**：详情组装漏 cosWork——`assets_detail.go` 增 fetchAssetCosWork（复用列表端点 ListCosWorkForAssets 同款查询，失败降级空串同列表策略），非空时填 detail.CosWork；Android 详情标题恢复「cosWork 优先、null 回退 fileName」语义。新增 TestAssetDetailCosWork（COS 资产返回 cosWork 级断言+常规资产缺省）。
+- **#16（协议注释勘误）**：openapi ViewEventReport.sessionId description 改为真实口径「open/play 按当日会话级去重、dwell 不去重逐条累加」（对照 engagement.go 与 DOMAIN_RULES §5 核实）；顺带 AssetSummary.cosWork 描述补「详情端点也返回」；`make sdk` 三端生成物同步（均 gitignored 本地重建）。
+- **验收**：go test ./... 15 包全绿（httpapi 实跑 10.3s）；gofmt 清偿；web tsc（用新生成物）exit 0。附记：make sdk 首跑遇 redocly Windows libuv 偶发崩溃（spec 校验已过后崩溃，重跑即过）——CI 间歇假失败风险记档待观察。
+
+---
+
 ## docs: 任务C 回归修复与体验对齐批任务书落档——8 项用户反馈根因定位+今晚队列合并（2026-09-07 第一百零九笔）
 
 执行 AI：GLM-5.3-Flash（主会话，规划会话）

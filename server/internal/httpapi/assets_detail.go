@@ -100,6 +100,24 @@ func (s *Server) fetchAssetStats(ctx context.Context, assetID string) (st assetS
 	return st, "", nil
 }
 
+// fetchAssetCosWork 取单资产的 COS 作品子目录名（detail 响应 cosWork 字段
+// 的数据源）。不另立查询口径：复用列表端点 fillListCosWork 同款
+// ListCosWorkForAssets（IN 形式，这里只放本资产一个元素），其
+// cos_work IS NOT NULL 过滤使常规库/无作品子目录资产天然返回空串
+// （协议 null 语义 = 客户端回退 fileName）。展示性字段：查询失败记日志
+// 返回空串降级，不阻塞详情响应——与列表端点对该字段的失败策略一致。
+func (s *Server) fetchAssetCosWork(ctx context.Context, assetID string) string {
+	rows, err := s.q.ListCosWorkForAssets(ctx, jsonString([]string{assetID}))
+	if err != nil {
+		s.logger.Error("查询资产 COS 作品名失败", "err", err)
+		return ""
+	}
+	if len(rows) == 0 {
+		return ""
+	}
+	return rows[0].CosWork.String
+}
+
 // GetApiV1AssetsAssetId 资产详情：组装全部关联数据与签名直链。
 func (s *Server) GetApiV1AssetsAssetId(w http.ResponseWriter, r *http.Request, assetID gen.AssetId) {
 	row, err := s.q.GetAssetWithLibrary(r.Context(), assetID.String())
@@ -152,6 +170,12 @@ func (s *Server) GetApiV1AssetsAssetId(w http.ResponseWriter, r *http.Request, a
 		ViewCount:          ptr(st.viewCount),
 		PlayCount:          ptr(st.playCount),
 		TotalBrowseSeconds: ptr(toInt(st.seconds)),
+	}
+	// cosWork（AssetSummary 继承字段）：detail 响应此前漏装——客户端
+	// 详情页标题因此恒回退 fileName（台账 #15）。空串 = 无作品子目录，
+	// 保持字段缺省即协议 null 语义。
+	if w := s.fetchAssetCosWork(ctx, row.AssetID); w != "" {
+		detail.CosWork = &w
 	}
 	orig := s.signedMediaURL(mediaPathOrig + row.AssetID)
 	detail.OrigUrl = &orig
