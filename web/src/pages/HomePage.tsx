@@ -7,6 +7,7 @@ import { assetToCard, useRecommendations } from '@/hooks/use-assets'
 import { useRankingsInfinite } from '@/hooks/use-stats'
 import { useAutoMore } from '@/hooks/use-auto-more'
 import { parseRankPeriod, type HomeRankPeriod, type HomeTabKey } from '@/lib/home-tabs'
+import { assetDetail } from '@/lib/route-keys'
 
 /**
  * 首页：顶栏分类 tab（推荐/cos/排行榜）对应的内容区（tab 由 URL ?tab= 驱动，
@@ -30,7 +31,7 @@ export default function HomePage() {
   const period = parseRankPeriod(searchParams.get('period'))
 
   const openDetail = (id?: string): void => {
-    if (id) navigate(`/app/asset/${id}`)
+    if (id) navigate(assetDetail(id))
   }
 
   return (
