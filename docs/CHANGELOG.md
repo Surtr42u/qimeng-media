@@ -11,6 +11,19 @@
 
 ---
 
+## feat(app): D2 视频两级全屏 + 退出恢复竖屏（2026-09-08 第一百二十二笔）
+
+执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 全新上下文对抗审查（含独立强制重跑测试），任务D-Android卷 D2）
+
+- **两级全屏**：点全屏钮 → 第一级=竖屏全屏覆盖层（视频经 `adoptCurrentState` 挂同一 ExoPlayer，surface 随挂载迁移播放零中断，实测跨级同帧 1.958s；横屏视频 letterbox 属正常）；覆盖层内再点全屏钮 → 第二级=横屏全屏（**固定 SCREEN_ORIENTATION_LANDSCAPE** 防双横屏乱闪，800ms 防抖保留两钮共用）；退出逐级回退（横屏级→竖屏级→排版态）。BiliPlayerView isLandscapeVideo 门控删除，全类型视频可全屏（GUIDE_UI:195 旧句被用户 2026-09-07 口径覆盖）。
+- **方向恢复兜底**：VideoStage onDispose 强制 PORTRAIT——系统返回/兄弟 push/退出详情三条路径走组合离场天然覆盖；用户场景（横屏全屏退详情卡横屏）实机复现已修（回首页 dumpsys `mCurrentAppOrientation=PORTRAIT` 实证）。
+- **结构**：VideoFullscreenStateMachine 纯 JVM 状态机（NONE/PORTRAIT/LANDSCAPE + 方向指令 + awaitPortraitSettle 瞬态忽略窗口），11 例单测；FullscreenOverlayShell 共享外壳（D1 图片/D2 视频共挂，Dialog+insets+退出骨架全仓单源，禁第 3 次复制粘贴落地）；ENDED 态进覆盖层同位 seek 强制重渲染末帧防黑屏（记待拍板 #22）。
+- **reviewer P1 处置（旋转入口如实化）**：「旋转设备→横屏」在常规全屏下物理不可达（第一级方向锁后系统不响应旋转，仅分屏/自由窗口等忽略 requestedOrientation 环境可达）——第二级入口先行为「覆盖层内全屏钮」（已实机验证），旋转分支代码保留+KDoc/测试注释如实标注可达性，三候选（传感器检测/一级不锁向/维持现状）记待拍板 #23。P3 清偿：死 string detail_video_fullscreen_portrait_unsupported 与 isLandscapeVideo() 死方法删除（grep 零残留）、ImageStage 过时 KDoc 修正。
+- **审查**：D2 主体 PASS（状态机/防抖逐行同构/退出覆盖推演/外壳单源/setPlayer 默认参逐行兼容）；独立 `--rerun-tasks` 强制重跑全绿。
+- **验收**：三连绿（VideoFullscreenStateMachineTest 11/0、VideoStageStateMachineTest 6/0、PlayerMathTest 7/0 保绿）；实机两片型（竖屏 540x960 专项 ffmpeg 造片上传虚构库+横屏 960x540）各走两级、方向证据 dumpsys+窗口 bounds、防抖连点、ENDED 末帧复验。证据 %TEMP%\qimeng-d2-evidence\（47 项）。
+
+---
+
 ## feat(app): D1 详情页图片全屏覆盖层（2026-09-08 第一百二十一笔）
 
 执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 全新上下文对抗审查，任务D-Android卷 D1）

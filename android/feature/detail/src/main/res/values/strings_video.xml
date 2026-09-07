@@ -2,10 +2,8 @@
 <resources>
     <!-- 视频态文案（M4-3 3c）。资源名 detail_ 前缀避免合并冲突（home/login 同款约定）。
          本文件为 3c 新建（既有 values/strings.xml 本批次由 3b 并行占用，禁碰）；
-         搬运件 BiliPlayerView 内旧硬编码中文按「搬运原样」原则保留，不抽资源。 -->
-
-    <!-- G6 冻结口径：全屏按钮仅横屏视频可点，竖屏视频点按只提示不改方向 -->
-    <string name="detail_video_fullscreen_portrait_unsupported">竖屏视频不支持全屏</string>
+         搬运件 BiliPlayerView 内旧硬编码中文按「搬运原样」原则保留，不抽资源。
+         （D2 返工：detail_video_fullscreen_portrait_unsupported 已随全屏钮门控删除而移除） -->
 
     <!-- 3d 视频接线：已看完徽标（海报态左上角；WatchState 口径） -->
     <string name="detail_video_watched">已看完</string>

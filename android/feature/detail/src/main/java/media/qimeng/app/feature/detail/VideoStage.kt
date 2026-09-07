@@ -46,6 +46,10 @@ import media.qimeng.app.core.ui.component.QimengThumbnail
 import media.qimeng.app.core.ui.icon.PlayIcon
 import media.qimeng.app.feature.detail.video.BiliPlayerView
 import media.qimeng.app.feature.detail.video.TimelineTagEntity
+import media.qimeng.app.feature.detail.video.VideoFullscreenCommand
+import media.qimeng.app.feature.detail.video.VideoFullscreenLevel
+import media.qimeng.app.feature.detail.video.VideoFullscreenOrientation
+import media.qimeng.app.feature.detail.video.VideoFullscreenStateMachine
 import media.qimeng.app.feature.detail.video.VideoStageMode
 import media.qimeng.app.feature.detail.video.VideoStageStateMachine
 import media.qimeng.app.feature.detail.video.rememberVideoPlayerState
@@ -85,6 +89,15 @@ private const val FULLSCREEN_TOGGLE_DEBOUNCE_MS = 800L
  * - 标签：[timelineTags] 映射桥接实体 → updateTimelineTags（芯片点击 seek 为控件内建行为；
  *   长按芯片/书签按钮经 [onTagLongPress]/[onBookmark] 回 Compose 侧对话框）。
  *
+ * D2 两级全屏（用户 2026-09-07 拍板，覆盖 GUIDE_UI 旧句「仅横屏视频可全屏」）：全屏钮
+ * → 第一级=竖屏全屏覆盖层（[VideoFullScreenOverlay]，方向保持竖屏，横屏视频 letterbox
+ * 属正常）→ 覆盖层内再点全屏钮 → 第二级=横屏全屏（固定 LANDSCAPE；「旋转设备进第二级」
+ * 在常规全屏下被第一级方向锁堵死，配置变化升级分支仅分屏/自由窗口等忽略方向锁环境可达，
+ * 可达性口径待拍板 #23）；退出逐级回退（横屏级→竖屏级→排版态），任何退出路径经组合离场
+ * 兜底强制回竖屏。层级真源=[VideoFullscreenStateMachine]（纯 JVM 可测），方向写入集中在
+ * [applyFullscreenCommand]；覆盖层与排版态视图共用同一 ExoPlayer（surface 交接，见
+ * BiliPlayerView setPlayer/rebindPlayer/detachPlayer）。
+ *
  * @param watched 已看完徽标（3d WatchState 口径，海报态左上角显示）
  * @param startPositionMs 起播位置毫秒（VM 按断点秒×1000 计算；已看完=0 重播）
  * @param timelineTags 时间轴标签（VM 已按 timeMillis 升序拉取）
@@ -123,6 +136,37 @@ internal fun VideoStage(
     var isPlaying by remember { mutableStateOf(false) }
     // G6 全屏防抖时间戳（factory 一次性闭包经 State 捕获最新值；仅算间隔不参与业务口径）
     var lastFullscreenToggleAt by remember { mutableLongStateOf(0L) }
+    // D2 两级全屏：层级显式态（fullscreenMachine 为逻辑真源，镜像同 stageMode 模式）。
+    // 旧口径「Compose 侧不持状态、以设备方向为全屏真源」只支持单级横屏全屏；两级需要
+    // 层级态裁决「全屏钮点击该进/退哪级」与「配置变化升/降级（可达性见状态机 KDoc #23）」
+    val fullscreenMachine = remember { VideoFullscreenStateMachine() }
+    var fullscreenLevel by remember { mutableStateOf(VideoFullscreenLevel.NONE) }
+
+    /** 执行两级全屏状态机指令：层级镜像 + 方向写入（全仓唯一方向写入点语义延续） */
+    fun applyFullscreenCommand(command: VideoFullscreenCommand) {
+        fullscreenLevel = command.level
+        // 横屏级固定 LANDSCAPE 而非 SENSOR（旧版 MediaDetailFragment.kt:1171 口径：固定
+        // 横屏，避免 SENSOR 在两个横屏方向间切换乱闪）；进竖屏级/退出恢复写 PORTRAIT
+        context.findActivity()?.requestedOrientation = when (command.orientation) {
+            VideoFullscreenOrientation.PORTRAIT -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            VideoFullscreenOrientation.LANDSCAPE -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        }
+    }
+
+    /** 全屏钮（排版态与覆盖层视图共用）：800ms 防抖后交状态机裁决进/退哪一级（旧版
+     *  Fragment:1157-1160 同款语义，具名常量 FULLSCREEN_TOGGLE_DEBOUNCE_MS） */
+    fun requestFullscreenToggle() {
+        val now = System.currentTimeMillis()
+        if (now - lastFullscreenToggleAt >= FULLSCREEN_TOGGLE_DEBOUNCE_MS) {
+            lastFullscreenToggleAt = now
+            fullscreenMachine.onFullscreenToggle()?.let(::applyFullscreenCommand)
+        }
+    }
+
+    /** 覆盖层退出请求（系统返回/覆盖层顶栏返回共用）：状态机逐级回退（横屏级→竖屏级→排版态） */
+    fun exitFullscreenLevel() {
+        fullscreenMachine.onExitRequested()?.let(::applyFullscreenCommand)
+    }
 
     // 播放器 → 状态机/回调同步：ENDED 记账（G9），恢复播放补账（视图内再播路径）；
     // isPlaying 翻转同时驱动打点 play（VM 侧幂等去重，重复回调安全）与进度轮询开关
@@ -146,6 +190,26 @@ internal fun VideoStage(
         }
         playerState.player.addListener(listener)
         onDispose { playerState.player.removeListener(listener) }
+    }
+
+    // D2 配置变化监听：竖屏级遇横屏配置 → 锁横屏升第二级；竖屏写入后的瞬态横屏配置由
+    // 状态机 settle 窗口忽略（防转屏延迟顶回横屏级）。可达性口径（待拍板 #23）：常规全屏
+    // 被第一级 PORTRAIT 方向锁堵死，本分支仅分屏/自由窗口等忽略 requestedOrientation 的
+    // 环境可达，第二级入口=覆盖层内全屏钮。NONE 层恒 no-op——排版态自由旋转语义不变
+    LaunchedEffect(configuration, fullscreenLevel) {
+        fullscreenMachine.onRotationChanged(
+            isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE,
+        )?.let(::applyFullscreenCommand)
+    }
+
+    // D2 方向恢复兜底：任何退出路径（系统返回/兄弟 push/退出详情页/资产换类型）都经本
+    // 组合离场 → 强制回竖屏，修复「横屏全屏态退出详情页 App 卡横屏」（旧实现只靠全屏钮
+    // 回调恢复方向，绕过按钮的退出路径漏恢复）。与逐级退出的 PORTRAIT 写入幂等
+    DisposableEffect(Unit) {
+        onDispose {
+            context.findActivity()?.requestedOrientation =
+                ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        }
     }
 
     // 进度轮询（3d 设计从简）：播放中每 1s 读 ExoPlayer 位置喂 VM 节流策略；
@@ -206,6 +270,24 @@ internal fun VideoStage(
         if (wasPlayingBeforeDialog) playerView?.startPlayback()
     }
 
+    /** 书签钮（排版态/覆盖层视图共用同链）：wasPlaying 快照 → 暂停 → 开标签对话框
+     *（dismiss/确认后恢复；spec 冻结口径「打开前暂停、dismiss 后恢复」） */
+    fun handlePlayerBookmark(view: BiliPlayerView) {
+        wasPlayingBeforeDialog = view.isPlaying()
+        view.pausePlayback()
+        showTagDialog = true
+    }
+
+    /** 快速转跳钮（排版态/覆盖层视图共用同链）：跳当前播放位置之后的下一个标签（无则
+     *  在后的标签→回卷第一个；无标签 no-op）。芯片本体点击 seek 是控件内建行为
+     *（createTagChip → seekTo），不经此回调 */
+    fun handlePlayerJump(view: BiliPlayerView) {
+        val entities = latestTagEntities
+        val next = entities.firstOrNull { it.timeMillis > view.currentPositionMs }
+            ?: entities.firstOrNull()
+        next?.let { view.seekToPosition(it.timeMillis) }
+    }
+
     val posterClickable = stageMode == VideoStageMode.POSTER && asset.origUrl != null
 
     Box(
@@ -258,39 +340,13 @@ internal fun VideoStage(
                 factory = { ctx ->
                     BiliPlayerView(ctx).apply {
                         setPlayer(playerState.player)
-                        onFullscreen = {
-                            // 800ms 防抖：快速连点全屏键不连续请求方向（旧版 Fragment:1157-1160
-                            // 同款语义，具名常量 FULLSCREEN_TOGGLE_DEBOUNCE_MS）
-                            val now = System.currentTimeMillis()
-                            if (now - lastFullscreenToggleAt >= FULLSCREEN_TOGGLE_DEBOUNCE_MS) {
-                                lastFullscreenToggleAt = now
-                                // G6：方向切换经 Activity 请求，Compose 侧不持状态——
-                                // 旋转后 configuration 变化经下方 update 回写 setFullscreen。
-                                // 进横屏用固定 LANDSCAPE 而非 SENSOR（旧版 MediaDetailFragment.kt:1171
-                                // 口径：固定横屏，避免 SENSOR 在两个横屏方向间切换乱闪）
-                                ctx.findActivity()?.requestedOrientation = if (getFullscreen()) {
-                                    ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-                                } else {
-                                    ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-                                }
-                            }
-                        }
-                        // 书签按钮（时间轴标签添加入口）：wasPlaying 快照 → 暂停 → 开对话框
-                        //（dismiss/确认后恢复；spec 冻结口径「打开前暂停、dismiss 后恢复」）
-                        onBookmark = {
-                            wasPlayingBeforeDialog = isPlaying()
-                            pausePlayback()
-                            showTagDialog = true
-                        }
-                        // 快速转跳按钮（3d 接线从简）：跳到当前播放位置之后的下一个标签
-                        //（无则在后的标签→回卷第一个；无标签 no-op）。芯片本体点击 seek 是
-                        // 控件内建行为（createTagChip → seekTo），不经此回调
-                        onJump = {
-                            val entities = latestTagEntities
-                            val next = entities.firstOrNull { it.timeMillis > currentPositionMs }
-                                ?: entities.firstOrNull()
-                            next?.let { seekToPosition(it.timeMillis) }
-                        }
+                        // D2 两级全屏：本视图只上报点击，进/退哪级由状态机裁决（防抖共用，
+                        // 覆盖层视图同键同窗）
+                        onFullscreen = { requestFullscreenToggle() }
+                        // 书签按钮（时间轴标签添加入口）：与覆盖层视图共用同链（快照→暂停→对话框）
+                        onBookmark = { handlePlayerBookmark(this) }
+                        // 快速转跳按钮：与覆盖层视图共用同链（见 handlePlayerJump KDoc）
+                        onJump = { handlePlayerJump(this) }
                         // 长按芯片 → Compose 侧菜单（跳转/删除），域 id 由菜单对话框反查
                         onTagLongPress = { entity -> menuTag = entity }
                         // 起播（内含 ENDED 回 0 口径）；此后触摸由控件手势循环接管
@@ -298,9 +354,13 @@ internal fun VideoStage(
                     }.also { playerView = it }
                 },
                 update = { view ->
-                    // G6「Compose 侧不持状态」：全屏态 = 设备方向事实，旋转落地后回写视图。
-                    // 用 LocalConfiguration（配置变化会触发重组）而非 context.resources——
-                    // 后者在旋转后不刷新，全屏态会卡死在旧方向（LocalContextConfigurationRead lint）
+                    // G6 注释修订（D2 两级全屏）：全屏**层级**真源已改为 Compose 侧
+                    // VideoFullscreenStateMachine（「Compose 侧不持状态」旧口径只支持单级
+                    // 横屏全屏）；本回写只表达「当前配置方向」→ 控件手势档（G1 竖屏单击播停/
+                    // 横屏单击显隐控制器）与按钮图标，全屏层级由覆盖层视图恒 setFullscreen(true)
+                    // 表达、不经此处。用 LocalConfiguration（配置变化会触发重组）而非
+                    // context.resources——后者在旋转后不刷新，会卡死在旧方向
+                    //（LocalContextConfigurationRead lint）
                     val landscape = configuration.orientation ==
                         Configuration.ORIENTATION_LANDSCAPE
                     view.setFullscreen(landscape)
@@ -336,6 +396,23 @@ internal fun VideoStage(
                 menuTag = null
             },
             onDismiss = { menuTag = null },
+        )
+    }
+
+    // D2 两级全屏覆盖层（第一级竖屏/第二级横屏同窗口）：独立 Dialog 窗口铺满整屏
+    // （选型依据同图片覆盖层，Dialog+insets 骨架共享 FullscreenOverlayShell）；同一
+    // ExoPlayer 双视图交接——挂载即接管画面播放零中断，关闭时 surface 迁回排版态视图。
+    // 退出逐级回退：横屏级→竖屏级→排版态（系统返回/覆盖层顶栏返回经状态机裁决）
+    if (fullscreenLevel != VideoFullscreenLevel.NONE) {
+        VideoFullScreenOverlay(
+            player = playerState.player,
+            tagEntities = tagEntities,
+            onFullscreenToggle = ::requestFullscreenToggle,
+            onExit = ::exitFullscreenLevel,
+            onBookmarkTap = ::handlePlayerBookmark,
+            onJumpTap = ::handlePlayerJump,
+            onTagChipLongPress = { entity -> menuTag = entity },
+            onReleasePlayerSurface = { playerView?.rebindPlayer(playerState.player) },
         )
     }
 }
