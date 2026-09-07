@@ -191,6 +191,13 @@ media-ui-prototype/
     - **验收**：四命令绿（tsc 0 错/oxlint **15**≤17 降 1/build 41 entries/npm test **84 过**=78−1 删 inHomeDetailGroup 用例+7 新增 listKeyFromPath 3+readBackdropKey 4）+ 主会话浏览器实测（新 bundle）：相册滚动 500.26 进详情→浏览器返回 **scrollTop 逐位一致**+页面存活、详情 pager「1/23」可用（相册批次导航）、相册详情 sidebar 切首页=复位回顶+相册卸载（真导航）、深链直达 asset 无 state 底衬=home 无 pager 降级、home cos 链 ?tab=cos 全程保态+scrollTop 保留（实测 11=内容高度上限值，非回归）。
     - **留档**：侧栏「相册」高亮不随详情期 backdrop 联动（首页同现状）；相册页查询串 URL 保态属后续批；Sidebar `'/app/albums'` 字面量未收敛（同 E1 对 '/app/home' 的尾巴，后续批）；其余 6 入口（search/mine×2/collection/ranks/data）按 memo 步骤 8 留后续批（DataPage/RanksPage 收益仅滚动可排末或豁免）。证据目录 %TEMP%\qimeng-f5-evidence\（保留勿删）。
 
+29. **F6 文件管理/回收站批量多选（✅ 2026-09-08 完成，任务F-Web卷 F6=#15 用户拍板两处都做；reviewer 全项通过+主会话浏览器主链走查过）**：
+    - **结构**（两页同构共享件，零协议改动=前端逐条循环既有单条端点）：`lib/batch.ts` 纯函数（batchPercent/batchFailureReason/formatBatchSummary/failureListText，+10 单测）+ `hooks/use-multi-select.ts`（选集/locked 执行期冻结/Esc 退出含弹窗让位 escEnabled/prune 修剪）+ `hooks/use-batch-runner.ts`（严格串行 for+await 逐条 mutateAsync、失败收集不中断、runningRef 防重入、失效不另立=每条成功各自触发既有 mutation onSuccess+SSE 双保险）+ `components/ui/multi-select-bar.tsx`（全选/计数/动作/退出）+ `components/ui/batch-ops-panel.tsx`（复用上传队列 .progress 进度条+完成计数+页内失败明细列表）。
+    - **两页接线**：DirFileList「多选」切换→行首 checkbox（.qm-check，accent-color token）→全选本目录→批量删除（danger 确认文案明示「N 个文件移入回收站…可在回收站恢复」）/批量移动（MoveDialog 加 batch 模式：assetId 变可选、隐藏改名输入、既有单文件调用方零影响）；TrashPage「多选」→批量恢复/批量彻底删除（danger 二次确认「物理删除不可恢复」）。
+    - **审查**：reviewer 11 项全过——真串行、防重入窗口、失效链覆盖（ASSETS/TRASH 根键子键命中）、MoveDialog batch 与单文件路径隔离、Esc 让位接线、零新端点零直调 fetch（铁律 7）、样式零新颜色字面量、范围干净。
+    - **验收**：四命令绿（tsc 0 错/oxlint 15≤17/build 42 entries/npm test **94 过**=84+10）+ executor curl 级全链自验（删 3→回收站 3→恢复 3→库对账回 18；批量移动含 1 条故意 409 失败+2 成功不中断）+ 主会话浏览器实测主链（文件管理多选→全选 3/3→批量删除确认框文案核对→面板「移入回收站完成 3/3」+toast→回收站 3 项在位→多选批量恢复「完成 3/3」+toast）。
+    - **P2-1 留下批清偿**（reviewer 揪出）：onFinished 的 selectOnly 在三条经弹窗路径被 locked 实例捕获成 no-op，「终局只留失败项」实际由 prune 收敛达成（行为正确机制失配）——批次结束到失效重取落地间（keepPreviousData 保留旧列表）已成功行勾选短暂残留，手快可对 stale 选择二次发起（404 计入失败无害但误导）；修法=runner 终局由调用方以 unlocked 渲染的稳定回调收尾或 selectOnly 改 ref 判锁，至少改三处注释。P3×3：批次不可取消（无 AbortSignal，卸载后跑完，语义可辩护）；两页多选态不同构（回收站保留行内单条操作、空 items 时退出钮 disabled 仅剩 Esc）；id 为空行 checkbox 可入选集但双重过滤无危害。验证遗留：库根两个空目录 f6-batch-target/f6-repro-dir（协议无删目录端点，无害）。证据目录 %TEMP%\qimeng-f6-evidence\（保留勿删）。
+
 ## 5.9 UI 收尾执行批次（2026-09-04 规划定稿，用户拍板启动）
 
 三项待办的执行级任务书，顺序冻结 **W-1 → W-2 → W-3**（功能缺口优先、最重殿后）；每批交付 = 代码 + 实机截图 + `npx tsc --noEmit -p web/tsconfig.app.json` + `npm --prefix web run build` + `npm --prefix web run lint` 全绿。通用约束：§4.5 对齐纪律（改布局必须静止态实测）、§5.8 颜色 token 口径、铁律 7（UI 组件禁直调 API，走 hooks）、AI_README_FIRST 代码卫生。

@@ -11,6 +11,18 @@
 
 ---
 
+## feat(web): F6 文件管理/回收站批量多选（2026-09-08 第一百三十三笔）
+
+执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 全项对抗审查/主会话浏览器主链走查，任务F-Web卷 F6=#15 用户拍板两处都做）
+
+- **结构**（零协议改动=前端逐条循环既有单条端点，两页同构共享件防复制粘贴）：`lib/batch.ts` 纯函数四件（进度换算/失败原因/汇总文案/失败清单折叠，+10 单测）+ `use-multi-select`（选集/执行期 locked 冻结/Esc 退出带弹窗让位/prune）+ `use-batch-runner`（严格串行逐条 mutateAsync、失败收集不中断整批、runningRef 防重入、失效不另立=每条成功各自触发既有 mutation onSuccess+SSE 双保险）+ `multi-select-bar`/`batch-ops-panel`（复用上传队列 .progress 进度条+页内失败明细列表）。
+- **两页接线**：文件管理「多选」→checkbox→全选本目录→批量删除（文案明示「N 个文件移入回收站…可恢复」，铁律 4）/批量移动（MoveDialog 加 batch 模式，既有单文件调用方零影响）；回收站「多选」→批量恢复/批量彻底删除（danger 二次确认「物理删除不可恢复」）。
+- **审查**：reviewer 11 项全过——真串行/防重入/失效根键子键命中/MoveDialog 路径隔离/Esc 让位/零新端点零直调 fetch（铁律 7）/样式零新颜色/范围干净。
+- **验收**：tsc 0 错/oxlint 15≤17/build 42 entries/npm test **94 过**（84+10）+ executor curl 级全链自验（删 3→回收站 3→恢复 3→库对账 18；批量移动 1 条故意 409+2 成功不中断）+ 主会话浏览器实测主链（多选→全选 3/3→批量删除确认文案→面板「移入回收站完成 3/3」+toast→回收站在位→批量恢复「完成 3/3」+toast）。
+- **P2-1 留下批**（reviewer 揪出）：onFinished 的 selectOnly 在三条经弹窗路径捕获 locked 实例成 no-op，「终局只留失败项」实际由 prune 收敛达成（行为正确、机制注释失实）——批次结束到重取落地间 stale 勾选短暂残留；修法=稳定回调收尾或 ref 判锁，至少改三处注释。P3×3（批次不可取消/两页多选态不同构/空 id 行 checkbox 无危害）记 HANDOVER_UI §5 第 29 条。证据 %TEMP%\qimeng-f6-evidence\（保留勿删）。
+
+---
+
 ## fix(app): D6 M4-3 整批自查 + GIF 动图停帧修复（2026-09-08 第一百三十二笔）
 
 执行 AI：GLM-5.3-Flash（主会话调度；executor 执行自查，任务D-Android卷 D6）
