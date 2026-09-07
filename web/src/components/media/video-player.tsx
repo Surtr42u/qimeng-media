@@ -118,9 +118,11 @@ export default function VideoPlayer({
   // 创建参数挂载时定格：断点续播起点/签名直链/时间轴打点只认首挂值——父级进度
   // 上报或查询失效触发的 refetch 改变 props 不重建播放器（换资产由页面侧 key
   // 重建保证）。打点官方 API 仅在构造/loadedmetadata 时消费、挂载后不动态更新，
-  // 页面以 tagsLoading 守卫保证首挂即全量标签，定格即完整。播放回调是唯一
-  // 例外，走下方 ref 转发保持最新（lint 合规：ref 同步放 effect，且声明在建
-  // 实例 effect 之前，首挂时先于建实例执行）。
+  // 页面以「tags isPending || isPlaceholderData 不挂载」守卫保证首挂即全量、
+  // 且绝非上一资产的旧打点，定格即完整（F2·P1-1：keepPreviousData 占位期 v5
+  // 乐观 status='success'，isLoading 拦不住占位，契约见 hooks/use-progress.ts）。
+  // 播放回调是唯一例外，走下方 ref 转发保持最新（lint 合规：ref 同步放 effect，
+  // 且声明在建实例 effect 之前，首挂时先于建实例执行）。
   const [initial] = useState({ src, poster, startTime, highlights })
   const handlersRef = useRef({ onTimeUpdate, onPause, onPlay })
   useEffect(() => {

@@ -23,6 +23,10 @@
  * 单击切沉浸 chrome（延迟判定与双击共存）/ Esc 退出。动效只用
  * opacity+transform+--qm-* token，不碰 zoom；prefers-reduced-motion 由
  * 全局归零层自然覆盖。
+ *
+ * 混合媒体语义（F2·P3c）：查看器开着横滑进视频项时由挂载方按 !isVideo 卸载
+ * 本组件（视频不接图片查看器）；viewerOpen 是否随之复位由挂载方决定——
+ * 设计语义与后果记录在 AssetDetailPage 挂载处注释，勿当 bug 修。
  */
 
 import { useEffect, useRef, useState } from 'react'
@@ -337,6 +341,10 @@ function ViewerCanvas({
     pointers.current.delete(e.pointerId)
     const g = gesture.current
     gesture.current = null
+    // F2·P3a：系统打断（pointercancel，如来电/手势导航接管）的手势与 pointup
+    // 非 pending 路径同口径清 lastTap——残留的首击记录会把下一次抬手误判成
+    // 双击缩放
+    lastTap.current = null
     if (g?.mode === 'swipe') {
       // 系统打断的横滑不换件，回弹
       setAnimate(true)
@@ -383,11 +391,62 @@ export default function ImageViewer({
   preloadUrls,
 }: ImageViewerProps) {
   const [chromeVisible, setChromeVisible] = useState(true)
+  // F2·P3b（aria-modal 焦点管理，手写方案）：根容器（Tab 圈定范围）与关闭钮
+  // （打开时的初始焦点落点）
+  const rootRef = useRef<HTMLDivElement>(null)
+  const closeBtnRef = useRef<HTMLButtonElement>(null)
 
-  // Esc 退出（window 级监听；chrome 隐藏态也可退出），卸载时清理
+  // F2·P3b：打开时焦点移入（关闭钮），卸载时归还触发元素——role=dialog +
+  // aria-modal 的键盘可达性配套。归还对已离场元素是 no-op（浏览器静默忽略），
+  // 无需存活检查。preventScroll：查看器是 fixed 全屏层，聚焦不许可滚动跳动。
+  // focus-visible 规则保证鼠标用户的点击打开不会闪焦点描边
+  useEffect(() => {
+    const prev = document.activeElement
+    closeBtnRef.current?.focus({ preventScroll: true })
+    return () => {
+      if (prev instanceof HTMLElement) prev.focus({ preventScroll: true })
+    }
+  }, [])
+
+  // Esc 退出（window 级监听；chrome 隐藏态也可退出）+ Tab 循环 trap（F2·P3b：
+  // aria-modal 语义下焦点不得逃出对话框），卸载时一并清理
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape') {
+        onClose()
+        return
+      }
+      if (e.key !== 'Tab') return
+      const root = rootRef.current
+      if (!root) return
+      // 可焦点集 = 查看器内未禁用且当前可见的按钮（本组件内只有按钮可聚焦）。
+      // 沉浸 chrome 隐藏态是 visibility:hidden（不可点、不进可达性树），须剔除
+      const focusables = Array.from(
+        root.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'),
+      ).filter((el) => window.getComputedStyle(el).visibility !== 'hidden')
+      if (focusables.length === 0) {
+        // P3-1：chrome 全隐藏（可焦点集为空）也吃掉 Tab——aria-modal 层内
+        // 无可落点时不许把焦点放逃到查看器外
+        e.preventDefault()
+        return
+      }
+      const first = focusables[0]
+      const last = focusables[focusables.length - 1]
+      const active = document.activeElement
+      const inCircle = active instanceof HTMLElement && focusables.includes(active as HTMLButtonElement)
+      if (!inCircle) {
+        // 焦点在圈外（查看器外 / 停在被沉浸隐藏的 chrome 按钮上）：拉回圈内
+        e.preventDefault()
+        if (e.shiftKey) last.focus({ preventScroll: true })
+        else first.focus({ preventScroll: true })
+      } else if (e.shiftKey && active === first) {
+        e.preventDefault() // 逆向越界：绕到末尾
+        last.focus({ preventScroll: true })
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault() // 正向越界：绕回头部
+        first.focus({ preventScroll: true })
+      }
+      // 其余情况焦点已在圈内两钮之间，浏览器默认步进即落在圈内，不拦
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -402,7 +461,7 @@ export default function ImageViewer({
   }, [preloadUrls])
 
   return createPortal(
-    <div className="img-viewer" role="dialog" aria-modal="true" aria-label="图片查看器">
+    <div ref={rootRef} className="img-viewer" role="dialog" aria-modal="true" aria-label="图片查看器">
       {/* key=src：换件重挂画布，transform/手势现场自然复位（免命令式复位） */}
       <ViewerCanvas
         key={src}
@@ -418,7 +477,13 @@ export default function ImageViewer({
             {position.index} / {position.total}
           </span>
         ) : null}
-        <button type="button" className="img-viewer__btn img-viewer__close" onClick={onClose} aria-label="关闭查看器">
+        <button
+          ref={closeBtnRef}
+          type="button"
+          className="img-viewer__btn img-viewer__close"
+          onClick={onClose}
+          aria-label="关闭查看器"
+        >
           <X size={18} />
         </button>
         {onPrev ? (

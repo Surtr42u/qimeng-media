@@ -118,6 +118,10 @@ function useRecommendationStream(seed: number, cosOnly: boolean) {
     // P3.1（E1 返工）：换 seed 的占位窗口里 hasNextPage 取自旧流（可能为
     // false）——「到底了」类文案须配合此标记抑制，防窗口期闪现
     isPlaceholderData: q.isPlaceholderData,
+    // F2：换键重取失败透传给 StreamCards 显示错误态（hook 原样返回
+    // useInfiniteQuery 结果，isError/refetch 天然可得，无需 hook 层改动）
+    isError: q.isError,
+    refetch: q.refetch,
     sentinelRef,
   }
 }
@@ -140,7 +144,7 @@ function StreamCards({ stream, onOpen, emptyHint, footer, endHint, gridClassName
   /** 网格容器类（热榜传 'grid grid--hot'，缺省 'grid'） */
   gridClassName?: string
 }) {
-  const { items, isLoading, isFetchingNextPage, hasNextPage, isPlaceholderData, sentinelRef } = stream
+  const { items, isLoading, isFetchingNextPage, hasNextPage, isPlaceholderData, isError, refetch, sentinelRef } = stream
   // E5 批次导航快照：当前已渲染（去重后）流的 id 序与所点下标。协议 id 可空：
   // 无 id 项不可跳详情也不入快照（快照与可点项保持同序同集）
   const navContext = (() => {
@@ -170,15 +174,34 @@ function StreamCards({ stream, onOpen, emptyHint, footer, endHint, gridClassName
           />
         ))}
       </div>
-      {/* 提示行区（网格之下全宽直挂）：加载中/空态/页脚/到底了/哨兵 */}
+      {/* 提示行区（网格之下全宽直挂）：加载中/错误/空态/页脚/到底了/哨兵。
+          F2：错误态优先于空态——换键重取失败（isError）时不再落进 emptyHint
+          （「暂无上榜内容」类文案把失败误报成没数据）；三个流（推荐/cos/热榜）
+          经同一 StreamCards 出口天然同口径。v5 实际语义（P2-1 注释修正）：
+          占位只在 pending 态生效——换键失败期占位被丢弃（status=error、
+          data=undefined）→ 网格清空，只剩「加载失败+重试」；fetchNextPage
+          同键失败才保留已载卡片，页脚/到底了让位错误行，恢复路径都是「重试」
+          一颗钮（错误期哨兵卸载，不再自动续拉）。样式复用 pill/grid-empty
+          既有 token，零新颜色字面量 */}
       {isLoading && <p className="grid-empty">加载中…</p>}
-      {isFetchingNextPage && <p className="grid-empty">加载中…</p>}
-      {!isLoading && items.length === 0 && <p className="grid-empty">{emptyHint}</p>}
-      {!isLoading && items.length > 0 && footer}
-      {/* P3.1：占位窗口（换 seed 重取中）hasNextPage 是旧流的，可能假性
-          false——到底提示须等新流到货再判 */}
-      {!isLoading && !isPlaceholderData && items.length > 0 && !hasNextPage && endHint}
-      {hasNextPage && <div ref={sentinelRef} style={{ height: 1 }} aria-hidden="true" />}
+      {!isError && isFetchingNextPage && <p className="grid-empty">加载中…</p>}
+      {isError ? (
+        <p className="grid-empty">
+          加载失败
+          <button className="pill" type="button" onClick={() => void refetch()}>
+            重试
+          </button>
+        </p>
+      ) : (
+        <>
+          {!isLoading && items.length === 0 && <p className="grid-empty">{emptyHint}</p>}
+          {!isLoading && items.length > 0 && footer}
+          {/* P3.1：占位窗口（换 seed 重取中）hasNextPage 是旧流的，可能假性
+              false——到底提示须等新流到货再判 */}
+          {!isLoading && !isPlaceholderData && items.length > 0 && !hasNextPage && endHint}
+        </>
+      )}
+      {hasNextPage && !isError && <div ref={sentinelRef} style={{ height: 1 }} aria-hidden="true" />}
     </>
   )
 }
@@ -251,6 +274,9 @@ function HotRankTab({ period, onOpen }: { period: HomeRankPeriod; onOpen: (id?: 
     // E2：榜单流已配 keepPreviousData——period 换档/qm:refresh 换 reloadKey
     // 重取期间旧榜保留占位，isPlaceholderData 为 true，与推荐流共用口径
     isPlaceholderData: q.isPlaceholderData,
+    // F2：错误态透传，与推荐流同口径（见 useRecommendationStream 注释）
+    isError: q.isError,
+    refetch: q.refetch,
     sentinelRef,
   }
   return (

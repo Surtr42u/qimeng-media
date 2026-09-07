@@ -5,6 +5,7 @@ import { HomeBackdropLayout } from '@/components/layout/HomeBackdropLayout'
 import { RootLayout } from '@/components/layout/RootLayout'
 import { AppShell } from '@/components/shell/AppShell'
 import { CollectionDeepLink } from '@/pages/CollectionDeepLink'
+import { HOME_PATH } from '@/lib/route-keys'
 
 /**
  * 路由（2026-09-02：UI 原型移植重建；E1 首页↔详情改叠加组）。
@@ -31,8 +32,8 @@ const LibraryManagePage = lazy(() => import('@/pages/LibraryManagePage'))
 const TrashPage = lazy(() => import('@/pages/TrashPage'))
 
 export const router = createBrowserRouter([
-  // 根路径直达首页（应用主入口）
-  { index: true, element: <Navigate to="/app/home" replace /> },
+  // 根路径直达首页（应用主入口；路由串走 HOME_PATH 常量，F2 字面量收敛）
+  { index: true, element: <Navigate to={HOME_PATH} replace /> },
   {
     path: 'app',
     element: <AuthGate />,

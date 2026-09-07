@@ -174,6 +174,15 @@ media-ui-prototype/
     - **全量榜单页单框单标题**：RanksPage 三全量榜删内层 `.rank-card > .rank-head` 重复 h3，保留框体+.rank-note 口径注+列表，单标题=page-head h2。断言：三页 h3=0、rank-head=0、cards=1。
     - **审查与验收**：四命令绿（tsc 0 错/oxlint 16≤17/build 41 entries/npm test 41 过）+ reviewer 六质询点全过（StreamCards 条件分支逐字比对、grid--hot margin 作用机制推演 E1 基线 83.1 不受影响、查看器可达链条、fileCount 字段对照生成 SDK、LOCALE_ZH 无孤儿、注释 grep 零残留）+ 主会话浏览器 4 剧本走查全过。P3 记账×3：①刷新 spinning 0.6s 动画内进详情，FAB 卸载致 onAnimationEnd 不触发，返回首页重挂载时动画重放一次（纯视觉）；②搜索页/收藏页既有空态提示仍占网格单格宽（同款观感问题，本批范围外）；③尾注行移网格下后间距松约 8px（未调）。**存量记账**：裸 `/app/ranks`（无 rank 参数）404 Unexpected Application Error——路由只注册 `ranks/:rank`、数据页入口恒带参，存量现状非本批回归（router 默认 errorElement 无友好 404 页，待后续立项）。证据目录 %TEMP%\qimeng-f7-evidence\（保留勿删）。
 
+27. **F2 E 系列审查遗留收口六项（✅ 2026-09-08 完成，任务F-Web卷 F2；reviewer 两轮——首轮 P1 打回返工、二轮清偿复审通过+主会话浏览器走查过）**：
+    - **StreamCards 错误态**（E2 备案清偿）：isError 分支「加载失败」+重试钮（refetch），错误态优先空态/endHint，哨兵 `hasNextPage && !isError` 错误期卸载防自动续拉；三流（推荐/cos/hot）经同一 StreamCards 出口同口径。**注释如实化**（P2-1）：换键重取失败时 v5 占位被丢弃（status=error）→网格清空只显错误行；fetchNextPage 同键失败才保留已载卡片+错误行。走查实测（停 18463 服务端模拟断网）：5s 内「加载失败+重试」出现且无「暂无 COS 内容」误导，服务恢复点重试→流恢复。
+    - **useTimelineTags 占位+播放器闸门（首轮 P1 打回项，本批核心）**：keepPreviousData 本身会在换件窗口期让 isLoading=false，旧 `tagsLoading` 门**确定性失效**（v5 占位生效时 status 被乐观翻 'success'，queryObserver.js:277-310 实证）→ 新 VideoPlayer 以旧资产 highlights 首挂定格（ArtPlayer highlight 仅构造时消费），进度条永久挂旧资产打点、点击 seek 错位。**修复=挂载门改 `tagsPending || tagsPlaceholder`**（AssetDetailPage，占位/挂起期显示「加载中…」不挂播放器），换键失败期占位被丢弃→闸开+highlights 空数组无残留；注释契约写在 use-progress.ts（消费方必读）与 video-player.tsx。走查实测：视频→视频换件窗口精确显示「加载中…」+无播放器，新件到货即挂。
+    - **viewer P3 三处**：pointercancel 清 lastTap（与 pointup 同口径）；手写焦点管理（挂载焦点入关闭钮 preventScroll、卸载归还触发元素、Tab trap 过滤 visibility:hidden——未迁 radix Dialog，取可逆低成本：现组件 portal+Pointer 手势+key=src 重挂耦合深，迁移动面大不可逆，45 行纯增量可整体回退）；沉浸态 focusables 空分支补 preventDefault 吞 Tab 防焦点逃出（P3-1 清偿）；「进视频项 viewer 卸载、回图片项 viewerOpen 保持不复位（满足条件即自动重现）」设计语义注释落 image-viewer.tsx 文件头+AssetDetailPage 挂载处（**注**：E5 备案写「不自动重现」与代码事实相反，实为 viewerOpen 不复位条件重成立即重现，注释按实际行为落笔，改行为须过用户拍板）。
+    - **`'/app/home'` 字面量收敛**（E1 P3.5）：router.tsx/Sidebar.tsx/TopBar.tsx 三处改 HOME_PATH 导入（route-keys 单源），grep 零残留（route-keys.test.ts 裸字面量为谓词测试夹具自洽豁免），URL 逐字节不变。
+    - **use-prefs.ts 注释修正**（E4 P3）：「滑杆展示顺序」→E4 后现状（预设激活判定遍历顺序），零行为改动。
+    - **作者页搜索图标 r=8**（#14 拍板）：核识 SearchIcon 放大镜圆自阶段 A（c8788ca）即 `r="8"`（git log -p 全史唯一、从未改过），拍板=确认 8 否决原型 7——数值无需改，icons.tsx 补拍板溯源注释（禁改回 7）。
+    - **验收**：四命令绿（tsc 0 错/oxlint 16≤17 存量持平/build 41 entries/npm test 41 过）+ reviewer 二轮七时序推演全过（冷启动/换件占位/detail 先到/tags 先到/换键失败/同键 refetch/加载中借用）+ 主会话浏览器实测四点（错误态与重试恢复、换件闸门、焦点入钮与 trap、全站导航回归）。走查受限记录：合成 Pointer 事件无法触发沉浸切换（E5 已知手势模拟限制），P3-1 分支以代码级核验覆盖；SDK client 固化 globalThis.fetch 引用致合成 fetch 拦截无效，错误态改以停服务端真实模拟。证据目录 %TEMP%\qimeng-f2-evidence\（保留勿删）。
+
 ## 5.9 UI 收尾执行批次（2026-09-04 规划定稿，用户拍板启动）
 
 三项待办的执行级任务书，顺序冻结 **W-1 → W-2 → W-3**（功能缺口优先、最重殿后）；每批交付 = 代码 + 实机截图 + `npx tsc --noEmit -p web/tsconfig.app.json` + `npm --prefix web run build` + `npm --prefix web run lint` 全绿。通用约束：§4.5 对齐纪律（改布局必须静止态实测）、§5.8 颜色 token 口径、铁律 7（UI 组件禁直调 API，走 hooks）、AI_README_FIRST 代码卫生。

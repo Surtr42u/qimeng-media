@@ -14,7 +14,8 @@ import { unwrapSdkResult } from '@/lib/api-client'
 
 export const PREFS_QUERY_KEY = ['api/v1/recommendations/prefs'] as const
 
-/** 9 维键序（滑杆展示顺序；与 DOMAIN_RULES §1.3 表格列序一致，PUT 全量提交） */
+/** 9 维键序（E4 后无滑杆、只留预设：现用于预设激活判定的字段遍历顺序
+ *  （SettingsPage isActivePreset）；与 DOMAIN_RULES §1.3 表格列序一致，PUT 全量提交） */
 export const PREFS_KEYS = [
   'tagRelevance',
   'tagCollection',

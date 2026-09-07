@@ -80,6 +80,11 @@ export function SettingsIcon({ className }: IconProps) {
   )
 }
 
+// 放大镜圆 r=8 是用户拍板口径（2026-09-08 拍板 #14：作者页搜索图标对齐旧版
+// r=8；原型的 7px 差 ≤1px 被否）——禁改回 7。r 为 SVG 几何属性、token 体系
+// 无对应项，按「无对应 token 的几何值可直写并注释」纪律原样直写。
+// 该图标同时服务作者管理页（AuthorsPage）与我的页搜索框（.hist-search），
+// 改半径会影响两处，动前先对照拍板记录。
 export function SearchIcon({ className }: IconProps) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
