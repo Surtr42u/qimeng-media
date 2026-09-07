@@ -24,6 +24,17 @@ object TimelineTagColors {
     /** 星标前缀（标签名以此开头 → 金色系） */
     const val STAR_PREFIX = "⭐"
 
+    /**
+     * 心动快捷写入字面量（❤ + U+FE0F 变体选择符 → 呈现为红心 emoji）。
+     * 判定与写入分离：判定恒用裸 [HEART_PREFIX]（兼容手输无变体符的 ❤ 与快捷键写入的 ❤️），
+     * 写入恒用本完整字面量（保证键盘呈现为红色 emoji）——2026-09-07 审查 P2 前口径分叉，
+     * 快捷键与芯片底色曾各自定义字面量，现统一收敛到本对象单源。
+     */
+    const val HEART_TAG = "\u2764\uFE0F"
+
+    /** 星标快捷写入字面量（U+2B50 实心星；⭐ 无变体符歧义，判定直用 [STAR_PREFIX]） */
+    const val STAR_TAG = "\u2B50"
+
     /** 红·浅色主题（Material Red 800：浅底上够深，对比度足） */
     val HeartLight: Color = Color(0xFFC62828)
 

@@ -19,8 +19,11 @@ import media.qimeng.app.core.model.AssetQuery
 import media.qimeng.app.core.model.AssetSort
 import media.qimeng.app.core.model.FacetOption
 import media.qimeng.app.core.model.FacetsResult
+import media.qimeng.app.core.model.LIST_LOAD_FAILED_MESSAGE
+import media.qimeng.app.core.model.LIST_PAGE_SIZE
 import media.qimeng.app.core.model.MediaAsset
 import media.qimeng.app.core.model.MediaKind
+import media.qimeng.app.core.model.PARTITION_KEY_ALL
 import media.qimeng.app.core.model.SortOrder
 import media.qimeng.app.core.model.Zone
 import media.qimeng.app.core.model.withOtherBucketLast
@@ -156,7 +159,7 @@ class FavoriteViewModel @Inject constructor(
         _uiState.value = state.copy(isLoading = true, isRefreshing = isRefresh)
         viewModelScope.launch {
             runCatching {
-                val base = AlbumFilter.toAssetQuery(state.filter, limit = PAGE_SIZE, cursor = cursor)
+                val base = AlbumFilter.toAssetQuery(state.filter, limit = LIST_PAGE_SIZE, cursor = cursor)
                 // 收藏固定口径：favorite=true + 收藏时间倒序（sort=favoriteAt 仅在收藏语义成立）
                 mediaRepository.assets(
                     base.copy(favorite = true, sort = AssetSort.FAVORITE_AT, order = SortOrder.DESC),
@@ -174,7 +177,7 @@ class FavoriteViewModel @Inject constructor(
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     isRefreshing = false,
-                    errorMessage = LOAD_FAILED_MESSAGE,
+                    errorMessage = LIST_LOAD_FAILED_MESSAGE,
                 )
             }
         }
@@ -208,18 +211,10 @@ class FavoriteViewModel @Inject constructor(
                 )
             }.onFailure {
                 if (gen != filterGeneration) return@onFailure // 旧代失败不污染新筛选态
-                _uiState.value = _uiState.value.copy(errorMessage = LOAD_FAILED_MESSAGE)
+                _uiState.value = _uiState.value.copy(errorMessage = LIST_LOAD_FAILED_MESSAGE)
             }
         }
     }
-
-    companion object {
-        /** 列表分页大小（与相册页同口径：协议 /assets 缺省 60） */
-        const val PAGE_SIZE = 60
-
-        /** 「全部」桶 key（协议 Partition.all 字面值） */
-        private const val PARTITION_KEY_ALL = "all"
-
-        private const val LOAD_FAILED_MESSAGE = "加载失败，请下拉重试"
-    }
+    // 分页大小/全部桶 key/失败文案：共享常量收敛至 core/model ListQueryDefaults.kt
+    // （2026-09-07 审查 P3，与相册/历史/搜索同款单源）。
 }

@@ -19,8 +19,11 @@ import media.qimeng.app.core.model.AlbumFilterState
 import media.qimeng.app.core.model.FacetOption
 import media.qimeng.app.core.model.FacetsResult
 import media.qimeng.app.core.model.HistoryQuery
+import media.qimeng.app.core.model.LIST_LOAD_FAILED_MESSAGE
+import media.qimeng.app.core.model.LIST_PAGE_SIZE
 import media.qimeng.app.core.model.MediaAsset
 import media.qimeng.app.core.model.MediaKind
+import media.qimeng.app.core.model.PARTITION_KEY_ALL
 import media.qimeng.app.core.model.Zone
 import media.qimeng.app.core.model.zoneToHistoryParams
 import media.qimeng.app.core.model.withOtherBucketLast
@@ -162,7 +165,7 @@ class HistoryViewModel @Inject constructor(
                 historyRepository.history(
                     HistoryQuery(
                         cursor = cursor,
-                        limit = PAGE_SIZE,
+                        limit = LIST_PAGE_SIZE,
                         includeCos = includeCos,
                         cosOnly = cosOnly,
                         mediaType = state.filter.mediaType,
@@ -183,7 +186,7 @@ class HistoryViewModel @Inject constructor(
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     isRefreshing = false,
-                    errorMessage = LOAD_FAILED_MESSAGE,
+                    errorMessage = LIST_LOAD_FAILED_MESSAGE,
                 )
             }
         }
@@ -216,18 +219,10 @@ class HistoryViewModel @Inject constructor(
                 )
             }.onFailure {
                 if (gen != filterGeneration) return@onFailure // 旧代失败不污染新筛选态
-                _uiState.value = _uiState.value.copy(errorMessage = LOAD_FAILED_MESSAGE)
+                _uiState.value = _uiState.value.copy(errorMessage = LIST_LOAD_FAILED_MESSAGE)
             }
         }
     }
-
-    companion object {
-        /** 列表分页大小（协议 /history limit 缺省 60） */
-        const val PAGE_SIZE = 60
-
-        /** 「全部」桶 key（协议 Partition.all 字面值） */
-        private const val PARTITION_KEY_ALL = "all"
-
-        private const val LOAD_FAILED_MESSAGE = "加载失败，请下拉重试"
-    }
+    // 分页大小/全部桶 key/失败文案：共享常量收敛至 core/model ListQueryDefaults.kt
+    // （2026-09-07 审查 P3，与相册/收藏/搜索同款单源）。
 }

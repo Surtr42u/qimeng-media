@@ -64,11 +64,8 @@ private val STAGE_WATCHED_BADGE_PADDING = 8.dp
 /** 进度轮询间隔（3d 设计从简：播放中每 1s 读一次位置喂节流策略；策略自身 5s 放行一次） */
 private const val POSITION_POLL_INTERVAL_MS = 1000L
 
-/** 快捷时间轴标签（❤️ 带变体选择符，命中 TimelineTagColors「❤」前缀与桥接件「❤️」判定） */
-private const val HEART_QUICK_TAG = "\u2764\uFE0F"
-
-/** 快捷时间轴标签（星标；TimelineTagColors/桥接件同前缀判定） */
-private const val STAR_QUICK_TAG = "\u2B50"
+// 快捷标签字面量不再本地定义：写入用 TimelineTagColors.HEART_TAG/STAR_TAG（单源，
+// 2026-09-07 审查 P2 前❤字面量三处独立定义且口径分叉，已收敛）。
 
 /** G6 全屏切换防抖窗口（ms）：快速连点全屏键不连续请求方向（旧版 MediaDetailFragment:1157-1160 同款语义） */
 private const val FULLSCREEN_TOGGLE_DEBOUNCE_MS = 800L
@@ -163,8 +160,9 @@ internal fun VideoStage(
     // 时间轴标签（3d）：领域模型 → 桥接实体映射（timeMillis 直传；实体遗留字段
     // recordKey/fileName 填本资产标识、createdAtMillis 桥接件仅作展示来源不消费填 0；
     // timelineTagId 以列表序号占位——桥接件不消费该字段，域 id 由长按菜单经序号反查）。
-    // 颜色说明：芯片红/金配色由桥接件按 ❤️/⭐ 前缀自绘（bg_timeline_tag_like/fav，
-    // 改动最小面），Compose 侧不重复注入颜色；TimelineTagColors 用于添加对话框快捷键。
+    // 颜色说明：芯片红/金配色由桥接件按 TimelineTagColors.HEART_PREFIX/STAR_PREFIX 裸前缀
+    // 判定自绘（bg_timeline_tag_like/fav，改动最小面；裸前缀同时命中带/不带变体符写法），
+    // Compose 侧不重复注入颜色；TimelineTagColors 亦供添加对话框快捷键（写入字面量单源）。
     val tagEntities = remember(timelineTags, asset.id) {
         timelineTags.mapIndexed { index, tag ->
             TimelineTagEntity(
@@ -358,22 +356,23 @@ private fun TimelineTagAddDialog(
         title = { Text(stringResource(R.string.detail_video_tag_add_title)) },
         text = {
             Column {
-                // 快捷键 = 前缀填入输入框（可再补文字，如「❤️ 名字」）；前缀与
-                // TimelineTagColors/桥接件芯片判定的字面量同源
+                // 快捷键 = 前缀填入输入框（可再补文字，如「❤️ 名字」）。写入字面量与
+                // 芯片底色判定均收敛在 TimelineTagColors 单源：写入用 HEART_TAG/STAR_TAG
+                // 完整字面量，判定用裸前缀（兼容带/不带变体符的既有数据）
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick = { input = HEART_QUICK_TAG }) {
+                    TextButton(onClick = { input = TimelineTagColors.HEART_TAG }) {
                         Text(
-                            text = HEART_QUICK_TAG,
+                            text = TimelineTagColors.HEART_TAG,
                             color = TimelineTagColors.colorFor(
-                                HEART_QUICK_TAG, darkTheme, MaterialTheme.colorScheme.onSurface,
+                                TimelineTagColors.HEART_TAG, darkTheme, MaterialTheme.colorScheme.onSurface,
                             ),
                         )
                     }
-                    TextButton(onClick = { input = STAR_QUICK_TAG }) {
+                    TextButton(onClick = { input = TimelineTagColors.STAR_TAG }) {
                         Text(
-                            text = STAR_QUICK_TAG,
+                            text = TimelineTagColors.STAR_TAG,
                             color = TimelineTagColors.colorFor(
-                                STAR_QUICK_TAG, darkTheme, MaterialTheme.colorScheme.onSurface,
+                                TimelineTagColors.STAR_TAG, darkTheme, MaterialTheme.colorScheme.onSurface,
                             ),
                         )
                     }

@@ -656,8 +656,8 @@ class DetailViewModel @Inject constructor(
         /** 推荐栏条数（Web useUpNextList limit 缺省 12，use-assets.ts:322） */
         const val UP_NEXT_LIMIT = 12
 
-        // 错误文案（中文含操作名；与 home 的 LOAD_FAILED_MESSAGE 同为 VM 常量——
-        // 状态层文案不进 res，测试直接断言）
+        // 错误文案（中文含操作名；与列表族共享的 LIST_LOAD_FAILED_MESSAGE（core:model 单源）同为
+        // 状态层文案——不进 res，测试直接断言；本文件文案为详情页专用故留在本地）
         private const val ERROR_MISSING_ASSET = "缺少资产参数，无法打开详情"
         private const val ERROR_LOAD_DETAIL = "详情加载失败，请重试"
         private const val ERROR_LOAD_UP_NEXT = "推荐加载失败"

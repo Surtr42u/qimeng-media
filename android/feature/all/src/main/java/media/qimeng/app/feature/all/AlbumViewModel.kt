@@ -24,8 +24,11 @@ import media.qimeng.app.core.model.AlbumPanelDraft
 import media.qimeng.app.core.model.FacetOption
 import media.qimeng.app.core.model.FacetParamKind
 import media.qimeng.app.core.model.FacetsResult
+import media.qimeng.app.core.model.LIST_LOAD_FAILED_MESSAGE
+import media.qimeng.app.core.model.LIST_PAGE_SIZE
 import media.qimeng.app.core.model.MediaAsset
 import media.qimeng.app.core.model.MediaKind
+import media.qimeng.app.core.model.PARTITION_KEY_ALL
 import media.qimeng.app.core.model.RankingPeriod
 import media.qimeng.app.core.model.TagSummary
 import media.qimeng.app.core.model.Zone
@@ -257,7 +260,7 @@ class AlbumViewModel @Inject constructor(
                 .onSuccess { _panelState.value = _panelState.value.copy(tags = it) }
                 .onFailure {
                     // 候选流失败属列表级加载失败，沿用列表加载文案（与面板操作失败语义分流，P2-1）
-                    _uiState.value = _uiState.value.copy(errorMessage = LOAD_FAILED_MESSAGE)
+                    _uiState.value = _uiState.value.copy(errorMessage = LIST_LOAD_FAILED_MESSAGE)
                 }
         }
     }
@@ -337,7 +340,7 @@ class AlbumViewModel @Inject constructor(
         viewModelScope.launch {
             runCatching {
                 mediaRepository.assets(
-                    AlbumFilter.toAssetQuery(state.filter, limit = PAGE_SIZE, cursor = cursor),
+                    AlbumFilter.toAssetQuery(state.filter, limit = LIST_PAGE_SIZE, cursor = cursor),
                 )
             }.onSuccess { page ->
                 if (gen != filterGeneration) return@onSuccess // 旧代迟到响应，丢弃
@@ -353,7 +356,7 @@ class AlbumViewModel @Inject constructor(
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     isRefreshing = false,
-                    errorMessage = LOAD_FAILED_MESSAGE,
+                    errorMessage = LIST_LOAD_FAILED_MESSAGE,
                 )
             }
         }
@@ -383,17 +386,12 @@ class AlbumViewModel @Inject constructor(
                 )
             }.onFailure {
                 if (gen != filterGeneration) return@onFailure // 旧代失败不污染新筛选态
-                _uiState.value = _uiState.value.copy(errorMessage = LOAD_FAILED_MESSAGE)
+                _uiState.value = _uiState.value.copy(errorMessage = LIST_LOAD_FAILED_MESSAGE)
             }
         }
     }
-
-    companion object {
-        /** 列表分页大小（协议 /assets limit 缺省 60，≤200；协议侧改动须同步此处） */
-        const val PAGE_SIZE = 60
-
-        private const val LOAD_FAILED_MESSAGE = "加载失败，请下拉重试"
-    }
+    // 分页大小/失败文案：共享常量收敛至 core/model ListQueryDefaults.kt（2026-09-07
+    // 审查 P3，与收藏/历史/搜索同款单源）。
 }
 
 /** 四请求聚合（ FacetsResult + 「全部」胶囊计数；独立小类便于测试与复用） */
@@ -405,8 +403,8 @@ internal data class FacetsCombiner(
     val total: Int?,
 ) {
     companion object {
-        /** 「全部」桶在分区栏的 key（协议 Partition.all 字面值） */
-        private const val PARTITION_KEY_ALL = "all"
+        // 「全部」桶 key 不再本地定义：共享常量 core/model PARTITION_KEY_ALL
+        // （协议 Partition 枚举字面值，2026-09-07 审查 P3 收敛单源）。
 
         fun collect(
             partition: FacetsResult,
