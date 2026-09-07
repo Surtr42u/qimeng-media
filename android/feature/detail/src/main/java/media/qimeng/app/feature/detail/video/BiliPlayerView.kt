@@ -9,6 +9,8 @@ import android.util.AttributeSet
 import android.view.GestureDetector
 import android.view.Gravity
 import android.view.MotionEvent
+import android.view.SurfaceView
+import android.view.TextureView
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
@@ -42,13 +44,16 @@ import kotlin.math.min
  *   ② [TimelineTagEntity] 由旧 Room 实体剥离为同包纯数据类（字段不变）；
  *   ③ G4 拖进度自适应上限抽为 [gestureSeekCapMs] 纯函数（同包，行为不变）；
  *   ④ G7 倍速档位/按钮文案抽为 [PLAYER_SPEED_TIERS]/[speedButtonText] 纯函数（行为不变）；
- *   ⑤ G6 全屏按钮加「仅横屏视频可点」门禁（竖屏点按仅提示，任务书冻结口径）。
+ *   ⑤ G6 全屏按钮门禁已于 D2 删除（2026-09-07 拍板两级全屏：全类型视频均可触发，分级/
+ *      回退由 Compose 侧 [VideoFullscreenStateMachine] 裁决；覆盖 GUIDE_UI 旧句
+ *      「仅横屏视频可全屏」），并补画面交接三件套 [setPlayer] adopt / [rebindPlayer] /
+ *      [detachPlayer]（视频全屏覆盖层与排版态视图共用同一 ExoPlayer）。
  *
  * 手势冻结口径（G1~G9）：G1 竖屏单击播停/横屏单击显隐控制器；G2 横屏双击播停；
  * G3 长按 2x 松开还原（竖屏下方锁速区拖入锁定/拖出退出，长按期间禁起拖）；
  * G4 水平拖进度（24dp 起拖阈值且 |dx|>|dy|，上限见 [gestureSeekCapMs]，无时长忽略）；
- * G5 亮度/音量手势=不做（旧版无此功能）；G6 全屏=仅横屏视频可点（方向经 Activity 请求，
- * Compose 侧不持状态）；G7 倍速菜单 0.5/1/1.5/2x（1x 按钮显示「倍速」）；
+ * G5 亮度/音量手势=不做（旧版无此功能）；G6 全屏=D2 起全类型视频可点（方向写入与
+ * 两级分级/回退由 Compose 侧状态机裁决，见适配点⑤）；G7 倍速菜单 0.5/1/1.5/2x（1x 按钮显示「倍速」）；
  * G8 初始默认静音（volume=0，用户拍板）；G9 控制器 5s 自动隐藏（ENDED 强制显示，
  * 再点播放 seekTo(0)）。
  */
@@ -429,12 +434,9 @@ class BiliPlayerView @JvmOverloads constructor(
             layoutParams = LinearLayout.LayoutParams(36.dp(context), 36.dp(context))
             setColorFilter(Color.WHITE)
             setOnClickListener {
-                // G6 冻结口径：全屏按钮仅横屏视频可点；竖屏视频点按只提示不改方向
-                if (isLandscapeVideo()) {
-                    onFullscreen?.invoke()
-                } else {
-                    showTopIndicator(context.getString(R.string.detail_video_fullscreen_portrait_unsupported))
-                }
+                // D2 两级全屏：门控删除，全类型视频均可触发（竖屏视频第一级=竖屏全屏覆盖层，
+                // letterbox 属正常）；分级/回退由 Compose 侧状态机裁决，本控件只上报点击
+                onFullscreen?.invoke()
             }
         }
         buttonRow.addView(playPauseBtn)
@@ -470,16 +472,56 @@ class BiliPlayerView @JvmOverloads constructor(
         }
     }
 
-    fun setPlayer(player: ExoPlayer) {
+    fun setPlayer(player: ExoPlayer, adoptCurrentState: Boolean = false) {
+        // D2 交接挂载（adopt=true，视频全屏覆盖层视图专用）：先快照播放器实况——下方
+        // applyMuteAndSpeed 按「本视图镜像」写入音量/倍速，覆盖层新实例镜像=默认值
+        // （静音/1x），不快照会把用户已调的静音/倍速打回默认。默认 false 与既有行为逐行一致
+        val targetMuted = if (adoptCurrentState) player.volume == 0f else isMuted
+        val targetSpeed = if (adoptCurrentState) player.playbackParameters.speed else currentSpeed
         playerView.player?.removeListener(playerListener)
         playerView.player = player
         player.addListener(playerListener)
-        // G8：挂载即按静音位压 volume（搬运件 isMuted 初始 true → 首挂即静音）
-        player.volume = if (isMuted) 0f else 1f
-        // v1.15：恢复当前倍速——原实现只恢复音量，锁定过 2x 后新播放器实际 1x 但 UI 显示 2x，状态脱节
-        player.setPlaybackSpeed(currentSpeed)
+        // G8：挂载即按静音位压 volume（搬运件 isMuted 初始 true → 首挂即静音）；
+        // adopt 路径取快照（见上），交接不丢用户已调状态
+        applyMuteAndSpeed(muted = targetMuted, speed = targetSpeed)
         removeCallbacks(updateProgressRunnable)
         post(updateProgressRunnable)
+    }
+
+    /**
+     * 播放器画面重绑回本视图（D2 全屏覆盖层关闭时用）：覆盖层视图挂载期间播放器 surface
+     * 挂在覆盖层，排版态视图只留末帧（画面假死观感）；PlayerView.setPlayer 对同实例幂等
+     * 短路不会迁移 surface，故直接底层重绑画面目标。静音/倍速镜像以播放器实况对齐
+     * （覆盖层期间可能被改动），听众先移后挂幂等，不重复注册。
+     */
+    fun rebindPlayer(player: ExoPlayer) {
+        when (val surface = playerView.videoSurfaceView) {
+            is TextureView -> player.setVideoTextureView(surface)
+            is SurfaceView -> player.setVideoSurfaceView(surface)
+            else -> Unit
+        }
+        player.removeListener(playerListener)
+        player.addListener(playerListener)
+        applyMuteAndSpeed(muted = player.volume == 0f, speed = player.playbackParameters.speed)
+    }
+
+    /**
+     * 解绑播放器（D2 覆盖层视图退场用）：摘除本视图听众并断开 PlayerView 引用，防退场
+     * 视图经播放器听众滞留（surface 交接由调用方在退场序列里调 [rebindPlayer] 完成）。
+     */
+    fun detachPlayer() {
+        playerView.player?.removeListener(playerListener)
+        playerView.player = null
+    }
+
+    /** 静音位/倍速的「镜像字段 + 控件 + 播放器」三处对齐（交接路径共用，防镜像与实况脱节） */
+    private fun applyMuteAndSpeed(muted: Boolean, speed: Float) {
+        isMuted = muted
+        playerView.player?.volume = if (muted) 0f else 1f
+        muteBtn.setImageResource(if (muted) R.drawable.ic_player_mute else R.drawable.ic_player_unmute)
+        currentSpeed = speed
+        playerView.player?.setPlaybackSpeed(speed)
+        updateSpeedButtonText()
     }
 
     fun setVideoUri(uri: String) {
@@ -803,14 +845,6 @@ class BiliPlayerView @JvmOverloads constructor(
     /** 跳转到指定位置 */
     fun seekToPosition(pos: Long) {
         playerView.player?.seekTo(pos)
-    }
-
-    /** 视频是否为横屏（宽>高） */
-    fun isLandscapeVideo(): Boolean {
-        val player = playerView.player ?: return false
-        val w = player.videoSize.width
-        val h = player.videoSize.height
-        return w > 0 && h > 0 && w > h
     }
 
     /** 设置全屏状态，更新按钮图标，横屏时默认隐藏控制器，处理导航栏内边距 */
