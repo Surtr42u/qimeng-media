@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 import type { ClientConfig, RecommendPrefs } from '@/api/generated'
 import { Pill } from '@/components/ui/pill'
-import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
 import {
   CONFIG_BOUNDS,
@@ -22,11 +21,13 @@ import {
 /**
  * 设置页（原型 #page-settings 移植）。
  * 阶段 B：新增「推荐偏好」卡（9 维权重，GET/PUT /recommendations/prefs，全量整体替换）——
- * 预设点击即保存；滑杆拖动后点「保存」才 PUT；GET 失败兜底「均衡推荐」默认（DOMAIN_RULES §1.3）。
+ * 预设点击即保存；GET 失败兜底「均衡推荐」默认（DOMAIN_RULES §1.3）。
  * 阶段 C（2026-09-04）：扫描/上传两卡接 GET/PUT /api/v1/config 真实持久化——
  * 全量替换语义（四字段一并提交）；upload 两项服务端实时生效，scan 两项仅
  * 持久化、重启后生效（保存 toast 与输入提示注明，不假装实时）；
  * 界面卡维持静态说明。
+ * 阶段 E4（2026-09-07）：推荐偏好只留 4 预设（口径对齐旧版 GUIDE_UI:255）——
+ * 移除 9 维滑杆/保存按钮/本地草稿，点击预设即 PUT；激活态对服务端保存值逐维比较。
  */
 
 /** 越界提示（协议 400 之前本地先拦，文案与 CONFIG_BOUNDS 对齐） */
@@ -35,19 +36,6 @@ const BOUND_HINTS = {
   thumbEdge: `缩略图长边须在 ${CONFIG_BOUNDS.thumbEdge.min}–${CONFIG_BOUNDS.thumbEdge.max} px`,
   maxBytesMb: `单文件上限须在 ${CONFIG_BOUNDS.maxBytesMb.min}–${CONFIG_BOUNDS.maxBytesMb.max} MB`,
 } as const
-
-/** 9 维中文标签（顺序与 PREFS_KEYS 一致；维度名照 DOMAIN_RULES §1.3） */
-const PREFS_LABELS: Record<(typeof PREFS_KEYS)[number], string> = {
-  tagRelevance: '标签相关度',
-  tagCollection: '标签收集度',
-  engagement: '互动权重',
-  recency: '时效性',
-  likeScore: '点赞偏好',
-  discovery: '探索性',
-  freshness: '新鲜度',
-  browseDepth: '浏览深度',
-  maxRandom: '随机打散',
-}
 
 export default function SettingsPage() {
   const { data } = usePrefs()
@@ -100,14 +88,12 @@ export default function SettingsPage() {
     })
   }
 
-  // 草稿态：null = 未改过（显示服务端值，缺字段/Miss 时兜底默认）；拖动/点预设后转本地草稿
-  const [draft, setDraft] = useState<RecommendPrefs | null>(null)
-  const prefs: RecommendPrefs = draft ?? (data ? { ...DEFAULT_PREFS, ...data } : DEFAULT_PREFS)
+  // 当前生效值 = 服务端保存值（缺字段兜底默认），无本地草稿——预设点击即 PUT（方案拍板语义）。
+  // 激活态对它逐维比较：保存 pending 期间滞后一拍（invalidate 后到位）可接受。
+  const prefs: RecommendPrefs = data ? { ...DEFAULT_PREFS, ...data } : DEFAULT_PREFS
 
-  const setPref = (key: (typeof PREFS_KEYS)[number], value: number): void =>
-    setDraft({ ...prefs, [key]: value })
-
-  const doSave = (p: RecommendPrefs): void => {
+  // 预设点击即保存（含「均衡推荐」默认；方案拍板语义）
+  const applyPreset = (p: RecommendPrefs): void => {
     savePrefs.mutate(p, {
       onSuccess: () => toast.success('推荐偏好已保存'),
       onError: (err) =>
@@ -115,16 +101,8 @@ export default function SettingsPage() {
     })
   }
 
-  // 预设点击即保存（含「均衡推荐」默认；方案拍板语义）
-  const applyPreset = (p: RecommendPrefs): void => {
-    setDraft(p)
-    doSave(p)
-  }
-
   const isActivePreset = (p: RecommendPrefs): boolean =>
     PREFS_KEYS.every((k) => (prefs[k] ?? 0) === (p[k] ?? 0))
-
-  const dirty = PREFS_KEYS.some((k) => (prefs[k] ?? 0) !== ((data?.[k] ?? DEFAULT_PREFS[k]) ?? 0))
 
   return (
     <div className="page" id="page-settings">
@@ -195,7 +173,7 @@ export default function SettingsPage() {
       </div>
       <div className="settings-card">
         <h3>推荐偏好</h3>
-        <p>作用于首页推荐流的 9 维权重；预设点击即保存，滑杆调整后点「保存推荐偏好」</p>
+        <p>作用于首页推荐流的 9 维权重；点击预设立即保存生效</p>
         <div className="settings-grid">
           {RECOMMEND_PRESETS.map((p) => (
             <Pill
@@ -207,34 +185,6 @@ export default function SettingsPage() {
               {p.label}
             </Pill>
           ))}
-        </div>
-        {PREFS_KEYS.map((key) => (
-          <label className="settings-field settings-single" key={key}>
-            <span>{PREFS_LABELS[key]}</span>
-            {/* radix Slider 替换 input[type=range]：value 单拇指 number[]、
-                onValueChange 取首位；方向键/Home/End/aria-valuenow 由 radix 自带，
-                aria-label 补上原生 label 关联不再命中的可访问名 */}
-            <Slider
-              min={0}
-              max={1}
-              step={0.01}
-              value={[prefs[key] ?? 0]}
-              onValueChange={([v]) => setPref(key, v)}
-              aria-label={PREFS_LABELS[key]}
-            />
-            <small>{Math.round((prefs[key] ?? 0) * 100)}%</small>
-          </label>
-        ))}
-        <div className="settings-actions">
-          <button
-            className="save-btn"
-            type="button"
-            disabled={savePrefs.isPending}
-            onClick={() => doSave(prefs)}
-          >
-            {savePrefs.isPending ? '保存中…' : '保存推荐偏好'}
-          </button>
-          {dirty ? <span className="save-tip">有未保存的调整</span> : null}
         </div>
       </div>
       <div className="settings-actions">

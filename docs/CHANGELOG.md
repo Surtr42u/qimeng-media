@@ -11,6 +11,16 @@
 
 ---
 
+## fix(web): E4 推荐偏好只留 4 预设——滑杆/草稿态退役+slider 组件清理（2026-09-08 第一百一十七笔）
+
+执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 对抗审查/主会话浏览器验收，任务E-Web卷 E4=C6，用户 2026-09-07 口径）
+
+- **改动**：设置页推荐偏好卡只留 4 预设 Pill（均衡推荐/高记忆流行/深度探索/新鲜优先，文案与 use-prefs.ts 逐字一致）；删 9 维滑杆/百分比/保存按钮/「有未保存的调整」及 draft/setPref/doSave/dirty 态、PREFS_LABELS；applyPreset 点击即 PUT（toast 保留），isActivePreset 对服务端保存值逐维比较（DEFAULT_PREFS 兜底）。use-prefs.ts 与协议零改动（9 维整体存取 UI 不暴露）。连带退役全站零引用的 components/ui/slider.tsx 与 prototype.css .slider-* 6 条死规则（radix-ui 包仍被 Switch/Select 使用不移除）。
+- **审查**：reviewer 深挖服务端链反证高亮判定成立（clampPrefs 只钳 [0,1] 无归一化/浮点往返无损/DefaultWeights=PRESET_BALANCED 逐字一致）；被删符号消费方逐一 grep 零悬空。P2 备案：GET 失败兜底时「均衡推荐」误导性高亮（口径内双路兜底一致）；P3×5 记录（滞后一拍/satisfies 子集/注释过时/导出冗余/aria-pressed 既有）。
+- **验收**：三命令绿（16≤17）+ 主会话浏览器实测：仅 4 pill 无滑杆/百分比/保存钮、点深度探索→「推荐偏好已保存」toast+高亮迁移+GET 回读 9 维与 PRESET_EXPLORE 逐字一致、其余设置卡不受影响。文档：HANDOVER_UI.md §2 现状行+§5 第 22 条。证据 %TEMP%/qimeng-e4-evidence/（保留勿删）。
+
+---
+
 ## fix(web): E3 五页无感加载——LoadMorePill 退役换 useAutoMore 哨兵（2026-09-08 第一百一十六笔）
 
 执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 对抗审查/主会话浏览器验收，任务E-Web卷 E3=C5）

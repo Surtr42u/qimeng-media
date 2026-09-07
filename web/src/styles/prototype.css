@@ -1391,43 +1391,6 @@ button.select-trigger:disabled { cursor: not-allowed; opacity: .5; }
 .select-item[data-highlighted] { background: var(--hover-bg); }
 .select-item[data-state="checked"] { color: var(--qm-primary); font-weight: 500; }
 
-/* ---- Slider（推荐偏好 9 维，替换原生 input[type=range]——原型层本无 range
-   样式，新语言全 token）：轨道 --border、已选段 --qm-primary、拇指 --qm-primary
-   （与开关 checked 主色同源），描边用页面底色使拇指在轨道上可辨 ---- */
-.slider-root {
-  position: relative;
-  display: flex;
-  align-items: center;
-  width: 100%;
-  height: 16px;
-  touch-action: none;
-  user-select: none;
-}
-.slider-track {
-  position: relative;
-  height: 6px;
-  width: 100%;
-  border-radius: 999px;
-  background: var(--border);
-}
-.slider-range {
-  position: absolute;
-  height: 100%;
-  border-radius: 999px;
-  background: var(--qm-primary);
-}
-.slider-thumb {
-  display: block;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: var(--qm-primary);
-  box-shadow: 0 0 0 2px var(--bg);
-  outline: none;
-}
-.slider-thumb:hover { background: var(--accent-deep); }
-.slider-thumb:focus-visible { outline: 2px solid var(--qm-primary); outline-offset: 2px; }
-
 /* ===== 详情页 B站式排版大改（2026-09-05）：双栏 = 左主列（媒体/标题/信息/互动/标签）
    + 右栏（作者卡/接下来播放）；颜色全走既有 token（§5.8 口径，本段零颜色字面量）===== */
 .detail-layout {
