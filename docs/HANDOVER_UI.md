@@ -158,6 +158,8 @@ media-ui-prototype/
     - **P3 备案**：viewer 开着横滑进视频再经 pager 回图片项，viewerOpen 保持 true 但不自动重现（需再点击，语义自洽建议留意）；aria-modal 无焦点陷阱；pointercancel 不清 lastTap（30px slop 兜底）。
     - **验收**：三命令绿（16≤17）+ 主会话浏览器 18462 实测 11 项（查看器结构四值/双击 1.8x 还原/单击沉浸/Esc/横滑图→图换件 viewer 保持+counter 递增+查询串保留/换到视频项卸载/pager 边界/真·无上下文深链降级/同 URL reload state 存活/零依赖 import 面）；返工复核（一般式反例重推精确落回、z 三处同步、31~34 无占用）+ 主会话 z35>30 看图终验。证据目录 %TEMP%\qimeng-e5-evidence\（含 accept/acceptance-main-session.md，保留勿删）。
 
+24. **E6 vitest 测试基建（✅ 2026-09-08 完成，任务E-Web卷 E6=ADR-0017 实施；reviewer 独立对抗审查通过含破坏性抽验）**：`npm install -D vitest@^5.0.0`（npm registry latest，peer 官方覆盖 vite ^8.2.0）；`package.json` 仅 scripts.test="vitest run"+devDependencies.vitest 两处 diff；独立 `vitest.config.ts`（node 环境/include src/**/*.test.ts/alias @ 与 vite.config 同口径，vite 构建链零接触）。7 个 lib 纯函数模块 39 条测试全绿（sse 帧边界 8/pagination 游标 4/format 档位与时钟 11/album-grouping 4/history-grouping 跨日 4/search-mapping 全表 4/route-keys 4），显式 import vitest 不用 globals，dateLabel/分组用 vi.setSystemTime 固定时钟相对天数构造（时区无关），sse 测试以 vi.stubGlobal+动态 import 解决 api-client 顶层 localStorage 的 Node 环境前提（isolate:true 无泄漏）。reviewer 破坏性抽验（改断言→精确变红→sha256 核验恢复）证明测试真实锁定行为；锁定到源码既有怪癖（formatBytes 1024²-1→KB 档、pagination 页长>limit 判到底）。P3 覆盖面建议（后续批次补）：readAssetNavState/assetDetailWithSearch/subscribeSSE retry 停连/dateRangeFor/partitionKey 未覆盖。CI web job 接入 npm test 仍记待办（ADR-0017）。验收：npm test 全绿+tsc/oxlint（16≤17，新文件 0 告警）/build 41 entries。证据目录 %TEMP%\qimeng-e6-evidence\（保留勿删）。
+
 ## 5.9 UI 收尾执行批次（2026-09-04 规划定稿，用户拍板启动）
 
 三项待办的执行级任务书，顺序冻结 **W-1 → W-2 → W-3**（功能缺口优先、最重殿后）；每批交付 = 代码 + 实机截图 + `npx tsc --noEmit -p web/tsconfig.app.json` + `npm --prefix web run build` + `npm --prefix web run lint` 全绿。通用约束：§4.5 对齐纪律（改布局必须静止态实测）、§5.8 颜色 token 口径、铁律 7（UI 组件禁直调 API，走 hooks）、AI_README_FIRST 代码卫生。
