@@ -21,6 +21,7 @@ import media.qimeng.app.core.model.AlbumDim
 import media.qimeng.app.core.model.FacetOption
 import media.qimeng.app.core.model.FourDimPillModel
 import media.qimeng.app.core.model.FourDimPills
+import media.qimeng.app.core.model.MediaAsset
 import media.qimeng.app.core.model.PillSpec
 import media.qimeng.app.core.model.Zone
 import media.qimeng.app.core.model.groupByAlbumDim
@@ -46,7 +47,10 @@ private const val ALBUM_ROUTE = "all"
  * 四维芯片行 + 悬浮药丸面板（叠放不推挤网格）+ 按 activeDim 分派的分组网格 + 下拉刷新 + cursor 分页。
  */
 @Composable
-fun AllScreen(viewModel: AlbumViewModel = hiltViewModel()) {
+fun AllScreen(
+    onOpenAsset: (assetId: String) -> Unit,
+    viewModel: AlbumViewModel = hiltViewModel(),
+) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val columns by viewModel.albumColumns.collectAsStateWithLifecycle()
     // 万能筛选面板（M4-2A-B3）：面板开关/草稿/标签候选都在 VM 面板流里
@@ -146,6 +150,9 @@ fun AllScreen(viewModel: AlbumViewModel = hiltViewModel()) {
                     // 底部预留 180dp：防悬浮药丸面板展开时遮挡末行（旧版 L149 clipToPadding=false 同款）
                     bottomContentPadding = QimengDimens.ListBottomContentPadding,
                     onNearBottom = viewModel::onNearBottom,
+                    // 卡片点击进详情（D3 顺手修复：onAssetClick 有默认空实现漏传即静默无反应；
+                    // 相册页暂无 Home 式批次上下文写入，详情 i/N 滑动链缺口另记待办）
+                    onAssetClick = { asset: MediaAsset -> onOpenAsset(asset.id) },
                 )
             }
             // 悬浮药丸面板：Box 叠放不推挤网格（旧版 FrameLayout 叠放 + elevation 4dp，P9-2）

@@ -221,19 +221,20 @@ class FavoriteViewModelTest {
     }
 
     @Test
-    fun `维度芯片点击 已激活维切换展开 其他维切维并展开`() = runTest(mainDispatcherRule.testDispatcher) {
+    fun `维度芯片点击 进页默认收起 已激活维切换展开收起 其他维切维并展开`() = runTest(mainDispatcherRule.testDispatcher) {
         val viewModel = viewModel(FakeMediaRepository())
         advanceUntilIdle()
 
-        // 点已激活维（默认分区、默认展开）→ 折叠；再点 → 展开（镜像 AlbumViewModelTest 同名用例）
-        viewModel.onDimChipClicked(AlbumDim.PARTITION)
+        // 进页默认收起（用户 2026-09-07 覆盖 B8）：点已激活维 → 展开；再点 → 收起
+        // （镜像 AlbumViewModelTest 同名用例）
         assertFalse(viewModel.uiState.value.filter.expanded)
-        assertEquals(AlbumDim.PARTITION, viewModel.uiState.value.activeDim)
         viewModel.onDimChipClicked(AlbumDim.PARTITION)
         assertTrue(viewModel.uiState.value.filter.expanded)
+        assertEquals(AlbumDim.PARTITION, viewModel.uiState.value.activeDim)
+        viewModel.onDimChipClicked(AlbumDim.PARTITION)
+        assertFalse(viewModel.uiState.value.filter.expanded)
 
-        // 点其他维 → 切维并默认展开（B8 拍板保持）
-        viewModel.collapsePills()
+        // 点其他维 → 切维并展开（切维强制展开保持，旧仓库实录四 Fragment 齐证）
         viewModel.onDimChipClicked(AlbumDim.TYPE)
         assertEquals(AlbumDim.TYPE, viewModel.uiState.value.activeDim)
         assertTrue(viewModel.uiState.value.filter.expanded)

@@ -23,16 +23,17 @@ enum class AlbumDim(val label: String) {
  * 联动规则（拍板口径）：
  * - 切分区清空作者/角色选择（两行候选的 kind 命名空间随分区变化）；
  * - 行内点已选 = 取消；行前置「全部」胶囊 = 清本行（等价于取消选中）；
- * - 切换维度行时药丸容器默认展开（B8：规格书 §药丸容器「切换到新模式时默认展开」，
- *   Web 现版自相矛盾处以规格书为准）。
+ * - 进页药丸容器默认收起（用户 2026-09-07 覆盖 B8「切换到新模式时默认展开」）；
+ *   切维度行仍强制展开——旧仓库实录四 Fragment（AllFiles/Favorite/BrowseHistory 等
+ *   setViewMode）齐证切维即展示药丸，进页默认态按新拍板与旧版不同（非缺陷）。
  */
 data class AlbumFilterState(
     val partition: Zone = Zone.ALL,
     val author: FacetOption? = null,
     val character: FacetOption? = null,
     val mediaType: MediaKind? = null,
-    /** 药丸容器展开态（切维度行时由调用方重置为 true） */
-    val expanded: Boolean = true,
+    /** 药丸容器展开态（进页默认收起，用户 2026-09-07 覆盖 B8；切维度行时由调用方重置为 true） */
+    val expanded: Boolean = false,
     // ---- 万能筛选面板字段（M4-2A-B3；编辑态/映射语义见 AlbumPanelFilter.kt，默认值=协议缺省不传） ----
 
     /** 排序键（面板「排序方式」七选；协议 sort） */

@@ -18,6 +18,7 @@ import media.qimeng.app.core.model.AlbumDim
 import media.qimeng.app.core.model.FacetOption
 import media.qimeng.app.core.model.FourDimPillModel
 import media.qimeng.app.core.model.FourDimPills
+import media.qimeng.app.core.model.MediaAsset
 import media.qimeng.app.core.model.PillSpec
 import media.qimeng.app.core.model.Zone
 import media.qimeng.app.core.model.groupByDateLabel
@@ -42,6 +43,7 @@ import media.qimeng.app.core.ui.R as CoreUiR
 @Composable
 fun FavoriteScreen(
     onBack: () -> Unit,
+    onOpenAsset: (assetId: String) -> Unit,
     viewModel: FavoriteViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -110,6 +112,9 @@ fun FavoriteScreen(
                     // fragment_all_files.xml L149 clipToPadding=false 场景）
                     bottomContentPadding = QimengDimens.ListBottomContentPadding,
                     onNearBottom = viewModel::onNearBottom,
+                    // 卡片点击进详情（D3 同族顺手修复：onAssetClick 默认空实现漏传即静默无反应，
+                    // 镜像 AllScreen/HomeScreen 接线；收藏页暂无批次上下文写入，缺口与相册页同记待办）
+                    onAssetClick = { asset: MediaAsset -> onOpenAsset(asset.id) },
                 )
             }
             // 悬浮药丸面板：Box 叠放不推挤网格（与相册页同款——旧版 FrameLayout 叠放 + elevation 4dp，P9-2）
