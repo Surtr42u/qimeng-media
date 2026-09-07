@@ -34,6 +34,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import media.qimeng.app.core.model.NameSuggestion
 import media.qimeng.app.core.model.badgeLabel
+import media.qimeng.app.core.model.MediaAsset
 import media.qimeng.app.core.model.groupByDateLabel
 import media.qimeng.app.core.ui.component.QimengEmptyState
 import media.qimeng.app.core.ui.component.QimengMediaGrid
@@ -56,6 +57,7 @@ import media.qimeng.app.core.ui.theme.QimengDimens
 @Composable
 fun SearchScreen(
     onBack: () -> Unit,
+    onOpenAsset: (assetId: String) -> Unit,
     viewModel: SearchViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -105,6 +107,7 @@ fun SearchScreen(
                 onNearBottom = viewModel::onNearBottom,
                 onPinchStep = viewModel::adjustColumnsLive,
                 onPinchEnd = viewModel::commitPinchColumns,
+                onAssetClick = { asset -> onOpenAsset(asset.id) },
             )
         }
     }
@@ -267,6 +270,7 @@ private fun ResultPhase(
     onNearBottom: () -> Unit,
     onPinchStep: (Int) -> Unit,
     onPinchEnd: () -> Unit,
+    onAssetClick: (MediaAsset) -> Unit,
 ) {
     Box(
         modifier = Modifier
@@ -283,6 +287,9 @@ private fun ResultPhase(
                 columns = displayColumns,
                 animatedUrlResolver = animatedUrlResolver,
                 onNearBottom = onNearBottom,
+                // 卡片点击进详情（D3 同族顺手修复：onAssetClick 默认空实现漏传即静默无反应，
+                // 镜像相册/收藏/历史三页接线；搜索页暂无批次上下文写入，缺口同记待办）
+                onAssetClick = onAssetClick,
             )
         }
     }

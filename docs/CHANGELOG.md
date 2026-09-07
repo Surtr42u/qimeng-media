@@ -11,6 +11,16 @@
 
 ---
 
+## fix(app): 搜索结果页点卡进详情补修（2026-09-08 第一百二十七笔）
+
+执行 AI：GLM-5.3-Flash（主会话调度；原 D3 执行者续聊补修，任务D-Android卷 D3 同族收尾）
+
+- **根因**：D3 修相册/收藏/历史三页 onAssetClick 漏传时，搜索页同族第四处漏网——SearchScreen 的 QimengMediaGrid onAssetClick 默认 `{}`，点结果卡无响应。D5 批离线对账 UI 实测中发现并移交。
+- **修法**（镜像 D3 已审口径，2 文件）：SearchScreen 签名加 onOpenAsset（onBack 后、默认参前，与三页风格一致）+ SearchPhase.RESULT 调用点与私有 ResultPhase 透传；QimengNavHost Routes.SEARCH 调用点补接线。EmptyPhase/SuggestPhase 无网格不涉及。
+- **验收**：三连绿；实机——搜索「W-01」（中文词 adb 不可键入，ASCII 词走同一 ResultPhase 链路）出结果卡→点 jpg 卡进详情 dump 实证；相册/收藏/历史三页点卡回归通过（收藏借临时造数、已撤销还原）。证据 %TEMP%\qimeng-d3-evidence\（d3_search_fix_*）。
+
+---
+
 ## fix(web): F2 E系列审查遗留收口——错误态/换件占位/viewer细节/字面量收敛（2026-09-08 第一百二十六笔）
 
 执行 AI：GLM-5.3-Flash（主会话调度；executor 执行+返工/reviewer 两轮对抗审查（首轮 P1 打回）/主会话浏览器走查，任务F-Web卷 F2）
