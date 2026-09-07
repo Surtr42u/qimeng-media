@@ -16,7 +16,7 @@ import { AssetTagRow } from '@/components/detail/AssetTagRow'
 import { FileOpsButton } from '@/components/detail/FileOpsButton'
 import { UpNextList } from '@/components/detail/UpNextList'
 import { formatBytes, formatCount, formatShortDate } from '@/lib/format'
-import { assetDetailWithSearch, readAssetNavState, type AssetNavState } from '@/lib/route-keys'
+import { assetDetailWithSearch, readAssetNavState, readBackdropKey, type OverlayDetailState } from '@/lib/route-keys'
 import { ensureSessionId } from '@/hooks/use-session'
 
 /**
@@ -133,18 +133,27 @@ export default function AssetDetailPage() {
     return index >= 0 ? { ...snap, index } : null
   }, [assetId, locationState])
 
+  // F5 底衬透传：当前详情的底衬归属（入口列表身份键，顶层独立字段——
+  // readAssetNavState 只挑 ids/index/origUrls 会剥掉同级字段，必须独立读取）。
+  // null = home 链入口未携带该字段 → goNeighbor 不写，state 与 E1 现状逐字节
+  // 一致（home 链零回归）；非 null = 相册等列表入口 → 换件时写回，否则详情
+  // →详情后布局按缺省 home 重挂底衬、返回时落错列表
+  const backdrop = readBackdropKey(locationState)
+
   // 换件唯一回调（分页钮与查看器横滑/箭头共用）：保查询串（E1 叠加组底衬
-  // 同流约定）+ 带更新过 index 的 state（后续换件与浏览器返回的上下文续接）；
-  // 边界停止不循环（待拍板 #12/#18 先行口径：可逆低成本）
+  // 同流约定）+ 带更新过 index 的 state（后续换件与浏览器返回的上下文续接）
+  // + 透传 backdrop（底衬归属随详情链延续）；边界停止不循环（待拍板 #12/#18
+  // 先行口径：可逆低成本）
   const goNeighbor = useCallback(
     (delta: -1 | 1) => {
       if (!nav) return
       const target = nav.index + delta
       if (target < 0 || target >= nav.ids.length) return
-      const nextState: AssetNavState = { ids: nav.ids, index: target, origUrls: nav.origUrls }
+      const nextState: OverlayDetailState = { ids: nav.ids, index: target, origUrls: nav.origUrls }
+      if (backdrop) nextState.backdrop = backdrop
       navigate(assetDetailWithSearch(nav.ids[target], search), { state: nextState })
     },
-    [nav, navigate, search],
+    [nav, navigate, search, backdrop],
   )
 
   // 相邻预载直链：按 PRELOAD_AROUND 从快照 origUrls 切片（现有列表类型无该

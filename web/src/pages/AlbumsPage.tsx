@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router'
+import { useLocation, useNavigate } from 'react-router'
 import type { AssetSummary } from '@/api/generated'
 import { MediaCard } from '@/components/media/MediaCard'
 import { Pill } from '@/components/ui/pill'
 import { DEFAULT_PAGE_SIZE, LOCALE_ZH } from '@/lib/constants'
 import { groupAlbumsByDate } from '@/lib/album-grouping'
-import { assetDetail } from '@/lib/route-keys'
+import { ALBUMS_PATH, assetDetailWithSearch, type OverlayDetailState } from '@/lib/route-keys'
 import { useAutoMore } from '@/hooks/use-auto-more'
 import {
   assetToCard,
@@ -131,6 +131,37 @@ export default function AlbumsPage() {
   // 规则抽离）；胶囊/排序切换只改变 items，分组是其上的纯函数。
   const groups = useMemo(() => groupAlbumsByDate(items), [items])
 
+  // F5 批次导航快照 + 叠加打开：照 HomePage StreamCards 的 navContext 组装。
+  // 快照序 = 用户看到的平铺序（分组序拼接——组间按组首时间降序、组内保原序），
+  // pager 上一件/下一件才与可视顺序一致；协议 id 可空：无 id 项不可跳详情也
+  // 不入快照（快照与可点项保持同序同集）。backdrop 顶层独立字段声明底衬归属，
+  // 布局据此在详情打开期间保住相册页实例与滚动（缺省回落的是首页）。
+  const { search } = useLocation()
+  const navContext = useMemo(() => {
+    const ids: string[] = []
+    const indexAt = new Map<string, number>()
+    for (const g of groups) {
+      for (const a of g.assets) {
+        if (a.id === undefined) continue
+        indexAt.set(a.id, ids.length)
+        ids.push(a.id)
+      }
+    }
+    return { ids, indexAt }
+  }, [groups])
+
+  const openDetail = (id?: string): void => {
+    if (!id) return
+    // 叠加组导航统一入口 assetDetailWithSearch（search 原样携带，现相册页无
+    // 查询串即空串不加 ?；日后相册页做 URL 保态时此处自动续接）
+    const navState: OverlayDetailState = {
+      ids: navContext.ids,
+      index: navContext.indexAt.get(id) ?? 0,
+      backdrop: ALBUMS_PATH,
+    }
+    navigate(assetDetailWithSearch(id, search), { state: navState })
+  }
+
   // 四维 facets：每个请求"缺自身参数"（服务端排自身计数）。
   // partition 恒显式传参（不再依赖服务端缺省=all 的隐式行为）。
   const facetPartition = useAssetFacets({ ...authorParams, ...characterParams, ...(mediaType ? { mediaType } : {}) })
@@ -219,7 +250,7 @@ export default function AlbumsPage() {
     <MediaCard
       key={a.id}
       {...assetToCard(a)}
-      onClick={() => a.id && navigate(assetDetail(a.id))}
+      onClick={() => openDetail(a.id)}
     />
   )
 

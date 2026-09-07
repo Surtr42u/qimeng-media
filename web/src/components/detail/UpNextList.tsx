@@ -4,7 +4,7 @@ import { Shuffle } from 'lucide-react'
 import type { AssetSummary } from '@/api/generated'
 import { useUpNextList, type MediaType } from '@/hooks/use-assets'
 import { formatDuration } from '@/lib/format'
-import { assetDetailWithSearch, type AssetNavState } from '@/lib/route-keys'
+import { assetDetailWithSearch, readBackdropKey, type OverlayDetailState } from '@/lib/route-keys'
 
 /**
  * 详情页「接下来播放」推荐栏（B站式右栏下部）：同类型推荐流（推荐算法 +
@@ -26,7 +26,11 @@ export function UpNextList({
   // P1（E1 返工）：行跳转原样携带当前查询串（?tab/?period）——叠加组导航
   // 统一走 assetDetailWithSearch，否则详情→详情丢查询串，底衬 HomePage 翻回
   // recommend、CosRecommendTab 卸载（换一批 seed 丢失），返回时流已重置
-  const { search } = useLocation()
+  const { search, state: locationState } = useLocation()
+  // F5 底衬透传：行的详情→详情换件要延续当前详情的底衬归属（相册进的详情
+  // 换件后返回仍回相册，否则布局按缺省 home 重挂底衬）。null = home 链入口
+  // 未携带该字段 → 不写，state 与 E1 现状逐字节一致（零回归）
+  const backdrop = readBackdropKey(locationState)
   const { data, isFetching } = useUpNextList({
     mediaType,
     // COS 资产的推荐流同区收窄（与首页 cos tab 同参数语义）
@@ -55,7 +59,7 @@ export function UpNextList({
             className="upnext-row"
             key={a.id}
             to={assetDetailWithSearch(a.id, search)}
-            state={{ ids: navIds, index: i } satisfies AssetNavState}
+            state={{ ids: navIds, index: i, ...(backdrop ? { backdrop } : {}) } satisfies OverlayDetailState}
           >
             <span className="upnext-thumb">
               {a.thumbUrl ? <img src={a.thumbUrl} alt={a.fileName ?? ''} loading="lazy" /> : null}

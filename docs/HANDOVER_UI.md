@@ -183,6 +183,14 @@ media-ui-prototype/
     - **作者页搜索图标 r=8**（#14 拍板）：核识 SearchIcon 放大镜圆自阶段 A（c8788ca）即 `r="8"`（git log -p 全史唯一、从未改过），拍板=确认 8 否决原型 7——数值无需改，icons.tsx 补拍板溯源注释（禁改回 7）。
     - **验收**：四命令绿（tsc 0 错/oxlint 16≤17 存量持平/build 41 entries/npm test 41 过）+ reviewer 二轮七时序推演全过（冷启动/换件占位/detail 先到/tags 先到/换键失败/同键 refetch/加载中借用）+ 主会话浏览器实测四点（错误态与重试恢复、换件闸门、焦点入钮与 trap、全站导航回归）。走查受限记录：合成 Pointer 事件无法触发沉浸切换（E5 已知手势模拟限制），P3-1 分支以代码级核验覆盖；SDK client 固化 globalThis.fetch 引用致合成 fetch 拦截无效，错误态改以停服务端真实模拟。证据目录 %TEMP%\qimeng-f2-evidence\（保留勿删）。
 
+28. **F5 列表页入叠加组推广·首站相册页（✅ 2026-09-08 完成，任务F-Web卷 F5；调研 memo=仓库外 QimengNAS/web-overlay-rollout-memo.md；reviewer 全项通过+主会话浏览器走查过）**：
+    - **方案与结构**（调研推荐方案 a「单组+动态底衬槽」）：`albums` 移入既有 pathless 叠加组（element:null），`HomeBackdropLayout` 泛化改名 `AssetOverlayGroupLayout`（旧文件删除，`home-backdrop`→`overlay-backdrop` 类名，均无 CSS 消费零影响）——activeKey 推导：列表路径→`listKeyFromPath(pathname)`（route-keys 新函数，OVERLAY_LIST_PATHS 登记集，null=配置错误显形不静默回落）；`/app/asset/x`→`readBackdropKey(location.state) ?? HOME_PATH`。**backdrop=state 顶层独立字段+独立校验**（值=列表 pathname 必须命中登记键；不扩 readAssetNavState——职责不同：nav 缺失=无 pager 无缺省，backdrop 缺失有安全缺省 home；混入会破坏「任一字段非法整包拒绝」纪律）；同一 tree 位置同类型组件=详情往返实例存活（筛选 useState 保态）。
+    - **相册页接入**：AlbumsPage 照 StreamCards navContext 模式组装 items 快照（groups.flatMap 平铺序、无 id 项不入快照不可点）+ state `{ids,index,backdrop:ALBUMS_PATH}`——**相册入口批次导航顺带解锁**（E5 留档缺口清偿）；goNeighbor 与 UpNextList 显式读 `readBackdropKey` 写回（readAssetNavState 只挑三字段会剥同级 backdrop），home 链条件不写=state 与 E1 逐字节一致。
+    - **滚动门改写**（AppShell）：next 是详情→跳过；prev 是详情且目标===该条目 backdrop（缺省 home）→跳过；其余复位。任务书字面版「prev 或 next 是详情就跳过」被正确裁断否决——字面版下「相册详情 sidebar 切首页」不复位，违反真导航复位验收；实现版七类用例与 E1 旧行为逐条等价（home 链 backdrop 缺省 home 恰好复现），仅新增相册链语义。`inHomeDetailGroup` 退役删除（listKeyFromPath+readBackdropKey 组合替代）。
+    - **审查**：reviewer 全项通过+E1 零回归专项（HomePage 零改动/UpNextList home 链 state 逐字节一致/七类滚动用例新旧等价/查询串链未动/深链底衬=首页保留/FAB 门未动）；chunk 独立性以 dist 产物验证（AlbumsPage 独立 chunk 主 bundle 仅引用串，无首载膨胀）。
+    - **验收**：四命令绿（tsc 0 错/oxlint **15**≤17 降 1/build 41 entries/npm test **84 过**=78−1 删 inHomeDetailGroup 用例+7 新增 listKeyFromPath 3+readBackdropKey 4）+ 主会话浏览器实测（新 bundle）：相册滚动 500.26 进详情→浏览器返回 **scrollTop 逐位一致**+页面存活、详情 pager「1/23」可用（相册批次导航）、相册详情 sidebar 切首页=复位回顶+相册卸载（真导航）、深链直达 asset 无 state 底衬=home 无 pager 降级、home cos 链 ?tab=cos 全程保态+scrollTop 保留（实测 11=内容高度上限值，非回归）。
+    - **留档**：侧栏「相册」高亮不随详情期 backdrop 联动（首页同现状）；相册页查询串 URL 保态属后续批；Sidebar `'/app/albums'` 字面量未收敛（同 E1 对 '/app/home' 的尾巴，后续批）；其余 6 入口（search/mine×2/collection/ranks/data）按 memo 步骤 8 留后续批（DataPage/RanksPage 收益仅滚动可排末或豁免）。证据目录 %TEMP%\qimeng-f5-evidence\（保留勿删）。
+
 ## 5.9 UI 收尾执行批次（2026-09-04 规划定稿，用户拍板启动）
 
 三项待办的执行级任务书，顺序冻结 **W-1 → W-2 → W-3**（功能缺口优先、最重殿后）；每批交付 = 代码 + 实机截图 + `npx tsc --noEmit -p web/tsconfig.app.json` + `npm --prefix web run build` + `npm --prefix web run lint` 全绿。通用约束：§4.5 对齐纪律（改布局必须静止态实测）、§5.8 颜色 token 口径、铁律 7（UI 组件禁直调 API，走 hooks）、AI_README_FIRST 代码卫生。

@@ -11,6 +11,18 @@
 
 ---
 
+## feat(web): F5 列表页入叠加组推广——相册页进详情保态+批次导航（2026-09-08 第一百三十一笔）
+
+执行 AI：GLM-5.3-Flash（主会话调度；F5 调研=researcher 子代理（memo 仓库外 web-overlay-rollout-memo.md）/executor 实施/reviewer 全项对抗审查含 E1 零回归专项/主会话浏览器走查，任务F-Web卷 F5=E1 遗留①）
+
+- **方案 a「单组+动态底衬槽」落地**（调研三方案对比后选定；三方案评估全文见 memo）：albums 移入 pathless 叠加组，HomeBackdropLayout 泛化改名 AssetOverlayGroupLayout——activeKey=列表路径 pathname 派生（listKeyFromPath，登记集外显形不静默）/详情 readBackdropKey(state)??HOME_PATH；backdrop 为 state 顶层独立字段+独立校验（不扩 readAssetNavState，理由：nav 缺失无缺省 vs backdrop 缺失安全回落 home，职责与容错纪律不同）；同位置同类型组件=详情往返实例存活（筛选态保）。
+- **相册入口批次导航顺带解锁**：AlbumsPage 组装 items 快照（flatMap 平铺序）+ state {ids,index,backdrop}，详情 pager「n/23」可用（E5 留档缺口清偿）；goNeighbor/UpNextList 显式透传 backdrop（相册进的详情右栏换件后底衬仍=相册）；home 链条件不写=state 与 E1 逐字节一致零回归。
+- **滚动门改写**（AppShell）：next 详情→跳过；prev 详情且目标===backdrop（缺省 home）→跳过；其余复位——任务书字面版「prev 或 next 是详情就跳过」被正确裁断否决（字面版相册详情切首页不复位），实现版与 E1 旧行为七类用例逐条等价；inHomeDetailGroup 退役。
+- **审查**：reviewer 全项过+E1 零回归专项（HomePage 零 diff/state 逐字节/深链底衬/FAB 门/chunk 独立性 dist 实证无首载膨胀）。
+- **验收**：tsc 0 错/oxlint **15**≤17（降 1）/build 41 entries/npm test **84 过**（78−1+7：listKeyFromPath 3+readBackdropKey 4）+ 主会话浏览器实测：相册滚动 500.26→进详情→返回 **scrollTop 逐位一致**、pager 1/23、相册详情切首页复位+卸载、深链无 state 底衬=home 降级、home cos 链 ?tab=cos 保态。留档：侧栏相册高亮不联动（同现状）、Sidebar '/app/albums' 字面量与相册查询串保态留后续批、其余 6 入口入组留后续批。证据 %TEMP%\qimeng-f5-evidence\（保留勿删）。
+
+---
+
 ## build(web): F4 CI web job 接入 vitest（2026-09-08 第一百三十笔）
 
 执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 对抗审查通过，任务F-Web卷 F4=ADR-0017 待办闭环）

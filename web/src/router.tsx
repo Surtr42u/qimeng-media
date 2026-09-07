@@ -1,7 +1,7 @@
 import { Suspense, lazy } from 'react'
 import { createBrowserRouter, Navigate } from 'react-router'
 import { AuthGate } from '@/components/layout/AuthGate'
-import { HomeBackdropLayout } from '@/components/layout/HomeBackdropLayout'
+import { AssetOverlayGroupLayout } from '@/components/layout/AssetOverlayGroupLayout'
 import { RootLayout } from '@/components/layout/RootLayout'
 import { AppShell } from '@/components/shell/AppShell'
 import { CollectionDeepLink } from '@/pages/CollectionDeepLink'
@@ -12,13 +12,12 @@ import { HOME_PATH } from '@/lib/route-keys'
  *
  * 页面懒加载（chunk 分包）；壳层结构：
  *   /app（AuthGate 门禁）→ RootLayout（SSE 事件桥）→ AppShell（侧栏+顶栏+内容区）
- *   → 九个业务页（六主导航页 + 搜索结果/完整榜单/作者管理三个子页）
- *   + 首页↔详情叠加组（pathless layout route：HomePage 常驻底衬，详情覆盖打开，
- *   布局元素见 components/layout/HomeBackdropLayout.tsx）。
+ *   → 业务页（五主导航页 + 搜索结果/完整榜单/作者管理/集合等子页）
+ *   + 列表↔详情叠加组（pathless layout route：首页/相册常驻底衬，详情覆盖
+ *   打开，布局元素见 components/layout/AssetOverlayGroupLayout.tsx）。
  * 页面类名与原型逐字一致（styles/prototype.css 消费 #page-* id 选择器）。
  */
 
-const AlbumsPage = lazy(() => import('@/pages/AlbumsPage'))
 const MinePage = lazy(() => import('@/pages/MinePage'))
 const DataPage = lazy(() => import('@/pages/DataPage'))
 const MaintenancePage = lazy(() => import('@/pages/MaintenancePage'))
@@ -46,20 +45,24 @@ export const router = createBrowserRouter([
             element: <AppShell />,
             children: [
               {
-                // E1 首页↔详情叠加组（pathless layout route：无 path 的路由对象
+                // F5 列表↔详情叠加组（pathless layout route：无 path 的路由对象
                 // 只为 children 提供布局嵌套、不产生 URL 段——react-router 官方
-                // Layout Routes 语法）。HomePage 在组内恒挂载为底衬：home↔asset
-                // 切换不卸载，seed/已加载分页与 .content 滚动位置自然保留（返回
-                // 保态的根基）；详情子路由渲染为覆盖层（.asset-overlay），URL 仍是
-                // /app/asset/:assetId 可直达（直达时底衬=首页）。
-                element: <HomeBackdropLayout />,
+                // Layout Routes 语法；由 E1 首页单列表泛化为多列表单槽，布局见
+                // components/layout/AssetOverlayGroupLayout.tsx）。组内列表页
+                // 在同一布局槽恒挂载为底衬：列表↔详情互切不卸载，筛选态/seed/
+                // 已加载分页与 .content 滚动位置自然保留（返回保态的根基）；
+                // 详情子路由渲染为覆盖层（.asset-overlay），URL 仍是
+                // /app/asset/:assetId 可直达（直达无 state 时底衬=首页）。
+                // 列表入组两处登记缺一不可：OVERLAY_LIST_PATHS（route-keys）
+                // + 布局槽位条件渲染；子路由 element:null，可见内容就是底衬
+                // 列表本身。
+                element: <AssetOverlayGroupLayout />,
                 children: [
-                  // 首页子路由不渲染元素：可见内容就是底衬 HomePage 本身
                   { path: 'home', element: null },
+                  { path: 'albums', element: null },
                   { path: 'asset/:assetId', element: <Suspense fallback={null}><AssetDetailPage /></Suspense> },
                 ],
               },
-              { path: 'albums', element: <Suspense fallback={null}><AlbumsPage /></Suspense> },
               { path: 'mine', element: <Suspense fallback={null}><MinePage /></Suspense> },
               { path: 'data', element: <Suspense fallback={null}><DataPage /></Suspense> },
               { path: 'maintenance', element: <Suspense fallback={null}><MaintenancePage /></Suspense> },
