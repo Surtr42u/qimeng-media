@@ -128,9 +128,9 @@ class AlbumViewModel @Inject constructor(
 
     /**
      * 维度芯片点击入口（M4-2A-B2 起芯片行由页面直接接线，交互语义收进状态机——铁律 7
-     * 「组件禁业务规则」；旧版 QimengFourDimSection 内嵌同款规则，favorite/history 迁悬浮
-     * 药丸面板时（B5）应改走本入口后退役其内嵌逻辑）：
-     * 点已激活维=切换展开/折叠，点其他维=切维并默认展开（规格书 §药丸容器）。
+     * 「组件禁业务规则」；旧仓库 AllFilesFragment.setViewMode 等四 Fragment 内嵌同款规则）：
+     * 点已激活维=切换展开/收起，点其他维=切维并展开。进页默认收起
+     * （用户 2026-09-07 覆盖 B8；切维仍展开，旧仓库实录四 Fragment 齐证）。
      */
     fun onDimChipClicked(dim: AlbumDim) {
         if (_uiState.value.activeDim == dim) toggleExpanded() else selectDim(dim)

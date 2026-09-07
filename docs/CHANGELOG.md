@@ -11,6 +11,19 @@
 
 ---
 
+## fix(app): D3 维度胶囊默认收起 + 列表族点卡进详情修复（2026-09-08 第一百二十笔）
+
+执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 全新上下文对抗审查，任务D-Android卷 D3）
+
+- **C7 默认收起**（用户 2026-09-07 拍板覆盖 M4-2「B8：切维度默认展开」）：AlbumFilterState.expanded 默认 false；落地口径=进页默认收起 + 点已激活维 toggle + **切维仍展开**（selectDim 零改动）——任务书预判「切维不展开」被其规定的旧仓库复核推翻（四 Fragment setViewMode 齐证切维强制展开，AlbumDetail v1.15 更是显式拍板从折叠改回展开），差异记《待拍板-20260907.md》#19，翻案=三 VM 各删一行+测试回翻。
+- **注释纠偏**：三 VM onDimChipClicked KDoc 所引「旧版 QimengFourDimSection」在旧仓库不存在（grep 零命中），修正为实证出处（AllFilesFragment/FavoriteFragment/BrowseHistoryFragment 的 setViewMode）。
+- **测试反转**：三个同构用例改「进页默认收起→首点展开→再点收起→切维展开」，新增进页默认收起前置断言；AlbumPanelFilterTest/FourDimPillsTest 方向中性零改动。
+- **顺手修复（同族 bug）**：相册/收藏/历史三页 QimengMediaGrid 的 onAssetClick 漏传（默认 `{}`）致点卡不进详情——三 Screen 补 onOpenAsset 参数 + NavHost 三路由接线；dump 哈希前后对照实证（修复前点卡页面零反应，修复后进详情）。
+- **审查**：D1~D3 一轮 reviewer 对抗审查，D3 部分 PASS（测试真锁含前置断言/三页接线镜像一致/core:ui 默认 {} 未破坏/零越界零硬编码）。
+- **验收**：make app-build/app-test/app-lint 全绿（AlbumViewModelTest 7/0、Favorite 6/0、History 6/0，Video 族既有测试无回归）；实机 uiautomator 逐态 dump（默认收起/toggle/切维展开/收起▲/收藏历史两页点卡进详情）。证据 %TEMP%\qimeng-d3-evidence\（37 文件）。
+
+---
+
 ## build(web): E6 vitest 测试基建——ADR-0017 实施，lib 纯函数 39 测试锁定（2026-09-08 第一百一十九笔）
 
 执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 独立对抗审查含破坏性抽验，任务E-Web卷 E6）

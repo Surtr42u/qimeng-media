@@ -151,7 +151,11 @@ fun QimengNavHost(
                     onOpenAsset = { assetId -> navController.navigate(DetailRoutes.detailRoute(assetId)) },
                 )
             }
-            composable(TopLevelDestination.ALL.route) { AllScreen() }
+            composable(TopLevelDestination.ALL.route) {
+                AllScreen(
+                    onOpenAsset = { assetId -> navController.navigate(DetailRoutes.detailRoute(assetId)) },
+                )
+            }
             composable(TopLevelDestination.STATS.route) { StatsScreen() }
             composable(TopLevelDestination.SETTINGS.route) {
                 SettingsScreen(
@@ -162,8 +166,18 @@ fun QimengNavHost(
                 )
             }
             composable(Routes.SEARCH) { SearchScreen(onBack = { navController.popBackStack() }) }
-            composable(Routes.FAVORITE) { FavoriteScreen(onBack = { navController.popBackStack() }) }
-            composable(Routes.HISTORY) { HistoryScreen(onBack = { navController.popBackStack() }) }
+            composable(Routes.FAVORITE) {
+                FavoriteScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenAsset = { assetId -> navController.navigate(DetailRoutes.detailRoute(assetId)) },
+                )
+            }
+            composable(Routes.HISTORY) {
+                HistoryScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenAsset = { assetId -> navController.navigate(DetailRoutes.detailRoute(assetId)) },
+                )
+            }
             composable(Routes.AUTHORS) { AuthorScreen(onBack = { navController.popBackStack() }) }
             composable(Routes.UPLOAD) {
                 UploadScreen(
