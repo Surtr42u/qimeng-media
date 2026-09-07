@@ -1869,3 +1869,79 @@ li.dir-file-row:hover { background: var(--hover-bg); }
   background: none;
   cursor: zoom-in;
 }
+
+/* ===== F6 列表批量多选（2026-09-08）：文件管理目录文件行 + 回收站表 =====
+   颜色全走既有 token（零新颜色字面量）；复选框用原生 input[type=checkbox]
+   加 .qm-check 专用类（accent-color 主色，与原型风格协调，无自绘控件）。
+   共享件：MultiSelectBar(.ms-bar) / BatchOpsPanel(.batch-panel) 两页共用 */
+
+/* 行首复选框：多选态行首出现；disabled = 批量执行期选集锁定（视觉同步降透明） */
+.qm-check {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  margin: 0;
+  accent-color: var(--qm-primary);
+  cursor: pointer;
+}
+.qm-check:disabled { cursor: default; opacity: 0.5; }
+.qm-check:focus-visible { outline: 2px solid var(--qm-primary); outline-offset: 2px; }
+
+/* 多选态选中行底色：与 hover 同 token（勾选态以 checkbox 本体为准，不靠底色唯一区分） */
+li.dir-file-row.ms-row-selected { background: var(--hover-bg); }
+.log-table tr.ms-row-selected td { background: var(--hover-bg); }
+
+/* 多选工具行（MultiSelectBar）：全选 / 已选计数 / 动作按钮 / 退出多选 */
+.ms-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 8px 0 2px;
+  font-size: 13px;
+  color: var(--text-sub);
+}
+.ms-bar-count { font-variant-numeric: tabular-nums; }
+.ms-bar-count b { color: var(--text-main); }
+.ms-bar .pill:disabled { opacity: 0.5; cursor: default; }
+.ms-bar-exit { margin-left: auto; }
+
+/* 批量进度/失败汇总面板（BatchOpsPanel）：.progress 复用上传队列进度条，
+   失败明细行 = 文件名 + 原因，超高滚动（全量清单留在面板，toast 只带前几条） */
+.batch-panel {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--qm-radius);
+}
+.batch-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+.batch-panel-head b { color: var(--text-main); }
+.batch-panel-count { flex: 1; font-variant-numeric: tabular-nums; color: var(--text-sub); }
+.batch-panel-failures {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 160px;
+  overflow-y: auto;
+  font-size: 12px;
+  color: var(--text-mid);
+}
+.batch-panel-failures li { display: flex; gap: 8px; min-width: 0; }
+.batch-fail-label {
+  flex: none;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-main);
+}
+.batch-fail-reason { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-sub); }
