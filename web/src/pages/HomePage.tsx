@@ -218,8 +218,8 @@ function HotRankTab({ period, onOpen }: { period: HomeRankPeriod; onOpen: (id?: 
     isLoading: q.isLoading,
     isFetchingNextPage: q.isFetchingNextPage,
     hasNextPage: q.hasNextPage,
-    // 榜单流无 placeholderData（确定性排序，period 换档整页换键重拉属预期），
-    // 恒 false，仅为满足共用流类型
+    // E2：榜单流已配 keepPreviousData——period 换档/qm:refresh 换 reloadKey
+    // 重取期间旧榜保留占位，isPlaceholderData 为 true，与推荐流共用口径
     isPlaceholderData: q.isPlaceholderData,
     sentinelRef,
   }
