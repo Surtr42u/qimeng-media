@@ -1,5 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { dateLabel, formatBytes, formatCount } from './format'
+import {
+  authorDisplayName,
+  dateLabel,
+  dirLabel,
+  formatBytes,
+  formatCardUp,
+  formatCount,
+  formatDateTime,
+  formatDuration,
+  formatShortDate,
+  localDateKey,
+} from './format'
 
 // 固定时钟：本地 2026-09-07（周一）12:00——日期串无时区后缀按本地时区解析，
 // 断言全部用「相对今天 N 天」的本地日历日构造，不依赖运行环境时区。
@@ -84,5 +95,114 @@ describe('formatCount', () => {
   it('百万级起：整数万（四舍五入）', () => {
     expect(formatCount(1000000)).toBe('100万')
     expect(formatCount(1234567)).toBe('123万')
+  })
+})
+
+describe('formatDuration', () => {
+  it('mm:ss 与 h:mm:ss 分档：秒/分进位、满 1h 带时位、不足 1h 不带', () => {
+    expect(formatDuration(0)).toBe('0:00')
+    expect(formatDuration(59_000)).toBe('0:59')
+    expect(formatDuration(60_000)).toBe('1:00')
+    expect(formatDuration(3_599_999)).toBe('59:59') // 差 1ms 满 1h，仍是分:秒档
+    expect(formatDuration(3_600_000)).toBe('1:00:00')
+    expect(formatDuration(3_661_000)).toBe('1:01:01')
+  })
+
+  it('非法输入按实际行为产出（毫秒直除逐位取余，无防御）', () => {
+    expect(formatDuration(Number.NaN)).toBe('NaN:NaN')
+    expect(formatDuration(-1000)).toBe('-1:-1') // 负毫秒：时/分/秒取余全为负
+    // null 数值化为 0、undefined 数值化为 NaN（JS 除法强转，签名收 number 故加断言）
+    expect(formatDuration(null as unknown as number)).toBe('0:00')
+    expect(formatDuration(undefined as unknown as number)).toBe('NaN:NaN')
+  })
+})
+
+describe('formatShortDate', () => {
+  it('ISO 日期 → M-D（月/日不补零；无时区后缀按本地日历日解析）', () => {
+    expect(formatShortDate('2026-09-07')).toBe('9-7')
+    expect(formatShortDate('2026-01-05T08:00:00')).toBe('1-5')
+  })
+
+  it('空值 / 非法日期 → 空串', () => {
+    expect(formatShortDate(undefined)).toBe('')
+    expect(formatShortDate(null)).toBe('')
+    expect(formatShortDate('')).toBe('')
+    expect(formatShortDate('not-a-date')).toBe('')
+  })
+})
+
+describe('formatCardUp', () => {
+  it('单作者原样；多作者压缩为「首作者 等N」', () => {
+    expect(formatCardUp(['甲'], '出处分区')).toBe('甲')
+    expect(formatCardUp(['甲', '乙'], '出处分区')).toBe('甲 等2')
+    expect(formatCardUp(['甲', '乙', '丙'], null)).toBe('甲 等3')
+  })
+
+  it('无作者（缺省/空数组/首元素空串）回退 source；两者皆无 → undefined（不渲染）', () => {
+    expect(formatCardUp(undefined, 'cos')).toBe('cos')
+    expect(formatCardUp(null, 'cos')).toBe('cos')
+    expect(formatCardUp([], 'cos')).toBe('cos')
+    expect(formatCardUp([''], 'cos')).toBe('cos') // 空串作者按无作者处理
+    expect(formatCardUp(undefined, null)).toBeUndefined()
+    expect(formatCardUp(undefined, '')).toBeUndefined() // 空串 source 同样不渲染
+  })
+})
+
+describe('authorDisplayName', () => {
+  it('type=cos 追加「 ·COS」标识（前置空格）；其余 type 原样', () => {
+    expect(authorDisplayName({ displayName: '小明', type: 'cos' })).toBe('小明 ·COS')
+    expect(authorDisplayName({ displayName: '小明', type: 'author' })).toBe('小明')
+    expect(authorDisplayName({ displayName: '小明', type: null })).toBe('小明')
+    expect(authorDisplayName({ displayName: '小明' })).toBe('小明')
+  })
+
+  it('displayName 缺省 → 空串兜底（cos 时仅剩标识串）', () => {
+    expect(authorDisplayName({ displayName: null, type: 'author' })).toBe('')
+    expect(authorDisplayName({ type: 'cos' })).toBe(' ·COS')
+  })
+})
+
+describe('dirLabel', () => {
+  it('路径末段：正/反斜杠及混用均可切分', () => {
+    expect(dirLabel('photos/2026/08')).toBe('08')
+    expect(dirLabel('photos\\2026\\08')).toBe('08')
+    expect(dirLabel('a/b\\c')).toBe('c')
+    expect(dirLabel('库根')).toBe('库根')
+  })
+
+  it('空路径 / null / undefined / 纯分隔符 → 库根', () => {
+    expect(dirLabel('')).toBe('库根')
+    expect(dirLabel(null)).toBe('库根')
+    expect(dirLabel(undefined)).toBe('库根')
+    expect(dirLabel('/')).toBe('库根')
+  })
+})
+
+describe('formatDateTime', () => {
+  it('毫秒时间戳 → M-D HH:mm（月/日不补零，时:分补零）', () => {
+    const ts = new Date(2026, 8, 7, 9, 5).getTime() // 本地 2026-09-07 09:05
+    expect(formatDateTime(ts)).toBe('9-7 09:05')
+  })
+
+  it('空值 / 非正数 / NaN → 空串', () => {
+    expect(formatDateTime(undefined)).toBe('')
+    expect(formatDateTime(null)).toBe('')
+    expect(formatDateTime(0)).toBe('')
+    expect(formatDateTime(-1)).toBe('')
+    expect(formatDateTime(Number.NaN)).toBe('')
+  })
+})
+
+describe('localDateKey', () => {
+  it('y-m-d 数值串：月份取 getMonth() 原始 0 基值且不补零（分组键口径，非展示文案）', () => {
+    const ts = new Date(2026, 8, 7, 12).getTime() // 本地 2026-09-07 → 键为 2026-8-7
+    expect(localDateKey(ts)).toBe('2026-8-7')
+  })
+
+  it('空值 / 非正数 / NaN → 空串（调用方不分组）', () => {
+    expect(localDateKey(undefined)).toBe('')
+    expect(localDateKey(null)).toBe('')
+    expect(localDateKey(0)).toBe('')
+    expect(localDateKey(Number.NaN)).toBe('')
   })
 })

@@ -1,4 +1,9 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import {
+  SSE_MAX_RECONNECT_DELAY_MS,
+  SSE_MIN_RECONNECT_DELAY_MS,
+  SSE_RECONNECT_DELAY_MS,
+} from './constants'
 
 // api-client.ts 在模块顶层读 localStorage（token 缓存，浏览器专用全局），
 // node 测试环境无此全局，静态 import ./sse 会在模块求值期 ReferenceError。
@@ -10,7 +15,11 @@ vi.stubGlobal('localStorage', {
   removeItem: () => {},
 })
 
-const { createSSEParser } = await import('./sse')
+const { createSSEParser, subscribeSSE } = await import('./sse')
+// 与 sse.ts 内部引用同一 api-client 模块实例：用 onAuthFailed 注册监听即可
+// 观测 emitAuthFailed 广播，无需模块 mock（本文件禁止 unstubAllGlobals——
+// 会连 localStorage 桩一起拆掉，后续 connect 取 headers 时 ReferenceError）
+const { onAuthFailed } = await import('./api-client')
 
 describe('createSSEParser', () => {
   it('跨 chunk 帧边界：帧拆进两个 chunk，拼齐后才产出', () => {
@@ -61,5 +70,95 @@ describe('createSSEParser', () => {
     expect(parse('retry: 0\nretry: -5\nretry: abc\ndata: w\n\n')).toEqual([
       { event: 'message', data: 'w' },
     ])
+  })
+})
+
+/** 构造 subscribeSSE 可消费的流式 Response 桩：逐条吐 chunks（UTF-8 编码）后正常关流 */
+function streamResponse(chunks: string[]): Response {
+  const encoder = new TextEncoder()
+  let i = 0
+  const reader = {
+    read: async (): Promise<{ done: boolean; value?: Uint8Array }> =>
+      i < chunks.length ? { done: false, value: encoder.encode(chunks[i++]) } : { done: true },
+  }
+  return { ok: true, status: 200, body: { getReader: () => reader } } as unknown as Response
+}
+
+describe('subscribeSSE', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('retry 帧低于下限：重连延迟夹到 SSE_MIN_RECONNECT_DELAY_MS', async () => {
+    vi.useFakeTimers()
+    const fetchMock = vi.fn(async () => streamResponse(['retry: 500\ndata: x\n\n']))
+    vi.stubGlobal('fetch', fetchMock)
+    const cancel = subscribeSSE({ url: '/api/v1/events', onMessage: () => {} })
+    await vi.advanceTimersByTimeAsync(0) // 冲微任务：首轮读完流即断，按夹取值安排重连定时器
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(SSE_MIN_RECONNECT_DELAY_MS - 1)
+    expect(fetchMock).toHaveBeenCalledTimes(1) // 下限之内不提前重连
+    await vi.advanceTimersByTimeAsync(1)
+    expect(fetchMock).toHaveBeenCalledTimes(2) // 恰在 1000ms 重连
+    cancel()
+  })
+
+  it('retry 帧超上限：重连延迟夹到 SSE_MAX_RECONNECT_DELAY_MS', async () => {
+    vi.useFakeTimers()
+    const fetchMock = vi.fn(async () => streamResponse(['retry: 60000\ndata: x\n\n']))
+    vi.stubGlobal('fetch', fetchMock)
+    const cancel = subscribeSSE({ url: '/api/v1/events', onMessage: () => {} })
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(SSE_MAX_RECONNECT_DELAY_MS - 1)
+    expect(fetchMock).toHaveBeenCalledTimes(1) // 上限之内不提前重连
+    await vi.advanceTimersByTimeAsync(1)
+    expect(fetchMock).toHaveBeenCalledTimes(2) // 恰在 30000ms 重连
+    cancel()
+  })
+
+  it('retry 帧为区间内正常值：直用不夹取', async () => {
+    vi.useFakeTimers()
+    const fetchMock = vi.fn(async () => streamResponse(['retry: 5000\ndata: x\n\n']))
+    vi.stubGlobal('fetch', fetchMock)
+    const cancel = subscribeSSE({ url: '/api/v1/events', onMessage: () => {} })
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(4999)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(fetchMock).toHaveBeenCalledTimes(2) // 恰在帧指定的 5000ms 重连
+    cancel()
+  })
+
+  it('断流无 retry 帧：用默认 SSE_RECONNECT_DELAY_MS', async () => {
+    vi.useFakeTimers()
+    const fetchMock = vi.fn(async () => streamResponse(['data: x\n\n']))
+    vi.stubGlobal('fetch', fetchMock)
+    const cancel = subscribeSSE({ url: '/api/v1/events', onMessage: () => {} })
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(SSE_RECONNECT_DELAY_MS - 1)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(fetchMock).toHaveBeenCalledTimes(2) // 恰在默认 3000ms 重连
+    cancel()
+  })
+
+  it('HTTP 401/403：广播鉴权失败 + onError 报错，连接终止不再重试', async () => {
+    vi.useFakeTimers()
+    for (const status of [401, 403]) {
+      const authFailed = vi.fn()
+      const off = onAuthFailed(authFailed)
+      const fetchMock = vi.fn(async () => ({ ok: false, status }) as unknown as Response)
+      vi.stubGlobal('fetch', fetchMock)
+      const onError = vi.fn()
+      const cancel = subscribeSSE({ url: '/api/v1/events', onMessage: () => {}, onError })
+      await vi.advanceTimersByTimeAsync(0)
+      expect(authFailed).toHaveBeenCalledTimes(1) // emitAuthFailed 广播（AuthGate 接管入口）
+      expect(onError).toHaveBeenCalledTimes(1)
+      expect((onError.mock.calls[0][0] as Error).message).toContain(`HTTP ${status}`)
+      await vi.advanceTimersByTimeAsync(SSE_MAX_RECONNECT_DELAY_MS * 2)
+      expect(fetchMock).toHaveBeenCalledTimes(1) // token 已失效：停止重连不空转
+      off()
+      cancel()
+    }
   })
 })
