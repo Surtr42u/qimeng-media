@@ -110,8 +110,10 @@ class DetailViewModel @Inject constructor(
     /**
      * 行为打点组装器（3d，DirectAnalyticsReporter 纯逻辑壳）：init 即 onDetailEntered()
      * = open 打点一次 + 开 dwell 会话；起播/暂停/离开由 Screen 生命周期与起播回调驱动。
-     * 上报出网在回调内发 viewModelScope；失败静默（打点尽力而为，不影响浏览主链路）。
-     * assetId 缺参（错误态）为 null：无资产可打点，reporter 不创建、一切入口无害跳过。
+     * 上报落点 = DetailRepository.reportViewEvent（M4-4 起写进离线队列：写成功即返回，
+     * 出网补传由队列三通道异步完成）；失败静默 = 仅队列写失败时静默（打点尽力而为，
+     * 不影响浏览主链路）。assetId 缺参（错误态）为 null：无资产可打点，reporter 不创建、
+     * 一切入口无害跳过。
      */
     private val analyticsReporter: DirectAnalyticsReporter? = assetId?.let { id ->
         DirectAnalyticsReporter(
@@ -127,7 +129,7 @@ class DetailViewModel @Inject constructor(
                             sessionId = emission.sessionId,
                             dwellSeconds = emission.dwellSeconds,
                         )
-                    }.onFailure { /* 打点尽力而为：失败静默 */ }
+                    }.onFailure { /* 写队列失败才静默（打点尽力而为）；出网补传由队列负责 */ }
                 }
             },
         )

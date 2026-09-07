@@ -11,6 +11,20 @@
 
 ---
 
+## feat(app): D5 M4-4 行为上报离线队列（2026-09-08 第一百二十八笔）
+
+执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 独立对抗审查（防虚增审计+logcat 逐行互证），任务D-Android卷 D5）
+
+- **架构**（:core:data 新建 events 包 12 文件）：Room 队列表 `pending_view_events` 7 列（room 2.8.4 × Kotlin 2.3.21/KSP 2.3.11 兼容实测通过，schema 1.json 导出入库）；写入即入队+5000 FIFO 淘汰同一事务；触发三通道=写入即触发/启动与 ON_START（ProcessLifecycleOwner）/WorkManager 周期兜底（`MIN_PERIODIC_INTERVAL_MILLIS` 15min 钳制注释，KEEP，unique 名 `qm-event-sync-*` 与上传链隔离）；drain Mutex 串行并发=1（Worker 与前台触发唯一入口）。
+- **防虚增语义（冻结口径全落地）**：dwell 先删后发（DAO 事务内 select+delete 再出网，at-most-once，宁少计不虚增）；毒丸连败≥3 丢弃（连败计数随回队迁新 id，AUTOINCREMENT 防撞号）；失败分类表驱动纯函数（202=删行/400,401,403,404=终局/429,408,5xx,IO,未知=重试）；单位换算 `movePointLeft(3)` 无损、open/play 不带 seconds；**事件链不加 CONNECTED 约束**（同仓上传链弱网悬置先例，与备忘录 §3.2 相反的有意决策）。
+- **语义保持铁律**：DwellSessionTracker/DirectAnalyticsReporter/DetailViewModel 仅注释清偿零逻辑变化（reviewer diff 逐行核实）；sessionId 保持每 VM 实例 UUID；TODO(M4-4) 六处清偿 grep=0。
+- **测试**：新增 20 测（失败分类表 15 行含 200/204/409 边界、5001 实值 FIFO、真并发双 drain maxInFlight=1、毒丸恰好 3 发后丢、先删后发时序、回队内容保真）；既有全族保绿；三连绿。**room 2.8.4 编译确认点归 D6/D7 复跑收口**（审查禁构建令所限）。
+- **断网补传对账（18461 实测）**：svc wifi+data disable→ping unreachable→离线浏览→恢复回前台→`drain sent/dropped/kept/pending` 日志闭环；totalViews 15→17 可解释（含 1 笔毒丸丢弃实证：rowId 1→2→4 连败 1→2→3）。
+- **重大发现（待拍板 #24 高优）**：dwell 上报恒 400——SDK 生成物 BigDecimalAdapter.toJson 把 seconds 序列化为带引号字符串，服务端 gen `Seconds *float32` 拒收（curl 数字得 202 佐证）；**M4-3 直连时代 dwell 从未送达**（静默吞错掩盖，本批终局丢弃日志首次暴露）；协议冻结夜不改，客户端按冻结表处置正确，修复归协议批+三端 SDK 再生。
+- **审查**：独立 reviewer 通过（0 P0/P1/P2）——冻结口径逐条可复核、防虚增审计未发现实现层缺陷（进程死亡只丢不重/并发 Mutex 真覆盖/id 不撞号）、logcat 与代码行为逐行互证；P3×4 记录备查（非 IO 运行时异常击穿=少计方向/RETRY 回队暂超 5000 下次收敛/KEEP 运行中触发延迟非丢失/一处本批前陈旧注释）。
+
+---
+
 ## fix(app): 搜索结果页点卡进详情补修（2026-09-08 第一百二十七笔）
 
 执行 AI：GLM-5.3-Flash（主会话调度；原 D3 执行者续聊补修，任务D-Android卷 D3 同族收尾）

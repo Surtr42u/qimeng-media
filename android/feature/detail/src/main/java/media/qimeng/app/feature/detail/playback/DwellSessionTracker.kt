@@ -86,7 +86,6 @@ class DwellSessionTracker(
         val current = session ?: return
         if (current.flushed) return
         current.flushed = true
-        // TODO(M4-4): dwell 打点当前直连上报，改走离线队列（弱网/退后台不丢）
         onDwell(current.startedAtMs, (nowMs() - current.startedAtMs) / 1000L)
     }
 }

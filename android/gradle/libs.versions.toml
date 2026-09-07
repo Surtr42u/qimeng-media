@@ -68,6 +68,13 @@ work = "2.11.2"
 #   【待联网复核】下一批次联网时对照官方 release 页
 #   （https://developer.android.com/jetpack/androidx/releases/media3）复核 1.8.0 stable 定位后移除本标注。
 media3 = "1.8.0"
+# Room（2026-09-07 M4-4 引入，行为上报离线队列 pending_view_events）。
+# 版本 2.8.4 = 主会话冻结口径（2.x stable 线末位；androidx.room3 新包不取）。核查线索：
+#   https://developer.android.com/jetpack/androidx/releases/room（2.x 线收尾于 2.8.x）；
+#   本地 Gradle 缓存已有完整 2.8.4 构件（room-runtime/room-compiler 实测在列，离线可解析）。
+#   注意：2.8 线起 room-ktx 已并入 room-runtime（官方迁移说明），勿再单独引 room-ktx；
+#   Room 2.8.4 room-compiler × Kotlin 2.3.21 / KSP 2.3.11 兼容性以 assembleDebug 实测为准。
+room = "2.8.4"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -102,6 +109,12 @@ androidx-hilt-compiler = { group = "androidx.hilt", name = "hilt-compiler", vers
 # Media3（M4-3 3c，白名单 ADR-0014）：ExoPlayer 内核 + PlayerView（BiliPlayerView 宿主），版本注释见 [versions]
 androidx-media3-exoplayer = { group = "androidx.media3", name = "media3-exoplayer", version.ref = "media3" }
 androidx-media3-ui = { group = "androidx.media3", name = "media3-ui", version.ref = "media3" }
+# Room（M4-4 行为上报离线队列，白名单 ADR-0014）：runtime 含挂起 DAO/事务支持（2.8 起 ktx 并入），
+# compiler 为 KSP 注解处理器；版本论证见 [versions] room 注释。
+androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
+androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
+# lifecycle-process（M4-4 回前台补传触发：ProcessLifecycleOwner ON_START），与 lifecycle 同版本收口
+androidx-lifecycle-process = { group = "androidx.lifecycle", name = "lifecycle-process", version.ref = "lifecycle" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 # build-logic convention 插件的编译期依赖（compileOnly；版本锚定同上方 agp/kotlin，禁止单独升级）。
 # 运行期版本由主工程根 build.gradle.kts 的 apply false 收口，convention 不携带运行时版本。

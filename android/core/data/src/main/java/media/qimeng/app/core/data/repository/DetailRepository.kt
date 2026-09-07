@@ -55,12 +55,14 @@ interface DetailRepository {
     suspend fun reportProgress(assetId: String, positionSeconds: Double)
 
     /**
-     * 行为打点直连上报（POST /events/view；open/play/dwell，DOMAIN_RULES §5 ViewEvent 事件流）。
-     * TODO(M4-4): 改走离线队列（弱网/退后台不丢打点），此处直连为 M4-3 过渡实现。
+     * 行为打点入队（POST /events/view 的离线队列写入口，DOMAIN_RULES §5 ViewEvent 事件流）。
+     * M4-4 落地：本方法只把事件写进 Room 离线队列（写成功即返回，弱网/退后台不丢），
+     * 出网补传由队列三通道异步完成（写入即触发 / 回前台 ON_START / 周期兜底）；
+     * 写失败抛异常，静默口径收敛为「写队列失败才静默」（调用方 DetailViewModel）。
      *
-     * @param startedAtMs 事件开始时刻（客户端时钟 epochMilli；服务端转 OffsetDateTime 存储）
-     * @param sessionId 客户端会话标识（客户端会话级 UUID；服务端按 assetId+kind+sessionId+当日去重）
-     * @param dwellSeconds 仅 dwell 携带：本次停留秒数（长整型截断）
+     * @param startedAtMs 事件开始时刻（客户端时钟 epochMilli；出网时转 UTC OffsetDateTime 存储）
+     * @param sessionId 客户端会话标识（每详情停留会话一个 UUID；服务端按 assetId+kind+sessionId+当日去重）
+     * @param dwellSeconds 仅 dwell 携带：本次停留秒数（长整型截断；open/play 传 null）
      */
     suspend fun reportViewEvent(
         assetId: String,

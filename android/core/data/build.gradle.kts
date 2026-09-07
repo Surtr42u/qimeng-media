@@ -2,6 +2,8 @@
 // M4-0 空壳起步：首个 Repository（AuthRepository/ServerConfigDataSource）随 M4-1 落地。
 // convention 插件（build-logic，NIA 范式）提供：android library + Kotlin Android + Java/Kotlin 17 +
 // compileSdk/minSdk + Hilt/KSP（含 hilt 依赖）。
+import com.google.devtools.ksp.gradle.KspExtension
+
 plugins {
     alias(libs.plugins.qimeng.android.library)
     alias(libs.plugins.qimeng.android.hilt)
@@ -9,6 +11,19 @@ plugins {
 
 android {
     namespace = "media.qimeng.app.core.data"
+
+    // Room schema 导出（M4-4）：KSP 插件由 convention 内部 apply（本模块无类型安全 accessor），
+    // 取官方等价的 KSP arg 通道，产物 schemas/*.json 随版本入库（取舍记录见文件头 Room 依赖注释）。
+    configure<KspExtension> {
+        arg("room.schemaLocation", "$projectDir/schemas")
+    }
+
+    testOptions {
+        // M4-4 行为队列单测（ViewEventQueueTest）在 JVM 走 android.jar stub：
+        // 队列内的 android.util.Log 调用在 stub 上默认抛「not mocked」，此处放行为返回默认值。
+        // 仅作用于本模块单元测试，不影响生产代码与其他模块。
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 dependencies {
@@ -33,6 +48,16 @@ dependencies {
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.androidx.hilt.work)
     ksp(libs.androidx.hilt.compiler)
+
+    // 行为上报离线队列（M4-4）：Room 白名单依赖（ADR-0014）。2.8 线起 room-ktx 已并入
+    // room-runtime（挂起 DAO / 事务开箱即用），勿再单独引 room-ktx；版本论证见 libs.versions.toml。
+    // schema 导出：Room 官方两条通道（Gradle 插件 / KSP arg）二选一，此处取 KSP arg——
+    // 免新增 androidx.room Gradle 插件 classpath（AGP 版本协商成本），产物同为 schemas/*.json 随版本入库。
+    implementation(libs.androidx.room.runtime)
+    ksp(libs.androidx.room.compiler)
+
+    // 回前台补传触发（M4-4）：ProcessLifecycleOwner ON_START 监听，版本与 lifecycle 同源收口。
+    implementation(libs.androidx.lifecycle.process)
 
     // 上传响应/错误体解析（M4-5）：moshi 反射（SDK 生成物同款 KotlinJsonAdapterFactory，单版本原则）
     implementation(libs.moshi.kotlin)

@@ -3,6 +3,8 @@ package media.qimeng.app.core.data.repository
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import media.qimeng.app.core.data.events.EventSyncScheduler
+import media.qimeng.app.core.data.events.ViewEventQueue
 import media.qimeng.app.core.model.AssetDetail
 import media.qimeng.app.core.model.LikeToggleResult
 import media.qimeng.app.core.model.MediaAsset
@@ -26,6 +28,8 @@ import javax.inject.Singleton
 @Singleton
 class SdkDetailRepository @Inject constructor(
     private val apiFactory: BusinessApiFactory,
+    private val viewEventQueue: ViewEventQueue,
+    private val syncScheduler: EventSyncScheduler,
 ) : DetailRepository {
 
     override suspend fun assetDetail(assetId: String): AssetDetail {
@@ -116,7 +120,14 @@ class SdkDetailRepository @Inject constructor(
         }
     }
 
-    /** 行为打点直连上报（每事件一次出网）。TODO(M4-4): 改走离线队列（批量+重试） */
+    /**
+     * 行为打点入队（M4-4 起不再是直连出网）：事件写进 Room 离线队列（pending_view_events，
+     * 入队+FIFO 上限淘汰同一事务），**写成功即返回**——出网补传由队列三通道异步完成
+     * （①写入即触发（本方法末尾）/②回前台 ON_START/③周期兜底，见 events/ 包）。
+     * dwell 毫秒 = 停留秒×1000（队列口径存 ms，出网时 movePointLeft(3) 无损换算回秒）；
+     * open/play 恒 0 不带 seconds。写失败原样抛异常：调用方（DetailViewModel）据此收窄
+     * 静默口径为「写队列失败才静默」。
+     */
     override suspend fun reportViewEvent(
         assetId: String,
         kind: ViewEventKind,
@@ -124,13 +135,11 @@ class SdkDetailRepository @Inject constructor(
         sessionId: String,
         dwellSeconds: Long?,
     ) {
-        val api = apiFactory.create()
-        logRequest("POST /events/view", "kind=$kind seconds=$dwellSeconds session=$sessionId")
-        withContext(Dispatchers.IO) {
-            api.apiV1EventsViewPost(
-                SdkDetailMappers.toViewEventReport(assetId, kind, startedAtMs, sessionId, dwellSeconds),
-            )
-        }
+        val durationMs = (dwellSeconds?.coerceAtLeast(MIN_DWELL_SECONDS) ?: MIN_DWELL_SECONDS) * MS_PER_SECOND
+        viewEventQueue.enqueue(assetId, kind, startedAtMs, durationMs, sessionId)
+        logRequest("enqueue /events/view", "kind=$kind seconds=$dwellSeconds session=$sessionId")
+        // 通道①：写入即入队补传（KEEP 合并瞬时多次触发；断网时任务照样跑、发送失败留在队列）
+        syncScheduler.requestSyncNow()
     }
 
     override suspend fun timelineTags(assetId: String): List<TimelineTag> {
@@ -173,5 +182,11 @@ class SdkDetailRepository @Inject constructor(
     companion object {
         /** 推荐栏取数偏移恒 0（换一批=换 seed 重取，同 seed 可复现——DOMAIN_RULES §1.1 禁纯随机） */
         private const val UP_NEXT_OFFSET = 0
+
+        /** dwell 秒→毫秒换算系数（队列口径存 ms，见 reportViewEvent 注释） */
+        private const val MS_PER_SECOND = 1000L
+
+        /** dwell 秒数下界（open/play 的 dwellSeconds=null 归 0，即 durationMs 恒 0） */
+        private const val MIN_DWELL_SECONDS = 0L
     }
 }
