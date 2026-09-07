@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { MediaCard } from '@/components/media/MediaCard'
-import { LoadMorePill } from '@/components/ui/load-more-pill'
 import { Pill } from '@/components/ui/pill'
+import { useAutoMore } from '@/hooks/use-auto-more'
 import {
   useAssetsInfinite,
   useAssetFacets,
@@ -134,11 +134,17 @@ export default function CollectionPage() {
       : {}
   }, [isAuthor, author, tag, attrSel, mediaType, isCosAuthor])
 
-  const { data: pages, isFetching, fetchNextPage, hasNextPage } = useAssetsInfinite(
-    listParams,
-    !!found,
-  )
+  const {
+    data: pages, isFetchingNextPage, isPlaceholderData, fetchNextPage, hasNextPage,
+  } = useAssetsInfinite(listParams, !!found)
   const items = useMemo(() => pages?.pages.flatMap((pg) => pg.items ?? []) ?? [], [pages])
+
+  // E3 无感加载哨兵：enabled 与原 pill 的 when 同口径（实体未定位不挂不拉）。
+  // onHit 双守卫：isFetchingNextPage 防重复拉页；isPlaceholderData 前瞻防混拼
+  // （useAssetsInfinite 未配 placeholderData 恒 false，守卫零成本）。
+  const sentinelRef = useAutoMore(!!found && hasNextPage, () => {
+    if (!isFetchingNextPage && !isPlaceholderData) void fetchNextPage()
+  })
 
   // 标题计数：实体 fileCount（标签/作者均有）优先，缺省回退列表 totalMatched
   const count = (isAuthor ? author?.fileCount : tag?.fileCount) ?? pages?.pages[0]?.totalMatched ?? 0
@@ -240,12 +246,12 @@ export default function CollectionPage() {
             : `该${kindLabel}下暂无内容。`}
         </p>
       )}
-      <LoadMorePill
-        when={found && hasNextPage}
-        fetching={isFetching}
-        count={items.length}
-        onNext={() => fetchNextPage()}
-      />
+      {/* E3 无感加载：拉下一页时底部占位；到底且非空时保留原 pill 的计数信息 */}
+      {isFetchingNextPage ? <p className="grid-empty">加载中…</p> : null}
+      {!hasNextPage && items.length > 0 ? (
+        <p className="grid-empty">共 {items.length} 项 · 到底了</p>
+      ) : null}
+      {found && hasNextPage && <div ref={sentinelRef} style={{ height: 1 }} aria-hidden="true" />}
     </div>
   )
 }

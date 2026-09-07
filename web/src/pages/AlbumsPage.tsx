@@ -2,11 +2,11 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
 import type { AssetSummary } from '@/api/generated'
 import { MediaCard } from '@/components/media/MediaCard'
-import { LoadMorePill } from '@/components/ui/load-more-pill'
 import { Pill } from '@/components/ui/pill'
 import { DEFAULT_PAGE_SIZE, LOCALE_ZH } from '@/lib/constants'
 import { groupAlbumsByDate } from '@/lib/album-grouping'
 import { assetDetail } from '@/lib/route-keys'
+import { useAutoMore } from '@/hooks/use-auto-more'
 import {
   assetToCard,
   useAssetsInfinite, useAssetFacets, facetToOptions,
@@ -115,8 +115,17 @@ export default function AlbumsPage() {
     [partition, authorParams, characterParams, mediaType, sort],
   )
 
-  const { data: pages, isFetching, fetchNextPage, hasNextPage } = useAssetsInfinite(listParams)
+  const {
+    data: pages, isFetching, isFetchingNextPage, isPlaceholderData, fetchNextPage, hasNextPage,
+  } = useAssetsInfinite(listParams)
   const items = useMemo(() => pages?.pages.flatMap((p) => p.items ?? []) ?? [], [pages])
+
+  // E3 无感加载哨兵（对齐首页 use-auto-more 语义：触底提前 6 项拉下一页）。
+  // onHit 双守卫：isFetchingNextPage 防重复拉页；isPlaceholderData 前瞻防混拼
+  // （useAssetsInfinite 未配 placeholderData 恒 false，守卫零成本）。
+  const sentinelRef = useAutoMore(hasNextPage, () => {
+    if (!isFetchingNextPage && !isPlaceholderData) void fetchNextPage()
+  })
 
   // 时间分区（原型 renderAlbumGrid）：口径单源在 lib/album-grouping.ts（ADR-0008
   // 规则抽离）；胶囊/排序切换只改变 items，分组是其上的纯函数。
@@ -274,12 +283,13 @@ export default function AlbumsPage() {
       {items.length === 0 && !isFetching ? (
         <p className="grid-empty">该筛选组合下暂无内容，换个胶囊试试。</p>
       ) : null}
-      <LoadMorePill
-        when={hasNextPage}
-        fetching={isFetching}
-        count={items.length}
-        onNext={() => fetchNextPage()}
-      />
+      {/* E3 无感加载：拉下一页时底部占位；到底且非空时保留原 pill 的计数信息 */}
+      {isFetchingNextPage ? <p className="grid-empty">加载中…</p> : null}
+      {!hasNextPage && items.length > 0 ? (
+        <p className="grid-empty">共 {items.length} 项 · 到底了</p>
+      ) : null}
+      {/* 触底哨兵：还有下一页才挂载——到底即卸载，观察器随之断开 */}
+      {hasNextPage && <div ref={sentinelRef} style={{ height: 1 }} aria-hidden="true" />}
     </div>
   )
 }

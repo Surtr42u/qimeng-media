@@ -11,6 +11,16 @@
 
 ---
 
+## fix(web): E3 五页无感加载——LoadMorePill 退役换 useAutoMore 哨兵（2026-09-08 第一百一十六笔）
+
+执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 对抗审查/主会话浏览器验收，任务E-Web卷 E3=C5）
+
+- **改动**：相册/收藏/历史/搜索/集合五处 LoadMorePill 全换 useAutoMore 哨兵（触底提前 6 项自动拉下一页、hasNextPage=false 卸载哨兵），onHit 双守卫（isFetchingNextPage+isPlaceholderData 前瞻）；isFetchingNextPage 底部「加载中…」占位与首页模板同构；尾注「共 N 项 · 到底了」（!hasNextPage 且 items.length>0，保留原 pill 计数信息；MinePage 双 pane 各自挂）。components/ui/load-more-pill.tsx 删除（grep 零命中）；.pill/.pill-count/.grid-empty 共享样式核实有其他消费方后保留；Search/Collection 移除仅 pill 消费的 isFetching 解构（空态链不受影响，reviewer 逐处核实）。分组纯函数零改动。
+- **审查**：reviewer 五处接线/enabled 口径与原 when 等价性/删除完整性四重复核/尾注 N 口径/换键无混拼窗口逐项过；三命令亲跑复现（tsc 0 错/oxlint 16w0e/build 42 entries=删共享 chunk 减 1）。
+- **验收**：主会话浏览器 18462 实测——相册尾注「共 22 项 · 到底了」、历史 5 项、搜索 19 项、收藏 0 项空态无尾注、全站无「加载更多」；自动拉页数据集单页（22<60）不可触发备查。存量缺陷记账：集合页深链 /app/collection?author=… 冷启动整页空白（stash 法在 E2 基线构建复现，非本批回归）→ 待拍板-20260907。文档：HANDOVER_UI.md §5 第 21 条。证据 %TEMP%/qimeng-e3-evidence/（含 accept/acceptance-main-session.md，保留勿删）。
+
+---
+
 ## fix(web): E2 首页加载/刷新过渡——榜单流 keepPreviousData（2026-09-08 第一百一十五笔）
 
 执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 源码级对抗审查/主会话浏览器验收，任务E-Web卷 E2=C4）
