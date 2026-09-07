@@ -4,6 +4,7 @@ import { AuthGate } from '@/components/layout/AuthGate'
 import { HomeBackdropLayout } from '@/components/layout/HomeBackdropLayout'
 import { RootLayout } from '@/components/layout/RootLayout'
 import { AppShell } from '@/components/shell/AppShell'
+import { CollectionDeepLink } from '@/pages/CollectionDeepLink'
 
 /**
  * 路由（2026-09-02：UI 原型移植重建；E1 首页↔详情改叠加组）。
@@ -65,6 +66,9 @@ export const router = createBrowserRouter([
               { path: 'search', element: <Suspense fallback={null}><SearchPage /></Suspense> },
               { path: 'ranks/:rank', element: <Suspense fallback={null}><RanksPage /></Suspense> },
               { path: 'authors', element: <Suspense fallback={null}><AuthorsPage /></Suspense> },
+              // 查询串深链归一（?author=/?tag= → 路径形态，见 CollectionDeepLink）：
+              // 未注册裸 /app/collection 时这类外部深链整树无匹配 → 白屏（F1）
+              { path: 'collection', element: <CollectionDeepLink /> },
               { path: 'collection/:kind/:name', element: <Suspense fallback={null}><CollectionPage /></Suspense> },
               { path: 'maintenance/files', element: <Suspense fallback={null}><LibraryManagePage /></Suspense> },
               { path: 'maintenance/trash', element: <Suspense fallback={null}><TrashPage /></Suspense> },

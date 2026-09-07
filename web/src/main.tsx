@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider } from 'react-router'
 import { Toaster } from '@/components/ui/sonner'
+import { AppErrorBoundary } from '@/components/layout/AppErrorBoundary'
 import { router } from './router'
 import { initTheme } from './lib/theme'
 import { installClientLogs } from './lib/client-logs'
@@ -44,10 +45,13 @@ const queryClient = new QueryClient({
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      {/* M2：M0 骨架（App.tsx 单页）被路由骨架取代，直接挂 RouterProvider */}
-      <RouterProvider router={router} />
-      {/* 全局 toast（sonner）：主题变量已由 shadcn 生成映射，无需额外配置 */}
-      <Toaster richColors position="bottom-center" />
+      {/* 全局渲染期异常兜底：路由树内任何页面抛错不再卸成白屏（见组件注释） */}
+      <AppErrorBoundary>
+        {/* M2：M0 骨架（App.tsx 单页）被路由骨架取代，直接挂 RouterProvider */}
+        <RouterProvider router={router} />
+        {/* 全局 toast（sonner）：主题变量已由 shadcn 生成映射，无需额外配置 */}
+        <Toaster richColors position="bottom-center" />
+      </AppErrorBoundary>
     </QueryClientProvider>
   </StrictMode>,
 )
