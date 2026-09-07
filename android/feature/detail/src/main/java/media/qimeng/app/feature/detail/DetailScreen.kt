@@ -47,7 +47,10 @@ import media.qimeng.app.core.ui.theme.QimengDimens
  * 标签行 → 作者卡 → 接下来播放；排版基准 = Web AssetDetailPage.tsx B站式布局的移动端移植）；
  * 3b 补沉浸模式（chromeVisible 状态单源：顶行+底部间距 AnimatedVisibility 隐显 + 系统栏
  * 隐显）与兄弟资产滑动接线（图片手势在 ImageStage，视频 3c）；3d 补视频全量接线
- * （续播/已看完徽标/进度上报/打点/时间轴标签经具名参数逐层下发，穿墙通道已删）。
+ * （续播/已看完徽标/进度上报/打点/时间轴标签经具名参数逐层下发，穿墙通道已删）；
+ * D1 补图片全屏查看覆盖层（imageOverlayVisible 单源：排版态单击图片舞台打开，独立 Dialog
+ * 窗口铺满整屏盖住顶行/底节，单击/系统返回退出；选型与实测取舍见
+ * [ImageFullScreenOverlay] KDoc）。
  *
  * @param assetId 路由参数（ViewModel 经 SavedStateHandle 同键读取；此处显式保留供预览/测试）
  * @param onBack 返回（壳层 popBackStack）
@@ -65,7 +68,12 @@ fun DetailScreen(
     val context = LocalContext.current
     // 沉浸模式 chrome 显隐（3b；媒体单击切换，默认可见；每屏独立——兄弟 push 是新路由实例）
     var chromeVisible by rememberSaveable { mutableStateOf(true) }
-    SystemBarsImmersiveEffect(chromeVisible = chromeVisible)
+    // 图片全屏查看覆盖层开关（D1）：排版态单击图片舞台开，单击图片/系统返回关；
+    // rememberSaveable 与 chromeVisible 同语义（每屏独立，进程重建后恢复态一致）
+    var imageOverlayVisible by rememberSaveable { mutableStateOf(false) }
+    // D1：覆盖层打开=强制沉浸（隐藏系统栏），与 chrome 可见性同走一套 WindowInsetsController
+    // 显隐语义（复用不另开通道）；关闭即回落到排版态自身 chrome 态
+    SystemBarsImmersiveEffect(chromeVisible = chromeVisible && !imageOverlayVisible)
 
     // 3d 生命周期接线：onPause → dwell 当前段兜底 flush + 进度 force 补报；onResume → dwell
     // 开新段（分段累加口径，见 DwellSessionTracker）；onDispose（组合离场，先于 VM onCleared
@@ -106,6 +114,13 @@ fun DetailScreen(
         onDispose { disposables.values.forEach { it.dispose() } }
     }
 
+    // 兄弟资产切换回调单源（拍板③：目标解析失败（越界/无批次/缺参）静默不动；不走
+    // upNextJump 换批——批次清单就是当前清单；push 叠栈 = 浏览历史语义）。
+    // D1：排版态舞台与全屏覆盖层共用同一条链（覆盖层直传，不另开通道）
+    val onSiblingNavigate: (Int) -> Unit = { delta ->
+        viewModel.moveBy(delta)?.let { targetId -> onOpenAsset(targetId, emptyList()) }
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
         // 顶行随沉浸隐显（3b）：AnimatedVisibility 收放，返回键始终可用（系统返回）
         AnimatedVisibility(visible = chromeVisible) {
@@ -124,13 +139,11 @@ fun DetailScreen(
             else -> DetailLoadedContent(
                 state = state,
                 chromeVisible = chromeVisible,
-                // 舞台动作具名下发（3d 解冻：原 DetailStageActions 穿墙通道已删）。
-                // 兄弟资产切换（拍板③）：目标解析失败（越界/无批次/缺参）静默不动；
-                // 不走 upNextJump 换批——批次清单就是当前清单；push 叠栈 = 浏览历史语义
-                onSiblingNavigate = { delta ->
-                    viewModel.moveBy(delta)?.let { targetId -> onOpenAsset(targetId, emptyList()) }
-                },
+                // 舞台动作具名下发（3d 解冻：原 DetailStageActions 穿墙通道已删）
+                onSiblingNavigate = onSiblingNavigate,
                 onToggleChrome = { chromeVisible = !chromeVisible },
+                // D1：排版态单击图片舞台打开全屏覆盖层（开关状态单源在本屏）
+                onOpenFullScreen = { imageOverlayVisible = true },
                 // 推荐栏跳转：先换批次清单（推荐栏即新清单），再交壳层导航
                 onOpenAsset = { id, batchIds ->
                     viewModel.upNextJump()
@@ -153,6 +166,18 @@ fun DetailScreen(
             )
         }
     }
+    // 图片全屏查看覆盖层（D1）：仅资产就绪时挂载。Dialog 独立窗口铺满整屏（不受壳层
+    // Scaffold padding 约束，选型理由见组件 KDoc）；单击/系统返回退出回排版态。
+    // 排版基准不动摇：Column 排版主体零改动，全屏只是叠加态
+    state.asset?.let { asset ->
+        if (imageOverlayVisible) {
+            ImageFullScreenOverlay(
+                asset = asset,
+                onSiblingNavigate = onSiblingNavigate,
+                onDismiss = { imageOverlayVisible = false },
+            )
+        }
+    }
 }
 
 /** 加载成功后的滚动主体：单列堆叠各节 + 错误横幅（互动失败不退场，横幅照 home 模式可点关） */
@@ -162,6 +187,7 @@ private fun DetailLoadedContent(
     chromeVisible: Boolean,
     onSiblingNavigate: (delta: Int) -> Unit,
     onToggleChrome: () -> Unit,
+    onOpenFullScreen: () -> Unit,
     onOpenAsset: (assetId: String, batchIds: List<String>) -> Unit,
     onPlaybackStarted: () -> Unit,
     onPositionChanged: (positionSeconds: Double) -> Unit,
@@ -194,6 +220,7 @@ private fun DetailLoadedContent(
             timelineTags = state.timelineTags,
             onSiblingNavigate = onSiblingNavigate,
             onToggleChrome = onToggleChrome,
+            onOpenFullScreen = onOpenFullScreen,
             onPlaybackStarted = onPlaybackStarted,
             onPositionChanged = onPositionChanged,
             onAddTimelineTag = onAddTimelineTag,
