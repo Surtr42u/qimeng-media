@@ -4,7 +4,7 @@ import { Shuffle } from 'lucide-react'
 import type { AssetSummary } from '@/api/generated'
 import { useUpNextList, type MediaType } from '@/hooks/use-assets'
 import { formatDuration } from '@/lib/format'
-import { assetDetailWithSearch } from '@/lib/route-keys'
+import { assetDetailWithSearch, type AssetNavState } from '@/lib/route-keys'
 
 /**
  * 详情页「接下来播放」推荐栏（B站式右栏下部）：同类型推荐流（推荐算法 +
@@ -35,6 +35,10 @@ export function UpNextList({
   })
   // 类型谓词收窄 id：协议 AssetSummary.id 可空，但本列表行必须有 id 才可跳详情
   const items = (data ?? []).filter((a): a is AssetSummary & { id: string } => !!a.id && a.id !== assetId)
+  // E5 批次导航快照：本列表（排除当前资产后）的 id 序即流快照，行下标即所点
+  // 位置，经 location.state 交详情页渲染上一件/下一件；AssetSummary 无 origUrl
+  // 字段故不传 origUrls（邻项不预载，切换走详情接口 origUrl——拍板允许）
+  const navIds = items.map((a) => a.id)
 
   return (
     <div className="rank-card upnext-card">
@@ -46,8 +50,13 @@ export function UpNextList({
         </button>
       </div>
       <div className="upnext-list">
-        {items.map((a) => (
-          <Link className="upnext-row" key={a.id} to={assetDetailWithSearch(a.id, search)}>
+        {items.map((a, i) => (
+          <Link
+            className="upnext-row"
+            key={a.id}
+            to={assetDetailWithSearch(a.id, search)}
+            state={{ ids: navIds, index: i } satisfies AssetNavState}
+          >
             <span className="upnext-thumb">
               {a.thumbUrl ? <img src={a.thumbUrl} alt={a.fileName ?? ''} loading="lazy" /> : null}
               {a.mediaType === 'video' && a.durationMs ? (

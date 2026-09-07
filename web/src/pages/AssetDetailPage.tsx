@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { useParams } from 'react-router'
-import { Star, ThumbsUp } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useLocation, useNavigate, useParams } from 'react-router'
+import { ChevronLeft, ChevronRight, Star, ThumbsUp } from 'lucide-react'
 import {
   useAssetDetail,
   useReportView,
@@ -10,11 +10,13 @@ import {
 import { useDwellReport } from '@/hooks/use-dwell-report'
 import { useProgress, useTimelineTags } from '@/hooks/use-progress'
 import VideoPlayer from '@/components/media/video-player'
+import ImageViewer, { PRELOAD_AROUND } from '@/components/media/image-viewer'
 import { AuthorCard } from '@/components/detail/AuthorCard'
 import { AssetTagRow } from '@/components/detail/AssetTagRow'
 import { FileOpsButton } from '@/components/detail/FileOpsButton'
 import { UpNextList } from '@/components/detail/UpNextList'
 import { formatBytes, formatCount, formatShortDate } from '@/lib/format'
+import { assetDetailWithSearch, readAssetNavState, type AssetNavState } from '@/lib/route-keys'
 import { ensureSessionId } from '@/hooks/use-session'
 
 /**
@@ -24,7 +26,10 @@ import { ensureSessionId } from '@/hooks/use-session'
  * 代管（.content 已对叠加组加门），详情→详情（右栏换资产）改由本页自回顶。
  * B站式双栏排版（2026-09-05 大改）：左主列 = 媒体舞台 → 标题 → 信息行 →
  * 点赞/收藏互动行 → 标签行；右栏 = 作者卡（关注）+「接下来播放」推荐栏。
- * 图片/动图 = 签名原件直链大图（"查看永远发原件"）；视频 = ArtPlayer 播放器
+ * 图片/动图 = 签名原件直链大图（"查看永远发原件"），E5 起点击打开自研
+ * 图片查看器（缩放/横滑换件，components/media/image-viewer.tsx），并有列表
+ * 上下文批次导航（上一件/下一件，数据源=入口经 location.state 传入的流快照）；
+ * 视频 = ArtPlayer 播放器
  * （W-3：倍速/静音/全屏/断点续播/时间轴标签打点回看，网络逻辑全在
  * hooks/use-progress.ts）。打点（DOMAIN_RULES §5）：进入上报 open、
  * 视频每次起播上报 play、停留时长上报 dwell（图片视频通用）。
@@ -104,6 +109,51 @@ export default function AssetDetailPage() {
   // 点赞图标弹跳动效：每次点击重触发（类挂上→动画结束复位），onAnimationEnd 冒泡到按钮
   const [likeBounce, setLikeBounce] = useState(false)
 
+  // E5 批次导航上下文：location.state 携带进入详情时所在列表流的 id 快照
+  // （HomePage.openDetail 与 UpNextList 行两个叠加组入口传入；其余入口/直达/
+  // 刷新无 state → nav=null，导航钮与查看器切换不渲染）。index 以 URL 当前
+  // 资产在快照中的实际位置为准（浏览器前进/后退逐条恢复各自 state，天然对齐；
+  // 对不上一律按无上下文处理，不猜）
+  const { search, state: locationState } = useLocation()
+  const navigate = useNavigate()
+  const nav = useMemo(() => {
+    if (!assetId) return null
+    const snap = readAssetNavState(locationState)
+    if (!snap) return null
+    const index = snap.ids.indexOf(assetId)
+    return index >= 0 ? { ...snap, index } : null
+  }, [assetId, locationState])
+
+  // 换件唯一回调（分页钮与查看器横滑/箭头共用）：保查询串（E1 叠加组底衬
+  // 同流约定）+ 带更新过 index 的 state（后续换件与浏览器返回的上下文续接）；
+  // 边界停止不循环（待拍板 #12/#18 先行口径：可逆低成本）
+  const goNeighbor = useCallback(
+    (delta: -1 | 1) => {
+      if (!nav) return
+      const target = nav.index + delta
+      if (target < 0 || target >= nav.ids.length) return
+      const nextState: AssetNavState = { ids: nav.ids, index: target, origUrls: nav.origUrls }
+      navigate(assetDetailWithSearch(nav.ids[target], search), { state: nextState })
+    },
+    [nav, navigate, search],
+  )
+
+  // 相邻预载直链：按 PRELOAD_AROUND 从快照 origUrls 切片（现有列表类型无该
+  // 字段 → 空数组 = 邻项不预载，切换时走详情接口 origUrl 的短暂加载态）
+  const preloadUrls = useMemo(() => {
+    if (!nav?.origUrls) return []
+    const urls: Array<string | undefined> = []
+    for (let delta = -PRELOAD_AROUND; delta <= PRELOAD_AROUND; delta++) {
+      if (delta === 0) continue
+      urls.push(nav.origUrls[nav.index + delta])
+    }
+    return urls.filter((u): u is string => !!u)
+  }, [nav])
+
+  // E5 图片查看器：仅图片/动图媒体可开（视频不接查看器）；换件后 viewer 保持
+  // 打开，src 随 detail.origUrl 更新（组件内部按 src 重挂复位手势态）
+  const [viewerOpen, setViewerOpen] = useState(false)
+
   // E1 叠加层滚动自管：详情→详情（右栏换资产）时回顶。旧版本 pathname 变化
   // 由 AppShell 统一 reset .content，叠加化后 .content 复位已对叠加组加门
   // （保底衬列表位置），叠加层自身滚动改由本页在资产切换时归零。挂载即跑
@@ -147,11 +197,47 @@ export default function AssetDetailPage() {
                 />
               )
             ) : d.origUrl ? (
-              <img src={d.origUrl} alt={d.fileName} loading="eager" />
+              // E5：图片/动图包裹点击态，点击打开自研查看器（原件直链直显，
+              // 不新发签名请求；手势/缩放/切换见 components/media/image-viewer.tsx）
+              <button
+                type="button"
+                className="asset-img-open"
+                onClick={() => setViewerOpen(true)}
+                title="查看大图"
+              >
+                <img src={d.origUrl} alt={d.fileName} loading="eager" />
+              </button>
             ) : (
               <p className="grid-empty">无法加载内容</p>
             )}
           </div>
+          {/* E5 批次导航（媒体区旁）：有列表上下文才渲染；n/总数 序号 +
+              上一件/下一件，边界置灰停止不循环；与查看器共用 goNeighbor */}
+          {nav ? (
+            <div className="asset-pager">
+              <button
+                type="button"
+                className="asset-pager__btn"
+                disabled={nav.index <= 0}
+                onClick={() => goNeighbor(-1)}
+              >
+                <ChevronLeft size={14} />
+                上一件
+              </button>
+              <span className="asset-pager__count">
+                {nav.index + 1} / {nav.ids.length}
+              </span>
+              <button
+                type="button"
+                className="asset-pager__btn"
+                disabled={nav.index >= nav.ids.length - 1}
+                onClick={() => goNeighbor(1)}
+              >
+                下一件
+                <ChevronRight size={14} />
+              </button>
+            </div>
+          ) : null}
           <h1 className="detail-title">{d.cosWork ?? d.fileName}</h1>
           <p className="detail-meta">
             <span>浏览 {formatCount(d.viewCount)}</span>
@@ -199,6 +285,20 @@ export default function AssetDetailPage() {
           <UpNextList assetId={assetId!} mediaType={d.mediaType} cosWork={d.cosWork} />
         </aside>
       </div>
+      {/* E5 查看器覆盖层：portal 挂 body（z-index 35 层级位见组件头注释）。
+          条件：非视频（视频不接查看器——横滑进视频资产时自动收起）、仍有
+          origUrl。换件回调与分页钮共用 goNeighbor，边界外不注入回调即无切换 UI */}
+      {viewerOpen && !isVideo && d.origUrl ? (
+        <ImageViewer
+          src={d.origUrl}
+          alt={d.fileName ?? ''}
+          onClose={() => setViewerOpen(false)}
+          onPrev={nav && nav.index > 0 ? () => goNeighbor(-1) : undefined}
+          onNext={nav && nav.index < nav.ids.length - 1 ? () => goNeighbor(1) : undefined}
+          position={nav ? { index: nav.index + 1, total: nav.ids.length } : undefined}
+          preloadUrls={preloadUrls}
+        />
+      ) : null}
     </div>
   )
 }

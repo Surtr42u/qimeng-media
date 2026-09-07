@@ -7,7 +7,7 @@ import { assetToCard, useRecommendations } from '@/hooks/use-assets'
 import { useRankingsInfinite } from '@/hooks/use-stats'
 import { useAutoMore } from '@/hooks/use-auto-more'
 import { parseRankPeriod, type HomeRankPeriod, type HomeTabKey } from '@/lib/home-tabs'
-import { assetDetailWithSearch } from '@/lib/route-keys'
+import { assetDetailWithSearch, type AssetNavState } from '@/lib/route-keys'
 
 /**
  * 首页：顶栏分类 tab（推荐/cos/排行榜）对应的内容区（tab 由 URL ?tab= 驱动，
@@ -30,14 +30,16 @@ export default function HomePage() {
   const tab: HomeTabKey = (searchParams.get('tab') as HomeTabKey) ?? 'recommend'
   const period = parseRankPeriod(searchParams.get('period'))
 
-  const openDetail = (id?: string): void => {
+  // E5：nav = 当前已加载流的 id 快照 + 所点下标（StreamCards 组装），经
+  // location.state 交给详情页做上一件/下一件批次导航；无则按无上下文打开
+  const openDetail = (id?: string, nav?: AssetNavState): void => {
     if (!id) return
     // E1 叠加打开携带当前查询串（tab/period）：详情期间底衬 HomePage 保持
     // 同一条流（tab 子组件不换挂、换一批 seed 不丢），浏览器返回的历史条目
     // 与离开时完全一致。与详情右栏 upnext 行（UpNextList）共用统一入口
     // assetDetailWithSearch；recommend 缺省无参数则不加 ?（空查询串不污染 URL）。
     const q = searchParams.toString()
-    navigate(assetDetailWithSearch(id, q ? `?${q}` : ''))
+    navigate(assetDetailWithSearch(id, q ? `?${q}` : ''), nav ? { state: nav } : undefined)
   }
 
   return (
@@ -124,7 +126,7 @@ type RecommendationStream = ReturnType<typeof useRecommendationStream>
  *  哨兵。哨兵只在还有下一页时挂载——到底即卸载，观察器随之断开。 */
 function StreamCards({ stream, onOpen, emptyHint, footer, endHint }: {
   stream: RecommendationStream
-  onOpen: (id?: string) => void
+  onOpen: (id?: string, nav?: AssetNavState) => void
   emptyHint: string
   /** 常驻页脚（cos：换一批 + 计数），首屏加载完即显示 */
   footer?: ReactNode
@@ -132,13 +134,31 @@ function StreamCards({ stream, onOpen, emptyHint, footer, endHint }: {
   endHint?: ReactNode
 }) {
   const { items, isLoading, isFetchingNextPage, hasNextPage, isPlaceholderData, sentinelRef } = stream
+  // E5 批次导航快照：当前已渲染（去重后）流的 id 序与所点下标。协议 id 可空：
+  // 无 id 项不可跳详情也不入快照（快照与可点项保持同序同集）
+  const navContext = (() => {
+    const ids: string[] = []
+    const indexAt = new Map<string, number>()
+    for (const a of items) {
+      if (a.id === undefined) continue
+      indexAt.set(a.id, ids.length)
+      ids.push(a.id)
+    }
+    return { ids, indexAt }
+  })()
   return (
     <>
       {items.map((a) => (
         <MediaCard
           key={a.id}
           {...assetToCard(a)}
-          onClick={() => onOpen(a.id)}
+          onClick={() => {
+            if (a.id === undefined) {
+              onOpen(undefined)
+              return
+            }
+            onOpen(a.id, { ids: navContext.ids, index: navContext.indexAt.get(a.id) ?? 0 })
+          }}
         />
       ))}
       {isLoading && <p className="grid-empty">加载中…</p>}
@@ -155,7 +175,7 @@ function StreamCards({ stream, onOpen, emptyHint, footer, endHint }: {
 
 /** 推荐 tab（recommend）：卡片流触底增量加载；qm:refresh → seed=Date.now()
  *  （旧版 refreshSeed++：全量重排并回第一页）。 */
-function RecommendTab({ onOpen }: { onOpen: (id?: string) => void }) {
+function RecommendTab({ onOpen }: { onOpen: (id?: string, nav?: AssetNavState) => void }) {
   const [seed, setSeed] = useState(0)
   useQmRefresh(() => setSeed(Date.now()))
   const stream = useRecommendationStream(seed, false)
@@ -172,7 +192,7 @@ function RecommendTab({ onOpen }: { onOpen: (id?: string) => void }) {
 /** COS 推荐 tab（cos）：旧版「COS 推荐模式」——同套算法跑 COS 子集，
  *  触底增量加载；换一批 = seed 换键重排（与服务端每日展示惩罚自然衔接），
  *  qm:refresh 同语义。 */
-function CosRecommendTab({ onOpen }: { onOpen: (id?: string) => void }) {
+function CosRecommendTab({ onOpen }: { onOpen: (id?: string, nav?: AssetNavState) => void }) {
   const [seed, setSeed] = useState(0)
   useQmRefresh(() => setSeed(Date.now()))
   const stream = useRecommendationStream(seed, true)
@@ -205,7 +225,7 @@ function CosRecommendTab({ onOpen }: { onOpen: (id?: string) => void }) {
  *  原 rank-card「内容榜」标题壳按用户拍板去除）。period 变化经 queryKey
  *  换档天然重置分页；qm:refresh → reloadKey+1 重置分页重拉（排行榜是
  *  确定性排序，不需要 seed 打散）。 */
-function HotRankTab({ period, onOpen }: { period: HomeRankPeriod; onOpen: (id?: string) => void }) {
+function HotRankTab({ period, onOpen }: { period: HomeRankPeriod; onOpen: (id?: string, nav?: AssetNavState) => void }) {
   const [reloadKey, setReloadKey] = useState(0)
   useQmRefresh(() => setReloadKey((n) => n + 1))
   const q = useRankingsInfinite(period, DEFAULT_PAGE_SIZE, reloadKey)

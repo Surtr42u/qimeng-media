@@ -1746,3 +1746,124 @@ li.dir-file-row:hover { background: var(--hover-bg); }
   background: var(--bg);
   padding: 12px 24px 40px;
 }
+
+/* ===== E5 图片查看器（web/src/components/media/image-viewer.tsx，2026-09-07）
+   层级位：组件 createPortal 挂 body（脱离 .asset-overlay 的 z-10 层叠上下文，
+   否则内部 z 值压不过顶栏搜索弹层），z-index 35——高于 .asset-overlay(10) 与
+   顶栏搜索面板(20)/搜索输入(30)，低于 FAB(40——浮于查看器系有意设计，叠加期
+   常显约定)与弹窗族(50/51)。
+   zoom 反向补偿：0.9090909 = 1/1.1，与 :105 radix popper wrapper 同公式——
+   全局 html{zoom:1.1} 对 body 级 fixed 元素照常继承放大，组件手势以纯视觉
+   坐标（clientX/getBoundingClientRect）换算 CSS transform 长度，必须 1:1；
+   html zoom 改动须同步此处与 :105，反之亦然。子树内 1 CSS px == 1 视觉 px。
+   动效只用 opacity+transform+token（§1623 既有约定，不碰 zoom）；
+   prefers-reduced-motion 由全局归零层自然覆盖。本段零新颜色字面量。 */
+.img-viewer {
+  /* 补偿值与 :105 同公式但语义独立（查看器整子树归一 vs popper 单层定位），
+     不合并变量——html zoom 改动两处同步 */
+  --zoom-inverse: 0.9090909;
+  position: fixed;
+  inset: 0;
+  z-index: 35;
+  zoom: var(--zoom-inverse);
+  overflow: hidden;
+  background: var(--stage-bg); /* 与 .asset-stage 媒体舞台黑底同源 */
+}
+.img-viewer__canvas {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: none; /* Pointer Events 手势自管：禁浏览器默认平移/双指缩放 */
+  user-select: none;
+}
+.img-viewer__img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-drag: none;
+  will-change: transform;
+}
+/* 沉浸 chrome（关闭钮/序号/换件箭头）：容器不吃事件（点击穿透画布切沉浸），
+   仅子按钮可点；隐藏态 visibility 延迟过渡兜底——淡出后不可点、不进可达性树 */
+.img-viewer__chrome {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  visibility: visible;
+  transition: opacity var(--qm-duration-base) var(--qm-ease-out), visibility 0s linear 0s;
+}
+.img-viewer__chrome:not(.img-viewer__chrome--hidden) > * { pointer-events: auto; }
+.img-viewer__chrome--hidden {
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity var(--qm-duration-base) var(--qm-ease-out), visibility 0s linear var(--qm-duration-base);
+}
+.img-viewer__counter {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  padding: 4px 10px;
+  border-radius: var(--qm-radius);
+  background: var(--overlay-bg);
+  color: var(--invert);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.img-viewer__btn {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--qm-radius);
+  background: var(--overlay-bg);
+  color: var(--invert);
+  cursor: pointer;
+  transition: opacity var(--qm-duration-fast) var(--qm-ease-out);
+}
+.img-viewer__btn:hover { opacity: 0.85; }
+.img-viewer__close { top: 12px; right: 14px; width: 34px; height: 34px; }
+.img-viewer__nav { top: 50%; transform: translateY(-50%); width: 42px; height: 42px; }
+.img-viewer__nav--prev { left: 12px; }
+.img-viewer__nav--next { right: 12px; }
+
+/* ===== E5 详情页批次导航（媒体区旁，上下文存在才渲染）：上一件/下一件 +
+   n/总数 序号；边界置灰停止不循环（待拍板 #12 先行口径） */
+.asset-pager {
+  display: flex;
+  align-items: center;
+  gap: var(--qm-space-2);
+  margin-top: var(--qm-space-2);
+  color: var(--text-mid);
+  font-size: 12px;
+}
+.asset-pager__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--qm-radius);
+  background: var(--bg);
+  color: var(--text-mid);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background var(--qm-duration-fast) var(--qm-ease-out), color var(--qm-duration-fast) var(--qm-ease-out);
+}
+.asset-pager__btn:hover:not(:disabled) { background: var(--hover-bg); color: var(--text-main); }
+.asset-pager__btn:disabled { opacity: 0.45; cursor: default; }
+.asset-pager__count { font-variant-numeric: tabular-nums; }
+
+/* ===== E5 详情媒体区图片点击态：按钮壳样式归零（视觉同裸 img，.asset-stage img
+   的尺寸约束对内部 img 照常生效），cursor zoom-in 提示可打开查看器 */
+.asset-img-open {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
+}
