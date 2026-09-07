@@ -6,9 +6,12 @@
 
 import { generatePath, matchPath } from 'react-router'
 
-/** 首页路由（E1 叠加组底衬判定用；F2（2026-09-08）把 Sidebar/TopBar/router 的
+/** 首页路由（叠加组底衬列表键；F2（2026-09-08）把 Sidebar/TopBar/router 的
  *  存量字面量收敛至此，本文件是路由键唯一来源，新增引用一律走此常量） */
 export const HOME_PATH = '/app/home'
+
+/** 相册页路由（F5 列表↔详情叠加组第二个底衬列表键；Sidebar/后续引用一律走此常量） */
+export const ALBUMS_PATH = '/app/albums'
 
 /** 集合子页 kind（路由段 /app/collection/:kind/:name） */
 export const COLLECTION_TAG = 'tag'
@@ -62,19 +65,31 @@ export function isAssetDetailPath(pathname: string): boolean {
   return matchPath(ASSET_DETAIL_PATTERN, pathname) !== null
 }
 
-/** E1 叠加组（首页↔资产详情）判定：组内互相切换时 AppShell 不做滚动复位——
- *  底衬列表的 .content scrollTop 即返回（浏览器回退/顶栏回首页）时的恢复位置 */
-export function inHomeDetailGroup(pathname: string): boolean {
-  return pathname === HOME_PATH || isAssetDetailPath(pathname)
+/**
+ * F5 叠加组底衬列表身份键集合（pathname 即键）。列表页入叠加组时在此登记，
+ * 并同步 AssetOverlayGroupLayout 的槽位条件渲染（两处缺一即白屏/回落错误列表）。
+ * 带路径参数的列表（collection/:kind/:name、ranks/:rank）后续批入组时在本
+ * 函数内扩展匹配，勿直接塞常量数组（参数段不是固定字符串）。
+ */
+const OVERLAY_LIST_PATHS: readonly string[] = [HOME_PATH, ALBUMS_PATH]
+
+/**
+ * pathname → 叠加组列表身份键（键=pathname 本身，与详情侧 readBackdropKey
+ * 同一口径）；非组内列表路径返回 null——/app/asset 详情与组外页面都不是
+ * 底衬列表。叠加布局的底衬归属：列表路径走本函数派生；详情走 readBackdropKey。
+ */
+export function listKeyFromPath(pathname: string): string | null {
+  return OVERLAY_LIST_PATHS.includes(pathname) ? pathname : null
 }
 
 /**
- * E5 列表上下文快照（history state）：叠加组入口（HomePage.openDetail 与
- * UpNextList 行）进详情时携带「当前已加载流」的 id 快照 + 所点下标，详情页
- * 据此渲染上一件/下一件批次导航与查看器切换；其余 7 处入口不传 state——
- * 直达/刷新 readAssetNavState 返回 null，导航 UI 不渲染（无上下文兜底）。
+ * E5 列表上下文快照（history state）：叠加组入口（HomePage.openDetail、
+ * UpNextList 行与 F5 起的 AlbumsPage 卡片）进详情时携带「当前已加载流」的
+ * id 快照 + 所点下标，详情页据此渲染上一件/下一件批次导航与查看器切换；
+ * 其余入口不传 state——直达/刷新 readAssetNavState 返回 null，导航 UI 不
+ * 渲染（无上下文兜底）。
  * origUrls：与 ids 对齐的可选原件直链快照，仅供查看器相邻预载。现有列表类型
- * （AssetSummary）无 origUrl 字段故两个入口都不传——邻项不预载、切换时用
+ * （AssetSummary）无 origUrl 字段故各入口都不传——邻项不预载、切换时用
  * 详情接口的 origUrl（短暂加载态，E5 拍板允许）；字段为未来带原件直链的
  * 列表入口预留，勿删。
  */
@@ -83,6 +98,15 @@ export interface AssetNavState {
   index: number
   origUrls?: Array<string | undefined>
 }
+
+/**
+ * F5 叠加组详情入口 state 总形：批次导航快照 + 顶层独立 backdrop 字段
+ * （底衬列表身份键）。backdrop 不扩入 AssetNavState 的理由：两者职责与
+ * 生命周期不同——快照缺失=无 pager（无缺省值），backdrop 缺失有安全缺省
+ * home；且 readAssetNavState 的纪律是「任一字段不合法整包拒绝」，混入允许
+ * 缺省回落的字段要么让非法 backdrop 拖垮 pager、要么破坏整包拒绝口径。
+ */
+export type OverlayDetailState = AssetNavState & { backdrop?: string }
 
 /**
  * location.state 收敛解析（全站首个 history state 消费点）：state 运行时
@@ -104,6 +128,20 @@ export function readAssetNavState(state: unknown): AssetNavState | null {
     return null
   }
   return { ids, index, origUrls: origUrls as Array<string | undefined> | undefined }
+}
+
+/**
+ * F5 底衬字段读取（location.state 顶层独立字段，独立校验，不与
+ * readAssetNavState 耦合）：返回入口列表身份键或 null（未携带/不合法）。
+ * 消费方各自定缺省：叠加布局 null → home（深链直达与 home 链入口都不携带
+ * 该字段）；goNeighbor/UpNextList null → 不写该字段（state 与 E1 现状
+ * 逐字节一致，home 链零回归）。校验必须是已登记的组内列表键，非法值一律
+ * null 不猜。
+ */
+export function readBackdropKey(state: unknown): string | null {
+  if (typeof state !== 'object' || state === null) return null
+  const backdrop = (state as { backdrop?: unknown }).backdrop
+  return typeof backdrop === 'string' ? listKeyFromPath(backdrop) : null
 }
 
 /** 榜单键：DataPage 入口与 RanksPage 路由段共用 */

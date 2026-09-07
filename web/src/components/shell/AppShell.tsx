@@ -1,15 +1,15 @@
 /**
  * 应用壳层：侧栏 + 顶栏 + 内容区（路由出口）+ 右下角悬浮刷新（详情叠加期
  * 隐藏，见下方 overlayOpen 注释）。
- * 真导航（非叠加组内切换）时内容区滚回顶部（原型 showPage 的 scrollTop=0
- * 语义 → 路由 pathname 驱动；叠加组门见下方 E1 注释）。
+ * 真导航（非同一叠加对内切换）时内容区滚回顶部（原型 showPage 的 scrollTop=0
+ * 语义 → 路由 pathname 驱动；叠加组门见下方 F5 注释）。
  */
 
 import { QM_REFRESH_EVENT } from '@/lib/constants'
 import { useEffect, useRef, useState } from 'react'
 import { Outlet, useLocation } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
-import { inHomeDetailGroup, isAssetDetailPath } from '@/lib/route-keys'
+import { HOME_PATH, isAssetDetailPath, listKeyFromPath, readBackdropKey } from '@/lib/route-keys'
 import { Sidebar } from './Sidebar'
 import { TopBar } from './TopBar'
 import { RefreshIcon, BackTopIcon } from './icons'
@@ -18,23 +18,37 @@ import { RefreshIcon, BackTopIcon } from './icons'
 const BACK_TOP_THRESHOLD = 400
 
 export function AppShell() {
-  const { pathname } = useLocation()
+  const { pathname, state: navState } = useLocation()
   const contentRef = useRef<HTMLElement>(null)
   const queryClient = useQueryClient()
   const [spinning, setSpinning] = useState(false)
   const [showBackTop, setShowBackTop] = useState(false)
-  // E1 叠加组（首页↔详情）：详情是覆盖在首页底衬上的叠加层，组内互相切换
-  // （进详情/浏览器返回/详情→详情）不复位 .content——底衬列表的 scrollTop
-  // 即返回时的恢复位置，复位它等于丢态。仅真导航（进出相册/搜索等其他页）
-  // 保持原回顶语义。上一 pathname 用 ref 记，避免为比较值多一次渲染。
+  // F5 叠加组滚动门（取代 E1 的 inHomeDetailGroup「双在组内」判定——单组多
+  // 列表后「组内」不再等于「同一叠加对」）：详情是覆盖在底衬列表上的叠加层，
+  // (1) 进/驻详情（列表→详情、详情→详情）不复位 .content——底衬列表的
+  //     scrollTop 即返回时的恢复位置，复位它等于丢态；
+  // (2) 离开详情（详情→列表）仅当目标列表就是该详情的底衬（上一条历史条目
+  //     state 的 backdrop，缺省 home——home 链入口从不携带该字段）才不复位：
+  //     浏览器返回与顶栏/侧栏回底衬都是恢复滚动；底衬以外的目标（如相册详情
+  //     侧栏切首页）是真导航 → 复位回顶（2026-09-08 验收矩阵③）；
+  // (3) 列表→列表 → 复位（真导航回顶语义不变）。
+  // 上一 pathname 与其 state 都用 ref 记：效果运行时 location 已是新条目，
+  // 底衬归属只存在于详情条目自身的 state 上。
   const prevPathnameRef = useRef<string | null>(null)
+  const prevStateRef = useRef<unknown>(null)
 
   useEffect(() => {
     const prev = prevPathnameRef.current
+    const prevState = prevStateRef.current
     prevPathnameRef.current = pathname
-    if (prev !== null && inHomeDetailGroup(prev) && inHomeDetailGroup(pathname)) return
+    prevStateRef.current = navState
+    if (isAssetDetailPath(pathname)) return
+    if (prev !== null && isAssetDetailPath(prev)) {
+      const backdrop = readBackdropKey(prevState) ?? HOME_PATH
+      if (backdrop === listKeyFromPath(pathname)) return
+    }
     contentRef.current?.scrollTo(0, 0)
-  }, [pathname])
+  }, [pathname, navState])
 
   // 详情叠加打开期间 .content 不再滚动，回顶部按钮失去意义且悬浮在覆盖层上；
   // 刷新 FAB 同门（F7 2026-09-08 用户拍板，推翻 E5「FAB 浮于查看器系有意」

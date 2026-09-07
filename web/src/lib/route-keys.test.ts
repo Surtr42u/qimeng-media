@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
+  ALBUMS_PATH,
   assetDetail,
   assetDetailWithSearch,
   collectionPath,
-  inHomeDetailGroup,
   isAssetDetailPath,
+  listKeyFromPath,
   readAssetNavState,
+  readBackdropKey,
 } from './route-keys'
 
 describe('assetDetail', () => {
@@ -27,11 +29,49 @@ describe('isAssetDetailPath', () => {
   })
 })
 
-describe('inHomeDetailGroup', () => {
-  it('首页与资产详情在叠加组内，其余页面不在', () => {
-    expect(inHomeDetailGroup('/app/home')).toBe(true)
-    expect(inHomeDetailGroup('/app/asset/x')).toBe(true)
-    expect(inHomeDetailGroup('/app/albums')).toBe(false)
+describe('listKeyFromPath', () => {
+  it('组内列表路径返回自身（键=pathname，与 backdrop 写入侧同一口径）', () => {
+    expect(listKeyFromPath('/app/home')).toBe('/app/home')
+    expect(listKeyFromPath(ALBUMS_PATH)).toBe('/app/albums')
+  })
+
+  it('详情 / 组外页面 / 根路径 → null（都不是底衬列表）', () => {
+    expect(listKeyFromPath('/app/asset/x')).toBeNull()
+    expect(listKeyFromPath('/app/search')).toBeNull()
+    expect(listKeyFromPath('/app/mine')).toBeNull()
+    expect(listKeyFromPath('/app/collection/author/x')).toBeNull()
+    expect(listKeyFromPath('/')).toBeNull()
+  })
+
+  it('带查询串的 pathname 不命中（本函数只吃 pathname，search 由调用方剥离）', () => {
+    expect(listKeyFromPath('/app/home?tab=cos')).toBeNull()
+  })
+})
+
+describe('readBackdropKey', () => {
+  it('合法 backdrop（已登记组内列表键）原样返回；与同级 nav 快照字段共存', () => {
+    expect(readBackdropKey({ ids: ['a'], index: 0, backdrop: '/app/albums' })).toBe('/app/albums')
+    expect(readBackdropKey({ ids: ['a'], index: 0, backdrop: '/app/home' })).toBe('/app/home')
+  })
+
+  it('未携带 → null（布局侧缺省 home；写入侧不写该字段，home 链零回归）', () => {
+    expect(readBackdropKey({ ids: ['a'], index: 0 })).toBeNull()
+    expect(readBackdropKey({})).toBeNull()
+  })
+
+  it('state 非 object（null / 原始值 / undefined）→ null', () => {
+    expect(readBackdropKey(null)).toBeNull()
+    expect(readBackdropKey(undefined)).toBeNull()
+    expect(readBackdropKey('x')).toBeNull()
+    expect(readBackdropKey(42)).toBeNull()
+  })
+
+  it('不合法（非字符串 / 非组内列表键）→ null，不猜', () => {
+    expect(readBackdropKey({ backdrop: 'albums' })).toBeNull()
+    expect(readBackdropKey({ backdrop: '/app/search' })).toBeNull()
+    expect(readBackdropKey({ backdrop: '/app/asset/x' })).toBeNull()
+    expect(readBackdropKey({ backdrop: 42 })).toBeNull()
+    expect(readBackdropKey({ backdrop: null })).toBeNull()
   })
 })
 
