@@ -64,7 +64,13 @@ fun QimengEmptyState(
     text: String,
     modifier: Modifier = Modifier,
 ) {
-    Box(modifier = modifier.fillMaxWidth().padding(vertical = 48.dp)) {
+    // C8 用户视角重审修复（S9 空态文案 26.8%）：撑满剩余空间使文案垂直居中，对齐旧仓库
+    // 空态口径——fragment_favorite.xml L160-168 / fragment_browse_history.xml L167-176 均为
+    // height=0dp + weight=1 + gravity=center（剩余区域居中）；旧实现 wrap-content 落顶部，
+    // 与旧版可见位置差（顶部 vs 居中）。8 处调用方（all/author/favorite/history/home/search）
+    // 各自独占满容父容器（7 处在 QimengPullToRefresh content 内；search ResultPhase 在
+    // Box(fillMaxSize) 内独占、无兄弟），fillMaxSize 无挤压风险。
+    Box(modifier = modifier.fillMaxSize().padding(vertical = 48.dp)) {
         Text(
             text = text,
             style = MaterialTheme.typography.bodyMedium,
