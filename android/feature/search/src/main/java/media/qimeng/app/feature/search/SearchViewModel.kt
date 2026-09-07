@@ -16,6 +16,7 @@ import media.qimeng.app.core.data.repository.AssetOrigUrlResolver
 import media.qimeng.app.core.data.repository.MediaRepository
 import media.qimeng.app.core.data.repository.SearchHistoryRepository
 import media.qimeng.app.core.model.AssetQuery
+import media.qimeng.app.core.model.LIST_PAGE_SIZE
 import media.qimeng.app.core.model.MediaAsset
 import media.qimeng.app.core.model.NameSuggestion
 import media.qimeng.app.core.model.sortedShortestFirst
@@ -208,7 +209,7 @@ class SearchViewModel @Inject constructor(
                 mediaRepository.assets(
                     AssetQuery(
                         cursor = cursor,
-                        limit = PAGE_SIZE,
+                        limit = LIST_PAGE_SIZE,
                         // 旧版搜索=合并常规+COS（GUIDE_UI §首页搜索范围），固定 includeCos=1
                         includeCos = true,
                         q = state.submittedQuery,
@@ -238,8 +239,8 @@ class SearchViewModel @Inject constructor(
         /** 补全/推荐词条数上限（规格书 §搜索页 ≤10 条；协议 limit 缺省 10） */
         const val SUGGEST_LIMIT = 10
 
-        /** 列表分页大小（协议 /assets 缺省 60） */
-        const val PAGE_SIZE = 60
+        // 分页大小不再本地定义：共享常量 core/model LIST_PAGE_SIZE（协议 /assets
+        // 缺省 60，2026-09-07 审查 P3 与相册/收藏/历史同款单源）。
 
         /** 结果网格缺省列数（旧版 columnsRef = ColumnsRef(3)：每次进搜索页重置 3 列起步，SearchFragment L90） */
         const val SEARCH_DEFAULT_COLUMNS = 3
@@ -248,6 +249,7 @@ class SearchViewModel @Inject constructor(
         const val SEARCH_MIN_COLUMNS = 2
         const val SEARCH_MAX_COLUMNS = 5
 
+        /** 搜索页无下拉刷新，失败文案与列表页通用款不同（「请重试」非「请下拉重试」），保留本地 */
         private const val LOAD_FAILED_MESSAGE = "加载失败，请重试"
     }
 }

@@ -49,7 +49,12 @@ class DwellSessionTracker(
     /** 挂起（进后台/暂停播放）：flush 当前段并结束会话（resume 再开新段，秒数由服务端累加） */
     fun pause() {
         flush()
-        awaitingResume = session != null
+        // 守卫（2026-09-07 审查 P3）：仅当本次 pause 真实结束了一段（session 非空）才置
+        // 挂起位。连续第二次 pause 时 session 已为 null，若直写 "awaitingResume = session != null"
+        // 会把第一次 pause 置好的挂起位清掉，其后 resume 变 no-op，丢一段计时。
+        if (session != null) {
+            awaitingResume = true
+        }
         session = null
     }
 

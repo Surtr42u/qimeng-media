@@ -25,6 +25,7 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import media.qimeng.app.feature.detail.R
+import media.qimeng.app.feature.detail.TimelineTagColors
 import kotlin.math.abs
 import kotlin.math.max
 import androidx.media3.common.util.UnstableApi
@@ -768,8 +769,11 @@ class BiliPlayerView @JvmOverloads constructor(
 
     /** 创建单个标签芯片，预设标签使用对应色调背景 */
     private fun createTagChip(tag: TimelineTagEntity): TextView {
-        val isLike = tag.name.startsWith("❤️")
-        val isFav = tag.name.startsWith("⭐")
+        // 判定口径与 TimelineTagColors.colorFor 同源（裸 ❤/⭐ 前缀 startsWith）：
+        // 同时命中带/不带 U+FE0F 变体选择符两种写法——此前这里用裸字面量 "❤️" 判定，
+        // 手输无变体符的 ❤ 标签取色命中红而芯片底色不命中（2026-09-07 审查 P2），已收敛。
+        val isLike = tag.name.startsWith(TimelineTagColors.HEART_PREFIX)
+        val isFav = tag.name.startsWith(TimelineTagColors.STAR_PREFIX)
         val chipBg = when {
             isLike -> R.drawable.bg_timeline_tag_like
             isFav -> R.drawable.bg_timeline_tag_fav

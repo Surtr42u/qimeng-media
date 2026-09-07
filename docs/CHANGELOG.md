@@ -11,6 +11,17 @@
 
 ---
 
+## fix(app): 维护审查清偿——❤/⭐ 前缀单源+列表族常量收敛 core:model+DwellSessionTracker 连续 pause 边界（2026-09-07 夜 第一百一十一笔）
+
+执行 AI：GLM-5.3（主会话调度；执行子代理）
+
+- **审查结论**：M4-3c/3d、B4、B5 四笔对抗审查全过（总评通过）——架构红线/安全/测试质量/真实数据残留（无）全部在位；P1 横屏卡死已由任务D-D2 立项。
+- **P2 清偿（行为修正）**：❤/⭐ 快捷标签前缀三处独立定义口径分叉（BiliPlayerView startsWith("❤️") 带变体符 vs TimelineTagColors.HEART_PREFIX 不带 vs VideoStage 第三处）——统一单源 TimelineTagColors（判定用裸前缀兼容两种写法、写入用完整字面量 HEART_TAG/STAR_TAG），修正"同源"不实注释；手输无变体符标签取色与芯片底色不再分叉。
+- **P3 清偿**：PARTITION_KEY_ALL/LIST_PAGE_SIZE/LIST_LOAD_FAILED_MESSAGE 三 VM 复制收敛 `core/model/ListQueryDefaults.kt` 单源（协议联动注释）；DwellSessionTracker 连续两次 pause 清掉挂起位致 resume 丢段——pause 加 session 非空守卫+回归测试。
+- **验收**：7 模块 202 任务全量重跑（--rerun-tasks）215 单测 0 失败；grep 单源验证（❤/⭐ 字面量、PARTITION_KEY_ALL 各只剩一处定义）；app-build/app-test/app-lint 三件套+全仓 make lint ✅。
+
+---
+
 ## fix(server): GET /assets/{id} 补 cosWork 映射（台账#15）+ openapi sessionId 口径注释勘误（#16）（2026-09-07 夜 第一百一十笔）
 
 执行 AI：GLM-5.3（主会话调度；执行子代理）

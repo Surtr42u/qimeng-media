@@ -143,4 +143,26 @@ class DwellSessionTrackerTest {
         assertEquals(1, emissions.size)
         assertEquals(61L, emissions[0].second)
     }
+
+    @Test
+    fun `连续两次pause后resume仍开新段 - 计时不丢段`() {
+        // 回归锁定（2026-09-07 审查 P3）：第二次 pause 时 session 已为 null，不得清掉
+        // 第一次 pause 置好的挂起位——否则 resume 变 no-op，pause→pause→resume 场景
+        // （生命周期重复回调）丢一段计时。
+        val t = tracker()
+        now = 0L
+        t.enter()
+        now = 30_000L
+        t.pause() // 第一段：30s（startedAt=0）
+        t.pause() // 第二次 pause：无会话可结束，不得影响挂起位
+        now = 40_000L
+        t.resume() // 仍应开新段（startedAt=40_000）
+        now = 100_000L
+        t.leave() // 第二段：60s
+        assertEquals(2, emissions.size)
+        assertEquals(0L, emissions[0].first)
+        assertEquals(30L, emissions[0].second)
+        assertEquals(40_000L, emissions[1].first)
+        assertEquals(60L, emissions[1].second)
+    }
 }

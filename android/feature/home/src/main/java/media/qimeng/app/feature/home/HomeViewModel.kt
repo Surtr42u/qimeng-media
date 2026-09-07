@@ -17,6 +17,7 @@ import media.qimeng.app.core.data.repository.MediaRepository
 import media.qimeng.app.core.data.repository.AssetOrigUrlResolver
 import media.qimeng.app.core.model.AssetSort
 import media.qimeng.app.core.model.AssetQuery
+import media.qimeng.app.core.model.LIST_LOAD_FAILED_MESSAGE
 import media.qimeng.app.core.model.MediaAsset
 import media.qimeng.app.core.model.RankingPeriod
 import media.qimeng.app.core.model.RecommendPaging
@@ -214,7 +215,7 @@ class HomeViewModel @Inject constructor(
                 )
             }.onFailure { error ->
                 _uiState.value = _uiState.value.copy(
-                    errorMessage = LOAD_FAILED_MESSAGE,
+                    errorMessage = LIST_LOAD_FAILED_MESSAGE,
                     recommend = _uiState.value.recommend.copy(isLoading = false, isRefreshing = false),
                 )
             }
@@ -242,7 +243,7 @@ class HomeViewModel @Inject constructor(
                 )
             }.onFailure {
                 _uiState.value = _uiState.value.copy(
-                    errorMessage = LOAD_FAILED_MESSAGE,
+                    errorMessage = LIST_LOAD_FAILED_MESSAGE,
                     recommend = _uiState.value.recommend.copy(isLoading = false),
                 )
             }
@@ -281,7 +282,7 @@ class HomeViewModel @Inject constructor(
                 )
             }.onFailure {
                 _uiState.value = _uiState.value.copy(
-                    errorMessage = LOAD_FAILED_MESSAGE,
+                    errorMessage = LIST_LOAD_FAILED_MESSAGE,
                     cos = _uiState.value.cos.copy(isLoading = false, isRefreshing = false),
                 )
             }
@@ -315,7 +316,7 @@ class HomeViewModel @Inject constructor(
             }.onFailure {
                 if (gen != rankGeneration) return@onFailure // 旧代失败不污染新周期
                 _uiState.value = _uiState.value.copy(
-                    errorMessage = LOAD_FAILED_MESSAGE,
+                    errorMessage = LIST_LOAD_FAILED_MESSAGE,
                     rank = _uiState.value.rank.copy(isLoading = false, isRefreshing = false),
                 )
             }
@@ -332,6 +333,8 @@ class HomeViewModel @Inject constructor(
         /** 排行榜首拉偏移 */
         const val RANK_OFFSET_INITIAL = 0
 
-        private const val LOAD_FAILED_MESSAGE = "加载失败，请下拉重试"
+        // 失败文案不再本地定义：共享常量 core/model LIST_LOAD_FAILED_MESSAGE（下拉刷新
+        // 列表通用款，2026-09-07 审查 P3 与相册/收藏/历史同款单源）。COS_PAGE_SIZE 为
+        // COS 流专用语义命名，与通用列表分页非同款，保留本地。
     }
 }
