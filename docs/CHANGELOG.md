@@ -11,6 +11,17 @@
 
 ---
 
+## test(web): F3 E6 测试覆盖面补齐——导航状态校验/SSE 重连停连/日期区间等（2026-09-08 第一百二十九笔）
+
+执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 对抗审查含破坏性推演，任务F-Web卷 F3=E6 reviewer P3 清偿）
+
+- **+37 用例（41→78）全绿，产品源码与 package.json 零 diff**（仅 4 个 *.test.ts，+345 行）：route-keys +12（readAssetNavState 逐字段非法整包 null 九态+assetDetailWithSearch 查询串三态）、sse +5（retry 夹取下限/上限/区间/缺省四边界+401/403 停连：onAuthFailed 广播+推进 60s fetch 仍 1 次）、search-mapping +6（dateRangeFor 今天/本周周一起始/周日跨周回退/含当日/未知档 undefined+partitionKey 三态）、format +14（七函数含非法输入边界）。
+- **行为锁定产出（怪癖 4 条成文，测试注释标注「锁怪癖非背书」）**：react-router 8 空 id 产出无尾斜杠 `/app/asset`；formatDuration null→`0:00`/undefined→`NaN:NaN`/负数→`-1:-1`；localDateKey 月份 0 基不补零（分组键口径）；readAssetNavState 合法返回恒带 origUrls 键（显式 undefined）。
+- **审查**：reviewer 十项全过——断言经源码推演+react-router 8.3.1 独立实测双验证；三类高风险用例（夹取/停连/怪癖）破坏性推演「改错必红」；假测试专项排查零命中（无弱匹配器/无断言复刻实现/401 走真实事件总线）；既有 19 条用例未弱化；测试卫生（localStorage 桩先于动态 import、文件级隔离不泄漏、固定时钟自清理）核过。
+- **验收**：tsc 0 错/oxlint 16≤17（测试文件 0 告警）/build ✅/npm test **78 passed (78)**。证据 %TEMP%\qimeng-f3-evidence\（保留勿删）。
+
+---
+
 ## feat(app): D5 M4-4 行为上报离线队列（2026-09-08 第一百二十八笔）
 
 执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 独立对抗审查（防虚增审计+logcat 逐行互证），任务D-Android卷 D5）
