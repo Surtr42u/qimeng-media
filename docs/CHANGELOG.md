@@ -11,6 +11,19 @@
 
 ---
 
+## feat(app): D1 详情页图片全屏覆盖层（2026-09-08 第一百二十一笔）
+
+执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 全新上下文对抗审查，任务D-Android卷 D1）
+
+- **行为**：排版态单击图片舞台 → 打开全屏查看覆盖层（ZoomImageView 手势/原图加载链复用不换控件、铺满整屏 `[0,0][1080,2400]`、隐藏系统栏、盖住顶行/底节）；再次单击或系统返回退出回排版态（返回键由覆盖层消费不 pop 路由）；左右滑兄弟切换全屏态可用（onSiblingNavigate 与排版态同一回调链）。排版态布局/视频舞台/缩放手势语义零改动。
+- **选型（实测驱动反转）**：宿主 Box overlay 方案实测被壳层 Scaffold innerPadding + 模拟器 override-inset 特性卡死（顶部恒留白条）；改 Compose 全屏 Dialog（usePlatformDefaultWidth=false + decorFitsSystemWindows=false）；又实测推翻「系统栏显隐单源在 Activity 窗」假设——Dialog 取焦后系统栏回归，修正为覆盖层打开期间由 Dialog 自身窗口 insetsController 隐藏（同既有 BEHAVIOR_DEFAULT 语义），关闭恢复。API 用法经 developer.android.com 官方文档核实。
+- **结构**：ZoomableOriginalImage 自 ImageStage 逐字抽出（排版态舞台与覆盖层两处复用，杜绝分叉）；ImageStage 单击语义 onToggleChrome→onOpenFullScreen；覆盖层挂载条件=资产就绪；rememberSaveable 与 chrome 显隐合并单源（`chromeVisible && !imageOverlayVisible`）。
+- **审查**：D1 部分 PASS（抽取与原实现逐行一致/挂载条件/铺满+系统栏/兄弟链同源/零越界零硬编码零真实数据）。
+- **验收**：三连绿；实机文本树（全屏态顶行/底节节点不可见、图片节点铺满、退出恢复）+ 手势清单（双击缩放还原/左右滑换件/两种退出）+ 虚构数据截图。证据 %TEMP%\qimeng-d1-evidence\。
+- **已知口径差异**：全屏态左右滑后兄弟资产落在排版态（旧版媒体层恒全屏），记待拍板 #20；双指捏合 adb 不可注入（组件冻结语义，非本批耦合）。
+
+---
+
 ## fix(app): D3 维度胶囊默认收起 + 列表族点卡进详情修复（2026-09-08 第一百二十笔）
 
 执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 全新上下文对抗审查，任务D-Android卷 D3）

@@ -33,6 +33,8 @@ internal fun DetailMediaStage(
     timelineTags: List<TimelineTag>,
     onSiblingNavigate: (delta: Int) -> Unit,
     onToggleChrome: () -> Unit,
+    /** 图片全屏查看覆盖层开关（D1：排版态单击图片舞台打开；视频舞台不消费仍走 onToggleChrome） */
+    onOpenFullScreen: () -> Unit,
     /** 起播回调（3d 打点 play 用；图片舞台无此语义不传） */
     onPlaybackStarted: () -> Unit,
     /** 播放进度 tick 秒（3d 节流上报用） */
@@ -74,7 +76,7 @@ internal fun DetailMediaStage(
             asset = asset,
             modifier = stageModifier,
             onSiblingNavigate = onSiblingNavigate,
-            onToggleChrome = onToggleChrome,
+            onOpenFullScreen = onOpenFullScreen,
         )
     }
 }
