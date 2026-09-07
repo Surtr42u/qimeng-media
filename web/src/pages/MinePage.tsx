@@ -10,7 +10,9 @@ import { useHistoryInfinite } from '@/hooks/use-history'
 import { useLibraries } from '@/hooks/use-libraries'
 import { useStatsOverview } from '@/hooks/use-stats'
 import { LOCALE_ZH } from '@/lib/constants'
-import { formatBytes, formatDateTime, formatDuration, localDateKey } from '@/lib/format'
+import { formatBytes, formatDateTime, formatDuration } from '@/lib/format'
+import { groupHistory } from '@/lib/history-grouping'
+import { assetDetail } from '@/lib/route-keys'
 
 /**
  * 我的页（原型 #page-mine 移植）：资料卡 + 三 Tab（关注/收藏/历史），阶段 B 已接真实数据。
@@ -26,29 +28,6 @@ const TABS: { key: MineTab; label: string }[] = [
   { key: 'fav', label: '收藏作品' },
   { key: 'history', label: '浏览历史' },
 ]
-
-/** 历史分组（顺序固定：今天 → 昨天 → 更早；空组隐藏） */
-const HIST_GROUPS = [
-  { key: 'today', label: '今天' },
-  { key: 'yesterday', label: '昨天' },
-  { key: 'earlier', label: '更早' },
-] as const
-
-type HistGroupKey = (typeof HIST_GROUPS)[number]['key']
-
-/** 本地今天/昨天日期键（历史分组边界；跨零点后下次渲染自动更新） */
-function dayBoundaryKeys(): { today: string; yesterday: string } {
-  const now = new Date()
-  const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1)
-  return { today: localDateKey(now.getTime()), yesterday: localDateKey(yesterday.getTime()) }
-}
-
-function histGroupOf(ts: number, today: string, yesterday: string): HistGroupKey {
-  const k = localDateKey(ts)
-  if (k === today) return 'today'
-  if (k === yesterday) return 'yesterday'
-  return 'earlier'
-}
 
 /** 历史卡渲染项：协议 HistoryItem + 客户端推导的「已看完」徽标 */
 type HistRenderItem = HistoryItem & { isDone?: boolean }
@@ -92,22 +71,8 @@ export default function MinePage() {
   // 仅显示已关注（用户拍板语义：未关注作者在作者管理页处理）
   const followedAuthors = useMemo(() => authors.filter((a) => a.followed), [authors])
 
-  // 分组：组内按 lastViewedAt 倒序；标题子串（fileName）过滤；空组隐藏
-  const histGroups = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    const { today, yesterday } = dayBoundaryKeys()
-    const matched = histItems.filter(
-      (h) =>
-        (h.lastViewedAt ?? 0) > 0 &&
-        (!q || (h.fileName ?? '').toLowerCase().includes(q)),
-    )
-    return HIST_GROUPS.map((g) => ({
-      ...g,
-      items: matched
-        .filter((h) => histGroupOf(h.lastViewedAt as number, today, yesterday) === g.key)
-        .sort((a, b) => (b.lastViewedAt ?? 0) - (a.lastViewedAt ?? 0)),
-    })).filter((g) => g.items.length > 0)
-  }, [histItems, query])
+  // 分组：口径单源 lib/history-grouping.ts（今天/昨天/更早 + 标题子串过滤，ADR-0008 抽离）
+  const histGroups = useMemo(() => groupHistory(histItems, query), [histItems, query])
 
   return (
     <div className="page" id="page-mine">
@@ -180,7 +145,7 @@ export default function MinePage() {
             <MediaCard
               key={f.id}
               {...assetToCard(f)}
-              onClick={() => f.id && navigate(`/app/asset/${f.id}`)}
+              onClick={() => f.id && navigate(assetDetail(f.id))}
             />
           ))}
           {favItems.length === 0 && !favQuery.isFetching ? (
@@ -222,7 +187,7 @@ export default function MinePage() {
                     isDone: h.durationMs != null && h.lastPositionSeconds != null
                       && h.lastPositionSeconds * 1000 >= h.durationMs,
                   }}
-                  onClick={() => h.id && navigate(`/app/asset/${h.id}`)}
+                  onClick={() => h.id && navigate(assetDetail(h.id))}
                 />
               ))}
             </div>

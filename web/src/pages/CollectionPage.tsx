@@ -13,6 +13,7 @@ import {
 import { useAuthors } from '@/hooks/use-authors'
 import { useTags } from '@/hooks/use-tags'
 import { DEFAULT_PAGE_SIZE, LOCALE_ZH } from '@/lib/constants'
+import { assetDetail } from '@/lib/route-keys'
 
 /**
  * 集合子页（/app/collection/tag/:name 与 /app/collection/author/:name）：
@@ -228,7 +229,7 @@ export default function CollectionPage() {
             <MediaCard
               key={a.id}
               {...assetToCard(a)}
-              onClick={() => a.id && navigate(`/app/asset/${a.id}`)}
+              onClick={() => a.id && navigate(assetDetail(a.id))}
             />
           ))}
         </div>

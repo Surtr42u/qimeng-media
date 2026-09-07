@@ -4,12 +4,16 @@ import { FolderMonitorIcon, TrashIcon } from '@/components/shell/icons'
 import { useClientLogs } from '@/hooks/use-client-logs'
 import { useSystemStatus } from '@/hooks/use-system-status'
 import { useTrash } from '@/hooks/use-trash'
+import { STATUS_POLL_INTERVAL_MS } from '@/lib/constants'
 import { formatBytes, formatDateTime } from '@/lib/format'
 import { Line, LineChart, ResponsiveContainer, Tooltip, YAxis } from 'recharts'
 import { TIP_STYLE, TrendLegend } from '@/components/data/chart-shared'
 
 /** 曲线采样：最近 2 分钟、每 2 秒一点（60 点）；与轮询周期（2s）耦合 */
 const RATE_WINDOW = 60
+/** 速率差分除数（秒）：两帧字节差 ÷ 轮询间隔秒数 = B/s——与 STATUS_POLL_INTERVAL_MS
+ *  同源派生，轮询周期若调整，差分口径自动跟随，纵轴仍是 B/s */
+const RATE_DIVISOR_S = STATUS_POLL_INTERVAL_MS / 1000
 /** 原型 gauge 视口：圆心 50/50、半径 44 → 周长 2πr（dash 基数） */
 const GAUGE_CIRC = 2 * Math.PI * 44
 
@@ -40,7 +44,7 @@ export default function MaintenancePage() {
   // 客户端异常排查表（新→旧，环形缓冲最新 200 条）
   const { data: clientLogs = [] } = useClientLogs()
 
-  // 速率环形缓冲：每帧拿 netRx/netTx 与上一帧累计值差分 → B/s（/2s=间隔）
+  // 速率环形缓冲：每帧拿 netRx/netTx 与上一帧累计值差分 ÷ 轮询间隔秒 → B/s
   const [rates, setRates] = useState<RatePoint[]>([])
   const accumRef = useRef<{ rx: number; tx: number } | null>(null)
   useEffect(() => {
@@ -52,8 +56,8 @@ export default function MaintenancePage() {
     setRates((r) => [
       ...r.slice(-(RATE_WINDOW - 1)),
       {
-        rx: Math.max(0, cur.rx - prev.rx) / 2,
-        tx: Math.max(0, cur.tx - prev.tx) / 2,
+        rx: Math.max(0, cur.rx - prev.rx) / RATE_DIVISOR_S,
+        tx: Math.max(0, cur.tx - prev.tx) / RATE_DIVISOR_S,
       },
     ])
   }, [status])

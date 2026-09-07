@@ -11,7 +11,7 @@ import { useTags } from '@/hooks/use-tags'
 import { LOCALE_ZH } from '@/lib/constants'
 import { authorDisplayName, formatBytes } from '@/lib/format'
 import { authorRankRows, tagRankRows } from '@/lib/rank-rows'
-import { COLLECTION_AUTHOR, COLLECTION_TAG, RANK_AUTHORS, RANK_CONTENT, RANK_TAGS } from '@/lib/route-keys'
+import { assetDetail, COLLECTION_AUTHOR, COLLECTION_TAG, RANK_AUTHORS, RANK_CONTENT, RANK_TAGS } from '@/lib/route-keys'
 
 /**
  * 数据页（原型 #page-data 移植，阶段 B 已接真实数据）：时段胶囊 + 6 指标卡 +
@@ -186,7 +186,7 @@ export default function DataPage() {
           ) : (
             <ContentRankGrid
               items={contentRank.data ?? []}
-              onOpen={(a) => a.id && navigate(`/app/asset/${a.id}`)}
+              onOpen={(a) => a.id && navigate(assetDetail(a.id))}
             />
           )}
         </div>

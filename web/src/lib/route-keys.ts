@@ -8,6 +8,15 @@
 export const COLLECTION_TAG = 'tag'
 export const COLLECTION_AUTHOR = 'author'
 
+/**
+ * 资产详情路由（router.tsx /app 下的 asset/:assetId 段）。
+ * 列表卡/榜单/接下来播放等所有进详情的跳转唯一来源——模板串曾散写 9 处/8 文件，
+ * 2026-09-07 审查后收口至此，禁再散写字面量。
+ */
+export function assetDetail(id: string): string {
+  return `/app/asset/${id}`
+}
+
 /** 榜单键：DataPage 入口与 RanksPage 路由段共用 */
 export const RANK_CONTENT = 'content'
 export const RANK_TAGS = 'tags'

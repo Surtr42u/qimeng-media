@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { Link } from 'react-router'
 import { Shuffle } from 'lucide-react'
+import type { AssetSummary } from '@/api/generated'
 import { useUpNextList, type MediaType } from '@/hooks/use-assets'
 import { formatDuration } from '@/lib/format'
+import { assetDetail } from '@/lib/route-keys'
 
 /**
  * 详情页「接下来播放」推荐栏（B站式右栏下部）：同类型推荐流（推荐算法 +
@@ -27,7 +29,8 @@ export function UpNextList({
     cosOnly: !!cosWork,
     seed,
   })
-  const items = (data ?? []).filter((a) => a.id && a.id !== assetId)
+  // 类型谓词收窄 id：协议 AssetSummary.id 可空，但本列表行必须有 id 才可跳详情
+  const items = (data ?? []).filter((a): a is AssetSummary & { id: string } => !!a.id && a.id !== assetId)
 
   return (
     <div className="rank-card upnext-card">
@@ -40,7 +43,7 @@ export function UpNextList({
       </div>
       <div className="upnext-list">
         {items.map((a) => (
-          <Link className="upnext-row" key={a.id} to={`/app/asset/${a.id}`}>
+          <Link className="upnext-row" key={a.id} to={assetDetail(a.id)}>
             <span className="upnext-thumb">
               {a.thumbUrl ? <img src={a.thumbUrl} alt={a.fileName ?? ''} loading="lazy" /> : null}
               {a.mediaType === 'video' && a.durationMs ? (

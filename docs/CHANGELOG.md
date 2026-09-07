@@ -11,6 +11,16 @@
 
 ---
 
+## refactor(web): 维护审查清偿——路由键收口+轮询常量单源+页面规则抽离 lib+死常量清理（2026-09-07 夜 第一百一十二笔）
+
+执行 AI：GLM-5.3（主会话调度；执行子代理）
+
+- **审查发现（对抗审查四维全过，总评通过）**：4 P2——①`use-system-status.ts` refetchInterval=2000 魔法值与零消费死常量 STATUS_POLL_INTERVAL_MS=3000 注释失真三合一；②`/app/asset/${id}` 模板串 9 处/8 文件散写而 route-keys.ts 自称唯一来源；③相册/我的/搜索三页分组与映射规则内嵌组件（ADR-0008 违例）；④web 零测试基建（→E6 批+ADR-0017）。
+- **清偿**：STATUS_POLL_INTERVAL_MS 统一 2000（行为不变）+MaintenancePage 差分改常量派生 RATE_DIVISOR_S；route-keys.ts 增 `assetDetail(id)`，9 处全改引用（URL 逐字节不变）；抽离 `lib/album-grouping.ts`/`lib/history-grouping.ts`/`lib/search-mapping.ts` 纯函数，三页改 import；删 SOURCES_PATH/METRICS_PATH 死常量；UpNextList filter 补类型谓词（assetDetail 参数严格化的最小必要）。P3 悬置：Suspense fallback 白屏、theme.ts hex 双写（有同步注释）记档。
+- **验收**：web 目录内 tsc --noEmit exit 0 / oxlint 17 warnings（存量持平）0 errors / npm run build ✅（executor 亲跑贴原文）；全仓 `make lint` ✅。C3~C6 根因定位（AppShell.tsx:31-33 scrollTo/use-assets 无 placeholderData/四页 LoadMorePill/SettingsPage.tsx:196-239）已写进任务E 卷供执行免复研。
+
+---
+
 ## fix(app): 维护审查清偿——❤/⭐ 前缀单源+列表族常量收敛 core:model+DwellSessionTracker 连续 pause 边界（2026-09-07 夜 第一百一十一笔）
 
 执行 AI：GLM-5.3（主会话调度；执行子代理）

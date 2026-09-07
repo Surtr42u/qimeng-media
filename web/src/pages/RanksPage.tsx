@@ -8,6 +8,7 @@ import { useTags } from '@/hooks/use-tags'
 import { MAX_PAGE_SIZE } from '@/lib/constants'
 import { authorRankRows, tagRankRows } from '@/lib/rank-rows'
 import {
+  assetDetail,
   COLLECTION_AUTHOR,
   COLLECTION_TAG,
   RANK_AUTHORS,
@@ -52,7 +53,7 @@ export default function RanksPage() {
           <p className="rank-note">按浏览量</p>
           <ContentRankGrid
             items={contentRank.data ?? []}
-            onOpen={(a) => a.id && navigate(`/app/asset/${a.id}`)}
+            onOpen={(a) => a.id && navigate(assetDetail(a.id))}
           />
         </div>
       ) : (

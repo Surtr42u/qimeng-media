@@ -30,17 +30,8 @@ export const MAX_PAGE_SIZE = 200
 /** 事件流端点路径（协议 GET /api/v1/events；SSE 端点要求 Bearer 鉴权，见 lib/sse.ts） */
 export const EVENTS_PATH = '/api/v1/events'
 
-/**
- * 信息来源端点路径（协议 GET /api/v1/sources，后端并行开发中）。
- * generated SDK 尚无对应函数，use-sources.ts 暂以直连实现（见该文件 TODO）。
- */
-export const SOURCES_PATH = '/api/v1/sources'
-
 /** 上传端点路径（协议 POST /api/v1/assets/upload；body=原始字节流，元数据全在 query） */
 export const UPLOAD_PATH = '/api/v1/assets/upload'
-
-/** 指标文本端点（协议 GET /metrics；管理员调试用，仅文本展示） */
-export const METRICS_PATH = '/metrics'
 
 /** SSE 断线重连基础延迟（ms）：服务端不发 retry: 帧时的默认值，fatal 后 3s 重连 */
 export const SSE_RECONNECT_DELAY_MS = 3000
@@ -54,8 +45,10 @@ export const SSE_MAX_RECONNECT_DELAY_MS = 30_000
 /** 中文排序 locale（相册按名称排序/搜索标签池升序共用——与旧项目排序口径一致） */
 export const LOCALE_ZH = 'zh-Hans-CN'
 
-/** 系统状态轮询间隔（ms）：管理页 CPU/内存/网络卡片刷新周期；可被页面临时覆盖（暂停/恢复） */
-export const STATUS_POLL_INTERVAL_MS = 3000
+/** 系统状态轮询间隔（ms）：维护页性能监控 2s 轮询（曲线需连续采样，速率差分按此周期折算 B/s）。
+ *  消费方 hooks/use-system-status.ts（refetchInterval）与 pages/MaintenancePage.tsx（差分除数），
+ *  两端同源引用，改周期须意识到速率曲线纵轴随之变化。 */
+export const STATUS_POLL_INTERVAL_MS = 2000
 
 /**
  * AppShell 刷新按钮 → 首页旧版 refreshSeed++ 全量重排的广播事件名。
