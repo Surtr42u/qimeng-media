@@ -44,14 +44,16 @@ export default function HomePage() {
 
   return (
     <div className="page" id="page-home">
-      {/* 三 tab 共用一个 grid 容器；热榜带 grid--hot 修饰类（首行贴侧栏节奏的热榜例外，见 prototype.css） */}
-      <div className={`grid${tab === 'hot' ? ' grid--hot' : ''}`}>
-        {tab === 'hot'
-          ? <HotRankTab period={period} onOpen={openDetail} />
-          : tab === 'recommend'
-            ? <RecommendTab onOpen={openDetail} />
-            : <CosRecommendTab onOpen={openDetail} />}
-      </div>
+      {/* F7（2026-09-08）：grid 容器下沉进各 tab（StreamCards 持有）——网格只放
+          卡片，「加载中/空态/到底了/换一批」等提示行改为网格之下的全宽独立行
+          （此前 endHint 作为 .grid 子元素占一个网格格位与缩略图并列，实测
+          rect 宽=单格宽）。热榜带 grid--hot 修饰类（首行贴侧栏节奏的热榜例外，
+          见 prototype.css），由 HotRankTab 经 gridClassName 传入。 */}
+      {tab === 'hot'
+        ? <HotRankTab period={period} onOpen={openDetail} />
+        : tab === 'recommend'
+          ? <RecommendTab onOpen={openDetail} />
+          : <CosRecommendTab onOpen={openDetail} />}
     </div>
   )
 }
@@ -123,8 +125,11 @@ function useRecommendationStream(seed: number, cosOnly: boolean) {
 type RecommendationStream = ReturnType<typeof useRecommendationStream>
 
 /** 卡片流渲染：卡片 + 加载中/到底提示（复用 grid-empty/pill 类）+ 触底
- *  哨兵。哨兵只在还有下一页时挂载——到底即卸载，观察器随之断开。 */
-function StreamCards({ stream, onOpen, emptyHint, footer, endHint }: {
+ *  哨兵。哨兵只在还有下一页时挂载——到底即卸载，观察器随之断开。
+ *  F7：本组件持有 .grid 容器（ HomePage 不再包网格）——网格内只渲染卡片，
+ *  全部提示行（加载中/空态/页脚/到底了）与哨兵移到网格之下作全宽独立行
+ *  （.page 为纵向 flex，直挂子元素自动撑满内容区宽），不再与缩略图抢格位。 */
+function StreamCards({ stream, onOpen, emptyHint, footer, endHint, gridClassName = 'grid' }: {
   stream: RecommendationStream
   onOpen: (id?: string, nav?: AssetNavState) => void
   emptyHint: string
@@ -132,6 +137,8 @@ function StreamCards({ stream, onOpen, emptyHint, footer, endHint }: {
   footer?: ReactNode
   /** 到底提示（无下一页且非空时显示） */
   endHint?: ReactNode
+  /** 网格容器类（热榜传 'grid grid--hot'，缺省 'grid'） */
+  gridClassName?: string
 }) {
   const { items, isLoading, isFetchingNextPage, hasNextPage, isPlaceholderData, sentinelRef } = stream
   // E5 批次导航快照：当前已渲染（去重后）流的 id 序与所点下标。协议 id 可空：
@@ -148,19 +155,22 @@ function StreamCards({ stream, onOpen, emptyHint, footer, endHint }: {
   })()
   return (
     <>
-      {items.map((a) => (
-        <MediaCard
-          key={a.id}
-          {...assetToCard(a)}
-          onClick={() => {
-            if (a.id === undefined) {
-              onOpen(undefined)
-              return
-            }
-            onOpen(a.id, { ids: navContext.ids, index: navContext.indexAt.get(a.id) ?? 0 })
-          }}
-        />
-      ))}
+      <div className={gridClassName}>
+        {items.map((a) => (
+          <MediaCard
+            key={a.id}
+            {...assetToCard(a)}
+            onClick={() => {
+              if (a.id === undefined) {
+                onOpen(undefined)
+                return
+              }
+              onOpen(a.id, { ids: navContext.ids, index: navContext.indexAt.get(a.id) ?? 0 })
+            }}
+          />
+        ))}
+      </div>
+      {/* 提示行区（网格之下全宽直挂）：加载中/空态/页脚/到底了/哨兵 */}
       {isLoading && <p className="grid-empty">加载中…</p>}
       {isFetchingNextPage && <p className="grid-empty">加载中…</p>}
       {!isLoading && items.length === 0 && <p className="grid-empty">{emptyHint}</p>}
@@ -247,6 +257,7 @@ function HotRankTab({ period, onOpen }: { period: HomeRankPeriod; onOpen: (id?: 
     <StreamCards
       stream={stream}
       onOpen={onOpen}
+      gridClassName="grid grid--hot"
       emptyHint="暂无上榜内容。"
       endHint={<p className="grid-empty">到底了</p>}
     />
