@@ -66,3 +66,6 @@ android/sdk/
 
 # 服务端运行时数据目录（临时配置启动时产生，非 qimeng-data 正式数据目录）
 server/data/
+
+# 运行截图（可能含真实媒体帧，永不入库；存证放仓库外 run-screens-* 目录）
+.run-screens/
