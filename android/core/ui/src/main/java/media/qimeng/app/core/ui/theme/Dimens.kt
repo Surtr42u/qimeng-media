@@ -102,7 +102,7 @@ object QimengDimens {
 
     // ---------- 空态 / 加载（QimengScaffold） ----------
 
-    /** 48dp：空态纵向内边距（QimengScaffold QimengEmptyState L67） */
+    /** 48dp：空态纵向内边距（QimengScaffold QimengEmptyState 的 Box padding，按符号定位防行号漂移） */
     val EmptyStateVerticalPadding: Dp = 48.dp
 
     /** 96dp：加载占位顶部内边距（QimengScaffold QimengLoadingState L105，避开顶部标题区） */

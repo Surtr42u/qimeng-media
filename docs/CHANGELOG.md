@@ -11,6 +11,19 @@
 
 ---
 
+## feat(app): D4 C8 新旧截图对照修复 + B6 收尾（2026-09-08 第一百二十五笔）
+
+执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 独立对抗审查（取证级：设备时钟校准/APK 反汇编/像素几何互证），任务D-Android卷 D4）
+
+- **代码修复 1 处**：QimengEmptyState Box fillMaxWidth→fillMaxSize——空态文案改剩余区域垂直居中，对齐旧仓库口径（fragment_favorite/fragment_browse_history 均 weight=1+gravity=center）；修复前钉顶与旧版可见位置差是 S9 空态文案 26.8% 差的根因。8 处调用方逐一核安全（7 处 PTR content + search ResultPhase 独占 Box）；pair_C8_S9_favorite_empty.png 双证（新 y≈1359 居中形态 vs 旧 y≈1856 下半区居中；残差=旧构建空态下药丸容器占位，复刻缺陷不跟，报告已记）。
+- **harness 场景补全与修正**（ui-compare-harness，仓库外）：新增 S9 收藏页（8 签名空态对称基线）/S10 历史页（5 签名，作品芯片=/history 协议缺口不入签、清除按钮不入签）；S1/S4 分组标题签名改双侧同规日期头宽匹配+CAUSE_DATE_DRIFT（原钉「今天」随日历翻转腐化产生假结构红）；S2 补 CAUSE_COUNT（23 件数据集演化计数差）。
+- **豁免重审**（79 项按用户视角全部重审，以复跑为唯一依据）：三轮全量对照收敛，round3 终版 10 场景 104 签名 100 红**全部有解释**（文案 19/结构 4/视觉 96）=修复 1+假红修复 2+豁免 97（V14 拆分：S2/S3≈91% 真实交互口径差=待拍板 #2 维持现状；S1/S4≈50% 裁片配准伪差亲证排除）。判据纪律：known_cause 只豁免文本列、结构缺失/视觉差不洗白。
+- **B6 五项交付**（QimengNAS/m42a-review/C8-visual-report.md）：①任务书预估勘误成文 ②统计行容量降级汇编 ③旧构建三条口径差异（含日期标签行为级断言：旧构建同日历档渲染绝对日期、新版按 DOMAIN_RULES §8 渲染周X）④P8 虚构数据对称降级说明 ⑤隔离环境截图标注口径成文；附 #17/#20/#3 差异记录。
+- **审查**：独立 reviewer 通过——100 红逐项可溯抽查全命中、场景幂等性（round2→round3 逐值一致）、时间线取证（报告头 GMT 时区疑点经设备时钟+APK 哈希+dex 反汇编排除）；P2 注释失实（search 调用方不在 PTR 内）与 P3 行号漂移已随本笔顺带修正（改按符号定位防再漂）。
+- **验收**：三连绿（app-test 当时 186 tests/23 XML 0 失败——**注**：该 XML 证据已被并行批次后续测试运行覆盖，终态以本笔工作树三连与后续 D5/D7 复跑为准）；修复面仅 core/ui 两文件。证据 %TEMP%\qimeng-d4-evidence\ + shots/pair_C8_*.png。
+
+---
+
 ## fix(web): F7 用户实测反馈批——到底了独立行/详情期隐藏刷新FAB/作者榜计数/全量榜单页单框（2026-09-08 第一百二十四笔）
 
 执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 全新上下文对抗审查六质询点全过/主会话浏览器 4 剧本走查，任务F-Web卷 F7=2026-09-08 晨用户反馈）
