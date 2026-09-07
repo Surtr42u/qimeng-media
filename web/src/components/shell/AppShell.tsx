@@ -1,5 +1,6 @@
 /**
- * 应用壳层：侧栏 + 顶栏 + 内容区（路由出口）+ 右下角悬浮刷新。
+ * 应用壳层：侧栏 + 顶栏 + 内容区（路由出口）+ 右下角悬浮刷新（详情叠加期
+ * 隐藏，见下方 overlayOpen 注释）。
  * 真导航（非叠加组内切换）时内容区滚回顶部（原型 showPage 的 scrollTop=0
  * 语义 → 路由 pathname 驱动；叠加组门见下方 E1 注释）。
  */
@@ -35,7 +36,10 @@ export function AppShell() {
     contentRef.current?.scrollTo(0, 0)
   }, [pathname])
 
-  // 详情叠加打开期间 .content 不再滚动，回顶部按钮失去意义且悬浮在覆盖层上
+  // 详情叠加打开期间 .content 不再滚动，回顶部按钮失去意义且悬浮在覆盖层上；
+  // 刷新 FAB 同门（F7 2026-09-08 用户拍板，推翻 E5「FAB 浮于查看器系有意」
+  // 约定）：详情叠加期不渲染——图片查看器只能在详情叠加内打开，叠加期隐藏
+  // 即查看器期不可达、不可点
   const overlayOpen = isAssetDetailPath(pathname)
   const showBackTopFab = showBackTop && !overlayOpen
 
@@ -74,15 +78,20 @@ export function AppShell() {
           <Outlet />
         </main>
       </div>
-      <button
-        className={`refresh-fab${spinning ? ' spinning' : ''}`}
-        title="刷新"
-        type="button"
-        onClick={refresh}
-        onAnimationEnd={() => setSpinning(false)}
-      >
-        <RefreshIcon />
-      </button>
+      {/* F7：详情叠加期（含其上打开的图片查看器期）条件卸载，不渲染即不可点
+          （不用 hidden 属性——.layout .refresh-fab 的 display:flex 会压过
+          [hidden] 的 UA display:none，见 prototype.css .page[hidden] 同款坑） */}
+      {!overlayOpen && (
+        <button
+          className={`refresh-fab${spinning ? ' spinning' : ''}`}
+          title="刷新"
+          type="button"
+          onClick={refresh}
+          onAnimationEnd={() => setSpinning(false)}
+        >
+          <RefreshIcon />
+        </button>
+      )}
       <button
         className={`backtop-fab${showBackTopFab ? ' shown' : ''}`}
         title="回到顶部"

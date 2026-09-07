@@ -11,6 +11,19 @@
 
 ---
 
+## fix(web): F7 用户实测反馈批——到底了独立行/详情期隐藏刷新FAB/作者榜计数/全量榜单页单框（2026-09-08 第一百二十四笔）
+
+执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 全新上下文对抗审查六质询点全过/主会话浏览器 4 剧本走查，任务F-Web卷 F7=2026-09-08 晨用户反馈）
+
+- **首页「到底了」独立成行**：StreamCards 网格化重构——HomePage 不再包 .grid，StreamCards 加 gridClassName prop（HotRankTab 传 grid grid--hot 保留热榜 margin），.grid 内只渲染卡片，加载中/空态/换一批页脚/到底了/触底哨兵全移网格下全宽独立行（复用 .grid-empty token 样式零新 CSS）；修前「到底了」占单格宽 271px 与缩略图并列（用户实测反馈），修后 1151px 全宽。五页尾注 sweep 确认 E3 已页级直挂零改动。
+- **刷新 FAB 详情/查看器期隐藏**（用户推翻 E5 有意设计注释）：AppShell 刷新 FAB 条件卸载 `{!overlayOpen && …}`（与回顶部 FAB 同一 isAssetDetailPath 门；不用 hidden 属性防 display:flex 压过 [hidden] 既有坑）；image-viewer/AppShell/prototype.css 三处「FAB 浮于查看器系有意」注释改如实语义。
+- **作者榜计数文案统一**：rank-rows.ts 单源改排——排序口径不动（viewCount 降序、0 浏览不入榜、卡头注「按浏览」保留），裸 `<b>3</b>` → `.rank-sub2`「N 个文件」（fileCount 生成 SDK 真实字段，文案与作者总览逐字一致）；DataPage 榜与 /app/ranks/authors 全量页同源生效。
+- **全量榜单页单框单标题**：RanksPage 三全量榜（content/tags/authors）删内层 .rank-card>.rank-head 重复 h3，保留框体+口径注+列表，单标题=page-head h2，节奏对齐集合子页单框流。
+- **审查**：reviewer 六质询点全过——StreamCards 条件分支与改前逐字一致、`#page-home .grid(--hot)` 后代选择器作用机制不变（E1 网格顶沿 83.1 基线不受影响）、查看器全库唯一消费点在详情组件内（FAB 卸载链条成立）、fileCount 对照生成 SDK 非杜撰、LOCALE_ZH 无孤儿消费、三处注释 grep 零残留；四命令独立重跑一致。
+- **验收**：tsc 0 错/oxlint 16≤17/build ✅/npm test 41 过 + 主会话浏览器 18463 实测：到底了 parent=.page 宽 1151=容器全宽、进详情 fab=false（回顶部 FAB 仍在）、img-viewer 开启期 fab=false、作者榜行 b=0 且 rank-sub2=「N 个文件」、三全量榜页 h3=0 单框单标题。P3 记账×3（spinning 卸载动画重放/搜索收藏空态嵌格遗留/尾注间距松 8px）+ 存量记账（裸 /app/ranks 404 系路由只注册 ranks/:rank 的既有现状）——详见 HANDOVER_UI §5 第 26 条。证据 %TEMP%\qimeng-f7-evidence\（保留勿删）。
+
+---
+
 ## fix(web): F1 集合页深链白屏修复 + 全局 ErrorBoundary 兜底（2026-09-08 第一百二十三笔）
 
 执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 全新上下文对抗审查 12 项全过/主会话浏览器 4 剧本走查，任务F-Web卷 F1=待拍板 #17）

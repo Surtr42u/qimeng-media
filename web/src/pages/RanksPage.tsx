@@ -25,6 +25,9 @@ const RANK_KEYS: readonly string[] = [RANK_CONTENT, RANK_TAGS, RANK_AUTHORS]
  * 完整榜单页（原型 #page-ranks 移植，阶段 B 已接真实数据）：数据页排行卡「查看全部」
  * 按榜进入，只渲染点进的那一个榜（原型 data-panel 匹配语义），非法 rank 按 content 处理。
  * 内容榜固定全周期（现状无周期胶囊——任务说明：无则不新增）；标签/作者为全量降序列表。
+ * F7（2026-09-08）：删内层 .rank-card 的 .rank-head 重复标题（h3 与 page-head h2
+ * 双框双标题，用户反馈）——page-head 大标题为唯一标题，内层只留框体（承担列表
+ * 布局/底色，保留）+ 口径注 + 列表，节奏对齐集合子页「page-head + 单框内容区」。
  */
 export default function RanksPage() {
   const { rank } = useParams()
@@ -47,9 +50,6 @@ export default function RanksPage() {
       </div>
       {key === RANK_CONTENT ? (
         <div className="rank-card">
-          <div className="rank-head">
-            <h3>内容榜</h3>
-          </div>
           <p className="rank-note">按浏览量</p>
           <ContentRankGrid
             items={contentRank.data ?? []}
@@ -58,9 +58,6 @@ export default function RanksPage() {
         </div>
       ) : (
         <div className="rank-card">
-          <div className="rank-head">
-            <h3>{key === RANK_TAGS ? '标签榜' : '作者榜'}</h3>
-          </div>
           <p className="rank-note">{key === RANK_TAGS ? '按关联文件数' : '按浏览'}</p>
           <RankRowList
             rows={key === RANK_TAGS ? tagRows : authorRows}

@@ -386,7 +386,7 @@ body {
   position: fixed;
   right: 24px;
   bottom: 88px;
-  z-index: 40; /* 高于内容卡片与顶栏搜索面板，悬浮常显 */
+  z-index: 40; /* 高于内容卡片与顶栏搜索面板；详情叠加期由 AppShell 条件卸载（F7），非纯 CSS 常显 */
   width: 52px;
   height: 52px;
   border-radius: 14px;
@@ -1750,8 +1750,10 @@ li.dir-file-row:hover { background: var(--hover-bg); }
 /* ===== E5 图片查看器（web/src/components/media/image-viewer.tsx，2026-09-07）
    层级位：组件 createPortal 挂 body（脱离 .asset-overlay 的 z-10 层叠上下文，
    否则内部 z 值压不过顶栏搜索弹层），z-index 35——高于 .asset-overlay(10) 与
-   顶栏搜索面板(20)/搜索输入(30)，低于 FAB(40——浮于查看器系有意设计，叠加期
-   常显约定)与弹窗族(50/51)。
+   顶栏搜索面板(20)/搜索输入(30)，低于 FAB(40)与弹窗族(50/51)。F7（2026-09-08
+   用户拍板，推翻 E5「FAB 浮于查看器系有意设计」注释）：刷新 FAB 在详情叠加期
+   已由 AppShell 条件卸载，查看器只能开在详情叠加内，故查看器期 FAB 实际
+   不可达——40>35 仅是剩余的理论层级位，非可见遮挡。
    zoom 反向补偿：0.9090909 = 1/1.1，与 :105 radix popper wrapper 同公式——
    全局 html{zoom:1.1} 对 body 级 fixed 元素照常继承放大，组件手势以纯视觉
    坐标（clientX/getBoundingClientRect）换算 CSS transform 长度，必须 1:1；
