@@ -165,7 +165,12 @@ fun QimengNavHost(
                     onOpenUpload = { navController.navigate(Routes.UPLOAD) },
                 )
             }
-            composable(Routes.SEARCH) { SearchScreen(onBack = { navController.popBackStack() }) }
+            composable(Routes.SEARCH) {
+                SearchScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenAsset = { assetId -> navController.navigate(DetailRoutes.detailRoute(assetId)) },
+                )
+            }
             composable(Routes.FAVORITE) {
                 FavoriteScreen(
                     onBack = { navController.popBackStack() },
