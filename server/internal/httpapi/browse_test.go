@@ -1301,6 +1301,37 @@ func TestAssetListCosWork(t *testing.T) {
 	}
 }
 
+// TestAssetDetailCosWork：详情端点 cosWork 装配（台账 #15 回归锁）——
+// 有作品子目录的 COS 资产 detail 响应返回作品名，常规资产字段缺省
+// （协议 null 语义 = 客户端详情页标题回退 fileName）。detail 直取
+// assets.cos_work 列，与列表端点（fillListCosWork）同数据源。
+func TestAssetDetailCosWork(t *testing.T) {
+	env := newTestEnv(t)
+	a := testFiles[0]
+	b := testFiles[1]
+	ctx := context.Background()
+	now := store.FormatTimestamp(env.clock.Now())
+
+	if _, err := env.q.UpsertAsset(ctx, db.UpsertAssetParams{
+		AssetID: a.id, LibraryID: env.libID, RelPath: a.relPath,
+		FileName: a.name, MediaType: a.mediaType, SizeBytes: a.size,
+		Mtime:     a.mtime,
+		CosWork:   sql.NullString{String: "8-24 手办", Valid: true},
+		CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("写入 cos_work 失败: %v", err)
+	}
+
+	cos := env.detail(t, a.id)
+	if cos.CosWork == nil || *cos.CosWork != "8-24 手办" {
+		t.Errorf("a.jpg 详情 cosWork 应为「8-24 手办」，得到 %v", cos.CosWork)
+	}
+	plain := env.detail(t, b.id)
+	if plain.CosWork != nil {
+		t.Errorf("b.jpg（常规）详情 cosWork 应缺省，得到 %v", *plain.CosWork)
+	}
+}
+
 // ---------- directory 目录过滤（B-4：目录树「文件行」数据源） ----------
 
 // seedSubdirAssets 直插子目录种子资产：UpsertAsset 是 scanner/filing/upload
