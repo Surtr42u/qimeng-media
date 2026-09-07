@@ -12,8 +12,8 @@ import media.qimeng.app.core.model.ViewEventKind
  *   真实口径出处见其类注释；engagement.go / GUIDE_API.md，openapi:951 注释有误导）；
  * - [destroy] 后所有入口无害 no-op（生命周期安全：销毁前做最后一次兜底 flush）。
  *
- * 上报为同步回调（生产接线时在回调内 scope.launch → DetailRepository.reportViewEvent）；
- * TODO(M4-4): open/play 直连上报改走离线队列（dwell 侧 TODO 在 DwellSessionTracker.flush）。
+ * 上报为同步回调（生产接线：DetailViewModel 回调内 scope.launch → DetailRepository.reportViewEvent；
+ * M4-4 起该落点写进 :core:data 的离线队列 pending_view_events，出网补传由队列三通道异步完成）。
  *
  * @param assetId 本页资产 id
  * @param sessionIdProvider 会话标识来源（App 启动生成一次的 UUID；M4-2 客户端无既有
@@ -50,7 +50,6 @@ class DirectAnalyticsReporter(
         if (destroyed) return
         if (!openReported) {
             openReported = true
-            // TODO(M4-4): 改走离线队列
             emit(ViewEventKind.OPEN, nowMs(), dwellSeconds = null)
         }
         dwellTracker.enter()
@@ -61,7 +60,6 @@ class DirectAnalyticsReporter(
         if (destroyed) return
         if (!playReported) {
             playReported = true
-            // TODO(M4-4): 改走离线队列
             emit(ViewEventKind.PLAY, nowMs(), dwellSeconds = null)
         }
     }
