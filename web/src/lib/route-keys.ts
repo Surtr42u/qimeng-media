@@ -6,8 +6,8 @@
 
 import { generatePath, matchPath } from 'react-router'
 
-/** 首页路由（E1 叠加组底衬判定用；Sidebar/TopBar 存量字面量待收敛，本文件
- *  是路由键唯一来源，新增引用一律走此常量） */
+/** 首页路由（E1 叠加组底衬判定用；F2（2026-09-08）把 Sidebar/TopBar/router 的
+ *  存量字面量收敛至此，本文件是路由键唯一来源，新增引用一律走此常量） */
 export const HOME_PATH = '/app/home'
 
 /** 集合子页 kind（路由段 /app/collection/:kind/:name） */

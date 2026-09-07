@@ -55,7 +55,16 @@ export default function AssetDetailPage() {
   // isPlaceholderData（P2 占位闸门）：详情→详情换件、useAssetDetail 的
   // keepPreviousData 窗口期 d 仍是上一资产——此窗口内播放/停留上报全部停门
   const { data: d, isPlaceholderData } = useAssetDetail(assetId)
-  const { data: timelineTags, isLoading: tagsLoading } = useTimelineTags(assetId)
+  // F2·P1-1：tags 查询占位态透传。keepPreviousData 占位期 v5 会把 status 乐观
+  // 翻成 'success'（isPending/isLoading 同拍为 false）——旧门 tagsLoading 拦不住：
+  // 新 detail 到货 key 翻转重挂播放器时会以旧资产 tags 首挂（ArtPlayer 打点仅
+  // 构造时消费 → 进度条定格旧打点、seek 落到旧时间戳）。守卫必须是
+  // isPending || isPlaceholderData（契约详见 hooks/use-progress.ts useTimelineTags）
+  const {
+    data: timelineTags,
+    isPending: tagsPending,
+    isPlaceholderData: tagsPlaceholder,
+  } = useTimelineTags(assetId)
   const reportView = useReportView()
   // 进度上报：tick=播放中心跳（5s 节流）、flush=暂停/卸载立即上报（hooks/use-progress.ts）；
   // 占位窗口停门（enabled=false），防上一资产的播放位置错记进 URL 新资产
@@ -182,7 +191,12 @@ export default function AssetDetailPage() {
           <div className="asset-stage">
             {watched ? <span className="watched-badge">已看完</span> : null}
             {isVideo ? (
-              tagsLoading ? null : (
+              // F2·P1-1 挂载闸：tags isPending || isPlaceholderData 不挂播放器
+              // （防新播放器以旧资产 tags 首挂定格，契约见 useTimelineTags 注释）；
+              // 占位窗口很短，舞台显示加载行过渡
+              tagsPending || tagsPlaceholder ? (
+                <p className="grid-empty">加载中…</p>
+              ) : (
                 <VideoPlayer
                   key={d.id ?? assetId}
                   src={d.origUrl ?? ''}
@@ -286,8 +300,14 @@ export default function AssetDetailPage() {
         </aside>
       </div>
       {/* E5 查看器覆盖层：portal 挂 body（z-index 35 层级位见组件头注释）。
-          条件：非视频（视频不接查看器——横滑进视频资产时自动收起）、仍有
-          origUrl。换件回调与分页钮共用 goNeighbor，边界外不注入回调即无切换 UI */}
+          条件：非视频（视频不接查看器）、仍有 origUrl。换件回调与分页钮共用
+          goNeighbor，边界外不注入回调即无切换 UI。
+          F2·P3c 混合媒体设计语义（有意为之，勿当 bug 修）：查看器开着换件进
+          视频项时本条件以 !isVideo 使查看器卸载（E5 实录 4b「查看器关闭·设计
+          内」），且有意不在该卸载路径复位 viewerOpen——它承载「查看意图仍在」：
+          此后换件/分页回到图片项时，查看器随本条件重新挂载自动重现。要改此
+          行为（如回图片项不重现）属产品语义变更，须过用户拍板，不得顺手在
+          卸载路径加 setViewerOpen(false)。 */}
       {viewerOpen && !isVideo && d.origUrl ? (
         <ImageViewer
           src={d.origUrl}

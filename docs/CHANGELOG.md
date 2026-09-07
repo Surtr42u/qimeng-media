@@ -11,6 +11,19 @@
 
 ---
 
+## fix(web): F2 E系列审查遗留收口——错误态/换件占位/viewer细节/字面量收敛（2026-09-08 第一百二十六笔）
+
+执行 AI：GLM-5.3-Flash（主会话调度；executor 执行+返工/reviewer 两轮对抗审查（首轮 P1 打回）/主会话浏览器走查，任务F-Web卷 F2）
+
+- **StreamCards 错误态**（E2 备案）：isError 分支「加载失败」+重试钮，错误态优先空态/endHint、哨兵错误期卸载；三流同口径。注释如实化：换键失败=占位丢弃网格清空+错误行，同键失败=卡片保留+错误行（v5 占位仅 pending 态生效）。走查：停隔离实例模拟断网，「加载失败+重试」出现且无误导空态，恢复重试即复原。
+- **useTimelineTags 占位+播放器闸门（首轮 P1 打回返工，本批核心）**：仅加 keepPreviousData 会让旧 `tagsLoading` 门确定性失效（v5 占位期 status 乐观翻 'success'，isLoading 同拍 false）→ 换件窗口新 VideoPlayer 以旧资产 highlights 首挂**永久定格**（ArtPlayer highlight 仅构造时消费）→ 进度条挂错打点、seek 错位。修复=挂载门改 `tagsPending || tagsPlaceholder`（占位期「加载中…」不挂播放器），七时序推演（冷启动/换件/detail 先到/tags 先到/换键失败/同键 refetch）全过；消费方契约注释落 use-progress.ts 与 video-player.tsx。走查：换件窗口精确「加载中…」+无播放器，新件到货即挂。
+- **viewer P3 三处**：pointercancel 清 lastTap；手写焦点管理（焦点入关闭钮/卸载归还/Tab trap 过滤 visibility:hidden，未迁 radix Dialog——portal+手势+key=src 耦合深迁移不可逆，45 行可回退）；沉浸态空焦点集补 preventDefault 吞 Tab；「进视频项 viewer 卸载、回图片项 viewerOpen 不复位自动重现」设计语义注释（E5 备案「不自动重现」与代码事实相反，按实际行为落笔，改行为待拍板）。
+- **杂项**：`'/app/home'` 三处字面量收敛 HOME_PATH（URL 不变）；use-prefs.ts 过时注释修正（零行为）；作者页搜索图标 r=8 核识自阶段 A 即在位（拍板=确认 8 否决原型 7），补溯源注释。
+- **审查**：reviewer 首轮揪出 P1（tags 占位错账）与 P2（注释失实）打回；返工后二轮七时序推演+范围+四命令全过。P3 备忘：timelineTags keepPreviousData 对唯一消费方（被闸播放器）已无可见收益，冗余但无害。
+- **验收**：tsc 0 错/oxlint 16≤17/build 41 entries/npm test 41 过 + 主会话浏览器实测（错误态与重试恢复/换件闸门/焦点入钮与 trap/全站导航回归）。走查方法备案：SDK client 固化 globalThis.fetch 引用致合成拦截无效，错误态以停服务端真实模拟；合成 Pointer 事件无法触发沉浸切换（E5 已知限制），该分支代码级核验覆盖。证据 %TEMP%\qimeng-f2-evidence\（保留勿删）。
+
+---
+
 ## feat(app): D4 C8 新旧截图对照修复 + B6 收尾（2026-09-08 第一百二十五笔）
 
 执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 独立对抗审查（取证级：设备时钟校准/APK 反汇编/像素几何互证），任务D-Android卷 D4）

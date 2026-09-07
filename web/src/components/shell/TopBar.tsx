@@ -16,6 +16,7 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router'
 import type { SearchSuggestion, SearchSuggestionType } from '@/api/generated'
 import { useRecommendSearchWords, useSearchSuggestions } from '@/hooks/use-suggestions'
 import { HOME_TABS, RANK_PERIODS, parseRankPeriod } from '@/lib/home-tabs'
+import { HOME_PATH } from '@/lib/route-keys'
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { ChevronDownIcon, ClearIcon, SearchIcon, WinCloseIcon, WinMaxIcon, WinMinIcon } from './icons'
 
@@ -82,7 +83,8 @@ export function TopBar() {
   const [searchParams, setSearchParams] = useSearchParams()
   const activeTab = searchParams.get('tab') ?? 'recommend'
 
-  const isHome = pathname === '/app/home'
+  // F2：首页判定走 route-keys HOME_PATH（路由键唯一来源，字面量已收敛）
+  const isHome = pathname === HOME_PATH
   const showRankPanel = isHome && activeTab === 'hot'
   // 周期行当前值 = URL ?period=（URL 驱动，刷新/直达不丢态；缺省日榜）
   const rankPeriod = parseRankPeriod(searchParams.get('period'))

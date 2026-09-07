@@ -7,7 +7,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query'
 import {
   getApiV1AssetsByAssetIdTimelineTags,
   putApiV1AssetsByAssetIdProgress,
@@ -33,6 +33,15 @@ export function useTimelineTags(assetId?: string) {
     queryFn: () =>
       unwrapSdkResult(getApiV1AssetsByAssetIdTimelineTags({ path: { assetId: assetId! } })),
     enabled: !!assetId,
+    // F2：详情→详情换件换键重取期间保留上一件的标签占位（与 useAssetDetail
+    // 同款 TanStack v5 keepPreviousData 模式，web/src/hooks/use-assets.ts 先例）
+    // ——不闪「标签空一拍」。P1-1 契约（消费方必读）：占位期 v5 把 status 乐观
+    // 置为 'success'（isPending/isLoading 同拍为 false），故消费方必须以
+    // isPending || isPlaceholderData 作挂载闸（AssetDetailPage 的播放器挂载守卫
+    // 即此口径）——占位中的旧资产标签严禁喂给新挂载的 VideoPlayer：打点仅在
+    // 构造/loadedmetadata 时消费，旧标签会定格在新播放器进度条上、seek 落到
+    // 旧资产时间戳。换键重取失败（error）期占位被丢弃，data 回 undefined
+    placeholderData: keepPreviousData,
     select: (tags) => [...tags].sort((a, b) => (a.timeMillis ?? 0) - (b.timeMillis ?? 0)),
   })
 }
