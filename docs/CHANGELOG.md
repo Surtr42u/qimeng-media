@@ -11,6 +11,16 @@
 
 ---
 
+## build(web): F4 CI web job 接入 vitest（2026-09-08 第一百三十笔）
+
+执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 对抗审查通过，任务F-Web卷 F4=ADR-0017 待办闭环）
+
+- **改动**：`.github/workflows/ci.yml` web job 步骤尾部（build 之后）加 `- run: npm test`（+1 行，与 job 既有裸 run 步骤同风格，working-directory 走 job 级 defaults=web）；server/android/sdk-chain/openapi 四 job 零改动。
+- **审查**：reviewer 五项全过——diff 单 hunk 落 web job 内；`vitest run` 无 watch 挂起风险、vitest 在 devDependencies 且 npm ci 默认装、执行序 npm ci→openapi-ts→tsc→build→npm test；vitest.config node 环境无浏览器依赖；js-yaml 解析 5 job 结构完整；本地 npm test 78/78 独立复跑。
+- **验收**：本地四命令绿（npm test 78 全绿）；**CI 实跑验收因 GitHub 502 push 受阻，待 push 恢复后以 gh run watch web job 绿补验（五 job 整体不红）**。ADR-0017 状态行已更新闭环、HANDOVER_UI §5 第 24 条待办句清账。证据 %TEMP%\qimeng-f4-evidence\（保留勿删）。
+
+---
+
 ## test(web): F3 E6 测试覆盖面补齐——导航状态校验/SSE 重连停连/日期区间等（2026-09-08 第一百二十九笔）
 
 执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 对抗审查含破坏性推演，任务F-Web卷 F3=E6 reviewer P3 清偿）

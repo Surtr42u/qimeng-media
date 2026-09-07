@@ -63,6 +63,7 @@ jobs:
       - run: npx openapi-ts -f src/api/openapi-ts.config.ts
       - run: npx tsc --noEmit
       - run: npm run build
+      - run: npm test
 
   sdk-chain:
     name: SDK 生成链（make sdk 三端可重建）
