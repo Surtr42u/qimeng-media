@@ -910,10 +910,10 @@ button.save-btn {
 .card--date { color: var(--text-sub); font-size: 11px; }
 
 
-/* 滚动条 */
-.content::-webkit-scrollbar { width: 6px; height: 6px; }
-.content::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
-.content::-webkit-scrollbar-thumb:hover { background: var(--faint); }
+/* 滚动条（.content 与 E1 详情叠加层同规格） */
+.content::-webkit-scrollbar, .asset-overlay::-webkit-scrollbar { width: 6px; height: 6px; }
+.content::-webkit-scrollbar-thumb, .asset-overlay::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
+.content::-webkit-scrollbar-thumb:hover, .asset-overlay::-webkit-scrollbar-thumb:hover { background: var(--faint); }
 
 /* 窗口中小尺寸下网格收缩 */
 @media (max-width: 900px) {
@@ -1763,3 +1763,23 @@ li.dir-file-row:hover { background: var(--hover-bg); }
    归一后仅步长 14→16 的变化。 */
 .dir-tree-list { flex-basis: 100%; width: 100%; }
 .dir-tree-list li { padding-left: 0; padding-right: 0; }
+
+/* ===== E1 详情叠加层（首页从详情返回保态）：详情以 fixed 覆盖内容区打开，
+   首页列表常驻底衬不卸载（router.tsx 叠加组），.content 滚动位置即返回恢复
+   位置（AppShell 复位已对叠加组加门）。定位锚点 = 顶栏下缘/侧栏右缘 token
+   单源；自身滚动 + overscroll-behavior 防链式滚动传染底衬；内边距与 .content
+   同值，§4.5 首行贴栏节奏（.asset-stage -11.5px）不受影响；z-index 低于搜索
+   弹层(20/30)/悬浮按钮(40)/弹窗(50)——顶栏与悬浮件在叠加期保持可用 */
+.asset-overlay {
+  position: fixed;
+  top: var(--header-h);
+  left: var(--sidebar-w);
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  background: var(--bg);
+  padding: 12px 24px 40px;
+}

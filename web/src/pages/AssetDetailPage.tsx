@@ -19,6 +19,9 @@ import { ensureSessionId } from '@/hooks/use-session'
 
 /**
  * 资产详情页（/app/asset/:assetId，首页/相册卡片点击进入）。
+ * E1 起为叠加层形态：路由收进首页叠加组，本页以 .asset-overlay（fixed 覆盖
+ * 内容区、自身滚动）打开，首页列表常驻底衬不卸载；滚动复位不再由 AppShell
+ * 代管（.content 已对叠加组加门），详情→详情（右栏换资产）改由本页自回顶。
  * B站式双栏排版（2026-09-05 大改）：左主列 = 媒体舞台 → 标题 → 信息行 →
  * 点赞/收藏互动行 → 标签行；右栏 = 作者卡（关注）+「接下来播放」推荐栏。
  * 图片/动图 = 签名原件直链大图（"查看永远发原件"）；视频 = ArtPlayer 播放器
@@ -44,11 +47,15 @@ function isWatched(
 
 export default function AssetDetailPage() {
   const { assetId } = useParams()
-  const { data: d } = useAssetDetail(assetId)
+  // isPlaceholderData（P2 占位闸门）：详情→详情换件、useAssetDetail 的
+  // keepPreviousData 窗口期 d 仍是上一资产——此窗口内播放/停留上报全部停门
+  const { data: d, isPlaceholderData } = useAssetDetail(assetId)
   const { data: timelineTags, isLoading: tagsLoading } = useTimelineTags(assetId)
   const reportView = useReportView()
-  // 进度上报：tick=播放中心跳（5s 节流）、flush=暂停/卸载立即上报（hooks/use-progress.ts）
-  const progress = useProgress(assetId ?? '')
+  // 进度上报：tick=播放中心跳（5s 节流）、flush=暂停/卸载立即上报（hooks/use-progress.ts）；
+  // 占位窗口停门（enabled=false），防上一资产的播放位置错记进 URL 新资产
+  const reportingLive = !isPlaceholderData
+  const progress = useProgress(assetId ?? '', reportingLive)
   // 互动行（B站式）：点赞 toggle（响应 LikeState 回填）/ 收藏显式设置（hooks/use-assets.ts）
   const toggleLike = useToggleLike()
   const setFavorite = useSetFavorite()
@@ -60,7 +67,9 @@ export default function AssetDetailPage() {
 
   // open 打点：每资产只报一次（会话去重由服务端按 assetId+kind+sessionId+当日）。
   // ref 记「已上报资产」而非布尔：UpNextList 的详情→详情导航同路由只换参数、
-  // 组件不重挂载（reviewer P1），布尔守卫会让新资产 open 永不上报
+  // 组件不重挂载（reviewer P1），布尔守卫会让新资产 open 永不上报。
+  // open 不参与 P2 占位闸门：进详情是导航事实，与画面是否已切换无关
+  // （服务端按 assetId+当日会话去重，不会重复计）
   const reportedFor = useRef<string | null>(null)
   useEffect(() => {
     if (!assetId || reportedFor.current === assetId) return
@@ -74,27 +83,41 @@ export default function AssetDetailPage() {
   }, [assetId, reportView])
 
   // play 打点：视频每次起播如实上报一条（同会话当日重复起播的去重由服务端
-  // 判定，重复上报被其 202 幂等吸收——DOMAIN_RULES §5「同会话只计一次」）
+  // 判定，重复上报被其 202 幂等吸收——DOMAIN_RULES §5「同会话只计一次」）；
+  // P2 占位窗口（画面仍属上一资产）不起播上报
   const reportPlay = useCallback(() => {
-    if (!assetId) return
+    if (!assetId || isPlaceholderData) return
     reportView.mutate({
       assetId,
       kind: 'play',
       startedAt: new Date().toISOString(),
       sessionId: ensureSessionId(),
     })
-  }, [assetId, reportView])
+  }, [assetId, reportView, isPlaceholderData])
 
   // dwell 打点：进入计时、离开/页面隐藏 flush 恰好一条（累加口径的防重
-  // 闸门在 hook 内部；图片与视频详情页通用）
-  useDwellReport(assetId)
+  // 闸门在 hook 内部；图片与视频详情页通用）。P2 占位窗口传 undefined：
+  // hook 对空 assetId 不开段（数据到货后随 assetId 变化正常开段），
+  // 防看上一资产画面的停留时长错记进 URL 新资产
+  useDwellReport(isPlaceholderData ? undefined : assetId)
 
   // 点赞图标弹跳动效：每次点击重触发（类挂上→动画结束复位），onAnimationEnd 冒泡到按钮
   const [likeBounce, setLikeBounce] = useState(false)
 
+  // E1 叠加层滚动自管：详情→详情（右栏换资产）时回顶。旧版本 pathname 变化
+  // 由 AppShell 统一 reset .content，叠加化后 .content 复位已对叠加组加门
+  // （保底衬列表位置），叠加层自身滚动改由本页在资产切换时归零。挂载即跑
+  // 一次无副作用（新叠加层本就在顶部）。
+  const overlayRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    overlayRef.current?.scrollTo(0, 0)
+  }, [assetId])
+
   if (!d) {
+    // 仅直达冷启动（无任何缓存/占位数据）可达：换件期间 useAssetDetail 的
+    // keepPreviousData 占位不会走到这里（不闪「加载中…」）
     return (
-      <div className="page" id="page-asset">
+      <div className="page asset-overlay" id="page-asset">
         <p className="grid-empty">加载中…</p>
       </div>
     )
@@ -103,7 +126,7 @@ export default function AssetDetailPage() {
   const isVideo = d.mediaType === 'video'
 
   return (
-    <div className="page" id="page-asset">
+    <div ref={overlayRef} className="page asset-overlay" id="page-asset">
       <div className="detail-layout">
         <div className="detail-main">
           <div className="asset-stage">

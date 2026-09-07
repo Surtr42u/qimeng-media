@@ -1,10 +1,10 @@
 import { useState } from 'react'
-import { Link } from 'react-router'
+import { Link, useLocation } from 'react-router'
 import { Shuffle } from 'lucide-react'
 import type { AssetSummary } from '@/api/generated'
 import { useUpNextList, type MediaType } from '@/hooks/use-assets'
 import { formatDuration } from '@/lib/format'
-import { assetDetail } from '@/lib/route-keys'
+import { assetDetailWithSearch } from '@/lib/route-keys'
 
 /**
  * 详情页「接下来播放」推荐栏（B站式右栏下部）：同类型推荐流（推荐算法 +
@@ -23,6 +23,10 @@ export function UpNextList({
   cosWork?: string | null
 }) {
   const [seed, setSeed] = useState(0)
+  // P1（E1 返工）：行跳转原样携带当前查询串（?tab/?period）——叠加组导航
+  // 统一走 assetDetailWithSearch，否则详情→详情丢查询串，底衬 HomePage 翻回
+  // recommend、CosRecommendTab 卸载（换一批 seed 丢失），返回时流已重置
+  const { search } = useLocation()
   const { data, isFetching } = useUpNextList({
     mediaType,
     // COS 资产的推荐流同区收窄（与首页 cos tab 同参数语义）
@@ -43,7 +47,7 @@ export function UpNextList({
       </div>
       <div className="upnext-list">
         {items.map((a) => (
-          <Link className="upnext-row" key={a.id} to={assetDetail(a.id)}>
+          <Link className="upnext-row" key={a.id} to={assetDetailWithSearch(a.id, search)}>
             <span className="upnext-thumb">
               {a.thumbUrl ? <img src={a.thumbUrl} alt={a.fileName ?? ''} loading="lazy" /> : null}
               {a.mediaType === 'video' && a.durationMs ? (

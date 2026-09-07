@@ -1,12 +1,14 @@
 /**
  * 应用壳层：侧栏 + 顶栏 + 内容区（路由出口）+ 右下角悬浮刷新。
- * 切页时内容区滚回顶部（原型 showPage 的 scrollTop=0 语义 → 路由 pathname 驱动）。
+ * 真导航（非叠加组内切换）时内容区滚回顶部（原型 showPage 的 scrollTop=0
+ * 语义 → 路由 pathname 驱动；叠加组门见下方 E1 注释）。
  */
 
 import { QM_REFRESH_EVENT } from '@/lib/constants'
 import { useEffect, useRef, useState } from 'react'
 import { Outlet, useLocation } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
+import { inHomeDetailGroup, isAssetDetailPath } from '@/lib/route-keys'
 import { Sidebar } from './Sidebar'
 import { TopBar } from './TopBar'
 import { RefreshIcon, BackTopIcon } from './icons'
@@ -20,10 +22,22 @@ export function AppShell() {
   const queryClient = useQueryClient()
   const [spinning, setSpinning] = useState(false)
   const [showBackTop, setShowBackTop] = useState(false)
+  // E1 叠加组（首页↔详情）：详情是覆盖在首页底衬上的叠加层，组内互相切换
+  // （进详情/浏览器返回/详情→详情）不复位 .content——底衬列表的 scrollTop
+  // 即返回时的恢复位置，复位它等于丢态。仅真导航（进出相册/搜索等其他页）
+  // 保持原回顶语义。上一 pathname 用 ref 记，避免为比较值多一次渲染。
+  const prevPathnameRef = useRef<string | null>(null)
 
   useEffect(() => {
+    const prev = prevPathnameRef.current
+    prevPathnameRef.current = pathname
+    if (prev !== null && inHomeDetailGroup(prev) && inHomeDetailGroup(pathname)) return
     contentRef.current?.scrollTo(0, 0)
   }, [pathname])
+
+  // 详情叠加打开期间 .content 不再滚动，回顶部按钮失去意义且悬浮在覆盖层上
+  const overlayOpen = isAssetDetailPath(pathname)
+  const showBackTopFab = showBackTop && !overlayOpen
 
   // 滚动容器是 .content（window 不滚），显隐跟随其 scrollTop；切页 scrollTo(0,0) 会触发
   // scroll 事件使按钮自动隐藏，已在顶部时无事件且状态本就为隐藏，无泄漏路径
@@ -70,11 +84,11 @@ export function AppShell() {
         <RefreshIcon />
       </button>
       <button
-        className={`backtop-fab${showBackTop ? ' shown' : ''}`}
+        className={`backtop-fab${showBackTopFab ? ' shown' : ''}`}
         title="回到顶部"
         type="button"
         onClick={backToTop}
-        tabIndex={showBackTop ? 0 : -1}
+        tabIndex={showBackTopFab ? 0 : -1}
       >
         <BackTopIcon />
         <p>顶部</p>
