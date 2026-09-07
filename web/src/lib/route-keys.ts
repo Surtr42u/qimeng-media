@@ -53,6 +53,44 @@ export function inHomeDetailGroup(pathname: string): boolean {
   return pathname === HOME_PATH || isAssetDetailPath(pathname)
 }
 
+/**
+ * E5 列表上下文快照（history state）：叠加组入口（HomePage.openDetail 与
+ * UpNextList 行）进详情时携带「当前已加载流」的 id 快照 + 所点下标，详情页
+ * 据此渲染上一件/下一件批次导航与查看器切换；其余 7 处入口不传 state——
+ * 直达/刷新 readAssetNavState 返回 null，导航 UI 不渲染（无上下文兜底）。
+ * origUrls：与 ids 对齐的可选原件直链快照，仅供查看器相邻预载。现有列表类型
+ * （AssetSummary）无 origUrl 字段故两个入口都不传——邻项不预载、切换时用
+ * 详情接口的 origUrl（短暂加载态，E5 拍板允许）；字段为未来带原件直链的
+ * 列表入口预留，勿删。
+ */
+export interface AssetNavState {
+  ids: string[]
+  index: number
+  origUrls?: Array<string | undefined>
+}
+
+/**
+ * location.state 收敛解析（全站首个 history state 消费点）：state 运行时
+ * 不可信（手工构造/扩展注入），逐字段校验，任一不合法一律按无上下文处理。
+ */
+export function readAssetNavState(state: unknown): AssetNavState | null {
+  if (typeof state !== 'object' || state === null) return null
+  const ids = (state as { ids?: unknown }).ids
+  const index = (state as { index?: unknown }).index
+  const origUrls = (state as { origUrls?: unknown }).origUrls
+  if (!Array.isArray(ids) || !ids.every((id): id is string => typeof id === 'string')) return null
+  if (typeof index !== 'number' || !Number.isInteger(index) || index < 0 || index >= ids.length) {
+    return null
+  }
+  if (
+    origUrls !== undefined &&
+    (!Array.isArray(origUrls) || !origUrls.every((u) => u === undefined || typeof u === 'string'))
+  ) {
+    return null
+  }
+  return { ids, index, origUrls: origUrls as Array<string | undefined> | undefined }
+}
+
 /** 榜单键：DataPage 入口与 RanksPage 路由段共用 */
 export const RANK_CONTENT = 'content'
 export const RANK_TAGS = 'tags'

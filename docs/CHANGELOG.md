@@ -11,6 +11,18 @@
 
 ---
 
+## feat(web): E5 自研图片查看器+列表上下文批次导航+zoom 备忘（2026-09-08 第一百一十八笔）
+
+执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 两轮对抗审查/主会话浏览器验收 11 项，任务E-Web卷 E5=任务B §6 回补批）
+
+- **图片查看器**（components/media/image-viewer.tsx 新，**零新依赖**）：详情页图片/动图点击进入全视口覆盖层（z-index 35，暗底，zoom 0.9090909 反补偿与 popper 同公式注释互指）；Pointer Events 双指捏合 0.5~5x/双击 1.8x/拖拽平移/横滑 60px 换件/单击 300ms 沉浸 chrome/Esc 退出；**保焦点缩放一般式 t1=t0+(s0−s1)·(f−c−t0)/s0**（首版特设式在平移/缩放态起手漂移达数百 px，reviewer 数学反例打回后返工）；纯视觉坐标（W-3 纪律）；查看永远发详情接口 origUrl 签名原件直链，GIF 原生动，视频不接查看器。
+- **批次导航**：location state 快照+运行时校验（readAssetNavState），叠加组两入口（首页三 tab 流/UpNextList）传上下文；.asset-pager 上一件/下一件+n/总数、边界停止不循环（规格未定义处先行口径，待拍板 #18）；换件统一 assetDetailWithSearch 保查询串；直达/刷新无 state 降级隐藏；其余 7 处入口按设计不传。
+- **zoom 备忘**：仓库外 web-zoom-memo.md（约定盘点+四方案影响面+迁移风险，只写不改）。
+- **审查**：reviewer 首轮需返工——P2-1 保焦点公式（数学反例：t0=(-500,0) 双击漂移 400px）、P2-2 z25<搜索 z30 层级注释失实、P3×3 竞态（双动作同发/定时器叠加/lastTap 残留）→ 返工后复核通过（一般式反例精确落回/z 三处同步/31~34 无占用；package.json vitest diff 经裁决归 E6 批边界，非 E5 缺陷）。
+- **验收**：主会话浏览器 18462 实测 11 项全过（查看器结构四值、双击缩放、沉浸切换、Esc、图→图横滑 viewer 保持+查询串保留、视频项卸载、pager 边界、无上下文降级、零依赖）；z35>30 看图终验过。文档：HANDOVER_UI.md §5 第 23 条。证据 %TEMP%/qimeng-e5-evidence/（保留勿删）。
+
+---
+
 ## fix(web): E4 推荐偏好只留 4 预设——滑杆/草稿态退役+slider 组件清理（2026-09-08 第一百一十七笔）
 
 执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 对抗审查/主会话浏览器验收，任务E-Web卷 E4=C6，用户 2026-09-07 口径）
