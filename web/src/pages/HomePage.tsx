@@ -7,7 +7,7 @@ import { assetToCard, useRecommendations } from '@/hooks/use-assets'
 import { useRankingsInfinite } from '@/hooks/use-stats'
 import { useAutoMore } from '@/hooks/use-auto-more'
 import { parseRankPeriod, type HomeRankPeriod, type HomeTabKey } from '@/lib/home-tabs'
-import { assetDetail } from '@/lib/route-keys'
+import { assetDetailWithSearch } from '@/lib/route-keys'
 
 /**
  * 首页：顶栏分类 tab（推荐/cos/排行榜）对应的内容区（tab 由 URL ?tab= 驱动，
@@ -31,7 +31,13 @@ export default function HomePage() {
   const period = parseRankPeriod(searchParams.get('period'))
 
   const openDetail = (id?: string): void => {
-    if (id) navigate(assetDetail(id))
+    if (!id) return
+    // E1 叠加打开携带当前查询串（tab/period）：详情期间底衬 HomePage 保持
+    // 同一条流（tab 子组件不换挂、换一批 seed 不丢），浏览器返回的历史条目
+    // 与离开时完全一致。与详情右栏 upnext 行（UpNextList）共用统一入口
+    // assetDetailWithSearch；recommend 缺省无参数则不加 ?（空查询串不污染 URL）。
+    const q = searchParams.toString()
+    navigate(assetDetailWithSearch(id, q ? `?${q}` : ''))
   }
 
   return (
@@ -105,6 +111,9 @@ function useRecommendationStream(seed: number, cosOnly: boolean) {
     isLoading: q.isLoading,
     isFetchingNextPage: q.isFetchingNextPage,
     hasNextPage: q.hasNextPage,
+    // P3.1（E1 返工）：换 seed 的占位窗口里 hasNextPage 取自旧流（可能为
+    // false）——「到底了」类文案须配合此标记抑制，防窗口期闪现
+    isPlaceholderData: q.isPlaceholderData,
     sentinelRef,
   }
 }
@@ -122,7 +131,7 @@ function StreamCards({ stream, onOpen, emptyHint, footer, endHint }: {
   /** 到底提示（无下一页且非空时显示） */
   endHint?: ReactNode
 }) {
-  const { items, isLoading, isFetchingNextPage, hasNextPage, sentinelRef } = stream
+  const { items, isLoading, isFetchingNextPage, hasNextPage, isPlaceholderData, sentinelRef } = stream
   return (
     <>
       {items.map((a) => (
@@ -136,7 +145,9 @@ function StreamCards({ stream, onOpen, emptyHint, footer, endHint }: {
       {isFetchingNextPage && <p className="grid-empty">加载中…</p>}
       {!isLoading && items.length === 0 && <p className="grid-empty">{emptyHint}</p>}
       {!isLoading && items.length > 0 && footer}
-      {!isLoading && items.length > 0 && !hasNextPage && endHint}
+      {/* P3.1：占位窗口（换 seed 重取中）hasNextPage 是旧流的，可能假性
+          false——到底提示须等新流到货再判 */}
+      {!isLoading && !isPlaceholderData && items.length > 0 && !hasNextPage && endHint}
       {hasNextPage && <div ref={sentinelRef} style={{ height: 1 }} aria-hidden="true" />}
     </>
   )
@@ -180,7 +191,9 @@ function CosRecommendTab({ onOpen }: { onOpen: (id?: string) => void }) {
             换一批
           </button>
           <span className="pill-count">
-            共 {stream.items.length} 项{stream.hasNextPage ? '' : ' · 到底了'}
+            共 {stream.items.length} 项
+            {/* P3.1：占位窗口 hasNextPage 取自旧流，「到底了」后缀同 endHint 口径抑制 */}
+            {stream.hasNextPage || stream.isPlaceholderData ? '' : ' · 到底了'}
           </span>
         </p>
       )}
@@ -205,6 +218,9 @@ function HotRankTab({ period, onOpen }: { period: HomeRankPeriod; onOpen: (id?: 
     isLoading: q.isLoading,
     isFetchingNextPage: q.isFetchingNextPage,
     hasNextPage: q.hasNextPage,
+    // 榜单流无 placeholderData（确定性排序，period 换档整页换键重拉属预期），
+    // 恒 false，仅为满足共用流类型
+    isPlaceholderData: q.isPlaceholderData,
     sentinelRef,
   }
   return (

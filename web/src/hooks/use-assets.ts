@@ -87,6 +87,9 @@ export function useRecommendations(limit = DEFAULT_PAGE_SIZE, seed = 0, cosOnly 
       unwrapSdkResult(getApiV1Recommendations({ query: { limit, seed, cosOnly, offset: pageParam } })),
     initialPageParam: offset,
     getNextPageParam: lengthCursorNext(limit),
+    // E1（次生根因）：换键重取期间保留旧流占位（TanStack 官方 keepPreviousData
+    // 模式）——换一批/qm:refresh 与返回首页时不得整流闪「加载中…」
+    placeholderData: keepPreviousData,
   })
 }
 
@@ -171,12 +174,15 @@ export function assetToCard(a: AssetSummary): MediaCardProps {
   }
 }
 
-/** 资产详情（签名原件直链/编码信息/标签作者——详情页与播放兼容性判断数据源） */
+/** 资产详情（签名原件直链/编码信息/标签作者——详情页与播放兼容性判断数据源）。
+ *  E1：详情→详情（右栏换资产）换键重取期间保留上一资产占位，到货即整体切换
+ *  ——不闪整页「加载中…」；仅直达冷启动（真无数据）由消费方显示加载态。 */
 export function useAssetDetail(assetId?: string) {
   return useQuery({
     queryKey: [...ASSETS_QUERY_KEY, 'detail', assetId],
     queryFn: () => unwrapSdkResult(getApiV1AssetsByAssetId({ path: { assetId: assetId! } })),
     enabled: !!assetId,
+    placeholderData: keepPreviousData,
   })
 }
 

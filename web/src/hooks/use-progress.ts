@@ -41,8 +41,12 @@ export function useTimelineTags(assetId?: string) {
  * 断点续播进度上报：tick = 播放中心跳（内部按 5s 节流）；
  * flush = 暂停/离开立即上报最后已知位置（不受节流限制，可显式传位置）。
  * 组件卸载时自动补报一次（协议语义：暂停/离开播放页各补一次）。
+ * enabled=false（P2 占位闸门）：详情→详情换件的 keepPreviousData 窗口，
+ * 播放器里还是上一资产的画面——tick/flush 一律 no-op，防旧资产的播放位置
+ * 错记进 URL 上的新资产；切资产补报（下方 effect）不受此门限制，照常把
+ * 旧资产自己的最后位置报给旧资产。
  */
-export function useProgress(assetId: string) {
+export function useProgress(assetId: string, enabled = true) {
   // 上报载荷必须带显式 assetId：详情→详情导航（同路由参数变化，组件不卸载）时
   // mutationFn 闭包里的 assetId 会随 render 切到新资产——补报旧位置若走闭包，
   // 就会把旧资产的进度写进新资产（跨资产数据污染）。
@@ -86,23 +90,25 @@ export function useProgress(assetId: string) {
 
   const tick = useCallback(
     (positionSeconds: number) => {
+      if (!enabled) return // P2 占位闸门：窗口期画面属于上一资产，不记账不上报
       lastRef.current = { assetId: assetIdRef.current, positionSeconds }
       if (Date.now() - lastSentAtRef.current >= PROGRESS_REPORT_INTERVAL_MS) {
         send(assetIdRef.current, positionSeconds)
       }
     },
-    [send],
+    [send, enabled],
   )
 
   const flush = useCallback(
     (positionSeconds?: number) => {
+      if (!enabled) return // P2 占位闸门：窗口期无本资产位置可报（旧资产已在切资产 effect 补报）
       const last = lastRef.current
       const position =
         positionSeconds ??
         (last && last.assetId === assetIdRef.current ? last.positionSeconds : null)
       if (position !== null) send(assetIdRef.current, position)
     },
-    [send],
+    [send, enabled],
   )
 
   // 离开播放页立即补报（协议语义：暂停/离开各补一次）：仅卸载时触发一次；

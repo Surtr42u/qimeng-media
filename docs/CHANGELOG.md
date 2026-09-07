@@ -11,6 +11,19 @@
 
 ---
 
+## fix(web): E1 首页详情返回保态——叠加路由+查询串保态+占位防闪+打点闸门（2026-09-08 第一百一十四笔）
+
+执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 两轮对抗审查/主会话浏览器 DOM 验收，任务E-Web卷 E1=C3）
+
+- **叠加路由**：首页与详情收进 React Router v8 pathless layout route（新 `components/layout/HomeBackdropLayout.tsx`：HomePage 恒挂载底衬+Outlet+详情打开时底衬 inert；`home` 子路由 element:null）；URL 仍 `/app/asset/:assetId` 可直达（直达时底衬=首页）。AppShell pathname→scrollTo(0,0) 加叠加组门（route-keys.ts 新增 HOME_PATH/ASSET_DETAIL_PATTERN/isAssetDetailPath/inHomeDetailGroup 单源）：组内互切不复位、进出组真导航保持回顶；回顶部 FAB 叠加期隐藏。`.asset-overlay` 叠加层全 token 锚点（--header-h/--sidebar-w）+独立滚动+overscroll:contain+z-index 10 有序。
+- **查询串保态（reviewer P1 返工项）**：叠加组导航统一 `assetDetailWithSearch(id, location.search)`（首页 openDetail 与 UpNextList 行共用）——`?tab=cos`/`?tab=hot&period=` 全程随 URL，底衬 tab 子组件不换挂、换一批 seed/reloadKey 不丢；`assetDetail()` 改 generatePath(ASSET_DETAIL_PATTERN) 单源派生（P3.3 消模板串双写）。
+- **占位防闪**：useAssetDetail/useRecommendations/useUpNextList 加 placeholderData: keepPreviousData——刷新/换批/详情→详情换件保留旧内容至新数据就绪，无整页「加载中…」/「暂无推荐」闪现。
+- **占位窗口打点闸门（reviewer P2 返工项，防跨资产错账）**：useProgress 增可选 enabled（占位窗口 tick/flush no-op；切资产补报 effect 不受门限，旧资产最后位置报旧资产）；useDwellReport 占位传 undefined id（空 id 不开段既有行为，调用点注释声明）；reportPlay 加 isPlaceholderData 守卫；open 打点不设门（导航事实+服务端 assetId+当日去重）。
+- **到底提示守卫（P3.1）**：StreamCards endHint 与 cos 页脚「· 到底了」加 !isPlaceholderData——换 seed 占位窗口不闪「到底了」。
+- **审查与验收**：reviewer 首轮需返工（P1 UpNextList 丢查询串/P2 打点错账/P3.1 到底闪现/P3.3 模板双写）→ 续聊原 executor 返工 → 二轮全项通过（含 React Query v5 hasNextPage 源码级推演：占位窗口哨兵自动卸载无混拼入口）；主会话浏览器 DOM 验收 18462 隔离虚构实例 14 步全过——底衬 .content scrollTop 进出详情精确保留（538.70±0）、叠加层独立滚动（Z=485.2）不传染、cos/hot 两链查询串逐级保留+换批流按历史条目还原、占位窗口「到底了」抑制实测（0~518ms 无闪现）、真导航复位不受门误伤、首页网格顶沿 83.1 与 §4.5 基线零漂移；三命令绿（oxlint 16≤基线 17，stash 对比法核实）。文档：HANDOVER_UI.md §5 第 19 条+文头。证据 %TEMP%\qimeng-e1-evidence\（保留勿删）。留档：非 home 页进详情仍整页重建（范围外）；非 home 入口底衬隐发请求=叠加设计固有成本；P2 dwell 段占位窗口延后起算（<0.5s 且 <1s 段不上报，口径影响可忽略）。
+
+---
+
 ## docs: 前端维护审查+夜间双卷任务书重组（2026-09-07 夜 第一百一十三笔）
 
 执行 AI：GLM-5.3（主会话调度；审查/修复由执行子代理并发完成，四路审查+两路修复）
