@@ -11,6 +11,17 @@
 
 ---
 
+## build(web): E6 vitest 测试基建——ADR-0017 实施，lib 纯函数 39 测试锁定（2026-09-08 第一百一十九笔）
+
+执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 独立对抗审查含破坏性抽验，任务E-Web卷 E6）
+
+- **基建**：devDependency vitest ^5.0.0（npm latest，peer 官方覆盖 vite ^8.2.0）+ scripts.test="vitest run"（package.json 仅两处 diff）+ 独立 vitest.config.ts（node 环境，不碰 vite.config.ts 构建链）；CI web job 接入仍记待办（ADR-0017）。
+- **测试**：7 个 lib 纯函数模块 39 条全绿——sse 帧解析（跨 chunk/多帧/容错 8 条）、pagination 游标、format 档位与时钟（vi.setSystemTime 相对天数，时区无关）、album/history 分组（跨零点/过滤/剔无效）、search-mapping 两表 toStrictEqual 全表、route-keys 路径三边界；显式 import 不用 globals；sse 测试 vi.stubGlobal+动态 import 解决 api-client 顶层 localStorage 前提（isolate 隔离无泄漏）。行为锁定产出：formatBytes 1024²-1→KB 档怪癖、pagination 页长>limit 判到底等既有行为首次成文。
+- **审查**：reviewer 逐行比对断言与源码（反推 3 嫌疑点均系锁定真实行为）+ 破坏性抽验（改断言精确变红→sha256 恢复核验）+ lock peer/picomatch hoist 连带闭环。P3 覆盖面建议记档（readAssetNavState/subscribeSSE retry/401 停连/dateRangeFor 等后续补）。
+- **验收**：npm test 全绿 + tsc/oxlint（16≤17 新文件 0 告警）/build 41 entries。文档：HANDOVER_UI.md §5 第 24 条。证据 %TEMP%/qimeng-e6-evidence/（保留勿删）。
+
+---
+
 ## feat(web): E5 自研图片查看器+列表上下文批次导航+zoom 备忘（2026-09-08 第一百一十八笔）
 
 执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 两轮对抗审查/主会话浏览器验收 11 项，任务E-Web卷 E5=任务B §6 回补批）
