@@ -11,6 +11,18 @@
 
 ---
 
+## fix(app): D6 M4-3 整批自查 + GIF 动图停帧修复（2026-09-08 第一百三十二笔）
+
+执行 AI：GLM-5.3-Flash（主会话调度；executor 执行自查，任务D-Android卷 D6）
+
+- **自查结论**：7 块清单基本全绿（证据 %TEMP%\qimeng-d6-evidence\自查清单.md）——排版基准七层序（含 COS 作者卡）、原件直链（Content-Length==磁盘字节）、G1/G7/G8/G9/G6 抽查、已看完徽标+续播起点、❤️/❤ 变体单源（UI 快捷钮写 0x2764 0xfe0f，取色逐通道差 0）、cosWork 双证、队列链打点（TODO(M4-4)=0，open/play 会话去重，API viewCount==asset_daily_stats）、3d 隔离证据复引（after_contract.json 四项 PASS，废片 after.json 未引）。
+- **真 bug 修复（GIF 停第 0 帧）**：ZoomableOriginalImage Coil Target.onSuccess 补 `(drawable as? Animatable)?.start()`——旧版 load() 的 ImageViewTarget 自带动图 start，M4 重建换自定义 Target 后丢失；排版态舞台与全屏覆盖层共用此件一处修复两处生效；实测帧差 0→87.83（N-02.gif 渲染至第 2 帧）。
+- **重大发现（待拍板 #26，与 #24 同根并案）**：progress 上报 positionSeconds 同被 BigDecimalAdapter 序列化为字符串→服务端 400→**断点续播位置自 M4-3 起从未落库**（App 侧离开补报机制正确有 logcat，curl 字符串 400/数字 204 复现）。修复候选：a) 修生成模板+make sdk 治本 b) core:network wire 修补 interceptor 治标（~20 行）。
+- **口径注记**：dwell 缺席=已知 #24；ZoomImageView 无既有单测（清单原假设不实，双击/双指按代码语义+人工清单口径）；双击宿主态归属受 adb 注入时序限制如实注记；红系芯片取色改同底差分判定（半透明混色下 B>G，❤️==❤ 差 0+相对压制方向正确）。
+- **验收**：三连绿；修复后重装实机复验 GIF 帧渲染。
+
+---
+
 ## feat(web): F5 列表页入叠加组推广——相册页进详情保态+批次导航（2026-09-08 第一百三十一笔）
 
 执行 AI：GLM-5.3-Flash（主会话调度；F5 调研=researcher 子代理（memo 仓库外 web-overlay-rollout-memo.md）/executor 实施/reviewer 全项对抗审查含 E1 零回归专项/主会话浏览器走查，任务F-Web卷 F5=E1 遗留①）

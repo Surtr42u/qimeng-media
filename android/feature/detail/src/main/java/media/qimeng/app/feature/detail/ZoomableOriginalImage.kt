@@ -1,5 +1,6 @@
 package media.qimeng.app.feature.detail
 
+import android.graphics.drawable.Animatable
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -81,8 +82,12 @@ internal fun ZoomableOriginalImage(
                         // coil3 多平台 Image → Android Drawable（asDrawable 官方转换，
                         // Coil ImageViewTarget 同款；参数为 Resources 档）
                         override fun onSuccess(result: Image) {
+                            val drawable = result.asDrawable(context.resources)
                             // setImageDrawable 内部做智能分层 + resetZoom（搬运件行为）
-                            view.setImageDrawable(result.asDrawable(context.resources))
+                            view.setImageDrawable(drawable)
+                            // 旧版 Coil load() 的 ImageViewTarget 语义：动图（GIF）目标需显式
+                            // start()，否则 AnimatedImageDrawable 停在第 0 帧（M4-3 D6 自查发现）
+                            (drawable as? Animatable)?.start()
                         }
                     },
                 )
