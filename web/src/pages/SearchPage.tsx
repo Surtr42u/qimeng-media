@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 import { MediaCard } from '@/components/media/MediaCard'
 import { ChevronDownIcon } from '@/components/shell/icons'
-import { LoadMorePill } from '@/components/ui/load-more-pill'
 import { Pill } from '@/components/ui/pill'
+import { useAutoMore } from '@/hooks/use-auto-more'
 import {
   assetToCard,
   useAssetsInfinite,
@@ -134,8 +134,15 @@ export default function SearchPage() {
     return p
   }, [q, state])
 
-  const { data: pages, isLoading, isFetching, fetchNextPage, hasNextPage } = useAssetsInfinite(listParams, q !== '')
+  const { data: pages, isLoading, isFetchingNextPage, isPlaceholderData, fetchNextPage, hasNextPage } = useAssetsInfinite(listParams, q !== '')
   const items = useMemo(() => pages?.pages.flatMap((pg) => pg.items ?? []) ?? [], [pages])
+
+  // E3 无感加载哨兵：enabled 与原 pill 的 when 同口径（q==='' 不挂不拉）。
+  // onHit 双守卫：isFetchingNextPage 防重复拉页；isPlaceholderData 前瞻防混拼
+  // （useAssetsInfinite 未配 placeholderData 恒 false，守卫零成本）。
+  const sentinelRef = useAutoMore(q !== '' && hasNextPage, () => {
+    if (!isFetchingNextPage && !isPlaceholderData) void fetchNextPage()
+  })
 
   // 类型 tab 结构（综合无徽标照原型；徽标 = 该类型资产总数，与当前筛选无关）
   const typeTabs = useMemo(
@@ -229,12 +236,12 @@ export default function SearchPage() {
           <p className="grid-empty">没有匹配的内容，放宽一点筛选条件试试。</p>
         )}
       </div>
-      <LoadMorePill
-        when={q !== '' && hasNextPage}
-        fetching={isFetching}
-        count={items.length}
-        onNext={() => fetchNextPage()}
-      />
+      {/* E3 无感加载：拉下一页时底部占位；到底且非空时保留原 pill 的计数信息 */}
+      {isFetchingNextPage ? <p className="grid-empty">加载中…</p> : null}
+      {!hasNextPage && items.length > 0 ? (
+        <p className="grid-empty">共 {items.length} 项 · 到底了</p>
+      ) : null}
+      {q !== '' && hasNextPage && <div ref={sentinelRef} style={{ height: 1 }} aria-hidden="true" />}
     </div>
   )
 }

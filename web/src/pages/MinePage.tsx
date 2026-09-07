@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router'
 import type { HistoryItem } from '@/api/generated'
 import { MediaCard } from '@/components/media/MediaCard'
 import { SearchIcon } from '@/components/shell/icons'
-import { LoadMorePill } from '@/components/ui/load-more-pill'
+import { useAutoMore } from '@/hooks/use-auto-more'
 import { assetToCard, useAssetsInfinite } from '@/hooks/use-assets'
 import { useAuthors, useToggleFollow } from '@/hooks/use-authors'
 import { useHistoryInfinite } from '@/hooks/use-history'
@@ -67,6 +67,17 @@ export default function MinePage() {
     () => histQuery.data?.pages.flatMap((p) => p.items ?? []) ?? [],
     [histQuery.data],
   )
+
+  // E3 无感加载哨兵 ×2（收藏/历史两 pane 各自，对齐首页 use-auto-more 语义：
+  // 触底提前 6 项拉下一页）。onHit 双守卫：isFetchingNextPage 防重复拉页；
+  // isPlaceholderData 前瞻防混拼（两 hook 均未配 placeholderData 恒 false）。
+  // pane 切换走 hidden 属性——display:none 下 IO 恒不相交，隐藏 pane 不会误拉。
+  const favSentinelRef = useAutoMore(favQuery.hasNextPage, () => {
+    if (!favQuery.isFetchingNextPage && !favQuery.isPlaceholderData) void favQuery.fetchNextPage()
+  })
+  const histSentinelRef = useAutoMore(histQuery.hasNextPage, () => {
+    if (!histQuery.isFetchingNextPage && !histQuery.isPlaceholderData) void histQuery.fetchNextPage()
+  })
 
   // 仅显示已关注（用户拍板语义：未关注作者在作者管理页处理）
   const followedAuthors = useMemo(() => authors.filter((a) => a.followed), [authors])
@@ -152,12 +163,12 @@ export default function MinePage() {
             <p className="grid-empty">暂无收藏内容</p>
           ) : null}
         </div>
-        <LoadMorePill
-          when={favQuery.hasNextPage}
-          fetching={favQuery.isFetching}
-          count={favItems.length}
-          onNext={() => favQuery.fetchNextPage()}
-        />
+        {/* E3 无感加载：拉下一页时底部占位；到底且非空时保留原 pill 的计数信息 */}
+        {favQuery.isFetchingNextPage ? <p className="grid-empty">加载中…</p> : null}
+        {!favQuery.hasNextPage && favItems.length > 0 ? (
+          <p className="grid-empty">共 {favItems.length} 项 · 到底了</p>
+        ) : null}
+        {favQuery.hasNextPage && <div ref={favSentinelRef} style={{ height: 1 }} aria-hidden="true" />}
       </div>
       <div className="m-pane" id="mpane-history" hidden={tab !== 'history'}>
         <div className="hist-toolbar">
@@ -196,12 +207,12 @@ export default function MinePage() {
         {histGroups.length === 0 && !histQuery.isFetching ? (
           <p className="grid-empty">{query.trim() ? '没有匹配的历史记录' : '暂无浏览记录'}</p>
         ) : null}
-        <LoadMorePill
-          when={histQuery.hasNextPage}
-          fetching={histQuery.isFetching}
-          count={histItems.length}
-          onNext={() => histQuery.fetchNextPage()}
-        />
+        {/* E3 无感加载：拉下一页时底部占位；到底且非空时保留原 pill 的计数信息 */}
+        {histQuery.isFetchingNextPage ? <p className="grid-empty">加载中…</p> : null}
+        {!histQuery.hasNextPage && histItems.length > 0 ? (
+          <p className="grid-empty">共 {histItems.length} 项 · 到底了</p>
+        ) : null}
+        {histQuery.hasNextPage && <div ref={histSentinelRef} style={{ height: 1 }} aria-hidden="true" />}
       </div>
     </div>
   )
