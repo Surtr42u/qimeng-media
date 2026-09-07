@@ -11,6 +11,18 @@
 
 ---
 
+## fix(web): F1 集合页深链白屏修复 + 全局 ErrorBoundary 兜底（2026-09-08 第一百二十三笔）
+
+执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 全新上下文对抗审查 12 项全过/主会话浏览器 4 剧本走查，任务F-Web卷 F1=待拍板 #17）
+
+- **病根**：`router.tsx` 路由表只注册 `collection/:kind/:name` 路径形态，查询串深链 `/app/collection?author=x` 的裸 pathname 在 React Router v8 数据路由下 matches 为空 → **整树渲染 null 白屏**（matchRoutes 探针实证；E2 基线已复现=存量缺陷非回归）。任务书两疑点排除：CollectionPage 渲染期 `prevAuthorId` setState 非病根（白屏 URL 下组件不挂载，且系 React 官方 adjust-state-in-render 模式，未改动）；displayName→id 解析链无失败路径。
+- **修法**：`route-keys.ts` 新增 COLLECTION_PATTERN/collectionPath（generatePath 编码单源，禁调用方预编码防双跳，+2 单测）；新 `CollectionDeepLink.tsx` 归一组件（?author= 优先于 ?tag=、`<Navigate replace>` 不加历史、双缺省回首页）；router 注册裸 collection 路由；CollectionPage 零改动。
+- **全局 ErrorBoundary**：新 `AppErrorBoundary.tsx`（class 边界）挂 `main.tsx` 根（QueryClientProvider 内、RouterProvider 外）——兜底页全 `--qm-*` token 零硬编码色、中文文案、「重试」清错误重挂 +「返回首页」整页刷新不依赖 router；componentDidCatch 补 console 记录。P3 记账：inline 字号字面量后续收敛（tokens.css 无字号档位）。
+- **审查**：reviewer 逐项对抗审查 12 项全过——病根 matchRoutes 独立复现一致、Navigate 无循环重定向、无编码双跳、LoginGate/dev-login 交互不破坏、ErrorBoundary 挂载位置能接住路由树内异常、样式逐 token 核对、零越界（仅 6 文件全在 web/src）、四命令独立重跑输出与声称一致。
+- **验收**：tsc 0 错/oxlint 16≤17（新文件 0 告警）/build ✅ + npm test **41 通过**（39 存量+2 新增）+ 主会话浏览器 18463 实测：`?author=测试作者二` → 归一路径正常渲染 2 文件+筛选胶囊、`?tag=深链测试`（API 造数）→ 1 文件、`?author=不存在` → 空态「该作者下暂无内容。」不白屏、数据页→作者行→集合站内导航回归、裸 `/app/collection` 回首页。存疑记账：同传优先级/未登录深链丢查询串（AuthGate 既有）见 HANDOVER_UI §5 第 25 条。证据 %TEMP%\qimeng-f1-evidence\（保留勿删）。
+
+---
+
 ## feat(app): D2 视频两级全屏 + 退出恢复竖屏（2026-09-08 第一百二十二笔）
 
 执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 全新上下文对抗审查（含独立强制重跑测试），任务D-Android卷 D2）

@@ -15,6 +15,21 @@ export const COLLECTION_TAG = 'tag'
 export const COLLECTION_AUTHOR = 'author'
 
 /**
+ * 集合子页路由模板（router.tsx /app 下 collection/:kind/:name 段同形；与
+ * ASSET_DETAIL_PATTERN 同例——模板串全库仅此一处，新增引用一律走 collectionPath）。
+ */
+export const COLLECTION_PATTERN = '/app/collection/:kind/:name'
+
+/**
+ * 集合子页路由（kind 传 COLLECTION_TAG/COLLECTION_AUTHOR 常量，name=标签名或
+ * 作者显示名）。name 由 generatePath 内部 percent-encode（中文/空格/斜杠安全，
+ * useParams 读回自动解码），调用方禁止自行 encodeURIComponent 以免双重编码。
+ */
+export function collectionPath(kind: string, name: string): string {
+  return generatePath(COLLECTION_PATTERN, { kind, name })
+}
+
+/**
  * 资产详情路由匹配模式（router.tsx 叠加组子路由段、assetDetail() 派生与
  * isAssetDetailPath 判定的单一来源——模板串全库仅此一处）。
  */
