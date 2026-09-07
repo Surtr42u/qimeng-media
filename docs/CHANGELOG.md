@@ -11,6 +11,17 @@
 
 ---
 
+## fix(web): E2 首页加载/刷新过渡——榜单流 keepPreviousData（2026-09-08 第一百一十五笔）
+
+执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 源码级对抗审查/主会话浏览器验收，任务E-Web卷 E2=C4）
+
+- **改动**：`useRankingsInfinite` 加 `placeholderData: keepPreviousData`（use-stats.ts）——hot tab 的 qm:refresh/reloadKey 换键与 period 换档期间旧榜保留、无闪空；HomePage HotRankTab 过时注释修正（isPlaceholderData 自本批起真实变 true，E1 预埋透传字段随之激活，到底提示守卫与推荐流同口径）。
+- **C4 其余项去向**：useRecommendations/useUpNextList 占位与 UpNextList 换一批旧卡保留=E1 已落地；MediaCard 入场渐入=B-2 批 qm-card-in stagger 本就存在；翻页流底部占位行现状已不跳版——本批无重复改动。
+- **审查**：reviewer 源码级核验（queryObserver.js:265-283 占位仅换键+pending 生效、isLoading 过渡期 false）；消费方全核（useRankingsInfinite 全仓仅 HotRankTab，RanksPage/DataPage 单页 useRankings 不受影响、queryKey 'paged' 段无碰撞）；SSE 相互作用排除（无 RANKINGS 根键失效路径，同键失效时占位本就不生效）；占位窗口哨兵竞态源码级排除（infiniteQueryBehavior 退化为重拉首页，无害）。
+- **验收**：三命令绿（oxlint 16≤基线 17，被改文件 0 告警）+ 主会话浏览器 18462 实测四场景（推荐刷新/hot 换档/hot 刷新/UpNextList 换一批）占位窗口旧内容保留零闪现；翻页场景数据集单页（17<60）不可触发，executor 代码级核实。P3 备忘：StreamCards 换键重取失败无 isError 分支（E2 前既有，另立批次收口）。文档：HANDOVER_UI.md §5 第 20 条。证据 %TEMP%\qimeng-e2-evidence\（保留勿删）。
+
+---
+
 ## fix(web): E1 首页详情返回保态——叠加路由+查询串保态+占位防闪+打点闸门（2026-09-08 第一百一十四笔）
 
 执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 两轮对抗审查/主会话浏览器 DOM 验收，任务E-Web卷 E1=C3）

@@ -4,7 +4,7 @@
  * §5（统计口径 = ViewEvent 事件流聚合；趋势 range 窗口表见 §5 固定窗口）。
  */
 
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { getApiV1Rankings, getApiV1StatsOverview, getApiV1StatsTrends } from '@/api/generated'
 import { unwrapSdkResult } from '@/lib/api-client'
 import { MAX_PAGE_SIZE } from '@/lib/constants'
@@ -60,6 +60,10 @@ export function useRankings(period: RankingPeriod | undefined, limit?: number, o
  *   （「重置分页重拉」语义；排行榜是确定性排序，不需要 seed 打散）。
  * - period 变化即 queryKey 换档，分页天然重置，无需额外 state。
  * - hasNextPage 判据同推荐流，口径单源在 lib/pagination.ts（lengthCursorNext）。
+ * - E2（首页加载/刷新过渡）：换键重取期间保留旧榜单占位（TanStack 官方
+ *   keepPreviousData 模式，与 use-assets.ts 推荐流同款）——qm:refresh 换
+ *   reloadKey 与 period 换档期间旧榜保留，消费方 isLoading 只在真首屏为 true，
+ *   不得整页闪「加载中…」。
  */
 export function useRankingsInfinite(
   period: RankingPeriod | undefined,
@@ -72,5 +76,6 @@ export function useRankingsInfinite(
       unwrapSdkResult(getApiV1Rankings({ query: { period, limit, offset: pageParam || undefined } })),
     initialPageParam: 0,
     getNextPageParam: lengthCursorNext(limit),
+    placeholderData: keepPreviousData,
   })
 }
