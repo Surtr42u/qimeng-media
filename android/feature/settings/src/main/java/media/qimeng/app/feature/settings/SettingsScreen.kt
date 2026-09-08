@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
@@ -30,6 +29,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import media.qimeng.app.core.model.DiskCacheQuota
 import media.qimeng.app.core.model.RecommendPreset
 import media.qimeng.app.core.ui.component.Dimens
+import media.qimeng.app.core.ui.component.QimengSegPill
 import media.qimeng.app.core.ui.component.formatBytesHumanReadable
 
 /** 我的页入口行文案（GUIDE_UI §我的页 + M4-2 既有入口 + M4-6 上传入口） */
@@ -275,10 +275,10 @@ private fun QuotaCard(
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 DiskCacheQuota.entries.forEach { quota ->
-                    FilterChip(
+                    QimengSegPill(
+                        text = quota.label,
                         selected = current == quota,
                         onClick = { onSelectQuota(quota) },
-                        label = { Text(text = quota.label) },
                     )
                 }
             }

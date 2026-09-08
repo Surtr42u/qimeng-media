@@ -25,7 +25,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -460,11 +459,12 @@ private fun AddTagDialog(onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
         onDismissRequest = onDismiss,
         title = { Text(text = stringResource(R.string.ui_filter_add_tag_dialog_title)) },
         text = {
-            OutlinedTextField(
+            // core:ui 自家消费胶囊输入框（G6）；label 走 placeholder 语义，对齐 Web
+            QimengCapsuleTextField(
                 value = name,
                 onValueChange = { name = it },
                 singleLine = true,
-                label = { Text(text = stringResource(R.string.ui_filter_add_tag_input_hint)) },
+                placeholder = stringResource(R.string.ui_filter_add_tag_input_hint),
             )
         },
         confirmButton = {

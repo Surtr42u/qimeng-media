@@ -26,12 +26,10 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -52,6 +50,8 @@ import media.qimeng.app.core.model.DirNode
 import media.qimeng.app.core.model.UploadItem
 import media.qimeng.app.core.model.UploadQueueEntry
 import media.qimeng.app.core.model.UploadStatus
+import media.qimeng.app.core.ui.component.QimengCapsuleTextField
+import media.qimeng.app.core.ui.component.QimengSegPill
 import media.qimeng.app.core.ui.component.QimengTopBar
 
 /**
@@ -131,10 +131,10 @@ fun UploadScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     state.libraries.forEach { library ->
-                        FilterChip(
+                        QimengSegPill(
+                            text = library.name,
                             selected = state.selectedLibrary?.id == library.id,
                             onClick = { viewModel.selectLibrary(library) },
-                            label = { Text(library.name) },
                         )
                     }
                 }
@@ -397,10 +397,11 @@ private fun CreateDirDialog(
         onDismissRequest = onDismiss,
         title = { Text("新建子目录") },
         text = {
-            OutlinedTextField(
+            // 胶囊输入框 label 走 placeholder 语义（G6：对齐 Web，组件不支持 label 浮动）
+            QimengCapsuleTextField(
                 value = name,
                 onValueChange = { name = it },
-                label = { Text("目录名") },
+                placeholder = "目录名",
                 singleLine = true,
             )
         },

@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -33,6 +32,7 @@ import java.util.Locale
 import media.qimeng.app.core.model.StatsRangeOption
 import media.qimeng.app.core.model.TrendPoint
 import media.qimeng.app.core.ui.component.Dimens
+import media.qimeng.app.core.ui.component.QimengSegPill
 import media.qimeng.app.core.ui.component.formatBytesHumanReadable
 
 /**
@@ -57,10 +57,10 @@ fun StatsScreen(
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 StatsRangeOption.entries.forEach { option ->
-                    FilterChip(
+                    QimengSegPill(
+                        text = option.label,
                         selected = state.selectedRange == option,
                         onClick = { viewModel.selectRange(option) },
-                        label = { Text(text = option.label) },
                     )
                 }
             }
