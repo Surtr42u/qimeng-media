@@ -24,6 +24,9 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.hilt.navigation.compose)
+    // BackHandler（I7 沉浸复刻：播放中按返回先退 chrome 浏览模式，GUIDE_UI L279）：
+    // activity-compose 已在版本目录白名单（feature/search 同款先例），非新增依赖
+    implementation(libs.androidx.activity.compose)
 
     // Media3（M4-3 3c，白名单 ADR-0014）：ExoPlayer 内核 + PlayerView（BiliPlayerView 桥接宿主）
     implementation(libs.androidx.media3.exoplayer)

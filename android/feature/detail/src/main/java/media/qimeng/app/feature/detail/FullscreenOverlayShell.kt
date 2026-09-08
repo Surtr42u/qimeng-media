@@ -22,10 +22,11 @@ import androidx.core.view.WindowInsetsControllerCompat
 
 /**
  * 全屏查看覆盖层共享外壳（D2 抽取）：**Dialog 独立窗口 + insets 隐显 + 黑底铺满 + 返回退出**
- * 骨架单源——图片（[ImageFullScreenOverlay]，D1）与视频（VideoFullScreenOverlay，D2 两级
- * 全屏）共用，禁止第三次复制粘贴该骨架。
+ * 骨架单源——任务I I7 起仅视频（VideoFullScreenOverlay，D2 两级全屏）使用（图片覆盖层
+ * ImageFullScreenOverlay.kt 随沉浸复刻退役：舞台本就全出血、单击切 chrome 成为主形态，
+ * 裁决记档见 ImageStage KDoc），骨架保留单源待视频专用化收拢。
  *
- * 选型依据沿用 D1 实测（详见 [ImageFullScreenOverlay] KDoc 与证据截图）：
+ * 选型依据沿用 D1 实测（D1 KDoc 已退役删除，结论留档于此）：
  * - **宿主树内 overlay 到不了真屏**：壳层 QimengNavHost 用 Scaffold padding 把内容钉在
  *   inset 收窄区内，且部分设备系统栏隐藏后 top inset 不归零，Box 覆盖层顶部永远差一条白条；
  * - **Dialog 开独立窗口**：usePlatformDefaultWidth=false 解除宽度钳制 + decorFitsSystemWindows
@@ -34,11 +35,11 @@ import androidx.core.view.WindowInsetsControllerCompat
  *   带回来，故本组件按详情页既有沉浸语义（BEHAVIOR_DEFAULT + hide/show systemBars）在窗口上
  *   隐藏、onDispose 恢复；Activity 窗的 SystemBarsImmersiveEffect 继续管排版态显隐，两窗
  *   各管焦点期显隐、不互相打架；
- * - **返回语义**：onDismissRequest=onDismiss（图片=关覆盖层；视频=逐级回退，由调用方裁决）；
+ * - **返回语义**：onDismissRequest=onDismiss（视频=逐级回退，由调用方状态机裁决）；
  *   dismissOnClickOutside=false——内容铺满窗口不存在「外部」。
  *
  * @param onDismiss 退出覆盖层（系统返回共用；内容件自管单击/手势退出）
- * @param content 覆盖层内容件（图片=ZoomableOriginalImage，视频=BiliPlayerView 桥接）
+ * @param content 覆盖层内容件（视频=BiliPlayerView 桥接）
  */
 @Composable
 internal fun FullscreenOverlayShell(

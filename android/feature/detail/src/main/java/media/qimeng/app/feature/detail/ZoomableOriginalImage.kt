@@ -20,8 +20,9 @@ import media.qimeng.app.core.model.AssetDetail
 import media.qimeng.app.feature.detail.image.ZoomImageView
 
 /**
- * ZoomImageView 桥接 + Coil 原图加载的公共内容件（D1 自 ImageStage 抽出）：排版态图片舞台与
- * 图片全屏查看覆盖层（[ImageFullScreenOverlay]）两处复用同一手势/加载链，杜绝复制分叉。
+ * ZoomImageView 桥接 + Coil 原图加载的公共内容件（D1 自 ImageStage 抽出）：图片舞台
+ * 唯一内容件（旧第二消费者 ImageFullScreenOverlay.kt 随任务I I7 沉浸复刻退役——单击切
+ * chrome 成为主形态，裁决记档见 ImageStage KDoc；本件手势/加载链零变化）。
  *
  * 口径与原 ImageStage 实现逐字一致（抽取零行为变化）：
  * - **原图不降采样（口径②）**：请求用 [AssetDetail.origUrl]（签名直链，「查看永远发原件」）
@@ -30,10 +31,9 @@ import media.qimeng.app.feature.detail.image.ZoomImageView
  * - **手势语义（冻结）**：单击 → [onSingleTap]；单指横滑 → [onSwipe](±1)；双指缩放/双击
  *   toggle 全在 ZoomImageView 内部（搬运件行为，不因宿主场景分叉）。
  *
- * 排版态（[ImageStage]）：单击=打开全屏覆盖层、横滑=兄弟切换（D1 起）；
- * 全屏态（[ImageFullScreenOverlay]）：单击=退出覆盖层、横滑=兄弟切换直传同一回调链。
+ * 图片舞台（[ImageStage]）：单击=切换沉浸 chrome、横滑=兄弟切换（I7 起）。
  *
- * @param onSingleTap 单击回调（语义由宿主场景定：排版态开全屏 / 全屏态退出）
+ * @param onSingleTap 单击回调（语义由宿主场景定：舞台态切沉浸 chrome）
  * @param onSwipe 左右滑切换相邻资产（方向同 ZoomImageView.onSwipe：+1=左滑下一张）
  */
 @Composable

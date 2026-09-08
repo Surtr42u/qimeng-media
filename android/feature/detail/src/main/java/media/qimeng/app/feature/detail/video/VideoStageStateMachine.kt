@@ -61,4 +61,13 @@ internal class VideoStageStateMachine(initialMode: VideoStageMode = VideoStageMo
     fun onPlaybackStarted() {
         if (mode == VideoStageMode.ENDED) mode = VideoStageMode.PLAYING
     }
+
+    /**
+     * 退回海报态（任务I I7 chrome 浏览模式：GUIDE_UI §详情页 L168/L279「播放中按返回先退
+     * 到 chrome 浏览模式」——海报态 + chrome 显示）。PLAYING/ENDED → POSTER；已 POSTER 幂等
+     * no-op。播放器的暂停与位置保留由执行层负责（状态机只管形态迁移；同源续播不重装源）。
+     */
+    fun exitToPoster() {
+        if (mode != VideoStageMode.POSTER) mode = VideoStageMode.POSTER
+    }
 }

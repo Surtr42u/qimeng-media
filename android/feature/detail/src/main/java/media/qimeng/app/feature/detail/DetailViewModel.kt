@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import media.qimeng.app.core.data.repository.AuthorRepository
 import media.qimeng.app.core.data.repository.DetailRepository
+import media.qimeng.app.core.data.repository.LikeMutationTracker
 import media.qimeng.app.core.data.repository.MediaBatchIndex
 import media.qimeng.app.core.data.repository.MoveConflictException
 import media.qimeng.app.core.model.AssetDetail
@@ -100,6 +101,10 @@ class DetailViewModel @Inject constructor(
     private val authorRepository: AuthorRepository,
     private val batchIndex: MediaBatchIndex,
     private val imageDimCache: DetailImageDimCache,
+    // 本地点赞变更指纹（任务I I7 接线，I1 批交付的消费端基座）：点赞成功处上报，
+    // 首页 ON_RESUME 对比指纹变化重拉推荐/排行榜（GUIDE_UI §下拉刷新 L89「点赞后返回
+    // 自动重排」；SSE 无 like 事件，本地感知是协议内唯一路径——tracker KDoc 口径）
+    private val likeMutationTracker: LikeMutationTracker,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
@@ -387,7 +392,8 @@ class DetailViewModel @Inject constructor(
 
     // ---------- 互动行 ----------
 
-    /** 点赞 toggle：成功后用服务端权威值（LikeState）回填，不做本地猜测 */
+    /** 点赞 toggle：成功后用服务端权威值（LikeState）回填，不做本地猜测；成功处上报本地点赞
+     *  变更指纹（I7，LikeMutationTracker——首页返回重拉的感知源，失败不上报） */
     fun toggleLike() {
         val id = assetId ?: return
         if (_uiState.value.likePending) return
@@ -395,6 +401,7 @@ class DetailViewModel @Inject constructor(
         viewModelScope.launch {
             runCatching { detailRepository.toggleLike(id) }
                 .onSuccess { result ->
+                    likeMutationTracker.onLikeMutated()
                     _uiState.value = _uiState.value.copy(
                         likePending = false,
                         asset = _uiState.value.asset?.copy(
