@@ -11,6 +11,23 @@
 
 ---
 
+## feat(app): 任务I I3 数据统计复刻——三档回改+数字卡6指标联动+趋势marker交互+分类型趋势/分布详情页（协议缺口#31冻结项不渲染）（2026-09-09 第一百五十二笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理，任务I-Android页面复刻卷 I3 数据统计批；独占 feature:stats，依据 REPLICATION_GAPS §3.3 八项裁定逐条清偿）
+
+- **时间范围三档回改（裁定1，R10）**：core:model StatsRangeOption 删 90 天档回 GUIDE_UI 三档 7天/30天/全部（apiRange 映射 7d/day/all 保留「day=近30天逐日」陷阱注释；新增 detailTitleSuffix 后缀「近7天/近30天/全部」供详情页标题），全仓 grep 无其他 90 天档引用；StatsRangeTest 五用例锁定（含「90 天档废止」防回加锁）。
+- **数字卡 6 指标改造+全局联动（裁定2）**：StatsScreen OverviewCards 换 GUIDE_UI L209-211 指标集——第一行总浏览次数/总播放次数/总浏览时长=**/stats/trends 桶求和随档位联动**（TrendPoint 含 playCount/seconds 字段，窗口值与趋势同请求同源同防重，无第二覆盖窗口）；第二行总文件数/总占用空间=overview 静态；「平均浏览次数」=协议缺口 #31a 冻结显示「—」占位保 6 格形态；旧「图片/视频/今日浏览」Web 残留格删除。时长格式化 formatDurationSeconds 四档（秒/分/小时/天，纯函数单测）。
+- **趋势交互（裁定3）**：QimengTrendLineChart 增加 markerController 参数位，统计页趋势卡实装 Vico DefaultCartesianMarker（rememberTrendValueMarker：MarkerCorneredShape 圆角描边气泡+系列色圆点 indicator+自定义 ValueFormatter）+ rememberToggleOnTap 点击显隐，点击数据点高亮出数值气泡（官方 2.5.1 API 当场核验，非自绘）。
+- **趋势卡进详情（裁定4）**：趋势卡整体可点+右上「分类型趋势 ›」入口，携当前档位进 StatsDetail。
+- **分布统计小入口卡（裁定5）**：纯文字卡「类型与来源的库存构成/查看详情 ›」进分布详情（来源维度 #31b 冻结，详情只做类型库存）。
+- **统计详情页 StatsDetail（裁定6，新路由 stats_detail/{mode}/{range}，路由契约单源 feature:stats）**：「类型浏览趋势」卡=图片/视频/动图多系列（复用 QimengTrendLineChart series+seriesColors，mediaType 单值三次并发调用拼系列）+调用点自组图例行（H3 记档轻方案，未扩封装）+气泡含系列名（Point.color 反查）；「类型分布对比」卡=overview 类型库存 QimengRankCard 形态+相对第一名进度条+前三名排名主题色高亮；空态「暂无数据」。常看文件/常看作者标签两模式（#31c/d 冻结）不进 StatsDetailMode 枚举不渲染入口（交付报告记档）。
+- **跳转链（裁定7，协议内最小实现）**：Search 路由加 q 可选参数（defaultValue 空串=无词入口态行为不变）+SearchScreen 加 initialQuery 默认参透传（进页即 submit，GUIDE v1.15 携词语义；feature:search 内部逻辑未动）——唯一调用方常看标签卡属 #31d 冻结，管道先就位记档；类型分布行=聚合值无单文件落点、趋势桶条目同为聚合，协议内无可达成跳转目标，条目不设点击（记档简化）。
+- **【边界披露需共享窗口认账】core:data 加参**：裁定6 要求的 mediaType 参数客户端唯一出口=StatsRepository.trends(range)，原签名无 mediaType 而 core:data 不在 I3 授权清单；已两次上报（RespondToCoordinator+AskUserQuestion）未获回复，按裁定6 明示要求以最小面落地——接口加**默认方法双参重载**（单参保留为抽象，既有实现/调用零感知，I1 并行批 LikeMutationTracker 为不同文件零冲突），SdkStatsRepository 覆写实传 MediaType 枚举；接口 KDoc 与交付报告双记档，如裁决另议回退仅动 StatsRepositories.kt/SdkStatsRepositories.kt 两处。
+- **门禁三连绿**：:feature:stats:testDebugUnitTest 21 tests（StatsViewModel 8 含三档映射/窗口求和/联动/防重扩展、StatsDetailViewModel 7 含路由解析/多系列拼装/分布派生/空态、StatsFormatters 6）0 failures；:feature:search:testDebugUnitTest 12 tests（initialQuery 签名改动回归）0 failures；:core:data/:core:model（StatsRangeTest 5）全绿；:app:assembleDebug BUILD SUCCESSFUL；lintDebug BUILD SUCCESSFUL 0 errors。模拟器 18461 虚构库走查：三档切换联动（logcat range=7d→day→all）/数字卡 6 格/趋势点气泡「0次」/详情页多系列+图例+「图片 11次」系列名气泡/分布对比卡进度条/冻结项无死入口，证据 %TEMP%\qimeng-i3-evidence\（WALKTHROUGH-RECORD.md+9 截图+3 dump+请求日志）。
+
+---
+
+
 ## feat(app): 任务I I1 首页复刻——刷新清空三tab缓存+点赞返回重排指纹（LikeMutationTracker，detail侧接线归I7）+胶囊按下缩放（2026-09-09 第一百五十笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理，任务I-Android页面复刻卷 I1 批；依据=docs/REPLICATION_GAPS.md §3.1 三条差距逐条清偿，清单外不做）

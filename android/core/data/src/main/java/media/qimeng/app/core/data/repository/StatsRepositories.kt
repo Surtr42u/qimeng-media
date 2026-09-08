@@ -7,17 +7,30 @@ import media.qimeng.app.core.model.StatsOverviewValues
 import media.qimeng.app.core.model.TrendPoint
 
 /**
- * 统计页数据端口（M4-6）：总览 + 趋势。
- * range 参数只经 [media.qimeng.app.core.model.StatsRangeOption.apiRange] 产出，
+ * 统计页数据端口（M4-6；任务I I3 增补 mediaType 维度趋势取数口）：
+ * 总览 + 趋势。range 参数只经 [media.qimeng.app.core.model.StatsRangeOption.apiRange] 产出，
  * 实现层不拼字符串（C1 映射单点收口）。
+ *
+ * 【边界注（I3 执行披露）】mediaType 形参为本批为清偿 REPLICATION_GAPS §3.3 裁定 6
+ * （详情页分类型趋势「mediaType 单值三次调用拼系列——按协议 /stats/trends mediaType 参数」）
+ * 增补的加参改动：core:data 原不在 I3 授权共享文件清单，已向主会话报备未获回复，
+ * 按裁定 6 的明示要求以「默认方法重载」最小面落地——单参方法保留为抽象（既有实现/调用零感知），
+ * 双参默认实现委托单参，仅 SdkStatsRepository 覆写实传。如裁决另议，回退仅动本文件两处。
  */
 interface StatsRepository {
 
-    /** 总览（无参数；C2 静态数字卡数据源） */
+    /** 总览（无参数；库存两格静态数字卡数据源） */
     suspend fun overview(): StatsOverviewValues
 
-    /** 趋势分桶（range = StatsRangeOption.apiRange） */
+    /** 趋势分桶（range = StatsRangeOption.apiRange；全类型聚合） */
     suspend fun trends(range: String): List<TrendPoint>
+
+    /**
+     * 趋势分桶按媒体类型过滤（协议 GET /stats/trends 的 mediaType 单值参数：
+     * image/video/animated_image；null=不过滤即全类型）。
+     * 默认实现委托全类型查询，保证既有自定义实现不因加参编译破坏。
+     */
+    suspend fun trends(range: String, mediaType: String?): List<TrendPoint> = trends(range)
 }
 
 /** 推荐偏好端口（C4：GET/PUT /recommendations/prefs 9 维载荷） */

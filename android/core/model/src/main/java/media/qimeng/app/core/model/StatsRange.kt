@@ -1,19 +1,19 @@
 package media.qimeng.app.core.model
 
 /**
- * 统计页时段档位（C1 用户拍板：四档对齐 Web DataPage）。
+ * 统计页时段档位（任务I I3 回改：2026-09-08「完全复刻」拍板覆盖旧 C1 四档，
+ * 回 GUIDE_UI §数据统计页三档 7天/30天/全部；90 天档为任务G 对齐 Web 产物，废止）。
  * UI 文案档位与 `/stats/trends` 的 range 参数解耦——映射收敛在 [apiRange]，
  * 统计页 ViewModel 只认本枚举，禁止直接摸 range 字符串。
  */
 enum class StatsRangeOption(val label: String) {
     SEVEN_DAYS("7天"),
     THIRTY_DAYS("30天"),
-    NINETY_DAYS("90天"),
     ALL("全部"),
 }
 
 /**
- * 档位 → `/stats/trends` range 参数映射（openapi 8 档枚举的 4 档子集）。
+ * 档位 → `/stats/trends` range 参数映射（openapi 8 档枚举的 3 档子集）。
  *
  * 【命名陷阱】30 天档传 `day` 而非直觉的 "30d"（协议里没有 30d）：
  * 服务端口径 range=day = **近 30 天逐日** 30 个桶（DOMAIN_RULES §5 窗口表），
@@ -23,9 +23,19 @@ val StatsRangeOption.apiRange: String
     get() = when (this) {
         StatsRangeOption.SEVEN_DAYS -> "7d"
         StatsRangeOption.THIRTY_DAYS -> "day"
-        StatsRangeOption.NINETY_DAYS -> "90d"
         StatsRangeOption.ALL -> "all"
     }
 
 /** 统计页默认档位（进页先看近 7 天，与 Web 数据页默认一致） */
 val DEFAULT_STATS_RANGE: StatsRangeOption = StatsRangeOption.SEVEN_DAYS
+
+/**
+ * 统计详情页标题的时间范围后缀（GUIDE_UI §统计详情页：动态标题含
+ * 「· 近7天/近30天/全部」——与主页胶囊文案（7天/30天/全部）不同字，勿混用）。
+ */
+val StatsRangeOption.detailTitleSuffix: String
+    get() = when (this) {
+        StatsRangeOption.SEVEN_DAYS -> "近7天"
+        StatsRangeOption.THIRTY_DAYS -> "近30天"
+        StatsRangeOption.ALL -> "全部"
+    }

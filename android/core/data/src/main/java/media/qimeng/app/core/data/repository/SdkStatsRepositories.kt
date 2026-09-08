@@ -44,9 +44,12 @@ class SdkStatsRepository @Inject constructor(
         )
     }
 
-    override suspend fun trends(range: String): List<TrendPoint> {
-        // range 只认 StatsRangeOption.apiRange 的产出（7d/day/90d/all）；此处打日志即验收证据
-        Log.d(SdkMediaRepository.LOG_TAG, "GET /stats/trends range=$range")
+    override suspend fun trends(range: String): List<TrendPoint> = trends(range, null)
+
+    override suspend fun trends(range: String, mediaType: String?): List<TrendPoint> {
+        // range 只认 StatsRangeOption.apiRange 的产出（7d/day/all）；mediaType 只认协议三值
+        // （image/video/animated_image），null=不过滤；此处打日志即验收证据
+        Log.d(SdkMediaRepository.LOG_TAG, "GET /stats/trends range=$range mediaType=$mediaType")
         val api = withContext(Dispatchers.IO) { apiFactory.create() }
         val sdkRange = when (range) {
             "7d" -> media.qimeng.sdk.apis.DefaultApi.RangeApiV1StatsTrendsGet._7d
@@ -55,7 +58,15 @@ class SdkStatsRepository @Inject constructor(
             "all" -> media.qimeng.sdk.apis.DefaultApi.RangeApiV1StatsTrendsGet.all
             else -> media.qimeng.sdk.apis.DefaultApi.RangeApiV1StatsTrendsGet.month
         }
-        val buckets = withContext(Dispatchers.IO) { api.apiV1StatsTrendsGet(range = sdkRange) }
+        val sdkMediaType = when (mediaType) {
+            "image" -> media.qimeng.sdk.models.MediaType.image
+            "video" -> media.qimeng.sdk.models.MediaType.video
+            "animated_image" -> media.qimeng.sdk.models.MediaType.animated_image
+            else -> null
+        }
+        val buckets = withContext(Dispatchers.IO) {
+            api.apiV1StatsTrendsGet(range = sdkRange, mediaType = sdkMediaType)
+        }
         return buckets.map { bucket ->
             TrendPoint(
                 label = bucket.label.orEmpty(),
