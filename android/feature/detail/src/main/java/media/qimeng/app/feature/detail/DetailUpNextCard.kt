@@ -24,6 +24,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import media.qimeng.app.core.model.MediaAsset
 import media.qimeng.app.core.model.MediaKind
+import media.qimeng.app.core.ui.component.QimengRankCard
 import media.qimeng.app.core.ui.component.QimengThumbnail
 import media.qimeng.app.core.ui.component.THUMBNAIL_ASPECT_RATIO
 import media.qimeng.app.core.ui.component.formatDurationBadge
@@ -48,6 +49,8 @@ private const val UPNEXT_SUBTITLE_MAX_LINES = 1
  * 标题 +「换一批」+ 行式列表（16:9 小缩略图 + 视频时长角标 +
  * 两行文本：上行=标题、下行=作者[0]??出处）。点击行 → 壳层 onOpenAsset（VM 已换批次清单）。
  * 空态「暂无推荐」。
+ * G1a 卡片化：仅换外壳——内部结构（标题行/换一批钮/缩略图行）不动，套 [QimengRankCard]
+ * 描边卡盒（Web .detail-side 推荐栏复用 .rank-card 卡盒同语义），卡内边距由卡盒统一施加。
  */
 @Composable
 internal fun DetailUpNextCard(
@@ -65,27 +68,29 @@ internal fun DetailUpNextCard(
                 vertical = SECTION_SPACING,
             ),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = stringResource(R.string.detail_upnext_title),
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.weight(1f),
-            )
-            TextButton(enabled = !upNextLoading, onClick = onReshuffle) {
-                Text(text = stringResource(R.string.detail_upnext_shuffle))
+        QimengRankCard(modifier = Modifier.fillMaxWidth()) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = stringResource(R.string.detail_upnext_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(enabled = !upNextLoading, onClick = onReshuffle) {
+                    Text(text = stringResource(R.string.detail_upnext_shuffle))
+                }
             }
-        }
-        if (upNext.isEmpty()) {
-            Text(
-                text = stringResource(R.string.detail_upnext_empty),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(vertical = QimengDimens.SpaceM),
-            )
-        } else {
-            val batchIds = upNext.map { it.id }
-            upNext.forEach { item ->
-                UpNextRow(item = item, onClick = { onOpenAsset(item.id, batchIds) })
+            if (upNext.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.detail_upnext_empty),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = QimengDimens.SpaceM),
+                )
+            } else {
+                val batchIds = upNext.map { it.id }
+                upNext.forEach { item ->
+                    UpNextRow(item = item, onClick = { onOpenAsset(item.id, batchIds) })
+                }
             }
         }
     }
