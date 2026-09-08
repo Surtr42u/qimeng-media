@@ -17,12 +17,15 @@ import media.qimeng.app.core.data.repository.AuthorRepository
 import media.qimeng.app.core.data.repository.CoilCacheManager
 import media.qimeng.app.core.data.repository.DiskCachePrefsRepository
 import media.qimeng.app.core.data.repository.RecommendPrefsRepository
+import media.qimeng.app.core.data.repository.StatsRepository
 import media.qimeng.app.core.data.repository.SystemInfoRepository
 import media.qimeng.app.core.model.AuthorSummary
 import media.qimeng.app.core.model.AuthorType
 import media.qimeng.app.core.model.DiskCacheQuota
 import media.qimeng.app.core.model.RecommendPrefsValues
 import media.qimeng.app.core.model.RecommendPreset
+import media.qimeng.app.core.model.StatsOverviewValues
+import media.qimeng.app.core.model.TrendPoint
 import media.qimeng.app.core.model.toPrefsValues
 import media.qimeng.app.core.testing.FakeAuthRepository
 import media.qimeng.app.core.testing.MainDispatcherRule
@@ -88,6 +91,18 @@ class SettingsViewModelTest {
         override suspend fun serverVersion(): String? = version
     }
 
+    /** 数量卡替身（I4）：overview 可编程抛出（读失败降级路径锁定）；trends 本页不消费 */
+    private class FakeStatsRepository(
+        private val overview: StatsOverviewValues?,
+    ) : StatsRepository {
+        override suspend fun overview(): StatsOverviewValues =
+            overview ?: throw RuntimeException("network down")
+
+        override suspend fun trends(range: String): List<TrendPoint> = emptyList()
+
+        override suspend fun trends(range: String, mediaType: String?): List<TrendPoint> = emptyList()
+    }
+
     private class FakeDiskCachePrefsRepository : DiskCachePrefsRepository {
         private val quotaFlow = MutableStateFlow(DiskCacheQuota.DEFAULT)
 
@@ -127,9 +142,13 @@ class SettingsViewModelTest {
         cachePrefs: DiskCachePrefsRepository = FakeDiskCachePrefsRepository(),
         cacheManager: CoilCacheManager = FakeCoilCacheManager(),
         authorRepo: FakeAuthorRepository? = null,
+        stats: StatsRepository = FakeStatsRepository(
+            StatsOverviewValues(totalFiles = 6135, imageCount = 5721, videoCount = 414, totalSizeBytes = 0L, todayViews = 0, totalViews = 0L),
+        ),
     ): SettingsViewModel = SettingsViewModel(
         authRepository = auth,
         authorRepository = authorRepo ?: FakeAuthorRepository(authors),
+        statsRepository = stats,
         prefsRepository = prefs,
         systemInfoRepository = FakeSystemInfoRepository(version),
         diskCachePrefsRepository = cachePrefs,
@@ -211,6 +230,32 @@ class SettingsViewModelTest {
         val noVersion = viewModel(version = null)
         advanceUntilIdle()
         assertNull(noVersion.uiState.value.serverVersion)
+    }
+
+    // ---------- I4 页首数量卡（GET /stats/overview imageCount/videoCount 纯计数） ----------
+
+    @Test
+    fun `init 拉取库存数量 图片视频两卡计数落地`() = runTest {
+        // 默认 fake 数据取实录 mine.txt 锚点（图片 5721 / 视频 414）
+        val settingsViewModel = viewModel()
+        advanceUntilIdle()
+        assertEquals(5721, settingsViewModel.uiState.value.imageCount)
+        assertEquals(414, settingsViewModel.uiState.value.videoCount)
+        // 纯计数装饰卡失败不构成操作反馈：成功路径无横幅
+        assertNull(settingsViewModel.uiState.value.writeError)
+    }
+
+    @Test
+    fun `数量卡读失败降级置空不崩不弹横幅`() = runTest {
+        val settingsViewModel = viewModel(stats = FakeStatsRepository(overview = null))
+        advanceUntilIdle()
+        // null → UI 数字位显「—」（降级），writeError 不承载（与操作反馈族不同口径）
+        assertNull(settingsViewModel.uiState.value.imageCount)
+        assertNull(settingsViewModel.uiState.value.videoCount)
+        assertNull(settingsViewModel.uiState.value.writeError)
+        // 其余初始化链路不受数量卡读失败牵连
+        assertEquals(3, settingsViewModel.uiState.value.authorOverview?.totalAuthors)
+        assertEquals("v0.9.0", settingsViewModel.uiState.value.serverVersion)
     }
 
     // ---------- P2-3 写失败反馈 + 读失败反馈（原实现静默吞错的回归锁定） ----------

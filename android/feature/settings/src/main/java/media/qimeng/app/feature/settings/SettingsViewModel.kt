@@ -16,6 +16,7 @@ import media.qimeng.app.core.data.repository.AuthorRepository
 import media.qimeng.app.core.data.repository.CoilCacheManager
 import media.qimeng.app.core.data.repository.DiskCachePrefsRepository
 import media.qimeng.app.core.data.repository.RecommendPrefsRepository
+import media.qimeng.app.core.data.repository.StatsRepository
 import media.qimeng.app.core.data.repository.SystemInfoRepository
 import media.qimeng.app.core.model.AuthorOverview
 import media.qimeng.app.core.model.DiskCacheQuota
@@ -25,9 +26,16 @@ import media.qimeng.app.core.model.matchPreset
 import media.qimeng.app.core.model.toAuthorOverview
 import media.qimeng.app.core.model.toPrefsValues
 
-/** 我的页 UI 状态（C4 资料/推荐偏好 + C5 缓存 + C6 版本 + G2 作者总览卡） */
+/** 我的页 UI 状态（C4 资料/推荐偏好 + C5 缓存 + C6 版本 + G2 作者总览卡 + I4 数量卡） */
 data class MineUiState(
     val serverUrl: String = "",
+    /**
+     * 页首数量卡（I4，GUIDE_UI §我的页 L252：图片/视频两卡；数据源 GET /stats/overview）。
+     * null = 未就绪或读失败（数字卡显示「—」降级，不崩、不弹横幅——纯计数装饰卡，
+     * 失败不构成需要用户介入的操作反馈，与 writeError 操作反馈族不同口径）。
+     */
+    val imageCount: Int? = null,
+    val videoCount: Int? = null,
     /**
      * 作者总览卡数据（G2：Web DataPage 作者总览形态——「N 位作者 · 已关注 M」+ 文件数 Top5）；
      * null=未就绪（首次加载中或读失败，失败反馈走 [writeError] 横幅，卡内不重复报错）。
@@ -53,15 +61,17 @@ data class MineUiState(
 )
 
 /**
- * 我的页 ViewModel（M4-6）：作者总览卡（G2：Web DataPage 形态——计数+文件数 Top5，
- * 替换 C4 关注列表展示）、推荐偏好四预设（BottomSheet 应用）、
- * 缓存档位持久化（重启生效）与清空归零、服务端版本展示（C6）。
+ * 我的页 ViewModel（M4-6）：页首数量卡（I4：/stats/overview 图片/视频计数）、作者总览卡
+ * （G2：Web DataPage 形态——计数+文件数 Top5，替换 C4 关注列表展示形态）、
+ * 推荐偏好四预设（BottomSheet 应用）、缓存档位持久化（重启生效）与清空归零、
+ * 服务端版本展示（C6）。
  * 业务规则一律走 :core:model 纯函数与 :core:data 仓库，本层只做状态编排。
  */
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val authRepository: AuthRepository,
     private val authorRepository: AuthorRepository,
+    private val statsRepository: StatsRepository,
     private val prefsRepository: RecommendPrefsRepository,
     private val systemInfoRepository: SystemInfoRepository,
     private val diskCachePrefsRepository: DiskCachePrefsRepository,
@@ -74,10 +84,29 @@ class SettingsViewModel @Inject constructor(
 
     init {
         viewModelScope.launch { authRepository.serverUrl.collect { url -> _uiState.update { it.copy(serverUrl = url) } } }
+        loadLibraryCounts()
         refreshAuthorOverview()
         loadPrefs()
         loadServerVersion()
         loadCacheState()
+    }
+
+    /**
+     * 页首数量卡（I4，GUIDE_UI L252 + 实录 mine.txt 两卡「图片 N」「视频 N」）：
+     * GET /stats/overview 的 imageCount/videoCount 纯计数（不触拍板⑤容量豁免）。
+     * 读失败降级为 null（数字卡显「—」），静默不弹横幅——装饰性计数卡失败
+     * 不构成操作反馈（writeError 族保留给写操作与作者总览读失败）。
+     */
+    private fun loadLibraryCounts() {
+        viewModelScope.launch {
+            val overview = runCatching { statsRepository.overview() }.getOrNull()
+            _uiState.update {
+                it.copy(
+                    imageCount = overview?.imageCount,
+                    videoCount = overview?.videoCount,
+                )
+            }
+        }
     }
 
     /**
