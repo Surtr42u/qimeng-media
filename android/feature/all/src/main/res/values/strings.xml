@@ -6,4 +6,16 @@
 
     <!-- 页面标题（2026-09-05 导航四化：原「全部」页更名「相册」，route all 不变只改 label） -->
     <string name="all_title">相册</string>
+
+    <!-- 排序行（任务G G5：排序 pill 行提到页头）：档位文案与 Web AlbumsPage SORTS 逐字一致
+         （精选/最新/最旧/按名称），不复用筛选面板旧版七档文案（默认/文件日期/名字…） -->
+    <string name="all_sort_label">排序</string>
+    <string name="all_sort_featured">精选</string>
+    <string name="all_sort_newest">最新</string>
+    <string name="all_sort_oldest">最旧</string>
+    <string name="all_sort_by_name">按名称</string>
+
+    <!-- 值区块展开/收起切换钮（任务G G5：候选>9 时出现，文案与 Web expand-btn 逐字一致含箭头符） -->
+    <string name="all_values_expand">展开 ⌄</string>
+    <string name="all_values_collapse">收起 ⌃</string>
 </resources>

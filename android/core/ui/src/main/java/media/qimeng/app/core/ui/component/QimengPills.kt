@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.FlowRowOverflow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -165,6 +166,37 @@ private fun ChipDivider() {
             .height(QimengDimens.DividerHeight)
             .background(MaterialTheme.colorScheme.outlineVariant),
     )
+}
+
+/**
+ * 内联药丸值区块（任务G G5）：候选值胶囊进文档流排布——展开时推挤下方内容，
+ * 不悬浮遮挡网格（相册页对齐 Web AlbumsPage .value-row 形态，替代悬浮面板的呈现容器）。
+ * 与 [QimengFloatingPillPanel] 的差别：
+ * - 进文档流（调用方放进页面 Column，网格自然下移）而非 Box 叠放；
+ * - 无「收起 ▲」尾丸——整块显隐由调用方控制（相册页维度芯片行的 D3 拍板语义），
+ *   区块内的「展开 ⌄/收起 ⌃」两行钳制切换钮也由调用方按阈值渲染；
+ * - [maxLines] 行数钳制（默认不限）：对齐 Web .value-row 收起态 max-height 两行的视觉语义，
+ *   用「行数」而非 dp 表达——dp 需按字号/内边距换算，行数与 Web 交互语义一一对应。
+ * 胶囊渲染复用 [PillChip] 单源（铁律 7：禁止各页自绘胶囊）。
+ * 悬浮面板本体保留：收藏/历史页仍在用（G5 只改相册页接线）。
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun QimengValuePillFlow(
+    pills: List<QimengPill>,
+    onPillClick: (index: Int) -> Unit,
+    modifier: Modifier = Modifier,
+    maxLines: Int = Int.MAX_VALUE,
+) {
+    FlowRow(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(QimengDimens.SpaceM),
+        verticalArrangement = Arrangement.spacedBy(QimengDimens.SpaceM),
+        maxLines = maxLines,
+        overflow = FlowRowOverflow.Clip,
+    ) {
+        pills.forEachIndexed { index, pill -> PillChip(pill = pill, onClick = { onPillClick(index) }) }
+    }
 }
 
 /** 胶囊本体：选中实底主色/未选中软底（旧版 QimengCapsuleChip 的 M3 token 翻译）。
