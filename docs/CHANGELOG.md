@@ -11,6 +11,20 @@
 
 ---
 
+## feat(app): 任务G G1a 详情页排版对齐 Web（2026-09-08 第一百四十四笔）
+
+执行 AI：GLM-5.3（主代理调度；executor 执行/主代理模拟器验证，任务G-Android对齐卷 G1a）
+
+- **舞台高度钳制**：图片舞台固定 aspectRatio 改 heightIn(max=屏高×0.68f)+黑底 contain（常量 DETAIL_STAGE_MAX_HEIGHT_FRACTION 注明来源 Web .asset-stage max-height:68vh）——竖图不再撑超一屏；视频舞台不动（播放器自适应已有 letterbox）。
+- **asset-pager 行**（对齐 Web 交互形态）：舞台下方「上一件 ‹ | n / N | › 下一件」行（边界 disabled、无批次上下文整行不渲染=已知 #21 单卡语义保持）；复用 onSiblingNavigate 单源；**顶部行 i/N 文本退役**（旧版形态，Web 无——「完全一致」口径）。
+- **互动钮 active 视觉对齐 Web**：primaryContainer 软底退役→primary 实底+onPrimary+图标 Filled/Outlined 变体切换+点击 bounce（Animatable+spring(DampingRatioMediumBouncy) 回弹，参数常量注明 Web :active scale 语义）。
+- **meta 行分隔**：相邻可见项间「·」分隔（对齐 Web .detail-meta span::before）。
+- **右栏卡片化**：作者卡+推荐栏套 QimengRankCard（G2 批共享件复用，内部结构零改动）。
+- **图标**：core:ui QimengDetailIcons 补四枚自持 ImageVector（ThumbUpOutlined/StarOutlined/ChevronLeft/ChevronRight，path data 逐字取自 google/material-design-icons 官方 24px.svg，图标自持纪律）。
+- **验收**：compile+feature:detail 90 单测全绿；模拟器实测：首页流进详情 pager「1 / 18」在位、点下一件「2 / 18」换件成功、meta「浏览 0 · 播放 0 · 42 KB · 9-3 · …」分隔在位、相册入口（无批次）pager 正确回退不渲染；截图 %TEMP%\qimeng-g1a-evidence\。
+
+---
+
 ## feat(app): 任务G G2 作者总览进「我的」+ AuthorScreen Web 形态重排（2026-09-08 第一百四十三笔）
 
 执行 AI：GLM-5.3（主代理调度；executor 执行+两处 Web 口径纠偏/主代理模拟器验证，任务G-Android对齐卷 G2；用户拍板=「只把作者总览放到我的界面，web的作者管理替换掉现在安卓端的作者管理」）

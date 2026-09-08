@@ -5,8 +5,12 @@
 
     <!-- 顶行 -->
     <string name="detail_back">返回</string>
-    <!-- 「i / N」批次序号（batchIndex>=0 时显示） -->
+    <!-- 「i / N」批次序号（G1a 起由顶行迁至舞台下 pager 行中位计数） -->
     <string name="detail_batch_position">%1$d / %2$d</string>
+
+    <!-- 批次 pager 行（任务G G1a，舞台下方：上一件/下一件 + n/N 计数；文案逐字对齐 Web asset-pager__btn） -->
+    <string name="detail_pager_prev">上一件</string>
+    <string name="detail_pager_next">下一件</string>
 
     <!-- 加载 / 错误 -->
     <string name="detail_loading">加载中…</string>

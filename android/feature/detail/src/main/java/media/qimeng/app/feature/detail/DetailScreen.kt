@@ -43,8 +43,9 @@ import coil3.size.Size
 import media.qimeng.app.core.ui.theme.QimengDimens
 
 /**
- * 详情页（M4-3）：3a 骨架与排版（顶行 + 竖屏单列堆叠：媒体舞台 → 标题 → meta 行 → 互动行 →
- * 标签行 → 作者卡 → 接下来播放；排版基准 = Web AssetDetailPage.tsx B站式布局的移动端移植）；
+ * 详情页（M4-3）：3a 骨架与排版（顶行 + 竖屏单列堆叠：媒体舞台 → 批次 pager 行（G1a）→
+ * 标题 → meta 行 → 互动行 → 标签行 → 作者卡 → 接下来播放；排版基准 = Web AssetDetailPage.tsx
+ * B站式布局的移动端移植）；
  * 3b 补沉浸模式（chromeVisible 状态单源：顶行+底部间距 AnimatedVisibility 隐显 + 系统栏
  * 隐显）与兄弟资产滑动接线（图片手势在 ImageStage，视频 3c）；3d 补视频全量接线
  * （续播/已看完徽标/进度上报/打点/时间轴标签经具名参数逐层下发，穿墙通道已删）；
@@ -122,13 +123,10 @@ fun DetailScreen(
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // 顶行随沉浸隐显（3b）：AnimatedVisibility 收放，返回键始终可用（系统返回）
+        // 顶行随沉浸隐显（3b）：AnimatedVisibility 收放，返回键始终可用（系统返回）。
+        // G1a：顶行不再带 i/N 批次序号（Web 顶行无计数）——序号随 DetailPagerRow 落舞台下方
         AnimatedVisibility(visible = chromeVisible) {
-            DetailTopRow(
-                batchIndex = state.batchIndex,
-                batchSize = state.batchSize,
-                onBack = onBack,
-            )
+            DetailTopRow(onBack = onBack)
         }
         when {
             state.isLoading -> DetailLoadingState()
@@ -225,6 +223,13 @@ private fun DetailLoadedContent(
             onPositionChanged = onPositionChanged,
             onAddTimelineTag = onAddTimelineTag,
             onDeleteTimelineTag = onDeleteTimelineTag,
+        )
+        // 批次 pager 行（任务G G1a，Web .asset-pager 对齐）：舞台与标题之间；无批次上下文
+        // （batchIndex<0 深链单卡）DetailPagerRow 内部整行不渲染
+        DetailPagerRow(
+            batchIndex = state.batchIndex,
+            batchSize = state.batchSize,
+            onSiblingNavigate = onSiblingNavigate,
         )
         DetailTitle(title = asset.title)
         DetailMetaRow(asset = asset)
