@@ -202,18 +202,17 @@ internal fun VideoStage(
         )?.let(::applyFullscreenCommand)
     }
 
-    // D2 方向恢复兜底（审查清偿：快照恢复替代无条件锁竖屏）：requestedOrientation 是
-    // Activity 级粘性属性，无条件写 PORTRAIT 会把「只看过排版态视频、从未进全屏」的整个
-    // App 永久锁竖屏（横屏平板致命，且违背「排版态自由旋转语义不变」）。改为恢复进入本
-    // 组合时的快照：常规快照=UNSPECIFIED（manifest 不锁方向）→ 退出回自由旋转，手机竖屏
-    // 持机自然回竖屏——「横屏全屏态退出卡横屏」的修复语义保持；逐级退出的 PORTRAIT 写入
-    // （全屏钮路径）不受影响，离场时仍由本兜底解掉残留锁
+    // D2 方向恢复兜底（审查两轮清偿）：requestedOrientation 是 Activity 级粘性属性——
+    // 无条件写 PORTRAIT 会把「只看过排版态视频、从未进全屏」的整个 App 永久锁竖屏；
+    // 改快照恢复后又发现转场窗口洞（详情页互 push 时新页先组合、旧页后 dispose，新页
+    // 快照会捕到旧页 exitToNone 残留的 PORTRAIT 并代代相传，会话级锁竖屏）。全仓唯一
+    // 方向写入点=本文件 applyFullscreenCommand（grep 证），manifest 不锁方向 → App 的
+    // 自然基线恒 UNSPECIFIED，离场一律恢复 UNSPECIFIED：手机竖屏持机自然回竖屏
+    // （「横屏全屏态退出卡横屏」修复语义保持），全屏两级的残留锁也必然被解掉
     DisposableEffect(Unit) {
-        val orientationOnEnter =
-            context.findActivity()?.requestedOrientation
-                ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         onDispose {
-            context.findActivity()?.requestedOrientation = orientationOnEnter
+            context.findActivity()?.requestedOrientation =
+                ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         }
     }
 

@@ -14,7 +14,6 @@ import media.qimeng.app.core.model.AuthorSortOption
 import media.qimeng.app.core.model.AuthorSummary
 import media.qimeng.app.core.model.Zone
 import media.qimeng.app.core.model.applyAuthorRows
-import media.qimeng.app.core.model.filterByZone
 
 data class AuthorUiState(
     val authors: List<AuthorSummary> = emptyList(),

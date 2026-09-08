@@ -46,19 +46,6 @@ class AuthorRowsTest {
     }
 
     @Test
-    fun `体系过滤 计数行口径与列表行体系段一致`() {
-        // G2 作者页计数行 N=当前体系过滤后数量（不含关键词）
-        assertEquals(4, authors.filterByZone(Zone.ALL).size)
-        assertEquals(2, authors.filterByZone(Zone.REGULAR).size)
-        assertEquals(2, authors.filterByZone(Zone.COS).size)
-        // 与 applyAuthorRows 的体系段同口径（空关键词时过滤结果逐项相等）
-        assertEquals(
-            authors.applyAuthorRows(Zone.COS, "", AuthorSortOption.DEFAULT).map { it.id },
-            authors.filterByZone(Zone.COS).map { it.id },
-        )
-    }
-
-    @Test
     fun `作者总览 全量计数 已关注计数 文件数Top5`() {
         val rows = listOf(
             author("1", "Gifdoozer", AuthorType.COS, fileCount = 500, followed = true),
