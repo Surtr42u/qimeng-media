@@ -3,15 +3,18 @@ package media.qimeng.app.feature.login
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
@@ -39,8 +42,9 @@ import media.qimeng.app.core.ui.component.QimengCapsuleTextField
  * 服务器地址支持 localhost/127.0.0.1 形式（ADR-0015 单机形态预留；规范化在 core 的
  * ServerAddress.normalize，UI 不做格式校验）。错误文案按 LoginError 分类映射中文资源。
  * 本页渲染在主壳 Scaffold 之外（QimengNavRoot 未登录分支），edge-to-edge 下无壳层
- * innerPadding 让位系统栏——根容器自行补 statusBars/navigationBars/ime 三段 padding
- * （G3；顺序=先导航栏后 IME，insets 消费链避免键盘弹出时双重计高）。
+ * innerPadding 让位系统栏——根容器自行补系统栏三段 padding（G3；审查清偿：底部改
+ * ime union navigationBars 取最大值——两类 insets 顺序叠加会在键盘弹出时多让出
+ * 一个手势条高度）。
  */
 @Composable
 fun LoginScreen(
@@ -55,8 +59,7 @@ fun LoginScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
-                .navigationBarsPadding()
-                .imePadding()
+                .windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars))
                 .padding(all = Dimens.ScreenPadding),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,

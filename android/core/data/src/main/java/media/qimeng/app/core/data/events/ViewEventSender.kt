@@ -61,7 +61,8 @@ class SdkViewEventSender @Inject constructor(
                 // 脏 assetId 抛 IllegalArgumentException）若冒过本层，会击穿 drain 的
                 // 「不抛出网异常」契约 → 整轮已删行全丢。归 RETRY 口径保守重试，
                 // 确定性失败由毒丸连败阈值（≥3）最终丢弃，方向仍是宁少计不虚增。
-                Log.w(EventSyncWorkSpec.LOG_TAG, "send crashed rowId=${event.id}: ${e.message}")
+                // throwable 全量入栈（复审清偿）：编程错误（NPE 等）不能只留 message 丢栈。
+                Log.w(EventSyncWorkSpec.LOG_TAG, "send crashed rowId=${event.id}: ${e.message}", e)
                 ViewEventSendResult.IoError
             }
         }

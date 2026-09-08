@@ -38,7 +38,7 @@ data class AuthorOverview(
 val AuthorSummary.displayLabel: String
     get() = if (type == AuthorType.COS) "$displayName ·COS" else displayName
 
-/** 体系→类型映射（全部=null 不筛；[applyAuthorRows] 与 [filterByZone] 共用单源） */
+/** 体系→类型映射（全部=null 不筛；[applyAuthorRows] 的体系段单源） */
 private fun Zone.toAuthorType(): AuthorType? = when (this) {
     Zone.ALL -> null
     Zone.REGULAR -> AuthorType.REGULAR
@@ -65,15 +65,6 @@ fun List<AuthorSummary>.applyAuthorRows(
                 AuthorSortOption.WORKS -> compareByDescending { it.fileCount ?: 0 }
             },
         )
-}
-
-/**
- * 体系过滤（G2 作者页计数行「全部作者 · N 位」：N=当前体系过滤后数量，不含关键词——
- * 计数口径与 [applyAuthorRows] 的体系段一致，纯函数单测锁定）。
- */
-fun List<AuthorSummary>.filterByZone(zone: Zone): List<AuthorSummary> {
-    val type = zone.toAuthorType()
-    return filter { type == null || it.type == type }
 }
 
 /**

@@ -30,8 +30,11 @@ import media.qimeng.app.core.ui.theme.QimengDimens
  */
 internal fun isMoveSubmittable(currentDir: String, currentName: String, targetDir: String, name: String): Boolean {
     val trimmed = name.trim()
+    val trimmedDir = targetDir.trim()
     val renamed = trimmed.isNotEmpty() && trimmed != currentName
-    val moved = targetDir != currentDir
+    // 目录同样 trim（复审清偿）：带尾空格的目录会被判「已移动」且原样发出，
+    // 服务端 NormalizeRelPath 400 后文案退化为裸「整理失败」
+    val moved = trimmedDir != currentDir
     return trimmed.isNotEmpty() && (renamed || moved)
 }
 
@@ -102,7 +105,7 @@ internal fun DetailMoveDialog(
                 enabled = !pending && isMoveSubmittable(currentDir, currentName, targetDir, name),
                 onClick = {
                     val trimmed = name.trim()
-                    onSubmit(targetDir, if (trimmed != currentName) trimmed else null)
+                    onSubmit(targetDir.trim(), if (trimmed != currentName) trimmed else null)
                 },
             ) {
                 if (pending) {

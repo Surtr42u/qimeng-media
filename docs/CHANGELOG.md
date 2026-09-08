@@ -11,13 +11,25 @@
 
 ---
 
+## docs: 任务G-Android对齐卷收官——G7 全卷对抗审查+P2/P3 清偿+文档同步（2026-09-08 第一百四十六笔）
+
+执行 AI：GLM-5.3（主代理调度；reviewer 全卷对抗审查/主代理修复，任务G-Android对齐卷 G7）
+
+- **全卷对抗审查**（7970592..faaa181 十笔=维护清偿三笔+任务G 七笔）：铁律全数达标（UI 零直调 API/零 SDK 手改/删除=回收站端点/零硬编码色/零旧代码搬运）；G5 排序四档、G2 计数口径、G1b includeCos 与 Web 三处逐字核对一致；全部单测 --rerun-tasks 强制重跑逐套件核对（101/12/57/9/91 全绿+web 94/94）。
+- **P2 清偿（方向锁转场窗口）**：快照恢复方案在详情页互 push 转场期新页先组合、旧页后 dispose——新页快照捕到旧页 exitToNone 残留的 PORTRAIT 并代代相传，会话级永久锁竖屏（本会话上午修复的 bug 类窄路径复发）。终修=离场无条件恢复 UNSPECIFIED（全仓唯一方向写入点在 VideoStage，grep 证；manifest 不锁方向=App 自然基线恒 UNSPECIFIED，语义正确且更简）。
+- **P3×7 清偿**：filterByZone 死代码+尸注释+对应用例删除（G2 计数口径改全量后残留）；整理弹窗 targetDir 提交与判定统一 trim（尾空格目录原样发出会 400）；ViewEventSender catch(Exception) 补 throwable 全栈；LoginScreen 底部改 ime∪navigationBars union（顺序叠加在键盘弹出时多让一个手势条高度）；CHANGELOG 两处计数勘误（137笔标题 P3×5、G1b 新增 24 测）。
+- **门禁**：testDebugUnitTest+lintDebug+assembleDebug 三连绿（串行；lint 0 错误 24 版本漂移警告均存量）；lint 曾在后台与前台构建并发时假红一次，串行复跑绿=并发冲突非真问题。**环境**：18461 虚构库复原（改名/删除均 API 恢复 23 件基线）；dev token TTL 过期链实证（dwell 401 终局丢弃+清 token 回登录+空密码重登）=正常行为记档。
+- **文档同步**：HANDOVER_APP 文头任务G 收官条目、HANDOVER.md 任务书入口段 D/E/F/G 四卷收官、任务书（仓库外）全部勾选。
+
+---
+
 ## feat(app): 任务G G1b 详情页交互补齐——文件操作+作者集合页（2026-09-08 第一百四十五笔）
 
 执行 AI：GLM-5.3（主代理调度；executor 执行/主代理模拟器全链验证，任务G-Android对齐卷 G1b）
 
 - **文件操作（对齐 Web FileOpsButton）**：互动行右端「整理/删除」两钮（DriveFileMove/Delete 自持图标）；整理弹窗=新名输入预填 fileName+目标目录预填当前目录（**简化取舍：Web 目录树选择器→文本输入「库内相对路径，留空=库根」，目录树组件留后续批**）+409 同名领域异常中文文案；删除=danger 二次确认（文案逐字对齐 Web，明示回收站可恢复=铁律4）→成功 Toast+onBack()。Repository 端口扩 moveAsset/deleteAsset（封 SDK 既有端点，零协议）；AssetDetail 补 directory 字段透传。
 - **作者集合页**（新路由 author_collection/{authorId}/{authorName}，路由契约单源在 feature:author 沿 DetailRoutes 范式）：QimengTopBar(作者名)+计数行「作者 · N 个文件」+日期分组网格+onNearBottom cursor 增量分页+空态「该作者下暂无内容。」；数据复用 MediaRepository.assets(AssetQuery(authorId, includeCos=true)) 零扩端点（includeCos=true 对齐 Web CollectionPage 口径，单测锁定——不补则 COS 作者集合恒空）。**三处接线**：AuthorScreen 行点击（G2 占位替换）/详情页作者卡名字可点（主色+clickable）/UpNext 副行**按 Web 基准跳过**（Web 副行作者名非独立链接+AssetSummary 无作者 id，现状=与 Web 一致非缺口）。
-- **新增 29 测**（feature:detail 101/feature:author 12 含路由编码 6+VM 分页 6/core:data 57 含 directory 映射）：整理表单可提交判定/路由编码中文与斜杠劈裂/取数参数/409 领域文案/删除回调。
+- **新增 24 测**（feature:detail 101=90+11/feature:author 12 含路由编码 6+VM 分页 6/core:data 57 含 directory 映射）：整理表单可提交判定/路由编码中文与斜杠劈裂/取数参数/409 领域文案/删除回调。
 - **模拟器全链验证**（18461 虚构库）：改名「…gif→…gif%2dG1B」生效（详情标题刷新+API 对账）→API 恢复原名；删除→danger 确认→回列表→trash API 实证在位→API restore 恢复 23 件基线；作者管理行点击与详情作者卡点击均进集合页（测试作者一·3 文件·周日/周六/周四分组）。**中途实证 dev token TTL 过期链**：dwell 401 终局丢弃（队列口径正确）+AuthInterceptor 清 token 回登录页+空密码重登恢复——正常过期行为记录在案。截图 %TEMP%\qimeng-g1b-evidence\。
 
 ---
@@ -78,7 +90,7 @@
 
 ---
 
-## fix(app): 维护审查清偿——任务D卷审查 P2×5/P3×4（2026-09-08 第一百三十七笔）
+## fix(app): 维护审查清偿——任务D卷审查 P2×5/P3×5（2026-09-08 第一百三十七笔）
 
 执行 AI：GLM-5.3（主代理；三路并发审查子代理 Android 卷/Web 卷/流程合规 + 主代理修复）
 
