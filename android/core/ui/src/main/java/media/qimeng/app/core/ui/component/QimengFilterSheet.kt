@@ -2,7 +2,6 @@ package media.qimeng.app.core.ui.component
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,15 +16,19 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -39,6 +42,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -211,11 +215,17 @@ private fun <T> FilterSection(
     ) {
         options.forEach { option ->
             Row(
-                modifier = Modifier.clickable { onSelect(option.value) },
+                // 任务 H1：clickable 换 foundation 标准 selectable（role=RadioButton）——
+                // 无障碍语义与 RadioButton 状态联通，视觉零变化
+                modifier = Modifier.selectable(
+                    selected = option.value == selected,
+                    role = Role.RadioButton,
+                    onClick = { onSelect(option.value) },
+                ),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 // onClick=null：去掉 48dp 最小触区包裹，圈紧凑化让每行多排一个选项
-                // （旧版 ChipGroup 一行 4 个选项的换行密度）；点击语义由整行 clickable 承担
+                // （旧版 ChipGroup 一行 4 个选项的换行密度）；点击语义由整行 selectable 承担
                 RadioButton(
                     selected = option.value == selected,
                     onClick = null,
@@ -242,7 +252,12 @@ private fun DateRangeSection(
     ) {
         dateRangeOptions().forEach { option ->
             Row(
-                modifier = Modifier.clickable { onDateRangePicked(option.value, draft, onDraftChange) },
+                // selectable role=RadioButton 同 [FilterSection]（任务 H1 语义升级）
+                modifier = Modifier.selectable(
+                    selected = option.value == draft.dateRange,
+                    role = Role.RadioButton,
+                    onClick = { onDateRangePicked(option.value, draft, onDraftChange) },
+                ),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 // onClick=null 同 [FilterSection]：紧凑圈 + 整行承担点击
@@ -313,22 +328,29 @@ private fun YearRangeRow(
     }
 }
 
-/** 单个年份下拉（1990..当前年，旧版 NumberPicker min/max 口径；值未初始化时显示占位空串） */
+/**
+ * 单个年份下拉（1990..当前年，旧版 NumberPicker min/max 口径；值未初始化时显示占位空串）。
+ * 任务 H1：锚点从手绘 clip+background+clickable 药丸换 M3 可点击 [Surface] 标准件
+ * （形状/颜色 token 逐项不变），下拉菜单本体 DropdownMenu（已是标准件）不动。
+ */
 @Composable
 private fun YearPicker(year: Int?, onPick: (Int) -> Unit, modifier: Modifier = Modifier) {
     var expanded by remember { mutableStateOf(false) }
     Box(modifier = modifier) {
-        Text(
-            text = year?.toString().orEmpty(),
-            style = MaterialTheme.typography.bodyLarge,
-            textAlign = TextAlign.Center,
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(QimengDimens.PillCornerRadius))
-                .background(MaterialTheme.colorScheme.surfaceVariant)
-                .clickable { expanded = true }
-                .padding(vertical = QimengDimens.SpaceS),
-        )
+        Surface(
+            onClick = { expanded = true },
+            shape = RoundedCornerShape(QimengDimens.PillCornerRadius),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(
+                text = year?.toString().orEmpty(),
+                style = MaterialTheme.typography.bodyLarge,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(vertical = QimengDimens.SpaceS),
+            )
+        }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             val maxYear = remember { LocalDate.now().year }
             (PANEL_MIN_YEAR..maxYear).forEach { candidate ->
@@ -397,7 +419,15 @@ private fun TagsSection(
     }
 }
 
-/** 标签胶囊：点击切换选中、长按删除（combinedClickable；样式=QimengPills 既有胶囊语言） */
+/**
+ * 标签胶囊：点击切换选中、长按删除（确认框）。
+ * 任务 H1 审查记档的**例外**（M3 芯片家族没有长按参数）：两轮标准件替换实测均破坏功能——
+ * ① FilterChip 常态态 + 外层 combinedClickable：m3 1.4 芯片内层手势吞掉外层长按，
+ * 且长按抬起被误转成点击（模拟器实证）；② FilterChip enabled=false 纯视觉化 + 外层
+ * combinedClickable：连单击都到不了外层（m3 1.4 禁用 Surface 仍拦截手势节点，实测）。
+ * 按任务书「以不破坏功能为前提」保留既有手绘胶囊（token 与 QimengSegPill 同谱，
+ * 行为经前批次实测验证），待 M3 提供带长按的芯片标准件或内层手势可穿透后再收编。
+ */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TagChip(
@@ -406,7 +436,6 @@ private fun TagChip(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
-    val shape = RoundedCornerShape(QimengDimens.PillCornerRadius)
     Text(
         text = label,
         style = MaterialTheme.typography.labelLarge,
@@ -417,7 +446,7 @@ private fun TagChip(
             MaterialTheme.colorScheme.onSurfaceVariant
         },
         modifier = Modifier
-            .clip(shape)
+            .clip(RoundedCornerShape(QimengDimens.PillCornerRadius))
             .background(if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(
@@ -427,19 +456,22 @@ private fun TagChip(
     )
 }
 
-/** 「+ 添加标签」行（实录逐字文案；旧版为 primary 色全宽文本行） */
+/** 「+ 添加标签」行（实录逐字文案；旧版为 primary 色全宽文本行）——任务 H1 换 M3 TextButton 标准件 */
 @Composable
 private fun AddTagRow(onClick: () -> Unit) {
-    Text(
-        text = stringResource(R.string.ui_filter_add_tag),
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(QimengDimens.PillCornerRadius))
-            .clickable(onClick = onClick)
-            .padding(vertical = QimengDimens.SpaceS),
-    )
+    TextButton(
+        onClick = onClick,
+        shape = RoundedCornerShape(QimengDimens.PillCornerRadius),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        // TextButton 默认内容居中，旧版实录是左对齐全宽文本行——Text 撑满后回左对齐
+        Text(
+            text = stringResource(R.string.ui_filter_add_tag),
+            style = MaterialTheme.typography.labelLarge,
+            textAlign = TextAlign.Start,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
 }
 
 /** 添加标签对话框（旧版 AlertDialog：标题「添加标签」/输入提示「标签名称」/添加·取消；空名不提交） */
@@ -531,16 +563,26 @@ private fun FilterFooter(onReset: () -> Unit, onApply: () -> Unit) {
     }
 }
 
-/** 面板操作按钮（旧版 actionButton：胶囊语言，高 48dp，实底主色/软底次级） */
+/**
+ * 面板操作按钮（旧版 actionButton：胶囊语言，高 48dp，实底主色/软底次级）。
+ * 任务 H1：手绘 Box 换 M3 [Button] 标准件——实底档用默认主色组、软底档覆盖 surfaceVariant；
+ * 旧版按钮平面无投影（实录 dump 无 elevation 表现），压平 M3 默认投影。
+ */
 @Composable
 private fun SheetButton(text: String, filled: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .height(QimengDimens.FilterButtonHeight)
-            .clip(RoundedCornerShape(QimengDimens.PillCornerRadius))
-            .background(if (filled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
+    Button(
+        onClick = onClick,
+        modifier = modifier.height(QimengDimens.FilterButtonHeight),
+        shape = RoundedCornerShape(QimengDimens.PillCornerRadius),
+        colors = if (filled) {
+            ButtonDefaults.buttonColors()
+        } else {
+            ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        },
+        elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
     ) {
         // fillMaxWidth+居中：旧版按钮即整宽 TextView（实录「重置」节点 [60,2264][534,2408] 通栏），
         // 文本节点与按钮同宽，dump 形态与旧版一致
@@ -548,7 +590,6 @@ private fun SheetButton(text: String, filled: Boolean, onClick: () -> Unit, modi
             text = text,
             style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.Bold,
-            color = if (filled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth(),
         )
