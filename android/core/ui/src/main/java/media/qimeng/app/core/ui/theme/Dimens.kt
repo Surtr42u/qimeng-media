@@ -100,6 +100,20 @@ object QimengDimens {
     /** 4dp：媒体卡时长角标圆角（QimengMediaGrid L168 RoundedCornerShape(4.dp)） */
     val BadgeCornerRadius: Dp = 4.dp
 
+    // ---------- 榜单卡（任务G G2：对齐 Web .rank-card，prototype.css「卡片通用」规则） ----------
+
+    /** 12dp：榜单卡圆角（Web .rank-card border-radius 12px——卡片通用规则，与媒体卡 16dp 档区分） */
+    val RankCardCornerRadius: Dp = 12.dp
+
+    /** 1dp：榜单卡描边宽（Web .rank-card border 1px solid var(--border)→outlineVariant，以描边区分卡片） */
+    val RankCardBorderWidth: Dp = 1.dp
+
+    /** 16dp：榜单卡内边距（Web .rank-card padding 16px，卡内全部内容的统一内缩值） */
+    val RankCardInnerPadding: Dp = 16.dp
+
+    /** 1dp：榜单卡行分隔线宽（Web .rank-card li border-bottom 1px solid var(--border)，末行无线） */
+    val RankCardRowDividerThickness: Dp = 1.dp
+
     // ---------- 空态 / 加载（QimengScaffold） ----------
 
     /** 48dp：空态纵向内边距（QimengScaffold QimengEmptyState 的 Box padding，按符号定位防行号漂移） */
