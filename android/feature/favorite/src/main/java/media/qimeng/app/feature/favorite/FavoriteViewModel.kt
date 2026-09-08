@@ -7,11 +7,15 @@ import javax.inject.Inject
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import media.qimeng.app.core.data.repository.MediaRepository
 import media.qimeng.app.core.data.repository.AssetOrigUrlResolver
+import media.qimeng.app.core.data.repository.DataStoreGridPrefsRepository
+import media.qimeng.app.core.data.repository.GridPrefsRepository
 import media.qimeng.app.core.model.AlbumDim
 import media.qimeng.app.core.model.AlbumFilter
 import media.qimeng.app.core.model.AlbumFilterState
@@ -65,6 +69,7 @@ data class FavoriteUiState(
 @HiltViewModel
 class FavoriteViewModel @Inject constructor(
     private val mediaRepository: MediaRepository,
+    private val gridPrefs: GridPrefsRepository,
     val origUrlResolver: AssetOrigUrlResolver,
 ) : ViewModel() {
 
@@ -78,6 +83,63 @@ class FavoriteViewModel @Inject constructor(
      * 状态更新同线程），无需原子类。
      */
     private var filterGeneration = 0
+
+    /**
+     * 网格列数（双指缩放 2~5 列，GUIDE_UI §公共UI工具 L300 + §全部页 L149）：**共用全部页档**——
+     * 旧版 v1.15 持久化语义「收藏/浏览历史/作者文件/全部→updateGridColumnsAll」，此处纯复用既有
+     * [GridPrefsRepository.albumColumns]（键 grid_columns_all）读写同档，core:data 零改动。
+     * 进页读档为初始值，双指缩放手势结束持久化回写同档。
+     */
+    val gridColumns: StateFlow<Int> = gridPrefs.albumColumns
+        .stateIn(
+            viewModelScope,
+            SharingStarted.Eagerly,
+            DataStoreGridPrefsRepository.DEFAULT_ALBUM_COLUMNS,
+        )
+
+    /**
+     * 双指缩放期间的瞬时列数（null=无进行中手势，展示持久化值）。
+     * 手势逐事件步进只改内存、不落盘——DataStore 写有延迟，逐帧写会卡顿且无意义；
+     * 手势结束由 [commitPinchColumns] 统一持久化一次。（镜像 AlbumViewModel 同名接线，M4-2A-B2）
+     */
+    private val _pinchColumns = MutableStateFlow<Int?>(null)
+    val pinchColumns: StateFlow<Int?> = _pinchColumns.asStateFlow()
+
+    /** 双指缩放步进（delta=±1：放大减列、缩小加列，语义见 QimengGridPinchGesture），clamp 2..5 */
+    fun adjustColumnsLive(delta: Int) {
+        val current = _pinchColumns.value ?: gridColumns.value
+        _pinchColumns.value = (current + delta).coerceIn(
+            DataStoreGridPrefsRepository.MIN_ALBUM_COLUMNS,
+            DataStoreGridPrefsRepository.MAX_ALBUM_COLUMNS,
+        )
+    }
+
+    /** 手势结束：缩放结果持久化一次（复用 [GridPrefsRepository.setAlbumColumns]，仓库内部再 clamp 2..5） */
+    fun commitPinchColumns() {
+        val target = _pinchColumns.value ?: return
+        _pinchColumns.value = null
+        if (target != gridColumns.value) {
+            viewModelScope.launch { gridPrefs.setAlbumColumns(target) }
+        }
+    }
+
+    /**
+     * 详情页返回自动刷新（GUIDE_UI §收藏页 L410）：ON_RESUME 观测触发（镜像 HomeScreen I1 模式），
+     * 覆盖详情 pop 返回与 App 回前台两路径——详情 toggleFavorite 后返回列表即反映。
+     * 防叠加风暴（resume 即 refresh 的简单方案，不另造指纹/标记）：
+     * - 首个 ON_RESUME 与 init 首载天然重叠，跳过（否则进页即双载）；
+     * - 后续 resume 复用 refresh() 的 isRefresh+isLoading 在途防重——下拉刷新/翻页在途时
+     *   本次 resume 重拉被丢弃，不叠加请求。
+     */
+    private var resumedOnce = false
+
+    fun onResumed() {
+        if (!resumedOnce) {
+            resumedOnce = true
+            return
+        }
+        refresh()
+    }
 
     init {
         reloadAll()

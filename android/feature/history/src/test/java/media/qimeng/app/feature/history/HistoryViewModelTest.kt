@@ -1,6 +1,8 @@
 package media.qimeng.app.feature.history
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -10,6 +12,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import media.qimeng.app.core.data.repository.AssetOrigUrlResolver
+import media.qimeng.app.core.data.repository.DataStoreGridPrefsRepository
+import media.qimeng.app.core.data.repository.GridPrefsRepository
 import media.qimeng.app.core.data.repository.HistoryRepository
 import media.qimeng.app.core.data.repository.MediaRepository
 import media.qimeng.app.core.model.AlbumDim
@@ -95,6 +99,23 @@ class HistoryViewModelTest {
         }
     }
 
+    /** 列数档替身：StateFlow 直存的内存档（模拟 grid_columns_all 键的读写，与本页 VM 无关） */
+    private class FakeGridPrefsRepository : GridPrefsRepository {
+        val homeFlow = MutableStateFlow(DataStoreGridPrefsRepository.DEFAULT_HOME_COLUMNS)
+        val albumFlow = MutableStateFlow(DataStoreGridPrefsRepository.DEFAULT_ALBUM_COLUMNS)
+
+        override val homeColumns: Flow<Int> = homeFlow
+        override val albumColumns: Flow<Int> = albumFlow
+
+        override suspend fun setHomeColumns(columns: Int) {
+            homeFlow.value = columns
+        }
+
+        override suspend fun setAlbumColumns(columns: Int) {
+            albumFlow.value = columns
+        }
+    }
+
     // ---------- 造数 ----------
 
     private fun asset(id: String) = MediaAsset(
@@ -129,9 +150,11 @@ class HistoryViewModelTest {
     private fun viewModel(
         historyRepo: FakeHistoryRepository,
         mediaRepo: FakeMediaRepository,
+        gridPrefs: FakeGridPrefsRepository = FakeGridPrefsRepository(),
     ): HistoryViewModel = HistoryViewModel(
         historyRepository = historyRepo,
         mediaRepository = mediaRepo,
+        gridPrefs = gridPrefs,
         origUrlResolver = object : AssetOrigUrlResolver {
             override suspend fun origUrl(assetId: String): String? = null
         },
@@ -275,5 +298,97 @@ class HistoryViewModelTest {
         viewModel.selectPartition(Zone.COS)
         advanceUntilIdle()
         assertEquals(R.string.history_empty_cos, viewModel.uiState.value.emptyTextRes)
+    }
+
+    // ---------- 任务I I5：列数共用全部页档 + 双指缩放 + resume 重拉 ----------
+
+    @Test
+    fun `网格列数初始值读共用全部页档`() = runTest(mainDispatcherRule.testDispatcher) {
+        // 档位预置 4（全部页此前调过）：进页 gridColumns 应读档为 4，而非缺省值
+        val gridPrefs = FakeGridPrefsRepository()
+        gridPrefs.albumFlow.value = 4
+        val viewModel = viewModel(FakeHistoryRepository(), FakeMediaRepository(), gridPrefs)
+        advanceUntilIdle()
+        assertEquals(4, viewModel.gridColumns.value)
+    }
+
+    @Test
+    fun `双指缩放步进clamp2到5 手势结束持久化到共用全部页档`() = runTest(mainDispatcherRule.testDispatcher) {
+        val gridPrefs = FakeGridPrefsRepository()
+        val viewModel = viewModel(FakeHistoryRepository(), FakeMediaRepository(), gridPrefs)
+        advanceUntilIdle()
+
+        // 放大减列到下界：clamp 在 2（MIN_ALBUM_COLUMNS）
+        viewModel.adjustColumnsLive(-1)
+        viewModel.adjustColumnsLive(-1)
+        assertEquals(2, viewModel.pinchColumns.value)
+
+        // 缩小加列到上界：clamp 在 5（MAX_ALBUM_COLUMNS）
+        repeat(4) { viewModel.adjustColumnsLive(+1) }
+        assertEquals(5, viewModel.pinchColumns.value)
+
+        // 手势结束：内存值落盘到共用档（grid_columns_all），瞬时值归位
+        viewModel.commitPinchColumns()
+        advanceUntilIdle()
+        assertNull(viewModel.pinchColumns.value)
+        assertEquals(5, gridPrefs.albumFlow.value)
+        assertEquals(5, viewModel.gridColumns.value)
+
+        // 无进行中手势时 commit 幂等 no-op（不重复写档）
+        viewModel.commitPinchColumns()
+        advanceUntilIdle()
+        assertEquals(5, gridPrefs.albumFlow.value)
+    }
+
+    @Test
+    fun `resume重拉 首次跳过不与首载叠加 后续每次resume重拉第一页`() = runTest(mainDispatcherRule.testDispatcher) {
+        val historyRepo = FakeHistoryRepository()
+        val mediaRepo = FakeMediaRepository()
+        val viewModel = viewModel(historyRepo, mediaRepo)
+        advanceUntilIdle()
+        assertEquals(1, historyRepo.calls.size) // init 首载在途
+
+        // 首个 ON_RESUME 与 init 首载重叠：跳过，不发起第二载
+        viewModel.onResumed()
+        advanceUntilIdle()
+        assertEquals(1, historyRepo.calls.size)
+
+        // 首载落地后，模拟详情页浏览上报后返回（第二次 ON_RESUME）：重拉第一页+候选
+        historyRepo.calls[0].gate.complete(historyPage(listOf(entry("a"))))
+        mediaRepo.completeFacetsBatch(batch = 0, result = facets(total = 1))
+        advanceUntilIdle()
+
+        viewModel.onResumed()
+        advanceUntilIdle()
+        assertEquals(2, historyRepo.calls.size)
+        assertNull(historyRepo.calls[1].query.cursor) // 重拉回第一页（lastViewedAt 重排）
+
+        mediaRepo.completeFacetsBatch(batch = 1, result = facets(total = 1))
+        historyRepo.calls[1].gate.complete(historyPage(listOf(entry("b"), entry("a"))))
+        advanceUntilIdle()
+        assertEquals(listOf("b", "a"), viewModel.uiState.value.items.map { it.id })
+    }
+
+    @Test
+    fun `resume重拉在途防重 刷新在途时再次resume不叠加请求`() = runTest(mainDispatcherRule.testDispatcher) {
+        val historyRepo = FakeHistoryRepository()
+        val mediaRepo = FakeMediaRepository()
+        val viewModel = viewModel(historyRepo, mediaRepo)
+        advanceUntilIdle()
+        viewModel.onResumed() // 首个跳过
+        historyRepo.calls[0].gate.complete(historyPage(entries = emptyList()))
+        mediaRepo.completeFacetsBatch(batch = 0, result = facets(total = 0))
+        advanceUntilIdle()
+
+        // 第一次 resume 发起重拉（闸门挂着不放）；在途期间再次 resume：被 refresh 防重丢弃
+        viewModel.onResumed()
+        advanceUntilIdle()
+        viewModel.onResumed()
+        advanceUntilIdle()
+        assertEquals(2, historyRepo.calls.size)
+
+        historyRepo.calls[1].gate.complete(historyPage(listOf(entry("b"))))
+        advanceUntilIdle()
+        assertEquals(listOf("b"), viewModel.uiState.value.items.map { it.id })
     }
 }
