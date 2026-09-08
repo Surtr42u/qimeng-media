@@ -18,6 +18,8 @@ dependencies {
 
     implementation(libs.compose.material3)
     implementation(libs.compose.ui.tooling.preview)
+    // Vico 折线图（任务H H2，ADR-0018）：统计页趋势卡渲染层，QimengTrendLineChart 封装供 I3 复用
+    implementation(libs.vico.compose.m3)
 
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)

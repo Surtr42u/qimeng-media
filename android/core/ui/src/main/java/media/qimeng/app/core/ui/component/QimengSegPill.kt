@@ -21,8 +21,7 @@ import media.qimeng.app.core.ui.theme.QimengDimens
  * 胶囊视觉 token 逐项保住（G6 已定语言，任务 H1 明确保留）：
  * - 圆角=[QimengDimens.PillCornerRadius]（Web .pill 999px）；
  * - 选中=主色实底 + onPrimary 字 + SemiBold；未选=surfaceVariant 软底 + onSurfaceVariant；
- * - border=null 去掉 FilterChip 默认描边（胶囊语言是实底填充，Web .seg 无描边）；
- * - FilterChip 内建 8dp label 横向留白，补 [QimengDimens.SpaceS] 凑足旧版 14dp 胶囊横向内边距。
+ * - border=null 去掉 FilterChip 默认描边（胶囊语言是实底填充，Web .seg 无描边）。
  * FilterChip 无勾选图标的前提是不传 leadingIcon（默认 null，勾选位不占位）。
  *
  * 本组件仍是全仓单枚胶囊渲染的唯一来源（PillChip 经此委托）。QimengFilterSheet 标签胶囊

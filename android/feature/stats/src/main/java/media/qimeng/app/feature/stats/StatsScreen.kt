@@ -1,6 +1,5 @@
 package media.qimeng.app.feature.stats
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,16 +14,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.text.drawText
-import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -36,11 +27,13 @@ import media.qimeng.app.core.ui.component.QimengSegPill
 import media.qimeng.app.core.ui.component.formatBytesHumanReadable
 
 /**
- * 数据统计页（M4-6，C1/C2/C3 拍板口径）：
+ * 数据统计页（M4-6；C3 拍板已被用户 2026-09-08 推翻，见 ADR-0018）：
  * - 数字卡 6 指标静态（/stats/overview，不随时段联动——overview 无 range 参数，C2）；
  * - 时段四档胶囊 7天/30天/90天/全部（对齐 Web，C1；30 天档 = range=day，见 StatsRange 注释）；
- * - 趋势卡渐变面积 + 折线 + 数据点（Compose Canvas 自绘，C3 拍板；点击数据点气泡与
- *   分类型详情页维持砍掉）。交互规格 = 旧项目 GUIDE_UI §数据统计页。
+ * - 趋势卡渐变面积 + 折线 + 数据点：原 C3 拍板为 Compose Canvas 自绘，用户 2026-09-08
+ *   「不要自绘」「统计页折线图换 Vico」原话优先推翻之，现渲染层 = Vico（ADR-0018，
+ *   QimengTrendLineChart 封装，I3 统计详情页多系列趋势图复用同一封装）。
+ *   交互规格 = 旧项目 GUIDE_UI §数据统计页。
  */
 @Composable
 fun StatsScreen(
@@ -116,7 +109,8 @@ private fun MetricCell(title: String, value: String, modifier: Modifier = Modifi
 
 /**
  * 趋势卡：浏览次数（TrendPoint.viewCount）逐桶折线。
- * 渐变面积 + 折线 + 数据点 + 稀疏 X 轴标签（labelStep 截断到最多 6 个，防长窗口糊屏）。
+ * 渐变面积 + 折线 + 数据点，渲染层走 Vico（QimengTrendLineChart，ADR-0018）；
+ * X 轴日期标签防重叠抽稀由 Vico ItemPlacer 内置（替代旧 Canvas labelStep 手工截断）。
  * 空数据时显示规格文案「暂无趋势数据」。
  */
 @Composable
@@ -131,89 +125,16 @@ private fun TrendCard(points: List<TrendPoint>, loading: Boolean, empty: Boolean
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                else -> TrendChart(
-                    points = points,
-                    lineColor = MaterialTheme.colorScheme.primary,
-                    labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                else -> QimengTrendLineChart(
+                    series = listOf(QimengTrendSeries(values = points.map { it.viewCount })),
+                    seriesColors = listOf(MaterialTheme.colorScheme.primary),
+                    xLabels = points.map { it.label },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(TREND_CHART_HEIGHT_DP.dp),
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun TrendChart(points: List<TrendPoint>, lineColor: Color, labelColor: Color) {
-    val textMeasurer = rememberTextMeasurer()
-    // 桶值不变时避免重组期重复计算极值（Canvas 每帧重绘读这组缓存值）
-    val maxValue = remember(points) { points.maxOf { it.viewCount }.coerceAtLeast(1) }
-    Canvas(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(TREND_CHART_HEIGHT_DP.dp),
-    ) {
-        val padLeft = 8.dp.toPx()
-        val padRight = 8.dp.toPx()
-        val padTop = 12.dp.toPx()
-        val padBottom = 24.dp.toPx()
-        val chartWidth = size.width - padLeft - padRight
-        val chartHeight = size.height - padTop - padBottom
-
-        // x 均分（单点居中）；y 线性映射到 [padTop, padTop + chartHeight]
-        val stepX = if (points.size <= 1) 0f else chartWidth / (points.size - 1)
-        val offsets = points.mapIndexed { index, point ->
-            Offset(
-                x = padLeft + stepX * index,
-                y = padTop + chartHeight * (1f - point.viewCount.toFloat() / maxValue),
-            )
-        }
-
-        // 渐变面积（规格 §数据统计页趋势卡：渐变面积 + 折线）
-        val areaPath = Path().apply {
-            moveTo(offsets.first().x, padTop + chartHeight)
-            offsets.forEach { lineTo(it.x, it.y) }
-            lineTo(offsets.last().x, padTop + chartHeight)
-            close()
-        }
-        drawPath(
-            path = areaPath,
-            brush = Brush.verticalGradient(
-                colors = listOf(lineColor.copy(alpha = AREA_ALPHA), Color.Transparent),
-                startY = padTop,
-                endY = padTop + chartHeight,
-            ),
-        )
-        drawPath(
-            path = Path().apply {
-                moveTo(offsets.first().x, offsets.first().y)
-                offsets.drop(1).forEach { lineTo(it.x, it.y) }
-            },
-            color = lineColor,
-            style = Stroke(width = LINE_WIDTH_DP.dp.toPx()),
-        )
-        offsets.forEach { drawCircle(color = lineColor, radius = DOT_RADIUS_DP.dp.toPx(), center = it) }
-
-        // X 轴稀疏标签（labelStep = 装下最多 MAX_X_LABELS 个的步长；末桶必画）
-        val labelStep = if (points.size <= MAX_X_LABELS) 1 else (points.size + MAX_X_LABELS - 1) / MAX_X_LABELS
-        points.forEachIndexed { index, point ->
-            if (index % labelStep == 0 || index == points.lastIndex) {
-                val measured = textMeasurer.measure(point.label)
-                val x = (offsets[index].x - measured.size.width / 2f)
-                    .coerceIn(0f, size.width - measured.size.width)
-                drawText(
-                    textLayoutResult = measured,
-                    color = labelColor,
-                    topLeft = Offset(x = x, y = size.height - measured.size.height),
-                )
-            }
-        }
-
-        // Y 轴上限参考值（右上角，读数辅助）
-        val maxLabel = textMeasurer.measure(maxValue.toDisplayText())
-        drawText(
-            textLayoutResult = maxLabel,
-            color = labelColor,
-            topLeft = Offset(x = size.width - maxLabel.size.width, y = 0f),
-        )
     }
 }
 
@@ -227,15 +148,3 @@ private const val TREND_EMPTY_TEXT = "暂无趋势数据"
 
 /** 趋势图固定高度（一屏内不挤压列表；纯展示尺寸） */
 private const val TREND_CHART_HEIGHT_DP = 200
-
-/** X 轴标签最多个数（超出按步长抽稀） */
-private const val MAX_X_LABELS = 6
-
-/** 面积渐变顶部透明度（视觉调参：压暗到不抢折线） */
-private const val AREA_ALPHA = 0.25f
-
-/** 折线宽度（dp） */
-private const val LINE_WIDTH_DP = 2
-
-/** 数据点半径（dp） */
-private const val DOT_RADIUS_DP = 3
