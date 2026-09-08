@@ -11,6 +11,16 @@
 
 ---
 
+## fix(app): 任务I I7 收尾——舞台negate-inset真edge-to-edge（chrome两态不位移）（2026-09-09 第一百五十七笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理，任务I I7 批收尾；仲裁 B 案执行——主会话 2026-09-09 裁定推翻 fit-viewport 收口稿，理由：真 edge-to-edge 系 GUIDE_UI L158 语义要求、两态不位移合 L273、纯 feature:detail 零共享文件改动）
+
+- **舞台 negate-inset（DetailScreen）**：壳层 Scaffold 对 NavHost 统一 `padding(innerPadding)+consumeWindowInsets`，fit-viewport 收口稿舞台贴视口致顶部露壳底色条、切 chrome 时 Scaffold 重算 padding 致图片重居中（L273 违规）。改法：`WindowInsets.statusBars.getTop(density)` 读窗口真实 inset（consumeWindowInsets 只作用于 padding 修饰符链，raw 值不受影响），舞台盒高度加回 inset、`Modifier.layout` 绘制时向上平移并等量扣回占位高度——舞台视觉恒 [0,整屏]，chrome 切换（inset 128↔0）两态舞台屏幕框不动（图片不重居中），内容区起点恒屏底两态等高。
+- **chrome 避让改原生 inset（DetailChromeBars）**：B 案首版模拟器实测暴露底部 chrome 因壳层 consumeWindowInsets 读到近似 0 的 nav inset 而下坠入导航栏区——顶/底两 chrome 的 `statusBarsPadding()/navigationBarsPadding()` 改 `padding(WindowInsets.statusBars/navigationBars.asPaddingValues())`（asPaddingValues 不受消费影响，L275 真值避让恒成立），KDoc 同步。
+- **门禁三连绿**：:feature:detail:testDebugUnitTest（含点赞指纹/exitToPoster 用例）0 failures；:app:assembleDebug BUILD SUCCESSFUL；:feature:detail:lintDebug 0 errors。模拟器 18461 走查：B 案顶栏自屏顶渐变（无壳底色条）、双击缩放 1.8x 详见 %TEMP%\qimeng-i7-evidence\（35-37 号证据）；底部 chrome 避让修复后复验与海报横滑正例/快速转跳 Sheet 两项补证因并行会话持续占用模拟器未完成独立取证，代码链路已核如实记档（I9 收官总走查兜底）。
+
+---
+
 ## fix(app): 任务I I5 补齐——滑动暂停缩略图加载 core:ui 门控参数（2026-09-09 第一百五十六笔）
 
 执行 AI：GLM-5.3-Flash（监督会话续作 executor 实现；I5 主体=e516f12 原会话 executor，本笔闭合其缺失依赖修复 broken master）

@@ -8,10 +8,12 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -28,7 +30,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -166,15 +170,43 @@ fun DetailScreen(
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background),
         ) {
-            val stageHeight = maxHeight
+            // 舞台 negate-inset 真 edge-to-edge（任务I I7 收尾，仲裁 B 案 2026-09-09）：壳层
+            // Scaffold 给 NavHost 统一 innerPadding.top（=状态栏高）+consumeWindowInsets，
+            // 舞台贴视口则顶部露一条壳底色条（不符 GUIDE_UI L272「详情页始终 edge-to-edge
+            // 全屏布局，系统栏显隐不触发布局变化」——既非全出血，切 chrome 时 Scaffold 重算
+            // padding 亦致舞台位移、图片重新居中）。处理留在本文件不触共享壳：
+            // WindowInsets.statusBars 读的是窗口真实 inset（consumeWindowInsets 只作用于
+            // padding 修饰符链，不改 rootWindowInsets 原值），舞台盒高度加回 inset、绘制时
+            // 向上平移并等量扣回占位高度——舞台视觉恒 [0,整屏]；chrome 切换（inset 128↔0）
+            // 两态舞台屏幕框不动（图片不重新居中），内容区起点恒屏底两态等高。chrome 顶栏
+            // 避让随之自洽：DetailTopChrome 自带 statusBarsPadding，舞台顶从屏顶起算后其
+            // 避让量即状态栏真实高度（L275）。
+            val density = LocalDensity.current
+            val statusBarTopPx = WindowInsets.statusBars.getTop(density)
+            val stageHeight = with(density) { statusBarTopPx.toFloat().toDp() } + maxHeight
+            val stageEdgeToEdgeShift = Modifier.layout { measurable, constraints ->
+                val placeable = measurable.measure(constraints)
+                layout(
+                    width = placeable.width,
+                    height = (placeable.height - statusBarTopPx).coerceAtLeast(0),
+                ) {
+                    placeable.placeRelative(x = 0, y = -statusBarTopPx)
+                }
+            }
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState()),
             ) {
-                // 第一屏：媒体舞台 edge-to-edge 全出血（黑底整屏盒）+ 渐变 chrome 浮层
-                //（chrome 挂舞台盒内随第一屏滚动——只覆盖第一屏，下滑看内容不被遮）
-                Box(modifier = Modifier.fillMaxWidth().height(stageHeight)) {
+                // 第一屏：媒体舞台 edge-to-edge 全出血（黑底盒整屏盒）+ 渐变 chrome 浮层
+                //（chrome 挂舞台盒内随第一屏滚动——只覆盖第一屏，下滑看内容不被遮）；
+                // stageEdgeToEdgeShift 见上注（negate-inset 平移）
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(stageHeight)
+                        .then(stageEdgeToEdgeShift),
+                ) {
                     DetailMediaStage(
                         asset = asset,
                         watched = state.videoWatched,
