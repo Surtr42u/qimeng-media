@@ -3,7 +3,6 @@ package media.qimeng.app.core.ui.component
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -13,10 +12,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
@@ -64,37 +63,11 @@ fun QimengChipRow(
 }
 
 /**
- * 药丸容器（旧版 GUIDE_UI §药丸容器）：自动换行 + 末尾「收起 ▲」；折叠 = 完全隐藏、无摘要行
- * （折叠时调用方不渲染本组件即可——为显式表达该语义，collapsed=true 时这里渲染 null）。
- * 多选不退出：点胶囊只回调 onPillClick，不收起；仅「收起 ▲」触发 onCollapse。
- */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-fun QimengPillFlowRow(
-    pills: List<QimengPill>,
-    onPillClick: (index: Int) -> Unit,
-    collapsed: Boolean,
-    onCollapse: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    if (collapsed) return
-    FlowRow(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(QimengDimens.SpaceM),
-        verticalArrangement = Arrangement.spacedBy(QimengDimens.SpaceM),
-    ) {
-        pills.forEachIndexed { index, pill -> PillChip(pill = pill, onClick = { onPillClick(index) }) }
-        PillChip(
-            pill = QimengPill(text = stringResource(R.string.ui_pill_collapse), selected = false),
-            onClick = onCollapse,
-        )
-    }
-}
-
-/**
  * 词丸流（旧版实录 search_entry：推荐搜索/搜索历史 ChipGroup 换行药丸流，M4-2A-B4）。
- * 与 [QimengPillFlowRow] 的差别：无「收起 ▲」尾丸、无折叠语义——搜索页两区词丸
- * 旧版全量平铺不折叠；胶囊渲染复用 [PillChip] 单源，禁各页自绘（铁律 7 / §5 组件单源）。
+ * 无「收起 ▲」尾丸、无折叠语义——搜索页两区词丸旧版全量平铺不折叠；
+ * 胶囊渲染复用 [PillChip] 单源，禁各页自绘（铁律 7 / §5 组件单源）。
+ * （任务 H1 清偿：原带「收起 ▲」折叠尾丸的 QimengPillFlowRow 全仓零调用已删除，
+ * 折叠语义由 [QimengFloatingPillPanel]/[QimengValuePillFlow] 分承。）
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -117,7 +90,7 @@ fun QimengWordPillFlow(
  * （elevation 4dp + 页面底色，不推挤网格——旧版 FrameLayout 叠放）、最大高度=屏高一半
  * （旧版 MaxHeightScrollView.onMeasure：heightPixels/2 的 AT_MOST 语义）超出内部滚动、
  * 药丸 FlowRow 自动换行、末尾固定「收起 ▲」、点药丸不收起。
- * 折叠时调用方不组合本组件（与 [QimengPillFlowRow] 同语义，collapsed=true 渲染 null）。
+ * 折叠时调用方不组合本组件（collapsed=true 渲染 null）。
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -157,14 +130,16 @@ fun QimengFloatingPillPanel(
     }
 }
 
-/** 芯片行竖分隔线（旧版 fragment_all_files.xml L117-118：1dp × 18dp；色=qmColorDivider→outlineVariant） */
+/**
+ * 芯片行竖分隔线（旧版 fragment_all_files.xml L117-118：1dp × 18dp；色=qmColorDivider→outlineVariant）。
+ * 任务 H1：自绘 Box 换 M3 [VerticalDivider] 标准件（尺寸/颜色 token 逐项不变）。
+ */
 @Composable
 private fun ChipDivider() {
-    Box(
-        modifier = Modifier
-            .width(QimengDimens.DividerThickness)
-            .height(QimengDimens.DividerHeight)
-            .background(MaterialTheme.colorScheme.outlineVariant),
+    VerticalDivider(
+        thickness = QimengDimens.DividerThickness,
+        modifier = Modifier.height(QimengDimens.DividerHeight),
+        color = MaterialTheme.colorScheme.outlineVariant,
     )
 }
 

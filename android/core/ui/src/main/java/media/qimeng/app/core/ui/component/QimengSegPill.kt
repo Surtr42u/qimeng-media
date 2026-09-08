@@ -1,30 +1,33 @@
 package media.qimeng.app.core.ui.component
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import media.qimeng.app.core.ui.theme.QimengDimens
 
 /**
- * 分段选择胶囊（任务 G6：FilterChip 的胶囊替身，对齐 Web .seg/.pill=999px）。
+ * 分段选择胶囊（任务 H1：内部实现从自绘 Text+clip+background 换 M3 [FilterChip] 标准件）。
  *
- * 语义：无勾选框；选中=主色实底反色字（SemiBold），未选中=软底 surfaceVariant——与
- * [QimengPills] 的胶囊语言完全同谱（选中实底/未选软底）。
+ * 为什么不换 SingleChoiceSegmentedButtonRow（任务书二选一）：SegmentedButton 是连体分段布局，
+ * 消费方（feature/settings 缓存档位、feature/stats 时段档、feature/upload 目标库、QimengPills
+ * 全部胶囊族）都在 spacedBy 的 Row/FlowRow 里逐枚独立排布，换连体分段要改全部调用点布局——
+ * FilterChip 方案签名零变化、调用点零改动，按「改动面小者为准」选 FilterChip。
  *
- * 实现取舍：自绘 Text+clip+background+clickable，不用 FilterChip——FilterChip 选中态自带
- * 前导勾选图标与描边观感，与「无勾选框软底胶囊」语言冲突（Web .seg 无勾选框）。
- * 渲染参数与 QimengPills 原私有 PillChip 逐项相同（G6 查重后 PillChip 已改为委托本组件），
- * 本组件是全仓单枚胶囊渲染的唯一来源，禁止再开平行实现。
+ * 胶囊视觉 token 逐项保住（G6 已定语言，任务 H1 明确保留）：
+ * - 圆角=[QimengDimens.PillCornerRadius]（Web .pill 999px）；
+ * - 选中=主色实底 + onPrimary 字 + SemiBold；未选=surfaceVariant 软底 + onSurfaceVariant；
+ * - border=null 去掉 FilterChip 默认描边（胶囊语言是实底填充，Web .seg 无描边）；
+ * - FilterChip 内建 8dp label 横向留白，补 [QimengDimens.SpaceS] 凑足旧版 14dp 胶囊横向内边距。
+ * FilterChip 无勾选图标的前提是不传 leadingIcon（默认 null，勾选位不占位）。
  *
- * 消费方清单：feature/settings 缓存档位、feature/stats 时段档、feature/upload 目标库选择、
- * QimengPills 全部胶囊行/词丸流/悬浮面板（经私有 PillChip 委托）。
+ * 本组件仍是全仓单枚胶囊渲染的唯一来源（PillChip 经此委托）。QimengFilterSheet 标签胶囊
+ * 因 M3 芯片无长按能力（两轮标准件化实测破坏功能）保留手绘实现，属已记档例外，
+ * 其 token 与本组件同谱；禁止再开其他平行实现。
  *
  * @param text 胶囊文案
  * @param selected 选中态（实底主色 vs 软底）
@@ -37,24 +40,25 @@ fun QimengSegPill(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.labelLarge,
-        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-        color = if (selected) {
-            MaterialTheme.colorScheme.onPrimary
-        } else {
-            MaterialTheme.colorScheme.onSurfaceVariant
-        },
-        modifier = modifier
-            .clip(RoundedCornerShape(QimengDimens.PillCornerRadius))
-            .background(
-                if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        // m3 1.4 FilterChip 内建 label 横向留白实测已接近旧版 14dp 胶囊横向内边距
+        // （目检 dump：不再额外补白，胶囊宽度与基线差 <2dp/侧，故 label 不加 padding）
+        label = {
+            Text(
+                text = text,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
             )
-            .clickable(onClick = onClick)
-            .padding(
-                horizontal = QimengDimens.ChipHorizontalPadding,
-                vertical = QimengDimens.SpaceS,
-            ),
+        },
+        shape = RoundedCornerShape(QimengDimens.PillCornerRadius),
+        colors = FilterChipDefaults.filterChipColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+            labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            selectedContainerColor = MaterialTheme.colorScheme.primary,
+            selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
+        ),
+        border = null,
+        modifier = modifier,
     )
 }

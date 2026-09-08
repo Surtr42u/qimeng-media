@@ -16,7 +16,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
+import media.qimeng.app.core.ui.theme.QimengDimens
 
 /**
  * 覆盖页/列表页统一顶栏：返回 + 标题 + 可选动作区（同构页面禁止各写一套 Scaffold 顶栏）。
@@ -70,7 +70,7 @@ fun QimengEmptyState(
     // 与旧版可见位置差（顶部 vs 居中）。8 处调用方（all/author/favorite/history/home/search）
     // 各自独占满容父容器（7 处在 QimengPullToRefresh content 内；search ResultPhase 在
     // Box(fillMaxSize) 内独占、无兄弟），fillMaxSize 无挤压风险。
-    Box(modifier = modifier.fillMaxSize().padding(vertical = 48.dp)) {
+    Box(modifier = modifier.fillMaxSize().padding(vertical = QimengDimens.EmptyStateVerticalPadding)) {
         Text(
             text = text,
             style = MaterialTheme.typography.bodyMedium,
@@ -108,7 +108,7 @@ fun QimengLoadingState(
     modifier: Modifier = Modifier,
 ) {
     Column(
-        modifier = modifier.fillMaxSize().padding(top = 96.dp),
+        modifier = modifier.fillMaxSize().padding(top = QimengDimens.LoadingTopPadding),
         verticalArrangement = Arrangement.Center,
     ) {
         Text(

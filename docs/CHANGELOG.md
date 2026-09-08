@@ -11,6 +11,20 @@
 
 ---
 
+## refactor(app): 任务H H1 :core:ui 组件瘦身——M3标准件替换+死代码清理（2026-09-09 第一百四十七笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理，任务H-Android复刻前置卷 H1 批）
+
+- **胶囊单源标准件化**：QimengSegPill 内部实现从自绘 Text+clip+background+clickable 换 M3 FilterChip（对外签名零变化，全仓胶囊渲染仍单源，feature 调用点零改动；目检微调=label 不额外补白，m3 1.4 内建留白已≈旧版 14dp）；分段切换不选 SegmentedButton 的理由=连体分段布局与消费方 spacedBy 独立排布冲突、改动面大，按任务书「改动面小者为准」选 FilterChip。G6 胶囊 token 逐项保留（PillCornerRadius=100dp/选中主色实底+onPrimary+SemiBold/未选 surfaceVariant，border=null 去 FilterChip 默认描边）。
+- **筛选面板内部标准件化**（基座已是 ModalBottomSheet 不动）：SheetButton 手绘 Box→M3 Button（压平投影保旧版平面观感，软底档覆盖 surfaceVariant）；AddTagRow→TextButton（Text 撑满回左对齐保实录形态）；年份下拉锚点手绘药丸→M3 可点击 Surface；单选行 clickable→selectable(role=RadioButton) 无障碍语义升级（视觉零变化）。**例外记档**：TagChip 保留手绘——两轮 FilterChip 化模拟器实测均破坏长按删除（①常态 FilterChip+外层 combinedClickable：内层手势吞长按且长按抬起误转点击；②enabled=false 纯视觉化：连单击都到不了外层），按「以不破坏功能为前提」回退，待 M3 出带长按芯片或手势可穿透再收编。
+- **零签名改动核对**：feature 调用点全部零改动（QimengSegPill 签名不变、删除件零调用）。
+- **死代码清理**：QimengPlaceholderPage（M4-0 零调用遗留）删除，其宿主文件仅存 `Dimens.ScreenPadding`（login/settings/stats 三处引用）改名 ComponentDimens.kt；QimengPillFlowRow（疑零调用 grep 全仓核实仅自引用）删除，「收起 ▲」折叠语义由 FloatingPillPanel/ValuePillFlow 分承。
+- **保留记档**：QimengGridPinchGesture（捏合切列数无标准件）、QimengMediaGrid/QimengThumbnail/QimengScaffold（布局薄封装）、QimengCapsuleTextField（已是 M3 OutlinedTextField 薄封装，搜索框不换 SearchBar=改动面小者）、QimengRankCard/QimengTitleRow/TabScrollController/QimengFormat；icon/ 两文件自持矢量=体积决策在案不动。
+- **卫生清偿**：QimengScaffold 空态/加载态裸 48dp/96dp 换已登记 QimengDimens token；QimengPills 竖分隔线自绘 Box→M3 VerticalDivider。
+- 门禁：单测（:core:ui+全仓 testDebugUnitTest+:core:model:test）/assembleDebug/:core:ui lintDebug 全绿；全仓 lintDebug 的 6 errors 系 master 既有（:feature:detail DetailScreen.kt LocalContextGetResourceValueCall，git stash 对照实验证实与本批无关）。模拟器 qimeng_api35 同机位前后截图对比大致相似，全部页 G5 三要素（排序 pill 行/in-flow 值行/卡片日期行）无回滚；筛选面板长按删除标签全链路（长按→确认框→删除→重添加复原）实测通过。
+
+---
+
 ## docs: 任务G-Android对齐卷收官——G7 全卷对抗审查+P2/P3 清偿+文档同步（2026-09-08 第一百四十六笔）
 
 执行 AI：GLM-5.3（主代理调度；reviewer 全卷对抗审查/主代理修复，任务G-Android对齐卷 G7）
