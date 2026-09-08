@@ -5,16 +5,16 @@
  */
 
 import { useLocation, useNavigate } from 'react-router'
-import { HOME_PATH } from '@/lib/route-keys'
+import { ALBUMS_PATH, HOME_PATH } from '@/lib/route-keys'
 import { toggleTheme } from '@/lib/theme'
 import {
   AlbumsIcon, BackIcon, DataIcon, HomeIcon, MineIcon, MoonIcon, SettingsIcon, WrenchIcon,
 } from './icons'
 
 const MAIN_NAV = [
-  // F2：首页路由串收敛走 route-keys HOME_PATH（路由键唯一来源）
+  // F2/F5 审查清偿：主导航路由串全走 route-keys 常量（路由键唯一来源）
   { to: HOME_PATH, label: '首页', Icon: HomeIcon },
-  { to: '/app/albums', label: '相册', Icon: AlbumsIcon },
+  { to: ALBUMS_PATH, label: '相册', Icon: AlbumsIcon },
   { to: '/app/mine', label: '我的', Icon: MineIcon },
   { to: '/app/data', label: '数据', Icon: DataIcon },
 ] as const

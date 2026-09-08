@@ -76,6 +76,10 @@ export const router = createBrowserRouter([
               { path: 'collection/:kind/:name', element: <Suspense fallback={null}><CollectionPage /></Suspense> },
               { path: 'maintenance/files', element: <Suspense fallback={null}><LibraryManagePage /></Suspense> },
               { path: 'maintenance/trash', element: <Suspense fallback={null}><TrashPage /></Suspense> },
+              // 未注册路径兜底（E/F卷审查·P3 清偿）：F1 只修了 /app/collection 深链，
+              // 任意其他未注册路径（旧书签/手误）仍整树无匹配白屏且 ErrorBoundary
+              // 兜不住（路由不匹配不抛异常）；catch-all 静默回首页（SPA 无 404 页需求）
+              { path: '*', element: <Navigate to={HOME_PATH} replace /> },
             ],
           },
         ],

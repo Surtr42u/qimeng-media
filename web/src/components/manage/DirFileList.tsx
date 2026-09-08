@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { FolderInput, Pencil, Trash2 } from 'lucide-react'
+import { FolderInput, Trash2 } from 'lucide-react'
 import type { AssetSummary, MediaType } from '@/api/generated'
 import { MoveDialog } from '@/components/manage/MoveDialog'
 import {
@@ -23,7 +23,7 @@ import { dirLabel, formatBytes } from '@/lib/format'
  * useAssetsInDirectory（GET /assets 的 B-4 directory 过滤，一次拉全 limit=200，
  * query key 含 directory——切目录换键重取；挂资产根键，移动/删除的根键失效
  * 直接命中本清单，行随操作结果即时刷新）。行 = 文件名 + 类型/大小 metric +
- * 行内 hover 三操作（重命名/移动/删除）；弹窗编排复用共享 FileOpsDialogs
+ * 行内 hover 两操作（移动/重命名共用一个端点弹窗、删除）；弹窗编排复用共享 FileOpsDialogs
  * （MoveDialog / ConfirmDialog 删除语义，文案含「移入回收站」），本组件零
  * 直调 API（铁律 7）。行容器复用 .dir-row（与目录行同一 hover 操作语言）。
  *
@@ -209,20 +209,11 @@ export function DirFileList({ libraryId, directory }: { libraryId: string; direc
                     <button
                       className="dir-action-btn"
                       type="button"
-                      title="重命名"
-                      onClick={() => openOps('move', f)}
-                    >
-                      <Pencil width={14} height={14} />
-                      重命名
-                    </button>
-                    <button
-                      className="dir-action-btn"
-                      type="button"
-                      title="移动到其他目录"
+                      title="移动或重命名"
                       onClick={() => openOps('move', f)}
                     >
                       <FolderInput width={14} height={14} />
-                      移动
+                      移动/重命名
                     </button>
                     <button
                       className="dir-action-btn"

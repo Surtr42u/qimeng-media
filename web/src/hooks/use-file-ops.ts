@@ -24,6 +24,7 @@ import {
   DIRS_QUERY_KEY,
   RECOMMENDATIONS_QUERY_KEY,
   SOURCES_QUERY_KEY,
+  STATS_QUERY_KEY,
   TRASH_QUERY_KEY,
 } from '@/lib/query-keys'
 
@@ -61,6 +62,9 @@ export function useDeleteAsset() {
       qc.invalidateQueries({ queryKey: RECOMMENDATIONS_QUERY_KEY })
       // 目录树 fileCount 同步失效（与 useMoveAsset 对齐，消除本地即时性窗口）
       qc.invalidateQueries({ queryKey: DIRS_QUERY_KEY })
+      // 库总量/类型计数等统计随删除变化（stats 不在 SSE 失效面=query-keys 口径，
+      // 本地 onSuccess 补齐，消除首页统计 staleTime 窗口滞后；E/F卷审查·P3）
+      qc.invalidateQueries({ queryKey: STATS_QUERY_KEY })
     },
   })
 }
