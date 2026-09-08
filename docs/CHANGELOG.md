@@ -11,6 +11,18 @@
 
 ---
 
+## feat(app): 任务I I1 首页复刻——刷新清空三tab缓存+点赞返回重排指纹（LikeMutationTracker，detail侧接线归I7）+胶囊按下缩放（2026-09-09 第一百五十笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理，任务I-Android页面复刻卷 I1 批；依据=docs/REPLICATION_GAPS.md §3.1 三条差距逐条清偿，清单外不做）
+
+- **下拉刷新清空所有 tab 排序缓存**（GUIDE_UI §下拉刷新 L86，差距①）：HomeViewModel.refresh() 重写——当前 tab 立即重拉（推荐=B 站式换 seed 全量重排；COS/排行=重拉当前页），另两 tab 数据缓存清空+loaded 标脏，切入时经既有 switchTab 懒重拉，不再残留刷新前旧数据；当前 tab 不预清数据（在途防重拦截后不白屏，响应落地即整体替换）。行为单测×2 锁定（当前 tab 立即重拉且换 seed/另两 tab 标脏缓存清空/切入懒重拉发新请求）。
+- **点赞后返回自动重排**（GUIDE_UI L89 likeVersion 指纹维度，缺失②=I1 核心项）：:core:data 新增 LikeMutationTracker（Hilt 单例，纯内存指纹=likeVersion 计数器+变更时间戳，不持久化；KDoc 写明 SSE 无 like 事件（openapi.yaml /events 清单），本地感知是协议内唯一路径；**detail 侧上报点=I7 批在详情页点赞成功处调用，全链实测留 I7**）；HomeViewModel.onHomeResumed() 指纹对比（首次回调只采纳基线，进页不误刷），变化→重拉当前 tab（推荐走刷新路径换 seed——同 seed 服务端返回同一打散序、重排不可见；重排效果由服务端打分决定，客户端不做语义假设），无变更不重拉=「浏览退出保持原样」半边天然满足；HomeScreen 以 LifecycleEventObserver ON_RESUME 接线（覆盖详情 pop 返回与 App 回前台两路径）。本批验收=tracker 单测×3+首页响应单测×2+模拟器「浏览返回不重拉」走查。
+- **三胶囊按下缩放反馈 0.92→1.0**（GUIDE_UI §UI约束 L312 微交互，缺失③）：QimengSegPill（全仓胶囊渲染单源，一处补齐全局生效）补 pressed scale——自持 interactionSource+collectIsPressedAsState+animateFloatAsState（tween 100ms FastOutSlowInEasing 对应旧版 PressAnimation，常量具名 SEG_PILL_PRESSED_SCALE=0.92f），graphicsLayer 块内延迟读取、缩放动画不触发重组；模拟器像素实测：按下时选中胶囊宽比 0.911/面积比 0.826（≈0.92²），松手回弹 1.0。
+- 门禁：:feature:home testDebugUnitTest（7 用例含 4 新）+:core:data testDebugUnitTest（LikeMutationTrackerTest 3 用例）+模块 lintDebug 全绿；模拟器 18461 虚构库（QIMENG-TEST）走查：下拉刷新后切 COS/排行榜各自发出全新请求（旧实现命中缓存不重拉）+当前 tab 换 seed 立即重拉；详情返回无列表重拉（浏览保持原样）；证据 %TEMP%\qimeng-i1-evidence\（请求序列 logcat+前后截图+按下缩放双帧）。
+- 记档：①emulator-5554 为 I1/I2/I3 并行共享，走查中观测到并行批操作交错（幽灵 tab 切换/他批下拉刷新的 seed++ 请求/他批重装触发的重登录），关键断言以紧凑单窗口请求序列与单测为准；②既有边界行为（非本批引入、按范围红线不动，待拍板）：小库（18 文件一次全揭示）下 RANK→RECOMMEND 胶囊切换时周期行消失使 pager 视口变高，距底哨兵（core:ui QimengMediaGrid lastVisible≥total-1-6）在阈值上触发 appendNextSeedRound 换 seed 请求一次，与「切 tab 不重拉」相悖，大库不可见，如需清偿另开小批。
+
+---
+
 ## feat(app): 任务I I2 搜索页复刻走查——IME 遮挡实测判定通过（无需修复）+H1 换件回归确认，零代码改动纯走查批（2026-09-09 第一百五十一笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理，任务I-Android页面复刻卷 I2 搜索批；独占 feature:search，REPLICATION_GAPS §3.2 两条目全走查）
