@@ -21,6 +21,7 @@ import media.qimeng.app.core.model.AlbumDim
 import media.qimeng.app.core.model.AlbumFilter
 import media.qimeng.app.core.model.AlbumFilterState
 import media.qimeng.app.core.model.AlbumPanelDraft
+import media.qimeng.app.core.model.AssetSort
 import media.qimeng.app.core.model.FacetOption
 import media.qimeng.app.core.model.FacetParamKind
 import media.qimeng.app.core.model.FacetsResult
@@ -30,6 +31,7 @@ import media.qimeng.app.core.model.MediaAsset
 import media.qimeng.app.core.model.MediaKind
 import media.qimeng.app.core.model.PARTITION_KEY_ALL
 import media.qimeng.app.core.model.RankingPeriod
+import media.qimeng.app.core.model.SortOrder
 import media.qimeng.app.core.model.TagSummary
 import media.qimeng.app.core.model.Zone
 import media.qimeng.app.core.model.panelDraft
@@ -141,8 +143,17 @@ class AlbumViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(filter = filter.copy(expanded = !filter.expanded))
     }
 
-    fun collapsePills() {
-        _uiState.value = _uiState.value.copy(filter = _uiState.value.filter.copy(expanded = false))
+    /**
+     * 排序档切换（任务G G5：排序 pill 行提到页头，对齐 Web AlbumsPage SORTS 四档——
+     * 精选=default/desc、最新=fileDate/desc、最旧=fileDate/asc、按名称=name/asc）。
+     * 档位映射 [AlbumFilterState] 既有 sort+order 字段，走 [applyFilter] 既有刷新链
+     * （代际防乱序自动生效），零协议/数据层改动。
+     * 点当前档不重发请求——Web 端点击已选 pill 仅 setState 同值不触发重取，同口径。
+     */
+    fun selectSort(sort: AssetSort, order: SortOrder) {
+        val current = _uiState.value.filter
+        if (current.sort == sort && current.order == order) return
+        applyFilter(current.copy(sort = sort, order = order))
     }
 
     fun selectPartition(zone: Zone) {

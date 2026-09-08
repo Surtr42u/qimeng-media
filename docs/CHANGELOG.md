@@ -11,6 +11,37 @@
 
 ---
 
+## feat(app): 任务G G5 相册排版对齐 Web（2026-09-08 第一百四十二笔）
+
+执行 AI：GLM-5.3（主代理调度；executor 执行/主代理模拟器验证，任务G-Android对齐卷 G5；**基准拍板=Web 现版，推翻 B6 豁免档相册页相关豁免**——用户 2026-09-08 反馈「web的倒是和旧版手机的ui一致，为什么新版的手机端反而没做到」按冲突优先级第 1 条裁决）
+
+- **排序 pill 行提到页头**：维度芯片行下常驻排序行（精选/最新/最旧/按名称，与 Web AlbumsPage SORTS 逐字一致；映射 DEFAULT+DESC/FILE_DATE+DESC/FILE_DATE+ASC/NAME+ASC，走 AlbumViewModel.selectSort 既有代际链，同档不重发）；QimengFilterSheet 移除排序方式/顺位两段（单一编辑入口；面板草稿仍原样携带 sort/order 模型零改动；10 条死字符串资源清除）。面板七档排序（添加日期/观看次数等）随段移除失去入口=对齐 Web 四档基线的必然结果。
+- **值行改 in-flow**：相册页候选值药丸从 QimengFloatingPillPanel 悬浮面板改为内联值区块（QimengValuePillFlow 新组件：FlowRow+maxLines 钳制），默认收起两行（阈值 9 对齐 Web VALUE_COLLAPSE_THRESHOLD，候选>9 显示「展开 ⌄/收起 ⌃」）；切维归位收起+旋转存活（rememberSaveable）；展开推挤网格不再遮挡。**维度芯片行 D3 拍板语义（默认收起/toggle/切维仍展开）保持不动**；QimengFloatingPillPanel 本体保留（收藏/历史页仍在用，grep 确认）。网格 180dp 底衬留白保留（原始理由消失，留作呼吸区注释更新）。
+- **卡片补日期行**：QimengMediaGrid 卡片四层=图/标题/作者/日期（对齐 Web MediaCard；formatShortDate(modifiedAtMs) 复用既有函数同字段同格式「M-D」；up/date 皆空不渲染）——列表族（首页/相册/收藏/历史/搜索）共用组件一并对齐。
+- **验收**：compile+单测全绿（AlbumViewModelTest 7/AlbumFilterPanelTest 11/core:model 91 全过）；模拟器实测：排序行四档在位、分区展开值区内联推挤排序行下移（428→534px）、卡片「其他 9-7」日期行在位；截图 %TEMP%\qimeng-g5-evidence\。
+
+---
+
+## feat(app): 任务G G6 内部 UI 胶囊语言统一（含 G4 搜索胶囊）（2026-09-08 第一百四十笔）
+
+执行 AI：GLM-5.3（主代理调度；executor 执行/主代理模拟器验证，任务G-Android对齐卷 G6）
+
+- **共享组件两件**（core:ui，Web 胶囊语言的安卓落地）：`QimengCapsuleTextField`（胶囊软底输入框——PillCornerRadius 全圆角+surfaceVariant 软底+三态描边透明，聚焦反馈走 focusedContainerColor=surfaceContainerHigh；label 一律 placeholder 语义对齐 Web；不设高度档=保留 56dp 触摸目标，取舍记 KDoc）；`QimengSegPill`（分段选择胶囊——自绘 Text+clip+background，选中 primary 实底反色字 SemiBold/未选软底，无勾选框对齐 Web .seg/.pill=999px；不用 FilterChip 因自带勾选图标冲突）。**查重产出**：QimengPills 私有 PillChip 与 QimengSegPill 渲染同谱 → PillChip 改委托单源，8 处既有胶囊消费方零变化。
+- **替换 11+3 处散点**：搜索页搜索框（=G4 本体，补 leading 放大镜图标，外层手势拦截不动）/作者页搜索框（同款）/设置页缓存档位/统计页时段档/上传页目标库三处 FilterChip→QimengSegPill；上传新建目录/标签新建/时间轴标签命名/筛选面板标签输入→QimengCapsuleTextField；作者页关注钮+首页假搜索框硬编码 100.dp→QimengDimens.PillCornerRadius 单源。图标纪律=自持矢量（SearchIcon 非 Icons.Outlined）。替换后 feature/core 下零裸 OutlinedTextField 默认形状消费。
+- **验收**：assembleDebug+testDebugUnitTest 全绿；模拟器实测搜索页——胶囊形+放大镜+软底+顶部无异常间距（视觉模型判读），截图 %TEMP%\qimeng-g6-evidence\。
+
+---
+
+## fix(app): 任务G G3 外部页面系统栏遮挡+覆盖页双重留白（2026-09-08 第一百四十一笔）
+
+执行 AI：GLM-5.3（主代理调度；executor 执行/主代理补 consumeWindowInsets+模拟器验证）
+
+- **登录页结构性缺口**（渲染在主壳 Scaffold 之外，edge-to-edge 下内容画进系统栏+键盘盖密码框）：LoginScreen 根容器补 statusBarsPadding+navigationBarsPadding+imePadding；两输入框随批换 QimengCapsuleTextField。
+- **覆盖页双重状态栏留白（executor 反编译 material3 1.4.0 bytecode 实证）**：主壳 Scaffold 无 topBar→innerPadding.top=状态栏高，NavHost 只 padding 不消费 insets；search/favorite/history/authors/upload/detail 覆盖页内嵌 QimengTopBar（M3 TopAppBar 默认 windowInsets=statusBars）再自留一段→标题上方两倍空白。修复=NavHost `padding(innerPadding).consumeWindowInsets(innerPadding)`（Scaffold 官方范式，嵌套组件 insets 归零）。
+- **验收**：assembleDebug 全绿；模拟器实测作者管理页标题 top=171px（状态栏 128 下方正常位，修复前≈300px 双倍）。
+
+---
+
 ## fix(app): 维护审查清偿——任务D卷审查 P2×5/P3×4（2026-09-08 第一百三十七笔）
 
 执行 AI：GLM-5.3（主代理；三路并发审查子代理 Android 卷/Web 卷/流程合规 + 主代理修复）

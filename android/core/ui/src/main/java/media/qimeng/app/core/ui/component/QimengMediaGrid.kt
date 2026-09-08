@@ -130,7 +130,8 @@ fun QimengMediaGrid(
 }
 
 /**
- * 资产卡片：缩略图（16:9）+ 标题一行 + 视频时长角标（旧版：纯文字时长，不使用胶囊底）。
+ * 资产卡片：缩略图（16:9）+ 标题一行 + 视频时长角标（旧版：纯文字时长，不使用胶囊底）+
+ * meta 行（作者 + 日期，任务G G5 对齐 Web MediaCard 四层 图/标题/up/date）。
  * 详情跳转是 M4-3 交界：onClick 已预留，本批由壳层决定行为。
  * 动图（animated_image）走原件直链动画（拍板条目 9）：解析经 [animatedUrlResolver]
  * （VM 侧带内存缓存的 AssetOrigUrlResolver），解析完成前显示服务端缩略图。
@@ -194,17 +195,29 @@ private fun AssetCard(
                     bottom = QimengDimens.SpaceS,
                 ),
             ) {
-                val meta = asset.authorNames.firstOrNull() ?: asset.source
-                if (meta != null) {
+                val up = asset.authorNames.firstOrNull() ?: asset.source
+                // 日期行（任务G G5：Web MediaCard 第四层，date=formatShortDate(modifiedAt)——
+                // Android 同字段 modifiedAtMs、同格式「M-D」（[formatShortDate] 口径注释对照 Web）
+                val date = formatShortDate(asset.modifiedAtMs)
+                if (up != null) {
                     Text(
-                        text = meta,
+                        text = up,
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
+                        // 作者名占剩余宽：日期钉在行尾不被长名挤掉（Web card--meta 同行 flex 布局）
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (date.isNotEmpty()) Spacer(modifier = Modifier.width(QimengDimens.SpaceXS))
+                }
+                if (date.isNotEmpty()) {
+                    Text(
+                        text = date,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Spacer(modifier = Modifier.width(QimengDimens.SpaceXS))
             }
         }
     }
