@@ -11,6 +11,22 @@
 
 ---
 
+## feat(app): 任务I I7 详情页沉浸复刻——4层沉浸结构+chrome显隐/系统栏+信息/快速转跳BottomSheet+播放返回拦截+海报态横滑+点赞指纹接线（全链重排闭环）（2026-09-09 第一百五十五笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理，任务I-Android页面复刻卷 I7 详情页批；独占 feature:detail，依据 REPLICATION_GAPS §3.7 差距条目逐条清偿；接手工作树 I7 遗留半成品原地收尾，未回滚未重做。**执行披露**：本批 feature:detail 在盘点半成品期间检测到另一并行续作会话同面修错与走查（04:49 编译错收敛、05:10 DetailScreen 舞台高度改 BoxWithConstraints.maxHeight），两次上报主会话仲裁未获回复；本笔按现状树收口提交，含该会话同批改动，特此记档）
+
+- **沉浸 4 层结构回归（差距1，GUIDE_UI §详情页 L158-160）**：G1a/G1b Web 排版页（68vh 舞台）回归旧版沉浸组织——第一屏媒体舞台黑底盒整屏（图片态 ZoomImageView 链 / 视频态 BiliPlayerView 链，gesture/分层/续播全链冻结不动），媒体层下方保留信息内容区（标题/meta/互动/标签/作者卡/UpNext，拍板⑧超规格件保留融入，下滑查看；chrome 挂舞台盒内只覆盖第一屏）。基准依据=台账 #33 用户拍板「1 a」按 GUIDE_UI 沉浸复刻（推翻 09-05 Web 排版基准）。
+- **上下渐变 chrome（差距2，L171/172/313）**：DetailChromeBars.kt 新增顶部渐变操作层（返回/n/N/信息）与底部渐变操作层（点赞/收藏/标签/快速转跳四钮 SpaceEvenly），Brush.verticalGradient 模拟 bg_detail_top/bottom_gradient（背景色 90%↔透明）；浅底/黑底随明暗切换（L161，色取 MaterialTheme background/onBackground）；六钮按下缩放反馈 0.92→1.0/100ms（L173）；statusBarsPadding/navigationBarsPadding 避让（L275）；chrome 图标 info/sell/people 三枚自持（QimengDetailIcons 同款构造，I 卷共享文件冻结不进 core:ui，I9 后可收拢）；无批次上下文（batchIndex<0 深链单卡，#21 待拍板）计数不渲染，未补批次基建。
+- **单击显隐 chrome+系统栏（差距3，L271-276）**：图片态单击舞台切 chromeVisible（AnimatedVisibility fade），chromeEffective 驱动 SystemBarsImmersiveEffect 显隐系统栏（BEHAVIOR_DEFAULT 不触发布局重排，离场 DisposableEffect 恢复）；视频态 chrome 让位播放器（VideoStage 上报 onPlayerActiveChanged：海报态=false/播放·暂停·ENDED=true）；海报态单击=起播（L163 旧版语义优先，与 L271 冲突取旧版并记档：海报态不接 chrome 切换）；▶ 恒显随 chrome（L276 口径的冲突态记档同上）。**D1 图片全屏覆盖层退役（裁决记档）**：沉浸结构下舞台本就全出血，D1 的存在理由（68vh 排版态的「半成品全屏」）消失，保留入口反与「单击切 chrome」手势冲突——ImageFullScreenOverlay.kt 整件删除，ZoomableOriginalImage 保留为舞台唯一内容件；D2 视频两级全屏覆盖层保留（拍板⑦），FullscreenOverlayShell 骨架注释同步。
+- **信息 BottomSheet（差距4，L169/171）**：DetailSheets.kt DetailInfoSheet——文件名/出处/尺寸/时长四行（协议 AssetDetail width/height/durationMs 直读零解码；尺寸行齐备且>0 才渲染；时长仅视频资产有值），无「完成」按钮（下滑/点外部关闭）。
+- **快速转跳 BottomSheet（差距5，L172）**：DetailJumpSheet——当前文件关联作者列表（COS 作者带·COS 后缀、空态「该文件暂无关联作者」），点击经既有 onOpenAuthor 链进作者集合页（与作者卡同链，壳层路由零改动）。
+- **播放中按返回先退 chrome 浏览模式（差距6，L168/L279）**：VideoStage 挂 BackHandler（播放器活动期 enabled、全屏覆盖层打开时禁用）→ 暂停+VideoStageStateMachine.exitToPoster（新增，纯函数）+chrome 恢复显示；播放器不销毁——再点播放走同源续播不归零（L165 同款语义）。**海报态横滑切兄弟（差距7，L163）**：单指横滑（>60dp 且横速度>800，对齐 ZoomImageView 冻结阈值）→onSiblingNavigate(±1)；播放态不接（对齐旧版「预览态可横滑」边界）。
+- **LikeMutationTracker 接线（差距8，I1 消费端闭环）**：DetailViewModel 注入 tracker，toggleLike 成功处 onLikeMutated()（失败不上报）；验收全链实测=详情点赞（实心拇指）→返回首页→推荐流重拉且顺序全变（对照基线截图 08/28），「浏览退出保持原样」半边由无变更指纹不变天然满足。**冻结不动**：标签逐条即时移除（#32a 草稿式现状保留）、冷启动重试（R5 豁免）、「其他标签」名字序（已拍板）。
+- **残留与存疑（上报仲裁中，非阻塞）**：①壳层 Scaffold 对全部路由统一 innerPadding.top+consumeWindowInsets，详情舞台照单全收则顶部留一条壳底色条、且 chrome 切系统栏时 Scaffold 重算 padding 致图片重居中（L273 违规）——05:10 收口改法=舞台高度取 BoxWithConstraints.maxHeight 贴视口（底 chrome 可见、功能全通）；另一方案（读窗口真实 inset 平移舞台，真 edge-to-edge+两态不位移，纯 feature:detail 可实现）已上报主会话待裁，若裁另案仅动 DetailScreen 舞台盒一段，低成本回改。②图片/动图原图首次解码 3-4s 期间舞台黑屏（测试库大图放大现象，占位黑底属沉浸色系，加载完成即出图）——记档不阻塞。
+- **门禁三连绿**：:feature:detail:testDebugUnitTest（DetailViewModelTest 含点赞指纹成功上报/失败不动两断言 + VideoStageStateMachineTest 含 exitToPoster 三态迁移/幂等/再起播不重装源四用例）0 failures；:app:assembleDebug BUILD SUCCESSFUL；:feature:detail:lintDebug+:app:lintDebug 0 errors。模拟器 18461 虚构库走查：沉浸舞台全出血黑底/图片 fit-center 出图、chrome 初始可见↔单击显隐两向、信息 Sheet 四行+无完成钮（视频案例 960×540/0:02）、播放中 chrome 让位+BACK 拦截退海报态 chrome 恢复、BiliPlayerView G 链控制器（倍速/静音/书签/进度/全屏）回归无损、点赞→首页重排闭环，证据 %TEMP%\qimeng-i7-evidence\（20+ 截图；海报横滑正例/快速转跳/双击缩放三项因并行会话共用模拟器互踩未取到独立截图证据，代码链路+既有单测已核，如实记档）。
+
+---
+
 ## feat(app): 任务I I4 我的页复刻——图片/视频数量卡+主题色彩行+入口行副文案两行化+作者总览行接线（2026-09-09 第一百五十三笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理，任务I-Android页面复刻卷 I4 我的页批；独占 feature:settings，依据 REPLICATION_GAPS §3.4 差距条目逐条清偿）

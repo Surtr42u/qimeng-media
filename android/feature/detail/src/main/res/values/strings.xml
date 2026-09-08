@@ -80,4 +80,20 @@
     <string name="detail_upnext_title">接下来播放</string>
     <string name="detail_upnext_shuffle">换一批</string>
     <string name="detail_upnext_empty">暂无推荐</string>
+
+    <!-- 沉浸 chrome（任务I I7，GUIDE_UI §详情页 L171/172）：顶/底渐变操作层按钮无障碍文案 -->
+    <string name="detail_chrome_info">信息</string>
+    <string name="detail_chrome_tag">标签</string>
+    <string name="detail_chrome_jump">快速转跳</string>
+
+    <!-- 信息 BottomSheet（GUIDE_UI L169/171：文件名/出处/尺寸/时长；无「完成」按钮——下滑/点外部关闭） -->
+    <string name="detail_info_sheet_title">详细信息</string>
+    <string name="detail_info_filename">文件名</string>
+    <string name="detail_info_source">出处</string>
+    <string name="detail_info_resolution">尺寸</string>
+    <string name="detail_info_duration">时长</string>
+
+    <!-- 快速转跳 BottomSheet（GUIDE_UI L172：当前文件关联作者列表，点击进作者集合页） -->
+    <string name="detail_jump_sheet_title">快速转跳</string>
+    <string name="detail_jump_empty">该文件暂无关联作者</string>
 </resources>

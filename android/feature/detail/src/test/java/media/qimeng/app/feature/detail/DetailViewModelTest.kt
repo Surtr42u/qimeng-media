@@ -12,6 +12,7 @@ import org.junit.Rule
 import org.junit.Test
 import media.qimeng.app.core.data.repository.AuthorRepository
 import media.qimeng.app.core.data.repository.DetailRepository
+import media.qimeng.app.core.data.repository.LikeMutationTracker
 import media.qimeng.app.core.data.repository.MediaBatchIndex
 import media.qimeng.app.core.data.repository.MoveConflictException
 import media.qimeng.app.core.model.AssetDetail
@@ -262,11 +263,13 @@ class DetailViewModelTest {
         batchIndex: MediaBatchIndex = MediaBatchIndex(),
         assetId: String? = "b",
         imageDimCache: DetailImageDimCache = DetailImageDimCache(),
+        likeTracker: LikeMutationTracker = LikeMutationTracker(),
     ): DetailViewModel = DetailViewModel(
         detailRepository = repo,
         authorRepository = authorRepo,
         batchIndex = batchIndex,
         imageDimCache = imageDimCache,
+        likeMutationTracker = likeTracker,
         savedStateHandle = savedHandle(assetId),
     )
 
@@ -328,6 +331,28 @@ class DetailViewModelTest {
         assertNotNull(vm.uiState.value.errorMessage) // 含操作名的中文报错
         assertEquals(true, vm.uiState.value.asset?.likedToday) // 状态不变
         assertEquals(42, vm.uiState.value.asset?.likeCount)
+    }
+
+    @Test
+    fun `点赞成功上报本地点赞变更指纹 - 失败不上报`() = runTest(mainDispatcherRule.testDispatcher) {
+        // 任务I I7（LikeMutationTracker KDoc 口径）：详情页点赞成功处 onLikeMutated——
+        // 首页返回重拉（GUIDE_UI L89 点赞后返回自动重排）的感知源；失败不上报
+        val tracker = LikeMutationTracker()
+        val repo = FakeDetailRepository().apply { detailResult = detail("b") }
+        val vm = viewModel(repo, likeTracker = tracker)
+        advanceUntilIdle()
+        assertEquals(0L, tracker.fingerprint().likeVersion) // 初始零变更
+
+        repo.likeResult = LikeToggleResult(likedToday = true, likeCount = 1)
+        vm.toggleLike()
+        advanceUntilIdle()
+        assertEquals(1L, tracker.fingerprint().likeVersion) // 成功 → likeVersion 递增
+        assertTrue(tracker.fingerprint().lastMutatedAtMs > 0L)
+
+        repo.likeError = RuntimeException("like boom")
+        vm.toggleLike()
+        advanceUntilIdle()
+        assertEquals(1L, tracker.fingerprint().likeVersion) // 失败 → 指纹不动
     }
 
     @Test

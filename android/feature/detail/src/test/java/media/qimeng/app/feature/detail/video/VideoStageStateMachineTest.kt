@@ -74,4 +74,50 @@ class VideoStageStateMachineTest {
         machine.onPlaybackStarted()
         assertEquals(VideoStageMode.POSTER, machine.mode)
     }
+
+    @Test
+    fun exitToPosterFromPlayingReturnsToPoster() {
+        // 任务I I7 chrome 浏览模式（GUIDE_UI L168/L279）：播放中按返回 → 先退海报态
+        val machine = VideoStageStateMachine()
+        machine.start()
+        assertEquals(VideoStageMode.PLAYING, machine.mode)
+
+        machine.exitToPoster()
+
+        assertEquals(VideoStageMode.POSTER, machine.mode)
+    }
+
+    @Test
+    fun exitToPosterFromEndedReturnsToPoster() {
+        // ENDED 态按返回同样退 chrome 浏览模式（播放器活动期口径不含 ENDED 例外）
+        val machine = VideoStageStateMachine()
+        machine.start()
+        machine.onPlaybackEnded()
+
+        machine.exitToPoster()
+
+        assertEquals(VideoStageMode.POSTER, machine.mode)
+    }
+
+    @Test
+    fun exitToPosterIsIdempotentFromPoster() {
+        // 海报态按返回不迁移（此时 BackHandler 未启用，防御性幂等）
+        val machine = VideoStageStateMachine()
+        machine.exitToPoster()
+        assertEquals(VideoStageMode.POSTER, machine.mode)
+    }
+
+    @Test
+    fun startAgainAfterExitToPosterPreparesWithoutRestartFlag() {
+        // 退 chrome 浏览模式后再点播放：POSTER → PLAYING 正常指令（restartFromZero=false，
+        // 执行层走同源续播不重装源——同源判定在执行层，状态机只表达形态迁移）
+        val machine = VideoStageStateMachine()
+        machine.start()
+        machine.exitToPoster()
+
+        val command = machine.start()
+
+        assertEquals(VideoStageMode.PLAYING, machine.mode)
+        assertFalse(command!!.restartFromZero)
+    }
 }

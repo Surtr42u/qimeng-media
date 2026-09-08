@@ -2,7 +2,9 @@ package media.qimeng.app.feature.detail
 
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,18 +33,24 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.painter.ColorPainter
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import coil3.compose.AsyncImage
+import kotlin.math.abs
 import kotlinx.coroutines.delay
 import media.qimeng.app.core.model.AssetDetail
 import media.qimeng.app.core.model.TimelineTag
 import media.qimeng.app.core.ui.component.QimengCapsuleTextField
-import media.qimeng.app.core.ui.component.QimengThumbnail
 import media.qimeng.app.core.ui.icon.PlayIcon
 import media.qimeng.app.feature.detail.video.BiliPlayerView
 import media.qimeng.app.feature.detail.video.TimelineTagEntity
@@ -68,6 +76,12 @@ private val STAGE_WATCHED_BADGE_PADDING = 8.dp
 /** 进度轮询间隔（3d 设计从简：播放中每 1s 读一次位置喂节流策略；策略自身 5s 放行一次） */
 private const val POSITION_POLL_INTERVAL_MS = 1000L
 
+/** 海报态横滑最小距离（dp，I7）：对齐 ZoomImageView 冻结手势阈值（60dp） */
+private const val POSTER_SWIPE_DISTANCE_DP = 60
+
+/** 海报态横滑最小横向速度（px/s，I7）：对齐 ZoomImageView 冻结手势阈值（800，VelocityTracker 同单位） */
+private const val POSTER_SWIPE_VELOCITY = 800f
+
 // 快捷标签字面量不再本地定义：写入用 TimelineTagColors.HEART_TAG/STAR_TAG（单源，
 // 2026-09-07 审查 P2 前❤字面量三处独立定义且口径分叉，已收敛）。
 
@@ -75,11 +89,21 @@ private const val POSITION_POLL_INTERVAL_MS = 1000L
 private const val FULLSCREEN_TOGGLE_DEBOUNCE_MS = 800L
 
 /**
- * 视频舞台（3c 视频态 + 3d 全量接线）：海报态（缩略图 + 中央播放钮 + 已看完徽标）单击起播 →
- * [BiliPlayerView] 整体桥接（ADR-0014 例外③）接管触摸，进手势循环（G1~G9 冻结口径）。
+ * 视频舞台（3c 视频态 + 3d 全量接线；任务I I7 沉浸复刻改版）：海报态（缩略图 + 中央播放钮 +
+ * 已看完徽标）单击起播 → [BiliPlayerView] 整体桥接（ADR-0014 例外③）接管触摸，进手势循环
+ * （G1~G9 冻结口径）。
  *
  * 起播幂等由 [VideoStageStateMachine] 保证（已播放的重复点击直接返回，不重置进度/不重装源）；
  * ENDED 再播回 0 由控件内 togglePlayPause/startPlayback 承担（G9），状态机同步记账。
+ *
+ * I7 沉浸接线（GUIDE_UI §详情页 L163/L168/L279）：
+ * - **海报态横滑切兄弟**：单指横滑（>60dp 且横速度>800，阈值对齐 ZoomImageView 冻结语义）
+ *   → [onSiblingNavigate](±1)；播放态不接（播放器手势接管，对齐旧版「预览态可横滑」）；
+ * - **播放中按返回先退 chrome 浏览模式**：BackHandler 拦截（播放器活动期 enabled）→ 暂停 +
+ *   状态机退回海报态 + [onExitToChromeBrowse]（chrome 恢复显示）；播放器已 prepare 的同源
+ *   媒体保留位置，再点播放走同源续播不归零（L165 同款语义）；
+ * - **播放器活动态上报**：[onPlayerActiveChanged]（海报态=false，播放/暂停/ENDED=true）——
+ *   DetailScreen 据此让 chrome 让位播放器自有控制器（chrome 恒隐）。
  *
  * 3d 接线拓扑（谁持有谁）：本舞台持有 [rememberVideoPlayerState]（ExoPlayer）与桥接视图引用；
  * VM 持节流/打点策略。回调链 = 播放器事件 → 本舞台 → DetailScreen 具名参数 → ViewModel：
@@ -101,9 +125,13 @@ private const val FULLSCREEN_TOGGLE_DEBOUNCE_MS = 800L
  * @param watched 已看完徽标（3d WatchState 口径，海报态左上角显示）
  * @param startPositionMs 起播位置毫秒（VM 按断点秒×1000 计算；已看完=0 重播）
  * @param timelineTags 时间轴标签（VM 已按 timeMillis 升序拉取）
- * @param onSiblingNavigate 左右滑切换相邻资产回调（视频由播放器手势接管，本批不消费：
- *   视频 chrome=播放器自有控制器，无第二套手势面；保留参数与图片舞台签名对齐）
- * @param onToggleChrome 沉浸模式顶行开关回调（同上，视频态无可接线对象，保留签名对齐）
+ * @param modifier 舞台尺寸段（I7 沉浸：调用方传 fillMaxSize+黑底，海报/播放两态共用）
+ * @param onSiblingNavigate 左右滑切换相邻资产回调（I7 海报态接线；播放态不接——播放器手势
+ *   接管，无第二套手势面）
+ * @param onToggleChrome 沉浸模式 chrome 开关回调（视频态不接：海报单击=起播（L163 优先，
+ *   与 L271 冲突取旧版语义并记档）、播放单击=播停归播放器手势；保留参数与图片舞台签名对齐）
+ * @param onPlayerActiveChanged 播放器活动态上报（I7：chrome 恒隐的驱动源）
+ * @param onExitToChromeBrowse 播放中按返回退 chrome 浏览模式后 chrome 恢复显示（I7，L279）
  * @param onPlaybackStarted 起播回调（打点 play 用；VM 侧幂等，重复回调安全）
  * @param onPositionChanged 播放位置 tick（秒；VM 侧节流，逐 tick 喂入安全）
  * @param onAddTimelineTag 添加时间轴标签（timeMillis=对话框打开时的播放位置毫秒）
@@ -119,6 +147,8 @@ internal fun VideoStage(
     modifier: Modifier,
     onSiblingNavigate: (delta: Int) -> Unit,
     onToggleChrome: () -> Unit,
+    onPlayerActiveChanged: (Boolean) -> Unit,
+    onExitToChromeBrowse: () -> Unit,
     onPlaybackStarted: () -> Unit,
     onPositionChanged: (positionSeconds: Double) -> Unit,
     onAddTimelineTag: (timeMillis: Long, name: String) -> Unit,
@@ -256,6 +286,10 @@ internal fun VideoStage(
     // factory 一次性闭包的陈旧捕获防线：经 State 在调用点取最新值
     val latestTagEntities by rememberUpdatedState(tagEntities)
     val latestOnAdd by rememberUpdatedState(onAddTimelineTag)
+    // I7 同款防线（回调参数为父级每次重组新建的 lambda，手势/Effect 键取 Unit + 最新值桥）
+    val latestOnSiblingNavigate by rememberUpdatedState(onSiblingNavigate)
+    val latestOnPlayerActiveChanged by rememberUpdatedState(onPlayerActiveChanged)
+    val latestOnExitToChromeBrowse by rememberUpdatedState(onExitToChromeBrowse)
 
     fun beginPlayback() {
         // 视频源 = asset.origUrl（缺直链则保持海报，理论不发生的兜底）
@@ -263,8 +297,20 @@ internal fun VideoStage(
         // 幂等起播：已 PLAYING 直接返回（状态机拦下重复点击）
         val command = machine.start() ?: return
         stageMode = machine.mode
-        // ENDED 路径 restartFromZero=true → 回 0（G9；实际该路径由控件内按钮承担，此处对齐口径）
-        playerState.prepare(uri, if (command.restartFromZero) 0L else startPositionMs)
+        // 同源续播（I7）：播放中按返回退 chrome 浏览模式（不销毁播放器）后再次起播，播放器
+        // 仍持有已 prepare 的同源媒体 → 只续播不重装源（进度不归零，GUIDE_UI L165 同款语义；
+        // ENDED 态先 seek 回 0 对齐控件内 startPlayback 口径）；仅首次/换源才 prepare
+        val currentUri = playerState.player.currentMediaItem?.localConfiguration?.uri?.toString()
+        val sameSourcePrepared = currentUri == uri &&
+            playerState.player.playbackState != Player.STATE_IDLE
+        if (sameSourcePrepared) {
+            if (playerState.player.playbackState == Player.STATE_ENDED) {
+                playerState.player.seekTo(0L)
+            }
+        } else {
+            // ENDED 路径 restartFromZero=true → 回 0（G9；实际该路径由控件内按钮承担，此处对齐口径）
+            playerState.prepare(uri, if (command.restartFromZero) 0L else startPositionMs)
+        }
         playerState.play()
     }
 
@@ -292,18 +338,79 @@ internal fun VideoStage(
         next?.let { view.seekToPosition(it.timeMillis) }
     }
 
-    val posterClickable = stageMode == VideoStageMode.POSTER && asset.origUrl != null
+    /** 播放中按返回 → 退 chrome 浏览模式（I7，GUIDE_UI L168/L279：暂停 + 海报态 + chrome
+     *  显示）。播放器不销毁：进度保留（同源续播不归零），海报重挂载显示缩略图 */
+    fun exitToChromeBrowseMode() {
+        playerState.player.pause()
+        machine.exitToPoster()
+        stageMode = machine.mode
+        onExitToChromeBrowse()
+    }
 
-    Box(
-        modifier = modifier.then(
-            if (posterClickable) Modifier.clickable { beginPlayback() } else Modifier
-        ),
+    // 播放器活动期（播放/暂停/ENDED，海报态除外）拦截系统返回：先退 chrome 浏览模式再议退出
+    // 页面；全屏覆盖层打开时禁用——其 Dialog 窗口自管返回（逐级回退，经 exitFullscreenLevel）
+    BackHandler(
+        enabled = stageMode != VideoStageMode.POSTER &&
+            fullscreenLevel == VideoFullscreenLevel.NONE,
     ) {
+        exitToChromeBrowseMode()
+    }
+
+    // 播放器活动态上报（I7）：海报态=false、播放/暂停/ENDED=true——DetailScreen chromeEffective
+    // 的驱动源（chrome 让位播放器自有控制器，系统栏随隐）
+    LaunchedEffect(stageMode) {
+        onPlayerActiveChanged(stageMode != VideoStageMode.POSTER)
+    }
+
+    // 海报态横滑（I7，GUIDE_UI L163「视频预览…横滑浏览其他文件」）：阈值对齐 ZoomImageView
+    // 冻结手势语义（>60dp 且横速度>800，+1=左滑下一张）；播放态不接（播放器手势接管，
+    // 对齐旧版「预览态可横滑」边界）。注意 pointerInput 在 clickable 之前：横滑过 slop 后
+    // 消费事件，clickable 的点击语义自然取消（拖动不误触起播）
+    val swipeDistancePx = with(LocalDensity.current) {
+        POSTER_SWIPE_DISTANCE_DP.dp.toPx()
+    }
+    val posterGestureModifier = if (stageMode == VideoStageMode.POSTER && asset.origUrl != null) {
+        Modifier
+            .pointerInput(onSiblingNavigate, swipeDistancePx) {
+                var dragX = 0f
+                val tracker = VelocityTracker()
+                detectHorizontalDragGestures(
+                    onDragStart = {
+                        dragX = 0f
+                        tracker.resetTracking()
+                    },
+                    onHorizontalDrag = { change, dragAmount ->
+                        tracker.addPosition(change.uptimeMillis, change.position)
+                        dragX += dragAmount
+                        change.consume()
+                    },
+                    onDragEnd = {
+                        val velocity = tracker.calculateVelocity()
+                        if (abs(dragX) > swipeDistancePx && abs(velocity.x) > POSTER_SWIPE_VELOCITY) {
+                            onSiblingNavigate(if (dragX < 0f) 1 else -1)
+                        }
+                        dragX = 0f
+                    },
+                    onDragCancel = { dragX = 0f },
+                )
+            }
+            .clickable { beginPlayback() }
+    } else {
+        Modifier
+    }
+
+    Box(modifier = modifier.then(posterGestureModifier)) {
         if (stageMode == VideoStageMode.POSTER) {
-            // 海报态：缩略图 + 中央播放钮，整块可点起播（播放钮为视觉锚点）
-            QimengThumbnail(
+            // 海报态：视频帧 + 中央播放钮，整块可点起播（播放钮为视觉锚点）。
+            // I7 整屏舞台改 Fit contain：G1a 固定比例舞台下 Crop≈Fit，整屏后 Crop 会裁掉
+            // 海报边缘且与播放 letterbox 跳变——对齐旧版 ZoomImageView 预览的 contain 语义；
+            // 占位/错误底取黑（舞台盒同色调，与 chrome 隐藏态黑底沉浸一致）
+            AsyncImage(
                 model = asset.thumbUrl,
                 contentDescription = stringResource(R.string.detail_media_stage),
+                contentScale = ContentScale.Fit,
+                placeholder = ColorPainter(Color.Black),
+                error = ColorPainter(Color.Black),
                 modifier = Modifier.fillMaxSize(),
             )
             Surface(

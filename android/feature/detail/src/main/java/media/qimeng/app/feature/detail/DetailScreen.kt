@@ -1,12 +1,16 @@
 package media.qimeng.app.feature.detail
 
 import android.widget.Toast
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -44,21 +48,30 @@ import coil3.size.Size
 import media.qimeng.app.core.ui.theme.QimengDimens
 
 /**
- * 详情页（M4-3）：3a 骨架与排版（顶行 + 竖屏单列堆叠：媒体舞台 → 批次 pager 行（G1a）→
- * 标题 → meta 行 → 互动行 → 标签行 → 作者卡 → 接下来播放；排版基准 = Web AssetDetailPage.tsx
- * B站式布局的移动端移植）；
- * 3b 补沉浸模式（chromeVisible 状态单源：顶行+底部间距 AnimatedVisibility 隐显 + 系统栏
- * 隐显）与兄弟资产滑动接线（图片手势在 ImageStage，视频 3c）；3d 补视频全量接线
- * （续播/已看完徽标/进度上报/打点/时间轴标签经具名参数逐层下发，穿墙通道已删）；
- * D1 补图片全屏查看覆盖层（imageOverlayVisible 单源：排版态单击图片舞台打开，独立 Dialog
- * 窗口铺满整屏盖住顶行/底节，单击/系统返回退出；选型与实测取舍见
- * [ImageFullScreenOverlay] KDoc）。
+ * 详情页（任务I I7 沉浸复刻改版）：按 GUIDE_UI §详情页 L158-160 沉浸 4 层组织回归——
+ * 第一屏媒体舞台 edge-to-edge 全出血（黑底盒整屏高，图片态 ZoomImageView 链 / 视频态
+ * BiliPlayerView 链）+ 上下渐变 chrome 浮层（顶：返回/n/N/信息；底：点赞/收藏/标签/快速
+ * 转跳，[DetailChromeBars]）+ 单击显隐（图片态单击舞台切 chrome+系统栏，L271-276）；
+ * 媒体层下方保留信息内容区（标题/meta/互动/标签/作者卡/UpNext——拍板⑧超规格件保留融入，
+ * 下滑查看；chrome 挂在舞台盒内随第一屏滚动，只覆盖第一屏）。
+ *
+ * 沿革：3a 骨架排版（Web AssetDetailPage 移植）→ 3b/3c/3d 沉浸/播放器/全量接线 →
+ * G1a/G1b Web 排版页 → I7 基准切回 GUIDE_UI 沉浸复刻（台账 #33 用户拍板「1 a」，
+ * 推翻 09-05 Web 排版基准；两级全屏制拍板⑦保留）。D1 图片全屏覆盖层退役（裁决记档见
+ * [ImageStage] KDoc）；D2 视频两级全屏覆盖层保留（拍板⑦）。chrome 组件见
+ * DetailChromeBars.kt（渐变顶/底操作层）。
+ *
+ * 视频态 chrome 语义：播放器活动期（播放/暂停/ENDED）chrome 让位播放器自有控制器
+ * （VideoStage 上报 onPlayerActiveChanged，chromeEffective=false）；播放中按返回先退
+ * chrome 浏览模式（暂停+海报态+chrome 显示，L168/L279——BackHandler 拦截在 VideoStage）。
+ * 海报态单击=起播（L163 旧版语义优先，与 L271 单击切 chrome 的冲突记档：海报态不接
+ * chrome 切换，▶ 随 chrome 恒显）。
  *
  * @param assetId 路由参数（ViewModel 经 SavedStateHandle 同键读取；此处显式保留供预览/测试）
  * @param onBack 返回（壳层 popBackStack）
  * @param onOpenAsset 跳资产（壳层导航 push 叠栈）：推荐栏跳转先经 VM.upNextJump 换批，
  *   兄弟资产滑动不换批（批次就是当前清单）——两条路共用此回调但只有前者动批次
- * @param onOpenAuthor 跳作者集合页（任务G G1b：作者卡名字点击，壳层导航 push 叠栈）
+ * @param onOpenAuthor 跳作者集合页（作者卡名字点击与快速转跳弹窗共用，壳层导航 push 叠栈）
  */
 @Composable
 fun DetailScreen(
@@ -70,14 +83,17 @@ fun DetailScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    // 沉浸模式 chrome 显隐（3b；媒体单击切换，默认可见；每屏独立——兄弟 push 是新路由实例）
+    // 沉浸模式 chrome 显隐（媒体单击切换，默认可见；每屏独立——兄弟 push 是新路由实例）
     var chromeVisible by rememberSaveable { mutableStateOf(true) }
-    // 图片全屏查看覆盖层开关（D1）：排版态单击图片舞台开，单击图片/系统返回关；
-    // rememberSaveable 与 chromeVisible 同语义（每屏独立，进程重建后恢复态一致）
-    var imageOverlayVisible by rememberSaveable { mutableStateOf(false) }
-    // D1：覆盖层打开=强制沉浸（隐藏系统栏），与 chrome 可见性同走一套 WindowInsetsController
-    // 显隐语义（复用不另开通道）；关闭即回落到排版态自身 chrome 态
-    SystemBarsImmersiveEffect(chromeVisible = chromeVisible && !imageOverlayVisible)
+    // 视频播放器活动态镜像（VideoStage 上报）：活动期 chrome 让位播放器控制器
+    var playerActive by remember { mutableStateOf(false) }
+    val chromeEffective = chromeVisible && !playerActive
+    // 信息/快速转跳 BottomSheet 开关（纯 UI 弹层无数据请求，页面局部状态；进程重建后
+    // 关闭态恢复——与 chromeVisible 同 rememberSaveable 语义）
+    var infoSheetVisible by rememberSaveable { mutableStateOf(false) }
+    var jumpSheetVisible by rememberSaveable { mutableStateOf(false) }
+    // I7 沉浸：chrome 显隐驱动系统栏（chrome 隐藏=黑底沉浸+系统栏隐藏，L273-274）
+    SystemBarsImmersiveEffect(chromeVisible = chromeEffective)
 
     // 3d 生命周期接线：onPause → dwell 当前段兜底 flush + 进度 force 补报；onResume → dwell
     // 开新段（分段累加口径，见 DwellSessionTracker）；onDispose（组合离场，先于 VM onCleared
@@ -119,55 +135,140 @@ fun DetailScreen(
     }
 
     // 兄弟资产切换回调单源（拍板③：目标解析失败（越界/无批次/缺参）静默不动；不走
-    // upNextJump 换批——批次清单就是当前清单；push 叠栈 = 浏览历史语义）。
-    // D1：排版态舞台与全屏覆盖层共用同一条链（覆盖层直传，不另开通道）
+    // upNextJump 换批——批次清单就是当前清单；push 叠栈 = 浏览历史语义）
     val onSiblingNavigate: (Int) -> Unit = { delta ->
         viewModel.moveBy(delta)?.let { targetId -> onOpenAsset(targetId, emptyList()) }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        // 顶行随沉浸隐显（3b）：AnimatedVisibility 收放，返回键始终可用（系统返回）。
-        // G1a：顶行不再带 i/N 批次序号（Web 顶行无计数）——序号随 DetailPagerRow 落舞台下方
-        AnimatedVisibility(visible = chromeVisible) {
+    if (state.isLoading) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            // 加载/错误态保留朴素顶行（沉浸 chrome 随舞台挂载，加载期无舞台可浮）
             DetailTopRow(onBack = onBack)
+            DetailLoadingState()
         }
-        when {
-            state.isLoading -> DetailLoadingState()
-            state.asset == null -> DetailErrorState(
+    } else if (state.asset == null) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            DetailTopRow(onBack = onBack)
+            DetailErrorState(
                 message = state.errorMessage,
                 onRetry = viewModel::retry,
             )
-            else -> DetailLoadedContent(
-                state = state,
-                chromeVisible = chromeVisible,
-                // 舞台动作具名下发（3d 解冻：原 DetailStageActions 穿墙通道已删）
-                onSiblingNavigate = onSiblingNavigate,
-                onToggleChrome = { chromeVisible = !chromeVisible },
-                // D1：排版态单击图片舞台打开全屏覆盖层（开关状态单源在本屏）
-                onOpenFullScreen = { imageOverlayVisible = true },
-                // 推荐栏跳转：先换批次清单（推荐栏即新清单），再交壳层导航
-                onOpenAsset = { id, batchIds ->
-                    viewModel.upNextJump()
-                    onOpenAsset(id, batchIds)
-                },
-                onOpenAuthor = onOpenAuthor,
-                onPlaybackStarted = viewModel::onPlaybackStarted,
-                onPositionChanged = viewModel::onPositionChanged,
-                onAddTimelineTag = viewModel::addTimelineTag,
-                onDeleteTimelineTag = viewModel::deleteTimelineTag,
-                onToggleLike = viewModel::toggleLike,
-                onToggleFavorite = viewModel::toggleFavorite,
-                onToggleFollow = viewModel::toggleFollow,
-                // 文件操作（任务G G1b）：互动行右端两钮只开关弹窗，提交走 VM（铁律 7 UI 零网络）
-                onOpenMoveDialog = viewModel::openMoveSheet,
-                onOpenDeleteDialog = viewModel::openDeleteConfirm,
-                onOpenTagSheet = viewModel::openTagSheet,
-                onReshuffle = viewModel::reshuffleUpNext,
-                onDismissError = viewModel::clearError,
+        }
+    } else {
+        val asset = requireNotNull(state.asset)
+        // 第一屏舞台高度 = 壳层内容区可视高度（BoxWithConstraints.maxHeight：状态栏/导航栏
+        // insets 已由壳层 Scaffold 扣除）。I7 初稿用 LocalConfiguration.screenHeightDp（整屏），
+        // 但舞台盒顶从壳层 inset 线起算 → 盒底越过视口下缘，底部 chrome（BottomCenter 对齐）
+        // 落到屏幕外不可见（模拟器走查实证：a11y 树无底部四钮）——改为按可视高度取值，
+        // chrome 随第一屏滚动的设计不变
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background),
+        ) {
+            val stageHeight = maxHeight
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                // 第一屏：媒体舞台 edge-to-edge 全出血（黑底整屏盒）+ 渐变 chrome 浮层
+                //（chrome 挂舞台盒内随第一屏滚动——只覆盖第一屏，下滑看内容不被遮）
+                Box(modifier = Modifier.fillMaxWidth().height(stageHeight)) {
+                    DetailMediaStage(
+                        asset = asset,
+                        watched = state.videoWatched,
+                        startPositionMs = state.videoStartPositionMs,
+                        timelineTags = state.timelineTags,
+                        modifier = Modifier.fillMaxSize(),
+                        onSiblingNavigate = onSiblingNavigate,
+                        onToggleChrome = { chromeVisible = !chromeVisible },
+                        onPlayerActiveChanged = { playerActive = it },
+                        onExitToChromeBrowse = { chromeVisible = true },
+                        // 舞台动作具名下发（3d 解冻拓扑保持）
+                        onPlaybackStarted = viewModel::onPlaybackStarted,
+                        onPositionChanged = viewModel::onPositionChanged,
+                        onAddTimelineTag = viewModel::addTimelineTag,
+                        onDeleteTimelineTag = viewModel::deleteTimelineTag,
+                    )
+                    // 顶部渐变 chrome（L171：返回/当前序号 n/N/信息钮）——alpha 显隐（L175）。
+                    // 显式全限定：外层 Column 的 ColumnScope.AnimatedVisibility 扩展在此上下文
+                    // （BoxScope 内）不可隐式调用，须取顶层函数
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = chromeEffective,
+                        modifier = Modifier.align(Alignment.TopCenter),
+                        enter = fadeIn(),
+                        exit = fadeOut(),
+                    ) {
+                        DetailTopChrome(
+                            batchIndex = state.batchIndex,
+                            batchSize = state.batchSize,
+                            onBack = onBack,
+                            onOpenInfo = { infoSheetVisible = true },
+                        )
+                    }
+                    // 底部渐变操作层（L172：点赞/收藏/标签/快速转跳）——全限定同上
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = chromeEffective,
+                        modifier = Modifier.align(Alignment.BottomCenter),
+                        enter = fadeIn(),
+                        exit = fadeOut(),
+                    ) {
+                        DetailBottomChrome(
+                            asset = asset,
+                            likePending = state.likePending,
+                            favoritePending = state.favoritePending,
+                            onToggleLike = viewModel::toggleLike,
+                            onToggleFavorite = viewModel::toggleFavorite,
+                            onOpenTagSheet = viewModel::openTagSheet,
+                            onOpenJumpSheet = { jumpSheetVisible = true },
+                        )
+                    }
+                }
+                DetailContentSections(
+                    state = state,
+                    onSiblingNavigate = onSiblingNavigate,
+                    onOpenAsset = { id, batchIds ->
+                        // 推荐栏跳转：先换批次清单（推荐栏即新清单），再交壳层导航
+                        viewModel.upNextJump()
+                        onOpenAsset(id, batchIds)
+                    },
+                    onOpenAuthor = onOpenAuthor,
+                    onToggleLike = viewModel::toggleLike,
+                    onToggleFavorite = viewModel::toggleFavorite,
+                    onToggleFollow = viewModel::toggleFollow,
+                    onOpenMoveDialog = viewModel::openMoveSheet,
+                    onOpenDeleteDialog = viewModel::openDeleteConfirm,
+                    onOpenTagSheet = viewModel::openTagSheet,
+                    onReshuffle = viewModel::reshuffleUpNext,
+                    onDismissError = viewModel::clearError,
+                )
+            }
+        }
+
+        // ---- 弹窗族（挂滚动主体之外；ModalBottomSheet 自带遮罩层） ----
+
+        if (state.tagSheetOpen) {
+            DetailTagManageSheet(
+                pool = state.tagPool,
+                selectedTagIds = state.selectedTagIds,
+                savingTags = state.savingTags,
                 onToggleTag = viewModel::toggleTagSelection,
                 onCreateTag = viewModel::createAndSelectTag,
-                onSaveTags = viewModel::saveTags,
-                onDismissTagSheet = viewModel::dismissTagSheet,
+                onSave = viewModel::saveTags,
+                onDismiss = viewModel::dismissTagSheet,
+            )
+        }
+        // 信息弹窗（I7，L169/L171：文件名/出处/尺寸/时长；无完成按钮）
+        if (infoSheetVisible) {
+            DetailInfoSheet(asset = asset, onDismiss = { infoSheetVisible = false })
+        }
+        // 快速转跳弹窗（I7，L172：关联作者列表 → 作者集合页既有路由）
+        if (jumpSheetVisible) {
+            DetailJumpSheet(
+                authors = asset.authors,
+                onOpenAuthor = onOpenAuthor,
+                onDismiss = { jumpSheetVisible = false },
             )
         }
     }
@@ -222,34 +323,19 @@ fun DetailScreen(
             onDismiss = viewModel::dismissDeleteConfirm,
         )
     }
-    // 图片全屏查看覆盖层（D1）：仅资产就绪时挂载。Dialog 独立窗口铺满整屏（不受壳层
-    // Scaffold padding 约束，选型理由见组件 KDoc）；单击/系统返回退出回排版态。
-    // 排版基准不动摇：Column 排版主体零改动，全屏只是叠加态
-    state.asset?.let { asset ->
-        if (imageOverlayVisible) {
-            ImageFullScreenOverlay(
-                asset = asset,
-                onSiblingNavigate = onSiblingNavigate,
-                onDismiss = { imageOverlayVisible = false },
-            )
-        }
-    }
 }
 
-/** 加载成功后的滚动主体：单列堆叠各节 + 错误横幅（互动失败不退场，横幅照 home 模式可点关） */
+/**
+ * 加载成功后的信息内容区（媒体层下方，下滑查看；拍板⑧超规格件保留融入沉浸结构）：
+ * 批次 pager 行（G1a，n/N 与顶 chrome 同源展示）→ 标题 → meta 行 → 互动行 → 标签行 →
+ * 作者卡 → 接下来播放 + 底部呼吸空间。舞台动作不在本节（归媒体舞台浮层）。
+ */
 @Composable
-private fun DetailLoadedContent(
+private fun DetailContentSections(
     state: DetailUiState,
-    chromeVisible: Boolean,
     onSiblingNavigate: (delta: Int) -> Unit,
-    onToggleChrome: () -> Unit,
-    onOpenFullScreen: () -> Unit,
     onOpenAsset: (assetId: String, batchIds: List<String>) -> Unit,
     onOpenAuthor: (authorId: String, displayName: String) -> Unit,
-    onPlaybackStarted: () -> Unit,
-    onPositionChanged: (positionSeconds: Double) -> Unit,
-    onAddTimelineTag: (timeMillis: Long, name: String) -> Unit,
-    onDeleteTimelineTag: (tagId: String) -> Unit,
     onToggleLike: () -> Unit,
     onToggleFavorite: () -> Unit,
     onToggleFollow: (String) -> Unit,
@@ -258,35 +344,16 @@ private fun DetailLoadedContent(
     onOpenTagSheet: () -> Unit,
     onReshuffle: () -> Unit,
     onDismissError: () -> Unit,
-    onToggleTag: (String) -> Unit,
-    onCreateTag: (name: String, onCreated: () -> Unit) -> Unit,
-    onSaveTags: () -> Unit,
-    onDismissTagSheet: () -> Unit,
 ) {
     val asset = requireNotNull(state.asset)
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState()),
-    ) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        // 错误横幅（互动失败不退场，home 的 ErrorBanner 模式可点关）：置内容区首位
+        //（媒体舞台下方——沉浸第一屏不被横幅推挤）
         state.errorMessage?.let { message ->
             DetailErrorBanner(message = message, onDismiss = onDismissError)
         }
-        DetailMediaStage(
-            asset = asset,
-            watched = state.videoWatched,
-            startPositionMs = state.videoStartPositionMs,
-            timelineTags = state.timelineTags,
-            onSiblingNavigate = onSiblingNavigate,
-            onToggleChrome = onToggleChrome,
-            onOpenFullScreen = onOpenFullScreen,
-            onPlaybackStarted = onPlaybackStarted,
-            onPositionChanged = onPositionChanged,
-            onAddTimelineTag = onAddTimelineTag,
-            onDeleteTimelineTag = onDeleteTimelineTag,
-        )
         // 批次 pager 行（任务G G1a，Web .asset-pager 对齐）：舞台与标题之间；无批次上下文
-        // （batchIndex<0 深链单卡）DetailPagerRow 内部整行不渲染
+        // （batchIndex<0 深链单卡）DetailPagerRow 内部整行不渲染。超规格件（拍板⑧）保留
         DetailPagerRow(
             batchIndex = state.batchIndex,
             batchSize = state.batchSize,
@@ -317,36 +384,19 @@ private fun DetailLoadedContent(
             onReshuffle = onReshuffle,
             onOpenAsset = onOpenAsset,
         )
-        // 底部呼吸空间（避免末节贴系统导航栏；轻量档），随沉浸隐显（3b chrome 开关）
-        AnimatedVisibility(visible = chromeVisible) {
-            Box(modifier = Modifier.padding(bottom = DETAIL_BOTTOM_SPACER))
-        }
-    }
-    // 标签管理弹窗挂滚动主体之外（ModalBottomSheet 自带遮罩层，不随内容滚动）
-    if (state.tagSheetOpen) {
-        DetailTagManageSheet(
-            pool = state.tagPool,
-            selectedTagIds = state.selectedTagIds,
-            savingTags = state.savingTags,
-            onToggleTag = onToggleTag,
-            onCreateTag = onCreateTag,
-            onSave = onSaveTags,
-            onDismiss = onDismissTagSheet,
-        )
+        // 底部呼吸空间（避免末节贴系统导航栏；轻量档）——I7 起恒显（chrome 不再占用本节）
+        Box(modifier = Modifier.padding(bottom = DETAIL_BOTTOM_SPACER))
     }
 }
 
-/** 页面级底部预留（轻量档；与网格页 180dp 防遮挡档语义不同。标签弹窗底部留白同档复用） */
-internal val DETAIL_BOTTOM_SPACER = 24.dp
-
 /**
- * 系统栏沉浸效果（3b，旧版语义）：chrome 可见=显示 statusBars+navigationBars，隐藏=隐藏
- * （下滑临时呼出=BEHAVIOR_DEFAULT 平台默认）。**只控显隐不触发布局重排**——图片不因系统栏
- * 切换重新居中；decorFitsSystemWindows(false) 恒成立由 MainActivity.enableEdgeToEdge 全局
- * 保证（等价于 WindowCompat.setDecorFitsSystemWindows(window,false)，此处不重复设置、
- * 也不在离开时恢复 true，避免整窗重排）。
- * 退出沉浸 = 再次单击（LaunchedEffect 翻转）或返回/兄弟 push 换屏（onDispose 恢复系统栏；
- * LEGACY_REQUIREMENTS E：controller 判空 + 生命周期清理）。
+ * 系统栏沉浸效果（3b，旧版语义；I7 起 chrome 源 = chromeEffective）：chrome 可见=显示
+ * statusBars+navigationBars，隐藏=隐藏（下滑临时呼出=BEHAVIOR_DEFAULT 平台默认）。
+ * **只控显隐不触发布局重排**——图片不因系统栏切换重新居中；decorFitsSystemWindows(false)
+ * 恒成立由 MainActivity.enableEdgeToEdge 全局保证（等价于
+ * WindowCompat.setDecorFitsSystemWindows(window,false)，此处不重复设置、也不在离开时恢复
+ * true，避免整窗重排）。退出沉浸 = 再次单击（LaunchedEffect 翻转）或返回/兄弟 push 换屏
+ * （onDispose 恢复系统栏；LEGACY_REQUIREMENTS E：controller 判空 + 生命周期清理）。
  */
 @Composable
 private fun SystemBarsImmersiveEffect(chromeVisible: Boolean) {
@@ -370,8 +420,16 @@ private fun SystemBarsImmersiveEffect(chromeVisible: Boolean) {
     }
 }
 
-/** 错误横幅纵向内边距（home 的 ErrorBanner 同款 4dp 轻贴边档） */
+/** 页面级底部预留（轻量档；与网格页 180dp 防遮挡档语义不同。标签弹窗底部留白同档复用） */
+internal val DETAIL_BOTTOM_SPACER = 24.dp
+
+/** 错误横幅纵向留白（沿用 3a 排版档；横幅在沉浸结构中挂内容区首位） */
 private val ERROR_BANNER_VERTICAL_PADDING = 4.dp
+
+/*
+ * 加载/错误态顶行：复用 DetailSections.kt 既有 [DetailTopRow]（单源；I7 重写稿曾在本文件
+ * 重复定义引发 overload 冲突，收口回单源）。
+ */
 
 /** 加载态：居中「加载中…」（Web 首屏 grid-empty 同文案） */
 @Composable
