@@ -11,6 +11,17 @@
 
 ---
 
+## docs(app): 任务H-Android复刻前置卷收官——H3 全卷对抗审查通过+P3 清偿+文档同步（2026-09-09 第一百四十九笔）
+
+执行 AI：GLM-5.3-Flash（主会话主代理，任务H H3 收官批；批次级审查 H1/H2 各有独立 reviewer 报告在案，本笔=全卷收官）
+
+- **H3 全卷对抗审查通过**（独立 reviewer，范围 bc2efb9..HEAD 四笔）：全卷零协议/零 sdk/零 feature:all 实证；6ac9849 stringResource 上提与 H1 换件叠加无回归（占位符全 %s 型、无 remember 跨重组记忆）；H0→H2 交付一致性成立（QimengTrendLineChart 多系列+marker 预留满足 REPLICATION_GAPS §3.3 承诺，**图例能力缺口记档供 I3**）；三套门禁 reviewer 亲跑全绿（assembleDebug/全仓 lint 0 errors/单测 --rerun-tasks 无缓存重跑/make lint）；模拟器终态抽查（Vico 趋势两档重渲+相册页 G5 三要素）证据 %TEMP%\qimeng-h3-evidence\。
+- **收官清偿 P3×3**：①StatsViewModel StatsUiState KDoc 的 C1/C2/C3 死引用改标「已被 2026-09-08 完全复刻拍板覆盖，I3 回改，趋势渲染见 ADR-0018」；②ADR-0018 与 libs.versions.toml 注释的 stdlib 版本精度拆分（3.3.1→2.4.10、2.5.2→2.4.0，均超 Hilt kotlin-metadata-jvm 2.3.0 上限，否决结论不变；勘误 148 笔「均 2.4.0」表述，历史条目按惯例不改正文）；③REPLICATION_GAPS.md §3.3 两处定位更新到 HEAD 现状（TrendChart 已删→TrendCard:117/QimengTrendLineChart:128）+ 图例缺口记档 + §4 #33 状态明确为「建议口径执行、非已拍板」。
+- **文档同步**：HANDOVER_APP 文头收官记录+新增任务H 节（四批交付与证据目录）；M4-3 排版基准块加注「09-05 拍板已被 09-08 完全复刻覆盖，台账 #33 知情条，建议口径=I7 沉浸复刻先行」；通用约束 4「规格书与 Web 现版冲突停手问用户」对齐裁决优先级口径（用户拍板 > GUIDE_UI > Web 现版）。
+- **任务I 前置就绪**：REPLICATION_GAPS.md 定稿移交，I1~I8 按 feature 互斥可并行、I9 收官。
+
+---
+
 ## feat(app): 任务H H2 统计页折线图换 Vico——2.x compose-m3 锁版+可复用封装+Canvas 退役（2026-09-09 第一百四十八笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理，任务H-Android复刻前置卷 H2 批；拍板=用户 2026-09-08 原话「不要自绘」「统计页折线图换 Vico」，**推翻 C3 批次 Canvas 自绘拍板并记档**，StatsScreen 注释已同步改写不留死引用）
