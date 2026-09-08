@@ -1,7 +1,7 @@
 package media.qimeng.app.feature.author
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -17,6 +19,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -37,6 +42,9 @@ import media.qimeng.app.core.ui.theme.QimengDimens
 
 /** 作者管理胶囊（全部/常规/COS）+ 排序三项（默认/浏览数/文件数） */
 private val ZONE_OPTIONS = listOf("全部" to Zone.ALL, "常规" to Zone.REGULAR, "COS" to Zone.COS)
+
+/** 排序单钮面文字（GUIDE_UI §芯片栏配置对比 L73 作者管理行「排序 ▾」逐字） */
+private const val SORT_BUTTON_LABEL = "排序 ▾"
 
 /** 计数行文案前缀（G2：Web AuthorsPage page-head 副行「全部作者 · N 位」） */
 private const val COUNT_ROW_PREFIX = "全部作者"
@@ -91,26 +99,28 @@ fun AuthorScreen(
                 modifier = Modifier.weight(1f),
             )
         }
-        QimengChipRow(
-            pills = ZONE_OPTIONS.map { (label, zone) ->
-                QimengPill(text = label, selected = zone == state.zone)
-            },
-            onPillClick = { index -> viewModel.selectZone(ZONE_OPTIONS[index].second) },
-            modifier = Modifier.padding(horizontal = QimengDimens.ScreenPaddingHorizontal, vertical = QimengDimens.SpaceXS),
-        )
-        // 排序行（G2：Web .a-sortrow 定行不横滑——三项 QimengSegPill 直排，
-        // 胶囊渲染与体系行同源（PillChip 委托），不再经横滑 ChipRow）
+        // 体系胶囊行 + 排序单钮同行（GUIDE_UI §芯片栏配置对比 L73 作者管理行：左侧
+        // 全部/常规/COS、右侧「排序 ▾」——排序对所有分类生效）。任务I I6 回改：G2 的
+        // 三枚排序胶囊直排（Web AuthorsPage 形态，无拍板保护）按 GUIDE_UI 回改单钮+下拉，
+        // 排序功能语义不变（applyAuthorRows 对体系+关键词后排序生效，ViewModel 零改动）
         Row(
-            modifier = Modifier.padding(horizontal = QimengDimens.ScreenPaddingHorizontal, vertical = QimengDimens.SpaceXS),
-            horizontalArrangement = Arrangement.spacedBy(QimengDimens.SpaceS),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = QimengDimens.ScreenPaddingHorizontal),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            AuthorSortOption.entries.forEach { sort ->
-                QimengSegPill(
-                    text = sort.label,
-                    selected = sort == state.sort,
-                    onClick = { viewModel.selectSort(sort) },
-                )
-            }
+            QimengChipRow(
+                pills = ZONE_OPTIONS.map { (label, zone) ->
+                    QimengPill(text = label, selected = zone == state.zone)
+                },
+                onPillClick = { index -> viewModel.selectZone(ZONE_OPTIONS[index].second) },
+                modifier = Modifier.weight(1f),
+            )
+            AuthorSortMenuButton(
+                current = state.sort,
+                onSelect = viewModel::selectSort,
+                modifier = Modifier.padding(start = QimengDimens.SpaceS),
+            )
         }
 
         state.errorMessage?.let { message ->
@@ -162,6 +172,46 @@ fun AuthorScreen(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * 排序单钮+下拉菜单（GUIDE_UI §芯片栏配置对比 L73「排序 ▾」单钮形态，M3 DropdownMenu
+ * 标准件）：钮面文字恒「排序 ▾」（锚定胶囊语言 QimengSegPill 渲染），当前选中项在菜单内
+ * 以 ✓ 标识；点选即生效并收起。
+ */
+@Composable
+private fun AuthorSortMenuButton(
+    current: AuthorSortOption,
+    onSelect: (AuthorSortOption) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box(modifier = modifier) {
+        QimengSegPill(
+            text = SORT_BUTTON_LABEL,
+            selected = false,
+            onClick = { expanded = true },
+        )
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            AuthorSortOption.entries.forEach { sort ->
+                DropdownMenuItem(
+                    text = { Text(text = sort.label) },
+                    onClick = {
+                        expanded = false
+                        onSelect(sort)
+                    },
+                    trailingIcon = if (sort == current) {
+                        { Text(text = "✓", color = MaterialTheme.colorScheme.primary) }
+                    } else {
+                        null
+                    },
+                )
             }
         }
     }

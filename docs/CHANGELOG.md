@@ -11,6 +11,19 @@
 
 ---
 
+## feat(app): 任务I I6 作者页复刻——作者集合页四维芯片体系（常规作品/角色/类型·COS角色/类型）+pinch/列数共档+作者管理排序回改单钮下拉（2026-09-09 第一百五十八笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理，任务I-Android页面复刻卷 I6 作者批；独占 feature:author，依据 REPLICATION_GAPS §3.6 差距条目逐条清偿；与并行 I7 收尾会话共享模拟器实例，重装自证+紧凑窗口取证）
+
+- **作者集合页四维芯片体系（差距1，GUIDE_UI §芯片栏配置对比 L68-69，新增整套非回改）**：AuthorCollectionScreen 从裸网格升级为维度子集芯片栏——常规作者「作品/角色/类型（无分区）」、COS 作者「角色/类型」（COS 判定=路由 authorId `cos_` 前缀，openapi Author.id 口径；`isCosAuthorId`/`authorCollectionDims`/`collectionAssetQuery`/`collectionFacetsQuery` 纯函数层新增于 feature:author 内部 `AuthorCollectionFilter.kt`）。复用 core:model FourDimPills 维度子集机制（`dimChips(model,dims)`/`pillsFor(model,dim)` 只读重载参数位承接，core:model 零改动）+ :core:ui 瘦身后组件 QimengChipRow（「角色|类型」竖分隔线对齐全部/收藏页）/QimengFloatingPillPanel（拍板⑨列表族悬浮形态）。药丸语义对齐全部页：**进页默认收起、切维度行强制展开（拍板②）**、点已激活维折叠、「全部 (N)」清行（payload=null）；多选现状单选模型保留（协议缺口 #29 冻结不扩）。ViewModel 扩展：筛选代际防乱序（镜像 FavoriteViewModel 同族方案）+筛选变化回第一页重拉 items+facets；「全部 (N)」药丸计数=服务端 /assets totalMatched（当前其他维选择下的总数，与相册页分区栏 all 桶同口径，零额外请求）。
+- **协议限制记档（建议主会话进台账 §4）**：服务端 facets 作者行「排自身=source 与 authorId 一起忽略」（server/internal/httpapi/facets.go 作者行注释），**作品维（authors 桶）候选无法按 authorId 收窄**——返回全库 source∪COS 作者桶；本卷零协议，消费侧裁剪为 SOURCE 子集（kind=author 的 COS 作者候选在本页固定集合作者语义下不可作筛选参数，裁剪同时消除死药丸），故作品候选计数为全库口径（选中筛选行为仍正确：/assets authorId+source 联收）；角色/类型两桶 authorId 收窄实测正常（COS 页「测试作品M (3)」实证）。协议扩展（facets 增非排自身收窄参数或作者行细分）留待拍板。
+- **双指缩放 2-5 列+列数共用全部页档（差距2，GUIDE_UI §导航结构 L36+§全部页 L149）**：`qimengPinchToColumns` 接线（照抄 AllScreen:254/I5 FavoriteViewModel 模式：adjustColumnsLive 内存步进 clamp 2..5、commitPinchColumns 手势结束持久化一次）；纯复用 `GridPrefsRepository.albumColumns/setAlbumColumns`（键 grid_columns_all），core:data 零改动；COLLECTION_COLUMNS=3 固定列退役。
+- **作者管理排序形态回改（差距3，GUIDE_UI §芯片栏配置对比 L73「排序 ▾」单钮，R6 无拍板保护）**：G2 三枚排序 SegPill 直排（Web AuthorsPage 形态）回改单钮（QimengSegPill 胶囊语言）+M3 DropdownMenu 下拉标准件（当前选中项 ✓ 标识），与体系胶囊同行右置（左 全部/常规/COS、右 排序 ▾）；排序功能语义不变（AuthorViewModel.selectSort/applyAuthorRows 零改动，对所有分类+关键词后排序生效）。
+- **超规格记档保留（差距4，不回改不扩做）**：作者管理计数行「全部作者 · N 位」/RankCard 行/行分隔线（G2）；作者集合页计数行「作者 · N 个文件」/空态「该作者下暂无内容。」（G1b）。
+- **门禁三连绿**：:feature:author:testDebugUnitTest 25 用例 0 failures（新增：维度子集纯函数/COS 前缀判定/VM 维度子集与激活维默认/COS 不拉作品维 facets/筛选→协议参数映射/筛选重拉回第一页/facets 收窄联动×2/行内全部清行/作品维 SOURCE 裁剪/药丸进页收起切维展开/列数读共用档/pinch clamp+落档）；:app:assembleDebug BUILD SUCCESSFUL；根 lintDebug 0 errors。模拟器 18461 虚构库走查：常规作者（POST /import/qimeng-backup 协议内造数 i6walkauthor+4 文件关联，走查后复原）集合页=作品(1)/角色(0)/类型(3) 三芯片+悬浮面板展开/「其他」选中筛选/类型→视频筛后计数行联动「作者 · 1 个文件」；COS 作者集合页=角色/类型两芯片、角色面板 authorId 收窄「测试作品M (3)」；作者管理排序下拉选「浏览数」实测重排（viewCount 14/6/1）；关注 toggle 落库对账（followed=true 服务端复核后复原 false）。证据 %TEMP%\qimeng-i6-evidence\（14 张）。**已知观察（共享件 core:ui，非本批改动）**：QimengMediaGrid 组头未加 GridItemSpan（KDoc「组头跨全列」与实现不符，日期组头现占单列与首卡同行）——core:ui 冻结不属本批文件集，记待办归主会话串行窗口/I9 收官裁定。
+
+---
+
 ## fix(app): 任务I I7 收尾——舞台negate-inset真edge-to-edge（chrome两态不位移）（2026-09-09 第一百五十七笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理，任务I I7 批收尾；仲裁 B 案执行——主会话 2026-09-09 裁定推翻 fit-viewport 收口稿，理由：真 edge-to-edge 系 GUIDE_UI L158 语义要求、两态不位移合 L273、纯 feature:detail 零共享文件改动）
