@@ -11,6 +11,18 @@
 
 ---
 
+## docs: 任务F-Web卷 晨间收尾汇总（2026-09-08 第一百三十六笔）
+
+执行 AI：GLM-5.3-Flash（主会话调度收尾；08:50 定时收尾自动化触发，用户指令「今天早上8.50暂停会话中的所有任务」）
+
+- **完成批次（F0~F7 全部完成，无 SKIPPED、无中断断点）**：F0 环境预检（18463 隔离实例+虚构库 23 文件，无 commit）；F1 集合页深链白屏修复+全局 ErrorBoundary=**66162a5**；F7 用户实测反馈四项=**bf2a026**；F2 E 系列审查遗留收口六项=**ea1892f**；F3 测试覆盖面补齐=**54a9fe2**；F4 CI web job 接入 vitest=**ebcd6a6**；F5 保态推广（调研推荐方案 a+相册页实施，未弃批；memo=仓库外 web-overlay-rollout-memo.md）=**323950a**；F6 文件管理/回收站批量多选=**8c015b4**。每批 executor 执行+全新上下文 reviewer 对抗审查（F2 首轮 P1 tags 占位错账打回→返工清偿复审通过）+主会话浏览器走查；证据 %TEMP%\qimeng-f1~f7-evidence\（保留勿删）。
+- **push 与 CI 闭环**：执行期间 GitHub 持续 502（06:14~08:05 四次 push 失败），六笔 commit 滞留本地；网络恢复后随 D 卷收官 push 一并上远程（origin/master=b3556c1 同步，push 确认 Everything up-to-date）。**F4 CI 实跑验收补验通过**：run 34173261179（含 ci.yml 的 npm test 新步骤+全部 F 卷 web 代码）五 job 全绿 12m22s，web job 日志确认「Run npm test」步骤真实执行。至此 F 卷无任何未闭环项。
+- **基线推进**：npm test 39→**94**（F1 +2 / F3 +37 / F5 +7−1 / F6 +10）；oxlint 16→**15**（F5 删一处 lazy 声明告警）；ADR-0017 待办清零。
+- **记档遗留（下批清偿，不阻塞）**：F6 P2-1（onFinished 的 selectOnly 死机制、注释失实，行为由 prune 兜底正确）；F7 P3×3（spinning 卸载重放/搜索收藏空态嵌格/尾注间距）+存量裸 /app/ranks 404；F1 P3（AppErrorBoundary inline 字号）；F5 留后续批（其余 6 入口入组、Sidebar '/app/albums' 字面量、相册查询串保态）。详见 HANDOVER_UI §5 第 25~29 条。
+- **环境**：18463 隔离实例在线（虚构库 23 文件，仅供 Web 验证复用）；8420 真库全程未碰；与并行 D 卷会话文件集零冲突（CHANGELOG 编号交错兼容）。
+
+---
+
 ## docs: 任务D-Android卷 夜间晨间汇总（2026-09-08 第一百三十五笔）
 
 执行 AI：GLM-5.3-Flash（主会话调度收尾）
