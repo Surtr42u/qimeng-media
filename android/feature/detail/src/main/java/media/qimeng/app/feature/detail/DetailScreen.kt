@@ -178,6 +178,14 @@ fun DetailScreen(
     // 返回后的自然重取（Compose 列表无 TanStack 缓存，返回即重拉——VM 无须通知列表页）
     val fileOpsAsset = state.asset
     if (state.moveSheetOpen && fileOpsAsset != null) {
+        // Toast 文案组合期取值（stringResource 随 Configuration 变化重组；LocalContext.getString
+        // 不会，lint LocalContextGetResourceValueCall）。结果分支（moved/renamed）与目标目录属
+        // 运行时数据取不到组合值，回调内只按模板 String.format 拼参——占位符均为 %s、实参均
+        // 为 String，格式化输出与 getString(resId, args) 逐字节等价
+        val toastBoth = stringResource(R.string.detail_move_toast_both)
+        val toastMoved = stringResource(R.string.detail_move_toast_moved)
+        val toastRenamed = stringResource(R.string.detail_move_toast_renamed)
+        val rootDirLabel = stringResource(R.string.detail_move_root_dir)
         DetailMoveDialog(
             assetId = fileOpsAsset.id,
             currentDir = fileOpsAsset.directory.orEmpty(),
@@ -186,17 +194,11 @@ fun DetailScreen(
             errorMessage = state.moveError,
             onSubmit = { targetDir, newName ->
                 viewModel.moveAsset(targetDir, newName) { moved, renamed ->
+                    val dirLabel = targetDir.ifEmpty { rootDirLabel }
                     val message = when {
-                        moved && renamed -> context.getString(
-                            R.string.detail_move_toast_both,
-                            targetDir.ifEmpty { context.getString(R.string.detail_move_root_dir) },
-                            newName.orEmpty(),
-                        )
-                        moved -> context.getString(
-                            R.string.detail_move_toast_moved,
-                            targetDir.ifEmpty { context.getString(R.string.detail_move_root_dir) },
-                        )
-                        else -> context.getString(R.string.detail_move_toast_renamed, newName.orEmpty())
+                        moved && renamed -> String.format(toastBoth, dirLabel, newName.orEmpty())
+                        moved -> String.format(toastMoved, dirLabel)
+                        else -> String.format(toastRenamed, newName.orEmpty())
                     }
                     Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
                 }
@@ -205,16 +207,15 @@ fun DetailScreen(
         )
     }
     if (state.deleteConfirmOpen && fileOpsAsset != null) {
+        // 同上：文案组合期格式化（fileName 组合期已知，stringResource 直传实参），
+        // 回调内只弹系统 Toast（捕捉的组合期快照与原 getString 取值逐字节一致）
+        val deleteToast = stringResource(R.string.detail_delete_toast, fileOpsAsset.fileName)
         DetailDeleteConfirmDialog(
             fileName = fileOpsAsset.fileName,
             pending = state.fileOpsPending,
             onConfirm = {
                 viewModel.deleteAsset {
-                    Toast.makeText(
-                        context,
-                        context.getString(R.string.detail_delete_toast, fileOpsAsset.fileName),
-                        Toast.LENGTH_SHORT,
-                    ).show()
+                    Toast.makeText(context, deleteToast, Toast.LENGTH_SHORT).show()
                     onBack()
                 }
             },
