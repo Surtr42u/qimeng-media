@@ -14,6 +14,7 @@ import media.qimeng.app.core.model.AuthorSortOption
 import media.qimeng.app.core.model.AuthorSummary
 import media.qimeng.app.core.model.Zone
 import media.qimeng.app.core.model.applyAuthorRows
+import media.qimeng.app.core.model.filterByZone
 
 data class AuthorUiState(
     val authors: List<AuthorSummary> = emptyList(),
@@ -89,6 +90,13 @@ class AuthorViewModel @Inject constructor(
     /** 展示行 = 先 filter 后 sort（ zone 胶囊 + 关键词 + 排序三项；纯函数 [applyAuthorRows] 单测锁定） */
     fun visibleRows(state: AuthorUiState = _uiState.value): List<AuthorSummary> =
         state.authors.applyAuthorRows(state.zone, state.keyword, state.sort)
+
+    /**
+     * 计数行「全部作者 · N 位」的 N（G2）：**全量作者数**——对齐 Web AuthorsPage page-head
+     * 副行 `全部作者 · {authors.length}`（Web 计数不随体系/关键词过滤，运行时口径 2026-09-08
+     * 复核）；UI 不内嵌计数规则（铁律 7）。
+     */
+    fun authorCount(state: AuthorUiState = _uiState.value): Int = state.authors.size
 
     private fun load(isInitial: Boolean, isRefresh: Boolean = false) {
         val state = _uiState.value

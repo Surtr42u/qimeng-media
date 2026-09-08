@@ -7,6 +7,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -28,13 +29,13 @@ import media.qimeng.app.core.testing.MainDispatcherRule
 
 /** 与 SettingsViewModel 私有常量对齐的反馈文案（文案属反馈契约，ViewModel 侧改动须同步此处） */
 private const val SAVE_FAILED_TEXT = "保存失败，请重试"
-private const val UNFOLLOW_FAILED_TEXT = "取关失败，请重试"
-private const val LOAD_FOLLOWED_FAILED_TEXT = "关注列表加载失败，请重试"
+private const val LOAD_AUTHORS_FAILED_TEXT = "作者列表加载失败，请重试"
 
 /**
- * 我的页 ViewModel 单测（M4-6）：登出会话闭环（M4-1 原语义）+ 关注列表过滤/取关（C4）+
+ * 我的页 ViewModel 单测（M4-6）：登出会话闭环（M4-1 原语义）+ 作者总览卡聚合（G2）+
  * 预设应用（C4）+ 档位持久化/清空（C5）+ 服务端版本（C6）。
- * 过滤纯函数本身由 :core:model 单测锁定，这里锁 UI 状态编排与仓库触达。
+ * 总览计数/Top5 聚合纯函数本身由 :core:model 单测锁定，这里锁 UI 状态编排与仓库触达；
+ * C4 的取关路径已随 G2 总览卡下线（关注 toggle 归作者管理页），对应用例移除。
  */
 class SettingsViewModelTest {
 
@@ -52,7 +53,7 @@ class SettingsViewModelTest {
         /** 可编程：非空时 setFollowed 抛出（P2-3 失败路径：静默吞错回归锁定） */
         var unfollowError: Throwable? = null
 
-        /** 可编程：非空时 authors 抛出（refreshFollowed 读失败路径锁定） */
+        /** 可编程：非空时 authors 抛出（refreshAuthorOverview 读失败路径锁定） */
         var authorsError: Throwable? = null
 
         override suspend fun authors(): List<AuthorSummary> {
@@ -115,12 +116,12 @@ class SettingsViewModelTest {
         override fun capacityBytes(): Long = DiskCacheQuota.DEFAULT.bytes
     }
 
-    private fun author(id: String, followed: Boolean) =
-        AuthorSummary(id = id, displayName = "作者$id", type = AuthorType.REGULAR, fileCount = null, followed = followed, viewCount = null)
+    private fun author(id: String, followed: Boolean, fileCount: Int? = null) =
+        AuthorSummary(id = id, displayName = "作者$id", type = AuthorType.REGULAR, fileCount = fileCount, followed = followed, viewCount = null)
 
     private fun viewModel(
         auth: AuthRepository = FakeAuthRepository(initialServerUrl = "http://10.0.2.2:8420", initialLoggedIn = true),
-        authors: List<AuthorSummary> = listOf(author("1", true), author("2", false), author("3", true)),
+        authors: List<AuthorSummary> = listOf(author("1", true, fileCount = 3), author("2", false, fileCount = 10), author("3", true, fileCount = 5)),
         prefs: RecommendPrefsRepository = FakePrefsRepository(),
         version: String? = "v0.9.0",
         cachePrefs: DiskCachePrefsRepository = FakeDiskCachePrefsRepository(),
@@ -150,20 +151,17 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `init 拉取关注列表只含已关注作者`() = runTest {
+    fun `init 拉取作者总览 双计数与文件数Top5`() = runTest {
         val settingsViewModel = viewModel()
         advanceUntilIdle()
-        assertEquals(listOf("作者1", "作者3"), settingsViewModel.uiState.value.followedAuthors.map { it.displayName })
+        val overview = settingsViewModel.uiState.value.authorOverview
+        assertNotNull(overview)
+        // 全量 3 位 · 已关注 2（Web DataPage 作者总览卡同口径）；Top 按文件数降序
+        assertEquals(3, overview!!.totalAuthors)
+        assertEquals(2, overview.followedCount)
+        assertEquals(listOf("2", "3", "1"), overview.topByFileCount.map { it.id })
+        assertFalse(settingsViewModel.uiState.value.authorsLoading)
         assertEquals("http://10.0.2.2:8420", settingsViewModel.uiState.value.serverUrl)
-    }
-
-    @Test
-    fun `取关发 followed=false 且行消失`() = runTest {
-        val settingsViewModel = viewModel()
-        advanceUntilIdle()
-        settingsViewModel.unfollow("1")
-        advanceUntilIdle()
-        assertEquals(listOf("作者3"), settingsViewModel.uiState.value.followedAuthors.map { it.displayName })
     }
 
     @Test
@@ -218,29 +216,29 @@ class SettingsViewModelTest {
     // ---------- P2-3 写失败反馈 + 读失败反馈（原实现静默吞错的回归锁定） ----------
 
     @Test
-    fun `关注列表读失败给反馈且不清空既有列表`() = runTest {
+    fun `作者总览读失败给反馈且不清空既有总览`() = runTest {
         val authorRepo = FakeAuthorRepository(
-            listOf(author("1", true), author("2", false), author("3", true)),
+            listOf(author("1", true, fileCount = 3), author("2", false, fileCount = 10), author("3", true, fileCount = 5)),
         )
         val settingsViewModel = viewModel(authorRepo = authorRepo)
         advanceUntilIdle()
-        assertEquals(listOf("作者1", "作者3"), settingsViewModel.uiState.value.followedAuthors.map { it.displayName })
+        assertEquals(3, settingsViewModel.uiState.value.authorOverview?.totalAuthors)
 
-        // 二次刷新失败：列表保持原状（修复前 getOrDefault(emptyList()) 把网络抖动伪装成「没有关注」），给反馈
+        // 二次刷新失败：既有总览保持原状（网络抖动不伪装成「没有作者」），给反馈
         authorRepo.authorsError = RuntimeException("network down")
-        settingsViewModel.refreshFollowed()
+        settingsViewModel.refreshAuthorOverview()
         advanceUntilIdle()
-        assertEquals(LOAD_FOLLOWED_FAILED_TEXT, settingsViewModel.uiState.value.writeError)
-        assertEquals(listOf("作者1", "作者3"), settingsViewModel.uiState.value.followedAuthors.map { it.displayName })
-        assertFalse(settingsViewModel.uiState.value.followedLoading)
+        assertEquals(LOAD_AUTHORS_FAILED_TEXT, settingsViewModel.uiState.value.writeError)
+        assertEquals(3, settingsViewModel.uiState.value.authorOverview?.totalAuthors)
+        assertFalse(settingsViewModel.uiState.value.authorsLoading)
 
-        // 恢复后重刷：横幅可消除，列表正常落地
+        // 恢复后重刷：横幅可消除，总览正常落地
         authorRepo.authorsError = null
         settingsViewModel.dismissWriteError()
-        settingsViewModel.refreshFollowed()
+        settingsViewModel.refreshAuthorOverview()
         advanceUntilIdle()
         assertNull(settingsViewModel.uiState.value.writeError)
-        assertEquals(listOf("作者1", "作者3"), settingsViewModel.uiState.value.followedAuthors.map { it.displayName })
+        assertEquals(3, settingsViewModel.uiState.value.authorOverview?.totalAuthors)
     }
 
     @Test
@@ -261,22 +259,6 @@ class SettingsViewModelTest {
         settingsViewModel.dismissWriteError()
         advanceUntilIdle()
         assertNull(settingsViewModel.uiState.value.writeError)
-    }
-
-    @Test
-    fun `取关失败给反馈且列表保持原状`() = runTest {
-        val authorRepo = FakeAuthorRepository(
-            listOf(author("1", true), author("2", false), author("3", true)),
-        ).apply { unfollowError = RuntimeException("network down") }
-        val settingsViewModel = viewModel(authorRepo = authorRepo)
-        advanceUntilIdle()
-
-        settingsViewModel.unfollow("1")
-        advanceUntilIdle()
-        assertEquals(UNFOLLOW_FAILED_TEXT, settingsViewModel.uiState.value.writeError)
-        // 回滚语义：请求未触达仓库、列表保持原状（行不乐观移除）
-        assertEquals(0, authorRepo.followCalls.size)
-        assertEquals(listOf("作者1", "作者3"), settingsViewModel.uiState.value.followedAuthors.map { it.displayName })
     }
 
     @Test

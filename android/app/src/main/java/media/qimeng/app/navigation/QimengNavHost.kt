@@ -190,7 +190,14 @@ fun QimengNavHost(
                     onOpenAsset = { assetId -> navController.navigate(DetailRoutes.detailRoute(assetId)) },
                 )
             }
-            composable(Routes.AUTHORS) { AuthorScreen(onBack = { navController.popBackStack() }) }
+            composable(Routes.AUTHORS) {
+                AuthorScreen(
+                    onBack = { navController.popBackStack() },
+                    // 行点击进作者集合页（Web /app/collection/author/{name} 等价物）：
+                    // G2 批只留接口接线占位，集合页本身归 G1b 批实现
+                    onAuthorClick = { _, _ -> },
+                )
+            }
             composable(Routes.UPLOAD) {
                 UploadScreen(
                     sharedUris = sharedUris,

@@ -21,17 +21,37 @@ enum class AuthorSortOption(val label: String) {
     WORKS("文件数"),
 }
 
+/** 作者总览卡 Top 行数（对齐 Web RANK_TOP_COUNT=5：DataPage 榜单卡/作者总览卡同值；G2） */
+const val AUTHOR_OVERVIEW_TOP_COUNT = 5
+
+/** 作者总览卡数据（G2 我的页「作者总览」区，Web DataPage 作者总览卡同形态） */
+data class AuthorOverview(
+    /** 头注「N 位作者」的 N（全量口径，与 Web authors.length 一致） */
+    val totalAuthors: Int,
+    /** 头注「已关注 M」的 M（followed==true 客户端计数） */
+    val followedCount: Int,
+    /** 按文件数降序 Top N 行（Web authorOverviewRows 同口径；行内由 UI 展示「N 个文件」） */
+    val topByFileCount: List<AuthorSummary>,
+)
+
+/** 作者行显示名：COS 作者追加「 ·COS」标识（对齐 Web authorDisplayName 单源翻译；G2 前两页内联双写收编） */
+val AuthorSummary.displayLabel: String
+    get() = if (type == AuthorType.COS) "$displayName ·COS" else displayName
+
+/** 体系→类型映射（全部=null 不筛；[applyAuthorRows] 与 [filterByZone] 共用单源） */
+private fun Zone.toAuthorType(): AuthorType? = when (this) {
+    Zone.ALL -> null
+    Zone.REGULAR -> AuthorType.REGULAR
+    Zone.COS -> AuthorType.COS
+}
+
 /** 作者页排序（纯函数；先 filter 后 sort，slice 语义用 toList 保证不污染原序基准） */
 fun List<AuthorSummary>.applyAuthorRows(
     zone: Zone,
     keyword: String,
     sort: AuthorSortOption,
 ): List<AuthorSummary> {
-    val type = when (zone) {
-        Zone.ALL -> null
-        Zone.REGULAR -> AuthorType.REGULAR
-        Zone.COS -> AuthorType.COS
-    }
+    val type = zone.toAuthorType()
     return filter { author ->
         (type == null || author.type == type) &&
             (keyword.isBlank() || author.displayName.contains(keyword.trim()))
@@ -46,6 +66,28 @@ fun List<AuthorSummary>.applyAuthorRows(
             },
         )
 }
+
+/**
+ * 体系过滤（G2 作者页计数行「全部作者 · N 位」：N=当前体系过滤后数量，不含关键词——
+ * 计数口径与 [applyAuthorRows] 的体系段一致，纯函数单测锁定）。
+ */
+fun List<AuthorSummary>.filterByZone(zone: Zone): List<AuthorSummary> {
+    val type = zone.toAuthorType()
+    return filter { type == null || it.type == type }
+}
+
+/**
+ * 作者总览聚合（纯函数，G2）：「N 位作者 · 已关注 M」双计数 + 文件数 Top5。
+ * 口径对齐 Web DataPage authorOverviewRows：fileCount 降序取前 N（null 计 0，稳定排序
+ * 保持同数原相对序）；不改入参（sortedByDescending 返回新列表）。
+ */
+fun List<AuthorSummary>.toAuthorOverview(
+    topCount: Int = AUTHOR_OVERVIEW_TOP_COUNT,
+): AuthorOverview = AuthorOverview(
+    totalAuthors = size,
+    followedCount = count { it.followed },
+    topByFileCount = sortedByDescending { it.fileCount ?: 0 }.take(topCount),
+)
 
 /** 搜索建议领域模型（映射 SDK SearchSuggestion） */
 data class NameSuggestion(

@@ -17,19 +17,24 @@ import media.qimeng.app.core.data.repository.CoilCacheManager
 import media.qimeng.app.core.data.repository.DiskCachePrefsRepository
 import media.qimeng.app.core.data.repository.RecommendPrefsRepository
 import media.qimeng.app.core.data.repository.SystemInfoRepository
-import media.qimeng.app.core.model.AuthorSummary
+import media.qimeng.app.core.model.AuthorOverview
 import media.qimeng.app.core.model.DiskCacheQuota
 import media.qimeng.app.core.model.RecommendPrefsValues
 import media.qimeng.app.core.model.RecommendPreset
-import media.qimeng.app.core.model.filterFollowed
 import media.qimeng.app.core.model.matchPreset
+import media.qimeng.app.core.model.toAuthorOverview
 import media.qimeng.app.core.model.toPrefsValues
 
-/** 我的页 UI 状态（C4 资料/关注列表/推荐偏好 + C5 缓存 + C6 版本） */
+/** 我的页 UI 状态（C4 资料/推荐偏好 + C5 缓存 + C6 版本 + G2 作者总览卡） */
 data class MineUiState(
     val serverUrl: String = "",
-    val followedAuthors: List<AuthorSummary> = emptyList(),
-    val followedLoading: Boolean = true,
+    /**
+     * 作者总览卡数据（G2：Web DataPage 作者总览形态——「N 位作者 · 已关注 M」+ 文件数 Top5）；
+     * null=未就绪（首次加载中或读失败，失败反馈走 [writeError] 横幅，卡内不重复报错）。
+     */
+    val authorOverview: AuthorOverview? = null,
+    /** 作者总览加载中（读失败置 false 且既有总览保持原状，见 [SettingsViewModel.refreshAuthorOverview]） */
+    val authorsLoading: Boolean = true,
     val prefsValues: RecommendPrefsValues? = null,
     /** 当前命中的预设（四档都不匹配 = null，BottomSheet 不高亮任何行） */
     val appliedPreset: RecommendPreset? = null,
@@ -40,15 +45,16 @@ data class MineUiState(
     val cacheSizeBytes: Long? = null,
     val serverVersion: String? = null,
     /**
-     * 写操作失败反馈（自审 P2-3：applyPreset/unfollow/setCacheQuota 失败原实现静默吞错）。
+     * 写操作失败反馈（自审 P2-3：applyPreset/setCacheQuota 失败原实现静默吞错；C4 的 unfollow 已随 G2 总览卡下线）。
      * 非空时 UI 横幅展示，点按消除（[SettingsViewModel.dismissWriteError]）；成功路径永不产生。
-     * 2026-09-06 起同时承载关注列表**读**失败（refreshFollowed 静默失败修整，同族口径）。
+     * 2026-09-06 起同时承载作者列表**读**失败（refreshAuthorOverview 静默失败修整，同族口径）。
      */
     val writeError: String? = null,
 )
 
 /**
- * 我的页 ViewModel（M4-6）：关注列表（客户端过滤 C4）、推荐偏好四预设（BottomSheet 应用）、
+ * 我的页 ViewModel（M4-6）：作者总览卡（G2：Web DataPage 形态——计数+文件数 Top5，
+ * 替换 C4 关注列表展示）、推荐偏好四预设（BottomSheet 应用）、
  * 缓存档位持久化（重启生效）与清空归零、服务端版本展示（C6）。
  * 业务规则一律走 :core:model 纯函数与 :core:data 仓库，本层只做状态编排。
  */
@@ -68,37 +74,30 @@ class SettingsViewModel @Inject constructor(
 
     init {
         viewModelScope.launch { authRepository.serverUrl.collect { url -> _uiState.update { it.copy(serverUrl = url) } } }
-        refreshFollowed()
+        refreshAuthorOverview()
         loadPrefs()
         loadServerVersion()
         loadCacheState()
     }
 
     /**
-     * 关注列表（C4：GET /authors 全量 → followed==true 客户端过滤，纯函数在 :core:model）。
-     * 读失败不清空既有列表（getOrDefault(emptyList()) 会把网络抖动伪装成「没有关注」——
-     * 2026-09-06 审查卫生项）：保持原列表 + 反馈横幅（writeError 家族口径，见 P2-3）。
+     * 作者总览（G2：GET /authors 全量 → :core:model 纯函数 [toAuthorOverview] 聚合——
+     * 「N 位作者 · 已关注 M」双计数 + 文件数 Top5，替换 C4 关注列表展示形态）。
+     * 读失败不清空既有总览（网络抖动不伪装成「没有作者」，与 C4 读失败同族口径）：
+     * 保持原数据 + 反馈横幅（writeError 家族口径，见 P2-3）。
+     * 取关不再由本页承担（总览卡无取关行），关注 toggle 走作者管理页（feature:author）。
      */
-    fun refreshFollowed() {
+    fun refreshAuthorOverview() {
         viewModelScope.launch {
-            runCatching { authorRepository.authors().filterFollowed() }
-                .onSuccess { followed ->
-                    _uiState.update { it.copy(followedAuthors = followed, followedLoading = false) }
+            runCatching { authorRepository.authors().toAuthorOverview() }
+                .onSuccess { overview ->
+                    _uiState.update { it.copy(authorOverview = overview, authorsLoading = false) }
                 }
                 .onFailure {
                     _uiState.update {
-                        it.copy(followedLoading = false, writeError = LOAD_FOLLOWED_FAILED_MESSAGE)
+                        it.copy(authorsLoading = false, writeError = LOAD_AUTHORS_FAILED_MESSAGE)
                     }
                 }
-        }
-    }
-
-    /** 取关（PUT /authors/{id}/follow followed=false）后刷新，行即消失；失败给反馈且列表保持原状（行不乐观移除=天然回滚） */
-    fun unfollow(authorId: String) {
-        viewModelScope.launch {
-            runCatching { authorRepository.setFollowed(authorId, false) }
-                .onSuccess { refreshFollowed() }
-                .onFailure { _uiState.update { it.copy(writeError = UNFOLLOW_FAILED_MESSAGE) } }
         }
     }
 
@@ -193,9 +192,8 @@ class SettingsViewModel @Inject constructor(
     private companion object {
         /** 写失败反馈文案（P2-3）：中文、可重试指向；成功路径永不产生 */
         const val SAVE_FAILED_MESSAGE = "保存失败，请重试"
-        const val UNFOLLOW_FAILED_MESSAGE = "取关失败，请重试"
 
-        /** 关注列表读失败反馈文案（2026-09-06 审查卫生项：refreshFollowed 静默失败修整） */
-        const val LOAD_FOLLOWED_FAILED_MESSAGE = "关注列表加载失败，请重试"
+        /** 作者总览读失败反馈文案（C4 关注列表读失败同族口径，G2 随形态更名） */
+        const val LOAD_AUTHORS_FAILED_MESSAGE = "作者列表加载失败，请重试"
     }
 }

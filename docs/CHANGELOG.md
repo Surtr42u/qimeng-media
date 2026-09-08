@@ -11,6 +11,17 @@
 
 ---
 
+## feat(app): 任务G G2 作者总览进「我的」+ AuthorScreen Web 形态重排（2026-09-08 第一百四十三笔）
+
+执行 AI：GLM-5.3（主代理调度；executor 执行+两处 Web 口径纠偏/主代理模拟器验证，任务G-Android对齐卷 G2；用户拍板=「只把作者总览放到我的界面，web的作者管理替换掉现在安卓端的作者管理」）
+
+- **「我的」页作者总览卡**（Web DataPage 形态，替换「关注的作者」区）：区头「作者总览|管理」+双计数副行「N 位作者 · 已关注 M」+按文件数 Top5 行（displayLabel 单源 ·COS 标记+「N 个文件」）+rank-card 卡片底；SettingsViewModel.refreshFollowed/unfollow 退役改 refreshAuthorOverview（authors() 全量+toAuthorOverview 纯函数聚合）；0 作者空态「暂无作者」。
+- **AuthorScreen Web 形态重排**（Web AuthorsPage 形态）：顶栏下计数行「全部作者 · N 位」；排序行 QimengSegPill 直排；列表套 QimengRankCard 卡片底+行间分隔；行副行「N 个文件」单计数（**executor 纠偏两处执行基线**：①计数 N=全量作者数非体系过滤数——Web AuthorsPage L71 运行时口径；②不加「浏览 M 次」——Web 2026-09-05 反馈⑤拍板不展示、F7 批统一「N 个文件」）；onAuthorClick(id,name) 行点击接口+NavHost 占位接线（集合页归 G1b）。
+- **共享件**：core:ui 新增 QimengRankCard（12dp 圆角+1dp 边框+16dp 内边距，对齐 Web .rank-card，Dimens 四常量单源）；core:model 新增 toAuthorOverview/filterByZone/AuthorOverview+AUTHOR_OVERVIEW_TOP_COUNT=5（+3 单测）。
+- **验收**：compile+单测全绿（SettingsViewModelTest 9/AuthorRowsTest 7）；模拟器实测：我的页总览卡「2 位作者 · 已关注 0」+Top2 行在位、作者管理页计数行/胶囊搜索/排序行/卡片行全对齐、关注 toggle 往返（关注→已关注→关注）链路通；截图 %TEMP%\qimeng-g2-evidence\。
+
+---
+
 ## feat(app): 任务G G5 相册排版对齐 Web（2026-09-08 第一百四十二笔）
 
 执行 AI：GLM-5.3（主代理调度；executor 执行/主代理模拟器验证，任务G-Android对齐卷 G5；**基准拍板=Web 现版，推翻 B6 豁免档相册页相关豁免**——用户 2026-09-08 反馈「web的倒是和旧版手机的ui一致，为什么新版的手机端反而没做到」按冲突优先级第 1 条裁决）

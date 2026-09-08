@@ -13,7 +13,8 @@ class AuthorRowsTest {
         type: AuthorType = AuthorType.REGULAR,
         fileCount: Int? = null,
         viewCount: Int? = null,
-    ) = AuthorSummary(id = id, displayName = name, type = type, fileCount = fileCount, followed = false, viewCount = viewCount)
+        followed: Boolean = false,
+    ) = AuthorSummary(id = id, displayName = name, type = type, fileCount = fileCount, followed = followed, viewCount = viewCount)
 
     private val authors = listOf(
         author("1", "Gifdoozer", AuthorType.COS, fileCount = 500, viewCount = 30),
@@ -42,6 +43,42 @@ class AuthorRowsTest {
         assertEquals(listOf("1", "2", "3", "4"), authors.applyAuthorRows(Zone.ALL, "", AuthorSortOption.DEFAULT).map { it.id })
         assertEquals(listOf("2", "3", "4", "1"), authors.applyAuthorRows(Zone.ALL, "", AuthorSortOption.BROWSE).map { it.id })
         assertEquals(listOf("1", "3", "2", "4"), authors.applyAuthorRows(Zone.ALL, "", AuthorSortOption.WORKS).map { it.id })
+    }
+
+    @Test
+    fun `体系过滤 计数行口径与列表行体系段一致`() {
+        // G2 作者页计数行 N=当前体系过滤后数量（不含关键词）
+        assertEquals(4, authors.filterByZone(Zone.ALL).size)
+        assertEquals(2, authors.filterByZone(Zone.REGULAR).size)
+        assertEquals(2, authors.filterByZone(Zone.COS).size)
+        // 与 applyAuthorRows 的体系段同口径（空关键词时过滤结果逐项相等）
+        assertEquals(
+            authors.applyAuthorRows(Zone.COS, "", AuthorSortOption.DEFAULT).map { it.id },
+            authors.filterByZone(Zone.COS).map { it.id },
+        )
+    }
+
+    @Test
+    fun `作者总览 全量计数 已关注计数 文件数Top5`() {
+        val rows = listOf(
+            author("1", "Gifdoozer", AuthorType.COS, fileCount = 500, followed = true),
+            author("2", "尼尔", fileCount = 100),
+            author("3", "海伦", AuthorType.COS, fileCount = 300, followed = true),
+            author("4", "原神", fileCount = 10),
+            author("5", "甲", fileCount = 50),
+            author("6", "乙"), // fileCount=null 计 0，Top5 落榜
+        )
+        val overview = rows.toAuthorOverview()
+        assertEquals(6, overview.totalAuthors)
+        assertEquals(2, overview.followedCount)
+        // fileCount 降序取前 5（null 计 0；Web authorOverviewRows 同口径）
+        assertEquals(listOf("1", "3", "2", "5", "4"), overview.topByFileCount.map { it.id })
+    }
+
+    @Test
+    fun `显示名 COS 作者追加点COS标识`() {
+        assertEquals("Gifdoozer ·COS", authors[0].displayLabel)
+        assertEquals("尼尔", authors[1].displayLabel)
     }
 
     @Test
