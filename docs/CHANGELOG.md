@@ -11,6 +11,19 @@
 
 ---
 
+## feat(app): 任务I I4 我的页复刻——图片/视频数量卡+主题色彩行+入口行副文案两行化+作者总览行接线（2026-09-09 第一百五十三笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理，任务I-Android页面复刻卷 I4 我的页批；独占 feature:settings，依据 REPLICATION_GAPS §3.4 差距条目逐条清偿）
+
+- **图片/视频数量卡（差距1，GUIDE_UI L252）**：页首（标题之后、ServerUrlCard 之前——旧版页首即数量卡的实录语义）新增两卡并排「图片 N」「视频 N」（标题在上数字在下，实录 mine.txt 结构）；数据源复用既有 StatsRepository.overview()（GET /stats/overview 的 imageCount/videoCount 纯计数，零协议改动，不触拍板⑤容量豁免）；读失败/未就绪降级数字位显「—」不崩不弹横幅（装饰性计数不构成操作反馈，writeError 族口径不变）。
+- **主题色彩行（差距2，GUIDE_UI L253+L268）**：新增不可点击纯展示行（EntryRow onClick=null），副文案「跟随手机白天/深色模式自动切换」实录逐字；行位按 GUIDE 行序=作者管理（+上传）之后、推荐偏好之前。
+- **入口行两行化（差距3，实录 mine.txt 逐字）**：EntryRow 改「标题+副文案」两行结构（subtitle 参数；detail 右灰字参数保留供版本行等旧形态行），各行副文案逐字——收藏「查看收藏的图片和视频」/浏览历史「查看最近打开过的图片和视频」/作者管理「管理作者与关联文件」/推荐偏好「调整首页推荐算法的权重偏好」；推荐偏好行当前预设名从行 detail 挪走不再展示（实录无此展示，当前项高亮已在 BottomSheet 内，GUIDE L255），BottomSheet 四预设+整行应用+高亮回归走查无损。行序重排为 GUIDE L253 口径：收藏→浏览历史→作者管理→上传（M4-5 新增无旧版锚点，保持作者管理后）→主题色彩→推荐偏好。
+- **AuthorOverviewCard 接线核实（差距4，存疑记档条）**：核实结论=原注释「行点击进作者集合页待 G1b 批接线」过时——G1b 实际接的是作者管理页 AuthorScreen 行点击（QimengNavHost 实证 AUTHOR_COLLECTION 路由在作者管理页承接），我的页总览卡 Top5 行此前无 onClick。本批补接线：OverviewAuthorRow 可点，onOpenAuthor 当前传 onOpenAuthors（进作者管理页，经其行点击继续进作者集合页，模拟器全链实测闭环）；**总览行直达作者集合页需壳层为 SettingsScreen 增配 authorId 回调（QimengNavHost.kt 属共享文件，本批只读红线未动）——记「需共享窗口」项**。
+- **拍板豁免不动**：数据管理/数据备份/兼容性检查三入口（拍板⑩）、作者总览卡形态（拍板⑥保护）均未回改。
+- **门禁三连绿**：:feature:settings:testDebugUnitTest 11 tests 0 failures（新增数量卡 2 用例：init 拉取 5721/414 实录锚点落地、读失败降级置空不崩不弹横幅且不牵连总览/版本初始化链）；:app:assembleDebug BUILD SUCCESSFUL；lintDebug BUILD SUCCESSFUL 0 errors。模拟器 18461 虚构库（dev 免密）走查：数量卡「图片 17」「视频 6」与同库 Web /api/v1/stats/overview（imageCount=17/videoCount=6）一致、主题色彩行纯展示、五行副文案逐字、作者总览行→作者管理→作者集合页两跳点击链闭环、推荐偏好 Sheet 四预设+「当前」高亮无损，证据 %TEMP%\qimeng-i4-evidence\（4 截图）。
+
+---
+
 ## feat(app): 任务I I3 数据统计复刻——三档回改+数字卡6指标联动+趋势marker交互+分类型趋势/分布详情页（协议缺口#31冻结项不渲染）（2026-09-09 第一百五十二笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理，任务I-Android页面复刻卷 I3 数据统计批；独占 feature:stats，依据 REPLICATION_GAPS §3.3 八项裁定逐条清偿）

@@ -42,6 +42,23 @@ private const val ROW_FAVORITE = "收藏"
 private const val ROW_HISTORY = "浏览历史"
 private const val ROW_AUTHORS = "作者管理"
 private const val ROW_UPLOAD = "上传文件"
+private const val ROW_THEME = "主题色彩"
+private const val ROW_PREFS = "推荐偏好"
+
+/**
+ * 入口行副文案（I4 两行化，实录 mine.txt 逐字：收藏/浏览历史/作者管理/主题色彩/推荐偏好；
+ * 推荐偏好行当前预设名不再展示在行上——当前项高亮已在 BottomSheet 内，GUIDE_UI L255）。
+ */
+private const val SUBTITLE_FAVORITE = "查看收藏的图片和视频"
+private const val SUBTITLE_HISTORY = "查看最近打开过的图片和视频"
+private const val SUBTITLE_AUTHORS = "管理作者与关联文件"
+private const val SUBTITLE_THEME = "跟随手机白天/深色模式自动切换"
+private const val SUBTITLE_PREFS = "调整首页推荐算法的权重偏好"
+
+/** 数量卡文案（I4，实录 mine.txt 两卡「图片 N」「视频 N」；数字未就绪/读失败显「—」） */
+private const val COUNT_CARD_IMAGE = "图片"
+private const val COUNT_CARD_VIDEO = "视频"
+private const val COUNT_UNKNOWN = "—"
 
 /** 分区标题与行副文案（展示语义，GUIDE_UI §我的页/设置页口径 + C5/C6 拍板 + G2 作者总览） */
 private const val SECTION_CACHE = "缓存"
@@ -59,10 +76,12 @@ private const val OVERVIEW_EMPTY = "暂无作者"
 private const val WRITE_ERROR_DISMISS = "知道了"
 
 /**
- * 「我的」Tab（M4-6 完整版，单页滚动列表，GUIDE_UI §我的页结构）：
+ * 「我的」Tab（M4-6 完整版，单页滚动列表，GUIDE_UI §我的页结构 + I4 复刻清偿）：
+ * 标题 → 页首数量卡（I4：图片/视频两卡，实录页首即数量卡，GUIDE_UI L252）→
  * 资料卡（服务器地址展示，改地址=退出重登语义）→ 作者总览卡（G2：Web DataPage 形态——
- * 计数头注 + 文件数 Top5 + 管理入口；关注/取关操作移作者管理页）→ 推荐偏好（BottomSheet
- * 四预设整行应用/当前项高亮）→ 覆盖页入口（收藏/浏览历史/作者管理）→ 上传入口 →
+ * 计数头注 + 文件数 Top5 + 管理入口；关注/取关操作移作者管理页）→
+ * 入口行族（GUIDE_UI L253 行序：收藏/浏览历史/作者管理 → 上传入口 → 主题色彩（不可点）→
+ * 推荐偏好（BottomSheet 四预设整行应用/当前项高亮））→
  * 缓存区（LRU 档位 + 清空）→ 版本信息（服务端版本，C6）→ 退出登录。
  */
 @Composable
@@ -87,6 +106,23 @@ fun SettingsScreen(
             item { WriteErrorBanner(message = message, onDismiss = viewModel::dismissWriteError) }
         }
 
+        // 页首数量卡（I4：旧版页首即数量卡，实录 mine.txt 两卡「图片 N」「视频 N」；
+        // 位置在 ServerUrlCard 之前——ServerUrlCard 为新版资料卡，数量卡承接旧版页首语义）
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                CountCard(
+                    title = COUNT_CARD_IMAGE,
+                    count = state.imageCount,
+                    modifier = Modifier.weight(1f),
+                )
+                CountCard(
+                    title = COUNT_CARD_VIDEO,
+                    count = state.videoCount,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+
         // 资料卡：服务器地址（单机形态预留点，ADR-0015；只展示不可改）
         item { ServerUrlCard(serverUrl = state.serverUrl) }
 
@@ -97,27 +133,59 @@ fun SettingsScreen(
                 overview = state.authorOverview,
                 loading = state.authorsLoading,
                 onManage = onOpenAuthors,
+                onOpenAuthor = onOpenAuthors,
             )
         }
 
-        // 推荐偏好（C4 BottomSheet）
+        // 入口行族（GUIDE_UI L253 行序：收藏/浏览历史/作者管理/主题色彩/推荐偏好；
+        // 上传入口为 M4-5 新增功能入口，无旧版行序锚点，保持作者管理之后）
         item {
             EntryRow(
-                label = "推荐偏好",
-                detail = state.appliedPreset?.label ?: "自定义",
+                label = ROW_FAVORITE,
+                subtitle = SUBTITLE_FAVORITE,
+                onClick = onOpenFavorite,
+            )
+        }
+        item {
+            EntryRow(
+                label = ROW_HISTORY,
+                subtitle = SUBTITLE_HISTORY,
+                onClick = onOpenHistory,
+            )
+        }
+        item {
+            EntryRow(
+                label = ROW_AUTHORS,
+                subtitle = SUBTITLE_AUTHORS,
+                onClick = onOpenAuthors,
+            )
+        }
+
+        // 上传入口（M4-5 上传页接入设置页，M4-5 遗留项）
+        item {
+            EntryRow(
+                label = ROW_UPLOAD,
+                onClick = onOpenUpload,
+            )
+        }
+
+        // 主题色彩（I4，GUIDE_UI L253+L268：不可点击纯展示行，仅跟随系统明暗模式）
+        item {
+            EntryRow(
+                label = ROW_THEME,
+                subtitle = SUBTITLE_THEME,
+                onClick = null,
+            )
+        }
+
+        // 推荐偏好（C4 BottomSheet；I4 两行化：副文案实录逐字，当前预设高亮在 Sheet 内）
+        item {
+            EntryRow(
+                label = ROW_PREFS,
+                subtitle = SUBTITLE_PREFS,
                 onClick = viewModel::openPrefsSheet,
             )
         }
-
-        // 覆盖页入口（M4-2 既有三行）
-        item {
-            EntryRow(label = ROW_FAVORITE, onClick = onOpenFavorite)
-        }
-        item { EntryRow(label = ROW_HISTORY, onClick = onOpenHistory) }
-        item { EntryRow(label = ROW_AUTHORS, onClick = onOpenAuthors) }
-
-        // 上传入口（M4-5 上传页接入设置页，M4-5 遗留项）
-        item { EntryRow(label = ROW_UPLOAD, onClick = onOpenUpload) }
 
         // 缓存区（C5）
         item { SectionTitle(text = SECTION_CACHE) }
@@ -156,6 +224,26 @@ fun SettingsScreen(
             onApply = viewModel::applyPreset,
             onDismiss = viewModel::closePrefsSheet,
         )
+    }
+}
+
+/**
+ * 页首数量卡（I4，GUIDE_UI L252 + 实录 mine.txt：标题在上、数字在下的两卡并排）。
+ * count=null（未就绪或读失败）→ 数字位显「—」降级，不崩、不弹横幅。
+ */
+@Composable
+private fun CountCard(title: String, count: Int?, modifier: Modifier = Modifier) {
+    Surface(color = MaterialTheme.colorScheme.surfaceVariant, modifier = modifier) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(text = title, style = MaterialTheme.typography.titleSmall)
+            Text(
+                text = count?.toString() ?: COUNT_UNKNOWN,
+                style = MaterialTheme.typography.headlineSmall,
+            )
+        }
     }
 }
 
@@ -215,13 +303,19 @@ private fun WriteErrorBanner(message: String, onDismiss: () -> Unit) {
  * 「N 位作者 · 已关注 M」计数副行 → 按文件数 Top5 行（作者名 ·COS 标记 + 「N 个文件」）。
  * 展示口径单源在 :core:model [toAuthorOverview]（计数与排序纯函数，单测锁定）。
  * 总览未就绪 → 「加载中…」；读失败既有总览保持原状、横幅走 writeError（卡内不重复报错）；
- * 全量作者为 0 → 「暂无作者」空态。行点击进作者集合页待 G1b 批接线，本批纯展示。
+ * 全量作者为 0 → 「暂无作者」空态。
+ * 【接线核实（I4）】原注释「行点击进作者集合页待 G1b 批接线」已过时——G1b 实际接线的是
+ * 作者管理页（AuthorScreen 行点击 → AuthorCollectionRoutes，QimengNavHost 实证），本卡
+ * Top5 行此前无 onClick。I4 补接线：行点击走 onOpenAuthor；当前传 onOpenAuthors（进作者
+ * 管理页，经其行点击继续进作者集合页，链路闭环）——直达作者集合页需壳层为 SettingsScreen
+ * 增配 authorId 回调（QimengNavHost 属共享文件，本批只读红线，见交付报告需共享窗口项）。
  */
 @Composable
 private fun AuthorOverviewCard(
     overview: AuthorOverview?,
     loading: Boolean,
     onManage: () -> Unit,
+    onOpenAuthor: () -> Unit,
 ) {
     QimengRankCard(modifier = Modifier.fillMaxWidth()) {
         // 头行：标题 + 管理入口（Web .rank-head：h3 + a.rank-more 小字次色，点进作者管理页）
@@ -259,19 +353,24 @@ private fun AuthorOverviewCard(
                             color = MaterialTheme.colorScheme.outlineVariant,
                         )
                     }
-                    OverviewAuthorRow(name = author.displayLabel, fileCount = author.fileCount ?: 0)
+                    OverviewAuthorRow(
+                        name = author.displayLabel,
+                        fileCount = author.fileCount ?: 0,
+                        onClick = onOpenAuthor,
+                    )
                 }
             }
         }
     }
 }
 
-/** 总览行（Web RankRowList li：.rank-name 首行 + .rank-sub2 副标题「N 个文件」；行点击待 G1b） */
+/** 总览行（Web RankRowList li：.rank-name 首行 + .rank-sub2 副标题「N 个文件」；I4 行点击接线见卡注释） */
 @Composable
-private fun OverviewAuthorRow(name: String, fileCount: Int) {
+private fun OverviewAuthorRow(name: String, fileCount: Int, onClick: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .clickable(onClick = onClick)
             // Web .rank-card li 纵向内边距 6px（横段 2px 由卡内边距承担，不重复施加）
             .padding(vertical = QimengDimens.SpaceS),
     ) {
@@ -294,9 +393,18 @@ private fun CardPlaceholder(text: String) {
     )
 }
 
-/** 入口行（浅面底；detail 非空时右侧灰字；onClick=null 为纯展示行） */
+/**
+ * 入口行（浅面底；I4 两行化：label 标题 + subtitle 副文案两行结构，实录 mine.txt 逐字；
+ * subtitle=null 保持单行；detail=右侧灰字（版本行等无副文案的旧形态行保留用）；
+ * onClick=null 为纯展示行（主题色彩，GUIDE_UI L268）。
+ */
 @Composable
-private fun EntryRow(label: String, detail: String? = null, onClick: (() -> Unit)?) {
+private fun EntryRow(
+    label: String,
+    subtitle: String? = null,
+    detail: String? = null,
+    onClick: (() -> Unit)?,
+) {
     Surface(
         color = MaterialTheme.colorScheme.surfaceVariant,
         modifier = Modifier
@@ -307,7 +415,16 @@ private fun EntryRow(label: String, detail: String? = null, onClick: (() -> Unit
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(text = label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = label, style = MaterialTheme.typography.bodyLarge)
+                if (subtitle != null) {
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
             if (detail != null) {
                 Text(
                     text = detail,
