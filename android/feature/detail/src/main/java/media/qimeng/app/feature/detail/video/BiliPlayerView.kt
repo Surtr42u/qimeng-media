@@ -503,6 +503,12 @@ class BiliPlayerView @JvmOverloads constructor(
         player.removeListener(playerListener)
         player.addListener(playerListener)
         applyMuteAndSpeed(muted = player.volume == 0f, speed = player.playbackParameters.speed)
+        // ENDED 态 surface 迁回不产生新帧（解码已到流末尾不再渲染）→ 排版态黑屏；
+        // 同位 seek 强制重渲末帧（与 VideoFullScreenOverlay 进覆盖层的 ENDED 补渲同源，
+        // 进出两方向对称，防「ENDED 态退出全屏黑屏」）
+        if (player.playbackState == Player.STATE_ENDED) {
+            player.seekTo(player.currentPosition)
+        }
     }
 
     /**

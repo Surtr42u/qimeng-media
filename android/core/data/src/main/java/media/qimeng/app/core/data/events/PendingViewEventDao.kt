@@ -27,11 +27,11 @@ interface PendingViewEventDao {
     )
     suspend fun evictBeyondLimit(limit: Int)
 
-    /** 入队 + 环形上限淘汰，同一事务（冻结口径） */
+    /** 入队 + 环形上限淘汰，同一事务（冻结口径；先 count 判满再淘汰，未达上限免整表排序扫描） */
     @Transaction
     suspend fun enqueueWithinLimit(entity: PendingViewEventEntity, limit: Int) {
         insert(entity)
-        evictBeyondLimit(limit)
+        if (count() > limit) evictBeyondLimit(limit)
     }
 
     @Query("SELECT * FROM ${PendingViewEventEntity.TABLE_NAME} ORDER BY id ASC LIMIT :limit")

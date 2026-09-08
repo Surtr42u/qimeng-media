@@ -414,7 +414,8 @@ class ZoomImageView @JvmOverloads constructor(
     }
 
     private fun log(message: String) {
-        Log.d(TAG, message)
+        // 默认静默（isLoggable 任意 tag 默认 INFO）；排查时 adb shell setprop log.tag.QimengZoom DEBUG 打开
+        if (Log.isLoggable(TAG, Log.DEBUG)) Log.d(TAG, message)
     }
 
     companion object {

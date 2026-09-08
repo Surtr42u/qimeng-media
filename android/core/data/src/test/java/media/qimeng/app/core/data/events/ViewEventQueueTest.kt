@@ -17,11 +17,20 @@ class ViewEventQueueTest {
 
     // ---------- 测试替身 ----------
 
+    /** 全局操作序号源（先删后发时序断言用：deleteByIds 与 send 各领序号，小者先发生） */
+    private class OpSequence {
+        var next = 0L
+        fun tick(): Long = ++next
+    }
+
     /** 内存 DAO：按接口语义复刻（insert 自增 id / 淘汰保最新 / 取件按 id 升序+即删） */
-    private class FakeDao : PendingViewEventDao {
+    private class FakeDao(private val seq: OpSequence = OpSequence()) : PendingViewEventDao {
         val rows = mutableListOf<PendingViewEventEntity>()
         var nextId = 1L
         var failInsert = false
+
+        /** rowId → 删除时刻的全局序号（先删后发时序断言用） */
+        val deleteSeq = mutableMapOf<Long, Long>()
 
         override suspend fun insert(entity: PendingViewEventEntity): Long {
             if (failInsert) throw IllegalStateException("db boom")
@@ -40,23 +49,29 @@ class ViewEventQueueTest {
             rows.sortedBy { it.id }.take(limit)
 
         override suspend fun deleteByIds(ids: List<Long>) {
+            ids.forEach { deleteSeq[it] = seq.tick() }
             rows.removeAll { it.id in ids }
         }
 
         override suspend fun count(): Int = rows.size
     }
 
-    /** 假发送器：可编程每行裁决；记录发送序与并发峰值（串行断言用） */
+    /** 假发送器：可编程每行裁决；记录发送序与并发峰值（串行/时序断言用） */
     private class FakeSender(
         private val decide: (PendingViewEventEntity) -> ViewEventSendResult = { ViewEventSendResult.Http(202) },
         private val delayMs: Long = 0,
+        private val seq: OpSequence = OpSequence(),
     ) : ViewEventSender {
         val sent = mutableListOf<PendingViewEventEntity>()
         var inFlight = 0
         var maxInFlight = 0
 
+        /** rowId → 发送时刻的全局序号（先删后发时序断言用） */
+        val sendSeq = mutableMapOf<Long, Long>()
+
         override suspend fun send(event: PendingViewEventEntity): ViewEventSendResult {
             sent += event
+            sendSeq[event.id] = seq.tick()
             inFlight++
             if (inFlight > maxInFlight) maxInFlight = inFlight
             if (delayMs > 0) delay(delayMs)
@@ -115,20 +130,46 @@ class ViewEventQueueTest {
     }
 
     @Test
-    fun `先删后发 - 取件删除先于任何发送（at-most-once 时序）`() = runTest {
-        val dao = FakeDao()
-        val sender = FakeSender()
+    fun `先删后发 - 每行取件删除的全局序号先于其发送序号（at-most-once 时序）`() = runTest {
+        val seq = OpSequence()
+        val dao = FakeDao(seq)
+        val sender = FakeSender(seq = seq)
         val queue = ViewEventQueue(dao, sender)
-        queue.enqueue("a", ViewEventKind.OPEN, 1L, 0L, "s")
+        repeat(3) { queue.enqueue("a", ViewEventKind.OPEN, 1L, 0L, "s") }
 
         queue.drain()
 
-        // FakeDao.takeOldest（接口默认方法）内部先 select 再 deleteByIds；deleteByIds 是
-        // 行离开队列的唯一路径——发送发生时行必然已被删：以「drain 结束后队列为空且
-        // 发送确实发生」锁住时序（delete 先行由 @Transaction takeOldest 契约保证，
-        // SQL 层面的原子性由 Room 编译期校验 + 模拟器对账实测覆盖）。
-        assertEquals(1, sender.sent.size)
+        // 硬时序断言（审查清偿弱断言）：若实现改成「先发后删」（at-most-once 变
+        // at-least-once），deleteSeq[id] > sendSeq[id] 必红；@Transaction takeOldest 的
+        // SQL 原子性由 Room 编译期校验 + 模拟器对账实测覆盖
+        assertEquals(3, sender.sent.size)
+        sender.sent.forEach { event ->
+            val deletedAt = dao.deleteSeq[event.id]
+            val sentAt = sender.sendSeq[event.id]
+            assertTrue("rowId=${event.id} delete序号=$deletedAt 应先于 send序号=$sentAt", deletedAt != null && sentAt != null && deletedAt < sentAt)
+        }
         assertEquals(0, queue.pendingCount())
+    }
+
+    @Test
+    fun `多批循环 - 超单批50行分轮取件清空，RETRY回队与新批交错终止`() = runTest {
+        val dao = FakeDao()
+        // 120 行 = 3 批（50+50+20）+ 回队行补 1 批；前 10 行 DWELL 首发必败（IoError 回队尾
+        // 换新 id > 120），重发成功——锁定批满再取一轮的循环推进与 RETRY 行不滞留不重复计
+        val sender = FakeSender(decide = { event ->
+            if (event.kind == ViewEventKind.DWELL.name && event.id <= 120L) ViewEventSendResult.IoError
+            else ViewEventSendResult.Http(202)
+        })
+        val queue = ViewEventQueue(dao, sender)
+        repeat(10) { queue.enqueue("a", ViewEventKind.DWELL, 1L, 5000L, "s") } // id 1..10
+        repeat(110) { queue.enqueue("a", ViewEventKind.OPEN, 1L, 0L, "s") }    // id 11..120
+
+        val summary = queue.drain()
+
+        assertEquals(120, summary.sent)          // 全部最终收敛（10 DWELL 第二次发送 + 110 OPEN）
+        assertEquals(10, summary.keptForRetry)   // DWELL 各回队一次
+        assertEquals(0, queue.pendingCount())    // 终止性：队列清空
+        assertEquals(130, sender.sent.size)      // 总发送 = 120 成功 + 10 失败重试，无重复计
     }
 
     @Test

@@ -66,7 +66,9 @@ fun QimengMediaGrid(
     modifier: Modifier = Modifier,
     listState: LazyGridState = rememberLazyGridState(),
     bottomContentPadding: Dp = QimengDimens.SpaceM,
-    onAssetClick: (MediaAsset) -> Unit = {},
+    // 无默认空实现（审查清偿）：默认 {} 让漏传接线静默无反应（D3 同族四页 bug 根因），
+    // 必传参数把漏接变成编译错误
+    onAssetClick: (MediaAsset) -> Unit,
     onNearBottom: () -> Unit = {},
 ) {
     // 扁平化为 (header?, asset?) 序列：组头跨全列，卡片单列

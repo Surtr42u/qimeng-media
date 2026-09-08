@@ -21,7 +21,7 @@ import media.qimeng.app.core.model.AssetDetail
  * - **系统栏隐藏须由本 Dialog 窗口自己做**（01:21 实测修正初版「单源在 Activity 窗」的
  *   错误假设）：系统栏可见性跟随**焦点窗口**的请求——Dialog 取焦后默认把系统栏带回来
  *   （证据 d1-fullscreen-v2.png 顶/底栏可见），故在窗口上按既有沉浸语义
- *   （BEAVIOR_DEFAULT + hide/show systemBars）隐藏，onDispose 恢复；Activity 窗的
+ *   （BEHAVIOR_DEFAULT + hide/show systemBars）隐藏，onDispose 恢复；Activity 窗的
  *   SystemBarsImmersiveEffect（overlay 开关已并入其 chrome 表达式）继续管排版态显隐，
  *   两窗各管焦点期显隐、不互相打架；
  * - **返回语义**：Dialog dismissOnBackPress → onDismissRequest=退出回排版态（与 BackHandler
