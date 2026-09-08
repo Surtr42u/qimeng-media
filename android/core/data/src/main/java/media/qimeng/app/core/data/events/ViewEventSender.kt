@@ -56,6 +56,13 @@ class SdkViewEventSender @Inject constructor(
             } catch (e: IOException) {
                 Log.w(EventSyncWorkSpec.LOG_TAG, "send io-failed rowId=${event.id}: ${e.message}")
                 ViewEventSendResult.IoError
+            } catch (e: Exception) {
+                // 非 IO 运行时异常也必须折进结果（审查清偿）：事件体映射（如 UUID.fromString
+                // 脏 assetId 抛 IllegalArgumentException）若冒过本层，会击穿 drain 的
+                // 「不抛出网异常」契约 → 整轮已删行全丢。归 RETRY 口径保守重试，
+                // 确定性失败由毒丸连败阈值（≥3）最终丢弃，方向仍是宁少计不虚增。
+                Log.w(EventSyncWorkSpec.LOG_TAG, "send crashed rowId=${event.id}: ${e.message}")
+                ViewEventSendResult.IoError
             }
         }
     }

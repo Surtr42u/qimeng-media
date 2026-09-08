@@ -67,7 +67,6 @@ fun AllScreen(
     LaunchedEffect(Unit) {
         TabScrollController.events.collectLatest { route ->
             if (route == ALBUM_ROUTE) {
-                android.util.Log.d("QimengM42", "scroll-to-top route=$ALBUM_ROUTE")
                 listState.scrollToItem(0)
             }
         }
