@@ -57,6 +57,10 @@ private val DURATION_BADGE_TYPES = setOf(MediaKind.VIDEO)
  * @param bottomContentPadding 列表底部预留（clipToPadding=false 语义）——默认与网格间距同档；
  *   相册页传 [QimengDimens.ListBottomContentPadding]（180dp，防悬浮药丸面板遮挡末行，
  *   旧版 fragment_all_files.xml L149）
+ * @param pauseThumbnailsWhileScrolling 滚动暂停缩略图加载（任务I I5，GUIDE_UI §浏览历史
+ *   L394 / §收藏页 L411）：网格滚动进行中（拖拽/惯性 fling 均 true，[LazyGridState]
+ *   .isScrollInProgress 口径）暂缓新缩略图请求、停滚自动恢复（门控在 [QimengThumbnail]）。
+ *   默认 false——首页/搜索/全部页既有调用方行为零变化
  */
 @Composable
 fun QimengMediaGrid(
@@ -70,6 +74,7 @@ fun QimengMediaGrid(
     // 必传参数把漏接变成编译错误
     onAssetClick: (MediaAsset) -> Unit,
     onNearBottom: () -> Unit = {},
+    pauseThumbnailsWhileScrolling: Boolean = false,
 ) {
     // 扁平化为 (header?, asset?) 序列：组头跨全列，卡片单列
     data class Cell(val header: String?, val asset: MediaAsset?)
@@ -94,6 +99,10 @@ fun QimengMediaGrid(
     LaunchedEffect(shouldLoadMore, totalCount) {
         if (totalCount > 0 && shouldLoadMore) onNearBottom()
     }
+
+    // 滚动进行中观测（derivedStateOf：仅 isScrollInProgress 翻转时才让卡片层重组）
+    val scrolling by remember { derivedStateOf { listState.isScrollInProgress } }
+    val thumbnailsPaused = pauseThumbnailsWhileScrolling && scrolling
 
     LazyVerticalGrid(
         state = listState,
@@ -122,7 +131,12 @@ fun QimengMediaGrid(
             } else {
                 val asset = cell.asset
                 if (asset != null) {
-                    AssetCard(asset = asset, animatedUrlResolver = animatedUrlResolver, onClick = { onAssetClick(asset) })
+                    AssetCard(
+                        asset = asset,
+                        animatedUrlResolver = animatedUrlResolver,
+                        paused = thumbnailsPaused,
+                        onClick = { onAssetClick(asset) },
+                    )
                 }
             }
         }
@@ -140,6 +154,7 @@ fun QimengMediaGrid(
 private fun AssetCard(
     asset: MediaAsset,
     animatedUrlResolver: suspend (String) -> String?,
+    paused: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -163,6 +178,7 @@ private fun AssetCard(
                 QimengThumbnail(
                     model = thumbModel,
                     contentDescription = asset.title,
+                    paused = paused,
                     modifier = Modifier.fillMaxSize(),
                 )
                 if (asset.mediaType in DURATION_BADGE_TYPES) {

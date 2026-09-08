@@ -3,6 +3,10 @@ package media.qimeng.app.core.ui.component
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.layout.ContentScale
@@ -16,19 +20,27 @@ import coil3.compose.AsyncImage
  * 内存缓存由 Coil 单例 ImageLoader 统一管理（滚动复用/同 URL 命中零开销）。
  *
  * @param model 直链字符串；null = 占位（列表请求中或服务端未返回）
+ * @param paused 滚动暂停缩略图加载（任务I I5，GUIDE_UI §浏览历史 L394 / §收藏页 L411）：
+ *   true 且尚未成功加载过 → 暂不下发请求只出占位底（滚动结束后恢复加载）；**已成功加载的
+ *   保持画面不清空**（对齐旧版 Glide pauseOnScroll 语义：滚动中不闪白，仅推迟新请求）。
+ *   默认 false（首页/搜索/全部页等既有调用方行为零变化）
  */
 @Composable
 fun QimengThumbnail(
     model: String?,
     modifier: Modifier = Modifier,
     contentDescription: String? = null,
+    paused: Boolean = false,
 ) {
+    // 「成功加载过」逐 model 记账：paused 恢复后（或 model 换新）重置，重新参与暂停门控
+    var loaded by remember(model) { mutableStateOf(false) }
     AsyncImage(
-        model = model,
+        model = if (paused && !loaded) null else model,
         contentDescription = contentDescription,
         contentScale = ContentScale.Crop,
         placeholder = ColorPainter(MaterialTheme.colorScheme.surfaceVariant),
         error = ColorPainter(MaterialTheme.colorScheme.surfaceVariant),
+        onSuccess = { loaded = true },
         modifier = modifier,
     )
 }
