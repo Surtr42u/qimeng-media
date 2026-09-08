@@ -72,6 +72,18 @@ class SdkDetailMappersTest {
     }
 
     @Test
+    fun `目录字段 - 库内相对路径原样透传 缺省null等于库根`() {
+        // 任务G G1b：文件整理弹窗预填当前目录——SDK directory 透传，不拼 base 不改写
+        val withDir = SdkDetailMappers.toAssetDetail(
+            sdkDetail().copy(directory = "2026/09"),
+            baseUrl,
+        )
+        assertEquals("2026/09", withDir.directory)
+        val rootLevel = SdkDetailMappers.toAssetDetail(sdkDetail(), baseUrl)
+        assertNull(rootLevel.directory) // 库根（协议缺省 null；UI 侧 orEmpty 成空串）
+    }
+
+    @Test
     fun `cosWork为null回退fileName - 已是绝对的URL原样保留`() {
         val absolute = "https://cdn.example.com/thumb/x"
         val domain = SdkDetailMappers.toAssetDetail(

@@ -13,9 +13,11 @@ import media.qimeng.app.core.model.TagChip
 import media.qimeng.app.core.model.TimelineTag
 import media.qimeng.app.core.model.ViewEventKind
 import media.qimeng.sdk.apis.DefaultApi
+import media.qimeng.sdk.infrastructure.ClientException
 import media.qimeng.sdk.models.ApiV1AssetsAssetIdFavoritePutRequest
 import media.qimeng.sdk.models.ApiV1AssetsAssetIdTagsPutRequest
 import media.qimeng.sdk.models.ApiV1TagsPostRequest
+import media.qimeng.sdk.models.MoveRequest
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -175,6 +177,34 @@ class SdkDetailRepository @Inject constructor(
         }
     }
 
+    // ---------- 文件操作（任务G G1b：POST /move + DELETE=回收站） ----------
+
+    override suspend fun moveAsset(assetId: String, targetDir: String, newName: String?) {
+        val api = apiFactory.create()
+        logRequest("POST /assets/$assetId/move", "targetDir=$targetDir newName=$newName")
+        try {
+            withContext(Dispatchers.IO) {
+                api.apiV1AssetsAssetIdMovePost(
+                    assetId = UUID.fromString(assetId),
+                    moveRequest = MoveRequest(targetDir = targetDir, newName = newName),
+                )
+            }
+        } catch (e: ClientException) {
+            // 409 = 目标位置已有同名文件（服务端不覆盖）——领域化上抛（TagNameConflictException 同范式）
+            if (e.statusCode == HTTP_CONFLICT) throw MoveConflictException()
+            throw e
+        }
+    }
+
+    override suspend fun deleteAsset(assetId: String) {
+        val api = apiFactory.create()
+        logRequest("DELETE /assets/$assetId", "trash")
+        withContext(Dispatchers.IO) {
+            // 铁律 4：DELETE 语义 = 移入回收站（可在维护页恢复），非物理删除
+            api.apiV1AssetsAssetIdDelete(UUID.fromString(assetId))
+        }
+    }
+
     private fun logRequest(endpoint: String, params: String) {
         Log.d(SdkMediaRepository.LOG_TAG, "$endpoint $params")
     }
@@ -188,5 +218,8 @@ class SdkDetailRepository @Inject constructor(
 
         /** dwell 秒数下界（open/play 的 dwellSeconds=null 归 0，即 durationMs 恒 0） */
         private const val MIN_DWELL_SECONDS = 0L
+
+        /** HTTP 409：POST /move 目标位置同名（服务端不覆盖，领域化为 [MoveConflictException]） */
+        private const val HTTP_CONFLICT = 409
     }
 }

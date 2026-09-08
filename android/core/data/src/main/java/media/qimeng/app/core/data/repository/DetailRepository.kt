@@ -80,4 +80,30 @@ interface DetailRepository {
 
     /** 删除时间轴标签（DELETE /assets/{id}/timeline-tags/{tagId}，204） */
     suspend fun deleteTimelineTag(assetId: String, tagId: String)
+
+    // ------------------------------------------------------------------
+    // 文件操作（任务G G1b：详情页整理/删除，基准 = Web FileOpsButton/FileOpsDialogs）
+    // ------------------------------------------------------------------
+
+    /**
+     * 整理文件（POST /assets/{id}/move：一个端点两用——改名 = 原目录 + 新名；移动 = 新目录 + 原名）。
+     * 目标位置已有同名文件时服务端拒绝（不覆盖，409 → [MoveConflictException] 领域化）。
+     *
+     * @param targetDir 库内目标目录（相对路径，空串 = 库根）
+     * @param newName 可选新文件名（null = 保持原名；含扩展名）
+     */
+    suspend fun moveAsset(assetId: String, targetDir: String, newName: String?)
+
+    /**
+     * 移入回收站（DELETE /assets/{id}；铁律 4：DELETE 语义 = 回收站，物理删除是独立管理操作，
+     * 恢复走维护页回收站——调用方文案必须明示该语义）。
+     */
+    suspend fun deleteAsset(assetId: String)
 }
+
+/**
+ * 整理目标位置同名冲突（服务端 POST /move 返回 409）的领域化异常（TagNameConflictException
+ * 同范式）：生成 SDK 的 ClientException 不带响应体文案，仓库层翻译成固定中文领域文案，
+ * 调用方据此给「目标位置已有同名文件」专门反馈而非笼统失败。
+ */
+class MoveConflictException : Exception("move target conflict")

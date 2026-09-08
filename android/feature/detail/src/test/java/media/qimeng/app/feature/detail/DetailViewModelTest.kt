@@ -13,6 +13,7 @@ import org.junit.Test
 import media.qimeng.app.core.data.repository.AuthorRepository
 import media.qimeng.app.core.data.repository.DetailRepository
 import media.qimeng.app.core.data.repository.MediaBatchIndex
+import media.qimeng.app.core.data.repository.MoveConflictException
 import media.qimeng.app.core.model.AssetDetail
 import media.qimeng.app.core.model.AuthorSummary
 import media.qimeng.app.core.model.DetailAuthor
@@ -163,6 +164,24 @@ class DetailViewModelTest {
             upNextError?.let { throw it }
             upNextCalls += UpNextCall(seed, limit, mediaType, cosOnly)
             return upNextResult
+        }
+
+        // 文件操作（任务G G1b）：调用记录 + 失败/领域冲突注入
+        data class MoveCall(val assetId: String, val targetDir: String, val newName: String?)
+
+        val moveCalls = mutableListOf<MoveCall>()
+        var moveError: Exception? = null
+        val deleteCalls = mutableListOf<String>()
+        var deleteError: Exception? = null
+
+        override suspend fun moveAsset(assetId: String, targetDir: String, newName: String?) {
+            moveError?.let { throw it }
+            moveCalls += MoveCall(assetId, targetDir, newName)
+        }
+
+        override suspend fun deleteAsset(assetId: String) {
+            deleteError?.let { throw it }
+            deleteCalls += assetId
         }
     }
 
@@ -788,5 +807,102 @@ class DetailViewModelTest {
         assertFalse(vm.uiState.value.tagSheetOpen)
         assertFalse(vm.uiState.value.isLoading)
         assertEquals("b", vm.uiState.value.asset?.id) // 主内容不受影响
+    }
+
+    // ---------- 文件操作（任务G G1b：POST /move + DELETE=回收站） ----------
+
+    @Test
+    fun `整理成功 - 参数透传 关弹窗 回调变化维度 重拉详情`() = runTest(mainDispatcherRule.testDispatcher) {
+        val repo = FakeDetailRepository().apply { detailResult = detail("b").copy(directory = "旧目录") }
+        val vm = viewModel(repo)
+        advanceUntilIdle()
+        vm.openMoveSheet()
+        assertTrue(vm.uiState.value.moveSheetOpen)
+
+        var movedArg = false
+        var renamedArg = false
+        vm.moveAsset(targetDir = "新目录", newName = "新名.jpg") { moved, renamed ->
+            movedArg = moved
+            renamedArg = renamed
+        }
+        advanceUntilIdle()
+        // 仓库收到原始参数（改名=新名、移动=新目录——一个端点两用）
+        assertEquals(
+            FakeDetailRepository.MoveCall("b", "新目录", "新名.jpg"),
+            repo.moveCalls.single(),
+        )
+        // 成功收尾：关弹窗、清失败文案、回调变化维度（toast 文案分流用）
+        assertFalse(vm.uiState.value.moveSheetOpen)
+        assertNull(vm.uiState.value.moveError)
+        assertFalse(vm.uiState.value.fileOpsPending)
+        assertTrue(movedArg)
+        assertTrue(renamedArg)
+        // 成功后重拉详情（directory/fileName 落新值）：init 1 次 + move 后 1 次
+        assertEquals(2, repo.detailCallsById["b"])
+    }
+
+    @Test
+    fun `整理失败 - 弹窗保持打开 409同名走领域文案`() = runTest(mainDispatcherRule.testDispatcher) {
+        val repo = FakeDetailRepository().apply {
+            detailResult = detail("b")
+            moveError = MoveConflictException()
+        }
+        val vm = viewModel(repo)
+        advanceUntilIdle()
+        vm.openMoveSheet()
+        vm.moveAsset(targetDir = "x", newName = null) { _, _ -> }
+        advanceUntilIdle()
+        // 失败：弹窗保持打开（Web toast 后弹窗可重试同语义），失败文案在弹窗内
+        assertTrue(vm.uiState.value.moveSheetOpen)
+        assertEquals("目标位置已有同名文件，请换个名字或目录", vm.uiState.value.moveError)
+        assertFalse(vm.uiState.value.fileOpsPending)
+    }
+
+    @Test
+    fun `整理失败 - 非同名冲突透传message`() = runTest(mainDispatcherRule.testDispatcher) {
+        val repo = FakeDetailRepository().apply {
+            detailResult = detail("b")
+            moveError = RuntimeException("network down")
+        }
+        val vm = viewModel(repo)
+        advanceUntilIdle()
+        vm.openMoveSheet()
+        vm.moveAsset(targetDir = "x", newName = null) { _, _ -> }
+        advanceUntilIdle()
+        assertTrue(vm.uiState.value.moveError!!.startsWith("整理失败："))
+        assertTrue(vm.uiState.value.moveError!!.endsWith("network down"))
+    }
+
+    @Test
+    fun `删除成功 - 回调onDeleted交UI层收尾 关确认弹窗`() = runTest(mainDispatcherRule.testDispatcher) {
+        val repo = FakeDetailRepository().apply { detailResult = detail("b") }
+        val vm = viewModel(repo)
+        advanceUntilIdle()
+        vm.openDeleteConfirm()
+        assertTrue(vm.uiState.value.deleteConfirmOpen)
+
+        var deleted = false
+        vm.deleteAsset { deleted = true }
+        advanceUntilIdle()
+        assertEquals(listOf("b"), repo.deleteCalls)
+        assertTrue(deleted) // UI 层据此 toast + onBack()（Web navigate(-1) 同收尾）
+        assertFalse(vm.uiState.value.deleteConfirmOpen)
+        assertFalse(vm.uiState.value.fileOpsPending)
+    }
+
+    @Test
+    fun `删除失败 - 关弹窗进errorMessage横幅`() = runTest(mainDispatcherRule.testDispatcher) {
+        val repo = FakeDetailRepository().apply {
+            detailResult = detail("b")
+            deleteError = RuntimeException("boom")
+        }
+        val vm = viewModel(repo)
+        advanceUntilIdle()
+        vm.openDeleteConfirm()
+        vm.deleteAsset { }
+        advanceUntilIdle()
+        assertFalse(vm.uiState.value.deleteConfirmOpen)
+        assertEquals("移入回收站失败，请重试", vm.uiState.value.errorMessage)
+        assertFalse(vm.uiState.value.fileOpsPending)
     }
 }
