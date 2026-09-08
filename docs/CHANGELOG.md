@@ -11,6 +11,17 @@
 
 ---
 
+## feat(app): 任务I I2 搜索页复刻走查——IME 遮挡实测判定通过（无需修复）+H1 换件回归确认，零代码改动纯走查批（2026-09-09 第一百五十一笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理，任务I-Android页面复刻卷 I2 搜索批；独占 feature:search，REPLICATION_GAPS §3.2 两条目全走查）
+
+- **键盘适配走查通过（GAPS §3.2 存疑条=R12 裁决 I2 走查项，实测判定无需修复）**：18461 虚构库（QIMENG-TEST）+ qimeng_api35 模拟器三态实测——搜索页聚焦弹 IME（`mInputShown=true`）后，①输入框（顶栏底边 y=307 ≪ IME 上沿≈1510）不被遮挡、输入与 IME Search 动作正常；②uiautomator dump 逐节点 bounds 对比（输入框占位/推荐搜索区头/搜索历史区头 IME 前后逐像素相同）证明布局零调整=Compose edge-to-edge 无 ime insets 消费天然等价旧版 `SOFT_INPUT_ADJUST_NOTHING`（GUIDE_UI L130）语义；③列表 IME 开启时下沿被覆盖、收起后滚到底全部可达（与旧版基准行为一致，非缺陷）；④旧版动机「避免底栏顶到键盘上方」结构性满足——搜索路由为覆盖页壳层 bottomBar 不组合。无黑边/跳动/压瘪异常。
+- **H1 换件回归确认（知悉项：QimengSegPill 内部换 M3 FilterChip）**：搜索页词丸流（推荐搜索/搜索历史两区 QimengWordPillFlow）软底胶囊无描边、FlowRow 换行正常；建议行「icon+候选名+右侧类型徽标（COS作品）」、顶栏三件、结果态日期分组头与实录 search_entry/suggest/results.txt 结构逐项对齐，无视觉回退（大致相似口径）。
+- **交互链走查**：输入防抖拉建议（suggest 只匹配名字索引五维——「01」空建议为正确行为）/IME Search 与按钮提交同链/结果态词保留/点搜索栏回建议态词保留/返回族 建议→空态清词→退页回首页，全链符合 GUIDE_UI §搜索页。
+- **门禁三连全绿**：`:feature:search:testDebugUnitTest` BUILD SUCCESSFUL（12 tests, 0 failures, 0 errors, 0 skipped）；`:app:assembleDebug` BUILD SUCCESSFUL；`lintDebug` BUILD SUCCESSFUL（0 errors, 25 warnings 存量）。证据 %TEMP%\qimeng-i2-evidence\（WALKTHROUGH-RECORD.md+9 截图+7 dump）。零代码改动（纯走查批），commit 仅含本笔 CHANGELOG。
+
+---
+
 ## docs(app): 任务H-Android复刻前置卷收官——H3 全卷对抗审查通过+P3 清偿+文档同步（2026-09-09 第一百四十九笔）
 
 执行 AI：GLM-5.3-Flash（主会话主代理，任务H H3 收官批；批次级审查 H1/H2 各有独立 reviewer 报告在案，本笔=全卷收官）
