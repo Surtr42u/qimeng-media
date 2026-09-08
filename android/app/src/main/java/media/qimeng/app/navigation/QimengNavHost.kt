@@ -21,10 +21,12 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import media.qimeng.app.core.ui.component.TabScrollController
 import media.qimeng.app.feature.all.AllScreen
 import media.qimeng.app.feature.author.AuthorCollectionRoutes
@@ -38,6 +40,8 @@ import media.qimeng.app.feature.home.HomeScreen
 import media.qimeng.app.feature.login.LoginScreen
 import media.qimeng.app.feature.search.SearchScreen
 import media.qimeng.app.feature.settings.SettingsScreen
+import media.qimeng.app.feature.stats.StatsDetailRoutes
+import media.qimeng.app.feature.stats.StatsDetailScreen
 import media.qimeng.app.feature.stats.StatsScreen
 import media.qimeng.app.feature.upload.UploadScreen
 import media.qimeng.app.session.MainViewModel
@@ -46,8 +50,18 @@ import media.qimeng.app.session.SessionState
 /** 导航路由契约（壳层独占；feature 只暴露 Screen+回调。例外：详情路由串/参数键单源在
  *  feature:detail 的 [DetailRoutes]——feature 禁依赖 :app，壳层反向引用此处合法） */
 object Routes {
-    /** 覆盖页面：搜索（首页搜索框进入；GUIDE_UI §导航结构 入栈隐藏底栏） */
-    const val SEARCH = "search"
+    /**
+     * 覆盖页面：搜索（首页搜索框进入；GUIDE_UI §导航结构 入栈隐藏底栏）。
+     * 任务I I3 加可选携词参数（GUIDE_UI §统计详情页「标签 → 搜索页携词跳转」管道）：
+     * 未带词的入口仍 navigate 到 [SEARCH_NAV]（可选参数缺省走 defaultValue）。
+     */
+    const val SEARCH = "search?q={q}"
+
+    /** 搜索页无参导航地址（q 可选参数缺省空串=入口态，行为与旧无参路由一致） */
+    const val SEARCH_NAV = "search"
+
+    /** 搜索携词参数键（[SEARCH] 路由占位符） */
+    const val KEY_SEARCH_QUERY = "q"
 
     /** 覆盖页面：收藏（我的页入口行；M4-6 完整我的页前的临时入口） */
     const val FAVORITE = "favorite"
@@ -156,7 +170,7 @@ fun QimengNavHost(
         ) {
             composable(TopLevelDestination.HOME.route) {
                 HomeScreen(
-                    onOpenSearch = { navController.navigate(Routes.SEARCH) },
+                    onOpenSearch = { navController.navigate(Routes.SEARCH_NAV) },
                     onOpenAsset = { assetId -> navController.navigate(DetailRoutes.detailRoute(assetId)) },
                 )
             }
@@ -165,7 +179,15 @@ fun QimengNavHost(
                     onOpenAsset = { assetId -> navController.navigate(DetailRoutes.detailRoute(assetId)) },
                 )
             }
-            composable(TopLevelDestination.STATS.route) { StatsScreen() }
+            composable(TopLevelDestination.STATS.route) {
+                StatsScreen(
+                    // 趋势卡/分布入口卡点击进统计详情页（任务I I3；GUIDE_UI §数据统计页 L213-214，
+                    // 携带当前时间范围——GUIDE §交互设计「进入详情携带当前时间范围」）
+                    onOpenDetail = { mode, range ->
+                        navController.navigate(StatsDetailRoutes.statsDetailRoute(mode, range))
+                    },
+                )
+            }
             composable(TopLevelDestination.SETTINGS.route) {
                 SettingsScreen(
                     onOpenFavorite = { navController.navigate(Routes.FAVORITE) },
@@ -174,8 +196,18 @@ fun QimengNavHost(
                     onOpenUpload = { navController.navigate(Routes.UPLOAD) },
                 )
             }
-            composable(Routes.SEARCH) {
+            composable(
+                route = Routes.SEARCH,
+                arguments = listOf(
+                    navArgument(Routes.KEY_SEARCH_QUERY) {
+                        type = NavType.StringType
+                        defaultValue = ""
+                    },
+                ),
+            ) { entry ->
                 SearchScreen(
+                    initialQuery = entry.arguments?.getString(Routes.KEY_SEARCH_QUERY)
+                        ?.takeUnless { it.isBlank() },
                     onBack = { navController.popBackStack() },
                     onOpenAsset = { assetId -> navController.navigate(DetailRoutes.detailRoute(assetId)) },
                 )
@@ -216,6 +248,13 @@ fun QimengNavHost(
                     sharedUris = sharedUris,
                     onSharedConsumed = onSharedConsumed,
                     onDone = { navController.popBackStack() },
+                )
+            }
+            // 统计详情页（任务I I3）：路由契约单源在 feature:stats（DetailRoutes/AuthorCollectionRoutes
+            // 同范式），mode/range 参数由页面 ViewModel 经 SavedStateHandle 读取，此处无需展开 arguments
+            composable(StatsDetailRoutes.STATS_DETAIL_ROUTE) {
+                StatsDetailScreen(
+                    onBack = { navController.popBackStack() },
                 )
             }
             // 详情页（M4-3）：不设 launchSingleTop——详情→详情（推荐栏跳转）保留返回栈，

@@ -23,6 +23,7 @@ import com.patrykandpatrick.vico.core.cartesian.data.CartesianValueFormatter
 import com.patrykandpatrick.vico.core.cartesian.data.LineCartesianLayerModel
 import com.patrykandpatrick.vico.core.cartesian.layer.LineCartesianLayer
 import com.patrykandpatrick.vico.core.cartesian.marker.CartesianMarker
+import com.patrykandpatrick.vico.core.cartesian.marker.CartesianMarkerController
 import com.patrykandpatrick.vico.core.common.data.ExtraStore
 import com.patrykandpatrick.vico.core.common.shape.CorneredShape
 import com.patrykandpatrick.vico.core.common.shader.ShaderProvider
@@ -39,17 +40,21 @@ data class QimengTrendSeries(val values: List<Number>)
  * - 系列数可配：[series] 每项 = 一条折线（Vico 事务内逐条 add，天然多系列）；
  * - 系列颜色可配：[seriesColors] 与 [series] 按序一一对应（数量不足直接抛错，防静默串色）；
  * - marker / persistentMarkers 参数位已预留：I3「点击数据点高亮 + 数值气泡」时直接传入
- *   DefaultCartesianMarker / persistentMarkers 实现，本封装不内嵌交互（本批零交互）。
+ *   DefaultCartesianMarker / persistentMarkers 实现（I3 已实装：rememberTrendValueMarker），
+ *   本封装不内嵌气泡内容（各调用方按语义组值）。
  *
  * 视觉口径（旧版 GUIDE_UI §数据统计页趋势卡，Vico 能力内近似）：渐变面积 + 折线 + 数据点；
- * X 轴标签防重叠抽稀由 Vico ItemPlacer 内置（替代旧 Canvas labelStep 手工截断到 6 个）；
+ * X 轴标签防重叠抽稀由 Vico ItemPlacer 内置（替代旧 Canvas labelStep 手工截断）；
  * 不画 Y 轴（旧版仅右上角最大值参考标签，读数辅助非规格硬项，不复刻）。
  *
  * @param series 折线系列列表（空列表不渲染任何系列）
  * @param seriesColors 每条系列的主色（折线/数据点/面积渐变同色系）
  * @param xLabels X 轴标签，与各系列数据点下标一一对应（超出部分 Vico 自动抽稀）
- * @param marker 悬浮 marker（I3 预留：点击数据点高亮 + 数值气泡），null = 无
- * @param persistentMarkers 持久 marker（I3 预留：常驻标记能力口），null = 无
+ * @param marker 悬浮 marker（I3：点击数据点高亮 + 数值气泡），null = 无
+ * @param persistentMarkers 持久 marker（预留：常驻标记能力口），null = 无
+ * @param markerController marker 显隐交互控制器（I3：调用方传
+ *   CartesianMarkerController.Companion.rememberToggleOnTap() = 点击显示/再点隐藏，
+ *   对齐 GUIDE_UI「点击数据点高亮」）；null = 库默认按压显隐（与 H2 行为一致）
  */
 @Composable
 fun QimengTrendLineChart(
@@ -59,6 +64,7 @@ fun QimengTrendLineChart(
     modifier: Modifier = Modifier,
     marker: CartesianMarker? = null,
     persistentMarkers: (CartesianChart.PersistentMarkerScope.(ExtraStore) -> Unit)? = null,
+    markerController: CartesianMarkerController? = null,
 ) {
     require(seriesColors.size >= series.size) {
         "seriesColors (${seriesColors.size}) 少于 series (${series.size})：系列必须逐条配色，禁止静默回落默认色"
@@ -110,6 +116,7 @@ fun QimengTrendLineChart(
             ),
             marker = marker,
             persistentMarkers = persistentMarkers,
+            markerController = markerController ?: remember { CartesianMarkerController.showOnPress() },
         ),
         modelProducer = modelProducer,
         modifier = modifier,

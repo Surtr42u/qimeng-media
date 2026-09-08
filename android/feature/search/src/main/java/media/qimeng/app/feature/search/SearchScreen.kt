@@ -21,6 +21,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -58,6 +59,7 @@ import media.qimeng.app.core.ui.theme.QimengDimens
 fun SearchScreen(
     onBack: () -> Unit,
     onOpenAsset: (assetId: String) -> Unit,
+    initialQuery: String? = null,
     viewModel: SearchViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -68,6 +70,14 @@ fun SearchScreen(
     val animatedUrlResolver = remember(viewModel) { viewModel.origUrlResolver::origUrl }
     // nowMs 一次快照：会话内分组标签稳定，不做跨日跳动（与相册页同思路）
     val nowMs = remember { System.currentTimeMillis() }
+
+    // 携词跳转透传（任务I I3 授权的签名+透传改动；GUIDE_UI §统计详情页 v1.15
+    // 「showSearchFragment(initialQuery) 携带标签名跳转，修复打开空白搜索页」）：
+    // 进页即按该词提交（记历史+切结果态），等价于点建议词搜索；页面内部逻辑不动。
+    // 当前统计页可跳来源=常看标签卡（协议缺口 #31d 冻结未渲染），管道先就位供详情链使用。
+    LaunchedEffect(initialQuery) {
+        if (!initialQuery.isNullOrBlank()) viewModel.submit(initialQuery)
+    }
 
     // 返回族同链：左上箭头与系统返回走同一分发（旧版 searchBack.setOnClickListener { handleBack() }）
     val handleBackAction = {
