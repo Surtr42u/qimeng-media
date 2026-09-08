@@ -409,11 +409,20 @@ export default function ImageViewer({
   }, [])
 
   // Esc 退出（window 级监听；chrome 隐藏态也可退出）+ Tab 循环 trap（F2·P3b：
-  // aria-modal 语义下焦点不得逃出对话框），卸载时一并清理
+  // aria-modal 语义下焦点不得逃出对话框）+ 方向键换件（E/F卷审查·P3 清偿：
+  // 与横滑换件同映射——左=上一件/右=下一件，回调缺失即不启用），卸载时一并清理
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') {
         onClose()
+        return
+      }
+      if (e.key === 'ArrowLeft' && onPrev) {
+        onPrev()
+        return
+      }
+      if (e.key === 'ArrowRight' && onNext) {
+        onNext()
         return
       }
       if (e.key !== 'Tab') return
@@ -450,7 +459,7 @@ export default function ImageViewer({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+  }, [onClose, onPrev, onNext])
 
   // 相邻预载：new Image() 仅暖浏览器缓存；失败静默（不挂 onerror、不重试）
   useEffect(() => {

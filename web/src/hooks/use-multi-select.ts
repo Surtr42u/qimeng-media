@@ -57,14 +57,16 @@ export function useMultiSelect(options: MultiSelectOptions = {}) {
     setSelected(new Set())
   }, [locked])
 
-  /** 选集重置为给定 id 集：批量收尾只保留失败项（可原地重试），全成功即清空 */
-  const selectOnly = useCallback(
-    (ids: readonly string[]) => {
-      if (locked) return
-      setSelected(new Set(ids))
-    },
-    [locked],
-  )
+  /** 选集重置为给定 id 集：批量收尾只保留失败项（可原地重试），全成功即清空。
+   *  审查清偿（F6·P2-1）：本方法唯一调用方是 useBatchRunner 的 onFinished 终局
+   *  回调——回调经弹窗确认渲染的闭包进入，若带 locked 守卫则恒捕获 true 成为
+   *  永不生效的死机制（终局收敛此前实际由列表刷新后的 prune 兜底达成）。
+   *  终局回调是程序事件非用户输入入口，不在执行期锁的禁改面内，去守卫后
+   *  「终局只留失败项」名副其实；用户入口（toggle/selectAll/clear/exit/Esc）
+   *  的锁定语义不变。 */
+  const selectOnly = useCallback((ids: readonly string[]) => {
+    setSelected(new Set(ids))
+  }, [])
 
   /** 选集对给定合法 id 集做修剪（剔除已不存在的行）：列表刷新后选集始终指向
    *  可见行，phantom 计数不会出现。执行期锁定下 no-op（改选集是用户操作的

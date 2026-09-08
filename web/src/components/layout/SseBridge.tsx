@@ -32,7 +32,9 @@ export function SseBridge() {
   useSSEEvents({
     onLibraryChanged: () => {
       // 库内容增删改（扫描/管理操作）：资产族根键一次覆盖 list/total/detail/
-      // facets/timeline-tags；sources/authors 聚合随扫描变化；删除类操作进回收站
+      // facets/timeline-tags；sources/authors 聚合随扫描变化；删除类操作进回收站。
+      // 审查清偿（P2-3）：补推荐流——删除/移动后推荐流卡片集合变化，缺失时
+      // 其他标签页在 staleTime 窗口内继续显示已删资产（点入 404）
       for (const key of [
         ASSETS_QUERY_KEY,
         LIBRARIES_QUERY_KEY,
@@ -41,6 +43,7 @@ export function SseBridge() {
         AUTHORS_QUERY_KEY,
         SOURCES_QUERY_KEY,
         TRASH_QUERY_KEY,
+        RECOMMENDATIONS_QUERY_KEY,
       ]) {
         void queryClient.invalidateQueries({ queryKey: key })
       }
