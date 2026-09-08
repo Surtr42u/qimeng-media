@@ -18,7 +18,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -36,6 +35,7 @@ import media.qimeng.app.core.model.NameSuggestion
 import media.qimeng.app.core.model.badgeLabel
 import media.qimeng.app.core.model.MediaAsset
 import media.qimeng.app.core.model.groupByDateLabel
+import media.qimeng.app.core.ui.component.QimengCapsuleTextField
 import media.qimeng.app.core.ui.component.QimengEmptyState
 import media.qimeng.app.core.ui.component.QimengMediaGrid
 import media.qimeng.app.core.ui.component.QimengPill
@@ -144,10 +144,14 @@ private fun SearchTopBar(
                     onTap = onFieldTap,
                 ),
         ) {
-            OutlinedTextField(
+            QimengCapsuleTextField(
                 value = query,
                 onValueChange = onQueryChange,
-                placeholder = { Text(text = stringResource(R.string.search_hint)) },
+                placeholder = stringResource(R.string.search_hint),
+                // Web .hist-search：软底胶囊 + 前置放大镜（decorative，placeholder 已表意）
+                leadingIcon = {
+                    Icon(imageVector = SearchIcon, contentDescription = null)
+                },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = { onSubmit() }),

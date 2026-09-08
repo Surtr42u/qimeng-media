@@ -1,7 +1,6 @@
 package media.qimeng.app.core.ui.component
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,17 +14,13 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import media.qimeng.app.core.ui.R
 import media.qimeng.app.core.ui.theme.QimengDimens
@@ -172,26 +167,10 @@ private fun ChipDivider() {
     )
 }
 
-/** 胶囊本体：选中实底主色/未选中软底（旧版 QimengCapsuleChip 的 M3 token 翻译） */
+/** 胶囊本体：选中实底主色/未选中软底（旧版 QimengCapsuleChip 的 M3 token 翻译）。
+ *  渲染委托 [QimengSegPill]（G6 查重收敛：FilterChip 替身与本组件视觉语义完全同谱，
+ *  单枚胶囊渲染单源，视觉与行为零变化）。 */
 @Composable
 private fun PillChip(pill: QimengPill, onClick: () -> Unit) {
-    val shape = RoundedCornerShape(QimengDimens.PillCornerRadius)
-    val background =
-        if (pill.selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
-    val contentColor =
-        if (pill.selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-    Text(
-        text = pill.text,
-        style = MaterialTheme.typography.labelLarge,
-        fontWeight = if (pill.selected) FontWeight.SemiBold else FontWeight.Normal,
-        color = contentColor,
-        modifier = Modifier
-            .clip(shape)
-            .background(background)
-            .clickable(onClick = onClick)
-            .padding(
-                horizontal = QimengDimens.ChipHorizontalPadding,
-                vertical = QimengDimens.SpaceS,
-            ),
-    )
+    QimengSegPill(text = pill.text, selected = pill.selected, onClick = onClick)
 }

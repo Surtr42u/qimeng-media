@@ -41,6 +41,7 @@ import media.qimeng.app.core.ui.component.QimengMediaGrid
 import media.qimeng.app.core.ui.component.QimengPill
 import media.qimeng.app.core.ui.component.QimengPullToRefresh
 import media.qimeng.app.core.ui.component.TabScrollController
+import media.qimeng.app.core.ui.theme.QimengDimens
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 
@@ -193,7 +194,7 @@ private fun HomeTopRow(
         )
         // 搜索框不可聚焦（点击整块跳搜索页——规格书语义）
         Surface(
-            shape = RoundedCornerShape(100.dp),
+            shape = RoundedCornerShape(QimengDimens.PillCornerRadius),
             color = MaterialTheme.colorScheme.surfaceVariant,
             modifier = Modifier
                 .weight(1f)

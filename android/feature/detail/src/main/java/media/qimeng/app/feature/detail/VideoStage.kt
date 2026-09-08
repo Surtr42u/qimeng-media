@@ -16,7 +16,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -42,6 +41,7 @@ import androidx.media3.common.util.UnstableApi
 import kotlinx.coroutines.delay
 import media.qimeng.app.core.model.AssetDetail
 import media.qimeng.app.core.model.TimelineTag
+import media.qimeng.app.core.ui.component.QimengCapsuleTextField
 import media.qimeng.app.core.ui.component.QimengThumbnail
 import media.qimeng.app.core.ui.icon.PlayIcon
 import media.qimeng.app.feature.detail.video.BiliPlayerView
@@ -459,11 +459,12 @@ private fun TimelineTagAddDialog(
                         )
                     }
                 }
-                OutlinedTextField(
+                QimengCapsuleTextField(
                     value = input,
                     onValueChange = { input = it },
                     singleLine = true,
-                    label = { Text(stringResource(R.string.detail_video_tag_input_hint)) },
+                    // 胶囊输入框 label 走 placeholder 语义（G6：对齐 Web，组件不支持 label 浮动）
+                    placeholder = stringResource(R.string.detail_video_tag_input_hint),
                 )
             }
         },

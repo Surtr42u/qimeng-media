@@ -1,6 +1,7 @@
 package media.qimeng.app.feature.author
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -9,8 +10,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -23,11 +24,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import media.qimeng.app.core.model.AuthorSortOption
 import media.qimeng.app.core.model.AuthorSummary
 import media.qimeng.app.core.model.Zone
+import media.qimeng.app.core.ui.component.QimengCapsuleTextField
 import media.qimeng.app.core.ui.component.QimengChipRow
 import media.qimeng.app.core.ui.component.QimengEmptyState
 import media.qimeng.app.core.ui.component.QimengPill
 import media.qimeng.app.core.ui.component.QimengPullToRefresh
 import media.qimeng.app.core.ui.component.QimengTopBar
+import media.qimeng.app.core.ui.icon.SearchIcon
+import media.qimeng.app.core.ui.theme.QimengDimens
 
 /** 作者管理胶囊（全部/常规/COS）+ 排序三项（默认/浏览数/文件数） */
 private val ZONE_OPTIONS = listOf("全部" to Zone.ALL, "常规" to Zone.REGULAR, "COS" to Zone.COS)
@@ -52,10 +56,14 @@ fun AuthorScreen(
                 .padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            OutlinedTextField(
+            QimengCapsuleTextField(
                 value = state.keyword,
                 onValueChange = viewModel::onKeywordChange,
-                placeholder = { Text(text = "按名字搜索") },
+                placeholder = "按名字搜索",
+                // 对齐 Web .hist-search：胶囊搜索框带前置放大镜（decorative，placeholder 已表意）
+                leadingIcon = {
+                    Icon(imageVector = SearchIcon, contentDescription = null)
+                },
                 singleLine = true,
                 modifier = Modifier.weight(1f),
             )
@@ -134,7 +142,8 @@ private fun AuthorRow(
             }
         }
         Surface(
-            shape = androidx.compose.foundation.shape.RoundedCornerShape(100.dp),
+            // 胶囊圆角收敛单源 token（G6：原硬编码 RoundedCornerShape(100.dp)）
+            shape = RoundedCornerShape(QimengDimens.PillCornerRadius),
             color = if (author.followed) {
                 MaterialTheme.colorScheme.surfaceVariant
             } else {
