@@ -11,6 +11,37 @@
 
 ---
 
+## fix(app): 维护审查清偿——任务D卷审查 P2×5/P3×4（2026-09-08 第一百三十七笔）
+
+执行 AI：GLM-5.3（主代理；三路并发审查子代理 Android 卷/Web 卷/流程合规 + 主代理修复）
+
+- **审查**：对今日 D/E/F 三卷 25 笔提交三路并发对抗审查（Android 卷七提交/Web 卷十三提交/流程合规全量），Android 卷无 P0/P1，P2×5/P3×6 清偿如下（P3 dwell 假精度与 EventSyncWorkSpecTest 弱断言记档不清偿，见 HANDOVER_APP）。
+- **P2 清偿**：①ViewEventSender 补非 IO 异常兜底（catch Exception 折进 IoError，防 UUID.fromString 脏 assetId 击穿 drain 契约致整轮已删行全丢；毒丸阈值最终收敛）；②VideoStage onDispose 方向恢复改**进入时快照还原**（原无条件写 PORTRAIT 把从未进全屏的整个 App 永久锁竖屏，横屏平板致命）；③BiliPlayerView.rebindPlayer 补 ENDED 态同位 seek 重渲末帧（进出全屏两方向对称，防 ENDED 退场黑屏）；④「先删后发」测试改全局序号硬断言（FakeDao.deleteByIds/FakeSender.send 共享 OpSequence，改「先发后删」必红）；⑤新增多批循环测试（120 行=3 批+RETRY 回队交错，锁终止性）。
+- **P3 清偿**：QimengMediaGrid.onAssetClick 删默认空实现（D3 同族四页 bug 根因根除，漏接变编译错误）；enqueueWithinLimit 先 count 判满再淘汰（未达上限免整表 NOT IN 排序扫描）；ImageFullScreenOverlay KDoc BEAVIOR→BEHAVIOR；AllScreen 生产调试 Log.d 清除；ZoomImageView log() 加 isLoggable 门控（默认静默，setprop 可开）。
+- **验收**：`:core:data:testDebugUnitTest`（22 测含 2 强化）+ :core:ui/:feature:all/:feature:detail compileDebugKotlin 全绿。#24/#26（BigDecimalAdapter 序列化致 dwell/progress 恒 400）审查复核根因定位准确，修复归协议批待用户拍板。
+
+---
+
+## fix(web): 维护审查清偿——任务E/F卷审查 P2×3/P3×5（2026-09-08 第一百三十八笔）
+
+执行 AI：GLM-5.3（主代理）
+
+- **P2 清偿**：①use-multi-select.selectOnly 去 locked 守卫（唯一调用方=useBatchRunner.onFinished 终局回调，捕获 locked 闭包恒 no-op 的死机制根除，F6 P2-1 闭环）；②useRestoreTrash 失效面补 ASSETS+DIRS+RECOMMENDATIONS（原仅 TRASH+SSE 兜底，断连退避窗跨页不一致；F6 批量恢复放大暴露面）；③SseBridge library.changed 补 RECOMMENDATIONS_QUERY_KEY（跨标签页删除后推荐流 stale 窗口内显示已删资产）。
+- **P3 清偿**：image-viewer 键盘方向键换件（左=上一件/右=下一件，与横滑同映射）+ effect deps 补 onPrev/onNext；router 加 catch-all `*` 路由（未注册路径不再白屏，含裸 /app/ranks，回首页）；Sidebar '/app/albums' 字面量收敛 ALBUMS_PATH；useDeleteAsset 补 STATS 失效；DirFileList 重命名/移动两同行为钮合并为「移动/重命名」（Pencil 死导入清除）。
+- **记档不清偿**：MediaCard key={a.id} 无 id 行 duplicate-key 警告风险（8 处存量惯用法，无功能影响）；image-viewer keydown effect 因调用方内联回调每渲染重挂 listener（功能等价，代价可忽略）。
+- **验收**：tsc 0 错/oxlint 15 warnings 0 errors（持平基线）/vitest 94/94 全绿。
+
+---
+
+## docs: 任务G-Android对齐卷立卷 + 流程合规审查三处清偿（2026-09-08 第一百三十九笔）
+
+执行 AI：GLM-5.3（主代理；流程合规审查子代理 + 研究子代理六项根因定位）
+
+- **流程合规审查结论**：今日 25 笔提交无铁律/安全/生成物/迁移/协议红线违规；3 处文档失实本笔清偿——①adr/INDEX.md ADR-0017 行「CI 接入记待办」滞后 → 闭环（F4 批 run 34173261179 验证）；②HANDOVER.md 任务书入口段「D 卷仍开放」与文头矛盾 → 三卷收官口径；③E1~E6 hash 回填：8dac898/263d255/89e688a/5097402/e0f9f57/c28a9e1（对齐 D/F 卷回填惯例，此前仅在 HANDOVER 文头）。另记：commit「文档：」栏今后不列仓库外文件（7970592 教训）。
+- **任务G 立卷**（用户六项反馈：详情页对齐 Web/作者总览进我的/状态栏遮挡/搜索胶囊/相册排版/内部 UI 理念）：任务书=仓库外《QimengNAS/任务G-Android对齐卷.md》（G0~G7 八批，根因定位到文件行级）；关键拍板=G5 相册基准以 Web 现版为准（调研实证旧版与 Web 形态互斥，用户断言 Web=旧版手机 UI，按冲突优先级第 1 条用户最新要求裁决，**推翻 B6 豁免档相册页相关豁免**）；G2=我的页作者总览卡（Web DataPage 式）+ AuthorScreen 按 Web AuthorsPage 重排；流程约束重申=双会话隔离/三子代理并发/异步子代理/后台执行/无真实文件（8420 真库永不连）/多种测试（JVM 单测+三连绿+模拟器实测）。零协议零 SDK 再生（所需端点已核验在生成物内）。
+
+---
+
 ## docs: 任务F-Web卷 晨间收尾汇总（2026-09-08 第一百三十六笔）
 
 执行 AI：GLM-5.3-Flash（主会话调度收尾；08:50 定时收尾自动化触发，用户指令「今天早上8.50暂停会话中的所有任务」）
