@@ -19,9 +19,9 @@ Web 端同类问题已由 ADR-0016（recharts）解决，Android 端需要对等
 
 - 官方仓库与 Maven group：https://github.com/patrykandpatrick/vico +
   https://repo1.maven.org/maven2/com/patrykandpatrick/vico/compose-m3/ ；
-- 当前全局最新稳定线是 3.x（3.3.1），2.x 末位是 2.5.2——但两者的构件 .module 均声明
-  kotlin-stdlib 2.4.0，其 @Metadata 2.4.0 超出工程 Hilt 2.58 的 kotlin-metadata-jvm 上限
-  2.3.0（同 ADR-0014 批次否决 Coil 3.5.0 的既证死因）；
+- 当前全局最新稳定线是 3.x（3.3.1），2.x 末位是 2.5.2——两者的构件 .module 声明的
+  kotlin-stdlib 分别为 2.4.10 与 2.4.0，@Metadata 版本均超出工程 Hilt 2.58 的
+  kotlin-metadata-jvm 上限 2.3.0（同 ADR-0014 批次否决 Coil 3.5.0 的既证死因）；
 - 2.5.1 = 2.x 线在工程冻结工具链（AGP 8.13.2 / compileSdk 36 / Kotlin 2.3.21）上的末位可落
   稳定版：stdlib 2.3.21（metadata 2.3.0 合规）、compose/core/compose-m3 三构件 AAR
   aar-metadata 实测 minCompileSdk=36、compose-bom requires 2026.05.00（工程 BOM 2026.06.01
@@ -35,7 +35,7 @@ rememberLineCartesianLayer（LineFill.single 折线 / AreaFill.single 渐变面�
 ## 落选方案
 
 - **维持 Canvas 自绘**：被用户 2026-09-08 原话直接否决；I3 多系列 + 点击交互的手绘成本高。
-- **Vico 3.3.1（最新稳定线）**：kotlin-stdlib 2.4.0 与 Hilt 2.58 冲突（见上）；待工程整体
+- **Vico 3.3.1（最新稳定线）**：kotlin-stdlib 2.4.10 与 Hilt 2.58 冲突（见上）；待工程整体
   升级 AGP 9 + Kotlin ≥2.4 工具链后可再评估升级。
 - **MPAndroidChart 等 View 体系图表库**：非 Compose 原生，须 AndroidView 桥接，声明式状态
   管理割裂，且社区维护放缓。

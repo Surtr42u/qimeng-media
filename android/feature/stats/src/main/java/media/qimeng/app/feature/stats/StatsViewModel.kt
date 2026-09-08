@@ -16,7 +16,7 @@ import media.qimeng.app.core.model.StatsRangeOption
 import media.qimeng.app.core.model.TrendPoint
 import media.qimeng.app.core.model.apiRange
 
-/** 统计页 UI 状态（数字卡静态 C2 + 四档切换 C1 + 趋势线 C3） */
+/** 统计页 UI 状态（旧 C1/C2/C3 拍板均被 2026-09-08「完全复刻」拍板覆盖：四档/数字卡静态/砍详情页将由任务I I3 按 GUIDE_UI 回改；趋势渲染见 ADR-0018） */
 data class StatsUiState(
     val overview: StatsOverviewValues? = null,
     val overviewLoading: Boolean = true,

@@ -79,8 +79,9 @@ room = "2.8.4"
 # 「不要自绘」「统计页折线图换 Vico」原话）。官方仓库/Maven group = patrykandpatrick/vico
 # （https://github.com/patrykandpatrick/vico + https://repo1.maven.org/maven2/com/patrykandpatrick/vico/）。
 # 2.x 稳定线逐版核查（compose-m3 构件 .module + AAR aar-metadata 当场实测，2026-09-09）：
-#   3.3.1（当前全局最新稳定线）与 2.5.2（2.x 末位）-> kotlin-stdlib 2.4.0，其 @Metadata 2.4.0
-#            超出 Hilt 2.58 的 kotlin-metadata-jvm 上限 2.3.0（同 Coil 3.5.0 否决因），不取；
+#   3.3.1（当前全局最新稳定线）-> kotlin-stdlib 2.4.10；2.5.2（2.x 末位）-> 2.4.0；
+#            两者 @Metadata 均超出 Hilt 2.58 的 kotlin-metadata-jvm 上限 2.3.0（同 Coil 3.5.0
+#            否决因），不取；
 #   2.5.1     -> stdlib 2.3.21（= 工程 Kotlin 2.3.21，metadata 2.3.0 合规）+ compose/core/compose-m3
 #            三构件 minCompileSdk=36（AAR aar-metadata 实测，与冻结 compileSdk 36 相等）+
 #            compose-bom requires 2026.05.00（本工程 BOM 2026.06.01 更新，覆盖解析）——
