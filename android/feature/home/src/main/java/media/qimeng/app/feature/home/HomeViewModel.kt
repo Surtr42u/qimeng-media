@@ -12,6 +12,8 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import media.qimeng.app.core.data.repository.DataStoreGridPrefsRepository
 import media.qimeng.app.core.data.repository.GridPrefsRepository
+import media.qimeng.app.core.data.repository.LikeFingerprint
+import media.qimeng.app.core.data.repository.LikeMutationTracker
 import media.qimeng.app.core.data.repository.MediaBatchIndex
 import media.qimeng.app.core.data.repository.MediaRepository
 import media.qimeng.app.core.data.repository.AssetOrigUrlResolver
@@ -82,11 +84,18 @@ class HomeViewModel @Inject constructor(
     private val mediaRepository: MediaRepository,
     private val gridPrefs: GridPrefsRepository,
     private val batchIndex: MediaBatchIndex,
+    private val likeMutationTracker: LikeMutationTracker,
     val origUrlResolver: AssetOrigUrlResolver,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
+
+    /**
+     * 上次留存（采纳基线）的点赞变更指纹：[onHomeResumed] 每次回调快照对比，
+     * 仅 Main 线程读写（生命周期回调驱动），无需原子化。
+     */
+    private var lastLikeFingerprint: LikeFingerprint? = null
 
     /**
      * 排行榜周期代际号：切周期即递增。弱网下仓库响应可能乱序归位（与相册页同族
@@ -125,8 +134,51 @@ class HomeViewModel @Inject constructor(
         loadRank(isInitial = true)
     }
 
-    /** 下拉刷新：推荐=B 站式换 seed 全量重排；COS/排行=重拉当前页 */
+    /**
+     * 下拉刷新（GUIDE_UI §下拉刷新 L86「清空**所有 tab** 的排序缓存」）：当前 tab 立即重拉
+     * （推荐=B 站式换 seed 全量重排；COS/排行=重拉当前页），另两 tab 数据缓存清空标脏
+     * （items 清空 + loaded=false），切入时经 [switchTab] 懒重拉——不再残留刷新前的旧数据。
+     * 当前 tab 不预清数据：刷新在途旧内容保持可见（防在途防重拦截后白屏），响应落地即整体替换。
+     */
     fun refresh() {
+        val current = _uiState.value
+        _uiState.value = current.copy(
+            recommend = if (current.currentTab == HomeTab.RECOMMEND) {
+                current.recommend
+            } else {
+                current.recommend.copy(pulled = emptyList(), revealed = 0, loaded = false)
+            },
+            cos = if (current.currentTab == HomeTab.COS) {
+                current.cos
+            } else {
+                current.cos.copy(items = emptyList(), nextCursor = null, exhausted = false, loaded = false)
+            },
+            rank = if (current.currentTab == HomeTab.RANK) {
+                current.rank
+            } else {
+                current.rank.copy(items = emptyList(), loaded = false)
+            },
+        )
+        when (current.currentTab) {
+            HomeTab.RECOMMEND -> loadRecommend(isInitial = false, isRefresh = true)
+            HomeTab.COS -> loadCosPage(isInitial = false, isRefresh = true)
+            HomeTab.RANK -> loadRank(isInitial = false, isRefresh = true)
+        }
+    }
+
+    /**
+     * 返回/回前台（ON_RESUME，由 HomeScreen 生命周期观测驱动）：点赞变更指纹
+     * （[LikeMutationTracker]，SSE 无 like 事件，本地感知是协议内唯一路径）与上次留存不一致时
+     * 重拉当前 tab——详情页点赞后返回自动重排（GUIDE_UI §下拉刷新 L89；重排效果由服务端
+     * 打分决定，客户端不做语义假设，只负责整页重拉；推荐走刷新路径换 seed，同 seed 服务端
+     * 返回同一打散序、重排不可见）；无变更不重拉=「浏览退出保持原样」半边天然满足。
+     * 首次回调只采纳基线（进页不误刷）。
+     */
+    fun onHomeResumed() {
+        val snapshot = likeMutationTracker.fingerprint()
+        val last = lastLikeFingerprint
+        lastLikeFingerprint = snapshot
+        if (last == null || last == snapshot) return
         when (_uiState.value.currentTab) {
             HomeTab.RECOMMEND -> loadRecommend(isInitial = false, isRefresh = true)
             HomeTab.COS -> loadCosPage(isInitial = false, isRefresh = true)

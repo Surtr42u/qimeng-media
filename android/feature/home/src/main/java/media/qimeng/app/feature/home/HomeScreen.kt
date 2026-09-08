@@ -20,6 +20,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -29,6 +30,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -72,6 +76,18 @@ fun HomeScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val columns by viewModel.homeColumns.collectAsStateWithLifecycle()
     val animatedUrlResolver = remember(viewModel) { viewModel.origUrlResolver::origUrl }
+
+    // 点赞后返回自动重排（GUIDE_UI §下拉刷新 L89，likeVersion 指纹维度）：返回/回前台
+    // （ON_RESUME，覆盖详情页 pop 返回与 App 回前台两路径）对比点赞变更指纹，变化则由 VM
+    // 重拉当前 tab。上报点在详情页点赞成功处（I7 批接线，见 LikeMutationTracker KDoc）。
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) viewModel.onHomeResumed()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     // 双击「首页」Tab 回顶：三个 tab 各自的滚动状态（pager 页销毁不丢数据，状态在 VM）
     val recommendListState = rememberLazyGridState()
