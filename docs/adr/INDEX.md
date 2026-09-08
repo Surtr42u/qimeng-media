@@ -21,4 +21,4 @@
 | ADR-0014 | M4 Android 走 Compose 重建（先进优先，Now in Android 多模块范式），交互规格照搬 GUIDE_UI，复杂自绘控件允许 AndroidView 桥接；minSdk 26 | `android/`（README、HANDOVER_APP 批次任务书）、`AGENTS.md`、`AI_README_FIRST.md`、`docs/PROJECT_PLAN.md` M4 | 已接受（2026-09-04） |
 | ADR-0015 | Android 单机形态：Go 服务端交叉编译进手机（modernc 纯 Go 红利），App 连 localhost，替代旧项目；Termux/App 内嵌两候选形态 | `docs/PROJECT_PLAN.md` M6、`server/`（构建目标）、`android/`（服务器地址配置）、旧项目退役安排 | 已接受（2026-09-04，实施排 M4 后先于 M5） |
 | ADR-0016 | Web 图表库选型 recharts 3.x：折线图悬停提示/参考线/高亮点库内置，主题色走 CSS 变量 token | `web/package.json`、`web/src/components/data/TrendChart.tsx`、`web/src/pages/MaintenancePage.tsx` | 已接受（2026-09-05） |
-| ADR-0017 | Web 测试基建 vitest（仅 devDependency）：lib 纯函数层单测 + npm test 脚本；CI web job 接入记待办 | `web/package.json`、`web/package-lock.json`、`web/src/lib/*.test.ts` | 已接受（2026-09-07，实施=任务E E6 批） |
+| ADR-0017 | Web 测试基建 vitest（仅 devDependency）：lib 纯函数层单测 + npm test 脚本；CI web job 已接入 npm test（2026-09-08 任务F F4 批闭环，run 34173261179 验证） | `web/package.json`、`web/package-lock.json`、`web/src/lib/*.test.ts`、`.github/workflows/ci.yml` | 已接受（2026-09-07，实施=任务E E6 批；CI 接入=任务F F4 批 ebcd6a6） |
