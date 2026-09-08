@@ -1,13 +1,34 @@
 # CHANGELOG - 变更历史
 
 本文件归档项目历次功能/修复/决策变更，每条对应 git 提交（commit hash 标注）。
-
 ## AI 署名约定（沿用旧项目 QimengMedia 惯例）
 
 - 每个变更条目标注实际执行该改动的 AI 模型（真实命名，品牌-版本），便于追溯每次改动由谁完成。
 - 每个条目单独署名；多 AI 协作时各条目自行署名。
 - 子代理执行的工作标注"（执行子代理）"，主对话直接完成的标注"（主代理）"。
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
+
+---
+## docs(app): 任务I I9 收官走查——旧版UI实录对比总走查全过（口径A 七组结构对照+口径B 五页走查，0 P1/0 新增 P2）（2026-09-09 第一百六十笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理，任务I-Android页面复刻卷 I9 总装走查；commit 由主会话收官笔一并提交）
+
+- 构建 728c7bb 装 qimeng_api35 实测；工作树开工/收工双检干净；18461 虚构库走查，8420 未触碰；证据 %TEMP%\qimeng-i9-evidence\（12 目录 120+ 件，uiautomator 视图树对比判静止——像素哈希会被 GIF 动图骗，I8 教训沿用）。
+- **口径A（实录 dump 逐页结构对照）**：home 标题/搜索/三芯片/双列/时长角标全过（筛选图标=拍板①豁免）；搜索三态全过（占位逐字+两丸流+清除历史+建议行类型标签+结果 3 列日期分组）；全部页族冻结区只记档——四芯片带候选计数/作品·角色模式分组语义/类型保日期分组全对齐实录，无「收起▲」尾丸=D3 拍板②toggle、排序页头四档=G5 形态；favorite 空态双分支逐字（悬浮丸板收起▲=拍板⑨）；history 计数+日期分组（无清除钮=拍板③、缺作品维=#30 在案）；mine 数量卡+五行入口副文案逐字（数据管理/备份=拍板⑩豁免）；filter_sheet 观看/点击/大小/时间/标签模式/重置应用全对齐实录（排序 7 档+顺位=G5 移除记档）。
+- **口径B（无 dump 五页）**：统计三档+6 指标+分类型趋势/分布详情可达（#31a-d 冻结项不渲染实证，无死入口）；详情沉浸 4 层+单击显隐（隐藏态 dump 全空树）+chrome+信息/快速转跳 Sheet+横滑翻件 i/N 更新+播放返回拦截+返回先回上一媒体全过；作者管理排序▾下拉+常规三芯片/COS 两芯片差异实证；上传/登录健康态+免密往返。
+- 差异全部记档不判打回（冻结区/协议缺口/拍板保护逐条对号）；P3 记档 3 条（首页卡片文本行=信息增强向、搜索组头星期格式、收起▲两页形态并存）；存疑记档：统计三档联动因虚构库数据集中近 7 天而 UI 数值同值，联动机制由 I3 单测+走查锁定。
+
+---
+
+## docs(app): 任务I-Android页面复刻卷收官——I9 全卷对抗审查通过+实录总走查全过+文档同步（2026-09-09 第一百六十一笔）
+
+执行 AI：GLM-5.3-Flash（主会话主代理，任务I I9 收官批；批次级自审+I9 独立 reviewer 全卷审查+走查 executor 总装走查，三层在案）
+
+- **I9 全卷对抗审查通过**（独立 reviewer，范围 ab916ca..HEAD 十笔）：commit 边界与文件集逐笔核对无夹带；全卷红线零触碰（api/server/web/sdk/feature:all 空 diff）；差距清偿抽查通过+冻结项全部维持（多选/历史作品维/标签逐条/平均浏览次数等）；批间缝隙四点通过（LikeMutationTracker I1→I7 闭环、StatsRepository 双参重载共存、列数三页共档、negate-inset 数学成立）；门禁三连亲跑全绿（全仓单测 --rerun 428 tasks 全执行/assemble+lint 0 errors/make lint）。孤儿会话三笔非常规 commit（ac8ecfe 补交/1b30953 收尾/728c7bb 纯走查）复核与声明一致；I8「未等仲裁即接管收口」流程偏离记档成立不构成打回。
+- **CHANGELOG 笔序校正**（reviewer P3-1）：154 笔（I5）移至 153 与 155 之间、151 笔（I2）移至 150 之前——并行批并发提交所致乱序，校正后 150→159 自顶向下有序。
+- **文档同步**：REPLICATION_GAPS.md §3 八节状态收口（已清偿条目挂 commit hash、冻结/豁免维持注记、使命完成归档注记）；《待拍板-20260907.md》增 #34（facets 作者行「排自身」收窄限制，I6 消费侧裁剪兜底）/#35（首页排行榜→推荐切换哨兵误触发换 seed，存量边界）/#36（QimengMediaGrid 组头未声明 GridItemSpan，KDoc 与实现不符，存量）；HANDOVER_APP 补任务I 节。
+- **收官清理（用户 2026-09-09 拍板）**：删除仓库外已复用调研笔记 m4-2/m4-3/m4-6-spec-notes.md 三份（m4-6-runtime-notes.md 为协议口径事实长期保留）；ui-compare-harness 与 m42a-review 历史档案不动。
+- **任务I 全卷收官**：I1~I9 九批交付完毕；复刻基准=GUIDE_UI 的八页差距全部清偿或按拍板/协议缺口冻结在案；遗留挂账：I4 总览行直达作者集合页（待壳层共享窗口）、I5 双指真机走查（adb 无多点注入）、I7 三项证据已由总走查兜底。
 
 ---
 
@@ -22,7 +43,6 @@
 - **证据**：%TEMP%\qimeng-i8-evidence\（burst 系列 19 步=登录 dev 免密/SAF 多选/上传全链/分享接收/队列态截图+dump；复用先行会话 i8-login-*/i8-upload-* 证据）。
 
 ---
-
 ## feat(app): 任务I I6 作者页复刻——作者集合页四维芯片体系（常规作品/角色/类型·COS角色/类型）+pinch/列数共档+作者管理排序回改单钮下拉（2026-09-09 第一百五十八笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理，任务I-Android页面复刻卷 I6 作者批；独占 feature:author，依据 REPLICATION_GAPS §3.6 差距条目逐条清偿；与并行 I7 收尾会话共享模拟器实例，重装自证+紧凑窗口取证）
@@ -35,7 +55,6 @@
 - **门禁三连绿**：:feature:author:testDebugUnitTest 25 用例 0 failures（新增：维度子集纯函数/COS 前缀判定/VM 维度子集与激活维默认/COS 不拉作品维 facets/筛选→协议参数映射/筛选重拉回第一页/facets 收窄联动×2/行内全部清行/作品维 SOURCE 裁剪/药丸进页收起切维展开/列数读共用档/pinch clamp+落档）；:app:assembleDebug BUILD SUCCESSFUL；根 lintDebug 0 errors。模拟器 18461 虚构库走查：常规作者（POST /import/qimeng-backup 协议内造数 i6walkauthor+4 文件关联，走查后复原）集合页=作品(1)/角色(0)/类型(3) 三芯片+悬浮面板展开/「其他」选中筛选/类型→视频筛后计数行联动「作者 · 1 个文件」；COS 作者集合页=角色/类型两芯片、角色面板 authorId 收窄「测试作品M (3)」；作者管理排序下拉选「浏览数」实测重排（viewCount 14/6/1）；关注 toggle 落库对账（followed=true 服务端复核后复原 false）。证据 %TEMP%\qimeng-i6-evidence\（14 张）。**已知观察（共享件 core:ui，非本批改动）**：QimengMediaGrid 组头未加 GridItemSpan（KDoc「组头跨全列」与实现不符，日期组头现占单列与首卡同行）——core:ui 冻结不属本批文件集，记待办归主会话串行窗口/I9 收官裁定。
 
 ---
-
 ## fix(app): 任务I I7 收尾——舞台negate-inset真edge-to-edge（chrome两态不位移）（2026-09-09 第一百五十七笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理，任务I I7 批收尾；仲裁 B 案执行——主会话 2026-09-09 裁定推翻 fit-viewport 收口稿，理由：真 edge-to-edge 系 GUIDE_UI L158 语义要求、两态不位移合 L273、纯 feature:detail 零共享文件改动）
@@ -45,7 +64,6 @@
 - **门禁三连绿**：:feature:detail:testDebugUnitTest（含点赞指纹/exitToPoster 用例）0 failures；:app:assembleDebug BUILD SUCCESSFUL；:feature:detail:lintDebug 0 errors。模拟器 18461 走查：B 案顶栏自屏顶渐变（无壳底色条）、双击缩放 1.8x 详见 %TEMP%\qimeng-i7-evidence\（35-37 号证据）；底部 chrome 避让修复后复验与海报横滑正例/快速转跳 Sheet 两项补证因并行会话持续占用模拟器未完成独立取证，代码链路已核如实记档（I9 收官总走查兜底）。
 
 ---
-
 ## fix(app): 任务I I5 补齐——滑动暂停缩略图加载 core:ui 门控参数（2026-09-09 第一百五十六笔）
 
 执行 AI：GLM-5.3-Flash（监督会话续作 executor 实现；I5 主体=e516f12 原会话 executor，本笔闭合其缺失依赖修复 broken master）
@@ -55,7 +73,6 @@
 - 门禁：模块编译对照（stash 红→恢复绿）；全量四连门禁于 I7 收尾态已绿（app-test/app-lint/app-build/lint 全仓 0 errors）。
 
 ---
-
 ## feat(app): 任务I I7 详情页沉浸复刻——4层沉浸结构+chrome显隐/系统栏+信息/快速转跳BottomSheet+播放返回拦截+海报态横滑+点赞指纹接线（全链重排闭环）（2026-09-09 第一百五十五笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理，任务I-Android页面复刻卷 I7 详情页批；独占 feature:detail，依据 REPLICATION_GAPS §3.7 差距条目逐条清偿；接手工作树 I7 遗留半成品原地收尾，未回滚未重做。**执行披露**：本批 feature:detail 在盘点半成品期间检测到另一并行续作会话同面修错与走查（04:49 编译错收敛、05:10 DetailScreen 舞台高度改 BoxWithConstraints.maxHeight），两次上报主会话仲裁未获回复；本笔按现状树收口提交，含该会话同批改动，特此记档）
@@ -71,6 +88,19 @@
 - **门禁三连绿**：:feature:detail:testDebugUnitTest（DetailViewModelTest 含点赞指纹成功上报/失败不动两断言 + VideoStageStateMachineTest 含 exitToPoster 三态迁移/幂等/再起播不重装源四用例）0 failures；:app:assembleDebug BUILD SUCCESSFUL；:feature:detail:lintDebug+:app:lintDebug 0 errors。模拟器 18461 虚构库走查：沉浸舞台全出血黑底/图片 fit-center 出图、chrome 初始可见↔单击显隐两向、信息 Sheet 四行+无完成钮（视频案例 960×540/0:02）、播放中 chrome 让位+BACK 拦截退海报态 chrome 恢复、BiliPlayerView G 链控制器（倍速/静音/书签/进度/全屏）回归无损、点赞→首页重排闭环，证据 %TEMP%\qimeng-i7-evidence\（20+ 截图；海报横滑正例/快速转跳/双击缩放三项因并行会话共用模拟器互踩未取到独立截图证据，代码链路+既有单测已核，如实记档）。
 
 ---
+## feat(app): 任务I I5 收藏/历史复刻——双指缩放2-5列接线+列数共用全部页档持久化+详情返回resume重拉两页（2026-09-09 第一百五十四笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理，任务I-Android页面复刻卷 I5 收藏+浏览历史批；独占 feature:favorite+feature:history，依据 REPLICATION_GAPS §3.5 差距条目逐条清偿；接手工作树 I5 遗留半成品原地收尾，未回滚未重做）
+
+- **双指缩放 2-5 列接线（差距1，GUIDE_UI §公共UI工具 L300+§全部页 L149，R2 裁决图标豁免不覆盖手势）**：FavoriteScreen/HistoryScreen 网格容器接线既有 QimengGridPinchGesture（qimengPinchToColumns onStep/onGestureEnd，与 AllScreen.kt:254 既有接线逐行同构——feature:all 冻结区只读参考）；VM 侧 pinchColumns 瞬时值逐帧内存反馈、手势结束 commitPinchColumns 统一持久化一次，clamp 2..5 由 MIN/MAX_ALBUM_COLUMNS 常量锁定。
+- **列数持久化共用全部页档（差距2，GUIDE_UI L149 v1.15 口径「收藏/浏览历史/作者文件/全部→updateGridColumnsAll」）**：两页 VM 纯复用既有 GridPrefsRepository.albumColumns/setAlbumColumns（键 grid_columns_all），初始值 Eagerly stateIn 读档、手势结束回写同档——**core:data 零改动**（半成品已按此口径实现，本批核实并保留）；单测锁定初始读档（预置 4 非 2）/clamp 边界/落盘/幂等 no-op 四点。
+- **收藏页 resume 重拉（差距3，GUIDE_UI §收藏页 L410 详情返回自动刷新）**：FavoriteScreen 挂 ON_RESUME LifecycleEventObserver（镜像 HomeScreen I1 模式，覆盖详情 pop 返回与 App 回前台两路径）触发 VM 重拉第一页+候选；防叠加风暴=首个 ON_RESUME 与 init 首载天然重叠跳过 + 后续复用 refresh 的 isRefresh+isLoading 在途防重（不另造指纹）。
+- **历史页 resume 重拉（差距4，GUIDE_UI §浏览历史 L391 Flow 自动性语义）**：同款接线——详情浏览上报后 lastViewedAt 已变，服务端化后旧版 Room Flow 自动重排丢失，ON_RESUME 重拉补偿；同款防叠加。
+- **冻结项不渲染（差距5，协议缺口 §4-#29/#30 记档）**：作品/角色多选维持 AlbumFilterState 单值模型（/assets、/history 参数单值）；历史页「作品」维维持三维子集（/history 无 source/authorId）；无清除按钮（拍板③）——均不进本批，UI 不留半成品。
+- **门禁（口径披露）**：:feature:favorite/:feature:history testDebugUnitTest --rerun 实跑各 10 tests 0 failures（各含 I5 新增 4 用例：初始读档/pinch clamp+持久化/resume 首载跳过+后续重拉/resume 在途防重）；:app:assembleDebug 与 lintDebug **在 git worktree（HEAD+本批 diff）验证 BUILD SUCCESSFUL**——主工作树 :feature:detail 被 I7 并行批沉浸复刻半成品（未完成、不归本批）编译挡住，两 feature 模块互不依赖不受影响。
+- **模拟器 18461 虚构库走查（与 I4/I7 并行共享）**：收藏 resume 链=详情取消收藏→返回收藏页即时回「0 文件」空态（旧缓存不残留）；历史 resume 链=历史页点 W-01 进详情浏览→返回即重排至首位（旧序散图-02 退居第 2）；空态双分支文案/统计行/四芯片行/悬浮面板/日期分组 dump 结构在位。**pinch 双指注入受限披露**：adb 无多点注入 API，sendevent（reader 层确认两指 down/move/up 流完整）与 emulator console event send 两条通道均无法触发 Compose calculateZoom 步进（冻结参照系全部页同组件接线对照实验同样无效，判定为合成事件流与真实触摸的合批差异，非本批接线缺陷信号）；组件为 M4-2A-B2 已交付生产件+VM 语义 10 用例单测锁定，真机双指走查留待实机。列数写侧（pinch→持久化）重启保持与共档交叉验证依赖同一注入通道，同记受限；读侧共用档实证=两页+全部页网格同为 grid_columns_all 缺省 2 列（run-as 读 client_prefs.preferences_pb 该键未写档，读缺省一致），证据 %TEMP%\qimeng-i5-evidence\（resume 链前后 dump+截图+getevent 校准日志）。
+
+---
 
 ## feat(app): 任务I I4 我的页复刻——图片/视频数量卡+主题色彩行+入口行副文案两行化+作者总览行接线（2026-09-09 第一百五十三笔）
 
@@ -84,7 +114,6 @@
 - **门禁三连绿**：:feature:settings:testDebugUnitTest 11 tests 0 failures（新增数量卡 2 用例：init 拉取 5721/414 实录锚点落地、读失败降级置空不崩不弹横幅且不牵连总览/版本初始化链）；:app:assembleDebug BUILD SUCCESSFUL；lintDebug BUILD SUCCESSFUL 0 errors。模拟器 18461 虚构库（dev 免密）走查：数量卡「图片 17」「视频 6」与同库 Web /api/v1/stats/overview（imageCount=17/videoCount=6）一致、主题色彩行纯展示、五行副文案逐字、作者总览行→作者管理→作者集合页两跳点击链闭环、推荐偏好 Sheet 四预设+「当前」高亮无损，证据 %TEMP%\qimeng-i4-evidence\（4 截图）。
 
 ---
-
 ## feat(app): 任务I I3 数据统计复刻——三档回改+数字卡6指标联动+趋势marker交互+分类型趋势/分布详情页（协议缺口#31冻结项不渲染）（2026-09-09 第一百五十二笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理，任务I-Android页面复刻卷 I3 数据统计批；独占 feature:stats，依据 REPLICATION_GAPS §3.3 八项裁定逐条清偿）
@@ -100,22 +129,16 @@
 - **门禁三连绿**：:feature:stats:testDebugUnitTest 21 tests（StatsViewModel 8 含三档映射/窗口求和/联动/防重扩展、StatsDetailViewModel 7 含路由解析/多系列拼装/分布派生/空态、StatsFormatters 6）0 failures；:feature:search:testDebugUnitTest 12 tests（initialQuery 签名改动回归）0 failures；:core:data/:core:model（StatsRangeTest 5）全绿；:app:assembleDebug BUILD SUCCESSFUL；lintDebug BUILD SUCCESSFUL 0 errors。模拟器 18461 虚构库走查：三档切换联动（logcat range=7d→day→all）/数字卡 6 格/趋势点气泡「0次」/详情页多系列+图例+「图片 11次」系列名气泡/分布对比卡进度条/冻结项无死入口，证据 %TEMP%\qimeng-i3-evidence\（WALKTHROUGH-RECORD.md+9 截图+3 dump+请求日志）。
 
 ---
+## feat(app): 任务I I2 搜索页复刻走查——IME 遮挡实测判定通过（无需修复）+H1 换件回归确认，零代码改动纯走查批（2026-09-09 第一百五十一笔）
 
-## feat(app): 任务I I5 收藏/历史复刻——双指缩放2-5列接线+列数共用全部页档持久化+详情返回resume重拉两页（2026-09-09 第一百五十四笔）
+执行 AI：GLM-5.3-Flash（执行子代理，任务I-Android页面复刻卷 I2 搜索批；独占 feature:search，REPLICATION_GAPS §3.2 两条目全走查）
 
-执行 AI：GLM-5.3-Flash（执行子代理，任务I-Android页面复刻卷 I5 收藏+浏览历史批；独占 feature:favorite+feature:history，依据 REPLICATION_GAPS §3.5 差距条目逐条清偿；接手工作树 I5 遗留半成品原地收尾，未回滚未重做）
-
-- **双指缩放 2-5 列接线（差距1，GUIDE_UI §公共UI工具 L300+§全部页 L149，R2 裁决图标豁免不覆盖手势）**：FavoriteScreen/HistoryScreen 网格容器接线既有 QimengGridPinchGesture（qimengPinchToColumns onStep/onGestureEnd，与 AllScreen.kt:254 既有接线逐行同构——feature:all 冻结区只读参考）；VM 侧 pinchColumns 瞬时值逐帧内存反馈、手势结束 commitPinchColumns 统一持久化一次，clamp 2..5 由 MIN/MAX_ALBUM_COLUMNS 常量锁定。
-- **列数持久化共用全部页档（差距2，GUIDE_UI L149 v1.15 口径「收藏/浏览历史/作者文件/全部→updateGridColumnsAll」）**：两页 VM 纯复用既有 GridPrefsRepository.albumColumns/setAlbumColumns（键 grid_columns_all），初始值 Eagerly stateIn 读档、手势结束回写同档——**core:data 零改动**（半成品已按此口径实现，本批核实并保留）；单测锁定初始读档（预置 4 非 2）/clamp 边界/落盘/幂等 no-op 四点。
-- **收藏页 resume 重拉（差距3，GUIDE_UI §收藏页 L410 详情返回自动刷新）**：FavoriteScreen 挂 ON_RESUME LifecycleEventObserver（镜像 HomeScreen I1 模式，覆盖详情 pop 返回与 App 回前台两路径）触发 VM 重拉第一页+候选；防叠加风暴=首个 ON_RESUME 与 init 首载天然重叠跳过 + 后续复用 refresh 的 isRefresh+isLoading 在途防重（不另造指纹）。
-- **历史页 resume 重拉（差距4，GUIDE_UI §浏览历史 L391 Flow 自动性语义）**：同款接线——详情浏览上报后 lastViewedAt 已变，服务端化后旧版 Room Flow 自动重排丢失，ON_RESUME 重拉补偿；同款防叠加。
-- **冻结项不渲染（差距5，协议缺口 §4-#29/#30 记档）**：作品/角色多选维持 AlbumFilterState 单值模型（/assets、/history 参数单值）；历史页「作品」维维持三维子集（/history 无 source/authorId）；无清除按钮（拍板③）——均不进本批，UI 不留半成品。
-- **门禁（口径披露）**：:feature:favorite/:feature:history testDebugUnitTest --rerun 实跑各 10 tests 0 failures（各含 I5 新增 4 用例：初始读档/pinch clamp+持久化/resume 首载跳过+后续重拉/resume 在途防重）；:app:assembleDebug 与 lintDebug **在 git worktree（HEAD+本批 diff）验证 BUILD SUCCESSFUL**——主工作树 :feature:detail 被 I7 并行批沉浸复刻半成品（未完成、不归本批）编译挡住，两 feature 模块互不依赖不受影响。
-- **模拟器 18461 虚构库走查（与 I4/I7 并行共享）**：收藏 resume 链=详情取消收藏→返回收藏页即时回「0 文件」空态（旧缓存不残留）；历史 resume 链=历史页点 W-01 进详情浏览→返回即重排至首位（旧序散图-02 退居第 2）；空态双分支文案/统计行/四芯片行/悬浮面板/日期分组 dump 结构在位。**pinch 双指注入受限披露**：adb 无多点注入 API，sendevent（reader 层确认两指 down/move/up 流完整）与 emulator console event send 两条通道均无法触发 Compose calculateZoom 步进（冻结参照系全部页同组件接线对照实验同样无效，判定为合成事件流与真实触摸的合批差异，非本批接线缺陷信号）；组件为 M4-2A-B2 已交付生产件+VM 语义 10 用例单测锁定，真机双指走查留待实机。列数写侧（pinch→持久化）重启保持与共档交叉验证依赖同一注入通道，同记受限；读侧共用档实证=两页+全部页网格同为 grid_columns_all 缺省 2 列（run-as 读 client_prefs.preferences_pb 该键未写档，读缺省一致），证据 %TEMP%\qimeng-i5-evidence\（resume 链前后 dump+截图+getevent 校准日志）。
+- **键盘适配走查通过（GAPS §3.2 存疑条=R12 裁决 I2 走查项，实测判定无需修复）**：18461 虚构库（QIMENG-TEST）+ qimeng_api35 模拟器三态实测——搜索页聚焦弹 IME（`mInputShown=true`）后，①输入框（顶栏底边 y=307 ≪ IME 上沿≈1510）不被遮挡、输入与 IME Search 动作正常；②uiautomator dump 逐节点 bounds 对比（输入框占位/推荐搜索区头/搜索历史区头 IME 前后逐像素相同）证明布局零调整=Compose edge-to-edge 无 ime insets 消费天然等价旧版 `SOFT_INPUT_ADJUST_NOTHING`（GUIDE_UI L130）语义；③列表 IME 开启时下沿被覆盖、收起后滚到底全部可达（与旧版基准行为一致，非缺陷）；④旧版动机「避免底栏顶到键盘上方」结构性满足——搜索路由为覆盖页壳层 bottomBar 不组合。无黑边/跳动/压瘪异常。
+- **H1 换件回归确认（知悉项：QimengSegPill 内部换 M3 FilterChip）**：搜索页词丸流（推荐搜索/搜索历史两区 QimengWordPillFlow）软底胶囊无描边、FlowRow 换行正常；建议行「icon+候选名+右侧类型徽标（COS作品）」、顶栏三件、结果态日期分组头与实录 search_entry/suggest/results.txt 结构逐项对齐，无视觉回退（大致相似口径）。
+- **交互链走查**：输入防抖拉建议（suggest 只匹配名字索引五维——「01」空建议为正确行为）/IME Search 与按钮提交同链/结果态词保留/点搜索栏回建议态词保留/返回族 建议→空态清词→退页回首页，全链符合 GUIDE_UI §搜索页。
+- **门禁三连全绿**：`:feature:search:testDebugUnitTest` BUILD SUCCESSFUL（12 tests, 0 failures, 0 errors, 0 skipped）；`:app:assembleDebug` BUILD SUCCESSFUL；`lintDebug` BUILD SUCCESSFUL（0 errors, 25 warnings 存量）。证据 %TEMP%\qimeng-i2-evidence\（WALKTHROUGH-RECORD.md+9 截图+7 dump）。零代码改动（纯走查批），commit 仅含本笔 CHANGELOG。
 
 ---
-
-
 ## feat(app): 任务I I1 首页复刻——刷新清空三tab缓存+点赞返回重排指纹（LikeMutationTracker，detail侧接线归I7）+胶囊按下缩放（2026-09-09 第一百五十笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理，任务I-Android页面复刻卷 I1 批；依据=docs/REPLICATION_GAPS.md §3.1 三条差距逐条清偿，清单外不做）
@@ -127,18 +150,6 @@
 - 记档：①emulator-5554 为 I1/I2/I3 并行共享，走查中观测到并行批操作交错（幽灵 tab 切换/他批下拉刷新的 seed++ 请求/他批重装触发的重登录），关键断言以紧凑单窗口请求序列与单测为准；②既有边界行为（非本批引入、按范围红线不动，待拍板）：小库（18 文件一次全揭示）下 RANK→RECOMMEND 胶囊切换时周期行消失使 pager 视口变高，距底哨兵（core:ui QimengMediaGrid lastVisible≥total-1-6）在阈值上触发 appendNextSeedRound 换 seed 请求一次，与「切 tab 不重拉」相悖，大库不可见，如需清偿另开小批。
 
 ---
-
-## feat(app): 任务I I2 搜索页复刻走查——IME 遮挡实测判定通过（无需修复）+H1 换件回归确认，零代码改动纯走查批（2026-09-09 第一百五十一笔）
-
-执行 AI：GLM-5.3-Flash（执行子代理，任务I-Android页面复刻卷 I2 搜索批；独占 feature:search，REPLICATION_GAPS §3.2 两条目全走查）
-
-- **键盘适配走查通过（GAPS §3.2 存疑条=R12 裁决 I2 走查项，实测判定无需修复）**：18461 虚构库（QIMENG-TEST）+ qimeng_api35 模拟器三态实测——搜索页聚焦弹 IME（`mInputShown=true`）后，①输入框（顶栏底边 y=307 ≪ IME 上沿≈1510）不被遮挡、输入与 IME Search 动作正常；②uiautomator dump 逐节点 bounds 对比（输入框占位/推荐搜索区头/搜索历史区头 IME 前后逐像素相同）证明布局零调整=Compose edge-to-edge 无 ime insets 消费天然等价旧版 `SOFT_INPUT_ADJUST_NOTHING`（GUIDE_UI L130）语义；③列表 IME 开启时下沿被覆盖、收起后滚到底全部可达（与旧版基准行为一致，非缺陷）；④旧版动机「避免底栏顶到键盘上方」结构性满足——搜索路由为覆盖页壳层 bottomBar 不组合。无黑边/跳动/压瘪异常。
-- **H1 换件回归确认（知悉项：QimengSegPill 内部换 M3 FilterChip）**：搜索页词丸流（推荐搜索/搜索历史两区 QimengWordPillFlow）软底胶囊无描边、FlowRow 换行正常；建议行「icon+候选名+右侧类型徽标（COS作品）」、顶栏三件、结果态日期分组头与实录 search_entry/suggest/results.txt 结构逐项对齐，无视觉回退（大致相似口径）。
-- **交互链走查**：输入防抖拉建议（suggest 只匹配名字索引五维——「01」空建议为正确行为）/IME Search 与按钮提交同链/结果态词保留/点搜索栏回建议态词保留/返回族 建议→空态清词→退页回首页，全链符合 GUIDE_UI §搜索页。
-- **门禁三连全绿**：`:feature:search:testDebugUnitTest` BUILD SUCCESSFUL（12 tests, 0 failures, 0 errors, 0 skipped）；`:app:assembleDebug` BUILD SUCCESSFUL；`lintDebug` BUILD SUCCESSFUL（0 errors, 25 warnings 存量）。证据 %TEMP%\qimeng-i2-evidence\（WALKTHROUGH-RECORD.md+9 截图+7 dump）。零代码改动（纯走查批），commit 仅含本笔 CHANGELOG。
-
----
-
 ## docs(app): 任务H-Android复刻前置卷收官——H3 全卷对抗审查通过+P3 清偿+文档同步（2026-09-09 第一百四十九笔）
 
 执行 AI：GLM-5.3-Flash（主会话主代理，任务H H3 收官批；批次级审查 H1/H2 各有独立 reviewer 报告在案，本笔=全卷收官）
@@ -149,7 +160,6 @@
 - **任务I 前置就绪**：REPLICATION_GAPS.md 定稿移交，I1~I8 按 feature 互斥可并行、I9 收官。
 
 ---
-
 ## feat(app): 任务H H2 统计页折线图换 Vico——2.x compose-m3 锁版+可复用封装+Canvas 退役（2026-09-09 第一百四十八笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理，任务H-Android复刻前置卷 H2 批；拍板=用户 2026-09-08 原话「不要自绘」「统计页折线图换 Vico」，**推翻 C3 批次 Canvas 自绘拍板并记档**，StatsScreen 注释已同步改写不留死引用）
@@ -162,7 +172,6 @@
 - 门禁：:feature:stats testDebugUnitTest + make app-build/app-test/app-lint + :feature:stats lintDebug 全绿；模拟器 qimeng_api35（18461 虚构库）目检：趋势卡默认档与切换档各一截（重拉重渲正常），证据 %TEMP%\qimeng-h2-evidence\。
 
 ---
-
 ## refactor(app): 任务H H1 :core:ui 组件瘦身——M3标准件替换+死代码清理（2026-09-09 第一百四十七笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理，任务H-Android复刻前置卷 H1 批）
@@ -176,7 +185,6 @@
 - 门禁：单测（:core:ui+全仓 testDebugUnitTest+:core:model:test）/assembleDebug/:core:ui lintDebug 全绿；全仓 lintDebug 的 6 errors 系 master 既有（:feature:detail DetailScreen.kt LocalContextGetResourceValueCall，git stash 对照实验证实与本批无关）。模拟器 qimeng_api35 同机位前后截图对比大致相似，全部页 G5 三要素（排序 pill 行/in-flow 值行/卡片日期行）无回滚；筛选面板长按删除标签全链路（长按→确认框→删除→重添加复原）实测通过。
 
 ---
-
 ## docs: 任务G-Android对齐卷收官——G7 全卷对抗审查+P2/P3 清偿+文档同步（2026-09-08 第一百四十六笔）
 
 执行 AI：GLM-5.3（主代理调度；reviewer 全卷对抗审查/主代理修复，任务G-Android对齐卷 G7）
@@ -188,7 +196,6 @@
 - **文档同步**：HANDOVER_APP 文头任务G 收官条目、HANDOVER.md 任务书入口段 D/E/F/G 四卷收官、任务书（仓库外）全部勾选。
 
 ---
-
 ## feat(app): 任务G G1b 详情页交互补齐——文件操作+作者集合页（2026-09-08 第一百四十五笔）
 
 执行 AI：GLM-5.3（主代理调度；executor 执行/主代理模拟器全链验证，任务G-Android对齐卷 G1b）
@@ -199,7 +206,6 @@
 - **模拟器全链验证**（18461 虚构库）：改名「…gif→…gif%2dG1B」生效（详情标题刷新+API 对账）→API 恢复原名；删除→danger 确认→回列表→trash API 实证在位→API restore 恢复 23 件基线；作者管理行点击与详情作者卡点击均进集合页（测试作者一·3 文件·周日/周六/周四分组）。**中途实证 dev token TTL 过期链**：dwell 401 终局丢弃（队列口径正确）+AuthInterceptor 清 token 回登录页+空密码重登恢复——正常过期行为记录在案。截图 %TEMP%\qimeng-g1b-evidence\。
 
 ---
-
 ## feat(app): 任务G G1a 详情页排版对齐 Web（2026-09-08 第一百四十四笔）
 
 执行 AI：GLM-5.3（主代理调度；executor 执行/主代理模拟器验证，任务G-Android对齐卷 G1a）
@@ -213,7 +219,6 @@
 - **验收**：compile+feature:detail 90 单测全绿；模拟器实测：首页流进详情 pager「1 / 18」在位、点下一件「2 / 18」换件成功、meta「浏览 0 · 播放 0 · 42 KB · 9-3 · …」分隔在位、相册入口（无批次）pager 正确回退不渲染；截图 %TEMP%\qimeng-g1a-evidence\。
 
 ---
-
 ## feat(app): 任务G G2 作者总览进「我的」+ AuthorScreen Web 形态重排（2026-09-08 第一百四十三笔）
 
 执行 AI：GLM-5.3（主代理调度；executor 执行+两处 Web 口径纠偏/主代理模拟器验证，任务G-Android对齐卷 G2；用户拍板=「只把作者总览放到我的界面，web的作者管理替换掉现在安卓端的作者管理」）
@@ -224,7 +229,6 @@
 - **验收**：compile+单测全绿（SettingsViewModelTest 9/AuthorRowsTest 7）；模拟器实测：我的页总览卡「2 位作者 · 已关注 0」+Top2 行在位、作者管理页计数行/胶囊搜索/排序行/卡片行全对齐、关注 toggle 往返（关注→已关注→关注）链路通；截图 %TEMP%\qimeng-g2-evidence\。
 
 ---
-
 ## feat(app): 任务G G5 相册排版对齐 Web（2026-09-08 第一百四十二笔）
 
 执行 AI：GLM-5.3（主代理调度；executor 执行/主代理模拟器验证，任务G-Android对齐卷 G5；**基准拍板=Web 现版，推翻 B6 豁免档相册页相关豁免**——用户 2026-09-08 反馈「web的倒是和旧版手机的ui一致，为什么新版的手机端反而没做到」按冲突优先级第 1 条裁决）
@@ -235,7 +239,6 @@
 - **验收**：compile+单测全绿（AlbumViewModelTest 7/AlbumFilterPanelTest 11/core:model 91 全过）；模拟器实测：排序行四档在位、分区展开值区内联推挤排序行下移（428→534px）、卡片「其他 9-7」日期行在位；截图 %TEMP%\qimeng-g5-evidence\。
 
 ---
-
 ## feat(app): 任务G G6 内部 UI 胶囊语言统一（含 G4 搜索胶囊）（2026-09-08 第一百四十笔）
 
 执行 AI：GLM-5.3（主代理调度；executor 执行/主代理模拟器验证，任务G-Android对齐卷 G6）
@@ -245,7 +248,6 @@
 - **验收**：assembleDebug+testDebugUnitTest 全绿；模拟器实测搜索页——胶囊形+放大镜+软底+顶部无异常间距（视觉模型判读），截图 %TEMP%\qimeng-g6-evidence\。
 
 ---
-
 ## fix(app): 任务G G3 外部页面系统栏遮挡+覆盖页双重留白（2026-09-08 第一百四十一笔）
 
 执行 AI：GLM-5.3（主代理调度；executor 执行/主代理补 consumeWindowInsets+模拟器验证）
@@ -255,7 +257,6 @@
 - **验收**：assembleDebug 全绿；模拟器实测作者管理页标题 top=171px（状态栏 128 下方正常位，修复前≈300px 双倍）。
 
 ---
-
 ## fix(app): 维护审查清偿——任务D卷审查 P2×5/P3×5（2026-09-08 第一百三十七笔）
 
 执行 AI：GLM-5.3（主代理；三路并发审查子代理 Android 卷/Web 卷/流程合规 + 主代理修复）
@@ -266,7 +267,6 @@
 - **验收**：`:core:data:testDebugUnitTest`（22 测含 2 强化）+ :core:ui/:feature:all/:feature:detail compileDebugKotlin 全绿。#24/#26（BigDecimalAdapter 序列化致 dwell/progress 恒 400）审查复核根因定位准确，修复归协议批待用户拍板。
 
 ---
-
 ## fix(web): 维护审查清偿——任务E/F卷审查 P2×3/P3×5（2026-09-08 第一百三十八笔）
 
 执行 AI：GLM-5.3（主代理）
@@ -277,7 +277,6 @@
 - **验收**：tsc 0 错/oxlint 15 warnings 0 errors（持平基线）/vitest 94/94 全绿。
 
 ---
-
 ## docs: 任务G-Android对齐卷立卷 + 流程合规审查三处清偿（2026-09-08 第一百三十九笔）
 
 执行 AI：GLM-5.3（主代理；流程合规审查子代理 + 研究子代理六项根因定位）
@@ -286,7 +285,6 @@
 - **任务G 立卷**（用户六项反馈：详情页对齐 Web/作者总览进我的/状态栏遮挡/搜索胶囊/相册排版/内部 UI 理念）：任务书=仓库外《QimengNAS/任务G-Android对齐卷.md》（G0~G7 八批，根因定位到文件行级）；关键拍板=G5 相册基准以 Web 现版为准（调研实证旧版与 Web 形态互斥，用户断言 Web=旧版手机 UI，按冲突优先级第 1 条用户最新要求裁决，**推翻 B6 豁免档相册页相关豁免**）；G2=我的页作者总览卡（Web DataPage 式）+ AuthorScreen 按 Web AuthorsPage 重排；流程约束重申=双会话隔离/三子代理并发/异步子代理/后台执行/无真实文件（8420 真库永不连）/多种测试（JVM 单测+三连绿+模拟器实测）。零协议零 SDK 再生（所需端点已核验在生成物内）。
 
 ---
-
 ## docs: 任务F-Web卷 晨间收尾汇总（2026-09-08 第一百三十六笔）
 
 执行 AI：GLM-5.3-Flash（主会话调度收尾；08:50 定时收尾自动化触发，用户指令「今天早上8.50暂停会话中的所有任务」）
@@ -298,7 +296,6 @@
 - **环境**：18463 隔离实例在线（虚构库 23 文件，仅供 Web 验证复用）；8420 真库全程未碰；与并行 D 卷会话文件集零冲突（CHANGELOG 编号交错兼容）。
 
 ---
-
 ## docs: 任务D-Android卷 夜间晨间汇总（2026-09-08 第一百三十五笔）
 
 执行 AI：GLM-5.3-Flash（主会话调度收尾）
@@ -310,7 +307,6 @@
 - **环境交还**：模拟器与 18461 在线（cos 5+normal 18 基线）、App 已 pm clear；8420 真库全程未碰；与并行 F-web 会话文件集零冲突（CHANGELOG 编号交错兼容）。
 
 ---
-
 ## feat(app): D7 M4-7 整体验收通过——M4 里程碑达成（2026-09-08 第一百三十四笔）
 
 执行 AI：GLM-5.3-Flash（主会话调度；executor 验收（零代码改动红线遵守），任务D-Android卷 D7）
@@ -321,7 +317,6 @@
 - **遗留记录**：批次播种入口缺口（=待拍板 #21 相册/搜索进详情单卡语义）、无法解码原件静默黑屏（新发现=待拍板 #27）。
 
 ---
-
 ## feat(web): F6 文件管理/回收站批量多选（2026-09-08 第一百三十三笔）
 
 执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 全项对抗审查/主会话浏览器主链走查，任务F-Web卷 F6=#15 用户拍板两处都做）
@@ -333,7 +328,6 @@
 - **P2-1 留下批**（reviewer 揪出）：onFinished 的 selectOnly 在三条经弹窗路径捕获 locked 实例成 no-op，「终局只留失败项」实际由 prune 收敛达成（行为正确、机制注释失实）——批次结束到重取落地间 stale 勾选短暂残留；修法=稳定回调收尾或 ref 判锁，至少改三处注释。P3×3（批次不可取消/两页多选态不同构/空 id 行 checkbox 无危害）记 HANDOVER_UI §5 第 29 条。证据 %TEMP%\qimeng-f6-evidence\（保留勿删）。
 
 ---
-
 ## fix(app): D6 M4-3 整批自查 + GIF 动图停帧修复（2026-09-08 第一百三十二笔）
 
 执行 AI：GLM-5.3-Flash（主会话调度；executor 执行自查，任务D-Android卷 D6）
@@ -345,7 +339,6 @@
 - **验收**：三连绿；修复后重装实机复验 GIF 帧渲染。
 
 ---
-
 ## feat(web): F5 列表页入叠加组推广——相册页进详情保态+批次导航（2026-09-08 第一百三十一笔）
 
 执行 AI：GLM-5.3-Flash（主会话调度；F5 调研=researcher 子代理（memo 仓库外 web-overlay-rollout-memo.md）/executor 实施/reviewer 全项对抗审查含 E1 零回归专项/主会话浏览器走查，任务F-Web卷 F5=E1 遗留①）
@@ -357,7 +350,6 @@
 - **验收**：tsc 0 错/oxlint **15**≤17（降 1）/build 41 entries/npm test **84 过**（78−1+7：listKeyFromPath 3+readBackdropKey 4）+ 主会话浏览器实测：相册滚动 500.26→进详情→返回 **scrollTop 逐位一致**、pager 1/23、相册详情切首页复位+卸载、深链无 state 底衬=home 降级、home cos 链 ?tab=cos 保态。留档：侧栏相册高亮不联动（同现状）、Sidebar '/app/albums' 字面量与相册查询串保态留后续批、其余 6 入口入组留后续批。证据 %TEMP%\qimeng-f5-evidence\（保留勿删）。
 
 ---
-
 ## build(web): F4 CI web job 接入 vitest（2026-09-08 第一百三十笔）
 
 执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 对抗审查通过，任务F-Web卷 F4=ADR-0017 待办闭环）
@@ -367,7 +359,6 @@
 - **验收**：本地四命令绿（npm test 78 全绿）；**CI 实跑验收因 GitHub 502 push 受阻，待 push 恢复后以 gh run watch web job 绿补验（五 job 整体不红）**。ADR-0017 状态行已更新闭环、HANDOVER_UI §5 第 24 条待办句清账。证据 %TEMP%\qimeng-f4-evidence\（保留勿删）。
 
 ---
-
 ## test(web): F3 E6 测试覆盖面补齐——导航状态校验/SSE 重连停连/日期区间等（2026-09-08 第一百二十九笔）
 
 执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 对抗审查含破坏性推演，任务F-Web卷 F3=E6 reviewer P3 清偿）
@@ -378,7 +369,6 @@
 - **验收**：tsc 0 错/oxlint 16≤17（测试文件 0 告警）/build ✅/npm test **78 passed (78)**。证据 %TEMP%\qimeng-f3-evidence\（保留勿删）。
 
 ---
-
 ## feat(app): D5 M4-4 行为上报离线队列（2026-09-08 第一百二十八笔）
 
 执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 独立对抗审查（防虚增审计+logcat 逐行互证），任务D-Android卷 D5）
@@ -392,7 +382,6 @@
 - **审查**：独立 reviewer 通过（0 P0/P1/P2）——冻结口径逐条可复核、防虚增审计未发现实现层缺陷（进程死亡只丢不重/并发 Mutex 真覆盖/id 不撞号）、logcat 与代码行为逐行互证；P3×4 记录备查（非 IO 运行时异常击穿=少计方向/RETRY 回队暂超 5000 下次收敛/KEEP 运行中触发延迟非丢失/一处本批前陈旧注释）。
 
 ---
-
 ## fix(app): 搜索结果页点卡进详情补修（2026-09-08 第一百二十七笔）
 
 执行 AI：GLM-5.3-Flash（主会话调度；原 D3 执行者续聊补修，任务D-Android卷 D3 同族收尾）
@@ -402,7 +391,6 @@
 - **验收**：三连绿；实机——搜索「W-01」（中文词 adb 不可键入，ASCII 词走同一 ResultPhase 链路）出结果卡→点 jpg 卡进详情 dump 实证；相册/收藏/历史三页点卡回归通过（收藏借临时造数、已撤销还原）。证据 %TEMP%\qimeng-d3-evidence\（d3_search_fix_*）。
 
 ---
-
 ## fix(web): F2 E系列审查遗留收口——错误态/换件占位/viewer细节/字面量收敛（2026-09-08 第一百二十六笔）
 
 执行 AI：GLM-5.3-Flash（主会话调度；executor 执行+返工/reviewer 两轮对抗审查（首轮 P1 打回）/主会话浏览器走查，任务F-Web卷 F2）
@@ -415,7 +403,6 @@
 - **验收**：tsc 0 错/oxlint 16≤17/build 41 entries/npm test 41 过 + 主会话浏览器实测（错误态与重试恢复/换件闸门/焦点入钮与 trap/全站导航回归）。走查方法备案：SDK client 固化 globalThis.fetch 引用致合成拦截无效，错误态以停服务端真实模拟；合成 Pointer 事件无法触发沉浸切换（E5 已知限制），该分支代码级核验覆盖。证据 %TEMP%\qimeng-f2-evidence\（保留勿删）。
 
 ---
-
 ## feat(app): D4 C8 新旧截图对照修复 + B6 收尾（2026-09-08 第一百二十五笔）
 
 执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 独立对抗审查（取证级：设备时钟校准/APK 反汇编/像素几何互证），任务D-Android卷 D4）
@@ -428,7 +415,6 @@
 - **验收**：三连绿（app-test 当时 186 tests/23 XML 0 失败——**注**：该 XML 证据已被并行批次后续测试运行覆盖，终态以本笔工作树三连与后续 D5/D7 复跑为准）；修复面仅 core/ui 两文件。证据 %TEMP%\qimeng-d4-evidence\ + shots/pair_C8_*.png。
 
 ---
-
 ## fix(web): F7 用户实测反馈批——到底了独立行/详情期隐藏刷新FAB/作者榜计数/全量榜单页单框（2026-09-08 第一百二十四笔）
 
 执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 全新上下文对抗审查六质询点全过/主会话浏览器 4 剧本走查，任务F-Web卷 F7=2026-09-08 晨用户反馈）
@@ -441,7 +427,6 @@
 - **验收**：tsc 0 错/oxlint 16≤17/build ✅/npm test 41 过 + 主会话浏览器 18463 实测：到底了 parent=.page 宽 1151=容器全宽、进详情 fab=false（回顶部 FAB 仍在）、img-viewer 开启期 fab=false、作者榜行 b=0 且 rank-sub2=「N 个文件」、三全量榜页 h3=0 单框单标题。P3 记账×3（spinning 卸载动画重放/搜索收藏空态嵌格遗留/尾注间距松 8px）+ 存量记账（裸 /app/ranks 404 系路由只注册 ranks/:rank 的既有现状）——详见 HANDOVER_UI §5 第 26 条。证据 %TEMP%\qimeng-f7-evidence\（保留勿删）。
 
 ---
-
 ## fix(web): F1 集合页深链白屏修复 + 全局 ErrorBoundary 兜底（2026-09-08 第一百二十三笔）
 
 执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 全新上下文对抗审查 12 项全过/主会话浏览器 4 剧本走查，任务F-Web卷 F1=待拍板 #17）
@@ -453,7 +438,6 @@
 - **验收**：tsc 0 错/oxlint 16≤17（新文件 0 告警）/build ✅ + npm test **41 通过**（39 存量+2 新增）+ 主会话浏览器 18463 实测：`?author=测试作者二` → 归一路径正常渲染 2 文件+筛选胶囊、`?tag=深链测试`（API 造数）→ 1 文件、`?author=不存在` → 空态「该作者下暂无内容。」不白屏、数据页→作者行→集合站内导航回归、裸 `/app/collection` 回首页。存疑记账：同传优先级/未登录深链丢查询串（AuthGate 既有）见 HANDOVER_UI §5 第 25 条。证据 %TEMP%\qimeng-f1-evidence\（保留勿删）。
 
 ---
-
 ## feat(app): D2 视频两级全屏 + 退出恢复竖屏（2026-09-08 第一百二十二笔）
 
 执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 全新上下文对抗审查（含独立强制重跑测试），任务D-Android卷 D2）
@@ -466,7 +450,6 @@
 - **验收**：三连绿（VideoFullscreenStateMachineTest 11/0、VideoStageStateMachineTest 6/0、PlayerMathTest 7/0 保绿）；实机两片型（竖屏 540x960 专项 ffmpeg 造片上传虚构库+横屏 960x540）各走两级、方向证据 dumpsys+窗口 bounds、防抖连点、ENDED 末帧复验。证据 %TEMP%\qimeng-d2-evidence\（47 项）。
 
 ---
-
 ## feat(app): D1 详情页图片全屏覆盖层（2026-09-08 第一百二十一笔）
 
 执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 全新上下文对抗审查，任务D-Android卷 D1）
@@ -479,7 +462,6 @@
 - **已知口径差异**：全屏态左右滑后兄弟资产落在排版态（旧版媒体层恒全屏），记待拍板 #20；双指捏合 adb 不可注入（组件冻结语义，非本批耦合）。
 
 ---
-
 ## fix(app): D3 维度胶囊默认收起 + 列表族点卡进详情修复（2026-09-08 第一百二十笔）
 
 执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 全新上下文对抗审查，任务D-Android卷 D3）
@@ -492,7 +474,6 @@
 - **验收**：make app-build/app-test/app-lint 全绿（AlbumViewModelTest 7/0、Favorite 6/0、History 6/0，Video 族既有测试无回归）；实机 uiautomator 逐态 dump（默认收起/toggle/切维展开/收起▲/收藏历史两页点卡进详情）。证据 %TEMP%\qimeng-d3-evidence\（37 文件）。
 
 ---
-
 ## build(web): E6 vitest 测试基建——ADR-0017 实施，lib 纯函数 39 测试锁定（2026-09-08 第一百一十九笔）
 
 执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 独立对抗审查含破坏性抽验，任务E-Web卷 E6）
@@ -503,7 +484,6 @@
 - **验收**：npm test 全绿 + tsc/oxlint（16≤17 新文件 0 告警）/build 41 entries。文档：HANDOVER_UI.md §5 第 24 条。证据 %TEMP%/qimeng-e6-evidence/（保留勿删）。
 
 ---
-
 ## feat(web): E5 自研图片查看器+列表上下文批次导航+zoom 备忘（2026-09-08 第一百一十八笔）
 
 执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 两轮对抗审查/主会话浏览器验收 11 项，任务E-Web卷 E5=任务B §6 回补批）
@@ -515,7 +495,6 @@
 - **验收**：主会话浏览器 18462 实测 11 项全过（查看器结构四值、双击缩放、沉浸切换、Esc、图→图横滑 viewer 保持+查询串保留、视频项卸载、pager 边界、无上下文降级、零依赖）；z35>30 看图终验过。文档：HANDOVER_UI.md §5 第 23 条。证据 %TEMP%/qimeng-e5-evidence/（保留勿删）。
 
 ---
-
 ## fix(web): E4 推荐偏好只留 4 预设——滑杆/草稿态退役+slider 组件清理（2026-09-08 第一百一十七笔）
 
 执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 对抗审查/主会话浏览器验收，任务E-Web卷 E4=C6，用户 2026-09-07 口径）
@@ -525,7 +504,6 @@
 - **验收**：三命令绿（16≤17）+ 主会话浏览器实测：仅 4 pill 无滑杆/百分比/保存钮、点深度探索→「推荐偏好已保存」toast+高亮迁移+GET 回读 9 维与 PRESET_EXPLORE 逐字一致、其余设置卡不受影响。文档：HANDOVER_UI.md §2 现状行+§5 第 22 条。证据 %TEMP%/qimeng-e4-evidence/（保留勿删）。
 
 ---
-
 ## fix(web): E3 五页无感加载——LoadMorePill 退役换 useAutoMore 哨兵（2026-09-08 第一百一十六笔）
 
 执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 对抗审查/主会话浏览器验收，任务E-Web卷 E3=C5）
@@ -535,7 +513,6 @@
 - **验收**：主会话浏览器 18462 实测——相册尾注「共 22 项 · 到底了」、历史 5 项、搜索 19 项、收藏 0 项空态无尾注、全站无「加载更多」；自动拉页数据集单页（22<60）不可触发备查。存量缺陷记账：集合页深链 /app/collection?author=… 冷启动整页空白（stash 法在 E2 基线构建复现，非本批回归）→ 待拍板-20260907。文档：HANDOVER_UI.md §5 第 21 条。证据 %TEMP%/qimeng-e3-evidence/（含 accept/acceptance-main-session.md，保留勿删）。
 
 ---
-
 ## fix(web): E2 首页加载/刷新过渡——榜单流 keepPreviousData（2026-09-08 第一百一十五笔）
 
 执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 源码级对抗审查/主会话浏览器验收，任务E-Web卷 E2=C4）
@@ -546,7 +523,6 @@
 - **验收**：三命令绿（oxlint 16≤基线 17，被改文件 0 告警）+ 主会话浏览器 18462 实测四场景（推荐刷新/hot 换档/hot 刷新/UpNextList 换一批）占位窗口旧内容保留零闪现；翻页场景数据集单页（17<60）不可触发，executor 代码级核实。P3 备忘：StreamCards 换键重取失败无 isError 分支（E2 前既有，另立批次收口）。文档：HANDOVER_UI.md §5 第 20 条。证据 %TEMP%\qimeng-e2-evidence\（保留勿删）。
 
 ---
-
 ## fix(web): E1 首页详情返回保态——叠加路由+查询串保态+占位防闪+打点闸门（2026-09-08 第一百一十四笔）
 
 执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 两轮对抗审查/主会话浏览器 DOM 验收，任务E-Web卷 E1=C3）
@@ -559,7 +535,6 @@
 - **审查与验收**：reviewer 首轮需返工（P1 UpNextList 丢查询串/P2 打点错账/P3.1 到底闪现/P3.3 模板双写）→ 续聊原 executor 返工 → 二轮全项通过（含 React Query v5 hasNextPage 源码级推演：占位窗口哨兵自动卸载无混拼入口）；主会话浏览器 DOM 验收 18462 隔离虚构实例 14 步全过——底衬 .content scrollTop 进出详情精确保留（538.70±0）、叠加层独立滚动（Z=485.2）不传染、cos/hot 两链查询串逐级保留+换批流按历史条目还原、占位窗口「到底了」抑制实测（0~518ms 无闪现）、真导航复位不受门误伤、首页网格顶沿 83.1 与 §4.5 基线零漂移；三命令绿（oxlint 16≤基线 17，stash 对比法核实）。文档：HANDOVER_UI.md §5 第 19 条+文头。证据 %TEMP%\qimeng-e1-evidence\（保留勿删）。留档：非 home 页进详情仍整页重建（范围外）；非 home 入口底衬隐发请求=叠加设计固有成本；P2 dwell 段占位窗口延后起算（<0.5s 且 <1s 段不上报，口径影响可忽略）。
 
 ---
-
 ## docs: 前端维护审查+夜间双卷任务书重组（2026-09-07 夜 第一百一十三笔）
 
 执行 AI：GLM-5.3（主会话调度；审查/修复由执行子代理并发完成，四路审查+两路修复）
@@ -570,7 +545,6 @@
 - **文档同步**：HANDOVER.md（头部+当前待办改双卷入口）、HANDOVER_APP.md（头部+批次表 B6/任务C 段+§4.7）、`docs/adr/INDEX.md`、仓库外 00-总说明.md 任务入口句。
 
 ---
-
 ## refactor(web): 维护审查清偿——路由键收口+轮询常量单源+页面规则抽离 lib+死常量清理（2026-09-07 夜 第一百一十二笔）
 
 执行 AI：GLM-5.3（主会话调度；执行子代理）
@@ -580,7 +554,6 @@
 - **验收**：web 目录内 tsc --noEmit exit 0 / oxlint 17 warnings（存量持平）0 errors / npm run build ✅（executor 亲跑贴原文）；全仓 `make lint` ✅。C3~C6 根因定位（AppShell.tsx:31-33 scrollTo/use-assets 无 placeholderData/四页 LoadMorePill/SettingsPage.tsx:196-239）已写进任务E 卷供执行免复研。
 
 ---
-
 ## fix(app): 维护审查清偿——❤/⭐ 前缀单源+列表族常量收敛 core:model+DwellSessionTracker 连续 pause 边界（2026-09-07 夜 第一百一十一笔）
 
 执行 AI：GLM-5.3（主会话调度；执行子代理）
@@ -591,7 +564,6 @@
 - **验收**：7 模块 202 任务全量重跑（--rerun-tasks）215 单测 0 失败；grep 单源验证（❤/⭐ 字面量、PARTITION_KEY_ALL 各只剩一处定义）；app-build/app-test/app-lint 三件套+全仓 make lint ✅。
 
 ---
-
 ## fix(server): GET /assets/{id} 补 cosWork 映射（台账#15）+ openapi sessionId 口径注释勘误（#16）（2026-09-07 夜 第一百一十笔）
 
 执行 AI：GLM-5.3（主会话调度；执行子代理）
@@ -601,7 +573,6 @@
 - **验收**：go test ./... 15 包全绿（httpapi 实跑 10.3s）；gofmt 清偿；web tsc（用新生成物）exit 0。附记：make sdk 首跑遇 redocly Windows libuv 偶发崩溃（spec 校验已过后崩溃，重跑即过）——CI 间歇假失败风险记档待观察。
 
 ---
-
 ## docs: 任务C 回归修复与体验对齐批任务书落档——8 项用户反馈根因定位+今晚队列合并（2026-09-07 第一百零九笔）
 
 执行 AI：GLM-5.3-Flash（主会话，规划会话）
@@ -612,7 +583,6 @@
 - **文档同步**：`docs/HANDOVER.md`（头部最后更新+当前待办新增最优先条目）、`docs/HANDOVER_APP.md`（头部最后更新+批次表区任务C 段）。本笔=纯文档，无代码改动；协议零改动。
 
 ---
-
 ## feat(app): M4-2A-B5 收藏/历史跟随+空态——两页悬浮化迁移+TitleRow 可选返回/列数+QimengFourDimSection 退役（2026-09-07 第一百零八笔）
 
 执行 AI：GLM-5.3-Flash（任务A 会话主代理调度；执行子代理实现+reviewer 对抗审查+P2 清偿复核通过）
@@ -625,7 +595,6 @@
 - **记录（B6 收口项）**：统计行 TitleRow 右端 vs 实录独立整行=B2 遗留版式差（豁免候选）；两页统计行数据源 totalForAllPill（HistoryPageResult 无 totalMatched，数值等价）；历史页 3 维 vs 实录 4 维（缺「作品」chip，M4-2 协议缺口现状）；收藏/历史页对照场景 harness 尚未建（S1-S8 外）；历史带数据态未实测（列表点击进详情导航属 M4-2 既有缺口）。
 
 ---
-
 ## feat(app): M4-2A-B4 搜索页三态对齐——入口/建议/结果逐字复刻+删筛选芯片+返回族清词+列数内存态，harness 增 S6~S8（2026-09-07 第一百零七笔）
 
 执行 AI：GLM-5.3-Flash（任务A 会话主代理调度；执行子代理实现+reviewer 对抗审查两轮+修复轮+复审通过）
@@ -638,7 +607,6 @@
 - **记录（不阻塞）**：结果态点栏后不自动拉焦点键盘（旧版有 showKeyboard，B6 实机体验项）；服务端 q 五维匹配范围核实（能力缺口候选，零协议改动红线内不修）。
 
 ---
-
 ## feat(app): M4-3d 断点续播+时间轴标签+行为打点集成——策略层+VM 接线+壳层 manifest（2026-09-07 第一百零六笔）
 
 执行 AI：GLM-5.3-Flash（B 会话主代理调度；3d 纯逻辑+集成两轮执行子代理+对抗审查两轮，清偿复审 15/15 PASS）
@@ -648,7 +616,6 @@
 - **接线**：续播起点→VideoStage startPositionMs；进度 1s 轮询→节流→PUT progress+暂停/离开 force；打点 open（VM init）/play（起播回调）/dwell（Screen 生命周期）；sessionId=每详情实例 UUID（对齐 DOMAIN_RULES §5 会话去重）；DetailStage 解冻删穿墙（3b 冻结债）。
 - **壳层**：MainActivity configChanges（orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden）——修 3c 遗留「全屏旋转重建 Activity 杀播放器」。
 - **审查清偿**：P1 dwell 分段语义反转（含用例反转+两段累加用例）、DetailRepository 接口收拢抽象、标签增删失败路径 3 用例、P2 全屏方向常量、findActivity 单源等 15 项全 PASS。
-
 ## feat(app): M4-3c 视频态基座——media3 1.8.0 锁版+BiliPlayerView/TimelineTagEntity 桥接+G1~G9（2026-09-07 第一百零五笔）
 
 执行 AI：GLM-5.3-Flash（B 会话主代理调度；3c 执行子代理实施+对抗审查「可提交」+清偿复审）
@@ -657,7 +624,6 @@
 - **桥接（ADR-0014 例外清单）**：旧仓 `ui/detail/BiliPlayerView.kt`（837 行）整文件搬运至 `feature/detail/video/`（包名/R/私有 dp 三处适配；TimelineTagEntity 由 Room 实体剥离为纯数据类，6 字段不变；搬运时补回 speedPopup 字段）；G4/G7 三档上限与倍速表抽 `PlayerMath` 纯函数（7 单测锁边界）；POSTER/PLAYING/ENDED 状态机（6 单测：幂等起播/ENDED 回 0）；`VideoPlayerState` ExoPlayer 生命周期（创建即静音 volume=0、handleAudioFocus、ON_PAUSE/RESUME 记忆恢复、onDispose 唯一释放点）+logcat TAG=QimengVideo 四态；12 个 drawable 逐字节一致。
 - **手势逐项**：G1 单击播停/G2 双击横屏/G3 长按 2x+锁速区/G4 水平拖进度（24dp 阈值+三档上限+非 READY 忽略）/G5 亮度音量=不做（旧版无）/G6 全屏（固定 LANDSCAPE 对齐旧版乱闪规避注释+800ms 防抖）/G7 倍速 0.5~2x/G8 默认静音/G9 控制器 5s 自动隐藏。
 - **lint 清偿**：UnstableApi opt-in 链（DetailStage/VideoPlayerState `@androidx.annotation.OptIn`）+update 块改 `LocalConfiguration.current`。
-
 ## feat(app): M4-3b 图片态——ZoomImageView/GpuInfo 桥接+原图直链+预加载窗口+沉浸 chrome（2026-09-07 第一百零四笔）
 
 执行 AI：GLM-5.3-Flash（B 会话主代理调度；3b 执行子代理实施+对抗审查两轮+清偿复审 15/15 PASS）
@@ -667,7 +633,6 @@
 - **预加载窗口（拍板③）**：`DetailPreloadPolicy` 纯函数（前1后2/不含当前/超大图窗口限量1距最近/heap≥0.6 跳超大/未知按普通）+VM 接线（邻位详情拉取+Coil 预取 Disposable 取消链）+6 单测；heap provider 双通道（Java+native）。
 - **沉浸模式**：DetailScreen chromeVisible 单源+SystemBarsImmersiveEffect（只控显隐不触发重排，onDispose 恢复）。
 - **审查清偿**：P1 预载链 UI 消费缺失（DisposableEffect 补 Coil enqueue+dispose map）、P2 heap 丢 native 通道、P3 EGL 参数/重复 id 用例/超时防零。
-
 ## feat(app): M4-2A-B3 万能筛选面板——底部筛选面板全参数族+标签增删+实录逐字对齐，PROJECT_PLAN M4-2 条目补勾（2026-09-07 第一百零三笔）
 
 执行 AI：GLM-5.3-Flash（任务A 会话主代理调度；执行子代理实现+reviewer 对抗审查两轮+修复轮+复审）
@@ -680,7 +645,6 @@
 - **文档同步**：PROJECT_PLAN M4-2「登录/首页/列表/筛选/搜索」条目随本笔勾选（万能筛选面板=M4-2.1 缺口补齐）；HANDOVER_APP M4-2A 段 B3 勾选；任务A-UI对齐 §0 进度表同步（仓库外）。
 
 ---
-
 ## feat(app): M4-3a 详情页骨架与排版——路由+竖屏堆叠排版全链+批次导航逻辑层+ImageStage/VideoStage 文件缝（2026-09-07 第一百零二笔）
 
 执行 AI：GLM-5.3-Flash（B 会话主代理调度；前会话半成品续作+三路只读调研子代理并行消化规格+执行/审查子代理多轮）
@@ -690,7 +654,6 @@
 - **质量与审查**：对抗审查两轮（首轮判「不可提交」揪出 P1 大小格式化三处走样→新增 formatBytesForDetail 对齐 Web format.ts 口径+QimengFormatTest 11 用例锁死；复审 `--rerun-tasks` 全量重跑终判「可提交」）；DetailSections 728 行拆 6 文件（**ImageStage/VideoStage 占位桩为 3b/3c 并行批铺好文件缝**）；测试矩阵 DetailViewModel 11+SdkDetailMappers 6+MediaBatchIndex 3+QimengFormat 11 全绿（core/ui 建首个测试目录）。
 - **模拟器文本证据（18461 虚构数据+headless uiautomator，禁截图协议）**：图片/COS/视频三类详情页 dump 对照 Web 逐项通过——批次序号 i/N、meta 六字段（服务端 null 时正确省略/有值 960×540 正确显示）、作者卡 ·COS+关注双态、推荐栏同类型收窄+时长角标；证据驱动修复 AAPT 裁剪 `detail_author_cos_suffix` 前导空格（\u0020 转义）。证据存 `%TEMP%\qimeng-m43-3a-evidence\`。
 - **环境发现上报**：server AssetDetail.cosWork=null 而 AssetSummary 正常（detail 组装丢字段，Web 同受影响）→《待拍板-20260905夜2》#15；开发 token 短时效登出属 M4-1 设计行为非缺陷。
-
 ## fix(server): 分割审查清偿·server 卷（Android 工作日不触 app/web/api）——上传原子落盘+指标字节修正+签名构造单源+错误码常量化+import 拆分+DOMAIN_RULES 七处勘误（2026-09-07 第一百零一笔）
 
 执行 AI：GLM-5.3（主代理；三路只读审查子代理并行调研：安全红线/代码卫生与架构边界/领域一致性）
@@ -708,7 +671,6 @@
 - **验证**：go build ./... + go vet ./... 全过；go test ./... 15 包全绿（httpapi 13s 实跑含新增原子性用例）；golangci-lint run 0 issues；本笔未跑 make sdk（无协议改动）。
 
 ---
-
 ## docs: M4-2A B2 残留清理——任务A文档续作指引归档 + 并发纪律勘误「在跑子代理 ≤3」（2026-09-07 第九十九笔）
 
 执行 AI：GLM-5.3-Flash（主代理）
@@ -719,7 +681,6 @@
 - **注**：纯文档与工作区清理卷，无代码改动；B3~B6 由新会话按《任务A-UI对齐.md》§2 续作。
 
 ---
-
 ## feat(app): M4-2A-B2 相册四模式对齐——统计行/四维芯片/分组四模式/列数缩放/悬浮药丸（2026-09-07 第九十八笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理×4 轮，主会话 GLM-5.3-Flash 调度/验收/审查裁决）
@@ -732,7 +693,6 @@
 - **记录**：旧 App 冷启重扫使对照数据 21→22 件（计数口径差异已消失，豁免文案留作历史注记）；点已激活维芯片=切换展开/折叠（GUIDE_UI.md:344/347 逐字核对为正确语义）；审查与校准全文存 `QimengNAS/m42a-review/B2-round1.md`。
 
 ---
-
 ## feat(app): M4-2A-B1 主题基座·旧版灰系换肤——深浅两套 24 token + Dimens.kt 建立（2026-09-06 第九十七笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理，主会话 GLM-5.3-Flash 派发与审查裁决）
@@ -743,7 +703,6 @@
 - **注**：M4-2A 各批（B0~B6）的 HANDOVER_APP 批次表勾选按任务书 §6 统一在 B6 收口；本批表内进度以 CHANGELOG 为准。
 
 ---
-
 ## feat(app): 登录空密码走 dev-login 免密通道——测试环境免输密码（2026-09-06 第九十六笔）
 
 执行 AI：GLM-5.3（主代理）
@@ -756,7 +715,6 @@
 - **配套（同日非本 commit）**：对照环境 `QimengNAS/ui-compare-harness/` 隔离服务端同步开 dev 模式（server.sh），M4-2A/M4-3 两批任务书已记录免密口径。
 
 ---
-
 ## fix(app): 昨日(09-06)全量审查清偿·app 卷——筛选代际防乱序补齐同族四 VM+卫生项五处（2026-09-06 第九十五笔）
 
 执行 AI：GLM-5.3-Flash（主代理）
@@ -772,7 +730,6 @@
 - **顺手清理**：Windows 下 exe 被占用重建遗留的 `server/qimeng-server.exe~` 备份产物未入 .gitignore（`*.exe` 规则不覆盖 `~` 后缀）——补 `*.exe~` 规则并删除陈旧备份（09-05 23:25 旧构建，现役 exe 为 09-06 11:37）。
 
 ---
-
 ## fix(web): 昨日(09-06)全量审查清偿——web 页大小单源补净+Pill 模板全收拢 + 文档卷勘误补勾补账（2026-09-06 第九十四笔）
 
 执行 AI：deepseek-v4-flash-vision-exp（主代理）
@@ -789,7 +746,6 @@
 - 审查其余低优先发现（记录备查，不构成本批返工）：web 圆角/字号/尺寸 token 化系统性落差（ADR-0008 与原型惯例的历史欠账）；prototype.css 1718 行超 500 警戒线（存量持续增肥）；动效 stagger delay 13 处硬编码与段头自述矛盾；app 冷启动 token 预热竞态窗口；server scanner 注入时钟与 time.Since 混用、trash 刷新 goroutine 不可取消。
 
 ---
-
 ## fix(web): 昨日审查清偿·web 卷——备份导入 stats 死键修复 + 查询键族收敛 + Pill 三处收拢/页大小单源（2026-09-06 第九十三笔）
 
 执行 AI：GLM-5.3（主代理）
@@ -800,7 +756,6 @@
 - **页大小单源**：HomePage 本地 `HOME_PAGE_SIZE = 60` 删除改引用 `DEFAULT_PAGE_SIZE`（constants.ts 既有常量，消除 60 三重定义之一）；useQmRefresh 注释"事件名一字不改"措辞更新为 QM_REFRESH_EVENT 常量单一来源口径（提常量后残留）。
 - **验证**：`tsc -b` 零错误、`oxlint` 0 errors（17 warnings 为存量 router 等，与昨日交付时一致）；`make lint` TS 道全过。
 - 审查未采纳返工项说明：LibraryManagePage.tsx 昨日末态 535 行超线无注释，今日 36af094 目录树操作化重构后已 496 行回线内，无需处理。
-
 ## fix(server): 昨日审查清偿·server 卷——assets.go 拆 fillList* 族回文件警戒线内 + 主 handler 超线补理由注释（2026-09-06 第九十二笔）
 
 执行 AI：GLM-5.3（主代理）
@@ -809,7 +764,6 @@
 - **拆分**（纯函数搬移零行为变化）：fillListAuthorNames/fillListCosWork/fillListLikedToday 三函数族（列表条目批量字段装配，统一"页大小一次 IN 查询+二次装配"模式）整体搬到新文件 `internal/httpapi/assets_list_fill.go`（108 行，文件头注明职责与失败策略分级）；assets.go 673→582 行回线内，头注释补拆分去向。
 - **超线注释**：GetApiV1Assets 补理由——oapi-codegen 生成接口签名 + 单请求直线流（参数归一→游标→SQL→装配→响应），无嵌套分支复杂度，拆段只会把一串局部状态提升为结构体在函数间传递。
 - **验证**：`go build ./...` + `go test ./internal/httpapi/` 全绿 + `make lint` 四道（redocly/gofmt/golangci/oxlint）全过（昨日 8344920 漏跑 lint 致 CI 红的教训，本批补跑）。
-
 ## docs(docs): 昨日(09-05)全量审查清偿·文档卷——第五十六笔标题补回 + 三笔漏记勘误 + 两处笔误（2026-09-06 第九十一笔）
 
 执行 AI：GLM-5.3（主代理；四路对抗审查 reviewer 子代理并行：api+server / web / app / 文档一致性）
@@ -823,7 +777,6 @@
 - **记账既成事实说明**：f384b69（作者 TXT 匹配扩展名检查）的第五十八笔条目实由同秒并发提交 29777c8 夹带入库（f384b69 自身 diff 未动 CHANGELOG，与其 message 声明不符——并发竞态既成事实，无法追改历史 message，特此注明）。
 - **两处笔误修正**：HANDOVER_UI §5.9 详情页 B站式节"第四十六笔"→"第五十六笔"（85be719 引入，第四十六笔实为 TXT 导入卡去重）；PROJECT_PLAN 门禁行"M4-0 起"日期 2026-09-04→2026-09-05（M4-0 实际 09-05 交付）。
 - 审查其余低优先发现（不构成本批返工，记录备查）：9 笔裸 `docs:` 无 scope 前缀（历史 message 无法追改，后续新提交注意）；f384b69 大小写不敏感口径未落 DOMAIN_RULES 表行；413 分支(>64MB)无直接单测；export recordKey 第三级消歧跨库同 rel_path 场景无区分度且零测试（涉及行为语义，留待专项）；HANDOVER_UI 文头「最后更新」自第六十笔起未随正文刷新（欠账累积，待下次 UI 会话统稿一并更新）。
-
 ## docs(docs): 晨间收尾——夜2 双车道闭合落档（A 四批+尾批+双轮自审；M4-3 留今夜）（2026-09-06 第九十笔）
 
 执行 AI：GLM-5.3-Flash（A 会话主代理·8:50 定时收尾）
@@ -833,7 +786,6 @@
 - **备忘录三份落 QimengNAS**：A-S2 图标自持策略（官方停更 material-icons 库族，维持手绘 vector 按需补）/ A-S3 AGP9+compileSdk37 三步走升级路线（M4-7 后独立基建批）/ M4-4 离线队列前置验证（DDL/调度/失败语义/测试矩阵）。
 - **新建**：`android/启动模拟器-headless.bat`（无窗口+禁音频一键启动）；8:50 晨间收尾定时自动化建档（automation-ebea7fc2）。
 - **遗留**：加做项 a（core 单测补强）未做；M4-5 审查观察项 5 条已入 HANDOVER_APP §3 M4-7 验收清单；B 车道移交项已全部清零（其收工档 ec9c1a5）。
-
 ## fix(app): 自审返工——筛选请求代际防乱序/设置页写失败反馈/卫生清偿（含 M4-7 验收清单与 headless 启动脚本）（2026-09-06 第八十九笔）
 
 执行 AI：GLM-5.3-Flash（A 车道·夜2 返工批执行子代理）
@@ -845,13 +797,11 @@
 - **M4-7 验收自查清单（HANDOVER_APP §3 M4-7 追加）**：对照 PROJECT_PLAN M4 验收标准逐条列检查项（完整日常使用/上传→Web 立即可见/离线不丢/门禁全绿/生成物不手改/新迁移只加文件/决策先写 ADR/GUIDE_UI 复刻抽查），并纳入 M4-5 审查观察项 5 条（content:// 授权持久化/dataSync FGS 6h 限时/分享路径通知权限/取消上传路径/100+ 文件多选）。
 - **headless 启动脚本**：新增 `android/启动模拟器-headless.bat`（内容注释纯 ASCII——Windows cmd 代码页坑）：先 `adb devices` 提示检查（不强制阻断），再启动 `emulator -avd qimeng_api35 -no-window -no-audio -gpu swiftshader_indirect -no-snapshot`（SDK 路径写死 `%LOCALAPPDATA%\Android\Sdk`）。
 - **A-S2/A-S3 备忘录落账（仓库外文件，本笔只记账）**：`<本地工作区>\a-s2-icon-strategy-memo.md`（应用图标策略备忘）与 `<本地工作区>\a-s3-agp9-upgrade-memo.md`（AGP9 升级前置约束备忘）已落档。
-
 ## ci(app): android job 补 :core:model:test——纯 JVM 模块 testDebugUnitTest 覆盖不到（2026-09-06 第八十八笔）
 
 执行 AI：GLM-5.3-Flash（A 车道·夜2 返工批执行子代理）
 
 - CI android job 构建命令补 `:core:model:test`：:core:model 是纯 JVM 模块（`kotlin("jvm")`，qimeng.jvm.library convention），只有 `test` 任务，`testDebugUnitTest` 聚合覆盖不到——该模块的领域纯逻辑单测（筛选状态机/分组/分批）此前在 CI 从未执行。与本机 Makefile `app-test` 的同款补账对齐（0ff017a），只动 android job 一处。
-
 ## refactor(app): build-logic convention 插件收敛 17 模块重复配置 + Makefile app-test 补 :core:model:test（2026-09-06 第八十七笔）
 
 执行 AI：GLM-5.3-Flash（A 车道·A-S1 批执行子代理）
@@ -864,7 +814,6 @@
 - 改动文件：android/build-logic/**（新增：settings.gradle.kts、convention/build.gradle.kts、convention/src/main/kotlin/media/qimeng/buildlogic/ 下 5 插件+KotlinAndroid.kt+AndroidCompose.kt+ProjectExtensions.kt）；android/settings.gradle.kts（pluginManagement.includeBuild）；android/gradle/libs.versions.toml（+7 条目）；17 个模块 build.gradle.kts；Makefile（仅 app-test 一处）；文档：HANDOVER_APP.md（§1 构建接线行）、CHANGELOG.md（本条）。
 
 ---
-
 ## feat(app): M4-6 缓存策略与设置/统计/我的页——Coil 磁盘缓存 LRU 档位/趋势线/关注列表/推荐偏好（2026-09-06 第八十六笔）
 
 执行 AI：GLM-5.3-Flash（A 车道·M4-6 批执行子代理）
@@ -878,7 +827,6 @@
 - 改动文件：android/core/model/{StatsRange.kt、RecommendPresets.kt、FollowedAuthors.kt、DiskCacheQuota.kt、StatsModels.kt(均新增)+4 个对应测试(新增)}；android/core/data/{build.gradle.kts(+coil-core/coil-gif)、repository/StatsRepositories.kt(新增 4 接口)、repository/SdkStatsRepositories.kt(新增)、di/CoilModule.kt(新增 ImageLoader 装配+RealCoilCacheManager)、di/DataModule.kt(+5 绑定+IoDispatcher)}；android/core/ui/component/QimengFormat.kt(新增 formatBytesHumanReadable 共享)；android/app/{QimengApplication.kt(改走注入单例)、navigation/QimengNavHost.kt(+onOpenUpload)}；android/feature/stats/{build.gradle.kts(+core:data/lifecycle)、StatsViewModel.kt(新增)、StatsScreen.kt(重写)、test/StatsViewModelTest.kt(新增)}；android/feature/settings/{SettingsViewModel.kt(重写)、SettingsScreen.kt(重写)、test/SettingsViewModelTest.kt(重写+6 新用例)}；文档：HANDOVER_APP.md（批次表勾选）、CHANGELOG.md（本条）。
 
 ---
-
 ## feat(app): M4-5 上传主通道——系统分享接收/SAF 多选/选库选目录/WorkManager 串行队列+前台通知（2026-09-06 第八十五笔）
 
 执行 AI：GLM-5.3-Flash（A 车道·M4-5 批执行子代理）
@@ -893,7 +841,6 @@
 - 改动文件：android/gradle/libs.versions.toml；android/core/model/UploadModels.kt 与其单测；android/core/data/{build.gradle.kts、src/main/AndroidManifest.xml(新增)、src/main/res/drawable/qm_ic_stat_upload.xml(新增)、repository/UploadRepository.kt+SdkUploadRepository.kt(新增)、upload/UploadOutcome.kt+UploadWorkSpec.kt+AssetUploader.kt+UploadWorker.kt+UploadNotifications.kt(新增)、di/DataModule.kt(补绑定)、upload 两条单测(新增)}；android/core/testing/FakeUploadRepository.kt(新增)；android/feature/upload/{build.gradle.kts、UploadViewModel.kt(新增)、UploadScreen.kt(重写)、UploadViewModelTest.kt(新增)}；android/app/{build.gradle.kts、AndroidManifest.xml、MainActivity.kt、session/MainViewModel.kt、navigation/QimengNavHost.kt、QimengApplication.kt}；文档：HANDOVER_APP.md（批次表勾选）、CHANGELOG.md（本条）。
 
 ---
-
 ## fix(server): 指标包装器补 ReaderFrom 委托与回收站刷新超时（埋点批P3清偿）（2026-09-06 第八十四笔）
 
 执行 AI：GLM-5.3-Flash（B 会话·埋点 P3 清偿批）
@@ -906,7 +853,6 @@
 - 改动文件：server/internal/httpapi/{metrics_middleware.go,media.go,trash.go,metrics_middleware_test.go,media_test.go}；文档：OBSERVABILITY.md、CHANGELOG.md（本条）。
 
 ---
-
 ## feat(app): M4-2 列表族与导航四化——推荐流/相册四维胶囊/收藏/历史/搜索/作者+四 Tab（2026-09-06 第八十三笔）
 
 执行 AI：GLM-5.3-Flash（A 会话·M4-2 批执行子代理）
@@ -919,7 +865,6 @@
 - **遗留**：①相册页「筛选图标+万能标签筛选面板」未做（规格书 §全部页 有筛选图标；万能筛选面板涉及 tagIds/tagMode，属增量功能，建议随 M4-3 详情页标签管理一并做）；②历史页作者维筛选无协议参数（/history 无 source/authorId——需协议扩展再补，页面已留三维）；③资产卡片点击详情为 M4-3 交界（onClick 已预留未接线）；④首页/相册列数切换用「n列」文字按钮（旧版列数图标矢量的零依赖等价表达）；⑤动图「滚动停止动画迭代」依赖 Coil 生命周期与组合回收（LazyGrid 出屏即停），未做额外逐帧节流（真库 189 项动图滚动实测无肉眼可感卡顿；如后续掉帧数据出现再议优化）。
 
 ---
-
 ## docs(api): /import/qimeng-backup 补 413 声明+directory 描述补全；能力地图三处过期缺口清偿（2026-09-06 第八十二笔）
 
 执行 AI：GLM-5.3-Flash（B 会话·协议补全批）
@@ -929,7 +874,6 @@
 - **CAPABILITY_MAP 三处过期缺口清偿（第七十八笔记账「待权限方修」，经用户授权本笔修）**：①媒体库行「相册视图」缺口→现状列（AlbumsPage 四维筛选，分区维承接 COS 能力，0d4c9df）；②索引与检索行「检索高亮/联想建议未做」→联想建议移现状列（GET /search/suggestions + web 顶栏补全 eda96cf），缺口余「检索高亮未做」；③推荐行「推荐偏好设置页 UI（M3 剩余 1 项）」→现状列（9 维滑杆+4 预设，2026-09-03 接真），缺口置「—」。只动三行，表头「最后更新」行未动（任务约束逐字最小修改）。
 - **自测**：`make sdk` 全链通过（redocly validate "spec OK" → go → ts → kotlin，生成物 git 忽略不入库）；`make lint` exit 0 全绿（golangci 0 issues；web 存量 17 warning 与 redocly 存量 112 warning 均不属本批，无 warning 指向本笔两处改动）；`cd server && go build ./...` 过。openapi diff 仅 /import/qimeng-backup responses 与 /assets directory description 两处。
 - 改动文件：api/openapi.yaml；文档：CAPABILITY_MAP.md（三行）、CHANGELOG.md（本条）。
-
 ## feat(server): 9 族指标埋点接线——http 中间件/媒体字节/SSE 连接/扫描/库文件/缩略图队列/回收站（2026-09-06 第八十一笔）
 
 执行 AI：GLM-5.3-Flash（B 会话·指标埋点清偿批，拍板来源=主会话接线口径定稿）
@@ -939,7 +883,6 @@
 - **口径注记（OBSERVABILITY.md 新增权威小节）**：排除清单 /metrics、/api/v1/healthz、/api/v1/readyz、/api/v1/events 四条路由整条跳过 http 计数（events 长流由 sse_connections 单独覆盖）；http 指标不含参数绑定失败的 400（gen 绑定层在中间件之前短路）与未匹配路由 404；library_files 与 trash 两 gauge 为变更点推送刷新非定时采样。
 - **自测**：go build 过；`go test ./... -count=1` 全绿（新增 metrics_middleware_test.go 四用例：endpoint=路由模板/状态码捕获/排除清单不计数/SSE Flusher 保留）；`make lint` 全绿（0 issues，web 存量 17 warning 不属本批）。隔离实例（18427+新临时数据目录 %TEMP%\qimeng-b2+dev 模式，未碰 8420，测完收进程）实测：http_requests_total 全部为路由模板形态且不含 events//metrics 行、media_bytes_total 两 kind 有字节、sse_connections 开流 1/断开 0、trash_items 删除后 1、library_files 扫描后 1/删除后归 0、scan_duration_seconds 非零。
 - 改动文件：server/internal/httpapi/{metrics_middleware.go,metrics_middleware_test.go(新),server.go,media.go,libraries.go,upload.go,trash.go} + server/internal/events/sse.go + server/internal/scanner/scanner.go + server/internal/thumbnail/pool.go；文档：OBSERVABILITY.md（口径注记节）、CHANGELOG.md（本条）。
-
 ## fix(web): 目录树嵌套子树层级缩进对齐修复 + DirFileList 重取闪烁清偿（2026-09-06 第八十笔）
 
 执行 AI：GLM-5.3-Flash（B 会话·目录树对齐修复批，拍板来源=待拍板-20260905夜2 条目 2）
@@ -948,7 +891,6 @@
 - **根因**：DirTreeNodes 嵌套 `<ul>` 与行容器同为 `<li>` 直接子元素，`.rank-card li` 是 display:flex+flex-wrap——目录浏览卡的树裸 `<ul>` 无 `.dir-tree` 作用域（reset 只覆盖上传卡），嵌套子树成了水平 flex item 被排到父行右侧，行内 depth*步长 paddingLeft 在横排下失效。
 - **修法（零 DOM/零交互变化）**：① prototype.css B-8 段 `.dir-tree-list{flex-basis:100%;width:100%}` 嵌套 ul 压回父行下一行（DirBrowser 顶层 ul 与 DirTree.tsx 嵌套 ul 同挂此类）；② `.dir-tree-list li` 横向 padding 归零，缩进唯一来源=DirTree.tsx 具名常量 `DIR_TREE_INDENT_PX` 14→16/级；③ 顺带修 B-5 死规则：`.dir-file-row`（0-1-0）恒被 `.rank-card li`（0-1-1）压住，padding 7px 8px/hover 底从未生效，加 `li.` 前缀使 B-5 写定值真正渲染；④ DirFileList 重取闪烁（B-5 批 reviewer P3 清偿）：useAssetsInDirectory 加 `placeholderData: keepPreviousData` + 组件 isFetching→isLoading，失效重取/切目录期间保留旧列表。
 - **修复后数值**（headless 静止态实测，浅/深两态几何一致）：树行行盒左缘全部 115.38=卡片内容线；文字左缘 库根 124.17 → sub1 141.77 → sub1a 159.36 → sub1a-deep 176.97，逐级步长恒 17.6=16px×zoom1.1，sub2=141.77 与同级同线；文件行文字左缘 124.17 与库根行完全同线（§4.5 基准线）；上传卡共享组件同测通过、目录选中→文件清单切换交互零变化。tsc 0 错/build 成功/lint 改动文件 0 告警（存量 17 条不属本批）；证据目录 %TEMP%\qimeng-b8-evidence\（保留勿删）。改动文件：web/src/components/manage/{DirTree,DirBrowser,DirFileList}.tsx + web/src/hooks/use-assets.ts + web/src/styles/prototype.css；文档：HANDOVER_UI.md §5 第 18 条。
-
 ## docs(docs): B 车道收工——夜2 B 链七批全部完成+三轮对抗审查通过（2026-09-06 第七十九笔）
 
 执行 AI：GLM-5.3-Flash（B 会话·调度落档）
@@ -957,7 +899,6 @@
 - **审查结论**：reviewer 全新上下文对抗审查三轮（B-1~B-3 / B-4 / B-5+清偿）全部**通过**，零未决 P1/P2。
 - **待拍板存量**：仓库外《待拍板-20260905夜2.md》条目 1（✅ 已按建议口径落地 B-4/B-5，待用户翻拍可销）、条目 2（嵌套子树对齐存量问题）、条目 3（M6 ffmpeg 选型：Termux 先行+内嵌形态 jniLibs exec 三件套）；W-4 两条仍在《待拍板-20260905夜集群.md》；A 会话新增条目 4/5 由 A 车道落档。
 - **遗留移交**：①CAPABILITY_MAP 三处漂移（联想建议/推荐偏好页/相册视图已落地仍标缺口）与 openapi /import/qimeng-backup 413 声明缺口、指标埋点缺口（9 族注册恒零值）——均第七十八笔记账待后续批次；②26c2126 曾夹带 A 车道已 git rm 的 android/feature/album 两删除（内容与 M4-2 导航四化一致，仅历史归属瑕疵，已在该笔披露、不重写已推送历史），引用清理待 A 车道提交收尾。
-
 ## docs: B-7 文档漂移检测清偿（2026-09-06 第七十八笔）
 
 执行 AI：GLM-5.3-Flash（B 会话·B-7 批）
@@ -968,7 +909,6 @@
 - **CAPABILITY_MAP.md 三处漂移（不在 B 车道可写清单，记账待权限方修）**：①索引与检索行缺口「检索高亮/联想建议未做」——联想建议已落地（GET /search/suggestions + web 顶栏补全 eda96cf，web/src/hooks/use-suggestions.ts），缺口应余「检索高亮」；②推荐行缺口「推荐偏好设置页 UI（M3 剩余 1 项）」——已落地（PROJECT_PLAN M3 勾选 2026-09-03，web/src/pages/SettingsPage.tsx + use-prefs.ts）；③媒体库行缺口「相册视图」——已落地（AlbumsPage 消费 GET /assets/facets 四维筛选相册页，0d4c9df，web/src/pages/AlbumsPage.tsx）。
 - **PROJECT_PLAN.md 零漂移**：M0-M3 勾选与交付一致；M4 进行中（勾选属 A 车道，不动勿记）；M5/M6/M7+ 未动；本晚 B 链七批均无新里程碑勾选项。
 - **附带记录（协议面缺口，openapi.yaml 非本批可写清单）**：POST /import/qimeng-backup 实际超限回 413 TOO_LARGE（httpapi/errors.go:57，0977190 落地，GUIDE_API 已记）但 openapi.yaml 该端点 responses 未声明 413——待协议侧批次补记。
-
 ## test(api): 目录过滤补不存在目录空列表用例（2026-09-06 第七十七笔）
 
 执行 AI：GLM-5.3-Flash（B 会话·B-4 审查跟进）
@@ -976,21 +916,18 @@
 - **背景**：B-4 批（第七十三笔）对抗审查通过后留 P3 一条——TestAssetListDirectoryFilter 缺「directory=不存在目录」用例，服务端该分支（200+空列表）仅有隔离实例 curl 证据（ev2）无单测锁定。
 - **改动**：browse_test.go 该测试 ③ 与 ④ 之间插 ③b 用例：`?directory=no-such-dir` → 200 + 空 items + totalMatched=0（目录树展开空目录的正常分支、非错误路径，与 curl ev2 行为对齐）。零生产代码改动，协议零变化。
 - **验收**：`cd server && go test ./internal/httpapi/ -count=1 -run TestAssetListDirectoryFilter -v` → `--- PASS (0.06s)`；`go test ./... -count=1` 全量全绿（httpapi 11.929s ok，各包无 FAIL）。改前核对 server/** 工作树干净（A 车道 android 改动未触碰），暂存区 `git diff --cached` 核对仅本批 2 文件。
-
 ## feat(web): 目录树文件行接线（消费 /assets directory 过滤）（2026-09-06 第七十六笔）
 
 执行 AI：GLM-5.3-Flash（B 会话·B-5 批）
 
 - **完成项**：文件管理页目录浏览卡「目录树文件行」接线（纯消费 B-4 第七十三笔的 GET /assets directory 过滤，协议零改动）：①`hooks/use-assets.ts` 新增 `useAssetsInDirectory(libraryId, directory, enabled)`——GET /assets 带 libraryId+directory+limit=200（协议上限具名常量 DIR_FILES_LIMIT，目录内直接子文件量级小一次拉全）；queryKey 含 libraryId+directory（切目录换键重取），挂在 ASSETS_QUERY_KEY 根键下（useMoveAsset/useDeleteAsset 的根键失效直接命中文件清单）；②`DirTree.tsx` 增「选择+行尾操作」组合模式（select 按钮与行尾操作并存——按钮不可嵌套，行容器走 .dir-row flex；上传卡/整理弹窗纯选择模式零变化）；③`DirBrowser.tsx` 目录行升级组合模式：点击目录（含根行「库根」）选中，树下方新增 `DirFileList.tsx` 列该目录直接子文件行（文件名 + 类型/大小 metric + 行内 hover 三操作 重命名/移动/删除；缺省选中库根，换库复位）；④弹窗编排抽共享 `components/manage/FileOpsDialogs.tsx`（MoveDialog + 删除确认「移入回收站」文案 + useDeleteAsset 删除流第二处出现即提取，代码卫生 6；详情页 `FileOpsButton` 改委托复用，删除后 navigate(-1) 收尾保留）——挂载形态与抽取前逐语义一致：MoveDialog 条件挂载（惰性初始化复位依赖条件挂载，首测常驻挂载翻车：预填名冻成空串、保存即误移库，已修并复测），ConfirmDialog 常驻受控（B-2 关闭动画依赖常驻挂载）；⑤prototype.css 追加 B-5 段（组合模式目录行 .dir-node flex 修正 + 文件行区样式，颜色全走既有 token，零新颜色字面量）。批量多选不做（既有待办不变）。
 - **验收**：`cd web && npx tsc --noEmit -p tsconfig.app.json` 0 错；`npm --prefix web run build` 成功；`npm --prefix web run lint` 改动文件 0 告警（存量 17 条不属本批）。隔离实例（18425+新临时数据目录+dev 模式，未碰 8420 真实库）headless 文本实测：选库后缺省「库根」选中、文件行 3 行（video-a.mp4 视频·31 B / image-a2.png 图片·70 B / image-a.png 图片·70 B，行内三操作齐）；点 sub1 → 文件行切 2 行（「sub1」的直接子文件2）；行内重命名 image-b.png→renamed-b.png 生效（弹窗预填正确、DOM 文本变化、刷新后保持）；删除 image-c.png（确认弹窗文案含「移入回收站」）→ 行消失、GET /trash 可查（originalPath=sub1/image-c.png）；静止态布局数值（文件管理页目录浏览卡区无历史基线，本批实测留档为基线）：page x=96.78/y=95.69/w=1118.83（y 与 B-3 批 h2 口径一致）、目录卡与 page 同宽（spread=0）、目录树首行 y=791.53/h=36.81、文件区标题 y=861.33、首文件行 y=891.56/h=40.58；证据目录 %TEMP%\qimeng-b5-evidence\（保留勿删）。
-
 ## fix(server): 删未使用常量 legacyHistoryLimit 清 make lint 红（500 上限单一来源归 legacy_export.sql）（2026-09-06 第七十五笔）
 
 执行 AI：GLM-5.3-Flash（B 会话·自审清偿批）
 
 - **完成项**：删除 `server/internal/httpapi/export.go` 的未使用常量 `legacyHistoryLimit`（commit 8344920 引入，即第七十一/七十三笔「遗留」反复记账的 `make lint` 主干既有红）及其注释行；原位置留一行指针注释「history 段 500 条上限的单一来源在 store/queries/legacy_export.sql（ExportRecentOpenEvents，对齐旧库 view_history）——SQL 侧改动须同步彼处注释」（代码卫生 7 双方注释互指；SQL 侧 legacy_export.sql 注释彼处本就有，本笔未动）。行为零变化，只删常量。
 - **验收**：`cd server && go build ./...` 过、`go vet ./internal/httpapi/` 过、`golangci-lint run internal/httpapi/...` 0 issues；仓库根 `make lint` exit 0（redocly + gofmt + golangci-lint + web build 全链，自 8344920 起首次全绿），TS 侧 17 条 warning 为既有存量非失败项。
-
 ## fix(web): B车道自审P3清偿（死类名/删除后目录树失效/条目措辞/时长token化）（2026-09-06 第七十四笔）
 
 执行 AI：GLM-5.3-Flash（B 会话·自审清偿批）
@@ -998,7 +935,6 @@
 - **完成项**：reviewer 对抗审查 B-1~B-3 三笔通过后所列 P3 建议清偿 + 记账措辞订正，功能零变化：①`CreateDirDialog.tsx` 删死类名 `dir-act-create`（全仓库无 CSS 定义，按钮实际渲染 `confirm-btn--cancel` 样式）；②`use-file-ops.ts` useDeleteAsset onSuccess 补失效 `DIRS_QUERY_KEY`（与 useMoveAsset 对齐，消除删除资产后目录树 fileCount 的本地即时性窗口；DIRS_QUERY_KEY 本就在该文件 import）；③第六十八笔与 HANDOVER_UI §5 第 14 条完成项首句订正——原「文件管理页目录树文件行三操作」与实际不符（三操作实际挂详情页互动行，目录树只新增新建子目录），改为「详情页互动行文件三操作（重命名/移动/删除入回收站）+ 目录树新建子目录（目录树文件行操作待 B-4/B-5 协议扩展与接线）」，只改措辞不改条目结构；④B-3 合并注释口径订正（use-assets.ts + HANDOVER_UI §5 第 16 条同步）——原「相册页 partition 恒显式传、两页参数形态天然互斥」表述不准（AlbumsPage 的 facetPartition 路排自身口径不传 partition），改为「两页参数形态不同键为主；即使同键也同参数同响应共享缓存零行为差」；⑤prototype.css B-1 段两处裸 `transition: .15s` 时长改 `var(--qm-duration-fast)`（120ms，视觉档等价，对齐 B-2 段 token 化做法）。
 - **披露**：B-4 批 commit 26c2126 曾携带 A 车道已 git rm 的 2 个删除（android/feature/album，内容与 M4-2 导航四化一致，仅历史归属瑕疵；共享 master 不重写已推送历史，特此落档）。
 - **验收**：`npx tsc --noEmit -p tsconfig.app.json` 0 错；`npm --prefix web run build` 成功；`npm --prefix web run lint` 改动文件 0 告警（存量 17 条不属本批）。功能零变化（改的是失效键补齐/死类名/措辞/CSS 时长 token 化），未做隔离实例重测。
-
 ## feat(api): /assets 目录过滤参数（目录树文件行数据源）（2026-09-06 第七十三笔）
 
 执行 AI：GLM-5.3-Flash（B 会话·B-4 批）
@@ -1008,7 +944,6 @@
 - **新增单测**：`TestAssetListDirectoryFilter` 四类用例（种子 sub/d.jpg + sub/deep/e.mp4 直插 UpsertAsset，不需要磁盘真文件）：`directory=sub` 精确命中不含递归孙文件；`directory=`（空串）只含库根文件；`directory=sub&mediaType=video` 组合叠加；`directory=../x` 与转义形态 `%2e%2e%2fx` 均 400 INVALID_PARAM。
 - **验收**：`cd server && go test ./... -count=1` 全绿；隔离实例（18424 端口+新临时数据目录+dev 模式，未碰 8420 真库）curl 实测：`directory=sub` 恰回 2 个直接子文件（deep/e.jpg 不入）、`directory=empty-dir` 空列表 totalMatched=0、`directory=sub&mediaType=image` 组合筛选恰中目标、`directory=`（空串）只回库根文件、`../x` 原文与 `%2e%2e%2fx` 均 400 INVALID_PARAM「目录路径不合法」。证据目录 `%TEMP%\qimeng-b4\`。
 - **遗留**：`make lint` 败于与第七十一笔相同的主干既有问题（`server/internal/httpapi/export.go:47` `legacyHistoryLimit` unused，commit 8344920 引入）——本批改动文件 gofmt/golangci-lint/redocly 全部干净（golangci-lint 仅此 1 issue）；按 B-4 口径不做 directory 谓词索引优化（表达式谓词走全扫，万级库实测无感，留档待 profiler 说话）。
-
 ## refactor(web): facets hooks 合并+收藏页排序口径落档（2026-09-06 第七十二笔）
 
 执行 AI：GLM-5.3-Flash（B 会话·B-3 小清偿批）
@@ -1017,7 +952,6 @@
 - **收藏 tab 缺省排序口径落档（HANDOVER_UI §5 第 16 条②，A 车道 M4-2 批对齐基线）**：MinePage 收藏 tab = `GET /assets favorite=true, sort=favoriteAt, order=desc`——按收藏时间倒序（最新收藏在前）、服务端排序（协议 sort/order 参数，前端仅 flatMap 拼页零二次排序）、limit 协议缺省 60 游标分页；无用户可调排序 UI，恒定此参数。只记录现状未改排序行为。
 - **验收**：`npx tsc --noEmit -p tsconfig.app.json` 0 错、`npm run build` 成功、改动 3 文件 lint 0 告警（存量 17 条不属本批）；隔离实例（18423+新临时数据目录+dev 模式，未碰真实库）headless 文本实测：相册页四维胶囊渲染正常（分区2/作者2/角色2/类型3，值行 全部8/常规5/COS3）+点选「类型:图片」网格条数 8→7；作者集合页（COS 作者）筛选胶囊同测（作品2/类型3，点「作品A」网格 3→2）；首页网格顶沿复测 83.05 与 B-2 基线零漂移（§4.5 终值 83.1 口径），相册/集合页静止态数值在案。证据目录 `%TEMP%\qimeng-b3-evidence\`。
 - **记账编号注**：本笔顺延为第七十二笔——第七十一笔已被并行 A 车道 M4-1 批（commit 88af1b9）占用，避让防撞号。
-
 ## feat(app): M4-1 登录与服务端配置——DataStore token/401 事件跳登录/退出登录（2026-09-06 第七十一笔）
 
 执行 AI：GLM-5.3-Flash（夜2 A 车道·执行子代理）
@@ -1027,7 +961,6 @@
 - **新增单测**：LoginViewModelTest 6 用例、SettingsViewModelTest 1、MainViewModelTest 4（登录态分支/401 即时退页/重登复位）。全模块 35 用例零失败。
 - **实机验收（qimeng_api35 模拟器，文本证据协议）**：a. 登录 `http://10.0.2.2:8420` 成功进五 Tab 壳；b. 杀进程重启仍登录直进壳；c. 我的 Tab 退出登录回登录页且地址回填（记忆上次）；附加：错误密码实显「密码错误，请重新输入」（与地址不通分开）。证据目录 `%TEMP%\qimeng-m41-evidence\`。
 - **遗留**：`make lint` 败于 server 基线既有问题（`server/internal/httpapi/export.go:47` `legacyHistoryLimit` unused，commit 8344920 引入，本车道无 server 改动权限）；模拟器 5554 端口被第三方模拟器（MI 9）占用，qimeng_api35 以 `-port 5556` 启动后跨批保持运行。
-
 ## docs(docs): B-6 M6 前置深化备忘录——Termux 一键启动设计稿+ffmpeg 停维护后替代方案扫描（2026-09-06 第七十笔）
 
 执行 AI：GLM-5.3-Flash（B 会话·read-only 批，仓库外产出）
@@ -1035,7 +968,6 @@
 - **产出**：仓库外《QimengNAS/m6-next-steps.md》（约 200 行）——①Termux 形态一键启动脚本设计稿（termux-setup-storage 授权流/二进制投放路径/三层保活/伪代码含失败兜底，未实测处逐条标注「设计稿·未实测」）；②App 内嵌形态 ffmpeg 方案扫描（官方主线 9.0.1 NDK 自编译 / gomobile 桥接 / 社区分支 FFmpegKitNext·ffmpegkit-maintained·hzw1199 预编译成品，各含成熟度/维护/成本/架构契合点）。
 - **关键事实（3 轮网络核实 15 组来源）**：arthenica/ffmpeg-kit 2026-07-02 归档；FFmpegKitNext 为官方续作（源码分发、Kotlin API、无 CLI）；ffmpeg 主线 9.0.1（2026-08-12）；Android 16KB 页对齐现行口径 2027-02-01。
 - **建议口径**已落仓库外《待拍板-20260905夜2.md》条目 3（Termux 先行第一根烟囱；内嵌形态 jniLibs exec 三件套；不采纳 gomobile bind 与 ffmpeg-kit 系 AAR）。本笔仓库零代码改动（read-only 批）。
-
 ## feat(web): 全局动效现代化——页面过渡 token 化/卡片进场 stagger/弹层统一进出场/reduced-motion 归零层（2026-09-06 第六十九笔）
 
 执行 AI：GLM-5.3-Flash（B 会话）
@@ -1044,7 +976,6 @@
 - **reduced-motion**：新增 `@media (prefers-reduced-motion: reduce)` 全局归零层，覆盖本批新增+存量全部 animation/transition（含 infinite 循环强转 1 次、stagger 延迟一并归零防空窗）；用 0.01ms 而非 0s 保证 animationend/transitionend 照常派发——详情页点赞弹跳 onAnimationEnd 复位与 radix Presence 卸载路径不变。
 - **口径**：存量散点 transition（.pill/.detail-act/.dir-action-btn 等已有效果的）保持原值不动，本批不逐处改字面量规避视觉回归；radix 组件层零改动（className 指回 prototype.css 追加段）。
 - **验收结论**：`npx tsc --noEmit -p tsconfig.app.json` 0 错；`npm --prefix web run build` 成功；`npm --prefix web run lint` 存量 17 告警不属本批（本批改动为 CSS）。隔离实例（18422+新临时数据目录+dev 模式，未碰真实库）headless 文本实测：静止态零漂移（首页网格顶沿 83.05≈§4.5 静止态终值 83.1；首卡五元组 x96.78/y83.05/w263.2/h225.02 在案）；stagger 阶梯实读 0/0.04/0.08/0.12/0.16s；hover 后 transform=translateY(-2)+阴影+0.12s 过渡；confirm 弹窗 open 态 animation-name=qm-panel-in(0.2s)/遮罩 qm-fade-in、取消后 closed 态 qm-panel-out(0.12s) 且动画完才卸载（Presence 闭环实证）；emulate reduced-motion 后 page/card/存量 search 输入框 transition 全 0.01ms；html zoom=1.1 未动。证据目录 %TEMP%\qimeng-b2-evidence\（保留勿删）。
-
 ## feat(web): 文件管理目录树操作化（重命名/移动/删除入回收站/新建子目录）（2026-09-06 第六十八笔）
 
 执行 AI：GLM-5.3-Flash（B 会话·收尾交付）
@@ -1053,7 +984,6 @@
 - **新增代码**：`hooks/use-file-ops.ts`（useMoveAsset/useDeleteAsset/useCreateDir，铁律 7 UI 组件禁直调 API）+ `components/manage/DirBrowser.tsx`/`MoveDialog.tsx`/`CreateDirDialog.tsx` + `components/detail/FileOpsButton.tsx`（详情页已接线）。
 - **验收结论**：`npx tsc --noEmit -p tsconfig.app.json` 0 错；`npm --prefix web run build` 成功；`npm --prefix web run lint` 改动 9 文件 0 告警（存量 17 告警在 router.tsx/SearchPage 等，不属本批不扩围）。隔离实例 curl 全链：新建目录 201 + 重放幂等、移动+重命名 200、目标已存在 409 TARGET_EXISTS、删除→回收站可查→恢复 200。证据目录 %TEMP%\qimeng-b1\（保留勿删）。
 - **待办与待拍板**：目录树批量多选本批不做记待办；两项待拍板见仓库外《QimengNAS/待拍板-20260905夜2.md》（条目 1=目录树文件行缺协议数据源→B-4 批解决；条目 2=嵌套子树对齐存量问题）。
-
 ## docs(docs): QimengNAS 工作区清理——删除重复/过时文件，拍板指针归一夜2（2026-09-06 第六十七笔）
 
 执行 AI：GLM-5.3（主代理·计划）
@@ -1061,7 +991,6 @@
 - 用户 2026-09-06 01:10 拍板：工作区文件太多，删重复/用不到的。删除 4 个：`m4-2-decisions.md`（1A/2B/3B/4A 拍板，与夜2「A 车道批次拍板与执行口径」完全重复）、`m4-env-preflight.md`（M4-0 一次性预检，AVD/环境已就绪且口径进夜2 通用环境备忘）、`待拍板-20260905午.md`（拍板已全部落地，结论并入夜2 专节与仓库 docs）、`进度盘点-20260905晨.md`（自声明一次性快照，被夜2「当前磁盘状态」取代）。
 - 保留（均有夜2 任务书活引用）：派发任务书-20260905夜2、待拍板-20260905夜2（活跃台账）、待拍板-20260905夜集群（W-4 两条仍待用户拍板）、m4-2/3/6-spec-notes ×3 + m4-6-runtime-notes（M4 各批执行蓝本）、m6-ffmpeg-memo + m6-poc/（B-6/M6 依据）、00-总说明（工作区 README，顺修旧项目关系过时表述——待退役口径对齐 ADR-0015）。
 - 引用订正：HANDOVER 拍板详情指针改指夜2 专节；待拍板-夜2 台台账头移除已删文件引用。
-
 ## docs(docs): 旧派发任务书（20260905夜）删除——M4 拍板执行口径并入夜2 任务书成唯一蓝本（2026-09-06 第六十六笔）
 
 执行 AI：GLM-5.3（主代理·计划）
@@ -1069,7 +998,6 @@
 - 用户 2026-09-06 01:05 拍板：删除旧任务书《QimengNAS/派发任务书-20260905夜.md》，只保留当夜《派发任务书-20260905夜2.md》。
 - 删除前先把旧书独有内容并入夜2（避免断链）：M4-2 拍板 1A/2B/3B/4A+A3/A4+B 组 B1~B8 执行口径+存疑五条处置、M4-6 拍板 C1~C6、M4-3 五条拍板（likedToday 已就绪段跳过）——合并为夜2「A 车道批次拍板与执行口径」节；A 会话任务书引用全部改为「HANDOVER_APP §3 + 夜2 专节」，夜2 成为自包含唯一任务书。
 - HANDOVER「单批任务书」引用同步订正；旧任务书涉及的 m4-2/3/6-spec-notes 备忘录与待拍板/进度盘点文件非任务书，保留。
-
 ## docs(docs): 夜2计划两会话定稿——每会话 ≤3 并发子代理，C 车道裁撤并入 B 链（2026-09-06 第六十五笔）
 
 执行 AI：GLM-5.3（主代理·计划）
@@ -1077,7 +1005,6 @@
 - 用户 2026-09-06 00:50 拍板：执行=**两个持久会话**（A=Android、B=Web+协议+服务端）；**每会话同时可跑 ≤3 个子代理**（典型 1 写批 + 1~2 只读并行；两个写子代理并行仅当文件集不相交）。**账号级子代理上限撤除**——昨晚蓝本记录的「全账号 ≤4/1302 限流」经用户实测可超（保留「撞限流等 2 分钟重试」兜底一句）。
 - **C 车道裁撤**（用户判其对 A/B 的审查角色不需要独立会话）：其实质工作并入 B 链——C-1 /assets 目录过滤协议扩展→B-4、C-2 M6 备忘录→B-6、C-3 文档漂移→B-7、C-4 夜终审查→各会话「续做与自审协议」多轮自审承担。B 车道恢复协议改动权（铁律 1 先 openapi 后 make sdk；A↔B 生成物竞态自愈协议保留）。
 - 会话池/磁盘锁机制随两会话定稿移除。
-
 ## docs(docs): 夜2计划三会话版——新增 C 车道（协议/M6/审查）与三会话并发·竞态约束（2026-09-06 第六十四笔）
 
 执行 AI：GLM-5.3（主代理·计划）
@@ -1085,7 +1012,6 @@
 - 用户 2026-09-06 00:10 拍板：执行会话 2→3 个。新增 **C 车道**（api/openapi.yaml + server/** + GUIDE_API/DOMAIN_RULES/OBSERVABILITY + 仓库外备忘录）：C-1 `/assets` 目录过滤协议扩展（B-1 急停现场发现的目录树文件行数据源缺口；建议口径=精确目录过滤，已落《待拍板-20260905夜2.md》条目 1，B 端接线后置为条件批 B-6）→ C-2 M6 备忘录续写 → C-3 文档漂移检测 → C-4 夜终一致性审查。原 B 车道禁协议改动不变（协议归 C）。
 - **三会话并发约束重订**：每会话在跑写批次子代理 ≤1、只读子代理 ≤1，全账号在跑合计 ≤4（~5 并发触发 1302 限流）；A↔C 的 make sdk 生成物竞态自愈协议（昨晚已验证）入蓝本共同协议 5。
 - 计划书重写为三车道三会话自驱版（三段 paste-ready 开工任务书），「当前磁盘状态」节与 git 实况核对一致（stash ×2 / 半成品文件清单 / 8420 在线）。
-
 ## docs(docs): 夜2执行模式订正——双会话并行版计划书 + 首批急停现场落档（2026-09-06 第六十三笔）
 
 执行 AI：GLM-5.3（主代理·计划）
@@ -1093,7 +1019,6 @@
 - 用户 00:15 拍板：夜2集群执行模式改为**用户自开两个持久会话**（A=Android、B=Web）按仓库外《QimengNAS/派发任务书-20260905夜2.md》并行自驱（做完一批验收即接下一批，链条耗尽进调研批）；计划会话只出计划书不执行，其 23:40 试派的首批执行子代理已全部叫停，急停现场报告归档进蓝本「当前磁盘状态」节。
 - **首批半成品留工作树未提交（后续会话续做，现场与恢复步骤见蓝本）**：B-1 文件管理增强代码基本完成（tsc/build 过、隔离实例 curl 全链证据在 %TEMP%\qimeng-b1*；含 b1-temp-orig/b1-temp-dirbrowser 两个 stash 待依序 pop）；M4-1 登录 core 层（network/data）写完但从未编译，settings.gradle 已 include 未建的 :feature:login——直接构建必失败，续做先建该模块骨架。
 - 订正 HANDOVER「夜2执行中」口径为双会话并行模式；计划会话的心跳/收停自动化已删除（手动会话自守 08:30 硬停线）。
-
 ## docs(docs): 夜2集群启动落档——Android 导航四化 + M4-3 排版基准 + 无截图证据协议（2026-09-05 第六十二笔）
 
 执行 AI：GLM-5.3（主代理·调度）
@@ -1101,7 +1026,6 @@
 - 用户三处规格变更落档（夜间双车道集群，蓝本 = 仓库外《QimengNAS/派发任务书-20260905夜2.md》）：①**Android 导航 5 Tab→4 Tab**——「全部」更名「相册」（只改 label，route `all` 不变）、原「相册」Tab 删除，feature:album 空壳模块一并移除，M4-2 批落地；②**M4-3 详情页排版基准 = Web 现版**（B站式双栏移动端移植：媒体舞台→标题→meta 行→互动行→标签行→作者卡→接下来播放；手势/播放器规格照旧）；③**验收证据协议改无截图**（用户明令禁截图/录屏/视觉查看——敏感内容）：一律文本证据（uiautomator dump 文本树/logcat/curl JSON/单测输出/DOM 数值实测）。
 - 能力地图漂移修复：备份域「缺口」→「已有」（导入端点 M3 + 导出端点 8344920 + 维护页备份卡）。
 - 本笔纯文档落档，无代码改动。
-
 ## feat(api): 备份导入/导出——旧版格式导出端点 + 维护页备份卡；导入幂等修复（2026-09-05 第六十一笔）
 
 执行 AI：GLM-5.3-Flash（主代理）
@@ -1113,7 +1037,6 @@
 - **测试与验证**：新增 TestExportQimengBackupRoundTrip（A 库导出 → B 全新实例恢复，段级计数与事件总量守恒断言 + 同批次重导幂等）与 TestExportHistoryCap500；go test ./... 全绿、tsc/build/lint 全绿。实机验证：导出 6325 文件/140 作者/6247 关联（2896 KB，同名消歧与 isCosFile 正确）；UI 导出 toast + 注入合成备份走确认弹窗后取消（真实库零变更）。全程零截图。
 - **运维注意**：实机重启发现裸跑 `qimeng-server.exe`（cwd=server）会新建空 server/data 且 dev 模式关闭——服务端必须经 `启动服务端.bat` 启动（其设 QIMENG_DATA_DIR=qimeng-data + QIMENG_AUTH_DEV_MODE=1）；误启实例已清理。
 - **回归修复（用户实测导入报 "Failed to fetch"）**：根因 = 全局 JSON 请求体上限 1MB（errors.go maxJSONBody，SECURITY 红线 6），真实备份 2.9MB 超限——MaxBytesReader 在服务端掐断连接时浏览器仍在上传，表现为 "Failed to fetch" 而非可读报错。修复：新增 `decodeJSONWithLimit`（per-route 限额 + 超限 413 TOO_LARGE），导入端点单独放宽到 `legacyImportMaxBody` 64MB（约数十万文件级库的余量；SECURITY 红线 6 的显式例外，已注记）；web 侧 lib/backup.ts 前置拦截同限额（BACKUP_MAX_BYTES 双写同步注记）。新增 TestImportBodyAboveGlobalLimit（~2MB 载荷导入成功）；隔离实例（18420+临时数据目录）用真实导出文件实测：2.9MB → HTTP 200、6325 文件清单 + 140 作者入账。真实库未做导入验证——导入语义是"新批次首导必回放事件"，往有统计的库导入会翻倍统计，导入只用于全新实例/迁移场景（§10 口径）。
-
 ## fix(web): 详情页自适应微调——1800 上限居中，4K 不再无限放大（2026-09-05 第六十笔）
 
 执行 AI：GLM-5.3-Flash（主代理）
@@ -1121,7 +1044,6 @@
 - 用户实测纯流式（第五十九笔）后反馈：内容跟着分辨率持续放大，4K 上主媒体区压迫感强、右栏相对过窄；1280×720 内置浏览器比例依旧是最好的。
 - **微调**：`.detail-layout` 加回上限但换正确写法——`width: 100%; max-width: 1800px; margin-inline: auto`：≤1800 一律全填满（1080p 全屏内容区 ~1618 仍零空白），更宽（1440p/4K）整体居中不再放大。**width:100% 是关键**：flex 列子项只有 auto 边距会退化 fit-content 收缩（第五十九笔双侧留白教训），显式宽度下 auto 才是纯余量分配。右栏 `.detail-side` 改 `clamp(340px, 22vw, 400px)`——小窗 340 不动（1280 基准），大屏放到 400 平衡主区。上限 1800 是唯一调节旋钮（CSS 注释同记）。
 - **四档实测（IAB 数值测量，visual px）**：1280×720 与原基准逐像素一致（96.8→1247.3 全填）；1920×1080 全填零空白（右栏 440）；2560×1440 触顶居中，左右各 225.3/225.2 对称；3840×2160 居中，左右各 865.3/865.2 对称，媒体区 1518（纯流式时 ~2900，压迫感解除）；还原 1280 后与基准一致。零截图。
-
 ## fix(web): 详情页自适应排版 + 视频全屏只显中间段修复；混合内容作者显示验证（2026-09-05 第五十九笔）
 
 执行 AI：GLM-5.3-Flash（主代理）
@@ -1130,7 +1052,6 @@
 - **实测（IAB 数值测量，1280/1920×1080/2560×1440 三档视口）**：布局左缘=内容区 padding 线（96.8）、右缘=滚动条前可用边缘，三档 spread 均为 0；右栏贴右缘。全程按用户要求零截图，纯 DOM 数值验证。
 - **视频全屏只显中间段修复（用户实机反馈）**：根因有二——①ArtPlayer 全屏的是播放器容器，`<video>` 仍是 `.asset-stage` 后代，`.asset-stage video { max-height: 68vh }` 在全屏态照常生效把画面压到屏高 68%、其余全黑；②全局 `html{zoom:1.1}` 被全屏顶层元素继承，UA 的 100%×100% 全屏尺寸再放大 1.1 倍致边缘裁切。修复（prototype.css 末尾追加）：`.asset-stage :fullscreen video { max-height: none }` + `:fullscreen { zoom: 1 }`。实测：进入全屏后 fullscreenElement=ArtPlayer 根、video 铺满 1280×720（修复前 max-height=490px）、computed max-height=none、zoom=1，ESC 正常退出。
 - **混合内容作者显示验证（用户问①：作者同时有图片和视频；无代码改动，记录结论）**：取实库作者 M71Z30（62 文件=47 图+15 视频，TXT 关联 f384b69 修复后数据）——作者集合页 60 卡=15 视频卡（m:ss 时长角标）+45 图片卡（无角标）、全部有封面；图片详情页舞台渲染原图（4608×6144 居中 contain）、作者卡正常、「接下来播放」12 行全为图片（0 时长角标=同类型流）；视频详情页 ArtPlayer 舞台+作者卡+推荐全带角标。两种介质在三处入口（作者页/图片详情/视频详情）显示均正确。
-
 ## fix(server): 作者 TXT 匹配补扩展名检查——png/mp4 同基础名不再跨后缀污染（2026-09-05 第五十八笔）
 
 执行 AI：GLM-5.3-Flash（主代理）
@@ -1141,7 +1062,6 @@
 - **测试**：新增 `TestMatchWorksExtCheckRealCaseKiriko`（实机数据回归：png/mp4 各归各 + 大小写不敏感命中）；补强 `RequiresSameExtension` 数据加 X.png。`go test ./...` 全绿。
 - **存量修正**：重启实机服务后 POST /authors/import-txt/rebuild 统一重建（122 作者/689 关联），雾子 3.png→仅 rwt4184、雾子 3.mp4→仅 cakiiBB，rwt4184 名下与 TXT 完全一致。
 - 文档：DOMAIN_RULES §6「关联方式」行补扩展名检查口径（用户实机拍板）。
-
 ## fix(web): 移除 hevc 编码兼容提示条（2026-09-05 第五十七笔）
 
 执行 AI：GLM-5.3-Flash（主代理）
@@ -1149,7 +1069,6 @@
 - 用户拍板：浏览器可直放 hevc，详情页顶部黄色「此视频编码为 hevc，当前浏览器可能无法直接播放…」提示条是常驻噪声，去除（元素级移除 + INCOMPATIBLE_CODECS 常量 + .codec-warn 样式段 + --codec-warn-* token 全清）。
 - 播放失败兜底交回 ArtPlayer 自身错误态；项目「始终播放原件、不转码」约定不变。
 - tsc / lint / build 全绿。
-
 ## feat(web): 详情页 B站式双栏排版大改——互动行/标签管理/作者卡/接下来播放 + 按钮类回归连带修复（2026-09-05 第五十六笔）
 
 > 注：本条目标题曾丢失（29777c8 并发编辑把标题行误当替换锚删除），2026-09-06 审查清偿时按 85be719 原 diff 补回；正文未动。
@@ -1164,7 +1083,6 @@
 - **连带修复 671db67 的 `.layout button` 重置存量回归**：该重置 (0,1,1) 压过全部单类按钮的 border/background——本批浏览器实测发现作者卡 `.follow-btn--idle` 白底透明不可见，顺藤排查同病类并一次根治：pill/seg/more-filter/follow-btn(--idle)/save-btn/confirm-btn--cancel/--primary/--danger 及本批 .detail-act 共 14 处选择器加 button 前缀提级（沿用 select-trigger 先例）；span 消费的 .pill 用选择器列表双写保住非按钮用法。reviewer 另打回 P3×2 已修：管理按钮手型被 `.detail-tags .pill` (0,2,0) 压死→提为 `button.pill.detail-tag-manage`；`.upnext-thumb` 补 `.dark` 深色占位（照 `.dark .card--cover` 既有模式）。
 - 验收：tsc / build / lint 全绿（新文件 0 告警）；隔离实例（18430+临时数据目录，未碰真实库）curl 9 项（like toggle 计数与当日态翻转、favorite 204 双向、tags PUT 后详情变化、follow 204、recommendations 非空）+ 浏览器全链路（浅/深/窄窗三态截图、点赞收藏关注状态回填、标签勾选保存、换一批重排、打点存活、对齐实测主列 spread=0.0/舞台顶 83.1 与首页贴顶栏节奏一致）。
 - 遗留：图片查看器（缩放/沉浸）与列表上下文批次导航仍按用户拍板后置（HANDOVER_UI §5.9 发现项）；测试纪律补账——**PWA Service Worker 缓存旧构建**，改前端重 build 后浏览器须清 SW/缓存再验（本次踩坑：computed 样式陈旧与 fullPage 截图错乱皆源于此，已记 HANDOVER_UI）。
-
 ## feat(web): 悬浮按钮组——刷新 FAB 上移让位 + 回顶部按钮滚动出现 + FAB 透明底根治（2026-09-05 第五十五笔）
 
 执行 AI：GLM-5.3-Flash（主代理，用户实机拍板「替代现在的刷新：取消透明、下滑后出现下面那个顶部，阈值实现自定」；参考图为旧版半透明样式，新版不复制透明）
@@ -1174,7 +1092,6 @@
 - **刷新 FAB 上移让位**：bottom 24→88（24 底距 + 52 顶钮高 + 12 间距），位置固定不随顶钮显隐跳动。
 - 滚动容器为 .content（window 不滚），监听挂 AppShell contentRef（passive）。
 - 验收：tsc -b / build / make lint 全绿；浏览器实测——滚动 600 → opacity 1 / 落位 bottom 26.4，点击 → scrollTop 0 + 自动隐藏，双 FAB 底色 rgb(255,255,255)，刷新钮位置全程不跳。
-
 ## UI 微调：热榜首行卡片顶边对齐侧栏「相册」项（2026-09-05 第五十四笔）
 
 执行 AI：GLM-5.3-Flash（主代理，用户实机拍板「这俩对齐」——侧栏相册项 ↔ 热榜首行卡片）
@@ -1182,7 +1099,6 @@
 - 背景：「首行贴侧栏节奏」调参块（prototype.css 1069 行）老规则为「高卡片顶沿贴顶栏下缘(75)」，但热榜 tab 的周期行（第五十二笔）移到顶栏下方后占住了「首页」带，卡片流被 -11.5px 老负边距拉到贴死周期行（间隙 0），顶边高出侧栏「相册」项 13px。
 - 修复：HomePage 三个 tab 共用一个 .grid 容器，tab=hot 时加 `grid--hot` 修饰类；CSS 新增 `#page-home .grid--hot { margin-top: 1.5px }`——112.5(内容区顶) + 12(内容区上内边距) + 1.5 = 126 = 「相册」项顶边（未缩放坐标）。推荐/cos 无周期行，维持「贴顶栏下缘」老规不动。
 - 验收：tsc -b / build / make lint 全绿；浏览器 JS 实测（无截图）热榜首行卡片顶边 = 相册项顶边，推荐 tab 卡片位置不变。
-
 ## UI 错位收尾：radix 弹层 zoom 反向补偿 + 排行榜周期行中心回校（2026-09-05 第五十三笔）
 
 执行 AI：GLM-5.3-Flash（主代理，接续 sess_469c58ec 错位修复批次；用户实机确认搜索面板已对齐，全程禁截图，以用户贴回的元素 Rect 与 CSS 几何模型互证）
@@ -1190,7 +1106,6 @@
 - **radix 弹层二次放大（元素 1/2）**：全局 `html { zoom: 1.1 }` 对 body 级 Portal 弹层二次应用——Floating UI 给的是视觉坐标，写进 zoom 上下文又乘一遍 1.1（实测面板 x=614→675、宽 370→407）。补 `body > [data-radix-popper-content-wrapper] { zoom: 0.9090909 }` 反向抵消，搜索建议面板与五个 Select 下拉同类弹层一并恢复精确落位；用户实机确认搜索面板已对齐。
 - **排行榜周期行中心错位（元素 3/4）**：侧栏「首页」项中心（未缩放坐标 94）应与周期行胶囊中心同线（既有拍板），但胶囊行高 37（14px 字号 × 1.5 行高 + 8px × 2 内边距）较当初调参假设的 34 高 3px，中心下沉 1.5px（实测 rect 中心 103.5 vs 105.5，渲染坐标）。`.rank-panel` 上内边距 2px→0.5px 回校：75(顶栏) + 0.5 + 37/2 = 94。旧会话「rank-panel 水平内边距 24 与内容区 40 不一致」假说证伪——系把 `padding: 12px 24px 40px` 的下边距误读成水平值，实测两者左缘同为 88，水平对齐本就成立。
 - 验收：tsc -b / build / make lint 全绿；无截图，以用户贴回元素 Rect 与 CSS 几何模型互证。
-
 ## 首页排版三修：搜索面板对齐 + 排行榜卡片流统一（2026-09-05 第五十二笔）
 
 执行 AI：GLM-5.3-Flash（主代理，用户实机反馈三点：面板没和搜索栏对齐 / 内容榜标题壳去除 / 排行榜排版与推荐一致）
@@ -1198,7 +1113,6 @@
 - **搜索面板对齐**：PopoverAnchor 从 .search 包裹层（含图标区域，居中定位致面板右偏 80px）移到输入框本身，align 改 start，.search-pop--popper 宽度取 radix 注入的 anchor 宽——面板与输入框左对齐且同宽。
 - **排行榜排版统一**：hot tab 弃 ContentRankGrid 紧凑榜单卡与 rank-card「内容榜」标题壳，改用与推荐/cos 完全相同的 MediaCard 卡片流（StreamCards 复用：触底增量/去重/到底提示/刷新语义全保留）；ContentRankGrid 组件保留（数据页 Top5 与完整榜单页仍在用）。
 - 验收：tsc -b/build/make lint 全绿（17 告警既有存量）。
-
 ## UI 组件库化与共享组件收拢（2026-09-05 第五十一笔）
 
 执行 AI：GLM-5.3-Flash（主代理派发双路研究 + 三 executor 并行，全过程三次基础设施故障均按兜底续跑恢复；reviewer 全新上下文对抗审查通过）
@@ -1210,7 +1124,6 @@
 - **E-A 收拢**：chart-shared.tsx（TIP_STYLE + TrendLegend，修正上批 recharts 迁移的双写遗留）；lib/rank-rows.ts（榜单行加工纯函数，DOMAIN_RULES 口径注释单源——DataPage Top5/RanksPage 全量共用）；lib/pagination.ts（lengthCursorNext 游标判据，use-assets/use-stats 共用）。
 - **明确不做**：环形图两套（DonutCard N 扇区 vs gauge 单值环，形似语义不同，仅注释互指）；纯样式 tabs/胶囊（无行为逻辑）；SearchFilters/SettingsPage 的 pill 拼接（本轮范围外）。
 - **验收**：reviewer 亲跑门禁（tsc -b/build/lint 17 告警 0 错误）+ 六组 grep + 逐文件 diff 对照，全部 PASS；行为差异备案两处——TopBar 下拉新增 ESC 关闭（增强）、Select 无法选回空 placeholder（radix 语义），均与基线一致。MaintenancePage Tooltip labelStyle 视觉无差异为静态论证，待实机目检。
-
 ## 折线图换 recharts：悬停提示库内置，弃手搓覆盖层（2026-09-05 第五十笔）
 
 执行 AI：GLM-5.3-Flash（主代理；用户实机验收第四十九笔拍板「没和曲线对齐，干脆换个自带这个效果的来使用」）
@@ -1221,7 +1134,6 @@
 - 维护页网络图 `isAnimationActive={false}`——2s 滚动刷新防动画重放闪烁。
 - 删除手搓模块 components/data/trend-hover.tsx 与 prototype.css 对应覆盖层样式（.trend-legend 图例保留）；样式注释头同步。
 - 验收：tsc/build/make lint 全绿（16 告警既有存量）；悬停对齐性由库保证，待用户实机目检。
-
 ## 折线图悬停数值反馈 + 图例（2026-09-05 第四十九笔）
 
 执行 AI：GLM-5.3-Flash（主代理，用户实机拍板「没有数值、鼠标过去也不显示数据，要悬停显示所在位置数据」）
@@ -1232,7 +1144,6 @@
 - 数据页：悬停提示 = `分桶 label · 浏览 N · 播放 M`；维护页：`下行 X/s · 上行 Y/s`（formatBytes 口径，与卡片数值一致）。
 - 两图补顶部图例（浏览/播放、下行/上行，色点与折线 stroke 同源 token）——旧版顶部图例语义补齐。
 - 样式追加 prototype.css 尾部 trend-* 类（全走既有 token，零颜色字面量）。tsc/build 绿。
-
 ## 搜索补全接线 + 推荐搜索随机化：对齐旧版搜索语义（2026-09-05 第四十八笔）
 
 执行 AI：GLM-5.3-Flash（主代理派发 executor 子代理端到端实施，主代理验收收尾）
@@ -1243,19 +1154,16 @@
 - **服务端**：suggestions.sql 增五随机池查询（口径逐一照抄既有 UNION 分支；DISTINCT 套子查询规避 SQLite compound SELECT 的 ORDER BY 表达式限制）；handler 随机分支按池轮转交错合并——任一维缺货由其余维填满、五维有货时天然混合。新用例：recommend 随机（type 全法值、(type,name) 唯一、limit=50 全集精确、幽灵作者不入池）与 q 非空时 recommend 被忽略。
 - **Web**：新建 hooks/use-suggestions.ts（useSearchSuggestions 输入态 + useRecommendSearchWords 空态，后者 staleTime=0——每次打开面板换一批，随机语义的一部分）；TopBar 输入非空时下拉切换为补全列表（名称+右侧类型徽标，点行=填入并搜索，200ms 防抖、TanStack queryKey 隔离替代 AbortController）；空态推荐词改接 recommend 端点（删 Top N 逻辑）；prototype.css 尾部追加 pop-suggest-* 类（全走 token）。
 - **验收**：go test 14 包全绿、make lint 0 错误（16 告警既有存量）、tsc/build 绿；实机见同批验证记录。
-
 ## UI 微调：内容榜数值角标去除（2026-09-05 第四十七笔）
 
 执行 AI：GLM-5.3-Flash（主代理，用户实机拍板「内容榜的这个次数去除」）
 
 ContentRankGrid 封面上的 rank-views 次数角标删除（该组件为数据页 Top5 / 完整榜单页 / 首页排行榜 tab 三处共用，统一去除保持同一视觉口径）；热度排序已由卡片顺序表达，不再叠加次数文本。作者榜/作者总览行等文本行的计数字段是榜单度量本体，不受影响。
-
 ## UI 微调：TXT 导入卡去重，导入区成唯一入口（2026-09-05 第四十六笔）
 
 执行 AI：GLM-5.3-Flash（主代理，用户看实机拍板「下面的隐形入口去掉，上面那个保留」）
 
 第四十四笔 E4 交付的「虚线导入区 + 主色按钮」双入口，用户确认嫌重复。删除按钮行中的「选择 TXT 导入」save-btn（重新匹配 pill 与隐藏 file input 保留），导入区成为唯一入口；补齐键盘可达性（tabIndex + Enter/Space 触发，对齐原生 button 语义，抵消删真按钮的可访问性损失）。功能逻辑零改动。tsc/build 绿。
-
 ## 运维：服务端改固定路径构建 + 端口级防火墙规则，根治 Windows 防火墙反复弹窗（2026-09-05 第四十五笔）
 
 执行 AI：GLM-5.3-Flash（主代理，用户报障「防火墙允许弹窗经常出现，怕卡住任务进度」）
@@ -1265,7 +1173,6 @@ ContentRankGrid 封面上的 rank-views 次数角标删除（该组件为数据�
 - **启动脚本**：`go run` 改为 `go build -o qimeng-server.exe ./cmd/qimeng` 后运行（exe 路径固定 = 规则永远命中；构建失败时红字提示并 pause 驻留窗口）；`*.exe` 已在 .gitignore 无需变更。
 - **防火墙（管理员）**：删除 40 条死路径 qimeng.exe 旧规则；新增端口级入站规则「Qimeng Media Server 8420」（TCP 8420，**profile=专用**）——端口规则不随二进制路径变化失效，任何构建产物监听 8420 都不再弹窗。**仅放行专用网络**：SECURITY.md 红线 8「永不开公网端口」不受影响（公用网络仍拦，远程访问继续走 Tailscale 隧道方案）；用户当前网络即专用档，手机同 WiFi 访问不受影响。
 - **验证**：新 bat 启动后 `server/qimeng-server.exe` 稳定监听 8420（40s 存活观察 + healthz 200）；首次重启出现过一次新旧进程交替的偶发绑定竞争（未复现），bat 窗口会驻留报错便于查看。
-
 ## Web 四修：刷新广播/COS 作者反查/作者页筛选胶囊/TXT 导入卡（2026-09-05 第四十四笔）
 
 执行 AI：GLM-5.3-Flash（主代理派发 executor 子代理×3 并行执行；对抗审查通过后由主代理完成返工项）
@@ -1276,7 +1183,6 @@ ContentRankGrid 封面上的 rank-views 次数角标删除（该组件为数据�
 - **E3 作者链路**：CollectionPage COS 作者反查两段式修复（剥「·COS」后缀，字节级对齐 authorDisplayName）；新增筛选胶囊栏（常规=角色/类型、COS=作品/类型，facets 计数排自身、authorId 恒传；单选受协议单值参数约束，注释记账）；作者切换改渲染期重置（返工建议项，清 set-state-in-effect 告警，lint 告警回落 16 条既有存量）；AuthorsPage 行点击进文件页 + 删「浏览 M 次」；DataPage 作者总览 sub 改「N 个文件」。
 - **E4 TXT 导入卡**：导入入口复用 .upload-drop 虚线焦点区（图标+状态感知提示+说明小列表化），onPick/importTxt/rebuild 逻辑零改动。
 - **验收**：tsc/build/lint（16 告警 0 错误）/go test 全绿；reviewer 八项质询逐项 PASS（COS 后缀 od 字节级核对、offset=0 等价性 diff 对照、facets 排自身对照 AlbumsPage、越界清单零命中）。
-
 ## 首页三 tab 无限加载：/recommendations 与 /rankings 增 offset 翻页（2026-09-05 第四十三笔）
 
 执行 AI：GLM-5.3-Flash（主代理派发 executor 子代理执行，完整档六任务批之 E1；对抗审查通过后由主代理完成返工项）
@@ -1287,7 +1193,6 @@ ContentRankGrid 封面上的 rank-views 次数角标删除（该组件为数据�
 - **服务端**：handler 增 resolvePageOffset（负数 400，风格同 pagination.go）；推荐流 Recommend(Limit=offset+limit) 后 slicePage 切片、IncrementDailyShown 只回写返回项；rankings 同款切片（offset=0 与改前逐字节等价）。新增用例：翻页并集==全量、负 offset 400、rankings offset 翻页。
 - **Web**：useRecommendations 改 useInfiniteQuery（queryKey 根不变，SSE 失效仍覆盖）；新增 useRankingsInfinite 与 use-auto-more.ts（IntersectionObserver 哨兵，rootMargin=6×220px 提前量常量）；HomePage 三 tab 触底加载、推荐/cos 渲染前按 assetId 去重（服务端重打分跨页漂移兜底）、hasNextPage 用原始页长判据；qm:refresh 监听（推荐/cos seed=Date.now() 重排回第一页、排行榜 reloadKey 重置）——事件名经对抗审查返工提为 lib/constants.ts QM_REFRESH_EVENT 单一来源（AppShell 广播端同批接线）。
 - **验收**：go test 14 包全绿、make lint 0 错误（告警回落 16 条既有存量）、tsc/build 绿；reviewer 全新上下文对抗审查（门禁亲跑 + offset 语义/契约/回归/越界八项质询）仅 1 硬项（事件名字面量 3 处手抄）返工闭合。
-
 ## COS 卡片标题 + COS 推荐模式：首页 cos tab 两缺口修复（2026-09-05 第四十二笔）
 
 执行 AI：GLM-5.3-Flash（主代理，用户报障「COS 卡片应显示作品文件夹名」「cos tab 好像没做算法」后查实并拍板执行）
@@ -1300,7 +1205,6 @@ ContentRankGrid 封面上的 rank-views 次数角标删除（该组件为数据�
 - **测试**：新增 TestRecommendationsCosOnly（常规流隔离+COS 模式候选集+cosWork 填充/平铺 null 四断言）与 TestAssetListCosWork（/assets 出口装配）；`go test ./...` 14 包全绿、`make lint` 全绿（TS 15 警告既有存量）、`npx tsc --noEmit` 通过、web build 产物更新。
 - **实机验证**（8420 重启后）：/recommendations?cosOnly=true 返回 COS 资产且 cosWork 有值（萝莉身材/NO.324 沙希女警/修道院等），常规推荐流无 COS 资产无 cosWork；/assets?cosOnly=true 三条样本 cosWork=萝莉身材。
 - **文档**：DOMAIN_RULES §6（COS 卡片标题口径 + cos tab=COS 推荐模式，原纯浏览流口径废止）、GUIDE_API（/recommendations 参数行、cosWork 字段条目）。
-
 ## 文档漂移修复：PROJECT_PLAN M4 脚手架条目补勾（2026-09-05 第四十一笔）
 
 执行 AI：GLM-5.3-Flash（主代理）
@@ -1308,7 +1212,6 @@ ContentRankGrid 封面上的 rank-views 次数角标删除（该组件为数据�
 M4-0 工程基建已于 2026-09-05 交付（cdc422e，CHANGELOG 第三十二笔），但该 commit 对 PROJECT_PLAN.md 只更新了头部门禁描述（CI 四 job→五 job），M4 第一项「项目脚手架」勾选框漏勾——违反变更纪律「每完成一项勾选一项并注明 commit」。本次补勾并注明 commit（核对依据：HANDOVER_APP 批次表 M4-0 ✅ + android/ 工程骨架与 `:sdk` 生成物在盘 + commit 交付清单逐项对应）。纯文档修复，无代码改动。
 
 - `docs/PROJECT_PLAN.md`：M4「项目脚手架」条目 [x] 并注明 commit cdc422e 与交付内容；头部「最后更新」补 2026-09-05 行。
-
 ## 服务端 M6 前置：ffmpeg/ffprobe 二进制路径配置化（2026-09-05 第四十笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理，S 车道 S-3 批次）
@@ -1320,7 +1223,6 @@ M6 单机形态前置小改造（依据 ADR-0015 + 仓库外 m6-ffmpeg-memo/m6-p
 - **接线**：`scanner.New` 增 probe 参数（nil = 默认 `thumbnail.ProbeVideo` 回退语义），main 注入 `thumbs.ProbeVideo`——扫描入库与上传探测（httpapi upload 改走 `s.thumbs.ProbeVideo`）与缩略图管线共用同一 ffprobe 配置来源，路径只在装配处解析一次。
 - **测试**：thumbnail/binpath_test.go 锁两分支——「显式配置优先」（配置路径原样进 exec，构造字段与 exec 错误信息双重实证）与「缺省回退自动发现」（裸命令名进 exec）；config_test.go 锁默认空值/yaml 覆盖/env 优先；ffmpeg_integration_test.go 适配方法化签名（真 ffmpeg 行为断言不变，本机实跑通过）。
 - **验收**：`cd server && go test ./...` 全绿（含 thumbnail/config 现跑）；`make lint` 全绿（exit 0，TS 15 条警告为既有存量）。
-
 ## CI 修复：android/gradlew 补回可执行位——Android 门禁 job 存量红（2026-09-05 第三十九笔）
 
 执行 AI：GLM-5.3-Flash（主代理）
@@ -1329,7 +1231,6 @@ W-4 批次交付时由执行代理发现、移交主代理处置的仓库级基�
 
 - **修复**：仅改 index 文件模式为 100755（`git update-index --chmod=+x android/gradlew`），文件内容零改动；不涉三端代码与 workflow 逻辑。
 - **验证**：run 33918995510（本 commit 触发）五 job 全绿——Android job 7m31s 正常执行 wrapper，存量红清零，后续 push 恢复正常门禁。
-
 ## Web 端 play/dwell 行为打点补齐：playCount/浏览时长恢复 web 侧供数（2026-09-05 第三十八笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理，W 车道 W-4 批次）
@@ -1341,7 +1242,6 @@ W-4 批次（打点缺口补齐，任务书=仓库外《QimengNAS/派发任务�
 - **隔离实例实机验收**（端口 18420+临时数据目录+dev-login+ffmpeg 造数 1 图 2 视频，未触碰 8420 真库）：headless Edge 走真实 UI 路径（点击 `.art-state` 起播）——视频起播→停留 13s→SPA 离开→图片停留 7s→离开→二次进入视频页模拟 hidden/visible 分段 3s+6s；8 条 `POST /events/view` 全 202；`GET /stats/trends?range=7d` 当日 `seconds=29`=13+7+3+6 精确吻合（无重复无遗漏）、video-a viewCount=1（两次 open 会话去重生效）/playCount=1、image-a viewCount=1/playCount=0、`GET /stats/overview` totalViews=2、`GET /rankings?period=day` 恢复供数（video-a 居首）。截图 %TEMP%/qimeng-w4-shots/（6 张：首页/起播前/播放中/离开后/图片详情/二次进入）。
 - **验收**：`npx tsc --noEmit -p web/tsconfig.app.json` 0 错；`npm --prefix web run build` 成功；`npm --prefix web run lint` 改动 3 文件 0 告警（全库存量 15 条不动）。
 - **文档**：HANDOVER_UI.md §5 第 13 条标记闭合 + 文头更新行。
-
 ## 服务端协议扩展 S-2：AssetSummary/AssetDetail 增 likedToday 点赞初始态字段（2026-09-05 第三十七笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理，S 车道 S-2 批次）
@@ -1352,7 +1252,6 @@ Q2-1 拍板（A 方案）落地：给 M4-3 详情页点赞按钮提供初始态�
 - **服务端接线**：① 列表出口 `GET /assets`——`fillListLikedToday` 页大小一次批量查询二次装配（同 fillListAuthorNames 模式），批量查询 `ListLikedTodayForAssets` 新增于 queries/likes.sql（HasLikedOnDay 的 IN 批量形式，同 likes 表同 day 口径，sqlc v1.31.1 重新生成）；② 详情出口 `GET /assets/{id}`——fetchAssetStats 直接复用点赞端点既有查询 `HasLikedOnDay`（day=store.FormatDay 本地日历日）。
 - **测试**：browse_test.go 增 `TestAssetLikedToday`——今日已赞/曾赞非今日/从未赞三态 × 列表/详情两出口，含"曾赞非今日 → likedToday=false 但 likeCount 保留"口径锁定与取消今日赞后两出口联动回 false；隔离实例（端口 8466 + 临时数据目录 + dev 模式，未触碰 8420 真库）curl 实测三态两出口全部正确。
 - **文档**：GUIDE_API.md「关键机制」增 likedToday 字段说明 + 头部更新行。
-
 ## 晨间拍板落档：Q1~Q4 全按建议——W-4 web 打点车道开跑、M4-3/M4-6 解锁、用户手动派发模式（2026-09-05 第三十六笔）
 
 执行 AI：GLM-5.3（主代理，ZCode 调度）
@@ -1365,7 +1264,6 @@ Q2-1 拍板（A 方案）落地：给 M4-3 详情页点赞按钮提供初始态�
 - **Q4 记账项**：AGP9+Gradle9+compileSdk37 等 M4 全完后一次升；build-logic 收敛 M4-7 做；五 Tab 图标维持自持；App label 沿用「绮梦影库」。
 - **执行模式变更**：用户手动派发（贴单批任务书开新会话），主会话只做规划不派发；六份自包含任务书（W-4/M4-1/M4-2/M4-3/M4-5/M4-6，含环境快照+08:30 硬停线）=仓库外《QimengNAS/派发任务书-20260905夜.md》。推荐派发序：Android 串行 M4-1→M4-2→M4-5→M4-6（07:00 后不新贴批），W-4 随时并行，M4-3 最重留明晚首发。
 - 08:50 定时暂停自动化的收尾口径同步更新（晨报只报执行结果——拍板已全部完成）。
-
 ## 晨间复查与派发链规划：今晚 M4-1→M4-2→M4-5，M4-3/M4-6 待拍板暂缓（2026-09-05 第三十五笔）
 
 执行 AI：GLM-5.3（主代理，ZCode 调度）
@@ -1376,7 +1274,6 @@ Q2-1 拍板（A 方案）落地：给 M4-3 详情页点赞按钮提供初始态�
 - **暂缓链**：M4-3（卡详情页五条拍板）→ M4-4（前置 M4-3）→ M4-6（卡 C1~C6 拍板）→ M4-7（全部前置）；M6 在 M4 后（真机 arm64 复验第一优先，需用户实体手机）。
 - **待拍板汇总报表**：仓库外《QimengNAS/待拍板-20260905午.md》——★web play/dwell 打点缺口、★M4-3 五条、M4-6 C1~C6、M4-0 记账项四条，每条附候选与建议，供用户中午一次性定夺；详情页发现项已拍板（M4 后回补）不再列入。
 - **08:50 定时暂停**：单次自动化今日 08:50 触发（免费 Flash 额度 09:00 截止前 10 分钟）——停派新批、收尾在途、补记报表夜间结果段、晨报归档。
-
 ## 夜间集群晨间汇总：W 链 + M4-0 + S-1 + M6 POC 完成，多会话并行归档（2026-09-05 第三十四笔）
 
 执行 AI：GLM-5.3-Flash（主代理，ZCode 调度；各批次署名见对应条目）
@@ -1388,7 +1285,6 @@ Q2-1 拍板（A 方案）落地：给 M4-3 详情页点赞按钮提供初始态�
 - **待用户处理项**：★web play/dwell 打点缺口（§5 第 13 条：整库播放次数/浏览时长为零，核查建议补，半天）；★M4-3 详情页五条协议/规格歧义（不拍板 M4-3 会中途停手）；M4-6 C1~C6 六条；详情页发现项（图片查看器/互动行/批次导航 Web 端回补与否）；M4-0 记账项（AGP9+compileSdk37 升级路线/build-logic 收敛/图标方案/App label）；搁置两项维持。
 - **多会话观测**：单会话子代理 ≤3 稳定（5 并发触发账号限流 1302，SendMessage 续跑可恢复进度）；跨会话写并行靠「只 stage 本车道路径 + 共享文件提交前检查」零冲突；GitHub 两次 502 重试通过。
 - **下一步**：待 5.3 复查规划后从 M4-1 起串行派发（执行链与前置见盘点文件第四节；M4-2 批将落地拍板 1A/2B/3B/4A）。
-
 ## W-3 追加返工：倍速文案真修复 + 切路由整队取消补全（2026-09-05 第三十三笔）
 
 执行 AI：GLM-5.3-Flash（主代理调度验收；返工由原 W-3 执行子代理续聊完成）
@@ -1399,7 +1295,6 @@ Q2-1 拍板（A 方案）落地：给 M4-3 详情页点赞按钮提供初始态�
 - **切路由整队取消（W-1 冻结语义补全）**：W-1 起卸载 cleanup 只 abort 在传 XHR，串行泵会继续拾取 queued 条目后台续传，违反「切路由自动 abort 整队、不做后台续传」冻结语义——卸载时先把全部 queued 标 canceled 再 abort 在传，注释与行为对齐。
 - **顺带**：UploadCard 删除 targetLibraryId undefined 死分支，未选库拦截条目按目录语义显示「/库根」（注释注明）。
 - **验收**：tsc/build/lint 全绿（改动 3 文件 0 warning，存量 15 不变）；复审确认第 9/10/11①/12①/第 8 条五项修复真实有效（SSE 键收敛/入队快照/单泵真串行/拖拽 seek 归一/深色 token 统一）维持通过。
-
 ## M4-0 工程基建：Android Compose 多模块骨架 + 壳导航 + make/CI 第五门禁（2026-09-05 第三十二笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理）
@@ -1415,7 +1310,6 @@ Q2-1 拍板（A 方案）落地：给 M4-3 详情页点赞按钮提供初始态�
 - **CI 第五 job**：`android`（checkout → make sdk 重建生成物 → temurin 21 → gradle/actions/setup-gradle@v4 → assembleDebug+testDebugUnitTest+lintDebug）；同步 PROJECT_PLAN「门禁 = CI 五 job」与 HANDOVER「五道门禁」。
 - **测试**：TopLevelDestinationTest 锁定五 Tab 顺序/路由唯一性；`make app-build && make app-test && make app-lint`、`make lint` 全绿；`make sdk` 删除 android/sdk 后干净重建验证通过。
 - **模拟器实测**：qimeng_api35 启动 → installDebug → 五 Tab 逐一切换截图（`%TEMP%\qimeng-m40-shots\01~05.png`）→ 关机。
-
 ## 服务端协议扩展 S-1：/history 筛选、facets 子集计数、搜索补全端点、收藏/历史缺省全部（2026-09-05 第三十一笔）
 
 执行 AI：GLM-5.3-Flash（主代理，ZCode 调度验收；编码由 executor 子代理完成）
@@ -1429,7 +1323,6 @@ Q2-1 拍板（A 方案）落地：给 M4-3 详情页点赞按钮提供初始态�
 - **口径变更**：收藏/历史缺省排除 COS 的旧口径就此废止（DOMAIN_RULES §6 同步改写）；首页推荐维持缺省排除。
 - **生成物重建**：`make sdk` 全链通过（redocly lint → oapi-codegen v2.8.0 → hey-api TS → openapi-generator kotlin）+ `sqlc generate`（history.sql 三态+筛选、facets.sql 六查询子集谓词、suggestions.sql 新查询）。
 - **测试**：httpapi 全量通过——history（缺省含 COS/includeCos=false/cosOnly/mediaType/work/character 'a+b' 全部命中）、facets（favorite/history 子集四维计数、与 mediaType 组合、排自身回归）、suggestions 新文件（五维命中/大小写折叠/同维去重/跨维同名/长度+字典序排序/默认 10 与 limit 覆写与越界 400/无文件作者不出现/空 q 空列表）、assets 收藏缺省全部+防回归；既有锁定旧口径的断言已按新拍板修正（测试注释注明 2026-09-05 用户拍板）。隔离实例 curl 实测通过（缺省 /history 含 COS、/assets?favorite=1 含 COS 收藏、facets favorite/history 子集计数、suggestions 五维与排序）。
-
 ## 拍板批五项修复：SSE 跨端刷新/上传目标快照+真串行/拖拽 seek/倍速文案/深色 token 统一（2026-09-05 第三十笔）
 
 执行 AI：GLM-5.3-Flash（主代理，ZCode；用户四项拍板后单会话直修，隔离实例全量实机验收）
@@ -1444,7 +1337,6 @@ HANDOVER_UI §5 第 9~12 条记账项经用户逐项拍板（SSE 修/上传快�
 - **深色 token 写法统一（§5 第 11 条② / 第 8 条口径更新）**：13 个 `-dark` 后缀变量自 `:root` 等值迁入 `.dark` 块并改同名覆盖（与 `--bg/--elev` 同制），引用规则同步改基名——纯定义点搬移 + 引用改名，浅/深双态零视觉变化；`-dark` 口径自 HANDOVER_UI 第 8 条退役。
 - **详情页发现项拍板落档**：图片查看器/详情互动行/批次导航 → 用户拍板「M4 后回补 Web，不阻塞 M4 启动」（HANDOVER_UI §5.9 末尾）。
 - **验收**：`npx tsc --noEmit -p web/tsconfig.app.json` 0 错、`npm run build` 成功、`npm run lint` 15 warnings 0 errors（存量分布不变，改动文件 0 告警）；隔离实例（18420+临时数据目录，dev-login，两库 13 资产）全项实机走查，截图 %TEMP%/qimeng-decision-shots/（上传队列表含目标列 + 播放器 seek 后 00:29/02:00）。并行观测：本批执行期间磁盘出现 M4-0 Android 批次并发 WIP（server/android/CI 等）——本 commit 严格只含本批文件（web 12 文件 + HANDOVER_UI/CHANGELOG），未触碰他人 WIP；HANDOVER.md 待办让位并行批次后自行更新。
-
 ## W-3 一致性复审：文档声明逐项核验 + play/dwell 打点缺口记账（2026-09-05 第二十九笔）
 
 执行 AI：GLM-5.3-Flash（主代理，ZCode）
@@ -1453,7 +1345,6 @@ HANDOVER_UI §5 第 9~12 条记账项经用户逐项拍板（SSE 修/上传快�
 - **三命令复跑全绿**：`npx tsc --noEmit -p tsconfig.app.json` 0 错、`npm run build` 成功、`npm run lint` 15 warnings 0 errors——全部位于存量文件（router.tsx×13、button.tsx、SearchPage.tsx 各 1），W-3 改动文件零告警，与第二十八笔声明一致。
 - **修补两处文档滞后**：HANDOVER_UI §5 第 2 条仍标「⏳ 待做——ArtPlayer 播放器 UI（现用原生 video）」→ 三待办划线全清（W-3 补 ✅ 注）；文头「最后更新」停留 09-04 未反映三批收官 → 刷新至 09-05。
 - **新记账（HANDOVER_UI §5 第 13 条，待拍板）**：web 从未上报 play/dwell 事件（全局只发 open，旧裸 video 时代同样未接）——playCount、浏览时长、排行热度公式的 playCount 项从 web 侧永远无贡献；W-3 任务书「dwell/play 打点沿用 useReportView」实际是保持现状而非已接线。M4 App 端任务书已含 play/dwell 接线（HANDOVER_APP），web 是否补齐待用户拍板。
-
 ## W-3 ArtPlayer 播放器：断点续播/倍速/时间轴打点/已看完徽标（2026-09-05 第二十八笔）
 
 执行 AI：GLM-5.3-Flash（主代理，ZCode 调度验收；编码与冒烟由 executor 子代理完成，reviewer 子代理对抗审查打回 1 轮后返工通过）
@@ -1466,7 +1357,6 @@ UI 收尾三批收官（HANDOVER_UI §5.9 任务书，重批次走对抗审查�
 - **对抗审查打回 1 轮（已返工验证）**：P1 详情→详情导航（同路由参数变化不卸载）时卸载补报把旧资产进度写进新资产（mutationFn 闭包随 render 切资产）——修法=mutationFn 收显式载荷+`{assetId, positionSeconds}` 配对存储+切资产 effect 以旧 id 补报后整体重置，靶向实测（A 播至 24s→SPA 切 B→离开：A=23.93 已报、B 无 lastPositionSeconds 污染）；P2 打点注释失实已改实并删死代码 highlightsRef。返工后全量冻结项回归通过。
 - **验收证据**：tsc/build/lint 全绿（改动文件 0 warning，存量 15 不变）；隔离实例 10 图+ev.log（%TEMP%/qimeng-w3-shots/）——续播 20s 起点、倍速菜单 0.5~3.0、静音、双标记点击 seek、暂停 52.55→服务端 52.5467、离开补报 55.21、已看完 00:00+徽标、双视口 spread 0.0/0.0。
 - **记账（HANDOVER_UI §5 第 11/12 条，待拍板）**：拖拽 seek 的 zoom 偏置未修（冻结只要求点击）；倍速菜单文案内建舍入（0.75 显 0.8）；全局 zoom 与坐标类库系统性冲突；上传串行仅单批+深色 token 写法并存。
-
 ## 一致性审查：W-1/W-2/第十笔文档声明逐项核验 + 代码卫生修补（2026-09-05 第二十七笔）
 
 执行 AI：GLM-5.3-Flash（主代理，ZCode）
@@ -1478,7 +1368,6 @@ UI 收尾三批收官（HANDOVER_UI §5.9 任务书，重批次走对抗审查�
 - **修补②（文档状态同步）**：HANDOVER「当前待办」第 1 条补 W-1/W-2 已交付标记（commit 号）与 W-3 当前批次指向——此前恢复入口文档未反映前两批完成，新会话按「当前待办继续下一批」会误派 W-1。
 - **工作树发现（不擅动）**：审查进行中观测到 W-3 会话正并发写入本工作树（夜间集群模式）——artplayer@5.4.0（经 npm 核实为最新稳定）依赖、video-player.tsx、use-progress.ts、AssetDetailPage 接线相继出现且未提交。本审查范围=已提交基线（至 2001a20），W-3 WIP 不在审查内、一律未触碰；复核时 lint 从 15→22 warnings，增量全部来自 W-3 在写文件（use-progress/video-player/AssetDetailPage），基线 15 与 W-2 交付声明一致。并发状态已同步进 HANDOVER 待办第 1 条。
 - **代码审查记账（不扩围，HANDOVER_UI §5 第 10 条）**：use-upload 队列条目未在入队时快照目标 libraryId/dir——上传中途切库/切目录会改变未开始条目的去向（uploadOne 发送时读实时 options），队列表也不显示目标库；快照语义更合用户预期，但属行为变化需重跑 W-1 冒烟，待用户拍板。
-
 ## W-2 confirm 换原型风格弹窗：window.confirm 全量退役（2026-09-04 第二十六笔）
 
 执行 AI：GLM-5.3-Flash（主代理，ZCode 调度验收；编码与冒烟由 executor 子代理完成）
@@ -1488,7 +1377,6 @@ UI 收尾三批第二笔（HANDOVER_UI §5.9 任务书）：
 - **新增** `web/src/components/ui/confirm-dialog.tsx`：radix AlertDialog 封装（复用已有 `radix-ui` 统一包 ^1.6.7，零新装包）；冻结 API 原样 + 必要可选 prop `onOpenChange?`（radix 受控 open 响应 ESC 所必需，主会话裁决接受并记账）；样式全走原型 token，新增 `--overlay-bg`/`--dialog-shadow` 双语义 token（§5.8 口径，零颜色字面量）；danger 语义=主文字色反底（浅色黑胶囊/深色自动反转白底黑字），不引入红色 token。
 - **替换**：TrashPage 彻底删除/清空（danger）、LibraryManagePage 删库（非 danger——删库只清索引、磁盘文件不受影响，主色键）；`grep window.confirm` 实际调用清零。顺带删除 TrashPage 一处不可达空回收站分支（disabled 拦截下死代码，行为等价）。
 - **验收证据**：tsc/build/lint 全绿（本批文件 0 warning，存量 15 warnings 不变）；隔离实例三弹窗×浅/深双模式+焦点环+ESC 关闭+真确认链路 9 图（%TEMP%/qimeng-w2-shots/）；ESC 实测 7 次全过、焦点环 2px var(--qm-primary)、radix 初始焦点自动落取消键。
-
 ## W-1 上传 UI 入口：文件管理页上传卡 + use-upload 队列 hook（2026-09-04 第二十五笔）
 
 执行 AI：GLM-5.3-Flash（主代理，ZCode 调度验收；编码与冒烟由 executor 子代理完成）
@@ -1499,19 +1387,16 @@ UI 收尾三批第一笔（HANDOVER_UI §5.9 任务书，夜间集群模式首�
 - **修改**：LibraryManagePage 接入上传卡；use-libraries/use-assets 提取 DIRS/ASSETS 查询键常量（字面量卫生）；format.ts 新增 dirLabel()；prototype.css 追加上传卡段（零新增颜色字面量，全 token 引用）。
 - **验收证据**：`npx tsc --noEmit -p tsconfig.app.json` / `npm --prefix web run build` / `npm --prefix web run lint`（0 errors，存量 15 warnings 不变）全绿；隔离实例（18420 端口+临时数据目录，真实库零接触）UI 实走 1 图+1 视频上传：进度 26% 中间态→完成 toast→目录树 7→8 文件→首页网格出现新卡，截图 5 张存 %TEMP%/qimeng-w1-shots/；§4.5 对齐静止态实测：上传卡与同页全部行级块横向 spread 0.0px、卡间距 17.59px 与全页节奏一致。
 - **发现并记账（不扩围）**：SseBridge 跨端失效键与实际查询键形态不匹配的存量缺陷（HANDOVER_UI §5 第 9 条，待拍板）；上传并发取串行（协议未约定，最保守值）；DirBrowser 根行改显「库根 N 文件」（共享抽取伴生小变化）。
-
 ## 夜间集群模式补入执行调度：主会话调度器 + 写串行读并行（2026-09-04 第二十四笔）
 
 执行 AI：GLM-5.3（主代理，ZCode）
 
 用户问「Flash 无限额时段能否一个主会话派集群子代理全量执行」——评估结论：全量并行不可行（全部子代理共用同一工作树，写任务并行必互踩；批次有依赖链），全量**流水线**可行。调度规则补第 8 条「夜间集群模式」：主会话只当调度器不写码（派发/验收/更新勾选与 CHANGELOG）；写代码任务严格串行（前批 commit 后再派下批），只读任务（reviewer/调研）可并行；停手批次记 SKIPPED 跳过、继续派无依赖批次；收工产出晨间汇总（完成清单含 commit hash/SKIPPED 原因/待用户处理项）追加 CHANGELOG；推进状态以磁盘为准不靠记忆，会话压缩前确认工作树干净。
-
 ## Flash 自驱执行调度规则落档：免 5.3 逐批规划（2026-09-04 第二十三笔）
 
 执行 AI：GLM-5.3（主代理，ZCode）
 
 用户要求 Flash 按任务书自驱派发执行（免 5.3 逐批规划，防额度卡死）。任务书本已自包含（昨日终审标准即"拿着就能干"），本笔补最后一块——调度规则七条落 `docs/HANDOVER.md`「执行调度」节：顺序固定（W-1~3 → M4-0~7 → M6）、每批一个会话/子代理禁连做、验收只认贴输出+截图、重批次（M4-0/3/5、W-3）自派 reviewer 对抗审查、每批完成即 commit（中断无损、恢复=新会话说「按 HANDOVER 当前待办继续下一批」）、停手即停、不扩围。5.3 收窄为停手仲裁/方向变更/验收争议时介入。
-
 ## M4/M6 规划终审对抗审查与修补：交付前防线加固（2026-09-04 第二十二笔）
 
 执行 AI：GLM-5.3（主代理，ZCode；对抗审查由 reviewer 子代理完成，全部事实经 grep/read 独立重验）
@@ -1522,7 +1407,6 @@ UI 收尾三批第一笔（HANDOVER_UI §5.9 任务书，夜间集群模式首�
 - **P2 五项**：AGENTS 路由表 UI 行补 0014/HANDOVER_APP 指向（reviewer 报告的"正文未同步"经 grep 验证为误报，正文已是 ADR-0014 口径）；进度心跳 5s 注明"严于协议建议值 10s、协议允许"（消除与 openapi/GUIDE_API 的表面矛盾）；**M4-4 打点语义改写**——服务端仅 open/play 会话去重、**dwell 累加不去重**（原表述与 DOMAIN_RULES §5 实口径不符，弱照做会时长虚增），客户端保证一次停留恰好一条 dwell；断点续播"已看完"语义冻结（lastPositionSeconds ≥ durationMs/1000 从 0 重播+徽标，协议明文客户端推导）；HANDOVER_APP 补开工前置（服务端跑法/密码/8420 在线确认，见 HANDOVER 两节）。
 - **P3 十项**：版本纪律硬化（版本号须查官方来源锁定+交付报告附链接，禁凭记忆）；WorkManager 兜底周期注明 ≥15min 系统钳制；健康探测改协议面 `/api/v1/healthz`（根路径是运维别名）；M4-0 补应用图标（旧仓库 §应用图标 资产规格）；M4-0 交付物补"CI 四 job 字样→五"两处文档同步（PROJECT_PLAN 头部/HANDOVER）；ADR-0014 桥接白名单补同类自绘件（LineChartView）对齐 M4-6；INDEX 表头补状态列+0013 行注批次引用过期；HANDOVER 进度节日期残留修正；"第五笔"标签补出处；ADR-0013 废弃标注与引用关系核实协调。
 - 审查正面验证通过项（未改）：GUIDE_UI 19 节名引用逐条命中、协议端点/字段（progress/facets/config/lastPositionSeconds）与代码符号（INCOMPATIBLE_CODECS/useReportView）真实存在、minSdk 26 全兼容、ServerConfigDataSource 单点五处口径一致、M6 Termux/ffmpeg/gomobile 表述准确。
-
 ## M4 二次改道「先进优先」Compose 重建 + M6 单机形态（ADR-0014/0015）（2026-09-04 第二十一笔）
 
 执行 AI：GLM-5.3（主代理，ZCode）
@@ -1534,7 +1418,6 @@ UI 收尾三批第一笔（HANDOVER_UI §5.9 任务书，夜间集群模式首�
 - **HANDOVER_APP 第三次重写（Compose 版）**：八批次任务书（基建含多模块骨架/登录含 ServerConfigDataSource 单点=单机形态预留/列表族/详情页含断点续播+时间轴标签/离线上报/上传/缓存+统计/验收），通用约束十含「服务器地址只经 ServerConfigDataSource 流转」。
 - **配套同步**：AGENTS（项目一句话+旧项目关系节：Compose 重建+旧项目待退役口径）、AI_README_FIRST（禁止行为第 2 条+Kotlin 规范行）、android/README（技术栈二次定论+单机形态预留节）、HANDOVER（执行路线四段：UI 收尾→M4 Compose→M6 单机→M5 用户自测节奏）、INDEX（0013 废弃标注+0014/0015 两行）。
 - **Go 后端先进性评估结论（答复用户，无改动）**：现有选型（协议先行/纯函数领域层/事件流统计/sqlc/纯 Go SQLite）即现代 Go 最佳实践，且纯 Go 无 CGO 与配置化数据目录两个选型正是单机形态可行性的钥匙，无需变更。
-
 ## M4 路线改道：旧 UI 整体照搬 + 数据层网络化（ADR-0013）（2026-09-04 第二十笔）
 
 执行 AI：GLM-5.3（主代理，ZCode；旧项目架构调研由只读探索子代理完成）
@@ -1546,7 +1429,6 @@ UI 收尾三批第一笔（HANDOVER_UI §5.9 任务书，夜间集群模式首�
 - **HANDOVER_APP.md 按新路线重写**：八批次改序——M4-0 工程基建+登录 / M4-1 数据层网络化（风险点先行验证，接口按 UI 调用面渐进实现）/ M4-2 列表族 / M4-3 详情页（BiliPlayerView 837 行照搬+断点续播叠加+4 处 URI 消费点改造清单）/ M4-4 离线上报 / M4-5 上传 / M4-6 缓存+设置+统计页（照搬路线下统计/我的/作者页全部纳入，原"不在 M4 范围"边界作废）/ M4-7 验收；通用约束新增照搬纪律（算法不搬不复算、代码实测行为优先于规格书）。
 - **铁律口径收窄（原「禁止搬运旧项目实现代码」→「禁止搬运单机生态代码」）**：AGENTS.md（项目一句话 + 旧项目关系节）、AI_README_FIRST（禁止行为第 2 条 + Kotlin 代码规范行）、android/README.md（技术栈定论全面改写：View 照搬、AppContainer、包名沿用、禁搬清单）、PROJECT_PLAN M4 条目（「Compose 复刻交互」→「旧 UI 整体移植」）、HANDOVER（当前待办第 2 条 + 领域知识库节）六处同步。
 - **算法提取状态确认（用户问题答复，无代码改动）**：GUIDE_ALGORITHM 全部条目已在 M3 落进服务端并测试锁定（推荐十维+自适应回收+三后处理+冷启动/排行榜/筛选枚举/SourceMatcher 130 组/统计口径/作者双体系/日期分组/旧数据迁移）；缩略图三级解码被「服务端 ffmpeg 出图 + HTTP 直链」架构性替代，非缺失。
-
 ## 执行路线定稿：UI 收尾三批 + M4 八批次任务书（2026-09-04 第十九笔）
 
 执行 AI：GLM-5.3（主代理，ZCode）
@@ -1557,7 +1439,6 @@ UI 收尾三批第一笔（HANDOVER_UI §5.9 任务书，夜间集群模式首�
 - **HANDOVER_UI 新增 §5.9**：UI 收尾三批任务书（顺序冻结 W-1 上传入口 → W-2 confirm 弹窗 → W-3 ArtPlayer），逐批冻结设计（上传落点=文件管理页+切路由 abort 整队；弹窗=radix AlertDialog+原型 token、不引入红色 token；ArtPlayer=不建 ADR+官方 API 撑不起时间轴标记即停手）与验收标准。**发现项记账**：现版详情页为极简重建版（裸 img/裸 video），图片查看器/互动行/批次导航三件旧壳体验不在三项待办内，是否补齐待用户拍板。
 - **HANDOVER/PROJECT_PLAN 同步**：执行路线行（UI 收尾→M4→M5）、「当前待办」改写（未导入内容两项标搁置）、接手第一步补第 6 条（Android 读 HANDOVER_APP）、M4 节头指向批次表（本文件勾选仍为进度真相）。
 - **现状澄清**（规划调研结论）：android/ 零应用代码（仅 README 技术栈定论 + git 忽略的 sdk/ 生成物）；「M4 播放端基座」（commit 9773213）是服务端前置件（断点续播端点+ffprobe 元数据）而非 App 代码；CI 现四 job 无 Android job，由 M4-0 补第五个。
-
 ## 搜索页默认全部 + 对齐重校准：口径变更与锚定修复（2026-09-04 第十八笔）
 
 执行 AI：GLM-5.3（主代理，ZCode）
@@ -1569,7 +1450,6 @@ UI 收尾三批第一笔（HANDOVER_UI §5.9 任务书，夜间集群模式首�
 - **对齐定值重校准（根因=定值过时）**：stype-count 徽标加入后类型行高 37→48.9px，旧 -14.9px 定值在宽窄视口**本来**就偏 +2.6px（非本次引入）；窄屏（≤499px）按钮被 flex 压缩、文字竖排换行致行高暴涨 73.7px、偏差 15px——`.stype/.sort-pill/.more-filter` nowrap+flex:none、`.stype-row` margin-top -17.5px + overflow-x:auto + 滚动条视觉隐藏（防滚动条占高推下排序行）、`.s-toolbar` margin-top 1.5px、media ≤499px gap 6px。
 - **终测（浏览器静止态、徽标全渲染，474px/1000px 双视口）**：类型行中心偏差 -0.3px、排序行 +0.5px、横向溢出 0（≤1px 达标）。**新增教训记账**：对齐实测必须等异步徽标渲染完成，未渲染时量到的是假达标（第十六/十七笔即栽在此）。
 - 文档：DOMAIN_RULES §3/§6、HANDOVER_UI §4.5 规则 3/5 同步。
-
 ## 搜索页分区胶囊 UI 修正：对齐与排序（2026-09-04 第十七笔）
 
 执行 AI：GLM-5.3（主代理，ZCode）
@@ -1578,7 +1458,6 @@ UI 收尾三批第一笔（HANDOVER_UI §5.9 任务书，夜间集群模式首�
 
 - **对齐**：分区胶囊行水平内边距 16px → 24px，与 `.stype-row` 的 24px 对齐（prototype.css:887）。
 - **排序**：`PARTITION_OPTIONS` 改为 全部/常规/COS——与相册页 all/regular/cos 三态顺序一致（用户拍板）；默认选中仍为「常规」（DOMAIN_RULES §6 隔离口径不变）。
-
 ## 搜索页 COS 分区入口补缺：搜索触达 COS 内容（2026-09-04 第十六笔）
 
 执行 AI：GLM-5.3（主代理，ZCode）
@@ -1589,7 +1468,6 @@ UI 收尾三批第一笔（HANDOVER_UI §5.9 任务书，夜间集群模式首�
 - **修复（复用相册页既有模式，默认口径不变）**：`search-state.ts` 状态机加 `partition` 档位（常规/COS/全部，默认常规=排除 COS 不推翻隔离口径）；`SearchPage.tsx` 类型 tab 上方加分区胶囊（复用 pill 样式）、listParams 唯一组装点映射三态（COS=cosOnly、全部=includeCos、常规=不传）；`use-assets.ts` 的 `useAssetsTotal` 加分区参数——类型徽标计数跟随分区口径，切 COS 后徽标不再是常规数字。
 - **端到端实证**（dev-login 后 curl）：搜 COS 文件名片段默认 0 条 / cosOnly 1 条 / includeCos 1 条；常规分区默认口径未受影响（765 条）。无协议改动（参数已在 openapi）。
 - **文档**：DOMAIN_RULES §3 全文搜索口径补「分区」条（三态开关 + 胶囊入口出处）。
-
 ## 手机局域网访问白屏修复：crypto.randomUUID 非安全上下文降级（2026-09-04 第十五笔）
 
 执行 AI：GLM-5.3（主代理，ZCode）
@@ -1600,7 +1478,6 @@ UI 收尾三批第一笔（HANDOVER_UI §5.9 任务书，夜间集群模式首�
 - **根因**：手机浏览器经 `http://192.0.2.2`（HTTP + 非 localhost = 非安全上下文）访问时 `crypto.randomUUID` API 不存在，`use-session.ts` 的 `ensureSessionId()` 在 React useState 初始化路径直接调用，整应用白屏崩溃（电脑 localhost 属安全上下文故无感）。
 - **修复**：`web/src/hooks/use-session.ts` 新增私有 `randomUUID()`——守卫 `typeof crypto.randomUUID === 'function'`，缺失时降级 `crypto.getRandomValues` 拼 UUID v4（该 API 非安全上下文同样可用）；`web/dist` 已重新构建，服务端 SPA 托管按请求读盘（curl 实证返回新 hash 产物），手机刷新页面即生效、无需重启服务端。
 - **质量**：oxlint 0 errors（15 warnings 均为存量，与本次改动无关）；tsc 构建通过。
-
 ## 交接文档进度对齐：阶段 B 全量口径 + 上传 UI 缺口记账（2026-09-04 第十四笔）
 
 执行 AI：GLM-5.3（主代理，ZCode）
@@ -1611,7 +1488,6 @@ UI 收尾三批第一笔（HANDOVER_UI §5.9 任务书，夜间集群模式首�
 - **上传 UI 入口缺口记账（2026-09-04 审查发现）**：后端 POST /assets/upload（四道校验齐全）、SSE upload.done 桥接、设置页上传配置读写均就绪，但 web 页面无上传入口（`lib/constants.ts` 的 UPLOAD_PATH 常量无消费方）——记入 HANDOVER_UI §5.2 待做与 HANDOVER「UI 路线现状」；手机直传仍以 M4 App 为主通道。
 
 ---
-
 ## 一键启动自动打开 Web UI（2026-09-04 第十三笔）
 
 执行 AI：GLM-5.3（主代理，ZCode）
@@ -1623,7 +1499,6 @@ UI 收尾三批第一笔（HANDOVER_UI §5.9 任务书，夜间集群模式首�
 - **HANDOVER.md「怎么跑起来」**同步改写：自动打开行为 + "UI 不需要单独启动，它就是 8420 的网页"显式说明 + 浏览器没弹的手动兜底地址。
 
 ---
-
 ## 质量审查清债（Web 端）：分层纪律收紧 + prototype.css 颜色收敛（2026-09-04 第十二笔）
 
 执行 AI：GLM-5.3（主代理，ZCode；执行子代理×1 实施 + 主代理独立验收）
@@ -1633,7 +1508,6 @@ UI 收尾三批第一笔（HANDOVER_UI §5.9 任务书，夜间集群模式首�
 - 门禁：`tsc --noEmit -p tsconfig.app.json` 零错误、`npm run build` 成功（dist 已更新供 8420 托管）、组件层 api-client 引用零命中、prototype.css 规则体散落颜色清零（剩余命中全部在 :root/.dark 定义块内）。
 
 ---
-
 ## 质量审查清债（服务端）：assets.go 拆分 + main.go 常量收敛 + 写错误注释（2026-09-04 第十一笔）
 
 执行 AI：GLM-5.3（主代理，ZCode；审查=研究子代理×3 并行抽查 + 执行子代理×1 实施 + 主代理独立验收）
@@ -1646,7 +1520,6 @@ UI 收尾三批第一笔（HANDOVER_UI §5.9 任务书，夜间集群模式首�
 - 门禁：go vet 0、go test 14 包全绿（httpapi 针对性用例复跑 PASS）、gofmt 干净；主代理 diff 逐行复核确认无逻辑变化（详情端点全部字段赋值与原实现逐一比对等价）。
 
 ---
-
 ## 数据页「作者总览」卡行数收敛 Top5（2026-09-04 第九笔）
 
 执行 AI：GLM-5.3-Flash（主代理，ZCode）
@@ -1654,7 +1527,6 @@ UI 收尾三批第一笔（HANDOVER_UI §5.9 任务书，夜间集群模式首�
 用户反馈：真库 122 位作者全量渲染致栏目过长（原型 mock 作者少未暴露）。改为与相邻榜单卡（标签榜/作者榜）一致的行数——Top5 预览（按文件数降序，作者管理页「文件数量」档同口径），两行副标题保留；总量看头注「N 位作者 · 已关注 M」，完整列表走「管理」进作者管理页。
 
 ---
-
 ## 后端四缺口清零：上传富化 + 探针协议债归位 + 配置读写端点 + 客户端异常上报（2026-09-04 第十笔）
 
 执行 AI：GLM-5.3-Flash（主代理，ZCode；执行×3（含模型请求失败后 SendMessage 续跑原代理 1 次）+ 对抗审查×2 + 返工 1 轮）
@@ -1688,7 +1560,6 @@ UI 收尾三批第一笔（HANDOVER_UI §5.9 任务书，夜间集群模式首�
 - 审查实证要点：白名单无路径变体绕过面；EnrichAsset 不碰探测元数据（逐条核 SQL）；scan 字段无消费点（推翻"重启后生效"）；413 构造手法（Expect: 100-continue）真实有效。
 
 ---
-
 ## 常规作者关联丢失修复：TXT 匹配重放端点 + 文件管理页「重新匹配」按钮（2026-09-04 第八笔）
 
 执行 AI：GLM-5.3-Flash（主代理，ZCode；执行子代理实施 + 主代理数据恢复）
@@ -1702,7 +1573,6 @@ UI 收尾三批第一笔（HANDOVER_UI §5.9 任务书，夜间集群模式首�
 - 文档：GUIDE_API 作者行补 rebuild 端点说明。
 
 ---
-
 ## 原型七组缺陷 web 正式端移植（协议 AssetSummary.authorNames 全链路）+ 原型 CSS 双缺陷修复 + 归档会话质量审查（2026-09-03 第七笔）
 
 执行 AI：GLM-5.3-Flash（主代理，ZCode；执行×3 + 对抗审查×2 子代理）
@@ -1733,7 +1603,6 @@ UI 收尾三批第一笔（HANDOVER_UI §5.9 任务书，夜间集群模式首�
 - 门禁：go test 14 包全绿、golangci-lint 0 issues、gofmt 干净、`make sdk`/`sqlc generate` 重跑零 diff、web tsc/build/lint 全绿（0 errors，15 warnings 全存量）；dateLabel 6 边界用例验证通过（web 无测试框架，脚本验证后清除）。
 
 ---
-
 ## media-ui-prototype 七组缺陷修复：榜单浏览口径/作者关联副标题/首页卡片元信息/相册时间分区/COS 搜索与推荐词/作者 TXT 导入（2026-09-03 第六笔）
 
 执行 AI：DeepSeek-V4-Flash（主代理，WorkBuddy；执行子代理 ui-fix-dev@media-ui-fix）
@@ -1757,7 +1626,6 @@ UI 收尾三批第一笔（HANDOVER_UI §5.9 任务书，夜间集群模式首�
 - 相册页徽标仍为 4 个独立 facets 请求（本地聚合量级可控，无合并端点需求）。
 
 ---
-
 ## 相册作者/角色行语义修正（旧版「全部」tab 口径）+ 首页 cos/排行榜 + 文件管理 TXT 卡（2026-09-03 第五笔）
 
 执行 AI：DeepSeek-V4-Flash（主代理，WorkBuddy）
@@ -1794,7 +1662,6 @@ UI 收尾三批第一笔（HANDOVER_UI §5.9 任务书，夜间集群模式首�
 HANDOVER_UI §5 待办项：搜索页类型 tab 从 综合/视频/图片 三档扩为四档（+动图=mediaType animated_image，计数走 useAssetsTotal）——与相册页类型维、协议 MediaType 枚举（image/animated_image/video）对齐。纯前端小改（SearchPage.tsx 四处），协议零变化；tsc + build 通过。用户拍板暂停后续小任务（confirm 原型风格弹窗、上传路径富化两项仍记账待做）。
 
 ---
-
 ## 相册四维聚合：GET /assets/facets + migration 0008 cos_work + 相册页四维胶囊（2026-09-03 第三笔）
 
 执行 AI：GLM-5.3-Flash（主代理，WorkBuddy）
@@ -1827,7 +1694,6 @@ HANDOVER_UI §5 待办项：搜索页类型 tab 从 综合/视频/图片 三档�
 - `.tmp-verify/` 为上一会话验证残留目录（t8.db），未入库未删。
 
 ---
-
 ## 全部界面接真实数据：搜索/我的/数据/榜单/集合/作者/顶栏/推荐偏好/维护监控（2026-09-03 第二笔）
 
 执行 AI：DeepSeek-V4-Flash-Vision-Exp（主代理，ZCode；研究×2、执行×3、审查×1 子代理）
@@ -1880,7 +1746,6 @@ HANDOVER_UI §5 待办项：搜索页类型 tab 从 综合/视频/图片 三档�
 - 数据页内容榜子页固定全周期（无周期胶囊）；"本周"按周一为起点。
 
 ---
-
 ## 本机启动脚本开启开发免密登录：QIMENG_AUTH_DEV_MODE=1（2026-09-03）
 
 执行 AI：DeepSeek-V4-Flash-Vision-Exp（主代理，ZCode）
@@ -1898,7 +1763,6 @@ HANDOVER_UI §5 待办项：搜索页类型 tab 从 综合/视频/图片 三档�
 - 用户浏览器刷新 `http://127.0.0.1:8420` 即免密直达 UI；旧 token 因 dev-login 重铸失效属预期（与 /auth/login 同语义，签发即重铸）。
 
 ---
-
 ## 阶段 B 浏览链路接真实数据：首页推荐流/相册/详情页（图片大图+视频直链播放）（2026-09-03）
 
 执行 AI：GLM-5.3-Flash（主代理，ZCode）
@@ -1927,7 +1791,6 @@ HANDOVER_UI §5 待办项：搜索页类型 tab 从 综合/视频/图片 三档�
 - 搜索页/集合页仍为 mock 池（其点击不产生真实资产跳转）；搜索接 FTS5、我的页 /stats 接线待做。
 
 ---
-
 ## 库启用/停用开关 + ADR-0012 库类型可扩展体系（2026-09-03）
 
 执行 AI：GLM-5.3-Flash（主代理，ZCode）
@@ -1958,7 +1821,6 @@ HANDOVER_UI §5 待办项：搜索页类型 tab 从 综合/视频/图片 三档�
 - sqlc 对 SQL 注释/谓词顺序敏感：`WHERE AND EXISTS` 语法错误（谓词作首条件不带 AND）；flow mapping 内 description 含 `{libraryId}` 花括号被 YAML 解析为嵌套集合（redocly "missed comma"）——协议描述禁用花括号字面量。
 
 ---
-
 ## 维护页实际功能：文件管理（库管理）+ 回收站子页（2026-09-03）
 
 执行 AI：GLM-5.3-Flash（主代理，ZCode）
@@ -1987,7 +1849,6 @@ HANDOVER_UI §5 待办项：搜索页类型 tab 从 综合/视频/图片 三档�
 注册「临时测试库」→ 列表即时出现 → 扫描 fileCount=3 → 目录树（根 2 + 子目录A 1）→ API 删 1 资产 → 回收站页 1 条（入口卡计数同步 1）→ UI 恢复 → 空态且文件归位磁盘 → 再删 → UI 彻底删除（confirm 文案正确）→ 空态 → 删库 204/重复 404 → 磁盘文件全部保持（恢复归位/彻底删除真物理删均符合语义）→ 临时目录清理。
 
 ---
-
 ## 排行榜行点击 → 标签/作者集合子页（2026-09-03）
 
 执行 AI：GLM-5.3-Flash（主代理，ZCode）
@@ -2005,7 +1866,6 @@ HANDOVER_UI §5 待办项：搜索页类型 tab 从 综合/视频/图片 三档�
 - tsc + build 全绿；浏览器实测：数据页点「样例」→ /app/collection/tag/样例 4 卡 ✓；点「绮梦」→ /app/collection/author/绮梦 3 卡 ✓；完整标签榜（7 行真实计数）点「摄影」→ 2 卡 ✓；侧栏返回回榜单页 ✓。
 
 ---
-
 ## UI 原型移植 web 端 React 重建（阶段 A · mock）（2026-09-02）
 
 执行 AI：GLM-5.3-Flash（主代理 + 2 执行子代理 + 1 审查子代理，ZCode）
@@ -2036,7 +1896,6 @@ HANDOVER_UI §5 待办项：搜索页类型 tab 从 综合/视频/图片 三档�
 - oxlint：router lazy fast-refresh 警告 ×9 属模式性警告，不修。
 
 ---
-
 ## M4 播放端协议与服务端基座（2026-09-02）
 
 执行 AI：GLM-5.3-Flash（主代理，ZCode）
@@ -2064,7 +1923,6 @@ HANDOVER_UI §5 待办项：搜索页类型 tab 从 综合/视频/图片 三档�
 - ProbeVideo 集成测试补 codec 断言（lavfi 合成 mp4 = h264/无音轨），新增带音轨用例（h264/aac，验证音频流后置时不漏采）。
 
 ---
-
 ## UI 原型：榜单改造 + 作者管理页 + 对齐实测动画污染修正（2026-09-02）
 
 执行 AI：GLM-5.3-Flash（主代理，ZCode）
@@ -2100,7 +1958,6 @@ HANDOVER_UI §5 待办项：搜索页类型 tab 从 综合/视频/图片 三档�
 
 ---
 
-
 ## UI 原型对齐修正（2026-09-02）
 
 执行 AI：GLM-5.3-Flash（主代理，ZCode）
@@ -2121,7 +1978,6 @@ HANDOVER_UI §5 待办项：搜索页类型 tab 从 综合/视频/图片 三档�
 - 文档同步：HANDOVER_UI.md（最后更新行、§4 导航描述、§4.5 对齐纪律、原型踩坑与对齐规则记录）。
 
 ---
-
 ## UI 原型收尾 + v1 旧壳删除（2026-09-01）
 
 执行 AI：DeepSeek-V4-Flash（主代理，ZCode）
@@ -2147,7 +2003,6 @@ HANDOVER_UI §5 待办项：搜索页类型 tab 从 综合/视频/图片 三档�
 |---|---|
 | docs/HANDOVER_UI.md | 全文重写（原型现状/六页/中性化/v1 删除/待办/工作树） |
 | docs/HANDOVER.md | UI 路线现状与待办表述更新（v1 已删，原文参考措辞中性化） |
-
 ## Immich 风格主题 token + 开发免密通道（2026-08-31）
 
 执行 AI：DeepSeek-V4-Flash（主代理，ZCode）
@@ -2183,7 +2038,6 @@ HANDOVER_UI §5 待办项：搜索页类型 tab 从 综合/视频/图片 三档�
 验证：make sdk-validate/sdk-go/sdk-ts 通过；`go test ./...` 全绿（新增 dev-login 3 用例）；web `tsc+build+lint` 全 0 错误；dev 模式实跑免密直达 UI。
 
 ---
-
 ## Web 适配补丁：/dirs libraryId 必填 + 详情库 ID 接线（2026-08-31，紧随 M3 收尾）
 
 执行 AI：DeepSeek-V4-Flash（主代理，ZCode）
@@ -2201,7 +2055,6 @@ HANDOVER_UI §5 待办项：搜索页类型 tab 从 综合/视频/图片 三档�
 文档：`CHANGELOG.md` 本条。
 
 ---
-
 ## M3 后端收尾：遗留三项清零 + 协议债修复（2026-08-31）
 
 执行 AI：DeepSeek-V4-Flash（主代理，ZCode；研究子代理摸底 + 主代理实施）
@@ -2224,7 +2077,6 @@ HANDOVER_UI §5 待办项：搜索页类型 tab 从 综合/视频/图片 三档�
 文档：`GUIDE_API.md`（自定义出处机制 + 端点表）、`DOMAIN_RULES.md`（§4 自定义出处/§6 COS 作者清理与目录变更/§9 cos 移动映射 + 最后更新）、`HANDOVER.md`（进度/待办/环境清理）、`CAPABILITY_MAP.md`（M2/M3 三态同步）、`PROJECT_PLAN.md`（M3 收尾勾选）、`CHANGELOG.md` 本条。
 
 ---
-
 ## 线上实机部署与登录链路修复（2026-08-30）
 
 执行 AI：GLM-5.3-Flash（主代理）
@@ -2243,7 +2095,6 @@ HANDOVER_UI §5 待办项：搜索页类型 tab 从 综合/视频/图片 三档�
 文档：`GUIDE_API.md`（认证行）、`HANDOVER.md`（线上实机状态节）、`CHANGELOG.md` 本条。
 
 ---
-
 ## M3 后端算法移植全量完成（2026-08-30）
 
 执行 AI：GLM-5.3-Flash（主代理 + 执行子代理 A/B/C 三路并行/串行 + maker-checker 审查）
@@ -2264,7 +2115,6 @@ M3 六项中五项后端完成（推荐偏好设置页属 UI 按用户指示不�
 遗留（记 HANDOVER）：COS 孤立作者清理（作者目录改名/删除后残留，旧项目有对应能力）、custom_sources 写入端点（协议未定义，UI 路线一起做）、filing API 改名的 cos 库作者映射修正（normal 库已覆盖）。
 
 ---
-
 ## UI 方向定稿：Tremor 风格面板成为正式 UI 基底（2026-08-29/30）
 
 执行 AI：GLM-5.3-Flash（主代理 + 执行子代理多轮迭代，浏览器原型逐版验收）
@@ -2285,7 +2135,6 @@ M2 UI 提交后 UI 方向经用户多轮拍板演进，本条存档方向变化�
 文档：`HANDOVER.md`（UI 方向定稿节）、`CHANGELOG.md` 本条、`.gitignore`（server/data 运行时目录）。
 
 ---
-
 ## M2 UI 段页面组装与集成验收（2026-08-29）
 
 执行 AI：GLM-5.3-Flash（主代理组装 DetailPage + 修复与集成；Organize/Trash/Stats 三页由执行子代理完成；reviewer 子代理对抗审查通过）
@@ -2305,7 +2154,6 @@ M2 UI 提交后 UI 方向经用户多轮拍板演进，本条存档方向变化�
 文档：`PROJECT_PLAN.md`（M2 UI 九项勾选）、`HANDOVER.md`（完成记录 + 提交待办）、`CHANGELOG.md` 本条。**git 未提交**——工作树混有并行 M3 后端改动，提交拆分策略待用户确认。
 
 ---
-
 ## M2 UI 段随附后端四件套（2026-08-29）
 
 执行 AI：DeepSeek-V4-Flash（执行子代理，ZCode）
@@ -2324,7 +2172,6 @@ M2 Web UI 段的随附后端改动——缩略图抽帧策略对齐、标签排�
 文档：`DOMAIN_RULES.md` §3（sources 端点一句）/§7（标签排序两行）/§11（实现状态=已对齐，性能分工 M3 预留）/「最后更新」加日期；`GUIDE_API.md` 分组表与全局约定；`HANDOVER.md` 进度；`CHANGELOG.md` 本条。`PROJECT_PLAN.md` 未动（主 AI 统一勾选）。
 
 ---
-
 ## M2 收尾：FTS5 全文搜索 + upload.done SSE 载荷 schema（2026-08-29）
 
 执行 AI：DeepSeek-V4-Flash（主代理，ZCode）
@@ -2345,7 +2192,6 @@ M2 最后一个后端任务——全文搜索落地，全链路（协议→迁�
 文档：`DOMAIN_RULES.md` §3 新增「全文搜索口径」节（分词/AND/六维/子串/叠加/索引说明，行为唯一权威）；`GUIDE_API.md` 搜索实现状态；`HANDOVER.md` 进度与剩余任务（M2 后端全清）；`PROJECT_PLAN.md` M2 勾选；`CHANGELOG.md` 本条。
 
 ---
-
 ## 代码卫生排查与硬编码收敛（2026-08-29）
 
 执行 AI：GLM-5.3-Flash（主代理，ZCode）
@@ -2362,7 +2208,6 @@ M2 最后一个后端任务——全文搜索落地，全链路（协议→迁�
 验证：gofmt 无差异、go vet 通过、go build 通过、go test ./... 全绿。
 
 文档：`AI_README_FIRST.md` 新增「代码卫生约束」节（魔法值零容忍/第二次即提取/协议双写同步责任/安全字符串单一来源/调度参数禁内联/复用优先级/禁隐式调度耦合），警戒线表增「魔法字面量」行；`AGENTS.md` 警戒线索引同步。Web 端排查结论：手写代码干净，生成 SDK 未接线、baseUrl 配置策略留待 SDK 接线任务。Android 端仅生成物不适用。
-
 ## M2 后端先行：六批端点接线（2026-08-27 ~ 2026-08-29）
 
 执行 AI：GLM-5.3-Flash（主代理，ZCode）
@@ -2386,7 +2231,6 @@ M2 最后一个后端任务——全文搜索落地，全链路（协议→迁�
 已知遗留：本机 redocly 有 Windows libuv 退出崩溃 bug（校验本身通过，CI Linux 不受影响）；migrations/0001 的 trash_items 表未使用（回收站真相源是 meta 文件，filing 包设计），下轮评估是否在 0002+ 清理或启用。
 
 ---
-
 ## 底层重构与文档体系升级（2026-08-26，c7d4839）
 
 执行 AI：DeepSeek-V4（主代理 + 执行子代理）
@@ -2409,13 +2253,11 @@ M2 最后一个后端任务——全文搜索落地，全链路（协议→迁�
 - 新增根 `llms.txt`（llms.txt v2 格式文档导航）
 - AGENTS.md / AI_README_FIRST.md 增补模块边界、迁移纪律、生成物禁手改、commit scope 约定、Go/React 警戒线
 - ARCHITECTURE §5.1 模块边界强制小节、§10 CI 四 job 实况对齐 ci.yml；OBSERVABILITY/GUIDE_API readyz 免鉴权口径统一；HANDOVER search 包现状更正；PROJECT_PLAN 补常驻任务与验收门禁
-
 ## M1 收尾：一键启动脚本（2026-08-22，`1ae33eb`）
 
 执行 AI：GLM-5.3（主代理）
 
 双击 `启动服务端.bat` 即可启动服务端（显示局域网 IP 列表 + 防火墙提示 + 全路径调 go 规避 PATH 截断）。三次迭代修复：中文 echo 在 cmd 代码页下破坏后续命令解析 → 全 ASCII；`go` 不在继承 PATH → 全路径调用。已实测 healthz 通。
-
 ## M1 服务端核心闭环完成（2026-08-22，`4a42acd`）
 
 执行 AI：GLM-5.3（主代理 + 执行子代理 ×8）
@@ -2435,19 +2277,16 @@ M2 最后一个后端任务——全文搜索落地，全链路（协议→迁�
 | 接线与收尾 | 主代理 | wire.go 扫描适配器、FinishScan/SetScanner、sm=256 档、自噬防御修复与验收 |
 
 **集成验收实测发现并修复**：数据目录配置在库内时缩略图缓存（webp 白名单格式）被扫描器自噬入库——加两道防线（注册互斥校验 DATA_DIR_CONFLICT + scanner SkipDir/watch 过滤）并补测试。移动合并真机验证通过（改名后 asset_id 不变）。
-
 ## 协议变更：删除按需缩放副本（2026-08-22，`4a1f3da`）
 
 执行 AI：GLM-5.3（主代理）
 
 用户明确要求"查看永远发原件"：删除 `/media/preview` 端点与 `previewUrl` 字段，三端 SDK 重新生成。同步更新铁律 1（总说明）、ARCHITECTURE §7、GUIDE_API。同 commit 附带：DOMAIN_RULES 黑帧判定语义澄清（全部采样制）、ADR-0005 事件流无外键实现澄清、m4v 白名单补齐。
-
 ## CI 与仓库（2026-08-22，`848ef29`/`11a0fdb`）
 
 执行 AI：GLM-5.3（主代理）
 
 GitHub 私有仓库 `Surtr42u/qimeng-media` 建立；Actions 四道门禁（redocly 协议校验 / Go vet+test+build / Web tsc+build / make sdk 三端生成链）首跑全绿；actions 升级 v5/v6 + Go 缓存路径修复。
-
 ## M0 地基完成（2026-08-22，`1625db1`）
 
 执行 AI：GLM-5.3（主代理 + 执行子代理 ×3）
