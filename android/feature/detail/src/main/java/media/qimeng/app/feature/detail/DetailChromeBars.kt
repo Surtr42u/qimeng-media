@@ -8,10 +8,12 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -50,7 +52,8 @@ private const val CHROME_PRESS_ANIM_MS = 100
  * 顶部渐变 chrome（任务I I7，GUIDE_UI §详情页 L171）：返回（左）/ 当前序号 n/N（中）/
  * 信息（右），上浮于媒体舞台的渐变遮罩操作层（[CHROME_GRADIENT_ALPHA] 同 GUIDE 渐变档）；
  * 浅底/黑底随明暗切换（L161：图标 tint = onBackground，渐变底 = background，主题自洽）。
- * 状态栏避让经 statusBarsPadding（L275：顶部操作栏按 statusBars inset 动态加 padding）。
+ * 状态栏避让经原生 statusBars inset padding（L275：顶部操作栏按 statusBars inset 动态加
+ * padding；asPaddingValues 取原生值不受壳层 consumeWindowInsets 影响，见 Row 处注）。
  * 批次序号沿用旧「i/N」数据源（batchIndex 0 基展示 1 基）；无批次上下文（batchIndex<0，
  * 深链单卡=待拍板 #21）不渲染计数——翻件语义边界：禁止擅自补批次上下文基建。
  */
@@ -65,7 +68,10 @@ internal fun DetailTopChrome(
         modifier = Modifier
             .fillMaxWidth()
             .background(chromeTopGradient())
-            .statusBarsPadding()
+            // L275 顶部操作栏按 statusBars inset 加 padding——用 asPaddingValues 取原生
+            // inset：壳层 consumeWindowInsets 只影响 windowInsetsPadding 修饰符链，
+            // asPaddingValues 不受消费影响（B 案舞台 negate-inset 后语义恒正确）
+            .padding(WindowInsets.statusBars.asPaddingValues())
             .padding(horizontal = QimengDimens.SpaceS, vertical = QimengDimens.SpaceXS),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -97,8 +103,9 @@ internal fun DetailTopChrome(
 /**
  * 底部渐变操作层（任务I I7，GUIDE_UI §详情页 L172）：点赞 / 收藏 / 标签 / 快速转跳
  * 四图标均匀分布居中，渐变遮罩从透明渐变到 qmColorBg 90%；收藏/点赞图标区分空心/实心态
- * （L172），激活态 = primary 主色（对齐互动行 active 语义）。导航栏避让经
- * navigationBarsPadding（L275）。点赞/收藏与内容区互动行同链（VM toggle，乐观 disabled 同源）。
+ * （L172），激活态 = primary 主色（对齐互动行 active 语义）。导航栏避让经原生
+ * navigationBars inset padding（L275，asPaddingValues 不受壳层消费影响，见 Row 处注）。
+ * 点赞/收藏与内容区互动行同链（VM toggle，乐观 disabled 同源）。
  */
 @Composable
 internal fun DetailBottomChrome(
@@ -114,7 +121,10 @@ internal fun DetailBottomChrome(
         modifier = Modifier
             .fillMaxWidth()
             .background(chromeBottomGradient())
-            .navigationBarsPadding()
+            // L275 底部操作栏按 navigationBars inset 加 padding——asPaddingValues 取原生
+            // inset 不受壳层消费影响（同上注；B 案前 navigationBarsPadding 在舞台盒内读到
+            // 被消费的 0 值靠排版巧合可见，舞台加高后必须真值避让）
+            .padding(WindowInsets.navigationBars.asPaddingValues())
             .padding(vertical = QimengDimens.SpaceXS),
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
