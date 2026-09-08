@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import media.qimeng.app.core.data.repository.MediaRepository
+import media.qimeng.app.core.data.repository.MediaBatchIndex
 import media.qimeng.app.core.data.repository.AssetOrigUrlResolver
 import media.qimeng.app.core.data.repository.DataStoreGridPrefsRepository
 import media.qimeng.app.core.data.repository.GridPrefsRepository
@@ -70,6 +71,7 @@ data class FavoriteUiState(
 class FavoriteViewModel @Inject constructor(
     private val mediaRepository: MediaRepository,
     private val gridPrefs: GridPrefsRepository,
+    private val batchIndex: MediaBatchIndex,
     val origUrlResolver: AssetOrigUrlResolver,
 ) : ViewModel() {
 
@@ -196,6 +198,16 @@ class FavoriteViewModel @Inject constructor(
         val state = _uiState.value
         if (state.isLoading || state.nextCursor == null) return
         loadItems(cursor = state.nextCursor, append = true)
+    }
+
+    /**
+     * 进详情前的批次上下文写入（2026-09-09 拍板：收藏/历史对齐旧版补基建，首页同款机制）：
+     * 「已加载 = 当前显示清单」口径——收藏页 items 即整页显示，快照式整体替换
+     * [MediaBatchIndex.ids]，详情页据此得「i / N」序号与滑动切换（调用点在 FavoriteScreen
+     * 卡片点击，先写批次再交壳层导航）。
+     */
+    fun enterDetail(assetId: String) {
+        batchIndex.ids = _uiState.value.items.map { it.id }
     }
 
     fun clearError() {

@@ -15,6 +15,7 @@ import media.qimeng.app.core.data.repository.AssetOrigUrlResolver
 import media.qimeng.app.core.data.repository.DataStoreGridPrefsRepository
 import media.qimeng.app.core.data.repository.GridPrefsRepository
 import media.qimeng.app.core.data.repository.HistoryRepository
+import media.qimeng.app.core.data.repository.MediaBatchIndex
 import media.qimeng.app.core.data.repository.MediaRepository
 import media.qimeng.app.core.model.AlbumDim
 import media.qimeng.app.core.model.AssetPageResult
@@ -151,10 +152,12 @@ class HistoryViewModelTest {
         historyRepo: FakeHistoryRepository,
         mediaRepo: FakeMediaRepository,
         gridPrefs: FakeGridPrefsRepository = FakeGridPrefsRepository(),
+        batchIndex: MediaBatchIndex = MediaBatchIndex(),
     ): HistoryViewModel = HistoryViewModel(
         historyRepository = historyRepo,
         mediaRepository = mediaRepo,
         gridPrefs = gridPrefs,
+        batchIndex = batchIndex,
         origUrlResolver = object : AssetOrigUrlResolver {
             override suspend fun origUrl(assetId: String): String? = null
         },
@@ -391,4 +394,37 @@ class HistoryViewModelTest {
         advanceUntilIdle()
         assertEquals(listOf("b"), viewModel.uiState.value.items.map { it.id })
     }
+
+    // ---------- 批次上下文（2026-09-09 拍板：收藏/历史进详情补批次，首页同款机制） ----------
+
+    @Test
+    fun `enterDetail批次上下文 - 清单未落地时空批次 落地后含追加件且序号滑切可用`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val historyRepo = FakeHistoryRepository()
+            val mediaRepo = FakeMediaRepository()
+            val batchIndex = MediaBatchIndex()
+            val viewModel = viewModel(historyRepo, mediaRepo, batchIndex = batchIndex)
+            advanceUntilIdle()
+
+            // 首载在途（清单未落地）点卡：批次为空表——详情页序号区不显示（空批次语义）
+            viewModel.enterDetail("x")
+            assertTrue(batchIndex.ids.isEmpty())
+            assertEquals(-1, batchIndex.indexOf("x"))
+
+            // 首载落地两件（带 cursor 可翻页）+ 翻页追加一件后点卡：批次 = 当前显示清单（含追加件，lastViewedAt 倒序）
+            historyRepo.calls[0].gate.complete(historyPage(listOf(entry("a"), entry("b")), nextCursor = "c1"))
+            advanceUntilIdle()
+            viewModel.onNearBottom()
+            advanceUntilIdle() // 请求注册在 viewModelScope.launch 内，先推进调度再取 calls[1]
+            historyRepo.calls[1].gate.complete(historyPage(listOf(entry("c"))))
+            advanceUntilIdle()
+            viewModel.enterDetail("b")
+            assertEquals(listOf("a", "b", "c"), batchIndex.ids)
+            assertEquals(1, batchIndex.indexOf("b"))
+            assertEquals(3, batchIndex.size())
+
+            // 滑切数据链（详情页 moveBy 消费）：邻位可达、尾件越界返回 null
+            assertEquals("c", batchIndex.assetIdAt(batchIndex.indexOf("b"), +1))
+            assertNull(batchIndex.assetIdAt(batchIndex.indexOf("c"), +1))
+        }
 }

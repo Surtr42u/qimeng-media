@@ -142,8 +142,12 @@ fun FavoriteScreen(
                     // 暂缓新缩略图请求、停滚恢复（门控在 QimengThumbnail；QimengMediaGrid 开关）
                     pauseThumbnailsWhileScrolling = true,
                     // 卡片点击进详情（D3 同族顺手修复：onAssetClick 默认空实现漏传即静默无反应，
-                    // 镜像 AllScreen/HomeScreen 接线；收藏页暂无批次上下文写入，缺口与相册页同记待办）
-                    onAssetClick = { asset: MediaAsset -> onOpenAsset(asset.id) },
+                    // 镜像 AllScreen/HomeScreen 接线）；点击统一走：先写批次上下文（详情页 i/N
+                    // 序号+滑动切换数据链，2026-09-09 拍板对齐首页机制），再交壳层导航
+                    onAssetClick = { asset: MediaAsset ->
+                        viewModel.enterDetail(asset.id)
+                        onOpenAsset(asset.id)
+                    },
                 )
             }
             // 悬浮药丸面板：Box 叠放不推挤网格（与相册页同款——旧版 FrameLayout 叠放 + elevation 4dp，P9-2）

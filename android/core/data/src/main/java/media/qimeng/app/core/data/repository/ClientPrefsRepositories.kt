@@ -87,9 +87,9 @@ class DataStoreGridPrefsRepository @Inject constructor(
         const val MIN_ALBUM_COLUMNS = 2
         const val MAX_ALBUM_COLUMNS = 5
 
-        /** 缺省列数（旧版：首页双列、其余页双列起步） */
+        /** 缺省列数（首页双列；其余页 2026-09-09 用户拍板默认 3 列对齐旧版，推翻此前「双列起步」口径） */
         const val DEFAULT_HOME_COLUMNS = 2
-        const val DEFAULT_ALBUM_COLUMNS = 2
+        const val DEFAULT_ALBUM_COLUMNS = 3
 
         private val KEY_HOME_COLUMNS = intPreferencesKey("grid_columns_home")
         private val KEY_ALBUM_COLUMNS = intPreferencesKey("grid_columns_all")
