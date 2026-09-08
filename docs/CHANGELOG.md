@@ -40,6 +40,20 @@
 
 ---
 
+## feat(app): 任务I I5 收藏/历史复刻——双指缩放2-5列接线+列数共用全部页档持久化+详情返回resume重拉两页（2026-09-09 第一百五十四笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理，任务I-Android页面复刻卷 I5 收藏+浏览历史批；独占 feature:favorite+feature:history，依据 REPLICATION_GAPS §3.5 差距条目逐条清偿；接手工作树 I5 遗留半成品原地收尾，未回滚未重做）
+
+- **双指缩放 2-5 列接线（差距1，GUIDE_UI §公共UI工具 L300+§全部页 L149，R2 裁决图标豁免不覆盖手势）**：FavoriteScreen/HistoryScreen 网格容器接线既有 QimengGridPinchGesture（qimengPinchToColumns onStep/onGestureEnd，与 AllScreen.kt:254 既有接线逐行同构——feature:all 冻结区只读参考）；VM 侧 pinchColumns 瞬时值逐帧内存反馈、手势结束 commitPinchColumns 统一持久化一次，clamp 2..5 由 MIN/MAX_ALBUM_COLUMNS 常量锁定。
+- **列数持久化共用全部页档（差距2，GUIDE_UI L149 v1.15 口径「收藏/浏览历史/作者文件/全部→updateGridColumnsAll」）**：两页 VM 纯复用既有 GridPrefsRepository.albumColumns/setAlbumColumns（键 grid_columns_all），初始值 Eagerly stateIn 读档、手势结束回写同档——**core:data 零改动**（半成品已按此口径实现，本批核实并保留）；单测锁定初始读档（预置 4 非 2）/clamp 边界/落盘/幂等 no-op 四点。
+- **收藏页 resume 重拉（差距3，GUIDE_UI §收藏页 L410 详情返回自动刷新）**：FavoriteScreen 挂 ON_RESUME LifecycleEventObserver（镜像 HomeScreen I1 模式，覆盖详情 pop 返回与 App 回前台两路径）触发 VM 重拉第一页+候选；防叠加风暴=首个 ON_RESUME 与 init 首载天然重叠跳过 + 后续复用 refresh 的 isRefresh+isLoading 在途防重（不另造指纹）。
+- **历史页 resume 重拉（差距4，GUIDE_UI §浏览历史 L391 Flow 自动性语义）**：同款接线——详情浏览上报后 lastViewedAt 已变，服务端化后旧版 Room Flow 自动重排丢失，ON_RESUME 重拉补偿；同款防叠加。
+- **冻结项不渲染（差距5，协议缺口 §4-#29/#30 记档）**：作品/角色多选维持 AlbumFilterState 单值模型（/assets、/history 参数单值）；历史页「作品」维维持三维子集（/history 无 source/authorId）；无清除按钮（拍板③）——均不进本批，UI 不留半成品。
+- **门禁（口径披露）**：:feature:favorite/:feature:history testDebugUnitTest --rerun 实跑各 10 tests 0 failures（各含 I5 新增 4 用例：初始读档/pinch clamp+持久化/resume 首载跳过+后续重拉/resume 在途防重）；:app:assembleDebug 与 lintDebug **在 git worktree（HEAD+本批 diff）验证 BUILD SUCCESSFUL**——主工作树 :feature:detail 被 I7 并行批沉浸复刻半成品（未完成、不归本批）编译挡住，两 feature 模块互不依赖不受影响。
+- **模拟器 18461 虚构库走查（与 I4/I7 并行共享）**：收藏 resume 链=详情取消收藏→返回收藏页即时回「0 文件」空态（旧缓存不残留）；历史 resume 链=历史页点 W-01 进详情浏览→返回即重排至首位（旧序散图-02 退居第 2）；空态双分支文案/统计行/四芯片行/悬浮面板/日期分组 dump 结构在位。**pinch 双指注入受限披露**：adb 无多点注入 API，sendevent（reader 层确认两指 down/move/up 流完整）与 emulator console event send 两条通道均无法触发 Compose calculateZoom 步进（冻结参照系全部页同组件接线对照实验同样无效，判定为合成事件流与真实触摸的合批差异，非本批接线缺陷信号）；组件为 M4-2A-B2 已交付生产件+VM 语义 10 用例单测锁定，真机双指走查留待实机。列数写侧（pinch→持久化）重启保持与共档交叉验证依赖同一注入通道，同记受限；读侧共用档实证=两页+全部页网格同为 grid_columns_all 缺省 2 列（run-as 读 client_prefs.preferences_pb 该键未写档，读缺省一致），证据 %TEMP%\qimeng-i5-evidence\（resume 链前后 dump+截图+getevent 校准日志）。
+
+---
+
 
 ## feat(app): 任务I I1 首页复刻——刷新清空三tab缓存+点赞返回重排指纹（LikeMutationTracker，detail侧接线归I7）+胶囊按下缩放（2026-09-09 第一百五十笔）
 

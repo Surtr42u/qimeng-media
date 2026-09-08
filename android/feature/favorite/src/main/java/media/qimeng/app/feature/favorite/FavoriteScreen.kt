@@ -7,12 +7,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import media.qimeng.app.core.model.AlbumDim
 import media.qimeng.app.core.model.FacetOption
@@ -29,6 +33,7 @@ import media.qimeng.app.core.ui.component.QimengMediaGrid
 import media.qimeng.app.core.ui.component.QimengPill
 import media.qimeng.app.core.ui.component.QimengPullToRefresh
 import media.qimeng.app.core.ui.component.QimengTitleRow
+import media.qimeng.app.core.ui.component.qimengPinchToColumns
 import media.qimeng.app.core.ui.theme.QimengDimens
 // 页头组件共享文案在 :core:ui（nonTransitiveRClass 下跨模块取资源须引对方 R）
 import media.qimeng.app.core.ui.R as CoreUiR
@@ -38,7 +43,8 @@ import media.qimeng.app.core.ui.R as CoreUiR
  * （favoriteAt 降序）+ 四维芯片行 + 悬浮药丸面板（叠放不推挤网格）+ 日期分组 + 下拉刷新。
  * 头部形态照旧版实录 favorite.txt：返回 + 标题 + 芯片行 + 统计行「N 文件」（无筛选/列数图标——
  * 实录两页头部均无，主会话裁定 1/2）；无清空按钮语义在此不涉及；
- * 详情页返回自动刷新随 M4-3 接互动行后生效。
+ * 任务I I5：双指缩放调列数 2~5（列数图标豁免不覆盖手势，R2）+ 列数持久化共用全部页档
+ * （GUIDE_UI §全部页 L149 updateGridColumnsAll 口径）+ 详情页返回自动刷新（ON_RESUME 重拉）。
  */
 @Composable
 fun FavoriteScreen(
@@ -47,11 +53,24 @@ fun FavoriteScreen(
     viewModel: FavoriteViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    // 网格列数：共用全部页档（grid_columns_all），初始值读档、手势结束持久化（见 VM）
+    val columns by viewModel.gridColumns.collectAsStateWithLifecycle()
+    // 双指缩放期间的瞬时列数优先展示（逐帧反馈在内存、手势结束才持久化一次——镜像 AllScreen 接线）
+    val pinchColumns by viewModel.pinchColumns.collectAsStateWithLifecycle()
+    val displayColumns = pinchColumns ?: columns
     val animatedUrlResolver = remember(viewModel) { viewModel.origUrlResolver::origUrl }
-    // 收藏网格固定 3 列起步（覆盖页无列数持久化需求，规格书 §收藏页 3 列网格；
-    // 头部不传列数控件——实录两页标题行无列数图标，主会话 2026-09-07 裁定 2）
-    val columns = FAVORITE_COLUMNS
     val nowMs = remember { System.currentTimeMillis() }
+
+    // 详情页返回自动刷新（GUIDE_UI §收藏页 L410）：返回/回前台（ON_RESUME）触发 VM 重拉，
+    // 防叠加语义在 FavoriteViewModel.onResumed（镜像 HomeScreen I1 模式）
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) viewModel.onResumed()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     val pillModel = FourDimPillModel(
         filter = state.filter,
@@ -96,7 +115,14 @@ fun FavoriteScreen(
             QimengPullToRefresh(
                 isRefreshing = state.isRefreshing,
                 onRefresh = viewModel::refresh,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    // 双指缩放调列数 2~5（GUIDE_UI §公共UI工具 L300）：步进即时生效（内存），
+                    // 手势结束统一持久化一次到共用全部页档（镜像 AllScreen 既有接线）
+                    .qimengPinchToColumns(
+                        onStep = viewModel::adjustColumnsLive,
+                        onGestureEnd = viewModel::commitPinchColumns,
+                    ),
             ) {
                 if (state.items.isEmpty()) {
                     // 空态文案两分支（旧仓库 FavoriteFragment.kt L370-380 逐字，资源在 strings.xml）：
@@ -106,12 +132,15 @@ fun FavoriteScreen(
                 }
                 QimengMediaGrid(
                     sections = state.items.groupByDateLabel(nowMs) { it.modifiedAtMs },
-                    columns = columns,
+                    columns = displayColumns,
                     animatedUrlResolver = animatedUrlResolver,
                     // 底部预留 180dp：防悬浮药丸面板展开时遮挡末行（与相册页同款，旧版
                     // fragment_all_files.xml L149 clipToPadding=false 场景）
                     bottomContentPadding = QimengDimens.ListBottomContentPadding,
                     onNearBottom = viewModel::onNearBottom,
+                    // 滚动暂停缩略图加载（任务I I5，GUIDE_UI §收藏页 L411）：拖拽/fling 期间
+                    // 暂缓新缩略图请求、停滚恢复（门控在 QimengThumbnail；QimengMediaGrid 开关）
+                    pauseThumbnailsWhileScrolling = true,
                     // 卡片点击进详情（D3 同族顺手修复：onAssetClick 默认空实现漏传即静默无反应，
                     // 镜像 AllScreen/HomeScreen 接线；收藏页暂无批次上下文写入，缺口与相册页同记待办）
                     onAssetClick = { asset: MediaAsset -> onOpenAsset(asset.id) },
@@ -143,6 +172,3 @@ private fun dispatchPill(
         AlbumDim.TYPE -> viewModel.selectMediaType(spec.payload as? media.qimeng.app.core.model.MediaKind)
     }
 }
-
-/** 收藏页网格列数（旧版 §收藏页 3 列网格语义） */
-private const val FAVORITE_COLUMNS = 3
