@@ -11,6 +11,16 @@
 
 ---
 
+## fix(app): 任务I I5 补齐——滑动暂停缩略图加载 core:ui 门控参数（2026-09-09 第一百五十六笔）
+
+执行 AI：GLM-5.3-Flash（监督会话续作 executor 实现；I5 主体=e516f12 原会话 executor，本笔闭合其缺失依赖修复 broken master）
+
+- **修编译断裂**：e516f12 已入库两页 `pauseThumbnailsWhileScrolling = true` 接线，但承载该参数的 `QimengThumbnail`（`paused` 门控）与 `QimengMediaGrid`（开关参数，默认 false 零波及）两文件未随批提交——stash 对照实测缺此二文件 `:feature:favorite:compileDebugKotlin` 失败。本笔补齐闭合。
+- 依据：GUIDE_UI L394/L411「滑动暂停缩略图加载」（H0 清单漏收项，续作按 GUIDE_UI 补做）；两页开关随 I5 批开启。
+- 门禁：模块编译对照（stash 红→恢复绿）；全量四连门禁于 I7 收尾态已绿（app-test/app-lint/app-build/lint 全仓 0 errors）。
+
+---
+
 ## feat(app): 任务I I7 详情页沉浸复刻——4层沉浸结构+chrome显隐/系统栏+信息/快速转跳BottomSheet+播放返回拦截+海报态横滑+点赞指纹接线（全链重排闭环）（2026-09-09 第一百五十五笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理，任务I-Android页面复刻卷 I7 详情页批；独占 feature:detail，依据 REPLICATION_GAPS §3.7 差距条目逐条清偿；接手工作树 I7 遗留半成品原地收尾，未回滚未重做。**执行披露**：本批 feature:detail 在盘点半成品期间检测到另一并行续作会话同面修错与走查（04:49 编译错收敛、05:10 DetailScreen 舞台高度改 BoxWithConstraints.maxHeight），两次上报主会话仲裁未获回复；本笔按现状树收口提交，含该会话同批改动，特此记档）
