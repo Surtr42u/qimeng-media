@@ -50,6 +50,8 @@ internal object SdkDetailMappers {
         height = detail.height,
         tags = detail.tags.orEmpty().map(::toDetailTag),
         authors = detail.authors.orEmpty().map(::toDetailAuthor),
+        // 库内相对路径原样透传（文件整理弹窗预填；null = 库根，任务G G1b）
+        directory = detail.directory,
     )
 
     fun toDetailTag(tag: Tag): DetailTag = DetailTag(

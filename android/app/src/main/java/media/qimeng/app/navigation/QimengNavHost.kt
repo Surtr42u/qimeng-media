@@ -27,6 +27,8 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import media.qimeng.app.core.ui.component.TabScrollController
 import media.qimeng.app.feature.all.AllScreen
+import media.qimeng.app.feature.author.AuthorCollectionRoutes
+import media.qimeng.app.feature.author.AuthorCollectionScreen
 import media.qimeng.app.feature.author.AuthorScreen
 import media.qimeng.app.feature.detail.DetailRoutes
 import media.qimeng.app.feature.detail.DetailScreen
@@ -193,9 +195,20 @@ fun QimengNavHost(
             composable(Routes.AUTHORS) {
                 AuthorScreen(
                     onBack = { navController.popBackStack() },
-                    // 行点击进作者集合页（Web /app/collection/author/{name} 等价物）：
-                    // G2 批只留接口接线占位，集合页本身归 G1b 批实现
-                    onAuthorClick = { _, _ -> },
+                    // 行点击进作者集合页（任务G G1b 接线：Web /app/collection/author/{name}
+                    // 等价物；路由带 id+名字双参数，见 AuthorCollectionRoutes 注释）
+                    onAuthorClick = { authorId, displayName ->
+                        navController.navigate(AuthorCollectionRoutes.authorCollectionRoute(authorId, displayName))
+                    },
+                )
+            }
+            // 作者集合页（任务G G1b）：路由契约单源在 feature:author（DetailRoutes 同范式，
+            // feature 禁依赖 :app，壳层反向引用合法）；路由参数由页面 ViewModel 经
+            // SavedStateHandle 读取，此处无需展开 arguments
+            composable(AuthorCollectionRoutes.AUTHOR_COLLECTION_ROUTE) {
+                AuthorCollectionScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenAsset = { assetId -> navController.navigate(DetailRoutes.detailRoute(assetId)) },
                 )
             }
             composable(Routes.UPLOAD) {
@@ -214,6 +227,10 @@ fun QimengNavHost(
                     onOpenAsset = { assetId, _ ->
                         // 批次清单已由 DetailViewModel.upNextJump 换成推荐栏清单，壳层只管导航
                         navController.navigate(DetailRoutes.detailRoute(assetId))
+                    },
+                    // 作者卡名字点击进作者集合页（任务G G1b 接线；原始名不带 ·COS 后缀）
+                    onOpenAuthor = { authorId, displayName ->
+                        navController.navigate(AuthorCollectionRoutes.authorCollectionRoute(authorId, displayName))
                     },
                 )
             }

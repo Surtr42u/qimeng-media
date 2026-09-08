@@ -4,12 +4,14 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -28,6 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
@@ -45,6 +48,8 @@ import media.qimeng.app.core.ui.component.formatShortDate
 import media.qimeng.app.core.ui.icon.BackIcon
 import media.qimeng.app.core.ui.icon.ChevronLeftIcon
 import media.qimeng.app.core.ui.icon.ChevronRightIcon
+import media.qimeng.app.core.ui.icon.DeleteIcon
+import media.qimeng.app.core.ui.icon.DriveFileMoveIcon
 import media.qimeng.app.core.ui.icon.StarIcon
 import media.qimeng.app.core.ui.icon.StarOutlinedIcon
 import media.qimeng.app.core.ui.icon.ThumbUpIcon
@@ -265,14 +270,19 @@ private const val ACT_BOUNCE_SPRING_STIFFNESS = Spring.StiffnessMediumLow
  * 互动行（Web .detail-actions）：点赞（ThumbUp+计数，likedToday 高亮）+ 收藏（Star+文案，isFavorite 高亮）。
  * G1a：图标形态随激活切换（active=filled 实底 / 未激活=outlined 描边——Web .detail-act.active
  * svg fill:currentColor 同语义）。
+ * 任务G G1b：右端追加文件操作两钮「整理 / 删除」（Web FileOpsButton 同位置同语义——
+ * 详情页有 assetId/directory 完整上下文，是文件三操作的挂载点；删除 = 移入回收站，铁律 4）。
  */
 @Composable
 internal fun DetailInteractionRow(
     asset: AssetDetail,
     likePending: Boolean,
     favoritePending: Boolean,
+    fileOpsPending: Boolean,
     onToggleLike: () -> Unit,
     onToggleFavorite: () -> Unit,
+    onOpenMoveDialog: () -> Unit,
+    onOpenDeleteDialog: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -319,6 +329,42 @@ internal fun DetailInteractionRow(
                 fontWeight = FontWeight.Bold,
             )
         }
+        // 文件操作两钮推到行右端（基准说明「互动行右端」；窄屏与点赞/收藏同行换行时
+        // FlowRow 未用——Web 同一行 flex，超宽由内容自适应，暂保持 Row 语义）
+        Spacer(modifier = Modifier.weight(1f))
+        DetailActionButton(
+            active = false,
+            enabled = !fileOpsPending,
+            contentDescription = stringResource(R.string.detail_file_ops_move),
+            onClick = onOpenMoveDialog,
+        ) {
+            Icon(
+                imageVector = DriveFileMoveIcon,
+                contentDescription = null,
+            )
+            Text(
+                text = stringResource(R.string.detail_file_ops_move),
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+        DetailActionButton(
+            active = false,
+            enabled = !fileOpsPending,
+            danger = true,
+            contentDescription = stringResource(R.string.detail_file_ops_delete),
+            onClick = onOpenDeleteDialog,
+        ) {
+            Icon(
+                imageVector = DeleteIcon,
+                contentDescription = null,
+            )
+            Text(
+                text = stringResource(R.string.detail_file_ops_delete),
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+            )
+        }
     }
 }
 
@@ -328,12 +374,15 @@ internal fun DetailInteractionRow(
  * 软底退役）；点击 bounce 缩放动效（点击瞬间 snap 到 [ACT_BOUNCE_PRESSED_SCALE]，MediumBouncy
  * spring 回弹到 1，过冲即 Web act-bounce 的弹跳感；点赞/收藏两钮共用同款，Web 点赞弹跳/
  * 通用 :active 按下缩放的合并表达）。
+ * 任务G G1b 补 danger 档：删除钮未激活态用 error 色系（危险操作的常驻视觉语义；
+ * Web 的 danger 语义在确认弹窗，此处按钮先行着色提示）。
  */
 @Composable
 private fun DetailActionButton(
     active: Boolean,
     enabled: Boolean,
     contentDescription: String,
+    danger: Boolean = false,
     onClick: () -> Unit,
     content: @Composable RowScope.() -> Unit,
 ) {
@@ -368,6 +417,9 @@ private fun DetailActionButton(
         contentColor = if (active) {
             // Web .detail-act.active：color var(--invert) 反色字
             MaterialTheme.colorScheme.onPrimary
+        } else if (danger) {
+            // danger 档（G1b 删除钮）：错误色文字提示破坏性语义
+            MaterialTheme.colorScheme.error
         } else {
             MaterialTheme.colorScheme.onSurfaceVariant
         },
@@ -465,15 +517,18 @@ internal fun DisplayPill(
 
 /**
  * 作者卡（Web AuthorCard）：无作者不渲染；每行 displayName（isCos 追加「 ·COS」，
- * Web authorDisplayName 同口径）+ 关注按钮。作者名跳转不做——App 尚无作者文件页（交付报告记缺口）。
- * G1a 卡片化：套 [QimengRankCard] 描边卡盒（Web .detail-side 作者卡复用 .rank-card 卡盒同语义），
- * 卡内边距由卡盒统一施加（RankCardInnerPadding），外层只留屏幕边距与节间距。
+ * Web authorDisplayName 同口径）+ 关注按钮。作者名点击进作者集合页（任务G G1b 接线——
+ * Web AuthorCard 名字是链接；回调 (id, 原始名) 双参，原始名不带 ·COS 后缀，
+ * Web 跳转用原始名同语义）。G1a 卡片化：套 [QimengRankCard] 描边卡盒（Web .detail-side
+ * 作者卡复用 .rank-card 卡盒同语义），卡内边距由卡盒统一施加（RankCardInnerPadding），
+ * 外层只留屏幕边距与节间距。
  */
 @Composable
 internal fun DetailAuthorCard(
     authors: List<DetailAuthor>,
     followPending: Boolean,
     onToggleFollow: (String) -> Unit,
+    onOpenAuthor: (authorId: String, displayName: String) -> Unit = { _, _ -> },
 ) {
     if (authors.isEmpty()) return
     val cosSuffix = stringResource(R.string.detail_author_cos_suffix)
@@ -497,7 +552,13 @@ internal fun DetailAuthorCard(
                     Text(
                         text = if (author.isCos) author.displayName + cosSuffix else author.displayName,
                         style = MaterialTheme.typography.bodyLarge,
-                        modifier = Modifier.weight(1f),
+                        // 名字即链接（Web 同语义）：主色 + 可点，触区补竖向内边距防误触邻行
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .weight(1f)
+                            .clipToBounds()
+                            .clickable { onOpenAuthor(author.id, author.displayName) }
+                            .padding(vertical = QimengDimens.SpaceXS),
                     )
                     FollowButton(
                         followed = author.followed,

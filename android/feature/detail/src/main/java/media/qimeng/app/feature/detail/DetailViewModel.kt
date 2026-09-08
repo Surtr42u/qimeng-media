@@ -14,6 +14,7 @@ import kotlinx.coroutines.launch
 import media.qimeng.app.core.data.repository.AuthorRepository
 import media.qimeng.app.core.data.repository.DetailRepository
 import media.qimeng.app.core.data.repository.MediaBatchIndex
+import media.qimeng.app.core.data.repository.MoveConflictException
 import media.qimeng.app.core.model.AssetDetail
 import media.qimeng.app.core.model.MediaAsset
 import media.qimeng.app.core.model.MediaKind
@@ -63,6 +64,15 @@ data class DetailUiState(
     val videoWatched: Boolean = false,
     /** 时间轴标签（3d，仅视频资产加载；GET 按 timeMillis 升序，服务端排序） */
     val timelineTags: List<TimelineTag> = emptyList(),
+    // ---------- 文件操作（任务G G1b：整理/删除） ----------
+    /** 整理弹窗开关（条件挂载——打开即从当前 directory/fileName 惰性复位预填值） */
+    val moveSheetOpen: Boolean = false,
+    /** 删除确认弹窗开关 */
+    val deleteConfirmOpen: Boolean = false,
+    /** 文件操作请求进行中（两弹窗确认钮与互动行两钮 disabled 同源） */
+    val fileOpsPending: Boolean = false,
+    /** 整理弹窗内失败文案（null=无失败；弹窗内独立展示——错误横幅在弹窗遮罩后不可见） */
+    val moveError: String? = null,
 )
 
 /**
@@ -651,6 +661,92 @@ class DetailViewModel @Inject constructor(
         }
     }
 
+    // ---------- 文件操作（任务G G1b：POST /move + DELETE=回收站） ----------
+
+    /** 打开整理弹窗（预填值来自当前 asset 的 directory/fileName，弹窗条件挂载即复位） */
+    fun openMoveSheet() {
+        if (_uiState.value.asset == null || _uiState.value.fileOpsPending) return
+        _uiState.value = _uiState.value.copy(moveSheetOpen = true, moveError = null)
+    }
+
+    fun dismissMoveSheet() {
+        if (_uiState.value.fileOpsPending) return // 请求在途不许关（防丢结果上下文）
+        _uiState.value = _uiState.value.copy(moveSheetOpen = false, moveError = null)
+    }
+
+    /** 打开删除确认弹窗（danger 二次确认，文案在弹窗内明示回收站语义） */
+    fun openDeleteConfirm() {
+        if (_uiState.value.asset == null || _uiState.value.fileOpsPending) return
+        _uiState.value = _uiState.value.copy(deleteConfirmOpen = true)
+    }
+
+    fun dismissDeleteConfirm() {
+        if (_uiState.value.fileOpsPending) return
+        _uiState.value = _uiState.value.copy(deleteConfirmOpen = false)
+    }
+
+    /**
+     * 整理提交（POST /assets/{id}/move：改名 = 原目录 + 新名；移动 = 新目录 + 原名）。
+     * 成功：关弹窗 + 重拉详情（directory/fileName 落新值，orig/thumb 签名直链随新路径刷新），
+     * [onMoved] 回调交 UI 层做 toast（Web toast.success 同语义；VM 不触 Android 资源）。
+     * 失败：弹窗保持打开 + 弹窗内失败文案（409 同名 → 领域文案；其余 → 通用 + 透传 message）。
+     *
+     * @param moved/moved & renamed 由 UI 侧（弹窗输入态）判定的变化维度，仅用于 toast 文案分流
+     */
+    fun moveAsset(targetDir: String, newName: String?, onMoved: (moved: Boolean, renamed: Boolean) -> Unit) {
+        val id = assetId ?: return
+        val current = _uiState.value
+        if (current.fileOpsPending) return
+        val asset = current.asset ?: return
+        _uiState.value = current.copy(fileOpsPending = true, moveError = null)
+        viewModelScope.launch {
+            runCatching { detailRepository.moveAsset(id, targetDir, newName) }
+                .onSuccess {
+                    _uiState.value = _uiState.value.copy(
+                        fileOpsPending = false,
+                        moveSheetOpen = false,
+                        moveError = null,
+                    )
+                    onMoved(targetDir != (asset.directory ?: ""), newName != null)
+                    reloadAssetOnly()
+                }
+                .onFailure { error ->
+                    val message = if (error is MoveConflictException) {
+                        ERROR_MOVE_CONFLICT
+                    } else {
+                        "$ERROR_MOVE_FAILED${error.message.orEmpty()}"
+                    }
+                    _uiState.value = _uiState.value.copy(fileOpsPending = false, moveError = message)
+                }
+        }
+    }
+
+    /**
+     * 删除提交（DELETE = 移入回收站，铁律 4；浏览/点赞等记录保留）。
+     * 成功：[onDeleted] 回调交 UI 层做 toast + onBack() 离开已删资产（Web navigate(-1)
+     * 同收尾；VM 不做导航）。失败：关弹窗 + errorMessage 横幅（弹窗已关，横幅可见）。
+     */
+    fun deleteAsset(onDeleted: () -> Unit) {
+        val id = assetId ?: return
+        val current = _uiState.value
+        if (current.fileOpsPending) return
+        _uiState.value = current.copy(fileOpsPending = true)
+        viewModelScope.launch {
+            runCatching { detailRepository.deleteAsset(id) }
+                .onSuccess {
+                    _uiState.value = _uiState.value.copy(fileOpsPending = false, deleteConfirmOpen = false)
+                    onDeleted()
+                }
+                .onFailure {
+                    _uiState.value = _uiState.value.copy(
+                        fileOpsPending = false,
+                        deleteConfirmOpen = false,
+                        errorMessage = ERROR_DELETE_ASSET,
+                    )
+                }
+        }
+    }
+
     companion object {
         /** 推荐栏初始 seed：0 = 协议不打散固定序（Web useUpNextList 初始 0 同款） */
         const val INITIAL_UP_NEXT_SEED = 0L
@@ -671,5 +767,11 @@ class DetailViewModel @Inject constructor(
         private const val ERROR_SAVE_TAGS = "标签保存失败："
         private const val ERROR_ADD_TIMELINE_TAG = "时间轴标签添加失败"
         private const val ERROR_DELETE_TIMELINE_TAG = "时间轴标签删除失败"
+
+        // 文件操作文案（任务G G1b；中文含操作名。服务端 409 同名是可预期输入，
+        // 给专门文案而非笼统失败——TagNameConflictException 分流同范式）
+        private const val ERROR_MOVE_CONFLICT = "目标位置已有同名文件，请换个名字或目录"
+        private const val ERROR_MOVE_FAILED = "整理失败："
+        private const val ERROR_DELETE_ASSET = "移入回收站失败，请重试"
     }
 }

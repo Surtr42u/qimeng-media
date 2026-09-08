@@ -11,6 +11,17 @@
 
 ---
 
+## feat(app): 任务G G1b 详情页交互补齐——文件操作+作者集合页（2026-09-08 第一百四十五笔）
+
+执行 AI：GLM-5.3（主代理调度；executor 执行/主代理模拟器全链验证，任务G-Android对齐卷 G1b）
+
+- **文件操作（对齐 Web FileOpsButton）**：互动行右端「整理/删除」两钮（DriveFileMove/Delete 自持图标）；整理弹窗=新名输入预填 fileName+目标目录预填当前目录（**简化取舍：Web 目录树选择器→文本输入「库内相对路径，留空=库根」，目录树组件留后续批**）+409 同名领域异常中文文案；删除=danger 二次确认（文案逐字对齐 Web，明示回收站可恢复=铁律4）→成功 Toast+onBack()。Repository 端口扩 moveAsset/deleteAsset（封 SDK 既有端点，零协议）；AssetDetail 补 directory 字段透传。
+- **作者集合页**（新路由 author_collection/{authorId}/{authorName}，路由契约单源在 feature:author 沿 DetailRoutes 范式）：QimengTopBar(作者名)+计数行「作者 · N 个文件」+日期分组网格+onNearBottom cursor 增量分页+空态「该作者下暂无内容。」；数据复用 MediaRepository.assets(AssetQuery(authorId, includeCos=true)) 零扩端点（includeCos=true 对齐 Web CollectionPage 口径，单测锁定——不补则 COS 作者集合恒空）。**三处接线**：AuthorScreen 行点击（G2 占位替换）/详情页作者卡名字可点（主色+clickable）/UpNext 副行**按 Web 基准跳过**（Web 副行作者名非独立链接+AssetSummary 无作者 id，现状=与 Web 一致非缺口）。
+- **新增 29 测**（feature:detail 101/feature:author 12 含路由编码 6+VM 分页 6/core:data 57 含 directory 映射）：整理表单可提交判定/路由编码中文与斜杠劈裂/取数参数/409 领域文案/删除回调。
+- **模拟器全链验证**（18461 虚构库）：改名「…gif→…gif%2dG1B」生效（详情标题刷新+API 对账）→API 恢复原名；删除→danger 确认→回列表→trash API 实证在位→API restore 恢复 23 件基线；作者管理行点击与详情作者卡点击均进集合页（测试作者一·3 文件·周日/周六/周四分组）。**中途实证 dev token TTL 过期链**：dwell 401 终局丢弃（队列口径正确）+AuthInterceptor 清 token 回登录页+空密码重登恢复——正常过期行为记录在案。截图 %TEMP%\qimeng-g1b-evidence\。
+
+---
+
 ## feat(app): 任务G G1a 详情页排版对齐 Web（2026-09-08 第一百四十四笔）
 
 执行 AI：GLM-5.3（主代理调度；executor 执行/主代理模拟器验证，任务G-Android对齐卷 G1a）

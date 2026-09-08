@@ -34,6 +34,27 @@
     <string name="detail_favorite">收藏</string>
     <string name="detail_favorite_active">已收藏</string>
 
+    <!-- 文件操作（任务G G1b：整理/删除——Web FileOpsButton/FileOpsDialogs/MoveDialog 同语义文案） -->
+    <string name="detail_file_ops_move">整理</string>
+    <string name="detail_file_ops_delete">删除</string>
+    <string name="detail_move_title">整理文件</string>
+    <!-- 对齐 Web MoveDialog desc：同名拒绝不覆盖语义 -->
+    <string name="detail_move_desc">修改文件名或目标目录；目标位置已有同名文件时将被拒绝（不覆盖）。</string>
+    <string name="detail_move_name_placeholder">新文件名（含扩展名）</string>
+    <string name="detail_move_dir_placeholder">目标目录</string>
+    <string name="detail_move_dir_hint">库内相对路径，留空 = 库根</string>
+    <string name="detail_move_confirm">保存</string>
+    <!-- Web dirLabel(空串)=「库根」的 Android 侧等价词 -->
+    <string name="detail_move_root_dir">库根</string>
+    <string name="detail_move_toast_both">已移动到「%1$s」并重命名为「%2$s」</string>
+    <string name="detail_move_toast_moved">已移动到「%1$s」</string>
+    <string name="detail_move_toast_renamed">已重命名为「%1$s」</string>
+    <!-- 删除确认（Web FileOpsDialogs ConfirmDialog 文案逐字；铁律4=移入回收站非物理删除） -->
+    <string name="detail_delete_title">移入回收站「%1$s」？</string>
+    <string name="detail_delete_desc">文件将移入回收站并从媒体库移除（浏览/点赞等记录保留）。\n可在维护页「回收站」恢复。</string>
+    <string name="detail_delete_confirm">移入回收站</string>
+    <string name="detail_delete_toast">「%1$s」已移入回收站（可在维护页恢复）</string>
+
     <!-- 标签行 / 标签管理弹窗（LEGACY §A：当前标签空态=暂无标签；弹窗外层可滚动） -->
     <string name="detail_tag_manage">管理</string>
     <string name="detail_tag_add">+ 添加标签</string>

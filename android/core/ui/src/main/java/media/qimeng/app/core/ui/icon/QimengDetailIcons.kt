@@ -89,3 +89,21 @@ val ChevronRightIcon: ImageVector = materialIcon(
     name = "QimengChevronRight",
     pathData = "M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z",
 )
+
+/**
+ * 整理（Material Icons "drive_file_move"，任务G G1b）：互动行「整理」钮图标——移动到其他
+ * 目录/重命中的语义（Web FileOpsButton 用 lucide FolderInput，Material 侧最贴近的移动语义图标）。
+ */
+val DriveFileMoveIcon: ImageVector = materialIcon(
+    name = "QimengDriveFileMove",
+    pathData = "M20 6h-8l-2-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-6 12v-3h-4v-4h4V8l5 5-5 5z",
+)
+
+/**
+ * 删除（Material Icons "delete"，任务G G1b）：互动行「删除」钮图标（Web FileOpsButton 用
+ * lucide Trash2 同语义）；语义 = 移入回收站（铁律 4），非物理删除。
+ */
+val DeleteIcon: ImageVector = materialIcon(
+    name = "QimengDelete",
+    pathData = "M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z",
+)

@@ -1,5 +1,6 @@
 package media.qimeng.app.feature.detail
 
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -57,12 +58,14 @@ import media.qimeng.app.core.ui.theme.QimengDimens
  * @param onBack 返回（壳层 popBackStack）
  * @param onOpenAsset 跳资产（壳层导航 push 叠栈）：推荐栏跳转先经 VM.upNextJump 换批，
  *   兄弟资产滑动不换批（批次就是当前清单）——两条路共用此回调但只有前者动批次
+ * @param onOpenAuthor 跳作者集合页（任务G G1b：作者卡名字点击，壳层导航 push 叠栈）
  */
 @Composable
 fun DetailScreen(
     assetId: String,
     onBack: () -> Unit,
     onOpenAsset: (assetId: String, batchIds: List<String>) -> Unit,
+    onOpenAuthor: (authorId: String, displayName: String) -> Unit = { _, _ -> },
     viewModel: DetailViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -147,6 +150,7 @@ fun DetailScreen(
                     viewModel.upNextJump()
                     onOpenAsset(id, batchIds)
                 },
+                onOpenAuthor = onOpenAuthor,
                 onPlaybackStarted = viewModel::onPlaybackStarted,
                 onPositionChanged = viewModel::onPositionChanged,
                 onAddTimelineTag = viewModel::addTimelineTag,
@@ -154,6 +158,9 @@ fun DetailScreen(
                 onToggleLike = viewModel::toggleLike,
                 onToggleFavorite = viewModel::toggleFavorite,
                 onToggleFollow = viewModel::toggleFollow,
+                // 文件操作（任务G G1b）：互动行右端两钮只开关弹窗，提交走 VM（铁律 7 UI 零网络）
+                onOpenMoveDialog = viewModel::openMoveSheet,
+                onOpenDeleteDialog = viewModel::openDeleteConfirm,
                 onOpenTagSheet = viewModel::openTagSheet,
                 onReshuffle = viewModel::reshuffleUpNext,
                 onDismissError = viewModel::clearError,
@@ -163,6 +170,56 @@ fun DetailScreen(
                 onDismissTagSheet = viewModel::dismissTagSheet,
             )
         }
+    }
+
+    // 文件操作弹窗（任务G G1b）：成功 toast 挂系统层（android.widget.Toast，离开本页仍可见
+    // ——Web 根 Toaster 的 Android 等价物；App 无 snackbar 基建，Toast 是平台标准件）。
+    // 删除成功后 onBack() 离开已删资产（Web navigate(-1) 同收尾）；列表数据刷新依赖
+    // 返回后的自然重取（Compose 列表无 TanStack 缓存，返回即重拉——VM 无须通知列表页）
+    val fileOpsAsset = state.asset
+    if (state.moveSheetOpen && fileOpsAsset != null) {
+        DetailMoveDialog(
+            assetId = fileOpsAsset.id,
+            currentDir = fileOpsAsset.directory.orEmpty(),
+            currentName = fileOpsAsset.fileName,
+            pending = state.fileOpsPending,
+            errorMessage = state.moveError,
+            onSubmit = { targetDir, newName ->
+                viewModel.moveAsset(targetDir, newName) { moved, renamed ->
+                    val message = when {
+                        moved && renamed -> context.getString(
+                            R.string.detail_move_toast_both,
+                            targetDir.ifEmpty { context.getString(R.string.detail_move_root_dir) },
+                            newName.orEmpty(),
+                        )
+                        moved -> context.getString(
+                            R.string.detail_move_toast_moved,
+                            targetDir.ifEmpty { context.getString(R.string.detail_move_root_dir) },
+                        )
+                        else -> context.getString(R.string.detail_move_toast_renamed, newName.orEmpty())
+                    }
+                    Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                }
+            },
+            onDismiss = viewModel::dismissMoveSheet,
+        )
+    }
+    if (state.deleteConfirmOpen && fileOpsAsset != null) {
+        DetailDeleteConfirmDialog(
+            fileName = fileOpsAsset.fileName,
+            pending = state.fileOpsPending,
+            onConfirm = {
+                viewModel.deleteAsset {
+                    Toast.makeText(
+                        context,
+                        context.getString(R.string.detail_delete_toast, fileOpsAsset.fileName),
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                    onBack()
+                }
+            },
+            onDismiss = viewModel::dismissDeleteConfirm,
+        )
     }
     // 图片全屏查看覆盖层（D1）：仅资产就绪时挂载。Dialog 独立窗口铺满整屏（不受壳层
     // Scaffold padding 约束，选型理由见组件 KDoc）；单击/系统返回退出回排版态。
@@ -187,6 +244,7 @@ private fun DetailLoadedContent(
     onToggleChrome: () -> Unit,
     onOpenFullScreen: () -> Unit,
     onOpenAsset: (assetId: String, batchIds: List<String>) -> Unit,
+    onOpenAuthor: (authorId: String, displayName: String) -> Unit,
     onPlaybackStarted: () -> Unit,
     onPositionChanged: (positionSeconds: Double) -> Unit,
     onAddTimelineTag: (timeMillis: Long, name: String) -> Unit,
@@ -194,6 +252,8 @@ private fun DetailLoadedContent(
     onToggleLike: () -> Unit,
     onToggleFavorite: () -> Unit,
     onToggleFollow: (String) -> Unit,
+    onOpenMoveDialog: () -> Unit,
+    onOpenDeleteDialog: () -> Unit,
     onOpenTagSheet: () -> Unit,
     onReshuffle: () -> Unit,
     onDismissError: () -> Unit,
@@ -237,14 +297,18 @@ private fun DetailLoadedContent(
             asset = asset,
             likePending = state.likePending,
             favoritePending = state.favoritePending,
+            fileOpsPending = state.fileOpsPending,
             onToggleLike = onToggleLike,
             onToggleFavorite = onToggleFavorite,
+            onOpenMoveDialog = onOpenMoveDialog,
+            onOpenDeleteDialog = onOpenDeleteDialog,
         )
         DetailTagRow(tags = asset.tags, onOpenTagSheet = onOpenTagSheet)
         DetailAuthorCard(
             authors = asset.authors,
             followPending = state.followPendingAuthorId != null,
             onToggleFollow = onToggleFollow,
+            onOpenAuthor = onOpenAuthor,
         )
         DetailUpNextCard(
             upNext = state.upNext,

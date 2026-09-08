@@ -10,6 +10,7 @@ package media.qimeng.app.core.model
  * @param lastPositionSeconds 断点续播位置秒（协议 BigDecimal → Double；已看完判定在 3b/3c 消费）
  * @param tags 详情标签（服务端按关联时间倒序返回——「最近添加置顶」，LEGACY §A）
  * @param authors 详情作者完整对象（关注态随行）
+ * @param directory 当前所在目录（库内相对路径，'' = 库根；文件整理弹窗预填当前目录，任务G G1b）
  */
 data class AssetDetail(
     val id: String,
@@ -34,6 +35,8 @@ data class AssetDetail(
     val height: Int?,
     val tags: List<DetailTag>,
     val authors: List<DetailAuthor>,
+    /** 当前所在目录（库内相对路径，null/空串 = 库根；协议 AssetDetail.directory） */
+    val directory: String? = null,
 )
 
 /** 详情标签（详情/弹窗共用；id 是关联操作主键） */
