@@ -1,5 +1,6 @@
 package media.qimeng.app.navigation
 
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Icon
@@ -143,7 +144,13 @@ fun QimengNavHost(
         NavHost(
             navController = navController,
             startDestination = TopLevelDestination.HOME.route,
-            modifier = Modifier.padding(innerPadding),
+            // consumeWindowInsets（任务G3 双重留白清偿）：主壳 Scaffold 无 topBar，innerPadding
+            // 的 top=状态栏高；不消费则覆盖页内嵌的 QimengTopBar（M3 TopAppBar 默认
+            // windowInsets=statusBars）会再自留一段状态栏高度——标题上方两倍空白。
+            // padding 后消费=Scaffold 官方范式，嵌套组件读到已消耗的 insets 归零
+            modifier = Modifier
+                .padding(innerPadding)
+                .consumeWindowInsets(innerPadding),
         ) {
             composable(TopLevelDestination.HOME.route) {
                 HomeScreen(

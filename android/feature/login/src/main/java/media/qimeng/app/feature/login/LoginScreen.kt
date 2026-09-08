@@ -6,15 +6,17 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -30,11 +32,15 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import media.qimeng.app.core.data.repository.LoginError
 import media.qimeng.app.core.ui.component.Dimens
+import media.qimeng.app.core.ui.component.QimengCapsuleTextField
 
 /**
  * 登录页（M4-1 冻结最小版）：服务器地址 + 密码两字段。
  * 服务器地址支持 localhost/127.0.0.1 形式（ADR-0015 单机形态预留；规范化在 core 的
  * ServerAddress.normalize，UI 不做格式校验）。错误文案按 LoginError 分类映射中文资源。
+ * 本页渲染在主壳 Scaffold 之外（QimengNavRoot 未登录分支），edge-to-edge 下无壳层
+ * innerPadding 让位系统栏——根容器自行补 statusBars/navigationBars/ime 三段 padding
+ * （G3；顺序=先导航栏后 IME，insets 消费链避免键盘弹出时双重计高）。
  */
 @Composable
 fun LoginScreen(
@@ -48,6 +54,9 @@ fun LoginScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .imePadding()
                 .padding(all = Dimens.ScreenPadding),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
@@ -58,21 +67,21 @@ fun LoginScreen(
                 color = MaterialTheme.colorScheme.onBackground,
             )
             Spacer(modifier = Modifier.height(TitleSpacing))
-            OutlinedTextField(
+            // 胶囊输入框 label 走 placeholder 语义（G6：对齐 Web，组件不支持 label 浮动）
+            QimengCapsuleTextField(
                 value = uiState.serverUrl,
                 onValueChange = viewModel::onServerUrlChange,
-                label = { Text(text = stringResource(R.string.login_server_url_label)) },
-                placeholder = { Text(text = stringResource(R.string.login_server_url_placeholder)) },
+                placeholder = stringResource(R.string.login_server_url_placeholder),
                 singleLine = true,
                 enabled = !uiState.isSubmitting,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next),
                 modifier = Modifier.fillMaxWidth(),
             )
             Spacer(modifier = Modifier.height(FieldSpacing))
-            OutlinedTextField(
+            QimengCapsuleTextField(
                 value = uiState.password,
                 onValueChange = viewModel::onPasswordChange,
-                label = { Text(text = stringResource(R.string.login_password_label)) },
+                placeholder = stringResource(R.string.login_password_label),
                 singleLine = true,
                 enabled = !uiState.isSubmitting,
                 visualTransformation = PasswordVisualTransformation(),
