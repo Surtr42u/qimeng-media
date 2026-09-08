@@ -11,6 +11,19 @@
 
 ---
 
+## feat(app): 任务H H2 统计页折线图换 Vico——2.x compose-m3 锁版+可复用封装+Canvas 退役（2026-09-09 第一百四十八笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理，任务H-Android复刻前置卷 H2 批；拍板=用户 2026-09-08 原话「不要自绘」「统计页折线图换 Vico」，**推翻 C3 批次 Canvas 自绘拍板并记档**，StatsScreen 注释已同步改写不留死引用）
+
+- **锁版 Vico 2.5.1**（`com.patrykandpatrick.vico:compose-m3`，ADR-0018）：官方源当场实测逐版核查（compose-m3 构件 .module + AAR aar-metadata）——全局最新稳定线 3.3.1 与 2.x 末位 2.5.2 均 kotlin-stdlib 2.4.0（@Metadata 超出 Hilt 2.58 kotlin-metadata-jvm 上限 2.3.0，同 Coil 3.5.0 否决因），**2.5.1 = 2.x 线在冻结工具链（AGP 8.13.2/compileSdk 36/Kotlin 2.3.21）上的末位可落稳定版**：stdlib 2.3.21 对齐、三构件 minCompileSdk=36 实测、bom requires 2026.05.00 被工程 2026.06.01 覆盖。注意：官方 Maven group 为 `com.patrykandpatrick.vico`（patryk**andpatrick**，非任务书草稿里的 patrykmichalik）。
+- **可复用封装 QimengTrendLineChart**（feature/stats 新文件）：系列数可配（Vico 事务一次 add=一条系列，天然多系列）+ 系列颜色可配（数量不足 require 抛错防静默串色）+ **marker/persistentMarkers 参数位预留**（I3「点击数据点高亮+数值气泡」直接传 DefaultCartesianMarker/persistentMarkers，本批零交互）；视觉近似旧趋势卡=渐变面积（AreaFill.single+ShaderProvider.verticalGradient 顶部 0.25 透明度对齐旧 AREA_ALPHA）+折线+6dp 数据点，X 轴日期标签防重叠抽稀由 Vico ItemPlacer 内置（替代旧 labelStep 手工截断），无 Y 轴（旧右上角最大值参考标签属读数辅助，不复刻）；StatsScreen 数据装配零改动（TrendPoint 流不动，只换渲染层）。
+- **Canvas 实现退役**：StatsScreen TrendChart 手绘（路径/渐变/数据点/文本测量）整体删除，连带 AREA_ALPHA/LINE_WIDTH_DP/DOT_RADIUS_DP/MAX_X_LABELS 四常量；数字卡/时间范围四档胶囊逻辑不动（三档回改归 I3）。
+- **顺手清偿（H1 审查 P3 遗留）**：QimengSegPill KDoc 删「补 SpaceS 凑 14dp」矛盾 bullet（终态=不额外补白）；core/ui theme/Dimens.kt 文件头第 3 来源列表与 ScreenPaddingHorizontal 注释两处 QimengPlaceholderPage 死引用清零（出处改挂 component/ComponentDimens.kt）。
+- **新增 ADR-0018**（Android 图表库选型 Vico）+ INDEX.md 索引行同步；ADR-0014 白名单扩一项（用户原话拍板）。
+- 门禁：:feature:stats testDebugUnitTest + make app-build/app-test/app-lint + :feature:stats lintDebug 全绿；模拟器 qimeng_api35（18461 虚构库）目检：趋势卡默认档与切换档各一截（重拉重渲正常），证据 %TEMP%\qimeng-h2-evidence\。
+
+---
+
 ## refactor(app): 任务H H1 :core:ui 组件瘦身——M3标准件替换+死代码清理（2026-09-09 第一百四十七笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理，任务H-Android复刻前置卷 H1 批）

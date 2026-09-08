@@ -10,8 +10,7 @@ import androidx.compose.ui.unit.dp
  * 条目逐个来自下列三处，注释标注「文件 + 行号/属性」：
  *  1. 旧仓库 `app/src/main/res/layout/fragment_all_files.xml`（页面级 padding/margin/芯片行）
  *  2. 旧仓库 `app/src/main/res/values/styles.xml` + `drawable/bg_capsule_soft.xml` / `bg_profile_row.xml`（胶囊/卡片尺寸）
- *  3. 新版 core/ui 组件现状值（QimengPills / QimengMediaGrid / QimengScaffold /
- *     QimengPlaceholderPage——本批只登记不改动组件，组件私有常量迁移此处后以本文件为唯一来源）
+ *  3. 新版 core/ui 组件现状值（QimengPills / QimengMediaGrid / QimengScaffold——本批只登记不改动组件，组件私有常量迁移此处后以本文件为唯一来源）
  */
 object QimengDimens {
     // ---------- 通用间距档（同值多源共用一档，禁止再开平行档位） ----------
@@ -39,7 +38,7 @@ object QimengDimens {
 
     /** 16dp：页面左右内边距（fragment_all_files.xml L14/L16 root paddingStart/End）/
      *  药丸面板左右内边距 L159-160 / 维度芯片行横向 16dp（QimengChipRow 调用方，M4-2A-B2 起同款）/
-     *  占位页边距（QimengPlaceholderPage ScreenPadding 16dp L49） */
+     *  页面四周统一留白（component/ComponentDimens.kt Dimens.ScreenPadding 16dp——原 QimengPlaceholderPage 已删除，出处改挂 ComponentDimens） */
     val ScreenPaddingHorizontal: Dp = 16.dp
 
     /** 12dp：页面顶部内边距（fragment_all_files.xml L15 root paddingTop） */
