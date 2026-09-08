@@ -11,6 +11,18 @@
 
 ---
 
+## docs(app): 任务I I8 上传/登录健康走查——insets/可用性全过（无复刻基准，只核查）（2026-09-09 第一百五十九笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理，任务I-Android页面复刻卷 I8 批；REPLICATION_GAPS §2.1/§2.2/§3.8：GUIDE_UI 与实录均无上传/登录条目，本批不做 GUIDE_UI 对照、不进差距清单，仅 insets/可用性健康走查+对照 Web 现版大致相似。**零代码改动**——两模块走查未发现可修缺陷，feature:upload/feature:login 零触碰）
+
+- **登录页 4 项全过**：①三 insets 健康（状态栏/手势条不遮内容；IME 弹出时表单整体上浮、两输入框与提交钮完整可见——G3 的 ime∪navigationBars 取大方案回归通过，LoginScreen.kt:62）；②错误态可用（「密码错误，请重新输入」中文完整、表单可重试；5 类 LoginError 文案资源齐全）；③dev 免密路径可用（密码留空→dev-login 进主壳，本批亲手实证+AuthRepositoryImpl password.isEmpty() 分支有单测锁定）；④键盘弹出后提交钮可达（URL/密码两字段分别实证）。
+- **上传页 5 项全过**：①insets 健康（TopBar/状态栏/手势条无遮挡）；②两入口可达——SAF 多选：选择文件→DocumentsUI 长按多选 2 项→确认→待传清单+大小正确；分享接收：SEND intent→singleTask 复用跳上传页→待传+1（describe 成功），manifest SEND/SEND_MULTIPLE image/*|video/* 声明齐全；③队列态显示不遮挡（「上传成功」两行完整可见，错误/拦截卡为可点关横幅）；④实测上传（独立测试库避免污染 cos5+normal18 虚构基线：SAF 选 1 jpg+1 mp4→库根→队列两行「上传成功」；curl 对账服务端 files=2/img=1/vid=1、/assets 两条字节数与源文件一致、磁盘落库正确；测后删库+清设备/宿主文件现场还原）；⑤对照 Web 现版（LoginGate/UploadCard）布局结构大致相似：同为居中登录表单/选库→目录树→选文件→队列进度四段式；Android 以胶囊选库+SAF+纵向队列行替代 Web 下拉+拖拽+表格，属端形态适配非差距。观察记档（无复刻基准，不判差距）：Web 队列有「全部取消/清除已完成」控件，Android 串行 WorkManager 队列无对应钮。
+- **门禁三连绿**：:feature:upload:testDebugUnitTest+:feature:login:testDebugUnitTest 0 failures（BUILD SUCCESSFUL）；:app:assembleDebug BUILD SUCCESSFUL；lintDebug 0 errors。
+- **执行披露（并行会话，两次上报主会话仲裁未获回复，按 I7 第155笔先例披露后收口）**：①另一 I8 会话先行完成登录/上传页走查（%TEMP%\qimeng-i8-evidence\ 05:42-05:52 证据 39 件），其登录 insets/错误态/dev 免密/SAF 入口证据经复核采信，本批补其未竟的实际上传+curl 对账与分享接收链；②I6 会话持续占用模拟器至 ~06:16 后收步（其 worktree author 改动与本批无涉零触碰）；③屏幕静止判定曾被首页 GIF 动图缩略图骗过（截图哈希假变化），改用 uiautomator 视图树对比确认静止后才操作+重装自证（构建=当时 HEAD 1b30953，I6 author 改动当时未提交，feature:upload/login 两模块两版本同源）；④18461 单 token 模型下各会话 dev-login 互相重铸属预期（app 401 后回退登录页行为顺带实证，无崩溃）。
+- **证据**：%TEMP%\qimeng-i8-evidence\（burst 系列 19 步=登录 dev 免密/SAF 多选/上传全链/分享接收/队列态截图+dump；复用先行会话 i8-login-*/i8-upload-* 证据）。
+
+---
+
 ## feat(app): 任务I I6 作者页复刻——作者集合页四维芯片体系（常规作品/角色/类型·COS角色/类型）+pinch/列数共档+作者管理排序回改单钮下拉（2026-09-09 第一百五十八笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理，任务I-Android页面复刻卷 I6 作者批；独占 feature:author，依据 REPLICATION_GAPS §3.6 差距条目逐条清偿；与并行 I7 收尾会话共享模拟器实例，重装自证+紧凑窗口取证）
