@@ -11,6 +11,29 @@
 
 ---
 
+## docs: 任务D-Android卷 夜间晨间汇总（2026-09-08 第一百三十五笔）
+
+执行 AI：GLM-5.3-Flash（主会话调度收尾）
+
+- **完成批次（D0~D7 全部完成，无 SKIPPED）**：D0 环境预检（含 18461 服务端二进制升级带 cosWork 修复）；D1 图片全屏覆盖层=2018f9e；D2 视频两级全屏+退出恢复竖屏=f5a295c；D3 胶囊默认收起+相册/收藏/历史点卡修复=dd1497c；D4 C8 对照+B6 收尾=d659833；搜索页点卡补修=2ad4d62；D5 M4-4 离线队列=3034426；D6 M4-3 整批自查+GIF 停帧修复=40ec778；D7 M4-7 验收（本笔同 commit 落文档）。每批独立 reviewer 对抗审查通过；证据 %TEMP%\qimeng-d1~d7-evidence\。
+- **里程碑**：PROJECT_PLAN M4 三条未勾项（复刻/详情/行为上报）全部勾选；CAPABILITY_MAP 移动端「规划中(M4)」→「已有(M4)」+两条候选记账。
+- **中断/断点**：无——全部批次完成并落库；D7 交付时 HEAD 曾被并行 F-web 会话前移（8c015b4），android 侧验收不受影响。
+- **待用户项（晨间翻案随时，均为低成本）**：《待拍板-20260907.md》#19 D3 切维口径、#20 全屏滑切落排版态、#21 批次播种入口缺口、#22 ENDED 末帧重渲染、#23 旋转入口三候选、**#24【高优】dwell 恒 400 协议缺口（M4-3 起 dwell 从未送达）**、#25 毒丸 IO 口径、**#26 progress 恒 400（断点续播位置未落库，与 #24 同根）**、#27 无法解码原件静默黑屏、#28 harness init Git Bash 坑。#24/#26 建议同一协议批修（openapi+make sdk 三端再生，或 core:network 临时 interceptor 治标）。
+- **环境交还**：模拟器与 18461 在线（cos 5+normal 18 基线）、App 已 pm clear；8420 真库全程未碰；与并行 F-web 会话文件集零冲突（CHANGELOG 编号交错兼容）。
+
+---
+
+## feat(app): D7 M4-7 整体验收通过——M4 里程碑达成（2026-09-08 第一百三十四笔）
+
+执行 AI：GLM-5.3-Flash（主会话调度；executor 验收（零代码改动红线遵守），任务D-Android卷 D7）
+
+- **八条验收全过**（证据 %TEMP%\qimeng-d7-evidence\，80 项）：①完整日常使用（列表/筛选/详情/播放/收藏全链+服务端 DB 实证 favorites/likes/timeline_tags 落库、view_events 66 条）②上传→立即可见（SAF 2 图→curl totalMatched≥2）③离线行为不丢（断网→恢复→logcat `enqueue kind=DWELL`→EventSyncWorker POST→Worker SUCCESS；点赞/收藏离线出中文错误=冻结口径内非队列事件；dwell 落库受 #24 阻塞已知不算 FAIL）④门禁四段全绿（256 tests 0 fail/redocly valid/golangci 0 issues/oxlint 0 errors）⑤`make sdk` 幂等（前后 porcelain diff 空）⑥cdc422e..HEAD 迁移零改动 ⑦Room/lifecycle-process 均在 ADR-0014 白名单、无需新 ADR ⑧三项规格抽查（COS 联动/长按 2x+暂停/双击缩放像素级）。
+- **M4-5 五观察项补证**：①takePersistableUriPermission 0 命中=缺口实锤（→CAPABILITY_MAP 候选）②dataSync FGS 已声明+串行短任务 6h 风险定性低 ③拒通知权限上传仍成功+队列页可见（已恢复权限）④取消上传入口缺口实锤→CAPABILITY_MAP 候选 ⑤**110/110 SAF 多选上传全落库、无 ANR**。
+- **环境复原**：验收测试物清理+两库重建重扫（cos 5 + normal 18，与 P0 基线一致）；App 已 pm clear 干净交还；init 脚本 Git Bash cygpath 坑记待拍板 #28。
+- **遗留记录**：批次播种入口缺口（=待拍板 #21 相册/搜索进详情单卡语义）、无法解码原件静默黑屏（新发现=待拍板 #27）。
+
+---
+
 ## feat(web): F6 文件管理/回收站批量多选（2026-09-08 第一百三十三笔）
 
 执行 AI：GLM-5.3-Flash（主会话调度；executor 执行/reviewer 全项对抗审查/主会话浏览器主链走查，任务F-Web卷 F6=#15 用户拍板两处都做）
