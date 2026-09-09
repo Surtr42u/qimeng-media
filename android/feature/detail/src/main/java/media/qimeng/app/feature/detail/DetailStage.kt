@@ -48,6 +48,28 @@ internal fun stageBackdropColor(
     themeBackground: Color,
 ): Color = if (chromeVisible && !playerActive) themeBackground else Color.Black
 
+/**
+ * 舞台全出血有效补偿裁决单源（任务K K3c D1 清偿，2026-09-10）：补偿值 = 详情页顶部
+ * 「背板色填充条」的高度（画在滚动裁剪区外 [-comp,0]，沉浸态纯黑延伸到 y=0——机制见
+ * DetailScreen D1 重做注）。沉浸期系统栏隐藏，实时 inset 在部分设备上归零，若补偿跟随
+ * 实时值则垫条塌缩、壳层主题底色带露出（走查 k2-10b 实证 128px）。按态裁决：
+ * - 系统栏可见：实时值——分屏/字号等真实 inset 变化即时响应，chrome 显示态行为不变；
+ * - 沉浸态（栏已隐藏）：冻结在记忆的可见态值——垫条高度两态恒定；
+ * - 可见态但实时值瞬时归零：回退记忆值——show()/hide() 的 inset 派发存在 1~2 帧滞后，
+ *   裸跟实时会先塌缩再回位闪跳。
+ * 纯函数无 Compose 依赖，JVM 单测锁定见 StageEdgeToEdgeCompensationTest；记忆值的采集
+ * （实时值 >0 才刷新）在 DetailScreen 调用点。
+ */
+internal fun stageEdgeToEdgeCompensationPx(
+    liveInsetPx: Int,
+    rememberedVisibleInsetPx: Int,
+    barsVisible: Boolean,
+): Int = when {
+    !barsVisible -> rememberedVisibleInsetPx
+    liveInsetPx <= 0 -> rememberedVisibleInsetPx
+    else -> liveInsetPx
+}
+
 @androidx.annotation.OptIn(UnstableApi::class) // VideoStage 桥接 Media3 @UnstableApi 面（BiliPlayerView），调用方显式 opt-in
 @Composable
 internal fun DetailMediaStage(

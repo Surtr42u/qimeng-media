@@ -9,6 +9,19 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## fix(app): 任务K K3 收官——沉浸态顶部条带清偿（D1 重做=裁剪区外背板垫条）+单级制陈旧注释清理+全链路走查收官（2026-09-10 第一百八十五笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理，任务K K3c 收官批）
+
+- **走查收官**：K3 全链路走查 11 项 9 PASS（证据 %TEMP%\qimeng-k3-evidence\）；独立 reviewer 对抗审查通过 0 必修；两条可选加固记档——①VideoStage factory 闭包捕获 isLandscapeVideo 首值（现拓扑不可达，未来新入口出现需 remember 键）②800ms 防抖在 Compose 层不可 JVM 测（D2 既有）
+- **D1 缺陷与重做**：走查实证沉浸态顶部 128px 主题底色带（k2-10b）。前批归因「实时 inset 沉浸期归零致平移补偿失效」被本批 logcat 诊断推翻——API 35 隐藏系统栏后 `WindowInsets.statusBars` 实时值恒 128 不派发归零，B案平移后的舞台被 `verticalScroll` 视口**裁剪在内容原点**，条带=裁剪边界（chrome 显态因舞台底色=主题底同色而从未显形）。**修法（无平移）**：舞台盒=内容区高（与现网交付态逐像素一致，走查 1~5 项零位移）；补偿值转用作顶部「背板色填充条」高度（画在滚动裁剪区外 [-comp,0]）：沉浸态纯黑延伸到 y=0，chrome 显态主题底无感。补偿单源抽纯函数 `stageEdgeToEdgeCompensationPx`（可见态跟实时/沉浸态冻结记忆的可见态 inset/show-hide 派发滞后零值回退；记忆值实时 >0 才刷新、SideEffect 写回），JVM 单测 `StageEdgeToEdgeCompensationTest` 4 例全绿
+- **像素级复验**（qimeng_api35@emulator-5554 身份校验过，18461 虚构库）：日/夜×图片/视频四象限沉浸态顶部 y=10/64/120 全 #000000（修复前日图片顶部 [0,127]=#FAFAFA）；图片位置两态零位移；chrome 显/隐往返一切如旧；dumpsys statusBars visible=false 佐证
+- **注释清理**（纯注释零行为）：BiliPlayerView 适配点⑤/G6 手势口径/全屏钮注释、FullscreenOverlayShell 两处、DetailScreen 沿革——两级制现行表述归零（grep 自证，余留命中均为「已推翻/曾立」沿革记档框架）
+- **项 8 复测定案**：「全屏态横滑切兄弟」在 K2 覆盖层无此手势路径（横滑切兄弟仅海报态接线，播放/全屏态播放器手势接管；实测横滑零效果、全屏保持）——特性边界非缺陷；「退出全屏回竖屏」实测 ✓（BACK→回竖屏落排版态内联播放器）。#20 表述核对不动（其语境=D1 图片覆盖层时代）
+- **门禁**：make app-test / app-build / app-lint 全绿（新单测 4/4）；make lint 中 redocly/TS/golangci 组件绿、Go gofmt 组件红=master@HEAD 既有（L5 提交的 4 个 server 文件未格式化——本批零 server/openapi/TS 改动，归属 L 车道清偿）
+- **文档同步**：HANDOVER_APP 补「任务K」节；《待拍板-20260907.md》#23 改写为已清偿（2026-09-10 单级横屏全屏落地）+ 新增 #42（日夜切换 uimode 触发 MainActivity 重建、导航栈重置——D2 存量归 App 壳层）
+
+---
 ## feat(web): 任务L L5 打点本地账——IndexedDB+同UUID重试（2026-09-09 第一百八十四笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理，任务L L5 批）

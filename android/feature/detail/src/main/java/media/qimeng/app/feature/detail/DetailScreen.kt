@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.rememberScrollState
@@ -23,14 +24,15 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
@@ -62,8 +64,9 @@ import media.qimeng.app.core.ui.theme.QimengDimens
  *
  * 沿革：3a 骨架排版（Web AssetDetailPage 移植）→ 3b/3c/3d 沉浸/播放器/全量接线 →
  * G1a/G1b Web 排版页 → I7 基准切回 GUIDE_UI 沉浸复刻（台账 #33 用户拍板「1 a」，
- * 推翻 09-05 Web 排版基准；两级全屏制拍板⑦保留）。D1 图片全屏覆盖层退役（裁决记档见
- * [ImageStage] KDoc）；D2 视频两级全屏覆盖层保留（拍板⑦）。chrome 组件见
+ * 推翻 09-05 Web 排版基准）。D1 图片全屏覆盖层退役（裁决记档见 [ImageStage] KDoc）；
+ * D2 曾立视频两级全屏制（拍板⑦，09-07），已被任务K 推翻——2026-09-09 用户拍板 #23 改
+ * 单级横屏全屏（NONE⇄LANDSCAPE，见 VideoFullscreenStateMachine）。chrome 组件见
  * DetailChromeBars.kt（渐变顶/底操作层）。
  *
  * 视频态 chrome 语义：播放器活动期（播放/暂停/ENDED）chrome 让位播放器自有控制器
@@ -181,42 +184,54 @@ fun DetailScreen(
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background),
         ) {
-            // 舞台 negate-inset 真 edge-to-edge（任务I I7 收尾，仲裁 B 案 2026-09-09）：壳层
-            // Scaffold 给 NavHost 统一 innerPadding.top（=状态栏高）+consumeWindowInsets，
-            // 舞台贴视口则顶部露一条壳底色条（不符 GUIDE_UI L272「详情页始终 edge-to-edge
-            // 全屏布局，系统栏显隐不触发布局变化」——既非全出血，切 chrome 时 Scaffold 重算
-            // padding 亦致舞台位移、图片重新居中）。处理留在本文件不触共享壳：
-            // WindowInsets.statusBars 读的是窗口真实 inset（consumeWindowInsets 只作用于
-            // padding 修饰符链，不改 rootWindowInsets 原值），舞台盒高度加回 inset、绘制时
-            // 向上平移并等量扣回占位高度——舞台视觉恒 [0,整屏]；chrome 切换（inset 128↔0）
-            // 两态舞台屏幕框不动（图片不重新居中），内容区起点恒屏底两态等高。chrome 顶栏
-            // 避让随之自洽：DetailTopChrome 自带 statusBarsPadding，舞台顶从屏顶起算后其
-            // 避让量即状态栏真实高度（L275）。
+            // 舞台全出血（K3c D1 重做，2026-09-10）：壳层 Scaffold 把 NavHost 内容钉在
+            // [状态栏线, 导航栏线]，GUIDE_UI L272 要求详情页 edge-to-edge。任务I B案以
+            // 「舞台盒 +comp 高度、绘制平移 -comp」实现，但走查实证（k2-10b 条带 + 本批
+            // logcat 诊断：API 35 上 hide 派发后实时 inset 恒 128 不归零）平移后的舞台被
+            // verticalScroll 视口裁剪在内容原点处——沉浸黑底态顶部露出一条壳层主题底色带
+            // （D1），chrome 显态因舞台底色=主题底同色而从未显形。重做为**无平移**：
+            // 舞台盒=内容区高（视觉几何与现网交付态逐像素一致，走查 1~5 项零位移），
+            // 补偿值转用作**顶部背板色填充条**高度，画在滚动裁剪区之外（BoxWithConstraints
+            // 不裁剪子项越界绘制）：沉浸态纯黑延伸到 y=0；chrome 显态=主题底与壳底同色
+            // 无感。若设备 hide 后实时 inset 归零（本机不发生），记忆回退仍保垫条高度正确
+            // （stageEdgeToEdgeCompensationPx 按态裁决，单测锁定）。
             val density = LocalDensity.current
-            val statusBarTopPx = WindowInsets.statusBars.getTop(density)
-            val stageHeight = with(density) { statusBarTopPx.toFloat().toDp() } + maxHeight
-            val stageEdgeToEdgeShift = Modifier.layout { measurable, constraints ->
-                val placeable = measurable.measure(constraints)
-                layout(
-                    width = placeable.width,
-                    height = (placeable.height - statusBarTopPx).coerceAtLeast(0),
-                ) {
-                    placeable.placeRelative(x = 0, y = -statusBarTopPx)
-                }
+            val liveStatusBarTopPx = WindowInsets.statusBars.getTop(density)
+            // 记忆最近一次可见态 inset：实时值 >0 才刷新（零值不覆盖，沉浸期记忆值得以
+            // 存续）；SideEffect 写回避免组合期反向写状态。首组初值=实时值（进页时系统栏
+            // 恒可见），进程重建后同口径自愈
+            val rememberedStatusBarTopPx = remember { mutableIntStateOf(liveStatusBarTopPx) }
+            SideEffect {
+                if (liveStatusBarTopPx > 0) rememberedStatusBarTopPx.intValue = liveStatusBarTopPx
             }
+            val statusBarTopPx = stageEdgeToEdgeCompensationPx(
+                liveInsetPx = liveStatusBarTopPx,
+                rememberedVisibleInsetPx = rememberedStatusBarTopPx.intValue,
+                barsVisible = chromeEffective,
+            )
+            val stageTopBandHeight = with(density) { statusBarTopPx.toFloat().toDp() }
+            // 舞台盒高=壳层内容区可视高（BoxWithConstraints.maxHeight，G1a 口径不变）
+            val stageViewportHeight = maxHeight
+            // 顶部背板色填充条（D1 单源）：[-comp, 0] 越界绘制区，随 stageBackdrop 切色
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(stageTopBandHeight)
+                    .offset(y = -stageTopBandHeight)
+                    .background(stageBackdrop),
+            )
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState()),
             ) {
-                // 第一屏：媒体舞台 edge-to-edge 全出血（整屏盒，底色随沉浸切换——K1 单源
-                // 口径见上注）+ 渐变 chrome 浮层（chrome 挂舞台盒内随第一屏滚动——只覆盖
-                // 第一屏，下滑看内容不被遮）；stageEdgeToEdgeShift 见上注（negate-inset 平移）
+                // 第一屏：媒体舞台（内容区整屏盒，底色随沉浸切换——K1 单源口径见上注；
+                // 顶部越界带由上方背板填充条补足，见 D1 重做注）+ 渐变 chrome 浮层（chrome
+                // 挂舞台盒内随第一屏滚动——只覆盖第一屏，下滑看内容不被遮）
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(stageHeight)
-                        .then(stageEdgeToEdgeShift),
+                        .height(stageViewportHeight),
                 ) {
                     DetailMediaStage(
                         asset = asset,
