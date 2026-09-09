@@ -2,8 +2,9 @@
 //
 // 详情 = 基础行 + 关联三查询（标签/作者/角色）+ 统计七查询 + 签名直链
 // 组装。主 handler 只做编排，两组关联查询分别收敛在 fetchAssetRefs /
-// fetchAssetStats；列表端点与浏览侧共享小助手（游标、筛选、buildSummary
-// 等）在 assets.go。
+// fetchAssetStats；列表端点与浏览侧共享小助手按职责拆在
+// assets_filters.go（游标/筛选）、assets_list.go（buildSummary）、
+// assets_media_url.go（签名直链/标量抹平）。
 package httpapi
 
 import (

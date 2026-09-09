@@ -98,7 +98,9 @@
 
 依赖方向：`httpapi → 各业务模块 → store`；业务模块之间通过 `events` 解耦；`recommend`/`stats`/`sourcematcher`/`authoring` 不依赖任何其他业务模块（只依赖领域类型定义包）。scanner 在扫描入库时调用 sourcematcher/authoring 做出处/角色/作者富化（§4/§6「匹配发生在服务端扫描入库时」）。
 
-### 5.1 模块边界强制与防漂移（ADR-0010 / ADR-0009 / ADR-0011）
+### 5.1 模块边界强制与防漂移（ADR-0010 / ADR-0009 / ADR-0011 / ADR-0019）
+
+**编排下沉（ADR-0019）**：多步业务编排（上传落盘入库、移动先文件后库行、统计事件重建等）必须放在专职编排包（`server/internal/orchestration/` 或等价 app 层），`httpapi` 禁止业务编排，只保留鉴权、参数校验、序列化与对编排入口的一次调用。既有厚 handler 增量迁移；新增多步流一律不得在 httpapi 落地。不引入编排框架，`cmd/qimeng` 仍为唯一组合根。
 
 边界不是口头约定，是**三层机器强制**（决策见 ADR-0010）：
 

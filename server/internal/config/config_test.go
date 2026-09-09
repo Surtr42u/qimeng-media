@@ -192,3 +192,54 @@ func TestLoadFFmpegBinPathOverrides(t *testing.T) {
 		t.Errorf("env 应优先于 yaml，得到 %q/%q", cfg.Thumbnail.FFmpegPath, cfg.Thumbnail.FFprobePath)
 	}
 }
+
+// TestLoadAllowedLibraryRoots 锁定 allowed_library_roots 的默认空（不限制）、
+// yaml 列表覆盖、env 路径列表覆盖与空段跳过语义。
+func TestLoadAllowedLibraryRoots(t *testing.T) {
+	// 默认：空 = 不限制（向后兼容本地零配置）。
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load(\"\") 报错: %v", err)
+	}
+	if len(cfg.AllowedLibraryRoots) != 0 {
+		t.Errorf("默认 AllowedLibraryRoots 应为空（不限制），得到 %v", cfg.AllowedLibraryRoots)
+	}
+
+	// yaml 列表覆盖。
+	path := writeYAML(t, "allowed_library_roots:\n  - \"/media/photos\"\n  - \"/media/videos\"\n")
+	cfg, err = Load(path)
+	if err != nil {
+		t.Fatalf("Load 报错: %v", err)
+	}
+	if len(cfg.AllowedLibraryRoots) != 2 ||
+		cfg.AllowedLibraryRoots[0] != "/media/photos" ||
+		cfg.AllowedLibraryRoots[1] != "/media/videos" {
+		t.Errorf("yaml 白名单未生效，得到 %v", cfg.AllowedLibraryRoots)
+	}
+
+	// env 路径列表：同时接受 ';' 与本平台 PathListSeparator；空段跳过。
+	t.Setenv("QIMENG_ALLOWED_LIBRARY_ROOTS", "/a;;/b;"+string(os.PathListSeparator)+"/c")
+	cfg, err = Load(path)
+	if err != nil {
+		t.Fatalf("Load 报错: %v", err)
+	}
+	want := []string{"/a", "/b", "/c"}
+	if len(cfg.AllowedLibraryRoots) != len(want) {
+		t.Fatalf("env 白名单段数期望 %d，得到 %v", len(want), cfg.AllowedLibraryRoots)
+	}
+	for i, w := range want {
+		if cfg.AllowedLibraryRoots[i] != w {
+			t.Errorf("AllowedLibraryRoots[%d] = %q, 期望 %q", i, cfg.AllowedLibraryRoots[i], w)
+		}
+	}
+
+	// env 空值 = 未设置，保留 yaml 值。
+	t.Setenv("QIMENG_ALLOWED_LIBRARY_ROOTS", "")
+	cfg, err = Load(path)
+	if err != nil {
+		t.Fatalf("Load 报错: %v", err)
+	}
+	if len(cfg.AllowedLibraryRoots) != 2 {
+		t.Errorf("env 空值应保留 yaml 白名单，得到 %v", cfg.AllowedLibraryRoots)
+	}
+}

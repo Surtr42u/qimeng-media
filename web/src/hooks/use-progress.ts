@@ -4,6 +4,9 @@
  * 进度走 PUT /assets/{id}/progress（心跳式，服务端只保留最新值；不进事件流、
  * 不计 playCount——GUIDE_API「播放进度与编码字段」）；时间轴标签走
  * GET /assets/{id}/timeline-tags（视频内时间点标记，独立于文件标签）。
+ *
+ * 纯规则（节流 shouldSend / 切资产补报 / flush 配对 / 标签排序）在
+ * lib/progress-report.ts，本 hook 只留 React 生命周期与网络（ADR-0017）。
  */
 
 import { useCallback, useEffect, useMemo, useRef } from 'react'
@@ -14,14 +17,15 @@ import {
   type TimelineTag,
 } from '@/api/generated'
 import { unwrapSdkResult } from '@/lib/api-client'
+import {
+  resolveFlushPosition,
+  resolveSwitchFlush,
+  resolveUnloadFlush,
+  shouldSendProgress,
+  sortTimelineTagsByTime,
+  type LastPositionPair,
+} from '@/lib/progress-report'
 import { ASSETS_QUERY_KEY } from '@/lib/query-keys'
-
-/**
- * 进度心跳间隔（毫秒）：5s——严于协议建议值 10s（api/openapi.yaml
- * PUT /assets/{id}/progress description「建议 10s 间隔」，协议允许更密）。
- * 协议侧建议值改动须同步此处，反之亦然。
- */
-const PROGRESS_REPORT_INTERVAL_MS = 5000
 
 /** 时间轴标签（协议 TimelineTag；timeMillis 毫秒→播放器秒由消费方换算） */
 export type AssetTimelineTag = TimelineTag
@@ -42,7 +46,7 @@ export function useTimelineTags(assetId?: string) {
     // 构造/loadedmetadata 时消费，旧标签会定格在新播放器进度条上、seek 落到
     // 旧资产时间戳。换键重取失败（error）期占位被丢弃，data 回 undefined
     placeholderData: keepPreviousData,
-    select: (tags) => [...tags].sort((a, b) => (a.timeMillis ?? 0) - (b.timeMillis ?? 0)),
+    select: (tags) => sortTimelineTagsByTime(tags),
   })
 }
 
@@ -70,7 +74,7 @@ export function useProgress(assetId: string, enabled = true) {
   })
 
   // 最后已知位置与「它所属的资产」配对存储：补报只允许写回配对里的那个资产
-  const lastRef = useRef<{ assetId: string; positionSeconds: number } | null>(null)
+  const lastRef = useRef<LastPositionPair | null>(null)
   const lastSentAtRef = useRef(0)
   const assetIdRef = useRef(assetId)
 
@@ -90,8 +94,9 @@ export function useProgress(assetId: string, enabled = true) {
   // 进度从零积累，旧位置不得在后续卸载补报中归属到新资产
   useEffect(() => {
     if (assetIdRef.current === assetId) return
-    const prev = lastRef.current
-    if (prev && prev.assetId === assetIdRef.current) send(prev.assetId, prev.positionSeconds)
+    // 切资产补报：仅配对仍归属旧资产时才报（规则在 lib/progress-report）
+    const switchFlush = resolveSwitchFlush(lastRef.current, assetIdRef.current)
+    if (switchFlush) send(switchFlush.assetId, switchFlush.positionSeconds)
     lastRef.current = null
     lastSentAtRef.current = 0
     assetIdRef.current = assetId
@@ -101,7 +106,7 @@ export function useProgress(assetId: string, enabled = true) {
     (positionSeconds: number) => {
       if (!enabled) return // P2 占位闸门：窗口期画面属于上一资产，不记账不上报
       lastRef.current = { assetId: assetIdRef.current, positionSeconds }
-      if (Date.now() - lastSentAtRef.current >= PROGRESS_REPORT_INTERVAL_MS) {
+      if (shouldSendProgress(lastSentAtRef.current, Date.now())) {
         send(assetIdRef.current, positionSeconds)
       }
     },
@@ -111,10 +116,7 @@ export function useProgress(assetId: string, enabled = true) {
   const flush = useCallback(
     (positionSeconds?: number) => {
       if (!enabled) return // P2 占位闸门：窗口期无本资产位置可报（旧资产已在切资产 effect 补报）
-      const last = lastRef.current
-      const position =
-        positionSeconds ??
-        (last && last.assetId === assetIdRef.current ? last.positionSeconds : null)
+      const position = resolveFlushPosition(positionSeconds, lastRef.current, assetIdRef.current)
       if (position !== null) send(assetIdRef.current, position)
     },
     [send, enabled],
@@ -124,7 +126,7 @@ export function useProgress(assetId: string, enabled = true) {
   // 只认带资产配对的记录，配对归属谁就报给谁
   useEffect(
     () => () => {
-      const last = lastRef.current
+      const last = resolveUnloadFlush(lastRef.current)
       if (last) mutateRef.current({ assetId: last.assetId, positionSeconds: last.positionSeconds })
     },
     [],
