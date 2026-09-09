@@ -105,8 +105,8 @@ func (q *Queries) GetTagByName(ctx context.Context, name string) (Tag, error) {
 }
 
 const insertTimelineTag = `-- name: InsertTimelineTag :one
-INSERT INTO timeline_tags (id, asset_id, time_millis, name, created_at)
-VALUES (?, ?, ?, ?, ?) RETURNING id, asset_id, time_millis, name, created_at
+INSERT INTO timeline_tags (id, asset_id, time_millis, name, color, created_at)
+VALUES (?, ?, ?, ?, ?, ?) RETURNING id, asset_id, time_millis, name, created_at, color
 `
 
 type InsertTimelineTagParams struct {
@@ -114,15 +114,19 @@ type InsertTimelineTagParams struct {
 	AssetID    string
 	TimeMillis int64
 	Name       string
+	Color      string
 	CreatedAt  string
 }
 
+// color = ” means "no color set" (protocol batch P2, 2026-09-09;
+// migration 0009 NOT NULL DEFAULT ” sentinel, DOMAIN_RULES 7).
 func (q *Queries) InsertTimelineTag(ctx context.Context, arg InsertTimelineTagParams) (TimelineTag, error) {
 	row := q.db.QueryRowContext(ctx, insertTimelineTag,
 		arg.ID,
 		arg.AssetID,
 		arg.TimeMillis,
 		arg.Name,
+		arg.Color,
 		arg.CreatedAt,
 	)
 	var i TimelineTag
@@ -132,6 +136,7 @@ func (q *Queries) InsertTimelineTag(ctx context.Context, arg InsertTimelineTagPa
 		&i.TimeMillis,
 		&i.Name,
 		&i.CreatedAt,
+		&i.Color,
 	)
 	return i, err
 }
@@ -219,7 +224,7 @@ func (q *Queries) ListTags(ctx context.Context) ([]ListTagsRow, error) {
 }
 
 const listTimelineTags = `-- name: ListTimelineTags :many
-SELECT id, asset_id, time_millis, name, created_at FROM timeline_tags WHERE asset_id = ?
+SELECT id, asset_id, time_millis, name, created_at, color FROM timeline_tags WHERE asset_id = ?
 ORDER BY time_millis, id
 `
 
@@ -238,6 +243,7 @@ func (q *Queries) ListTimelineTags(ctx context.Context, assetID string) ([]Timel
 			&i.TimeMillis,
 			&i.Name,
 			&i.CreatedAt,
+			&i.Color,
 		); err != nil {
 			return nil, err
 		}
@@ -250,4 +256,67 @@ func (q *Queries) ListTimelineTags(ctx context.Context, assetID string) ([]Timel
 		return nil, err
 	}
 	return items, nil
+}
+
+const removeAssetTagByName = `-- name: RemoveAssetTagByName :execrows
+DELETE FROM asset_tags
+WHERE asset_id = ?
+  AND tag_id = (SELECT id FROM tags WHERE name = ?)
+`
+
+type RemoveAssetTagByNameParams struct {
+	AssetID string
+	Name    string
+}
+
+// Per-tag unbinding (protocol batch P2, 2026-09-09): removes ONE
+// (asset, tag) association and leaves every other association's
+// created_at untouched -- unlike the replace-style PUT which re-inserts
+// all rows. Idempotent at the association level: 0 rows affected =
+// tag exists but was not attached (caller returns 204 either way;
+// tag-name existence is checked by the caller first for a 404).
+func (q *Queries) RemoveAssetTagByName(ctx context.Context, arg RemoveAssetTagByNameParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, removeAssetTagByName, arg.AssetID, arg.Name)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const updateTimelineTag = `-- name: UpdateTimelineTag :one
+UPDATE timeline_tags
+SET time_millis = ?, name = ?, color = ?
+WHERE id = ? AND asset_id = ?
+RETURNING id, asset_id, time_millis, name, created_at, color
+`
+
+type UpdateTimelineTagParams struct {
+	TimeMillis int64
+	Name       string
+	Color      string
+	ID         string
+	AssetID    string
+}
+
+// Full replace of the mutable fields (time/name/color); scoped like the
+// delete: tagId must belong to the given asset. 0 rows = unknown
+// (assetId, tagId) pair, caller maps that to 404. Empty color clears it.
+func (q *Queries) UpdateTimelineTag(ctx context.Context, arg UpdateTimelineTagParams) (TimelineTag, error) {
+	row := q.db.QueryRowContext(ctx, updateTimelineTag,
+		arg.TimeMillis,
+		arg.Name,
+		arg.Color,
+		arg.ID,
+		arg.AssetID,
+	)
+	var i TimelineTag
+	err := row.Scan(
+		&i.ID,
+		&i.AssetID,
+		&i.TimeMillis,
+		&i.Name,
+		&i.CreatedAt,
+		&i.Color,
+	)
+	return i, err
 }

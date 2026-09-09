@@ -114,6 +114,7 @@ type TimelineTag struct {
 	TimeMillis int64
 	Name       string
 	CreatedAt  string
+	Color      string
 }
 
 type TrashItem struct {

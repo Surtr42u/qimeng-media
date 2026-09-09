@@ -46,7 +46,9 @@ func localDayBoundsUTC(t time.Time) (start, end string) {
 // assets 全表聚合，浏览计数（todayViews/totalViews）直接数 view_events
 // 事件流——唯一真相源口径（DOMAIN_RULES §5），且事件表无 FK、可能引用
 // 已删资产（ADR-0005），删除历史仍是真实浏览，照数不排除。
-func (s *Server) GetApiV1StatsOverview(w http.ResponseWriter, r *http.Request) {
+// 来源库存（sourceNormalCount/sourceCosCount）与平均浏览（avgViewsPerFile，
+// 窗口由 range 参数决定、缺省 all=全时段）为协议批 P2 新增字段（§5）。
+func (s *Server) GetApiV1StatsOverview(w http.ResponseWriter, r *http.Request, params gen.GetApiV1StatsOverviewParams) {
 	summary, err := s.q.SummarizeAssets(r.Context())
 	if err != nil {
 		s.internalErr(w, "统计资产总览", err)
@@ -65,34 +67,67 @@ func (s *Server) GetApiV1StatsOverview(w http.ResponseWriter, r *http.Request) {
 		s.internalErr(w, "统计累计浏览", err)
 		return
 	}
+	// 来源库存：§6 分区判定两条独立计数（normal + cos == totalFiles）。
+	cosCount, err := s.q.CountCosLinkedAssets(r.Context())
+	if err != nil {
+		s.internalErr(w, "统计 COS 来源库存", err)
+		return
+	}
+	regCount, err := s.q.CountRegularAssets(r.Context())
+	if err != nil {
+		s.internalErr(w, "统计常规来源库存", err)
+		return
+	}
+	// 平均浏览：窗口内现存资产 open 总数 ÷ 有 open 的不同文件数；
+	// 分母 0 → nil（协议 null，空态语义），分子分母同窗口同限定。
+	rng, ok := resolveStatsRange(w, params.Range, stats.RangeAll)
+	if !ok {
+		return
+	}
+	agg, err := s.q.SummarizeOpenWindow(r.Context(), statsWindowStartTS(rng, s.now()))
+	if err != nil {
+		s.internalErr(w, "统计平均浏览", err)
+		return
+	}
+	var avg *float64
+	if agg.Files > 0 {
+		v := float64(agg.Opens) / float64(agg.Files)
+		avg = &v
+	}
 	writeJSON(w, http.StatusOK, gen.StatsOverview{
-		TotalFiles:     ptr(int(summary.TotalFiles)),
-		ImageCount:     ptr(int(summary.ImageCount)), // 含 animated_image（DOMAIN_RULES §11）
-		VideoCount:     ptr(int(summary.VideoCount)),
-		TotalSizeBytes: ptr(summary.TotalSizeBytes),
-		TodayViews:     ptr(int(todayViews)),
-		TotalViews:     ptr(totalViews),
+		TotalFiles:        ptr(int(summary.TotalFiles)),
+		ImageCount:        ptr(int(summary.ImageCount)), // 含 animated_image（DOMAIN_RULES §11）
+		VideoCount:        ptr(int(summary.VideoCount)),
+		TotalSizeBytes:    ptr(summary.TotalSizeBytes),
+		TodayViews:        ptr(int(todayViews)),
+		TotalViews:        ptr(totalViews),
+		SourceNormalCount: ptr(int(regCount)),
+		SourceCosCount:    ptr(int(cosCount)),
+		AvgViewsPerFile:   avg,
 	})
 }
 
 // GetApiV1StatsTrends 趋势折线：按 range 决定取数窗口 → SumDailyStatsBetween
 // 拉按天聚合 → stats.BuildTrendBuckets 纯函数分桶 → []gen.TrendBucket。
+// source 参数（协议批 P2）按 §6 来源桶过滤物化行（”/缺省 = 不过滤）。
 func (s *Server) GetApiV1StatsTrends(w http.ResponseWriter, r *http.Request, params gen.GetApiV1StatsTrendsParams) {
-	rng := stats.RangeMonth // 协议默认值（openapi range default: month）
-	if params.Range != nil {
-		rng = stats.Range(*params.Range)
-		switch rng {
-		case stats.RangeDay, stats.RangeWeek, stats.RangeMonth,
-			stats.RangeQuarter, stats.RangeYear, stats.RangeAll,
-			stats.Range7d, stats.Range90d: // 合法（openapi enum 与 stats.Range 双同步）
-		default:
-			writeErr(w, http.StatusBadRequest, codeInvalidParam, "range 取值不合法")
-			return
-		}
+	rng, ok := resolveStatsRange(w, params.Range, stats.RangeMonth)
+	if !ok {
+		return
 	}
 	mediaType := "" // 空串 = 不过滤（store 查询的空串哨兵约定）
 	if params.MediaType != nil {
 		mediaType = string(*params.MediaType)
+	}
+	sourceBucket := "" // 空串 = 不过滤（常规∪COS）
+	if params.Source != nil {
+		switch *params.Source {
+		case gen.GetApiV1StatsTrendsParamsSourceNormal, gen.GetApiV1StatsTrendsParamsSourceCos:
+			sourceBucket = string(*params.Source)
+		default:
+			writeErr(w, http.StatusBadRequest, codeInvalidParam, "source 取值不合法")
+			return
+		}
 	}
 
 	today := s.now()
@@ -102,6 +137,7 @@ func (s *Server) GetApiV1StatsTrends(w http.ResponseWriter, r *http.Request, par
 	}
 	rows, err := s.q.SumDailyStatsBetween(r.Context(), db.SumDailyStatsBetweenParams{
 		FromDay: fromDay, ToDay: store.FormatDay(today), MediaType: mediaType,
+		SourceBucket: sourceBucket,
 	})
 	if err != nil {
 		s.internalErr(w, "统计趋势数据", err)

@@ -9,6 +9,16 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## feat(api): N3 协议批 P2——统计聚合三端点+来源维度（#31）+标签逐条删/颜色协议化（#32）（2026-09-09 第一百六十四笔）
+
+执行 AI：GLM-5.3-Flash（监督会话 executor；夜间授权协议批第二段）
+
+- **统计聚合（#31）**：新增 `GET /stats/most-viewed`（metric=views|seconds，常看文件双榜）、`GET /stats/top-authors`、`GET /stats/top-tags`（range+limit 缺省 20/钳 50）；`/stats/trends` 加可选 `source=normal|cos`；`/stats/overview` 加可选 `range`（缺省 all 兼容）+响应 `sourceNormalCount/sourceCosCount/avgViewsPerFile`（分母 0→null）。DOMAIN_RULES §5 新增「统计聚合榜单口径/来源桶口径/平均浏览次数」三条（公式风格对齐既有节，既有公式零改动）
+- **标签协议化（#32）**：新增 `DELETE /assets/{assetId}/tags/{tag}`（只删单条关联不动其余 created_at、幂等 204）；时间轴标签 `color`（hex6）创建/更新/响应三处透传+迁移 0009_timeline_tag_color（只加不改，up/down 对）；新增 PUT timeline-tags/{tagId} 更新端点（color 省略=清除）
+- server：stats_top.go 新 handler（修 trendWindowStart 未落日界的存量窗口 bug→与 trends day 口径对齐）+9 用例（倒序/窗口边界/limit 钳制/孤儿事件/COS 作者计法/avg null）；tags +2 用例；store 层 view_events+5 查询/tags+2/migration 0009
+- make sdk 三端再生（纯新增可选字段与新端点，web/android 零适配编译绿）；门禁 redocly 0 errors/go test 全 ok/make lint 0 issues/app-test 绿/web-build 绿；端到端消费属 N4
+
+---
 ## feat(api): N2 协议批 P1——seconds 序列化根修（#24/#26）+筛选多值化（#29）+/history 补参（#30）+facets 作者行收窄（#34）（2026-09-09 第一百六十三笔）
 
 执行 AI：GLM-5.3-Flash（监督会话 executor；用户授权协议批自决，待拍板 2026-09-09 夜条目②）
