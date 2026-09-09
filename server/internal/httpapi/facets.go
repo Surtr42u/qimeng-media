@@ -54,12 +54,18 @@ var facetMediaTypeLabels = map[gen.MediaType]string{
 // facetSourceBuckets 作者行的出处分组候选（常规/全部分区调用）。
 // 「其他」（NULL source）桶排在末尾（旧版 renderSourcePills 的「其他
 // 永远排在列表最下面」），key=sourceOtherLabel 可直接回传 GET /assets。
-// 尾部两个 int64 是子集约束旗（恒 0/1，见 GetApiV1AssetsFacets 注释）。
-func (s *Server) facetSourceBuckets(w http.ResponseWriter, r *http.Request, mediaType, charactersJson, cosWork, qJson any, favoriteSubset, historySubset int64) ([]gen.FacetBucket, bool) {
+// source/sourceIsOther/authorID 是普通收窄键（2026-09-09 协议批：作者
+// 集合页固定传 authorId 让作品维候选按作者收窄；排自身由相册页调用方
+// 省略自身参数实现，见 openapi facets description）。尾部两个 int64 是
+// 子集约束旗（恒 0/1，见 GetApiV1AssetsFacets 注释）。
+func (s *Server) facetSourceBuckets(w http.ResponseWriter, r *http.Request, mediaType, charactersJson, cosWork, source any, sourceIsOther, authorID, qJson any, favoriteSubset, historySubset int64) ([]gen.FacetBucket, bool) {
 	rows, err := s.q.FacetSourceCounts(r.Context(), db.FacetSourceCountsParams{
 		MediaType:      mediaType,
 		CharactersJson: charactersJson,
 		CosWork:        cosWork,
+		Source:         source,
+		SourceIsOther:  sourceIsOther,
+		AuthorID:       authorID,
 		QJson:          qJson,
 		FavoriteSubset: favoriteSubset,
 		HistorySubset:  historySubset,
@@ -93,13 +99,17 @@ func (s *Server) facetSourceBuckets(w http.ResponseWriter, r *http.Request, medi
 }
 
 // facetCosAuthorBuckets 作者行的 COS 作者候选（COS/全部分区调用）。
-func (s *Server) facetCosAuthorBuckets(w http.ResponseWriter, r *http.Request, includeCos, cosOnly int64, mediaType, charactersJson, cosWork, qJson any, favoriteSubset, historySubset int64) ([]gen.FacetBucket, bool) {
+// source/sourceIsOther/authorID 同 facetSourceBuckets：普通收窄键。
+func (s *Server) facetCosAuthorBuckets(w http.ResponseWriter, r *http.Request, includeCos, cosOnly int64, mediaType, charactersJson, cosWork, source any, sourceIsOther, authorID, qJson any, favoriteSubset, historySubset int64) ([]gen.FacetBucket, bool) {
 	rows, err := s.q.FacetAuthorCounts(r.Context(), db.FacetAuthorCountsParams{
 		IncludeCos:     includeCos,
 		CosOnly:        cosOnly,
 		MediaType:      mediaType,
 		CharactersJson: charactersJson,
 		CosWork:        cosWork,
+		Source:         source,
+		SourceIsOther:  sourceIsOther,
+		AuthorID:       authorID,
 		QJson:          qJson,
 		FavoriteSubset: favoriteSubset,
 		HistorySubset:  historySubset,
@@ -139,8 +149,10 @@ func mergeFacetBuckets(groups ...[]gen.FacetBucket) []gen.FacetBucket {
 	return merged
 }
 
-// GetApiV1AssetsFacets 四维候选聚合。各查询排除自身维度、应用其余全部
-// 当前选择（排自身口径，facets.sql 文件头有逐查询的维度表）。
+// GetApiV1AssetsFacets 四维候选聚合。排自身的实现口径 = 调用方每维独立
+// 请求、请求时省略该维自身参数；服务端把全部收窄参数照常应用于每次查询
+// （2026-09-09 协议批：作者行 source/authorId 亦然，见 facets.sql 文件头
+// 逐查询的维度表）。
 // 超函数警戒线（>100 行）理由：oapi-codegen 生成的接口签名 + 单请求
 // 直线流（十来个可选参数逐个归一为 SQL 谓词形态→四维逐个查询→合并
 // 响应）；参数归一与维度的对应关系直线可读，拆段要把半程状态提升为
@@ -220,18 +232,20 @@ func (s *Server) GetApiV1AssetsFacets(w http.ResponseWriter, r *http.Request, pa
 		{Key: "cos", Name: "COS", FileCount: cosCount},
 	}
 
-	// 作者行（旧版「作品」行：排自身=source 与 authorId 一起忽略）：
+	// 作者行（旧版「作品」行；2026-09-09 协议批起 source/authorId 对本行
+	// 照常收窄——作者集合页固定传 authorId 即可让作品维候选按作者收窄；
+	// 排自身由相册页调用方每维独立请求时省略自身参数实现）：
 	//   常规分区=出处分组；COS 分区=COS 作者；全部分区=两者合并。
 	var authors []gen.FacetBucket
 	if !isCosPartition {
-		srcBuckets, ok := s.facetSourceBuckets(w, r, mediaType, charactersJson, cosWork, qJson, favoriteSubset, historySubset)
+		srcBuckets, ok := s.facetSourceBuckets(w, r, mediaType, charactersJson, cosWork, source, sourceIsOther, authorID, qJson, favoriteSubset, historySubset)
 		if !ok {
 			return
 		}
 		authors = srcBuckets
 	}
 	if !isRegularPartition {
-		cosBuckets, ok := s.facetCosAuthorBuckets(w, r, includeCos, cosOnly, mediaType, charactersJson, cosWork, qJson, favoriteSubset, historySubset)
+		cosBuckets, ok := s.facetCosAuthorBuckets(w, r, includeCos, cosOnly, mediaType, charactersJson, cosWork, source, sourceIsOther, authorID, qJson, favoriteSubset, historySubset)
 		if !ok {
 			return
 		}

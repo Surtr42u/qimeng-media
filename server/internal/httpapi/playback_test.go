@@ -35,7 +35,7 @@ func videoAssetID(t *testing.T, env *testEnv) string {
 // putProgress 上报一次播放进度并断言响应码。
 func putProgress(t *testing.T, env *testEnv, assetID string, seconds float64, wantCode int) {
 	t.Helper()
-	body, err := json.Marshal(gen.ProgressUpdate{PositionSeconds: float32(seconds)})
+	body, err := json.Marshal(gen.ProgressUpdate{PositionSeconds: float64(seconds)})
 	if err != nil {
 		t.Fatalf("构造进度请求失败: %v", err)
 	}

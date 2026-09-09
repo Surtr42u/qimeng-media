@@ -228,10 +228,10 @@ func weightsFromPrefs(p *gen.RecommendPrefs) *recommend.Weights {
 	return &w
 }
 
-// paramOr 字段级回落：nil 用默认，否则取 *float32 转 float64。
-func paramOr(def float64, v *float32) float64 {
+// paramOr 字段级回落：nil 用默认，否则取 *float64。
+func paramOr(def float64, v *float64) float64 {
 	if v == nil {
 		return def
 	}
-	return float64(*v)
+	return *v
 }

@@ -42,8 +42,9 @@ internal object SdkDetailMappers {
         origUrl = detail.origUrl?.let { absolutize(it, baseUrl) },
         durationMs = detail.durationMs,
         cosWork = detail.cosWork,
-        // 协议断点续播位置为 BigDecimal（秒），客户端统一 Double 消费（3b 播放器起点）
-        lastPositionSeconds = detail.lastPositionSeconds?.toDouble(),
+        // 断点续播位置为 Double 秒（协议批 2026-09-09：format:double 后 SDK
+        // 原生 Double，不再经 BigDecimal 转换），客户端统一 Double 消费（3b 播放器起点）
+        lastPositionSeconds = detail.lastPositionSeconds,
         viewCount = detail.viewCount,
         playCount = detail.playCount,
         width = detail.width,
@@ -88,9 +89,9 @@ internal object SdkDetailMappers {
     /** 时间轴标签列表映射 */
     fun toTimelineTags(tags: List<SdkTimelineTag>): List<TimelineTag> = tags.map(::toTimelineTag)
 
-    /** 进度上报请求体（Double 秒 → BigDecimal；BigDecimal.valueOf 走 Double.toString 最短表示，无二进制尾差放大） */
+    /** 进度上报请求体（Double 秒直传；协议批 2026-09-09 #26 根修后 positionSeconds 为原生 Double，moshi 序列化为 JSON 数字） */
     fun toProgressUpdate(positionSeconds: Double): ProgressUpdate =
-        ProgressUpdate(positionSeconds = java.math.BigDecimal.valueOf(positionSeconds))
+        ProgressUpdate(positionSeconds = positionSeconds)
 
     /** 新建时间轴标签请求体 */
     fun toAddTimelineTagRequest(timeMillis: Long, name: String): ApiV1AssetsAssetIdTimelineTagsPostRequest =
@@ -118,7 +119,7 @@ internal object SdkDetailMappers {
             java.time.ZoneOffset.UTC,
         ),
         sessionId = sessionId,
-        seconds = dwellSeconds?.let(java.math.BigDecimal::valueOf),
+        seconds = dwellSeconds?.toDouble(),
     )
 
     private fun MediaType?.toDomainMediaKind(): MediaKind = when (this) {

@@ -66,12 +66,14 @@ class SdkMediaRepository @Inject constructor(
                 sort = query.sort.toSdk(),
                 order = query.order.toSdk(),
                 mediaType = query.mediaType?.toSdk(),
-                source = query.source,
-                character = query.character,
+                // 协议批 2026-09-09（#29）：source/character/work 多值化（数组，
+                // 同维 OR）；现发单值=单元素列表，多选 UI 属 N4。
+                source = query.source?.let(::listOf),
+                character = query.character?.let(::listOf),
                 authorId = query.authorId,
                 includeCos = query.includeCos,
                 cosOnly = query.cosOnly,
-                work = query.work,
+                work = query.work?.let(::listOf),
                 favorite = query.favorite,
                 q = query.q,
                 // 万能筛选面板参数族（M4-2A-B3）：null=不传（默认档已在状态机归 null）
@@ -215,8 +217,10 @@ class SdkHistoryRepository @Inject constructor(
                 includeCos = query.includeCos,
                 cosOnly = query.cosOnly,
                 mediaType = query.mediaType?.toSdk(),
-                work = query.work,
-                character = query.character,
+                // 协议批 2026-09-09（#29/#30）：work/character 多值化、新增
+                // source（本仓库 HistoryQuery 尚无 source/authorId 位，N4 消费批再开）。
+                work = query.work?.let(::listOf),
+                character = query.character?.let(::listOf),
             )
         }
         val baseUrl = apiFactory.currentBaseUrl()

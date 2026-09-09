@@ -37,16 +37,26 @@ WHERE
             SELECT 1 FROM asset_characters ac
             WHERE ac.asset_id = a.asset_id AND ac.character_name = c.value)))
     AND (?5 IS NULL OR a.cos_work = ?5)
-    AND (?6 IS NULL OR NOT EXISTS (
-        SELECT 1 FROM json_each(?6) qk
+    AND ((?6 IS NULL AND ?7 = 0)
+         OR (?7 = 1 AND a.source IS NULL
+             AND NOT EXISTS (
+                 SELECT 1 FROM asset_authors aaoth
+                 JOIN authors auoth ON auoth.id = aaoth.author_id
+                 WHERE aaoth.asset_id = a.asset_id AND auoth.type = 'cos'))
+         OR a.source = ?6)
+    AND (?8 IS NULL OR EXISTS (
+        SELECT 1 FROM asset_authors aa2
+        WHERE aa2.asset_id = a.asset_id AND aa2.author_id = ?8))
+    AND (?9 IS NULL OR NOT EXISTS (
+        SELECT 1 FROM json_each(?9) qk
         WHERE NOT EXISTS (
             SELECT 1 FROM assets_fts f
             WHERE f.rowid = a.rowid
               AND instr(lower(f.all_text), lower(qk.value)) > 0)))
     -- subset constraints (see file header).
-    AND (?7 = 0 OR EXISTS (
+    AND (?10 = 0 OR EXISTS (
         SELECT 1 FROM favorites fvs WHERE fvs.asset_id = a.asset_id))
-    AND (?8 = 0 OR EXISTS (
+    AND (?11 = 0 OR EXISTS (
         SELECT 1 FROM view_events veh
         WHERE veh.asset_id = a.asset_id AND veh.kind = 'open'))
 GROUP BY au.id
@@ -59,6 +69,9 @@ type FacetAuthorCountsParams struct {
 	MediaType      interface{}
 	CharactersJson interface{}
 	CosWork        interface{}
+	Source         interface{}
+	SourceIsOther  interface{}
+	AuthorID       interface{}
 	QJson          interface{}
 	FavoriteSubset interface{}
 	HistorySubset  interface{}
@@ -74,8 +87,9 @@ type FacetAuthorCountsRow struct {
 // to au.type = 'cos': regular TXT authors are NOT part of this row (user
 // decision 2026-09-03 -- the row is "cos authors + regular works").
 // key = author_id, ready to be fed back into GET /assets.
-// author_id and source are deliberately NOT filtered here (exclude-self,
-// same pill row). The partition flags are kept for shape consistency with
+// source / source_is_other / author_id apply as plain narrowing keys
+// (protocol 2026-09-09, same as FacetSourceCounts: exclude-self is
+// client-side). The partition flags are kept for shape consistency with
 // the other facet queries; with au.type='cos' the regular partition
 // naturally yields no rows (cos authors only link cos-linked assets).
 func (q *Queries) FacetAuthorCounts(ctx context.Context, arg FacetAuthorCountsParams) ([]FacetAuthorCountsRow, error) {
@@ -85,6 +99,9 @@ func (q *Queries) FacetAuthorCounts(ctx context.Context, arg FacetAuthorCountsPa
 		arg.MediaType,
 		arg.CharactersJson,
 		arg.CosWork,
+		arg.Source,
+		arg.SourceIsOther,
+		arg.AuthorID,
 		arg.QJson,
 		arg.FavoriteSubset,
 		arg.HistorySubset,
@@ -492,12 +509,15 @@ type FacetPartitionCountsRow struct {
 // produced, generalized to freely order-independent selection.
 //
 //	FacetPartitionCounts  -> applies media_type/character/work/source/q
-//	FacetSourceCounts     -> applies media_type/character/work/q
-//	                          (source and authorId are the SAME row,
-//	                          excluded together)
-//	FacetAuthorCounts     -> applies partition/media_type/character/work/q
-//	                          (source and authorId are the SAME row,
-//	                          excluded together)
+//	FacetSourceCounts     -> applies media_type/character/work/source/
+//	                          author_id/q (protocol 2026-09-09: source
+//	                          and authorId are plain narrowing keys for
+//	                          EVERY row now -- the author-collection page
+//	                          passes a FIXED authorId to scope its work-
+//	                          row candidates; exclude-self is client-side,
+//	                          callers omit their own dimension's params)
+//	FacetAuthorCounts     -> applies partition/media_type/character/work/
+//	                          source/author_id/q (same 2026-09-09 change)
 //	FacetCharacterCounts  -> applies partition/media_type/author-or-source/q
 //	                          (character and work are the SAME row,
 //	                          excluded together)
@@ -564,17 +584,27 @@ WHERE
             SELECT 1 FROM asset_characters ac
             WHERE ac.asset_id = a.asset_id AND ac.character_name = c.value)))
     AND (?3 IS NULL OR a.cos_work = ?3)
-    AND (?4 IS NULL OR NOT EXISTS (
-        SELECT 1 FROM json_each(?4) qk
+    AND ((?4 IS NULL AND ?5 = 0)
+         OR (?5 = 1 AND a.source IS NULL
+             AND NOT EXISTS (
+                 SELECT 1 FROM asset_authors aaoth
+                 JOIN authors auoth ON auoth.id = aaoth.author_id
+                 WHERE aaoth.asset_id = a.asset_id AND auoth.type = 'cos'))
+         OR a.source = ?4)
+    AND (?6 IS NULL OR EXISTS (
+        SELECT 1 FROM asset_authors aa2
+        WHERE aa2.asset_id = a.asset_id AND aa2.author_id = ?6))
+    AND (?7 IS NULL OR NOT EXISTS (
+        SELECT 1 FROM json_each(?7) qk
         WHERE NOT EXISTS (
             SELECT 1 FROM assets_fts f
             WHERE f.rowid = a.rowid
               AND instr(lower(f.all_text), lower(qk.value)) > 0)))
     -- subset constraints (see file header): same two predicates as every
     -- other query in this file.
-    AND (?5 = 0 OR EXISTS (
+    AND (?8 = 0 OR EXISTS (
         SELECT 1 FROM favorites fvs WHERE fvs.asset_id = a.asset_id))
-    AND (?6 = 0 OR EXISTS (
+    AND (?9 = 0 OR EXISTS (
         SELECT 1 FROM view_events veh
         WHERE veh.asset_id = a.asset_id AND veh.kind = 'open'))
 GROUP BY a.source
@@ -585,6 +615,9 @@ type FacetSourceCountsParams struct {
 	MediaType      interface{}
 	CharactersJson interface{}
 	CosWork        interface{}
+	Source         interface{}
+	SourceIsOther  interface{}
+	AuthorID       interface{}
 	QJson          interface{}
 	FavoriteSubset interface{}
 	HistorySubset  interface{}
@@ -599,13 +632,18 @@ type FacetSourceCountsRow struct {
 // the matcher's canonical source. The old app's groupBySource filtered
 // !isCosFile before grouping; the NULL-source group is the user-facing
 // OTHER bucket and IS returned (as a NULL row -- the handler labels it).
-// Self-excluded: source and author_id are the SAME pill row, so neither
-// is applied here.
+// source / source_is_other / author_id apply as plain narrowing keys
+// (protocol 2026-09-09: fixed-author collections pass authorId here to
+// scope the row; exclude-self is client-side -- album callers omit both
+// params when asking for this row).
 func (q *Queries) FacetSourceCounts(ctx context.Context, arg FacetSourceCountsParams) ([]FacetSourceCountsRow, error) {
 	rows, err := q.db.QueryContext(ctx, facetSourceCounts,
 		arg.MediaType,
 		arg.CharactersJson,
 		arg.CosWork,
+		arg.Source,
+		arg.SourceIsOther,
+		arg.AuthorID,
 		arg.QJson,
 		arg.FavoriteSubset,
 		arg.HistorySubset,

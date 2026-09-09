@@ -191,7 +191,7 @@ func (s *Server) GetApiV1AssetsAssetId(w http.ResponseWriter, r *http.Request, a
 		detail.Height = ptr(int(row.Height.Int64))
 	}
 	if row.LastPositionSeconds.Valid {
-		detail.LastPositionSeconds = ptr(float32(row.LastPositionSeconds.Float64))
+		detail.LastPositionSeconds = ptr(row.LastPositionSeconds.Float64)
 	}
 	if row.VideoCodec.Valid {
 		detail.VideoCodec = ptr(row.VideoCodec.String)

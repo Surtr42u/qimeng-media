@@ -70,10 +70,12 @@ func TestRebuildIndex(t *testing.T) {
 		Sort: "default", RowLimit: 10,
 		// COS 分区三态开关（browse.sql）：直连 store 层必须显式传 0/1，
 		// NULL 会让三值逻辑把非 COS 行也排除（handler 侧恒传，见
-		// newAssetFilters 注释）；本测试走常规分区缺省。
-		IncludeCos: 0,
-		CosOnly:    0,
-		QJson:      `["标题"]`,
+		// newAssetFilters 注释）；本测试走常规分区缺省。source_is_other
+		// 同此契约（2026-09-09 多值化后与 sources_json 组成 AND 短路对）。
+		IncludeCos:    0,
+		CosOnly:       0,
+		SourceIsOther: 0,
+		QJson:         `["标题"]`,
 	})
 	if err != nil {
 		t.Fatalf("搜索失败: %v", err)

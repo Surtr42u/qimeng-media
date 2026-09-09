@@ -1,6 +1,5 @@
 package media.qimeng.app.core.data.repository
 
-import java.math.BigDecimal
 import java.time.OffsetDateTime
 import java.util.UUID
 import org.junit.Assert.assertEquals
@@ -32,7 +31,7 @@ class SdkDetailMappersTest {
         mediaType: MediaType = MediaType.image,
         thumbUrl: String? = "/media/thumb/abc?size=lg&sig=x",
         origUrl: String? = "/media/orig/abc?exp=1&sig=y",
-        lastPositionSeconds: BigDecimal? = null,
+        lastPositionSeconds: Double? = null,
         likedToday: Boolean? = null,
         likeCount: Int? = null,
         tags: List<Tag> = emptyList(),
@@ -102,7 +101,7 @@ class SdkDetailMappersTest {
                 mediaType = MediaType.video,
                 likedToday = true,
                 likeCount = 9,
-                lastPositionSeconds = BigDecimal("125.75"),
+                lastPositionSeconds = 125.75,
             ),
             baseUrl,
         )
@@ -192,11 +191,11 @@ class SdkDetailMappersTest {
     }
 
     @Test
-    fun `进度上报请求体Double转BigDecimal`() {
+    fun `进度上报请求体Double直传`() {
         val update = SdkDetailMappers.toProgressUpdate(125.75)
-        assertEquals(0, update.positionSeconds.compareTo(java.math.BigDecimal("125.75")))
-        // 整数秒不带小数尾巴
-        assertEquals(0, SdkDetailMappers.toProgressUpdate(90.0).positionSeconds.compareTo(java.math.BigDecimal("90")))
+        assertEquals(125.75, update.positionSeconds, 1e-9)
+        // 整数秒同值直传
+        assertEquals(90.0, SdkDetailMappers.toProgressUpdate(90.0).positionSeconds, 1e-9)
     }
 
     @Test
@@ -221,7 +220,7 @@ class SdkDetailMappersTest {
             dwellSeconds = 42L,
         )
         assertEquals(media.qimeng.sdk.models.ViewEventReport.Kind.dwell, dwell.kind)
-        assertEquals(0, dwell.seconds!!.compareTo(java.math.BigDecimal(42)))
+        assertEquals(42.0, dwell.seconds!!, 1e-9)
 
         val play = SdkDetailMappers.toViewEventReport(
             "11111111-1111-1111-1111-111111111111",

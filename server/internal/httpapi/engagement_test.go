@@ -21,7 +21,7 @@ import (
 )
 
 // postDwellEvent 上报一条带秒数的 dwell 事件。
-func postDwellEvent(t *testing.T, env *testEnv, assetID, session string, at time.Time, seconds float32) {
+func postDwellEvent(t *testing.T, env *testEnv, assetID, session string, at time.Time, seconds float64) {
 	t.Helper()
 	body, err := json.Marshal(gen.ViewEventReport{
 		AssetId:   uuid.MustParse(assetID),

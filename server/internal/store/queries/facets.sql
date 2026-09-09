@@ -17,12 +17,15 @@
 -- faceted-search behavior and is what the old app's merged pill rows
 -- produced, generalized to freely order-independent selection.
 --   FacetPartitionCounts  -> applies media_type/character/work/source/q
---   FacetSourceCounts     -> applies media_type/character/work/q
---                             (source and authorId are the SAME row,
---                             excluded together)
---   FacetAuthorCounts     -> applies partition/media_type/character/work/q
---                             (source and authorId are the SAME row,
---                             excluded together)
+--   FacetSourceCounts     -> applies media_type/character/work/source/
+--                             author_id/q (protocol 2026-09-09: source
+--                             and authorId are plain narrowing keys for
+--                             EVERY row now -- the author-collection page
+--                             passes a FIXED authorId to scope its work-
+--                             row candidates; exclude-self is client-side,
+--                             callers omit their own dimension's params)
+--   FacetAuthorCounts     -> applies partition/media_type/character/work/
+--                             source/author_id/q (same 2026-09-09 change)
 --   FacetCharacterCounts  -> applies partition/media_type/author-or-source/q
 --                             (character and work are the SAME row,
 --                             excluded together)
@@ -103,8 +106,10 @@ WHERE
 -- the matcher's canonical source. The old app's groupBySource filtered
 -- !isCosFile before grouping; the NULL-source group is the user-facing
 -- OTHER bucket and IS returned (as a NULL row -- the handler labels it).
--- Self-excluded: source and author_id are the SAME pill row, so neither
--- is applied here.
+-- source / source_is_other / author_id apply as plain narrowing keys
+-- (protocol 2026-09-09: fixed-author collections pass authorId here to
+-- scope the row; exclude-self is client-side -- album callers omit both
+-- params when asking for this row).
 SELECT a.source AS source_name,
        COUNT(*) AS file_count
 FROM assets a
@@ -122,6 +127,16 @@ WHERE
             SELECT 1 FROM asset_characters ac
             WHERE ac.asset_id = a.asset_id AND ac.character_name = c.value)))
     AND (sqlc.narg(cos_work) IS NULL OR a.cos_work = sqlc.narg(cos_work))
+    AND ((sqlc.narg(source) IS NULL AND sqlc.arg(source_is_other) = 0)
+         OR (sqlc.arg(source_is_other) = 1 AND a.source IS NULL
+             AND NOT EXISTS (
+                 SELECT 1 FROM asset_authors aaoth
+                 JOIN authors auoth ON auoth.id = aaoth.author_id
+                 WHERE aaoth.asset_id = a.asset_id AND auoth.type = 'cos'))
+         OR a.source = sqlc.narg(source))
+    AND (sqlc.narg(author_id) IS NULL OR EXISTS (
+        SELECT 1 FROM asset_authors aa2
+        WHERE aa2.asset_id = a.asset_id AND aa2.author_id = sqlc.narg(author_id)))
     AND (sqlc.narg(q_json) IS NULL OR NOT EXISTS (
         SELECT 1 FROM json_each(sqlc.narg(q_json)) qk
         WHERE NOT EXISTS (
@@ -143,8 +158,9 @@ ORDER BY file_count DESC, a.source;
 -- to au.type = 'cos': regular TXT authors are NOT part of this row (user
 -- decision 2026-09-03 -- the row is "cos authors + regular works").
 -- key = author_id, ready to be fed back into GET /assets.
--- author_id and source are deliberately NOT filtered here (exclude-self,
--- same pill row). The partition flags are kept for shape consistency with
+-- source / source_is_other / author_id apply as plain narrowing keys
+-- (protocol 2026-09-09, same as FacetSourceCounts: exclude-self is
+-- client-side). The partition flags are kept for shape consistency with
 -- the other facet queries; with au.type='cos' the regular partition
 -- naturally yields no rows (cos authors only link cos-linked assets).
 SELECT au.id AS author_id,
@@ -173,6 +189,16 @@ WHERE
             SELECT 1 FROM asset_characters ac
             WHERE ac.asset_id = a.asset_id AND ac.character_name = c.value)))
     AND (sqlc.narg(cos_work) IS NULL OR a.cos_work = sqlc.narg(cos_work))
+    AND ((sqlc.narg(source) IS NULL AND sqlc.arg(source_is_other) = 0)
+         OR (sqlc.arg(source_is_other) = 1 AND a.source IS NULL
+             AND NOT EXISTS (
+                 SELECT 1 FROM asset_authors aaoth
+                 JOIN authors auoth ON auoth.id = aaoth.author_id
+                 WHERE aaoth.asset_id = a.asset_id AND auoth.type = 'cos'))
+         OR a.source = sqlc.narg(source))
+    AND (sqlc.narg(author_id) IS NULL OR EXISTS (
+        SELECT 1 FROM asset_authors aa2
+        WHERE aa2.asset_id = a.asset_id AND aa2.author_id = sqlc.narg(author_id)))
     AND (sqlc.narg(q_json) IS NULL OR NOT EXISTS (
         SELECT 1 FROM json_each(sqlc.narg(q_json)) qk
         WHERE NOT EXISTS (

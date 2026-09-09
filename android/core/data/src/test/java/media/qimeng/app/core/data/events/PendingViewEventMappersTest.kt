@@ -1,6 +1,5 @@
 package media.qimeng.app.core.data.events
 
-import java.math.BigDecimal
 import java.time.ZoneOffset
 import java.util.UUID
 import media.qimeng.app.core.model.ViewEventKind
@@ -42,13 +41,13 @@ class PendingViewEventMappersTest {
     fun `dwell - durationMs 毫秒转秒 movePointLeft(3) 无损`() {
         // 7350ms → 7.350：毫秒精度不截断（冻结口径禁用整秒截断换算）
         val report = entity(kind = ViewEventKind.DWELL.name, durationMs = 7350L).toSdkReport()
-        assertEquals(BigDecimal("7.350"), report.seconds)
+        assertEquals(7.350, report.seconds!!, 1e-9)
     }
 
     @Test
     fun `dwell - 整秒值换算不变形`() {
         val report = entity(kind = ViewEventKind.DWELL.name, durationMs = 5000L).toSdkReport()
-        assertEquals(BigDecimal("5.000"), report.seconds)
+        assertEquals(5.0, report.seconds!!, 1e-9)
     }
 
     @Test

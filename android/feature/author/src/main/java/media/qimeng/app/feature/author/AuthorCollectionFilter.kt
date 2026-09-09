@@ -63,10 +63,9 @@ internal fun collectionAssetQuery(
  * + 其余维选择联动（作品/角色递归筛选——选了作品后角色只显示该作品下的候选，服务端口径）。
  * partition 恒 ALL（本页无分区芯片，候选只由固定 authorId 收窄）。
  *
- * 已知协议限制（服务端 facets.go「作者行排自身=source 与 authorId 一起忽略」）：
- * 作品维（authors 桶）候选**不随 authorId 收窄**——服务端返回全库的 source∪COS 作者桶，
- * 本页在消费侧裁剪为 SOURCE 子集（见 AuthorCollectionViewModel.loadFacets）；角色/类型
- * 两桶的 authorId 收窄正常（已实测）。协议扩展归台账，本卷零协议。
+ * 协议批 2026-09-09 已解除收窄限制（#34）：服务端 facets 作者行 source/authorId
+ * 照常收窄——固定 authorId 下作品维（authors 桶）候选即按本作者收窄，本页
+ * 无需再依赖「消费侧 SOURCE 子集兜底」的旧行为前提（N4 消费批可直接消费 authors 桶）。
  */
 internal fun collectionFacetsQuery(
     authorId: String,

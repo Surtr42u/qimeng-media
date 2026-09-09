@@ -32,15 +32,15 @@ func (s *Server) GetApiV1RecommendationsPrefs(w http.ResponseWriter, r *http.Req
 		wgt = *stored
 	}
 	writeJSON(w, http.StatusOK, gen.RecommendPrefs{
-		TagRelevance:  ptr(float32(wgt.TagRelevance)),
-		TagCollection: ptr(float32(wgt.TagCollection)),
-		Engagement:    ptr(float32(wgt.Engagement)),
-		Recency:       ptr(float32(wgt.Recency)),
-		LikeScore:     ptr(float32(wgt.LikeScore)),
-		Discovery:     ptr(float32(wgt.Discovery)),
-		Freshness:     ptr(float32(wgt.Freshness)),
-		BrowseDepth:   ptr(float32(wgt.BrowseDepth)),
-		MaxRandom:     ptr(float32(wgt.MaxRandom)),
+		TagRelevance:  ptr(wgt.TagRelevance),
+		TagCollection: ptr(wgt.TagCollection),
+		Engagement:    ptr(wgt.Engagement),
+		Recency:       ptr(wgt.Recency),
+		LikeScore:     ptr(wgt.LikeScore),
+		Discovery:     ptr(wgt.Discovery),
+		Freshness:     ptr(wgt.Freshness),
+		BrowseDepth:   ptr(wgt.BrowseDepth),
+		MaxRandom:     ptr(wgt.MaxRandom),
 	})
 }
 
@@ -71,7 +71,7 @@ func (s *Server) PutApiV1RecommendationsPrefs(w http.ResponseWriter, r *http.Req
 
 // clampPrefs 把全部非 nil 权值钳制到 [0,1]（maxRandom 同为权重语义）。
 func clampPrefs(p *gen.RecommendPrefs) {
-	clamp := func(v **float32) {
+	clamp := func(v **float64) {
 		if *v == nil {
 			return
 		}
