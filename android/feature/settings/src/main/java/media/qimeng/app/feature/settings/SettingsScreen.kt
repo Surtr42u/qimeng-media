@@ -92,6 +92,8 @@ fun SettingsScreen(
     onOpenHistory: () -> Unit = {},
     onOpenAuthors: () -> Unit = {},
     onOpenUpload: () -> Unit = {},
+    /** 作者总览 Top5 行直达作者集合页（RES R2 清偿 I4 挂账：此前借道作者管理页两跳） */
+    onOpenAuthorCollection: (authorId: String, displayName: String) -> Unit = { _, _ -> },
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -135,7 +137,7 @@ fun SettingsScreen(
                 overview = state.authorOverview,
                 loading = state.authorsLoading,
                 onManage = onOpenAuthors,
-                onOpenAuthor = onOpenAuthors,
+                onOpenAuthorCollection = onOpenAuthorCollection,
             )
         }
 
@@ -299,18 +301,15 @@ private fun WriteErrorBanner(message: String, onDismiss: () -> Unit) {
  * 展示口径单源在 :core:model [toAuthorOverview]（计数与排序纯函数，单测锁定）。
  * 总览未就绪 → 「加载中…」；读失败既有总览保持原状、横幅走 writeError（卡内不重复报错）；
  * 全量作者为 0 → 「暂无作者」空态。
- * 【接线核实（I4）】原注释「行点击进作者集合页待 G1b 批接线」已过时——G1b 实际接线的是
- * 作者管理页（AuthorScreen 行点击 → AuthorCollectionRoutes，QimengNavHost 实证），本卡
- * Top5 行此前无 onClick。I4 补接线：行点击走 onOpenAuthor；当前传 onOpenAuthors（进作者
- * 管理页，经其行点击继续进作者集合页，链路闭环）——直达作者集合页需壳层为 SettingsScreen
- * 增配 authorId 回调（QimengNavHost 属共享文件，本批只读红线，见交付报告需共享窗口项）。
+ * Top5 行点击直达作者集合页（RES R2 清偿 I4 挂账「待壳层共享窗口」：行点击带
+ * authorId+原始名上抛，壳层接线 AuthorCollectionRoutes——不再借道作者管理页两跳）。
  */
 @Composable
 private fun AuthorOverviewCard(
     overview: AuthorOverview?,
     loading: Boolean,
     onManage: () -> Unit,
-    onOpenAuthor: () -> Unit,
+    onOpenAuthorCollection: (authorId: String, displayName: String) -> Unit,
 ) {
     QimengRankCard(modifier = Modifier.fillMaxWidth()) {
         // 头行：标题 + 管理入口（Web .rank-head：h3 + a.rank-more 小字次色，点进作者管理页）
@@ -351,7 +350,9 @@ private fun AuthorOverviewCard(
                     OverviewAuthorRow(
                         name = author.displayLabel,
                         fileCount = author.fileCount ?: 0,
-                        onClick = onOpenAuthor,
+                        // 直达作者集合页：id=取数键、displayName=原始名（不带 ·COS 展示后缀，
+                        // 对齐详情页作者卡口径），均由 AuthorSummary 透出
+                        onClick = { onOpenAuthorCollection(author.id, author.displayName) },
                     )
                 }
             }
@@ -359,7 +360,7 @@ private fun AuthorOverviewCard(
     }
 }
 
-/** 总览行（Web RankRowList li：.rank-name 首行 + .rank-sub2 副标题「N 个文件」；I4 行点击接线见卡注释） */
+/** 总览行（Web RankRowList li：.rank-name 首行 + .rank-sub2 副标题「N 个文件」；行点击直达见卡注释） */
 @Composable
 private fun OverviewAuthorRow(name: String, fileCount: Int, onClick: () -> Unit) {
     Column(

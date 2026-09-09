@@ -13,6 +13,7 @@ import org.junit.Rule
 import org.junit.Test
 import media.qimeng.app.core.data.repository.DataStoreGridPrefsRepository
 import media.qimeng.app.core.data.repository.GridPrefsRepository
+import media.qimeng.app.core.data.repository.MediaBatchIndex
 import media.qimeng.app.core.data.repository.MediaRepository
 import media.qimeng.app.core.model.AlbumDim
 import media.qimeng.app.core.model.AssetPageResult
@@ -116,9 +117,11 @@ class AuthorCollectionViewModelTest {
         gridPrefs: FakeGridPrefsRepository = FakeGridPrefsRepository(),
         authorId: String? = "22222222-2222-2222-2222-222222222222",
         authorName: String? = "蠢沫",
+        batchIndex: MediaBatchIndex = MediaBatchIndex(),
     ): AuthorCollectionViewModel = AuthorCollectionViewModel(
         mediaRepository = repo,
         gridPrefs = gridPrefs,
+        batchIndex = batchIndex,
         origUrlResolver = object : media.qimeng.app.core.data.repository.AssetOrigUrlResolver {
             override suspend fun origUrl(assetId: String): String? = null
         },
@@ -450,4 +453,35 @@ class AuthorCollectionViewModelTest {
         advanceUntilIdle()
         assertEquals(5, gridPrefs.albumFlow.value)
     }
+
+    // ---------- 批次上下文（RES R4：作者集合页进详情补批次，台账 #21 余量清偿） ----------
+
+    @Test
+    fun `enterDetail批次上下文 - 清单落地后批次含翻页追加件 序号滑切可用 筛选重拉整体替换`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val repo = FakeMediaRepository()
+            val batchIndex = MediaBatchIndex()
+            val viewModel = viewModel(repo, batchIndex = batchIndex)
+            advanceUntilIdle()
+
+            // 首载落地一件（a-1）+ 翻页追加一件（a-2）后点卡：批次 = 当前显示清单（显示顺序）
+            viewModel.onNearBottom()
+            advanceUntilIdle()
+            assertEquals(listOf("a-1", "a-2"), viewModel.uiState.value.items.map { it.id })
+            viewModel.enterDetail("a-2")
+            assertEquals(listOf("a-1", "a-2"), batchIndex.ids)
+            assertEquals(1, batchIndex.indexOf("a-2"))
+            assertEquals(2, batchIndex.size())
+
+            // 滑切数据链（详情页 moveBy 消费）：邻位可达、首件向前越界返回 null
+            assertEquals("a-1", batchIndex.assetIdAt(batchIndex.indexOf("a-2"), -1))
+            assertNull(batchIndex.assetIdAt(batchIndex.indexOf("a-1"), -1))
+
+            // 筛选重拉（清单整体换血为 a-3）：快照式整体替换——再次点卡批次不再含旧清单
+            viewModel.selectMediaType(MediaKind.VIDEO)
+            advanceUntilIdle()
+            viewModel.enterDetail("a-3")
+            assertEquals(listOf("a-3"), batchIndex.ids)
+            assertEquals(-1, batchIndex.indexOf("a-1"))
+        }
 }

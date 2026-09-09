@@ -132,7 +132,12 @@ fun AuthorCollectionScreen(
                     // 底部预留防悬浮药丸面板展开时遮挡末行（收藏/相册页同款）
                     bottomContentPadding = QimengDimens.ListBottomContentPadding,
                     onNearBottom = viewModel::onNearBottom,
-                    onAssetClick = { asset: MediaAsset -> onOpenAsset(asset.id) },
+                    // 卡片点击先写批次上下文再交壳层导航（RES R4：详情页 i/N 序号+滑动切换
+                    // 数据链，与首页/收藏/搜索同款机制）
+                    onAssetClick = { asset: MediaAsset ->
+                        viewModel.enterDetail(asset.id)
+                        onOpenAsset(asset.id)
+                    },
                 )
             }
             // 悬浮药丸面板：Box 叠放不推挤网格（拍板⑨：列表族悬浮形态保留；进页默认收起

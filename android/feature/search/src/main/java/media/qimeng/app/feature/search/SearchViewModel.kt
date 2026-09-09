@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import media.qimeng.app.core.data.repository.AssetOrigUrlResolver
+import media.qimeng.app.core.data.repository.MediaBatchIndex
 import media.qimeng.app.core.data.repository.MediaRepository
 import media.qimeng.app.core.data.repository.SearchHistoryRepository
 import media.qimeng.app.core.model.AssetQuery
@@ -52,6 +53,7 @@ data class SearchUiState(
 class SearchViewModel @Inject constructor(
     private val mediaRepository: MediaRepository,
     private val searchHistoryRepository: SearchHistoryRepository,
+    private val batchIndex: MediaBatchIndex,
     val origUrlResolver: AssetOrigUrlResolver,
 ) : ViewModel() {
 
@@ -164,6 +166,17 @@ class SearchViewModel @Inject constructor(
         val state = _uiState.value
         if (state.isLoading || state.nextCursor == null) return
         loadItems(state.nextCursor, append = true)
+    }
+
+    /**
+     * 进详情前的批次上下文写入（RES R3 补齐 N1 范式，清偿 SearchScreen D3 注释挂账）：
+     * 「已加载 = 当前显示清单」口径——结果态 items（含翻页追加件，显示顺序）即整页显示，
+     * 快照式整体替换 [MediaBatchIndex.ids]，详情页据此得「i / N」序号与滑动切换
+     * （调用点在 SearchScreen 卡片点击，先写批次再交壳层导航；空态/建议态点不到卡片，
+     * items 恒空表=空批次语义，无需按 phase 分支）。
+     */
+    fun enterDetail(assetId: String) {
+        batchIndex.ids = _uiState.value.items.map { it.id }
     }
 
     fun clearHistory() {

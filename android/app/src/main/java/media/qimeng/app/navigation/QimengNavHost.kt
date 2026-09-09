@@ -204,6 +204,8 @@ fun QimengNavHost(
                 )
             }
             composable(TopLevelDestination.STATS.route) {
+                // 统计族跳转回调组单源（RES R1 去重，构造见 [statsNavLinks]）
+                val links = statsNavLinks(navController)
                 StatsScreen(
                     // 趋势卡/分布入口卡点击进统计详情页（任务I I3；GUIDE_UI §数据统计页 L213-214，
                     // 携带当前时间范围——GUIDE §交互设计「进入详情携带当前时间范围」）
@@ -213,11 +215,9 @@ fun QimengNavHost(
                     // 任务J J1 详情页跳转链（GUIDE_UI L218-224）：常看文件条目→详情页（批次
                     // 上下文已由 StatsViewModel.enterDetail 写入）、作者条目→作者集合页、
                     // 标签条目→搜索页携词（query 编码见 Routes.searchRoute）
-                    onOpenAsset = { assetId -> navController.navigate(DetailRoutes.detailRoute(assetId)) },
-                    onOpenAuthor = { authorId, displayName ->
-                        navController.navigate(AuthorCollectionRoutes.authorCollectionRoute(authorId, displayName))
-                    },
-                    onOpenTagSearch = { tag -> navController.navigate(Routes.searchRoute(tag)) },
+                    onOpenAsset = links.onOpenAsset,
+                    onOpenAuthor = links.onOpenAuthor,
+                    onOpenTagSearch = links.onOpenTagSearch,
                 )
             }
             composable(TopLevelDestination.SETTINGS.route) {
@@ -226,6 +226,10 @@ fun QimengNavHost(
                     onOpenHistory = { navController.navigate(Routes.HISTORY) },
                     onOpenAuthors = { navController.navigate(Routes.AUTHORS) },
                     onOpenUpload = { navController.navigate(Routes.UPLOAD) },
+                    // RES R2：总览卡 Top5 行直达作者集合页（清偿 I4「待壳层共享窗口」挂账）
+                    onOpenAuthorCollection = { authorId, displayName ->
+                        navController.navigate(AuthorCollectionRoutes.authorCollectionRoute(authorId, displayName))
+                    },
                 )
             }
             composable(
@@ -285,16 +289,16 @@ fun QimengNavHost(
             // 统计详情页（任务I I3）：路由契约单源在 feature:stats（DetailRoutes/AuthorCollectionRoutes
             // 同范式），mode/range 参数由页面 ViewModel 经 SavedStateHandle 读取，此处无需展开 arguments
             composable(StatsDetailRoutes.STATS_DETAIL_ROUTE) {
+                // 统计族跳转回调组单源（RES R1 去重，构造见 [statsNavLinks]）
+                val links = statsNavLinks(navController)
                 StatsDetailScreen(
                     onBack = { navController.popBackStack() },
                     // 任务J J1 详情页跳转链（GUIDE_UI L218-224）：seconds 榜条目→详情页
                     // （批次上下文已由 StatsDetailViewModel.enterDetail 写入 Top20 快照）、
                     // 作者条目→作者集合页、标签条目→搜索页携词
-                    onOpenAsset = { assetId -> navController.navigate(DetailRoutes.detailRoute(assetId)) },
-                    onOpenAuthor = { authorId, displayName ->
-                        navController.navigate(AuthorCollectionRoutes.authorCollectionRoute(authorId, displayName))
-                    },
-                    onOpenTagSearch = { tag -> navController.navigate(Routes.searchRoute(tag)) },
+                    onOpenAsset = links.onOpenAsset,
+                    onOpenAuthor = links.onOpenAuthor,
+                    onOpenTagSearch = links.onOpenTagSearch,
                 )
             }
             // 详情页（M4-3）：不设 launchSingleTop——详情→详情（推荐栏跳转）保留返回栈，
@@ -321,14 +325,33 @@ fun QimengNavHost(
 private val topLevelRoutes = TopLevelDestination.entries.map { it.route }.toSet()
 
 /**
+ * 统计族（统计页/统计详情页）详情跳转回调组（RES R1 去重）：两页的三回调接线原本逐字重复，
+ * 收敛为参数对象单源构造——后续统计族新增跳转链只改 [statsNavLinks] 一处。
+ */
+private data class StatsNavLinks(
+    val onOpenAsset: (assetId: String) -> Unit,
+    val onOpenAuthor: (authorId: String, displayName: String) -> Unit,
+    val onOpenTagSearch: (tag: String) -> Unit,
+)
+
+/** 以 navController 构造统计族跳转回调组（路由串单源：DetailRoutes/AuthorCollectionRoutes/Routes） */
+private fun statsNavLinks(navController: NavHostController): StatsNavLinks = StatsNavLinks(
+    onOpenAsset = { assetId -> navController.navigate(DetailRoutes.detailRoute(assetId)) },
+    onOpenAuthor = { authorId, displayName ->
+        navController.navigate(AuthorCollectionRoutes.authorCollectionRoute(authorId, displayName))
+    },
+    onOpenTagSearch = { tag -> navController.navigate(Routes.searchRoute(tag)) },
+)
+
+/**
  * query 值百分号编码（[Routes.searchRoute] 专用；RFC 3986 unreserved 之外一律 %XX）。
  * 为什么自持编码器而不用 android.net.Uri.encode：与 feature:author 的 encodeRouteSegment
  * 同款理由——行为确定性优先（Uri.encode 的默认保留集含 &/= 等 query 结构字符的版本行为
  * 不做记忆依赖），且本地 JVM 单测跑在 android.jar stub 上平台 API 不可用。不复用
  * encodeRouteSegment 本体：internal 跨模块不可见，query/路径段语义略异——两处注释互指，
- * 标签词表变更时同步自查。
+ * 标签词表变更时同步自查。internal 供同模块单测锁定（encodeRouteSegment 同款处置）。
  */
-private fun encodeQueryValue(value: String): String = buildString {
+internal fun encodeQueryValue(value: String): String = buildString {
     for (byte in value.toByteArray(Charsets.UTF_8)) {
         val c = byte.toInt() and 0xFF
         val unreserved = c < QUERY_ASCII_BOUNDARY &&
