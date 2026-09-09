@@ -117,7 +117,12 @@ fun SearchScreen(
                 onNearBottom = viewModel::onNearBottom,
                 onPinchStep = viewModel::adjustColumnsLive,
                 onPinchEnd = viewModel::commitPinchColumns,
-                onAssetClick = { asset -> onOpenAsset(asset.id) },
+                // 卡片点击先写批次上下文再交壳层导航（RES R3 清偿本页 D3 注释挂账，
+                // 详情页 i/N 序号+滑动切换数据链，与首页/收藏/历史同款机制）
+                onAssetClick = { asset ->
+                    viewModel.enterDetail(asset.id)
+                    onOpenAsset(asset.id)
+                },
             )
         }
     }
@@ -302,7 +307,7 @@ private fun ResultPhase(
                 animatedUrlResolver = animatedUrlResolver,
                 onNearBottom = onNearBottom,
                 // 卡片点击进详情（D3 同族顺手修复：onAssetClick 默认空实现漏传即静默无反应，
-                // 镜像相册/收藏/历史三页接线；搜索页暂无批次上下文写入，缺口同记待办）
+                // 镜像相册/收藏/历史三页接线；批次上下文写入已由 RES R3 补齐——见调用方注释）
                 onAssetClick = onAssetClick,
             )
         }

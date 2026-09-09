@@ -16,6 +16,7 @@ import kotlinx.coroutines.launch
 import media.qimeng.app.core.data.repository.AssetOrigUrlResolver
 import media.qimeng.app.core.data.repository.DataStoreGridPrefsRepository
 import media.qimeng.app.core.data.repository.GridPrefsRepository
+import media.qimeng.app.core.data.repository.MediaBatchIndex
 import media.qimeng.app.core.data.repository.MediaRepository
 import media.qimeng.app.core.model.AlbumDim
 import media.qimeng.app.core.model.AlbumFilter
@@ -62,6 +63,7 @@ data class AuthorCollectionUiState(
 class AuthorCollectionViewModel @Inject constructor(
     private val mediaRepository: MediaRepository,
     private val gridPrefs: GridPrefsRepository,
+    private val batchIndex: MediaBatchIndex,
     val origUrlResolver: AssetOrigUrlResolver,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
@@ -168,6 +170,16 @@ class AuthorCollectionViewModel @Inject constructor(
         val state = _uiState.value
         if (state.isLoading || state.nextCursor == null) return
         loadItems(cursor = state.nextCursor, append = true)
+    }
+
+    /**
+     * 进详情前的批次上下文写入（RES R4 清偿台账 #21 余量，N1 范式补齐）：
+     * 「已加载 = 当前显示清单」口径——当前筛选下的集合清单 items（含翻页追加件，显示顺序）
+     * 即整页显示，快照式整体替换 [MediaBatchIndex.ids]；筛选重拉后清单整体换血，
+     * 再次点卡即写新清单（快照语义天然覆盖，无需额外分支）。
+     */
+    fun enterDetail(assetId: String) {
+        batchIndex.ids = _uiState.value.items.map { it.id }
     }
 
     fun refresh() {

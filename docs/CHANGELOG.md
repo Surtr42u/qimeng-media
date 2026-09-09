@@ -9,6 +9,17 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## feat(app): RES 残账清偿——总览行直达集合页+搜索/作者集合页批次上下文+NavHost去重与编码器单测（2026-09-09 第一百七十一笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理，RES批；主会话质量排查认定的可直接做项）
+
+- **R1 QimengNavHost 去重（卫生 J1）**：StatsScreen/StatsDetailScreen 两处三回调接线（onOpenAsset/onOpenAuthor/onOpenTagSearch）逐字重复，收敛为私有参数对象 StatsNavLinks + statsNavLinks(navController) 单源构造；encodeQueryValue 补 6 断言单测（EncodeQueryValueTest：unreserved 保留/中文 UTF-8/&/# 劈裂防护/空格/emoji 四字节/searchRoute 拼接，对齐 AuthorCollectionRoutesTest 风格，private→internal 供同模块锁定）
+- **R2 我的页作者总览 Top5 行直达作者集合页（I4 挂账清偿）**：此前借道作者管理页两跳。SettingsScreen 签名加 onOpenAuthorCollection(authorId, displayName)，OverviewAuthorRow 点击带 AuthorSummary.id+原始名（不带 ·COS 展示后缀，对齐详情页作者卡口径）上抛，QimengNavHost 接线 authorCollectionRoute——模拟器实证一跳直达（dump：标题「I6走查作者」+「作者 · 4 个文件」）
+- **R3 搜索页进详情批次上下文（N1 范式补齐，清偿 SearchScreen D3 注释挂账）**：SearchViewModel 注入 MediaBatchIndex 加 enterDetail（结果态 items 含翻页追加件=批次，快照整体替换），Screen 点卡先写批次再导航；单测 2 例（未落地空批次/追加件序号滑切 + 换词重查整体替换）——模拟器实证「2 / 18」序号
+- **R4 作者集合页进详情批次上下文（台账 #21 余量清偿）**：AuthorCollectionViewModel 同范式加 enterDetail + Screen 接线；单测 1 例（翻页追加+邻位滑切+筛选重拉整体替换）——模拟器实证「4 / 4」「3 / 4」序号随点卡位置变化
+- 新增单测 9 例全绿（EncodeQueryValueTest 6 + SearchViewModelTest 2 + AuthorCollectionViewModelTest 1）；门禁四连绿（app-test/app-lint/app-build/make lint 0 errors）；证据 %TEMP%\qimeng-res-evidence\
+
+---
 ## fix(app): BVIS 行距微调——搜索词丸流间隙对齐旧实录8dp+悬浮药丸面板间隙4dp（2026-09-09 第一百七十笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理，BVIS批；走查B类清偿）
