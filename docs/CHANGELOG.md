@@ -9,6 +9,15 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## fix(server): 清偿 P2 批遗留 server 存量 lint 债——libraries.go gofmt + assets_media_url.go 冗余转换（2026-09-09 第一百七十六笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理，任务L L1 批附带清偿；两处均为 P2 六条清偿 commit 28e9116 入库的存量问题，非本次 L1 改动引入）
+
+- `internal/httpapi/libraries.go`：gofmt（中文注释行 `//（` 补空格为 `// （`），纯空白修正
+- `internal/httpapi/assets_media_url.go`：`uuidOrNil` 删 `openapi_types.UUID(u)` 冗余转换（该类型是 uuid.UUID 的类型别名，unconvert 判定直返 `u`），行为零变化，`go build ./...` + `go test ./internal/httpapi/` 全绿
+- 动因：任务L L1 门禁 `make lint` 被此二项拦停（gofmt required / unconvert: 1），为还四连绿门禁顺带清偿
+
+---
 ## feat(app): 任务L L1 缩略图卡片旧版化——网格卡裁回旧版极简卡（仅16:9图+视频时长角标）（2026-09-09 第一百七十五笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理，任务L L1 批）
