@@ -9,6 +9,19 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## feat(app): 任务L L3 #37 首页↔排行榜卡半屏修复——对齐判定加偏移量可重试+滚动在途回写门控（2026-09-09 第一百八十笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理，任务L L3 批）
+
+- **用户原话**：「37 明确高频触发……直接从首页点击到排行榜或者排行榜点击首页,会卡在cos半屏幕」+ 拍板 #3「禁止再按无法稳定复现停手——以高频路径必修为验收门」
+- **根因定位**（双因叠加，均在 `HomeScreen.kt` chip↔pager 同步层）：① chip→pager 以「currentPage == 目标」单次 `animateScrollToPage`——高频连点重启 LaunchedEffect 打断在途动画后，pager 停在中间偏移而 currentPage 已等于目标，对齐判定永真即永久卡半屏；② pager→chip 用 currentPage 无门控回写——程序化翻页 0→2 途经中间页 1 时 `switchTab` 被中途劫持再反向打断动画（「首页→排行榜被拽回 COS 半屏」帮凶）
+- **修法（拍板 A+B 同做）**：① 对齐判定抽纯函数 `isPagerAlignedWithTab`（页码到位 **且** `currentPageOffsetFraction` 在容差 `SNAP_ALIGNMENT_EPSILON_FRACTION=0.01` 内，容差只滤浮点残差防重试死循环），LaunchedEffect 内 while 未对齐就重试 `animateScrollToPage`，重试前先等 `isScrollInProgress` 归假（不与手指/在途滚动抢 mutator）；② 回写抽纯函数 `pagerPageForTabSync`（滚动在途发 null 不回写），且门必须读在 snapshotFlow 求值内——落定瞬间门开触发再求值补发最后一次 currentPage，否则拖拽中最后一次发射被吞后 chip 永不跟随
+- **#35 防护零回归**：HomeViewModel 未动（哨兵抑制 500ms 窗与 switchTab 单点回写链路原样），HomeViewModelTest 含哨兵用例全绿；RANK 周期行显隐高度扰动按拍板评估后维持条件挂载（固定预留偏离旧版规格、animateItem 是 LazyLayout API 不适用于普通 Column），评估结论落注释
+- **单测**：新增 `HomePagerSyncLogicTest` 6 例全绿——卡半屏中间偏移(±0.4/0.5)判未对齐触发重试、浮点残差(1e-7)判对齐防死循环、页码不符判未对齐、滚动在途回写发 null、落定回写页码
+- **门禁四连绿**：make app-build / app-test / app-lint / lint 全 EXIT=0
+- **实机高频验收**（qimeng_api35@emulator-5554 身份校验过，18461 虚构库）：chip→pager（点排行榜）52 次 + pager→chip（点推荐）50 次**逐击核对**（logcat `QimengL37 aligned` 账本）全部落定，**中间态计数 0**（139/139 条 fraction=0.0）；250ms 快速连点 20 轮故意打断在途动画全部轮末收敛；左右滑回归过（滑到排行榜周期行出现=pager→chip 回写在门控下正常）；App 进程崩溃 0、ANR 0。验收期间两次外部打断经现场存证确认系并行任务K车道同模拟器走查（相册页现场铁证+10 条 uiautomator 工具进程 dump 冲突 FATAL，非 App 崩溃），计数制脚本自愈后达标。证据 %TEMP%\qimeng-l3-evidence\
+
+---
 ## feat(app): 任务K K2 视频全屏对齐旧版——单级横屏全屏制（NONE⇄LANDSCAPE，竖屏视频全屏钮no-op）（2026-09-09 第一百七十九笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理，任务K K2 批）
