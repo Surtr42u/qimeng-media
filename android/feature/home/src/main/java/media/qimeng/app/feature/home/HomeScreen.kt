@@ -65,8 +65,8 @@ private fun HomeTab.tabLabelRes(): Int = when (this) {
     HomeTab.RANK -> R.string.home_tab_rank
 }
 
-/** pager↔chip 同步对齐日志 tag（实机高频验收 grep 用，同 QimengM42 先例） */
-private const val PAGER_SYNC_LOG_TAG = "QimengL37"
+/** pager↔chip 同步对齐日志 tag（实机高频验收 grep 用，同 QimengM42 先例；L6 起改功能域名，原批次台账号 QimengL37 退役） */
+private const val PAGER_SYNC_LOG_TAG = "QimengHomePagerSync"
 
 /**
  * 对齐判定的偏移容差（页宽分数）：snap 落点理论精确为 0，容差只滤浮点残差、防「残差≠0 →

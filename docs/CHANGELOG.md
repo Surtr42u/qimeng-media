@@ -9,6 +9,17 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## docs(app): 任务L L6 收官——全卷总结+P3清偿三处（tag/陈旧口径注释/例数勘误）+待拍板销账六条+实录对照与合并联调记档（2026-09-10 第一百八十六笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理，任务L L6 收官批）
+
+- **全卷总结（任务L-缩略图导航首页与数据合并卷，2026-09-09 立，2026-09-10 收官）**：范围=缩略图旧版化（L1）+底 Tab 防叠屏（L2）+#37 卡半屏高优必修（L3）+删相册页头排序行与面板排序回归（L4）+浏览数据本地优先与两端幂等合并（L5，原独立任务M 并入）+收官（L6）。六批全部交付：37b8566+fb76003+1d68ead → 9db061f → e766630 → 68e8fdb → 2e4c591/1865556/92c2ade → 本笔。审查方式=**每批独立对抗审查**（独立 reviewer 逐批），五批全过 0 P1/P2（收口笔=54e1480/b10a0c5/187c968/e47cf07，L5 P2 CRLF 由主代理亲笔随收口清偿）。与任务K 两卷并行红线全程未破（L 零触碰 feature:detail）。全卷证据目录 %TEMP%\qimeng-l{1..6}-evidence\（保留勿删）。
+- **P3 清偿三处（本笔代码改动，`make app-build`/`app-test`/`app-lint` 三连绿复验 EXIT=0）**：①HomeScreen 日志 tag 台账号 `QimengL37` 改功能域名 `QimengHomePagerSync`（L3 审查收口记档的清理候选）；②ViewEventSender.kt 注释残留已废止「毒丸连败≥3丢弃/先删后发」旧口径改现行语义（发送成功再删/IO·5xx 退避重试不丢/4xx 终局标记不删行保留导出）；③第一百八十三笔「ViewEventQueueTest 14 例」勘误为实数 13 例（随本卷审查收口 ⑤ 口径，原句处注明）。
+- **待拍板销账（`QimengNAS\待拍板-20260907.md`，格式仿 #23）**：#37 卡半屏→L3 e766630 清偿关闭；#25 本地优先合并→L5 三笔（clientEventId 幂等+两端并集）关闭；#38 删排序行→L4 68e8fdb 关闭；#40 底 Tab 叠屏→L2 9db061f 覆盖关闭；#41 缩略图旧版极简卡→L1 37b8566 覆盖关闭；#39 详情黑底=非 L 范围（L1~L5 文件集不含 feature:detail），注记 K1（96b1959）已随任务K 收官清偿；**#19 切维语义明确不关**（维持现状，与本卷无关未动）。
+- **收官走查记档**：①旧版UI实录对照——qimeng_api35 无头模拟器+18461 虚构库，首页/相册两页网格截图+dump 对照《旧版UI实录》逐项核对极简卡形态（16:9 图+时长角标/无文字层/卡间 10dp）与组头跨行，差异逐条记档（见 %TEMP%\qimeng-l6-evidence\README.md）；②数据合并联调——模拟器断网浏览 2 件→恢复网络→「立即同步」→curl stats 核对数字一致（原始 curl 输出存档）。
+- **遗留挂账（全卷，均已在 HANDOVER_APP 任务L 节落档）**：Web 4xx 无终局标记且无导出抢救入口（幂等兜底下有界）；server legacy 放行测试建议补 raw body 断言；`.gitattributes` eol 根治候选（拍板候选未擅改）。
+
+---
 ## fix(app): 任务K K3 收官——沉浸态顶部条带清偿（D1 重做=裁剪区外背板垫条）+单级制陈旧注释清理+全链路走查收官（2026-09-10 第一百八十五笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理，任务K K3c 收官批）
@@ -44,7 +55,7 @@
 - **Room 1→2 迁移**（`EventDbMigrations.MIGRATION_1_2`，只加三列 DEFAULT）：clientEventId/terminal/nextAttemptAt——旧库无损升级，存量行幂等键 `''` 由 drain 懒回填生成一次并落库（不伪造历史 id）；走正式迁移不破坏性重建（队列现在是用户数据唯一暂存）
 - **分类表改判**（ViewEventSendPolicy，表驱动+单测逐行锁定）：2xx 全段=确认（幂等键使信任 2xx 安全，避免非声明 2xx 永久重试无底洞）；400/401/403/404=终局标记；409 等未声明 4xx 保守重试；毒丸连败阈值删除
 - **设置页最小 UI**（feature:settings）：「浏览数据」一行卡（待上传 N 条 + 立即同步 + 导出未上传 + 一次性结果提示）——立即同步与三通道自动补传同一 drain 执行体（同一 Mutex 串行，退避未到期不狂打）；导出走 SAF CreateDocument（VM 只出数据、屏幕层写文件，元素=可直接 POST /events/view 的请求体，同一 clientEventId 手动与自动路径幂等一致）；feature:settings 补 activity-compose 依赖与 testOptions returnDefaultValues（core:data 同款先例）
-- **单测重写/新增**：`ViewEventQueueTest` 按新语义全量重写 14 例（成功删/失败留/退避到期前后/同 id 重发/终局标记不再取件/懒回填/多批循环/串行/环形上限/导出/空队列）；`ViewEventSendPolicyTest` 改判表 16 行+退避参数；`PendingEventExportTest` 新增 3 例（dwell 秒数/kind 小写/startedAt UTC/不带 seconds/空数组）；`PendingViewEventMappersTest`+`ViewEventReportWireTest`+`SdkDetailMappersTest` 补幂等键透传断言；`SettingsViewModelTest` 增 2 例（同步完成/网络不通保留）
+- **单测重写/新增**：`ViewEventQueueTest` 按新语义全量重写 **13 例**（成功删/失败留/退避到期前后/同 id 重发/终局标记不再取件/懒回填/多批循环/串行/环形上限/导出/空队列；L6 收官勘误 2026-09-09：本句原记「14 例」系执行者笔误，实数 13 例——第一百八十四笔审查收口 ⑤ 已勘，随 L6 清偿改定）；`ViewEventSendPolicyTest` 改判表 16 行+退避参数；`PendingEventExportTest` 新增 3 例（dwell 秒数/kind 小写/startedAt UTC/不带 seconds/空数组）；`PendingViewEventMappersTest`+`ViewEventReportWireTest`+`SdkDetailMappersTest` 补幂等键透传断言；`SettingsViewModelTest` 增 2 例（同步完成/网络不通保留）
 - **门禁**：make app-build / app-test / app-lint 全绿（core:data 71 例、feature:settings 13 例全过）
 
 ---
