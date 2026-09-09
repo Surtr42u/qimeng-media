@@ -44,16 +44,17 @@ import kotlin.math.min
  *   ② [TimelineTagEntity] 由旧 Room 实体剥离为同包纯数据类（字段不变）；
  *   ③ G4 拖进度自适应上限抽为 [gestureSeekCapMs] 纯函数（同包，行为不变）；
  *   ④ G7 倍速档位/按钮文案抽为 [PLAYER_SPEED_TIERS]/[speedButtonText] 纯函数（行为不变）；
- *   ⑤ G6 全屏按钮门禁已于 D2 删除（2026-09-07 拍板两级全屏：全类型视频均可触发，分级/
- *      回退由 Compose 侧 [VideoFullscreenStateMachine] 裁决；覆盖 GUIDE_UI 旧句
- *      「仅横屏视频可全屏」），并补画面交接三件套 [setPlayer] adopt / [rebindPlayer] /
+ *   ⑤ G6 全屏按钮门禁已于 D2 删除（是否放行由 Compose 侧 [VideoFullscreenStateMachine]
+ *      裁决，覆盖 GUIDE_UI 旧句「仅横屏视频可全屏」的门禁实现；D2 曾按两级全屏放开
+ *      全类型可点，已被 2026-09-09 拍板 #23 推翻——现行单级横屏全屏，仅横屏视频可触发，
+ *      竖屏视频无反应旧版同款），并补画面交接三件套 [setPlayer] adopt / [rebindPlayer] /
  *      [detachPlayer]（视频全屏覆盖层与排版态视图共用同一 ExoPlayer）。
  *
  * 手势冻结口径（G1~G9）：G1 竖屏单击播停/横屏单击显隐控制器；G2 横屏双击播停；
  * G3 长按 2x 松开还原（竖屏下方锁速区拖入锁定/拖出退出，长按期间禁起拖）；
  * G4 水平拖进度（24dp 起拖阈值且 |dx|>|dy|，上限见 [gestureSeekCapMs]，无时长忽略）；
- * G5 亮度/音量手势=不做（旧版无此功能）；G6 全屏=D2 起全类型视频可点（方向写入与
- * 两级分级/回退由 Compose 侧状态机裁决，见适配点⑤）；G7 倍速菜单 0.5/1/1.5/2x（1x 按钮显示「倍速」）；
+ * G5 亮度/音量手势=不做（旧版无此功能）；G6 全屏钮=仅横屏视频可点（K2 单级横屏全屏收口，
+ * D2「全类型可点」已推翻；方向写入与进出由 Compose 侧状态机裁决，见适配点⑤）；G7 倍速菜单 0.5/1/1.5/2x（1x 按钮显示「倍速」）；
  * G8 初始默认静音（volume=0，用户拍板）；G9 控制器 5s 自动隐藏（ENDED 强制显示，
  * 再点播放 seekTo(0)）。
  */
@@ -434,8 +435,8 @@ class BiliPlayerView @JvmOverloads constructor(
             layoutParams = LinearLayout.LayoutParams(36.dp(context), 36.dp(context))
             setColorFilter(Color.WHITE)
             setOnClickListener {
-                // D2 两级全屏：门控删除，全类型视频均可触发（竖屏视频第一级=竖屏全屏覆盖层，
-                // letterbox 属正常）；分级/回退由 Compose 侧状态机裁决，本控件只上报点击
+                // K2 单级横屏全屏：门控已删，是否放行由 Compose 侧状态机裁决（仅横屏视频
+                // 可进，竖屏视频无反应旧版同款），本控件只上报点击
                 onFullscreen?.invoke()
             }
         }
