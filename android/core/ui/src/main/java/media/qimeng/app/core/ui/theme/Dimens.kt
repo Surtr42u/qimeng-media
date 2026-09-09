@@ -81,6 +81,27 @@ object QimengDimens {
      *  标签胶囊 chipCornerRadius 100dp（styles.xml L25）/ 药丸圆角（QimengPills PILL_CORNER_RADIUS 100dp） */
     val PillCornerRadius: Dp = 100.dp
 
+    // ---------- 胶囊输入框（F 批：用户 2026-09-09 反馈「搜索胶囊过大不符旧版视觉」，压回旧版尺寸） ----------
+
+    /** 34dp：胶囊软底文本输入框固定高度（旧仓库 fragment_search.xml L29 searchInput layout_height=34dp；
+     *  bg_capsule_soft 全仓输入面统一 34dp）。不放任 M3 默认：material3 1.4.0（BOM 2026.06.01）的
+     *  OutlinedTextField 无高度约束时实测 80dp——内部文本区被 minimumInteractiveComponentSize 撑到
+     *  48dp + 无 label 默认 contentPadding 上下各 16dp（TextFieldImplKt TextFieldPadding）= 80dp，
+     *  超出 TextFieldDefaults.MinHeight=56dp 的下限直接取内容高。F 批压回 34dp（KDoc 见
+     *  QimengCapsuleTextField：用户 2026-09-09 反馈推翻 G6「保留 56dp 触摸目标」取舍） */
+    val CapsuleFieldHeight: Dp = 34.dp
+
+    /** 2dp：词丸流换行行距（F 批紧凑化：旧版 QimengCapsuleChip 行间紧凑换行，32dp 胶囊 + 2dp 行距
+     *  = 行节距 34dp，对齐旧实录 search_entry 词丸区视觉；styles.xml 无对应间距项，按实录拍板值登记） */
+    val WordPillRowSpacing: Dp = 2.dp
+
+    /** 6dp：词丸流横向间距（旧仓库 styles.xml L8 QimengCapsuleChip layout_marginEnd=6dp） */
+    val WordPillSpacing: Dp = 6.dp
+
+    /** 40dp：首页搜索框高度（旧仓库 fragment_home.xml L37，bg_capsule_soft 胶囊底同语言；
+     *  F 批前实测 48dp，压回旧版 40dp） */
+    val HomeSearchFieldHeight: Dp = 40.dp
+
     // ---------- 卡片 / 行项 ----------
 
     /** 16dp：媒体卡圆角（QimengMediaGrid CARD_CORNER_RADIUS 16dp L46）/

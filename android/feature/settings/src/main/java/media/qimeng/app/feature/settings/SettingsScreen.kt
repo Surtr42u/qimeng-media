@@ -37,21 +37,22 @@ import media.qimeng.app.core.ui.component.QimengSegPill
 import media.qimeng.app.core.ui.component.formatBytesHumanReadable
 import media.qimeng.app.core.ui.theme.QimengDimens
 
-/** 我的页入口行文案（GUIDE_UI §我的页 + M4-2 既有入口 + M4-6 上传入口） */
+/** 我的页入口行文案（GUIDE_UI §我的页 + M4-2 既有入口 + M4-6 上传入口；
+ *  F 批 2026-09-09：删除「作者管理」行——用户拍板「我的界面暂时只需要删除外部的作者管理，
+ *  因为已经有了一个作者管理」，唯一入口=作者总览卡内「管理」（onOpenAuthors 仍被该卡使用） */
 private const val ROW_FAVORITE = "收藏"
 private const val ROW_HISTORY = "浏览历史"
-private const val ROW_AUTHORS = "作者管理"
 private const val ROW_UPLOAD = "上传文件"
 private const val ROW_THEME = "主题色彩"
 private const val ROW_PREFS = "推荐偏好"
 
 /**
- * 入口行副文案（I4 两行化，实录 mine.txt 逐字：收藏/浏览历史/作者管理/主题色彩/推荐偏好；
- * 推荐偏好行当前预设名不再展示在行上——当前项高亮已在 BottomSheet 内，GUIDE_UI L255）。
+ * 入口行副文案（I4 两行化，实录 mine.txt 逐字：收藏/浏览历史/主题色彩/推荐偏好；
+ * 推荐偏好行当前预设名不再展示在行上——当前项高亮已在 BottomSheet 内，GUIDE_UI L255；
+ * 原作者管理行副文案随行同批删除，F 批 2026-09-09）。
  */
 private const val SUBTITLE_FAVORITE = "查看收藏的图片和视频"
 private const val SUBTITLE_HISTORY = "查看最近打开过的图片和视频"
-private const val SUBTITLE_AUTHORS = "管理作者与关联文件"
 private const val SUBTITLE_THEME = "跟随手机白天/深色模式自动切换"
 private const val SUBTITLE_PREFS = "调整首页推荐算法的权重偏好"
 
@@ -79,8 +80,9 @@ private const val WRITE_ERROR_DISMISS = "知道了"
  * 「我的」Tab（M4-6 完整版，单页滚动列表，GUIDE_UI §我的页结构 + I4 复刻清偿）：
  * 标题 → 页首数量卡（I4：图片/视频两卡，实录页首即数量卡，GUIDE_UI L252）→
  * 资料卡（服务器地址展示，改地址=退出重登语义）→ 作者总览卡（G2：Web DataPage 形态——
- * 计数头注 + 文件数 Top5 + 管理入口；关注/取关操作移作者管理页）→
- * 入口行族（GUIDE_UI L253 行序：收藏/浏览历史/作者管理 → 上传入口 → 主题色彩（不可点）→
+ * 计数头注 + 文件数 Top5 + 管理入口；关注/取关操作移作者管理页；F 批 2026-09-09 起
+ * 卡内「管理」=唯一作者管理入口，外部入口行删除）→
+ * 入口行族（收藏/浏览历史 → 上传入口 → 主题色彩（不可点）→
  * 推荐偏好（BottomSheet 四预设整行应用/当前项高亮））→
  * 缓存区（LRU 档位 + 清空）→ 版本信息（服务端版本，C6）→ 退出登录。
  */
@@ -137,8 +139,8 @@ fun SettingsScreen(
             )
         }
 
-        // 入口行族（GUIDE_UI L253 行序：收藏/浏览历史/作者管理/主题色彩/推荐偏好；
-        // 上传入口为 M4-5 新增功能入口，无旧版行序锚点，保持作者管理之后）
+        // 入口行族（F 批 2026-09-09 起行序：收藏/浏览历史 → 上传入口 → 主题色彩（不可点）→
+        // 推荐偏好；原「作者管理」行按用户拍板删除——作者总览卡内「管理」即唯一作者管理入口）
         item {
             EntryRow(
                 label = ROW_FAVORITE,
@@ -151,13 +153,6 @@ fun SettingsScreen(
                 label = ROW_HISTORY,
                 subtitle = SUBTITLE_HISTORY,
                 onClick = onOpenHistory,
-            )
-        }
-        item {
-            EntryRow(
-                label = ROW_AUTHORS,
-                subtitle = SUBTITLE_AUTHORS,
-                onClick = onOpenAuthors,
             )
         }
 

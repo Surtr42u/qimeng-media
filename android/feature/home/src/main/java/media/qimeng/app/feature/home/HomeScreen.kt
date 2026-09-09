@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -208,20 +209,27 @@ private fun HomeTopRow(
             text = HOME_TITLE,
             style = MaterialTheme.typography.titleLarge,
         )
-        // 搜索框不可聚焦（点击整块跳搜索页——规格书语义）
+        // 搜索框不可聚焦（点击整块跳搜索页——规格书语义）；高度 40dp=旧版 fragment_home.xml L37
+        // bg_capsule_soft 胶囊底（F 批 2026-09-09：压回旧版视觉，此前实测 48dp）
         Surface(
             shape = RoundedCornerShape(QimengDimens.PillCornerRadius),
             color = MaterialTheme.colorScheme.surfaceVariant,
             modifier = Modifier
                 .weight(1f)
+                .height(QimengDimens.HomeSearchFieldHeight)
                 .clickable(onClick = onOpenSearch),
         ) {
-            Text(
-                text = "搜索",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            )
+            Box(
+                modifier = Modifier.fillMaxHeight(),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = "搜索",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                )
+            }
         }
         IconButton(onClick = onToggleColumns) {
             Text(text = "${columns}列", style = MaterialTheme.typography.labelLarge)
