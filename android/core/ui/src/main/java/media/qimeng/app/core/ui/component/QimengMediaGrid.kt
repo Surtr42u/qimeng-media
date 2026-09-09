@@ -117,7 +117,16 @@ fun QimengMediaGrid(
             bottom = bottomContentPadding,
         ),
     ) {
-        items(cells, key = { cell -> cell.asset?.id ?: "header:${cell.header}" }) { cell ->
+        items(
+            cells,
+            key = { cell -> cell.asset?.id ?: "header:${cell.header}" },
+            // 组头跨整行（任务J J2，台账 #36 用户拍板「对齐旧版」）：日期组头独占一行，
+            // 不再占单列与首卡同行——KDoc「组头跨全列」自此与实现相符（I6/I9 实证不符项清偿）。
+            // 影响全部网格页（含冻结的全部页）=H1 同款穿透豁免口径，用户已拍板授权。
+            span = { cell ->
+                if (cell.header != null) GridItemSpan(maxLineSpan) else GridItemSpan(1)
+            },
+        ) { cell ->
             val header = cell.header
             if (header != null) {
                 Text(
