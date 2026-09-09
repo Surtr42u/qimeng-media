@@ -9,6 +9,18 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## fix(app): BVIS 行距微调——搜索词丸流间隙对齐旧实录8dp+悬浮药丸面板间隙4dp（2026-09-09 第一百七十笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理，BVIS批；走查B类清偿）
+
+- **走查 B 类两处清偿（%TEMP%\qimeng-jvis-evidence\ 判差距，零协议批：只碰 core/ui 两文件）**：
+- **①搜索词丸流行距过紧**：走查实测 QimengWordPillFlow 行节距 33.9dp（[QimengDimens.WordPillRowSpacing]=2dp 档）vs 旧实录 search_entry.txt 推荐词丸行位 404/528/652px@density3 → 节距 124px=41.3dp（32dp 芯片 → 纵向间隙 ≈8dp）；横向同帧枚缘 329→353px → 间隙 24px=8dp。修：WordPillRowSpacing 2dp→8dp、WordPillSpacing 6dp→8dp（XML 声明值 marginEnd=6dp 让位于实录渲染值）。**F 批 KDoc「34dp 节距=对齐实录」勘正**：34dp 实为胶囊输入框场高（CapsuleFieldHeight），与词丸行节距两个数混淆，注释已改写
+- **②悬浮药丸面板行距过松**：走查实测 QimengFloatingPillPanel 药丸节距 40dp（FlowRow spacedBy SpaceM=8dp）vs 旧实录 all_partition_pills.txt 行位 466/568px@density3 → 节距 102px=34dp（30dp 芯片 → 间隙 4dp）。修：新增具名 token FloatingPillPanelSpacing=4dp，面板内 FlowRow 纵横两处换用。**只动 QimengFloatingPillPanel**——QimengValuePillFlow（相册页值流）保持 8dp 不随动（G5 Web 基准拍板保护，走查未判差距），QimengChipRow 同禁扩散
+- token 全进 QimengDimens 具名常量附 px→dp 换算注释，无内联魔法值
+- 实测（emulator-5554 @density2.625，像素带扫描+语义 bounds 双口径）：搜索页词丸流行节距 33.9dp→**40.0dp**（105px=84px 芯片+21px 间隙，纵横间隙实测 8.0dp 精确命中旧实录；节距 vs 旧实录 41.3dp 差 -1.3dp=间隙拍板 8dp 对实录 9.3dp 的取整档）；历史页悬浮面板（作品维度展开三行）节距 40dp→**36.2dp**（95px=84px 芯片+10.5px 间隙，纵横间隙实测 4dp 命中拍板；节距 vs 旧实录 34dp 余 2.2dp 差全部源自芯片高统一 32dp（QimengSegPill F 批口径）vs 旧实录/走查 30dp 口径——芯片高度不在本批间隙 token 范围，记档不扩）；证据 %TEMP%\qimeng-bvis-evidence\（截图 3+dump 4+扫描脚本 3+输出 3）
+- 门禁四连绿（app-test/app-lint/app-build/make lint 0 errors）
+
+---
 ## fix(app): 任务J J3 首页切换两案——tab 切换哨兵抑制窗口（#35）+ 排行榜→COS 卡半屏复现记档停手（#37）（2026-09-09 第一百六十九笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理，任务J J3批）
