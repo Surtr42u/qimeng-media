@@ -51,6 +51,11 @@ private val DURATION_BADGE_TYPES = setOf(MediaKind.VIDEO)
 /** 旧版卡片外层 padding=5dp（item_media_thumbnail.xml root padding；5dp 不在既有间距档内，独立常量） */
 private val CARD_OUTER_PADDING = 5.dp
 
+/** 网格项间额外间距=0（任务L L1 补齐拍板：旧版 RecyclerView 项间无间距，卡间视觉距=
+ *  卡片自 padding 5dp×2=10dp；此前 spacedBy(SpaceM) 使总距 18dp 偏疏。卡片自 padding
+ *  由 [CARD_OUTER_PADDING] 提供，此处归零即可回归旧版密度） */
+private val GRID_INTER_ITEM_SPACING = 0.dp
+
 /** 旧版圆角 outline 24f——**像素**值非 dp（item_media_thumbnail.xml outline radius 24f），
  *  使用处经 [LocalDensity] 运行时 toDp() 换算，不同密度设备观感一致 */
 private const val LEGACY_CARD_CORNER_RADIUS_PX = 24f
@@ -130,8 +135,8 @@ fun QimengMediaGrid(
         state = listState,
         columns = GridCells.Fixed(columns),
         modifier = modifier.fillMaxSize(),
-        horizontalArrangement = Arrangement.spacedBy(QimengDimens.SpaceM),
-        verticalArrangement = Arrangement.spacedBy(QimengDimens.SpaceM),
+        horizontalArrangement = Arrangement.spacedBy(GRID_INTER_ITEM_SPACING),
+        verticalArrangement = Arrangement.spacedBy(GRID_INTER_ITEM_SPACING),
         contentPadding = PaddingValues(
             start = QimengDimens.SpaceM,
             top = QimengDimens.SpaceM,
