@@ -56,11 +56,9 @@ func toGenSystemStatus(st sysmon.SystemStatus) gen.SystemStatus {
 		used, total := int64(d.UsedBytes), int64(d.TotalBytes)
 		disks[i] = genDisk{Mount: &mount, UsedBytes: &used, TotalBytes: &total}
 	}
-	perCore := make([]float32, len(st.PerCore))
-	for i, v := range st.PerCore {
-		perCore[i] = float32(v)
-	}
-	cpu := float32(st.CPUPercent)
+	perCore := make([]float64, len(st.PerCore))
+	copy(perCore, st.PerCore)
+	cpu := st.CPUPercent
 	memUsed, memTotal := int64(st.MemUsedBytes), int64(st.MemTotalBytes)
 	rx, tx := int64(st.NetRxBytes), int64(st.NetTxBytes)
 	uptime := st.UptimeSeconds

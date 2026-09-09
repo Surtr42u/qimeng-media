@@ -276,20 +276,21 @@ func TestFacetsOtherDims(t *testing.T) {
 }
 
 // TestFacetsExcludeSelf：排自身口径——计某维候选时忽略该维自身选择。
-// 作者行 = source 与 authorId 两个参数（排自身时一起忽略）；角色行 =
-// character 与 work 两个参数（一起忽略）。
+// 排自身的实现口径 = 调用方每维独立请求、省略自身参数（相册页/web 同款）；
+// 服务端把 source/authorId 对全部行照常收窄（2026-09-09 协议批：作者行
+// 亦然——作者集合页固定传 authorId 让作品维候选按作者收窄，#34）。
+// 角色行 = character 与 work 两个参数（一起省略）。
 func TestFacetsExcludeSelf(t *testing.T) {
 	env := newTestEnv(t)
 	seedFacetFixture(t, env)
 	regAuthor := authoring.GenerateAuthorID("画师A")
-	cosAuthor := authoring.GenerateCosAuthorID("作者X")
 
-	// 选了常规作者画师A（authorId 其他维度过滤仍生效）：作者栏排自身=全量
-	// 报告（source 与 authorId 同属作者行，一起忽略）；其余维按画师A 的
-	// 资产（a/b.jpg：无视频、无 COS）。
+	// 固定常规作者画师A（作者集合页场景）：作者行（作品维）按画师A 收窄
+	// = 其资产出处（a.jpg 其他 / b.jpg kemono），COS 作者桶互斥清空；
+	// 其余维同样按画师A 的资产（a/b.jpg：无视频、无 COS）。
 	q := "?authorId=" + regAuthor
 	got := bucketMap(t, getFacets(t, env, q), "authors")
-	assertCounts(t, got, map[string]int{sourceOtherLabel: 2, "kemono": 1, cosAuthor: 2}, "选作者后作者栏（排自身=全量）")
+	assertCounts(t, got, map[string]int{sourceOtherLabel: 1, "kemono": 1}, "固定作者后作者栏（按作者收窄，#34）")
 	got = bucketMap(t, getFacets(t, env, q), "characters")
 	assertCounts(t, got, map[string]int{"天使": 2, "黑百合": 1}, "选作者后角色栏")
 	got = bucketMap(t, getFacets(t, env, q), "types")
@@ -297,11 +298,13 @@ func TestFacetsExcludeSelf(t *testing.T) {
 	got = bucketMap(t, getFacets(t, env, q), "partitions")
 	assertCounts(t, got, map[string]int{"all": 2, "regular": 2, "cos": 0}, "选作者后分区栏")
 
-	// 选了出处 kemono（作者行内 pill）：作者栏排自身=忽略 source → 全量；
+	// 选了出处 kemono（相册页作者行内 pill）：作者行查询会省略 source
+	//（客户端排自身）；此处直传时服务端照常收窄 → 作者栏只剩 kemono
+	//（COS 作者桶按 kemono 收窄 = COS 资产无出处，互斥清空）；
 	// 其余维按 kemono 资产（b.jpg 一个）。
 	q = "?source=kemono"
 	got = bucketMap(t, getFacets(t, env, q), "authors")
-	assertCounts(t, got, map[string]int{sourceOtherLabel: 2, "kemono": 1, cosAuthor: 2}, "选出处分组后作者栏（排自身=全量）")
+	assertCounts(t, got, map[string]int{"kemono": 1}, "选出处分组后作者栏（source 照常收窄）")
 	got = bucketMap(t, getFacets(t, env, q), "characters")
 	assertCounts(t, got, map[string]int{"天使": 1, "黑百合": 1}, "选出处后角色栏（只 kemono 资产）")
 	got = bucketMap(t, getFacets(t, env, q), "types")

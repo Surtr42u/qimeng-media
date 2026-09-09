@@ -31,7 +31,7 @@ func getPrefs(t *testing.T, env *testEnv) gen.RecommendPrefs {
 func TestRecommendationPrefsDefault(t *testing.T) {
 	env := newTestEnv(t)
 	p := getPrefs(t, env)
-	checks := map[string]float32{
+	checks := map[string]float64{
 		"tagRelevance":  0.22,
 		"tagCollection": 0.15,
 		"engagement":    0.10,
@@ -48,7 +48,7 @@ func TestRecommendationPrefsDefault(t *testing.T) {
 		t.Fatalf("默认偏好九字段必须全部非空：%+v", p)
 	}
 	// 逐字段断言全部 9 个默认值（含 maxRandom，DOMAIN_RULES §1.3 均衡推荐）。
-	got := map[string]float32{
+	got := map[string]float64{
 		"tagRelevance":  *p.TagRelevance,
 		"tagCollection": *p.TagCollection,
 		"engagement":    *p.Engagement,
@@ -78,7 +78,7 @@ func TestRecommendationPrefsPutRoundtrip(t *testing.T) {
 		t.Fatalf("PUT 偏好期望 204，得到 %d", resp.StatusCode)
 	}
 	p := getPrefs(t, env)
-	checks := map[string]float32{
+	checks := map[string]float64{
 		"tagRelevance":  0.5,
 		"tagCollection": 0.2,
 		"engagement":    0.11,
@@ -89,7 +89,7 @@ func TestRecommendationPrefsPutRoundtrip(t *testing.T) {
 		"browseDepth":   0.02,
 		"maxRandom":     0.25,
 	}
-	got := map[string]float32{
+	got := map[string]float64{
 		"tagRelevance": *p.TagRelevance, "tagCollection": *p.TagCollection,
 		"engagement": *p.Engagement, "recency": *p.Recency, "likeScore": *p.LikeScore,
 		"discovery": *p.Discovery, "freshness": *p.Freshness,

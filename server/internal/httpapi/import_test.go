@@ -154,7 +154,7 @@ func TestImport_fullPipeline(t *testing.T) {
 			},
 			FollowedAuthorIds: &[]string{"author_a", "ghost_id"},
 			AppPrefs: &gen.LegacyAppPrefs{RecommendationPrefs: &gen.RecommendPrefs{
-				TagRelevance: ptr(float32(0.30)), MaxRandom: ptr(float32(0.35)),
+				TagRelevance: ptr(0.30), MaxRandom: ptr(0.35),
 			}},
 			ScanSources: &[]gen.LegacyScanSource{{UriString: "content://x", DisplayName: "旧目录", AddedAtMillis: ptr(int64(1))}},
 			Settings:    &[]gen.LegacySetting{{Key: "k", Value: "v"}},

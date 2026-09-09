@@ -9,6 +9,18 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## feat(api): N2 协议批 P1——seconds 序列化根修（#24/#26）+筛选多值化（#29）+/history 补参（#30）+facets 作者行收窄（#34）（2026-09-09 第一百六十三笔）
+
+执行 AI：GLM-5.3-Flash（监督会话 executor；用户授权协议批自决，待拍板 2026-09-09 夜条目②）
+
+- **seconds 根修（#24/#26，数据正确性）**：openapi 请求侧小数字段（dwell seconds/progress positionSeconds）+prefs 9 字段+响应侧 lastPositionSeconds/system 百分比加 `format: double`——Kotlin 生成器改走原生 Double 直序列化 JSON 数字，M4-3 起 dwell/progress 被引号字符串卡 400 从未落库的缺陷根除；新增 ViewEventReportWireTest 锁 JSON 数字契约；Go gen float32→float64 六文件机械适配（行为无关）；**台账 #7 顺带闭环**：prefs okhttp 手拼绕行撤除改走生成 SDK
+- **筛选多值化（#29）**：/assets、/history 的 source/character/work 改数组（同名重复参数，单值向后兼容）——**同维内 OR、跨维 AND**、character 组合出镜组内 AND、「其他」桶可混选；sqlc 谓词双层 json_each；8 项新单测
+- **/history 补 source（数组）/authorId（#30）**：谓词+单测
+- **facets 作者行收窄（#34）**：facets.sql 两查询补 source/author_id 谓词（实证消费方全为客户端排自身，零破坏）；DOMAIN_RULES §3 旧「一起忽略」表述废止同步
+- 三端再生 make sdk（Kotlin Double/List、TS Array、Go float64）；android 调用点 listOf 最小适配+mapper Double 化；web 增 toSdkAssetListQuery 边界归一（用户面单值不变）
+- 门禁：redocly 0 errors / go test 14 包全 ok / make lint 0 issues / app-test 绿 / web build 绿；端到端 dwell 复测属 N4
+
+---
 ## feat(app): N1 决策落地批——相册默认 3 列（台账#3）+收藏/历史进详情批次上下文（台账#21）（2026-09-09 第一百六十二笔）
 
 执行 AI：GLM-5.3-Flash（监督会话 executor；用户 2026-09-09 夜拍板「剩下的对齐旧版」授权）

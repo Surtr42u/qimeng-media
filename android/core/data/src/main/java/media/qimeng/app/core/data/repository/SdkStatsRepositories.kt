@@ -15,9 +15,6 @@ import media.qimeng.app.core.model.StatsOverviewValues
 import media.qimeng.app.core.model.TrendPoint
 import media.qimeng.sdk.apis.DefaultApi
 import media.qimeng.sdk.models.RecommendPrefs
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.RequestBody.Companion.toRequestBody
-import okhttp3.OkHttpClient
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -78,11 +75,12 @@ class SdkStatsRepository @Inject constructor(
     }
 }
 
-/** [RecommendPrefsRepository] 实现（GET 走生成 SDK；PUT 走 okhttp 直发，原因见类注释） */
+/** [RecommendPrefsRepository] 实现（GET/PUT 均走生成 SDK；协议批 2026-09-09 起
+ *  prefs 九字段为 format:double 原生 Double，旧「okhttp 直发绕 BigDecimal」绕行
+ *  已随根修撤除——#7 待拍板条目闭环） */
 @Singleton
 class SdkRecommendPrefsRepository @Inject constructor(
     private val apiFactory: BusinessApiFactory,
-    private val okHttpClient: OkHttpClient,
 ) : RecommendPrefsRepository {
 
     override suspend fun prefs(): RecommendPrefsValues {
@@ -94,58 +92,39 @@ class SdkRecommendPrefsRepository @Inject constructor(
 
     override suspend fun putPrefs(values: RecommendPrefsValues) {
         Log.d(SdkMediaRepository.LOG_TAG, "PUT /recommendations/prefs ${values.toLogString()}")
-        val baseUrl = apiFactory.currentBaseUrl().trimEnd('/')
-        // 数字字面量直拼（org.json 平台内置，零新依赖）：值域 [0,1] 权重，Double.toString 即合法 JSON number
-        val json = org.json.JSONObject().apply {
-            put("tagRelevance", values.tagRelevance)
-            put("tagCollection", values.tagCollection)
-            put("engagement", values.engagement)
-            put("recency", values.recency)
-            put("likeScore", values.likeScore)
-            put("discovery", values.discovery)
-            put("freshness", values.freshness)
-            put("browseDepth", values.browseDepth)
-            put("maxRandom", values.maxRandom)
-        }.toString()
-        val request = okhttp3.Request.Builder()
-            .url(baseUrl + PUT_PREFS_PATH)
-            .put(json.toRequestBody("application/json".toMediaType()))
-            .build()
+        val api = withContext(Dispatchers.IO) { apiFactory.create() }
         withContext(Dispatchers.IO) {
-            okHttpClient.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    throw java.io.IOException("PUT prefs 失败: HTTP ${response.code}")
-                }
-            }
+            api.apiV1RecommendationsPrefsPut(
+                recommendPrefs = RecommendPrefs(
+                    tagRelevance = values.tagRelevance,
+                    tagCollection = values.tagCollection,
+                    engagement = values.engagement,
+                    recency = values.recency,
+                    likeScore = values.likeScore,
+                    discovery = values.discovery,
+                    freshness = values.freshness,
+                    browseDepth = values.browseDepth,
+                    maxRandom = values.maxRandom,
+                ),
+            )
         }
     }
 
     private fun RecommendPrefs.toValues(): RecommendPrefsValues = RecommendPrefsValues(
-        tagRelevance = tagRelevance?.toDouble() ?: 0.0,
-        tagCollection = tagCollection?.toDouble() ?: 0.0,
-        engagement = engagement?.toDouble() ?: 0.0,
-        recency = recency?.toDouble() ?: 0.0,
-        likeScore = likeScore?.toDouble() ?: 0.0,
-        discovery = discovery?.toDouble() ?: 0.0,
-        freshness = freshness?.toDouble() ?: 0.0,
-        browseDepth = browseDepth?.toDouble() ?: 0.0,
-        maxRandom = maxRandom?.toDouble() ?: 0.0,
+        tagRelevance = tagRelevance ?: 0.0,
+        tagCollection = tagCollection ?: 0.0,
+        engagement = engagement ?: 0.0,
+        recency = recency ?: 0.0,
+        likeScore = likeScore ?: 0.0,
+        discovery = discovery ?: 0.0,
+        freshness = freshness ?: 0.0,
+        browseDepth = browseDepth ?: 0.0,
+        maxRandom = maxRandom ?: 0.0,
     )
 
     private fun RecommendPrefsValues.toLogString(): String =
         "tagRel=$tagRelevance tagColl=$tagCollection engage=$engagement recency=$recency " +
             "like=$likeScore discov=$discovery fresh=$freshness depth=$browseDepth random=$maxRandom"
-
-    companion object {
-        /**
-         * 协议路径直写（协议侧改动须同步此处，反之亦然；openapi.yaml /recommendations/prefs PUT）。
-         * 为什么绕开生成 SDK：生成物 BigDecimalAdapter 把 number 序列化为 JSON 字符串
-         * （`"0.1"` 带引号），服务端 *float32 拒收返回 400——生成物禁手改（ADR-0009），
-         * 根治需 openapi schema 增 format: double 后重新 make sdk（已入交付报告存疑点）。
-         * Bearer 注入仍走全局 OkHttpClient 的 AuthInterceptor，鉴权单点不破坏。
-         */
-        const val PUT_PREFS_PATH = "/api/v1/recommendations/prefs"
-    }
 }
 
 /** [SystemInfoRepository] SDK 实现（C6：version 字段单值端口） */

@@ -79,12 +79,22 @@ func nullBool(b *bool) any {
 // jsonString 把字符串集合编成 SQL json_each 消费的 JSON 数组文本；
 // 空集返回 NULL（筛选未启用）。
 func jsonString(items []string) any {
-	if len(items) == 0 {
+	return jsonValue(items)
+}
+
+// jsonValue 把任意可 JSON 序列化的集合值编成 SQL json_each 消费的 JSON
+// 文本；nil 或空集返回 NULL（筛选未启用）。多值筛选（sources/works）与
+// 组合筛选（characters 的「组合的数组」）共用。
+func jsonValue(v any) any {
+	if v == nil {
 		return sql.NullString{}
 	}
-	b, err := json.Marshal(items)
+	if rv := reflect.ValueOf(v); rv.Kind() == reflect.Slice && rv.Len() == 0 {
+		return sql.NullString{}
+	}
+	b, err := json.Marshal(v)
 	if err != nil {
-		// []string 的 Marshal 不会失败；防御性兜底为 NULL。
+		// []string / [][]string 的 Marshal 不会失败；防御性兜底为 NULL。
 		return sql.NullString{}
 	}
 	return sql.NullString{String: string(b), Valid: true}
@@ -95,11 +105,11 @@ func jsonString(items []string) any {
 type assetFilters struct {
 	LibraryID      any
 	MediaType      any
-	Source         any
+	SourcesJson    any
 	SourceIsOther  int64
 	IncludeCos     int64
 	CosOnly        int64
-	CosWork        any
+	CosWorksJson   any
 	CharactersJson any
 	AuthorID       any
 	TagIdsJson     any
@@ -122,12 +132,15 @@ type assetFilters struct {
 }
 
 // newAssetFilters 把 openapi 参数映射成筛选集。语义备注：
-//   - source="其他" 翻译成 source_is_other 标志（NULL 出处的资产桶），
-//     避免 SQL 里出现非 ASCII 字面量（sqlc 解析器对多字节文本敏感，
-//     见 browse.sql 文件头）；
+//   - source/character/work 多值（协议 2026-09-09）：数组内 OR、与其余
+//     筛选维 AND；source="其他" 翻译成 source_is_other 标志（NULL 出处
+//     的资产桶），避免 SQL 里出现非 ASCII 字面量（sqlc 解析器对多字节
+//     文本敏感，见 browse.sql 文件头）；单值=单元素数组向后兼容；
+//   - character 每元素 'a+b' 拆成组合（组内全部命中），数组编成「组合
+//     的数组」（组合间 OR）；facets 端点的 character 是单值参数，其
+//     SQL（facets.sql）保持扁平数组形态，两文件谓词注释互指勿混；
 //   - includeCos 默认 false = 排除 COS 作者关联文件（DOMAIN_RULES §6）；
 //     收藏流特例见下方 favorite 分支（2026-09-05 用户拍板）；
-//   - character 'a+b' 拆成集合，SQL 语义 = 全部命中（组合出镜）；
 //   - dateFrom/dateTo 是本地日历日，换算成与 mtime 存储格式同构的
 //     UTC 毫秒时间戳文本再做字典序比较（dateTo 含当日全天）；
 //   - directory 由 handler 预校验归一（filing.NormalizeRelPath）后传入：
@@ -142,11 +155,17 @@ func newAssetFilters(params gen.GetApiV1AssetsParams, directory *string) assetFi
 		f.MediaType = nullStr(string(*params.MediaType))
 	}
 	if params.Source != nil {
-		if *params.Source == sourceOtherLabel {
-			f.SourceIsOther = 1
-		} else {
-			f.Source = nullStr(*params.Source)
+		// 多值 source（协议 2026-09-09）：数组内 OR。'其他' 桶翻译成
+		// source_is_other 旗（见上），其余出处名进 JSON 数组（IN json_each）。
+		var sources []string
+		for _, src := range *params.Source {
+			if src == sourceOtherLabel {
+				f.SourceIsOther = 1
+			} else if src != "" {
+				sources = append(sources, src)
+			}
 		}
+		f.SourcesJson = jsonString(sources)
 	}
 	if params.IncludeCos != nil && *params.IncludeCos {
 		f.IncludeCos = 1
@@ -170,13 +189,25 @@ func newAssetFilters(params gen.GetApiV1AssetsParams, directory *string) assetFi
 		params.IncludeCos == nil && params.CosOnly == nil {
 		f.IncludeCos = 1
 	}
-	if params.Work != nil && *params.Work != "" {
-		// COS 作品名（migration 0008）：`作者/作品/文件` 的第二段，
-		// COS 分区下的「角色」维度（DOMAIN_RULES §6）。
-		f.CosWork = nullStr(*params.Work)
+	if params.Work != nil {
+		// COS 作品名多值（协议 2026-09-09）：数组内 OR（migration 0008，
+		// `作者/作品/文件` 的第二段，COS 分区下的「角色」维度，DOMAIN_RULES §6）。
+		var works []string
+		for _, w := range *params.Work {
+			if w != "" {
+				works = append(works, w)
+			}
+		}
+		f.CosWorksJson = jsonString(works)
 	}
-	if params.Character != nil && *params.Character != "" {
-		f.CharactersJson = jsonString(splitCharacters(*params.Character))
+	if params.Character != nil && len(*params.Character) > 0 {
+		// 角色多值（协议 2026-09-09）：每个元素是旧单值表达式（'a+b' 组合
+		// 出镜，组内 AND），数组内 OR——编成「组合的数组」（jsonValue）。
+		combos := make([][]string, 0, len(*params.Character))
+		for _, c := range *params.Character {
+			combos = append(combos, splitCharacters(c))
+		}
+		f.CharactersJson = jsonValue(combos)
 	}
 	if params.AuthorId != nil {
 		f.AuthorID = nullStr(*params.AuthorId)

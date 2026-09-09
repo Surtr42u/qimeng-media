@@ -21,6 +21,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -1436,5 +1437,92 @@ func TestAssetListDirectoryFilter(t *testing.T) {
 		if code != http.StatusBadRequest || errResp.Code != "INVALID_PARAM" {
 			t.Fatalf("%s 期望 400 INVALID_PARAM，得到 %d %q", q, code, errResp.Code)
 		}
+	}
+}
+
+// TestAssetListMultiValueFilters：source/character/work 多值协议（2026-09-09
+// 协议批，#29）——同维内 OR（数组内任一命中）、跨维 AND；单值=单元素
+// 数组向后兼容；'其他' 桶可与具名出处混选。fixture 复用 seedFacetFixture
+// （a.jpg 无出处+天使 / b.jpg kemono+天使+黑百合 / c.mp4 视频；COS 库
+// 1.jpg 作品P、2.jpg 无作品——GET /assets 缺省排除 COS）。
+func TestAssetListMultiValueFilters(t *testing.T) {
+	env := newTestEnv(t)
+	seedFacetFixture(t, env)
+
+	fetchNames := func(query string) []string {
+		t.Helper()
+		resp := env.do(t, "GET", "/api/v1/assets"+query, "")
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("%s 期望 200，得到 %d", query, resp.StatusCode)
+		}
+		var page gen.AssetPage
+		if err := decodeBody(resp, &page); err != nil {
+			t.Fatalf("解析失败: %v", err)
+		}
+		closeBody(resp)
+		out := make([]string, 0, len(deref(page.Items)))
+		for _, it := range deref(page.Items) {
+			out = append(out, *it.FileName)
+		}
+		sort.Strings(out)
+		return out
+	}
+	fetchTotal := func(query string) int {
+		t.Helper()
+		resp := env.do(t, "GET", "/api/v1/assets"+query, "")
+		var page gen.AssetPage
+		if err := decodeBody(resp, &page); err != nil {
+			t.Fatalf("解析失败: %v", err)
+		}
+		closeBody(resp)
+		if page.TotalMatched == nil {
+			t.Fatalf("%s 应返回 totalMatched", query)
+		}
+		return *page.TotalMatched
+	}
+
+	// 空=不过滤：无 source 参数 → 常规三资产（缺省排除 COS）。
+	if got := fetchNames(""); len(got) != 3 {
+		t.Fatalf("无筛选应 3 条（a/b/c），得到 %v", got)
+	}
+	// 同维双值 OR：kemono ∪ 其他 → b.jpg + a.jpg（+c.mp4 其他桶）= 3 条。
+	if got := fetchNames("?source=kemono&source=" + percentEncode("其他")); len(got) != 3 {
+		t.Fatalf("source 双值(kemono,其他) 应 3 条，得到 %v", got)
+	}
+	// 同维双值 OR（不含其他）：kemono ∪ 不存在 → 只 b.jpg。
+	if got := fetchNames("?source=kemono&source=no-such"); len(got) != 1 || got[0] != "b.jpg" {
+		t.Fatalf("source 双值(kemono,no-such) 应只 b.jpg，得到 %v", got)
+	}
+	// 单值 = 单元素数组（向后兼容，旧调用形态不变）。
+	if got := fetchNames("?source=kemono"); len(got) != 1 || got[0] != "b.jpg" {
+		t.Fatalf("source 单值应只 b.jpg，得到 %v", got)
+	}
+	// '其他' 单值桶 = 无出处常规文件。
+	if got := fetchNames("?source=" + percentEncode("其他")); len(got) != 2 {
+		t.Fatalf("source=其他 应 2 条（a/c），得到 %v", got)
+	}
+	// character 双组合 OR：天使组合 {a,b} ∪ 黑百合组合 {b} = {a,b}。
+	if got := fetchNames("?character=" + percentEncode("天使") + "&character=" + percentEncode("黑百合")); len(got) != 2 {
+		t.Fatalf("character 双组合应 2 条（a/b），得到 %v", got)
+	}
+	// character 组合表达式（组内 AND，旧语义不变）：天使+黑百合 → 只 b。
+	if got := fetchNames("?character=" + percentEncode("天使+黑百合")); len(got) != 1 || got[0] != "b.jpg" {
+		t.Fatalf("character=天使+黑百合 应只 b.jpg，得到 %v", got)
+	}
+	// 跨维 AND：source=kemono ∩ character=天使 → 只 b；
+	// source=其他 ∩ character=黑百合 → 空。
+	if got := fetchNames("?source=kemono&character=" + percentEncode("天使")); len(got) != 1 || got[0] != "b.jpg" {
+		t.Fatalf("source∩character 应只 b.jpg，得到 %v", got)
+	}
+	if n := fetchTotal("?source=" + percentEncode("其他") + "&character=" + percentEncode("黑百合")); n != 0 {
+		t.Fatalf("其他∩黑百合 应 0 条，得到 %d", n)
+	}
+	// work 多值（COS 分区须 includeCos=true）：作品P ∪ 不存在 → 只 1.jpg。
+	if got := fetchNames("?includeCos=true&work=" + percentEncode("作品P") + "&work=no-such"); len(got) != 1 || got[0] != "1.jpg" {
+		t.Fatalf("work 双值应只 1.jpg，得到 %v", got)
+	}
+	// work 单值兼容。
+	if got := fetchNames("?includeCos=true&work=" + percentEncode("作品P")); len(got) != 1 || got[0] != "1.jpg" {
+		t.Fatalf("work 单值应只 1.jpg，得到 %v", got)
 	}
 }

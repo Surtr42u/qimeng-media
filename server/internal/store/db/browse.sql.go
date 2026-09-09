@@ -19,13 +19,13 @@ WHERE
                 WHERE le.id = a.library_id AND le.enabled = 1)
     AND (?1 IS NULL OR a.library_id = ?1)
     AND (?2 IS NULL OR a.media_type = ?2)
-    AND (?3 IS NULL
+    AND ((?3 IS NULL AND ?4 = 0)
          OR (?4 = 1 AND a.source IS NULL
              AND NOT EXISTS (
                  SELECT 1 FROM asset_authors aaoth
                  JOIN authors auoth ON auoth.id = aaoth.author_id
                  WHERE aaoth.asset_id = a.asset_id AND auoth.type = 'cos'))
-         OR a.source = ?3)
+         OR a.source IN (SELECT value FROM json_each(?3)))
     -- COS partition. Three-way switch shared by the browse default and the
     -- album partition pills (DOMAIN_RULES 6 isolation, migration 0008):
     --   include_cos = 1 -> no restriction (all partition);
@@ -45,12 +45,14 @@ WHERE
     -- COS work (migration 0008): second path segment of ` + "`" + `author/work/file` + "`" + `.
     -- The album character pill lists these under the cos partition (old-app
     -- "COS character = work directory name", GUIDE_ALGORITHM).
-    AND (?7 IS NULL OR a.cos_work = ?7)
-    AND (?8 IS NULL OR NOT EXISTS (
-        SELECT 1 FROM json_each(?8) c
+    AND (?7 IS NULL OR a.cos_work IN (SELECT value FROM json_each(?7)))
+    AND (?8 IS NULL OR EXISTS (
+        SELECT 1 FROM json_each(?8) combo
         WHERE NOT EXISTS (
-            SELECT 1 FROM asset_characters ac
-            WHERE ac.asset_id = a.asset_id AND ac.character_name = c.value)))
+            SELECT 1 FROM json_each(combo.value) c
+            WHERE NOT EXISTS (
+                SELECT 1 FROM asset_characters ac
+                WHERE ac.asset_id = a.asset_id AND ac.character_name = c.value))))
     AND (?9 IS NULL OR EXISTS (
         SELECT 1 FROM asset_authors aa2
         WHERE aa2.asset_id = a.asset_id AND aa2.author_id = ?9))
@@ -131,11 +133,11 @@ WHERE
 type CountAssetsFilteredParams struct {
 	LibraryID      interface{}
 	MediaType      interface{}
-	Source         interface{}
+	SourcesJson    interface{}
 	SourceIsOther  interface{}
 	IncludeCos     interface{}
 	CosOnly        interface{}
-	CosWork        interface{}
+	CosWorksJson   interface{}
 	CharactersJson interface{}
 	AuthorID       interface{}
 	TagIdsJson     interface{}
@@ -160,11 +162,11 @@ func (q *Queries) CountAssetsFiltered(ctx context.Context, arg CountAssetsFilter
 	row := q.db.QueryRowContext(ctx, countAssetsFiltered,
 		arg.LibraryID,
 		arg.MediaType,
-		arg.Source,
+		arg.SourcesJson,
 		arg.SourceIsOther,
 		arg.IncludeCos,
 		arg.CosOnly,
-		arg.CosWork,
+		arg.CosWorksJson,
 		arg.CharactersJson,
 		arg.AuthorID,
 		arg.TagIdsJson,
@@ -436,13 +438,13 @@ WHERE
                 WHERE le.id = a.library_id AND le.enabled = 1)
     AND (?2 IS NULL OR a.library_id = ?2)
     AND (?3 IS NULL OR a.media_type = ?3)
-    AND (?4 IS NULL
+    AND ((?4 IS NULL AND ?5 = 0)
          OR (?5 = 1 AND a.source IS NULL
              AND NOT EXISTS (
                  SELECT 1 FROM asset_authors aaoth
                  JOIN authors auoth ON auoth.id = aaoth.author_id
                  WHERE aaoth.asset_id = a.asset_id AND auoth.type = 'cos'))
-         OR a.source = ?4)
+         OR a.source IN (SELECT value FROM json_each(?4)))
     -- COS partition. Three-way switch shared by the browse default and the
     -- album partition pills (DOMAIN_RULES 6 isolation, migration 0008):
     --   include_cos = 1 -> no restriction (all partition);
@@ -462,12 +464,14 @@ WHERE
     -- COS work (migration 0008): second path segment of ` + "`" + `author/work/file` + "`" + `.
     -- The album character pill lists these under the cos partition (old-app
     -- "COS character = work directory name", GUIDE_ALGORITHM).
-    AND (?8 IS NULL OR a.cos_work = ?8)
-    AND (?9 IS NULL OR NOT EXISTS (
-        SELECT 1 FROM json_each(?9) c
+    AND (?8 IS NULL OR a.cos_work IN (SELECT value FROM json_each(?8)))
+    AND (?9 IS NULL OR EXISTS (
+        SELECT 1 FROM json_each(?9) combo
         WHERE NOT EXISTS (
-            SELECT 1 FROM asset_characters ac
-            WHERE ac.asset_id = a.asset_id AND ac.character_name = c.value)))
+            SELECT 1 FROM json_each(combo.value) c
+            WHERE NOT EXISTS (
+                SELECT 1 FROM asset_characters ac
+                WHERE ac.asset_id = a.asset_id AND ac.character_name = c.value))))
     AND (?10 IS NULL OR EXISTS (
         SELECT 1 FROM asset_authors aa2
         WHERE aa2.asset_id = a.asset_id AND aa2.author_id = ?10))
@@ -572,11 +576,11 @@ type ListAssetsFilteredAscParams struct {
 	Sort           interface{}
 	LibraryID      interface{}
 	MediaType      interface{}
-	Source         interface{}
+	SourcesJson    interface{}
 	SourceIsOther  interface{}
 	IncludeCos     interface{}
 	CosOnly        interface{}
-	CosWork        interface{}
+	CosWorksJson   interface{}
 	CharactersJson interface{}
 	AuthorID       interface{}
 	TagIdsJson     interface{}
@@ -623,11 +627,11 @@ func (q *Queries) ListAssetsFilteredAsc(ctx context.Context, arg ListAssetsFilte
 		arg.Sort,
 		arg.LibraryID,
 		arg.MediaType,
-		arg.Source,
+		arg.SourcesJson,
 		arg.SourceIsOther,
 		arg.IncludeCos,
 		arg.CosOnly,
-		arg.CosWork,
+		arg.CosWorksJson,
 		arg.CharactersJson,
 		arg.AuthorID,
 		arg.TagIdsJson,
@@ -722,15 +726,17 @@ WHERE
     -- bucket is regular-only: COS assets never enter the source system
     -- (enrich.go: cos libraries skip SourceMatcher), so a cos-linked
     -- asset with NULL source is NOT "other" -- old-app groupBySource
-    -- filtered !isCosFile before grouping (same shape in all three
-    -- queries here and in facets.sql FacetSourceCounts).
-    AND (?4 IS NULL
+    -- filtered !isCosFile before grouping. Multi-value form (protocol
+    -- 2026-09-09): sources_json = JSON array of source names, ANY match
+    -- within the dimension (OR), AND with every other dimension; both
+    -- slots empty = filter off; single value = one-element array.
+    AND ((?4 IS NULL AND ?5 = 0)
          OR (?5 = 1 AND a.source IS NULL
              AND NOT EXISTS (
                  SELECT 1 FROM asset_authors aaoth
                  JOIN authors auoth ON auoth.id = aaoth.author_id
                  WHERE aaoth.asset_id = a.asset_id AND auoth.type = 'cos'))
-         OR a.source = ?4)
+         OR a.source IN (SELECT value FROM json_each(?4)))
     -- COS partition. Three-way switch shared by the browse default and the
     -- album partition pills (DOMAIN_RULES 6 isolation, migration 0008):
     --   include_cos = 1 -> no restriction (all partition);
@@ -749,16 +755,20 @@ WHERE
              WHERE aa.asset_id = a.asset_id AND au.type = 'cos')))
     -- COS work (migration 0008): second path segment of ` + "`" + `author/work/file` + "`" + `.
     -- The album character pill lists these under the cos partition (old-app
-    -- "COS character = work directory name", GUIDE_ALGORITHM).
-    AND (?8 IS NULL OR a.cos_work = ?8)
-    -- character filter: 'a+b' is split by the caller into a JSON array
-    -- of canonical names; ALL names must be attached (multi-character
-    -- group semantics).
-    AND (?9 IS NULL OR NOT EXISTS (
-        SELECT 1 FROM json_each(?9) c
+    -- "COS character = work directory name", GUIDE_ALGORITHM). Multi-value
+    -- (protocol 2026-09-09): JSON array, ANY match within the dimension.
+    AND (?8 IS NULL OR a.cos_work IN (SELECT value FROM json_each(?8)))
+    -- character filter (protocol 2026-09-09): characters_json is a JSON
+    -- array of COMBOS; each combo is an array of canonical names ('a+b'
+    -- split by the caller) and must be FULLY attached (multi-character
+    -- group semantics); ANY combo matching = asset in (OR across combos).
+    AND (?9 IS NULL OR EXISTS (
+        SELECT 1 FROM json_each(?9) combo
         WHERE NOT EXISTS (
-            SELECT 1 FROM asset_characters ac
-            WHERE ac.asset_id = a.asset_id AND ac.character_name = c.value)))
+            SELECT 1 FROM json_each(combo.value) c
+            WHERE NOT EXISTS (
+                SELECT 1 FROM asset_characters ac
+                WHERE ac.asset_id = a.asset_id AND ac.character_name = c.value))))
     AND (?10 IS NULL OR EXISTS (
         SELECT 1 FROM asset_authors aa2
         WHERE aa2.asset_id = a.asset_id AND aa2.author_id = ?10))
@@ -887,11 +897,11 @@ type ListAssetsFilteredDescParams struct {
 	Sort           interface{}
 	LibraryID      interface{}
 	MediaType      interface{}
-	Source         interface{}
+	SourcesJson    interface{}
 	SourceIsOther  interface{}
 	IncludeCos     interface{}
 	CosOnly        interface{}
-	CosWork        interface{}
+	CosWorksJson   interface{}
 	CharactersJson interface{}
 	AuthorID       interface{}
 	TagIdsJson     interface{}
@@ -990,11 +1000,11 @@ func (q *Queries) ListAssetsFilteredDesc(ctx context.Context, arg ListAssetsFilt
 		arg.Sort,
 		arg.LibraryID,
 		arg.MediaType,
-		arg.Source,
+		arg.SourcesJson,
 		arg.SourceIsOther,
 		arg.IncludeCos,
 		arg.CosOnly,
-		arg.CosWork,
+		arg.CosWorksJson,
 		arg.CharactersJson,
 		arg.AuthorID,
 		arg.TagIdsJson,

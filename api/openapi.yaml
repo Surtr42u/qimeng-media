@@ -154,12 +154,12 @@ paths:
         - { name: sort,        in: query, schema: { type: string, enum: [default, fileDate, addedDate, viewCount, playCount, sizeBytes, name, favoriteAt], default: default }, description: 排序键（DOMAIN_RULES §3 八种；favoriteAt = 按收藏时间排序，仅 favorite=true 时语义成立） }
         - { name: order,       in: query, schema: { type: string, enum: [asc, desc], default: desc }, description: 顺位 }
         - { name: mediaType,   in: query, schema: { $ref: "#/components/schemas/MediaType" } }
-        - { name: source,      in: query, schema: { type: string }, description: 出处分区（含 '其他'） }
-        - { name: character,   in: query, schema: { type: string }, description: 角色（'a+b' 多角色） }
+        - { name: source,      in: query, schema: { type: array, items: { type: string } }, description: '出处分区多选（含 ''其他'' 桶=无出处常规文件）。多值语义：同维内 OR（命中数组内任一出处即入选）、与其余筛选维 AND；同名参数重复传或按生成器数组语法展开。单值 = 单元素数组，与旧单值协议向后兼容。数组含 ''其他'' 即并选 NULL source 的常规文件桶' }
+        - { name: character,   in: query, schema: { type: array, items: { type: string } }, description: '角色多选。每个元素是一个角色表达式（''a+b'' 多角色 = 组合出镜，组内全部命中，DOMAIN_RULES §4 分隔符语义不变）；数组内多表达式 OR（命中任一组合即入选）、与其余筛选维 AND。单元素 = 旧单值协议向后兼容' }
         - { name: authorId,    in: query, schema: { type: string } }
         - { name: includeCos,  in: query, schema: { type: boolean, default: false }, description: 含 COS 作者关联文件（默认排除，COS 走独立入口） }
         - { name: cosOnly,     in: query, schema: { type: boolean, default: false }, description: 只要 COS 作者关联文件（分区胶囊「COS」语义；与 includeCos 互斥，两者同时为真时 cosOnly 优先） }
-        - { name: work,        in: query, schema: { type: string }, description: COS 作品名（COS 库 `作者/作品/文件` 目录结构的第二段，旧版「COS 角色」维度口径，见 DOMAIN_RULES §6） }
+        - { name: work,        in: query, schema: { type: array, items: { type: string } }, description: 'COS 作品名多选（COS 库 `作者/作品/文件` 目录结构的第二段，旧版「COS 角色」维度口径，见 DOMAIN_RULES §6）。多值语义：数组内 OR、与其余筛选维 AND；单元素 = 旧单值协议向后兼容' }
         - { name: tagIds,      in: query, schema: { type: array, items: { type: string } } }
         - { name: tagMode,     in: query, schema: { type: string, enum: [fuzzy, exact], default: fuzzy } }
         - { name: viewRange,   in: query, schema: { $ref: "#/components/schemas/CountRange" } }
@@ -194,10 +194,12 @@ paths:
           （key=MediaType 枚举值，可直接回传 GET /assets 的 mediaType）。
 
         计数口径 = 排自身（faceted search 惯例）：计算某一维候选的 fileCount 时，
-        忽略该维自身已选值，其余维度的当前选择全部生效。作者栏的 source 与
-        authorId 同属「作者」维一起忽略；角色栏的 character 与 work 同属
-        「角色」维一起忽略。空值候选（无作品目录的 COS 文件）不列入，
-        前端按需兜底「其他」。
+        忽略该维自身已选值，其余维度的当前选择全部生效。排自身的实现口径 =
+        前端每维独立请求、请求时省略该维自身参数（服务端把 source/authorId
+        对全部维照常作为收窄条件，2026-09-09 协议批起作者行亦然——修复作者
+        集合页「固定 authorId 下作品维候选不收窄」缺陷）；角色栏的 character
+        与 work 同属「角色」维（本端点无这两个参数之外的排自身分支）。空值
+        候选（无作品目录的 COS 文件）不列入，前端按需兜底「其他」。
 
         favorite / history 是子集约束而非四维之一：传入时对全部四维（含
         分区栏）统一收窄统计口径（如 favorite=1 的分区芯片 = 收藏子集内的
@@ -224,16 +226,20 @@ paths:
         COS 分区缺省全部 = 常规∪COS 合并（2026-09-05 用户拍板，原「与
         /assets 同口径默认排除」废止）：显式 includeCos=false 切常规分区
         （排除 COS 作者关联文件），cosOnly=true 切 COS 分区，与 /assets
-        同一套三态开关（DOMAIN_RULES §6）。其余筛选（mediaType/work/
-        character）与 GET /assets 同名参数同语义，在历史子集内叠加生效。
+        同一套三态开关（DOMAIN_RULES §6）。其余筛选（mediaType/source/
+        work/character/authorId）与 GET /assets 同名参数同语义，在历史
+        子集内叠加生效（source/character/work 为多选数组：同维内 OR、
+        跨维 AND，单元素向后兼容）。
         分页为 keyset 游标（最近浏览时间 + asset_id）。
       parameters:
         - { name: cursor,     in: query, schema: { type: string }, description: 分页游标 }
         - { name: limit,      in: query, schema: { type: integer, default: 60, maximum: 200 } }
         - { name: includeCos, in: query, schema: { type: boolean, default: true }, description: 缺省全部（常规∪COS 合并，2026-09-05 用户拍板）；显式 false 切常规分区（排除 COS），cosOnly=true 切 COS 分区 }
         - { name: cosOnly,    in: query, schema: { type: boolean, default: false }, description: 只要 COS 作者关联文件（COS 分区；与 includeCos 同真时 cosOnly 优先） }
-        - { name: work,       in: query, schema: { type: string }, description: COS 作品名（`作者/作品/文件` 目录结构第二段，语义同 GET /assets 的 work） }
-        - { name: character,  in: query, schema: { type: string }, description: 角色（'a+b' 多角色全部命中，语义同 GET /assets 的 character） }
+        - { name: work,       in: query, schema: { type: array, items: { type: string } }, description: 'COS 作品名多选（`作者/作品/文件` 目录结构第二段，语义同 GET /assets 的 work）。多值语义：数组内 OR、与其余筛选维 AND；单元素 = 旧单值协议向后兼容' }
+        - { name: character,  in: query, schema: { type: array, items: { type: string } }, description: '角色多选（语义同 GET /assets 的 character：每元素 ''a+b'' 组合出镜组内 AND，数组内 OR；单元素向后兼容）' }
+        - { name: source,     in: query, schema: { type: array, items: { type: string } }, description: '出处分区多选（语义同 GET /assets 的 source：数组内 OR、与其余筛选维 AND；''其他''=无出处常规文件桶；单元素向后兼容）' }
+        - { name: authorId,   in: query, schema: { type: string }, description: 作者（按资产作者关联过滤；语义同 GET /assets 的 authorId） }
         - { name: mediaType,  in: query, schema: { $ref: "#/components/schemas/MediaType" } }
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/HistoryPage" } } } }
@@ -838,7 +844,7 @@ components:
         durationMs:  { type: integer, format: int64, description: 视频时长（图片/动图无值；仅 VIDEO 扫描时探测） }
         authorNames: { type: array, items: { type: string }, description: 该资产全部作者显示名（常规∪COS，DOMAIN_RULES §6）。列表类端点（GET /assets、GET /recommendations）返回，无作者为空数组；详情端点省略本字段（用 authors 完整对象） }
         cosWork:     { type: [string, "null"], description: 'COS 作品子目录名（assets.cos_work，rel_path 第二段，DOMAIN_RULES §6；仅 COS 库扫描赋值）。列表与详情端点（GET /assets、GET /assets/{assetId}）均返回；常规库资产与无作品子目录（作者/文件平铺）的 COS 资产为 null——客户端卡片标题优先取本字段、null 回退 fileName' }
-        lastPositionSeconds: { type: [number, "null"], description: '断点续播位置（秒；未播过/图片=null）。播放器经 PUT /assets/{assetId}/progress 上报；已看完口径 = >= durationMs/1000，由客户端推导' }
+        lastPositionSeconds: { type: [number, "null"], format: double, description: '断点续播位置（秒；未播过/图片=null）。播放器经 PUT /assets/{assetId}/progress 上报；已看完口径 = >= durationMs/1000，由客户端推导。format double 与 ProgressUpdate.positionSeconds 同根修口径（响应侧统一，无行为变化）' }
         viewCount:   { type: integer, description: 累计浏览次数（kind='open' 事件计数）。仅填充该字段的端点返回（排行榜等），列表端点可省略 }
         playCount:   { type: integer, description: 累计播放次数（kind='play' 事件计数）。填充约定同 viewCount }
 
@@ -947,14 +953,14 @@ components:
         assetId:   { type: string, format: uuid }
         kind:      { type: string, enum: [open, play, dwell] }
         startedAt: { type: string, format: date-time }
-        seconds:   { type: number, description: dwell 时的停留秒数 }
+        seconds:   { type: number, format: double, description: dwell 时的停留秒数（format double：客户端 SDK 走原生小数类型直接序列化为 JSON 数字——无 format 时 Kotlin 生成 BigDecimal 被序列化为带引号字符串导致服务端 400，协议批 2026-09-09 根修） }
         sessionId: { type: string, description: "客户端会话标识（App 启动/Web 标签页生成，UUID 即可）；open/play 按当日会话级去重（同 assetId+kind+sessionId+事件发生日已有同类事件则不重复计数），dwell 不去重——停留秒逐条累加、不减不重（DOMAIN_RULES §5）" }
 
     ProgressUpdate:
       type: object
       required: [positionSeconds]
       properties:
-        positionSeconds: { type: number, minimum: 0, description: 当前播放位置（秒；视频实际进度而非停留时长，与 dwell.seconds 的停留语义区分） }
+        positionSeconds: { type: number, format: double, minimum: 0, description: 当前播放位置（秒；视频实际进度而非停留时长，与 dwell.seconds 的停留语义区分；format double 同 ViewEventReport.seconds 根修口径——JSON 数字直传） }
 
     LikeState:
       type: object
@@ -1051,16 +1057,17 @@ components:
 
     RecommendPrefs:
       type: object
+      description: 九维权重（全部 format double——同 ViewEventReport.seconds 根修口径，客户端 SDK 原生小数直传 JSON 数字）
       properties:
-        tagRelevance: { type: number, default: 0.22 }
-        tagCollection: { type: number, default: 0.15 }
-        engagement:   { type: number, default: 0.10 }
-        recency:      { type: number, default: 0.15 }
-        likeScore:    { type: number, default: 0.05 }
-        discovery:    { type: number, default: 0.20 }
-        freshness:    { type: number, default: 0.05 }
-        browseDepth:  { type: number, default: 0.03 }
-        maxRandom:    { type: number, default: 0.30 }
+        tagRelevance: { type: number, format: double, default: 0.22 }
+        tagCollection: { type: number, format: double, default: 0.15 }
+        engagement:   { type: number, format: double, default: 0.10 }
+        recency:      { type: number, format: double, default: 0.15 }
+        likeScore:    { type: number, format: double, default: 0.05 }
+        discovery:    { type: number, format: double, default: 0.20 }
+        freshness:    { type: number, format: double, default: 0.05 }
+        browseDepth:  { type: number, format: double, default: 0.03 }
+        maxRandom:    { type: number, format: double, default: 0.30 }
 
     ClientConfig:
       type: object
@@ -1136,8 +1143,8 @@ components:
     SystemStatus:
       type: object
       properties:
-        cpuPercent:    { type: number }
-        perCore:       { type: array, items: { type: number }, description: 按逻辑核心的 CPU 使用率明细（0~100），首次采样前为全 0 }
+        cpuPercent:    { type: number, format: double }
+        perCore:       { type: array, items: { type: number, format: double }, description: 按逻辑核心的 CPU 使用率明细（0~100），首次采样前为全 0 }
         memUsedBytes:  { type: integer, format: int64 }
         memTotalBytes: { type: integer, format: int64 }
         disks:         { type: array, items: { type: object, properties: { mount: { type: string }, usedBytes: { type: integer, format: int64 }, totalBytes: { type: integer, format: int64 } } } }

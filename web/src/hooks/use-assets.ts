@@ -99,11 +99,27 @@ export function useAssetsInfinite(params: AssetListParams = {}, enabled = true) 
   return useInfiniteQuery({
     queryKey: [...ASSETS_LIST_QUERY_KEY, params],
     queryFn: ({ pageParam }) =>
-      unwrapSdkResult(getApiV1Assets({ query: { ...params, cursor: pageParam } })),
+      unwrapSdkResult(getApiV1Assets({ query: { ...toSdkAssetListQuery(params), cursor: pageParam } })),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextCursor ?? undefined,
     enabled,
   })
+}
+
+/**
+ * 用户面单值 → 协议多值的 SDK 边界归一（协议批 2026-09-09，#29）：
+ * GET /assets 的 source/character/work 已多值化（数组、同维内 OR、跨维 AND），
+ * web 现发单值——用户面 AssetListParams 保持单值 string 零改动，仅在传给
+ * 生成 SDK 时包单元素数组（单值=单元素数组向后兼容）；多选 UI 属后续批次。
+ */
+function toSdkAssetListQuery(params: AssetListParams) {
+  const { source, character, work, ...rest } = params
+  return {
+    ...rest,
+    source: source ? [source] : undefined,
+    character: character ? [character] : undefined,
+    work: work ? [work] : undefined,
+  }
 }
 
 /** 目录树文件行单页上限：协议 GET /assets 的 limit 上限=200（openapi limit
@@ -196,9 +212,9 @@ export function useSources() {
 
 /** 筛选胶囊候选（分区/作者/角色/类型；GET /assets/facets，排自身口径）。
  *  params 里只传"其他维度"的当前选择——被渲染维自身的参数由调用方省略，
- *  服务端对每个维都是排自身计数（openapi 该端点 description）。
- *  source 与 authorId 同属「作者」行（排自身时两者都不传）；character 与
- *  work 同属「角色」行（同理）。
+ *  排自身口径由调用方实现：每维独立请求、省略自身参数——source 与 authorId
+ *  同属「作者」行（查作者行时两者都不传）、character 与 work 同属「角色」行（同理）；
+ *  服务端对传入的收窄参数照常生效（2026-09-09 协议批，openapi facets description）。
  *  enabled=false 防无效请求（集合子页作者实体未定位时用）。B-3 合并：
  *  CollectionPage 原专用 use-collection-facets.ts（并行冲突规避产物）与本
  *  hook 逐语义重复，收敛后该文件消亡——其缓存键第三段 'collection' 一并

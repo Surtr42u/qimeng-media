@@ -84,15 +84,17 @@ WHERE
     -- bucket is regular-only: COS assets never enter the source system
     -- (enrich.go: cos libraries skip SourceMatcher), so a cos-linked
     -- asset with NULL source is NOT "other" -- old-app groupBySource
-    -- filtered !isCosFile before grouping (same shape in all three
-    -- queries here and in facets.sql FacetSourceCounts).
-    AND (sqlc.narg(source) IS NULL
+    -- filtered !isCosFile before grouping. Multi-value form (protocol
+    -- 2026-09-09): sources_json = JSON array of source names, ANY match
+    -- within the dimension (OR), AND with every other dimension; both
+    -- slots empty = filter off; single value = one-element array.
+    AND ((sqlc.narg(sources_json) IS NULL AND sqlc.arg(source_is_other) = 0)
          OR (sqlc.arg(source_is_other) = 1 AND a.source IS NULL
              AND NOT EXISTS (
                  SELECT 1 FROM asset_authors aaoth
                  JOIN authors auoth ON auoth.id = aaoth.author_id
                  WHERE aaoth.asset_id = a.asset_id AND auoth.type = 'cos'))
-         OR a.source = sqlc.narg(source))
+         OR a.source IN (SELECT value FROM json_each(sqlc.narg(sources_json))))
     -- COS partition. Three-way switch shared by the browse default and the
     -- album partition pills (DOMAIN_RULES 6 isolation, migration 0008):
     --   include_cos = 1 -> no restriction (all partition);
@@ -111,16 +113,20 @@ WHERE
              WHERE aa.asset_id = a.asset_id AND au.type = 'cos')))
     -- COS work (migration 0008): second path segment of `author/work/file`.
     -- The album character pill lists these under the cos partition (old-app
-    -- "COS character = work directory name", GUIDE_ALGORITHM).
-    AND (sqlc.narg(cos_work) IS NULL OR a.cos_work = sqlc.narg(cos_work))
-    -- character filter: 'a+b' is split by the caller into a JSON array
-    -- of canonical names; ALL names must be attached (multi-character
-    -- group semantics).
-    AND (sqlc.narg(characters_json) IS NULL OR NOT EXISTS (
-        SELECT 1 FROM json_each(sqlc.narg(characters_json)) c
+    -- "COS character = work directory name", GUIDE_ALGORITHM). Multi-value
+    -- (protocol 2026-09-09): JSON array, ANY match within the dimension.
+    AND (sqlc.narg(cos_works_json) IS NULL OR a.cos_work IN (SELECT value FROM json_each(sqlc.narg(cos_works_json))))
+    -- character filter (protocol 2026-09-09): characters_json is a JSON
+    -- array of COMBOS; each combo is an array of canonical names ('a+b'
+    -- split by the caller) and must be FULLY attached (multi-character
+    -- group semantics); ANY combo matching = asset in (OR across combos).
+    AND (sqlc.narg(characters_json) IS NULL OR EXISTS (
+        SELECT 1 FROM json_each(sqlc.narg(characters_json)) combo
         WHERE NOT EXISTS (
-            SELECT 1 FROM asset_characters ac
-            WHERE ac.asset_id = a.asset_id AND ac.character_name = c.value)))
+            SELECT 1 FROM json_each(combo.value) c
+            WHERE NOT EXISTS (
+                SELECT 1 FROM asset_characters ac
+                WHERE ac.asset_id = a.asset_id AND ac.character_name = c.value))))
     AND (sqlc.narg(author_id) IS NULL OR EXISTS (
         SELECT 1 FROM asset_authors aa2
         WHERE aa2.asset_id = a.asset_id AND aa2.author_id = sqlc.narg(author_id)))
@@ -272,13 +278,13 @@ WHERE
                 WHERE le.id = a.library_id AND le.enabled = 1)
     AND (sqlc.narg(library_id) IS NULL OR a.library_id = sqlc.narg(library_id))
     AND (sqlc.narg(media_type) IS NULL OR a.media_type = sqlc.narg(media_type))
-    AND (sqlc.narg(source) IS NULL
+    AND ((sqlc.narg(sources_json) IS NULL AND sqlc.arg(source_is_other) = 0)
          OR (sqlc.arg(source_is_other) = 1 AND a.source IS NULL
              AND NOT EXISTS (
                  SELECT 1 FROM asset_authors aaoth
                  JOIN authors auoth ON auoth.id = aaoth.author_id
                  WHERE aaoth.asset_id = a.asset_id AND auoth.type = 'cos'))
-         OR a.source = sqlc.narg(source))
+         OR a.source IN (SELECT value FROM json_each(sqlc.narg(sources_json))))
     -- COS partition. Three-way switch shared by the browse default and the
     -- album partition pills (DOMAIN_RULES 6 isolation, migration 0008):
     --   include_cos = 1 -> no restriction (all partition);
@@ -298,12 +304,14 @@ WHERE
     -- COS work (migration 0008): second path segment of `author/work/file`.
     -- The album character pill lists these under the cos partition (old-app
     -- "COS character = work directory name", GUIDE_ALGORITHM).
-    AND (sqlc.narg(cos_work) IS NULL OR a.cos_work = sqlc.narg(cos_work))
-    AND (sqlc.narg(characters_json) IS NULL OR NOT EXISTS (
-        SELECT 1 FROM json_each(sqlc.narg(characters_json)) c
+    AND (sqlc.narg(cos_works_json) IS NULL OR a.cos_work IN (SELECT value FROM json_each(sqlc.narg(cos_works_json))))
+    AND (sqlc.narg(characters_json) IS NULL OR EXISTS (
+        SELECT 1 FROM json_each(sqlc.narg(characters_json)) combo
         WHERE NOT EXISTS (
-            SELECT 1 FROM asset_characters ac
-            WHERE ac.asset_id = a.asset_id AND ac.character_name = c.value)))
+            SELECT 1 FROM json_each(combo.value) c
+            WHERE NOT EXISTS (
+                SELECT 1 FROM asset_characters ac
+                WHERE ac.asset_id = a.asset_id AND ac.character_name = c.value))))
     AND (sqlc.narg(author_id) IS NULL OR EXISTS (
         SELECT 1 FROM asset_authors aa2
         WHERE aa2.asset_id = a.asset_id AND aa2.author_id = sqlc.narg(author_id)))
@@ -415,13 +423,13 @@ WHERE
                 WHERE le.id = a.library_id AND le.enabled = 1)
     AND (sqlc.narg(library_id) IS NULL OR a.library_id = sqlc.narg(library_id))
     AND (sqlc.narg(media_type) IS NULL OR a.media_type = sqlc.narg(media_type))
-    AND (sqlc.narg(source) IS NULL
+    AND ((sqlc.narg(sources_json) IS NULL AND sqlc.arg(source_is_other) = 0)
          OR (sqlc.arg(source_is_other) = 1 AND a.source IS NULL
              AND NOT EXISTS (
                  SELECT 1 FROM asset_authors aaoth
                  JOIN authors auoth ON auoth.id = aaoth.author_id
                  WHERE aaoth.asset_id = a.asset_id AND auoth.type = 'cos'))
-         OR a.source = sqlc.narg(source))
+         OR a.source IN (SELECT value FROM json_each(sqlc.narg(sources_json))))
     -- COS partition. Three-way switch shared by the browse default and the
     -- album partition pills (DOMAIN_RULES 6 isolation, migration 0008):
     --   include_cos = 1 -> no restriction (all partition);
@@ -441,12 +449,14 @@ WHERE
     -- COS work (migration 0008): second path segment of `author/work/file`.
     -- The album character pill lists these under the cos partition (old-app
     -- "COS character = work directory name", GUIDE_ALGORITHM).
-    AND (sqlc.narg(cos_work) IS NULL OR a.cos_work = sqlc.narg(cos_work))
-    AND (sqlc.narg(characters_json) IS NULL OR NOT EXISTS (
-        SELECT 1 FROM json_each(sqlc.narg(characters_json)) c
+    AND (sqlc.narg(cos_works_json) IS NULL OR a.cos_work IN (SELECT value FROM json_each(sqlc.narg(cos_works_json))))
+    AND (sqlc.narg(characters_json) IS NULL OR EXISTS (
+        SELECT 1 FROM json_each(sqlc.narg(characters_json)) combo
         WHERE NOT EXISTS (
-            SELECT 1 FROM asset_characters ac
-            WHERE ac.asset_id = a.asset_id AND ac.character_name = c.value)))
+            SELECT 1 FROM json_each(combo.value) c
+            WHERE NOT EXISTS (
+                SELECT 1 FROM asset_characters ac
+                WHERE ac.asset_id = a.asset_id AND ac.character_name = c.value))))
     AND (sqlc.narg(author_id) IS NULL OR EXISTS (
         SELECT 1 FROM asset_authors aa2
         WHERE aa2.asset_id = a.asset_id AND aa2.author_id = sqlc.narg(author_id)))

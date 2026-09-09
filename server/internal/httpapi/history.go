@@ -43,18 +43,50 @@ func (s *Server) GetApiV1History(w http.ResponseWriter, r *http.Request, params 
 		cosOnly = 1
 		includeCos = 0
 	}
-	// 与 GET /assets 同名参数同语义的三维筛选（browse.sql 同型谓词）。
+	// 与 GET /assets 同名参数同语义的多维筛选（browse.sql 同型谓词；
+	// 2026-09-09 协议批：source/character/work 多值数组、新增 authorId）。
 	var mediaType any
 	if params.MediaType != nil {
 		mediaType = nullStr(string(*params.MediaType))
 	}
-	var cosWork any
-	if params.Work != nil && *params.Work != "" {
-		cosWork = nullStr(*params.Work)
+	var cosWorksJson any
+	if params.Work != nil {
+		var works []string
+		for _, w := range *params.Work {
+			if w != "" {
+				works = append(works, w)
+			}
+		}
+		cosWorksJson = jsonString(works)
 	}
 	var charactersJson any
-	if params.Character != nil && *params.Character != "" {
-		charactersJson = jsonString(splitCharacters(*params.Character))
+	if params.Character != nil && len(*params.Character) > 0 {
+		// 角色多值：每元素 'a+b' 组合出镜（组内 AND），数组间 OR——
+		// 编成「组合的数组」，谓词见 history.sql（browse.sql 同型）。
+		combos := make([][]string, 0, len(*params.Character))
+		for _, c := range *params.Character {
+			combos = append(combos, splitCharacters(c))
+		}
+		charactersJson = jsonValue(combos)
+	}
+	// 多值 source（同 newAssetFilters 口径）：'其他' 桶翻译成
+	// source_is_other 旗，其余出处名进 JSON 数组（IN json_each）。
+	var sourcesJson any
+	var sourceIsOther any = int64(0)
+	if params.Source != nil {
+		var sources []string
+		for _, src := range *params.Source {
+			if src == sourceOtherLabel {
+				sourceIsOther = int64(1)
+			} else if src != "" {
+				sources = append(sources, src)
+			}
+		}
+		sourcesJson = jsonString(sources)
+	}
+	var authorID any
+	if params.AuthorId != nil && *params.AuthorId != "" {
+		authorID = nullStr(*params.AuthorId)
 	}
 	var cur pageCursor
 	if params.Cursor != nil && *params.Cursor != "" {
@@ -72,8 +104,11 @@ func (s *Server) GetApiV1History(w http.ResponseWriter, r *http.Request, params 
 		IncludeCos:     includeCos,
 		CosOnly:        cosOnly,
 		MediaType:      mediaType,
-		CosWork:        cosWork,
+		SourcesJson:    sourcesJson,
+		SourceIsOther:  sourceIsOther,
+		CosWorksJson:   cosWorksJson,
 		CharactersJson: charactersJson,
+		AuthorID:       authorID,
 	})
 	if err != nil {
 		s.logger.Error("查询观看历史失败", "err", err)
@@ -98,9 +133,9 @@ func (s *Server) GetApiV1History(w http.ResponseWriter, r *http.Request, params 
 		if row.DurationMs.Valid {
 			dur = ptr(row.DurationMs.Int64)
 		}
-		var pos *float32
+		var pos *float64
 		if row.LastPositionSeconds.Valid {
-			f := float32(row.LastPositionSeconds.Float64)
+			f := row.LastPositionSeconds.Float64
 			pos = &f
 		}
 		items = append(items, gen.HistoryItem{

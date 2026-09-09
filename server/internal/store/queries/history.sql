@@ -15,9 +15,12 @@
 --     /assets only in the handler-side default: a MISSING includeCos
 --     maps to 1 (all partition -- user decision 2026-09-05: history
 --     defaults to regular UNION cos), an explicit false maps to 0.
---   - media_type / cos_work / characters_json filters are the same
---     predicate shapes as browse.sql; characters 'a+b' arrives as a
---     JSON array the caller splits, and ALL names must be attached.
+--   - media_type / sources_json / cos_works_json / characters_json /
+--     author_id filters are the same predicate shapes as browse.sql
+--     (protocol 2026-09-09: source/work/character are multi-value JSON
+--     arrays -- ANY match within the dimension; character combos are
+--     arrays of arrays, each combo fully attached); characters 'a+b'
+--     arrives split by the caller.
 --   - Keyset cursor = (last_viewed_at, asset_id) of the last row of the
 --     previous page; last_viewed_at is the RFC3339-ms TEXT kept in the
 --     store-wide format, so lexicographic order == chronological order
@@ -50,15 +53,35 @@ WHERE EXISTS (SELECT 1 FROM view_events ve
              JOIN authors au ON au.id = aa.author_id
              WHERE aa.asset_id = a.asset_id AND au.type = 'cos')))
     AND (sqlc.narg(media_type) IS NULL OR a.media_type = sqlc.narg(media_type))
+    -- Multi-value source filter (protocol 2026-09-09, browse.sql shape):
+    -- sources_json = JSON array, ANY match within the dimension (OR), AND
+    -- with every other dimension; source_is_other = 1 adds the NULL-source
+    -- regular bucket ("OTHER", not cos-linked); both slots empty = off.
+    AND ((sqlc.narg(sources_json) IS NULL AND sqlc.arg(source_is_other) = 0)
+         OR (sqlc.arg(source_is_other) = 1 AND a.source IS NULL
+             AND NOT EXISTS (
+                 SELECT 1 FROM asset_authors aaoth
+                 JOIN authors auoth ON auoth.id = aaoth.author_id
+                 WHERE aaoth.asset_id = a.asset_id AND auoth.type = 'cos'))
+         OR a.source IN (SELECT value FROM json_each(sqlc.narg(sources_json))))
     -- COS work (migration 0008): second path segment of `author/work/file`.
-    AND (sqlc.narg(cos_work) IS NULL OR a.cos_work = sqlc.narg(cos_work))
-    -- character filter: 'a+b' is split by the caller into a JSON array
-    -- of canonical names; ALL names must be attached (browse.sql shape).
-    AND (sqlc.narg(characters_json) IS NULL OR NOT EXISTS (
-        SELECT 1 FROM json_each(sqlc.narg(characters_json)) c
+    -- Multi-value (protocol 2026-09-09): JSON array, ANY match (browse.sql shape).
+    AND (sqlc.narg(cos_works_json) IS NULL OR a.cos_work IN (SELECT value FROM json_each(sqlc.narg(cos_works_json))))
+    -- character filter (protocol 2026-09-09, browse.sql shape):
+    -- characters_json = array of combos ('a+b' split by the caller);
+    -- combo must be FULLY attached, ANY combo matching = asset in.
+    AND (sqlc.narg(characters_json) IS NULL OR EXISTS (
+        SELECT 1 FROM json_each(sqlc.narg(characters_json)) combo
         WHERE NOT EXISTS (
-            SELECT 1 FROM asset_characters ac
-            WHERE ac.asset_id = a.asset_id AND ac.character_name = c.value)))
+            SELECT 1 FROM json_each(combo.value) c
+            WHERE NOT EXISTS (
+                SELECT 1 FROM asset_characters ac
+                WHERE ac.asset_id = a.asset_id AND ac.character_name = c.value))))
+    -- author filter (protocol 2026-09-09): same single-value predicate as
+    -- browse.sql (author association on the asset).
+    AND (sqlc.narg(author_id) IS NULL OR EXISTS (
+        SELECT 1 FROM asset_authors aa2
+        WHERE aa2.asset_id = a.asset_id AND aa2.author_id = sqlc.narg(author_id)))
     AND (sqlc.narg(cursor_key) IS NULL
         OR (SELECT MAX(v2.started_at) FROM view_events v2
             WHERE v2.asset_id = a.asset_id AND v2.kind = 'open') < sqlc.narg(cursor_key)

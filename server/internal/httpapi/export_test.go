@@ -106,7 +106,7 @@ func seedExportData(t *testing.T, e *testEnv) {
 	}
 
 	// 推荐偏好（kv_settings，与生产写入同键同格式）。
-	prefs := gen.RecommendPrefs{TagRelevance: ptr(float32(0.22)), MaxRandom: ptr(float32(0.3))}
+	prefs := gen.RecommendPrefs{TagRelevance: ptr(0.22), MaxRandom: ptr(0.3)}
 	raw, err := json.Marshal(prefs)
 	if err != nil {
 		t.Fatalf("序列化偏好失败: %v", err)
