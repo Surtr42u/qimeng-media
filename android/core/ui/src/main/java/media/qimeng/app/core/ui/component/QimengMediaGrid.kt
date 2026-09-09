@@ -285,7 +285,7 @@ private fun AssetCard(
             .padding(CARD_OUTER_PADDING)
             .fillMaxWidth()
             .thumbnailAspectRatio()
-            // exp#3 合入（任务V V1，2026-09-10）：与详情页舞台同 key 配对；scope 缺位
+            // exp#3 合入（任务V V1，2026-09-10，exp#6 已铺开至五网格路由）：与详情页舞台同 key 配对；scope 缺位
             // （非网格路由页面/壳层未包 SharedTransitionLayout）时原样返回，渲染零变化。
             // 回退=删此行（回退 exp#3 见 motion/QimengSharedTransition.kt 头注释）
             .qimengAssetPosterSharedBounds(asset.id)

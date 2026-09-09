@@ -200,12 +200,14 @@ fun QimengNavHost(
             }
         },
     ) { innerPadding ->
-        // 共享元素转场试点（exp#3，分支提案）：SharedTransitionLayout 只包 NavHost——共享元素
-        // 的 overlay 边界=导航内容区（底栏不参与）。四 Tab 顶层切换的转场仍为 None（下方
-        // 原注释，L2 拍板不动）；试点只给「首页网格卡→详情舞台」连续化边界，范围锁死在
-        // HOME/DETAIL 两个 destination 提供 LocalNavAnimatedVisibilityScope——其余页面读到
-        // null 自动不参与，铺开=壳层多包一个 destination，组件侧零改动。回退=摘掉本层
-        // SharedTransitionLayout + 两处 provider + AssetCard/DetailScreen 各一个 modifier。
+        // 共享元素转场（exp#3 试点→exp#6 铺开，分支提案）：SharedTransitionLayout 只包 NavHost——
+        // 共享元素的 overlay 边界=导航内容区（底栏不参与）。四 Tab 顶层切换的转场仍为 None
+        // （下方原注释，L2 拍板不动）。exp#6 起 LocalNavAnimatedVisibilityScope 的 provide 从
+        // HOME/DETAIL 铺开到全部网格路由（相册/收藏/历史/搜索/作者集合——均 QimengMediaGrid
+        // 网格卡→详情舞台同 key 配对）；非网格路由（统计/上传等）读到 null 自动不参与。
+        // 铺开前提：网格数据入口已按 id 去重（exp#5 flattenGridCells），同 key 双卡已防御。
+        // 回退=摘掉本层 SharedTransitionLayout + 各 destination 的 provider +
+        // AssetCard/DetailScreen 各一个 modifier（见 motion/QimengSharedTransition.kt 头注释）。
         SharedTransitionLayout {
             CompositionLocalProvider(LocalNavSharedTransitionScope provides this) {
                 NavHost(
@@ -230,7 +232,8 @@ fun QimengNavHost(
                         .padding(innerPadding)
                         .consumeWindowInsets(innerPadding),
                 ) {
-                    // 首页（试点页族）：provide 转场 scope——本页网格卡与详情舞台同 key 配对
+                    // 首页：provide 转场 scope——本页网格卡与详情舞台同 key 配对
+                    //（exp#6 铺开后 scope 覆盖全部网格路由，见铺开总注）
                     composable(TopLevelDestination.HOME.route) {
                         CompositionLocalProvider(LocalNavAnimatedVisibilityScope provides this@composable) {
                             HomeScreen(
@@ -241,12 +244,16 @@ fun QimengNavHost(
                             )
                         }
                     }
+                    // 相册（exp#6 铺开）：网格卡→详情共享动画生效；铺开前自查=各路由 dump
+                    // 确认无同 key 双卡（数据入口已在 exp#5 flattenGridCells 按 id 收敛）
                     composable(TopLevelDestination.ALL.route) {
-                        AllScreen(
-                            onOpenAsset = { assetId ->
-                                navController.navigate(DetailRoutes.detailRoute(assetId))
-                            },
-                        )
+                        CompositionLocalProvider(LocalNavAnimatedVisibilityScope provides this@composable) {
+                            AllScreen(
+                                onOpenAsset = { assetId ->
+                                    navController.navigate(DetailRoutes.detailRoute(assetId))
+                                },
+                            )
+                        }
                     }
                     composable(TopLevelDestination.STATS.route) {
                         // 统计族跳转回调组单源（RES R1 去重，构造见 [statsNavLinks]）
@@ -288,30 +295,39 @@ fun QimengNavHost(
                             },
                         ),
                     ) { entry ->
-                        SearchScreen(
-                            initialQuery = entry.arguments?.getString(Routes.KEY_SEARCH_QUERY)
-                                ?.takeUnless { it.isBlank() },
-                            onBack = { navController.popBackStack() },
-                            onOpenAsset = { assetId ->
-                                navController.navigate(DetailRoutes.detailRoute(assetId))
-                            },
-                        )
+                        // 搜索（exp#6 铺开）：结果网格卡→详情共享动画生效
+                        CompositionLocalProvider(LocalNavAnimatedVisibilityScope provides this@composable) {
+                            SearchScreen(
+                                initialQuery = entry.arguments?.getString(Routes.KEY_SEARCH_QUERY)
+                                    ?.takeUnless { it.isBlank() },
+                                onBack = { navController.popBackStack() },
+                                onOpenAsset = { assetId ->
+                                    navController.navigate(DetailRoutes.detailRoute(assetId))
+                                },
+                            )
+                        }
                     }
+                    // 收藏（exp#6 铺开）：网格卡→详情共享动画生效
                     composable(Routes.FAVORITE) {
-                        FavoriteScreen(
-                            onBack = { navController.popBackStack() },
-                            onOpenAsset = { assetId ->
-                                navController.navigate(DetailRoutes.detailRoute(assetId))
-                            },
-                        )
+                        CompositionLocalProvider(LocalNavAnimatedVisibilityScope provides this@composable) {
+                            FavoriteScreen(
+                                onBack = { navController.popBackStack() },
+                                onOpenAsset = { assetId ->
+                                    navController.navigate(DetailRoutes.detailRoute(assetId))
+                                },
+                            )
+                        }
                     }
+                    // 浏览历史（exp#6 铺开）：网格卡→详情共享动画生效
                     composable(Routes.HISTORY) {
-                        HistoryScreen(
-                            onBack = { navController.popBackStack() },
-                            onOpenAsset = { assetId ->
-                                navController.navigate(DetailRoutes.detailRoute(assetId))
-                            },
-                        )
+                        CompositionLocalProvider(LocalNavAnimatedVisibilityScope provides this@composable) {
+                            HistoryScreen(
+                                onBack = { navController.popBackStack() },
+                                onOpenAsset = { assetId ->
+                                    navController.navigate(DetailRoutes.detailRoute(assetId))
+                                },
+                            )
+                        }
                     }
                     composable(Routes.AUTHORS) {
                         AuthorScreen(
@@ -327,14 +343,17 @@ fun QimengNavHost(
                     }
                     // 作者集合页（任务G G1b）：路由契约单源在 feature:author（DetailRoutes 同范式，
                     // feature 禁依赖 :app，壳层反向引用合法）；路由参数由页面 ViewModel 经
-                    // SavedStateHandle 读取，此处无需展开 arguments
+                    // SavedStateHandle 读取，此处无需展开 arguments。
+                    // 作者集合页同为 QimengMediaGrid 网格（exp#6 走查确认），铺开一并接入
                     composable(AuthorCollectionRoutes.AUTHOR_COLLECTION_ROUTE) {
-                        AuthorCollectionScreen(
-                            onBack = { navController.popBackStack() },
-                            onOpenAsset = { assetId ->
-                                navController.navigate(DetailRoutes.detailRoute(assetId))
-                            },
-                        )
+                        CompositionLocalProvider(LocalNavAnimatedVisibilityScope provides this@composable) {
+                            AuthorCollectionScreen(
+                                onBack = { navController.popBackStack() },
+                                onOpenAsset = { assetId ->
+                                    navController.navigate(DetailRoutes.detailRoute(assetId))
+                                },
+                            )
+                        }
                     }
                     composable(Routes.UPLOAD) {
                         UploadScreen(
@@ -360,7 +379,8 @@ fun QimengNavHost(
                     }
                     // 详情页（M4-3）：不设 launchSingleTop——详情→详情（推荐栏跳转）保留返回栈，
                     // 返回键回到上一个资产（旧版内部浏览历史栈的导航层等价语义）。
-                    // exp#3 试点：provide 转场 scope——详情舞台与首页网格卡同 key 配对
+                    // provide 转场 scope——详情舞台与各网格路由的卡同 key 配对（exp#3 试点，
+                    // exp#6 铺开到全部网格路由）
                     composable(DetailRoutes.DETAIL_ROUTE) { entry ->
                         CompositionLocalProvider(LocalNavAnimatedVisibilityScope provides this@composable) {
                             DetailScreen(
