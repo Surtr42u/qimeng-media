@@ -13,9 +13,9 @@ import androidx.compose.ui.Modifier
  * 逐层传参）：壳层 SharedTransitionLayout 包住整个 NavHost，两个 scope 若走参数要穿过
  * HomeScreen→QimengMediaGrid→AssetCard 三层签名，全部调用方连带改动；本地局部量让
  * AssetCard（core:ui）与 DetailScreen（feature:detail）零签名变化接入，试点回退面最小。
- * 代价是隐式依赖——由「只在家页/详情页两个 destination 提供 [LocalNavAnimatedVisibilityScope]」
- * 把试点范围锁死在首页族（其余页面读到 null 即自动不参与），铺开时在壳层多包一个
- * destination 即可，组件侧零改动。
+ * 代价是隐式依赖——由「哪些 destination 提供 [LocalNavAnimatedVisibilityScope]」决定参与
+ * 范围：exp#3 试点只锁首页族，exp#6 起铺开到全部网格路由（相册/收藏/历史/搜索/作者集合，
+ * 壳层逐 destination 包 provider），非网格路由读到 null 自动不参与，组件侧零改动。
  *
  * 试点红线（任务书）：顶层四 Tab 的 NavHost enter/exit 转场保持 None 不动（L2 拍板）；
  * 共享元素只连续化「网格卡→详情舞台」的边界，不改 K 卷沉浸结构与排版。
@@ -24,7 +24,8 @@ import androidx.compose.ui.Modifier
 /** 壳层 SharedTransitionLayout 的 scope（QimengNavHost 在 NavHost 外层 provide 一次） */
 val LocalNavSharedTransitionScope = compositionLocalOf<SharedTransitionScope?> { null }
 
-/** 当前 destination 的转场 scope（壳层只在家页/详情页两个 composable 内 provide——试点范围锁） */
+/** 当前 destination 的转场 scope（壳层在网格路由与详情页的 composable 内 provide——exp#6 起
+ *  覆盖全部网格路由，非网格路由缺位自动不参与） */
 val LocalNavAnimatedVisibilityScope = compositionLocalOf<AnimatedVisibilityScope?> { null }
 
 /** 网格卡 ↔ 详情舞台共享元素 key 前缀（单源；两端经 [qimengAssetPosterSharedBounds] 同源拼 key） */

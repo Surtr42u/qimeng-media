@@ -77,6 +77,19 @@
 - **为什么选数据整理层而非 HomeViewModel**：LazyVerticalGrid 项 key 与共享元素 key 都在本组件以 asset.id 铸造——重复 id 直接撞 key 约束（崩溃级）或同屏双卡同 sharedBounds key（配对未定义）；服务端无「单响应内 id 唯一」协议承诺，在 key 铸造点收敛一处覆盖全部网格页（首页三流/相册/收藏/历史/搜索/作者集合），且不动数据层语义（批次清单/展示序仍由调用方持有）。顺序保持首现位（distinctBy 语义），正常数据输出逐格相同——零列表语义变化。
 - **怎么回退**：调用点改回内联不去重 buildList + 删 `flattenGridCells`/`GridCell` + 删单测文件，其余零改动。
 
+## exp#6 共享元素铺开——scope provide 扩到全部网格路由 —— ✅ 已落地（竞态修复+防冲突加固验证通过后执行）
+
+- **改了什么**：`android/app/.../navigation/QimengNavHost.kt` 把 `LocalNavAnimatedVisibilityScope` 的 provide 从 HOME/DETAIL 两处扩到 **5 个网格路由**：相册（ALL）、收藏（FAVORITE）、浏览历史（HISTORY）、搜索（SEARCH）、作者集合（AUTHOR_COLLECTION——走查确认同为 QimengMediaGrid 网格，任务书条件「如也是 AssetCard 网格则一并」命中）。每处仅 `CompositionLocalProvider` 包一层，Screen 回调零改动；NavHost 四处转场参数（None）与四 Tab 切换逻辑未动。同步修订三处陈旧注释（QimengSharedTransition.kt 头注/DetailScreen 舞台注/AssetCard 注）为铺开后口径，QimengMediaGrid.kt 注释一处。
+- **铺开前自查（任务书要求）**：各路由 uiautomator dump 资产卡 content-desc 逐一查重——相册 14 卡/收藏 4 卡/历史/搜索 2 卡/作者集合 4 卡均零重复（收藏与作者集合页 dump 出的重复项为筛选面板芯片「测试作品M」，非资产卡；数据入口 exp#5 flattenGridCells 已按 id 收敛兜底）。
+- **模拟器实测走查**（qimeng_api35，夜间态；每日志路由：页面渲染→dump 查重→卡→详情→返回）：
+  - 相册：组头+筛选面板正常；卡 k3-ultrawide-01→详情 3/20 正常；**返回 morph 中间帧两帧实证**（r2albback-011/013.png：海报块收缩中+底栏「相册」高亮+详情 chrome 渐隐）——铺开页共享元素配对生效的代表性铁证（其余四页同代码路径：AssetCard 单 modifier+壳层 provide+详情舞台单点）。
+  - 收藏：卡→详情 1/4（r2-fav-detail.png）→返回恢复 ✓。
+  - 历史：卡→详情 1/22（r2-his-detail.png）→返回恢复 ✓。
+  - 搜索：携词 k3→结果 2 卡→详情 1/2（r2-search-detail.png）→返回恢复（词与结果保留，r2-search-back.png）✓。
+  - 作者集合：行→集合网格→卡→详情 3/4（r2-coll-detail.png）→返回恢复 ✓。
+  - 铺开页四 Tab 顶层切换（首页/相册/我的来回）瞬时无转场动画（None 未动），无叠影。
+- **怎么回退**：删 QimengNavHost 五个网格路由 composable 内的 `CompositionLocalProvider(LocalNavAnimatedVisibilityScope provides this@composable)` 包裹层（HOME/DETAIL 两处保留即回到 exp#3 试点态）+ 注释还原，组件侧零改动。
+
 ---
 
 （完）
