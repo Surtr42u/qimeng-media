@@ -217,6 +217,8 @@ fun DetailScreen(
                         onToggleChrome = { chromeVisible = !chromeVisible },
                         onPlayerActiveChanged = { playerActive = it },
                         onExitToChromeBrowse = { chromeVisible = true },
+                        // 图片态解码失败覆盖层「返回」（RES #27）——与顶行返回同链（popBackStack）
+                        onExitDetail = onBack,
                         // 舞台动作具名下发（3d 解冻拓扑保持）
                         onPlaybackStarted = viewModel::onPlaybackStarted,
                         onPositionChanged = viewModel::onPositionChanged,

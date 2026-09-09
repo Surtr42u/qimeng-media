@@ -45,6 +45,8 @@ internal fun DetailMediaStage(
     onPlayerActiveChanged: (Boolean) -> Unit,
     /** 播放中按返回先退 chrome 浏览模式（L279）后 chrome 恢复显示的回调 */
     onExitToChromeBrowse: () -> Unit,
+    /** 图片态解码失败覆盖层「返回」（RES #27；离开详情页 popBackStack 语义，仅图片分支消费） */
+    onExitDetail: () -> Unit = {},
     /** 起播回调（3d 打点 play 用；图片舞台无此语义不传） */
     onPlaybackStarted: () -> Unit,
     /** 播放进度 tick 秒（3d 节流上报用） */
@@ -83,6 +85,7 @@ internal fun DetailMediaStage(
                 modifier = Modifier.fillMaxSize(),
                 onSiblingNavigate = onSiblingNavigate,
                 onToggleChrome = onToggleChrome,
+                onExitDetail = onExitDetail,
             )
         }
     }

@@ -20,6 +20,16 @@
 - 新增单测 9 例全绿（EncodeQueryValueTest 6 + SearchViewModelTest 2 + AuthorCollectionViewModelTest 1）；门禁四连绿（app-test/app-lint/app-build/make lint 0 errors）；证据 %TEMP%\qimeng-res-evidence\
 
 ---
+## feat(app): RES #27 详情损坏原件解码失败中文提示（2026-09-09 第一百七十二笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理，RES批）
+
+- **损坏件不黑屏哑失败（D7 发现，台账 #27）**：损坏 JPEG 进详情此前黑屏无任何提示。ZoomableOriginalImage 的 Coil Target 补 onError（coil3 3.4.0 源码实证恒回调语义）→ 舞台中央中文提示「该文件无法解码，可能已损坏或格式不受支持」+ 重试/返回按钮（重试=递增 retryAttempt 重建请求真重发，错误结果不入缓存；返回=onExitDetail 参数链上抛与顶行返回同链 popBackStack）。黑底白字（VideoStage 播放钮同款前例）；失败态只反映最近一次完成的结果（请求发起清零，切资产/重试不残留旧态）
+- **视频态不碰（记档）**：Web 端编码兼容提示条已按 2026-09-05 用户拍板移除（ArtPlayer 自身错误态兜底），INCOMPATIBLE_CODECS 无可对照现版口径；Android Media3 播放器错误面自成体系——按任务书「无既有口径则只做图片态并记档」执行
+- 模拟器实证（18461 虚构库）：构造损坏 JPEG（SOI+JFIF 头+随机熵数据无 EOI，320 字节）经上传 API 入 compare-normal 库 → 搜索 corrupt 点卡进详情 → 提示+重试/返回三文案 dump 实证；重试点按后再现提示不崩（logcat 无 FATAL）；返回回搜索页；证据 %TEMP%\qimeng-res-evidence\
+- 门禁四连绿（app-test/app-lint/app-build/make lint 0 errors）
+
+---
 ## fix(app): BVIS 行距微调——搜索词丸流间隙对齐旧实录8dp+悬浮药丸面板间隙4dp（2026-09-09 第一百七十笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理，BVIS批；走查B类清偿）
