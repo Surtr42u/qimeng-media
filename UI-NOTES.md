@@ -71,6 +71,12 @@
 - **干扰记档**（并行玻璃分支代理共享模拟器，均容错重试后完成）：run4 连拍中途前台被拉回 launcher（帧 3 起 r2-run4）；run5 详情页 chrome 被外来点击切隐（帧 5 起渐隐）；图片走查时前台被切到 Calendar 一次（拉回后重拍）。`uimode` 曾被外部翻回夜态一次。
 - **怎么回退**：预载翼=删 AssetCard onClick 内 `preloadDetailPoster(...)` 调用+函数+常量节；占位翼 A=VideoStage placeholder 改回 `ColorPainter(backdrop)`；占位翼 B=删 ZoomableOriginalImage 的灰占位 Box 段与 `imageReady`。三者相互独立可单独回退。
 
+## exp#5 共享 key 防冲突加固——网格数据按 id 去重 —— ✅ 已落地（exp#3 铺开前置，上轮 P3①）
+
+- **改了什么**：`android/core/ui/.../component/QimengMediaGrid.kt` 把「分组段→格子」扁平化抽为纯函数 `flattenGridCells(sections)`（`GridCell` internal data class），并在其中**按资产 id 防御性去重**（首现位保留、跨段去重、组头恒渲染不参与）；调用点 `remember(sections) { flattenGridCells(sections) }` 行为等价替换。新增 JVM 单测 `core/ui/src/test/.../QimengMediaGridCellsTest.kt` 四例（重复 id→输出唯一/跨段去重+组头保留/无重复零变化/空段与全重复段组头保留）。
+- **为什么选数据整理层而非 HomeViewModel**：LazyVerticalGrid 项 key 与共享元素 key 都在本组件以 asset.id 铸造——重复 id 直接撞 key 约束（崩溃级）或同屏双卡同 sharedBounds key（配对未定义）；服务端无「单响应内 id 唯一」协议承诺，在 key 铸造点收敛一处覆盖全部网格页（首页三流/相册/收藏/历史/搜索/作者集合），且不动数据层语义（批次清单/展示序仍由调用方持有）。顺序保持首现位（distinctBy 语义），正常数据输出逐格相同——零列表语义变化。
+- **怎么回退**：调用点改回内联不去重 buildList + 删 `flattenGridCells`/`GridCell` + 删单测文件，其余零改动。
+
 ---
 
 （完）

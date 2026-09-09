@@ -50,6 +50,37 @@ import media.qimeng.app.core.ui.theme.QimengDimens
  *  但网格组件不依赖具体业务模块，此处独立成 UI 常量） */
 private const val GRID_PRELOAD_DISTANCE = 6
 
+/** 网格格子：组头（跨全列）或资产卡（单列）；[flattenGridCells] 产物。internal 供 JVM 单测锁定 */
+internal data class GridCell(val header: String?, val asset: MediaAsset?)
+
+/**
+ * 分组段扁平化 + 按资产 id 防御性去重（exp#5，2026-09-10 ui/expressive 分支）。
+ *
+ * 为什么在 key 铸造点去重：本组件用 asset.id 作 LazyVerticalGrid 项 key（重复 key 直接崩）
+ * 并经 [media.qimeng.app.core.ui.motion.qimengAssetPosterSharedBounds] 以同 id 铸共享元素
+ * key（服务端单响应含重复资产时会同屏双卡撞同一 sharedBounds key，配对行为未定义）。
+ * 服务端各列表端点均无「单响应内 id 唯一」的协议承诺，此处按 id 收敛是最后的防御点，
+ * 一处覆盖共用本组件的全部网格页（首页三流/相册/收藏/历史/搜索/作者集合）。
+ *
+ * 语义：顺序保持首现位（distinctBy 语义，后现重复丢弃）、跨段去重、组头不参与去重
+ * （组头恒渲染）；正常数据（无重复）输出与不去重版本逐格相同——零语义变化，仅在
+ * 异常数据下防崩防冲突。组头所在段即便条目全为重复也不删段（空段头保留，防御路径
+ * 不做美学裁剪）。纯函数不碰 IO；internal 供 JVM 单测锁定。
+ *
+ * 回退（exp#5）：调用点改回内联不去重 buildList + 删本函数与 GridCell + 删单测。
+ */
+internal fun flattenGridCells(sections: List<GridSection>): List<GridCell> {
+    val seenAssetIds = HashSet<String>()
+    return buildList {
+        sections.forEach { section ->
+            if (section.label.isNotEmpty()) add(GridCell(header = section.label, asset = null))
+            section.items.forEach { asset ->
+                if (seenAssetIds.add(asset.id)) add(GridCell(header = null, asset = asset))
+            }
+        }
+    }
+}
+
 /** 视频类型（时长角标仅视频渲染）——与领域 MediaKind.VIDEO 对应的本地引用 */
 private val DURATION_BADGE_TYPES = setOf(MediaKind.VIDEO)
 
@@ -148,17 +179,8 @@ fun QimengMediaGrid(
     onNearBottom: () -> Unit = {},
     pauseThumbnailsWhileScrolling: Boolean = false,
 ) {
-    // 扁平化为 (header?, asset?) 序列：组头跨全列，卡片单列
-    data class Cell(val header: String?, val asset: MediaAsset?)
-
-    val cells = remember(sections) {
-        buildList {
-            sections.forEach { section ->
-                if (section.label.isNotEmpty()) add(Cell(header = section.label, asset = null))
-                section.items.forEach { add(Cell(header = null, asset = it)) }
-            }
-        }
-    }
+    // 扁平化为 (header?, asset?) 序列：组头跨全列，卡片单列（含按 id 防御性去重，见函数 KDoc）
+    val cells = remember(sections) { flattenGridCells(sections) }
     val totalCount = cells.size
 
     // 距底哨兵：可见末项接近总尾即回调（LaunchedEffect 挂 listState 一次性收集快照流）
