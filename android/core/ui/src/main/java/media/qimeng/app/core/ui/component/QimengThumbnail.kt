@@ -18,6 +18,9 @@ import coil3.compose.AsyncImage
  * - animated_image 资产传**原件签名直链**（由调用方经 AssetOrigUrlResolver 解析，
  *   2026-09-06 拍板：动图缩略图必须动画；coil-gif 解码器在 QimengApplication 装配）。
  * 内存缓存由 Coil 单例 ImageLoader 统一管理（滚动复用/同 URL 命中零开销）。
+ * 淡入关闭（任务L L1 旧版口径 crossfade(false)）：由全局单例 ImageLoader 统一配置
+ * （core/data CoilModule.crossfade(false)，经 QimengApplication 的 SingletonImageLoader.Factory
+ * 接入本组件）——组件内不重复配置，规格事实记档于此。
  *
  * @param model 直链字符串；null = 占位（列表请求中或服务端未返回）
  * @param paused 滚动暂停缩略图加载（任务I I5，GUIDE_UI §浏览历史 L394 / §收藏页 L411）：
@@ -34,12 +37,14 @@ fun QimengThumbnail(
 ) {
     // 「成功加载过」逐 model 记账：paused 恢复后（或 model 换新）重置，重新参与暂停门控
     var loaded by remember(model) { mutableStateOf(false) }
+    // 占位/错误底：旧版 ?attr/qmColorChipBg → 本项目主题角色映射 secondaryContainer
+    // （Theme.kt 映射注释；日 #F0F0F2 / 夜 #2E2E2E 成对），任务L L1 起替代 surfaceVariant
     AsyncImage(
         model = if (paused && !loaded) null else model,
         contentDescription = contentDescription,
         contentScale = ContentScale.Crop,
-        placeholder = ColorPainter(MaterialTheme.colorScheme.surfaceVariant),
-        error = ColorPainter(MaterialTheme.colorScheme.surfaceVariant),
+        placeholder = ColorPainter(MaterialTheme.colorScheme.secondaryContainer),
+        error = ColorPainter(MaterialTheme.colorScheme.secondaryContainer),
         onSuccess = { loaded = true },
         modifier = modifier,
     )

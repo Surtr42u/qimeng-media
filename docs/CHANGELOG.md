@@ -9,6 +9,18 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## feat(app): 任务L L1 缩略图卡片旧版化——网格卡裁回旧版极简卡（仅16:9图+视频时长角标）（2026-09-09 第一百七十五笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理，任务L L1 批）
+
+- **AssetCard 裁剪**（core/ui QimengMediaGrid.kt）：删 G5「Web MediaCard 四层」中的标题/up/日期文字层与 Surface 卡底，恢复旧版 item_media_thumbnail.xml 口径=仅 16:9 图 + 视频时长角标；外层 padding 5dp、圆角 24f 为旧版**像素**值经 LocalDensity toDp() 换算（KDoc 注明）、无按下缩放动画；时长角标改白字 12sp+阴影纯文字、右下 8dp，删 clip 胶囊底
+- **QimengThumbnail 占位**（core/ui QimengThumbnail.kt）：placeholder/error 由 surfaceVariant 换旧版 qmColorChipBg 等价 token secondaryContainer（Theme.kt 既定角色映射，日 #F0F0F2/夜 #2E2E2E 成对）；crossfade(false) 记档 KDoc（全局 ImageLoader CoilModule 已配置，组件不重复设）
+- **穿透**：首页/相册/收藏/历史/搜索/作者集合六页经共享组件自然传导；J2 网格组头未动；相册页头排序行属 L4 范围未动
+- **单测**：QimengFormatTest 补 formatDurationBadge 旧版口径 4 例（空值回 null/m:ss 补零/h:mm:ss/毫秒截尾不进位）；Compose 卡片结构无单测惯例，以模拟器实测代验记档
+- **走查**：qimeng_api35 无头模拟器登录 18461 对照实例，六页截图+uiautomator dump 逐页证实（卡片文字节点清零，仅剩页头/组头「N 项」/时长角标/tab/chip；资产标题仅存 content-desc 无障碍层不渲染）；夜间态抽查正常；证据 %TEMP%\qimeng-l1-evidence\
+- 门禁四连绿：app-build/app-test/app-lint/make lint 全 EXIT=0（lint 曾被 P2 批遗留的 server 存量债拦停——libraries.go gofmt + assets_media_url.go 冗余转换，独立 commit 清偿，见下一笔）
+
+---
 ## fix(app): 任务K K1 详情黑底污染清偿——舞台底色单源对齐旧版（chrome显=主题底/沉浸=纯黑/播放中=播放器黑）（2026-09-09 第一百七十四笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理，任务K K1 批）

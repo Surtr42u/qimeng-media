@@ -3,14 +3,10 @@ package media.qimeng.app.core.ui.component
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridState
@@ -19,7 +15,6 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -31,9 +26,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import media.qimeng.app.core.model.GridSection
 import media.qimeng.app.core.model.MediaAsset
 import media.qimeng.app.core.model.MediaKind
@@ -45,6 +45,28 @@ private const val GRID_PRELOAD_DISTANCE = 6
 
 /** 视频类型（时长角标仅视频渲染）——与领域 MediaKind.VIDEO 对应的本地引用 */
 private val DURATION_BADGE_TYPES = setOf(MediaKind.VIDEO)
+
+// ---------- 旧版极简卡视觉参数（任务L L1，2026-09-09 拍板；来源=旧仓库 item_media_thumbnail.xml，勿改值） ----------
+
+/** 旧版卡片外层 padding=5dp（item_media_thumbnail.xml root padding；5dp 不在既有间距档内，独立常量） */
+private val CARD_OUTER_PADDING = 5.dp
+
+/** 旧版圆角 outline 24f——**像素**值非 dp（item_media_thumbnail.xml outline radius 24f），
+ *  使用处经 [LocalDensity] 运行时 toDp() 换算，不同密度设备观感一致 */
+private const val LEGACY_CARD_CORNER_RADIUS_PX = 24f
+
+/** 时长角标文字样式：白字 12sp + 阴影、无胶囊底（旧版 §缩略图口径；G5 的 clip 胶囊底已删）。
+ *  阴影保证浅色画面上可读——规格只要求「有阴影」未定参数，取常规柔和档：
+ *  黑 60% + 纵向偏移 1px + 模糊 4px（Shadow 单位=像素，与旧版 shadowDx/Dy/Radius 同口径） */
+private val DurationBadgeTextStyle = TextStyle(
+    fontSize = 12.sp,
+    color = Color.White,
+    shadow = Shadow(
+        color = Color.Black.copy(alpha = 0.6f),
+        offset = Offset(0f, 1f),
+        blurRadius = 4f,
+    ),
+)
 
 /**
  * 共享媒体网格：分组段组头（跨全列）+ 资产卡片 + 距底预载回调 + 列数可调。
@@ -153,11 +175,17 @@ fun QimengMediaGrid(
 }
 
 /**
- * 资产卡片：缩略图（16:9）+ 标题一行 + 视频时长角标（旧版：纯文字时长，不使用胶囊底）+
- * meta 行（作者 + 日期，任务G G5 对齐 Web MediaCard 四层 图/标题/up/date）。
- * 详情跳转是 M4-3 交界：onClick 已预留，本批由壳层决定行为。
+ * 资产卡片：旧版极简卡（任务L L1，2026-09-09 拍板，覆盖 G5「Web MediaCard 四层」）——
+ * 结构 = 16:9 缩略图 + 视频时长纯文字角标，**无标题 / 无作者 / 无日期**
+ * （旧版 item_media_thumbnail.xml 实测口径）。
+ * - 外层 padding [CARD_OUTER_PADDING]（旧版 root padding=5dp）；
+ * - 圆角 [LEGACY_CARD_CORNER_RADIUS_PX] 为旧版**像素**值，经 [LocalDensity] 运行时换算 dp；
+ * - 占位/错误底 = 旧版 qmColorChipBg 等价主题 token（在 [QimengThumbnail] 内，secondaryContainer）；
+ * - 角标 [DurationBadgeTextStyle] 白字 12sp + 阴影、右下 8dp、无胶囊底；
+ * - 无按下缩放动画（旧版无 scale/press 效果，保持 [clickable] 默认点击态即可，禁止再加缩放修饰）。
  * 动图（animated_image）走原件直链动画（拍板条目 9）：解析经 [animatedUrlResolver]
  * （VM 侧带内存缓存的 AssetOrigUrlResolver），解析完成前显示服务端缩略图。
+ * 详情跳转是 M4-3 交界：onClick 由壳层接线。
  */
 @Composable
 private fun AssetCard(
@@ -176,73 +204,32 @@ private fun AssetCard(
     } else {
         asset.thumbUrl
     }
-    Surface(
-        modifier = modifier.clickable(onClick = onClick),
-        shape = RoundedCornerShape(QimengDimens.CardCornerRadius),
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = QimengDimens.CardTonalElevation,
+    // 旧版圆角是像素值：运行时按屏幕密度换算（KDoc 规格要求的 toDp() 写法）
+    val cornerRadius = with(LocalDensity.current) { LEGACY_CARD_CORNER_RADIUS_PX.toDp() }
+    Box(
+        modifier = modifier
+            .padding(CARD_OUTER_PADDING)
+            .fillMaxWidth()
+            .thumbnailAspectRatio()
+            // 先 clip 后 clickable：ripple 限定在圆角内；仅默认点击态，无缩放/按压动画
+            .clip(RoundedCornerShape(cornerRadius))
+            .clickable(onClick = onClick),
     ) {
-        Column {
-            Box(modifier = Modifier.fillMaxWidth().thumbnailAspectRatio()) {
-                QimengThumbnail(
-                    model = thumbModel,
-                    contentDescription = asset.title,
-                    paused = paused,
-                    modifier = Modifier.fillMaxSize(),
+        QimengThumbnail(
+            model = thumbModel,
+            contentDescription = asset.title,
+            paused = paused,
+            modifier = Modifier.fillMaxSize(),
+        )
+        if (asset.mediaType in DURATION_BADGE_TYPES) {
+            formatDurationBadge(asset.durationMs)?.let { badge ->
+                Text(
+                    text = badge,
+                    style = DurationBadgeTextStyle,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(QimengDimens.SpaceM), // 旧版角标距右下 8dp（SpaceM 同档）
                 )
-                if (asset.mediaType in DURATION_BADGE_TYPES) {
-                    val badge = formatDurationBadge(asset.durationMs)
-                    if (badge != null) {
-                        Text(
-                            text = badge,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .padding(QimengDimens.SpaceXS)
-                                .clip(RoundedCornerShape(QimengDimens.BadgeCornerRadius))
-                                .padding(QimengDimens.SpaceXXS),
-                        )
-                    }
-                }
-            }
-            Text(
-                text = asset.title,
-                style = MaterialTheme.typography.bodySmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(horizontal = QimengDimens.SpaceS, vertical = QimengDimens.SpaceXS),
-            )
-            Row(
-                modifier = Modifier.padding(
-                    start = QimengDimens.SpaceS,
-                    end = QimengDimens.SpaceS,
-                    bottom = QimengDimens.SpaceS,
-                ),
-            ) {
-                val up = asset.authorNames.firstOrNull() ?: asset.source
-                // 日期行（任务G G5：Web MediaCard 第四层，date=formatShortDate(modifiedAt)——
-                // Android 同字段 modifiedAtMs、同格式「M-D」（[formatShortDate] 口径注释对照 Web）
-                val date = formatShortDate(asset.modifiedAtMs)
-                if (up != null) {
-                    Text(
-                        text = up,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        // 作者名占剩余宽：日期钉在行尾不被长名挤掉（Web card--meta 同行 flex 布局）
-                        modifier = Modifier.weight(1f),
-                    )
-                    if (date.isNotEmpty()) Spacer(modifier = Modifier.width(QimengDimens.SpaceXS))
-                }
-                if (date.isNotEmpty()) {
-                    Text(
-                        text = date,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
             }
         }
     }
