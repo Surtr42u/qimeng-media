@@ -51,6 +51,7 @@ import coil3.request.CachePolicy
 import coil3.request.Disposable
 import coil3.request.ImageRequest
 import coil3.size.Size
+import media.qimeng.app.core.ui.motion.qimengAssetPosterSharedBounds
 import media.qimeng.app.core.ui.theme.QimengDimens
 
 /**
@@ -239,7 +240,14 @@ fun DetailScreen(
                         startPositionMs = state.videoStartPositionMs,
                         timelineTags = state.timelineTags,
                         backdrop = stageBackdrop,
-                        modifier = Modifier.fillMaxSize(),
+                        // 共享元素试点（exp#3，分支提案）：舞台盒=首页网格卡的配对端
+                        // （同 asset-poster:<id> key）。挂在本层（DetailScreen 单点）而非
+                        // VideoStage/ImageStage 内部——播放器桥接件与缩放控件零接触，回退=
+                        // 删此一个 modifier 段。scope 缺位（非首页族进入）时该段原样返回，
+                        // 渲染零变化；bounds 动画只连续化边界，舞台结构/排版/沉浸层不动
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .qimengAssetPosterSharedBounds(asset.id),
                         onSiblingNavigate = onSiblingNavigate,
                         onToggleChrome = { chromeVisible = !chromeVisible },
                         onPlayerActiveChanged = { playerActive = it },

@@ -19,6 +19,10 @@ dependencies {
     implementation(libs.compose.ui.graphics)
     implementation(libs.compose.foundation)
     implementation(libs.compose.material3)
+    // api 而非 implementation：motion/QimengSharedTransition.kt 的 CompositionLocal 签名
+    // 泄漏 animation 构件类型（SharedTransitionScope/AnimatedVisibilityScope），消费方
+    //（:app 壳层、feature:detail）须经此传递可见（exp#3 试点；版本随 BOM，禁止单独升级）
+    api(libs.compose.animation)
     implementation(libs.compose.ui.tooling.preview)
 
     // Coil 3（拍板：动图缩略图动画；api 传递给 feature 与 :app——AsyncImage 与单例 ImageLoader 装配）
