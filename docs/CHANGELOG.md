@@ -20,6 +20,7 @@
 - **单测**：`AlbumFilterPanelTest` 新增 3 例（面板选最旧档 sort=file_date+asc 写入已应用态且请求携带 / 重置清空排序回 default-desc / 面板内改排序只动草稿不触请求）14 例全绿；`AlbumViewModelTest` 7 例全绿；core/model `AlbumPanelFilterTest` 七档映射既有用例不动全绿
 - **门禁四连绿**：make app-build / app-test / app-lint / lint 全 EXIT=0
 - **实机验收**（qimeng_api35@emulator-5554 身份核验过，18461 虚构库）：相册页页头「排序/精选/最新/最旧/按名称」不存在（dump 证）；面板见排序方式七档+顺位且选中态正确；选「文件日期+升序」（旧版「最旧」语义）应用后列表序实际变化——首条资产 k3-ultrawide-01.jpg→corrupt-res27.jpg，今天桶组内序与 curl `sort=file_date&order=asc` 服务端序逐条一致；重开面板草稿仍=文件日期+升序（拷贝往返）；重置后回默认序（k3 先）；收藏/历史无筛选入口实证；App 崩溃 0（logcat -b crash 计 0）。**并行干扰记档**：K 车道同模拟器走查两次踩道（模拟器进程被外部终止→本车道重启同 AVD 无头恢复；恢复后 App 被外部导航到详情页+登出→BACK+重登恢复），全部重试自愈、计数判据未受影响。证据 %TEMP%\qimeng-l4-evidence\
+- **对抗审查收口（独立 reviewer，0 P1/P2，主代理记档 2026-09-10）**：升序/降序方向专项核查无搞反（ASC=file_date 最早在前=旧版「最旧」语义，与 G5 被删映射同向）；面板其他分区 diff 逐行核过零触碰；AlbumFilterPanelTest 14+7 例 `--rerun-tasks` 强制实跑全绿。三项 P3 留档——①服务端 curl 对照仅 README 三行转述、原始输出未存档且对照实例已停（结论由端上 dump+单测+ASC 语义链互证锁定，后续批次留原始输出）；②本批改 core:ui 与拍板 #6「仅限网格缩略图相关」字面有出入，以拍板 #4「恢复面板排序段」具体授权优先，构成合理授权；③AlbumViewModel.kt:145 与 feature/all strings.xml:10 注释提及已删符号，属「为什么删+去哪了」说明性注释，非残留。
 
 ---
 ## feat(app): 任务L L3 #37 首页↔排行榜卡半屏修复——对齐判定加偏移量可重试+滚动在途回写门控（2026-09-09 第一百八十笔）
