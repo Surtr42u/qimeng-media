@@ -36,7 +36,9 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 import media.qimeng.app.core.model.GridSection
 import media.qimeng.app.core.model.MediaAsset
 import media.qimeng.app.core.model.RankingPeriod
@@ -62,6 +64,38 @@ private fun HomeTab.tabLabelRes(): Int = when (this) {
     HomeTab.COS -> R.string.home_tab_cos
     HomeTab.RANK -> R.string.home_tab_rank
 }
+
+/** pager↔chip 同步对齐日志 tag（实机高频验收 grep 用，同 QimengM42 先例） */
+private const val PAGER_SYNC_LOG_TAG = "QimengL37"
+
+/**
+ * 对齐判定的偏移容差（页宽分数）：snap 落点理论精确为 0，容差只滤浮点残差、防「残差≠0 →
+ * 无限重试」死循环；真实卡半屏的中间偏移（如 0.4）远超此值必判未对齐。
+ */
+private const val SNAP_ALIGNMENT_EPSILON_FRACTION = 0.01f
+
+/**
+ * pager 与目标 tab 是否完全对齐（任务L L3 #37 拍板 A：settled 对齐）。
+ * 只看 currentPage 不够——动画被打断后 pager 可停在中间偏移而 currentPage 已等于目标，
+ * 对齐判定永真即永久卡半屏；补 currentPageOffsetFraction 把「停半路」与「真落定」区分开。
+ * 纯函数（internal）供单测锁定契约，UI 时序本身以实机高频验收代验。
+ */
+internal fun isPagerAlignedWithTab(
+    currentPage: Int,
+    pageOffsetFraction: Float,
+    targetTabOrdinal: Int,
+): Boolean = currentPage == targetTabOrdinal &&
+    abs(pageOffsetFraction) <= SNAP_ALIGNMENT_EPSILON_FRACTION
+
+/**
+ * pager→tab 回写门控（任务L L3 #37 拍板 B）：滚动/程序化动画在途（isScrollInProgress）时
+ * 发 null=不回写 VM，落定才回写——斩断「程序化翻页途经中间页 → switchTab 中途劫持 → 反向
+ * 打断动画」的 chip↔pager 同步环。为什么门必须在 snapshotFlow 求值内：落定瞬间门开触发再求值、
+ * 补发最后一次 currentPage；若在 collect 侧判门，拖拽中最后一次发射被吞后 chip 永不跟随。
+ * 纯函数（internal）供单测锁定契约。
+ */
+internal fun pagerPageForTabSync(isScrollInProgress: Boolean, currentPage: Int): Int? =
+    if (isScrollInProgress) null else currentPage
 
 /**
  * 首页（M4-2）：顶行[标题][搜索框不可聚焦→跳搜索页][网格图标] +
@@ -107,18 +141,52 @@ fun HomeScreen(
         }
     }
 
-    // chip 点击 ↔ 横滑 双向同步：state 变化驱动 pager，pager 翻页驱动 VM
+    // chip 点击 ↔ 横滑 双向同步（任务L L3 #37 高频卡半屏修复，拍板 A+B 同做）。
+    // 旧实现两根因：
+    // ① chip→pager 以「currentPage == 目标」单次 animateScrollToPage——高频连点重启
+    //    LaunchedEffect 打断在途动画后，pager 停在中间偏移而 currentPage 已等于目标，
+    //    对齐判定永真，永久卡半屏（首页→排行榜被拽回 COS 半屏的主因）；
+    // ② pager→chip 用 currentPage 无门控回写——程序化翻页途经中间页时 switchTab 被中途
+    //    劫持，再反向打断动画（帮凶）。
+    // 修法：② 经 pagerPageForTabSync 门控，滚动在途不回写，斩断同步环；① 对齐判定加
+    // currentPageOffsetFraction（isPagerAlignedWithTab），未对齐就重试 animateScrollToPage
+    // 直至落定，重试前先等 isScrollInProgress 归假（不与手指/在途滚动抢 mutator）。
+    // #35 哨兵抑制（switchTab 500ms 窗口）未被触碰：回写仍走 switchTab 单点。
     val pagerState = rememberPagerState(initialPage = state.currentTab.ordinal) { HomeTab.entries.size }
     LaunchedEffect(state.currentTab) {
-        if (pagerState.currentPage != state.currentTab.ordinal) {
-            pagerState.animateScrollToPage(state.currentTab.ordinal)
+        val targetTabOrdinal = state.currentTab.ordinal
+        while (!isPagerAlignedWithTab(
+                currentPage = pagerState.currentPage,
+                pageOffsetFraction = pagerState.currentPageOffsetFraction,
+                targetTabOrdinal = targetTabOrdinal,
+            )
+        ) {
+            // 手势/在途滚动（含上一轮被打断动画释放 mutator）结束前不动 pager
+            snapshotFlow { pagerState.isScrollInProgress }.first { !it }
+            // 等待期间可能已被落定回写等路径对齐，复核后再动
+            if (isPagerAlignedWithTab(
+                    currentPage = pagerState.currentPage,
+                    pageOffsetFraction = pagerState.currentPageOffsetFraction,
+                    targetTabOrdinal = targetTabOrdinal,
+                )
+            ) {
+                break
+            }
+            pagerState.animateScrollToPage(targetTabOrdinal)
         }
+        android.util.Log.d(
+            PAGER_SYNC_LOG_TAG,
+            "aligned tab=$targetTabOrdinal page=${pagerState.currentPage} " +
+                "fraction=${pagerState.currentPageOffsetFraction}",
+        )
     }
     LaunchedEffect(pagerState) {
-        snapshotFlow { pagerState.currentPage }.collectLatest { page ->
-            val tab = HomeTab.entries[page]
-            if (tab != state.currentTab) viewModel.switchTab(tab)
-        }
+        snapshotFlow { pagerPageForTabSync(pagerState.isScrollInProgress, pagerState.currentPage) }
+            .collectLatest { page ->
+                if (page == null) return@collectLatest
+                val tab = HomeTab.entries[page]
+                if (tab != state.currentTab) viewModel.switchTab(tab)
+            }
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -132,6 +200,13 @@ fun HomeScreen(
             onPillClick = { index -> viewModel.switchTab(HomeTab.entries[index]) },
             modifier = Modifier.padding(horizontal = 16.dp),
         )
+        // 台账 #37 修法③评估结论（拍板要求评估、能落地则落地——评估后维持现状）：
+        // a) Modifier.height 固定预留周期行高度 = 推荐/COS 两 tab 常驻一行 chip 高度空白，
+        //    偏离旧版「仅排行榜有周期行」视觉规格，不落地；
+        // b) animateItem 是 LazyLayout item API，此处是普通 Column 条件挂载，不适用；
+        // c) 显隐引发的视口高度突变曾误触距底哨兵（#35），已由 switchTab 的 500ms 抑制窗覆盖
+        //    （本批未动）；高度重测不丢 pager 横向滚动位置，卡半屏根因是动画被打断（见上方
+        //    同步块注释），已在同步层修复。故本行维持条件挂载。
         if (state.currentTab == HomeTab.RANK) {
             Spacer(modifier = Modifier.height(4.dp))
             // 排行榜周期四档（日/周/月/年；缺省日榜——拍板 B3，不用 quarter/all）
