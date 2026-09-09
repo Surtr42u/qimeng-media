@@ -125,7 +125,10 @@ private const val FULLSCREEN_TOGGLE_DEBOUNCE_MS = 800L
  * @param watched 已看完徽标（3d WatchState 口径，海报态左上角显示）
  * @param startPositionMs 起播位置毫秒（VM 按断点秒×1000 计算；已看完=0 重播）
  * @param timelineTags 时间轴标签（VM 已按 timeMillis 升序拉取）
- * @param modifier 舞台尺寸段（I7 沉浸：调用方传 fillMaxSize+黑底，海报/播放两态共用）
+ * @param backdrop 舞台底色（任务K K1 单源：stageBackdropColor 于 DetailScreen 裁决后经
+ *   [DetailMediaStage] 下发——chrome 显=主题底/沉浸或播放中=纯黑；本舞台用于海报态
+ *   缩略图占位与错误底，舞台盒底色由调用方 modifier.background(backdrop) 打底）
+ * @param modifier 舞台尺寸段（I7 沉浸：调用方传 fillMaxSize+backdrop 打底，海报/播放两态共用）
  * @param onSiblingNavigate 左右滑切换相邻资产回调（I7 海报态接线；播放态不接——播放器手势
  *   接管，无第二套手势面）
  * @param onToggleChrome 沉浸模式 chrome 开关回调（视频态不接：海报单击=起播（L163 优先，
@@ -144,6 +147,8 @@ internal fun VideoStage(
     watched: Boolean,
     startPositionMs: Long,
     timelineTags: List<TimelineTag>,
+    /** 舞台底色（任务K K1 单源下发，见 @param backdrop） */
+    backdrop: Color,
     modifier: Modifier,
     onSiblingNavigate: (delta: Int) -> Unit,
     onToggleChrome: () -> Unit,
@@ -405,13 +410,14 @@ internal fun VideoStage(
             // 海报态：视频帧 + 中央播放钮，整块可点起播（播放钮为视觉锚点）。
             // I7 整屏舞台改 Fit contain：G1a 固定比例舞台下 Crop≈Fit，整屏后 Crop 会裁掉
             // 海报边缘且与播放 letterbox 跳变——对齐旧版 ZoomImageView 预览的 contain 语义；
-            // 占位/错误底取黑（舞台盒同色调，与 chrome 隐藏态黑底沉浸一致）
+            // 占位/错误底取 backdrop（任务K K1 单源：chrome 显=主题底，对齐旧版海报透出
+            // qmColorBg；沉浸态=黑）
             AsyncImage(
                 model = asset.thumbUrl,
                 contentDescription = stringResource(R.string.detail_media_stage),
                 contentScale = ContentScale.Fit,
-                placeholder = ColorPainter(Color.Black),
-                error = ColorPainter(Color.Black),
+                placeholder = ColorPainter(backdrop),
+                error = ColorPainter(backdrop),
                 modifier = Modifier.fillMaxSize(),
             )
             Surface(

@@ -1,6 +1,7 @@
 package media.qimeng.app.feature.detail
 
 import android.graphics.drawable.Animatable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -150,8 +151,10 @@ internal fun ZoomableOriginalImage(
 }
 
 /**
- * 解码失败覆盖层（RES #27）：舞台中央中文提示 + 重试/返回两按钮。舞台恒黑底
- * （DetailMediaStage 图片分支），文字/按钮取纯白（VideoStage 播放钮同款黑底白面前例）。
+ * 解码失败覆盖层（RES #27）：舞台中央中文提示 + 重试/返回两按钮。覆盖层自带纯黑底
+ *（任务K K1 起舞台底色随主题/沉浸切换，黑底白面高对比改由覆盖层自身保证、不再依赖
+ * 「舞台恒黑」假设；视觉与 K1 前完全一致，RES #27 口径不变），文字/按钮取纯白
+ *（VideoStage 播放钮同款黑底白面前例）。
  */
 @Composable
 private fun DecodeErrorOverlay(
@@ -159,7 +162,7 @@ private fun DecodeErrorOverlay(
     onExit: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+    Box(modifier = modifier.background(Color.Black), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 text = stringResource(R.string.detail_image_decode_failed),

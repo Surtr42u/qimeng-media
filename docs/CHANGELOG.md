@@ -9,6 +9,20 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## fix(app): 任务K K1 详情黑底污染清偿——舞台底色单源对齐旧版（chrome显=主题底/沉浸=纯黑/播放中=播放器黑）（2026-09-09 第一百七十四笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理，任务K K1 批）
+
+- **用户原话**：「详情页也严格按照旧版实现　现在的会出现黑色背景的详情页污染视觉」——I7 时代舞台盒无条件 `Color.Black`，日间主题下整页黑底；旧版舞台底透出主题背景色（日 #FAFAFA / 夜 #1A1A1A），仅沉浸态与视频播放中才黑
+- **底色单源**：新增 `stageBackdropColor(chromeVisible, playerActive, themeBackground)` 纯函数（`DetailStage.kt`，全卷唯一裁决点在 `DetailScreen.kt`，经 `DetailMediaStage.backdrop` 参数逐层下发，子层禁止自带底色防口径分叉）——chrome 有效显示=主题背景透传；沉浸（chrome 隐藏）或播放器活动期（视频 PLAYING/ENDED/PAUSED，chrome 让位播放器）=纯黑；全屏覆盖层 Dialog 维持黑（拍板口径不动）
+- **改动文件**：`DetailStage.kt`（删两处无条件 `background(Color.Black)` 改 backdrop 单源 + KDoc 重写新口径）、`DetailScreen.kt`（裁决点接线，negate-inset 舞台平移后状态栏后区域底色随单源同步，无黑条/主题色条错位）、`VideoStage.kt`（海报态 AsyncImage 占位/错误底 ColorPainter 黑→backdrop）、`ImageStage.kt`（KDoc 同步）、`ZoomableOriginalImage.kt`（解码失败覆盖层改自带纯黑底——舞台底不再恒黑后 RES #27 黑底白面高对比由覆盖层自身保证，视觉不变、拍板不回退）
+- **DetailChromeBars**：免改——顶/底 chrome 渐变本就取 `colorScheme.background.copy(alpha)`（主题色），沉浸态 chrome 整体隐藏无底色可同步
+- **单测**：新增 `StageBackdropTest`（JVM 纯函数锁定，5 用例：chrome 显透传日/夜主题底、播放中黑、沉浸黑、沉浸+播放黑、日间浏览态绝不返回纯黑的回归锁）
+- **门禁四绿**：`make app-test`（StageBackdropTest tests=5 failures=0，BUILD SUCCESSFUL）/ `make app-lint` / `make app-build` / `make lint` 全 EXIT=0（后台无头，日志在证据目录）
+- **UI 实测停手记档**：本机同时存在用户雷电模拟器（dnplayer.exe 在跑）与官方 qimeng_api35 无头实例（占 5554/5555），adb `emulator-5554` 归属无法在不违禁（5554 全命令禁碰）的前提下验证；自有第二实例因 AVD 锁（既有实例非 -read-only 独占）无法在 5556 启动，杀既有实例=触碰 5554 背后进程，同样违禁——按「尽力而为」条款停手，UI 对照（日/夜、竖/横/超宽、chrome 显隐）留给 K3 收官走查
+- 证据目录：`%TEMP%\qimeng-k1-evidence\`（四门禁日志 + 模拟器启动失败日志）
+
+---
 ## refactor/feat/fix/docs(server+web): 系统审查 P2 六条清偿——assets 拆分+ADR-0019+库白名单+回收站路径闸门+Web 打点测试+工作区清理（2026-09-09 第一百七十三笔）
 
 执行 AI：MiMo（主代理，汇总/验收/修 config 编译缺陷）；实现子代理 general-1~6 分条落地（P2-1~P2-6）

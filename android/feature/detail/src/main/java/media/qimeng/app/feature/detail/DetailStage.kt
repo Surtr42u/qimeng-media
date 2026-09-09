@@ -13,20 +13,41 @@ import media.qimeng.app.core.model.MediaKind
 import media.qimeng.app.core.model.TimelineTag
 
 /**
- * 媒体舞台编排器（任务I I7 沉浸复刻改版）：舞台 = 第一屏 edge-to-edge 全出血媒体层
- * （GUIDE_UI §详情页 L158-160 沉浸 4 层组织的媒体层；G1a 时代的 68vh 排版钳制
- * DETAIL_STAGE_MAX_HEIGHT_FRACTION 随基准切回旧版退役），负责媒体类型分发——
- * 图片/动图 → [ImageStage]，视频 → [VideoStage]。
+ * 媒体舞台编排器（任务I I7 沉浸复刻改版；任务K K1 黑底污染清偿改底色口径）：舞台 =
+ * 第一屏 edge-to-edge 全出血媒体层（GUIDE_UI §详情页 L158-160 沉浸 4 层组织的媒体层；
+ * G1a 时代的 68vh 排版钳制 DETAIL_STAGE_MAX_HEIGHT_FRACTION 随基准切回旧版退役），
+ * 负责媒体类型分发——图片/动图 → [ImageStage]，视频 → [VideoStage]。
  *
- * 舞台盒恒黑底（L161 chrome 隐藏态始终黑底沉浸；媒体 contain 居中、黑边由舞台盒打底）：
- * - 图片：ZoomImageView fit-center 画法（configureBaseMatrix min(宽比,高比)+居中），
- *   填满整屏盒后竖图上下/横图左右留黑边，缩放手势链（0.5~5x/双击 1.8/智能分层 4096）不变；
- * - 视频：海报态缩略图 Fit 居中 + 播放态 BiliPlayerView 自适应 letterbox（行为同旧版，
- *   固定宽高比舞台退役——旧版媒体层恒全屏）。
+ * 舞台底色单源 [stageBackdropColor]（K1 对齐旧版 MediaDetailFragment 颜色口径，覆盖
+ * I7「舞台盒恒黑底」旧口径——旧版舞台底透出主题色，恒黑导致日间主题整页黑底污染）：
+ * - chrome 有效显示（默认浏览）：主题背景色（≈旧 qmColorBg，日 #FAFAFA / 夜 #1A1A1A，
+ *   非纯黑）——媒体 contain 居中的 letterbox 边由主题底打底；
+ * - 沉浸态（chrome 隐藏）或播放器活动期：纯黑（旧版 setChromeVisible(false) 显式 BLACK
+ *   同款；视频播放中舞台盒同步黑，与 BiliPlayerView 自身黑 letterbox 无缝衔接）；
+ * - 全屏覆盖层 Dialog 维持黑（FullscreenOverlayShell，拍板口径不动）。
+ *
+ * 图片：ZoomImageView fit-center 画法（configureBaseMatrix min(宽比,高比)+居中），
+ * 填满整屏盒后竖图上下/横图左右留主题底边，缩放手势链（0.5~5x/双击 1.8/智能分层 4096）
+ * 不变；视频：海报态缩略图 Fit 居中 + 播放态 BiliPlayerView 自适应 letterbox（行为同
+ * 旧版，固定宽高比舞台退役——旧版媒体层恒全屏）。
  *
  * 舞台动作（沉浸开关/兄弟切换/播放态上报）与视频接线参数（续播起点/已看完/进度上报/
  * 打点/时间轴标签）维持具名参数逐层下发（3d 解冻拓扑不变，DetailScreen 单源）。
  */
+
+/**
+ * 舞台底色裁决单源（任务K K1，用户原话「黑色背景的详情页污染视觉」清偿）：chrome 有效
+ * 显示 → 主题背景透传；沉浸（chrome 隐藏）或播放器活动（视频 PLAYING/ENDED，chrome 让位
+ * 播放器控制器即 chromeEffective=false）→ 纯黑。纯函数无 Compose 依赖（Color 为纯 Kotlin
+ * 值类），JVM 单测锁定见 StageBackdropTest；裁决点唯一在 DetailScreen，经 [DetailMediaStage]
+ * 的 backdrop 参数逐层下发，子层禁止再自带底色（防口径分叉复发）。
+ */
+internal fun stageBackdropColor(
+    chromeVisible: Boolean,
+    playerActive: Boolean,
+    themeBackground: Color,
+): Color = if (chromeVisible && !playerActive) themeBackground else Color.Black
+
 @androidx.annotation.OptIn(UnstableApi::class) // VideoStage 桥接 Media3 @UnstableApi 面（BiliPlayerView），调用方显式 opt-in
 @Composable
 internal fun DetailMediaStage(
@@ -37,6 +58,8 @@ internal fun DetailMediaStage(
     startPositionMs: Long,
     /** 时间轴标签（3d，仅视频资产有值；VideoStage 映射桥接实体） */
     timelineTags: List<TimelineTag>,
+    /** 舞台底色（K1 单源：DetailScreen 经 stageBackdropColor 裁决后下发，本层不再自带颜色） */
+    backdrop: Color,
     modifier: Modifier,
     onSiblingNavigate: (delta: Int) -> Unit,
     /** 沉浸模式 chrome 开关回调（I7：图片态单击舞台切换；视频态由播放态镜像驱动） */
@@ -57,13 +80,15 @@ internal fun DetailMediaStage(
     onDeleteTimelineTag: (tagId: String) -> Unit,
 ) {
     if (asset.mediaType == MediaKind.VIDEO) {
-        // 视频舞台（I7 全出血）：播放器自适应 letterbox（G1a 冻结口径不变）
+        // 视频舞台（I7 全出血）：播放器自适应 letterbox（G1a 冻结口径不变）；底色随
+        // backdrop 单源切换（K1：海报态透主题底，播放中转黑衔接播放器 letterbox）
         VideoStage(
             asset = asset,
             watched = watched,
             startPositionMs = startPositionMs,
             timelineTags = timelineTags,
-            modifier = modifier.background(Color.Black),
+            backdrop = backdrop,
+            modifier = modifier.background(backdrop),
             onSiblingNavigate = onSiblingNavigate,
             onToggleChrome = onToggleChrome,
             onPlayerActiveChanged = onPlayerActiveChanged,
@@ -74,10 +99,11 @@ internal fun DetailMediaStage(
             onDeleteTimelineTag = onDeleteTimelineTag,
         )
     } else {
-        // 图片舞台（I7 全出血）：整屏黑底盒 + ZoomImageView fit-center（缩放手势链不变），
-        // 单击切 chrome（沉浸主形态，D1 全屏覆盖层退役——裁决记档见 ImageStage KDoc）
+        // 图片舞台（I7 全出血）：整屏舞台盒打底 backdrop（K1 单源：chrome 显=主题底/
+        // 沉浸=纯黑）+ ZoomImageView fit-center（缩放手势链不变），单击切 chrome
+        //（沉浸主形态，D1 全屏覆盖层退役——裁决记档见 ImageStage KDoc）
         Box(
-            modifier = modifier.background(Color.Black),
+            modifier = modifier.background(backdrop),
             contentAlignment = Alignment.Center,
         ) {
             ImageStage(

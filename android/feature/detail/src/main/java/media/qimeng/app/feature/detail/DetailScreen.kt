@@ -52,12 +52,13 @@ import coil3.size.Size
 import media.qimeng.app.core.ui.theme.QimengDimens
 
 /**
- * 详情页（任务I I7 沉浸复刻改版）：按 GUIDE_UI §详情页 L158-160 沉浸 4 层组织回归——
- * 第一屏媒体舞台 edge-to-edge 全出血（黑底盒整屏高，图片态 ZoomImageView 链 / 视频态
- * BiliPlayerView 链）+ 上下渐变 chrome 浮层（顶：返回/n/N/信息；底：点赞/收藏/标签/快速
- * 转跳，[DetailChromeBars]）+ 单击显隐（图片态单击舞台切 chrome+系统栏，L271-276）；
- * 媒体层下方保留信息内容区（标题/meta/互动/标签/作者卡/UpNext——拍板⑧超规格件保留融入，
- * 下滑查看；chrome 挂在舞台盒内随第一屏滚动，只覆盖第一屏）。
+ * 详情页（任务I I7 沉浸复刻改版；任务K K1 黑底污染清偿改舞台底色口径）：按 GUIDE_UI
+ * §详情页 L158-160 沉浸 4 层组织回归——第一屏媒体舞台 edge-to-edge 全出血（整屏高，底色
+ * 随沉浸切换：chrome 显=主题底/沉浸或播放中=黑，见 [stageBackdropColor]；图片态
+ * ZoomImageView 链 / 视频态 BiliPlayerView 链）+ 上下渐变 chrome 浮层（顶：返回/n/N/信息；
+ * 底：点赞/收藏/标签/快速转跳，[DetailChromeBars]）+ 单击显隐（图片态单击舞台切 chrome+系统栏，
+ * L271-276）；媒体层下方保留信息内容区（标题/meta/互动/标签/作者卡/UpNext——拍板⑧超规格件
+ * 保留融入，下滑查看；chrome 挂在舞台盒内随第一屏滚动，只覆盖第一屏）。
  *
  * 沿革：3a 骨架排版（Web AssetDetailPage 移植）→ 3b/3c/3d 沉浸/播放器/全量接线 →
  * G1a/G1b Web 排版页 → I7 基准切回 GUIDE_UI 沉浸复刻（台账 #33 用户拍板「1 a」，
@@ -160,6 +161,16 @@ fun DetailScreen(
         }
     } else {
         val asset = requireNotNull(state.asset)
+        // 舞台底色单源裁决（任务K K1 黑底污染清偿，对齐旧版 MediaDetailFragment 颜色口径）：
+        // chrome 有效显示=主题背景（≈旧 qmColorBg，日 #FAFAFA/夜 #1A1A1A，非纯黑——媒体
+        // contain letterbox 与状态栏后区域同色，negate-inset 平移出的顶部区无黑条/主题色条
+        // 错位）；沉浸（chrome 隐藏）或播放器活动期=纯黑。全卷唯一裁决点在此，经
+        // DetailMediaStage.backdrop 逐层下发，子层禁止自带底色
+        val stageBackdrop = stageBackdropColor(
+            chromeVisible = chromeVisible,
+            playerActive = playerActive,
+            themeBackground = MaterialTheme.colorScheme.background,
+        )
         // 第一屏舞台高度 = 壳层内容区可视高度（BoxWithConstraints.maxHeight：状态栏/导航栏
         // insets 已由壳层 Scaffold 扣除）。I7 初稿用 LocalConfiguration.screenHeightDp（整屏），
         // 但舞台盒顶从壳层 inset 线起算 → 盒底越过视口下缘，底部 chrome（BottomCenter 对齐）
@@ -198,9 +209,9 @@ fun DetailScreen(
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState()),
             ) {
-                // 第一屏：媒体舞台 edge-to-edge 全出血（黑底盒整屏盒）+ 渐变 chrome 浮层
-                //（chrome 挂舞台盒内随第一屏滚动——只覆盖第一屏，下滑看内容不被遮）；
-                // stageEdgeToEdgeShift 见上注（negate-inset 平移）
+                // 第一屏：媒体舞台 edge-to-edge 全出血（整屏盒，底色随沉浸切换——K1 单源
+                // 口径见上注）+ 渐变 chrome 浮层（chrome 挂舞台盒内随第一屏滚动——只覆盖
+                // 第一屏，下滑看内容不被遮）；stageEdgeToEdgeShift 见上注（negate-inset 平移）
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -212,6 +223,7 @@ fun DetailScreen(
                         watched = state.videoWatched,
                         startPositionMs = state.videoStartPositionMs,
                         timelineTags = state.timelineTags,
+                        backdrop = stageBackdrop,
                         modifier = Modifier.fillMaxSize(),
                         onSiblingNavigate = onSiblingNavigate,
                         onToggleChrome = { chromeVisible = !chromeVisible },
