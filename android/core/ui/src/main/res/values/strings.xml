@@ -21,8 +21,21 @@
     <string name="ui_filter_title">筛选</string>
     <string name="ui_filter_icon_desc">筛选</string>
 
-    <!-- 排序方式/顺位两段随任务G G5 移除（相册页排序提到页头 pill 行，四档文案在 feature/all
-         strings.xml；G5 前的 10 条 ui_filter_sort_*/ui_filter_order_* 资源已成死资源删除） -->
+    <!-- 排序方式（7 单选；任务L L4 随面板排序段从 git 历史 5536d79^ 恢复，文案逐字照旧版
+         实录 filter_sheet.txt，档序同实录：默认/文件日期/添加日期/观看次数/点击次数/文件大小/名字） -->
+    <string name="ui_filter_sort_section">排序方式</string>
+    <string name="ui_filter_sort_default">默认</string>
+    <string name="ui_filter_sort_file_date">文件日期</string>
+    <string name="ui_filter_sort_added_date">添加日期</string>
+    <string name="ui_filter_sort_view_count">观看次数</string>
+    <string name="ui_filter_sort_play_count">点击次数</string>
+    <string name="ui_filter_sort_file_size">文件大小</string>
+    <string name="ui_filter_sort_name">名字</string>
+
+    <!-- 顺位（2 单选；实录逐字：降序/升序） -->
+    <string name="ui_filter_order_section">顺位</string>
+    <string name="ui_filter_order_desc">降序</string>
+    <string name="ui_filter_order_asc">升序</string>
 
     <!-- 观看次数 / 点击次数（各 5 单选；两档共用区间文案） -->
     <string name="ui_filter_view_section">观看次数</string>

@@ -9,6 +9,19 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## feat(app): 任务L L4 删相册页头排序行+面板排序回归旧版——用户点名删除 G5 页头四档行，排序唯一编辑入口回归筛选面板七档+顺位（2026-09-09 第一百八十一笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理，任务L L4 批）
+
+- **用户原话**：「19 ……那就删除 就是截图这个,分区下面地这个排序」（截图=相册页分区 chips 下「排序｜精选｜最新｜最旧｜按名称」页头行）+ 拍板 #4（删页头+面板按旧版恢复，其余 all 实现冻结只读）
+- **删页头**（`AllScreen.kt`）：移除 G5 的排序 Divider+「排序」标签+四档胶囊行与 `AlbumSortChoice`/`ALBUM_SORT_CHOICES`；`AlbumViewModel.selectSort` 页头链路整体删除（面板路径承接，见下）；列表默认排序维持协议缺省 default/desc（`AlbumFilterState` 既有默认值，行为不变）；G5 in-flow 值区块/组头 span/列数等冻结项零改动
+- **面板恢复**（`QimengFilterSheet.kt` + `core/ui strings.xml`）：「排序方式」七档+「顺位」升降两段从本仓 git 历史 5536d79^ 取回恢复（自家 Compose 实现，禁搬旧仓库代码红线不涉），位置=标题下首两段、档序与文案逐字照旧版实录 filter_sheet.txt（默认/文件日期/添加日期/观看次数/点击次数/文件大小/名字；降序/升序），与旧仓库 GUIDE_ALGORITHM 万能筛选表三方核对一致；映射既有 `AlbumPanelDraft.sort/order`（panelDraft/withPanelDraft 原样往返，零协议零模型改动）
+- **穿透核查**：`QimengFilterSheet` 全仓唯一挂载点=相册页 `AllScreen`（grep 实证）；收藏/历史无筛选入口（feature 模块无 openFilterClick 接线 + 旧版实录 favorite.txt/history.txt 无筛选图标，B5 判读沿用）——排序段不穿透，无需按页传参；端上实测收藏/历史两页均无筛选图标（dump 存证）
+- **单测**：`AlbumFilterPanelTest` 新增 3 例（面板选最旧档 sort=file_date+asc 写入已应用态且请求携带 / 重置清空排序回 default-desc / 面板内改排序只动草稿不触请求）14 例全绿；`AlbumViewModelTest` 7 例全绿；core/model `AlbumPanelFilterTest` 七档映射既有用例不动全绿
+- **门禁四连绿**：make app-build / app-test / app-lint / lint 全 EXIT=0
+- **实机验收**（qimeng_api35@emulator-5554 身份核验过，18461 虚构库）：相册页页头「排序/精选/最新/最旧/按名称」不存在（dump 证）；面板见排序方式七档+顺位且选中态正确；选「文件日期+升序」（旧版「最旧」语义）应用后列表序实际变化——首条资产 k3-ultrawide-01.jpg→corrupt-res27.jpg，今天桶组内序与 curl `sort=file_date&order=asc` 服务端序逐条一致；重开面板草稿仍=文件日期+升序（拷贝往返）；重置后回默认序（k3 先）；收藏/历史无筛选入口实证；App 崩溃 0（logcat -b crash 计 0）。**并行干扰记档**：K 车道同模拟器走查两次踩道（模拟器进程被外部终止→本车道重启同 AVD 无头恢复；恢复后 App 被外部导航到详情页+登出→BACK+重登恢复），全部重试自愈、计数判据未受影响。证据 %TEMP%\qimeng-l4-evidence\
+
+---
 ## feat(app): 任务L L3 #37 首页↔排行榜卡半屏修复——对齐判定加偏移量可重试+滚动在途回写门控（2026-09-09 第一百八十笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理，任务L L3 批）
