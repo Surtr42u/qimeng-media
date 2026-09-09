@@ -9,6 +9,18 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## feat(web): 任务L L5 打点本地账——IndexedDB+同UUID重试（2026-09-09 第一百八十四笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理，任务L L5 批）
+
+- **用户原话**：#25「web 和手机都是单独保存本地一份再上报合并……失败也有本地的」+ 拍板 #7
+- **本地账核心**（`lib/event-ledger.ts` 纯账本）：事件先落本地（入账即生成 clientEventId 幂等键，lib/uuid 单源）→ 上报成功（sender 不抛错）才删 → 失败保留原行，补发携带**同一** id（服务端唯一索引幂等，重发不双计）；全失败整轮 flush 起退避闸（60s 具名常量）防狂打故障端点，任一条成功解除；并发触发单飞合并
+- **浏览器装配**（`lib/ledger-instance.ts`）：IndexedDB（库名 qimeng_event_ledger，keyPath=clientEventId 与服务端唯一约束同构）+ 生成 SDK 出网（202=确认、非 2xx/IO=抛错保留）；IndexedDB 不可用（隐私模式等）降级内存账，打点尽力而为不阻塞浏览主链路；单例经 promise 复用（无竞态切换）
+- **接线**：`useReportView` mutationFn 换成账本记账（组件侧 API 形态不变，open/play/dwell 三路打点全走账本）；新增 `hooks/use-event-ledger` 补发触发通道（挂载即补发=补发路径 + online=断网恢复 + 回可见=App 回前台同构 + 60s 周期兜底），挂 AuthGate；`randomUUID` 从 use-session 迁至 `lib/uuid` 单源（hooks→lib 依赖方向归位）
+- **单测**：`lib/event-ledger.test.ts` 新增 5 例（记账生成 UUID+成功删除/失败保留同 id 重试/退避闸内跳过闸后恢复/空账本幂等/dwell seconds 透传）——存储出网全 fake，node 环境无需 IndexedDB
+- **门禁**：npm test 123 例全绿（11 文件）；`tsc --noEmit` 0 错误；oxlint 0 错误（15 警告为存量）
+
+---
 ## feat(app): 任务L L5 队列改本地优先——发送成功再删+退避重试+导出未上传（2026-09-09 第一百八十三笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理，任务L L5 批）
