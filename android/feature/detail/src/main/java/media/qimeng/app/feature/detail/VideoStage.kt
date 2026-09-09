@@ -127,8 +127,9 @@ private const val FULLSCREEN_TOGGLE_DEBOUNCE_MS = 800L
  * @param startPositionMs 起播位置毫秒（VM 按断点秒×1000 计算；已看完=0 重播）
  * @param timelineTags 时间轴标签（VM 已按 timeMillis 升序拉取）
  * @param backdrop 舞台底色（任务K K1 单源：stageBackdropColor 于 DetailScreen 裁决后经
- *   [DetailMediaStage] 下发——chrome 显=主题底/沉浸或播放中=纯黑；本舞台用于海报态
- *   缩略图占位与错误底，舞台盒底色由调用方 modifier.background(backdrop) 打底）
+ *   [DetailMediaStage] 下发——chrome 显=主题底/沉浸或播放中=纯黑；本舞台用于海报态错误底
+ *   （占位底 exp#4 起改品牌灰 secondaryContainer，见海报态内注释），舞台盒底色由调用方
+ *   modifier.background(backdrop) 打底）
  * @param modifier 舞台尺寸段（I7 沉浸：调用方传 fillMaxSize+backdrop 打底，海报/播放两态共用）
  * @param onSiblingNavigate 左右滑切换相邻资产回调（I7 海报态接线；播放态不接——播放器手势
  *   接管，无第二套手势面）
@@ -419,13 +420,17 @@ internal fun VideoStage(
             // 海报态：视频帧 + 中央播放钮，整块可点起播（播放钮为视觉锚点）。
             // I7 整屏舞台改 Fit contain：G1a 固定比例舞台下 Crop≈Fit，整屏后 Crop 会裁掉
             // 海报边缘且与播放 letterbox 跳变——对齐旧版 ZoomImageView 预览的 contain 语义；
-            // 占位/错误底取 backdrop（任务K K1 单源：chrome 显=主题底，对齐旧版海报透出
-            // qmColorBg；沉浸态=黑）
+            // 占位（exp#4 前进转场竞态修复·占位翼）：海报未就绪底由 backdrop（主题底，
+            // exp#3 实测与壳层页面同色，sharedBounds 转场期间空舞台不可感知）改为品牌灰
+            // secondaryContainer——与网格卡 QimengThumbnail 占位/错误底同 token，转场期间
+            // 舞台以可辨「色块」形态连续移动；加载完成后的 letterbox 底仍是调用方打底的
+            // backdrop（K1 单源口径不动：本占位只作用于未就绪瞬间，不参与稳态渲染）。
+            // 错误底保留 backdrop（K1 既有口径：对齐旧版海报透出 qmColorBg，不在本翼扩权）
             AsyncImage(
                 model = asset.thumbUrl,
                 contentDescription = stringResource(R.string.detail_media_stage),
                 contentScale = ContentScale.Fit,
-                placeholder = ColorPainter(backdrop),
+                placeholder = ColorPainter(MaterialTheme.colorScheme.secondaryContainer),
                 error = ColorPainter(backdrop),
                 modifier = Modifier.fillMaxSize(),
             )

@@ -46,5 +46,32 @@
 
 ---
 
+## R2#0 门禁三连基线（上轮 P2 清偿，2026-09-10，不动代码）
+
+上轮门禁日志未存证据目录被判 P2，本轮补跑并存档。worktree 无头执行，三连全绿：
+
+- `make app-build`：`BUILD SUCCESSFUL in 7s`（562 tasks up-to-date），exit=0 → `%TEMP%\qimeng-ub-evidence\r2-gate-build.log`
+- `make app-test`：`BUILD SUCCESSFUL in 3s`（428 tasks up-to-date），exit=0 → `r2-gate-test.log`
+- `make app-lint`：`BUILD SUCCESSFUL in 3s`（705 tasks，68 executed），exit=0 → `r2-gate-lint.log`
+
+## exp#4 前进转场竞态修复——预载+占位双翼 —— ✅ 已落地（实测有取舍，见「边界结论」）
+
+- **改了什么**（三文件，均单点小改）：
+  - `android/core/ui/.../component/QimengMediaGrid.kt`（预载翼）：AssetCard onClick 内导航前调用 `preloadDetailPoster(...)`——对卡上所持海报 URL 发 Coil 单例 ImageLoader 入队（发射后不管不挂组合生命周期），常量 `DETAIL_POSTER_PRELOAD_CACHE_POLICY=CachePolicy.ENABLED`（具名+为什么）；请求形状对齐详情页既有预载链（视频海报帧=默认档 / 图片动图=`Size.ORIGINAL`），同形才复用同一内存缓存键。
+  - `android/feature/detail/.../VideoStage.kt`（占位翼 A）：海报态 AsyncImage 的 **placeholder** 底由 backdrop（主题底）改品牌灰 `secondaryContainer`（与网格卡 QimengThumbnail 占位/错误底同 token）；**error 底保留 backdrop**（K1「对齐旧版海报透出 qmColorBg」口径不扩权）；加载完成后的 letterbox 底仍是调用方打底的 backdrop（K1 单源不动）。
+  - `android/feature/detail/.../ZoomableOriginalImage.kt`（占位翼 B）：原图解码完成前舞台以品牌灰 Box 参与（`imageReady` 态驱动，onSuccess 摘除/换资产重置）；就绪后 letterbox 底归 backdrop（K1 不动）。**分支记档**：本件「抽取零行为变化」口径自此在本分支破例一处。
+- **为什么**：exp#3 实证前进转场首帧空舞台（海报未解码、色块与页面同色不可感知）。预载翼把「加载」提前到点击瞬间（转场前抢跑）；占位翼保证舞台未就绪期以可辨色块形态参与渲染。
+- **模拟器实测结论**（qimeng_api35，swiftshader 软渲染，日夜两态走查）：
+  - **预载翼生效实证**（r2both-026.png）：点击→详情加载窗（约 1~2s，加载期首页网格仍可见+「加载中…」）→详情挂载**首帧海报已在**（purple Q 卡+播放钮），无空白间歇。
+  - **占位翼生效实证**（r2rec3-041.png + 像素取样）：冷缓存一次实测舞台整屏 #2D2D2D（=secondaryContainer 夜档；旧 backdrop 应为 #1A1A1A），海报就绪后被内容替换。
+  - **返回转场不回归**（r2both-071/072.png）：海报块连续收缩回卡片方向、首页底栏已就位、详情 chrome 渐隐——连续两帧中间态，round-1 行为保持。
+  - **视频回归**（r2-light-playing.png）：起播→BiliPlayerView 控制条/时间轴标签芯片正常（共享边界包裹的舞台内，桥接件无异常）。**图片舞台**（r2-light-image.png）：原图 fill 居中正常。
+  - **日夜两态**：日光详情（r2-light-detail.png，letterbox=FAFAFA）/ 夜间详情/首页均正常。
+- **边界结论（实测取舍，重要）**：**前进方向不存在边界 morph 是结构性现象，双翼不能也不应造出**——进入转场启动时 DetailScreen 仍在 `state.isLoading`（舞台未组合、shared key 未注册），数据落地（约 1~2s）晚于转场窗口（enter/exit=None 瞬时），sharedBounds 无从配对；round-1 的「动画在跑但空舞台不可见」推断据此修正为「转场窗口内舞台根本未挂载」。双翼的实际交付=①详情挂载首帧即出海报（预载赢下加载窗竞速）②未赢时舞台以品牌灰色块可见（占位翼）③返回方向 morph 保持。「前进可见连续动画」若要达成需舞台在 isLoading 期挂骨架（占位翼延展），涉加载态结构改动，超出本批「布局零改动」红线，转遗留。
+- **干扰记档**（并行玻璃分支代理共享模拟器，均容错重试后完成）：run4 连拍中途前台被拉回 launcher（帧 3 起 r2-run4）；run5 详情页 chrome 被外来点击切隐（帧 5 起渐隐）；图片走查时前台被切到 Calendar 一次（拉回后重拍）。`uimode` 曾被外部翻回夜态一次。
+- **怎么回退**：预载翼=删 AssetCard onClick 内 `preloadDetailPoster(...)` 调用+函数+常量节；占位翼 A=VideoStage placeholder 改回 `ColorPainter(backdrop)`；占位翼 B=删 ZoomableOriginalImage 的灰占位 Box 段与 `imageReady`。三者相互独立可单独回退。
+
+---
+
 （完）
 

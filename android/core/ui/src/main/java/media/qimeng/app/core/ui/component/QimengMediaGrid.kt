@@ -1,5 +1,6 @@
 package media.qimeng.app.core.ui.component
 
+import android.content.Context
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -29,11 +30,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil3.SingletonImageLoader
+import coil3.request.CachePolicy
+import coil3.request.ImageRequest
+import coil3.size.Size
 import media.qimeng.app.core.model.GridSection
 import media.qimeng.app.core.model.MediaAsset
 import media.qimeng.app.core.model.MediaKind
@@ -73,6 +79,44 @@ private val DurationBadgeTextStyle = TextStyle(
         blurRadius = 4f,
     ),
 )
+
+// ---------- 详情海报点击预载（exp#4 前进转场竞态修复·预载翼，2026-09-10 任务V V1 合入自 ui/expressive 分支） ----------
+
+/**
+ * 预载产物必须写内存缓存（与详情页既有预载链 DetailScreen DisposableEffect 同款
+ * CachePolicy.ENABLED）：共享元素转场首帧要的是「同步命中内存缓存」——只落磁盘缓存
+ * 对首帧无意义，这是本翼存在的全部目的。
+ */
+private val DETAIL_POSTER_PRELOAD_CACHE_POLICY = CachePolicy.ENABLED
+
+/**
+ * 网格卡点击瞬间对目标资产海报 URL 发 Coil 预载（发射后不管：不挂组合生命周期，
+ * 离场不取消——取消就失去了「转场前抢跑」的意义；产物进内存缓存由单例 ImageLoader 管理）。
+ *
+ * 为什么（exp#3 实证的前进竞态）：首页→详情共享元素转场的可见性依赖详情舞台海报已解码，
+ * 而舞台侧请求只在详情页组合后才发起，慢于转场时长时首帧是空舞台，sharedBounds 画的
+ * 色块与页面底同色、肉眼不可感知（HANDOVER_APP.md 任务V 节「前进转场通常无可见动画」限制）。
+ * 点击即入队把加载提前到导航前，转场起跑时内存缓存大概率已热。详情侧既有预载链只覆盖
+ * 「邻位切换窗口」，不含「点击进场」这第一步，本预载与之互补不替代。
+ *
+ * 边界诚实记档：图片资产详情舞台渲的是**原图直链**（签名直链须详情侧解析，网格只持
+ * 缩略图直链），对这类资产本预载只热身缩略图、原图仍由详情侧加载——前进可见性由详情
+ * 舞台的占位翼兜底，此处尽力而为；视频（海报帧=缩略图直链）与动图（卡上已持解析后的
+ * 原件直链）两端 URL 同源，是本翼的主受益形态。请求形状对齐详情预载链（视频海报帧=
+ * 默认档、图片/动图=Size.ORIGINAL 不降采样），同形才能复用同一条内存缓存键。
+ *
+ * 回退（exp#4 预载翼）：删 AssetCard onClick 内 preloadDetailPoster(...) 调用 +
+ * 本函数与本节常量，其余零改动。
+ */
+private fun preloadDetailPoster(context: Context, mediaType: MediaKind, posterUrl: String?) {
+    if (posterUrl.isNullOrEmpty()) return
+    val request = ImageRequest.Builder(context)
+        .data(posterUrl)
+        .memoryCachePolicy(DETAIL_POSTER_PRELOAD_CACHE_POLICY)
+        .apply { if (mediaType != MediaKind.VIDEO) size(Size.ORIGINAL) }
+        .build()
+    SingletonImageLoader.get(context).enqueue(request)
+}
 
 /**
  * 共享媒体网格：分组段组头（跨全列）+ 资产卡片 + 距底预载回调 + 列数可调。
@@ -212,6 +256,8 @@ private fun AssetCard(
     }
     // 旧版圆角是像素值：运行时按屏幕密度换算（KDoc 规格要求的 toDp() 写法）
     val cornerRadius = with(LocalDensity.current) { LEGACY_CARD_CORNER_RADIUS_PX.toDp() }
+    // exp#4 预载翼的入队上下文（单例 ImageLoader 经 context 取，与详情预载链同源）
+    val context = LocalContext.current
     Box(
         modifier = modifier
             .padding(CARD_OUTER_PADDING)
@@ -223,7 +269,12 @@ private fun AssetCard(
             .qimengAssetPosterSharedBounds(asset.id)
             // 先 clip 后 clickable：ripple 限定在圆角内；仅默认点击态，无缩放/按压动画
             .clip(RoundedCornerShape(cornerRadius))
-            .clickable(onClick = onClick),
+            .clickable(onClick = {
+                // exp#4 预载翼：导航前抢跑海报加载（为什么见 preloadDetailPoster KDoc）；
+                // 卡上持有的正是详情舞台将渲的同一 URL（视频/动图），预载→转场首帧命中
+                preloadDetailPoster(context, asset.mediaType, thumbModel)
+                onClick()
+            }),
     ) {
         QimengThumbnail(
             model = thumbModel,

@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -80,8 +81,24 @@ internal fun ZoomableOriginalImage(
     // onError 置位、onSuccess 清零；重试经 [retryAttempt] 递增触发请求重建
     var decodeFailed by remember { mutableStateOf(false) }
     var retryAttempt by remember { mutableIntStateOf(0) }
+    // 原图就绪态（exp#4 前进转场竞态修复·占位翼）：驱动灰色占位层的摘除时机。
+    // 与 decodeFailed 同款「最近一次完成的结果」口径：新请求发起时清零、onSuccess 置位
+    var imageReady by remember(asset.id) { mutableStateOf(false) }
 
     Box(modifier = modifier) {
+        // 占位翼（exp#4 分支提案）：原图解码完成前舞台先以品牌灰色块参与共享边界动画
+        // （exp#3 实证：此前此间舞台只透出 backdrop 主题底，与壳层页面同色，前进转场的
+        // sharedBounds 色块不可感知）。token=secondaryContainer 与网格卡占位/错误底同源；
+        // 就绪即摘除——加载完成后的 letterbox 底仍归调用方打底的 backdrop（K1 单源口径
+        // 不动，本层只补「未就绪瞬间」的可见形态）。分支提案记档：本件原「抽取零行为
+        // 变化」口径自此在 ui/expressive 分支破例一处，回退=删本段 Box 与 imageReady
+        if (!imageReady && !decodeFailed) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.secondaryContainer),
+            )
+        }
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
@@ -115,8 +132,10 @@ internal fun ZoomableOriginalImage(
         if (view == null || url.isNullOrEmpty()) {
             onDispose { }
         } else {
-            // 新请求在途：清旧失败态（失败态只反映最近一次完成的结果）
+            // 新请求在途：清旧失败态（失败态只反映最近一次完成的结果）；就绪态同步清零
+            // （exp#4 占位翼：换资产重新以灰占位，直至新图 onSuccess）
             decodeFailed = false
+            imageReady = false
             val request = ImageRequest.Builder(context)
                 .data(url)
                 // 口径②：不降采样。Size.ORIGINAL =「按原图尺寸解码」的显式表达；
@@ -128,6 +147,7 @@ internal fun ZoomableOriginalImage(
                         // Coil ImageViewTarget 同款；参数为 Resources 档）
                         override fun onSuccess(result: Image) {
                             decodeFailed = false
+                            imageReady = true
                             val drawable = result.asDrawable(context.resources)
                             // setImageDrawable 内部做智能分层 + resetZoom（搬运件行为）
                             view.setImageDrawable(drawable)
