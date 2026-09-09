@@ -179,6 +179,15 @@ class SdkDetailMappersTest {
         assertEquals("", empty.id)
         assertEquals(0L, empty.timeMillis)
         assertEquals("", empty.name)
+        // N4 I7b：color 服务端色透传；空串归 null（=无服务端颜色，客户端前缀推断保底）
+        val colored = SdkDetailMappers.toTimelineTag(
+            media.qimeng.sdk.models.TimelineTag(id = "tt2", timeMillis = 1L, name = "自定义", color = "#d6336c"),
+        )
+        assertEquals("#d6336c", colored.color)
+        val blank = SdkDetailMappers.toTimelineTag(
+            media.qimeng.sdk.models.TimelineTag(id = "tt3", timeMillis = 1L, name = "空色", color = ""),
+        )
+        assertNull(blank.color)
         assertEquals(
             2,
             SdkDetailMappers.toTimelineTags(

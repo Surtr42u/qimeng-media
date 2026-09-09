@@ -37,7 +37,8 @@ internal fun authorCollectionDims(isCos: Boolean): List<AlbumDim> =
 /**
  * 集合页 GET /assets 查询映射：authorId 恒定（集合作者，覆盖路由参数）+ includeCos 恒 true
  * （COS 作者文件不显式包含则列表恒空——原 VM 口径保持）+ 维选择按 kind 分派：
- * 作品维（仅常规作者）恒 SOURCE→source；角色维 kind 分派 character|work；类型维→mediaType。
+ * 作品维（仅常规作者）恒 SOURCE→source（多选数组，N4 消费批 #29 消费）；角色维 kind
+ * 分派 character|work（同为多选数组）；类型维→mediaType。
  * 不经 AlbumFilter.toAssetQuery（其 authorId 位留给分区态的作者维选择，与本页固定
  * authorId 语义冲突——显式映射避免同参覆盖）。
  */
@@ -52,9 +53,18 @@ internal fun collectionAssetQuery(
     authorId = authorId,
     includeCos = true,
     mediaType = filter.mediaType,
-    source = filter.author?.takeIf { it.kind == FacetParamKind.SOURCE }?.key,
-    character = filter.character?.takeIf { it.kind == FacetParamKind.CHARACTER }?.key,
-    work = filter.character?.takeIf { it.kind == FacetParamKind.WORK }?.key,
+    source = filter.authors
+        .filter { it.kind == FacetParamKind.SOURCE }
+        .map { it.key }
+        .ifEmpty { null },
+    character = filter.characters
+        .filter { it.kind == FacetParamKind.CHARACTER }
+        .map { it.key }
+        .ifEmpty { null },
+    work = filter.characters
+        .filter { it.kind == FacetParamKind.WORK }
+        .map { it.key }
+        .ifEmpty { null },
 )
 
 /**
@@ -64,8 +74,10 @@ internal fun collectionAssetQuery(
  * partition 恒 ALL（本页无分区芯片，候选只由固定 authorId 收窄）。
  *
  * 协议批 2026-09-09 已解除收窄限制（#34）：服务端 facets 作者行 source/authorId
- * 照常收窄——固定 authorId 下作品维（authors 桶）候选即按本作者收窄，本页
- * 无需再依赖「消费侧 SOURCE 子集兜底」的旧行为前提（N4 消费批可直接消费 authors 桶）。
+ * 照常收窄——固定 authorId 下作品维（authors 桶）候选即按本作者收窄，消费侧
+ * 「SOURCE 子集兜底」过滤已随 N4 消费批解除（直接消费 authors 桶）。
+ * facets 协议 source/character/work 为单值位：多选集恰好单选时照常传（跨维收窄），
+ * 多选（>1）时该维收窄省略（与 core:model AlbumFilter 同一口径，纯函数单测锁定）。
  */
 internal fun collectionFacetsQuery(
     authorId: String,
@@ -74,18 +86,21 @@ internal fun collectionFacetsQuery(
 ): FacetsQuery = FacetsQuery(
     partition = Zone.ALL,
     mediaType = filter.mediaType.takeIf { dim != AlbumDim.TYPE },
-    source = filter.author
-        ?.takeIf { it.kind == FacetParamKind.SOURCE }
-        ?.key
+    source = filter.authors
+        .filter { it.kind == FacetParamKind.SOURCE }
+        .map { it.key }
+        .singleOrNull()
         ?.takeIf { dim != AlbumDim.AUTHOR },
     // 固定集合作者恒传（收窄键）；作品维选择只可能 kind=SOURCE（常规作者文件无 COS 作者桶），不占本位
     authorId = authorId,
-    character = filter.character
-        ?.takeIf { it.kind == FacetParamKind.CHARACTER }
-        ?.key
+    character = filter.characters
+        .filter { it.kind == FacetParamKind.CHARACTER }
+        .map { it.key }
+        .singleOrNull()
         ?.takeIf { dim != AlbumDim.CHARACTER },
-    work = filter.character
-        ?.takeIf { it.kind == FacetParamKind.WORK }
-        ?.key
+    work = filter.characters
+        .filter { it.kind == FacetParamKind.WORK }
+        .map { it.key }
+        .singleOrNull()
         ?.takeIf { dim != AlbumDim.CHARACTER },
 )

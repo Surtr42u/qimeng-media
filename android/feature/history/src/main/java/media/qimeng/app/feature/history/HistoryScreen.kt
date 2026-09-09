@@ -42,8 +42,8 @@ import media.qimeng.app.core.ui.R as CoreUiR
 
 /**
  * 浏览历史页（M4-2 覆盖页；M4-2A-B5 头部随相册页形态重排）：GET /history 每资产一条
- * （lastViewedAt 倒序，服务端口径）+ 分区/角色·作品/类型筛选（作者行无协议参数，见 VM 注释）+
- * 按浏览日期分组 + 下拉刷新。
+ * （lastViewedAt 倒序，服务端口径）+ 分区/作品/角色/类型四维筛选（「作品」行=出处分组
+ * 多选，N2 #30 source 数组位；N4 消费批接线）+ 按浏览日期分组 + 下拉刷新。
  * 头部形态照旧版实录 history.txt：返回 + 标题 + 芯片行 + 统计行「N 文件」（无筛选/列数图标——
  * 实录两页头部均无，主会话裁定 1/2）。
  * **无清空按钮**（2026-09-05 拍板 2B：协议无 DELETE /history，砍交互；协议缺口落档见交付报告）。
@@ -81,7 +81,7 @@ fun HistoryScreen(
         filter = state.filter,
         activeDim = state.activeDim,
         partitionOptions = state.partitionOptions,
-        authorOptions = emptyList(),
+        authorOptions = state.authorOptions,
         characterOptions = state.characterOptions,
         typeOptions = state.typeOptions,
         totalForAllPill = state.totalForAllPill,
@@ -97,7 +97,7 @@ fun HistoryScreen(
             onBack = onBack,
         )
 
-        // 维度芯片行常驻文档流（维度子集按现状三分区/角色·作品/类型不动——作者行无协议参数）；
+        // 维度芯片行常驻文档流（维度子集=分区/作品/角色/类型，GUIDE_UI §浏览历史 L386 顺序）；
         // 「角色 | 类型」间竖分隔线与相册页同款（实录 history.txt 芯片行 角色→类型 间隙 51px>18px）；
         // 芯片点击语义（点已激活维=切展开/折叠）在 ViewModel
         QimengChipRow(
@@ -169,7 +169,7 @@ fun HistoryScreen(
     }
 }
 
-/** 药丸点击 → 状态机调用（历史页无分区作者/类型以外的维度；payload 约定同相册页） */
+/** 药丸点击 → 状态机调用（分区/作品/角色/类型四维；payload 约定同相册页） */
 private fun dispatchPill(
     viewModel: HistoryViewModel,
     dim: AlbumDim,
@@ -178,9 +178,8 @@ private fun dispatchPill(
     if (spec == null) return
     when (dim) {
         AlbumDim.PARTITION -> viewModel.selectPartition(spec.payload as? Zone ?: Zone.ALL)
+        AlbumDim.AUTHOR -> viewModel.selectAuthor(spec.payload as? FacetOption)
         AlbumDim.CHARACTER -> viewModel.selectCharacter(spec.payload as? FacetOption)
         AlbumDim.TYPE -> viewModel.selectMediaType(spec.payload as? MediaKind)
-        // 历史页不出现作者行；防御性忽略
-        AlbumDim.AUTHOR -> Unit
     }
 }

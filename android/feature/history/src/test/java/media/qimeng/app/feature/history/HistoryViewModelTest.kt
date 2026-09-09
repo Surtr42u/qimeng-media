@@ -89,14 +89,14 @@ class HistoryViewModelTest {
 
         override suspend fun deleteTag(tagId: String) = Unit
 
-        /** 整批放行某一代的三维候选请求（loadFacets 每批固定并行 3 个——历史页无作者行，实现细节只在此替身内约定） */
+        /** 整批放行某一代的四维候选请求（loadFacets 每批固定并行 4 个——分区/作品/角色/类型，实现细节只在此替身内约定） */
         fun completeFacetsBatch(batch: Int, result: FacetsResult) {
             val base = batch * FACETS_PER_BATCH
             repeat(FACETS_PER_BATCH) { facetsCalls[base + it].gate.complete(result) }
         }
 
         companion object {
-            const val FACETS_PER_BATCH = 3
+            const val FACETS_PER_BATCH = 4
         }
     }
 
@@ -221,7 +221,7 @@ class HistoryViewModelTest {
     }
 
     @Test
-    fun `三维候选旧代响应不覆盖新筛选候选`() = runTest(mainDispatcherRule.testDispatcher) {
+    fun `四维候选旧代响应不覆盖新筛选候选`() = runTest(mainDispatcherRule.testDispatcher) {
         val historyRepo = FakeHistoryRepository()
         val mediaRepo = FakeMediaRepository()
         val viewModel = viewModel(historyRepo, mediaRepo)
@@ -239,6 +239,84 @@ class HistoryViewModelTest {
         mediaRepo.completeFacetsBatch(batch = 1, result = facets(total = 3))
         advanceUntilIdle()
         assertEquals(3, viewModel.uiState.value.totalForAllPill)
+    }
+
+    // ---------- N4 消费批：历史页「作品」维行（出处分组多选，/history source 数组） ----------
+
+    @Test
+    fun `作品行多选映射 - 出处分组投影为 source 数组 同维OR`() = runTest(mainDispatcherRule.testDispatcher) {
+        val historyRepo = FakeHistoryRepository()
+        val mediaRepo = FakeMediaRepository()
+        val viewModel = viewModel(historyRepo, mediaRepo)
+        advanceUntilIdle()
+
+        // 双选两个出处（旧版「支持多选作品筛选」语义）→ /history source 数组
+        viewModel.selectAuthor(FacetOption("出处A", "出处A", 12, FacetParamKind.SOURCE))
+        advanceUntilIdle()
+        viewModel.selectAuthor(FacetOption("出处B", "出处B", 7, FacetParamKind.SOURCE))
+        advanceUntilIdle()
+        assertEquals(3, historyRepo.calls.size)
+        assertEquals(setOf("出处A", "出处B"), historyRepo.calls.last().query.source?.toSet())
+
+        // 再点已选=取消单个；「全部」胶囊（null）= 清本行
+        viewModel.selectAuthor(FacetOption("出处A", "出处A", 12, FacetParamKind.SOURCE))
+        advanceUntilIdle()
+        assertEquals(listOf("出处B"), historyRepo.calls.last().query.source)
+        viewModel.selectAuthor(null)
+        advanceUntilIdle()
+        assertNull(historyRepo.calls.last().query.source)
+    }
+
+    @Test
+    fun `作品行候选 - facets作者行按SOURCE桶收口 kind=author不入候选 其他沉底`() = runTest(mainDispatcherRule.testDispatcher) {
+        val historyRepo = FakeHistoryRepository()
+        val mediaRepo = FakeMediaRepository()
+        val viewModel = viewModel(historyRepo, mediaRepo)
+        advanceUntilIdle()
+
+        // 作品行候选请求（排自身）：作者维 source/authorId 不传，history=1 子集约束在位
+        val authorCall = mediaRepo.facetsCalls[1] // 每批第 2 路 = authorFacetsQuery
+        assertNull(authorCall.query.source)
+        assertNull(authorCall.query.authorId)
+        assertEquals(true, authorCall.query.history)
+
+        // 候选收口：kind=author 的 COS 作者桶不进「作品」行（/history 无 authorId 数组位）；
+        // source 桶照出，「其他」恒沉底
+        mediaRepo.completeFacetsBatch(
+            batch = 0,
+            result = FacetsResult(
+                partitions = listOf(FacetOption("all", "全部", 23, FacetParamKind.SOURCE)),
+                authors = listOf(
+                    FacetOption("出处B", "出处B", 7, FacetParamKind.SOURCE),
+                    FacetOption("cos_测试作者一", "测试作者一", 5, FacetParamKind.AUTHOR),
+                    FacetOption("出处A", "出处A", 12, FacetParamKind.SOURCE),
+                    FacetOption("其他", "其他", 4, FacetParamKind.SOURCE),
+                ),
+                characters = emptyList(),
+                types = emptyList(),
+            ),
+        )
+        advanceUntilIdle()
+        // VM 只兜底「其他」沉底（排序=服务端 fileCount 降序原样透出）；kind=author 桶已收口
+        assertEquals(
+            listOf("出处B", "出处A", "其他"),
+            viewModel.uiState.value.authorOptions.map { it.name },
+        )
+    }
+
+    @Test
+    fun `作品行激活与分区联动 - 切分区清作品行`() = runTest(mainDispatcherRule.testDispatcher) {
+        val historyRepo = FakeHistoryRepository()
+        val mediaRepo = FakeMediaRepository()
+        val viewModel = viewModel(historyRepo, mediaRepo)
+        advanceUntilIdle()
+        viewModel.selectAuthor(FacetOption("出处A", "出处A", 12, FacetParamKind.SOURCE))
+        advanceUntilIdle()
+
+        viewModel.selectPartition(Zone.COS)
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.filter.authors.isEmpty())
+        assertNull(historyRepo.calls.last().query.source)
     }
 
     @Test

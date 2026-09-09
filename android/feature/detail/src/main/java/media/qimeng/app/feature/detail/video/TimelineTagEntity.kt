@@ -22,4 +22,6 @@ data class TimelineTagEntity(
     val timeMillis: Long,
     val name: String,
     val createdAtMillis: Long,
+    /** 服务端存储色（"#rrggbb"；null/空=无——桥接件回退 TimelineTagColors 前缀推断，保底不删） */
+    val serverColor: String? = null,
 )

@@ -60,8 +60,15 @@ data class LikeToggleResult(val likedToday: Boolean, val likeCount: Int)
  * 时间轴标签（M4-3 3d，GET/POST /assets/{id}/timeline-tags）。
  * id 为服务端生成主键（DELETE /assets/{id}/timeline-tags/{tagId} 用）；POST 返回体带回。
  * @param timeMillis 标签指向播放位置（毫秒，从 0 起算）
+ * @param color 服务端存储的十六进制颜色（如 "#d6336c"；N3 协议批 P2 #32）——
+ *   null/空 = 服务端未存颜色，客户端回退 TimelineTagColors 前缀推断（保底不删）
  */
-data class TimelineTag(val id: String, val timeMillis: Long, val name: String)
+data class TimelineTag(
+    val id: String,
+    val timeMillis: Long,
+    val name: String,
+    val color: String? = null,
+)
 
 /**
  * 行为打点事件类别（POST /events/view 的 kind 枚举；DOMAIN_RULES §5 底层 ViewEvent 事件流）。

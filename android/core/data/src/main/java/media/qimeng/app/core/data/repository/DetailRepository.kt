@@ -33,6 +33,13 @@ interface DetailRepository {
     suspend fun replaceAssetTags(assetId: String, tagIds: List<String>)
 
     /**
+     * 单条解除标签关联（DELETE /assets/{id}/tags/{tag}，N3 协议批 #32 逐条删端点；
+     * N4 I7b 消费：详情标签弹窗 chip 关闭图标=立即解绑）。幂等：本就未挂载仍 204；
+     * 标签池无此名 → 404（拼错不静默吞）。只动本条关联的 created_at（DOMAIN_RULES §7）。
+     */
+    suspend fun unbindTag(assetId: String, tagName: String)
+
+    /**
      * 「接下来播放」推荐流（GET /recommendations offset=0 + cosOnly 收窄；Web useUpNextList 同参数）。
      * 为什么不在 [MediaRepository.recommendations] 加 cosOnly 参数：该接口被列表族四个 VM 的
      * 测试 fake 实现，改签名会撞 M4-2A 并行边界——详情侧独立端口零侵入。
