@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.sp
 import media.qimeng.app.core.model.GridSection
 import media.qimeng.app.core.model.MediaAsset
 import media.qimeng.app.core.model.MediaKind
+import media.qimeng.app.core.ui.motion.qimengAssetPosterSharedBounds
 import media.qimeng.app.core.ui.theme.QimengDimens
 
 /** 距底预加载阈值（LEGACY §H：距底 ≤6 项提前加载；数值与 RecommendPaging.PRELOAD_DISTANCE 同语义，
@@ -216,6 +217,10 @@ private fun AssetCard(
             .padding(CARD_OUTER_PADDING)
             .fillMaxWidth()
             .thumbnailAspectRatio()
+            // exp#3 合入（任务V V1，2026-09-10）：与详情页舞台同 key 配对；scope 缺位
+            // （非网格路由页面/壳层未包 SharedTransitionLayout）时原样返回，渲染零变化。
+            // 回退=删此行（回退 exp#3 见 motion/QimengSharedTransition.kt 头注释）
+            .qimengAssetPosterSharedBounds(asset.id)
             // 先 clip 后 clickable：ripple 限定在圆角内；仅默认点击态，无缩放/按压动画
             .clip(RoundedCornerShape(cornerRadius))
             .clickable(onClick = onClick),

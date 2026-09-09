@@ -2,6 +2,7 @@ package media.qimeng.app.navigation
 
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -15,6 +16,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -33,6 +35,8 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import media.qimeng.app.core.ui.component.TabScrollController
+import media.qimeng.app.core.ui.motion.LocalNavAnimatedVisibilityScope
+import media.qimeng.app.core.ui.motion.LocalNavSharedTransitionScope
 import media.qimeng.app.core.ui.theme.QimengBrandColors
 import media.qimeng.app.feature.all.AllScreen
 import media.qimeng.app.feature.author.AuthorCollectionRoutes
@@ -196,150 +200,186 @@ fun QimengNavHost(
             }
         },
     ) { innerPadding ->
-        NavHost(
-            navController = navController,
-            startDestination = TopLevelDestination.HOME.route,
-            // 任务L L2（拍板 #2「NavHost 顶层切换确保无 enter/exit 转场动画叠影」）：
-            // Navigation Compose 2.7+ 默认转场为 crossfade（新页 fadeIn 220ms 延迟 90ms 叠着
-            // 旧页 fadeOut）——快速切 Tab 时新旧两页同屏，正是用户「叠屏/延迟消失」观感的
-            // 动画根因。旧版 Fragment show/hide 无转场，故四处转场全置 None（瞬时切换）；
-            // 覆盖页/详情页进出同样瞬时（旧版同为无转场观感）。与防抖双保险，防叠加。
-            enterTransition = { EnterTransition.None },
-            exitTransition = { ExitTransition.None },
-            popEnterTransition = { EnterTransition.None },
-            popExitTransition = { ExitTransition.None },
-            // consumeWindowInsets（任务G3 双重留白清偿）：主壳 Scaffold 无 topBar，innerPadding
-            // 的 top=状态栏高；不消费则覆盖页内嵌的 QimengTopBar（M3 TopAppBar 默认
-            // windowInsets=statusBars）会再自留一段状态栏高度——标题上方两倍空白。
-            // padding 后消费=Scaffold 官方范式，嵌套组件读到已消耗的 insets 归零
-            modifier = Modifier
-                .padding(innerPadding)
-                .consumeWindowInsets(innerPadding),
-        ) {
-            composable(TopLevelDestination.HOME.route) {
-                HomeScreen(
-                    onOpenSearch = { navController.navigate(Routes.SEARCH_NAV) },
-                    onOpenAsset = { assetId -> navController.navigate(DetailRoutes.detailRoute(assetId)) },
-                )
-            }
-            composable(TopLevelDestination.ALL.route) {
-                AllScreen(
-                    onOpenAsset = { assetId -> navController.navigate(DetailRoutes.detailRoute(assetId)) },
-                )
-            }
-            composable(TopLevelDestination.STATS.route) {
-                // 统计族跳转回调组单源（RES R1 去重，构造见 [statsNavLinks]）
-                val links = statsNavLinks(navController)
-                StatsScreen(
-                    // 趋势卡/分布入口卡点击进统计详情页（任务I I3；GUIDE_UI §数据统计页 L213-214，
-                    // 携带当前时间范围——GUIDE §交互设计「进入详情携带当前时间范围」）
-                    onOpenDetail = { mode, range ->
-                        navController.navigate(StatsDetailRoutes.statsDetailRoute(mode, range))
-                    },
-                    // 任务J J1 详情页跳转链（GUIDE_UI L218-224）：常看文件条目→详情页（批次
-                    // 上下文已由 StatsViewModel.enterDetail 写入）、作者条目→作者集合页、
-                    // 标签条目→搜索页携词（query 编码见 Routes.searchRoute）
-                    onOpenAsset = links.onOpenAsset,
-                    onOpenAuthor = links.onOpenAuthor,
-                    onOpenTagSearch = links.onOpenTagSearch,
-                )
-            }
-            composable(TopLevelDestination.SETTINGS.route) {
-                SettingsScreen(
-                    onOpenFavorite = { navController.navigate(Routes.FAVORITE) },
-                    onOpenHistory = { navController.navigate(Routes.HISTORY) },
-                    onOpenAuthors = { navController.navigate(Routes.AUTHORS) },
-                    onOpenUpload = { navController.navigate(Routes.UPLOAD) },
-                    // RES R2：总览卡 Top5 行直达作者集合页（清偿 I4「待壳层共享窗口」挂账）
-                    onOpenAuthorCollection = { authorId, displayName ->
-                        navController.navigate(AuthorCollectionRoutes.authorCollectionRoute(authorId, displayName))
-                    },
-                )
-            }
-            composable(
-                route = Routes.SEARCH,
-                arguments = listOf(
-                    navArgument(Routes.KEY_SEARCH_QUERY) {
-                        type = NavType.StringType
-                        defaultValue = ""
-                    },
-                ),
-            ) { entry ->
-                SearchScreen(
-                    initialQuery = entry.arguments?.getString(Routes.KEY_SEARCH_QUERY)
-                        ?.takeUnless { it.isBlank() },
-                    onBack = { navController.popBackStack() },
-                    onOpenAsset = { assetId -> navController.navigate(DetailRoutes.detailRoute(assetId)) },
-                )
-            }
-            composable(Routes.FAVORITE) {
-                FavoriteScreen(
-                    onBack = { navController.popBackStack() },
-                    onOpenAsset = { assetId -> navController.navigate(DetailRoutes.detailRoute(assetId)) },
-                )
-            }
-            composable(Routes.HISTORY) {
-                HistoryScreen(
-                    onBack = { navController.popBackStack() },
-                    onOpenAsset = { assetId -> navController.navigate(DetailRoutes.detailRoute(assetId)) },
-                )
-            }
-            composable(Routes.AUTHORS) {
-                AuthorScreen(
-                    onBack = { navController.popBackStack() },
-                    // 行点击进作者集合页（任务G G1b 接线：Web /app/collection/author/{name}
-                    // 等价物；路由带 id+名字双参数，见 AuthorCollectionRoutes 注释）
-                    onAuthorClick = { authorId, displayName ->
-                        navController.navigate(AuthorCollectionRoutes.authorCollectionRoute(authorId, displayName))
-                    },
-                )
-            }
-            // 作者集合页（任务G G1b）：路由契约单源在 feature:author（DetailRoutes 同范式，
-            // feature 禁依赖 :app，壳层反向引用合法）；路由参数由页面 ViewModel 经
-            // SavedStateHandle 读取，此处无需展开 arguments
-            composable(AuthorCollectionRoutes.AUTHOR_COLLECTION_ROUTE) {
-                AuthorCollectionScreen(
-                    onBack = { navController.popBackStack() },
-                    onOpenAsset = { assetId -> navController.navigate(DetailRoutes.detailRoute(assetId)) },
-                )
-            }
-            composable(Routes.UPLOAD) {
-                UploadScreen(
-                    sharedUris = sharedUris,
-                    onSharedConsumed = onSharedConsumed,
-                    onDone = { navController.popBackStack() },
-                )
-            }
-            // 统计详情页（任务I I3）：路由契约单源在 feature:stats（DetailRoutes/AuthorCollectionRoutes
-            // 同范式），mode/range 参数由页面 ViewModel 经 SavedStateHandle 读取，此处无需展开 arguments
-            composable(StatsDetailRoutes.STATS_DETAIL_ROUTE) {
-                // 统计族跳转回调组单源（RES R1 去重，构造见 [statsNavLinks]）
-                val links = statsNavLinks(navController)
-                StatsDetailScreen(
-                    onBack = { navController.popBackStack() },
-                    // 任务J J1 详情页跳转链（GUIDE_UI L218-224）：seconds 榜条目→详情页
-                    // （批次上下文已由 StatsDetailViewModel.enterDetail 写入 Top20 快照）、
-                    // 作者条目→作者集合页、标签条目→搜索页携词
-                    onOpenAsset = links.onOpenAsset,
-                    onOpenAuthor = links.onOpenAuthor,
-                    onOpenTagSearch = links.onOpenTagSearch,
-                )
-            }
-            // 详情页（M4-3）：不设 launchSingleTop——详情→详情（推荐栏跳转）保留返回栈，
-            // 返回键回到上一个资产（旧版内部浏览历史栈的导航层等价语义）
-            composable(DetailRoutes.DETAIL_ROUTE) { entry ->
-                DetailScreen(
-                    assetId = entry.arguments?.getString(DetailRoutes.KEY_ASSET_ID).orEmpty(),
-                    onBack = { navController.popBackStack() },
-                    onOpenAsset = { assetId, _ ->
-                        // 批次清单已由 DetailViewModel.upNextJump 换成推荐栏清单，壳层只管导航
-                        navController.navigate(DetailRoutes.detailRoute(assetId))
-                    },
-                    // 作者卡名字点击进作者集合页（任务G G1b 接线；原始名不带 ·COS 后缀）
-                    onOpenAuthor = { authorId, displayName ->
-                        navController.navigate(AuthorCollectionRoutes.authorCollectionRoute(authorId, displayName))
-                    },
-                )
+        // 共享元素转场试点（exp#3，分支提案）：SharedTransitionLayout 只包 NavHost——共享元素
+        // 的 overlay 边界=导航内容区（底栏不参与）。四 Tab 顶层切换的转场仍为 None（下方
+        // 原注释，L2 拍板不动）；试点只给「首页网格卡→详情舞台」连续化边界，范围锁死在
+        // HOME/DETAIL 两个 destination 提供 LocalNavAnimatedVisibilityScope——其余页面读到
+        // null 自动不参与，铺开=壳层多包一个 destination，组件侧零改动。回退=摘掉本层
+        // SharedTransitionLayout + 两处 provider + AssetCard/DetailScreen 各一个 modifier。
+        SharedTransitionLayout {
+            CompositionLocalProvider(LocalNavSharedTransitionScope provides this) {
+                NavHost(
+                    navController = navController,
+                    startDestination = TopLevelDestination.HOME.route,
+                    // 任务L L2（拍板 #2「NavHost 顶层切换确保无 enter/exit 转场动画叠影」）：
+                    // Navigation Compose 2.7+ 默认转场为 crossfade（新页 fadeIn 220ms 延迟 90ms 叠着
+                    // 旧页 fadeOut）——快速切 Tab 时新旧两页同屏，正是用户「叠屏/延迟消失」观感的
+                    // 动画根因。旧版 Fragment show/hide 无转场，故四处转场全置 None（瞬时切换）；
+                    // 覆盖页/详情页进出同样瞬时（旧版同为无转场观感）。与防抖双保险，防叠加。
+                    // （exp#3 红线：本参数块是共享元素试点的前置约束，禁改——共享元素边界动画
+                    // 独立于内容 enter/exit，None 不影响 sharedBounds 的 bounds 动画）
+                    enterTransition = { EnterTransition.None },
+                    exitTransition = { ExitTransition.None },
+                    popEnterTransition = { EnterTransition.None },
+                    popExitTransition = { ExitTransition.None },
+                    // consumeWindowInsets（任务G3 双重留白清偿）：主壳 Scaffold 无 topBar，innerPadding
+                    // 的 top=状态栏高；不消费则覆盖页内嵌的 QimengTopBar（M3 TopAppBar 默认
+                    // windowInsets=statusBars）会再自留一段状态栏高度——标题上方两倍空白。
+                    // padding 后消费=Scaffold 官方范式，嵌套组件读到已消耗的 insets 归零
+                    modifier = Modifier
+                        .padding(innerPadding)
+                        .consumeWindowInsets(innerPadding),
+                ) {
+                    // 首页（试点页族）：provide 转场 scope——本页网格卡与详情舞台同 key 配对
+                    composable(TopLevelDestination.HOME.route) {
+                        CompositionLocalProvider(LocalNavAnimatedVisibilityScope provides this@composable) {
+                            HomeScreen(
+                                onOpenSearch = { navController.navigate(Routes.SEARCH_NAV) },
+                                onOpenAsset = { assetId ->
+                                    navController.navigate(DetailRoutes.detailRoute(assetId))
+                                },
+                            )
+                        }
+                    }
+                    composable(TopLevelDestination.ALL.route) {
+                        AllScreen(
+                            onOpenAsset = { assetId ->
+                                navController.navigate(DetailRoutes.detailRoute(assetId))
+                            },
+                        )
+                    }
+                    composable(TopLevelDestination.STATS.route) {
+                        // 统计族跳转回调组单源（RES R1 去重，构造见 [statsNavLinks]）
+                        val links = statsNavLinks(navController)
+                        StatsScreen(
+                            // 趋势卡/分布入口卡点击进统计详情页（任务I I3；GUIDE_UI §数据统计页
+                            // L213-214，携带当前时间范围——GUIDE §交互设计「进入详情携带当前时间范围」）
+                            onOpenDetail = { mode, range ->
+                                navController.navigate(StatsDetailRoutes.statsDetailRoute(mode, range))
+                            },
+                            // 任务J J1 详情页跳转链（GUIDE_UI L218-224）：常看文件条目→详情页（批次
+                            // 上下文已由 StatsViewModel.enterDetail 写入）、作者条目→作者集合页、
+                            // 标签条目→搜索页携词（query 编码见 Routes.searchRoute）
+                            onOpenAsset = links.onOpenAsset,
+                            onOpenAuthor = links.onOpenAuthor,
+                            onOpenTagSearch = links.onOpenTagSearch,
+                        )
+                    }
+                    composable(TopLevelDestination.SETTINGS.route) {
+                        SettingsScreen(
+                            onOpenFavorite = { navController.navigate(Routes.FAVORITE) },
+                            onOpenHistory = { navController.navigate(Routes.HISTORY) },
+                            onOpenAuthors = { navController.navigate(Routes.AUTHORS) },
+                            onOpenUpload = { navController.navigate(Routes.UPLOAD) },
+                            // RES R2：总览卡 Top5 行直达作者集合页（清偿 I4「待壳层共享窗口」挂账）
+                            onOpenAuthorCollection = { authorId, displayName ->
+                                navController.navigate(
+                                    AuthorCollectionRoutes.authorCollectionRoute(authorId, displayName),
+                                )
+                            },
+                        )
+                    }
+                    composable(
+                        route = Routes.SEARCH,
+                        arguments = listOf(
+                            navArgument(Routes.KEY_SEARCH_QUERY) {
+                                type = NavType.StringType
+                                defaultValue = ""
+                            },
+                        ),
+                    ) { entry ->
+                        SearchScreen(
+                            initialQuery = entry.arguments?.getString(Routes.KEY_SEARCH_QUERY)
+                                ?.takeUnless { it.isBlank() },
+                            onBack = { navController.popBackStack() },
+                            onOpenAsset = { assetId ->
+                                navController.navigate(DetailRoutes.detailRoute(assetId))
+                            },
+                        )
+                    }
+                    composable(Routes.FAVORITE) {
+                        FavoriteScreen(
+                            onBack = { navController.popBackStack() },
+                            onOpenAsset = { assetId ->
+                                navController.navigate(DetailRoutes.detailRoute(assetId))
+                            },
+                        )
+                    }
+                    composable(Routes.HISTORY) {
+                        HistoryScreen(
+                            onBack = { navController.popBackStack() },
+                            onOpenAsset = { assetId ->
+                                navController.navigate(DetailRoutes.detailRoute(assetId))
+                            },
+                        )
+                    }
+                    composable(Routes.AUTHORS) {
+                        AuthorScreen(
+                            onBack = { navController.popBackStack() },
+                            // 行点击进作者集合页（任务G G1b 接线：Web /app/collection/author/{name}
+                            // 等价物；路由带 id+名字双参数，见 AuthorCollectionRoutes 注释）
+                            onAuthorClick = { authorId, displayName ->
+                                navController.navigate(
+                                    AuthorCollectionRoutes.authorCollectionRoute(authorId, displayName),
+                                )
+                            },
+                        )
+                    }
+                    // 作者集合页（任务G G1b）：路由契约单源在 feature:author（DetailRoutes 同范式，
+                    // feature 禁依赖 :app，壳层反向引用合法）；路由参数由页面 ViewModel 经
+                    // SavedStateHandle 读取，此处无需展开 arguments
+                    composable(AuthorCollectionRoutes.AUTHOR_COLLECTION_ROUTE) {
+                        AuthorCollectionScreen(
+                            onBack = { navController.popBackStack() },
+                            onOpenAsset = { assetId ->
+                                navController.navigate(DetailRoutes.detailRoute(assetId))
+                            },
+                        )
+                    }
+                    composable(Routes.UPLOAD) {
+                        UploadScreen(
+                            sharedUris = sharedUris,
+                            onSharedConsumed = onSharedConsumed,
+                            onDone = { navController.popBackStack() },
+                        )
+                    }
+                    // 统计详情页（任务I I3）：路由契约单源在 feature:stats（DetailRoutes/AuthorCollectionRoutes
+                    // 同范式），mode/range 参数由页面 ViewModel 经 SavedStateHandle 读取，此处无需展开 arguments
+                    composable(StatsDetailRoutes.STATS_DETAIL_ROUTE) {
+                        // 统计族跳转回调组单源（RES R1 去重，构造见 [statsNavLinks]）
+                        val links = statsNavLinks(navController)
+                        StatsDetailScreen(
+                            onBack = { navController.popBackStack() },
+                            // 任务J J1 详情页跳转链（GUIDE_UI L218-224）：seconds 榜条目→详情页
+                            // （批次上下文已由 StatsDetailViewModel.enterDetail 写入 Top20 快照）、
+                            // 作者条目→作者集合页、标签条目→搜索页携词
+                            onOpenAsset = links.onOpenAsset,
+                            onOpenAuthor = links.onOpenAuthor,
+                            onOpenTagSearch = links.onOpenTagSearch,
+                        )
+                    }
+                    // 详情页（M4-3）：不设 launchSingleTop——详情→详情（推荐栏跳转）保留返回栈，
+                    // 返回键回到上一个资产（旧版内部浏览历史栈的导航层等价语义）。
+                    // exp#3 试点：provide 转场 scope——详情舞台与首页网格卡同 key 配对
+                    composable(DetailRoutes.DETAIL_ROUTE) { entry ->
+                        CompositionLocalProvider(LocalNavAnimatedVisibilityScope provides this@composable) {
+                            DetailScreen(
+                                assetId = entry.arguments?.getString(DetailRoutes.KEY_ASSET_ID).orEmpty(),
+                                onBack = { navController.popBackStack() },
+                                onOpenAsset = { assetId, _ ->
+                                    // 批次清单已由 DetailViewModel.upNextJump 换成推荐栏清单，壳层只管导航
+                                    navController.navigate(DetailRoutes.detailRoute(assetId))
+                                },
+                                // 作者卡名字点击进作者集合页（任务G G1b 接线；原始名不带 ·COS 后缀）
+                                onOpenAuthor = { authorId, displayName ->
+                                    navController.navigate(
+                                        AuthorCollectionRoutes.authorCollectionRoute(authorId, displayName),
+                                    )
+                                },
+                            )
+                        }
+                    }
+                }
             }
         }
     }
