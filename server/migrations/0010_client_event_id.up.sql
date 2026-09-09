@@ -1,0 +1,23 @@
+-- 0010_client_event_id.up：ViewEvent 客户端幂等键列 + 唯一索引（任务L L5「本地优先合并」）。
+--
+-- 需求来源：用户原话 #25「web 和手机都是单独保存本地一份再上报合并……失败也有本地的」
+-- + 主代理拍板 #7 冻结口径：本地优先 + 发送成功再删 + clientEventId 服务端幂等。
+-- 客户端（App/Web）断网期间事件留本地暂存，恢复后补传；服务端必须保证同一事件重发
+-- 不双计（dwell 秒数不重复累加、open/play 不重复计数），客户端才能安全地
+-- 「发送成功（2xx）才删本地暂存」。
+--
+-- 幂等语义：client_event_id = 客户端在事件产生时生成的 UUID，随本地暂存持久，
+-- 重试/补传/导出再 POST 一律携带同一 id。写入侧 INSERT OR IGNORE（ON CONFLICT
+-- DO NOTHING，store/queries/view_events.sql InsertViewEventIdempotent）+ 本唯一索引
+-- 实现「同 id 重复提交成功返回（202）但不入库不计数」。
+--
+-- 为什么可空（历史数据行为 NULL，协议字段本身 required）：①本表是只追加事件流
+-- （ADR-0005），存量行与 qimeng-backup 导入回放（DOMAIN_RULES §10）产生的事件没有
+-- 客户端幂等键，置 NULL 原样保留历史事实，不回填伪造 id；②SQLite 唯一索引对 NULL
+-- 不做唯一判定（NULL ≠ NULL），多行 NULL 互不冲突——旧格式请求/导入回放放行入库
+-- 不被索引误伤，幂等仅对携带 id 的事件生效。
+--
+-- 只加不改（ADR-0011）：新增列 + 新增索引，不动既有结构；down 直接 DROP
+--（modernc SQLite 引擎 3.4x 支持 DROP COLUMN，同 0004/0009 先例）。
+ALTER TABLE view_events ADD COLUMN client_event_id TEXT;
+CREATE UNIQUE INDEX idx_view_events_client_event_id ON view_events (client_event_id);

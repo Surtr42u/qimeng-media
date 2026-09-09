@@ -9,6 +9,20 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## feat(api): 任务L L5 协议+服务端幂等合并——clientEventId+唯一约束+重传不双计（2026-09-09 第一百八十二笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理，任务L L5 批）
+
+- **用户原话**：「25 应该是本地储存,然后再上报,web和手机都是单独保存本地一份再上报合并……web 有 d 安卓有 e 应该合并成两端都是 a b c d e……失败也有本地的，可以把安卓本地的直接传给 nas 合并」+ 拍板 #7（本地优先+发送成功再删+clientEventId 服务端幂等；推翻 M4-4 先删后发/毒丸 IO 丢弃）
+- **协议**（openapi.yaml，铁律 1 先行）：ViewEventReport 增 `clientEventId`（string，format uuid，**required**——去重键，三端 SDK 同批再生成全部由生成链产出）——客户端在事件产生时生成 UUID 随本地暂存持久，重试/补传/导出再 POST 携带同一 id；协议注释写明幂等语义与服务端列可空的旧格式放行口径
+- **migration 0010**（只加不改，ADR-0011）：`view_events.client_event_id` TEXT 可空列 + `idx_view_events_client_event_id` 唯一索引——可空原因（文件注释写明）：存量行/导入回放无客户端幂等键，SQLite 唯一索引对 NULL 不做唯一判定，多行 NULL 互不冲突；down 可回滚（DROP INDEX+COLUMN）
+- **入库幂等**：sqlc 新增 `InsertViewEventIdempotent :execrows`（INSERT … ON CONFLICT(client_event_id) DO NOTHING，事件流文件仍零 UPDATE/DELETE）；handler 判定链 = open/play 会话去重（§5 原样保留）→ 幂等插入 → RowsAffected=0 即同 id 重发 → 202 成功返回但零写入零计数（dwell 秒数不重复累加、open/play 不重复计数）；幂等判定与物化累加同事务，不双计两边同时成立
+- **旧格式行为 = 放行**（注释+测试锁定）：未携带 clientEventId（解码为零值 uuid.Nil）按 NULL 入库照常计数，幂等仅对携带 id 的事件生效——兼容存量数据/导入回放/旧客户端
+- **web 编译适配**（TS 随生成类型必填）：`useReportView` 在 hook 层统一挂 `randomUUID()`（use-session 单源导出），调用方零改动；打点本地账由本卷 web 批接手
+- **单测**：新增 `engagement_idempotency_test.go` 两组——同 id 重发 open/dwell 数字不变（事件流 1 行+物化 view=1/secs 不重复累加）、两端并集（不同 sessionId 不同 id 各计一条）、键优先于会话（跨会话误用同 id 不新增）、旧格式放行+NULL 与带 id 共存；`store_test.go` 迁移回退链插入 0010 步骤（列+索引删除、0009 对象保留）
+- **门禁**：server `go test ./...` 14 包全绿；`make lint` 0 issues（golangci-lint/redocly/TS 全过，oxlint 15 警告为存量非本批引入）
+
+---
 ## feat(app): 任务L L4 删相册页头排序行+面板排序回归旧版——用户点名删除 G5 页头四档行，排序唯一编辑入口回归筛选面板七档+顺位（2026-09-09 第一百八十一笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理，任务L L4 批）

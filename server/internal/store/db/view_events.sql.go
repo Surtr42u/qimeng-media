@@ -198,6 +198,50 @@ func (q *Queries) InsertViewEvent(ctx context.Context, arg InsertViewEventParams
 	return err
 }
 
+const insertViewEventIdempotent = `-- name: InsertViewEventIdempotent :execrows
+
+INSERT INTO view_events (asset_id, kind, session_id, started_at, seconds, client_event_id)
+VALUES (?, ?, ?, ?, ?, ?)
+ON CONFLICT (client_event_id) DO NOTHING
+`
+
+type InsertViewEventIdempotentParams struct {
+	AssetID       string
+	Kind          string
+	SessionID     string
+	StartedAt     string
+	Seconds       sql.NullInt64
+	ClientEventID sql.NullString
+}
+
+// InsertViewEventIdempotent: write entry for the live report endpoint
+// (task L / batch L5, 2026-09-09). client_event_id is the client
+// idempotency key (unique index, migration 0010): ON CONFLICT DO
+// NOTHING turns a duplicate submission into a 0-row write, and the
+// caller (RowsAffected == 0) answers 202 WITHOUT touching the
+// materialized table -- dwell seconds are not re-accumulated, open/play
+// not re-counted, which is what lets clients delete their local pending
+// copy only after a confirmed 2xx send. A NULL id (legacy-format
+// requests, backup-import replay) never conflicts -- SQLite unique
+// indexes treat NULLs as distinct -- so old events still insert
+// normally; idempotency applies only to id-bearing events. Append-only
+// discipline intact: no UPDATE/DELETE, DO NOTHING merely skips the
+// insert (the first submission always wins, byte-for-byte).
+func (q *Queries) InsertViewEventIdempotent(ctx context.Context, arg InsertViewEventIdempotentParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, insertViewEventIdempotent,
+		arg.AssetID,
+		arg.Kind,
+		arg.SessionID,
+		arg.StartedAt,
+		arg.Seconds,
+		arg.ClientEventID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const listAllViewEvents = `-- name: ListAllViewEvents :many
 
 SELECT asset_id, kind, session_id, started_at, seconds

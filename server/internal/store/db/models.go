@@ -137,10 +137,11 @@ type User struct {
 }
 
 type ViewEvent struct {
-	ID        int64
-	AssetID   string
-	Kind      string
-	SessionID string
-	StartedAt string
-	Seconds   sql.NullInt64
+	ID            int64
+	AssetID       string
+	Kind          string
+	SessionID     string
+	StartedAt     string
+	Seconds       sql.NullInt64
+	ClientEventID sql.NullString
 }
