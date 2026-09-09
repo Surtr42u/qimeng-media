@@ -9,6 +9,19 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## feat(app): 任务K K2 视频全屏对齐旧版——单级横屏全屏制（NONE⇄LANDSCAPE，竖屏视频全屏钮no-op）（2026-09-09 第一百七十九笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理，任务K K2 批）
+
+- **用户原话**：「23 和旧版的视频ui逻辑一致啊 旧版能做到怎么新版本的ui做不到了」+ 2026-09-09 夜拍板 #23：对齐旧版视频 UI 逻辑，推翻 09-07「两级全屏制」（旧版事实：单级——仅横屏视频全屏钮有效，进 LANDSCAPE 固定锁非 SENSOR，退出 PORTRAIT，竖屏视频点击无反应）
+- **状态机重写**（`VideoFullscreenStateMachine.kt`）：层级删 PORTRAIT 层改 NONE⇄LANDSCAPE 两态；`onFullscreenToggle(isLandscapeVideo)` 排版态且横屏→LANDSCAPE（写横屏固定锁）、竖屏→null 无反应、LANDSCAPE→NONE（写 PORTRAIT）；删 `awaitingPortraitSettle` 与「配置变化升级第二级」分支；`onRotationChanged` 仅保留 LANDSCAPE 外力破锁防御回退；新增纯函数 `isLandscapeVideoSize(width,height)`（宽高齐备且宽>高才放行，尺寸未知不放行宁紧勿松）
+- **接线**（`VideoStage.kt`）：横屏判定由 `AssetDetail.width/height` 喂入；旋转监听 `LaunchedEffect` 键从 `(configuration, fullscreenLevel)` 改为仅 `(configuration)`——旧实现以层级镜像为键，进锁转屏瞬态窗口内会拿陈旧竖屏配置把刚写入的横屏锁立刻自反（「乱闪」根因之一）；覆盖层仅 LANDSCAPE 挂载（排版态无「竖屏全屏 Dialog」形态）；800ms 防抖保留；退出详情 onDispose 兜底维持 UNSPECIFIED（G7 快照转场修复不回退，基线允许 PORTRAIT/UNSPECIFIED）；在效拍板 #20/#22/RES #27/K1 底色单源均未动
+- **注释同步**：`VideoFullScreenOverlay.kt` KDoc 改单级口径；`FullscreenOverlayShell.kt`/`BiliPlayerView.kt`/`DetailScreen.kt` 残留两级表述归 K3 收官文档同步（本批范围红线未动）
+- **单测**：`VideoFullscreenStateMachineTest` 重写 11 例全绿——横屏可进/竖屏 no-op/层内全屏钮退出写竖屏/系统返回退出/排版态旋转忽略/横屏配置无迁移/外力破锁回退/破锁后再进/尺寸判定门槛 4 例；旧两级用例全删
+- **门禁四连绿**：make app-test / app-lint / app-build / lint 全 EXIT=0
+- **UI 实测**（qimeng_api35@emulator-5554 身份校验过，18461 虚构库）：横屏视频 960×540 全屏钮→`cur=2400x1080` 固定锁一次到位无乱闪，覆盖层黑底+退出图标+ENDED 末帧同位 seek 渲染正常（#22 保护生效）；Back→`cur=1080x2400` 回竖屏、surface 迁回排版态无假死；竖屏视频 540×960 全屏钮点击方向零变化无覆盖层（no-op 证实）。期间检测到并行 L 车道在同模拟器走查（输入交叠致两轮重试，非 App 缺陷）；「播放中 Back 先退 chrome」「切兄弟退出全屏回竖屏」两项留 K3 全链路走查。证据 %TEMP%\qimeng-k2-evidence\
+
+---
 ## feat(app): 任务L L2 底部Tab快速点击防叠屏——连点200ms防抖+NavHost转场置None瞬时切换（2026-09-09 第一百七十八笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理，任务L L2；沿用被中止前任会话的同范围未提交半成品，完成评估、收尾、验证与文档同步）

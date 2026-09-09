@@ -1,35 +1,24 @@
 package media.qimeng.app.feature.detail.video
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * 两级全屏状态机单测（D2）：分级迁移、逐级回退、方向指令、瞬态横屏忽略（settle 窗口）。
+ * 单级横屏全屏状态机单测（任务K K2，对齐旧版 MediaDetailFragment:1163-1183 口径）：
+ * 横屏视频可进 / 竖屏视频 no-op / 层内退出写竖屏 / 外力破锁防御回退 / 尺寸判定门槛。
+ * D2 两级制用例（升级/settle 窗口/逐级回退）随两级制一并删除。
  */
 class VideoFullscreenStateMachineTest {
 
     @Test
-    fun toggleFromNoneEntersPortraitLevel() {
-        // 冻结口径：第一级=竖屏全屏（写竖屏方向），全类型视频可进全屏
+    fun toggleFromNoneWithLandscapeVideoEntersLandscapeFullscreen() {
+        // K2 冻结口径：横屏视频（宽>高）排版态点全屏 → 单级横屏全屏（写横屏固定锁，非 SENSOR）
         val machine = VideoFullscreenStateMachine()
 
-        val command = machine.onFullscreenToggle()
-
-        assertEquals(VideoFullscreenLevel.PORTRAIT, machine.level)
-        assertEquals(
-            VideoFullscreenCommand(VideoFullscreenLevel.PORTRAIT, VideoFullscreenOrientation.PORTRAIT),
-            command,
-        )
-    }
-
-    @Test
-    fun toggleFromPortraitEscalatesToLandscape() {
-        // 冻结口径：覆盖层内再点全屏钮 → 第二级=横屏全屏（固定横屏，防双横屏乱闪）
-        val machine = VideoFullscreenStateMachine()
-        machine.onFullscreenToggle()
-
-        val command = machine.onFullscreenToggle()
+        val command = machine.onFullscreenToggle(isLandscapeVideo = true)
 
         assertEquals(VideoFullscreenLevel.LANDSCAPE, machine.level)
         assertEquals(
@@ -39,28 +28,21 @@ class VideoFullscreenStateMachineTest {
     }
 
     @Test
-    fun toggleFromLandscapeStepsDownToPortrait() {
-        // 冻结口径：退出逐级回退（横屏级 → 竖屏级），不跳级
+    fun toggleFromNoneWithPortraitVideoIsNoOp() {
+        // K2 冻结口径（旧版同款）：竖屏视频全屏钮点击无反应——不迁移、不产生方向写入
         val machine = VideoFullscreenStateMachine()
-        machine.onFullscreenToggle()
-        machine.onFullscreenToggle()
 
-        val command = machine.onFullscreenToggle()
-
-        assertEquals(VideoFullscreenLevel.PORTRAIT, machine.level)
-        assertEquals(
-            VideoFullscreenCommand(VideoFullscreenLevel.PORTRAIT, VideoFullscreenOrientation.PORTRAIT),
-            command,
-        )
+        assertNull(machine.onFullscreenToggle(isLandscapeVideo = false))
+        assertEquals(VideoFullscreenLevel.NONE, machine.level)
     }
 
     @Test
-    fun exitFromPortraitClosesOverlayAndRestoresPortrait() {
-        // 竖屏级退出 → NONE，仍写竖屏（与 onDispose 兜底同向，防卡横屏）
+    fun toggleFromLandscapeExitsToLayoutAndRestoresPortrait() {
+        // 覆盖层内全屏钮=退出：LANDSCAPE → NONE 且写竖屏（旧版「退出全屏回竖屏」口径）
         val machine = VideoFullscreenStateMachine()
-        machine.onFullscreenToggle()
+        machine.onFullscreenToggle(isLandscapeVideo = true)
 
-        val command = machine.onExitRequested()
+        val command = machine.onFullscreenToggle(isLandscapeVideo = false)
 
         assertEquals(VideoFullscreenLevel.NONE, machine.level)
         assertEquals(
@@ -70,16 +52,16 @@ class VideoFullscreenStateMachineTest {
     }
 
     @Test
-    fun exitFromLandscapeStepsDownToPortraitNotNone() {
+    fun exitFromLandscapeRestoresPortrait() {
+        // 系统返回/覆盖层顶栏返回退出：同向写竖屏（退出详情 onDispose 兜底之外的主路径）
         val machine = VideoFullscreenStateMachine()
-        machine.onFullscreenToggle()
-        machine.onFullscreenToggle()
+        machine.onFullscreenToggle(isLandscapeVideo = true)
 
         val command = machine.onExitRequested()
 
-        assertEquals(VideoFullscreenLevel.PORTRAIT, machine.level)
+        assertEquals(VideoFullscreenLevel.NONE, machine.level)
         assertEquals(
-            VideoFullscreenCommand(VideoFullscreenLevel.PORTRAIT, VideoFullscreenOrientation.PORTRAIT),
+            VideoFullscreenCommand(VideoFullscreenLevel.NONE, VideoFullscreenOrientation.PORTRAIT),
             command,
         )
     }
@@ -103,20 +85,40 @@ class VideoFullscreenStateMachineTest {
     }
 
     @Test
-    fun transientLandscapeAfterPortraitWriteIsIgnoredUntilPortraitSettles() {
-        // 横屏手持点全屏：写竖屏后系统转屏有延迟，窗口期内横屏配置是瞬态，须忽略（防乱闪）
+    fun landscapeLevelStaysUnderLandscapeConfiguration() {
+        // 横屏全屏已锁横屏：横屏配置与锁一致，无迁移指令
         val machine = VideoFullscreenStateMachine()
-        machine.onFullscreenToggle() // 写竖屏，settle 窗口开启
+        machine.onFullscreenToggle(isLandscapeVideo = true)
 
-        assertNull(machine.onRotationChanged(isLandscape = true)) // 瞬态横屏
-        assertEquals(VideoFullscreenLevel.PORTRAIT, machine.level)
+        assertNull(machine.onRotationChanged(isLandscape = true))
+        assertEquals(VideoFullscreenLevel.LANDSCAPE, machine.level)
+    }
 
-        assertNull(machine.onRotationChanged(isLandscape = false)) // 竖屏落地，窗口关闭
-        assertNull(machine.onRotationChanged(isLandscape = false))
+    @Test
+    fun landscapeBreakLockByExternalRotationFallsBackToLayoutWritingPortrait() {
+        // 防御回退（分屏/自由窗口等忽略 requestedOrientation 的外力把配置转回竖屏）：
+        // 退出全屏写竖屏，恢复排版态自由旋转
+        val machine = VideoFullscreenStateMachine()
+        machine.onFullscreenToggle(isLandscapeVideo = true)
 
-        // 此后的横屏配置变化（常规全屏被一级方向锁堵死，仅分屏/自由窗口等忽略方向锁
-        // 环境可达，见状态机 onRotationChanged KDoc #23）→ 升第二级并锁横屏
-        val command = machine.onRotationChanged(isLandscape = true)
+        val command = machine.onRotationChanged(isLandscape = false)
+
+        assertEquals(VideoFullscreenLevel.NONE, machine.level)
+        assertEquals(
+            VideoFullscreenCommand(VideoFullscreenLevel.NONE, VideoFullscreenOrientation.PORTRAIT),
+            command,
+        )
+    }
+
+    @Test
+    fun afterBreakLockFallbackFullscreenCanBeReEntered() {
+        // 破锁回退后的再进入：状态机无残留态，横屏视频仍可正常进全屏
+        val machine = VideoFullscreenStateMachine()
+        machine.onFullscreenToggle(isLandscapeVideo = true)
+        machine.onRotationChanged(isLandscape = false)
+
+        val command = machine.onFullscreenToggle(isLandscapeVideo = true)
+
         assertEquals(VideoFullscreenLevel.LANDSCAPE, machine.level)
         assertEquals(
             VideoFullscreenCommand(VideoFullscreenLevel.LANDSCAPE, VideoFullscreenOrientation.LANDSCAPE),
@@ -124,50 +126,20 @@ class VideoFullscreenStateMachineTest {
         )
     }
 
+    // ---------- isLandscapeVideoSize 判定门槛（喂入状态机的数据源口径） ----------
+
     @Test
-    fun rotationCausedPortraitDescentHasNoSettleWindow() {
-        // 横屏级被外力转回竖屏（多窗等）→ 防御回退竖屏级；配置已落地，无 settle 窗口：
-        // 立即再转横屏须直接升级（对照上一条：写竖屏指令的迁移才开窗口）
-        val machine = VideoFullscreenStateMachine()
-        machine.onFullscreenToggle()
-        machine.onFullscreenToggle()
-        assertEquals(VideoFullscreenLevel.LANDSCAPE, machine.level)
-
-        val descend = machine.onRotationChanged(isLandscape = false)
-        assertEquals(VideoFullscreenLevel.PORTRAIT, machine.level)
-        assertEquals(
-            VideoFullscreenCommand(VideoFullscreenLevel.PORTRAIT, VideoFullscreenOrientation.PORTRAIT),
-            descend,
-        )
-
-        val escalate = machine.onRotationChanged(isLandscape = true)
-        assertEquals(VideoFullscreenLevel.LANDSCAPE, machine.level)
-        assertEquals(
-            VideoFullscreenCommand(VideoFullscreenLevel.LANDSCAPE, VideoFullscreenOrientation.LANDSCAPE),
-            escalate,
-        )
+    fun landscapeVideoSizeIsTrueOnlyForWidthGreaterThanHeight() {
+        assertTrue(isLandscapeVideoSize(1920, 1080))
+        assertFalse(isLandscapeVideoSize(1080, 1920)) // 竖屏视频：全屏钮 no-op 的数据面
     }
 
     @Test
-    fun stepDownToPortraitReopensSettleWindow() {
-        // 横屏级回退竖屏级（写竖屏）：同样有 settle 窗口——配置还报横屏时不能被顶回横屏级
-        val machine = VideoFullscreenStateMachine()
-        machine.onFullscreenToggle()
-        machine.onFullscreenToggle()
-
-        machine.onFullscreenToggle() // 回退竖屏级，settle 窗口开启
-        assertNull(machine.onRotationChanged(isLandscape = true)) // 瞬态横屏，忽略
-        assertEquals(VideoFullscreenLevel.PORTRAIT, machine.level)
-    }
-
-    @Test
-    fun landscapeLevelStaysUnderLandscapeConfiguration() {
-        // 横屏级已锁横屏：横屏配置不产生迁移指令
-        val machine = VideoFullscreenStateMachine()
-        machine.onFullscreenToggle()
-        machine.onFullscreenToggle()
-
-        assertNull(machine.onRotationChanged(isLandscape = true))
-        assertEquals(VideoFullscreenLevel.LANDSCAPE, machine.level)
+    fun unknownOrSquareVideoSizeIsNotLandscape() {
+        // 尺寸未知（服务端未探测/旧数据）与正方形一律不放行：宁紧勿松
+        assertFalse(isLandscapeVideoSize(null, null))
+        assertFalse(isLandscapeVideoSize(1920, null))
+        assertFalse(isLandscapeVideoSize(null, 1080))
+        assertFalse(isLandscapeVideoSize(1080, 1080))
     }
 }
