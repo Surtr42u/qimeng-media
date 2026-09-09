@@ -1,11 +1,14 @@
 package media.qimeng.app.navigation
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -28,6 +31,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import media.qimeng.app.core.ui.component.TabScrollController
+import media.qimeng.app.core.ui.theme.QimengBrandColors
 import media.qimeng.app.feature.all.AllScreen
 import media.qimeng.app.feature.author.AuthorCollectionRoutes
 import media.qimeng.app.feature.author.AuthorCollectionScreen
@@ -120,6 +124,13 @@ fun QimengNavHost(
     val currentRoute = backStackEntry?.destination?.route
     // 双击回顶的上一击时间戳（400ms 窗口；壳层计时，列表页只听广播）
     var lastTabTapTimeMs by remember { mutableLongStateOf(0L) }
+    // 底栏选中指示器色（F 批 2026-09-09 接线）：旧版 styles.xml BottomNavigationView
+    // ActiveIndicator = qm_primary_soft 浅色 #123A3A3A / 夜间 #1AC8C8C8（Color.kt 具名 token
+    // 早已备好但从未接线）——此前默认 indicator=secondaryContainer(=ChipBg) 与底栏背景色差
+    // 仅 2/255，选中胶囊肉眼不可见（用户反馈「没做的圆润边角」）；选中 icon/label 同步取
+    // onSurface（旧版选中图标=主色深灰，默认 onSecondaryContainer 次级灰观感偏淡）
+    val darkTheme = isSystemInDarkTheme()
+    val indicatorColor = if (darkTheme) QimengBrandColors.PrimarySoftDark else QimengBrandColors.PrimarySoftLight
 
     // 系统分享接收（M4-5）：未消费的分享 URI 存在即进上传流（登录后才可达——本组合在 LoggedIn 分支）
     LaunchedEffect(sharedUris) {
@@ -151,6 +162,13 @@ fun QimengNavHost(
                             },
                             icon = { Icon(imageVector = destination.icon, contentDescription = null) },
                             label = { Text(text = stringResource(destination.labelRes)) },
+                            // F 批：指示器/选中色接线（见上方 darkTheme 处注释），未选色保持
+                            // M3 默认（onSurfaceVariant=旧版次级灰）
+                            colors = NavigationBarItemDefaults.colors(
+                                indicatorColor = indicatorColor,
+                                selectedIconColor = MaterialTheme.colorScheme.onSurface,
+                                selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                            ),
                         )
                     }
                 }

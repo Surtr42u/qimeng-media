@@ -9,6 +9,19 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## fix(app): F批 用户反馈三修——搜索胶囊族尺寸对齐旧版+我的页删作者管理入口行+底导航指示器色接线（2026-09-09 第一百六十六笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理，F批；用户2026-09-09三反馈）
+
+- **80dp 之谜根因（反馈①「搜索的胶囊 ui 都过大」）**：material3 1.4.0（BOM 2026.06.01）无 label 输入框内容高=内部文本区 minimumInteractiveComponentSize 48dp + 无 label 默认 contentPadding 上下 16dp（TextFieldImplKt TextFieldPadding 字节码实证）=80dp，直接顶穿 TextFieldDefaults.MinHeight=56dp 下限（模拟器实测搜索输入胶囊 210px=80dp、placeholder 节点 126px=48dp 互证）。contentPadding 参数只在 TextFieldState 新态重载开放（String 经典重载无，34dp 固定高下内部留白会把文字压到 2dp），新态重载又缺 visualTransformation/KeyboardActions 面（登录密码/搜索 IME 提交依赖）——**QimengCapsuleTextField 换 foundation BasicTextField+自绘 decorationBox 复刻旧版 EditText+bg_capsule_soft 同构**：34dp 高（fragment_search.xml L29）+14sp（L36）+横向 14dp（L40）+焦点底色加深一档（保 G6 语义），公开签名零变化 9 处消费方零改动
+- **词丸/胶囊芯片紧凑化（同反馈①）**：QimengSegPill 全仓胶囊单源加 CompositionLocal(LMinimumInteractiveComponentSize=0.dp)（旧版 chipMinTouchTargetSize=0dp 的 Compose 等价；m3 1.4.0 可点 Surface 内部施该 modifier——FilterChip 布局节点被撑到 48dp 的元凶，字节码 SurfaceKt$Surface$2 实证）+字号 labelMedium 12sp（styles.xml L13 全仓胶囊统一）；QimengWordPillFlow 行距 2dp/横距 6dp（styles.xml L8 marginEnd）。实测：词丸芯片 84px=32dp+行节距 89px（修前 56dp=147px）
+- **首页搜索框 40dp**（fragment_home.xml L37）：实测 105px=40.0dp（修前 48dp），文字垂直居中
+- **我的页删「作者管理」入口行（反馈②）**：SettingsScreen ROW_AUTHORS/SUBTITLE_AUTHORS 常量+行项整块删除（用户拍板「已经有了一个作者管理」=作者总览卡「管理」入口为唯一入口，onOpenAuthors 仍供该卡使用）；实测行序 收藏→浏览历史→上传文件
+- **底导航指示器接线（反馈③「圆润边角不可见」）**：NavigationBarItem indicatorColor=PrimarySoftLight(#123A3A3A)/Dark(#1AC8C8C8)（旧版 styles.xml 底栏 ActiveIndicator 同值，Color.kt 具名 token 备好从未接线）+选中 icon/label=onSurface（旧版选中图标=主色深灰）。修前默认 indicator=secondaryContainer 与底栏背景色差 2/255 不可见；修后四 Tab 轮点实测指示器 #E5E5E7 叠底栏 #F2F2F4 **色差 13/255**（≥10 达标），pill 84px=32dp=M3 默认圆润胶囊
+- 测量口径记档：m3 触摸目标扩展使 uiautomator 可点节点 bounds 虚胖（如 34dp 胶囊报 48dp）——视觉尺寸以截图像素扫描为准；门禁四连绿（app-test 7+0/:core:ui 绿/app-lint/app-build/make lint 0 errors）；证据 %TEMP%\qimeng-f-evidence\（截图+dump 15 件）
+- 遗留记档：搜索页顶栏核对无需改码（顶栏 48dp/返回钮 24dp 字形/文本钮 14sp 均已在旧版规格上，SearchScreen.kt 不在本批文件集）；QimengCapsuleTextField 聚焦反馈沿用 G6「surfaceContainerHigh 加深一档」（浅色下 delta 2/255 极淡，未在本批反馈范围，如需强化待用户拍板）
+
+---
 ## feat(app): N4 解冻消费批——多选 UI+历史作品维+统计常看族接线+标签即时解绑+服务端色+dwell/progress 端到端复测（2026-09-09 第一百六十五笔）
 
 执行 AI：GLM-5.3-Flash（监督会话 executor；夜间授权链收官批）

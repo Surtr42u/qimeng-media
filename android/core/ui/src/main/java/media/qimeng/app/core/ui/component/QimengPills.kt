@@ -68,6 +68,12 @@ fun QimengChipRow(
  * 胶囊渲染复用 [PillChip] 单源，禁各页自绘（铁律 7 / §5 组件单源）。
  * （任务 H1 清偿：原带「收起 ▲」折叠尾丸的 QimengPillFlowRow 全仓零调用已删除，
  * 折叠语义由 [QimengFloatingPillPanel]/[QimengValuePillFlow] 分承。）
+ *
+ * 紧凑行距（F 批 2026-09-09）：横向 [QimengDimens.WordPillSpacing]=6dp（旧版
+ * QimengCapsuleChip marginEnd 6dp）、纵向 [QimengDimens.WordPillRowSpacing]=2dp——
+ * 词丸经 [QimengSegPill] 紧凑化后 32dp 高，行节距 34dp 对齐旧实录词丸区视觉；
+ * 此前 FilterChip 48dp 布局膨胀 + 8dp 行距 = 56dp 节距，用户 2026-09-09 反馈「过大」。
+ * 其余药丸容器（[QimengFloatingPillPanel]/[QimengValuePillFlow]）保持 8dp 间距不随动。
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -78,8 +84,8 @@ fun QimengWordPillFlow(
 ) {
     FlowRow(
         modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(QimengDimens.SpaceM),
-        verticalArrangement = Arrangement.spacedBy(QimengDimens.SpaceM),
+        horizontalArrangement = Arrangement.spacedBy(QimengDimens.WordPillSpacing),
+        verticalArrangement = Arrangement.spacedBy(QimengDimens.WordPillRowSpacing),
     ) {
         pills.forEachIndexed { index, pill -> PillChip(pill = pill, onClick = { onPillClick(index) }) }
     }
