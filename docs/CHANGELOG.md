@@ -9,6 +9,17 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## feat(app): 任务L L2 底部Tab快速点击防叠屏——连点200ms防抖+NavHost转场置None瞬时切换（2026-09-09 第一百七十八笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理，任务L L2；沿用被中止前任会话的同范围未提交半成品，完成评估、收尾、验证与文档同步）
+
+- **防抖决策纯函数化**：QimengNavHost 抽出 `resolveTabTapAction`（internal 供单测），三态输出 ScrollToTop/Navigate/Ignore，优先级=双击回顶 > 防抖导航 > 忽略（拍板 #2「双击回顶语义保留且优先」）；防抖窗 `TAB_NAVIGATE_DEBOUNCE_MS=200ms`（拍板 150~250ms 中档，具名常量），基准=上次**实际执行**导航时刻且回顶不重置——「回顶后立刻切 Tab」仍受防抖保护；`DOUBLE_TAP_WINDOW_MS`（400ms）改 internal 供单测锁定
+- **转场叠影根因清除**：NavHost 四处转场（enter/exit/popEnter/popExit）全置 None——Navigation Compose 2.7+ 默认 crossfade（新旧两页同屏 fade 220ms）即「叠屏/延迟消失」观感的动画根因；对齐旧版 Fragment show/hide 无转场手感；四 Tab 结构不动，不碰 RES 批 b702a6b 的 statsNavLinks 去重
+- **单测**：新增 `TabTapDecisionTest` 8 用例（首击放行/回顶 400ms 边界/回顶优先于防抖/防抖窗 ≥200ms 边界/连点 10 击仅 3 次放行序列/回顶不重置防抖基准）；`TopLevelDestinationTest` 3 用例仍绿
+- **实测**（qimeng_api35 无头实例复用，`emu avd name` 核实；仅虚构测试数据）：四 Tab 轮询连点 48 击×2 轮（设备端单 shell 高频 tap）无叠影无崩溃；单点切 Tab 正常（正向对照）；统计页 BACK 一步回上一 Tab、再 BACK 退到桌面（返回栈干净=无一次点击多次入栈）；进详情返回后再连点 48 击正常且列表滚动位置保留；下滑后同 Tab 双击页头（排序/精选）重现=回顶生效。证据 %TEMP%\qimeng-l2-evidence\（shot-rapid-*/shot-doubletap-top-2.png、dump-0~9.xml、gate1~4 日志、TEST-*.xml、logcat-crash-check.log 0 行）
+- 门禁四连绿：app-build/app-test/app-lint/make lint 全 EXIT=0（gate1~gate4 日志）
+
+---
 ## feat(app): 任务L L1 补齐——网格间距回归旧版密度（卡间10dp）；组头样式按实录核对维持现状（2026-09-09 第一百七十七笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理，任务L L1 补齐小批；主代理验收拍板两项）

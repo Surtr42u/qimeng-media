@@ -1,5 +1,7 @@
 package media.qimeng.app.navigation
 
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -130,6 +132,9 @@ fun QimengNavHost(
     val currentRoute = backStackEntry?.destination?.route
     // 双击回顶的上一击时间戳（400ms 窗口；壳层计时，列表页只听广播）
     var lastTabTapTimeMs by remember { mutableLongStateOf(0L) }
+    // 上一次实际执行顶层导航的时间戳（任务L L2 防抖基准；双击回顶不重置此值，
+    // 使「回顶后立刻切 Tab」仍受防抖保护）
+    var lastNavigateTimeMs by remember { mutableLongStateOf(0L) }
     // 底栏选中指示器色（F 批 2026-09-09 接线）：旧版 styles.xml BottomNavigationView
     // ActiveIndicator = qm_primary_soft 浅色 #123A3A3A / 夜间 #1AC8C8C8（Color.kt 具名 token
     // 早已备好但从未接线）——此前默认 indicator=secondaryContainer(=ChipBg) 与底栏背景色差
@@ -156,15 +161,25 @@ fun QimengNavHost(
                             selected = currentRoute == destination.route,
                             onClick = {
                                 val now = System.currentTimeMillis()
-                                val isDoubleClick =
-                                    currentRoute == destination.route &&
-                                        now - lastTabTapTimeMs <= DOUBLE_TAP_WINDOW_MS
-                                lastTabTapTimeMs = now
-                                if (isDoubleClick) {
-                                    TabScrollController.requestScrollToTop(destination.route)
-                                } else {
-                                    navigateTopLevel(navController, destination)
+                                // 任务L L2：决策抽纯函数 [resolveTabTapAction]——双击回顶优先
+                                // （不受防抖限制），防抖窗内忽略导航，窗后首击放行
+                                when (
+                                    resolveTabTapAction(
+                                        isCurrentRoute = currentRoute == destination.route,
+                                        nowMs = now,
+                                        lastTapMs = lastTabTapTimeMs,
+                                        lastNavigateMs = lastNavigateTimeMs,
+                                    )
+                                ) {
+                                    TabTapAction.ScrollToTop ->
+                                        TabScrollController.requestScrollToTop(destination.route)
+                                    TabTapAction.Navigate -> {
+                                        lastNavigateTimeMs = now
+                                        navigateTopLevel(navController, destination)
+                                    }
+                                    TabTapAction.Ignore -> Unit
                                 }
+                                lastTabTapTimeMs = now
                             },
                             icon = { Icon(imageVector = destination.icon, contentDescription = null) },
                             label = { Text(text = stringResource(destination.labelRes)) },
@@ -184,6 +199,15 @@ fun QimengNavHost(
         NavHost(
             navController = navController,
             startDestination = TopLevelDestination.HOME.route,
+            // 任务L L2（拍板 #2「NavHost 顶层切换确保无 enter/exit 转场动画叠影」）：
+            // Navigation Compose 2.7+ 默认转场为 crossfade（新页 fadeIn 220ms 延迟 90ms 叠着
+            // 旧页 fadeOut）——快速切 Tab 时新旧两页同屏，正是用户「叠屏/延迟消失」观感的
+            // 动画根因。旧版 Fragment show/hide 无转场，故四处转场全置 None（瞬时切换）；
+            // 覆盖页/详情页进出同样瞬时（旧版同为无转场观感）。与防抖双保险，防叠加。
+            enterTransition = { EnterTransition.None },
+            exitTransition = { ExitTransition.None },
+            popEnterTransition = { EnterTransition.None },
+            popExitTransition = { ExitTransition.None },
             // consumeWindowInsets（任务G3 双重留白清偿）：主壳 Scaffold 无 topBar，innerPadding
             // 的 top=状态栏高；不消费则覆盖页内嵌的 QimengTopBar（M3 TopAppBar 默认
             // windowInsets=statusBars）会再自留一段状态栏高度——标题上方两倍空白。
@@ -372,8 +396,49 @@ private const val QUERY_UNRESERVED_SYMBOLS = "-_.~"
 
 private const val QUERY_HEX_DIGITS = "0123456789ABCDEF"
 
-/** 双击回顶判定窗口（GUIDE_UI §导航结构：400ms 内同一 Tab 二击） */
-private const val DOUBLE_TAP_WINDOW_MS = 400L
+/** 双击回顶判定窗口（GUIDE_UI §导航结构：400ms 内同一 Tab 二击）。internal 供单测锁定 */
+internal const val DOUBLE_TAP_WINDOW_MS = 400L
+
+/**
+ * 顶层导航防抖窗（任务L L2，拍板 #2：150~250ms 窗口内只认一次，取中档 200ms）。
+ * 用户实测（#37 同源反馈）：快速连点不同 Tab 时每次点击都触发 saveState/restoreState
+ * 重建链，观感为「叠屏/延迟消失」——窗口内忽略后续点击，只认窗后首击。
+ * 与 [DOUBLE_TAP_WINDOW_MS] 的关系：双击回顶判定先行且不受此窗限制（同 Tab 二击
+ * 200~400ms 区间仍能回顶），防抖只拦「导航」不拦「回顶」。internal 供单测锁定
+ */
+internal const val TAB_NAVIGATE_DEBOUNCE_MS = 200L
+
+/** Tab 点击决策结果（[resolveTabTapAction] 纯函数输出；壳层 onClick 按分支执行） */
+internal sealed interface TabTapAction {
+    /** 双击回顶：广播 [TabScrollController.requestScrollToTop]，不导航不重置防抖计时 */
+    data object ScrollToTop : TabTapAction
+
+    /** 执行顶层导航（更新防抖时间戳） */
+    data object Navigate : TabTapAction
+
+    /** 防抖窗内忽略本次点击 */
+    data object Ignore : TabTapAction
+}
+
+/**
+ * Tab 点击决策纯函数（任务L L2；抽出便于 JVM 单测锁定时序语义）。
+ * 优先级：双击回顶 > 防抖导航 > 忽略——双击回顶不受防抖窗限制（拍板 #2「语义保留且优先」）。
+ *
+ * @param isCurrentRoute 点击的 Tab 是否就是当前所在 Tab（双击回顶的必要条件）
+ * @param nowMs 本次点击时刻
+ * @param lastTapMs 上一次任意 Tab 点击时刻（双击窗基准；任意 Tab 共享，与既有行为一致）
+ * @param lastNavigateMs 上一次**实际执行**顶层导航的时刻（防抖窗基准；回顶不重置）
+ */
+internal fun resolveTabTapAction(
+    isCurrentRoute: Boolean,
+    nowMs: Long,
+    lastTapMs: Long,
+    lastNavigateMs: Long,
+): TabTapAction = when {
+    isCurrentRoute && nowMs - lastTapMs <= DOUBLE_TAP_WINDOW_MS -> TabTapAction.ScrollToTop
+    nowMs - lastNavigateMs >= TAB_NAVIGATE_DEBOUNCE_MS -> TabTapAction.Navigate
+    else -> TabTapAction.Ignore
+}
 
 /** 四 Tab 切换统一走此函数：单顶 + 保存/恢复状态（见主壳注释的保活语义说明） */
 private fun navigateTopLevel(navController: NavHostController, destination: TopLevelDestination) {
