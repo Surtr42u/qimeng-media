@@ -9,6 +9,17 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## fix(app): 任务J J3 首页切换两案——tab 切换哨兵抑制窗口（#35）+ 排行榜→COS 卡半屏复现记档停手（#37）（2026-09-09 第一百六十九笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理，任务J J3批）
+
+- **J3a 哨兵抑制窗口（#35 清偿）**：HomeViewModel.onNearBottom 开头判定——距上次 switchTab 不足 SENTINEL_SUPPRESS_AFTER_TAB_SWITCH_MS(500ms，具名常量：覆盖 pager settle 动画 ~300ms + 周期行移除 1~2 帧重布局回流；代价=切换后 500ms 内真实触底被吞一次、滚停自愈) 一律丢弃：切换瞬间 RANK 周期行移除使 pager 视口变高，布局回流把 lastVisible 抬过距底阈值（≥total-1-6）是布局噪声非用户滚动意图，放行即误换 seed 追加，违背「切 tab 不重拉」（小库一次全揭示必现，任务I I1 发现）。时间戳初值 Long.MIN_VALUE=冷启动首布局不抑制（init 揭示哨兵是既有分批行为）；时钟回拨判负不抑制；selectPeriod 不动周期行高度不参与。实现位置选 VM 层而非 QimengMediaGrid：业务语义归 VM+单测友好+不动五页共用组件公共 API（J3 文件集纪律）
+- **时钟源**：internal var clockMs（默认 System::currentTimeMillis）而非构造注入——Hilt @Inject constructor 无法提供函数类型绑定（ProgressThrottlePolicy 先例是普通类）；internal 可变=单测推进时间入口，生产恒默认
+- **单测 +3**：切 tab 后短窗内哨兵被抑制不追加换 seed（RANK→推荐 fake-clock 窗口内 onNearBottom 无第二次推荐请求）/ 窗口过后恢复追加（恰出窗口 seed=2 正常）/ 冷启动首布局不在窗口（无 switchTab 时哨兵照常）。10 用例全绿
+- **J3b 排行榜→COS 卡半屏（#37）——复现 1 次+无法重放，带证据停手（任务书明文口径，禁止盲改）**：模拟器虚构库 100+ 次 RANK↔COS 切换（chip 点击/横滑/半途反向/连点/滚动中切/周期切换后切/刷新在途切/后台往返/fling 后长等待，A~H+R1~R3 共 13 组），**成功复现 1 次**：RECOMMEND→RANK→RECOMMEND chip 连切（间隔 1s/0.8s）后 pager 卡死在 page≈0.94 中间态——推荐页内容被挤压至左缘 61px 窄条、COS 页占其余（j3b-stuck-primary.xml/png：左列窄卡 x[0,61] 与右两列正常卡同屏并列），稳定不自愈（2s/4s 后 dump 不变）；同序列定向重放 R1×5+R2×12（抖动间隔）+R3×8（含 dump 时序回放）均不复现——**低概率 (<1%) 时序竞争**。疑似机制（无日志佐证不下手）：chip 点击驱动的 animateScrollToPage 途中 currentPage 翻转经 snapshotFlow 回环 switchTab 劫持 currentTab，叠加 RANK 周期行移除引发 pager 高度重测打断动画，LaunchedEffect(currentTab) 单次触发不重试→卡中间态。候选方案（待拍板另批）：①settledPage 持续对齐（snapshotFlow 观察纠正，非单次 animate）②动画期间禁用 snapshotFlow 回环（isScrollInProgress 门控）③升级 Compose BOM 看是否上游已修。台账 #37 维持开放记档
+- J3a 实测（emulator-5554）：RANK→RECOMMEND 切换首屏内容稳定无重排（before/after 对照 dump）；门禁四连绿（app-test/app-lint/app-build/make lint 0 errors）；证据 %TEMP%\qimeng-j3-evidence\（复现卡死 dump+截图 1 组+13 组不复现探针）
+
+---
 ## feat(app): 任务J J2 网格组头跨整行——GridItemSpan(maxLineSpan) 对齐旧版（#36）（2026-09-09 第一百六十八笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理，任务J J2批）

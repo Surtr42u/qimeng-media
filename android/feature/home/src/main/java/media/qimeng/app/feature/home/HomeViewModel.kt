@@ -104,6 +104,18 @@ class HomeViewModel @Inject constructor(
      */
     private var rankGeneration = 0
 
+    /**
+     * 上次 tab 切换时间戳（哨兵抑制窗口判定，任务J J3a）：初值取极小让冷启动
+     * 首布局不在窗口内（init 揭示后的哨兵触发是既有分批行为，不是本批要抑制的对象）。
+     */
+    private var lastTabSwitchAtMs = Long.MIN_VALUE
+
+    /**
+     * 时钟源（哨兵抑制窗口判定用；internal 可变=单测推进时间入口，生产恒默认墙钟）。
+     * 为什么不是构造注入：Hilt @Inject constructor 无法提供函数类型绑定。
+     */
+    internal var clockMs: () -> Long = System::currentTimeMillis
+
     /** 首页网格列数（1~2 列持久化，LEGACY §F） */
     val homeColumns: StateFlow<Int> = gridPrefs.homeColumns
         .stateIn(
@@ -118,6 +130,8 @@ class HomeViewModel @Inject constructor(
     }
 
     fun switchTab(tab: HomeTab) {
+        // 刷新哨兵抑制窗口起点（任务J J3a，台账 #35）：见 [onNearBottom] 窗口判定
+        lastTabSwitchAtMs = clockMs()
         _uiState.value = _uiState.value.copy(currentTab = tab)
         when (tab) {
             HomeTab.RECOMMEND -> if (!_uiState.value.recommend.loaded) loadRecommend(isInitial = true)
@@ -198,8 +212,18 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    /** 距底触发：推荐流揭示下一批 / 批次尽则换 seed 追加；COS 流拉下一页；排行一次拉满无操作 */
+    /**
+     * 距底触发：推荐流揭示下一批 / 批次尽则换 seed 追加；COS 流拉下一页；排行一次拉满无操作。
+     *
+     * 哨兵抑制窗口（任务J J3a，台账 #35 清偿）：tab 切换后 [SENTINEL_SUPPRESS_AFTER_TAB_SWITCH_MS]
+     * 窗口内的回调一律丢弃——切换瞬间 RANK 周期行显隐使 pager 视口高度突变（如 RANK→推荐
+     * 周期行移除、视口变高），布局回流把 lastVisible 抬过距底阈值（≥total-1-6）是布局噪声
+     * 而非用户滚动意图，放行即误追加换 seed，违背「切 tab 不重拉」（小库一次全揭示时必现）。
+     * 窗口只在 switchTab 刷新起点（selectPeriod 不动周期行高度，无需抑制）。时钟回拨判负不抑制。
+     */
     fun onNearBottom() {
+        val sinceSwitchMs = clockMs() - lastTabSwitchAtMs
+        if (sinceSwitchMs in 0 until SENTINEL_SUPPRESS_AFTER_TAB_SWITCH_MS) return
         when (_uiState.value.currentTab) {
             HomeTab.RECOMMEND -> {
                 val s = _uiState.value.recommend
@@ -376,6 +400,14 @@ class HomeViewModel @Inject constructor(
     }
 
     companion object {
+        /**
+         * tab 切换后距底哨兵抑制窗口（任务J J3a，台账 #35）：500ms 覆盖 pager settle 动画
+         * （HorizontalPager snap spring ~300ms 量级）+ 周期行移除引发的 1~2 帧网格重布局回流；
+         * 代价是切换后 500ms 内用户真实滚到底的触底被吞一次（滚停后哨兵重触发自愈），
+         * 取更长时间会放大该代价。与壳层双击回顶窗口（400ms）同量级。
+         */
+        const val SENTINEL_SUPPRESS_AFTER_TAB_SWITCH_MS = 500L
+
         /** COS 流分页大小（协议 /assets 缺省 60；同真 cosOnly 优先） */
         const val COS_PAGE_SIZE = 60
 

@@ -353,4 +353,65 @@ class HomeViewModelTest {
         advanceUntilIdle()
         assertEquals(listOf("k2", "k3"), viewModel.uiState.value.rank.items.map { it.id })
     }
+
+    // ---------- 任务J J3a：tab 切换后距底哨兵抑制窗口（台账 #35） ----------
+
+    @Test
+    fun `切tab后短窗内距底哨兵被抑制 - 不追加换seed`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val repo = FakeMediaRepository().apply {
+                // ≤BATCH_SIZE 的小库：init 后 revealed=pulled.size，再触 onNearBottom 即走换 seed 分支
+                recommendationsResult = listOf(asset("r1"), asset("r2"))
+            }
+            val viewModel = viewModel(repo)
+            advanceUntilIdle()
+            assertEquals(listOf(1L), repo.recommendationsCalls) // init 一次拉满
+
+            // 可控时钟：RANK→推荐 切换后窗口内（周期行移除→视口变高→哨兵噪声时点）
+            var fakeNow = 1_000L
+            viewModel.clockMs = { fakeNow }
+            viewModel.switchTab(HomeTab.RANK) // 榜单懒加载挂 gate 在途，不影响推荐缓存
+            viewModel.switchTab(HomeTab.RECOMMEND) // 时间戳刷新为 fakeNow=1000
+            fakeNow += HomeViewModel.SENTINEL_SUPPRESS_AFTER_TAB_SWITCH_MS - 1 // 窗口内最后一刻
+            viewModel.onNearBottom()
+            advanceUntilIdle()
+            // 抑制生效：无第二次推荐请求（不追加换 seed——「切 tab 不重拉」）
+            assertEquals(listOf(1L), repo.recommendationsCalls)
+        }
+
+    @Test
+    fun `哨兵抑制窗口过后触底恢复正常追加`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val repo = FakeMediaRepository().apply {
+                recommendationsResult = listOf(asset("r1"), asset("r2"))
+            }
+            val viewModel = viewModel(repo)
+            advanceUntilIdle()
+            assertEquals(listOf(1L), repo.recommendationsCalls)
+
+            var fakeNow = 1_000L
+            viewModel.clockMs = { fakeNow }
+            viewModel.switchTab(HomeTab.RANK)
+            viewModel.switchTab(HomeTab.RECOMMEND)
+            fakeNow += HomeViewModel.SENTINEL_SUPPRESS_AFTER_TAB_SWITCH_MS // 恰出窗口
+            viewModel.onNearBottom()
+            advanceUntilIdle()
+            // 窗口外哨兵是真实触底：批次尽换 seed 追加（既有行为不回归）
+            assertEquals(listOf(1L, 2L), repo.recommendationsCalls)
+        }
+
+    @Test
+    fun `冷启动首布局不在抑制窗口 - init揭示后哨兵照常工作`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            // 初值 Long.MIN_VALUE（非 switchTab 写入）：冷启动布局回流的哨兵触发不被吞
+            val repo = FakeMediaRepository().apply {
+                recommendationsResult = listOf(asset("r1"), asset("r2"))
+            }
+            val viewModel = viewModel(repo)
+            advanceUntilIdle()
+            assertEquals(listOf(1L), repo.recommendationsCalls)
+            viewModel.onNearBottom() // 未经任何 switchTab（真实时钟差恒正且巨大）
+            advanceUntilIdle()
+            assertEquals(listOf(1L, 2L), repo.recommendationsCalls)
+        }
 }
