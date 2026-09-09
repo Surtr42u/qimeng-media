@@ -48,12 +48,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import java.time.LocalDate
 import media.qimeng.app.core.model.AlbumPanelDraft
+import media.qimeng.app.core.model.AssetSort
 import media.qimeng.app.core.model.PanelCountRange
 import media.qimeng.app.core.model.PanelDateRange
 import media.qimeng.app.core.model.PanelSizeRange
 import media.qimeng.app.core.model.PanelTagMode
 import media.qimeng.app.core.model.PANEL_DEFAULT_YEAR_FROM
 import media.qimeng.app.core.model.PANEL_MIN_YEAR
+import media.qimeng.app.core.model.SortOrder
 import media.qimeng.app.core.model.TagSummary
 import media.qimeng.app.core.ui.R
 import media.qimeng.app.core.ui.theme.QimengDimens
@@ -100,11 +102,23 @@ fun QimengFilterSheet(
                     .padding(horizontal = QimengDimens.FilterSheetPaddingHorizontal),
             ) {
                 SheetTitle()
-                // 排序方式/顺位两段已移除（任务G G5）：排序 pill 行提到相册页头（四档，对齐 Web
-                // AlbumsPage sort-row）后与本面板重复编辑同一 sort/order 状态——双入口档位集不一致
-                // （面板七档+顺位 vs 页头四档）会让已选态在两处互相脱钩，按「单一编辑入口」收敛到页头；
-                // 草稿仍携带当前 sort/order 原样往返（panelDraft/withPanelDraft 不动），应用面板其余
-                // 筛选不会重置已选排序档。模型/协议零改动。
+                // 排序方式/顺位两段（任务L L4 从 git 历史 5536d79^ 恢复，结构为本仓自己的
+                // Compose 实现）：G5 曾按「排序提页头」删除面板排序段，L4 按用户拍板删除页头
+                // 四档行、排序唯一编辑入口回归面板——两段位置/档序/文案逐字照旧版实录
+                // filter_sheet.txt（标题下首两段：排序方式七档 → 顺位二档），映射既有
+                // AlbumPanelDraft.sort/order（panelDraft/withPanelDraft 原样携带，零协议改动）。
+                FilterSection(
+                    label = stringResource(R.string.ui_filter_sort_section),
+                    options = sortOptions(),
+                    selected = draft.sort,
+                    onSelect = { onDraftChange(draft.copy(sort = it)) },
+                )
+                FilterSection(
+                    label = stringResource(R.string.ui_filter_order_section),
+                    options = orderOptions(),
+                    selected = draft.order,
+                    onSelect = { onDraftChange(draft.copy(order = it)) },
+                )
                 FilterSection(
                     label = stringResource(R.string.ui_filter_view_section),
                     options = viewRangeOptions(),
@@ -597,6 +611,25 @@ private fun SheetButton(text: String, filled: Boolean, onClick: () -> Unit, modi
 }
 
 // ---------- 选项文案表（实录逐字；值→协议映射在 core/model / :core:data，此处只陈列） ----------
+
+// 排序方式七档/顺位二档文案（任务L L4 随两段恢复）：逐字照旧版实录 filter_sheet.txt
+// （默认/文件日期/添加日期/观看次数/点击次数/文件大小/名字；降序/升序），档序同实录
+@Composable
+private fun sortOptions(): List<QimengRadioOption<AssetSort>> = listOf(
+    QimengRadioOption(AssetSort.DEFAULT, stringResource(R.string.ui_filter_sort_default)),
+    QimengRadioOption(AssetSort.FILE_DATE, stringResource(R.string.ui_filter_sort_file_date)),
+    QimengRadioOption(AssetSort.ADDED_DATE, stringResource(R.string.ui_filter_sort_added_date)),
+    QimengRadioOption(AssetSort.VIEW_COUNT, stringResource(R.string.ui_filter_sort_view_count)),
+    QimengRadioOption(AssetSort.PLAY_COUNT, stringResource(R.string.ui_filter_sort_play_count)),
+    QimengRadioOption(AssetSort.SIZE_BYTES, stringResource(R.string.ui_filter_sort_file_size)),
+    QimengRadioOption(AssetSort.NAME, stringResource(R.string.ui_filter_sort_name)),
+)
+
+@Composable
+private fun orderOptions(): List<QimengRadioOption<SortOrder>> = listOf(
+    QimengRadioOption(SortOrder.DESC, stringResource(R.string.ui_filter_order_desc)),
+    QimengRadioOption(SortOrder.ASC, stringResource(R.string.ui_filter_order_asc)),
+)
 
 @Composable
 private fun viewRangeOptions(): List<QimengRadioOption<PanelCountRange>> = listOf(

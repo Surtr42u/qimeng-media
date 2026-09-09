@@ -17,6 +17,7 @@ import media.qimeng.app.core.data.repository.TagNameConflictException
 import media.qimeng.app.core.model.AlbumPanelDraft
 import media.qimeng.app.core.model.AssetPageResult
 import media.qimeng.app.core.model.AssetQuery
+import media.qimeng.app.core.model.AssetSort
 import media.qimeng.app.core.model.FacetOption
 import media.qimeng.app.core.model.FacetParamKind
 import media.qimeng.app.core.model.FacetsQuery
@@ -26,6 +27,7 @@ import media.qimeng.app.core.model.MediaKind
 import media.qimeng.app.core.model.NameSuggestion
 import media.qimeng.app.core.model.PanelCountRange
 import media.qimeng.app.core.model.RankingPeriod
+import media.qimeng.app.core.model.SortOrder
 import media.qimeng.app.core.model.TagSummary
 import media.qimeng.app.core.testing.MainDispatcherRule
 
@@ -229,6 +231,72 @@ class AlbumFilterPanelTest {
         vm.deleteTag("tX") // 不存在的 id
         advanceUntilIdle()
         assertEquals(listOf("t1"), vm.panelState.value.draft.tagIds)
+    }
+
+    // ---------- 排序经面板（任务L L4：页头排序行删除，排序唯一编辑入口回归面板） ----------
+
+    @Test
+    fun `面板选排序 - 最旧档 sort=file_date order=asc 写入已应用态且请求携带`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val repo = FakeMediaRepository()
+            val vm = viewModel(repo)
+            vm.openFilterSheet()
+            // 面板「排序方式=文件日期 + 顺位=升序」即旧版「最旧」语义
+            vm.updatePanelDraft(
+                AlbumPanelDraft(sort = AssetSort.FILE_DATE, order = SortOrder.ASC),
+            )
+            vm.applyPanelDraft()
+            advanceUntilIdle()
+
+            assertEquals(AssetSort.FILE_DATE, vm.uiState.value.filter.sort)
+            assertEquals(SortOrder.ASC, vm.uiState.value.filter.order)
+            val appliedQuery = repo.assetsCalls.last().query
+            assertEquals(AssetSort.FILE_DATE, appliedQuery.sort)
+            assertEquals(SortOrder.ASC, appliedQuery.order)
+        }
+
+    @Test
+    fun `重置清空排序 - 回协议缺省 default-desc 且刷新请求不携带非默认排序`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val repo = FakeMediaRepository()
+            val vm = viewModel(repo)
+            // 先经面板应用非默认排序
+            vm.openFilterSheet()
+            vm.updatePanelDraft(AlbumPanelDraft(sort = AssetSort.NAME, order = SortOrder.ASC))
+            vm.applyPanelDraft()
+            advanceUntilIdle()
+            assertEquals(AssetSort.NAME, vm.uiState.value.filter.sort)
+
+            vm.openFilterSheet()
+            advanceUntilIdle() // 放行在途请求后再取基线，避免误记
+            val callsBeforeReset = repo.assetsCalls.size
+            vm.resetPanelDraft()
+            advanceUntilIdle()
+
+            assertEquals(AssetSort.DEFAULT, vm.uiState.value.filter.sort)
+            assertEquals(SortOrder.DESC, vm.uiState.value.filter.order)
+            assertEquals(AlbumPanelDraft(), vm.panelState.value.draft)
+            val resetQuery = repo.assetsCalls.last().query
+            assertEquals(AssetSort.DEFAULT, resetQuery.sort)
+            assertEquals(SortOrder.DESC, resetQuery.order)
+            assertEquals(callsBeforeReset + 1, repo.assetsCalls.size) // 重置触发一次刷新
+        }
+
+    @Test
+    fun `面板内改排序只动草稿 - 未应用前列表请求不携带`() = runTest(mainDispatcherRule.testDispatcher) {
+        val repo = FakeMediaRepository()
+        val vm = viewModel(repo)
+        vm.openFilterSheet()
+        advanceUntilIdle()
+        val callsBeforeEdit = repo.assetsCalls.size
+
+        vm.updatePanelDraft(AlbumPanelDraft(sort = AssetSort.VIEW_COUNT, order = SortOrder.ASC))
+        advanceUntilIdle()
+
+        // 草稿态：已应用态与请求不变（面板内点选不触发刷新——编辑态语义）
+        assertEquals(AssetSort.DEFAULT, vm.uiState.value.filter.sort)
+        assertEquals(callsBeforeEdit, repo.assetsCalls.size)
+        assertEquals(AssetSort.VIEW_COUNT, vm.panelState.value.draft.sort)
     }
 
     // ---------- 面板操作反馈分流（修复轮 P2-1） ----------

@@ -1,16 +1,13 @@
 package media.qimeng.app.feature.all
 
-import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -20,7 +17,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
@@ -28,13 +24,11 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.flow.collectLatest
 import media.qimeng.app.core.model.AlbumDim
-import media.qimeng.app.core.model.AssetSort
 import media.qimeng.app.core.model.FacetOption
 import media.qimeng.app.core.model.FourDimPillModel
 import media.qimeng.app.core.model.FourDimPills
 import media.qimeng.app.core.model.MediaAsset
 import media.qimeng.app.core.model.PillSpec
-import media.qimeng.app.core.model.SortOrder
 import media.qimeng.app.core.model.Zone
 import media.qimeng.app.core.model.groupByAlbumDim
 import media.qimeng.app.core.ui.component.QimengChipRow
@@ -64,21 +58,12 @@ private const val ALBUM_VALUE_COLLAPSE_THRESHOLD = 9
  *  web/src/styles/prototype.css）；以「行数」表达与胶囊实际高度解耦，视觉≈两行药丸 */
 private const val ALBUM_VALUE_COLLAPSED_LINES = 2
 
-/** 排序档（任务G G5：排序 pill 行提到页头）：文案与 Web AlbumsPage SORTS 四档逐字一致；
- *  value 映射 [media.qimeng.app.core.model.AlbumFilterState] 既有 sort+order 枚举（零协议改动） */
-private data class AlbumSortChoice(@StringRes val labelRes: Int, val sort: AssetSort, val order: SortOrder)
-
-private val ALBUM_SORT_CHOICES = listOf(
-    AlbumSortChoice(R.string.all_sort_featured, AssetSort.DEFAULT, SortOrder.DESC), // 精选
-    AlbumSortChoice(R.string.all_sort_newest, AssetSort.FILE_DATE, SortOrder.DESC), // 最新
-    AlbumSortChoice(R.string.all_sort_oldest, AssetSort.FILE_DATE, SortOrder.ASC), // 最旧
-    AlbumSortChoice(R.string.all_sort_by_name, AssetSort.NAME, SortOrder.ASC), // 按名称
-)
-
 /**
  * 相册页（M4-2，原全部页；任务G G5 对齐 Web AlbumsPage 形态）：标题+统计行+列数图标（双指缩放可调）+
- * 四维芯片行 + in-flow 值区块（文档流推挤网格，超阈值收起两行可展开）+ 常驻排序行（四档）+
+ * 四维芯片行 + in-flow 值区块（文档流推挤网格，超阈值收起两行可展开）+
  * 按 activeDim 分派的分组网格 + 下拉刷新 + cursor 分页。
+ * 排序不在页头（任务L L4 按用户拍板删除 G5 页头四档排序行——旧版无此行），
+ * 排序唯一编辑入口回归万能筛选面板「排序方式/顺位」两段（QimengFilterSheet）。
  */
 @Composable
 fun AllScreen(
@@ -192,48 +177,10 @@ fun AllScreen(
             }
         }
 
-        // 排序行（任务G G5：常驻页头，对齐 Web sort-row——上分隔线 + 「排序」标签 + 四档单选胶囊；
-        // 切档走 AlbumViewModel.selectSort 既有请求链，点当前档不重发）
-        HorizontalDivider(
-            modifier = Modifier.padding(
-                // Web .sort-row margin-top/padding-top 12px + border-top 1px
-                top = QimengDimens.SpaceL,
-                start = QimengDimens.ScreenPaddingHorizontal,
-                end = QimengDimens.ScreenPaddingHorizontal,
-            ),
-            thickness = QimengDimens.DividerThickness,
-            color = MaterialTheme.colorScheme.outlineVariant,
-        )
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(
-                    top = QimengDimens.SpaceL,
-                    start = QimengDimens.ScreenPaddingHorizontal,
-                    end = QimengDimens.ScreenPaddingHorizontal,
-                ),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = stringResource(R.string.all_sort_label),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                // Web .sort-label margin-right 2px
-                modifier = Modifier.padding(end = QimengDimens.SpaceXXS),
-            )
-            QimengChipRow(
-                pills = ALBUM_SORT_CHOICES.map { choice ->
-                    QimengPill(
-                        text = stringResource(choice.labelRes),
-                        selected = choice.sort == state.filter.sort && choice.order == state.filter.order,
-                    )
-                },
-                onPillClick = { index ->
-                    ALBUM_SORT_CHOICES[index].let { viewModel.selectSort(it.sort, it.order) }
-                },
-                modifier = Modifier.weight(1f),
-            )
-        }
+        // 页头排序行已删除（任务L L4，用户原话 #19「那就删除 就是截图这个,分区下面地这个排序」）：
+        // 旧版相册页无页头排序行（排序在万能筛选面板七档+顺位），G5 提到页头的四档行按拍板移除；
+        // 排序唯一编辑入口回归筛选面板（QimengFilterSheet 排序方式/顺位两段），列表默认排序
+        // 维持协议缺省 default/desc（AlbumFilterState 既有默认值，行为不变）。
 
         state.errorMessage?.let { message ->
             Text(
