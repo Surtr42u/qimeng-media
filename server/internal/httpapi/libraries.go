@@ -188,7 +188,7 @@ func (s *Server) PostApiV1Libraries(w http.ResponseWriter, r *http.Request) {
 // 空列表 = 不限制（返回 true），调用方无需先判 len。
 // 路径先 Clean；大小写不敏感比较（Windows/NAS 文件系统普遍如此，与
 // dirConflict 同风格）。前缀边界必须带分隔符：避免 /media 命中 /mediax
-//（与 filing.PathWithinRoot 同一防御；此处叠加 EqualFold 以适配盘符/目录名大小写）。
+// （与 filing.PathWithinRoot 同一防御；此处叠加 EqualFold 以适配盘符/目录名大小写）。
 func pathWithinAnyAllowedRoot(path string, allowedRoots []string) bool {
 	if len(allowedRoots) == 0 {
 		return true

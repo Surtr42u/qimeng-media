@@ -80,7 +80,8 @@ func uuidOrNil(s string) openapi_types.UUID {
 	if err != nil {
 		return openapi_types.UUID{}
 	}
-	return openapi_types.UUID(u)
+	// openapi_types.UUID 是 uuid.UUID 的类型别名（oapi-codegen uuid.TYPE），unconvert 判定直返即可
+	return u
 }
 
 // dirOf 取库内相对路径的目录部分（'/' 分隔；根目录文件返回空串）。
