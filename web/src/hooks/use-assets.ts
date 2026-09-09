@@ -11,7 +11,6 @@ import {
   getApiV1AssetsFacets,
   getApiV1Recommendations,
   getApiV1Sources,
-  postApiV1EventsView,
   putApiV1AssetsByAssetIdFavorite,
   putApiV1AssetsByAssetIdLike,
   putApiV1AssetsByAssetIdTags,
@@ -23,7 +22,7 @@ import {
 // facets 相关类型本文件也要用，import（而非仅 re-export）才能进当前模块作用域
 import type { AssetFacets, FacetBucket, Partition } from '@/api/generated'
 export type { AssetFacets, FacetBucket, Partition }
-import { randomUUID } from '@/hooks/use-session'
+import { getEventLedger } from '@/lib/ledger-instance'
 import type { MediaCardProps } from '@/components/media/MediaCard'
 import { unwrapSdkResult } from '@/lib/api-client'
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants'
@@ -259,17 +258,21 @@ export function facetToOptions(
 }
 
 /** 行为上报（DOMAIN_RULES §5：open/play/dwell；会话去重依赖每标签页 sessionId）。
- * clientEventId（任务L L5 幂等键）在此层统一生成——调用方只描述事件本身；
- * 打点本地账批会把它换成「先落本地、发送成功才删、失败同 id 重试」。 */
+ * 任务L L5 本地优先：事件先落 IndexedDB 账本（入账即生成 clientEventId 幂等键），
+ * 上报成功才删、失败保留同 id 重试（lib/event-ledger 单测锁定；断网补发由
+ * hooks/use-event-ledger 的触发通道承担）。组件侧 API 形态不变。 */
 export function useReportView() {
   return useMutation({
-    mutationFn: (body: {
+    mutationFn: async (body: {
       assetId: string
       kind: 'open' | 'play' | 'dwell'
       startedAt: string
       sessionId: string
       seconds?: number
-    }) => unwrapSdkResult(postApiV1EventsView({ body: { ...body, clientEventId: randomUUID() } })),
+    }) => {
+      const ledger = await getEventLedger()
+      await ledger.record(body)
+    },
   })
 }
 
