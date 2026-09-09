@@ -9,6 +9,16 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## feat(app): 任务L L1 补齐——网格间距回归旧版密度（卡间10dp）；组头样式按实录核对维持现状（2026-09-09 第一百七十七笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理，任务L L1 补齐小批；主代理验收拍板两项）
+
+- **网格密度回归**：QimengMediaGrid 的横纵 `spacedBy(SpaceM)` 归零（新增 GRID_INTER_ITEM_SPACING=0dp 常量并注明依据）——旧版卡间视觉距=卡片自 padding 5dp×2=10dp，此前 8dp 网格间距致总距 18dp 偏疏；卡片 5dp padding 与 contentPadding（8dp）不动
+- **组头样式核对**（不凭「主色粗体」一句话改）：查《QimengNAS\旧版UI实录》all_partition.xml / all_work_mode.xml 组头节点——uiautomator 树无色彩/字重属性，无法确证主色粗体；跨满行结构（x 48→1068 满宽）与 J2 现状一致 → **维持现状**，两案中取「无法确证保持」案
+- **走查**：qimeng_api35 复用（emu avd name 核实），重装后首页/相册重截——卡间收紧为 10dp 视觉距，组头跨满行与网格左缘对齐无贴边错位（dump 组头 bounds [21,498][1059,551] 满宽）；证据 %TEMP%\qimeng-l1-evidence\（shot-11/21-*-dense.png + dump）
+- 门禁四连绿：app-build/app-test/app-lint/make lint 全 EXIT=0（gate2-*.log）
+
+---
 ## fix(server): 清偿 P2 批遗留 server 存量 lint 债——libraries.go gofmt + assets_media_url.go 冗余转换（2026-09-09 第一百七十六笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理，任务L L1 批附带清偿；两处均为 P2 六条清偿 commit 28e9116 入库的存量问题，非本次 L1 改动引入）
