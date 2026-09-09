@@ -245,3 +245,255 @@ func (q *Queries) ListAllViewEvents(ctx context.Context) ([]ListAllViewEventsRow
 	}
 	return items, nil
 }
+
+const summarizeOpenWindow = `-- name: SummarizeOpenWindow :one
+
+SELECT CAST(COUNT(*) AS INTEGER) AS opens,
+       CAST(COUNT(DISTINCT v.asset_id) AS INTEGER) AS files
+FROM view_events v
+JOIN assets a ON a.asset_id = v.asset_id
+WHERE v.kind = 'open'
+  AND (CAST(?1 AS TEXT) = '' OR v.started_at >= ?1)
+`
+
+type SummarizeOpenWindowRow struct {
+	Opens int64
+	Files int64
+}
+
+// SummarizeOpenWindow: numerator/denominator pair for the overview
+// avgViewsPerFile field -- total opens vs DISTINCT assets with at least
+// one open in the window (both restricted to live assets, DOMAIN_RULES
+// 5: denominator 0 -> null is decided by the caller).
+func (q *Queries) SummarizeOpenWindow(ctx context.Context, fromTs string) (SummarizeOpenWindowRow, error) {
+	row := q.db.QueryRowContext(ctx, summarizeOpenWindow, fromTs)
+	var i SummarizeOpenWindowRow
+	err := row.Scan(&i.Opens, &i.Files)
+	return i, err
+}
+
+const topDwellAssets = `-- name: TopDwellAssets :many
+
+SELECT v.asset_id AS asset_id,
+       a.file_name AS file_name,
+       a.media_type AS media_type,
+       CAST(COALESCE(SUM(v.seconds), 0) AS INTEGER) AS value
+FROM view_events v
+JOIN assets a ON a.asset_id = v.asset_id
+WHERE v.kind = 'dwell'
+  AND (CAST(?1 AS TEXT) = '' OR v.started_at >= ?1)
+GROUP BY v.asset_id, a.file_name, a.media_type
+ORDER BY value DESC, v.asset_id
+LIMIT ?2
+`
+
+type TopDwellAssetsParams struct {
+	FromTs string
+	Lim    int64
+}
+
+type TopDwellAssetsRow struct {
+	AssetID   string
+	FileName  string
+	MediaType string
+	Value     int64
+}
+
+// TopDwellAssets: most-viewed by accumulated dwell seconds; files with
+// no dwell event in the window simply do not appear (DOMAIN_RULES 5).
+func (q *Queries) TopDwellAssets(ctx context.Context, arg TopDwellAssetsParams) ([]TopDwellAssetsRow, error) {
+	rows, err := q.db.QueryContext(ctx, topDwellAssets, arg.FromTs, arg.Lim)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []TopDwellAssetsRow
+	for rows.Next() {
+		var i TopDwellAssetsRow
+		if err := rows.Scan(
+			&i.AssetID,
+			&i.FileName,
+			&i.MediaType,
+			&i.Value,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const topOpenAssets = `-- name: TopOpenAssets :many
+
+
+SELECT v.asset_id AS asset_id,
+       a.file_name AS file_name,
+       a.media_type AS media_type,
+       CAST(COUNT(*) AS INTEGER) AS value
+FROM view_events v
+JOIN assets a ON a.asset_id = v.asset_id
+WHERE v.kind = 'open'
+  AND (CAST(?1 AS TEXT) = '' OR v.started_at >= ?1)
+GROUP BY v.asset_id, a.file_name, a.media_type
+ORDER BY value DESC, v.asset_id
+LIMIT ?2
+`
+
+type TopOpenAssetsParams struct {
+	FromTs string
+	Lim    int64
+}
+
+type TopOpenAssetsRow struct {
+	AssetID   string
+	FileName  string
+	MediaType string
+	Value     int64
+}
+
+// ============ Stats top-lists (protocol batch P2, 2026-09-09) ============
+// Windowed per-asset/author/tag aggregation straight from the event
+// stream (single source of truth, DOMAIN_RULES 5). Window semantics:
+// from_ts = RFC3339 timestamp string (store layout) of the window's
+// first local-calendar-day 00:00; empty string = no window (range=all),
+// same sentinel as media_type in daily_stats.sql. INNER JOIN assets on
+// purpose: the ranking must render file info, so deleted-asset events
+// (no FK, adr/0005) cannot appear here even though the overview still
+// counts them. Tie-break = primary key ascending for stable ordering.
+// TopOpenAssets: most-viewed by open count within the window.
+func (q *Queries) TopOpenAssets(ctx context.Context, arg TopOpenAssetsParams) ([]TopOpenAssetsRow, error) {
+	rows, err := q.db.QueryContext(ctx, topOpenAssets, arg.FromTs, arg.Lim)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []TopOpenAssetsRow
+	for rows.Next() {
+		var i TopOpenAssetsRow
+		if err := rows.Scan(
+			&i.AssetID,
+			&i.FileName,
+			&i.MediaType,
+			&i.Value,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const topOpenAuthors = `-- name: TopOpenAuthors :many
+
+SELECT au.id AS author_id,
+       au.display_name AS display_name,
+       CAST(COUNT(*) AS INTEGER) AS views
+FROM view_events v
+JOIN assets a ON a.asset_id = v.asset_id
+JOIN asset_authors aa ON aa.asset_id = a.asset_id
+JOIN authors au ON au.id = aa.author_id
+WHERE v.kind = 'open'
+  AND (CAST(?1 AS TEXT) = '' OR v.started_at >= ?1)
+GROUP BY au.id, au.display_name
+ORDER BY views DESC, au.id
+LIMIT ?2
+`
+
+type TopOpenAuthorsParams struct {
+	FromTs string
+	Lim    int64
+}
+
+type TopOpenAuthorsRow struct {
+	AuthorID    string
+	DisplayName string
+	Views       int64
+}
+
+// TopOpenAuthors: per-author open count within the window. Many-to-many
+// asset x author: one open counts once for EVERY linked author. COS
+// authors are counted via their COS-linked assets only (asset_authors
+// holds no regular links for them -- prefix isolation, DOMAIN_RULES 6).
+func (q *Queries) TopOpenAuthors(ctx context.Context, arg TopOpenAuthorsParams) ([]TopOpenAuthorsRow, error) {
+	rows, err := q.db.QueryContext(ctx, topOpenAuthors, arg.FromTs, arg.Lim)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []TopOpenAuthorsRow
+	for rows.Next() {
+		var i TopOpenAuthorsRow
+		if err := rows.Scan(&i.AuthorID, &i.DisplayName, &i.Views); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const topOpenTags = `-- name: TopOpenTags :many
+
+SELECT t.name AS tag,
+       CAST(COUNT(*) AS INTEGER) AS views
+FROM view_events v
+JOIN assets a ON a.asset_id = v.asset_id
+JOIN asset_tags atg ON atg.asset_id = a.asset_id
+JOIN tags t ON t.id = atg.tag_id
+WHERE v.kind = 'open'
+  AND (CAST(?1 AS TEXT) = '' OR v.started_at >= ?1)
+GROUP BY t.id, t.name
+ORDER BY views DESC, t.name
+LIMIT ?2
+`
+
+type TopOpenTagsParams struct {
+	FromTs string
+	Lim    int64
+}
+
+type TopOpenTagsRow struct {
+	Tag   string
+	Views int64
+}
+
+// TopOpenTags: per-tag open count within the window (tagged assets).
+func (q *Queries) TopOpenTags(ctx context.Context, arg TopOpenTagsParams) ([]TopOpenTagsRow, error) {
+	rows, err := q.db.QueryContext(ctx, topOpenTags, arg.FromTs, arg.Lim)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []TopOpenTagsRow
+	for rows.Next() {
+		var i TopOpenTagsRow
+		if err := rows.Scan(&i.Tag, &i.Views); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

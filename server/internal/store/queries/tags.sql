@@ -48,10 +48,32 @@ SELECT * FROM timeline_tags WHERE asset_id = ?
 ORDER BY time_millis, id;
 
 -- name: InsertTimelineTag :one
-INSERT INTO timeline_tags (id, asset_id, time_millis, name, created_at)
-VALUES (?, ?, ?, ?, ?) RETURNING *;
+-- color = '' means "no color set" (protocol batch P2, 2026-09-09;
+-- migration 0009 NOT NULL DEFAULT '' sentinel, DOMAIN_RULES 7).
+INSERT INTO timeline_tags (id, asset_id, time_millis, name, color, created_at)
+VALUES (?, ?, ?, ?, ?, ?) RETURNING *;
+
+-- name: UpdateTimelineTag :one
+-- Full replace of the mutable fields (time/name/color); scoped like the
+-- delete: tagId must belong to the given asset. 0 rows = unknown
+-- (assetId, tagId) pair, caller maps that to 404. Empty color clears it.
+UPDATE timeline_tags
+SET time_millis = ?, name = ?, color = ?
+WHERE id = ? AND asset_id = ?
+RETURNING *;
 
 -- name: DeleteTimelineTag :execrows
 -- Scoped delete: tagId must belong to the given asset, so a stale
 -- (assetId, tagId) pair from another asset can never delete a row.
 DELETE FROM timeline_tags WHERE id = ? AND asset_id = ?;
+
+-- name: RemoveAssetTagByName :execrows
+-- Per-tag unbinding (protocol batch P2, 2026-09-09): removes ONE
+-- (asset, tag) association and leaves every other association's
+-- created_at untouched -- unlike the replace-style PUT which re-inserts
+-- all rows. Idempotent at the association level: 0 rows affected =
+-- tag exists but was not attached (caller returns 204 either way;
+-- tag-name existence is checked by the caller first for a 404).
+DELETE FROM asset_tags
+WHERE asset_id = ?
+  AND tag_id = (SELECT id FROM tags WHERE name = ?);

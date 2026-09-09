@@ -45,6 +45,15 @@ JOIN assets ON assets.asset_id = asset_daily_stats.asset_id
 WHERE asset_daily_stats.day >= sqlc.arg(from_day)
   AND asset_daily_stats.day <= sqlc.arg(to_day)
   AND (CAST(sqlc.arg(media_type) AS TEXT) = '' OR assets.media_type = CAST(sqlc.arg(media_type) AS TEXT))
+  AND (CAST(sqlc.arg(source_bucket) AS TEXT) = ''
+       OR (sqlc.arg(source_bucket) = 'cos' AND EXISTS (
+           SELECT 1 FROM asset_authors aacos
+           JOIN authors aucos ON aucos.id = aacos.author_id
+           WHERE aacos.asset_id = asset_daily_stats.asset_id AND aucos.type = 'cos'))
+       OR (sqlc.arg(source_bucket) = 'normal' AND NOT EXISTS (
+           SELECT 1 FROM asset_authors aareg
+           JOIN authors aureg ON aureg.id = aareg.author_id
+           WHERE aareg.asset_id = asset_daily_stats.asset_id AND aureg.type = 'cos')))
 GROUP BY asset_daily_stats.day
 ORDER BY asset_daily_stats.day;
 
@@ -75,3 +84,23 @@ SELECT
     CAST(COALESCE(SUM(CASE WHEN assets.media_type = 'video' THEN 1 ELSE 0 END), 0) AS INTEGER) AS video_count,
     CAST(COALESCE(SUM(assets.size_bytes), 0) AS INTEGER) AS total_size_bytes
 FROM assets;
+
+-- CountCosLinkedAssets / CountRegularAssets: overview source inventory
+-- (protocol batch P2, 2026-09-09). The two predicates mirror the browse
+-- partition switch (DOMAIN_RULES 6): cos = linked to at least one cos
+-- author, regular = linked to none. normal_count + cos_count == total
+-- files (both scan assets directly, so the sum is exact).
+
+-- name: CountCosLinkedAssets :one
+SELECT CAST(COUNT(*) AS INTEGER) FROM assets a
+WHERE EXISTS (
+    SELECT 1 FROM asset_authors aacos
+    JOIN authors aucos ON aucos.id = aacos.author_id
+    WHERE aacos.asset_id = a.asset_id AND aucos.type = 'cos');
+
+-- name: CountRegularAssets :one
+SELECT CAST(COUNT(*) AS INTEGER) FROM assets a
+WHERE NOT EXISTS (
+    SELECT 1 FROM asset_authors aa
+    JOIN authors au ON au.id = aa.author_id
+    WHERE aa.asset_id = a.asset_id AND au.type = 'cos');

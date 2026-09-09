@@ -9,6 +9,42 @@ import (
 	"context"
 )
 
+const countCosLinkedAssets = `-- name: CountCosLinkedAssets :one
+
+SELECT CAST(COUNT(*) AS INTEGER) FROM assets a
+WHERE EXISTS (
+    SELECT 1 FROM asset_authors aacos
+    JOIN authors aucos ON aucos.id = aacos.author_id
+    WHERE aacos.asset_id = a.asset_id AND aucos.type = 'cos')
+`
+
+// CountCosLinkedAssets / CountRegularAssets: overview source inventory
+// (protocol batch P2, 2026-09-09). The two predicates mirror the browse
+// partition switch (DOMAIN_RULES 6): cos = linked to at least one cos
+// author, regular = linked to none. normal_count + cos_count == total
+// files (both scan assets directly, so the sum is exact).
+func (q *Queries) CountCosLinkedAssets(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countCosLinkedAssets)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const countRegularAssets = `-- name: CountRegularAssets :one
+SELECT CAST(COUNT(*) AS INTEGER) FROM assets a
+WHERE NOT EXISTS (
+    SELECT 1 FROM asset_authors aa
+    JOIN authors au ON au.id = aa.author_id
+    WHERE aa.asset_id = a.asset_id AND au.type = 'cos')
+`
+
+func (q *Queries) CountRegularAssets(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countRegularAssets)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const deleteAllAssetDailyStats = `-- name: DeleteAllAssetDailyStats :exec
 
 DELETE FROM asset_daily_stats
@@ -65,14 +101,24 @@ JOIN assets ON assets.asset_id = asset_daily_stats.asset_id
 WHERE asset_daily_stats.day >= ?1
   AND asset_daily_stats.day <= ?2
   AND (CAST(?3 AS TEXT) = '' OR assets.media_type = CAST(?3 AS TEXT))
+  AND (CAST(?4 AS TEXT) = ''
+       OR (?4 = 'cos' AND EXISTS (
+           SELECT 1 FROM asset_authors aacos
+           JOIN authors aucos ON aucos.id = aacos.author_id
+           WHERE aacos.asset_id = asset_daily_stats.asset_id AND aucos.type = 'cos'))
+       OR (?4 = 'normal' AND NOT EXISTS (
+           SELECT 1 FROM asset_authors aareg
+           JOIN authors aureg ON aureg.id = aareg.author_id
+           WHERE aareg.asset_id = asset_daily_stats.asset_id AND aureg.type = 'cos')))
 GROUP BY asset_daily_stats.day
 ORDER BY asset_daily_stats.day
 `
 
 type SumDailyStatsBetweenParams struct {
-	FromDay   string
-	ToDay     string
-	MediaType string
+	FromDay      string
+	ToDay        string
+	MediaType    string
+	SourceBucket string
 }
 
 type SumDailyStatsBetweenRow struct {
@@ -97,7 +143,12 @@ type SumDailyStatsBetweenRow struct {
 // Adding a third aggregation path would just widen the surface that
 // can drift from the event-stream truth.
 func (q *Queries) SumDailyStatsBetween(ctx context.Context, arg SumDailyStatsBetweenParams) ([]SumDailyStatsBetweenRow, error) {
-	rows, err := q.db.QueryContext(ctx, sumDailyStatsBetween, arg.FromDay, arg.ToDay, arg.MediaType)
+	rows, err := q.db.QueryContext(ctx, sumDailyStatsBetween,
+		arg.FromDay,
+		arg.ToDay,
+		arg.MediaType,
+		arg.SourceBucket,
+	)
 	if err != nil {
 		return nil, err
 	}

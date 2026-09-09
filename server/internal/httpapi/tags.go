@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/google/uuid"
@@ -152,6 +153,35 @@ func (s *Server) PutApiV1AssetsAssetIdTags(w http.ResponseWriter, r *http.Reques
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// timelineTagColorRe 颜色协议形态（openapi pattern 同款）：hex 6 位。
+var timelineTagColorRe = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
+
+// normalizeTimelineColor 校验并归一 color 入参（协议批 P2，DOMAIN_RULES §7）：
+// nil/空串 → ""（不设置/清除，落库空串哨兵 = 响应省略字段）；合法 hex6 →
+// 原值；非法 → 返回 false（调用方 400，防垃圾值入库）。
+func normalizeTimelineColor(raw *string) (string, bool) {
+	if raw == nil || *raw == "" {
+		return "", true
+	}
+	if !timelineTagColorRe.MatchString(*raw) {
+		return "", false
+	}
+	return *raw, true
+}
+
+// genTimelineTag db 行 → 协议对象：color 空串哨兵 → 字段省略
+// （客户端自兜底，DOMAIN_RULES §7「缺省 = 服务端不给」）。
+func genTimelineTag(t db.TimelineTag) gen.TimelineTag {
+	id, name := t.ID, t.Name
+	ms := t.TimeMillis
+	out := gen.TimelineTag{Id: &id, TimeMillis: &ms, Name: &name}
+	if t.Color != "" {
+		c := t.Color
+		out.Color = &c
+	}
+	return out
+}
+
 // GetApiV1AssetsAssetIdTimelineTags 时间轴标签列表（按时间点升序）。
 func (s *Server) GetApiV1AssetsAssetIdTimelineTags(w http.ResponseWriter, r *http.Request, assetID gen.AssetId) {
 	if err := s.ensureAsset(w, r, assetID.String()); err != nil {
@@ -164,18 +194,17 @@ func (s *Server) GetApiV1AssetsAssetIdTimelineTags(w http.ResponseWriter, r *htt
 	}
 	items := make([]gen.TimelineTag, 0, len(rows))
 	for _, t := range rows {
-		id, name := t.ID, t.Name
-		ms := t.TimeMillis
-		items = append(items, gen.TimelineTag{Id: &id, TimeMillis: &ms, Name: &name})
+		items = append(items, genTimelineTag(t))
 	}
 	writeJSON(w, http.StatusOK, items)
 }
 
-// PostApiV1AssetsAssetIdTimelineTags 添加时间轴标签。
+// PostApiV1AssetsAssetIdTimelineTags 添加时间轴标签（color 可选）。
 func (s *Server) PostApiV1AssetsAssetIdTimelineTags(w http.ResponseWriter, r *http.Request, assetID gen.AssetId) {
 	var req struct {
-		TimeMillis int64  `json:"timeMillis"`
-		Name       string `json:"name"`
+		TimeMillis int64   `json:"timeMillis"`
+		Name       string  `json:"name"`
+		Color      *string `json:"color"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -183,6 +212,11 @@ func (s *Server) PostApiV1AssetsAssetIdTimelineTags(w http.ResponseWriter, r *ht
 	name := strings.TrimSpace(req.Name)
 	if name == "" || req.TimeMillis < 0 {
 		writeErr(w, http.StatusBadRequest, codeInvalidParam, "timeMillis 与 name 必填（时间点非负）")
+		return
+	}
+	color, ok := normalizeTimelineColor(req.Color)
+	if !ok {
+		writeErr(w, http.StatusBadRequest, codeInvalidParam, "color 须为 hex 6 位（如 #d6336c）或空")
 		return
 	}
 	if err := s.ensureAsset(w, r, assetID.String()); err != nil {
@@ -193,14 +227,81 @@ func (s *Server) PostApiV1AssetsAssetIdTimelineTags(w http.ResponseWriter, r *ht
 		AssetID:    assetID.String(),
 		TimeMillis: req.TimeMillis,
 		Name:       name,
+		Color:      color,
 		CreatedAt:  store.FormatTimestamp(s.now()),
 	})
 	if err != nil {
 		s.internalErr(w, "创建时间轴标签", err)
 		return
 	}
-	id := t.ID
-	writeJSON(w, http.StatusCreated, gen.TimelineTag{Id: &id, TimeMillis: &req.TimeMillis, Name: &name})
+	writeJSON(w, http.StatusCreated, genTimelineTag(t))
+}
+
+// PutApiV1AssetsAssetIdTimelineTagsTagId 更新时间轴标签（协议批 P2 新增：
+// 改名/改色/改时间点的入口）。全量替换语义：timeMillis/name 必填（校验同
+// POST），color 省略或空串 = 清除颜色。tagId 不属于该资产或不存在 → 404。
+func (s *Server) PutApiV1AssetsAssetIdTimelineTagsTagId(w http.ResponseWriter, r *http.Request, assetID gen.AssetId, tagID string) {
+	var req struct {
+		TimeMillis int64   `json:"timeMillis"`
+		Name       string  `json:"name"`
+		Color      *string `json:"color"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" || req.TimeMillis < 0 {
+		writeErr(w, http.StatusBadRequest, codeInvalidParam, "timeMillis 与 name 必填（时间点非负）")
+		return
+	}
+	color, ok := normalizeTimelineColor(req.Color)
+	if !ok {
+		writeErr(w, http.StatusBadRequest, codeInvalidParam, "color 须为 hex 6 位（如 #d6336c）或空")
+		return
+	}
+	if err := s.ensureAsset(w, r, assetID.String()); err != nil {
+		return
+	}
+	t, err := s.q.UpdateTimelineTag(r.Context(), db.UpdateTimelineTagParams{
+		TimeMillis: req.TimeMillis, Name: name, Color: color,
+		ID: tagID, AssetID: assetID.String(),
+	})
+	if errors.Is(err, sql.ErrNoRows) {
+		writeErr(w, http.StatusNotFound, codeNotFound, "时间轴标签不存在")
+		return
+	} else if err != nil {
+		s.internalErr(w, "更新时间轴标签", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, genTimelineTag(t))
+}
+
+// DeleteApiV1AssetsAssetIdTagsTag 逐条解除单标签关联（协议批 P2，
+// DOMAIN_RULES §7）：只删该条，其余关联 created_at 不动（区别于整体替换
+// PUT 会刷新全部关联时间）。幂等：标签存在但未挂载 → 204；资产不存在
+// 或标签池无此名 → 404（拼错标签名不静默吞掉）。
+func (s *Server) DeleteApiV1AssetsAssetIdTagsTag(w http.ResponseWriter, r *http.Request, assetID gen.AssetId, tag string) {
+	if err := s.ensureAsset(w, r, assetID.String()); err != nil {
+		return
+	}
+	if _, err := s.q.GetTagByName(r.Context(), tag); errors.Is(err, sql.ErrNoRows) {
+		writeErr(w, http.StatusNotFound, codeNotFound, "标签不存在")
+		return
+	} else if err != nil {
+		s.internalErr(w, "查询标签", err)
+		return
+	}
+	n, err := s.q.RemoveAssetTagByName(r.Context(), db.RemoveAssetTagByNameParams{
+		AssetID: assetID.String(), Name: tag,
+	})
+	if err != nil {
+		s.internalErr(w, "解除标签关联", err)
+		return
+	}
+	if n > 0 {
+		s.publishLibraryChanged()
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // DeleteApiV1AssetsAssetIdTimelineTagsTagId 删除时间轴标签（tagId 必须属于

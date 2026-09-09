@@ -243,6 +243,16 @@ func idForIndex(i int) string {
 // 第八步验证 0001 down（业务表全删）。
 func TestMigrateDownThenUp(t *testing.T) {
 	conn, _ := openTestDB(t) // 已 up
+	// 第零步：0009 down（时间轴标签颜色列删除、0008 对象保留）
+	if err := MigrateDown(conn, 1); err != nil {
+		t.Fatalf("MigrateDown 失败: %v", err)
+	}
+	if columnExists(t, conn, "timeline_tags", "color") {
+		t.Error("0009 down 后 timeline_tags.color 仍存在（0009 down 缺 DROP COLUMN）")
+	}
+	if !columnExists(t, conn, "assets", "cos_work") {
+		t.Error("0009 down 后 assets.cos_work 应保留（只回退了一个版本）")
+	}
 	// 第一步：0008 down（COS 作品列删除、0007 对象保留）
 	if err := MigrateDown(conn, 1); err != nil {
 		t.Fatalf("MigrateDown 失败: %v", err)

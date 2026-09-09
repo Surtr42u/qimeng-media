@@ -481,6 +481,22 @@ paths:
             schema: { type: object, required: [tagIds], properties: { tagIds: { type: array, items: { type: string } } } }
       responses:
         "204": { description: OK }
+  /api/v1/assets/{assetId}/tags/{tag}:
+    delete:
+      summary: 逐条解除单个标签关联（DOMAIN_RULES §7）
+      description: |
+        只删除该资产上指定标签名的一条关联，其余关联的 created_at 一律不动
+        （区别于 PUT /assets/{assetId}/tags 整体替换会刷新全部关联时间）。
+        幂等语义：标签存在但该资产本就未挂载 → 204（无变更照常 204）；
+        资产不存在或标签池中无此名标签 → 404（标签名拼错不静默吞掉）。
+        {tag} 为 URL 编码后的标签名；含路径分隔符 / 的标签名不适用本端点
+        （路径单段限制），此类标签的解除用 PUT 全量替换承载。
+      parameters:
+        - { $ref: "#/components/parameters/AssetId" }
+        - { name: tag, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: 已解除（或本就未挂载，幂等） }
+        "404": { $ref: "#/components/responses/NotFound" }
   /api/v1/authors:
     get:
       summary: 作者列表（常规与 COS 统一返回，type 区分；排序与筛选见 DOMAIN_RULES §6）
@@ -548,10 +564,41 @@ paths:
         required: true
         content:
           application/json:
-            schema: { type: object, required: [timeMillis, name], properties: { timeMillis: { type: integer, format: int64 }, name: { type: string } } }
+            schema:
+              type: object
+              required: [timeMillis, name]
+              properties:
+                timeMillis: { type: integer, format: int64 }
+                name: { type: string }
+                color: { type: string, pattern: '^(#[0-9a-fA-F]{6})?$', description: 可选颜色（hex 6 位，如 "#d6336c"）；缺省/空串=不设置颜色 }
       responses:
         "201": { description: 已创建, content: { application/json: { schema: { $ref: "#/components/schemas/TimelineTag" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
   /api/v1/assets/{assetId}/timeline-tags/{tagId}:
+    put:
+      summary: 更新时间轴标签（改名/改色/改时间点）
+      description: |
+        全量替换语义：提交 timeMillis 与 name 必填（校验同 POST——name 非空、
+        timeMillis 非负），color 可选——省略或空串 = 清除颜色。tagId 必须
+        属于该资产（不存在或不属于 → 404）。返回更新后的完整对象。
+      parameters:
+        - { $ref: "#/components/parameters/AssetId" }
+        - { name: tagId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [timeMillis, name]
+              properties:
+                timeMillis: { type: integer, format: int64 }
+                name: { type: string }
+                color: { type: string, pattern: '^(#[0-9a-fA-F]{6})?$', description: 可选颜色；缺省/空串 = 清除颜色 }
+      responses:
+        "200": { description: 已更新, content: { application/json: { schema: { $ref: "#/components/schemas/TimelineTag" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
     delete:
       summary: 删除时间轴标签
       parameters:
@@ -583,7 +630,10 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/AssetSummary" } } } } }
   /api/v1/stats/overview:
     get:
-      summary: 总览（文件数/类型分布/累计浏览/今日浏览/库容量等）
+      summary: 总览（文件数/类型分布/累计浏览/今日浏览/库容量/来源库存等）
+      description: range 仅作用于 avgViewsPerFile 的窗口（缺省 all=全时段）；其余字段为固定口径（todayViews=今日、totalViews=累计），不受 range 影响。
+      parameters:
+        - { name: range, in: query, schema: { type: string, enum: [day, week, month, quarter, year, all, 7d, 90d], default: all }, description: avgViewsPerFile 的统计窗口（枚举与 /stats/trends 同款） }
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/StatsOverview" } } } }
   /api/v1/stats/trends:
@@ -592,8 +642,43 @@ paths:
       parameters:
         - { name: range, in: query, schema: { type: string, enum: [day, week, month, quarter, year, all, 7d, 90d], default: month } }
         - { name: mediaType, in: query, schema: { $ref: "#/components/schemas/MediaType" } }
+        - { name: source, in: query, schema: { type: string, enum: [normal, cos] }, description: '来源桶过滤（口径同 §6 分区判定，不新造）：normal=仅不关联 COS 作者的资产、cos=仅关联 COS 作者的资产；缺省=不过滤（常规∪COS）' }
       responses:
         "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/TrendBucket" } } } } }
+  /api/v1/stats/most-viewed:
+    get:
+      summary: 常看文件（窗口内浏览次数或停留时长倒序，DOMAIN_RULES §5）
+      description: |
+        metric=views（缺省）：按窗口内 kind='open' 事件次数倒序；
+        metric=seconds：按窗口内 dwell 事件 seconds 累加倒序（无 dwell 事件
+        的文件不参与 seconds 榜）。仅现存资产入榜（已删资产事件不计）。
+        同分 tie-break = assetId 字典序升序（排序确定性）。
+      parameters:
+        - { name: range, in: query, schema: { type: string, enum: [day, week, month, quarter, year, all, 7d, 90d], default: month } }
+        - { name: metric, in: query, schema: { type: string, enum: [views, seconds], default: views } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 }, description: 服务端钳制：缺省 20，>50 取 50，<1 取默认 20 }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/MostViewedItem" } } } } }
+  /api/v1/stats/top-authors:
+    get:
+      summary: 常看作者（窗口内该作者关联资产被打开次数倒序，DOMAIN_RULES §5/§6）
+      description: |
+        窗口内该作者关联资产的 open 事件次数倒序；资产与作者多对多，一次
+        open 对每个关联作者各计一次。COS 作者按其 COS 关联资产计（前缀
+        隔离天然成立）。仅现存资产的事件计入。
+      parameters:
+        - { name: range, in: query, schema: { type: string, enum: [day, week, month, quarter, year, all, 7d, 90d], default: month } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 }, description: 服务端钳制：缺省 20，>50 取 50，<1 取默认 20 }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/TopAuthorItem" } } } } }
+  /api/v1/stats/top-tags:
+    get:
+      summary: 常看标签（窗口内带该标签资产被打开次数倒序，DOMAIN_RULES §5/§7）
+      parameters:
+        - { name: range, in: query, schema: { type: string, enum: [day, week, month, quarter, year, all, 7d, 90d], default: month } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 }, description: 服务端钳制：缺省 20，>50 取 50，<1 取默认 20 }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/TopTagItem" } } } } }
   /api/v1/recommendations/prefs:
     get:
       summary: 读取推荐偏好（9 维权重）
@@ -991,6 +1076,7 @@ components:
         id:        { type: string }
         timeMillis: { type: integer, format: int64 }
         name:      { type: string }
+        color:     { type: string, pattern: '^(#[0-9a-fA-F]{6})?$', description: '十六进制颜色（如 "#d6336c"）；缺省/空 = 服务端未存储颜色，客户端自兜底。预设类型不入协议，客户端按 color 自持（2026-09-09 协议批 P2）' }
 
     TxtImportResult:
       type: object
@@ -1014,6 +1100,34 @@ components:
         totalSizeBytes: { type: integer, format: int64 }
         todayViews:  { type: integer }
         totalViews:  { type: integer, format: int64 }
+        sourceNormalCount: { type: integer, description: '常规来源库存：不关联 COS 作者的现存资产数（谓词同 §6 分区判定）' }
+        sourceCosCount: { type: integer, description: 'COS 来源库存：关联 COS 作者的现存资产数' }
+        avgViewsPerFile: { type: [number, "null"], format: double, description: '平均浏览次数 = 窗口内现存资产 open 事件总数 ÷ 窗口内至少一次 open 的不同现存文件数；窗口由本端点 range 参数决定（缺省 all=全时段）；分母 0 → null' }
+
+    MostViewedItem:
+      type: object
+      required: [assetId, fileName, mediaType, value]
+      properties:
+        assetId:  { type: string, format: uuid }
+        fileName: { type: string }
+        mediaType: { $ref: "#/components/schemas/MediaType" }
+        thumbUrl: { type: string, description: 签名缩略图 URL（与 AssetSummary.thumbUrl 同一签名机制） }
+        value:    { type: integer, description: metric=views 时 = 窗口内 open 事件次数；metric=seconds 时 = 窗口内 dwell 秒数累计 }
+
+    TopAuthorItem:
+      type: object
+      required: [authorId, displayName, views]
+      properties:
+        authorId:    { type: string, description: 常规=generateAuthorId 规则；COS=cos_ 前缀 }
+        displayName: { type: string }
+        views:       { type: integer, description: 窗口内该作者关联资产的 open 事件次数 }
+
+    TopTagItem:
+      type: object
+      required: [tag, views]
+      properties:
+        tag:   { type: string, description: 标签名（tags.name，全局唯一） }
+        views: { type: integer, description: 窗口内带该标签资产的 open 事件次数 }
 
     TrendBucket:
       type: object

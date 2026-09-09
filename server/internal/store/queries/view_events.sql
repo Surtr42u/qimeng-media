@@ -72,3 +72,91 @@ WHERE kind = 'open' AND started_at >= ? AND started_at < ?;
 SELECT asset_id, kind, session_id, started_at, seconds
 FROM view_events
 ORDER BY id;
+
+-- ============ Stats top-lists (protocol batch P2, 2026-09-09) ============
+-- Windowed per-asset/author/tag aggregation straight from the event
+-- stream (single source of truth, DOMAIN_RULES 5). Window semantics:
+-- from_ts = RFC3339 timestamp string (store layout) of the window's
+-- first local-calendar-day 00:00; empty string = no window (range=all),
+-- same sentinel as media_type in daily_stats.sql. INNER JOIN assets on
+-- purpose: the ranking must render file info, so deleted-asset events
+-- (no FK, adr/0005) cannot appear here even though the overview still
+-- counts them. Tie-break = primary key ascending for stable ordering.
+
+-- TopOpenAssets: most-viewed by open count within the window.
+
+-- name: TopOpenAssets :many
+SELECT v.asset_id AS asset_id,
+       a.file_name AS file_name,
+       a.media_type AS media_type,
+       CAST(COUNT(*) AS INTEGER) AS value
+FROM view_events v
+JOIN assets a ON a.asset_id = v.asset_id
+WHERE v.kind = 'open'
+  AND (CAST(sqlc.arg(from_ts) AS TEXT) = '' OR v.started_at >= sqlc.arg(from_ts))
+GROUP BY v.asset_id, a.file_name, a.media_type
+ORDER BY value DESC, v.asset_id
+LIMIT sqlc.arg(lim);
+
+-- TopDwellAssets: most-viewed by accumulated dwell seconds; files with
+-- no dwell event in the window simply do not appear (DOMAIN_RULES 5).
+
+-- name: TopDwellAssets :many
+SELECT v.asset_id AS asset_id,
+       a.file_name AS file_name,
+       a.media_type AS media_type,
+       CAST(COALESCE(SUM(v.seconds), 0) AS INTEGER) AS value
+FROM view_events v
+JOIN assets a ON a.asset_id = v.asset_id
+WHERE v.kind = 'dwell'
+  AND (CAST(sqlc.arg(from_ts) AS TEXT) = '' OR v.started_at >= sqlc.arg(from_ts))
+GROUP BY v.asset_id, a.file_name, a.media_type
+ORDER BY value DESC, v.asset_id
+LIMIT sqlc.arg(lim);
+
+-- TopOpenAuthors: per-author open count within the window. Many-to-many
+-- asset x author: one open counts once for EVERY linked author. COS
+-- authors are counted via their COS-linked assets only (asset_authors
+-- holds no regular links for them -- prefix isolation, DOMAIN_RULES 6).
+
+-- name: TopOpenAuthors :many
+SELECT au.id AS author_id,
+       au.display_name AS display_name,
+       CAST(COUNT(*) AS INTEGER) AS views
+FROM view_events v
+JOIN assets a ON a.asset_id = v.asset_id
+JOIN asset_authors aa ON aa.asset_id = a.asset_id
+JOIN authors au ON au.id = aa.author_id
+WHERE v.kind = 'open'
+  AND (CAST(sqlc.arg(from_ts) AS TEXT) = '' OR v.started_at >= sqlc.arg(from_ts))
+GROUP BY au.id, au.display_name
+ORDER BY views DESC, au.id
+LIMIT sqlc.arg(lim);
+
+-- TopOpenTags: per-tag open count within the window (tagged assets).
+
+-- name: TopOpenTags :many
+SELECT t.name AS tag,
+       CAST(COUNT(*) AS INTEGER) AS views
+FROM view_events v
+JOIN assets a ON a.asset_id = v.asset_id
+JOIN asset_tags atg ON atg.asset_id = a.asset_id
+JOIN tags t ON t.id = atg.tag_id
+WHERE v.kind = 'open'
+  AND (CAST(sqlc.arg(from_ts) AS TEXT) = '' OR v.started_at >= sqlc.arg(from_ts))
+GROUP BY t.id, t.name
+ORDER BY views DESC, t.name
+LIMIT sqlc.arg(lim);
+
+-- SummarizeOpenWindow: numerator/denominator pair for the overview
+-- avgViewsPerFile field -- total opens vs DISTINCT assets with at least
+-- one open in the window (both restricted to live assets, DOMAIN_RULES
+-- 5: denominator 0 -> null is decided by the caller).
+
+-- name: SummarizeOpenWindow :one
+SELECT CAST(COUNT(*) AS INTEGER) AS opens,
+       CAST(COUNT(DISTINCT v.asset_id) AS INTEGER) AS files
+FROM view_events v
+JOIN assets a ON a.asset_id = v.asset_id
+WHERE v.kind = 'open'
+  AND (CAST(sqlc.arg(from_ts) AS TEXT) = '' OR v.started_at >= sqlc.arg(from_ts));
