@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import media.qimeng.app.core.data.repository.MediaBatchIndex
 import media.qimeng.app.core.data.repository.StatsRepository
 import media.qimeng.app.core.model.DEFAULT_STATS_RANGE
 import media.qimeng.app.core.model.MostViewedEntry
@@ -80,6 +81,7 @@ data class StatsDetailUiState(
 class StatsDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val statsRepository: StatsRepository,
+    private val batchIndex: MediaBatchIndex,
 ) : ViewModel() {
 
     /** 模式与档位（路由参数解析；非法值回落默认——路由参数不可信原则） */
@@ -174,6 +176,15 @@ class StatsDetailViewModel @Inject constructor(
                 _uiState.update { it.copy(loading = false, loadFailed = true) }
             }
         }
+    }
+
+    /**
+     * 常看文件（seconds 榜）条目进详情前的批次上下文写入（任务J J1，GUIDE_UI L218-224）：
+     * 「已加载=当前显示清单」——榜单整表 Top20 即批次，快照式整体替换 [MediaBatchIndex.ids]；
+     * 与 [StatsViewModel.enterDetail]（主页面 Top3 卡）同款范式，参数保留 assetId 对齐签名。
+     */
+    fun enterDetail(assetId: String) {
+        batchIndex.ids = _uiState.value.secondsRanking.map { it.assetId }
     }
 
     /** 分布统计：overview 类型库存 + 来源构成（sourceNormalCount/sourceCosCount，N3 #31b 解冻） */

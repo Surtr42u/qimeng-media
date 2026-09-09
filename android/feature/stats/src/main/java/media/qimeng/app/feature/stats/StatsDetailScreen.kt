@@ -1,6 +1,7 @@
 package media.qimeng.app.feature.stats
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -49,13 +50,17 @@ import media.qimeng.app.core.ui.component.QimengTopBar
  * - DISTRIBUTION：「类型分布对比」卡 +「来源构成对比」卡（overview sourceCounts，N3 #31b 解冻）——
  *   QimengRankCard 形态 + 相对第一名的进度条（GUIDE_UI L229）+ 前三名排名数字高亮（L247 同节）；
  * - 空态「暂无数据」（L247）。
- * 跳转链记档（REPLICATION_GAPS §3.3 裁定 7）：GUIDE L218-224 的文件/作者/标签条目跳转
- * （文件→详情/作者→作者页/标签→搜索页）——Search 路由 initialQuery 管道已就位，本批先落
- * 榜单呈现，条目点击跳转不在 N4 范围（记遗留）。
+ * 详情页跳转链（任务J J1，GUIDE_UI L218-224；REPLICATION_GAPS §3.3 裁定 7 清偿）：
+ * seconds 榜条目→详情页（榜单作批次上下文，[StatsDetailViewModel.enterDetail] 写 Top20
+ * 快照清单）；常看作者条目→作者集合页（真实 authorId）；常看标签条目→搜索页携词——
+ * 经回调上抛壳层导航。分布行无协议内跳转落点，维持不可点击（原记档口径不变）。
  */
 @Composable
 fun StatsDetailScreen(
     onBack: () -> Unit,
+    onOpenAsset: (assetId: String) -> Unit,
+    onOpenAuthor: (authorId: String, displayName: String) -> Unit,
+    onOpenTagSearch: (tag: String) -> Unit,
     viewModel: StatsDetailViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -87,11 +92,30 @@ fun StatsDetailScreen(
                         }
                     }
                     StatsDetailMode.MOST_VIEWED -> {
-                        item { SecondsRankingCard(entries = state.secondsRanking) }
+                        item {
+                            SecondsRankingCard(
+                                entries = state.secondsRanking,
+                                onEntryClick = { entry ->
+                                    // 榜单作批次上下文（J1）：Top20 快照清单先写再导航
+                                    viewModel.enterDetail(entry.assetId)
+                                    onOpenAsset(entry.assetId)
+                                },
+                            )
+                        }
                     }
                     StatsDetailMode.AUTHORS_TAGS -> {
-                        item { AuthorsRankingCard(entries = state.topAuthors) }
-                        item { TagsRankingCard(entries = state.topTags) }
+                        item {
+                            AuthorsRankingCard(
+                                entries = state.topAuthors,
+                                onEntryClick = { entry -> onOpenAuthor(entry.authorId, entry.displayName) },
+                            )
+                        }
+                        item {
+                            TagsRankingCard(
+                                entries = state.topTags,
+                                onEntryClick = { entry -> onOpenTagSearch(entry.tag) },
+                            )
+                        }
                     }
                     StatsDetailMode.DISTRIBUTION -> {
                         item { TypeDistributionCard(entries = state.distribution) }
@@ -212,10 +236,14 @@ private fun RankRows(entries: List<TypeStockEntry>) {
 
 /**
  * 「常看文件（按时长）」榜（MOST_VIEWED 模式）：most-viewed metric=seconds Top20——
- * 值=窗口内 dwell 秒数累计（formatDurationSeconds 人读化），相对第一名进度条。
+ * 值=窗口内 dwell 秒数累计（formatDurationSeconds 人读化），相对第一名进度条；
+ * 条目可点击进详情（J1 跳转链，榜单作批次上下文）。
  */
 @Composable
-private fun SecondsRankingCard(entries: List<MostViewedEntry>) {
+private fun SecondsRankingCard(
+    entries: List<MostViewedEntry>,
+    onEntryClick: (MostViewedEntry) -> Unit,
+) {
     QimengRankCard(modifier = Modifier.fillMaxWidth()) {
         Text(text = "常看文件（按时长）", style = MaterialTheme.typography.titleMedium)
         Spacer(modifier = Modifier.height(8.dp))
@@ -235,14 +263,18 @@ private fun SecondsRankingCard(entries: List<MostViewedEntry>) {
                 count = entry.value,
                 progress = entry.value.toFloat() / maxValue,
                 countText = formatDurationSeconds(entry.value.toLong()),
+                onClick = { onEntryClick(entry) },
             )
         }
     }
 }
 
-/** 「常看作者」Top15 排行卡（AUTHORS_TAGS 模式） */
+/** 「常看作者」Top15 排行卡（AUTHORS_TAGS 模式）；条目点击→作者集合页（J1 跳转链） */
 @Composable
-private fun AuthorsRankingCard(entries: List<TopAuthorEntry>) {
+private fun AuthorsRankingCard(
+    entries: List<TopAuthorEntry>,
+    onEntryClick: (TopAuthorEntry) -> Unit,
+) {
     QimengRankCard(modifier = Modifier.fillMaxWidth()) {
         Text(text = "常看作者", style = MaterialTheme.typography.titleMedium)
         Spacer(modifier = Modifier.height(8.dp))
@@ -262,14 +294,18 @@ private fun AuthorsRankingCard(entries: List<TopAuthorEntry>) {
                 count = entry.views,
                 progress = entry.views.toFloat() / maxViews,
                 countText = entry.views.toDisplayText() + MARKER_VALUE_SUFFIX_VIEWS,
+                onClick = { onEntryClick(entry) },
             )
         }
     }
 }
 
-/** 「常看标签」Top10 排行卡（AUTHORS_TAGS 模式） */
+/** 「常看标签」Top10 排行卡（AUTHORS_TAGS 模式）；条目点击→搜索页携词（J1 跳转链） */
 @Composable
-private fun TagsRankingCard(entries: List<TopTagEntry>) {
+private fun TagsRankingCard(
+    entries: List<TopTagEntry>,
+    onEntryClick: (TopTagEntry) -> Unit,
+) {
     QimengRankCard(modifier = Modifier.fillMaxWidth()) {
         Text(text = "常看标签", style = MaterialTheme.typography.titleMedium)
         Spacer(modifier = Modifier.height(8.dp))
@@ -289,6 +325,7 @@ private fun TagsRankingCard(entries: List<TopTagEntry>) {
                 count = entry.views,
                 progress = entry.views.toFloat() / maxViews,
                 countText = entry.views.toDisplayText() + MARKER_VALUE_SUFFIX_VIEWS,
+                onClick = { onEntryClick(entry) },
             )
         }
     }
@@ -336,12 +373,24 @@ private fun SourceTrendCard(series: List<TypeTrendSeries>, labels: List<String>)
     }
 }
 
-/** 排行行：排名数字（前三名主题色高亮）+ 名称 + 数值 + 相对第一名进度条（countText 缺省=千分位） */
+/**
+ * 排行行：排名数字（前三名主题色高亮）+ 名称 + 数值 + 相对第一名进度条（countText 缺省=千分位）；
+ * [onClick] 非空时整行可点击（J1 跳转链：文件→详情/作者→集合页/标签→搜索），
+ * 分布行缺省 null 维持不可点击（无协议内落点）。
+ */
 @Composable
-private fun RankRow(rank: Int, name: String, count: Int, progress: Float, countText: String = count.toDisplayText()) {
+private fun RankRow(
+    rank: Int,
+    name: String,
+    count: Int,
+    progress: Float,
+    countText: String = count.toDisplayText(),
+    onClick: (() -> Unit)? = null,
+) {
     Column(modifier = Modifier
         .fillMaxWidth()
-        .padding(vertical = 6.dp)) {
+        .padding(vertical = 6.dp)
+        .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),

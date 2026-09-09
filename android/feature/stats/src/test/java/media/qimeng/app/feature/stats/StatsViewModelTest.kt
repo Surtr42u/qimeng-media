@@ -9,6 +9,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+import media.qimeng.app.core.data.repository.MediaBatchIndex
 import media.qimeng.app.core.data.repository.StatsRepository
 import media.qimeng.app.core.model.MostViewedEntry
 import media.qimeng.app.core.model.StatsOverviewValues
@@ -79,7 +80,7 @@ class StatsViewModelTest {
     @Test
     fun `init 加载总览与默认7天档`() = runTest {
         val repository = FakeStatsRepository()
-        val viewModel = StatsViewModel(repository)
+        val viewModel = StatsViewModel(repository, MediaBatchIndex())
         advanceUntilIdle()
         // 库存格 overview() 一次 + 均值联动 overview(7d) 一次
         assertEquals(listOf<String?>(null, "7d"), repository.overviewRangeCalls)
@@ -92,7 +93,7 @@ class StatsViewModelTest {
     @Test
     fun `档位切换按三档映射发请求`() = runTest {
         val repository = FakeStatsRepository()
-        val viewModel = StatsViewModel(repository)
+        val viewModel = StatsViewModel(repository, MediaBatchIndex())
         advanceUntilIdle()
         viewModel.selectRange(StatsRangeOption.THIRTY_DAYS)
         viewModel.selectRange(StatsRangeOption.ALL)
@@ -106,7 +107,7 @@ class StatsViewModelTest {
     @Test
     fun `同档不重拉`() = runTest {
         val repository = FakeStatsRepository()
-        val viewModel = StatsViewModel(repository)
+        val viewModel = StatsViewModel(repository, MediaBatchIndex())
         advanceUntilIdle()
         viewModel.selectRange(StatsRangeOption.SEVEN_DAYS)
         advanceUntilIdle()
@@ -123,7 +124,7 @@ class StatsViewModelTest {
                 point("07/03", views = 5, plays = 3, seconds = 30),
             )
         }
-        val viewModel = StatsViewModel(repository)
+        val viewModel = StatsViewModel(repository, MediaBatchIndex())
         advanceUntilIdle()
         val state = viewModel.uiState.value
         assertEquals(12L, state.windowViews)
@@ -137,7 +138,7 @@ class StatsViewModelTest {
         repository.trendsProvider = { range ->
             if (range == "7d") listOf(point("07/01", 3)) else listOf(point("06/01", 10), point("06/02", 20))
         }
-        val viewModel = StatsViewModel(repository)
+        val viewModel = StatsViewModel(repository, MediaBatchIndex())
         advanceUntilIdle()
         assertEquals(3L, viewModel.uiState.value.windowViews)
         viewModel.selectRange(StatsRangeOption.THIRTY_DAYS)
@@ -152,7 +153,7 @@ class StatsViewModelTest {
         val gate7d = CompletableDeferred<List<TrendPoint>>()
         val gate30 = CompletableDeferred<List<TrendPoint>>()
         repository.trendsProvider = { range -> if (range == "7d") gate7d.await() else gate30.await() }
-        val viewModel = StatsViewModel(repository)
+        val viewModel = StatsViewModel(repository, MediaBatchIndex())
         advanceUntilIdle() // 首请求挂起在 gate7d
         viewModel.selectRange(StatsRangeOption.THIRTY_DAYS)
         advanceUntilIdle() // 次请求挂起在 gate30
@@ -174,7 +175,7 @@ class StatsViewModelTest {
     fun `总览失败数字卡置空而非崩溃`() = runTest {
         val repository = FakeStatsRepository().apply { overviewFailure = true }
         repository.trendsProvider = { emptyList() }
-        val viewModel = StatsViewModel(repository)
+        val viewModel = StatsViewModel(repository, MediaBatchIndex())
         advanceUntilIdle()
         assertNull(viewModel.uiState.value.overview)
         // 总览失败不影响趋势渲染（空态文案走起）
@@ -185,7 +186,7 @@ class StatsViewModelTest {
     fun `趋势失败窗口指标归零不出错`() = runTest {
         val repository = FakeStatsRepository()
         repository.trendsProvider = { emptyList() }
-        val viewModel = StatsViewModel(repository)
+        val viewModel = StatsViewModel(repository, MediaBatchIndex())
         advanceUntilIdle()
         assertEquals(0L, viewModel.uiState.value.windowViews)
         assertEquals(0L, viewModel.uiState.value.windowSeconds)
@@ -211,14 +212,14 @@ class StatsViewModelTest {
         }
         repository.topTagsProvider = { _, _ -> listOf(TopTagEntry("塞尔达", 5)) }
         repository.avgViewsByRange = mapOf("7d" to 3.5, "day" to 2.0)
-        val viewModel = StatsViewModel(repository)
+        val viewModel = StatsViewModel(repository, MediaBatchIndex())
         advanceUntilIdle()
 
         val state = viewModel.uiState.value
         assertEquals(2, state.mostViewed.size)
         assertEquals("A.mp4", state.mostViewed.first().fileName)
         // 混合 Top3：作者甲(8) > 塞尔达(5) > 作者乙(3)
-        assertEquals(listOf("作者甲", "塞尔达", "作者乙"), state.topAuthorsTagsMixed.map { it.first })
+        assertEquals(listOf("作者甲", "塞尔达", "作者乙"), state.topAuthorsTagsMixed.map { it.name })
         assertEquals(3.5, state.avgViewsPerFile!!, 0.0001)
         assertFalse(state.mostViewedEmpty)
         assertFalse(state.topAuthorsTagsEmpty)
@@ -232,7 +233,7 @@ class StatsViewModelTest {
     @Test
     fun `常看族空态 - 默认空表卡片空态不隐藏`() = runTest {
         val repository = FakeStatsRepository() // 常看族全走默认空表
-        val viewModel = StatsViewModel(repository)
+        val viewModel = StatsViewModel(repository, MediaBatchIndex())
         advanceUntilIdle()
         val state = viewModel.uiState.value
         assertTrue(state.mostViewedEmpty)
@@ -247,13 +248,13 @@ class StatsViewModelTest {
         repository.topAuthorsProvider = { _, _ -> throw java.io.IOException("top-authors 失败") }
         repository.topTagsProvider = { _, _ -> listOf(TopTagEntry("只有标签", 2)) }
         repository.trendsProvider = { listOf(point("07/01", 4)) }
-        val viewModel = StatsViewModel(repository)
+        val viewModel = StatsViewModel(repository, MediaBatchIndex())
         advanceUntilIdle()
         val state = viewModel.uiState.value
         // 失败口降级空表（卡内空态），趋势与标签照常落地——不互相拖垮
         assertTrue(state.mostViewed.isEmpty())
         assertTrue(state.topAuthors.isEmpty())
-        assertEquals(listOf("只有标签"), state.topAuthorsTagsMixed.map { it.first })
+        assertEquals(listOf("只有标签"), state.topAuthorsTagsMixed.map { it.name })
         assertEquals(4L, state.windowViews)
     }
 
@@ -263,7 +264,7 @@ class StatsViewModelTest {
             overviewFailure = true
         }
         repository.trendsProvider = { listOf(point("07/01", 1)) }
-        val viewModel = StatsViewModel(repository)
+        val viewModel = StatsViewModel(repository, MediaBatchIndex())
         advanceUntilIdle()
         // 库存格失败（overview null）+ 均值口失败（null）→ 占位语义，不崩溃
         assertNull(viewModel.uiState.value.overview)
@@ -271,9 +272,52 @@ class StatsViewModelTest {
         assertFalse(viewModel.uiState.value.avgViewsLoading)
         // 分母 0 → 协议 null：同走「—」占位（加载完成 + null 值分支）
         val repository2 = FakeStatsRepository().apply { avgViewsByRange = mapOf("7d" to null) }
-        val viewModel2 = StatsViewModel(repository2)
+        val viewModel2 = StatsViewModel(repository2, MediaBatchIndex())
         advanceUntilIdle()
         assertNull(viewModel2.uiState.value.avgViewsPerFile)
         assertFalse(viewModel2.uiState.value.avgViewsLoading)
+    }
+
+    // ---------- 任务J J1：详情页跳转链（GUIDE_UI L218-224） ----------
+
+    @Test
+    fun `常看文件条目点击写批次上下文 - 快照等于当前榜单清单`() = runTest {
+        val repository = FakeStatsRepository()
+        repository.mostViewedProvider = { _, _, _ ->
+            listOf(
+                MostViewedEntry("id-1", "A.mp4", "video", null, 12),
+                MostViewedEntry("id-2", "B.jpg", "image", null, 6),
+                MostViewedEntry("id-3", "C.mp4", "video", null, 3),
+            )
+        }
+        val batchIndex = MediaBatchIndex()
+        val viewModel = StatsViewModel(repository, batchIndex)
+        advanceUntilIdle()
+
+        viewModel.enterDetail("id-2")
+        // 批次上下文 = 当前常看卡榜单整体（「已加载=当前显示清单」口径，快照式整体替换）
+        assertEquals(listOf("id-1", "id-2", "id-3"), batchIndex.ids)
+        assertEquals(1, batchIndex.indexOf("id-2")) // 详情页 i/N 序号定位正确
+    }
+
+    @Test
+    fun `混合卡条目意图构造 - 作者带真实id标签带词`() = runTest {
+        val repository = FakeStatsRepository()
+        repository.topAuthorsProvider = { _, _ ->
+            listOf(TopAuthorEntry("author-uuid-1", "作者甲", 8), TopAuthorEntry("author-uuid-2", "作者乙", 3))
+        }
+        repository.topTagsProvider = { _, _ -> listOf(TopTagEntry("塞尔达", 5)) }
+        val viewModel = StatsViewModel(repository, MediaBatchIndex())
+        advanceUntilIdle()
+
+        val mixed = viewModel.uiState.value.topAuthorsTagsMixed
+        // 作者甲(8) > 塞尔达(5) > 作者乙(3)；作者条目 kind=AUTHOR 且 id=真实 authorId
+        //（/stats/top-authors 响应字段，跳作者集合页取数键），标签条目 kind=TAG 且 id=词
+        assertEquals(
+            listOf(TopAuthorTagEntry.Kind.AUTHOR, TopAuthorTagEntry.Kind.TAG, TopAuthorTagEntry.Kind.AUTHOR),
+            mixed.map { it.kind },
+        )
+        assertEquals(listOf("author-uuid-1", "塞尔达", "author-uuid-2"), mixed.map { it.id })
+        assertEquals(listOf("作者甲", "塞尔达", "作者乙"), mixed.map { it.name })
     }
 }

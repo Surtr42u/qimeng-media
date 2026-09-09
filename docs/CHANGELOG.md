@@ -9,6 +9,18 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## feat(app): 任务J J1 统计榜单跳转接线——常看文件批次上下文+作者集合页+标签携词搜索（2026-09-09 第一百六十七笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理，任务J J1批）
+
+- **GUIDE_UI L218-224 详情页跳转链清偿（REPLICATION_GAPS §3.3 裁定 7「记遗留」转已接线）**：统计页/统计详情页榜单条目全部可点击，四链路——①常看文件条目（主页面 Top3 卡）→详情页，榜单作批次上下文（StatsViewModel.enterDetail 写 MediaBatchIndex 快照=HomeViewModel/FavoriteViewModel 同款 N1 机制，DetailViewModel 消费零改动）；②常看作者条目→作者集合页（TopAuthorEntry.authorId 真实 id 来自 /stats/top-authors 响应，无硬造）；③常看标签条目→搜索页携词；④详情页 seconds 榜 Top20 条目→详情页（StatsDetailViewModel.enterDetail 写整榜快照）
+- **混合卡可点击模型**：StatsUiState.topAuthorsTagsMixed 由 Pair<String,Int> 升级为 TopAuthorTagEntry(kind/id/name/views)——kind 分发 AUTHOR→集合页 / TAG→携词搜索，id 字段承载跳转键（作者=authorId、标签=词名）
+- **携词转义单源**：壳层 Routes.searchRoute(query)（query 百分号编码 RFC 3986，自持编码器与 feature:author encodeRouteSegment 同款理由：行为确定性+JVM 单测 stub 不可用平台 API；两处注释互指）；QimengNavHost StatsScreen/StatsDetailScreen 两处回调接线（导航接线报备：任务书允许的例外）
+- 单测：StatsViewModelTest +2（enterDetail 批次快照=当前榜单清单 / 混合条目 kind+id 意图构造——作者带真实 id 标签带词）、StatsDetailViewModelTest +1（seconds 榜 enterDetail 快照=整榜）；既有混合卡断言随模型升级改 name 取值。14+10 全绿
+- 实测（emulator-5554 虚构库 18461）：常看文件条目→详情「1 / 3」与「2 / 3」位序正确；作者条目→集合页（测试作者一·3 个文件 / I6走查作者·4 个文件）；标签条目→搜索携词（虚构补数：POST /tags J1走查标签+PUT tagIds+open×3，top-tags 7d=16 次；搜索框携词+结果命中挂标资产）；seconds 榜条目→详情「2 / 6」；返回统计页滚动位置/档位（30 天）/数据保持无重拉
+- 门禁四连绿（app-test 428 任务/app-lint/app-build/make lint 0 errors）；证据 %TEMP%\qimeng-j1-evidence\（dump+截图 14 件）
+
+---
 ## fix(app): F批 用户反馈三修——搜索胶囊族尺寸对齐旧版+我的页删作者管理入口行+底导航指示器色接线（2026-09-09 第一百六十六笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理，F批；用户2026-09-09三反馈）
