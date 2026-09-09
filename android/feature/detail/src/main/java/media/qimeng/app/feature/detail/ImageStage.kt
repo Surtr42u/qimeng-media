@@ -5,7 +5,8 @@ import androidx.compose.ui.Modifier
 import media.qimeng.app.core.model.AssetDetail
 
 /**
- * 图片/动图舞台：整屏黑底舞台内提供 ZoomImageView 手势与 Coil 原图加载
+ * 图片/动图舞台：整屏舞台盒（底色=调用方 modifier 打底的 backdrop，任务K K1 单源口径：
+ * chrome 显=主题底/沉浸=纯黑）内提供 ZoomImageView 手势与 Coil 原图加载
  * （实现下沉到公共内容件 [ZoomableOriginalImage]）。
  *
  * 任务I I7 交互改版——**单击图片舞台 = 切换沉浸 chrome**（GUIDE_UI §沉浸浏览 L271-276：
