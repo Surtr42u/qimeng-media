@@ -91,12 +91,21 @@ object QimengDimens {
      *  QimengCapsuleTextField：用户 2026-09-09 反馈推翻 G6「保留 56dp 触摸目标」取舍） */
     val CapsuleFieldHeight: Dp = 34.dp
 
-    /** 2dp：词丸流换行行距（F 批紧凑化：旧版 QimengCapsuleChip 行间紧凑换行，32dp 胶囊 + 2dp 行距
-     *  = 行节距 34dp，对齐旧实录 search_entry 词丸区视觉；styles.xml 无对应间距项，按实录拍板值登记） */
-    val WordPillRowSpacing: Dp = 2.dp
+    /** 8dp：词丸流换行纵向间隙（BVIS 勘正：旧实录 search_entry.txt 推荐词丸行位 404/528/652px@density3
+     *  → 行节距 124px=41.3dp，芯片高 32dp → 纵向间隙 ≈8dp 拍板值。F 批曾记「2dp 行距 = 行节距 34dp
+     *  对齐实录」有误——34dp 实为胶囊输入框场高 [CapsuleFieldHeight]，与词丸行节距是两个数混淆，
+     *  走查实测 2dp 档节距 33.9dp 偏紧，本批按实录清偿） */
+    val WordPillRowSpacing: Dp = 8.dp
 
-    /** 6dp：词丸流横向间距（旧仓库 styles.xml L8 QimengCapsuleChip layout_marginEnd=6dp） */
-    val WordPillSpacing: Dp = 6.dp
+    /** 8dp：词丸流横向间隙（BVIS 勘正：旧实录 search_entry.txt 同帧枚缘 329→353px@density3
+     *  → 枚间 24px=8dp。旧 styles.xml L8 marginEnd=6dp 是 XML 声明值，以实录渲染值为准） */
+    val WordPillSpacing: Dp = 8.dp
+
+    /** 4dp：悬浮药丸面板内 FlowRow 纵横间隙（BVIS：旧实录 all_partition_pills.txt 行位
+     *  466/568px@density3 → 行节距 102px=34dp，芯片高 30dp → 间隙 4dp；此前复用 SpaceM=8dp
+     *  实测节距 40dp 偏松。仅 QimengFloatingPillPanel 使用——QimengValuePillFlow 保持
+     *  8dp（G5 Web 基准拍板保护，走查未判差距不随动） */
+    val FloatingPillPanelSpacing: Dp = 4.dp
 
     /** 40dp：首页搜索框高度（旧仓库 fragment_home.xml L37，bg_capsule_soft 胶囊底同语言；
      *  F 批前实测 48dp，压回旧版 40dp） */

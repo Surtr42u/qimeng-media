@@ -69,11 +69,14 @@ fun QimengChipRow(
  * （任务 H1 清偿：原带「收起 ▲」折叠尾丸的 QimengPillFlowRow 全仓零调用已删除，
  * 折叠语义由 [QimengFloatingPillPanel]/[QimengValuePillFlow] 分承。）
  *
- * 紧凑行距（F 批 2026-09-09）：横向 [QimengDimens.WordPillSpacing]=6dp（旧版
- * QimengCapsuleChip marginEnd 6dp）、纵向 [QimengDimens.WordPillRowSpacing]=2dp——
- * 词丸经 [QimengSegPill] 紧凑化后 32dp 高，行节距 34dp 对齐旧实录词丸区视觉；
- * 此前 FilterChip 48dp 布局膨胀 + 8dp 行距 = 56dp 节距，用户 2026-09-09 反馈「过大」。
- * 其余药丸容器（[QimengFloatingPillPanel]/[QimengValuePillFlow]）保持 8dp 间距不随动。
+ * 词丸流间隙（BVIS 2026-09-09 勘正）：纵横 [QimengDimens.WordPillSpacing]/[QimengDimens.WordPillRowSpacing]
+ * 均 8dp——旧实录 search_entry.txt 推荐词丸行位 404/528/652px@density3 → 行节距 124px=41.3dp，
+ * 32dp 芯片 → 纵向间隙 ≈8dp；同帧枚缘 329→353px → 横向间隙 24px=8dp。F 批曾以「2dp 行距 =
+ * 行节距 34dp 对齐实录」登记（把词丸间隙与胶囊输入框场高 34dp 两个数混淆），走查实测该档节距
+ * 33.9dp 偏紧，本批按实录清偿；FilterChip 48dp 布局膨胀时代的 56dp 节距不复返（[QimengSegPill]
+ * 紧凑化保持）。
+ * 药丸容器间隙各随其实录：本组件 8dp、[QimengFloatingPillPanel] 4dp（all_partition_pills 实测）、
+ * [QimengValuePillFlow] 保持 8dp（G5 Web 基准拍板保护）。
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -97,6 +100,9 @@ fun QimengWordPillFlow(
  * （旧版 MaxHeightScrollView.onMeasure：heightPixels/2 的 AT_MOST 语义）超出内部滚动、
  * 药丸 FlowRow 自动换行、末尾固定「收起 ▲」、点药丸不收起。
  * 折叠时调用方不组合本组件（collapsed=true 渲染 null）。
+ * 药丸间隙纵横 [QimengDimens.FloatingPillPanelSpacing]=4dp（BVIS：旧实录 all_partition_pills.txt
+ * 行位 466/568px@density3 → 行节距 102px=34dp，30dp 芯片 → 间隙 4dp；此前复用 SpaceM=8dp
+ * 实测节距 40dp 偏松，本批清偿）。
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -124,8 +130,8 @@ fun QimengFloatingPillPanel(
     ) {
         FlowRow(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(QimengDimens.SpaceM),
-            verticalArrangement = Arrangement.spacedBy(QimengDimens.SpaceM),
+            horizontalArrangement = Arrangement.spacedBy(QimengDimens.FloatingPillPanelSpacing),
+            verticalArrangement = Arrangement.spacedBy(QimengDimens.FloatingPillPanelSpacing),
         ) {
             pills.forEachIndexed { index, pill -> PillChip(pill = pill, onClick = { onPillClick(index) }) }
             PillChip(
