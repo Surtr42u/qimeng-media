@@ -31,6 +31,7 @@
 - **单测**：新增 `TabTapDecisionTest` 8 用例（首击放行/回顶 400ms 边界/回顶优先于防抖/防抖窗 ≥200ms 边界/连点 10 击仅 3 次放行序列/回顶不重置防抖基准）；`TopLevelDestinationTest` 3 用例仍绿
 - **实测**（qimeng_api35 无头实例复用，`emu avd name` 核实；仅虚构测试数据）：四 Tab 轮询连点 48 击×2 轮（设备端单 shell 高频 tap）无叠影无崩溃；单点切 Tab 正常（正向对照）；统计页 BACK 一步回上一 Tab、再 BACK 退到桌面（返回栈干净=无一次点击多次入栈）；进详情返回后再连点 48 击正常且列表滚动位置保留；下滑后同 Tab 双击页头（排序/精选）重现=回顶生效。证据 %TEMP%\qimeng-l2-evidence\（shot-rapid-*/shot-doubletap-top-2.png、dump-0~9.xml、gate1~4 日志、TEST-*.xml、logcat-crash-check.log 0 行）
 - 门禁四连绿：app-build/app-test/app-lint/make lint 全 EXIT=0（gate1~gate4 日志）
+- **对抗审查收口（独立 reviewer，0 P1/P2，主代理记档 2026-09-10）**：审查者强制 `--rerun` 实跑单测 8+3 全绿、全仓 grep 证伪跨卷回归（K 卷沉浸动画均为页内 Compose 动画，与 NavHost 转场无关）。记档两项——**P3-a 作用域披露**：转场置 None 为 NavHost 级全局生效，详情页 push/pop 等一切导航的默认 crossfade 一并转为瞬时（超出拍板 #2「顶层切换」字面，代码注释已披露；用户走查若觉详情进出手感过快可回改 per-destination 方案）；**P3-b 软闸记档**：200ms 防抖对 200~300ms 人手连点拦截率低（`>=200` 即放行），根因已由瞬时转场根除，若仍报毛刺改 isNavigating 旗标案。任务L L1 批（37b8566/fb76003/1d68ead）同日对抗审查通过（0 P1/P2）：fb76003 server lint 债经类型别名独立验证零语义、主代理追认；占位色共享组件穿透 DetailUpNextCard 已知会；组头样式维持实录核对记档。
 
 ---
 ## feat(app): 任务L L1 补齐——网格间距回归旧版密度（卡间10dp）；组头样式按实录核对维持现状（2026-09-09 第一百七十七笔）
