@@ -23,6 +23,7 @@ import {
 // facets 相关类型本文件也要用，import（而非仅 re-export）才能进当前模块作用域
 import type { AssetFacets, FacetBucket, Partition } from '@/api/generated'
 export type { AssetFacets, FacetBucket, Partition }
+import { randomUUID } from '@/hooks/use-session'
 import type { MediaCardProps } from '@/components/media/MediaCard'
 import { unwrapSdkResult } from '@/lib/api-client'
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants'
@@ -257,7 +258,9 @@ export function facetToOptions(
   return buckets.map((b) => ({ label: b.name, value: b.key, count: b.fileCount, kind: b.kind }))
 }
 
-/** 行为上报（DOMAIN_RULES §5：open/play/dwell；会话去重依赖每标签页 sessionId） */
+/** 行为上报（DOMAIN_RULES §5：open/play/dwell；会话去重依赖每标签页 sessionId）。
+ * clientEventId（任务L L5 幂等键）在此层统一生成——调用方只描述事件本身；
+ * 打点本地账批会把它换成「先落本地、发送成功才删、失败同 id 重试」。 */
 export function useReportView() {
   return useMutation({
     mutationFn: (body: {
@@ -266,7 +269,7 @@ export function useReportView() {
       startedAt: string
       sessionId: string
       seconds?: number
-    }) => unwrapSdkResult(postApiV1EventsView({ body })),
+    }) => unwrapSdkResult(postApiV1EventsView({ body: { ...body, clientEventId: randomUUID() } })),
   })
 }
 

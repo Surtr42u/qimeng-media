@@ -1033,13 +1033,24 @@ components:
 
     ViewEventReport:
       type: object
-      required: [assetId, kind, startedAt, sessionId]
+      required: [assetId, kind, startedAt, sessionId, clientEventId]
       properties:
         assetId:   { type: string, format: uuid }
         kind:      { type: string, enum: [open, play, dwell] }
         startedAt: { type: string, format: date-time }
         seconds:   { type: number, format: double, description: dwell 时的停留秒数（format double：客户端 SDK 走原生小数类型直接序列化为 JSON 数字——无 format 时 Kotlin 生成 BigDecimal 被序列化为带引号字符串导致服务端 400，协议批 2026-09-09 根修） }
         sessionId: { type: string, description: "客户端会话标识（App 启动/Web 标签页生成，UUID 即可）；open/play 按当日会话级去重（同 assetId+kind+sessionId+事件发生日已有同类事件则不重复计数），dwell 不去重——停留秒逐条累加、不减不重（DOMAIN_RULES §5）" }
+        clientEventId:
+          type: string
+          format: uuid
+          description: >-
+            客户端幂等键（任务L L5「本地优先合并」口径）：客户端在事件产生时生成 UUID，
+            随本地暂存（App Room 队列 / Web IndexedDB 账本）持久，重试/补传/导出再 POST
+            一律携带**同一** clientEventId。服务端对它建唯一索引做写入幂等——同一
+            clientEventId 重复提交返回 202 但**不重复入库、不重复计数**（dwell 秒数不重复
+            累加、open/play 不重复计数），客户端据此可安全「发送成功（2xx）才删本地暂存」。
+            服务端列可空：历史数据与不带此字段的旧格式请求按 NULL 放行照常入库（SQLite
+            唯一索引允许多 NULL 互不冲突），幂等语义仅对携带 id 的事件生效。
 
     ProgressUpdate:
       type: object

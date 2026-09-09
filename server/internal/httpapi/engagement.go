@@ -5,6 +5,8 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/google/uuid"
+
 	"qimeng-media/server/internal/httpapi/gen"
 	"qimeng-media/server/internal/store"
 	"qimeng-media/server/internal/store/db"
@@ -17,6 +19,21 @@ import (
 // 已有同类事件 → 直接 202 不插入（横滑切走切回不重复计）。dwell 例外：
 // 停留时长每次都有效（时长是累加量而非计数，去重会丢真实停留时间），
 // 逐条插入并把秒数累加进物化表。
+//
+// 客户端幂等（任务L L5「本地优先合并」，拍板 #7）：ViewEventReport.clientEventId
+// 是客户端在事件产生时生成、随本地暂存持久的 UUID，重试/补传携带同一 id。
+// 写入走 InsertViewEventIdempotent（唯一索引 + ON CONFLICT DO NOTHING，
+// migration 0010）：同 id 重复提交 → RowsAffected==0 → 原样 202 但**不重复
+// 入库、不重复计数**（dwell 秒数不重复累加、open/play 不重复计数）——这是
+// 客户端「发送成功（2xx）才删本地暂存」的安全前提。幂等判定在会话去重之后、
+// 物化累加之前：open/play 的重发大概率已被会话去重挡下，漏网者（如跨会话
+// 误用同 id、dwell 重传）由唯一索引兜底。
+//
+// 旧格式请求（未携带 clientEventId）行为 = **放行**：生成类型是 uuid.UUID，
+// 缺失字段解码为零值 uuid.Nil，按 NULL 入库照常计数——SQLite 唯一索引对
+// NULL 不做唯一判定，存量行/导入回放（DOMAIN_RULES §10）/旧客户端互不冲突，
+// 幂等语义仅对携带 id 的事件生效。该口径由 TestEngagementClientEventIdempotency
+// 锁定。
 //
 // 去重窗口与物化表 day 同源：都按 started_at 的本地日历日取界（而不是
 // 服务器当前时间），保证「当日已存在判定」与「聚合行落在哪一天」口径
@@ -34,6 +51,8 @@ func (s *Server) PostApiV1EventsView(w http.ResponseWriter, r *http.Request) {
 		seconds = sql.NullInt64{Int64: int64(*req.Seconds), Valid: true}
 	}
 	startedAt := store.FormatTimestamp(req.StartedAt)
+	// 幂等键：uuid.Nil（未携带/旧格式）→ NULL 放行（见函数头注释），其余原样入库
+	clientEventID := sql.NullString{String: req.ClientEventId.String(), Valid: req.ClientEventId != uuid.Nil}
 
 	// open/play 会话去重：当日同会话已有同类事件 → 原样 202（幂等语义）
 	if req.Kind == gen.Open || req.Kind == gen.Play {
@@ -63,14 +82,26 @@ func (s *Server) PostApiV1EventsView(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() { _ = tx.Rollback() }()
 	qtx := s.q.WithTx(tx)
-	if err := qtx.InsertViewEvent(r.Context(), db.InsertViewEventParams{
-		AssetID:   req.AssetId.String(),
-		Kind:      string(req.Kind),
-		SessionID: req.SessionId,
-		StartedAt: startedAt,
-		Seconds:   seconds,
-	}); err != nil {
+	inserted, err := qtx.InsertViewEventIdempotent(r.Context(), db.InsertViewEventIdempotentParams{
+		AssetID:       req.AssetId.String(),
+		Kind:          string(req.Kind),
+		SessionID:     req.SessionId,
+		StartedAt:     startedAt,
+		Seconds:       seconds,
+		ClientEventID: clientEventID,
+	})
+	if err != nil {
 		s.internalErr(w, "写入浏览事件", err)
+		return
+	}
+	if inserted == 0 {
+		// 幂等命中：同 clientEventId 已入库（重发/补传），原样 202 但不重复计数
+		//——事务内零写入，提交即空转；跳过物化累加（dwell 不重加秒、open/play 不重计）
+		if err := tx.Commit(); err != nil {
+			s.internalErr(w, "提交浏览事件", err)
+			return
+		}
+		w.WriteHeader(http.StatusAccepted)
 		return
 	}
 	var delta db.UpsertAssetDailyStatsParams

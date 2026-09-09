@@ -12,6 +12,25 @@
 INSERT INTO view_events (asset_id, kind, session_id, started_at, seconds)
 VALUES (?, ?, ?, ?, ?);
 
+-- InsertViewEventIdempotent: write entry for the live report endpoint
+-- (task L / batch L5, 2026-09-09). client_event_id is the client
+-- idempotency key (unique index, migration 0010): ON CONFLICT DO
+-- NOTHING turns a duplicate submission into a 0-row write, and the
+-- caller (RowsAffected == 0) answers 202 WITHOUT touching the
+-- materialized table -- dwell seconds are not re-accumulated, open/play
+-- not re-counted, which is what lets clients delete their local pending
+-- copy only after a confirmed 2xx send. A NULL id (legacy-format
+-- requests, backup-import replay) never conflicts -- SQLite unique
+-- indexes treat NULLs as distinct -- so old events still insert
+-- normally; idempotency applies only to id-bearing events. Append-only
+-- discipline intact: no UPDATE/DELETE, DO NOTHING merely skips the
+-- insert (the first submission always wins, byte-for-byte).
+
+-- name: InsertViewEventIdempotent :execrows
+INSERT INTO view_events (asset_id, kind, session_id, started_at, seconds, client_event_id)
+VALUES (?, ?, ?, ?, ?, ?)
+ON CONFLICT (client_event_id) DO NOTHING;
+
 -- CountAssetEvents: per-asset view/play counts (DOMAIN_RULES 5:
 -- aggregated from the event stream; dwell is not counted). At most two
 -- rows per asset (open/play) -- the caller assembles them. Empty result

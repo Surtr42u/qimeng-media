@@ -233,7 +233,9 @@ func idForIndex(i int) string {
 
 // TestMigrateDownThenUp：down migration 必须可执行（生产禁用，测试与灾备依赖），
 // 且 down 后能再次 up（幂等重建）。migration 演进后回退步数随之变化：
-// 第一步验证 0008 down（COS 作品列删除、0007 对象保留），
+// 第零步验证 0010 down（客户端幂等键列+唯一索引删除、0009 对象保留），
+// 次步验证 0009 down（时间轴标签颜色列删除、0008 对象保留），
+// 再下验证 0008 down（COS 作品列删除、0007 对象保留），
 // 第二步验证 0007 down（库开关列删除、0006 对象保留），
 // 第三步验证 0006 down（播放进度/编码列删除、0005 对象保留），
 // 第四步验证 0005 down（物化表/关注列/COS 库列删除、0004 对象保留），
@@ -243,7 +245,20 @@ func idForIndex(i int) string {
 // 第八步验证 0001 down（业务表全删）。
 func TestMigrateDownThenUp(t *testing.T) {
 	conn, _ := openTestDB(t) // 已 up
-	// 第零步：0009 down（时间轴标签颜色列删除、0008 对象保留）
+	// 第零步：0010 down（客户端幂等键列+唯一索引删除、0009 对象保留）
+	if err := MigrateDown(conn, 1); err != nil {
+		t.Fatalf("MigrateDown 失败: %v", err)
+	}
+	if columnExists(t, conn, "view_events", "client_event_id") {
+		t.Error("0010 down 后 view_events.client_event_id 仍存在（0010 down 缺 DROP COLUMN）")
+	}
+	if objExists(t, conn, "index", "idx_view_events_client_event_id") {
+		t.Error("0010 down 后幂等键唯一索引仍存在（0010 down 缺 DROP INDEX）")
+	}
+	if !columnExists(t, conn, "timeline_tags", "color") {
+		t.Error("0010 down 后 timeline_tags.color 应保留（只回退了一个版本）")
+	}
+	// 次步：0009 down（时间轴标签颜色列删除、0008 对象保留）
 	if err := MigrateDown(conn, 1); err != nil {
 		t.Fatalf("MigrateDown 失败: %v", err)
 	}
