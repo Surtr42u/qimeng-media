@@ -67,6 +67,12 @@ object Routes {
     /** 搜索携词参数键（[SEARCH] 路由占位符） */
     const val KEY_SEARCH_QUERY = "q"
 
+    /**
+     * 搜索携词导航地址（任务J J1 接线：统计常看标签条目→搜索页携词，GUIDE_UI §统计详情页）：
+     * query 必须 URL 编码——标签可含中文/空格/&/# 等，裸拼会劈裂 query 或吞掉后续参数。
+     */
+    fun searchRoute(query: String): String = "$SEARCH_NAV?$KEY_SEARCH_QUERY=${encodeQueryValue(query)}"
+
     /** 覆盖页面：收藏（我的页入口行；M4-6 完整我的页前的临时入口） */
     const val FAVORITE = "favorite"
 
@@ -204,6 +210,14 @@ fun QimengNavHost(
                     onOpenDetail = { mode, range ->
                         navController.navigate(StatsDetailRoutes.statsDetailRoute(mode, range))
                     },
+                    // 任务J J1 详情页跳转链（GUIDE_UI L218-224）：常看文件条目→详情页（批次
+                    // 上下文已由 StatsViewModel.enterDetail 写入）、作者条目→作者集合页、
+                    // 标签条目→搜索页携词（query 编码见 Routes.searchRoute）
+                    onOpenAsset = { assetId -> navController.navigate(DetailRoutes.detailRoute(assetId)) },
+                    onOpenAuthor = { authorId, displayName ->
+                        navController.navigate(AuthorCollectionRoutes.authorCollectionRoute(authorId, displayName))
+                    },
+                    onOpenTagSearch = { tag -> navController.navigate(Routes.searchRoute(tag)) },
                 )
             }
             composable(TopLevelDestination.SETTINGS.route) {
@@ -273,6 +287,14 @@ fun QimengNavHost(
             composable(StatsDetailRoutes.STATS_DETAIL_ROUTE) {
                 StatsDetailScreen(
                     onBack = { navController.popBackStack() },
+                    // 任务J J1 详情页跳转链（GUIDE_UI L218-224）：seconds 榜条目→详情页
+                    // （批次上下文已由 StatsDetailViewModel.enterDetail 写入 Top20 快照）、
+                    // 作者条目→作者集合页、标签条目→搜索页携词
+                    onOpenAsset = { assetId -> navController.navigate(DetailRoutes.detailRoute(assetId)) },
+                    onOpenAuthor = { authorId, displayName ->
+                        navController.navigate(AuthorCollectionRoutes.authorCollectionRoute(authorId, displayName))
+                    },
+                    onOpenTagSearch = { tag -> navController.navigate(Routes.searchRoute(tag)) },
                 )
             }
             // 详情页（M4-3）：不设 launchSingleTop——详情→详情（推荐栏跳转）保留返回栈，
@@ -297,6 +319,35 @@ fun QimengNavHost(
 
 /** 顶层路由集合（底栏可见性判定用） */
 private val topLevelRoutes = TopLevelDestination.entries.map { it.route }.toSet()
+
+/**
+ * query 值百分号编码（[Routes.searchRoute] 专用；RFC 3986 unreserved 之外一律 %XX）。
+ * 为什么自持编码器而不用 android.net.Uri.encode：与 feature:author 的 encodeRouteSegment
+ * 同款理由——行为确定性优先（Uri.encode 的默认保留集含 &/= 等 query 结构字符的版本行为
+ * 不做记忆依赖），且本地 JVM 单测跑在 android.jar stub 上平台 API 不可用。不复用
+ * encodeRouteSegment 本体：internal 跨模块不可见，query/路径段语义略异——两处注释互指，
+ * 标签词表变更时同步自查。
+ */
+private fun encodeQueryValue(value: String): String = buildString {
+    for (byte in value.toByteArray(Charsets.UTF_8)) {
+        val c = byte.toInt() and 0xFF
+        val unreserved = c < QUERY_ASCII_BOUNDARY &&
+            (c.toChar().isLetterOrDigit() || c.toChar() in QUERY_UNRESERVED_SYMBOLS)
+        if (unreserved) append(c.toChar()) else {
+            append('%')
+            append(QUERY_HEX_DIGITS[c ushr 4])
+            append(QUERY_HEX_DIGITS[c and 0xF])
+        }
+    }
+}
+
+/** ASCII 单字节边界（≥128 的多字节 UTF-8 序列成分，恒编码） */
+private const val QUERY_ASCII_BOUNDARY = 0x80
+
+/** RFC 3986 unreserved 符号集（字母数字之外；与 feature:author encodeRouteSegment 同集） */
+private const val QUERY_UNRESERVED_SYMBOLS = "-_.~"
+
+private const val QUERY_HEX_DIGITS = "0123456789ABCDEF"
 
 /** 双击回顶判定窗口（GUIDE_UI §导航结构：400ms 内同一 Tab 二击） */
 private const val DOUBLE_TAP_WINDOW_MS = 400L

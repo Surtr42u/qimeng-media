@@ -9,6 +9,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+import media.qimeng.app.core.data.repository.MediaBatchIndex
 import media.qimeng.app.core.data.repository.StatsRepository
 import media.qimeng.app.core.model.MostViewedEntry
 import media.qimeng.app.core.model.StatsOverviewValues
@@ -84,6 +85,7 @@ class StatsDetailViewModelTest {
         val viewModel = StatsDetailViewModel(
             handle(StatsDetailMode.DISTRIBUTION, StatsRangeOption.ALL),
             FakeStatsRepository(),
+            MediaBatchIndex(),
         )
         advanceUntilIdle()
         assertEquals(StatsDetailMode.DISTRIBUTION, viewModel.mode)
@@ -100,6 +102,7 @@ class StatsDetailViewModelTest {
                 ),
             ),
             FakeStatsRepository(),
+            MediaBatchIndex(),
         )
         advanceUntilIdle()
         assertEquals(StatsDetailMode.TYPE_TREND, viewModel.mode)
@@ -113,7 +116,7 @@ class StatsDetailViewModelTest {
         repository.trendsByType["video"] = listOf(point("07/01", 1), point("07/02", 2))
         repository.trendsBySource["normal"] = listOf(point("07/01", 8), point("07/02", 9))
         // animated_image 与 cos 无数据 → 不出系列
-        val viewModel = StatsDetailViewModel(handle(StatsDetailMode.TYPE_TREND), repository)
+        val viewModel = StatsDetailViewModel(handle(StatsDetailMode.TYPE_TREND), repository, MediaBatchIndex())
         advanceUntilIdle()
         // 类型三路（mediaType 单值）+ 来源两路（source 单值 normal/cos）
         assertEquals(5, repository.trendRequests.size)
@@ -146,7 +149,7 @@ class StatsDetailViewModelTest {
                 MostViewedEntry("id-2", "短看.jpg", "image", null, 45),
             )
         }
-        val viewModel = StatsDetailViewModel(handle(StatsDetailMode.MOST_VIEWED), repository)
+        val viewModel = StatsDetailViewModel(handle(StatsDetailMode.MOST_VIEWED), repository, MediaBatchIndex())
         advanceUntilIdle()
         val state = viewModel.uiState.value
         assertEquals(2, state.secondsRanking.size)
@@ -168,7 +171,7 @@ class StatsDetailViewModelTest {
             assertEquals(10, limit)
             listOf(TopTagEntry("手绘", 9))
         }
-        val viewModel = StatsDetailViewModel(handle(StatsDetailMode.AUTHORS_TAGS), repository)
+        val viewModel = StatsDetailViewModel(handle(StatsDetailMode.AUTHORS_TAGS), repository, MediaBatchIndex())
         advanceUntilIdle()
         val state = viewModel.uiState.value
         assertEquals(listOf("测试作者一"), state.topAuthors.map { it.displayName })
@@ -190,7 +193,7 @@ class StatsDetailViewModelTest {
                 sourceCosCount = 3,
             )
         }
-        val viewModel = StatsDetailViewModel(handle(StatsDetailMode.DISTRIBUTION), repository)
+        val viewModel = StatsDetailViewModel(handle(StatsDetailMode.DISTRIBUTION), repository, MediaBatchIndex())
         advanceUntilIdle()
         val state = viewModel.uiState.value
         assertEquals(listOf("图片", "视频", "其他"), state.distribution.map { it.name })
@@ -206,7 +209,7 @@ class StatsDetailViewModelTest {
         val repository = FakeStatsRepository().apply {
             overviewValue = StatsOverviewValues(9, 6, 3, 1024L, 1, 42L)
         }
-        val viewModel = StatsDetailViewModel(handle(StatsDetailMode.DISTRIBUTION), repository)
+        val viewModel = StatsDetailViewModel(handle(StatsDetailMode.DISTRIBUTION), repository, MediaBatchIndex())
         advanceUntilIdle()
         assertEquals(listOf("图片", "视频"), viewModel.uiState.value.distribution.map { it.name })
     }
@@ -214,16 +217,16 @@ class StatsDetailViewModelTest {
     @Test
     fun `全空数据走空态`() = runTest {
         val repository = FakeStatsRepository() // 趋势与总览全空
-        val viewModel = StatsDetailViewModel(handle(StatsDetailMode.TYPE_TREND), repository)
+        val viewModel = StatsDetailViewModel(handle(StatsDetailMode.TYPE_TREND), repository, MediaBatchIndex())
         advanceUntilIdle()
         assertTrue(viewModel.uiState.value.isEmpty)
         // 分布模式：overview 失败=失败态（同样给「暂无数据」文案）
-        val viewModel2 = StatsDetailViewModel(handle(StatsDetailMode.DISTRIBUTION), repository)
+        val viewModel2 = StatsDetailViewModel(handle(StatsDetailMode.DISTRIBUTION), repository, MediaBatchIndex())
         advanceUntilIdle()
         assertNull(viewModel2.uiState.value.distribution.takeIf { it.isNotEmpty() })
         assertTrue(viewModel2.uiState.value.loadFailed)
         // 常看文件模式：空榜=空态（空态保留口径）
-        val viewModel3 = StatsDetailViewModel(handle(StatsDetailMode.MOST_VIEWED), repository)
+        val viewModel3 = StatsDetailViewModel(handle(StatsDetailMode.MOST_VIEWED), repository, MediaBatchIndex())
         advanceUntilIdle()
         assertTrue(viewModel3.uiState.value.isEmpty)
     }
@@ -231,7 +234,7 @@ class StatsDetailViewModelTest {
     @Test
     fun `mediaType 与 source 协议值到中文名映射`() {
         val repository = FakeStatsRepository()
-        val viewModel = StatsDetailViewModel(handle(StatsDetailMode.TYPE_TREND), repository)
+        val viewModel = StatsDetailViewModel(handle(StatsDetailMode.TYPE_TREND), repository, MediaBatchIndex())
         assertEquals("图片", viewModel.mediaTypeDisplayName("image"))
         assertEquals("视频", viewModel.mediaTypeDisplayName("video"))
         assertEquals("动图", viewModel.mediaTypeDisplayName("animated_image"))
@@ -239,5 +242,27 @@ class StatsDetailViewModelTest {
         assertEquals("常规", viewModel.sourceDisplayName("normal"))
         assertEquals("COS", viewModel.sourceDisplayName("cos"))
         assertEquals("unknown", viewModel.sourceDisplayName("unknown"))
+    }
+
+    // ---------- 任务J J1：详情页跳转链（GUIDE_UI L218-224） ----------
+
+    @Test
+    fun `seconds榜条目点击写批次上下文 - 快照等于榜清单`() = runTest {
+        val repository = FakeStatsRepository()
+        repository.mostViewedProvider = { _, _, _ ->
+            listOf(
+                MostViewedEntry("sec-1", "长看.mp4", "video", null, 300),
+                MostViewedEntry("sec-2", "中看.mp4", "video", null, 120),
+                MostViewedEntry("sec-3", "短看.jpg", "image", null, 45),
+            )
+        }
+        val batchIndex = MediaBatchIndex()
+        val viewModel = StatsDetailViewModel(handle(StatsDetailMode.MOST_VIEWED), repository, batchIndex)
+        advanceUntilIdle()
+
+        viewModel.enterDetail("sec-1")
+        // 批次上下文 = seconds 榜整表（「已加载=当前显示清单」，快照式整体替换）
+        assertEquals(listOf("sec-1", "sec-2", "sec-3"), batchIndex.ids)
+        assertEquals(0, batchIndex.indexOf("sec-1"))
     }
 }

@@ -1,5 +1,6 @@
 package media.qimeng.app.feature.stats
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -42,11 +43,17 @@ import media.qimeng.app.core.ui.component.formatBytesHumanReadable
  * - 分布统计小入口卡（L214）：纯文字卡，点击进分布统计详情（来源构成 N3 #31b 解冻，详情页呈现）；
  * - 常看文件卡（L215）：文件名+浏览次数紧凑 Top3（/stats/most-viewed metric=views），
  *   点击进常看文件详情（seconds 榜）；常看作者与标签卡（L216）：作者/标签混合 Top3
- *   （/stats/top-authors + /stats/top-tags），点击进常看作者标签详情——空数据卡内空态保留。
+ *   （/stats/top-authors + /stats/top-tags），点击进常看作者标签详情——空数据卡内空态保留；
+ * - 详情页跳转链（任务J J1，GUIDE_UI L218-224）：常看文件**条目**→详情页（榜单作批次
+ *   上下文，[StatsViewModel.enterDetail] 写快照清单）；常看作者条目→作者集合页（真实
+ *   authorId）；常看标签条目→搜索页携词——均经回调上抛壳层导航，本层零路由耦合。
  */
 @Composable
 fun StatsScreen(
     onOpenDetail: (mode: StatsDetailMode, range: StatsRangeOption) -> Unit,
+    onOpenAsset: (assetId: String) -> Unit,
+    onOpenAuthor: (authorId: String, displayName: String) -> Unit,
+    onOpenTagSearch: (tag: String) -> Unit,
     viewModel: StatsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -91,6 +98,11 @@ fun StatsScreen(
                 loading = state.trendsLoading,
                 empty = state.mostViewedEmpty,
                 onOpen = { onOpenDetail(StatsDetailMode.MOST_VIEWED, state.selectedRange) },
+                onEntryClick = { entry ->
+                    // 榜单作批次上下文（J1）：先写快照清单再导航，详情页 i/N 与滑动链以 Top3 榜为批次
+                    viewModel.enterDetail(entry.assetId)
+                    onOpenAsset(entry.assetId)
+                },
             )
         }
         item {
@@ -99,6 +111,14 @@ fun StatsScreen(
                 loading = state.trendsLoading,
                 empty = state.topAuthorsTagsEmpty,
                 onOpen = { onOpenDetail(StatsDetailMode.AUTHORS_TAGS, state.selectedRange) },
+                onEntryClick = { entry ->
+                    when (entry.kind) {
+                        // 作者条目→作者集合页（authorId 真实 id，/stats/top-authors 响应字段）
+                        TopAuthorTagEntry.Kind.AUTHOR -> onOpenAuthor(entry.id, entry.name)
+                        // 标签条目→搜索页携词（转义在壳层导航构建处统一处理）
+                        TopAuthorTagEntry.Kind.TAG -> onOpenTagSearch(entry.id)
+                    }
+                },
             )
         }
         item { Spacer(modifier = Modifier.height(8.dp)) }
@@ -276,6 +296,7 @@ private fun MostViewedCard(
     loading: Boolean,
     empty: Boolean,
     onOpen: () -> Unit,
+    onEntryClick: (MostViewedEntry) -> Unit,
 ) {
     Surface(
         onClick = onOpen,
@@ -299,7 +320,11 @@ private fun MostViewedCard(
                 loading -> CompactText(LOADING_TEXT)
                 empty -> CompactEmptyText()
                 else -> entries.forEach { entry ->
-                    CompactRow(text = entry.fileName, value = entry.value.toDisplayText() + VIEW_SUFFIX)
+                    CompactRow(
+                        text = entry.fileName,
+                        value = entry.value.toDisplayText() + VIEW_SUFFIX,
+                        onClick = { onEntryClick(entry) },
+                    )
                 }
             }
         }
@@ -312,10 +337,11 @@ private fun MostViewedCard(
  */
 @Composable
 private fun TopAuthorsTagsCard(
-    mixed: List<Pair<String, Int>>,
+    mixed: List<TopAuthorTagEntry>,
     loading: Boolean,
     empty: Boolean,
     onOpen: () -> Unit,
+    onEntryClick: (TopAuthorTagEntry) -> Unit,
 ) {
     Surface(
         onClick = onOpen,
@@ -338,19 +364,25 @@ private fun TopAuthorsTagsCard(
             when {
                 loading -> CompactText(LOADING_TEXT)
                 empty -> CompactEmptyText()
-                else -> mixed.forEach { (name, views) ->
-                    CompactRow(text = name, value = views.toDisplayText() + VIEW_SUFFIX)
+                else -> mixed.forEach { entry ->
+                    CompactRow(
+                        text = entry.name,
+                        value = entry.views.toDisplayText() + VIEW_SUFFIX,
+                        onClick = { onEntryClick(entry) },
+                    )
                 }
             }
         }
     }
 }
 
-/** 常看卡紧凑行：名称左对齐 + 数值右对齐（单行省略） */
+/** 常看卡紧凑行：名称左对齐 + 数值右对齐（单行省略）；条目可点击（J1 跳转链） */
 @Composable
-private fun CompactRow(text: String, value: String) {
+private fun CompactRow(text: String, value: String, onClick: () -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         Text(

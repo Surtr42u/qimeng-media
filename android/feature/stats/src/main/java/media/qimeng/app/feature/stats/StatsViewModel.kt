@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import media.qimeng.app.core.data.repository.MediaBatchIndex
 import media.qimeng.app.core.data.repository.StatsRepository
 import media.qimeng.app.core.model.DEFAULT_STATS_RANGE
 import media.qimeng.app.core.model.MostViewedEntry
@@ -21,6 +22,20 @@ import media.qimeng.app.core.model.apiRange
 
 /** 数字卡/常看卡共享的 Top 条数（GUIDE_UI §数据统计页「紧凑文本列表 Top 3」） */
 internal const val TOP_CARD_LIMIT = 3
+
+/**
+ * 常看作者/标签混合卡单条（任务J J1 详情页跳转链，GUIDE_UI L218-224）：条目可点击——
+ * AUTHOR → 作者集合页（[id] = authorId 取数键，真实 id 来自 /stats/top-authors 响应）；
+ * TAG → 搜索页携词（[id] = 标签名，与展示名同值）。视图层按 kind 分发，不在此耦合导航。
+ */
+data class TopAuthorTagEntry(
+    val kind: Kind,
+    val id: String,
+    val name: String,
+    val views: Int,
+) {
+    enum class Kind { AUTHOR, TAG }
+}
 
 /**
  * 统计页 UI 状态（任务I I3 复刻回改 + N4 I3b 常看族解冻接线）：
@@ -69,11 +84,17 @@ data class StatsUiState(
 
     /**
      * 常看作者与标签混合 Top3（GUIDE_UI §数据统计页「作者/标签按窗口浏览聚合混合 Top 3」）：
-     * 作者取 displayName、标签取 tag 名，按 views 降序混排取前 3（稳定排序：同分作者在前）。
+     * 作者/标签各转可点击条目（[TopAuthorTagEntry]，J1 跳转链），按 views 降序混排取前 3
+     * （稳定排序：同分作者在前）。
      */
-    val topAuthorsTagsMixed: List<Pair<String, Int>>
-        get() = (topAuthors.map { it.displayName to it.views } + topTags.map { it.tag to it.views })
-            .sortedByDescending { it.second }
+    val topAuthorsTagsMixed: List<TopAuthorTagEntry>
+        get() = (
+            topAuthors.map {
+                TopAuthorTagEntry(TopAuthorTagEntry.Kind.AUTHOR, it.authorId, it.displayName, it.views)
+            } + topTags.map {
+                TopAuthorTagEntry(TopAuthorTagEntry.Kind.TAG, it.tag, it.tag, it.views)
+            }
+            ).sortedByDescending { it.views }
             .take(TOP_CARD_LIMIT)
 
     private inline fun sumWindow(points: List<TrendPoint>, selector: (TrendPoint) -> Int): Long =
@@ -94,6 +115,7 @@ data class StatsUiState(
 @HiltViewModel
 class StatsViewModel @Inject constructor(
     private val statsRepository: StatsRepository,
+    private val batchIndex: MediaBatchIndex,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(StatsUiState())
@@ -146,6 +168,16 @@ class StatsViewModel @Inject constructor(
             val overview = runCatching { statsRepository.overview() }.getOrNull()
             _uiState.update { it.copy(overview = overview, overviewLoading = false) }
         }
+    }
+
+    /**
+     * 常看文件条目进详情前的批次上下文写入（任务J J1，GUIDE_UI L218-224 跳转链；
+     * HomeViewModel/FavoriteViewModel 的 enterDetail 同款范式）：「已加载=当前显示清单」
+     * 口径——主页面常看卡即 Top3 榜单，快照式整体替换 [MediaBatchIndex.ids]，
+     * DetailViewModel 既有消费零改动。参数保留 assetId 与同款签名对齐（触发时机语义）。
+     */
+    fun enterDetail(assetId: String) {
+        batchIndex.ids = _uiState.value.mostViewed.map { it.assetId }
     }
 
     private companion object {
