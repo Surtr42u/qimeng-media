@@ -123,6 +123,13 @@ func (s *Server) PostApiV1Libraries(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, codeInvalidParam, "rootPath 必须是绝对路径")
 		return
 	}
+	// 库根白名单（config.AllowedLibraryRoots）：空 = 不限制（本地零配置
+	// 开发向后兼容）；非空时必须落在任一允许前缀内。放在 Stat 之前：
+	// 白名单外的路径不探测文件系统，避免用「是否存在」侧信道探测任意目录。
+	if !pathWithinAnyAllowedRoot(req.RootPath, s.cfg.AllowedLibraryRoots) {
+		writeErr(w, http.StatusBadRequest, codeInvalidParam, "库路径不在允许的根目录白名单内")
+		return
+	}
 	info, err := os.Stat(req.RootPath)
 	if err != nil || !info.IsDir() {
 		// 不区分"不存在"与"无权限"：错误文案不泄露服务端文件系统细节
@@ -175,6 +182,32 @@ func (s *Server) PostApiV1Libraries(w http.ResponseWriter, r *http.Request) {
 		ScanState: &state,
 		Kind:      &createdKind,
 	})
+}
+
+// pathWithinAnyAllowedRoot 判定 path 是否落在 allowedRoots 任一根内（含根本身）。
+// 空列表 = 不限制（返回 true），调用方无需先判 len。
+// 路径先 Clean；大小写不敏感比较（Windows/NAS 文件系统普遍如此，与
+// dirConflict 同风格）。前缀边界必须带分隔符：避免 /media 命中 /mediax
+//（与 filing.PathWithinRoot 同一防御；此处叠加 EqualFold 以适配盘符/目录名大小写）。
+func pathWithinAnyAllowedRoot(path string, allowedRoots []string) bool {
+	if len(allowedRoots) == 0 {
+		return true
+	}
+	pc := filepath.Clean(path)
+	for _, root := range allowedRoots {
+		if root == "" {
+			continue
+		}
+		rc := filepath.Clean(root)
+		if strings.EqualFold(pc, rc) {
+			return true
+		}
+		prefix := rc + string(filepath.Separator)
+		if len(pc) >= len(prefix) && strings.EqualFold(pc[:len(prefix)], prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // dirConflict 判断库根与数据目录是否存在任一方向的嵌套（含相同）。

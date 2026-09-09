@@ -209,6 +209,100 @@ func TestTrashRestoreNotFound(t *testing.T) {
 	}
 }
 
+// TestDeletePathWithinRootGuard：删除路径必须落在库根内（SECURITY 红线 1 纵深防御）。
+// 触发方式：污染库行 root_path 为空（PathWithinRoot 对空 root 恒 false），
+// rel_path 保持合法——若无该闸门，Stat 走相对路径会得到 404 而非 400，
+// 从而与本用例的 400 断言区分开。
+func TestDeletePathWithinRootGuard(t *testing.T) {
+	env := newTestEnv(t)
+	id, ok := env.assetIDByName(t, "a.jpg")
+	if !ok {
+		t.Fatal("测试前置失败：a.jpg 不在列表")
+	}
+	if _, err := env.conn.Exec("UPDATE libraries SET root_path = '' WHERE id = ?", env.libID); err != nil {
+		t.Fatalf("污染 root_path 失败: %v", err)
+	}
+
+	resp := env.do(t, http.MethodDelete, "/api/v1/assets/"+id, "")
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("路径越界删除期望 400（无闸门时是相对路径 Stat 的 404），得到 %d", resp.StatusCode)
+	}
+	if _, err := os.Stat(filepath.Join(env.media, "a.jpg")); err != nil {
+		t.Errorf("拦截后库内文件应仍在原地: %v", err)
+	}
+	if got := len(env.trashList(t)); got != 0 {
+		t.Errorf("路径越界删除不应写入回收站，得到 %d 条", got)
+	}
+	var n int
+	if err := env.conn.QueryRow("SELECT COUNT(*) FROM assets WHERE asset_id = ?", id).Scan(&n); err != nil || n != 1 {
+		t.Errorf("拦截后库行应保留，count=%d err=%v", n, err)
+	}
+}
+
+// TestDeleteRelPathEscapeRejected：库行 rel_path 被污染为 .. 逃逸时删除 400。
+// 该路径在 PathWithinRoot 与 TrashPathFor(NormalizeRelPath) 双闸下均被拒；
+// 用例锁定对外语义「逃逸删除 = 400 且不动磁盘」，不区分哪一道先拦。
+func TestDeleteRelPathEscapeRejected(t *testing.T) {
+	env := newTestEnv(t)
+	id, ok := env.assetIDByName(t, "a.jpg")
+	if !ok {
+		t.Fatal("测试前置失败：a.jpg 不在列表")
+	}
+	if _, err := env.conn.Exec("UPDATE assets SET rel_path = ? WHERE asset_id = ?", "../outside.jpg", id); err != nil {
+		t.Fatalf("污染 rel_path 失败: %v", err)
+	}
+	outside := filepath.Join(filepath.Dir(env.media), "outside.jpg")
+	if err := os.WriteFile(outside, []byte("must-not-be-trashed"), 0o644); err != nil {
+		t.Fatalf("创建库外文件失败: %v", err)
+	}
+
+	resp := env.do(t, http.MethodDelete, "/api/v1/assets/"+id, "")
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("逃逸 rel_path 删除期望 400，得到 %d", resp.StatusCode)
+	}
+	if _, err := os.Stat(outside); err != nil {
+		t.Errorf("拦截后库外文件应仍在原地: %v", err)
+	}
+	if got := len(env.trashList(t)); got != 0 {
+		t.Errorf("逃逸删除不应写入回收站，得到 %d 条", got)
+	}
+}
+
+// TestRestorePathWithinRootGuard：恢复目标拼接后越出库根时必须 400。
+// 触发方式：污染库行 root_path 为空（PathWithinRoot 对空 root 恒 false），
+// meta 的 OriginalPath 本身合法——证明闸门看的是"库根 × 拼接结果"而非只信 meta。
+func TestRestorePathWithinRootGuard(t *testing.T) {
+	env := newTestEnv(t)
+	id, ok := env.assetIDByName(t, "a.jpg")
+	if !ok {
+		t.Fatal("测试前置失败：a.jpg 不在列表")
+	}
+	resp := env.do(t, http.MethodDelete, "/api/v1/assets/"+id, "")
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("删除期望 200，得到 %d", resp.StatusCode)
+	}
+	items := env.trashList(t)
+	if len(items) != 1 || items[0].Id == nil {
+		t.Fatalf("回收站期望 1 条，得到 %+v", items)
+	}
+	// 污染库根：空 root_path 时 PathWithinRoot 恒 false。
+	if _, err := env.conn.Exec("UPDATE libraries SET root_path = '' WHERE id = ?", env.libID); err != nil {
+		t.Fatalf("污染 root_path 失败: %v", err)
+	}
+	resp = env.do(t, http.MethodPost, "/api/v1/trash/"+*items[0].Id+"/restore", "")
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("越界恢复期望 400，得到 %d", resp.StatusCode)
+	}
+	// 条目必须仍在回收站（恢复被拒绝，不得吞掉文件）。
+	if got := len(env.trashList(t)); got != 1 {
+		t.Errorf("拦截后回收站应仍有 1 条，得到 %d", got)
+	}
+}
+
 // TestTrashUnauthorized：回收站端点全要求 Bearer。
 func TestTrashUnauthorized(t *testing.T) {
 	env := newTestEnv(t)

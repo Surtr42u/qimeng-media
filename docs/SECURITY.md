@@ -33,6 +33,13 @@
 - **本机开发脚本**：仓库根 `启动服务端.bat` 已默认带 `QIMENG_AUTH_DEV_MODE=1`（2026-09-03 起）——生产/远程部署**必须移除该行**（或改回 `0`）。
 - 部署清单检查项：docker-compose / 生产 yaml **不得**出现 `auth_dev_mode: true`（CI 不做强制 gate，靠部署者自查 + 文档双签）。
 
+## 媒体库注册（allowed_library_roots）
+
+- **配置键**：`allowed_library_roots`（yaml）/ `QIMENG_ALLOWED_LIBRARY_ROOTS`（env，路径列表，`;` 或本平台 `os.PathListSeparator` 分隔）。
+- **空 = 关闭**：默认空列表，注册行为与本开关引入前一致——任意服务端可访问的绝对目录均可注册（本地零配置开发不受影响）。
+- **非空 = 强制**：`POST /api/v1/libraries` 的 `rootPath` 必须位于任一允许前缀之下（含前缀本身，路径 Clean + 大小写不敏感），否则 400 `INVALID_PARAM`「库路径不在允许的根目录白名单内」。白名单外路径不探测文件系统，避免存在性侧信道。
+- **生产建议**：NAS/Docker 部署务必配置，把注册面收敛到已挂载的媒体卷（如 `/media`、`/mnt/photos`），防止误把 `/`、系统目录或无关共享挂进扫描/直链管线。该白名单只约束**新注册**；已入库的库不受影响（改配置不会追溯删除既有库）。
+
 ## 上传安全（对应需求：手机直传 NAS）
 
 - 白名单：图片 jpg/jpeg/png/gif/webp/avif；视频 mp4/mkv/webm/mov/m4v/avi。

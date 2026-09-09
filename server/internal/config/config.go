@@ -108,6 +108,13 @@ type Config struct {
 	// 流程，调试 UI 用。仅限本机开发，生产必须关闭；SECURITY 红线 5 的
 	// 单点例外，说明见 docs/SECURITY.md「开发模式」节。
 	AuthDevMode bool `yaml:"auth_dev_mode"`
+	// AllowedLibraryRoots 是媒体库注册根路径白名单。
+	// 为什么：注册库 = 把磁盘目录交给扫描器/直链/回收站管线，路径一旦
+	// 误指（如 /、/etc、家目录）会把无关文件暴露进媒体面或被误扫。
+	// 空 = 不限制（向后兼容本地零配置开发，行为与本字段引入前一致）；
+	// 非空 = 每个注册库的 root_path 必须位于任一前缀之下（含前缀本身），
+	// 否则 POST /api/v1/libraries 返回 400。
+	AllowedLibraryRoots []string `yaml:"allowed_library_roots"`
 }
 
 // Load 按优先级加载配置：内置默认值 < yaml 文件 < 环境变量。
@@ -208,7 +215,40 @@ func applyEnv(cfg *Config) error {
 		}
 		cfg.AuthDevMode = b
 	}
+	// 白名单是路径列表：空值 = 未设置、保留 yaml/默认（空 = 不限制）。
+	// 分隔符同时接受 ';'（Windows 路径列表习惯，也是本平台 PathListSeparator）
+	// 与 os.PathListSeparator（Unix 为 ':'）——跨平台 compose 只需记住一种写法。
+	if v := os.Getenv("QIMENG_ALLOWED_LIBRARY_ROOTS"); v != "" {
+		cfg.AllowedLibraryRoots = splitPathList(v)
+	}
 	return nil
+}
+
+// splitPathList 把环境变量里的路径列表拆成切片。
+// 同时按 ';' 与 os.PathListSeparator 切分：Windows 上两者同为 ';'，
+// 不会误切盘符冒号；Unix 上额外接受 ':'，与 PATH 同款习惯。
+// 空段（如 "a;;b"）跳过，避免把 "" 当成「当前目录」白名单根。
+func splitPathList(v string) []string {
+	// Windows 上 os.PathListSeparator 就是 ';'，map 字面量不能写两个相同键；
+	// 先放 ';'，再无条件加入 PathListSeparator（同值时覆盖无害）。
+	seps := map[byte]bool{';': true}
+	seps[os.PathListSeparator] = true
+	var out []string
+	start := 0
+	flush := func(end int) {
+		p := v[start:end]
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	for i := 0; i < len(v); i++ {
+		if seps[v[i]] {
+			flush(i)
+			start = i + 1
+		}
+	}
+	flush(len(v))
+	return out
 }
 
 // SlogLevel 把字符串日志级别翻译成 slog.Level。

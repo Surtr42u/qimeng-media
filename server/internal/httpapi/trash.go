@@ -109,6 +109,16 @@ func (s *Server) DeleteApiV1AssetsAssetId(w http.ResponseWriter, r *http.Request
 		return
 	}
 	src := filepath.Join(row.RootPath, filepath.FromSlash(row.RelPath))
+	// 纵深防御：SECURITY 红线 1（路径穿越）。rel_path 来自库，扫描入库时
+	// 已过 NormalizeRelPath；为什么数据库路径也再验一次——外部工具改库、
+	// 迁移 bug、历史脏数据都可能让库行不再干净。删除是不可逆方向的文件
+	// 移动（移进回收站），库数据被污染时绝不能把库外文件当资产删走，
+	// PathWithinRoot 是 handler 侧最后一道闸（与 media 直链同一模式）。
+	if !filing.PathWithinRoot(row.RootPath, src) {
+		s.logger.Error("资产相对路径越界，删除已拦截", "assetId", row.AssetID)
+		writeErr(w, http.StatusBadRequest, codeInvalidParam, "路径不合法")
+		return
+	}
 	if _, err := os.Stat(src); err != nil {
 		// 库与磁盘漂移（文件已被外部移动/删除）：删除无从谈起，
 		// 404 让用户感知而不是 500——行还在库里的清理由扫描器负责。
@@ -318,6 +328,15 @@ func (s *Server) PostApiV1TrashTrashIdRestore(w http.ResponseWriter, r *http.Req
 		targetRel = path.Join(dir, filing.ResolveConflict(name, exists))
 	}
 	target := filepath.Join(lib.RootPath, filepath.FromSlash(targetRel))
+	// 纵深防御：SECURITY 红线 1。RestorePaths 已对 meta 的 OriginalPath 过
+	// NormalizeRelPath；为什么库根与拼接结果也再验一次——恢复目标是"库内
+	// 写文件"，库行 root_path 与 meta 均属持久化数据，任一被污染（改库/
+	// 坏 meta/根路径配置漂移）都不该把文件写出库根。与删除侧同一闸门。
+	if !filing.PathWithinRoot(lib.RootPath, target) {
+		s.logger.Error("恢复目标越出库根，已拦截", "assetId", e.meta.AssetID)
+		writeErr(w, http.StatusBadRequest, codeInvalidParam, "路径不合法")
+		return
+	}
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		s.internalErr(w, "创建恢复目录", err)
 		return

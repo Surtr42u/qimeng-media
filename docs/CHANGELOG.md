@@ -9,6 +9,20 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## refactor/feat/fix/docs(server+web): 系统审查 P2 六条清偿——assets 拆分+ADR-0019+库白名单+回收站路径闸门+Web 打点测试+工作区清理（2026-09-09 第一百七十三笔）
+
+执行 AI：MiMo（主代理，汇总/验收/修 config 编译缺陷）；实现子代理 general-1~6 分条落地（P2-1~P2-6）
+
+- **P2-1**：`httpapi/assets.go` 612 行拆为 assets / assets_filters / assets_list / assets_media_url（主文件 93 行，handler ~61 行）；符号名保留，行为零变化
+- **P2-2**：ADR-0019「编排层从 httpapi 下沉」Accepted；INDEX / ARCHITECTURE §5.1 / AI_README_FIRST 自审清单同步
+- **P2-3**：`allowed_library_roots`（yaml + `QIMENG_ALLOWED_LIBRARY_ROOTS`）；空=不限制；注册库不在白名单 → 400；SECURITY.md 新节；config/httpapi 测试
+- **P2-4**：删除与回收站恢复路径补 `filing.PathWithinRoot` 纵深防御（污染 root/rel 拒 400）；3 个 API 测试
+- **P2-5**：抽 `web/src/lib/progress-report.ts` 纯函数；`use-progress` 接线不变；+24 vitest；全量 118 绿
+- **P2-6**：原型归档 README + 工作区清理说明；`qimeng-server.exe~` 因进程占用暂未删（Access denied）
+- 门禁：`go test ./...` 全绿；`npm test` 118/118；`tsc --noEmit` 过
+- 详单：`docs/P2-修复执行报告.md` + `docs/.p2-progress-P2-1..6.md`
+
+---
 ## feat(app): RES 残账清偿——总览行直达集合页+搜索/作者集合页批次上下文+NavHost去重与编码器单测（2026-09-09 第一百七十一笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理，RES批；主会话质量排查认定的可直接做项）
