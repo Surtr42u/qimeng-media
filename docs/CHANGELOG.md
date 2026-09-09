@@ -9,6 +9,19 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## feat(app): 任务L L5 队列改本地优先——发送成功再删+退避重试+导出未上传（2026-09-09 第一百八十三笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理，任务L L5 批）
+
+- **用户原话**：#25「应该是本地储存,然后再上报……失败也有本地的，可以把安卓本地的直接传给 nas 合并」+ 拍板 #7（推翻 M4-4「先删后发+毒丸 IO 丢弃」）
+- **队列语义重写**（`core:data/events`）：入队即生成 `clientEventId` UUID 随行持久（单一生成点，调用方不感知）；drain 改「**只读取件→2xx 确认才删行**」——进程死亡最多重复发送（服务端唯一索引幂等吸收不双计），绝不丢行；IO/5xx → 行保留 + 指数退避（30s 基础档、2^n 增长、封顶=周期兜底 15min，全具名常量，退避时刻持久在 `nextAttemptAt` 列、跨进程重启生效）；4xx → **终局标记不删行**（`terminal` 列，不再重试、保留供导出，毒丸丢弃废止）；环形上限 5000 FIFO 与 dwell 单条语义原样保留，终局行占额度（取舍注释写明：本地存储有界优先，终局行可导出抢救）
+- **Room 1→2 迁移**（`EventDbMigrations.MIGRATION_1_2`，只加三列 DEFAULT）：clientEventId/terminal/nextAttemptAt——旧库无损升级，存量行幂等键 `''` 由 drain 懒回填生成一次并落库（不伪造历史 id）；走正式迁移不破坏性重建（队列现在是用户数据唯一暂存）
+- **分类表改判**（ViewEventSendPolicy，表驱动+单测逐行锁定）：2xx 全段=确认（幂等键使信任 2xx 安全，避免非声明 2xx 永久重试无底洞）；400/401/403/404=终局标记；409 等未声明 4xx 保守重试；毒丸连败阈值删除
+- **设置页最小 UI**（feature:settings）：「浏览数据」一行卡（待上传 N 条 + 立即同步 + 导出未上传 + 一次性结果提示）——立即同步与三通道自动补传同一 drain 执行体（同一 Mutex 串行，退避未到期不狂打）；导出走 SAF CreateDocument（VM 只出数据、屏幕层写文件，元素=可直接 POST /events/view 的请求体，同一 clientEventId 手动与自动路径幂等一致）；feature:settings 补 activity-compose 依赖与 testOptions returnDefaultValues（core:data 同款先例）
+- **单测重写/新增**：`ViewEventQueueTest` 按新语义全量重写 14 例（成功删/失败留/退避到期前后/同 id 重发/终局标记不再取件/懒回填/多批循环/串行/环形上限/导出/空队列）；`ViewEventSendPolicyTest` 改判表 16 行+退避参数；`PendingEventExportTest` 新增 3 例（dwell 秒数/kind 小写/startedAt UTC/不带 seconds/空数组）；`PendingViewEventMappersTest`+`ViewEventReportWireTest`+`SdkDetailMappersTest` 补幂等键透传断言；`SettingsViewModelTest` 增 2 例（同步完成/网络不通保留）
+- **门禁**：make app-build / app-test / app-lint 全绿（core:data 71 例、feature:settings 13 例全过）
+
+---
 ## feat(api): 任务L L5 协议+服务端幂等合并——clientEventId+唯一约束+重传不双计（2026-09-09 第一百八十二笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理，任务L L5 批）

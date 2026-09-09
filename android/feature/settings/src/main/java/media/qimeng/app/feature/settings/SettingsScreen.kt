@@ -1,5 +1,7 @@
 package media.qimeng.app.feature.settings
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -20,13 +22,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import java.io.IOException
+import kotlinx.coroutines.launch
 import media.qimeng.app.core.model.AuthorOverview
 import media.qimeng.app.core.model.DiskCacheQuota
 import media.qimeng.app.core.model.RecommendPreset
@@ -75,6 +81,16 @@ private const val OVERVIEW_EMPTY = "暂无作者"
 
 /** 写失败横幅消除按钮文案（P2-3） */
 private const val WRITE_ERROR_DISMISS = "知道了"
+
+/** 浏览数据同步卡文案（任务L L5，最小 UI：一行卡片 + 两按钮 + 一次性提示） */
+private const val EVENT_SYNC_TITLE = "浏览数据"
+private const val EVENT_SYNC_PENDING_PREFIX = "待上传"
+private const val EVENT_SYNC_PENDING_ZERO = "待上传 0 条"
+private const val EVENT_SYNC_PENDING_UNKNOWN = "待上传 —"
+private const val EVENT_SYNC_SUBTITLE = "断网时打点先存本机，联网自动补传；服务端按幂等键合并不重复计数"
+private const val EVENT_SYNC_BUTTON_NOW = "立即同步"
+private const val EVENT_SYNC_BUTTON_EXPORT = "导出未上传"
+private const val EVENT_SYNC_EXPORT_FILE_NAME = "qimeng-pending-events.json"
 
 /**
  * 「我的」Tab（M4-6 完整版，单页滚动列表，GUIDE_UI §我的页结构 + I4 复刻清偿）：
@@ -181,6 +197,35 @@ fun SettingsScreen(
                 label = ROW_PREFS,
                 subtitle = SUBTITLE_PREFS,
                 onClick = viewModel::openPrefsSheet,
+            )
+        }
+
+        // 浏览数据同步（任务L L5：本地优先队列的手动入口 + 导出未上传，最小 UI）
+        item {
+            val context = LocalContext.current
+            val scope = rememberCoroutineScope()
+            val exportLauncher = rememberLauncherForActivityResult(
+                ActivityResultContracts.CreateDocument("application/json"),
+            ) { uri ->
+                if (uri == null) return@rememberLauncherForActivityResult // 用户取消，非错误
+                scope.launch {
+                    val export = viewModel.exportPending()
+                    // SAF 写文件是平台胶水（非业务逻辑，铁律 7 不涉）：VM 出数据、屏幕层落盘
+                    val written = export != null && runCatching {
+                        context.contentResolver.openOutputStream(uri)?.use { out ->
+                            out.write(export.json.toByteArray(Charsets.UTF_8))
+                        } ?: throw IOException("openOutputStream 返回 null")
+                    }.isSuccess
+                    viewModel.onExported(if (written) export.count else null)
+                }
+            }
+            EventSyncCard(
+                pending = state.pendingEvents,
+                syncing = state.eventSyncing,
+                note = state.eventSyncNote,
+                onSyncNow = viewModel::syncEventsNow,
+                onExport = { exportLauncher.launch(EVENT_SYNC_EXPORT_FILE_NAME) },
+                onDismissNote = viewModel::dismissEventSyncNote,
             )
         }
 
@@ -387,6 +432,61 @@ private fun CardPlaceholder(text: String) {
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
+}
+
+/**
+ * 浏览数据同步卡（任务L L5，最小 UI）：标题 + 待上传计数副行 +「立即同步/导出未上传」
+ * 两按钮 + 一次性结果提示（点按消除）。执行体全在 [media.qimeng.app.core.data.events.
+ * ViewEventQueue]（三通道自动补传的同一队列），本卡只是手动触发口——设置页一行入口即
+ * 可，不做大 UI（拍板口径）。
+ */
+@Composable
+private fun EventSyncCard(
+    pending: Int?,
+    syncing: Boolean,
+    note: String?,
+    onSyncNow: () -> Unit,
+    onExport: () -> Unit,
+    onDismissNote: () -> Unit,
+) {
+    Surface(color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(text = EVENT_SYNC_TITLE, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                Text(
+                    text = when {
+                        pending == null -> EVENT_SYNC_PENDING_UNKNOWN
+                        pending == 0 -> EVENT_SYNC_PENDING_ZERO
+                        else -> "$EVENT_SYNC_PENDING_PREFIX $pending 条"
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Text(
+                text = EVENT_SYNC_SUBTITLE,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(enabled = !syncing, onClick = onSyncNow) {
+                    Text(text = if (syncing) "同步中…" else EVENT_SYNC_BUTTON_NOW)
+                }
+                TextButton(onClick = onExport) { Text(text = EVENT_SYNC_BUTTON_EXPORT) }
+            }
+            if (note != null) {
+                Text(
+                    text = note,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.clickable(onClick = onDismissNote),
+                )
+            }
+        }
+    }
 }
 
 /**

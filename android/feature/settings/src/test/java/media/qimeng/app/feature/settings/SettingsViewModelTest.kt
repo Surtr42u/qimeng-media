@@ -12,6 +12,11 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+import media.qimeng.app.core.data.events.PendingViewEventDao
+import media.qimeng.app.core.data.events.PendingViewEventEntity
+import media.qimeng.app.core.data.events.ViewEventQueue
+import media.qimeng.app.core.data.events.ViewEventSender
+import media.qimeng.app.core.data.events.ViewEventSendResult
 import media.qimeng.app.core.data.repository.AuthRepository
 import media.qimeng.app.core.data.repository.AuthorRepository
 import media.qimeng.app.core.data.repository.CoilCacheManager
@@ -134,6 +139,63 @@ class SettingsViewModelTest {
     private fun author(id: String, followed: Boolean, fileCount: Int? = null) =
         AuthorSummary(id = id, displayName = "作者$id", type = AuthorType.REGULAR, fileCount = fileCount, followed = followed, viewCount = null)
 
+    /** 内存事件队列 DAO（任务L L5：立即同步/导出用例；语义按接口契约复刻） */
+    private class FakeEventDao : PendingViewEventDao {
+        val rows = mutableListOf<PendingViewEventEntity>()
+        private var nextId = 1L
+
+        override suspend fun insert(entity: PendingViewEventEntity): Long {
+            val id = nextId++
+            rows += entity.copy(id = id)
+            return id
+        }
+
+        override suspend fun evictBeyondLimit(limit: Int) {
+            if (rows.size <= limit) return
+            val keep = rows.sortedByDescending { it.id }.take(limit).map { it.id }.toSet()
+            rows.removeAll { it.id !in keep }
+        }
+
+        override suspend fun selectDue(now: Long, limit: Int): List<PendingViewEventEntity> =
+            rows.filter { !it.terminal && it.nextAttemptAt <= now }.sortedBy { it.id }.take(limit)
+
+        override suspend fun deleteByIds(ids: List<Long>) {
+            rows.removeAll { it.id in ids }
+        }
+
+        override suspend fun reschedule(id: Long, nextAttemptAt: Long) {
+            val i = rows.indexOfFirst { it.id == id }
+            if (i >= 0) rows[i] = rows[i].copy(nextAttemptAt = nextAttemptAt)
+        }
+
+        override suspend fun markTerminal(id: Long) {
+            val i = rows.indexOfFirst { it.id == id }
+            if (i >= 0) rows[i] = rows[i].copy(terminal = true)
+        }
+
+        override suspend fun updateClientEventId(id: Long, clientEventId: String) {
+            val i = rows.indexOfFirst { it.id == id }
+            if (i >= 0) rows[i] = rows[i].copy(clientEventId = clientEventId)
+        }
+
+        override suspend fun listAll(): List<PendingViewEventEntity> = rows.sortedBy { it.id }
+
+        override suspend fun countPending(): Int = rows.count { !it.terminal }
+
+        override suspend fun count(): Int = rows.size
+    }
+
+    /** 固定时钟（退避使行不可取件——本组用例只断言提示与计数，0 足够） */
+private object FixedEventClock : media.qimeng.app.core.data.events.EventClock {
+    override fun now(): Long = 0L
+}
+
+/** 可编程发送器：恒 202 或恒 IO 失败（立即同步摘要语义断言用） */
+    private class FakeEventSender(private val fail: Boolean) : ViewEventSender {
+        override suspend fun send(event: PendingViewEventEntity): ViewEventSendResult =
+            if (fail) ViewEventSendResult.IoError else ViewEventSendResult.Http(202)
+    }
+
     private fun viewModel(
         auth: AuthRepository = FakeAuthRepository(initialServerUrl = "http://10.0.2.2:8420", initialLoggedIn = true),
         authors: List<AuthorSummary> = listOf(author("1", true, fileCount = 3), author("2", false, fileCount = 10), author("3", true, fileCount = 5)),
@@ -145,6 +207,7 @@ class SettingsViewModelTest {
         stats: StatsRepository = FakeStatsRepository(
             StatsOverviewValues(totalFiles = 6135, imageCount = 5721, videoCount = 414, totalSizeBytes = 0L, todayViews = 0, totalViews = 0L),
         ),
+        queue: ViewEventQueue = ViewEventQueue(FakeEventDao(), FakeEventSender(fail = false), clock = FixedEventClock),
     ): SettingsViewModel = SettingsViewModel(
         authRepository = auth,
         authorRepository = authorRepo ?: FakeAuthorRepository(authors),
@@ -153,6 +216,7 @@ class SettingsViewModelTest {
         systemInfoRepository = FakeSystemInfoRepository(version),
         diskCachePrefsRepository = cachePrefs,
         coilCacheManager = cacheManager,
+        viewEventQueue = queue,
         // IO 位也走测试调度器：withContext 全链路可被 advanceUntilIdle 推进
         ioDispatcher = mainDispatcherRule.testDispatcher,
     )
@@ -318,5 +382,53 @@ class SettingsViewModelTest {
         // 回滚语义：DataStore 未写入，UI 跟随原档位
         assertEquals(DiskCacheQuota.DEFAULT, cachePrefs.quota.first())
         assertEquals(DiskCacheQuota.DEFAULT, settingsViewModel.uiState.value.cacheQuota)
+    }
+
+    // ---------- 浏览数据同步（任务L L5） ----------
+
+    /** 预置一条未上传事件（幂等键合规，避免触发懒回填路径干扰断言） */
+    private suspend fun FakeEventDao.seed(rowId: String) = insert(
+        PendingViewEventEntity(
+            assetId = "00000000-0000-0000-0000-000000000001", kind = "OPEN",
+            startedAt = 1L, durationMs = 0L, sessionId = "s", createdAt = 1L, clientEventId = rowId,
+        ),
+    )
+
+    @Test
+    fun `浏览数据同步 - 成功后提示同步完成且待上传数清零`() = runTest {
+        val dao = FakeEventDao()
+        dao.seed("00000000-0000-0000-0000-0000000000a1")
+        dao.seed("00000000-0000-0000-0000-0000000000a2")
+        val queue = ViewEventQueue(dao, FakeEventSender(fail = false), clock = FixedEventClock)
+        val vm = viewModel(queue = queue)
+        advanceUntilIdle() // init loadPendingEvents
+        assertEquals(2, vm.uiState.value.pendingEvents)
+
+        vm.syncEventsNow()
+        advanceUntilIdle()
+
+        assertEquals("同步完成", vm.uiState.value.eventSyncNote)
+        assertEquals(0, vm.uiState.value.pendingEvents)
+        assertFalse(vm.uiState.value.eventSyncing)
+        // 导出取数：空队列导出 0 条
+        val export = vm.exportPending()
+        assertEquals(0, export?.count)
+    }
+
+    @Test
+    fun `浏览数据同步 - 网络不通提示保留重试且行不离队`() = runTest {
+        val dao = FakeEventDao()
+        dao.seed("00000000-0000-0000-0000-0000000000b1")
+        val queue = ViewEventQueue(dao, FakeEventSender(fail = true), clock = FixedEventClock)
+        val vm = viewModel(queue = queue)
+        advanceUntilIdle()
+        assertEquals(1, vm.uiState.value.pendingEvents)
+
+        vm.syncEventsNow()
+        advanceUntilIdle()
+
+        assertEquals("网络不通，1 条稍后自动重试", vm.uiState.value.eventSyncNote)
+        assertEquals(1, vm.uiState.value.pendingEvents)
+        assertEquals(1, dao.rows.size) // 本地优先：失败不丢行
     }
 }

@@ -26,6 +26,7 @@ class PendingViewEventMappersTest {
         durationMs = durationMs,
         sessionId = SESSION_ID,
         createdAt = 1L,
+        clientEventId = CLIENT_EVENT_ID,
     )
 
     @Test
@@ -70,9 +71,16 @@ class PendingViewEventMappersTest {
         assertEquals(SESSION_ID, report.sessionId)
     }
 
+    @Test
+    fun `幂等键 - clientEventId 透传为协议 UUID（任务L L5）`() {
+        val report = entity(kind = ViewEventKind.OPEN.name, durationMs = 0L).toSdkReport()
+        assertEquals(UUID.fromString(CLIENT_EVENT_ID), report.clientEventId)
+    }
+
     private companion object {
         const val ASSET_ID = "00000000-0000-0000-0000-000000000001"
         const val SESSION_ID = "session-d5-test"
         const val STARTED_AT_MS = 1_700_000_000_123L
+        const val CLIENT_EVENT_ID = "00000000-0000-0000-0000-00000000cba1"
     }
 }

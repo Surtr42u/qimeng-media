@@ -11,6 +11,13 @@ plugins {
 
 android {
     namespace = "media.qimeng.app.feature.settings"
+
+    testOptions {
+        // 任务L L5：SettingsViewModel 的「立即同步」用例直跑 ViewEventQueue.drain，
+        // 队列内的 android.util.Log 在 JVM android.jar stub 上默认抛「not mocked」，
+        // 此处放行为返回默认值（core/data 同款先例，仅作用于本模块单元测试）。
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 dependencies {
@@ -20,6 +27,7 @@ dependencies {
     implementation(libs.compose.material3)
     implementation(libs.compose.ui.tooling.preview)
 
+    implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.hilt.navigation.compose)

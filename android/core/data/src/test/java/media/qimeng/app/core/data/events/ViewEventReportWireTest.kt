@@ -25,11 +25,26 @@ class ViewEventReportWireTest {
             ViewEventKind.DWELL,
             startedAtMs = 1_000L,
             sessionId = "wire-1",
+            clientEventId = "00000000-0000-0000-0000-00000000cba1",
             dwellSeconds = 18L,
         )
         val json = Serializer.moshi.adapter(ViewEventReport::class.java).toJson(report)
         assertTrue("seconds 应为 JSON 数字，实际: $json", json.contains("\"seconds\":18.0"))
         assertFalse("seconds 不得为带引号字符串，实际: $json", json.contains("\"seconds\":\""))
+    }
+
+    @Test
+    fun `clientEventId 幂等键随 wire 透传（任务L L5）`() {
+        val report = SdkDetailMappers.toViewEventReport(
+            "11111111-1111-1111-1111-111111111111",
+            ViewEventKind.OPEN,
+            startedAtMs = 1_000L,
+            sessionId = "wire-1",
+            clientEventId = "00000000-0000-0000-0000-00000000cba1",
+            dwellSeconds = null,
+        )
+        val json = Serializer.moshi.adapter(ViewEventReport::class.java).toJson(report)
+        assertTrue("clientEventId 应在请求体，实际: $json", json.contains("\"clientEventId\":\"00000000-0000-0000-0000-00000000cba1\""))
     }
 
     @Test
