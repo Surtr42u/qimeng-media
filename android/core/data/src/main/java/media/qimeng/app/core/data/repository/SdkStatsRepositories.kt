@@ -10,8 +10,11 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import media.qimeng.app.core.model.DiskCacheQuota
+import media.qimeng.app.core.model.MostViewedEntry
 import media.qimeng.app.core.model.RecommendPrefsValues
 import media.qimeng.app.core.model.StatsOverviewValues
+import media.qimeng.app.core.model.TopAuthorEntry
+import media.qimeng.app.core.model.TopTagEntry
 import media.qimeng.app.core.model.TrendPoint
 import media.qimeng.sdk.apis.DefaultApi
 import media.qimeng.sdk.models.RecommendPrefs
@@ -27,10 +30,20 @@ class SdkStatsRepository @Inject constructor(
     private val apiFactory: BusinessApiFactory,
 ) : StatsRepository {
 
-    override suspend fun overview(): StatsOverviewValues {
-        Log.d(SdkMediaRepository.LOG_TAG, "GET /stats/overview")
+    override suspend fun overview(): StatsOverviewValues = overview("all")
+
+    override suspend fun overview(range: String): StatsOverviewValues {
+        // N4 I3b：range 供 avgViewsPerFile 窗口（协议缺省=all；此处显式传不靠缺省）
+        Log.d(SdkMediaRepository.LOG_TAG, "GET /stats/overview range=$range")
         val api = withContext(Dispatchers.IO) { apiFactory.create() }
-        val overview = withContext(Dispatchers.IO) { api.apiV1StatsOverviewGet() }
+        val sdkRange = when (range) {
+            "7d" -> media.qimeng.sdk.apis.DefaultApi.RangeApiV1StatsOverviewGet._7d
+            "day" -> media.qimeng.sdk.apis.DefaultApi.RangeApiV1StatsOverviewGet.day
+            "90d" -> media.qimeng.sdk.apis.DefaultApi.RangeApiV1StatsOverviewGet._90d
+            "all" -> media.qimeng.sdk.apis.DefaultApi.RangeApiV1StatsOverviewGet.all
+            else -> media.qimeng.sdk.apis.DefaultApi.RangeApiV1StatsOverviewGet.month
+        }
+        val overview = withContext(Dispatchers.IO) { api.apiV1StatsOverviewGet(range = sdkRange) }
         return StatsOverviewValues(
             totalFiles = overview.totalFiles ?: 0,
             imageCount = overview.imageCount ?: 0,
@@ -38,15 +51,22 @@ class SdkStatsRepository @Inject constructor(
             totalSizeBytes = overview.totalSizeBytes ?: 0L,
             todayViews = overview.todayViews ?: 0,
             totalViews = overview.totalViews ?: 0L,
+            sourceNormalCount = overview.sourceNormalCount ?: 0,
+            sourceCosCount = overview.sourceCosCount ?: 0,
+            avgViewsPerFile = overview.avgViewsPerFile,
         )
     }
 
     override suspend fun trends(range: String): List<TrendPoint> = trends(range, null)
 
-    override suspend fun trends(range: String, mediaType: String?): List<TrendPoint> {
+    override suspend fun trends(range: String, mediaType: String?): List<TrendPoint> =
+        trends(range, mediaType, null)
+
+    override suspend fun trends(range: String, mediaType: String?, source: String?): List<TrendPoint> {
         // range 只认 StatsRangeOption.apiRange 的产出（7d/day/all）；mediaType 只认协议三值
-        // （image/video/animated_image），null=不过滤；此处打日志即验收证据
-        Log.d(SdkMediaRepository.LOG_TAG, "GET /stats/trends range=$range mediaType=$mediaType")
+        // （image/video/animated_image），null=不过滤；source 只认 normal|cos（N3 #31b），null=不过滤；
+        // 此处打日志即验收证据
+        Log.d(SdkMediaRepository.LOG_TAG, "GET /stats/trends range=$range mediaType=$mediaType source=$source")
         val api = withContext(Dispatchers.IO) { apiFactory.create() }
         val sdkRange = when (range) {
             "7d" -> media.qimeng.sdk.apis.DefaultApi.RangeApiV1StatsTrendsGet._7d
@@ -61,8 +81,13 @@ class SdkStatsRepository @Inject constructor(
             "animated_image" -> media.qimeng.sdk.models.MediaType.animated_image
             else -> null
         }
+        val sdkSource = when (source) {
+            "normal" -> media.qimeng.sdk.apis.DefaultApi.SourceApiV1StatsTrendsGet.normal
+            "cos" -> media.qimeng.sdk.apis.DefaultApi.SourceApiV1StatsTrendsGet.cos
+            else -> null
+        }
         val buckets = withContext(Dispatchers.IO) {
-            api.apiV1StatsTrendsGet(range = sdkRange, mediaType = sdkMediaType)
+            api.apiV1StatsTrendsGet(range = sdkRange, mediaType = sdkMediaType, source = sdkSource)
         }
         return buckets.map { bucket ->
             TrendPoint(
@@ -72,6 +97,70 @@ class SdkStatsRepository @Inject constructor(
                 seconds = bucket.seconds ?: 0,
             )
         }
+    }
+
+    override suspend fun mostViewed(range: String, metric: String, limit: Int): List<MostViewedEntry> {
+        Log.d(SdkMediaRepository.LOG_TAG, "GET /stats/most-viewed range=$range metric=$metric limit=$limit")
+        val api = withContext(Dispatchers.IO) { apiFactory.create() }
+        val sdkRange = when (range) {
+            "7d" -> media.qimeng.sdk.apis.DefaultApi.RangeApiV1StatsMostViewedGet._7d
+            "day" -> media.qimeng.sdk.apis.DefaultApi.RangeApiV1StatsMostViewedGet.day
+            "90d" -> media.qimeng.sdk.apis.DefaultApi.RangeApiV1StatsMostViewedGet._90d
+            "all" -> media.qimeng.sdk.apis.DefaultApi.RangeApiV1StatsMostViewedGet.all
+            else -> media.qimeng.sdk.apis.DefaultApi.RangeApiV1StatsMostViewedGet.month
+        }
+        // metric 只认协议两值（views/seconds）；非法值回落 views（协议缺省）
+        val sdkMetric = if (metric == "seconds") {
+            media.qimeng.sdk.apis.DefaultApi.MetricApiV1StatsMostViewedGet.seconds
+        } else {
+            media.qimeng.sdk.apis.DefaultApi.MetricApiV1StatsMostViewedGet.views
+        }
+        val items = withContext(Dispatchers.IO) {
+            api.apiV1StatsMostViewedGet(range = sdkRange, metric = sdkMetric, limit = limit)
+        }
+        return items.map { item ->
+            MostViewedEntry(
+                assetId = item.assetId.toString(),
+                fileName = item.fileName,
+                mediaType = item.mediaType?.value.orEmpty(),
+                thumbUrl = item.thumbUrl,
+                value = item.value ?: 0,
+            )
+        }
+    }
+
+    override suspend fun topAuthors(range: String, limit: Int): List<TopAuthorEntry> {
+        Log.d(SdkMediaRepository.LOG_TAG, "GET /stats/top-authors range=$range limit=$limit")
+        val api = withContext(Dispatchers.IO) { apiFactory.create() }
+        val sdkRange = when (range) {
+            "7d" -> media.qimeng.sdk.apis.DefaultApi.RangeApiV1StatsTopAuthorsGet._7d
+            "day" -> media.qimeng.sdk.apis.DefaultApi.RangeApiV1StatsTopAuthorsGet.day
+            "90d" -> media.qimeng.sdk.apis.DefaultApi.RangeApiV1StatsTopAuthorsGet._90d
+            "all" -> media.qimeng.sdk.apis.DefaultApi.RangeApiV1StatsTopAuthorsGet.all
+            else -> media.qimeng.sdk.apis.DefaultApi.RangeApiV1StatsTopAuthorsGet.month
+        }
+        val items = withContext(Dispatchers.IO) { api.apiV1StatsTopAuthorsGet(range = sdkRange, limit = limit) }
+        return items.map { item ->
+            TopAuthorEntry(
+                authorId = item.authorId,
+                displayName = item.displayName,
+                views = item.views ?: 0,
+            )
+        }
+    }
+
+    override suspend fun topTags(range: String, limit: Int): List<TopTagEntry> {
+        Log.d(SdkMediaRepository.LOG_TAG, "GET /stats/top-tags range=$range limit=$limit")
+        val api = withContext(Dispatchers.IO) { apiFactory.create() }
+        val sdkRange = when (range) {
+            "7d" -> media.qimeng.sdk.apis.DefaultApi.RangeApiV1StatsTopTagsGet._7d
+            "day" -> media.qimeng.sdk.apis.DefaultApi.RangeApiV1StatsTopTagsGet.day
+            "90d" -> media.qimeng.sdk.apis.DefaultApi.RangeApiV1StatsTopTagsGet._90d
+            "all" -> media.qimeng.sdk.apis.DefaultApi.RangeApiV1StatsTopTagsGet.all
+            else -> media.qimeng.sdk.apis.DefaultApi.RangeApiV1StatsTopTagsGet.month
+        }
+        val items = withContext(Dispatchers.IO) { api.apiV1StatsTopTagsGet(range = sdkRange, limit = limit) }
+        return items.map { item -> TopTagEntry(tag = item.tag, views = item.views ?: 0) }
     }
 }
 

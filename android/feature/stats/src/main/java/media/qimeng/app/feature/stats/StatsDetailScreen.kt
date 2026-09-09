@@ -22,12 +22,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.patrykandpatrick.vico.compose.cartesian.marker.rememberToggleOnTap
 import com.patrykandpatrick.vico.core.cartesian.marker.CartesianMarkerController
+import media.qimeng.app.core.model.MostViewedEntry
 import media.qimeng.app.core.model.StatsRangeOption
+import media.qimeng.app.core.model.TopAuthorEntry
+import media.qimeng.app.core.model.TopTagEntry
 import media.qimeng.app.core.model.detailTitleSuffix
 import media.qimeng.app.core.ui.component.Dimens
 import media.qimeng.app.core.ui.component.QimengEmptyState
@@ -35,18 +39,19 @@ import media.qimeng.app.core.ui.component.QimengRankCard
 import media.qimeng.app.core.ui.component.QimengTopBar
 
 /**
- * 统计详情页（任务I I3；GUIDE_UI §统计详情页 L225-234 协议内可达成部分，StatsDetailRoutes）：
+ * 统计详情页（任务I I3 + N4 I3b 全量接线；GUIDE_UI §统计详情页 L225-234，StatsDetailRoutes）：
  * - 顶栏动态标题 = 模式标题 + 时间范围后缀（「· 近7天/近30天/全部」，StatsRange.detailTitleSuffix）；
- * - TYPE_TREND：「类型浏览趋势」卡——图片/视频/动图多系列折线（复用 QimengTrendLineChart 的
- *   series+seriesColors，mediaType 单值逐类型取数拼系列），调用点自组图例行（两/三色圆点+文字，
- *   H3 收官记档的轻方案，不扩封装）；点击气泡含系列名（rememberTrendValueMarker）。
- *   「来源浏览趋势」卡协议缺口 #31b 冻结不渲染；
- * - DISTRIBUTION：「类型分布对比」卡——overview 类型库存，QimengRankCard 形态 +
- *   相对第一名的进度条（GUIDE_UI L229）+ 前三名排名数字高亮（L247 同节；来源维度 #31b 冻结）；
+ * - TYPE_TREND：「类型浏览趋势」卡 +「来源浏览趋势」卡（N3 #31b 解冻：常规/COS 双系列，
+ *   mediaType 单值/source 单值逐次取数拼系列），调用点自组图例行（色圆点+文字）；
+ *   点击气泡含系列名（rememberTrendValueMarker）；
+ * - MOST_VIEWED：「常看文件（按时长）」榜——most-viewed metric=seconds Top20（QimengRankCard 形态）；
+ * - AUTHORS_TAGS：「常看作者」Top15 +「常看标签」Top10 双排行卡（GUIDE_UI v1.16 拆卡口径）；
+ * - DISTRIBUTION：「类型分布对比」卡 +「来源构成对比」卡（overview sourceCounts，N3 #31b 解冻）——
+ *   QimengRankCard 形态 + 相对第一名的进度条（GUIDE_UI L229）+ 前三名排名数字高亮（L247 同节）；
  * - 空态「暂无数据」（L247）。
- * 跳转链记档（REPLICATION_GAPS §3.3 裁定 7）：GUIDE L218-224 的文件/作者/标签条目跳转依赖
- * 冻结模式（常看文件/常看作者标签 #31c/d），类型分布行=聚合值无单文件落点——协议内无可达成
- * 跳转目标，本页条目不设点击；Search 路由 initialQuery 管道已就位（壳层+SearchScreen）。
+ * 跳转链记档（REPLICATION_GAPS §3.3 裁定 7）：GUIDE L218-224 的文件/作者/标签条目跳转
+ * （文件→详情/作者→作者页/标签→搜索页）——Search 路由 initialQuery 管道已就位，本批先落
+ * 榜单呈现，条目点击跳转不在 N4 范围（记遗留）。
  */
 @Composable
 fun StatsDetailScreen(
@@ -74,15 +79,24 @@ fun StatsDetailScreen(
                 ),
                 verticalArrangement = Arrangement.spacedBy(Dimens.ScreenPadding),
             ) {
-                if (viewModel.mode == StatsDetailMode.TYPE_TREND) {
-                    item {
-                        TypeTrendCard(
-                            series = state.typeSeries,
-                            labels = state.trendLabels,
-                        )
+                when (viewModel.mode) {
+                    StatsDetailMode.TYPE_TREND -> {
+                        item { TypeTrendCard(series = state.typeSeries, labels = state.trendLabels) }
+                        item {
+                            SourceTrendCard(series = state.sourceSeries, labels = state.trendLabels)
+                        }
                     }
-                } else {
-                    item { TypeDistributionCard(entries = state.distribution) }
+                    StatsDetailMode.MOST_VIEWED -> {
+                        item { SecondsRankingCard(entries = state.secondsRanking) }
+                    }
+                    StatsDetailMode.AUTHORS_TAGS -> {
+                        item { AuthorsRankingCard(entries = state.topAuthors) }
+                        item { TagsRankingCard(entries = state.topTags) }
+                    }
+                    StatsDetailMode.DISTRIBUTION -> {
+                        item { TypeDistributionCard(entries = state.distribution) }
+                        item { SourceDistributionCard(entries = state.sourceDistribution) }
+                    }
                 }
             }
         }
@@ -157,21 +171,174 @@ private fun TypeDistributionCard(entries: List<TypeStockEntry>) {
     QimengRankCard(modifier = Modifier.fillMaxWidth()) {
         Text(text = "类型分布对比", style = MaterialTheme.typography.titleMedium)
         Spacer(modifier = Modifier.height(8.dp))
-        val maxCount = entries.maxOfOrNull { it.count }?.coerceAtLeast(1) ?: 1
+        RankRows(entries)
+    }
+}
+
+/**
+ * 「来源构成对比」卡（分布模式，N3 #31b 解冻）：overview 的 sourceNormalCount/sourceCosCount
+ * 常规/COS 库存对比（DOMAIN_RULES §6 分区判定口径），形态与类型卡同构。
+ */
+@Composable
+private fun SourceDistributionCard(entries: List<TypeStockEntry>) {
+    QimengRankCard(modifier = Modifier.fillMaxWidth()) {
+        Text(text = "来源构成对比", style = MaterialTheme.typography.titleMedium)
+        Spacer(modifier = Modifier.height(8.dp))
+        RankRows(entries)
+    }
+}
+
+/** 排行行组（相对第一名进度条；空表显示空态行——卡不因空数据只剩标题） */
+@Composable
+private fun RankRows(entries: List<TypeStockEntry>) {
+    if (entries.isEmpty() || entries.all { it.count == 0 }) {
+        Text(
+            text = EMPTY_TEXT,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        return
+    }
+    val maxCount = entries.maxOf { it.count }.coerceAtLeast(1)
+    entries.forEachIndexed { index, entry ->
+        RankRow(
+            rank = index + 1,
+            name = entry.name,
+            count = entry.count,
+            progress = entry.count.toFloat() / maxCount,
+        )
+    }
+}
+
+/**
+ * 「常看文件（按时长）」榜（MOST_VIEWED 模式）：most-viewed metric=seconds Top20——
+ * 值=窗口内 dwell 秒数累计（formatDurationSeconds 人读化），相对第一名进度条。
+ */
+@Composable
+private fun SecondsRankingCard(entries: List<MostViewedEntry>) {
+    QimengRankCard(modifier = Modifier.fillMaxWidth()) {
+        Text(text = "常看文件（按时长）", style = MaterialTheme.typography.titleMedium)
+        Spacer(modifier = Modifier.height(8.dp))
+        if (entries.isEmpty()) {
+            Text(
+                text = EMPTY_TEXT,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            return@QimengRankCard
+        }
+        val maxValue = entries.maxOf { it.value }.coerceAtLeast(1)
         entries.forEachIndexed { index, entry ->
             RankRow(
                 rank = index + 1,
-                name = entry.name,
-                count = entry.count,
-                progress = entry.count.toFloat() / maxCount,
+                name = entry.fileName,
+                count = entry.value,
+                progress = entry.value.toFloat() / maxValue,
+                countText = formatDurationSeconds(entry.value.toLong()),
             )
         }
     }
 }
 
-/** 排行行：排名数字（前三名主题色高亮）+ 类型名 + 数值 + 相对第一名进度条 */
+/** 「常看作者」Top15 排行卡（AUTHORS_TAGS 模式） */
 @Composable
-private fun RankRow(rank: Int, name: String, count: Int, progress: Float) {
+private fun AuthorsRankingCard(entries: List<TopAuthorEntry>) {
+    QimengRankCard(modifier = Modifier.fillMaxWidth()) {
+        Text(text = "常看作者", style = MaterialTheme.typography.titleMedium)
+        Spacer(modifier = Modifier.height(8.dp))
+        if (entries.isEmpty()) {
+            Text(
+                text = EMPTY_TEXT,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            return@QimengRankCard
+        }
+        val maxViews = entries.maxOf { it.views }.coerceAtLeast(1)
+        entries.forEachIndexed { index, entry ->
+            RankRow(
+                rank = index + 1,
+                name = entry.displayName,
+                count = entry.views,
+                progress = entry.views.toFloat() / maxViews,
+                countText = entry.views.toDisplayText() + MARKER_VALUE_SUFFIX_VIEWS,
+            )
+        }
+    }
+}
+
+/** 「常看标签」Top10 排行卡（AUTHORS_TAGS 模式） */
+@Composable
+private fun TagsRankingCard(entries: List<TopTagEntry>) {
+    QimengRankCard(modifier = Modifier.fillMaxWidth()) {
+        Text(text = "常看标签", style = MaterialTheme.typography.titleMedium)
+        Spacer(modifier = Modifier.height(8.dp))
+        if (entries.isEmpty()) {
+            Text(
+                text = EMPTY_TEXT,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            return@QimengRankCard
+        }
+        val maxViews = entries.maxOf { it.views }.coerceAtLeast(1)
+        entries.forEachIndexed { index, entry ->
+            RankRow(
+                rank = index + 1,
+                name = entry.tag,
+                count = entry.views,
+                progress = entry.views.toFloat() / maxViews,
+                countText = entry.views.toDisplayText() + MARKER_VALUE_SUFFIX_VIEWS,
+            )
+        }
+    }
+}
+
+/**
+ * 「来源浏览趋势」卡（TYPE_TREND 模式，N3 #31b 解冻）：常规/COS 双系列折线，
+ * 渲染与图例和类型卡同构（seriesColors 二档 primary/tertiary）。
+ */
+@Composable
+private fun SourceTrendCard(series: List<TypeTrendSeries>, labels: List<String>) {
+    if (series.isEmpty()) return // 窗口内常规与 COS 均无浏览：不出卡（类型卡同口径）
+    val seriesColors = listOf(
+        MaterialTheme.colorScheme.primary,
+        MaterialTheme.colorScheme.tertiary,
+    )
+    val marker = rememberTrendValueMarker(
+        seriesNamesByColor = series.mapIndexedNotNull { index, sourceSeries ->
+            seriesColors.getOrNull(index)?.let { color -> color to sourceSeries.name }
+        }.toMap(),
+        valueSuffix = MARKER_VALUE_SUFFIX_VIEWS,
+    )
+    Surface(color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(text = "来源浏览趋势", style = MaterialTheme.typography.titleMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                series.forEachIndexed { index, sourceSeries ->
+                    LegendEntry(
+                        color = seriesColors[index % seriesColors.size],
+                        name = sourceSeries.name,
+                    )
+                }
+            }
+            QimengTrendLineChart(
+                series = series.map { QimengTrendSeries(values = it.values) },
+                seriesColors = seriesColors,
+                xLabels = labels,
+                marker = marker,
+                markerController = CartesianMarkerController.Companion.rememberToggleOnTap(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(DETAIL_TREND_CHART_HEIGHT_DP.dp),
+            )
+        }
+    }
+}
+
+/** 排行行：排名数字（前三名主题色高亮）+ 名称 + 数值 + 相对第一名进度条（countText 缺省=千分位） */
+@Composable
+private fun RankRow(rank: Int, name: String, count: Int, progress: Float, countText: String = count.toDisplayText()) {
     Column(modifier = Modifier
         .fillMaxWidth()
         .padding(vertical = 6.dp)) {
@@ -189,10 +356,12 @@ private fun RankRow(rank: Int, name: String, count: Int, progress: Float) {
             Text(
                 text = name,
                 style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
             Text(
-                text = count.toDisplayText(),
+                text = countText,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

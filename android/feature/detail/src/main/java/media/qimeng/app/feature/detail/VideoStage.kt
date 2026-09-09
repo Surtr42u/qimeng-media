@@ -270,6 +270,7 @@ internal fun VideoStage(
                 timeMillis = tag.timeMillis,
                 name = tag.name,
                 createdAtMillis = 0L,
+                serverColor = tag.color,
             )
         }
     }

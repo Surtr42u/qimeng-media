@@ -93,6 +93,18 @@ class SdkDetailRepository @Inject constructor(
         }
     }
 
+    override suspend fun unbindTag(assetId: String, tagName: String) {
+        // N3 #32 逐条删端点（{tag}=URL 编码后的标签名，SDK 自动转义）；幂等 204/404 语义见接口注释
+        val api = apiFactory.create()
+        logRequest("DELETE /assets/$assetId/tags/$tagName", "unbind")
+        withContext(Dispatchers.IO) {
+            api.apiV1AssetsAssetIdTagsTagDelete(
+                assetId = UUID.fromString(assetId),
+                tag = tagName,
+            )
+        }
+    }
+
     override suspend fun upNext(seed: Long, limit: Int, mediaType: MediaKind?, cosOnly: Boolean): List<MediaAsset> {
         val api = apiFactory.create()
         logRequest("GET /recommendations", "upnext seed=$seed limit=$limit mediaType=$mediaType cosOnly=$cosOnly offset=0")

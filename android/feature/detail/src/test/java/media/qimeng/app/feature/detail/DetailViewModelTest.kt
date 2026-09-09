@@ -73,6 +73,10 @@ class DetailViewModelTest {
         var replaceTagsError: Exception? = null
         val replaceTagsCalls = mutableListOf<List<String>>()
 
+        // N4 I7b：单条解绑（调用记录 + 失败注入）
+        var unbindTagError: Exception? = null
+        val unbindTagCalls = mutableListOf<Pair<String, String>>() // assetId to tagName
+
         // 3d 接口（播放进度/打点/时间轴标签）——接口已收拢为抽象方法，fake 全量实现
         val progressCalls = mutableListOf<Double>()
 
@@ -154,6 +158,11 @@ class DetailViewModelTest {
         override suspend fun replaceAssetTags(assetId: String, tagIds: List<String>) {
             replaceTagsError?.let { throw it }
             replaceTagsCalls += tagIds
+        }
+
+        override suspend fun unbindTag(assetId: String, tagName: String) {
+            unbindTagError?.let { throw it }
+            unbindTagCalls += assetId to tagName
         }
 
         override suspend fun upNext(
@@ -596,6 +605,72 @@ class DetailViewModelTest {
         assertEquals(2, repo.detailCallCount) // 重拉详情（关联时间倒序最终序在服务端）
         assertFalse(vm.uiState.value.tagSheetOpen)
         assertFalse(vm.uiState.value.savingTags)
+    }
+
+    @Test
+    fun `标签即时解绑 - chip关闭立即DELETE乐观移除成功重拉`() = runTest(mainDispatcherRule.testDispatcher) {
+        val repo = FakeDetailRepository().apply {
+            detailResult = detail("b", tags = listOf(DetailTag("t1", "甲"), DetailTag("t2", "乙")))
+            tagPool = listOf(TagChip("t1", "甲"), TagChip("t2", "乙"))
+        }
+        val vm = viewModel(repo)
+        advanceUntilIdle()
+        vm.openTagSheet()
+        advanceUntilIdle()
+        assertEquals(listOf("t1", "t2"), vm.uiState.value.selectedTagIds)
+
+        // 模拟服务端删后状态：重拉详情将只含 t2（fake 详情不可变，预置删后回包）
+        repo.detailResult = detail("b", tags = listOf(DetailTag("t2", "乙")))
+
+        // 关闭图标：乐观移除 + DELETE 单条解绑（N4 I7b）
+        vm.unbindTag("t1")
+        advanceUntilIdle()
+        assertEquals(listOf("b" to "甲"), repo.unbindTagCalls) // DELETE 按标签名（协议 {tag} 位）
+        assertEquals(listOf("t2"), vm.uiState.value.asset!!.tags.map { it.id }) // 乐观移除已生效
+        assertEquals(listOf("t2"), vm.uiState.value.selectedTagIds) // 草稿勾选同步收缩（保存不会复活）
+        assertNull(vm.uiState.value.errorMessage)
+        assertTrue(vm.uiState.value.unbindingTagIds.isEmpty())
+        assertEquals(2, repo.detailCallCount) // 成功后重拉详情对齐服务端最终序
+    }
+
+    @Test
+    fun `标签即时解绑 - 失败回滚乐观态加错误提示`() = runTest(mainDispatcherRule.testDispatcher) {
+        val repo = FakeDetailRepository().apply {
+            detailResult = detail("b", tags = listOf(DetailTag("t1", "甲")))
+            tagPool = listOf(TagChip("t1", "甲"))
+            unbindTagError = java.io.IOException("网络炸了")
+        }
+        val vm = viewModel(repo)
+        advanceUntilIdle()
+        vm.openTagSheet()
+        advanceUntilIdle()
+
+        vm.unbindTag("t1")
+        advanceUntilIdle()
+        // 回滚：标签回到当前列表、勾选复位、在途清空、错误横幅提示
+        assertEquals(listOf("t1"), vm.uiState.value.asset!!.tags.map { it.id })
+        assertEquals(listOf("t1"), vm.uiState.value.selectedTagIds)
+        assertTrue(vm.uiState.value.unbindingTagIds.isEmpty())
+        assertTrue(vm.uiState.value.errorMessage!!.startsWith("解除标签失败"))
+    }
+
+    @Test
+    fun `标签即时解绑 - 同标签在途防重`() = runTest(mainDispatcherRule.testDispatcher) {
+        val repo = FakeDetailRepository().apply {
+            detailResult = detail("b", tags = listOf(DetailTag("t1", "甲")))
+            tagPool = listOf(TagChip("t1", "甲"))
+        }
+        val vm = viewModel(repo)
+        advanceUntilIdle()
+        vm.openTagSheet()
+        advanceUntilIdle()
+
+        // 闸门挂起：在途期间同 id 再点被忽略（每次调用挂一个闸门，这里直接数调用数）
+        vm.unbindTag("t1")
+        val callsAtFlight = repo.unbindTagCalls.size
+        vm.unbindTag("t1")
+        assertEquals(callsAtFlight, repo.unbindTagCalls.size)
+        advanceUntilIdle()
     }
 
     @Test

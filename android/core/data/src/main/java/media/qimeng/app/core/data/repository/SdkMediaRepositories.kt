@@ -67,13 +67,13 @@ class SdkMediaRepository @Inject constructor(
                 order = query.order.toSdk(),
                 mediaType = query.mediaType?.toSdk(),
                 // 协议批 2026-09-09（#29）：source/character/work 多值化（数组，
-                // 同维 OR）；现发单值=单元素列表，多选 UI 属 N4。
-                source = query.source?.let(::listOf),
-                character = query.character?.let(::listOf),
+                // 同维 OR）；N4 消费批起多选集直传（单选=单元素列表向后兼容）。
+                source = query.source?.takeIf { it.isNotEmpty() },
+                character = query.character?.takeIf { it.isNotEmpty() },
                 authorId = query.authorId,
                 includeCos = query.includeCos,
                 cosOnly = query.cosOnly,
-                work = query.work?.let(::listOf),
+                work = query.work?.takeIf { it.isNotEmpty() },
                 favorite = query.favorite,
                 q = query.q,
                 // 万能筛选面板参数族（M4-2A-B3）：null=不传（默认档已在状态机归 null）
@@ -217,10 +217,12 @@ class SdkHistoryRepository @Inject constructor(
                 includeCos = query.includeCos,
                 cosOnly = query.cosOnly,
                 mediaType = query.mediaType?.toSdk(),
-                // 协议批 2026-09-09（#29/#30）：work/character 多值化、新增
-                // source（本仓库 HistoryQuery 尚无 source/authorId 位，N4 消费批再开）。
-                work = query.work?.let(::listOf),
-                character = query.character?.let(::listOf),
+                // 协议批 2026-09-09（#29/#30）：work/character/source 数组化（同维 OR），
+                // N4 消费批起历史页「作品」维行（source 出处分组多选）直传。
+                source = query.source?.takeIf { it.isNotEmpty() },
+                authorId = query.authorId,
+                work = query.work?.takeIf { it.isNotEmpty() },
+                character = query.character?.takeIf { it.isNotEmpty() },
             )
         }
         val baseUrl = apiFactory.currentBaseUrl()

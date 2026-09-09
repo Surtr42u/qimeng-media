@@ -286,6 +286,7 @@ fun DetailScreen(
                 selectedTagIds = state.selectedTagIds,
                 savingTags = state.savingTags,
                 onToggleTag = viewModel::toggleTagSelection,
+                onUnbindTag = viewModel::unbindTag,
                 onCreateTag = viewModel::createAndSelectTag,
                 onSave = viewModel::saveTags,
                 onDismiss = viewModel::dismissTagSheet,

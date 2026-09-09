@@ -31,8 +31,8 @@ internal fun formatDurationSeconds(totalSeconds: Long): String = when {
     }
 }
 
-/** 1 位小数但整数值去掉 ".0"（12.0→"12"，12.5→"12.5"） */
-private fun trimTrailingZero(value: Double): String {
+/** 1 位小数但整数值去掉 ".0"（12.0→"12"，12.5→"12.5"）；internal 供平均浏览次数格式化复用 */
+internal fun trimTrailingZero(value: Double): String {
     val rounded = (value * 10).roundToLong() / 10.0
     return if (rounded == rounded.toLong().toDouble()) {
         rounded.toLong().toString()

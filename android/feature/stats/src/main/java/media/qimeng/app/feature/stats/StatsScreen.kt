@@ -16,12 +16,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.patrykandpatrick.vico.compose.cartesian.marker.rememberToggleOnTap
 import com.patrykandpatrick.vico.core.cartesian.marker.CartesianMarker
 import com.patrykandpatrick.vico.core.cartesian.marker.CartesianMarkerController
+import media.qimeng.app.core.model.MostViewedEntry
 import media.qimeng.app.core.model.StatsRangeOption
 import media.qimeng.app.core.model.TrendPoint
 import media.qimeng.app.core.ui.component.Dimens
@@ -29,16 +31,18 @@ import media.qimeng.app.core.ui.component.QimengSegPill
 import media.qimeng.app.core.ui.component.formatBytesHumanReadable
 
 /**
- * 数据统计页（任务I I3 复刻：GUIDE_UI §数据统计页 L203-224，协议内可达成部分）：
+ * 数据统计页（任务I I3 复刻：GUIDE_UI §数据统计页 L203-224；N4 I3b 常看族解冻接线）：
  * - 时间范围三档胶囊 7天/30天/全部（R10 裁决回改，四档 90 天档废止），**全局联动**：
- *   数字卡窗口三指标/趋势图随档位重拉（窗口指标=趋势桶求和，同源同请求）；
+ *   数字卡窗口三指标/趋势图/常看族两卡/平均浏览次数随档位重拉（窗口指标=趋势桶求和，同源同请求）；
  * - 总览数字卡两行 6 指标（L209-211）：第一行窗口值（总浏览次数/总播放次数/总浏览时长），
- *   第二行库存静态值（总文件数/总占用空间）+ 平均浏览次数（**协议缺口 #31a 冻结：分母
- *   「窗口内有浏览的文件数」无端点，UI 显示「—」占位，不做**）；
+ *   第二行库存静态值（总文件数/总占用空间）+ 平均浏览次数（**N3 #31a 解冻**：overview(range)
+ *   的 avgViewsPerFile 随档位联动；分母 0 → null →「—」占位语义保留）；
  * - 浏览趋势卡（L213）：点击数据点高亮+数值气泡（Vico DefaultCartesianMarker，
  *   rememberTrendValueMarker + rememberToggleOnTap）；点击卡片/右上「分类型趋势 ›」进统计详情页；
- * - 分布统计小入口卡（L214）：纯文字卡，点击进分布统计详情（来源维度 #31b 冻结，详情只做类型库存）；
- * - 常看文件/常看作者与标签两卡（L215-216）协议缺口 #31c/d 冻结，**不渲染**（不留死入口）。
+ * - 分布统计小入口卡（L214）：纯文字卡，点击进分布统计详情（来源构成 N3 #31b 解冻，详情页呈现）；
+ * - 常看文件卡（L215）：文件名+浏览次数紧凑 Top3（/stats/most-viewed metric=views），
+ *   点击进常看文件详情（seconds 榜）；常看作者与标签卡（L216）：作者/标签混合 Top3
+ *   （/stats/top-authors + /stats/top-tags），点击进常看作者标签详情——空数据卡内空态保留。
  */
 @Composable
 fun StatsScreen(
@@ -79,6 +83,22 @@ fun StatsScreen(
         item {
             DistributionEntryCard(
                 onOpen = { onOpenDetail(StatsDetailMode.DISTRIBUTION, state.selectedRange) },
+            )
+        }
+        item {
+            MostViewedCard(
+                entries = state.mostViewed,
+                loading = state.trendsLoading,
+                empty = state.mostViewedEmpty,
+                onOpen = { onOpenDetail(StatsDetailMode.MOST_VIEWED, state.selectedRange) },
+            )
+        }
+        item {
+            TopAuthorsTagsCard(
+                mixed = state.topAuthorsTagsMixed,
+                loading = state.trendsLoading,
+                empty = state.topAuthorsTagsEmpty,
+                onOpen = { onOpenDetail(StatsDetailMode.AUTHORS_TAGS, state.selectedRange) },
             )
         }
         item { Spacer(modifier = Modifier.height(8.dp)) }
@@ -122,9 +142,17 @@ private fun OverviewCards(state: StatsUiState) {
                     ?: staticPlaceholder(state.overviewLoading),
                 modifier = Modifier.weight(1f),
             )
-            // 平均浏览次数（GUIDE_UI L210：窗口总浏览 ÷ 窗口内有浏览的文件数）——分母无协议端点
-            // （REPLICATION_GAPS §4-#31a 冻结），显示「—」占位不删格，保住两行 6 格形态
-            MetricCell(title = "平均浏览次数", value = FROZEN_PLACEHOLDER_TEXT, modifier = Modifier.weight(1f))
+            // 平均浏览次数（GUIDE_UI L210：窗口总浏览 ÷ 窗口内有浏览的文件数）——N3 #31a 解冻：
+            // overview(range).avgViewsPerFile 随档位联动；分母 0/失败 → null →「—」占位
+            MetricCell(
+                title = "平均浏览次数",
+                value = when {
+                    state.avgViewsLoading -> LOADING_TEXT
+                    state.avgViewsPerFile != null -> formatAvgViews(state.avgViewsPerFile)
+                    else -> FROZEN_PLACEHOLDER_TEXT
+                },
+                modifier = Modifier.weight(1f),
+            )
         }
     }
 }
@@ -213,7 +241,7 @@ private fun TrendCard(
 /**
  * 分布统计小入口卡（GUIDE_UI L214 纯文字卡）：
  * 主文案「类型与来源的库存构成」+ 右侧「查看详情 ›」，点击进分布统计详情。
- * 注：来源（常规/COS）维度统计协议缺口 #31b 冻结，详情页只呈现类型库存部分。
+ * 来源（常规/COS）构成 N3 #31b 解冻——详情页以 overview sourceCounts 呈现来源对比卡。
  */
 @Composable
 private fun DistributionEntryCard(onOpen: () -> Unit) {
@@ -237,6 +265,127 @@ private fun DistributionEntryCard(onOpen: () -> Unit) {
     }
 }
 
+/**
+ * 常看文件卡（GUIDE_UI L215）：文件名 + 浏览次数紧凑文本列表 Top 3
+ * （/stats/most-viewed metric=views，随档位联动），点击进常看文件详情（seconds 榜）。
+ * 加载中/空数据卡内文案占位（空态保留，不隐藏卡）。
+ */
+@Composable
+private fun MostViewedCard(
+    entries: List<MostViewedEntry>,
+    loading: Boolean,
+    empty: Boolean,
+    onOpen: () -> Unit,
+) {
+    Surface(
+        onClick = onOpen,
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(text = "常看文件", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    text = "查看全部 ›",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            when {
+                loading -> CompactText(LOADING_TEXT)
+                empty -> CompactEmptyText()
+                else -> entries.forEach { entry ->
+                    CompactRow(text = entry.fileName, value = entry.value.toDisplayText() + VIEW_SUFFIX)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 常看作者与标签卡（GUIDE_UI L216）：作者/标签按窗口浏览聚合混合 Top 3
+ * （/stats/top-authors + /stats/top-tags），点击进常看作者标签详情（双排行卡）。
+ */
+@Composable
+private fun TopAuthorsTagsCard(
+    mixed: List<Pair<String, Int>>,
+    loading: Boolean,
+    empty: Boolean,
+    onOpen: () -> Unit,
+) {
+    Surface(
+        onClick = onOpen,
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(text = "常看作者与标签", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    text = "查看全部 ›",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            when {
+                loading -> CompactText(LOADING_TEXT)
+                empty -> CompactEmptyText()
+                else -> mixed.forEach { (name, views) ->
+                    CompactRow(text = name, value = views.toDisplayText() + VIEW_SUFFIX)
+                }
+            }
+        }
+    }
+}
+
+/** 常看卡紧凑行：名称左对齐 + 数值右对齐（单行省略） */
+@Composable
+private fun CompactRow(text: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/** 常看卡加载/空态的统一弱文案行 */
+@Composable
+private fun CompactText(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+@Composable
+private fun CompactEmptyText() {
+    CompactText(TOP_EMPTY_TEXT)
+}
+
+/** 平均浏览次数显示（1 位小数去尾零：3.0→"3"、3.69→"3.7"；纯函数进 Formatters 单测） */
+internal fun formatAvgViews(value: Double): String = trimTrailingZero(value)
+
 /** 趋势空态文案（GUIDE_UI §数据统计页规格原文） */
 private const val TREND_EMPTY_TEXT = "暂无趋势数据"
 
@@ -251,3 +400,9 @@ private const val FROZEN_PLACEHOLDER_TEXT = "—"
 
 /** 趋势卡右上入口文案（GUIDE_UI L213「分类型趋势 ›」） */
 private const val TYPE_TREND_ENTRY_TEXT = "分类型趋势 ›"
+
+/** 常看卡数值后缀（浏览次数单位） */
+private const val VIEW_SUFFIX = " 次"
+
+/** 常看卡空态文案（与详情页「暂无数据」同口径） */
+private const val TOP_EMPTY_TEXT = "暂无数据"

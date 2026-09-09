@@ -63,6 +63,7 @@ internal fun DetailTagManageSheet(
     selectedTagIds: List<String>,
     savingTags: Boolean,
     onToggleTag: (String) -> Unit,
+    onUnbindTag: (String) -> Unit,
     onCreateTag: (name: String, onCreated: () -> Unit) -> Unit,
     onSave: () -> Unit,
     onDismiss: () -> Unit,
@@ -98,7 +99,9 @@ internal fun DetailTagManageSheet(
                         verticalArrangement = Arrangement.spacedBy(QimengDimens.SpaceS),
                     ) {
                         selectedChips.forEach { chip ->
-                            // 点 chip=移除勾选（详情页删除只解除本文件关联，LEGACY §A:17）
+                            // 关闭图标 = **立即** DELETE 单条解绑（N4 I7b；N3 #32 逐条删端点，
+                            // 失败由 VM 回滚乐观态+横幅提示）；LEGACY §A:17「删除只解除本文件
+                            // 关联」语义不变——解绑不动标签池本体。
                             DisplayPill(
                                 text = chip.name,
                                 trailing = {
@@ -108,7 +111,7 @@ internal fun DetailTagManageSheet(
                                         modifier = Modifier
                                             .padding(start = QimengDimens.SpaceS)
                                             .size(TAG_CLEAR_ICON_SIZE)
-                                            .clickable { onToggleTag(chip.id) },
+                                            .clickable { onUnbindTag(chip.id) },
                                     )
                                 },
                             )

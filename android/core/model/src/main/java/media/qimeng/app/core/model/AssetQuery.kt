@@ -27,10 +27,13 @@ data class AssetQuery(
     val includeCos: Boolean? = null,
     val cosOnly: Boolean? = null,
     val mediaType: MediaKind? = null,
-    val source: String? = null,
+    /** 出处分区多选（协议批 #29 数组化：同维 OR；「其他」桶可混选；null=不传） */
+    val source: List<String>? = null,
     val authorId: String? = null,
-    val character: String? = null,
-    val work: String? = null,
+    /** 角色多选（数组内 OR；每元素可含 'a+b' 组合；null=不传） */
+    val character: List<String>? = null,
+    /** COS 作品多选（数组内 OR；null=不传） */
+    val work: List<String>? = null,
     val favorite: Boolean? = null,
     val q: String? = null,
     val sort: AssetSort = AssetSort.DEFAULT,
@@ -68,17 +71,22 @@ data class FacetsQuery(
     val history: Boolean? = null,
 )
 
-/** GET /history 请求参数包（cursor 分页；服务端缺省 includeCos=true=全部） */
+/** GET /history 请求参数包（cursor 分页；服务端缺省 includeCos=true=全部）。
+ * source/character/work 数组参数（协议批 #29/#30：同维内 OR、与其余维 AND）；
+ * source 位为 N4 消费批新开（历史页「作品」维行——出处分组多选）。 */
 data class HistoryQuery(
     val cursor: String? = null,
     val limit: Int? = null,
     val includeCos: Boolean? = null,
     val cosOnly: Boolean? = null,
     val mediaType: MediaKind? = null,
-    val source: String? = null,
+    /** 出处分区多选（「其他」=无出处常规文件桶；null=不传） */
+    val source: List<String>? = null,
     val authorId: String? = null,
-    val character: String? = null,
-    val work: String? = null,
+    /** 角色多选（每元素 'a+b' 组合出镜组内 AND，数组内 OR；null=不传） */
+    val character: List<String>? = null,
+    /** COS 作品多选（null=不传） */
+    val work: List<String>? = null,
 )
 
 /** 排行榜周期四档（协议 period 六档， quarter/all 不展示——规格书 §首页 日/周/月/年） */

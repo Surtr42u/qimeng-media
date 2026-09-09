@@ -45,6 +45,8 @@ data class DetailUiState(
     val selectedTagIds: List<String> = emptyList(),
     val tagSheetOpen: Boolean = false,
     val savingTags: Boolean = false,
+    /** 解绑在途的标签 id 集（N4 I7b：chip 关闭图标=立即 DELETE；同 id 在途防重） */
+    val unbindingTagIds: List<String> = emptyList(),
     /** 互动行请求进行中（按钮 disabled 态） */
     val likePending: Boolean = false,
     val favoritePending: Boolean = false,
@@ -502,6 +504,47 @@ class DetailViewModel @Inject constructor(
     }
 
     /**
+     * 「当前标签」chip 关闭图标 = **立即** DELETE 单条解绑（N4 I7b；N3 #32 逐条删端点），
+     * 不再只是草稿勾选：乐观移除 UI → 服务端成功后重拉详情（服务端按关联时间倒序回「最终序」）；
+     * 失败回滚乐观态 + 错误提示。草稿新增流（其他标签点选 + 新建 + 保存=整体替换）保留不动。
+     */
+    fun unbindTag(tagId: String) {
+        val current = _uiState.value
+        val asset = current.asset ?: return
+        val id = assetId ?: return
+        if (tagId in current.unbindingTagIds) return // 同标签在途防重
+        val chip = current.tagPool.firstOrNull { it.id == tagId } ?: return
+        // 乐观态快照（失败回滚基准；StateFlow 值可被并发替换，不能依赖链式引用）
+        val snapshotAsset = asset
+        val snapshotSelected = current.selectedTagIds
+        _uiState.value = current.copy(
+            unbindingTagIds = current.unbindingTagIds + tagId,
+            asset = asset.copy(tags = asset.tags.filterNot { it.id == tagId }),
+            selectedTagIds = current.selectedTagIds - tagId,
+        )
+        viewModelScope.launch {
+            runCatching { detailRepository.unbindTag(id, chip.name) }
+                .onSuccess {
+                    _uiState.value = _uiState.value.copy(
+                        unbindingTagIds = _uiState.value.unbindingTagIds - tagId,
+                        errorMessage = null,
+                    )
+                    // 重拉详情对齐服务端最终序（保存同款收尾；失败不影响已解绑事实）
+                    reloadAssetOnly()
+                }
+                .onFailure { error ->
+                    val rollback = _uiState.value
+                    _uiState.value = rollback.copy(
+                        unbindingTagIds = rollback.unbindingTagIds - tagId,
+                        asset = snapshotAsset,
+                        selectedTagIds = snapshotSelected,
+                        errorMessage = "$ERROR_UNBIND_TAG${error.message ?: ""}",
+                    )
+                }
+        }
+    }
+
+    /**
      * 新建并勾选：trim 非空才发；重名失败透传服务端错误文案；成功入池且选中。
      * [onCreated] 仅创建成功后回调（弹窗据此清空输入框；失败保留输入供重试，对齐 Web 成功回调清空）。
      */
@@ -772,6 +815,7 @@ class DetailViewModel @Inject constructor(
         private const val ERROR_LOAD_TAGS = "标签列表加载失败"
         private const val ERROR_CREATE_TAG = "新建标签失败："
         private const val ERROR_SAVE_TAGS = "标签保存失败："
+        private const val ERROR_UNBIND_TAG = "解除标签失败："
         private const val ERROR_ADD_TIMELINE_TAG = "时间轴标签添加失败"
         private const val ERROR_DELETE_TIMELINE_TAG = "时间轴标签删除失败"
 

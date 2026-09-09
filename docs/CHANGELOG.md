@@ -9,6 +9,18 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## feat(app): N4 解冻消费批——多选 UI+历史作品维+统计常看族接线+标签即时解绑+服务端色+dwell/progress 端到端复测（2026-09-09 第一百六十五笔）
+
+执行 AI：GLM-5.3-Flash（监督会话 executor；夜间授权链收官批）
+
+- **I5b**：AlbumFilterState author/character 单选改多选集（同维 OR/跨维 AND），favorite/history 走 N2 数组参数；历史页补「作品」维行（分区/作品/角色/类型对齐 GUIDE_UI L386，facets history=1 source 桶作候选）；作者集合页 #34 SOURCE 兜底解除
+- **I3b**：统计页常看文件卡（views Top3）+常看作者/标签混排卡+均值真值联动；详情页 seconds 榜 Top20/作者 Top15/标签 Top10/来源构成/来源双系列趋势——I3 冻结占位全部换真数据
+- **I7b**：DetailTagSheet chip 关闭=立即 DELETE 单条解绑（乐观移除失败回滚+横幅）；时间轴标签服务端 color 优先（BiliPlayerView tintList 透传，非法 hex 静默回退前缀档保底）
+- **端到端铁证（18461 升级后）**：应用内播放→dwell seconds=29 补传落库（**M4-3 以来首次**）→curl seconds 榜即时反映；progress 0.476 落库；curl 数字 202/字符串 400 对照；多选并集 4 件实证；标签解绑重进不回来；服务端色像素数学实证。迁移 0009 自动应用，cos5+normal18 基线 23 件未变
+- 测试：AlbumFilterState 多选/数组投影、History 作品行映射、Stats 装配/空态/降级、Detail 解绑成功/回滚/防重、color mapper；门禁四连绿（app-test/app-lint/app-build/lint 全仓 0 errors）；证据 %TEMP%\qimeng-n4-evidence\（81 件）
+- 遗留记档：统计榜单条目点击跳转（GUIDE L218-224）未做；facets 多选跨维收窄放宽（协议单值位）；/assets authorId 多 COS 作者同选降级不传（协议缺口已注释+单测锁）
+
+---
 ## feat(api): N3 协议批 P2——统计聚合三端点+来源维度（#31）+标签逐条删/颜色协议化（#32）（2026-09-09 第一百六十四笔）
 
 执行 AI：GLM-5.3-Flash（监督会话 executor；夜间授权协议批第二段）

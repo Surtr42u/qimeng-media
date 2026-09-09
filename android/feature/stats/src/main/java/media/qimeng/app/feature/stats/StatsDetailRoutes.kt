@@ -7,15 +7,21 @@ import media.qimeng.app.core.model.StatsRangeOption
  * 路由串/参数键收敛在 feature:stats——feature 禁依赖 :app（ADR-0010），壳层 QimengNavHost
  * 反向引用此处合法；mode/range 取枚举 name（纯 ASCII 标识符，无需 URL 编码）。
  *
- * GUIDE_UI §统计详情页四模式中，协议内可达成只两模式（REPLICATION_GAPS §4-#31c/d 冻结项
- * 不渲染入口，不留死路由）：常看文件/常看作者标签两模式不进本枚举。
+ * GUIDE_UI §统计详情页四模式（N4 消费批 I3b 全量落地——N3 协议批 #31 解冻三端点后
+ * 常看文件/常看作者标签两模式由冻结转可达成，冻结口径记档于 REPLICATION_GAPS §4）。
  */
 enum class StatsDetailMode(val title: String) {
 
-    /** 分类型趋势（图片/视频多系列折线；来源趋势 #31b 冻结不渲染） */
+    /** 分类型趋势（图片/视频/动图多系列折线 + 来源浏览趋势 常规/COS 双系列） */
     TYPE_TREND("分类型趋势"),
 
-    /** 分布统计（类型库存对比；来源维度 #31b 冻结不渲染） */
+    /** 常看文件（详情=seconds 榜：窗口内停留时长累计倒序 Top 20） */
+    MOST_VIEWED("常看文件"),
+
+    /** 常看作者与标签（双排行卡：常看作者 Top15 + 常看标签 Top10） */
+    AUTHORS_TAGS("常看作者与标签"),
+
+    /** 分布统计（类型库存对比 + 来源构成对比卡） */
     DISTRIBUTION("分布统计"),
 }
 

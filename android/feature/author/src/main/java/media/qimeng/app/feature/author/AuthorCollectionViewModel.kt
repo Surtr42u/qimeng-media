@@ -21,7 +21,6 @@ import media.qimeng.app.core.model.AlbumDim
 import media.qimeng.app.core.model.AlbumFilter
 import media.qimeng.app.core.model.AlbumFilterState
 import media.qimeng.app.core.model.FacetOption
-import media.qimeng.app.core.model.FacetParamKind
 import media.qimeng.app.core.model.FacetsResult
 import media.qimeng.app.core.model.LIST_LOAD_FAILED_MESSAGE
 import media.qimeng.app.core.model.LIST_PAGE_SIZE
@@ -244,13 +243,9 @@ class AuthorCollectionViewModel @Inject constructor(
             }.onSuccess { facets ->
                 if (gen != filterGeneration) return@onSuccess // 旧代迟到响应，丢弃
                 _uiState.value = _uiState.value.copy(
-                    // 作品维候选只取 SOURCE 桶（协议 facets 作者行排自身=source 与 authorId
-                    // 一起忽略——authorId 无法收窄作者行候选，服务端返回的是全库候选，
-                    // 其中 kind=author 的 COS 作者桶在本页（固定集合作者）不可作筛选参数，
-                    // 客户端裁剪掉；协议限制记交付报告/台账）。kind 分派语义见 collectionAssetQuery。
-                    authorOptions = facets.authors
-                        .filter { it.kind == FacetParamKind.SOURCE }
-                        .withOtherBucketLast(),
+                    // 作品维候选直接消费 authors 桶（#34 已修：facets 作者行按固定
+                    // authorId 收窄；原「kind=SOURCE 消费侧兜底」过滤随 N4 消费批解除）。
+                    authorOptions = facets.authors.withOtherBucketLast(),
                     characterOptions = facets.characters.withOtherBucketLast(),
                     typeOptions = facets.types,
                 )

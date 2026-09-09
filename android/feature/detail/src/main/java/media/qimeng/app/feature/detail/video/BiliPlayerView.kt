@@ -815,9 +815,10 @@ class BiliPlayerView @JvmOverloads constructor(
         }
     }
 
-    /** 创建单个标签芯片，预设标签使用对应色调背景 */
+    /** 创建单个标签芯片：服务端 color 优先（N3 #32 协议化），缺省回退前缀色调背景（保底不删） */
     private fun createTagChip(tag: TimelineTagEntity): TextView {
-        // 判定口径与 TimelineTagColors.colorFor 同源（裸 ❤/⭐ 前缀 startsWith）：
+        // 颜色优先级：服务端 hex（#rrggbb）> 前缀推断（TimelineTagColors.HEART/STAR）> 默认底。
+        // 前缀判定口径与 TimelineTagColors.colorFor 同源（裸 ❤/⭐ 前缀 startsWith）：
         // 同时命中带/不带 U+FE0F 变体选择符两种写法——此前这里用裸字面量 "❤️" 判定，
         // 手输无变体符的 ❤ 标签取色命中红而芯片底色不命中（2026-09-07 审查 P2），已收敛。
         val isLike = tag.name.startsWith(TimelineTagColors.HEART_PREFIX)
@@ -827,12 +828,19 @@ class BiliPlayerView @JvmOverloads constructor(
             isFav -> R.drawable.bg_timeline_tag_fav
             else -> R.drawable.bg_timeline_tag_chip
         }
+        // 服务端色解析（非法 hex/非 # 开头一律静默回退前缀档——展示层不因脏数据崩）
+        val serverTint: Int? = tag.serverColor
+            ?.takeIf { it.startsWith("#") && it.length in 7..9 }
+            ?.let { runCatching { Color.parseColor(it) }.getOrNull() }
         return TextView(context).apply {
             text = "${formatMs(tag.timeMillis)} ${tag.name}"
             setTextColor(Color.WHITE)
             textSize = 12f
             setPadding(10.dp(context), 5.dp(context), 10.dp(context), 5.dp(context))
             setBackgroundResource(chipBg)
+            serverTint?.let { tint ->
+                backgroundTintList = android.content.res.ColorStateList.valueOf(tint)
+            }
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
                 marginEnd = 6.dp(context)
             }

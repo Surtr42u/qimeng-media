@@ -79,11 +79,13 @@ internal object SdkDetailMappers {
 
     // ---------------- M4-3 3d：进度 / 打点 / 时间轴标签 ----------------
 
-    /** 时间轴标签映射（SDK 可空字段兜底：timeMillis 协议 required，null 仅防御性归 0） */
+    /** 时间轴标签映射（SDK 可空字段兜底：timeMillis 协议 required，null 仅防御性归 0；
+     *  color 空串归 null=无服务端颜色，客户端走前缀推断保底） */
     fun toTimelineTag(tag: SdkTimelineTag): TimelineTag = TimelineTag(
         id = tag.id.orEmpty(),
         timeMillis = tag.timeMillis ?: 0L,
         name = tag.name.orEmpty(),
+        color = tag.color?.takeIf { it.isNotEmpty() },
     )
 
     /** 时间轴标签列表映射 */

@@ -261,7 +261,7 @@ class AuthorCollectionViewModelTest {
         advanceUntilIdle()
         run {
             val q = repo.assetsCalls.last()
-            assertEquals("幻想乡", q.source)
+            assertEquals(listOf("幻想乡"), q.source)
             assertEquals("22222222-2222-2222-2222-222222222222", q.authorId) // 固定作者不被覆盖
             assertEquals(true, q.includeCos)
             assertNull(q.character)
@@ -273,18 +273,19 @@ class AuthorCollectionViewModelTest {
         advanceUntilIdle()
         run {
             val q = repo.assetsCalls.last()
-            assertEquals("灵梦", q.character)
-            assertEquals("幻想乡", q.source) // 作品维选择保持（递归筛选）
+            assertEquals(listOf("灵梦"), q.character)
+            assertEquals(listOf("幻想乡"), q.source) // 作品维选择保持（递归筛选）
             assertNull(q.work)
         }
 
-        // 角色维 kind=WORK（COS 作者文件按作品名分组）→ work 参数（常规作者页不可达，映射仍锁定）
+        // 角色维 kind=WORK（COS 作者文件按作品名分组）→ work 参数（常规作者页不可达，映射仍锁定）；
+        // 角色行多选（N4）：kind=CHARACTER 与 kind=WORK 同行共存不互斥（同维 OR）
         vm.selectCharacter(FacetOption("作品A", "作品A", 7, FacetParamKind.WORK))
         advanceUntilIdle()
         run {
             val q = repo.assetsCalls.last()
-            assertNull(q.character)
-            assertEquals("作品A", q.work)
+            assertEquals(listOf("灵梦"), q.character)
+            assertEquals(listOf("作品A"), q.work)
         }
 
         // 类型维 → mediaType；再点同档=取消（selectMediaType toggle）
@@ -349,16 +350,15 @@ class AuthorCollectionViewModelTest {
     }
 
     @Test
-    fun `作品维候选 - 只保留SOURCE桶 kind=author为全库噪声裁剪`() = runTest(mainDispatcherRule.testDispatcher) {
+    fun `作品维候选 - 直接消费authors桶 其他沉底（N34兜底解除）`() = runTest(mainDispatcherRule.testDispatcher) {
         val repo = FakeMediaRepository()
-        // 服务端作者行排自身（authorId 不收窄）→ 回包混入全库 COS 作者桶（kind=author）：
-        // 本页固定集合作者，COS 作者候选不可作筛选参数（查询映射只认 SOURCE→source），裁剪
+        // #34 已修（facets 作者行按固定 authorId 收窄）：消费侧 kind=SOURCE 兜底过滤
+        // 已解除——authors 桶原样透出，仅「其他」恒沉底（withOtherBucketLast）
         repo.facetsResult = FacetsResult(
             partitions = emptyList(),
             authors = listOf(
-                FacetOption("cos_测试作者一", "测试作者一", 3, FacetParamKind.AUTHOR),
+                FacetOption("幻想乡", "幻想乡", 12, FacetParamKind.SOURCE),
                 FacetOption("其他", "其他", 18, FacetParamKind.SOURCE),
-                FacetOption("幻想乡", "幻想乡", 2, FacetParamKind.SOURCE),
             ),
             characters = listOf(FacetOption("测试作品M", "测试作品M", 3, FacetParamKind.WORK)),
             types = emptyList(),
@@ -366,7 +366,7 @@ class AuthorCollectionViewModelTest {
         val vm = viewModel(repo)
         advanceUntilIdle()
         assertEquals(
-            listOf("幻想乡", "其他"), // SOURCE 子集（「其他」恒沉底）；kind=author 已裁剪
+            listOf("幻想乡", "其他"), // 「其他」恒沉底
             vm.uiState.value.authorOptions.map { it.name },
         )
         assertEquals(listOf("测试作品M"), vm.uiState.value.characterOptions.map { it.name })
@@ -379,7 +379,7 @@ class AuthorCollectionViewModelTest {
         advanceUntilIdle()
         vm.selectAuthor(FacetOption("幻想乡", "幻想乡", 12, FacetParamKind.SOURCE))
         advanceUntilIdle()
-        assertEquals("幻想乡", repo.assetsCalls.last().source)
+        assertEquals(listOf("幻想乡"), repo.assetsCalls.last().source)
         vm.selectAuthor(null) // 「全部」胶囊 = 清作品行
         advanceUntilIdle()
         assertNull(repo.assetsCalls.last().source)

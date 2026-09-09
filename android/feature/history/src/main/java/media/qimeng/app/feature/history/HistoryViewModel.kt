@@ -22,6 +22,7 @@ import media.qimeng.app.core.model.AlbumDim
 import media.qimeng.app.core.model.AlbumFilter
 import media.qimeng.app.core.model.AlbumFilterState
 import media.qimeng.app.core.model.FacetOption
+import media.qimeng.app.core.model.FacetParamKind
 import media.qimeng.app.core.model.FacetsResult
 import media.qimeng.app.core.model.HistoryQuery
 import media.qimeng.app.core.model.LIST_LOAD_FAILED_MESSAGE
@@ -34,13 +35,19 @@ import media.qimeng.app.core.model.zoneToHistoryParams
 import media.qimeng.app.core.model.withOtherBucketLast
 import media.qimeng.app.feature.history.R
 
-/** 历史页维度子集：分区/角色·作品/类型（作者行无协议参数支撑——/history 无 source/authorId，见交付报告） */
-private val HISTORY_DIMS = listOf(AlbumDim.PARTITION, AlbumDim.CHARACTER, AlbumDim.TYPE)
+/**
+ * 历史页维度子集：分区/作品/角色/类型（GUIDE_UI §浏览历史 L386 芯片栏逐字顺序）。
+ * 「作品」行 = 出处分组多选（旧版「作品模式：按出处分组……支持多选作品筛选」；
+ * N2 协议批 #30 起 /history 有 source 数组位）。COS 作者桶不作历史页作品行候选
+ * （/history authorId 为单值位且旧版历史页作品模式只有出处分组——候选侧再按 kind 收口）。
+ */
+private val HISTORY_DIMS = listOf(AlbumDim.PARTITION, AlbumDim.AUTHOR, AlbumDim.CHARACTER, AlbumDim.TYPE)
 
 data class HistoryUiState(
     val filter: AlbumFilterState = AlbumFilterState(),
     val activeDim: AlbumDim = AlbumDim.PARTITION,
     val partitionOptions: List<FacetOption> = emptyList(),
+    val authorOptions: List<FacetOption> = emptyList(),
     val characterOptions: List<FacetOption> = emptyList(),
     val typeOptions: List<FacetOption> = emptyList(),
     val totalForAllPill: Int? = null,
@@ -61,7 +68,7 @@ data class HistoryUiState(
             R.string.history_empty_default
         }
 
-    /** 历史页维度子集（无作者行） */
+    /** 历史页维度子集（分区/作品/角色/类型，GUIDE_UI §浏览历史 L386 顺序） */
     val dims: List<AlbumDim> = HISTORY_DIMS
 }
 
@@ -179,8 +186,13 @@ class HistoryViewModel @Inject constructor(
     }
 
     fun selectPartition(zone: Zone) {
-        // 切分区清作者/角色（类型保留）；历史页作者行不存在，只清角色行
+        // 切分区清作品/角色（类型保留）；历史页无 COS 作者位，作品行只清出处分组
         applyFilter(AlbumFilter.selectPartition(_uiState.value.filter, zone))
+    }
+
+    /** 「作品」行候选点击（出处分组多选，同维 OR；null=「全部」胶囊清本行） */
+    fun selectAuthor(option: FacetOption?) {
+        applyFilter(AlbumFilter.selectAuthor(_uiState.value.filter, option))
     }
 
     fun selectCharacter(option: FacetOption?) {
@@ -245,8 +257,19 @@ class HistoryViewModel @Inject constructor(
                         includeCos = includeCos,
                         cosOnly = cosOnly,
                         mediaType = state.filter.mediaType,
-                        character = state.filter.character?.takeIf { it.kind == media.qimeng.app.core.model.FacetParamKind.CHARACTER }?.key,
-                        work = state.filter.character?.takeIf { it.kind == media.qimeng.app.core.model.FacetParamKind.WORK }?.key,
+                        // 「作品」行出处分组多选（N2 #30 数组位；N4 消费批接线）
+                        source = state.filter.authors
+                            .filter { it.kind == FacetParamKind.SOURCE }
+                            .map { it.key }
+                            .ifEmpty { null },
+                        character = state.filter.characters
+                            .filter { it.kind == FacetParamKind.CHARACTER }
+                            .map { it.key }
+                            .ifEmpty { null },
+                        work = state.filter.characters
+                            .filter { it.kind == FacetParamKind.WORK }
+                            .map { it.key }
+                            .ifEmpty { null },
                     ),
                 )
             }.onSuccess { page ->
@@ -268,7 +291,10 @@ class HistoryViewModel @Inject constructor(
         }
     }
 
-    /** 候选（facets 加 history=1 子集约束）：分区/角色/类型三维（无作者行） */
+    /** 候选（facets 加 history=1 子集约束）：分区/作品/角色/类型四维。
+     * 「作品」行候选 = facets 作者行（history=1）的 source 桶——COS 作者桶
+     * 不作历史页作品行候选（/history 无 authorId 数组位，且旧版作品模式只
+     * 有出处分组），候选侧按 kind=SOURCE 收口（单测锁定）。 */
     private fun loadFacets() {
         val filter = _uiState.value.filter
         val gen = filterGeneration
@@ -276,11 +302,12 @@ class HistoryViewModel @Inject constructor(
             runCatching {
                 coroutineScope {
                     val partition = async { mediaRepository.facets(AlbumFilter.partitionFacetsQuery(filter, history = true)) }
+                    val author = async { mediaRepository.facets(AlbumFilter.authorFacetsQuery(filter, history = true)) }
                     val character = async { mediaRepository.facets(AlbumFilter.characterFacetsQuery(filter, history = true)) }
                     val type = async { mediaRepository.facets(AlbumFilter.typeFacetsQuery(filter, history = true)) }
                     FacetsResult(
                         partitions = partition.await().partitions,
-                        authors = emptyList(),
+                        authors = author.await().authors,
                         characters = character.await().characters,
                         types = type.await().types,
                     )
@@ -289,6 +316,9 @@ class HistoryViewModel @Inject constructor(
                 if (gen != filterGeneration) return@onSuccess // 旧代迟到响应，丢弃
                 _uiState.value = _uiState.value.copy(
                     partitionOptions = facets.partitions,
+                    authorOptions = facets.authors
+                        .filter { it.kind == FacetParamKind.SOURCE }
+                        .withOtherBucketLast(),
                     characterOptions = facets.characters.withOtherBucketLast(),
                     typeOptions = facets.types,
                     totalForAllPill = facets.partitions.firstOrNull { it.key == PARTITION_KEY_ALL }?.fileCount,
