@@ -102,12 +102,15 @@ internal object SdkDetailMappers {
     /**
      * 行为打点报告体（POST /events/view）。startedAt 统一转 UTC OffsetDateTime
      * （客户端本地时区只用于展示，打点存绝对时刻）。
+     * clientEventId（任务L L5）：协议幂等键，调用方在事件产生时生成并随本地暂存
+     * 持久，重试/导出携带同一 id（服务端唯一索引幂等，重发不双计）。
      */
     fun toViewEventReport(
         assetId: String,
         kind: ViewEventKind,
         startedAtMs: Long,
         sessionId: String,
+        clientEventId: String,
         dwellSeconds: Long?,
     ): ViewEventReport = ViewEventReport(
         assetId = java.util.UUID.fromString(assetId),
@@ -121,6 +124,7 @@ internal object SdkDetailMappers {
             java.time.ZoneOffset.UTC,
         ),
         sessionId = sessionId,
+        clientEventId = java.util.UUID.fromString(clientEventId),
         seconds = dwellSeconds?.toDouble(),
     )
 

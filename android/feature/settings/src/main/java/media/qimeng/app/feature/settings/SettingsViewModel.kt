@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import media.qimeng.app.core.data.di.IoDispatcher
+import media.qimeng.app.core.data.events.ViewEventQueue
 import media.qimeng.app.core.data.repository.AuthRepository
 import media.qimeng.app.core.data.repository.AuthorRepository
 import media.qimeng.app.core.data.repository.CoilCacheManager
@@ -58,6 +59,13 @@ data class MineUiState(
      * 2026-09-06 起同时承载作者列表**读**失败（refreshAuthorOverview 静默失败修整，同族口径）。
      */
     val writeError: String? = null,
+    /**
+     * 浏览数据同步（任务L L5）：待上传事件条数（null=未就绪）、同步进行中、
+     * 同步/导出的一次性结果提示（非空时行内展示，下次操作覆盖或点按消除）。
+     */
+    val pendingEvents: Int? = null,
+    val eventSyncing: Boolean = false,
+    val eventSyncNote: String? = null,
 )
 
 /**
@@ -76,6 +84,8 @@ class SettingsViewModel @Inject constructor(
     private val systemInfoRepository: SystemInfoRepository,
     private val diskCachePrefsRepository: DiskCachePrefsRepository,
     private val coilCacheManager: CoilCacheManager,
+    /** 浏览打点离线队列（任务L L5：立即同步/导出未上传的执行体） */
+    private val viewEventQueue: ViewEventQueue,
     @IoDispatcher private val ioDispatcher: kotlinx.coroutines.CoroutineDispatcher,
 ) : ViewModel() {
 
@@ -89,6 +99,7 @@ class SettingsViewModel @Inject constructor(
         loadPrefs()
         loadServerVersion()
         loadCacheState()
+        loadPendingEvents()
     }
 
     /**
@@ -218,11 +229,75 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { authRepository.logout() }
     }
 
+    // ---------- 浏览数据同步（任务L L5：本地优先队列的手动入口，最小 UI） ----------
+
+    /** 待上传条数（进页读一次；同步/导出后随结果刷新） */
+    private fun loadPendingEvents() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(pendingEvents = runCatching { viewEventQueue.pendingCount() }.getOrNull()) }
+        }
+    }
+
+    /**
+     * 立即同步：手动触发一轮 drain（与三通道自动补传同一执行体、同一 Mutex 串行）。
+     * 退避中的行不到期不会被本次 drain 取走（防「连点立即同步狂打故障端点」），
+     * 结果提示按摘要语义给出。
+     */
+    fun syncEventsNow() {
+        if (_uiState.value.eventSyncing) return
+        _uiState.update { it.copy(eventSyncing = true, eventSyncNote = null) }
+        viewModelScope.launch {
+            val summary = runCatching { viewEventQueue.drain() }.getOrNull()
+            val pending = runCatching { viewEventQueue.pendingCount() }.getOrNull()
+            _uiState.update {
+                it.copy(
+                    eventSyncing = false,
+                    pendingEvents = pending,
+                    eventSyncNote = when {
+                        summary == null -> EVENT_SYNC_FAILED_MESSAGE
+                        summary.keptForRetry > 0 -> "网络不通，${summary.keptForRetry} 条稍后自动重试"
+                        summary.dropped > 0 -> "同步完成；${summary.dropped} 条发送失败已保留（可导出）"
+                        else -> "同步完成"
+                    },
+                )
+            }
+        }
+    }
+
+    /**
+     * 导出未上传 JSON 的取数端（用户原话 #25「可以把安卓本地的直接传给 nas 合并」）：
+     * 只取数据不碰平台 IO——SAF 写文件是平台胶水，留在屏幕层（LocalContext +
+     * CreateDocument），VM 不持有 Context。写完调 [onExported] 回填结果提示。
+     * null = 读队列失败（队列 DB 层异常）。
+     */
+    suspend fun exportPending(): ViewEventQueue.PendingExport? =
+        runCatching { viewEventQueue.exportPending() }.getOrNull()
+
+    /** 导出结果回填：count 非空 = 成功导出条数；null = 写文件失败 */
+    fun onExported(count: Int?) {
+        _uiState.update {
+            it.copy(
+                eventSyncNote = if (count != null) "已导出 $count 条未上传事件" else EVENT_EXPORT_FAILED_MESSAGE,
+            )
+        }
+    }
+
+    /** 同步/导出结果提示点按消除 */
+    fun dismissEventSyncNote() {
+        _uiState.update { it.copy(eventSyncNote = null) }
+    }
+
     private companion object {
         /** 写失败反馈文案（P2-3）：中文、可重试指向；成功路径永不产生 */
         const val SAVE_FAILED_MESSAGE = "保存失败，请重试"
 
         /** 作者总览读失败反馈文案（C4 关注列表读失败同族口径，G2 随形态更名） */
         const val LOAD_AUTHORS_FAILED_MESSAGE = "作者列表加载失败，请重试"
+
+        /** 浏览数据同步失败反馈文案（任务L L5）：drain 抛出（本地 DB 层）时给出 */
+        const val EVENT_SYNC_FAILED_MESSAGE = "同步失败，请重试"
+
+        /** 浏览数据导出失败反馈文案（任务L L5）：写文件失败时给出 */
+        const val EVENT_EXPORT_FAILED_MESSAGE = "导出失败，请重试"
     }
 }

@@ -24,6 +24,9 @@ class SdkDetailMappersTest {
 
     private val baseUrl = "http://192.0.2.10:8420"
 
+    /** 幂等键入参（任务L L5）：本组只验映射透传，值本身任意合法 UUID */
+    private val CLIENT_EVENT_ID = "00000000-0000-0000-0000-00000000cba1"
+
     private fun sdkDetail(
         id: String = "11111111-1111-1111-1111-111111111111",
         fileName: String = "IMG_001.jpg",
@@ -214,18 +217,22 @@ class SdkDetailMappersTest {
             media.qimeng.app.core.model.ViewEventKind.OPEN,
             startedAtMs = 1_000L,
             sessionId = "s-1",
+            clientEventId = CLIENT_EVENT_ID,
             dwellSeconds = null,
         )
         assertEquals(media.qimeng.sdk.models.ViewEventReport.Kind.`open`, open.kind)
         assertNull(open.seconds)
         assertEquals("s-1", open.sessionId)
         assertEquals(1_000L, open.startedAt.toInstant().toEpochMilli())
+        // 幂等键透传（任务L L5）：报告体携带调用方生成的 clientEventId
+        assertEquals(java.util.UUID.fromString(CLIENT_EVENT_ID), open.clientEventId)
 
         val dwell = SdkDetailMappers.toViewEventReport(
             "11111111-1111-1111-1111-111111111111",
             media.qimeng.app.core.model.ViewEventKind.DWELL,
             startedAtMs = 2_000L,
             sessionId = "s-1",
+            clientEventId = CLIENT_EVENT_ID,
             dwellSeconds = 42L,
         )
         assertEquals(media.qimeng.sdk.models.ViewEventReport.Kind.dwell, dwell.kind)
@@ -236,6 +243,7 @@ class SdkDetailMappersTest {
             media.qimeng.app.core.model.ViewEventKind.PLAY,
             startedAtMs = 3_000L,
             sessionId = "s-1",
+            clientEventId = CLIENT_EVENT_ID,
             dwellSeconds = null,
         )
         assertEquals(media.qimeng.sdk.models.ViewEventReport.Kind.play, play.kind)

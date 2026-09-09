@@ -1,36 +1,37 @@
 package media.qimeng.app.core.data.events
 
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import media.qimeng.app.core.model.ViewEventKind
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * ViewEventQueue 行为锁定（M4-4 冻结口径）：
- * 入队 FIFO 环形上限淘汰 / drain 串行（并发=1）/ 先删后发时序 / 毒丸连败丢弃 /
- * 可重试失败保留回队。DAO 与出网全用 fake（禁 MockK；DAO 默认方法语义按接口契约复刻）。
+ * ViewEventQueue 行为锁定（任务L L5「本地优先」口径；推翻 M4-4 先删后发/毒丸）：
+ * 入队即生成幂等键 / FIFO 环形上限淘汰 / drain 串行（并发=1）/ **发送成功（2xx）才删** /
+ * IO·5xx 保留退避重试（同 id 重发）/ 4xx 终局标记保留供导出 / 幂等键懒回填。
+ * DAO 与出网全用 fake（禁 MockK；DAO 默认方法语义按接口契约复刻）。
  */
 class ViewEventQueueTest {
 
     // ---------- 测试替身 ----------
 
-    /** 全局操作序号源（先删后发时序断言用：deleteByIds 与 send 各领序号，小者先发生） */
-    private class OpSequence {
-        var next = 0L
-        fun tick(): Long = ++next
+    /** 可控时钟（退避到期时刻断言用；drain 经构造注入读取） */
+    private class FakeClock(var current: Long = 1_000_000L) : EventClock {
+        override fun now(): Long = current
+        fun advanceBy(ms: Long) {
+            current += ms
+        }
     }
 
-    /** 内存 DAO：按接口语义复刻（insert 自增 id / 淘汰保最新 / 取件按 id 升序+即删） */
-    private class FakeDao(private val seq: OpSequence = OpSequence()) : PendingViewEventDao {
+    /** 内存 DAO：按接口语义复刻（insert 自增 id / 淘汰保最新 / selectDue 只读不删） */
+    private class FakeDao : PendingViewEventDao {
         val rows = mutableListOf<PendingViewEventEntity>()
         var nextId = 1L
         var failInsert = false
-
-        /** rowId → 删除时刻的全局序号（先删后发时序断言用） */
-        val deleteSeq = mutableMapOf<Long, Long>()
 
         override suspend fun insert(entity: PendingViewEventEntity): Long {
             if (failInsert) throw IllegalStateException("db boom")
@@ -45,50 +46,69 @@ class ViewEventQueueTest {
             rows.removeAll { it.id !in keepIds }
         }
 
-        override suspend fun selectOldest(limit: Int): List<PendingViewEventEntity> =
-            rows.sortedBy { it.id }.take(limit)
+        override suspend fun selectDue(now: Long, limit: Int): List<PendingViewEventEntity> =
+            rows.filter { !it.terminal && it.nextAttemptAt <= now }.sortedBy { it.id }.take(limit)
 
         override suspend fun deleteByIds(ids: List<Long>) {
-            ids.forEach { deleteSeq[it] = seq.tick() }
             rows.removeAll { it.id in ids }
         }
+
+        override suspend fun reschedule(id: Long, nextAttemptAt: Long) {
+            val i = rows.indexOfFirst { it.id == id }
+            if (i >= 0) rows[i] = rows[i].copy(nextAttemptAt = nextAttemptAt)
+        }
+
+        override suspend fun markTerminal(id: Long) {
+            val i = rows.indexOfFirst { it.id == id }
+            if (i >= 0) rows[i] = rows[i].copy(terminal = true)
+        }
+
+        override suspend fun updateClientEventId(id: Long, clientEventId: String) {
+            val i = rows.indexOfFirst { it.id == id }
+            if (i >= 0) rows[i] = rows[i].copy(clientEventId = clientEventId)
+        }
+
+        override suspend fun listAll(): List<PendingViewEventEntity> = rows.sortedBy { it.id }
+
+        override suspend fun countPending(): Int = rows.count { !it.terminal }
 
         override suspend fun count(): Int = rows.size
     }
 
-    /** 假发送器：可编程每行裁决；记录发送序与并发峰值（串行/时序断言用） */
+    /** 假发送器：可编程每行裁决；记录发送史与并发峰值（串行/同 id 断言用） */
     private class FakeSender(
-        private val decide: (PendingViewEventEntity) -> ViewEventSendResult = { ViewEventSendResult.Http(202) },
-        private val delayMs: Long = 0,
-        private val seq: OpSequence = OpSequence(),
+        private val decide: (List<PendingViewEventEntity>) -> ViewEventSendResult = { ViewEventSendResult.Http(202) },
     ) : ViewEventSender {
         val sent = mutableListOf<PendingViewEventEntity>()
         var inFlight = 0
         var maxInFlight = 0
 
-        /** rowId → 发送时刻的全局序号（先删后发时序断言用） */
-        val sendSeq = mutableMapOf<Long, Long>()
-
         override suspend fun send(event: PendingViewEventEntity): ViewEventSendResult {
             sent += event
-            sendSeq[event.id] = seq.tick()
             inFlight++
             if (inFlight > maxInFlight) maxInFlight = inFlight
-            if (delayMs > 0) delay(delayMs)
             inFlight--
-            return decide(event)
+            return decide(sent)
         }
     }
 
-    private fun eventOf(kind: ViewEventKind = ViewEventKind.OPEN) = PendingViewEventEntity(
-        assetId = "a", kind = kind.name, startedAt = 1L, durationMs = 0L,
-        sessionId = "s", createdAt = 1L,
-    )
-
-    // ---------- 用例 ----------
+    // ---------- 入队 ----------
 
     @Test
-    fun `入队FIFO淘汰 - 超冻结上限5000丢最旧`() = runTest {
+    fun `入队即生成幂等键 - 每行 UUID 且互不相同`() = runTest {
+        val dao = FakeDao()
+        val queue = ViewEventQueue(dao, FakeSender())
+        queue.enqueue("a", ViewEventKind.OPEN, startedAtMs = 1L, durationMs = 0L, sessionId = "s")
+        queue.enqueue("a", ViewEventKind.DWELL, startedAtMs = 2L, durationMs = 5_000L, sessionId = "s")
+
+        val ids = dao.rows.map { it.clientEventId }
+        assertEquals(2, ids.size)
+        ids.forEach { assertTrue("应为合法 UUID: $it", it.matches(UUID_REGEX)) }
+        assertNotEquals(ids[0], ids[1])
+    }
+
+    @Test
+    fun `入队FIFO淘汰 - 超上限5000丢最旧且幂等键随行存活`() = runTest {
         val dao = FakeDao()
         val queue = ViewEventQueue(dao, FakeSender())
         repeat(ViewEventQueue.MAX_QUEUE_SIZE + 1) {
@@ -99,6 +119,7 @@ class ViewEventQueueTest {
         assertEquals(ViewEventQueue.MAX_QUEUE_SIZE, dao.rows.size)
         assertEquals(2L, dao.rows.minOf { it.id })     // id 1（最旧）被淘汰
         assertEquals(ViewEventQueue.MAX_QUEUE_SIZE + 1L, dao.rows.maxOf { it.id })
+        assertEquals(ViewEventQueue.MAX_QUEUE_SIZE, dao.rows.count { it.clientEventId.matches(UUID_REGEX) })
     }
 
     @Test
@@ -114,10 +135,13 @@ class ViewEventQueueTest {
         assertTrue(thrown)
     }
 
+    // ---------- drain：发送成功才删 ----------
+
     @Test
-    fun `drain成功 - 202确认后队列清空`() = runTest {
+    fun `drain成功 - 202确认后删行队列清空（发送成功才删）`() = runTest {
         val dao = FakeDao()
-        val queue = ViewEventQueue(dao, FakeSender())
+        val sender = FakeSender()
+        val queue = ViewEventQueue(dao, sender)
         queue.enqueue("a", ViewEventKind.OPEN, 1L, 0L, "s")
         queue.enqueue("a", ViewEventKind.DWELL, 1L, 5000L, "s")
 
@@ -127,97 +151,14 @@ class ViewEventQueueTest {
         assertEquals(0, summary.dropped)
         assertEquals(0, summary.keptForRetry)
         assertEquals(0, queue.pendingCount())
+        assertEquals(0, dao.rows.size)                       // 2xx 之后才删
+        assertEquals(2, sender.sent.count { it.clientEventId.matches(UUID_REGEX) }) // 出网体带幂等键
     }
 
     @Test
-    fun `先删后发 - 每行取件删除的全局序号先于其发送序号（at-most-once 时序）`() = runTest {
-        val seq = OpSequence()
-        val dao = FakeDao(seq)
-        val sender = FakeSender(seq = seq)
-        val queue = ViewEventQueue(dao, sender)
-        repeat(3) { queue.enqueue("a", ViewEventKind.OPEN, 1L, 0L, "s") }
-
-        queue.drain()
-
-        // 硬时序断言（审查清偿弱断言）：若实现改成「先发后删」（at-most-once 变
-        // at-least-once），deleteSeq[id] > sendSeq[id] 必红；@Transaction takeOldest 的
-        // SQL 原子性由 Room 编译期校验 + 模拟器对账实测覆盖
-        assertEquals(3, sender.sent.size)
-        sender.sent.forEach { event ->
-            val deletedAt = dao.deleteSeq[event.id]
-            val sentAt = sender.sendSeq[event.id]
-            assertTrue("rowId=${event.id} delete序号=$deletedAt 应先于 send序号=$sentAt", deletedAt != null && sentAt != null && deletedAt < sentAt)
-        }
-        assertEquals(0, queue.pendingCount())
-    }
-
-    @Test
-    fun `多批循环 - 超单批50行分轮取件清空，RETRY回队与新批交错终止`() = runTest {
+    fun `发送失败 - 行保留在队列且内容原样（失败也有本地的）`() = runTest {
         val dao = FakeDao()
-        // 120 行 = 3 批（50+50+20）+ 回队行补 1 批；前 10 行 DWELL 首发必败（IoError 回队尾
-        // 换新 id > 120），重发成功——锁定批满再取一轮的循环推进与 RETRY 行不滞留不重复计
-        val sender = FakeSender(decide = { event ->
-            if (event.kind == ViewEventKind.DWELL.name && event.id <= 120L) ViewEventSendResult.IoError
-            else ViewEventSendResult.Http(202)
-        })
-        val queue = ViewEventQueue(dao, sender)
-        repeat(10) { queue.enqueue("a", ViewEventKind.DWELL, 1L, 5000L, "s") } // id 1..10
-        repeat(110) { queue.enqueue("a", ViewEventKind.OPEN, 1L, 0L, "s") }    // id 11..120
-
-        val summary = queue.drain()
-
-        assertEquals(120, summary.sent)          // 全部最终收敛（10 DWELL 第二次发送 + 110 OPEN）
-        assertEquals(10, summary.keptForRetry)   // DWELL 各回队一次
-        assertEquals(0, queue.pendingCount())    // 终止性：队列清空
-        assertEquals(130, sender.sent.size)      // 总发送 = 120 成功 + 10 失败重试，无重复计
-    }
-
-    @Test
-    fun `drain串行 - 并发触发时发送并发峰值恒为1`() = runTest {
-        val dao = FakeDao()
-        val sender = FakeSender(delayMs = 10) // 虚拟时间下制造发送窗口，放大并发竞争
-        val queue = ViewEventQueue(dao, sender)
-        repeat(4) { queue.enqueue("a", ViewEventKind.OPEN, 1L, 0L, "s") }
-
-        val first = launch { queue.drain() }
-        val second = launch { queue.drain() }
-        first.join()
-        second.join()
-
-        assertEquals(4, sender.sent.size)     // 4 行都只发一次（重试保留不重复计）
-        assertEquals(1, sender.maxInFlight)   // Mutex 串行：任何时刻至多 1 条在发
-    }
-
-    @Test
-    fun `毒丸 - 5xx连败达阈值丢弃且不阻塞后续事件补传`() = runTest {
-        val dao = FakeDao()
-        val sender = FakeSender(decide = { event ->
-            if (event.kind == ViewEventKind.DWELL.name) ViewEventSendResult.Http(500)
-            else ViewEventSendResult.Http(202)
-        })
-        val queue = ViewEventQueue(dao, sender)
-        queue.enqueue("a", ViewEventKind.DWELL, 1L, 8000L, "s")   // 毒丸
-        queue.enqueue("a", ViewEventKind.OPEN, 1L, 0L, "s")       // 正常行（排在毒丸之后）
-
-        // 三轮补传：连败 1 → 2 → 达阈值 3 丢弃（计数跨 drain 存活在进程内存）
-        val first = queue.drain()
-        val second = queue.drain()
-        val third = queue.drain()
-
-        assertEquals(1, first.keptForRetry)               // 第 1 轮：毒丸回队保留
-        assertEquals(1, second.keptForRetry)              // 第 2 轮：再保留
-        assertEquals(1, third.dropped)                    // 第 3 轮：连败达 3 丢弃
-        assertEquals(0, queue.pendingCount())             // 丢弃后不再滞留
-        // 毒丸被发 3 次（3 轮各 1 次）后弃；正常行只发 1 次即收敛
-        assertEquals(3, sender.sent.count { it.kind == ViewEventKind.DWELL.name })
-        assertEquals(1, sender.sent.count { it.kind == ViewEventKind.OPEN.name })
-    }
-
-    @Test
-    fun `保留重试 - 可重试失败回队尾且行内容原样`() = runTest {
-        val dao = FakeDao()
-        val sender = FakeSender(decide = { ViewEventSendResult.IoError })
-        val queue = ViewEventQueue(dao, sender)
+        val queue = ViewEventQueue(dao, FakeSender(decide = { ViewEventSendResult.IoError }))
         queue.enqueue("a", ViewEventKind.DWELL, startedAtMs = 42L, durationMs = 1234L, sessionId = "s")
 
         val summary = queue.drain()
@@ -228,30 +169,202 @@ class ViewEventQueueTest {
         assertEquals(42L, row.startedAt)
         assertEquals(1234L, row.durationMs)
         assertEquals(ViewEventKind.DWELL.name, row.kind)
+        assertFalse(row.terminal)
+    }
+
+    // ---------- drain：退避重试 ----------
+
+    @Test
+    fun `退避重试 - IO失败写退避到期时刻，到期前不取件，到期后同id重发成功`() = runTest {
+        val clock = FakeClock(current = 1_000_000L)
+        val dao = FakeDao()
+        var fail = true
+        val sender = FakeSender(decide = { if (fail) ViewEventSendResult.IoError else ViewEventSendResult.Http(202) })
+        val queue = ViewEventQueue(dao, sender, clock = clock)
+        queue.enqueue("a", ViewEventKind.DWELL, 1L, 1234L, "s")
+        val originalId = dao.rows.single().clientEventId
+
+        val first = queue.drain()
+        assertEquals(1, first.keptForRetry)
+        assertEquals(clock.current + ViewEventSendPolicy.RETRY_BACKOFF_BASE_MS, dao.rows.single().nextAttemptAt)
+
+        // 退避未到期：drain 取不到件（不狂打故障端点）
+        clock.advanceBy(ViewEventSendPolicy.RETRY_BACKOFF_BASE_MS - 1)
+        val premature = queue.drain()
+        assertEquals(0, premature.sent)
+        assertEquals(0, premature.keptForRetry)
+        assertEquals(1, sender.sent.size)
+
+        // 到期后重发：同一行同一幂等键（服务端幂等的前提），成功后删行
+        clock.advanceBy(1)
+        fail = false
+        val second = queue.drain()
+        assertEquals(1, second.sent)
+        assertEquals(originalId, sender.sent[1].clientEventId) // 同 id 重发
+        assertEquals(0, queue.pendingCount())
     }
 
     @Test
-    fun `终局丢弃 - 4xx 不回队（重发无意义）`() = runTest {
+    fun `退避档位 - 连败指数增长且封顶15分钟（纯函数表）`() {
+        assertEquals(30_000L, ViewEventSendPolicy.backoffDelayMs(1))
+        assertEquals(60_000L, ViewEventSendPolicy.backoffDelayMs(2))
+        assertEquals(120_000L, ViewEventSendPolicy.backoffDelayMs(3))
+        assertEquals(240_000L, ViewEventSendPolicy.backoffDelayMs(4))
+        assertEquals(
+            ViewEventSendPolicy.RETRY_BACKOFF_MAX_MS,
+            ViewEventSendPolicy.backoffDelayMs(20),
+        )
+        // 溢出护栏：超大连败不炸不回绕
+        assertEquals(ViewEventSendPolicy.RETRY_BACKOFF_MAX_MS, ViewEventSendPolicy.backoffDelayMs(Int.MAX_VALUE))
+    }
+
+    @Test
+    fun `多批循环 - 超单批50行分轮清空，RETRY退避行到期后收敛`() = runTest {
+        val clock = FakeClock()
+        val dao = FakeDao()
+        // DWELL 行（id 1..10）只在各自首发时失败一次（IoError 退避），重发成功
+        val failedOnce = mutableSetOf<Long>()
+        val sender = FakeSender(decide = { history ->
+            val current = history.last()
+            if (current.kind == ViewEventKind.DWELL.name && current.id !in failedOnce) {
+                failedOnce.add(current.id)
+                ViewEventSendResult.IoError
+            } else {
+                ViewEventSendResult.Http(202)
+            }
+        })
+        val queue = ViewEventQueue(dao, sender, clock = clock)
+        repeat(10) { queue.enqueue("a", ViewEventKind.DWELL, 1L, 5000L, "s") } // id 1..10
+        repeat(110) { queue.enqueue("a", ViewEventKind.OPEN, 1L, 0L, "s") }    // id 11..120
+
+        val first = queue.drain()
+        assertEquals(110, first.sent)          // OPEN 全收敛；DWELL 首轮全退避
+        assertEquals(10, first.keptForRetry)
+        assertEquals(10, dao.rows.size)        // 退避行留在队列（本地优先不丢）
+
+        clock.advanceBy(ViewEventSendPolicy.RETRY_BACKOFF_MAX_MS)
+        val second = queue.drain()
+        assertEquals(10, second.sent)          // DWELL 到期重发成功
+        assertEquals(0, queue.pendingCount())  // 终止性：队列清空
+        // 总发送 = 110 OPEN 各 1 次 + 10 DWELL 各 2 次（首发退避 + 重发成功），无重复计
+        assertEquals(130, sender.sent.size)
+    }
+
+    // ---------- drain：终局标记 ----------
+
+    @Test
+    fun `终局4xx - 标记后不再重试但行保留供导出（不删行）`() = runTest {
+        val clock = FakeClock()
         val dao = FakeDao()
         val sender = FakeSender(decide = { ViewEventSendResult.Http(401) })
-        val queue = ViewEventQueue(dao, sender)
+        val queue = ViewEventQueue(dao, sender, clock = clock)
         queue.enqueue("a", ViewEventKind.OPEN, 1L, 0L, "s")
+        queue.enqueue("a", ViewEventKind.OPEN, 2L, 0L, "s")
 
         val summary = queue.drain()
 
         assertEquals(0, summary.sent)
-        assertEquals(1, summary.dropped)
+        assertEquals(2, summary.dropped)
         assertEquals(0, summary.keptForRetry)
+        assertEquals(2, dao.rows.size)                       // 保留
+        assertTrue(dao.rows.all { it.terminal })             // 全部终局标记
+        assertEquals(0, queue.pendingCount())                // 不算待上传
+        // 后续 drain 永不再取终局行（拨多轮也不重发）
+        clock.advanceBy(10 * ViewEventSendPolicy.RETRY_BACKOFF_MAX_MS)
+        repeat(3) {
+            val again = queue.drain()
+            assertEquals(0, again.sent + again.keptForRetry + again.dropped)
+        }
+        assertEquals(2, sender.sent.size)                    // 各只发一次
+    }
+
+    // ---------- drain：幂等键 ----------
+
+    @Test
+    fun `迁移存量行 - 幂等键懒回填一次落库，重试复用同一id`() = runTest {
+        val clock = FakeClock()
+        val dao = FakeDao()
+        var fail = true
+        val sender = FakeSender(decide = { if (fail) ViewEventSendResult.IoError else ViewEventSendResult.Http(202) })
+        val queue = ViewEventQueue(dao, sender, clock = clock)
+        // 模拟 1→2 迁移存量行：clientEventId=''（DEFAULT ''）
+        dao.insert(
+            PendingViewEventEntity(
+                assetId = "a", kind = ViewEventKind.OPEN.name, startedAt = 1L, durationMs = 0L,
+                sessionId = "s", createdAt = 1L, clientEventId = "",
+            ),
+        )
+
+        queue.drain()
+        val backfilled = dao.rows.single().clientEventId
+        assertTrue("回填后应为 UUID: $backfilled", backfilled.matches(UUID_REGEX))
+
+        clock.advanceBy(ViewEventSendPolicy.RETRY_BACKOFF_MAX_MS)
+        fail = false
+        queue.drain()
+        assertEquals(backfilled, sender.sent[1].clientEventId) // 重发复用同一 id
         assertEquals(0, queue.pendingCount())
-        assertEquals(1, sender.sent.size) // 只试一次，不重试
+    }
+
+    // ---------- drain：串行 ----------
+
+    @Test
+    fun `drain串行 - 并发触发时发送并发峰值恒为1`() = runTest {
+        val dao = FakeDao()
+        val sender = FakeSender()
+        val queue = ViewEventQueue(dao, sender)
+        repeat(4) { queue.enqueue("a", ViewEventKind.OPEN, 1L, 0L, "s") }
+
+        val first = launch { queue.drain() }
+        val second = launch { queue.drain() }
+        first.join()
+        second.join()
+
+        assertEquals(4, sender.sent.size)     // 4 行各恰好发一次（失败保留≠重复计）
+        assertEquals(1, sender.maxInFlight)   // Mutex 串行：任何时刻至多 1 条在发
+        assertEquals(0, queue.pendingCount())
+    }
+
+    // ---------- 导出 ----------
+
+    @Test
+    fun `导出 - 全量未上传行序列化为可直接POST的JSON数组`() = runTest {
+        val dao = FakeDao()
+        val queue = ViewEventQueue(dao, FakeSender())
+        queue.enqueue(
+            "00000000-0000-0000-0000-000000000001", ViewEventKind.OPEN,
+            startedAtMs = 1_700_000_000_123L, durationMs = 0L, sessionId = "sess-1",
+        )
+        queue.enqueue(
+            "00000000-0000-0000-0000-000000000002", ViewEventKind.DWELL,
+            startedAtMs = 1_700_000_000_456L, durationMs = 7_350L, sessionId = "sess-1",
+        )
+
+        // 一行终局：终局行也属于「未上传」，导出必须带上（用户手动补传的兜底）
+        dao.markTerminal(dao.rows.last().id)
+
+        val export = queue.exportPending()
+
+        assertEquals(2, export.count)
+        assertTrue(export.json.trimStart().startsWith("["))
+        assertTrue(export.json.contains("\"clientEventId\""))
+        assertTrue(export.json.contains("\"kind\":\"open\""))          // 协议小写
+        assertTrue(export.json.contains("\"kind\":\"dwell\""))
+        assertTrue(export.json.contains("\"seconds\":7.35"))           // ms→秒无损
+        assertFalse(export.json.contains("OPEN"))                      // 不得漏大写枚举名
     }
 
     @Test
-    fun `空队列 - drain 幂等无害`() = runTest {
+    fun `空队列 - drain 幂等无害且导出为空数组`() = runTest {
         val queue = ViewEventQueue(FakeDao(), FakeSender())
         val summary = queue.drain()
         assertEquals(0, summary.sent)
         assertEquals(0, summary.dropped)
         assertEquals(0, summary.keptForRetry)
+        assertEquals("[]", queue.exportPending().json)
+    }
+
+    companion object {
+        private val UUID_REGEX = Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
     }
 }

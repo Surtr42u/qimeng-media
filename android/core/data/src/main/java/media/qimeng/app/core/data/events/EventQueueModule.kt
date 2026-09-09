@@ -22,6 +22,7 @@ object EventQueueModule {
     @Singleton
     fun provideEventDatabase(@ApplicationContext context: Context): QimengEventDatabase =
         Room.databaseBuilder(context, QimengEventDatabase::class.java, QimengEventDatabase.NAME)
+            .addMigrations(*EventDbMigrations.ALL)
             .build()
 
     @Provides
@@ -30,7 +31,7 @@ object EventQueueModule {
         database.pendingViewEventDao()
 }
 
-/** 出网端口绑定：drain 走生成 SDK（单测注入 fake sender，不触网） */
+/** 出网端口与时钟绑定：drain 走生成 SDK（单测注入 fake sender，不触网） */
 @Module
 @InstallIn(SingletonComponent::class)
 interface EventSyncBindings {
@@ -38,4 +39,8 @@ interface EventSyncBindings {
     @Binds
     @Singleton
     fun bindViewEventSender(impl: SdkViewEventSender): ViewEventSender
+
+    @Binds
+    @Singleton
+    fun bindEventClock(impl: SystemEventClock): EventClock
 }
