@@ -32,6 +32,7 @@
 - **接线**：`useReportView` mutationFn 换成账本记账（组件侧 API 形态不变，open/play/dwell 三路打点全走账本）；新增 `hooks/use-event-ledger` 补发触发通道（挂载即补发=补发路径 + online=断网恢复 + 回可见=App 回前台同构 + 60s 周期兜底），挂 AuthGate；`randomUUID` 从 use-session 迁至 `lib/uuid` 单源（hooks→lib 依赖方向归位）
 - **单测**：`lib/event-ledger.test.ts` 新增 5 例（记账生成 UUID+成功删除/失败保留同 id 重试/退避闸内跳过闸后恢复/空账本幂等/dwell seconds 透传）——存储出网全 fake，node 环境无需 IndexedDB
 - **门禁**：npm test 123 例全绿（11 文件）；`tsc --noEmit` 0 错误；oxlint 0 错误（15 警告为存量）
+- **对抗审查收口（独立 reviewer，0 P1 / 1 P2 已清偿 / 6 P3，主代理记档 2026-09-10）**：幂等链经亲读 handler 证实无旁路（忽略→空事务 202→统计累加被完整跳过）；`go test -run TestEngagement`、Android events 包 32 例、web event-ledger 均被审查者强制实跑复现。**P2 已清偿（主代理亲笔，机械无逻辑变更——原因：gofmt 属换行归一非业务代码）**：本批 4 个 server 文件工作区被写成 CRLF 致本地 make lint 红（blob 本为 LF、CI 不受影响；执行工具引入），已 LF 归一并 `make lint` 复验全绿，暂存零内容差异；K3 批记档的同一笔「L 车道 gofmt 债」随此清偿。根因=`core.autocrlf=true` 环境 checkout 会 CRLF 化，建议后续批次加 `.gitattributes`（`*.go text eol=lf`）根治（记拍板候选，未擅改）。**P3 记档**：①legacy 放行测试覆盖「字段存在但零值 UUID」而非「wire 完全不带字段」（无校验解码链下等价，建议补 raw body 断言）；②执行者自报的「POST 挂起>3min」经审查证伪为**退避静默期误读**——超时配置齐备（NetworkModule 10s×3），logcat 实为退避 60s+worker 取件空转，归因更正；③组3 Web POST 无原始 curl 存档（union 数字自洽但 Web 侧来源靠转述，L4 教训在 Web 侧未贯彻）；④ViewEventSender.kt 注释残留已废止「毒丸/先删后发」口径；⑤ViewEventQueueTest 实数 13 例，上句「14 例」口径差 1；⑥Web 4xx 无终局标记且无导出抢救入口（幂等兜底+60s 闸下有界，留后续批次）。
 
 ---
 ## feat(app): 任务L L5 队列改本地优先——发送成功再删+退避重试+导出未上传（2026-09-09 第一百八十三笔）
