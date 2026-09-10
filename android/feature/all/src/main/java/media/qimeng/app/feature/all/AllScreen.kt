@@ -100,8 +100,19 @@ fun AllScreen(
     // all_type_mode 实录中切维后首组组头恒在网格视口顶部（元素级对照需首组可见），
     // 保留滚动深度会让首组标题滚出屏幕。只挂 activeDim：药丸（分区筛选）点击不改 activeDim，
     // 其滚动行为本批不动。首次组合时列表本就在顶部，scrollToItem(0) 为无操作。
+    //
+    // 门控 lastDimScrolledToTop（任务V V1 追修 D1，2026-09-10）：回顶只在 activeDim **真值变化**
+    // 时执行——LaunchedEffect 以 key 重启，而本页从详情返回会重新进入组合（转场期 destination
+    // 离开组合），effect 无条件重启即把滚动拍回顶，表现为「返回后列表重建于顶 + morph 飞向
+    // 第一格」（六入口验证 3/3 复现，其余五入口无切维 effect 故滚动保持）。快照经
+    // rememberSaveable 存活：返回重组时恢复旧值与当前 activeDim 相等即跳过；首次进入
+    // null≠默认维，走一次无操作回顶（与原注释口径一致）。
+    var lastDimScrolledToTop by rememberSaveable { mutableStateOf<AlbumDim?>(null) }
     LaunchedEffect(state.activeDim) {
-        listState.scrollToItem(0)
+        if (lastDimScrolledToTop != state.activeDim) {
+            lastDimScrolledToTop = state.activeDim
+            listState.scrollToItem(0)
+        }
     }
 
     val pillModel = FourDimPillModel(

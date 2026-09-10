@@ -1,6 +1,7 @@
 package media.qimeng.app.core.ui.component
 
 import android.content.Context
+import androidx.compose.animation.EnterExitState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -43,6 +44,8 @@ import coil3.size.Size
 import media.qimeng.app.core.model.GridSection
 import media.qimeng.app.core.model.MediaAsset
 import media.qimeng.app.core.model.MediaKind
+import media.qimeng.app.core.ui.motion.LocalNavAnimatedVisibilityScope
+import media.qimeng.app.core.ui.motion.LocalNavSharedTransitionScope
 import media.qimeng.app.core.ui.motion.qimengAssetPosterSharedBounds
 import media.qimeng.app.core.ui.theme.QimengDimens
 
@@ -198,10 +201,37 @@ fun QimengMediaGrid(
     val scrolling by remember { derivedStateOf { listState.isScrollInProgress } }
     val thumbnailsPaused = pauseThumbnailsWhileScrolling && scrolling
 
+    // 任务V V1 追修 D2（2026-09-10 用户「返回时…应该是原来的不变」）：返回（pop）被揭出时把
+    // 整个网格画进共享转场 overlay。为什么：morph 期间 outgoing 详情页被共享元素动画钉在
+    // 渲染树顶层（页面转场 None 也移除不了它，NavHost 转场参数与共享元素动画正交），网格若
+    // 留在普通层则被暗色详情页全程遮盖、morph 末帧才一次性重现（六入口连拍实证）。zIndex=-1
+    // 恒低于 sharedBounds 飞行元素默认 0——morph 飞行图浮在网格之上，网格其余部分全程可见。
+    // 门控两条件：isTransitionActive=有共享元素动画在跑（普通 Tab 切换/无 morph 页恒 false，
+    // 零影响）；targetState=Visible=本页是转场揭出侧（incoming）——前进 push 时本页是离场侧
+    // （PostExit）不提升，前进行为不变。scope 缺位（非网格路由）时零变化，与
+    // qimengAssetPosterSharedBounds 同款防御。
+    val revealOverlayModifier = run {
+        val sharedScope = LocalNavSharedTransitionScope.current
+        val animatedScope = LocalNavAnimatedVisibilityScope.current
+        if (sharedScope == null || animatedScope == null) {
+            Modifier
+        } else {
+            with(sharedScope) {
+                // 位置传参：zIndex=-1（恒低于飞行元素默认 0），lambda=是否提升进 overlay
+                Modifier.renderInSharedTransitionScopeOverlay(-1f) {
+                    isTransitionActive &&
+                        animatedScope.transition.targetState == EnterExitState.Visible
+                }
+            }
+        }
+    }
+
     LazyVerticalGrid(
         state = listState,
         columns = GridCells.Fixed(columns),
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier
+            .fillMaxSize()
+            .then(revealOverlayModifier),
         horizontalArrangement = Arrangement.spacedBy(GRID_INTER_ITEM_SPACING),
         verticalArrangement = Arrangement.spacedBy(GRID_INTER_ITEM_SPACING),
         contentPadding = PaddingValues(
