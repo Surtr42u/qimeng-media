@@ -10,7 +10,10 @@ import androidx.compose.ui.graphics.vector.addPathNodes
 import media.qimeng.app.core.ui.theme.QimengDimens
 
 /**
- * 详情页沉浸 chrome 图标（任务I I7，GUIDE_UI §详情页 L171/172）：信息/标签/快速转跳三枚。
+ * 详情页沉浸 chrome 图标（任务I I7，GUIDE_UI §详情页 L171/172）：信息/标签两枚。
+ * （原第三枚快速转跳 DetailPeopleIcon 已随任务V V3 四胶囊重排删除——「快速转跳」不进
+ * 四胶囊，首屏入口随旧图标行消失，孤儿图标一并清偿；ic_detail_jump.xml 不在此列——
+ * 它是 BiliPlayerView 播放器内部控件资源，与本文件无关仍被引用。）
  *
  * 为什么不进 :core:ui QimengDetailIcons.kt：I 卷共享文件冻结（本批独占面 = feature:detail 目录），
  * materialIcon helper 在本文件复制 QimengDetailIcons 同款（构造参数逐字一致，注释互指——
@@ -55,10 +58,4 @@ val DetailInfoIcon: ImageVector = materialIcon(
 val DetailSellIcon: ImageVector = materialIcon(
     name = "QimengDetailSell",
     pathData = "M21.41 11.58l-9-9C12.05 2.22 11.55 2 11 2H4c-1.1 0-2 .9-2 2v7c0 .55.22 1.05.59 1.42l9 9c.36.36.86.58 1.41.58.55 0 1.05-.22 1.41-.59l7-7c.37-.36.59-.86.59-1.41 0-.55-.23-1.06-.59-1.42zM5.5 7C4.67 7 4 6.33 4 5.5S4.67 4 5.5 4 7 4.67 7 5.5 6.33 7 5.5 7z",
-)
-
-/** 快速转跳（Material Icons "people"）：底部 chrome 快速转跳钮——点开关联作者列表 BottomSheet */
-val DetailPeopleIcon: ImageVector = materialIcon(
-    name = "QimengDetailPeople",
-    pathData = "M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z",
 )

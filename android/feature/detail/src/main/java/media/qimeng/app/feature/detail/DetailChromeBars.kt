@@ -26,7 +26,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import media.qimeng.app.core.model.AssetDetail
+import media.qimeng.app.core.ui.component.formatCount
 import media.qimeng.app.core.ui.icon.BackIcon
+import media.qimeng.app.core.ui.icon.DriveFileMoveIcon
 import media.qimeng.app.core.ui.icon.StarIcon
 import media.qimeng.app.core.ui.icon.StarOutlinedIcon
 import media.qimeng.app.core.ui.icon.ThumbUpIcon
@@ -99,21 +101,26 @@ internal fun DetailTopChrome(
 }
 
 /**
- * 底部渐变操作层（任务I I7，GUIDE_UI §详情页 L172）：点赞 / 收藏 / 标签 / 快速转跳
- * 四图标均匀分布居中，渐变遮罩从透明渐变到 qmColorBg 90%；收藏/点赞图标区分空心/实心态
- * （L172），激活态 = primary 主色（对齐互动行 active 语义）。底部不再做导航栏避让（任务V
- * V2，与顶部同口径：壳层内容区已钉在导航栏线下，navigationBars inset padding 双重避让撤除）。
- * 点赞/收藏与内容区互动行同链（VM toggle，乐观 disabled 同源）。
+ * 底部渐变操作层——任务V V3 重排（2026-09-10 截图批注用户拍板）：四枚 icon+文字圆角胶囊
+ * 「点赞N / 收藏 / 标签 / 整理」SpaceEvenly 均匀分布，原位替换旧四纯图标行（点赞/收藏/
+ * 标签/快速转跳）；样式=现行胶囊件 [DetailActionButton]（首屏不放标题/meta/标签/作者卡，
+ * 下滑区互动行退役后此处是点赞收藏唯一入口）。渐变遮罩从透明渐变到 qmColorBg 90%、
+ * 底部不做导航栏避让（任务V V2 口径：壳层内容区已钉在导航栏线下）均不变（K3c 背板条
+ * 机制不动，胶囊在既有容器内替换）。收藏/点赞图标区分空心/实心态，激活态 = primary 主色
+ * 实底；点赞/收藏与原下滑区互动行同链（VM toggle，乐观 disabled 同源）。
+ * 「快速转跳」不进四胶囊（主代理保守裁决，待用户确认）——首屏入口随旧图标行消失，
+ * DetailJumpSheet 组件保留（挂载点保留无触发点，见 DetailScreen 注释）。
  */
 @Composable
 internal fun DetailBottomChrome(
     asset: AssetDetail,
     likePending: Boolean,
     favoritePending: Boolean,
+    fileOpsPending: Boolean,
     onToggleLike: () -> Unit,
     onToggleFavorite: () -> Unit,
     onOpenTagSheet: () -> Unit,
-    onOpenJumpSheet: () -> Unit,
+    onOpenMoveDialog: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -125,42 +132,73 @@ internal fun DetailBottomChrome(
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ChromeIconButton(
-            icon = if (asset.likedToday) ThumbUpIcon else ThumbUpOutlinedIcon,
-            contentDescription = stringResource(R.string.detail_like),
-            tint = if (asset.likedToday) {
-                MaterialTheme.colorScheme.primary
-            } else {
-                MaterialTheme.colorScheme.onBackground
-            },
+        // 点赞N（icon+计数文字胶囊；激活 primary 实底，content 沿用原互动行点赞钮结构）
+        DetailActionButton(
+            active = asset.likedToday,
             enabled = !likePending,
+            contentDescription = stringResource(R.string.detail_like),
             onClick = onToggleLike,
-        )
-        ChromeIconButton(
-            icon = if (asset.isFavorite) StarIcon else StarOutlinedIcon,
+        ) {
+            Icon(
+                imageVector = if (asset.likedToday) ThumbUpIcon else ThumbUpOutlinedIcon,
+                contentDescription = null,
+            )
+            Text(
+                text = formatCount(asset.likeCount),
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+        // 收藏（icon+文字；isFavorite 高亮）
+        DetailActionButton(
+            active = asset.isFavorite,
+            enabled = !favoritePending,
             contentDescription = stringResource(
                 if (asset.isFavorite) R.string.detail_favorite_active else R.string.detail_favorite,
             ),
-            tint = if (asset.isFavorite) {
-                MaterialTheme.colorScheme.primary
-            } else {
-                MaterialTheme.colorScheme.onBackground
-            },
-            enabled = !favoritePending,
             onClick = onToggleFavorite,
-        )
-        ChromeIconButton(
-            icon = DetailSellIcon,
+        ) {
+            Icon(
+                imageVector = if (asset.isFavorite) StarIcon else StarOutlinedIcon,
+                contentDescription = null,
+            )
+            Text(
+                text = stringResource(
+                    if (asset.isFavorite) R.string.detail_favorite_active else R.string.detail_favorite,
+                ),
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+        // 标签（V3 新增胶囊=原黑圈标签/管理入口：开 DetailTagManageSheet 编辑链）
+        DetailActionButton(
+            active = false,
+            enabled = true,
             contentDescription = stringResource(R.string.detail_chrome_tag),
-            tint = MaterialTheme.colorScheme.onBackground,
             onClick = onOpenTagSheet,
-        )
-        ChromeIconButton(
-            icon = DetailPeopleIcon,
-            contentDescription = stringResource(R.string.detail_chrome_jump),
-            tint = MaterialTheme.colorScheme.onBackground,
-            onClick = onOpenJumpSheet,
-        )
+        ) {
+            Icon(imageVector = DetailSellIcon, contentDescription = null)
+            Text(
+                text = stringResource(R.string.detail_chrome_tag),
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+        // 整理（原下滑区互动行整理钮上移；文件操作 pending 期间禁用同 G1b 语义。
+        // 「删除」按钮从详情页移除，功能归本入口：整理弹窗内「移入回收站」→ 既有删除确认链）
+        DetailActionButton(
+            active = false,
+            enabled = !fileOpsPending,
+            contentDescription = stringResource(R.string.detail_file_ops_move),
+            onClick = onOpenMoveDialog,
+        ) {
+            Icon(imageVector = DriveFileMoveIcon, contentDescription = null)
+            Text(
+                text = stringResource(R.string.detail_file_ops_move),
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+            )
+        }
     }
 }
 
