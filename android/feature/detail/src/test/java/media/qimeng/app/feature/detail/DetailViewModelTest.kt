@@ -12,6 +12,7 @@ import org.junit.Rule
 import org.junit.Test
 import media.qimeng.app.core.data.repository.AuthorRepository
 import media.qimeng.app.core.data.repository.DetailRepository
+import media.qimeng.app.core.data.repository.FavoriteMutationTracker
 import media.qimeng.app.core.data.repository.LikeMutationTracker
 import media.qimeng.app.core.data.repository.MediaBatchIndex
 import media.qimeng.app.core.data.repository.MoveConflictException
@@ -273,12 +274,14 @@ class DetailViewModelTest {
         assetId: String? = "b",
         imageDimCache: DetailImageDimCache = DetailImageDimCache(),
         likeTracker: LikeMutationTracker = LikeMutationTracker(),
+        favoriteTracker: FavoriteMutationTracker = FavoriteMutationTracker(),
     ): DetailViewModel = DetailViewModel(
         detailRepository = repo,
         authorRepository = authorRepo,
         batchIndex = batchIndex,
         imageDimCache = imageDimCache,
         likeMutationTracker = likeTracker,
+        favoriteMutationTracker = favoriteTracker,
         savedStateHandle = savedHandle(assetId),
     )
 
@@ -367,7 +370,9 @@ class DetailViewModelTest {
     @Test
     fun `toggleFavorite成功本地翻转 - 失败不变加报错`() = runTest(mainDispatcherRule.testDispatcher) {
         val repo = FakeDetailRepository().apply { detailResult = detail("b", isFavorite = false) }
-        val vm = viewModel(repo)
+        // 任务V V1：收藏成功处上报 FavoriteMutationTracker（收藏页返回重拉的感知源），失败不上报
+        val favoriteTracker = FavoriteMutationTracker()
+        val vm = viewModel(repo, favoriteTracker = favoriteTracker)
         advanceUntilIdle()
 
         vm.toggleFavorite()
@@ -375,12 +380,14 @@ class DetailViewModelTest {
         assertTrue(repo.favoriteCalls.single().second) // 目标态 = 本地翻转
         assertTrue(vm.uiState.value.asset?.isFavorite == true)
         assertNull(vm.uiState.value.errorMessage)
+        assertEquals(1L, favoriteTracker.fingerprint().favoriteVersion) // 成功 → 指纹递增
 
         repo.favoriteError = RuntimeException("fav boom")
         vm.toggleFavorite()
         advanceUntilIdle()
         assertTrue(vm.uiState.value.asset?.isFavorite == true) // 失败不翻转
         assertNotNull(vm.uiState.value.errorMessage)
+        assertEquals(1L, favoriteTracker.fingerprint().favoriteVersion) // 失败 → 指纹不动
     }
 
     @Test

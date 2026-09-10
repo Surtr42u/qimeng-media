@@ -421,57 +421,9 @@ class HistoryViewModelTest {
         assertEquals(5, gridPrefs.albumFlow.value)
     }
 
-    @Test
-    fun `resume重拉 首次跳过不与首载叠加 后续每次resume重拉第一页`() = runTest(mainDispatcherRule.testDispatcher) {
-        val historyRepo = FakeHistoryRepository()
-        val mediaRepo = FakeMediaRepository()
-        val viewModel = viewModel(historyRepo, mediaRepo)
-        advanceUntilIdle()
-        assertEquals(1, historyRepo.calls.size) // init 首载在途
-
-        // 首个 ON_RESUME 与 init 首载重叠：跳过，不发起第二载
-        viewModel.onResumed()
-        advanceUntilIdle()
-        assertEquals(1, historyRepo.calls.size)
-
-        // 首载落地后，模拟详情页浏览上报后返回（第二次 ON_RESUME）：重拉第一页+候选
-        historyRepo.calls[0].gate.complete(historyPage(listOf(entry("a"))))
-        mediaRepo.completeFacetsBatch(batch = 0, result = facets(total = 1))
-        advanceUntilIdle()
-
-        viewModel.onResumed()
-        advanceUntilIdle()
-        assertEquals(2, historyRepo.calls.size)
-        assertNull(historyRepo.calls[1].query.cursor) // 重拉回第一页（lastViewedAt 重排）
-
-        mediaRepo.completeFacetsBatch(batch = 1, result = facets(total = 1))
-        historyRepo.calls[1].gate.complete(historyPage(listOf(entry("b"), entry("a"))))
-        advanceUntilIdle()
-        assertEquals(listOf("b", "a"), viewModel.uiState.value.items.map { it.id })
-    }
-
-    @Test
-    fun `resume重拉在途防重 刷新在途时再次resume不叠加请求`() = runTest(mainDispatcherRule.testDispatcher) {
-        val historyRepo = FakeHistoryRepository()
-        val mediaRepo = FakeMediaRepository()
-        val viewModel = viewModel(historyRepo, mediaRepo)
-        advanceUntilIdle()
-        viewModel.onResumed() // 首个跳过
-        historyRepo.calls[0].gate.complete(historyPage(entries = emptyList()))
-        mediaRepo.completeFacetsBatch(batch = 0, result = facets(total = 0))
-        advanceUntilIdle()
-
-        // 第一次 resume 发起重拉（闸门挂着不放）；在途期间再次 resume：被 refresh 防重丢弃
-        viewModel.onResumed()
-        advanceUntilIdle()
-        viewModel.onResumed()
-        advanceUntilIdle()
-        assertEquals(2, historyRepo.calls.size)
-
-        historyRepo.calls[1].gate.complete(historyPage(listOf(entry("b"))))
-        advanceUntilIdle()
-        assertEquals(listOf("b"), viewModel.uiState.value.items.map { it.id })
-    }
+    // 任务V V1（2026-09-10）：「详情返回 ON_RESUME 自动重拉」两用例随机制整体移除而删除
+    // （用户拍板「返回时不要刷新界面…应该是原来的不变」，lastViewedAt 重排滞后靠下拉
+    // 刷新/下次冷启动收敛——取舍见 HistoryViewModel 类 KDoc 与 CHANGELOG 第一百八十八笔）。
 
     // ---------- 批次上下文（2026-09-09 拍板：收藏/历史进详情补批次，首页同款机制） ----------
 
