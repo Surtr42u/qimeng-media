@@ -296,7 +296,6 @@ fun DetailScreen(
                 }
                 DetailContentSections(
                     state = state,
-                    onSiblingNavigate = onSiblingNavigate,
                     onOpenAsset = { id, batchIds ->
                         // 推荐栏跳转：先换批次清单（推荐栏即新清单），再交壳层导航
                         viewModel.upNextJump()
@@ -397,13 +396,12 @@ fun DetailScreen(
 
 /**
  * 加载成功后的信息内容区（媒体层下方，下滑查看；拍板⑧超规格件保留融入沉浸结构）：
- * 批次 pager 行（G1a，n/N 与顶 chrome 同源展示）→ 标题 → meta 行 → 互动行 → 标签行 →
- * 作者卡 → 接下来播放 + 底部呼吸空间。舞台动作不在本节（归媒体舞台浮层）。
+ * 标题 → meta 行 → 互动行 → 标签行 → 作者卡 → 接下来播放 + 底部呼吸空间。舞台动作不在
+ * 本节（归媒体舞台浮层）。V2 删 pager 行（用户拍板：导航只留横滑，i/N 由顶部 chrome 承担）。
  */
 @Composable
 private fun DetailContentSections(
     state: DetailUiState,
-    onSiblingNavigate: (delta: Int) -> Unit,
     onOpenAsset: (assetId: String, batchIds: List<String>) -> Unit,
     onOpenAuthor: (authorId: String, displayName: String) -> Unit,
     onToggleLike: () -> Unit,
@@ -422,13 +420,6 @@ private fun DetailContentSections(
         state.errorMessage?.let { message ->
             DetailErrorBanner(message = message, onDismiss = onDismissError)
         }
-        // 批次 pager 行（任务G G1a，Web .asset-pager 对齐）：舞台与标题之间；无批次上下文
-        // （batchIndex<0 深链单卡）DetailPagerRow 内部整行不渲染。超规格件（拍板⑧）保留
-        DetailPagerRow(
-            batchIndex = state.batchIndex,
-            batchSize = state.batchSize,
-            onSiblingNavigate = onSiblingNavigate,
-        )
         DetailTitle(title = asset.title)
         DetailMetaRow(asset = asset)
         DetailInteractionRow(
