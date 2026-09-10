@@ -16,13 +16,7 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { useReportView } from '@/hooks/use-assets'
 import { ensureSessionId } from '@/hooks/use-session'
-
-/**
- * 停留段最小上报时长（毫秒）：不足 1s 的停留段秒数四舍五入后为 0，累加
- * 无意义且会给事件流制造零值噪声（快速划过），不产生事件；数值口径不受
- * 影响（少计的 <1s 在任意统计窗口内都不足 1 秒）。
- */
-const MIN_REPORT_SEGMENT_MS = 1000
+import { decideDwellSegment } from '@/lib/engagement-reporting'
 
 /** 一段正在计时的停留（归属资产 + 段起点）；null = 当前无打开的停留段 */
 interface DwellSegment {
@@ -49,19 +43,22 @@ export function useDwellReport(assetId: string | undefined) {
     mutateRef.current = reportView.mutate
   })
 
-  /** 关闭当前停留段并上报（同段重复调用 no-op——段被取走即置空，禁重复 flush） */
+  /** 关闭当前停留段并上报（同段重复调用 no-op——段被取走即置空，禁重复 flush）。
+   * 段级口径（2026-09-11 口径 B，DOMAIN_RULES §5）：不足 1s 的合法段照报
+   * （seconds 四舍五入后为 0 的零值行合法，原「<1s 段不上报」退役），
+   * 仅非正值/非有限毫秒数（时钟异常/脏数据）由 decideDwellSegment 防御拦截。 */
   const flush = useCallback(() => {
     const segment = segmentRef.current
     segmentRef.current = null
     if (!segment) return
-    const elapsedMs = Date.now() - segment.startedAtMs
-    if (elapsedMs < MIN_REPORT_SEGMENT_MS) return
+    const decision = decideDwellSegment(Date.now() - segment.startedAtMs)
+    if (!decision.report) return
     mutateRef.current({
       assetId: segment.assetId,
       kind: 'dwell',
       startedAt: new Date(segment.startedAtMs).toISOString(),
       sessionId: ensureSessionId(),
-      seconds: Math.round(elapsedMs / 1000),
+      seconds: decision.seconds,
     })
   }, [])
 

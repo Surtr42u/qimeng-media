@@ -9,6 +9,7 @@
 
 import Artplayer from 'artplayer'
 import { useEffect, useRef, useState } from 'react'
+import { stepPlayGate, type PlayGateState } from '@/lib/engagement-reporting'
 
 /** 倍速菜单档位 0.5~3x（W-3 冻结清单；官方默认最高 2x，构造前覆盖静态档位表生效） */
 const PLAYBACK_RATES = [0.5, 0.75, 1, 1.25, 1.5, 2, 3]
@@ -33,7 +34,10 @@ export interface VideoPlayerProps {
   onTimeUpdate?: (positionSeconds: number) => void
   /** 暂停（页面侧立即上报） */
   onPause?: (positionSeconds: number) => void
-  /** 起播（页面侧上报 play 事件；每次起播都派发，会话去重是服务端职责） */
+  /** 起播（页面侧上报 play 事件）。口径 B（2026-09-11，DOMAIN_RULES §5）：同一
+   * 连续播放段双来源（art 'play' 主路径 ∪ 'video:play' 原生兜底）只派发一条
+   * （组件内防重闸门），暂停后重新起播重新派发——「每次起播一条」语义不变，
+   * 同会话当日重复起播的去重仍是服务端职责。 */
   onPlay?: () => void
 }
 
@@ -128,6 +132,9 @@ export default function VideoPlayer({
   useEffect(() => {
     handlersRef.current = { onTimeUpdate, onPause, onPlay }
   })
+  // play 防重闸门状态（口径 B：同一起播双来源只派发一条，判定纯函数在
+  // lib/engagement-reporting；建实例 effect 内随新实例重置——新实例=新会话）
+  const playGateRef = useRef<PlayGateState>('idle')
 
   useEffect(() => {
     const container = containerRef.current
@@ -135,6 +142,7 @@ export default function VideoPlayer({
 
     // 倍速档位表是静态属性（构造时读取），必须先覆盖再实例化
     Artplayer.PLAYBACK_RATE = PLAYBACK_RATES
+    playGateRef.current = 'idle' // 新播放器实例 = 新播放会话，闸门归零
     const art = new Artplayer({
       container,
       url: initial.src,
@@ -167,8 +175,27 @@ export default function VideoPlayer({
     // 断点续播：元数据就绪后跳到起点（ready = 官方「首次可播」事件）
     if (initial.startTime > 0) art.on('ready', () => (art.seek = initial.startTime))
     art.on('video:timeupdate', () => handlersRef.current.onTimeUpdate?.(art.currentTime))
-    art.on('pause', () => handlersRef.current.onPause?.(art.currentTime))
-    art.on('play', () => handlersRef.current.onPlay?.())
+    art.on('pause', () => {
+      playGateRef.current = stepPlayGate(playGateRef.current, 'pause').state
+      handlersRef.current.onPause?.(art.currentTime)
+    })
+    // play 双来源单发（口径 B，替换第三十八笔口径 A 的「video:play 不混用」取舍）：
+    // art 'play' 主路径保留，旁补 'video:play' 原生兜底（覆盖自动播放恢复等非
+    // art.play() 起播路径）；两路喂同一防重状态机，同一起播只派发一条 onPlay。
+    // 暂停重置走双源（'video:pause' 原生兜底 + 上方 art 'pause'），任一来源的
+    // 暂停都把闸门拨回 idle，暂停后重新起播能重新派发。防重判定逻辑在
+    // lib/engagement-reporting 纯函数（铁律 7），此处仅接线。
+    const handlePlaySignal = () => {
+      const step = stepPlayGate(playGateRef.current, 'play')
+      playGateRef.current = step.state
+      if (step.report) handlersRef.current.onPlay?.()
+    }
+    const handlePauseReset = () => {
+      playGateRef.current = stepPlayGate(playGateRef.current, 'pause').state
+    }
+    art.on('play', handlePlaySignal)
+    art.on('video:play', handlePlaySignal)
+    art.on('video:pause', handlePauseReset)
 
     // 深色模式跟随 token：月亮按钮切 html class 时重读 --qm-primary
     const themeObserver = new MutationObserver(() => {
