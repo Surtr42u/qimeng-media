@@ -9,6 +9,15 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## fix(app): 任务V V7 杂项修复——上传目录选择器 COS 子文件夹点行展开+作者总览卡导航与排版（2026-09-11 第一百九十五笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理，任务V V7 批）；主代理（对抗审查汇总/提交）：GLM-5.3-Flash
+
+- **①COS 子文件夹不可点（定性=App 侧，本批修）**：curl 实证 server /dirs 对 COS 库已返回完整两层树（测试作者一→测试作品M 等，与 normal 库形状一致）=非协议缺口；App 选择器行点击只选中不展开、唯一展开入口是 14px ▸ 小箭头，normal 库根下全叶子「点行即达」故用户感知「COS 与其余不一样」。修法=UploadRules 新增纯函数 `shouldExpandOnSelect(hasChildren, alreadyExpanded)`（有子级且未展开才展开，单调语义=已展开再点行不收起、收起走 ▾ 箭头；保守取舍待用户追认）+UploadScreen 行点击接「选中+按规则展开」；normal 库叶子行逐字等价零回归。+3 单测（core:model 12 例全过）。
+- **上传全链实测**（emulator-5562+18461）：adb push 测试图→SAF→compare-cos→点行展开→选子目录 测试作者一/测试作品M→上传成功→服务端 /assets/{id} relPath=测试作者一/测试作品M/v7-test-upload.jpg（cos 库 5→6），已选路径与最终 relPath 逐字一致。
+- **②作者总览卡**：卡级点击（头行+计数副行）→onManage→AuthorScreen 作者列表页（落点选型：集合页需 authorId 卡整体没有，Top5 行直达集合页为 RES 批 b702a6b 既有不回退）；排版拥挤修复=三处间距对齐 Web prototype.css（.rank-note 4px/.rank-card ul 8px/.rank-sub2 2px，此前全 0dp），提 3 命名常量注释含来源，只动排版不动语义。I4 遗留「总览行直达」就此清偿（共享窗口 morph 部分仍悬置属 U-4 范畴）。
+- 门禁三连绿（16s/12s/1m24s，低 CPU 档）；独立 reviewer 对抗审查通过 0 P1/P2：diff 逐行、接线链跟到 nav graph 闭合、服务端 JSON/时间链互证；P3 备案（normal 库修复后 UI 走查留痕补拍归 V8、COS 三级深层无测试数据、shouldExpandOnSelect 组合 (false,true) 短路等价未单列）。证据 %TEMP%\qimeng-v7-evidence\。
+
 ## feat(app): 任务V V6 material3 1.5.0-alpha15 升级+LoadingIndicator 试点——alpha28 撞 SDK37 冻结线改锁 alpha15（2026-09-11 第一百九十四笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理，任务V V6 批两轮）；主代理（落地点裁决/对抗审查汇总/提交）：GLM-5.3-Flash

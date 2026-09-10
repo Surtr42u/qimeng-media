@@ -69,4 +69,21 @@ class UploadModelsTest {
         assertNull(UploadRules.joinDirPath("a", ".."))
         assertNull(UploadRules.joinDirPath("a", "x/y"))
     }
+
+    // ---- UploadRules.shouldExpandOnSelect（V7：点目录行 = 选中并进入）----
+
+    @Test
+    fun `有子级且未展开时点行同时展开`() {
+        assertTrue(UploadRules.shouldExpandOnSelect(hasChildren = true, alreadyExpanded = false))
+    }
+
+    @Test
+    fun `已展开的点行不再触发展开`() {
+        assertFalse(UploadRules.shouldExpandOnSelect(hasChildren = true, alreadyExpanded = true))
+    }
+
+    @Test
+    fun `叶子目录点行不展开`() {
+        assertFalse(UploadRules.shouldExpandOnSelect(hasChildren = false, alreadyExpanded = false))
+    }
 }

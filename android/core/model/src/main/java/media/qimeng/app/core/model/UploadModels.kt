@@ -89,4 +89,14 @@ object UploadRules {
         val base = selectedDir.trim('/')
         return if (base.isEmpty()) newName.trim() else "$base/${newName.trim()}"
     }
+
+    /**
+     * 点击目录行时是否同时展开该层（V7 修复）：COS 等带层级的库，用户点目录行
+     * 的心智是"点进去看到子文件夹"，只选中不展开会让子级看起来"不可点"
+     * （唯一展开入口 ▸ 小箭头不可发现；全叶子的普通库则点行即达，行为分叉即 bug 观感）。
+     * 规则：有子级且尚未展开才展开；已展开或叶子返回 false（收起仍走 ▾ 箭头，
+     * 避免选中确认路径上子级忽隐忽现）。纯函数，单测锁定，UI 层只消费。
+     */
+    fun shouldExpandOnSelect(hasChildren: Boolean, alreadyExpanded: Boolean): Boolean =
+        hasChildren && !alreadyExpanded
 }
