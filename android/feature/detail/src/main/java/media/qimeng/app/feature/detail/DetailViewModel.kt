@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import media.qimeng.app.core.data.repository.AuthorRepository
 import media.qimeng.app.core.data.repository.DetailRepository
+import media.qimeng.app.core.data.repository.FavoriteMutationTracker
 import media.qimeng.app.core.data.repository.LikeMutationTracker
 import media.qimeng.app.core.data.repository.MediaBatchIndex
 import media.qimeng.app.core.data.repository.MoveConflictException
@@ -107,6 +108,10 @@ class DetailViewModel @Inject constructor(
     // 首页 ON_RESUME 对比指纹变化重拉推荐/排行榜（GUIDE_UI §下拉刷新 L89「点赞后返回
     // 自动重排」；SSE 无 like 事件，本地感知是协议内唯一路径——tracker KDoc 口径）
     private val likeMutationTracker: LikeMutationTracker,
+    // 本地收藏变更指纹（任务V V1，2026-09-10 返回刷新缺陷修复）：收藏成功处上报，
+    // 收藏页 ON_RESUME 对比指纹变化才重拉（此前无条件重拉，返回 morph 期间列表整体
+    // 重显——缺陷根因；SSE 无 favorite 事件，与 like 同款协议约束，tracker KDoc 口径）
+    private val favoriteMutationTracker: FavoriteMutationTracker,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
@@ -418,7 +423,8 @@ class DetailViewModel @Inject constructor(
         }
     }
 
-    /** 收藏显式设置：目标态 = 本地翻转（协议 PUT body 是显式布尔，非 toggle） */
+    /** 收藏显式设置：目标态 = 本地翻转（协议 PUT body 是显式布尔，非 toggle）；成功处上报
+     *  本地收藏变更指纹（任务V V1，FavoriteMutationTracker——收藏页返回重拉的感知源，失败不上报） */
     fun toggleFavorite() {
         val id = assetId ?: return
         val current = _uiState.value.asset ?: return
@@ -428,6 +434,7 @@ class DetailViewModel @Inject constructor(
         viewModelScope.launch {
             runCatching { detailRepository.setFavorite(id, target) }
                 .onSuccess {
+                    favoriteMutationTracker.onFavoriteMutated()
                     _uiState.value = _uiState.value.copy(
                         favoritePending = false,
                         asset = _uiState.value.asset?.copy(isFavorite = target),

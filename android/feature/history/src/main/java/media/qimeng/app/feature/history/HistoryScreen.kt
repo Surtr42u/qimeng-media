@@ -7,16 +7,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import media.qimeng.app.core.model.AlbumDim
 import media.qimeng.app.core.model.FacetOption
@@ -48,8 +44,9 @@ import media.qimeng.app.core.ui.R as CoreUiR
  * 实录两页头部均无，主会话裁定 1/2）。
  * **无清空按钮**（2026-09-05 拍板 2B：协议无 DELETE /history，砍交互；协议缺口落档见交付报告）。
  * 任务I I5：双指缩放调列数 2~5（列数图标豁免不覆盖手势，R2）+ 列数持久化共用全部页档
- * （GUIDE_UI §全部页 L149 updateGridColumnsAll 口径）+ 详情页返回自动刷新（ON_RESUME 重拉，
- * 补偿服务端化后丢失的 Flow 自动性——详情浏览上报后 lastViewedAt 已变，返回重排）。
+ * （GUIDE_UI §全部页 L149 updateGridColumnsAll 口径）。任务V V1（2026-09-10）：详情返回
+ * ON_RESUME 自动重拉已移除（用户拍板「返回时不要刷新界面」；lastViewedAt 重排滞后靠
+ * 下拉刷新/下次冷启动收敛，取舍详见 HistoryViewModel 类 KDoc）。
  */
 @Composable
 fun HistoryScreen(
@@ -66,16 +63,10 @@ fun HistoryScreen(
     val animatedUrlResolver = remember(viewModel) { viewModel.origUrlResolver::origUrl }
     val nowMs = remember { System.currentTimeMillis() }
 
-    // 详情页返回自动刷新（GUIDE_UI §浏览历史 L391）：返回/回前台（ON_RESUME）触发 VM 重拉，
-    // 防叠加语义在 HistoryViewModel.onResumed（镜像 HomeScreen I1 模式）
-    val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) viewModel.onResumed()
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
+    // 任务V V1（2026-09-10）：已移除「详情返回 ON_RESUME 自动重拉」——无条件重拉使返回
+    // 共享元素 morph（缩略图飞回）期间列表整体重显，用户拍板「返回时不要刷新界面…
+    // 应该是原来的不变」。代价=刚浏览条目的 lastViewedAt 重排滞后，靠下拉刷新/下次
+    // 冷启动收敛（详见 HistoryViewModel 类 KDoc 与 CHANGELOG 第一百八十八笔）。
 
     val pillModel = FourDimPillModel(
         filter = state.filter,

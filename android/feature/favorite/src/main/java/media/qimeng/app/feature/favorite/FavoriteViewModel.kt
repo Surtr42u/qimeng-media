@@ -15,6 +15,8 @@ import kotlinx.coroutines.launch
 import media.qimeng.app.core.data.repository.MediaRepository
 import media.qimeng.app.core.data.repository.MediaBatchIndex
 import media.qimeng.app.core.data.repository.AssetOrigUrlResolver
+import media.qimeng.app.core.data.repository.FavoriteFingerprint
+import media.qimeng.app.core.data.repository.FavoriteMutationTracker
 import media.qimeng.app.core.data.repository.DataStoreGridPrefsRepository
 import media.qimeng.app.core.data.repository.GridPrefsRepository
 import media.qimeng.app.core.model.AlbumDim
@@ -72,6 +74,9 @@ class FavoriteViewModel @Inject constructor(
     private val mediaRepository: MediaRepository,
     private val gridPrefs: GridPrefsRepository,
     private val batchIndex: MediaBatchIndex,
+    // 本地收藏变更指纹（任务V V1，2026-09-10 返回刷新缺陷修复）：详情 toggleFavorite 成功处
+    // 上报，此处 ON_RESUME 对比指纹变化才重拉——纯浏览返回零网络零重组（tracker KDoc 口径）
+    private val favoriteMutationTracker: FavoriteMutationTracker,
     val origUrlResolver: AssetOrigUrlResolver,
 ) : ViewModel() {
 
@@ -126,21 +131,29 @@ class FavoriteViewModel @Inject constructor(
     }
 
     /**
-     * 详情页返回自动刷新（GUIDE_UI §收藏页 L410）：ON_RESUME 观测触发（镜像 HomeScreen I1 模式），
-     * 覆盖详情 pop 返回与 App 回前台两路径——详情 toggleFavorite 后返回列表即反映。
-     * 防叠加风暴（resume 即 refresh 的简单方案，不另造指纹/标记）：
-     * - 首个 ON_RESUME 与 init 首载天然重叠，跳过（否则进页即双载）；
-     * - 后续 resume 复用 refresh() 的 isRefresh+isLoading 在途防重——下拉刷新/翻页在途时
-     *   本次 resume 重拉被丢弃，不叠加请求。
+     * 返回/回前台（ON_RESUME，由 FavoriteScreen 生命周期观测驱动）：收藏变更指纹
+     * （[FavoriteMutationTracker]，任务V V1）与上次留存不一致时才重拉——详情页
+     * toggleFavorite 后返回列表即反映（GUIDE_UI §收藏页 L410 的刷新语义收窄为「有变更才刷」；
+     * 用户 2026-09-10 拍板「返回时不要刷新界面…应该是原来的不变」：此前无条件重拉使
+     * 返回共享元素 morph（缩略图飞回）期间列表整体重显 + 刷新指示器闪一轮，缺陷根因）。
+     * - 首次回调只采纳基线（进页不误刷）；
+     * - 无变更不重拉 =「纯浏览返回保持原样」零网络零重组；
+     * - 重拉走静默路径（isRefresh=false，不置 isRefreshing）：morph 窗口内指示器不闪，
+     *   数据仍整组替换、morph 结束时列表已新。
      */
-    private var resumedOnce = false
+    private var lastFavoriteFingerprint: FavoriteFingerprint? = null
 
     fun onResumed() {
-        if (!resumedOnce) {
-            resumedOnce = true
+        val snapshot = favoriteMutationTracker.fingerprint()
+        val last = lastFavoriteFingerprint
+        if (last == null || last == snapshot) {
+            // 首次采纳基线 / 指纹无变化（纯浏览返回）：不重拉
+            lastFavoriteFingerprint = snapshot
             return
         }
-        refresh()
+        if (_uiState.value.isLoading) return // 在途（首载/上次重拉/筛选）不叠加：不采纳指纹，下次 resume 重试
+        lastFavoriteFingerprint = snapshot
+        reloadAll(isRefresh = false) // 静默重拉：不置 isRefreshing，morph 期间指示器不闪（见 KDoc）
     }
 
     init {

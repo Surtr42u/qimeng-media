@@ -44,7 +44,8 @@ import media.qimeng.app.core.ui.R as CoreUiR
  * 头部形态照旧版实录 favorite.txt：返回 + 标题 + 芯片行 + 统计行「N 文件」（无筛选/列数图标——
  * 实录两页头部均无，主会话裁定 1/2）；无清空按钮语义在此不涉及；
  * 任务I I5：双指缩放调列数 2~5（列数图标豁免不覆盖手势，R2）+ 列数持久化共用全部页档
- * （GUIDE_UI §全部页 L149 updateGridColumnsAll 口径）+ 详情页返回自动刷新（ON_RESUME 重拉）。
+ * （GUIDE_UI §全部页 L149 updateGridColumnsAll 口径）；详情页返回刷新经任务V V1（2026-09-10）
+ * 收窄为收藏变更指纹门控（仅详情收藏变更后的返回重拉，纯浏览返回保持原样）。
  */
 @Composable
 fun FavoriteScreen(
@@ -61,8 +62,9 @@ fun FavoriteScreen(
     val animatedUrlResolver = remember(viewModel) { viewModel.origUrlResolver::origUrl }
     val nowMs = remember { System.currentTimeMillis() }
 
-    // 详情页返回自动刷新（GUIDE_UI §收藏页 L410）：返回/回前台（ON_RESUME）触发 VM 重拉，
-    // 防叠加语义在 FavoriteViewModel.onResumed（镜像 HomeScreen I1 模式）
+    // 详情页返回按收藏变更指纹门控刷新（任务V V1，2026-09-10）：返回/回前台（ON_RESUME）
+    // 由 VM 对比 FavoriteMutationTracker 指纹，仅详情收藏变更过才重拉——纯浏览返回不刷新
+    // （用户拍板「返回时…应该是原来的不变」，无条件重拉曾致返回 morph 期间列表整体重显）
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->

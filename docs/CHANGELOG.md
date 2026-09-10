@@ -9,6 +9,18 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## feat(app): 任务V V1 动效合入——共享元素转场exp#3~6合入+exp#2剔除+返回刷新缺陷修复（2026-09-10 第一百八十八笔）
+
+执行 AI：GLM-5.3（执行子代理，任务V V1 批）
+
+- **四笔 cherry-pick 合入**（自 ui/expressive@8430fd3 逐笔摘取到 master，exp#2 按用户拍板剔除不摘）：d17a0c9=exp#3 首页→详情共享元素试点（SharedTransitionLayout 包 NavHost+同 key sharedBounds，CompositionLocal 接线组件侧零签名变化，范围锁首页族）→ df1d5ce=exp#4 前进转场竞态修复（预载翼：AssetCard onClick 导航前 Coil 抢跑海报；占位翼：VideoStage/ZoomableOriginalImage 未就绪期品牌灰色块参与渲染）→ e5149ca=exp#5 共享 key 防冲突加固（flattenGridCells 纯函数按资产 id 防御性去重+四例 JVM 单测）→ 8d8b00c=exp#6 scope provide 扩至相册/收藏/历史/搜索/作者集合五网格路由（铺开前置 dump 查重全零）。
+- **exp#2 剔净（grep 证据）**：`git grep "assetCardPressScale|ASSET_CARD_PRESSED|pressSource" -- android/` 零命中（EXIT=1）；AssetCard clickable 恢复纯净形态 `.clickable(onClick = { preloadDetailPoster(...); onClick() })`（仅 exp#4 预载翼），KDoc 恢复 L1 拍板口径「无按下缩放动画…禁止再加缩放修饰」；toml 红线复验：`git diff 323513e -- android/gradle/libs.versions.toml` 仅新增 compose-animation 别名（BOM 管控无版本号），composeBom 仍 2026.06.01 零版本变动。
+- **返回刷新缺陷修复（本批代码主体，前任执行代理在门禁前超时被杀、续作代理验证+收尾提交）**：根因=收藏/历史页 ON_RESUME 无条件重拉（I5 时代的 resume 重拉语义），共享元素转场合入后缺陷显性化——详情返回 morph（缩略图飞回）进行中列表整体重显（items 整组替换+指示器闪一轮），用户 2026-09-10 拍板「返回时不要刷新界面…应该是原来的不变」。修复双路：①收藏改指纹门控——新增 `FavoriteMutationTracker`（镜像 LikeMutationTracker 范式，@Singleton 纯进程内计数器；DetailViewModel.toggleFavorite 成功处 onFavoriteMutated 上报），FavoriteViewModel.onResumed 对比指纹（首次采纳基线/无变更不拉/在途不采纳指纹），命中才静默 `reloadAll(isRefresh=false)`（不置 isRefreshing，morph 窗口内指示器不闪）；②历史页整体移除 ON_RESUME 自动重拉（含观测代码）——取舍：历史 lastViewedAt 重排滞后靠手动下拉刷新收敛（SSE 无 favorite/history 事件，本地感知是唯一路径，Tracker KDoc 记档）。三个 ViewModel 测试文件同步更新。
+- **UI-NOTES.md 折叠记档**：cherry-pick 带入的仓库根实验台账 UI-NOTES.md 已 `git rm`，要点（exp#1 MotionScheme 停手实证/各 exp 实测结论与干扰记档/回退法）折叠进 HANDOVER_APP.md 任务V 节。
+- **六入口模拟器验证（首页/相册/收藏/历史/搜索/作者集合→详情→返回）=后续代理补证**：本批执行会话两次接力（前任超时+续作收尾）均未做模拟器 UI 走查，ui/expressive 分支上的实测结论（返回 morph 两帧中间态铁证/前进首帧海报在位/视频桥接回归）可作参照但 master 合入态待独立走查确认，遗留入 HANDOVER_APP 任务V 节。
+- **门禁三连**：make app-build / app-test / app-lint 全绿（EXIT=0，尾部日志存 %TEMP%\qimeng-v1-evidence\gates.txt）。
+
+---
 ## docs(app): 任务L 终审收口——全卷终审通过+终审P3四处补记（2026-09-10 第一百八十七笔）
 
 执行 AI：GLM-5.3-Flash（主代理）

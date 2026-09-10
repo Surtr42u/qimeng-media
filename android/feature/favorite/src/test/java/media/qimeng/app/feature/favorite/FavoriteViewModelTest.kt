@@ -13,6 +13,7 @@ import org.junit.Rule
 import org.junit.Test
 import media.qimeng.app.core.data.repository.AssetOrigUrlResolver
 import media.qimeng.app.core.data.repository.DataStoreGridPrefsRepository
+import media.qimeng.app.core.data.repository.FavoriteMutationTracker
 import media.qimeng.app.core.data.repository.GridPrefsRepository
 import media.qimeng.app.core.data.repository.MediaBatchIndex
 import media.qimeng.app.core.data.repository.MediaRepository
@@ -139,10 +140,12 @@ class FavoriteViewModelTest {
         repo: FakeMediaRepository,
         gridPrefs: FakeGridPrefsRepository = FakeGridPrefsRepository(),
         batchIndex: MediaBatchIndex = MediaBatchIndex(),
+        favoriteTracker: FavoriteMutationTracker = FavoriteMutationTracker(),
     ): FavoriteViewModel = FavoriteViewModel(
         mediaRepository = repo,
         gridPrefs = gridPrefs,
         batchIndex = batchIndex,
+        favoriteMutationTracker = favoriteTracker,
         origUrlResolver = object : AssetOrigUrlResolver {
             override suspend fun origUrl(assetId: String): String? = null
         },
@@ -324,54 +327,88 @@ class FavoriteViewModelTest {
     }
 
     @Test
-    fun `resume重拉 首次跳过不与首载叠加 后续每次resume重拉第一页`() = runTest(mainDispatcherRule.testDispatcher) {
-        val repo = FakeMediaRepository()
-        val viewModel = viewModel(repo)
-        advanceUntilIdle()
-        assertEquals(1, repo.assetsCalls.size) // init 首载在途
+    fun `收藏指纹门控 - 首次基线不误刷 纯浏览返回不重拉 收藏变更返回静默重拉第一页`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val repo = FakeMediaRepository()
+            // 任务V V1（2026-09-10）：ON_RESUME 无条件重拉改为 FavoriteMutationTracker 指纹门控
+            val tracker = FavoriteMutationTracker()
+            val viewModel = viewModel(repo, favoriteTracker = tracker)
+            advanceUntilIdle()
+            assertEquals(1, repo.assetsCalls.size) // init 首载在途
 
-        // 首个 ON_RESUME 与 init 首载重叠：跳过，不发起第二载
-        viewModel.onResumed()
-        advanceUntilIdle()
-        assertEquals(1, repo.assetsCalls.size)
+            // 首个 ON_RESUME 与 init 首载重叠：只采纳基线，不发起第二载
+            viewModel.onResumed()
+            advanceUntilIdle()
+            assertEquals(1, repo.assetsCalls.size)
 
-        // 首载落地后，模拟详情页 toggleFavorite 后返回（第二次 ON_RESUME）：重拉第一页+候选
-        repo.assetsCalls[0].gate.complete(page(items = listOf(asset("a"))))
-        repo.completeFacetsBatch(batch = 0, result = facets(total = 1))
-        advanceUntilIdle()
+            // 首载落地
+            repo.assetsCalls[0].gate.complete(page(items = listOf(asset("a"))))
+            repo.completeFacetsBatch(batch = 0, result = facets(total = 1))
+            advanceUntilIdle()
 
-        viewModel.onResumed()
-        advanceUntilIdle()
-        assertEquals(2, repo.assetsCalls.size)
-        assertNull(repo.assetsCalls[1].query.cursor) // 重拉回第一页
+            // 纯浏览返回（无收藏变更）：指纹不变不重拉——零网络零重组（缺陷修复点）
+            viewModel.onResumed()
+            advanceUntilIdle()
+            assertEquals(1, repo.assetsCalls.size)
 
-        repo.completeFacetsBatch(batch = 1, result = facets(total = 1))
-        repo.assetsCalls[1].gate.complete(page(items = listOf(asset("b"), asset("a"))))
-        advanceUntilIdle()
-        assertEquals(listOf("b", "a"), viewModel.uiState.value.items.map { it.id })
-    }
+            // 详情页 toggleFavorite 成功（上报点）→ 返回：指纹变化 → 静默重拉第一页
+            tracker.onFavoriteMutated()
+            viewModel.onResumed()
+            advanceUntilIdle()
+            assertEquals(2, repo.assetsCalls.size)
+            assertNull(repo.assetsCalls[1].query.cursor) // 重拉回第一页
+            assertTrue(viewModel.uiState.value.isLoading) // 重拉在途
+            assertFalse(viewModel.uiState.value.isRefreshing) // 静默：不置 isRefreshing（morph 期间指示器不闪）
+
+            repo.completeFacetsBatch(batch = 1, result = facets(total = 1))
+            repo.assetsCalls[1].gate.complete(page(items = listOf(asset("b"), asset("a"))))
+            advanceUntilIdle()
+            assertEquals(listOf("b", "a"), viewModel.uiState.value.items.map { it.id })
+            assertFalse(viewModel.uiState.value.isLoading)
+
+            // 重拉落地后的再次返回（无新变更）：不重拉
+            viewModel.onResumed()
+            advanceUntilIdle()
+            assertEquals(2, repo.assetsCalls.size)
+        }
 
     @Test
-    fun `resume重拉在途防重 刷新在途时再次resume不叠加请求`() = runTest(mainDispatcherRule.testDispatcher) {
-        val repo = FakeMediaRepository()
-        val viewModel = viewModel(repo)
-        advanceUntilIdle()
-        viewModel.onResumed() // 首个跳过
-        repo.assetsCalls[0].gate.complete(page(items = emptyList()))
-        repo.completeFacetsBatch(batch = 0, result = facets(total = 0))
-        advanceUntilIdle()
+    fun `收藏指纹门控在途防重 - 重拉在途时新变更的resume不叠加 下次resume补拉`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val repo = FakeMediaRepository()
+            val tracker = FavoriteMutationTracker()
+            val viewModel = viewModel(repo, favoriteTracker = tracker)
+            advanceUntilIdle()
+            viewModel.onResumed() // 首个采纳基线
+            repo.assetsCalls[0].gate.complete(page(items = emptyList()))
+            repo.completeFacetsBatch(batch = 0, result = facets(total = 0))
+            advanceUntilIdle()
 
-        // 第一次 resume 发起重拉（闸门挂着不放）；在途期间再次 resume：被 refresh 防重丢弃
-        viewModel.onResumed()
-        advanceUntilIdle()
-        viewModel.onResumed()
-        advanceUntilIdle()
-        assertEquals(2, repo.assetsCalls.size)
+            // 第一次变更触发静默重拉（闸门挂着不放）
+            tracker.onFavoriteMutated()
+            viewModel.onResumed()
+            advanceUntilIdle()
+            assertEquals(2, repo.assetsCalls.size)
 
-        repo.assetsCalls[1].gate.complete(page(items = listOf(asset("b"))))
-        advanceUntilIdle()
-        assertEquals(listOf("b"), viewModel.uiState.value.items.map { it.id })
-    }
+            // 在途期间再次变更+resume：被 isLoading 防重拦截且不采纳指纹，等下次 resume 重试
+            tracker.onFavoriteMutated()
+            viewModel.onResumed()
+            advanceUntilIdle()
+            assertEquals(2, repo.assetsCalls.size)
+
+            // 在途重拉落地后：未采纳的变更由下一次 resume 补拉
+            repo.completeFacetsBatch(batch = 1, result = facets(total = 0))
+            repo.assetsCalls[1].gate.complete(page(items = listOf(asset("b"))))
+            advanceUntilIdle()
+            viewModel.onResumed()
+            advanceUntilIdle()
+            assertEquals(3, repo.assetsCalls.size)
+
+            repo.completeFacetsBatch(batch = 2, result = facets(total = 0))
+            repo.assetsCalls[2].gate.complete(page(items = listOf(asset("c"))))
+            advanceUntilIdle()
+            assertEquals(listOf("c"), viewModel.uiState.value.items.map { it.id })
+        }
 
     // ---------- 批次上下文（2026-09-09 拍板：收藏/历史进详情补批次，首页同款机制） ----------
 

@@ -75,6 +75,15 @@ data class HistoryUiState(
 /**
  * 历史页 ViewModel：GET /history（cursor 分页；每资产一条 lastViewedAt 倒序，服务端口径）。
  * 无清空按钮（拍板 2B：协议无 DELETE /history）。
+ *
+ * 任务V V1（2026-09-10）：**无详情返回自动重拉**——此前 ON_RESUME 无条件 refresh() 补偿
+ * 服务端化后丢失的 Room Flow 自动重排（详情浏览上报 lastViewedAt 已变、返回重排），但
+ * 无条件重拉使返回共享元素 morph（缩略图飞回）期间列表整体重显（items 整组替换+指示器
+ * 闪一轮），用户拍板「返回时不要刷新界面…应该是原来的不变」，该机制整体移除（Screen 侧
+ * ON_RESUME 观测同删）。取舍：刚浏览条目的 lastViewedAt 排序滞后（重排不可见），靠
+ * 下拉刷新/下次冷启动收敛；收藏页保留刷新语义但收窄为变更指纹门控（见
+ * FavoriteMutationTracker），历史无本地变更上报点（浏览上报在详情侧、非用户显式操作），
+ * 依用户原话直接不刷。
  */
 @HiltViewModel
 class HistoryViewModel @Inject constructor(
@@ -133,25 +142,6 @@ class HistoryViewModel @Inject constructor(
         if (target != gridColumns.value) {
             viewModelScope.launch { gridPrefs.setAlbumColumns(target) }
         }
-    }
-
-    /**
-     * 详情页返回自动刷新（GUIDE_UI §浏览历史 L391 Flow 自动性语义）：详情页浏览上报后
-     * lastViewedAt 已变，服务端化后旧版 Room Flow 自动重排丢失，ON_RESUME 重拉补偿
-     * （镜像 HomeScreen I1 模式，覆盖详情 pop 返回与 App 回前台两路径）。
-     * 防叠加风暴（resume 即 refresh 的简单方案，不另造指纹/标记）：
-     * - 首个 ON_RESUME 与 init 首载天然重叠，跳过（否则进页即双载）；
-     * - 后续 resume 复用 refresh() 的 isRefresh+isLoading 在途防重——下拉刷新/翻页在途时
-     *   本次 resume 重拉被丢弃，不叠加请求。
-     */
-    private var resumedOnce = false
-
-    fun onResumed() {
-        if (!resumedOnce) {
-            resumedOnce = true
-            return
-        }
-        refresh()
     }
 
     init {
