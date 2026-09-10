@@ -59,8 +59,9 @@ import media.qimeng.app.core.ui.theme.QimengDimens
  * §详情页 L158-160 沉浸 4 层组织回归——第一屏媒体舞台 edge-to-edge 全出血（整屏高，底色
  * 随沉浸切换：chrome 显=主题底/沉浸或播放中=黑，见 [stageBackdropColor]；图片态
  * ZoomImageView 链 / 视频态 BiliPlayerView 链）+ 上下渐变 chrome 浮层（顶：返回/n/N/信息；
- * 底：点赞/收藏/标签/快速转跳，[DetailChromeBars]）+ 单击显隐（图片态单击舞台切 chrome+系统栏，
- * L271-276）；媒体层下方保留信息内容区（标题/meta/互动/标签/作者卡/UpNext——拍板⑧超规格件
+ * 底：点赞N/收藏/标签/整理四胶囊——任务V V3 截图批注拍板，[DetailChromeBars]）+ 单击显隐
+ * （图片态单击舞台切 chrome+系统栏，L271-276）；媒体层下方保留信息内容区（标题/meta/只读
+ * 标签/作者卡/UpNext——拍板⑧超规格件
  * 保留融入，下滑查看；chrome 挂在舞台盒内随第一屏滚动，只覆盖第一屏）。
  *
  * 沿革：3a 骨架排版（Web AssetDetailPage 移植）→ 3b/3c/3d 沉浸/播放器/全量接线 →
@@ -98,7 +99,10 @@ fun DetailScreen(
     var playerActive by remember { mutableStateOf(false) }
     val chromeEffective = chromeVisible && !playerActive
     // 信息/快速转跳 BottomSheet 开关（纯 UI 弹层无数据请求，页面局部状态；进程重建后
-    // 关闭态恢复——与 chromeVisible 同 rememberSaveable 语义）
+    // 关闭态恢复——与 chromeVisible 同 rememberSaveable 语义）。任务V V3：「快速转跳」
+    // 不进首屏四胶囊（主代理保守裁决待用户确认），入口随旧图标行消失——jumpSheetVisible
+    // 与 DetailJumpSheet 挂载保留（组件保留裁决），当前无触发点、恒为关闭态；如需恢复
+    // 入口，把 DetailBottomChrome 的某胶囊 onClick 接 { jumpSheetVisible = true } 即可
     var infoSheetVisible by rememberSaveable { mutableStateOf(false) }
     var jumpSheetVisible by rememberSaveable { mutableStateOf(false) }
     // I7 沉浸：chrome 显隐驱动系统栏（chrome 隐藏=黑底沉浸+系统栏隐藏，L273-274）
@@ -276,7 +280,8 @@ fun DetailScreen(
                             onOpenInfo = { infoSheetVisible = true },
                         )
                     }
-                    // 底部渐变操作层（L172：点赞/收藏/标签/快速转跳）——全限定同上
+                    // 底部渐变操作层（V3 四胶囊：点赞N/收藏/标签/整理原位替换旧四图标行）——
+                    // 全限定同上
                     androidx.compose.animation.AnimatedVisibility(
                         visible = chromeEffective,
                         modifier = Modifier.align(Alignment.BottomCenter),
@@ -287,10 +292,11 @@ fun DetailScreen(
                             asset = asset,
                             likePending = state.likePending,
                             favoritePending = state.favoritePending,
+                            fileOpsPending = state.fileOpsPending,
                             onToggleLike = viewModel::toggleLike,
                             onToggleFavorite = viewModel::toggleFavorite,
                             onOpenTagSheet = viewModel::openTagSheet,
-                            onOpenJumpSheet = { jumpSheetVisible = true },
+                            onOpenMoveDialog = viewModel::openMoveSheet,
                         )
                     }
                 }
@@ -302,12 +308,7 @@ fun DetailScreen(
                         onOpenAsset(id, batchIds)
                     },
                     onOpenAuthor = onOpenAuthor,
-                    onToggleLike = viewModel::toggleLike,
-                    onToggleFavorite = viewModel::toggleFavorite,
                     onToggleFollow = viewModel::toggleFollow,
-                    onOpenMoveDialog = viewModel::openMoveSheet,
-                    onOpenDeleteDialog = viewModel::openDeleteConfirm,
-                    onOpenTagSheet = viewModel::openTagSheet,
                     onReshuffle = viewModel::reshuffleUpNext,
                     onDismissError = viewModel::clearError,
                 )
@@ -332,7 +333,8 @@ fun DetailScreen(
         if (infoSheetVisible) {
             DetailInfoSheet(asset = asset, onDismiss = { infoSheetVisible = false })
         }
-        // 快速转跳弹窗（I7，L172：关联作者列表 → 作者集合页既有路由）
+        // 快速转跳弹窗（I7，L172：关联作者列表 → 作者集合页既有路由）。V3 起无入口
+        // （「快速转跳」不进四胶囊，组件保留裁决），恒不挂载——见 jumpSheetVisible 注释
         if (jumpSheetVisible) {
             DetailJumpSheet(
                 authors = asset.authors,
@@ -373,6 +375,13 @@ fun DetailScreen(
                     Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
                 }
             },
+            // 「删除归整理」（任务V V3，主代理保守裁决待用户确认）：详情页删除钮已移除，
+            // 删除功能归本弹窗入口——先关整理弹窗再开既有回收站二次确认（openDeleteConfirm
+            // 链原样复用，铁律 4 语义不变）
+            onDeleteClick = {
+                viewModel.dismissMoveSheet()
+                viewModel.openDeleteConfirm()
+            },
             onDismiss = viewModel::dismissMoveSheet,
         )
     }
@@ -396,20 +405,17 @@ fun DetailScreen(
 
 /**
  * 加载成功后的信息内容区（媒体层下方，下滑查看；拍板⑧超规格件保留融入沉浸结构）：
- * 标题 → meta 行 → 互动行 → 标签行 → 作者卡 → 接下来播放 + 底部呼吸空间。舞台动作不在
+ * 标题 → meta 行 → 标签行（只读）→ 作者卡 → 接下来播放 + 底部呼吸空间。舞台动作不在
  * 本节（归媒体舞台浮层）。V2 删 pager 行（用户拍板：导航只留横滑，i/N 由顶部 chrome 承担）。
+ * 任务V V3 重排：互动行（DetailInteractionRow）整行退役——点赞/收藏/整理上移首屏四胶囊
+ * （DetailBottomChrome）、删除归整理弹窗入口，标签行只读化（编辑走首屏「标签」胶囊）。
  */
 @Composable
 private fun DetailContentSections(
     state: DetailUiState,
     onOpenAsset: (assetId: String, batchIds: List<String>) -> Unit,
     onOpenAuthor: (authorId: String, displayName: String) -> Unit,
-    onToggleLike: () -> Unit,
-    onToggleFavorite: () -> Unit,
     onToggleFollow: (String) -> Unit,
-    onOpenMoveDialog: () -> Unit,
-    onOpenDeleteDialog: () -> Unit,
-    onOpenTagSheet: () -> Unit,
     onReshuffle: () -> Unit,
     onDismissError: () -> Unit,
 ) {
@@ -422,17 +428,7 @@ private fun DetailContentSections(
         }
         DetailTitle(title = asset.title)
         DetailMetaRow(asset = asset)
-        DetailInteractionRow(
-            asset = asset,
-            likePending = state.likePending,
-            favoritePending = state.favoritePending,
-            fileOpsPending = state.fileOpsPending,
-            onToggleLike = onToggleLike,
-            onToggleFavorite = onToggleFavorite,
-            onOpenMoveDialog = onOpenMoveDialog,
-            onOpenDeleteDialog = onOpenDeleteDialog,
-        )
-        DetailTagRow(tags = asset.tags, onOpenTagSheet = onOpenTagSheet)
+        DetailTagRow(tags = asset.tags)
         DetailAuthorCard(
             authors = asset.authors,
             followPending = state.followPendingAuthorId != null,

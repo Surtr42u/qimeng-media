@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -32,7 +31,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import media.qimeng.app.core.model.AssetDetail
 import media.qimeng.app.core.model.DetailAuthor
@@ -42,21 +40,12 @@ import media.qimeng.app.core.ui.component.formatBytesForDetail
 import media.qimeng.app.core.ui.component.formatCount
 import media.qimeng.app.core.ui.component.formatShortDate
 import media.qimeng.app.core.ui.icon.BackIcon
-import media.qimeng.app.core.ui.icon.DeleteIcon
-import media.qimeng.app.core.ui.icon.DriveFileMoveIcon
-import media.qimeng.app.core.ui.icon.StarIcon
-import media.qimeng.app.core.ui.icon.StarOutlinedIcon
-import media.qimeng.app.core.ui.icon.ThumbUpIcon
-import media.qimeng.app.core.ui.icon.ThumbUpOutlinedIcon
 import media.qimeng.app.core.ui.theme.QimengDimens
 
 // ---------- 页面私有尺寸档（本文件单源；来源注释随条目） ----------
 
 /** 详情各节纵向间距（Web .detail-main 各子块 margin 的移动端近似档；推荐栏 DetailUpNextCard.kt 同档复用） */
 internal val SECTION_SPACING = 12.dp
-
-/** 互动行钮间横向间距（Web .detail-actions gap 12px） */
-private val ACTION_SPACING = 12.dp
 
 // ---------- 顶行 ----------
 
@@ -147,7 +136,7 @@ internal fun DetailMetaRow(asset: AssetDetail) {
     }
 }
 
-// ---------- 互动行 ----------
+// ---------- 互动钮（胶囊样式件） ----------
 
 /** 互动钮点击弹跳压缩档（G1a 方案口径 scale 1→0.92→1；Web .detail-act:active transform scale(0.94)
  *  按下缩放 + act-bounce 弹跳动画的 Compose 合并近似——snap 到压缩档再弹回） */
@@ -158,118 +147,17 @@ private const val ACT_BOUNCE_PRESSED_SCALE = 0.92f
 private const val ACT_BOUNCE_SPRING_STIFFNESS = Spring.StiffnessMediumLow
 
 /**
- * 互动行（Web .detail-actions）：点赞（ThumbUp+计数，likedToday 高亮）+ 收藏（Star+文案，isFavorite 高亮）。
- * G1a：图标形态随激活切换（active=filled 实底 / 未激活=outlined 描边——Web .detail-act.active
- * svg fill:currentColor 同语义）。
- * 任务G G1b：右端追加文件操作两钮「整理 / 删除」（Web FileOpsButton 同位置同语义——
- * 详情页有 assetId/directory 完整上下文，是文件三操作的挂载点；删除 = 移入回收站，铁律 4）。
- */
-@Composable
-internal fun DetailInteractionRow(
-    asset: AssetDetail,
-    likePending: Boolean,
-    favoritePending: Boolean,
-    fileOpsPending: Boolean,
-    onToggleLike: () -> Unit,
-    onToggleFavorite: () -> Unit,
-    onOpenMoveDialog: () -> Unit,
-    onOpenDeleteDialog: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(
-                horizontal = QimengDimens.ScreenPaddingHorizontal,
-                vertical = SECTION_SPACING,
-            ),
-        horizontalArrangement = Arrangement.spacedBy(ACTION_SPACING),
-    ) {
-        DetailActionButton(
-            active = asset.likedToday,
-            enabled = !likePending,
-            contentDescription = stringResource(R.string.detail_like),
-            onClick = onToggleLike,
-        ) {
-            Icon(
-                imageVector = if (asset.likedToday) ThumbUpIcon else ThumbUpOutlinedIcon,
-                contentDescription = null,
-            )
-            Text(
-                text = formatCount(asset.likeCount),
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold,
-            )
-        }
-        DetailActionButton(
-            active = asset.isFavorite,
-            enabled = !favoritePending,
-            contentDescription = stringResource(
-                if (asset.isFavorite) R.string.detail_favorite_active else R.string.detail_favorite,
-            ),
-            onClick = onToggleFavorite,
-        ) {
-            Icon(
-                imageVector = if (asset.isFavorite) StarIcon else StarOutlinedIcon,
-                contentDescription = null,
-            )
-            Text(
-                text = stringResource(
-                    if (asset.isFavorite) R.string.detail_favorite_active else R.string.detail_favorite,
-                ),
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold,
-            )
-        }
-        // 文件操作两钮推到行右端（基准说明「互动行右端」；窄屏与点赞/收藏同行换行时
-        // FlowRow 未用——Web 同一行 flex，超宽由内容自适应，暂保持 Row 语义）
-        Spacer(modifier = Modifier.weight(1f))
-        DetailActionButton(
-            active = false,
-            enabled = !fileOpsPending,
-            contentDescription = stringResource(R.string.detail_file_ops_move),
-            onClick = onOpenMoveDialog,
-        ) {
-            Icon(
-                imageVector = DriveFileMoveIcon,
-                contentDescription = null,
-            )
-            Text(
-                text = stringResource(R.string.detail_file_ops_move),
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold,
-            )
-        }
-        DetailActionButton(
-            active = false,
-            enabled = !fileOpsPending,
-            danger = true,
-            contentDescription = stringResource(R.string.detail_file_ops_delete),
-            onClick = onOpenDeleteDialog,
-        ) {
-            Icon(
-                imageVector = DeleteIcon,
-                contentDescription = null,
-            )
-            Text(
-                text = stringResource(R.string.detail_file_ops_delete),
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold,
-            )
-        }
-    }
-}
-
-/**
  * 互动按钮（胶囊；请求进行中 disabled——Web toggleLike.isPending 同语义）。
  * G1a 对齐 Web .detail-act：active=primary 主色实底+onPrimary 反色字（primaryContainer
  * 软底退役）；点击 bounce 缩放动效（点击瞬间 snap 到 [ACT_BOUNCE_PRESSED_SCALE]，MediumBouncy
- * spring 回弹到 1，过冲即 Web act-bounce 的弹跳感；点赞/收藏两钮共用同款，Web 点赞弹跳/
- * 通用 :active 按下缩放的合并表达）。
- * 任务G G1b 补 danger 档：删除钮未激活态用 error 色系（危险操作的常驻视觉语义；
- * Web 的 danger 语义在确认弹窗，此处按钮先行着色提示）。
+ * spring 回弹到 1，过冲即 Web act-bounce 的弹跳感）。
+ * 任务G G1b 补 danger 档：破坏性操作未激活态用 error 色系（常驻视觉语义提示）。
+ * 任务V V3：原下滑区互动行（DetailInteractionRow）整行退役，点赞/收藏/标签/整理四胶囊
+ * 上移首屏（DetailBottomChrome 原位替换旧四图标行）——本件由文件私有提为模块内 internal
+ * 供 DetailChromeBars 复用，样式口径不变（用户拍板：四胶囊样式=现行胶囊件）。
  */
 @Composable
-private fun DetailActionButton(
+internal fun DetailActionButton(
     active: Boolean,
     enabled: Boolean,
     contentDescription: String,
@@ -336,12 +224,13 @@ private fun DetailActionButton(
 // ---------- 标签行 ----------
 
 /**
- * 标签行（Web .detail-tags）：当前标签只读胶囊 +「管理 / + 添加标签」入口。
- * 点击入口开标签管理弹窗（整体替换保存的语义在弹窗内说明）。
+ * 标签行（Web .detail-tags）：当前标签只读胶囊展示。
+ * 任务V V3：原「管理 / + 添加标签」入口胶囊删除（用户拍板下滑区 chips 只读）——编辑
+ * 入口收敛到首屏「标签」胶囊（DetailBottomChrome → DetailTagManageSheet 既有链）。
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun DetailTagRow(tags: List<DetailTag>, onOpenTagSheet: () -> Unit) {
+internal fun DetailTagRow(tags: List<DetailTag>) {
     FlowRow(
         modifier = Modifier
             .fillMaxWidth()
@@ -354,24 +243,6 @@ internal fun DetailTagRow(tags: List<DetailTag>, onOpenTagSheet: () -> Unit) {
     ) {
         tags.forEach { tag ->
             DisplayPill(text = tag.name)
-        }
-        // 入口胶囊（Web .detail-tag-manage：有标签=「管理」，无标签=「+ 添加标签」）
-        Surface(
-            onClick = onOpenTagSheet,
-            shape = RoundedCornerShape(QimengDimens.PillCornerRadius),
-            color = MaterialTheme.colorScheme.surfaceVariant,
-            contentColor = MaterialTheme.colorScheme.primary,
-        ) {
-            Text(
-                text = stringResource(
-                    if (tags.isEmpty()) R.string.detail_tag_add else R.string.detail_tag_manage,
-                ),
-                style = MaterialTheme.typography.labelLarge,
-                modifier = Modifier.padding(
-                    horizontal = QimengDimens.ChipHorizontalPadding,
-                    vertical = QimengDimens.SpaceS,
-                ),
-            )
         }
     }
 }

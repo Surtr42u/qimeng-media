@@ -2,6 +2,7 @@ package media.qimeng.app.feature.detail
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.AlertDialog
@@ -46,6 +47,9 @@ internal fun isMoveSubmittable(currentDir: String, currentName: String, targetDi
  * 挂载语义对齐 Web：调用方按 open 条件挂载（Web MoveDialog 同款——条件挂载使 remember
  * 每次打开都从当前现实惰性复位，预填名/目录不冻住旧值；remember 键 = assetId 兜底同屏
  * 极端复用）。
+ * 任务V V3「删除归整理」（主代理保守裁决待用户确认）：详情页删除钮已移除，破坏性出口
+ * 收敛到本弹窗左侧 danger 文本钮「移入回收站」——[onDeleteClick] 交调用方先关本弹窗再
+ * 开既有删除确认（回收站二次确认链原样复用，删除功能保证可达，铁律 4）。
  */
 @Composable
 internal fun DetailMoveDialog(
@@ -55,6 +59,7 @@ internal fun DetailMoveDialog(
     pending: Boolean,
     errorMessage: String?,
     onSubmit: (targetDir: String, newName: String?) -> Unit,
+    onDeleteClick: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     var name by remember(assetId) { mutableStateOf(currentName) }
@@ -120,8 +125,18 @@ internal fun DetailMoveDialog(
             }
         },
         dismissButton = {
-            TextButton(enabled = !pending, onClick = onDismiss) {
-                Text(text = stringResource(R.string.detail_cancel))
+            // V3「删除归整理」：danger 入口钮（error 色文字与删除确认框确认钮同色系同文案）
+            // 与取消并排于主按钮左侧；pending 期间与取消钮同禁用（删除确认有自己的 pending 门控）
+            Row(horizontalArrangement = Arrangement.spacedBy(QimengDimens.SpaceS)) {
+                TextButton(enabled = !pending, onClick = onDeleteClick) {
+                    Text(
+                        text = stringResource(R.string.detail_delete_confirm),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                TextButton(enabled = !pending, onClick = onDismiss) {
+                    Text(text = stringResource(R.string.detail_cancel))
+                }
             }
         },
     )

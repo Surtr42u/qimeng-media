@@ -9,6 +9,17 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## fix(app): 任务V V3 详情互动行重排——首屏四胶囊+下滑区重排+标签只读化+删除归整理（2026-09-11 第一百九十一笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理，任务V V3 批）；主代理（两处保守裁决/对抗审查汇总/提交）：GLM-5.3-Flash
+
+- **首屏四胶囊行**（用户截图批注落地）：DetailBottomChrome 四纯图标行原位替换为四枚 `DetailActionButton` 胶囊——`点赞N`（formatCount(likeCount) 既有状态）/`收藏`/`标签`/`整理`，SpaceEvenly 均布与 K3c 渐变背板条机制不动；胶囊样式件 DetailActionButton top-level private→internal，DetailChromeBars/DetailSections 两文件单源复用（非复制样式）；参数 onOpenJumpSheet→onOpenMoveDialog+fileOpsPending。首屏结构=顶部 chrome→垂直居中媒体→底部四胶囊，无标题/meta/标签/作者卡。
+- **下滑区重排**：DetailInteractionRow 整删（含 ACTION_SPACING 常量与 8 个孤儿 import）；DetailContentSections 终态=Title→Meta→TagRow(只读)→AuthorCard→UpNext；DetailTagRow 只读化（删「管理/+添加标签」入口与 onOpenTagSheet 参数），标签编辑唯一入口=首屏「标签」胶囊→DetailTagManageSheet 既有链（openTagSheet/saveTags 零改动）。
+- **删除归整理（主代理保守裁决 b，待用户确认）**：详情页删除钮移除；DetailMoveDialog 新增 onDeleteClick 参数+红字「移入回收站」TextButton（复用 detail_delete_confirm 文案），接线 dismissMoveSheet+openDeleteConfirm 走既有回收站二次确认链（铁律 4 语义不变）。
+- **快速转跳（主代理保守裁决 a，待用户确认）**：不进四胶囊；DetailJumpSheet 组件保留（作者卡在用）但 jumpSheetVisible 无置真路径=恒关闭态（grep 自证仅初始化与 onDismiss 赋值），代码注释记恢复方法；DetailPeopleIcon 图标与 detail_file_ops_delete/detail_tag_manage/detail_tag_add/detail_chrome_jump 4 条孤儿字符串删除，9 符号孤儿 grep 代码引用 0 残留（ic_detail_jump.xml 因 BiliPlayerView:424 播放器内部引用保留）。
+- 复验（emulator-5562 qimeng_api35 无头 + 18461 虚构库，证据 %TEMP%\qimeng-v3-evidence\after\ 9 图+dump）：首屏 dump 无标题/meta 节点；四胶囊同 y 带 [2216-2311] x 均布 45/265/536/808；点赞 toggle 0→1 已还原；标签链勾选 wq→下滑区只读呈现闭环；整理→移入回收站→回收站二次确认（取消未真删）；夜态首屏/下滑区两图（night yes→重拉重进→还原）。虚构库副作用=P-01.jpg 增标签 wq。
+- 门禁三连绿（本卷起统一低CPU档：GRADLE_OPTS workers.max=2+priority=low，compile 慢但安静）；独立 reviewer 对抗审查通过：0 P1/0 P2、越界清单空、门禁日志 mtime 晚于全部源文件 mtime 自洽，仅 1 P3=DetailActionButton 的 danger 分支失去唯一调用点成死档（有默认值非孤儿，与「删除归整理」danger 语义后续批一并裁决）。
+
 ## fix(app): 任务V V2 详情对齐——播放态媒体居中+chrome 双重 inset 撤除+删上一件/下一件行+横滑放宽（2026-09-10 第一百九十笔）
 
 执行 AI：GLM-5.3（执行子代理，任务V V2 批）；主代理（基线裁决/模拟器基线与复验/审查汇总）：GLM-5.3-Flash
