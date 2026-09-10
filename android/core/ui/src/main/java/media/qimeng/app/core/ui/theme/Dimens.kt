@@ -151,6 +151,12 @@ object QimengDimens {
     /** 96dp：加载占位顶部内边距（QimengScaffold QimengLoadingState L105，避开顶部标题区） */
     val LoadingTopPadding: Dp = 96.dp
 
+    /** 20dp：按钮内 LoadingIndicator 直径（V8 #5：16dp 时 expressive 叶片强缩成「小齿轮」观感，
+     * 与并排按钮文字失衡——对齐 M3 Button 默认文字样式 labelLarge 的 20sp 行高，加载中保持
+     * 「文字不消失、指示器与文字行高协调」。页级/整页加载仍用组件默认 48dp，不共用本档；
+     * feature 层按钮内嵌 loading（login/detail/upload）一律引用本 token，禁止再写局部 dp） */
+    val ButtonLoadingIndicatorSize: Dp = 20.dp
+
     // ---------- 图标 ----------
 
     /** 24dp：矢量图标默认边长（Material 图标标准档；QimengIcons 全部自持矢量共用，M4-2A-B2 收编） */

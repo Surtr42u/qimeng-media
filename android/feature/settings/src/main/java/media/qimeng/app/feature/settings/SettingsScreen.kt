@@ -180,10 +180,12 @@ fun SettingsScreen(
             )
         }
 
-        // 上传入口（M4-5 上传页接入设置页，M4-5 遗留项）
+        // 上传入口（M4-5 上传页接入设置页，M4-5 遗留项；
+        // V8 #4：补副标题对齐其他入口行两行节奏——文案走 strings 资源 settings_upload_subtitle）
         item {
             EntryRow(
                 label = ROW_UPLOAD,
+                subtitle = stringResource(R.string.settings_upload_subtitle),
                 onClick = onOpenUpload,
             )
         }

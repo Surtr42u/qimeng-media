@@ -37,6 +37,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import media.qimeng.app.core.data.repository.LoginError
 import media.qimeng.app.core.ui.component.Dimens
 import media.qimeng.app.core.ui.component.QimengCapsuleTextField
+import media.qimeng.app.core.ui.theme.QimengDimens
 
 /**
  * 登录页（M4-1 冻结最小版）：服务器地址 + 密码两字段。
@@ -130,5 +131,7 @@ private fun LoginError.toMessageRes(): Int = when (this) {
 
 private val TitleSpacing = 24.dp
 private val FieldSpacing = 12.dp
-private val ButtonIndicatorSize = 16.dp
+
+/** 提交钮内指示器直径单源到 QimengDimens（V8 #5：16dp 强缩失衡 → 对齐 labelLarge 文字行高） */
+private val ButtonIndicatorSize = QimengDimens.ButtonLoadingIndicatorSize
 private val IndicatorTextSpacing = 8.dp

@@ -45,7 +45,8 @@ import media.qimeng.app.core.ui.theme.QimengDimens
 private val TAG_CLEAR_ICON_SIZE = 16.dp
 
 /** 保存按钮内嵌转圈直径（按钮内小尺寸档） */
-private val TAG_SAVE_PROGRESS_SIZE = 16.dp
+/** 保存按钮内嵌指示器直径单源到 QimengDimens（V8 #5：16dp 强缩失衡 → 对齐 labelLarge 文字行高） */
+private val TAG_SAVE_PROGRESS_SIZE = QimengDimens.ButtonLoadingIndicatorSize
 
 /**
  * 标签管理弹窗（LEGACY §A / Web TagDialog；自 DetailSections.kt 拆出，纯移动零行为变化）：

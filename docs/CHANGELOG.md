@@ -9,6 +9,16 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## fix(app): 任务V V8 全应用系统性视觉走查——树行高统一+按钮 LoadingIndicator 协调化+上传卡副标题+折叠热区 32dp（2026-09-11 第一百九十六笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理，任务V V8 批 A/B 两阶段+二轮微调）；主代理（修复清单裁决/对抗审查汇总/提交）：GLM-5.3-Flash
+
+- **阶段A 全页面族扫查（只读）**：登录/首页/相册(含筛选面板)/收藏/历史/搜索(空+结果)/作者列表+集合/统计(总览+趋势)/我的/详情(图片 chrome 显隐两态+视频海报+播放+返回 morph 中间帧)/上传(normal+COS 两级树)/标签 Sheet/整理弹窗，日 28+夜 18 共 46 图（emulator-5562+18461 虚构库，V4 修后 uimode 可原地切）；结论 **0 P1 / 2 P2 / 8 P3**，无重叠/裁剪/错位/不可读级缺陷。证据 %TEMP%\qimeng-v8-evidence\（notes.md+issues.md+day\night\）。
+- **阶段B 修复（主代理裁决清单，排版与大小范畴）**：①上传目录树行距不一致（COS 树被 M3 TextButton 自带 40dp 最小高撑到叶子行 1.3 倍）——折叠箭头 TextButton 改固定 48×32dp Box+clickable（DIR_TOGGLE_AREA_* 常量，行高回归文字+padding 单源；二轮审查清偿把高度 20→32dp，热区翻倍达 Material 密集列表档）；②按钮内 LoadingIndicator 16dp 强缩失衡（V6 遗留）——core/ui Dimens.kt 新 token `ButtonLoadingIndicatorSize=20dp`（对齐 labelLarge 行高），LoginScreen/DetailTagSheet/DetailFileOpsDialogs 三处单源引用，UploadScreen 页级保持默认 48dp；③我的页「上传文件」卡补副标题（settings_upload_subtitle，句式对齐收藏/历史卡）。
+- **复现定夺 2 条**：夜间上传禁用钮噪点横带=screenrecord+ffmpeg 实锤真实渲染噪声（低 alpha 合成抖动、日间干净、逐帧分布不同，排除截屏伪影）——主题/渲染层面留用户拍板；播放器 0:00 进度点=圆点 42% 换算正确、矛盾根源=BiliPlayerView totalTimeText 仅 STATE_READY 早期赋值一次卡死 00:00（L130 唯一赋值点）——冻结件只记档不动。
+- **基线核验免修 3 条**：四维胶囊「角色|类型」竖线=App 忠实旧版实录 fragment_all_files.xml（与 Web 全渲染 .pill-divider 两基线不同源）；首页搜索框居中=不可聚焦入口按钮语义；作者集合页 2 列=pinch 2~5 列共用档的当前值非固定布局。
+- 门禁三连绿；独立 reviewer 对抗审查通过 0 P1/P2（V7 接线未破坏、四处 token 无漏改、旧仓 layout/Web 源码亲核、冻结件零触碰自证）；P3 记录=箭头颜色字重随控件更换变化（primary/Medium→onSurface/Normal，主代理看图裁定可接受）+同族副文案两种来源机制并存（后续批统一）。
+
 ## fix(app): 任务V V7 杂项修复——上传目录选择器 COS 子文件夹点行展开+作者总览卡导航与排版（2026-09-11 第一百九十五笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理，任务V V7 批）；主代理（对抗审查汇总/提交）：GLM-5.3-Flash

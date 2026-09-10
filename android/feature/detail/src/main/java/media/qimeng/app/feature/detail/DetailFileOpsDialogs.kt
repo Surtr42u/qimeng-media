@@ -18,7 +18,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import media.qimeng.app.core.ui.component.QimengCapsuleTextField
 import media.qimeng.app.core.ui.theme.QimengDimens
 
@@ -176,5 +175,5 @@ internal fun DetailDeleteConfirmDialog(
     )
 }
 
-/** 保存按钮内嵌转圈直径（DetailTagSheet TAG_SAVE_PROGRESS_SIZE 同档） */
-private val MOVE_PROGRESS_SIZE = 16.dp
+/** 确认按钮内嵌指示器直径单源到 QimengDimens（V8 #5：16dp 强缩失衡 → 对齐 labelLarge 文字行高；与 DetailTagSheet 同档） */
+private val MOVE_PROGRESS_SIZE = QimengDimens.ButtonLoadingIndicatorSize

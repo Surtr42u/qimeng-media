@@ -10,6 +10,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -99,7 +101,9 @@ fun UploadScreen(
         QimengTopBar(title = "上传", onBack = onDone)
 
         if (state.loading) {
-            // V6：expressive LoadingIndicator 替换（仅控件替换，padding 原样）
+            // V6：expressive LoadingIndicator 替换（仅控件替换，padding 原样）。
+            // V8 #5 口径：页级加载无并排文字，保持组件默认 48dp（ButtonLoadingIndicatorSize
+            // 20dp 档仅限按钮内嵌 loading，页级不共用）
             LoadingIndicator(modifier = Modifier.padding(24.dp))
         }
 
@@ -330,11 +334,21 @@ private fun DirRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (hasChildren) {
-            TextButton(onClick = onToggle) {
-                Text(if (expanded) "▾" else "▸")
+            // V8 #1：折叠箭头不再用 TextButton——M3 TextButton 自带约 40dp 最小高度，
+            // 会把「有子级的行」撑到叶子行（Spacer 占位）的约 1.3 倍，COS 树与 normal 树
+            // 切换时密度跳变。改为与叶子占位同宽、与整行约等高（20sp 行高+12dp 行距）
+            // 的可点击区，行高仍与叶子行同档、由行内文字+padding 单源决定
+            // （点击语义不变：仍只在此区域触发折叠）。
+            Box(
+                modifier = Modifier
+                    .size(width = DIR_TOGGLE_AREA_WIDTH_DP.dp, height = DIR_TOGGLE_AREA_HEIGHT_DP.dp)
+                    .clickable(onClick = onToggle),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(if (expanded) "▾" else "▸", style = MaterialTheme.typography.bodyMedium)
             }
         } else {
-            Spacer(modifier = Modifier.width(48.dp))
+            Spacer(modifier = Modifier.width(DIR_TOGGLE_AREA_WIDTH_DP.dp))
         }
         Text(
             text = if (selected) "● $label" else "○ $label",
@@ -453,6 +467,16 @@ private const val DIR_ROOT_LABEL = "（库根）"
 
 /** 树行每层缩进（dp） */
 private const val INDENT_STEP_DP = 20
+
+/** 目录树行折叠区宽度（dp）：有子级的箭头区与叶子占位同宽，两树文字起点对齐（V8 #1） */
+private const val DIR_TOGGLE_AREA_WIDTH_DP = 48
+
+/**
+ * 目录树行折叠区高度（dp）：与整行约等高（bodyMedium 20sp 行高+上下各 6dp 行距≈32dp），
+ * 不高于叶子行——行高与叶子行同档、不被折叠区撑破（V8 #1）；V8 二轮从 20 提到 32：
+ * 点击热区翻倍至 48×32（Material 密集列表 32dp 档），清偿「收起热区低于最小触摸目标」审查回退。
+ */
+private const val DIR_TOGGLE_AREA_HEIGHT_DP = 32
 
 private const val MIME_IMAGE = "image/*"
 private const val MIME_VIDEO = "video/*"
