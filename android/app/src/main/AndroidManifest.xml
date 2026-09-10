@@ -22,9 +22,15 @@
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTask"
-            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden">
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|uiMode">
             <!-- 3c 遗留：全屏旋转重建 Activity 会杀播放器；声明后旋转不重建，Compose 自处理
-                 （3b 沉浸同样受益：旋转不再触发系统栏状态重置） -->
+                 （3b 沉浸同样受益：旋转不再触发系统栏状态重置）
+                 uiMode（#42，任务V V4）：日夜切换属于 uiMode 配置变化，未声明时系统会
+                 销毁重建 MainActivity，导致导航栈重置回首页、详情页丢失。声明后由
+                 Activity 原地 onConfigurationChanged 承接，Compose LocalConfiguration
+                 更新触发主题重组就地换肤，导航栈原样保留。模拟器实测（qimeng_api35）：
+                 cmd uimode night yes/no 切换期间 MainActivity 无 onDestroy/onCreate，
+                 详情页与返回栈保留、日夜两态主题正确跟随。 -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
