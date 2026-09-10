@@ -9,6 +9,16 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## feat(web): 任务V V5 #8 打点口径 B 落地——<1s dwell 段上报+video:play 兜底单发（2026-09-11 第一百九十三笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理，任务V V5 批）；主代理（口径细节裁决/对抗审查汇总/提交）：GLM-5.3-Flash
+
+- **口径 A→B（用户 2026-09-10「8 可以做」授权；两处细节主代理裁决待追认）**：①dwell <1s 停留段也上报——use-dwell-report.ts 删 MIN_REPORT_SEGMENT_MS=1000 过滤（口径 A「防零值噪声」退役），flush 改走新纯函数 decideDwellSegment（0/负值/NaN/Infinity 脏数据仍防御拦截；seconds=Math.round(ms/1000) 可为 0，0 值行合法）；②play 双来源单发——video-player.tsx 保留 art.on('play') 主路径+新增 art.on('video:play') 原生兜底，两路喂同一 playGateRef 防重状态机（新播放器实例=新会话闸门归零；pause∪video:pause 双源重置），同一次起播只发一条，对齐口径 A「不混用」取舍——是补兜底不是双发。
+- **纯函数+测试**：web/src/lib/engagement-reporting.ts 新增 decideDwellSegment/stepPlayGate（无 IO 无 React，ADR-0017 lib 层）+engagement-reporting.test.ts 11 条 vitest（<1s 边界 499/500/999ms、四舍五入、脏数据防御、状态机全组合、双源时序「起播双源→暂停双源→重播恰两条」）；vitest 12 files 134 tests 全过+tsc --noEmit 0 errors。
+- **DOMAIN_RULES §5 同步（先文档后代码）**：三处最小措辞修订——play 覆盖面（起播路径∪原生兜底、客户端防重单发）、dwell 段级口径（<1s 段上报、seconds=0 行合法、原「<1s 不上报」废止注记）、seconds 榜参与集合补注（seconds=0 的 dwell 行算「有 dwell 事件」，<1s 停留文件以 0 参与排序）；逐字公式条款零触碰（diff 仅文头 1 行+§5 3 行）。
+- 已知边界披露：自然播完（ended）不触发 pause→闸门保持 reported，同实例自然播完后不经暂停直接重播的下一条 play 被跳过（服务端 engagement.go 当日会话去重吸收，playCount 不受影响；跨午夜同实例重播理论少计 1 条=极边缘，留后续打点批次）。app 三连 up-to-date 全绿（本批零 Android 改动）。
+- 独立 reviewer 对抗审查通过 0 P1/P2：diff 逐行核对、JS Math.round 语义逐点核、Artplayer 事件名在 node_modules 字节码证实、vitest+tsc 亲跑复现与申报一致；2 P3 备注（stepPlayGate 运行时非法事件可加显式拒绝；跨午夜边缘已披露）。
+
 ## fix(app): 任务V V4 #42 日夜切换原地重组——manifest configChanges 追加 uiMode（2026-09-11 第一百九十二笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理，任务V V4 批）；主代理（对抗审查汇总/提交）：GLM-5.3-Flash
