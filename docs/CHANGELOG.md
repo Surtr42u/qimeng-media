@@ -9,6 +9,15 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## feat(app): 任务V V6 material3 1.5.0-alpha15 升级+LoadingIndicator 试点——alpha28 撞 SDK37 冻结线改锁 alpha15（2026-09-11 第一百九十四笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理，任务V V6 批两轮）；主代理（落地点裁决/对抗审查汇总/提交）：GLM-5.3-Flash
+
+- **验证结论（worktree 隔离实验，主树零污染）**：①线内最新 1.5.0-alpha28 **结构性死局**——AAR metadata 硬性要求 compileSdk 37+AGP 9.1.0，与项目冻结线 AGP 8.13.2+compileSdk 36 冲突（checkDebugAarMetadata 20 条冲突 BUILD FAILED，非配置可解；解锁条件=AGP 9+SDK 37 整体路线开启）；②收益点全成立——MotionScheme/MaterialExpressiveTheme/LoadingIndicator 自 1.4.0 全 internal 转 public（javap 字节码实证，exp#1 遗留反转）；③**主代理裁决落地点=1.5.0-alpha15**：1.5.0 线内 minCompileSdk=35（兼容 36）+ Kotlin metadata mv=2.1.0<Hilt 2.58 上限 2.3.0+隔离实测 BUILD SUCCESSFUL 出 APK，即「三关+收益全过」的最低可行点（U-3「升级授权须过验证关」意图达成；toml 注释完整记档裁决链与官方索引 URL，锁定后不上浮）。
+- **落地（主树 5 文件）**：toml material3 显式版本覆盖 BOM（仅此项，其余 BOM 管控不动）；全仓 CircularProgressIndicator 恰 4 处全部替换 LoadingIndicator 试点（DetailFileOpsDialogs/DetailTagSheet/LoginScreen/UploadScreen，仅控件替换布局语义零变更，3 个 strokeWidth 孤儿常量随用点退役 grep 0 残留；LinearProgressIndicator 不同控件未动；@OptIn ExperimentalMaterial3ExpressiveApi 按现有函数级模式接）。dependencyInsight 实证解析 1.5.0-alpha15。
+- **复验**（emulator-5562+18461，证据 %TEMP%\qimeng-v6-evidence\）：整理弹窗 pending 态 LoadingIndicator（expressive morph 形态）渲染铁证（network speed edge 限速拉长窗口，已恢复 full）；App 全链走通。虚构库副作用=测试出处A-测试角色Q-01.jpg 经整理改名 …zQ-01.jpg（真实提交走通，未回改）。
+- 门禁三连绿（33s/19s/1m25s，依赖升级后大面积重编符合预期）；独立 reviewer 对抗审查通过 0 P1/P2：核心裁决链逐项独立复现（含亲跑 dependencyInsight 与补证 alpha15 可见性 javap）；2 项外围失实当场整改（残留空分支 exp/v6-m3-alpha 已删；两份 404 页误作证据存档已用真实 maven-metadata 4811B 覆盖重取，toml 注释 URL 经主代理探测 200 有效）。遗留：LoadingIndicator 在 16dp 盒子内观感偏小留 V8 走查复核；升回线内最新时需复核 4 处用点 API 签名。
+
 ## feat(web): 任务V V5 #8 打点口径 B 落地——<1s dwell 段上报+video:play 兜底单发（2026-09-11 第一百九十三笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理，任务V V5 批）；主代理（口径细节裁决/对抗审查汇总/提交）：GLM-5.3-Flash

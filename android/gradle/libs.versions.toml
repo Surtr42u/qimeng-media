@@ -87,6 +87,19 @@ room = "2.8.4"
 #            compose-bom requires 2026.05.00（本工程 BOM 2026.06.01 更新，覆盖解析）——
 #            取本版 = 2.x 线在冻结工具链（AGP 8.13.2 / compileSdk 36 / Kotlin 2.3.21）上的末位可落稳定版。
 vico = "2.5.1"
+# material3 1.5.0-alpha15（任务V V6 验证批，2026-09-11，主代理裁决落地点）：Google Maven 官方索引锁版——
+#   https://dl.google.com/android/maven2/androidx/compose/material3/material3/maven-metadata.xml
+#   （1.5.0 线末位=1.5.0-alpha28）+ group-index.xml + AAR HEAD 200。
+# 为什么锁 alpha15 不追线内最新：alpha28 起 AAR metadata 硬性要求 compileSdk 37 + AGP 9.1.0，
+#   本项目冻结 AGP 8.13.2 + compileSdk 36（toml 既有记录同源，2026-08 androidx wave），
+#   assembleDebug 实测 checkDebugAarMetadata 20 条冲突即死（证据 %TEMP%\qimeng-v6-evidence\）；
+#   解锁条件 = AGP 9 + SDK 37 整体路线开启后升回线内最新。
+# alpha15 为 1.5.0-alpha 线内已隔离实证三关+收益全过的最低可行点（worktree exp/v6-m3-alpha 实测：
+#   minCompileSdk=35 兼容 36；Hilt 2.58 聚合编译通过[material3 字节码 Kotlin metadata mv=2.1.0
+#   < 上限 2.3.0]；BUILD SUCCESSFUL 562 tasks 出 APK）；收益=MotionScheme/MaterialExpressiveTheme/
+#   LoadingIndicator 自 1.4.0 全 internal 转 public（javap 实证，同目录 javap-alpha28-benefit.txt）。
+# 显式版本覆盖 BOM 2026.06.01（BOM 管控 1.4.0）的 material3 一项，其余 BOM 管控不动。
+material3 = "1.5.0-alpha15"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -97,7 +110,7 @@ compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = 
 compose-ui = { group = "androidx.compose.ui", name = "ui" }
 compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }
 compose-foundation = { group = "androidx.compose.foundation", name = "foundation" }
-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
+compose-material3 = { group = "androidx.compose.material3", name = "material3", version.ref = "material3" }
 # 共享元素转场（exp#3 试点）：SharedTransitionLayout/sharedBounds 在 animation 构件，
 # 版本随 BOM（2026.06.01 → animation 1.11.4，compose ui·animation 同步发布），禁止单独升级
 compose-animation = { group = "androidx.compose.animation", name = "animation" }

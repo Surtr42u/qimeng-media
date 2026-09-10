@@ -6,7 +6,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -51,6 +52,7 @@ internal fun isMoveSubmittable(currentDir: String, currentName: String, targetDi
  * 收敛到本弹窗左侧 danger 文本钮「移入回收站」——[onDeleteClick] 交调用方先关本弹窗再
  * 开既有删除确认（回收站二次确认链原样复用，删除功能保证可达，铁律 4）。
  */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun DetailMoveDialog(
     assetId: String,
@@ -114,11 +116,12 @@ internal fun DetailMoveDialog(
                 },
             ) {
                 if (pending) {
-                    CircularProgressIndicator(
+                    // V6：expressive LoadingIndicator 替换 CircularProgressIndicator（仅控件替换，
+                    // padding/size 约束原样；无 strokeWidth 参数）
+                    LoadingIndicator(
                         modifier = Modifier
                             .padding(end = QimengDimens.SpaceS)
                             .size(MOVE_PROGRESS_SIZE),
-                        strokeWidth = MOVE_PROGRESS_STROKE,
                     )
                 }
                 Text(text = stringResource(R.string.detail_move_confirm))
@@ -175,6 +178,3 @@ internal fun DetailDeleteConfirmDialog(
 
 /** 保存按钮内嵌转圈直径（DetailTagSheet TAG_SAVE_PROGRESS_SIZE 同档） */
 private val MOVE_PROGRESS_SIZE = 16.dp
-
-/** 保存按钮内嵌转圈线宽（同档） */
-private val MOVE_PROGRESS_STROKE = 2.dp

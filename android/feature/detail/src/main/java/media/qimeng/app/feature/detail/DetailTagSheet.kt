@@ -15,9 +15,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
@@ -46,9 +47,6 @@ private val TAG_CLEAR_ICON_SIZE = 16.dp
 /** 保存按钮内嵌转圈直径（按钮内小尺寸档） */
 private val TAG_SAVE_PROGRESS_SIZE = 16.dp
 
-/** 保存按钮内嵌转圈线宽（按钮内小尺寸档） */
-private val TAG_SAVE_PROGRESS_STROKE = 2.dp
-
 /**
  * 标签管理弹窗（LEGACY §A / Web TagDialog；自 DetailSections.kt 拆出，纯移动零行为变化）：
  * 外层整体可上下滚动；「当前标签」=勾选集（chip 带 ClearIcon 点击即时移除勾选）；「其他标签」=未选池
@@ -56,7 +54,11 @@ private val TAG_SAVE_PROGRESS_STROKE = 2.dp
  * 名字序降级已拍板）；新建输入框+按钮（成功回调才清空输入，失败保留重试）；保存=整体替换（saving 转圈防重）。
  * 当前标签空态=「暂无标签」。
  */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(
+    ExperimentalMaterial3Api::class,
+    ExperimentalMaterial3ExpressiveApi::class,
+    ExperimentalLayoutApi::class,
+)
 @Composable
 internal fun DetailTagManageSheet(
     pool: List<TagChip>,
@@ -183,10 +185,8 @@ internal fun DetailTagManageSheet(
                 Spacer(modifier = Modifier.width(QimengDimens.SpaceS))
                 Button(onClick = onSave, enabled = !savingTags) {
                     if (savingTags) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(TAG_SAVE_PROGRESS_SIZE),
-                            strokeWidth = TAG_SAVE_PROGRESS_STROKE,
-                        )
+                        // V6：expressive LoadingIndicator 替换（仅控件替换，size 约束原样）
+                        LoadingIndicator(modifier = Modifier.size(TAG_SAVE_PROGRESS_SIZE))
                         Spacer(modifier = Modifier.width(QimengDimens.SpaceS))
                     }
                     Text(text = stringResource(R.string.detail_save))

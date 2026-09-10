@@ -18,7 +18,8 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -46,6 +47,7 @@ import media.qimeng.app.core.ui.component.QimengCapsuleTextField
  * ime union navigationBars 取最大值——两类 insets 顺序叠加会在键盘弹出时多让出
  * 一个手势条高度）。
  */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun LoginScreen(
     modifier: Modifier = Modifier,
@@ -107,10 +109,8 @@ fun LoginScreen(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 if (uiState.isSubmitting) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(ButtonIndicatorSize),
-                        strokeWidth = ButtonIndicatorStrokeWidth,
-                    )
+                    // V6：expressive LoadingIndicator 替换（仅控件替换，size 约束原样）
+                    LoadingIndicator(modifier = Modifier.size(ButtonIndicatorSize))
                     Spacer(modifier = Modifier.width(IndicatorTextSpacing))
                 }
                 Text(text = stringResource(R.string.login_submit))
@@ -131,5 +131,4 @@ private fun LoginError.toMessageRes(): Int = when (this) {
 private val TitleSpacing = 24.dp
 private val FieldSpacing = 12.dp
 private val ButtonIndicatorSize = 16.dp
-private val ButtonIndicatorStrokeWidth = 2.dp
 private val IndicatorTextSpacing = 8.dp
