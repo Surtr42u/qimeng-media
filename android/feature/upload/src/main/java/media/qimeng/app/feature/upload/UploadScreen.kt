@@ -24,10 +24,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -59,7 +60,7 @@ import media.qimeng.app.core.ui.component.QimengTopBar
  * 入口：①系统分享接收（壳层带分享 URI 导航至此）②App 内后续入口（设置页，M4-6 接线）。
  * UI 只做表单编排与状态渲染，业务规则在 ViewModel/core 层（ADR-0008 铁律 7）。
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun UploadScreen(
     sharedUris: List<String>,
@@ -97,7 +98,8 @@ fun UploadScreen(
         QimengTopBar(title = "上传", onBack = onDone)
 
         if (state.loading) {
-            CircularProgressIndicator(modifier = Modifier.padding(24.dp))
+            // V6：expressive LoadingIndicator 替换（仅控件替换，padding 原样）
+            LoadingIndicator(modifier = Modifier.padding(24.dp))
         }
 
         Column(
