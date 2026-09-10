@@ -69,3 +69,6 @@ server/data/
 
 # 运行截图（可能含真实媒体帧，永不入库；存证放仓库外 run-screens-* 目录）
 .run-screens/
+
+# IDE 运行配置目录（曾混入截图，同上永不入库；任务V V2 审查 P3-2 加盖）
+.run/

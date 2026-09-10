@@ -28,6 +28,8 @@ import kotlin.math.min
  * 公开面：onSingleTap / onSwipe / resetZoom / setImageDrawable。
  * 手势语义（冻结）：双指 0.5x~5x、双击 toggle（normalizedScale>1.1f→resetZoom，否则 1.8x）、
  * 单指横滑（>60dp 且横速度>800，未放大态）→ onSwipe(±1)，+1=左滑下一张 / -1=右滑上一张。
+ * 任务V V2 例外增补：未放大态慢拖（无 fling 事件）UP 时按累积位移判定切件（距离阈值同
+ * 60dp、横向占优），放大态手势不变——用户钦点恢复横滑，冻结例外已记档。
  *
  * 搬运适配（行为不变）：
  * - 包名迁移到 media.qimeng.app.feature.detail.image；
@@ -54,6 +56,14 @@ class ZoomImageView @JvmOverloads constructor(
     private var hasPendingScreenRect = false
     private var isGestureActive = false
     private var hasDisallowedIntercept = false
+
+    // 任务V V2 例外增补（只观察不改事件流）：未放大态 onScroll 不平移图像，但累积位移供
+    // ACTION_UP 时慢拖切件判定；不设 isGestureActive、不动渲染层类型——放大态行为零变化
+    private var dragAccumX = 0f
+    private var dragAccumY = 0f
+
+    // onFling 已触发 onSwipe 的本手势标记（UP 时不再按累积位移重复判定，防同手势双触发）
+    private var swipeConsumedThisGesture = false
     private val resetLayerRunnable = Runnable {
         // 手势结束后按当前图尺寸智能恢复层类型（大图保持 HARDWARE，超大图回 SOFTWARE）
         if (!isGestureActive) {
@@ -111,7 +121,13 @@ class ZoomImageView @JvmOverloads constructor(
                 distanceX: Float,
                 distanceY: Float
             ): Boolean {
-                if (normalizedScale <= 1.05f) return false
+                if (normalizedScale <= 1.05f) {
+                    // V2 例外增补：未放大态不平移图像，但累积位移供 UP 时慢拖切件判定
+                    //（distanceX=上次x-当前x，手指左移为正 → accumX>0=左滑）
+                    dragAccumX += distanceX
+                    dragAccumY += distanceY
+                    return false
+                }
                 if (!isGestureActive) {
                     isGestureActive = true
                     removeCallbacks(resetLayerRunnable)
@@ -141,6 +157,8 @@ class ZoomImageView @JvmOverloads constructor(
                 val dy = e2.y - e1.y
                 if (abs(dx) > SWIPE_DISTANCE_DP.dpFloat(context) && abs(dx) > abs(dy) && abs(velocityX) > SWIPE_VELOCITY) {
                     onSwipe?.invoke(if (dx < 0f) 1 else -1)
+                    // V2：本手势已切件，UP 时跳过慢拖累积判定（防同手势双触发）
+                    swipeConsumedThisGesture = true
                     return true
                 }
                 return false
@@ -273,9 +291,30 @@ class ZoomImageView @JvmOverloads constructor(
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+            // V2：新手势清慢拖累积与消费标记（防跨手势残留误切）
+            dragAccumX = 0f
+            dragAccumY = 0f
+            swipeConsumedThisGesture = false
+        }
         scaleDetector.onTouchEvent(event)
         gestureDetector.onTouchEvent(event)
         if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
+            // V2 例外增补：未放大态慢拖收尾（无 fling 事件）UP 时按累积位移判定切件——
+            // 距离阈值同 60dp、横向占优才切；onFling 已切（swipeConsumedThisGesture）或
+            // 已放大（>1.05f）不触发，放大态手势循环不变
+            if (event.actionMasked == MotionEvent.ACTION_UP &&
+                normalizedScale <= 1.05f &&
+                !swipeConsumedThisGesture
+            ) {
+                swipeDeltaFromDrag(
+                    accumX = dragAccumX,
+                    accumY = dragAccumY,
+                    swipeDistancePx = SWIPE_DISTANCE_DP.dpFloat(context),
+                )?.let { direction -> onSwipe?.invoke(direction) }
+            }
+            dragAccumX = 0f
+            dragAccumY = 0f
             clampScaleEnd()
             isGestureActive = false
             hasDisallowedIntercept = false
@@ -437,4 +476,15 @@ class ZoomImageView @JvmOverloads constructor(
         private const val HARDWARE_RENDER_SAFE_SIZE = 4096
     }
 
+}
+
+/**
+ * 未放大态拖动切件判定（任务V V2 新增，纯函数无 Android 依赖，行为由 SiblingSwipePolicyTest
+ * 锁定）：|accumX| 达距离阈值 且 横向占优才切——慢拖收尾无 fling 事件也能切件。
+ * 方向口径与 onFling 一致：View.onScroll 的 distanceX=上次x-当前x，手指左移 accumX>0 →
+ * +1（下一张）；右移 accumX<0 → -1（上一张）。
+ */
+internal fun swipeDeltaFromDrag(accumX: Float, accumY: Float, swipeDistancePx: Float): Int? = when {
+    abs(accumX) > swipeDistancePx && abs(accumX) > abs(accumY) -> if (accumX > 0f) 1 else -1
+    else -> null
 }

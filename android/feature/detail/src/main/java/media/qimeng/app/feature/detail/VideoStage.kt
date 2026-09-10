@@ -83,6 +83,17 @@ private const val POSTER_SWIPE_DISTANCE_DP = 60
 /** 海报态横滑最小横向速度（px/s，I7）：对齐 ZoomImageView 冻结手势阈值（800，VelocityTracker 同单位） */
 private const val POSTER_SWIPE_VELOCITY = 800f
 
+/**
+ * 海报态横滑切件判定（任务V V2 起 ViewPager 语义：慢拖距离达阈值 或 快甩速度达阈值，任一
+ * 即切）。V1 是「距离 且 速度」双与门，慢拖（位移够、收尾速度低）被挡死不切件——用户实测
+ * 复核后拍板放宽。方向取拖动符号：dragX<0=手指左滑=+1（下一件）。纯函数无 Compose 依赖，
+ * 行为由 SiblingSwipePolicyTest 锁定。
+ */
+internal fun posterSwipeDelta(dragX: Float, velocityX: Float, swipeDistancePx: Float): Int? = when {
+    abs(dragX) > swipeDistancePx || abs(velocityX) > POSTER_SWIPE_VELOCITY -> if (dragX < 0f) 1 else -1
+    else -> null
+}
+
 // 快捷标签字面量不再本地定义：写入用 TimelineTagColors.HEART_TAG/STAR_TAG（单源，
 // 2026-09-07 审查 P2 前❤字面量三处独立定义且口径分叉，已收敛）。
 
@@ -98,8 +109,9 @@ private const val FULLSCREEN_TOGGLE_DEBOUNCE_MS = 800L
  * ENDED 再播回 0 由控件内 togglePlayPause/startPlayback 承担（G9），状态机同步记账。
  *
  * I7 沉浸接线（GUIDE_UI §详情页 L163/L168/L279）：
- * - **海报态横滑切兄弟**：单指横滑（>60dp 且横速度>800，阈值对齐 ZoomImageView 冻结语义）
- *   → [onSiblingNavigate](±1)；播放态不接（播放器手势接管，对齐旧版「预览态可横滑」）；
+ * - **海报态横滑切兄弟**：单指横滑（V2 起 ViewPager 语义：距离或速度任一达阈值即切——
+ *   慢拖可切件，阈值仍对齐 ZoomImageView 60dp/800 冻结档）→ [onSiblingNavigate](±1)；
+ *   播放态不接（播放器手势接管，对齐旧版「预览态可横滑」）；
  * - **播放中按返回先退 chrome 浏览模式**：BackHandler 拦截（播放器活动期 enabled）→ 暂停 +
  *   状态机退回海报态 + [onExitToChromeBrowse]（chrome 恢复显示）；播放器已 prepare 的同源
  *   媒体保留位置，再点播放走同源续播不归零（L165 同款语义）；
@@ -130,9 +142,10 @@ private const val FULLSCREEN_TOGGLE_DEBOUNCE_MS = 800L
  *   [DetailMediaStage] 下发——chrome 显=主题底/沉浸或播放中=纯黑；本舞台用于海报态错误底
  *   （占位底 exp#4 起改品牌灰 secondaryContainer，见海报态内注释），舞台盒底色由调用方
  *   modifier.background(backdrop) 打底）
- * @param modifier 舞台尺寸段（I7 沉浸：调用方传 fillMaxSize+backdrop 打底，海报/播放两态共用）
- * @param onSiblingNavigate 左右滑切换相邻资产回调（I7 海报态接线；播放态不接——播放器手势
- *   接管，无第二套手势面）
+ * @param modifier 舞台尺寸段（I7 沉浸：调用方传 fillMaxSize+backdrop 打底，海报/播放两态共用；
+ *   播放态内部 AndroidView 自行 fillMaxSize 填满舞台盒——V2 修复播放器贴顶）
+ * @param onSiblingNavigate 左右滑切换相邻资产回调（海报态横滑 V2 起距离或速度任一达阈值即切，
+ *   慢拖可切件；播放态不接——播放器手势接管，K3 定案）
  * @param onToggleChrome 沉浸模式 chrome 开关回调（视频态不接：海报单击=起播（L163 优先，
  *   与 L271 冲突取旧版语义并记档）、播放单击=播停归播放器手势；保留参数与图片舞台签名对齐）
  * @param onPlayerActiveChanged 播放器活动态上报（I7：chrome 恒隐的驱动源）
@@ -378,8 +391,9 @@ internal fun VideoStage(
         onPlayerActiveChanged(stageMode != VideoStageMode.POSTER)
     }
 
-    // 海报态横滑（I7，GUIDE_UI L163「视频预览…横滑浏览其他文件」）：阈值对齐 ZoomImageView
-    // 冻结手势语义（>60dp 且横速度>800，+1=左滑下一张）；播放态不接（播放器手势接管，
+    // 海报态横滑（I7，GUIDE_UI L163「视频预览…横滑浏览其他文件」；V2 放宽为 ViewPager
+    // 语义：距离或速度任一达阈值即切——慢拖可切件，判定收敛到 posterSwipeDelta，阈值仍
+    // 对齐 ZoomImageView 60dp/800 冻结档，+1=左滑下一张）；播放态不接（播放器手势接管，
     // 对齐旧版「预览态可横滑」边界）。注意 pointerInput 在 clickable 之前：横滑过 slop 后
     // 消费事件，clickable 的点击语义自然取消（拖动不误触起播）
     val swipeDistancePx = with(LocalDensity.current) {
@@ -402,9 +416,8 @@ internal fun VideoStage(
                     },
                     onDragEnd = {
                         val velocity = tracker.calculateVelocity()
-                        if (abs(dragX) > swipeDistancePx && abs(velocity.x) > POSTER_SWIPE_VELOCITY) {
-                            onSiblingNavigate(if (dragX < 0f) 1 else -1)
-                        }
+                        // V2 判定收敛到纯函数 posterSwipeDelta（距离或速度任一达阈值即切）
+                        posterSwipeDelta(dragX, velocity.x, swipeDistancePx)?.let(onSiblingNavigate)
                         dragX = 0f
                     },
                     onDragCancel = { dragX = 0f },
@@ -467,8 +480,12 @@ internal fun VideoStage(
                 }
             }
         } else {
-            // 播放态（含暂停/ENDED）：BiliPlayerView 整体桥接，触摸全归播放器手势循环
+            // 播放态（含暂停/ENDED）：BiliPlayerView 整体桥接，触摸全归播放器手势循环。
+            // V2 修复播放器贴顶：必须显式 fillMaxSize 填满舞台盒——缺 modifier 时 AndroidView
+            // 走 wrap-content 测量，PlayerView 尺寸塌缩贴顶不居中；PlayerView 默认
+            // RESIZE_MODE_FIT 自行 letterbox 居中画面，外层 Box 尺寸由调用方 fillMaxSize 决定
             AndroidView(
+                modifier = Modifier.fillMaxSize(),
                 factory = { ctx ->
                     BiliPlayerView(ctx).apply {
                         setPlayer(playerState.player)

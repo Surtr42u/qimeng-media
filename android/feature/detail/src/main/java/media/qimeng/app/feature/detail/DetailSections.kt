@@ -3,7 +3,6 @@ package media.qimeng.app.feature.detail
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -14,7 +13,6 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -29,10 +27,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -46,8 +42,6 @@ import media.qimeng.app.core.ui.component.formatBytesForDetail
 import media.qimeng.app.core.ui.component.formatCount
 import media.qimeng.app.core.ui.component.formatShortDate
 import media.qimeng.app.core.ui.icon.BackIcon
-import media.qimeng.app.core.ui.icon.ChevronLeftIcon
-import media.qimeng.app.core.ui.icon.ChevronRightIcon
 import media.qimeng.app.core.ui.icon.DeleteIcon
 import media.qimeng.app.core.ui.icon.DriveFileMoveIcon
 import media.qimeng.app.core.ui.icon.StarIcon
@@ -67,8 +61,8 @@ private val ACTION_SPACING = 12.dp
 // ---------- 顶行 ----------
 
 /**
- * 顶行：返回箭头。任务G G1a 移除右侧「i / N」批次序号文本——Web 顶行无计数（AssetDetailPage
- * 批次序号在媒体区旁 .asset-pager），序号随 [DetailPagerRow] 落到舞台下方；沉浸逻辑 3b 不变。
+ * 顶行：返回箭头。任务G G1a 移除右侧「i / N」批次序号文本（Web 顶行无计数）；i/N 已全归
+ * 顶部渐变 chrome（DetailTopChrome，V2 删舞台下 pager 行后为唯一承担者）；沉浸逻辑 3b 不变。
  */
 @Composable
 internal fun DetailTopRow(onBack: () -> Unit) {
@@ -83,109 +77,6 @@ internal fun DetailTopRow(onBack: () -> Unit) {
                 imageVector = BackIcon,
                 contentDescription = stringResource(R.string.detail_back),
             )
-        }
-    }
-}
-
-// ---------- 批次 pager 行（任务G G1a） ----------
-
-/** pager 钮 chevron 图标边长（Web .asset-pager__btn 内 ChevronLeft size={14}） */
-private val PAGER_CHEVRON_ICON_SIZE = 14.dp
-
-/** pager 钮边界禁用透明度（Web .asset-pager__btn:disabled opacity .45 置灰档） */
-private const val PAGER_DISABLED_ALPHA = 0.45f
-
-/**
- * 批次 pager 行（任务G G1a，逐语义对齐 Web .asset-pager，舞台与标题之间）：
- * 左「上一件」· 中「n / N」计数 · 右「下一件」；边界置灰停止不循环（首件禁上一件/
- * 末件禁下一件——Web disabled 同口径）；计数沿用旧顶行 i/N 的数据源（batchIndex+1/batchSize）。
- * 无批次上下文（batchIndex<0，深链单卡）整行不渲染——Web 无 nav 态同款。
- * 切换单源复用 onSiblingNavigate(delta)（与图片横滑/全屏覆盖层同一条链）。
- */
-@Composable
-internal fun DetailPagerRow(
-    batchIndex: Int,
-    batchSize: Int,
-    onSiblingNavigate: (delta: Int) -> Unit,
-) {
-    if (batchIndex < 0) return
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            // 纵向 8dp：Web .asset-pager margin-top --qm-space-2=8px 的近似档
-            .padding(horizontal = QimengDimens.ScreenPaddingHorizontal, vertical = QimengDimens.SpaceM),
-        verticalAlignment = Alignment.CenterVertically,
-        // Web .asset-pager gap --qm-space-2=8px
-        horizontalArrangement = Arrangement.spacedBy(QimengDimens.SpaceM),
-    ) {
-        PagerButton(
-            text = stringResource(R.string.detail_pager_prev),
-            icon = ChevronLeftIcon,
-            enabled = batchIndex > 0,
-            onClick = { onSiblingNavigate(-1) },
-        )
-        Text(
-            // 展示序号 1 基（内部 0 基）；Web asset-pager__count tabular-nums 档（Compose 缺省数字字体近似）
-            text = stringResource(R.string.detail_batch_position, batchIndex + 1, batchSize),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        PagerButton(
-            text = stringResource(R.string.detail_pager_next),
-            icon = ChevronRightIcon,
-            enabled = batchIndex < batchSize - 1,
-            iconTrailing = true,
-            onClick = { onSiblingNavigate(1) },
-        )
-    }
-}
-
-/**
- * pager 钮（Web .asset-pager__btn：1dp 描边 + 12px 圆角 + 页面底色小钮，上一件 chevron
- * 前置 / 下一件 chevron 后置；禁用=半透明置灰不可点）。
- */
-@Composable
-private fun PagerButton(
-    text: String,
-    icon: ImageVector,
-    enabled: Boolean,
-    onClick: () -> Unit,
-    iconTrailing: Boolean = false,
-) {
-    Surface(
-        onClick = onClick,
-        enabled = enabled,
-        // Web --qm-radius = var(--radius) = 12px，与 12dp 卡圆角同档（RankCardCornerRadius 复用）
-        shape = RoundedCornerShape(QimengDimens.RankCardCornerRadius),
-        color = MaterialTheme.colorScheme.background,
-        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-        border = BorderStroke(QimengDimens.DividerThickness, MaterialTheme.colorScheme.outlineVariant),
-        modifier = Modifier.alpha(if (enabled) 1f else PAGER_DISABLED_ALPHA),
-    ) {
-        Row(
-            // Web padding 4px 10px 的近似档（现有间距档取近：纵向 4dp / 横向 8dp）
-            modifier = Modifier.padding(
-                horizontal = QimengDimens.SpaceM,
-                vertical = QimengDimens.SpaceXS,
-            ),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(QimengDimens.SpaceXS), // Web 图标-文字 gap 4px
-        ) {
-            if (!iconTrailing) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null, // 文本已表意，chevron 纯装饰
-                    modifier = Modifier.size(PAGER_CHEVRON_ICON_SIZE),
-                )
-            }
-            Text(text = text, style = MaterialTheme.typography.bodySmall)
-            if (iconTrailing) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    modifier = Modifier.size(PAGER_CHEVRON_ICON_SIZE),
-                )
-            }
         }
     }
 }

@@ -9,6 +9,19 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## fix(app): 任务V V2 详情对齐——播放态媒体居中+chrome 双重 inset 撤除+删上一件/下一件行+横滑放宽（2026-09-10 第一百九十笔）
+
+执行 AI：GLM-5.3（执行子代理，任务V V2 批）；主代理（基线裁决/模拟器基线与复验/审查汇总）：GLM-5.3-Flash
+
+- **①播放态媒体垂直居中**：根因=VideoStage 播放态 AndroidView（BiliPlayerView 桥接）**未传 modifier**，wrap-content 测量贴顶（基线帧证：播放器顶占 y≈100–640 一条、下方全黑、控制条悬中部）。修法=播放态补 `Modifier.fillMaxSize()` 填满舞台盒（PlayerView 默认 RESIZE_MODE_FIT 自行 letterbox 居中）；KDoc 同步修订。复验：视频带中心 1263 vs 舞台盒中心 1232（Δ31px≈2.6%，基线中心 370）。
+- **②顶部/底部 chrome 贴合系统栏**：根因=壳层 Scaffold innerPadding 已把内容区钉在 [状态栏线 128px, 导航栏线]（dump 内容区顶 bounds=128 实证），DetailTopChrome 再加 `statusBars.asPaddingValues()`（DetailBottomChrome 对称 navigationBars）=**双重避让**——基线像素量测：时钟底 y=82 vs chrome 图标顶 y=310，空 228px（用户「和状态栏大面积空白」）。修法=撤除两处 inset padding（K3c 顶部背板条机制不动），注释按新口径重写。复验：图标顶 310→182（撤除恰=statusBars inset 128px）、底部图标下移 63px=navigationBars inset（实测 2286 vs 舞台盒几何模型预测 2285 吻合，恰回旧版 edge-to-edge 几何）。
+- **③导航只留横滑（删胶囊行+慢拖可切件）**：DetailPagerRow 整删（DetailSections 定义+DetailScreen 调用点+PagerButton+PAGER_ 常量+detail_pager_prev|next 字符串+孤儿参数 DetailContentSections.onSiblingNavigate 连带清理；i/N 由顶部 chrome 承担）。横滑放宽双路——海报态抽纯函数 `posterSwipeDelta`：V1「60dp 且 800px/s」双与门挡死慢拖（基线实测 450px/s 慢拖不切）→ ViewPager 语义「距离或速度任一达阈值即切」；图片态 ZoomImageView（**冻结搬运件例外增补，理由=用户钦点恢复横滑，类 KDoc 记档**）：未放大态 onScroll 只累积位移（仍 return false 不改事件流、不设 isGestureActive 不动渲染层）、ACTION_UP 经纯函数 `swipeDeltaFromDrag`（|accumX|>60dp 且横向占优）判定切件，onFling 置 `swipeConsumedThisGesture` 防同手势双触发，放大态手势零变化。
+- **新增 SiblingSwipePolicyTest**（8 例 JVM 单测：两纯函数的慢拖达距/快甩达速/双不达/方向±1/纵向占优口径锁定）。
+- **模拟器复验（qimeng_api35 无头 5562 + 18461 虚构库，证据 %TEMP%\qimeng-v2-evidence\：baseline\=修复前基线+像素量测，fix\=修复后）**：①②量化如上；③下滑区 uiautomator dump「上一件/下一件」0 命中（基线下滑首行即它）；海报态慢拖 7/20→8/20→9/20 连续切件（基线同参数零行为）、快甩路径完好（8→9 亦经快甩验证）、图片态慢拖 10/20→11/20 切件；播放态横滑仍不切件（K3 项8 播放器手势接管定案不回退）。
+- **门禁三连**：make app-build / app-test / app-lint 全绿（EXIT=0；SiblingSwipePolicyTest tests=8 failures=0）。
+- **独立对抗审查：通过（0 P1/P2，2 P3 当场清偿）**：P3-1=chrome 注释 228px 补可复核出处（基线量测时钟底 y82↔图标顶 y310，128px=inset 双计）+P3-2=`.run/` 加盖 .gitignore（IDE 目录曾混入截图，同 `.run-screens/` 口径永不入库；既有目录内容未动）。审查复核项：ZoomImageView 双触发护栏时序（onFling 于 UP 事件内先于 UP 判定块）、CANCEL 路径双清、放大态零触碰、ChevronLeftIcon 留 core 共享库正确、单测 --rerun 实跑 8/0/0。
+
+---
 ## fix(app): 任务V V1 追修——相册返回滚动重置根修+morph 期网格可见性(返回转场 None 化+overlay 揭出渲染)+Tracker 单测清偿（2026-09-10 第一百八十九笔）
 
 执行 AI：GLM-5.3（执行子代理，任务V V1 追修批）
