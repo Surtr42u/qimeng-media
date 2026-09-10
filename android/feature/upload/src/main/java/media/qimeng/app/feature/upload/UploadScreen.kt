@@ -50,6 +50,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import media.qimeng.app.core.model.DirNode
 import media.qimeng.app.core.model.UploadItem
 import media.qimeng.app.core.model.UploadQueueEntry
+import media.qimeng.app.core.model.UploadRules
 import media.qimeng.app.core.model.UploadStatus
 import media.qimeng.app.core.ui.component.QimengCapsuleTextField
 import media.qimeng.app.core.ui.component.QimengSegPill
@@ -294,7 +295,12 @@ private fun DirNodeRows(
         selected = selectedPath == node.path,
         expanded = expanded,
         hasChildren = hasChildren,
-        onClick = { onSelect(node.path) },
+        onClick = {
+            // V7：点行 = 选中并进入（有子级且未展开时同时展开）——
+            // COS 等层级库点行直达子文件夹，收起仍走 ▾ 箭头（规则见 UploadRules）
+            onSelect(node.path)
+            if (UploadRules.shouldExpandOnSelect(hasChildren, expanded)) onToggle(node.path)
+        },
         onToggle = { onToggle(node.path) },
         depth = depth,
     )

@@ -79,6 +79,12 @@ private const val OVERVIEW_MANAGE = "管理"
 private const val OVERVIEW_LOADING = "加载中…"
 private const val OVERVIEW_EMPTY = "暂无作者"
 
+/** 作者总览卡纵向间距（V7 排版修复：Web prototype.css 逐字对齐——全局 reset 后仅显式间距生效，
+ *  App 侧此前三处全为 0dp 即「拥挤」根因；对照我的页其他卡片基准同源） */
+private val OVERVIEW_NOTE_TOP_SPACING = 4.dp
+private val OVERVIEW_LIST_TOP_SPACING = 8.dp
+private val OVERVIEW_ROW_SUB_TOP_SPACING = 2.dp
+
 /** 写失败横幅消除按钮文案（P2-3） */
 private const val WRITE_ERROR_DISMISS = "知道了"
 
@@ -348,6 +354,14 @@ private fun WriteErrorBanner(message: String, onDismiss: () -> Unit) {
  * 全量作者为 0 → 「暂无作者」空态。
  * Top5 行点击直达作者集合页（RES R2 清偿 I4 挂账「待壳层共享窗口」：行点击带
  * authorId+原始名上抛，壳层接线 AuthorCollectionRoutes——不再借道作者管理页两跳）。
+ *
+ * V7 导航补齐：头行+计数副行整体可点 → 作者列表页（[onManage]，与「管理」同目标）。
+ * 落点选型：集合页需具体 authorId、卡整体没有，语义不符；「N 位作者」的具体页=全部
+ * 作者列表（Web 谱系「作者总览=作者管理入口卡」同语义）。Top5 行为更具体的行级入口，
+ * 子级 clickable 优先消费、不受卡级点击影响。
+ *
+ * V7 排版修复：纵向三处间距对齐 Web（.rank-note margin-top:4px / .rank-card ul
+ * margin-top:8px / .rank-sub2 margin-top:2px）——此前全 0dp 即用户「拥挤」观感根因。
  */
 @Composable
 private fun AuthorOverviewCard(
@@ -357,48 +371,62 @@ private fun AuthorOverviewCard(
     onOpenAuthorCollection: (authorId: String, displayName: String) -> Unit,
 ) {
     QimengRankCard(modifier = Modifier.fillMaxWidth()) {
-        // 头行：标题 + 管理入口（Web .rank-head：h3 + a.rank-more 小字次色，点进作者管理页）
-        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = OVERVIEW_TITLE,
-                style = MaterialTheme.typography.titleSmall,
-                modifier = Modifier.weight(1f),
-            )
-            Text(
-                text = OVERVIEW_MANAGE,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.clickable(onClick = onManage),
-            )
-        }
-        if (overview == null) {
-            // 未就绪：首次加载中给占位；读失败不占位（横幅已反馈，避免「暂无作者」误读）
-            if (loading) CardPlaceholder(text = OVERVIEW_LOADING)
-        } else {
-            // 计数副行（Web .rank-note：「N 位作者 · 已关注 M」——N=全量、M=followed 计数）
-            Text(
-                text = "${overview.totalAuthors} 位作者 · 已关注 ${overview.followedCount}",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            if (overview.totalAuthors == 0) {
-                CardPlaceholder(text = OVERVIEW_EMPTY)
+        // 头行 + 计数副行 = 卡级点击面（V7：对齐其他卡片「点进去看具体」交互，
+        // 进作者列表页；「管理」为行内子级入口，点击仍归本页同目标）
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onManage),
+        ) {
+            // 头行：标题 + 管理入口（Web .rank-head：h3 + a.rank-more 小字次色，点进作者管理页）
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = OVERVIEW_TITLE,
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    text = OVERVIEW_MANAGE,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.clickable(onClick = onManage),
+                )
+            }
+            if (overview == null) {
+                // 未就绪：首次加载中给占位；读失败不占位（横幅已反馈，避免「暂无作者」误读）
+                if (loading) CardPlaceholder(text = OVERVIEW_LOADING)
             } else {
-                overview.topByFileCount.forEachIndexed { index, author ->
-                    // 行间分隔线（Web .rank-card li border-bottom，末行无线）
-                    if (index > 0) {
-                        HorizontalDivider(
-                            thickness = QimengDimens.RankCardRowDividerThickness,
-                            color = MaterialTheme.colorScheme.outlineVariant,
-                        )
+                // 计数副行（Web .rank-note：「N 位作者 · 已关注 M」——N=全量、M=followed 计数）
+                Text(
+                    text = "${overview.totalAuthors} 位作者 · 已关注 ${overview.followedCount}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = OVERVIEW_NOTE_TOP_SPACING),
+                )
+                if (overview.totalAuthors == 0) {
+                    CardPlaceholder(text = OVERVIEW_EMPTY)
+                } else {
+                    // 行列上间距（Web .rank-card ul margin-top:8px）
+                    Column(
+                        modifier = Modifier.padding(top = OVERVIEW_LIST_TOP_SPACING),
+                    ) {
+                        overview.topByFileCount.forEachIndexed { index, author ->
+                            // 行间分隔线（Web .rank-card li border-bottom，末行无线）
+                            if (index > 0) {
+                                HorizontalDivider(
+                                    thickness = QimengDimens.RankCardRowDividerThickness,
+                                    color = MaterialTheme.colorScheme.outlineVariant,
+                                )
+                            }
+                            OverviewAuthorRow(
+                                name = author.displayLabel,
+                                fileCount = author.fileCount ?: 0,
+                                // 直达作者集合页：id=取数键、displayName=原始名（不带 ·COS 展示后缀，
+                                // 对齐详情页作者卡口径），均由 AuthorSummary 透出
+                                onClick = { onOpenAuthorCollection(author.id, author.displayName) },
+                            )
+                        }
                     }
-                    OverviewAuthorRow(
-                        name = author.displayLabel,
-                        fileCount = author.fileCount ?: 0,
-                        // 直达作者集合页：id=取数键、displayName=原始名（不带 ·COS 展示后缀，
-                        // 对齐详情页作者卡口径），均由 AuthorSummary 透出
-                        onClick = { onOpenAuthorCollection(author.id, author.displayName) },
-                    )
                 }
             }
         }
@@ -420,6 +448,8 @@ private fun OverviewAuthorRow(name: String, fileCount: Int, onClick: () -> Unit)
             text = "$fileCount 个文件",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            // Web .rank-sub2 margin-top:2px（V7 排版修复：此前 0dp 两行贴死）
+            modifier = Modifier.padding(top = OVERVIEW_ROW_SUB_TOP_SPACING),
         )
     }
 }
