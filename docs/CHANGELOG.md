@@ -9,6 +9,14 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## fix(app): 任务V V4 #42 日夜切换原地重组——manifest configChanges 追加 uiMode（2026-09-11 第一百九十二笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理，任务V V4 批）；主代理（对抗审查汇总/提交）：GLM-5.3-Flash
+
+- **修复**：MainActivity `configChanges` 在原值 `orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden` 基础上只增不删追加 `|uiMode`（android/app/src/main/AndroidManifest.xml，零代码改动）——uiMode 变化由原地 onConfigurationChanged 承接、Compose LocalConfiguration 更新重组换肤，Activity 不再销毁重建，#42（切日夜导航栈重置回首页/详情页丢失）清偿。
+- **验证**（emulator-5562 qimeng_api35 + 18461 虚构库，证据 %TEMP%\qimeng-v4-evidence\）：①详情页 night yes/no 双向 logcat 全量抓取 onDestroy/onCreate 计数 0，有 `Config changes=200`+`onConfigurationChanged configDiff={CONFIG_UI_MODE}` 原地回调铁证；②切换后 BACK 正常回首页、同 MainActivity 实例；③同一详情页日夜两图主题正确反色（主题来源单一：Theme.kt isSystemInDarkTheme，无 values-night/AppCompatDelegate 依赖路径）；④方向锁回归 PASS——横屏视频（测试出处A-测试场景R-01.mp4 960x540）全屏 2400x1080 LANDSCAPE→BACK 2 秒回竖屏，全周期 destroy 0（旋转仍由原 orientation 声明原地承接）。
+- 门禁三连绿（5s/3s/57s，低 CPU 档）；独立 reviewer 对抗审查通过 0 P1/P2：manifest diff 只增不删、logcat 亲数 0 重建、dump 双态逐字段一致、越界清单空；2 P3 备案（topResumedActivity 转述行未附原始 dumpsys 输出；图像反色由主代理亲验通过）。
+
 ## fix(app): 任务V V3 详情互动行重排——首屏四胶囊+下滑区重排+标签只读化+删除归整理（2026-09-11 第一百九十一笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理，任务V V3 批）；主代理（两处保守裁决/对抗审查汇总/提交）：GLM-5.3-Flash
