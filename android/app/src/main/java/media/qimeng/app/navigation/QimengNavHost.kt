@@ -294,6 +294,9 @@ fun QimengNavHost(
                                 defaultValue = ""
                             },
                         ),
+                        // 任务V V1 追修 D2：pop 揭出时瞬时全显（morph 独挑返回动效，列表全程
+                        // 可见；理由见 detail 路由同批注释）
+                        popEnterTransition = { EnterTransition.None },
                     ) { entry ->
                         // 搜索（exp#6 铺开）：结果网格卡→详情共享动画生效
                         CompositionLocalProvider(LocalNavAnimatedVisibilityScope provides this@composable) {
@@ -308,7 +311,11 @@ fun QimengNavHost(
                         }
                     }
                     // 收藏（exp#6 铺开）：网格卡→详情共享动画生效
-                    composable(Routes.FAVORITE) {
+                    // popEnter=None=任务V V1 追修 D2（理由见 detail 路由同批注释）
+                    composable(
+                        route = Routes.FAVORITE,
+                        popEnterTransition = { EnterTransition.None },
+                    ) {
                         CompositionLocalProvider(LocalNavAnimatedVisibilityScope provides this@composable) {
                             FavoriteScreen(
                                 onBack = { navController.popBackStack() },
@@ -319,7 +326,11 @@ fun QimengNavHost(
                         }
                     }
                     // 浏览历史（exp#6 铺开）：网格卡→详情共享动画生效
-                    composable(Routes.HISTORY) {
+                    // popEnter=None=任务V V1 追修 D2（理由见 detail 路由同批注释）
+                    composable(
+                        route = Routes.HISTORY,
+                        popEnterTransition = { EnterTransition.None },
+                    ) {
                         CompositionLocalProvider(LocalNavAnimatedVisibilityScope provides this@composable) {
                             HistoryScreen(
                                 onBack = { navController.popBackStack() },
@@ -329,7 +340,12 @@ fun QimengNavHost(
                             )
                         }
                     }
-                    composable(Routes.AUTHORS) {
+                    // popEnter=None=任务V V1 追修 D2（作者管理非网格页但同为 pushed 页，
+                    // 返回被揭出同须瞬时全显；理由见 detail 路由同批注释）
+                    composable(
+                        route = Routes.AUTHORS,
+                        popEnterTransition = { EnterTransition.None },
+                    ) {
                         AuthorScreen(
                             onBack = { navController.popBackStack() },
                             // 行点击进作者集合页（任务G G1b 接线：Web /app/collection/author/{name}
@@ -345,7 +361,11 @@ fun QimengNavHost(
                     // feature 禁依赖 :app，壳层反向引用合法）；路由参数由页面 ViewModel 经
                     // SavedStateHandle 读取，此处无需展开 arguments。
                     // 作者集合页同为 QimengMediaGrid 网格（exp#6 走查确认），铺开一并接入
-                    composable(AuthorCollectionRoutes.AUTHOR_COLLECTION_ROUTE) {
+                    // popEnter=None=任务V V1 追修 D2（理由见 detail 路由同批注释）
+                    composable(
+                        route = AuthorCollectionRoutes.AUTHOR_COLLECTION_ROUTE,
+                        popEnterTransition = { EnterTransition.None },
+                    ) {
                         CompositionLocalProvider(LocalNavAnimatedVisibilityScope provides this@composable) {
                             AuthorCollectionScreen(
                                 onBack = { navController.popBackStack() },
@@ -381,7 +401,19 @@ fun QimengNavHost(
                     // 返回键回到上一个资产（旧版内部浏览历史栈的导航层等价语义）。
                     // provide 转场 scope——详情舞台与各网格路由的卡同 key 配对（exp#3 试点，
                     // exp#6 铺开到全部网格路由）
-                    composable(DetailRoutes.DETAIL_ROUTE) { entry ->
+                    //
+                    // 任务V V1 追修 D2（2026-09-10 用户「返回时…应该是原来的不变」）：pop 期
+                    // 网格列表须全程可见，morph（sharedBounds bounds 动画）独挑全部动效——
+                    // 详情页自身退出/被 pop 揭出（detail→detail 兄弟链返回上层详情）不允许
+                    // 再叠一层内容转场遮盖列表（六入口验证：返回 morph 期间详情暗色页淡出
+                    // 盖在网格上，网格末帧才完整重现，即用户抱怨的「返回原位后再显示所有的」）。
+                    // popExit/popEnter 双 None 与 L2 顶层四参 None 同源理由（瞬时交换）；前进
+                    // enter/exit 不动（继承 NavHost 顶层 None，exp#3 红线：转场参数块只增不删）。
+                    composable(
+                        route = DetailRoutes.DETAIL_ROUTE,
+                        popExitTransition = { ExitTransition.None },
+                        popEnterTransition = { EnterTransition.None },
+                    ) { entry ->
                         CompositionLocalProvider(LocalNavAnimatedVisibilityScope provides this@composable) {
                             DetailScreen(
                                 assetId = entry.arguments?.getString(DetailRoutes.KEY_ASSET_ID).orEmpty(),

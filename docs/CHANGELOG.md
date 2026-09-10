@@ -9,6 +9,18 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## fix(app): 任务V V1 追修——相册返回滚动重置根修+morph 期网格可见性(返回转场 None 化+overlay 揭出渲染)+Tracker 单测清偿（2026-09-10 第一百八十九笔）
+
+执行 AI：GLM-5.3（执行子代理，任务V V1 追修批）
+
+- **D1（阻断，3/3 复现）相册 Tab 返回后滚动位置重置到顶——根修**：根因在组合层：AllScreen 的 `LaunchedEffect(state.activeDim){ listState.scrollToItem(0) }`（切维回顶，G5 时代引入）以 key 重启语义工作——从详情返回时页面重新进入组合，effect 无条件重启即把滚动拍回顶，表现为「morph 飞向第一格+列表重建于顶」；相册是六入口中唯一带切维回顶 effect 的入口（首页 scrollToItem 只挂双击 Tab 广播），故其余五入口全保持。修法最小化：`lastDimScrolledToTop`（rememberSaveable 快照，跨 push/pop 存活）门控，仅 activeDim **真值变化**才回顶——首次进入 null≠默认维走一次无操作回顶（原注释口径不变）、切维照旧回顶、返回重组快照恢复相等即跳过；零布局改动。
+- **D2（观感）返回 morph 期间网格被详情页遮盖——双翼修复（第二翼生效，第一翼实测无效并记档）**：现象=六入口返回时共享元素 morph（~700ms）期间网格全程不可见、morph 末帧才一次性完整呈现（用户 2026-09-10「返回时…应该是原来的不变」）。**第一翼（钦定方案，保留为语义显式化）**：detail 路由 `popExitTransition/popEnterTransition = None`+favorite/history/search/authors/authorCollection 五 pushed 路由 `popEnterTransition = None`（注释引用 L2 None 先例同源理由）——装包实测**无行为变化**：NavHost 顶层四参 L2 起本就是 None，morph 时长由 sharedBounds 自身 spring 驱动、与 NavHost 内容转场参数正交（Navigation 2.9.8 字节码证实 NavHost 无 SharedTransition 感知），morph 期间 outgoing 详情页被共享元素动画钉在渲染树顶层，转场参数移除不了它（帧证据：morph 帧与 settled 网格内容零相关 corr=-0.08、卡区块方差 0=屏上非网格）。**第二翼（生效）**：QimengMediaGrid 的 LazyVerticalGrid 挂 `renderInSharedTransitionScopeOverlay(-1f)`，门控 `isTransitionActive && transition.targetState==Visible`——返回被揭出（incoming）时整个网格画进共享转场 overlay，zIndex=-1 恒低于 sharedBounds 飞行元素默认 0：morph 期间网格全程可见、飞行图浮在其上；前进 push 本页是离场侧（PostExit）不提升行为不变；无共享元素场景 isTransitionActive 恒 false 零影响；scope 缺位（非网格路由）零变化。morph 独挑返回动效至此达成。
+- **P2 清偿（审查遗留）**：`FavoriteMutationTrackerTest.kt` 新增（3 例：初值零版本/单调递增+时间戳刷新/指纹对比），镜像 LikeMutationTrackerTest 同款口径；tests=3 failures=0。
+- **P3 记档（不改代码）**：①App 回前台不再自动刷新的行为收窄为「显式下拉/收藏指纹命中/重新进页」三路径（V1 已落，本批复验无回归）；②收藏指纹命中后的静默重拉仍整组替换 items（收藏变更场景重排=预期行为，morph 结束后一帧呈现非缺陷）；③core:ui 两新文件（motion/QimengSharedTransition.kt 时代）CRLF 与兄弟文件不一致（index 层已 LF 无污染，后续批统一治理）。
+- **复验结论（qimeng_api35 无头+18461 虚构库，证据 %TEMP%\qimeng-v1-evidence\fix\）**：①D1 相册双证——滚动后 pre vs 返回后 post **diff=0/156600**；morph 飞行收拢于被点卡原位 (799,1589) 带（中部 9481 采样差）而非第一格（该区块 var=4534=静态内容，修复前 var=0）；②D2 相册+首页——morph 中间帧卡区块 var=4534/2308 与 2765/2112（修复前均 0=纯背景色）+飞行差异带在跑；③收藏变更场景不回归——取消收藏返回列表静默 4→3（无 PTR/全屏加载/灰占位闪，back-005 起与 post 逐帧全等），库状态已还原（4 文件逐项一致）。
+- **门禁三连**：make app-build / app-test / app-lint 全绿（EXIT=0，尾部存 %TEMP%\qimeng-v1-evidence\gates-fix.txt）。
+
+---
 ## feat(app): 任务V V1 动效合入——共享元素转场exp#3~6合入+exp#2剔除+返回刷新缺陷修复（2026-09-10 第一百八十八笔）
 
 执行 AI：GLM-5.3（执行子代理，任务V V1 批）
