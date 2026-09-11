@@ -1,7 +1,6 @@
 package media.qimeng.app.core.ui.component
 
 import android.content.Context
-import androidx.compose.animation.EnterExitState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -44,9 +43,6 @@ import coil3.size.Size
 import media.qimeng.app.core.model.GridSection
 import media.qimeng.app.core.model.MediaAsset
 import media.qimeng.app.core.model.MediaKind
-import media.qimeng.app.core.ui.motion.LocalNavAnimatedVisibilityScope
-import media.qimeng.app.core.ui.motion.LocalNavSharedTransitionScope
-import media.qimeng.app.core.ui.motion.qimengAssetPosterSharedBounds
 import media.qimeng.app.core.ui.theme.QimengDimens
 
 /** 距底预加载阈值（LEGACY §H：距底 ≤6 项提前加载；数值与 RecommendPaging.PRELOAD_DISTANCE 同语义，
@@ -59,9 +55,8 @@ internal data class GridCell(val header: String?, val asset: MediaAsset?)
 /**
  * 分组段扁平化 + 按资产 id 防御性去重（exp#5，2026-09-10 ui/expressive 分支）。
  *
- * 为什么在 key 铸造点去重：本组件用 asset.id 作 LazyVerticalGrid 项 key（重复 key 直接崩）
- * 并经 [media.qimeng.app.core.ui.motion.qimengAssetPosterSharedBounds] 以同 id 铸共享元素
- * key（服务端单响应含重复资产时会同屏双卡撞同一 sharedBounds key，配对行为未定义）。
+ * 为什么在 key 铸造点去重：本组件用 asset.id 作 LazyVerticalGrid 项 key，服务端单响应若含
+ * 重复资产即同屏双卡同 key（LazyVerticalGrid 重复 key 直接崩）。
  * 服务端各列表端点均无「单响应内 id 唯一」的协议承诺，此处按 id 收敛是最后的防御点，
  * 一处覆盖共用本组件的全部网格页（首页三流/相册/收藏/历史/搜索/作者集合）。
  *
@@ -114,27 +109,26 @@ private val DurationBadgeTextStyle = TextStyle(
     ),
 )
 
-// ---------- 详情海报点击预载（exp#4 前进转场竞态修复·预载翼，2026-09-10 任务V V1 合入自 ui/expressive 分支） ----------
+// ---------- 详情海报点击预载（exp#4 预载翼；任务W W1 撤动效后保留——点击抢跑热身详情舞台首帧） ----------
 
 /**
  * 预载产物必须写内存缓存（与详情页既有预载链 DetailScreen DisposableEffect 同款
- * CachePolicy.ENABLED）：共享元素转场首帧要的是「同步命中内存缓存」——只落磁盘缓存
- * 对首帧无意义，这是本翼存在的全部目的。
+ * CachePolicy.ENABLED）：点击进场后的详情舞台首帧要的是「同步命中内存缓存」——只落
+ * 磁盘缓存对首帧无意义，这是本翼存在的全部目的。
  */
 private val DETAIL_POSTER_PRELOAD_CACHE_POLICY = CachePolicy.ENABLED
 
 /**
  * 网格卡点击瞬间对目标资产海报 URL 发 Coil 预载（发射后不管：不挂组合生命周期，
- * 离场不取消——取消就失去了「转场前抢跑」的意义；产物进内存缓存由单例 ImageLoader 管理）。
+ * 离场不取消——取消就失去了「导航前抢跑」的意义；产物进内存缓存由单例 ImageLoader 管理）。
  *
- * 为什么（exp#3 实证的前进竞态）：首页→详情共享元素转场的可见性依赖详情舞台海报已解码，
- * 而舞台侧请求只在详情页组合后才发起，慢于转场时长时首帧是空舞台，sharedBounds 画的
- * 色块与页面底同色、肉眼不可感知（HANDOVER_APP.md 任务V 节「前进转场通常无可见动画」限制）。
- * 点击即入队把加载提前到导航前，转场起跑时内存缓存大概率已热。详情侧既有预载链只覆盖
- * 「邻位切换窗口」，不含「点击进场」这第一步，本预载与之互补不替代。
+ * 为什么：详情舞台海报的加载请求只在详情页组合后才发起，慢于进场瞬间时首帧是空舞台
+ * （占位灰）。点击即入队把加载提前到导航前，详情页首帧大概率直接命中内存缓存。详情侧
+ * 既有预载链只覆盖「邻位切换窗口」，不含「点击进场」这第一步，本预载与之互补不替代。
+ * （原为 exp#4 前进转场竞态修复·预载翼，任务W W1 撤动效后保留。）
  *
  * 边界诚实记档：图片资产详情舞台渲的是**原图直链**（签名直链须详情侧解析，网格只持
- * 缩略图直链），对这类资产本预载只热身缩略图、原图仍由详情侧加载——前进可见性由详情
+ * 缩略图直链），对这类资产本预载只热身缩略图、原图仍由详情侧加载——首帧可见性由详情
  * 舞台的占位翼兜底，此处尽力而为；视频（海报帧=缩略图直链）与动图（卡上已持解析后的
  * 原件直链）两端 URL 同源，是本翼的主受益形态。请求形状对齐详情预载链（视频海报帧=
  * 默认档、图片/动图=Size.ORIGINAL 不降采样），同形才能复用同一条内存缓存键。
@@ -201,37 +195,10 @@ fun QimengMediaGrid(
     val scrolling by remember { derivedStateOf { listState.isScrollInProgress } }
     val thumbnailsPaused = pauseThumbnailsWhileScrolling && scrolling
 
-    // 任务V V1 追修 D2（2026-09-10 用户「返回时…应该是原来的不变」）：返回（pop）被揭出时把
-    // 整个网格画进共享转场 overlay。为什么：morph 期间 outgoing 详情页被共享元素动画钉在
-    // 渲染树顶层（页面转场 None 也移除不了它，NavHost 转场参数与共享元素动画正交），网格若
-    // 留在普通层则被暗色详情页全程遮盖、morph 末帧才一次性重现（六入口连拍实证）。zIndex=-1
-    // 恒低于 sharedBounds 飞行元素默认 0——morph 飞行图浮在网格之上，网格其余部分全程可见。
-    // 门控两条件：isTransitionActive=有共享元素动画在跑（普通 Tab 切换/无 morph 页恒 false，
-    // 零影响）；targetState=Visible=本页是转场揭出侧（incoming）——前进 push 时本页是离场侧
-    // （PostExit）不提升，前进行为不变。scope 缺位（非网格路由）时零变化，与
-    // qimengAssetPosterSharedBounds 同款防御。
-    val revealOverlayModifier = run {
-        val sharedScope = LocalNavSharedTransitionScope.current
-        val animatedScope = LocalNavAnimatedVisibilityScope.current
-        if (sharedScope == null || animatedScope == null) {
-            Modifier
-        } else {
-            with(sharedScope) {
-                // 位置传参：zIndex=-1（恒低于飞行元素默认 0），lambda=是否提升进 overlay
-                Modifier.renderInSharedTransitionScopeOverlay(-1f) {
-                    isTransitionActive &&
-                        animatedScope.transition.targetState == EnterExitState.Visible
-                }
-            }
-        }
-    }
-
     LazyVerticalGrid(
         state = listState,
         columns = GridCells.Fixed(columns),
-        modifier = modifier
-            .fillMaxSize()
-            .then(revealOverlayModifier),
+        modifier = modifier.fillMaxSize(),
         horizontalArrangement = Arrangement.spacedBy(GRID_INTER_ITEM_SPACING),
         verticalArrangement = Arrangement.spacedBy(GRID_INTER_ITEM_SPACING),
         contentPadding = PaddingValues(
@@ -315,10 +282,6 @@ private fun AssetCard(
             .padding(CARD_OUTER_PADDING)
             .fillMaxWidth()
             .thumbnailAspectRatio()
-            // exp#3 合入（任务V V1，2026-09-10，exp#6 已铺开至五网格路由）：与详情页舞台同 key 配对；scope 缺位
-            // （非网格路由页面/壳层未包 SharedTransitionLayout）时原样返回，渲染零变化。
-            // 回退=删此行（回退 exp#3 见 motion/QimengSharedTransition.kt 头注释）
-            .qimengAssetPosterSharedBounds(asset.id)
             // 先 clip 后 clickable：ripple 限定在圆角内；仅默认点击态，无缩放/按压动画
             .clip(RoundedCornerShape(cornerRadius))
             .clickable(onClick = {

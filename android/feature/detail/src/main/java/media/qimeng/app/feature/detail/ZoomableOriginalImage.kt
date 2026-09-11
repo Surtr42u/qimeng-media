@@ -81,17 +81,16 @@ internal fun ZoomableOriginalImage(
     // onError 置位、onSuccess 清零；重试经 [retryAttempt] 递增触发请求重建
     var decodeFailed by remember { mutableStateOf(false) }
     var retryAttempt by remember { mutableIntStateOf(0) }
-    // 原图就绪态（exp#4 前进转场竞态修复·占位翼）：驱动灰色占位层的摘除时机。
+    // 原图就绪态（exp#4 占位翼）：驱动灰色占位层的摘除时机。
     // 与 decodeFailed 同款「最近一次完成的结果」口径：新请求发起时清零、onSuccess 置位
     var imageReady by remember(asset.id) { mutableStateOf(false) }
 
     Box(modifier = modifier) {
-        // 占位翼（exp#4 分支提案）：原图解码完成前舞台先以品牌灰色块参与共享边界动画
-        // （exp#3 实证：此前此间舞台只透出 backdrop 主题底，与壳层页面同色，前进转场的
-        // sharedBounds 色块不可感知）。token=secondaryContainer 与网格卡占位/错误底同源；
-        // 就绪即摘除——加载完成后的 letterbox 底仍归调用方打底的 backdrop（K1 单源口径
-        // 不动，本层只补「未就绪瞬间」的可见形态）。分支提案记档：本件原「抽取零行为
-        // 变化」口径自此在 ui/expressive 分支破例一处，回退=删本段 Box 与 imageReady
+        // 占位翼（exp#4；动效机制已随任务W W1 撤除，占位保留）：原图解码完成前舞台先以
+        // 品牌灰色块显形（此前此间只透出 backdrop 主题底，与壳层页面同色，不可感知）。
+        // token=secondaryContainer 与网格卡占位/错误底同源；就绪即摘除——加载完成后的
+        // letterbox 底仍归调用方打底的 backdrop（K1 单源口径不动，本层只补「未就绪瞬间」
+        // 的可见形态）。回退=删本段 Box 与 imageReady
         if (!imageReady && !decodeFailed) {
             Box(
                 modifier = Modifier

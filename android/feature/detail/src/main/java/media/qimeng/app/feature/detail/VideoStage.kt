@@ -433,11 +433,11 @@ internal fun VideoStage(
             // 海报态：视频帧 + 中央播放钮，整块可点起播（播放钮为视觉锚点）。
             // I7 整屏舞台改 Fit contain：G1a 固定比例舞台下 Crop≈Fit，整屏后 Crop 会裁掉
             // 海报边缘且与播放 letterbox 跳变——对齐旧版 ZoomImageView 预览的 contain 语义；
-            // 占位（exp#4 前进转场竞态修复·占位翼）：海报未就绪底由 backdrop（主题底，
-            // exp#3 实测与壳层页面同色，sharedBounds 转场期间空舞台不可感知）改为品牌灰
-            // secondaryContainer——与网格卡 QimengThumbnail 占位/错误底同 token，转场期间
-            // 舞台以可辨「色块」形态连续移动；加载完成后的 letterbox 底仍是调用方打底的
-            // backdrop（K1 单源口径不动：本占位只作用于未就绪瞬间，不参与稳态渲染）。
+            // 占位（exp#4 占位翼；动效机制已随任务W W1 撤除，占位保留）：海报未就绪底由
+            // backdrop（主题底，与壳层页面同色，不可感知）改为品牌灰 secondaryContainer——
+            // 与网格卡 QimengThumbnail 占位/错误底同 token，未就绪期舞台以可辨「色块」形态
+            // 出现；加载完成后的 letterbox 底仍是调用方打底的 backdrop（K1 单源口径不动：
+            // 本占位只作用于未就绪瞬间，不参与稳态渲染）。
             // 错误底保留 backdrop（K1 既有口径：对齐旧版海报透出 qmColorBg，不在本翼扩权）
             AsyncImage(
                 model = asset.thumbUrl,
