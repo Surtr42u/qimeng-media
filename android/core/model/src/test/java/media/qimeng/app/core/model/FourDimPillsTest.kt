@@ -31,7 +31,8 @@ class FourDimPillsTest {
     }
 
     @Test
-    fun `作者行前置全部胶囊 payload 为空`() {
+    fun `作者行前置全部胶囊 行空选中 payload 为空`() {
+        // W6 #2 对标旧实录（C8 §3.3 S2/S3 翻案）：行内无候选选中时「全部」实底高亮（selected=true）
         val model = FourDimPillModel(
             filter = AlbumFilterState(),
             activeDim = AlbumDim.AUTHOR,
@@ -44,9 +45,30 @@ class FourDimPillsTest {
         val pills = FourDimPills.pillsFor(model, AlbumDim.AUTHOR)
         assertEquals("全部 (100)", pills.first().text)
         assertNull(pills.first().payload)
-        assertFalse(pills.first().selected)
+        assertTrue(pills.first().selected)
         // 「其他」在作者行同样垫底
         assertEquals("其他", pills.last().text.substringBefore(" ("))
+    }
+
+    @Test
+    fun `作者行有选中时全部胶囊不选中`() {
+        // W6 #2 对标旧实录：行内点选候选后「全部」让位为未选中，候选丸转选中（点击清行行为不变）
+        val picked = option("尼尔", 30)
+        val model = FourDimPillModel(
+            filter = AlbumFilterState(authors = setOf(picked)),
+            activeDim = AlbumDim.AUTHOR,
+            partitionOptions = emptyList(),
+            authorOptions = listOf(picked, option("其他", 25)),
+            characterOptions = emptyList(),
+            typeOptions = emptyList(),
+            totalForAllPill = 100,
+        )
+        val pills = FourDimPills.pillsFor(model, AlbumDim.AUTHOR)
+        assertFalse(pills.first().selected)
+        assertTrue(pills[1].selected)
+        // 角色行同口径：行空=「全部」选中
+        val characterModel = model.copy(filter = model.filter.copy(characters = emptySet()), activeDim = AlbumDim.CHARACTER)
+        assertTrue(FourDimPills.pillsFor(characterModel, AlbumDim.CHARACTER).first().selected)
     }
 
     @Test

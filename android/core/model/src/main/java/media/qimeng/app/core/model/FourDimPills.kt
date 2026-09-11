@@ -118,7 +118,7 @@ object FourDimPills {
                         payload = zoneFromKey(option.key),
                     )
                 }
-            AlbumDim.AUTHOR -> listOf(allPillSpec(model)) + model.authorOptions
+            AlbumDim.AUTHOR -> listOf(allPillSpec(model, model.filter.authors.isEmpty())) + model.authorOptions
                 .map { option ->
                     PillSpec(
                         text = option.labelWithCount(),
@@ -126,7 +126,7 @@ object FourDimPills {
                         payload = option,
                     )
                 }
-            AlbumDim.CHARACTER -> listOf(allPillSpec(model)) + model.characterOptions
+            AlbumDim.CHARACTER -> listOf(allPillSpec(model, model.filter.characters.isEmpty())) + model.characterOptions
                 .map { option ->
                     PillSpec(
                         text = option.labelWithCount(),
@@ -146,10 +146,16 @@ object FourDimPills {
                 }
         }
 
-    /** 「全部」胶囊：清本行；计数 = 分区栏 all 桶（当前其他维选择下的总数，Web 同口径） */
-    private fun allPillSpec(model: FourDimPillModel): PillSpec = PillSpec(
+    /**
+     * 「全部」胶囊：清本行；计数 = 分区栏 all 桶（当前其他维选择下的总数，Web 同口径）。
+     * 选中态（任务W W6 #2 对标旧版，原 C8 报告 §3.3 S2/S3 差异项拍板翻案）：
+     * 旧实录该丸在行内无具体候选选中时深底白字实底高亮（分区/类型行的「全部」桶
+     * 本就按 key 判选中，作者/角色行此前硬编码恒不选中——即 C8 记档的交互口径差），
+     * 现按行选中集是否为空对齐旧版；点击=清行、payload、查询投影零变化（纯展示位）。
+     */
+    private fun allPillSpec(model: FourDimPillModel, rowAllActive: Boolean): PillSpec = PillSpec(
         text = model.totalForAllPill?.let { "全部 ($it)" } ?: "全部",
-        selected = false,
+        selected = rowAllActive,
         payload = null,
     )
 

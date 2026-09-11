@@ -38,6 +38,7 @@ import media.qimeng.app.core.model.TagChip
 import media.qimeng.app.core.ui.component.QimengCapsuleTextField
 import media.qimeng.app.core.ui.icon.ClearIcon
 import media.qimeng.app.core.ui.theme.QimengDimens
+import media.qimeng.app.core.ui.theme.qimengFilledButtonColors
 
 // ---------- 页面私有尺寸档（本文件单源；来源注释随条目） ----------
 
@@ -184,7 +185,8 @@ internal fun DetailTagManageSheet(
                     Text(text = stringResource(R.string.detail_cancel))
                 }
                 Spacer(modifier = Modifier.width(QimengDimens.SpaceS))
-                Button(onClick = onSave, enabled = !savingTags) {
+                // 保存中=禁用态大面积容器，夜间走不透明禁用底消 dither 横带（W6 #49）
+                Button(onClick = onSave, enabled = !savingTags, colors = qimengFilledButtonColors()) {
                     if (savingTags) {
                         // V6：expressive LoadingIndicator 替换（仅控件替换，size 约束原样）
                         LoadingIndicator(modifier = Modifier.size(TAG_SAVE_PROGRESS_SIZE))

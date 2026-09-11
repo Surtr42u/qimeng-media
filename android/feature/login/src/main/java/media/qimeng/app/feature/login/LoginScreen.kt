@@ -38,6 +38,7 @@ import media.qimeng.app.core.data.repository.LoginError
 import media.qimeng.app.core.ui.component.Dimens
 import media.qimeng.app.core.ui.component.QimengCapsuleTextField
 import media.qimeng.app.core.ui.theme.QimengDimens
+import media.qimeng.app.core.ui.theme.qimengFilledButtonColors
 
 /**
  * 登录页（M4-1 冻结最小版）：服务器地址 + 密码两字段。
@@ -107,6 +108,8 @@ fun LoginScreen(
             Button(
                 onClick = viewModel::submit,
                 enabled = !uiState.isSubmitting,
+                // 提交中=禁用态大面积容器，夜间走不透明禁用底消 dither 横带（W6 #49）
+                colors = qimengFilledButtonColors(),
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 if (uiState.isSubmitting) {
