@@ -17,7 +17,7 @@
 - **W8 SKIPPED（据实处置）**：网络实测 maven.google.com 与 github 均不可达——AGP9/androidx/SDK37 升级产物源断、CI 第五 job 不可验、push 不可用；叠加距 8:50 定时暂停 <3h 不满足三步走独立验证预算。按存疑停手纪律零改动跳过，**#47 升级解锁维持开放**，下次会话照仓库外 a-s3-agp9-upgrade-memo.md §5.2 继续。
 - **台账落账**：《待拍板-20260907.md》追加「任务W 收官落账」节——#45/#49/#2/#50/#20 五项落地关闭、#47 随 W8 维持开放、#44 改注完成（详情页删除入口随整理胶囊退役）、U-4 销账确认；**新增待拍板三项**：①63px 沉浸切换位移（壳层 innerPadding 布局平移，206 笔，维持现状 vs 旧版架构待选）；②作者 Sheet 点外不关闭口径确认（205 笔）；③滑切 push 系统栏 1-2 帧白条闪烁（210 笔，handoff-ack 留档）。
 - **新发现记档（未立批）**：视频详情横滑禁用（疑播放态语义）/keyevent4 滑切栈撤销语义/长视频总时长未实测（数据集仅短片）/harness 资产命名不一致/测试服务端单 token 模型踢登出。
-- 本笔纯文档零代码；全卷测试资产净增：JVM 单测 +7 用例（PlayerMath 3+SiblingSwipeImmersionRequest 4）+FourDimPills 用例翻新增 1。
+- 本笔纯文档零代码；全卷测试资产净增：JVM 单测 +8 用例（PlayerMath 3+SiblingSwipeImmersionRequest 4+AuthorCollectionRoutes 中文 id 编码 1——211 笔初稿漏计 W3 此项，终审勘误追注）+FourDimPills/AuthorCollectionRoutes/DetailViewModel（删 upNext 用例）断言翻新各 1。
 
 ## feat(app): 任务W W7 批——全屏滑切保持全屏（#20 对标旧版）——沉浸交接单+滑切根因定案（2026-09-12 第二百一十笔）
 
