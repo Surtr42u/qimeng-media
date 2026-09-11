@@ -9,6 +9,16 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## fix(app): 任务W W5 播放器总时长卡死修复——全屏态 adopt 挂载补同步+冻结件例外三件套（2026-09-12 第二百零七笔）
+
+执行 AI：GLM-5.3-Flash（主代理调度+模拟器实测验收；executor 子代理实现，reviewer 子代理对抗审查）
+
+- **#50 全屏态总时长恒 00:00 修复**：根因=全屏覆盖层 VideoFullScreenOverlay 新建第二个 BiliPlayerView 以 adopt 方式挂同一 ExoPlayer 时 STATE_READY 转换已过（Player.Listener 只报状态变化），原唯一赋值点（READY 分支）在该实例上永不触发，恒显构造器初值 00:00；排版态正常系其挂载先于 prepare 赶得上 IDLE→READY。修法=setPlayer 挂载听众后按「时长可用」判定立即补同步 syncTotalTimeText()，READY 分支收敛到同一方法保单一事实源；ENDED 态进全屏顺带覆盖。
+- **冻结搬运件例外三件套**（BiliPlayerView）：类 KDoc 增补适配点⑥（解冻令+根因+修法）；判定/格式化抽 PlayerMath.totalDurationText/formatDurationMs 纯函数（formatMs 逐行搬移委托，调用面零变动）；PlayerMathTest 新增 3 用例（共 10 用例 0 失败锁定）。
+- **迟滞条件项分流=不改**：W4 矩阵实测拖动 seek 跳转生效、松手无回弹，任务书条件项「W4 后仍慢才改」不触发，轮询/SeekBar/手势链零触碰，候选①②③留档备查。
+- **模拟器实测验收**（主会话，18461 虚构库）：内嵌态总时长 0:02 正常；ENDED→重播→全屏路径总时长 0:02 正确显示（修复前 00:00）；退出全屏正常回竖屏。数据集仅 0:02 短片，长片路径未实测（判定逻辑时长无关，机制一致）。
+- 门禁三连全绿（低 CPU 档；build 6s/test 4s+XML 实证 10 用例非缓存/lint 1m13s）；证据 %TEMP%\qimeng-w5-evidence\。
+
 ## feat(app): 任务W W4 批——交互态锁滚动落地+11项手势矩阵全验（2026-09-12 第二百零六笔）
 
 执行 AI：GLM-5.3-Flash（主代理调度；executor 子代理四轮实现/收尾，general-purpose 测试子代理矩阵取证，reviewer 子代理终审【通过】，主代理模拟器裁决）

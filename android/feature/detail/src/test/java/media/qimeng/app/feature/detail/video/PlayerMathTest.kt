@@ -63,4 +63,31 @@ class PlayerMathTest {
     fun speedButtonTextFallsBackToNxForNonStandardTier() {
         assertEquals("1.25x", speedButtonText(1.25f))
     }
+
+    // ---------- W5 #50：总时长赋值判定 + 时长格式化（冻结件例外三件套） ----------
+
+    @Test
+    fun totalDurationTextNullWhenDurationUnavailable() {
+        // 时长不可用（0=TIME_UNSET 折算/非 READY；负数防御）→ null=不赋值、控件保持现状
+        assertEquals(null, totalDurationText(0L))
+        assertEquals(null, totalDurationText(-1L))
+    }
+
+    @Test
+    fun totalDurationTextFormatsPositiveDuration() {
+        // 正值时长即产出格式化文本（#50 修复口径：挂载时 READY 已过也能补出总时长）
+        assertEquals("0:02", totalDurationText(2_000L))
+        assertEquals("1:01", totalDurationText(61_000L))
+        assertEquals("1:00:00", totalDurationText(3_600_000L))
+    }
+
+    @Test
+    fun formatDurationMsMatchesLegacyFormatMsBehavior() {
+        // 原 BiliPlayerView.formatMs 行为锁定：小时档 h:mm:ss / 分钟不补零 m:ss / 负时长带前缀
+        assertEquals("12:34", formatDurationMs((12 * 60 + 34) * 1000L))
+        assertEquals("0:05", formatDurationMs(5_000L))
+        assertEquals("2:03:04", formatDurationMs((2 * 3600 + 3 * 60 + 4) * 1000L))
+        assertEquals("-0:05", formatDurationMs(-5_000L))
+        assertEquals("-1:00:00", formatDurationMs(-3_600_000L))
+    }
 }

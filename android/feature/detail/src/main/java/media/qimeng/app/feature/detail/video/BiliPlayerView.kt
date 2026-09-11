@@ -49,6 +49,13 @@ import kotlin.math.min
  *      全类型可点，已被 2026-09-09 拍板 #23 推翻——现行单级横屏全屏，仅横屏视频可触发，
  *      竖屏视频无反应旧版同款），并补画面交接三件套 [setPlayer] adopt / [rebindPlayer] /
  *      [detachPlayer]（视频全屏覆盖层与排版态视图共用同一 ExoPlayer）。
+ *   ⑥ W5 #50（2026-09-12 用户拍板「可以修复」=解冻令）总时长卡 00:00 最小修复：全屏覆盖层
+ *      新建本视图以 adopt=true 挂同一播放器时，STATE_READY 转换早已发生（Player.Listener
+ *      只报状态*变化*），原「总时长仅 READY 分支赋值」在新视图上永不触发 → 全屏态恒 00:00
+ *      （2026-09-12 主会话实测复现；排版态正常系其挂载先于 prepare、赶得上 READY 转换）。
+ *      修法=[setPlayer] 挂载即按「时长可用」判定补同步一次；判定与格式化抽为
+ *      PlayerMath.totalDurationText/formatDurationMs 纯函数（formatMs 改委托，行为不变），
+ *      单测锁定于 PlayerMathTest。其余逐行原样。
  *
  * 手势冻结口径（G1~G9）：G1 竖屏单击播停/横屏单击显隐控制器；G2 横屏双击播停；
  * G3 长按 2x 松开还原（竖屏下方锁速区拖入锁定/拖出退出，长按期间禁起拖）；
@@ -126,8 +133,8 @@ class BiliPlayerView @JvmOverloads constructor(
 
         override fun onPlaybackStateChanged(playbackState: Int) {
             if (playbackState == Player.STATE_READY) {
-                val d = duration
-                if (d > 0) totalTimeText.text = formatMs(d)
+                // W5 #50：赋值判定收敛到 syncTotalTimeText（与 setPlayer 挂载补同步同源同口径）
+                syncTotalTimeText()
             } else if (playbackState == Player.STATE_ENDED) {
                 // G9：播完强制显示控制器（再点播放由 togglePlayPause/startPlayback seekTo(0)）
                 showController(true)
@@ -482,6 +489,9 @@ class BiliPlayerView @JvmOverloads constructor(
         playerView.player?.removeListener(playerListener)
         playerView.player = player
         player.addListener(playerListener)
+        // W5 #50：全屏覆盖层等 adopt 场景挂载时 READY 转换早已发生（Listener 只报状态变化，
+        // 原唯一赋值点 onPlaybackStateChanged 在新视图上永不触发 → 总时长恒 00:00），挂载即补同步
+        syncTotalTimeText()
         // G8：挂载即按静音位压 volume（搬运件 isMuted 初始 true → 首挂即静音）；
         // adopt 路径取快照（见上），交接不丢用户已调状态
         applyMuteAndSpeed(muted = targetMuted, speed = targetSpeed)
@@ -519,6 +529,15 @@ class BiliPlayerView @JvmOverloads constructor(
     fun detachPlayer() {
         playerView.player?.removeListener(playerListener)
         playerView.player = null
+    }
+
+    /**
+     * 总时长文本同步（W5 #50）：时长可用即赋值、不可用（非 READY/TIME_UNSET）保持现状，
+     * 不做清零回退。判定口径=纯函数 [totalDurationText]（单测锁定）；
+     * READY 分支与 [setPlayer] 挂载补同步共用本方法，保证单一事实源。
+     */
+    private fun syncTotalTimeText() {
+        totalDurationText(duration)?.let { totalTimeText.text = it }
     }
 
     /** 静音位/倍速的「镜像字段 + 控件 + 播放器」三处对齐（交接路径共用，防镜像与实况脱节） */
@@ -897,18 +916,8 @@ class BiliPlayerView @JvmOverloads constructor(
     /** 当前是否处于全屏状态 */
     fun getFullscreen(): Boolean = isFullscreen
 
-    internal fun formatMs(ms: Long): String {
-        val absMs = abs(ms)
-        val totalSec = absMs / 1000
-        val h = totalSec / 3600
-        val m = (totalSec % 3600) / 60
-        val s = totalSec % 60
-        val prefix = if (ms < 0) "-" else ""
-        // 固定使用 Locale.US，确保时长始终输出拉丁数字（避免非拉丁 locale 下显示异常字符）
-        val locale = java.util.Locale.US
-        return if (h > 0) "$prefix$h:${String.format(locale, "%02d", m)}:${String.format(locale, "%02d", s)}"
-        else "$prefix${m}:${String.format(locale, "%02d", s)}"
-    }
+    /** 时长格式化（W5 #50 三件套：方法体已搬至 PlayerMath.formatDurationMs 纯函数，本委托保留调用面） */
+    internal fun formatMs(ms: Long): String = formatDurationMs(ms)
 
 }
 
