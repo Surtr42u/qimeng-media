@@ -277,10 +277,24 @@ fun DetailScreen(
                     .offset(y = liveNavBarBottomHeight)
                     .background(stageBackdrop),
             )
+            // 任务W W4 交互态锁滚动：verticalScroll 门控在 chromeEffective（=chromeVisible &&
+            // !playerActive，上方 L~100 现成组合态，与沉浸系统栏/chrome 显隐同源）——海报态
+            // （初始，chrome 显）保留可小幅下滑（「详情页时可以下滑一下」）；单击图片进沉浸
+            // 全屏态、视频播放器活动期（播放/暂停/ENDED）一律锁死滚动。语义对齐旧版「媒体态
+            // 不可滚、下滑只在最初详情页」：GUIDE_UI 口径媒体层恒 edge-to-edge 单层容器无
+            // 滚动语义，新版下滑区是拍板⑧超规格件，故仅在海报态放行；沉浸态放任滚动还会
+            // 让父层 touch slop 劫持 ZoomImageView 未放大态手势、整页带动舞台盒（Bug A 观感
+            // 根因之一）。横屏全屏=独立 Dialog 窗口（VideoStage），本就摸不到背后滚动，无须
+            // 处理。ScrollState 具名 remember：enabled=false 只停手势不清状态，退回海报态
+            // 解锁后滚动位置原样保留（旧版「位置保留」语义）。设备实锤复测（2026-09-12）：
+            // 沉浸态纵滑 scrollY 全程 0=锁滚生效；残余的整列 63px 位移系系统栏 inset 收缩
+            // （contentH 2209→2272）经壳层 innerPadding 引发的布局平移，归 W2 域沉浸几何，
+            // 修法涉壳层 padding（任务书停手点），记档待用户拍板，与本门控无关
+            val detailScrollState = rememberScrollState()
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .verticalScroll(rememberScrollState()),
+                    .verticalScroll(detailScrollState, enabled = chromeEffective),
             ) {
                 // 第一屏：媒体舞台（内容区整屏盒，底色随沉浸切换——K1 单源口径见上注；
                 // 顶部越界带由上方背板填充条补足，见 D1 重做注）+ 渐变 chrome 浮层（chrome
