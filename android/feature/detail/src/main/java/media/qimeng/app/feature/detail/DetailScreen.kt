@@ -80,7 +80,9 @@ import media.qimeng.app.core.ui.theme.QimengDimens
  * @param assetId 路由参数（ViewModel 经 SavedStateHandle 同键读取；此处显式保留供预览/测试）
  * @param onBack 返回（壳层 popBackStack）
  * @param onOpenAsset 跳资产（壳层导航 push 叠栈）：兄弟资产滑动换件走此回调（批次清单
- *   就是当前清单，不换批）——push 叠栈 = 浏览历史语义
+ *   就是当前清单，不换批）——push 叠栈 = 浏览历史语义。任务W W7：沉浸态滑切经
+ *   [SiblingSwipeImmersionRequest] 交接单让目标屏 chromeVisible 以 false 起步
+ *   （对标旧版「媒体层恒全屏」；海报态滑切目标仍落排版态）
  * @param onOpenAuthor 跳作者集合页（作者 Sheet「进入作者主页」，壳层导航 push 叠栈）
  */
 @Composable
@@ -93,8 +95,13 @@ fun DetailScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    // 沉浸模式 chrome 显隐（媒体单击切换，默认可见；每屏独立——兄弟 push 是新路由实例）
-    var chromeVisible by rememberSaveable { mutableStateOf(true) }
+    // 沉浸模式 chrome 显隐（媒体单击切换；默认可见=排版态，网格入口基线不变）。
+    // 任务W W7（#20 对标旧版「媒体层恒全屏」）：沉浸态滑切是 push 叠栈（新路由实例），
+    // 源屏置位 SiblingSwipeImmersionRequest 后，本 initializer 首次组合时消费命中 →
+    // 目标屏以 chromeVisible=false（沉浸）起步，滑切目标保持全屏语义；海报态滑切不置位，
+    // 目标落排版态不变。只有新组合实例才执行 initializer（返回 pop/进程重建走
+    // rememberSaveable 恢复，不读交接单），栈内各屏互不干扰
+    var chromeVisible by rememberSaveable { mutableStateOf(!SiblingSwipeImmersionRequest.consume()) }
     // 视频播放器活动态镜像（VideoStage 上报）：活动期 chrome 让位播放器控制器
     var playerActive by remember { mutableStateOf(false) }
     val chromeEffective = chromeVisible && !playerActive
@@ -149,9 +156,15 @@ fun DetailScreen(
     }
 
     // 兄弟资产切换回调单源（拍板③：目标解析失败（越界/无批次/缺参）静默不动；批次清单
-    // 就是当前清单，不换批；push 叠栈 = 浏览历史语义）
+    // 就是当前清单，不换批；push 叠栈 = 浏览历史语义）。任务W W7（#20 对标旧版「媒体层
+    // 恒全屏」）：源屏沉浸态（chromeVisible=false）且目标解析成功时，push 前置位沉浸
+    // 交接单 → 目标屏 chromeVisible 以 false 起步，滑切目标保持全屏；置位放在 moveBy
+    // 成功分支内 = 只有真实发生的导航才携带语义，解析失败不留孤儿标志误染后续入口
     val onSiblingNavigate: (Int) -> Unit = { delta ->
-        viewModel.moveBy(delta)?.let { targetId -> onOpenAsset(targetId) }
+        viewModel.moveBy(delta)?.let { targetId ->
+            if (!chromeVisible) SiblingSwipeImmersionRequest.request()
+            onOpenAsset(targetId)
+        }
     }
 
     if (state.isLoading) {
