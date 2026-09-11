@@ -9,6 +9,15 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## docs(app): 删除 docs/HANDOVER_APP.md——交接手册职能终结，全仓活引用同步改指 CHANGELOG 与仓库外任务书（2026-09-11 第二百笔）
+
+执行 AI：GLM-5.3-Flash（主代理，用户拍板「整个文件都删除」）
+
+- **删除**：`docs/HANDOVER_APP.md`（85KB/203 行）。定性：M4 交接手册+批次任务书职能已随 M4 里程碑达成（2026-09-08）终结——「最后更新」链/批次总表/各卷记录与 CHANGELOG 逐笔重复；M4-0~M4-7 任务书与已收官卷（D/E/F/G/H/I/J/K/L/V）的执行记录以 CHANGELOG 为事实源，在办卷任务书以仓库外《QimengNAS\任务*.md》为事实源；§4 通用约束的活条款（门禁三连命令/测试纪律/存疑停手）分散存活于 AGENTS.md 铁律、HANDOVER.md「执行调度」节与各在办任务书「流程约束」节，无信息丢失。
+- **仓库内引用同步（8 文件）**：AGENTS.md（路由表 UI 行+旧项目节）、android/README.md（必读清单）、docs/HANDOVER.md（接手第一步/执行调度 2·3·8 条/当前待办指针）、docs/adr/0014（后果节指针）、docs/adr/INDEX.md（ADR-0013/0014 两行落实文件列）、docs/PROJECT_PLAN.md（M4 执行批次说明+四条勾选注改指 CHANGELOG）、docs/REPLICATION_GAPS.md（⑩行裁决依据改指 CHANGELOG）。
+- **仓库外在办任务书同步（2 文件）**：《任务W-详情精简与播放体验卷.md》（W6 收官批清单与 commit 格式去掉 HANDOVER_APP，W3~W6 继续执行不受阻）、《任务N-原生View移植卷.md》（模拟器纪律节引用措辞）。
+- 历史记录（CHANGELOG 往笔正文、废弃 ADR-0013 正文、HANDOVER_UI/HANDOVER 文头叙事）中的 HANDOVER_APP 提及按「历史不改写」惯例保留；Makefile/libs.versions.toml 及 Kotlin 注释中约 14 处「HANDOVER_APP 通用约束 N」为出处级引用、约束正文均自包含，不为此翻动代码文件，一并保留。
+
 ## fix(app): 任务W W2 图片进入跳动根修——舞台盒沉浸几何冻结根除 chrome 切换居中漂移（2026-09-11 第一百九十九笔）
 
 执行 AI：GLM-5.3（执行子代理，任务W W2 批）；主会话派发（流程约束：写码一律子代理）

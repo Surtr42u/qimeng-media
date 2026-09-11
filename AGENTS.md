@@ -21,7 +21,7 @@
 | 数据库改动 | `docs/adr/0003`、`docs/adr/0004`（身份机制）、`docs/adr/0011`（迁移纪律）+ migrations 规则 |
 | 安全相关（鉴权/上传/文件操作） | `docs/SECURITY.md`（红线清单） |
 | 监控/指标 | `docs/OBSERVABILITY.md` |
-| UI 开发（web/android） | `docs/adr/0008`（UI 解耦策略）+ **Android 另读 `docs/adr/0014` + `docs/HANDOVER_APP.md`**（M4 Compose 路线与批次任务书） |
+| UI 开发（web/android） | `docs/adr/0008`（UI 解耦策略）+ **Android 另读 `docs/adr/0014`**（M4 Compose 路线；批次任务书=仓库外 `..\任务*.md`，批次记录见 `docs/CHANGELOG.md`） |
 | 新增 Go 包 / 模块边界 | `docs/adr/0010` + `docs/ARCHITECTURE.md` §5.1 |
 | 能力缺口评估 / 新功能提案 | `docs/CAPABILITY_MAP.md`（能力地图）+ `docs/adr/INDEX.md` |
 | 部署/Docker/NAS | `docs/PROJECT_PLAN.md` M5 + 仓库外 `..\dev-tools\TOOLCHAIN_GUIDE.md` |
@@ -52,7 +52,7 @@
 - 旧项目 = 领域知识库（推荐算法/筛选/统计/作者规则已提炼进 `docs/DOMAIN_RULES.md`，服务端 M3 实现完毕）
 - **M4 App 端走 Compose 重建（ADR-0014，2026-09-04 用户二次拍板「先进优先」）**：交互规格照搬其 `docs/GUIDE_UI.md`（唯一规格书），实现代码全部 Compose 新写，**禁止搬运旧 Kotlin 实现**；例外：复杂自绘控件（BiliPlayerView/ZoomImageView）允许 AndroidView 互操作桥接，桥接清单入交付报告
 - **旧项目待退役（ADR-0015）**：M6 单机形态（Go 服务端内嵌手机）验收通过后归档——数据迁移走 `POST /import/qimeng-backup`（DOMAIN_RULES §10），媒体文件原地注册为库
-- 同日 ADR-0013（旧 UI 照搬路线）已废弃，其架构调研结论仍被 HANDOVER_APP 引用作规格参考
+- 同日 ADR-0013（旧 UI 照搬路线）已废弃，其架构调研结论仍有效（见该 ADR 与 `docs/adr/INDEX.md` 记档）
 
 ## 回复签名
 
