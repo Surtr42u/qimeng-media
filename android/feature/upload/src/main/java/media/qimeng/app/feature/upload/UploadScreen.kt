@@ -57,6 +57,7 @@ import media.qimeng.app.core.model.UploadStatus
 import media.qimeng.app.core.ui.component.QimengCapsuleTextField
 import media.qimeng.app.core.ui.component.QimengSegPill
 import media.qimeng.app.core.ui.component.QimengTopBar
+import media.qimeng.app.core.ui.theme.qimengFilledButtonColors
 
 /**
  * 上传主通道页（M4-5）：选库 → 选目录（可新建）→ 选文件（SAF/分享接收）→ 串行队列进度。
@@ -210,6 +211,8 @@ fun UploadScreen(
                 enabled = state.pendingItems.isNotEmpty() &&
                     state.selectedLibrary != null &&
                     !state.enqueueing,
+                // 第 196 笔噪点横带本尊：禁用态通栏容器夜间走不透明底消 dither（W6 #49）
+                colors = qimengFilledButtonColors(),
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(if (state.enqueueing) "正在创建任务…" else "开始上传（${state.pendingItems.size} 个）")

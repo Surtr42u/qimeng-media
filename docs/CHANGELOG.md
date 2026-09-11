@@ -9,6 +9,15 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## fix(app): 任务W W6 车道B #49 夜间禁用钮噪点修复+#2 「全部」丸选中态对标旧版（2026-09-12 第二百零九笔）
+
+执行 AI：GLM-5.3-Flash（主代理调度；executor 子代理实现+装机实测，reviewer 子代理对抗审查【通过】并 --rerun 非缓存复核）
+
+- **#49 夜间禁用钮噪点根修**：根因=M3 Button 禁用态容器 onSurface 12% alpha 大面积低 alpha 纯色在夜间深底+模拟器 GPU 下逐帧 dither 抖动成横带（196 笔定性）。修法=core/ui 新增单源 `qimengFilledButtonColors()`——日间原样 ButtonDefaults（构造性零回归），夜间仅覆盖 disabledContainerColor=surfaceContainerHighest（不透明无 dither 面，禁用语义仍可辨）；全仓可禁用实底 Button 共 3 处接线（UploadScreen 开始上传[196 笔本尊]/LoginScreen 提交/DetailTagSheet 保存），审查 grep 复核其余 4 处 Button 均无 enabled 参数非漏网。装机对照：夜间禁用钮横带消除、日间形态不变。
+- **#2 「全部」丸选中态对标旧版**：真差非颜色/字重/形状，而是 FourDimPills allPillSpec 把作者/角色行「全部」selected=false 硬编码（C8 记档 B2 口径）——增参 rowAllActive，作者/角色行按行空判选中（与分区/类型行同构），点击清行/payload/查询投影零变化；对标旧实录「全部 (N)」深底白字实底高亮一致（并排对照 s2-old-vs-new.png），点选互斥行为实测正常（33→4 收窄）。
+- **测试**：FourDimPillsTest 翻转旧断言+新增互斥双向用例（:core:model 108 用例、:core:ui 19 用例审查 --rerun 非缓存全绿）；门禁三连全绿（低 CPU 档）。
+- **记档**：本实例 screenrecord 损坏恒 1 帧，修前瞬态噪点证据依赖 196 笔 canon 帧（btn-031）拼接对照；夜间判定用 background 亮度代理非显式 darkTheme 标志（现 scheme 鲁棒，未来新主题需复核）。证据 %TEMP%\qimeng-w6-evidence\app\。
+
 ## fix(web): 任务W W6 车道A #45 dwell<1s 过滤回退——V5 口径 B 翻案落地上报端+DOMAIN_RULES §5（2026-09-12 第二百零八笔）
 
 执行 AI：GLM-5.3-Flash（主代理调度；executor 子代理实现，reviewer 子代理对抗审查【通过】）
