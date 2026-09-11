@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
@@ -201,6 +202,7 @@ fun DetailScreen(
             // （stageEdgeToEdgeCompensationPx 按态裁决，单测锁定）。
             val density = LocalDensity.current
             val liveStatusBarTopPx = WindowInsets.statusBars.getTop(density)
+            val liveNavBarBottomPx = WindowInsets.navigationBars.getBottom(density)
             // 记忆最近一次可见态 inset：实时值 >0 才刷新（零值不覆盖，沉浸期记忆值得以
             // 存续）；SideEffect 写回避免组合期反向写状态。首组初值=实时值（进页时系统栏
             // 恒可见），进程重建后同口径自愈
@@ -214,14 +216,64 @@ fun DetailScreen(
                 barsVisible = chromeEffective,
             )
             val stageTopBandHeight = with(density) { statusBarTopPx.toFloat().toDp() }
-            // 舞台盒高=壳层内容区可视高（BoxWithConstraints.maxHeight，G1a 口径不变）
-            val stageViewportHeight = maxHeight
+            // 舞台盒高 = 可见态稳定高度（任务W W2 沉浸几何冻结，2026-09-11）：此前直接取
+            // BoxWithConstraints.maxHeight（壳层内容区高），系统栏显隐会经壳层 Scaffold
+            // innerPadding 改变内容区高——chrome 切换期舞台盒随 insets 动画逐帧变高变矮，
+            // ZoomImageView 的 UP 松手 clampTranslation 按「当时盒高」垂直再居中（搬运件
+            // 手势语义），若松手落在动画中间态（如 status 已回 nav 未回的 2272 高），随后
+            // 盒高落回 2209 时 preserveScreenPosition 只按窗口位移补偿、不感知纯尺寸收缩
+            // ——图片停驻在按瞬态盒高算出的位置，实测（emulator-5562）一个隐/显周期后
+            // 持久偏移 +31.5px（=nav inset 63 之半），且下一次单击松手时再「跳回」。
+            // 旧版不跳的根因 = 容器层几何恒定（fragment_media_detail.xml 单层 match_parent，
+            // GUIDE_UI L162「系统栏显隐不触发布局变化，避免图片重新居中」）。本式以
+            // screenPx（恒等式：内容高+两 inset，逐帧不变）减去 max(实时, 见过最大) 的两
+            // inset 稳定值，把舞台盒高钉死在可见态稳定值——chrome 显隐全程与动画中间态
+            // 盒高恒 2209 级，图片居中基准不再漂移；纯函数 stageImmersiveViewportHeightPx
+            // 单测锁定（见 StageViewportHeightTest）
+            val maxSeenStatusBarTopPx = remember { mutableIntStateOf(liveStatusBarTopPx) }
+            val maxSeenNavBarBottomPx = remember { mutableIntStateOf(liveNavBarBottomPx) }
+            SideEffect {
+                // 单调上探：栏显隐动画的中间值（如 13/6）不回写，只有更大的稳定值
+                //（字号/分屏等真实 inset 变化）才采纳；回缩类变化进程内保持旧值（记档）
+                if (liveStatusBarTopPx > maxSeenStatusBarTopPx.intValue) {
+                    maxSeenStatusBarTopPx.intValue = liveStatusBarTopPx
+                }
+                if (liveNavBarBottomPx > maxSeenNavBarBottomPx.intValue) {
+                    maxSeenNavBarBottomPx.intValue = liveNavBarBottomPx
+                }
+            }
+            val stageViewportHeightPx = stageImmersiveViewportHeightPx(
+                liveContentHeightPx = with(density) { maxHeight.roundToPx() },
+                liveStatusBarTopPx = liveStatusBarTopPx,
+                liveNavBarBottomPx = liveNavBarBottomPx,
+                maxSeenStatusBarTopPx = maxSeenStatusBarTopPx.intValue,
+                maxSeenNavBarBottomPx = maxSeenNavBarBottomPx.intValue,
+            )
+            val stageViewportHeight = with(density) { stageViewportHeightPx.toDp() }
+            // 底部背板色填充条（W2，对称 D1 顶条）：沉浸冻结后舞台盒固定在可见态高度，
+            // 栏隐藏期内容区底部多出的条带（[盒底, 屏底]）由本条以 stageBackdrop 补足
+            //（沉浸=纯黑延伸到 y=2400；chrome 显态=主题底与壳底同色无感）。高度=屏高-
+            // 盒高-实时 status inset（盒底随内容顶移动，剩余缺口全部落在底部）；offset
+            // 按实时 nav inset 越界画到内容区外（BoxWithConstraints 不裁剪越界绘制）
+            val stageBottomBandHeightPx =
+                (with(density) { maxHeight.roundToPx() } + liveStatusBarTopPx + liveNavBarBottomPx) -
+                    stageViewportHeightPx - liveStatusBarTopPx
+            val stageBottomBandHeight = with(density) { stageBottomBandHeightPx.toDp() }
+            val liveNavBarBottomHeight = with(density) { liveNavBarBottomPx.toDp() }
             // 顶部背板色填充条（D1 单源）：[-comp, 0] 越界绘制区，随 stageBackdrop 切色
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(stageTopBandHeight)
                     .offset(y = -stageTopBandHeight)
+                    .background(stageBackdrop),
+            )
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(stageBottomBandHeight)
+                    .offset(y = liveNavBarBottomHeight)
                     .background(stageBackdrop),
             )
             Column(

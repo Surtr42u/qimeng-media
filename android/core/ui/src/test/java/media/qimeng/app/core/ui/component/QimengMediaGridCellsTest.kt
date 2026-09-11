@@ -7,9 +7,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * 网格扁平化/去重纯函数单测（exp#5，2026-09-10 ui/expressive 分支）：
- * 服务端单响应若含重复资产 id，同屏双卡会同时撞 LazyVerticalGrid 项 key 约束（直接崩）
- * 与共享元素同 key 冲突（exp#3）——[flattenGridCells] 在 key 铸造点按 id 收敛。
+ * 网格扁平化/去重纯函数单测（exp#5，2026-09-10 ui/expressive 分支；任务W W2 注释清偿
+ * ——共享元素机制已随第一百九十八笔撤除，去重动机改为陈述现状）：服务端单响应若含
+ * 重复资产 id，同屏双卡会撞 LazyVerticalGrid 项 key 唯一性约束（java.lang.IllegalArgumentException
+ * 直接崩）——[flattenGridCells] 在 key 铸造点按 id 收敛做崩溃防御。
  * 锁定口径：顺序保持首现位、跨段去重、组头不参与去重、正常数据输出零变化。
  * 全部纯 JVM，无 Android 依赖（core:ui 铁律）。
  */
