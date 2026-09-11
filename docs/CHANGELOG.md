@@ -9,6 +9,16 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## fix(app): 任务W W1 共享元素转场撤除——morph 全套退役+保留件零回归（2026-09-11 第一百九十八笔）
+
+执行 AI：GLM-5.3（执行子代理，任务W W1 批）；主会话派发（流程约束：写码一律子代理）
+
+- **撤除范围（任务V V1 合入的共享元素转场全套机制）**：①`core/ui/motion/QimengSharedTransition.kt` 全文件删（53 行单点接线：LocalNavSharedTransitionScope/LocalNavAnimatedVisibilityScope/qimengAssetPosterSharedBounds）；②`QimengNavHost.kt` 撤 SharedTransitionLayout+scope provide 撤壳（NavHost 上提，体内 186 行连带降阶）+七网格路由各删一层 LocalNavAnimatedVisibilityScope provider 包裹；③`QimengMediaGrid.kt` 删 V1 追修 D2 revealOverlay 翼（renderInSharedTransitionScopeOverlay 整块）+LazyVerticalGrid 挂点+AssetCard 卡端 sharedBounds（flattenGridCells 去重保留，KDoc 改写不引用已删机制）；④`DetailScreen.kt` 删舞台端 qimengAssetPosterSharedBounds+motion import；⑤VideoStage/ZoomableOriginalImage 占位灰注释改写去机制引用（代码本体不动）。grep 验收：`SharedTransition|sharedBounds|LocalNavShared|LocalNavAnimated|renderInShared|EnterExitState` android/ 全源码（排除 build/）零命中。
+- **保留清单（零回归复核）**：FavoriteMutationTracker 及三 VM 接线、AllScreen lastDimScrolledToTop、preloadDetailPoster+DETAIL_POSTER_PRELOAD_CACHE_POLICY（KDoc 改写为「点击抢跑热身详情首帧」语境）、VideoStage/ZoomableOriginalImage 占位灰、NavHost 基础四参转场 None（L2 口径不动）、6 pushed 路由 popEnter=None（注释改「瞬时交换语义显式化 no-op」）；libs.versions.toml 未动；四 Tab 结构未动；生成物未碰。
+- **走查（emulator-5562=qimeng_api35+18461 虚构实例，铁律 13 全程显式 -s）**：六入口（首页/相册/收藏/历史/搜索/作者集合）→详情→返回全部瞬时交换（screenrecord 20fps 抽帧双参考检测，morph 应 ≥3 中间帧，实测全部 0）；D1 相册滚中→详情→返回仍在列表中部未回顶（首可见行 y 573→513 同区域）；收藏静默刷新=详情取消收藏→返回 4→3 无整页重载指示器（返回后 50ms 帧列表已完整渲染），历史返回零重绘（V1 撤 ON_RESUME 重拉语义保持）；收藏库状态已还原（4/4）。证据 %TEMP%\qimeng-w1-evidence\（notes.md+六视频+帧目录+dump+门禁日志）。
+- **门禁三连（低 CPU 档，全 exit 0）**：app-build BUILD SUCCESSFUL in 39s / app-test BUILD SUCCESSFUL in 11s（428 actionable tasks）/ app-lint BUILD SUCCESSFUL in 1m 33s（705 actionable tasks）。过程坑记档：`make | tail` 管道被 Gradle/Kotlin daemon 继承的管道写端挂死（构建实际 39s 完成、管道空转 34min 才发现）——本批起门禁命令一律 `> 文件 2>&1` 重定向，后续批次沿用。
+- **回退法**：git revert 本 commit（撤除全部落在单 commit，无结构/协议/依赖变更）。
+
 ## docs(app): 任务V V9 收官——全卷总结+待拍板台账落账（#42/#8 关闭+Consolidated 待确认项入表）+HANDOVER 任务V 节收官（2026-09-11 第一百九十七笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理，任务V V9 收官批，纯文档零代码）；主代理（收官裁决/提交）：GLM-5.3-Flash
