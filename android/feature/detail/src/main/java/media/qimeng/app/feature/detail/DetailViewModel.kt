@@ -18,7 +18,6 @@ import media.qimeng.app.core.data.repository.LikeMutationTracker
 import media.qimeng.app.core.data.repository.MediaBatchIndex
 import media.qimeng.app.core.data.repository.MoveConflictException
 import media.qimeng.app.core.model.AssetDetail
-import media.qimeng.app.core.model.MediaAsset
 import media.qimeng.app.core.model.MediaKind
 import media.qimeng.app.core.model.TagChip
 import media.qimeng.app.core.model.TimelineTag
@@ -38,9 +37,6 @@ data class DetailUiState(
     val batchIndex: Int = -1,
     /** 批次清单大小（「i / N」的 N） */
     val batchSize: Int = 0,
-    /** 「接下来播放」推荐流（已过滤当前资产） */
-    val upNext: List<MediaAsset> = emptyList(),
-    val upNextLoading: Boolean = false,
     /** 标签管理弹窗：全量标签池（服务端名字序）与勾选集合 */
     val tagPool: List<TagChip> = emptyList(),
     val selectedTagIds: List<String> = emptyList(),
@@ -91,12 +87,13 @@ data class DetailPreloadTarget(
 
 /**
  * 详情页 ViewModel（M4-3）：3a 详情读取、互动行（点赞/收藏/关注）、标签管理
- * （读-改-写一次提交）、「接下来播放」与批次导航数据链；3b 补兄弟资产切换取数
+ * （读-改-写一次提交）与批次导航数据链；3b 补兄弟资产切换取数
  * （moveBy，UI 经 push 叠栈消费）与预加载窗口（拍板③：窗口计算=DetailPreloadPolicy
  * 纯函数，本 VM 只做取数与目标发布）；3d 补播放接线三件：续播起点（WatchState 口径）、
  * 进度上报（ProgressThrottlePolicy 5s 心跳节流 + 暂停/离开 force 补报）、行为打点
  * （DirectAnalyticsReporter：open/play/dwell），以及时间轴标签增删查。
  * 互动/标签失败只置 errorMessage，不动 asset——已加载内容不因单次请求失败回退成空页。
+ * 任务W W3：原「接下来播放」推荐流数据链随推荐栏退役整段删除。
  */
 @HiltViewModel
 class DetailViewModel @Inject constructor(
@@ -163,19 +160,16 @@ class DetailViewModel @Inject constructor(
      */
     internal var progressThrottle = ProgressThrottlePolicy()
 
-    /** 推荐流当前 seed（初始 0；换一批 = 换成当前时间戳） */
-    private var upNextSeed: Long = INITIAL_UP_NEXT_SEED
-
     init {
         // 3d：进入详情 = open 打点一次 + 开 dwell 会话（open 每实例一次由 reporter 幂等保证）
         analyticsReporter?.onDetailEntered()
-        loadDetail(initial = true)
+        loadDetail()
     }
 
-    /** 错误横幅「重试」/错误态「重试」按钮：重新走详情加载（成功后续拉推荐流） */
+    /** 错误横幅「重试」/错误态「重试」按钮：重新走详情加载 */
     fun retry() {
         if (_uiState.value.isLoading) return
-        loadDetail(initial = true)
+        loadDetail()
     }
 
     fun clearError() {
@@ -184,7 +178,7 @@ class DetailViewModel @Inject constructor(
 
     // ---------- 详情加载 ----------
 
-    private fun loadDetail(initial: Boolean) {
+    private fun loadDetail() {
         val id = assetId
         if (id == null) {
             // 无 assetId（导航缺参）：不崩溃，进错误态（测试 8 锁定）
@@ -204,7 +198,6 @@ class DetailViewModel @Inject constructor(
                     )
                     applyWatchState(detail)
                     rememberDims(detail)
-                    if (initial) refreshUpNext(INITIAL_UP_NEXT_SEED)
                     schedulePreload()
                     // 时间轴标签只对视频资产加载（3d；失败静默，不影响主内容）
                     if (detail.mediaType == MediaKind.VIDEO) loadTimelineTags()
@@ -215,7 +208,7 @@ class DetailViewModel @Inject constructor(
         }
     }
 
-    /** 标签保存成功后的详情重拉：只刷新 asset（推荐流与此无关，不重触发） */
+    /** 标签保存成功后的详情重拉：只刷新 asset */
     private fun reloadAssetOnly() {
         val id = assetId ?: return
         viewModelScope.launch {
@@ -252,60 +245,13 @@ class DetailViewModel @Inject constructor(
         )
     }
 
-    // ---------- 「接下来播放」 ----------
-
-    /**
-     * 拉推荐流。seed 初始 0：协议 seed=0 不打散=固定序（Web UpNextList useState(0) 同款）；
-     * mediaType 按详情类型收窄；cosOnly = COS 资产推荐流同区收窄（与首页 cos tab 同参数语义）；
-     * 结果过滤当前资产（协议无排除参数，客户端滤——Web useUpNextList 同款）。
-     */
-    private fun refreshUpNext(seed: Long) {
-        val asset = _uiState.value.asset ?: return
-        upNextSeed = seed
-        _uiState.value = _uiState.value.copy(upNextLoading = true)
-        viewModelScope.launch {
-            runCatching {
-                detailRepository.upNext(
-                    seed = seed,
-                    limit = UP_NEXT_LIMIT,
-                    mediaType = asset.mediaType,
-                    cosOnly = asset.cosWork != null,
-                )
-            }.onSuccess { items ->
-                _uiState.value = _uiState.value.copy(
-                    upNextLoading = false,
-                    upNext = items.filter { it.id.isNotEmpty() && it.id != asset.id },
-                )
-            }.onFailure {
-                _uiState.value = _uiState.value.copy(
-                    upNextLoading = false,
-                    errorMessage = ERROR_LOAD_UP_NEXT,
-                )
-            }
-        }
-    }
-
-    /** 「换一批」：seed=当前时间戳重取（同 seed 可复现，DOMAIN_RULES §1.1 禁纯随机）。
-     *  在途判定 = upNextLoading（按钮 disabled 同源；原 reshufflePending 死状态已清偿） */
-    fun reshuffleUpNext() {
-        if (_uiState.value.upNextLoading) return
-        refreshUpNext(seed = System.currentTimeMillis())
-    }
-
-    /**
-     * 推荐栏行点击（批次导航数据链，3b 滑动接线的 VM 侧基座）：
-     * 把批次清单整体替换为推荐栏清单（推荐栏即新清单），随后 UI 层调 onOpenAsset 导航。
-     * 无参：目标 id 对批次替换无意义（整表替换语义），原参数为死参已清偿。
-     */
-    fun upNextJump() {
-        batchIndex.ids = _uiState.value.upNext.map { it.id }
-    }
+    // ---------- 批次导航 ----------
 
     /**
      * 批次邻位切换取数（拍板③：详情页左右滑切换相邻资产）：基于批次快照以当前路由资产
      * 定位 index，返回 delta 偏移后的目标资产 id；路由缺参/当前资产不在批次内/目标越界
      * 返回 null（UI 据此不动，不环绕）。3b 已接线：ImageStage 横滑回调 → 本方法 → 壳层
-     * push 叠栈导航（批次清单不变，不经 upNextJump 换批）。
+     * push 叠栈导航（批次清单不变）。
      */
     fun moveBy(delta: Int): String? {
         val id = assetId ?: return null
@@ -805,17 +751,10 @@ class DetailViewModel @Inject constructor(
     }
 
     companion object {
-        /** 推荐栏初始 seed：0 = 协议不打散固定序（Web useUpNextList 初始 0 同款） */
-        const val INITIAL_UP_NEXT_SEED = 0L
-
-        /** 推荐栏条数（Web useUpNextList limit 缺省 12，use-assets.ts:322） */
-        const val UP_NEXT_LIMIT = 12
-
         // 错误文案（中文含操作名；与列表族共享的 LIST_LOAD_FAILED_MESSAGE（core:model 单源）同为
         // 状态层文案——不进 res，测试直接断言；本文件文案为详情页专用故留在本地）
         private const val ERROR_MISSING_ASSET = "缺少资产参数，无法打开详情"
         private const val ERROR_LOAD_DETAIL = "详情加载失败，请重试"
-        private const val ERROR_LOAD_UP_NEXT = "推荐加载失败"
         private const val ERROR_LIKE = "点赞操作失败，请重试"
         private const val ERROR_FAVORITE = "收藏操作失败，请重试"
         private const val ERROR_FOLLOW = "关注操作失败，请重试"

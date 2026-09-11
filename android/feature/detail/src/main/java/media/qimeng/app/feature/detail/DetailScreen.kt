@@ -59,10 +59,10 @@ import media.qimeng.app.core.ui.theme.QimengDimens
  * §详情页 L158-160 沉浸 4 层组织回归——第一屏媒体舞台 edge-to-edge 全出血（整屏高，底色
  * 随沉浸切换：chrome 显=主题底/沉浸或播放中=黑，见 [stageBackdropColor]；图片态
  * ZoomImageView 链 / 视频态 BiliPlayerView 链）+ 上下渐变 chrome 浮层（顶：返回/n/N/信息；
- * 底：点赞N/收藏/标签/整理四胶囊——任务V V3 截图批注拍板，[DetailChromeBars]）+ 单击显隐
- * （图片态单击舞台切 chrome+系统栏，L271-276）；媒体层下方保留信息内容区（标题/meta/只读
- * 标签/作者卡/UpNext——拍板⑧超规格件
- * 保留融入，下滑查看；chrome 挂在舞台盒内随第一屏滚动，只覆盖第一屏）。
+ * 底：点赞N/收藏/标签/作者四胶囊——任务W W3「整理」退役换作者，[DetailChromeBars]）+
+ * 单击显隐（图片态单击舞台切 chrome+系统栏，L271-276）；媒体层下方保留信息内容区
+ * （标题/meta/只读标签三段——任务W W3 下滑区裁剪终态：作者卡内容移植进 DetailAuthorSheet、
+ * 「接下来播放」推荐栏整段退役；chrome 挂在舞台盒内随第一屏滚动，只覆盖第一屏）。
  *
  * 沿革：3a 骨架排版（Web AssetDetailPage 移植）→ 3b/3c/3d 沉浸/播放器/全量接线 →
  * G1a/G1b Web 排版页 → I7 基准切回 GUIDE_UI 沉浸复刻（台账 #33 用户拍板「1 a」，
@@ -79,15 +79,15 @@ import media.qimeng.app.core.ui.theme.QimengDimens
  *
  * @param assetId 路由参数（ViewModel 经 SavedStateHandle 同键读取；此处显式保留供预览/测试）
  * @param onBack 返回（壳层 popBackStack）
- * @param onOpenAsset 跳资产（壳层导航 push 叠栈）：推荐栏跳转先经 VM.upNextJump 换批，
- *   兄弟资产滑动不换批（批次就是当前清单）——两条路共用此回调但只有前者动批次
- * @param onOpenAuthor 跳作者集合页（作者卡名字点击与快速转跳弹窗共用，壳层导航 push 叠栈）
+ * @param onOpenAsset 跳资产（壳层导航 push 叠栈）：兄弟资产滑动换件走此回调（批次清单
+ *   就是当前清单，不换批）——push 叠栈 = 浏览历史语义
+ * @param onOpenAuthor 跳作者集合页（作者 Sheet「进入作者主页」，壳层导航 push 叠栈）
  */
 @Composable
 fun DetailScreen(
     assetId: String,
     onBack: () -> Unit,
-    onOpenAsset: (assetId: String, batchIds: List<String>) -> Unit,
+    onOpenAsset: (assetId: String) -> Unit,
     onOpenAuthor: (authorId: String, displayName: String) -> Unit = { _, _ -> },
     viewModel: DetailViewModel = hiltViewModel(),
 ) {
@@ -98,13 +98,14 @@ fun DetailScreen(
     // 视频播放器活动态镜像（VideoStage 上报）：活动期 chrome 让位播放器控制器
     var playerActive by remember { mutableStateOf(false) }
     val chromeEffective = chromeVisible && !playerActive
-    // 信息/快速转跳 BottomSheet 开关（纯 UI 弹层无数据请求，页面局部状态；进程重建后
+    // 信息/快速转跳/作者 BottomSheet 开关（纯 UI 弹层无数据请求，页面局部状态；进程重建后
     // 关闭态恢复——与 chromeVisible 同 rememberSaveable 语义）。任务V V3：「快速转跳」
     // 不进首屏四胶囊（主代理保守裁决待用户确认），入口随旧图标行消失——jumpSheetVisible
-    // 与 DetailJumpSheet 挂载保留（组件保留裁决），当前无触发点、恒为关闭态；如需恢复
-    // 入口，把 DetailBottomChrome 的某胶囊 onClick 接 { jumpSheetVisible = true } 即可
+    // 与 DetailJumpSheet 挂载保留（组件保留裁决），当前无触发点、恒为关闭态。任务W W3：
+    // 作者胶囊补 authorSheetVisible 入口（点 DetailAuthorSheet）。
     var infoSheetVisible by rememberSaveable { mutableStateOf(false) }
     var jumpSheetVisible by rememberSaveable { mutableStateOf(false) }
+    var authorSheetVisible by rememberSaveable { mutableStateOf(false) }
     // I7 沉浸：chrome 显隐驱动系统栏（chrome 隐藏=黑底沉浸+系统栏隐藏，L273-274）
     SystemBarsImmersiveEffect(chromeVisible = chromeEffective)
 
@@ -147,10 +148,10 @@ fun DetailScreen(
         onDispose { disposables.values.forEach { it.dispose() } }
     }
 
-    // 兄弟资产切换回调单源（拍板③：目标解析失败（越界/无批次/缺参）静默不动；不走
-    // upNextJump 换批——批次清单就是当前清单；push 叠栈 = 浏览历史语义）
+    // 兄弟资产切换回调单源（拍板③：目标解析失败（越界/无批次/缺参）静默不动；批次清单
+    // 就是当前清单，不换批；push 叠栈 = 浏览历史语义）
     val onSiblingNavigate: (Int) -> Unit = { delta ->
-        viewModel.moveBy(delta)?.let { targetId -> onOpenAsset(targetId, emptyList()) }
+        viewModel.moveBy(delta)?.let { targetId -> onOpenAsset(targetId) }
     }
 
     if (state.isLoading) {
@@ -324,7 +325,7 @@ fun DetailScreen(
                             onOpenInfo = { infoSheetVisible = true },
                         )
                     }
-                    // 底部渐变操作层（V3 四胶囊：点赞N/收藏/标签/整理原位替换旧四图标行）——
+                    // 底部渐变操作层（W3 四胶囊：点赞N/收藏/标签/作者——「整理」退役）——
                     // 全限定同上
                     androidx.compose.animation.AnimatedVisibility(
                         visible = chromeEffective,
@@ -336,24 +337,15 @@ fun DetailScreen(
                             asset = asset,
                             likePending = state.likePending,
                             favoritePending = state.favoritePending,
-                            fileOpsPending = state.fileOpsPending,
                             onToggleLike = viewModel::toggleLike,
                             onToggleFavorite = viewModel::toggleFavorite,
                             onOpenTagSheet = viewModel::openTagSheet,
-                            onOpenMoveDialog = viewModel::openMoveSheet,
+                            onOpenAuthorSheet = { authorSheetVisible = true },
                         )
                     }
                 }
                 DetailContentSections(
                     state = state,
-                    onOpenAsset = { id, batchIds ->
-                        // 推荐栏跳转：先换批次清单（推荐栏即新清单），再交壳层导航
-                        viewModel.upNextJump()
-                        onOpenAsset(id, batchIds)
-                    },
-                    onOpenAuthor = onOpenAuthor,
-                    onToggleFollow = viewModel::toggleFollow,
-                    onReshuffle = viewModel::reshuffleUpNext,
                     onDismissError = viewModel::clearError,
                 )
             }
@@ -384,6 +376,16 @@ fun DetailScreen(
                 authors = asset.authors,
                 onOpenAuthor = onOpenAuthor,
                 onDismiss = { jumpSheetVisible = false },
+            )
+        }
+        // 作者弹窗（W3）：作者胶囊入口，原作者卡内容移植（关注闭环 + 进入作者主页）
+        if (authorSheetVisible) {
+            DetailAuthorSheet(
+                authors = asset.authors,
+                followPending = state.followPendingAuthorId != null,
+                onToggleFollow = viewModel::toggleFollow,
+                onOpenAuthor = onOpenAuthor,
+                onDismiss = { authorSheetVisible = false },
             )
         }
     }
@@ -419,9 +421,10 @@ fun DetailScreen(
                     Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
                 }
             },
-            // 「删除归整理」（任务V V3，主代理保守裁决待用户确认）：详情页删除钮已移除，
-            // 删除功能归本弹窗入口——先关整理弹窗再开既有回收站二次确认（openDeleteConfirm
-            // 链原样复用，铁律 4 语义不变）
+            // 「删除归整理」（任务V V3 拍板）→ 任务W W3 推翻（台账 #44）：整理胶囊随 W3
+            // 退役（四胶囊换作者），整理/删除/改名/移动入口从详情页消失（后果记档待拍板
+            // 台账）——弹窗族与 VM 文件操作链按 DetailJumpSheet 同款保守口径保留（挂载点
+            // 保留、无触发点恒不挂载），moveSheetOpen 无入口恒为关闭态
             onDeleteClick = {
                 viewModel.dismissMoveSheet()
                 viewModel.openDeleteConfirm()
@@ -449,18 +452,15 @@ fun DetailScreen(
 
 /**
  * 加载成功后的信息内容区（媒体层下方，下滑查看；拍板⑧超规格件保留融入沉浸结构）：
- * 标题 → meta 行 → 标签行（只读）→ 作者卡 → 接下来播放 + 底部呼吸空间。舞台动作不在
- * 本节（归媒体舞台浮层）。V2 删 pager 行（用户拍板：导航只留横滑，i/N 由顶部 chrome 承担）。
- * 任务V V3 重排：互动行（DetailInteractionRow）整行退役——点赞/收藏/整理上移首屏四胶囊
- * （DetailBottomChrome）、删除归整理弹窗入口，标签行只读化（编辑走首屏「标签」胶囊）。
+ * 标题 → meta 行 → 标签行（只读）+ 底部呼吸空间——任务W W3 下滑区裁剪终态（三段）：
+ * 作者卡内容移植 DetailAuthorSheet、「接下来播放」推荐栏整段退役。舞台动作不在本节（归媒体
+ * 舞台浮层）。V2 删 pager 行（用户拍板：导航只留横滑，i/N 由顶部 chrome 承担）。
+ * 任务V V3 重排：互动行（DetailInteractionRow）整行退役——点赞/收藏上移首屏四胶囊
+ * （DetailBottomChrome）、标签行只读化（编辑走首屏「标签」胶囊）。
  */
 @Composable
 private fun DetailContentSections(
     state: DetailUiState,
-    onOpenAsset: (assetId: String, batchIds: List<String>) -> Unit,
-    onOpenAuthor: (authorId: String, displayName: String) -> Unit,
-    onToggleFollow: (String) -> Unit,
-    onReshuffle: () -> Unit,
     onDismissError: () -> Unit,
 ) {
     val asset = requireNotNull(state.asset)
@@ -473,18 +473,6 @@ private fun DetailContentSections(
         DetailTitle(title = asset.title)
         DetailMetaRow(asset = asset)
         DetailTagRow(tags = asset.tags)
-        DetailAuthorCard(
-            authors = asset.authors,
-            followPending = state.followPendingAuthorId != null,
-            onToggleFollow = onToggleFollow,
-            onOpenAuthor = onOpenAuthor,
-        )
-        DetailUpNextCard(
-            upNext = state.upNext,
-            upNextLoading = state.upNextLoading,
-            onReshuffle = onReshuffle,
-            onOpenAsset = onOpenAsset,
-        )
         // 底部呼吸空间（避免末节贴系统导航栏；轻量档）——I7 起恒显（chrome 不再占用本节）
         Box(modifier = Modifier.padding(bottom = DETAIL_BOTTOM_SPACER))
     }

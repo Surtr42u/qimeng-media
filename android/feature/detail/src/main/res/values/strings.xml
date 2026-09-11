@@ -34,7 +34,9 @@
 
     <!-- 文件操作（任务G G1b：整理——Web FileOpsButton/FileOpsDialogs/MoveDialog 同语义文案。
         任务V V3：四胶囊行重排，「整理」胶囊文字沿用本条；detail_file_ops_delete 随互动行
-        删除钮退役删除（删除归整理弹窗入口，确认文案 detail_delete_* 仍在） -->
+        删除钮退役删除（删除归整理弹窗入口，确认文案 detail_delete_* 仍在）。
+        任务W W3：「整理」胶囊退役（四胶囊换作者），本条保留——整理弹窗族保守保留无入口
+        （JumpSheet 口径，后果记档待拍板台账） -->
     <string name="detail_file_ops_move">整理</string>
     <string name="detail_move_title">整理文件</string>
     <!-- 对齐 Web MoveDialog desc：同名拒绝不覆盖语义 -->
@@ -68,21 +70,21 @@
     <string name="detail_save">保存</string>
     <string name="detail_cancel">取消</string>
 
-    <!-- 作者卡（无作者不渲染；isCos 追加「 ·COS」在代码拼接——Web authorDisplayName 同口径） -->
+    <!-- 作者（作者卡/作者 Sheet 共用；无作者不渲染条目；isCos 追加「 ·COS」在代码拼接——
+        Web authorDisplayName 同口径）。任务W W3：作者胶囊文字同源本条；
+        detail_author_open_collection 供作者 Sheet「进入作者主页」钮 -->
     <string name="detail_authors_title">作者</string>
     <string name="detail_follow">+ 关注</string>
     <string name="detail_followed">已关注</string>
+    <string name="detail_author_open_collection">进入作者主页</string>
     <!-- 前导空格必须 \u0020 转义：AAPT 会裁掉字符串资源首尾空白（2026-09-07 模拟器文本证据发现渲染成「作者名·COS」缺空格） -->
     <string name="detail_author_cos_suffix">\u0020·COS</string>
 
-    <!-- 接下来播放 -->
-    <string name="detail_upnext_title">接下来播放</string>
-    <string name="detail_upnext_shuffle">换一批</string>
-    <string name="detail_upnext_empty">暂无推荐</string>
-
     <!-- 沉浸 chrome（任务I I7，GUIDE_UI §详情页 L171/172）：顶/底渐变操作层按钮无障碍文案。
         任务V V3：底部四胶囊后 detail_chrome_tag 兼作「标签」胶囊文字与无障碍文案；
-        detail_chrome_jump 随「快速转跳」不进四胶囊删除（DetailJumpSheet 组件保留无入口） -->
+        detail_chrome_jump 随「快速转跳」不进四胶囊删除（DetailJumpSheet 组件保留无入口）。
+        任务W W3：「接下来播放」三条字符串随推荐栏整段退役删除；「整理」胶囊退役
+        （detail_file_ops_move 保留——整理弹窗族保守保留无入口，JumpSheet 口径） -->
     <string name="detail_chrome_info">信息</string>
     <string name="detail_chrome_tag">标签</string>
 

@@ -21,7 +21,6 @@ import media.qimeng.app.core.model.AuthorSummary
 import media.qimeng.app.core.model.DetailAuthor
 import media.qimeng.app.core.model.DetailTag
 import media.qimeng.app.core.model.LikeToggleResult
-import media.qimeng.app.core.model.MediaAsset
 import media.qimeng.app.core.model.MediaKind
 import media.qimeng.app.core.model.TagChip
 import media.qimeng.app.core.model.TimelineTag
@@ -31,9 +30,9 @@ import media.qimeng.app.feature.detail.playback.ProgressThrottlePolicy
 
 /**
  * 详情页 ViewModel 单测（M4-3 3a）：详情加载/批次序号、互动回填与失败保持、
- * 推荐流参数锁死（seed=0 初始/limit=12/类型收窄/过滤当前资产/换一批换 seed/跳转换批次）、
  * 标签管理流（拉池/即时勾选/新建/整体替换+重拉详情）、路由缺参错误态。
  * fake 全手写（禁 MockK），范式照 HomeViewModelTest + core/testing MainDispatcherRule。
+ * （任务W W3：「接下来播放」推荐流数据链随推荐栏退役整段删除，对应用例一并清偿。）
  */
 class DetailViewModelTest {
 
@@ -43,8 +42,6 @@ class DetailViewModelTest {
     // ---------- 测试替身 ----------
 
     private class FakeDetailRepository : DetailRepository {
-        data class UpNextCall(val seed: Long, val limit: Int, val mediaType: MediaKind?, val cosOnly: Boolean)
-
         var detailResult: AssetDetail? = null
 
         /** 按 id 的详情返回（3b 预载：窗口内会拉多个 id；未配置的 id 回退 [detailResult]） */
@@ -61,10 +58,6 @@ class DetailViewModelTest {
 
         var favoriteError: Exception? = null
         val favoriteCalls = mutableListOf<Pair<String, Boolean>>()
-
-        var upNextResult: List<MediaAsset> = emptyList()
-        var upNextError: Exception? = null
-        val upNextCalls = mutableListOf<UpNextCall>()
 
         var tagPool: List<TagChip> = emptyList()
         var createTagError: Exception? = null
@@ -166,17 +159,6 @@ class DetailViewModelTest {
             unbindTagCalls += assetId to tagName
         }
 
-        override suspend fun upNext(
-            seed: Long,
-            limit: Int,
-            mediaType: MediaKind?,
-            cosOnly: Boolean,
-        ): List<MediaAsset> {
-            upNextError?.let { throw it }
-            upNextCalls += UpNextCall(seed, limit, mediaType, cosOnly)
-            return upNextResult
-        }
-
         // 文件操作（任务G G1b）：调用记录 + 失败/领域冲突注入
         data class MoveCall(val assetId: String, val targetDir: String, val newName: String?)
 
@@ -245,23 +227,6 @@ class DetailViewModelTest {
         height = height,
         tags = tags,
         authors = authors,
-    )
-
-    private fun mediaAsset(id: String) = MediaAsset(
-        id = id,
-        fileName = "$id.jpg",
-        title = id,
-        mediaType = MediaKind.IMAGE,
-        thumbUrl = null,
-        source = null,
-        characters = emptyList(),
-        isFavorite = false,
-        authorNames = emptyList(),
-        modifiedAtMs = null,
-        durationMs = null,
-        viewCount = null,
-        playCount = null,
-        lastViewedAtMs = null,
     )
 
     private fun savedHandle(assetId: String?): SavedStateHandle =
@@ -412,38 +377,6 @@ class DetailViewModelTest {
     }
 
     @Test
-    fun `upNext - 参数锁死过滤当前资产reshuffle换seed且jump替换批次清单`() = runTest(mainDispatcherRule.testDispatcher) {
-        val batchIndex = MediaBatchIndex()
-        batchIndex.ids = listOf("a", "b", "c")
-        val repo = FakeDetailRepository().apply {
-            detailResult = detail("b", cosWork = "作品B", mediaType = MediaKind.VIDEO)
-            upNextResult = listOf(mediaAsset("b"), mediaAsset("x"), mediaAsset("y"))
-        }
-        val vm = viewModel(repo, batchIndex = batchIndex)
-        advanceUntilIdle()
-
-        // 请求参数锁死：seed=0 初始（协议不打散固定序）、limit=12、类型收窄、COS 同区收窄
-        val call = repo.upNextCalls.single()
-        assertEquals(0L, call.seed)
-        assertEquals(12, call.limit)
-        assertEquals(MediaKind.VIDEO, call.mediaType)
-        assertTrue(call.cosOnly) // cosWork!=null → cosOnly
-        // 结果过滤当前资产
-        assertEquals(listOf("x", "y"), vm.uiState.value.upNext.map { it.id })
-
-        // 换一批：seed 变为时间戳（非 0，可复现语义）
-        vm.reshuffleUpNext()
-        advanceUntilIdle()
-        assertEquals(2, repo.upNextCalls.size)
-        assertTrue(repo.upNextCalls[1].seed > 0)
-        assertTrue(repo.upNextCalls[1].seed != repo.upNextCalls[0].seed)
-
-        // 跳转：批次清单整体替换为推荐栏清单（推荐栏即新清单；无参——目标 id 不参与替换语义）
-        vm.upNextJump()
-        assertEquals(listOf("x", "y"), batchIndex.ids)
-    }
-
-    @Test
     fun `moveBy - 批次内前进后退返回邻位id`() = runTest(mainDispatcherRule.testDispatcher) {
         val batchIndex = MediaBatchIndex()
         batchIndex.ids = listOf("a", "b", "c")
@@ -555,7 +488,7 @@ class DetailViewModelTest {
         advanceUntilIdle()
         assertEquals(1, repo.detailCallsById["c"])
 
-        // retry 走 loadDetail(initial=true)→schedulePreload：prefetchedIds 去重，邻位不重拉
+        // retry 走 loadDetail→schedulePreload：prefetchedIds 去重，邻位不重拉
         vm.retry()
         advanceUntilIdle()
         assertEquals(1, repo.detailCallsById["c"])
@@ -689,7 +622,6 @@ class DetailViewModelTest {
         assertNotNull(vm.uiState.value.errorMessage)
         assertFalse(vm.uiState.value.isLoading)
         assertEquals(0, repo.detailCallCount)
-        assertEquals(0, repo.upNextCalls.size)
     }
 
     // ---------- 续播起点与已看完（3d，WatchState 冻结口径经 UiState 消费） ----------
