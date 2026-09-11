@@ -30,6 +30,8 @@ import kotlin.math.min
  * 单指横滑（>60dp 且横速度>800，未放大态）→ onSwipe(±1)，+1=左滑下一张 / -1=右滑上一张。
  * 任务V V2 例外增补：未放大态慢拖（无 fling 事件）UP 时按累积位移判定切件（距离阈值同
  * 60dp、横向占优），放大态手势不变——用户钦点恢复横滑，冻结例外已记档。
+ * 任务W W2 例外增补：onSizeChanged 基态自愈重居中（宿主容器尺寸变化时，见 onSizeChanged
+ * 处注释与 shouldRecenterOnResize）——冻结例外三件套记档同 V2 先例。
  *
  * 搬运适配（行为不变）：
  * - 包名迁移到 media.qimeng.app.feature.detail.image；
@@ -56,6 +58,10 @@ class ZoomImageView @JvmOverloads constructor(
     private var hasPendingScreenRect = false
     private var isGestureActive = false
     private var hasDisallowedIntercept = false
+
+    // W2 自愈重居中标记：onSizeChanged 触发 resetZoom 后置位，紧随的 onLayout 跳过一次
+    // preserveScreenPosition（见 onLayout 分支注释）
+    private var recenteredSinceLastLayout = false
 
     // 任务V V2 例外增补（只观察不改事件流）：未放大态 onScroll 不平移图像，但累积位移供
     // ACTION_UP 时慢拖切件判定；不设 isGestureActive、不动渲染层类型——放大态行为零变化
@@ -285,8 +291,31 @@ class ZoomImageView @JvmOverloads constructor(
         super.onLayout(changed, left, top, right, bottom)
         if (hasPendingScreenRect) {
             restorePendingScreenRect()
+        } else if (recenteredSinceLastLayout) {
+            // W2 自愈重居中后的首次布局：矩阵已按新尺寸绝对居中，本轮跳过窗口位移补偿
+            //（补偿会按旧窗口位置平移刚居中好的矩阵，造成二次偏移），只重锚窗口记忆值
+            recenteredSinceLastLayout = false
+            getLocationOnScreen(windowLocation)
+            lastWindowX = windowLocation[0]
+            lastWindowY = windowLocation[1]
         } else {
             preserveScreenPosition(previousX, previousY)
+        }
+    }
+
+    // 任务W W2 例外增补（冻结件三件套：本 KDoc 增补段+纯函数 shouldRecenterOnResize+
+    // ZoomResizePolicyTest+CHANGELOG 独立条目，先例=V2 swipeDeltaFromDrag）：宿主容器
+    //（Compose 舞台盒）尺寸变化时基态自愈重居中。背景=舞台盒高由 DetailScreen 的
+    // stageImmersiveViewportHeightPx 钉死在可见态稳定值（见其 KDoc），常规 chrome 显隐
+    // 全程尺寸恒定、本回调不触发；仅剩的尺寸变化窗口是「兄弟 push 在栏动画中间态挂载
+    // 新详情」——图片按瞬态盒高居中后盒高落回稳定值，若无自愈则停驻偏移位（任务W W2
+    // 实测同类机制曾致 +31.5px 持久偏移）。放大态（normalizedScale!=1）绝不重置——
+    // 用户缩放不可被容器变化销毁；手势期不触发（isGestureActive）。
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        if (oldw > 0 && oldh > 0 && shouldRecenterOnResize(isGestureActive, normalizedScale)) {
+            resetZoom()
+            recenteredSinceLastLayout = true
         }
     }
 
@@ -488,3 +517,11 @@ internal fun swipeDeltaFromDrag(accumX: Float, accumY: Float, swipeDistancePx: F
     abs(accumX) > swipeDistancePx && abs(accumX) > abs(accumY) -> if (accumX > 0f) 1 else -1
     else -> null
 }
+
+/**
+ * 容器尺寸变化时是否自愈重居中（任务W W2 新增，纯函数无 Android 依赖，行为由
+ * ZoomResizePolicyTest 锁定）：仅基态（normalizedScale==1，未缩放）且非手势期才重置
+ * ——用户缩放态不可被容器变化销毁；手势期（双指/拖拽进行中）不抢状态机。
+ */
+internal fun shouldRecenterOnResize(isGestureActive: Boolean, normalizedScale: Float): Boolean =
+    !isGestureActive && normalizedScale == 1f

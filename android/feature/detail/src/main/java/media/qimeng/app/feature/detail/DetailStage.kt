@@ -70,6 +70,35 @@ internal fun stageEdgeToEdgeCompensationPx(
     else -> liveInsetPx
 }
 
+/**
+ * 舞台盒沉浸几何冻结单源（任务W W2，2026-09-11）：返回钉死在「系统栏可见态」的舞台
+ * 盒高——chrome 显隐全程（含栏动画中间态）恒定，杜绝盒高随壳层 Scaffold innerPadding
+ * 抖动引发的图片居中基准漂移（根因链与实测证据见 DetailScreen W2 注）。
+ *
+ * 口径：screenPx = 内容高 + status inset + nav inset（恒等式：内容区就是屏幕减两栏，
+ * 栏动画期三项此消彼长逐帧不变）；稳定 inset = max(实时, 见过最大)——动画中间值
+ * （小于稳定值）被压回稳定值，真实 inset 增长（字号/分屏）即时采纳。
+ *
+ * 各态验证（1080x2400、status=128、nav=63 例）：
+ * - 可见稳定：2400 - max(128,128) - max(63,63) = 2209（=壳层内容区高，G1a 口径不变）；
+ * - 隐藏稳定（两 inset 均归零设备）：2400 - 128 - 63 = 2209（恒定）；
+ * - 隐藏稳定（status 回读滞留设备，如 API35 模拟器实测 128 不归零）：内容高 2272，
+ *   screenPx 仍 2400 → 2209（恒定）；
+ * - 显/隐动画中间态（inset 部分回传）：max 压回稳定值 → 2209（恒定）。
+ * 纯函数无 Compose 依赖，JVM 单测锁定见 StageViewportHeightTest。
+ */
+internal fun stageImmersiveViewportHeightPx(
+    liveContentHeightPx: Int,
+    liveStatusBarTopPx: Int,
+    liveNavBarBottomPx: Int,
+    maxSeenStatusBarTopPx: Int,
+    maxSeenNavBarBottomPx: Int,
+): Int {
+    val screenPx = liveContentHeightPx + liveStatusBarTopPx + liveNavBarBottomPx
+    return screenPx - maxOf(liveStatusBarTopPx, maxSeenStatusBarTopPx) -
+        maxOf(liveNavBarBottomPx, maxSeenNavBarBottomPx)
+}
+
 @androidx.annotation.OptIn(UnstableApi::class) // VideoStage 桥接 Media3 @UnstableApi 面（BiliPlayerView），调用方显式 opt-in
 @Composable
 internal fun DetailMediaStage(

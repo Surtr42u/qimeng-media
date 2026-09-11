@@ -9,6 +9,22 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## fix(app): 任务W W2 图片进入跳动根修——舞台盒沉浸几何冻结根除 chrome 切换居中漂移（2026-09-11 第一百九十九笔）
+
+执行 AI：GLM-5.3（执行子代理，任务W W2 批）；主会话派发（流程约束：写码一律子代理）
+
+- **定位结论（先测后改，emulator-5562+18461，screenrecord 唯一帧逐帧量化+dumpsys 轮询+QimengZoom DEBUG 日志三方互证）**：
+  - **候选①②④排除**——W1 撤转场后「进详情图片跳动」在净态**不再复现**（冷加载 s3/缓存命中 s4 两路径：图一出现即终位 929-1535，configureBaseMatrix dy=800.75 与像素实测逐位吻合；setImageDrawable 时 view 恒已就绪即时 resetZoom，onPreDraw 延迟路径与背板条均不涉位置）。用户报告构建=0680272 含 V1 morph——首帧跳变主候选已随 W1 撤除。
+  - **候选③变体坐实（新发现）**——chrome 显隐周期后图片**持久偏移 +31.5px（=nav inset 63 之半）且下次单击瞬间跳回**：根因链=壳层 Scaffold innerPadding 随栏显隐动画改内容区高→舞台盒高变（本机 2209→2272：status 回读滞留 128[K2 记档]+nav 归 0；规范设备 2209→2400）→ ZoomImageView ACTION_UP 无条件 clampScaleEnd→clampTranslation 按**当时盒高**垂直再居中（显栏单击的 UP 落在动画中间态 2272→图顶 960.5，实测 960 分毫不差）→ 随后 nav 回位盒 2272→2209 纯尺寸收缩（窗口位移为 0）→ preserveScreenPosition 只按窗口位移补偿**不感知纯尺寸收缩**→图停驻 960 不归位。旧版不跳的根因=容器层几何恒定（fragment_media_detail.xml 单层 match_parent；GUIDE_UI L162「系统栏显隐不触发布局变化，避免图片重新居中」）。
+- **修法（收敛 feature/detail，零壳层改动）**：①`DetailStage.kt` 新纯函数 `stageImmersiveViewportHeightPx`——screenPx 恒等式（内容高+两 inset，逐帧不变）减 max(实时, 见过最大) 双 inset 稳定值，把舞台盒高**钉死在可见态稳定值**（chrome 显隐全程含动画中间态恒定；maxSeen 单调上探，字号/分屏等真实 inset 增长即时采纳），居中基准不再漂移；②`DetailScreen.kt` 舞台盒改用该值+新增**底部背板色填充条**（对称 D1 顶条：沉浸=纯黑延伸到屏底，显态=主题底与壳底同色隐形）补冻结后底部条带；③`ZoomImageView.kt`（冻结件例外**三件套**：类 KDoc 增补段+`shouldRecenterOnResize` 纯函数+`ZoomResizePolicyTest`+本独立条目，先例=V2 swipeDeltaFromDrag）`onSizeChanged` 基态自愈重居中+跳过紧随的一次窗口补偿——覆盖「栏动画中间态挂载新详情」窄窗口（该窗口令图按瞬态盒高居中后落定不归位）。
+- **新增单测**：StageViewportHeightTest 6 例（可见稳定/两设备类沉浸/动画中间态/真实 inset 增长/无栏形态）+ ZoomResizePolicyTest 3 例（基态重居中/放大态绝不重置/手势期不抢状态机），全绿。
+- **修后复验（重装 APK，证据 %TEMP%\qimeng-w2-evidence\）**：V1 进入（冷加载）图一出现即终位；V2 chrome 三隐显周期（199 唯一帧）每周期精确归位 (1230,1535)、零漂移零跳变（修前 +31.5px/周期性跳回），过渡帧图区像素静止仅 chrome 淡入淡出；V2 附验沉浸底部全宽纯黑（底部条生效）+显态同色隐形；V3 GIF（GIF→HARDWARE 分层正确）一出现即终位；V4 视频海报态/起播/ENDED 沉浸零回归（舞台冻结对 VideoStage 无碍）；V5 双击放大 1.8x/复位逐像素归零/横滑兄弟切换全通（冻结件手势面完好）。判定标准：内容特征带首现帧 vs 稳定帧、周期前 vs 周期后位移 ≤2px；修前 +31.5、修后 0。
+- **顺手清偿（W1 reviewer 遗留三条）**：①core/ui/build.gradle.kts api(compose-animation) 注释改写为现状陈述（原引用已删 QimengSharedTransition.kt；真实理由=QimengSegPill 用 animation.core+QimengNavHost/DetailScreen/DetailChromeBars/DetailSections 等 5 文件未自声明经 api 传递可见，grep 实证）；②QimengMediaGridCellsTest KDoc 僵尸引用（共享元素同 key 冲突 exp#3）改为现状语义（LazyVerticalGrid 重复 key 崩溃防御）；③198 笔「grep 零命中」补口径更正追注（*.kt 代码零命中，build.gradle.kts 两行注释级命中已随本笔清偿）——CHANGELOG 198 笔末尾追加注记+HANDOVER W1 段括号追注，历史正文未改写。
+- **记档**：18461 dev 会话不稳（测试中多次 401 自动登出，重开+免密登录即恢复，早期 t2~t8 系列录屏受污染，证据以干净会话 s*/v* 系列为准）；18461 库无超大图（>1MB/长边>4096 均无），超大图回归以最大可用图替代+SOFTWARE 层路径（>4096）零改动论证；maxSeen 单调上探对「inset 回缩类」配置变化进程内保持旧值（rotation 已锁、字号回缩属边缘，记档不处理）。
+- **门禁三连（低 CPU 档，全 exit 0，输出重定向）**：app-build BUILD SUCCESSFUL in 3s（562 up-to-date）/ app-test BUILD SUCCESSFUL in 8s（428 tasks）/ app-lint 见 gate3-app-lint.log。
+- **回退法**：git revert 本 commit（改动=2 纯函数+DetailScreen 几何块+ZoomView 例外段+2 测试文件+3 处注释清偿，无结构/协议/依赖变更；revert 后 chrome 切换漂移缺陷复现但可正常使用）。
+
+---
 ## fix(app): 任务W W1 共享元素转场撤除——morph 全套退役+保留件零回归（2026-09-11 第一百九十八笔）
 
 执行 AI：GLM-5.3（执行子代理，任务W W1 批）；主会话派发（流程约束：写码一律子代理）
@@ -18,6 +34,7 @@
 - **走查（emulator-5562=qimeng_api35+18461 虚构实例，铁律 13 全程显式 -s）**：六入口（首页/相册/收藏/历史/搜索/作者集合）→详情→返回全部瞬时交换（screenrecord 20fps 抽帧双参考检测，morph 应 ≥3 中间帧，实测全部 0）；D1 相册滚中→详情→返回仍在列表中部未回顶（首可见行 y 573→513 同区域）；收藏静默刷新=详情取消收藏→返回 4→3 无整页重载指示器（返回后 50ms 帧列表已完整渲染），历史返回零重绘（V1 撤 ON_RESUME 重拉语义保持）；收藏库状态已还原（4/4）。证据 %TEMP%\qimeng-w1-evidence\（notes.md+六视频+帧目录+dump+门禁日志）。
 - **门禁三连（低 CPU 档，全 exit 0）**：app-build BUILD SUCCESSFUL in 39s / app-test BUILD SUCCESSFUL in 11s（428 actionable tasks）/ app-lint BUILD SUCCESSFUL in 1m 33s（705 actionable tasks）。过程坑记档：`make | tail` 管道被 Gradle/Kotlin daemon 继承的管道写端挂死（构建实际 39s 完成、管道空转 34min 才发现）——本批起门禁命令一律 `> 文件 2>&1` 重定向，后续批次沿用。
 - **回退法**：git revert 本 commit（撤除全部落在单 commit，无结构/协议/依赖变更）。
+- **口径更正（任务W W2 追注，2026-09-11）**：本笔「grep 零命中」的精确口径=android/ 全部 *.kt 代码零命中；core/ui/build.gradle.kts 两行**注释级**命中（api(libs.compose.animation) 的理由注释仍引用已删的 motion/QimengSharedTransition.kt）当时保留未改，已随 W2 批（第一百九十九笔）清偿改写——对拍板无影响（依赖本身从未在撤除清单）。
 
 ## docs(app): 任务V V9 收官——全卷总结+待拍板台账落账（#42/#8 关闭+Consolidated 待确认项入表）+HANDOVER 任务V 节收官（2026-09-11 第一百九十七笔）
 

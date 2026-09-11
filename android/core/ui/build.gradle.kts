@@ -19,9 +19,12 @@ dependencies {
     implementation(libs.compose.ui.graphics)
     implementation(libs.compose.foundation)
     implementation(libs.compose.material3)
-    // api 而非 implementation：motion/QimengSharedTransition.kt 的 CompositionLocal 签名
-    // 泄漏 animation 构件类型（SharedTransitionScope/AnimatedVisibilityScope），消费方
-    //（:app 壳层、feature:detail）须经此传递可见（exp#3 试点；版本随 BOM，禁止单独升级）
+    // api 而非 implementation（现状陈述，任务W W2 清偿——原注释引用的已删件
+    // motion/QimengSharedTransition.kt 见第一百九十八笔）：本件 QimengSegPill 用
+    // animation.core（animateFloatAsState/tween），且 :app 壳层与 feature 各页的
+    // AnimatedVisibility/fade 动画（QimengNavHost/DetailScreen/DetailChromeBars/
+    // DetailSections 等 5 文件）均未自声明 animation 构件、经此 api 传递可见
+    //（版本随 BOM，禁止单独升级）
     api(libs.compose.animation)
     implementation(libs.compose.ui.tooling.preview)
 
