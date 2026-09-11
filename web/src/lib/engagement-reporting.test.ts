@@ -1,29 +1,28 @@
 /**
- * 行为打点口径纯函数锁定（2026-09-11 打点口径批，口径 B；DOMAIN_RULES §5）：
- * dwell 段决策（<1s 合法段照报 / 非正值防御 / 秒数四舍五入）与 play 双来源
- * 单发状态机（同段防重 / pause 重置 / 起播来源在接线层归一）。node 环境纯函数，
+ * 行为打点口径纯函数锁定（DOMAIN_RULES §5）：
+ * dwell 段决策（<1s 过滤 / 非有限值防御 / 秒数四舍五入；2026-09-12 W6 #45
+ * 回退 V5 口径 B，恢复「<1s 段不上报」）与 play 双来源单发状态机（同段防重 /
+ * pause 重置 / 起播来源在接线层归一；#46 维持不变）。node 环境纯函数，
  * 无假件依赖。
  */
 import { describe, expect, it } from 'vitest'
 import { decideDwellSegment, stepPlayGate } from './engagement-reporting'
 
 describe('decideDwellSegment（dwell 段是否上报 + 秒数取整）', () => {
-  it('口径 B 核心：不足 1s 的合法停留段照报，seconds=0 合法（<500ms 段四舍五入为 0）', () => {
-    expect(decideDwellSegment(1)).toEqual({ report: true, seconds: 0 })
-    expect(decideDwellSegment(499)).toEqual({ report: true, seconds: 0 })
-    // 500ms 起四舍五入进位：999ms=0.999s→1（口径 A 注释「<1s 段秒数为 0」的原
-    // 表述只对 <500ms 成立，口径 B 起 <1s 段全量照报、按四舍五入如实取整）
-    expect(decideDwellSegment(500)).toEqual({ report: true, seconds: 1 })
-    expect(decideDwellSegment(999)).toEqual({ report: true, seconds: 1 })
+  it('<1s 过滤：不足 1s 的停留段不上报（W6 #45 回退口径——浏览 open 事件已计入访问，零值段冗余）', () => {
+    expect(decideDwellSegment(1)).toEqual({ report: false, seconds: 0 })
+    expect(decideDwellSegment(499)).toEqual({ report: false, seconds: 0 })
+    expect(decideDwellSegment(500)).toEqual({ report: false, seconds: 0 })
+    expect(decideDwellSegment(999)).toEqual({ report: false, seconds: 0 })
   })
 
-  it('秒数四舍五入：恰 1s→1，1.5s→2，长段不受口径变更影响', () => {
+  it('恰 1s 起上报：1000ms→1，四舍五入 1.5s→2，长段不受口径回退影响', () => {
     expect(decideDwellSegment(1000)).toEqual({ report: true, seconds: 1 })
     expect(decideDwellSegment(1500)).toEqual({ report: true, seconds: 2 })
     expect(decideDwellSegment(13_000)).toEqual({ report: true, seconds: 13 })
   })
 
-  it('防御：0ms 段不上报（原口径 A 防御保留）', () => {
+  it('防御：0ms 段不上报（<1s 过滤天然涵盖）', () => {
     expect(decideDwellSegment(0)).toEqual({ report: false, seconds: 0 })
   })
 
