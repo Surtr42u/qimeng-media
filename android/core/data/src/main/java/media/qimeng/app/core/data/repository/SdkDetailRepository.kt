@@ -7,8 +7,6 @@ import media.qimeng.app.core.data.events.EventSyncScheduler
 import media.qimeng.app.core.data.events.ViewEventQueue
 import media.qimeng.app.core.model.AssetDetail
 import media.qimeng.app.core.model.LikeToggleResult
-import media.qimeng.app.core.model.MediaAsset
-import media.qimeng.app.core.model.MediaKind
 import media.qimeng.app.core.model.TagChip
 import media.qimeng.app.core.model.TimelineTag
 import media.qimeng.app.core.model.ViewEventKind
@@ -103,24 +101,6 @@ class SdkDetailRepository @Inject constructor(
                 tag = tagName,
             )
         }
-    }
-
-    override suspend fun upNext(seed: Long, limit: Int, mediaType: MediaKind?, cosOnly: Boolean): List<MediaAsset> {
-        val api = apiFactory.create()
-        logRequest("GET /recommendations", "upnext seed=$seed limit=$limit mediaType=$mediaType cosOnly=$cosOnly offset=0")
-        val items = withContext(Dispatchers.IO) {
-            // offset 恒 0：推荐栏一次取一页，翻页=换 seed（Web useUpNextList 同参数语义）
-            api.apiV1RecommendationsGet(
-                seed = seed,
-                limit = limit,
-                offset = UP_NEXT_OFFSET,
-                mediaType = mediaType?.toSdk(),
-                cosOnly = cosOnly,
-            )
-        }
-        // 列表 DTO 映射复用 SdkMappers（同模块 internal 可见，零改动零复制）
-        val baseUrl = apiFactory.currentBaseUrl()
-        return items.map { SdkMappers.toMediaAsset(it, baseUrl) }
     }
 
     override suspend fun reportProgress(assetId: String, positionSeconds: Double) {
@@ -222,9 +202,6 @@ class SdkDetailRepository @Inject constructor(
     }
 
     companion object {
-        /** 推荐栏取数偏移恒 0（换一批=换 seed 重取，同 seed 可复现——DOMAIN_RULES §1.1 禁纯随机） */
-        private const val UP_NEXT_OFFSET = 0
-
         /** dwell 秒→毫秒换算系数（队列口径存 ms，见 reportViewEvent 注释） */
         private const val MS_PER_SECOND = 1000L
 

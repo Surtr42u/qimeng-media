@@ -9,6 +9,18 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## feat(app): 任务W W3 详情精简批——四胶囊作者化+作者Sheet+下滑区三段+UpNext退役（2026-09-12 第二百零五笔）
+
+执行 AI：GLM-5.3-Flash（主代理调度；executor 子代理两轮实现+修复，reviewer 子代理对抗审查，主代理模拟器实操走查）
+
+- **四胶囊=点赞N/收藏/标签/作者**（「整理」胶囊退役）：DetailChromeBars 四枚 DetailActionButton 单源沿用，新增 DetailAuthorIcon；整理/删除/改名/移动入口详情页退役（弹窗族组件保守保留无入口，DetailJumpSheet 维持 V3 口径不动）；DriveFileMoveIcon 孤儿图标一并清偿。
+- **DetailAuthorSheet（ModalBottomSheet）**：作者胶囊弹出，内容=原下滑区作者卡移植（displayName·COS、关注/取关闭环走 viewModel.toggleFollow→真 SDK `PUT /authors/{id}/follow`、「进入作者主页」复用 authorCollection 路由，跳转即收 Sheet）。
+- **下滑区终态=Title→Meta→TagRow(只读) 三段**：UpNext 推荐栏整段退役（DetailUpNextCard 整文件删、VM refreshUpNext/reshuffleUpNext/upNextJump/UiState.upNext、Repository 端口与 UP_NEXT_*/INITIAL_UP_NEXT_SEED 常量、strings detail_upnext_* 三条、测试 fake 与用例全清）；孤儿 grep（upnext/DetailAuthorCard/DriveFileMoveIcon 忽略大小写）全源码零命中。
+- **修复轮 P1×2（模拟器走查实锤，根因=material3 1.5.0-alpha15 ModalBottomSheet 重写件三新行为）**：①拖拽 handle 挂了「Expanded 态点击即收起」+show 动画 spring 过冲回弹致点击坐标错位+缺省 contentWindowInsets 垫入 statusBars 惰性死区——「+关注」「进入作者主页」onClick 从未收到事件（服务端零 follow 请求佐证）；修=dragHandle=null+shouldDismissOnClickOutside=false+contentWindowInsets 改 standardWindowInsets（**交互口径变化：Sheet 不再点外部关闭，关闭出口=返回键/下滑**，如需恢复点外关闭待用户拍板）。②AuthorCollectionRoutes 契约注释误设 authorId 为 UUID、实测 COS 作者 id=`cos_测试作者一` 含中文且路由只编码 name 段——修=authorId 段同样百分号编码+新增中文 id 单测。
+- **验证**：门禁三连两轮全绿（低 CPU 档 workers.max=2+priority=low；build 43s/9s、test 13s/5s、lint 1m32s/1m14s）；reviewer 对抗审查【通过】（红线/toml/sdk 生成物/舞台 W2 修复区/四 Tab 零触碰独立复核，DetailViewModelTest 33/0 独立重跑）；模拟器实操走查（qimeng_api35b 独立 AVD+18461 虚构库）：四胶囊 dump/Sheet 关注闭环（服务端 followed=true 实证）/进入作者主页可达（作者集合页 4 文件渲染）/下滑区三段/TagRow 渲染/返回栈，证据 %TEMP%\qimeng-w3-evidence\。
+- **后果记档**：整理/删除/改名/移动入口退役+#44「删除归整理」推翻+DetailJumpSheet 口径，已追加至仓库外《待拍板-20260907.md》「任务W W3 后果记档」节。
+- **遗留记档**：①core/ui 存量孤儿 DeleteIcon（V3 删删除钮遗留）与 ChevronLeftIcon（V2 删 pager 行遗留）零引用，非本批引入，下次清偿批顺带；②DetailChromeBars/DetailScreen 两处「待用户确认」过时注释（#43 已追认）；③走查中偶发一次「详情操作后弹回登录页」（同操作复测两次均正常，冷启动登录态恢复实测正常，根因未定位）——列入观察项，W4 批继续留意。
+
 ## docs(app): 任务W W4 扩口——交互态锁滚动+图片手势正确性批（沉浸态锁滚/Bug A 全屏错位/Bug B 点击重居中/11 项手势矩阵）（2026-09-11 第二百零四笔）
 
 执行 AI：GLM-5.3-Flash（主代理，用户报告两个手势 bug 并拍板「写入任务书一起做了」）

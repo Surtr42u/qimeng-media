@@ -28,7 +28,6 @@ import androidx.compose.ui.text.font.FontWeight
 import media.qimeng.app.core.model.AssetDetail
 import media.qimeng.app.core.ui.component.formatCount
 import media.qimeng.app.core.ui.icon.BackIcon
-import media.qimeng.app.core.ui.icon.DriveFileMoveIcon
 import media.qimeng.app.core.ui.icon.StarIcon
 import media.qimeng.app.core.ui.icon.StarOutlinedIcon
 import media.qimeng.app.core.ui.icon.ThumbUpIcon
@@ -101,13 +100,14 @@ internal fun DetailTopChrome(
 }
 
 /**
- * 底部渐变操作层——任务V V3 重排（2026-09-10 截图批注用户拍板）：四枚 icon+文字圆角胶囊
- * 「点赞N / 收藏 / 标签 / 整理」SpaceEvenly 均匀分布，原位替换旧四纯图标行（点赞/收藏/
- * 标签/快速转跳）；样式=现行胶囊件 [DetailActionButton]（首屏不放标题/meta/标签/作者卡，
- * 下滑区互动行退役后此处是点赞收藏唯一入口）。渐变遮罩从透明渐变到 qmColorBg 90%、
- * 底部不做导航栏避让（任务V V2 口径：壳层内容区已钉在导航栏线下）均不变（K3c 背板条
- * 机制不动，胶囊在既有容器内替换）。收藏/点赞图标区分空心/实心态，激活态 = primary 主色
- * 实底；点赞/收藏与原下滑区互动行同链（VM toggle，乐观 disabled 同源）。
+ * 底部渐变操作层——任务W W3 重排（2026-09-12 任务书拍板）：四枚 icon+文字圆角胶囊
+ * 「点赞N / 收藏 / 标签 / 作者」，样式=现行胶囊件 [DetailActionButton]（单源，不另起炉灶）。
+ * 沿革：V3 四胶囊为「点赞N/收藏/标签/整理」（原位替换旧四纯图标行）；W3「整理」退役
+ * 换「作者」——整理/删除/改名/移动入口随本批从详情页退役（后果已记档待拍板台账），
+ * 作者胶囊点开 [DetailAuthorSheet]（原作者卡内容移植）。渐变遮罩从透明渐变到 qmColorBg
+ * 90%、底部不做导航栏避让（任务V V2 口径：壳层内容区已钉在导航栏线下）均不变（K3c
+ * 背板条机制不动，胶囊在既有容器内替换）。收藏/点赞图标区分空心/实心态，激活态 =
+ * primary 主色实底；点赞/收藏与原下滑区互动行同链（VM toggle，乐观 disabled 同源）。
  * 「快速转跳」不进四胶囊（主代理保守裁决，待用户确认）——首屏入口随旧图标行消失，
  * DetailJumpSheet 组件保留（挂载点保留无触发点，见 DetailScreen 注释）。
  */
@@ -116,11 +116,10 @@ internal fun DetailBottomChrome(
     asset: AssetDetail,
     likePending: Boolean,
     favoritePending: Boolean,
-    fileOpsPending: Boolean,
     onToggleLike: () -> Unit,
     onToggleFavorite: () -> Unit,
     onOpenTagSheet: () -> Unit,
-    onOpenMoveDialog: () -> Unit,
+    onOpenAuthorSheet: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -184,17 +183,16 @@ internal fun DetailBottomChrome(
                 fontWeight = FontWeight.Bold,
             )
         }
-        // 整理（原下滑区互动行整理钮上移；文件操作 pending 期间禁用同 G1b 语义。
-        // 「删除」按钮从详情页移除，功能归本入口：整理弹窗内「移入回收站」→ 既有删除确认链）
+        // 作者（W3 新增胶囊，替换退役的「整理」：原作者卡内容移植进 DetailAuthorSheet）
         DetailActionButton(
             active = false,
-            enabled = !fileOpsPending,
-            contentDescription = stringResource(R.string.detail_file_ops_move),
-            onClick = onOpenMoveDialog,
+            enabled = true,
+            contentDescription = stringResource(R.string.detail_authors_title),
+            onClick = onOpenAuthorSheet,
         ) {
-            Icon(imageVector = DriveFileMoveIcon, contentDescription = null)
+            Icon(imageVector = DetailAuthorIcon, contentDescription = null)
             Text(
-                text = stringResource(R.string.detail_file_ops_move),
+                text = stringResource(R.string.detail_authors_title),
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.Bold,
             )

@@ -3,7 +3,6 @@ package media.qimeng.app.feature.detail
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -26,16 +25,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import media.qimeng.app.core.model.AssetDetail
-import media.qimeng.app.core.model.DetailAuthor
 import media.qimeng.app.core.model.DetailTag
-import media.qimeng.app.core.ui.component.QimengRankCard
 import media.qimeng.app.core.ui.component.formatBytesForDetail
 import media.qimeng.app.core.ui.component.formatCount
 import media.qimeng.app.core.ui.component.formatShortDate
@@ -44,7 +40,7 @@ import media.qimeng.app.core.ui.theme.QimengDimens
 
 // ---------- 页面私有尺寸档（本文件单源；来源注释随条目） ----------
 
-/** 详情各节纵向间距（Web .detail-main 各子块 margin 的移动端近似档；推荐栏 DetailUpNextCard.kt 同档复用） */
+/** 详情各节纵向间距（Web .detail-main 各子块 margin 的移动端近似档） */
 internal val SECTION_SPACING = 12.dp
 
 // ---------- 顶行 ----------
@@ -272,92 +268,5 @@ internal fun DisplayPill(
             Text(text = text, style = MaterialTheme.typography.labelLarge)
             trailing?.invoke(this)
         }
-    }
-}
-
-// ---------- 作者卡 ----------
-
-/**
- * 作者卡（Web AuthorCard）：无作者不渲染；每行 displayName（isCos 追加「 ·COS」，
- * Web authorDisplayName 同口径）+ 关注按钮。作者名点击进作者集合页（任务G G1b 接线——
- * Web AuthorCard 名字是链接；回调 (id, 原始名) 双参，原始名不带 ·COS 后缀，
- * Web 跳转用原始名同语义）。G1a 卡片化：套 [QimengRankCard] 描边卡盒（Web .detail-side
- * 作者卡复用 .rank-card 卡盒同语义），卡内边距由卡盒统一施加（RankCardInnerPadding），
- * 外层只留屏幕边距与节间距。
- */
-@Composable
-internal fun DetailAuthorCard(
-    authors: List<DetailAuthor>,
-    followPending: Boolean,
-    onToggleFollow: (String) -> Unit,
-    onOpenAuthor: (authorId: String, displayName: String) -> Unit = { _, _ -> },
-) {
-    if (authors.isEmpty()) return
-    val cosSuffix = stringResource(R.string.detail_author_cos_suffix)
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(
-                horizontal = QimengDimens.ScreenPaddingHorizontal,
-                vertical = SECTION_SPACING,
-            ),
-    ) {
-        QimengRankCard(modifier = Modifier.fillMaxWidth()) {
-            Text(text = stringResource(R.string.detail_authors_title), style = MaterialTheme.typography.titleMedium)
-            authors.forEach { author ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = QimengDimens.SpaceM),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = if (author.isCos) author.displayName + cosSuffix else author.displayName,
-                        style = MaterialTheme.typography.bodyLarge,
-                        // 名字即链接（Web 同语义）：主色 + 可点，触区补竖向内边距防误触邻行
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier
-                            .weight(1f)
-                            .clipToBounds()
-                            .clickable { onOpenAuthor(author.id, author.displayName) }
-                            .padding(vertical = QimengDimens.SpaceXS),
-                    )
-                    FollowButton(
-                        followed = author.followed,
-                        enabled = !followPending,
-                        onClick = { onToggleFollow(author.id) },
-                    )
-                }
-            }
-        }
-    }
-}
-
-/** 关注按钮（Web .follow-btn：已关注=灰底、「+ 关注」=主色底） */
-@Composable
-private fun FollowButton(followed: Boolean, enabled: Boolean, onClick: () -> Unit) {
-    Surface(
-        onClick = onClick,
-        enabled = enabled,
-        shape = RoundedCornerShape(QimengDimens.PillCornerRadius),
-        color = if (followed) {
-            MaterialTheme.colorScheme.surfaceVariant
-        } else {
-            MaterialTheme.colorScheme.primary
-        },
-        contentColor = if (followed) {
-            MaterialTheme.colorScheme.onSurfaceVariant
-        } else {
-            MaterialTheme.colorScheme.onPrimary
-        },
-    ) {
-        Text(
-            text = stringResource(if (followed) R.string.detail_followed else R.string.detail_follow),
-            style = MaterialTheme.typography.labelLarge,
-            modifier = Modifier.padding(
-                horizontal = QimengDimens.ChipHorizontalPadding,
-                vertical = QimengDimens.SpaceS,
-            ),
-        )
     }
 }

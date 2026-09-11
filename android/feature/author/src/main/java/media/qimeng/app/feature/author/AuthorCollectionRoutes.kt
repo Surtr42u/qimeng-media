@@ -5,7 +5,8 @@ package media.qimeng.app.feature.author
  * 路由串/参数键收敛在 feature:author——feature 禁依赖 :app（ADR-0010），壳层 QimengNavHost
  * 反向引用此处合法；防 route 字符串第二次手抄。
  *
- * 路由带双参数：authorId（UUID，取数键——GET /assets authorId 精确过滤）+ authorName
+ * 路由带双参数：authorId（取数键——GET /assets authorId 精确过滤；初版假设 UUID，实测
+ * COS 作者 id="cos_测试作者一" 含中文，见 authorCollectionRoute 注）+ authorName
  * （页标题展示用）。为什么不学 Web 用名字反查（Web /app/collection/author/{name} 按
  * displayName 找 /authors）：两处入口（作者管理行/详情作者卡）本来就持有 authorId，
  * 直传 id 免一次全量反查，也不会踩「剥 ·COS 后缀」的名字匹配边角；name 只作展示参数
@@ -20,9 +21,14 @@ object AuthorCollectionRoutes {
     /** 作者集合页路由模式（入栈隐藏底栏，覆盖页面语义） */
     const val AUTHOR_COLLECTION_ROUTE = "author_collection/{$KEY_AUTHOR_ID}/{$KEY_AUTHOR_NAME}"
 
-    /** 路由构建（authorName 必须 URL 编码——作者名可含中文/空格/斜杠，斜杠不编码会劈裂路径段） */
+    /**
+     * 路由构建（authorId 与 authorName **一律**百分号编码）：authorName 可含中文/空格/斜杠
+     * 自不待言；authorId 契约注释曾假设 UUID，实测服务端 COS 作者 id="cos_测试作者一" 同样
+     * 含中文（任务W W3 详情作者 Sheet「进入作者主页」链路实证）——裸中文进 Navigation 路由
+     * 串行为未定义，两段统一走 [encodeRouteSegment] 消除隐患。
+     */
     fun authorCollectionRoute(authorId: String, authorName: String): String =
-        "author_collection/$authorId/${encodeRouteSegment(authorName)}"
+        "author_collection/${encodeRouteSegment(authorId)}/${encodeRouteSegment(authorName)}"
 }
 
 /**

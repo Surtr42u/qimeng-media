@@ -2,15 +2,13 @@ package media.qimeng.app.core.data.repository
 
 import media.qimeng.app.core.model.AssetDetail
 import media.qimeng.app.core.model.LikeToggleResult
-import media.qimeng.app.core.model.MediaAsset
-import media.qimeng.app.core.model.MediaKind
 import media.qimeng.app.core.model.TagChip
 import media.qimeng.app.core.model.TimelineTag
 import media.qimeng.app.core.model.ViewEventKind
 
 /**
- * 详情页数据端口（M4-3）：详情读取 + 互动（点赞/收藏/关注走 [AuthorRepository]）+ 标签管理
- * + 「接下来播放」推荐流。实现经生成 SDK 访问服务端（UI 禁直调 SDK/网络，ADR-0008 铁律 7）。
+ * 详情页数据端口（M4-3）：详情读取 + 互动（点赞/收藏/关注走 [AuthorRepository]）+ 标签管理。
+ * 实现经生成 SDK 访问服务端（UI 禁直调 SDK/网络，ADR-0008 铁律 7）。
  */
 interface DetailRepository {
 
@@ -38,14 +36,6 @@ interface DetailRepository {
      * 标签池无此名 → 404（拼错不静默吞）。只动本条关联的 created_at（DOMAIN_RULES §7）。
      */
     suspend fun unbindTag(assetId: String, tagName: String)
-
-    /**
-     * 「接下来播放」推荐流（GET /recommendations offset=0 + cosOnly 收窄；Web useUpNextList 同参数）。
-     * 为什么不在 [MediaRepository.recommendations] 加 cosOnly 参数：该接口被列表族四个 VM 的
-     * 测试 fake 实现，改签名会撞 M4-2A 并行边界——详情侧独立端口零侵入。
-     * 当前资产由调用方（ViewModel）过滤，仓库层保持「纯取数」。
-     */
-    suspend fun upNext(seed: Long, limit: Int, mediaType: MediaKind?, cosOnly: Boolean): List<MediaAsset>
 
     // ------------------------------------------------------------------
     // M4-3 3d 新增（播放进度 / 行为打点 / 时间轴标签）。

@@ -359,8 +359,8 @@ fun QimengNavHost(
                     onOpenTagSearch = links.onOpenTagSearch,
                 )
             }
-            // 详情页（M4-3）：不设 launchSingleTop——详情→详情（推荐栏跳转）保留返回栈，
-            // 返回键回到上一个资产（旧版内部浏览历史栈的导航层等价语义）。
+            // 详情页（M4-3）：不设 launchSingleTop——详情→详情（兄弟资产滑动换件 push 叠栈）
+            // 保留返回栈，返回键回到上一个资产（旧版内部浏览历史栈的导航层等价语义）。
             // popExit/popEnter 双 None：瞬时交换语义显式化（继承 NavHost 顶层四参
             // None，no-op；L2 拍板「无内容转场」口径同样覆盖 pushed 路由的 pop 侧）。
             composable(
@@ -371,11 +371,12 @@ fun QimengNavHost(
                 DetailScreen(
                     assetId = entry.arguments?.getString(DetailRoutes.KEY_ASSET_ID).orEmpty(),
                     onBack = { navController.popBackStack() },
-                    onOpenAsset = { assetId, _ ->
-                        // 批次清单已由 DetailViewModel.upNextJump 换成推荐栏清单，壳层只管导航
+                    onOpenAsset = { assetId ->
+                        // 兄弟资产滑动换件：批次清单就是当前清单（任务W W3 推荐栏退役后
+                        // 壳层只管导航，无换批语义）
                         navController.navigate(DetailRoutes.detailRoute(assetId))
                     },
-                    // 作者卡名字点击进作者集合页（任务G G1b 接线；原始名不带 ·COS 后缀）
+                    // 作者 Sheet「进入作者主页」进作者集合页（任务G G1b 接线；原始名不带 ·COS 后缀）
                     onOpenAuthor = { authorId, displayName ->
                         navController.navigate(
                             AuthorCollectionRoutes.authorCollectionRoute(authorId, displayName),
