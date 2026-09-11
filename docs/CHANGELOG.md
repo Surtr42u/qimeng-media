@@ -9,6 +9,17 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## feat(app): 任务W W7 批——全屏滑切保持全屏（#20 对标旧版）——沉浸交接单+滑切根因定案（2026-09-12 第二百一十笔）
+
+执行 AI：GLM-5.3-Flash（主代理调度；executor 子代理实现，测试子代理矩阵实测，reviewer 子代理对抗审查【通过】含刚性平移假设检验）
+
+- **滑切根因定案**：详情横滑切件并非同容器 pager 换页，而是壳层 navigate **push 叠栈**（ZoomImageView 快甩/慢拖累积+VideoStage 海报态滑拽→onSiblingNavigate→navController.navigate push）——新 DetailScreen 实例 chromeVisible rememberSaveable 初值恒 true，故滑切目标落排版态；pop 回源屏 saveable 恢复沉浸=「返回时才恢复全屏」的由来。
+- **修法（最小面仅 feature:detail，零壳层改动）**：新增进程内一次性沉浸交接单 SiblingSwipeImmersionRequest（request 置位幂等/consume 读后即清零，裸 object 先例=TabScrollController/FavoriteMutationTracker）；onSiblingNavigate 沉浸态且 moveBy 成功才置位（解析失败不留孤儿标志）；chromeVisible initializer 改 `!consume()`——沉浸滑切目标以全屏起步，海报态滑切/网格入口不受染，pop/进程重建走 saveable 恢复与交接单解耦。**三条停手点（四 Tab/enterDetail 链/横屏 Dialog 机制）均未触及。**
+- **实测（矩阵复测+录屏）**：沉浸连切 4 刀 3 件全部保持全屏（chrome 不显/系统栏不驻留）；海报态滑切基线不回归；返回链逐级恢复该件滑切前形态；K2 视频全屏 Dialog 进出播放零中断、K3 播放中返回先退 chrome；W2 显隐零漂移、W5 总时长正确全回归。
+- **W4「回归」争议处置（审查复核成立）**：复测中沉浸态纵滑页面位移经审查者刚性平移假设检验实锤=w1 整体上移恰 63px（dy=63 时差异 235,339→62,571px 塌缩），与 W4 已定案的「系统栏 inset 收缩经壳层 innerPadding 的布局平移」签名完全一致——**滚动锁死非本批回归，仍为挂起拍板项**（详见第二百零六笔）。
+- **观察项记档**：滑切 push 瞬间系统栏 show→hide 1-2 帧白条闪烁（旧屏 dispose 恢复+新屏再隐藏，<200ms 低频，审查实测 f0 帧亮度 250）——后续可 handoff-ack 消除，留待裁决；测试报告附注 keyevent 4 在详情=撤销滑切 push 栈（既有 push 语义非本批引入）。
+- 门禁三连全绿（低 CPU 档）；新增 SiblingSwipeImmersionRequestTest 4 用例（审查独立重跑非缓存通过）；证据 %TEMP%\qimeng-w7-evidence\。
+
 ## fix(app): 任务W W6 车道B #49 夜间禁用钮噪点修复+#2 「全部」丸选中态对标旧版（2026-09-12 第二百零九笔）
 
 执行 AI：GLM-5.3-Flash（主代理调度；executor 子代理实现+装机实测，reviewer 子代理对抗审查【通过】并 --rerun 非缓存复核）
