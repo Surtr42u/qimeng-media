@@ -9,6 +9,15 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## fix(web): 任务W W6 车道A #45 dwell<1s 过滤回退——V5 口径 B 翻案落地上报端+DOMAIN_RULES §5（2026-09-12 第二百零八笔）
+
+执行 AI：GLM-5.3-Flash（主代理调度；executor 子代理实现，reviewer 子代理对抗审查【通过】）
+
+- **#45 用户拍板回退**：「直接算点击或者浏览更方便」——decideDwellSegment 过滤由 `elapsedMs<=0` 恢复为 `elapsedMs < MIN_REPORT_SEGMENT_MS(1000)`，恢复「<1s 停留段不上报」（浏览 open 事件已计入访问，快速划过的零值段冗余）；Number.isFinite 脏数据防御保留（审查确认不可达输入上与原口径输出等价）；**stepPlayGate/play 双来源单发零改动（#46 维持）**，video-player.tsx 未触碰。
+- **DOMAIN_RULES §5 同步回退**：「浏览时长」恢复不足 1s 不上报（注明 2026-09-12 用户拍板回退 V5 口径 B）；「常看文件」行逐字回退 V5 前原文；playCount 行逐字不动；头部更新行追加条目。
+- **测试回翻**：engagement-reporting.test.ts——<1s 过滤（1/499/500/999ms 均 report:false）+恰 1s 起上报（1000→1/1500→2/13000→13）+0/负/非有限防御用例保留；stepPlayGate 6 用例逐字未动；全库 vitest 134/134、tsc 0 错、vite build/PWA 产物正常。
+- 审查独立复跑 vitest/tsc 确认非缓存；证据 %TEMP%\qimeng-w6-evidence\web\。
+
 ## fix(app): 任务W W5 播放器总时长卡死修复——全屏态 adopt 挂载补同步+冻结件例外三件套（2026-09-12 第二百零七笔）
 
 执行 AI：GLM-5.3-Flash（主代理调度+模拟器实测验收；executor 子代理实现，reviewer 子代理对抗审查）

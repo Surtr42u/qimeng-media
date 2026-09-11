@@ -44,9 +44,9 @@ export function useDwellReport(assetId: string | undefined) {
   })
 
   /** 关闭当前停留段并上报（同段重复调用 no-op——段被取走即置空，禁重复 flush）。
-   * 段级口径（2026-09-11 口径 B，DOMAIN_RULES §5）：不足 1s 的合法段照报
-   * （seconds 四舍五入后为 0 的零值行合法，原「<1s 段不上报」退役），
-   * 仅非正值/非有限毫秒数（时钟异常/脏数据）由 decideDwellSegment 防御拦截。 */
+   * 段级口径（DOMAIN_RULES §5）：不足 1s 的停留段不上报（W6 #45 回退——浏览
+   * open 事件已计入访问，零值段冗余），非有限毫秒数（脏数据）由
+   * decideDwellSegment 一并防御拦截。 */
   const flush = useCallback(() => {
     const segment = segmentRef.current
     segmentRef.current = null

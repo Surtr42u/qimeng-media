@@ -1,5 +1,5 @@
 /**
- * 行为打点口径纯函数（2026-09-11 打点口径批，口径 B；DOMAIN_RULES §5）。
+ * 行为打点口径纯函数（DOMAIN_RULES §5）。
  *
  * lib 纯函数层（ADR-0017）：无 IO、无 React——打点判定是口径载体，行为由单测
  * 锁定（与推荐算法/统计聚合同族：口径进纯函数，hook/组件层只做接线，铁律 7）。
@@ -7,12 +7,20 @@
  * （play 防重状态机）。
  */
 
+/**
+ * 停留段最小上报时长（毫秒）：不足 1s 的停留段秒数四舍五入后为 0，累加
+ * 无意义且会给事件流制造零值噪声（快速划过），不产生事件；浏览 open 事件
+ * 已计入访问（W6 #45 用户拍板回退，DOMAIN_RULES §5），数值口径不受影响
+ * （少计的 <1s 在任意统计窗口内都不足 1 秒）。
+ */
+const MIN_REPORT_SEGMENT_MS = 1000
+
 /** dwell 段上报决策（decideDwellSegment 返回值） */
 export interface DwellSegmentDecision {
   /**
-   * false = 该段不上报。仅对非正值/非有限毫秒数（0ms、负值、脏数据）防御——
-   * 口径 B 起不足 1s 的合法停留段照报（seconds 四舍五入后为 0 的零值行合法，
-   * 原「<1s 段不上报」口径 A 就此退役）。
+   * false = 该段不上报。不足 1s 的停留段不上报（2026-09-12 W6 #45 回退：
+   * 恢复原「<1s 段不上报」口径，V5 口径 B 废止）；另对非有限毫秒数
+   * （NaN/Infinity，时钟异常/脏数据）防御。
    */
   report: boolean
   /** 上报秒数 = 毫秒数 ÷1000 四舍五入；report=false 时为 0 */
@@ -22,11 +30,13 @@ export interface DwellSegmentDecision {
 /**
  * dwell 段是否上报 + 秒数取整的单点决策。
  * 口径（DOMAIN_RULES §5「浏览时长：详情页停留秒数」）：一次连续停留恰好一条
- * dwell 事件，段时长不足 1s 同样上报（seconds 可为 0）；仅非正值/非有限值
- * （时钟异常/脏数据）不上报。
+ * dwell 事件；段时长不足 1s（MIN_REPORT_SEGMENT_MS）不上报，仅非有限值
+ * （时钟异常/脏数据）一并防御拦截。
  */
 export function decideDwellSegment(elapsedMs: number): DwellSegmentDecision {
-  if (!Number.isFinite(elapsedMs) || elapsedMs <= 0) return { report: false, seconds: 0 }
+  if (!Number.isFinite(elapsedMs) || elapsedMs < MIN_REPORT_SEGMENT_MS) {
+    return { report: false, seconds: 0 }
+  }
   return { report: true, seconds: Math.round(elapsedMs / 1000) }
 }
 
