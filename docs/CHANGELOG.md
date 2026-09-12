@@ -9,6 +9,16 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## fix(server)+ci: 任务S S4 清欠批——#9 文件操作 TOCTOU 按库串行化 + #10 生成物指纹锁入库 + 工具批 #28 收尾（2026-09-13 第二百四十四笔）
+
+执行 AI：GLM-5.3-Flash（主代理调度+工具批亲修；调研+executor 子代理流水）
+
+- **#9 upload/移动 TOCTOU（P3 清欠）**：实锤三处两段式竞态——上传（ResolveConflict 与 rename 间窗口，并发同名上传第二次 Rename 静默覆盖第一次致资产行指向同一幸存文件）、移动（冲突双查与 rename 间，覆盖第三方文件）、回收站恢复（同模式）。修法=**filing 包新增 gate.go 按库 keyed mutex（WithLibraryGate）**：单用户 NAS 全部写入方同进程，按 libraryID 串行「探测占用→解析冲突名→rename 落盘（必要时含库行检查与回滚）」关键段；上传采用**收流在锁外、改名在锁内**形态（分钟级流接收不持锁，窗口缩至毫秒级）；move 以 sentinel（409 双查/400 越界）锁内判定锁外写响应，SECURITY 红线路径越界兜底保持；与 scanner.libraryGate 同构但独立（不可互替，scanner 闸门不可重入）。filing 纯函数边界在 doc.go 声明 gate.go 为唯一例外。**并发回归**：TestUploadConcurrentSameName（8 路同名并发断言 relPath 两两不同+字节各自完整）、TestMoveUploadNoOverwrite（move+上传竞争零覆盖）无 -race 连跑 10 次全绿；**-race 本机不可跑**（Windows 无 gcc，如实披露）——CI server job `go test ./... -race` 为最终裁决，合并前须核 CI。
+- **#10 gen 生成物 git 盲区（CI 批）**：候选 A 摘要锁落地——Makefile 新增 `sdk-lock` target（三端生成物逐文件 LF 归一化 sha256、按路径排序写 `api/sdk.lock`；排除 `.openapi-generator/` 与 build 产物；Java 系生成器 Windows 行尾差异靠 tr -d '\r' 归一）；`sdk` target 末尾追生成锁；ci.yml `sdk-chain` job 在 make sdk 后重算 diff 校验，不一致 exit 1 并指引重跑提交。ADR-0009 不入库决策不动（指纹入库≠产物入库），手改/漂移/协议漏提交三类盲区一次覆盖；铁律 1 与 AI_README 同步「协议改动或重新生成须同 commit 更新锁」。本地产出 sdk.lock（274 条目，幂等两次一致、纯 LF）。**风险预告**：若 CI 生成器产物与本机现存生成物有历史漂移，sdk-chain 首跑可能红——按指引重跑 make sdk 提交锁即可，属锁生效而非故障。
+- **工具批 #28 收尾（仓库外 ui-compare-harness，不入 git）**：server.sh 主体已于既往修妥（cygpath -m + CRLF 收口）；残量 tap.sh:4 的坏 sed（`s|\|/|g` GNU sed 直接 unterminated）+ mktemp 双后缀修复为 cygpath -m 一步到位，README 脚本表补录 tap.sh 条目。**#5（harness elem 截图状态对称性）语义不可复原**（原出处文件已删，仅存台账一行）：调研以代码实据推定四条不对称点（单侧 steps2 空步骤采集/内容就绪态不等/场景间状态渗漏/do_tap 空regex前科），**语义核销留用户**——机械改进项不在语义不明时先行实施。
+- 验证：`go build/gofmt/vet` 全净、`go test ./... -count=1` 全绿（executor 实跑）；Makefile/ci.yml 变更经 sdk-lock 本机实跑验证；harness tap.sh bash -n 语法过。撞窗披露：工作树同期存在任务T 会话在途 android/{core:data,core:network,core:testing,feature:login,feature:settings} 改动与 19x.xml dump 残留（非本卷文件，未卷入本 commit，S5 出包前须确认 T 会话收口状态）。
+
+---
 ## docs: 任务S S3 基座升级批 SKIPPED——maven.google.com 实测不可达，按纪律不硬做（2026-09-13 第二百四十三笔）
 
 执行 AI：GLM-5.3-Flash（主代理）

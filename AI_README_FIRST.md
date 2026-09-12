@@ -93,7 +93,7 @@
 - 禁止修改 `docs/DOMAIN_RULES.md` 里标记「逐字遵守」的公式常量（除非用户明确要求并同步更新测试）。
 - 禁止通读完整源码文件来理解项目——通过文档定位，只读必要片段。
 - 禁止完成修改后不自审就回复。
-- 禁止手改 SDK 生成物（`server/internal/httpapi/gen/*.gen.go`、`web/src/api/generated/`、`android/sdk/**`）——协议改动只改 openapi.yaml 后 `make sdk`（ADR-0009）。
+- 禁止手改 SDK 生成物（`server/internal/httpapi/gen/*.gen.go`、`web/src/api/generated/`、`android/sdk/**`）——协议改动只改 openapi.yaml 后 `make sdk`（ADR-0009）。生成物指纹锁 `api/sdk.lock` 入库（#10）：协议改动或 make sdk 重新生成后须同 commit 更新锁文件——指纹入库≠产物入库。
 - 禁止违反 depguard 模块边界或为其开豁免——被 lint 拦截只能按依赖方向重构（ADR-0010）。
 - 禁止修改历史 migration 文件——schema 演进只加文件（ADR-0011）。
 
