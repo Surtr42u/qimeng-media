@@ -12,8 +12,8 @@ import media.qimeng.app.core.ui.theme.QimengDimens
 /**
  * 详情页沉浸 chrome 图标（任务I I7，GUIDE_UI §详情页 L171/172）：信息/标签/作者三枚。
  * （原第三枚快速转跳 DetailPeopleIcon 已随任务V V3 四胶囊重排删除——「快速转跳」不进
- * 四胶囊，首屏入口随旧图标行消失，孤儿图标一并清偿；ic_detail_jump.xml 不在此列——
- * 它是 BiliPlayerView 播放器内部控件资源，与本文件无关仍被引用。）
+ * 四胶囊，首屏入口随旧图标行消失，孤儿图标一并清偿。播放器侧快速转跳按钮亦于任务X X4
+ * 退役，ic_detail_jump.xml 孤儿资源随 X8 收官批删除。）
  *
  * 为什么不进 :core:ui QimengDetailIcons.kt：I 卷共享文件冻结（本批独占面 = feature:detail 目录），
  * materialIcon helper 在本文件复制 QimengDetailIcons 同款（构造参数逐字一致，注释互指——
