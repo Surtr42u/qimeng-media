@@ -20,11 +20,29 @@ package media.qimeng.app.feature.detail
  * applyChanges 次序，VideoStage D2 注有同款实证）——置位发生在 navigate 同步调用前，
  * 消费发生在目标屏首个 rememberSaveable 初值计算，二者之间无其他 DetailScreen 新实例
  * 组合窗口；消费即清零，孤儿置位（理论不发生：置位后必跟 navigate）不残留。
+ *
+ * handoff-ack（任务S S2 2026-09-13 落地，沿革：CHANGELOG 第二百一十笔 W7 留档）：滑切
+ * push 详情→详情时，旧屏 SystemBarsImmersiveEffect.onDispose 的 show(systemBars) 在
+ * applyChanges 阶段同步执行，先于新屏 LaunchedEffect 的 hide(systemBars)（协程后调度），
+ * 系统栏闪现 1-2 帧亮色白条。因消费点（新屏组合期 initializer）次序上先于旧屏
+ * onDispose，consume() 命中即置「交接在途」标记；旧屏 onDispose 经
+ * [consumeHandoffAndClear] 查询命中则跳过 show()，让栏保持隐藏与新屏 hide() 幂等汇合，
+ * 消除白条。标记读后即清：非滑切离场（详情→作者页 / pop 回列表）标记必为 false，
+ * onDispose 照常恢复 show()，列表页不丢栏。
+ *
+ * 耦合声明（S2 对抗审查 CONCERN 记档 2026-09-13）：上述「消费先于 dispose」的前提隐式
+ * 依赖壳层两个外部事实——QimengNavHost 详情转场 enter/exit/popEnter/popExit 全 None
+ * （无转场动画后移 dispose）与 Z5 换件 popUpTo(inclusive=true) 栈深恒 1（任意时刻至多
+ * 一个待 dispose 的 DetailScreen，无「两次 dispose 抢一个标记」）。若未来引入动画转场，
+ * dispose 后移将拉宽标记残留窗口、快速连滑可复现误跳 show()——届时须先重审本单时序。
  */
 internal object SiblingSwipeImmersionRequest {
 
     /** 一次性待消费标志（主线程读写；滑切手势与导航组合均在主线程，无须原子化） */
     private var pending = false
+
+    /** 交接在途标志（S2 handoff-ack）：consume() 命中即置位，供旧屏 onDispose 查询后读后即清 */
+    private var handoffInFlight = false
 
     /**
      * 源屏置位：沉浸态滑切且目标解析成功后、onOpenAsset 之前调用。
@@ -42,6 +60,24 @@ internal object SiblingSwipeImmersionRequest {
     fun consume(): Boolean {
         val consumed = pending
         pending = false
+        // S2 handoff-ack：命中即标记「滑切交接在途」——组合期消费先于旧屏 onDispose，
+        // 旧屏据此跳过 show() 避免白条；未命中不动标记（正常入口不产生交接）
+        if (consumed) handoffInFlight = true
         return consumed
+    }
+
+    /**
+     * 旧屏 onDispose 查询并读后即清（S2 handoff-ack）。返回 true = 本次离场是滑切交接
+     * 在途：时序依据是新屏组合期 consume() 先于旧屏 onDispose 的 applyChanges，命中即
+     * 滑切 push 详情→详情正在交接，旧屏应跳过 show() 让栏保持隐藏，与新屏 hide() 幂等
+     * 汇合，消除 1-2 帧白条（W7 第二百一十笔留档）。
+     *
+     * 为什么读后即清：标记若残留，后续非滑切离场（详情→作者页→返回 / pop 回列表）的
+     * onDispose 会误跳过 show()，导致列表页丢系统栏。
+     */
+    fun consumeHandoffAndClear(): Boolean {
+        val inFlight = handoffInFlight
+        handoffInFlight = false
+        return inFlight
     }
 }

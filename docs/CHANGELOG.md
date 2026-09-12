@@ -9,6 +9,19 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## fix(app): 任务S S2 系统栏架构根治批——滑切白条 handoff-ack 根修+导航栏图标明暗清偿；63px 位移复测零位移（2026-09-13 第二百四十二笔）
+
+执行 AI：GLM-5.3-Flash（主代理调度/实测验收；调研+executor+reviewer 子代理流水）
+
+- **症状①（63px 沉浸位移）重评估=已被 X1 根治**（纠正任务书立卷时的 W4 时点预判）：调研批实证任务X 212 笔 X1 根修后 detail 路由裸 Modifier、chrome 浮层化、舞台盒冻结式——即旧版「栏显隐不触发布局」（任务书候选 a）的 Compose 等价落地；X8 218 笔已实测逐像素零位移。本批**不重做架构**，改后复测：图片详情沉浸切换录屏抽帧，图卡核心区像素 diff=0.0000%（hide/show 前后帧锁定，证据 %TEMP%\qimeng-s2-frames）。
+- **症状③（滑切 push 白条）=W7 留档 handoff-ack 落地**：根因=旧屏 `SystemBarsImmersiveEffect.onDispose` 的 show(systemBars) 在 applyChanges 阶段同步执行、先于新屏 LaunchedEffect 的 hide（协程后调度）→ 栏闪现 1-2 帧。修法=新屏组合期 `SiblingSwipeImmersionRequest.consume()` 命中置「交接在途」标记（次序先于旧屏 onDispose），旧屏 `consumeHandoffAndClear()`（读后即清）命中则跳过 show() 与新屏 hide 幂等汇合。防丢栏推演+reviewer 代码级证明：详情→作者页/pop 回列表标记必 false 照常 show。
+- **顺手清偿 X8 218 笔观察项**：`isAppearanceLightNavigationBars` 与 statusBars 同口径设定/回设（LaunchedEffect+onDispose 双侧对称），minSdk 26 + core-ktx 1.18.0 合法。
+- **测试**：SiblingSwipeImmersionRequestTest 4→7 用例（命中置位/读后即清/未命中不置位/清零不残留），reviewer 以 --rerun 非缓存复跑 XML 三对齐全绿；门禁三连低 CPU 档全绿（430 用例，:core:network 预存失败结构性排除——依赖面零交集）。
+- **全页面走查 insets 零回归**（qimeng_api35c）：首页/相册/数据(统计)/我的/搜索/作者管理/上传(覆盖页代表)/登录/详情图片 chrome+沉浸/详情视频，截图证据 %TEMP%\qimeng-s2-walkthrough。
+- **限制记档（诚实口径）**：滑切 20 次逐帧白条核验本轮受限——qimeng_api35c 的 screenrecord 与 input 并发必崩（53195B 截断文件，多次复现，196/210 笔有前科）+ 自动化 fling 手势受阈值/入口序列制约；白条修复为纯逻辑门（最坏失效=退回 210 笔前既有白条，无新增危害），机制由单测+时序考古（D2 实证、四转场 None、Z5 栈深恒 1）锁定，**真机逐帧复验为强制遗留项，闭环前不向用户宣称白条已修复闭环**。reviewer 对抗审查 8 项全 PASS【通过】；耦合声明已入 SiblingSwipeImmersionRequest KDoc（NavHost 全 None 转场+栈深恒 1 两外部事实，未来引入转场动画须重审时序）。
+- 环境记档：qimeng_api35c 本批 reboot 一次（修复 screenrecord 首录成功后并发仍崩——劣化不因重启消除，与 input 并发强相关）；视频详情播放态（playerActive）滑切/切 chrome 手势归 BiliPlayerView 冻结手势域，滑切验证须用图片态或视频预览态。
+
+---
 ## fix(app): 任务S S1 对齐小修批——时间轴标签服务端色消费断开（前缀档锁定）+ 作者 Sheet 恢复点外关闭（2026-09-13 第二百四十一笔）
 
 执行 AI：GLM-5.3-Flash（主代理调度验收；executor 子代理实施）

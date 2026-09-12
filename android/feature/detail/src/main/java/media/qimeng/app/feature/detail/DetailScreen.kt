@@ -543,6 +543,10 @@ private fun DetailContentSections(
  * show/hide 分支按 chromeVisible 幂等，不会误显沉浸期系统栏。onDispose 恢复走
  * rememberUpdatedState 取最新明暗（DisposableEffect 不以 darkTheme 为键——重启会误
  * show 系统栏破坏沉浸态）。
+ *
+ * 任务S S2（2026-09-13）：onDispose 的 show() 增加 handoff-ack 门控（W7 第二百一十笔
+ * 留档的白条根修，见 SiblingSwipeImmersionRequest）——滑切 push 详情→详情时跳过 show()
+ * 避免栏闪现；导航栏图标明暗与状态栏同口径设定/回设（X8 第二百一十八笔记档清偿）。
  */
 @Composable
 private fun SystemBarsImmersiveEffect(chromeVisible: Boolean) {
@@ -557,6 +561,9 @@ private fun SystemBarsImmersiveEffect(chromeVisible: Boolean) {
             insets.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
             // 任务X X7 图标明暗（见上 KDoc）：沉浸=浅色图标（黑底）；chrome 显=随系统明暗
             insets.isAppearanceLightStatusBars = chromeVisible && !darkTheme
+            // X8 第二百一十八笔记档顺手清偿（任务S S2）：导航栏图标明暗与状态栏同口径
+            // 同步——此前只设状态栏，沉浸切换时导航栏图标明暗停留在旧值
+            insets.isAppearanceLightNavigationBars = chromeVisible && !darkTheme
             val bars = WindowInsetsCompat.Type.systemBars()
             if (chromeVisible) insets.show(bars) else insets.hide(bars)
         }
@@ -566,8 +573,19 @@ private fun SystemBarsImmersiveEffect(chromeVisible: Boolean) {
         onDispose {
             // 离开详情页（返回/推入下一资产）恢复系统栏，不留沉浸态给其他页面；
             // 图标明暗同步回系统明暗（X7：此前只恢复显隐，明暗停留在最后一次设定值）
-            controller?.show(WindowInsetsCompat.Type.systemBars())
+            // S2 handoff-ack（W7 第二百一十笔留档 → 本批落地）：滑切 push 详情→详情时，
+            // 本 onDispose（applyChanges 阶段同步执行）先于新屏 LaunchedEffect 的
+            // hide()（协程后调度），此处 show() 会闪现 1-2 帧亮色白条；新屏组合期
+            // consume() 已置「交接在途」标记且次序先于本 onDispose，命中则跳过 show()
+            // 让栏保持隐藏，与新屏 hide() 幂等汇合。读后即清：非滑切离场（详情→作者页 /
+            // pop 回列表）标记必为 false，照常恢复 show()，列表页不丢栏
+            if (!SiblingSwipeImmersionRequest.consumeHandoffAndClear()) {
+                controller?.show(WindowInsetsCompat.Type.systemBars())
+            }
             controller?.isAppearanceLightStatusBars = !latestDarkTheme
+            // X8 第二百一十八笔记档顺手清偿（任务S S2）：导航栏图标明暗与状态栏同口径
+            // 回设——此前只回设状态栏，导航栏停留在沉浸期最后一次设定值
+            controller?.isAppearanceLightNavigationBars = !latestDarkTheme
         }
     }
 }
