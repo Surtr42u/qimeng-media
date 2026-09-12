@@ -193,11 +193,11 @@ fun DetailScreen(
             playerActive = playerActive,
             themeBackground = MaterialTheme.colorScheme.background,
         )
-        // 第一屏舞台高度 = 壳层内容区可视高度（BoxWithConstraints.maxHeight：状态栏/导航栏
-        // insets 已由壳层 Scaffold 扣除）。I7 初稿用 LocalConfiguration.screenHeightDp（整屏），
-        // 但舞台盒顶从壳层 inset 线起算 → 盒底越过视口下缘，底部 chrome（BottomCenter 对齐）
-        // 落到屏幕外不可见（模拟器走查实证：a11y 树无底部四钮）——改为按可视高度取值，
-        // chrome 随第一屏滚动的设计不变
+        // 第一屏舞台高度 = 壳层内容区高度（BoxWithConstraints.maxHeight）。X1 壳层改造
+        // （2026-09-12 任务X）后 detail 路由不再吃壳层 innerPadding，内容区=全屏铺开且
+        // 恒定（系统栏显隐不触发布局，GUIDE_UI L162 口径）；I7 初稿用
+        // LocalConfiguration.screenHeightDp（整屏）曾因壳层钉位导致盒底越出视口、底部
+        // chrome 落屏外——该前提已随 X1 失效，现 maxHeight 恒等于整屏，两口径合流
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
@@ -214,6 +214,9 @@ fun DetailScreen(
             // 不裁剪子项越界绘制）：沉浸态纯黑延伸到 y=0；chrome 显态=主题底与壳底同色
             // 无感。若设备 hide 后实时 inset 归零（本机不发生），记忆回退仍保垫条高度正确
             // （stageEdgeToEdgeCompensationPx 按态裁决，单测锁定）。
+            // X1 改造后（2026-09-12 任务X）钉位前提失效：舞台盒顶=屏幕顶 y=0、自带
+            // backdrop 全屏打底，本垫条 [-comp, 0] 恒画在屏幕外不可见——机制保留不大拆
+            // （精密几何件，清偿交 X8 终审裁量），仅记档退化口径
             val density = LocalDensity.current
             val liveStatusBarTopPx = WindowInsets.statusBars.getTop(density)
             val liveNavBarBottomPx = WindowInsets.navigationBars.getBottom(density)
@@ -263,15 +266,29 @@ fun DetailScreen(
                 maxSeenStatusBarTopPx = maxSeenStatusBarTopPx.intValue,
                 maxSeenNavBarBottomPx = maxSeenNavBarBottomPx.intValue,
             )
-            val stageViewportHeight = with(density) { stageViewportHeightPx.toDp() }
+            // X1 改造钳制（2026-09-12 任务X）：壳层解除 detail 钉位后内容区=全屏且恒定
+            // （系统栏显隐不再触发布局，GUIDE_UI L162 口径达成），W2 冻结式依赖的恒等式
+            // screenPx=内容高+两 inset 随之失效——沉浸期 nav inset 归零会令冻结式低估盒高
+            // （1080x2400、status 滞留 128 例：2400+128+0-128-63=2337，盒缩 63px→图片中心
+            // 位移 31.5px，正是 W2 当年清偿的位移类缺陷复活）。以内容区高兜底钳制：舞台
+            // 盒=全屏恒高，图片 fit-center 恒屏幕居中（letterbox 上下对称）、进出沉浸零
+            // 位移；maxSeen 上探机制原样保留——真实 inset 增长（字号/分屏）时冻结式先行
+            // 响应，钳制不 bite；隐藏期冻结式只会低估不会高估（live≤maxSeen 恒成立），
+            // 钳制方向安全
+            val stageBoxHeightPx = maxOf(stageViewportHeightPx, with(density) { maxHeight.roundToPx() })
+            val stageViewportHeight = with(density) { stageBoxHeightPx.toDp() }
             // 底部背板色填充条（W2，对称 D1 顶条）：沉浸冻结后舞台盒固定在可见态高度，
             // 栏隐藏期内容区底部多出的条带（[盒底, 屏底]）由本条以 stageBackdrop 补足
             //（沉浸=纯黑延伸到 y=2400；chrome 显态=主题底与壳底同色无感）。高度=屏高-
             // 盒高-实时 status inset（盒底随内容顶移动，剩余缺口全部落在底部）；offset
-            // 按实时 nav inset 越界画到内容区外（BoxWithConstraints 不裁剪越界绘制）
+            // 按实时 nav inset 越界画到内容区外（BoxWithConstraints 不裁剪越界绘制）。
+            // X1 改造后退化记档：舞台盒=全屏恒高（钳制见上），缺口归零、垫条恒越界画在
+            // 屏幕外不可见；沉浸露出「舞台盒正下方标题条」的旧疾改由盒高钳制根治，垫条
+            // 机制保留不大拆（清偿交 X8 终审裁量）；沉浸态 z 序在滚动列之下、被舞台盒
+            // backdrop 覆盖，无视觉贡献
             val stageBottomBandHeightPx =
                 (with(density) { maxHeight.roundToPx() } + liveStatusBarTopPx + liveNavBarBottomPx) -
-                    stageViewportHeightPx - liveStatusBarTopPx
+                    stageBoxHeightPx - liveStatusBarTopPx
             val stageBottomBandHeight = with(density) { stageBottomBandHeightPx.toDp() }
             val liveNavBarBottomHeight = with(density) { liveNavBarBottomPx.toDp() }
             // 顶部背板色填充条（D1 单源）：[-comp, 0] 越界绘制区，随 stageBackdrop 切色
