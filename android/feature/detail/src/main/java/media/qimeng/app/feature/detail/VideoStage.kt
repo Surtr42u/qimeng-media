@@ -390,7 +390,11 @@ internal fun VideoStage(
     }
     val posterGestureModifier = if (stageMode == VideoStageMode.POSTER && asset.origUrl != null) {
         Modifier
-            .pointerInput(onSiblingNavigate, swipeDistancePx) {
+            // Z1：键不含 onSiblingNavigate（父级每次重组新建 lambda，键=非稳定 lambda 会随
+            // 重组重启手势协程，拖拽中重组=手势静默死亡）；回调经 :317 既有
+            // latestOnSiblingNavigate 最新值桥取用，注释与实现自此一致。键留 swipeDistancePx
+            //（值稳定，仅密度真变才重启，重启后阈值取新值）
+            .pointerInput(swipeDistancePx) {
                 var dragX = 0f
                 val tracker = VelocityTracker()
                 detectHorizontalDragGestures(
@@ -406,7 +410,8 @@ internal fun VideoStage(
                     onDragEnd = {
                         val velocity = tracker.calculateVelocity()
                         // V2 判定收敛到纯函数 posterSwipeDelta（距离或速度任一达阈值即切）
-                        posterSwipeDelta(dragX, velocity.x, swipeDistancePx)?.let(onSiblingNavigate)
+                        posterSwipeDelta(dragX, velocity.x, swipeDistancePx)
+                            ?.let(latestOnSiblingNavigate)
                         dragX = 0f
                     },
                     onDragCancel = { dragX = 0f },

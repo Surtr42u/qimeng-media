@@ -32,6 +32,12 @@ import kotlin.math.min
  * 60dp、横向占优），放大态手势不变——用户钦点恢复横滑，冻结例外已记档。
  * 任务W W2 例外增补：onSizeChanged 基态自愈重居中（宿主容器尺寸变化时，见 onSizeChanged
  * 处注释与 shouldRecenterOnResize）——冻结例外三件套记档同 V2 先例。
+ * 任务Z Z1 例外增补：未放大态横向主导（|accumX| 超 4dp 门槛且 >|accumY|，见
+ * isHorizontalDominantDrag 与 onScroll 处注释）onScroll 即向父层 requestDisallowInterceptTouchEvent——
+ * 根因=父层 verticalScroll（chrome 显态 enabled）竖向 slop 先过即拦截并 CANCEL 本事件流，
+ * 而慢拖切件只认 UP 不认 CANCEL → 带竖直分量的横滑整刀作废（受控实验：海报态 dy≥200
+ * 斜滑 10 中 1 成、沉浸态 3/3 全过，唯一变量=verticalScroll enabled）。用户反馈出处=
+ * 2026-09-12 晚真机「有时候详情页左右滑动没反应」。冻结例外三件套记档同 V2/W2 先例。
  *
  * 搬运适配（行为不变）：
  * - 包名迁移到 media.qimeng.app.feature.detail.image；
@@ -132,6 +138,23 @@ class ZoomImageView @JvmOverloads constructor(
                     //（distanceX=上次x-当前x，手指左移为正 → accumX>0=左滑）
                     dragAccumX += distanceX
                     dragAccumY += distanceY
+                    // Z1 根修：未放大态横向主导时请求父层不拦截（写法照本类 onScale 与下方
+                    // 放大态 onScroll 的 requestDisallowInterceptTouchEvent 既有先例）——根因=
+                    // 父层 verticalScroll（chrome 显态 enabled）竖向 slop 先过即拦截并 CANCEL
+                    // 本事件流，慢拖切件只认 UP 不认 CANCEL → 带竖直分量的横滑整刀作废。
+                    // 纵向主导不请求：保留 W 拍板⑧「海报态可小幅下滑」（下滑交还父层滚动）。
+                    // 首个 onScroll 即携总位移（GestureDetector 欧氏 slop bypass 语义），4dp
+                    // 门槛在此事件即可达标，先于父层竖向 slop 拦截出手（阈值论证见常量注）
+                    if (!hasDisallowedIntercept &&
+                        isHorizontalDominantDrag(
+                            accumX = dragAccumX,
+                            accumY = dragAccumY,
+                            requestThresholdPx = HORIZONTAL_DOMINANT_REQUEST_DP.dpFloat(context),
+                        )
+                    ) {
+                        parent?.requestDisallowInterceptTouchEvent(true)
+                        hasDisallowedIntercept = true
+                    }
                     return false
                 }
                 if (!isGestureActive) {
@@ -332,6 +355,10 @@ class ZoomImageView @JvmOverloads constructor(
             // V2 例外增补：未放大态慢拖收尾（无 fling 事件）UP 时按累积位移判定切件——
             // 距离阈值同 60dp、横向占优才切；onFling 已切（swipeConsumedThisGesture）或
             // 已放大（>1.05f）不触发，放大态手势循环不变
+            // Z1 记档（CANCEL 语义评估，本批不改）：CANCEL 时若横向位移已达切件阈值是否同样
+            // 触发曾评估（对齐旧版手势容忍度）——保守不接：Z1 已令横向主导手势在 onScroll 即
+            // disallow-intercept，父层不再 CANCEL 子事件流（根因已除），残余 CANCEL 只落在
+            // 竖向主导滚动场景（此时本就不该切件）；若未来放开竖向门控再议
             if (event.actionMasked == MotionEvent.ACTION_UP &&
                 normalizedScale <= 1.05f &&
                 !swipeConsumedThisGesture
@@ -495,6 +522,12 @@ class ZoomImageView @JvmOverloads constructor(
         private const val SWIPE_DISTANCE_DP = 60
         private const val SWIPE_VELOCITY = 800f
 
+        // Z1：未放大态横向主导请求父层不拦截的横向位移门槛（dp）。取 4dp、低于系统 touch
+        // slop（通常 8dp）：首个 onScroll（GestureDetector 欧氏 slop bypass）即可达标，先于
+        // 父层 verticalScroll 竖向拦截出手；再小会被轻微横向抖动误锁下滑（W 拍板⑧「海报态
+        // 可小幅下滑」受损），再大则斜滑竞速输给父层竖向 slop（丢切件 bug 复活），4dp 两头留档
+        private const val HORIZONTAL_DOMINANT_REQUEST_DP = 4
+
         // 硬件渲染安全阈值：长边超过此值的图走 LAYER_TYPE_SOFTWARE。
         // GpuInfo.maxTextureSize() 返回 OpenGL 理论上限（如 Adreno 750 探测得 16384），但厂商 GPU 驱动
         // 对超大 bitmap 无法正确应用 MATRIX 缩放（实测 8000x8000 走 HARDWARE 时图按原始像素从左上角
@@ -517,6 +550,16 @@ internal fun swipeDeltaFromDrag(accumX: Float, accumY: Float, swipeDistancePx: F
     abs(accumX) > swipeDistancePx && abs(accumX) > abs(accumY) -> if (accumX > 0f) 1 else -1
     else -> null
 }
+
+/**
+ * 未放大态横向主导判定（任务Z Z1 新增，纯函数无 Android 依赖，行为由 SiblingSwipePolicyTest
+ * 锁定）：|accumX| 超过请求门槛 且 横向占优（|accumX| > |accumY|）→ true，调用方据此向父层
+ * requestDisallowInterceptTouchEvent（防 verticalScroll 竖向 slop 拦截 CANCEL 切件手势流）；
+ * 纵向主导返回 false——保留 W 拍板⑧「海报态可小幅下滑」语义（下滑手势交还父层滚动）。
+ * 门槛取值论证见 HORIZONTAL_DOMINANT_REQUEST_DP 常量注。
+ */
+internal fun isHorizontalDominantDrag(accumX: Float, accumY: Float, requestThresholdPx: Float): Boolean =
+    abs(accumX) > requestThresholdPx && abs(accumX) > abs(accumY)
 
 /**
  * 容器尺寸变化时是否自愈重居中（任务W W2 新增，纯函数无 Android 依赖，行为由
