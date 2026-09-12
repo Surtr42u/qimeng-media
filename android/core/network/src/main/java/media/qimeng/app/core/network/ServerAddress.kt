@@ -23,6 +23,17 @@ object ServerAddress {
     const val DEFAULT_PORT = 8420
 
     /**
+     * 本机模式预设地址（任务T T3 兑现 ADR-0015 单点预留；端口 18430 = T2 批 deploy/termux 定稿口径）。
+     * 服务端内嵌手机本机（Termux 形态 A / 内嵌形态 B）监听 127.0.0.1 回环、不暴露局域网（ADR-0015），
+     * 登录页/设置页快捷填入入口共用本常量，UI 零结构改动。
+     *
+     * 单值互指（部署侧改动须同步此处，反之亦然）：deploy/termux/qimeng-start.sh、
+     * qimeng-watchdog.sh、qimeng-stop.sh 三脚本的 PORT 常量与 deploy/termux/README.md
+     * 「端口 18430 定稿」行——三脚本内嵌同一份常量注释互指，本常量是 App 端唯一对应点。
+     */
+    const val LOCAL_MODE_PRESET = "http://127.0.0.1:18430"
+
+    /**
      * 规范化服务端地址：去首尾空白 → 补缺省协议 → HttpUrl 校验 → 去尾部 `/`。
      *
      * @return 规范化后的 base URL（如 `http://10.0.2.2:8420`）；非法输入返回 null（由调用方给中文错误文案）。

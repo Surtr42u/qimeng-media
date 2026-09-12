@@ -24,6 +24,13 @@ class ServerAddressTest {
     }
 
     @Test
+    fun `本机模式预设地址规范化往返一致（T3 单值互指锚点）`() {
+        // 预设常量必须是规范化恒等形——快捷填入后登录（normalize 在 AuthRepository.login 内）
+        // 不得产生第二形态；常量本体与 deploy/termux 三脚本 PORT 单值互指
+        assertEquals(ServerAddress.LOCAL_MODE_PRESET, ServerAddress.normalize(ServerAddress.LOCAL_MODE_PRESET))
+    }
+
+    @Test
     fun `首尾空白与尾部斜杠被清理`() {
         assertEquals("http://10.0.2.2:8420", ServerAddress.normalize("  http://10.0.2.2:8420/ "))
     }

@@ -8,6 +8,7 @@ import org.junit.Rule
 import org.junit.Test
 import media.qimeng.app.core.data.repository.LoginError
 import media.qimeng.app.core.data.repository.LoginResult
+import media.qimeng.app.core.network.ServerAddress
 import media.qimeng.app.core.testing.FakeAuthRepository
 import media.qimeng.app.core.testing.MainDispatcherRule
 
@@ -35,6 +36,32 @@ class LoginViewModelTest {
         val viewModel = LoginViewModel(FakeAuthRepository())
         driveIdle()
         assertEquals("", viewModel.uiState.value.serverUrl)
+    }
+
+    // ---------- 本机模式快捷填入（任务T T3，ADR-0015 预设） ----------
+
+    @Test
+    fun `本机模式快捷填入预设地址且仍是未提交态可再修改`() {
+        val viewModel = LoginViewModel(FakeAuthRepository())
+        viewModel.fillLocalMode()
+        driveIdle()
+        assertEquals(ServerAddress.LOCAL_MODE_PRESET, viewModel.uiState.value.serverUrl)
+        assertNull(viewModel.uiState.value.error)
+        // 快捷填入=输入框赋值不是保存：用户仍可手改（未提交态语义）
+        viewModel.onServerUrlChange("http://192.0.2.10:8420")
+        assertEquals("http://192.0.2.10:8420", viewModel.uiState.value.serverUrl)
+    }
+
+    @Test
+    fun `快捷填入后提交按既有登录流程原样透传预设地址`() {
+        val repository = FakeAuthRepository()
+        val viewModel = LoginViewModel(repository)
+        viewModel.fillLocalMode()
+        viewModel.onPasswordChange("secret")
+        viewModel.submit()
+        driveIdle()
+        assertEquals(1, repository.loginCalls.size)
+        assertEquals(ServerAddress.LOCAL_MODE_PRESET, repository.loginCalls.single().rawAddress)
     }
 
     @Test

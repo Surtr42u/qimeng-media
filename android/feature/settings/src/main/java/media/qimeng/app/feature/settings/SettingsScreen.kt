@@ -36,6 +36,7 @@ import java.io.IOException
 import kotlinx.coroutines.launch
 import media.qimeng.app.core.model.DiskCacheQuota
 import media.qimeng.app.core.model.RecommendPreset
+import media.qimeng.app.core.network.ServerAddress
 import media.qimeng.app.core.ui.component.Dimens
 import media.qimeng.app.core.ui.component.QimengSegPill
 import media.qimeng.app.core.ui.component.formatBytesHumanReadable
@@ -72,6 +73,11 @@ private const val SECTION_CACHE = "缓存"
 private const val HINT_SERVER_URL = "媒体库与账号都归这台服务端管；更换地址请退出登录后重新登录"
 private const val HINT_QUOTA = "重启应用后生效（缓存目录正在使用中，运行中扩缩容会损坏缓存）"
 private const val VERSION_UNKNOWN = "未知"
+
+/** 本机模式快捷入口（任务T T3，ADR-0015）：改地址=退出重登语义的快捷化；预设地址值单源
+ *  在 core ServerAddress.LOCAL_MODE_PRESET，副文案插值引用不抄字面量（故不可 const） */
+private const val ROW_LOCAL_MODE = "本机模式"
+private val SUBTITLE_LOCAL_MODE = "服务端跑在本机时点此切换：退出登录并预填 ${ServerAddress.LOCAL_MODE_PRESET}，在登录页确认后生效"
 
 /** 写失败横幅消除按钮文案（P2-3） */
 private const val WRITE_ERROR_DISMISS = "知道了"
@@ -143,6 +149,16 @@ fun SettingsScreen(
 
         // 资料卡：服务器地址（单机形态预留点，ADR-0015；只展示不可改）
         item { ServerUrlCard(serverUrl = state.serverUrl) }
+
+        // 本机模式快捷入口（任务T T3，ADR-0015 单点预留兑现；只加入口行不加页面——
+        // 点按=退出登录+预填本机预设地址，登录页带出确认后走既有登录流程）
+        item {
+            EntryRow(
+                label = ROW_LOCAL_MODE,
+                subtitle = SUBTITLE_LOCAL_MODE,
+                onClick = viewModel::fillLocalModeForNextLogin,
+            )
+        }
 
         // 作者总览入口行（X5 批 2026-09-12：内嵌卡改收藏同款外部入口行，用户问题8；
         // 点击=onOpenAuthors → 壳层 Routes.AUTHORS → AuthorScreen 全部作者页）

@@ -55,6 +55,13 @@ class FakeAuthRepository(
         loggedInState.value = false
     }
 
+    // 语义与真实实现对齐：登出（isLoggedIn 翻 false）+ 地址预置为带出值（登录页「记忆上次」数据源）
+    override suspend fun logoutWithStagedUrl(url: String) {
+        logoutCount++
+        serverUrlState.value = url
+        loggedInState.value = false
+    }
+
     /** 测试驱动：模拟登录成功（token 已持久化）。 */
     fun setLoggedIn(value: Boolean) {
         loggedInState.value = value
