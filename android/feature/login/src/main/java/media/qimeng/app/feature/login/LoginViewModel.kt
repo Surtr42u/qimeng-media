@@ -12,6 +12,7 @@ import kotlinx.coroutines.launch
 import media.qimeng.app.core.data.repository.AuthRepository
 import media.qimeng.app.core.data.repository.LoginError
 import media.qimeng.app.core.data.repository.LoginResult
+import media.qimeng.app.core.network.ServerAddress
 import javax.inject.Inject
 
 /**
@@ -49,6 +50,15 @@ class LoginViewModel @Inject constructor(
 
     fun onServerUrlChange(value: String) {
         _uiState.update { it.copy(serverUrl = value, error = null) }
+    }
+
+    /**
+     * 本机模式快捷填入（任务T T3，ADR-0015 单点预留兑现）：把预设地址一键填入地址输入框。
+     * 只是未提交的输入框赋值——用户看到/确认后仍走既有 [submit]（探活→登录→持久化），
+     * 不在此处直接保存（UI 快捷入口禁内嵌保存行为，地址单点流转红线不动）。
+     */
+    fun fillLocalMode() {
+        _uiState.update { it.copy(serverUrl = ServerAddress.LOCAL_MODE_PRESET, error = null) }
     }
 
     fun onPasswordChange(value: String) {

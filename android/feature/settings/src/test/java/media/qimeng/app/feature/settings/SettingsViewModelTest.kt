@@ -28,6 +28,7 @@ import media.qimeng.app.core.model.RecommendPreset
 import media.qimeng.app.core.model.StatsOverviewValues
 import media.qimeng.app.core.model.TrendPoint
 import media.qimeng.app.core.model.toPrefsValues
+import media.qimeng.app.core.network.ServerAddress
 import media.qimeng.app.core.testing.FakeAuthRepository
 import media.qimeng.app.core.testing.MainDispatcherRule
 
@@ -196,6 +197,21 @@ private object FixedEventClock : media.qimeng.app.core.data.events.EventClock {
         // 登录态已翻 false；地址保留（下次登录自动回填的「记忆上次」语义）
         assertFalse(runBlocking { auth.isLoggedIn.first() })
         assertEquals("http://10.0.2.2:8420", runBlocking { auth.serverUrl.first() })
+    }
+
+    // ---------- 本机模式快捷入口（任务T T3，ADR-0015 预设） ----------
+
+    @Test
+    fun `本机模式入口登出并预置下次登录带出的预设地址`() = runTest {
+        val auth = FakeAuthRepository(initialServerUrl = "http://10.0.2.2:8420", initialLoggedIn = true)
+        val settingsViewModel = viewModel(auth = auth)
+        advanceUntilIdle()
+        settingsViewModel.fillLocalModeForNextLogin()
+        advanceUntilIdle()
+        // 登出触达仓库层；地址预置为本机模式预设（登录页「记忆上次」回填数据源）
+        assertEquals(1, auth.logoutCount)
+        assertFalse(runBlocking { auth.isLoggedIn.first() })
+        assertEquals(ServerAddress.LOCAL_MODE_PRESET, runBlocking { auth.serverUrl.first() })
     }
 
     @Test

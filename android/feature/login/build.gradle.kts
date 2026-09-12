@@ -13,9 +13,11 @@ android {
 }
 
 dependencies {
-    // feature 只许依赖 core（单向依赖，ADR-0014）：core:ui 主题/尺寸 token、core:data 的 AuthRepository
+    // feature 只许依赖 core（单向依赖，ADR-0014）：core:ui 主题/尺寸 token、core:data 的 AuthRepository、
+    // core:network 的 ServerAddress（T3 本机模式预设常量单源；normalize 仍在 AuthRepository 内消费）
     implementation(project(":core:ui"))
     implementation(project(":core:data"))
+    implementation(project(":core:network"))
 
     implementation(libs.compose.ui)
     implementation(libs.compose.foundation)

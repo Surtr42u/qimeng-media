@@ -23,6 +23,8 @@ android {
 dependencies {
     implementation(project(":core:ui"))
     implementation(project(":core:data"))
+    // T3 本机模式快捷入口：预设地址常量单源在 core:network 的 ServerAddress（feature→core 单向，ADR-0014）
+    implementation(project(":core:network"))
 
     implementation(libs.compose.material3)
     implementation(libs.compose.ui.tooling.preview)

@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import media.qimeng.app.core.network.SdkAuthApiFactory
+import media.qimeng.app.core.network.ServerAddress
 import media.qimeng.app.core.network.ServerConfigDataSource
 import media.qimeng.app.core.network.SessionEventBus
 import okhttp3.Interceptor
@@ -199,6 +200,19 @@ class AuthRepositoryImplTest {
         assertFalse(repository.isLoggedIn.first())
         // 「记忆上次」：地址保留给登录页回填
         assertEquals(FAKE_BASE_URL, serverConfig.serverUrl.first())
+    }
+
+    @Test
+    fun `登出并预置地址_token清空且serverUrl为预置值`() = runTest {
+        repository.login(FAKE_BASE_URL, correctPassword)
+
+        repository.logoutWithStagedUrl(ServerAddress.LOCAL_MODE_PRESET)
+
+        // 对外契约（任务T T3 本机模式快捷入口）：token 清空（壳层切登录页）+
+        // serverUrl 精确等于预置地址（登录页「记忆上次」回填读到的就是它）
+        assertEquals(null, serverConfig.token.first())
+        assertFalse(repository.isLoggedIn.first())
+        assertEquals(ServerAddress.LOCAL_MODE_PRESET, serverConfig.serverUrl.first())
     }
 
     private companion object {

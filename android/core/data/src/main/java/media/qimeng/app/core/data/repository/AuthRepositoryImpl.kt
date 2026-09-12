@@ -71,6 +71,12 @@ class AuthRepositoryImpl @Inject constructor(
 
     override suspend fun logout() = serverConfig.clearToken()
 
+    // 先写地址再清 token——顺序理由见接口 KDoc（换登录页回填的确定性）
+    override suspend fun logoutWithStagedUrl(url: String) {
+        serverConfig.updateServerUrl(url)
+        serverConfig.clearToken()
+    }
+
     private companion object {
         /** 未认证状态码（openapi.yaml components.responses.Unauthorized；协议侧改动须同步）。 */
         const val HTTP_UNAUTHORIZED = 401

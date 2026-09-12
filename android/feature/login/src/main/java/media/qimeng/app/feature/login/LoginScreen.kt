@@ -23,6 +23,7 @@ import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -84,6 +85,15 @@ fun LoginScreen(
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next),
                 modifier = Modifier.fillMaxWidth(),
             )
+            // 本机模式快捷填入（T3，ADR-0015）：只加入口不加页面（UI 结构零改动）——
+            // 一键把预设地址填入上方输入框（未提交态），确认仍走既有登录按钮
+            TextButton(
+                onClick = viewModel::fillLocalMode,
+                enabled = !uiState.isSubmitting,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(text = stringResource(R.string.login_fill_local_mode))
+            }
             Spacer(modifier = Modifier.height(FieldSpacing))
             QimengCapsuleTextField(
                 value = uiState.password,

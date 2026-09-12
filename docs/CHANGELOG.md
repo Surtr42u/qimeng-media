@@ -9,6 +9,25 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## feat(app): 任务T T3 App 单机模式接入批——本机模式预设常量+登录/设置页快捷填入+模拟器单机闭环（2026-09-13 第二百四十六笔）
+
+> 笔号撞窗口记档（如实披露）：本批起草时预取 244，提交窗口内先后撞号两次——第二百四十四笔被任务S S4 清欠批占用、第二百四十五笔被任务S S5 收官批占用，本笔为第三撞，终取尾笔顺延 = **246**。
+
+执行 AI：GLM-5.3-Flash（执行子代理，任务T 会话B 调度）
+
+- **ServerAddress 增「本机模式」预设常量（ADR-0015 单点预留兑现）**：`LOCAL_MODE_PRESET = "http://127.0.0.1:18430"`（端口 = T2 批 deploy/termux 定稿口径），KDoc 单值互指 deploy/termux 三脚本（qimeng-start/watchdog/stop 的 PORT 常量）+README 第 16 行，零行为变化只加常量。
+- **登录页快捷填入入口**：地址输入框下新增 TextButton「本机模式（服务端跑在本机时点此填入）」（login_fill_local_mode 资源，文案不嵌地址字面量）→ `LoginViewModel.fillLocalMode()` 把预设填入输入框（未提交态，可再手改），确认仍走既有 submit（探活→登录→持久化）。UI 结构零改动：不新增页面/路由。
+- **设置页快捷入口（语义适配记档）**：设置页现状是「地址只展示卡+改地址=退出重登语义」（既无输入框也非直接保存制，任务书两分支均不适用）——入口行「本机模式」点按 = `AuthRepository.logoutWithStagedUrl(preset)`（接口+实现+FakeAuthRepository 三处新增）：登出并把预设地址预置为「下次登录带出值」，壳层切登录页后地址框自动带出，用户确认（点登录）才真正切换；实现**先写地址再清 token**（token 流翻 false 壳层立即切登录页回填，反序有回填读到旧值的竞态；写地址与清 token 两个连续挂起调用间确有极短窗口、此刻仍为登录态，但目标为本机回环——服务端未启动=连接拒绝 / 自家服务端=401 走既有幂等 clearToken，无实害，KDoc 已如实记档）。地址仍只经 ServerConfigDataSource 单点流转。
+- **模块依赖**：feature/login、feature/settings 各增 `implementation(project(":core:network"))`（feature→core 单向，ADR-0014 允许；预设常量单源在 core:network，feature 侧不抄字面量）。
+- **测试**：ServerAddressTest 6→7（预设常量 normalize 往返一致）、LoginViewModelTest 6→8（快捷填入未提交态可改/提交原样透传）、SettingsViewModelTest 11→12（入口登出并预置带出地址）、AuthRepositoryImplTest 9→10（logoutWithStagedUrl 对外契约：token 清空 + serverUrl 精确等于预置地址）；五模块受影响测试全绿。**门禁三连低 CPU 档**（GRADLE_OPTS workers.max=2+priority=low）：app-build 29s / app-test 15s / app-lint 1m37s 全 exit 0。**预存红基线对照**：`:core:network` DataStore 测试 2/3 Windows 竞态红（242 笔披露）本批改动前干净基线三跑（含 --rerun 非缓存）均全绿未复现——flaky 竞态如实记档「预存红仍成立、未修、与本批零关系」。
+- **模拟器单机闭环（qimeng_api35t = emulator-5581，铁律 13 合规全程显式 serial；qimeng_api35/api35b/api35c/雷电 5554 未触碰）**：amd64 服务端（make server-android-amd64）push 至 /data/local/tmp/qimeng-t3-test 后台运行（127.0.0.1:18430，dev 免密，数据/媒体目录全虚构）→ curl healthz alive → App debug 包实装走查：**登录页快捷填入实点两回合**（输入框带出 127.0.0.1:18430 后登录成功）→ 首页 3 资产浏览 → 图片详情（见遗留）→ 视频详情播放**全链实证**（logcat：BUFFERING→READY→c2.goldfish.h264 硬解→`PUT /assets/{id}/progress position=0.18`→ENDED，黑帧=screenrecord 素材本身暗色内容；控制条时长 00:00/00:00 与 screenrecord 容器时长元数据相关性存疑记档）→ 点赞打点（UI 计数 0→1 + `PUT /assets/{id}/like toggle` logcat；服务端 likeCount=1 复核）→ 上传（adb push PNG 至 /sdcard/Download → SAF 选择 → `QimengUpload: success 1470/1470` Worker SUCCESS；服务端资产列表 4 项含上传件、文件落盘库根）。库注册/扫描经服务端 API（App 无库管理 UI，T1 同款口径）。
+- **断外网初验**：方法=宿主网络本身节点级受限（243 笔口径，模拟器 NAT 随宿主，基线 ping 8.8.8.8 即 Network is unreachable）+ `cmd connectivity airplane-mode enable`（settings airplane_mode_on=1 确认生效）；结果=飞行模式下 App↔127.0.0.1 服务端全链通（GET /authors、3×资产详情、timeline-tags、视频流式播放 BUFFERING→READY→ENDED、OPEN/PLAY 打点入队全绿，进程存活）。真机飞行模式全流程验收仍归 T7 用户节点。
+- **遗留问题（如实记档，不阻塞本批）**：图片资产原图在 App 内查看显示「该文件无法解码」占位（feature/detail ZoomableOriginalImage 的 Coil 请求 onError，静默无日志）。归因证据链：同一 PNG 宿主解码器逐字节验证合法（CRC/scanline 全过）；设备 Chrome 打开同一签名直链 200 正常渲染；ExoPlayer 同服务器同 /media/orig 路径视频流播放正常；App→18430 的 TCP 连接在 /proc/net/tcp 可见（uid 10210 已建立）——问题收敛于 App 内 Coil 取图/解码环节，且 S1/S2 批对宿主服务端（10.0.2.2:8420）走查过图片详情。与本批零文件交集（本批未动 detail/core:ui/coil 装配），按不扩围纪律记档待查（候选：对 127.0.0.1 直链 Coil 客户端行为差异/签名 URL 处理），模拟器现状态保留（服务端已停、fixture 保留 qm-data 供复查）。
+- **reviewer 对抗审查**：11 项全 PASS【通过】，记档 4 条已闭环修正（AuthRepositoryImplTest 契约用例补齐 / logoutWithStagedUrl KDoc 窗口口径如实化 / 本笔笔号与证据陈述修正 / 测试清单与审查行补记）。
+- **门禁物证（诚实口径）**：证据目录为纯走查物证（截图/dump/XML/logcat/服务端日志/API JSON），门禁三连的复核物证在仓库 build/ 内时间戳链可查——android/app/build/reports/lint-results-debug.txt（0 errors / 26 条非阻断 warning，gate 口径=error 即失败，mtime 与 lint 门禁跑时点一致）、app/build/outputs/apk/debug/app-debug.apk（app-build 产物）、各模块 test-results/*.xml（app-test 产物）；reviewer 独立复跑四模块单测 EXIT=0。
+- 证据：%TEMP%\qimeng-t3-evidence\（108 项：截图/dump/XML/logcat/服务端日志/API JSON/proxy 调试留档）。
+
+---
 ## docs: 任务S S5 收官批——全卷对抗审查两轮全 PASS + 终包重出验签冒烟 + 台账/HANDOVER 落账（2026-09-13 第二百四十五笔）
 
 执行 AI：GLM-5.3-Flash（主代理）
