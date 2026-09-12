@@ -27,7 +27,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.io.IOException
@@ -109,7 +111,13 @@ fun SettingsScreen(
             .padding(horizontal = Dimens.ScreenPadding),
         verticalArrangement = Arrangement.spacedBy(Dimens.ScreenPadding),
     ) {
-        item { Text(text = stringResource(R.string.settings_title), style = MaterialTheme.typography.headlineSmall) }
+        // Z2 批（2026-09-12 我的页字体色彩对齐旧版）：页标题 28sp Bold（旧 profile.xml）
+        item {
+            Text(
+                text = stringResource(R.string.settings_title),
+                style = MaterialTheme.typography.headlineSmall.copy(fontSize = 28.sp, fontWeight = FontWeight.Bold),
+            )
+        }
 
         // 写操作失败反馈（P2-3）：横幅常驻直至点按消除，避免静默失败
         state.writeError?.let { message ->
@@ -271,10 +279,14 @@ private fun CountCard(title: String, count: Int?, modifier: Modifier = Modifier)
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text(text = title, style = MaterialTheme.typography.titleSmall)
+            // Z2 批：对齐旧版数量卡两行同 16sp Bold（数字不是大号字，照旧版）
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall.copy(fontSize = 16.sp, fontWeight = FontWeight.Bold),
+            )
             Text(
                 text = count?.toString() ?: COUNT_UNKNOWN,
-                style = MaterialTheme.typography.headlineSmall,
+                style = MaterialTheme.typography.headlineSmall.copy(fontSize = 16.sp, fontWeight = FontWeight.Bold),
             )
         }
     }
@@ -409,12 +421,18 @@ private fun EntryRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(text = label, style = MaterialTheme.typography.bodyLarge)
+                // Z2 批：对齐旧版入口行两行同款 15sp 主色（onSurface 槽，显式指定——Surface
+                // 的 contentColor 会把无色 Text 带成 onSurfaceVariant 灰，实测截图中过）
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.sp),
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
                 if (subtitle != null) {
                     Text(
                         text = subtitle,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.sp),
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
                 }
             }

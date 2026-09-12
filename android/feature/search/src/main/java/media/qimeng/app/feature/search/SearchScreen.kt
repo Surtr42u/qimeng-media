@@ -29,7 +29,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import media.qimeng.app.core.model.NameSuggestion
@@ -173,9 +175,12 @@ private fun SearchTopBar(
                 modifier = Modifier.fillMaxWidth(),
             )
         }
-        // 旧版 searchAction=文本按钮「搜索」（实录非图标）
+        // 旧版 searchAction=文本按钮「搜索」（实录非图标）；Z4 批：14sp Regular（旧版非 Medium）
         TextButton(onClick = onSubmit) {
-            Text(text = stringResource(R.string.search_action))
+            Text(
+                text = stringResource(R.string.search_action),
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Normal),
+            )
         }
     }
 }
@@ -264,11 +269,12 @@ private fun SuggestPhase(
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(modifier = Modifier.padding(start = QimengDimens.SpaceM))
-                Text(text = suggestion.name, style = MaterialTheme.typography.bodyLarge)
+                // Z4 批：候选名 14sp（旧版建议行）、类型标签 10sp Regular 次色
+                Text(text = suggestion.name, style = MaterialTheme.typography.bodyMedium)
                 Spacer(modifier = Modifier.weight(1f))
                 Text(
                     text = suggestion.kind.badgeLabel,
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.Normal),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -316,9 +322,11 @@ private fun ResultPhase(
 
 @Composable
 private fun SectionHeader(text: String) {
+    // Z4 批（2026-09-12 搜索页字体对齐旧版）：区头 13sp Regular 次色（旧 search_entry.xml）
     Text(
         text = text,
-        style = MaterialTheme.typography.titleSmall,
+        style = MaterialTheme.typography.titleSmall.copy(fontSize = 13.sp),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(vertical = QimengDimens.SpaceM),
     )
 }
