@@ -36,6 +36,10 @@ const dayLayout = "2006-01-02"
 // weekDays 是一个自然周的长度（周桶推进步长）。
 const weekDays = 7
 
+// hoursPerDay 周/日粒度换算的小时数（24 的具名化；分桶口径本身见
+// DOMAIN_RULES §5，此处仅消除裸数字）。
+const hoursPerDay = 24
+
 // DailyRow 是「文件×天」聚合行（唯一真相源口径，DOMAIN_RULES §5）：
 // 每文件每天一行，Day 为本地日历日 yyyy-MM-dd（store.FormatDay 产物）。
 type DailyRow struct {
@@ -191,7 +195,7 @@ func chooseGranularity(r Range, earliest, end time.Time) granularity {
 	case RangeYear:
 		return granYear
 	default: // RangeAll 与未知值：动态（未知值兜底到全口径，不报错丢数据）
-		weekCount := int(align(granWeek, end).Sub(align(granWeek, earliest)) / (weekDays * 24 * time.Hour))
+		weekCount := int(align(granWeek, end).Sub(align(granWeek, earliest)) / (weekDays * hoursPerDay * time.Hour))
 		if weekCount+1 <= maxWeekBuckets {
 			return granWeek
 		}

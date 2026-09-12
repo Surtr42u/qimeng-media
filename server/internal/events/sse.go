@@ -26,6 +26,15 @@ const (
 	// "实时"变"重放"（HTTP 惯例值，跨包不与 httpapi 共享常量——边界所限
 	// 各自具名即可）。
 	sseNoCache = "no-cache"
+
+	// SSE 端点错误码（writeError 的 code 参数具名来源）。与 openapi
+	// components.Error 的 code 语义同源；模块边界（ADR-0010：业务包禁止
+	// 依赖 httpapi）使然不能复用 httpapi/errors.go 的常量。同步责任：
+	// 协议侧 /events 错误响应或 httpapi 错误码体系改动时须同步此处，
+	// 反之亦然（代码卫生约束 3）。
+	codeTooManyConnections = "TOO_MANY_CONNECTIONS"
+	codeNoStreamSupport    = "NO_STREAM_SUPPORT"
+	codeEventsShutdown     = "EVENTS_SHUTDOWN"
 )
 
 // allTopics SSE 端点固定开放全部四类事件（与 openapi /api/v1/events 定义一致）。
@@ -126,7 +135,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if n := h.conns.Add(1); n > h.maxConns {
 		h.conns.Add(-1)
 		h.writeError(w, http.StatusServiceUnavailable,
-			"TOO_MANY_CONNECTIONS", "SSE 并发连接数已达上限，请关闭其他页面后重试")
+			codeTooManyConnections, "SSE 并发连接数已达上限，请关闭其他页面后重试")
 		return // 503 拒绝不回调 gauge：连接从未活跃（WithConnectionGauge 契约）
 	}
 	h.notifyConns()
@@ -138,7 +147,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		h.writeError(w, http.StatusInternalServerError,
-			"NO_STREAM_SUPPORT", "当前响应不支持流式写入")
+			codeNoStreamSupport, "当前响应不支持流式写入")
 		return
 	}
 
@@ -146,7 +155,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// 总线已关闭（通常处于进程优雅退出阶段），按服务不可用返回
 		h.writeError(w, http.StatusServiceUnavailable,
-			"EVENTS_SHUTDOWN", "事件服务已关闭")
+			codeEventsShutdown, "事件服务已关闭")
 		return
 	}
 	defer sub.Close()

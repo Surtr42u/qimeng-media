@@ -92,7 +92,16 @@ func (s *Server) PostApiV1Dirs(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, codeInvalidParam, "目录路径不合法")
 		return
 	}
-	if err := os.MkdirAll(filepath.Join(lib.RootPath, filepath.FromSlash(rel)), 0o755); err != nil {
+	target := filepath.Join(lib.RootPath, filepath.FromSlash(rel))
+	// SECURITY 红线 1 的 handler 侧兜底（与 media 直链/trash 同一纵深防御
+	// 模式）：rel 虽已过 NormalizeRelPath，Join 后仍强制验根内——库行/配置
+	// 被污染时的最后一道闸。
+	if !filing.PathWithinRoot(lib.RootPath, target) {
+		s.logger.Error("目录路径越界，已拦截", "libraryId", lib.ID, "rel", rel)
+		writeErr(w, http.StatusBadRequest, codePathEscape, "目录路径不合法")
+		return
+	}
+	if err := os.MkdirAll(target, dirPerm); err != nil {
 		s.internalErr(w, "创建目录", err)
 		return
 	}

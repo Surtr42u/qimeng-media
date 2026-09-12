@@ -77,7 +77,16 @@ func (s *Server) PostApiV1AssetsAssetIdMove(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	srcAbs := filepath.Join(row.RootPath, filepath.FromSlash(row.RelPath))
-	if err := os.MkdirAll(filepath.Dir(targetAbs), 0o755); err != nil {
+	// SECURITY 红线 1 的 handler 侧兜底（与 media 直链/trash 同一纵深防御
+	// 模式）：目标侧 dir+name 各过校验、源侧 rel_path 直信库行——库数据
+	// 被污染（外部改库/迁移 bug）时 Join 后这道闸是最后防线，两侧都验。
+	if !filing.PathWithinRoot(row.RootPath, targetAbs) || !filing.PathWithinRoot(row.RootPath, srcAbs) {
+		s.logger.Error("移动路径越界，已拦截", "assetId", row.AssetID,
+			"src", row.RelPath, "dst", newRel)
+		writeErr(w, http.StatusBadRequest, codePathEscape, "路径不合法")
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(targetAbs), dirPerm); err != nil {
 		s.internalErr(w, "创建目标目录", err)
 		return
 	}

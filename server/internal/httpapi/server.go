@@ -90,6 +90,10 @@ const (
 // 不能拖垮编排系统秒级周期的探活。
 const readyzTimeout = 3 * time.Second
 
+// dirPerm handler 侧新建目录的统一权限（MkdirAll 调用点原各自手抄
+// 0o755；库内目录按「所有者可写、其他人可读」的 NAS 单用户口径）。
+const dirPerm = 0o755
+
 // Deps 是组装 httpapi.Server 的全部外部依赖（依赖注入只在 main 发生，
 // 业务包之间禁止互相 new——ARCHITECTURE §5）。
 type Deps struct {
@@ -380,7 +384,7 @@ func (s *Server) GetApiV1Readyz(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusServiceUnavailable, codeDbUnreachable, "数据库不可达")
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", contentTypeJSON)
 	// 写失败只可能发生在探针调用方已断开时（探针本就是调用方主动轮询，
 	// 无补救动作），忽略即可。
 	_, _ = w.Write([]byte(`{"status":"ready"}`))

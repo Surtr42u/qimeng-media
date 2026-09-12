@@ -20,6 +20,11 @@ import (
 	"qimeng-media/server/internal/store"
 )
 
+// dateToBoundSkew 把按日粒度传入的 DateTo（含当日）转为时间戳上界的
+// 补偿量：当日终点 24h 再回退 1ms（FormatTimestamp 为毫秒粒度），使
+// [DateFrom, DateTo] 闭区间覆盖当日全部毫秒。
+const dateToBoundSkew = 24*time.Hour - time.Millisecond
+
 // ---- 游标 ----
 //
 // cursor 是对客户端不透明的 base64(JSON{"k": sort_key, "i": asset_id})。
@@ -258,7 +263,7 @@ func newAssetFilters(params gen.GetApiV1AssetsParams, directory *string) assetFi
 		f.MtimeFrom = nullStr(store.FormatTimestamp(params.DateFrom.Time.UTC()))
 	}
 	if params.DateTo != nil {
-		f.MtimeTo = nullStr(store.FormatTimestamp(params.DateTo.Time.UTC().Add(24*time.Hour - time.Millisecond)))
+		f.MtimeTo = nullStr(store.FormatTimestamp(params.DateTo.Time.UTC().Add(dateToBoundSkew)))
 	}
 	if params.YearFrom != nil {
 		f.YearFrom = nullInt(params.YearFrom)
