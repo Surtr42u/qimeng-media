@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.view.Display
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -30,6 +31,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        requestHighestRefreshRate()
         handleShareIntent(intent)
         setContent {
             QimengTheme {
@@ -41,6 +43,43 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleShareIntent(intent)
+    }
+
+    /**
+     * 请求设备最高刷新率（任务Y-Y5，用户问题5「帧率同步手机实际帧率」）。
+     *
+     * 为什么需要：高刷屏设备（如用户真机努比亚 NX721J）系统可能为省电把 App 默认锁在
+     * 60Hz，不显式声明就永远跑不到面板峰值；App 侧「帧率同步显示器/手机实际帧率」的
+     * 官方口径即 [android.view.WindowManager.LayoutParams.preferredDisplayModeId] +
+     * [Display.getSupportedModes]（API 23+，minSdk 26 无需 guard；modeId 随设备变化，
+     * 禁止硬编码，必须运行时从模式表取）。出处：
+     * developer.android.com/develop/ui/views/layout/improving-frame-rates
+     *
+     * 策略：只在「与当前 mode 同分辨率」的候选里取 refreshRate 最高者（避免切到分辨率
+     * 不同的模式导致画质/密度抖动）；已处于最高刷或模式表为空则不动。
+     * 全程防御式判空，任何一步拿不到都直接返回，绝不阻断启动。
+     */
+    private fun requestHighestRefreshRate() {
+        val display: Display? =
+            if (Build.VERSION.SDK_INT >= 30) {
+                display // Context.getDisplay（API 30+；onCreate 时 Activity 必已附着）
+            } else {
+                @Suppress("DEPRECATION")
+                windowManager.defaultDisplay // API 26-29 兜底
+            }
+        val current = display?.mode ?: return
+        val best =
+            display.supportedModes
+                .filter {
+                    it.physicalWidth == current.physicalWidth &&
+                        it.physicalHeight == current.physicalHeight
+                }
+                .maxByOrNull { it.refreshRate }
+                ?: return
+        if (best.modeId == current.modeId) return // 已处于同分辨率最高刷，不重设免多余 relayout
+        val attrs = window.attributes
+        attrs.preferredDisplayModeId = best.modeId
+        window.attributes = attrs // 回写触发 ViewRootImpl 应用新模式
     }
 
     private fun handleShareIntent(intent: Intent?) {
