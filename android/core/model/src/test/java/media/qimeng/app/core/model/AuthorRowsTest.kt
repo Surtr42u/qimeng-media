@@ -46,23 +46,6 @@ class AuthorRowsTest {
     }
 
     @Test
-    fun `作者总览 全量计数 已关注计数 文件数Top5`() {
-        val rows = listOf(
-            author("1", "Gifdoozer", AuthorType.COS, fileCount = 500, followed = true),
-            author("2", "尼尔", fileCount = 100),
-            author("3", "海伦", AuthorType.COS, fileCount = 300, followed = true),
-            author("4", "原神", fileCount = 10),
-            author("5", "甲", fileCount = 50),
-            author("6", "乙"), // fileCount=null 计 0，Top5 落榜
-        )
-        val overview = rows.toAuthorOverview()
-        assertEquals(6, overview.totalAuthors)
-        assertEquals(2, overview.followedCount)
-        // fileCount 降序取前 5（null 计 0；Web authorOverviewRows 同口径）
-        assertEquals(listOf("1", "3", "2", "5", "4"), overview.topByFileCount.map { it.id })
-    }
-
-    @Test
     fun `显示名 COS 作者追加点COS标识`() {
         assertEquals("Gifdoozer ·COS", authors[0].displayLabel)
         assertEquals("尼尔", authors[1].displayLabel)

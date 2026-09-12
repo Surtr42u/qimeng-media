@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
@@ -33,19 +32,16 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.io.IOException
 import kotlinx.coroutines.launch
-import media.qimeng.app.core.model.AuthorOverview
 import media.qimeng.app.core.model.DiskCacheQuota
 import media.qimeng.app.core.model.RecommendPreset
-import media.qimeng.app.core.model.displayLabel
 import media.qimeng.app.core.ui.component.Dimens
-import media.qimeng.app.core.ui.component.QimengRankCard
 import media.qimeng.app.core.ui.component.QimengSegPill
 import media.qimeng.app.core.ui.component.formatBytesHumanReadable
-import media.qimeng.app.core.ui.theme.QimengDimens
 
 /** 我的页入口行文案（GUIDE_UI §我的页 + M4-2 既有入口 + M4-6 上传入口；
- *  F 批 2026-09-09：删除「作者管理」行——用户拍板「我的界面暂时只需要删除外部的作者管理，
- *  因为已经有了一个作者管理」，唯一入口=作者总览卡内「管理」（onOpenAuthors 仍被该卡使用） */
+ *  F 批 2026-09-09：删除「作者管理」行；X5 批 2026-09-12：作者总览由内嵌卡改回
+ *  收藏同款外部入口行（用户问题8），点击经壳层 onOpenAuthors 进全部作者页） */
+private const val ROW_AUTHORS = "作者总览"
 private const val ROW_FAVORITE = "收藏"
 private const val ROW_HISTORY = "浏览历史"
 private const val ROW_UPLOAD = "上传文件"
@@ -55,8 +51,10 @@ private const val ROW_PREFS = "推荐偏好"
 /**
  * 入口行副文案（I4 两行化，实录 mine.txt 逐字：收藏/浏览历史/主题色彩/推荐偏好；
  * 推荐偏好行当前预设名不再展示在行上——当前项高亮已在 BottomSheet 内，GUIDE_UI L255；
- * 原作者管理行副文案随行同批删除，F 批 2026-09-09）。
+ * 原作者管理行副文案随行同批删除，F 批 2026-09-09。X5 批新增作者总览行副文案：
+ * 入口行不预取数据，无「N 位作者」动态口径，用固定说明文字）。
  */
+private const val SUBTITLE_AUTHORS = "查看全部作者与作品"
 private const val SUBTITLE_FAVORITE = "查看收藏的图片和视频"
 private const val SUBTITLE_HISTORY = "查看最近打开过的图片和视频"
 private const val SUBTITLE_THEME = "跟随手机白天/深色模式自动切换"
@@ -67,23 +65,11 @@ private const val COUNT_CARD_IMAGE = "图片"
 private const val COUNT_CARD_VIDEO = "视频"
 private const val COUNT_UNKNOWN = "—"
 
-/** 分区标题与行副文案（展示语义，GUIDE_UI §我的页/设置页口径 + C5/C6 拍板 + G2 作者总览） */
+/** 分区标题与行副文案（展示语义，GUIDE_UI §我的页/设置页口径 + C5/C6 拍板） */
 private const val SECTION_CACHE = "缓存"
 private const val HINT_SERVER_URL = "媒体库与账号都归这台服务端管；更换地址请退出登录后重新登录"
 private const val HINT_QUOTA = "重启应用后生效（缓存目录正在使用中，运行中扩缩容会损坏缓存）"
 private const val VERSION_UNKNOWN = "未知"
-
-/** 作者总览卡文案（G2：Web DataPage 作者总览卡同形态——头行/计数副行/管理入口/空态） */
-private const val OVERVIEW_TITLE = "作者总览"
-private const val OVERVIEW_MANAGE = "管理"
-private const val OVERVIEW_LOADING = "加载中…"
-private const val OVERVIEW_EMPTY = "暂无作者"
-
-/** 作者总览卡纵向间距（V7 排版修复：Web prototype.css 逐字对齐——全局 reset 后仅显式间距生效，
- *  App 侧此前三处全为 0dp 即「拥挤」根因；对照我的页其他卡片基准同源） */
-private val OVERVIEW_NOTE_TOP_SPACING = 4.dp
-private val OVERVIEW_LIST_TOP_SPACING = 8.dp
-private val OVERVIEW_ROW_SUB_TOP_SPACING = 2.dp
 
 /** 写失败横幅消除按钮文案（P2-3） */
 private const val WRITE_ERROR_DISMISS = "知道了"
@@ -101,9 +87,9 @@ private const val EVENT_SYNC_EXPORT_FILE_NAME = "qimeng-pending-events.json"
 /**
  * 「我的」Tab（M4-6 完整版，单页滚动列表，GUIDE_UI §我的页结构 + I4 复刻清偿）：
  * 标题 → 页首数量卡（I4：图片/视频两卡，实录页首即数量卡，GUIDE_UI L252）→
- * 资料卡（服务器地址展示，改地址=退出重登语义）→ 作者总览卡（G2：Web DataPage 形态——
- * 计数头注 + 文件数 Top5 + 管理入口；关注/取关操作移作者管理页；F 批 2026-09-09 起
- * 卡内「管理」=唯一作者管理入口，外部入口行删除）→
+ * 资料卡（服务器地址展示，改地址=退出重登语义）→ 作者总览入口行（X5 批 2026-09-12：
+ * 收藏同款外部入口行，用户问题8——点击经 [onOpenAuthors] 进全部作者页；
+ * 原 G2 内嵌总览卡与 VM 总览管线随本批退役，本页不再预取作者数据）→
  * 入口行族（收藏/浏览历史 → 上传入口 → 主题色彩（不可点）→
  * 推荐偏好（BottomSheet 四预设整行应用/当前项高亮））→
  * 缓存区（LRU 档位 + 清空）→ 版本信息（服务端版本，C6）→ 退出登录。
@@ -114,8 +100,6 @@ fun SettingsScreen(
     onOpenHistory: () -> Unit = {},
     onOpenAuthors: () -> Unit = {},
     onOpenUpload: () -> Unit = {},
-    /** 作者总览 Top5 行直达作者集合页（RES R2 清偿 I4 挂账：此前借道作者管理页两跳） */
-    onOpenAuthorCollection: (authorId: String, displayName: String) -> Unit = { _, _ -> },
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -152,19 +136,18 @@ fun SettingsScreen(
         // 资料卡：服务器地址（单机形态预留点，ADR-0015；只展示不可改）
         item { ServerUrlCard(serverUrl = state.serverUrl) }
 
-        // 作者总览卡（G2：替换 C4 关注列表展示——Web DataPage 作者总览卡形态，
-        // 计数头注 + 文件数 Top5 + 管理入口；取关操作移作者管理页承担）
+        // 作者总览入口行（X5 批 2026-09-12：内嵌卡改收藏同款外部入口行，用户问题8；
+        // 点击=onOpenAuthors → 壳层 Routes.AUTHORS → AuthorScreen 全部作者页）
         item {
-            AuthorOverviewCard(
-                overview = state.authorOverview,
-                loading = state.authorsLoading,
-                onManage = onOpenAuthors,
-                onOpenAuthorCollection = onOpenAuthorCollection,
+            EntryRow(
+                label = ROW_AUTHORS,
+                subtitle = SUBTITLE_AUTHORS,
+                onClick = onOpenAuthors,
             )
         }
 
         // 入口行族（F 批 2026-09-09 起行序：收藏/浏览历史 → 上传入口 → 主题色彩（不可点）→
-        // 推荐偏好；原「作者管理」行按用户拍板删除——作者总览卡内「管理」即唯一作者管理入口）
+        // 推荐偏好；原「作者管理」行按用户拍板删除，作者管理页由作者总览行承担入口）
         item {
             EntryRow(
                 label = ROW_FAVORITE,
@@ -346,124 +329,6 @@ private fun WriteErrorBanner(message: String, onDismiss: () -> Unit) {
             TextButton(onClick = onDismiss) { Text(text = WRITE_ERROR_DISMISS) }
         }
     }
-}
-
-/**
- * 作者总览卡（G2，Web DataPage 作者总览卡同形态）：「作者总览 + 管理」头行 →
- * 「N 位作者 · 已关注 M」计数副行 → 按文件数 Top5 行（作者名 ·COS 标记 + 「N 个文件」）。
- * 展示口径单源在 :core:model [toAuthorOverview]（计数与排序纯函数，单测锁定）。
- * 总览未就绪 → 「加载中…」；读失败既有总览保持原状、横幅走 writeError（卡内不重复报错）；
- * 全量作者为 0 → 「暂无作者」空态。
- * Top5 行点击直达作者集合页（RES R2 清偿 I4 挂账「待壳层共享窗口」：行点击带
- * authorId+原始名上抛，壳层接线 AuthorCollectionRoutes——不再借道作者管理页两跳）。
- *
- * V7 导航补齐：头行+计数副行整体可点 → 作者列表页（[onManage]，与「管理」同目标）。
- * 落点选型：集合页需具体 authorId、卡整体没有，语义不符；「N 位作者」的具体页=全部
- * 作者列表（Web 谱系「作者总览=作者管理入口卡」同语义）。Top5 行为更具体的行级入口，
- * 子级 clickable 优先消费、不受卡级点击影响。
- *
- * V7 排版修复：纵向三处间距对齐 Web（.rank-note margin-top:4px / .rank-card ul
- * margin-top:8px / .rank-sub2 margin-top:2px）——此前全 0dp 即用户「拥挤」观感根因。
- */
-@Composable
-private fun AuthorOverviewCard(
-    overview: AuthorOverview?,
-    loading: Boolean,
-    onManage: () -> Unit,
-    onOpenAuthorCollection: (authorId: String, displayName: String) -> Unit,
-) {
-    QimengRankCard(modifier = Modifier.fillMaxWidth()) {
-        // 头行 + 计数副行 = 卡级点击面（V7：对齐其他卡片「点进去看具体」交互，
-        // 进作者列表页；「管理」为行内子级入口，点击仍归本页同目标）
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(onClick = onManage),
-        ) {
-            // 头行：标题 + 管理入口（Web .rank-head：h3 + a.rank-more 小字次色，点进作者管理页）
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = OVERVIEW_TITLE,
-                    style = MaterialTheme.typography.titleSmall,
-                    modifier = Modifier.weight(1f),
-                )
-                Text(
-                    text = OVERVIEW_MANAGE,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.clickable(onClick = onManage),
-                )
-            }
-            if (overview == null) {
-                // 未就绪：首次加载中给占位；读失败不占位（横幅已反馈，避免「暂无作者」误读）
-                if (loading) CardPlaceholder(text = OVERVIEW_LOADING)
-            } else {
-                // 计数副行（Web .rank-note：「N 位作者 · 已关注 M」——N=全量、M=followed 计数）
-                Text(
-                    text = "${overview.totalAuthors} 位作者 · 已关注 ${overview.followedCount}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = OVERVIEW_NOTE_TOP_SPACING),
-                )
-                if (overview.totalAuthors == 0) {
-                    CardPlaceholder(text = OVERVIEW_EMPTY)
-                } else {
-                    // 行列上间距（Web .rank-card ul margin-top:8px）
-                    Column(
-                        modifier = Modifier.padding(top = OVERVIEW_LIST_TOP_SPACING),
-                    ) {
-                        overview.topByFileCount.forEachIndexed { index, author ->
-                            // 行间分隔线（Web .rank-card li border-bottom，末行无线）
-                            if (index > 0) {
-                                HorizontalDivider(
-                                    thickness = QimengDimens.RankCardRowDividerThickness,
-                                    color = MaterialTheme.colorScheme.outlineVariant,
-                                )
-                            }
-                            OverviewAuthorRow(
-                                name = author.displayLabel,
-                                fileCount = author.fileCount ?: 0,
-                                // 直达作者集合页：id=取数键、displayName=原始名（不带 ·COS 展示后缀，
-                                // 对齐详情页作者卡口径），均由 AuthorSummary 透出
-                                onClick = { onOpenAuthorCollection(author.id, author.displayName) },
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-/** 总览行（Web RankRowList li：.rank-name 首行 + .rank-sub2 副标题「N 个文件」；行点击直达见卡注释） */
-@Composable
-private fun OverviewAuthorRow(name: String, fileCount: Int, onClick: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            // Web .rank-card li 纵向内边距 6px（横段 2px 由卡内边距承担，不重复施加）
-            .padding(vertical = QimengDimens.SpaceS),
-    ) {
-        Text(text = name, style = MaterialTheme.typography.bodyMedium)
-        Text(
-            text = "$fileCount 个文件",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            // Web .rank-sub2 margin-top:2px（V7 排版修复：此前 0dp 两行贴死）
-            modifier = Modifier.padding(top = OVERVIEW_ROW_SUB_TOP_SPACING),
-        )
-    }
-}
-
-/** 卡内占位文案（Web .a-empty/.rank-note 空数据口径：次色小字） */
-@Composable
-private fun CardPlaceholder(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
 }
 
 /**

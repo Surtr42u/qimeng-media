@@ -13,21 +13,18 @@ import kotlinx.coroutines.withContext
 import media.qimeng.app.core.data.di.IoDispatcher
 import media.qimeng.app.core.data.events.ViewEventQueue
 import media.qimeng.app.core.data.repository.AuthRepository
-import media.qimeng.app.core.data.repository.AuthorRepository
 import media.qimeng.app.core.data.repository.CoilCacheManager
 import media.qimeng.app.core.data.repository.DiskCachePrefsRepository
 import media.qimeng.app.core.data.repository.RecommendPrefsRepository
 import media.qimeng.app.core.data.repository.StatsRepository
 import media.qimeng.app.core.data.repository.SystemInfoRepository
-import media.qimeng.app.core.model.AuthorOverview
 import media.qimeng.app.core.model.DiskCacheQuota
 import media.qimeng.app.core.model.RecommendPrefsValues
 import media.qimeng.app.core.model.RecommendPreset
 import media.qimeng.app.core.model.matchPreset
-import media.qimeng.app.core.model.toAuthorOverview
 import media.qimeng.app.core.model.toPrefsValues
 
-/** 我的页 UI 状态（C4 资料/推荐偏好 + C5 缓存 + C6 版本 + G2 作者总览卡 + I4 数量卡） */
+/** 我的页 UI 状态（C4 资料/推荐偏好 + C5 缓存 + C6 版本 + I4 数量卡） */
 data class MineUiState(
     val serverUrl: String = "",
     /**
@@ -37,13 +34,6 @@ data class MineUiState(
      */
     val imageCount: Int? = null,
     val videoCount: Int? = null,
-    /**
-     * 作者总览卡数据（G2：Web DataPage 作者总览形态——「N 位作者 · 已关注 M」+ 文件数 Top5）；
-     * null=未就绪（首次加载中或读失败，失败反馈走 [writeError] 横幅，卡内不重复报错）。
-     */
-    val authorOverview: AuthorOverview? = null,
-    /** 作者总览加载中（读失败置 false 且既有总览保持原状，见 [SettingsViewModel.refreshAuthorOverview]） */
-    val authorsLoading: Boolean = true,
     val prefsValues: RecommendPrefsValues? = null,
     /** 当前命中的预设（四档都不匹配 = null，BottomSheet 不高亮任何行） */
     val appliedPreset: RecommendPreset? = null,
@@ -56,7 +46,6 @@ data class MineUiState(
     /**
      * 写操作失败反馈（自审 P2-3：applyPreset/setCacheQuota 失败原实现静默吞错；C4 的 unfollow 已随 G2 总览卡下线）。
      * 非空时 UI 横幅展示，点按消除（[SettingsViewModel.dismissWriteError]）；成功路径永不产生。
-     * 2026-09-06 起同时承载作者列表**读**失败（refreshAuthorOverview 静默失败修整，同族口径）。
      */
     val writeError: String? = null,
     /**
@@ -69,16 +58,16 @@ data class MineUiState(
 )
 
 /**
- * 我的页 ViewModel（M4-6）：页首数量卡（I4：/stats/overview 图片/视频计数）、作者总览卡
- * （G2：Web DataPage 形态——计数+文件数 Top5，替换 C4 关注列表展示形态）、
+ * 我的页 ViewModel（M4-6）：页首数量卡（I4：/stats/overview 图片/视频计数）、
  * 推荐偏好四预设（BottomSheet 应用）、缓存档位持久化（重启生效）与清空归零、
  * 服务端版本展示（C6）。
+ * X5 批 2026-09-12：作者总览卡退役（用户问题8，我的页改收藏同款入口行，经壳层
+ * onOpenAuthors 进全部作者页），本页不再预取作者数据、不依赖 AuthorRepository。
  * 业务规则一律走 :core:model 纯函数与 :core:data 仓库，本层只做状态编排。
  */
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val authRepository: AuthRepository,
-    private val authorRepository: AuthorRepository,
     private val statsRepository: StatsRepository,
     private val prefsRepository: RecommendPrefsRepository,
     private val systemInfoRepository: SystemInfoRepository,
@@ -95,7 +84,6 @@ class SettingsViewModel @Inject constructor(
     init {
         viewModelScope.launch { authRepository.serverUrl.collect { url -> _uiState.update { it.copy(serverUrl = url) } } }
         loadLibraryCounts()
-        refreshAuthorOverview()
         loadPrefs()
         loadServerVersion()
         loadCacheState()
@@ -106,7 +94,7 @@ class SettingsViewModel @Inject constructor(
      * 页首数量卡（I4，GUIDE_UI L252 + 实录 mine.txt 两卡「图片 N」「视频 N」）：
      * GET /stats/overview 的 imageCount/videoCount 纯计数（不触拍板⑤容量豁免）。
      * 读失败降级为 null（数字卡显「—」），静默不弹横幅——装饰性计数卡失败
-     * 不构成操作反馈（writeError 族保留给写操作与作者总览读失败）。
+     * 不构成操作反馈（writeError 族保留给写操作）。
      */
     private fun loadLibraryCounts() {
         viewModelScope.launch {
@@ -117,27 +105,6 @@ class SettingsViewModel @Inject constructor(
                     videoCount = overview?.videoCount,
                 )
             }
-        }
-    }
-
-    /**
-     * 作者总览（G2：GET /authors 全量 → :core:model 纯函数 [toAuthorOverview] 聚合——
-     * 「N 位作者 · 已关注 M」双计数 + 文件数 Top5，替换 C4 关注列表展示形态）。
-     * 读失败不清空既有总览（网络抖动不伪装成「没有作者」，与 C4 读失败同族口径）：
-     * 保持原数据 + 反馈横幅（writeError 家族口径，见 P2-3）。
-     * 取关不再由本页承担（总览卡无取关行），关注 toggle 走作者管理页（feature:author）。
-     */
-    fun refreshAuthorOverview() {
-        viewModelScope.launch {
-            runCatching { authorRepository.authors().toAuthorOverview() }
-                .onSuccess { overview ->
-                    _uiState.update { it.copy(authorOverview = overview, authorsLoading = false) }
-                }
-                .onFailure {
-                    _uiState.update {
-                        it.copy(authorsLoading = false, writeError = LOAD_AUTHORS_FAILED_MESSAGE)
-                    }
-                }
         }
     }
 
@@ -290,9 +257,6 @@ class SettingsViewModel @Inject constructor(
     private companion object {
         /** 写失败反馈文案（P2-3）：中文、可重试指向；成功路径永不产生 */
         const val SAVE_FAILED_MESSAGE = "保存失败，请重试"
-
-        /** 作者总览读失败反馈文案（C4 关注列表读失败同族口径，G2 随形态更名） */
-        const val LOAD_AUTHORS_FAILED_MESSAGE = "作者列表加载失败，请重试"
 
         /** 浏览数据同步失败反馈文案（任务L L5）：drain 抛出（本地 DB 层）时给出 */
         const val EVENT_SYNC_FAILED_MESSAGE = "同步失败，请重试"
