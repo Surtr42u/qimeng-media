@@ -21,13 +21,13 @@
 | 外网访问 | 内网直连 + Tailscale 隧道（ADR-0006，服务端零改动） | Tailscale 启用文档/引导 | 已有（设计）+ 规划中 |
 | 多用户 | 单用户起步，表结构第一天按多用户设计（SECURITY.md） | 多用户实现（M6+ 后置储备） | 规划中（后置） |
 | 备份 | 数据目录（SQLite+缩略图+回收站）服务端私有，可整体拷贝；旧版格式备份导入（POST /import/qimeng-backup，§10 映射，M3）+ 导出（GET /export/qimeng-backup，2026-09-05 8344920）+ 维护页备份导入/导出卡 | 跨端定期自动备份指南 | 已有（M3 + 2026-09-05 补导出） |
-| 统计 | ViewEvent 事件流 + 日均物化表（migration 0005）+ 趋势分桶聚合（§5）；`/stats/overview`、`/stats/trends`、`/rankings` 已接线；sysmon `/metrics`、`/system/status`、`/admin` 仪表盘 | — | 已有（M2/M3） |
+| 统计 | ViewEvent 事件流 + 日均物化表（migration 0005）+ 趋势分桶聚合（§5）；`/stats/overview`、`/stats/trends`、`/rankings` 与 2026-09-09 三榜单端点（`/stats/most-viewed`、`/stats/top-authors`、`/stats/top-tags`）已接线；sysmon `/metrics`、`/system/status`、维护页仪表盘（`/app/maintenance`） | — | 已有（M2/M3） |
 | 推荐 | 10 维算法（DOMAIN_RULES §1 逐字遵守，14+ 用例锁行为）；`/recommendations`、`/rankings`、`/recommendations/prefs`（后端）已接线；推荐偏好设置页 UI（9 维滑杆+4 预设，2026-09-03 接真） | — | 已有（M3） |
-| 移动端 | 协议 SDK 就绪；Android 端 M4 全功能（浏览/播放/上传/整理）（2026-09-08 M4-7 验收通过：列表/详情/播放/上传/离线队列/缓存/设置统计全链，门禁五 job 绿；已知缺口=progress/dwell seconds 序列化 400（待拍板 #24/#26 协议批）、批次播种仅首页入口（#21）） | 整个 Android 客户端 | 已有（M4） |
+| 移动端 | 协议 SDK 就绪；Android 端 M4 全功能（浏览/播放/上传/整理）（2026-09-08 M4-7 验收通过：列表/详情/播放/上传/离线队列/缓存/设置统计全链，门禁五 job 绿；已知缺口=批次播种仅首页入口（#21）；progress/dwell seconds 序列化 400 已于 2026-09-09 N2 协议批根修（format: double 三端落位，此前少计数据不回填）） | 整个 Android 客户端 | 已有（M4） |
 | 上传整理 | 流式上传（四道校验+自动重命名）+ 移动/重命名（保关联）+ 回收站全套 + 目录树；Web UI 已接 | — | 已有（M2） |
 | 标签/收藏/点赞/时间轴 | 标签池/替换式绑定/级联删除/排序口径、收藏、每日点赞 toggle、时间轴标签全部端点 + Web UI | — | 已有（M2） |
 | 作者体系 | TXT 三格式导入统一重建 + COS 目录扫描双体系 + 关注；孤立 COS 作者自动清理、COS 目录变更映射重算、自定义出处（/sources/custom 写入+存量重算） | COS 库改名场景的其他维度（normal 已覆盖） | 已有（M3） |
-| 监控面板 | sysmon 指标采集 + /metrics + /system/status + 管理面板 /admin（内置指标） | 仪表盘并入 panel-demo 后其余 UI 支持 | 已有（M2） |
+| 监控面板 | sysmon 指标采集 + /metrics + /system/status + Web 维护页仪表盘 /app/maintenance（内置指标，登录门禁内） | 长期历史曲线（Grafana 增强包，OBSERVABILITY「后置可选」） | 已有（M2） |
 | 部署 | Docker Compose 目标形态已定（docker-compose.yml 样例） | buildx 双架构镜像、fnOS 虚拟机彩排（M5） | 规划中（M5） |
 
 ## 规划中
