@@ -3,6 +3,7 @@ package media.qimeng.app.feature.detail
 import android.widget.Toast
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -32,6 +33,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -528,25 +530,42 @@ private fun DetailContentSections(
  * WindowCompat.setDecorFitsSystemWindows(window,false)，此处不重复设置、也不在离开时恢复
  * true，避免整窗重排）。退出沉浸 = 再次单击（LaunchedEffect 翻转）或返回/兄弟 push 换屏
  * （onDispose 恢复系统栏；LEGACY_REQUIREMENTS E：controller 判空 + 生命周期清理）。
+ *
+ * 任务X X7（2026-09-12 状态栏发白修复②）：状态栏图标明暗随沉浸态同步——enableEdgeToEdge
+ * 仅 onCreate 按当时系统明暗设一次图标，详情沉浸态（黑底）系统自呼出状态栏时图标仍是
+ * 暗色 → 暗底暗图标不可辨/发白观感。修法：沉浸（chromeVisible=false，舞台底恒纯黑）
+ * 图标一律浅色（isAppearanceLightStatusBars=false）；chrome 可见态舞台底=主题背景，
+ * 图标按系统明暗回设（日=暗图标/夜=浅图标，与 enableEdgeToEdge 的 auto 语义一致）。
+ * 仅动图标明暗，不碰窗口透明背景（edge-to-edge 语义不变）。键面=controller +
+ * chromeVisible + darkTheme：日夜切换（uiMode 原地换肤，不 recreate）时 effect 重跑，
+ * show/hide 分支按 chromeVisible 幂等，不会误显沉浸期系统栏。onDispose 恢复走
+ * rememberUpdatedState 取最新明暗（DisposableEffect 不以 darkTheme 为键——重启会误
+ * show 系统栏破坏沉浸态）。
  */
 @Composable
 private fun SystemBarsImmersiveEffect(chromeVisible: Boolean) {
     val view = LocalView.current
     val activity = LocalContext.current.findActivity()
+    val darkTheme = isSystemInDarkTheme()
     val controller = remember(activity, view) {
         activity?.window?.let { window -> WindowCompat.getInsetsController(window, view) }
     }
-    LaunchedEffect(controller, chromeVisible) {
+    LaunchedEffect(controller, chromeVisible, darkTheme) {
         controller?.let { insets ->
             insets.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
+            // 任务X X7 图标明暗（见上 KDoc）：沉浸=浅色图标（黑底）；chrome 显=随系统明暗
+            insets.isAppearanceLightStatusBars = chromeVisible && !darkTheme
             val bars = WindowInsetsCompat.Type.systemBars()
             if (chromeVisible) insets.show(bars) else insets.hide(bars)
         }
     }
+    val latestDarkTheme by rememberUpdatedState(darkTheme)
     DisposableEffect(controller) {
         onDispose {
-            // 离开详情页（返回/推入下一资产）恢复系统栏，不留沉浸态给其他页面
+            // 离开详情页（返回/推入下一资产）恢复系统栏，不留沉浸态给其他页面；
+            // 图标明暗同步回系统明暗（X7：此前只恢复显隐，明暗停留在最后一次设定值）
             controller?.show(WindowInsetsCompat.Type.systemBars())
+            controller?.isAppearanceLightStatusBars = !latestDarkTheme
         }
     }
 }

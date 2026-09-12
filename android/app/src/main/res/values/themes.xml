@@ -1,8 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Manifest 层基础主题：Compose 接管全部绘制前避免默认 ActionBar 闪现。
-         窗口背景用品牌背景白，冷启动不闪系统灰。 -->
+         窗口背景用品牌页面底色 @color/qm_bg（DayNight 资源：本文件浅色 / values-night
+         同名深色自动分流），冷启动/导航帧不闪系统色。任务X X7 状态栏发白修复①：
+         此前硬编码 @android:color/white 且本主题无 night 变体，夜间模式冷启动透白；
+         现对齐旧版 DayNight 语义（浅 #FAFAFA/夜 #1A1A1A，与 core/ui Theme.kt
+         QimengBrandColors.BgLight/BgDark 同源，色值单源注释见 colors.xml）。 -->
     <style name="Theme.Qimeng" parent="android:Theme.Material.Light.NoActionBar">
-        <item name="android:windowBackground">@android:color/white</item>
+        <item name="android:windowBackground">@color/qm_bg</item>
     </style>
 </resources>

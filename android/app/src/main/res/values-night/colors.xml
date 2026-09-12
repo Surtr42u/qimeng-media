@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 品牌页面底色（夜间）= 旧版 values-night/colors.xml qm_bg = core/ui Theme.kt
+         QimengBrandColors.BgDark（深灰而非纯黑）。任务X X7 状态栏发白修复①：
+         夜间窗口背景不再透白（冷启动/导航帧状态栏区=#1A1A1A 系）。 -->
+    <color name="qm_bg">#1A1A1A</color>
+</resources>
