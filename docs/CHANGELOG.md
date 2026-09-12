@@ -9,6 +9,15 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## docs: 任务S S3 基座升级批 SKIPPED——maven.google.com 实测不可达，按纪律不硬做（2026-09-13 第二百四十三笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- **前置网络探测（任务书 S3 第一道门）**：maven.google.com → **000（TCP 443 连接超时，3 次重试全败；DNS 解析正常 142.250.198.78，属节点级阻断**——同刻 dl.google.com/services.gradle.org/github.com 全 200，非本机断网）；W8 SKIPPED 教训同款形态。**整批 SKIPPED**（Gradle wrapper 9.x+AGP9+SDK37+material3 三步走全部依赖 maven.google.com 拉取 AGP/androidx 构件，不可硬做），下会话网络条件恢复后再探再试。回退零成本：本批零改动。
+- 连带顺延：任务T T6（前置 S3 收官）维持挂起；S5 收官批「最终 release 包以现基座（AGP8 线）重出」口径生效。
+- 待拍板台账联动：#47（AGP9/SDK37/material3 升级）保持「已拍板做、执行受阻于网络」状态，不销账。
+
+---
 ## fix(app): 任务S S2 系统栏架构根治批——滑切白条 handoff-ack 根修+导航栏图标明暗清偿；63px 位移复测零位移（2026-09-13 第二百四十二笔）
 
 执行 AI：GLM-5.3-Flash（主代理调度/实测验收；调研+executor+reviewer 子代理流水）
