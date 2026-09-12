@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
 import type { HistoryItem } from '@/api/generated'
 import { MediaCard } from '@/components/media/MediaCard'
+import { InfiniteTail } from '@/components/media/InfiniteTail'
 import { SearchIcon } from '@/components/shell/icons'
 import { useAutoMore } from '@/hooks/use-auto-more'
 import { assetToCard, useAssetsInfinite } from '@/hooks/use-assets'
@@ -163,12 +164,13 @@ export default function MinePage() {
             <p className="grid-empty">暂无收藏内容</p>
           ) : null}
         </div>
-        {/* E3 无感加载：拉下一页时底部占位；到底且非空时保留原 pill 的计数信息 */}
-        {favQuery.isFetchingNextPage ? <p className="grid-empty">加载中…</p> : null}
-        {!favQuery.hasNextPage && favItems.length > 0 ? (
-          <p className="grid-empty">共 {favItems.length} 项 · 到底了</p>
-        ) : null}
-        {favQuery.hasNextPage && <div ref={favSentinelRef} style={{ height: 1 }} aria-hidden="true" />}
+        {/* E3 无感加载尾部（三件套见 components/media/InfiniteTail） */}
+        <InfiniteTail
+          isFetchingNextPage={favQuery.isFetchingNextPage}
+          hasNextPage={favQuery.hasNextPage}
+          itemCount={favItems.length}
+          sentinelRef={favSentinelRef}
+        />
       </div>
       <div className="m-pane" id="mpane-history" hidden={tab !== 'history'}>
         <div className="hist-toolbar">
@@ -207,12 +209,13 @@ export default function MinePage() {
         {histGroups.length === 0 && !histQuery.isFetching ? (
           <p className="grid-empty">{query.trim() ? '没有匹配的历史记录' : '暂无浏览记录'}</p>
         ) : null}
-        {/* E3 无感加载：拉下一页时底部占位；到底且非空时保留原 pill 的计数信息 */}
-        {histQuery.isFetchingNextPage ? <p className="grid-empty">加载中…</p> : null}
-        {!histQuery.hasNextPage && histItems.length > 0 ? (
-          <p className="grid-empty">共 {histItems.length} 项 · 到底了</p>
-        ) : null}
-        {histQuery.hasNextPage && <div ref={histSentinelRef} style={{ height: 1 }} aria-hidden="true" />}
+        {/* E3 无感加载尾部（三件套见 components/media/InfiniteTail） */}
+        <InfiniteTail
+          isFetchingNextPage={histQuery.isFetchingNextPage}
+          hasNextPage={histQuery.hasNextPage}
+          itemCount={histItems.length}
+          sentinelRef={histSentinelRef}
+        />
       </div>
     </div>
   )

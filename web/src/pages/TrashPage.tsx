@@ -24,6 +24,11 @@ import type { TrashItem } from '@/api/generated'
  * 进度/失败汇总见 BatchOpsPanel），失效链路 = 各 mutation 自身 onSuccess + SSE。
  */
 
+/** 复选框列宽（px）：只容一个选择框（F6 批选列） */
+const SELECT_COL_PX = 36
+/** 原路径列最大宽（px）：超长单行截断省略，完整路径由 title 悬停可见 */
+const PATH_COL_MAX_PX = 300
+
 export default function TrashPage() {
   const { data: items = [], isLoading } = useTrash()
   const restore = useRestoreTrash()
@@ -189,7 +194,7 @@ export default function TrashPage() {
           <table className="log-table">
             <thead>
               <tr>
-                {select.active && <th style={{ width: 36 }} aria-label="选择" />}
+                {select.active && <th style={{ width: SELECT_COL_PX }} aria-label="选择" />}
                 <th>文件名</th><th>原路径</th><th>大小</th><th>删除时间</th><th>操作</th>
               </tr>
             </thead>
@@ -212,7 +217,7 @@ export default function TrashPage() {
                       </td>
                     )}
                     <td>{it.fileName}</td>
-                    <td style={{ maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={it.originalPath}>{it.originalPath}</td>
+                    <td style={{ maxWidth: PATH_COL_MAX_PX, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={it.originalPath}>{it.originalPath}</td>
                     <td>{formatBytes(it.sizeBytes ?? 0)}</td>
                     <td>{it.deletedAt ? new Date(it.deletedAt).toLocaleString(LOCALE_ZH) : '-'}</td>
                     <td>

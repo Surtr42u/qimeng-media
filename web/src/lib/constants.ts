@@ -50,6 +50,10 @@ export const LOCALE_ZH = 'zh-Hans-CN'
  *  两端同源引用，改周期须意识到速率曲线纵轴随之变化。 */
 export const STATUS_POLL_INTERVAL_MS = 2000
 
+/** TanStack Query 全局 staleTime（ms）：数据一致性主要由 SSE 事件桥主动失效保证，
+ *  staleTime 只是无事件时避免高频重拉的兜底（消费方 main.tsx 全局默认）。 */
+export const QUERY_STALE_TIME_MS = 20_000
+
 /**
  * AppShell 刷新按钮 → 首页旧版 refreshSeed++ 全量重排的广播事件名。
  * 跨文件契约：dispatch=components/shell/AppShell.tsx，监听=pages/HomePage.tsx，

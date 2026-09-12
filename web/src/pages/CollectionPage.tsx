@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { MediaCard } from '@/components/media/MediaCard'
+import { InfiniteTail } from '@/components/media/InfiniteTail'
 import { Pill } from '@/components/ui/pill'
 import { useAutoMore } from '@/hooks/use-auto-more'
 import {
@@ -246,12 +247,15 @@ export default function CollectionPage() {
             : `该${kindLabel}下暂无内容。`}
         </p>
       )}
-      {/* E3 无感加载：拉下一页时底部占位；到底且非空时保留原 pill 的计数信息 */}
-      {isFetchingNextPage ? <p className="grid-empty">加载中…</p> : null}
-      {!hasNextPage && items.length > 0 ? (
-        <p className="grid-empty">共 {items.length} 项 · 到底了</p>
-      ) : null}
-      {found && hasNextPage && <div ref={sentinelRef} style={{ height: 1 }} aria-hidden="true" />}
+      {/* E3 无感加载尾部（三件套见 components/media/InfiniteTail）；哨兵
+          仅在集合存在（found）时挂载 */}
+      <InfiniteTail
+        isFetchingNextPage={isFetchingNextPage}
+        hasNextPage={hasNextPage}
+        itemCount={items.length}
+        sentinelRef={sentinelRef}
+        sentinelActive={!!found}
+      />
     </div>
   )
 }
