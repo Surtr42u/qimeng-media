@@ -21,14 +21,25 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import media.qimeng.app.core.model.AssetDetail
 import media.qimeng.app.core.model.DetailAuthor
+import media.qimeng.app.core.ui.component.detailDirectoryLabel
+import media.qimeng.app.core.ui.component.detailTypeLabel
+import media.qimeng.app.core.ui.component.formatBytesForDetail
 import media.qimeng.app.core.ui.component.formatDurationBadge
+import media.qimeng.app.core.ui.component.formatShortDate
 import media.qimeng.app.core.ui.icon.ChevronRightIcon
 import media.qimeng.app.core.ui.theme.QimengDimens
 
 /**
- * 信息 BottomSheet（任务I I7，GUIDE_UI §详情页 L169/L171）：文件名 / 出处 / 尺寸 / 时长
- * 等详细信息（区分图片和视频——时长仅视频资产有值，协议 AssetDetail.durationMs 直读，
- * 零按需解码成本；尺寸行 width/height 齐备且 >0 才渲染，与 meta 行口径一致）。
+ * 信息 BottomSheet（任务I I7 → 任务X X3 旧版移植扩行，2026-09-12 用户拍板「详细信息应该
+ * 和旧版移植」；行序对齐旧版 showInfoSheet=QimengMedia MediaDetailFragment:1026-1070 + 作品行）：
+ * 文件名 / 作品 / 出处 / 日期 / 大小 / 类型 / 尺寸 / 时长 / 目录 / 路径（label 小字 + value
+ * 双段式，InfoRow 同构旧版 addInfoRow）。
+ * 可选行口径（沿用本 Sheet 既有「null/0 不渲染」）：作品/出处空值不渲染；日期空值
+ * （formatShortDate 空串）不渲染；尺寸 width/height 齐备且 >0 才渲染；时长仅视频资产有值；
+ * 路径 relPath 空串（服务端未返回）不渲染。恒显行：大小（null 按 Web sizeBytes ?? 0 语义
+ * = 0 B）、类型（中文媒体类型+小写扩展名「视频 · mp4」式，无扩展名仅类型名）、目录
+ * （空 = 库根「/」）。时长/尺寸 durationMs/width/height 直读协议（服务端扫描已产，旧版
+ * 按需解码流已作废，null=未知→行隐藏）。
  * **无「完成」按钮**（L169：BottomSheet 下滑手势 / 点外部空白关闭即可）。
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -47,20 +58,48 @@ internal fun DetailInfoSheet(asset: AssetDetail, onDismiss: () -> Unit) {
                 style = MaterialTheme.typography.titleLarge,
             )
             InfoRow(label = stringResource(R.string.detail_info_filename), value = asset.fileName)
+            // 作品（X3 补行）：cosWork 非空才显示——title=cosWork??fileName 是下滑区标题
+            // 口径，Sheet 作品行按旧版规格独立展示 cosWork 原值
+            asset.cosWork?.takeIf { it.isNotEmpty() }?.let { work ->
+                InfoRow(label = stringResource(R.string.detail_info_work), value = work)
+            }
             asset.source?.takeIf { it.isNotEmpty() }?.let { source ->
                 InfoRow(label = stringResource(R.string.detail_info_source), value = source)
             }
+            // 日期（X3 补行）：M-D 短日期（与 Web formatShortDate 同函数口径），空值不渲染
+            formatShortDate(asset.modifiedAtMs).takeIf { it.isNotEmpty() }?.let { date ->
+                InfoRow(label = stringResource(R.string.detail_info_date), value = date)
+            }
+            // 大小（X3 补行）：恒显，空值语义 = 0 B（Web sizeBytes ?? 0，口径单源）
+            InfoRow(
+                label = stringResource(R.string.detail_info_size),
+                value = formatBytesForDetail(asset.sizeBytes),
+            )
+            // 类型（X3 补行）：「视频 · mp4」式（中文媒体类型+小写扩展名；无扩展名仅类型名）
+            InfoRow(
+                label = stringResource(R.string.detail_info_type),
+                value = detailTypeLabel(asset.mediaType, asset.fileName),
+            )
             val w = asset.width
             val h = asset.height
             if (w != null && h != null && w > 0 && h > 0) {
                 InfoRow(
                     label = stringResource(R.string.detail_info_resolution),
-                    // 值格式与 meta 行同串资源（%1$d×%2$d），口径单源
+                    // 值格式与原 meta 行同串资源（%1$d×%2$d），口径单源
                     value = stringResource(R.string.detail_meta_resolution, w, h),
                 )
             }
             formatDurationBadge(asset.durationMs)?.let { duration ->
                 InfoRow(label = stringResource(R.string.detail_info_duration), value = duration)
+            }
+            // 目录（X3 补行）：空/null = 库根显示「/」（detailDirectoryLabel 单源回退）
+            InfoRow(
+                label = stringResource(R.string.detail_info_directory),
+                value = detailDirectoryLabel(asset.directory),
+            )
+            // 路径（X3 补行）：库内相对路径；空串（服务端未返回）不渲染
+            asset.relPath.takeIf { it.isNotEmpty() }?.let { relPath ->
+                InfoRow(label = stringResource(R.string.detail_info_path), value = relPath)
             }
         }
     }

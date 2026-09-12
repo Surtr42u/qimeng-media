@@ -86,6 +86,19 @@ class SdkDetailMappersTest {
     }
 
     @Test
+    fun `relPath字段 - 库内相对路径透传 缺省null兜底空串`() {
+        // 任务X X3：详细信息 Sheet「路径」行数据源——SDK relPath 原样透传，不拼 base 不改写
+        val withPath = SdkDetailMappers.toAssetDetail(
+            sdkDetail().copy(relPath = "cos/2026/img_001.jpg"),
+            baseUrl,
+        )
+        assertEquals("cos/2026/img_001.jpg", withPath.relPath)
+        // 协议缺省 null → 空串兜底（UI 按「null/0 不渲染」口径隐藏路径行）
+        val noPath = SdkDetailMappers.toAssetDetail(sdkDetail(), baseUrl)
+        assertEquals("", noPath.relPath)
+    }
+
+    @Test
     fun `cosWork为null回退fileName - 已是绝对的URL原样保留`() {
         val absolute = "https://cdn.example.com/thumb/x"
         val domain = SdkDetailMappers.toAssetDetail(

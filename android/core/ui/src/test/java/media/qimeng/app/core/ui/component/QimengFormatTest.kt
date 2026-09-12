@@ -2,6 +2,7 @@ package media.qimeng.app.core.ui.component
 
 import java.time.LocalDate
 import java.time.ZoneId
+import media.qimeng.app.core.model.MediaKind
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -9,7 +10,9 @@ import org.junit.Test
  * 格式化纯函数单测（口径冻结对照 web/src/lib/format.ts，与 Web 逐值对齐）：
  * formatCount（千分位/万压缩/截尾/取整）、formatShortDate（月日均不补零）、
  * formatBytesForDetail（详情 meta 行专用：GB/MB 一位小数、整数 KB、空值 0 B）、
- * formatDurationBadge（网格卡时长角标，任务L L1 补旧版口径断言：m:ss / h:mm:ss 纯文字）。
+ * formatDurationBadge（网格卡时长角标，任务L L1 补旧版口径断言：m:ss / h:mm:ss 纯文字）、
+ * fileExtension/mediaTypeLabel/detailTypeLabel/detailDirectoryLabel（任务X X3 详细信息
+ * Sheet 旧版移植扩行专用）。
  * 全部纯 JVM，无 Android 依赖（core:ui 铁律：格式化不碰 IO/Compose）。
  */
 class QimengFormatTest {
@@ -128,5 +131,48 @@ class QimengFormatTest {
     fun `formatDurationBadge - 不足一秒截尾为 0_00`() {
         assertEquals("0:00", formatDurationBadge(500))
         assertEquals("1:00", formatDurationBadge(60_999)) // 毫秒截尾不进位
+    }
+
+    // ---------- 详情信息 Sheet 专用（任务X X3 旧版移植扩行） ----------
+
+    @Test
+    fun `fileExtension - 常规扩展名截取`() {
+        assertEquals("mp4", fileExtension("video.mp4"))
+        assertEquals("gz", fileExtension("archive.tar.gz")) // 取最后一个「.」后段
+        assertEquals("jpg", fileExtension("IMG_001.jpg"))
+    }
+
+    @Test
+    fun `fileExtension - 大小写归一小写`() {
+        assertEquals("jpg", fileExtension("IMG.JPG"))
+        assertEquals("png", fileExtension("photo.Png"))
+    }
+
+    @Test
+    fun `fileExtension - 无扩展名与以点结尾归空串`() {
+        assertEquals("", fileExtension("noext"))
+        assertEquals("", fileExtension("file."))
+        assertEquals("", fileExtension("")) // 空文件名防御
+        assertEquals("", fileExtension(".hidden")) // 隐藏文件：前导点非扩展名分隔
+    }
+
+    @Test
+    fun `mediaTypeLabel - 三档全枚举中文映射`() {
+        assertEquals("图片", mediaTypeLabel(MediaKind.IMAGE))
+        assertEquals("动图", mediaTypeLabel(MediaKind.ANIMATED_IMAGE))
+        assertEquals("视频", mediaTypeLabel(MediaKind.VIDEO))
+    }
+
+    @Test
+    fun `detailTypeLabel - 「视频 · mp4」式组合与无扩展名回退`() {
+        assertEquals("视频 · mp4", detailTypeLabel(MediaKind.VIDEO, "clip.MP4"))
+        assertEquals("图片", detailTypeLabel(MediaKind.IMAGE, "noext")) // 无扩展名仅类型名
+    }
+
+    @Test
+    fun `detailDirectoryLabel - 空值回退库根斜杠 非空原样`() {
+        assertEquals("/", detailDirectoryLabel(null))
+        assertEquals("/", detailDirectoryLabel(""))
+        assertEquals("cos/2026", detailDirectoryLabel("cos/2026"))
     }
 }

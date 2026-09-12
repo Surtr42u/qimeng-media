@@ -53,6 +53,8 @@ internal object SdkDetailMappers {
         authors = detail.authors.orEmpty().map(::toDetailAuthor),
         // 库内相对路径原样透传（文件整理弹窗预填；null = 库根，任务G G1b）
         directory = detail.directory,
+        // 库内相对路径（任务X X3 详细信息 Sheet「路径」行）；SDK 可空兜底空串 = 服务端未返回
+        relPath = detail.relPath.orEmpty(),
     )
 
     fun toDetailTag(tag: Tag): DetailTag = DetailTag(
