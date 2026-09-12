@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 import { MediaCard } from '@/components/media/MediaCard'
+import { InfiniteTail } from '@/components/media/InfiniteTail'
 import { ChevronDownIcon } from '@/components/shell/icons'
 import { Pill } from '@/components/ui/pill'
 import { useAutoMore } from '@/hooks/use-auto-more'
@@ -236,12 +237,15 @@ export default function SearchPage() {
           <p className="grid-empty">没有匹配的内容，放宽一点筛选条件试试。</p>
         )}
       </div>
-      {/* E3 无感加载：拉下一页时底部占位；到底且非空时保留原 pill 的计数信息 */}
-      {isFetchingNextPage ? <p className="grid-empty">加载中…</p> : null}
-      {!hasNextPage && items.length > 0 ? (
-        <p className="grid-empty">共 {items.length} 项 · 到底了</p>
-      ) : null}
-      {q !== '' && hasNextPage && <div ref={sentinelRef} style={{ height: 1 }} aria-hidden="true" />}
+      {/* E3 无感加载尾部（三件套见 components/media/InfiniteTail）；哨兵
+          仅在有搜索词（列表可能非空）时挂载 */}
+      <InfiniteTail
+        isFetchingNextPage={isFetchingNextPage}
+        hasNextPage={hasNextPage}
+        itemCount={items.length}
+        sentinelRef={sentinelRef}
+        sentinelActive={q !== ''}
+      />
     </div>
   )
 }

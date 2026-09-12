@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import type { AssetSummary } from '@/api/generated'
 import { MediaCard } from '@/components/media/MediaCard'
+import { InfiniteTail } from '@/components/media/InfiniteTail'
 import { Pill } from '@/components/ui/pill'
 import { DEFAULT_PAGE_SIZE, LOCALE_ZH } from '@/lib/constants'
 import { groupAlbumsByDate } from '@/lib/album-grouping'
@@ -314,13 +315,13 @@ export default function AlbumsPage() {
       {items.length === 0 && !isFetching ? (
         <p className="grid-empty">该筛选组合下暂无内容，换个胶囊试试。</p>
       ) : null}
-      {/* E3 无感加载：拉下一页时底部占位；到底且非空时保留原 pill 的计数信息 */}
-      {isFetchingNextPage ? <p className="grid-empty">加载中…</p> : null}
-      {!hasNextPage && items.length > 0 ? (
-        <p className="grid-empty">共 {items.length} 项 · 到底了</p>
-      ) : null}
-      {/* 触底哨兵：还有下一页才挂载——到底即卸载，观察器随之断开 */}
-      {hasNextPage && <div ref={sentinelRef} style={{ height: 1 }} aria-hidden="true" />}
+      {/* E3 无感加载尾部（三件套见 components/media/InfiniteTail） */}
+      <InfiniteTail
+        isFetchingNextPage={isFetchingNextPage}
+        hasNextPage={hasNextPage}
+        itemCount={items.length}
+        sentinelRef={sentinelRef}
+      />
     </div>
   )
 }

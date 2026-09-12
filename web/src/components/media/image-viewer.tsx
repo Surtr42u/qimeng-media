@@ -32,64 +32,22 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { ChevronLeft, ChevronRight, X } from 'lucide-react'
-
-/** 缩放边界（E5 拍板口径）：捏合与双击共用，0.5x 概览 ~ 5x 细节 */
-const MIN_SCALE = 0.5
-const MAX_SCALE = 5
-
-/** 双击放大目标倍率（E5 拍板 1.8x；已放大态再双击还原 1x） */
-const DOUBLE_TAP_SCALE = 1.8
-
-/** 相邻预载条数：打开/换件时对前后各 N 件预载原件（对齐旧版 preloadAround
- *  最小档 1 前 1 后）；URL 由页面从上下文快照 origUrls 切片注入，快照无
- *  origUrl 字段则传空（该邻项不预载，切换走详情接口 origUrl） */
-export const PRELOAD_AROUND = 1
-
-/** 双击判定：两次抬手的最大间隔（ms）与最大落点偏移（视觉 px），超出算两次单击 */
-const DOUBLE_TAP_MS = 300
-const DOUBLE_TAP_SLOP_PX = 30
-
-/** 单击（切沉浸 chrome）延迟=双击判定窗口：第二击必然落在单击生效前，
- *  结构性排除「单击 chrome 切换 + 双击缩放」同发 */
-const SINGLE_TAP_DELAY_MS = DOUBLE_TAP_MS
-
-/** 位移超过该值（视觉 px）判为拖拽而非点击（防手抖把点击变拖拽） */
-const DRAG_SLOP_PX = 6
-
-/** 未放大态横滑触发换件的最小位移（视觉 px） */
-const SWIPE_SWITCH_PX = 60
-
-/** 画布 transform（渲染态）：scale 倍率，x/y 平移（画布局部视觉 px） */
-interface Transform {
-  scale: number
-  x: number
-  y: number
-}
-
-const IDENTITY: Transform = { scale: 1, x: 0, y: 0 }
-
-/** 二维点（画布局部视觉 px） */
-interface Point {
-  x: number
-  y: number
-}
-
-/** 手势现场：pointerdown 建档、up/cancel 销毁；坐标全部画布局部视觉 px */
-interface Gesture {
-  mode: 'pending' | 'pan' | 'swipe' | 'pinch'
-  /** 手势起始 transform（增量计算的基准） */
-  start: Transform
-  /** 图片 scale=1 基准视觉尺寸（建档时测量；pinch 过程不变） */
-  base: { w: number; h: number }
-  /** 画布（=视口）视觉尺寸 */
-  viewport: { w: number; h: number }
-  /** 首指/双指中点起始位置（位移增量参照） */
-  startMid: Point
-  /** 捏合焦点（=起始双指中点；缩放时保持其画面位置不动） */
-  focal: Point
-  /** 双指起始间距（为 0 只出现在未进入 pinch 的单指档） */
-  startDist: number
-}
+import {
+  DOUBLE_TAP_MS,
+  DOUBLE_TAP_SCALE,
+  DOUBLE_TAP_SLOP_PX,
+  DRAG_SLOP_PX,
+  IDENTITY,
+  MAX_SCALE,
+  MIN_SCALE,
+  SINGLE_TAP_DELAY_MS,
+  SWIPE_SWITCH_PX,
+  clampOffset,
+  focusPreservingTransform,
+  type Gesture,
+  type Point,
+  type Transform,
+} from '@/lib/image-viewer-math'
 
 export interface ImageViewerProps {
   /** 原件直链（detail.origUrl——查看永远用原件直链，组件不改发请求） */
@@ -105,22 +63,7 @@ export interface ImageViewerProps {
   preloadUrls?: string[]
 }
 
-/** 平移收敛：放大后图片边缘不出视口（图片小于视口时归零居中，视觉 px） */
-function clampOffset(
-  scale: number,
-  x: number,
-  y: number,
-  base: { w: number; h: number },
-  viewport: { w: number; h: number },
-): Transform {
-  const maxX = Math.max(0, (base.w * scale - viewport.w) / 2)
-  const maxY = Math.max(0, (base.h * scale - viewport.h) / 2)
-  return {
-    scale,
-    x: Math.min(maxX, Math.max(-maxX, x)),
-    y: Math.min(maxY, Math.max(-maxY, y)),
-  }
-}
+/** 平移收敛与保焦点缩放公式在 lib/image-viewer-math.ts（纯函数 + 单测锁定） */
 
 /**
  * 画布（手势与图片渲染层）。以 key=src 由外层重挂实现换件复位：transform/
@@ -181,7 +124,8 @@ function ViewerCanvas({
     return { x: clientX - (rect?.left ?? 0), y: clientY - (rect?.top ?? 0) }
   }
 
-  /** 双击缩放切换：>1x 还原，否则放大到 1.8x（绕点击点，保焦点公式见 pinch） */
+  /** 双击缩放切换：>1x 还原，否则放大到 1.8x（绕点击点，保焦点公式=共享
+   *  focusPreservingTransform，双击无中点漂移传 0） */
   const toggleZoom = (point: Point) => {
     const t = transformRef.current
     setAnimate(true)
@@ -189,15 +133,9 @@ function ViewerCanvas({
       setTransform(IDENTITY)
       return
     }
-    const vp = measureViewport()
-    const scale = DOUBLE_TAP_SCALE
-    // 保焦点缩放（一般式）：把点击下的内容点 p=(f−c−t0)/s0 缩放前后都映到
-    // f，解得 t1 = t0 + (s0−s1)·(f−c−t0)/s0——t0≠恒等（起手已平移/已缩放）
-    // 也精确；特设式 (s0−s1)·(f−c) 仅 t0=恒等成立，会漂移数百 px（P2-1）
-    const fx = point.x - vp.w / 2 - t.x
-    const fy = point.y - vp.h / 2 - t.y
-    const k = (t.scale - scale) / t.scale
-    setTransform(clampOffset(scale, t.x + k * fx, t.y + k * fy, measureBase(), vp))
+    setTransform(focusPreservingTransform(
+      t, DOUBLE_TAP_SCALE, point, { x: 0, y: 0 }, measureViewport(), measureBase(),
+    ))
   }
 
   /** 原地抬手=点击：双击判定优先，否则挂延迟单击（等可能出现的第二击） */
@@ -293,17 +231,15 @@ function ViewerCanvas({
       const [a, b] = pts
       const dist = Math.hypot(a.x - b.x, a.y - b.y) || 1
       const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
-      // 缩放 = 两指距离比 × 起始倍率，clamp 0.5~5（E5 拍板边界）
+      // 缩放 = 两指距离比 × 起始倍率，clamp 0.5~5（E5 拍板边界）；
+      // 保焦点（一般式）=共享 focusPreservingTransform（焦点=起始双指中点，
+      // 中点漂移 = mid−startMid），公式行为由 image-viewer-math.test.ts 锁定
       const scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, g.start.scale * (dist / g.startDist)))
-      // 保焦点（一般式）：t1 = t0 + Δmid + (s0−s1)·(f−c−t0)/s0——焦点下的内容
-      // 点 p=(f−c−t0)/s0 在缩放前后都停在焦点下（起手已平移/已缩放也精确，
-      // P2-1）；s0 恒 ≥ MIN_SCALE(0.5)，除法无零除
-      const k = (g.start.scale - scale) / g.start.scale
-      const nx =
-        g.start.x + (mid.x - g.startMid.x) + k * (g.focal.x - g.viewport.w / 2 - g.start.x)
-      const ny =
-        g.start.y + (mid.y - g.startMid.y) + k * (g.focal.y - g.viewport.h / 2 - g.start.y)
-      setTransform(clampOffset(scale, nx, ny, g.base, g.viewport))
+      setTransform(focusPreservingTransform(
+        g.start, scale, g.focal,
+        { x: mid.x - g.startMid.x, y: mid.y - g.startMid.y },
+        g.viewport, g.base,
+      ))
       return
     }
 

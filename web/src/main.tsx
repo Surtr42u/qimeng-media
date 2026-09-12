@@ -7,6 +7,7 @@ import { AppErrorBoundary } from '@/components/layout/AppErrorBoundary'
 import { router } from './router'
 import { initTheme } from './lib/theme'
 import { installClientLogs } from './lib/client-logs'
+import { QUERY_STALE_TIME_MS } from './lib/constants'
 import './index.css'
 // 原型样式层（媒体库 UI 主题）：必须在 index.css 之后导入——原型 :root 的
 // --qm-primary/--border 与 tokens.css/index.css 同名变量按导入顺序覆盖，
@@ -36,7 +37,7 @@ installClientLogs()
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 20_000,
+      staleTime: QUERY_STALE_TIME_MS,
       retry: 1,
     },
   },
