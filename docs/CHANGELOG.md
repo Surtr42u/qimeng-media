@@ -9,6 +9,33 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## feat(app): 任务X X8 收官批——孤儿清偿+全卷终审走查（2026-09-12 第二百一十八笔）
+
+执行 AI：GLM-5.3-Flash（主代理收官清偿+全链路走查；X1~X7 每批独立对抗审查【通过】）
+
+- **孤儿清偿**：ic_detail_jump.xml（X4 快速转跳退役后的无引用资源）删除；DetailChromeIcons.kt 类 KDoc 沿革注更新（X4/X8 口径）；DetailScreen.kt import 排序修正（X7 审查 P2 级瑕疵）。detail_jump_sheet_title/detail_jump_empty 与 DetailJumpSheet 组件维持任务V V3「组件保留」既有裁决不动。
+- **11 条问题全闭环走查**（模拟器 qimeng_api35:5562+18461 虚构数据，截图/dump 证据各批归档 %TEMP%\qimeng-x*-evidence\）：①详情全屏不可下滑（X1 沉浸态 scrollY=0+上滑纹丝不动+底部零露出）②退出跳动（进出沉浸图片区逐像素零位移）③图片居中（fit-center=屏幕正中心，letterbox 796/796 对称）④视频播放态不可下滑（播放/ENDED 上滑像素 diff bbox=None+标题条已删）⑤倍速旁按钮（快速转跳退役，底栏六槽实证）⑥下滑区只留四胶囊（DetailTitle/MetaRow/TagRow 死码清偿 grep 零残留）⑦详细信息旧版移植（十行 Sheet 与服务端 JSON 逐值核对）⑧作者总览外部入口（入口行→全部作者页闭环）⑨首页胶囊行下间隙（滚动帧内容顶 401px=380+8dp 恒定）⑩状态栏发白（夜冷启动 #1A1A1A 精确命中+沉浸 appearance 同步）⑪旧版逻辑对齐（GUIDE_UI L162/L272-275「系统栏显隐不触发布局」壳层架构落地）。
+- **记档（待拍板/后续批）**：W7 push 瞬间白条在 X7① 窗口背景修复后待用户真机复验（handoff-ack 方案仍留档）；App 停留非详情页期间系统明暗热切换（不 recreate）时非详情页图标明暗不自动跟随（enableEdgeToEdge 单次调用红线未动，用户主诉两路径已闭）；导航栏图标明暗未同步（系统瞬态呼出带 scrim 可辨）；作品行非空可见态未经 cosWork 资产真机实证（逻辑与出处行同构）。
+- 全卷门禁三连（build/test/lint）收官复跑 exit 0；QimengMediaGrid 调用点实为 8 处（X6 报告笔误 9，reviewer 已复核计数）。
+- 全卷 commit 链：6635f09(X1)→69f2a25(X2+X3)→da21b67(X4)→516a30a(X5)→本笔(X6/X7/清偿)。push 因 github 不可达（W8 同款网络限制）待网络恢复执行。
+
+## feat(app): 任务X X7 批——状态栏发白修复（2026-09-12 第二百一十七笔）
+
+执行 AI：GLM-5.3-Flash（executor 子代理实施+像素级自测，reviewer 子代理对抗审查【通过】含 aapt/dex 静态链+独立复测）
+
+- **修复①（问题10 主因：窗口背景恒白）**：app themes.xml windowBackground 从硬编码 @android:color/white 改引新增颜色资源 @color/qm_bg（values=#FAFAFA/新建 values-night=#1A1A1A，与 core/ui Theme.kt BgLight/BgDark 注释锁同源）；新建 values-night/themes.xml 完整同名夜间变体（parent 换 android:Theme.Material.NoActionBar 深色基座）——旧版 DayNight 语义对齐（GUIDE_UI 口径：旧 themes 无 windowBackground 覆盖随明暗）。Manifest 同名引用零改动，aapt 实证 APK 双 config 齐备。
+- **修复②（详情沉浸图标发白）**：SystemBarsImmersiveEffect 增状态栏图标明暗同步——沉浸（黑底）isAppearanceLightStatusBars(false) 浅色图标；chrome 可见按系统明暗回设；onDispose 恢复（rememberUpdatedState 取最新值，DisposableEffect 不以 darkTheme 为键防日夜切换误 show 系统栏）。chrome rememberSaveable 恢复链/X1 chrome 自管 insets 零侵入。
+- **实测**：夜冷启动状态栏区 (26,26,26)=#1A1A1A 精确命中、夜间全程无纯白帧；日间排版态 LIGHT_STATUS_BARS→沉浸标志清空→退沉浸恢复（dumpsys appearance 链）；门禁三连 exit 0。
+- 记档：App 停留非详情页期间 uiMode 热切换（不 recreate）的图标跟随属 enableEdgeToEdge 单次调用残余，非用户主诉路径，维持不动。
+
+## feat(app): 任务X X6 批——网格顶部间隙语义修复（2026-09-12 第二百一十六笔）
+
+执行 AI：GLM-5.3-Flash（executor 子代理实施，reviewer 子代理对抗审查【通过】含独立几何实测）
+
+- **改动（问题9「下滑浏览时胶囊和缩略图之间空白消失」）**：QimengMediaGrid 顶部间距从 LazyVerticalGrid contentPadding(top=SpaceM) 挪到 modifier.padding(top=SpaceM)（视口外语义=旧版 homeRecycler layout_marginTop+clipToPadding=true：滚动全程胶囊行→网格内容间隙恒定 8dp，内容在网格视口顶边被裁剪）。start/end/bottom 原样保留（含全部/收藏/历史/作者集合四页 180dp ListBottomContentPadding 的刻意滚入语义）；SpaceM=8dp 值不变，静止几何不变。
+- **波及面（拍板=一并修，旧版所有网格页同语义）**：8 调用点（首页三 tab/全部/作者集合/收藏/历史/搜索）全不传 modifier 零特殊依赖；组头页首项间隙同样恒定。
+- **实测**：滚动停稳帧内容层顶 y=401=380+8dp 精确档位（旧 contentPadding 语义下会归零至 380）；门禁三连 exit 0；QimengMediaGridCellsTest 纯函数单测不受影响。
+
 ## feat(app): 任务X X5 批——我的页作者总览外部化（2026-09-12 第二百一十五笔）
 
 执行 AI：GLM-5.3-Flash（executor 子代理实施，reviewer 子代理对抗审查【通过】含 --rerun 非缓存单测复跑与模拟器双闭环独立执行）

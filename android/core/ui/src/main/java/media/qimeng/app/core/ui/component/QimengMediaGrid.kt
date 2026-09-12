@@ -198,12 +198,18 @@ fun QimengMediaGrid(
     LazyVerticalGrid(
         state = listState,
         columns = GridCells.Fixed(columns),
-        modifier = modifier.fillMaxSize(),
+        // 顶部间距=视口外（任务X X6，2026-09-12 用户问题9）：旧版各网格 RecyclerView 是
+        // layout_marginTop（视口外，滚动全程顶部间隙恒定，clipToPadding=true 语义）；此前
+        // 误放 contentPadding(top)——Lazy 系 contentPadding 是视口内 padding，内容可滚入
+        // padding 带，下滑后「胶囊行→缩略图」间隙归零（观感=空白消失）。挪到 modifier
+        // padding 后内容在网格视口顶边被裁剪，间隙恒定=对齐旧版滚动语义；值保持 SpaceM
+        // 不变=静止几何不变，只改滚动语义。bottom 仍留 contentPadding（clipToPadding=false
+        // 防遮挡语义，相册/收藏/历史/作者集合页 180dp 档刻意滚入，本批不动）。
+        modifier = modifier.padding(top = QimengDimens.SpaceM).fillMaxSize(),
         horizontalArrangement = Arrangement.spacedBy(GRID_INTER_ITEM_SPACING),
         verticalArrangement = Arrangement.spacedBy(GRID_INTER_ITEM_SPACING),
         contentPadding = PaddingValues(
             start = QimengDimens.SpaceM,
-            top = QimengDimens.SpaceM,
             end = QimengDimens.SpaceM,
             bottom = bottomContentPadding,
         ),
