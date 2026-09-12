@@ -20,8 +20,8 @@ func TestHealthz(t *testing.T) {
 	if got := rec.Body.String(); got != `{"status":"alive"}` {
 		t.Errorf("响应体 = %q, 期望 %q", got, `{"status":"alive"}`)
 	}
-	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
-		t.Errorf("Content-Type = %q, 期望 application/json", ct)
+	if ct := rec.Header().Get("Content-Type"); ct != contentTypeJSON {
+		t.Errorf("Content-Type = %q, 期望 %q", ct, contentTypeJSON)
 	}
 }
 

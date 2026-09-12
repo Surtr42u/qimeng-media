@@ -50,11 +50,14 @@ func FormatDay(t time.Time) string {
 //     立刻失败——单进程多协程（扫描器+API）偶发写碰撞靠它吸收。
 //   - foreign_keys(1)：SQLite 默认关闭外键约束，必须逐连接显式开启，
 //     否则 migration 里精心设计的 CASCADE 全部形同虚设。
+//
+// busyTimeoutMS SQLite busy_timeout（毫秒）：写锁被占时的等待上限，
+// 与下方 Open 注释「等待 5 秒」联动——调整须两处同步。
+const busyTimeoutMS = 5000
+
 func Open(path string) (*sql.DB, error) {
-	dsn := "file:" + path +
-		"?_pragma=busy_timeout(5000)" +
-		"&_pragma=journal_mode(WAL)" +
-		"&_pragma=foreign_keys(1)"
+	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(%d)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)",
+		path, busyTimeoutMS)
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("store: 打开数据库 %s: %w", path, err)

@@ -51,10 +51,15 @@ const (
 	codeBadRequest         = "BAD_REQUEST"
 )
 
+// contentTypeJSON 全部 JSON 响应的 Content-Type 唯一取值（charset 显式
+// 声明 UTF-8；探针/鉴权等手写响应与 writeJSON 统一走它，包内第二处
+// 手抄即违例——代码卫生约束 2）。
+const contentTypeJSON = "application/json; charset=utf-8"
+
 // writeJSON 输出统一 JSON 响应。写失败只可能发生在客户端断开时，
 // 无补救动作；调用方不需要处理该错误。
 func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Content-Type", contentTypeJSON)
 	w.WriteHeader(status)
 	// 编码/写失败即客户端已断开，此处已是终端响应，无补救动作，忽略。
 	_ = json.NewEncoder(w).Encode(v)

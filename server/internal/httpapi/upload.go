@@ -113,7 +113,14 @@ func (s *Server) PostApiV1AssetsUpload(w http.ResponseWriter, r *http.Request, p
 	finalName := filing.ResolveConflict(name, exists)
 	targetRel := path.Join(dir, finalName)
 	targetAbs := filepath.Join(lib.RootPath, filepath.FromSlash(targetRel))
-	if err := os.MkdirAll(filepath.Dir(targetAbs), 0o755); err != nil {
+	// SECURITY 红线 1 的 handler 侧兜底（与 media 直链/trash 同一纵深防御
+	// 模式）：dir/finalName 虽各过校验，Join 后仍强制验根内再落盘。
+	if !filing.PathWithinRoot(lib.RootPath, targetAbs) {
+		s.logger.Error("上传目标路径越界，已拦截", "libraryId", lib.ID, "rel", targetRel)
+		writeErr(w, http.StatusBadRequest, codePathEscape, "目标路径不合法")
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(targetAbs), dirPerm); err != nil {
 		s.internalErr(w, "创建目标目录", err)
 		return
 	}

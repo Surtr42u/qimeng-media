@@ -131,7 +131,7 @@ func (s *Server) DeleteApiV1AssetsAssetId(w http.ResponseWriter, r *http.Request
 		writeErr(w, http.StatusBadRequest, codeInvalidParam, "资产路径不合法")
 		return
 	}
-	if err := os.MkdirAll(filepath.Dir(trashFile), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(trashFile), dirPerm); err != nil {
 		s.internalErr(w, "创建回收站目录", err)
 		return
 	}
@@ -337,7 +337,7 @@ func (s *Server) PostApiV1TrashTrashIdRestore(w http.ResponseWriter, r *http.Req
 		writeErr(w, http.StatusBadRequest, codeInvalidParam, "路径不合法")
 		return
 	}
-	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(target), dirPerm); err != nil {
 		s.internalErr(w, "创建恢复目录", err)
 		return
 	}
@@ -412,7 +412,7 @@ func (s *Server) DeleteApiV1Trash(w http.ResponseWriter, r *http.Request) {
 		s.internalErr(w, "清空回收站", err)
 		return
 	}
-	if err := os.MkdirAll(root, 0o755); err != nil {
+	if err := os.MkdirAll(root, dirPerm); err != nil {
 		s.internalErr(w, "重建回收站目录", err)
 		return
 	}

@@ -77,12 +77,22 @@ type unauthorizedBody struct {
 	Message string `json:"message"`
 }
 
+// 本包错误码/Content-Type 与 httpapi 包的 codeUnauthorized /
+// contentTypeJSON（errors.go）同值——模块边界（ADR-0010：业务包禁止依赖
+// httpapi）使然，无法共用常量。同步责任：协议侧（openapi components.Error）
+// 或 httpapi/errors.go 改动这两个值时必须同步此处，反之亦然
+// （代码卫生约束 3）。
+const (
+	codeUnauthorized = "UNAUTHORIZED"
+	contentTypeJSON  = "application/json; charset=utf-8"
+)
+
 // writeUnauthorized 输出 401。文案固定不含任何请求细节
 // （SECURITY 红线 7：错误响应不泄露内部信息）。
 func writeUnauthorized(w http.ResponseWriter, message string) {
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", contentTypeJSON)
 	w.WriteHeader(http.StatusUnauthorized)
 	// 响应体写失败（客户端已断开）无补救动作，net/http 会关连接；
 	// 此处为终端错误响应，忽略写错误即可。
-	_ = json.NewEncoder(w).Encode(unauthorizedBody{Code: "UNAUTHORIZED", Message: message})
+	_ = json.NewEncoder(w).Encode(unauthorizedBody{Code: codeUnauthorized, Message: message})
 }
