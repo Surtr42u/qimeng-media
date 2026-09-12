@@ -5,8 +5,10 @@
 
     <!-- 顶行 -->
     <string name="detail_back">返回</string>
-    <!-- 「i / N」批次序号（现由顶部渐变 chrome 承担展示——V2 删舞台下 pager 行） -->
-    <string name="detail_batch_position">%1$d / %2$d</string>
+    <!-- 「i/N」批次序号（现由顶部渐变 chrome 承担展示——V2 删舞台下 pager 行）。
+        任务Y Y2：去「/」两侧空格对齐旧版——旧仓库 MediaDetailFragment "%d/%d".format
+        （L406），渲染形如「8/3822」无空格 -->
+    <string name="detail_batch_position">%1$d/%2$d</string>
 
     <!-- 加载 / 错误 -->
     <string name="detail_loading">加载中…</string>
