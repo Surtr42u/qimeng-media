@@ -1,0 +1,15 @@
+# 任务R R2 手工 baseline profile（HSPL=Hot+Startup+PostStartup；官方 manually-create-measure 语法）
+# 覆盖：冷启动（壳+导航）→ 首页首滑（home+共享UI/数据层+SDK反序列化）→ 详情打开（detail+缩放/播放桥）
+# androidx 热点由库 AAR 自带 profile 覆盖（merged_art_profile 实证），不重复手写。
+# 冷启动：app 根包（QimengApplication/MainActivity/session）
+HSPLmedia/qimeng/app/*;->**(**)**
+# 首页首滑 + 详情热点
+HSPLmedia/qimeng/app/navigation/**->**(**)**
+HSPLmedia/qimeng/app/feature/home/**->**(**)**
+HSPLmedia/qimeng/app/feature/detail/**->**(**)**
+HSPLmedia/qimeng/app/core/ui/**->**(**)**
+HSPLmedia/qimeng/app/core/data/**->**(**)**
+HSPLmedia/qimeng/app/core/network/**->**(**)**
+HSPLmedia/qimeng/app/core/model/**->**(**)**
+# 首屏数据链路：SDK 模型反序列化+网络基础设施
+HSPLmedia/qimeng/sdk/**->**(**)**
