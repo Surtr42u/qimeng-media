@@ -12,6 +12,8 @@ import media.qimeng.app.core.ui.theme.QimengDimens
 /**
  * 详情页图标（M4-3）：点赞/收藏/播放；任务G G1a 补批次 pager 双 chevron 与互动行
  * 未激活态双 outlined 变体（对齐 Web 详情页 active=图标实底填充 / 未激活=描边形态）。
+ * 任务Y Y2（2026-09-12）：收藏由星形对（star/star_border）换心形对（favorite 系）对齐
+ * 旧版字形——旧仓库收藏钮一年即心形，星形系 G1a 对 Web lucide 的近似（用户真机反馈纠偏）。
  * 为什么不进 QimengIcons.kt：其 materialIcon helper 是 file-private，且该文件属 M4-2A
  * 并行任务已改文件（B2 列数图标）禁碰——helper 在本文件复制同款（注释互指，合并后可收拢）。
  * path data 一律 Material Icons 官方（fonts.google.com/icons 同源，与 QimengIcons 注释口径一致；
@@ -47,10 +49,15 @@ val ThumbUpIcon: ImageVector = materialIcon(
     pathData = "M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z",
 )
 
-/** 收藏（Material Icons "star"；实心=已收藏态，空心由 tint/描边层表达） */
-val StarIcon: ImageVector = materialIcon(
-    name = "QimengStar",
-    pathData = "M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z",
+/**
+ * 收藏（Material Icons "favorite" 实心心形；任务Y Y2 由 star 星形换心形对齐旧版——
+ * 旧仓库详情页收藏钮 drawable 即 ic_detail_favorite_filled，与 Material favorite
+ * 24px.svg 几何同源（仅逗号格式差异，2026-09-12 与旧仓库逐字核对）；星形仅本处使用，
+ * 随替换退役）。实心=已收藏态，空心见 [FavoriteBorderIcon]。
+ */
+val FavoriteFilledIcon: ImageVector = materialIcon(
+    name = "QimengFavoriteFilled",
+    pathData = "M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z",
 )
 
 /** 播放（Material Icons "play_arrow"）：视频舞台中央占位播放钮（3a），3b 接播放器 */
@@ -70,12 +77,14 @@ val ThumbUpOutlinedIcon: ImageVector = materialIcon(
 )
 
 /**
- * 收藏未激活态（Material Icons "star_border"，G1a）：与 [StarIcon]（实心）配对，
- * 未收藏=描边星 / 已收藏=实心星（Web lucide Star + active fill 同语义）。
+ * 收藏未激活态（Material Icons "favorite_border" 空心心形，G1a 引入星形对、任务Y Y2 换
+ * 心形对齐旧版）：与 [FavoriteFilledIcon]（实心）配对，未收藏=空心 / 已收藏=实心
+ * （旧仓库 ic_detail_favorite / ic_detail_favorite_filled 同语义双 drawable，几何同源
+ * Material favorite_border 24px）。
  */
-val StarOutlinedIcon: ImageVector = materialIcon(
-    name = "QimengStarOutlined",
-    pathData = "M22 9.24l-7.19-.62L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21 12 17.27 18.18 21l-1.63-7.03L22 9.24zM12 15.4l-3.76 2.27 1-4.28-3.32-2.88 4.38-.38L12 6.1l1.71 4.04 4.38.38-3.32 2.88 1 4.28L12 15.4z",
+val FavoriteBorderIcon: ImageVector = materialIcon(
+    name = "QimengFavoriteBorder",
+    pathData = "M16.5 3c-1.74 0-3.41.81-4.5 2.09C10.91 3.81 9.24 3 7.5 3 4.42 3 2 5.42 2 8.5c0 3.78 3.4 6.86 8.55 11.54L12 21.35l1.45-1.32C18.6 15.36 22 12.28 22 8.5 22 5.42 19.58 3 16.5 3zm-4.4 15.55l-.1.1-.1-.1C7.14 14.24 4 11.39 4 8.5 4 6.5 5.5 5 7.5 5c1.54 0 3.04.99 3.57 2.36h1.87C13.46 5.99 14.96 5 16.5 5c2 0 3.5 1.5 3.5 3.5 0 2.89-3.14 5.74-7.9 10.05z",
 )
 
 /** 左 chevron（Material Icons "chevron_left"，G1a）：详情批次 pager「上一件」钮前缀图标（Web ChevronLeft 同源） */
