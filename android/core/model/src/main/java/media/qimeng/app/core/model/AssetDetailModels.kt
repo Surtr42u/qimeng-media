@@ -66,8 +66,10 @@ data class LikeToggleResult(val likedToday: Boolean, val likeCount: Int)
  * 时间轴标签（M4-3 3d，GET/POST /assets/{id}/timeline-tags）。
  * id 为服务端生成主键（DELETE /assets/{id}/timeline-tags/{tagId} 用）；POST 返回体带回。
  * @param timeMillis 标签指向播放位置（毫秒，从 0 起算）
- * @param color 服务端存储的十六进制颜色（如 "#d6336c"；N3 协议批 P2 #32）——
- *   null/空 = 服务端未存颜色，客户端回退 TimelineTagColors 前缀推断（保底不删）
+ * @param color 协议镜像字段：服务端存储的十六进制颜色（如 "#d6336c"；N3 协议批 P2 #32）。
+ *   App 显示已不消费（2026-09-12 用户拍板「时间轴标签颜色对齐旧版」S1a：芯片恒按
+ *   TimelineTagColors 前缀档，消费链已在 VideoStage 映射层断开）；字段保留供协议完整性，
+ *   映射层仍透传（SdkDetailMappers 断言不动）。
  */
 data class TimelineTag(
     val id: String,

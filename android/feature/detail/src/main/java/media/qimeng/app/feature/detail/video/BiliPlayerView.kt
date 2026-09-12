@@ -61,6 +61,15 @@ import kotlin.math.min
  *      为「跳下一个时间轴标签」即用户困惑源；作者直达已由 W3 作者胶囊承接，长按标签
  *      芯片菜单的「跳转」不受影响）。倍速/书签/全屏/静音保留，G1~G9 手势参数一律不动
  *      （buttonRow 线性布局无权重依赖）。其余逐行原样。
+ *   ⑧ S1a（2026-09-12 用户拍板「时间轴标签颜色对齐旧版」=解冻令）服务端色消费链断开：
+ *      根因=N3 #32 曾按「服务端 color 优先、非法 hex 静默回退前缀档」（N4 第一百六十五笔
+ *      落地）经 backgroundTintList 覆盖芯片底色，而 Y2 第二百二十笔裁决实证芯片代码与三件
+ *      drawable 与旧版逐字节一致、观感差异全来自服务端色覆盖 → 拍板恒按旧版前缀档。
+ *      修法=createTagChip 删除 serverColor 解析与 backgroundTintList 覆盖，底色恒用前缀档
+ *      drawable（前景文字色/内容逻辑不动）；配套 TimelineTagEntity.serverColor 字段删除
+ *      （VideoStage 映射层不再透传，TimelineTagColorsTest 反射锁定实体无该字段）。
+ *      沿革=上述「服务端 color 优先」逻辑本笔删除；协议 color 字段/领域模型
+ *      TimelineTag.color/服务端/Web 端一律不动。其余逐行原样。
  *
  * 手势冻结口径（G1~G9）：G1 竖屏单击播停/横屏单击显隐控制器；G2 横屏双击播停；
  * G3 长按 2x 松开还原（竖屏下方锁速区拖入锁定/拖出退出，长按期间禁起拖）；
@@ -829,9 +838,10 @@ class BiliPlayerView @JvmOverloads constructor(
         }
     }
 
-    /** 创建单个标签芯片：服务端 color 优先（N3 #32 协议化），缺省回退前缀色调背景（保底不删） */
+    /** 创建单个标签芯片：恒按前缀档取色取底（S1a 2026-09-12 拍板对齐旧版，见类 KDoc 适配点⑧） */
     private fun createTagChip(tag: TimelineTagEntity): TextView {
-        // 颜色优先级：服务端 hex（#rrggbb）> 前缀推断（TimelineTagColors.HEART/STAR）> 默认底。
+        // 底色恒走前缀档（S1a：服务端 color 消费链已断，原「服务端 hex > 前缀推断 > 默认底」
+        // 优先级与本段解析/backgroundTintList 覆盖逻辑一并删除）。
         // 前缀判定口径与 TimelineTagColors.colorFor 同源（裸 ❤/⭐ 前缀 startsWith）：
         // 同时命中带/不带 U+FE0F 变体选择符两种写法——此前这里用裸字面量 "❤️" 判定，
         // 手输无变体符的 ❤ 标签取色命中红而芯片底色不命中（2026-09-07 审查 P2），已收敛。
@@ -842,19 +852,12 @@ class BiliPlayerView @JvmOverloads constructor(
             isFav -> R.drawable.bg_timeline_tag_fav
             else -> R.drawable.bg_timeline_tag_chip
         }
-        // 服务端色解析（非法 hex/非 # 开头一律静默回退前缀档——展示层不因脏数据崩）
-        val serverTint: Int? = tag.serverColor
-            ?.takeIf { it.startsWith("#") && it.length in 7..9 }
-            ?.let { runCatching { Color.parseColor(it) }.getOrNull() }
         return TextView(context).apply {
             text = "${formatMs(tag.timeMillis)} ${tag.name}"
             setTextColor(Color.WHITE)
             textSize = 12f
             setPadding(10.dp(context), 5.dp(context), 10.dp(context), 5.dp(context))
             setBackgroundResource(chipBg)
-            serverTint?.let { tint ->
-                backgroundTintList = android.content.res.ColorStateList.valueOf(tint)
-            }
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
                 marginEnd = 6.dp(context)
             }
