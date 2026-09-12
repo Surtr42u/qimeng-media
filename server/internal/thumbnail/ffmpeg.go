@@ -42,6 +42,21 @@ func resolveBin(configured, fallback string) string {
 	return fallback
 }
 
+// CheckBinaries 对 resolveBin 解析出的最终 ffmpeg/ffprobe 命令做启动期可用性
+// 自检（exec.LookPath）：显式配置路径验存在且可执行，空配置走 PATH 自动发现
+// （与 run() 实际解析语义同源，单点不漂移）。
+// 为什么只告警不阻断：无 ffmpeg 是既定降级形态（缩略图 404 占位、探测元数据
+// 留空、下次扫描自动重探），缺失原本要到首次调用才暴露（备忘录第五节-5），
+// 启动自检把暴露点提前到部署当下，一条 Warn 引导投放即可，不构成致命错误。
+// 返回解析后的最终命令与各自错误，由调用方决定日志形态（main 装配处消费）。
+func CheckBinaries(ffmpegCfg, ffprobeCfg string) (ffmpeg, ffprobe string, ffmpegErr, ffprobeErr error) {
+	ffmpeg = resolveBin(ffmpegCfg, DefaultFFmpegBin)
+	ffprobe = resolveBin(ffprobeCfg, DefaultFFprobeBin)
+	_, ffmpegErr = exec.LookPath(ffmpeg)
+	_, ffprobeErr = exec.LookPath(ffprobe)
+	return
+}
+
 // run 执行外部命令（ffmpeg/ffprobe 共用底座）：stdout 交还调用方、stderr 截进错误。
 // 为什么截 stderr 尾部而非全文：ffmpeg 对损坏文件可能输出几 MB 日志，
 // 尾部才是含结论的行（"Error opening ..." 等），既可排障又不撑爆错误信息。

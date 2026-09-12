@@ -71,10 +71,10 @@ export SDK_GRADLE_FILE
 #   go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.1
 GOLANGCI_LINT ?= $(GOBIN_DIR)/golangci-lint
 
-.PHONY: help sdk sdk-validate sdk-go sdk-ts sdk-kotlin app-build app-test app-lint server-run server-test web-build web-dev web-test docker-build lint
+.PHONY: help sdk sdk-validate sdk-go sdk-ts sdk-kotlin app-build app-test app-lint server-run server-test server-android-arm64 server-android-amd64 web-build web-dev web-test docker-build lint
 
 help: ## 显示全部命令
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
 
 sdk: sdk-validate sdk-go sdk-ts sdk-kotlin ## 从 api/openapi.yaml 生成三端 SDK（Go 接口层 + TS + Kotlin）
 	@echo "sdk: all done (validate -> go -> ts -> kotlin)"
@@ -144,6 +144,24 @@ server-run: ## 本地运行服务端（:8420；自定义配置直接 go run ./se
 
 server-test: ## 服务端全部测试（-race 由 CI 跑；本机 Windows 无 gcc 编译器）
 	cd server && go test ./... -count=1
+
+# Android 服务端交叉编译（M6 单机形态，ADR-0015）。产物投放口径：
+#   arm64-v8a → 真机：Termux 形态投放 $HOME/.qimeng/bin/qimeng-server（任务T T2）；
+#               App 内嵌形态改名 libqimeng.so 进 jniLibs/arm64-v8a/（任务T T6）。
+#   x86_64    → 仅模拟器（x86_64 系统镜像）shell 域验证，deploy/emulator-verify/ 消费。
+# arm64 纯静态零 cgo（POC 实证）；amd64 是 Go 硬限制必须 cgo 外链（android/amd64
+# requires external linking），借 NDK clang 交叉链——cgo 代码量为零（net/os.user 外链），
+# modernc sqlite 仍是纯 Go，见 ../m6-poc/POC-RESULT.md 步骤②.2。
+ANDROID_NDK_HOME ?= <AndroidSdk>/ndk/28.2.13676358
+# 注意 windows-x86_64/.cmd 是 Windows 宿主三元组：非 Windows 宿主跑 server-android-amd64
+# 需按本机 NDK prebuilt 目录改写（arm64 target 不依赖 NDK，跨宿主无此问题）。
+NDK_X64_CLANG := $(ANDROID_NDK_HOME)/toolchains/llvm/prebuilt/windows-x86_64/bin/x86_64-linux-android35-clang.cmd
+
+server-android-arm64: ## 交叉编译 Android arm64 服务端（真机投放；build/android/arm64-v8a/qimeng-server）
+	cd server && GOOS=android GOARCH=arm64 CGO_ENABLED=0 go build -o ../build/android/arm64-v8a/qimeng-server ./cmd/qimeng
+
+server-android-amd64: ## 交叉编译 Android x86_64 服务端（模拟器验证专用；build/android/x86_64/qimeng-server）
+	cd server && GOOS=android GOARCH=amd64 CGO_ENABLED=1 CC="$(NDK_X64_CLANG)" go build -o ../build/android/x86_64/qimeng-server ./cmd/qimeng
 
 web-build: ## 构建 Web 前端产物（web/dist）——服务端 SPA 托管依赖此产物（默认 web.static_dir=../web/dist，见 server/internal/config）；未构建时服务端回退内嵌验收页，页面功能不完整但服务不挂
 	npm --prefix web run build
