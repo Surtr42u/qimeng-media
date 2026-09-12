@@ -312,7 +312,6 @@ internal fun VideoStage(
     var menuTag by remember { mutableStateOf<TimelineTagEntity?>(null) }
 
     // factory 一次性闭包的陈旧捕获防线：经 State 在调用点取最新值
-    val latestTagEntities by rememberUpdatedState(tagEntities)
     val latestOnAdd by rememberUpdatedState(onAddTimelineTag)
     // I7 同款防线（回调参数为父级每次重组新建的 lambda，手势/Effect 键取 Unit + 最新值桥）
     val latestOnSiblingNavigate by rememberUpdatedState(onSiblingNavigate)
@@ -354,16 +353,6 @@ internal fun VideoStage(
         wasPlayingBeforeDialog = view.isPlaying()
         view.pausePlayback()
         showTagDialog = true
-    }
-
-    /** 快速转跳钮（排版态/覆盖层视图共用同链）：跳当前播放位置之后的下一个标签（无则
-     *  在后的标签→回卷第一个；无标签 no-op）。芯片本体点击 seek 是控件内建行为
-     *（createTagChip → seekTo），不经此回调 */
-    fun handlePlayerJump(view: BiliPlayerView) {
-        val entities = latestTagEntities
-        val next = entities.firstOrNull { it.timeMillis > view.currentPositionMs }
-            ?: entities.firstOrNull()
-        next?.let { view.seekToPosition(it.timeMillis) }
     }
 
     /** 播放中按返回 → 退 chrome 浏览模式（I7，GUIDE_UI L168/L279：暂停 + 海报态 + chrome
@@ -494,8 +483,6 @@ internal fun VideoStage(
                         onFullscreen = { requestFullscreenToggle() }
                         // 书签按钮（时间轴标签添加入口）：与覆盖层视图共用同链（快照→暂停→对话框）
                         onBookmark = { handlePlayerBookmark(this) }
-                        // 快速转跳按钮：与覆盖层视图共用同链（见 handlePlayerJump KDoc）
-                        onJump = { handlePlayerJump(this) }
                         // 长按芯片 → Compose 侧菜单（跳转/删除），域 id 由菜单对话框反查
                         onTagLongPress = { entity -> menuTag = entity }
                         // 起播（内含 ENDED 回 0 口径）；此后触摸由控件手势循环接管
@@ -535,7 +522,7 @@ internal fun VideoStage(
             tag = tag,
             domainTagId = tagEntities.indexOf(tag).takeIf { it >= 0 }
                 ?.let { timelineTags.getOrNull(it)?.id },
-            onJump = {
+            onSeekToTag = {
                 playerView?.seekToPosition(tag.timeMillis)
                 menuTag = null
             },
@@ -558,7 +545,6 @@ internal fun VideoStage(
             onFullscreenToggle = ::requestFullscreenToggle,
             onExit = ::exitFullscreenLevel,
             onBookmarkTap = ::handlePlayerBookmark,
-            onJumpTap = ::handlePlayerJump,
             onTagChipLongPress = { entity -> menuTag = entity },
             onReleasePlayerSurface = { playerView?.rebindPlayer(playerState.player) },
         )
@@ -631,7 +617,7 @@ private fun TimelineTagAddDialog(
 private fun TimelineTagMenuDialog(
     tag: TimelineTagEntity,
     domainTagId: String?,
-    onJump: () -> Unit,
+    onSeekToTag: () -> Unit,
     onDelete: (tagId: String) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -643,7 +629,7 @@ private fun TimelineTagMenuDialog(
             Text(text = "${tag.timeMillis / 1000}s ${tag.name}")
         },
         confirmButton = {
-            TextButton(onClick = onJump) { Text(stringResource(R.string.detail_video_tag_menu_jump)) }
+            TextButton(onClick = onSeekToTag) { Text(stringResource(R.string.detail_video_tag_menu_jump)) }
         },
         dismissButton = {
             TextButton(

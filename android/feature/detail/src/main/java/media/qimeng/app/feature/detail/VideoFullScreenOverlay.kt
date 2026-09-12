@@ -39,7 +39,6 @@ import media.qimeng.app.feature.detail.video.TimelineTagEntity
  * @param onBookmarkTap 书签钮（与排版态同链：暂停+开标签对话框；AlertDialog 窗口后建者
  *   置顶，z 序天然盖过本覆盖层，对话框可正常交互；入参=本覆盖层桥接视图，共享播放器语义
  *   经视图公开面执行）
- * @param onJumpTap 快速转跳钮（与排版态同链，入参同上）
  * @param onTagChipLongPress 长按标签芯片（与排版态同链，菜单对话框同上盖过覆盖层）
  * @param onReleasePlayerSurface 退场时把播放器 surface 迁回排版态视图（VideoStage 实现）
  */
@@ -51,7 +50,6 @@ internal fun VideoFullScreenOverlay(
     onFullscreenToggle: () -> Unit,
     onExit: () -> Unit,
     onBookmarkTap: (BiliPlayerView) -> Unit,
-    onJumpTap: (BiliPlayerView) -> Unit,
     onTagChipLongPress: (TimelineTagEntity) -> Unit,
     onReleasePlayerSurface: () -> Unit,
 ) {
@@ -84,7 +82,6 @@ internal fun VideoFullScreenOverlay(
                     onFullscreen = onFullscreenToggle
                     onBack = onExit
                     onBookmark = { onBookmarkTap(this) }
-                    onJump = { onJumpTap(this) }
                     onTagLongPress = onTagChipLongPress
                 }.also { bridgeView = it }
             },

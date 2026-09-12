@@ -56,6 +56,11 @@ import kotlin.math.min
  *      修法=[setPlayer] 挂载即按「时长可用」判定补同步一次；判定与格式化抽为
  *      PlayerMath.totalDurationText/formatDurationMs 纯函数（formatMs 改委托，行为不变），
  *      单测锁定于 PlayerMathTest。其余逐行原样。
+ *   ⑦ X4（2026-09-12 用户拍板「视频倍速旁边的按钮去除」=解冻令）快速转跳按钮退役：
+ *      删该钮的构建/buttonRow 挂载/回调链（旧版同位同钮=弹作者列表 Sheet，新版语义漂移
+ *      为「跳下一个时间轴标签」即用户困惑源；作者直达已由 W3 作者胶囊承接，长按标签
+ *      芯片菜单的「跳转」不受影响）。倍速/书签/全屏/静音保留，G1~G9 手势参数一律不动
+ *      （buttonRow 线性布局无权重依赖）。其余逐行原样。
  *
  * 手势冻结口径（G1~G9）：G1 竖屏单击播停/横屏单击显隐控制器；G2 横屏双击播停；
  * G3 长按 2x 松开还原（竖屏下方锁速区拖入锁定/拖出退出，长按期间禁起拖）；
@@ -101,7 +106,6 @@ class BiliPlayerView @JvmOverloads constructor(
     var onBack: (() -> Unit)? = null
     var onFullscreen: (() -> Unit)? = null
     var onBookmark: (() -> Unit)? = null
-    var onJump: (() -> Unit)? = null
     var onTagLongPress: ((TimelineTagEntity) -> Unit)? = null
 
     private var controllerVisible = false
@@ -427,15 +431,6 @@ class BiliPlayerView @JvmOverloads constructor(
             }
             setOnClickListener { showSpeedPopup() }
         }
-        val quickJumpBtn = ImageView(context).apply {
-            setImageResource(R.drawable.ic_detail_jump)
-            setPadding(4.dp(context), 4.dp(context), 4.dp(context), 4.dp(context))
-            layoutParams = LinearLayout.LayoutParams(36.dp(context), 36.dp(context)).apply {
-                marginStart = 8.dp(context)
-            }
-            setColorFilter(Color.WHITE)
-            setOnClickListener { onJump?.invoke() }
-        }
         fullscreenBtn = ImageView(context).apply {
             setImageResource(R.drawable.ic_player_fullscreen)
             setPadding(4.dp(context), 4.dp(context), 4.dp(context), 4.dp(context))
@@ -452,7 +447,6 @@ class BiliPlayerView @JvmOverloads constructor(
         buttonRow.addView(spacer)
         buttonRow.addView(timelineTagBtn)
         buttonRow.addView(speedBtn)
-        buttonRow.addView(quickJumpBtn)
         buttonRow.addView(fullscreenBtn)
         bottomBar.addView(buttonRow)
 
