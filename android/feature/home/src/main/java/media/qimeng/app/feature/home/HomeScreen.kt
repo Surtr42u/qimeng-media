@@ -49,9 +49,11 @@ import kotlinx.coroutines.launch
 import kotlin.math.abs
 import media.qimeng.app.core.model.GridSection
 import media.qimeng.app.core.model.MediaAsset
+import media.qimeng.app.core.model.PanelFeedback
 import media.qimeng.app.core.model.RankingPeriod
 import media.qimeng.app.core.ui.component.QimengChipRow
 import media.qimeng.app.core.ui.component.QimengEmptyState
+import media.qimeng.app.core.ui.component.QimengFilterSheet
 import media.qimeng.app.core.ui.component.QimengMediaGrid
 import media.qimeng.app.core.ui.component.QimengPill
 import media.qimeng.app.core.ui.component.QimengPullToRefresh
@@ -113,15 +115,16 @@ internal fun pagerPageForTabSync(isScrollInProgress: Boolean, currentPage: Int):
 /**
  * 首页（M4-2）：顶行[标题][搜索框不可聚焦→跳搜索页][筛选图标钮][列数图标钮] +
  * 推荐/COS/排行榜 三 tab（HorizontalPager 左右横滑切换）+ 各 tab 独立缓存 + 下拉刷新。
- * Y4a（2026-09-12）：顶栏控件图标化对齐旧版（原「N列」文字钮退役）；筛选面板壳层接线归 Y4b 批。
+ * Y4a（2026-09-12）：顶栏控件图标化对齐旧版（原「N列」文字钮退役）。
+ * Y4b（2026-09-12）：筛选面板接线（范式=AllScreen/AlbumViewModel，状态与展开单源 core/model）——
+ * 顶栏筛选钮直连 [HomeViewModel.openFilterSheet]（Y4a 的上抛回调拆除，壳层无需经手）；
+ * 面板筛选只作用于 COS tab（/assets 参数面；推荐/排行榜协议无筛选参数，记档交付报告）。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     onOpenSearch: () -> Unit,
     onOpenAsset: (assetId: String) -> Unit,
-    // Y4a：筛选入口回调上抛（默认空实现=面板未接线）；壳层接线与 QimengFilterSheet 归 Y4b 批
-    onOpenFilter: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -214,7 +217,8 @@ fun HomeScreen(
         HomeTopRow(
             columns = columns,
             onOpenSearch = onOpenSearch,
-            onOpenFilter = onOpenFilter,
+            // Y4b：面板唯一实现在 :core:ui（QimengFilterSheet），开关/草稿都在 VM 筛选态里
+            onOpenFilter = viewModel::openFilterSheet,
             onToggleColumns = viewModel::toggleHomeColumns,
         )
         QimengChipRow(
@@ -283,6 +287,27 @@ fun HomeScreen(
         }
     }
 
+    // 万能筛选面板（任务Y Y4b）：唯一实现在 :core:ui，本页只接线（范式=AllScreen 同款——
+    // 组件收进 Column 之外保证覆盖全页，ModalBottomSheet 自带 scrim/手势关闭=丢弃草稿）；
+    // 面板操作反馈：VM 只发结构化语义，文案在此经 strings.xml 落地传给面板
+    if (state.filterPanel.visible) {
+        QimengFilterSheet(
+            draft = state.filterPanel.draft,
+            tags = state.filterPanel.tags,
+            message = state.filterPanel.message?.let { feedback ->
+                when (feedback) {
+                    is PanelFeedback.TagExists -> stringResource(UiR.string.ui_filter_tag_exists, feedback.name)
+                    PanelFeedback.OpFailed -> stringResource(UiR.string.ui_filter_op_failed)
+                }
+            },
+            onDraftChange = viewModel::updatePanelDraft,
+            onReset = viewModel::resetPanelDraft,
+            onApply = viewModel::applyPanelDraft,
+            onAddTag = viewModel::addTag,
+            onDeleteTag = viewModel::deleteTag,
+            onDismiss = viewModel::dismissFilterSheet,
+        )
+    }
 }
 
 /**

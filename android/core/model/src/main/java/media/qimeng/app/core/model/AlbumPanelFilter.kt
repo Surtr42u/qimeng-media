@@ -135,3 +135,42 @@ fun AlbumFilterState.withPanelDraft(draft: AlbumPanelDraft): AlbumFilterState = 
     yearFrom = draft.yearFrom,
     yearTo = draft.yearTo,
 )
+
+/**
+ * 面板字段 → GET /assets 查询包覆写（协议展开单源，任务Y Y4b 自 AlbumFilter.toAssetQuery
+ * 提炼：相册页与首页 COS 流共用同一展开口径，禁第二份手抄）。
+ * 默认档一律映射为不传（viewRange/playRange/sizeRange=ALL→null、tagIds 空→null、
+ * dateRange=ALL→不传日期；YEAR_RANGE→yearFrom/yearTo 且起止交叉归一 start=min/end=max，
+ * 旧版 footer 应用时交叉校验口径）；[today] 注入时间档区间计算（纯函数可单测）。
+ * 只覆写面板字段：cursor/limit/分区方向（includeCos/cosOnly）等调用方字段原样保留——
+ * 首页 COS 流传 cosOnly=true + cursor，覆写后不丢（AlbumFilter.toAssetQuery 与 HomeViewModel
+ * loadCosPage 两侧同源）。
+ */
+fun AssetQuery.withPanelDraft(draft: AlbumPanelDraft, today: LocalDate = LocalDate.now()): AssetQuery {
+    val dateBounds = panelDateRangeBounds(draft.dateRange, today)
+    // 按年份：起止交叉归一（旧版 buildFooter 口径 start=min/end=max）；年份不全=不传
+    val years: Pair<Int, Int>? =
+        if (draft.dateRange == PanelDateRange.YEAR_RANGE && draft.yearFrom != null && draft.yearTo != null) {
+            minOf(draft.yearFrom, draft.yearTo) to maxOf(draft.yearFrom, draft.yearTo)
+        } else {
+            null
+        }
+    return copy(
+        sort = draft.sort,
+        order = draft.order,
+        viewRange = draft.viewRange.toQuery(),
+        playRange = draft.playRange.toQuery(),
+        sizeRange = draft.sizeRange.toQuery(),
+        dateFrom = dateBounds?.first,
+        dateTo = dateBounds?.second,
+        yearFrom = years?.first,
+        yearTo = years?.second,
+        tagIds = draft.tagIds.ifEmpty { null },
+        tagMode = if (draft.tagIds.isEmpty()) null else draft.tagMode,
+    )
+}
+
+/** 「全部」档 → null（不传参数=协议缺省全量语义）；其余档原样进查询包（SDK 枚举映射在 :core:data） */
+private fun PanelCountRange.toQuery(): PanelCountRange? = if (this == PanelCountRange.ALL) null else this
+
+private fun PanelSizeRange.toQuery(): PanelSizeRange? = if (this == PanelSizeRange.ALL) null else this

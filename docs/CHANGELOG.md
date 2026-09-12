@@ -9,6 +9,22 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## feat(app): 任务Y Y5 批——帧率同步+release 构建配置（2026-09-12 第二百二十四笔）
+
+执行 AI：GLM-5.3-Flash（executor 子代理实施，reviewer 子代理对抗审查【通过】含 apksigner/dumpsys 独立复验）
+
+- **帧率同步（问题5「提交帧率同步显示器或者手机实际帧率」）**：MainActivity 新增 requestHighestRefreshRate()——preferredDisplayModeId（API 23，minSdk 26 免 guard）请求与当前模式同分辨率的最高刷新率（禁止硬编码 modeId，官方口径注释落档；API30+ display / 26-29 defaultDisplay 分档）；modeId 相同 no-op，判空不阻断启动。背景=高刷屏设备系统可能为省电锁 60Hz，App 显式请求最高刷。
+- **release 构建**：app build.gradle.kts 补 buildTypes.release——signingConfig 复用 debug 签名（本地实测口径注释）、minify/shrinkResources 显式 false（R8/Hilt/Room keep 规则风险留后续批）。出包 app-release.apk 验签通过+模拟器试装走查（首页/详情零崩溃）+装回 debug。
+- 实测：门禁三连绿；模拟器单模式 60Hz 实证 no-op 路径；**真机高刷收益待用户 真机 装 release 包实测**（本批出包目的）；R8 优化/baseline profile 记档后续批。
+
+## feat(app): 任务Y Y4b 批——首页筛选面板接线（2026-09-12 第二百二十三笔）
+
+执行 AI：GLM-5.3-Flash（executor 子代理实施，reviewer 子代理对抗审查【通过】含 SDK 请求日志逐字段比对与独立实测）
+
+- **接线（问题1 后半「筛选没有」）**：首页筛选图标直连 ViewModel，挂载 QimengFilterSheet（组件单源零改动，全分区=排序 7 档/顺位/观看/点击/大小/时间+按年份/标签模式/标签增删/重置/应用，逐字旧实录口径）；**拍板：筛选作用域=COS tab**（推荐/排行榜协议无筛选参数，入口恒显对齐旧版，协议扩展另立卷记档）；类型单源迁移（FilterPanelUiState/PanelFeedback 入 core/model）+新增 AssetQuery.withPanelDraft 纯函数单源（AlbumFilter.toAssetQuery 改委托，既有单测全绿背书输出等价）+7 条新契约单测；HomeViewModel 五方法+标签增删+cosGeneration 代际防乱序+loadCosPage 带 panelDraft。
+- **实测**：门禁三连绿；模拟器全链=面板弹出→应用「本周」→COS 6→4 张与 18461 服务端真值逐项吻合（SDK 请求日志 dateFrom/dateTo 逐字段一致）→草稿回显→重置恢复；推荐/排行榜数据零变化（dump diff RECOMMEND-UNCHANGED）；相册页面板回归正常。
+- 记档：18461 数据集无大文件/无标签，>50MB 档验空态替代子集；dev-login 重铸 token 会踢 App 在线会话（authapi 既有语义，实测者注意）；Y7 审查 P2-1 注释口径已修正，P2-2 cosGeneration 对位单测记档下卷补。
+
 ## feat(app): 任务Y Y4a+Y6 批——首页顶栏图标化+筛选入口+芯片切换瞬时化（2026-09-12 第二百二十二笔）
 
 执行 AI：GLM-5.3-Flash（executor 子代理实施，reviewer 子代理对抗审查【通过】含 pathData 逐字比对+录屏零中间帧重放）

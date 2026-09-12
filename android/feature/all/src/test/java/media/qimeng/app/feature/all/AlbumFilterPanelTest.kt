@@ -26,6 +26,7 @@ import media.qimeng.app.core.model.MediaAsset
 import media.qimeng.app.core.model.MediaKind
 import media.qimeng.app.core.model.NameSuggestion
 import media.qimeng.app.core.model.PanelCountRange
+import media.qimeng.app.core.model.PanelFeedback
 import media.qimeng.app.core.model.RankingPeriod
 import media.qimeng.app.core.model.SortOrder
 import media.qimeng.app.core.model.TagSummary

@@ -16,14 +16,17 @@ import media.qimeng.app.core.data.repository.LikeFingerprint
 import media.qimeng.app.core.data.repository.LikeMutationTracker
 import media.qimeng.app.core.data.repository.MediaBatchIndex
 import media.qimeng.app.core.data.repository.MediaRepository
+import media.qimeng.app.core.data.repository.TagNameConflictException
 import media.qimeng.app.core.data.repository.AssetOrigUrlResolver
-import media.qimeng.app.core.model.AssetSort
+import media.qimeng.app.core.model.AlbumPanelDraft
 import media.qimeng.app.core.model.AssetQuery
+import media.qimeng.app.core.model.FilterPanelUiState
 import media.qimeng.app.core.model.LIST_LOAD_FAILED_MESSAGE
 import media.qimeng.app.core.model.MediaAsset
+import media.qimeng.app.core.model.PanelFeedback
 import media.qimeng.app.core.model.RankingPeriod
 import media.qimeng.app.core.model.RecommendPaging
-import media.qimeng.app.core.model.SortOrder
+import media.qimeng.app.core.model.withPanelDraft
 
 /** 首页三 tab（GUIDE_UI §首页：推荐 / COS / 排行榜，左右横滑切换）；展示文案在 feature strings.xml（tabLabelRes 映射），不进状态层 */
 enum class HomeTab {
@@ -72,6 +75,13 @@ data class HomeUiState(
     val recommend: RecommendState = RecommendState(),
     val cos: CosState = CosState(),
     val rank: RankState = RankState(),
+    // ---- 万能筛选面板态（任务Y Y4b；作用域=COS tab——/recommendations、/rankings 协议无
+    // 筛选参数，推荐/排行榜不受面板影响；顶栏入口恒显，对齐旧版顶栏实录） ----
+
+    /** 面板开关/编辑草稿/标签候选/面板内反馈（类型单源 core/model，AlbumViewModel 同范式互指） */
+    val filterPanel: FilterPanelUiState = FilterPanelUiState(),
+    /** 已应用面板筛选（COS 流 AssetQuery 展开源；默认=全缺省档，查询行为与 Y4b 前一致） */
+    val cosFilter: AlbumPanelDraft = AlbumPanelDraft(),
     val errorMessage: String? = null,
 )
 
@@ -103,6 +113,13 @@ class HomeViewModel @Inject constructor(
      * 旧代响应（含失败）一律丢弃，不再覆盖新周期。读写都在 Main，无需原子类。
      */
     private var rankGeneration = 0
+
+    /**
+     * COS 流筛选代际号（任务Y Y4b，AlbumViewModel.filterGeneration 同范式互指）：面板筛选
+     * 应用即递增。请求发起时快照代际、响应落地前校验——旧代响应（含失败）一律丢弃，
+     * 不再覆盖新筛选态。读写都在 Main（viewModelScope 与状态更新同线程），无需原子类。
+     */
+    private var cosGeneration = 0
 
     /**
      * 上次 tab 切换时间戳（哨兵抑制窗口判定，任务J J3a）：初值取极小让冷启动
@@ -210,6 +227,135 @@ class HomeViewModel @Inject constructor(
             }
             gridPrefs.setHomeColumns(next)
         }
+    }
+
+    // ---------- 万能筛选面板（任务Y Y4b） ----------
+    // 五方法（open/dismiss/update/reset/apply）语义与 AlbumViewModel 面板方法组逐款同范式
+    // （打开=拷贝已应用值、面板内只改草稿、重置=回默认+立即应用+关面板三合一、关闭=丢弃）。
+    // 平行实现而非共享基类的裁决依据：已应用态模型不同——相册页写 AlbumFilterState 四维刷新链
+    // （独立 panelState flow），首页写 [HomeUiState.cosFilter] 并只重拉 COS 流（面板态并入
+    // HomeUiState 聚合流）；两者共用 core/model 单源的 FilterPanelUiState/PanelFeedback 类型与
+    // AssetQuery.withPanelDraft 查询展开，防漂移靠单源类型不靠基类。
+
+    /**
+     * 打开面板：拷贝当前已应用面板值为草稿（编辑态语义，旧版 show(current) 同口径）
+     * 并拉取标签候选流。关闭不回写——丢弃草稿。
+     */
+    fun openFilterSheet() {
+        _uiState.value = _uiState.value.copy(
+            filterPanel = _uiState.value.filterPanel.copy(
+                visible = true,
+                draft = _uiState.value.cosFilter,
+                message = null, // 重开面板清上一轮操作反馈
+            ),
+        )
+        loadTags()
+    }
+
+    /** 下滑/点外部关闭：丢弃草稿（BottomSheet 常规语义），反馈一并清空 */
+    fun dismissFilterSheet() {
+        _uiState.value = _uiState.value.copy(
+            filterPanel = _uiState.value.filterPanel.copy(visible = false, message = null),
+        )
+    }
+
+    /** 面板内每次点选：只改草稿，不触发刷新 */
+    fun updatePanelDraft(draft: AlbumPanelDraft) {
+        _uiState.value = _uiState.value.copy(filterPanel = _uiState.value.filterPanel.copy(draft = draft))
+    }
+
+    /**
+     * 「重置」：草稿回默认值后走 [applyPanelDraft] 同一条应用链——写已应用态 + COS 重拉 + 关面板。
+     * 旧版口径即三合一（旧仓库 MediaFilterSheet.kt L266-269 实读，AlbumViewModel.resetPanelDraft
+     * 同款注释互指）。
+     */
+    fun resetPanelDraft() {
+        updatePanelDraft(AlbumPanelDraft())
+        applyPanelDraft()
+    }
+
+    /**
+     * 「应用筛选」：草稿写入已应用态 [HomeUiState.cosFilter] + 递增 COS 代际（在途旧筛选响应
+     * 作废）+ COS 流重拉第一页 + 关面板。不论当前 tab 都重拉（入口恒显）：筛选只作用于 COS
+     * tab 数据，其余 tab 应用后切入 COS 时缓存已带上新筛选。
+     */
+    fun applyPanelDraft() {
+        val draft = _uiState.value.filterPanel.draft
+        cosGeneration += 1
+        _uiState.value = _uiState.value.copy(
+            filterPanel = _uiState.value.filterPanel.copy(visible = false),
+            cosFilter = draft,
+        )
+        loadCosPage(isInitial = true)
+    }
+
+    /**
+     * 新建标签（面板「+ 添加标签」）：成功后刷新候选流；空名不发出请求。重名分流两道
+     * （候选预查重 + 服务端 409 领域化兜底），语义与 AlbumViewModel.addTag 同款
+     * （状态容器不同故平行实现，注释互指防漂移）。
+     */
+    fun addTag(name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return
+        if (_uiState.value.filterPanel.tags.any { it.name == trimmed }) {
+            setPanelFeedback(PanelFeedback.TagExists(trimmed))
+            return
+        }
+        viewModelScope.launch {
+            runCatching { mediaRepository.createTag(trimmed) }
+                .onSuccess {
+                    setPanelFeedback(null)
+                    loadTags()
+                }
+                .onFailure {
+                    setPanelFeedback(
+                        if (it is TagNameConflictException) PanelFeedback.TagExists(trimmed) else PanelFeedback.OpFailed,
+                    )
+                }
+        }
+    }
+
+    /**
+     * 删除标签（面板长按确认后）：服务端删除 + 候选流刷新；若删除的是草稿已选标签则一并从
+     * 草稿 tagIds 移除（否则应用时会引用已不存在的 id）。失败给中性操作失败反馈。
+     */
+    fun deleteTag(tagId: String) {
+        viewModelScope.launch {
+            runCatching { mediaRepository.deleteTag(tagId) }
+                .onSuccess {
+                    val draft = _uiState.value.filterPanel.draft
+                    if (tagId in draft.tagIds) {
+                        _uiState.value = _uiState.value.copy(
+                            filterPanel = _uiState.value.filterPanel.copy(
+                                draft = draft.copy(tagIds = draft.tagIds - tagId),
+                            ),
+                        )
+                    }
+                    setPanelFeedback(null)
+                    loadTags()
+                }
+                .onFailure { setPanelFeedback(PanelFeedback.OpFailed) }
+        }
+    }
+
+    private fun loadTags() {
+        viewModelScope.launch {
+            runCatching { mediaRepository.tags() }
+                .onSuccess {
+                    _uiState.value = _uiState.value.copy(
+                        filterPanel = _uiState.value.filterPanel.copy(tags = it),
+                    )
+                }
+                .onFailure {
+                    // 候选流失败属列表级加载失败，沿用列表加载文案（与面板操作失败语义分流，P2-1）
+                    _uiState.value = _uiState.value.copy(errorMessage = LIST_LOAD_FAILED_MESSAGE)
+                }
+        }
+    }
+
+    /** 面板操作反馈落位（null=清除；操作成功即清除上一条反馈） */
+    private fun setPanelFeedback(feedback: PanelFeedback?) {
+        _uiState.value = _uiState.value.copy(filterPanel = _uiState.value.filterPanel.copy(message = feedback))
     }
 
     /**
@@ -328,20 +474,27 @@ class HomeViewModel @Inject constructor(
 
     private fun loadCosPage(isInitial: Boolean, isRefresh: Boolean = false) {
         val current = _uiState.value
-        if (current.cos.isLoading) return
+        // 防重语义（与代际防乱序正交，AlbumViewModel.loadItems 同范式）：分页/下拉刷新在途时
+        // 照旧丢弃重复触发；筛选重载与 tab 首次揭示（isInitial 且非刷新）不受 isLoading 拦截
+        // ——在途的是旧代请求，其响应会被代际校验丢弃；同代重复触发会多发一次请求但整页
+        // 等价替换，无数据损害（Y7 审查 P2-1 记档）
+        if ((isRefresh || !isInitial) && current.cos.isLoading) return
+        val gen = cosGeneration
         _uiState.value = current.copy(cos = current.cos.copy(isLoading = true, isRefreshing = isRefresh))
         viewModelScope.launch {
             runCatching {
                 mediaRepository.assets(
+                    // 任务Y Y4b：排序/顺位/观看/点击/大小/时间/标签由已应用面板草稿经
+                    // AssetQuery.withPanelDraft 展开（core/model 单源；默认草稿=协议缺省不传，
+                    // Y4b 前行为不变）。cursor/limit/cosOnly 为本调用方持有字段，覆写不触碰。
                     AssetQuery(
                         cursor = if (isRefresh || isInitial) null else _uiState.value.cos.nextCursor,
                         limit = COS_PAGE_SIZE,
                         cosOnly = true,
-                        sort = AssetSort.DEFAULT,
-                        order = SortOrder.DESC,
-                    ),
+                    ).withPanelDraft(_uiState.value.cosFilter),
                 )
             }.onSuccess { page ->
+                if (gen != cosGeneration) return@onSuccess // 旧代迟到响应，丢弃
                 _uiState.value = _uiState.value.copy(
                     cos = _uiState.value.cos.copy(
                         items = if (isRefresh || isInitial) {
@@ -357,6 +510,7 @@ class HomeViewModel @Inject constructor(
                     ),
                 )
             }.onFailure {
+                if (gen != cosGeneration) return@onFailure // 旧代失败不污染新筛选态
                 _uiState.value = _uiState.value.copy(
                     errorMessage = LIST_LOAD_FAILED_MESSAGE,
                     cos = _uiState.value.cos.copy(isLoading = false, isRefreshing = false),

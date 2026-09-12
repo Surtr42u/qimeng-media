@@ -30,6 +30,7 @@ import media.qimeng.app.core.model.FacetOption
 import media.qimeng.app.core.model.FourDimPillModel
 import media.qimeng.app.core.model.FourDimPills
 import media.qimeng.app.core.model.MediaAsset
+import media.qimeng.app.core.model.PanelFeedback
 import media.qimeng.app.core.model.PillSpec
 import media.qimeng.app.core.model.Zone
 import media.qimeng.app.core.model.groupByAlbumDim
