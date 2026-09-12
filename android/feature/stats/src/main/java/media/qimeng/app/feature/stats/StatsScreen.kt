@@ -17,8 +17,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.patrykandpatrick.vico.compose.cartesian.marker.rememberToggleOnTap
@@ -65,7 +67,8 @@ fun StatsScreen(
             .padding(horizontal = Dimens.ScreenPadding),
         verticalArrangement = Arrangement.spacedBy(Dimens.ScreenPadding),
     ) {
-        item { Text(text = "数据", style = MaterialTheme.typography.headlineSmall) }
+        // Z4 批（2026-09-12 数据页字体对齐旧 stats.xml）：文案「数据」→「数据统计」+ Bold
+        item { Text(text = "数据统计", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold)) }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 StatsRangeOption.entries.forEach { option ->
@@ -192,10 +195,15 @@ private fun MetricCell(title: String, value: String, modifier: Modifier = Modifi
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text(text = value, style = MaterialTheme.typography.titleMedium)
+            // Z4 批：数值 20sp Bold 主色（primary 槽=旧 qmColorPrimary）、标签 Regular（旧 stats.xml metric 格）
+            Text(
+                text = value,
+                style = MaterialTheme.typography.titleMedium.copy(fontSize = 20.sp, fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.primary,
+            )
             Text(
                 text = title,
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Normal),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -229,10 +237,13 @@ private fun TrendCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(text = "浏览趋势", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    text = "浏览趋势",
+                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 14.sp, fontWeight = FontWeight.Bold),
+                )
                 Text(
                     text = TYPE_TREND_ENTRY_TEXT,
-                    style = MaterialTheme.typography.labelMedium,
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Normal),
                     color = MaterialTheme.colorScheme.primary,
                 )
             }
@@ -259,8 +270,9 @@ private fun TrendCard(
 }
 
 /**
- * 分布统计小入口卡（GUIDE_UI L214 纯文字卡）：
- * 主文案「类型与来源的库存构成」+ 右侧「查看详情 ›」，点击进分布统计详情。
+ * 分布统计小入口卡（GUIDE_UI L214 纯文字卡；Z4 批 2026-09-12 补回旧 stats.xml L302-316
+ * 两行结构——「分布统计」14sp Bold 标题行 +「类型与来源的库存构成」12sp Regular 次色副行）：
+ * 右侧「查看详情 ›」，点击进分布统计详情。
  * 来源（常规/COS）构成 N3 #31b 解冻——详情页以 overview sourceCounts 呈现来源对比卡。
  */
 @Composable
@@ -275,10 +287,20 @@ private fun DistributionEntryCard(onOpen: () -> Unit) {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(text = "类型与来源的库存构成", style = MaterialTheme.typography.bodyMedium)
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "分布统计",
+                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 14.sp, fontWeight = FontWeight.Bold),
+                )
+                Text(
+                    text = "类型与来源的库存构成",
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp, fontWeight = FontWeight.Normal),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             Text(
                 text = "查看详情 ›",
-                style = MaterialTheme.typography.labelMedium,
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Normal),
                 color = MaterialTheme.colorScheme.primary,
             )
         }
@@ -309,10 +331,13 @@ private fun MostViewedCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(text = "常看文件", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    text = "常看文件",
+                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 14.sp, fontWeight = FontWeight.Bold),
+                )
                 Text(
                     text = "查看全部 ›",
-                    style = MaterialTheme.typography.labelMedium,
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Normal),
                     color = MaterialTheme.colorScheme.primary,
                 )
             }
@@ -354,10 +379,13 @@ private fun TopAuthorsTagsCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(text = "常看作者与标签", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    text = "常看作者与标签",
+                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 14.sp, fontWeight = FontWeight.Bold),
+                )
                 Text(
                     text = "查看全部 ›",
-                    style = MaterialTheme.typography.labelMedium,
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Normal),
                     color = MaterialTheme.colorScheme.primary,
                 )
             }
@@ -385,17 +413,18 @@ private fun CompactRow(text: String, value: String, onClick: () -> Unit) {
             .clickable(onClick = onClick),
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
+        // Z4 批：名称 Bold、数值 12sp Bold 主色（旧 stats.xml 常看行）
         Text(
             text = text,
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
         Text(
             text = value,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp, fontWeight = FontWeight.Bold),
+            color = MaterialTheme.colorScheme.primary,
         )
     }
 }
@@ -405,7 +434,7 @@ private fun CompactRow(text: String, value: String, onClick: () -> Unit) {
 private fun CompactText(text: String) {
     Text(
         text = text,
-        style = MaterialTheme.typography.bodyMedium,
+        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 }
