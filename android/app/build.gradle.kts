@@ -23,10 +23,13 @@ android {
             // 本地实测用非发布签名：复用 debug 签名（convention 未配 signingConfig，
             // AGP 隐式 release=无签名包不可装机；正式对外发布前需另配 release 签名档）。
             signingConfig = signingConfigs.getByName("debug")
-            // R8/Hilt/Room keep 规则风险留后续批（任务Y-Y5 拍板）：显式关闭混淆与
-            // 资源收缩——AGP 隐式默认亦为 false，此处落字为档，防依赖升级静默变更。
-            isMinifyEnabled = false
-            isShrinkResources = false
+            // 任务R R2：开启 R8 混淆+资源收缩——目标包体（R8 去无用代码 + shrinkResources
+            // 去无用资源）与冷启动（随本批 baseline-prof.txt 编译进 APK，ART 提前 AOT）。
+            // 任务Y-Y5 的 keep 缺口本批已补：moshi 反射序列化按包 keep（proguard-rules.pro），
+            // Hilt/Room/kotlin-reflect 等由依赖制品内嵌 consumer 规则自动覆盖（见该文件注释）。
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
 }

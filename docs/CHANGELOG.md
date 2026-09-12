@@ -9,6 +9,18 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## feat(app): 任务R R2 R8+baseline profile——release 开混淆与资源收缩，包体 -72.36%，全功能走查零崩溃（2026-09-13 第二百三十六笔）
+
+执行 AI：GLM-5.3（executor 子代理实施三件套+出包，主代理模拟器走查+视觉子代理截图验证）
+
+- **三件套**：①`android/app/build.gradle.kts` release 块——`isMinifyEnabled=true`+`isShrinkResources=true`+`proguardFiles(proguard-android-optimize.txt, proguard-rules.pro)`（官方 shrink 模板写法，Y5 拍板的"显式关闭"注释更新为本批口径）；②`android/app/proguard-rules.pro` 新建——仅两条手写 keep：`media.qimeng.sdk.models.**`（生成 SDK 数据类不挂 @JsonClass 不能按注解收敛，Moshi README「反射序列化类必须使用方 keep」）+ `AssetUploader$*`（SDK 包外唯一走 KotlinJsonAdapterFactory 的嵌套 DTO）；kotlin.Metadata/kotlin-reflect/Hilt/hilt-work/Room 规则均由依赖制品内嵌 consumer rules 自动覆盖（本机缓存制品拆包逐字核实，注释互指勿重复手写）；③`android/app/baseline-prof.txt`（src/main）新建——HSPL 通配规则覆盖冷启动（app 根包）/首页首滑（home+navigation+core 四件+sdk 全包）/详情热点（detail），androidx 热点由库 AAR 自带 profile 覆盖不重复手写；**免依赖路径成立**：profileinstaller 1.4.1 经 Compose 传递已在 releaseRuntimeClasspath（gradle 依赖树实测），未动 libs.versions.toml（Y 卷红线守住）。
+- **R8 结果**：零警告零缺类（mapping/release/ 无 missing_classes.txt，两条 keep 进 configuration.txt 实证）；APK 16,714,625→4,620,081 字节（**-72.36%**，dex 4→1+kotlin-reflect/未用依赖裁剪）；baseline.prof(7,626B)+profm 编译落包（unzip 实证）；debug 变体零回归。出包+冷启动证据 `%TEMP%\qimeng-r2-evidence\`（release-before/after.log、app-release-before/after.apk、coldstart-before/after.txt）。
+- **实测门禁**：qimeng_api35 装包全功能走查（登录/首页三 tab/筛选面板+应用+重置/列数切换/详情图片缩放/详情视频播放/搜索/我的=设置，21 张截图 `%TEMP%\qimeng-r2-evidence\shots\`）——**logcat 全程零 FATAL EXCEPTION**；视觉子代理逐张核对 20/21 直接过+无任何 R8 典型症状（无崩溃弹窗/黑屏/默认图标/@string 泄漏），07 列数空白+24 统计「—」两项复核实证均为**过程插曲假象**（走查中段自建 18463 隔离实例前的服务端死亡窗口瞬态；活服务端重测列数两态饱满渲染 484/531KB、统计 16/5 与服务端 JSON 全等）；视频播放以双帧哈希差异实证（画面推进非静止）。ExoPlayer Init 日志在案。
+- **冷启动**（am start -W×5 弃首跑）：before 中位 274ms vs after 284ms——模拟器 swiftshader 噪声淹没差异（首跑 437→257 有方向性改善）；**真机收益待用户实测**（R3 收官包即 R8 版，顺带验 Y5 高刷待验项）。
+- **记档（环境插曲，非本卷产物）**：走查中途 18461 虚构实例与 8420 实机库双双下线（旧会话进程消亡）——自铸隔离实例 18463 应对：git worktree 干净检出 master 编服务端（含拷贝 httpapi/gen 生成物）、注册 ui-compare-harness/testmedia/library-normal 虚构库 21 资产；**服务端进程多次静默消亡**（沙箱作业对象收割子进程，最终 WMI 创建通道存活 ~5 分钟仍死，T 会话同期加 1d1504a 最小化启动器印证是环境级问题）——走查按「服务端活窗口」分段完成，统计/列数两假象即源于死亡窗口。COS tab 空=normal 库无 COS 资产的数据集属性（18461 期 03 截图有 6 卡实证 cosOnly 管线本身正常）；排行榜单无序号/搜索推荐词空/版本信息「未知」为同窗口观察项，未单独复验。
+- 任务书：《QimengNAS\任务R-R8性能优化与单测补强卷.md》R2 勾选（仓库外）。
+
+---
 ## feat(server): 任务T T2 Termux 形态A落地批——三脚本+README 入库 + 双层模拟器验证（层2 全绿）（2026-09-13 第二百三十五笔）
 
 执行 AI：GLM-5.3（主代理调度验收；executor 子代理实施；reviewer 对抗审查打回 4×P2 修复后通过）
