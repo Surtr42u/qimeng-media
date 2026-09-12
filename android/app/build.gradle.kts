@@ -25,8 +25,9 @@ android {
             signingConfig = signingConfigs.getByName("debug")
             // 任务R R2：开启 R8 混淆+资源收缩——目标包体（R8 去无用代码 + shrinkResources
             // 去无用资源）与冷启动（随本批 baseline-prof.txt 编译进 APK，ART 提前 AOT）。
-            // 任务Y-Y5 的 keep 缺口本批已补：moshi 反射序列化按包 keep（proguard-rules.pro），
-            // Hilt/Room/kotlin-reflect 等由依赖制品内嵌 consumer 规则自动覆盖（见该文件注释）。
+            // 任务Y-Y5 的 keep 缺口本批已补：moshi 反射序列化按包 keep（proguard-rules.pro，
+            // sdk.models 包 + UploadApiBodies 嵌套 DTO 已 keep）；Hilt/Room/kotlin-reflect 等
+            // 由依赖制品内嵌 consumer 规则自动覆盖（见该文件注释）。
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
