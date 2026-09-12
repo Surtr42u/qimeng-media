@@ -372,8 +372,9 @@ fun QimengNavHost(
                     onOpenTagSearch = links.onOpenTagSearch,
                 )
             }
-            // 详情页（M4-3）：不设 launchSingleTop——详情→详情（兄弟资产滑动换件 push 叠栈）
-            // 保留返回栈，返回键回到上一个资产（旧版内部浏览历史栈的导航层等价语义）。
+            // 详情页（M4-3）：滑切换件的返回栈语义=popUpTo 换顶、栈深恒 1（见 onOpenAsset
+            // 内注释；任务Z Z5 对齐旧版单实例语义。launchSingleTop 不适用：换件必须生成
+            // 全新 entry，W7 沉浸交接单依赖新实例 rememberSaveable 初值链消费）。
             // popExit/popEnter 双 None：瞬时交换语义显式化（继承 NavHost 顶层四参
             // None，no-op；L2 拍板「无内容转场」口径同样覆盖 pushed 路由的 pop 侧）。
             composable(
@@ -386,8 +387,24 @@ fun QimengNavHost(
                     onBack = { navController.popBackStack() },
                     onOpenAsset = { assetId ->
                         // 兄弟资产滑动换件：批次清单就是当前清单（任务W W3 推荐栏退役后
-                        // 壳层只管导航，无换批语义）
-                        navController.navigate(DetailRoutes.detailRoute(assetId))
+                        // 壳层只管导航，无换批语义）。
+                        // 任务Z Z5（2026-09-12 用户反馈 #4「旧版左右滑动完依旧可以直接返回
+                        // 主页，新版是返回上一个」）：旧版=单 Fragment moveBy 原地换内容，按
+                        // 返回恒 closeDetail→popBackStack 回来路页（MediaDetailFragment.kt
+                        // :232-236/:757-769）；新版此前 push 叠栈=滑 N 次栈里 N 个 detail 实例、
+                        // 返回回上一个，与旧版相悖（GUIDE_UI L278「浏览历史栈」经调研在旧代码
+                        // 中并无实现，该规格行过期记档）。popUpTo(模式串, inclusive)=先弹掉
+                        // 栈顶当前 detail 再 push 新实例，栈深恒 1：返回=pop 回来路页（首页/
+                        // 搜索/作者集合…），逐字对齐旧版，顺带根治滑切叠栈增长。popUpTo(route)
+                        // 对模式串的匹配已核 navigation 2.9.8 字节码：NavDestinationImpl
+                        // .hasRoute 首分支=destination.route 精确等值（与 X1 isDetailDestination
+                        // 同机制），与实例参数无关，栈顶 detail 必命中；万一未命中仅日志降级
+                        // 「Ignoring popBackStack」且 navigate 照常 push，无崩溃风险。
+                        // W7 沉浸交接单不受影响：换件目标仍是全新 entry，rememberSaveable
+                        // 初值链照常消费置位；返回恢复的旧实例不走该链（W7 原语义）。
+                        navController.navigate(DetailRoutes.detailRoute(assetId)) {
+                            popUpTo(DetailRoutes.DETAIL_ROUTE) { inclusive = true }
+                        }
                     },
                     // 作者 Sheet「进入作者主页」进作者集合页（任务G G1b 接线；原始名不带 ·COS 后缀）
                     onOpenAuthor = { authorId, displayName ->
