@@ -9,6 +9,36 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## feat(app): 任务Z Z2+Z4 批——我的/数据/搜索页字体对齐旧版（2026-09-12 第二百二十八笔）
+
+执行 AI：GLM-5.3-Flash（executor 子代理实施+sp 反推逐项验证，reviewer 子代理对抗审查【通过】含与旧 layout 逐值核对与独立重测）
+
+- **改动（问题1/3：三页字体色彩查缺补漏）**：延续 Y3 裁决（Typography 角色不动，页面级 copy）——我的页（SettingsScreen）：标题 28sp Bold、数量卡标题/数字 16sp Bold、入口行两行同款 15sp 主色；数据页（StatsScreen）：标题文案回「数据统计」+Bold、总览数值 20sp Bold primary、卡标题 14sp Bold、常看行名称 Bold/数值 12sp Bold primary、分布入口卡补旧版两行结构（「分布统计」Bold 标题+12sp 次色副行）；搜索页（SearchScreen）：区头 13sp 次色、搜索钮 14sp Regular、建议行 14sp、类型标签 10sp Normal。共享件（Type/SegPill/TopBar/CapsuleTextField）零触碰。
+- **实测**：模拟器 bounds 反推字号逐项命中（28/16/15/24/20/14/13/10）；门禁三连绿；统计详情页标题经共享 TopBar 无覆盖点，记档不动。
+- 记档：时段胶囊 13sp/搜索词丸透明底主色属旧页特例，与 F 批全仓胶囊语言冲突，维持新语言待用户裁决；「数据统计」文案暂为模块内硬编码（stats 无 strings.xml，沿该文件既有风格）。
+
+## feat(app): 任务Z Z3 批——作者管理页排版放松（2026-09-12 第二百二十七笔）
+
+执行 AI：GLM-5.3-Flash（executor 子代理实施+前后对照截图，reviewer 子代理对抗审查【通过】含与旧 Adapter 逐值核对）
+
+- **改动（问题2「作者管理排版太拥挤」）**：拥挤根因=行节距 53dp vs 旧版 83dp（-36%）。AuthorScreen 行纵向 padding 8→12dp、名字 14sp→16sp Bold、副行 11→12sp 且与名字补 4dp、顶部计数行/搜索/芯片行补 12/8/8 纵向间距（对齐旧版节奏）。列表形态（单卡+发丝线，G2 对 Web 基准拍板）与关注胶囊（新版新增件）保持；QimengRankCard 共享件不动（设置页共用）；AuthorCollectionScreen 核实不同构未动。
+- 实测：门禁绿；before/after 截图对照呼吸感明显改善；我的页零波及。
+
+## fix(app): 任务Z Z5 批——详情滑切返回语义对齐旧版（2026-09-12 第二百二十六笔）
+
+执行 AI：GLM-5.3-Flash（executor 子代理实施[含 navigation 2.9.8 字节码核实 popUpTo 语义]，reviewer 子代理对抗审查【通过】含夹层链推演与独立实测）
+
+- **改动（问题4「旧版滑切完返回直接回主页，新版返回上一个」）**：旧版=单 Fragment 原地换件，滑多少次返回恒回列表（moveBy/showMediaAt，MediaDetailFragment.kt:757-769）；新版滑切 navigate push 叠栈致返回 pop 回上一实例。修=detail 路由 onOpenAsset 加 `popUpTo(DETAIL_ROUTE){inclusive=true}` 换顶：滑切=替换当前 detail 条目、栈深恒 1，**返回一次直回来路页**（首页/相册/作者集合…逐字对齐旧版），顺带根治「滑 50 次=50 个活实例」栈增长。GUIDE_UI L278「浏览历史栈」经旧代码核实未实现（QimengNavHost 旧注释引用过期），记档。W7 沉浸交接单/批次上下文/夹层链（详情→作者集合→详情）均不受影响（实测矩阵 a~f 全过，含沉浸滑切保持全屏、播放态返回先退海报）。
+
+## fix(app): 任务Z Z1 批——详情页横滑偶发无反应根修（2026-09-12 第二百二十五笔）
+
+执行 AI：GLM-5.3-Flash（researcher 受控实验锁定根因[斜滑 10 仅 1 成]，executor 子代理实施冻结件适配，reviewer 子代理对抗审查【通过】含独立重测斜滑 3/3）
+
+- **根因（问题0「有时候详情页左右滑动没反应」）**：图片海报态（chrome 显）带竖直分量的横滑——ZoomImageView 为 AndroidView interop，未放大态 onScroll 不请求父层不拦截（:124-136 旧态），父层 verticalScroll（enabled=chromeEffective）竖向 slop 先过即拦截→CANCEL→慢拖切件只认 ACTION_UP→不切件。受控实验：斜滑 dy≥200px 切件 1/10，沉浸态同手势 3/3（唯一变量=verticalScroll enabled）。次要：VideoStage 海报手势 pointerInput 键=非稳定 lambda（重组即重启手势，拖拽中重组=静默死亡），:317「键取 Unit+最新值桥」注释与实现脱节。
+- **修**（冻结件三件套）：ZoomImageView 未放大态横向主导（|accumX|>4dp 门槛常量且>|accumY|）时 `parent.requestDisallowInterceptTouchEvent(true)`（照 :96/:149 先例；纵向主导不拦=W 拍板⑧语义保留；UP/CANCEL 复位链完好）+纯函数 isHorizontalDominantDrag+4 条 JVM 单测；VideoStage 键改留稳定值+接通 latestOnSiblingNavigate 桥（注释实现归一）。CANCEL 切件保守不改（根因已除，KDoc 记档）。
+- **实测**：修复后斜滑 dy=500×10 全过、快滑/慢滑/沉浸/视频海报/放大态平移全矩阵绿；门禁三连绿（SiblingSwipePolicyTest 12 用例）。附带结论：W7 记档「视频横滑禁用」关闭——禁用仅在播放态（=播放器进度手势，旧版同语义非 bug）；边缘起滑触发系统返回手势属 OS 行为（观察项维持记档）。
+- 审查备忘：executor 模拟器实测证据时间线存疑（装机时间早于源码改动），reviewer 已用自建包独立复测（斜滑 3/3+返回语义）锁死功能结论，交付结论不依赖该声明。
+
 ## feat(app): 任务Y Y5 批——帧率同步+release 构建配置（2026-09-12 第二百二十四笔）
 
 执行 AI：GLM-5.3-Flash（executor 子代理实施，reviewer 子代理对抗审查【通过】含 apksigner/dumpsys 独立复验）
