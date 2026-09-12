@@ -7,13 +7,13 @@
 
 ## 全局约定
 
-- 前缀 `/api/v1`；除 `/api/v1/healthz`、`/api/v1/readyz` 两个探针外全部要求 `Authorization: Bearer <token>`（探针在 openapi.yaml 标 `security: []`，其余端点继承全局 bearerAuth；根路径 `/healthz`、`/readyz` 是运维探针别名，行为一致，不入协议面）
+- 前缀 `/api/v1`；免 Bearer 面共 7 处 `security: []`：探针 2（`/healthz`、`/readyz`）+ 认证 3（`/auth/setup`、`/auth/login`、`/auth/dev-login`——未设密前 setup 可达，登录后自然受保护）+ 签名直链 2（`/media/**` 走 HMAC 签名 URL，见下）；其余端点全部要求 `Authorization: Bearer <token>`（继承全局 bearerAuth；根路径 `/healthz`、`/readyz` 是运维探针别名，行为一致，不入协议面）
 - 分页统一 cursor 式：响应带 `nextCursor`，为 null 表示到底
 - 错误统一 `Error{code, message}`；`code` 机器可读（如 PATH_ESCAPE / TOO_LARGE / INVALID_TYPE）
 - 媒体直链（/media/**）不走 header 鉴权，用短期 HMAC 签名 URL（默认 6h），参数 `exp`（过期时间戳）+ `sig`
 - **页面投放**：服务端存在 Web 构建产物（`web.static_dir`，默认 `../web/dist`）时 `/` 与 `/index.html` 托管 SPA（静态资源直发 + 前端路由回退）；产物缺失时回退内嵌验收页。内嵌验收页另挂 `/_debug/`（永远可访问，调试用）。页面均为免鉴权静态资源，页面内数据请求照常走 Bearer
 
-## 端点分组速览（50 路径）
+## 端点分组速览（54 路径，2026-09-09 协议批后实数）
 
 | 分组 | 端点 | 说明 |
 |---|---|---|
@@ -34,7 +34,7 @@
 | 标签 | GET/POST /tags、DELETE /tags/{id}、PUT /assets/{id}/tags、**DELETE /assets/{id}/tags/{tag}** | 全局池；删除级联清理关联；替换式绑定；**2026-09-09 协议批 P2 新增逐条解除**（#32）：按 URL 编码标签名删单条关联，其余关联 created_at 不动（区别整体替换的刷新语义）；幂等=标签存在但未挂载→204，资产不存在或标签池无此名→404（含 `/` 的标签名不适用，走 PUT 全量替换） |
 | 作者 | GET /authors、POST/GET/DELETE /authors/import-txt、POST /authors/import-txt/rebuild、PUT /authors/{id}/follow | 常规/COS 双体系（type 区分）；TXT 三格式自动识别统一重建（GET=已导入片段名升序、DELETE=移除片段并从剩余片段重建〔204/404〕，第五笔新增——旧版数据管理「TXT导入作者」卡数据源；POST …/rebuild=用已存片段幂等重放重建关联〔不增删片段，2026-09-04 新增——库重建后常规关联丢失的自救入口〕）；关注布尔；2026-09-03 响应加 viewCount（作者作品累计浏览次数） |
 | 时间轴 | GET/POST /assets/{id}/timeline-tags、**PUT** /assets/{id}/timeline-tags/{tagId}、DELETE /assets/{id}/timeline-tags/{tagId} | 视频内时间点标记，独立于文件标签；**2026-09-09 协议批 P2 颜色协议化**（#32）：TimelineTag 增可选 `color`（hex 6 位如 "#d6336c"；缺省/空=服务端不存颜色，客户端自兜底；预设类型不入协议），创建/更新/响应三处透传，非 hex6 → 400；**PUT 为本批新增更新入口**（全量替换语义：timeMillis/name 必填、color 省略=清除，tagId 不属于该资产→404） |
-| 推荐排行 | GET /recommendations、GET /rankings、GET/PUT /recommendations/prefs | 10 维算法（seed 控制打散；**2026-09-05 增 `cosOnly` 参数**（true=COS 推荐模式）；**同日增 `offset` 参数**（/recommendations 与 /rankings 各一，default 0/min 0，与 limit 组合翻页切片——首页三 tab 触底加载的数据面；推荐流每次请求按当下打分排序切片，同流连续翻页由客户端按 assetId 去重兜底）：true=COS 推荐模式——候选集限定 COS 关联资产，同套打分/权重回收/每日惩罚照跑，首页 cos tab 数据源；false=常规流缺省排除 COS）；纯热度排行（日/周/月/年/季（近 90 天）/总，period=quarter 为 2026-09-03 新增；2026-09-03 起响应填充 viewCount/playCount 供卡片角标）；9 维权重偏好 |
+| 推荐排行 | GET /recommendations、GET /rankings、GET/PUT /recommendations/prefs | 10 维算法（seed 控制打散；**2026-09-05 增 `cosOnly` 参数**（true=COS 推荐模式）；**同日增 `offset` 参数**（/recommendations 与 /rankings 各一，default 0/min 0，与 limit 组合翻页切片——首页三 tab 触底加载的数据面；推荐流每次请求按当下打分排序切片，同流连续翻页由客户端按 assetId 去重兜底）：true=COS 推荐模式——候选集限定 COS 关联资产，同套打分/权重回收/每日惩罚照跑，首页 cos tab 数据源；false=常规流缺省排除 COS）；纯热度排行（日/周/月/年/季（近 90 天）/总，period=quarter 为 2026-09-03 新增；limit 缺省 50、服务端钳制 1~200 越界 400——协议暂未声明 maximum 属已知协议债（httpapi/pagination.go 注释记档）；2026-09-03 起响应填充 viewCount/playCount 供卡片角标）；9 维权重偏好 |
 | 统计 | GET /stats/overview、GET /stats/trends、**GET /stats/most-viewed、GET /stats/top-authors、GET /stats/top-tags** | 总览面板（animated_image 计入 imageCount；计数直接数事件流，含已删资产历史——事件流无 FK 设计；**2026-09-09 协议批 P2 扩展**（#31）：响应增 `sourceNormalCount`/`sourceCosCount`（来源库存，normal+cos=totalFiles）与可空 `avgViewsPerFile`（窗口内 open 总数÷有 open 的不同现存文件数，range 参数定窗口缺省 all、分母 0→null））；趋势按 asset_daily_stats 物化表（仅现存资产，随资产删除级联清理、可由事件流全量重建），**P2 增可选 `source=normal|cos` 来源桶过滤**（口径同 §6 分区判定）；分桶：range=day/week/month/quarter/year 固定粒度 + 2026-09-03 新增 7d（近 7 天逐日）/90d（近 90 天逐日），all 按数据跨度动态选粒度（≤12 周周 / 12 周~24 月月 / 更长季）全量不丢弃、总和守恒（DOMAIN_RULES §5）；**P2 新增三榜单端点**（事件流聚合、range 窗口与 trends 同款、limit 缺省 20 上限 50、仅现存资产入榜）：most-viewed（metric=views 按窗口 open 次数 / metric=seconds 按窗口 dwell 秒累计，无 dwell 不进 seconds 榜）、top-authors（作者资产 open 次数，COS 作者按 COS 资产计）、top-tags（带标签资产 open 次数） |
 | 系统 | /healthz、/readyz、/metrics、GET /system/status | 探针协议面为 `/api/v1/healthz`、`/api/v1/readyz`（免鉴权，openapi.yaml `security: []`；根路径 `/healthz` `/readyz` 是运维探针别名——docker/k8s 惯例，行为一致，不入协议面）；/metrics 与 /system/status 要求管理 token；负载/流量面板 |
 | 迁移 | POST /import/qimeng-backup、GET /export/qimeng-backup | 导入：旧版备份一次性导入：作者/标签/关联/时间轴按唯一键 upsert，统计转 ViewEvent 回放（dailyBrowse 全量 + mediaStats 差额 + history 补漏）；幂等 = 同 exportedAtMillis 批次事件只回放一次 + 段级 upsert 不翻倍；scanSources/settings/albumRules 不导入进 warnings（TXT 请重走 import-txt）。**导出（2026-09-05 第六十一笔）**：当前库 → 旧版单文件全量备份（qimeng_backup.json，响应带 Content-Disposition 附件头），§10 逆向映射——recordKey 生成镜像导入消歧（文件名 / 「名 @ 文件夹」/ 跨库同文件夹再 #哈希）、dailyBrowse 取物化表、mediaStats 事件流聚合、history 截 500、likes 聚合 {累计,最后日}、settings/scanSources/albumRules/cosWorks 恒空、appPrefs 只带 recommendationPrefs；与导入互为镜像可幂等回环。导入请求体上限 64MB（per-route 例外，全局 JSON 红线 1MB 不变——单文件全量备份随库规模增长，1MB 会拦掉真实备份）；超限 413 TOO_LARGE。**导入只用于全新实例/迁移场景**：往已有统计的库导入新批次备份会回放事件导致统计翻倍（幂等锚只防同批次重复导入） |

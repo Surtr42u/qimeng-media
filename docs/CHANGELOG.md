@@ -9,6 +9,40 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## refactor(server): 系统性清偿——facets 超线拆分/协议错误码单源/纵深防御三闸/字面量具名（2026-09-13 第二百三十一笔）
+
+执行 AI：GLM-5.3（主代理；researcher 三路摸底+逐项核实后主代理实施）
+
+- **facets.go 降线**：`GetApiV1AssetsFacets` 202→37 行（全库最长豁免函数）——参数归一抽 `facetFilters`/`newFacetFilters`（与 newAssetFilters 同型），四维装配各自成方法（facetPartitionBuckets/facetAuthorBuckets/facetCharacterBuckets/facetMediaTypeBuckets），facetSourceBuckets/facetCosAuthorBuckets 十二参长表改单 struct 传参；既有 facets_test 五用例零改动全绿（排自身/COS 隔离/子集口径不动）。
+- **协议错误码跨包收敛**：auth/middleware「UNAUTHORIZED」与 events/sse 三码（TOO_MANY_CONNECTIONS/NO_STREAM_SUPPORT/EVENTS_SHUTDOWN）原内联手抄，按代码卫生约束 3 各自包级具名+同步责任注释（模块边界禁依赖 httpapi〔ADR-0010〕无法共用常量，注释互指 errors.go 与 openapi）。
+- **纵深防御统一（SECURITY 红线 1）**：dirs 新建目录 / upload 落盘 / move 源与目标三处 Join 后补 `PathWithinRoot` 二次校验（与 media 直链/trash 同款「库数据被污染时最后一道闸」——此前六条文件写路径仅 media/trash 四处有）。
+- **字面量具名**：0o755 六处→`dirPerm`（server.go）；Content-Type 两种写法并存→`contentTypeJSON` 统一 charset=utf-8 变体（healthz/readyz/auth 401 对齐 writeJSON，healthz_test 断言同步）；DateTo 日界 24h−1ms→`dateToBoundSkew`；trend 周/日换算裸 24→`hoursPerDay`；store DSN busy_timeout(5000)→`busyTimeoutMS`。
+- 门禁：go vet / gofmt / golangci-lint（v2.13.1）零 issue；go test 15 包全绿（低 CPU 档 `-p 2`；改动包二次复跑确认最终态）。
+- 范围纪律：与并行任务T（server/thumbnail+config+Makefile+deploy 在途）文件集零交集；internal/filing 包（任务S S4 TOCTOU 对象）未触碰——httpapi/filing.go 与 upload.go 仅闸门三行+常量替换，S4 改造不受影响。
+
+---
+## refactor(web): image-viewer 手势数学抽离+InfiniteTail 五处收拢+纯函数补测（2026-09-13 第二百三十二笔）
+
+执行 AI：GLM-5.3（主代理）
+
+- **image-viewer.tsx 522→458 行（全库唯一超 500 行红线的 tsx）**：手势常量/Transform/Point/Gesture 类型/clampOffset/保焦点公式抽 `lib/image-viewer-math.ts`（零 DOM 纯函数层）；双击与捏合两处保焦点缩放合并为共享 `focusPreservingTransform`（一般式 t1=t0+Δ+(s0−s1)(f−c−t0)/s0，E5 P2-1 防漂移公式注释随迁）；PRELOAD_AROUND 随迁 lib（消费方 AssetDetailPage import 更新）。新增 image-viewer-math.test.ts 7 例——抽出时发现并修正 `Math.min(0,-0)` 产出 −0 的边界（渲染等价，规范输出归一 +0）。
+- **InfiniteTail 共享组件**：加载中/到底计数/触底哨兵三件套 JSX 原五处逐字复制（相册/集合/搜索/我的收藏/我的历史），收拢 `components/media/InfiniteTail.tsx`（`sentinelActive` 覆盖集合页 found、搜索页有词两种哨兵门控；文案与哨兵写法单一来源）。
+- **纯函数补测 28 例**：backup.test.ts 6 例（格式校验/64MB 超限前置拦截/摘要计数/确认弹窗文案——备份导入唯一前端防线首次锁测）；rank-rows.test.ts 6 例（降序/0 浏览不入榜/F7 计数口径/COS 标识/不改入参）；home-tabs.test.ts 9 例（tab/周期字面锁定+非法周期回退日榜）；image-viewer-math 7 例。
+- **魔法值收拢**：main.tsx staleTime 20_000→`QUERY_STALE_TIME_MS`（constants.ts）；TrashPage width:36/maxWidth:300→`SELECT_COL_PX`/`PATH_COL_MAX_PX`。
+- 门禁：vitest 162/162（新增 28 例）；tsc -b + vite build 过；oxlint 0 error（15 存量 warning 不变）。
+
+---
+## docs: 三路审查文档准确性清偿——9 文档 20+ 处「文档先行于实现」如实标注（2026-09-13 第二百三十三笔）
+
+执行 AI：GLM-5.3（主代理；researcher 文档卷全量交叉核对，P1/P2 逐项主代理代码复核后落笔）
+
+- **P1 回收站保留期**：SECURITY「到期后台物理清除」与 DOMAIN_RULES §9「保留天数可配置」均未实现（`TrashExpired` 全库无调用方、config 无对应键）——改如实口径：30 天仅用于 trash 列表到期展示；自动清除+可配置标规划待立项（实现需 config 新键+后台巡检，涉任务T 在途 config 包故本批只修文档不动代码）。
+- **SECURITY.md**：token 泄露应急改为实际机制（停服删 `media-secret` 重启重铸密钥=全部直链失效；管理端重置端点标规划）；上传速率/并发上限、Dependabot（与 ARCHITECTURE「计划中」矛盾消解）、镜像构建（M5 TODO）如实标注；红线 7 访问日志脱敏标注未实现。
+- **OBSERVABILITY.md**：磁盘 IO 速率/按网卡明细（采集层无此计数器）、访问日志/日志轮转（未实现）如实标注；仪表盘路由 /admin→/app/maintenance；readyz 检查面勘误（当前仅 DB 可达，媒体目录/磁盘阈值标规划）；前端轮询 3s→2s（STATUS_POLL_INTERVAL_MS）。
+- **GUIDE_API.md**：路径计数 50→54；免鉴权面完整枚举（探针2+认证3+签名直链2 共 7 处 `security: []`，原「仅探针免 Bearer」不完整）；/rankings limit 1..200 服务端钳制入档（协议未声明 maximum 记协议债，pagination.go 注释互指）。
+- **其余**：README 榜单枚举补「季」+CI web job 补 test；ARCHITECTURE CI web job 步骤勘误（补 openapi-ts 重建与 npm test）+Makefile 命令枚举补 app-build/app-test/app-lint/web-build；CAPABILITY_MAP 移动端 #24/#26 序列化 400 已根修销账+统计行补三榜单端点+监控面板 panel-demo 残留措辞清理；PROJECT_PLAN 仪表盘路由勘误；adr/INDEX 0002~0011 十行补「已接受」状态列；AI_README commit 示例改引实存文档；DOMAIN_RULES §9 上传白名单补 jpeg（对齐 filing/upload.go 与 SECURITY 双侧口径）。
+
+---
 ## test(app): 任务R R1 cosGeneration 代际防乱序对位单测——4 例锁定筛选/翻页/重置全路径（2026-09-13 第二百三十笔）
 
 执行 AI：GLM-5.3（executor 子代理实施，主代理门禁验收）

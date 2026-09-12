@@ -63,7 +63,7 @@
 - [x] 标签/收藏/点赞交互（2026-08-29：TagManager 弹窗（当前/其他分组+新建+级联删除确认）/useLike 基线/useFavorite 乐观更新；详情页冒烟通过）
   - [x] 后端：标签池/资产标签（替换式，事务）/时间轴标签三件套（2026-08-29：store 新增 tags.sql 十查询（sqlc 注释须纯 ASCII——多字节文本使解析器报错，已验证）；重名 409、删除级联、跨资产时间轴删除隔离；6 用例）
 - [x] sysmon 接线：/metrics、/system/status（PerCore 快照补进协议 + make sdk；采集层 M1 已提前交付）（2026-08-27：协议补 perCore → make sdk-go → httpapi/system.go 两端点接线（Bearer 鉴权、未装配 503、部分采集失败仍 200）→ main/wire 装配（挂载点动态=DataDir+全部库根、version 常量单一来源）→ 7 用例 + 真机冒烟（20 核差分/真实磁盘容量/metrics 文本输出）全过）
-- [x] 监控仪表盘 `/admin`（OBSERVABILITY.md 内置指标）（2026-08-29：Dashboard 修复 data 解构后真机数据渲染确认——perCore/内存/磁盘/运行时长/网络速率 sparkline）
+- [x] 监控仪表盘（Web 维护页 `/app/maintenance`；OBSERVABILITY.md 内置指标——原文记 `/admin` 为路由勘误，2026-09-12 校正）（2026-08-29：Dashboard 修复 data 解构后真机数据渲染确认——perCore/内存/磁盘/运行时长/网络速率 sparkline）
 - [x] PWA：可安装、离线壳（2026-08-29：vite-plugin-pwa autoUpdate + navigateFallback + denylist /api + 图标全套生成；sw.js 产物构建确认）
 
 **验收**：日常"浏览-看图看视频-整理"全部在浏览器完成；Lighthouse PWA 可安装；手机浏览器体验流畅；golangci-lint 门禁绿、生成物不手改、新迁移只加文件、决策先写 ADR。
