@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Theme.Qimeng 夜间变体（任务X X7 状态栏发白修复①，2026-09-12）：values 版主题
+         parent=android:Theme.Material.Light 且无 night 变体，夜间模式下窗口基座仍为
+         浅色系、windowBackground 透白。本变体完整同名定义（与 values 版逐项对应）：
+         parent 换等价深色平台基座 Material.NoActionBar，windowBackground 引用同名
+         @color/qm_bg（资源限定符自动解析为 values-night 的 #1A1A1A，与 core/ui
+         Theme.kt QimengBrandColors.BgDark 同源）。其余窗口属性当前仅 windowBackground
+         一项，两份定义保持一致；系统栏明暗由 MainActivity.enableEdgeToEdge 运行时
+         接管，XML 不设 statusBarColor（维持 edge-to-edge 透明语义）。 -->
+    <style name="Theme.Qimeng" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/qm_bg</item>
+    </style>
+</resources>

@@ -2,4 +2,12 @@
 <resources>
     <!-- 图标背景色：GUIDE_UI §应用图标 冻结资产规格（纯色 #DDBC98） -->
     <color name="ic_launcher_background">#DDBC98</color>
+
+    <!-- 品牌页面底色（浅色）= 旧版 values/colors.xml qm_bg = core/ui Theme.kt
+         QimengBrandColors.BgLight（微灰白，windowBackground/statusBar/启动屏背景）。
+         DayNight 单源 token：values-night/colors.xml 同名覆盖深色 #1A1A1A，
+         themes.xml 的 android:windowBackground 引用本名自动分流（任务X X7 修复①，
+         取代硬编码 @android:color/white）。Compose 侧色板仍在 Theme.kt（XML 资源
+         仅 Manifest 层窗口背景消费；两处色值字面量一致性由本注释锁定）。 -->
+    <color name="qm_bg">#FAFAFA</color>
 </resources>
