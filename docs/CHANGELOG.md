@@ -9,6 +9,16 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## docs: 任务T 晨间汇总（会话B · 2026-09-13 夜）——T 卷无依赖批次全部完成，三节点挂起等用户（2026-09-13 第二百四十笔）
+
+执行 AI：GLM-5.3（主代理）
+
+- **完成批次（commit 链，全部已 push）**：T1 服务端 Android 构建批 `a012370`（Makefile 双 target + ffmpeg 启动自检 + 模拟器闭环脚本，证据 %TEMP%\qimeng-t1-evidence）→ T2 Termux 形态 A 批 `79ea051`（三脚本+README+MIGRATION 入库 deploy/termux/，层1+层2 双验证 16/16，证据 %TEMP%\qimeng-t2-evidence）→ T4 旧数据迁入批 `e9d6e95`（虚构备份 129 断言全绿 + 迁移指引，证据 %TEMP%\qimeng-t4-evidence）→ T5 性能批 `c2c8b9b`（首扫基准 45 断言全绿 + 充电联动停手记档，证据 %TEMP%\qimeng-t5-evidence\scan-report.md）。执行顺序记档：T3 前置（任务S S2）未满足，按夜间模式先做无依赖的 T4/T5。
+- **SKIPPED/挂起批次**：T3（等任务S S2 收官）；T6（等 T2 真机验收 + S3 收官）；T7（等前序）。
+- **等用户处理项（三节点，按任务书参与表）**：① **T2 真机验证**——手机装 Termux（F-Droid 渠道，步骤见 deploy/termux/README.md），AI 提供 arm64 二进制投放指引（产物已备：build/android/arm64-v8a/qimeng-server），跑通一键脚本即闭合「modernc sqlite arm64 真机运行」最大存疑；② **T4 真数据迁移确认**——确认后迁移真备份 <旧项目目录>\qimeng_backup.json 并按 deploy/termux/MIGRATION.md 核对表逐项勾验；③ **T5 真机首扫报告**——真机 + ffmpeg 投放后的含缩略图首扫吞吐与耗电粗估（模拟器对照报告已出）。共享存储（~/storage/shared）注册扫描同在真机节点验证。
+- 环境资产：qimeng_api35t 模拟器保持在线（Termux 已实装）；层1/层2/演练脚本全部幂等可重跑。
+
+---
 ## test(server): 任务T T5 性能批——模拟器首扫基准 45 断言全绿（降级模式 2000 文件 6.5s）+ 充电联动停手记档（2026-09-13 第二百三十九笔）
 
 执行 AI：GLM-5.3（主代理调度验收；executor 子代理实施并预趟坑——首跑即全绿）
