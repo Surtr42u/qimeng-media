@@ -9,6 +9,23 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## feat(app): 任务X X5 批——我的页作者总览外部化（2026-09-12 第二百一十五笔）
+
+执行 AI：GLM-5.3-Flash（executor 子代理实施，reviewer 子代理对抗审查【通过】含 --rerun 非缓存单测复跑与模拟器双闭环独立执行）
+
+- **改动（问题8「作者总览改成类似收藏的外部选项卡」）**：SettingsScreen 内嵌 AuthorOverviewCard（头行+计数副行+Top5 行列表）原位换成收藏同款 EntryRow「作者总览 / 查看全部作者与作品」，onClick=onOpenAuthors（壳层既有 Routes.AUTHORS→AuthorScreen「全部作者 · N 位」页，搜索/排序/关注/行点击进集合页闭环全现成）；连带清偿 onOpenAuthorCollection 链（卡片 Top5 直达入口，壳层传参同步删）。
+- **删面清偿**：SettingsViewModel authorOverview/authorsLoading/refreshAuthorOverview/authorRepository 构造参数（Hilt 图自适应）；AuthorRows 的 AuthorOverview/toAuthorOverview/AUTHOR_OVERVIEW_TOP_COUNT（displayLabel/applyAuthorRows 保留）；测试退役 3 用例+1 断言行（AuthorRowsTest 6→5、SettingsViewModelTest 13→11，reviewer 复核退役面均只覆盖被删功能）。grep AuthorOverview 系全零残留、AuthorCollection 系 7 文件完好未误伤。
+- **实测**：门禁三连（合并态）exit 0；模拟器走查=我的页入口行与收藏行同构、点击进全部作者页。
+
+## feat(app): 任务X X4 批——播放器快速转跳按钮退役（2026-09-12 第二百一十四笔）
+
+执行 AI：GLM-5.3-Flash（executor 子代理实施，reviewer 子代理对抗审查【通过】含三模块 --rerun 非缓存复跑与模拟器底栏六槽实证）
+
+- **改动（问题5「视频倍速旁边的按钮去除」）**：删除对象=倍速右侧「快速转跳」按钮（旧版语义=弹作者列表 Sheet，新版被改为跳下一时间轴标签——行为漂移即用户困惑源；作者直达已由 W3 作者胶囊承接）。BiliPlayerView.kt（冻结件，纯删除：quickJumpBtn 构建/addView/onJump 属性）+VideoStage.kt（handlePlayerJump+排版态/覆盖层两处接线+孤儿 latestTagEntities）+VideoFullScreenOverlay.kt（onJumpTap 参数+factory 接线）。保留：书签（时间轴标签添加唯一入口）/倍速/全屏/静音/播放暂停；G1~G9 手势参数零触碰。
+- **冻结件三件套**：类 KDoc 适配点⑦记档（解冻令=用户 2026-09-12 原话「视频倍速旁边的按钮去除」）；TimelineTagMenuDialog 参数 onJump→onSeekToTag 纯改名（长按菜单「跳转」旧版语义保留，非退役对象，改名为孤儿 grep 字面量避让，方法体零变化）；桥接清单记入本卷交付报告。
+- **实测**：门禁三连（合并态）exit 0；grep quickJump|onJump|handlePlayerJump 零残留；模拟器播放中底栏=播放/静音/书签/倍速/全屏六槽序列（倍速与全屏间无第七钮）。
+- 记档项（留 X8 清偿）：ic_detail_jump.xml 成无引用资源、DetailChromeIcons.kt:15-16 注释过时。
+
 ## feat(app): 任务X X2+X3 批——详情下滑区裁剪+详细信息旧版移植（2026-09-12 第二百一十三笔）
 
 执行 AI：GLM-5.3-Flash（executor 子代理同文件链串行实施，reviewer 子代理对抗审查【通过】含门禁独立复跑+5 资产 Sheet 与服务端 JSON 交叉核对）
