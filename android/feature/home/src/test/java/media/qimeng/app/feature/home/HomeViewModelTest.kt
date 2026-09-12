@@ -16,8 +16,10 @@ import media.qimeng.app.core.data.repository.GridPrefsRepository
 import media.qimeng.app.core.data.repository.LikeMutationTracker
 import media.qimeng.app.core.data.repository.MediaBatchIndex
 import media.qimeng.app.core.data.repository.MediaRepository
+import media.qimeng.app.core.model.AlbumPanelDraft
 import media.qimeng.app.core.model.AssetPageResult
 import media.qimeng.app.core.model.AssetQuery
+import media.qimeng.app.core.model.AssetSort
 import media.qimeng.app.core.model.FacetsQuery
 import media.qimeng.app.core.model.FacetsResult
 import media.qimeng.app.core.model.MediaAsset
@@ -35,6 +37,13 @@ import media.qimeng.app.core.testing.MainDispatcherRule
  * 任务I I1 追加：①下拉刷新清空三 tab 缓存（当前 tab 立即重拉、另两 tab 标脏切入懒重拉，
  * GUIDE_UI §下拉刷新 L86）；②点赞变更指纹返回重排（LikeMutationTracker，GUIDE_UI L89，
  * detail 侧上报点归 I7 批）。
+ *
+ * 任务R R1 追加：COS 流筛选代际防乱序对位锁定（任务Y Y4b 引入 cosGeneration 后，上面
+ * 「COS 流无代际语义」的表述仅适用于 Y4b 之前）——applyPanelDraft/resetPanelDraft 是唯一
+ * 代际递增点，翻页/下拉刷新不递增但响应同样受代际校验：在途旧代响应（成功/失败/翻页追加）
+ * 一律丢弃不落地；且各次请求携带当次应用筛选的快照（断言 AssetQuery.sort 区分草稿A/B，
+ * 证明请求不是「最终态重放」）。时序构造沿 rankings 同款闸门：assetsGated=true 时
+ * assets() 每次调用挂独立 gate，由测试决定归位顺序与成败。
  */
 class HomeViewModelTest {
 
@@ -48,11 +57,25 @@ class HomeViewModelTest {
 
         val rankingsCalls = mutableListOf<RankingsCall>()
 
+        /**
+         * COS 流闸门调用记录（任务R R1）：gate 由测试逐个 complete/completeExceptionally，
+         * 归位顺序与成败完全可控（rankings 闸门同款范式）。
+         */
+        data class AssetsCall(val query: AssetQuery, val gate: CompletableDeferred<AssetPageResult>)
+
         /** 推荐流调用记录（seed 序列，I1 刷新/指纹重拉断言用） */
         val recommendationsCalls = mutableListOf<Long>()
 
         /** COS 流调用记录（I1 刷新懒重拉断言用） */
         val assetsCalls = mutableListOf<AssetQuery>()
+
+        /**
+         * COS 流闸门开关（任务R R1 代际防乱序用例）：false 时 assets() 直返 assetsResult
+         * （既有用例行为不变）；true 时每次调用记录独立 gate 并挂起等待——多次在途请求
+         * 必须各自可控归位，单一共享 gate 一次 complete 会同时放行所有等待者，区分不了代次。
+         */
+        var assetsGated = false
+        val assetsGateCalls = mutableListOf<AssetsCall>()
 
         /** 推荐流/COS 流返回值可配（I1 需要非空数据验证缓存清空；默认空=既有用例行为不变） */
         var recommendationsResult: List<MediaAsset> = emptyList()
@@ -60,7 +83,10 @@ class HomeViewModelTest {
 
         override suspend fun assets(query: AssetQuery): AssetPageResult {
             assetsCalls += query
-            return assetsResult
+            if (!assetsGated) return assetsResult
+            val call = AssetsCall(query, CompletableDeferred())
+            assetsGateCalls += call
+            return call.gate.await()
         }
 
         override suspend fun facets(query: FacetsQuery): FacetsResult =
@@ -413,5 +439,200 @@ class HomeViewModelTest {
             viewModel.onNearBottom() // 未经任何 switchTab（真实时钟差恒正且巨大）
             advanceUntilIdle()
             assertEquals(listOf(1L, 2L), repo.recommendationsCalls)
+        }
+
+    // ---------- 任务R R1：COS 流筛选代际防乱序（cosGeneration，Y4b 起） ----------
+
+    @Test
+    fun `筛选代际防乱序 - 筛选A在途时应用筛选B，A迟到响应被丢弃，B整页落地`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val repo = FakeMediaRepository()
+            repo.assetsGated = true // COS 流挂闸门：两次在途请求的归位顺序由测试决定
+            val viewModel = viewModel(repo)
+            advanceUntilIdle()
+            assertFalse(viewModel.uiState.value.cos.loaded) // 懒加载：COS 未拉过
+
+            // 应用筛选A（按观看数排序）：代际 0→1，请求1在途挂闸门
+            viewModel.openFilterSheet()
+            viewModel.updatePanelDraft(AlbumPanelDraft(sort = AssetSort.VIEW_COUNT))
+            viewModel.applyPanelDraft()
+            advanceUntilIdle()
+            assertEquals(1, repo.assetsGateCalls.size)
+            assertTrue(viewModel.uiState.value.cos.isLoading)
+
+            // 筛选B（按文件名排序）紧接应用：代际 1→2；筛选重载 isInitial=true 不受在途
+            // isLoading 拦截，新请求照发——在途旧请求交给代际校验兜底，而非防重拦截
+            viewModel.openFilterSheet()
+            viewModel.updatePanelDraft(AlbumPanelDraft(sort = AssetSort.NAME))
+            viewModel.applyPanelDraft()
+            advanceUntilIdle()
+            assertEquals(2, repo.assetsGateCalls.size)
+            assertTrue(viewModel.uiState.value.cos.isLoading)
+            // 两次请求各自携带当次应用筛选的快照，不是「最终态重放」
+            assertEquals(AssetSort.VIEW_COUNT, repo.assetsGateCalls[0].query.sort)
+            assertEquals(AssetSort.NAME, repo.assetsGateCalls[1].query.sort)
+
+            // A 的成功响应迟到归位：旧代整代丢弃——items 不被 A 污染、loading 不被 A 收走、
+            // cursor 不被 A 改写
+            repo.assetsGateCalls[0].gate.complete(
+                AssetPageResult(items = listOf(asset("stale-a")), nextCursor = "stale-cursor", totalMatched = 1),
+            )
+            advanceUntilIdle()
+            assertTrue(viewModel.uiState.value.cos.items.isEmpty())
+            assertNull(viewModel.uiState.value.cos.nextCursor)
+            assertTrue(viewModel.uiState.value.cos.isLoading)
+            assertNull(viewModel.uiState.value.errorMessage)
+
+            // B 响应归位：整页替换落地，已应用态=B草稿、面板已关
+            repo.assetsGateCalls[1].gate.complete(
+                AssetPageResult(items = listOf(asset("fresh-b")), nextCursor = null, totalMatched = 1),
+            )
+            advanceUntilIdle()
+            assertEquals(listOf("fresh-b"), viewModel.uiState.value.cos.items.map { it.id })
+            assertNull(viewModel.uiState.value.cos.nextCursor)
+            assertFalse(viewModel.uiState.value.cos.isLoading)
+            assertTrue(viewModel.uiState.value.cos.loaded)
+            assertEquals(AssetSort.NAME, viewModel.uiState.value.cosFilter.sort)
+            assertFalse(viewModel.uiState.value.filterPanel.visible)
+        }
+
+    @Test
+    fun `旧代筛选失败不污染新筛选态 - 失败迟到不弹错不收loading，新代成功照常落地`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val repo = FakeMediaRepository()
+            repo.assetsGated = true
+            val viewModel = viewModel(repo)
+            advanceUntilIdle()
+
+            // 筛选A在途 → 应用筛选B（代际+1，isInitial=true 绕过防重拦截）
+            viewModel.openFilterSheet()
+            viewModel.updatePanelDraft(AlbumPanelDraft(sort = AssetSort.VIEW_COUNT))
+            viewModel.applyPanelDraft()
+            advanceUntilIdle()
+            viewModel.openFilterSheet()
+            viewModel.updatePanelDraft(AlbumPanelDraft(sort = AssetSort.NAME))
+            viewModel.applyPanelDraft()
+            advanceUntilIdle()
+            assertEquals(2, repo.assetsGateCalls.size)
+
+            // 旧代A失败迟到：不弹错误、不收 loading（错误只属于当前代）
+            repo.assetsGateCalls[0].gate.completeExceptionally(RuntimeException("stale failure"))
+            advanceUntilIdle()
+            assertNull(viewModel.uiState.value.errorMessage)
+            assertTrue(viewModel.uiState.value.cos.isLoading)
+
+            // 新代B成功落地：正常展示无错误
+            repo.assetsGateCalls[1].gate.complete(
+                AssetPageResult(items = listOf(asset("b")), nextCursor = null, totalMatched = 1),
+            )
+            advanceUntilIdle()
+            assertEquals(listOf("b"), viewModel.uiState.value.cos.items.map { it.id })
+            assertFalse(viewModel.uiState.value.cos.isLoading)
+            assertNull(viewModel.uiState.value.errorMessage)
+        }
+
+    @Test
+    fun `翻页在途时应用新筛选 - 翻页旧代响应被丢弃不追加，新代整页替换落地`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val repo = FakeMediaRepository()
+            repo.assetsGated = true
+            val viewModel = viewModel(repo)
+            advanceUntilIdle()
+
+            // 可控时钟：绕开切 tab 后的距底哨兵抑制窗口（J3a 500ms），让触底翻页可控触发
+            var fakeNow = 1_000L
+            viewModel.clockMs = { fakeNow }
+
+            // COS 首页落地（gen 快照=0；翻页/刷新不递增代际）
+            viewModel.switchTab(HomeTab.COS)
+            advanceUntilIdle()
+            assertEquals(1, repo.assetsGateCalls.size)
+            repo.assetsGateCalls[0].gate.complete(
+                AssetPageResult(items = listOf(asset("c1")), nextCursor = "cur1", totalMatched = 1),
+            )
+            advanceUntilIdle()
+            assertEquals(listOf("c1"), viewModel.uiState.value.cos.items.map { it.id })
+            assertFalse(viewModel.uiState.value.cos.exhausted)
+
+            // 触底翻页：isInitial=false 请求在途（携带 cur1 游标，代际仍是 0）
+            fakeNow += HomeViewModel.SENTINEL_SUPPRESS_AFTER_TAB_SWITCH_MS
+            viewModel.onNearBottom()
+            advanceUntilIdle()
+            assertEquals(2, repo.assetsGateCalls.size)
+            assertEquals("cur1", repo.assetsGateCalls[1].query.cursor)
+            assertTrue(viewModel.uiState.value.cos.isLoading)
+
+            // 翻页在途时应用新筛选：代际 0→1，isInitial=true 绕过 isLoading 防重发出新请求
+            //（cursor=null 整页首拉，携带新筛选快照）
+            viewModel.openFilterSheet()
+            viewModel.updatePanelDraft(AlbumPanelDraft(sort = AssetSort.PLAY_COUNT))
+            viewModel.applyPanelDraft()
+            advanceUntilIdle()
+            assertEquals(3, repo.assetsGateCalls.size)
+            assertNull(repo.assetsGateCalls[2].query.cursor)
+            assertEquals(AssetSort.PLAY_COUNT, repo.assetsGateCalls[2].query.sort)
+
+            // 翻页旧代响应迟到：丢弃——不追加 c2、nextCursor 不被改写成 cur2
+            repo.assetsGateCalls[1].gate.complete(
+                AssetPageResult(items = listOf(asset("c2")), nextCursor = "cur2", totalMatched = 2),
+            )
+            advanceUntilIdle()
+            assertEquals(listOf("c1"), viewModel.uiState.value.cos.items.map { it.id })
+            assertEquals("cur1", viewModel.uiState.value.cos.nextCursor)
+            assertTrue(viewModel.uiState.value.cos.isLoading)
+
+            // 新代整页替换落地（exhausted 随 nextCursor=null 置位）
+            repo.assetsGateCalls[2].gate.complete(
+                AssetPageResult(items = listOf(asset("n1"), asset("n2")), nextCursor = null, totalMatched = 2),
+            )
+            advanceUntilIdle()
+            assertEquals(listOf("n1", "n2"), viewModel.uiState.value.cos.items.map { it.id })
+            assertNull(viewModel.uiState.value.cos.nextCursor)
+            assertTrue(viewModel.uiState.value.cos.exhausted)
+            assertFalse(viewModel.uiState.value.cos.isLoading)
+        }
+
+    @Test
+    fun `重置面板走同一应用链 - 草稿回默认代际推进，在途旧筛选响应被丢弃`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val repo = FakeMediaRepository()
+            repo.assetsGated = true
+            val viewModel = viewModel(repo)
+            advanceUntilIdle()
+
+            // 先应用筛选A（在途挂闸门）
+            viewModel.openFilterSheet()
+            viewModel.updatePanelDraft(AlbumPanelDraft(sort = AssetSort.VIEW_COUNT))
+            viewModel.applyPanelDraft()
+            advanceUntilIdle()
+            assertEquals(AssetSort.VIEW_COUNT, viewModel.uiState.value.cosFilter.sort)
+
+            // 面板里再改成B后点「重置」：草稿回默认 + 走 applyPanelDraft 同链
+            //（代际+1 + 已应用态写默认 + 重拉 + 关面板三合一）
+            viewModel.openFilterSheet()
+            viewModel.updatePanelDraft(AlbumPanelDraft(sort = AssetSort.NAME))
+            viewModel.resetPanelDraft()
+            advanceUntilIdle()
+            assertEquals(2, repo.assetsGateCalls.size)
+            assertEquals(AssetSort.DEFAULT, repo.assetsGateCalls[1].query.sort) // 重拉携带默认筛选
+            assertEquals(AlbumPanelDraft(), viewModel.uiState.value.cosFilter) // 已应用态=默认草稿
+            assertEquals(AlbumPanelDraft(), viewModel.uiState.value.filterPanel.draft)
+            assertFalse(viewModel.uiState.value.filterPanel.visible)
+
+            // 旧代A响应迟到：被代际校验丢弃
+            repo.assetsGateCalls[0].gate.complete(
+                AssetPageResult(items = listOf(asset("stale-a")), nextCursor = null, totalMatched = 1),
+            )
+            advanceUntilIdle()
+            assertTrue(viewModel.uiState.value.cos.items.isEmpty())
+            assertTrue(viewModel.uiState.value.cos.isLoading)
+
+            // 新代（默认筛选）落地
+            repo.assetsGateCalls[1].gate.complete(
+                AssetPageResult(items = listOf(asset("default")), nextCursor = null, totalMatched = 1),
+            )
+            advanceUntilIdle()
+            assertEquals(listOf("default"), viewModel.uiState.value.cos.items.map { it.id })
+            assertFalse(viewModel.uiState.value.cos.isLoading)
         }
 }

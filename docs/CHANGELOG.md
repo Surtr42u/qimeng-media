@@ -9,6 +9,17 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## test(app): 任务R R1 cosGeneration 代际防乱序对位单测——4 例锁定筛选/翻页/重置全路径（2026-09-13 第二百三十笔）
+
+执行 AI：GLM-5.3（executor 子代理实施，主代理门禁验收）
+
+- **对象**：`HomeViewModel.cosGeneration`（任务Y Y4b 引入，任务Y 遗留待办④，Y7 reviewer P2-2 记档「下卷补」）。新增 4 例纯 JVM 单测（`HomeViewModelTest` 既有口径追加，既有 10 例一字未动；Fake 扩展为可选闸门 `assetsGated`，默认关=既有用例行为不变，开=每次调用挂独立 gate 由测试决定归位顺序与成败——单一共享 gate 一次 complete 会同时放行所有等待者区分不了代次，故逐调用独立）。
+- **锁定行为**：①筛选A在途时应用筛选B——A 迟到成功响应整代丢弃（items/loading/nextCursor 均不被污染），B 整页落地，且两次请求 `AssetQuery.sort` 各携带当次快照（VIEW_COUNT/NAME，证明非「最终态重放」）；②A 迟到**失败**不弹错误不收 loading；③翻页在途（isInitial=false，代际不递增）时应用新筛选——翻页旧代响应丢弃不追加、cursor 不改写，新代整页替换（isInitial=true 绕过 isLoading 防重、exhausted 随 null cursor 置位；可控时钟绕开 J3a 哨兵抑制窗触发触底）；④resetPanelDraft 走 applyPanelDraft 同链（草稿与已应用态回默认、代际推进、在途旧代响应丢弃）。
+- **实测**：`:feature:home:testDebugUnitTest` 14/14 绿（10 旧+4 新）；门禁三连（assembleDebug+testDebugUnitTest+:core:model:test+lintDebug，--max-workers=2 低 CPU 档）BUILD SUCCESSFUL 1m33s，证据 `%TEMP%\qimeng-r1-evidence\gate-r1.log`。
+- 记档：`ExperimentalCoroutinesApi` opt-in 警告为该文件既有状况（L159 起即有），本批未新增警告类别；全量 opt-in 需触碰既有声明区，超出「只加不改」红线未动。
+- 任务书：《QimengNAS\任务R-R8性能优化与单测补强卷.md》R1 勾选（仓库外）。
+
+---
 ## docs: 任务S/T 立卷与调度落账——用户拍板四条+双会话并行口径（2026-09-12 第二百二十九笔）
 
 执行 AI：GLM-5.3（主代理）
