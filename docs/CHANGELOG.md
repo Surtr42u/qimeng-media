@@ -9,6 +9,18 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## fix(app): 任务S S1 对齐小修批——时间轴标签服务端色消费断开（前缀档锁定）+ 作者 Sheet 恢复点外关闭（2026-09-13 第二百四十一笔）
+
+执行 AI：GLM-5.3-Flash（主代理调度验收；executor 子代理实施）
+
+- **S1a 时间轴标签颜色对齐旧版（用户 2026-09-12 拍板）**：App 消费侧断开服务端 color 透传——`TimelineTagEntity.serverColor` 字段删除 + `VideoStage` 映射不再透传 + `BiliPlayerView.createTagChip` 删除服务端色解析与 `backgroundTintList` 覆盖（原 N4 第一百六十五笔「服务端 color 优先」逻辑退役），芯片底色恒按前缀档 drawable（❤→红/⭐→金）。**BiliPlayerView 走冻结件三件套**：类 KDoc 增补适配点⑧（解冻令=拍板原文；根因=N3 #32 服务端色覆盖、Y2 第二百二十笔裁决；沿革=协议 color 字段/领域模型 TimelineTag.color/迁移 0009/服务端/Web 消费一律不动）。协议镜像字段保留（`AssetDetailModels.TimelineTag.color` KDoc 改口径），`SdkDetailMappers` 透传断言不动。
+- **S1b 作者 Sheet 点外关闭恢复（W9 三项之二拍板）**：`DetailAuthorSheet` 的 `shouldDismissOnClickOutside` 恢复 `true`（W3 第二百零五笔当时置 false），返回键/下滑出口不动；KDoc 三陷阱记档保留并注明现口径（dragHandle=null 与 standardWindowInsets 两处置仍生效）。
+- **测试锁定**：`TimelineTagColorsTest` 新增反射用例「实体无 serverColor 字段（2026-09-12 拍板对齐旧版）」——字段回流即视为服务端色重新接入显示链，锁死防回归；原 5 用例+新 1 共 6 用例全绿。
+- **验证**：门禁三连低 CPU 档（`--max-workers=2 -Dorg.gradle.priority=low`）assembleDebug+testDebugUnitTest+:core:model:test+lintDebug 全绿（430 用例 0 失败）；**qimeng_api35c 全新模拟器（headless -port 5567，铁律 13 合规）+18461 隔离虚构库走查**：curl 造带服务端色标签（❤ #d6336c 粉 / ⭐ #00aa00 绿）→ App 播放器芯片显示前缀档暗红/暗金，服务端色未参与（证据 %TEMP%\qimeng-s1-evidence-14~16）；作者 Sheet 点外 scrim 关闭、返回键/下滑保留（证据 -12~-13）。
+- **预存失败披露**：`:core:network` DataStore 测试 2/3 在 Windows 预存红（preferences_pb.tmp rename 竞态）——已用 git stash 在干净树复验先于本批存在，与本批零文件交集，按不扩围纪律未修，留待拍板（可并入后续 server/CI 清欠批）。
+- 环境记档：qimeng_api35c AVD 本批新建（pixel_6/API35/google_apis/x86_64/512M，对齐 qimeng_api35）；`input text` 不支持中文（NPE），虚构库造数一律走 python UTF-8 脚本（curl 命令行会被 GBK 代码页毁名）。
+
+---
 ## docs: 任务T 晨间汇总（会话B · 2026-09-13 夜）——T 卷无依赖批次全部完成，三节点挂起等用户（2026-09-13 第二百四十笔）
 
 执行 AI：GLM-5.3（主代理）

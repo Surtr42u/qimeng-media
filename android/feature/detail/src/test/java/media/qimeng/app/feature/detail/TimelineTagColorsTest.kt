@@ -1,6 +1,7 @@
 package media.qimeng.app.feature.detail
 
 import androidx.compose.ui.graphics.Color
+import media.qimeng.app.feature.detail.video.TimelineTagEntity
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -47,5 +48,14 @@ class TimelineTagColorsTest {
         assertTrue(TimelineTagColors.hasColorPrefix("⭐ b"))
         assertFalse(TimelineTagColors.hasColorPrefix("c"))
         assertFalse(TimelineTagColors.hasColorPrefix(""))
+    }
+
+    @Test
+    fun `服务端color不再参与显示决策 - 实体无serverColor字段（2026-09-12拍板对齐旧版）`() {
+        // S1a：消费侧断开——TimelineTagEntity 已删 serverColor 字段，芯片恒按 TimelineTagColors
+        // 前缀档取色；若该字段回流即意味着服务端色重新接入显示链，用反射锁死防回归。
+        // （协议镜像 core model TimelineTag.color 保留不动，映射层透传断言归 SdkDetailMappersTest。）
+        val fieldNames = TimelineTagEntity::class.java.declaredFields.map { it.name }
+        assertFalse("serverColor 应已删除（S1a 拍板对齐旧版），不应回流实体", fieldNames.contains("serverColor"))
     }
 }

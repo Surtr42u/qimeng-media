@@ -285,9 +285,11 @@ internal fun VideoStage(
     // 时间轴标签（3d）：领域模型 → 桥接实体映射（timeMillis 直传；实体遗留字段
     // recordKey/fileName 填本资产标识、createdAtMillis 桥接件仅作展示来源不消费填 0；
     // timelineTagId 以列表序号占位——桥接件不消费该字段，域 id 由长按菜单经序号反查）。
-    // 颜色说明：芯片红/金配色由桥接件按 TimelineTagColors.HEART_PREFIX/STAR_PREFIX 裸前缀
-    // 判定自绘（bg_timeline_tag_like/fav，改动最小面；裸前缀同时命中带/不带变体符写法），
-    // Compose 侧不重复注入颜色；TimelineTagColors 亦供添加对话框快捷键（写入字面量单源）。
+    // 颜色说明（S1a 2026-09-12 拍板「对齐旧版」后口径）：芯片红/金配色由桥接件按
+    // TimelineTagColors.HEART_PREFIX/STAR_PREFIX 裸前缀判定自绘（bg_timeline_tag_like/fav，
+    // 裸前缀同时命中带/不带变体符写法），Compose 侧不重复注入颜色；服务端 color 已不再
+    // 透传给桥接件（显示恒按前缀档，协议镜像 TimelineTag.color 保留）；TimelineTagColors
+    // 亦供添加对话框快捷键（写入字面量单源）。
     val tagEntities = remember(timelineTags, asset.id) {
         timelineTags.mapIndexed { index, tag ->
             TimelineTagEntity(
@@ -297,7 +299,6 @@ internal fun VideoStage(
                 timeMillis = tag.timeMillis,
                 name = tag.name,
                 createdAtMillis = 0L,
-                serverColor = tag.color,
             )
         }
     }

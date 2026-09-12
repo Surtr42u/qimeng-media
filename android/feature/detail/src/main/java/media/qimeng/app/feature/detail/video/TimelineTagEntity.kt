@@ -2,7 +2,9 @@ package media.qimeng.app.feature.detail.video
 
 /**
  * 时间轴标签（3c）——旧项目 QimengMedia Room 实体 `TimelineTagEntity` 的纯数据类副本
- * （ADR-0014 桥接例外③的配套剥离：**字段不变、Room 注解剥离**）。
+ * （ADR-0014 桥接例外③的配套剥离：**字段不变、Room 注解剥离**；S1a 2026-09-12 拍板
+ * 「时间轴标签颜色对齐旧版」后较旧实体少 serverColor 一字段——服务端 color 不再参与
+ * App 显示决策，协议镜像保留在 core model TimelineTag.color，见类内注记）。
  *
  * 剥离原因：本模块依赖面不含 Room（feature 只依赖 core，ADR-0014）；BiliPlayerView 桥接件
  * 公开面 `updateTimelineTags`/`onTagLongPress` 以此类型为参数，搬运时保持公开面不变。
@@ -22,6 +24,6 @@ data class TimelineTagEntity(
     val timeMillis: Long,
     val name: String,
     val createdAtMillis: Long,
-    /** 服务端存储色（"#rrggbb"；null/空=无——桥接件回退 TimelineTagColors 前缀推断，保底不删） */
-    val serverColor: String? = null,
+    // 旧实体的 serverColor 字段已删（S1a 2026-09-12 拍板）：芯片恒按前缀档取色，服务端
+    // color 消费链在映射层断开；协议字段由 core model TimelineTag.color 镜像保留（不删）。
 )

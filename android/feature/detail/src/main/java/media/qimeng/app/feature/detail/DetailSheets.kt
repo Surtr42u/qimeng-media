@@ -189,7 +189,7 @@ internal fun DetailJumpSheet(
  * displayName·COS、关注/取关钮（toggleFollow 既有链闭环可用）、「进入作者主页」（壳层
  * onOpenAuthor → authorCollection 既有路由，跳转后随 Sheet 关闭）。无作者不渲染条目（胶囊
  * 恒可点开空 Sheet，与「该文件暂无关联作者」空态口径一致）。无「完成」按钮（返回键/下滑
- * 手势关闭，见下）。
+ * 手势/点外 scrim 关闭，见下）。
  *
  * 为什么不用 ModalBottomSheet 缺省形态（任务W W3 P1 修复，2026-09-12 模拟器走查实证）：
  * material3 1.5.0-alpha15 重写件对**短内容** sheet 有三个叠加陷阱——①拖拽 handle 变为
@@ -198,8 +198,11 @@ internal fun DetailJumpSheet(
  * 百像素级瞬态偏差；③缺省 modalWindowInsets 给内容加 statusBars 顶部死区。作者 Sheet
  * 内容仅两行，三者叠加导致按视觉坐标点「+关注」/「进入作者主页」命中 scrim/handle/惰性
  * 区，按钮 onClick 从未收到事件（实证：服务端零 follow 请求、零导航，Sheet 反被关闭）。
- * 处置：去 handle（消灭点击即收起条）+ scrim 点击不再收起（误触不再吞掉 Sheet；返回键
- * 与下滑手势仍可关）+ insets 收窄为仅底部并补顶部小间距（紧凑、回弹行程小）。
+ * 处置沿革：W3 当时三陷阱全规避——去 handle + scrim 点击不再收起（防误触吞 Sheet）+
+ * insets 收窄为仅底部并补顶部小间距。现口径（S1b 2026-09-12 用户拍板「全修复 W9 三项
+ * 之二」）：dragHandle=null（防 handle 点击即收起）与 standardWindowInsets（防 statusBars
+ * 死区吞 onClick）两陷阱处置仍生效；点外关闭已恢复——shouldDismissOnClickOutside 按拍板
+ * 回到 true（scrim 点击收起），返回键与下滑手势出口本就保留、不动。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -212,12 +215,12 @@ internal fun DetailAuthorSheet(
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        // 三个缺省行为陷阱的处置依据见上 KDoc（alpha15 短内容 sheet P1 实证）
+        // 三个缺省行为陷阱的处置沿革与现口径（S1b 点外关闭已恢复）见上 KDoc（alpha15 短内容 sheet P1 实证）
         dragHandle = null,
         contentWindowInsets = { BottomSheetDefaults.standardWindowInsets },
         properties = ModalBottomSheetProperties(
             shouldDismissOnBackPress = true,
-            shouldDismissOnClickOutside = false,
+            shouldDismissOnClickOutside = true,
         ),
     ) {
         Column(
