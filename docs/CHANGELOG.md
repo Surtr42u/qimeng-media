@@ -9,6 +9,39 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## feat(app): 任务Y Y4a+Y6 批——首页顶栏图标化+筛选入口+芯片切换瞬时化（2026-09-12 第二百二十二笔）
+
+执行 AI：GLM-5.3-Flash（executor 子代理实施，reviewer 子代理对抗审查【通过】含 pathData 逐字比对+录屏零中间帧重放）
+
+- **Y4a 顶栏图标（问题1）**：删「N列」文字按钮，搜索框右侧按旧实录次序插两枚 40dp 胶囊图标钮（筛选左/列数右，bg_capsule_soft 胶囊底+primary tint+按压缩放 0.92 同旧版）；新增 Grid1Icon/HomeFilterIcon（pathData 逐字拷旧 ic_grid_1/ic_home_filter）；列数图标 1↔2 档随列数切换（1 档特判，gridIconFor 2..5 语义不动），toggleHomeColumns 1..2 循环+DataStore 持久化沿用（与旧版同口径）；**2026-09-06「首页筛选不做」旧拍板正式反转落档**（2026-09-12 用户拍板），onOpenFilter 回调上抛（默认空实现，面板接线归 Y4b）。间距逐项实录化（标题 end 10dp/筛选钮 10/6dp）。
+- **Y6 芯片切换瞬时化（问题6）**：首页三芯片（推荐/COS/排行榜）点击由 animateScrollToPage（~300ms 滑动过渡）改 **scrollToPage 瞬时跳页**，对齐旧版 HomeFragment.setTab 无动画语义；HorizontalPager 横滑手势保留（比旧版 fling 更跟手，记档差异）；对齐重试循环/500ms 哨兵未动，录屏 224 帧扫描零分屏中间帧+logcat 单条 aligned 实证无死循环。
+- **实测**：门禁三连绿；列数切换/重启持久化/连点四芯片全部落位；HomeScreen 同文件 Y3（标题 24sp Bold）+Y4a+Y6 三处改动共存无缠绕（reviewer 复核）。
+
+## feat(app): 任务Y Y3 批——全局字体体系对齐旧版（2026-09-12 第二百二十一笔）
+
+执行 AI：GLM-5.3-Flash（executor 子代理实施+像素级 sp 反推验证，reviewer 子代理对抗审查【通过】含色值采样独立复核）
+
+- **根因（问题2）**：新端 `QimengTypography=Typography()` 空默认（全仓 133 处角色引用走 M3 默认字号），与旧版 styles/layout 规格系统性偏离。
+- **裁决=组件级精准对齐（不改 Typography 角色）**：旧版页标题自身三档（全部页 28sp/首页 24sp/收藏历史 22sp，均 Bold），角色级一刀切会牺牲其他页。QimengTitleRow 加 titleStyle 可选参数（默认零影响），逐页传入：相册 28sp Bold+lineHeight36、首页 24sp Bold（独立顶行）、收藏/历史 22sp Bold；组头（QimengMediaGrid）14sp Medium 浅灰 → **16sp Bold+primary 槽 #3A3A3A+padding 4/18/4/10**（旧 GroupedMediaAdapter 逐值）；统计行 500→400 Regular。
+- **实测**：模拟器 uiautomator bounds 反推 sp 四页全精确（28/24/22/22）、组头与统计行色值采样 RGB 精确命中 #3A3A3A/#9A9A9A；门禁三连绿；Type.kt 仅注释记档。SegPill 零改动（调研口径与现状不符，现场核实已是 Normal）；胶囊高度维持 F 批 32dp 档记档。
+- 备注：统计行「· X GB」容量缺数据源为既有存疑项（DOMAIN_RULES 口径），非本批范围。
+
+## feat(app): 任务Y Y2 批——详情页样式对齐旧版（2026-09-12 第二百二十笔）
+
+执行 AI：GLM-5.3-Flash（executor 子代理实施，reviewer 子代理对抗审查【通过】含与旧 drawable 几何逐值比对）
+
+- **改动（问题4：详情页胶囊/字体的微略不一致）**：①顶部 i/N 计数 14sp SemiBold → **18sp Bold**+格式去空格（对齐旧 detailFileName 18sp bold「8/3822」）；②四胶囊容器 padding 4dp/0 → **水平 24dp/上6/下10**（旧 detailBottomDock 逐值）；③图标 glyph 24→**22dp**（新页面级常量，全局默认不动）；④**收藏图标星形→心形**（FavoriteFilled/Border 双态，path=Material 官方 favorite 口径与旧 ic_detail_favorite*.xml 几何逐值等价；旧版用户一年心智=心形）；⑤浅色模式 chrome 渐变基色对齐旧版暖纸 **#F2F1ED**（alpha 0.9 同构；**夜间保持 X7 主题化渐变**——旧版无 night 变体属旧版缺陷，记档不跟）；触达区 48dp 保留（M3 无障碍基线优于旧版 40dp，记档）。
+- **时间轴标签裁决**：研究车道核实芯片代码与三件 drawable 与旧版**逐字节一致**，不改；用户观感差异来源=N3 #32 服务端下发颜色覆盖（backgroundTintList，旧版无此功能）——是否降级交用户拍板。
+- 实测：门禁三连绿；浅色/夜间/收藏双态截图对照；点赞与标签字形差异（lucide 线性风 vs Material 实底）属结构级拍板项维持不动记档。
+
+## fix(app): 任务Y Y1 批——详情页残留上下拖动根修（2026-09-12 第二百一十九笔）
+
+执行 AI：GLM-5.3-Flash（executor 子代理实施，reviewer 子代理对抗审查【通过】含滚动列结构独立分析）
+
+- **根因（问题3）**：X2 下滑区裁剪后 DetailContentSections 残留「底部呼吸空间」Box（DETAIL_BOTTOM_SPACER padding），滚动列内容高=舞台盒(全屏)+留白 → 恰余一段可拖量=真机残留上下拖动感。
+- **修**：删该 Box（本节仅剩错误横幅条件渲染，无错误时高度 0）；DETAIL_BOTTOM_SPACER 常量保留（弹窗族 DetailTagSheet/DetailSheets 4 处在用，KDoc 记档口径）。
+- **实测**：排版态与沉浸态上滑**像素 diff=0**（246 万像素逐位比对）+uiautomator scrollable=false 双证；门禁 build/test 绿。
+
 ## feat(app): 任务X X8 收官批——孤儿清偿+全卷终审走查（2026-09-12 第二百一十八笔）
 
 执行 AI：GLM-5.3-Flash（主代理收官清偿+全链路走查；X1~X7 每批独立对抗审查【通过】）

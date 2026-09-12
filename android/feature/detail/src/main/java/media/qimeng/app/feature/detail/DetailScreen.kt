@@ -501,10 +501,13 @@ fun DetailScreen(
  * 加载成功后的信息内容区（媒体层下方；任务X X2 下滑区裁剪终态，2026-09-12 用户拍板
  * 「删除下方的文件名字等等，只保留四个胶囊」）：标题/meta/标签行三段整段退役（组件随
  * 调用一并删除、孤儿清偿见 DetailSections.kt），本节仅剩错误横幅（互动失败唯一提示面，
- * 条件渲染）+ 底部呼吸空间——常态无可滚内容，verticalScroll 门控（chromeEffective）自然
- * 失效，滚动列结构与舞台盒几何未动。沿革记档：W3 作者卡移植 DetailAuthorSheet、「接下来
- * 播放」推荐栏整段退役；V2 删 pager 行（i/N 由顶部 chrome 承担）；V3 互动行退役（点赞/
- * 收藏上移首屏四胶囊）。舞台动作不在本节（归媒体舞台浮层）。
+ * 条件渲染；errorMessage null 时整节为空、高度归零）。沿革记档：任务Y Y1（2026-09-12
+ * 真机反馈第 3 条「详情页残留上下拖动」根修）删除原「底部呼吸空间」Box——X2 裁剪后
+ * 滚动列内容=舞台盒（全屏高）+此留白，内容高超出视口恰余 DETAIL_BOTTOM_SPACER 高的
+ * 可拖余量；删除后常态内容高=舞台盒高=视口高，门控（chromeEffective）之外再无可滚量。
+ * 更早沿革：W3 作者卡移植 DetailAuthorSheet、「接下来播放」推荐栏整段退役；V2 删
+ * pager 行（i/N 由顶部 chrome 承担）；V3 互动行退役（点赞/收藏上移首屏四胶囊）。
+ * 舞台动作不在本节（归媒体舞台浮层）。
  */
 @Composable
 private fun DetailContentSections(
@@ -513,12 +516,11 @@ private fun DetailContentSections(
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         // 错误横幅（互动失败不退场，home 的 ErrorBanner 模式可点关）：置内容区首位
-        //（媒体舞台下方——沉浸第一屏不被横幅推挤）
+        //（媒体舞台下方——沉浸第一屏不被横幅推挤）。Y1：末尾呼吸空间已删（真机残留
+        // 拖动根因），常态本节空、滚动列内容止于舞台盒底
         state.errorMessage?.let { message ->
             DetailErrorBanner(message = message, onDismiss = onDismissError)
         }
-        // 底部呼吸空间（避免末节贴系统导航栏；轻量档）——I7 起恒显（chrome 不再占用本节）
-        Box(modifier = Modifier.padding(bottom = DETAIL_BOTTOM_SPACER))
     }
 }
 
@@ -570,7 +572,11 @@ private fun SystemBarsImmersiveEffect(chromeVisible: Boolean) {
     }
 }
 
-/** 页面级底部预留（轻量档；与网格页 180dp 防遮挡档语义不同。标签弹窗底部留白同档复用） */
+/**
+ * 底部留白常量（轻量档；与网格页 180dp 防遮挡档语义不同）。任务Y Y1 起页面级使用已删
+ * （DetailContentSections 呼吸空间=真机残留上下拖动根因），仅弹窗族底部留白继续复用
+ * （DetailTagSheet/DetailSheets，单源在本文件）。
+ */
 internal val DETAIL_BOTTOM_SPACER = 24.dp
 
 /** 错误横幅纵向留白（沿用 3a 排版档；横幅在沉浸结构中挂内容区首位） */
