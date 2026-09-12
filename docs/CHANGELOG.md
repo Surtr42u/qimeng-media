@@ -9,6 +9,18 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## feat(server): 任务T T4 旧项目数据迁入批——虚构备份端到端演练 129 断言全绿 + 迁移指引入库（2026-09-13 第二百三十八笔）
+
+执行 AI：GLM-5.3（主代理调度验收；executor 子代理实施脚本；主代理七轮环境坑修复后全绿）
+
+- **执行顺序记档**：任务书原序 T3→T4，因 T3 前置（任务S S2 收官）未满足而按夜间模式「无依赖批次照常推进」先做 T4（T4 文件集=deploy 文档+仓库外证据脚本，与 android 零交集）；T3 待 S2 收官回归。
+- **虚构备份端到端演练（%TEMP%\qimeng-t4-evidence\，129 PASS/0 FAIL）**：gen-fixture.py 确定性生成 17 段全覆盖虚构备份（含同名不同文件夹消歧组/三口径可断言差值）+ run-t4.sh 十步演练（Termux 实装环境：服务端以 com.termux uid 跑在 qimeng_api35t，媒体投放 Termux 私有目录布局）——**事件回放三口径逐项验证**（文件A=dailyBrowse 明细 7+差额 3=10；文件B=差额 5+history 补漏 1=6；文件C 零差额原样 2）、likes 落最后点赞日一行、favorites 幂等 upsert、cos_ 作者保留、cosWorks 不逐条导入、**幂等锚点**（同 exportedAtMillis 重导 eventsReplayed=0 全计数不变）、**导出回环**（export→再导入=新批次全量重放 alpha 10→20→同批幂等）、warnings 7 条全核对——M3 端点零新开发零改动，纯验证。
+- **环境坑七连修记档（Git Bash on Windows 验证工程经验）**：①EVID 用 mixed 形态（Windows 原生 python 不认 /tmp）；②共享存储对 app uid 在 headless 模拟器不可达（scoped storage 授权 UI 无法复现）——媒体布局改 Termux 私有目录（next-steps §1.2 备选），共享存储注册扫描挂真机节点；③while read 循环内 adb 吞 stdin（首文件后全漏投）——循环内 adb 一律 </dev/null；④Windows python 重定向文件 CRLF 三处剥离（表消费/幂等比较/asset-ids）；⑤详情跨轮残留旧 asset-id 文件混入 map——清场段连清 details*/；⑥导入前拉取的详情不含导入后状态——步骤7 开头重拉重建；⑦断言键名以 import 响应实键为准（authorRefsSkipped/tagRefsSkipped 不存在，executor 预设字段勘误）。
+- **deploy/termux/MIGRATION.md 入库**：面向用户的迁移指引——前置确认/媒体原地注册（含 COS 库 kind=cos 重扫重建语义）/curl 与 Web 双通道导入/幂等安全说明/warnings 7 类解读表/迁移完整性核对表（计数对照+App 抽查项）/退役与双向备份说明。
+- **真机节点挂起（夜间模式，不阻塞）**：真备份 `<旧项目目录>\qimeng_backup.json` 迁移=用户确认后执行（2026-09-04 搁置项⑤由本批激活待命）；Termux 共享存储 ~/storage/shared 路径注册扫描同挂真机验证。
+- 任务书：《QimengNAS\任务T-M6单机形态卷.md》T4 勾选（仓库外；真迁移子项挂起记档）。
+
+---
 ## fix(app): 任务R R3 收官——reviewer 抓 P1 修复（keep 宿主类名错位 UploadApiBodies）+门禁复跑+终包装机冒烟，任务R 收卷（2026-09-13 第二百三十七笔）
 
 执行 AI：GLM-5.3（reviewer 子代理对抗审查；executor 子代理 P1 返工；主代理门禁/装机冒烟/收官）
