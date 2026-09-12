@@ -131,6 +131,18 @@ func main() {
 		FFprobePath: cfg.Thumbnail.FFprobePath,
 	})
 
+	// ffmpeg/ffprobe 启动期自检（告警不阻断）：缺失=既定降级形态，提前到部署
+	// 当下暴露（M6 单机形态二进制投放错误时第一时间可见，不等首次调用）。
+	ffBin, fpBin, ffErr, fpErr := thumbnail.CheckBinaries(cfg.Thumbnail.FFmpegPath, cfg.Thumbnail.FFprobePath)
+	if ffErr != nil || fpErr != nil {
+		logger.Warn("ffmpeg/ffprobe 自检未通过：缩略图/探测将降级运行（缩略图 404 占位、视频元数据留空、下次扫描自动重探）",
+			"ffmpeg", ffBin, "ffmpegErr", ffErr,
+			"ffprobe", fpBin, "ffprobeErr", fpErr,
+			"hint", "检查二进制投放或 config thumbnail.ffmpeg_path/ffprobe_path")
+	} else {
+		logger.Info("ffmpeg/ffprobe 自检通过", "ffmpeg", ffBin, "ffprobe", fpBin)
+	}
+
 	apiSrv, err := httpapi.New(httpapi.Deps{
 		Conn:        conn,
 		Queries:     queries,

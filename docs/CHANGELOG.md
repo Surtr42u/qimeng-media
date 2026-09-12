@@ -9,6 +9,20 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## feat(server): 任务T T1 服务端Android构建批——Makefile 双交叉target+ffmpeg启动自检+模拟器shell域闭环脚本（2026-09-13 第二百三十四笔）
+
+执行 AI：GLM-5.3（主代理调度验收；executor 子代理实施；reviewer 对抗审查通过）
+
+- **范围记档（增量口径）**：任务书 T1 的「ffmpeg/ffprobe 路径可配置化」经查已由旧批 7452fd0（S-3）完整交付（config.Thumbnail.FFmpegPath/FFprobePath + thumbnail.resolveBin + binpath_test + main 装配），本批不重做，只补其缺口——启动期可用性自检。
+- **Makefile 双 target（纯追加）**：`server-android-arm64`（CGO_ENABLED=0 纯静态，POC 实证路线，产物 build/android/arm64-v8a/qimeng-server 26.3MB）与 `server-android-amd64`（Go 硬限制 android/amd64 必 cgo 外链，借 NDK 28.2 clang wrapper，产物 27.7MB，仅供 x86_64 模拟器验证）；产物投放口径（T2 Termux $HOME/.qimeng/bin / T6 jniLibs libqimeng.so）写入 target 注释；help 行 grep 字符类扩含数字（否则带数字 target 名不进索引，列宽 14→22）。
+- **ffmpeg 启动自检（告警不阻断）**：thumbnail.CheckBinaries——与 run() 同走 resolveBin 单点解析后 exec.LookPath（显式配置验存在可执行/空配置走 PATH，自检对象=实际 exec 对象不漂移）；main 装配处 Warn（含降级语义与投放 hint）/Info 二分支。bincheck_test.go 4 用例（显式缺失/空 PATH/跨平台成功分支用 os.Executable 自身/逐字回传契约）。
+- **deploy/emulator-verify/ 入库**：run-t1.sh 11 步闭环证据脚本（幂等清理→boot 检查→构建→推送→screenrecord 造真 mp4+坏 jpg→nohup 启动→healthz→dev-login→注册库→扫描终态→无 ffmpeg 降级断言→sysmon 取证→SQLite WAL 三件套→自检 Warn 日志断言）+ README；铁律13 口径硬编码 serial emulator-5581（qimeng_api35t 专属，17 处设备操作全带 -s）。
+- **验证证据（%TEMP%\qimeng-t1-evidence\）**：隔离 git worktree（HEAD+本批6文件，规避并行会话在途代码污染）双 target 构建通过 + `go test ./... -p 2` 14 包全绿；模拟器闭环 11 步 PASS（终版 20s）——**无 ffmpeg 降级三件证据**：视频 durationMs/width/height/videoCodec 全空（无 ffprobe）+ 缩略图 404 THUMBNAIL_FAILED（无 ffmpeg）+ 扫描器"元数据留空待重探"日志；**sysmon Android 取值核对**（POC 存疑点4 模拟器路径闭合）：memTotalBytes 2,592,722,944B 与 /proc/meminfo 2531956kB 精确一致、CPU 4 核与 abilist 一致、磁盘 totalBytes 与 df 精确一致；modernc SQLite WAL 三件套齐备（存疑点3 amd64 侧复证）。
+- **reviewer P3×4 现场修复**：扫描终态轮询"先见 scanning"防窗口逻辑在快扫描下成死路径（两轮实测白等满 120s）→ 改"非 scanning 且已见 scanning 或轮询≥3 次"；轮询循环 grep/curl 补 || true（set -e 下瞬时失败杀脚本）；README 依赖说法勘误（make/go 非 Git 自带）；NDK 宿主三元组 Windows-only 注释。另修 curl -o 中转文件偶发 exit 23（Git Bash 新建文件写失败）→ 7.3/7.7 体+码合并捕获。
+- 并行纪律执行：与任务R/S 共树全程零冲突（本批文件集=Makefile+cmd/qimeng+thumbnail×2+deploy×2，对方 231 笔主动避让互认）；arm64 真机投放与运行时验证= T2 真机节点（用户参与，夜间模式挂起不阻塞）。
+- 任务书：《QimengNAS\任务T-M6单机形态卷.md》T1 勾选（仓库外）。
+
+---
 ## refactor(server): 系统性清偿——facets 超线拆分/协议错误码单源/纵深防御三闸/字面量具名（2026-09-13 第二百三十一笔）
 
 执行 AI：GLM-5.3（主代理；researcher 三路摸底+逐项核实后主代理实施）
