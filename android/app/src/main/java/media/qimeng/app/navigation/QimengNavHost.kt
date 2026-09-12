@@ -268,14 +268,11 @@ fun QimengNavHost(
                 SettingsScreen(
                     onOpenFavorite = { navController.navigate(Routes.FAVORITE) },
                     onOpenHistory = { navController.navigate(Routes.HISTORY) },
+                    // X5 批 2026-09-12：作者总览改收藏同款入口行，onOpenAuthors=唯一作者入口；
+                    // 原总览卡 Top5 直达作者集合页的参数随内嵌卡退役，行级直达
+                    // 统一走 AuthorScreen 的 onAuthorClick（Routes.AUTHORS 组合内）
                     onOpenAuthors = { navController.navigate(Routes.AUTHORS) },
                     onOpenUpload = { navController.navigate(Routes.UPLOAD) },
-                    // RES R2：总览卡 Top5 行直达作者集合页（清偿 I4「待壳层共享窗口」挂账）
-                    onOpenAuthorCollection = { authorId, displayName ->
-                        navController.navigate(
-                            AuthorCollectionRoutes.authorCollectionRoute(authorId, displayName),
-                        )
-                    },
                 )
             }
             composable(

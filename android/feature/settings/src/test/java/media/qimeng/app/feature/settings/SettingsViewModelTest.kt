@@ -7,7 +7,6 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -18,14 +17,11 @@ import media.qimeng.app.core.data.events.ViewEventQueue
 import media.qimeng.app.core.data.events.ViewEventSender
 import media.qimeng.app.core.data.events.ViewEventSendResult
 import media.qimeng.app.core.data.repository.AuthRepository
-import media.qimeng.app.core.data.repository.AuthorRepository
 import media.qimeng.app.core.data.repository.CoilCacheManager
 import media.qimeng.app.core.data.repository.DiskCachePrefsRepository
 import media.qimeng.app.core.data.repository.RecommendPrefsRepository
 import media.qimeng.app.core.data.repository.StatsRepository
 import media.qimeng.app.core.data.repository.SystemInfoRepository
-import media.qimeng.app.core.model.AuthorSummary
-import media.qimeng.app.core.model.AuthorType
 import media.qimeng.app.core.model.DiskCacheQuota
 import media.qimeng.app.core.model.RecommendPrefsValues
 import media.qimeng.app.core.model.RecommendPreset
@@ -37,13 +33,12 @@ import media.qimeng.app.core.testing.MainDispatcherRule
 
 /** 与 SettingsViewModel 私有常量对齐的反馈文案（文案属反馈契约，ViewModel 侧改动须同步此处） */
 private const val SAVE_FAILED_TEXT = "保存失败，请重试"
-private const val LOAD_AUTHORS_FAILED_TEXT = "作者列表加载失败，请重试"
 
 /**
- * 我的页 ViewModel 单测（M4-6）：登出会话闭环（M4-1 原语义）+ 作者总览卡聚合（G2）+
- * 预设应用（C4）+ 档位持久化/清空（C5）+ 服务端版本（C6）。
- * 总览计数/Top5 聚合纯函数本身由 :core:model 单测锁定，这里锁 UI 状态编排与仓库触达；
- * C4 的取关路径已随 G2 总览卡下线（关注 toggle 归作者管理页），对应用例移除。
+ * 我的页 ViewModel 单测（M4-6）：登出会话闭环（M4-1 原语义）+ 预设应用（C4）+
+ * 档位持久化/清空（C5）+ 服务端版本（C6）。
+ * X5 批 2026-09-12：作者总览卡退役（我的页改收藏同款入口行），总览聚合/读失败用例
+ * 与 FakeAuthorRepository 随之移除；纯计数/排序仍由 :core:model 单测锁定。
  */
 class SettingsViewModelTest {
 
@@ -51,30 +46,6 @@ class SettingsViewModelTest {
     val mainDispatcherRule = MainDispatcherRule()
 
     // ---------- 测试替身（最小行为，只满足本页编排断言） ----------
-
-    private class FakeAuthorRepository(
-        authors: List<AuthorSummary>,
-    ) : AuthorRepository {
-        private val rows = authors.toMutableList()
-        val followCalls = mutableListOf<Pair<String, Boolean>>()
-
-        /** 可编程：非空时 setFollowed 抛出（P2-3 失败路径：静默吞错回归锁定） */
-        var unfollowError: Throwable? = null
-
-        /** 可编程：非空时 authors 抛出（refreshAuthorOverview 读失败路径锁定） */
-        var authorsError: Throwable? = null
-
-        override suspend fun authors(): List<AuthorSummary> {
-            authorsError?.let { throw it }
-            return rows.toList()
-        }
-
-        override suspend fun setFollowed(authorId: String, followed: Boolean) {
-            unfollowError?.let { throw it }
-            followCalls += authorId to followed
-            rows.replaceAll { if (it.id == authorId) it.copy(followed = followed) else it }
-        }
-    }
 
     private class FakePrefsRepository : RecommendPrefsRepository {
         var current: RecommendPrefsValues? = RecommendPreset.BALANCED.toPrefsValues()
@@ -136,9 +107,6 @@ class SettingsViewModelTest {
         override fun capacityBytes(): Long = DiskCacheQuota.DEFAULT.bytes
     }
 
-    private fun author(id: String, followed: Boolean, fileCount: Int? = null) =
-        AuthorSummary(id = id, displayName = "作者$id", type = AuthorType.REGULAR, fileCount = fileCount, followed = followed, viewCount = null)
-
     /** 内存事件队列 DAO（任务L L5：立即同步/导出用例；语义按接口契约复刻） */
     private class FakeEventDao : PendingViewEventDao {
         val rows = mutableListOf<PendingViewEventEntity>()
@@ -198,19 +166,16 @@ private object FixedEventClock : media.qimeng.app.core.data.events.EventClock {
 
     private fun viewModel(
         auth: AuthRepository = FakeAuthRepository(initialServerUrl = "http://10.0.2.2:8420", initialLoggedIn = true),
-        authors: List<AuthorSummary> = listOf(author("1", true, fileCount = 3), author("2", false, fileCount = 10), author("3", true, fileCount = 5)),
         prefs: RecommendPrefsRepository = FakePrefsRepository(),
         version: String? = "v0.9.0",
         cachePrefs: DiskCachePrefsRepository = FakeDiskCachePrefsRepository(),
         cacheManager: CoilCacheManager = FakeCoilCacheManager(),
-        authorRepo: FakeAuthorRepository? = null,
         stats: StatsRepository = FakeStatsRepository(
             StatsOverviewValues(totalFiles = 6135, imageCount = 5721, videoCount = 414, totalSizeBytes = 0L, todayViews = 0, totalViews = 0L),
         ),
         queue: ViewEventQueue = ViewEventQueue(FakeEventDao(), FakeEventSender(fail = false), clock = FixedEventClock),
     ): SettingsViewModel = SettingsViewModel(
         authRepository = auth,
-        authorRepository = authorRepo ?: FakeAuthorRepository(authors),
         statsRepository = stats,
         prefsRepository = prefs,
         systemInfoRepository = FakeSystemInfoRepository(version),
@@ -231,20 +196,6 @@ private object FixedEventClock : media.qimeng.app.core.data.events.EventClock {
         // 登录态已翻 false；地址保留（下次登录自动回填的「记忆上次」语义）
         assertFalse(runBlocking { auth.isLoggedIn.first() })
         assertEquals("http://10.0.2.2:8420", runBlocking { auth.serverUrl.first() })
-    }
-
-    @Test
-    fun `init 拉取作者总览 双计数与文件数Top5`() = runTest {
-        val settingsViewModel = viewModel()
-        advanceUntilIdle()
-        val overview = settingsViewModel.uiState.value.authorOverview
-        assertNotNull(overview)
-        // 全量 3 位 · 已关注 2（Web DataPage 作者总览卡同口径）；Top 按文件数降序
-        assertEquals(3, overview!!.totalAuthors)
-        assertEquals(2, overview.followedCount)
-        assertEquals(listOf("2", "3", "1"), overview.topByFileCount.map { it.id })
-        assertFalse(settingsViewModel.uiState.value.authorsLoading)
-        assertEquals("http://10.0.2.2:8420", settingsViewModel.uiState.value.serverUrl)
     }
 
     @Test
@@ -318,37 +269,10 @@ private object FixedEventClock : media.qimeng.app.core.data.events.EventClock {
         assertNull(settingsViewModel.uiState.value.videoCount)
         assertNull(settingsViewModel.uiState.value.writeError)
         // 其余初始化链路不受数量卡读失败牵连
-        assertEquals(3, settingsViewModel.uiState.value.authorOverview?.totalAuthors)
         assertEquals("v0.9.0", settingsViewModel.uiState.value.serverVersion)
     }
 
-    // ---------- P2-3 写失败反馈 + 读失败反馈（原实现静默吞错的回归锁定） ----------
-
-    @Test
-    fun `作者总览读失败给反馈且不清空既有总览`() = runTest {
-        val authorRepo = FakeAuthorRepository(
-            listOf(author("1", true, fileCount = 3), author("2", false, fileCount = 10), author("3", true, fileCount = 5)),
-        )
-        val settingsViewModel = viewModel(authorRepo = authorRepo)
-        advanceUntilIdle()
-        assertEquals(3, settingsViewModel.uiState.value.authorOverview?.totalAuthors)
-
-        // 二次刷新失败：既有总览保持原状（网络抖动不伪装成「没有作者」），给反馈
-        authorRepo.authorsError = RuntimeException("network down")
-        settingsViewModel.refreshAuthorOverview()
-        advanceUntilIdle()
-        assertEquals(LOAD_AUTHORS_FAILED_TEXT, settingsViewModel.uiState.value.writeError)
-        assertEquals(3, settingsViewModel.uiState.value.authorOverview?.totalAuthors)
-        assertFalse(settingsViewModel.uiState.value.authorsLoading)
-
-        // 恢复后重刷：横幅可消除，总览正常落地
-        authorRepo.authorsError = null
-        settingsViewModel.dismissWriteError()
-        settingsViewModel.refreshAuthorOverview()
-        advanceUntilIdle()
-        assertNull(settingsViewModel.uiState.value.writeError)
-        assertEquals(3, settingsViewModel.uiState.value.authorOverview?.totalAuthors)
-    }
+    // ---------- P2-3 写失败反馈（原实现静默吞错的回归锁定） ----------
 
     @Test
     fun `应用预设失败给反馈且高亮保持原项`() = runTest {
