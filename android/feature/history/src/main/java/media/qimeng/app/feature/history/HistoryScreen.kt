@@ -12,6 +12,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import media.qimeng.app.core.model.AlbumDim
@@ -86,6 +87,13 @@ fun HistoryScreen(
             title = stringResource(R.string.history_title),
             statLine = state.totalForAllPill?.let { stringResource(CoreUiR.string.ui_stat_files, it) } ?: "",
             onBack = onBack,
+            // Y3 批（2026-09-12 全局字体对齐旧版）：页标题对齐旧版 fragment_browse_history.xml
+            // L37-40——22sp Bold + qmColorTextPrimary（onSurface 槽）；字号 22sp 与 titleLarge
+            // 同值，只补 Bold 与主文字色
+            titleStyle = MaterialTheme.typography.titleLarge.copy(
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+            ),
         )
 
         // 维度芯片行常驻文档流（维度子集=分区/作品/角色/类型，GUIDE_UI §浏览历史 L386 顺序）；

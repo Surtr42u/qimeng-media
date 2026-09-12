@@ -33,6 +33,7 @@ import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -228,11 +229,19 @@ fun QimengMediaGrid(
             if (header != null) {
                 Text(
                     text = header,
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    // Y3 批（2026-09-12 全局字体对齐旧版）：组头样式对齐旧版 GroupedMediaAdapter.kt
+                    // L184-188——16f + DEFAULT_BOLD（titleSmall 14sp Medium 组件级覆盖字号/字重）+
+                    // 色 qmColorPrimary（Theme.kt colorPrimary→primary 槽，浅 #3A3A3A/夜 #C8C8C8；
+                    // 此前 onSurfaceVariant 浅灰不符）+ 内边距 setPadding(4,18,4,10)（此前仅
+                    // top=SpaceXS=4dp，与旧版 18dp 上距/10dp 下距不符）。
+                    style = MaterialTheme.typography.titleSmall.copy(
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                    ),
+                    color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = QimengDimens.SpaceXS),
+                        .padding(start = 4.dp, top = 18.dp, end = 4.dp, bottom = 10.dp),
                 )
             } else {
                 val asset = cell.asset

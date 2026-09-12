@@ -12,6 +12,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import media.qimeng.app.core.ui.R
 import media.qimeng.app.core.ui.icon.BackIcon
 import media.qimeng.app.core.ui.icon.FilterListIcon
@@ -31,6 +33,11 @@ import media.qimeng.app.core.ui.theme.QimengDimens
  *
  * @param title 页面标题（页私有文案，由调用方从各自 strings.xml 注入）
  * @param statLine 统计行文本（如「N 文件」；暂无数据传空串，占位仍保留右端对齐结构）
+ * @param titleStyle 页标题样式组件级覆盖（Y3 批 2026-09-12 裁决：Typography 角色不动——旧版页标题
+ *   自身三档 28/24/22sp，角色级一刀切会殃及收藏/历史等页，逐页对齐走本参数。相册页 28sp Bold
+ *   （fragment_all_files.xml L31-37）、收藏/历史 22sp Bold（fragment_favorite.xml L36-45 /
+ *   fragment_browse_history.xml L37-40，色均 qmColorTextPrimary→onSurface 槽）；null=默认
+ *   titleLarge（M3 22sp Regular）不回归旧版观感的调用方零影响）
  * @param onBack 返回按钮回调（null=不显示返回钮，M4-2A-B5 可选项）
  * @param modifier 行级外部布局参数（页面纵向上仍由调用方整体排布）
  * @param onFilterClick 筛选按钮回调（null=不显示筛选图标，M4-2A-B3 可选入口）
@@ -46,6 +53,7 @@ fun QimengTitleRow(
     onFilterClick: (() -> Unit)? = null,
     columns: Int? = null,
     onToggleColumns: (() -> Unit)? = null,
+    titleStyle: TextStyle? = null,
 ) {
     Row(
         modifier = modifier
@@ -64,11 +72,15 @@ fun QimengTitleRow(
                 )
             }
         }
-        Text(text = title, style = MaterialTheme.typography.titleLarge)
+        // Y3 批：titleStyle 非空时页标题组件级覆盖（见 KDoc @param titleStyle——旧版页标题三档
+        // 28/24/22sp，Typography 角色级不动），null=维持 titleLarge 基线
+        Text(text = title, style = titleStyle ?: MaterialTheme.typography.titleLarge)
         Spacer(modifier = Modifier.weight(1f))
         Text(
             text = statLine,
-            style = MaterialTheme.typography.labelMedium,
+            // Y3 批：字重对齐旧版 Regular（fragment_all_files.xml L39-46 统计行 12sp 无 bold，
+            // labelMedium 默认 Medium 500→Normal 400；字号 12sp/色 onSurfaceVariant 已与旧版一致不动）
+            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Normal),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         if (onFilterClick != null) {
