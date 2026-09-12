@@ -14,6 +14,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"net/http"
 	"os"
@@ -298,6 +299,10 @@ func (s *Server) findTrashEntry(trashID string) (trashEntry, bool) {
 	return trashEntry{}, false
 }
 
+// restore 关键段闭包内的越界分支以错误类型返回（HTTP 响应统一在锁外写，
+// 避免闭包内外两处 WriteHeader 路径）；500 级失败带阶段前缀原样上抛。
+var errRestoreEscaped = errors.New("restore target escapes library root")
+
 // PostApiV1TrashTrashIdRestore 恢复：文件搬回库内原路径（冲突自动重命名）
 // + UpsertAsset 重建库行（asset_id 不变）。
 func (s *Server) PostApiV1TrashTrashIdRestore(w http.ResponseWriter, r *http.Request, trashID gen.TrashId) {
@@ -316,35 +321,45 @@ func (s *Server) PostApiV1TrashTrashIdRestore(w http.ResponseWriter, r *http.Req
 		writeErr(w, http.StatusBadRequest, codeInvalidMeta, "回收站元数据不合法，无法恢复")
 		return
 	}
-	// 冲突自动重命名（协议承诺）：原位置已被同名文件占用时按
-	// "基名 (2).ext" 递增——恢复永远成功，不因冲突 409。
-	targetRel := origRel
-	if _, err := os.Stat(filepath.Join(lib.RootPath, filepath.FromSlash(origRel))); err == nil {
-		dir, name := path.Split(origRel)
-		exists := func(n string) bool {
-			_, err := os.Stat(filepath.Join(lib.RootPath, filepath.FromSlash(dir+n)))
-			return err == nil
+	// #9 关键段（锁内）：占用探测 → 冲突自动重命名 → 越界校验 → rename。
+	// 协议承诺冲突自动重命名（"基名 (2).ext" 递增——恢复永远成功，不因
+	// 冲突 409）：探测与改名必须对同库串行，否则并发上传/恢复会解析出
+	// 同一冲突名、rename 静默覆盖。targetRel 在锁内确定后用于库行。
+	var targetRel string
+	gerr := filing.WithLibraryGate(lib.ID, func() error {
+		targetRel = origRel
+		if _, err := os.Stat(filepath.Join(lib.RootPath, filepath.FromSlash(origRel))); err == nil {
+			dir, name := path.Split(origRel)
+			exists := func(n string) bool {
+				_, err := os.Stat(filepath.Join(lib.RootPath, filepath.FromSlash(dir+n)))
+				return err == nil
+			}
+			targetRel = path.Join(dir, filing.ResolveConflict(name, exists))
 		}
-		targetRel = path.Join(dir, filing.ResolveConflict(name, exists))
-	}
-	target := filepath.Join(lib.RootPath, filepath.FromSlash(targetRel))
-	// 纵深防御：SECURITY 红线 1。RestorePaths 已对 meta 的 OriginalPath 过
-	// NormalizeRelPath；为什么库根与拼接结果也再验一次——恢复目标是"库内
-	// 写文件"，库行 root_path 与 meta 均属持久化数据，任一被污染（改库/
-	// 坏 meta/根路径配置漂移）都不该把文件写出库根。与删除侧同一闸门。
-	if !filing.PathWithinRoot(lib.RootPath, target) {
-		s.logger.Error("恢复目标越出库根，已拦截", "assetId", e.meta.AssetID)
+		target := filepath.Join(lib.RootPath, filepath.FromSlash(targetRel))
+		// 纵深防御：SECURITY 红线 1。RestorePaths 已对 meta 的 OriginalPath 过
+		// NormalizeRelPath；为什么库根与拼接结果也再验一次——恢复目标是"库内
+		// 写文件"，库行 root_path 与 meta 均属持久化数据，任一被污染（改库/
+		// 坏 meta/根路径配置漂移）都不该把文件写出库根。与删除侧同一闸门。
+		if !filing.PathWithinRoot(lib.RootPath, target) {
+			s.logger.Error("恢复目标越出库根，已拦截", "assetId", e.meta.AssetID)
+			return errRestoreEscaped
+		}
+		if err := os.MkdirAll(filepath.Dir(target), dirPerm); err != nil {
+			return fmt.Errorf("创建恢复目录: %w", err)
+		}
+		return os.Rename(e.file, target)
+	})
+	switch {
+	case gerr == nil:
+	case errors.Is(gerr, errRestoreEscaped):
 		writeErr(w, http.StatusBadRequest, codeInvalidParam, "路径不合法")
 		return
-	}
-	if err := os.MkdirAll(filepath.Dir(target), dirPerm); err != nil {
-		s.internalErr(w, "创建恢复目录", err)
+	default:
+		s.internalErr(w, "恢复文件", gerr)
 		return
 	}
-	if err := os.Rename(e.file, target); err != nil {
-		s.internalErr(w, "恢复文件", err)
-		return
-	}
+	target := filepath.Join(lib.RootPath, filepath.FromSlash(targetRel))
 	if err := os.Remove(e.metaFile); err != nil {
 		s.logger.Warn("删除回收站 meta 失败（文件已恢复，残留 meta 不影响功能）",
 			"err", err, "meta", e.metaFile)

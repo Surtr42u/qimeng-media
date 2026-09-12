@@ -152,9 +152,12 @@ func TestUploadAtomicNoTempResidue(t *testing.T) {
 	head := append(append([]byte{}, jpg...), make([]byte, filing.RecommendedHeadBytes)...)[:filing.RecommendedHeadBytes]
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/assets/upload", &flakyReader{head: head})
 	w := httptest.NewRecorder()
-	if env.s.receiveAndStore(w, req, gen.PostApiV1AssetsUploadParams{Filename: "boom.jpg"},
-		filepath.Join(env.media, "boom.jpg"), 1<<20) {
-		t.Fatal("中断上传 receiveAndStore 应返回 false")
+	// #9 清欠后收流与改名拆分：这里直调收流半程（receiveUploadToTmp），
+	// 断连发生在写 tmp 阶段——半成品 tmp 应被清理、最终名不出现（改名段
+	// 的原子性由 handler 的 WithLibraryGate 关键段保证，端到端用例另测）。
+	if _, ok := env.s.receiveUploadToTmp(w, req, gen.PostApiV1AssetsUploadParams{Filename: "boom.jpg"},
+		env.media, 1<<20); ok {
+		t.Fatal("中断上传 receiveUploadToTmp 应返回 false")
 	}
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("断连上传期望 400，得到 %d", w.Code)

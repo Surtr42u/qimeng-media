@@ -26,6 +26,10 @@ import (
 	"qimeng-media/server/internal/sysmon"
 )
 
+// 上传目标目录越界（#9 关键段闭包内以此错误类型返回，HTTP 响应统一在
+// 锁外写，避免闭包内外两处 WriteHeader 路径）。
+var errUploadTargetEscape = errors.New("upload target escapes library root")
+
 // PostApiV1AssetsUpload 流式上传：四道校验 → 落盘 → 入库 → 广播。
 //
 // 冲突语义（与移动端点的 409 不同）：目标同名文件存在时自动重命名
@@ -35,12 +39,12 @@ import (
 //
 // 大小上限的双层执行：Content-Length 已知时先判（超限不收流）；
 // 未知长度（chunked）由 MaxBytesReader 在读流时截断。
-// 落盘原子性（SECURITY 红线 4）：临时文件 + 原子 rename，见
-// receiveAndStore。
+// 落盘原子性（SECURITY 红线 4）：临时文件 + 原子 rename，收流见
+// receiveUploadToTmp、改名见下方 #9 关键段（库锁内）。
 //
 // 超函数警戒线（>100 行）理由：oapi-codegen 生成的接口签名 + 单请求
-// 直线流（校验→冲突解析→流式落盘→入库→富化→广播→响应装配），落盘
-// 段已拆出 receiveAndStore，剩余的局部状态（finalName/maxBytes/lib）
+// 直线流（校验→收流落 tmp→锁内冲突解析与改名→入库→富化→广播→响应装配），
+// 收流段已拆出 receiveUploadToTmp，剩余的局部状态（finalName/maxBytes/lib）
 // 贯穿装配响应全流程，再拆只会提升为结构体在函数间传递。
 func (s *Server) PostApiV1AssetsUpload(w http.ResponseWriter, r *http.Request, params gen.PostApiV1AssetsUploadParams) {
 	// 第④道前置：文件名清洗（落盘名的唯一来源；ValidateUpload 内部
@@ -105,32 +109,80 @@ func (s *Server) PostApiV1AssetsUpload(w http.ResponseWriter, r *http.Request, p
 		return
 	}
 
-	// 冲突自动重命名（读盘判断，目录还没建也成立——exists 查不到就无冲突）。
-	exists := func(n string) bool {
-		_, err := os.Stat(filepath.Join(lib.RootPath, filepath.FromSlash(dir), n))
-		return err == nil
-	}
-	finalName := filing.ResolveConflict(name, exists)
-	targetRel := path.Join(dir, finalName)
-	targetAbs := filepath.Join(lib.RootPath, filepath.FromSlash(targetRel))
+	// 上传落盘顺序（#9 清欠后的形态）：建目标目录（锁外，幂等且并发安全）→
+	// 收流写临时文件（锁外，耗时与文件大小成正比，持库锁收流会让同库全部
+	// 写入方排队等一个大文件传完）→ 锁内「exists 探测 → ResolveConflict →
+	// rename」→ 入库。关键段必须持 filing.WithLibraryGate 的库锁：两段式
+	// "解析冲突名→改名"之间没有互斥时，并发同名上传会解析出同一冲突名，
+	// 第二次 rename 静默覆盖第一次（Windows/Linux 同为静默覆盖）；finalName
+	// 在锁内确定后才用于 relPath 响应与 DB 行。目录创建不进关键段：MkdirAll
+	// 幂等且并发安全，与冲突判定无关；临时文件与最终文件同目录才能原子
+	// rename，故目录必须先于收流建好。
+	// 自动重命名口径不变（DOMAIN_RULES §9）：目标同名存在 → "基名 (2).ext"
+	// 递增，上传永不 409。
+
+	// 上传目标目录（含校验兜底）：临时文件与最终文件都落在它下面。
+	baseDirAbs := filepath.Join(lib.RootPath, filepath.FromSlash(dir))
 	// SECURITY 红线 1 的 handler 侧兜底（与 media 直链/trash 同一纵深防御
-	// 模式）：dir/finalName 虽各过校验，Join 后仍强制验根内再落盘。
-	if !filing.PathWithinRoot(lib.RootPath, targetAbs) {
-		s.logger.Error("上传目标路径越界，已拦截", "libraryId", lib.ID, "rel", targetRel)
+	// 模式）：dir 已过 NormalizeRelPath，Join 后仍强制验根内再建目录落盘；
+	// finalName 在锁内确定后对 targetAbs 还有同一道闸。
+	if !filing.PathWithinRoot(lib.RootPath, baseDirAbs) {
+		s.logger.Error("上传目标目录越界，已拦截", "libraryId", lib.ID, "dir", dir)
 		writeErr(w, http.StatusBadRequest, codePathEscape, "目标路径不合法")
 		return
 	}
-	if err := os.MkdirAll(filepath.Dir(targetAbs), dirPerm); err != nil {
+	if err := os.MkdirAll(baseDirAbs, dirPerm); err != nil {
 		s.internalErr(w, "创建目标目录", err)
 		return
 	}
 
-	// 流式接收 + 落盘（含第②道魔数校验与临时文件原子 rename）。
-	if !s.receiveAndStore(w, r, params, targetAbs, maxBytes) {
+	// 流式接收 + 写临时文件（含第②道魔数校验；不触碰最终路径）。
+	tmpAbs, ok := s.receiveUploadToTmp(w, r, params, baseDirAbs, maxBytes)
+	if !ok {
 		return
 	}
+	// 临时文件生命周期移交本函数：rename 成功后 tmpAbs 已不存在（os.Rename
+	// 是移动语义，Remove 报 NotExist 被静默忽略），失败/异常路径由这里兜底
+	// 清理——成功/失败统一走这一处，语义与原 receiveAndStore 的 defer 等价。
+	defer func() {
+		if rmErr := os.Remove(tmpAbs); rmErr != nil && !os.IsNotExist(rmErr) {
+			s.logger.Warn("清理上传临时文件失败", "path", tmpAbs, "err", rmErr)
+		}
+	}()
+
+	// #9 关键段（锁内）：冲突解析与改名落盘。收流在锁外完成后，这段只做
+	// 只读探测与一次 rename，持锁时长与文件大小无关。
+	var (
+		finalName string
+		targetRel string
+	)
+	gerr := filing.WithLibraryGate(lib.ID, func() error {
+		exists := func(n string) bool {
+			_, err := os.Stat(filepath.Join(baseDirAbs, n))
+			return err == nil
+		}
+		finalName = filing.ResolveConflict(name, exists)
+		targetRel = path.Join(dir, finalName)
+		targetAbs := filepath.Join(lib.RootPath, filepath.FromSlash(targetRel))
+		if !filing.PathWithinRoot(lib.RootPath, targetAbs) {
+			s.logger.Error("上传目标路径越界，已拦截", "libraryId", lib.ID, "rel", targetRel)
+			return errUploadTargetEscape
+		}
+		return os.Rename(tmpAbs, targetAbs)
+	})
+	if gerr != nil {
+		if errors.Is(gerr, errUploadTargetEscape) {
+			writeErr(w, http.StatusBadRequest, codePathEscape, "目标路径不合法")
+			return
+		}
+		sysmon.Default.IncUpload(sysmon.UploadFail)
+		s.internalErr(w, "落盘上传文件", gerr)
+		return
+	}
+	sysmon.Default.IncUpload(sysmon.UploadOK)
 
 	// 元数据：size/mtime 以落盘事实为准；视频探测失败留空（scanner 同语义）。
+	targetAbs := filepath.Join(lib.RootPath, filepath.FromSlash(targetRel))
 	fi, err := os.Stat(targetAbs)
 	if err != nil {
 		s.internalErr(w, "读取上传文件信息", err)
@@ -234,18 +286,19 @@ const (
 	uploadTmpSuffix = ".tmp"
 )
 
-// receiveAndStore 流式接收并落盘：读魔数头 → ValidateUpload 四道校验 →
-// 写同目录临时文件 → 原子 rename 到最终路径（SECURITY 红线 4「临时文件 +
-// 原子 rename」：并发同名上传不会交叉写坏同一文件，进程崩溃不会留下占用
-// 最终名的半成品——写入中途的失败只残留白名单外的 .tmp 文件）。
-// 失败时响应已写完并返回 false；upload 计数在成功 rename 后计入。
-func (s *Server) receiveAndStore(w http.ResponseWriter, r *http.Request, params gen.PostApiV1AssetsUploadParams, targetAbs string, maxBytes int64) bool {
+// receiveUploadToTmp 流式接收写入 dirAbs 下的临时文件：读魔数头 →
+// ValidateUpload 四道校验 → 写 .qm-upload-*.tmp（SECURITY 红线 4 的"临时
+// 文件"半边）。不负责改名到最终路径——"探测冲突名 → rename 最终名"是
+// #9 关键段，由调用方持 filing.WithLibraryGate 库锁执行（收流在锁外，
+// 持锁时长与文件大小解耦）。失败时响应已写完、半成品临时文件已清理，
+// 返回 ok=false；成功时临时文件所有权移交调用方（rename 或清理）。
+func (s *Server) receiveUploadToTmp(w http.ResponseWriter, r *http.Request, params gen.PostApiV1AssetsUploadParams, dirAbs string, maxBytes int64) (string, bool) {
 	body := http.MaxBytesReader(w, r.Body, maxBytes)
 	head := make([]byte, filing.RecommendedHeadBytes)
 	n, err := io.ReadFull(body, head)
 	if err != nil && err != io.ErrUnexpectedEOF && err != io.EOF {
 		writeUploadErr(w, err)
-		return false
+		return "", false
 	}
 	head = head[:n]
 	if err := filing.ValidateUpload(params.Filename, min64(r.ContentLength, maxBytes), maxBytes, head); err != nil {
@@ -260,21 +313,13 @@ func (s *Server) receiveAndStore(w http.ResponseWriter, r *http.Request, params 
 		default: // ErrUploadFilename
 			writeErr(w, http.StatusBadRequest, codeInvalidFilename, "文件名不合法")
 		}
-		return false
+		return "", false
 	}
-	tmpAbs := filepath.Join(filepath.Dir(targetAbs), uploadTmpPrefix+uuid.NewString()+uploadTmpSuffix)
-	renamed := false
-	defer func() {
-		if !renamed {
-			if rmErr := os.Remove(tmpAbs); rmErr != nil && !os.IsNotExist(rmErr) {
-				s.logger.Warn("清理上传临时文件失败", "path", tmpAbs, "err", rmErr)
-			}
-		}
-	}()
+	tmpAbs := filepath.Join(dirAbs, uploadTmpPrefix+uuid.NewString()+uploadTmpSuffix)
 	f, err := os.Create(tmpAbs)
 	if err != nil {
 		s.internalErr(w, "创建上传临时文件", err)
-		return false
+		return "", false
 	}
 	_, err = f.Write(head)
 	// 头之外的全部内容流式接续写盘（不整读进内存）；err 全程用外层
@@ -287,17 +332,15 @@ func (s *Server) receiveAndStore(w http.ResponseWriter, r *http.Request, params 
 	}
 	if err != nil {
 		sysmon.Default.IncUpload(sysmon.UploadFail)
+		// 写失败即清理半成品（原 receiveAndStore 的 defer 清理语义收拢到
+		// 本函数的失败分支；成功路径的清理职责移交调用方，见 handler）。
+		if rmErr := os.Remove(tmpAbs); rmErr != nil && !os.IsNotExist(rmErr) {
+			s.logger.Warn("清理上传临时文件失败", "path", tmpAbs, "err", rmErr)
+		}
 		writeUploadErr(w, err)
-		return false
+		return "", false
 	}
-	if err := os.Rename(tmpAbs, targetAbs); err != nil {
-		sysmon.Default.IncUpload(sysmon.UploadFail)
-		s.internalErr(w, "落盘上传文件", err)
-		return false
-	}
-	renamed = true
-	sysmon.Default.IncUpload(sysmon.UploadOK)
-	return true
+	return tmpAbs, true
 }
 
 // writeUploadErr 把读流错误映射为协议响应：超限 413、其余 400。

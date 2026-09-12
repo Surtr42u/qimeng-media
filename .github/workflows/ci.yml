@@ -79,6 +79,16 @@ jobs:
         with: { distribution: temurin, java-version: 17 }
       - run: sudo apt-get update && sudo apt-get install -y make
       - run: make sdk
+      # #10 生成物摘要锁校验：make sdk 已随生成重算 api/sdk.lock，这里与
+      # 已提交的锁文件 diff——生成器版本漂移、或协议改动未同 commit 更新
+      # 锁文件（铁律 1 同步责任）都在此拦截。
+      - name: 校验生成物摘要锁（api/sdk.lock 与重算结果 diff）
+        run: |
+          make sdk-lock
+          if ! git diff --exit-code -- api/sdk.lock; then
+            echo "::error::api/sdk.lock 与三端生成物重算结果不一致。请在本地运行 make sdk 重新生成后，将更新后的 api/sdk.lock 与本次协议/生成器改动同 commit 提交（指纹入库≠产物入库，见 ADR-0009）。"
+            exit 1
+          fi
 
   android:
     name: Android 客户端（make sdk + assembleDebug + test + lint）

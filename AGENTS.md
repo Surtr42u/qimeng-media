@@ -29,7 +29,7 @@
 
 ## 铁律（违反任何一条都是事故）
 
-1. **先改 openapi.yaml，再生成代码**——禁止手写客户端 SDK，禁止手改生成物（`*.gen.go`/`*.gen.ts`/`android/sdk/**`，ADR-0009）。
+1. **先改 openapi.yaml，再生成代码**——禁止手写客户端 SDK，禁止手改生成物（`*.gen.go`/`*.gen.ts`/`android/sdk/**`，ADR-0009）；生成后须同 commit 更新生成物指纹锁 `api/sdk.lock`（指纹入库≠产物入库）。
 2. **数据库结构只能通过 migration 文件改**——只加不改不删（ADR-0011）；改/删既有结构走 expand-migrate-contract 两步迁移；禁止手改历史迁移文件、禁止手改运行中的库。
 3. **推荐算法/统计聚合是纯函数**——不碰 IO，行为由单元测试锁定，改动必须先看 `docs/DOMAIN_RULES.md` 的公式。
 4. **媒体文件操作必须走回收站**——`DELETE` 语义 = 移入回收站，物理删除是独立的管理操作。

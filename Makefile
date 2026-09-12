@@ -71,13 +71,16 @@ export SDK_GRADLE_FILE
 #   go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.1
 GOLANGCI_LINT ?= $(GOBIN_DIR)/golangci-lint
 
-.PHONY: help sdk sdk-validate sdk-go sdk-ts sdk-kotlin app-build app-test app-lint server-run server-test server-android-arm64 server-android-amd64 web-build web-dev web-test docker-build lint
+.PHONY: help sdk sdk-validate sdk-go sdk-ts sdk-kotlin sdk-lock app-build app-test app-lint server-run server-test server-android-arm64 server-android-amd64 web-build web-dev web-test docker-build lint
 
 help: ## 显示全部命令
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
 
 sdk: sdk-validate sdk-go sdk-ts sdk-kotlin ## 从 api/openapi.yaml 生成三端 SDK（Go 接口层 + TS + Kotlin）
 	@echo "sdk: all done (validate -> go -> ts -> kotlin)"
+	@# sdk-lock 放 recipe 末尾调用而非并列 prerequisite：make -j 下同级
+	@# prerequisite 执行顺序不保证，锁必须等三端生成物全部就绪后再算。
+	@$(MAKE) --no-print-directory sdk-lock
 
 sdk-validate:
 	@echo "==> [1/4] validate api/openapi.yaml (redocly; struct errors fail the build)"
@@ -124,6 +127,31 @@ sdk-kotlin:
 	@# :sdk 工程侧构建脚本（Gradle 8 兼容；内容见文件头注释）
 	@echo "$$SDK_GRADLE_FILE" > android/sdk/sdk.gradle
 	@echo "    android/sdk/sdk.gradle written (engineering build script for :sdk)"
+
+# sdk-lock：三端 SDK 生成物指纹锁（#10 清欠，api/sdk.lock）。重算算法：
+# 逐文件 tr -d '\r'（LF 归一化）后 sha256，按相对路径排序输出 `<hash>  <path>`。
+# 为什么 LF 归一化：Kotlin 生成器是 Java 系工具，Windows 上可能产出 CRLF
+# 行尾，与本仓库 ubuntu CI 的重算结果逐字节比对会假阳性；归一化后指纹只
+# 反映内容、不反映行尾。
+# 为什么排除：android/sdk/.openapi-generator/ 是生成器运行元数据（含机器/
+# 时间相关字段，逐次生成不稳定）；android/sdk/build/ 是 Gradle 构建产物，
+# 不是生成物源码。两者都不代表"生成物内容"。
+# 与 ADR-0009 的关系：指纹入库 != 产物入库——生成物仍不入库（.gitignore），
+# api/sdk.lock 只记录"与当前 api/openapi.yaml 对应的三端生成物指纹"，用于
+# 在 CI 证明重新生成的结果与已提交锁一致（生成器版本漂移或协议改动未
+# 同步即在此拦截，见 ci.yml sdk-chain）。
+# 同步责任（铁律 1）：协议侧改动（openapi.yaml）或 make sdk 重新生成后，
+# 必须同 commit 更新 api/sdk.lock。
+sdk-lock: ## 重算三端 SDK 生成物指纹并写入 api/sdk.lock
+	@{ \
+		find server/internal/httpapi/gen -maxdepth 1 -type f -name '*.gen.go'; \
+		find web/src/api/generated -type f \( -name '*.js' -o -name '*.ts' \); \
+		find android/sdk -type f -not -path '*/.openapi-generator/*' -not -path '*/build/*'; \
+	} | LC_ALL=C sort \
+	| while IFS= read -r f; do \
+		printf '%s  %s\n' "$$(tr -d '\r' < "$$f" | sha256sum | cut -d' ' -f1)" "$$f"; \
+	done > api/sdk.lock
+	@echo "sdk-lock: api/sdk.lock written ($$(wc -l < api/sdk.lock) entries)"
 
 # Android 客户端（M4，ADR-0014 Compose 重建）：走 wrapper，禁止依赖本机全局 gradle。
 # 前置：android/sdk 生成物存在（干净 checkout 先跑 make sdk；缺 :sdk 的报错一律重跑 make sdk，
