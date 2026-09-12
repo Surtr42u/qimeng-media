@@ -98,48 +98,25 @@ object AlbumFilter {
      * source/character/work 多选数组（协议批 #29：同维 OR）——按 kind 从多选集
      * 投影为 key 列表；authorId 协议仍单值（无数组位），>1 个 COS 作者同选时
      * 降级不传（列表放宽，非错误）——单选语义完全向后兼容。
-     * 排序/顺位/观看/点击/大小/时间/标签 = 万能筛选面板字段展开（M4-2A-B3）：
-     * 默认档一律映射为不传（viewRange/playRange/sizeRange=ALL→null、tagIds 空→null、
-     * dateRange=ALL→不传日期；YEAR_RANGE→yearFrom/yearTo 且起止交叉归一 start=min/end=max，
-     * 旧版 footer 应用时交叉校验口径）；[today] 注入时间档区间计算（纯函数可单测）。
+     * 排序/顺位/观看/点击/大小/时间/标签 = 万能筛选面板字段展开（M4-2A-B3），
+     * 委托 [AssetQuery.withPanelDraft]（任务Y Y4b 单源化：与首页 COS 流共用，禁第二份手抄）。
      */
     fun toAssetQuery(
         state: AlbumFilterState,
         limit: Int? = null,
         cursor: String? = null,
         today: LocalDate = LocalDate.now(),
-    ): AssetQuery {
-        val dateBounds = panelDateRangeBounds(state.dateRange, today)
-        // 按年份：起止交叉归一（旧版 buildFooter 口径 start=min/end=max）；年份不全=不传
-        val years: Pair<Int, Int>? =
-            if (state.dateRange == PanelDateRange.YEAR_RANGE && state.yearFrom != null && state.yearTo != null) {
-                minOf(state.yearFrom, state.yearTo) to maxOf(state.yearFrom, state.yearTo)
-            } else {
-                null
-            }
-        return AssetQuery(
-            cursor = cursor,
-            limit = limit,
-            includeCos = if (state.partition == Zone.ALL) true else null,
-            cosOnly = if (state.partition == Zone.COS) true else null,
-            mediaType = state.mediaType,
-            source = state.authors.keysOfKind(FacetParamKind.SOURCE),
-            authorId = state.authors.singleKeyOfKind(FacetParamKind.AUTHOR),
-            character = state.characters.keysOfKind(FacetParamKind.CHARACTER),
-            work = state.characters.keysOfKind(FacetParamKind.WORK),
-            sort = state.sort,
-            order = state.order,
-            viewRange = state.viewRange.toQuery(),
-            playRange = state.playRange.toQuery(),
-            sizeRange = state.sizeRange.toQuery(),
-            dateFrom = dateBounds?.first,
-            dateTo = dateBounds?.second,
-            yearFrom = years?.first,
-            yearTo = years?.second,
-            tagIds = state.tagIds.ifEmpty { null },
-            tagMode = if (state.tagIds.isEmpty()) null else state.tagMode.toQuery(),
-        )
-    }
+    ): AssetQuery = AssetQuery(
+        cursor = cursor,
+        limit = limit,
+        includeCos = if (state.partition == Zone.ALL) true else null,
+        cosOnly = if (state.partition == Zone.COS) true else null,
+        mediaType = state.mediaType,
+        source = state.authors.keysOfKind(FacetParamKind.SOURCE),
+        authorId = state.authors.singleKeyOfKind(FacetParamKind.AUTHOR),
+        character = state.characters.keysOfKind(FacetParamKind.CHARACTER),
+        work = state.characters.keysOfKind(FacetParamKind.WORK),
+    ).withPanelDraft(state.panelDraft(), today)
 
     /**
      * 四维候选请求（排自身计数）：每个请求缺自身维度的选择参数，
@@ -209,12 +186,8 @@ private fun Set<FacetOption>.keysOfKind(kind: FacetParamKind): List<String>? =
 private fun Set<FacetOption>.singleKeyOfKind(kind: FacetParamKind): String? =
     filter { it.kind == kind }.map { it.key }.singleOrNull()
 
-/** 「全部」档 → null（不传参数=协议缺省全量语义）；其余档原样进查询包（SDK 枚举映射在 :core:data） */
-private fun PanelCountRange.toQuery(): PanelCountRange? = if (this == PanelCountRange.ALL) null else this
-
-private fun PanelSizeRange.toQuery(): PanelSizeRange? = if (this == PanelSizeRange.ALL) null else this
-
-private fun PanelTagMode.toQuery(): PanelTagMode = this
+// 面板档位 → 查询参数的「全部」归零助手（PanelCountRange/PanelSizeRange.toQuery）已随
+// AssetQuery.withPanelDraft 迁至 AlbumPanelFilter.kt（任务Y Y4b 单源化）。
 
 /**
  * 分区三态 → GET /history 参数（历史页口径；与 /assets 方向不同）：
