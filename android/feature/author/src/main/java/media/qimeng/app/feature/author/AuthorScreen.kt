@@ -24,6 +24,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import media.qimeng.app.core.model.AuthorSortOption
@@ -74,17 +76,23 @@ fun AuthorScreen(
 
         // 计数行（G2：Web page-head 副行；N=全量作者数不随体系/关键词过滤，
         // 计数口径在 ViewModel.authorCount——UI 不内嵌业务规则）
+        // 任务Z Z3 排版放松：旧版三段节奏 12/8/8（计数行→搜索 12dp）——新此前与搜索框
+        // 零纵向间距显得拥挤，补 SpaceL=12dp 下距（现 Dimens 档）
         Text(
             text = "$COUNT_ROW_PREFIX · ${viewModel.authorCount(state)} 位",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = QimengDimens.ScreenPaddingHorizontal),
+            modifier = Modifier
+                .padding(horizontal = QimengDimens.ScreenPaddingHorizontal)
+                .padding(bottom = QimengDimens.SpaceL),
         )
 
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = QimengDimens.ScreenPaddingHorizontal),
+                .padding(horizontal = QimengDimens.ScreenPaddingHorizontal)
+                // 任务Z Z3：搜索框→芯片行补 8dp（旧节奏 12/8/8 第二段）
+                .padding(bottom = QimengDimens.SpaceM),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             QimengCapsuleTextField(
@@ -106,7 +114,9 @@ fun AuthorScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = QimengDimens.ScreenPaddingHorizontal),
+                .padding(horizontal = QimengDimens.ScreenPaddingHorizontal)
+                // 任务Z Z3：芯片行→列表卡补 8dp（旧节奏 12/8/8 第三段）
+                .padding(bottom = QimengDimens.SpaceM),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             QimengChipRow(
@@ -234,19 +244,27 @@ private fun AuthorRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onAuthorClick(author.id, author.displayName) }
-            // Web .a-list li padding 8px 2px（纵/横段）
-            .padding(horizontal = QimengDimens.SpaceXXS, vertical = QimengDimens.SpaceM),
+            // 任务Z Z3 排版放松（用户反馈「作者管理的排版太拥挤」）：旧版行节距 83dp
+            // （卡内上下 16dp + 卡间 10dp），新此前纵向 8dp 节距仅 53dp（-36%）——放松到
+            // SpaceL=12dp 档（横段保持 SpaceXXS 对齐 Web .a-list li 2px）
+            .padding(horizontal = QimengDimens.SpaceXXS, vertical = QimengDimens.SpaceL),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = author.displayLabel,
-                style = MaterialTheme.typography.bodyMedium,
+                // 任务Z Z3：对齐旧版 AuthorListFragment L479 名字 16sp Bold
+                //（Y3 批裁决：Typography 角色不改，页面级差异走 copy 覆盖；
+                // M3 titleMedium 基线即 16sp，只覆写字重）
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
             )
             Text(
                 text = "${author.fileCount ?: 0} 个文件",
-                style = MaterialTheme.typography.labelSmall,
+                // 任务Z Z3：对齐旧版副行 12sp（M3 labelSmall 基线 11sp）；与名字间
+                // 补 SpaceXS=4dp（旧版名字与计数 4dp 间距）；色保持 onSurfaceVariant 系
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = QimengDimens.SpaceXS),
             )
         }
         Surface(
