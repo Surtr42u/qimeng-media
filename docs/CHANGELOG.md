@@ -9,6 +9,18 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## feat(server): 任务T T2 Termux 形态A落地批——三脚本+README 入库 + 双层模拟器验证（层2 全绿）（2026-09-13 第二百三十五笔）
+
+执行 AI：GLM-5.3（主代理调度验收；executor 子代理实施；reviewer 对抗审查打回 4×P2 修复后通过）
+
+- **deploy/termux/ 四件入库**：qimeng-start.sh（四兜底：Termux 自检/存储授权引导/二进制自检+ffmpeg 三分支互斥〔投放版成对优先→半投放警示→pkg 版→无 ffmpeg 降级〕/pgrep 防重 + wake-lock + 日志>10MB 轮转 + nohup 启动 + healthz 15s 双路探测 + 通知）、qimeng-watchdog.sh（巡检拉回+指数退避 30→60→120→240→上限 300s，翻倍放 sleep 后保证首值 30 生效且启动即首巡检）、qimeng-stop.sh（SIGTERM 优雅退出等 10s〔对齐服务端 shutdownTimeout 与 NotifyContext 语义〕→SIGKILL 兜底；两分支均补 wake-unlock）、README.md（F-Droid 安装/投放/ffmpeg 两来路/开机自启/保活三件〔通知勿划掉 issue #4657/电池白名单/国产 ROM〕/故障表）。端口 18430 定稿口径三脚本+README 注释互指（与 T3 ServerConfigDataSource 预设单值互改）。
+- **实测发现并修复（设计稿「未实测」点闭合）**：①Termux bootstrap 无 curl——start.sh healthz 改双路探测（curl 优先，无则 bash 内建 /dev/tcp 裸 HTTP，零外部依赖永可用）；②Termux:Boot 只执行有执行位的脚本——README boot 示例补 chmod +x + 「装后手动打开一次」；③停止脚本"未在运行"分支漏解锁（崩溃后 wake-lock 悬挂耗电）——wake-unlock 移两分支公共路径；④退避序列实现与文档口径对齐（30s 起步）；⑤pgrep -f 锚定 ^路径$（防命令行恰含路径文本的误杀）。
+- **验证（双层，%TEMP%\qimeng-t2-evidence\）**：**层1**=宿主 Git Bash 编排等价（stub 化 termux-*/pgrep+Windows 服务端 exe）：start 全链/防重/自检兜底/轮转/ffmpeg 三分支//dev/tcp 路/stop 主路径（SIGTERM 编排+wake-unlock）——13+5+4 断言留档，FAIL 项均为 Windows 进程树收割伪影（层2 真环境闭合）；**层2**=Termux v0.118.3 x86_64 APK 实装 qimeng_api35t（run-as com.termux + LD_LIBRARY_PATH 注入 + amd64 服务端）：**16/16 全绿**——start 全链（真 bash+真无 ffmpeg 降级 WARN+healthz）/防重（真 pgrep）/stop（真 kill+SIGTERM 优雅退出"已完全退出"日志）/watchdog nohup 后台拉回（真进程存活）/服务端自检 Warn——adb shell 多行参数拆散、run-as 域重定向权限两个验证工程坑记档于证据脚本注释。
+- reviewer 打回修复（P2×4：wake-unlock 公共路径/boot chmod/退避口径/层1 补证留档；P3×5：半投放 WARN/pgrep 锚定/T3 前瞻措辞/curl 自洽/双拉示例去重）全部清偿；层1 harness 自身三轮 stub 缺陷定案（tasklist GBK×UTF-8 grep 误判/无 PID 输出/harness 重建覆盖 stub）记档。
+- **真机节点挂起（夜间模式，不阻塞后续）**：用户手机装 Termux→投放 arm64 二进制（build/android/arm64-v8a/qimeng-server 已备）→跑通脚本→modernc sqlite arm64 真机行为复验（POC 最大存疑）——等用户参与，T3 照常推进。
+- 任务书：《QimengNAS\任务T-M6单机形态卷.md》T2 勾选（仓库外；真机验收子项挂起记档）。
+
+---
 ## feat(server): 任务T T1 服务端Android构建批——Makefile 双交叉target+ffmpeg启动自检+模拟器shell域闭环脚本（2026-09-13 第二百三十四笔）
 
 执行 AI：GLM-5.3（主代理调度验收；executor 子代理实施；reviewer 对抗审查通过）
