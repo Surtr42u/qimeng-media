@@ -9,6 +9,17 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## fix(app): 任务R R3 收官——reviewer 抓 P1 修复（keep 宿主类名错位 UploadApiBodies）+门禁复跑+终包装机冒烟，任务R 收卷（2026-09-13 第二百三十七笔）
+
+执行 AI：GLM-5.3（reviewer 子代理对抗审查；executor 子代理 P1 返工；主代理门禁/装机冒烟/收官）
+
+- **对抗审查（打回→修复→硬验证闭环）**：reviewer 12 项审查抓出 **P1×1**——proguard-rules.pro 第二条 keep 宿主类名错位：`AssetUploader$*` 不匹配真实嵌套位置，两个 moshi 反射 DTO 实际在同文件**顶层 object UploadApiBodies**（AssetUploader.kt L158）之下，mapping.txt 实证已被混淆为单字母、seeds.txt 零命中——release 上传响应解析面临**不崩溃的静默降级**（冲突重命名兜底文案/错误文案退化，恰好不在走查清单覆盖面）。修复=规则改 `media.qimeng.app.core.data.upload.UploadApiBodies$*`，硬验证：mapping 两 DTO 恒等映射（保名）、seeds 命中 14、APK 尺寸不变 4,620,081B（-72.36% 维持）、baseline.prof 随新 dex 重编译仍落包（7,626→7,591B）、零警告无 missing_classes。外层 object 本身仍混淆属设计内（moshi 只反射 DTO 自身构造器/字段，注释记档）。P3×2（文档口径）随本笔更正：前笔「两条 keep 进 configuration.txt 实证」只证规则被读取不证命中——configuration.txt≠seeds/mapping，审查方法论记档。
+- **门禁三连复跑**（P1 修复后 HEAD）：assembleDebug+testDebugUnitTest+:core:model:test+lintDebug（--max-workers=2+priority=low 低CPU档）BUILD SUCCESSFUL 1m26s，证据 `%TEMP%\qimeng-r3-evidence\gate-r3.log`。
+- **终包装机冒烟**：app-release-final（4,620,081B）qimeng_api35 装机 Success→冷启→进程存活→logcat 零 FATAL→壳完整渲染（走查后端已清场，首页呈「加载失败，请下拉重试」优雅错误态=无服务端时的正确行为），截图 `%TEMP%\qimeng-r3-evidence\final-smoke2.png`。
+- **收卷交付口径**：任务R 三批全勾（R1 be74c75 / R2 140de94 / R3 本笔）。**最终真机包=本卷 R8 版**（`%TEMP%\qimeng-r3-evidence\app-release-final.apk`，4.62MB；若任务Z 先期交付过非 R8 包请以本包覆盖重装）——真机实测点合并：Z 全部改动 + R8 包体/冷启动收益 + Y5 高刷待验项，待用户重装实测。冷启动模拟器中位数持平（274→284ms，swiftshader 噪声淹没；首跑 437→257 方向性改善），真机收益待验。
+- 记档：走查期自建 18463 隔离实例与临时 worktree 已清场（服务端进程/工作树全删，qimeng-r2-data 数据目录留存无碍）；服务端进程反复静默消亡=环境级问题（沙箱作业对象收割），T 会话 1d1504a 最小化启动器为正解，后续会话跑长服务端一律走独立窗口启动器。
+
+---
 ## feat(app): 任务R R2 R8+baseline profile——release 开混淆与资源收缩，包体 -72.36%，全功能走查零崩溃（2026-09-13 第二百三十六笔）
 
 执行 AI：GLM-5.3（executor 子代理实施三件套+出包，主代理模拟器走查+视觉子代理截图验证）
