@@ -5,6 +5,7 @@ import java.math.RoundingMode
 import java.time.Instant
 import java.time.ZoneId
 import java.util.Locale
+import media.qimeng.app.core.model.MediaKind
 
 /** 字节换算基数（1024 进制；KB 档留作下界保护，展示主用 MB/GB 两级） */
 private const val KB = 1024L
@@ -84,3 +85,45 @@ fun formatBytesForDetail(bytes: Long?): String {
         else -> "$n B"
     }
 }
+
+// ---------------- 详情信息 Sheet 专用（任务X X3 旧版移植扩行，纯 JVM 无资源依赖） ----------------
+
+/**
+ * 文件扩展名截取（详细信息 Sheet「类型」行用）：取最后一个「.」之后段并归一小写
+ * （大小写不敏感口径：IMG.JPG → jpg）；无「.」/ 以「.」结尾 → 空串。
+ * 隐藏文件（.bashrc）按无扩展名处理（首字符前的「.」非扩展名分隔——substringAfterLast
+ * 对 ".bashrc" 取得 "bashrc"，故先剥前导点再截取）。
+ */
+fun fileExtension(fileName: String): String {
+    val name = fileName.removePrefix(".")
+    return name.substringAfterLast('.', "").lowercase()
+}
+
+/**
+ * 媒体类型中文文案（MediaKind 三档全枚举；DOMAIN_RULES §3「音频」不存在）。
+ * 中文用字面量而非 string 资源：本函数族是纯 JVM 可测的格式化层，不依赖 Android 资源
+ * （同 [formatCount] 的「万」字面量口径）。
+ */
+fun mediaTypeLabel(kind: MediaKind): String = when (kind) {
+    MediaKind.IMAGE -> "图片"
+    MediaKind.ANIMATED_IMAGE -> "动图"
+    MediaKind.VIDEO -> "视频"
+}
+
+/**
+ * 详细信息 Sheet「类型」行整行文案（任务X X3 拍板口径）：「视频 · mp4」式 =
+ * 中文媒体类型 + 小写扩展名（分隔「 · 」）；无扩展名仅出类型名（旧版「unknown」兜底
+ * 不移植——类型行媒体类型恒有值，扩展名缺失不造词）。
+ */
+fun detailTypeLabel(kind: MediaKind, fileName: String): String {
+    val label = mediaTypeLabel(kind)
+    val ext = fileExtension(fileName)
+    return if (ext.isEmpty()) label else "$label · $ext"
+}
+
+/**
+ * 详细信息 Sheet「目录」行：null/空串 = 库根 → 显示「/」（协议 AssetDetail.directory
+ * 口径与领域模型 KDoc「null/空串 = 库根」单源）；非空原样透传。
+ */
+fun detailDirectoryLabel(directory: String?): String =
+    directory?.takeIf { it.isNotEmpty() } ?: "/"

@@ -4,9 +4,6 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -30,19 +27,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.unit.dp
-import media.qimeng.app.core.model.AssetDetail
-import media.qimeng.app.core.model.DetailTag
-import media.qimeng.app.core.ui.component.formatBytesForDetail
-import media.qimeng.app.core.ui.component.formatCount
-import media.qimeng.app.core.ui.component.formatShortDate
 import media.qimeng.app.core.ui.icon.BackIcon
 import media.qimeng.app.core.ui.theme.QimengDimens
-
-// ---------- 页面私有尺寸档（本文件单源；来源注释随条目） ----------
-
-/** 详情各节纵向间距（Web .detail-main 各子块 margin 的移动端近似档） */
-internal val SECTION_SPACING = 12.dp
 
 // ---------- 顶行 ----------
 
@@ -65,72 +51,6 @@ internal fun DetailTopRow(onBack: () -> Unit) {
             Icon(
                 imageVector = BackIcon,
                 contentDescription = stringResource(R.string.detail_back),
-            )
-        }
-    }
-}
-
-// ---------- 标题 / meta 行 ----------
-
-/** 详情标题（Web .detail-title = cosWork ?? fileName，mapper 已算好 [AssetDetail.title]） */
-@Composable
-internal fun DetailTitle(title: String) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.titleLarge,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = QimengDimens.ScreenPaddingHorizontal, vertical = SECTION_SPACING),
-    )
-}
-
-/** meta 行相邻可见项「·」分隔符（Web .detail-meta span+span::before content "·"） */
-private const val META_ITEM_SEPARATOR = "·"
-
-/**
- * meta 行（逐项对照 Web detail-meta：浏览/播放/大小/宽×高/日期/出处）。
- * 口径：浏览/播放恒显（Web formatCount(null)="0"）；宽×高仅两者齐备且宽>0（Web d.width truthy）；
- * 日期/出处空值不渲染（Web 空串 span 无视觉贡献）。
- * G1a：相邻可见项之间补「·」分隔（对齐 Web span+span::before）；items 构建期已滤空值，
- * 故分隔只出现在两可见项之间——与 Web 同口径（FlowRow 换行时分隔符可能落行首，CSS
- * flex-wrap 有同款边角，不特殊处理）。
- */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-internal fun DetailMetaRow(asset: AssetDetail) {
-    // 局部拷贝避免跨模块属性 smart cast 限制（width/height 在 :core:model）
-    val w = asset.width
-    val h = asset.height
-    val resolution = stringResource(R.string.detail_meta_resolution, w ?: 0, h ?: 0)
-    val items = buildList {
-        add(stringResource(R.string.detail_meta_views, formatCount(asset.viewCount)))
-        add(stringResource(R.string.detail_meta_plays, formatCount(asset.playCount)))
-        add(formatBytesForDetail(asset.sizeBytes))
-        if (w != null && h != null && w > 0) add(resolution)
-        formatShortDate(asset.modifiedAtMs).takeIf { it.isNotEmpty() }?.let { add(it) }
-        asset.source?.takeIf { it.isNotEmpty() }?.let { add(it) }
-    }
-    FlowRow(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = QimengDimens.ScreenPaddingHorizontal),
-        // Web 分隔符 margin 0 8px 的近似档：分隔符两侧各 6dp（SpaceS）+ 字符宽
-        horizontalArrangement = Arrangement.spacedBy(QimengDimens.SpaceS),
-        verticalArrangement = Arrangement.spacedBy(QimengDimens.SpaceXS),
-    ) {
-        items.forEachIndexed { index, item ->
-            if (index > 0) {
-                Text(
-                    text = META_ITEM_SEPARATOR,
-                    style = MaterialTheme.typography.bodySmall,
-                    // Web var(--faint)「最浅次色：分隔」的近似档
-                    color = MaterialTheme.colorScheme.outlineVariant,
-                )
-            }
-            Text(
-                text = item,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
@@ -218,32 +138,6 @@ internal fun DetailActionButton(
             horizontalArrangement = Arrangement.spacedBy(QimengDimens.SpaceS),
             content = content,
         )
-    }
-}
-
-// ---------- 标签行 ----------
-
-/**
- * 标签行（Web .detail-tags）：当前标签只读胶囊展示。
- * 任务V V3：原「管理 / + 添加标签」入口胶囊删除（用户拍板下滑区 chips 只读）——编辑
- * 入口收敛到首屏「标签」胶囊（DetailBottomChrome → DetailTagManageSheet 既有链）。
- */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-internal fun DetailTagRow(tags: List<DetailTag>) {
-    FlowRow(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(
-                horizontal = QimengDimens.ScreenPaddingHorizontal,
-                vertical = QimengDimens.SpaceS,
-            ),
-        horizontalArrangement = Arrangement.spacedBy(QimengDimens.SpaceM),
-        verticalArrangement = Arrangement.spacedBy(QimengDimens.SpaceS),
-    ) {
-        tags.forEach { tag ->
-            DisplayPill(text = tag.name)
-        }
     }
 }
 

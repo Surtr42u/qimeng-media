@@ -11,6 +11,7 @@ package media.qimeng.app.core.model
  * @param tags 详情标签（服务端按关联时间倒序返回——「最近添加置顶」，LEGACY §A）
  * @param authors 详情作者完整对象（关注态随行）
  * @param directory 当前所在目录（库内相对路径，'' = 库根；文件整理弹窗预填当前目录，任务G G1b）
+ * @param relPath 库内相对路径（任务X X3 详细信息 Sheet「路径」行；空 = 服务端未返回不渲染）
  */
 data class AssetDetail(
     val id: String,
@@ -37,6 +38,11 @@ data class AssetDetail(
     val authors: List<DetailAuthor>,
     /** 当前所在目录（库内相对路径，null/空串 = 库根；协议 AssetDetail.directory） */
     val directory: String? = null,
+    /**
+     * 库内相对路径（协议 AssetDetail.relPath；任务X X3 详细信息 Sheet「路径」行数据源）。
+     * SDK 可空兜底空串；空 = 服务端未返回，UI 沿用「null/0 不渲染」口径隐藏行
+     */
+    val relPath: String = "",
 )
 
 /** 详情标签（详情/弹窗共用；id 是关联操作主键） */

@@ -22,9 +22,8 @@
     <!-- 图片态解码失败提示（RES #27：损坏原件不黑屏哑失败；Coil Target 不区分网络/解码失败，文案两者兼顾） -->
     <string name="detail_image_decode_failed">该文件无法解码，可能已损坏或格式不受支持</string>
 
-    <!-- meta 行（对照 Web detail-meta：浏览/播放/大小/宽×高/日期/出处） -->
-    <string name="detail_meta_views">浏览 %1$s</string>
-    <string name="detail_meta_plays">播放 %1$s</string>
+    <!-- 尺寸格式串（任务X X2：下滑区 meta 行退役，其浏览/播放两条计数文案随之删除；
+        resolution 保留——详细信息 Sheet「尺寸」行沿用，值格式口径单源） -->
     <string name="detail_meta_resolution">%1$d×%2$d</string>
 
     <!-- 互动行 -->
@@ -88,12 +87,20 @@
     <string name="detail_chrome_info">信息</string>
     <string name="detail_chrome_tag">标签</string>
 
-    <!-- 信息 BottomSheet（GUIDE_UI L169/171：文件名/出处/尺寸/时长；无「完成」按钮——下滑/点外部关闭） -->
+    <!-- 信息 BottomSheet（GUIDE_UI L169/171；无「完成」按钮——下滑/点外部关闭）。
+        任务X X3 旧版移植扩行（2026-09-12 用户拍板「详细信息应该和旧版移植」）：
+        行序对齐旧版 showInfoSheet=文件名/作品/出处/日期/大小/类型/尺寸/时长/目录/路径 -->
     <string name="detail_info_sheet_title">详细信息</string>
     <string name="detail_info_filename">文件名</string>
+    <string name="detail_info_work">作品</string>
     <string name="detail_info_source">出处</string>
+    <string name="detail_info_date">日期</string>
+    <string name="detail_info_size">大小</string>
+    <string name="detail_info_type">类型</string>
     <string name="detail_info_resolution">尺寸</string>
     <string name="detail_info_duration">时长</string>
+    <string name="detail_info_directory">目录</string>
+    <string name="detail_info_path">路径</string>
 
     <!-- 快速转跳 BottomSheet（GUIDE_UI L172：当前文件关联作者列表，点击进作者集合页） -->
     <string name="detail_jump_sheet_title">快速转跳</string>

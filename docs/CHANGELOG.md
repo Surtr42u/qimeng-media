@@ -9,6 +9,15 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## feat(app): 任务X X2+X3 批——详情下滑区裁剪+详细信息旧版移植（2026-09-12 第二百一十三笔）
+
+执行 AI：GLM-5.3-Flash（executor 子代理同文件链串行实施，reviewer 子代理对抗审查【通过】含门禁独立复跑+5 资产 Sheet 与服务端 JSON 交叉核对）
+
+- **X2 下滑区裁剪（问题6「只保留四个胶囊」）**：删 DetailContentSections 的 DetailTitle/DetailMetaRow/DetailTagRow 三段调用+三组件死码（DetailSections.kt）+孤儿 import/字符串/SECTION_SPACING 清偿；错误横幅、verticalScroll 门控结构、DetailActionButton/DisplayPill 共用件保留；detail_meta_resolution 经终态 grep 判活保留（详情 Sheet 尺寸行在用）。详情页终态=全屏舞台+chrome（四胶囊）+错误横幅，下滑不再拖出文件名。
+- **X3 详细信息移植（问题7，旧版 showInfoSheet 九行口径+作品行）**：DetailInfoSheet 扩十行终态（文件名/作品[cosWork 非空]/出处/日期/大小/类型/尺寸/时长/目录[空=「/」]/路径[relPath]）；relPath 客户端补链（协议 openapi.yaml:996 已有字段零协议改动：mapper orEmpty 透传→model 默认空串→Sheet 空值隐藏）；新增 QimengFormat 四纯函数（fileExtension 小写归一/mediaTypeLabel 全枚举/detailTypeLabel/detailDirectoryLabel）+JVM 单测 7 条（QimengFormatTest +6、SdkDetailMappersTest +1）；strings 补 detail_info_* 六条。
+- **实测**：门禁三连 exit 0（单测 21+11 全绿）；模拟器逐资产核对 Sheet 与服务端 JSON 逐值一致（图片/视频/动图/库根回退「/」）；详情下滑区零内容文本节点、返回滚动位置保留。
+- 备忘（非阻断）：作品行非空可见态留 X8 收官以 cosWork 资产走查；视频态十行 Sheet 超屏高依赖 M3 内建滚动（实测可滚）。复审判定记录：relPath 取非空 `String=""` 口径（同 directory 风格争议已议，维持现实现）。
+
 ## feat(app): 任务X X1 批——壳层 detail 路由 insets 全屏化——详情手势四连问题根修（2026-09-12 第二百一十二笔）
 
 执行 AI：GLM-5.3-Flash（主代理三车道调研+裁决立卷；executor 子代理实现，reviewer 子代理对抗审查【通过】含门禁独立复跑与 dump 逐字节同构复核）

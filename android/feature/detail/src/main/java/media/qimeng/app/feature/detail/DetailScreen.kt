@@ -60,9 +60,9 @@ import media.qimeng.app.core.ui.theme.QimengDimens
  * 随沉浸切换：chrome 显=主题底/沉浸或播放中=黑，见 [stageBackdropColor]；图片态
  * ZoomImageView 链 / 视频态 BiliPlayerView 链）+ 上下渐变 chrome 浮层（顶：返回/n/N/信息；
  * 底：点赞N/收藏/标签/作者四胶囊——任务W W3「整理」退役换作者，[DetailChromeBars]）+
- * 单击显隐（图片态单击舞台切 chrome+系统栏，L271-276）；媒体层下方保留信息内容区
- * （标题/meta/只读标签三段——任务W W3 下滑区裁剪终态：作者卡内容移植进 DetailAuthorSheet、
- * 「接下来播放」推荐栏整段退役；chrome 挂在舞台盒内随第一屏滚动，只覆盖第一屏）。
+ * 单击显隐（图片态单击舞台切 chrome+系统栏，L271-276）；媒体层下方仅剩错误横幅
+ * （任务X X2 下滑区裁剪终态：标题/meta/标签行整段退役，页面主体=舞台+四胶囊；
+ * chrome 挂在舞台盒内随第一屏滚动，只覆盖第一屏）。
  *
  * 沿革：3a 骨架排版（Web AssetDetailPage 移植）→ 3b/3c/3d 沉浸/播放器/全量接线 →
  * G1a/G1b Web 排版页 → I7 基准切回 GUIDE_UI 沉浸复刻（台账 #33 用户拍板「1 a」，
@@ -409,7 +409,8 @@ fun DetailScreen(
                 onDismiss = viewModel::dismissTagSheet,
             )
         }
-        // 信息弹窗（I7，L169/L171：文件名/出处/尺寸/时长；无完成按钮）
+        // 详细信息 BottomSheet（I7 → 任务X X3 旧版移植扩行：文件名/作品/出处/日期/大小/
+        // 类型/尺寸/时长/目录/路径；无完成按钮，下滑手势/点外部关闭）
         if (infoSheetVisible) {
             DetailInfoSheet(asset = asset, onDismiss = { infoSheetVisible = false })
         }
@@ -495,28 +496,25 @@ fun DetailScreen(
 }
 
 /**
- * 加载成功后的信息内容区（媒体层下方，下滑查看；拍板⑧超规格件保留融入沉浸结构）：
- * 标题 → meta 行 → 标签行（只读）+ 底部呼吸空间——任务W W3 下滑区裁剪终态（三段）：
- * 作者卡内容移植 DetailAuthorSheet、「接下来播放」推荐栏整段退役。舞台动作不在本节（归媒体
- * 舞台浮层）。V2 删 pager 行（用户拍板：导航只留横滑，i/N 由顶部 chrome 承担）。
- * 任务V V3 重排：互动行（DetailInteractionRow）整行退役——点赞/收藏上移首屏四胶囊
- * （DetailBottomChrome）、标签行只读化（编辑走首屏「标签」胶囊）。
+ * 加载成功后的信息内容区（媒体层下方；任务X X2 下滑区裁剪终态，2026-09-12 用户拍板
+ * 「删除下方的文件名字等等，只保留四个胶囊」）：标题/meta/标签行三段整段退役（组件随
+ * 调用一并删除、孤儿清偿见 DetailSections.kt），本节仅剩错误横幅（互动失败唯一提示面，
+ * 条件渲染）+ 底部呼吸空间——常态无可滚内容，verticalScroll 门控（chromeEffective）自然
+ * 失效，滚动列结构与舞台盒几何未动。沿革记档：W3 作者卡移植 DetailAuthorSheet、「接下来
+ * 播放」推荐栏整段退役；V2 删 pager 行（i/N 由顶部 chrome 承担）；V3 互动行退役（点赞/
+ * 收藏上移首屏四胶囊）。舞台动作不在本节（归媒体舞台浮层）。
  */
 @Composable
 private fun DetailContentSections(
     state: DetailUiState,
     onDismissError: () -> Unit,
 ) {
-    val asset = requireNotNull(state.asset)
     Column(modifier = Modifier.fillMaxSize()) {
         // 错误横幅（互动失败不退场，home 的 ErrorBanner 模式可点关）：置内容区首位
         //（媒体舞台下方——沉浸第一屏不被横幅推挤）
         state.errorMessage?.let { message ->
             DetailErrorBanner(message = message, onDismiss = onDismissError)
         }
-        DetailTitle(title = asset.title)
-        DetailMetaRow(asset = asset)
-        DetailTagRow(tags = asset.tags)
         // 底部呼吸空间（避免末节贴系统导航栏；轻量档）——I7 起恒显（chrome 不再占用本节）
         Box(modifier = Modifier.padding(bottom = DETAIL_BOTTOM_SPACER))
     }
