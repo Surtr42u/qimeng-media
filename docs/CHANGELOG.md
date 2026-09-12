@@ -9,6 +9,16 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## feat(app): 任务X X1 批——壳层 detail 路由 insets 全屏化——详情手势四连问题根修（2026-09-12 第二百一十二笔）
+
+执行 AI：GLM-5.3-Flash（主代理三车道调研+裁决立卷；executor 子代理实现，reviewer 子代理对抗审查【通过】含门禁独立复跑与 dump 逐字节同构复核）
+
+- **任务X 卷开卷**：用户真机验收任务W 收官构建后再报 11 条（全屏仍可下滑/退出跳动/不居中/播放态拖出文件名/倍速旁按钮/下滑区裁剪/详细信息旧版移植/作者总览外部化/首页胶囊行下间隙滚动消失/状态栏发白/按旧版逻辑修复）。主会话三车道前置调研+模拟器（qimeng_api35:5562+18461 隔离实例）逐项复现实锤后立卷=仓库外《任务X-详情手势根治与界面精简卷.md》（X1~X8 八批）。**用户第 11 条=对台账待拍板项①（63px 沉浸位移）的拍板：按旧版架构改**。
+- **根因定案（问题1/2/3/4 总根）**：壳层 QimengNavHost 以 `padding(innerPadding).consumeWindowInsets(innerPadding)` 把详情页钉在系统栏线内，舞台盒高随窗口 inset 变化（实测排版 2209/沉浸 2081，图片中心跳变 64px；沉浸视口 2400>舞台盒 2209 致 DetailTitle+MetaRow 从底部静态露出=「还能下滑拖出文件名」观感）。旧版架构=「始终 edge-to-edge 全屏布局，系统栏显隐不触发布局」（GUIDE_UI L162/L272-275）。
+- **修法（最小面特化）**：`isDetailDestination`（destination.route 与 `detail/{assetId}` 模式串精确等值，滑切叠栈同模式必命中）成立时 NavHost modifier 置裸 `Modifier` 全屏铺开，其余路由表达式逐字节保留；detail 侧自管 insets——顶/底 chrome 恢复 statusBars/navigationBarsPadding（在 background 之后=渐变延伸到栏背后，旧版观感），DetailTopRow（加载/错误态）连带补避让；W2 舞台盒冻结机制全保留、调用点加 `maxOf(maxHeight)` 兜底钳制（沉浸隐藏期 nav inset 归零会低估盒高，钳制方向安全，全状态盒高恒=全屏）。
+- **模拟器实测**（HEAD 基线 vs 修复后）：舞台盒 [0,128][2337]→**[0,0][1080,2400] 全屏**；图片 fit-center 中心 (539,1200)=屏幕正中心、letterbox 上下 796/796 对称；进出沉浸图片区逐像素零位移；沉浸态底部零文本节点（文件名条不再露出）；上滑纹丝不动；视频播放/ENDED 态上滑像素 diff bbox=None；四 Tab/我的页结构零回归。
+- 验证：`make app-build`/`app-test`/`app-lint` 全绿（reviewer 独立复跑 exit 0）；X2~X8 后续批次见任务X 任务书勾选。
+
 ## docs(app): 任务W W9 收官——全卷七批完成+W8 SKIPPED 记档+台账落账（2026-09-12 第二百一十一笔）
 
 执行 AI：GLM-5.3-Flash（主代理单会话调度，executor/测试/reviewer 子代理分批协作；每批独立对抗审查【通过】）

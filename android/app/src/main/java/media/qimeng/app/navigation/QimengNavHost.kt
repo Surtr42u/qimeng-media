@@ -130,6 +130,12 @@ fun QimengNavHost(
 ) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
+    // X1 壳层特化判定（2026-09-12 任务X）：当前目的地是否 detail 路由。destination.route
+    // 是路由模式串（"detail/{assetId}"），与 [DetailRoutes.DETAIL_ROUTE] 精确等值即可覆盖
+    // 全部详情实例——兄弟滑切 push 叠栈走同一路由模式，详情页没有更深层后代路由；中文 id
+    // 的 authorCollection 等路由只是详情的「来路」，详情入栈后栈顶目的地必为 detail，
+    // 无需 pattern 匹配
+    val isDetailDestination = currentRoute == DetailRoutes.DETAIL_ROUTE
     // 双击回顶的上一击时间戳（400ms 窗口；壳层计时，列表页只听广播）
     var lastTabTapTimeMs by remember { mutableLongStateOf(0L) }
     // 上一次实际执行顶层导航的时间戳（任务L L2 防抖基准；双击回顶不重置此值，
@@ -208,13 +214,23 @@ fun QimengNavHost(
             exitTransition = { ExitTransition.None },
             popEnterTransition = { EnterTransition.None },
             popExitTransition = { ExitTransition.None },
-            // consumeWindowInsets（任务G3 双重留白清偿）：主壳 Scaffold 无 topBar，innerPadding
-            // 的 top=状态栏高；不消费则覆盖页内嵌的 QimengTopBar（M3 TopAppBar 默认
-            // windowInsets=statusBars）会再自留一段状态栏高度——标题上方两倍空白。
-            // padding 后消费=Scaffold 官方范式，嵌套组件读到已消耗的 insets 归零
-            modifier = Modifier
-                .padding(innerPadding)
-                .consumeWindowInsets(innerPadding),
+            // X1 根修（2026-09-12 任务X，问题1/2/3/4 总根因）：detail 路由内容区不再被
+            // innerPadding 钉位。旧版详情页「始终 edge-to-edge 全屏布局，系统栏显隐不触发
+            // 布局」（GUIDE_UI L162/L272-275）；钉位架构下沉浸切换会经 Scaffold innerPadding
+            // 随 inset 收缩整页位移、舞台盒正下方内容露出（拖出文件名/退出跳动观感）。
+            // 特化仅此一路由：NavHost 全屏铺开，insets 由详情页 chrome 自管
+            // （statusBars/navigationBarsPadding）；其余路由维持 padding+consume 官方范式，
+            // 逐像素不变。consumeWindowInsets（任务G3 双重留白清偿）：主壳 Scaffold 无
+            // topBar，innerPadding 的 top=状态栏高；不消费则覆盖页内嵌的 QimengTopBar（M3
+            // TopAppBar 默认 windowInsets=statusBars）会再自留一段状态栏高度——标题上方
+            // 两倍空白。padding 后消费=Scaffold 官方范式，嵌套组件读到已消耗的 insets 归零
+            modifier = if (isDetailDestination) {
+                Modifier
+            } else {
+                Modifier
+                    .padding(innerPadding)
+                    .consumeWindowInsets(innerPadding)
+            },
         ) {
             composable(TopLevelDestination.HOME.route) {
                 HomeScreen(

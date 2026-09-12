@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -48,12 +49,15 @@ internal val SECTION_SPACING = 12.dp
 /**
  * 顶行：返回箭头。任务G G1a 移除右侧「i / N」批次序号文本（Web 顶行无计数）；i/N 已全归
  * 顶部渐变 chrome（DetailTopChrome，V2 删舞台下 pager 行后为唯一承担者）；沉浸逻辑 3b 不变。
+ * X1 壳层改造（2026-09-12 任务X）后详情内容全屏铺开，本行挂加载/错误态首位（无舞台盒
+ * chrome 浮层），需自管 statusBarsPadding 防返回钮被状态栏遮挡（同 DetailTopChrome X1 口径）。
  */
 @Composable
 internal fun DetailTopRow(onBack: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .statusBarsPadding()
             .padding(horizontal = QimengDimens.SpaceM, vertical = QimengDimens.SpaceM),
         verticalAlignment = Alignment.CenterVertically,
     ) {

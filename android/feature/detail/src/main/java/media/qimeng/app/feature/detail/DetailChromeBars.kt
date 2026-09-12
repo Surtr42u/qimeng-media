@@ -9,7 +9,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -49,10 +51,11 @@ private const val CHROME_PRESS_ANIM_MS = 100
  * 顶部渐变 chrome（任务I I7，GUIDE_UI §详情页 L171）：返回（左）/ 当前序号 n/N（中）/
  * 信息（右），上浮于媒体舞台的渐变遮罩操作层（[CHROME_GRADIENT_ALPHA] 同 GUIDE 渐变档）；
  * 浅底/黑底随明暗切换（L161：图标 tint = onBackground，渐变底 = background，主题自洽）。
- * 顶部不再做状态栏避让（任务V V2，2026-09-10 撤除）：壳层 Scaffold innerPadding 已把内容区
- * 钉在状态栏线下（舞台盒顶=状态栏线），chrome 再加 statusBars inset padding 属双重避让
- * （基线实测：状态栏时钟底 y=82 与 chrome 图标顶 y=310 间距 228px，其中 128px=statusBars
- * inset 被双计；撤后图标顶 182 与舞台盒几何模型吻合）；K3c 顶部背板条机制不受影响。
+ * 状态栏避让沿革：V2 曾撤除（2026-09-10，前提=壳层 Scaffold innerPadding 把内容区钉在
+ * 状态栏线下，再加 inset padding 属双重避让）；X1 壳层改造（2026-09-12 任务X）解除 detail
+ * 路由钉位后该前提失效——舞台盒顶=屏幕顶，按旧版口径「上下操作栏各自经 WindowInsets 加
+ * padding」（GUIDE_UI L272-275）恢复 [Modifier.statusBarsPadding] 自管避让，渐变底仍延伸
+ * 到状态栏背后（padding 在 background 之后，edge-to-edge 观感）。
  * 批次序号沿用旧「i/N」数据源（batchIndex 0 基展示 1 基）；无批次上下文（batchIndex<0，
  * 深链单卡=待拍板 #21）不渲染计数——翻件语义边界：禁止擅自补批次上下文基建。
  */
@@ -67,10 +70,10 @@ internal fun DetailTopChrome(
         modifier = Modifier
             .fillMaxWidth()
             .background(chromeTopGradient())
-            // V2 不再加 statusBars inset padding（2026-09-10 前与壳层 Scaffold 双重避让，
-            // 基线量测时钟底 y82↔图标顶 y310 空白 228px、撤后 310→182=恰一 inset 128px）：
-            // 壳层 innerPadding 已把内容区钉在状态栏线下，舞台盒顶=状态栏线，chrome 直接
-            // 贴舞台盒顶排版即可
+            // X1 恢复自管避让（2026-09-12 任务X）：壳层不再钉位，舞台盒顶=屏幕顶 y=0，
+            // 不避让则返回/序号钮被状态栏时钟遮挡；顺序=渐变→inset padding（渐变铺满
+            // 状态栏区域）。沉浸态 chrome 隐藏、系统栏同隐（inset 归零），互不相扰
+            .statusBarsPadding()
             .padding(horizontal = QimengDimens.SpaceS, vertical = QimengDimens.SpaceXS),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -105,8 +108,10 @@ internal fun DetailTopChrome(
  * 沿革：V3 四胶囊为「点赞N/收藏/标签/整理」（原位替换旧四纯图标行）；W3「整理」退役
  * 换「作者」——整理/删除/改名/移动入口随本批从详情页退役（后果已记档待拍板台账），
  * 作者胶囊点开 [DetailAuthorSheet]（原作者卡内容移植）。渐变遮罩从透明渐变到 qmColorBg
- * 90%、底部不做导航栏避让（任务V V2 口径：壳层内容区已钉在导航栏线下）均不变（K3c
- * 背板条机制不动，胶囊在既有容器内替换）。收藏/点赞图标区分空心/实心态，激活态 =
+ * 90% 不变；导航栏避让沿革：V2 曾撤除（前提=壳层内容区已钉在导航栏线下），X1 壳层改造
+ * （2026-09-12 任务X）解除 detail 钉位后按旧版口径恢复 [Modifier.navigationBarsPadding]
+ * 自管避让（GUIDE_UI L272-275），渐变底延伸到导航栏背后（K3c 背板条机制不动，胶囊在
+ * 既有容器内替换）。收藏/点赞图标区分空心/实心态，激活态 =
  * primary 主色实底；点赞/收藏与原下滑区互动行同链（VM toggle，乐观 disabled 同源）。
  * 「快速转跳」不进四胶囊（主代理保守裁决，待用户确认）——首屏入口随旧图标行消失，
  * DetailJumpSheet 组件保留（挂载点保留无触发点，见 DetailScreen 注释）。
@@ -125,8 +130,10 @@ internal fun DetailBottomChrome(
         modifier = Modifier
             .fillMaxWidth()
             .background(chromeBottomGradient())
-            // V2 不再加 navigationBars inset padding（同顶部口径：壳层 innerPadding 已把
-            // 内容区钉在导航栏线下，双重避让撤除）
+            // X1 恢复自管避让（2026-09-12 任务X）：壳层不再钉位，舞台盒底=屏幕底，胶囊
+            // 若再不避让会压在手势导航栏上；顺序=渐变→inset padding（渐变铺满导航栏区域，
+            // 旧版 bottom 渐变同观感）。沉浸态 chrome 隐藏、系统栏同隐（inset 归零），互不相扰
+            .navigationBarsPadding()
             .padding(vertical = QimengDimens.SpaceXS),
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
