@@ -1,7 +1,11 @@
 package media.qimeng.app.feature.home
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,12 +15,12 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -28,8 +32,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -48,7 +56,12 @@ import media.qimeng.app.core.ui.component.QimengMediaGrid
 import media.qimeng.app.core.ui.component.QimengPill
 import media.qimeng.app.core.ui.component.QimengPullToRefresh
 import media.qimeng.app.core.ui.component.TabScrollController
+import media.qimeng.app.core.ui.icon.Grid1Icon
+import media.qimeng.app.core.ui.icon.HomeFilterIcon
+import media.qimeng.app.core.ui.icon.gridIconFor
 import media.qimeng.app.core.ui.theme.QimengDimens
+// core/ui 共享文案资源别名导入：防与 feature/home 自身 R 撞名（顶栏图标钮无障碍描述复用）
+import media.qimeng.app.core.ui.R as UiR
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 
@@ -98,14 +111,17 @@ internal fun pagerPageForTabSync(isScrollInProgress: Boolean, currentPage: Int):
     if (isScrollInProgress) null else currentPage
 
 /**
- * 首页（M4-2）：顶行[标题][搜索框不可聚焦→跳搜索页][网格图标] +
+ * 首页（M4-2）：顶行[标题][搜索框不可聚焦→跳搜索页][筛选图标钮][列数图标钮] +
  * 推荐/COS/排行榜 三 tab（HorizontalPager 左右横滑切换）+ 各 tab 独立缓存 + 下拉刷新。
+ * Y4a（2026-09-12）：顶栏控件图标化对齐旧版（原「N列」文字钮退役）；筛选面板壳层接线归 Y4b 批。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     onOpenSearch: () -> Unit,
     onOpenAsset: (assetId: String) -> Unit,
+    // Y4a：筛选入口回调上抛（默认空实现=面板未接线）；壳层接线与 QimengFilterSheet 归 Y4b 批
+    onOpenFilter: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -148,9 +164,12 @@ fun HomeScreen(
     //    对齐判定永真，永久卡半屏（首页→排行榜被拽回 COS 半屏的主因）；
     // ② pager→chip 用 currentPage 无门控回写——程序化翻页途经中间页时 switchTab 被中途
     //    劫持，再反向打断动画（帮凶）。
-    // 修法：② 经 pagerPageForTabSync 门控，滚动在途不回写，斩断同步环；① 对齐判定加
-    // currentPageOffsetFraction（isPagerAlignedWithTab），未对齐就重试 animateScrollToPage
-    // 直至落定，重试前先等 isScrollInProgress 归假（不与手指/在途滚动抢 mutator）。
+    // 修法：② 经 pagerPageForTabSync 门控，滚动在途不回写，斩断同步环；① Y6 批
+    // （2026-09-12 用户拍板「tab 切换视觉走旧版那种」）把补页动作从 animateScrollToPage 换成
+    // scrollToPage 瞬时跳页（对齐旧版 HomeFragment.setTab 无动画换页）——滑动过渡不再存在，
+    // 「动画被打断停半屏」失去载体，未对齐重试循环保留为兜底（手势拖拽中途点芯片：先等
+    // isScrollInProgress 归假让路，落定后瞬时对齐，无死循环——scrollToPage 落定即精确对齐，
+    // 退出条件必然满足）；HorizontalPager 手势横滑保留=与旧版（无手势滑动）的已记档差异。
     // #35 哨兵抑制（switchTab 500ms 窗口）未被触碰：回写仍走 switchTab 单点。
     val pagerState = rememberPagerState(initialPage = state.currentTab.ordinal) { HomeTab.entries.size }
     LaunchedEffect(state.currentTab) {
@@ -172,7 +191,9 @@ fun HomeScreen(
             ) {
                 break
             }
-            pagerState.animateScrollToPage(targetTabOrdinal)
+            // Y6（2026-09-12 用户拍板对齐旧版 setTab）：瞬时跳页，无滑动中间帧；
+            // scrollToPage 落定即 currentPage==目标且 fraction==0，循环一轮即退出
+            pagerState.scrollToPage(targetTabOrdinal)
         }
         android.util.Log.d(
             PAGER_SYNC_LOG_TAG,
@@ -193,6 +214,7 @@ fun HomeScreen(
         HomeTopRow(
             columns = columns,
             onOpenSearch = onOpenSearch,
+            onOpenFilter = onOpenFilter,
             onToggleColumns = viewModel::toggleHomeColumns,
         )
         QimengChipRow(
@@ -264,13 +286,19 @@ fun HomeScreen(
 }
 
 /**
- * 顶行：[标题][搜索框不可聚焦→跳搜索页][网格图标]（GUIDE_UI §首页）。
- * 筛选图标不做（2026-09-06 用户拍板落档待拍板条目 5：首页无筛选入口；媒体类型参数协议面保留）。
+ * 顶行：[标题][搜索框不可聚焦→跳搜索页][筛选图标钮][列数图标钮]（GUIDE_UI §首页）。
+ * Y4a（2026-09-12 用户拍板「首页搜索地旁边行列不是图标然后筛选没有」）：顶栏控件图标化+筛选入口落地，
+ * **反转 2026-09-06「筛选不做」旧拍板**（落档待拍板条目 5 作废；媒体类型筛选参数协议面保留给 Y4b 面板）。
+ * 布局逐项对齐旧版 fragment_home.xml 实录：标题 marginEnd=10dp（L31）/搜索框 weight=1 高 40dp（L33-44，
+ * F 批已对齐）/筛选钮 40dp 胶囊 marginStart=10dp marginEnd=6dp（L48-52）/列数钮 40dp 胶囊（L53-59）；
+ * 筛选在左、列数在右（实录次序）。列数钮图标随列数换（旧版 HomeFragment.toggleColumns L366-374 同款：
+ * 1→ic_grid_1、2→ic_grid_2；1 档为 Y4a 补齐，[gridIconFor] 既有 2..5 档 clamp 语义不动故先特判 1）。
  */
 @Composable
 private fun HomeTopRow(
     columns: Int,
     onOpenSearch: () -> Unit,
+    onOpenFilter: () -> Unit,
     onToggleColumns: () -> Unit,
 ) {
     Row(
@@ -278,11 +306,18 @@ private fun HomeTopRow(
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(
             text = HOME_TITLE,
-            style = MaterialTheme.typography.titleLarge,
+            // Y3 批（2026-09-12 全局字体对齐旧版）：首页标题对齐旧版 fragment_home.xml L25-32
+            // ——24sp Bold + qmColorTextPrimary（onSurface 槽；此前 titleLarge 22sp Regular 偏小）
+            style = MaterialTheme.typography.titleLarge.copy(
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+            ),
+            // 旧版 L31 marginEnd=10dp（此前 spacedBy 8dp 均一间距，Y4a 逐项实录化）
+            modifier = Modifier.padding(end = 10.dp),
         )
         // 搜索框不可聚焦（点击整块跳搜索页——规格书语义）；高度 40dp=旧版 fragment_home.xml L37
         // bg_capsule_soft 胶囊底（F 批 2026-09-09：压回旧版视觉，此前实测 48dp）
@@ -306,8 +341,81 @@ private fun HomeTopRow(
                 )
             }
         }
-        IconButton(onClick = onToggleColumns) {
-            Text(text = "${columns}列", style = MaterialTheme.typography.labelLarge)
+        // 筛选钮（左）与列数钮（右）：无障碍文案复用 core/ui 共享资源（QimengTitleRow 同款语义；
+        // 别名导入防与 feature R 撞名）
+        HomeTopIconButton(
+            icon = HomeFilterIcon,
+            contentDescription = stringResource(UiR.string.ui_filter_icon_desc),
+            onClick = onOpenFilter,
+            // 旧版 L49-50 marginStart/End=10/6dp
+            modifier = Modifier.padding(start = 10.dp, end = 6.dp),
+        )
+        HomeTopIconButton(
+            icon = if (columns == 1) Grid1Icon else gridIconFor(columns),
+            contentDescription = stringResource(UiR.string.ui_columns_icon_desc),
+            onClick = onToggleColumns,
+        )
+    }
+}
+
+/** 按下缩放最小值（QimengSegPill 同款 0.92，GUIDE_UI §UI约束「按下反馈动画」） */
+private const val HOME_TOP_ICON_PRESSED_SCALE = 0.92f
+
+/** 按下缩放动画时长 ms（QimengSegPill 同款 100ms，旧版 PressAnimation 对应值） */
+private const val HOME_TOP_ICON_PRESS_SCALE_DURATION_MS = 100
+
+/**
+ * 首页顶栏 40dp 胶囊图标钮（Y4a）：Surface 胶囊底（surfaceVariant + [QimengDimens.PillCornerRadius]，
+ * 对齐旧版 bg_capsule_soft）+ 24dp 图标（[QimengDimens.IconDefaultSize]，tint 对齐旧版
+ * qmColorPrimary→primary 槽）+ 按压缩放反馈（QimengSegPill 同款 0.92/100ms 机制；旧版 ImageView
+ * 无按压反馈，取 GUIDE_UI §UI约束 标准款补齐）。
+ * 不走 M3 Surface onClick 重载/IconButton：二者内建 48dp 最小触达会把 40dp 胶囊撑大
+ * （同 QimengSegPill F 批 KDoc 实测成因），旧版钮恰为 40dp 必须保形；缩放即反馈，不叠 ripple。
+ */
+@Composable
+private fun HomeTopIconButton(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    // 按下态经自持 interactionSource 观测，缩放在 graphicsLayer 块内延迟读取 pressScale，
+    // 缩放动画不触发重组（QimengSegPill 同款机制）
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed) HOME_TOP_ICON_PRESSED_SCALE else 1f,
+        animationSpec = tween(
+            durationMillis = HOME_TOP_ICON_PRESS_SCALE_DURATION_MS,
+            easing = FastOutSlowInEasing,
+        ),
+        label = "homeTopIconPressScale",
+    )
+    Surface(
+        shape = RoundedCornerShape(QimengDimens.PillCornerRadius),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = modifier
+            .size(QimengDimens.IconButtonSize)
+            .graphicsLayer {
+                scaleX = pressScale
+                scaleY = pressScale
+            }
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+            ),
+    ) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = contentDescription,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(QimengDimens.IconDefaultSize),
+            )
         }
     }
 }

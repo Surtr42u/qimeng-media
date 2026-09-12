@@ -104,7 +104,14 @@ val ClearIcon: ImageVector = materialIcon(
     pathData = "M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z",
 )
 
-// ---------- 网格列数图标（旧版 drawable/ic_grid_2~5 的 pathData 逐字拷贝，M4-2A-B2） ----------
+// ---------- 网格列数图标（旧版 drawable/ic_grid_* 的 pathData 逐字拷贝；2~5 档=M4-2A-B2，1 档=任务Y Y4a 首页顶栏图标化补齐） ----------
+
+/** 1 列（旧版 ic_grid_1：单列双行大方块；首页列数 1~2 档切换用——任务Y Y4a，2026-09-12） */
+val Grid1Icon: ImageVector = multiPathIcon(
+    name = "QimengGrid1",
+    "M4,4h16v7H4Z",
+    "M4,13h16v7H4Z",
+)
 
 /** 2 列（旧版 ic_grid_2：2x2 实心方块组） */
 val Grid2Icon: ImageVector = multiPathIcon(
@@ -166,6 +173,16 @@ fun gridIconFor(columns: Int): ImageVector = when (columns.coerceIn(MIN_GRID_ICO
 val FilterListIcon: ImageVector = materialIcon(
     name = "QimengFilterList",
     pathData = "M10 18h4v-2h-4v2zM3 6v2h18V6H3zm3 7h12v-2H6v2z",
+)
+
+/**
+ * 首页筛选入口（旧版 drawable/ic_home_filter 的 pathData 逐字拷贝：行首圆点+不等长线形，
+ * 任务Y Y4a 2026-09-12）。与 [FilterListIcon] 是两个图标：后者=Material filter_list（相册页
+ * QimengTitleRow 用），本图标=旧版首页顶栏 homeFilterButton 专用款，勿互换。
+ */
+val HomeFilterIcon: ImageVector = materialIcon(
+    name = "QimengHomeFilter",
+    pathData = "M3,7h2v2h-2zM7,7h14v2h-14zM3,11h2v2h-2zM7,11h10v2h-10zM3,15h2v2h-2zM7,15h6v2h-6z",
 )
 
 private const val MIN_GRID_ICON_COLUMNS = 2
