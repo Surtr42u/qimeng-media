@@ -5,19 +5,25 @@ import android.content.res.Configuration
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.BottomSheetDefaults
+import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -41,6 +47,8 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.Player
@@ -52,6 +60,8 @@ import media.qimeng.app.core.model.AssetDetail
 import media.qimeng.app.core.model.TimelineTag
 import media.qimeng.app.core.ui.component.QimengCapsuleTextField
 import media.qimeng.app.core.ui.icon.PlayIcon
+import media.qimeng.app.core.ui.theme.QimengDimens
+import media.qimeng.app.core.ui.theme.qimengFilledButtonColors
 import media.qimeng.app.feature.detail.video.BiliPlayerView
 import media.qimeng.app.feature.detail.video.TimelineTagEntity
 import media.qimeng.app.feature.detail.video.VideoFullscreenCommand
@@ -60,6 +70,7 @@ import media.qimeng.app.feature.detail.video.VideoFullscreenOrientation
 import media.qimeng.app.feature.detail.video.VideoFullscreenStateMachine
 import media.qimeng.app.feature.detail.video.VideoStageMode
 import media.qimeng.app.feature.detail.video.VideoStageStateMachine
+import media.qimeng.app.feature.detail.video.formatDurationMs
 import media.qimeng.app.feature.detail.video.isLandscapeVideoSize
 import media.qimeng.app.feature.detail.video.rememberVideoPlayerState
 
@@ -73,6 +84,12 @@ private const val STAGE_PLAY_SCRIM_ALPHA = 0.6f
 
 /** 「已看完」徽标外边距（贴舞台左上角，8dp 通用贴边档） */
 private val STAGE_WATCHED_BADGE_PADDING = 8.dp
+
+/** 快捷标记胶囊圆角（S1c 对齐旧版快捷键胶囊 16dp 档；与芯片 100dp 胶囊语言区分，任务书冻结） */
+private val TAG_QUICK_CAPSULE_CORNER_RADIUS = 16.dp
+
+/** 快捷标记胶囊内边距（S1c 对齐旧版快捷键：横 16dp / 纵 10dp；纵 10dp 无既有 token，本文件单源） */
+private val TAG_QUICK_CAPSULE_PADDING = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
 
 /** 进度轮询间隔（3d 设计从简：播放中每 1s 读一次位置喂节流策略；策略自身 5s 放行一次） */
 private const val POSITION_POLL_INTERVAL_MS = 1000L
@@ -306,9 +323,12 @@ internal fun VideoStage(
         playerView?.updateTimelineTags(tagEntities)
     }
 
-    // 标签添加对话框状态（wasPlaying 快照：打开前暂停，dismiss 后恢复——冻结口径）
+    // 标签添加对话框状态（wasPlaying 快照：打开前暂停，dismiss 后恢复——冻结口径；
+    // tagPositionMs=打开瞬间位置快照，S1c 起对话框改传入不再读播放器，副标题与写入
+    // timeMillis 同源——确认时再读会在 Sheet 停留/收起动画窗口内漂移取数点）
     var showTagDialog by remember { mutableStateOf(false) }
     var wasPlayingBeforeDialog by remember { mutableStateOf(false) }
+    var tagPositionMs by remember { mutableLongStateOf(0L) }
     // 长按菜单目标（桥接实体；域 id 由菜单经 tagEntities 序号反查，避免实体遗留字段伪造）
     var menuTag by remember { mutableStateOf<TimelineTagEntity?>(null) }
 
@@ -342,16 +362,18 @@ internal fun VideoStage(
         playerState.play()
     }
 
-    /** 关标签对话框并按快照恢复播放（dismiss/确认共用；恢复走 startPlayback=ENDED 回 0 同口径） */
+    /** 关标签对话框并按快照恢复播放（dismiss/添加共用；恢复走 startPlayback=ENDED 回 0 同口径） */
     fun dismissTagDialog() {
         showTagDialog = false
         if (wasPlayingBeforeDialog) playerView?.startPlayback()
     }
 
-    /** 书签钮（排版态/覆盖层视图共用同链）：wasPlaying 快照 → 暂停 → 开标签对话框
-     *（dismiss/确认后恢复；spec 冻结口径「打开前暂停、dismiss 后恢复」） */
+    /** 书签钮（排版态/覆盖层视图共用同链）：wasPlaying 快照 → 位置打开瞬间快照 → 暂停 → 开
+     * 标签对话框（dismiss/添加后恢复；spec 冻结口径「打开前暂停、dismiss 后恢复」）。位置
+     * 在打开瞬间捕获（S1c 对齐旧版「当前时间」副标题口径：对话框只收快照不读播放器） */
     fun handlePlayerBookmark(view: BiliPlayerView) {
         wasPlayingBeforeDialog = view.isPlaying()
+        tagPositionMs = view.currentPositionMs
         view.pausePlayback()
         showTagDialog = true
     }
@@ -510,12 +532,14 @@ internal fun VideoStage(
         }
     }
 
-    // 时间轴标签添加对话框（3d 旧版核心体验：快捷 ❤️/⭐ + 自定义输入）
+    // 时间轴标签添加（3d 旧版核心体验，S1c 对齐旧版形态：底部弹出 Sheet，快捷 ❤️/⭐ 点击
+    // 立即添加并收起 + 自定义输入，无「取消」按钮）；位置传打开瞬间快照 tagPositionMs——
+    // 写库 timeMillis 与副标题「当前时间」同源（快照捕获见 handlePlayerBookmark）
     if (showTagDialog) {
         TimelineTagAddDialog(
-            onConfirm = { name ->
-                val positionMs = playerView?.currentPositionMs ?: 0L
-                latestOnAdd(positionMs, name)
+            currentPositionMs = tagPositionMs,
+            onAdd = { name ->
+                latestOnAdd(tagPositionMs, name)
                 dismissTagDialog()
             },
             onDismiss = ::dismissTagDialog,
@@ -558,61 +582,136 @@ internal fun VideoStage(
 }
 
 /**
- * 时间轴标签添加对话框（3d）：快捷 ❤️/⭐ 两键填入前缀（可再补文字，如「❤️ 白丝」）+
- * 自定义输入；确认按钮非空才可点。快捷键颜色按 [TimelineTagColors] 前缀映射（红/金）。
+ * 时间轴标签添加 BottomSheet（3d → S1c 2026-09-13 对齐旧版添加标记形态）：底部弹出（顶部
+ * 圆角 + surface 底、无拖拽把手；点外部/下滑/返回键关闭），**无「取消」按钮**。内容自上
+ *而下：居中粗体标题 + 「当前时间」副标题（[currentPositionMs] =调用方打开瞬间捕获的位置
+ * 快照，本组件不读播放器）+「快捷标记」两枚浅灰胶囊（点击**立即**写入完整名并收起，不再
+ * 经过输入框）+「自定义标记」输入行（非空才放行「添加」，写入 trim 值）。
+ * 快捷写入字面量 = [TimelineTagColors.HEART_TAG]/[STAR_TAG] + 空格 + 标签名（单源口径
+ * 延续 2026-09-07 审查 P2，芯片底色按裸前缀判定兼容变体符，见 TimelineTagColors KDoc）；
+ * 胶囊文字用主题 onSurface 对齐旧版浅灰胶囊（emoji 自带色，不再红/金染色）。
+ * Sheet 陷阱处置沿用 DetailAuthorSheet 现口径（alpha15 短内容 sheet 三陷阱：dragHandle=
+ * null + standardWindowInsets + 点外/返回可关，沿革与实证见 DetailSheets.kt KDoc）；
+ * 底部导航栏遮挡由 standardWindowInsets 底部段承担（DetailSheets 既有同款，不再叠加
+ * navigationBarsPadding 双计入）。
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TimelineTagAddDialog(
-    onConfirm: (name: String) -> Unit,
+    currentPositionMs: Long,
+    onAdd: (name: String) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    // 输入态随 Sheet 销毁复位（Sheet 由调用方关闭，卸载即清，无需 onAdd 后手动清）
     var input by remember { mutableStateOf("") }
-    val darkTheme = isSystemInDarkTheme()
-    AlertDialog(
+    ModalBottomSheet(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.detail_video_tag_add_title)) },
-        text = {
-            Column {
-                // 快捷键 = 前缀填入输入框（可再补文字，如「❤️ 名字」）。写入字面量与
-                // 芯片底色判定均收敛在 TimelineTagColors 单源：写入用 HEART_TAG/STAR_TAG
-                // 完整字面量，判定用裸前缀（兼容带/不带变体符的既有数据）
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick = { input = TimelineTagColors.HEART_TAG }) {
-                        Text(
-                            text = TimelineTagColors.HEART_TAG,
-                            color = TimelineTagColors.colorFor(
-                                TimelineTagColors.HEART_TAG, darkTheme, MaterialTheme.colorScheme.onSurface,
-                            ),
-                        )
-                    }
-                    TextButton(onClick = { input = TimelineTagColors.STAR_TAG }) {
-                        Text(
-                            text = TimelineTagColors.STAR_TAG,
-                            color = TimelineTagColors.colorFor(
-                                TimelineTagColors.STAR_TAG, darkTheme, MaterialTheme.colorScheme.onSurface,
-                            ),
-                        )
-                    }
+        // 短内容 sheet 三陷阱处置同 DetailAuthorSheet（S1b 现口径），沿革见其 KDoc
+        dragHandle = null,
+        contentWindowInsets = { BottomSheetDefaults.standardWindowInsets },
+        properties = ModalBottomSheetProperties(
+            shouldDismissOnBackPress = true,
+            shouldDismissOnClickOutside = true,
+        ),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                // 去 handle 后内容顶到圆角边，补顶距档（DetailAuthorSheet 同款）；底部 24dp
+                // 呼吸与页面级留白同档（DETAIL_BOTTOM_SPACER 单源在 DetailScreen.kt）
+                .padding(top = QimengDimens.ScreenPaddingTop)
+                .padding(horizontal = QimengDimens.ScreenPaddingHorizontal)
+                .padding(bottom = DETAIL_BOTTOM_SPACER),
+        ) {
+            // ① 标题 + ② 当前时间（Column 默认 Start 对齐小节标签，居中文本走
+            // fillMaxWidth + textAlign 局部居中）
+            Text(
+                text = stringResource(R.string.detail_video_tag_add_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = QimengDimens.SpaceM),
+            )
+            Text(
+                text = stringResource(
+                    R.string.detail_video_tag_current_time,
+                    formatDurationMs(currentPositionMs),
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            // ③④ 快捷标记：点击立即写入完整名并收起（旧版同款，不碰输入框）；
+            // 胶囊显示文本同写入字面量（❤️/⭐ + 空格 + 名，旧版 BottomSheet 同观感）
+            TagSectionLabel(text = stringResource(R.string.detail_video_tag_section_quick))
+            val quickLike = stringResource(R.string.detail_video_tag_quick_like)
+            val quickFavorite = stringResource(R.string.detail_video_tag_quick_favorite)
+            Row(horizontalArrangement = Arrangement.spacedBy(QimengDimens.SpaceM)) {
+                TagQuickCapsule(label = TimelineTagColors.HEART_TAG + " " + quickLike) {
+                    onAdd(TimelineTagColors.HEART_TAG + " " + quickLike)
                 }
+                TagQuickCapsule(label = TimelineTagColors.STAR_TAG + " " + quickFavorite) {
+                    onAdd(TimelineTagColors.STAR_TAG + " " + quickFavorite)
+                }
+            }
+            // ⑤⑥ 自定义标记：非空才放行，写入 trim 值后由调用方收起
+            TagSectionLabel(text = stringResource(R.string.detail_video_tag_section_custom))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(QimengDimens.SpaceM),
+            ) {
                 QimengCapsuleTextField(
                     value = input,
                     onValueChange = { input = it },
                     singleLine = true,
                     // 胶囊输入框 label 走 placeholder 语义（G6：对齐 Web，组件不支持 label 浮动）
                     placeholder = stringResource(R.string.detail_video_tag_input_hint),
+                    modifier = Modifier.weight(1f),
                 )
+                Button(
+                    enabled = input.isNotBlank(),
+                    onClick = { onAdd(input.trim()) },
+                    // 可禁用实底按钮统一入口（W6 #49：夜间禁用态防 dither 横带，禁止裸 buttonColors）
+                    colors = qimengFilledButtonColors(),
+                    shape = RoundedCornerShape(QimengDimens.PillCornerRadius),
+                ) {
+                    Text(text = stringResource(R.string.detail_video_tag_add_action))
+                }
             }
-        },
-        confirmButton = {
-            TextButton(
-                enabled = input.isNotBlank(),
-                onClick = { onConfirm(input) },
-            ) { Text(stringResource(R.string.detail_save)) }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.detail_cancel)) }
-        },
+        }
+    }
+}
+
+/** 添加 Sheet 小节标签（③/⑤：左对齐灰色小字，旧版 section label 同款） */
+@Composable
+private fun TagSectionLabel(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = QimengDimens.SpaceL, bottom = QimengDimens.SpaceM),
     )
+}
+
+/** 快捷标记胶囊（③：浅灰圆角胶囊 + 主题色文字；emoji 自带色不染色，对齐旧版） */
+@Composable
+private fun TagQuickCapsule(label: String, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(TAG_QUICK_CAPSULE_CORNER_RADIUS),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(TAG_QUICK_CAPSULE_PADDING),
+        )
+    }
 }
 
 /**

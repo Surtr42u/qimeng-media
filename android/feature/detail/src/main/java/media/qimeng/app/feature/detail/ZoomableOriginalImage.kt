@@ -55,10 +55,14 @@ private val DECODE_ERROR_HORIZONTAL_PADDING = 24.dp
  * （Media3 播放器错误面自成体系，且 Web 端编码兼容提示条已按 2026-09-05 用户拍板移除，
  * 无可对照口径——记档见交付报告）。
  *
- * 图片舞台（[ImageStage]）：单击=切换沉浸 chrome、横滑=兄弟切换（I7 起）。
+ * 图片舞台（[ImageStage]）：单击=切换沉浸 chrome、横滑=兄弟切换（I7 起）。缩放沉浸
+ * （2026-09-13 用户反馈驱动，非旧版对齐）：放大跨过阈值经 [onZoomImmersiveChanged] 上报，
+ * 宿主据此隐藏上下 chrome 渐变层与系统栏——bridge 转发链同手势回调（factory 只 set 一次）。
  *
  * @param onSingleTap 单击回调（语义由宿主场景定：舞台态切沉浸 chrome）
  * @param onSwipe 左右滑切换相邻资产（方向同 ZoomImageView.onSwipe：+1=左滑下一张）
+ * @param onZoomImmersiveChanged 缩放沉浸上报（ZoomImageView 只读回调直转：true=跨过放大
+ *   阈值、false=收束点回落；非对称滞回在搬运件 emitZoomImmersive 内，本层原样透传）
  * @param onExitDetail 解码失败覆盖层「返回」按钮（离开详情页，壳层 popBackStack 语义）
  */
 @Composable
@@ -67,12 +71,14 @@ internal fun ZoomableOriginalImage(
     modifier: Modifier,
     onSingleTap: () -> Unit,
     onSwipe: (direction: Int) -> Unit,
+    onZoomImmersiveChanged: (Boolean) -> Unit = {},
     onExitDetail: () -> Unit = {},
 ) {
     // 手势回调在 factory 里只 set 一次，经此桥转发到最新动作（组合局部值变化不重建 View）
     val bridge = remember { ZoomGestureBridge() }
     bridge.onSingleTap = onSingleTap
     bridge.onSwipe = onSwipe
+    bridge.onZoomImmersiveChanged = onZoomImmersiveChanged
 
     val context = LocalContext.current
     var zoomView by remember { mutableStateOf<ZoomImageView?>(null) }
@@ -106,6 +112,8 @@ internal fun ZoomableOriginalImage(
                     view.onSingleTap = { bridge.onSingleTap() }
                     // 旧版方向语义：dx<0（左滑）→ +1 = 下一张；delta 与 onSwipe 方向同义直传
                     view.onSwipe = { direction -> bridge.onSwipe(direction) }
+                    // 缩放沉浸只读回调同桥转发（直持 lambda 会捕获过期引用，纪律同上）
+                    view.onZoomImmersiveChanged = { zoomed -> bridge.onZoomImmersiveChanged(zoomed) }
                     view.contentDescription = ctx.getString(R.string.detail_image_zoom_desc)
                 }
             },
@@ -200,8 +208,9 @@ private fun DecodeErrorOverlay(
     }
 }
 
-/** 手势回调桥：ZoomImageView 的 Kotlin 回调持一次性引用，经可变字段转发到最新动作 */
+/** 手势/状态回调桥：ZoomImageView 的 Kotlin 回调持一次性引用，经可变字段转发到最新动作 */
 private class ZoomGestureBridge {
     var onSingleTap: () -> Unit = {}
     var onSwipe: (Int) -> Unit = {}
+    var onZoomImmersiveChanged: (Boolean) -> Unit = {}
 }

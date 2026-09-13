@@ -31,8 +31,8 @@ import media.qimeng.app.core.model.TimelineTag
  * 不变；视频：海报态缩略图 Fit 居中 + 播放态 BiliPlayerView 自适应 letterbox（行为同
  * 旧版，固定宽高比舞台退役——旧版媒体层恒全屏）。
  *
- * 舞台动作（沉浸开关/兄弟切换/播放态上报）与视频接线参数（续播起点/已看完/进度上报/
- * 打点/时间轴标签）维持具名参数逐层下发（3d 解冻拓扑不变，DetailScreen 单源）。
+ * 舞台动作（沉浸开关/兄弟切换/播放态上报/缩放沉浸上报）与视频接线参数（续播起点/已看完/
+ * 进度上报/打点/时间轴标签）维持具名参数逐层下发（3d 解冻拓扑不变，DetailScreen 单源）。
  */
 
 /**
@@ -40,7 +40,9 @@ import media.qimeng.app.core.model.TimelineTag
  * 显示 → 主题背景透传；沉浸（chrome 隐藏）或播放器活动（视频 PLAYING/ENDED，chrome 让位
  * 播放器控制器即 chromeEffective=false）→ 纯黑。纯函数无 Compose 依赖（Color 为纯 Kotlin
  * 值类），JVM 单测锁定见 StageBackdropTest；裁决点唯一在 DetailScreen，经 [DetailMediaStage]
- * 的 backdrop 参数逐层下发，子层禁止再自带底色（防口径分叉复发）。
+ * 的 backdrop 参数逐层下发，子层禁止再自带底色（防口径分叉复发）。2026-09-13 缩放沉浸：
+ * 调用方传入的 chromeVisible 实为 chromeEffective（已并入图片放大态 zoomImmersive），
+ * 放大态 letterbox 随沉浸转黑（与「沉浸=纯黑」同口径）——本纯函数签名与行为零变化。
  */
 internal fun stageBackdropColor(
     chromeVisible: Boolean,
@@ -115,6 +117,9 @@ internal fun DetailMediaStage(
     onSiblingNavigate: (delta: Int) -> Unit,
     /** 沉浸模式 chrome 开关回调（I7：图片态单击舞台切换；视频态由播放态镜像驱动） */
     onToggleChrome: () -> Unit,
+    /** 图片态缩放沉浸上报（2026-09-13 用户反馈「放大时上下白色渐变压图不适」驱动，非旧版对齐；
+     *  仅图片分支消费直传，视频分支不接——播放器沉浸走 onPlayerActiveChanged 独立语义） */
+    onZoomImmersiveChanged: (Boolean) -> Unit = {},
     /** 视频播放器活动态上报（I7：海报态=false，播放/暂停/ENDED=true——chrome 让位播放器控制器） */
     onPlayerActiveChanged: (Boolean) -> Unit,
     /** 播放中按返回先退 chrome 浏览模式（L279）后 chrome 恢复显示的回调 */
@@ -162,6 +167,7 @@ internal fun DetailMediaStage(
                 modifier = Modifier.fillMaxSize(),
                 onSiblingNavigate = onSiblingNavigate,
                 onToggleChrome = onToggleChrome,
+                onZoomImmersiveChanged = onZoomImmersiveChanged,
                 onExitDetail = onExitDetail,
             )
         }
