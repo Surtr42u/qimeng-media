@@ -146,12 +146,16 @@ sdk-lock: ## 重算三端 SDK 生成物指纹并写入 api/sdk.lock
 	@{ \
 		find server/internal/httpapi/gen -maxdepth 1 -type f -name '*.gen.go'; \
 		find web/src/api/generated -type f \( -name '*.js' -o -name '*.ts' \); \
-		find android/sdk -type f -not -path '*/.openapi-generator/*' -not -path '*/build/*'; \
+		find android/sdk -type f -not -path '*/.openapi-generator/*' -not -path '*/build/*' -not -path '*/src/test/*'; \
 	} | LC_ALL=C sort \
 	| while IFS= read -r f; do \
 		printf '%s  %s\n' "$$(tr -d '\r' < "$$f" | sha256sum | cut -d' ' -f1)" "$$f"; \
 	done > api/sdk.lock
 	@echo "sdk-lock: api/sdk.lock written ($$(wc -l < api/sdk.lock) entries)"
+	@# src/test 排除依据（2026-09-13）：生成器对 *Test.kt 的输出跨平台不稳定——CI/Linux 与
+	@# Windows 对同一 yaml 各自确定但互不相同（CI 34762202974 实证：18 处漂移全部落在生成
+	@# 测试文件，主源码/Go/TS 零漂移），而锁的守护目标是「被三端消费的 API 面」；生成测试
+	@# 本身的回归由 CI Android job 的 test 步骤兜底。
 
 # Android 客户端（M4，ADR-0014 Compose 重建）：走 wrapper，禁止依赖本机全局 gradle。
 # 前置：android/sdk 生成物存在（干净 checkout 先跑 make sdk；缺 :sdk 的报错一律重跑 make sdk，
