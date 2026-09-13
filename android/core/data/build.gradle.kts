@@ -38,10 +38,14 @@ dependencies {
 
     // Coil ImageLoader 全局单例组装（M4-6 C5）：磁盘缓存档位读自本模块 DataStore，
     // 组装必须与档位仓库同模块（依赖方向：core:data -> core:network 单向，network 无法反向依赖本模块）。
-    // GIF 解码器（coil-gif，同家族白名单）；coil-network-okhttp 取图器经 :core:ui 的 api 传递进
-    // APK classpath 由 ServiceLoader 注册，此处无需声明。
+    // GIF 解码器（coil-gif，同家族白名单）。
+    // coil-network-okhttp（2026-09-13 BUG-A 修复）：ImageLoader 显式装配 OkHttp 取图器
+    // （自定义读超时口径），本模块需引用 OkHttpNetworkFetcherFactory → 编译期显式声明；
+    // :app 侧经 :core:ui 的 api 传递进运行时 classpath，ServiceLoader 默认注册仍在（被
+    // 显式组件先行覆盖，见 CoilModule 注释），此处 implementation 不改变对外依赖面。
     implementation(libs.coil.core)
     implementation(libs.coil.gif)
+    implementation(libs.coil.network.okhttp)
 
     // 上传队列（M4-5）：WorkManager 白名单依赖 + @HiltWorker（androidx.hilt 同族接线）。
     // 官方来源与版本论证见 libs.versions.toml 的 work 版本注释。
