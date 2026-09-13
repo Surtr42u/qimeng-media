@@ -1,7 +1,10 @@
 package media.qimeng.app.feature.detail
 
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -41,6 +44,30 @@ import media.qimeng.app.core.ui.theme.QimengDimens
 // ---------- 页面私有尺寸/常量档（本文件单源；来源注释随条目） ----------
 
 /**
+ * chrome 条内容淡入/淡出时长档（任务U6，2026-09-14 对齐旧版逐帧语义）：旧版
+ * MediaDetailFragment.setChromeVisible 对条内容 `animate().alpha(...).setDuration(250L)`
+ * 逐字同源——250ms 单档、进出同用时。沿革：U3 曾 300/220 进慢出快（真机「近瞬隐」反馈
+ * 驱动），U5 统一 250 但保留 IN/OUT 双常量，U6 合并单档并随组件迁入本文件（原
+ * DetailScreen.kt CHROME_FADE_IN_MS/CHROME_FADE_OUT_MS 废止）。
+ */
+private const val CHROME_FADE_MS = 250
+
+/**
+ * chrome 条内容淡入/淡出统一 spec（进出共用，同曲线同时长）。旧版 ViewPropertyAnimator
+ * 未显式设插值器 = 默认 AccelerateDecelerateInterpolator，Compose 等价 = FastOutSlowInEasing。
+ *
+ * 任务U6 语义拆分（对齐旧版 setChromeVisible 逐帧行为）：**底色瞬时切换**——旧版显隐
+ * 首帧 setBackgroundColor 瞬时生效（隐=TRANSPARENT、显=0xF2 纯色，同帧完成），**仅条内
+ * 图标内容**走本 spec 淡出/淡入（结束置 INVISIBLE）。据此条容器（底色/系统栏避让/内边距）
+ * 恒组合、不参与任何动画；此前整条（含底色）一起 fadeIn/fadeOut，背景跟着渐隐导致实测
+ * 消失拖尾 325-400ms，本批清偿。
+ */
+private val CHROME_CONTENT_FADE = tween<Float>(
+    durationMillis = CHROME_FADE_MS,
+    easing = FastOutSlowInEasing,
+)
+
+/**
  * chrome 条底色不透明度（任务U U5 对齐旧版**运行时**实现）：旧版 MediaDetailFragment
  * setChromeVisible 用 `setBackgroundColor((0xF2 shl 24) or (qmColorBg and 0x00FFFFFF))`——
  * 纯色 0xF2≈95% 半透明条，**不是渐变**；仓库里的 bg_detail_top/bottom_gradient.xml 是被
@@ -78,20 +105,27 @@ private const val CHROME_PRESS_ANIM_MS = 100
  * 路由钉位后该前提失效——舞台盒顶=屏幕顶，按旧版口径「上下操作栏各自经 WindowInsets 加
  * padding」（GUIDE_UI L272-275）恢复 [Modifier.statusBarsPadding] 自管避让，渐变底仍延伸
  * 到状态栏背后（padding 在 background 之后，edge-to-edge 观感）。
+ * 任务U6 显隐拆分（对齐旧版 setChromeVisible 逐帧语义）：本件（条容器=底色+避让+内边距）
+ * 由调用方恒组合，底色随 [contentVisible] 瞬时切换（不参与动画）；仅条内内容包
+ * AnimatedVisibility 淡入淡出（spec 见 [CHROME_CONTENT_FADE]）。
  * 批次序号沿用旧「i/N」数据源（batchIndex 0 基展示 1 基）；无批次上下文（batchIndex<0，
  * 深链单卡=待拍板 #21）不渲染计数——翻件语义边界：禁止擅自补批次上下文基建。
  */
 @Composable
 internal fun DetailTopChrome(
+    contentVisible: Boolean,
     batchIndex: Int,
     batchSize: Int,
     onBack: () -> Unit,
     onOpenInfo: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .background(chromeBarTint())
+            // 任务U6 底色瞬时切换（旧版 setBackgroundColor 同帧语义直译）：显=纯色 @0xF2，
+            // 隐=全透明——直三元，不包任何 animate*AsState，零过渡
+            .background(if (contentVisible) chromeBarTint() else Color.Transparent)
             // X1 恢复自管避让（2026-09-12 任务X）：壳层不再钉位，舞台盒顶=屏幕顶 y=0，
             // 不避让则返回/序号钮被状态栏时钟遮挡；顺序=渐变→inset padding（渐变铺满
             // 状态栏区域）。沉浸态 chrome 隐藏、系统栏同隐（inset 归零），互不相扰
@@ -99,33 +133,50 @@ internal fun DetailTopChrome(
             .padding(horizontal = QimengDimens.SpaceS, vertical = QimengDimens.SpaceXS),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ChromeIconButton(
-            icon = BackIcon,
-            contentDescription = stringResource(R.string.detail_back),
-            tint = MaterialTheme.colorScheme.onBackground,
-            onClick = onBack,
-        )
-        Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-            if (batchIndex >= 0) {
-                // 任务Y Y2 字号对齐旧版：中央计数 TextView textSize=18sp bold
-                // （fragment_media_detail.xml:80-82 detailFileName，MediaDetailFragment L406
-                // "%d/%d" 填充同源，文本格式见 strings.xml detail_batch_position）
-                Text(
-                    text = stringResource(R.string.detail_batch_position, batchIndex + 1, batchSize),
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                    ),
-                    color = MaterialTheme.colorScheme.onBackground,
+        // 仅条内内容参与淡入淡出（U6）；显式全限定取顶层函数——本作用域在 Row 内，
+        // 不限定会误绑 RowScope.AnimatedVisibility 扩展（默认带 expand/shrinkHorizontally）。
+        // 退出完成后内容离场、容器塌为避让+内边距高：底色已透明无视觉差；显时底色
+        // 先瞬时回填、内容再淡入，同旧版逐帧观感
+        androidx.compose.animation.AnimatedVisibility(
+            visible = contentVisible,
+            enter = fadeIn(animationSpec = CHROME_CONTENT_FADE),
+            exit = fadeOut(animationSpec = CHROME_CONTENT_FADE),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            // 内层 Row 承接原内容几何（weight 居中需 RowScope，AnimatedVisibilityScope 不是）
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ChromeIconButton(
+                    icon = BackIcon,
+                    contentDescription = stringResource(R.string.detail_back),
+                    tint = MaterialTheme.colorScheme.onBackground,
+                    onClick = onBack,
+                )
+                Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                    if (batchIndex >= 0) {
+                        // 任务Y Y2 字号对齐旧版：中央计数 TextView textSize=18sp bold
+                        // （fragment_media_detail.xml:80-82 detailFileName，MediaDetailFragment L406
+                        // "%d/%d" 填充同源，文本格式见 strings.xml detail_batch_position）
+                        Text(
+                            text = stringResource(R.string.detail_batch_position, batchIndex + 1, batchSize),
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                            ),
+                            color = MaterialTheme.colorScheme.onBackground,
+                        )
+                    }
+                }
+                ChromeIconButton(
+                    icon = DetailInfoIcon,
+                    contentDescription = stringResource(R.string.detail_chrome_info),
+                    tint = MaterialTheme.colorScheme.onBackground,
+                    onClick = onOpenInfo,
                 )
             }
         }
-        ChromeIconButton(
-            icon = DetailInfoIcon,
-            contentDescription = stringResource(R.string.detail_chrome_info),
-            tint = MaterialTheme.colorScheme.onBackground,
-            onClick = onOpenInfo,
-        )
     }
 }
 
@@ -147,9 +198,12 @@ internal fun DetailTopChrome(
  * primary 主色实底；点赞/收藏与原下滑区互动行同链（VM toggle，乐观 disabled 同源）。
  * 「快速转跳」不进四胶囊（主代理保守裁决，待用户确认）——首屏入口随旧图标行消失，
  * DetailJumpSheet 组件保留（挂载点保留无触发点，见 DetailScreen 注释）。
+ * 任务U6 显隐拆分同 [DetailTopChrome]：条容器恒组合、底色随 [contentVisible] 瞬时切换，
+ * 仅四胶囊内容包 AnimatedVisibility 淡入淡出（spec 见 [CHROME_CONTENT_FADE]）。
  */
 @Composable
 internal fun DetailBottomChrome(
+    contentVisible: Boolean,
     asset: AssetDetail,
     likePending: Boolean,
     favoritePending: Boolean,
@@ -157,11 +211,13 @@ internal fun DetailBottomChrome(
     onToggleFavorite: () -> Unit,
     onOpenTagSheet: () -> Unit,
     onOpenAuthorSheet: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .background(chromeBarTint())
+            // 任务U6 底色瞬时切换（同 DetailTopChrome，旧版 setBackgroundColor 同帧语义直译）
+            .background(if (contentVisible) chromeBarTint() else Color.Transparent)
             // X1 恢复自管避让（2026-09-12 任务X）：壳层不再钉位，舞台盒底=屏幕底，胶囊
             // 若再不避让会压在手势导航栏上；顺序=渐变→inset padding（渐变铺满导航栏区域，
             // 旧版 bottom 渐变同观感）。沉浸态 chrome 隐藏、系统栏同隐（inset 归零），互不相扰。
@@ -176,81 +232,96 @@ internal fun DetailBottomChrome(
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // 点赞N（icon+计数文字胶囊；激活 primary 实底，content 沿用原互动行点赞钮结构）
-        DetailActionButton(
-            active = asset.likedToday,
-            enabled = !likePending,
-            contentDescription = stringResource(R.string.detail_like),
-            onClick = onToggleLike,
+        // 仅条内内容参与淡入淡出（U6，全限定防误绑 RowScope 扩展，理由同 DetailTopChrome）
+        androidx.compose.animation.AnimatedVisibility(
+            visible = contentVisible,
+            enter = fadeIn(animationSpec = CHROME_CONTENT_FADE),
+            exit = fadeOut(animationSpec = CHROME_CONTENT_FADE),
+            modifier = Modifier.fillMaxWidth(),
         ) {
-            Icon(
-                imageVector = if (asset.likedToday) ThumbUpIcon else ThumbUpOutlinedIcon,
-                contentDescription = null,
-                modifier = Modifier.size(CHROME_GLYPH_SIZE),
-            )
-            Text(
-                text = formatCount(asset.likeCount),
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold,
-            )
-        }
-        // 收藏（icon+文字；isFavorite 高亮；Y2 星形换心形对齐旧版字形）
-        DetailActionButton(
-            active = asset.isFavorite,
-            enabled = !favoritePending,
-            contentDescription = stringResource(
-                if (asset.isFavorite) R.string.detail_favorite_active else R.string.detail_favorite,
-            ),
-            onClick = onToggleFavorite,
-        ) {
-            Icon(
-                imageVector = if (asset.isFavorite) FavoriteFilledIcon else FavoriteBorderIcon,
-                contentDescription = null,
-                modifier = Modifier.size(CHROME_GLYPH_SIZE),
-            )
-            Text(
-                text = stringResource(
-                    if (asset.isFavorite) R.string.detail_favorite_active else R.string.detail_favorite,
-                ),
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold,
-            )
-        }
-        // 标签（V3 新增胶囊=原黑圈标签/管理入口：开 DetailTagManageSheet 编辑链）
-        DetailActionButton(
-            active = false,
-            enabled = true,
-            contentDescription = stringResource(R.string.detail_chrome_tag),
-            onClick = onOpenTagSheet,
-        ) {
-            Icon(
-                imageVector = DetailSellIcon,
-                contentDescription = null,
-                modifier = Modifier.size(CHROME_GLYPH_SIZE),
-            )
-            Text(
-                text = stringResource(R.string.detail_chrome_tag),
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold,
-            )
-        }
-        // 作者（W3 新增胶囊，替换退役的「整理」：原作者卡内容移植进 DetailAuthorSheet）
-        DetailActionButton(
-            active = false,
-            enabled = true,
-            contentDescription = stringResource(R.string.detail_authors_title),
-            onClick = onOpenAuthorSheet,
-        ) {
-            Icon(
-                imageVector = DetailAuthorIcon,
-                contentDescription = null,
-                modifier = Modifier.size(CHROME_GLYPH_SIZE),
-            )
-            Text(
-                text = stringResource(R.string.detail_authors_title),
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold,
-            )
+            // 内层 Row 承接原 SpaceEvenly 几何（AnimatedVisibilityScope 不是 RowScope）
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                // 点赞N（icon+计数文字胶囊；激活 primary 实底，content 沿用原互动行点赞钮结构）
+                DetailActionButton(
+                    active = asset.likedToday,
+                    enabled = !likePending,
+                    contentDescription = stringResource(R.string.detail_like),
+                    onClick = onToggleLike,
+                ) {
+                    Icon(
+                        imageVector = if (asset.likedToday) ThumbUpIcon else ThumbUpOutlinedIcon,
+                        contentDescription = null,
+                        modifier = Modifier.size(CHROME_GLYPH_SIZE),
+                    )
+                    Text(
+                        text = formatCount(asset.likeCount),
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+                // 收藏（icon+文字；isFavorite 高亮；Y2 星形换心形对齐旧版字形）
+                DetailActionButton(
+                    active = asset.isFavorite,
+                    enabled = !favoritePending,
+                    contentDescription = stringResource(
+                        if (asset.isFavorite) R.string.detail_favorite_active else R.string.detail_favorite,
+                    ),
+                    onClick = onToggleFavorite,
+                ) {
+                    Icon(
+                        imageVector = if (asset.isFavorite) FavoriteFilledIcon else FavoriteBorderIcon,
+                        contentDescription = null,
+                        modifier = Modifier.size(CHROME_GLYPH_SIZE),
+                    )
+                    Text(
+                        text = stringResource(
+                            if (asset.isFavorite) R.string.detail_favorite_active else R.string.detail_favorite,
+                        ),
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+                // 标签（V3 新增胶囊=原黑圈标签/管理入口：开 DetailTagManageSheet 编辑链）
+                DetailActionButton(
+                    active = false,
+                    enabled = true,
+                    contentDescription = stringResource(R.string.detail_chrome_tag),
+                    onClick = onOpenTagSheet,
+                ) {
+                    Icon(
+                        imageVector = DetailSellIcon,
+                        contentDescription = null,
+                        modifier = Modifier.size(CHROME_GLYPH_SIZE),
+                    )
+                    Text(
+                        text = stringResource(R.string.detail_chrome_tag),
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+                // 作者（W3 新增胶囊，替换退役的「整理」：原作者卡内容移植进 DetailAuthorSheet）
+                DetailActionButton(
+                    active = false,
+                    enabled = true,
+                    contentDescription = stringResource(R.string.detail_authors_title),
+                    onClick = onOpenAuthorSheet,
+                ) {
+                    Icon(
+                        imageVector = DetailAuthorIcon,
+                        contentDescription = null,
+                        modifier = Modifier.size(CHROME_GLYPH_SIZE),
+                    )
+                    Text(
+                        text = stringResource(R.string.detail_authors_title),
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
         }
     }
 }

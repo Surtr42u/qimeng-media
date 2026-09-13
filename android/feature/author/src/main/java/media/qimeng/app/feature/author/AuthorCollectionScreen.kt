@@ -95,7 +95,12 @@ fun AuthorCollectionScreen(
             pills = FourDimPills.dimChips(pillModel, dims).map { QimengPill(text = it.text, selected = it.selected) },
             onPillClick = { index -> viewModel.onDimChipClicked(dims[index]) },
             dividerBeforeIndex = dims.indexOf(AlbumDim.TYPE),
-            modifier = Modifier.padding(horizontal = QimengDimens.ScreenPaddingHorizontal),
+            modifier = Modifier
+                // 计数行与芯片行原竖向 0 间距显挤（2026-09-14 用户反馈「作者文件数和胶囊
+                // 挤在一起」）：补 SpaceM=8dp——token 出处即「芯片行上距」（fragment_all_files
+                // .xml L72），语义正合，不另开档
+                .padding(top = QimengDimens.SpaceM)
+                .padding(horizontal = QimengDimens.ScreenPaddingHorizontal),
         )
 
         state.errorMessage?.let { message ->
@@ -103,7 +108,10 @@ fun AuthorCollectionScreen(
                 text = message,
                 color = MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(horizontal = QimengDimens.ScreenPaddingHorizontal),
+                modifier = Modifier
+                    // 芯片行与错误文案原竖向 0 间距，同类拥挤问题一并规范到 ≥8dp（同上口径）
+                    .padding(top = QimengDimens.SpaceM)
+                    .padding(horizontal = QimengDimens.ScreenPaddingHorizontal),
             )
         }
 
