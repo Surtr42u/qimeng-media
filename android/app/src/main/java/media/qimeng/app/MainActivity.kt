@@ -39,6 +39,10 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         requestHighestRefreshRate()
         handleShareIntent(intent)
+        // U7 触摸诊断桩 QM_TOUCH（根因定位后撤除）：日志落盘初始化——间歇性故障复现时不一定
+        // 连 USB，logcat 缓冲会滚动；同步写 /sdcard/Android/data/media.qimeng.app/files/qm_touch.log
+        QmTouchProbe.initFileLog(applicationContext)
+        // U7 诊断桩结束
         setContent {
             QimengTheme {
                 // U7 触摸诊断桩 QM_TOUCH（根因定位后撤除）：Compose 根探针——包住全部 UI 的
