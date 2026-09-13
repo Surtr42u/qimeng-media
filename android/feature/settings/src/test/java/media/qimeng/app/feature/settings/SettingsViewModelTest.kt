@@ -55,7 +55,13 @@ class SettingsViewModelTest {
         /** 可编程：非空时 putPrefs 抛出（P2-3 失败路径） */
         var putError: Throwable? = null
 
-        override suspend fun prefs(): RecommendPrefsValues = current ?: RecommendPreset.BALANCED.toPrefsValues()
+        /** 可编程：非空时 prefs 抛出（2026-09-13 修复批：GET 失败 → prefsLoadFailed 态） */
+        var prefsError: Throwable? = null
+
+        override suspend fun prefs(): RecommendPrefsValues {
+            prefsError?.let { throw it }
+            return current ?: RecommendPreset.BALANCED.toPrefsValues()
+        }
 
         override suspend fun putPrefs(values: RecommendPrefsValues) {
             putError?.let { throw it }
@@ -228,6 +234,55 @@ private object FixedEventClock : media.qimeng.app.core.data.events.EventClock {
         assertEquals(RecommendPreset.FRESH_FIRST, settingsViewModel.uiState.value.appliedPreset)
         // 成功路径不产生写失败反馈（P2-3：成功不弹）
         assertNull(settingsViewModel.uiState.value.writeError)
+    }
+
+    // ---------- 推荐偏好加载失败/重试（2026-09-13「点击无反应」修复批回归锁定） ----------
+
+    @Test
+    fun `偏好拉取失败置失败态且重试成功后恢复高亮`() = runTest {
+        val prefs = FakePrefsRepository().apply { prefsError = RuntimeException("network down") }
+        val settingsViewModel = viewModel(prefs = prefs)
+        advanceUntilIdle()
+        // GET 失败终态：无值、失败态置位（Sheet 显「加载失败/重试」，四行仍可点应用）
+        assertNull(settingsViewModel.uiState.value.prefsValues)
+        assertTrue(settingsViewModel.uiState.value.prefsLoadFailed)
+        assertFalse(settingsViewModel.uiState.value.prefsLoading)
+        assertNull(settingsViewModel.uiState.value.appliedPreset)
+
+        // 重试恢复：失败清除、值与高亮落地
+        prefs.prefsError = null
+        settingsViewModel.retryLoadPrefs()
+        advanceUntilIdle()
+        assertEquals(RecommendPreset.BALANCED.toPrefsValues(), settingsViewModel.uiState.value.prefsValues)
+        assertFalse(settingsViewModel.uiState.value.prefsLoadFailed)
+        assertEquals(RecommendPreset.BALANCED, settingsViewModel.uiState.value.appliedPreset)
+    }
+
+    @Test
+    fun `偏好拉取失败时应用预设仍走 PUT 并本地高亮`() = runTest {
+        // Sheet 修复语义：预设四行恒可点（应用走 PUT 不依赖本次 GET 结果）
+        val prefs = FakePrefsRepository().apply { prefsError = RuntimeException("network down") }
+        val settingsViewModel = viewModel(prefs = prefs)
+        advanceUntilIdle()
+        assertTrue(settingsViewModel.uiState.value.prefsLoadFailed)
+
+        settingsViewModel.applyPreset(RecommendPreset.DEEP_EXPLORATION)
+        advanceUntilIdle()
+        assertEquals(1, prefs.putCalls.size)
+        assertEquals(RecommendPreset.DEEP_EXPLORATION, settingsViewModel.uiState.value.appliedPreset)
+        // PUT 成功即持权威值：先前的 GET 失败态随之消除（Sheet 撤重试态）
+        assertFalse(settingsViewModel.uiState.value.prefsLoadFailed)
+    }
+
+    @Test
+    fun `打开关闭偏好Sheet置位开合状态`() = runTest {
+        val settingsViewModel = viewModel()
+        advanceUntilIdle()
+        assertFalse(settingsViewModel.uiState.value.prefsSheetOpen)
+        settingsViewModel.openPrefsSheet()
+        assertTrue(settingsViewModel.uiState.value.prefsSheetOpen)
+        settingsViewModel.closePrefsSheet()
+        assertFalse(settingsViewModel.uiState.value.prefsSheetOpen)
     }
 
     @Test

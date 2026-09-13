@@ -648,12 +648,14 @@ private fun SystemBarsImmersiveEffect(chromeVisible: Boolean) {
 // chrome 显隐渐变时长档（用户 2026-09-13 真机反馈：默认短 fade 观感近瞬隐，改显式平滑
 // 过渡；Material fade 惯例进慢出快）。模块既有动画常量均为按压反馈档（如 DetailChromeBars
 // CHROME_PRESS_ANIM_MS=100，语义不同不可复用），无冲突档可循，按同款 file-level private
-// const 风格立档（2026-09-13 晚起仅供 chrome 条渐显渐隐使用——舞台底色改瞬时直切退出此档）
-/** chrome 渐显档 ms（Material fade 进慢出快：进=300）——顶/底 chrome fadeIn */
-private const val CHROME_FADE_IN_MS = 300
+// chrome 显隐渐变时长档（任务U U5 对齐旧版运行时：setChromeVisible 的 View.animate()
+// alpha 动画进出统一 250ms，此前 U3 的 300/220 进慢出快档废止）。模块既有动画常量均为
+// 按压反馈档（如 DetailChromeBars CHROME_PRESS_ANIM_MS=100，语义不同不可复用）
+/** chrome 渐显档 ms（旧版统一 250ms）——顶/底 chrome fadeIn */
+private const val CHROME_FADE_IN_MS = 250
 
-/** chrome 渐隐档 ms（Material fade 进慢出快：出=220）——顶/底 chrome fadeOut */
-private const val CHROME_FADE_OUT_MS = 220
+/** chrome 渐隐档 ms（旧版统一 250ms）——顶/底 chrome fadeOut */
+private const val CHROME_FADE_OUT_MS = 250
 
 /**
  * 底部留白常量（轻量档；与网格页 180dp 防遮挡档语义不同）。任务Y Y1 起页面级使用已删

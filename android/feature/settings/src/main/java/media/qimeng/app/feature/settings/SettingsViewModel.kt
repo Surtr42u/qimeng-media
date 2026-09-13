@@ -38,6 +38,16 @@ data class MineUiState(
     val prefsValues: RecommendPrefsValues? = null,
     /** 当前命中的预设（四档都不匹配 = null，BottomSheet 不高亮任何行） */
     val appliedPreset: RecommendPreset? = null,
+    /**
+     * 推荐偏好 GET 进行中（2026-09-13「点击无反应」修复批）：Sheet 内重试按钮防重 + 加载态。
+     * 与写侧 prefsApplying 分开——读/写是两条互不相干的生命周期。
+     */
+    val prefsLoading: Boolean = false,
+    /**
+     * 推荐偏好 GET 失败（2026-09-13 修复批）：为 true 时 Sheet 显「加载失败/重试」态。
+     * 四预设行仍恒渲染可点击（应用走 PUT 不依赖本次 GET 结果），仅当前项高亮缺席。
+     */
+    val prefsLoadFailed: Boolean = false,
     val prefsSheetOpen: Boolean = false,
     val prefsApplying: Boolean = false,
     val cacheQuota: DiskCacheQuota = DiskCacheQuota.DEFAULT,
@@ -109,12 +119,29 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 拉推荐偏好（2026-09-13「点击无反应」修复批改造）：GET 结果只有两种终态——
+     * 成功（prefsValues 非空、失败态清除）或失败（prefsValues=null、prefsLoadFailed=true，
+     * UI 进「加载失败/重试」态）；不再静默停在无数据的中间态。加载中防重（在途不重复发）。
+     */
     private fun loadPrefs() {
+        if (_uiState.value.prefsLoading) return
+        _uiState.update { it.copy(prefsLoading = true) }
         viewModelScope.launch {
             val values = runCatching { prefsRepository.prefs() }.getOrNull()
-            _uiState.update { it.copy(prefsValues = values, appliedPreset = values?.matchPreset()) }
+            _uiState.update {
+                it.copy(
+                    prefsValues = values,
+                    appliedPreset = values?.matchPreset(),
+                    prefsLoading = false,
+                    prefsLoadFailed = values == null,
+                )
+            }
         }
     }
+
+    /** 推荐偏好加载失败后的重试入口（Sheet 内「重试」按钮）：走同一 [loadPrefs] 防重链路 */
+    fun retryLoadPrefs() = loadPrefs()
 
     fun openPrefsSheet() = _uiState.update { it.copy(prefsSheetOpen = true) }
 
@@ -138,6 +165,8 @@ class SettingsViewModel @Inject constructor(
                         prefsApplying = false,
                         prefsValues = updated,
                         appliedPreset = preset,
+                        // PUT 成功即持有权威值，此前的 GET 失败态随之消除（Sheet 撤重试态）
+                        prefsLoadFailed = false,
                     )
                 }
             }
