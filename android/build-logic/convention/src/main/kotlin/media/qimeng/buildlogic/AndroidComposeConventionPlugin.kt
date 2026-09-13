@@ -17,7 +17,7 @@ class AndroidComposeConventionPlugin : Plugin<Project> {
         with(target) {
             apply(plugin = "org.jetbrains.kotlin.plugin.compose")
 
-            val extension: CommonExtension<*, *, *, *, *, *> =
+            val extension: CommonExtension =
                 extensions.findByType(ApplicationExtension::class.java)
                     ?: extensions.findByType(LibraryExtension::class.java)
                     ?: throw IllegalStateException(

@@ -1,6 +1,8 @@
 # 依赖版本唯一收口（HANDOVER_APP 通用约束 3：版本号必须当场查官方来源并锁版本，锁后本批次内不得升级）。
 # 核查日 2026-09-04，来源链接（交付报告同引）：
-#   agp            https://developer.android.com/build/releases/gradle-plugin（8.13 线最新 8.13.2）
+#   agp            https://developer.android.com/build/releases/gradle-plugin（原 8.13 线最新 8.13.2；
+#                  2026-09-13 S3 基座升级批按仓库外 a-s3-agp9-upgrade-memo.md 升至 9.2 线最新 9.2.1，
+#                  配对 Gradle 9.5.0，maven-metadata 实存核查 dl.google.com 2026-09-13）
 #   kotlin/ksp     https://github.com/JetBrains/kotlin/releases/tag/v2.3.21（2.3 线最新 patch；2.4.x 未被 AGP 8.13 文档背书，保守取 2.3.x）
 #                  https://github.com/google/ksp/releases（KSP 2.3.0 起与 Kotlin 编译器版本解耦，2.3.11 为当前稳定）
 #   composeBom     https://developer.android.com/develop/ui/compose/bom/bom-mapping（BOM 2026.06.01
@@ -12,13 +14,20 @@
 #   activity       https://developer.android.com/jetpack/androidx/releases/activity（1.13.0 要求 37 -> 1.12.4）
 #   lifecycle      https://developer.android.com/jetpack/androidx/releases/lifecycle（2.11.0 要求 37 -> 2.10.0）
 #   core-ktx       https://developer.android.com/jetpack/androidx/releases/core（stable 1.18.0，API 36 实测兼容）
-#   hilt           https://github.com/google/dagger/releases（2.58 = AGP 8.x 兼容线最新：2.59 起
-#                  Hilt Gradle 插件强制要求 AGP 9+，官方 release note 明言；本项目冻结 AGP 8.13.2）
+#   hilt           https://github.com/google/dagger/releases（原 2.58 = AGP 8.x 兼容线最新：2.59 起
+#                  Hilt Gradle 插件强制要求 AGP 9+，官方 release note 明言；2026-09-13 S3 批随 AGP 9.2.1
+#                  解锁升至最新稳定 2.60.1——repo1 maven-metadata 实存核查 2026-09-13，2.59/2.59.1/2.59.2/
+#                  2.60/2.60.1 为 2.58 之后全部 stable 线）
 #   androidx.hilt  https://developer.android.com/jetpack/androidx/releases/hilt（1.4.0 要求 37 -> 1.3.0 stable，
 #                  2025-09-10）
 # 注：2026-08 的 androidx 新 wave（compose 1.12/navigation 2.10/lifecycle 2.11/hilt 1.4/activity 1.13）
 # 统一要求 compileSdk 37（AAR 元数据硬门禁，assembleDebug 实测报错）；本项目锚定 AGP 8.13.2 +
 # compileSdk 36（预检备忘录冻结档），故取各自上一稳定线——升级需整体走 AGP 9 + Gradle 9 + 37 路线。
+# 【2026-09-13 S3 基座升级批更新】该路线第 1+2 步已落地：Gradle 9.5.0 + AGP 9.2.1 + Hilt 2.60.1
+# （gradle.properties 另有 android.builtInKotlin/newDsl=false 临时过桥 flag，依据见该文件注释）；
+# compileSdk 仍冻结 36（备忘录第 3 步，本批不动）。下文历史注释中「冻结 AGP 8.13.2 / Hilt 2.58
+# metadata 上限」等表述均为 S3 批前的冻结档实证记录，随 AGP 9/Hilt 2.60.1 部分解锁，相关依赖
+# （Coil/Vico/BOM 等）按备忘录第 3 步另行评估，本批不动。
 #   okhttp         与 make sdk 生成物 build.gradle 锁定的 okhttp 5.4.0 对齐（单版本原则；生成物为唯一事实源）
 #   datastore      https://developer.android.com/jetpack/androidx/releases/datastore（stable 1.2.1，2026-03-11；
 #                  1.2 线早于 2026-08 要求 compileSdk 37 的 androidx wave，与冻结的 36 兼容；1.3 尚在 alpha 不取）
@@ -29,7 +38,7 @@
 # Coil/Media3/Room/DataStore/WorkManager 到对应批次（M4-3/4/5/6）再当场查官方版本锁入，禁止提前占位。
 
 [versions]
-agp = "8.13.2"
+agp = "9.2.1"
 kotlin = "2.3.21"
 ksp = "2.3.11"
 composeBom = "2026.06.01"
@@ -37,7 +46,7 @@ activityCompose = "1.12.4"
 navigationCompose = "2.9.8"
 lifecycle = "2.10.0"
 coreKtx = "1.18.0"
-hilt = "2.58"
+hilt = "2.60.1"
 androidxHilt = "1.3.0"
 okhttp = "5.4.0"
 # 与 make sdk 生成物 build.gradle 锁定的 moshi 版本一致（生成物为唯一事实源，勿单方面升级）

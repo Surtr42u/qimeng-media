@@ -9,6 +9,18 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## ci+app: 任务S S3 基座升级批 Step1+2 落地——Gradle 9.5.0+AGP 9.2.1+Hilt 2.60.1（SDK36 冻结不变）（2026-09-13 第二百五十笔）
+
+执行 AI：GLM-5.3-Flash（主代理调度+网络重探，执行子代理实施+四步门禁自测）
+
+- **网络前提反转记档（S3 由 SKIPPED 转可执行的关键）**：主会话重探发现 dl.google.com（google() 仓库真实 URL）与 repo1.maven.org 已 **200 可达**（此前只探 maven.google.com 域名得出「节点级阻断」结论过粗）；且本地 wrapper 缓存已有 Gradle 9.x 系列。settings pluginManagement 仓库顺序 google→mavenCentral→gradlePluginPortal，插件解析不依赖被阻断的 portal。executor 实况补充：Gradle 9.5.0 缓存实为半截 .part，且 JVM 直连 services.gradle.org 有 TLS 证书链拦截（curl 走 Windows 信任库可过），经 curl 断点续传按官方 Content-Length 核验后置入 wrapper 缓存——环境操作，仓库内 wrapper 校验配置未动。
+- **升级内容（7 文件，41+/17-）**：wrapper distributionUrl → **gradle-9.5.0-bin**（AGP 9.2 要求 Gradle ≥9.4，注释改写为 S3 批口径+「wrapper 与 AGP 同批动」约束）；toml `agp 8.13.2→9.2.1`（9.2 线最新，maven-metadata 实存核查）、`hilt 2.58→2.60.1`（AGP9 硬门禁，2.59+ 才兼容；androidx.hilt 1.3.0 依备忘录保持，1.4.0 要求 compileSdk 37 留第三步）；gradle.properties 新增官方临时旁路 `android.builtInKotlin=false`+`android.newDsl=false`（AGP9 内置 Kotlin 时代继续用 org.jetbrains.kotlin.android 的官方 legacy 合法路径，KGP 2.3.21≥2.2.20 下限满足；flag 源码语义经 AGP 9.2.1 sources jar 实证，第 4 步迁移时撤除）。
+- **机械适配两处**：build-logic 三文件 `CommonExtension<*,*,*,*,*,*>` → 非泛型 `CommonExtension`（AGP 9 去泛型化，javap 实证）；core/data 的 `configure<KspExtension>` 从 `android {}` 块内平移到 project 层（**AGP 9.2 的 CommonExtension 新继承 ExtensionAware，块内裸 configure 绑定目标改变**→ KspExtension 注册找不到；init 脚本探针实证四插件扩展注册完好，根因即此一处，全仓仅此一处该用法）。
+- **门禁全绿**：gradlew --version=9.5.0/JVM21；`:app:assembleDebug`（354 tasks，含 :sdk:compileKotlin/:sdk:jar 新工具链直过=**生成物链路零改动**）+ --rerun-tasks 复核；`test lintDebug`（797 tasks 全模块单测+lint）；`go build ./...` 服务端零影响。Warning 摘要：deprecation 全部来自用户级 init 脚本（非工程代码）+ KGP 弃用顾问警告（旁路 flag 已知代价，预期）。
+- **遗留（如实记档）**：KGP 2.3.21 无 Gradle 9 变体，回退用 gradle813 变体 jar（官方矩阵外回退、实测可工作，彻底对齐需 Kotlin 2.4 留后续批）；第 3 步（compileSdk 37+BOM 2026.08 wave+Coil 3.6.2）与第 4 步（built-in Kotlin 迁移撤 flag）不在本批；模拟器冒烟=AGP9 构建包冷启动/登录态/推荐流缩略图全通（Coil+新 OkHttp fetcher 工作正常）。
+- **T 卷影响**：T6（内嵌形态 B）前置的「S3 收官」在 Step1+2 落地后部分满足；第 3 步待办并入后续基建批，#47 台账待主会话核销口径。
+
+---
 ## fix(app)+fix(server): 任务U U2 App 侧两 bug 清欠批——原图「无法解码」超时根修+视频时长占位与错误接线+缩略图并发闸（2026-09-13 第二百四十九笔）
 
 执行 AI：GLM-5.3-Flash（主代理调度，执行子代理实施+全量自测；主代理抽查 VideoStage hunk 归属）
