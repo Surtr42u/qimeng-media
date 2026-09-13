@@ -9,6 +9,20 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## fix(app): 任务U U6 六轮反馈批——沉浸显隐对齐旧版逐帧语义(底色瞬切+仅内容淡出)+作者界面间距规范+逐帧检测协议落地（2026-09-14 第二百五十六笔）
+
+执行 AI：GLM-5.3-Flash（主代理调度落账；研究/执行/逐帧测试三子代理分工；构建全程 `--max-workers=2 -Dorg.gradle.priority=low` 夜间降噪）
+
+- **逐帧检测协议（用户新增验收方式，替代慢截图）**：adb screenrecord（VFR，毫秒取自 pts 时间戳）+ffmpeg 全量抽帧+分区亮度逐帧判定。U5 基线实测：点图片进沉浸 chrome「首变→全消」389-402ms（衰减段 325-336ms）——比 250ms 常量一致性拖长 80-150ms，坐实用户「消失太慢」反馈。
+- **根因（研究子代理对旧仓库定案）**：旧版 setChromeVisible（QimengMedia MediaDetailFragment.kt:776-811）隐藏时**第 1 帧瞬时**完成根背景/系统栏色切黑+条自身底色 setBackgroundColor(TRANSPARENT)，250ms alpha 动画只作用于**条内图标内容**（ViewPropertyAnimator 默认 AccelerateDecelerateInterpolator，INVISIBLE 收尾，GUIDE_UI L175「单击显隐 chrome（alpha 动画）」）；新版 U5 把整条（含底色）包进 AnimatedVisibility 一起 250ms 淡出=底色残留拖尾即观感源头。另核实：Compose animation 1.12 与 View.animate 同受 animator_duration_scale 影响（MotionDurationScale 机制），测试机 scale=1 对比有效。
+- **修复**：DetailChromeBars 顶/底条容器恒组合，底色改三元直切 `if (contentVisible) chromeBarTint() else Color.Transparent`（零动画，对齐旧版 setBackgroundColor 瞬时语义）；仅条内容包 AnimatedVisibility，进出共用 tween(CHROME_FADE_MS=250, FastOutSlowInEasing)（=旧版默认插值器 Compose 等价物）；CHROME_FADE_IN_MS/OUT_MS 双档并档为单常量。DetailScreen 撤两处整条 AnimatedVisibility；stageBackdropColor 纯函数与 SystemBarsImmersiveEffect 零改动（U4 瞬时切黑维持）。
+- **逐帧复测（同设备同协议，.walk/u6-after/）**：底色消失=单帧瞬切（≈0-10ms，黑底即刻不可见）；图标内容 256-272ms（与 250ms 常量吻合，标准 FastOutSlowIn 衰减形态）；感知总时长 389-402→256-272ms；恢复向底色 1 帧瞬切+内容 233-295ms；无闪烁/无塌缩跳动（胶囊 y 重心 2247.46±0.03 恒定，执行子代理「容器塌缩」疑点被帧证据排除）/无残影。
+- **作者界面间距**（用户反馈「作者文件数和胶囊挤在一起」+同类扫描）：AuthorCollectionScreen 计数行→维度芯片行、芯片行→错误文案两处竖向 0 间距补 SpaceM(8dp，token 出处 fragment_all_files.xml L72)；DetailAuthorSheet padding 16/12 对齐旧版 sheetContainer 20/18（新常量 AUTHOR_SHEET_PADDING_*，来源=MediaDetailFragment.kt:1252-1256；底距保留 24dp 并注明不对齐 28dp 的依据=三 Sheet 共享单源）；作者名与 FollowButton 间补 SpaceM 最小水平间隔。注：8421 dev 虚拟库无作者数据，间距视觉效果待用户真机验收（空态结构截图已存档）。
+- **胶囊位置核查（用户问「上一版对下方胶囊有改动吗，位置好像变了」）**：before/after 非沉浸详情页截图像素级比对，胶囊内容区 y[2224,2269] 完全一致——U5/U6 均未移动胶囊几何；「位置变了」观感=U5 底色由「下端才有色的渐变」改「整条 0xF2 纯色」（与旧版运行时逐字同构）所致；胶囊化几何差异本身属 W3 拍板重排，非本两批回归。
+- **门禁**：:feature:detail 153+:feature:author 27 testDebugUnitTest 全绿；:app assembleDebug/assembleRelease 全绿（均低 CPU 参数）。U6 终包=`QimengNAS\qimeng-任务U6-终包-20260914.apk`。
+- **遗留观察记档**：①沉浸态静置数分钟 App 会自动退出沉浸（before/after 均复现，本批未定位，留后续批次）；②夜间构建降载参数 `--max-workers=2 -Dorg.gradle.priority=low` 建议夜间沿用。
+
+---
 ## fix(app): 任务U U5 五轮反馈批——详情页 chrome 渐变根修为旧版运行时纯色+统计详情页整版 1:1 复刻旧版+设置页推荐偏好「点击无反应」根修+补完分支治理（2026-09-14 第二百五十五笔）
 
 执行 AI：GLM-5.3-Flash（前一深夜会话实施+模拟器走查后未及落账，本会话主代理续做：门禁复跑+落账提交+补完第 254 笔未落地的删分支）

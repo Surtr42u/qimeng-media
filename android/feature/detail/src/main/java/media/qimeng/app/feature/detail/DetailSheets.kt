@@ -3,8 +3,10 @@ package media.qimeng.app.feature.detail
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -19,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import media.qimeng.app.core.model.AssetDetail
 import media.qimeng.app.core.model.DetailAuthor
 import media.qimeng.app.core.ui.component.detailDirectoryLabel
@@ -184,6 +187,20 @@ internal fun DetailJumpSheet(
     }
 }
 
+// ---------- 作者 Sheet 私有间距档（2026-09-14 用户反馈「作者文件数和胶囊挤在一起」
+// 间距清偿批；仅本 Sheet 使用，信息/快速转跳两 Sheet 维持原 16/12 档不在本批范围） ----------
+
+/**
+ * 作者 Sheet 左右内边距（20dp）：对齐旧版 sheetContainer padding 20/18/20/28 的水平段
+ * （QimengMedia MediaDetailFragment.kt:1252-1256）。QimengDimens 无页面级 20dp 档
+ * （FilterSheetPaddingHorizontal=20dp 语义专属筛选面板，不可复用），按代码卫生规则立
+ * 文件级常量。
+ */
+private val AUTHOR_SHEET_PADDING_HORIZONTAL = 20.dp
+
+/** 作者 Sheet 顶部内边距（18dp）：来源同上 = 旧版 sheetContainer padding 上段（原 QimengDimens.ScreenPaddingTop=12dp 收窄） */
+private val AUTHOR_SHEET_PADDING_TOP = 18.dp
+
 /**
  * 作者 BottomSheet（任务W W3）：内容=原下滑区作者卡（W3 随下滑区裁剪退役）整体移植——
  * displayName·COS、关注/取关钮（toggleFollow 既有链闭环可用）、「进入作者主页」（壳层
@@ -227,8 +244,12 @@ internal fun DetailAuthorSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 // 去 handle 后内容顶到圆角边，补屏幕顶距档间距（QimengDimens 单源）
-                .padding(top = QimengDimens.ScreenPaddingTop)
-                .padding(horizontal = QimengDimens.ScreenPaddingHorizontal)
+                // 2026-09-14 对齐旧版 sheetContainer padding 20/18/20/28：顶段改 18dp、
+                // 水平段改 20dp（原 12/16 收窄，来源注释见常量档）
+                .padding(top = AUTHOR_SHEET_PADDING_TOP)
+                .padding(horizontal = AUTHOR_SHEET_PADDING_HORIZONTAL)
+                // 底部保留 DETAIL_BOTTOM_SPACER=24dp（三 Sheet 共享单源，未对齐旧版下段
+                // 28dp）：4dp 差属手势导航区余量、无观感投诉，不为单 Sheet 破坏共享档
                 .padding(bottom = DETAIL_BOTTOM_SPACER),
         ) {
             Text(
@@ -259,6 +280,9 @@ internal fun DetailAuthorSheet(
                             style = MaterialTheme.typography.bodyLarge,
                             modifier = Modifier.weight(1f),
                         )
+                        // 长名场景与关注钮原贴边相对（weight 推挤下 0 间距）：补 SpaceM=8dp
+                        // 最小水平间隔（2026-09-14 用户反馈同类拥挤清偿）
+                        Spacer(modifier = Modifier.width(QimengDimens.SpaceM))
                         FollowButton(
                             followed = author.followed,
                             enabled = !followPending,
