@@ -38,6 +38,15 @@ import kotlin.math.min
  * 而慢拖切件只认 UP 不认 CANCEL → 带竖直分量的横滑整刀作废（受控实验：海报态 dy≥200
  * 斜滑 10 中 1 成、沉浸态 3/3 全过，唯一变量=verticalScroll enabled）。用户反馈出处=
  * 2026-09-12 晚真机「有时候详情页左右滑动没反应」。冻结例外三件套记档同 V2/W2 先例。
+ * 缩放沉浸例外增补（2026-09-13）：新增只读回调 [onZoomImmersiveChanged]——缩放跨过
+ * 1.05x 放大阈值即时上报 true、回落仅在收束点（resetZoom/clampScaleEnd）上报 false
+ * （非对称滞回，见 emitZoomImmersive），宿主据此进入/退出沉浸（隐藏上下 chrome 渐变
+ * 操作层与系统栏）。只增观察性回调、不改既有事件流与手势判定；口径来源=用户 2026-09-13
+ * 实测反馈「放大图片时上下白色渐变压在图上观感不适」，**非旧版对齐**（旧版单击无条件
+ * 切 chrome，无缩放沉浸语义）。同批把三处既有 1.05f 字面量谓词（onScroll 未放大态分支、
+ * onFling 切件禁用、UP 慢拖切件门控）收口到纯函数 [isZoomImmersive]——行为逐位等价
+ *（<=1.05f == !isZoomImmersive），只为阈值口径单源；双击回位判定（>1.1f）语义独立不动。
+ * 冻结例外三件套记档同 V2/W2/Z1 先例（本 KDoc 增补段 + 纯函数 + ZoomImmersionPolicyTest）。
  *
  * 搬运适配（行为不变）：
  * - 包名迁移到 media.qimeng.app.feature.detail.image；
@@ -53,6 +62,11 @@ class ZoomImageView @JvmOverloads constructor(
 ) : ImageView(context, attrs, defStyleAttr) {
     var onSingleTap: (() -> Unit)? = null
     var onSwipe: ((direction: Int) -> Unit)? = null
+
+    // 缩放沉浸例外增补（2026-09-13，见类 KDoc）：只读回调，宿主据此驱动沉浸 chrome；
+    // 发射时序由 emitZoomImmersive 决定（跨阈值即时 true / 回落收束点 false），本回调
+    // 不参与手势判定、事件流零变化
+    var onZoomImmersiveChanged: ((zoomed: Boolean) -> Unit)? = null
 
     private val drawMatrix = Matrix()
     private val mappedRect = RectF()
@@ -76,6 +90,10 @@ class ZoomImageView @JvmOverloads constructor(
 
     // onFling 已触发 onSwipe 的本手势标记（UP 时不再按累积位移重复判定，防同手势双触发）
     private var swipeConsumedThisGesture = false
+
+    // 缩放沉浸发射态（2026-09-13 例外增补）：最近一次经 onZoomImmersiveChanged 发出的值，
+    // 边沿触发记忆值——同态重复评估不重发；初始 false=基态（normalizedScale=1 未放大）
+    private var zoomImmersiveEmitted = false
     private val resetLayerRunnable = Runnable {
         // 手势结束后按当前图尺寸智能恢复层类型（大图保持 HARDWARE，超大图回 SOFTWARE）
         if (!isGestureActive) {
@@ -133,7 +151,7 @@ class ZoomImageView @JvmOverloads constructor(
                 distanceX: Float,
                 distanceY: Float
             ): Boolean {
-                if (normalizedScale <= 1.05f) {
+                if (!isZoomImmersive(normalizedScale)) {
                     // V2 例外增补：未放大态不平移图像，但累积位移供 UP 时慢拖切件判定
                     //（distanceX=上次x-当前x，手指左移为正 → accumX>0=左滑）
                     dragAccumX += distanceX
@@ -181,7 +199,7 @@ class ZoomImageView @JvmOverloads constructor(
                 velocityX: Float,
                 velocityY: Float
             ): Boolean {
-                if (e1 == null || normalizedScale > 1.05f) return false
+                if (e1 == null || isZoomImmersive(normalizedScale)) return false
                 val dx = e2.x - e1.x
                 val dy = e2.y - e1.y
                 if (abs(dx) > SWIPE_DISTANCE_DP.dpFloat(context) && abs(dx) > abs(dy) && abs(velocityX) > SWIPE_VELOCITY) {
@@ -354,13 +372,13 @@ class ZoomImageView @JvmOverloads constructor(
         if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
             // V2 例外增补：未放大态慢拖收尾（无 fling 事件）UP 时按累积位移判定切件——
             // 距离阈值同 60dp、横向占优才切；onFling 已切（swipeConsumedThisGesture）或
-            // 已放大（>1.05f）不触发，放大态手势循环不变
+            // 已放大（isZoomImmersive）不触发，放大态手势循环不变
             // Z1 记档（CANCEL 语义评估，本批不改）：CANCEL 时若横向位移已达切件阈值是否同样
             // 触发曾评估（对齐旧版手势容忍度）——保守不接：Z1 已令横向主导手势在 onScroll 即
             // disallow-intercept，父层不再 CANCEL 子事件流（根因已除），残余 CANCEL 只落在
             // 竖向主导滚动场景（此时本就不该切件）；若未来放开竖向门控再议
             if (event.actionMasked == MotionEvent.ACTION_UP &&
-                normalizedScale <= 1.05f &&
+                !isZoomImmersive(normalizedScale) &&
                 !swipeConsumedThisGesture
             ) {
                 swipeDeltaFromDrag(
@@ -383,9 +401,27 @@ class ZoomImageView @JvmOverloads constructor(
 
     override fun performClick(): Boolean = super.performClick()
 
+    /**
+     * 缩放沉浸态边沿发射（2026-09-13 例外增补，见类 KDoc）。非对称滞回：
+     * - 跨过阈值（捏合中，settled=false）：只放行向上沿——进入放大态即时发射 true，
+     *   chrome 在手指还捏着的时候就隐去，白渐变不压图；
+     * - 回落（发射 false）只在收束点评估（[resetZoom] / [clampScaleEnd]，settled=true）——
+     *   捏合中 1.05x 附近来回振荡不发射，防 chrome 闪烁（`!zoomed && !settled` 防闪门）。
+     * [zoomImmersiveEmitted] 记忆最近发射值：同态重复评估不重发（边沿触发）。
+     */
+    private fun emitZoomImmersive(settled: Boolean) {
+        val zoomed = isZoomImmersive(normalizedScale)
+        if (!zoomed && !settled) return // 未收束的回落不评估（防捏合振荡致 chrome 闪烁）
+        if (zoomed == zoomImmersiveEmitted) return // 边沿触发：同态不重发
+        zoomImmersiveEmitted = zoomed
+        onZoomImmersiveChanged?.invoke(zoomed)
+    }
+
     fun resetZoom() {
         configureBaseMatrix()
         imageMatrix = drawMatrix
+        // 收束点（换图/容器自愈/双击回位共用）：scale 已归 1，放大态在此解除——chrome 恢复
+        emitZoomImmersive(settled = true)
         log("resetZoom: scaleType=$scaleType drawable=${lastDrawableWidth}x${lastDrawableHeight} view=${width}x${height}")
     }
 
@@ -448,6 +484,8 @@ class ZoomImageView @JvmOverloads constructor(
             clampTranslation()
             imageMatrix = drawMatrix
         }
+        // 收束点（UP/CANCEL 松手）：回落发射只在此评估（捏合中 1.05x 附近振荡被防闪门压住）
+        emitZoomImmersive(settled = true)
     }
 
     private fun clampTranslation() {
@@ -486,6 +524,8 @@ class ZoomImageView @JvmOverloads constructor(
         drawMatrix.postScale(factor, factor, px, py)
         clampTranslation()
         imageMatrix = drawMatrix
+        // 捏合中（非收束点）：只放行向上沿（跨过阈值即时发射 true），回落被防闪门压住
+        emitZoomImmersive(settled = false)
     }
 
     /** 检查Drawable是否包含AnimatedImageDrawable（Coil 3 ScaleDrawable的child字段） */
@@ -519,6 +559,12 @@ class ZoomImageView @JvmOverloads constructor(
         private const val MAX_SCALE = 5f
         private const val END_MAX_SCALE = 5f
         private const val DOUBLE_TAP_SCALE = 1.8f
+
+        // 缩放沉浸阈值（2026-09-13 例外增补）：normalizedScale 严格大于此值即放大态
+        //（isZoomImmersive 单源判定，本类三处 1.05f 字面量谓词同批收口、行为不变）；
+        // 与双击回位阈值（1.1f）语义独立。internal 供同文件纯函数与 ZoomImmersionPolicyTest 引用
+        internal const val ZOOM_IMMERSIVE_THRESHOLD = 1.05f
+
         private const val SWIPE_DISTANCE_DP = 60
         private const val SWIPE_VELOCITY = 800f
 
@@ -568,3 +614,13 @@ internal fun isHorizontalDominantDrag(accumX: Float, accumY: Float, requestThres
  */
 internal fun shouldRecenterOnResize(isGestureActive: Boolean, normalizedScale: Float): Boolean =
     !isGestureActive && normalizedScale == 1f
+
+/**
+ * 缩放沉浸阈值判定（2026-09-13 缩放沉浸例外增补，纯函数无 Android 依赖，行为由
+ * ZoomImmersionPolicyTest 锁定）：normalizedScale 严格大于 ZOOM_IMMERSIVE_THRESHOLD
+ * 即视为放大态。口径单源：类内三处既有 1.05f 字面量谓词（onScroll 未放大态分支 /
+ * onFling 切件禁用 / UP 慢拖切件门控）同批收口到此，行为逐位等价（<=1.05f ==
+ * !isZoomImmersive）；双击回位判定（>1.1f）口径独立、不在此列。
+ */
+internal fun isZoomImmersive(normalizedScale: Float): Boolean =
+    normalizedScale > ZoomImageView.ZOOM_IMMERSIVE_THRESHOLD

@@ -9,6 +9,16 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## feat(app): 任务U U1 用户实测反馈批——时间轴标记 Sheet 对齐旧版+图片缩放联动沉浸（2026-09-13 第二百四十八笔）
+
+执行 AI：GLM-5.3-Flash（主代理调度，执行子代理×2 并行实施，文件集互斥；主代理验收返工一处=快捷胶囊显示文本补 emoji 前缀）
+
+- **U1a 时间轴「添加标记」对话框对齐旧版**（用户实测反馈①：新版=居中 AlertDialog，旧版=底部 BottomSheet，视觉与位置均不一致）。`TimelineTagAddDialog`（VideoStage.kt）重写为 `ModalBottomSheet`：**dragHandle=null + contentWindowInsets=standardWindowInsets + 点外/返回可关**（DetailAuthorSheet 三陷阱同口径，无「取消」钮=旧版同款）；内容结构逐段对齐旧版 TimelineTagHelper——居中粗体标题「添加时间轴标**记**」（用字对齐旧版，长按菜单标题仍「标签」未连带，记档）→「当前时间：x:xx」居中副标题→「快捷标记」小节（两枚 surfaceVariant 圆角胶囊「❤️ 喜欢」「⭐ 收藏」）→「自定义标记」小节（QimengCapsuleTextField placeholder「输入标签名称」+ 主色胶囊「添加」，空文本禁用=微优于旧版「可点无操作」）。**语义对齐旧版**：快捷胶囊点击=立即写入完整名并收起（`TimelineTagColors.HEART_TAG/STAR_TAG + " " + 名`，单源口径不变、红/金前缀判定不受影响），不再前缀填入输入框（M4-3 前缀填入口径被用户「对齐旧版」反馈取代，记档）。**位置快照前移**：`handlePlayerBookmark` 打开瞬间捕获 `tagPositionMs`（排版态/全屏覆盖层两入口共用同链），对话框只收快照不再读播放器（确认时读数在 Sheet 收起动画窗口内会漂移）。wasPlaying 暂停/恢复链原样。strings_video.xml：2 值改 + 6 新键（detail_video_tag_current_time/section_quick/section_custom/quick_like/quick_favorite/add_action），detail_save/detail_cancel 不动。
+- **U1b 图片放大联动沉浸**（用户新反馈：放大图片时上下白色渐变 chrome 压图不适）。**新语义（超出旧版，用户反馈驱动非旧版对齐，记档）**：图片捏合/双击放大跨过 1.05x 阈值 → chrome+系统栏自动隐藏（沉浸）、letterbox 随 K1 口径转黑；缩回未放大态（收束点）→ 恢复进入前 chrome 态。实现：冻结件 ZoomImageView 三件套例外增补（KDoc 段+纯函数 `isZoomImmersive`+单测 `ZoomImmersionPolicyTest` 4 例）——`onZoomImmersiveChanged` 只读回调，**边沿触发+非对称滞回**（跨阈即时发 true；回落仅 resetZoom/clampScaleEnd 收束点评估，捏合振荡不闪 chrome）；三处字面 1.05f 谓词收口为常量（行为逐位等价）。转发链 ZoomableOriginalImage→ImageStage→DetailStage（图片分支）→DetailScreen：新状态 `zoomImmersive`（remember 非 saveable，防进程重建假沉浸）并入 `chromeEffective`（系统栏/chrome 动画/W4 锁滚单点自动跟随）；放大态单击=无操作（防奇偶漂移，推荐口径拍板）；stageBackdropColor 改传 chromeEffective（视频态传参值不变、幂等证明在案）。
+- **虚拟库验证（qimeng_api35=emulator-5562 显式指定，8421 隔离实例+ffmpeg 造数 6 资产）**：三连绿（:feature:detail/:core:data/:core:model 单测+assembleDebug+lintDebug）；模拟器走查=BottomSheet 打开/标题+当前时间快照（0:05 与暂停帧 5.417s 一致）/emoji 胶囊/立即添加（时间轴出红「0:00 ❤️ 喜欢」+灰「0:05 test_tag_5s」芯片）/自定义输入+添加置灰联动/wasPlaying 恢复；双击放大→chrome 隐+letterbox 黑，双击缩回→chrome 完整恢复。截图证据 %TEMP%\u1_19~33。
+- **并行记档**：S3 网络重探细化——dl.google.com（google() 仓库真实 URL）与 repo1.maven.org 实测 **200 可达**，maven.google.com/services.gradle.org/plugins.gradle.org 仍 000（Gradle 9 发行版拉取渠道未通，AGP9 升级仍受阻，细评入 249 笔）。
+
+---
 ## docs: 任务T 晨间汇总——T3 单机模式接入批收官，T 卷余批挂起等 S3 重试与真机节点（2026-09-13 第二百四十七笔）
 
 执行 AI：GLM-5.3-Flash（主代理，会话B 任务T）

@@ -79,6 +79,13 @@ import media.qimeng.app.core.ui.theme.QimengDimens
  * 海报态单击=起播（L163 旧版语义优先，与 L271 单击切 chrome 的冲突记档：海报态不接
  * chrome 切换，▶ 随 chrome 恒显）。
  *
+ * 图片态缩放沉浸（2026-09-13 用户实测反馈驱动，非旧版对齐——旧版单击无条件切 chrome）：
+ * 图片放大跨过 1.05x（ZoomImageView.emitZoomImmersive 上报）即并入 chromeEffective——
+ * 系统栏/上下渐变 chrome 隐藏、舞台底转黑、滚动锁死（同沉浸口径，消除「放大时上下白色
+ * 渐变压在图上」观感）；缩回落回收束点恢复。放大态单击舞台无操作（防 chrome 显隐奇偶
+ * 漂移）。链路：ZoomImageView → ZoomableOriginalImage 桥 → DetailMediaStage → 本页
+ * zoomImmersive 单点并入 chromeEffective。
+ *
  * @param assetId 路由参数（ViewModel 经 SavedStateHandle 同键读取；此处显式保留供预览/测试）
  * @param onBack 返回（壳层 popBackStack）
  * @param onOpenAsset 跳资产（壳层导航 push 叠栈）：兄弟资产滑动换件走此回调（批次清单
@@ -106,7 +113,13 @@ fun DetailScreen(
     var chromeVisible by rememberSaveable { mutableStateOf(!SiblingSwipeImmersionRequest.consume()) }
     // 视频播放器活动态镜像（VideoStage 上报）：活动期 chrome 让位播放器控制器
     var playerActive by remember { mutableStateOf(false) }
-    val chromeEffective = chromeVisible && !playerActive
+    // 图片态缩放沉浸镜像（ZoomImageView 上报，2026-09-13 用户反馈「放大时上下白色渐变
+    // 压在图上观感不适」）：跨过 1.05x 即时 true、回落收束点 false（非对称滞回在搬运件）。
+    // remember 而非 rememberSaveable：放大态属 ZoomImageView 实例态，进程重建后 View 重建、
+    // 图片回基态（resetZoom 上报 false）——saveable 会造成「UI 沉浸而图未放大」的假沉浸，
+    // 故不持久化（chromeVisible 仍 saveable：chrome 开关是用户显式选择，语义不同）
+    var zoomImmersive by remember { mutableStateOf(false) }
+    val chromeEffective = chromeVisible && !playerActive && !zoomImmersive
     // 信息/快速转跳/作者 BottomSheet 开关（纯 UI 弹层无数据请求，页面局部状态；进程重建后
     // 关闭态恢复——与 chromeVisible 同 rememberSaveable 语义）。任务V V3：「快速转跳」
     // 不进首屏四胶囊（主代理保守裁决待用户确认），入口随旧图标行消失——jumpSheetVisible
@@ -189,9 +202,12 @@ fun DetailScreen(
         // chrome 有效显示=主题背景（≈旧 qmColorBg，日 #FAFAFA/夜 #1A1A1A，非纯黑——媒体
         // contain letterbox 与状态栏后区域同色，negate-inset 平移出的顶部区无黑条/主题色条
         // 错位）；沉浸（chrome 隐藏）或播放器活动期=纯黑。全卷唯一裁决点在此，经
-        // DetailMediaStage.backdrop 逐层下发，子层禁止自带底色
+        // DetailMediaStage.backdrop 逐层下发，子层禁止自带底色。2026-09-13 缩放沉浸：传参
+        // 由 chromeVisible 改为 chromeEffective（并入 zoomImmersive），放大态 letterbox 随
+        // 沉浸转黑（与「沉浸=纯黑」同口径）；与函数内 playerActive 判据幂等叠加不冲突
+        //（图片态 playerActive 恒 false），视频态传参值逐位不变（zoomImmersive 恒 false）
         val stageBackdrop = stageBackdropColor(
-            chromeVisible = chromeVisible,
+            chromeVisible = chromeEffective,
             playerActive = playerActive,
             themeBackground = MaterialTheme.colorScheme.background,
         )
@@ -310,7 +326,9 @@ fun DetailScreen(
                     .background(stageBackdrop),
             )
             // 任务W W4 交互态锁滚动：verticalScroll 门控在 chromeEffective（=chromeVisible &&
-            // !playerActive，上方 L~100 现成组合态，与沉浸系统栏/chrome 显隐同源）——海报态
+            // !playerActive && !zoomImmersive，上方现成组合态，与沉浸系统栏/chrome 显隐/
+            // 舞台底色同源；2026-09-13 缩放沉浸并入——放大态同沉浸锁滚，父层滚动不与双指
+            // 缩放手势竞争）——海报态
             // （初始，chrome 显）保留可小幅下滑（「详情页时可以下滑一下」）；单击图片进沉浸
             // 全屏态、视频播放器活动期（播放/暂停/ENDED）一律锁死滚动。语义对齐旧版「媒体态
             // 不可滚、下滑只在最初详情页」：GUIDE_UI 口径媒体层恒 edge-to-edge 单层容器无
@@ -344,8 +362,13 @@ fun DetailScreen(
                         backdrop = stageBackdrop,
                         modifier = Modifier.fillMaxSize(),
                         onSiblingNavigate = onSiblingNavigate,
-                        onToggleChrome = { chromeVisible = !chromeVisible },
+                        // 放大态单击=无操作（2026-09-13 拍板口径）：放大期 chromeEffective 已被
+                        // zoomImmersive 压 false，单击若照常翻转 chromeVisible 会在缩回后以
+                        // 反转态恢复（奇偶漂移），故门控掉
+                        onToggleChrome = { if (!zoomImmersive) chromeVisible = !chromeVisible },
                         onPlayerActiveChanged = { playerActive = it },
+                        // 图片态缩放沉浸上报（链路见类 KDoc；视频分支在 DetailMediaStage 不消费）
+                        onZoomImmersiveChanged = { zoomImmersive = it },
                         onExitToChromeBrowse = { chromeVisible = true },
                         // 图片态解码失败覆盖层「返回」（RES #27）——与顶行返回同链（popBackStack）
                         onExitDetail = onBack,

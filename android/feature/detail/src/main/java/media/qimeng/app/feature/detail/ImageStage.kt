@@ -18,6 +18,8 @@ import media.qimeng.app.core.model.AssetDetail
  *
  * @param onSiblingNavigate 左右滑切换相邻资产（DetailScreen → VM.moveBy → push 叠栈）
  * @param onToggleChrome 单击舞台切换沉浸 chrome 显隐（DetailScreen 持开关状态单源）
+ * @param onZoomImmersiveChanged 缩放沉浸上报（2026-09-13 用户反馈驱动，非旧版对齐：
+ *   图片放大跨过阈值/回落收束点，经 ZoomableOriginalImage 桥直传，本层无逻辑）
  * @param onExitDetail 解码失败覆盖层「返回」（RES #27；离开详情页 popBackStack 语义）
  */
 @Composable
@@ -26,6 +28,7 @@ internal fun ImageStage(
     modifier: Modifier,
     onSiblingNavigate: (delta: Int) -> Unit,
     onToggleChrome: () -> Unit,
+    onZoomImmersiveChanged: (Boolean) -> Unit = {},
     onExitDetail: () -> Unit = {},
 ) {
     ZoomableOriginalImage(
@@ -33,6 +36,7 @@ internal fun ImageStage(
         modifier = modifier,
         onSingleTap = onToggleChrome,
         onSwipe = onSiblingNavigate,
+        onZoomImmersiveChanged = onZoomImmersiveChanged,
         onExitDetail = onExitDetail,
     )
 }
