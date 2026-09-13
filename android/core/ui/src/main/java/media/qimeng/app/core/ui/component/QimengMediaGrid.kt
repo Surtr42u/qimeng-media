@@ -12,7 +12,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -83,6 +83,12 @@ internal fun flattenGridCells(sections: List<GridSection>): List<GridCell> {
 /** 视频类型（时长角标仅视频渲染）——与领域 MediaKind.VIDEO 对应的本地引用 */
 private val DURATION_BADGE_TYPES = setOf(MediaKind.VIDEO)
 
+/** 网格项 contentType 两型（修复D-2，2026-09-14 相册胶囊丢响应调研定案）：组头与资产卡
+ *  结构迥异（跨全列文本 vs 缩略图卡），分型后 Lazy 网格复用池按型匹配、同型项复用组合，
+ *  滚动往复不再跨型重组合 */
+private const val GRID_CELL_TYPE_HEADER = "gridHeader"
+private const val GRID_CELL_TYPE_ASSET = "gridAsset"
+
 // ---------- 旧版极简卡视觉参数（任务L L1，2026-09-09 拍板；来源=旧仓库 item_media_thumbnail.xml，勿改值） ----------
 
 /** 旧版卡片外层 padding=5dp（item_media_thumbnail.xml root padding；5dp 不在既有间距档内，独立常量） */
@@ -129,9 +135,11 @@ private val DETAIL_POSTER_PRELOAD_CACHE_POLICY = CachePolicy.ENABLED
  * （原为 exp#4 前进转场竞态修复·预载翼，任务W W1 撤动效后保留。）
  *
  * 边界诚实记档：图片资产详情舞台渲的是**原图直链**（签名直链须详情侧解析，网格只持
- * 缩略图直链），对这类资产本预载只热身缩略图、原图仍由详情侧加载——首帧可见性由详情
- * 舞台的占位翼兜底，此处尽力而为；视频（海报帧=缩略图直链）与动图（卡上已持解析后的
- * 原件直链）两端 URL 同源，是本翼的主受益形态。请求形状对齐详情预载链（视频海报帧=
+ * 缩略图直链），对这类资产本预载只热身缩略图、原图仍由详情侧加载——详情舞台的 exp#4
+ * 灰色占位翼已撤（2026-09-14 用户反馈深色模式灰块突兀 + 旧版无此形态，撤除记档见
+ * ZoomableOriginalImage 注释），首帧可见性仅剩本预载的缓存热身、尽力而为；视频（海报
+ * 帧=缩略图直链）与动图（卡上已持解析后的原件直链）两端 URL 同源，仍是本翼的主受益
+ * 形态。请求形状对齐详情预载链（视频海报帧=
  * 默认档、图片/动图=Size.ORIGINAL 不降采样），同形才能复用同一条内存缓存键。
  *
  * 回退（exp#4 预载翼）：删 AssetCard onClick 内 preloadDetailPoster(...) 调用 +
@@ -162,6 +170,11 @@ private fun preloadDetailPoster(context: Context, mediaType: MediaKind, posterUr
  *   L394 / §收藏页 L411）：网格滚动进行中（拖拽/惯性 fling 均 true，[LazyGridState]
  *   .isScrollInProgress 口径）暂缓新缩略图请求、停滚自动恢复（门控在 [QimengThumbnail]）。
  *   默认 false——首页/搜索/全部页既有调用方行为零变化
+ * @param tightenLeadingHeader 收紧列表首个组头的上内边距（修复C，2026-09-14 作者页用户
+ *   反馈「下面的文件时间离胶囊过远」）：默认 false=组头恒 18dp 上距（旧版
+ *   GroupedMediaAdapter setPadding(4,18,4,10) 对齐档，语义=与上一组末卡隔断）；
+ *   true=列表首格恰为组头时该 18dp 让位——列表顶部无「上一组末卡」，此 18dp 属冗余层，
+ *   胶囊/标题行→首组头间距收敛为网格自带顶距 SpaceM=8dp（4-8dp 档）。仅作者集合页开启。
  */
 @Composable
 fun QimengMediaGrid(
@@ -176,6 +189,7 @@ fun QimengMediaGrid(
     onAssetClick: (MediaAsset) -> Unit,
     onNearBottom: () -> Unit = {},
     pauseThumbnailsWhileScrolling: Boolean = false,
+    tightenLeadingHeader: Boolean = false,
 ) {
     // 扁平化为 (header?, asset?) 序列：组头跨全列，卡片单列（含按 id 防御性去重，见函数 KDoc）
     val cells = remember(sections) { flattenGridCells(sections) }
@@ -215,16 +229,20 @@ fun QimengMediaGrid(
             bottom = bottomContentPadding,
         ),
     ) {
-        items(
+        itemsIndexed(
             cells,
-            key = { cell -> cell.asset?.id ?: "header:${cell.header}" },
+            key = { _, cell -> cell.asset?.id ?: "header:${cell.header}" },
             // 组头跨整行（任务J J2，台账 #36 用户拍板「对齐旧版」）：日期组头独占一行，
             // 不再占单列与首卡同行——KDoc「组头跨全列」自此与实现相符（I6/I9 实证不符项清偿）。
             // 影响全部网格页（含冻结的全部页）=H1 同款穿透豁免口径，用户已拍板授权。
-            span = { cell ->
+            span = { _, cell ->
                 if (cell.header != null) GridItemSpan(maxLineSpan) else GridItemSpan(1)
             },
-        ) { cell ->
+            // 修复D-2：contentType 两型（组头/资产卡，常量见上），同型复用组合
+            contentType = { _, cell ->
+                if (cell.header != null) GRID_CELL_TYPE_HEADER else GRID_CELL_TYPE_ASSET
+            },
+        ) { index, cell ->
             val header = cell.header
             if (header != null) {
                 Text(
@@ -234,6 +252,8 @@ fun QimengMediaGrid(
                     // 色 qmColorPrimary（Theme.kt colorPrimary→primary 槽，浅 #3A3A3A/夜 #C8C8C8；
                     // 此前 onSurfaceVariant 浅灰不符）+ 内边距 setPadding(4,18,4,10)（此前仅
                     // top=SpaceXS=4dp，与旧版 18dp 上距/10dp 下距不符）。
+                    // 修复C（2026-09-14）：[tightenLeadingHeader] 开启时列表首格组头 18dp 上距
+                    // 让位（作者页芯片行→首组头 26dp→8dp，记档见参数 KDoc）；中段组头语义不变。
                     style = MaterialTheme.typography.titleSmall.copy(
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
@@ -241,7 +261,12 @@ fun QimengMediaGrid(
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = 4.dp, top = 18.dp, end = 4.dp, bottom = 10.dp),
+                        .padding(
+                            start = 4.dp,
+                            top = if (index == 0 && tightenLeadingHeader) 0.dp else 18.dp,
+                            end = 4.dp,
+                            bottom = 10.dp,
+                        ),
                 )
             } else {
                 val asset = cell.asset

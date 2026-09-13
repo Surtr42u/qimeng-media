@@ -140,6 +140,12 @@ fun AuthorCollectionScreen(
                     // 底部预留防悬浮药丸面板展开时遮挡末行（收藏/相册页同款）
                     bottomContentPadding = QimengDimens.ListBottomContentPadding,
                     onNearBottom = viewModel::onNearBottom,
+                    // 修复C（2026-09-14 用户反馈「下面的文件时间离胶囊过远」）：间距链=
+                    // 组件网格顶距 SpaceM=8dp + 组头上距 18dp（旧版 GroupedMediaAdapter
+                    // setPadding(4,18,4,10) 对齐档，语义=与上一组末卡隔断）——列表顶部无
+                    // 上一组，18dp 属两层叠加中的冗余层；开启收紧后芯片行→首组头日期
+                    // 26dp→8dp（4-8dp 档取组件既有 SpaceM，不另开 token），中段组头 18dp 不变
+                    tightenLeadingHeader = true,
                     // 卡片点击先写批次上下文再交壳层导航（RES R4：详情页 i/N 序号+滑动切换
                     // 数据链，与首页/收藏/搜索同款机制）
                     onAssetClick = { asset: MediaAsset ->

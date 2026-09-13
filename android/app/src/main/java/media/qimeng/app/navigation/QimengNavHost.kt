@@ -20,6 +20,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableLongStateOf
@@ -51,7 +52,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import media.qimeng.app.core.ui.component.QmTouchProbe
 import media.qimeng.app.core.ui.component.TabScrollController
+import media.qimeng.app.core.ui.component.qmTouchProbe
 import media.qimeng.app.core.ui.theme.QimengBrandColors
 import media.qimeng.app.feature.all.AllScreen
 import media.qimeng.app.feature.author.AuthorCollectionRoutes
@@ -301,6 +304,12 @@ fun QimengNavHost(
             }
         },
     ) { innerPadding ->
+        // U7 触摸诊断桩 QM_TOUCH（根因定位后撤除）
+        // NAVHOST_BOX：NavHost+常驻层公共祖先容器探针。特意不包 NavHost 单体——那会在
+        // 常驻层（zIndex -1）之上新增全尺寸命中参与者、遮蔽真实 Tab 屏的命中路径=改变
+        // 分发语义；包公共祖先只顺既有命中链多挂一个观察者，命中归属零变化。
+        // （Box 内容块维持原缩进不重排：临时诊断代码，压 diff 面积。）
+        Box(modifier = Modifier.fillMaxSize().qmTouchProbe("NAVHOST_BOX")) {
         NavHost(
             navController = navController,
             startDestination = TopLevelDestination.HOME.route,
@@ -338,15 +347,27 @@ fun QimengNavHost(
             // 路由/返回栈/saveState/restoreState 语义，底栏显隐仍按 currentRoute 判定。
             composable(TopLevelDestination.HOME.route) {
                 // 空壳：HomeScreen 真身在常驻层 [ResidentTabScreen] 按 route 渲染
+                // U7 触摸诊断桩 QM_TOUCH（根因定位后撤除）：跳板组合一次即打点
+                LaunchedEffect(Unit) { QmTouchProbe.log("SHELL", "route=${TopLevelDestination.HOME.route}") }
+                // U7 诊断桩结束
             }
             composable(TopLevelDestination.ALL.route) {
                 // 空壳：AllScreen 真身同上
+                // U7 触摸诊断桩 QM_TOUCH（根因定位后撤除）
+                LaunchedEffect(Unit) { QmTouchProbe.log("SHELL", "route=${TopLevelDestination.ALL.route}") }
+                // U7 诊断桩结束
             }
             composable(TopLevelDestination.STATS.route) {
                 // 空壳：StatsScreen 真身同上
+                // U7 触摸诊断桩 QM_TOUCH（根因定位后撤除）
+                LaunchedEffect(Unit) { QmTouchProbe.log("SHELL", "route=${TopLevelDestination.STATS.route}") }
+                // U7 诊断桩结束
             }
             composable(TopLevelDestination.SETTINGS.route) {
                 // 空壳：SettingsScreen 真身同上
+                // U7 触摸诊断桩 QM_TOUCH（根因定位后撤除）
+                LaunchedEffect(Unit) { QmTouchProbe.log("SHELL", "route=${TopLevelDestination.SETTINGS.route}") }
+                // U7 诊断桩结束
             }
             composable(
                 route = Routes.SEARCH,
@@ -530,7 +551,11 @@ fun QimengNavHost(
                 modifier = Modifier
                     .zIndex(-1f)
                     .padding(innerPadding)
-                    .consumeWindowInsets(innerPadding),
+                    .consumeWindowInsets(innerPadding)
+                    // U7 触摸诊断桩 QM_TOUCH（根因定位后撤除）：常驻层容器探针（观察不
+                    // consume，事件照旧下传各 Tab 屏；节点=既有 Tab 内容命中链的祖先）
+                    .qmTouchProbe("RESIDENT_BOX"),
+                // U7 诊断桩结束
             ) {
                 // graph 未就绪（residentEntry==null）的帧不组合 Tab 屏：见上方 owner 注释。
                 // 正常路径（首个组合内 graph 已内置）恒非空，此门控不可见
@@ -574,16 +599,23 @@ fun QimengNavHost(
                 //   同款 background 色补底，逐像素保真。② 输入：pushed 屏非交互区下压的触摸
                 //   全量吞掉，防穿透到常驻层造成幽灵滚动（zIndex=2 盖过当前 Tab 的 zIndex=1）
                 if (overlayRouteShowing) {
+                    // U7 触摸诊断桩 QM_TOUCH（根因定位后撤除）：幕帘组合即打点（pushed 屏
+                    // 触摸死活对照）；CURTAIN_TOUCH 观察探针挂既有 blockTouches 同节点链——
+                    // 该节点本就命中可测且全量消费，探针只加观察者，命中归属零变化
+                    SideEffect { QmTouchProbe.log("CURTAIN", "visible=true") }
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
                             .zIndex(2f)
                             .background(MaterialTheme.colorScheme.background)
+                            .qmTouchProbe("CURTAIN_TOUCH")
                             .blockTouches(),
                     )
+                    // U7 诊断桩结束
                 }
             }
         }
+        } // U7 诊断桩结束（NAVHOST_BOX 容器）
     }
 }
 
@@ -606,7 +638,9 @@ private fun statsNavLinks(navController: NavHostController): StatsNavLinks = Sta
     onOpenAuthor = { authorId, displayName ->
         navController.navigate(AuthorCollectionRoutes.authorCollectionRoute(authorId, displayName))
     },
-    onOpenTagSearch = { tag -> navController.navigate(Routes.searchRoute(tag)) },
+    // 修复E（2026-09-14）：launchSingleTop——标签行连点时同路由压栈双实例（返回须退两层），
+    // 单顶把重复导航收敛到既有栈顶实例
+    onOpenTagSearch = { tag -> navController.navigate(Routes.searchRoute(tag)) { launchSingleTop = true } },
 )
 
 /**

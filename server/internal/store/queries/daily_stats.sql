@@ -74,16 +74,43 @@ SELECT asset_id FROM assets;
 
 -- SummarizeAssets: stats overview library shape (total files, image
 -- count with animated_image folded in per DOMAIN_RULES 11 media types,
--- video count, total size). COALESCE keeps empty-library SUMs at 0
--- instead of NULL so the handler never needs null handling.
+-- video count, total size, per-type size sums). Per-type sizes keep
+-- animated_image as its own key (physical footprint accounting: the
+-- three keys sum to total_size_bytes exactly). COALESCE keeps empty-
+-- library SUMs at 0 instead of NULL so the handler never needs null
+-- handling.
 
 -- name: SummarizeAssets :one
 SELECT
     COUNT(*) AS total_files,
     CAST(COALESCE(SUM(CASE WHEN assets.media_type IN ('image', 'animated_image') THEN 1 ELSE 0 END), 0) AS INTEGER) AS image_count,
     CAST(COALESCE(SUM(CASE WHEN assets.media_type = 'video' THEN 1 ELSE 0 END), 0) AS INTEGER) AS video_count,
-    CAST(COALESCE(SUM(assets.size_bytes), 0) AS INTEGER) AS total_size_bytes
+    CAST(COALESCE(SUM(assets.size_bytes), 0) AS INTEGER) AS total_size_bytes,
+    CAST(COALESCE(SUM(CASE WHEN assets.media_type = 'image' THEN assets.size_bytes ELSE 0 END), 0) AS INTEGER) AS image_size_bytes,
+    CAST(COALESCE(SUM(CASE WHEN assets.media_type = 'video' THEN assets.size_bytes ELSE 0 END), 0) AS INTEGER) AS video_size_bytes,
+    CAST(COALESCE(SUM(CASE WHEN assets.media_type = 'animated_image' THEN assets.size_bytes ELSE 0 END), 0) AS INTEGER) AS animated_image_size_bytes
 FROM assets;
+
+-- SummarizeSourceSizes: overview per-source size sums (protocol batch
+-- 2026-09-14). Predicates mirror CountCosLinkedAssets / CountRegularAssets
+-- (DOMAIN_RULES 6 partition, no new criteria): normal = no cos author
+-- linked, cos = at least one cos author linked. The two columns sum to
+-- total_size_bytes (both branch on the same rows). One query instead of
+-- two -- same scan, two conditional SUMs.
+
+-- name: SummarizeSourceSizes :one
+SELECT
+    CAST(COALESCE(SUM(CASE WHEN NOT EXISTS (
+        SELECT 1 FROM asset_authors aanorm
+        JOIN authors aunorm ON aunorm.id = aanorm.author_id
+        WHERE aanorm.asset_id = a.asset_id AND aunorm.type = 'cos')
+        THEN a.size_bytes ELSE 0 END), 0) AS INTEGER) AS normal_size_bytes,
+    CAST(COALESCE(SUM(CASE WHEN EXISTS (
+        SELECT 1 FROM asset_authors aacos
+        JOIN authors aucos ON aucos.id = aacos.author_id
+        WHERE aacos.asset_id = a.asset_id AND aucos.type = 'cos')
+        THEN a.size_bytes ELSE 0 END), 0) AS INTEGER) AS cos_size_bytes
+FROM assets a;
 
 -- CountCosLinkedAssets / CountRegularAssets: overview source inventory
 -- (protocol batch P2, 2026-09-09). The two predicates mirror the browse

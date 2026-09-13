@@ -774,9 +774,9 @@ private fun distributionSummaryCells(state: StatsDetailUiState): List<SummaryCel
             "常规 / COS",
             "${overview.sourceNormalCount} / ${overview.sourceCosCount}",
         ),
-        // 协议 overview 无分类型大小直出（仅 totalSizeBytes），「—」占位保 8 格布局（记档交付报告）
-        SummaryCellUi("图片总大小", DETAIL_UNAVAILABLE_TEXT),
-        SummaryCellUi("视频总大小", DETAIL_UNAVAILABLE_TEXT),
+        // 分类型大小直出（2026-09-14 协议批 per_type_size_bytes；image 不含动图）
+        SummaryCellUi("图片总大小", formatSizeDetail(overview.imageSizeBytes)),
+        SummaryCellUi("视频总大小", formatSizeDetail(overview.videoSizeBytes)),
         SummaryCellUi("总占用", formatSizeDetail(overview.totalSizeBytes)),
         SummaryCellUi("窗口浏览", formatCountDetail(windowViews)),
     )
@@ -806,9 +806,9 @@ private fun typeDistributionRows(state: StatsDetailUiState): List<DistributionRo
     val animatedCount = (overview.totalFiles - overview.imageCount - overview.videoCount).coerceAtLeast(0)
     return buildDistributionRows(
         listOf(
-            Triple(IMAGE_DISPLAY_NAME, overview.imageCount, state.typeWindowViews[KEY_MEDIA_TYPE_IMAGE] ?: 0),
-            Triple(VIDEO_DISPLAY_NAME, overview.videoCount, state.typeWindowViews[KEY_MEDIA_TYPE_VIDEO] ?: 0),
-            Triple(ANIMATED_DISPLAY_NAME, animatedCount, state.typeWindowViews[KEY_MEDIA_TYPE_ANIMATED] ?: 0),
+            DistRowInput(IMAGE_DISPLAY_NAME, overview.imageCount, overview.imageSizeBytes, state.typeWindowViews[KEY_MEDIA_TYPE_IMAGE] ?: 0),
+            DistRowInput(VIDEO_DISPLAY_NAME, overview.videoCount, overview.videoSizeBytes, state.typeWindowViews[KEY_MEDIA_TYPE_VIDEO] ?: 0),
+            DistRowInput(ANIMATED_DISPLAY_NAME, animatedCount, overview.animatedImageSizeBytes, state.typeWindowViews[KEY_MEDIA_TYPE_ANIMATED] ?: 0),
         ),
     )
 }
@@ -818,25 +818,31 @@ private fun sourceDistributionRows(state: StatsDetailUiState): List<Distribution
     val overview = state.overviewValues ?: return emptyList()
     return buildDistributionRows(
         listOf(
-            Triple(SOURCE_NORMAL_DISPLAY_NAME, overview.sourceNormalCount, state.sourceWindowViews[KEY_SOURCE_NORMAL] ?: 0),
-            Triple(SOURCE_COS_DISPLAY_NAME, overview.sourceCosCount, state.sourceWindowViews[KEY_SOURCE_COS] ?: 0),
+            DistRowInput(SOURCE_NORMAL_DISPLAY_NAME, overview.sourceNormalCount, overview.normalSizeBytes, state.sourceWindowViews[KEY_SOURCE_NORMAL] ?: 0),
+            DistRowInput(SOURCE_COS_DISPLAY_NAME, overview.sourceCosCount, overview.cosSizeBytes, state.sourceWindowViews[KEY_SOURCE_COS] ?: 0),
         ),
     )
 }
 
 /**
- * 分布行装配：数量/浏览进度相对本卡最大值；大小指标协议无分类型数据（仅总占用直出），
- * 「—」+ 进度 0 占位——视觉结构按旧版保留三指标位（数据缺口记档交付报告）。
+ * 分布行装配：数量/浏览/大小进度均相对本卡（组内）最大值。大小指标走协议
+ * per_type/per_source_size_bytes 直出（2026-09-14 协议批）。
+ * 偏离记档：旧版（StatsDetailFragment.kt L685/L693）来源行进度 maxBytes 用
+ * 全库总占用，两行比例失真（各自最多只到总占比的百分位）；本版改组内最大值
+ * 口径 = 与数量/浏览档及排行卡「相对第一名」一致。
  */
-private fun buildDistributionRows(entries: List<Triple<String, Int, Int>>): List<DistributionRowUi> {
-    val maxCount = entries.maxOf { it.second }.coerceAtLeast(1)
-    val maxViews = entries.maxOf { it.third }.coerceAtLeast(1)
-    return entries.map { (label, count, views) ->
+private data class DistRowInput(val label: String, val count: Int, val sizeBytes: Long, val views: Int)
+
+private fun buildDistributionRows(entries: List<DistRowInput>): List<DistributionRowUi> {
+    val maxCount = entries.maxOf { it.count }.coerceAtLeast(1)
+    val maxSize = entries.maxOf { it.sizeBytes }.coerceAtLeast(1)
+    val maxViews = entries.maxOf { it.views }.coerceAtLeast(1)
+    return entries.map { (label, count, sizeBytes, views) ->
         DistributionRowUi(
             label = label,
             metrics = listOf(
                 DistributionMetricUi("数量", count.toString(), rankProgressPercent(count, maxCount)),
-                DistributionMetricUi("大小", DETAIL_UNAVAILABLE_TEXT, 0),
+                DistributionMetricUi("大小", formatSizeDetail(sizeBytes), rankProgressPercent(sizeBytes, maxSize)),
                 DistributionMetricUi("浏览", views.toString(), rankProgressPercent(views, maxViews)),
             ),
         )

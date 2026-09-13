@@ -1114,6 +1114,23 @@ components:
         sourceNormalCount: { type: integer, description: '常规来源库存：不关联 COS 作者的现存资产数（谓词同 §6 分区判定）' }
         sourceCosCount: { type: integer, description: 'COS 来源库存：关联 COS 作者的现存资产数' }
         avgViewsPerFile: { type: [number, "null"], format: double, description: '平均浏览次数 = 窗口内现存资产 open 事件总数 ÷ 窗口内至少一次 open 的不同现存文件数；窗口由本端点 range 参数决定（缺省 all=全时段）；分母 0 → null' }
+        per_type_size_bytes: { $ref: "#/components/schemas/StatsSizeByType" }
+        per_source_size_bytes: { $ref: "#/components/schemas/StatsSizeBySource" }
+
+    StatsSizeByType:
+      type: object
+      description: '分类型大小：现存资产按 media_type 分组各求和 size_bytes（口径见 DOMAIN_RULES §5）；image 不含 animated_image，各键之和 = totalSizeBytes；无资产的类型 = 0'
+      properties:
+        image: { type: integer, format: int64, description: 图片资产 size_bytes 求和（不含动图） }
+        video: { type: integer, format: int64, description: 视频资产 size_bytes 求和 }
+        animated_image: { type: integer, format: int64, description: 动图资产 size_bytes 求和 }
+
+    StatsSizeBySource:
+      type: object
+      description: '分来源大小：现存资产按来源分区各求和 size_bytes（谓词同 sourceNormalCount/sourceCosCount 的 §6 分区判定）；两键之和 = totalSizeBytes；无资产的来源 = 0'
+      properties:
+        normal: { type: integer, format: int64, description: 常规来源（不关联 COS 作者）size_bytes 求和 }
+        cos: { type: integer, format: int64, description: COS 来源（关联 COS 作者）size_bytes 求和 }
 
     MostViewedItem:
       type: object

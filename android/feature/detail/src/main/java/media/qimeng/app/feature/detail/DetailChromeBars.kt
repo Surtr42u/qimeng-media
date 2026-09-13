@@ -89,6 +89,16 @@ private val CHROME_DOCK_PADDING_HORIZONTAL = 24.dp
  *  上内边距 6dp = 旧版 :104 paddingTop，同 QimengDimens.SpaceS 档不另开） */
 private val CHROME_DOCK_PADDING_BOTTOM = 10.dp
 
+/**
+ * 四胶囊内容水平 padding 覆盖档（修复B 2026-09-14）：等宽四槽（weight(1f)+spacedBy）下
+ * 胶囊内容固有宽 = 默认 ChipHorizontalPadding 14×2 + 图标 22 + 间隙 6 + labelBold 两字
+ * ≈28 ≈ 84dp，已超 411dp 宽屏的等分槽宽 (411-48-24)/4 ≈ 84.75dp 的临界，「收藏/标签/作者」
+ * 实测折成两行竖排（证据 .walk/u7/04_detail_capsules.png）——压至 10dp 后内容宽 ≈76dp <
+ * 槽宽，单行居中。2026-09-14 用户「均匀统一+留间隔」拍板的配套档；胶囊件默认档
+ * ChipHorizontalPadding=14dp 不动（其他场景零变化）。
+ */
+private val CHROME_CAPSULE_CONTENT_H_PADDING = 10.dp
+
 /** chrome 图标按下压缩档（GUIDE_UI L173 按下反馈 0.92→1.0，旧版 addPressAnimation 同数值） */
 private const val CHROME_PRESSED_SCALE = 0.92f
 
@@ -239,10 +249,19 @@ internal fun DetailBottomChrome(
             exit = fadeOut(animationSpec = CHROME_CONTENT_FADE),
             modifier = Modifier.fillMaxWidth(),
         ) {
-            // 内层 Row 承接原 SpaceEvenly 几何（AnimatedVisibilityScope 不是 RowScope）
+            // 内层 Row 承接胶囊排布几何（AnimatedVisibilityScope 不是 RowScope）。
+            // 修复A（2026-09-14 用户拍板「均匀统一排布+之间留间隔做隔断」）：旧版
+            // detailBottomDock 四图标 layout_weight=1 等宽四槽 + 第3/4枚 marginStart=20dp
+            // 隔断；SpaceEvenly 的均分空隙观感为「挤在一起、间隙不统一」，改回旧版等宽槽
+            // 形态=四胶囊各 weight(1f)（等宽 ⇔ 旧版 weight=1）+ spacedBy 固定间隔；
+            // 20dp 无既有 token 档，曾取 SpaceL=12dp 近似。
+            // 修复B（2026-09-14 折行回归修复）：SpaceL 下槽宽被挤压，「收藏/标签/作者」
+            // 内容固有宽≈84dp 超槽宽实测折行——间隔降为 SpaceM=8dp 给内容让宽（窄屏
+            // 防折行优先于隔断强度；内容 padding 同步压档，见
+            // [CHROME_CAPSULE_CONTENT_H_PADDING]），槽内余量 + 8dp 构成胶囊间可视空隙。
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly,
+                horizontalArrangement = Arrangement.spacedBy(QimengDimens.SpaceM),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 // 点赞N（icon+计数文字胶囊；激活 primary 实底，content 沿用原互动行点赞钮结构）
@@ -250,6 +269,10 @@ internal fun DetailBottomChrome(
                     active = asset.likedToday,
                     enabled = !likePending,
                     contentDescription = stringResource(R.string.detail_like),
+                    // 修复B：等宽四槽防折行（档位注释见常量与 CapsuleText）
+                    singleLine = true,
+                    contentHorizontalPadding = CHROME_CAPSULE_CONTENT_H_PADDING,
+                    modifier = Modifier.weight(1f),
                     onClick = onToggleLike,
                 ) {
                     Icon(
@@ -257,11 +280,7 @@ internal fun DetailBottomChrome(
                         contentDescription = null,
                         modifier = Modifier.size(CHROME_GLYPH_SIZE),
                     )
-                    Text(
-                        text = formatCount(asset.likeCount),
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold,
-                    )
+                    CapsuleText(text = formatCount(asset.likeCount))
                 }
                 // 收藏（icon+文字；isFavorite 高亮；Y2 星形换心形对齐旧版字形）
                 DetailActionButton(
@@ -270,6 +289,9 @@ internal fun DetailBottomChrome(
                     contentDescription = stringResource(
                         if (asset.isFavorite) R.string.detail_favorite_active else R.string.detail_favorite,
                     ),
+                    singleLine = true,
+                    contentHorizontalPadding = CHROME_CAPSULE_CONTENT_H_PADDING,
+                    modifier = Modifier.weight(1f),
                     onClick = onToggleFavorite,
                 ) {
                     Icon(
@@ -277,12 +299,10 @@ internal fun DetailBottomChrome(
                         contentDescription = null,
                         modifier = Modifier.size(CHROME_GLYPH_SIZE),
                     )
-                    Text(
+                    CapsuleText(
                         text = stringResource(
                             if (asset.isFavorite) R.string.detail_favorite_active else R.string.detail_favorite,
                         ),
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold,
                     )
                 }
                 // 标签（V3 新增胶囊=原黑圈标签/管理入口：开 DetailTagManageSheet 编辑链）
@@ -290,6 +310,9 @@ internal fun DetailBottomChrome(
                     active = false,
                     enabled = true,
                     contentDescription = stringResource(R.string.detail_chrome_tag),
+                    singleLine = true,
+                    contentHorizontalPadding = CHROME_CAPSULE_CONTENT_H_PADDING,
+                    modifier = Modifier.weight(1f),
                     onClick = onOpenTagSheet,
                 ) {
                     Icon(
@@ -297,17 +320,16 @@ internal fun DetailBottomChrome(
                         contentDescription = null,
                         modifier = Modifier.size(CHROME_GLYPH_SIZE),
                     )
-                    Text(
-                        text = stringResource(R.string.detail_chrome_tag),
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold,
-                    )
+                    CapsuleText(text = stringResource(R.string.detail_chrome_tag))
                 }
                 // 作者（W3 新增胶囊，替换退役的「整理」：原作者卡内容移植进 DetailAuthorSheet）
                 DetailActionButton(
                     active = false,
                     enabled = true,
                     contentDescription = stringResource(R.string.detail_authors_title),
+                    singleLine = true,
+                    contentHorizontalPadding = CHROME_CAPSULE_CONTENT_H_PADDING,
+                    modifier = Modifier.weight(1f),
                     onClick = onOpenAuthorSheet,
                 ) {
                     Icon(
@@ -315,11 +337,7 @@ internal fun DetailBottomChrome(
                         contentDescription = null,
                         modifier = Modifier.size(CHROME_GLYPH_SIZE),
                     )
-                    Text(
-                        text = stringResource(R.string.detail_authors_title),
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold,
-                    )
+                    CapsuleText(text = stringResource(R.string.detail_authors_title))
                 }
             }
         }

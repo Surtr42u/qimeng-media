@@ -181,21 +181,30 @@ SELECT
     COUNT(*) AS total_files,
     CAST(COALESCE(SUM(CASE WHEN assets.media_type IN ('image', 'animated_image') THEN 1 ELSE 0 END), 0) AS INTEGER) AS image_count,
     CAST(COALESCE(SUM(CASE WHEN assets.media_type = 'video' THEN 1 ELSE 0 END), 0) AS INTEGER) AS video_count,
-    CAST(COALESCE(SUM(assets.size_bytes), 0) AS INTEGER) AS total_size_bytes
+    CAST(COALESCE(SUM(assets.size_bytes), 0) AS INTEGER) AS total_size_bytes,
+    CAST(COALESCE(SUM(CASE WHEN assets.media_type = 'image' THEN assets.size_bytes ELSE 0 END), 0) AS INTEGER) AS image_size_bytes,
+    CAST(COALESCE(SUM(CASE WHEN assets.media_type = 'video' THEN assets.size_bytes ELSE 0 END), 0) AS INTEGER) AS video_size_bytes,
+    CAST(COALESCE(SUM(CASE WHEN assets.media_type = 'animated_image' THEN assets.size_bytes ELSE 0 END), 0) AS INTEGER) AS animated_image_size_bytes
 FROM assets
 `
 
 type SummarizeAssetsRow struct {
-	TotalFiles     int64
-	ImageCount     int64
-	VideoCount     int64
-	TotalSizeBytes int64
+	TotalFiles             int64
+	ImageCount             int64
+	VideoCount             int64
+	TotalSizeBytes         int64
+	ImageSizeBytes         int64
+	VideoSizeBytes         int64
+	AnimatedImageSizeBytes int64
 }
 
 // SummarizeAssets: stats overview library shape (total files, image
 // count with animated_image folded in per DOMAIN_RULES 11 media types,
-// video count, total size). COALESCE keeps empty-library SUMs at 0
-// instead of NULL so the handler never needs null handling.
+// video count, total size, per-type size sums). Per-type sizes keep
+// animated_image as its own key (physical footprint accounting: the
+// three keys sum to total_size_bytes exactly). COALESCE keeps empty-
+// library SUMs at 0 instead of NULL so the handler never needs null
+// handling.
 func (q *Queries) SummarizeAssets(ctx context.Context) (SummarizeAssetsRow, error) {
 	row := q.db.QueryRowContext(ctx, summarizeAssets)
 	var i SummarizeAssetsRow
@@ -204,7 +213,44 @@ func (q *Queries) SummarizeAssets(ctx context.Context) (SummarizeAssetsRow, erro
 		&i.ImageCount,
 		&i.VideoCount,
 		&i.TotalSizeBytes,
+		&i.ImageSizeBytes,
+		&i.VideoSizeBytes,
+		&i.AnimatedImageSizeBytes,
 	)
+	return i, err
+}
+
+const summarizeSourceSizes = `-- name: SummarizeSourceSizes :one
+
+SELECT
+    CAST(COALESCE(SUM(CASE WHEN NOT EXISTS (
+        SELECT 1 FROM asset_authors aanorm
+        JOIN authors aunorm ON aunorm.id = aanorm.author_id
+        WHERE aanorm.asset_id = a.asset_id AND aunorm.type = 'cos')
+        THEN a.size_bytes ELSE 0 END), 0) AS INTEGER) AS normal_size_bytes,
+    CAST(COALESCE(SUM(CASE WHEN EXISTS (
+        SELECT 1 FROM asset_authors aacos
+        JOIN authors aucos ON aucos.id = aacos.author_id
+        WHERE aacos.asset_id = a.asset_id AND aucos.type = 'cos')
+        THEN a.size_bytes ELSE 0 END), 0) AS INTEGER) AS cos_size_bytes
+FROM assets a
+`
+
+type SummarizeSourceSizesRow struct {
+	NormalSizeBytes int64
+	CosSizeBytes    int64
+}
+
+// SummarizeSourceSizes: overview per-source size sums (protocol batch
+// 2026-09-14). Predicates mirror CountCosLinkedAssets / CountRegularAssets
+// (DOMAIN_RULES 6 partition, no new criteria): normal = no cos author
+// linked, cos = at least one cos author linked. The two columns sum to
+// total_size_bytes (both branch on the same rows). One query instead of
+// two -- same scan, two conditional SUMs.
+func (q *Queries) SummarizeSourceSizes(ctx context.Context) (SummarizeSourceSizesRow, error) {
+	row := q.db.QueryRowContext(ctx, summarizeSourceSizes)
+	var i SummarizeSourceSizesRow
+	err := row.Scan(&i.NormalSizeBytes, &i.CosSizeBytes)
 	return i, err
 }
 

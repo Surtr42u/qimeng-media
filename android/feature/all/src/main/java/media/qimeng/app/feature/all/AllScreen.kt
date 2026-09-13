@@ -42,8 +42,10 @@ import media.qimeng.app.core.ui.component.QimengPill
 import media.qimeng.app.core.ui.component.QimengPullToRefresh
 import media.qimeng.app.core.ui.component.QimengTitleRow
 import media.qimeng.app.core.ui.component.QimengValuePillFlow
+import media.qimeng.app.core.ui.component.QmTouchProbe
 import media.qimeng.app.core.ui.component.TabScrollController
 import media.qimeng.app.core.ui.component.qimengPinchToColumns
+import media.qimeng.app.core.ui.component.qmTouchProbe
 import media.qimeng.app.core.ui.theme.QimengDimens
 // 页头组件共享文案在 :core:ui（nonTransitiveRClass 下跨模块取资源须引对方 R）
 import media.qimeng.app.core.ui.R as CoreUiR
@@ -118,6 +120,17 @@ fun AllScreen(
         }
     }
 
+    // U7 触摸诊断桩 QM_TOUCH（根因定位后撤除）：状态快照打点（对照触摸死活与数据态）
+    LaunchedEffect(state) {
+        QmTouchProbe.log(
+            "ALBUM_STATE",
+            "items=${state.items.size} activeDim=${state.activeDim} " +
+                "expanded=${state.filter.expanded} loading=${state.isLoading} " +
+                "totalMatched=${state.totalMatched}",
+        )
+    }
+    // U7 诊断桩结束
+
     val pillModel = FourDimPillModel(
         filter = state.filter,
         activeDim = state.activeDim,
@@ -129,7 +142,9 @@ fun AllScreen(
     )
     val activePills = FourDimPills.pillsFor(pillModel)
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    // U7 触摸诊断桩 QM_TOUCH（根因定位后撤除）：相册根探针（观察不消费）
+    Column(modifier = Modifier.fillMaxSize().qmTouchProbe("ALBUM_ROOT")) {
+    // U7 诊断桩结束
         // 页头唯一实现于 :core:ui（任务A §5.2，B5 收藏/历史页复用）——本页只做文案/参数接线。
         // 筛选入口只在相册页标题行（按实录判读：旧版实录仅全部页标题行有 allFilterButton 图标，
         // favorite/history 实录无筛选图标；收藏/历史不传 onFilterClick 不显示，B5 接线时复核落档）
@@ -154,7 +169,12 @@ fun AllScreen(
         // fragment_all_files.xml L117-118；芯片点击语义（点已激活维=切展开/折叠）在 ViewModel
         QimengChipRow(
             pills = FourDimPills.dimChips(pillModel).map { QimengPill(text = it.text, selected = it.selected) },
-            onPillClick = { index -> viewModel.onDimChipClicked(AlbumDim.entries[index]) },
+            onPillClick = { index ->
+                // U7 触摸诊断桩 QM_TOUCH（根因定位后撤除）
+                QmTouchProbe.log("ALBUM_CHIP", "index=$index")
+                // U7 诊断桩结束
+                viewModel.onDimChipClicked(AlbumDim.entries[index])
+            },
             dividerBeforeIndex = AlbumDim.TYPE.ordinal,
             modifier = Modifier.padding(horizontal = QimengDimens.ScreenPaddingHorizontal),
         )
@@ -214,7 +234,9 @@ fun AllScreen(
             )
         }
 
-        Box(modifier = Modifier.weight(1f)) {
+        // U7 触摸诊断桩 QM_TOUCH（根因定位后撤除）：相册网格外层探针（观察不消费）
+        Box(modifier = Modifier.weight(1f).qmTouchProbe("ALBUM_GRID_AREA")) {
+        // U7 诊断桩结束
             QimengPullToRefresh(
                 isRefreshing = state.isRefreshing,
                 onRefresh = viewModel::refresh,
@@ -233,8 +255,13 @@ fun AllScreen(
                 }
                 QimengMediaGrid(
                     // 分组按激活维分派（P9-5）：分区/类型=日期分组，作品=source∪COS 作者，
-                    // 角色=characters∪cosWork，空组键归「其他」恒末位
-                    sections = state.items.groupByAlbumDim(state.activeDim, nowMs),
+                    // 角色=characters∪cosWork，空组键归「其他」恒末位。
+                    // 修复D-1（2026-09-14 相册胶囊点击丢响应调研定案）：O(n) 分组原每次重组
+                    // 裸跑，胶囊点击引发的重组全量重算拖慢帧（丢响应根因之一）——包 remember
+                    // 按参与变量（items/activeDim/nowMs）缓存，重组零重算、数据或维度变化才重算
+                    sections = remember(state.items, state.activeDim, nowMs) {
+                        state.items.groupByAlbumDim(state.activeDim, nowMs)
+                    },
                     columns = displayColumns,
                     animatedUrlResolver = animatedUrlResolver,
                     listState = listState,
@@ -242,6 +269,9 @@ fun AllScreen(
                     // 已无遮挡末行之忧，保留作列表底部呼吸区（行为不变项零改动，任务G G5）
                     bottomContentPadding = QimengDimens.ListBottomContentPadding,
                     onNearBottom = viewModel::onNearBottom,
+                    // 修复D-3：滚动暂停缩略图加载（对齐收藏/历史页任务I I5 口径——拖拽/fling
+                    // 期间暂缓新缩略图请求，停滚自动恢复），滚动时帧预算让位交互响应
+                    pauseThumbnailsWhileScrolling = true,
                     // 卡片点击进详情（D3 顺手修复：onAssetClick 有默认空实现漏传即静默无反应；
                     // 相册页暂无 Home 式批次上下文写入，详情 i/N 滑动链缺口另记待办）
                     onAssetClick = { asset: MediaAsset -> onOpenAsset(asset.id) },

@@ -260,6 +260,11 @@ class StatsDetailViewModelTest {
                 totalViews = 42L,
                 sourceNormalCount = 7,
                 sourceCosCount = 3,
+                imageSizeBytes = 300L,
+                videoSizeBytes = 600L,
+                animatedImageSizeBytes = 124L,
+                normalSizeBytes = 924L,
+                cosSizeBytes = 100L,
             )
         }
         val viewModel = StatsDetailViewModel(handle(StatsDetailMode.DISTRIBUTION), repository, MediaBatchIndex())
@@ -270,6 +275,13 @@ class StatsDetailViewModelTest {
         // 来源构成（N3 #31b 解冻）：overview sourceCounts 派生
         assertEquals(listOf("常规", "COS"), state.sourceDistribution.map { it.name })
         assertEquals(listOf(7, 3), state.sourceDistribution.map { it.count })
+        // 分类型/分来源大小（2026-09-14 协议批）：overviewValues 原样透传进 UiState
+        val overview = state.overviewValues
+        assertEquals(300L, overview?.imageSizeBytes)
+        assertEquals(600L, overview?.videoSizeBytes)
+        assertEquals(124L, overview?.animatedImageSizeBytes)
+        assertEquals(924L, overview?.normalSizeBytes)
+        assertEquals(100L, overview?.cosSizeBytes)
         assertFalse(state.isEmpty)
     }
 
