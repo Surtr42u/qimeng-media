@@ -11,9 +11,11 @@ import org.jetbrains.kotlin.gradle.dsl.KotlinBaseExtension
 import org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension
 
 // Android 公共版本面（原 17 个模块 build 文件逐字平移的收敛点；取值来源与升级论证统一见
-// gradle/libs.versions.toml 头注。compileSdk 36 = 冻结的 AGP 8.13 档上限，升 37 须整体走
-// AGP 9 + Gradle 9 路线，禁止单边改动此处）。
-internal const val ANDROID_COMPILE_SDK = 36
+// gradle/libs.versions.toml 头注。compileSdk 37 = S3 基座升级批第 3 步（2026-09-13）落地：
+// Android 17（API 37）2026-06-16 稳定发布，AGP 9.2.1 支持上限 API 37，androidx 2026-08 wave
+// （compose 1.12/navigation 2.10/lifecycle 2.11/activity 1.13/androidx.hilt 1.4）AAR 元数据
+// 硬门禁要求 37。targetSdk 保持 36 单独评估（备忘录 a-s3-agp9-upgrade-memo.md §2），minSdk 26 不动。
+internal const val ANDROID_COMPILE_SDK = 37
 internal const val ANDROID_MIN_SDK = 26
 
 /**

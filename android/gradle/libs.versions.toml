@@ -3,34 +3,42 @@
 #   agp            https://developer.android.com/build/releases/gradle-plugin（原 8.13 线最新 8.13.2；
 #                  2026-09-13 S3 基座升级批按仓库外 a-s3-agp9-upgrade-memo.md 升至 9.2 线最新 9.2.1，
 #                  配对 Gradle 9.5.0，maven-metadata 实存核查 dl.google.com 2026-09-13）
-#   kotlin/ksp     https://github.com/JetBrains/kotlin/releases/tag/v2.3.21（2.3 线最新 patch；2.4.x 未被 AGP 8.13 文档背书，保守取 2.3.x）
-#                  https://github.com/google/ksp/releases（KSP 2.3.0 起与 Kotlin 编译器版本解耦，2.3.11 为当前稳定）
-#   composeBom     https://developer.android.com/develop/ui/compose/bom/bom-mapping（BOM 2026.06.01
-#                  -> ui 1.11.4 / material3 1.4.0。不用最新 2026.08.00：其 compose 1.12.0 的 AAR
-#                  元数据要求 compileSdk 37，与冻结的 compileSdk 36（AGP 8.13 上限）冲突——
-#                  2026.06.01 是 API 36 兼容线上的最新 BOM；升级须先走 AGP 9 + compileSdk 37 路线）
-#   navigation     https://developer.android.com/jetpack/androidx/releases/navigation（2.10.0 要求 compileSdk 37
-#                  -> 取 2.9 线末位 2.9.8）
-#   activity       https://developer.android.com/jetpack/androidx/releases/activity（1.13.0 要求 37 -> 1.12.4）
-#   lifecycle      https://developer.android.com/jetpack/androidx/releases/lifecycle（2.11.0 要求 37 -> 2.10.0）
-#   core-ktx       https://developer.android.com/jetpack/androidx/releases/core（stable 1.18.0，API 36 实测兼容）
-#   hilt           https://github.com/google/dagger/releases（原 2.58 = AGP 8.x 兼容线最新：2.59 起
-#                  Hilt Gradle 插件强制要求 AGP 9+，官方 release note 明言；2026-09-13 S3 批随 AGP 9.2.1
-#                  解锁升至最新稳定 2.60.1——repo1 maven-metadata 实存核查 2026-09-13，2.59/2.59.1/2.59.2/
-#                  2.60/2.60.1 为 2.58 之后全部 stable 线）
-#   androidx.hilt  https://developer.android.com/jetpack/androidx/releases/hilt（1.4.0 要求 37 -> 1.3.0 stable，
-#                  2025-09-10）
+#   kotlin/ksp     https://github.com/JetBrains/kotlin/releases/tag/v2.4.20（2.4 线最新 stable，repo1
+#                  maven-metadata 实存核查 2026-09-13：2.4.0/2.4.10/2.4.20；S3 第 3 步随 Coil 3.6.2
+#                  解锁升级——Coil 3.5.0 起以 Kotlin 2.4 编译。KGP 2.4.20 含 gradle96 变体（构建于
+#                  Gradle 9.5.1），但该变体 org.gradle.plugin.api-version=9.6，本工程 Gradle 9.5.0
+#                  按属性匹配仍选 gradle813 变体（同 2.3.21 时代的官方矩阵外回退路径，实测可工作；
+#                  彻底对齐需 Gradle ≥9.6，wrapper 升级留后续批））
+#                  https://repo1.maven.org/maven2/com/google/devtools/ksp/symbol-processing-api/
+#                  （KSP 2.3.0 起与 Kotlin 编译器版本解耦，2.3.12 为当前稳定，随本批配套升级）
+#   composeBom     https://developer.android.com/develop/ui/compose/bom/bom-mapping（BOM 2026.08.00
+#                  -> ui/animation 1.12.0 / material3(BOM 管控) 1.4.0，dl.google.com maven-metadata
+#                  实存核查 2026-09-13。compose 1.12 AAR 元数据要求 compileSdk 37 + AGP ≥9.1.1——
+#                  S3 第 3 步 compileSdk 37 落地后解锁；2026.09.00 已发布，本批按备忘录第 3 步口径
+#                  锚定 37 门禁线首版 2026.08.00，2026.09+ 留后续批评估）
+#   navigation     https://developer.android.com/jetpack/androidx/releases/navigation（2.10 线 stable
+#                  末位 2.10.1；2.10.0 起要求 compileSdk 37 的门禁已随 S3 第 3 步解除）
+#   activity       https://developer.android.com/jetpack/androidx/releases/activity（1.13.0 stable；
+#                  1.14 尚在 alpha 不取）
+#   lifecycle      https://developer.android.com/jetpack/androidx/releases/lifecycle（2.11.0 stable；
+#                  2.12 尚在 alpha 不取）
+#   core-ktx       https://developer.android.com/jetpack/androidx/releases/core（stable 1.19.0，随
+#                  2026-08 wave 解锁升级）
+#   hilt           https://github.com/google/dagger/releases（2026-09-13 S3 批随 AGP 9.2.1 升至
+#                  最新稳定 2.60.1——repo1 maven-metadata 实存核查；对 Kotlin 2.4 编译产物的兼容性
+#                  经 assembleDebug 全链实测通过）
+#   androidx.hilt  https://developer.android.com/jetpack/androidx/releases/hilt（1.4.0 stable；1.4.0
+#                  要求 compileSdk 37——S3 第 3 步解锁后升级）
 # 注：2026-08 的 androidx 新 wave（compose 1.12/navigation 2.10/lifecycle 2.11/hilt 1.4/activity 1.13）
-# 统一要求 compileSdk 37（AAR 元数据硬门禁，assembleDebug 实测报错）；本项目锚定 AGP 8.13.2 +
-# compileSdk 36（预检备忘录冻结档），故取各自上一稳定线——升级需整体走 AGP 9 + Gradle 9 + 37 路线。
-# 【2026-09-13 S3 基座升级批更新】该路线第 1+2 步已落地：Gradle 9.5.0 + AGP 9.2.1 + Hilt 2.60.1
-# （gradle.properties 另有 android.builtInKotlin/newDsl=false 临时过桥 flag，依据见该文件注释）；
-# compileSdk 仍冻结 36（备忘录第 3 步，本批不动）。下文历史注释中「冻结 AGP 8.13.2 / Hilt 2.58
-# metadata 上限」等表述均为 S3 批前的冻结档实证记录，随 AGP 9/Hilt 2.60.1 部分解锁，相关依赖
-# （Coil/Vico/BOM 等）按备忘录第 3 步另行评估，本批不动。
+# 曾统一要求 compileSdk 37（AAR 元数据硬门禁，assembleDebug 实测报错）——该门禁已随 S3 第 3 步
+# compileSdk 37 落地解除，上述各族已升入 wave 线。下文历史注释中冻结档（AGP 8.13.2/compileSdk 36/
+# Hilt 2.58 metadata 上限 2.3.0）时代的锁版实证记录，凡涉及已升级项均已改写为当前口径，未升级项
+# （Vico 2.5.1/DataStore 1.2.1/Work 2.11.2 等）保留历史论证。S3 升级依据与三步走路线见仓库外
+# 备忘录 a-s3-agp9-upgrade-memo.md。
 #   okhttp         与 make sdk 生成物 build.gradle 锁定的 okhttp 5.4.0 对齐（单版本原则；生成物为唯一事实源）
 #   datastore      https://developer.android.com/jetpack/androidx/releases/datastore（stable 1.2.1，2026-03-11；
-#                  1.2 线早于 2026-08 要求 compileSdk 37 的 androidx wave，与冻结的 36 兼容；1.3 尚在 alpha 不取）
+#                  1.2 线早于 2026-08 要求 compileSdk 37 的 androidx wave——历史冻结档下锁此线，S3 第 3 步
+#                  后仍兼容（minCompileSdk 低），1.3 stable 化后另行评估，本批不动）
 #   coroutines     1.10.2 = 工程经 lifecycle/compose 传递解析到的 kotlinx-coroutines 版本（assembleDebug 实测）；
 #                  test 包与 core 必须同版本（官方 pairing 规则），test-only 用途
 #   junit          https://github.com/junit-team/junit4/releases（4.13.2，4.x 最终版）
@@ -39,30 +47,32 @@
 
 [versions]
 agp = "9.2.1"
-kotlin = "2.3.21"
-ksp = "2.3.11"
-composeBom = "2026.06.01"
-activityCompose = "1.12.4"
-navigationCompose = "2.9.8"
-lifecycle = "2.10.0"
-coreKtx = "1.18.0"
+kotlin = "2.4.20"
+ksp = "2.3.12"
+composeBom = "2026.08.00"
+activityCompose = "1.13.0"
+navigationCompose = "2.10.1"
+lifecycle = "2.11.0"
+coreKtx = "1.19.0"
 hilt = "2.60.1"
-androidxHilt = "1.3.0"
+androidxHilt = "1.4.0"
 okhttp = "5.4.0"
 # 与 make sdk 生成物 build.gradle 锁定的 moshi 版本一致（生成物为唯一事实源，勿单方面升级）
 moshi = "1.15.2"
 junit = "4.13.2"
 datastore = "1.2.1"
 coroutines = "1.10.2"
-# Coil 3（2026-09-06 M4-2 引入，拍板：动图缩略图动画）。stable 线核查（Maven Central +
-# 各版 kotlin-tooling-metadata.json + AAR aar-metadata，2026-09-06 实测）：
-#   3.6.2 -> minCompileSdk=37（与冻结 compileSdk 36 冲突，同 androidx 2026-08 wave 情形）
-#   3.5.0 -> minCompileSdk=36 但 Kotlin 2.4.0 编译（@Metadata 2.4.0 超出 Hilt 2.58 的
-#            kotlin-metadata-jvm 上限 2.3.0，Hilt 聚合根处理即报错）
-#   3.4.0 -> minCompileSdk=35 + Kotlin 2.3.10（metadata 2.3.0，与 Hilt 2.58 兼容）——取本版。
+# Coil 3（2026-09-06 M4-2 引入，拍板：动图缩略图动画；2026-09-13 S3 第 3 步随 compileSdk 37 +
+# Kotlin 2.4.20 解锁升至 3.6.2）。stable 线核查（Maven Central maven-metadata，2026-09-13 实存：
+# 3.4.0/3.5.0/3.6.0/3.6.1/3.6.2，3.6.2 = 线末位）：
+#   3.6.2 -> minCompileSdk=37（S3 第 3 步 compileSdk 37 已满足）+ Kotlin 2.4 编译（工程已同步
+#            升 Kotlin 2.4.20；Hilt 2.60.1 的 kotlin-metadata-jvm 对 2.4 metadata 的兼容经
+#            assembleDebug Hilt 聚合根全链实测通过——原 3.5.0 时代的否决因[2.4.0 metadata 超出
+#            Hilt 2.58 上限 2.3.0]已随 S3 第 1+2 步 Hilt 2.60.1 解除）
+#   3.4.0 -> 原冻结档（minCompileSdk=35 + Kotlin 2.3.10）锁版，已被上述解锁取代。
 # 来源：https://repo1.maven.org/maven2/io/coil-kt/coil3/ + https://coil-kt.github.io/coil/。
 # 白名单内（ADR-0014 Coil 3），coil-gif 为同家族 GIF 解码模块。
-coil = "3.4.0"
+coil = "3.6.2"
 # WorkManager（2026-09-06 M4-5 引入，上传串行队列）。官方 release 页核查（2026-09-06，
 # https://developer.android.com/jetpack/androidx/releases/work，页面更新 2026-08-11）：
 #   stable 线最新 2.11.2（2.12.0 尚在 rc01，不取非稳定版）；minSdk 23+/compileSdk 33+，
@@ -82,33 +92,28 @@ media3 = "1.8.0"
 #   https://developer.android.com/jetpack/androidx/releases/room（2.x 线收尾于 2.8.x）；
 #   本地 Gradle 缓存已有完整 2.8.4 构件（room-runtime/room-compiler 实测在列，离线可解析）。
 #   注意：2.8 线起 room-ktx 已并入 room-runtime（官方迁移说明），勿再单独引 room-ktx；
-#   Room 2.8.4 room-compiler × Kotlin 2.3.21 / KSP 2.3.11 兼容性以 assembleDebug 实测为准。
+#   Room 2.8.4 room-compiler × Kotlin 2.4.20 / KSP 2.3.12（S3 第 3 步升级后）兼容性以 assembleDebug 实测为准。
 room = "2.8.4"
 # Vico（2026-09-09 任务H H2 引入，统计页折线图，ADR-0018；白名单外一次性拍板：用户 2026-09-08
 # 「不要自绘」「统计页折线图换 Vico」原话）。官方仓库/Maven group = patrykandpatrick/vico
 # （https://github.com/patrykandpatrick/vico + https://repo1.maven.org/maven2/com/patrykandpatrick/vico/）。
-# 2.x 稳定线逐版核查（compose-m3 构件 .module + AAR aar-metadata 当场实测，2026-09-09）：
-#   3.3.1（当前全局最新稳定线）-> kotlin-stdlib 2.4.10；2.5.2（2.x 末位）-> 2.4.0；
-#            两者 @Metadata 均超出 Hilt 2.58 的 kotlin-metadata-jvm 上限 2.3.0（同 Coil 3.5.0
-#            否决因），不取；
-#   2.5.1     -> stdlib 2.3.21（= 工程 Kotlin 2.3.21，metadata 2.3.0 合规）+ compose/core/compose-m3
-#            三构件 minCompileSdk=36（AAR aar-metadata 实测，与冻结 compileSdk 36 相等）+
-#            compose-bom requires 2026.05.00（本工程 BOM 2026.06.01 更新，覆盖解析）——
-#            取本版 = 2.x 线在冻结工具链（AGP 8.13.2 / compileSdk 36 / Kotlin 2.3.21）上的末位可落稳定版。
+# 2.5.1（2026-09-09 冻结档锁版：当时否决 3.3.1/2.5.2 的因 = @Metadata 超出 Hilt 2.58 的
+#   kotlin-metadata-jvm 上限 2.3.0 + minCompileSdk 门禁）已随 S3 第 1+2+3 步全部解除
+#   （Hilt 2.60.1 + compileSdk 37 + Kotlin 2.4.20），升 3.3.1/2.5.2 技术上已可行；
+#   但 Vico 不在 S3 第 3 步改动清单内，本批不动，升级留后续批当场核查官方版本再锁。
 vico = "2.5.1"
-# material3 1.5.0-alpha15（任务V V6 验证批，2026-09-11，主代理裁决落地点）：Google Maven 官方索引锁版——
-#   https://dl.google.com/android/maven2/androidx/compose/material3/material3/maven-metadata.xml
-#   （1.5.0 线末位=1.5.0-alpha28）+ group-index.xml + AAR HEAD 200。
-# 为什么锁 alpha15 不追线内最新：alpha28 起 AAR metadata 硬性要求 compileSdk 37 + AGP 9.1.0，
-#   本项目冻结 AGP 8.13.2 + compileSdk 36（toml 既有记录同源，2026-08 androidx wave），
-#   assembleDebug 实测 checkDebugAarMetadata 20 条冲突即死（证据 %TEMP%\qimeng-v6-evidence\）；
-#   解锁条件 = AGP 9 + SDK 37 整体路线开启后升回线内最新。
-# alpha15 为 1.5.0-alpha 线内已隔离实证三关+收益全过的最低可行点（worktree exp/v6-m3-alpha 实测：
-#   minCompileSdk=35 兼容 36；Hilt 2.58 聚合编译通过[material3 字节码 Kotlin metadata mv=2.1.0
-#   < 上限 2.3.0]；BUILD SUCCESSFUL 562 tasks 出 APK）；收益=MotionScheme/MaterialExpressiveTheme/
-#   LoadingIndicator 自 1.4.0 全 internal 转 public（javap 实证，同目录 javap-alpha28-benefit.txt）。
-# 显式版本覆盖 BOM 2026.06.01（BOM 管控 1.4.0）的 material3 一项，其余 BOM 管控不动。
-material3 = "1.5.0-alpha15"
+# material3 1.5.0-alpha28（2026-09-13 S3 第 3 步升级，1.5.0-alpha 线内末位；任务V V6 于 2026-09-11
+# 曾锁 alpha15，其「解锁条件 = AGP 9 + SDK 37 整体路线开启后升回线内最新」现满足）：Google Maven
+#   官方索引锁版 https://dl.google.com/android/maven2/androidx/compose/material3/material3/
+#   maven-metadata.xml（2026-09-13 实查：1.5.0 线末位=1.5.0-alpha28，1.5.0 stable 未发布）。
+# 历史（V6 批，冻结档）：alpha15 为当时已隔离实证三关+收益全过的最低可行点（minCompileSdk=35
+#   兼容 36；收益=MotionScheme/MaterialExpressiveTheme/LoadingIndicator 自 1.4.0 全 internal 转
+#   public）；不追线内最新的因 = alpha28 起 AAR metadata 硬性要求 compileSdk 37 + AGP 9.1.0
+#   （assembleDebug checkDebugAarMetadata 20 条冲突，证据 %TEMP%\qimeng-v6-evidence\）。
+# 现口径：AGP 9.2.1 + compileSdk 37（S3 第 3 步）满足 alpha28 门禁，升回线内末位；仍需显式
+#   version.ref——BOM 2026.08.00 管控的 material3 仍是 1.4.0，不覆盖 1.5.0-alpha 线，其余 BOM
+#   管控构件（ui/foundation/animation 等）随 BOM 不动。
+material3 = "1.5.0-alpha28"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -121,7 +126,7 @@ compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }
 compose-foundation = { group = "androidx.compose.foundation", name = "foundation" }
 compose-material3 = { group = "androidx.compose.material3", name = "material3", version.ref = "material3" }
 # 共享元素转场（exp#3 试点）：SharedTransitionLayout/sharedBounds 在 animation 构件，
-# 版本随 BOM（2026.06.01 → animation 1.11.4，compose ui·animation 同步发布），禁止单独升级
+# 版本随 BOM（2026.08.00 → animation 1.12.0，compose ui·animation 同步发布），禁止单独升级
 compose-animation = { group = "androidx.compose.animation", name = "animation" }
 compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
 hilt-android = { group = "com.google.dagger", name = "hilt-android", version.ref = "hilt" }
