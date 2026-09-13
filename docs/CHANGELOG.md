@@ -9,6 +9,19 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## fix(app): 任务U U4 四轮反馈批——沉浸点击视觉回旧版瞬时切黑+数据统计页整版对齐旧版+分支治理只留 master（2026-09-13 第二百五十四笔）
+
+执行 AI：GLM-5.3-Flash（主代理直接实施与验证）
+
+- **仓库分支治理（用户拍板「删除多余分支只留主分支」）**：删 worktree ×2（`qimeng-media-app-native`/`qimeng-media-ui-exp`，后者未提交改动仅为试用对比的 `.exp` 包名后缀临时改，随分支弃置）+ 分支 `app/native`（任务N 原生 View 试验 16 commits）/`ui/expressive`（exp#1-6 交互试验 5 commits）/`feature/liquid-glass`（液态玻璃试验 2 commits——HANDOVER 挂起的「玻璃观感拍板」就此=弃分支零损失路径），远程 `origin/feature/liquid-glass` 同删；本地+远程仅剩 `master`。试验视觉参数（旧版统计页样式）在删分支前已从 app/native 的 1:1 移植件提取。
+- **详情页沉浸点击视觉回旧版瞬时切黑**（用户终裁「单击图片进沉浸的全屏渐变变黑取消，点击视觉和旧版一致」）：DetailScreen 撤 U3-A 的舞台底色 `animateColorAsState`（letterbox 主题底↔纯黑改瞬时直切=旧版 `setChromeVisible(false)` 显式 BLACK 同款）；顶/底 chrome 条 300/220ms alpha 渐隐渐显保留（旧版 L175 alpha 显隐口径）。`stageBackdropColor` 纯函数与 StageBackdropTest 零改动。
+- **数据统计页整版对齐旧版截图**（用户拍板以旧版截图为准）：
+  - 时段三档（7天/30天/全部）由三枚独立 `QimengSegPill` 改合体分段控件 **QimengSegmentedControl**（core:ui 新共享件；token 对照旧版 fragment_data_stats.xml：36dp 轨道/3dp 内边距/13sp/全圆角，选中段 primary 浮丸+onPrimary 字，未选 onSurfaceVariant）；
+  - 趋势折线图（QimengTrendLineChart）对齐旧版 LineChartView 视觉：渐变面积改**平涂**（alpha=40/255，旧 Canvas areaPaint alpha=40 逐字同源）+ 数据点**空心化**（shapeComponent strokeFill 主色环 2dp+卡底色内圈，旧版外圈 4dp/内圈 2dp 同构，点径 6→8dp）+ 补 4 条水平网格线（VerticalAxis.rememberStart 隐轴线/刻度/标签只留 guideline，outlineVariant 1dp）+ X 轴标签转次色（onSurfaceVariant）；Vico 2.5.1 strokeFill/strokeThickness/rememberStart 参数名经 Gradle 缓存类文件核实（非凭记忆）；
+  - 数字格式对齐旧版：数字卡千分位改紧凑计数（新 `formatCountCompact`：6339→「6.3k」，k/M 双档 1 位小数去尾零，Int/Long 双型，单测新增 7 断言）；总浏览时长「N分钟」→「N分」（旧版「38分」口径，测试同步）；`formatBytesHumanReadable` GB 档 2 位→1 位小数（「191.11GB」→「191.1GB」，同时根治数字卡「191.11G B」断行；设置页「已用缓存」同源联动）；统计五卡（6 数字格+趋势+分布+常看×2）圆角对齐旧版 bg_stat_card=20dp（新 STAT_CARD_CORNER_RADIUS 档）。
+- **门禁与验证**：:feature:stats 单测全绿（时长档用例更新+紧凑计数用例新增）+:feature:stats/:feature:detail/:core:ui 编译+:app assembleDebug/assembleRelease 全绿；模拟器（emulator-5562=qimeng_api35 显式指定）走查分段控件合体形态与卡片圆角生效；数据卡「加载中…」为该模拟器旧 token 失效的环境现象（服务端 8421 curl 带新 token 实测 overview/trends 均 2ms 正常返回），非本批回归——真机以用户终验为准。终包=`QimengNAS\qimeng-任务U4-终包-20260913.apk`。
+
+---
 ## ci: sdk.lock 指纹锁剔除生成测试文件——修复 CI「SDK 生成链」job 存量红（2026-09-13 第二百五十三笔）
 
 执行 AI：GLM-5.3-Flash（主代理直接排查与修复）

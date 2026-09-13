@@ -25,10 +25,12 @@ private const val WAN_SUFFIX = "万"
 /**
  * 字节容量人读格式（统计页「库容量」/设置页「已用缓存」共用；1024 进制两级单位）。
  * Locale 显式 US：小数点分组符不随设备语言漂移（验收对照 curl 数字时必须稳定）。
+ * GB 档 1 位小数（2026-09-13 用户终裁对齐旧版：总占用空间「191.1GB」短格式——2 位小数
+ * 的「191.11GB」曾在统计数字卡内断行成「191.11G B」，旧版全档一位小数无此问题）。
  */
 fun formatBytesHumanReadable(bytes: Long?): String = when {
     bytes == null || bytes < 0 -> "—"
-    bytes >= GB -> String.format(Locale.US, "%.2fGB", bytes.toDouble() / GB)
+    bytes >= GB -> String.format(Locale.US, "%.1fGB", bytes.toDouble() / GB)
     bytes >= MB -> String.format(Locale.US, "%.1fMB", bytes.toDouble() / MB)
     else -> "${bytes}B"
 }
