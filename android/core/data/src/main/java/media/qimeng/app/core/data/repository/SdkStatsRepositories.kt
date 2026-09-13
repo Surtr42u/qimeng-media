@@ -54,6 +54,12 @@ class SdkStatsRepository @Inject constructor(
             sourceNormalCount = overview.sourceNormalCount ?: 0,
             sourceCosCount = overview.sourceCosCount ?: 0,
             avgViewsPerFile = overview.avgViewsPerFile,
+            // 分类型/分来源大小（2026-09-14 协议批；服务端恒填充，null 仅旧服务端兼容）
+            imageSizeBytes = overview.perTypeSizeBytes?.image ?: 0L,
+            videoSizeBytes = overview.perTypeSizeBytes?.video ?: 0L,
+            animatedImageSizeBytes = overview.perTypeSizeBytes?.animatedImage ?: 0L,
+            normalSizeBytes = overview.perSourceSizeBytes?.normal ?: 0L,
+            cosSizeBytes = overview.perSourceSizeBytes?.cos ?: 0L,
         )
     }
 

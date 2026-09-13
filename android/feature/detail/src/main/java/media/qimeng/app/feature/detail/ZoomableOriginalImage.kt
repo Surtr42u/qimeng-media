@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -87,23 +86,15 @@ internal fun ZoomableOriginalImage(
     // onError 置位、onSuccess 清零；重试经 [retryAttempt] 递增触发请求重建
     var decodeFailed by remember { mutableStateOf(false) }
     var retryAttempt by remember { mutableIntStateOf(0) }
-    // 原图就绪态（exp#4 占位翼）：驱动灰色占位层的摘除时机。
-    // 与 decodeFailed 同款「最近一次完成的结果」口径：新请求发起时清零、onSuccess 置位
-    var imageReady by remember(asset.id) { mutableStateOf(false) }
+
+    // 加载期底色记档（修复B，2026-09-14）：exp#4 的整屏 secondaryContainer 灰色占位翼
+    // 撤除——用户反馈深色模式下「上下条先显示、中间固定一块灰加载区」突兀，且旧版无此
+    // 形态（旧 MediaDetailFragment.kt:441-442/:486-490 加载期透明底 + 保留上一张画面、
+    // 切换不闪白，GUIDE_UI L177 同口径）。撤除后加载期舞台透出调用方打底的 backdrop
+    // （K1 单源口径不动），与旧版观感一致；imageReady 状态随之退役，decodeFailed
+    // 覆盖层与 Coil 加载链其余部分不变。VideoStage 的海报占位属视频预览链，另行裁量不动。
 
     Box(modifier = modifier) {
-        // 占位翼（exp#4；动效机制已随任务W W1 撤除，占位保留）：原图解码完成前舞台先以
-        // 品牌灰色块显形（此前此间只透出 backdrop 主题底，与壳层页面同色，不可感知）。
-        // token=secondaryContainer 与网格卡占位/错误底同源；就绪即摘除——加载完成后的
-        // letterbox 底仍归调用方打底的 backdrop（K1 单源口径不动，本层只补「未就绪瞬间」
-        // 的可见形态）。回退=删本段 Box 与 imageReady
-        if (!imageReady && !decodeFailed) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.secondaryContainer),
-            )
-        }
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
@@ -139,10 +130,9 @@ internal fun ZoomableOriginalImage(
         if (view == null || url.isNullOrEmpty()) {
             onDispose { }
         } else {
-            // 新请求在途：清旧失败态（失败态只反映最近一次完成的结果）；就绪态同步清零
-            // （exp#4 占位翼：换资产重新以灰占位，直至新图 onSuccess）
+            // 新请求在途：清旧失败态（失败态只反映最近一次完成的结果）；占位翼已撤
+            // （修复B记档见上），加载期透出调用方 backdrop，旧版同款不闪白
             decodeFailed = false
-            imageReady = false
             val request = ImageRequest.Builder(context)
                 .data(url)
                 // 口径②：不降采样。Size.ORIGINAL =「按原图尺寸解码」的显式表达；
@@ -154,7 +144,6 @@ internal fun ZoomableOriginalImage(
                         // Coil ImageViewTarget 同款；参数为 Resources 档）
                         override fun onSuccess(result: Image) {
                             decodeFailed = false
-                            imageReady = true
                             val drawable = result.asDrawable(context.resources)
                             // setImageDrawable 内部做智能分层 + resetZoom（搬运件行为）
                             view.setImageDrawable(drawable)

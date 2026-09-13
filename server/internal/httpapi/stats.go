@@ -48,10 +48,19 @@ func localDayBoundsUTC(t time.Time) (start, end string) {
 // 已删资产（ADR-0005），删除历史仍是真实浏览，照数不排除。
 // 来源库存（sourceNormalCount/sourceCosCount）与平均浏览（avgViewsPerFile，
 // 窗口由 range 参数决定、缺省 all=全时段）为协议批 P2 新增字段（§5）。
+// 分类型/分来源大小（per_type_size_bytes/per_source_size_bytes，2026-09-14
+// 协议批）同为 assets 全表聚合：口径见 DOMAIN_RULES §5——分类型 image 键不含
+// animated_image（物理占用各键可对账 totalSizeBytes）；分来源谓词同 §6 分区
+// 判定（与 sourceNormalCount/sourceCosCount 同一条 EXISTS）。
 func (s *Server) GetApiV1StatsOverview(w http.ResponseWriter, r *http.Request, params gen.GetApiV1StatsOverviewParams) {
 	summary, err := s.q.SummarizeAssets(r.Context())
 	if err != nil {
 		s.internalErr(w, "统计资产总览", err)
+		return
+	}
+	sourceSizes, err := s.q.SummarizeSourceSizes(r.Context())
+	if err != nil {
+		s.internalErr(w, "统计分来源大小", err)
 		return
 	}
 	dayStart, dayEnd := localDayBoundsUTC(s.now())
@@ -104,6 +113,15 @@ func (s *Server) GetApiV1StatsOverview(w http.ResponseWriter, r *http.Request, p
 		SourceNormalCount: ptr(int(regCount)),
 		SourceCosCount:    ptr(int(cosCount)),
 		AvgViewsPerFile:   avg,
+		PerTypeSizeBytes: &gen.StatsSizeByType{
+			Image:         ptr(summary.ImageSizeBytes),
+			Video:         ptr(summary.VideoSizeBytes),
+			AnimatedImage: ptr(summary.AnimatedImageSizeBytes),
+		},
+		PerSourceSizeBytes: &gen.StatsSizeBySource{
+			Normal: ptr(sourceSizes.NormalSizeBytes),
+			Cos:    ptr(sourceSizes.CosSizeBytes),
+		},
 	})
 }
 

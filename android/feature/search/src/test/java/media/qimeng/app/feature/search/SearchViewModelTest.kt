@@ -241,6 +241,65 @@ class SearchViewModelTest {
         assertEquals(listOf(true, true), repo.suggestCalls.map { it.recommend })
     }
 
+    // ---------- 深链携词（修复E，2026-09-14：深链结果态返回直接退页，手动搜索保留清词语义） ----------
+    // UI 三分支（SearchScreen.handleBackAction）：①EMPTY→onBack；②fromDeepLink && RESULT &&
+    // 当前词==初始词 → onBack（直接退页）；③其余→viewModel.handleBack（清词回入口=旧版逐字）。
+    // 分支②③的判定输入（fromDeepLink/phase/query）由本节用例在 VM 侧锁定。
+
+    @Test
+    fun `深链携词提交 - 置深链标记按词提交，结果态返回判定三条件齐备`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val repo = FakeMediaRepository()
+            val historyRepo = FakeSearchHistoryRepository()
+            val viewModel = viewModel(repo, historyRepo)
+            advanceUntilIdle()
+
+            // 深链提交（SearchScreen LaunchedEffect(initialQuery) 调 submitFromDeepLink）
+            viewModel.submitFromDeepLink("M")
+            advanceUntilIdle()
+            val state = viewModel.uiState.value
+            // 分支②三条件齐备：fromDeepLink && RESULT && query==初始词（trim 后比对）→ UI 直接退页
+            assertTrue(state.fromDeepLink)
+            assertEquals(SearchPhase.RESULT, state.phase)
+            assertEquals("M", state.query)
+            // 提交链路与 submit 等价：出网按词 + 记历史
+            assertEquals(1, repo.assetsCalls.size)
+            assertEquals("M", repo.assetsCalls[0].query.q)
+            assertEquals(listOf("M"), historyRepo.recorded)
+        }
+
+    @Test
+    fun `深链标记生命周期 - 改词退出深链态经清词链后标记清除，后续手动搜索回归旧清词语义`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val repo = FakeMediaRepository()
+            val historyRepo = FakeSearchHistoryRepository()
+            val viewModel = viewModel(repo, historyRepo)
+            advanceUntilIdle()
+
+            // 深链进结果态后改词（query≠初始词，分支②不再命中→分支③清词链）
+            viewModel.submitFromDeepLink("M")
+            advanceUntilIdle()
+            viewModel.onQueryChange("MM")
+            assertEquals(SearchPhase.SUGGEST, viewModel.uiState.value.phase)
+            assertTrue(viewModel.uiState.value.fromDeepLink) // 标记仍在，靠「词不等」跳出分支②
+
+            // 清词链（分支③→handleBack）：回入口态且深链标记一并清除（深链会话终止）
+            viewModel.handleBack()
+            advanceUntilIdle()
+            assertEquals(SearchPhase.EMPTY, viewModel.uiState.value.phase)
+            assertFalse(viewModel.uiState.value.fromDeepLink)
+
+            // 后续手动搜索（分支②的 fromDeepLink=false 不命中→分支③）：结果态返回清词回入口=旧版逐字
+            viewModel.submit("MM")
+            advanceUntilIdle()
+            assertEquals(SearchPhase.RESULT, viewModel.uiState.value.phase)
+            assertFalse(viewModel.uiState.value.fromDeepLink)
+            viewModel.handleBack()
+            advanceUntilIdle()
+            assertEquals(SearchPhase.EMPTY, viewModel.uiState.value.phase)
+            assertEquals("", viewModel.uiState.value.query)
+        }
+
     @Test
     fun `结果态点搜索栏回建议态 - 词保留并按词重拉建议（旧版 onFocusChange 点击路径，非返回键）`() =
         runTest(mainDispatcherRule.testDispatcher) {

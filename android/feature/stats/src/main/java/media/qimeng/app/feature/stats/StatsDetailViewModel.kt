@@ -282,6 +282,9 @@ class StatsDetailViewModel @Inject constructor(
                 it.copy(
                     loading = false,
                     loadFailed = overview == null,
+                    // overview 全量透传（2026-09-14 协议批：分布页摘要格/分布卡
+                    // 大小指标直接读 overviewValues 的分类型/分来源大小字段）
+                    overviewValues = overview,
                     distribution = overview?.let { values ->
                         buildList {
                             add(TypeStockEntry(IMAGE_DISPLAY_NAME, values.imageCount))

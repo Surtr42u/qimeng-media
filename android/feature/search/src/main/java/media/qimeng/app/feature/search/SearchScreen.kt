@@ -77,13 +77,28 @@ fun SearchScreen(
     // 「showSearchFragment(initialQuery) 携带标签名跳转，修复打开空白搜索页」）：
     // 进页即按该词提交（记历史+切结果态），等价于点建议词搜索；页面内部逻辑不动。
     // 当前统计页可跳来源=常看标签卡（协议缺口 #31d 冻结未渲染），管道先就位供详情链使用。
+    // 修复E（2026-09-14）：深链提交走 [SearchViewModel.submitFromDeepLink] 置深链标记，
+    // 供返回三分支判定「深链结果态返回直接退页」。
     LaunchedEffect(initialQuery) {
-        if (!initialQuery.isNullOrBlank()) viewModel.submit(initialQuery)
+        if (!initialQuery.isNullOrBlank()) viewModel.submitFromDeepLink(initialQuery)
     }
 
-    // 返回族同链：左上箭头与系统返回走同一分发（旧版 searchBack.setOnClickListener { handleBack() }）
+    // 返回族同链：左上箭头与系统返回走同一分发（旧版 searchBack.setOnClickListener { handleBack() }）。
+    // 修复E 三分支（2026-09-14 用户反馈「标签深链搜索页返回多一层」）：
+    // ① EMPTY 相位 → onBack()（原语义不变）；
+    // ② 深链结果态（fromDeepLink && RESULT && 当前词==初始词，trim 后比对）→ onBack()
+    //    直接退页——旧版搜索是常驻 tab（清词回入口=回 tab 本体），新版是覆盖页，深链结果态
+    //    返回再「清词回入口」会停在无意义的空搜索页、返回手势多一层；
+    // ③ 其余（手动搜索结果/建议态、深链后已改词）走 viewModel.handleBack()——手动搜索的
+    //    清词回入口语义保留=旧版逐字。
     val handleBackAction = {
         if (state.phase == SearchPhase.EMPTY) {
+            onBack()
+        } else if (state.fromDeepLink &&
+            state.phase == SearchPhase.RESULT &&
+            initialQuery != null &&
+            state.query == initialQuery.trim()
+        ) {
             onBack()
         } else {
             viewModel.handleBack() // 结果/建议态：清词回入口态（旧版 setText("")+STATE_EMPTY）

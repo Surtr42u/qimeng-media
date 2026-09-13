@@ -39,6 +39,13 @@ data class SearchUiState(
     val nextCursor: String? = null,
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
+    /**
+     * 深链标记（修复E，2026-09-14）：携词跳转（SearchScreen 的 LaunchedEffect(initialQuery)
+     * 经 [submitFromDeepLink]）置位。UI 返回分发据此三分支——深链结果态（词未变）返回直接
+     * 退页；手动搜索（[submit] 直调）不置位、清词回入口语义保留。置位后在 [handleBack]
+     * 清词时一并清除（深链会话随返回终止；之后的手动搜索回归旧语义）。
+     */
+    val fromDeepLink: Boolean = false,
 )
 
 /**
@@ -131,10 +138,25 @@ class SearchViewModel @Inject constructor(
     }
 
     /**
+     * 深链携词提交（修复E，2026-09-14；提交点=SearchScreen 的 LaunchedEffect(initialQuery)，
+     * 不与按钮/IME/词丸共用的 [submit] 混线）：置深链标记后按词提交。
+     * 依据=用户反馈「标签深链搜索页返回多一层」+旧版搜索是常驻 tab（清词回入口即回到 tab
+     * 本体）、新版是覆盖页——深链进页被清词后只剩一个空搜索页，返回再「回入口态」毫无意义，
+     * 应直接退页；手动搜索的清词回入口语义保留（=旧版逐字）。
+     */
+    fun submitFromDeepLink(rawQuery: String) {
+        _uiState.value = _uiState.value.copy(fromDeepLink = true)
+        submit(rawQuery)
+    }
+
+    /**
      * 返回（系统返回 + 左上箭头共用，镜像旧版 handleBack，SearchFragment L253-270）：
      * 结果/建议态一律清词回入口态（旧版 showState(STATE_EMPTY) 前无条件 setText("")）
      * 并重拉推荐词；结果残留（submittedQuery/items/nextCursor）一并清空，回 pristine 入口；
      * 入口态不动作——退页由 UI 层调 onBack（壳层 popBackStack）承接。
+     * 修复E：深链标记在此一并清除——清词回入口=深链会话终止（UI 三分支在深链结果态已
+     * 直接退页、不会走到本方法的深链场景，能走到即用户已改词/手动操作），之后的手动搜索
+     * 回归旧语义。
      */
     fun handleBack() {
         val current = _uiState.value
@@ -147,6 +169,7 @@ class SearchViewModel @Inject constructor(
             submittedQuery = "",
             items = emptyList(),
             nextCursor = null,
+            fromDeepLink = false,
         )
         loadRecommendWords()
     }

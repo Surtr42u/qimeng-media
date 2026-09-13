@@ -191,5 +191,14 @@ fun QimengValuePillFlow(
  *  单枚胶囊渲染单源，视觉与行为零变化）。 */
 @Composable
 private fun PillChip(pill: QimengPill, onClick: () -> Unit) {
-    QimengSegPill(text = pill.text, selected = pill.selected, onClick = onClick)
+    QimengSegPill(
+        text = pill.text,
+        selected = pill.selected,
+        onClick = {
+            // U7 触摸诊断桩 QM_TOUCH（根因定位后撤除）：全局胶囊点击对照（所有页共用本单源）
+            QmTouchProbe.log("PILL_CLICK", "text=${pill.text}")
+            // U7 诊断桩结束
+            onClick()
+        },
+    )
 }

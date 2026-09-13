@@ -126,11 +126,94 @@ func TestStatsOverviewCounts(t *testing.T) {
 	if o.TotalSizeBytes == nil || *o.TotalSizeBytes != wantSize {
 		t.Fatalf("totalSizeBytes 期望 %d，得到 %v", wantSize, o.TotalSizeBytes)
 	}
+	// 分类型大小（2026-09-14 协议批）：image 不含 animated_image（与 imageCount
+	// 计数口径不同，DOMAIN_RULES §5），三键之和 = totalSizeBytes
+	if o.PerTypeSizeBytes == nil {
+		t.Fatal("perTypeSizeBytes 缺失")
+	}
+	if got := o.PerTypeSizeBytes.Image; got == nil || *got != testFiles[0].size+testFiles[1].size {
+		t.Fatalf("per_type image 期望 %d，得到 %v", testFiles[0].size+testFiles[1].size, got)
+	}
+	if got := o.PerTypeSizeBytes.Video; got == nil || *got != testFiles[2].size {
+		t.Fatalf("per_type video 期望 %d，得到 %v", testFiles[2].size, got)
+	}
+	if got := o.PerTypeSizeBytes.AnimatedImage; got == nil || *got != 1234 {
+		t.Fatalf("per_type animated_image 期望 1234，得到 %v", got)
+	}
+	if sum := *o.PerTypeSizeBytes.Image + *o.PerTypeSizeBytes.Video + *o.PerTypeSizeBytes.AnimatedImage; sum != *o.TotalSizeBytes {
+		t.Fatalf("per_type 三键之和 %d != totalSizeBytes %d", sum, *o.TotalSizeBytes)
+	}
+	// 分来源大小：默认库 3 资产 + 动图均无作者关联 → 全落 normal，cos=0
+	if o.PerSourceSizeBytes == nil {
+		t.Fatal("perSourceSizeBytes 缺失")
+	}
+	if got := o.PerSourceSizeBytes.Normal; got == nil || *got != wantSize {
+		t.Fatalf("per_source normal 期望 %d，得到 %v", wantSize, got)
+	}
+	if got := o.PerSourceSizeBytes.Cos; got == nil || *got != 0 {
+		t.Fatalf("per_source cos 期望 0，得到 %v", got)
+	}
 	if o.TodayViews == nil || *o.TodayViews != 2 {
 		t.Fatalf("todayViews 期望 2，得到 %v", o.TodayViews)
 	}
 	if o.TotalViews == nil || *o.TotalViews != 3 {
 		t.Fatalf("totalViews 期望 3，得到 %v", o.TotalViews)
+	}
+}
+
+// TestStatsOverviewSizeBreakdown：分类型/分来源大小混合口径——COS 资产落
+// cos 键、常规/无作者资产落 normal 键，两键之和 = totalSizeBytes（§6 分区
+// 谓词同 sourceNormalCount/sourceCosCount，DOMAIN_RULES §5）。
+func TestStatsOverviewSizeBreakdown(t *testing.T) {
+	env := newTestEnv(t)
+
+	// 动图 1234（无作者 → normal）
+	animID := uuid.NewString()
+	now := store.FormatTimestamp(env.clock.Now())
+	if _, err := env.q.UpsertAsset(context.Background(), db.UpsertAssetParams{
+		AssetID: animID, LibraryID: env.libID, RelPath: "anim.gif", FileName: "anim.gif",
+		MediaType: "animated_image", SizeBytes: 1234, Mtime: now, CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("插入动图资产失败: %v", err)
+	}
+	// COS 关联资产（seedAuthorFixture 资产 size 固定 10）→ cos 键
+	_ = seedAuthorFixture(t, env, "sizecos", "cos-size.jpg", true)
+	// 常规作者关联资产 10 → 仍落 normal 键（关联 regular 作者不影响分区）
+	_ = seedAuthorFixture(t, env, "sizereg", "reg-size.jpg", false)
+
+	o := getOverview(t, env)
+	if o.PerSourceSizeBytes == nil {
+		t.Fatal("perSourceSizeBytes 缺失")
+	}
+	wantNormal := testFiles[0].size + testFiles[1].size + testFiles[2].size + 1234 + 10
+	if got := o.PerSourceSizeBytes.Normal; got == nil || *got != wantNormal {
+		t.Fatalf("per_source normal 期望 %d，得到 %v", wantNormal, got)
+	}
+	if got := o.PerSourceSizeBytes.Cos; got == nil || *got != 10 {
+		t.Fatalf("per_source cos 期望 10，得到 %v", got)
+	}
+	if sum := *o.PerSourceSizeBytes.Normal + *o.PerSourceSizeBytes.Cos; o.TotalSizeBytes == nil || sum != *o.TotalSizeBytes {
+		t.Fatalf("per_source 两键之和 %d != totalSizeBytes %v", sum, o.TotalSizeBytes)
+	}
+}
+
+// TestStatsOverviewSizeEmptyLibrary：空库（无资产）→ 两组大小键全 0
+// （SQL COALESCE 兜底，handler 无 null 分支——store 层直测口径）。
+func TestStatsOverviewSizeEmptyLibrary(t *testing.T) {
+	env := newTestEnvRaw(t)
+	summary, err := env.q.SummarizeAssets(context.Background())
+	if err != nil {
+		t.Fatalf("SummarizeAssets 失败: %v", err)
+	}
+	if summary.ImageSizeBytes != 0 || summary.VideoSizeBytes != 0 || summary.AnimatedImageSizeBytes != 0 || summary.TotalSizeBytes != 0 {
+		t.Fatalf("空库分类型大小期望全 0，得到 %+v", summary)
+	}
+	sizes, err := env.q.SummarizeSourceSizes(context.Background())
+	if err != nil {
+		t.Fatalf("SummarizeSourceSizes 失败: %v", err)
+	}
+	if sizes.NormalSizeBytes != 0 || sizes.CosSizeBytes != 0 {
+		t.Fatalf("空库分来源大小期望全 0，得到 %+v", sizes)
 	}
 }
 

@@ -5,11 +5,17 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.view.Display
+import android.view.MotionEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.Modifier
 import dagger.hilt.android.AndroidEntryPoint
+import media.qimeng.app.core.ui.component.QmTouchProbe
+import media.qimeng.app.core.ui.component.qmTouchProbe
 import media.qimeng.app.core.ui.theme.QimengTheme
 import media.qimeng.app.navigation.QimengNavRoot
 import media.qimeng.app.session.MainViewModel
@@ -35,9 +41,41 @@ class MainActivity : ComponentActivity() {
         handleShareIntent(intent)
         setContent {
             QimengTheme {
-                QimengNavRoot()
+                // U7 触摸诊断桩 QM_TOUCH（根因定位后撤除）：Compose 根探针——包住全部 UI 的
+                // 公共祖先，观察事件是否已进入 Compose 树（与 MAIN_TOUCH 对照判「窗口→Compose」层）
+                Box(modifier = Modifier.fillMaxSize().qmTouchProbe("COMPOSE_ROOT")) {
+                    QimengNavRoot()
+                }
+                // U7 诊断桩结束
             }
         }
+    }
+
+    // U7 触摸诊断桩 QM_TOUCH（根因定位后撤除）：窗口层探针——观察全量触摸进入 Activity 的
+    // action/坐标；非 MOVE 追打 handled 回执（false=窗口之下无人消费，分层判定锚点）。
+    // 只加日志不改原分发逻辑：super 原样调用、原样返回。
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        QmTouchProbe.log("MAIN_TOUCH", "action=${event.actionMasked} x=${event.x} y=${event.y}")
+        val handled = super.dispatchTouchEvent(event)
+        if (event.actionMasked != MotionEvent.ACTION_MOVE) {
+            QmTouchProbe.log("MAIN_TOUCH", "action=${event.actionMasked} handled=$handled")
+        }
+        // U7 诊断桩结束
+        return handled
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // U7 触摸诊断桩 QM_TOUCH（根因定位后撤除）
+        QmTouchProbe.log("APP_LIFECYCLE", "APP_RESUME")
+        // U7 诊断桩结束
+    }
+
+    override fun onPause() {
+        super.onPause()
+        // U7 触摸诊断桩 QM_TOUCH（根因定位后撤除）
+        QmTouchProbe.log("APP_LIFECYCLE", "APP_PAUSE")
+        // U7 诊断桩结束
     }
 
     override fun onNewIntent(intent: Intent) {

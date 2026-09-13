@@ -131,6 +131,8 @@
   - **同分 tie-break** = 主键字典序升序（assetId/authorId/tag 名），保证分页与跨端渲染排序确定。
 - **来源桶口径**（/stats/trends 的 source 参数与 /stats/overview 的 sourceNormalCount/sourceCosCount，2026-09-09 协议批 P2 新增）：**引用 §6 既有分区判定，不新造口径**——normal=不关联 COS 作者的资产（NOT EXISTS asset_authors×authors type='cos'）、cos=关联 COS 作者的资产（EXISTS 同谓词）；库存两计数之和恒等于 totalFiles。
 - **平均浏览次数**（/stats/overview 的 avgViewsPerFile，2026-09-09 协议批 P2 新增）：窗口内现存资产的 open 事件总数 ÷ 窗口内至少一次 open 的**不同**现存文件数；窗口由 overview 的 range 参数决定，缺省 all=全时段累计口径；**分母 0 → null**（不返回 0，空库/无浏览的空态语义）。
+- **分类型大小**（/stats/overview 的 per_type_size_bytes，2026-09-14 新增）：现存资产按 media_type 分组各求和 size_bytes，键=image/video/animated_image 三协议值；image 键**不含** animated_image（与 imageCount「动图并入图片」的计数口径不同——大小是物理占用，动图独立成键才可与分类型行各值对账，per_type 各键之和 = totalSizeBytes）；空库/该类型无资产 → 0。
+- **分来源大小**（/stats/overview 的 per_source_size_bytes，2026-09-14 新增）：现存资产按来源分区各求和 size_bytes，键=normal/cos；**引用 §6 既有分区判定，不新造口径**（与 sourceNormalCount/sourceCosCount 同谓词：normal=不关联 COS 作者、cos=关联 COS 作者），两键之和 = totalSizeBytes；空库/该来源无资产 → 0。
 
 ## 6. 作者体系（两套隔离的来源）
 

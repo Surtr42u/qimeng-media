@@ -57,7 +57,9 @@ import media.qimeng.app.core.ui.component.QimengFilterSheet
 import media.qimeng.app.core.ui.component.QimengMediaGrid
 import media.qimeng.app.core.ui.component.QimengPill
 import media.qimeng.app.core.ui.component.QimengPullToRefresh
+import media.qimeng.app.core.ui.component.QmTouchProbe
 import media.qimeng.app.core.ui.component.TabScrollController
+import media.qimeng.app.core.ui.component.qmTouchProbe
 import media.qimeng.app.core.ui.icon.Grid1Icon
 import media.qimeng.app.core.ui.icon.HomeFilterIcon
 import media.qimeng.app.core.ui.icon.gridIconFor
@@ -213,7 +215,9 @@ fun HomeScreen(
             }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    // U7 触摸诊断桩 QM_TOUCH（根因定位后撤除）：首页根探针（观察不消费，跨页对照）
+    Column(modifier = Modifier.fillMaxSize().qmTouchProbe("HOME_ROOT")) {
+    // U7 诊断桩结束
         HomeTopRow(
             columns = columns,
             onOpenSearch = onOpenSearch,

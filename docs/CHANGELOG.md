@@ -9,6 +9,20 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## fix(app): 任务U U7 七轮反馈批——统计分布协议链补齐+标签深链返回修复+相册触摸死转诊断(QM_TOUCH桩)+四胶囊等宽+占位翼撤除+作者组头间距（2026-09-14 第二百五十七笔）
+
+执行 AI：GLM-5.3-Flash（主代理调度落账；研究×2+执行×4+走查子代理流水线；构建均 `--max-workers=2 -Dorg.gradle.priority=low`）
+
+- **统计分布补齐（用户反馈「分布子页面没做」的定性）**：骨架 U5 已 1:1 复刻，真根因两条——①`/stats/overview` 协议无分类型/分来源 sizeBytes（大小指标全「—」占位）；②分布模式 `loadDistribution` **从未把 overviewValues 写入 UiState**（既有缺陷，分布页整体拿不到数据）。协议先行全链落地：DOMAIN_RULES §5 增补两口径（分类型三键和=totalSizeBytes；分来源按 §6 谓词两键和=totalSizeBytes）→ openapi StatsOverview 增 `per_type_size_bytes`/`per_source_size_bytes` → make sdk（sdk.lock 201 条）→ 服务端 sqlc `SummarizeAssets` 扩三列 size 求和+新增 `SummarizeSourceSizes`+stats 15 用例全绿（新增混合类型/空库用例）→ App model/data 映射（null 兼容旧服务端回 0）+分布卡真实值+组内最大归一进度（注释记档偏离：旧版来源行 maxBytes=全库总占用致两行比例失真，改与排行卡「相对第一名」同口径）。8421 测试服务已换新二进制实测返回；模拟器走查分布页 PASS（图片总大小 129.0KB/视频 738.2KB 与库内精确一致）。
+- **标签深链返回修复（用户反馈「返回先到搜索再到数据 tab」）**：根因=搜索页三态返回语义吞首次返回（携词深链落结果态，首返被清词留页）。SearchUiState 增 `fromDeepLink`+`submitFromDeepLink`；handleBackAction 三分支（EMPTY→退页原语义；深链 RESULT 且未改词→直接退页；其余保留旧清词语义=旧版逐字）；QimengNavHost onOpenTagSearch 加 launchSingleTop。新增 2 单测。作者路径代码上无搜索参与（直 pop），判定用户把标签路径记到作者头上；模拟器库无标签/作者数据无法走查，**待真机验证**。
+- **相册触摸无响应（用户反馈「胶囊有时候点击无响应」）转诊断模式**：模拟器实锤比反馈更严重——U6/U7 包一致复现**整区触摸死**（四芯片点击+网格滑动零响应、截图像素级 0 diff 连涟漪都无；底部导航正常；其他 tab 正常；100% 复现），已排除窗口遮挡/加载停顿/本批改动引入/坐标偏差，与网络文件数无关。**按用户拍板不自行修复**：加 `QM_TOUCH` 分层触摸诊断桩 14 层（MAIN_TOUCH→COMPOSE_ROOT→NAVHOST/RESIDENT/CURTAIN/SHELL→四 Tab 根→相册专项→全局胶囊；观察不消费；R8 存活核验通过），任务书《任务U8-相册触摸无响应诊断卷》（仓库外，事实/线索分离+判读矩阵+真机采集脚本）交下一 AI。批内先行的相册性能治理保留：分组 remember+网格 contentType+滚动暂停缩略图（对卡顿型丢反馈有效）。
+- **四胶囊等宽排布（用户拍板「均匀统一+之间留空间」）**：DetailActionButton 增 modifier/singleLine/contentHorizontalPadding 参数，四枚 `weight(1f)` 等宽槽+内容居中+`spacedBy(SpaceM=8dp)`；首版 12dp 间隔在窄槽压出文字折行（走查 FAIL，证据 .walk/u7/04_detail_capsules.png）→ 二轮 `LocalCapsuleSingleLine`+`CapsuleText` 单行档+内容横 padding 14→10dp（新常量 CHROME_CAPSULE_CONTENT_H_PADDING）修正，模拟器复核 PASS（04b 截图全单行）。
+- **详情图片占位翼撤除（用户反馈深色模式「中间固定一块加载区」）**：exp#4 的整屏 secondaryContainer 灰块（夜间 #2E2E2E vs 舞台 #1A1A1A 高辨识）删除，对齐旧版「透明底+保留上一张、切换不闪白」（旧 MediaDetailFragment.kt:441/:486-490）；decodeFailed 覆盖层保留；VideoStage 海报占位未动（属视频预览链另行裁量）。走查 night yes 多帧无灰块 PASS。
+- **作者页组头间距（用户反馈「文件时间离胶囊过远」）**：芯片行→首日期组头 26dp（网格顶距 8+组头顶距 18 两层叠加）→8dp（QimengMediaGrid 新参数 tightenLeadingHeader，仅作者页开启，其余共用网格页面字节级不变）。
+- **门禁**：go test stats 15 全绿+go build/vet 干净；:feature:detail/author/all/search/stats 单测全绿（search 含深链 2 新用例）；:app assembleDebug/assembleRelease 绿；R8 桩存活核验（mapping.txt 命中）。U7 终包=`QimengNAS\qimeng-任务U7-终包-20260914.apk`（含诊断桩）。
+- **新发现未修记档（防丢失，详见任务U8 卷 §8/§10）**：①统计主页首载卡死>2min 自愈（服务端 1-200ms、App 零错误日志）；②dev-login 单会话互踢；③沉浸态静置自动退沉浸（U6 起两轮复现）；④相册 facets 全 (0) 待核实。
+
+---
 ## fix(app): 任务U U6 六轮反馈批——沉浸显隐对齐旧版逐帧语义(底色瞬切+仅内容淡出)+作者界面间距规范+逐帧检测协议落地（2026-09-14 第二百五十六笔）
 
 执行 AI：GLM-5.3-Flash（主代理调度落账；研究/执行/逐帧测试三子代理分工；构建全程 `--max-workers=2 -Dorg.gradle.priority=low` 夜间降噪）

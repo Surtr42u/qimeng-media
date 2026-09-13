@@ -5,6 +5,8 @@ package media.qimeng.app.core.model
  * 字段与 openapi StatsOverview schema 一一对应（协议侧改动须同步此处）。
  * N3 协议批新增：sourceNormalCount/sourceCosCount（来源库存构成）、
  * avgViewsPerFile（窗口内平均浏览次数，分母 0 → null——「—」占位语义）。
+ * 2026-09-14 协议批新增：分类型/分来源大小两组求和（DOMAIN_RULES §5：
+ * image 不含动图、per_type 三键与 per_source 两键各自之和 = totalSizeBytes）。
  */
 data class StatsOverviewValues(
     val totalFiles: Int,
@@ -19,6 +21,16 @@ data class StatsOverviewValues(
     val sourceCosCount: Int = 0,
     /** 平均浏览次数 = 窗口 open 事件总数 ÷ 窗口内至少一次 open 的不同现存文件数；分母 0 → null */
     val avgViewsPerFile: Double? = null,
+    /** 图片资产大小求和（字节；不含动图——物理占用口径，与 imageCount 计数不同） */
+    val imageSizeBytes: Long = 0,
+    /** 视频资产大小求和（字节） */
+    val videoSizeBytes: Long = 0,
+    /** 动图资产大小求和（字节） */
+    val animatedImageSizeBytes: Long = 0,
+    /** 常规来源（不关联 COS 作者）资产大小求和（字节；谓词同 sourceNormalCount） */
+    val normalSizeBytes: Long = 0,
+    /** COS 来源（关联 COS 作者）资产大小求和（字节；谓词同 sourceCosCount） */
+    val cosSizeBytes: Long = 0,
 )
 
 /**
