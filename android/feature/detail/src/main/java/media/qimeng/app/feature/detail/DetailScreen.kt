@@ -1,6 +1,10 @@
 package media.qimeng.app.feature.detail
 
 import android.widget.Toast
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -205,11 +209,19 @@ fun DetailScreen(
         // DetailMediaStage.backdrop 逐层下发，子层禁止自带底色。2026-09-13 缩放沉浸：传参
         // 由 chromeVisible 改为 chromeEffective（并入 zoomImmersive），放大态 letterbox 随
         // 沉浸转黑（与「沉浸=纯黑」同口径）；与函数内 playerActive 判据幂等叠加不冲突
-        //（图片态 playerActive 恒 false），视频态传参值逐位不变（zoomImmersive 恒 false）
-        val stageBackdrop = stageBackdropColor(
-            chromeVisible = chromeEffective,
-            playerActive = playerActive,
-            themeBackground = MaterialTheme.colorScheme.background,
+        //（图片态 playerActive 恒 false），视频态传参值逐位不变（zoomImmersive 恒 false）。
+        // 用户 2026-09-13 真机反馈：底色随缩放沉浸瞬时切换（主题底↔纯黑）观感生硬，改
+        // animateColorAsState 平滑过渡——动画的是「计算出的目标色」，stageBackdropColor
+        // 纯函数判定零改动（StageBackdropTest 单测不受影响）；时长同 chrome 渐显档
+        // CHROME_FADE_IN_MS（letterbox 转黑与 chrome 渐隐同期收尾，不另立魔数）
+        val stageBackdrop by animateColorAsState(
+            targetValue = stageBackdropColor(
+                chromeVisible = chromeEffective,
+                playerActive = playerActive,
+                themeBackground = MaterialTheme.colorScheme.background,
+            ),
+            animationSpec = tween(durationMillis = CHROME_FADE_IN_MS),
+            label = "stageBackdropColor",
         )
         // 第一屏舞台高度 = 壳层内容区高度（BoxWithConstraints.maxHeight）。X1 壳层改造
         // （2026-09-12 任务X）后 detail 路由不再吃壳层 innerPadding，内容区=全屏铺开且
@@ -381,11 +393,23 @@ fun DetailScreen(
                     // 顶部渐变 chrome（L171：返回/当前序号 n/N/信息钮）——alpha 显隐（L175）。
                     // 显式全限定：外层 Column 的 ColumnScope.AnimatedVisibility 扩展在此上下文
                     // （BoxScope 内）不可隐式调用，须取顶层函数
+                    // 用户 2026-09-13 真机反馈：默认短 fade 观感近瞬隐，改显式平滑过渡
+                    //（Material fade 惯例进慢出快，档位见 CHROME_FADE_IN_MS/CHROME_FADE_OUT_MS）
                     androidx.compose.animation.AnimatedVisibility(
                         visible = chromeEffective,
                         modifier = Modifier.align(Alignment.TopCenter),
-                        enter = fadeIn(),
-                        exit = fadeOut(),
+                        enter = fadeIn(
+                            animationSpec = tween(
+                                durationMillis = CHROME_FADE_IN_MS,
+                                easing = LinearOutSlowInEasing,
+                            ),
+                        ),
+                        exit = fadeOut(
+                            animationSpec = tween(
+                                durationMillis = CHROME_FADE_OUT_MS,
+                                easing = FastOutLinearInEasing,
+                            ),
+                        ),
                     ) {
                         DetailTopChrome(
                             batchIndex = state.batchIndex,
@@ -396,11 +420,23 @@ fun DetailScreen(
                     }
                     // 底部渐变操作层（W3 四胶囊：点赞N/收藏/标签/作者——「整理」退役）——
                     // 全限定同上
+                    // 用户 2026-09-13 真机反馈：默认短 fade 观感近瞬隐，改显式平滑过渡
+                    //（与顶部 chrome 同款档位，见 CHROME_FADE_IN_MS/CHROME_FADE_OUT_MS）
                     androidx.compose.animation.AnimatedVisibility(
                         visible = chromeEffective,
                         modifier = Modifier.align(Alignment.BottomCenter),
-                        enter = fadeIn(),
-                        exit = fadeOut(),
+                        enter = fadeIn(
+                            animationSpec = tween(
+                                durationMillis = CHROME_FADE_IN_MS,
+                                easing = LinearOutSlowInEasing,
+                            ),
+                        ),
+                        exit = fadeOut(
+                            animationSpec = tween(
+                                durationMillis = CHROME_FADE_OUT_MS,
+                                easing = FastOutLinearInEasing,
+                            ),
+                        ),
                     ) {
                         DetailBottomChrome(
                             asset = asset,
@@ -612,6 +648,16 @@ private fun SystemBarsImmersiveEffect(chromeVisible: Boolean) {
         }
     }
 }
+
+// chrome 显隐渐变时长档（用户 2026-09-13 真机反馈：默认短 fade 观感近瞬隐，改显式平滑
+// 过渡；Material fade 惯例进慢出快）。模块既有动画常量均为按压反馈档（如 DetailChromeBars
+// CHROME_PRESS_ANIM_MS=100，语义不同不可复用），无冲突档可循，按同款 file-level private
+// const 风格立档；舞台底色 animateColorAsState 复用进档（见 stageBackdrop 处注）
+/** chrome 渐显档 ms（Material fade 进慢出快：进=300）——顶/底 chrome fadeIn 与舞台底色动画同用 */
+private const val CHROME_FADE_IN_MS = 300
+
+/** chrome 渐隐档 ms（Material fade 进慢出快：出=220）——顶/底 chrome fadeOut */
+private const val CHROME_FADE_OUT_MS = 220
 
 /**
  * 底部留白常量（轻量档；与网格页 180dp 防遮挡档语义不同）。任务Y Y1 起页面级使用已删
