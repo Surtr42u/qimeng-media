@@ -9,6 +9,16 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## fix(app): 任务U U3 用户二轮反馈批——缩放沉浸过渡平滑化+底部 Tab 切换常驻化根治闪烁（2026-09-13 第二百五十一笔）
+
+执行 AI：GLM-5.3-Flash（主代理调度+门禁修复，执行子代理×2 并行实施[文件集互斥]+研究子代理根因定位）
+
+- **U3-A 缩放沉浸过渡平滑化**（用户真机反馈②「不要做渐变直接消失的」——U1b 隐/显语义保留、观感改平滑）：DetailScreen 两处 chrome AnimatedVisibility 由默认短 fade 改显式 `fadeIn(tween(300, LinearOutSlowInEasing))/fadeOut(tween(220, FastOutLinearInEasing))`（进慢出快 Material 惯例，CHROME_FADE_IN/OUT_MS 文件级常量档）；舞台底色 stageBackdropColor 目标色包 `animateColorAsState(tween(300))`（letterbox 转黑与 chrome 渐隐同期；纯函数与单测零改动）。触发逻辑/阈值/状态机不动。
+- **U3-B 底部 Tab 切换「闪烁/残留」根治——常驻化对齐旧版机制**（用户反馈：二次复发，要求看旧版实现）：研究结论=NavHost 换 destination 本质是「旧屏出树+新屏全量组合」的交换窗口，L2 的 None 转场只消灭动画叠影没消灭窗口本身，真机 R8 包+Y5 高刷放大窗口（壳层代码自 9db061f 零改动，非某 commit 回归）；旧版 QimengMedia=Fragment 常驻 add+show/hide 零组合成本。实施（全在 QimengNavHost.kt，+262/-37）：四 Tab 屏**懒驻留常驻层**（首访入列=旧版 fragmentCache 语义，SaveableStateProvider 按 route 分键，隐藏屏 alpha=0+clearAndSetSemantics+zIndex 压下+触摸死层三重隔离），NavHost 四 Tab 路由改**空壳跳板**（保留路由/返回栈/saveState 语义与底栏 currentRoute 判定），pushed 路由逐字不动+幕帘（背景补底+吞触摸防穿透）；owner=起始目的地 entry（CompositionLocalProvider 接管，保 ON_RESUME 观察与 VM 作用域）；状态单源=NavHost currentRoute 单向收敛+点击乐观先行。进程恢复经 listSaver 恢复驻留集。内存代价=驻留屏常驻测量布局（对齐旧版代价，KDoc 记档）。
+- **主代理门禁返工四处**（executor 静态交付、未编译，主会话统一门禁暴露后修复）：①animateColorAsState import 挂错包（core→androidx.compose.animation）+tween 类型推断补齐；②QimengNavHost 漏 rememberSaveable import；③LocalViewModelStoreOwner.current 可空收敛（requireNotNull）；④blockTouches 扩展调用缺接收者+lint UnrememberedGetBackStackEntry（remember(key=栈顶 entry id)+带依据 Suppress——start 目的地永不弹栈，id key 与对象 key 语义等价）。
+- **门禁与验证**：assembleDebug+:feature:detail/:app 单测+lintDebug 全绿；模拟器（emulator-5562 显式）走查：四 Tab 切换即时无闪烁、选中态正确、首页→详情（不透明覆盖常驻层）→返回后首页滚动/数据原样（零重组）、数据页/相册页渲染正常。遗留记档：进程恢复到 pushed 路由首帧幕帘晚一帧（改前底栏同有等价一帧，非回归）；HomeScreen 有一条历史 QimengM42 调试日志（非本批，未动）。真机观感（高刷）待用户复验。
+
+---
 ## ci+app: 任务S S3 基座升级批 Step1+2 落地——Gradle 9.5.0+AGP 9.2.1+Hilt 2.60.1（SDK36 冻结不变）（2026-09-13 第二百五十笔）
 
 执行 AI：GLM-5.3-Flash（主代理调度+网络重探，执行子代理实施+四步门禁自测）

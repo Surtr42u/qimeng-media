@@ -2,7 +2,10 @@ package media.qimeng.app.navigation
 
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -15,15 +18,31 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
+import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -113,8 +132,50 @@ fun QimengNavRoot(modifier: Modifier = Modifier) {
 /**
  * 主壳导航：底部四 Tab（导航四化）+ 覆盖页面（搜索/收藏/历史/作者）+ NavHost（仅登录后可达）。
  *
- * Tab 保活语义（GUIDE_UI §导航结构：旧版 show/hide 全 Tab 存活、切换不重建）在 Navigation
- * Compose 下的等价实现 = saveState/restoreState + launchSingleTop（Android 官方底部导航模式）。
+ * ## Tab 常驻层（2026-09-13 根治「Tab 切换闪烁/残留」，用户两次真机反馈）
+ *
+ * Tab 保活语义（GUIDE_UI §导航结构：旧版 show/hide 全 Tab 存活、切换不重建）。此前纯
+ * Navigation 方案（saveState/restoreState + launchSingleTop 官方底部导航模式）只保**状态**
+ * 不保**组合**：NavHost 换 destination = 旧屏出树 + 新屏全量组合，None 转场（2026-09-12
+ * 修复）只消灭动画叠影，交换窗口仍在——新屏组合期间旧屏滞留（残留）或露背景（闪烁），
+ * 壳层代码零改动下窗口依旧可见（真机 R8 包 + 高刷放大，Y5 强制最高刷）。旧版
+ * （QimengMedia MainActivity）Fragment 常驻 add、切换 = hide 全部 + show 目标，零组合成本
+ * 零交换窗口。本版对齐该机制，内容区改双载体：
+ *
+ * 1. **常驻层**：NavHost 之下（zIndex(-1)）的常驻容器。四个 Tab 屏**懒驻留**——首次点击才
+ *    进 [visitedTabs]（对齐旧版 fragmentCache 首访才 add），此后永不离树；非当前 Tab 用
+ *    graphicsLayer alpha=0（保持组合不绘制）+ clearAndSetSemantics（a11y 不可达，对齐旧版
+ *    hide 的 GONE 语义）+ 触摸死层（见 [blockTouches]，防非交互区命中穿透）三重隔离压在
+ *    当前 Tab（zIndex=1）之下。每屏包 SaveableStateProvider(route)（rememberSaveableStateHolder）
+ *    保 rememberSaveable 状态。
+ * 2. **跳板**：NavHost 内四 Tab 路由只留空壳、不渲染真实屏，仅承担 Tab 的路由/返回栈/
+ *    saveState/restoreState 语义与 pushed 路由的载体（detail/search/... 照旧由 NavHost
+ *    渲染真实屏，既有转场与不透明覆盖不动）。Tab 点击链路 [navigateTopLevel] 原样保留
+ *    （防抖、popUpTo、launchSingleTop、restoreState 全不动），仅同步登记常驻层——
+ *    **切换 = 常驻层可见性翻转，零屏离树、零重组成本**。
+ *
+ * 底栏（NavigationBar）与其显隐逻辑零改动（仍按 NavHost currentRoute 判定）；X1 的
+ * isDetailDestination 条件 modifier 在 NavHost 上原样生效（常驻层约束链与其无关，恒为
+ * padding+consume 官方范式——Tab 屏原本就只在非 detail 约束下可见）。
+ *
+ * ### 状态单源
+ * NavHost currentRoute 是唯一事实源：LaunchedEffect 单向收敛进常驻层（覆盖系统返回回 Tab、
+ * 进程恢复后栈顶为非 home Tab 等场景）；点击时乐观先行（与 navigate 同一重组帧原子生效，
+ * 若等 currentRoute 回流再翻则慢一帧=1 帧残留），乐观值与回流值恒等，同步为 no-op。
+ *
+ * ### 常驻层 owner 单源
+ * 常驻层包 CompositionLocalProvider：LocalLifecycleOwner / LocalViewModelStoreOwner 一律
+ * provide **起始目的地（home）的 NavBackStackEntry**——该 entry 被 popUpTo(start){saveState}
+ * 永不弹出，随主壳存亡。不接管的下场：LocalLifecycleOwner 落到 Activity，HomeScreen 的
+ * ON_RESUME 观察（点赞后返回自动重排，覆盖「详情页 pop 返回」路径）静默失效（Activity 在
+ * 应用内导航从不 pause）；Tab ViewModel 落 Activity 作用域则登出后不清、跨会话残留。
+ * start entry 作用域下 HomeScreen 语义与改前逐帧一致（它本来就是 home entry 的内容），
+ * 其余三屏 VM 随导航图存亡。
+ *
+ * ### 内存/性能代价（与旧版常驻 Fragment 同款，有意为之）
+ * 四屏驻留后其 ViewModel/状态收集照旧运行（collectAsStateWithLifecycle 以 start entry 为
+ * owner，≥STARTED 即收集）；懒驻留保证冷启动只组合首 Tab。驻留屏的测量/布局照常参与
+ * （旧版隐藏 Fragment 视图 GONE 免布局；此处为保滚动位置不重排，接受常驻布局差量）。
  *
  * 双击当前 Tab 回顶：400ms 内同一 Tab 二击 → TabScrollController 广播，列表页收集后
  * scrollToItem(0) 精确回顶（GUIDE_UI §导航结构）。
@@ -149,6 +210,40 @@ fun QimengNavHost(
     val darkTheme = isSystemInDarkTheme()
     val indicatorColor = if (darkTheme) QimengBrandColors.PrimarySoftDark else QimengBrandColors.PrimarySoftLight
 
+    // ── 常驻层状态（机制见本函数 KDoc §Tab 常驻层；2026-09-13 根治 Tab 切换闪烁/残留）──
+    // 已驻留 Tab，只增不减（对齐旧版 fragmentCache 首访才 add、此后常驻）。rememberSaveable：
+    // 进程恢复/旋转后直接恢复驻留集与当前 Tab，恢复帧即显示正确 Tab（与 NavHost 返回栈
+    // 恢复同源一致）；登出（主壳离树）随之丢弃，重登录全新开始。
+    val visitedTabs = rememberSaveable(
+        saver = listSaver<SnapshotStateList<String>, String>(
+            save = { it.toList() },
+            restore = { it.toMutableStateList() },
+        ),
+    ) { mutableStateListOf(TopLevelDestination.HOME.route) }
+    // 常驻层当前 Tab（可见性翻转依据）。单源=NavHost currentRoute（同步见下方 LaunchedEffect）；
+    // 点击时乐观先行（与 navigate 同一重组帧原子生效，值恒与 currentRoute 回流值一致）
+    var currentTabRoute by rememberSaveable { mutableStateOf(TopLevelDestination.HOME.route) }
+    // 各驻留 Tab 的 rememberSaveable 状态仓（按 route 分键；登出随主壳丢弃）
+    val stateHolder = rememberSaveableStateHolder()
+
+    /** Tab 登记：首访入列（同帧组合）+ 可见性翻转（bottomBar 点击与 currentRoute 同步共用） */
+    fun visitTab(route: String) {
+        if (route !in visitedTabs) visitedTabs.add(route)
+        currentTabRoute = route
+    }
+
+    // 状态单源同步（KDoc §状态单源）：NavHost currentRoute → 常驻层单向收敛。兜底系统返回
+    // 回到某 Tab、进程恢复后栈顶为非 home Tab 等场景；点击路径经此为 no-op（乐观值=回流值）
+    LaunchedEffect(currentRoute) {
+        val route = currentRoute
+        if (route != null && route in topLevelRoutes) {
+            visitTab(route)
+        }
+    }
+
+    // pushed 路由在顶（覆盖屏/详情）：常驻层与 NavHost 之间需不透明幕帘（见内容区注释）
+    val overlayRouteShowing = currentRoute != null && currentRoute !in topLevelRoutes
+
     // 系统分享接收（M4-5）：未消费的分享 URI 存在即进上传流（登录后才可达——本组合在 LoggedIn 分支）
     LaunchedEffect(sharedUris) {
         if (sharedUris.isNotEmpty()) {
@@ -181,6 +276,10 @@ fun QimengNavHost(
                                         TabScrollController.requestScrollToTop(destination.route)
                                     TabTapAction.Navigate -> {
                                         lastNavigateTimeMs = now
+                                        // 常驻层先行登记/翻转（与下方 navigate 同一重组帧原子生效；
+                                        // 若等 currentRoute 回流再翻则慢一帧=1 帧残留）。乐观值与
+                                        // currentRoute 回流值恒等，LaunchedEffect 同步为 no-op
+                                        visitTab(destination.route)
                                         navigateTopLevel(navController, destination)
                                     }
                                     TabTapAction.Ignore -> Unit
@@ -232,48 +331,22 @@ fun QimengNavHost(
                     .consumeWindowInsets(innerPadding)
             },
         ) {
+            // ── 四 Tab 路由 = 空壳跳板（机制见本函数 KDoc §Tab 常驻层）──
+            // 真实屏不再由 NavHost 渲染：NavHost 换 destination 的「旧屏出树+新屏全量组合」
+            // 交换窗口正是 Tab 切换闪烁/残留的根因；空壳让 Tab↔Tab 切换退化为空壳到空壳，
+            // 真实屏的显示翻转由常驻层完成，全程零屏离树。NavHost 仍保留 Tab 路由：承担
+            // 路由/返回栈/saveState/restoreState 语义，底栏显隐仍按 currentRoute 判定。
             composable(TopLevelDestination.HOME.route) {
-                HomeScreen(
-                    onOpenSearch = { navController.navigate(Routes.SEARCH_NAV) },
-                    onOpenAsset = { assetId ->
-                        navController.navigate(DetailRoutes.detailRoute(assetId))
-                    },
-                )
+                // 空壳：HomeScreen 真身在常驻层 [ResidentTabScreen] 按 route 渲染
             }
             composable(TopLevelDestination.ALL.route) {
-                AllScreen(
-                    onOpenAsset = { assetId ->
-                        navController.navigate(DetailRoutes.detailRoute(assetId))
-                    },
-                )
+                // 空壳：AllScreen 真身同上
             }
             composable(TopLevelDestination.STATS.route) {
-                // 统计族跳转回调组单源（RES R1 去重，构造见 [statsNavLinks]）
-                val links = statsNavLinks(navController)
-                StatsScreen(
-                    // 趋势卡/分布入口卡点击进统计详情页（任务I I3；GUIDE_UI §数据统计页
-                    // L213-214，携带当前时间范围——GUIDE §交互设计「进入详情携带当前时间范围」）
-                    onOpenDetail = { mode, range ->
-                        navController.navigate(StatsDetailRoutes.statsDetailRoute(mode, range))
-                    },
-                    // 任务J J1 详情页跳转链（GUIDE_UI L218-224）：常看文件条目→详情页（批次
-                    // 上下文已由 StatsViewModel.enterDetail 写入）、作者条目→作者集合页、
-                    // 标签条目→搜索页携词（query 编码见 Routes.searchRoute）
-                    onOpenAsset = links.onOpenAsset,
-                    onOpenAuthor = links.onOpenAuthor,
-                    onOpenTagSearch = links.onOpenTagSearch,
-                )
+                // 空壳：StatsScreen 真身同上
             }
             composable(TopLevelDestination.SETTINGS.route) {
-                SettingsScreen(
-                    onOpenFavorite = { navController.navigate(Routes.FAVORITE) },
-                    onOpenHistory = { navController.navigate(Routes.HISTORY) },
-                    // X5 批 2026-09-12：作者总览改收藏同款入口行，onOpenAuthors=唯一作者入口；
-                    // 原总览卡 Top5 直达作者集合页的参数随内嵌卡退役，行级直达
-                    // 统一走 AuthorScreen 的 onAuthorClick（Routes.AUTHORS 组合内）
-                    onOpenAuthors = { navController.navigate(Routes.AUTHORS) },
-                    onOpenUpload = { navController.navigate(Routes.UPLOAD) },
-                )
+                // 空壳：SettingsScreen 真身同上
             }
             composable(
                 route = Routes.SEARCH,
@@ -415,6 +488,102 @@ fun QimengNavHost(
                 )
             }
         }
+
+        // ── 常驻层（机制见本函数 KDoc §Tab 常驻层）──
+        // 声明在 NavHost 之后但 zIndex(-1) 压其下：z 序由 zIndex 决定，与声明序无关；
+        // 声明序只用于保证下方 owner 解析时 NavHost 已组合（graph 于首个组合内置好，
+        // navigation 2.8+ Ieb7be）。空壳 Tab 全透明放行 → 当前 Tab 可见可点；
+        // pushed 屏不透明自覆盖（透明根容器由幕帘补底）。
+        //
+        // 常驻层 owner（KDoc §常驻层 owner 单源）：provide 起始目的地（home）的
+        // NavBackStackEntry——该 entry 被 popUpTo(start){saveState} 永不弹出，随主壳存亡。
+        // start entry 作用域下 HomeScreen 的 ON_RESUME 观察语义与改前逐帧一致；四屏 Tab
+        // ViewModel 随导航图存亡（登出即清），不落 Activity 作用域。graph 未就绪的帧
+        // （理论过渡帧）直接不组合 Tab 屏：绝不允许任何一帧在 Activity owner 下建 Tab VM
+        // （否则 owner 换手后 VM 双实例+泄漏），fallback owner 仅在空帧时无消费地挂着
+        val fallbackLifecycleOwner = LocalLifecycleOwner.current
+        // current 在本版本签名非空可空并存风险下显式收敛：宿主 Activity 恒提供，理论不空
+        val fallbackViewModelStoreOwner = requireNotNull(LocalViewModelStoreOwner.current) {
+            "LocalViewModelStoreOwner 缺失：常驻层 fallback owner 无宿主（不应发生的组合帧）"
+        }
+        val currentEntryId: String? = navController.currentBackStackEntry?.id
+        // Suppress 依据：lint 只认 NavBackStackEntry 对象本体作 key；本处持有的是 start 目的地
+        // entry（popUpTo(start){saveState} 永不弹出、id 恒定），String id 作 key 与对象 key
+        // 语义等价，无「entry 被弹后悬持失效」风险（该风险正是此 lint 的守护对象）
+        @Suppress("UnrememberedGetBackStackEntry")
+        val residentEntry: NavBackStackEntry? = remember(currentEntryId) {
+            if (currentEntryId != null) {
+                navController.getBackStackEntry(TopLevelDestination.HOME.route)
+            } else {
+                null
+            }
+        }
+        CompositionLocalProvider(
+            LocalLifecycleOwner provides (residentEntry ?: fallbackLifecycleOwner),
+            LocalViewModelStoreOwner provides (residentEntry ?: fallbackViewModelStoreOwner),
+        ) {
+            // 约束链 = 原 NavHost 非 detail 分支的 modifier 逐字迁移（padding → consume 同序）：
+            // 常驻 Tab 屏的布局约束与改前在 NavHost 内容区时完全一致（同宽高、同 padding/insets
+            // 消耗链——本任务最大的坑，逐行对照迁移）；NavHost 自身的 isDetailDestination 条件
+            // modifier 原样保留，与常驻层互不影响（Tab 屏原本就只在非 detail 约束下可见过）
+            Box(
+                modifier = Modifier
+                    .zIndex(-1f)
+                    .padding(innerPadding)
+                    .consumeWindowInsets(innerPadding),
+            ) {
+                // graph 未就绪（residentEntry==null）的帧不组合 Tab 屏：见上方 owner 注释。
+                // 正常路径（首个组合内 graph 已内置）恒非空，此门控不可见
+                if (residentEntry != null) {
+                    visitedTabs.forEach { tabRoute ->
+                        key(tabRoute) {
+                            val isCurrentTab = tabRoute == currentTabRoute
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .zIndex(if (isCurrentTab) 1f else 0f)
+                                    .then(
+                                        if (isCurrentTab) {
+                                            Modifier
+                                        } else {
+                                            // 隐藏 Tab 三重隔离：不绘制（alpha=0）+ a11y 不可达
+                                            // （对齐旧版 hide 的 GONE）+ 触摸死层（下方兜底）
+                                            Modifier
+                                                .graphicsLayer { alpha = 0f }
+                                                .clearAndSetSemantics { }
+                                        }
+                                    ),
+                            ) {
+                                stateHolder.SaveableStateProvider(tabRoute) {
+                                    ResidentTabScreen(route = tabRoute, navController = navController)
+                                }
+                                // 触摸死层：Compose 命中测试中「无 pointer input 的节点」不拦截触摸——
+                                // 当前 Tab 的非交互区（如顶栏留白）下压会命中隐藏 Tab 的可交互节点
+                                // （幽灵点击/滚动）。死层盖在隐藏屏之上（声明在后=子级 z 更高）全量吞
+                                // 事件，隐藏屏由此不可点（「双重保险不可点」的落点）
+                                if (!isCurrentTab) {
+                                    Box(modifier = Modifier.fillMaxSize().blockTouches())
+                                }
+                            }
+                        }
+                    }
+                }
+                // 幕帘：pushed 路由（detail/search/...）在顶时垫在 NavHost 与常驻层之间。
+                // ① 视觉：部分 pushed 屏根容器无背景（如 SearchScreen 的裸 Column），改前透出
+                //   的是 Scaffold 背景色；常驻层就位后透出的会变成当前 Tab 屏——幕帘以 Scaffold
+                //   同款 background 色补底，逐像素保真。② 输入：pushed 屏非交互区下压的触摸
+                //   全量吞掉，防穿透到常驻层造成幽灵滚动（zIndex=2 盖过当前 Tab 的 zIndex=1）
+                if (overlayRouteShowing) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .zIndex(2f)
+                            .background(MaterialTheme.colorScheme.background)
+                            .blockTouches(),
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -519,5 +688,71 @@ private fun navigateTopLevel(navController: NavHostController, destination: TopL
         popUpTo(navController.graph.findStartDestination().id) { saveState = true }
         launchSingleTop = true
         restoreState = true
+    }
+}
+
+/**
+ * 常驻层按 route 渲染的 Tab 真身。回调接线逐字自原 NavHost 四个 Tab composable 迁移
+ * （2026-09-13 常驻层改造，屏与跳转目标均不动）；NavHost 内同路由为空壳跳板，本函数仅
+ * 由常驻层调用。
+ */
+@Composable
+private fun ResidentTabScreen(route: String, navController: NavHostController) {
+    when (route) {
+        TopLevelDestination.HOME.route -> HomeScreen(
+            onOpenSearch = { navController.navigate(Routes.SEARCH_NAV) },
+            onOpenAsset = { assetId ->
+                navController.navigate(DetailRoutes.detailRoute(assetId))
+            },
+        )
+        TopLevelDestination.ALL.route -> AllScreen(
+            onOpenAsset = { assetId ->
+                navController.navigate(DetailRoutes.detailRoute(assetId))
+            },
+        )
+        TopLevelDestination.STATS.route -> {
+            // 统计族跳转回调组单源（RES R1 去重，构造见 [statsNavLinks]）
+            val links = statsNavLinks(navController)
+            StatsScreen(
+                // 趋势卡/分布入口卡点击进统计详情页（任务I I3；GUIDE_UI §数据统计页
+                // L213-214，携带当前时间范围——GUIDE §交互设计「进入详情携带当前时间范围」）
+                onOpenDetail = { mode, range ->
+                    navController.navigate(StatsDetailRoutes.statsDetailRoute(mode, range))
+                },
+                // 任务J J1 详情页跳转链（GUIDE_UI L218-224）：常看文件条目→详情页（批次
+                // 上下文已由 StatsViewModel.enterDetail 写入）、作者条目→作者集合页、
+                // 标签条目→搜索页携词（query 编码见 Routes.searchRoute）
+                onOpenAsset = links.onOpenAsset,
+                onOpenAuthor = links.onOpenAuthor,
+                onOpenTagSearch = links.onOpenTagSearch,
+            )
+        }
+        TopLevelDestination.SETTINGS.route -> SettingsScreen(
+            onOpenFavorite = { navController.navigate(Routes.FAVORITE) },
+            onOpenHistory = { navController.navigate(Routes.HISTORY) },
+            // X5 批 2026-09-12：作者总览改收藏同款入口行，onOpenAuthors=唯一作者入口；
+            // 原总览卡 Top5 直达作者集合页的参数随内嵌卡退役，行级直达
+            // 统一走 AuthorScreen 的 onAuthorClick（Routes.AUTHORS 组合内）
+            onOpenAuthors = { navController.navigate(Routes.AUTHORS) },
+            onOpenUpload = { navController.navigate(Routes.UPLOAD) },
+        )
+        else -> Unit // 不可达：route 恒来自 visitedTabs（仅含 Tab 路由）；兜底防脏键
+    }
+}
+
+/**
+ * 触摸死层 modifier：把落在本层的触摸整段（按下→移动→抬起）全量消费。服务「保持组合但
+ * 不可交互」的隔离场景（常驻层隐藏 Tab 的兜底层、pushed 屏幕帘）——命中测试层面它带
+ * pointer input 节点，触摸沿 z 序命中即止（不再下探）；事件层面 consume 保证无漏网。
+ * 只承接「上层没接住的穿透触摸」，这类触摸在改前同样无处可去（落到 Scaffold 背景），
+ * 吞掉即行为等价。
+ */
+private fun Modifier.blockTouches(): Modifier = pointerInput(Unit) {
+    awaitEachGesture {
+        while (true) {
+            val event = awaitPointerEvent()
+            event.changes.forEach { change -> change.consume() }
+            if (event.changes.none { it.pressed }) break
+        }
     }
 }
