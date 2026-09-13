@@ -9,6 +9,16 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## ci: sdk.lock 指纹锁剔除生成测试文件——修复 CI「SDK 生成链」job 存量红（2026-09-13 第二百五十三笔）
+
+执行 AI：GLM-5.3-Flash（主代理直接排查与修复）
+
+- **现象**：S4 引入的「SDK 生成链」CI job 自 09-12 起持续红（250 笔 S 批遗留的「CI 首跑关注 sdk-chain」事项），本会话三次推送均红。诊断链：CI 日志显示 `make sdk` 成功、lock 校验 diff 出 **18 处漂移**；本地三次重生成哈希恒定且与锁一致（排除本地不确定）；逐项排除行尾（锁已有 tr -d '\r' 归一）、编码（本地均为合法 UTF-8）、Locale/时区（注入 UTC/en 重生成哈希不变）、生成器版本（openapitools.json 钉死 7.24.0）。
+- **定位**：18 处漂移**全部**落在 android/sdk/src/test 下生成测试文件（2 api + 16 model），主源码/Go/TS 零漂移——生成器对 `*Test.kt` 的输出跨平台「各自确定但互不相同」（Windows↔Linux），锁住它们等于把「生成平台一致性」误设为门禁。
+- **修复**：Makefile sdk-lock 的 android find 增 `-not -path '*/src/test/*'`（含依据注释）：锁的守护目标=被三端消费的 API 面（main 源集跨平台字节稳定）；生成测试本身的回归由 CI Android job 的 test 步骤兜底。lock 274→197 条，diff 纯删除 77 条测试条目、零哈希变化。
+- **验证**：本地 `make sdk`+`make sdk-lock` 全绿零漂移；推送后观察 CI SDK 链 job 转绿（后续笔补记结果）。
+
+---
 ## ci+app: 任务S S3 收尾——Step3 落地 compileSdk 37+androidx 2026-08 波（Kotlin 2.4.20/Coil 3.6.2），Step4 记档缓项（2026-09-13 第二百五十二笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理实施中途失联，主代理续做收口：SDK 组件手动安装+全量门禁+落账）
