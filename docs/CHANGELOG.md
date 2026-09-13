@@ -9,6 +9,17 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## ci+app: 任务S S3 收尾——Step3 落地 compileSdk 37+androidx 2026-08 波（Kotlin 2.4.20/Coil 3.6.2），Step4 记档缓项（2026-09-13 第二百五十二笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理实施中途失联，主代理续做收口：SDK 组件手动安装+全量门禁+落账）
+
+- **Step3 落地（版本面全表）**：Kotlin 2.3.21→**2.4.20**（KGP gradle9 变体到位，消除 250 笔遗留的矩阵外回退）+ KSP 2.3.12；compose BOM 2026.06.01→**2026.08.00**（ui 1.12 线）+ material3 1.5.0-alpha28；navigation 2.9.8→**2.10.1**；lifecycle 2.11.0；activity 1.13.0；core-ktx 1.19.0；androidx.hilt 1.3.0→**1.4.0**（此前锁旧注释同步改写）；Coil 3.4.0→**3.6.2**；**compileSdk 36→37**（KotlinAndroid.kt ANDROID_COMPILE_SDK 单源+注释写明依据：Android 17 于 2026-06-16 稳定、AGP 9.2.1 支持上限 37、2026-08 wave AAR 硬门禁）。targetSdk 36/minSdk 26 按 memo 策略不动。**源码零迁移**（新栈下全量编译通过，executor 超时前的版本面改动即全部所需）。
+- **环境插曲记档**：compileSdk 37 触发 AGP 自动下载 SDK Platform 37.0 组件，JVM 下载通道在传输中死亡（连接被掐、进程空转无 TCP），主代理改 curl 直拉官方 `platform-37.0_r02.zip`（67MB 校验解压）手动装入 `Sdk/platforms/android-37.0` 后编译通过——教训记档：大文件自动下载在本网络不可靠，SDK 组件缺失时优先 curl 手动装。
+- **门禁全绿**：:app:assembleDebug + assembleRelease（R8 链）+ 全模块 test + lintDebug（零 error）+ server go build 零影响；模拟器冒烟待终包批次统一做。
+- **Step4（内置 Kotlin 迁移撤 android.builtInKotlin/newDsl 两个官方临时 flag）判为缓项**：`:sdk` 生成物是纯 JVM 模块、无论如何必须保留 KGP kotlin("jvm")，全量迁内置 Kotlin 的收益只剩撤两个 flag，而风险集中在 build-logic convention 与 Hilt/KSP 插件在内置 Kotlin 下的交互（官方迁移文档未覆盖 :sdk 这类混合形态）——按「改动最小」纪律留独立基建批，两个 flag 维持现状（官方声明的合法过渡路径）。
+- **台账**：#47（AGP9 基座升级）Step1/2/3 全部落地，本笔可核销；剩余=Step4 缓项+targetSdk 37 评估（memo §2 单独决策项）。
+
+---
 ## fix(app): 任务U U3 用户二轮反馈批——缩放沉浸过渡平滑化+底部 Tab 切换常驻化根治闪烁（2026-09-13 第二百五十一笔）
 
 执行 AI：GLM-5.3-Flash（主代理调度+门禁修复，执行子代理×2 并行实施[文件集互斥]+研究子代理根因定位）
