@@ -3,12 +3,16 @@ package media.qimeng.app.core.data.di
 import android.content.Context
 import android.os.Build
 import android.util.Log
+import coil3.EventListener
 import coil3.ImageLoader
 import coil3.disk.DiskCache
 import coil3.disk.directory
 import coil3.gif.AnimatedImageDecoder
 import coil3.gif.GifDecoder
 import coil3.memory.MemoryCache
+import coil3.network.okhttp.OkHttpNetworkFetcherFactory
+import coil3.request.ErrorResult
+import coil3.request.ImageRequest
 import coil3.request.crossfade
 import coil3.request.allowHardware
 import dagger.Module
@@ -22,6 +26,8 @@ import kotlinx.coroutines.runBlocking
 import media.qimeng.app.core.data.repository.CoilCacheManager
 import media.qimeng.app.core.data.repository.DiskCachePrefsRepository
 import media.qimeng.app.core.model.DiskCacheQuota
+import okhttp3.OkHttpClient
+import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
 
 /** logcat 标签（验收证据协议：grep 'QimengCache' 看缓存装配/清空痕迹）；文件级单一定义，CoilModule 与 RealCoilCacheManager 共用 */
@@ -55,6 +61,26 @@ object CoilModule {
         diskCachePrefs: DiskCachePrefsRepository,
     ): ImageLoader = ImageLoader.Builder(context)
         .components {
+            // 网络层显式装配 OkHttp 取图器（2026-09-13 用户真机 BUG-A「图片详情偶现无法解码」主修）：
+            // 不配时 coil-network-okhttp 经 service-loader 自动注册默认 OkHttpClient
+            // （无任何超时配置 → OkHttp 默认 readTimeout=10s），NAS 缩略图懒生成风暴拖慢
+            // original 流 >10s → SocketTimeoutException → onError → UI 误报「无法解码」。
+            // 口径：connect 15s / read 60s / call 0（不设总时限）——「查看永远发原件」口径下
+            // 大文件长传输是常态，读超时必须给足；ComponentRegistry 首个可处理该数据的
+            // 工厂胜出，且用户组件排在 service-loader 组件之前（RealImageLoader 装配顺序），
+            // 显式装配必然覆盖默认注册（已对 3.4.0 源码核实，非凭记忆）。
+            add(
+                OkHttpNetworkFetcherFactory(
+                    callFactory = {
+                        OkHttpClient.Builder()
+                            .connectTimeout(NETWORK_CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                            .readTimeout(NETWORK_READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                            // callTimeout=0 即 OkHttp 官方语义「不设总时限」：原件长传输不设上限
+                            .callTimeout(NETWORK_CALL_TIMEOUT_DISABLED, TimeUnit.SECONDS)
+                            .build()
+                    },
+                ),
+            )
             // GIF 解码分档（Coil 官方建议）：API 28+ 用 AnimatedImageDecoder（硬件加速逐帧），
             // 26/27 回退 GifDecoder（软件解码；minSdk 26 全覆盖，lint NewApi 亦要求显式分档）
             if (Build.VERSION.SDK_INT >= 28) {
@@ -87,6 +113,14 @@ object CoilModule {
         // Coil 官方 FAQ 口径）；静态图无需 crossfade（列表滚动场景，旧版同款）
         .allowHardware(false)
         .crossfade(false)
+        // 全局错误可观测性（同上 BUG-A 修因配套）：onError 只记 Throwable 类名进 logcat，
+        // 供区分「解码失败」与「网络超时/断流」；不改变请求自身的 onError UI 行为。
+        // EventListener（coil3）除 onError 外全部有默认实现，匿名对象只覆写 onError 即可。
+        .eventListener(object : EventListener() {
+            override fun onError(request: ImageRequest, result: ErrorResult) {
+                Log.w(CACHE_LOG_TAG, "图片加载失败 throwable=${result.throwable.javaClass.name}")
+            }
+        })
         .build()
 
     /** 磁盘缓存目录名（Coil 官方示例同款 image_cache） */
@@ -94,6 +128,19 @@ object CoilModule {
 
     /** 内存缓存占最大堆比例（Coil 默认 25% 惯例档，M4-2 起沿用） */
     private const val MEMORY_CACHE_PERCENT = 0.25
+
+    /** 网络层连接超时（秒）：局域网/NAS 握手 10s（:core:network 同款）足够，略放余量。 */
+    private const val NETWORK_CONNECT_TIMEOUT_SECONDS = 15L
+
+    /**
+     * 网络层读超时（秒）：两次数据到达之间的窗口而非整个传输时长。NAS 缩略图懒生成
+     * 风暴下 original 流慢（>10s 曾被默认 readTimeout 掐断，BUG-A 误报根因），给足 60s；
+     * callTimeout 已禁用，长传输不受此值截断。
+     */
+    private const val NETWORK_READ_TIMEOUT_SECONDS = 60L
+
+    /** 网络层总时限（秒）：0 = OkHttp 语义「不设总时限」（查看永远发原件，长传输是常态）。 */
+    private const val NETWORK_CALL_TIMEOUT_DISABLED = 0L
 }
 
 /** [CoilCacheManager] 实现：清空/容量委托单例 ImageLoader 的 DiskCache（容量读持久化档位） */

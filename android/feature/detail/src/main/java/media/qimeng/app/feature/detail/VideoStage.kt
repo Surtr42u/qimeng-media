@@ -2,6 +2,7 @@ package media.qimeng.app.feature.detail
 
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
+import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -51,6 +52,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import coil3.compose.AsyncImage
@@ -101,6 +103,15 @@ private const val POSTER_SWIPE_DISTANCE_DP = 60
 private const val POSTER_SWIPE_VELOCITY = 800f
 
 /**
+ * 播放失败轻提示自动隐藏时长（ms，2026-09-13 BUG-B 次修）：桥接件顶部指示器同档
+ * （TOP_INDICATOR_DELAY=1500）再放余量——错误提示需读一句文案+给出重试指引。
+ */
+private const val PLAY_FAILED_HINT_DURATION_MS = 2500L
+
+/** 播放错误 logcat 标签（Qimeng* 家族命名；真机排障 grep 用，见 handlePlayerError） */
+private const val PLAYBACK_ERROR_LOG_TAG = "QimengVideoError"
+
+/**
  * 海报态横滑切件判定（任务V V2 起 ViewPager 语义：慢拖距离达阈值 或 快甩速度达阈值，任一
  * 即切）。V1 是「距离 且 速度」双与门，慢拖（位移够、收尾速度低）被挡死不切件——用户实测
  * 复核后拍板放宽。方向取拖动符号：dragX<0=手指左滑=+1（下一件）。纯函数无 Compose 依赖，
@@ -134,6 +145,10 @@ private const val FULLSCREEN_TOGGLE_DEBOUNCE_MS = 800L
  *   媒体保留位置，再点播放走同源续播不归零（L165 同款语义）；
  * - **播放器活动态上报**：[onPlayerActiveChanged]（海报态=false，播放/暂停/ENDED=true）——
  *   DetailScreen 据此让 chrome 让位播放器自有控制器（chrome 恒隐）。
+ *
+ * 播放错误承接（2026-09-13 用户真机反馈 BUG-B 次修）：PlaybackException → 状态机回退
+ * 海报态（全屏态先退层级，均走既有状态机 API，见 [handlePlayerError]）+ 舞台顶部轻提示
+ * 「播放失败，点按重试」（detail_video_play_failed）；海报态点按即重试链路。
  *
  * 3d 接线拓扑（谁持有谁）：本舞台持有 [rememberVideoPlayerState]（ExoPlayer）与桥接视图引用；
  * VM 持节流/打点策略。回调链 = 播放器事件 → 本舞台 → DetailScreen 具名参数 → ViewModel：
@@ -199,6 +214,9 @@ internal fun VideoStage(
     var stageMode by remember { mutableStateOf(VideoStageMode.POSTER) }
     // 桥接视图引用（3d：标签 update / seek / 暂停恢复 / 当前位置都走公开面）
     var playerView by remember { mutableStateOf<BiliPlayerView?>(null) }
+    // 播放失败轻提示（2026-09-13 BUG-B 次修）：错误回海报态后短暂展示「播放失败，点按重试」，
+    // 由 handlePlayerError 置位、下方 LaunchedEffect 到点熄灭
+    var showPlayFailedHint by remember { mutableStateOf(false) }
     // 播放中镜像（进度轮询的开关；onIsPlayingChanged 主线程写入）
     var isPlaying by remember { mutableStateOf(false) }
     // G6 全屏防抖时间戳（factory 一次性闭包经 State 捕获最新值；仅算间隔不参与业务口径）
@@ -299,6 +317,14 @@ internal fun VideoStage(
         }
     }
 
+    // 播放失败轻提示自动熄灭（BUG-B 次修）：置位后到点隐藏；重复错误重复置位自然续期
+    LaunchedEffect(showPlayFailedHint) {
+        if (showPlayFailedHint) {
+            delay(PLAY_FAILED_HINT_DURATION_MS)
+            showPlayFailedHint = false
+        }
+    }
+
     // 时间轴标签（3d）：领域模型 → 桥接实体映射（timeMillis 直传；实体遗留字段
     // recordKey/fileName 填本资产标识、createdAtMillis 桥接件仅作展示来源不消费填 0；
     // timelineTagId 以列表序号占位——桥接件不消费该字段，域 id 由长按菜单经序号反查）。
@@ -385,6 +411,23 @@ internal fun VideoStage(
         machine.exitToPoster()
         stageMode = machine.mode
         onExitToChromeBrowse()
+    }
+
+    /**
+     * 播放错误承接（2026-09-13 用户真机反馈 BUG-B 次修：此前全仓无 PlaybackException
+     * 处理，prepare 失败=黑屏无提示、时长恒占位）。全部走既有状态机回退路径，不绕开：
+     * 全屏态先退层级（[VideoFullscreenStateMachine.onExitRequested]，LANDSCAPE→NONE 写
+     * 竖屏，覆盖层经自身 onDispose 序列 detach + 交还 surface），再退海报态
+     * （[VideoStageStateMachine.exitToPoster]，与返回键同链）——海报态点按即同链重试
+     * （[beginPlayback] 对 IDLE 态自动重 prepare）。播放器错误后自身即 IDLE，无需暂停；
+     * chrome 显隐由 stageMode 变化经 onPlayerActiveChanged 自然恢复。
+     */
+    fun handlePlayerError(error: PlaybackException) {
+        Log.w(PLAYBACK_ERROR_LOG_TAG, "视频播放失败 code=${error.errorCodeName}", error)
+        exitFullscreenLevel()
+        machine.exitToPoster()
+        stageMode = machine.mode
+        showPlayFailedHint = true
     }
 
     // 播放器活动期（播放/暂停/ENDED，海报态除外）拦截系统返回：先退 chrome 浏览模式再议退出
@@ -513,6 +556,9 @@ internal fun VideoStage(
                         onBookmark = { handlePlayerBookmark(this) }
                         // 长按芯片 → Compose 侧菜单（跳转/删除），域 id 由菜单对话框反查
                         onTagLongPress = { entity -> menuTag = entity }
+                        // 播放错误 → 状态机回退海报态 + 轻提示（BUG-B 次修；全屏覆盖层视图
+                        // 未接线，但其未挂时本视图听众仍在共享播放器上，错误同样经此承接）
+                        onPlayerError = { handlePlayerError(it) }
                         // 起播（内含 ENDED 回 0 口径）；此后触摸由控件手势循环接管
                         startPlayback()
                     }.also { playerView = it }
@@ -529,6 +575,26 @@ internal fun VideoStage(
                     view.setFullscreen(landscape)
                 },
             )
+        }
+
+        // 播放失败轻提示（BUG-B 次修，海报态/播放态均可能短暂驻留）：置顶覆盖的轻量
+        // Surface，观感对齐海报态「已看完」徽标（同黑底白字小字档）；文案点明可点按重试
+        //（海报态整块 clickable 起播即重试链路）
+        if (showPlayFailedHint) {
+            Surface(
+                shape = RoundedCornerShape(4.dp),
+                color = Color.Black.copy(alpha = STAGE_PLAY_SCRIM_ALPHA),
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = STAGE_WATCHED_BADGE_PADDING),
+            ) {
+                Text(
+                    text = stringResource(R.string.detail_video_play_failed),
+                    color = Color.White,
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                )
+            }
         }
     }
 

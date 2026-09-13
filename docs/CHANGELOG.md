@@ -9,6 +9,19 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## fix(app)+fix(server): 任务U U2 App 侧两 bug 清欠批——原图「无法解码」超时根修+视频时长占位与错误接线+缩略图并发闸（2026-09-13 第二百四十九笔）
+
+执行 AI：GLM-5.3-Flash（主代理调度，执行子代理实施+全量自测；主代理抽查 VideoStage hunk 归属）
+
+用户真机实测两 bug（交接清单第 9 项），研究子代理先行定位四根因，本批四项修复：
+
+- **FIX-1 原图「无法解码」主修（Coil 网络超时口径）**：CoilModule 显式装配 `OkHttpNetworkFetcherFactory(callFactory=…)`——connectTimeout=15s / **readTimeout=60s** / callTimeout=0。根因=coil-network-okhttp 3.4.0 默认 OkHttp readTimeout=10s，NAS 缩略图懒生成风暴拖慢 original 流 >10s → SocketTimeoutException 被一律当「无法解码」上覆盖层（API 经反编译 coil aar+官方 3.4.0 tag 源码核实，非凭记忆；用户组件先于 service-loader 默认装配、取首个匹配工厂=必然覆盖）。顺带 EventListener.onError 记 Throwable 类名（tag QimengCache）补可观测性。配套：core/data build.gradle.kts 补 `implementation(libs.coil.network.okhttp)`（该包此前仅 runtime 传递、编译期不可见，executor 如实记录首次编译失败与修复）。
+- **FIX-2 视频时长占位（BUG-B 主修）**：BiliPlayerView 总时长初始与「不可用」展示统一占位 **"--:--"**（companion 常量；syncTotalTimeText duration≤0 显式回占位，替换原「保持初始 00:00」路径——用户把 00:00 误读为 0 秒视频，READY 后被真实时长覆盖；PlayerMath 纯函数不动，偏离旧版口径已 KDoc 记档）。顺手清偿 onAttachedToWindow 双倍轮询（post 前 removeCallbacks）。
+- **FIX-3 播放错误接线（BUG-B 次修，此前全仓无 PlaybackException 处理）**：BiliPlayerView 增 onPlayerError 转发 → VideoStage.handlePlayerError=状态机回退（全屏先退层级 onExitRequested、再 exitToPoster，与返回键同链不绕过）+海报态顶部轻提示「视频播放失败，点按重试」2500ms 自动熄灭+Log.w（tag QimengVideoError）。海报态点按即同链重试（beginPlayback 对 IDLE 自动重 prepare）。
+- **FIX-4 缩略图懒生成并发闸（服务端侧修）**：server/internal/thumbnail 新增包级信号量（容量=runtime.GOMAXPROCS(0)，acquire(ctx) 排队不拒绝、取消可中断、defer 归还），ensureOne 在缓存命中判定后接闸（命中不耗闸位、排队不受 60s frameTimeout 约束）——消灭「每个未命中请求同步起 ffmpeg 无上限」的 CPU/磁盘争抢（即 original 被拖慢的诱因，也是「ffmpeg context canceled」日志风暴的源头）。测试：semaphore_test.go 3 例（8 goroutine 竞争容量 2 断言峰值≤容量/取消中断/容量夹紧）+ 集成测试 TestEnsureConcurrentLazyRequestsIntegration（N=8 并发 Ensure 全成功，验证接线不回归）。
+- **自测全绿**：`go test ./...` 14 包（含 4 新测试 PASS）；gradle :feature:detail/:core:data 单测 229 例 0 fail（状态机 21 例回归绿）+ :app:assembleDebug。遗留记档：全屏覆盖层视图未直接接 onPlayerError（排版态听众在共享播放器上兜底，组合缺口未来补）；错误重试从 VM 断点位置重 prepare（非失败时刻位置，位置已不可靠）。
+
+---
 ## feat(app): 任务U U1 用户实测反馈批——时间轴标记 Sheet 对齐旧版+图片缩放联动沉浸（2026-09-13 第二百四十八笔）
 
 执行 AI：GLM-5.3-Flash（主代理调度，执行子代理×2 并行实施，文件集互斥；主代理验收返工一处=快捷胶囊显示文本补 emoji 前缀）

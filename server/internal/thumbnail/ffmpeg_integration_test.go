@@ -3,6 +3,7 @@ package thumbnail
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"image"
 	"image/png"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -384,6 +386,57 @@ func TestAttachedPicIntegration(t *testing.T) {
 		t.Fatalf("extractAttachedPic: %v", err)
 	}
 	assertRedPixel(t, decodePNG(t, dst))
+}
+
+// TestEnsureConcurrentLazyRequestsIntegration 并发闸下的懒生成风暴缩样（2026-09-13
+// BUG-A 侧修的真机场景：真库首屏几十个请求同时未命中）：N 个 goroutine 并发 Ensure
+// 不同资产，经 genSlots 排队后必须全部成功、产物齐备——闸只削峰不拒绝。并发持闸
+// 峰值 ≤ 容量的语义由 semaphore_test.go 的纯结构单测锁定（真实 ffmpeg 进程内部
+// 无法安全插桩计数，此处验证接线不回归：排队不串坏结果、不产生死锁）。
+func TestEnsureConcurrentLazyRequestsIntegration(t *testing.T) {
+	requireFFmpeg(t)
+	const n = 8
+	dir := t.TempDir()
+	dataDir := filepath.Join(dir, "data")
+	gen := NewGenerator(dataDir, nil, Options{})
+	t.Cleanup(gen.Close)
+
+	// 源素材在主测试 goroutine 合成（makeSolidVideo 内部用 t.Fatalf，只允许测试主
+	// goroutine 调用）；八种纯色避开 makeSolidVideo 的同名落盘冲突。
+	colors := []string{"red", "blue", "green", "white", "black", "gray", "yellow", "orange"}
+	if len(colors) < n {
+		t.Fatalf("测试素材色不足: 需要 %d", n)
+	}
+	assets := make([]string, n)
+	for i := range assets {
+		assets[i] = makeSolidVideo(t, dir, colors[i], 1)
+	}
+
+	errs := make([]error, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			errs[i] = gen.Ensure(context.Background(),
+				fmt.Sprintf("asset-%d", i), assets[i], KindVideo, []Size{SizeGrid})
+		}(i)
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("并发 Ensure #%d 失败: %v", i, err)
+		}
+	}
+	// 产物齐备：每个资产的缩略图都应落盘且非空（布局断言与 Ensure 集成用例同源）。
+	for i := 0; i < n; i++ {
+		key := CacheKey(fmt.Sprintf("asset-%d", i), SizeGrid)
+		path := filepath.Join(dataDir, "thumbs", key[:2], key+".webp")
+		info, err := os.Stat(path)
+		if err != nil || info.Size() == 0 {
+			t.Errorf("并发闸下资产 #%d 的缩略图应存在且非空: %v", i, err)
+		}
+	}
 }
 
 // TestGeneratorEnsureIntegration 全管线端到端：三类媒体经 Ensure 落盘到

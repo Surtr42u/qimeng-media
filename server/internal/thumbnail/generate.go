@@ -138,6 +138,17 @@ func (g *Generator) ensureOne(ctx context.Context, assetID, srcPath string, kind
 		return fmt.Errorf("创建缓存目录 %s: %w", filepath.Dir(dst), err)
 	}
 
+	// 并发闸（2026-09-13 用户真机 BUG-A 侧修，见 genSlots 注释）：懒生成端点对每个
+	// 未命中请求同步起 ffmpeg，此前无上限——真库首屏几十请求 = ffmpeg 风暴，拖慢
+	// original 流（客户端 10s 读超时被掐断的诱因）。这里排队等待而非拒绝（响应慢
+	// 但不失败）；排队期间 ctx 取消（客户端断开/超时）立即中断。排队只受上游 ctx
+	// 约束、不占 frameTimeout——后者衡量的是拿到闸位后的生成全流程。缓存命中路径
+	// 不进闸（不消耗 ffmpeg 预算）；release 经 defer 保证成功/失败/panic 都归还。
+	if !genSlots.acquire(ctx) {
+		return fmt.Errorf("排队等待缩略图生成闸位时上游已取消: %w", ctx.Err())
+	}
+	defer genSlots.release()
+
 	ctx, cancel := context.WithTimeout(ctx, frameTimeout)
 	defer cancel()
 

@@ -8,6 +8,9 @@
     <!-- 3d 视频接线：已看完徽标（海报态左上角；WatchState 口径） -->
     <string name="detail_video_watched">已看完</string>
 
+    <!-- 2026-09-13 用户真机反馈 BUG-B 次修：播放错误回海报态后的轻提示（点按海报即重试） -->
+    <string name="detail_video_play_failed">视频播放失败，点按重试</string>
+
     <!-- 3d 时间轴标签：添加对话框（S1c 对齐旧版：底部弹出 Sheet + 快捷 ❤️/⭐ 点击立即添加
          + 自定义输入，无「取消」按钮；副标题带打开瞬间的位置快照）与长按菜单（跳转/删除） -->
     <string name="detail_video_tag_add_title">添加时间轴标记</string>

@@ -23,6 +23,7 @@ import androidx.core.view.isVisible
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.media3.common.C
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
@@ -70,6 +71,16 @@ import kotlin.math.min
  *      （VideoStage 映射层不再透传，TimelineTagColorsTest 反射锁定实体无该字段）。
  *      沿革=上述「服务端 color 优先」逻辑本笔删除；协议 color 字段/领域模型
  *      TimelineTag.color/服务端/Web 端一律不动。其余逐行原样。
+ *   ⑨ T1（2026-09-13 用户真机反馈 BUG-B「控制条总时长偶显 00:00」=解冻令）总时长占位
+ *      "--:--"：旧版口径「时长未就绪保持初始 00:00」在真机上被用户误读为「0 秒视频」
+ *      （旧版同窗口但就绪快未被感知）——偏离 GUIDE_UI 冻结口径的最小可读性修复，初始
+ *      文本与「时长不可用」展示统一为 [TOTAL_TIME_PLACEHOLDER]，STATE_READY 后被真实
+ *      时长覆盖；PlayerMath.totalDurationText 纯函数不动（仍以 null 表不可用），显式回
+ *      占位的口径收敛在 [syncTotalTimeText] 单点。其余逐行原样。
+ *   ⑩ T1 同窗次（BUG-B 次修）：播放错误回调 [onPlayerError]——旧版与新版此前均无
+ *      PlaybackException 处理（prepare 失败=黑屏无提示），本控件只增回调转发不改任何
+ *      既有行为；错误后的状态回退与提示由 Compose 侧 VideoStage 承接（状态机裁决）。
+ *      其余逐行原样。
  *
  * 手势冻结口径（G1~G9）：G1 竖屏单击播停/横屏单击显隐控制器；G2 横屏双击播停；
  * G3 长按 2x 松开还原（竖屏下方锁速区拖入锁定/拖出退出，长按期间禁起拖）；
@@ -116,6 +127,8 @@ class BiliPlayerView @JvmOverloads constructor(
     var onFullscreen: (() -> Unit)? = null
     var onBookmark: (() -> Unit)? = null
     var onTagLongPress: ((TimelineTagEntity) -> Unit)? = null
+    /** 播放错误上报（适配点⑩）：转发 Player.Listener.onPlayerError，状态回退/提示由 Compose 侧裁决 */
+    var onPlayerError: ((PlaybackException) -> Unit)? = null
 
     private var controllerVisible = false
     private var currentSpeed = 1f
@@ -153,6 +166,11 @@ class BiliPlayerView @JvmOverloads constructor(
                 showController(true)
             }
         }
+
+        override fun onPlayerError(error: PlaybackException) {
+            // 适配点⑩：只转发，不改变本控件任何状态（黑屏回退/提示由 Compose 侧状态机承接）
+            onPlayerError?.invoke(error)
+        }
     }
 
     private val hideControllerRunnable = Runnable { showController(false) }
@@ -166,6 +184,11 @@ class BiliPlayerView @JvmOverloads constructor(
         const val HIDE_DELAY = 5000L
         const val TOP_INDICATOR_DELAY = 1500L
         const val LONG_PRESS_SPEED = 2f
+        /**
+         * 总时长占位（适配点⑨，2026-09-13 用户反馈 BUG-B）：初始与「时长不可用」统一展示，
+         * 避免被误读为「0 秒视频」；位置 0 是真实值，currentTimeText 不用占位。
+         */
+        const val TOTAL_TIME_PLACEHOLDER = "--:--"
         /** 播放器倍速选中色（固定蓝色，深色/浅色主题下一致） */
         const val SPEED_SELECTED_COLOR = 0xFF4FC3F7.toInt()
         /** 播放器倍速弹窗背景色（固定深色，深色/浅色主题下一致） */
@@ -389,7 +412,8 @@ class BiliPlayerView @JvmOverloads constructor(
             })
         }
         totalTimeText = TextView(context).apply {
-            text = "00:00"
+            // 适配点⑨：初始即占位（旧版「初始 00:00」口径已废，见类 KDoc 与 TOTAL_TIME_PLACEHOLDER）
+            text = TOTAL_TIME_PLACEHOLDER
             setTextColor(Color.WHITE)
             textSize = 12f
         }
@@ -535,12 +559,15 @@ class BiliPlayerView @JvmOverloads constructor(
     }
 
     /**
-     * 总时长文本同步（W5 #50）：时长可用即赋值、不可用（非 READY/TIME_UNSET）保持现状，
-     * 不做清零回退。判定口径=纯函数 [totalDurationText]（单测锁定）；
-     * READY 分支与 [setPlayer] 挂载补同步共用本方法，保证单一事实源。
+     * 总时长文本同步（W5 #50 → 适配点⑨）：时长可用即赋真实时长；不可用（非 READY/
+     * TIME_UNSET）**显式回占位** "--:--"——2026-09-13 用户反馈「时长偶显 00:00 被误读为
+     * 0 秒视频」，旧版「保持初始 00:00」口径废止（初始文本也已改占位，见类 KDoc）。
+     * STATE_READY 后本方法被真实时长覆盖。判定口径=纯函数 [totalDurationText]
+     * （单测锁定，null=不可用）；READY 分支与 [setPlayer] 挂载补同步共用本方法，
+     * 保证单一事实源。
      */
     private fun syncTotalTimeText() {
-        totalDurationText(duration)?.let { totalTimeText.text = it }
+        totalTimeText.text = totalDurationText(duration) ?: TOTAL_TIME_PLACEHOLDER
     }
 
     /** 静音位/倍速的「镜像字段 + 控件 + 播放器」三处对齐（交接路径共用，防镜像与实况脱节） */
@@ -811,6 +838,10 @@ class BiliPlayerView @JvmOverloads constructor(
             // v1.15：detach 时移除的 listener 需在重新 attach 后补挂，
             // 否则视图复用场景播放/暂停图标不再更新、STATE_ENDED 不再弹控制器
             playerView.player?.addListener(playerListener)
+            // 2026-09-13 用户反馈 BUG-B 顺手清偿：setPlayer 已 post 过一轮（adopt 场景
+            // attach 晚于 setPlayer），此处再 post 会双倍轮询（200ms 步长被截半）——
+            // 先移再投保持单实例
+            removeCallbacks(updateProgressRunnable)
             post(updateProgressRunnable)
         }
     }
