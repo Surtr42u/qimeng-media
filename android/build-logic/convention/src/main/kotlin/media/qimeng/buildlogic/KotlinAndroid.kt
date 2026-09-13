@@ -20,7 +20,7 @@ internal const val ANDROID_MIN_SDK = 26
  * Android 模块公共配置：compileSdk/minSdk/Java 17 字节码 + Kotlin jvmTarget 17。
  * 与 A-S1 收敛前各模块 android{} 块逐字等价（零行为变更）。
  */
-internal fun Project.configureKotlinAndroid(commonExtension: CommonExtension<*, *, *, *, *, *>) {
+internal fun Project.configureKotlinAndroid(commonExtension: CommonExtension) {
     commonExtension.apply {
         compileSdk = ANDROID_COMPILE_SDK
 

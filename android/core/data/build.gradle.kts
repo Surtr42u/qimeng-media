@@ -12,18 +12,21 @@ plugins {
 android {
     namespace = "media.qimeng.app.core.data"
 
-    // Room schema 导出（M4-4）：KSP 插件由 convention 内部 apply（本模块无类型安全 accessor），
-    // 取官方等价的 KSP arg 通道，产物 schemas/*.json 随版本入库（取舍记录见文件头 Room 依赖注释）。
-    configure<KspExtension> {
-        arg("room.schemaLocation", "$projectDir/schemas")
-    }
-
     testOptions {
         // M4-4 行为队列单测（ViewEventQueueTest）在 JVM 走 android.jar stub：
         // 队列内的 android.util.Log 调用在 stub 上默认抛「not mocked」，此处放行为返回默认值。
         // 仅作用于本模块单元测试，不影响生产代码与其他模块。
         unitTests.isReturnDefaultValues = true
     }
+}
+
+// Room schema 导出（M4-4）：KSP 插件由 convention 内部 apply（本模块无类型安全 accessor），
+// 取官方等价的 KSP arg 通道，产物 schemas/*.json 随版本入库（取舍记录见文件头 Room 依赖注释）。
+// 注意（2026-09-13 S3 批，AGP 9.2.1）：此调用必须在 android{} 块外（project 层）——
+// AGP 9 起 CommonExtension 继承 ExtensionAware，块内裸 configure<T> 会绑定到 android 扩展的
+// 内部容器（报「Extension of type KspExtension does not exist」），语义与 AGP 8 时代等价、仅位置平移。
+configure<KspExtension> {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 dependencies {
