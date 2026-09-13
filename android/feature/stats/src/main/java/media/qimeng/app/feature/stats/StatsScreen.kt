@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -30,7 +31,7 @@ import media.qimeng.app.core.model.MostViewedEntry
 import media.qimeng.app.core.model.StatsRangeOption
 import media.qimeng.app.core.model.TrendPoint
 import media.qimeng.app.core.ui.component.Dimens
-import media.qimeng.app.core.ui.component.QimengSegPill
+import media.qimeng.app.core.ui.component.QimengSegmentedControl
 import media.qimeng.app.core.ui.component.formatBytesHumanReadable
 
 /**
@@ -70,15 +71,13 @@ fun StatsScreen(
         // Z4 批（2026-09-12 数据页字体对齐旧 stats.xml）：文案「数据」→「数据统计」+ Bold
         item { Text(text = "数据统计", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold)) }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                StatsRangeOption.entries.forEach { option ->
-                    QimengSegPill(
-                        text = option.label,
-                        selected = state.selectedRange == option,
-                        onClick = { viewModel.selectRange(option) },
-                    )
-                }
-            }
+            // 时段三档合体分段控件（2026-09-13 用户终裁对齐旧版截图：不再是三枚独立胶囊，
+            // 换 QimengSegmentedControl 连体轨道+浮丸形态，token 见组件 KDoc）
+            QimengSegmentedControl(
+                options = StatsRangeOption.entries.map { it.label },
+                selectedIndex = StatsRangeOption.entries.indexOf(state.selectedRange),
+                onSelect = { index -> viewModel.selectRange(StatsRangeOption.entries[index]) },
+            )
         }
         item { OverviewCards(state = state) }
         item {
@@ -139,12 +138,12 @@ private fun OverviewCards(state: StatsUiState) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             MetricCell(
                 title = "总浏览次数",
-                value = if (state.trendsLoading) LOADING_TEXT else state.windowViews.toDisplayText(),
+                value = if (state.trendsLoading) LOADING_TEXT else formatCountCompact(state.windowViews),
                 modifier = Modifier.weight(1f),
             )
             MetricCell(
                 title = "总播放次数",
-                value = if (state.trendsLoading) LOADING_TEXT else state.windowPlays.toDisplayText(),
+                value = if (state.trendsLoading) LOADING_TEXT else formatCountCompact(state.windowPlays),
                 modifier = Modifier.weight(1f),
             )
             MetricCell(
@@ -156,7 +155,7 @@ private fun OverviewCards(state: StatsUiState) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             MetricCell(
                 title = "总文件数",
-                value = overview?.totalFiles?.toDisplayText() ?: staticPlaceholder(state.overviewLoading),
+                value = overview?.let { formatCountCompact(it.totalFiles) } ?: staticPlaceholder(state.overviewLoading),
                 modifier = Modifier.weight(1f),
             )
             MetricCell(
@@ -184,11 +183,12 @@ private fun OverviewCards(state: StatsUiState) {
 private fun staticPlaceholder(loading: Boolean): String =
     if (loading) LOADING_TEXT else FROZEN_PLACEHOLDER_TEXT
 
-/** 单格指标卡（浅面底 + 数值 + 标题） */
+/** 单格指标卡（浅面底 + 数值 + 标题；圆角对齐旧版 bg_stat_card 20dp，见 [STAT_CARD_CORNER_RADIUS]） */
 @Composable
 private fun MetricCell(title: String, value: String, modifier: Modifier = Modifier) {
     Surface(
         color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = RoundedCornerShape(STAT_CARD_CORNER_RADIUS),
         modifier = modifier,
     ) {
         Column(
@@ -215,7 +215,7 @@ private fun MetricCell(title: String, value: String, modifier: Modifier = Modifi
  * - 点击数据点高亮 + 数值气泡：marker = [rememberTrendValueMarker]，交互 = toggleOnTap
  *   （点击显示/再点隐藏；图表区内点击被 Vico 消费，卡片其余区域点击进详情）；
  * - 点击卡片或右上「分类型趋势 ›」→ 统计详情页分类型趋势模式（GUIDE_UI L213）。
- * 渐变面积 + 折线 + 数据点，渲染层走 Vico（QimengTrendLineChart，ADR-0018）；
+ * 平涂面积 + 折线 + 空心数据点，渲染层走 Vico（QimengTrendLineChart，ADR-0018）；
  * 空数据时显示规格文案「暂无趋势数据」。
  */
 @Composable
@@ -229,6 +229,7 @@ private fun TrendCard(
     Surface(
         onClick = onOpenTypeTrend,
         color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = RoundedCornerShape(STAT_CARD_CORNER_RADIUS),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -280,6 +281,7 @@ private fun DistributionEntryCard(onOpen: () -> Unit) {
     Surface(
         onClick = onOpen,
         color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = RoundedCornerShape(STAT_CARD_CORNER_RADIUS),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Row(
@@ -323,6 +325,7 @@ private fun MostViewedCard(
     Surface(
         onClick = onOpen,
         color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = RoundedCornerShape(STAT_CARD_CORNER_RADIUS),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -371,6 +374,7 @@ private fun TopAuthorsTagsCard(
     Surface(
         onClick = onOpen,
         color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = RoundedCornerShape(STAT_CARD_CORNER_RADIUS),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -449,6 +453,12 @@ internal fun formatAvgViews(value: Double): String = trimTrailingZero(value)
 
 /** 趋势空态文案（GUIDE_UI §数据统计页规格原文） */
 private const val TREND_EMPTY_TEXT = "暂无趋势数据"
+
+/**
+ * 统计卡圆角（2026-09-13 用户终裁对齐旧版截图：旧版全部统计卡走 bg_stat_card
+ * drawable，corners=20dp 纯色填充；此前用主题默认 shape 圆角偏小）
+ */
+private val STAT_CARD_CORNER_RADIUS = 20.dp
 
 /** 趋势图固定高度（一屏内不挤压列表；纯展示尺寸） */
 private const val TREND_CHART_HEIGHT_DP = 200

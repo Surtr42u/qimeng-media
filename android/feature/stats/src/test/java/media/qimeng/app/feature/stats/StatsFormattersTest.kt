@@ -48,9 +48,9 @@ class StatsFormattersTest {
     @Test
     fun `时长四档格式化`() {
         assertEquals("59秒", formatDurationSeconds(59))
-        // 分档边界：<60 秒 / <3600 秒 / <86400 秒 / 其余
-        assertEquals("1分钟", formatDurationSeconds(60))
-        assertEquals("59分钟", formatDurationSeconds(3600 - 1))
+        // 分档边界：<60 秒 / <3600 秒 / <86400 秒 / 其余；分档后缀「分」对齐旧版（38分）
+        assertEquals("1分", formatDurationSeconds(60))
+        assertEquals("59分", formatDurationSeconds(3600 - 1))
         assertEquals("1小时", formatDurationSeconds(3600))
         assertEquals("1.5小时", formatDurationSeconds(5400))
         // 小时档四舍五入到 0.1h（23h59m59s 显示 24小时——显示格式四舍五入口径）
@@ -63,5 +63,19 @@ class StatsFormattersTest {
     fun `千分位显示`() {
         assertEquals("1,234", 1234.toDisplayText())
         assertEquals("1,234,567", 1234567L.toDisplayText())
+    }
+
+    @Test
+    fun `数字卡紧凑计数三档`() {
+        // 千位以下裸数（旧版数字卡「100」「24」同款）
+        assertEquals("0", formatCountCompact(0))
+        assertEquals("999", formatCountCompact(999))
+        // k 档 1 位小数去尾零（旧版总文件数 6339 →「6.3k」）
+        assertEquals("1k", formatCountCompact(1000))
+        assertEquals("6.3k", formatCountCompact(6339))
+        assertEquals("999.9k", formatCountCompact(999_949))
+        // M 档同式进位
+        assertEquals("1M", formatCountCompact(1_000_000))
+        assertEquals("2.5M", formatCountCompact(2_500_000))
     }
 }

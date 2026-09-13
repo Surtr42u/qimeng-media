@@ -1,7 +1,6 @@
 package media.qimeng.app.feature.detail
 
 import android.widget.Toast
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -210,18 +209,15 @@ fun DetailScreen(
         // 由 chromeVisible 改为 chromeEffective（并入 zoomImmersive），放大态 letterbox 随
         // 沉浸转黑（与「沉浸=纯黑」同口径）；与函数内 playerActive 判据幂等叠加不冲突
         //（图片态 playerActive 恒 false），视频态传参值逐位不变（zoomImmersive 恒 false）。
-        // 用户 2026-09-13 真机反馈：底色随缩放沉浸瞬时切换（主题底↔纯黑）观感生硬，改
-        // animateColorAsState 平滑过渡——动画的是「计算出的目标色」，stageBackdropColor
-        // 纯函数判定零改动（StageBackdropTest 单测不受影响）；时长同 chrome 渐显档
-        // CHROME_FADE_IN_MS（letterbox 转黑与 chrome 渐隐同期收尾，不另立魔数）
-        val stageBackdrop by animateColorAsState(
-            targetValue = stageBackdropColor(
-                chromeVisible = chromeEffective,
-                playerActive = playerActive,
-                themeBackground = MaterialTheme.colorScheme.background,
-            ),
-            animationSpec = tween(durationMillis = CHROME_FADE_IN_MS),
-            label = "stageBackdropColor",
+        // 用户 2026-09-13 晚终裁：单击进沉浸的「全屏渐变变黑」过渡取消，点击视觉对齐旧版
+        // （旧版 setChromeVisible(false) 显式 BLACK 瞬切同款）——底色直切无动画。
+        // 沿革：U3 曾按「瞬时切换观感生硬」反馈改 animateColorAsState 平滑过渡，当晚用户
+        // 否决（渐变观感不适），回退为纯函数直读。StageBackdropTest 单测不受影响（纯函数
+        // 签名与行为零变化）；chrome 条 300/220ms alpha 渐隐渐显保留（旧版 L175 alpha 显隐口径）
+        val stageBackdrop = stageBackdropColor(
+            chromeVisible = chromeEffective,
+            playerActive = playerActive,
+            themeBackground = MaterialTheme.colorScheme.background,
         )
         // 第一屏舞台高度 = 壳层内容区高度（BoxWithConstraints.maxHeight）。X1 壳层改造
         // （2026-09-12 任务X）后 detail 路由不再吃壳层 innerPadding，内容区=全屏铺开且
@@ -652,8 +648,8 @@ private fun SystemBarsImmersiveEffect(chromeVisible: Boolean) {
 // chrome 显隐渐变时长档（用户 2026-09-13 真机反馈：默认短 fade 观感近瞬隐，改显式平滑
 // 过渡；Material fade 惯例进慢出快）。模块既有动画常量均为按压反馈档（如 DetailChromeBars
 // CHROME_PRESS_ANIM_MS=100，语义不同不可复用），无冲突档可循，按同款 file-level private
-// const 风格立档；舞台底色 animateColorAsState 复用进档（见 stageBackdrop 处注）
-/** chrome 渐显档 ms（Material fade 进慢出快：进=300）——顶/底 chrome fadeIn 与舞台底色动画同用 */
+// const 风格立档（2026-09-13 晚起仅供 chrome 条渐显渐隐使用——舞台底色改瞬时直切退出此档）
+/** chrome 渐显档 ms（Material fade 进慢出快：进=300）——顶/底 chrome fadeIn */
 private const val CHROME_FADE_IN_MS = 300
 
 /** chrome 渐隐档 ms（Material fade 进慢出快：出=220）——顶/底 chrome fadeOut */
