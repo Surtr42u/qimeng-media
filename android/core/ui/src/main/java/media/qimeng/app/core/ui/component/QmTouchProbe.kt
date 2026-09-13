@@ -1,10 +1,15 @@
 package media.qimeng.app.core.ui.component
 
+import android.content.Context
 import android.util.Log
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerEvent
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * U7 相册触摸死诊断桩（QM_TOUCH）——临时诊断代码，根因定位后整组撤除。
@@ -28,7 +33,8 @@ import androidx.compose.ui.input.pointer.pointerInput
  * `// U7 触摸诊断桩 QM_TOUCH（根因定位后撤除）` … `// U7 诊断桩结束` 注释对及其间语句。
  *
  * ## 日志
- * `adb logcat -s QM_TOUCH`。层名一览：
+ * `adb logcat -s QM_TOUCH`，同时落盘 `/sdcard/Android/data/media.qimeng.app/files/qm_touch.log`
+ * （`adb pull` 取，2MB 滚动）。层名一览：
  * MAIN_TOUCH / APP_LIFECYCLE / COMPOSE_ROOT / NAVHOST_BOX / RESIDENT_BOX /
  * CURTAIN / CURTAIN_TOUCH / SHELL / ALBUM_ROOT / HOME_ROOT / STATS_ROOT /
  * SETTINGS_ROOT / ALBUM_GRID_AREA / ALBUM_CHIP / ALBUM_STATE / ALBUM_VM / PILL_CLICK。
@@ -38,13 +44,54 @@ object QmTouchProbe {
     /** logcat 过滤 tag：`adb logcat -s QM_TOUCH` */
     const val TAG = "QM_TOUCH"
 
+    /**
+     * 落盘文件（U7 诊断桩：间歇性故障复现时不一定连着 USB，logcat 缓冲会滚动丢日志——
+     * 同步写一份到应用外部专属目录，事后 `adb pull` 即可）：
+     * `/sdcard/Android/data/media.qimeng.app/files/qm_touch.log`（滚动档 .1，单文件 2MB 上限）。
+     */
+    @Volatile private var logFile: File? = null
+    private val fileLock = Any()
+    private val timeFormat = SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.US)
+
+    /** MainActivity.onCreate 调用一次；拿不到目录则静默降级为纯 logcat 模式 */
+    fun initFileLog(context: Context) {
+        try {
+            val dir = context.getExternalFilesDir(null) ?: context.filesDir
+            File(dir, "qm_touch.log").let {
+                logFile = it
+                log("INIT", "file-log ready: ${it.absolutePath}")
+            }
+        } catch (_: Throwable) {
+            logFile = null
+        }
+    }
+
     /** 绝不抛：logcat 未就绪、JVM 单测（android.util.Log 未 mock 抛 RuntimeException）等一律吞掉 */
     fun log(layer: String, msg: String) {
+        val line = "${timeFormat.format(Date())} [$layer] $msg"
         try {
-            Log.i(TAG, "[$layer] $msg")
+            Log.i(TAG, line)
+        } catch (_: Throwable) {
+        }
+        appendFile(line)
+    }
+
+    private fun appendFile(line: String) {
+        val file = logFile ?: return
+        try {
+            synchronized(fileLock) {
+                if (file.length() > FILE_ROTATE_BYTES) {
+                    val older = File(file.parentFile, "qm_touch.1.log")
+                    older.delete()
+                    file.renameTo(older)
+                }
+                file.appendText(line + "\n")
+            }
         } catch (_: Throwable) {
         }
     }
+
+    private const val FILE_ROTATE_BYTES = 2_000_000L
 }
 
 /**
