@@ -9,6 +9,19 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## fix(app): 任务U U5 五轮反馈批——详情页 chrome 渐变根修为旧版运行时纯色+统计详情页整版 1:1 复刻旧版+设置页推荐偏好「点击无反应」根修+补完分支治理（2026-09-14 第二百五十五笔）
+
+执行 AI：GLM-5.3-Flash（前一深夜会话实施+模拟器走查后未及落账，本会话主代理续做：门禁复跑+落账提交+补完第 254 笔未落地的删分支）
+
+- **详情页 chrome 条渐变根修为纯色**（用户 2026-09-13 终裁「点击视觉和旧版一致，取消渐变」的根因落地）：旧版 MediaDetailFragment.setChromeVisible 运行时是 `setBackgroundColor((0xF2 shl 24) or qmColorBg)` **纯色半透明条**，旧仓库 bg_detail_top/bottom_gradient.xml 是被运行时覆盖的死资源——Y2/I7 按 xml 复刻的上下渐变即用户反复反馈的观感源头。DetailChromeBars 删 chromeTop/BottomGradient+CHROME_GRADIENT_* 渐变件整组，改 `chromeBarTint()`=主题 background @ 0xF2/255（昼夜随主题槽位自动适配，旧版 qmColorBg 日 #FAFAFA/夜 #1A1A1A 与新主题同值）。
+- **chrome 显隐动画统一 250ms**（对齐旧版 setChromeVisible 的 View.animate() alpha 口径）：U3 的 300/220ms 进慢出快档废止，DetailScreen CHROME_FADE_IN/OUT_MS 归一 250。
+- **统计详情页整版 1:1 复刻旧版 StatsDetailFragment**（StatsDetailScreen 净增约 1100 行）：顶栏（56dp/返回 32dp/标题 18sp Bold+档位后缀陷阱#8）、摘要卡（2 列网格每格独立白卡，旧版 chunked(2) 同构）、洞察卡（「近X共浏览 N 次，停留 D」逐字）、趋势卡（类型 图片→视频→动图/来源 常规→COS 多维度多选图例，trendColor 五色运行时值逐字，单维度守卫）、排行卡（MiniProgressBar=旧版 max100 截断 coerceIn(1,100)+陷阱#11 零值；排序胶囊「按热度/按时长」=views+seconds 双榜切换，enterDetail 批次快照随排序档同源；空态占位行陷阱#12）、分布对比卡（数量/大小/浏览三指标行）。窗口聚合（总浏览/播放/停留、有浏览记录文件数 `deriveFilesWithViewRecords`=views 总数÷avg 反解+榜条数兜底）**全部经既有 /stats/trends、/stats/overview 端点派生，零新增协议端点**；新增详情页专用格式函数档（formatCountDetail 万/k、formatSizeDetail GB/MB/KB/B、formatDurationDetail 三档、formatAvgViewsDetail、rankProgressPercent——旧版 StatsFormatHelper 同款不去尾零；与主页已锁定口径分函数、注释互禁互改）。
+- **设置页推荐偏好「点击无反应」根修**：根因=GET 静默失败停在无数据中间态。MineUiState 增 prefsLoading/prefsLoadFailed 双态（与写侧 prefsApplying 分离，读/写两条生命周期），失败 Sheet 显「加载失败/重试」+在途防重；四预设行恒渲染可点（应用走 PUT 不依赖 GET 结果）；PUT 成功即持权威值并清失败态。
+- **门禁与验证**：:feature:stats/:feature:settings/:feature:detail testDebugUnitTest 全绿（本会话复跑 EXIT=0）；前一深夜会话模拟器走查截图存 `.walk/`（已入 .gitignore——含真实媒体帧不入库，同 .run-screens 纪律）。
+- **补完分支治理**：第 254 笔「本地+远程仅剩 master」实未落地（复潮=本地 3 试验分支+远程 origin/feature/liquid-glass 均在）；本笔实际删净，现本地+远程仅剩 `master`。
+- **遗留**：U5 终包未出；真机复验（chrome 纯色条观感/统计详情页复刻/推荐偏好重试态）待用户。
+
+---
 ## fix(app): 任务U U4 四轮反馈批——沉浸点击视觉回旧版瞬时切黑+数据统计页整版对齐旧版+分支治理只留 master（2026-09-13 第二百五十四笔）
 
 执行 AI：GLM-5.3-Flash（主代理直接实施与验证）

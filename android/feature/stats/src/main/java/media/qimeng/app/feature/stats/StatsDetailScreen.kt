@@ -5,26 +5,36 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.patrykandpatrick.vico.compose.cartesian.marker.rememberToggleOnTap
@@ -36,24 +46,22 @@ import media.qimeng.app.core.model.TopTagEntry
 import media.qimeng.app.core.model.detailTitleSuffix
 import media.qimeng.app.core.ui.component.Dimens
 import media.qimeng.app.core.ui.component.QimengEmptyState
-import media.qimeng.app.core.ui.component.QimengRankCard
-import media.qimeng.app.core.ui.component.QimengTopBar
+import media.qimeng.app.core.ui.icon.BackIcon
 
 /**
- * 统计详情页（任务I I3 + N4 I3b 全量接线；GUIDE_UI §统计详情页 L225-234，StatsDetailRoutes）：
- * - 顶栏动态标题 = 模式标题 + 时间范围后缀（「· 近7天/近30天/全部」，StatsRange.detailTitleSuffix）；
- * - TYPE_TREND：「类型浏览趋势」卡 +「来源浏览趋势」卡（N3 #31b 解冻：常规/COS 双系列，
- *   mediaType 单值/source 单值逐次取数拼系列），调用点自组图例行（色圆点+文字）；
- *   点击气泡含系列名（rememberTrendValueMarker）；
- * - MOST_VIEWED：「常看文件（按时长）」榜——most-viewed metric=seconds Top20（QimengRankCard 形态）；
- * - AUTHORS_TAGS：「常看作者」Top15 +「常看标签」Top10 双排行卡（GUIDE_UI v1.16 拆卡口径）；
- * - DISTRIBUTION：「类型分布对比」卡 +「来源构成对比」卡（overview sourceCounts，N3 #31b 解冻）——
- *   QimengRankCard 形态 + 相对第一名的进度条（GUIDE_UI L229）+ 前三名排名数字高亮（L247 同节）；
- * - 空态「暂无数据」（L247）。
- * 详情页跳转链（任务J J1，GUIDE_UI L218-224；REPLICATION_GAPS §3.3 裁定 7 清偿）：
- * seconds 榜条目→详情页（榜单作批次上下文，[StatsDetailViewModel.enterDetail] 写 Top20
- * 快照清单）；常看作者条目→作者集合页（真实 authorId）；常看标签条目→搜索页携词——
- * 经回调上抛壳层导航。分布行无协议内跳转落点，维持不可点击（原记档口径不变）。
+ * 统计详情页（2026-09-13 视觉复刻批：对齐旧仓库 StatsDetailFragment + fragment_stats_detail.xml
+ * 运行时形态；GUIDE_UI §统计详情页 L225-234，路由契约见 StatsDetailRoutes）：
+ * - 顶栏自绘 56dp（旧版自定义 LinearLayout，非 M3 TopAppBar）：返回钮 32dp + 标题 18sp Bold；
+ *   动态标题 = 模式标题 +「 · 近7天/近30天/全部」，分布统计详情不带后缀（陷阱#8）；
+ * - 摘要卡：2 列白卡网格（旧版 renderSummary/createSummaryCard），每格独立 20dp 圆角卡；
+ * - 洞察卡：「数据洞察」+「· 文案」条目（旧版 renderInsights；空列表不出卡）；
+ * - TYPE_TREND：类型/来源两张趋势卡（胶囊多选 + 图例 + 240dp 折线）；
+ * - MOST_VIEWED：「常看排行」卡 + 按热度/按时长排序胶囊（双榜取数，[StatsDetailViewModel.toggleFilesSort]）；
+ * - AUTHORS_TAGS：常看作者 Top15 + 常看标签 Top10 双排行卡；
+ * - DISTRIBUTION：类型/来源两张分布对比卡（行标签 + 数量/大小/浏览三指标）；
+ * - 排行行 = 独立白卡：名次列 28dp 前三名 primary 高亮 + 进度条 accent 灰（陷阱#7）；
+ *   空态占位行名次「—」不可点（陷阱#12）。
+ * 跳转链（任务J J1）不变：榜单条目回调上抛壳层导航，批次快照由 enterDetail 随排序档写入。
  */
 @Composable
 fun StatsDetailScreen(
@@ -64,11 +72,9 @@ fun StatsDetailScreen(
     viewModel: StatsDetailViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val filesSortByHeat by viewModel.filesSortByHeat.collectAsStateWithLifecycle()
     Column(modifier = Modifier.fillMaxSize()) {
-        QimengTopBar(
-            title = "${viewModel.mode.title} · ${viewModel.range.detailTitleSuffix}",
-            onBack = onBack,
-        )
+        DetailTopBar(title = detailTitle(viewModel.mode, viewModel.range), onBack = onBack)
         when {
             state.loading -> Text(
                 text = LOADING_TEXT,
@@ -78,48 +84,80 @@ fun StatsDetailScreen(
             state.loadFailed || state.isEmpty -> QimengEmptyState(text = EMPTY_TEXT)
             else -> LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                    horizontal = Dimens.ScreenPadding,
-                    vertical = Dimens.ScreenPadding,
-                ),
-                verticalArrangement = Arrangement.spacedBy(Dimens.ScreenPadding),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(Dimens.ScreenPadding),
+                verticalArrangement = Arrangement.spacedBy(SECTION_SPACING_DP.dp),
             ) {
                 when (viewModel.mode) {
                     StatsDetailMode.TYPE_TREND -> {
-                        item { TypeTrendCard(series = state.typeSeries, labels = state.trendLabels) }
                         item {
-                            SourceTrendCard(series = state.sourceSeries, labels = state.trendLabels)
+                            DetailTrendCard(
+                                title = TYPE_TREND_CARD_TITLE,
+                                dimensions = TYPE_TREND_DIMENSIONS,
+                                seriesValuesByKey = state.typeSeries.associate { it.mediaType to it.values },
+                                labels = state.trendLabels,
+                            )
+                        }
+                        item {
+                            DetailTrendCard(
+                                title = SOURCE_TREND_CARD_TITLE,
+                                dimensions = SOURCE_TREND_DIMENSIONS,
+                                seriesValuesByKey = state.sourceSeries.associate { it.mediaType to it.values },
+                                labels = state.trendLabels,
+                            )
                         }
                     }
                     StatsDetailMode.MOST_VIEWED -> {
+                        item { SummaryGrid(cells = mostViewedSummaryCells(state)) }
+                        item { InsightCard(lines = mostViewedInsightLines(state, viewModel.range)) }
                         item {
-                            SecondsRankingCard(
-                                entries = state.secondsRanking,
-                                onEntryClick = { entry ->
-                                    // 榜单作批次上下文（J1）：Top20 快照清单先写再导航
+                            RankingCard(
+                                title = FILES_RANK_CARD_TITLE,
+                                subtitle = "共 ${state.filesWithViewRecords} 个有浏览记录的文件",
+                                rows = mostViewedRankRows(state, filesSortByHeat) { entry ->
+                                    // 榜单作批次上下文（J1）：先写快照清单再导航
                                     viewModel.enterDetail(entry.assetId)
                                     onOpenAsset(entry.assetId)
                                 },
+                                sortToggleText = if (filesSortByHeat) SORT_BY_HEAT_TEXT else SORT_BY_SECONDS_TEXT,
+                                onSortToggle = viewModel::toggleFilesSort,
                             )
                         }
                     }
                     StatsDetailMode.AUTHORS_TAGS -> {
+                        item { SummaryGrid(cells = authorsTagsSummaryCells(state)) }
+                        item { InsightCard(lines = authorsTagsInsightLines(state)) }
                         item {
-                            AuthorsRankingCard(
-                                entries = state.topAuthors,
-                                onEntryClick = { entry -> onOpenAuthor(entry.authorId, entry.displayName) },
+                            RankingCard(
+                                title = AUTHORS_CARD_TITLE,
+                                subtitle = AUTHORS_CARD_SUBTITLE,
+                                rows = authorRankRows(state) { entry -> onOpenAuthor(entry.authorId, entry.displayName) },
                             )
                         }
                         item {
-                            TagsRankingCard(
-                                entries = state.topTags,
-                                onEntryClick = { entry -> onOpenTagSearch(entry.tag) },
+                            RankingCard(
+                                title = TAGS_CARD_TITLE,
+                                subtitle = TAGS_CARD_SUBTITLE,
+                                rows = tagRankRows(state) { entry -> onOpenTagSearch(entry.tag) },
                             )
                         }
                     }
                     StatsDetailMode.DISTRIBUTION -> {
-                        item { TypeDistributionCard(entries = state.distribution) }
-                        item { SourceDistributionCard(entries = state.sourceDistribution) }
+                        item { SummaryGrid(cells = distributionSummaryCells(state)) }
+                        item { InsightCard(lines = distributionInsightLines(state, viewModel.range)) }
+                        item {
+                            DistributionCard(
+                                title = TYPE_DISTRIBUTION_CARD_TITLE,
+                                subtitle = TYPE_DISTRIBUTION_CARD_SUBTITLE,
+                                rows = typeDistributionRows(state),
+                            )
+                        }
+                        item {
+                            DistributionCard(
+                                title = SOURCE_DISTRIBUTION_CARD_TITLE,
+                                subtitle = SOURCE_DISTRIBUTION_CARD_SUBTITLE,
+                                rows = sourceDistributionRows(state),
+                            )
+                        }
                     }
                 }
             }
@@ -127,311 +165,847 @@ fun StatsDetailScreen(
     }
 }
 
-/**
- * 「类型浏览趋势」卡：多系列折线 + 调用点自组图例行。
- * 系列色 = M3 scheme primary/tertiary/error 三档（图片/视频/动图固定按序取色，
- * 图例与折线同源同一色表，气泡系列名反查同表）。
- */
-@Composable
-private fun TypeTrendCard(series: List<TypeTrendSeries>, labels: List<String>) {
-    val seriesColors = listOf(
-        MaterialTheme.colorScheme.primary,
-        MaterialTheme.colorScheme.tertiary,
-        MaterialTheme.colorScheme.error,
-    )
-    // 气泡系列名：折线色 → 系列名（Point.color 逐点携带系列色，反查同表）
-    val marker = rememberTrendValueMarker(
-        seriesNamesByColor = series.mapIndexedNotNull { index, typeSeries ->
-            seriesColors.getOrNull(index)?.let { color -> color to typeSeries.name }
-        }.toMap(),
-        valueSuffix = MARKER_VALUE_SUFFIX_VIEWS,
-    )
-    Surface(color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(text = "类型浏览趋势", style = MaterialTheme.typography.titleMedium)
-            // 图例行（调用点自组：色点+系列名；封装无图例能力，H3 记档的轻方案）
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                series.forEachIndexed { index, typeSeries ->
-                    LegendEntry(
-                        color = seriesColors[index % seriesColors.size],
-                        name = typeSeries.name,
-                    )
-                }
-            }
-            QimengTrendLineChart(
-                series = series.map { QimengTrendSeries(values = it.values) },
-                seriesColors = seriesColors,
-                xLabels = labels,
-                marker = marker,
-                markerController = CartesianMarkerController.Companion.rememberToggleOnTap(),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(DETAIL_TREND_CHART_HEIGHT_DP.dp),
-            )
-        }
-    }
-}
+// ==================== 顶栏（旧版 fragment_stats_detail.xml L14-38 同构） ====================
 
-/** 图例单项：系列色圆点 + 系列名 */
+/** 顶栏：高 56dp 水平内边距 16dp；返回钮 32x32dp（tint=onSurface 档）；标题 18sp Bold 左距 8dp。
+ *  壳层 NavHost 已 padding+consume 状态栏 inset（QimengNavHost 官方范式），此处无需再让。 */
 @Composable
-private fun LegendEntry(color: Color, name: String) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+private fun DetailTopBar(title: String, onBack: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(TOP_BAR_HEIGHT_DP.dp)
+            .padding(horizontal = Dimens.ScreenPadding),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Box(
             modifier = Modifier
-                .size(LEGEND_DOT_SIZE_DP.dp)
-                .background(color = color, shape = CircleShape),
-        )
-        Text(text = name, style = MaterialTheme.typography.labelSmall)
-    }
-}
-
-/**
- * 「类型分布对比」卡（分布模式）：QimengRankCard 榜单卡形态，逐行类型库存 +
- * 相对第一名的进度条（GUIDE_UI L229）+ 前三名排名数字主题色高亮（L248）。
- * 跳转链记档见类 KDoc——分布行无协议内跳转落点，行不可点击。
- */
-@Composable
-private fun TypeDistributionCard(entries: List<TypeStockEntry>) {
-    QimengRankCard(modifier = Modifier.fillMaxWidth()) {
-        Text(text = "类型分布对比", style = MaterialTheme.typography.titleMedium)
-        Spacer(modifier = Modifier.height(8.dp))
-        RankRows(entries)
-    }
-}
-
-/**
- * 「来源构成对比」卡（分布模式，N3 #31b 解冻）：overview 的 sourceNormalCount/sourceCosCount
- * 常规/COS 库存对比（DOMAIN_RULES §6 分区判定口径），形态与类型卡同构。
- */
-@Composable
-private fun SourceDistributionCard(entries: List<TypeStockEntry>) {
-    QimengRankCard(modifier = Modifier.fillMaxWidth()) {
-        Text(text = "来源构成对比", style = MaterialTheme.typography.titleMedium)
-        Spacer(modifier = Modifier.height(8.dp))
-        RankRows(entries)
-    }
-}
-
-/** 排行行组（相对第一名进度条；空表显示空态行——卡不因空数据只剩标题） */
-@Composable
-private fun RankRows(entries: List<TypeStockEntry>) {
-    if (entries.isEmpty() || entries.all { it.count == 0 }) {
+                .size(BACK_BUTTON_SIZE_DP.dp)
+                .clickable(onClick = onBack),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = BackIcon,
+                contentDescription = "返回",
+                tint = MaterialTheme.colorScheme.onSurface,
+            )
+        }
         Text(
-            text = EMPTY_TEXT,
-            style = MaterialTheme.typography.bodyMedium,
+            text = title,
+            fontSize = TOP_BAR_TITLE_SP.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(start = 8.dp),
+        )
+    }
+}
+
+/** 顶栏动态标题：模式标题 + 档位后缀；分布统计详情不带后缀（陷阱#8，旧版 observeDistributionMode 逐字）。
+ *  TYPE_TREND 标题「类型浏览趋势」逐字取旧版（enum.title「分类型趋势」是入口卡文案，与旧版顶栏不同字） */
+private fun detailTitle(mode: StatsDetailMode, range: StatsRangeOption): String = when (mode) {
+    StatsDetailMode.TYPE_TREND -> "$TYPE_TREND_CARD_TITLE · ${range.detailTitleSuffix}"
+    StatsDetailMode.MOST_VIEWED -> "${mode.title} · ${range.detailTitleSuffix}"
+    StatsDetailMode.AUTHORS_TAGS -> "${mode.title} · ${range.detailTitleSuffix}"
+    StatsDetailMode.DISTRIBUTION -> DISTRIBUTION_DETAIL_TITLE
+}
+
+// ==================== 通用卡容器与摘要/洞察（旧版 bg_stat_card + renderSummary/renderInsights） ====================
+
+/** 统计卡容器：纯白 surface 槽位（=旧 qmColorSurface #FFFFFF，Theme.kt 映射）+ 20dp 圆角 + 12dp 内边距 */
+@Composable
+private fun StatCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(STAT_CARD_CORNER_RADIUS_DP),
+        modifier = modifier,
+    ) {
+        Column(modifier = Modifier.padding(12.dp), content = content)
+    }
+}
+
+/** 摘要格数据（旧版 SummaryItem 同构） */
+private data class SummaryCellUi(val label: String, val value: String)
+
+/** 摘要卡：2 列网格，列间 4dp 行间 8dp；每格独立白卡（旧版 renderSummary chunked(2) 同构） */
+@Composable
+private fun SummaryGrid(cells: List<SummaryCellUi>) {
+    if (cells.isEmpty()) return
+    Column(verticalArrangement = Arrangement.spacedBy(SUMMARY_ROW_SPACING_DP.dp)) {
+        cells.chunked(SUMMARY_GRID_COLUMNS).forEach { rowCells ->
+            Row(horizontalArrangement = Arrangement.spacedBy(SUMMARY_COLUMN_SPACING_DP.dp)) {
+                rowCells.forEach { cell -> SummaryCellCard(cell = cell, modifier = Modifier.weight(1f)) }
+                // 奇数项末行右侧占位（旧版 placeholder weight=1 同款，保持左格等宽）
+                if (rowCells.size < SUMMARY_GRID_COLUMNS) Spacer(modifier = Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+/** 摘要格：数值 18sp Bold primary 色 + 标签 11sp 次色（旧版 createSummaryCard 同款） */
+@Composable
+private fun SummaryCellCard(cell: SummaryCellUi, modifier: Modifier = Modifier) {
+    StatCard(modifier = modifier) {
+        Text(
+            text = cell.value,
+            fontSize = SUMMARY_VALUE_SP.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        Text(
+            text = cell.label,
+            fontSize = SUMMARY_LABEL_SP.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        return
     }
-    val maxCount = entries.maxOf { it.count }.coerceAtLeast(1)
-    entries.forEachIndexed { index, entry ->
-        RankRow(
-            rank = index + 1,
-            name = entry.name,
-            count = entry.count,
-            progress = entry.count.toFloat() / maxCount,
+}
+
+/** 洞察卡：标题 14sp Bold +「· 文案」12sp 次色条目间 6dp（旧版 renderInsights 同款；空列表不出卡） */
+@Composable
+private fun InsightCard(lines: List<String>) {
+    if (lines.isEmpty()) return
+    StatCard(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = INSIGHT_TITLE,
+            fontSize = CARD_TITLE_SP.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
         )
+        lines.forEach { line ->
+            Text(
+                text = "· $line",
+                fontSize = INSIGHT_ITEM_SP.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = INSIGHT_ITEM_SPACING_DP.dp),
+            )
+        }
     }
 }
+
+// ==================== 趋势卡（旧版 buildTrendCard/buildTrendCapsuleRow 同构） ====================
+
+/** 趋势维度（key=协议值，色=旧版 trendColor 运行时值逐字：图片/视频/动图/常规/COS 五档） */
+private data class TrendDimension(val key: String, val label: String, val color: Color)
+
+/** 类型趋势卡维度与系列顺序（图片→视频→动图，旧版 buildTypeSeries 逐字） */
+private val TYPE_TREND_DIMENSIONS = listOf(
+    TrendDimension(KEY_MEDIA_TYPE_IMAGE, IMAGE_DISPLAY_NAME, Color(0xFF4FC3F7)),
+    TrendDimension(KEY_MEDIA_TYPE_VIDEO, VIDEO_DISPLAY_NAME, Color(0xFFFF8A65)),
+    TrendDimension(KEY_MEDIA_TYPE_ANIMATED, ANIMATED_DISPLAY_NAME, Color(0xFFAED581)),
+)
+
+/** 来源趋势卡维度与系列顺序（常规→COS，旧版 buildSourceSeries 逐字） */
+private val SOURCE_TREND_DIMENSIONS = listOf(
+    TrendDimension(KEY_SOURCE_NORMAL, SOURCE_NORMAL_DISPLAY_NAME, Color(0xFF7986CB)),
+    TrendDimension(KEY_SOURCE_COS, SOURCE_COS_DISPLAY_NAME, Color(0xFFF06292)),
+)
 
 /**
- * 「常看文件（按时长）」榜（MOST_VIEWED 模式）：most-viewed metric=seconds Top20——
- * 值=窗口内 dwell 秒数累计（formatDurationSeconds 人读化），相对第一名进度条；
- * 条目可点击进详情（J1 跳转链，榜单作批次上下文）。
+ * 趋势卡：标题 14sp Bold → 胶囊行（topMargin 8dp、等宽 34dp 高、选中=主色实底 onPrimary 字 /
+ * 未选=完全透明底次色字，陷阱#6）→ 图例行（色块 8x8 方形 + 间距 4dp + 10sp 次色，图宽 1/n 均分居中）
+ * → 240dp 折线图（topMargin 8dp，色随维度固定，气泡系列名按色反查）。
+ * 胶囊多选可叠加对比（旧版 toggleTrend 同语义：至少保留一项防空图）。
  */
 @Composable
-private fun SecondsRankingCard(
-    entries: List<MostViewedEntry>,
-    onEntryClick: (MostViewedEntry) -> Unit,
+private fun DetailTrendCard(
+    title: String,
+    dimensions: List<TrendDimension>,
+    seriesValuesByKey: Map<String, List<Int>>,
+    labels: List<String>,
 ) {
-    QimengRankCard(modifier = Modifier.fillMaxWidth()) {
-        Text(text = "常看文件（按时长）", style = MaterialTheme.typography.titleMedium)
-        Spacer(modifier = Modifier.height(8.dp))
-        if (entries.isEmpty()) {
-            Text(
-                text = EMPTY_TEXT,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            return@QimengRankCard
-        }
-        val maxValue = entries.maxOf { it.value }.coerceAtLeast(1)
-        entries.forEachIndexed { index, entry ->
-            RankRow(
-                rank = index + 1,
-                name = entry.fileName,
-                count = entry.value,
-                progress = entry.value.toFloat() / maxValue,
-                countText = formatDurationSeconds(entry.value.toLong()),
-                onClick = { onEntryClick(entry) },
-            )
-        }
-    }
-}
-
-/** 「常看作者」Top15 排行卡（AUTHORS_TAGS 模式）；条目点击→作者集合页（J1 跳转链） */
-@Composable
-private fun AuthorsRankingCard(
-    entries: List<TopAuthorEntry>,
-    onEntryClick: (TopAuthorEntry) -> Unit,
-) {
-    QimengRankCard(modifier = Modifier.fillMaxWidth()) {
-        Text(text = "常看作者", style = MaterialTheme.typography.titleMedium)
-        Spacer(modifier = Modifier.height(8.dp))
-        if (entries.isEmpty()) {
-            Text(
-                text = EMPTY_TEXT,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            return@QimengRankCard
-        }
-        val maxViews = entries.maxOf { it.views }.coerceAtLeast(1)
-        entries.forEachIndexed { index, entry ->
-            RankRow(
-                rank = index + 1,
-                name = entry.displayName,
-                count = entry.views,
-                progress = entry.views.toFloat() / maxViews,
-                countText = entry.views.toDisplayText() + MARKER_VALUE_SUFFIX_VIEWS,
-                onClick = { onEntryClick(entry) },
-            )
-        }
-    }
-}
-
-/** 「常看标签」Top10 排行卡（AUTHORS_TAGS 模式）；条目点击→搜索页携词（J1 跳转链） */
-@Composable
-private fun TagsRankingCard(
-    entries: List<TopTagEntry>,
-    onEntryClick: (TopTagEntry) -> Unit,
-) {
-    QimengRankCard(modifier = Modifier.fillMaxWidth()) {
-        Text(text = "常看标签", style = MaterialTheme.typography.titleMedium)
-        Spacer(modifier = Modifier.height(8.dp))
-        if (entries.isEmpty()) {
-            Text(
-                text = EMPTY_TEXT,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            return@QimengRankCard
-        }
-        val maxViews = entries.maxOf { it.views }.coerceAtLeast(1)
-        entries.forEachIndexed { index, entry ->
-            RankRow(
-                rank = index + 1,
-                name = entry.tag,
-                count = entry.views,
-                progress = entry.views.toFloat() / maxViews,
-                countText = entry.views.toDisplayText() + MARKER_VALUE_SUFFIX_VIEWS,
-                onClick = { onEntryClick(entry) },
-            )
-        }
-    }
-}
-
-/**
- * 「来源浏览趋势」卡（TYPE_TREND 模式，N3 #31b 解冻）：常规/COS 双系列折线，
- * 渲染与图例和类型卡同构（seriesColors 二档 primary/tertiary）。
- */
-@Composable
-private fun SourceTrendCard(series: List<TypeTrendSeries>, labels: List<String>) {
-    if (series.isEmpty()) return // 窗口内常规与 COS 均无浏览：不出卡（类型卡同口径）
-    val seriesColors = listOf(
-        MaterialTheme.colorScheme.primary,
-        MaterialTheme.colorScheme.tertiary,
-    )
-    val marker = rememberTrendValueMarker(
-        seriesNamesByColor = series.mapIndexedNotNull { index, sourceSeries ->
-            seriesColors.getOrNull(index)?.let { color -> color to sourceSeries.name }
-        }.toMap(),
-        valueSuffix = MARKER_VALUE_SUFFIX_VIEWS,
-    )
-    Surface(color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(text = "来源浏览趋势", style = MaterialTheme.typography.titleMedium)
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                series.forEachIndexed { index, sourceSeries ->
-                    LegendEntry(
-                        color = seriesColors[index % seriesColors.size],
-                        name = sourceSeries.name,
+    if (seriesValuesByKey.isEmpty()) return // 该卡所有维度窗口内均无数据：不出卡（轴以有数卡为准）
+    // 多选态默认全选（旧版 typeSelections/sourceSelections 初始全量同款）
+    var selectedKeys by remember { mutableStateOf(seriesValuesByKey.keys.toSet()) }
+    val capsuleDimensions = dimensions.filter { it.key in seriesValuesByKey.keys }
+    val activeDimensions = capsuleDimensions.filter { it.key in selectedKeys }
+    StatCard(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = title,
+            fontSize = CARD_TITLE_SP.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp)
+                .height(TREND_CAPSULE_HEIGHT_DP.dp),
+            horizontalArrangement = Arrangement.spacedBy(TREND_CAPSULE_GAP_DP.dp),
+        ) {
+            capsuleDimensions.forEach { dimension ->
+                val selected = dimension.key in selectedKeys
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(PILL_CORNER_RADIUS_DP))
+                        .background(if (selected) MaterialTheme.colorScheme.primary else Color.Transparent)
+                        .clickable {
+                            // 该卡至少保留一个维度（旧版 toggleTrend size==1 守卫同款）
+                            if (selected && selectedKeys.size <= 1) return@clickable
+                            selectedKeys = if (selected) selectedKeys - dimension.key else selectedKeys + dimension.key
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = dimension.label,
+                        fontSize = TREND_CAPSULE_TEXT_SP.sp,
+                        color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
-            QimengTrendLineChart(
-                series = series.map { QimengTrendSeries(values = it.values) },
-                seriesColors = seriesColors,
-                xLabels = labels,
-                marker = marker,
-                markerController = CartesianMarkerController.Companion.rememberToggleOnTap(),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(DETAIL_TREND_CHART_HEIGHT_DP.dp),
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp),
+        ) {
+            activeDimensions.forEach { dimension ->
+                // 各系列在图宽 1/n 均分、内容居中（旧版 LineChartView.drawLegend centerX=(i+0.5)/n 同构）
+                Row(
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(LEGEND_SWATCH_SIZE_DP.dp)
+                            .background(dimension.color),
+                    )
+                    Spacer(modifier = Modifier.width(LEGEND_GAP_DP.dp))
+                    Text(
+                        text = dimension.label,
+                        fontSize = LEGEND_TEXT_SP.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+        val marker = rememberTrendValueMarker(
+            seriesNamesByColor = activeDimensions.associate { it.color to it.label },
+            valueSuffix = MARKER_VALUE_SUFFIX_VIEWS,
+        )
+        QimengTrendLineChart(
+            series = activeDimensions.map { QimengTrendSeries(values = seriesValuesByKey[it.key].orEmpty()) },
+            seriesColors = activeDimensions.map { it.color },
+            xLabels = labels,
+            marker = marker,
+            markerController = CartesianMarkerController.Companion.rememberToggleOnTap(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp)
+                .height(DETAIL_TREND_CHART_HEIGHT_DP.dp),
+        )
+    }
+}
+
+// ==================== 排行卡（旧版 rankListContainer + item_rank_list.xml 同构） ====================
+
+/** 排行行数据（占位行 rank=null；进度百分比渲染时经 [rankProgressPercent] 统一算） */
+private data class RankRowUi(
+    val rank: Int?,
+    val title: String,
+    val subtitle: String?,
+    val valueText: String?,
+    val progressValue: Long,
+    val progressMax: Long,
+    val onClick: (() -> Unit)? = null,
+)
+
+/** 空态占位行（陷阱#12：名次「—」+「暂无数据」+ 无数值 + 不可点，旧版 EMPTY_PLACEHOLDER 同构） */
+private val RANK_EMPTY_ROW = RankRowUi(
+    rank = null,
+    title = EMPTY_TEXT,
+    subtitle = null,
+    valueText = null,
+    progressValue = 0,
+    progressMax = 0,
+)
+
+/**
+ * 排行卡：标题行（14sp Bold + 可选排序胶囊）→ 副标题 12sp 次色（topMargin 2dp）→
+ * 行列表（topMargin 8dp、行间 6dp）；每行独立白卡（旧版 item_rank_list 根节点 bg_stat_card 同构）。
+ */
+@Composable
+private fun RankingCard(
+    title: String,
+    subtitle: String,
+    rows: List<RankRowUi>,
+    sortToggleText: String? = null,
+    onSortToggle: (() -> Unit)? = null,
+) {
+    StatCard(modifier = Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = title,
+                fontSize = CARD_TITLE_SP.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f),
             )
+            if (sortToggleText != null && onSortToggle != null) {
+                SortCapsule(text = sortToggleText, onClick = onSortToggle)
+            }
+        }
+        Text(
+            text = subtitle,
+            fontSize = CARD_SUBTITLE_SP.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 2.dp),
+        )
+        Column(
+            modifier = Modifier.padding(top = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(RANK_ROW_SPACING_DP.dp),
+        ) {
+            (rows.ifEmpty { listOf(RANK_EMPTY_ROW) }).forEach { row -> RankRow(row = row) }
         }
     }
 }
 
 /**
- * 排行行：排名数字（前三名主题色高亮）+ 名称 + 数值 + 相对第一名进度条（countText 缺省=千分位）；
- * [onClick] 非空时整行可点击（J1 跳转链：文件→详情/作者→集合页/标签→搜索），
- * 分布行缺省 null 维持不可点击（无协议内落点）。
+ * 排行行：名次列 28dp 居中 16sp Bold（前三名 primary 其余次色，占位行不高亮）→
+ * 标题 14sp 主文字色单行省略 + 副标题 11sp 次色（空则不占位）+ 进度条（3dp 高、
+ * 轨道 surfaceVariant / 进度 accent 灰，陷阱#7）→ 右侧数值 14sp Bold primary（marginStart 8dp）。
  */
 @Composable
-private fun RankRow(
-    rank: Int,
-    name: String,
-    count: Int,
-    progress: Float,
-    countText: String = count.toDisplayText(),
-    onClick: (() -> Unit)? = null,
-) {
-    Column(modifier = Modifier
-        .fillMaxWidth()
-        .padding(vertical = 6.dp)
-        .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)) {
+private fun RankRow(row: RankRowUi) {
+    val isPlaceholder = row.rank == null
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(STAT_CARD_CORNER_RADIUS_DP),
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (row.onClick != null) Modifier.clickable(onClick = row.onClick) else Modifier),
+    ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = rank.toString(),
-                style = MaterialTheme.typography.titleSmall,
-                color = if (rank <= TOP_RANK_HIGHLIGHT) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.onSurfaceVariant,
+                text = row.rank?.toString() ?: RANK_PLACEHOLDER_TEXT,
+                fontSize = RANK_TEXT_SP.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                color = if (!isPlaceholder && row.rank <= TOP_RANK_HIGHLIGHT) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                modifier = Modifier.width(RANK_COLUMN_WIDTH_DP.dp),
             )
-            Text(
-                text = name,
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-            Text(
-                text = countText,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            Column(modifier = Modifier.weight(1f).padding(start = 10.dp)) {
+                Text(
+                    text = row.title,
+                    fontSize = ROW_TITLE_SP.sp,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (!row.subtitle.isNullOrEmpty()) {
+                    Text(
+                        text = row.subtitle,
+                        fontSize = ROW_SUBTITLE_SP.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
+                MiniProgressBar(
+                    percent = rankProgressPercent(row.progressValue, row.progressMax),
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+            }
+            if (row.valueText != null) {
+                Text(
+                    text = row.valueText,
+                    fontSize = ROW_VALUE_SP.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(start = 8.dp),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 细进度条：高 3dp、圆角 2dp、轨道=旧 qmColorSurfaceSoft 槽位（surfaceVariant）；
+ * 进度=旧 qmColorAccent 槽位——Theme.kt 把 qm_accent 映射进 secondary（浅 #6A6A6A/夜 #A8A8A8），
+ * 陷阱#7：进度条是 accent 灰不是主色。M3 LinearProgressIndicator 自带圆头与轨道间隙，
+ * 3dp 细条下形变失真，故用双 Box 平铺（旧版 layer-list clip 同构）。
+ */
+@Composable
+private fun MiniProgressBar(percent: Int, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(RANK_PROGRESS_HEIGHT_DP.dp)
+            .clip(RoundedCornerShape(RANK_PROGRESS_RADIUS_DP))
+            .background(MaterialTheme.colorScheme.surfaceVariant),
+    ) {
+        if (percent > 0) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(percent / PROGRESS_SCALE.toFloat())
+                    .height(RANK_PROGRESS_HEIGHT_DP.dp)
+                    .clip(RoundedCornerShape(RANK_PROGRESS_RADIUS_DP))
+                    .background(MaterialTheme.colorScheme.secondary),
             )
         }
-        LinearProgressIndicator(
-            progress = { progress.coerceIn(0f, 1f) },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 4.dp),
+    }
+}
+
+/** 排序切换胶囊：软灰胶囊底（surfaceVariant）+ paddingH 10dp/paddingV 4dp + 11sp primary 色 */
+@Composable
+private fun SortCapsule(text: String, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(PILL_CORNER_RADIUS_DP))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+    ) {
+        Text(text = text, fontSize = SORT_TOGGLE_TEXT_SP.sp, color = MaterialTheme.colorScheme.primary)
+    }
+}
+
+// ==================== 分布对比卡（旧版 createDistributionCard/createDistributionRow 同构） ====================
+
+/** 分布单指标（percent 渲染前算好；数量/浏览用 [rankProgressPercent] 同一口径） */
+private data class DistributionMetricUi(val name: String, val valueText: String, val percent: Int)
+
+/** 分布行：行标签 + 三指标（数量/大小/浏览）等重横排 */
+private data class DistributionRowUi(val label: String, val metrics: List<DistributionMetricUi>)
+
+/**
+ * 分布对比卡：标题 14sp Bold + 副标题 11sp 次色（topMargin 2dp）→ 逐行
+ * 行标签 13sp Bold（topMargin 12dp）→ 指标行（topMargin 6dp、等重间距 6dp）→
+ * 单指标 = 名称 10sp 次色 + 进度条（topMargin 4dp，同排行规格）+ 数值 12sp Bold primary（topMargin 2dp）。
+ */
+@Composable
+private fun DistributionCard(title: String, subtitle: String, rows: List<DistributionRowUi>) {
+    StatCard(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = title,
+            fontSize = CARD_TITLE_SP.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Text(
+            text = subtitle,
+            fontSize = CARD_SUBTITLE_SECONDARY_SP.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 2.dp),
+        )
+        rows.forEach { row ->
+            Column(modifier = Modifier.padding(top = 12.dp)) {
+                Text(
+                    text = row.label,
+                    fontSize = DISTRIBUTION_LABEL_SP.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(DISTRIBUTION_METRIC_GAP_DP.dp),
+                ) {
+                    row.metrics.forEach { metric ->
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = metric.name,
+                                fontSize = DISTRIBUTION_METRIC_NAME_SP.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            MiniProgressBar(
+                                percent = metric.percent,
+                                modifier = Modifier.padding(top = 4.dp),
+                            )
+                            Text(
+                                text = metric.valueText,
+                                fontSize = DISTRIBUTION_METRIC_VALUE_SP.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(top = 2.dp),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ==================== 模式内容装配（旧版 renderFavorites/renderAuthorsTags/renderDistribution 数据口径） ====================
+
+/** 档位 → 洞察行「近X」用字（旧版 rangeLabel 逐字：7天/30天/全部时间，注意「全部时间」非「全部」） */
+private fun rangeLabel(range: StatsRangeOption): String = when (range) {
+    StatsRangeOption.SEVEN_DAYS -> "7天"
+    StatsRangeOption.THIRTY_DAYS -> "30天"
+    StatsRangeOption.ALL -> "全部时间"
+}
+
+/** 常看文件摘要格（旧版 renderFavorites renderSummary 四格：总浏览/浏览时长/常看文件/平均浏览次数） */
+private fun mostViewedSummaryCells(state: StatsDetailUiState): List<SummaryCellUi> = listOf(
+    SummaryCellUi("总浏览", formatCountDetail(state.windowViewCount + state.windowPlayCount)),
+    SummaryCellUi("浏览时长", formatDurationDetail(state.windowSeconds)),
+    SummaryCellUi("常看文件", formatCountDetail(state.filesWithViewRecords)),
+    SummaryCellUi(
+        "平均浏览次数",
+        // 旧版恒 "%.1f"（无数据给 0.0）；协议分母 0 → null，与主页同语义给「—」占位
+        state.overviewValues?.avgViewsPerFile?.let { formatAvgViewsDetail(it) } ?: DETAIL_UNAVAILABLE_TEXT,
+    ),
+)
+
+/** 常看文件洞察行（旧版逐字：「近X共浏览 N 次，停留 D」） */
+private fun mostViewedInsightLines(state: StatsDetailUiState, range: StatsRangeOption): List<String> = listOf(
+    "近${rangeLabel(range)}共浏览 ${state.windowViewCount + state.windowPlayCount} 次，" +
+        "停留 ${formatDurationDetail(state.windowSeconds)}",
+)
+
+/**
+ * 常看文件排行行（旧版热度/时长双档同构）：
+ * 按热度=views 榜（值「N 次」，副标题「浏览 N 次 · 停留 D」）；按时长=seconds 榜（值=人读时长，
+ * 副标题「浏览 N 次」）。停留时长按 assetId 从 seconds 榜 join——协议无单文件 dwell 直出，
+ * Top20 之外的文件 join 不到则省略「· 停留」段（记档交付报告）。
+ */
+private fun mostViewedRankRows(
+    state: StatsDetailUiState,
+    sortByHeat: Boolean,
+    onEntryClick: (MostViewedEntry) -> Unit,
+): List<RankRowUi> {
+    val dwellByAsset = state.secondsRanking.associate { it.assetId to it.value }
+    val viewsByAsset = state.viewsRanking.associate { it.assetId to it.value }
+    return if (sortByHeat) {
+        val maxValue = state.viewsRanking.firstOrNull()?.value ?: 0
+        state.viewsRanking.mapIndexed { index, entry ->
+            val dwell = dwellByAsset[entry.assetId]
+            RankRowUi(
+                rank = index + 1,
+                title = entry.fileName,
+                subtitle = "浏览 ${entry.value} 次" +
+                    dwell?.takeIf { it > 0 }?.let { " · 停留 ${formatDurationDetail(it.toLong())}" }.orEmpty(),
+                valueText = "${entry.value} 次",
+                progressValue = entry.value.toLong(),
+                progressMax = maxValue.toLong(),
+                onClick = { onEntryClick(entry) },
+            )
+        }
+    } else {
+        val maxValue = state.secondsRanking.firstOrNull()?.value ?: 0
+        state.secondsRanking.mapIndexed { index, entry ->
+            RankRowUi(
+                rank = index + 1,
+                title = entry.fileName,
+                subtitle = "浏览 ${viewsByAsset[entry.assetId] ?: 0} 次",
+                valueText = formatDurationDetail(entry.value.toLong()),
+                progressValue = entry.value.toLong(),
+                progressMax = maxValue.toLong(),
+                onClick = { onEntryClick(entry) },
+            )
+        }
+    }
+}
+
+/** 常看作者与标签摘要格（旧版 renderAuthorsTags 四格：作者/标签/浏览总次数/Top 作者） */
+private fun authorsTagsSummaryCells(state: StatsDetailUiState): List<SummaryCellUi> = listOf(
+    // 作者/标签计数=榜条数（协议只回 Top N，窗口内全量计数无直出字段——不足记档交付报告）
+    SummaryCellUi("作者", formatCountDetail(state.topAuthors.size)),
+    SummaryCellUi("标签", formatCountDetail(state.topTags.size)),
+    SummaryCellUi("浏览总次数", formatCountDetail(state.windowViewCount + state.windowPlayCount)),
+    SummaryCellUi("Top 作者", state.topAuthors.firstOrNull()?.displayName ?: DETAIL_UNAVAILABLE_TEXT),
+)
+
+/** 常看作者与标签洞察行（旧版逐字：「最常看作者「X」，浏览 N 次」/「最常看标签「Y」，浏览 M 次」） */
+private fun authorsTagsInsightLines(state: StatsDetailUiState): List<String> = buildList {
+    state.topAuthors.firstOrNull()?.let { add("最常看作者「${it.displayName}」，浏览 ${it.views} 次") }
+    state.topTags.firstOrNull()?.let { add("最常看标签「${it.tag}」，浏览 ${it.views} 次") }
+}
+
+/** 常看作者排行行（旧版同构：副标题「作者」、值「N 次」、进度相对第一名） */
+private fun authorRankRows(
+    state: StatsDetailUiState,
+    onEntryClick: (TopAuthorEntry) -> Unit,
+): List<RankRowUi> {
+    val maxValue = state.topAuthors.firstOrNull()?.views ?: 0
+    return state.topAuthors.mapIndexed { index, entry ->
+        RankRowUi(
+            rank = index + 1,
+            title = entry.displayName,
+            subtitle = "作者",
+            valueText = "${entry.views} 次",
+            progressValue = entry.views.toLong(),
+            progressMax = maxValue.toLong(),
+            onClick = { onEntryClick(entry) },
         )
     }
 }
 
-/** 详情页趋势图固定高度（GUIDE_UI：详情页折线图 240dp 档） */
+/** 常看标签排行行（旧版同构：副标题「标签」） */
+private fun tagRankRows(
+    state: StatsDetailUiState,
+    onEntryClick: (TopTagEntry) -> Unit,
+): List<RankRowUi> {
+    val maxValue = state.topTags.firstOrNull()?.views ?: 0
+    return state.topTags.mapIndexed { index, entry ->
+        RankRowUi(
+            rank = index + 1,
+            title = entry.tag,
+            subtitle = "标签",
+            valueText = "${entry.views} 次",
+            progressValue = entry.views.toLong(),
+            progressMax = maxValue.toLong(),
+            onClick = { onEntryClick(entry) },
+        )
+    }
+}
+
+/** 分布摘要格 8 项（旧版 renderDistribution renderSummary 逐字：图片/视频/动图各含整数百分比、
+ *  常规 / COS、图片总大小、视频总大小、总占用、窗口浏览；百分比=整数除法 count*100/total） */
+private fun distributionSummaryCells(state: StatsDetailUiState): List<SummaryCellUi> {
+    val overview = state.overviewValues ?: return emptyList()
+    val total = overview.totalFiles.coerceAtLeast(1)
+    val animatedCount = (overview.totalFiles - overview.imageCount - overview.videoCount).coerceAtLeast(0)
+    val windowViews = state.typeWindowViews.values.sum()
+    return listOf(
+        SummaryCellUi(IMAGE_DISPLAY_NAME, "${overview.imageCount} (${overview.imageCount * 100 / total}%)"),
+        SummaryCellUi(VIDEO_DISPLAY_NAME, "${overview.videoCount} (${overview.videoCount * 100 / total}%)"),
+        SummaryCellUi(ANIMATED_DISPLAY_NAME, "$animatedCount (${animatedCount * 100 / total}%)"),
+        SummaryCellUi(
+            "常规 / COS",
+            "${overview.sourceNormalCount} / ${overview.sourceCosCount}",
+        ),
+        // 协议 overview 无分类型大小直出（仅 totalSizeBytes），「—」占位保 8 格布局（记档交付报告）
+        SummaryCellUi("图片总大小", DETAIL_UNAVAILABLE_TEXT),
+        SummaryCellUi("视频总大小", DETAIL_UNAVAILABLE_TEXT),
+        SummaryCellUi("总占用", formatSizeDetail(overview.totalSizeBytes)),
+        SummaryCellUi("窗口浏览", formatCountDetail(windowViews)),
+    )
+}
+
+/** 分布洞察行（旧版逐字：类型浏览行恒出；COS 行仅 cosCount>0 时出） */
+private fun distributionInsightLines(state: StatsDetailUiState, range: StatsRangeOption): List<String> {
+    val overview = state.overviewValues ?: return emptyList()
+    val total = overview.totalFiles.coerceAtLeast(1)
+    val imageViews = state.typeWindowViews[KEY_MEDIA_TYPE_IMAGE] ?: 0
+    val videoViews = state.typeWindowViews[KEY_MEDIA_TYPE_VIDEO] ?: 0
+    val animatedViews = state.typeWindowViews[KEY_MEDIA_TYPE_ANIMATED] ?: 0
+    return buildList {
+        add("近${rangeLabel(range)}图片被浏览 $imageViews 次，视频 $videoViews 次，动图 $animatedViews 次")
+        if (overview.sourceCosCount > 0) {
+            add(
+                "COS 文件 ${overview.sourceCosCount} 个（${overview.sourceCosCount * 100 / total}%），" +
+                    "窗口浏览 ${state.sourceWindowViews[KEY_SOURCE_COS] ?: 0} 次",
+            )
+        }
+    }
+}
+
+/** 类型分布行（图片/视频/动图 × 数量/大小/浏览；最大值=行内三档各自取最大，旧版 maxCount/maxViews 同口径） */
+private fun typeDistributionRows(state: StatsDetailUiState): List<DistributionRowUi> {
+    val overview = state.overviewValues ?: return emptyList()
+    val animatedCount = (overview.totalFiles - overview.imageCount - overview.videoCount).coerceAtLeast(0)
+    return buildDistributionRows(
+        listOf(
+            Triple(IMAGE_DISPLAY_NAME, overview.imageCount, state.typeWindowViews[KEY_MEDIA_TYPE_IMAGE] ?: 0),
+            Triple(VIDEO_DISPLAY_NAME, overview.videoCount, state.typeWindowViews[KEY_MEDIA_TYPE_VIDEO] ?: 0),
+            Triple(ANIMATED_DISPLAY_NAME, animatedCount, state.typeWindowViews[KEY_MEDIA_TYPE_ANIMATED] ?: 0),
+        ),
+    )
+}
+
+/** 来源分布行（常规/COS × 数量/大小/浏览，旧版来源卡同构） */
+private fun sourceDistributionRows(state: StatsDetailUiState): List<DistributionRowUi> {
+    val overview = state.overviewValues ?: return emptyList()
+    return buildDistributionRows(
+        listOf(
+            Triple(SOURCE_NORMAL_DISPLAY_NAME, overview.sourceNormalCount, state.sourceWindowViews[KEY_SOURCE_NORMAL] ?: 0),
+            Triple(SOURCE_COS_DISPLAY_NAME, overview.sourceCosCount, state.sourceWindowViews[KEY_SOURCE_COS] ?: 0),
+        ),
+    )
+}
+
+/**
+ * 分布行装配：数量/浏览进度相对本卡最大值；大小指标协议无分类型数据（仅总占用直出），
+ * 「—」+ 进度 0 占位——视觉结构按旧版保留三指标位（数据缺口记档交付报告）。
+ */
+private fun buildDistributionRows(entries: List<Triple<String, Int, Int>>): List<DistributionRowUi> {
+    val maxCount = entries.maxOf { it.second }.coerceAtLeast(1)
+    val maxViews = entries.maxOf { it.third }.coerceAtLeast(1)
+    return entries.map { (label, count, views) ->
+        DistributionRowUi(
+            label = label,
+            metrics = listOf(
+                DistributionMetricUi("数量", count.toString(), rankProgressPercent(count, maxCount)),
+                DistributionMetricUi("大小", DETAIL_UNAVAILABLE_TEXT, 0),
+                DistributionMetricUi("浏览", views.toString(), rankProgressPercent(views, maxViews)),
+            ),
+        )
+    }
+}
+
+// ==================== 常量（除注明外均对齐旧仓库 fragment_stats_detail.xml / StatsDetailFragment.kt 运行时值） ====================
+
+/** 顶栏高（旧版 L15 56dp） */
+private const val TOP_BAR_HEIGHT_DP = 56
+
+/** 返回钮边长（旧版 L20-21 32x32dp） */
+private const val BACK_BUTTON_SIZE_DP = 32
+
+/** 顶栏标题字号（旧版 L34 18sp） */
+private const val TOP_BAR_TITLE_SP = 18
+
+/** 摘要格数值字号（旧版 createSummaryCard 18sp） */
+private const val SUMMARY_VALUE_SP = 18
+
+/** 摘要格标签字号（旧版 11sp） */
+private const val SUMMARY_LABEL_SP = 11
+
+/** 摘要网格列数（旧版 chunked(2)） */
+private const val SUMMARY_GRID_COLUMNS = 2
+
+/** 摘要网格列间距（任务规格 4dp；旧版双 margin 叠加视觉为 8dp，按规格取 4） */
+private const val SUMMARY_COLUMN_SPACING_DP = 4
+
+/** 摘要网格行间距（旧版 topMargin 8dp） */
+private const val SUMMARY_ROW_SPACING_DP = 8
+
+/** 洞察条目字号（旧版 12sp） */
+private const val INSIGHT_ITEM_SP = 12
+
+/** 洞察条目间距（旧版 topMargin 6dp） */
+private const val INSIGHT_ITEM_SPACING_DP = 6
+
+/** 卡标题字号（趋势卡/排行卡/分布卡/洞察卡统一 14sp Bold） */
+private const val CARD_TITLE_SP = 14
+
+/** 排行卡副标题字号（旧版 listSubtitleText 12sp） */
+private const val CARD_SUBTITLE_SP = 12
+
+/** 分布卡副标题字号（旧版 createDistributionCard subtitle 11sp） */
+private const val CARD_SUBTITLE_SECONDARY_SP = 11
+
+/** 趋势胶囊高（旧版 L242 34dp） */
+private const val TREND_CAPSULE_HEIGHT_DP = 34
+
+/** 趋势胶囊非首项左距（旧版 L245 marginStart 6dp） */
+private const val TREND_CAPSULE_GAP_DP = 6
+
+/** 趋势胶囊文字字号（旧版 L238 12sp） */
+private const val TREND_CAPSULE_TEXT_SP = 12
+
+/** 胶囊圆角（旧版 bg_capsule_primary/bg_capsule_soft radius 100dp；Dp 非 primitive 只能用 val） */
+private val PILL_CORNER_RADIUS_DP = 100.dp
+
+/** 图例色块边长（旧版 LineChartView swatch 8x8dp 方形） */
+private const val LEGEND_SWATCH_SIZE_DP = 8
+
+/** 图例色块与文字间距（旧版 gap 4dp） */
+private const val LEGEND_GAP_DP = 4
+
+/** 图例文字字号（旧版 legendPaint textSize 10sp） */
+private const val LEGEND_TEXT_SP = 10
+
+/** 详情页趋势图固定高（旧版 L215 240dp） */
 private const val DETAIL_TREND_CHART_HEIGHT_DP = 240
 
-/** 图例色点直径（视觉调参） */
-private const val LEGEND_DOT_SIZE_DP = 8
+/** 卡片圆角（旧版 bg_stat_card corners 20dp；Dp 非 primitive 只能用 val） */
+private val STAT_CARD_CORNER_RADIUS_DP = 20.dp
 
-/** 排名前三名高亮阈值（GUIDE_UI §交互设计「排行榜前三名排名数字高亮（主题色）」） */
+/** 区块间距（旧版各容器 marginTop 12dp） */
+private const val SECTION_SPACING_DP = 12
+
+/** 排行行间距（旧版 item_rank_list marginBottom 6dp） */
+private const val RANK_ROW_SPACING_DP = 6
+
+/** 名次列宽（旧版 rankText layout_width 28dp） */
+private const val RANK_COLUMN_WIDTH_DP = 28
+
+/** 名次字号（旧版 16sp Bold） */
+private const val RANK_TEXT_SP = 16
+
+/** 行标题字号（旧版 titleText 14sp） */
+private const val ROW_TITLE_SP = 14
+
+/** 行副标题字号（旧版 subtitleText 11sp） */
+private const val ROW_SUBTITLE_SP = 11
+
+/** 行数值字号（旧版 valueText 14sp Bold） */
+private const val ROW_VALUE_SP = 14
+
+/** 排序胶囊文字字号（旧版 sortToggleText 11sp） */
+private const val SORT_TOGGLE_TEXT_SP = 11
+
+/** 进度条高（旧版 progressBar layout_height 3dp） */
+private const val RANK_PROGRESS_HEIGHT_DP = 3
+
+/** 进度条圆角（旧版 bg_rank_progress corners 2dp；Dp 非 primitive 只能用 val） */
+private val RANK_PROGRESS_RADIUS_DP = 2.dp
+
+/** 进度百分比满刻度（旧版 ProgressBar max=100） */
+private const val PROGRESS_SCALE = 100
+
+/** 排行行分布行标签字号（旧版 createDistributionRow label 13sp Bold） */
+private const val DISTRIBUTION_LABEL_SP = 13
+
+/** 分布指标横排间距（任务规格 6dp；旧版双 margin 叠加视觉为 9dp，按规格取 6） */
+private const val DISTRIBUTION_METRIC_GAP_DP = 6
+
+/** 分布指标名称字号（旧版 10sp 次色） */
+private const val DISTRIBUTION_METRIC_NAME_SP = 10
+
+/** 分布指标数值字号（旧版 12sp Bold primary） */
+private const val DISTRIBUTION_METRIC_VALUE_SP = 12
+
+/** 排名前三名高亮阈值（旧版 RankListAdapter position < 3） */
 private const val TOP_RANK_HIGHLIGHT = 3
+
+/** 分布模式协议 mediaType key（openapi MediaType 枚举三值） */
+private const val KEY_MEDIA_TYPE_IMAGE = "image"
+private const val KEY_MEDIA_TYPE_VIDEO = "video"
+private const val KEY_MEDIA_TYPE_ANIMATED = "animated_image"
+
+/** 分布模式协议 source key（openapi /stats/trends source 枚举 normal|cos） */
+private const val KEY_SOURCE_NORMAL = "normal"
+private const val KEY_SOURCE_COS = "cos"
+
+/** 类型趋势卡标题（旧版顶栏与卡标题同字） */
+private const val TYPE_TREND_CARD_TITLE = "类型浏览趋势"
+
+/** 来源趋势卡标题（旧版 buildTrendCard 逐字） */
+private const val SOURCE_TREND_CARD_TITLE = "来源浏览趋势"
+
+/** 分布对比卡标题与副标题（旧版 createDistributionCard 调用点逐字） */
+private const val TYPE_DISTRIBUTION_CARD_TITLE = "类型分布对比"
+private const val TYPE_DISTRIBUTION_CARD_SUBTITLE = "库存数量/大小 vs 窗口浏览"
+private const val SOURCE_DISTRIBUTION_CARD_TITLE = "来源分布对比"
+private const val SOURCE_DISTRIBUTION_CARD_SUBTITLE = "常规 vs COS"
+
+/** 分布模式顶栏标题（陷阱#8：不带档位后缀，旧版 observeDistributionMode 逐字） */
+private const val DISTRIBUTION_DETAIL_TITLE = "分布统计详情"
+
+/** 常看文件排行卡标题（旧版 listTitleText 逐字） */
+private const val FILES_RANK_CARD_TITLE = "常看排行"
+
+/** 作者/标签排行卡标题（旧版 tagListTitleText/listTitleText 逐字） */
+private const val AUTHORS_CARD_TITLE = "常看作者"
+private const val TAGS_CARD_TITLE = "常看标签"
+
+/** 作者/标签排行卡副标题（旧版逐字「按浏览聚合 · Top 15/10」） */
+private const val AUTHORS_CARD_SUBTITLE = "按浏览聚合 · Top 15"
+private const val TAGS_CARD_SUBTITLE = "按浏览聚合 · Top 10"
+
+/** 排序胶囊两档文案（旧版 setupFilesSortToggle 逐字） */
+private const val SORT_BY_HEAT_TEXT = "按热度"
+private const val SORT_BY_SECONDS_TEXT = "按时长"
+
+/** 洞察卡标题（旧版 renderInsights 逐字） */
+private const val INSIGHT_TITLE = "数据洞察"
+
+/** 名次占位符（旧版空态行 rankText 逐字） */
+private const val RANK_PLACEHOLDER_TEXT = "—"
+
+/** 协议缺字段占位（与主页冻结占位「—」同语义） */
+private const val DETAIL_UNAVAILABLE_TEXT = "—"
 
 /** 加载中文案 */
 private const val LOADING_TEXT = "加载中…"

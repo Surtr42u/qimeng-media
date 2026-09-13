@@ -22,10 +22,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -42,16 +40,14 @@ import media.qimeng.app.core.ui.theme.QimengDimens
 
 // ---------- 页面私有尺寸/常量档（本文件单源；来源注释随条目） ----------
 
-/** chrome 渐变不透明度（GUIDE_UI L171/313：90% 渐变到透明；旧版 xml 顶色 0xE6≈90% 同档） */
-private const val CHROME_GRADIENT_ALPHA = 0.9f
-
 /**
- * chrome 渐变浅色基色（任务Y Y2）：旧版固定暖纸色 #F2F1ED——旧仓库
- * `drawable/bg_detail_top_gradient.xml` / `bg_detail_bottom_gradient.xml` 逐字同源
- * （#E6F2F1ED→#00F2F1ED，alpha 档 = [CHROME_GRADIENT_ALPHA]）。仅浅色模式启用；
- * 夜间沿用主题化渐变（X 系拍板：旧版无 night 变体属旧版缺陷，记档不跟）。
+ * chrome 条底色不透明度（任务U U5 对齐旧版**运行时**实现）：旧版 MediaDetailFragment
+ * setChromeVisible 用 `setBackgroundColor((0xF2 shl 24) or (qmColorBg and 0x00FFFFFF))`——
+ * 纯色 0xF2≈95% 半透明条，**不是渐变**；仓库里的 bg_detail_top/bottom_gradient.xml 是被
+ * 运行时覆盖的死资源（U5 根因：此前 Y2/I7 按 xml「逐字同源」复刻成上下渐变，正是用户
+ * 反复反馈的「上下渐变视觉」源头，2026-09-13 用户终裁对齐旧版代码删除渐变）。
  */
-private val CHROME_GRADIENT_LIGHT_BASE = Color(0xFFF2F1ED)
+private const val CHROME_BAR_SOLID_ALPHA = 0xF2 / 0xFF.toFloat()
 
 /** 四胶囊图标字形边长（任务Y Y2 对齐旧版 fragment_media_detail.xml:108-144 四枚 40dp
  *  ImageView 减 9dp padding = 22dp 实际字形；全局默认 QimengDimens.IconDefaultSize=24dp
@@ -73,10 +69,9 @@ private const val CHROME_PRESSED_SCALE = 0.92f
 private const val CHROME_PRESS_ANIM_MS = 100
 
 /**
- * 顶部渐变 chrome（任务I I7，GUIDE_UI §详情页 L171）：返回（左）/ 当前序号 n/N（中）/
- * 信息（右），上浮于媒体舞台的渐变遮罩操作层（[CHROME_GRADIENT_ALPHA] 同 GUIDE 渐变档）；
- * 渐变底色：浅色=旧版固定暖纸色 [CHROME_GRADIENT_LIGHT_BASE]、夜间=主题化 background
- * （任务Y Y2 对齐旧版 bg_detail_top_gradient.xml；判别与 KDoc 同 [chromeGradient]）；
+ * 顶部 chrome（任务I I7，GUIDE_UI §详情页 L171）：返回（左）/ 当前序号 n/N（中）/
+ * 信息（右），上浮于媒体舞台的半透明操作层；底色=旧版运行时纯色档（背景色
+ * @ [CHROME_BAR_SOLID_ALPHA]，U5 根因注见常量）；
  * 图标 tint = onBackground（L161），中央计数 18sp Bold 同旧版 detailFileName 字号档。
  * 状态栏避让沿革：V2 曾撤除（2026-09-10，前提=壳层 Scaffold innerPadding 把内容区钉在
  * 状态栏线下，再加 inset padding 属双重避让）；X1 壳层改造（2026-09-12 任务X）解除 detail
@@ -96,7 +91,7 @@ internal fun DetailTopChrome(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(chromeTopGradient())
+            .background(chromeBarTint())
             // X1 恢复自管避让（2026-09-12 任务X）：壳层不再钉位，舞台盒顶=屏幕顶 y=0，
             // 不避让则返回/序号钮被状态栏时钟遮挡；顺序=渐变→inset padding（渐变铺满
             // 状态栏区域）。沉浸态 chrome 隐藏、系统栏同隐（inset 归零），互不相扰
@@ -144,8 +139,8 @@ internal fun DetailTopChrome(
  * 胶囊件结构本身不动（DetailSections.kt「四胶囊样式=现行胶囊件」拍板在案）。
  * 沿革：V3 四胶囊为「点赞N/收藏/标签/整理」（原位替换旧四纯图标行）；W3「整理」退役
  * 换「作者」——整理/删除/改名/移动入口随本批从详情页退役（后果已记档待拍板台账），
- * 作者胶囊点开 [DetailAuthorSheet]（原作者卡内容移植）。渐变遮罩浅色改旧版暖纸色
- * #F2F1ED（见 [chromeGradient]）；导航栏避让沿革：V2 曾撤除（前提=壳层内容区已钉在导航栏线下），
+ * 作者胶囊点开 [DetailAuthorSheet]（原作者卡内容移植）。遮罩底色随 U5 改旧版运行时纯色
+ * （见 [chromeBarTint]/[CHROME_BAR_SOLID_ALPHA]）；导航栏避让沿革：V2 曾撤除（前提=壳层内容区已钉在导航栏线下），
  * X1 壳层改造（2026-09-12 任务X）解除 detail 钉位后按旧版口径恢复 [Modifier.navigationBarsPadding]
  * 自管避让（GUIDE_UI L272-275），渐变底延伸到导航栏背后（K3c 背板条机制不动，胶囊在
  * 既有容器内替换）。收藏/点赞图标区分空心/实心态，激活态 =
@@ -166,7 +161,7 @@ internal fun DetailBottomChrome(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(chromeBottomGradient())
+            .background(chromeBarTint())
             // X1 恢复自管避让（2026-09-12 任务X）：壳层不再钉位，舞台盒底=屏幕底，胶囊
             // 若再不避让会压在手势导航栏上；顺序=渐变→inset padding（渐变铺满导航栏区域，
             // 旧版 bottom 渐变同观感）。沉浸态 chrome 隐藏、系统栏同隐（inset 归零），互不相扰。
@@ -261,46 +256,16 @@ internal fun DetailBottomChrome(
 }
 
 /**
- * 顶部渐变（任务Y Y2 浅色=旧版暖纸色 90%→透明 / 夜间=背景色 90%→透明，自上而下）——
- * L171 `bg_detail_top_gradient.xml` 的 Compose 等价物（判别口径见 [chromeGradient]）
+ * chrome 条底色（任务U U5，2026-09-13 用户终裁）：主题背景色纯色 @ [CHROME_BAR_SOLID_ALPHA]——
+ * 旧版运行时 `setBackgroundColor((0xF2 shl 24) | qmColorBg)` 逐字同构，昼夜随主题槽位
+ * 自动适配（旧版 qmColorBg 日 #FAFAFA / 夜 #1A1A1A，与新主题 background 同值）。
+ * 沿革：Y2/I7 曾按旧仓库 bg_detail_top/bottom_gradient.xml 复刻为上下渐变——该 drawable
+ * 是运行时被覆盖的死资源，渐变观感即用户反复反馈的不适源头，本批删除。
  */
 @Composable
-private fun chromeTopGradient(): Brush = chromeGradient(reversed = false)
+internal fun chromeBarTint(): Color =
+    MaterialTheme.colorScheme.background.copy(alpha = CHROME_BAR_SOLID_ALPHA)
 
-/**
- * 底部渐变（方向与顶部相反，自上而下）——L172 `bg_detail_bottom_gradient.xml` 的
- * Compose 等价物（判别口径见 [chromeGradient]）
- */
-@Composable
-private fun chromeBottomGradient(): Brush = chromeGradient(reversed = true)
-
-/**
- * chrome 渐变基色（任务Y Y2 分夜昼）：浅色=旧版固定暖纸色 [CHROME_GRADIENT_LIGHT_BASE]
- * （#F2F1ED，旧仓库 bg_detail_top/bottom_gradient.xml 逐字同源——主题 background
- * #FAFAFA 冷灰白与旧版暖纸色有肉眼可辨的色温差，用户真机反馈纠偏）；夜间=主题化
- * background（X 系拍板：旧版无 night 变体属旧版缺陷，记档不跟）。昼夜判别沿用
- * ButtonColors 同款口径（background 亮度，与壳层 darkTheme 覆盖解耦）；
- * alpha 档 [CHROME_GRADIENT_ALPHA] 与旧版顶色 0xE6≈90% 同构。
- */
-@Composable
-private fun chromeGradient(reversed: Boolean): Brush {
-    val tinted = if (MaterialTheme.colorScheme.background.luminance() > 0.5f) {
-        CHROME_GRADIENT_LIGHT_BASE.copy(alpha = CHROME_GRADIENT_ALPHA)
-    } else {
-        MaterialTheme.colorScheme.background.copy(alpha = CHROME_GRADIENT_ALPHA)
-    }
-    return if (reversed) {
-        Brush.verticalGradient(listOf(Color.Transparent, tinted))
-    } else {
-        Brush.verticalGradient(listOf(tinted, Color.Transparent))
-    }
-}
-
-/**
- * chrome 图标钮（IconButton + 按下缩放反馈）：GUIDE_UI L173 六按钮按下反馈
- * （ACTION_DOWN 0.92 → 回弹 1.0，100ms）的 Compose 表达——interactionSource 采按压态，
- * animateFloatAsState tween([CHROME_PRESS_ANIM_MS]) 驱动 graphicsLayer 缩放。
- */
 @Composable
 private fun ChromeIconButton(
     icon: ImageVector,

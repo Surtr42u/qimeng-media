@@ -142,12 +142,17 @@ class StatsDetailViewModelTest {
         val repository = FakeStatsRepository()
         repository.mostViewedProvider = { range, metric, limit ->
             assertEquals("7d", range)
-            assertEquals("seconds", metric)
             assertEquals(20, limit)
-            listOf(
-                MostViewedEntry("id-1", "长看.mp4", "video", null, 300),
-                MostViewedEntry("id-2", "短看.jpg", "image", null, 45),
-            )
+            // 2026-09-13 视觉复刻批：排序胶囊双榜并发，本用例只喂 seconds 档
+            if (metric == "seconds") {
+                listOf(
+                    MostViewedEntry("id-1", "长看.mp4", "video", null, 300),
+                    MostViewedEntry("id-2", "短看.jpg", "image", null, 45),
+                )
+            } else {
+                assertEquals("views", metric)
+                emptyList()
+            }
         }
         val viewModel = StatsDetailViewModel(handle(StatsDetailMode.MOST_VIEWED), repository, MediaBatchIndex())
         advanceUntilIdle()
@@ -156,6 +161,70 @@ class StatsDetailViewModelTest {
         assertEquals("长看.mp4", state.secondsRanking.first().fileName)
         assertEquals(300, state.secondsRanking.first().value)
         assertFalse(state.isEmpty)
+    }
+
+    @Test
+    fun `常看文件双榜取数与排序切换批次快照`() = runTest {
+        val repository = FakeStatsRepository().apply {
+            overviewValue = StatsOverviewValues(
+                totalFiles = 10, imageCount = 6, videoCount = 3,
+                totalSizeBytes = 1024L, todayViews = 1, totalViews = 42L,
+                avgViewsPerFile = 5.0,
+            )
+        }
+        repository.mostViewedProvider = { _, metric, _ ->
+            if (metric == "views") {
+                listOf(MostViewedEntry("v-1", "热.mp4", "video", null, 12))
+            } else {
+                listOf(MostViewedEntry("s-1", "久.mp4", "video", null, 600))
+            }
+        }
+        val batchIndex = MediaBatchIndex()
+        val viewModel = StatsDetailViewModel(handle(StatsDetailMode.MOST_VIEWED), repository, batchIndex)
+        advanceUntilIdle()
+        val state = viewModel.uiState.value
+        assertEquals(listOf("热.mp4"), state.viewsRanking.map { it.fileName })
+        assertEquals(600, state.secondsRanking.first().value)
+        assertEquals(true, viewModel.filesSortByHeat.value)
+        // 默认按热度档：批次快照=views 榜整表（「已加载=当前显示清单」）
+        viewModel.enterDetail("v-1")
+        assertEquals(listOf("v-1"), batchIndex.ids)
+        // 切到按时长档：批次快照随之换源
+        viewModel.toggleFilesSort()
+        assertEquals(false, viewModel.filesSortByHeat.value)
+        viewModel.enterDetail("s-1")
+        assertEquals(listOf("s-1"), batchIndex.ids)
+    }
+
+    @Test
+    fun `有浏览记录文件数由平均浏览反解派生`() {
+        // avg = open 总数 ÷ 有 open 记录文件数（openapi 定义）→ 反解 files = views ÷ avg
+        assertEquals(4, deriveFilesWithViewRecords(windowViews = 40, avgViewsPerFile = 10.0, fallback = 99))
+        assertEquals(3, deriveFilesWithViewRecords(windowViews = 10, avgViewsPerFile = 10.0 / 3, fallback = 99))
+        // avg 缺失/≤0（overview 失败或窗口无浏览）回落榜条数
+        assertEquals(7, deriveFilesWithViewRecords(windowViews = 40, avgViewsPerFile = null, fallback = 7))
+        assertEquals(7, deriveFilesWithViewRecords(windowViews = 40, avgViewsPerFile = 0.0, fallback = 7))
+    }
+
+    @Test
+    fun `分布模式窗口浏览按类型与来源聚合`() = runTest {
+        val repository = FakeStatsRepository().apply {
+            overviewValue = StatsOverviewValues(
+                totalFiles = 10, imageCount = 6, videoCount = 3,
+                totalSizeBytes = 2048L, todayViews = 1, totalViews = 42L,
+                sourceNormalCount = 7, sourceCosCount = 3,
+            )
+            // view+play 合计口径（旧版 aggregateDailyByType/BySource 同款）
+            trendsByType["image"] = listOf(TrendPoint("07/01", 3, 1, 0), TrendPoint("07/02", 4, 0, 0))
+            trendsByType["video"] = listOf(TrendPoint("07/01", 1, 2, 0))
+            trendsBySource["normal"] = listOf(TrendPoint("07/01", 8, 1, 0))
+        }
+        val viewModel = StatsDetailViewModel(handle(StatsDetailMode.DISTRIBUTION), repository, MediaBatchIndex())
+        advanceUntilIdle()
+        val state = viewModel.uiState.value
+        // image=3+1+4=8（view+play）；video=1+2=3；animated 空=0
+        assertEquals(mapOf("image" to 8, "video" to 3, "animated_image" to 0), state.typeWindowViews)
+        assertEquals(mapOf("normal" to 9, "cos" to 0), state.sourceWindowViews)
     }
 
     @Test
@@ -260,8 +329,9 @@ class StatsDetailViewModelTest {
         val viewModel = StatsDetailViewModel(handle(StatsDetailMode.MOST_VIEWED), repository, batchIndex)
         advanceUntilIdle()
 
+        // 切到「按时长」档（默认档=按热度，其榜由同款 fixture 另喂），批次快照=当前显示的 seconds 榜
+        viewModel.toggleFilesSort()
         viewModel.enterDetail("sec-1")
-        // 批次上下文 = seconds 榜整表（「已加载=当前显示清单」，快照式整体替换）
         assertEquals(listOf("sec-1", "sec-2", "sec-3"), batchIndex.ids)
         assertEquals(0, batchIndex.indexOf("sec-1"))
     }

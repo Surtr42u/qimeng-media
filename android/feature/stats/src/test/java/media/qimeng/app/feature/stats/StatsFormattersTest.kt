@@ -78,4 +78,61 @@ class StatsFormattersTest {
         assertEquals("1M", formatCountCompact(1_000_000))
         assertEquals("2.5M", formatCountCompact(2_500_000))
     }
+
+    // ---------- 详情页专用（2026-09-13 视觉复刻批，旧版 StatsFormatHelper 口径锁定） ----------
+
+    @Test
+    fun `详情页紧凑计数万k双档不去尾零`() {
+        // 裸数档（<1000）
+        assertEquals("0", formatCountDetail(0))
+        assertEquals("999", formatCountDetail(999))
+        // k 档 1 位小数原样（旧版 String format 不去尾零：1000 →「1.0k」）
+        assertEquals("1.0k", formatCountDetail(1000))
+        assertEquals("9.9k", formatCountDetail(9900))
+        // 万档（≥10000，与主页 k/M 口径刻意不同）
+        assertEquals("1.0万", formatCountDetail(10_000))
+        assertEquals("1.5万", formatCountDetail(15_000))
+        assertEquals("12.3万", formatCountDetail(123_456))
+    }
+
+    @Test
+    fun `详情页大小四档`() {
+        assertEquals("0B", formatSizeDetail(0))
+        assertEquals("512B", formatSizeDetail(512))
+        assertEquals("1.0KB", formatSizeDetail(1024))
+        assertEquals("1.5KB", formatSizeDetail(1536))
+        assertEquals("1.0MB", formatSizeDetail(1024L * 1024))
+        assertEquals("1.0GB", formatSizeDetail(1024L * 1024 * 1024))
+        assertEquals("2.5GB", formatSizeDetail((2.5 * 1024 * 1024 * 1024).toLong()))
+    }
+
+    @Test
+    fun `详情页停留时长三档`() {
+        // 旧版 formatDuration 逐字：0秒 / X秒 / X分X秒 / X小时X分
+        assertEquals("0秒", formatDurationDetail(0))
+        assertEquals("0秒", formatDurationDetail(-5))
+        assertEquals("45秒", formatDurationDetail(45))
+        assertEquals("59分59秒", formatDurationDetail(59L * 60 + 59))
+        assertEquals("1小时0分", formatDurationDetail(3600))
+        assertEquals("1小时23分", formatDurationDetail(3600L + 23 * 60 + 5))
+    }
+
+    @Test
+    fun `详情页平均浏览一位小数不去尾零`() {
+        assertEquals("0.0", formatAvgViewsDetail(0.0))
+        assertEquals("3.0", formatAvgViewsDetail(3.0))
+        assertEquals("3.7", formatAvgViewsDetail(3.69))
+    }
+
+    @Test
+    fun `排行进度百分比边界`() {
+        assertEquals(100, rankProgressPercent(50, 50))
+        assertEquals(50, rankProgressPercent(25, 50))
+        assertEquals(1, rankProgressPercent(1, 200)) // 下限 1%（原始 0.5% 截断为 0 后被抬到 1）
+        assertEquals(100, rankProgressPercent(60, 50)) // 上限 100%
+        // 陷阱#11：value≤0 或 max≤0 → 0（禁 coerceIn 抬成 1%、防除零）
+        assertEquals(0, rankProgressPercent(0, 50))
+        assertEquals(0, rankProgressPercent(10, 0))
+        assertEquals(0, rankProgressPercent(0, 0))
+    }
 }
