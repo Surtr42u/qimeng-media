@@ -22,13 +22,18 @@ import androidx.compose.ui.unit.sp
 import media.qimeng.app.core.ui.component.QimengTopBar
 import media.qimeng.app.core.ui.theme.QimengDimens
 
-/** 页面文案（U10-6 拍板：hub 标题「数据管理」；两行分类入口=上传文件/库管理，
- *  副文案概括各自子页承担的事——上传行指向既有上传页、库管理行指向注册/重扫/启停/删除） */
+/** 页面文案（U10-6 拍板：hub 标题「数据管理」；四行分类入口=上传文件/库管理/作者 TXT 导入/
+ *  备份导入导出——前两行副文案概括各自子页承担的事；后两行 U10-6b 追加，副文案自拟对齐
+ *  Web 文件管理页 TxtAuthorImportCard/BackupCard 语义） */
 private const val HUB_TITLE = "数据管理"
 private const val HUB_ROW_UPLOAD = "上传文件"
 private const val HUB_ROW_UPLOAD_SUBTITLE = "选择本地图片和视频上传到媒体库"
 private const val HUB_ROW_LIBRARY = "库管理"
 private const val HUB_ROW_LIBRARY_SUBTITLE = "注册媒体目录，重扫、启停与删除媒体库"
+private const val HUB_ROW_AUTHOR_TXT = "作者 TXT 导入"
+private const val HUB_ROW_AUTHOR_TXT_SUBTITLE = "导入旧项目导出的作者清单 TXT，重建作者与文件关联"
+private const val HUB_ROW_BACKUP = "备份导入导出"
+private const val HUB_ROW_BACKUP_SUBTITLE = "导出全量备份，或导入 qimeng_backup.json 恢复"
 
 /** 16dp：hub 内容水平内边距（对齐上传子页 16dp 档；区别于我的页 20dp 档） */
 private val HubContentPadding = 16.dp
@@ -36,8 +41,9 @@ private val HubContentPadding = 16.dp
 /**
  * 数据管理 hub（U10-6）：「我的」页合并入口的二级分类页。合并范围 = 服务端内容管理类
  * 功能：上传文件（复用既有 Routes.UPLOAD 页，本页只做入口跳转不搬路由）+ 库管理
- * （注册媒体目录/重扫/启停/删除）。收藏/点赞/浏览历史/作者总览为个人数据域，U10-6 拍板
- * 明确不合并。信息架构基准 = Web 文件管理页（LibraryManagePage.tsx），
+ * （注册媒体目录/重扫/启停/删除）+ 作者 TXT 导入/备份导入导出（U10-6b 追加两行，
+ * 各进独立子页）。收藏/点赞/浏览历史/作者总览为个人数据域，U10-6 拍板明确不合并。
+ * 信息架构基准 = Web 文件管理页（LibraryManagePage.tsx），
  * 视觉/交互基准 = App 上传子页（QimengTopBar + 16dp 滚动列）。
  */
 @Composable
@@ -45,6 +51,8 @@ fun DataManageScreen(
     onBack: () -> Unit,
     onOpenUpload: () -> Unit,
     onOpenLibraryManage: () -> Unit,
+    onOpenAuthorTxt: () -> Unit,
+    onOpenBackup: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxSize()) {
@@ -66,6 +74,16 @@ fun DataManageScreen(
                 label = HUB_ROW_LIBRARY,
                 subtitle = HUB_ROW_LIBRARY_SUBTITLE,
                 onClick = onOpenLibraryManage,
+            )
+            HubEntryRow(
+                label = HUB_ROW_AUTHOR_TXT,
+                subtitle = HUB_ROW_AUTHOR_TXT_SUBTITLE,
+                onClick = onOpenAuthorTxt,
+            )
+            HubEntryRow(
+                label = HUB_ROW_BACKUP,
+                subtitle = HUB_ROW_BACKUP_SUBTITLE,
+                onClick = onOpenBackup,
             )
         }
     }

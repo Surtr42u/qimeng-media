@@ -19,6 +19,16 @@ dependencies {
     implementation(project(":core:ui"))
     implementation(project(":core:data"))
 
+    // U10-6b 例外记档：备份/作者 TXT 端口签名直用生成传输模型（LegacyBackupFile/
+    // LegacyBackupImport/TxtImportResult，拍板接口），VM 与 BackupValidator 只做类型
+    // 搬运/JSON 解析，不发网络（网络仍收口 core:data Repository，铁律 7 不破）。
+    // feature→core 单向依赖于此处对 :sdk 的模型只读引用；后续若上提映射型应收回。
+    implementation(project(":sdk"))
+
+    // U10-6b：作者 TXT/备份两子页的文件选择/落盘（ActivityResultContracts，
+    // feature:settings 同款依赖；SAF 读写是屏幕层平台胶水，SettingsScreen 先例）
+    implementation(libs.androidx.activity.compose)
+
     implementation(libs.compose.material3)
     implementation(libs.compose.foundation)
     implementation(libs.compose.ui.tooling.preview)

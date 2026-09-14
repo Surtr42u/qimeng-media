@@ -103,8 +103,8 @@ object QimengDimens {
 
     /** 4dp：悬浮药丸面板内 FlowRow 纵横间隙（BVIS：旧实录 all_partition_pills.txt 行位
      *  466/568px@density3 → 行节距 102px=34dp，芯片高 30dp → 间隙 4dp；此前复用 SpaceM=8dp
-     *  实测节距 40dp 偏松。仅 QimengFloatingPillPanel 使用——QimengValuePillFlow 保持
-     *  8dp（G5 Web 基准拍板保护，走查未判差距不随动） */
+     *  实测节距 40dp 偏松。仅 QimengFloatingPillPanel 使用——QimengValuePillFlow 自
+     *  U10 追加批起对齐旧版 FlowLayout 6/4dp（VALUE_PILL_SPACING_*，QimengPills.kt） */
     val FloatingPillPanelSpacing: Dp = 4.dp
 
     /** 40dp：首页搜索框高度（旧仓库 fragment_home.xml L37，bg_capsule_soft 胶囊底同语言；

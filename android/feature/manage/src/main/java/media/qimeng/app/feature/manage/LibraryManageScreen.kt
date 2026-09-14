@@ -284,22 +284,6 @@ private fun KindBadge(label: String) {
     }
 }
 
-/** 拦截/结果横幅（点击关闭，上传页 MessageCard 同款）：error 容器=失败、tertiary 容器=成功 */
-@Composable
-private fun StatusMessageCard(text: String, container: Color, onDismiss: () -> Unit) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onDismiss() },
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.padding(CardInnerPadding),
-        )
-    }
-}
-
 /**
  * 删除二次确认弹窗（Web ConfirmDialog 同文案语义：标题带库名、正文带文件数与
  * 「索引清除/磁盘文件不动」承诺）。

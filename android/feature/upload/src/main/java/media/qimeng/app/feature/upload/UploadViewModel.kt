@@ -13,6 +13,9 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import media.qimeng.app.core.data.repository.UploadRepository
+import media.qimeng.app.core.data.upload.FolderScanPolicy
+import media.qimeng.app.core.data.upload.FolderScanResult
+import media.qimeng.app.core.data.upload.FolderScanner
 import media.qimeng.app.core.model.DirNode
 import media.qimeng.app.core.model.LibraryChoice
 import media.qimeng.app.core.model.UploadItem
@@ -44,12 +47,21 @@ data class UploadUiState(
     val creatingDir: Boolean = false,
     /** 入队请求进行中 */
     val enqueueing: Boolean = false,
+    /** 文件夹扫描进行中（U10-6c） */
+    val scanningFolder: Boolean = false,
     /** 队列实时状态（WorkManager WorkInfo 映射） */
     val queue: List<UploadQueueEntry> = emptyList(),
 ) {
     /** 队列里仍有活跃任务（排队/上传中） */
     val hasActiveWork: Boolean
         get() = queue.any { it.status == UploadStatus.QUEUED || it.status == UploadStatus.UPLOADING }
+
+    /** 队列聚合行「共 N 个 · 成功 X · 失败 Y」（空队列 null；从 queue 派生，UI 只渲染） */
+    val queueSummary: String?
+        get() = queue.takeIf { it.isNotEmpty() }?.let { entries ->
+            "共 ${entries.size} 个 · 成功 ${entries.count { it.status == UploadStatus.SUCCEEDED }}" +
+                " · 失败 ${entries.count { it.status == UploadStatus.FAILED }}"
+        }
 }
 
 /**
@@ -60,6 +72,7 @@ data class UploadUiState(
 @HiltViewModel
 class UploadViewModel @Inject constructor(
     private val uploadRepository: UploadRepository,
+    private val folderScanner: FolderScanner,
 ) : ViewModel() {
 
     private val form = MutableStateFlow(UploadUiState())
@@ -169,6 +182,53 @@ class UploadViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 选文件夹入口（U10-6c）：treeUri 交 [FolderScanner] 递归枚举（SAF 细节收口在
+     * core:data），扫描结果走 [acceptFolder] 合并。VM 不 import android.*（JVM 单测注入 fake）。
+     */
+    fun acceptFolderTree(treeUri: String) {
+        if (form.value.scanningFolder) return
+        viewModelScope.launch {
+            form.update { it.copy(scanningFolder = true, errorMessage = null) }
+            val scan = try {
+                folderScanner.scan(treeUri)
+            } catch (e: Exception) {
+                form.update { it.copy(scanningFolder = false, errorMessage = FOLDER_SCAN_FAILED_MESSAGE) }
+                return@launch
+            }
+            form.update { it.copy(scanningFolder = false) }
+            acceptFolder(scan)
+        }
+    }
+
+    /**
+     * 合并文件夹扫描结果进待上传列表（去重口径同 [acceptUris]：按 uri，先到先得）。
+     * 跳过/截断提示走 blockMessage 横幅（MessageCard 既有模式）；全空给空文件夹提示。
+     */
+    fun acceptFolder(scanResult: FolderScanResult) {
+        if (scanResult.files.isEmpty()) {
+            form.update { it.copy(blockMessage = folderScanNotice(scanResult) ?: FOLDER_EMPTY_MESSAGE) }
+            return
+        }
+        form.update { current ->
+            val existing = current.pendingItems.map { it.uri }.toSet()
+            current.copy(
+                pendingItems = current.pendingItems + scanResult.files.filterNot { it.uri in existing },
+                blockMessage = folderScanNotice(scanResult),
+            )
+        }
+    }
+
+    /** 扫描提示文案：截断（口径③）+ 跳过计数（口径②）；无提示返回 null。 */
+    private fun folderScanNotice(scan: FolderScanResult): String? {
+        val parts = mutableListOf<String>()
+        if (scan.truncated) {
+            parts += "文件夹过大：已选前 ${FolderScanPolicy.MAX_FOLDER_FILES} 个，共 ${scan.totalUploadable} 个"
+        }
+        if (scan.skippedCount > 0) parts += "已跳过 ${scan.skippedCount} 个非媒体文件"
+        return parts.joinToString("；").ifEmpty { null }
+    }
+
     fun removeItem(item: UploadItem) {
         form.update { it.copy(pendingItems = it.pendingItems.filterNot { candidate -> candidate.uri == item.uri }) }
     }
@@ -242,5 +302,7 @@ class UploadViewModel @Inject constructor(
         const val INVALID_DIR_NAME_MESSAGE = "目录名不合法：不能为空、点段或包含路径分隔符"
         const val DESCRIBE_FAILED_MESSAGE = "读取所选文件信息失败，请重试"
         const val ENQUEUE_FAILED_MESSAGE = "上传任务创建失败，请重试"
+        const val FOLDER_SCAN_FAILED_MESSAGE = "扫描文件夹失败，请重试"
+        const val FOLDER_EMPTY_MESSAGE = "所选文件夹中没有可上传的媒体文件"
     }
 }

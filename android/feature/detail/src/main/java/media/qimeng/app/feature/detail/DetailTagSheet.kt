@@ -65,11 +65,18 @@ private val TAG_SECTION_TITLE_TEXT_SIZE = 13.sp
 /** ＋ 新建钮宽 52dp（U10-2 D8 拍板：旧版视觉「＋」实底主色圆钮） */
 private val TAG_ADD_BUTTON_WIDTH = 52.dp
 
-/** ＋ 字形字号 20sp（U10-2 D8 拍板） */
-private val TAG_ADD_GLYPH_TEXT_SIZE = 20.sp
+/** ＋ 字形字号 22sp（U10-2b 校正：旧版 22f MediaDetailFragment.kt:928——U10-2 曾记 20sp 系误抄） */
+private val TAG_ADD_GLYPH_TEXT_SIZE = 22.sp
 
 /** ＋ 钮与输入框间距 10dp（U10-2 D8 拍板；现成间距档 8/12dp 均不符，不硬凑） */
 private val TAG_ADD_ROW_SPACING = 10.dp
+
+/** 添加行顶距 8dp（U10-2b 回收垂直空隙：旧 inputRow setPadding(0,8,0,12) 顶值） */
+private val TAG_ADD_ROW_TOP_SPACING = 8.dp
+
+/** 弹层内容顶距 18dp（U10-2b 回收副标题删除后的空隙：旧 MediaDetailFragment.kt:1254
+ *  sheetContainer setPadding 顶 18dp——与横向 20dp 同源同处） */
+private val TAG_SHEET_CONTENT_TOP_PADDING = 18.dp
 
 /** 底部「取消/保存」按钮区顶距 18dp（U10-2 D9 拍板：旧版弹窗按钮区间距） */
 private val TAG_FOOTER_TOP_SPACING = 18.dp
@@ -82,7 +89,10 @@ private val TAG_FOOTER_TOP_SPACING = 18.dp
  * ——LEGACY §A 要求创建时间序但协议无 createdAt，名字序降级已拍板 D14；空态整区不渲染=旧版
  * GONE 语义）；新建输入框+「＋」钮（成功回调才清空输入，失败保留重试）。
  * 底部「取消/保存」双钮是 NAS 草稿整体替换模型的有意保留（不回退旧版单条即时写，D9 仅对齐
- * 顶距）；副标题说明行同为新交互模型的有意偏离保留项（解释「勾选后保存」）。
+ * 顶距）。U10-2b（2026-09-14 用户反馈「标签间隔太多」）垂直空隙回收：删副标题说明行（旧版
+ * 弹窗无此行，草稿模型语义由「保存」钮自身表达）、内容顶距 18dp/添加行顶距 8dp 对齐旧版
+ * sheetContainer/inputRow setPadding、节间距回到分节标题自带上下 6dp 语义——chip 本体尺寸
+ * 与间隙不动（8/4/30dp/14dp 与旧版一致）。
  */
 @OptIn(
     ExperimentalMaterial3Api::class,
@@ -112,6 +122,9 @@ internal fun DetailTagManageSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
+                // U10-2b：顶距 18dp=旧 sheetContainer setPadding 顶值（TAG_SHEET_CONTENT_TOP_PADDING
+                // 记档）；副标题说明行已删（用户反馈「标签间隔太多」——旧版弹窗无此行）
+                .padding(top = TAG_SHEET_CONTENT_TOP_PADDING)
                 // D7：弹层横向 20dp=旧 MediaDetailFragment.kt:1254 sheetContainer（token 见
                 // QimengDimens.DetailSheetPaddingHorizontal，不与筛选面板 20dp 同源混用）
                 .padding(horizontal = QimengDimens.DetailSheetPaddingHorizontal)
@@ -127,16 +140,8 @@ internal fun DetailTagManageSheet(
                 textAlign = TextAlign.Center,
                 modifier = Modifier
                     .fillMaxWidth()
+                    // 标题下 12dp（SpaceL）保留：与旧版弹窗标题-内容间距同值，U10-2b 不动
                     .padding(bottom = QimengDimens.SpaceL),
-            )
-            Text(
-                text = stringResource(R.string.detail_tag_sheet_desc),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = QimengDimens.SpaceXS),
             )
             SheetCurrentTags(
                 pool = pool,
@@ -251,8 +256,9 @@ private fun SheetOtherTags(
 
 /**
  * 添加行：34dp 胶囊输入框（F 批全局拍板勿动）+「＋」实底主色圆钮（D8 旧版视觉——52dp 宽、
- * 与输入行同高、100dp 圆角、20sp onPrimary 字形；enabled=空输入不可点，承自原「新建」
+ * 与输入行同高、100dp 圆角、22sp onPrimary 字形；enabled=空输入不可点，承自原「新建」
  * TextButton 语义）。contentDescription 承接被删除的「新建」文字的 TalkBack 语义。
+ * 顶距 8dp（U10-2b：TAG_ADD_ROW_TOP_SPACING 对齐旧 inputRow setPadding 顶值，原 SpaceL 12dp 偏松）。
  * 创建成功回调才清空输入框（Web TagDialog 同款；失败保留输入供重试，错误经横幅反馈）。
  */
 @Composable
@@ -265,7 +271,7 @@ private fun SheetAddTagRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = QimengDimens.SpaceL),
+            .padding(top = TAG_ADD_ROW_TOP_SPACING),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(TAG_ADD_ROW_SPACING),
     ) {
@@ -331,10 +337,12 @@ private fun SheetFooterButtons(
     }
 }
 
-/** 弹窗分节标题容器（「当前标签」「其他标签」共用结构；标题 13sp Regular 次级灰，D6 旧 TagSheetHelper.kt:160-165） */
+/** 弹窗分节标题容器（「当前标签」「其他标签」共用结构；标题 13sp Regular 次级灰，D6 旧 TagSheetHelper.kt:160-165）。
+ *  节顶距不设（U10-2b 移除原 SpaceL 12dp）：节间距回到「分节标题自带上下 6dp padding」语义
+ *  ——旧版节间即 6dp（TagSheetHelper.kt:160-165），弹层内容顶距由外层 18dp 承担 */
 @Composable
 private fun SheetTagSection(title: String, content: @Composable () -> Unit) {
-    Column(modifier = Modifier.padding(top = QimengDimens.SpaceL)) {
+    Column {
         Text(
             text = title,
             style = MaterialTheme.typography.titleSmall.copy(
@@ -348,12 +356,16 @@ private fun SheetTagSection(title: String, content: @Composable () -> Unit) {
     }
 }
 
-/** 弹窗空态提示（「暂无标签」，LEGACY §A:16） */
+/** 弹窗空态提示（「暂无标签」，LEGACY §A:16）。样式=分节标题同款（U10-2b：旧版空态即
+ *  13sp 次级灰，原 bodyMedium 偏大偏松） */
 @Composable
 private fun SheetEmptyHint() {
     Text(
         text = stringResource(R.string.detail_tag_empty),
-        style = MaterialTheme.typography.bodyMedium,
+        style = MaterialTheme.typography.titleSmall.copy(
+            fontSize = TAG_SECTION_TITLE_TEXT_SIZE,
+            fontWeight = FontWeight.Normal,
+        ),
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(top = QimengDimens.SpaceS),
     )

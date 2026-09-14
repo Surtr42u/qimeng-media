@@ -76,7 +76,7 @@ fun QimengChipRow(
  * 33.9dp 偏紧，本批按实录清偿；FilterChip 48dp 布局膨胀时代的 56dp 节距不复返（[QimengSegPill]
  * 紧凑化保持）。
  * 药丸容器间隙各随其实录：本组件 8dp、[QimengFloatingPillPanel] 4dp（all_partition_pills 实测）、
- * [QimengValuePillFlow] 保持 8dp（G5 Web 基准拍板保护）。
+ * [QimengValuePillFlow] 6dp/4dp（U10-2b/7 改：G5 Web 基准让位旧版实录，见常量注释）。
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -163,7 +163,11 @@ private fun ChipDivider() {
  * - 无「收起 ▲」尾丸——整块显隐由调用方控制（相册页维度芯片行的 D3 拍板语义），
  *   区块内的「展开 ⌄/收起 ⌃」两行钳制切换钮也由调用方按阈值渲染；
  * - [maxLines] 行数钳制（默认不限）：对齐 Web .value-row 收起态 max-height 两行的视觉语义，
- *   用「行数」而非 dp 表达——dp 需按字号/内边距换算，行数与 Web 交互语义一一对应。
+ *   用「行数」而非 dp 表达——dp 需按字号/内边距换算，行数与 Web 交互语义一一对应；
+ * - 展开态限高+纵向滚动由调用方容器承担（U10-2b/7 旧版 MaxHeightScrollView 复刻），
+ *   本组件只管流式排布。
+ * 药丸间隙=纵横异值 6dp/4dp（U10-2b/7：对齐旧版 FlowLayout.kt:18-19，G5 Web 8/8 基准退役；
+ * 全仓唯一消费方=相册页，故不设参数直接改默认）。
  * 胶囊渲染复用 [PillChip] 单源（铁律 7：禁止各页自绘胶囊）。
  * 悬浮面板本体保留：收藏/历史页仍在用（G5 只改相册页接线）。
  */
@@ -177,14 +181,20 @@ fun QimengValuePillFlow(
 ) {
     FlowRow(
         modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(QimengDimens.SpaceM),
-        verticalArrangement = Arrangement.spacedBy(QimengDimens.SpaceM),
+        horizontalArrangement = Arrangement.spacedBy(VALUE_PILL_SPACING_HORIZONTAL),
+        verticalArrangement = Arrangement.spacedBy(VALUE_PILL_SPACING_VERTICAL),
         maxLines = maxLines,
         overflow = FlowRowOverflow.Clip,
     ) {
         pills.forEachIndexed { index, pill -> PillChip(pill = pill, onClick = { onPillClick(index) }) }
     }
 }
+
+/** 值药丸流水平间隙 6dp（U10-2b/7：旧版 FlowLayout.kt:18-19 hSpace=6） */
+private val VALUE_PILL_SPACING_HORIZONTAL = 6.dp
+
+/** 值药丸流垂直间隙 4dp（U10-2b/7：旧版 FlowLayout.kt:18-19 vSpace=4） */
+private val VALUE_PILL_SPACING_VERTICAL = 4.dp
 
 /** 胶囊本体：选中实底主色/未选中软底（旧版 QimengCapsuleChip 的 M3 token 翻译）。
  *  渲染委托 [QimengSegPill]（G6 查重收敛：FilterChip 替身与本组件视觉语义完全同谱，

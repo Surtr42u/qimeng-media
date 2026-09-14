@@ -137,6 +137,24 @@ fun AlbumFilterState.withPanelDraft(draft: AlbumPanelDraft): AlbumFilterState = 
 )
 
 /**
+ * 已应用的筛选是否偏离默认（U10-2b 纯函数：相册页页头筛选钮点亮判定，UI 不内嵌规则——铁律 7）。
+ * 逐字段比对面板字段默认值：排序/顺位/观看/点击/大小/时间/年份/标签任一非默认即点亮。
+ * 刻意不计入：tagMode（默认 FUZZY 且仅 tagIds 非空才生效，单独改它不改变任何查询结果）、
+ * 四维芯片选择（partition/authors/characters/mediaType——其选中态在页头芯片行本身可见，
+ * 点亮语义专指万能面板字段）；expanded 为展示态非筛选条件。
+ */
+fun AlbumFilterState.hasActiveFilters(): Boolean =
+    sort != AssetSort.DEFAULT ||
+        order != SortOrder.DESC ||
+        viewRange != PanelCountRange.ALL ||
+        playRange != PanelCountRange.ALL ||
+        sizeRange != PanelSizeRange.ALL ||
+        dateRange != PanelDateRange.ALL ||
+        yearFrom != null ||
+        yearTo != null ||
+        tagIds.isNotEmpty()
+
+/**
  * 面板字段 → GET /assets 查询包覆写（协议展开单源，任务Y Y4b 自 AlbumFilter.toAssetQuery
  * 提炼：相册页与首页 COS 流共用同一展开口径，禁第二份手抄）。
  * 默认档一律映射为不传（viewRange/playRange/sizeRange=ALL→null、tagIds 空→null、

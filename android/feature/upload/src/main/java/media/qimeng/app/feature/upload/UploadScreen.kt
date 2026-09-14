@@ -90,6 +90,15 @@ fun UploadScreen(
         if (uris.isNotEmpty()) viewModel.acceptUris(uris.map { it.toString() })
     }
 
+    // 选文件夹（U10-6c）：OpenDocumentTree 即用即弃、不 takePersistableUriPermission
+    // （M4-5 先例，读权限覆盖本会话队列重试窗口）；递归枚举与扩展名过滤收口在
+    // core:data FolderScanner，UI 只把 treeUri 交给 ViewModel（ADR-0008 铁律 7）
+    val folderPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree(),
+    ) { treeUri ->
+        if (treeUri != null) viewModel.acceptFolderTree(treeUri.toString())
+    }
+
     // 通知权限（API 33+ 运行时申请；拒绝只影响可见性、不阻断上传）
     val notificationPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -108,124 +117,20 @@ fun UploadScreen(
             LoadingIndicator(modifier = Modifier.padding(24.dp))
         }
 
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp)
-                .imePadding(),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            state.errorMessage?.let { message ->
-                MessageCard(text = message, container = MaterialTheme.colorScheme.errorContainer) {
-                    viewModel.dismissError()
-                }
-            }
-            state.blockMessage?.let { message ->
-                MessageCard(text = message, container = MaterialTheme.colorScheme.tertiaryContainer) {
-                    viewModel.dismissBlock()
-                }
-            }
-
-            // —— 目标库 ——
-            SectionTitle("目标库")
-            if (state.libraries.isEmpty()) {
-                Text("暂无可选库", style = MaterialTheme.typography.bodyMedium)
-            } else {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    state.libraries.forEach { library ->
-                        QimengSegPill(
-                            text = library.name,
-                            selected = state.selectedLibrary?.id == library.id,
-                            onClick = { viewModel.selectLibrary(library) },
-                        )
-                    }
-                }
-            }
-
-            // —— 目标目录 ——
-            SectionTitle("目标目录")
-            state.dirTree?.let { tree ->
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(8.dp)) {
-                        val expanded = remember(tree) { mutableStateOf(setOf(ROOT_PATH)) }
-                        // 根行固定展示（path = "" 即库根，协议口径）
-                        DirRow(
-                            label = DIR_ROOT_LABEL,
-                            detail = "${tree.fileCount} 个文件",
-                            selected = state.selectedDirPath == ROOT_PATH,
-                            expanded = true,
-                            hasChildren = tree.children.isNotEmpty(),
-                            onClick = { viewModel.selectDir(ROOT_PATH) },
-                            onToggle = { },
-                        )
-                        tree.children.forEach { child ->
-                            DirNodeRows(
-                                node = child,
-                                depth = 1,
-                                selectedPath = state.selectedDirPath,
-                                expandedPaths = expanded.value,
-                                onToggle = { path ->
-                                    expanded.value =
-                                        if (path in expanded.value) expanded.value - path
-                                        else expanded.value + path
-                                },
-                                onSelect = viewModel::selectDir,
-                            )
-                        }
-                    }
-                }
-                Text(
-                    text = "已选目录：${state.selectedDirPath.ifEmpty { DIR_ROOT_LABEL }}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                OutlinedButton(onClick = { showCreateDirDialog = true }) {
-                    Text("在当前目录下新建子目录")
-                }
-            }
-
-            // —— 待上传文件 ——
-            SectionTitle("待上传文件（${state.pendingItems.size}）")
-            Button(onClick = {
+        UploadForm(
+            state = state,
+            viewModel = viewModel,
+            onPickFiles = {
                 requestNotificationPermissionIfNeeded(context, notificationPermission)
                 documentPicker.launch(arrayOf(MIME_IMAGE, MIME_VIDEO))
-            }) {
-                Text("选择文件（图片/视频）")
-            }
-            state.pendingItems.forEach { item ->
-                PendingItemRow(item = item, onRemove = { viewModel.removeItem(item) })
-                HorizontalDivider()
-            }
-
-            Button(
-                onClick = {
-                    requestNotificationPermissionIfNeeded(context, notificationPermission)
-                    viewModel.enqueue()
-                },
-                enabled = state.pendingItems.isNotEmpty() &&
-                    state.selectedLibrary != null &&
-                    !state.enqueueing,
-                // 第 196 笔噪点横带本尊：禁用态通栏容器夜间走不透明底消 dither（W6 #49）
-                colors = qimengFilledButtonColors(),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(if (state.enqueueing) "正在创建任务…" else "开始上传（${state.pendingItems.size} 个）")
-            }
-
-            // —— 上传队列 ——
-            if (state.queue.isNotEmpty()) {
-                SectionTitle("上传队列")
-                state.queue.forEach { entry -> QueueRow(entry) }
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-        }
+            },
+            onPickFolder = { folderPicker.launch(null) },
+            onCreateDir = { showCreateDirDialog = true },
+            onEnqueue = {
+                requestNotificationPermissionIfNeeded(context, notificationPermission)
+                viewModel.enqueue()
+            },
+        )
     }
 
     if (showCreateDirDialog) {
@@ -238,6 +143,190 @@ fun UploadScreen(
             creating = state.creatingDir,
         )
     }
+}
+
+/**
+ * 表单滚动主体：横幅 → 目标库 → 目标目录 → 待上传 → 入队 → 队列。
+ * 选择行为以回调注入（launcher 留在 [UploadScreen] 壳层），函数行数收敛到百行红线内。
+ */
+@Composable
+private fun UploadForm(
+    state: UploadUiState,
+    viewModel: UploadViewModel,
+    onPickFiles: () -> Unit,
+    onPickFolder: () -> Unit,
+    onCreateDir: () -> Unit,
+    onEnqueue: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp)
+            .imePadding(),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        state.errorMessage?.let { message ->
+            MessageCard(text = message, container = MaterialTheme.colorScheme.errorContainer) {
+                viewModel.dismissError()
+            }
+        }
+        state.blockMessage?.let { message ->
+            MessageCard(text = message, container = MaterialTheme.colorScheme.tertiaryContainer) {
+                viewModel.dismissBlock()
+            }
+        }
+
+        // —— 目标库 ——
+        SectionTitle("目标库")
+        if (state.libraries.isEmpty()) {
+            Text("暂无可选库", style = MaterialTheme.typography.bodyMedium)
+        } else {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                state.libraries.forEach { library ->
+                    QimengSegPill(
+                        text = library.name,
+                        selected = state.selectedLibrary?.id == library.id,
+                        onClick = { viewModel.selectLibrary(library) },
+                    )
+                }
+            }
+        }
+
+        // —— 目标目录 ——
+        SectionTitle("目标目录")
+        state.dirTree?.let { tree ->
+            DirTreePanel(
+                tree = tree,
+                selectedDirPath = state.selectedDirPath,
+                onSelect = viewModel::selectDir,
+                onCreateDir = onCreateDir,
+            )
+        }
+
+        // —— 待上传文件 ——
+        SectionTitle("待上传文件（${state.pendingItems.size}）")
+        PickerRow(
+            onPickFiles = onPickFiles,
+            onPickFolder = onPickFolder,
+            scanningFolder = state.scanningFolder,
+        )
+        state.pendingItems.forEach { item ->
+            PendingItemRow(item = item, onRemove = { viewModel.removeItem(item) })
+            HorizontalDivider()
+        }
+
+        Button(
+            onClick = onEnqueue,
+            enabled = state.pendingItems.isNotEmpty() &&
+                state.selectedLibrary != null &&
+                !state.enqueueing,
+            // 第 196 笔噪点横带本尊：禁用态通栏容器夜间走不透明底消 dither（W6 #49）
+            colors = qimengFilledButtonColors(),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(if (state.enqueueing) "正在创建任务…" else "开始上传（${state.pendingItems.size} 个）")
+        }
+
+        // —— 上传队列 ——
+        if (state.queue.isNotEmpty()) {
+            QueueSection(queue = state.queue, summary = state.queueSummary)
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+    }
+}
+
+/** 目标目录面板：目录树卡片 + 已选目录提示 + 新建子目录入口（目录树已加载时展示） */
+@Composable
+private fun DirTreePanel(
+    tree: DirNode,
+    selectedDirPath: String,
+    onSelect: (String) -> Unit,
+    onCreateDir: () -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(8.dp)) {
+            val expanded = remember(tree) { mutableStateOf(setOf(ROOT_PATH)) }
+            // 根行固定展示（path = "" 即库根，协议口径）
+            DirRow(
+                label = DIR_ROOT_LABEL,
+                detail = "${tree.fileCount} 个文件",
+                selected = selectedDirPath == ROOT_PATH,
+                expanded = true,
+                hasChildren = tree.children.isNotEmpty(),
+                onClick = { onSelect(ROOT_PATH) },
+                onToggle = { },
+            )
+            tree.children.forEach { child ->
+                DirNodeRows(
+                    node = child,
+                    depth = 1,
+                    selectedPath = selectedDirPath,
+                    expandedPaths = expanded.value,
+                    onToggle = { path ->
+                        expanded.value =
+                            if (path in expanded.value) expanded.value - path
+                            else expanded.value + path
+                    },
+                    onSelect = onSelect,
+                )
+            }
+        }
+    }
+    Text(
+        text = "已选目录：${selectedDirPath.ifEmpty { DIR_ROOT_LABEL }}",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    OutlinedButton(onClick = onCreateDir) {
+        Text("在当前目录下新建子目录")
+    }
+}
+
+/** 选文件/选文件夹两入口并排（U10-6c）；扫描中文案换态并禁用，避免并发扫描 */
+@Composable
+private fun PickerRow(
+    onPickFiles: () -> Unit,
+    onPickFolder: () -> Unit,
+    scanningFolder: Boolean,
+) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Button(onClick = onPickFiles, modifier = Modifier.weight(1f)) {
+            Text("选择文件")
+        }
+        OutlinedButton(
+            onClick = onPickFolder,
+            enabled = !scanningFolder,
+            modifier = Modifier.weight(1f),
+        ) {
+            Text(if (scanningFolder) "正在扫描…" else "选择文件夹")
+        }
+    }
+    Text(
+        text = "支持图片/视频常见格式；选文件夹时保留子目录结构、自动跳过其他文件",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+/** 队列区：聚合行「共 N 个 · 成功 X · 失败 Y」+ 逐条状态行（行样式不动） */
+@Composable
+private fun QueueSection(queue: List<UploadQueueEntry>, summary: String?) {
+    SectionTitle("上传队列")
+    summary?.let {
+        Text(
+            text = it,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    queue.forEach { entry -> QueueRow(entry) }
 }
 
 @Composable
@@ -265,7 +354,7 @@ private fun MessageCard(text: String, container: Color, onDismiss: () -> Unit) {
     }
 }
 
-/** 待上传文件行：展示名 + 大小 + 移除 */
+/** 待上传文件行：展示名 + 相对子目录（选文件夹上传时）+ 大小 + 移除 */
 @Composable
 private fun PendingItemRow(item: UploadItem, onRemove: () -> Unit) {
     Row(
@@ -274,6 +363,13 @@ private fun PendingItemRow(item: UploadItem, onRemove: () -> Unit) {
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(item.displayName, style = MaterialTheme.typography.bodyMedium)
+            if (item.relativeDir.isNotEmpty()) {
+                Text(
+                    text = "子目录：${item.relativeDir}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             Text(
                 text = formatBytes(item.sizeBytes),
                 style = MaterialTheme.typography.bodySmall,

@@ -65,6 +65,8 @@ import media.qimeng.app.feature.favorite.FavoriteScreen
 import media.qimeng.app.feature.history.HistoryScreen
 import media.qimeng.app.feature.home.HomeScreen
 import media.qimeng.app.feature.login.LoginScreen
+import media.qimeng.app.feature.manage.AuthorTxtImportScreen
+import media.qimeng.app.feature.manage.BackupScreen
 import media.qimeng.app.feature.manage.DataManageScreen
 import media.qimeng.app.feature.manage.LibraryManageScreen
 import media.qimeng.app.feature.search.SearchScreen
@@ -122,6 +124,13 @@ object Routes {
 
     /** 覆盖页面：库管理（U10-6：数据管理 hub → 库列表/注册媒体目录，信息架构对齐 Web 文件管理页） */
     const val LIBRARY_MANAGE = "libraryManage"
+
+    /** 覆盖页面：作者 TXT 导入（U10-6b：数据管理 hub → 片段列表/导入/移除/重放，
+     *  对齐 Web 文件管理页 TxtAuthorImportCard） */
+    const val AUTHOR_TXT_IMPORT = "authorTxtImport"
+
+    /** 覆盖页面：备份导入导出（U10-6b：数据管理 hub → 全量备份导出/qimeng_backup.json 幂等导入恢复） */
+    const val BACKUP = "backup"
 }
 
 /**
@@ -473,17 +482,34 @@ fun QimengNavHost(
                 )
             }
             // 数据管理 hub（U10-6）：我的页「数据管理」合并入口二级页；上传行复用既有
-            // Routes.UPLOAD 页（不搬路由），库管理行走本批新增子页
+            // Routes.UPLOAD 页（不搬路由），库管理/作者 TXT 导入/备份导入导出（U10-6b）
+            // 走各自新增子页
             composable(Routes.DATA_MANAGE) {
                 DataManageScreen(
                     onBack = { navController.popBackStack() },
                     onOpenUpload = { navController.navigate(Routes.UPLOAD) },
                     onOpenLibraryManage = { navController.navigate(Routes.LIBRARY_MANAGE) },
+                    onOpenAuthorTxt = { navController.navigate(Routes.AUTHOR_TXT_IMPORT) },
+                    onOpenBackup = { navController.navigate(Routes.BACKUP) },
                 )
             }
             // 库管理子页（U10-6）：库表 + 注册媒体目录表单（Web 文件管理页对齐物）
             composable(Routes.LIBRARY_MANAGE) {
                 LibraryManageScreen(
+                    onBack = { navController.popBackStack() },
+                )
+            }
+            // 作者 TXT 导入子页（U10-6b）：片段列表 + 选 TXT 导入 + 移除/重放
+            // （Web TxtAuthorImportCard 对齐物）
+            composable(Routes.AUTHOR_TXT_IMPORT) {
+                AuthorTxtImportScreen(
+                    onBack = { navController.popBackStack() },
+                )
+            }
+            // 备份导入导出子页（U10-6b）：全量备份导出 + qimeng_backup.json 幂等导入恢复
+            // （Web BackupCard 对齐物，DOMAIN_RULES §10）
+            composable(Routes.BACKUP) {
+                BackupScreen(
                     onBack = { navController.popBackStack() },
                 )
             }

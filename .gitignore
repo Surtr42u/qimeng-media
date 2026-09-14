@@ -75,3 +75,6 @@ server/data/
 
 # AI 走查截图（可能含真实媒体帧，永不入库；同 .run-screens 纪律）
 .walk/
+
+# Kotlin 构建会话缓存（AGP/KGP 2.x 写 android/.kotlin/，非源码；追加批 reviewer P2 加盖防误入库）
+.kotlin/

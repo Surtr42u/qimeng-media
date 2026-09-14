@@ -13,6 +13,12 @@ data class UploadItem(
     val displayName: String,
     /** 字节数；-1 = 未知（此时超限本地拦截跳过、由服务端 413 兜底） */
     val sizeBytes: Long,
+    /**
+     * 库内相对子目录（'/' 分隔、不含首尾斜杠）。空串 = 文件级上传（相对页面已选目标目录
+     * 本身）；选文件夹上传时为「所选文件夹名/子路径」（所选文件夹名作为首段，U10-6c）。
+     * 入队时与页面已选目录由 UploadRules.joinUploadDirPath 拼成每个任务自己的 dir。
+     */
+    val relativeDir: String = "",
 )
 
 /** 上传目标库（GET /libraries 的展示子集） */
@@ -88,6 +94,26 @@ object UploadRules {
         if (!isValidDirName(newName)) return null
         val base = selectedDir.trim('/')
         return if (base.isEmpty()) newName.trim() else "$base/${newName.trim()}"
+    }
+
+    /**
+     * 把待上传文件的相对子目录拼到页面已选目标目录后，返回该任务自己的库内相对目录
+     * （U10-6c：dir=joinUploadDirPath(selectedDirPath, item.relativeDir)）。
+     * 与 [joinDirPath] 的区别：[relative] 是多段路径（文件夹扫描产物），不做名单段校验；
+     * 拼出路径的最终安全性由服务端 NormalizeRelPath 兜底（400 唯一权威）。
+     *
+     * 口径对齐 server/internal/filing/path.go:56（NormalizeRelPath）：反斜杠一律归一为
+     * '/'（Windows 形态输入不产生混合分隔符）；两端各 trim 掉 '/'（容错，同 joinDirPath）。
+     * 纯函数，单测锁定（UploadModelsTest）。
+     */
+    fun joinUploadDirPath(base: String, relative: String): String {
+        val b = base.replace('\\', '/').trim('/')
+        val r = relative.replace('\\', '/').trim('/')
+        return when {
+            b.isEmpty() -> r
+            r.isEmpty() -> b
+            else -> "$b/$r"
+        }
     }
 
     /**
