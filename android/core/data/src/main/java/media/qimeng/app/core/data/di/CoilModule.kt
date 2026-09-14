@@ -46,7 +46,9 @@ private const val CACHE_LOG_TAG = "QimengCache"
  *   （ImageLoader.Builder.diskCache 注释），运行中重建 ImageLoader 官方不支持（SingletonImageLoader.setSafe
  *   语义 = 不可覆盖已创建实例）——重启生效是官方安全路径，设置页 UI 注明；
  * - GIF 原件直链**进**磁盘缓存（C5 拍板：网络缓存不损动画语义——落盘的是原始 GIF 字节，
- *   解码仍由 GIF 解码器逐帧动画）；
+ *   解码仍由 GIF 解码器逐帧动画）。**任务U10-5（2026-09-14 用户拍板）调整**：详情页
+ *   原件请求改为 request 级 `diskCachePolicy(DISABLED)`（GIF 原件含在内，即看即取不落盘，
+ *   防磁盘缓存膨胀与写盘损耗）——本加载器的磁盘缓存自此主要承载缩略图/海报帧等小对象；
  * - **视频不落盘**：播放走 Media3 直链流式（不经 Coil），上传走 WorkManager/okhttp（不经 Coil），
  *   全 App 无任何「用 Coil 加载视频 URL」的路径——不落盘由架构保证而非开关。
  */
