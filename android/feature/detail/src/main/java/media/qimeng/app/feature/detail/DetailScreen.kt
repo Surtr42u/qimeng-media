@@ -161,7 +161,16 @@ fun DetailScreen(
             val request = ImageRequest.Builder(context)
                 .data(target.url)
                 .memoryCachePolicy(CachePolicy.ENABLED)
-                .apply { if (!target.isVideo) size(Size.ORIGINAL) }
+                .apply {
+                    if (!target.isVideo) {
+                        size(Size.ORIGINAL)
+                        // 任务U10-5（2026-09-14 用户拍板）：原图即看即取**不落盘**——
+                        // 图片原件体积大，落盘缓存会让磁盘缓存无谓膨胀（用户实测 2.9GB），
+                        // 且反复写盘损耗存储；会话内回看由内存缓存兜底，离场即弃。
+                        // 视频海报帧是小缩略图，保持磁盘缓存（减少流量）。
+                        diskCachePolicy(CachePolicy.DISABLED)
+                    }
+                }
                 .build()
             disposables[target.assetId] = SingletonImageLoader.get(context).enqueue(request)
         }

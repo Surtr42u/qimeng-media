@@ -26,6 +26,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import coil3.Image
 import coil3.SingletonImageLoader
 import coil3.asDrawable
+import coil3.request.CachePolicy
 import coil3.request.ImageRequest
 import coil3.size.Size
 import coil3.target.Target
@@ -138,6 +139,11 @@ internal fun ZoomableOriginalImage(
                 // 口径②：不降采样。Size.ORIGINAL =「按原图尺寸解码」的显式表达；
                 // 缺省时 Coil 会按目标 View 尺寸解析出降采样尺寸
                 .size(Size.ORIGINAL)
+                // 任务U10-5（2026-09-14 用户拍板）：原图即看即取**不落盘**——
+                // 磁盘缓存只留给缩略图；原件体积大，落盘会让缓存无谓膨胀且损耗存储，
+                // 联网观看的预期是「即看即取」而非「下载留存」（对齐旧版本地直读体验）。
+                // 会话内回看由内存缓存兜底（memoryCachePolicy 全局 ENABLED）。
+                .diskCachePolicy(CachePolicy.DISABLED)
                 .target(
                     object : Target {
                         // coil3 多平台 Image → Android Drawable（asDrawable 官方转换，
