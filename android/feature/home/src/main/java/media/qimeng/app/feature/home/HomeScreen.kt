@@ -390,8 +390,10 @@ private const val HOME_TOP_ICON_PRESSED_SCALE = 0.92f
 private const val HOME_TOP_ICON_PRESS_SCALE_DURATION_MS = 100
 
 /**
- * 首页顶栏 40dp 胶囊图标钮（Y4a）：Surface 胶囊底（surfaceVariant + [QimengDimens.PillCornerRadius]，
- * 对齐旧版 bg_capsule_soft）+ 24dp 图标（[QimengDimens.IconDefaultSize]，tint 对齐旧版
+ * 首页顶栏 40dp 胶囊图标钮（Y4a）：Surface 胶囊底（[QimengDimens.PillCornerRadius]，对齐旧版
+ * bg_capsule_soft；U10-3 底槽统一 surfaceVariant→secondaryContainer——旧 bg_capsule_soft 实色=
+ * qmColorChipBg #F0F0F2，Theme.kt 映射 secondaryContainer，与相册页 QimengTitleRow 筛选钮同语言）
+ * + 24dp 图标（[QimengDimens.IconDefaultSize]，tint 对齐旧版
  * qmColorPrimary→primary 槽）+ 按压缩放反馈（QimengSegPill 同款 0.92/100ms 机制；旧版 ImageView
  * 无按压反馈，取 GUIDE_UI §UI约束 标准款补齐）。
  * 不走 M3 Surface onClick 重载/IconButton：二者内建 48dp 最小触达会把 40dp 胶囊撑大
@@ -418,7 +420,8 @@ private fun HomeTopIconButton(
     )
     Surface(
         shape = RoundedCornerShape(QimengDimens.PillCornerRadius),
-        color = MaterialTheme.colorScheme.surfaceVariant,
+        // U10-3 统一规格：底槽对齐旧 bg_capsule_soft 实色源（secondaryContainer），见 KDoc
+        color = MaterialTheme.colorScheme.secondaryContainer,
         modifier = modifier
             .size(QimengDimens.IconButtonSize)
             .graphicsLayer {

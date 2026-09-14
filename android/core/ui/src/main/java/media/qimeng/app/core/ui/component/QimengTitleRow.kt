@@ -1,12 +1,18 @@
 package media.qimeng.app.core.ui.component
 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -16,7 +22,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import media.qimeng.app.core.ui.R
 import media.qimeng.app.core.ui.icon.BackIcon
-import media.qimeng.app.core.ui.icon.FilterListIcon
+import media.qimeng.app.core.ui.icon.HomeFilterIcon
 import media.qimeng.app.core.ui.icon.gridIconFor
 import media.qimeng.app.core.ui.theme.QimengDimens
 
@@ -29,7 +35,8 @@ import media.qimeng.app.core.ui.theme.QimengDimens
  * 旧版实录 favorite/history 两页标题行**无**列数图标（主会话 2026-09-07 裁定 2），两页不传即不显示。
  * 筛选按钮（M4-2A-B3）= 可选项，仅相册页传入（按实录判读：筛选入口只在相册页标题行——
  * 旧版 uiautomator 实录仅 all_partition.txt 有 allFilterButton 节点，favorite/history 实录
- * 无筛选图标，/history 协议亦不支持筛选参数；B5 接线已复核落档）。
+ * 无筛选图标，/history 协议亦不支持筛选参数；B5 接线已复核落档）。U10-3 观感对齐：钮体换
+ * 旧版软底胶囊容器+ic_home_filter 专用图标（见实现处注释）。
  *
  * @param title 页面标题（页私有文案，由调用方从各自 strings.xml 注入）
  * @param statLine 统计行文本（如「N 文件」；暂无数据传空串，占位仍保留右端对齐结构）
@@ -84,11 +91,28 @@ fun QimengTitleRow(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         if (onFilterClick != null) {
-            IconButton(onClick = onFilterClick) {
-                Icon(
-                    imageVector = FilterListIcon,
-                    contentDescription = stringResource(R.string.ui_filter_icon_desc),
-                )
+            // U10-3：对齐旧版 allFilterButton（fragment_all_files.xml L48-57——40dp bg_capsule_soft
+            // 胶囊底 + ic_home_filter tint qmColorPrimary）：裸图标 IconButton 换软底胶囊容器 +
+            // 专用款 [HomeFilterIcon]（旧 ic_home_filter 三页通用，勿用 Material filter_list）。
+            // 不走 IconButton/可点击 Surface：二者内建 48dp 最小触达会把旧版 40dp 胶囊撑大
+            // （HomeTopIconButton 同成因）；内层 clickable 承担点击（ripple 被 Surface 形状裁剪）
+            Surface(
+                shape = RoundedCornerShape(QimengDimens.PillCornerRadius),
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                modifier = Modifier.size(QimengDimens.IconButtonSize),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clickable(onClick = onFilterClick),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = HomeFilterIcon,
+                        contentDescription = stringResource(R.string.ui_filter_icon_desc),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
             }
         }
         // 列数控件=图标+回调成对出现：回调为 null（或未配列数）整组不显示，不渲染残缺控件

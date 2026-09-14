@@ -23,11 +23,13 @@ import media.qimeng.app.core.model.RecommendPrefsValues
 import media.qimeng.app.core.model.RecommendPreset
 import media.qimeng.app.core.model.matchPreset
 import media.qimeng.app.core.model.toPrefsValues
-import media.qimeng.app.core.network.ServerAddress
 
-/** 我的页 UI 状态（C4 资料/推荐偏好 + C5 缓存 + C6 版本 + I4 数量卡） */
+/**
+ * 我的页 UI 状态（C4 推荐/偏好 + C5 缓存 + C6 版本 + I4 数量卡）。
+ * U10-4：serverUrl 字段随「服务器地址」卡迁出本页（地址展示/修改移入
+ * ServerSettingsViewModel，同包），本状态不再收集。
+ */
 data class MineUiState(
-    val serverUrl: String = "",
     /**
      * 页首数量卡（I4，GUIDE_UI §我的页 L252：图片/视频两卡；数据源 GET /stats/overview）。
      * null = 未就绪或读失败（数字卡显示「—」降级，不崩、不弹横幅——纯计数装饰卡，
@@ -74,6 +76,8 @@ data class MineUiState(
  * 服务端版本展示（C6）。
  * X5 批 2026-09-12：作者总览卡退役（用户问题8，我的页改收藏同款入口行，经壳层
  * onOpenAuthors 进全部作者页），本页不再预取作者数据、不依赖 AuthorRepository。
+ * U10-4：服务器地址/本机模式入口迁 ServerSettingsViewModel（同包），本类不再收集
+ * serverUrl、不再承担 fillLocalModeForNextLogin。
  * 业务规则一律走 :core:model 纯函数与 :core:data 仓库，本层只做状态编排。
  */
 @HiltViewModel
@@ -93,7 +97,6 @@ class SettingsViewModel @Inject constructor(
     val uiState: StateFlow<MineUiState> = _uiState.asStateFlow()
 
     init {
-        viewModelScope.launch { authRepository.serverUrl.collect { url -> _uiState.update { it.copy(serverUrl = url) } } }
         loadLibraryCounts()
         loadPrefs()
         loadServerVersion()
@@ -224,18 +227,6 @@ class SettingsViewModel @Inject constructor(
     /** 退出登录（清 token 留地址；壳层登录态流自动回登录页） */
     fun logout() {
         viewModelScope.launch { authRepository.logout() }
-    }
-
-    /**
-     * 本机模式快捷入口（任务T T3，ADR-0015 单点预留兑现）：退出登录并把本机预设地址
-     * 预置为「下次登录带出值」，壳层切登录页后地址框自动带出（未提交态），用户确认
-     * （点登录）才经既有探活→登录→持久化流程生效。
-     * 为什么连登出：本页地址是只展示卡（改地址=退出重登语义，HINT_SERVER_URL），
-     * 且登录态下改写地址会让在途业务请求立即改指新地址——经登出路径写入则只影响
-     * 登录页回填，地址仍只经 ServerConfigDataSource 单点流转。
-     */
-    fun fillLocalModeForNextLogin() {
-        viewModelScope.launch { authRepository.logoutWithStagedUrl(ServerAddress.LOCAL_MODE_PRESET) }
     }
 
     // ---------- 浏览数据同步（任务L L5：本地优先队列的手动入口，最小 UI） ----------

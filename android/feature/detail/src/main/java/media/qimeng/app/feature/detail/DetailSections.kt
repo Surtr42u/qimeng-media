@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,12 +26,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.sp
 import media.qimeng.app.core.ui.icon.BackIcon
 import media.qimeng.app.core.ui.theme.QimengDimens
 
@@ -194,28 +198,47 @@ internal fun CapsuleText(text: String) {
 }
 
 /**
+ * 标签 chip 文字覆盖档（U10-2 D2）：12sp Regular（旧 styles.xml:33 QimengTagChip textSize 12sp）。
+ * labelLarge 基座上仅覆盖字号/字重，字面量单点在此——DetailTagSheet「其他标签」chip 同源引用。
+ */
+internal val TagChipTextStyleOverride = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Normal)
+
+/**
  * 只读展示胶囊（当前标签展示用；trailing 可挂清除图标——弹窗「当前标签」勾选移除）。
  * 出处：标签行与标签管理弹窗（DetailTagSheet.kt）两节共用，故提为文件级 internal 共享。
+ * U10-2 对齐旧版标签弹窗 chip（D1/D2/D3）：selected=true 实底主色反白（旧 TagSheetHelper.kt:74-76
+ * qmColorPrimary 实底 + 反白文字/图标）；定高 30dp 取代纵向 padding 撑高的近似（旧 styles.xml
+ * chipMinHeight 30dp = QimengDimens.ChipHeight）；文字 12sp Regular（见 [TagChipTextStyleOverride]）。
  */
 @Composable
 internal fun DisplayPill(
     text: String,
+    selected: Boolean = false,
     trailing: (@Composable RowScope.() -> Unit)? = null,
 ) {
     Surface(
         shape = RoundedCornerShape(QimengDimens.PillCornerRadius),
-        color = MaterialTheme.colorScheme.surfaceVariant,
+        color = if (selected) {
+            MaterialTheme.colorScheme.primary
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant
+        },
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(
-                start = QimengDimens.ChipHorizontalPadding,
-                end = if (trailing != null) QimengDimens.SpaceS else QimengDimens.ChipHorizontalPadding,
-                top = QimengDimens.SpaceS,
-                bottom = QimengDimens.SpaceS,
-            ),
+            modifier = Modifier
+                .height(QimengDimens.ChipHeight)
+                .padding(
+                    start = QimengDimens.ChipHorizontalPadding,
+                    end = if (trailing != null) QimengDimens.SpaceS else QimengDimens.ChipHorizontalPadding,
+                ),
         ) {
-            Text(text = text, style = MaterialTheme.typography.labelLarge)
+            Text(
+                text = text,
+                style = MaterialTheme.typography.labelLarge.merge(TagChipTextStyleOverride),
+                // Unspecified = Text 参数默认值（未选中行为零变化）；选中实底反白（D1）
+                color = if (selected) MaterialTheme.colorScheme.onPrimary else Color.Unspecified,
+            )
             trailing?.invoke(this)
         }
     }

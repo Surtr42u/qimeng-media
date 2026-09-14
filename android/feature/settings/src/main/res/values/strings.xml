@@ -3,6 +3,4 @@
     <!-- 设置页（我的 Tab）文案。M4-1 最小版只有标题与登出；资源名 settings_ 前缀避免合并冲突。 -->
     <string name="settings_title">我的</string>
     <string name="settings_logout">退出登录</string>
-    <!-- V8 #4：上传入口行副文案——对齐收藏/浏览历史行「动词+对象」两行节奏（句式同族） -->
-    <string name="settings_upload_subtitle">上传手机里的图片和视频</string>
 </resources>

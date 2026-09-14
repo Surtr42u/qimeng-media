@@ -28,7 +28,6 @@ import media.qimeng.app.core.model.RecommendPreset
 import media.qimeng.app.core.model.StatsOverviewValues
 import media.qimeng.app.core.model.TrendPoint
 import media.qimeng.app.core.model.toPrefsValues
-import media.qimeng.app.core.network.ServerAddress
 import media.qimeng.app.core.testing.FakeAuthRepository
 import media.qimeng.app.core.testing.MainDispatcherRule
 
@@ -40,6 +39,8 @@ private const val SAVE_FAILED_TEXT = "保存失败，请重试"
  * 档位持久化/清空（C5）+ 服务端版本（C6）。
  * X5 批 2026-09-12：作者总览卡退役（我的页改收藏同款入口行），总览聚合/读失败用例
  * 与 FakeAuthorRepository 随之移除；纯计数/排序仍由 :core:model 单测锁定。
+ * U10-4：本机模式入口用例迁 ServerSettingsViewModelTest（入口移服务器子页，
+ * fillLocalModeForNextLogin 自本页 ViewModel 删除）。
  */
 class SettingsViewModelTest {
 
@@ -205,20 +206,7 @@ private object FixedEventClock : media.qimeng.app.core.data.events.EventClock {
         assertEquals("http://10.0.2.2:8420", runBlocking { auth.serverUrl.first() })
     }
 
-    // ---------- 本机模式快捷入口（任务T T3，ADR-0015 预设） ----------
-
-    @Test
-    fun `本机模式入口登出并预置下次登录带出的预设地址`() = runTest {
-        val auth = FakeAuthRepository(initialServerUrl = "http://10.0.2.2:8420", initialLoggedIn = true)
-        val settingsViewModel = viewModel(auth = auth)
-        advanceUntilIdle()
-        settingsViewModel.fillLocalModeForNextLogin()
-        advanceUntilIdle()
-        // 登出触达仓库层；地址预置为本机模式预设（登录页「记忆上次」回填数据源）
-        assertEquals(1, auth.logoutCount)
-        assertFalse(runBlocking { auth.isLoggedIn.first() })
-        assertEquals(ServerAddress.LOCAL_MODE_PRESET, runBlocking { auth.serverUrl.first() })
-    }
+    // ---------- 本机模式快捷入口用例随 U10-4 迁 ServerSettingsViewModelTest（入口移服务器子页） ----------
 
     @Test
     fun `应用预设发 9 维载荷并高亮当前项`() = runTest {

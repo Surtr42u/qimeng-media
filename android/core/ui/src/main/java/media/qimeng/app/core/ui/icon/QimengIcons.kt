@@ -169,16 +169,19 @@ fun gridIconFor(columns: Int): ImageVector = when (columns.coerceIn(MIN_GRID_ICO
     else -> Grid5Icon
 }
 
-/** 万能筛选面板入口（Material Icons "filter_list" 三横不等长线，M4-2A-B3 标题行筛选按钮） */
+/** Material Icons "filter_list" 三横不等长线（M4-2A-B3 曾用作标题行筛选钮；U10-3 勘正旧版
+ *  筛选钮实为 [HomeFilterIcon] 软底胶囊款后本图标无消费方，留档勿轻删） */
 val FilterListIcon: ImageVector = materialIcon(
     name = "QimengFilterList",
     pathData = "M10 18h4v-2h-4v2zM3 6v2h18V6H3zm3 7h12v-2H6v2z",
 )
 
 /**
- * 首页筛选入口（旧版 drawable/ic_home_filter 的 pathData 逐字拷贝：行首圆点+不等长线形，
- * 任务Y Y4a 2026-09-12）。与 [FilterListIcon] 是两个图标：后者=Material filter_list（相册页
- * QimengTitleRow 用），本图标=旧版首页顶栏 homeFilterButton 专用款，勿互换。
+ * 万能筛选入口（旧版 drawable/ic_home_filter 的 pathData 逐字拷贝：行首圆点+不等长线形，
+ * 任务Y Y4a 2026-09-12 引入）。U10-3 勘正：原「首页专用」注释与旧证据矛盾——旧版
+ * fragment_home.xml L56 / fragment_all_files.xml L56 / fragment_album_detail.xml L56
+ * （另 author_files.xml L66）同用 ic_home_filter，三页通用；新库首页/相册页等筛选入口
+ * 统一此款（软底胶囊容器见 QimengTitleRow），勿换 [FilterListIcon]。
  */
 val HomeFilterIcon: ImageVector = materialIcon(
     name = "QimengHomeFilter",

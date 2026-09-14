@@ -181,4 +181,11 @@ object QimengDimens {
 
     /** 48dp：底部「重置/应用筛选」按钮高度（旧版 footer 按钮 LayoutParams height 48dp） */
     val FilterButtonHeight: Dp = 48.dp
+
+    // ---------- 详情弹层（U10-2：详情页标签弹层排版对齐旧版；来源=旧仓库 MediaDetailFragment.kt） ----------
+
+    /** 20dp：详情标签弹层横向内边距（旧 MediaDetailFragment.kt:1254 sheetContainer 横向 padding；
+     *  与旧版 DetailSheet 底距 28dp 同出该旧文件。特设独立 token 而非借用筛选面板
+     *  FilterSheetPaddingHorizontal——同值不同源，防止后续两处口径互相牵连） */
+    val DetailSheetPaddingHorizontal: Dp = 20.dp
 }
