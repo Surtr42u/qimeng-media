@@ -48,9 +48,7 @@ import media.qimeng.app.core.model.DiskCacheQuota
 import media.qimeng.app.core.model.RecommendPreset
 import media.qimeng.app.core.network.ServerAddress
 import media.qimeng.app.core.ui.component.QimengSegPill
-import media.qimeng.app.core.ui.component.QmTouchProbe
 import media.qimeng.app.core.ui.component.formatBytesHumanReadable
-import media.qimeng.app.core.ui.component.qmTouchProbe
 import media.qimeng.app.core.ui.theme.QimengDimens
 
 /** 我的页入口行文案（GUIDE_UI §我的页 + M4-2 既有入口 + M4-6 上传入口；
@@ -182,10 +180,7 @@ fun SettingsScreen(
             // 旧版页面底色 = qm_bg（background 槽，浅 #FAFAFA / 夜 #1A1A1A）；壳层已涂底，
             // 显式声明防宿主容器换底后页面漏色
             .background(MaterialTheme.colorScheme.background)
-            .padding(horizontal = ScreenContentPadding)
-            // U7 触摸诊断桩 QM_TOUCH（根因定位后撤除）：我的根探针（观察不消费，跨页对照）
-            .qmTouchProbe("SETTINGS_ROOT"),
-        // U7 诊断桩结束
+            .padding(horizontal = ScreenContentPadding),
     ) {
         // Z2 批（2026-09-12 我的页字体色彩对齐旧版）：页标题 28sp Bold（旧 profile.xml）
         item {

@@ -130,7 +130,7 @@ export default function AuthorsPage() {
                   onClick={(e) => {
                     // 行本身可点进作者文件页：关注按钮拦截冒泡，避免误触发跳转
                     e.stopPropagation()
-                    a.id && toggleFollow.mutate({ authorId: a.id, follow: !a.followed })
+                    if (a.id) toggleFollow.mutate({ authorId: a.id, follow: !a.followed })
                   }}
                 >
                   {a.followed ? '已关注' : '关注'}

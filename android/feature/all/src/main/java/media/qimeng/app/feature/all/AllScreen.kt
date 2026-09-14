@@ -42,10 +42,8 @@ import media.qimeng.app.core.ui.component.QimengPill
 import media.qimeng.app.core.ui.component.QimengPullToRefresh
 import media.qimeng.app.core.ui.component.QimengTitleRow
 import media.qimeng.app.core.ui.component.QimengValuePillFlow
-import media.qimeng.app.core.ui.component.QmTouchProbe
 import media.qimeng.app.core.ui.component.TabScrollController
 import media.qimeng.app.core.ui.component.qimengPinchToColumns
-import media.qimeng.app.core.ui.component.qmTouchProbe
 import media.qimeng.app.core.ui.theme.QimengDimens
 // 页头组件共享文案在 :core:ui（nonTransitiveRClass 下跨模块取资源须引对方 R）
 import media.qimeng.app.core.ui.R as CoreUiR
@@ -120,17 +118,6 @@ fun AllScreen(
         }
     }
 
-    // U7 触摸诊断桩 QM_TOUCH（根因定位后撤除）：状态快照打点（对照触摸死活与数据态）
-    LaunchedEffect(state) {
-        QmTouchProbe.log(
-            "ALBUM_STATE",
-            "items=${state.items.size} activeDim=${state.activeDim} " +
-                "expanded=${state.filter.expanded} loading=${state.isLoading} " +
-                "totalMatched=${state.totalMatched}",
-        )
-    }
-    // U7 诊断桩结束
-
     val pillModel = FourDimPillModel(
         filter = state.filter,
         activeDim = state.activeDim,
@@ -142,9 +129,7 @@ fun AllScreen(
     )
     val activePills = FourDimPills.pillsFor(pillModel)
 
-    // U7 触摸诊断桩 QM_TOUCH（根因定位后撤除）：相册根探针（观察不消费）
-    Column(modifier = Modifier.fillMaxSize().qmTouchProbe("ALBUM_ROOT")) {
-    // U7 诊断桩结束
+    Column(modifier = Modifier.fillMaxSize()) {
         // 页头唯一实现于 :core:ui（任务A §5.2，B5 收藏/历史页复用）——本页只做文案/参数接线。
         // 筛选入口只在相册页标题行（按实录判读：旧版实录仅全部页标题行有 allFilterButton 图标，
         // favorite/history 实录无筛选图标；收藏/历史不传 onFilterClick 不显示，B5 接线时复核落档）
@@ -170,9 +155,6 @@ fun AllScreen(
         QimengChipRow(
             pills = FourDimPills.dimChips(pillModel).map { QimengPill(text = it.text, selected = it.selected) },
             onPillClick = { index ->
-                // U7 触摸诊断桩 QM_TOUCH（根因定位后撤除）
-                QmTouchProbe.log("ALBUM_CHIP", "index=$index")
-                // U7 诊断桩结束
                 viewModel.onDimChipClicked(AlbumDim.entries[index])
             },
             dividerBeforeIndex = AlbumDim.TYPE.ordinal,
@@ -234,9 +216,7 @@ fun AllScreen(
             )
         }
 
-        // U7 触摸诊断桩 QM_TOUCH（根因定位后撤除）：相册网格外层探针（观察不消费）
-        Box(modifier = Modifier.weight(1f).qmTouchProbe("ALBUM_GRID_AREA")) {
-        // U7 诊断桩结束
+        Box(modifier = Modifier.weight(1f)) {
             QimengPullToRefresh(
                 isRefreshing = state.isRefreshing,
                 onRefresh = viewModel::refresh,

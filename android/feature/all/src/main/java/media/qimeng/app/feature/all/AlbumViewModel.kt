@@ -36,7 +36,6 @@ import media.qimeng.app.core.model.Zone
 import media.qimeng.app.core.model.panelDraft
 import media.qimeng.app.core.model.withOtherBucketLast
 import media.qimeng.app.core.model.withPanelDraft
-import media.qimeng.app.core.ui.component.QmTouchProbe
 
 /** 相册页聚合状态（原「全部」页；2026-09-05 导航四化后为相册 Tab 内容） */
 data class AlbumUiState(
@@ -97,9 +96,6 @@ class AlbumViewModel @Inject constructor(
     }
 
     fun selectDim(dim: AlbumDim) {
-        // U7 触摸诊断桩 QM_TOUCH（根因定位后撤除）
-        QmTouchProbe.log("ALBUM_VM", "selectDim dim=$dim")
-        // U7 诊断桩结束
         _uiState.value = _uiState.value.copy(
             activeDim = dim,
             // 切维度默认展开（B8 拍板：规格书 §药丸容器，Web 现版自相矛盾处不采）
@@ -114,9 +110,6 @@ class AlbumViewModel @Inject constructor(
      * （用户 2026-09-07 覆盖 B8；切维仍展开，旧仓库实录四 Fragment 齐证）。
      */
     fun onDimChipClicked(dim: AlbumDim) {
-        // U7 触摸诊断桩 QM_TOUCH（根因定位后撤除）
-        QmTouchProbe.log("ALBUM_VM", "onDimChipClicked dim=$dim active=${_uiState.value.activeDim}")
-        // U7 诊断桩结束
         if (_uiState.value.activeDim == dim) toggleExpanded() else selectDim(dim)
     }
 

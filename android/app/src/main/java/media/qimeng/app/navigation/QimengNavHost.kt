@@ -20,11 +20,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.listSaver
@@ -52,9 +52,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import media.qimeng.app.core.ui.component.QmTouchProbe
 import media.qimeng.app.core.ui.component.TabScrollController
-import media.qimeng.app.core.ui.component.qmTouchProbe
 import media.qimeng.app.core.ui.theme.QimengBrandColors
 import media.qimeng.app.feature.all.AllScreen
 import media.qimeng.app.feature.author.AuthorCollectionRoutes
@@ -166,14 +164,25 @@ fun QimengNavRoot(modifier: Modifier = Modifier) {
  * 进程恢复后栈顶为非 home Tab 等场景）；点击时乐观先行（与 navigate 同一重组帧原子生效，
  * 若等 currentRoute 回流再翻则慢一帧=1 帧残留），乐观值与回流值恒等，同步为 no-op。
  *
- * ### 常驻层 owner 单源
- * 常驻层包 CompositionLocalProvider：LocalLifecycleOwner / LocalViewModelStoreOwner 一律
- * provide **起始目的地（home）的 NavBackStackEntry**——该 entry 被 popUpTo(start){saveState}
- * 永不弹出，随主壳存亡。不接管的下场：LocalLifecycleOwner 落到 Activity，HomeScreen 的
- * ON_RESUME 观察（点赞后返回自动重排，覆盖「详情页 pop 返回」路径）静默失效（Activity 在
- * 应用内导航从不 pause）；Tab ViewModel 落 Activity 作用域则登出后不清、跨会话残留。
- * start entry 作用域下 HomeScreen 语义与改前逐帧一致（它本来就是 home entry 的内容），
- * 其余三屏 VM 随导航图存亡。
+ * ### 常驻层 owner（per-tab，2026-09-14 任务U8 根修）
+ * 每个驻留 Tab 屏包自己的 CompositionLocalProvider：LocalLifecycleOwner /
+ * LocalViewModelStoreOwner provide **该 Tab 自己的 NavBackStackEntry**（由本函数四 Tab
+ * 空壳跳板在组合时登记进 [tabEntries]，restoreState 重建 entry 实例时壳重组自动刷新）。
+ *
+ * 为什么不能统一 provide 起始目的地（home）的 entry（U3 初版实现，任务U8 根因）：
+ * Navigation Compose 语义下**非栈顶 entry 的生命周期恒为 CREATED**（<STARTED）——用户在
+ * 相册/数据/设置 Tab 时 home entry 正在栈底，四屏共用的 owner 全部低于 STARTED，
+ * `collectAsStateWithLifecycle` 集体停摆：点击确实进了 ViewModel（状态已更新）但 UI
+ * 永不重组，直到切回首页 tab（home entry RESUMED）才把攒下的状态一次画出——即任务U8
+ * 的「相册点击无响应/迟到显示」与「统计主页首载卡死>2min 自愈」两症状的同根因
+ * （真机 QM_TOUCH 日志 19 条 ALBUM_STATE 快照中 17 条紧贴 SHELL route=home 事件确证）。
+ *
+ * per-tab 语义 = 恢复常驻层改造前（Tab 屏由 NavHost 渲染）的原生行为：置顶 RESUMED 实时
+ * 收集、隐藏 CREATED 暂停收集、pop 返回 RESUMED 恢复。HomeScreen 持 home entry（ON_RESUME
+ * 观察「点赞后返回自动重排」语义与 U3 前逐帧一致）；Tab ViewModel 落各自 entry 的
+ * ViewModelStore（popUpTo 恒 saveState=true 故跨 Tab 切换存活；登出随导航图销毁全清，
+ * 不落 Activity 作用域跨会话残留——U3 接管的两个初衷都保留）。entry 尚未登记的帧
+ * （进程恢复后未重访的 Tab）回落 home entry：隐藏屏暂停/回首页收集，行为安全。
  *
  * ### 内存/性能代价（与旧版常驻 Fragment 同款，有意为之）
  * 四屏驻留后其 ViewModel/状态收集照旧运行（collectAsStateWithLifecycle 以 start entry 为
@@ -228,6 +237,11 @@ fun QimengNavHost(
     var currentTabRoute by rememberSaveable { mutableStateOf(TopLevelDestination.HOME.route) }
     // 各驻留 Tab 的 rememberSaveable 状态仓（按 route 分键；登出随主壳丢弃）
     val stateHolder = rememberSaveableStateHolder()
+    // per-tab owner 数据源（任务U8 根修，机制见本函数 KDoc §常驻层 owner）：Tab 路由 → 该
+    // Tab 的 NavBackStackEntry，由 NavHost 内四 Tab 空壳跳板组合时登记。mutableStateMap：
+    // restoreState 重建 entry 实例时壳重组刷新映射、常驻层同帧感知换 owner。不可 Saveable
+    // （entry 不可序列化）；进程恢复后未重访 Tab 的映射缺席 → 常驻层回落 home entry（安全档）
+    val tabEntries = remember { mutableStateMapOf<String, NavBackStackEntry>() }
 
     /** Tab 登记：首访入列（同帧组合）+ 可见性翻转（bottomBar 点击与 currentRoute 同步共用） */
     fun visitTab(route: String) {
@@ -304,12 +318,6 @@ fun QimengNavHost(
             }
         },
     ) { innerPadding ->
-        // U7 触摸诊断桩 QM_TOUCH（根因定位后撤除）
-        // NAVHOST_BOX：NavHost+常驻层公共祖先容器探针。特意不包 NavHost 单体——那会在
-        // 常驻层（zIndex -1）之上新增全尺寸命中参与者、遮蔽真实 Tab 屏的命中路径=改变
-        // 分发语义；包公共祖先只顺既有命中链多挂一个观察者，命中归属零变化。
-        // （Box 内容块维持原缩进不重排：临时诊断代码，压 diff 面积。）
-        Box(modifier = Modifier.fillMaxSize().qmTouchProbe("NAVHOST_BOX")) {
         NavHost(
             navController = navController,
             startDestination = TopLevelDestination.HOME.route,
@@ -345,29 +353,22 @@ fun QimengNavHost(
             // 交换窗口正是 Tab 切换闪烁/残留的根因；空壳让 Tab↔Tab 切换退化为空壳到空壳，
             // 真实屏的显示翻转由常驻层完成，全程零屏离树。NavHost 仍保留 Tab 路由：承担
             // 路由/返回栈/saveState/restoreState 语义，底栏显隐仍按 currentRoute 判定。
-            composable(TopLevelDestination.HOME.route) {
-                // 空壳：HomeScreen 真身在常驻层 [ResidentTabScreen] 按 route 渲染
-                // U7 触摸诊断桩 QM_TOUCH（根因定位后撤除）：跳板组合一次即打点
-                LaunchedEffect(Unit) { QmTouchProbe.log("SHELL", "route=${TopLevelDestination.HOME.route}") }
-                // U7 诊断桩结束
+            composable(TopLevelDestination.HOME.route) { entry ->
+                // 空壳：HomeScreen 真身在常驻层 [ResidentTabScreen] 按 route 渲染；
+                // 壳组合即登记 entry（per-tab owner，任务U8 根修）
+                tabEntries[TopLevelDestination.HOME.route] = entry
             }
-            composable(TopLevelDestination.ALL.route) {
+            composable(TopLevelDestination.ALL.route) { entry ->
                 // 空壳：AllScreen 真身同上
-                // U7 触摸诊断桩 QM_TOUCH（根因定位后撤除）
-                LaunchedEffect(Unit) { QmTouchProbe.log("SHELL", "route=${TopLevelDestination.ALL.route}") }
-                // U7 诊断桩结束
+                tabEntries[TopLevelDestination.ALL.route] = entry
             }
-            composable(TopLevelDestination.STATS.route) {
+            composable(TopLevelDestination.STATS.route) { entry ->
                 // 空壳：StatsScreen 真身同上
-                // U7 触摸诊断桩 QM_TOUCH（根因定位后撤除）
-                LaunchedEffect(Unit) { QmTouchProbe.log("SHELL", "route=${TopLevelDestination.STATS.route}") }
-                // U7 诊断桩结束
+                tabEntries[TopLevelDestination.STATS.route] = entry
             }
-            composable(TopLevelDestination.SETTINGS.route) {
+            composable(TopLevelDestination.SETTINGS.route) { entry ->
                 // 空壳：SettingsScreen 真身同上
-                // U7 触摸诊断桩 QM_TOUCH（根因定位后撤除）
-                LaunchedEffect(Unit) { QmTouchProbe.log("SHELL", "route=${TopLevelDestination.SETTINGS.route}") }
-                // U7 诊断桩结束
+                tabEntries[TopLevelDestination.SETTINGS.route] = entry
             }
             composable(
                 route = Routes.SEARCH,
@@ -516,17 +517,13 @@ fun QimengNavHost(
         // navigation 2.8+ Ieb7be）。空壳 Tab 全透明放行 → 当前 Tab 可见可点；
         // pushed 屏不透明自覆盖（透明根容器由幕帘补底）。
         //
-        // 常驻层 owner（KDoc §常驻层 owner 单源）：provide 起始目的地（home）的
-        // NavBackStackEntry——该 entry 被 popUpTo(start){saveState} 永不弹出，随主壳存亡。
-        // start entry 作用域下 HomeScreen 的 ON_RESUME 观察语义与改前逐帧一致；四屏 Tab
-        // ViewModel 随导航图存亡（登出即清），不落 Activity 作用域。graph 未就绪的帧
-        // （理论过渡帧）直接不组合 Tab 屏：绝不允许任何一帧在 Activity owner 下建 Tab VM
-        // （否则 owner 换手后 VM 双实例+泄漏），fallback owner 仅在空帧时无消费地挂着
-        val fallbackLifecycleOwner = LocalLifecycleOwner.current
-        // current 在本版本签名非空可空并存风险下显式收敛：宿主 Activity 恒提供，理论不空
-        val fallbackViewModelStoreOwner = requireNotNull(LocalViewModelStoreOwner.current) {
-            "LocalViewModelStoreOwner 缺失：常驻层 fallback owner 无宿主（不应发生的组合帧）"
-        }
+        // 常驻层 owner（KDoc §常驻层 owner，任务U8 根修）：**per-tab**——每个驻留 Tab 屏
+        // provide 自己的 NavBackStackEntry（[tabEntries] 由四 Tab 空壳跳板登记；U3 初版
+        // 统一 provide home entry 的实现在非首页 Tab 置顶时因 home entry=CREATED 停摆全部
+        // 状态收集，即「相册点击无响应/统计首载卡死」根因，详见 KDoc）。entry 尚未登记的
+        // 帧（进程恢复后未重访的 Tab）回落 home entry；graph 未就绪（residentEntry==null）
+        // 的帧不组合 Tab 屏：绝不允许任何一帧在 Activity owner 下建 Tab VM（否则 owner 换手
+        // 后 VM 双实例+泄漏）
         val currentEntryId: String? = navController.currentBackStackEntry?.id
         // Suppress 依据：lint 只认 NavBackStackEntry 对象本体作 key；本处持有的是 start 目的地
         // entry（popUpTo(start){saveState} 永不弹出、id 恒定），String id 作 key 与对象 key
@@ -539,30 +536,29 @@ fun QimengNavHost(
                 null
             }
         }
-        CompositionLocalProvider(
-            LocalLifecycleOwner provides (residentEntry ?: fallbackLifecycleOwner),
-            LocalViewModelStoreOwner provides (residentEntry ?: fallbackViewModelStoreOwner),
+        // 约束链 = 原 NavHost 非 detail 分支的 modifier 逐字迁移（padding → consume 同序）：
+        // 常驻 Tab 屏的布局约束与改前在 NavHost 内容区时完全一致（同宽高、同 padding/insets
+        // 消耗链——本任务最大的坑，逐行对照迁移）；NavHost 自身的 isDetailDestination 条件
+        // modifier 原样保留，与常驻层互不影响（Tab 屏原本就只在非 detail 约束下可见过）
+        Box(
+            modifier = Modifier
+                .zIndex(-1f)
+                .padding(innerPadding)
+                .consumeWindowInsets(innerPadding)
         ) {
-            // 约束链 = 原 NavHost 非 detail 分支的 modifier 逐字迁移（padding → consume 同序）：
-            // 常驻 Tab 屏的布局约束与改前在 NavHost 内容区时完全一致（同宽高、同 padding/insets
-            // 消耗链——本任务最大的坑，逐行对照迁移）；NavHost 自身的 isDetailDestination 条件
-            // modifier 原样保留，与常驻层互不影响（Tab 屏原本就只在非 detail 约束下可见过）
-            Box(
-                modifier = Modifier
-                    .zIndex(-1f)
-                    .padding(innerPadding)
-                    .consumeWindowInsets(innerPadding)
-                    // U7 触摸诊断桩 QM_TOUCH（根因定位后撤除）：常驻层容器探针（观察不
-                    // consume，事件照旧下传各 Tab 屏；节点=既有 Tab 内容命中链的祖先）
-                    .qmTouchProbe("RESIDENT_BOX"),
-                // U7 诊断桩结束
-            ) {
-                // graph 未就绪（residentEntry==null）的帧不组合 Tab 屏：见上方 owner 注释。
-                // 正常路径（首个组合内 graph 已内置）恒非空，此门控不可见
-                if (residentEntry != null) {
-                    visitedTabs.forEach { tabRoute ->
-                        key(tabRoute) {
-                            val isCurrentTab = tabRoute == currentTabRoute
+            // graph 未就绪（residentEntry==null）的帧不组合 Tab 屏：见上方 owner 注释。
+            // 正常路径（首个组合内 graph 已内置）恒非空，此门控不可见
+            if (residentEntry != null) {
+                visitedTabs.forEach { tabRoute ->
+                    key(tabRoute) {
+                        // per-tab owner 落位：本 Tab 的 entry，缺登记帧回落 home entry
+                        // （隐藏屏暂停收集/回首页收集，安全档——见上方 owner 注释）
+                        val tabOwner = tabEntries[tabRoute] ?: residentEntry
+                        val isCurrentTab = tabRoute == currentTabRoute
+                        CompositionLocalProvider(
+                            LocalLifecycleOwner provides tabOwner,
+                            LocalViewModelStoreOwner provides tabOwner,
+                        ) {
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
@@ -593,29 +589,22 @@ fun QimengNavHost(
                         }
                     }
                 }
-                // 幕帘：pushed 路由（detail/search/...）在顶时垫在 NavHost 与常驻层之间。
-                // ① 视觉：部分 pushed 屏根容器无背景（如 SearchScreen 的裸 Column），改前透出
-                //   的是 Scaffold 背景色；常驻层就位后透出的会变成当前 Tab 屏——幕帘以 Scaffold
-                //   同款 background 色补底，逐像素保真。② 输入：pushed 屏非交互区下压的触摸
-                //   全量吞掉，防穿透到常驻层造成幽灵滚动（zIndex=2 盖过当前 Tab 的 zIndex=1）
-                if (overlayRouteShowing) {
-                    // U7 触摸诊断桩 QM_TOUCH（根因定位后撤除）：幕帘组合即打点（pushed 屏
-                    // 触摸死活对照）；CURTAIN_TOUCH 观察探针挂既有 blockTouches 同节点链——
-                    // 该节点本就命中可测且全量消费，探针只加观察者，命中归属零变化
-                    SideEffect { QmTouchProbe.log("CURTAIN", "visible=true") }
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .zIndex(2f)
-                            .background(MaterialTheme.colorScheme.background)
-                            .qmTouchProbe("CURTAIN_TOUCH")
-                            .blockTouches(),
-                    )
-                    // U7 诊断桩结束
-                }
+            }
+            // 幕帘：pushed 路由（detail/search/...）在顶时垫在 NavHost 与常驻层之间。
+            // ① 视觉：部分 pushed 屏根容器无背景（如 SearchScreen 的裸 Column），改前透出
+            //   的是 Scaffold 背景色；常驻层就位后透出的会变成当前 Tab 屏——幕帘以 Scaffold
+            //   同款 background 色补底，逐像素保真。② 输入：pushed 屏非交互区下压的触摸
+            //   全量吞掉，防穿透到常驻层造成幽灵滚动（zIndex=2 盖过当前 Tab 的 zIndex=1）
+            if (overlayRouteShowing) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .zIndex(2f)
+                        .background(MaterialTheme.colorScheme.background)
+                        .blockTouches(),
+                )
             }
         }
-        } // U7 诊断桩结束（NAVHOST_BOX 容器）
     }
 }
 
