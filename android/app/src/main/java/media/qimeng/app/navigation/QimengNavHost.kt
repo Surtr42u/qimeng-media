@@ -1,7 +1,8 @@
 package media.qimeng.app.navigation
 
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -137,9 +138,10 @@ fun QimengNavRoot(modifier: Modifier = Modifier) {
  *
  * Tab 保活语义（GUIDE_UI §导航结构：旧版 show/hide 全 Tab 存活、切换不重建）。此前纯
  * Navigation 方案（saveState/restoreState + launchSingleTop 官方底部导航模式）只保**状态**
- * 不保**组合**：NavHost 换 destination = 旧屏出树 + 新屏全量组合，None 转场（2026-09-12
- * 修复）只消灭动画叠影，交换窗口仍在——新屏组合期间旧屏滞留（残留）或露背景（闪烁），
- * 壳层代码零改动下窗口依旧可见（真机 R8 包 + 高刷放大，Y5 强制最高刷）。旧版
+ * 不保**组合**：NavHost 换 destination = 旧屏出树 + 新屏全量组合，瞬时转场（2026-09-12
+ * 置 None；任务U9 2026-09-14 起 fade*(snap())，None 在转场滞留时两页全不透明同屏=叠层
+ * 残留，见 NavHost 转场注释）只消灭动画叠影，交换窗口仍在——新屏组合期间旧屏滞留（残留）
+ * 或露背景（闪烁），壳层代码零改动下窗口依旧可见（真机 R8 包 + 高刷放大，Y5 强制最高刷）。旧版
  * （QimengMedia MainActivity）Fragment 常驻 add、切换 = hide 全部 + show 目标，零组合成本
  * 零交换窗口。本版对齐该机制，内容区改双载体：
  *
@@ -324,12 +326,18 @@ fun QimengNavHost(
             // 任务L L2（拍板 #2「NavHost 顶层切换确保无 enter/exit 转场动画叠影」）：
             // Navigation Compose 2.7+ 默认转场为 crossfade（新页 fadeIn 220ms 延迟 90ms 叠着
             // 旧页 fadeOut）——快速切 Tab 时新旧两页同屏，正是用户「叠屏/延迟消失」观感的
-            // 动画根因。旧版 Fragment show/hide 无转场，故四处转场全置 None（瞬时切换）；
-            // 覆盖页/详情页进出同样瞬时（旧版同为无转场观感）。与防抖双保险，防叠加。
-            enterTransition = { EnterTransition.None },
-            exitTransition = { ExitTransition.None },
-            popEnterTransition = { EnterTransition.None },
-            popExitTransition = { ExitTransition.None },
+            // 动画根因。旧版 Fragment show/hide 无转场，故四处转场为瞬时切换；覆盖页/详情页
+            // 进出同样瞬时（旧版同为无转场观感）。与防抖双保险，防叠加。
+            // 任务U9（2026-09-14）：None → fade*（snap()）——「无动画属性」≠「零时长」：
+            // None 下进出两页在整个转场存续期都以全不透明同屏，转场只要因任何原因滞留
+            // >1 帧（navigation 2.10 转场内部状态、release 包慢帧），就呈现用户实测的
+            // 「退出后旧页内容叠层残留 1~2s 才消失」（release 包逐帧实证）。snap() 第一帧
+            // 即把退出页 alpha 硬置 0/进入页置 1：无论转场滞留多久都无叠影，视觉仍是
+            // 瞬时交换，L2 拍板口径不变。
+            enterTransition = { fadeIn(snap()) },
+            exitTransition = { fadeOut(snap()) },
+            popEnterTransition = { fadeIn(snap()) },
+            popExitTransition = { fadeOut(snap()) },
             // X1 根修（2026-09-12 任务X，问题1/2/3/4 总根因）：detail 路由内容区不再被
             // innerPadding 钉位。旧版详情页「始终 edge-to-edge 全屏布局，系统栏显隐不触发
             // 布局」（GUIDE_UI L162/L272-275）；钉位架构下沉浸切换会经 Scaffold innerPadding
@@ -378,8 +386,6 @@ fun QimengNavHost(
                         defaultValue = ""
                     },
                 ),
-                // popEnter=None：瞬时交换语义显式化（继承 NavHost 顶层 None，no-op）
-                popEnterTransition = { EnterTransition.None },
             ) { entry ->
                 SearchScreen(
                     initialQuery = entry.arguments?.getString(Routes.KEY_SEARCH_QUERY)
@@ -390,10 +396,8 @@ fun QimengNavHost(
                     },
                 )
             }
-            // popEnter=None：瞬时交换语义显式化（继承 NavHost 顶层 None，no-op）
             composable(
                 route = Routes.FAVORITE,
-                popEnterTransition = { EnterTransition.None },
             ) {
                 FavoriteScreen(
                     onBack = { navController.popBackStack() },
@@ -402,10 +406,8 @@ fun QimengNavHost(
                     },
                 )
             }
-            // popEnter=None：瞬时交换语义显式化（继承 NavHost 顶层 None，no-op）
             composable(
                 route = Routes.HISTORY,
-                popEnterTransition = { EnterTransition.None },
             ) {
                 HistoryScreen(
                     onBack = { navController.popBackStack() },
@@ -414,10 +416,8 @@ fun QimengNavHost(
                     },
                 )
             }
-            // popEnter=None：瞬时交换语义显式化（继承 NavHost 顶层 None，no-op）
             composable(
                 route = Routes.AUTHORS,
-                popEnterTransition = { EnterTransition.None },
             ) {
                 AuthorScreen(
                     onBack = { navController.popBackStack() },
@@ -433,10 +433,8 @@ fun QimengNavHost(
             // 作者集合页（任务G G1b）：路由契约单源在 feature:author（DetailRoutes 同范式，
             // feature 禁依赖 :app，壳层反向引用合法）；路由参数由页面 ViewModel 经
             // SavedStateHandle 读取，此处无需展开 arguments。
-            // popEnter=None：瞬时交换语义显式化（继承 NavHost 顶层 None，no-op）
             composable(
                 route = AuthorCollectionRoutes.AUTHOR_COLLECTION_ROUTE,
-                popEnterTransition = { EnterTransition.None },
             ) {
                 AuthorCollectionScreen(
                     onBack = { navController.popBackStack() },
@@ -470,12 +468,10 @@ fun QimengNavHost(
             // 详情页（M4-3）：滑切换件的返回栈语义=popUpTo 换顶、栈深恒 1（见 onOpenAsset
             // 内注释；任务Z Z5 对齐旧版单实例语义。launchSingleTop 不适用：换件必须生成
             // 全新 entry，W7 沉浸交接单依赖新实例 rememberSaveable 初值链消费）。
-            // popExit/popEnter 双 None：瞬时交换语义显式化（继承 NavHost 顶层四参
-            // None，no-op；L2 拍板「无内容转场」口径同样覆盖 pushed 路由的 pop 侧）。
+            // 进出转场继承 NavHost 顶层 fade*（snap()）瞬时语义（任务U9：None 改 snap 根修
+            // 「退出后旧页叠层残留」，L2 拍板「无内容转场」口径同样覆盖 pushed 路由）。
             composable(
                 route = DetailRoutes.DETAIL_ROUTE,
-                popExitTransition = { ExitTransition.None },
-                popEnterTransition = { EnterTransition.None },
             ) { entry ->
                 DetailScreen(
                     assetId = entry.arguments?.getString(DetailRoutes.KEY_ASSET_ID).orEmpty(),

@@ -30,11 +30,13 @@ package media.qimeng.app.feature.detail
  * 消除白条。标记读后即清：非滑切离场（详情→作者页 / pop 回列表）标记必为 false，
  * onDispose 照常恢复 show()，列表页不丢栏。
  *
- * 耦合声明（S2 对抗审查 CONCERN 记档 2026-09-13）：上述「消费先于 dispose」的前提隐式
- * 依赖壳层两个外部事实——QimengNavHost 详情转场 enter/exit/popEnter/popExit 全 None
- * （无转场动画后移 dispose）与 Z5 换件 popUpTo(inclusive=true) 栈深恒 1（任意时刻至多
- * 一个待 dispose 的 DetailScreen，无「两次 dispose 抢一个标记」）。若未来引入动画转场，
- * dispose 后移将拉宽标记残留窗口、快速连滑可复现误跳 show()——届时须先重审本单时序。
+ * 耦合声明（S2 对抗审查 CONCERN 记档 2026-09-13；任务U9 2026-09-14 随转场根修同步更新）：
+ * 上述「消费先于 dispose」的前提隐式依赖壳层两个外部事实——QimengNavHost 详情转场
+ * enter/exit/popEnter/popExit 恒**无动画时长**（U9 起实现由 None 改为 fade*(snap())，仍是
+ * 第 1 帧即到位的瞬时交换，「无转场动画后移 dispose」性质不变）与 Z5 换件
+ * popUpTo(inclusive=true) 栈深恒 1（任意时刻至多一个待 dispose 的 DetailScreen，无「两次
+ * dispose 抢一个标记」）。若未来引入带时长的动画转场，dispose 后移将拉宽标记残留窗口、
+ * 快速连滑可复现误跳 show()——届时须先重审本单时序。
  */
 internal object SiblingSwipeImmersionRequest {
 
