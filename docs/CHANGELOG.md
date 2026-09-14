@@ -24,6 +24,24 @@
 - **终包**=`QimengNAS\qimeng-任务U10四批-终包-20260915.apk`（release+debug 签名可直装，含 U9/U10-5 全部内容）。**待用户真机**：①U10-2/U10-3 同屏对比旧版拍板「对齐了」（含单选胶囊纠正确认）；②U10-4 合并子页（换址/本机模式流程不回退）；③U10-6 数据管理全套内容管理操作体验拍板；④砍项三项（改名/路径浏览/文件行操作）如需恢复请指示（改名需先动 openapi.yaml）。U10-1 自动旋转排查保持低优先。
 
 ---
+## feat(app): 任务U10 追加批——筛选钮状态/标签弹层间距/相册胶囊展开三处修复+数据管理补TXT导入与备份+上传支持文件夹（2026-09-15 第二百六十四笔）
+
+执行 AI：GLM-5.3-Flash（主代理调度；研究×2 逐行考古+执行×3 并发实施+reviewer 对抗审查；**受用户暂停/禁编译指令约束，本批最终态未执行编译与安装，验证状态见文末如实记档**）
+
+- **三处 UI 修复（真机复核反馈）**：
+  1. **相册页筛选钮「常亮」**：考古实证旧版本就恒显软底且色值/尺寸与新版逐项一致（旧 fragment_all_files.xml:48-57 静态 bg_capsule_soft，三 Fragment 均无状态切换代码）——按用户预期做**有意偏离旧版的增强**（记档）：`QimengTitleRow` 加 `filterActive` 参数（无筛选=透明底仅图标，有筛选=软底点亮）；判定逻辑收口 core:model 纯函数 `AlbumPanelFilter.hasActiveFilters()`（面板 9 字段逐项比对默认值；四维芯片/tagMode 不点亮，反证用例锁定）+11 单测；首页按钮未动（用户确认其他页正常）。
+  2. **标签弹层「间隔太多」**：考古实证 chip 本体（间距 8/4dp、高 30dp、水平内距 14dp、12sp）与旧版**完全一致**，多出的空隙来自新版新增的三处垂直空隙——删副标题说明行（+24dp）、节顶距 12dp→0（回旧版「分节标题自带上下 6dp」语义）、添加行 12→8dp、内容顶距补 18dp（旧 sheetContainer setPadding MediaDetailFragment.kt:1254）、空态字号回 13sp、「＋」字形回 22sp（旧版 22f，U10-2 系误抄已记档）；全部改动带旧库 file:line 来源注释。
+  3. **相册胶囊展开行为**：旧版=展开区限高「屏幕像素高一半」+内部纵向滚动（MaxHeightScrollView.kt:15-18）、值药丸间距 6/4（FlowLayout.kt:18-19）——展开态补 `heightIn(max=screenHeightDp/2)+verticalScroll`、值药丸间距 8/8→6/4（消费方核查仅相册页用 QimengValuePillFlow）；收起态两行钳制与展开钮保留，悬浮面板形态未复刻（G5 in-flow 决策保留，KDoc 记档）。
+- **数据管理补两入口**（hub 行序：上传文件/库管理/**作者 TXT 导入**/**备份导入导出**；交互与文案逐字对齐 Web 文件管理页，零协议改动零 SDK 再生）：
+  1. **作者 TXT 导入**（`AuthorTxtImportScreen/ViewModel` + AuthorRepository 扩 4 方法带默认实现）：SAF OpenDocument(text/plain)+扩展名前置拦截+UTF-8 读取（与 Web readAsText 同口径，GBK 不支持记档）；片段列表/移除（按剩余片段重建）/重新匹配（rebuild 禁用条件=无片段）；成功/失败/规则三条文案逐字对照 Web TxtAuthorImportCard。
+  2. **备份导入导出**（`BackupScreen/ViewModel/BackupValidator` + BackupRepository/SdkBackupRepository）：导出=CreateDocument 预填 `qimeng_backup.json`+Moshi 序列化（reviewer P2 修复：数十 MB 信封的序列化+UTF-8 拷贝移出主线程 `withContext(Dispatchers.Default)` 防 ANR）；导入=四闸前置校验（64MB 上限常量与 web backup.ts/服务端 legacyImportMaxBody 三方双写注释、裸 JSON、format 信封、强类型结构——第 4 闸为 App 独有加强，Web 放行由服务端 400 兜）→ 摘要二次确认（Web backupSummaryText 逐字）→ 幂等导入+warnings 逐条展示；用户取消静默。
+- **上传支持文件夹**（App 新能力，Web 无 webkitdirectory 基准，文案自拟对齐上传页语言）：`OpenDocumentTree`+SAF 递归枚举（core:data `FolderScanPolicy` 纯逻辑零 Android import 可 JVM 测 + `SafFolderScanner` 平台件，Hilt 绑定独立模块文件避开并行热区）；拍板口径=所选文件夹名作 dir 首段（选「作者A」→库内 `作者A/...`，叠加页内已选目标目录）/非媒体扩展名跳过+计数/上限 `MAX_FOLDER_FILES=1000` 截断提示/不持久化 tree 权限（M4-5 先例）；`UploadItem.relativeDir`+`UploadRules.joinUploadDirPath`（口径对齐服务端 NormalizeRelPath：反斜杠归一/两端 trim/空段合成），per-item dir 落 `SdkUploadRepository` 入队 spec（文件级 relativeDir=空串行为零变化）；上传页选文件/选文件夹两入口并排+待传行「子目录」+「共 N · 成功 X · 失败 Y」聚合行；Screen 206 行超百行红线拆 `UploadForm/DirTreePanel`（纯搬移逐行对照）。
+- **reviewer 对抗审查**（git diff HEAD 全量+三批交叉）：**无 P1**；2×P2 全修——①备份导出序列化移出主线程（见上）②`android/.kotlin/` 构建会话缓存入 .gitignore 防误入库；P3 记档不阻塞（Scanner 无递归深度上限等病态输入、per-item dir 组合层无直测、跨入口 uri 去重对同一物理文件可能失效等）；越界清单仅 .kotlin 缓存目录（已拦）。hasActiveFilters 字段覆盖/heightIn 与 padding 顺序/滚动嵌套无手势冲突/NavHost 纯增量/SAF 回调协程安全均逐项 PASS。
+- **附带修复**：①feature:manage release 编译重载歧义——`LibraryManageScreen` 私有 `StatusMessageCard` 与追加批新 internal 共享件冲突（debug 增量编译不暴露、release 全量编译必炸），删私有旧件统一共享件（顺带修正旧件忽略 container 配色的视觉偏差）；②`DetailTagSheet` 补 `@OptIn(ExperimentalMaterial3ExpressiveApi::class)`（U10-2 重写时遗漏）；③UploadViewModelTest 3 处补 `driveIdle()`（uiState 经 combine().stateIn 异步传播，直调后需推进调度器）。
+- **验证状态（如实）**：用户暂停+禁编译指令下，最终态未执行全量门禁与安装。禁令前的分段记录：debug 门禁三连（build/test 638+新增/lint）全绿、`:feature:manage:compileReleaseKotlin` 与全量 assembleRelease 绿、E1/E3 模块编译与 `:core:model`/`:feature:upload`/`:feature:manage`/`:feature:settings` 测试分段绿；**两个 P2 修补（其一为纯线程调度调整）之后未再编译**。恢复步骤见 HANDOVER。
+- **环境记档（CPU 限流与热重载，供后续会话）**：①`--max-workers=N`/priority 线程级软限制挡不住 Gradle/Kotlin **守护进程复用**的 CPU 峰值（守护进程是旧进程，不在新构建的限流树内）；有效方案=Windows Job Object CPU_RATE_CONTROL_HARD_CAP 且**构建前预捕获既有守护进程**入 job（轮询补捕），实测强制重编译峰值 46%≤50%；脚本与 Makefile 接线经用户拍板撤除（dev-tools/build-cap50.ps1 已删、Makefile 已还原），机制结论留档备未来重建。②「热重载」答疑已记：本项目标准 Compose 工程支持 Android Studio **Live Edit**——Studio 打开 android 工程 Run 后改 Compose UI 代码即时生效免装包，新增页面/路由类结构性改动需重 Run；CLI 构建无此能力。
+
+---
 ## fix(app): 任务U10-5 原图不落盘——详情页原件请求 diskCachePolicy(DISABLED) 根治磁盘缓存膨胀（2026-09-14 第二百六十二笔）
 
 执行 AI：GLM-5.3-Flash（主代理直接实施）

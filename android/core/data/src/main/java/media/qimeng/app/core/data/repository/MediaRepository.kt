@@ -12,6 +12,8 @@ import media.qimeng.app.core.model.MediaKind
 import media.qimeng.app.core.model.NameSuggestion
 import media.qimeng.app.core.model.RankingPeriod
 import media.qimeng.app.core.model.TagSummary
+import media.qimeng.sdk.models.TxtImportedFile
+import media.qimeng.sdk.models.TxtImportResult
 
 /**
  * 列表族数据端口（M4-2）：资产/候选/推荐/排行榜/搜索建议。
@@ -66,11 +68,33 @@ interface HistoryRepository {
     suspend fun history(query: HistoryQuery): HistoryPageResult
 }
 
-/** 作者端口：全量数组（作者量有界，排序/搜索客户端做）+ 关注 toggle */
+/**
+ * 作者端口：全量数组（作者量有界，排序/搜索客户端做）+ 关注 toggle。
+ * U10-6b 追加 TXT 导入族（旧版数据管理「TXT导入作者」，Web 文件管理页
+ * TxtAuthorImportCard 对等物；DOMAIN_RULES §6 三格式自动识别 + 统一重建）。
+ * 返回类型直用生成模型（TxtImportedFile/TxtImportResult）——与本批 [BackupRepository]
+ * 同一透传口径，不新开 core 映射型（拍板接口签名即生成物模型）。
+ * 四方法带默认实现的原因同本文件 tags 族注释：并行批 feature:detail 的测试替身
+ * FakeAuthorRepository 只实现前两方法，抽象化会破坏其编译（任务外文件禁碰）；
+ * 默认值=「无 TXT 导入能力」，唯一生产实现 SdkAuthorRepository 全覆盖。
+ */
 interface AuthorRepository {
     suspend fun authors(): List<AuthorSummary>
 
     suspend fun setFollowed(authorId: String, followed: Boolean)
+
+    /** 已导入 TXT 片段列表（GET /authors/import-txt；filename 升序，空串=匿名导入） */
+    suspend fun importedTxtFiles(): List<TxtImportedFile> = emptyList()
+
+    /** 导入作者 TXT（POST /authors/import-txt；同名片段覆盖 + 从全部片段统一重建） */
+    suspend fun importTxt(filename: String, content: String): TxtImportResult =
+        throw UnsupportedOperationException("importTxt 未实现")
+
+    /** 移除一个片段并从剩余片段重建（DELETE /authors/import-txt；404=片段不存在） */
+    suspend fun removeImportedTxt(filename: String) = Unit
+
+    /** 幂等重放已存片段重建作者-文件关联（POST /authors/import-txt/rebuild；无片段返回零值） */
+    suspend fun rebuildTxt(): TxtImportResult = throw UnsupportedOperationException("rebuildTxt 未实现")
 }
 
 /**

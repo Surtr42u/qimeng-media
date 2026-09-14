@@ -2,7 +2,9 @@ package media.qimeng.app.core.model
 
 import java.time.LocalDate
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -225,5 +227,68 @@ class AlbumPanelFilterTest {
         assertEquals(PanelDateRange.YEAR_RANGE, roundTrip.dateRange)
         assertEquals(2020, roundTrip.yearFrom)
         assertEquals(2026, roundTrip.yearTo)
+    }
+
+    // ---------- 筛选钮点亮判定（U10-2b：hasActiveFilters 默认全假、逐字段置真各一） ----------
+
+    @Test
+    fun `点亮判定 - 默认态不点亮`() {
+        assertFalse(AlbumFilterState().hasActiveFilters())
+    }
+
+    @Test
+    fun `点亮判定 - 排序偏离默认点亮`() {
+        assertTrue(AlbumFilterState(sort = AssetSort.FILE_DATE).hasActiveFilters())
+    }
+
+    @Test
+    fun `点亮判定 - 顺位偏离默认点亮`() {
+        assertTrue(AlbumFilterState(order = SortOrder.ASC).hasActiveFilters())
+    }
+
+    @Test
+    fun `点亮判定 - 观看档非全部点亮`() {
+        assertTrue(AlbumFilterState(viewRange = PanelCountRange.LOW).hasActiveFilters())
+    }
+
+    @Test
+    fun `点亮判定 - 点击档非全部点亮`() {
+        assertTrue(AlbumFilterState(playRange = PanelCountRange.HIGH).hasActiveFilters())
+    }
+
+    @Test
+    fun `点亮判定 - 大小档非全部点亮`() {
+        assertTrue(AlbumFilterState(sizeRange = PanelSizeRange.LT_1M).hasActiveFilters())
+    }
+
+    @Test
+    fun `点亮判定 - 时间档非全部点亮`() {
+        assertTrue(AlbumFilterState(dateRange = PanelDateRange.TODAY).hasActiveFilters())
+    }
+
+    @Test
+    fun `点亮判定 - 年份置值点亮`() {
+        assertTrue(AlbumFilterState(yearFrom = PANEL_MIN_YEAR).hasActiveFilters())
+        assertTrue(AlbumFilterState(yearTo = 2026).hasActiveFilters())
+    }
+
+    @Test
+    fun `点亮判定 - 标签非空点亮`() {
+        assertTrue(AlbumFilterState(tagIds = listOf("tag-1")).hasActiveFilters())
+    }
+
+    @Test
+    fun `点亮判定 - 仅改标签匹配模式不点亮（默认档不改变查询结果）`() {
+        assertFalse(AlbumFilterState(tagMode = PanelTagMode.EXACT).hasActiveFilters())
+    }
+
+    @Test
+    fun `点亮判定 - 四维芯片与展开态不点亮（面板字段专属语义）`() {
+        val state = AlbumFilterState(
+            partition = Zone.COS,
+            mediaType = MediaKind.VIDEO,
+            expanded = true,
+        )
+        assertFalse(state.hasActiveFilters())
     }
 }

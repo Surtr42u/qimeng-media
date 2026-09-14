@@ -70,6 +70,33 @@ class UploadModelsTest {
         assertNull(UploadRules.joinDirPath("a", "x/y"))
     }
 
+    // ---- UploadRules.joinUploadDirPath（U10-6c：选文件夹上传的 per-item dir 拼装）----
+
+    @Test
+    fun `基目录为空时相对目录即整段`() {
+        assertEquals("作者A/子", UploadRules.joinUploadDirPath("", "作者A/子"))
+    }
+
+    @Test
+    fun `相对目录为空时保持基目录`() {
+        assertEquals("photos", UploadRules.joinUploadDirPath("photos", ""))
+    }
+
+    @Test
+    fun `基目录与相对目录斜杠拼接`() {
+        assertEquals("photos/作者A/子", UploadRules.joinUploadDirPath("photos", "作者A/子"))
+    }
+
+    @Test
+    fun `反斜杠归一为斜杠且首尾斜杠容错`() {
+        assertEquals("photos/作者A/子", UploadRules.joinUploadDirPath("/photos/", "作者A\\子"))
+    }
+
+    @Test
+    fun `两者皆空返回空串`() {
+        assertEquals("", UploadRules.joinUploadDirPath("", ""))
+    }
+
     // ---- UploadRules.shouldExpandOnSelect（V7：点目录行 = 选中并进入）----
 
     @Test

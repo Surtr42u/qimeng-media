@@ -81,6 +81,11 @@ interface DataModule {
     @Singleton
     fun bindLibraryRepository(impl: SdkLibraryRepository): LibraryRepository
 
+    // U10-6b：旧版备份导入/导出（数据管理 hub「备份导入导出」子页的数据面）
+    @Binds
+    @Singleton
+    fun bindBackupRepository(impl: media.qimeng.app.core.data.repository.SdkBackupRepository): media.qimeng.app.core.data.repository.BackupRepository
+
     @Binds
     @Singleton
     fun bindStatsRepository(impl: media.qimeng.app.core.data.repository.SdkStatsRepository): media.qimeng.app.core.data.repository.StatsRepository

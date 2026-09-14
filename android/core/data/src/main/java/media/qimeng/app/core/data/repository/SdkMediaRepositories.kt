@@ -22,7 +22,10 @@ import media.qimeng.app.core.network.ServerConfigDataSource
 import media.qimeng.sdk.apis.DefaultApi
 import media.qimeng.sdk.infrastructure.ClientException
 import media.qimeng.sdk.models.ApiV1AuthorsAuthorIdFollowPutRequest
+import media.qimeng.sdk.models.ApiV1AuthorsImportTxtPostRequest
 import media.qimeng.sdk.models.ApiV1TagsPostRequest
+import media.qimeng.sdk.models.TxtImportedFile
+import media.qimeng.sdk.models.TxtImportResult
 import okhttp3.OkHttpClient
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -254,6 +257,39 @@ class SdkAuthorRepository @Inject constructor(
                 authorId = authorId,
                 apiV1AuthorsAuthorIdFollowPutRequest = ApiV1AuthorsAuthorIdFollowPutRequest(follow = followed),
             )
+        }
+    }
+
+    // ── TXT 导入族（U10-6b，Web 文件管理页 TxtAuthorImportCard 对等物）──
+
+    override suspend fun importedTxtFiles(): List<TxtImportedFile> {
+        Log.d(SdkMediaRepository.LOG_TAG, "GET /authors/import-txt")
+        return withContext(Dispatchers.IO) {
+            apiFactory.create().apiV1AuthorsImportTxtGet()
+        }
+    }
+
+    override suspend fun importTxt(filename: String, content: String): TxtImportResult {
+        // 只记片段名与字符量，不打全文（内容可达 MB 级，logcat 单行溢出无意义）
+        Log.d(SdkMediaRepository.LOG_TAG, "POST /authors/import-txt filename=$filename chars=${content.length}")
+        return withContext(Dispatchers.IO) {
+            apiFactory.create().apiV1AuthorsImportTxtPost(
+                ApiV1AuthorsImportTxtPostRequest(filename = filename, content = content),
+            )
+        }
+    }
+
+    override suspend fun removeImportedTxt(filename: String) {
+        Log.d(SdkMediaRepository.LOG_TAG, "DELETE /authors/import-txt filename=$filename")
+        withContext(Dispatchers.IO) {
+            apiFactory.create().apiV1AuthorsImportTxtDelete(filename = filename)
+        }
+    }
+
+    override suspend fun rebuildTxt(): TxtImportResult {
+        Log.d(SdkMediaRepository.LOG_TAG, "POST /authors/import-txt/rebuild")
+        return withContext(Dispatchers.IO) {
+            apiFactory.create().apiV1AuthorsImportTxtRebuildPost()
         }
     }
 }

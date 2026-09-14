@@ -17,6 +17,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -48,6 +49,10 @@ import media.qimeng.app.core.ui.theme.QimengDimens
  * @param onBack 返回按钮回调（null=不显示返回钮，M4-2A-B5 可选项）
  * @param modifier 行级外部布局参数（页面纵向上仍由调用方整体排布）
  * @param onFilterClick 筛选按钮回调（null=不显示筛选图标，M4-2A-B3 可选入口）
+ * @param filterActive 是否存在已激活筛选（U10-2b，2026-09-14 用户真机反馈「筛选钮常亮」）：
+ *   false=透明底（40dp 尺寸/图标 tint 不变，防布局跳动），true=旧版软底胶囊。旧版为恒显软底
+ *   （fragment_all_files.xml:48-57 静态 bg_capsule_soft，无状态切换代码），本开关为按用户反馈
+ *   做的有意偏离增强；仅相册页传入，收藏/历史走默认 false 观感不变
  * @param columns 当前列数（驱动图标档位，越界由 [gridIconFor] clamp；与 onToggleColumns 成对出现）
  * @param onToggleColumns 列数步进回调（null=整组列数控件不显示，M4-2A-B5 可选项；步进/持久化语义在调用方 ViewModel）
  */
@@ -58,6 +63,7 @@ fun QimengTitleRow(
     modifier: Modifier = Modifier,
     onBack: (() -> Unit)? = null,
     onFilterClick: (() -> Unit)? = null,
+    filterActive: Boolean = false,
     columns: Int? = null,
     onToggleColumns: (() -> Unit)? = null,
     titleStyle: TextStyle? = null,
@@ -98,7 +104,9 @@ fun QimengTitleRow(
             // （HomeTopIconButton 同成因）；内层 clickable 承担点击（ripple 被 Surface 形状裁剪）
             Surface(
                 shape = RoundedCornerShape(QimengDimens.PillCornerRadius),
-                color = MaterialTheme.colorScheme.secondaryContainer,
+                // U10-2b：无激活筛选=透明底（用户反馈「常亮」——旧版恒显软底系静态容器无状态
+                // 语义，见 KDoc @param filterActive 有意偏离记档）；true 恢复旧版软底
+                color = if (filterActive) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
                 modifier = Modifier.size(QimengDimens.IconButtonSize),
             ) {
                 Box(

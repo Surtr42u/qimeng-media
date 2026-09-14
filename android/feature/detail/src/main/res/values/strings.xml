@@ -61,7 +61,8 @@
         任务V V3：detail_tag_manage / detail_tag_add 随下滑区标签行只读化删除——
         编辑入口收敛到首屏「标签」胶囊（detail_chrome_tag） -->
     <string name="detail_tag_sheet_title">标签管理</string>
-    <string name="detail_tag_sheet_desc">点选标签挂到本文件，保存时整体替换当前标签。</string>
+    <!-- detail_tag_sheet_desc（副标题说明行）已随 U10-2b 删除：用户反馈「标签间隔太多」，
+        旧版弹窗本无此行；草稿整体替换语义由「保存」钮自身表达 -->
     <string name="detail_tag_section_current">当前标签</string>
     <string name="detail_tag_section_other">其他标签</string>
     <string name="detail_tag_empty">暂无标签</string>

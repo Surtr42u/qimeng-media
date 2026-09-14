@@ -5,9 +5,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -19,8 +22,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -34,6 +39,7 @@ import media.qimeng.app.core.model.PanelFeedback
 import media.qimeng.app.core.model.PillSpec
 import media.qimeng.app.core.model.Zone
 import media.qimeng.app.core.model.groupByAlbumDim
+import media.qimeng.app.core.model.hasActiveFilters
 import media.qimeng.app.core.ui.component.QimengChipRow
 import media.qimeng.app.core.ui.component.QimengEmptyState
 import media.qimeng.app.core.ui.component.QimengFilterSheet
@@ -62,8 +68,18 @@ private const val ALBUM_VALUE_COLLAPSE_THRESHOLD = 9
 private const val ALBUM_VALUE_COLLAPSED_LINES = 2
 
 /**
+ * 展开态值区块限高 = 屏高 ÷ 本除数（U10-2b/7，2026-09-14 用户反馈「旧版点开展示一部分，
+ * 超过可以往下滑」）：复刻旧版 MaxHeightScrollView.kt:15-18 onMeasure
+ * displayMetrics.heightPixels/2 的 AT_MOST 语义——最多半屏、超出纵向滚动。Compose 侧以
+ * screenHeightDp/2 的 dp 近似（原实现按原始像素测量，不含密度换算，语义同为「半屏」）。
+ * 只作用于展开态容器；悬浮面板形态未复刻（G5 in-flow 决策保留）。
+ */
+private const val ALBUM_PILLS_MAX_HEIGHT_DIVISOR = 2
+
+/**
  * 相册页（M4-2，原全部页；任务G G5 对齐 Web AlbumsPage 形态）：标题+统计行+列数图标（双指缩放可调）+
- * 四维芯片行 + in-flow 值区块（文档流推挤网格，超阈值收起两行可展开）+
+ * 四维芯片行 + in-flow 值区块（文档流推挤网格，超阈值收起两行可展开；展开态限高半屏可纵滚——
+ * U10-2b/7 旧版 MaxHeightScrollView 行为复刻，悬浮形态未复刻）+
  * 按 activeDim 分派的分组网格 + 下拉刷新 + cursor 分页。
  * 排序不在页头（任务L L4 按用户拍板删除 G5 页头四档排序行——旧版无此行），
  * 排序唯一编辑入口回归万能筛选面板「排序方式/顺位」两段（QimengFilterSheet）。
@@ -148,6 +164,9 @@ fun AllScreen(
             columns = displayColumns,
             onToggleColumns = viewModel::toggleColumns,
             onFilterClick = viewModel::openFilterSheet,
+            // U10-2b：面板字段偏离默认（排序/顺位/观看/点击/大小/时间/年份/标签）才点亮软底；
+            // 判定为 core:model 纯函数（hasActiveFilters），UI 不内嵌业务规则（铁律 7）
+            filterActive = state.filter.hasActiveFilters(),
         )
 
         // 维度芯片行常驻文档流（旧版在网格上方推挤布局）；「角色 | 类型」间竖分隔线=旧版
@@ -165,13 +184,27 @@ fun AllScreen(
         // 对齐 Web .value-row 形态）。整块显隐仍由 D3 拍板语义控制（filter.expanded：
         // 进页默认收起/点已激活维 toggle/切维展开），本批只改「值」的呈现容器。
         if (state.filter.expanded) {
+            // U10-2b/7：展开态（valuesExpanded=true）容器限高半屏+纵向滚动=旧版 MaxHeightScrollView
+            // 行为复刻（见 ALBUM_PILLS_MAX_HEIGHT_DIVISOR 记档）；收起态维持两行钳制不滚动
+            val expandedMaxHeight =
+                LocalConfiguration.current.screenHeightDp.dp / ALBUM_PILLS_MAX_HEIGHT_DIVISOR
             Column(
-                modifier = Modifier.padding(
-                    start = QimengDimens.ScreenPaddingHorizontal,
-                    end = QimengDimens.ScreenPaddingHorizontal,
-                    // Web .value-row margin-top 10px 的近似 token 档（8dp）
-                    top = QimengDimens.SpaceM,
-                ),
+                modifier = Modifier
+                    .padding(
+                        start = QimengDimens.ScreenPaddingHorizontal,
+                        end = QimengDimens.ScreenPaddingHorizontal,
+                        // Web .value-row margin-top 10px 的近似 token 档（8dp）
+                        top = QimengDimens.SpaceM,
+                    )
+                    .then(
+                        if (valuesExpanded) {
+                            Modifier
+                                .heightIn(max = expandedMaxHeight)
+                                .verticalScroll(rememberScrollState())
+                        } else {
+                            Modifier
+                        },
+                    ),
             ) {
                 QimengValuePillFlow(
                     pills = activePills.map { QimengPill(text = it.text, selected = it.selected) },

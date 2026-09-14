@@ -23,6 +23,7 @@ import media.qimeng.app.core.model.LibraryChoice
 import media.qimeng.app.core.model.UploadItem
 import media.qimeng.app.core.model.UploadLimits
 import media.qimeng.app.core.model.UploadQueueEntry
+import media.qimeng.app.core.model.UploadRules
 import media.qimeng.app.core.model.UploadStatus
 import media.qimeng.sdk.models.ApiV1DirsPostRequest
 import java.util.UUID
@@ -87,11 +88,14 @@ class SdkUploadRepository @Inject constructor(
             val localId = UUID.randomUUID().toString()
             knownNames[localId] = item.displayName
             queueOrder.add(localId)
+            // U10-6c：per-item dir = 页面已选目录 + 该文件相对子目录（选文件夹上传时
+            // relativeDir 非空；文件级上传为空串，join 结果即原 dir，行为不变）
+            val itemDir = UploadRules.joinUploadDirPath(dir, item.relativeDir)
             val spec = UploadWorkSpec.UploadRequestSpec(
                 localId = localId,
                 uri = item.uri,
                 libraryId = libraryId,
-                dir = dir,
+                dir = itemDir,
                 displayName = item.displayName,
                 sizeBytes = item.sizeBytes,
             )
@@ -116,7 +120,7 @@ class SdkUploadRepository @Inject constructor(
                 .enqueue()
             Log.i(
                 SdkMediaRepository.LOG_TAG,
-                "enqueue upload localId=$localId file=${item.displayName} dir=$dir",
+                "enqueue upload localId=$localId file=${item.displayName} dir=$itemDir",
             )
             QueuedUpload(localId = localId, displayName = item.displayName)
         }
