@@ -2,12 +2,14 @@ package media.qimeng.app.feature.detail
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -33,28 +35,54 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import media.qimeng.app.core.model.TagChip
 import media.qimeng.app.core.ui.component.QimengCapsuleTextField
 import media.qimeng.app.core.ui.icon.ClearIcon
 import media.qimeng.app.core.ui.theme.QimengDimens
 import media.qimeng.app.core.ui.theme.qimengFilledButtonColors
 
-// ---------- 页面私有尺寸档（本文件单源；来源注释随条目） ----------
+// ---------- 页面私有尺寸/字号档（本文件单源；来源注释随条目） ----------
 
 /** 「当前标签」勾选移除图标边长（chip 内随行小图标档） */
 private val TAG_CLEAR_ICON_SIZE = 16.dp
 
-/** 保存按钮内嵌转圈直径（按钮内小尺寸档） */
 /** 保存按钮内嵌指示器直径单源到 QimengDimens（V8 #5：16dp 强缩失衡 → 对齐 labelLarge 文字行高） */
 private val TAG_SAVE_PROGRESS_SIZE = QimengDimens.ButtonLoadingIndicatorSize
 
+/** 弹层标题字号 18sp（旧 MediaDetailFragment.kt:1258-1265 标签弹窗标题，Bold+居中同源） */
+private val TAG_SHEET_TITLE_TEXT_SIZE = 18.sp
+
+/** 分节标题字号 13sp（旧 TagSheetHelper.kt:160-165 分节头） */
+private val TAG_SECTION_TITLE_TEXT_SIZE = 13.sp
+
+/** ＋ 新建钮宽 52dp（U10-2 D8 拍板：旧版视觉「＋」实底主色圆钮） */
+private val TAG_ADD_BUTTON_WIDTH = 52.dp
+
+/** ＋ 字形字号 20sp（U10-2 D8 拍板） */
+private val TAG_ADD_GLYPH_TEXT_SIZE = 20.sp
+
+/** ＋ 钮与输入框间距 10dp（U10-2 D8 拍板；现成间距档 8/12dp 均不符，不硬凑） */
+private val TAG_ADD_ROW_SPACING = 10.dp
+
+/** 底部「取消/保存」按钮区顶距 18dp（U10-2 D9 拍板：旧版弹窗按钮区间距） */
+private val TAG_FOOTER_TOP_SPACING = 18.dp
+
 /**
- * 标签管理弹窗（LEGACY §A / Web TagDialog；自 DetailSections.kt 拆出，纯移动零行为变化）：
- * 外层整体可上下滚动；「当前标签」=勾选集（chip 带 ClearIcon 点击即时移除勾选）；「其他标签」=未选池
- * （点击勾选；池按服务端名字序——LEGACY §A 要求创建时间序但协议无 createdAt，
- * 名字序降级已拍板）；新建输入框+按钮（成功回调才清空输入，失败保留重试）；保存=整体替换（saving 转圈防重）。
- * 当前标签空态=「暂无标签」。
+ * 标签管理弹窗（LEGACY §A / Web TagDialog；自 DetailSections.kt 拆出）。U10-2 排版对齐旧版：
+ * 标题 18sp Bold 居中、chip 12sp/30dp 高、弹层横向 20dp、无 dragHandle、添加行「＋」实底圆钮。
+ * 「当前标签」=勾选集（实底主色 chip，ClearIcon 点击即时移除——N4 I7b 逐条删端点，失败由 VM
+ * 回滚乐观态+横幅提示，D13 不动）；「其他标签」=未选池（软底 chip 点击勾选；池按服务端名字序
+ * ——LEGACY §A 要求创建时间序但协议无 createdAt，名字序降级已拍板 D14；空态整区不渲染=旧版
+ * GONE 语义）；新建输入框+「＋」钮（成功回调才清空输入，失败保留重试）。
+ * 底部「取消/保存」双钮是 NAS 草稿整体替换模型的有意保留（不回退旧版单条即时写，D9 仅对齐
+ * 顶距）；副标题说明行同为新交互模型的有意偏离保留项（解释「勾选后保存」）。
  */
 @OptIn(
     ExperimentalMaterial3Api::class,
@@ -74,136 +102,248 @@ internal fun DetailTagManageSheet(
 ) {
     val sheetState = rememberModalBottomSheetState()
     var draft by remember { mutableStateOf("") }
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+    // D11：dragHandle=null 对齐旧版弹窗无把手形态
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        dragHandle = null,
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = QimengDimens.ScreenPaddingHorizontal)
+                // D7：弹层横向 20dp=旧 MediaDetailFragment.kt:1254 sheetContainer（token 见
+                // QimengDimens.DetailSheetPaddingHorizontal，不与筛选面板 20dp 同源混用）
+                .padding(horizontal = QimengDimens.DetailSheetPaddingHorizontal)
                 // 底部呼吸空间与页面级留白同档（DETAIL_BOTTOM_SPACER 单源在 DetailScreen.kt）
                 .padding(bottom = DETAIL_BOTTOM_SPACER),
         ) {
             Text(
                 text = stringResource(R.string.detail_tag_sheet_title),
-                style = MaterialTheme.typography.titleLarge,
+                style = MaterialTheme.typography.titleLarge.copy(
+                    fontSize = TAG_SHEET_TITLE_TEXT_SIZE,
+                    fontWeight = FontWeight.Bold,
+                ),
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = QimengDimens.SpaceL),
             )
             Text(
                 text = stringResource(R.string.detail_tag_sheet_desc),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = QimengDimens.SpaceXS),
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = QimengDimens.SpaceXS),
             )
-            SheetTagSection(title = stringResource(R.string.detail_tag_section_current)) {
-                val selectedChips = pool.filter { it.id in selectedTagIds }
-                if (selectedChips.isEmpty()) {
-                    SheetEmptyHint()
-                } else {
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(QimengDimens.SpaceM),
-                        verticalArrangement = Arrangement.spacedBy(QimengDimens.SpaceS),
-                    ) {
-                        selectedChips.forEach { chip ->
-                            // 关闭图标 = **立即** DELETE 单条解绑（N4 I7b；N3 #32 逐条删端点，
-                            // 失败由 VM 回滚乐观态+横幅提示）；LEGACY §A:17「删除只解除本文件
-                            // 关联」语义不变——解绑不动标签池本体。
-                            DisplayPill(
-                                text = chip.name,
-                                trailing = {
-                                    Icon(
-                                        imageVector = ClearIcon,
-                                        contentDescription = stringResource(R.string.detail_tag_remove_selection),
-                                        modifier = Modifier
-                                            .padding(start = QimengDimens.SpaceS)
-                                            .size(TAG_CLEAR_ICON_SIZE)
-                                            .clickable { onUnbindTag(chip.id) },
-                                    )
-                                },
-                            )
-                        }
-                    }
-                }
-            }
-            SheetTagSection(title = stringResource(R.string.detail_tag_section_other)) {
-                // 池序 = 服务端名字序（GET /tags 恒名称升序；LEGACY 创建时间序的已拍板降级）
-                val otherChips = pool.filterNot { it.id in selectedTagIds }
-                if (otherChips.isEmpty()) {
-                    SheetEmptyHint()
-                } else {
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(QimengDimens.SpaceM),
-                        verticalArrangement = Arrangement.spacedBy(QimengDimens.SpaceS),
-                    ) {
-                        otherChips.forEach { chip ->
-                            Surface(
-                                onClick = { onToggleTag(chip.id) },
-                                shape = RoundedCornerShape(QimengDimens.PillCornerRadius),
-                                color = MaterialTheme.colorScheme.surfaceVariant,
-                            ) {
-                                Text(
-                                    text = chip.name,
-                                    style = MaterialTheme.typography.labelLarge,
-                                    modifier = Modifier.padding(
-                                        horizontal = QimengDimens.ChipHorizontalPadding,
-                                        vertical = QimengDimens.SpaceS,
-                                    ),
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = QimengDimens.SpaceL),
-                verticalAlignment = Alignment.CenterVertically,
+            SheetCurrentTags(
+                pool = pool,
+                selectedTagIds = selectedTagIds,
+                onUnbindTag = onUnbindTag,
+            )
+            SheetOtherTags(
+                pool = pool,
+                selectedTagIds = selectedTagIds,
+                onToggleTag = onToggleTag,
+            )
+            SheetAddTagRow(
+                draft = draft,
+                onDraftChange = { draft = it },
+                onCreateTag = onCreateTag,
+            )
+            SheetFooterButtons(
+                savingTags = savingTags,
+                onSave = onSave,
+                onDismiss = onDismiss,
+            )
+        }
+    }
+}
+
+/**
+ * 「当前标签」分节：实底主色 chip（selected=true，D1 旧 TagSheetHelper.kt:74-76 反白语义），
+ * 关闭图标=立即 DELETE 单条解绑（N4 I7b；N3 #32 逐条删端点，失败由 VM 回滚乐观态+横幅）；
+ * LEGACY §A:17「删除只解除本文件关联」语义不变——解绑不动标签池本体。空态=「暂无标签」。
+ */
+@Composable
+private fun SheetCurrentTags(
+    pool: List<TagChip>,
+    selectedTagIds: List<String>,
+    onUnbindTag: (String) -> Unit,
+) {
+    SheetTagSection(title = stringResource(R.string.detail_tag_section_current)) {
+        val selectedChips = pool.filter { it.id in selectedTagIds }
+        if (selectedChips.isEmpty()) {
+            SheetEmptyHint()
+        } else {
+            FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(QimengDimens.SpaceM),
+                verticalArrangement = Arrangement.spacedBy(QimengDimens.SpaceXS),
             ) {
-                QimengCapsuleTextField(
-                    value = draft,
-                    onValueChange = { draft = it },
-                    placeholder = stringResource(R.string.detail_tag_new_placeholder),
-                    singleLine = true,
-                    modifier = Modifier.weight(1f),
-                )
-                TextButton(
-                    enabled = draft.isNotBlank(),
-                    // 创建成功回调才清空输入框（Web TagDialog 同款；失败保留输入供重试，错误经横幅反馈）
-                    onClick = { onCreateTag(draft) { draft = "" } },
-                ) {
-                    Text(text = stringResource(R.string.detail_tag_create))
-                }
-            }
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = QimengDimens.SpaceM),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                TextButton(onClick = onDismiss, enabled = !savingTags) {
-                    Text(text = stringResource(R.string.detail_cancel))
-                }
-                Spacer(modifier = Modifier.width(QimengDimens.SpaceS))
-                // 保存中=禁用态大面积容器，夜间走不透明禁用底消 dither 横带（W6 #49）
-                Button(onClick = onSave, enabled = !savingTags, colors = qimengFilledButtonColors()) {
-                    if (savingTags) {
-                        // V6：expressive LoadingIndicator 替换（仅控件替换，size 约束原样）
-                        LoadingIndicator(modifier = Modifier.size(TAG_SAVE_PROGRESS_SIZE))
-                        Spacer(modifier = Modifier.width(QimengDimens.SpaceS))
-                    }
-                    Text(text = stringResource(R.string.detail_save))
+                selectedChips.forEach { chip ->
+                    DisplayPill(
+                        text = chip.name,
+                        selected = true,
+                        trailing = {
+                            Icon(
+                                imageVector = ClearIcon,
+                                contentDescription = stringResource(R.string.detail_tag_remove_selection),
+                                tint = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier
+                                    .padding(start = QimengDimens.SpaceS)
+                                    .size(TAG_CLEAR_ICON_SIZE)
+                                    .clickable { onUnbindTag(chip.id) },
+                            )
+                        },
+                    )
                 }
             }
         }
     }
 }
 
-/** 弹窗分节标题容器（「当前标签」「其他标签」共用结构） */
+/**
+ * 「其他标签」分节：软底 chip=secondaryContainer（D1b——qmColorChipBg 官方映射即该槽位，
+ * 文字仍 onSurfaceVariant）。空态整区不渲染（D10，旧版 GONE 语义 TagSheetHelper.kt:66——
+ * 连分节标题一起跳过）。
+ */
+@Composable
+private fun SheetOtherTags(
+    pool: List<TagChip>,
+    selectedTagIds: List<String>,
+    onToggleTag: (String) -> Unit,
+) {
+    // 池序 = 服务端名字序（GET /tags 恒名称升序；LEGACY 创建时间序的已拍板降级 D14）
+    val otherChips = pool.filterNot { it.id in selectedTagIds }
+    if (otherChips.isEmpty()) {
+        return
+    }
+    SheetTagSection(title = stringResource(R.string.detail_tag_section_other)) {
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(QimengDimens.SpaceM),
+            verticalArrangement = Arrangement.spacedBy(QimengDimens.SpaceXS),
+        ) {
+            otherChips.forEach { chip ->
+                Surface(
+                    onClick = { onToggleTag(chip.id) },
+                    shape = RoundedCornerShape(QimengDimens.PillCornerRadius),
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .height(QimengDimens.ChipHeight)
+                            .padding(horizontal = QimengDimens.ChipHorizontalPadding),
+                    ) {
+                        Text(
+                            text = chip.name,
+                            style = MaterialTheme.typography.labelLarge.merge(TagChipTextStyleOverride),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 添加行：34dp 胶囊输入框（F 批全局拍板勿动）+「＋」实底主色圆钮（D8 旧版视觉——52dp 宽、
+ * 与输入行同高、100dp 圆角、20sp onPrimary 字形；enabled=空输入不可点，承自原「新建」
+ * TextButton 语义）。contentDescription 承接被删除的「新建」文字的 TalkBack 语义。
+ * 创建成功回调才清空输入框（Web TagDialog 同款；失败保留输入供重试，错误经横幅反馈）。
+ */
+@Composable
+private fun SheetAddTagRow(
+    draft: String,
+    onDraftChange: (String) -> Unit,
+    onCreateTag: (name: String, onCreated: () -> Unit) -> Unit,
+) {
+    val addDesc = stringResource(R.string.detail_tag_add_desc)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = QimengDimens.SpaceL),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(TAG_ADD_ROW_SPACING),
+    ) {
+        QimengCapsuleTextField(
+            value = draft,
+            onValueChange = onDraftChange,
+            placeholder = stringResource(R.string.detail_tag_new_placeholder),
+            singleLine = true,
+            modifier = Modifier.weight(1f),
+        )
+        Surface(
+            onClick = { onCreateTag(draft) { onDraftChange("") } },
+            enabled = draft.isNotBlank(),
+            shape = RoundedCornerShape(QimengDimens.PillCornerRadius),
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier
+                .width(TAG_ADD_BUTTON_WIDTH)
+                .height(QimengDimens.CapsuleFieldHeight)
+                .semantics { contentDescription = addDesc },
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Text(
+                    text = "＋",
+                    style = TextStyle(fontSize = TAG_ADD_GLYPH_TEXT_SIZE),
+                    color = MaterialTheme.colorScheme.onPrimary,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 底部「取消/保存」双钮（NAS 草稿整体替换模型的有意保留项，不回退旧版单条即时写；顶距
+ * 对齐 [TAG_FOOTER_TOP_SPACING]）。保存中双钮禁用防重（saving 转圈嵌在保存钮内）。
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun SheetFooterButtons(
+    savingTags: Boolean,
+    onSave: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = TAG_FOOTER_TOP_SPACING),
+        horizontalArrangement = Arrangement.End,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        TextButton(onClick = onDismiss, enabled = !savingTags) {
+            Text(text = stringResource(R.string.detail_cancel))
+        }
+        Spacer(modifier = Modifier.width(QimengDimens.SpaceS))
+        // 保存中=禁用态大面积容器，夜间走不透明禁用底消 dither 横带（W6 #49）
+        Button(onClick = onSave, enabled = !savingTags, colors = qimengFilledButtonColors()) {
+            if (savingTags) {
+                // V6：expressive LoadingIndicator 替换（仅控件替换，size 约束原样）
+                LoadingIndicator(modifier = Modifier.size(TAG_SAVE_PROGRESS_SIZE))
+                Spacer(modifier = Modifier.width(QimengDimens.SpaceS))
+            }
+            Text(text = stringResource(R.string.detail_save))
+        }
+    }
+}
+
+/** 弹窗分节标题容器（「当前标签」「其他标签」共用结构；标题 13sp Regular 次级灰，D6 旧 TagSheetHelper.kt:160-165） */
 @Composable
 private fun SheetTagSection(title: String, content: @Composable () -> Unit) {
     Column(modifier = Modifier.padding(top = QimengDimens.SpaceL)) {
-        Text(text = title, style = MaterialTheme.typography.titleSmall)
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleSmall.copy(
+                fontSize = TAG_SECTION_TITLE_TEXT_SIZE,
+                fontWeight = FontWeight.Normal,
+            ),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(vertical = QimengDimens.SpaceS),
+        )
         content()
     }
 }

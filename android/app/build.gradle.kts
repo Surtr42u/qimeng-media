@@ -53,6 +53,8 @@ dependencies {
     implementation(project(":feature:stats"))
     implementation(project(":feature:settings"))
     implementation(project(":feature:upload"))
+    // U10-6：数据管理 hub + 库管理（我的页「数据管理」合并入口二级页）
+    implementation(project(":feature:manage"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

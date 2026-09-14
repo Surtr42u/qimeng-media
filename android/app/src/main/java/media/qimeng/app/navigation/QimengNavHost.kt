@@ -65,7 +65,10 @@ import media.qimeng.app.feature.favorite.FavoriteScreen
 import media.qimeng.app.feature.history.HistoryScreen
 import media.qimeng.app.feature.home.HomeScreen
 import media.qimeng.app.feature.login.LoginScreen
+import media.qimeng.app.feature.manage.DataManageScreen
+import media.qimeng.app.feature.manage.LibraryManageScreen
 import media.qimeng.app.feature.search.SearchScreen
+import media.qimeng.app.feature.settings.ServerSettingsScreen
 import media.qimeng.app.feature.settings.SettingsScreen
 import media.qimeng.app.feature.stats.StatsDetailRoutes
 import media.qimeng.app.feature.stats.StatsDetailScreen
@@ -107,6 +110,18 @@ object Routes {
 
     /** 覆盖页面：上传（M4-5；入口 = 系统分享接收 / 后续设置页入口，不进底栏） */
     const val UPLOAD = "upload"
+
+    /** 覆盖页面：服务器设置（U10-4：设置页「服务器」入口行 → 地址修改/本机模式/换址说明子页） */
+    const val SERVER = "server"
+
+    /**
+     * 覆盖页面：数据管理 hub（U10-6：我的页「数据管理」合并入口 → 上传文件/库管理
+     * 二级分类入口；上传页复用既有 [UPLOAD] 路由不搬家）
+     */
+    const val DATA_MANAGE = "dataManage"
+
+    /** 覆盖页面：库管理（U10-6：数据管理 hub → 库列表/注册媒体目录，信息架构对齐 Web 文件管理页） */
+    const val LIBRARY_MANAGE = "libraryManage"
 }
 
 /**
@@ -450,6 +465,28 @@ fun QimengNavHost(
                     onDone = { navController.popBackStack() },
                 )
             }
+            // 服务器设置子页（U10-4）：设置页「服务器」入口行进本页；pushed 覆盖页——
+            // 底栏隐藏与幕帘由既有 currentRoute 机制自动生效，无需额外处理
+            composable(Routes.SERVER) {
+                ServerSettingsScreen(
+                    onBack = { navController.popBackStack() },
+                )
+            }
+            // 数据管理 hub（U10-6）：我的页「数据管理」合并入口二级页；上传行复用既有
+            // Routes.UPLOAD 页（不搬路由），库管理行走本批新增子页
+            composable(Routes.DATA_MANAGE) {
+                DataManageScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenUpload = { navController.navigate(Routes.UPLOAD) },
+                    onOpenLibraryManage = { navController.navigate(Routes.LIBRARY_MANAGE) },
+                )
+            }
+            // 库管理子页（U10-6）：库表 + 注册媒体目录表单（Web 文件管理页对齐物）
+            composable(Routes.LIBRARY_MANAGE) {
+                LibraryManageScreen(
+                    onBack = { navController.popBackStack() },
+                )
+            }
             // 统计详情页（任务I I3）：路由契约单源在 feature:stats（DetailRoutes/AuthorCollectionRoutes
             // 同范式），mode/range 参数由页面 ViewModel 经 SavedStateHandle 读取，此处无需展开 arguments
             composable(StatsDetailRoutes.STATS_DETAIL_ROUTE) {
@@ -753,7 +790,11 @@ private fun ResidentTabScreen(route: String, navController: NavHostController) {
             // 原总览卡 Top5 直达作者集合页的参数随内嵌卡退役，行级直达
             // 统一走 AuthorScreen 的 onAuthorClick（Routes.AUTHORS 组合内）
             onOpenAuthors = { navController.navigate(Routes.AUTHORS) },
-            onOpenUpload = { navController.navigate(Routes.UPLOAD) },
+            // U10-6：原「上传文件」行升级为「数据管理」合并入口行（上传/注册媒体目录/
+            // 库管理进 hub 二级页；上传页本身复用 Routes.UPLOAD 不搬路由）
+            onOpenDataManage = { navController.navigate(Routes.DATA_MANAGE) },
+            // U10-4：「服务器」入口行 → 地址修改/本机模式/换址说明子页
+            onOpenServerDetail = { navController.navigate(Routes.SERVER) },
         )
         else -> Unit // 不可达：route 恒来自 visitedTabs（仅含 Tab 路由）；兜底防脏键
     }

@@ -66,7 +66,9 @@
     <string name="detail_tag_section_other">其他标签</string>
     <string name="detail_tag_empty">暂无标签</string>
     <string name="detail_tag_new_placeholder">新建标签，回车确认</string>
-    <string name="detail_tag_create">新建</string>
+    <!-- U10-2 D8：原「新建」文字钮退役换「＋」图标钮，TalkBack 语义由本条承接（contentDescription）；
+        原 detail_tag_create 随文字钮删除 -->
+    <string name="detail_tag_add_desc">新建标签</string>
     <string name="detail_tag_remove_selection">移除勾选</string>
     <string name="detail_save">保存</string>
     <string name="detail_cancel">取消</string>

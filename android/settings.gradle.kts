@@ -47,6 +47,8 @@ include(":feature:detail")
 include(":feature:stats")
 include(":feature:settings")
 include(":feature:upload")
+// U10-6：数据管理（我的页合并入口的二级页：hub + 库管理）
+include(":feature:manage")
 // make sdk 生成物（android/sdk，原样接入；禁止手改）。生成物自带的 build.gradle 用 Gradle 7 时代的
 // wrapper{} DSL（Gradle 8 起移除按名配置任务语法），在冻结的 Gradle 8.13 下无法求值——
 // buildFileName 指向工程侧脚本 sdk.gradle（同样由 `make sdk` 的 sdk-kotlin 步骤生成，勿手改），

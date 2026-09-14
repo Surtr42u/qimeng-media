@@ -21,10 +21,12 @@ import media.qimeng.app.core.data.repository.DataStoreSearchHistoryRepository
 import media.qimeng.app.core.data.repository.DetailRepository
 import media.qimeng.app.core.data.repository.GridPrefsRepository
 import media.qimeng.app.core.data.repository.HistoryRepository
+import media.qimeng.app.core.data.repository.LibraryRepository
 import media.qimeng.app.core.data.repository.MediaRepository
 import media.qimeng.app.core.data.repository.SdkAuthorRepository
 import media.qimeng.app.core.data.repository.SdkDetailRepository
 import media.qimeng.app.core.data.repository.SdkHistoryRepository
+import media.qimeng.app.core.data.repository.SdkLibraryRepository
 import media.qimeng.app.core.data.repository.SdkMediaRepository
 import media.qimeng.app.core.data.repository.SearchHistoryRepository
 import media.qimeng.app.core.data.repository.AssetOrigUrlResolver
@@ -73,6 +75,11 @@ interface DataModule {
     @Binds
     @Singleton
     fun bindUploadRepository(impl: media.qimeng.app.core.data.repository.SdkUploadRepository): media.qimeng.app.core.data.repository.UploadRepository
+
+    // U10-6：媒体库管理（库列表/注册/删除/重扫/启停），我的页「数据管理」合并入口的数据面
+    @Binds
+    @Singleton
+    fun bindLibraryRepository(impl: SdkLibraryRepository): LibraryRepository
 
     @Binds
     @Singleton
