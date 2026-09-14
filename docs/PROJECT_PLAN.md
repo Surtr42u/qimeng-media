@@ -116,8 +116,8 @@
 
 > 实施顺序：M4 完成后启动，优先于 M5（用户日常价值优先；M5 NAS/虚拟机验收按用户自测节奏并行）。技术验证优先项：Go 交叉编译 android/arm64（CGO_ENABLED=0）+ ffmpeg 移动端方案（Termux 形态用其 ffmpeg 包；App 内嵌形态另评估——ffmpeg-kit 已停维护）。
 
-- [ ] 服务端 Android 构建：交叉编译目标 + 数据目录/媒体根在手机存储的语义适配（无架构改动，ADR-0015 已论证）
-- [ ] 运行形态 A（Termux 宿主）：二进制 + 一键启动脚本 + termux-setup-storage 授权
+- [x] 服务端 Android 构建：交叉编译目标 + 数据目录/媒体根在手机存储的语义适配（无架构改动，ADR-0015 已论证）（2026-09-13：T1 交付=Makefile server-android-arm64/amd64 双 target+ffmpeg 可配置化+模拟器 shell 域闭环；2026-09-14 arm64 真机运行时复验通过，26.3MB 产物 healthz 200）
+- [x] 运行形态 A（Termux 宿主）：二进制 + 一键启动脚本 + termux-setup-storage 授权（2026-09-14：T2 真机节点核心通过——Termux v0.118.3 真机装机+脚本三件跑通+healthz 200+正式 Web 管理界面上机（QIMENG_WEB_STATIC_DIR 注入）；dev 免密入脚本（仅回环暴露，用户本地免密约定）；目录注册扫描由用户真机进行中，完成后 T2 全收官）
 - [ ] 运行形态 B（App 内嵌，A 验收后评估）：gomobile AAR + 前台 Service + ffmpeg so 方案
 - [ ] App 单机模式接入：ServerConfigDataSource 指向 localhost，UI 零改动验证
 - [ ] 旧项目数据迁入：`POST /import/qimeng-backup`（行为数据）+ 手机媒体原地注册为库
