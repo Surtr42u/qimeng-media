@@ -9,6 +9,21 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 ---
+## fix(app): 任务U8 相册触摸无响应根修——常驻层 owner 改 per-tab 根治状态收集停摆（相册点击无响应/统计首载卡死同根因）+QM_TOUCH 诊断桩整组撤除+模拟器全链实测（2026-09-14 第二百五十九笔）
+
+执行 AI：GLM-5.3-Flash（主代理接手收尾：单测确认/门禁复跑/模拟器实测/文档落账）
+
+- **根因定案（U8-1，接手前已锁死）**：U3 常驻层初版统一 provide **home entry** 的 `LocalLifecycleOwner/LocalViewModelStoreOwner`——Navigation Compose 语义下非栈顶 entry 生命周期恒 CREATED(<STARTED)，用户在相册/数据/设置 Tab 时 home entry 正在栈底，四屏共用的 owner 全部低于 STARTED，`collectAsStateWithLifecycle` 集体停摆：**点击确实进了 ViewModel（状态已更新）但 UI 永不重组**，直到切回首页（home entry 回 RESUMED）才把攒下的状态一次画出。真机 QM_TOUCH 日志（任务U8 卷 §6b）确证：19 条 ALBUM_STATE 快照中 17 条紧贴 SHELL route=home 事件、selectDim→重组滞后 0.5~2.6s 且中间态从未上屏。一次根因解释「相册点击无响应/迟到显示」（F10/F13）与「统计主页首载卡死>2min 自愈」（§4-A）两症状。
+- **修复（U8-2 per-tab owner）**：`QimengNavHost` 增 `tabEntries: mutableStateMapOf<String, NavBackStackEntry>`，四 Tab 空壳跳板组合时登记各自 entry（restoreState 重建实例时壳重组自动刷新映射）；常驻层每个驻留 Tab 屏 **per-tab provide 自己的 entry**；entry 尚未登记的帧（进程恢复后未重访的 Tab）回落 home entry 安全档。语义=恢复常驻层改造前原生行为（置顶 RESUMED 实时收集/隐藏 CREATED 暂停/pop 返回恢复）；U3 接管初衷全保留（HomeScreen ON_RESUME「点赞后返回自动重排」观察、Tab VM 落各自 entry 的 ViewModelStore 随导航图存亡，登出清干净不落 Activity 作用域）。
+- **QM_TOUCH/U7 诊断桩整组撤除**：`QmTouchProbe.kt` 文件删除，MainActivity/NavHost/四 Screen/AlbumViewModel/QimengPills 布点与 `qmTouchProbe` 调用全清（grep 零残留）。
+- **U8-3「相册 facets 全 (0)」定性非缺陷**：隔离库数据形态问题（模拟器旧库 6 文件无维度元数据）。8421 UI测试库（id `78d97a53-…`，90 文件）四维 facets 正常——实测「分区 (2)/作品 (3)/角色 (0)/类型 (3)」，与 §4-D 一笔勾销。
+- **门禁复跑全绿**：Android 单测 699 用例（testDebugUnitTest 585 + `:core:model:test` 114）0 失败 0 错误；`make app-lint` 0 error；`assembleDebug`/`assembleRelease`（R8+debug 签名）双绿；后端 `go test ./...` 15 包、Web tsc/vitest 162/build、`make lint` 0 error（15 条既有 warnings 记档不扩围）均由上一会话完成、本会话复核 Android 侧。
+- **模拟器全链实测（qimeng_api35 显式指定 + 8421 隔离库 90 文件真实数据）**：①四胶囊 100% 即时响应——分区/作品/角色/类型轮转切换与 toggle 折叠，每次点击值区行/分组列表立即刷新（uiautomator dump 即点即验，旧行为 F2=连涟漪都没有）；②网格滚动正常（组头滚出/滚回视口）；③**F10 回归通过**——点胶囊→切首页→回相册，值区与过滤列表状态完整保持，无需「离开+刷新才显示」；④统计首载 3 秒出全数据（总文件数 90/325.8MB/分布统计/浏览趋势，§4-A 卡死消除）；⑤四 tab 轮转 3 圈+详情进返+搜索进出无异常；⑥约 50 次连续操作零无响应（中途抽查状态与预期一致）。
+- **记档不做两项**：①Coil 全局 `allowHardware(false)` 软件位图的性能收窄（涉 GIF 渲染行为，需单独立项，任务U8 卷 §10-7）；②dev-login 单会话互踢（设计行为，`authapi.go`）。
+- **重构清扫**：AuthorsPage.tsx 关注按钮 `a.id &&` 表达式改 if 语句（lint 卫生）；router.tsx/fast-refresh 既有警告保留记档不扩围。
+- **终包**=`QimengNAS\qimeng-任务U8-终包-20260914.apk`（debug 签名可直装）。**待用户真机验收**（任务U8 卷 §8 口径）：胶囊点击可见变化 ≤100ms（对照真机 F13 基线 0.5~2.6s）、连续 50 次操作零无响应、F10 不复现、其他页面无新问题。模拟器 dump 精度（~1s）无法度量 100ms，最终口径以真机为准。
+
+---
 ## chore(app): QM_TOUCH 诊断桩补文件落盘+任务书记真机新症状「首页刷新串页」（2026-09-14 第二百五十八笔）
 
 执行 AI：GLM-5.3-Flash（主代理直接实施）

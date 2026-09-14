@@ -32,9 +32,7 @@ import media.qimeng.app.core.model.StatsRangeOption
 import media.qimeng.app.core.model.TrendPoint
 import media.qimeng.app.core.ui.component.Dimens
 import media.qimeng.app.core.ui.component.QimengSegmentedControl
-import media.qimeng.app.core.ui.component.QmTouchProbe
 import media.qimeng.app.core.ui.component.formatBytesHumanReadable
-import media.qimeng.app.core.ui.component.qmTouchProbe
 
 /**
  * 数据统计页（任务I I3 复刻：GUIDE_UI §数据统计页 L203-224；N4 I3b 常看族解冻接线）：
@@ -67,10 +65,7 @@ fun StatsScreen(
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = Dimens.ScreenPadding)
-            // U7 触摸诊断桩 QM_TOUCH（根因定位后撤除）：数据根探针（观察不消费，跨页对照）
-            .qmTouchProbe("STATS_ROOT"),
-        // U7 诊断桩结束
+            .padding(horizontal = Dimens.ScreenPadding),
         verticalArrangement = Arrangement.spacedBy(Dimens.ScreenPadding),
     ) {
         // Z4 批（2026-09-12 数据页字体对齐旧 stats.xml）：文案「数据」→「数据统计」+ Bold
