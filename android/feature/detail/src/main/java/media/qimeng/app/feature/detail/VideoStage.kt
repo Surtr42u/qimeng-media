@@ -1,6 +1,5 @@
 package media.qimeng.app.feature.detail
 
-import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.util.Log
 import androidx.activity.compose.BackHandler
@@ -65,16 +64,18 @@ import media.qimeng.app.core.ui.icon.PlayIcon
 import media.qimeng.app.core.ui.theme.QimengDimens
 import media.qimeng.app.core.ui.theme.qimengFilledButtonColors
 import media.qimeng.app.feature.detail.video.BiliPlayerView
+import media.qimeng.app.feature.detail.video.SCREEN_ORIENTATION_UNSPECIFIED
 import media.qimeng.app.feature.detail.video.TimelineTagEntity
 import media.qimeng.app.feature.detail.video.VideoFullscreenCommand
 import media.qimeng.app.feature.detail.video.VideoFullscreenLevel
-import media.qimeng.app.feature.detail.video.VideoFullscreenOrientation
 import media.qimeng.app.feature.detail.video.VideoFullscreenStateMachine
 import media.qimeng.app.feature.detail.video.VideoStageMode
 import media.qimeng.app.feature.detail.video.VideoStageStateMachine
 import media.qimeng.app.feature.detail.video.formatDurationMs
 import media.qimeng.app.feature.detail.video.isLandscapeVideoSize
 import media.qimeng.app.feature.detail.video.rememberVideoPlayerState
+import media.qimeng.app.feature.detail.video.resolveOrientationWrite
+import media.qimeng.app.feature.detail.video.toScreenOrientation
 
 // ---------- 页面私有尺寸档（本文件单源；来源注释随条目） ----------
 
@@ -232,15 +233,19 @@ internal fun VideoStage(
     // 宁紧勿松）。纯函数单源在 video 包（JVM 单测锁未知/相等尺寸口径）
     val isLandscapeVideo = isLandscapeVideoSize(asset.width, asset.height)
 
-    /** 执行单级全屏状态机指令：层级镜像 + 方向写入（全仓唯一方向写入点语义延续） */
+    /** 执行单级全屏状态机指令：层级镜像 + 方向写入（全仓唯一方向写入点语义延续）。
+     *  U11 批次C：写入条件化——仅目标 ≠ 当前 requestedOrientation 才落写
+     *  （resolveOrientationWrite 纯函数裁决；同值写=nubia ROM 启动旋转开关翻转
+     *  主嫌疑，U10-1 三步实验），中途横竖切换跨方向必写语义不变。 */
     fun applyFullscreenCommand(command: VideoFullscreenCommand) {
         fullscreenLevel = command.level
+        val activity = context.findActivity() ?: return
         // 横屏全屏固定 LANDSCAPE 而非 SENSOR（旧版 MediaDetailFragment.kt:1171 口径：固定
         // 横屏，避免 SENSOR 在两个横屏方向间切换乱闪）；退出回排版态写 PORTRAIT
-        context.findActivity()?.requestedOrientation = when (command.orientation) {
-            VideoFullscreenOrientation.PORTRAIT -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-            VideoFullscreenOrientation.LANDSCAPE -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-        }
+        resolveOrientationWrite(
+            activity.requestedOrientation,
+            command.orientation.toScreenOrientation(),
+        )?.let { activity.requestedOrientation = it }
     }
 
     /** 全屏钮（排版态与覆盖层视图共用）：800ms 防抖后交状态机裁决进/退（旧版
@@ -300,11 +305,19 @@ internal fun VideoStage(
     // 快照会捕到旧页 exitToNone 残留的 PORTRAIT 并代代相传，会话级锁竖屏）。全仓唯一
     // 方向写入点=本文件 applyFullscreenCommand（grep 证），manifest 不锁方向 → App 的
     // 自然基线恒 UNSPECIFIED，离场一律恢复 UNSPECIFIED：手机竖屏持机自然回竖屏
-    // （「横屏全屏态退出卡横屏」修复语义保持），全屏残留锁也必然被解掉
+    // （「横屏全屏态退出卡横屏」修复语义保持），全屏残留锁也必然被解掉。
+    // U11 批次C：恢复写同样条件化——冷启动恢复期组合抖动触发的 onDispose 常是
+    // UNSPECIFIED→UNSPECIFIED 冗余写（U10-1 实验的启动触发面），裁掉；真实
+    // 横屏锁残留（当前≠UNSPECIFIED）照写不误。
     DisposableEffect(Unit) {
         onDispose {
-            context.findActivity()?.requestedOrientation =
-                ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            val activity = context.findActivity()
+            if (activity != null) {
+                resolveOrientationWrite(
+                    activity.requestedOrientation,
+                    SCREEN_ORIENTATION_UNSPECIFIED,
+                )?.let { activity.requestedOrientation = it }
+            }
         }
     }
 

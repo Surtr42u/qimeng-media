@@ -10,6 +10,17 @@
 
 
 ---
+## fix(app): 任务U11 批次C U10-1 启动方向兜底写点条件化——同值写裁掉+镜像常量单源（2026-09-15 第二百七十笔）
+
+执行 AI：GLM-5.3（主代理）
+
+- **修法**（任务书既定）：`VideoStage.applyFullscreenCommand`（全仓方向写入点之一）与 D2 离场恢复 onDispose 两写点改经 `resolveOrientationWrite(currentRequested, target)` 纯函数裁决——仅目标 ≠ 当前才落写。消灭冷启动恢复期组合抖动触发的 UNSPECIFIED→UNSPECIFIED 冗余兜底写与防御回退同值写（U10-1 三步实验：nubia ROM 对 App 启动时的方向写事务反应，把系统自动旋转开关重开——写同值也触发）；中途横竖切换跨方向必写，语义零变化。
+- **新件**：`feature/detail/video/OrientationWritePolicy.kt`——ActivityInfo 常量按值镜像（模块纯 JVM 纪律不 import 框架，对齐由单测编译期交叉断言锁定——静态 final int 内联真值）+ 枚举→常量映射 + 写入裁决；`OrientationWritePolicyTest` 6 用例（镜像对齐/映射/同值跳过三分支/跨值落写三分支）。
+- **启动路径审查**：全仓 grep requestedOrientation/SCREEN_ORIENTATION 证只有 VideoStage 两写点、manifest 不锁方向（App 自然基线恒 UNSPECIFIED）——无其他写点需条件化。
+- **残余不确定（真机验收口径，任务书明示）**：会话中途进出全屏的写入是否也触发 ROM 翻转未知——装机后用户观察「冷启动后旋转开关是否不再被打开、中途看视频退出后再看开关」。
+- 门禁：:feature:detail:testDebugUnitTest 全绿。
+
+---
 ## fix(app): 任务U11 批次B 沉浸静置自动退——三实验零复现定档+ON_RESUME 系统栏重申加固（2026-09-15 第二百六十九笔）
 
 执行 AI：GLM-5.3（主代理）
