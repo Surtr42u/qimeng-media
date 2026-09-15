@@ -14,8 +14,7 @@ import {
   RANK_AUTHORS,
   RANK_CONTENT,
   RANK_PAGE_TITLES,
-  RANK_TAGS,
-} from '@/lib/route-keys'
+  RANK_TAGS,, collectionPath } from '@/lib/route-keys'
 
 type RankKey = typeof RANK_CONTENT | typeof RANK_TAGS | typeof RANK_AUTHORS
 
@@ -63,7 +62,7 @@ export default function RanksPage() {
             rows={key === RANK_TAGS ? tagRows : authorRows}
             onSelect={(n) =>
               navigate(
-                `/app/collection/${key === RANK_TAGS ? COLLECTION_TAG : COLLECTION_AUTHOR}/${encodeURIComponent(n)}`,
+                collectionPath(key === RANK_TAGS ? COLLECTION_TAG : COLLECTION_AUTHOR, n),
               )
             }
           />
