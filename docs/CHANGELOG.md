@@ -10,6 +10,19 @@
 
 
 ---
+## fix(app): 任务U10-5 缩略图缓存键根治——Coil Keyer 剥签名query防6h TTL键漂移重复下载（2026-09-15 第二百六十六笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理）
+
+- **机制一句话**：媒体直链 = HMAC 签名 URL，服务端每次响应重算 `exp`/`sig`（`DefaultTokenTTL=6h`），同一缩略图 URL 字符串随响应变化 → Coil 默认以完整 URL 为缓存键 → 键 miss → 同图反复下载（「浏览越多越吃网速」根因，U9 会话考古+任务卷 §6 头号嫌疑）。本批按已拍板口径实施**纯客户端修复**：不动协议、不改服务端，服务端仍逐请求验签，安全语义不变。
+- **实现**（`core/data/coil/SignedMediaCacheKeys.kt` 新文件 + `CoilModule.kt` 装配）：①`SignedMediaCacheKeys.stableKey` 纯函数——剥 query 中轮换的 `exp`/`sig`、其余参数原样保序，path（含资产 id）+ 保留参数即稳定键；**`size` 参数必须保留**（服务端缩略图 sm/md/lg 档是 query 参数不在 path，全剥会让同资产不同尺寸键碰撞）；非 `/media/` 家族、非 http(s)、空/异常输入一律回 null 交回 Coil 默认键（兜底零行为变化）。②`SignedMediaUriKeyer`（coil3 `Keyer<Uri>`）管**内存**缓存键。③`SignedMediaDiskKeyInterceptor` 管**磁盘**缓存键——coil3 3.6.2 的 NetworkFetcher 按 `options.diskCacheKey ?: 原始URL` 读写磁盘、**不走键器链**（对 3.6.2 产物字节码+官方源码 tag 3.6.2 双重核实），须请求级覆写 `diskCacheKey` 才能让「杀进程重进」的二次浏览命中磁盘缓存（验收口径明确场景）；只改键不改数据，非签名家族原样放行。
+- **API 考证（铁律 8）**：Coil 键器链收到的是**映射后**数据——String 模型先经 StringMapper 映射为 `coil3.Uri` 再进键器（EngineInterceptor 字节码核实），故键器泛型是 `Keyer<Uri>` 而非 `Keyer<String>`；用户组件先于内置组件注册（RealImageLoader 装配顺序核实），优先命中且有默认回退。
+- **单测**：`SignedMediaCacheKeysTest` 12 用例全绿（exp/sig 轮换同键（thumb/orig）、size 保留且 sm/md/lg 键互异、不同资产/家族/服务器键互异、无 query 原样、纯 path 键、参数保序、file/content/非 media 家族回 null、空串/blank/畸形输入兜底）。
+- **审计①列表原件路径（只记档不改）**：首页×3/全部/作者/收藏/历史/搜索 8 处列表全部经 `QimengMediaGrid`→`AssetCard`：图片/视频只走 `thumbUrl` 缩略图；**唯一例外=动图（animated_image）网格卡按拍板条目 9 解析原件直链做网格内动画**（有意决策非缺陷），本批后其原件加载同样获得稳定键受益（二次浏览命中内存+磁盘缓存）。详情页预载链/ZoomableOriginalImage 原件保持 U10-5 前半 `diskCachePolicy(DISABLED)` 不落盘。
+- **审计②服务端 Cache-Control（只记档不改）**：缩略图响应有 `Cache-Control: public, max-age=31536000, immutable` + `ETag`（SHA-256 内容键）+ If-None-Match 手动 304（`media.go` GetMediaThumbAssetId）；原图响应**无** Cache-Control（仅 ServeContent 隐式 Last-Modified 条件请求）。该 immutable 头对浏览器有效，但签名 URL 轮换使 OkHttp/Coil 侧 HTTP 缓存同样以 URL 为键而失效——恰证本批客户端稳定键是正解。
+- **门禁**：assembleDebug/`:core:model:test`/lintDebug 全绿（`--max-workers=4 -Dorg.gradle.priority=low` 限核）；`testDebugUnitTest` 全仓唯一红=`:core:data` `FolderScanPolicyTest.未达上限全量收录且不截断`（f0ee67f 引入的**预存红**：断言 `files.size==3` 后又 `files.single()` 自相矛盾，该批门禁未含本模块单测故未暴露；git stash 干净 HEAD 复跑同红实证与本批无关，修复待单独立小批）；`:core:network` DataStore 3/3 绿（20d5aec 根治保持）。
+
+---
 ## test(app): :core:network DataStore 单测 Windows rename 预存红根治——根因定位到行级+测试内等价存储替换（2026-09-15 第二百六十五笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理）

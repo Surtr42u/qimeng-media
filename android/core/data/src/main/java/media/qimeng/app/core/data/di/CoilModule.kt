@@ -15,6 +15,8 @@ import coil3.request.ErrorResult
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import coil3.request.allowHardware
+import media.qimeng.app.core.data.coil.SignedMediaDiskKeyInterceptor
+import media.qimeng.app.core.data.coil.SignedMediaUriKeyer
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -63,6 +65,19 @@ object CoilModule {
         diskCachePrefs: DiskCachePrefsRepository,
     ): ImageLoader = ImageLoader.Builder(context)
         .components {
+            // 任务U10-5 缓存键漂移根治（2026-09-15 批次2）：媒体直链 = HMAC 签名 URL，
+            // 服务端对每次响应重算 exp/sig（DefaultTokenTTL=6h），同一缩略图的 URL 字符串
+            // 随响应变化 → Coil 默认以完整 URL 为缓存键 → 键 miss → 同图反复下载
+            // （「浏览越多越吃网速」根因）。用户拍板口径：纯客户端剥签名 query 做键，
+            // 不动协议、不改服务端；服务端仍逐请求验签，安全语义不变。两个组件缺一不可：
+            // - Keyer 管内存缓存键（注意键的是映射后的 coil3.Uri 而非 String——Coil 3
+            //   键器链收的是 StringMapper 映射后数据，3.6.2 产物字节码核实）；
+            // - Interceptor 管磁盘缓存键（coil3 NetworkFetcher 按
+            //   options.diskCacheKey ?: 原始URL 读写磁盘、不走键器链，3.6.2 源码核实），
+            //   缺它则杀进程重进后二次浏览仍 miss 磁盘缓存（验收口径明确要求该场景零网络）。
+            // 两者只改键、不改请求/响应数据，非签名家族 URL 原样回退默认行为。
+            add(SignedMediaDiskKeyInterceptor())
+            add(SignedMediaUriKeyer())
             // 网络层显式装配 OkHttp 取图器（2026-09-13 用户真机 BUG-A「图片详情偶现无法解码」主修）：
             // 不配时 coil-network-okhttp 经 service-loader 自动注册默认 OkHttpClient
             // （无任何超时配置 → OkHttp 默认 readTimeout=10s），NAS 缩略图懒生成风暴拖慢
