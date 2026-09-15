@@ -1,5 +1,7 @@
 package media.qimeng.app.core.data.repository
 
+import media.qimeng.app.core.network.ServerAddress
+
 import media.qimeng.app.core.model.AssetSort
 import media.qimeng.app.core.model.AuthorSummary
 import media.qimeng.app.core.model.AuthorType
@@ -125,8 +127,12 @@ internal object SdkMappers {
         else -> MediaKind.IMAGE
     }
 
-    private fun absolutize(pathOrUrl: String, baseUrl: String): String =
-        if (pathOrUrl.startsWith("http://") || pathOrUrl.startsWith("https://")) {
+    /**
+     * 相对直链→绝对 URL（协议前缀判定走 [ServerAddress.SCHEME_HTTP]/[SCHEME_HTTPS] 单源，
+     * U11 小债清偿批收敛）。internal：SdkDetailMappers 复用（原 5 行复制已删）。
+     */
+    internal fun absolutize(pathOrUrl: String, baseUrl: String): String =
+        if (pathOrUrl.startsWith(ServerAddress.SCHEME_HTTP) || pathOrUrl.startsWith(ServerAddress.SCHEME_HTTPS)) {
             pathOrUrl
         } else {
             baseUrl.trimEnd('/') + pathOrUrl
