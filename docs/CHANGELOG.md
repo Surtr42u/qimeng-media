@@ -10,6 +10,46 @@
 
 
 ---
+---
+## docs: 任务U11 全量审查三路并行+四笔清偿收官（2026-09-15 第二百七十六笔）
+
+执行 AI：GLM-5.3（主代理）
+
+- **三路只读对抗审查（用户指令的全量项目审查）**：server+api【通过】（0×P1；四道校验/边界/纯函数红线/depguard 独立复核全过）；web【打回一项→已修】；android+docs【通过】（0×P1）。全仓 0×P1。
+- **CAPABILITY_MAP 移动端行补单机形态三态**（形态 A Termux 真机跑通/形态 B 内嵌代码+验壳完成、真机验收挂 T7）+ `android/README.md` embedded 包边界记档（批E reviewer P2-2 清偿）。
+- **HANDOVER 文头日期与当前待办全量刷新**（三处过期事实纠正——批A~E 已全提交/笔号至本笔/待推为零）。
+- **P3 存量记档（不阻塞，后续批次择机）**：server 8 个 >100 行函数无超线注释、ADR-0019 编排下沉零进度（upload.go PostApiV1AssetsUpload 246 行）；android 8 个 >500 行文件（StatsDetailScreen 1020/QimengNavHost 844/VideoStage 825 等）与 VideoStage 469 行组件；web 原型期 token 双命名空间（--qm-* vs prototype.css 变量）、上传导入区 JSX 三处同构、表格省略单元格样式四粘贴；feature/manage 直依赖 :sdk 的范式偏离观察。
+
+---
+## fix(server): 任务U11 清偿批 openapi缩略图描述与响应码补全+events 401+sse错误响应常量（2026-09-15 第二百七十五笔）
+
+执行 AI：GLM-5.3（主代理）
+
+- **openapi /media/thumb 三项补全**（server 审查 P2）：200 描述从「WebP 缩略图」更正为按部署自适应（webp/无 libwebp 降级 jpeg，指向 stillformat.go 单源）；补 403（签名校验实返）/404（资产不存在+缩略图不可用占位语义）——54b1e3d 的协议文档同步缺漏。
+- **openapi /api/v1/events 补 401**：redocly 未锁版本规则漂移（新版本要求操作至少一个 4XX）暴露的预存缺口，按实际鉴权中间件行为补。
+- **make sdk 再生**：生成物指纹锁 api/sdk.lock 更新 3 行（描述级改动，三端生成代码零语义变化）。
+- **events/sse.go writeError 的 Content-Type 裸串提常量**（第 3 次出现）：与 httpapi/errors.go、auth/middleware.go 三方值一致、包边界禁反依赖故各持副本+互指注释。
+- 门禁：go build ./... 过；openapi validate 过（make sdk 全链）。
+
+---
+## refactor(app): 任务U11 清偿批 http协议前缀三处收敛+absolutize合单（2026-09-15 第二百七十四笔）
+
+执行 AI：GLM-5.3（主代理）
+
+- **小债台账清偿（台账原记「两处」实为三处——android 审查 P2-1 纠正）**：`ServerAddress.SCHEME_HTTP/SCHEME_HTTPS` 公开常量单源（原 DEFAULT_SCHEME 私有升格）；`SdkMappers.absolutize` 改 internal+引用常量；`SdkDetailMappers` 删 5 行复制（M4-2A 并行边界期的临时复制，注释早已预告「合并后收拢回单源」）；`SignedMediaCacheKeys` 私有前缀常量改引单源。
+- 门禁：:core:data+:core:network 单测全绿。
+- 知悉：U11 §3 台账其余三项（metrics 计数器接线/Keyer Robolectric 测试/原图 Cache-Control）维持记档不扩本批。
+
+---
+## fix(web): 任务U11 清偿批 collection路由五处收敛单源——AuthorCard无编码路由缺陷根治（2026-09-15 第二百七十三笔）
+
+执行 AI：GLM-5.3（主代理；web 审查打回项返工）
+
+- **P2 返工（web 全量审查唯一打回项）**：`/app/collection/...` 模板串散写 5 处全部收敛走 `collectionPath()`（route-keys.ts 单源纪律）——DataPage×3（同一模板第 3 次粘贴，警戒线明令禁止）/RanksPage/AuthorsPage/AuthorCard。
+- **真实缺陷修复**：`AuthorCard.tsx:26` 原「手拼且完全无编码」——作者 displayName 含 `/ ? #` 时 URL 解析错路由断（route-keys.test 恰有该场景锁定用例，调用点却绕过防护）；收敛后由 generatePath 统一 percent-encode。
+- **过时注释清理**：api-client.ts:72 引用已删除的 use-sources.ts 更正为 use-assets.ts。
+- 门禁：tsc --noEmit 零错；vitest 162 用例全绿。
+
 ## feat(app): 任务U11 批次D T6 内嵌形态 B——三件套+薄前台 Service+本机模式全链接线（2026-09-15 第二百七十二笔）
 
 执行 AI：GLM-5.3（主代理）
@@ -101,19 +141,6 @@
 - **修复**（测试侧，禁伪修复口径）：测试内注入 `TestFileStorage`——按 1.2.1 源码逐字复刻的 Storage 实现（写 `.tmp`+fd.sync+`Files.move(REPLACE_EXISTING)` 换名、读缺失回退默认值、transactionMutex 读写语义同构），经公开 `PreferencesSerializer` 桥接保持与生产同一 protobuf 文件格式；持久化语义由「冷启动预热」用例跨实例真文件恢复验证；DataStore scope 统一登记 @After cancel（datastore「scope 活跃期=DataStore 活跃期」约定）。曾试「rename IOException 有界重试」被验收证伪（冲突持久非瞬态）后否决，未采用。
 - **验收**：`:core:network:testDebugUnitTest --rerun-tasks`（JDK17 显式指定，`--max-workers=4 -Dorg.gradle.priority=low` 限核）连跑 3 次全部 BUILD SUCCESSFUL、3/3 绿（修复前连续多轮每次必红 2/3）；证据 `android/core/network/build/test-results/testDebugUnitTest/TEST-media.qimeng.app.core.network.DataStoreServerConfigDataSourceTest.xml`。
 
----
-## feat(app): 任务U10 四批收尾——标签管理弹层与筛选面板对齐旧版+设置页服务器合并子页+数据管理合并入口（2026-09-15 第二百六十三笔）
-
-执行 AI：GLM-5.3-Flash（主代理调度落账；研究子代理×3 并发考古+执行子代理×4 实施+reviewer 对抗审查；构建统一 `--max-workers=4 -Dorg.gradle.priority=low` 限核——用户口径编译 CPU 占用 ≤50%，子代理禁自行构建）
-
-- **U10-2 标签管理弹层排版对齐旧版**（`DetailTagSheet.kt` 重写 359 行+`DetailSections.kt` DisplayPill 加 `selected` 变体+`Dimens.kt` 新 `DetailSheetPaddingHorizontal`=20dp）：「当前标签」实底 `primary` 反白+关闭图标 onPrimary（v2.1 胶囊语言核心，旧版 TagSheetHelper.kt:74-76）、chip 统一 12sp Regular/30dp 定高（复用 ChipHeight）/FlowRow 纵距 4dp、标题 18sp Bold 水平居中、分节标题 13sp onSurfaceVariant、弹层横距 16→20dp、「＋」实底主色圆钮（52×34dp）替代 TextButton「新建」、其他标签空态整区不渲染（旧版 GONE 语义）、dragHandle=null。折中保留记档：取消/保存双钮（NAS 草稿整体替换模型，不回退旧版单条即时写）、乐观更新+失败横幅、名字序排序（协议无 createdAt，已拍板降级 D14）、34dp 胶囊输入框（F 批全局拍板）、副标题说明行（「勾选后保存」新交互模型的有意偏离）。
-- **U10-3 筛选面板观感对齐旧版**（`QimengFilterSheet.kt` 676→288 行拆出 `QimengFilterSheetSections.kt`/`QimengFilterSheetTags.kt`+`QimengTitleRow.kt`+`QimengIcons.kt`+`HomeScreen.kt`）：**单选选项从 RadioButton 圆圈纠正回旧版胶囊语言**——考古实证旧实现=ChipGroup 单选 Material Chip（MediaFilterSheet.kt:286-302）+GUIDE_UI「与筛选药丸同一套胶囊语言」（实读 L172），当年 M4-2A-B3 误读 uiautomator 实录 class=RadioButton 所致；本轮按任务 U10-3「观感对齐旧版」口径纠正，选中实底 primary/onPrimary、未选 secondaryContainer/onSurfaceVariant、12sp/30dp/横 14dp/圆角 100、FlowRow 横 8 纵 4（换行密度一行 4 个与旧版一致）；字号档对齐（面板标题 18sp Bold/分区 12sp Bold/底部按钮 15sp Bold，旧 MediaFilterSheet.kt:307/315/325）；标签区 chip 12sp 去 SemiBold 加重；入口筛选钮 FilterListIcon→HomeFilterIcon+40dp 软底胶囊容器（旧 bg_capsule_soft；「首页专用」注释按旧证据 fragment_home/all_files/album_detail 三处同图标更正为三页通用，FilterListIcon 无消费方留档）；dragHandle=null。**交互语义零变化**：七张选项文案表逐项逐序一致、草稿编辑/点应用才生效/重置三合一/长按删标签确认/年份起止交叉归一经 reviewer 逐回调与 HEAD 比对确认原样（H1「RadioButton 对齐实录」旧拍板据此推翻记档，理由=dump class≠视觉形态）。
-- **U10-4 设置页「服务器地址+本机模式」合并**（`SettingsScreen.kt` 759→390 行+迁出 `SettingsCards.kt` 411 行+新增 `ServerSettingsScreen.kt` 222 行/`ServerSettingsViewModel.kt` 116 行）：两卡合并为单行「服务器」→新子页三块——①服务器地址展示+修改（「保存并重新登录」走 `AuthRepository.logoutWithStagedUrl` 既有链路：先写地址再清 token，登录页带出）；②本机模式卡（展示/可改预填 `ServerAddress.LOCAL_MODE_PRESET`=`http://127.0.0.1:18430` 端口子页可见；编辑语义=下次登录预填值，不持久化、不动 const 单源——避免第二地址源；「一键切换本机模式」原 `fillLocalModeForNextLogin` 语义整体迁入）；③换址需重新登录说明。`SettingsViewModel` 删 fillLocalModeForNextLogin/serverUrl 收集；测试迁移+新增（ServerSettingsViewModelTest 6+1 用例，含 reviewer P2 补的「种子位一次性——仓库流再变不覆盖用户输入」）；`QimengNavHost` 增 `Routes.SERVER` 纯增量接线（U8 tabEntries/空壳/幕帘零接触）。
-- **U10-6 「数据管理」合并入口**（新模块 `feature/manage`+core 层）：我的页新增「数据管理」行→hub（`DataManageScreen`：上传文件/库管理两入口，上传复用既有 `Routes.UPLOAD` 不搬路由零回归）→`LibraryManageScreen`（库行卡=名称/kind 徽标/路径小字/scanState 文案/文件数/启停 Switch/重新扫描/删除 AlertDialog 二次确认；注册新库表单=名称/根路径/类型 SegPill+「注册并扫描」两步链对齐 Web `submitRegister`）+`LibraryRepository`/`SdkLibraryRepository`（GET/POST /libraries、DELETE、scan 202、PUT enabled 五端点，零协议改动零 SDK 再生）+`core:model` LibraryModels（scanState 文案映射单源，与 Web LibraryManagePage.tsx L387 双写同步责任入注释）+`DataModule` 绑定；合并后我的页「上传文件」卡删除；**明确排除项未动**（收藏/点赞/浏览历史/作者总览）。**砍项记档（任务书口径修正，需用户知悉）**：①库改名——openapi libraries 族无 rename 端点、Web 文件管理页亦无此功能，砍；②「服务端路径浏览→注册」——协议无任意路径浏览端点（GET /dirs 是库内相对树），注册=手输 rootPath 绝对路径对齐 Web，表单带「不能位于服务端数据目录内；COS 库按作者/作品/文件目录结构组织」提示；③文件行移动/删除——不在卷清单。HubEntryRow 与 settings EntryRow 同规格两份私有实现（第三处消费方出现时上提 core:ui，注释记档）。
-- **reviewer 对抗审查**（四批全量 diff+交叉破坏+测试质量）：P1=U10-6 register 成功后 scan 失败被误报「注册失败，请重试」且表单不清（重复注册风险，偏离 Web 注册/扫描 toast 分离）——已修：scan 独立 try/catch，失败报「已注册「%s」，但触发扫描失败，请稍后在列表重新扫描」照常清表单+注册成功事实，补 2 用例（注册成功扫描失败/注册失败表单保留）；P2=ServerSettings 种子位一次性无回归守卫——已补用例；P3 记档（筛选钮触区收窄 30dp 对齐旧版、FilterListIcon 留档勿删、isSaving 不复位与 HEAD 等价、缺 id 跳过扫描时 notice 仍称「开始扫描」与 Web 一致）。总评：U8 红线零接触、U10-3 语义零变化、U10-4 迁移逐字保真、SDK 签名逐一核实。
-- **门禁与走查**：assembleDebug/assembleRelease/testDebugUnitTest+:core:model:test/lintDebug 全绿（单测 638=524+114，全程限核）；模拟器无头全链走查（qimeng_api35 显式指定+8421 虚拟库）：四区域前后对照截图存 `.walk/`；E2E 实测=注册临时库→扫描入库（2 个库+「已注册…开始扫描」）→删除二次确认→「已删除」回到 1 个库且磁盘文件保留、标签「cosplay」添加→保存→API 验证 fileCount=1 持久化、筛选「名字+应用筛选」面板关闭列表刷新。走查插曲记档：会话内 curl dev-login 重铸 token 顶掉 App 登录态（签发即重铸设计行为）——排查类操作后 App 需重登。
-- **环境**：8421 隔离虚拟库重建=新数据目录 `QimengNAS\qimeng-data-8421`（`QIMENG_LISTEN=127.0.0.1:8421 QIMENG_AUTH_DEV_MODE=1 build\qimeng-server-8421.exe`），注册UI测试库 90 文件 facets 正常；无头模拟器 qimeng_api35（emulator-5554，`-no-window -no-audio -gpu swiftshader_indirect -no-snapshot`，`android/启动模拟器-headless.bat` 同参）；每日 08:50「暂停会话一切任务」自动化建档（automation-ac3e42c2）。
-- **终包**=`QimengNAS\qimeng-任务U10四批-终包-20260915.apk`（release+debug 签名可直装，含 U9/U10-5 全部内容）。**待用户真机**：①U10-2/U10-3 同屏对比旧版拍板「对齐了」（含单选胶囊纠正确认）；②U10-4 合并子页（换址/本机模式流程不回退）；③U10-6 数据管理全套内容管理操作体验拍板；④砍项三项（改名/路径浏览/文件行操作）如需恢复请指示（改名需先动 openapi.yaml）。U10-1 自动旋转排查保持低优先。
 
 ---
 ## feat(app): 任务U10 追加批——筛选钮状态/标签弹层间距/相册胶囊展开三处修复+数据管理补TXT导入与备份+上传支持文件夹（2026-09-15 第二百六十四笔）
@@ -133,6 +160,19 @@
 - **验证状态（如实）**：用户暂停+禁编译指令下，最终态未执行全量门禁与安装。禁令前的分段记录：debug 门禁三连（build/test 638+新增/lint）全绿、`:feature:manage:compileReleaseKotlin` 与全量 assembleRelease 绿、E1/E3 模块编译与 `:core:model`/`:feature:upload`/`:feature:manage`/`:feature:settings` 测试分段绿；**两个 P2 修补（其一为纯线程调度调整）之后未再编译**。恢复步骤见 HANDOVER。
 - **环境记档（CPU 限流与热重载，供后续会话）**：①`--max-workers=N`/priority 线程级软限制挡不住 Gradle/Kotlin **守护进程复用**的 CPU 峰值（守护进程是旧进程，不在新构建的限流树内）；有效方案=Windows Job Object CPU_RATE_CONTROL_HARD_CAP 且**构建前预捕获既有守护进程**入 job（轮询补捕），实测强制重编译峰值 46%≤50%；脚本与 Makefile 接线经用户拍板撤除（dev-tools/build-cap50.ps1 已删、Makefile 已还原），机制结论留档备未来重建。②「热重载」答疑已记：本项目标准 Compose 工程支持 Android Studio **Live Edit**——Studio 打开 android 工程 Run 后改 Compose UI 代码即时生效免装包，新增页面/路由类结构性改动需重 Run；CLI 构建无此能力。
 
+---
+## feat(app): 任务U10 四批收尾——标签管理弹层与筛选面板对齐旧版+设置页服务器合并子页+数据管理合并入口（2026-09-15 第二百六十三笔）
+
+执行 AI：GLM-5.3-Flash（主代理调度落账；研究子代理×3 并发考古+执行子代理×4 实施+reviewer 对抗审查；构建统一 `--max-workers=4 -Dorg.gradle.priority=low` 限核——用户口径编译 CPU 占用 ≤50%，子代理禁自行构建）
+
+- **U10-2 标签管理弹层排版对齐旧版**（`DetailTagSheet.kt` 重写 359 行+`DetailSections.kt` DisplayPill 加 `selected` 变体+`Dimens.kt` 新 `DetailSheetPaddingHorizontal`=20dp）：「当前标签」实底 `primary` 反白+关闭图标 onPrimary（v2.1 胶囊语言核心，旧版 TagSheetHelper.kt:74-76）、chip 统一 12sp Regular/30dp 定高（复用 ChipHeight）/FlowRow 纵距 4dp、标题 18sp Bold 水平居中、分节标题 13sp onSurfaceVariant、弹层横距 16→20dp、「＋」实底主色圆钮（52×34dp）替代 TextButton「新建」、其他标签空态整区不渲染（旧版 GONE 语义）、dragHandle=null。折中保留记档：取消/保存双钮（NAS 草稿整体替换模型，不回退旧版单条即时写）、乐观更新+失败横幅、名字序排序（协议无 createdAt，已拍板降级 D14）、34dp 胶囊输入框（F 批全局拍板）、副标题说明行（「勾选后保存」新交互模型的有意偏离）。
+- **U10-3 筛选面板观感对齐旧版**（`QimengFilterSheet.kt` 676→288 行拆出 `QimengFilterSheetSections.kt`/`QimengFilterSheetTags.kt`+`QimengTitleRow.kt`+`QimengIcons.kt`+`HomeScreen.kt`）：**单选选项从 RadioButton 圆圈纠正回旧版胶囊语言**——考古实证旧实现=ChipGroup 单选 Material Chip（MediaFilterSheet.kt:286-302）+GUIDE_UI「与筛选药丸同一套胶囊语言」（实读 L172），当年 M4-2A-B3 误读 uiautomator 实录 class=RadioButton 所致；本轮按任务 U10-3「观感对齐旧版」口径纠正，选中实底 primary/onPrimary、未选 secondaryContainer/onSurfaceVariant、12sp/30dp/横 14dp/圆角 100、FlowRow 横 8 纵 4（换行密度一行 4 个与旧版一致）；字号档对齐（面板标题 18sp Bold/分区 12sp Bold/底部按钮 15sp Bold，旧 MediaFilterSheet.kt:307/315/325）；标签区 chip 12sp 去 SemiBold 加重；入口筛选钮 FilterListIcon→HomeFilterIcon+40dp 软底胶囊容器（旧 bg_capsule_soft；「首页专用」注释按旧证据 fragment_home/all_files/album_detail 三处同图标更正为三页通用，FilterListIcon 无消费方留档）；dragHandle=null。**交互语义零变化**：七张选项文案表逐项逐序一致、草稿编辑/点应用才生效/重置三合一/长按删标签确认/年份起止交叉归一经 reviewer 逐回调与 HEAD 比对确认原样（H1「RadioButton 对齐实录」旧拍板据此推翻记档，理由=dump class≠视觉形态）。
+- **U10-4 设置页「服务器地址+本机模式」合并**（`SettingsScreen.kt` 759→390 行+迁出 `SettingsCards.kt` 411 行+新增 `ServerSettingsScreen.kt` 222 行/`ServerSettingsViewModel.kt` 116 行）：两卡合并为单行「服务器」→新子页三块——①服务器地址展示+修改（「保存并重新登录」走 `AuthRepository.logoutWithStagedUrl` 既有链路：先写地址再清 token，登录页带出）；②本机模式卡（展示/可改预填 `ServerAddress.LOCAL_MODE_PRESET`=`http://127.0.0.1:18430` 端口子页可见；编辑语义=下次登录预填值，不持久化、不动 const 单源——避免第二地址源；「一键切换本机模式」原 `fillLocalModeForNextLogin` 语义整体迁入）；③换址需重新登录说明。`SettingsViewModel` 删 fillLocalModeForNextLogin/serverUrl 收集；测试迁移+新增（ServerSettingsViewModelTest 6+1 用例，含 reviewer P2 补的「种子位一次性——仓库流再变不覆盖用户输入」）；`QimengNavHost` 增 `Routes.SERVER` 纯增量接线（U8 tabEntries/空壳/幕帘零接触）。
+- **U10-6 「数据管理」合并入口**（新模块 `feature/manage`+core 层）：我的页新增「数据管理」行→hub（`DataManageScreen`：上传文件/库管理两入口，上传复用既有 `Routes.UPLOAD` 不搬路由零回归）→`LibraryManageScreen`（库行卡=名称/kind 徽标/路径小字/scanState 文案/文件数/启停 Switch/重新扫描/删除 AlertDialog 二次确认；注册新库表单=名称/根路径/类型 SegPill+「注册并扫描」两步链对齐 Web `submitRegister`）+`LibraryRepository`/`SdkLibraryRepository`（GET/POST /libraries、DELETE、scan 202、PUT enabled 五端点，零协议改动零 SDK 再生）+`core:model` LibraryModels（scanState 文案映射单源，与 Web LibraryManagePage.tsx L387 双写同步责任入注释）+`DataModule` 绑定；合并后我的页「上传文件」卡删除；**明确排除项未动**（收藏/点赞/浏览历史/作者总览）。**砍项记档（任务书口径修正，需用户知悉）**：①库改名——openapi libraries 族无 rename 端点、Web 文件管理页亦无此功能，砍；②「服务端路径浏览→注册」——协议无任意路径浏览端点（GET /dirs 是库内相对树），注册=手输 rootPath 绝对路径对齐 Web，表单带「不能位于服务端数据目录内；COS 库按作者/作品/文件目录结构组织」提示；③文件行移动/删除——不在卷清单。HubEntryRow 与 settings EntryRow 同规格两份私有实现（第三处消费方出现时上提 core:ui，注释记档）。
+- **reviewer 对抗审查**（四批全量 diff+交叉破坏+测试质量）：P1=U10-6 register 成功后 scan 失败被误报「注册失败，请重试」且表单不清（重复注册风险，偏离 Web 注册/扫描 toast 分离）——已修：scan 独立 try/catch，失败报「已注册「%s」，但触发扫描失败，请稍后在列表重新扫描」照常清表单+注册成功事实，补 2 用例（注册成功扫描失败/注册失败表单保留）；P2=ServerSettings 种子位一次性无回归守卫——已补用例；P3 记档（筛选钮触区收窄 30dp 对齐旧版、FilterListIcon 留档勿删、isSaving 不复位与 HEAD 等价、缺 id 跳过扫描时 notice 仍称「开始扫描」与 Web 一致）。总评：U8 红线零接触、U10-3 语义零变化、U10-4 迁移逐字保真、SDK 签名逐一核实。
+- **门禁与走查**：assembleDebug/assembleRelease/testDebugUnitTest+:core:model:test/lintDebug 全绿（单测 638=524+114，全程限核）；模拟器无头全链走查（qimeng_api35 显式指定+8421 虚拟库）：四区域前后对照截图存 `.walk/`；E2E 实测=注册临时库→扫描入库（2 个库+「已注册…开始扫描」）→删除二次确认→「已删除」回到 1 个库且磁盘文件保留、标签「cosplay」添加→保存→API 验证 fileCount=1 持久化、筛选「名字+应用筛选」面板关闭列表刷新。走查插曲记档：会话内 curl dev-login 重铸 token 顶掉 App 登录态（签发即重铸设计行为）——排查类操作后 App 需重登。
+- **环境**：8421 隔离虚拟库重建=新数据目录 `QimengNAS\qimeng-data-8421`（`QIMENG_LISTEN=127.0.0.1:8421 QIMENG_AUTH_DEV_MODE=1 build\qimeng-server-8421.exe`），注册UI测试库 90 文件 facets 正常；无头模拟器 qimeng_api35（emulator-5554，`-no-window -no-audio -gpu swiftshader_indirect -no-snapshot`，`android/启动模拟器-headless.bat` 同参）；每日 08:50「暂停会话一切任务」自动化建档（automation-ac3e42c2）。
+- **终包**=`QimengNAS\qimeng-任务U10四批-终包-20260915.apk`（release+debug 签名可直装，含 U9/U10-5 全部内容）。**待用户真机**：①U10-2/U10-3 同屏对比旧版拍板「对齐了」（含单选胶囊纠正确认）；②U10-4 合并子页（换址/本机模式流程不回退）；③U10-6 数据管理全套内容管理操作体验拍板；④砍项三项（改名/路径浏览/文件行操作）如需恢复请指示（改名需先动 openapi.yaml）。U10-1 自动旋转排查保持低优先。
 ---
 ## fix(app): 任务U10-5 原图不落盘——详情页原件请求 diskCachePolicy(DISABLED) 根治磁盘缓存膨胀（2026-09-14 第二百六十二笔）
 
