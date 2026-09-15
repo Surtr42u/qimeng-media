@@ -10,6 +10,16 @@
 
 
 ---
+## test(app): 任务U11 批次A FolderScanPolicyTest 预存红裁定修复——自相矛盾断言收正（2026-09-15 第二百六十八笔）
+
+执行 AI：GLM-5.3（主代理）
+
+- **裁定=测试 bug 非生产回归**（依据三条）：①失败用例「未达上限全量收录且不截断」内 `assertEquals(3, files.size)` 与 `files.single()`（要求列表恰好 1 元素）自相矛盾，3 元素下 single() 必抛 IllegalArgumentException——该断言自出生（f0ee67f）起从未可能通过；②同批引入的其余 4 用例（截断保序/恰等上限/默认一千/白名单）全绿，生产 `UploadableFileSink` 截断与计数语义已被锁定且行为正确；③失败行意图=验证 relativeDir 透传，生产 `addUploadable` 原样存储无任何改写字段路径。
+- **修复**：`files.single().relativeDir` 改 `files.forEach { assertEquals("作者A", it.relativeDir) }`（distinct 目录逐元素断言收正），裁定依据写入用例旁注释。
+- **门禁**：:core:data:testDebugUnitTest 全绿 + 全量门禁（assembleDebug/assembleRelease/testDebugUnitTest/:core:model:test/lintDebug，低 CPU 档）BUILD SUCCESSFUL。
+- 症状与任务书 §2 批次A 记载完全一致（f0ee67f 引入、该批门禁未含本模块单测故未暴露）。
+
+---
 ## docs: 任务U11 立卷+当日装机/旋转实验/会话落账（2026-09-15 第二百六十七笔）
 
 执行 AI：GLM-5.3-Flash（主代理）

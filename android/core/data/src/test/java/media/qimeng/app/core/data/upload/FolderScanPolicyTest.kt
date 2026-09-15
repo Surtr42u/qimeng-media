@@ -57,7 +57,10 @@ class FolderScanPolicyTest {
         assertEquals(1, result.skippedCount)
         assertEquals(3, result.totalUploadable)
         assertFalse(result.truncated)
-        assertEquals("作者A", result.files.single().relativeDir)
+        // f0ee67f 引入的断言自相矛盾（前一行 size==3 与 single() 要求唯一元素互斥），
+        // 裁定=测试 bug 非生产回归：single() 必抛 IllegalArgumentException，其余 4 用例
+        // 已锁定截断/计数语义且全绿。本行意图=验证 relativeDir 透传，改按逐元素断言。
+        result.files.forEach { assertEquals("作者A", it.relativeDir) }
     }
 
     @Test
