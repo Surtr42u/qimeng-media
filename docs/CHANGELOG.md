@@ -10,6 +10,17 @@
 
 
 ---
+## feat(server): 任务U11 批次D 前置——缩略图静图编码器自适应（libwebp 缺失时 mjpeg 降级）（2026-09-15 第二百七十一笔）
+
+执行 AI：GLM-5.3（主代理）
+
+- **背景（任务书矛盾修正）**：T6 任务书要求 ffmpeg 投放前实测含 libwebp，但拟用 hzw1199 LGPL-2.1 成品经三源实证**不含 libwebp**（配置串无 enable-libwebp+二进制字符串 0 次+U10 真机 Unknown encoder）；且影响面比 U10 卷记档更大——`generate.go` 全类型缩略图（静图/动图首帧/视频代表帧）的最终落盘阶段都是 scaleToWebP，libwebp 缺失=全量缩略图 404。合规替代供应经调研不存在（FFmpeg 无原生 WebP 编码器；ffmpeg-kit 是 LGPL-3 .so 套件非 CLI；Termux pkg 是 GPL-3）。自编译按任务书口径另立批不阻塞。
+- **解法=服务端启动期探测自适应**：`NewGenerator` 对生效 ffmpeg 跑一次 `-encoders` 探测（5s 兜底超时，失败回落 webp 维持既有降级语义）——含 libwebp 走 webp（**NAS/桌面部署行为零变化**），不含则静图缩略图降级 **mjpeg**（FFmpeg 内建编码器，任何合规构建都携带；内嵌形态正常档非妥协）。
+- **改动**：新增 `thumbnail/stillformat.go`（StillFormat 枚举/Ext 扩展名/encodeArgs 参数档/parseEncodersHasLibwebp 纯解析）+ Generator.stillFormat 字段与探测；`scaleToWebP`→`scaleStill`（编码段按格式分支）；`ThumbPath` 增 ext 参数（磁盘扩展名=输出封装=ServeContent Content-Type 三同源）；httpapi/media.go 从 `StillFormat().Ext()` 取扩展名。缓存键公式不动（DOMAIN_RULES §11 逐字遵守——格式是部署能力非内容策略；换 ffmpeg 后旧格式缓存自然变孤儿）。
+- **测试**：stillformat_test 4 用例（encoders 输出解析矩阵含 libwebp_anim 不算/两档编码参数逐字锁定/扩展名映射/强制 jpeg 档端到端集成——6x32 最长边语义+mjpeg 编码名实证）；cachekey_test/ffmpeg_integration_test 适配；`go test ./...` 全绿。
+- **已知取舍记档**：JPEG 无 alpha（带透明 PNG 源缩略图透明度被弃；用户真实库 jpg 照片+视频为主）；降级档磁盘占用约为 webp 的 1.5-2 倍（本地回环服务无带宽成本）。
+
+---
 ## fix(app): 任务U11 批次C U10-1 启动方向兜底写点条件化——同值写裁掉+镜像常量单源（2026-09-15 第二百七十笔）
 
 执行 AI：GLM-5.3（主代理）

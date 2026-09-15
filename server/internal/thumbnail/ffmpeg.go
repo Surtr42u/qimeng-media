@@ -178,28 +178,30 @@ func (g *Generator) extractAttachedPic(ctx context.Context, src string, streamIn
 	})
 }
 
-// ScaleToWebP 把图片等比缩放到最长边 longSide，输出 WebP 到 dst（原子落盘）。
+// scaleStill 把图片（或抽出的中转帧）等比缩放到最长边 longSide，按 Generator
+// 探测出的静图格式编码输出（原子落盘；格式裁决见 stillformat.go）。
 // 为什么用 scale=W:W:force_original_aspect_ratio=decrease 而非字面 scale=w:-1：
 // 实测 20x100 竖图在 scale=32:-1 下得到 32x160，最长边反而超出目标；
 // decrease 的语义是"在 W×W 框内等比缩小"，横图竖图都以 longSide 为最长边，
 // 与 config.Thumbnail.LongSide（最长边像素）的语义一致。
-// 质量参数见 webpQuality 常量注释。
-func (g *Generator) scaleToWebP(ctx context.Context, src string, longSide int, dst string) error {
+// 质量参数见 webpQuality / jpegQuality 常量注释；输出封装格式由临时文件
+// 扩展名（= stillFormat.Ext()）推断，编码段参数由 stillFormat.encodeArgs() 给出。
+func (g *Generator) scaleStill(ctx context.Context, src string, longSide int, dst string) error {
 	if longSide <= 0 {
 		return fmt.Errorf("longSide 必须为正数，得到 %d", longSide)
 	}
 	side := strconv.Itoa(longSide)
 	return writeAtomically(dst, func(tmp string) error {
 		var out bytes.Buffer
-		return run(ctx, g.ffmpegBin, &out,
+		args := []string{
 			"-y",
 			"-i", src,
-			"-vf", "scale="+side+":"+side+":force_original_aspect_ratio=decrease",
+			"-vf", "scale=" + side + ":" + side + ":force_original_aspect_ratio=decrease",
 			"-frames:v", "1",
-			"-c:v", "libwebp",
-			"-quality", strconv.Itoa(webpQuality),
-			tmp,
-		)
+		}
+		args = append(args, g.stillFormat.encodeArgs()...)
+		args = append(args, tmp)
+		return run(ctx, g.ffmpegBin, &out, args...)
 	})
 }
 

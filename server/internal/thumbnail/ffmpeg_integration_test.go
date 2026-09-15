@@ -299,17 +299,17 @@ func TestExtractFrameIntegration(t *testing.T) {
 	assertRedPixel(t, decodePNG(t, dst))
 }
 
-// TestScaleToWebPIntegration 竖图缩放验证"最长边"语义与 WebP 容器合法性：
+// TestScaleStillIntegration 竖图缩放验证"最长边"语义与容器合法性：
 // 20x100 在 longSide=32 下必须得到 6x32（等比缩小、长边恰为 32）。
-func TestScaleToWebPIntegration(t *testing.T) {
+func TestScaleStillIntegration(t *testing.T) {
 	requireFFmpeg(t)
 	dir := t.TempDir()
 	gen := newTestGenerator(t)
 	src := makeTallPNG(t, dir)
 	dst := filepath.Join(dir, "out.webp")
 
-	if err := gen.scaleToWebP(context.Background(), src, 32, dst); err != nil {
-		t.Fatalf("scaleToWebP: %v", err)
+	if err := gen.scaleStill(context.Background(), src, 32, dst); err != nil {
+		t.Fatalf("scaleStill: %v", err)
 	}
 	w, h := ffprobeImageSize(t, dst)
 	if w != 6 || h != 32 {
@@ -468,7 +468,7 @@ func TestGeneratorEnsureIntegration(t *testing.T) {
 			if err := gen.Ensure(context.Background(), assetID, tc.src, tc.kind, []Size{SizeGrid}); err != nil {
 				t.Fatalf("Ensure: %v", err)
 			}
-			path := ThumbPath(dataDir, CacheKey(assetID, SizeGrid))
+			path := ThumbPath(dataDir, CacheKey(assetID, SizeGrid), gen.StillFormat().Ext())
 			info, err := os.Stat(path)
 			if err != nil {
 				t.Fatalf("缩略图应存在于 %s: %v", path, err)
