@@ -71,7 +71,7 @@ export SDK_GRADLE_FILE
 #   go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.1
 GOLANGCI_LINT ?= $(GOBIN_DIR)/golangci-lint
 
-.PHONY: help sdk sdk-validate sdk-go sdk-ts sdk-kotlin sdk-lock app-build app-test app-lint server-run server-test server-android-arm64 server-android-amd64 web-build web-dev web-test docker-build lint
+.PHONY: help sdk sdk-validate sdk-go sdk-ts sdk-kotlin sdk-lock app-build app-test app-lint server-run server-test server-android-arm64 server-android-amd64 app-embedded-arm64 app-embedded-x86_64 app-embedded web-build web-dev web-test docker-build lint
 
 help: ## 显示全部命令
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
@@ -194,6 +194,25 @@ server-android-arm64: ## 交叉编译 Android arm64 服务端（真机投放；b
 
 server-android-amd64: ## 交叉编译 Android x86_64 服务端（模拟器验证专用；build/android/x86_64/qimeng-server）
 	cd server && GOOS=android GOARCH=amd64 CGO_ENABLED=1 CC="$(NDK_X64_CLANG)" go build -o ../build/android/x86_64/qimeng-server ./cmd/qimeng
+
+# ---------- 内嵌形态三件套装配（任务U11 批次D，ADR-0015 形态 B）----------
+# jniLibs 不入 git（~57MB）；装配口径/供应链哈希/W^X 红线见 deploy/embedded/README.md。
+EMBEDDED_JNILIBS := android/app/src/main/jniLibs
+
+
+app-embedded-arm64: server-android-arm64 ## 装配内嵌形态 arm64 三件套（release 终包）
+	mkdir -p "$(EMBEDDED_JNILIBS)/arm64-v8a"
+	cp build/android/arm64-v8a/qimeng-server "$(EMBEDDED_JNILIBS)/arm64-v8a/libqimeng.so"
+	powershell -NoProfile -ExecutionPolicy Bypass -File deploy/embedded/fetch-ffmpeg-arm64.ps1
+
+app-embedded-x86_64: server-android-amd64 ## 装配模拟器验壳件（x86_64 服务端；ffmpeg 复用 arm64 经 binfmt 翻译）
+	mkdir -p "$(EMBEDDED_JNILIBS)/x86_64"
+	cp build/android/x86_64/qimeng-server "$(EMBEDDED_JNILIBS)/x86_64/libqimeng.so"
+	[ -f "$(EMBEDDED_JNILIBS)/arm64-v8a/libffmpeg_cli.so" ] || $(MAKE) app-embedded-arm64
+	cp "$(EMBEDDED_JNILIBS)/arm64-v8a/libffmpeg_cli.so" "$(EMBEDDED_JNILIBS)/x86_64/libffmpeg_cli.so"
+	cp "$(EMBEDDED_JNILIBS)/arm64-v8a/libffprobe_cli.so" "$(EMBEDDED_JNILIBS)/x86_64/libffprobe_cli.so"
+
+app-embedded: app-embedded-arm64 app-embedded-x86_64 ## 全 ABI 装配（本地验壳+出包一步到位）
 
 web-build: ## 构建 Web 前端产物（web/dist）——服务端 SPA 托管依赖此产物（默认 web.static_dir=../web/dist，见 server/internal/config）；未构建时服务端回退内嵌验收页，页面功能不完整但服务不挂
 	npm --prefix web run build

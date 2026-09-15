@@ -11,6 +11,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+import media.qimeng.app.core.data.embedded.EmbeddedServerController
 import media.qimeng.app.core.network.ServerAddress
 import media.qimeng.app.core.testing.FakeAuthRepository
 import media.qimeng.app.core.testing.MainDispatcherRule
@@ -31,9 +32,15 @@ class ServerSettingsViewModelTest {
     /** 初始地址用 core 既有常量（测试零新增端口字面量） */
     private val initialUrl = ServerAddress.EMULATOR_LOOPBACK
 
+    private var fakeController: FakeEmbeddedServerController = FakeEmbeddedServerController()
+        get() = field
+
     private fun viewModel(
         auth: FakeAuthRepository = FakeAuthRepository(initialServerUrl = initialUrl, initialLoggedIn = true),
-    ): ServerSettingsViewModel = ServerSettingsViewModel(authRepository = auth)
+    ): ServerSettingsViewModel = ServerSettingsViewModel(
+        authRepository = auth,
+        embeddedServerController = FakeEmbeddedServerController().also { fakeController = it },
+    )
 
     @Test
     fun `进页展示当前地址并回填输入框`() = runTest(mainDispatcherRule.testDispatcher) {
@@ -94,6 +101,8 @@ class ServerSettingsViewModelTest {
         assertFalse(auth.isLoggedIn.first())
         assertEquals(ServerAddress.LOCAL_MODE_PRESET, auth.serverUrl.first())
         assertEquals(listOf(ServerSettingsEvent.LoggedOut), received)
+        // U11 批次D（reviewer P3-10 补断言）：预设地址切换必须触发内嵌服务端拉起
+        assertEquals(ServerAddress.LOCAL_MODE_PRESET, fakeController.lastStartedUrl)
     }
 
     @Test
@@ -138,4 +147,15 @@ class ServerSettingsViewModelTest {
         assertEquals("http://10.1.2.3:9999", vm.uiState.value.urlInput)
         assertEquals("http://192.0.2.99", vm.uiState.value.currentUrl)
     }
+}
+
+
+/** U11 批次D：内嵌服务端控制桩——ViewModel 只消费 ensureStartedIfLocalMode 的返回语义 */
+private class FakeEmbeddedServerController : EmbeddedServerController {
+    var lastStartedUrl: String? = null
+    override fun ensureStartedIfLocalMode(serverUrl: String): Boolean {
+        lastStartedUrl = serverUrl
+        return serverUrl == ServerAddress.LOCAL_MODE_PRESET
+    }
+    override fun stop() = Unit
 }

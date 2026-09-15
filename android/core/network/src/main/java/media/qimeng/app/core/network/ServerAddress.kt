@@ -23,15 +23,38 @@ object ServerAddress {
     const val DEFAULT_PORT = 8420
 
     /**
+     * 本机模式端口（18430）。为什么独立成常量：内嵌形态 Service 的监听地址
+     * （QIMENG_LISTEN）与 [LOCAL_MODE_PRESET] 必须同源——端口漂移=App 连不上自家
+     * 服务端，单值单源是唯一防线。
+     */
+    const val LOCAL_MODE_PORT = 18430
+
+    /**
      * 本机模式预设地址（任务T T3 兑现 ADR-0015 单点预留；端口 18430 = T2 批 deploy/termux 定稿口径）。
      * 服务端内嵌手机本机（Termux 形态 A / 内嵌形态 B）监听 127.0.0.1 回环、不暴露局域网（ADR-0015），
      * 登录页/设置页快捷填入入口共用本常量，UI 零结构改动。
      *
      * 单值互指（部署侧改动须同步此处，反之亦然）：deploy/termux/qimeng-start.sh、
      * qimeng-watchdog.sh、qimeng-stop.sh 三脚本的 PORT 常量与 deploy/termux/README.md
-     * 「端口 18430 定稿」行——三脚本内嵌同一份常量注释互指，本常量是 App 端唯一对应点。
+     * 「端口 18430 定稿」行 + 内嵌形态 EmbeddedServerConfig 的 QIMENG_LISTEN（:core:data
+     * embedded 包，U11 批次D）——多方内嵌同一份常量注释互指，本常量是 App 端唯一对应点。
      */
-    const val LOCAL_MODE_PRESET = "http://127.0.0.1:18430"
+    const val LOCAL_MODE_PRESET = "http://127.0.0.1:$LOCAL_MODE_PORT"
+
+    /**
+     * 是否为内嵌形态预设地址（规范化后的 URL 判定：回环主机名 + 预设端口）。
+     * 为什么接受 localhost 与 127.0.0.1 两种写法（reviewer P3-3）：两者解析到同一
+     * 本机回环、指向同一台内嵌服务——localhost 写法若判非，壳层 collector 会把用户
+     * 正要用的内嵌服务误停。端口仍须精确等于 [LOCAL_MODE_PORT]（内嵌 Service 只监听
+     * 固定端口，端口单值互指红线）——自定义端口=「自带 Termux 服务端」场景（T2 形态
+     * A），不触发内嵌拉起。消费方：设置页本机模式切换与 MainActivity 冷启动自拉起
+     * （U11 批次D）。
+     */
+    fun isLocalModePreset(normalizedUrl: String): Boolean {
+        val url = normalizedUrl.toHttpUrlOrNull() ?: return false
+        val loopback = url.host == "127.0.0.1" || url.host == "localhost"
+        return loopback && url.port == LOCAL_MODE_PORT
+    }
 
     /**
      * 规范化服务端地址：去首尾空白 → 补缺省协议 → HttpUrl 校验 → 去尾部 `/`。

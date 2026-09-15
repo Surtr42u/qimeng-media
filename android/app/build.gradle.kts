@@ -18,8 +18,32 @@ android {
         versionName = "0.2.0" // M4-2 列表族批次
     }
 
+    // U11 批次D（ADR-0015 形态 B）：内嵌服务端三件套（libqimeng.so/libffmpeg_cli.so/
+    // libffprobe_cli.so）经 jniLibs 打包、Service 从 nativeLibraryDir exec。
+    // useLegacyPackaging=true 安装期解出实体文件：exec 语义确定（APK 内直 exec 依赖
+    // zip 条目未压缩+对页对齐的隐式前提，POC 未验证过 App 域直 exec），代价是双份
+    // 存储（约 +57MB），W^X 红线不受影响（两路径都不是 filesDir）。jniLibs 目录
+    // 本身不入 git，由 make app-embedded 装配（deploy/embedded/README.md）。
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
     buildTypes {
+        // ABI 分层（U11 批次D 执行时定案并记档）：debug 含 x86_64 供 qimeng_api35
+        // 模拟器验壳（服务端 amd64 二进制经 ndk_translation 不行、需真 x86_64 构建物
+        // ——m6-poc 实证 Go arm64 必崩；arm64 ffmpeg 反而可翻译执行）；release 只装
+        // arm64 终包（真机形态，多装 x86_64 只增 26MB 无收益）。
+        debug {
+            ndk {
+                abiFilters += listOf("arm64-v8a", "x86_64")
+            }
+        }
         release {
+            ndk {
+                abiFilters += listOf("arm64-v8a")
+            }
             // 本地实测用非发布签名：复用 debug 签名（convention 未配 signingConfig，
             // AGP 隐式 release=无签名包不可装机；正式对外发布前需另配 release 签名档）。
             signingConfig = signingConfigs.getByName("debug")

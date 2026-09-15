@@ -22,6 +22,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import media.qimeng.app.core.network.ServerAddress
@@ -72,6 +79,24 @@ fun ServerSettingsScreen(
         }
     }
 
+    // U11 批次E reviewer P2-4：内嵌服务端的两态通知（运行中/已停止）在 API 33+ 依赖
+    // POST_NOTIFICATIONS 运时授权，全仓库此前只有上传流申请过——本机模式启用是唯一
+    // 入口，在这里补申请（拒绝不阻断切换：服务照跑，仅通知不可见，与上传流同口径）。
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { }
+    val context = LocalContext.current
+    fun requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS,
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
         QimengTopBar(title = TITLE_SERVER, onBack = onBack)
         Column(
@@ -94,7 +119,10 @@ fun ServerSettingsScreen(
                 saving = state.isSaving,
                 invalid = state.localUrlInvalid,
                 onLocalUrlChange = viewModel::onLocalUrlChange,
-                onSwitch = viewModel::switchToLocalMode,
+                onSwitch = {
+                    requestNotificationPermissionIfNeeded()
+                    viewModel.switchToLocalMode()
+                },
                 modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
             )
             Text(

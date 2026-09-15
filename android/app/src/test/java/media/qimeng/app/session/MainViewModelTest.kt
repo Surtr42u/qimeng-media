@@ -3,6 +3,7 @@ package media.qimeng.app.session
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
+import media.qimeng.app.core.data.embedded.EmbeddedServerController
 import media.qimeng.app.core.testing.FakeAuthRepository
 import media.qimeng.app.core.testing.MainDispatcherRule
 
@@ -16,14 +17,14 @@ class MainViewModelTest {
 
     @Test
     fun `持久化态未登录时呈 LoggedOut`() {
-        val viewModel = MainViewModel(FakeAuthRepository())
+        val viewModel = MainViewModel(FakeAuthRepository(), NoopEmbeddedServerController)
         driveIdle()
         assertEquals(SessionState.LoggedOut, viewModel.sessionState.value)
     }
 
     @Test
     fun `持久化态已登录时呈 LoggedIn（杀进程重启直进壳）`() {
-        val viewModel = MainViewModel(FakeAuthRepository(initialLoggedIn = true))
+        val viewModel = MainViewModel(FakeAuthRepository(initialLoggedIn = true), NoopEmbeddedServerController)
         driveIdle()
         assertEquals(SessionState.LoggedIn, viewModel.sessionState.value)
     }
@@ -31,7 +32,7 @@ class MainViewModelTest {
     @Test
     fun `401 事件即时退登录页（不等 token 写盘落地）`() {
         val repository = FakeAuthRepository(initialLoggedIn = true)
-        val viewModel = MainViewModel(repository)
+        val viewModel = MainViewModel(repository, NoopEmbeddedServerController)
         driveIdle()
         assertEquals(SessionState.LoggedIn, viewModel.sessionState.value)
         repository.emitUnauthorized()
@@ -42,7 +43,7 @@ class MainViewModelTest {
     @Test
     fun `重新登录成功复位过期标记（下一次 401 仍可触发跳转）`() {
         val repository = FakeAuthRepository(initialLoggedIn = true)
-        val viewModel = MainViewModel(repository)
+        val viewModel = MainViewModel(repository, NoopEmbeddedServerController)
         driveIdle()
         repository.emitUnauthorized()
         driveIdle()
@@ -58,4 +59,10 @@ class MainViewModelTest {
         driveIdle()
         assertEquals(SessionState.LoggedOut, viewModel.sessionState.value)
     }
+}
+
+/** U11 批次D：壳层自检消费桩——地址流驱动启停的触发不进本测试的关注面 */
+private object NoopEmbeddedServerController : EmbeddedServerController {
+    override fun ensureStartedIfLocalMode(serverUrl: String): Boolean = false
+    override fun stop() = Unit
 }

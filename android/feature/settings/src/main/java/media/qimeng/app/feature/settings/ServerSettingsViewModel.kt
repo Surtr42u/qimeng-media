@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import media.qimeng.app.core.data.embedded.EmbeddedServerController
 import media.qimeng.app.core.data.repository.AuthRepository
 import media.qimeng.app.core.network.ServerAddress
 
@@ -48,6 +49,7 @@ sealed interface ServerSettingsEvent {
 @HiltViewModel
 class ServerSettingsViewModel @Inject constructor(
     private val authRepository: AuthRepository,
+    private val embeddedServerController: EmbeddedServerController,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ServerSettingsUiState())
@@ -107,6 +109,10 @@ class ServerSettingsViewModel @Inject constructor(
             onInvalid()
             return
         }
+        // U11 批次D：切到内嵌预设地址时先拉起本机服务端（ensure 幂等）——登录页
+        // 回填 18430 后用户点登录时服务端已在启动中；非预设地址（自定义端口=
+        // 自带 Termux 服务端场景）不触发内嵌拉起
+        embeddedServerController.ensureStartedIfLocalMode(normalized)
         _uiState.update { it.copy(isSaving = true) }
         viewModelScope.launch {
             authRepository.logoutWithStagedUrl(normalized)
