@@ -251,9 +251,14 @@ func frame(buf *bytes.Buffer, id uint64, event string, data []byte) {
 	buf.WriteByte('\n')
 }
 
+// contentTypeJSON 与 httpapi/errors.go、auth/middleware.go 的同名值三方一致（包边界
+// 禁反向依赖 httpapi，各自持有副本但值漂移=响应头分裂，改动须三方同步——U11 清偿批
+// 记档：跨包共享需引公共 HTTP 常量包，当前三处成本低于新包）。
+const contentTypeJSON = "application/json; charset=utf-8"
+
 // writeError 输出与 openapi components.Error 模型（code/message 字段）一致的 JSON 错误。
 func (h *Handler) writeError(w http.ResponseWriter, status int, code, message string) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Content-Type", contentTypeJSON)
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(map[string]string{"code": code, "message": message}); err != nil {
 		// 响应已开始写，此处失败只可能是对端断开，记录后无补救动作
