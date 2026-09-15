@@ -9,7 +9,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -27,11 +26,11 @@ import media.qimeng.app.core.model.Zone
 import media.qimeng.app.core.model.groupByDateLabel
 import media.qimeng.app.core.ui.component.QimengChipRow
 import media.qimeng.app.core.ui.component.QimengEmptyState
-import media.qimeng.app.core.ui.component.QimengFloatingPillPanel
 import media.qimeng.app.core.ui.component.QimengMediaGrid
 import media.qimeng.app.core.ui.component.QimengPill
 import media.qimeng.app.core.ui.component.QimengPullToRefresh
 import media.qimeng.app.core.ui.component.QimengTitleRow
+import media.qimeng.app.core.ui.component.QimengValuePillBlock
 import media.qimeng.app.core.ui.component.qimengPinchToColumns
 import media.qimeng.app.core.ui.theme.QimengDimens
 // 页头组件共享文案在 :core:ui（nonTransitiveRClass 下跨模块取资源须引对方 R）
@@ -107,6 +106,17 @@ fun HistoryScreen(
             modifier = Modifier.padding(horizontal = QimengDimens.ScreenPaddingHorizontal),
         )
 
+        // 值区块 in-flow（2026-09-15 批与相册页统一：:core:ui QimengValuePillBlock 三页单源；
+        // 整块显隐仍由 filter.expanded 的 D3 拍板语义控制，钳制/展开钮规格随组件收编）
+        if (state.filter.expanded) {
+            QimengValuePillBlock(
+                pills = activePills.map { QimengPill(text = it.text, selected = it.selected) },
+                onPillClick = { index -> dispatchPill(viewModel, state.activeDim, activePills.getOrNull(index)) },
+                // 切维度归位「收起两行」（Web setDim 重置 expanded 同口径）
+                resetKey = state.activeDim,
+            )
+        }
+
         state.errorMessage?.let { message ->
             Text(
                 text = message,
@@ -140,8 +150,8 @@ fun HistoryScreen(
                     sections = state.items.groupByDateLabel(nowMs) { it.lastViewedAtMs },
                     columns = displayColumns,
                     animatedUrlResolver = animatedUrlResolver,
-                    // 底部预留 180dp：防悬浮药丸面板展开时遮挡末行（与相册页同款，旧版
-                    // fragment_all_files.xml L149 clipToPadding=false 场景）
+                    // 底部预留沿用旧版 fragment_all_files.xml L149 的 180dp 档：悬浮面板退役后
+                    // 已无遮挡末行之忧，保留作列表底部呼吸区（与相册页 G5 后口径一致）
                     bottomContentPadding = QimengDimens.ListBottomContentPadding,
                     onNearBottom = viewModel::onNearBottom,
                     // 滚动暂停缩略图加载（任务I I5，GUIDE_UI §浏览历史 L394）：拖拽/fling 期间
@@ -156,14 +166,6 @@ fun HistoryScreen(
                     },
                 )
             }
-            // 悬浮药丸面板：Box 叠放不推挤网格（与相册页同款——旧版 FrameLayout 叠放 + elevation 4dp，P9-2）
-            QimengFloatingPillPanel(
-                pills = activePills.map { QimengPill(text = it.text, selected = it.selected) },
-                onPillClick = { index -> dispatchPill(viewModel, state.activeDim, activePills.getOrNull(index)) },
-                collapsed = !state.filter.expanded,
-                onCollapse = viewModel::collapsePills,
-                modifier = Modifier.align(Alignment.TopStart),
-            )
         }
     }
 }

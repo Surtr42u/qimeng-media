@@ -183,10 +183,6 @@ class FavoriteViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(filter = filter.copy(expanded = !filter.expanded))
     }
 
-    fun collapsePills() {
-        _uiState.value = _uiState.value.copy(filter = _uiState.value.filter.copy(expanded = false))
-    }
-
     fun selectPartition(zone: Zone) {
         applyFilter(AlbumFilter.selectPartition(_uiState.value.filter, zone))
     }

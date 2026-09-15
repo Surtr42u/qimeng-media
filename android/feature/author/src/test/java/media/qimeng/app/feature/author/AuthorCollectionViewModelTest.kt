@@ -408,10 +408,6 @@ class AuthorCollectionViewModelTest {
         vm.onDimChipClicked(AlbumDim.TYPE)
         assertEquals(AlbumDim.TYPE, vm.uiState.value.activeDim)
         assertTrue(vm.uiState.value.filter.expanded)
-
-        // collapsePills（面板「收起 ▲」）= 直接收起
-        vm.collapsePills()
-        assertFalse(vm.uiState.value.filter.expanded)
     }
 
     // ---------- 任务I I6：列数共用全部页档 + 双指缩放（I5 同款） ----------

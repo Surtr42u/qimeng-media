@@ -19,6 +19,9 @@ dependencies {
     implementation(libs.compose.ui.graphics)
     implementation(libs.compose.foundation)
     implementation(libs.compose.material3)
+    // QimengValuePillBlock 的 rememberSaveable（两行钳制展开态）：
+    // runtime-saveable 构件显式声明（版本随 BOM，禁止单独升级）
+    implementation(libs.compose.runtime.saveable)
     // api 而非 implementation（现状陈述，任务W W2 清偿——原注释引用的已删件
     // motion/QimengSharedTransition.kt 见第一百九十八笔）：本件 QimengSegPill 用
     // animation.core（animateFloatAsState/tween），且 :app 壳层与 feature 各页的

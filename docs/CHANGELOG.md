@@ -11,6 +11,17 @@
 
 ---
 ---
+---
+---
+## refactor(app): 药丸组件收编三页单源+悬浮面板退役+存储权限引导卡（2026-09-15 第二百七十七笔）
+
+执行 AI：GLM-5.3（2026-09-15 会话遗留批；本笔由 GLM-5.3-Flash 清点入库）
+
+- **QimengValuePillBlock 收编 :core:ui 三页单源**（G5 钳制规格三常量随迁：收起阈值/收起行数/展开限高除数）——相册/收藏/历史/作者集合页值区块同款，AllScreen 本地三常量与展开态逻辑退役。
+- **QimengFloatingPillPanel 悬浮药丸面板全仓零调用退役**：FloatingPillPanelSpacing/PillsPanelElevation 两 token 随删（Dimens.kt 记档），列表底部 180dp 预留改记「呼吸区」语义。
+- **存储权限引导（ADR-0015 单机形态）**：清单声明 MANAGE_EXTERNAL_STORAGE（.nomedia 隐藏目录 376 文件在册、服务端直读 0 的实测注记）+ 设置→服务器「媒体库存储权限」卡（isExternalStorageManager 镜像 + ON_RESUME 重读 + 系统设置深链）。
+- 页面瘦身连带：收藏/历史/作者集合页值区块改用收编组件；ServerSettingsScreen 服务器行副文案单行节奏修正（≤15 字，换址说明下沉子页）。
+- 门禁：assembleRelease/testDebugUnitTest 全绿（本批为 2026-09-15 会话遗留未提交内容，GLM-5.3-Flash 清点入库时复跑）。
 ## docs: 任务U11 全量审查三路并行+四笔清偿收官（2026-09-15 第二百七十六笔）
 
 执行 AI：GLM-5.3（主代理）

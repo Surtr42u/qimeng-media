@@ -10,7 +10,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -29,11 +28,11 @@ import media.qimeng.app.core.model.Zone
 import media.qimeng.app.core.model.groupByDateLabel
 import media.qimeng.app.core.ui.component.QimengChipRow
 import media.qimeng.app.core.ui.component.QimengEmptyState
-import media.qimeng.app.core.ui.component.QimengFloatingPillPanel
 import media.qimeng.app.core.ui.component.QimengMediaGrid
 import media.qimeng.app.core.ui.component.QimengPill
 import media.qimeng.app.core.ui.component.QimengPullToRefresh
 import media.qimeng.app.core.ui.component.QimengTitleRow
+import media.qimeng.app.core.ui.component.QimengValuePillBlock
 import media.qimeng.app.core.ui.component.qimengPinchToColumns
 import media.qimeng.app.core.ui.theme.QimengDimens
 // 页头组件共享文案在 :core:ui（nonTransitiveRClass 下跨模块取资源须引对方 R）
@@ -41,7 +40,9 @@ import media.qimeng.app.core.ui.R as CoreUiR
 
 /**
  * 收藏页（M4-2 覆盖页；M4-2A-B5 头部随相册页形态重排）：favorite=true + 收藏时间倒序
- * （favoriteAt 降序）+ 四维芯片行 + 悬浮药丸面板（叠放不推挤网格）+ 日期分组 + 下拉刷新。
+ * （favoriteAt 降序）+ 四维芯片行 + in-flow 值区块（2026-09-15 批用户反馈「收藏和浏览记录
+ * 的胶囊没和相册的对齐」：悬浮面板退役，改 :core:ui QimengValuePillBlock 三页单源，与相册页
+ * 呈现完全一致）+ 日期分组 + 下拉刷新。
  * 头部形态照旧版实录 favorite.txt：返回 + 标题 + 芯片行 + 统计行「N 文件」（无筛选/列数图标——
  * 实录两页头部均无，主会话裁定 1/2）；无清空按钮语义在此不涉及；
  * 任务I I5：双指缩放调列数 2~5（列数图标豁免不覆盖手势，R2）+ 列数持久化共用全部页档
@@ -112,6 +113,17 @@ fun FavoriteScreen(
             modifier = Modifier.padding(horizontal = QimengDimens.ScreenPaddingHorizontal),
         )
 
+        // 值区块 in-flow（2026-09-15 批与相册页统一：:core:ui QimengValuePillBlock 三页单源；
+        // 整块显隐仍由 filter.expanded 的 D3 拍板语义控制，钳制/展开钮规格随组件收编）
+        if (state.filter.expanded) {
+            QimengValuePillBlock(
+                pills = activePills.map { QimengPill(text = it.text, selected = it.selected) },
+                onPillClick = { index -> dispatchPill(viewModel, state.activeDim, activePills.getOrNull(index)) },
+                // 切维度归位「收起两行」（Web setDim 重置 expanded 同口径）
+                resetKey = state.activeDim,
+            )
+        }
+
         state.errorMessage?.let { message ->
             Text(
                 text = message,
@@ -144,8 +156,8 @@ fun FavoriteScreen(
                     sections = state.items.groupByDateLabel(nowMs) { it.modifiedAtMs },
                     columns = displayColumns,
                     animatedUrlResolver = animatedUrlResolver,
-                    // 底部预留 180dp：防悬浮药丸面板展开时遮挡末行（与相册页同款，旧版
-                    // fragment_all_files.xml L149 clipToPadding=false 场景）
+                    // 底部预留沿用旧版 fragment_all_files.xml L149 的 180dp 档：悬浮面板退役后
+                    // 已无遮挡末行之忧，保留作列表底部呼吸区（与相册页 G5 后口径一致）
                     bottomContentPadding = QimengDimens.ListBottomContentPadding,
                     onNearBottom = viewModel::onNearBottom,
                     // 滚动暂停缩略图加载（任务I I5，GUIDE_UI §收藏页 L411）：拖拽/fling 期间
@@ -160,14 +172,6 @@ fun FavoriteScreen(
                     },
                 )
             }
-            // 悬浮药丸面板：Box 叠放不推挤网格（与相册页同款——旧版 FrameLayout 叠放 + elevation 4dp，P9-2）
-            QimengFloatingPillPanel(
-                pills = activePills.map { QimengPill(text = it.text, selected = it.selected) },
-                onPillClick = { index -> dispatchPill(viewModel, state.activeDim, activePills.getOrNull(index)) },
-                collapsed = !state.filter.expanded,
-                onCollapse = viewModel::collapsePills,
-                modifier = Modifier.align(Alignment.TopStart),
-            )
         }
     }
 }

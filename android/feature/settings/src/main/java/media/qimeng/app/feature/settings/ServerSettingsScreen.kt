@@ -16,8 +16,12 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -25,11 +29,19 @@ import androidx.compose.ui.unit.dp
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.Manifest
+import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
+import android.os.Environment
+import android.provider.Settings
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import media.qimeng.app.core.network.ServerAddress
 import media.qimeng.app.core.ui.component.QimengCapsuleTextField
@@ -54,12 +66,36 @@ private val SUBTITLE_LOCAL_MODE =
 private const val HINT_RELOGIN =
     "媒体库与账号都归这台服务端管；更换地址会退出当前登录，保存后在新地址上重新登录"
 
+// ---------- 媒体库存储权限卡（2026-09-15 批）：内嵌服务端读注册媒体根唯一通道=「所有文件
+// 访问」（ADR-0015 预留方案；手机实测 .nomedia 隐藏目录内 376 文件、无权限时服务端直读 0）。
+// 清单声明 MANAGE_EXTERNAL_STORAGE 后系统开关才可拨，本卡=非技术用户的授权引导入口。 ----------
+private const val SECTION_STORAGE_PERM = "媒体库存储权限"
+private const val BUTTON_GRANT_STORAGE = "去系统设置授权"
+private const val STORAGE_PERM_GRANTED = "已授权：本机服务端可读取注册媒体目录的文件"
+private const val STORAGE_PERM_MISSING = "未授权：本机模式的媒体库会读不到文件，点下方按钮去系统设置打开「所有文件访问」"
+
+/** 当前是否持「所有文件访问」（API 30+ 判定；更早版本无 scoped storage 强制，视为已授权） */
+private fun hasAllFilesAccess(context: Context): Boolean =
+    Build.VERSION.SDK_INT < 30 || Environment.isExternalStorageManager()
+
+/** 打开系统的「所有文件访问」授权页（部分 ROM 无 per-app 页时退回全量列表页） */
+private fun openAllFilesAccessSettings(context: Context) {
+    val perApp = Intent(
+        Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+        Uri.parse("package:${context.packageName}"),
+    )
+    runCatching { context.startActivity(perApp) }
+        .recoverCatching { context.startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)) }
+}
+
 /**
  * 服务器设置子页（U10-4：原设置页「服务器地址」只展示卡与「本机模式」入口行合并为
  * 单入口子页，pushed 覆盖页；GUIDE_UI §设置页语义，交互零新增协议）：
  * ① 当前地址展示 + 修改（保存=规范化 → 登出并预置新地址，登录页带出确认后生效）；
  * ② 本机模式卡（预填值可改端口，「一键切换本机模式」走同一登出预置链路）；
- * ③ 换址需重新登录说明。
+ * ③ 换址需重新登录说明；
+ * ④ 媒体库存储权限卡（2026-09-15 批：单机形态注册媒体根的「所有文件访问」授权引导，
+ *    授权页往返后 ON_RESUME 重读状态刷新卡片）。
  * 视觉语言对齐设置页现有 16dp 圆角纯白卡规格；全走 [ServerSettingsViewModel]，UI 不直调 API。
  */
 @Composable
@@ -125,6 +161,7 @@ fun ServerSettingsScreen(
                 },
                 modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
             )
+            StoragePermissionCard(modifier = Modifier.padding(bottom = QimengDimens.SpaceL))
             Text(
                 text = HINT_RELOGIN,
                 style = MaterialTheme.typography.labelSmall,
@@ -218,6 +255,42 @@ private fun LocalModeCard(
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(text = BUTTON_SWITCH_LOCAL)
+        }
+    }
+}
+
+/**
+ * 媒体库存储权限卡（2026-09-15 批）：展示「所有文件访问」授权态 + 未授权时给系统设置
+ * 深链按钮。状态为 UI 平台胶水直读（Environment.isExternalStorageManager，非业务规则，
+ * 铁律 7 不涉），不进 ViewModel——纯系统权限镜像，无协议交互。
+ */
+@Composable
+private fun StoragePermissionCard(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    // 授权页往返后系统开关变化不触发本应用重组：ON_RESUME 重读一次刷新卡片
+    var granted by remember { mutableStateOf(hasAllFilesAccess(context)) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) granted = hasAllFilesAccess(context)
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    CardContainer(modifier = modifier) {
+        Text(text = SECTION_STORAGE_PERM, style = MaterialTheme.typography.titleSmall)
+        Text(
+            text = if (granted) STORAGE_PERM_GRANTED else STORAGE_PERM_MISSING,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (!granted) {
+            TextButton(
+                onClick = { openAllFilesAccessSettings(context) },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(text = BUTTON_GRANT_STORAGE)
+            }
         }
     }
 }

@@ -54,11 +54,11 @@ object QimengDimens {
     val DividerHeight: Dp = 18.dp
 
     /** 180dp：列表底部预留（fragment_all_files.xml L149 RecyclerView paddingBottom，clipToPadding=false
-     *  场景——防悬浮药丸面板遮挡末行） */
+     *  场景——旧语义为防悬浮药丸面板遮挡末行；悬浮面板 2026-09-15 批退役后保留作列表底部呼吸区） */
     val ListBottomContentPadding: Dp = 180.dp
 
-    /** 4dp：悬浮药丸面板海拔（fragment_all_files.xml L157 elevation） */
-    val PillsPanelElevation: Dp = 4.dp
+    // PillsPanelElevation（4dp 悬浮面板海拔）与 FloatingPillPanelSpacing（4dp 面板 FlowRow 间隙）
+    // 2026-09-15 批随悬浮药丸面板 QimengFloatingPillPanel 全仓零调用一并删除。
 
     // ---------- 芯片 / 药丸（旧版胶囊语言） ----------
 
@@ -100,12 +100,6 @@ object QimengDimens {
     /** 8dp：词丸流横向间隙（BVIS 勘正：旧实录 search_entry.txt 同帧枚缘 329→353px@density3
      *  → 枚间 24px=8dp。旧 styles.xml L8 marginEnd=6dp 是 XML 声明值，以实录渲染值为准） */
     val WordPillSpacing: Dp = 8.dp
-
-    /** 4dp：悬浮药丸面板内 FlowRow 纵横间隙（BVIS：旧实录 all_partition_pills.txt 行位
-     *  466/568px@density3 → 行节距 102px=34dp，芯片高 30dp → 间隙 4dp；此前复用 SpaceM=8dp
-     *  实测节距 40dp 偏松。仅 QimengFloatingPillPanel 使用——QimengValuePillFlow 自
-     *  U10 追加批起对齐旧版 FlowLayout 6/4dp（VALUE_PILL_SPACING_*，QimengPills.kt） */
-    val FloatingPillPanelSpacing: Dp = 4.dp
 
     /** 40dp：首页搜索框高度（旧仓库 fragment_home.xml L37，bg_capsule_soft 胶囊底同语言；
      *  F 批前实测 48dp，压回旧版 40dp） */
