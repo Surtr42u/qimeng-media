@@ -10,6 +10,17 @@
 
 
 ---
+## test(app): :core:network DataStore 单测 Windows rename 预存红根治——根因定位到行级+测试内等价存储替换（2026-09-15 第二百六十五笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理）
+
+- **现象**：`DataStoreServerConfigDataSourceTest` 3 用例中 2 个稳定红（「清除 token 后流为 null 且地址保留」「冷启动预热从持久化文件恢复 token」），失败点均为同用例第二次写入（read-modify-write），报 `IOException: Unable to rename ...server_config.preferences_pb.tmp ... multiple instances of DataStore`；单次写入用例恒绿；模块生产代码自 T3(3baa1cf) 未改，判定测试环境潜伏缺陷非回归。
+- **根因（行级）**：datastore 1.2.1 `FileStorageConnection.writeScope`（FileStorage.kt L113-119）rename 覆盖已存在目标失败即抛该误导性文案，真实底层异常被 `File.atomicMoveTo`（FileMoves.jvm.kt L29-33，`Files.move(REPLACE_EXISTING)` 吞异常返 false）掩盖。本机临时探针实测：Windows JVM 上该冲突为**持久性**（10 次×50ms 有界重试全败）；触发条件收窄为「真 artifact 存储 × DataStoreImpl read-modify-write 全链路」——真存储直连（不经 Impl）、按 1.2.1 源码逐字复刻的存储走完整 Impl 链路、纯 JVM 裸文件序列均稳定全绿；与测试调度器无关（Standard/Unconfined/Dispatchers.IO/runBlocking/绑定 testScheduler 全复现）。属上游已知 Windows JVM 缺陷族（issuetracker 203087070 / 194301881 / 185414033）。
+- **生产无真缺陷**：DI 核实 `server_config` DataStore 为 `@Singleton` 单实例（NetworkModule.provideServerConfigDataStore），`client_prefs` 为 DataModule 另一文件，同文件无双实例；Android/ART 运行时不表现该 JVM 侧行为，生产代码不动。
+- **修复**（测试侧，禁伪修复口径）：测试内注入 `TestFileStorage`——按 1.2.1 源码逐字复刻的 Storage 实现（写 `.tmp`+fd.sync+`Files.move(REPLACE_EXISTING)` 换名、读缺失回退默认值、transactionMutex 读写语义同构），经公开 `PreferencesSerializer` 桥接保持与生产同一 protobuf 文件格式；持久化语义由「冷启动预热」用例跨实例真文件恢复验证；DataStore scope 统一登记 @After cancel（datastore「scope 活跃期=DataStore 活跃期」约定）。曾试「rename IOException 有界重试」被验收证伪（冲突持久非瞬态）后否决，未采用。
+- **验收**：`:core:network:testDebugUnitTest --rerun-tasks`（JDK17 显式指定，`--max-workers=4 -Dorg.gradle.priority=low` 限核）连跑 3 次全部 BUILD SUCCESSFUL、3/3 绿（修复前连续多轮每次必红 2/3）；证据 `android/core/network/build/test-results/testDebugUnitTest/TEST-media.qimeng.app.core.network.DataStoreServerConfigDataSourceTest.xml`。
+
+---
 ## feat(app): 任务U10 四批收尾——标签管理弹层与筛选面板对齐旧版+设置页服务器合并子页+数据管理合并入口（2026-09-15 第二百六十三笔）
 
 执行 AI：GLM-5.3-Flash（主代理调度落账；研究子代理×3 并发考古+执行子代理×4 实施+reviewer 对抗审查；构建统一 `--max-workers=4 -Dorg.gradle.priority=low` 限核——用户口径编译 CPU 占用 ≤50%，子代理禁自行构建）
