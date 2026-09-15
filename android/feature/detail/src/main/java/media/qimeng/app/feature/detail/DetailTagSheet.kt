@@ -237,8 +237,12 @@ private fun SheetOtherTags(
             verticalArrangement = Arrangement.spacedBy(QimengDimens.SpaceXXS),
         ) {
             otherChips.forEach { chip ->
+                // 2026-09-16 用户反馈「其他标签上下间隔太多，选中区是对的」根因修复：
+                // Surface(onClick=…) 会被 M3 套 48dp 最小触控目标（LocalMinimumInteractive-
+                // ComponentEnforcement），30dp chip 被隐形撑高 → 行距远大于选中区（DisplayPill
+                // 无 onClick 不受影响，故「选中的对、未选的错」）。改与 DisplayPill 同构：
+                // 普通 Surface（shape 裁剪涟漪）+ 点击挪到内容 Row，触控目标让位视觉紧凑。
                 Surface(
-                    onClick = { onToggleTag(chip.id) },
                     shape = RoundedCornerShape(QimengDimens.PillCornerRadius),
                     color = MaterialTheme.colorScheme.secondaryContainer,
                 ) {
@@ -246,6 +250,7 @@ private fun SheetOtherTags(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
                             .height(QimengDimens.ChipHeight)
+                            .clickable { onToggleTag(chip.id) }
                             // 2026-09-15 用户反馈「未选择的间距没做」：池 chip 内边距
                             // 14→10dp 收紧（选中态带图标收尾视觉更密，池 chip 双侧 14dp
                             // 显肥——本批与 FlowRow 间隙 6/2dp 配套的第二半）

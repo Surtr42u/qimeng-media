@@ -13,6 +13,15 @@
 ---
 ---
 ---
+## fix(app): 标签管理未选中chip去除48dp最小触控目标——行距对齐选中区（2026-09-16 第二百八十一笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- **根因（用户反馈「选中的标签间隔是对的，其他标签上下间隔太多」）**：其他标签池的 chip 用 `Surface(onClick=…)`，Material3 会对其自动套 48dp 最小触控目标（LocalMinimumInteractiveComponentEnforcement）——chip 本体仅 30dp 高，隐形撑高使行距远大于选中区；选中区 DisplayPill 无 onClick 不受影响，呈现「选中的对、未选的错」。280 笔的 FlowRow 间隙与内边距收紧均有效但被此罩住。
+- **修复**：与 DisplayPill 同构——普通 Surface（shape 裁剪涟漪）+ 点击挪到内容 Row（`Modifier.clickable`），触控目标让位视觉紧凑，两区行距统一为 30dp+2dp。
+- 门禁：:feature:detail 编译过，assembleRelease 重出包（真机断连，待回连安装）。
+---
+---
 ## feat(app): 浏览数据迁入备份导入导出+自动备份+缩略图缓存页+我的页缓存区退役（2026-09-16 第二百八十笔）
 
 执行 AI：GLM-5.3-Flash（主代理 + 执行子代理×2 并行）
