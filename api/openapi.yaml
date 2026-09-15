@@ -772,6 +772,16 @@ paths:
       summary: Prometheus 指标（管理权限）
       responses:
         "200": { description: text/plain 指标输出 }
+  /api/v1/thumbnails/progress:
+    get:
+      summary: 缩略图覆盖进度（已落盘缩略图数 / 启用库资产总数，2026-09-15 批）
+      description: |
+        缓存进度页轮询用。分子 = 缩略图缓存目录落盘文件数（多档并存按文件计；
+        md 预生成档为主的现状下即覆盖数），分母 = 启用库资产总数（与预热回填
+        候选同源同口径）。纯统计无副作用。
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ThumbnailProgress" } } } }
+
   /api/v1/system/status:
     get:
       summary: 系统面板数据（负载/流量/磁盘，OBSERVABILITY.md）
@@ -1284,6 +1294,13 @@ components:
       required: [items]
       properties:
         items: { type: array, items: { $ref: "#/components/schemas/ClientLogEntry" } }
+
+    ThumbnailProgress:
+      type: object
+      required: [totalAssets, thumbsOnDisk]
+      properties:
+        totalAssets:  { type: integer, description: 启用库资产总数（分母，与预热回填候选同口径） }
+        thumbsOnDisk: { type: integer, description: 缩略图缓存目录已落盘文件数（分子；多档并存按文件计） }
 
     SystemStatus:
       type: object

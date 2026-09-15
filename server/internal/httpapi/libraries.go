@@ -352,6 +352,9 @@ func (s *Server) FinishScan(libraryID string, failed bool) {
 	if err := s.bus.Publish(events.Event{Topic: events.TopicLibraryChanged}); err != nil {
 		s.logger.Warn("广播 library.changed 失败", "err", err)
 	}
+	// 自动预生成缩略图（2026-09-15 批）：扫描终态后异步补齐新增/变更资产的
+	// 缩略图（对齐旧版「扫描完即有缩略图」；后台 goroutine，不阻塞终态回写）
+	s.WarmupAfterScan()
 }
 
 // refreshLibraryFileMetrics 把 library_files{type} gauge 刷新为库内现状：

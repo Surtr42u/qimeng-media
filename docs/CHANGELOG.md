@@ -13,6 +13,17 @@
 ---
 ---
 ---
+## fix(server): 缩略图懒生成单飞后台续生+SQLite并发加固+自动预热回填+覆盖进度端点（2026-09-16 第二百七十八笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- **缩略图懒生成「单飞+后台续生」（detached.go，手机单机形态慢一拍/卡顿根治）**：旧 M1 同步生成直挂请求 context——客户端滚动取消即杀 ffmpeg，真机日志 3 分钟 765 次 context canceled 全部白干、6341 资产仅 256 张落盘。新 detachedGroup：同键合并一次生成 + 生成挂 Background context（genSlots 闸/frameTimeout 兜底不变），客户端取消只结束等待不杀生成；httpapi 取消分支静默不刷 WARN。行为由 detached_test.go 四用例锁定。
+- **SQLite 并发写加固（store.go）**：DSN 增 `_txlock=immediate`（deferred 读后写大事务升级锁撞 SQLITE_BUSY_SNAPSHOT(517)，busy_timeout 不生效——2026-09-15 单机首扫期间 TXT 重建三连失败实证）；busy_timeout 5s→15s（大重建事务持锁秒级，5s 在手机闪存+全量扫描并发下不够，scanner 入库连续 BUSY(5) 实证）。
+- **自动预热回填（thumbnail_warmup.go，对齐旧版「扫描完即有缩略图」无感体验）**：开机回填+FinishScan 钩子+10 分钟周期兜底三触发；ListThumbnailWarmup/CountEnabledLibraryAssets 轻查询（sqlc 再生；queries 目录中文注释踩 sqlc v1.31.1 多字节解析已知坑，ASCII 注释规范重写并记档于 UpsertAsset 既有注释）；投递 200ms 节流给按需请求留闸位。Generator 增 HasThumbnail/CountOnDisk 出口。
+- **协议新增 GET /thumbnails/progress**（缓存进度页数据源，openapi 先行 + make sdk 三端再生 + sdk.lock 更新）：分子=缓存目录落盘数，分母=启用库资产总数。真机实测：装机 256 张→冒烟时 1090/6341 回填推进中。
+- 门禁：go build/go test ./... 14 包全绿（含 detached 新增四用例）。
+---
+---
 ## refactor(app): 药丸组件收编三页单源+悬浮面板退役+存储权限引导卡（2026-09-15 第二百七十七笔）
 
 执行 AI：GLM-5.3（2026-09-15 会话遗留批；本笔由 GLM-5.3-Flash 清点入库）

@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"io"
@@ -118,12 +119,15 @@ func (s *Server) GetMediaOrigAssetId(w http.ResponseWriter, r *http.Request, ass
 
 // GetMediaThumbAssetId 缩略图直链（懒生成）。
 //
-// M1 简化：首次请求同步生成（Ensure 幂等，命中缓存即返回；未命中时
-// 本次请求等待 ffmpeg，图片几十毫秒、视频秒级——NAS 单用户可接受）。
-// 后续里程碑把首屏预热接入 WorkerPool 后，这里可改为"未命中投递任务
-// + 返回占位"。缓存响应 immutable：缓存键 = SHA-256(assetId+size)，
-// 键即内容身份，不存在"同键变内容"，强 ETag + immutable 语义成立
-// （DOMAIN_RULES §11：永不因数量上限删除有效缓存）。
+// 2026-09-15 批改 EnsureDetached（detached.go：单飞+后台续生）：未命中时同键
+// 请求合并为一次生成，且生成挂后台 context——客户端（App 网格滚动 Coil 取消/
+// 快速滑动）断开只结束本次等待，不杀 ffmpeg。旧 M1 简化（Ensure 直挂请求
+// context 同步生成）在手机单机形态被实测证伪：3 分钟 765 次「context canceled」
+// 全部白干、6341 资产仅 256 张落盘，客户端每次回看都重新生成（慢一拍+卡顿）。
+// 新语义：客户端活着且生成完成 → 本次直接回图；已取消 → 404 占位（连接已断
+// 无观感差异），生成落盘后下次请求命中缓存。缓存响应 immutable：缓存键 =
+// SHA-256(assetId+size)，键即内容身份，不存在"同键变内容"，强 ETag + immutable
+// 语义成立（DOMAIN_RULES §11：永不因数量上限删除有效缓存）。
 func (s *Server) GetMediaThumbAssetId(w http.ResponseWriter, r *http.Request, assetID gen.AssetId, params gen.GetMediaThumbAssetIdParams) {
 	row, err := s.q.GetAssetWithLibrary(r.Context(), assetID.String())
 	if errors.Is(err, sql.ErrNoRows) {
@@ -145,8 +149,13 @@ func (s *Server) GetMediaThumbAssetId(w http.ResponseWriter, r *http.Request, as
 		writeErr(w, http.StatusBadRequest, codePathEscape, "路径不合法")
 		return
 	}
-	if err := s.thumbs.Ensure(r.Context(), row.AssetID, abs, thumbnail.Kind(row.MediaType), []thumbnail.Size{size}); err != nil {
-		// 生成失败（损坏文件/ffmpeg 异常）：给 404 占位语义——客户端
+	if err := s.thumbs.EnsureDetached(r.Context(), row.AssetID, abs, thumbnail.Kind(row.MediaType), []thumbnail.Size{size}); err != nil {
+		// 客户端取消（滚动/离开视口）是高频预期路径：后台续生已在跑，静默返回
+		// 不刷 WARN 日志、不写响应（连接已断写了也无收件人）。
+		if errors.Is(err, context.Canceled) {
+			return
+		}
+		// 其余失败（损坏文件/ffmpeg 异常/排队超时）：给 404 占位语义——客户端
 		// 对缩略图缺失的常规处理就是显示占位块，不该当服务器故障处理。
 		s.logger.Warn("缩略图生成失败", "assetId", row.AssetID, "err", err)
 		writeErr(w, http.StatusNotFound, codeThumbnailFailed, "缩略图不可用")

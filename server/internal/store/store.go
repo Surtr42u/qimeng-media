@@ -37,26 +37,35 @@ func FormatDay(t time.Time) string {
 	return t.Local().Format(DayLayout)
 }
 
-// Open 打开（必要时创建）SQLite 数据库并应用连接级 PRAGMA。
+// Open 打开（必要时创建）SQLite 数据库并应用连接级 PRAGMA 与事务模式。
 //
-// PRAGMA 全部通过 DSN 的 _pragma 参数下发——它们是「每个连接」生效的，
-// database/sql 连接池新建连接时靠 DSN 自动带上，比在 Open 后手写
-// "PRAGMA ..." 语句可靠（后者只作用于恰好执行它的那一条连接）：
+// 二者都通过 DSN 参数下发——它们是「每个连接」生效的，database/sql 连接池
+// 新建连接时靠 DSN 自动带上，比在 Open 后手写 "PRAGMA ..." 语句可靠
+// （后者只作用于恰好执行它的那一条连接）：
 //
 //   - journal_mode(WAL)：读写不互斥（adr/0003 选 SQLite 的前提——单机
 //     数万 QPS 读的前提就是 WAL）；WAL 本身持久化在库文件里，但每个新连接
 //     重复声明无害且幂等。
-//   - busy_timeout(5000)：写锁被占时等待 5 秒再返回 SQLITE_BUSY，而不是
-//     立刻失败——单进程多协程（扫描器+API）偶发写碰撞靠它吸收。
+//   - busy_timeout(15000)：写锁被占时等待 15 秒再返回 SQLITE_BUSY，而不是
+//     立刻失败——单进程多协程（扫描器+API）写碰撞靠它吸收。15 秒口径：
+//     TXT 重建/备份事件回放是大事务，持锁可达秒级，旧值 5 秒在手机闪存+
+//     全量扫描并发下不够（2026-09-15 单机形态首扫 6341 文件期间 scanner
+//     入库连续 SQLITE_BUSY(5)，靠轮询补扫才救回）。
+//   - _txlock=immediate：事务起步即取写锁。deferred 下「先读后写」的大事务
+//     （TXT 重建、备份事件回放）升级写锁时可能撞 SQLITE_BUSY_SNAPSHOT(517)
+//     ——读期间 WAL 已被其他写者推进，busy_timeout 对该错误不生效、立即
+//     失败（同日实证：「重放 TXT 重建关联失败 database is locked (517)」
+//     三连，作者关联全数丢失）。immediate 把写竞态变成排队等待，根治该
+//     失败模式；单用户场景写并发本就有限，排队代价可忽略。
 //   - foreign_keys(1)：SQLite 默认关闭外键约束，必须逐连接显式开启，
 //     否则 migration 里精心设计的 CASCADE 全部形同虚设。
 //
 // busyTimeoutMS SQLite busy_timeout（毫秒）：写锁被占时的等待上限，
-// 与下方 Open 注释「等待 5 秒」联动——调整须两处同步。
-const busyTimeoutMS = 5000
+// 与上方 Open 注释「等待 15 秒」联动——调整须两处同步。
+const busyTimeoutMS = 15000
 
 func Open(path string) (*sql.DB, error) {
-	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(%d)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)",
+	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(%d)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_txlock=immediate",
 		path, busyTimeoutMS)
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
