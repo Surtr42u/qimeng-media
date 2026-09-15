@@ -1,16 +1,11 @@
 package media.qimeng.app.feature.all
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -21,11 +16,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -47,7 +39,7 @@ import media.qimeng.app.core.ui.component.QimengMediaGrid
 import media.qimeng.app.core.ui.component.QimengPill
 import media.qimeng.app.core.ui.component.QimengPullToRefresh
 import media.qimeng.app.core.ui.component.QimengTitleRow
-import media.qimeng.app.core.ui.component.QimengValuePillFlow
+import media.qimeng.app.core.ui.component.QimengValuePillBlock
 import media.qimeng.app.core.ui.component.TabScrollController
 import media.qimeng.app.core.ui.component.qimengPinchToColumns
 import media.qimeng.app.core.ui.theme.QimengDimens
@@ -57,24 +49,8 @@ import media.qimeng.app.core.ui.R as CoreUiR
 /** 相册 Tab 在壳导航里的路由（双击 Tab 回顶事件的过滤键） */
 private const val ALBUM_ROUTE = "all"
 
-/**
- * 候选值超过该数量（含「全部」胶囊）默认收起两行——对齐 Web 值行交互阈值
- * VALUE_COLLAPSE_THRESHOLD=9（web/src/pages/AlbumsPage.tsx，原型交互阈值），任务G G5。
- */
-private const val ALBUM_VALUE_COLLAPSE_THRESHOLD = 9
-
-/** 值区块收起态行数——对齐 Web .value-row 收起态 max-height:66px（两行胶囊+行距，
- *  web/src/styles/prototype.css）；以「行数」表达与胶囊实际高度解耦，视觉≈两行药丸 */
-private const val ALBUM_VALUE_COLLAPSED_LINES = 2
-
-/**
- * 展开态值区块限高 = 屏高 ÷ 本除数（U10-2b/7，2026-09-14 用户反馈「旧版点开展示一部分，
- * 超过可以往下滑」）：复刻旧版 MaxHeightScrollView.kt:15-18 onMeasure
- * displayMetrics.heightPixels/2 的 AT_MOST 语义——最多半屏、超出纵向滚动。Compose 侧以
- * screenHeightDp/2 的 dp 近似（原实现按原始像素测量，不含密度换算，语义同为「半屏」）。
- * 只作用于展开态容器；悬浮面板形态未复刻（G5 in-flow 决策保留）。
- */
-private const val ALBUM_PILLS_MAX_HEIGHT_DIVISOR = 2
+// 值区块钳制规格三常量（G5 收起阈值/收起行数/展开限高除数）2026-09-15 批收编进 :core:ui
+// QimengValuePillBlock（三页单源），本页不再持有。
 
 /**
  * 相册页（M4-2，原全部页；任务G G5 对齐 Web AlbumsPage 形态）：标题+统计行+列数图标（双指缩放可调）+
@@ -100,10 +76,6 @@ fun AllScreen(
     val listState = rememberLazyGridState()
     // nowMs 一次快照：会话内分组标签稳定，不做跨日跳动（与旧版渲染指纹同思路）
     val nowMs = remember { System.currentTimeMillis() }
-    // 值区块两行钳制的展开态（任务G G5）：以 activeDim 为键——切维度归位「收起两行」
-    // （Web setDim 重置 expanded 同口径）；旋转/进程重建经 rememberSaveable 存活。
-    // 与 filter.expanded（整块显隐，D3 拍板语义）是两层不同的展开：前者管「区块内两行/全部」
-    var valuesExpanded by rememberSaveable(state.activeDim) { mutableStateOf(false) }
 
     // 双击「相册」Tab 回顶（400ms 双击窗口判定在壳层，列表页只听广播）
     LaunchedEffect(Unit) {
@@ -132,6 +104,19 @@ fun AllScreen(
             lastDimScrolledToTop = state.activeDim
             listState.scrollToItem(0)
         }
+    }
+
+    // 下拉刷新完成后瞬时回顶（2026-09-15 用户反馈「相册刷新会导致跳到之前的日期」）：
+    // 刷新把列表截回第一页（AlbumViewModel.reloadAll cursor=null append=false），而滚动
+    // 位置仍钉在刷新前的旧索引上——LazyGrid 把位置钳在缩水后列表的尾部，视觉=跳到旧
+    // 日期区。刷新语义=回到最新，故 true→false 翻转沿回顶。门控 lastRefreshing 快照：
+    // 首次组合 isRefreshing=false 无操作；从详情返回重组不误触（无翻转即无回顶）。
+    var lastRefreshing by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(state.isRefreshing) {
+        if (lastRefreshing && !state.isRefreshing) {
+            listState.scrollToItem(0)
+        }
+        lastRefreshing = state.isRefreshing
     }
 
     val pillModel = FourDimPillModel(
@@ -180,59 +165,15 @@ fun AllScreen(
             modifier = Modifier.padding(horizontal = QimengDimens.ScreenPaddingHorizontal),
         )
 
-        // 值区块 in-flow（任务G G5：替代悬浮药丸面板——进文档流推挤网格，不再叠放遮挡；
-        // 对齐 Web .value-row 形态）。整块显隐仍由 D3 拍板语义控制（filter.expanded：
-        // 进页默认收起/点已激活维 toggle/切维展开），本批只改「值」的呈现容器。
+        // 值区块 in-flow（任务G G5：文档流推挤网格不遮挡；2026-09-15 批改用 :core:ui
+        // QimengValuePillBlock 三页单源——收藏/历史/作者集合页同款，钳制与展开钮规格随迁）
         if (state.filter.expanded) {
-            // U10-2b/7：展开态（valuesExpanded=true）容器限高半屏+纵向滚动=旧版 MaxHeightScrollView
-            // 行为复刻（见 ALBUM_PILLS_MAX_HEIGHT_DIVISOR 记档）；收起态维持两行钳制不滚动
-            val expandedMaxHeight =
-                LocalConfiguration.current.screenHeightDp.dp / ALBUM_PILLS_MAX_HEIGHT_DIVISOR
-            Column(
-                modifier = Modifier
-                    .padding(
-                        start = QimengDimens.ScreenPaddingHorizontal,
-                        end = QimengDimens.ScreenPaddingHorizontal,
-                        // Web .value-row margin-top 10px 的近似 token 档（8dp）
-                        top = QimengDimens.SpaceM,
-                    )
-                    .then(
-                        if (valuesExpanded) {
-                            Modifier
-                                .heightIn(max = expandedMaxHeight)
-                                .verticalScroll(rememberScrollState())
-                        } else {
-                            Modifier
-                        },
-                    ),
-            ) {
-                QimengValuePillFlow(
-                    pills = activePills.map { QimengPill(text = it.text, selected = it.selected) },
-                    onPillClick = { index -> dispatchPill(viewModel, state.activeDim, activePills.getOrNull(index)) },
-                    // 收起=钳制两行（≈Web max-height 66px）；展开=全部值推挤网格
-                    maxLines = if (valuesExpanded) Int.MAX_VALUE else ALBUM_VALUE_COLLAPSED_LINES,
-                )
-                // 展开钮只在候选超阈值时出现（含「全部」胶囊的计数口径与 Web 一致）
-                if (activePills.size > ALBUM_VALUE_COLLAPSE_THRESHOLD) {
-                    Text(
-                        text = stringResource(
-                            if (valuesExpanded) R.string.all_values_collapse else R.string.all_values_expand,
-                        ),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier
-                            // Web .expand-btn margin-top 8px
-                            .padding(top = QimengDimens.SpaceM)
-                            .clip(RoundedCornerShape(QimengDimens.PillCornerRadius))
-                            .clickable { valuesExpanded = !valuesExpanded }
-                            // 触区补边：纯文字钮按下反馈区过窄（Web 有 hover 态、触屏无）
-                            .padding(
-                                horizontal = QimengDimens.SpaceXS,
-                                vertical = QimengDimens.SpaceXS,
-                            ),
-                    )
-                }
-            }
+            QimengValuePillBlock(
+                pills = activePills.map { QimengPill(text = it.text, selected = it.selected) },
+                onPillClick = { index -> dispatchPill(viewModel, state.activeDim, activePills.getOrNull(index)) },
+                // 切维度归位「收起两行」（Web setDim 重置 expanded 同口径）
+                resetKey = state.activeDim,
+            )
         }
 
         // 页头排序行已删除（任务L L4，用户原话 #19「那就删除 就是截图这个,分区下面地这个排序」）：
@@ -290,8 +231,6 @@ fun AllScreen(
                     onAssetClick = { asset: MediaAsset -> onOpenAsset(asset.id) },
                 )
             }
-            // 悬浮药丸面板已退役（任务G G5：值区块改 in-flow 见页头；QimengFloatingPillPanel
-            // 组件本体保留在 :core:ui——收藏/历史页仍在用）
         }
     }
 

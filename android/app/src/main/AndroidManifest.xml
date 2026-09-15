@@ -9,6 +9,15 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- FGS 权限与 dataSync 类型声明在 :core:data（setForeground 使用方模块，随清单合并） -->
 
+    <!-- 内嵌服务端读媒体库根（ADR-0015 单机形态，2026-09-15 批）：注册库走「手输绝对路径→
+         服务端直读文件系统」的 NAS 范式，scoped storage 下唯有 ALL FILES ACCESS 能放行
+         （媒体三权限只覆盖 MediaStore 索引项，.nomedia 隐藏目录内的文件读不到——手机实测
+         376 文件在册、服务端直读 0）。声明本权限后系统设置「所有文件访问」开关才可拨；
+         授权引导入口在设置→服务器（本机模式）。安全面=单设备本地存储读取，不出网
+         （ADR-0015 回环红线），对本地媒体库 App 属正当用途（ADR-0015 风险节原文拍板）。 -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
+
     <application
         android:name=".QimengApplication"
         android:allowBackup="true"

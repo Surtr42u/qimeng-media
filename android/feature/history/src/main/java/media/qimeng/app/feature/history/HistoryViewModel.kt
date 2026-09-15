@@ -171,10 +171,6 @@ class HistoryViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(filter = filter.copy(expanded = !filter.expanded))
     }
 
-    fun collapsePills() {
-        _uiState.value = _uiState.value.copy(filter = _uiState.value.filter.copy(expanded = false))
-    }
-
     fun selectPartition(zone: Zone) {
         // 切分区清作品/角色（类型保留）；历史页无 COS 作者位，作品行只清出处分组
         applyFilter(AlbumFilter.selectPartition(_uiState.value.filter, zone))

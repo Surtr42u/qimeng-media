@@ -1,6 +1,6 @@
 package media.qimeng.app.core.ui.component
 
-import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -13,12 +13,18 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -67,7 +73,7 @@ fun QimengChipRow(
  * 无「收起 ▲」尾丸、无折叠语义——搜索页两区词丸旧版全量平铺不折叠；
  * 胶囊渲染复用 [PillChip] 单源，禁各页自绘（铁律 7 / §5 组件单源）。
  * （任务 H1 清偿：原带「收起 ▲」折叠尾丸的 QimengPillFlowRow 全仓零调用已删除，
- * 折叠语义由 [QimengFloatingPillPanel]/[QimengValuePillFlow] 分承。）
+ * 折叠语义由 [QimengValuePillFlow] 及其容器 [QimengValuePillBlock] 分承。）
  *
  * 词丸流间隙（BVIS 2026-09-09 勘正）：纵横 [QimengDimens.WordPillSpacing]/[QimengDimens.WordPillRowSpacing]
  * 均 8dp——旧实录 search_entry.txt 推荐词丸行位 404/528/652px@density3 → 行节距 124px=41.3dp，
@@ -75,8 +81,9 @@ fun QimengChipRow(
  * 行节距 34dp 对齐实录」登记（把词丸间隙与胶囊输入框场高 34dp 两个数混淆），走查实测该档节距
  * 33.9dp 偏紧，本批按实录清偿；FilterChip 48dp 布局膨胀时代的 56dp 节距不复返（[QimengSegPill]
  * 紧凑化保持）。
- * 药丸容器间隙各随其实录：本组件 8dp、[QimengFloatingPillPanel] 4dp（all_partition_pills 实测）、
- * [QimengValuePillFlow] 6dp/4dp（U10-2b/7 改：G5 Web 基准让位旧版实录，见常量注释）。
+ * 药丸容器间隙各随其实录：本组件 8dp、[QimengValuePillFlow] 6dp/4dp（U10-2b/7 改：G5 Web 基准让位
+ * 旧版实录，见常量注释）。旧悬浮面板形态（QimengFloatingPillPanel，FrameLayout 叠放）已随
+ * 2026-09-15 批「三页胶囊统一 in-flow」全仓零调用删除（删除先例：任务 H1 删 QimengPillFlowRow）。
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -94,49 +101,94 @@ fun QimengWordPillFlow(
     }
 }
 
+// ---------- 值区块钳制规格（2026-09-15 批自相册页私有常量收编为三页单源；文档随迁） ----------
+
 /**
- * 悬浮药丸面板（旧版 fragment_all_files.xml 药丸容器形态，M4-2A-B2）：悬浮在网格上方
- * （elevation 4dp + 页面底色，不推挤网格——旧版 FrameLayout 叠放）、最大高度=屏高一半
- * （旧版 MaxHeightScrollView.onMeasure：heightPixels/2 的 AT_MOST 语义）超出内部滚动、
- * 药丸 FlowRow 自动换行、末尾固定「收起 ▲」、点药丸不收起。
- * 折叠时调用方不组合本组件（collapsed=true 渲染 null）。
- * 药丸间隙纵横 [QimengDimens.FloatingPillPanelSpacing]=4dp（BVIS：旧实录 all_partition_pills.txt
- * 行位 466/568px@density3 → 行节距 102px=34dp，30dp 芯片 → 间隙 4dp；此前复用 SpaceM=8dp
- * 实测节距 40dp 偏松，本批清偿）。
+ * 值区块收起态钳制阈值：候选值超过该数量（含「全部」胶囊）默认收起两行——对齐 Web 值行
+ * 交互阈值 VALUE_COLLAPSE_THRESHOLD=9（web/src/pages/AlbumsPage.tsx，原型交互阈值），任务G G5。
  */
-@OptIn(ExperimentalLayoutApi::class)
+private const val VALUE_BLOCK_COLLAPSE_THRESHOLD = 9
+
+/** 值区块收起态行数——对齐 Web .value-row 收起态 max-height:66px（两行胶囊+行距，
+ *  web/src/styles/prototype.css）；以「行数」表达与胶囊实际高度解耦，视觉≈两行药丸 */
+private const val VALUE_BLOCK_COLLAPSED_LINES = 2
+
+/**
+ * 值区块展开态限高 = 屏高 ÷ 本除数（U10-2b/7，2026-09-14 用户反馈「旧版点开展示一部分，
+ * 超过可以往下滑」）：复刻旧版 MaxHeightScrollView.kt:15-18 onMeasure
+ * displayMetrics.heightPixels/2 的 AT_MOST 语义——最多半屏、超出纵向滚动。Compose 侧以
+ * screenHeightDp/2 的 dp 近似（原实现按原始像素测量，不含密度换算，语义同为「半屏」）。
+ */
+private const val VALUE_BLOCK_MAX_HEIGHT_DIVISOR = 2
+
+/**
+ * 文档流「值区块」容器（任务G G5 首创于相册页；2026-09-15 批用户反馈「收藏和浏览记录的
+ * 胶囊没和相册的对齐」，抽为相册/收藏/浏览历史三页单源，替代各页独立实现与已删除的
+ * 悬浮面板 QimengFloatingPillPanel——悬浮形态退役，三页呈现完全一致）：
+ * - 进文档流推挤网格（非叠放遮挡），对齐 Web AlbumsPage .value-row 形态；
+ * - 收起态钳制 [VALUE_BLOCK_COLLAPSED_LINES] 行；候选超 [VALUE_BLOCK_COLLAPSE_THRESHOLD]
+ *   出现「展开 ⌄/收起 ⌃」切换钮（文案与 Web expand-btn 逐字一致含箭头符）；
+ * - 展开态限高半屏+纵向滚动（U10-2b/7 旧版 MaxHeightScrollView 行为复刻）。
+ * 整块显隐由调用方门控（filter.expanded 的 D3 拍板语义：进页默认收起/点已激活维 toggle/
+ * 切维展开），本组件只管「显出后钳几行」。
+ *
+ * @param pills 候选值胶囊（渲染复用 [QimengValuePillFlow]→[PillChip] 单源）
+ * @param onPillClick 胶囊点击（index 对应 [pills] 下标）
+ * @param resetKey 两行钳制展开态的归位键——值变化（如切维度）即归位「收起两行」
+ *   （相册/收藏/历史页传 state.activeDim，Web setDim 重置 expanded 同口径；
+ *   旋转/进程重建经 rememberSaveable 存活）
+ */
 @Composable
-fun QimengFloatingPillPanel(
+fun QimengValuePillBlock(
     pills: List<QimengPill>,
     onPillClick: (index: Int) -> Unit,
-    collapsed: Boolean,
-    onCollapse: () -> Unit,
     modifier: Modifier = Modifier,
+    resetKey: Any? = null,
 ) {
-    if (collapsed) return
-    // 旧版 MaxHeightScrollView 逐字口径：最大高度 = 屏幕像素高的一半（无旧版 dp 常量，按屏推导）
-    val halfScreenHeight = LocalConfiguration.current.screenHeightDp.dp / 2
+    // 区块内「两行/全部」与调用方的 filter.expanded（整块显隐）是两层不同的展开
+    var valuesExpanded by rememberSaveable(resetKey) { mutableStateOf(false) }
     Column(
         modifier = modifier
-            .fillMaxWidth()
-            .heightIn(max = halfScreenHeight)
-            .shadow(elevation = QimengDimens.PillsPanelElevation)
-            .background(MaterialTheme.colorScheme.background)
             .padding(
-                horizontal = QimengDimens.ScreenPaddingHorizontal,
-                vertical = QimengDimens.SpaceXS,
+                start = QimengDimens.ScreenPaddingHorizontal,
+                end = QimengDimens.ScreenPaddingHorizontal,
+                // Web .value-row margin-top 10px 的近似 token 档（8dp）
+                top = QimengDimens.SpaceM,
             )
-            .verticalScroll(rememberScrollState()),
+            .then(
+                if (valuesExpanded) {
+                    Modifier
+                        .heightIn(max = LocalConfiguration.current.screenHeightDp.dp / VALUE_BLOCK_MAX_HEIGHT_DIVISOR)
+                        .verticalScroll(rememberScrollState())
+                } else {
+                    Modifier
+                },
+            ),
     ) {
-        FlowRow(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(QimengDimens.FloatingPillPanelSpacing),
-            verticalArrangement = Arrangement.spacedBy(QimengDimens.FloatingPillPanelSpacing),
-        ) {
-            pills.forEachIndexed { index, pill -> PillChip(pill = pill, onClick = { onPillClick(index) }) }
-            PillChip(
-                pill = QimengPill(text = stringResource(R.string.ui_pill_collapse), selected = false),
-                onClick = onCollapse,
+        QimengValuePillFlow(
+            pills = pills,
+            onPillClick = onPillClick,
+            // 收起=钳制两行（≈Web max-height 66px）；展开=全部值推挤网格
+            maxLines = if (valuesExpanded) Int.MAX_VALUE else VALUE_BLOCK_COLLAPSED_LINES,
+        )
+        // 展开钮只在候选超阈值时出现（含「全部」胶囊的计数口径与 Web 一致）
+        if (pills.size > VALUE_BLOCK_COLLAPSE_THRESHOLD) {
+            Text(
+                text = stringResource(
+                    if (valuesExpanded) R.string.ui_values_collapse else R.string.ui_values_expand,
+                ),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    // Web .expand-btn margin-top 8px
+                    .padding(top = QimengDimens.SpaceM)
+                    .clip(RoundedCornerShape(QimengDimens.PillCornerRadius))
+                    .clickable { valuesExpanded = !valuesExpanded }
+                    // 触区补边：纯文字钮按下反馈区过窄（Web 有 hover 态、触屏无）
+                    .padding(
+                        horizontal = QimengDimens.SpaceXS,
+                        vertical = QimengDimens.SpaceXS,
+                    ),
             )
         }
     }
@@ -169,7 +221,8 @@ private fun ChipDivider() {
  * 药丸间隙=纵横异值 6dp/4dp（U10-2b/7：对齐旧版 FlowLayout.kt:18-19，G5 Web 8/8 基准退役；
  * 全仓唯一消费方=相册页，故不设参数直接改默认）。
  * 胶囊渲染复用 [PillChip] 单源（铁律 7：禁止各页自绘胶囊）。
- * 悬浮面板本体保留：收藏/历史页仍在用（G5 只改相册页接线）。
+ * 值区块容器统一走 [QimengValuePillBlock]（2026-09-15 批三页单源；G5 时期「悬浮面板本体保留、
+ * 收藏/历史页仍在用」的分治口径随悬浮面板删除一并退役）。
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable

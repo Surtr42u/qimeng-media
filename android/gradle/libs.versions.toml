@@ -128,6 +128,9 @@ compose-material3 = { group = "androidx.compose.material3", name = "material3", 
 # 共享元素转场（exp#3 试点）：SharedTransitionLayout/sharedBounds 在 animation 构件，
 # 版本随 BOM（2026.08.00 → animation 1.12.0，compose ui·animation 同步发布），禁止单独升级
 compose-animation = { group = "androidx.compose.animation", name = "animation" }
+# rememberSaveable 所在构件（QimengValuePillBlock 两行钳制展开态）：foundation 传递可见但本仓
+# 显式依赖纪律下 core:ui 直用须自声明，版本随 BOM，禁止单独升级
+compose-runtime-saveable = { group = "androidx.compose.runtime", name = "runtime-saveable" }
 compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
 hilt-android = { group = "com.google.dagger", name = "hilt-android", version.ref = "hilt" }
 hilt-compiler = { group = "com.google.dagger", name = "hilt-android-compiler", version.ref = "hilt" }

@@ -147,10 +147,6 @@ class AuthorCollectionViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(filter = filter.copy(expanded = !filter.expanded))
     }
 
-    fun collapsePills() {
-        _uiState.value = _uiState.value.copy(filter = _uiState.value.filter.copy(expanded = false))
-    }
-
     /** 作品维（仅常规作者渲染；payload=null=「全部」清行） */
     fun selectAuthor(option: FacetOption?) {
         applyFilter(AlbumFilter.selectAuthor(_uiState.value.filter, option))
