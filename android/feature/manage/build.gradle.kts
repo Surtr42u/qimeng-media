@@ -12,6 +12,13 @@ plugins {
 
 android {
     namespace = "media.qimeng.app.feature.manage"
+
+    testOptions {
+        // 2026-09-15 批：浏览数据同步卡迁入本模块（BackupViewModel 直跑 ViewEventQueue.drain），
+        // 队列内的 android.util.Log 在 JVM android.jar stub 上默认抛「not mocked」，
+        // 此处放行为返回默认值（feature:settings / core:data 同款先例，仅作用于本模块单元测试）。
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 dependencies {

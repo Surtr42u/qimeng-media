@@ -13,6 +13,17 @@
 ---
 ---
 ---
+## feat(app): 浏览数据迁入备份导入导出+自动备份+缩略图缓存页+我的页缓存区退役（2026-09-16 第二百八十笔）
+
+执行 AI：GLM-5.3-Flash（主代理 + 执行子代理×2 并行）
+
+- **备份导入导出页重构（用户反馈「三种形式换统一形式，参考库管理风格」）**：导出行/导入拖放区/浏览数据卡三种旧视觉统一为一张主卡三行（导入备份/导出备份/同步浏览数据=待上传 N 条），「导出未上传」按钮退役（保留立即同步）；二次确认/Warnings/RuleNotes 全保留。
+- **自动备份（用户反馈「加到备份导入导出里」，旧版 GUIDE_BACKUP 目录自动写移植）**：BackupAutoPrefsRepository（client_prefs 三键）+ AutoBackupRunner（SAF 树 URI 原生 DocumentsContract 写 qimeng_backup.json，存在覆写不存在创建）；触发口径=冷启动登录态就绪判定 24h 一次（导出依赖服务端，WorkManager 后台无效）；页面卡=开关+目录选择（takePersistableUriPermission 持久授权）+立即备份+上次备份时间。
+- **缩略图缓存页（用户反馈「缓存上限和进度合并数据管理一个选项卡」）**：数据管理新增「缩略图缓存」入口 → 新页=生成进度卡（GET /thumbnails/progress 轮询+LinearProgressIndicator）+缓存上限卡（QuotaCard 自 settings 移植）；协议先行走 278 笔。
+- **我的页缓存区退役**：QuotaCard/缓存用例/Fake 随迁清理，页脚余版本信息+退出登录；**浏览数据卡自我的页迁出**（同批 279 笔前完成，用户反馈「外部的浏览数据移植到数据管理合并到导入备份那个」）。
+- 门禁：:feature:manage 44 例/:feature:settings 16 例/:app MainViewModelTest+nav 全绿；assembleRelease 26.5MB 真机覆盖安装冒烟过（thumbnails/progress 实测 1090/6341 回填推进中）。
+---
+---
 ## fix(app): 首页首屏失败重试+推荐触底死锁修复+相册fileDate默认排序+详情胶囊与标签间距（2026-09-16 第二百七十九笔）
 
 执行 AI：GLM-5.3-Flash（主代理）

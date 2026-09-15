@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import media.qimeng.app.core.data.backup.AutoBackupRunner
 import media.qimeng.app.core.data.embedded.EmbeddedServerController
 import media.qimeng.app.core.data.repository.AuthRepository
 
@@ -28,11 +29,16 @@ enum class SessionState {
  * （DataStore 写盘），事件通道保证「服务端已踢」在写盘落地前就翻到登录页；token 流通道负责
  * 常规分支（启动恢复/主动登出/重新登录）。sessionExpired 在重新登录成功时复位，保证下一次
  * 401 仍能触发跳转。
+ *
+ * 2026-09-16 用户反馈「自动备份加到备份导入导出」：壳层兼管自动备份的冷启动触发——
+ * 登录态就绪（isLoggedIn 收集到 true）即判定一次 [AutoBackupRunner.runIfDue]（24h 一次
+ * 由执行器内部门控），静默不打扰（失败不产生任何 UI 反馈，与 401/会话通道互不牵连）。
  */
 @HiltViewModel
 class MainViewModel @Inject constructor(
     private val authRepository: AuthRepository,
     private val embeddedServerController: EmbeddedServerController,
+    private val autoBackupRunner: AutoBackupRunner,
 ) : ViewModel() {
 
     private val sessionExpired = MutableStateFlow(false)
@@ -57,7 +63,13 @@ class MainViewModel @Inject constructor(
         }
         viewModelScope.launch {
             authRepository.isLoggedIn.collect { loggedIn ->
-                if (loggedIn) sessionExpired.value = false
+                if (loggedIn) {
+                    sessionExpired.value = false
+                    // 2026-09-16 用户反馈「自动备份加到备份导入导出」触发口径：冷启动登录态
+                    // 就绪后判定一次（重登亦然），24h 一次由 runIfDue 内部门控；静默不打扰——
+                    // runCatching 吞掉目录未授权/导出失败等一切异常，不进 writeError 族反馈
+                    viewModelScope.launch { runCatching { autoBackupRunner.runIfDue() } }
+                }
             }
         }
         // U11 批次D（ADR-0015 形态 B）：地址流驱动内嵌服务端随需启停——配置为内嵌

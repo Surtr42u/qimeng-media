@@ -3,13 +3,17 @@ package media.qimeng.app.core.data.repository
 import android.util.Log
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import media.qimeng.app.core.model.DiskCacheQuota
+import media.qimeng.app.core.model.ThumbnailCacheProgress
 import media.qimeng.app.core.model.MostViewedEntry
 import media.qimeng.app.core.model.RecommendPrefsValues
 import media.qimeng.app.core.model.StatsOverviewValues
@@ -257,5 +261,56 @@ class DataStoreDiskCachePrefsRepository @Inject constructor(
         const val DEFAULT_MB_UNSET = -1
 
         val KEY_QUOTA_MB = intPreferencesKey("disk_cache_quota_mb")
+    }
+}
+
+/** [ThumbnailProgressRepository] SDK 实现（进度页轮询；失败降级 null 由 UI 显「—」） */
+@Singleton
+class SdkThumbnailProgressRepository @Inject constructor(
+    private val apiFactory: BusinessApiFactory,
+) : ThumbnailProgressRepository {
+
+    override suspend fun progress(): ThumbnailCacheProgress? {
+        Log.d(SdkMediaRepository.LOG_TAG, "GET /thumbnails/progress")
+        return runCatching {
+            val api = withContext(Dispatchers.IO) { apiFactory.create() }
+            val p = withContext(Dispatchers.IO) { api.apiV1ThumbnailsProgressGet() }
+            ThumbnailCacheProgress(totalAssets = p.totalAssets, thumbsOnDisk = p.thumbsOnDisk)
+        }.getOrNull()
+    }
+}
+
+/** [BackupAutoPrefsRepository] DataStore 实现（client_prefs 同文件不同键，C5 同款） */
+@Singleton
+class DataStoreBackupAutoPrefsRepository @Inject constructor(
+    @media.qimeng.app.core.data.di.ClientPrefsDataStore private val dataStore: DataStore<Preferences>,
+) : BackupAutoPrefsRepository {
+
+    override val state: Flow<BackupAutoPrefs> = dataStore.data.map { prefs ->
+        BackupAutoPrefs(
+            enabled = prefs[KEY_ENABLED] ?: false,
+            dirUri = prefs[KEY_DIR_URI],
+            lastRunMillis = prefs[KEY_LAST_RUN] ?: 0L,
+        )
+    }
+
+    override suspend fun setEnabled(enabled: Boolean) {
+        dataStore.edit { it[KEY_ENABLED] = enabled }
+    }
+
+    override suspend fun setDirUri(uri: String?) {
+        dataStore.edit { prefs ->
+            if (uri == null) prefs.remove(KEY_DIR_URI) else prefs[KEY_DIR_URI] = uri
+        }
+    }
+
+    override suspend fun setLastRunMillis(millis: Long) {
+        dataStore.edit { it[KEY_LAST_RUN] = millis }
+    }
+
+    private companion object {
+        val KEY_ENABLED = booleanPreferencesKey("backup_auto_enabled")
+        val KEY_DIR_URI = stringPreferencesKey("backup_auto_dir_uri")
+        val KEY_LAST_RUN = longPreferencesKey("backup_auto_last_run_ms")
     }
 }
