@@ -10,6 +10,21 @@ import (
 	"database/sql"
 )
 
+const countEnabledLibraryAssets = `-- name: CountEnabledLibraryAssets :one
+SELECT COUNT(*) AS total FROM assets a
+JOIN libraries l ON l.id = a.library_id
+WHERE l.enabled = 1
+`
+
+// Thumbnail coverage progress denominator (2026-09-15 batch). Same WHERE as
+// ListThumbnailWarmup candidates; keep both in sync.
+func (q *Queries) CountEnabledLibraryAssets(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countEnabledLibraryAssets)
+	var total int64
+	err := row.Scan(&total)
+	return total, err
+}
+
 const getAsset = `-- name: GetAsset :one
 SELECT asset_id, library_id, rel_path, file_name, media_type, size_bytes, mtime, duration_ms, width, height, source, created_at, updated_at, last_position_seconds, video_codec, audio_codec, cos_work FROM assets WHERE asset_id = ?
 `
@@ -224,6 +239,54 @@ func (q *Queries) ListCosWorkForAssets(ctx context.Context, assetIdsJson interfa
 	for rows.Next() {
 		var i ListCosWorkForAssetsRow
 		if err := rows.Scan(&i.AssetID, &i.CosWork); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listThumbnailWarmup = `-- name: ListThumbnailWarmup :many
+SELECT a.asset_id, l.root_path, a.rel_path, a.media_type
+FROM assets a
+JOIN libraries l ON l.id = a.library_id
+WHERE l.enabled = 1
+ORDER BY a.created_at ASC, a.asset_id ASC
+`
+
+type ListThumbnailWarmupRow struct {
+	AssetID   string
+	RootPath  string
+	RelPath   string
+	MediaType string
+}
+
+// Warmup candidates for automatic thumbnail pre-generation (2026-09-15 batch,
+// mirrors the legacy app "thumbs exist right after scan" experience): all
+// assets of enabled libraries + library root + media type. "Which thumbnails
+// are missing" is decided in Go (cache key = SHA-256, see cachekey.go; SQL
+// cannot express it) via os.Stat on the thumb destination path.
+func (q *Queries) ListThumbnailWarmup(ctx context.Context) ([]ListThumbnailWarmupRow, error) {
+	rows, err := q.db.QueryContext(ctx, listThumbnailWarmup)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListThumbnailWarmupRow
+	for rows.Next() {
+		var i ListThumbnailWarmupRow
+		if err := rows.Scan(
+			&i.AssetID,
+			&i.RootPath,
+			&i.RelPath,
+			&i.MediaType,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

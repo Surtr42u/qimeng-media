@@ -50,6 +50,9 @@ type Generator struct {
 	// <=0 按 CPU 核数，见 NewWorkerPool）。懒生成/首屏预热经 Submit 提交；
 	// 应用停机路径必须调用 Close 优雅收池。
 	pool *WorkerPool
+	// detached 是懒生成端点的「单飞+后台续生」组（detached.go，2026-09-15 批）：
+	// 同键请求合并为一次生成，且客户端取消只结束等待不杀生成。
+	detached *detachedGroup
 }
 
 // Options 是 Generator 的构造配置。字段语义与 config.ThumbnailConfig 对应，
@@ -87,6 +90,7 @@ func NewGenerator(dataDir string, logger *slog.Logger, opts Options) *Generator 
 		longSide:   opts.LongSide,
 		ffmpegBin:  resolveBin(opts.FFmpegPath, DefaultFFmpegBin),
 		ffprobeBin: resolveBin(opts.FFprobePath, DefaultFFprobeBin),
+		detached:   newDetachedGroup(),
 	}
 	g.stillFormat = probeStillFormat(g.ffmpegBin, logger)
 	g.pool = NewWorkerPool(context.Background(), opts.Workers, 0, g.handle, logger)
@@ -129,14 +133,20 @@ func (g *Generator) Ensure(ctx context.Context, assetID, srcPath string, kind Ki
 	return nil
 }
 
-func (g *Generator) ensureOne(ctx context.Context, assetID, srcPath string, kind Kind, size Size) error {
-	// 网格默认档（md）的像素由 LongSide 配置决定（<=0 已在构造时回落
-	// SizeGrid）：size 常量只是档位占位，生成与缓存键都用换算后的像素，
-	// 保证"调整配置像素 = 新键 = 新文件"的缓存语义成立（cachekey.go 注释）。
+// thumbDst 返回某资产某尺寸的缩略图落盘路径（ensureOne 生成侧与懒生成
+// 快路径的存在性检查共用，EnsureDetached）。网格默认档（md）的像素由
+// LongSide 配置决定（<=0 已在构造时回落 SizeGrid）：size 常量只是档位占位，
+// 生成与缓存键都用换算后的像素，保证"调整配置像素 = 新键 = 新文件"的缓存
+// 语义成立（cachekey.go 注释）。
+func (g *Generator) thumbDst(assetID string, size Size) string {
 	if size == SizeGrid {
 		size = Size(g.longSide)
 	}
-	dst := ThumbPath(g.dataDir, CacheKey(assetID, size), g.stillFormat.Ext())
+	return ThumbPath(g.dataDir, CacheKey(assetID, size), g.stillFormat.Ext())
+}
+
+func (g *Generator) ensureOne(ctx context.Context, assetID, srcPath string, kind Kind, size Size) error {
+	dst := g.thumbDst(assetID, size)
 	if _, err := os.Stat(dst); err == nil {
 		return nil // 缓存命中
 	} else if !errors.Is(err, fs.ErrNotExist) {
@@ -215,4 +225,31 @@ func tempFramePath() (string, error) {
 		return "", fmt.Errorf("关闭抽帧中转文件 %s: %w", name, err)
 	}
 	return name, nil
+}
+
+// HasThumbnail 缩略图是否已落盘（预热回填/进度统计的存在性判定出口；
+// md 档走 LongSide 映射，与生成侧 thumbDst 同一换算，保证判定与落盘同键）。
+func (g *Generator) HasThumbnail(assetID string, size Size) bool {
+	_, err := os.Stat(g.thumbDst(assetID, size))
+	return err == nil
+}
+
+// CountOnDisk 统计缩略图缓存目录已落盘文件数（进度页分母口径见 httpapi
+// GetApiV1ThumbnailsProgress；目录不存在=零张，属正常态非错误）。
+func (g *Generator) CountOnDisk() (int64, error) {
+	var n int64
+	root := filepath.Join(g.dataDir, "thumbs")
+	err := filepath.WalkDir(root, func(_ string, d fs.DirEntry, werr error) error {
+		if werr != nil {
+			return nil // 子目录失联跳过（fs.ErrNotExist 常态），进度统计不受损
+		}
+		if !d.IsDir() {
+			n++
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
 }

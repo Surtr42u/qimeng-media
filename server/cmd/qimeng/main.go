@@ -168,6 +168,8 @@ func main() {
 	// ffprobe 路径与缩略图管线同源（thumbnail.ffprobe_path 单点解析）。
 	scan := scanner.New(queries, bus, logger, cfg.DataDir, thumbs.ProbeVideo)
 	apiSrv.SetScanner(newScannerAdapter(scan, queries, apiSrv, logger))
+	// 自动预生成缩略图（2026-09-15 批）：开机回填历史积压 + 周期兜底（daemon）
+	apiSrv.StartThumbnailWarmup()
 
 	handler := apiSrv.Handler()
 
