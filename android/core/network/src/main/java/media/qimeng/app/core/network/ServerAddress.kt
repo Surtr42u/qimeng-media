@@ -13,8 +13,15 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
  */
 object ServerAddress {
 
+    /**
+     * URL 协议前缀单源（U11 小债清偿批公开）：地址规范化、SDK 映射 absolutize、
+     * 缩略图缓存键协议判定三方共用——协议前缀第 2 处手抄即漂移风险，收拢于此。
+     */
+    const val SCHEME_HTTP = "http://"
+    const val SCHEME_HTTPS = "https://"
+
     /** 缺省协议（裸地址自动补前缀；内网场景 http 为主，显式 https 不受影响）。 */
-    private const val DEFAULT_SCHEME = "http://"
+    private const val DEFAULT_SCHEME = SCHEME_HTTP
 
     /** Android 模拟器访问宿主机回环地址的别名——10.0.2.2 即开发机的 127.0.0.1（官方模拟器网络约定）。 */
     const val EMULATOR_LOOPBACK = "http://10.0.2.2:8420"

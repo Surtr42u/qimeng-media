@@ -19,6 +19,11 @@
 - 本地持久化三类：登录配置、可设上限的媒体缓存（LRU）、事件队列
 - 交互规格唯一来源：旧项目 `<旧项目目录>\docs\GUIDE_UI.md`——只继承交互语义，实现代码全部 Compose 新写（禁搬旧 Kotlin；复杂自绘控件允许 AndroidView 桥接，清单入交付报告）
 
-## 单机形态预留（ADR-0015，M6 实施）
+## 单机形态（ADR-0015；形态 B 已落地——任务U11 批次D，2026-09-15）
 
-服务器地址只经 `ServerConfigDataSource`（M4-1）单点流转，支持 localhost——M6 单机形态（Go 服务端内嵌手机）时 UI 零改动切换。
+服务器地址只经 `ServerConfigDataSource`（M4-1）单点流转，支持 localhost。**内嵌形态 B**：
+`:core:data` 的 `embedded/` 包（EmbeddedServerConfig 装配纯逻辑 / EmbeddedServerService
+薄前台 Service（specialUse，W^X 只 exec nativeLibraryDir 成品、回环 18430 单值互指）/
+EmbeddedServerController 注入点）+ 设置页本机模式切换与壳层冷启动自拉起；三件套装配
+`make app-embedded-*`（供应链哈希锁见 deploy/embedded/README.md，jniLibs 不入 git）。
+真机 arm64 全链验收 = 任务T T7 用户节点。

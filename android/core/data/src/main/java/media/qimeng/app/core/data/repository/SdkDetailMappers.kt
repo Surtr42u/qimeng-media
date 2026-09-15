@@ -38,8 +38,8 @@ internal object SdkDetailMappers {
         isFavorite = detail.isFavorite ?: false,
         likeCount = detail.likeCount ?: 0,
         likedToday = detail.likedToday ?: false,
-        thumbUrl = detail.thumbUrl?.let { absolutize(it, baseUrl) },
-        origUrl = detail.origUrl?.let { absolutize(it, baseUrl) },
+        thumbUrl = detail.thumbUrl?.let { SdkMappers.absolutize(it, baseUrl) },
+        origUrl = detail.origUrl?.let { SdkMappers.absolutize(it, baseUrl) },
         durationMs = detail.durationMs,
         cosWork = detail.cosWork,
         // 断点续播位置为 Double 秒（协议批 2026-09-09：format:double 后 SDK
@@ -136,14 +136,5 @@ internal object SdkDetailMappers {
         else -> MediaKind.IMAGE
     }
 
-    /**
-     * 与 SdkMappers.absolutize 同语义；并行边界禁改对方文件（M4-2A 已声明改动集），
-     * 故在此复制 5 行小函数——合并后可收拢回单源（两个文件头注释互指）。
-     */
-    private fun absolutize(pathOrUrl: String, baseUrl: String): String =
-        if (pathOrUrl.startsWith("http://") || pathOrUrl.startsWith("https://")) {
-            pathOrUrl
-        } else {
-            baseUrl.trimEnd('/') + pathOrUrl
-        }
+    // U11 小债清偿批：原 5 行复制（M4-2A 并行边界期临时）已收拢回 SdkMappers.absolutize 单源
 }

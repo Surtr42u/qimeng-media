@@ -1,5 +1,7 @@
 package media.qimeng.app.core.data.coil
 
+import media.qimeng.app.core.network.ServerAddress
+
 import coil3.Uri
 import coil3.intercept.Interceptor
 import coil3.key.Keyer
@@ -38,8 +40,9 @@ object SignedMediaCacheKeys {
 
     private val ROTATING_PARAMS = setOf(PARAM_EXP, PARAM_SIG)
 
-    private const val HTTP_PREFIX = "http://"
-    private const val HTTPS_PREFIX = "https://"
+    // 协议前缀单源=core:network ServerAddress（U11 小债清偿批收敛，防三处手抄漂移）
+    private val HTTP_PREFIX = ServerAddress.SCHEME_HTTP
+    private val HTTPS_PREFIX = ServerAddress.SCHEME_HTTPS
     private const val QUERY_SEPARATOR = "?"
     private const val PARAM_SEPARATOR = "&"
 
