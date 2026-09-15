@@ -8,11 +8,28 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
+    <!-- 内嵌服务端 FGS（任务U11 批次D，ADR-0015 形态 B）：本地媒体服务端不属于任何
+         标准 FGS 类型（dataSync 已被上传链路占用且语义不符），走 specialUse +
+         子类型属性声明（API 34+ 必填）。 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
     <application>
         <service
             android:name="androidx.work.impl.foreground.SystemForegroundService"
             android:foregroundServiceType="dataSync"
             tools:node="merge" />
+
+        <!-- 内嵌服务端生命周期 Service（U11 批次D）：只 exec nativeLibraryDir 成品、
+             监听回环，红线与重启语义见 EmbeddedServerService KDoc。exported=false——
+             外部 App 不允许触发/停止本机服务端。 -->
+        <service
+            android:name=".embedded.EmbeddedServerService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Local media server for on-device single-machine form (ADR-0015); serves only 127.0.0.1 loopback" />
+        </service>
     </application>
 
 </manifest>

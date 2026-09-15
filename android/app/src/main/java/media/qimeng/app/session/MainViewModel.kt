@@ -3,6 +3,7 @@ package media.qimeng.app.session
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -10,8 +11,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import media.qimeng.app.core.data.embedded.EmbeddedServerController
 import media.qimeng.app.core.data.repository.AuthRepository
-import javax.inject.Inject
 
 /** 壳层会话状态：Loading = 持久化登录态尚未首读完成（防误闪登录页）。 */
 enum class SessionState {
@@ -31,6 +32,7 @@ enum class SessionState {
 @HiltViewModel
 class MainViewModel @Inject constructor(
     private val authRepository: AuthRepository,
+    private val embeddedServerController: EmbeddedServerController,
 ) : ViewModel() {
 
     private val sessionExpired = MutableStateFlow(false)
@@ -56,6 +58,19 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch {
             authRepository.isLoggedIn.collect { loggedIn ->
                 if (loggedIn) sessionExpired.value = false
+            }
+        }
+        // U11 批次D（ADR-0015 形态 B）：地址流驱动内嵌服务端随需启停——配置为内嵌
+        // 预设（127.0.0.1:18430）时冷启动自拉起（用户上次用本机模式，这次打开 App
+        // 即可用，不必先去设置页点一次）；切回 NAS 地址则停服回收。runCatching 吞
+        // 后台态 FGS 启动限制（进程后台恢复场景——此时登录页交互后设置页路径仍可拉起）。
+        viewModelScope.launch {
+            authRepository.serverUrl.collect { url ->
+                runCatching {
+                    if (!embeddedServerController.ensureStartedIfLocalMode(url)) {
+                        embeddedServerController.stop()
+                    }
+                }
             }
         }
     }

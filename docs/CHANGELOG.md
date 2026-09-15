@@ -10,6 +10,21 @@
 
 
 ---
+## feat(app): 任务U11 批次D T6 内嵌形态 B——三件套+薄前台 Service+本机模式全链接线（2026-09-15 第二百七十二笔）
+
+执行 AI：GLM-5.3（主代理）
+
+- **App 侧新件（:core:data embedded 包，全部 Kotlin 新写零搬运）**：①`EmbeddedServerConfig` 装配纯逻辑（W^X 只 exec nativeLibraryDir 成品；QIMENG_LISTEN 回环 18430 端口单值互指；THUMBNAIL 双路径直喂成品；AUTH_DEV_MODE=Termux 形态 A 同款口径）+4 JVM 单测；②`EmbeddedServerService` 薄前台 Service（specialUse 类型+子类型属性，常驻通知/看护轮询 5s/善后 SIGTERM→3s 宽限→SIGKILL/死亡通知文案含 Termux 端口冲突指引；**重启语义 V1 定案**=不自动重拉防崩溃循环掩盖根因）；③`EmbeddedServerController` 接口+Impl（Hilt 绑定，ensure 幂等语义）；④`ServerAddress.LOCAL_MODE_PORT` 端口常量单源+`isLocalModePreset()` 精确判定（自定义端口=自带 Termux 场景不触发内嵌）。
+- **接线**：设置页本机模式切换→切换前拉起 Service；壳层 MainViewModel serverUrl collector→配置为预设时冷启动自拉起、切回 NAS 地址自动停服（runCatching 吞后台态 FGS 限制）。
+- **装配流水线**：`make app-embedded[-arm64/-x86_64]`——服务端 make 产物改名 libqimeng.so 投 jniLibs + `deploy/embedded/fetch-ffmpeg-arm64.ps1`（hzw1199 锁 commit 90231cc0105a + SHA-256 双哈希校验，ASCII-only 防 PS5.1 GBK 坑）；jniLibs 不入 git（CI 零影响，缺目录=普通 NAS 客户端+明确通知）；`deploy/embedded/README.md` 供应链档案（libwebp 三源实证+替代品不存在调研记档+红线索引）；LGPL 声明+独立可替换分发说明=assets/THIRD_PARTY_NOTICES.txt。
+- **gradle**：useLegacyPackaging=true（安装期解出实体文件，exec 语义确定；代价双份存储已记档）；ABI 分层定案记档——debug=arm64+x86_64（验壳），release=arm64-only（终包）。
+- **模拟器验壳（证据 %TEMP%\qimeng-u11-b-evidence\BATCH-D-EVIDENCE-INDEX.txt）**：Service 壳层六项全过（FGS allowed/冷启动自拉起/子进程 exec 产出 server.log/看护善后/两态通知/manifest specialUse+property aapt 实证）；**App 全链 against 18430 过**（本机模式切换→登录→库注册→扫描 3 文件→相册浏览→签名缩略图 **200 image/jpeg**=mjpeg 降级端到端+服务端启动日志实录「降级 JPEG 输出」）。
+- **验壳发现记档（模拟器限制）**：App 域 x86_64 Go 二进制被 seccomp SIGSYS 拦杀（ndk_translation 镜像策略；shell 域正常）+arm64 Go 翻译 SIGSEGV（m6-poc）→ Service 内服务端在模拟器不可运行，真机 arm64 全链=用户节点（任务书既定分层不变）；FGS 类型遥测 W 噪声记档不阻塞。
+- **待真机（arm64 全链，AI 不擅自推真机）**：真 ffmpeg 抽帧缩略图（含 mjpeg 降级档观感）+T5 顺带观察项；Termux 形态 A 共存（先停 18430）流程照死亡通知文案。
+- 门禁：全量（assembleDebug/assembleRelease/testDebugUnitTest/:core:model:test/lintDebug 低 CPU 档）+go test ./... 全绿；release 含三件套（arm64-only）=26.6MB（基线 4.4MB，净增约 +22MB——57MB 未压缩 so 经 APK 压缩后远低于「+55MB 预估」口径，侧载无压力；安装解出后设备占用另计约 57MB）。
+- **批次E reviewer 对抗审查（全新上下文）：总评【通过】0×P1**——红线五项（W^X/回环/端口互指/供应链哈希/重启语义）独立复核全过；P2×5 当场清偿：终态通知撤 ongoing（可滑掉）/onDestroy 善后移后台线程不卡主线程/serverProcess 加 @Volatile/本机模式切换补 POST_NOTIFICATIONS 运时申请/README 关于页宣称勘误；P3×10 记档清偿其四（启动宽限死逻辑撤除/localhost:18430 判定收编+测试/Makefile .PHONY 去重/测试补 lastStartedUrl 断言），其余记档（FGS 图标临时用系统资源、16KB 对齐真机顺带核、docs 同步时机瑕疵自担）。清偿后全量门禁复跑全绿。
+
+---
 ## feat(server): 任务U11 批次D 前置——缩略图静图编码器自适应（libwebp 缺失时 mjpeg 降级）（2026-09-15 第二百七十一笔）
 
 执行 AI：GLM-5.3（主代理）

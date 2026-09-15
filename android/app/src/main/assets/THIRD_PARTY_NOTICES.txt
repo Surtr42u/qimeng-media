@@ -1,0 +1,29 @@
+绮梦影库（qimeng-media）Android 客户端 —— 第三方组件声明
+============================================================
+
+本应用在「本机模式」（内嵌服务端形态，ADR-0015）下随包分发以下第三方二进制组件。
+
+FFmpeg / ffprobe（FFmpeg 9.0，arm64-v8a 与模拟器验证用的同源副本）
+------------------------------------------------------------------
+版权所有 (c) FFmpeg 开发者（https://ffmpeg.org）
+
+以 LGPL-2.1（GNU 较宽通用公共许可证第 2.1 版）兼容配置编译分发
+（上游构建配置含 --disable-gpl --disable-nonfree）。上游成品来源：
+hzw1199/Android-FFmpeg-Prebuilt，锁定 commit 90231cc0105aef4f76926b911535f5eb73511b86。
+
+LGPL-2.1 许可证原文：https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html
+
+独立可替换分发说明（LGPL 第 6 条对应的用户替换权）：
+1. 本应用内的 FFmpeg/ffprobe 以独立可执行文件形式打包于 APK 原生库目录
+   （安装后位于应用 nativeLibraryDir，文件名 libffmpeg_cli.so / libffprobe_cli.so），
+   与应用代码为独立进程边界（应用经 exec 调用，非链接进应用二进制）。
+2. 用户获取对应架构的兼容 FFmpeg/ffprobe 可执行文件后，可解包 APK 替换上述
+   文件并重新打包签名，即完成组件替换——无需重新编译本应用。
+3. 对应版本的完整对应源码可从 FFmpeg 官方获取：
+   https://ffmpeg.org/releases/ffmpeg-9.0.tar.xz
+   （上游构建脚本与配置见上述 GitHub 仓库同 commit）。
+
+Go 标准库与依赖（libqimeng.so，本服务端自构建）
+-------------------------------------------------
+本应用自行从源码构建的 Go 服务端（仓库内 server/ 目录，含 go.mod 依赖清单），
+其中 modernc.org/sqlite 等依赖的许可声明见各依赖仓库；源码随本仓库分发。

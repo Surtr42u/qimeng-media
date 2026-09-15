@@ -78,3 +78,7 @@ server/data/
 
 # Kotlin 构建会话缓存（AGP/KGP 2.x 写 android/.kotlin/，非源码；追加批 reviewer P2 加盖防误入库）
 .kotlin/
+.tmp-u11-video-lib/
+
+# U11 批次D：内嵌形态三件套（~57MB 二进制不入 git，make app-embedded 装配；缺目录=普通 NAS 客户端）
+android/app/src/main/jniLibs/
