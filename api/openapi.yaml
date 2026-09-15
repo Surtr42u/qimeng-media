@@ -141,6 +141,7 @@ paths:
         - upload.done → UploadDoneEvent
       responses:
         "200": { description: text/event-stream }
+        "401": { description: 缺少/无效 Bearer token }
 
   # ---------- 资产浏览 ----------
   /api/v1/assets:
@@ -333,7 +334,9 @@ paths:
         - { name: exp, in: query, required: true, schema: { type: integer } }
         - { name: sig, in: query, required: true, schema: { type: string } }
       responses:
-        "200": { description: WebP 缩略图 }
+        "200": { description: 缩略图字节（Content-Type 按实际格式：webp，ffmpeg 无 libwebp 编码器的部署降级 jpeg——内嵌形态；格式裁决单一来源 server/internal/thumbnail/stillformat.go，U11 批次D） }
+        "403": { description: 签名无效或过期 }
+        "404": { description: 资产不存在或缩略图不可用（生成失败给 404 占位语义） }
 
   # ---------- 上传与文件管理 ----------
   /api/v1/assets/upload:
