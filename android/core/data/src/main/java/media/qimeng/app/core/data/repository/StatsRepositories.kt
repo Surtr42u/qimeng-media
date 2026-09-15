@@ -1,6 +1,7 @@
 package media.qimeng.app.core.data.repository
 
 import kotlinx.coroutines.flow.Flow
+import media.qimeng.app.core.model.ThumbnailCacheProgress
 import media.qimeng.app.core.model.DiskCacheQuota
 import media.qimeng.app.core.model.MostViewedEntry
 import media.qimeng.app.core.model.RecommendPrefsValues
@@ -112,4 +113,30 @@ interface CoilCacheManager {
      * 容量口径取当前持久化档位字节——与 ImageLoader 装配时读的是同一个 DataStore 键。
      */
     fun capacityBytes(): Long?
+}
+
+/** 自动备份持久化态（2026-09-15 批：备份导入导出页的自动备份卡数据源） */
+data class BackupAutoPrefs(
+    val enabled: Boolean,
+    val dirUri: String?,
+    val lastRunMillis: Long,
+)
+
+/** 自动备份持久化端口（client_prefs DataStore，键值三件：开关/目录/上次运行） */
+interface BackupAutoPrefsRepository {
+
+    val state: Flow<BackupAutoPrefs>
+
+    suspend fun setEnabled(enabled: Boolean)
+
+    suspend fun setDirUri(uri: String?)
+
+    suspend fun setLastRunMillis(millis: Long)
+}
+
+/** 缩略图覆盖进度端口（GET /thumbnails/progress 单值端口，缓存进度页轮询） */
+interface ThumbnailProgressRepository {
+
+    /** 读取失败（网络/服务端旧版本无此端点）返回 null，UI 显「—」降级 */
+    suspend fun progress(): ThumbnailCacheProgress?
 }

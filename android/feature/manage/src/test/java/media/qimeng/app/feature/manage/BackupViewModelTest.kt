@@ -1,17 +1,30 @@
 package media.qimeng.app.feature.manage
 
+import media.qimeng.app.core.data.backup.AutoBackupRunner
+import media.qimeng.app.core.data.events.EventClock
+import media.qimeng.app.core.data.events.PendingViewEventDao
+import media.qimeng.app.core.data.events.PendingViewEventEntity
+import media.qimeng.app.core.data.events.ViewEventQueue
+import media.qimeng.app.core.data.events.ViewEventSender
+import media.qimeng.app.core.data.events.ViewEventSendResult
+import media.qimeng.app.core.data.repository.BackupAutoPrefs
+import media.qimeng.app.core.data.repository.BackupAutoPrefsRepository
 import media.qimeng.app.core.data.repository.BackupRepository
 import media.qimeng.app.core.testing.MainDispatcherRule
 import media.qimeng.sdk.models.LegacyBackupData
 import media.qimeng.sdk.models.LegacyBackupFile
 import media.qimeng.sdk.models.LegacyBackupImport
 import media.qimeng.sdk.models.LegacyImportResult
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 
 /**
@@ -19,6 +32,8 @@ import kotlinx.coroutines.test.runTest
  * 前置校验拒绝/错误态。fake 只在测试源集内（LibraryManageViewModelTest 同款模式）。
  * 注：导出 SAF 选位「用户取消（uri=null）」发生在屏幕层 launcher 回调（SettingsScreen
  * 先例），VM 层对应的静默语义 = 取消确认（dismissImport）不触发出网，在此锁定。
+ * 2026-09-16 用户反馈：自动备份 prefs 回流/立即备份反馈入锁；「导出未上传」取数端
+ * （exportPending/onExported）随按钮退役，不再有对应用例。
  */
 class BackupViewModelTest {
 
@@ -40,8 +55,46 @@ class BackupViewModelTest {
          "data": {"authors": [{"authorId": "A1", "displayName": "作者一"}]}}
     """.trimIndent().toByteArray()
 
-    private fun newViewModel(repository: FakeBackupRepository = FakeBackupRepository()) =
-        Pair(BackupViewModel(repository).also { driveIdle() }, repository)
+    private fun newViewModel(
+        repository: FakeBackupRepository = FakeBackupRepository(),
+        queue: ViewEventQueue = ViewEventQueue(FakeEventDao(), FakeEventSender(fail = false), clock = FixedEventClock),
+        prefs: BackupAutoPrefsRepository = FakeBackupAutoPrefs(),
+    ) = Pair(
+        BackupViewModel(
+            backupRepository = repository,
+            viewEventQueue = queue,
+            autoBackupPrefs = prefs,
+            autoBackupRunner = newAutoBackupRunner(repository, prefs),
+        ).also { driveIdle() },
+        repository,
+    )
+
+    /**
+     * AutoBackupRunner 测试实例（Unsafe 绕过构造器）：其构造器要求非空 Context，JVM 单测
+     * 无真实对象可给（android.jar stub 的 Context 是抽象类，本仓库无 mock 依赖），而本测试组
+     * 只覆盖「未选目录 → writeNow 短路返回 false」路径，context 永不被触达——故绕过构造
+     * 仅注入 backupRepository/prefs 两个真实依赖，context 字段留 null。
+     */
+    private fun newAutoBackupRunner(
+        repository: BackupRepository,
+        prefs: BackupAutoPrefsRepository,
+    ): AutoBackupRunner {
+        val unsafeField = Class.forName("sun.misc.Unsafe").getDeclaredField("theUnsafe")
+        unsafeField.isAccessible = true
+        val unsafe = unsafeField.get(null)
+        val allocate = unsafe.javaClass.getMethod("allocateInstance", Class::class.java)
+        val runner = allocate.invoke(unsafe, AutoBackupRunner::class.java) as AutoBackupRunner
+        AutoBackupRunner::class.java.declaredFields
+            .filter { it.name == "backupRepository" || it.name == "prefs" }
+            .forEach { field ->
+                field.isAccessible = true
+                when (field.name) {
+                    "backupRepository" -> field.set(runner, repository)
+                    "prefs" -> field.set(runner, prefs)
+                }
+            }
+        return runner
+    }
 
     @Test
     fun `导出成功出序列化内容且写入回执置KB反馈`() = runTest(mainDispatcherRule.testDispatcher) {
@@ -172,6 +225,92 @@ class BackupViewModelTest {
         assertTrue(!viewModel.uiState.value.importing)
         assertNull(viewModel.uiState.value.noticeMessage)
     }
+    // ---------- 浏览数据同步（2026-09-15 批自我的页迁入；SettingsViewModelTest 原款用例随迁） ----------
+
+    @Test
+    fun `浏览数据同步 - 成功后提示同步完成且待上传数清零`() = runTest(mainDispatcherRule.testDispatcher) {
+        val dao = FakeEventDao()
+        dao.seed("00000000-0000-0000-0000-0000000000a1")
+        dao.seed("00000000-0000-0000-0000-0000000000a2")
+        val queue = ViewEventQueue(dao, FakeEventSender(fail = false), clock = FixedEventClock)
+        val (vm, _) = newViewModel(queue = queue)
+        advanceUntilIdle() // init loadPendingEvents
+        assertEquals(2, vm.uiState.value.pendingEvents)
+
+        vm.syncEventsNow()
+        advanceUntilIdle()
+
+        assertEquals("同步完成", vm.uiState.value.eventSyncNote)
+        assertEquals(0, vm.uiState.value.pendingEvents)
+        assertFalse(vm.uiState.value.eventSyncing)
+    }
+
+    @Test
+    fun `浏览数据同步 - 网络不通提示保留重试且行不离队`() = runTest(mainDispatcherRule.testDispatcher) {
+        val dao = FakeEventDao()
+        dao.seed("00000000-0000-0000-0000-0000000000b1")
+        val queue = ViewEventQueue(dao, FakeEventSender(fail = true), clock = FixedEventClock)
+        val (vm, _) = newViewModel(queue = queue)
+        advanceUntilIdle()
+        assertEquals(1, vm.uiState.value.pendingEvents)
+
+        vm.syncEventsNow()
+        advanceUntilIdle()
+
+        assertEquals("网络不通，1 条稍后自动重试", vm.uiState.value.eventSyncNote)
+        assertEquals(1, vm.uiState.value.pendingEvents)
+        assertEquals(1, dao.rows.size) // 本地优先：失败不丢行
+    }
+
+    // ---------- 自动备份（2026-09-16 用户反馈：prefs 回流 + 立即备份反馈可见） ----------
+
+    @Test
+    fun `自动备份 - prefs状态回流进UI状态且开关目录写回`() = runTest(mainDispatcherRule.testDispatcher) {
+        val prefs = FakeBackupAutoPrefs()
+        val (vm, _) = newViewModel(prefs = prefs)
+        advanceUntilIdle() // init observeAutoBackupPrefs
+        assertFalse(vm.uiState.value.autoBackupEnabled)
+        assertNull(vm.uiState.value.autoBackupDirUri)
+        assertEquals(0L, vm.uiState.value.autoBackupLastRunMillis)
+
+        // 写回走同一 DataStore 流（UI 跟随流原值，VM 不另持副本）
+        vm.setAutoBackupEnabled(true)
+        vm.onAutoBackupDirPicked("content://tree/primary%3Abackup")
+        advanceUntilIdle()
+
+        assertTrue(vm.uiState.value.autoBackupEnabled)
+        assertEquals("content://tree/primary%3Abackup", vm.uiState.value.autoBackupDirUri)
+    }
+
+    @Test
+    fun `自动备份 - 未选目录立即备份失败有反馈且busy复位`() = runTest(mainDispatcherRule.testDispatcher) {
+        val (vm, _) = newViewModel()
+        advanceUntilIdle()
+        vm.writeAutoBackupNow()
+        // writeNow 内部 withContext(Dispatchers.IO) 是真实线程跳板（advanceUntilIdle 只推进
+        // 调度器虚拟时间、不等真实 IO）：轮询等写回执落位（busy 复位=结果已进状态）。必须在
+        // 本用例内等协程收敛——否则续体在 resetMain 之后才恢复，会以 UncaughtExceptions
+        // 污染下一用例（与其他直接调 suspend 方法的用例不同，这里无法零等待收口）
+        val deadline = System.currentTimeMillis() + 5_000
+        while (vm.uiState.value.autoBackupBusy && System.currentTimeMillis() < deadline) {
+            advanceUntilIdle()
+            Thread.sleep(10)
+        }
+        advanceUntilIdle()
+        // 无目录可写 → runner false → 错误横幅可见（结果反馈不静默）、防重位复位
+        assertEquals("自动备份写入失败，请重试（请先选择备份目录）", vm.uiState.value.errorMessage)
+        assertFalse(vm.uiState.value.autoBackupBusy)
+        assertNull(vm.uiState.value.noticeMessage)
+    }
+
+    /** 预置一条未上传事件（幂等键合规，避免触发懒回填路径干扰断言） */
+    private suspend fun FakeEventDao.seed(rowId: String) = insert(
+        PendingViewEventEntity(
+            assetId = "00000000-0000-0000-0000-000000000001", kind = "OPEN",
+            startedAt = 1L, durationMs = 0L, sessionId = "s", createdAt = 1L, clientEventId = rowId,
+        ),
+    )
+
 }
 
 /**
@@ -212,5 +351,80 @@ private class FakeBackupRepository : BackupRepository {
             eventsReplayed = 5,
             warnings = resultWarnings,
         )
+    }
+}
+
+/** 内存事件队列 DAO（任务L L5：立即同步/导出用例；语义按接口契约复刻） */
+private class FakeEventDao : PendingViewEventDao {
+    val rows = mutableListOf<PendingViewEventEntity>()
+    private var nextId = 1L
+
+    override suspend fun insert(entity: PendingViewEventEntity): Long {
+        val id = nextId++
+        rows += entity.copy(id = id)
+        return id
+    }
+
+    override suspend fun evictBeyondLimit(limit: Int) {
+        if (rows.size <= limit) return
+        val keep = rows.sortedByDescending { it.id }.take(limit).map { it.id }.toSet()
+        rows.removeAll { it.id !in keep }
+    }
+
+    override suspend fun selectDue(now: Long, limit: Int): List<PendingViewEventEntity> =
+        rows.filter { !it.terminal && it.nextAttemptAt <= now }.sortedBy { it.id }.take(limit)
+
+    override suspend fun deleteByIds(ids: List<Long>) {
+        rows.removeAll { it.id in ids }
+    }
+
+    override suspend fun reschedule(id: Long, nextAttemptAt: Long) {
+        val i = rows.indexOfFirst { it.id == id }
+        if (i >= 0) rows[i] = rows[i].copy(nextAttemptAt = nextAttemptAt)
+    }
+
+    override suspend fun markTerminal(id: Long) {
+        val i = rows.indexOfFirst { it.id == id }
+        if (i >= 0) rows[i] = rows[i].copy(terminal = true)
+    }
+
+    override suspend fun updateClientEventId(id: Long, clientEventId: String) {
+        val i = rows.indexOfFirst { it.id == id }
+        if (i >= 0) rows[i] = rows[i].copy(clientEventId = clientEventId)
+    }
+
+    override suspend fun listAll(): List<PendingViewEventEntity> = rows.sortedBy { it.id }
+
+    override suspend fun countPending(): Int = rows.count { !it.terminal }
+
+    override suspend fun count(): Int = rows.size
+}
+
+/** 固定时钟（退避使行不可取件——本组用例只断言提示与计数，0 足够） */
+private object FixedEventClock : EventClock {
+    override fun now(): Long = 0L
+}
+
+/** 可编程发送器：恒 202 或恒 IO 失败（立即同步摘要语义断言用） */
+private class FakeEventSender(private val fail: Boolean) : ViewEventSender {
+    override suspend fun send(event: PendingViewEventEntity): ViewEventSendResult =
+        if (fail) ViewEventSendResult.IoError else ViewEventSendResult.Http(202)
+}
+
+/** 自动备份持久化替身（2026-09-16 用户反馈）：内存态 DataStore，写回即发射（UI 跟随流语义） */
+private class FakeBackupAutoPrefs : BackupAutoPrefsRepository {
+    private val _state = MutableStateFlow(BackupAutoPrefs(enabled = false, dirUri = null, lastRunMillis = 0L))
+    override val state: Flow<BackupAutoPrefs> = _state
+
+    override suspend fun setEnabled(enabled: Boolean) {
+        _state.value = _state.value.copy(enabled = enabled)
+    }
+
+    override suspend fun setDirUri(uri: String?) {
+        _state.value = _state.value.copy(dirUri = uri)
+    }
+
+    override suspend fun setLastRunMillis(millis: Long) {
+        _state.value = _state.value.copy(lastRunMillis = millis)
     }
 }

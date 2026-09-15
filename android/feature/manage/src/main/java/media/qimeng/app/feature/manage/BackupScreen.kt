@@ -17,7 +17,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -30,21 +32,37 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.io.IOException
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import media.qimeng.app.core.data.backup.AutoBackupRunner
 import media.qimeng.app.core.ui.component.QimengTopBar
 import media.qimeng.app.core.ui.theme.QimengDimens
 
-/** 页面文案（对齐 Web LibraryManagePage.tsx BackupCard L245-324 逐字；页标题取 hub 行名） */
+/** 页面文案（页标题取 hub 行名；行文案 2026-09-16 用户反馈改版自拟，语义对齐 Web BackupCard） */
 private const val SCREEN_TITLE = "备份导入导出"
-private const val CARD_TITLE = "备份导入 / 导出"
-private const val CARD_NOTE = "旧版迁移格式 qimeng_backup.json"
-private const val EXPORT_BUTTON = "导出全量备份"
-private const val EXPORT_BUTTON_BUSY = "导出中…"
-private const val EXPORT_NOTE = "当前库全量（文件清单/作者/标签/统计/收藏点赞），可回灌旧版 App 或其他实例"
-private const val DROP_TITLE = "选择备份文件导入恢复"
-private const val DROP_HINT = "点击选择旧版导出的 qimeng_backup.json，确认后按唯一键合并导入（不删除现有数据）"
+
+// ---------- 主卡三行（2026-09-16 用户反馈：导入/导出/同步统一成 Card+行 形式，
+// 参考 LibraryManageScreen 卡视觉；原 ExportRow/导入拖放区/EventSyncCard 三种形态退役） ----------
+private const val ROW_IMPORT_TITLE = "导入备份"
+private const val ROW_IMPORT_SUBTITLE =
+    "选择旧版导出的 qimeng_backup.json，确认后按唯一键合并导入（幂等不删除现有数据）"
+private const val ROW_IMPORT_ACTION = "选择文件"
+private const val ROW_IMPORT_ACTION_BUSY = "导入中…"
+private const val ROW_EXPORT_TITLE = "导出备份"
+private const val ROW_EXPORT_SUBTITLE = "全量导出当前库（文件清单/作者/标签/统计/收藏点赞）"
+private const val ROW_EXPORT_ACTION = "导出"
+private const val ROW_EXPORT_ACTION_BUSY = "导出中…"
+private const val ROW_SYNC_TITLE = "同步浏览数据"
+private const val SYNC_PENDING_TEMPLATE = "待上传 %d 条"
+private const val SYNC_PENDING_UNKNOWN = "待上传 —"
+private const val SYNC_SUBTITLE_SUFFIX = "断网先存本机联网自动补传"
+private const val ROW_SYNC_ACTION = "立即同步"
+private const val ROW_SYNC_ACTION_BUSY = "同步中…"
+
 private const val DIALOG_CONFIRM = "导入恢复"
 private const val DIALOG_CANCEL = "取消"
 
@@ -52,7 +70,19 @@ private const val DIALOG_CANCEL = "取消"
 private const val DIALOG_TITLE_TEMPLATE = "导入备份「%s」？"
 private const val WARNINGS_HEAD_TEMPLATE = "另有 %d 条迁移提示"
 
-/** 规则说明三条（Web L297-299 逐字） */
+// ---------- 自动备份卡（2026-09-16 用户反馈：开关 + SAF 目录 + 立即备份 + 上次备份时间） ----------
+private const val AUTO_TITLE = "自动备份"
+private const val AUTO_SUBTITLE = "每日一次，打开应用时写入所选目录"
+private const val AUTO_DIR_LABEL = "目录"
+private const val AUTO_DIR_SET = "已选择目录"
+private const val AUTO_DIR_UNSET = "未选择"
+private const val AUTO_DIR_PICK = "选择目录"
+private const val AUTO_LAST_LABEL = "上次备份"
+private const val AUTO_LAST_NEVER = "未运行"
+private const val AUTO_RUN_NOW = "立即备份"
+private const val AUTO_RUN_BUSY = "备份中…"
+
+/** 规则说明三条（Web L297-299 逐字；2026-09-16 用户反馈缩小置于主卡下方） */
 private val RULE_LINES = listOf(
     "· 导入幂等：同一备份重复导入不翻倍（作者/标签/关联按唯一键合并）",
     "· 统计/历史按事件回放重建；mediaFiles 仅在文件名能匹配到库内文件时建立关联",
@@ -65,6 +95,15 @@ private val ScreenContentPadding = 16.dp
 /** 24dp：滚动列尾部垫高（LibraryManageScreen 同值） */
 private val ScreenBottomSpacing = 24.dp
 
+/** 8dp：行卡内元素纵向节奏（LibraryManageScreen RowInnerSpacing 同值，本地自持不跨文件引用） */
+private val RowInnerSpacing = 8.dp
+
+/** 12dp：行卡四向内边距（LibraryManageScreen CardInnerPadding 同值，本地自持不跨文件引用） */
+private val CardInnerPadding = 12.dp
+
+/** 2dp：行标题与副标题小字间距（同 Block 两行文本的紧凑节奏） */
+private val SubtitleTopSpacing = 2.dp
+
 /** SAF 选文件的 MIME 过滤（Web input accept=".json,application/json" 对齐；内容校验在 BackupValidator） */
 private val JSON_MIME_TYPES = arrayOf("application/json")
 
@@ -72,10 +111,11 @@ private val JSON_MIME_TYPES = arrayOf("application/json")
 private const val EXPORT_FILE_NAME = "qimeng_backup.json"
 
 /**
- * 备份导入/导出页（U10-6b）：导出钮 + 导入区卡化（点击=选文件）→ 前置校验 →
- * AlertDialog 二次确认 → 幂等导入。信息架构基准 = Web BackupCard，视觉/交互基准 =
- * App 库管理子页。业务全在 ViewModel（铁律 7）；SAF 读写是屏幕层平台胶水
- * （SettingsScreen 先例口径：VM 出数据、屏幕层落盘）。
+ * 备份导入/导出页（U10-6b；2026-09-16 用户反馈改版）：主卡三行（导入/导出/同步）统一
+ * Card+行 形式（视觉基准 = LibraryManageScreen 库行卡）+ 自动备份卡（开关/目录/立即备份/
+ * 上次备份时间）+ 规则说明三条缩小置主卡下方。「导出未上传」按钮随改版退役（联网自动
+ * 补传口径下手动导出场景不复存在）。业务全在 ViewModel（铁律 7）；SAF 文件读写/目录
+ * 授权是屏幕层平台胶水（SettingsScreen 先例口径：VM 出数据、屏幕层落盘）。
  */
 @Composable
 fun BackupScreen(
@@ -117,6 +157,18 @@ fun BackupScreen(
         }
     }
 
+    // 自动备份目录（OpenDocumentTree；UploadScreen 即用即弃口径的反面——自动备份要跨进程
+    // 存活，选完立即 takePersistableUriPermission 持久化授权）；授权失败不落 prefs
+    // （存一个写不了的目录只会让备份必败）
+    val dirPickerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree(),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        runCatching {
+            context.contentResolver.takePersistableUriPermission(uri, AutoBackupRunner.TREE_PERMISSION_FLAGS)
+        }.onSuccess { viewModel.onAutoBackupDirPicked(uri.toString()) }
+    }
+
     Column(modifier = modifier.fillMaxSize()) {
         QimengTopBar(title = SCREEN_TITLE, onBack = onBack)
 
@@ -137,19 +189,67 @@ fun BackupScreen(
                     viewModel.dismissNotice()
                 }
             }
+            state.eventSyncNote?.let { message ->
+                StatusMessageCard(text = message, container = MaterialTheme.colorScheme.tertiaryContainer) {
+                    viewModel.dismissEventSyncNote()
+                }
+            }
             if (state.warnings.isNotEmpty()) {
                 WarningsCard(warnings = state.warnings, onDismiss = viewModel::dismissWarnings)
             }
 
-            CardHead()
-            ExportRow(exporting = state.exporting, onExport = { exportLauncher.launch(EXPORT_FILE_NAME) })
-            ImportDropZone(
-                title = DROP_TITLE,
-                hint = DROP_HINT,
-                importing = state.importing,
-                onPick = { importLauncher.launch(JSON_MIME_TYPES) },
-            )
+            // 主卡：导入/导出/同步三行（2026-09-16 用户反馈统一形式）
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(CardInnerPadding),
+                    verticalArrangement = Arrangement.spacedBy(RowInnerSpacing),
+                ) {
+                    ActionRow(title = ROW_IMPORT_TITLE, subtitle = ROW_IMPORT_SUBTITLE) {
+                        Button(
+                            onClick = { importLauncher.launch(JSON_MIME_TYPES) },
+                            enabled = !state.importing,
+                        ) {
+                            Text(if (state.importing) ROW_IMPORT_ACTION_BUSY else ROW_IMPORT_ACTION)
+                        }
+                    }
+                    ActionRow(title = ROW_EXPORT_TITLE, subtitle = ROW_EXPORT_SUBTITLE) {
+                        Button(
+                            onClick = { exportLauncher.launch(EXPORT_FILE_NAME) },
+                            enabled = !state.exporting,
+                        ) {
+                            Text(if (state.exporting) ROW_EXPORT_ACTION_BUSY else ROW_EXPORT_ACTION)
+                        }
+                    }
+                    ActionRow(
+                        title = ROW_SYNC_TITLE,
+                        subtitle = listOf(
+                            when (val pending = state.pendingEvents) {
+                                null -> SYNC_PENDING_UNKNOWN
+                                else -> SYNC_PENDING_TEMPLATE.format(pending)
+                            },
+                            SYNC_SUBTITLE_SUFFIX,
+                        ).joinToString(" · "),
+                    ) {
+                        TextButton(enabled = !state.eventSyncing, onClick = viewModel::syncEventsNow) {
+                            Text(if (state.eventSyncing) ROW_SYNC_ACTION_BUSY else ROW_SYNC_ACTION)
+                        }
+                    }
+                }
+            }
+
             RuleNotes()
+
+            AutoBackupCard(
+                enabled = state.autoBackupEnabled,
+                dirUri = state.autoBackupDirUri,
+                lastRunMillis = state.autoBackupLastRunMillis,
+                busy = state.autoBackupBusy,
+                onToggle = viewModel::setAutoBackupEnabled,
+                onPickDir = { dirPickerLauncher.launch(null) },
+                onRunNow = viewModel::writeAutoBackupNow,
+            )
 
             Spacer(modifier = Modifier.height(ScreenBottomSpacing))
         }
@@ -171,44 +271,109 @@ fun BackupScreen(
     }
 }
 
-/** 卡头：Web rank-head（标题 + rank-note）同位 */
+/**
+ * 主卡动作行（2026-09-16 用户反馈统一形式）：左侧标题+副标题小字（单块两行语义），
+ * 右侧动作钮。视觉基准 = LibraryManageScreen 库行卡的标题+小字节奏。
+ */
 @Composable
-private fun CardHead() {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = QimengDimens.SpaceM),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(CARD_TITLE, style = MaterialTheme.typography.titleMedium)
-        Spacer(modifier = Modifier.weight(1f))
-        Text(
-            text = CARD_NOTE,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-/** 导出行：导出钮（进行中禁用防重）+ 全量范围说明（Web 导出行同位逐字） */
-@Composable
-private fun ExportRow(exporting: Boolean, onExport: () -> Unit) {
+private fun ActionRow(
+    title: String,
+    subtitle: String,
+    action: @Composable () -> Unit,
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(QimengDimens.SpaceM),
+        horizontalArrangement = Arrangement.spacedBy(RowInnerSpacing),
     ) {
-        Button(onClick = onExport, enabled = !exporting) {
-            Text(if (exporting) EXPORT_BUTTON_BUSY else EXPORT_BUTTON)
-        }
-        Text(
-            text = EXPORT_NOTE,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        Column(
             modifier = Modifier.weight(1f),
-        )
+            verticalArrangement = Arrangement.spacedBy(SubtitleTopSpacing),
+        ) {
+            Text(text = title, style = MaterialTheme.typography.titleSmall)
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        action()
     }
 }
+
+/**
+ * 自动备份卡（2026-09-16 用户反馈）：行1 开关 + 行2 目录（选择/已选择）+ 行3 上次备份
+ * 时间 + 立即备份。触发判定与写盘执行体在 core:data AutoBackupRunner（每日一次、
+ * 打开应用时写入所选目录），本卡只做状态展示与手动触发（铁律 7）。
+ */
+@Composable
+private fun AutoBackupCard(
+    enabled: Boolean,
+    dirUri: String?,
+    lastRunMillis: Long,
+    busy: Boolean,
+    onToggle: (Boolean) -> Unit,
+    onPickDir: () -> Unit,
+    onRunNow: () -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(CardInnerPadding),
+            verticalArrangement = Arrangement.spacedBy(RowInnerSpacing),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(SubtitleTopSpacing),
+                ) {
+                    Text(text = AUTO_TITLE, style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        text = AUTO_SUBTITLE,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(checked = enabled, onCheckedChange = onToggle)
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(RowInnerSpacing),
+            ) {
+                Text(
+                    text = "$AUTO_DIR_LABEL：${if (dirUri != null) AUTO_DIR_SET else AUTO_DIR_UNSET}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = onPickDir) { Text(AUTO_DIR_PICK) }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(RowInnerSpacing),
+            ) {
+                Text(
+                    text = "$AUTO_LAST_LABEL：${formatLastRun(lastRunMillis)}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(enabled = !busy, onClick = onRunNow) {
+                    Text(if (busy) AUTO_RUN_BUSY else AUTO_RUN_NOW)
+                }
+            }
+        }
+    }
+}
+
+/** 上次备份时间格式化（0=从未运行；SimpleDateFormat 非线程安全，每次 new 不共享实例） */
+private fun formatLastRun(millis: Long): String =
+    if (millis <= 0L) {
+        AUTO_LAST_NEVER
+    } else {
+        SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(millis))
+    }
 
 /** 规则说明三条（Web rank-note 小字列表同位） */
 @Composable

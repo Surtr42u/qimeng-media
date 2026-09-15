@@ -20,28 +20,23 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import media.qimeng.app.core.model.DiskCacheQuota
 import media.qimeng.app.core.model.RecommendPreset
-import media.qimeng.app.core.ui.component.QimengSegPill
-import media.qimeng.app.core.ui.component.formatBytesHumanReadable
 import media.qimeng.app.core.ui.theme.QimengDimens
 
 /**
  * 设置页大卡区块（U10-4 减重批从 SettingsScreen.kt 原样迁出，行为零变化——SettingsScreen
  * 超 500 行警戒线，入口行族与页面骨架留主文件，独立卡片/Sheet 落本文件）：
- * 页首数量卡、写失败横幅、浏览数据同步卡、缓存配额卡、推荐偏好 BottomSheet。
+ * 页首数量卡、写失败横幅、推荐偏好 BottomSheet。
  * 原私有可见性改 internal（Kotlin 文件级 private 跨文件不可见；模块内同包引用所需，
  * 模块外仍不可见）。文案常量与尺寸档逐字随迁，注释口径不变。
+ * （浏览数据同步卡 2026-09-15 批、缓存配额卡与分区标题 2026-09-16 用户反馈先后迁出：
+ * 均去往数据管理→备份导入导出页/缩略图缓存页，本文件不再承载。）
  */
 
 // ---------- 数量卡文案（I4，实录 mine.txt 两卡「图片 N」「视频 N」；数字未就绪/读失败显「—」） ----------
@@ -51,21 +46,6 @@ private const val COUNT_UNKNOWN = "—"
 
 /** 写失败横幅消除按钮文案（P2-3） */
 private const val WRITE_ERROR_DISMISS = "知道了"
-
-/** 浏览数据同步卡文案（任务L L5，最小 UI：一行卡片 + 两按钮 + 一次性提示） */
-private const val EVENT_SYNC_TITLE = "浏览数据"
-private const val EVENT_SYNC_PENDING_PREFIX = "待上传"
-private const val EVENT_SYNC_PENDING_ZERO = "待上传 0 条"
-private const val EVENT_SYNC_PENDING_UNKNOWN = "待上传 —"
-private const val EVENT_SYNC_SUBTITLE = "断网时打点先存本机，联网自动补传；服务端按幂等键合并不重复计数"
-private const val EVENT_SYNC_BUTTON_NOW = "立即同步"
-private const val EVENT_SYNC_BUTTON_EXPORT = "导出未上传"
-
-/** 导出文件名（设置页 SAF 落盘 launch 用，主文件引用） */
-internal const val EVENT_SYNC_EXPORT_FILE_NAME = "qimeng-pending-events.json"
-
-/** 配额卡提示（C5：重启生效口径） */
-private const val HINT_QUOTA = "重启应用后生效（缓存目录正在使用中，运行中扩缩容会损坏缓存）"
 
 // ---------- 页首数量卡尺寸（旧版我的页运行时规格实录，随 CountCard 迁入） ----------
 
@@ -132,17 +112,6 @@ internal fun CountCard(title: String, count: Int?, modifier: Modifier = Modifier
     }
 }
 
-/** 分区标题（展示语义，GUIDE_UI §我的页/设置页口径 + C5/C6 拍板） */
-@Composable
-internal fun SectionTitle(text: String, modifier: Modifier = Modifier) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.titleSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = modifier,
-    )
-}
-
 /** 写操作失败横幅（P2-3）：errorContainer 底 + 点按消除；文案由 ViewModel 给出（中文、可重试指向） */
 @Composable
 internal fun WriteErrorBanner(message: String, onDismiss: () -> Unit, modifier: Modifier = Modifier) {
@@ -162,114 +131,6 @@ internal fun WriteErrorBanner(message: String, onDismiss: () -> Unit, modifier: 
                 modifier = Modifier.weight(1f),
             )
             TextButton(onClick = onDismiss) { Text(text = WRITE_ERROR_DISMISS) }
-        }
-    }
-}
-
-/**
- * 浏览数据同步卡（任务L L5，最小 UI）：标题 + 待上传计数副行 +「立即同步/导出未上传」
- * 两按钮 + 一次性结果提示（点按消除）。执行体全在 [media.qimeng.app.core.data.events.
- * ViewEventQueue]（三通道自动补传的同一队列），本卡只是手动触发口——设置页一行入口即
- * 可，不做大 UI（拍板口径）。卡底对齐全页纯白 16dp 圆角卡语言。
- */
-@Composable
-internal fun EventSyncCard(
-    pending: Int?,
-    syncing: Boolean,
-    note: String?,
-    onSyncNow: () -> Unit,
-    onExport: () -> Unit,
-    onDismissNote: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Surface(
-        color = MaterialTheme.colorScheme.surface,
-        shape = RoundedCornerShape(QimengDimens.CardCornerRadius),
-        modifier = modifier.fillMaxWidth(),
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(text = EVENT_SYNC_TITLE, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-                Text(
-                    text = when {
-                        pending == null -> EVENT_SYNC_PENDING_UNKNOWN
-                        pending == 0 -> EVENT_SYNC_PENDING_ZERO
-                        else -> "$EVENT_SYNC_PENDING_PREFIX $pending 条"
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Text(
-                text = EVENT_SYNC_SUBTITLE,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(enabled = !syncing, onClick = onSyncNow) {
-                    Text(text = if (syncing) "同步中…" else EVENT_SYNC_BUTTON_NOW)
-                }
-                TextButton(onClick = onExport) { Text(text = EVENT_SYNC_BUTTON_EXPORT) }
-            }
-            if (note != null) {
-                Text(
-                    text = note,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.clickable(onClick = onDismissNote),
-                )
-            }
-        }
-    }
-}
-
-/** 缓存卡：LRU 档位四选（写入 DataStore，重启生效）+ 清空按钮（清后容量归零核对）；卡底对齐全页纯白卡语言。
- *  缓存容量展示改走 :core:ui 共享 formatBytesHumanReadable（与统计页同源，原文件尾注记档随迁） */
-@Composable
-internal fun QuotaCard(
-    current: DiskCacheQuota,
-    sizeBytes: Long?,
-    onSelectQuota: (DiskCacheQuota) -> Unit,
-    onClear: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    var clearing by remember { mutableStateOf(false) }
-    Surface(
-        color = MaterialTheme.colorScheme.surface,
-        shape = RoundedCornerShape(QimengDimens.CardCornerRadius),
-        modifier = modifier.fillMaxWidth(),
-    ) {
-        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(text = "图片缓存上限", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-                Text(
-                    text = "已用 ${formatBytesHumanReadable(sizeBytes)}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                DiskCacheQuota.entries.forEach { quota ->
-                    QimengSegPill(
-                        text = quota.label,
-                        selected = current == quota,
-                        onClick = { onSelectQuota(quota) },
-                    )
-                }
-            }
-            Text(
-                text = HINT_QUOTA,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            TextButton(onClick = {
-                clearing = true
-                onClear()
-                clearing = false
-            }) { Text(text = if (clearing) "清空中…" else "清空图片缓存") }
         }
     }
 }

@@ -69,6 +69,7 @@ import media.qimeng.app.feature.manage.AuthorTxtImportScreen
 import media.qimeng.app.feature.manage.BackupScreen
 import media.qimeng.app.feature.manage.DataManageScreen
 import media.qimeng.app.feature.manage.LibraryManageScreen
+import media.qimeng.app.feature.manage.ThumbnailCacheScreen
 import media.qimeng.app.feature.search.SearchScreen
 import media.qimeng.app.feature.settings.ServerSettingsScreen
 import media.qimeng.app.feature.settings.SettingsScreen
@@ -131,6 +132,10 @@ object Routes {
 
     /** 覆盖页面：备份导入导出（U10-6b：数据管理 hub → 全量备份导出/qimeng_backup.json 幂等导入恢复） */
     const val BACKUP = "backup"
+
+    /** 覆盖页面：缩略图缓存（2026-09-16 用户反馈：缩略图生成进度 + 缓存上限合并页，
+     *  自我的页「缓存区」退役迁入，经数据管理 hub 二级入口可达） */
+    const val THUMBNAIL_CACHE = "thumbnail_cache"
 }
 
 /**
@@ -483,7 +488,7 @@ fun QimengNavHost(
             }
             // 数据管理 hub（U10-6）：我的页「数据管理」合并入口二级页；上传行复用既有
             // Routes.UPLOAD 页（不搬路由），库管理/作者 TXT 导入/备份导入导出（U10-6b）
-            // 走各自新增子页
+            // /缩略图缓存（2026-09-16 用户反馈）走各自新增子页
             composable(Routes.DATA_MANAGE) {
                 DataManageScreen(
                     onBack = { navController.popBackStack() },
@@ -491,6 +496,7 @@ fun QimengNavHost(
                     onOpenLibraryManage = { navController.navigate(Routes.LIBRARY_MANAGE) },
                     onOpenAuthorTxt = { navController.navigate(Routes.AUTHOR_TXT_IMPORT) },
                     onOpenBackup = { navController.navigate(Routes.BACKUP) },
+                    onOpenThumbCache = { navController.navigate(Routes.THUMBNAIL_CACHE) },
                 )
             }
             // 库管理子页（U10-6）：库表 + 注册媒体目录表单（Web 文件管理页对齐物）
@@ -510,6 +516,14 @@ fun QimengNavHost(
             // （Web BackupCard 对齐物，DOMAIN_RULES §10）
             composable(Routes.BACKUP) {
                 BackupScreen(
+                    onBack = { navController.popBackStack() },
+                )
+            }
+            // 缩略图缓存子页（2026-09-16 用户反馈）：缩略图生成进度 + 缓存上限档位合并页
+            // （自我的页「缓存区」QuotaCard 迁入 feature:manage；pushed 覆盖页，底栏隐藏
+            // 与幕帘由既有 currentRoute 机制自动生效）
+            composable(Routes.THUMBNAIL_CACHE) {
+                ThumbnailCacheScreen(
                     onBack = { navController.popBackStack() },
                 )
             }

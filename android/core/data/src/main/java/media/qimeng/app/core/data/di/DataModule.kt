@@ -105,6 +105,14 @@ interface DataModule {
     @Binds
     @Singleton
     fun bindCoilCacheManager(impl: media.qimeng.app.core.data.di.RealCoilCacheManager): media.qimeng.app.core.data.repository.CoilCacheManager
+
+    @Binds
+    @Singleton
+    fun bindThumbnailProgressRepository(impl: media.qimeng.app.core.data.repository.SdkThumbnailProgressRepository): media.qimeng.app.core.data.repository.ThumbnailProgressRepository
+
+    @Binds
+    @Singleton
+    fun bindBackupAutoPrefsRepository(impl: media.qimeng.app.core.data.repository.DataStoreBackupAutoPrefsRepository): media.qimeng.app.core.data.repository.BackupAutoPrefsRepository
 }
 
 /** 客户端本地偏好 DataStore 限定符（与 :core:network 的 server_config DataStore 区分绑定） */

@@ -63,11 +63,12 @@ private const val SUBTITLE_FAVORITE = "查看收藏的图片和视频"
 private const val SUBTITLE_HISTORY = "查看最近打开过的图片和视频"
 private const val SUBTITLE_THEME = "跟随手机白天/深色模式自动切换"
 private const val SUBTITLE_PREFS = "调整首页推荐算法的权重偏好"
-private const val SUBTITLE_SERVER = "查看服务器地址、本机模式；换址需重新登录"
+// 副文案单行节奏 ≤15 字（2026-09-15 用户反馈「服务器的介绍太长了导致没和其他的视觉对齐」
+// ——原「查看服务器地址、本机模式；换址需重新登录」折行致行高破 72dp 节奏；换址提示细节
+// 由子页承载）
+private const val SUBTITLE_SERVER = "服务器地址、本机模式与换址说明"
 private const val SUBTITLE_DATA_MANAGE = "上传文件、注册媒体目录、库管理"
 
-/** 缓存分区标题（展示语义，GUIDE_UI §设置页口径 + C5 拍板；标题组件在 SettingsCards.kt） */
-private const val SECTION_CACHE = "缓存"
 private const val VERSION_UNKNOWN = "未知"
 
 // ---------- 我的页视觉复刻旧版尺寸（2026-09-13 用户反馈「我的界面的 ui 也要和旧版一致」；
@@ -93,8 +94,10 @@ private val FirstRowTopSpacing = 16.dp
  * 标题 → 页首数量卡（I4：图片/视频两卡）→ 入口行族（服务器（U10-4 合并入口 →
  * ServerSettingsScreen 子页）→ 作者总览 → 收藏/浏览历史 → 数据管理（U10-6 合并入口 →
  * feature:manage hub 子页）→ 主题色彩（不可点）→
- * 推荐偏好（BottomSheet 四预设整行应用/当前项高亮））→ 浏览数据同步卡 →
- * 缓存区（LRU 档位 + 清空）→ 版本信息（服务端版本，C6）→ 退出登录。
+ * 推荐偏好（BottomSheet 四预设整行应用/当前项高亮））→
+ * 版本信息（服务端版本，C6）→ 退出登录。
+ * （浏览数据同步卡 2026-09-15 批迁往 feature:manage BackupScreen；缓存区「LRU 档位 +
+ * 清空」2026-09-16 用户反馈迁往数据管理→缩略图缓存页，与缩略图生成进度合并展示。）
  */
 @Composable
 fun SettingsScreen(
@@ -276,57 +279,13 @@ private fun LazyListScope.settingsEntryRowItems(
 }
 
 /**
- * 列表尾四组（U10-4 拆分：自 SettingsScreen 逐字迁移）：浏览数据同步（任务L L5：
- * 本地优先队列的手动入口 + 导出未上传，最小 UI）→ 缓存区（C5）→ 版本信息（C6）→
- * 退出登录。
+ * 列表尾两组（U10-4 拆分：自 SettingsScreen 逐字迁移）：版本信息（C6）→ 退出登录。
+ * （原首组「浏览数据同步」卡 2026-09-15 批迁往数据管理→备份导入导出页，用户拍板
+ * 「外部的浏览数据移植到数据管理中合并到导入备份那个」；原「缓存区（C5）」组——
+ * SectionTitle + 缩略图上限档位卡——2026-09-16 用户反馈迁往数据管理→缩略图缓存页，
+ * 与缩略图生成进度合并为单页，QuotaCard 随迁 feature:manage。）
  */
 private fun LazyListScope.settingsFooterItems(state: MineUiState, viewModel: SettingsViewModel) {
-    item {
-        val context = LocalContext.current
-        val scope = rememberCoroutineScope()
-        val exportLauncher = rememberLauncherForActivityResult(
-            ActivityResultContracts.CreateDocument("application/json"),
-        ) { uri ->
-            if (uri == null) return@rememberLauncherForActivityResult // 用户取消，非错误
-            scope.launch {
-                val export = viewModel.exportPending()
-                // SAF 写文件是平台胶水（非业务逻辑，铁律 7 不涉）：VM 出数据、屏幕层落盘
-                val written = export != null && runCatching {
-                    context.contentResolver.openOutputStream(uri)?.use { out ->
-                        out.write(export.json.toByteArray(Charsets.UTF_8))
-                    } ?: throw IOException("openOutputStream 返回 null")
-                }.isSuccess
-                viewModel.onExported(if (written) export.count else null)
-            }
-        }
-        EventSyncCard(
-            pending = state.pendingEvents,
-            syncing = state.eventSyncing,
-            note = state.eventSyncNote,
-            onSyncNow = viewModel::syncEventsNow,
-            onExport = { exportLauncher.launch(EVENT_SYNC_EXPORT_FILE_NAME) },
-            onDismissNote = viewModel::dismissEventSyncNote,
-            modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
-        )
-    }
-
-    // 缓存区（C5）
-    item {
-        SectionTitle(
-            text = SECTION_CACHE,
-            modifier = Modifier.padding(bottom = QimengDimens.SpaceM),
-        )
-    }
-    item {
-        QuotaCard(
-            current = state.cacheQuota,
-            sizeBytes = state.cacheSizeBytes,
-            onSelectQuota = viewModel::setCacheQuota,
-            onClear = viewModel::clearCache,
-            modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
-        )
-    }
-
     // 版本信息（C6：服务端版本）
     item {
         EntryRow(
