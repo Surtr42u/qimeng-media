@@ -153,7 +153,9 @@ func (s *Server) GetMediaThumbAssetId(w http.ResponseWriter, r *http.Request, as
 		return
 	}
 	key := thumbnail.CacheKey(row.AssetID, size)
-	path := thumbnail.ThumbPath(s.cfg.DataDir, key)
+	// 扩展名与生成侧同源（StillFormat 单点）：磁盘扩展名 = 输出封装 = Content-Type。
+	ext := s.thumbs.StillFormat().Ext()
+	path := thumbnail.ThumbPath(s.cfg.DataDir, key, ext)
 	f, err := os.Open(path)
 	if err != nil {
 		s.logger.Error("打开缩略图缓存失败", "err", err)
@@ -174,9 +176,10 @@ func (s *Server) GetMediaThumbAssetId(w http.ResponseWriter, r *http.Request, as
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
-	// 文件名带 .webp 扩展名让 ServeContent 推断出 image/webp。
+	// 文件名带生效格式扩展名让 ServeContent 推断 Content-Type（webp/jpg 与
+	// 磁盘扩展名、实际字节格式三者同源，见 thumbnail.StillFormat）。
 	// 缩略图恒计 thumb（304 手动返回路径在上方已 return，不进这里）。
 	cw := &countingResponseWriter{ResponseWriter: w}
-	http.ServeContent(cw, r, "t.webp", time.Time{}, f)
+	http.ServeContent(cw, r, "t"+ext, time.Time{}, f)
 	sysmon.Default.AddMediaBytes(sysmon.MediaThumb, float64(cw.n))
 }

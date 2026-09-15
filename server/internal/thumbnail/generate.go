@@ -42,6 +42,10 @@ type Generator struct {
 	// 一处，管线内所有 exec 与对外探测出口（Generator.ProbeVideo）统一取用。
 	ffmpegBin  string
 	ffprobeBin string
+	// stillFormat 是静图缩略图的输出编码格式（webp/mjpeg）：构造时对生效的
+	// ffmpeg 做一次编码器探测决定（见 stillformat.go；libwebp 缺失降级 jpeg
+	// 是内嵌形态的正常档）。进程生命周期内固定，缓存扩展名与 HTTP 侧同源。
+	stillFormat StillFormat
 	// pool 是本编排器自建的工作池（workers 来自 config.Thumbnail.Workers，
 	// <=0 按 CPU 核数，见 NewWorkerPool）。懒生成/首屏预热经 Submit 提交；
 	// 应用停机路径必须调用 Close 优雅收池。
@@ -84,9 +88,14 @@ func NewGenerator(dataDir string, logger *slog.Logger, opts Options) *Generator 
 		ffmpegBin:  resolveBin(opts.FFmpegPath, DefaultFFmpegBin),
 		ffprobeBin: resolveBin(opts.FFprobePath, DefaultFFprobeBin),
 	}
+	g.stillFormat = probeStillFormat(g.ffmpegBin, logger)
 	g.pool = NewWorkerPool(context.Background(), opts.Workers, 0, g.handle, logger)
 	return g
 }
+
+// StillFormat 返回生效的静图缩略图输出格式（含扩展名/编码参数的消费出口）：
+// httpapi 分发侧用它拼 ThumbPath 的扩展名与 ServeContent 的文件名。
+func (g *Generator) StillFormat() StillFormat { return g.stillFormat }
 
 // handle 把池任务转成 Ensure 调用（WorkerPool 的 handle 签名）。
 func (g *Generator) handle(ctx context.Context, t Task) error {
@@ -127,7 +136,7 @@ func (g *Generator) ensureOne(ctx context.Context, assetID, srcPath string, kind
 	if size == SizeGrid {
 		size = Size(g.longSide)
 	}
-	dst := ThumbPath(g.dataDir, CacheKey(assetID, size))
+	dst := ThumbPath(g.dataDir, CacheKey(assetID, size), g.stillFormat.Ext())
 	if _, err := os.Stat(dst); err == nil {
 		return nil // 缓存命中
 	} else if !errors.Is(err, fs.ErrNotExist) {
@@ -155,7 +164,7 @@ func (g *Generator) ensureOne(ctx context.Context, assetID, srcPath string, kind
 	switch kind {
 	case KindImage:
 		// 原图永不转码：缩放输出是独立副本，源文件只读。
-		return g.scaleToWebP(ctx, srcPath, int(size), dst)
+		return g.scaleStill(ctx, srcPath, int(size), dst)
 	case KindAnimatedImage, KindVideo:
 		// 动图取首帧静帧；视频经黑帧检测选点抽帧。中转帧放系统临时目录：
 		// 它只是 ffmpeg 的中间输入，不进缓存目录，也不污染数据目录布局。
@@ -188,7 +197,7 @@ func (g *Generator) ensureOne(ctx context.Context, assetID, srcPath string, kind
 				return err
 			}
 		}
-		return g.scaleToWebP(ctx, frame, int(size), dst)
+		return g.scaleStill(ctx, frame, int(size), dst)
 	default:
 		return fmt.Errorf("未知媒体类型 %q", kind)
 	}

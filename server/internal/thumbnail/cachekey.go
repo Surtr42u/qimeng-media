@@ -49,13 +49,16 @@ func CacheKey(assetID string, size Size) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// ThumbPath 返回缓存键对应的文件路径：dataDir/thumbs/{key[:2]}/{key}.webp。
+// ThumbPath 返回缓存键对应的文件路径：dataDir/thumbs/{key[:2]}/{key}{ext}。
+// ext 由调用方按生效的静图格式传入（StillFormat.Ext()，webp/.webp 与
+// jpeg/.jpg 两档，格式裁决见 stillformat.go）；磁盘扩展名 = 输出封装格式 =
+// httpapi ServeContent 推断的 Content-Type，三者必须同源。
 // 为什么加 {key[:2]} 一层子目录：媒体库动辄数万资产 × 多档尺寸，单目录海量小文件
 // 在常见文件系统上会查找退化；hex 键前两位天然均匀散列成 256 个子目录。
 // 为什么不做 LRU/数量上限清理【逐字遵守 DOMAIN_RULES §11：永不因数量上限删除
 // 有效缓存】：缩略图是几十 KB 级小文件，NAS 场景存储成本远低于重新抽帧的计算成本；
 // 孤儿（资产已删但缩略图还在）由后续对账任务清理，本期只负责键计算与目录布局。
 // 约定：key 必须是 CacheKey 的产物（64 位 hex），短键传入属编程错误。
-func ThumbPath(dataDir string, key string) string {
-	return filepath.Join(dataDir, thumbsDirName, key[:2], key+".webp")
+func ThumbPath(dataDir string, key string, ext string) string {
+	return filepath.Join(dataDir, thumbsDirName, key[:2], key+ext)
 }

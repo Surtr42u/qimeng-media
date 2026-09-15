@@ -83,14 +83,20 @@ func cacheKeyGolden(input string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// TestThumbPathLayout 锁定目录布局：dataDir/thumbs/{key[:2]}/{key}.webp。
+// TestThumbPathLayout 锁定目录布局：dataDir/thumbs/{key[:2]}/{key}{ext}
+// （ext 由静图格式决定，webp/.webp、jpeg/.jpg，见 stillformat.go）。
 func TestThumbPathLayout(t *testing.T) {
 	key := CacheKey("asset-1", SizeGrid)
 	dataDir := filepath.Join("srv", "data")
-	got := ThumbPath(dataDir, key)
+	got := ThumbPath(dataDir, key, ".webp")
 	want := filepath.Join("srv", "data", "thumbs", key[:2], key+".webp")
 	if got != want {
 		t.Fatalf("ThumbPath = %s，期望 %s", got, want)
+	}
+	gotJPEG := ThumbPath(dataDir, key, ".jpg")
+	wantJPEG := filepath.Join("srv", "data", "thumbs", key[:2], key+".jpg")
+	if gotJPEG != wantJPEG {
+		t.Fatalf("ThumbPath(jpeg) = %s，期望 %s", gotJPEG, wantJPEG)
 	}
 	if len(key) < 2 {
 		t.Fatalf("键长度不足以切两级目录前缀: %q", key)
