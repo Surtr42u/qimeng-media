@@ -71,3 +71,13 @@ data class TopTagEntry(
     val tag: String,
     val views: Int,
 )
+
+/** 缩略图覆盖进度（GET /thumbnails/progress；缓存进度页数据源，2026-09-15 批） */
+data class ThumbnailCacheProgress(
+    val totalAssets: Int,
+    val thumbsOnDisk: Int,
+) {
+    /** 0~1 覆盖率（分母为 0 视为已满，避免除零） */
+    val fraction: Float
+        get() = if (totalAssets <= 0) 1f else thumbsOnDisk.toFloat() / totalAssets
+}

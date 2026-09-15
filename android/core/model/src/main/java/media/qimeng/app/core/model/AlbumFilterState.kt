@@ -45,8 +45,10 @@ data class AlbumFilterState(
     val expanded: Boolean = false,
     // ---- 万能筛选面板字段（M4-2A-B3；编辑态/映射语义见 AlbumPanelFilter.kt，默认值=协议缺省不传） ----
 
-    /** 排序键（面板「排序方式」七选；协议 sort） */
-    val sort: AssetSort = AssetSort.DEFAULT,
+    /** 排序键（面板「排序方式」七选；协议 sort）。默认 FILE_DATE=文件 mtime（2026-09-15
+     *  用户反馈对齐旧版「按文件进文件夹的时间」——协议 default=入库时间，整批同日扫描
+     *  的库会整页挤在同一天，与旧版实录劈叉；服务端 fileDate 档既有，零协议改动） */
+    val sort: AssetSort = AssetSort.FILE_DATE,
     /** 顺位（面板「顺位」二选；协议 order） */
     val order: SortOrder = SortOrder.DESC,
     /** 观看次数档（协议 viewRange；ALL=不传） */

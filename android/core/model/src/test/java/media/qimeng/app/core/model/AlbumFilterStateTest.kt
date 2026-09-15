@@ -10,7 +10,7 @@ import org.junit.Test
  * 锁定四维筛选状态机（M4-2 拍板口径 + N4 消费批多选语义）：分区参数映射、kind 分派、
  * 切分区清下级、点已选取消/未选入集（多选 OR）、key+kind 激活判定、多选集→协议数组
  * 参数投影、authorId 单值位多选降级（排序组已按用户拍板移除：相册=旧版全部页完全一致，
- * 排序恒为协议缺省 default 降序）。
+ * 排序默认 FILE_DATE 文件时间降序（2026-09-15 用户拍板对齐旧版「按文件进文件夹的时间」，取代 2026-09-06 的 default 缺省拍板）。
  */
 class AlbumFilterStateTest {
 
@@ -221,9 +221,9 @@ class AlbumFilterStateTest {
     }
 
     @Test
-    fun `相册页排序固定协议缺省 default 降序（2026-09-06 拍板：不引入排序组）`() {
+    fun `相册页排序默认文件时间降序（2026-09-15 用户拍板对齐旧版，取代 2026-09-06 default 拍板）`() {
         val query = AlbumFilter.toAssetQuery(AlbumFilterState())
-        assertEquals(AssetSort.DEFAULT, query.sort)
+        assertEquals(AssetSort.FILE_DATE, query.sort) // 2026-09-15 拍板变更：文件时间（旧版「进文件夹时间」语义）
         assertEquals(SortOrder.DESC, query.order)
     }
 

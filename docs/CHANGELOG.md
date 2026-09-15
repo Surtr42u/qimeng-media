@@ -13,6 +13,18 @@
 ---
 ---
 ---
+## fix(app): 首页首屏失败重试+推荐触底死锁修复+相册fileDate默认排序+详情胶囊与标签间距（2026-09-16 第二百七十九笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- **首页首屏空白修复（用户反馈「刚进来不显示内容要点其他页面」）**：冷启动本机模式时内嵌服务端尚在启动，首屏请求必失败且 loaded=false 停在空白。三 tab 首屏失败按 1.5s×10 次退避重试（scheduleInitialRetry，切走即弃，切回有 switchTab 懒加载兜底）。
+- **推荐触底死锁修复（用户反馈「下滑到底无法加载新的」）**：服务端 seed 轮换健康（6341 库 seed1/2 前 30 零重合实验实证）；死锁在客户端——appendNextSeedRound 只加 pulled 不动 revealed，网格 totalCount 不变、QimengMediaGrid 触底哨兵 LaunchedEffect(shouldLoadMore, totalCount) 两 key 均不变永不再触发。修复=追加成功同步推进 +BATCH_SIZE 揭示。
+- **相册默认排序改 FILE_DATE（用户反馈对齐旧版「按文件进文件夹的时间」）**：协议 default=入库时间（整批同日扫描全挤一天），爬库确认扫描 mtime 为真实文件时间、分组标签本就走 mtime，仅排序错位。AlbumFilterState/AlbumPanelDraft 默认 FILE_DATE、hasActiveFilters 点亮基准随迁；9 个锁 2026-09-06 旧拍板的测试更新到新拍板（core:model 6 + feature:all 3）。
+- **相册刷新回顶（用户反馈「刷新跳到之前的日期」）**：刷新截回第一页而滚动位置钳在缩水列表尾=旧日期区；刷新完成 true→false 翻沿 scrollToItem(0)（落点 AllScreen.kt，随 277 笔入库）。
+- **详情页视觉（用户反馈）**：四胶囊容器下内边距 10→18dp 适度上移；标签管理选中区+未选池 chip 间隙 8/4→6/2dp、池 chip 内边距 14→10dp（前批只删说明行未动 chip 间隙的「修一半」补齐）。
+- 门禁：core:model/:feature:all/:feature:home/:feature:detail 编译与单测全绿。
+---
+---
 ## fix(server): 缩略图懒生成单飞后台续生+SQLite并发加固+自动预热回填+覆盖进度端点（2026-09-16 第二百七十八笔）
 
 执行 AI：GLM-5.3-Flash（主代理）

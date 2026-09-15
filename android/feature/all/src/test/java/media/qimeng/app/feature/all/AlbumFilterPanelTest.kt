@@ -188,7 +188,7 @@ class AlbumFilterPanelTest {
         advanceUntilIdle()
 
         assertFalse(vm.panelState.value.visible)
-        assertEquals(media.qimeng.app.core.model.AssetSort.DEFAULT, vm.uiState.value.filter.sort)
+        assertEquals(media.qimeng.app.core.model.AssetSort.FILE_DATE, vm.uiState.value.filter.sort) // 2026-09-16 拍板变更：默认文件时间
         // 重开面板 = 重新拷贝已应用值
         vm.openFilterSheet()
         assertEquals(AlbumPanelDraft(), vm.panelState.value.draft)
@@ -257,7 +257,7 @@ class AlbumFilterPanelTest {
         }
 
     @Test
-    fun `重置清空排序 - 回协议缺省 default-desc 且刷新请求不携带非默认排序`() =
+    fun `重置清空排序 - 回默认文件时间降序（2026-09-16 拍板）且刷新请求不携带非默认排序`() =
         runTest(mainDispatcherRule.testDispatcher) {
             val repo = FakeMediaRepository()
             val vm = viewModel(repo)
@@ -274,11 +274,11 @@ class AlbumFilterPanelTest {
             vm.resetPanelDraft()
             advanceUntilIdle()
 
-            assertEquals(AssetSort.DEFAULT, vm.uiState.value.filter.sort)
+            assertEquals(AssetSort.FILE_DATE, vm.uiState.value.filter.sort) // 2026-09-16 拍板变更
             assertEquals(SortOrder.DESC, vm.uiState.value.filter.order)
             assertEquals(AlbumPanelDraft(), vm.panelState.value.draft)
             val resetQuery = repo.assetsCalls.last().query
-            assertEquals(AssetSort.DEFAULT, resetQuery.sort)
+            assertEquals(AssetSort.FILE_DATE, resetQuery.sort) // 2026-09-16 拍板变更
             assertEquals(SortOrder.DESC, resetQuery.order)
             assertEquals(callsBeforeReset + 1, repo.assetsCalls.size) // 重置触发一次刷新
         }
@@ -295,7 +295,7 @@ class AlbumFilterPanelTest {
         advanceUntilIdle()
 
         // 草稿态：已应用态与请求不变（面板内点选不触发刷新——编辑态语义）
-        assertEquals(AssetSort.DEFAULT, vm.uiState.value.filter.sort)
+        assertEquals(AssetSort.FILE_DATE, vm.uiState.value.filter.sort) // 2026-09-16 拍板变更
         assertEquals(callsBeforeEdit, repo.assetsCalls.size)
         assertEquals(AssetSort.VIEW_COUNT, vm.panelState.value.draft.sort)
     }
