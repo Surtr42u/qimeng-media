@@ -584,21 +584,41 @@ private fun SystemBarsImmersiveEffect(chromeVisible: Boolean) {
     val controller = remember(activity, view) {
         activity?.window?.let { window -> WindowCompat.getInsetsController(window, view) }
     }
-    LaunchedEffect(controller, chromeVisible, darkTheme) {
+    // 显隐应用单点（U11 批次B 抽取）：键控重跑与 ON_RESUME 重挂共用同一语义，
+    // 两处各自手写一份必然渐行渐远（图标明暗/BEHAVIOR 漏一处就是新 bug）。
+    fun applyBars(visible: Boolean) {
         controller?.let { insets ->
             insets.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
             // 任务X X7 图标明暗（见上 KDoc）：沉浸=浅色图标（黑底）；chrome 显=随系统明暗
-            insets.isAppearanceLightStatusBars = chromeVisible && !darkTheme
+            insets.isAppearanceLightStatusBars = visible && !darkTheme
             // X8 第二百一十八笔记档顺手清偿（任务S S2）：导航栏图标明暗与状态栏同口径
             // 同步——此前只设状态栏，沉浸切换时导航栏图标明暗停留在旧值
-            insets.isAppearanceLightNavigationBars = chromeVisible && !darkTheme
+            insets.isAppearanceLightNavigationBars = visible && !darkTheme
             val bars = WindowInsetsCompat.Type.systemBars()
-            if (chromeVisible) insets.show(bars) else insets.hide(bars)
+            if (visible) insets.show(bars) else insets.hide(bars)
         }
     }
+    LaunchedEffect(controller, chromeVisible, darkTheme) {
+        applyBars(chromeVisible)
+    }
     val latestDarkTheme by rememberUpdatedState(darkTheme)
-    DisposableEffect(controller) {
+    // U11 批次B：chromeVisible 的最新值供 ON_RESUME 重挂读取（observer 注册期不重组）
+    val latestChromeVisible by rememberUpdatedState(chromeVisible)
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(controller, lifecycleOwner) {
+        // U11 批次B（沉浸静置自动退残余候选加固）：ON_RESUME 重申显隐——息屏/解锁
+        // 或 OEM ROM 在后台自行恢复系统栏后，本效果原有键控重跑不触发（键未变），
+        // 沉浸态观感被破坏且无人纠正（真机症状候选C4；AOSP 实测无此路径=EXP2 零
+        // 复现，此为对 ROM 行为的幂等防御：按最新 chromeVisible 重申，不改任何
+        // 正常路径行为——ON_RESUME 时键控分支本来就是这个值）。
+        val resumeObserver = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                applyBars(latestChromeVisible)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(resumeObserver)
         onDispose {
+            lifecycleOwner.lifecycle.removeObserver(resumeObserver)
             // 离开详情页（返回/推入下一资产）恢复系统栏，不留沉浸态给其他页面；
             // 图标明暗同步回系统明暗（X7：此前只恢复显隐，明暗停留在最后一次设定值）
             // S2 handoff-ack（W7 第二百一十笔留档 → 本批落地）：滑切 push 详情→详情时，

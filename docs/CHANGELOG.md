@@ -10,6 +10,17 @@
 
 
 ---
+## fix(app): 任务U11 批次B 沉浸静置自动退——三实验零复现定档+ON_RESUME 系统栏重申加固（2026-09-15 第二百六十九笔）
+
+执行 AI：GLM-5.3（主代理）
+
+- **代码审计**（Explore 子代理全量）：chrome 显隐=三态合成 `chromeEffective = chromeVisible && !playerActive && !zoomImmersive`（DetailScreen.kt:120）；静置场景把 chrome 置可见的全部写入点逐一核查——排除超时任务/insets 参与判定/缩放静置漂移/SiblingSwipe 通道/VM 周期刷新五个方向（全部定时器只动进度与提示，zoomImmersive 的 false 收束点全在触摸/换图事件上）。
+- **模拟器三实验（qimeng_api35+8421 隔离实例，证据 %TEMP%\qimeng-u11-b-evidence\）**：①EXP1 图片缩放沉浸静置 12 分钟（33 轮询）零复现；②EXP2 息屏 45s+唤醒周期零复现且语义树与沉浸态逐节点一致、logcat 无 Activity 重建；③EXP3 视频播放静置 12 分钟含 ENDED 窗口零复现；EXP4 播放中杀服务端亦未触发（本地小文件已被整段缓冲）——**当前构建在 AOSP 进程内不存在静置自发退出通道**。真机残余候选=C4（OEM ROM 后台恢复系统栏无重挂，nubia 行为无法在 AOSP 复现）、C3（ROM 触发 Activity 重建时 zoomImmersive/playerActive（remember）与 chromeVisible（saveable）持久化不对称）、C1（视频流错误退海报+chrome 复现=设计行为，伴随「播放失败」提示）。U6 走查「复现」最可能是走查自动化连击触发双击回位（zoom 重置→chrome 复现）的假象。
+- **修复（加固非根修）**：SystemBarsImmersiveEffect 抽取 applyBars 单点 + ON_RESUME 幂等重申系统栏显隐（LifecycleEventObserver，按最新 chromeVisible）——针对 C4 的零行为变化防御：ON_RESUME 时键控分支本来就该是这个值，仅在 ROM 破坏沉浸态后把它按回去；S2 handoff-ack 语义不动。
+- **真机采集口径（下轮装机顺带）**：用户复现时观察「系统栏与 App chrome 条是否同时回来」「画面是否切海报+播放失败提示」「logcat QimengVideoError/QimengZoom」三要素即可钉死 C1/C3/C4 归属。
+- 门禁：:feature:detail 全绿（批次C 同模块一并验证）。
+
+---
 ## test(app): 任务U11 批次A FolderScanPolicyTest 预存红裁定修复——自相矛盾断言收正（2026-09-15 第二百六十八笔）
 
 执行 AI：GLM-5.3（主代理）
