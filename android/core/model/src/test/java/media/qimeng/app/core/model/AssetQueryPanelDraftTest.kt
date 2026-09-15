@@ -39,9 +39,9 @@ class AssetQueryPanelDraftTest {
     // ---------- 默认草稿 = 协议缺省（首页 Y4b 前行为不变锚点） ----------
 
     @Test
-    fun `默认草稿 - 面板参数全部不传，排序为协议缺省 default 降序`() {
+    fun `默认草稿 - 面板参数全部不传，排序为文件时间降序（2026-09-15 拍板）`() {
         val next = AssetQuery(cosOnly = true).withPanelDraft(AlbumPanelDraft(), today = today)
-        assertEquals(AssetSort.DEFAULT, next.sort)
+        assertEquals(AssetSort.FILE_DATE, next.sort) // 2026-09-15 拍板变更
         assertEquals(SortOrder.DESC, next.order)
         assertNull(next.viewRange)
         assertNull(next.playRange)

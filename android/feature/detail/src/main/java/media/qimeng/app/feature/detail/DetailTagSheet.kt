@@ -78,6 +78,9 @@ private val TAG_ADD_ROW_TOP_SPACING = 8.dp
  *  sheetContainer setPadding 顶 18dp——与横向 20dp 同源同处） */
 private val TAG_SHEET_CONTENT_TOP_PADDING = 18.dp
 
+/** 「其他标签」池 chip 内边距 10dp（2026-09-15 用户反馈收紧，原全局 14dp 档对齐本节视觉密度） */
+private val TAG_POOL_CHIP_PADDING = 10.dp
+
 /** 底部「取消/保存」按钮区顶距 18dp（U10-2 D9 拍板：旧版弹窗按钮区间距） */
 private val TAG_FOOTER_TOP_SPACING = 18.dp
 
@@ -183,9 +186,11 @@ private fun SheetCurrentTags(
         if (selectedChips.isEmpty()) {
             SheetEmptyHint()
         } else {
+            // 2026-09-15 用户反馈「标签间距依旧没修复」收紧：横向 8→6dp（SpaceS）、
+            // 纵向 4→2dp（SpaceXXS）——U10-2b 只删了说明行未动 chip 间隙，本批落地
             FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(QimengDimens.SpaceM),
-                verticalArrangement = Arrangement.spacedBy(QimengDimens.SpaceXS),
+                horizontalArrangement = Arrangement.spacedBy(QimengDimens.SpaceS),
+                verticalArrangement = Arrangement.spacedBy(QimengDimens.SpaceXXS),
             ) {
                 selectedChips.forEach { chip ->
                     DisplayPill(
@@ -226,9 +231,10 @@ private fun SheetOtherTags(
         return
     }
     SheetTagSection(title = stringResource(R.string.detail_tag_section_other)) {
+        // 同上：2026-09-15 间隙收紧（8→6 / 4→2）
         FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(QimengDimens.SpaceM),
-            verticalArrangement = Arrangement.spacedBy(QimengDimens.SpaceXS),
+            horizontalArrangement = Arrangement.spacedBy(QimengDimens.SpaceS),
+            verticalArrangement = Arrangement.spacedBy(QimengDimens.SpaceXXS),
         ) {
             otherChips.forEach { chip ->
                 Surface(
@@ -240,7 +246,10 @@ private fun SheetOtherTags(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
                             .height(QimengDimens.ChipHeight)
-                            .padding(horizontal = QimengDimens.ChipHorizontalPadding),
+                            // 2026-09-15 用户反馈「未选择的间距没做」：池 chip 内边距
+                            // 14→10dp 收紧（选中态带图标收尾视觉更密，池 chip 双侧 14dp
+                            // 显肥——本批与 FlowRow 间隙 6/2dp 配套的第二半）
+                            .padding(horizontal = TAG_POOL_CHIP_PADDING),
                     ) {
                         Text(
                             text = chip.name,

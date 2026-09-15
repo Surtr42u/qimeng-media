@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import media.qimeng.app.core.data.repository.DataStoreGridPrefsRepository
 import media.qimeng.app.core.data.repository.GridPrefsRepository
@@ -140,6 +141,28 @@ class HomeViewModel @Inject constructor(
             SharingStarted.Eagerly,
             DataStoreGridPrefsRepository.DEFAULT_HOME_COLUMNS,
         )
+
+    // ---------- 首屏失败自动重试（2026-09-15 用户反馈「刚进来不显示内容要点一下其他页面」）：
+    // 冷启动本机模式时内嵌服务端尚在启动（exec+SQLite 迁移秒级），首屏请求必然失败且
+    // loaded=false，UI 空白直到用户切 tab 触发懒加载。失败后按 tab 退避重试，服务端就绪
+    // 即自愈；上限防无限循环掩盖真实故障。 ----------
+    private val initialRetryAttempts = mutableMapOf<HomeTab, Int>()
+
+    private fun scheduleInitialRetry(tab: HomeTab) {
+        val n = initialRetryAttempts.getOrDefault(tab, 0)
+        if (n >= INITIAL_RETRY_MAX) return
+        initialRetryAttempts[tab] = n + 1
+        viewModelScope.launch {
+            delay(INITIAL_RETRY_DELAY_MS)
+            // 用户已切走该 tab 则放弃（切回时 switchTab 懒加载兜底）
+            if (_uiState.value.currentTab != tab) return@launch
+            when (tab) {
+                HomeTab.RECOMMEND -> if (!_uiState.value.recommend.loaded) loadRecommend(isInitial = true)
+                HomeTab.COS -> if (!_uiState.value.cos.loaded) loadCosPage(isInitial = true)
+                HomeTab.RANK -> if (!_uiState.value.rank.loaded) loadRank(isInitial = true)
+            }
+        }
+    }
 
     init {
         // 首屏只加载当前 tab；其余 tab 首次切换时懒加载（tab 缓存独立）
@@ -440,6 +463,7 @@ class HomeViewModel @Inject constructor(
                     errorMessage = LIST_LOAD_FAILED_MESSAGE,
                     recommend = _uiState.value.recommend.copy(isLoading = false, isRefreshing = false),
                 )
+                if (!_uiState.value.recommend.loaded) scheduleInitialRetry(HomeTab.RECOMMEND)
             }
         }
     }
@@ -457,9 +481,18 @@ class HomeViewModel @Inject constructor(
             }.onSuccess { items ->
                 val seen = _uiState.value.recommend.pulled.map { it.id }.toHashSet()
                 val fresh = items.filterNot { seen.contains(it.id) }
+                // 2026-09-15 用户反馈「下滑到底无法加载新的」修复：追加后必须同步推进
+                // 一批揭示——revealed 不动时网格 take(revealed) 的 totalCount 不变，
+                // QimengMediaGrid 触底哨兵 LaunchedEffect(shouldLoadMore, totalCount)
+                // 两个 key 均无变化不再触发，用户钉在底部即永久死锁（新条目永远不显示）。
+                // 推进 +BATCH_SIZE 让 totalCount 变化、哨兵恢复工作，且用户视口底部
+                // 立即出现新条目（视觉可感知「加载到了」）。
+                val oldRevealed = _uiState.value.recommend.revealed
+                val newPulled = _uiState.value.recommend.pulled + fresh
                 _uiState.value = _uiState.value.copy(
                     recommend = _uiState.value.recommend.copy(
-                        pulled = _uiState.value.recommend.pulled + fresh,
+                        pulled = newPulled,
+                        revealed = minOf(newPulled.size, oldRevealed + RecommendPaging.BATCH_SIZE),
                         isLoading = false,
                     ),
                 )
@@ -515,6 +548,7 @@ class HomeViewModel @Inject constructor(
                     errorMessage = LIST_LOAD_FAILED_MESSAGE,
                     cos = _uiState.value.cos.copy(isLoading = false, isRefreshing = false),
                 )
+                if (!_uiState.value.cos.loaded) scheduleInitialRetry(HomeTab.COS)
             }
         }
     }
@@ -549,6 +583,7 @@ class HomeViewModel @Inject constructor(
                     errorMessage = LIST_LOAD_FAILED_MESSAGE,
                     rank = _uiState.value.rank.copy(isLoading = false, isRefreshing = false),
                 )
+                if (!_uiState.value.rank.loaded) scheduleInitialRetry(HomeTab.RANK)
             }
         }
     }
@@ -561,6 +596,10 @@ class HomeViewModel @Inject constructor(
          * 取更长时间会放大该代价。与壳层双击回顶窗口（400ms）同量级。
          */
         const val SENTINEL_SUPPRESS_AFTER_TAB_SWITCH_MS = 500L
+
+        /** 首屏失败重试：间隔与上限（服务端冷启动秒级就绪，10 次 × 1.5s = 15s 冗余足够） */
+        const val INITIAL_RETRY_DELAY_MS = 1_500L
+        const val INITIAL_RETRY_MAX = 10
 
         /** COS 流分页大小（协议 /assets 缺省 60；同真 cosOnly 优先） */
         const val COS_PAGE_SIZE = 60

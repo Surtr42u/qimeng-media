@@ -86,8 +86,9 @@ private val CHROME_GLYPH_SIZE = 22.dp
 private val CHROME_DOCK_PADDING_HORIZONTAL = 24.dp
 
 /** 四胶囊容器下内边距（任务Y Y2 对齐旧版 fragment_media_detail.xml:106 paddingBottom=10dp；
- *  上内边距 6dp = 旧版 :104 paddingTop，同 QimengDimens.SpaceS 档不另开） */
-private val CHROME_DOCK_PADDING_BOTTOM = 10.dp
+ *  2026-09-15 用户反馈「四个胶囊适度往上一点」上调至 18dp（+8dp 抬升，渐变底随行加高），
+ *  旧版 10dp 对齐沿革记档；上内边距 6dp = 旧版 :104 paddingTop，同 QimengDimens.SpaceS 档不另开） */
+private val CHROME_DOCK_PADDING_BOTTOM = 18.dp
 
 /**
  * 四胶囊内容水平 padding 覆盖档（修复B 2026-09-14）：等宽四槽（weight(1f)+spacedBy）下
