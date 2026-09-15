@@ -11,7 +11,7 @@ import { useTags } from '@/hooks/use-tags'
 import { LOCALE_ZH } from '@/lib/constants'
 import { authorDisplayName, formatBytes } from '@/lib/format'
 import { authorRankRows, tagRankRows } from '@/lib/rank-rows'
-import { assetDetail, COLLECTION_AUTHOR, COLLECTION_TAG, RANK_AUTHORS, RANK_CONTENT, RANK_TAGS } from '@/lib/route-keys'
+import { assetDetail, COLLECTION_AUTHOR, COLLECTION_TAG, RANK_AUTHORS, RANK_CONTENT, RANK_TAGS, collectionPath } from '@/lib/route-keys'
 
 /**
  * 数据页（原型 #page-data 移植，阶段 B 已接真实数据）：时段胶囊 + 6 指标卡 +
@@ -199,7 +199,7 @@ export default function DataPage() {
             <p className="rank-note">Top 5 · 按关联文件数</p>
             <RankRowList
               rows={tagRows}
-              onSelect={(n) => navigate(`/app/collection/${COLLECTION_TAG}/${encodeURIComponent(n)}`)}
+              onSelect={(n) => navigate(collectionPath(COLLECTION_TAG, n))}
             />
           </div>
           <div className="rank-card">
@@ -210,7 +210,7 @@ export default function DataPage() {
             <p className="rank-note">Top 5 · 按浏览</p>
             <RankRowList
               rows={authorRows}
-              onSelect={(n) => navigate(`/app/collection/${COLLECTION_AUTHOR}/${encodeURIComponent(n)}`)}
+              onSelect={(n) => navigate(collectionPath(COLLECTION_AUTHOR, n))}
             />
           </div>
           <div className="rank-card">
@@ -232,7 +232,7 @@ export default function DataPage() {
             </p>
             <RankRowList
               rows={authorOverviewRows}
-              onSelect={(n) => navigate(`/app/collection/${COLLECTION_AUTHOR}/${encodeURIComponent(n)}`)}
+              onSelect={(n) => navigate(collectionPath(COLLECTION_AUTHOR, n))}
             />
           </div>
         </div>

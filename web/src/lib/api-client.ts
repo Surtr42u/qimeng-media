@@ -69,7 +69,7 @@ export function clearToken(): void {
   notifyTokenChanged()
 }
 
-/** 组装请求头（供裸 fetch 使用：sse.ts / use-sources.ts / use-upload.ts 等不走 SDK 的场景）。 */
+/** 组装请求头（供裸 fetch 使用：sse.ts / use-assets.ts / use-upload.ts 等不走 SDK 的场景）。 */
 export function getAuthHeaders(): Record<string, string> {
   // M1 验收页约定 raw token 存 localStorage，请求时加 Bearer 前缀（两处共同来源见 constants.ts）
   const token = localStorage.getItem(TOKEN_STORAGE_KEY)

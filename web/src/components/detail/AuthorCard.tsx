@@ -4,6 +4,7 @@ import type { Author } from '@/api/generated'
 import { useToggleFollow } from '@/hooks/use-authors'
 import { authorDisplayName } from '@/lib/format'
 import { ASSETS_QUERY_KEY } from '@/lib/query-keys'
+import { collectionPath, COLLECTION_AUTHOR } from '@/lib/route-keys'
 
 /**
  * 详情页作者卡（B站式右栏上部）：作者名 + 关注按钮，多作者逐行，无作者不渲染。
@@ -23,7 +24,7 @@ export function AuthorCard({ authors }: { authors: Author[] }) {
       <div>
         {authors.map((a) => (
           <div className="author-row" key={a.id ?? a.displayName}>
-            <Link className="author-name" to={`/app/collection/author/${a.displayName ?? ''}`}>
+            <Link className="author-name" to={collectionPath(COLLECTION_AUTHOR, a.displayName ?? '')}>
               {authorDisplayName(a)}
             </Link>
             <button

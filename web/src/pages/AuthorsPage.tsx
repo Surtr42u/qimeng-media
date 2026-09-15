@@ -4,6 +4,7 @@ import type { Author } from '@/api/generated'
 import { SearchIcon } from '@/components/shell/icons'
 import { useAuthors, useToggleFollow } from '@/hooks/use-authors'
 import { authorDisplayName } from '@/lib/format'
+import { collectionPath, COLLECTION_AUTHOR } from '@/lib/route-keys'
 
 type AuthorZone = '全部' | '常规' | 'cos'
 type AuthorSort = 'default' | 'browse' | 'works'
@@ -116,7 +117,7 @@ export default function AuthorsPage() {
               <li
                 key={a.id}
                 onClick={() =>
-                  a.displayName && navigate(`/app/collection/author/${encodeURIComponent(a.displayName)}`)
+                  a.displayName && navigate(collectionPath(COLLECTION_AUTHOR, a.displayName))
                 }
               >
                 <span className="rank-name">{authorDisplayName(a)}</span>
