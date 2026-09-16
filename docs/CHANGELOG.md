@@ -13,6 +13,15 @@
 ---
 ---
 ---
+## fix(app): 无头模拟器bat闪退留窗pause+全机排查硬件不稳警报记档（2026-09-16 第二百八十四笔）
+
+执行 AI：GLM-5.3（主代理；全机/全项目排查会话，用户指令「电脑全量排查+CPU 情况、项目 CPU 设置排查、代码指令审查修复对齐文档」）
+
+- **改动（审查后采纳工作区遗留未提交改动）**：`android/启动模拟器-headless.bat` 尾部（emulator 进程退出后）补 `pause`——无头模拟器因遗留实例锁 AVD 等原因秒退时窗口不再闪关、报错可读；正常驻留路径不受影响，启动参数与第二百四十八笔口径零变化。
+- **项目 CPU 设置排查结论（复核第二百八十三笔拍板落实）**：全仓核查 Makefile/android gradle.properties/ci.yml/docker-compose/根目录与 android 启动脚本/desktop Cargo 配置——**无任何活的限核配置**（无 --max-workers/-Dorg.gradle.priority=low/CARGO_BUILD_JOBS/CPU 配额/Job Object 脚本残留）；`org.gradle.parallel=true` 为正常并行加速非限核；运行时「缩略图池=NumCPU、ffmpeg 闸=GOMAXPROCS」维持原判保留；文档侧无「现行口径」限核残留（历史笔录均存档）；adr/INDEX、ADR-0020、HANDOVER 顶部拍板三处口径一致。
+- **环境警报（记档供后续会话，软件侧无动作）**：本机 2026-09-16 当日 8 次（周内 9 次，另 9/11 一次）**硬件级断电重启**——每次伴随 WHEA-Logger Id=1 致命硬件错误记录 + Kernel-Power 41（bugcheck=0、非电源键）+ EventLog 6008，`C:\Windows\LiveKernelReports\` 存同刻 WHEA/WATCHDOG 内核转储；时段集中于下午/晚间（与全核构建时段吻合）。定性=负载下硬件级不稳（i5-13600K，BIOS 4505/2025-11 已新于 0x12B 微码波次；嫌疑方向=BIOS 超频/降压参数、第三方调参工具 MythCool 常驻多进程、电源），**只能硬件侧排查**（恢复 BIOS 默认、撤优化工具调节、电源检查），软件无法修复；构建仍按拍板全核执行，若构建中整机瞬断即此因。次要记录（良性未动）：luafv 驱动每次开机报 SCM 7000「此驱动程序被阻止加载」（错误 1275，疑优化工具所为）；DCOM 10010 开机常规噪音；当前负载/内存/磁盘均健康，无项目残留进程。
+
+---
 ## docs: 用户拍板解除项目内全部 CPU 限核约束——构建一律全核+工作区清理（2026-09-16 第二百八十三笔）
 
 执行 AI：GLM-5.3-Flash（主代理）
