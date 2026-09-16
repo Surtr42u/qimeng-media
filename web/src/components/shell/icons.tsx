@@ -174,3 +174,38 @@ export function TrashIcon({ className }: IconProps) {
     </svg>
   )
 }
+
+/** 数据管理 hub「上传文件」入口图标（entry-card）——箭头几何与上传卡
+ *  .upload-drop 内联 svg 同源，视觉语言一致 */
+export function UploadIcon({ className }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 16V4" />
+      <path d="m6 9 6-6 6 6" />
+      <path d="M4 20h16" />
+    </svg>
+  )
+}
+
+/** 数据管理 hub「作者 TXT 导入」入口图标（entry-card）——文本文档 */
+export function TxtDocIcon({ className }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+      <path d="M14 3v5h5" />
+      <line x1="9" y1="13" x2="15" y2="13" />
+      <line x1="9" y1="17" x2="13" y2="17" />
+    </svg>
+  )
+}
+
+/** 数据管理 hub「备份导入导出」入口图标（entry-card）——数据库 */
+export function BackupIcon({ className }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+      <ellipse cx="12" cy="5.5" rx="8" ry="2.5" />
+      <path d="M4 5.5v13c0 1.4 3.6 2.5 8 2.5s8-1.1 8-2.5v-13" />
+      <path d="M4 12c0 1.4 3.6 2.5 8 2.5s8-1.1 8-2.5" />
+    </svg>
+  )
+}
