@@ -13,6 +13,23 @@
 ---
 ---
 ---
+## fix(app): 首页冷启动假「加载失败」根治——首屏静默重试+成功清账（2026-09-17 第二百八十八笔）
+
+执行 AI：GLM-5.3-Flash（主代理 + 执行子代理）
+
+- 用户反馈「手机每次进入都在首页显示加载失败请下拉重试」。根因双层：①本机模式冷启动时 MainViewModel 拉起内嵌服务端（进程 spawn+迁移秒级就绪）与 HomeViewModel 首枪 `GET /recommendations`（127.0.0.1:18430）竞速，服务未监听必 connection refused（77435fb 提交注释自证「必然失败」）；②77435fb 重试机制失败分支**先**设 errorMessage 再 1.5s 静默重试，而 HomeScreen 对 errorMessage!=null 无条件亮横幅、三 loader onSuccess 从不清除——必闪且残留至点击。
+- 修法（全部 feature/home 内，真失败反馈原样保留）：首屏静默重试——预算内（10 次 × 1.5s）保持加载态不亮牌，耗尽才亮真错误；三 loader onSuccess 清横幅+归零该 tab 预算（刷新成功不残留）；下拉刷新/翻页/切周期等主动动作失败照旧即时亮牌。
+- 门禁：HomeViewModelTest 17/17（新增 3 用例：首枪失败静默不亮牌 / 预算耗尽亮牌且封顶 11 次请求 / 刷新失败即时亮牌+成功清账）+ HomePagerSyncLogicTest 6/6 + compileDebugKotlin ✓；顺带修 77435fb 存量断言（AssetSort.DEFAULT→FILE_DATE 默认排序漏更，HEAD 上即红）。
+- 遗留记档：冷启动仍有 1.5~3s 物理空白（服务进程真在启动，本页设计加载中无 spinner）；进一步优化需内嵌服务端就绪信号回调（EmbeddedServerController 无此口，涉 core:data 跨模块），另批评估。
+---
+## feat(web): 界面层次感微调——画布/卡片分层阴影+入口卡悬停浮起（2026-09-17 第二百八十七笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- 用户反馈「边界感太弱，微调 UI 加对比度层次感」。根因：卡片与页面同用 `--bg`，仅 1px `--border` 区分，白卡贴白页。新增分层 token（web/src/tokens.css 定义处既有动效 token 不动，分层三色入 prototype.css token 区、深色值随 .dark）：`--qm-canvas`（page 画布比卡面低半档）/ `--qm-card-shadow` / `--qm-card-shadow-hover`。
+- 应用：`.page` 垫画布色；五类卡（chart/profile/settings/metric/rank/donut/gauge/entry，`.filter-card` 去卡片化覆写不参与）统一浮出分层阴影；`entry-card--link` 悬停浮起 2px+主色描边+hover 阴影、:active 回落，动效走既有 `--qm-duration/-ease` token。
+- 门禁：npm run build ✓（dist 已重建）。
+---
 ## feat(web): 数据管理 hub 化——文件管理页拆四入口卡+四子页，内容零改动（2026-09-17 第二百八十六笔）
 
 执行 AI：GLM-5.3-Flash（主代理 + 执行子代理）
