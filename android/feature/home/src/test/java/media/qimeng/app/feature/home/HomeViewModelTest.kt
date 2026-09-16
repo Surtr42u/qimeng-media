@@ -4,6 +4,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -22,6 +23,7 @@ import media.qimeng.app.core.model.AssetQuery
 import media.qimeng.app.core.model.AssetSort
 import media.qimeng.app.core.model.FacetsQuery
 import media.qimeng.app.core.model.FacetsResult
+import media.qimeng.app.core.model.LIST_LOAD_FAILED_MESSAGE
 import media.qimeng.app.core.model.MediaAsset
 import media.qimeng.app.core.model.MediaKind
 import media.qimeng.app.core.model.NameSuggestion
@@ -81,6 +83,13 @@ class HomeViewModelTest {
         var recommendationsResult: List<MediaAsset> = emptyList()
         var assetsResult: AssetPageResult = AssetPageResult(items = emptyList(), nextCursor = null, totalMatched = 0)
 
+        /**
+         * 推荐流前缀失败注入（首屏静默重试用例，2026-09-17）：前 n 次调用抛 RuntimeException
+         * （模拟冷启动内嵌服务端就绪前的确定性首枪失败），之后正常返回 [recommendationsResult]。
+         * 默认 0=从不失败，既有用例行为不变。
+         */
+        var recommendationsFailFirstN = 0
+
         override suspend fun assets(query: AssetQuery): AssetPageResult {
             assetsCalls += query
             if (!assetsGated) return assetsResult
@@ -92,10 +101,14 @@ class HomeViewModelTest {
         override suspend fun facets(query: FacetsQuery): FacetsResult =
             FacetsResult(partitions = emptyList(), authors = emptyList(), characters = emptyList(), types = emptyList())
 
-        override suspend fun recommendations(seed: Long, limit: Int, mediaType: MediaKind?): List<MediaAsset> {
-            recommendationsCalls += seed
-            return recommendationsResult
+    override suspend fun recommendations(seed: Long, limit: Int, mediaType: MediaKind?): List<MediaAsset> {
+        recommendationsCalls += seed
+        if (recommendationsFailFirstN > 0) {
+            recommendationsFailFirstN--
+            throw RuntimeException("injected recommendations failure")
         }
+        return recommendationsResult
+    }
 
         override suspend fun rankings(period: RankingPeriod, limit: Int, offset: Int): List<MediaAsset> {
             val call = RankingsCall(period, CompletableDeferred())
@@ -614,7 +627,8 @@ class HomeViewModelTest {
             viewModel.resetPanelDraft()
             advanceUntilIdle()
             assertEquals(2, repo.assetsGateCalls.size)
-            assertEquals(AssetSort.DEFAULT, repo.assetsGateCalls[1].query.sort) // 重拉携带默认筛选
+            // 77435fb 起 AlbumPanelDraft 默认排序=FILE_DATE（2026-09-15 拍板），重拉携带新默认
+            assertEquals(AssetSort.FILE_DATE, repo.assetsGateCalls[1].query.sort)
             assertEquals(AlbumPanelDraft(), viewModel.uiState.value.cosFilter) // 已应用态=默认草稿
             assertEquals(AlbumPanelDraft(), viewModel.uiState.value.filterPanel.draft)
             assertFalse(viewModel.uiState.value.filterPanel.visible)
@@ -634,5 +648,68 @@ class HomeViewModelTest {
             advanceUntilIdle()
             assertEquals(listOf("default"), viewModel.uiState.value.cos.items.map { it.id })
             assertFalse(viewModel.uiState.value.cos.isLoading)
+        }
+
+    // ---------- 首屏失败静默自动重试（2026-09-17 用户反馈「每次进入首页都闪加载失败」） ----------
+    // 行为锁定：首屏路径失败且有重试预算=静默（不亮横幅、保持加载/空白态）；预算耗尽=亮真
+    // 错误；用户主动刷新失败=立即亮牌、成功后清牌。修的是 77435fb「失败即亮横幅+自愈不清牌」。
+
+    @Test
+    fun `首屏首枪失败静默重试 - 不亮错误横幅，重试成功内容落地横幅保持空`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val repo = FakeMediaRepository().apply {
+                recommendationsFailFirstN = 1 // 首枪失败（冷启动服务端未就绪的确定性失败），退避后重试成功
+                recommendationsResult = listOf(asset("r1"))
+            }
+            val viewModel = viewModel(repo)
+
+            // 只推进到首枪失败落地（重试还在 1.5s 退避中，不推进虚拟时间）
+            runCurrent()
+            assertFalse(viewModel.uiState.value.recommend.loaded)
+            assertFalse(viewModel.uiState.value.recommend.isLoading) // 退避间隙，非在途
+            assertNull(viewModel.uiState.value.errorMessage) // 静默：不闪「加载失败请下拉重试」
+
+            // 退避到期自动重试：成功自愈，横幅全程未出现
+            advanceUntilIdle()
+            assertTrue(viewModel.uiState.value.recommend.loaded)
+            assertEquals(listOf("r1"), viewModel.uiState.value.recommend.pulled.map { it.id })
+            assertNull(viewModel.uiState.value.errorMessage)
+            assertEquals(2, repo.recommendationsCalls.size) // 初次 + 重试一次，无多余请求
+        }
+
+    @Test
+    fun `首屏重试预算耗尽 - 连续失败达上限后亮真错误横幅且不再多发请求`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val repo = FakeMediaRepository().apply { recommendationsFailFirstN = 99 } // 恒失败=真故障
+            val viewModel = viewModel(repo)
+            advanceUntilIdle()
+
+            // 上限封顶：初次 + INITIAL_RETRY_MAX 次退避重试，防无限循环
+            assertEquals(1 + HomeViewModel.INITIAL_RETRY_MAX, repo.recommendationsCalls.size)
+            // 真失败必须有反馈：预算耗尽才亮横幅（不再被自动重试掩盖）
+            assertEquals(LIST_LOAD_FAILED_MESSAGE, viewModel.uiState.value.errorMessage)
+        }
+
+    @Test
+    fun `刷新失败即时亮横幅再刷新成功清横幅 - 主动动作反馈与陈旧牌清理`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val repo = FakeMediaRepository().apply { recommendationsResult = listOf(asset("r1")) }
+            val viewModel = viewModel(repo)
+            advanceUntilIdle()
+            assertTrue(viewModel.uiState.value.recommend.loaded)
+
+            // 用户主动下拉刷新失败（已 loaded，不走首屏静默）：立即亮牌
+            repo.recommendationsFailFirstN = 1
+            viewModel.refresh()
+            advanceUntilIdle()
+            assertEquals(LIST_LOAD_FAILED_MESSAGE, viewModel.uiState.value.errorMessage)
+            assertTrue(viewModel.uiState.value.recommend.loaded) // 刷新失败不清已加载数据
+            assertEquals(listOf("r1"), viewModel.uiState.value.recommend.pulled.map { it.id })
+
+            // 再刷新成功：横幅清除（失败反馈不残留成假错误）
+            viewModel.refresh()
+            advanceUntilIdle()
+            assertNull(viewModel.uiState.value.errorMessage)
+            assertTrue(viewModel.uiState.value.recommend.loaded)
         }
 }

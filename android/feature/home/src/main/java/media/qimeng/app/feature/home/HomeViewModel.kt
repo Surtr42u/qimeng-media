@@ -145,12 +145,19 @@ class HomeViewModel @Inject constructor(
     // ---------- 首屏失败自动重试（2026-09-15 用户反馈「刚进来不显示内容要点一下其他页面」）：
     // 冷启动本机模式时内嵌服务端尚在启动（exec+SQLite 迁移秒级），首屏请求必然失败且
     // loaded=false，UI 空白直到用户切 tab 触发懒加载。失败后按 tab 退避重试，服务端就绪
-    // 即自愈；上限防无限循环掩盖真实故障。 ----------
+    // 即自愈；上限防无限循环掩盖真实故障。
+    // 2026-09-17 用户反馈「每次进入首页都显示加载失败请下拉重试」修正亮牌时机：77435fb 起
+    // 首枪失败即设 errorMessage（HomeScreen 见 errorMessage 非 null 无条件亮横幅），随后自动
+    // 重试成功又不清横幅——冷启动必闪且残留假错误。改为：首屏路径（isInitial 且非刷新且尚未
+    // loaded）失败若还有重试预算则**静默**调度重试（保持加载/空白态，不亮横幅），预算耗尽
+    // 仍失败才亮横幅=真故障反馈；用户主动动作（下拉刷新/翻页追加/切周期）失败照旧立即亮。
+    // 任意加载成功清陈旧横幅并归零该 tab 重试预算（自愈后不残留「加载失败」）。 ----------
     private val initialRetryAttempts = mutableMapOf<HomeTab, Int>()
 
-    private fun scheduleInitialRetry(tab: HomeTab) {
+    /** @return 是否成功调度了重试（false=预算已耗尽，调用方应亮真错误横幅） */
+    private fun scheduleInitialRetry(tab: HomeTab): Boolean {
         val n = initialRetryAttempts.getOrDefault(tab, 0)
-        if (n >= INITIAL_RETRY_MAX) return
+        if (n >= INITIAL_RETRY_MAX) return false
         initialRetryAttempts[tab] = n + 1
         viewModelScope.launch {
             delay(INITIAL_RETRY_DELAY_MS)
@@ -162,6 +169,7 @@ class HomeViewModel @Inject constructor(
                 HomeTab.RANK -> if (!_uiState.value.rank.loaded) loadRank(isInitial = true)
             }
         }
+        return true
     }
 
     init {
@@ -449,7 +457,10 @@ class HomeViewModel @Inject constructor(
                     mediaType = null,
                 )
             }.onSuccess { items ->
+                // 自愈即清账：横幅清空（刷新失败亮过牌后重试/再刷成功不残留）+ 重试预算归零
+                initialRetryAttempts.remove(HomeTab.RECOMMEND)
                 _uiState.value = _uiState.value.copy(
+                    errorMessage = null,
                     recommend = _uiState.value.recommend.copy(
                         pulled = items,
                         revealed = minOf(items.size, RecommendPaging.BATCH_SIZE),
@@ -459,11 +470,15 @@ class HomeViewModel @Inject constructor(
                     ),
                 )
             }.onFailure { error ->
+                val retryScheduled = isInitial && !isRefresh &&
+                    !_uiState.value.recommend.loaded &&
+                    scheduleInitialRetry(HomeTab.RECOMMEND)
                 _uiState.value = _uiState.value.copy(
-                    errorMessage = LIST_LOAD_FAILED_MESSAGE,
+                    // 静默重试在途：不亮横幅保持加载/空白态（null 顺带清可能残留的旧牌）；
+                    // 预算耗尽或用户主动路径失败：立即亮真错误
+                    errorMessage = if (retryScheduled) null else LIST_LOAD_FAILED_MESSAGE,
                     recommend = _uiState.value.recommend.copy(isLoading = false, isRefreshing = false),
                 )
-                if (!_uiState.value.recommend.loaded) scheduleInitialRetry(HomeTab.RECOMMEND)
             }
         }
     }
@@ -528,7 +543,10 @@ class HomeViewModel @Inject constructor(
                 )
             }.onSuccess { page ->
                 if (gen != cosGeneration) return@onSuccess // 旧代迟到响应，丢弃
+                // 自愈即清账：横幅清空 + 重试预算归零（同 loadRecommend onSuccess 注释）
+                initialRetryAttempts.remove(HomeTab.COS)
                 _uiState.value = _uiState.value.copy(
+                    errorMessage = null,
                     cos = _uiState.value.cos.copy(
                         items = if (isRefresh || isInitial) {
                             page.items
@@ -544,11 +562,14 @@ class HomeViewModel @Inject constructor(
                 )
             }.onFailure {
                 if (gen != cosGeneration) return@onFailure // 旧代失败不污染新筛选态
+                val retryScheduled = isInitial && !isRefresh &&
+                    !_uiState.value.cos.loaded &&
+                    scheduleInitialRetry(HomeTab.COS)
                 _uiState.value = _uiState.value.copy(
-                    errorMessage = LIST_LOAD_FAILED_MESSAGE,
+                    // 静默重试在途不亮牌 / 预算耗尽或用户主动路径失败立即亮（口径同 loadRecommend）
+                    errorMessage = if (retryScheduled) null else LIST_LOAD_FAILED_MESSAGE,
                     cos = _uiState.value.cos.copy(isLoading = false, isRefreshing = false),
                 )
-                if (!_uiState.value.cos.loaded) scheduleInitialRetry(HomeTab.COS)
             }
         }
     }
@@ -569,7 +590,10 @@ class HomeViewModel @Inject constructor(
                 )
             }.onSuccess { items ->
                 if (gen != rankGeneration) return@onSuccess // 旧代迟到响应，丢弃
+                // 自愈即清账：横幅清空 + 重试预算归零（同 loadRecommend onSuccess 注释）
+                initialRetryAttempts.remove(HomeTab.RANK)
                 _uiState.value = _uiState.value.copy(
+                    errorMessage = null,
                     rank = _uiState.value.rank.copy(
                         items = items,
                         isLoading = false,
@@ -579,11 +603,14 @@ class HomeViewModel @Inject constructor(
                 )
             }.onFailure {
                 if (gen != rankGeneration) return@onFailure // 旧代失败不污染新周期
+                val retryScheduled = isInitial && !isRefresh &&
+                    !_uiState.value.rank.loaded &&
+                    scheduleInitialRetry(HomeTab.RANK)
                 _uiState.value = _uiState.value.copy(
-                    errorMessage = LIST_LOAD_FAILED_MESSAGE,
+                    // 静默重试在途不亮牌 / 预算耗尽或用户主动路径失败立即亮（口径同 loadRecommend）
+                    errorMessage = if (retryScheduled) null else LIST_LOAD_FAILED_MESSAGE,
                     rank = _uiState.value.rank.copy(isLoading = false, isRefreshing = false),
                 )
-                if (!_uiState.value.rank.loaded) scheduleInitialRetry(HomeTab.RANK)
             }
         }
     }
