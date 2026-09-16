@@ -1,22 +1,25 @@
 /**
- * 搜索页「更多筛选」面板（SearchPage 拆分出的子组件：警戒线 300 行）。
- * 纯渲染 + 状态回调，不调 API（铁律 7：数据一律经 SearchPage 的 hooks 传入）。
+ * 「更多筛选」面板（搜索页/相册页共用组件；2026-09-17 用户拍板两页面板内容
+ * 对齐同构，自 pages/SearchFilters.tsx 迁入 components/filters）。首行=排序
+ * 三档，其后 顺位/播放次数/文件大小/时间范围/标签模式/标签；纯渲染 + 状态回调，
+ * 不调 API（铁律 7：数据一律经 usePanelFilters hook 传入）。
  * 类名与原型逐字一致（styles/prototype.css 消费），布局数值不动。
  */
 
 import type { Tag } from '@/api/generated'
 import { LOCALE_ZH } from '@/lib/constants'
-import { Pill } from '@/components/ui/pill'
-import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
 import {
   ORDER_OPTIONS,
   PLAYS_OPTIONS,
   SEARCH_YEARS,
   SIZE_OPTIONS,
+  SORT_OPTIONS,
   TAG_MODE_OPTIONS,
   TIME_OPTIONS,
-  type SearchFilterState,
-} from './search-state'
+  type PanelFilterState,
+} from '@/lib/panel-filters'
+import { Pill } from '@/components/ui/pill'
+import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
 
 function FilterRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -125,14 +128,14 @@ function TagRow({ pool, selected, inputOpen, onToggle, onRemove, onOpenInput, on
   )
 }
 
-export interface SearchFiltersProps {
+export interface PanelFiltersProps {
   /** 面板折叠开关（父组件「更多筛选」按钮驱动，照原型 hidden 语义） */
   hidden: boolean
-  state: SearchFilterState
-  /** 标签池（服务端全量，按名称升序由父组件排好） */
+  state: PanelFilterState
+  /** 标签池（服务端全量，按名称升序由 hook 排好序前原样传入，组件内排序） */
   tagPool: Tag[]
   tagInputOpen: boolean
-  setFilter: <K extends keyof SearchFilterState>(key: K, value: SearchFilterState[K]) => void
+  setFilter: <K extends keyof PanelFilterState>(key: K, value: PanelFilterState[K]) => void
   onToggleTag: (tagId: string) => void
   onRemoveTag: (tagId: string) => void
   onOpenTagInput: () => void
@@ -140,8 +143,8 @@ export interface SearchFiltersProps {
   onAddTag: (raw: string) => void
 }
 
-/** 「更多筛选」面板：顺位/播放/大小/时间/标签模式/标签池（面板折叠由父组件控制 hidden） */
-export function SearchFilters({
+/** 「更多筛选」面板：排序/顺位/播放次数/大小/时间/标签模式/标签池（面板折叠由父组件控制 hidden） */
+export function PanelFilters({
   hidden,
   state,
   tagPool,
@@ -152,7 +155,7 @@ export function SearchFilters({
   onOpenTagInput,
   onCloseTagInput,
   onAddTag,
-}: SearchFiltersProps) {
+}: PanelFiltersProps) {
   const sortedPool = [...tagPool].sort((a, b) =>
     (a.name ?? '').localeCompare(b.name ?? '', LOCALE_ZH),
   )
@@ -160,6 +163,13 @@ export function SearchFilters({
   return (
     <div className="search-filters" hidden={hidden}>
       <div>
+        <FilterRow label="排序">
+          {SORT_OPTIONS.map((v) => (
+            <Pill key={v} active={state.sort === v} onClick={() => setFilter('sort', v)}>
+              {v}
+            </Pill>
+          ))}
+        </FilterRow>
         <FilterRow label="顺位">
           {ORDER_OPTIONS.map((v) => (
             <Pill key={v} active={state.order === v} onClick={() => setFilter('order', v)}>

@@ -14,6 +14,16 @@
 ---
 ---
 ---
+## feat(web): 搜索/相册「更多筛选」面板对齐同构——搜索删排序行+面板首行排序三档，相册换用共用面板（2026-09-17 第二百九十九笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- 用户拍板「搜索和相册的更多筛选内容不一致，相册的对齐首页的内容；搜索的综合排序/最多点击删除，筛选点开最上面加上 默认/观看次数/文件大小 三个（默认=时间排序那个）」：
+  - **搜索页**：排序行「综合排序/最多点击」两档撤除（.s-sort 规则消亡，.s-toolbar 只剩右对齐「更多筛选」钮 justify-content flex-end；§4.5 排序行锚位随之作废）；「更多筛选」面板首行新增 排序三档 默认/观看次数/文件大小（默认=default 即时间排序，协议八排序键零改动），面板成七行：排序/顺位/播放次数/文件大小/时间范围/标签模式/标签。
+  - **相册页**：面板换用与搜索页同一共享组件（原面板 排序/分区/类型 三行撤除——排序已进面板首行，分区/类型由页内维度胶囊承担），顺带获得 顺位（升降序）/播放次数/文件大小/时间范围/标签模式/标签 全套真实筛选（GET /assets 同参数，标签池增选同搜索页）；「更多筛选」钮点亮口径扩展到面板维（isPanelActive）。
+  - **共用单源抽离**（重复第 2 次即抽共享）：`lib/panel-filters.ts`（档位常量+PanelFilterState+newPanelState+isPanelActive）+ `hooks/use-panel-filters.ts`（面板状态机+标签池增选+panelAssetParams 参数映射，播放次数→playRange 而非 viewRange 口径注释随迁）+ `components/filters/PanelFilters.tsx`（自 pages/SearchFilters.tsx 迁入并加排序首行，旧文件消亡）；`pages/search-state.ts` 瘦身为搜索页特有维（分区/类型，SearchPageState/newSearchPageState）。
+- 门禁：npm run build ✓ + vitest 162/162 ✓ + oxlint 18 warnings=基线 0 errors（改动文件无新增告警）；隔离实例（18477+新临时数据目录，未碰真实库）浏览器实测——搜索页排序行消失/面板七行首行三档 ✓、相册页面板与搜索逐行同构 ✓、点 观看次数/升序 后 GET /assets 实发 `sort=viewCount&order=asc` ✓、「更多筛选」钮点亮 ✓、双页静止态截图存证（%TEMP%\qimeng-panel-align-evidence\）。
+---
 ## feat(web): 相册「更多筛选」面板上线——排序三档进面板首行；胶囊点按弹开（2026-09-17 第二百九十八笔）
 
 执行 AI：GLM-5.3-Flash（主代理 + 执行子代理）
