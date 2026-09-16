@@ -13,6 +13,15 @@
 ---
 ---
 ---
+## fix(desktop): 窗口三按钮无反应根治——远程源 capability 上下文缺失（2026-09-17 第二百九十四笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- 用户反馈「右上角三个按钮有延迟或者无反应」。真机复现（SendInput 精确点击最小化钮 → 窗口无反应）后定位根因：**Tauri 2 capabilities 默认仅作用于本地页面**，而主窗口加载的是远程源（http://127.0.0.1:8421 服务端 Web UI）——`core:window:*` 权限整体不生效，注入点击处理器调用的 minimize/close 被 ACL 静默拒绝。修复：capability 增加 `"remote": { "urls": ["http://*", "http://*:*", "https://*", "https://*:*"] }` 声明（威胁模型评估：壳加载的是自家服务端 UI，接受其调用窗口 API；不涉及文件/网络等高危能力）。
+- 顺带：titlebar.js 改惰性解析 `window.__TAURI__`（初始化脚本可能先于 Tauri 内部注入执行，早退会让按钮全盲，双保险）；移除调试探针。
+- 验证：SendInput 精确点击最小化钮 → IsIconic=True ✓，恢复窗口正常（修复前同法复现无反应）。
+- 排查备忘：Tauri 窗口标题不随 document.title 变化，title 探针法在壳内无效；WebView2 远程调试需全新 user-data-folder + WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS 才生效。
+---
 ## fix(web): 播放器设置面板（倍速）右缘裁切根治——钉住 .art-settings 定位（2026-09-17 第二百九十三笔）
 
 执行 AI：GLM-5.3-Flash（主代理）
