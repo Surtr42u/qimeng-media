@@ -110,8 +110,8 @@ export default function SearchPage() {
     else if (state.partition === '全部') p.includeCos = true
     const mt = TYPE_TO_MEDIA[state.type]
     if (mt) p.mediaType = mt
-    // 排序：综合=default、最多点击=viewCount（顺位 order 真实传参）
-    p.sort = state.sort === '最多点击' ? 'viewCount' : 'default'
+    // 排序：综合=default、最多点击=viewCount、文件大小=sizeBytes（2026-09-17 补齐任务1三档；顺位 order 真实传参）
+    p.sort = state.sort === '最多点击' ? 'viewCount' : state.sort === '文件大小' ? 'sizeBytes' : 'default'
     p.order = state.order === '升序' ? 'asc' : 'desc'
     const vr = PLAYS_TO_RANGE[state.plays]
     // 该行选项为「未播放/1-5/5-20/>20」——播放次数语义（play 事件），

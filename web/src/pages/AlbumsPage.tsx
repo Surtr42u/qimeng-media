@@ -57,6 +57,9 @@ const SORTS: { label: string; sort: AssetSort; order: 'asc' | 'desc' }[] = [
   { label: '最新', sort: 'fileDate', order: 'desc' },
   { label: '最旧', sort: 'fileDate', order: 'asc' },
   { label: '按名称', sort: 'name', order: 'asc' },
+  // 任务1三档补齐（2026-09-17 用户拍板：与手机排序 默认/观看次数/文件大小 对齐——精选=default 即「默认」）
+  { label: '观看次数', sort: 'viewCount', order: 'desc' },
+  { label: '文件大小', sort: 'sizeBytes', order: 'desc' },
 ]
 
 /** 值行超过该数量（含「全部」）默认收起两行（原型交互阈值） */
@@ -236,6 +239,19 @@ export default function AlbumsPage() {
     setExpanded(false)
   }
 
+  // 维度胶囊 = 手风琴（2026-09-17 用户澄清「点击胶囊会自己弹开，手机的那种」）：
+  // 换维度必展开值行；同维度再点一下开合切换。开合按值行当前可见态
+  // （filterOpen || hasFilter，与筛选钮箭头同口径）判定；hasFilter 常驻展开时
+  // 收起仍走 filterOpen=false，值行是否隐藏由既有可见规则（filterOpen||hasFilter）决定。
+  const toggleDim = (next: DimKey): void => {
+    if (next !== dim) {
+      setDim(next)
+      setFilterOpen(true)
+      return
+    }
+    setFilterOpen(!(filterOpen || hasFilter))
+  }
+
   const pickValue = (opt: { value: string; kind?: FacetOptionKind }): void => {
     switch (dim) {
       case 'partition': {
@@ -273,7 +289,7 @@ export default function AlbumsPage() {
           {(Object.keys(DIM_LABELS) as DimKey[]).map((d, i) => (
             <span key={d} className="pill-row-item">
               {i > 0 ? <span className="pill-divider" aria-hidden="true" /> : null}
-              <Pill active={dim === d} onClick={() => setDim(d)}>
+              <Pill active={dim === d} onClick={() => toggleDim(d)}>
                 {DIM_LABELS[d]} <span className="pill-count">{badgeCount(d)}</span>
               </Pill>
             </span>
