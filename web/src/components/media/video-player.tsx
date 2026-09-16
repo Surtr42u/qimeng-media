@@ -152,6 +152,9 @@ export default function VideoPlayer({
       setting: true, // 设置面板开关（倍速入口依赖）
       playbackRate: true,
       fullscreen: true,
+      // 网页全屏（铺满页面=桌面客户端里「占满窗口」，与系统全屏并存两种）：
+      // 官方 option（artplayer.org/document option#fullscreenweb），控制栏独立按钮
+      fullscreenWeb: true,
       highlight: initial.highlights,
     })
 
