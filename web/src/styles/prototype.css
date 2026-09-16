@@ -41,6 +41,10 @@
   --fab-shadow-hover: 0 6px 20px rgba(0, 0, 0, 0.16), 0 2px 6px rgba(0, 0, 0, 0.1);
   /* 搜索面板阴影 */
   --search-pop-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
+  /* 侧边栏分区对比（2026-09-17 用户拍板「常见的那种分割对比色」）：栏底色与内容区 --bg
+     拉开 + 右缘分割线；hover 用栏底色同族加深档（--hover-bg 与栏底色近同值，不可见） */
+  --qm-sidebar-bg: #f2f3f5;
+  --qm-sidebar-hover: #e8eaee;
   /* 日志徽章（浅色） */
   --log-warn-bg: #fef3c7;
   --log-warn-text: #b45309;
@@ -69,6 +73,9 @@
   --hover-bg: #1f1f1f;
   --elev: #26262a; /* 深色下表层面（占位封面 / 输入框），与 .pop-chip 共用 */
   --border: #2a2a2a;
+  /* 侧边栏分区对比深色值（随 2026-09-17 拍板）：栏面比内容区 --bg 抬高半档 */
+  --qm-sidebar-bg: #17181b;
+  --qm-sidebar-hover: #232327;
   --overlay-bg: rgba(0, 0, 0, .6); /* W-2 弹窗遮罩暗色加深 */
   --dialog-shadow: 0 8px 28px rgba(0, 0, 0, .5); /* W-2 弹窗面板阴影暗色值 */
   /* —— 散落字面量收敛（2026-09-04）的深色覆盖值，2026-09-05 自 -dark 后缀变量统一搬入本块 —— */
@@ -126,7 +133,8 @@ body {
   flex-direction: column;
   align-items: center;
     padding: 14px 0 18px;
-    background: var(--bg);
+    background: var(--qm-sidebar-bg);
+  border-right: 1px solid var(--border); /* 分割对比线（2026-09-17 分区对比） */
   }
 
 .sidebar--back {
@@ -142,6 +150,9 @@ body {
 }
 .sidebar--back svg { width: 18px; height: 18px; }
 .sidebar--back:hover { background: var(--hover-bg); color: var(--text-mid); }
+/* 栏内 hover 改用侧边栏同族加深档：--hover-bg 与栏底色近同值不可见（2026-09-17 分区对比） */
+.sidebar--back:hover, .settings-item:hover, .nav-item:hover { background: var(--qm-sidebar-hover); }
+.dark .sidebar--back:hover, .dark .settings-item:hover, .dark .nav-item:hover { background: var(--qm-sidebar-hover); }
 
 .sidebar--pages {
   display: flex;
@@ -170,72 +181,6 @@ body {
 .nav-item:hover { color: var(--text-main); }
 .nav-item.active { color: var(--qm-primary); }
 .nav-item.active:hover { color: var(--qm-primary); }
-
-/* ===== B 站式悬浮侧边栏（2026-09-17 用户拍板）：悬停窄栏滑出悬浮面板盖在内容上，
-   内容不位移；面板圆角+阴影，行式导航带完整标签；「<」收起逻辑见 Sidebar.tsx ===== */
-.sidebar { position: relative; }
-.sidebar--flyout {
-  position: absolute;
-  left: 100%;
-  top: 0;
-  height: 100%;
-  width: 200px;
-  display: flex;
-  flex-direction: column;
-  padding: 14px 10px 18px;
-  background: var(--bg);
-  border-radius: 0 12px 12px 0;
-  box-shadow: var(--dialog-shadow);
-  z-index: 50; /* 盖过内容与顶栏 sticky（z-40） */
-  opacity: 0;
-  transform: translateX(-8px);
-  visibility: hidden;
-  /* visibility 延迟到退场动画结束再隐藏，进场无延迟 */
-  transition: opacity var(--qm-duration-base) var(--qm-ease-out),
-    transform var(--qm-duration-base) var(--qm-ease-out),
-    visibility 0s linear var(--qm-duration-base);
-}
-.sidebar--flyout.open {
-  opacity: 1;
-  transform: none;
-  visibility: visible;
-  transition-delay: 0s;
-}
-.flyout-head { display: flex; margin-bottom: 8px; }
-.flyout-collapse {
-  width: 44px;
-  height: 34px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--faint);
-  border-radius: 8px;
-}
-.flyout-collapse svg { width: 18px; height: 18px; }
-.flyout-collapse:hover { background: var(--hover-bg); color: var(--text-mid); }
-.flyout-pages { display: flex; flex-direction: column; gap: 4px; }
-.flyout-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  height: 44px;
-  padding: 0 14px;
-  border-radius: 8px;
-  color: var(--icon-idle);
-  cursor: pointer;
-}
-.flyout-item svg { width: 22px; height: 22px; flex-shrink: 0; }
-.flyout-item span { font-size: 14px; }
-.flyout-item:hover { background: var(--hover-bg); color: var(--text-main); }
-.flyout-item.active { color: var(--qm-primary); }
-.flyout-item.active:hover { color: var(--qm-primary); }
-.flyout-settings {
-  margin-top: auto;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
 
 /* 底部图标组（明暗主题 / 维护 / 设置）：下沉至侧栏最底部 */
 .sidebar--settings {
