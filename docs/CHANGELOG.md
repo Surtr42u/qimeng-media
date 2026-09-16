@@ -13,6 +13,16 @@
 ---
 ---
 ---
+## feat(web): 数据管理 hub 化——文件管理页拆四入口卡+四子页，内容零改动（2026-09-17 第二百八十六笔）
+
+执行 AI：GLM-5.3-Flash（主代理 + 执行子代理）
+
+- 用户反馈「web 的数据管理都挤在一起，像手机版那样区分，先归类好，web 不做内容改动」：`maintenance/files`（原 LibraryManagePage 496 行五块同页堆叠）改为「数据管理」hub 四张入口卡（标题/副文案逐字对齐 Android DataManageScreen：上传文件/库管理/作者 TXT 导入/备份导入导出），四个子页 `maintenance/files/{upload,libraries,authors-txt,backup}` 原样承接——TxtAuthorImportCard/BackupCard 提为独立组件文件（函数体 diff 为空，仅加 export），库表格+注册表单、目录浏览+上传卡随迁，逐段 diff 自证零改动。
+- 返回交互：子页顶部「← 返回数据管理」确定性 navigate 回 hub（深链直进子页时不退出站点）；入口图标沿 icons.tsx 既有 stroke 先例新增 3 枚。
+- **顺带修复构建阻断**：RanksPage.tsx `RANK_TAGS,,` 双逗号笔误（512f167 引入，HEAD 上即坏）致 `npm run build` 全红，最小机械修复解锁门禁（单字符、零语义）。
+- 门禁：npm run build ✓（四子页独立 chunk）+ vitest 162/162 ✓ + tsc -b OK；`tsc --noEmit` 实为 files:[] 空转记档（后续批次改口径 tsc -b）。
+- 用户拍板砍项记档：「备份加上传同步」不做——Web 直连 Go 后端、浏览数据实时入库无积压可传（用户自证「web 直接接 go 后端就行了，没必要做」）。
+---
 ## feat(desktop): 主窗口无边框化——B 站同款「页面顶栏即标题栏」（2026-09-16 第二百八十五笔）
 
 执行 AI：GLM-5.3-Flash（主代理）

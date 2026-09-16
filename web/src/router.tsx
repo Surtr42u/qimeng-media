@@ -28,6 +28,10 @@ const AuthorsPage = lazy(() => import('@/pages/AuthorsPage'))
 const CollectionPage = lazy(() => import('@/pages/CollectionPage'))
 const AssetDetailPage = lazy(() => import('@/pages/AssetDetailPage'))
 const LibraryManagePage = lazy(() => import('@/pages/LibraryManagePage'))
+const LibraryUploadPage = lazy(() => import('@/pages/LibraryUploadPage'))
+const LibraryRegistryPage = lazy(() => import('@/pages/LibraryRegistryPage'))
+const AuthorTxtImportPage = lazy(() => import('@/pages/AuthorTxtImportPage'))
+const BackupImportExportPage = lazy(() => import('@/pages/BackupImportExportPage'))
 const TrashPage = lazy(() => import('@/pages/TrashPage'))
 
 export const router = createBrowserRouter([
@@ -74,7 +78,13 @@ export const router = createBrowserRouter([
               // 未注册裸 /app/collection 时这类外部深链整树无匹配 → 白屏（F1）
               { path: 'collection', element: <CollectionDeepLink /> },
               { path: 'collection/:kind/:name', element: <Suspense fallback={null}><CollectionPage /></Suspense> },
+              // 数据管理 hub + 四子页（2026-09-17 原单页「文件管理」拆分，扁平同层
+              // 注册与 maintenance/* 既有风格一致；页面内容零改动只做信息架构拆分）
               { path: 'maintenance/files', element: <Suspense fallback={null}><LibraryManagePage /></Suspense> },
+              { path: 'maintenance/files/upload', element: <Suspense fallback={null}><LibraryUploadPage /></Suspense> },
+              { path: 'maintenance/files/libraries', element: <Suspense fallback={null}><LibraryRegistryPage /></Suspense> },
+              { path: 'maintenance/files/authors-txt', element: <Suspense fallback={null}><AuthorTxtImportPage /></Suspense> },
+              { path: 'maintenance/files/backup', element: <Suspense fallback={null}><BackupImportExportPage /></Suspense> },
               { path: 'maintenance/trash', element: <Suspense fallback={null}><TrashPage /></Suspense> },
               // 未注册路径兜底（E/F卷审查·P3 清偿）：F1 只修了 /app/collection 深链，
               // 任意其他未注册路径（旧书签/手误）仍整树无匹配白屏且 ErrorBoundary

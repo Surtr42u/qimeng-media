@@ -14,7 +14,7 @@ import {
   RANK_AUTHORS,
   RANK_CONTENT,
   RANK_PAGE_TITLES,
-  RANK_TAGS,, collectionPath } from '@/lib/route-keys'
+  RANK_TAGS, collectionPath } from '@/lib/route-keys'
 
 type RankKey = typeof RANK_CONTENT | typeof RANK_TAGS | typeof RANK_AUTHORS
 
