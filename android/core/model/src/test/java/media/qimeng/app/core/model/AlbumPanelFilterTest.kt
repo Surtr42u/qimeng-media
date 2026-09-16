@@ -21,9 +21,9 @@ class AlbumPanelFilterTest {
     // ---------- 默认值不传 ----------
 
     @Test
-    fun `默认态 - 面板参数全部不传，排序为文件时间降序（2026-09-15 拍板）`() {
+    fun `默认态 - 面板参数全部不传，排序为默认档降序（2026-09-17 拍板）`() {
         val q = query(AlbumFilterState())
-        assertEquals(AssetSort.FILE_DATE, q.sort) // 2026-09-15 拍板变更
+        assertEquals(AssetSort.DEFAULT, q.sort) // 2026-09-17 拍板变更：默认选中档=「默认」
         assertEquals(SortOrder.DESC, q.order)
         assertNull(q.viewRange)
         assertNull(q.playRange)
@@ -39,9 +39,9 @@ class AlbumPanelFilterTest {
     // ---------- 排序 / 顺位 ----------
 
     @Test
-    fun `排序方式七选 - 逐一映射到 sort`() {
+    fun `排序键映射 - 逐一映射到 sort（协议镜像全枚举；面板档位 2026-09-17 精简为三档但映射不变）`() {
         val cases = mapOf(
-            AssetSort.FILE_DATE to AssetSort.FILE_DATE,
+            AssetSort.DEFAULT to AssetSort.DEFAULT,
             AssetSort.FILE_DATE to AssetSort.FILE_DATE,
             AssetSort.ADDED_DATE to AssetSort.ADDED_DATE,
             AssetSort.VIEW_COUNT to AssetSort.VIEW_COUNT,
@@ -238,9 +238,9 @@ class AlbumPanelFilterTest {
 
     @Test
     fun `点亮判定 - 排序偏离默认点亮`() {
-        // 2026-09-15 拍板变更：默认=FILE_DATE，偏离档改用 NAME
-        assertTrue(AlbumFilterState(sort = AssetSort.NAME).hasActiveFilters())
-        assertFalse(AlbumFilterState(sort = AssetSort.FILE_DATE).hasActiveFilters())
+        // 2026-09-17 拍板变更：默认=DEFAULT（协议缺省档），偏离档用观看次数
+        assertTrue(AlbumFilterState(sort = AssetSort.VIEW_COUNT).hasActiveFilters())
+        assertFalse(AlbumFilterState(sort = AssetSort.DEFAULT).hasActiveFilters())
     }
 
     @Test

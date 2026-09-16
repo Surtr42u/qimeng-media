@@ -8,7 +8,7 @@
     <string name="all_title">相册</string>
 
     <!-- 页头排序行五条 all_sort_* 资源随任务L L4 删除（用户拍板移除 G5 页头四档排序行；
-         排序唯一编辑入口回归万能筛选面板，七档/顺位文案在 :core:ui ui_filter_sort_*/ui_filter_order_*） -->
+         排序唯一编辑入口回归万能筛选面板，三档/顺位文案在 :core:ui ui_filter_sort_*/ui_filter_order_*） -->
 
     <!-- 值区块展开/收起切换钮 all_values_* 两条资源 2026-09-15 批随 QimengValuePillBlock
          组件收编迁 :core:ui（ui_values_expand/ui_values_collapse），本模块不再持有 -->

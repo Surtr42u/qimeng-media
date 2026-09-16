@@ -627,8 +627,8 @@ class HomeViewModelTest {
             viewModel.resetPanelDraft()
             advanceUntilIdle()
             assertEquals(2, repo.assetsGateCalls.size)
-            // 77435fb 起 AlbumPanelDraft 默认排序=FILE_DATE（2026-09-15 拍板），重拉携带新默认
-            assertEquals(AssetSort.FILE_DATE, repo.assetsGateCalls[1].query.sort)
+            // 2026-09-17 拍板起 AlbumPanelDraft 默认排序=DEFAULT（取代 2026-09-15 的 FILE_DATE），重拉携带新默认
+            assertEquals(AssetSort.DEFAULT, repo.assetsGateCalls[1].query.sort)
             assertEquals(AlbumPanelDraft(), viewModel.uiState.value.cosFilter) // 已应用态=默认草稿
             assertEquals(AlbumPanelDraft(), viewModel.uiState.value.filterPanel.draft)
             assertFalse(viewModel.uiState.value.filterPanel.visible)

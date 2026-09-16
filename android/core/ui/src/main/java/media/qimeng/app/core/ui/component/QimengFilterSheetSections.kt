@@ -245,17 +245,13 @@ private fun YearPicker(year: Int?, onPick: (Int) -> Unit, modifier: Modifier = M
 
 // ---------- 选项文案表（实录逐字；值→协议映射在 core/model / :core:data，此处只陈列） ----------
 
-// 排序方式七档/顺位二档文案（任务L L4 随两段恢复）：逐字照旧版实录 filter_sheet.txt
-// （默认/文件日期/添加日期/观看次数/点击次数/文件大小/名字；降序/升序），档序同实录
+// 排序方式三档/顺位二档文案：2026-09-17 用户拍板精简（原七档照旧版实录 filter_sheet.txt，
+// 删文件日期/添加日期/点击次数/名字四档），只保留 默认/观看次数/文件大小，档序按用户口径
 @Composable
 internal fun sortOptions(): List<QimengRadioOption<AssetSort>> = listOf(
     QimengRadioOption(AssetSort.DEFAULT, stringResource(R.string.ui_filter_sort_default)),
-    QimengRadioOption(AssetSort.FILE_DATE, stringResource(R.string.ui_filter_sort_file_date)),
-    QimengRadioOption(AssetSort.ADDED_DATE, stringResource(R.string.ui_filter_sort_added_date)),
     QimengRadioOption(AssetSort.VIEW_COUNT, stringResource(R.string.ui_filter_sort_view_count)),
-    QimengRadioOption(AssetSort.PLAY_COUNT, stringResource(R.string.ui_filter_sort_play_count)),
     QimengRadioOption(AssetSort.SIZE_BYTES, stringResource(R.string.ui_filter_sort_file_size)),
-    QimengRadioOption(AssetSort.NAME, stringResource(R.string.ui_filter_sort_name)),
 )
 
 @Composable

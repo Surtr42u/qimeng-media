@@ -39,9 +39,9 @@ class AssetQueryPanelDraftTest {
     // ---------- 默认草稿 = 协议缺省（首页 Y4b 前行为不变锚点） ----------
 
     @Test
-    fun `默认草稿 - 面板参数全部不传，排序为文件时间降序（2026-09-15 拍板）`() {
+    fun `默认草稿 - 面板参数全部不传，排序为默认档降序（2026-09-17 拍板）`() {
         val next = AssetQuery(cosOnly = true).withPanelDraft(AlbumPanelDraft(), today = today)
-        assertEquals(AssetSort.FILE_DATE, next.sort) // 2026-09-15 拍板变更
+        assertEquals(AssetSort.DEFAULT, next.sort) // 2026-09-17 拍板变更：默认选中档=「默认」
         assertEquals(SortOrder.DESC, next.order)
         assertNull(next.viewRange)
         assertNull(next.playRange)
@@ -75,10 +75,10 @@ class AssetQueryPanelDraftTest {
     @Test
     fun `排序顺位 - 草稿值覆写进查询包`() {
         val next = AssetQuery().withPanelDraft(
-            AlbumPanelDraft(sort = AssetSort.FILE_DATE, order = SortOrder.ASC),
+            AlbumPanelDraft(sort = AssetSort.VIEW_COUNT, order = SortOrder.ASC),
             today = today,
         )
-        assertEquals(AssetSort.FILE_DATE, next.sort)
+        assertEquals(AssetSort.VIEW_COUNT, next.sort)
         assertEquals(SortOrder.ASC, next.order)
     }
 
