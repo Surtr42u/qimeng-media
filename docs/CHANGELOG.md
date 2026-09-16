@@ -13,6 +13,15 @@
 ---
 ---
 ---
+## feat(desktop): 主窗口无边框化——B 站同款「页面顶栏即标题栏」（2026-09-16 第二百八十五笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- 用户拍板「要 B 站那种没有弹窗边框的」：主窗口 `decorations(false)` 去系统边框/标题栏；**web/ 零改动**——Web UI 顶栏与 `.win-btn` 三按钮是既有装饰件（浏览器环境无行为，TopBar.tsx），壳侧新增 `titlebar.js` 经 `initialization_script` 注入运行时接通：三按钮按中文 title 映射最小化/最大化/关闭，顶栏空白处按住拖动（可交互元素白名单放行照常点击），双击顶栏最大化/还原，全屏看视频时不接管。参考 tauri v2 官方 window-customization 手动 startDragging 形态。
+- 权限：capabilities 增 `core:window:allow-minimize/toggle-maximize/close/start-dragging`（internal-toggle-maximize 随 core:default）。
+- 已知边界：无边框窗口的 Win11 贴靠手势弱化（拖动/双击最大化保留）；边缘缩放若真机不可用，后续批次补 hit-test（待验）。
+- 验证：`tauri build --no-bundle` 增量 44s 绿；客户端已指向 **8421 UI测试库**（90 文件）运行中——目验因用户游戏中（全屏占屏）改由用户切出自验；`/auth/dev-login` 实测正确路径=/api/v1/auth/dev-login（根级 /auth/dev-login 返回 401/404，历史记载已漂移，记档）。
+---
 ## fix(app): 无头模拟器bat闪退留窗pause+全机排查硬件不稳警报记档（2026-09-16 第二百八十四笔）
 
 执行 AI：GLM-5.3（主代理；全机/全项目排查会话，用户指令「电脑全量排查+CPU 情况、项目 CPU 设置排查、代码指令审查修复对齐文档」）
