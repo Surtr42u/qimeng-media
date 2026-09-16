@@ -13,6 +13,17 @@
 ---
 ---
 ---
+## feat(desktop): 任务D-桌面壳批 Tauri 2 连接模式壳交付——首启填址+托盘+导航守卫+17单测全绿（2026-09-16 第二百八十二笔）
+
+执行 AI：GLM-5.3-Flash（主代理 + 执行子代理×2 并行）
+
+- **ADR-0020 落地（用户拍板「哔哩哔哩那种 PC 客户端；不改 UI、不重构」）**：桌面壳=连接模式，全新 `desktop/` 目录（Tauri 2.11.5，与 web/android/server 并列），壳只做「首启填服务器地址→主窗加载该地址的服务端 Web UI」；**web/android/server/api 四端零改动**；内嵌服务端单机版明确不在本批（另立 ADR）；commit scope 新增 `desktop`。
+- **壳能力**：中文设置窗（地址规范化纯函数：trim/无 scheme 补 http/禁路径 query 凭据/IPv6/端口越界校验，**17 单测全绿**）→ 写 app_config_dir 配置 → 主窗 1200×800 加载 Web UI；托盘三菜单（打开主窗/切换服务器地址/退出）+ `--setup` 兜底入口；导航守卫禁跳配置主机之外；关最后窗口=退出。
+- **工程细节**：WebView2 系统自带零分发；图标=ffmpeg 合成（android 品牌底色 #DDBC98 + ic_launcher_foreground 居中 768²，非占位）；productName「绮梦影库」复用 android strings.xml 单一来源；identifier media.qimeng.desktop；产物 **8.9MB**（对照 Electron 100~200MB）。
+- **编译插曲**：首次全量编译被中途掐断留下损坏 .rmeta 缓存（E0786 corrupt metadata 连环报错）——逐个删是打地鼠，`cargo clean` 干净重编根治；此后增量编译 44s（tauri crate 带 custom-protocol 重编）/纯壳改动 1.2s。
+- **验收**：`cargo test --release` 17/17 绿（CARGO_EXIT=0 真实退出码校验）；**真机启动实测通过**——设置窗「连接服务器 · 绮梦影库」正常拉起（内存 26MB），exe 绿色可直接运行。
+- **遗留**：① NSIS/MSI 安装器暂缓——打包器需从 GitHub 下载 WiX/NSIS，当前网络不可达（下载超时），网络恢复后 `npm run build` 补打即可（exe 本身已可用）；② 本地领先 origin/master 6 commit 待推送（GitHub 此刻连不上）；③ PC 单机版（sidecar 内嵌服务端）、窗口状态记忆、自动更新=后续可选批。
+---
 ## fix(app): 标签管理未选中chip去除48dp最小触控目标——行距对齐选中区（2026-09-16 第二百八十一笔）
 
 执行 AI：GLM-5.3-Flash（主代理）

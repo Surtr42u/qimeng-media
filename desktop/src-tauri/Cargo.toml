@@ -1,0 +1,18 @@
+[package]
+name = "qimeng-media-desktop"
+version = "0.1.0"
+description = "绮梦影库桌面壳（连接模式：UI 由 Go 服务端托管）"
+edition = "2021"
+
+# 构建顺序约束：必须先在 desktop/ 下 `npm run icon` 生成 src-tauri/icons/ 全套，
+# 否则 tauri::generate_context!（编译期嵌入 bundle.icon 声明的图标）会因缺文件编译失败。
+# tauri crate 固定 2.11.5：与 @tauri-apps/cli 2.11.4 同为 v2 大版本（crates.io 2026-09-16 查证，
+# 3.0.0-alpha.x 为预发布版不采用）。
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2.11.5", features = ["tray-icon"] }
+# serde/serde_json：server.json 配置读写（不引其它依赖，壳从简）
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

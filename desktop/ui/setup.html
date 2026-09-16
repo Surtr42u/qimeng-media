@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>连接服务器 · 绮梦影库</title>
+  <!-- 品牌色对齐 android res/values/colors.xml：底 #FAFAFA(qm_bg)、图标底 #DDBC98 -->
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body {
+      font-family: system-ui, "Microsoft YaHei", sans-serif;
+      background: #FAFAFA;
+      color: #1B1B1F;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      user-select: none;
+    }
+    .card { width: 100%; max-width: 372px; padding: 0 24px; }
+    .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+    .brand img { width: 40px; height: 40px; border-radius: 8px; }
+    h1 { font-size: 19px; font-weight: 600; }
+    .sub { font-size: 12px; color: #8A8A93; margin-bottom: 20px; }
+    label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; }
+    input {
+      width: 100%;
+      padding: 10px 12px;
+      font-size: 14px;
+      border: 1px solid #D9D9DE;
+      border-radius: 8px;
+      background: #FFFFFF;
+      color: #1B1B1F;
+      outline: none;
+    }
+    input:focus { border-color: #DDBC98; box-shadow: 0 0 0 2px rgba(221, 188, 152, .35); }
+    .hint { font-size: 12px; color: #8A8A93; margin: 8px 0 16px; }
+    .error {
+      display: none;
+      font-size: 12px;
+      color: #C0392B;
+      background: #FDEDEC;
+      border: 1px solid #F5C6CB;
+      border-radius: 6px;
+      padding: 8px 10px;
+      margin-bottom: 12px;
+      word-break: break-all;
+      user-select: text;
+    }
+    button {
+      width: 100%;
+      padding: 11px 0;
+      font-size: 14px;
+      font-weight: 600;
+      color: #1B1B1F;
+      background: #DDBC98;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    button:hover:not(:disabled) { background: #D0AE85; }
+    button:disabled { opacity: .6; cursor: default; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="brand">
+      <img src="app-icon.png" alt="绮梦影库" />
+      <h1>绮梦影库</h1>
+    </div>
+    <p class="sub">连接到你的 NAS 媒体库服务器</p>
+
+    <label for="server-url">服务器地址</label>
+    <input id="server-url" type="text" placeholder="http://192.168.1.8:8420"
+           autocomplete="off" spellcheck="false" autofocus />
+    <p class="hint">与手机 App 登录页填同一个地址；端口是服务端默认的 8420</p>
+
+    <div id="error" class="error"></div>
+    <button id="save" type="button">保存并连接</button>
+  </div>
+
+  <script>
+    // 纯静态页 + withGlobalTauri 注入的全局 API，无需前端构建步骤（字段名以 Tauri 2 官方文档为准）
+    const invoke = window.__TAURI__?.core?.invoke;
+    const input = document.getElementById('server-url');
+    const button = document.getElementById('save');
+    const errorBox = document.getElementById('error');
+
+    function showError(msg) {
+      errorBox.textContent = msg;
+      errorBox.style.display = 'block';
+    }
+
+    if (!invoke) {
+      // 开发时直接用浏览器打开本页才会出现
+      showError('未检测到 Tauri 运行环境，请通过应用窗口打开本页');
+      button.disabled = true;
+    } else {
+      // 回显已保存地址（切换服务器场景）
+      invoke('get_server_url').then((url) => { if (url) input.value = url; }).catch(() => {});
+    }
+
+    async function submit() {
+      if (button.disabled) return;
+      errorBox.style.display = 'none';
+      button.disabled = true;
+      button.textContent = '连接中…';
+      try {
+        // 成功后由 Rust 侧负责打开主窗口并关闭本窗口
+        await invoke('save_server_url', { url: input.value });
+      } catch (e) {
+        // Rust 侧 Err(String) 是面向用户的中文提示
+        showError(typeof e === 'string' ? e : (e?.message ?? String(e)));
+        button.disabled = false;
+        button.textContent = '保存并连接';
+      }
+    }
+
+    button.addEventListener('click', submit);
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
+  </script>
+</body>
+</html>

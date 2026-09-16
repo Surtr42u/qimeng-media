@@ -1,0 +1,14 @@
+{
+  "name": "qimeng-media-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "绮梦影库桌面壳（Tauri 2 连接模式，UI 由 Go 服务端 8420 托管）",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "icon": "tauri icon app-icon.png"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4"
+  }
+}
