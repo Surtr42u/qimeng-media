@@ -1,0 +1,10 @@
+# Node
+node_modules/
+
+# Rust / Tauri 构建产物
+src-tauri/target/
+# gen/ 下是构建时生成的 schema 与平台工程，不入库（capabilities 的 $schema 引用会在首次构建后出现）
+src-tauri/gen/
+
+# icons/ 下全套图标由 `npm run icon`（tauri icon）从 app-icon.png 生成，不手工维护；
+# README.md 留作目录占位说明
