@@ -13,6 +13,15 @@
 ---
 ---
 ---
+## docs: 用户拍板解除项目内全部 CPU 限核约束——构建一律全核+工作区清理（2026-09-16 第二百八十三笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- **决策（用户 2026-09-16）**：项目中的 CPU 限制全部去除，文档中的限核约束一并去除——①**构建侧一律全核**：Gradle 构建不再附加 `--max-workers=N`/`-Dorg.gradle.priority=low`，Cargo/Tauri 构建不再设 `CARGO_BUILD_JOBS`，「编译 CPU≤50%」「20 核机限核」历史口径与 Job Object HARD_CAP/构建前预捕获守护进程方案**全部作废、不得重建**；②**运行时代码排查结论：无任何低于全核的 CPU 限速**——缩略图 WorkerPool 默认 worker 数=NumCPU、ffmpeg 进程闸容量=GOMAXPROCS，两者均为「满核防超卖」的稳定性结构而非限速，保留不动；argon2 并行度 p=4 为密码学成本参数非 CPU 限制；docker-compose.yml/启动脚本/CI 均无 CPU 配额。
+- **文档清偿**：ADR-0020「构建纪律」「代价」两处 `CARGO_BUILD_JOBS=8` 限核表述改写为不限核全量构建；`adr/INDEX.md` ADR-0020 行同步；`HANDOVER.md` 顶部拍板记档+U10 追加批「CPU 限流结论…留档备重建」就地作废。本文件及 HANDOVER 日期条目中的历史限核记载仅作存档，不再构成约束。
+- **工作区清理（仓库外 `QimengNAS/` 根，用户授权「删除多余的安装包和计划书」）**：删除 4 份已被 `qimeng-任务U11-终包-20260915.apk`（release 含三件套，真机验收唯一在办件）取代的旧终包 APK——U9/U10/U10四批/U10追加批；删除已消费计划书 `m6-next-steps.md`（§1 Termux 设计稿已落地为仓库 `deploy/termux/` 三脚本=T2 批 79ea051、§2 内嵌 ffmpeg 方案已随 U11 批次D 出包，任务T 卷「储备材料」指向随之失效，T7/M6 收官以仓库与 ADR 为准）。保留：`a-s3-agp9-upgrade-memo.md`（gradle.properties 活引用）、`m4-6-runtime-notes.md`（协议口径事实长期保留）、`m6-ffmpeg-memo.md`+`m6-poc/`（既有保留拍板）、U11 终包与全部活跃任务卷/台账。
+
+---
 ## feat(desktop): 任务D-桌面壳批 Tauri 2 连接模式壳交付——首启填址+托盘+导航守卫+17单测全绿（2026-09-16 第二百八十二笔）
 
 执行 AI：GLM-5.3-Flash（主代理 + 执行子代理×2 并行）
