@@ -480,6 +480,26 @@ body {
 /* 相册筛选区：去卡片盒（用户拍板对齐）——行缘与网格/内容线同线 */
 .filter-card { padding: 0; border: none; background: none; border-radius: 0; }
 .pill-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+/* 相册筛选值行默认收起（2026-09-17 用户拍板）：点「筛选」展开；有选中值自动展开+按钮点亮。
+   按钮外观与顶栏搜索框同款（34px 高 / 17px 全圆角 / 1px --border） */
+.pill-row.value-row.collapsed { display: none; }
+.filter-toggle {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 34px;
+  padding: 0 18px;
+  border: 1px solid var(--border);
+  border-radius: 17px;
+  background: var(--bg);
+  color: var(--text-sub);
+  font-size: 13px;
+  font-family: var(--font);
+  cursor: pointer;
+}
+.filter-toggle:hover { border-color: var(--qm-primary); color: var(--qm-primary); }
+.filter-toggle.active { border-color: var(--qm-primary); color: var(--qm-primary); }
 button.pill,
 .pill {
   padding: 5px 12px;
