@@ -14,6 +14,13 @@
 ---
 ---
 ---
+## feat(web): 搜索页分区胶囊与「更多筛选」钮合一行（2026-09-17 第三百笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- 用户拍板「胶囊和更多筛选在一行」：SearchPage 原独立 .s-toolbar 工具行消亡，「更多筛选」钮并入分区胶囊行行尾（右推复用 .pill-row .more-filter 既有 margin-left:auto，与相册页维度行同构）；钮点亮口径同步补上（isPanelActive，原搜索页钮恒不点亮）；.s-toolbar CSS 规则删除。
+- 门禁：npm run build ✓ + vitest 162/162 ✓ + oxlint 18 warnings=基线 0 errors；隔离实例 18477 浏览器实测：合并行渲染 ✓、面板七行照常弹出 ✓（截图存证）。**自测踩坑记账**：PWA service worker 会缓存旧构建产物——改完必须先注销 SW + 清 caches 再刷新，否则看到的是上一版（本轮首刷即中招）。
+---
 ## feat(web): 搜索/相册「更多筛选」面板对齐同构——搜索删排序行+面板首行排序三档，相册换用共用面板（2026-09-17 第二百九十九笔）
 
 执行 AI：GLM-5.3-Flash（主代理）

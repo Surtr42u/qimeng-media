@@ -15,6 +15,7 @@ import {
   type MediaType,
 } from '@/hooks/use-assets'
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants'
+import { isPanelActive } from '@/lib/panel-filters'
 import { assetDetail } from '@/lib/route-keys'
 import { partitionKey } from '@/lib/search-mapping'
 import { PARTITION_OPTIONS, newSearchPageState, type SearchPageState } from './search-state'
@@ -25,7 +26,8 @@ import { PARTITION_OPTIONS, newSearchPageState, type SearchPageState } from './s
  * 类型 tab 四档：综合（不传 mediaType）/视频/动图/图片——协议无 audio 类型且数据库无音频
  * 记录（旧 App 的音频档在数据模型里本就无实体，原型残留，见 DOMAIN_RULES 类型口径）。
  * 排序行已删（2026-09-17 用户拍板：原「综合排序/最多点击」两档撤除，排序三档
- * 默认/观看次数/文件大小 收进「更多筛选」面板首行，与相册页共用同一面板组件）。
+ * 默认/观看次数/文件大小 收进「更多筛选」面板首行，与相册页共用同一面板组件）；
+ * 原 .s-toolbar 工具行一并消亡，「更多筛选」钮并入分区胶囊行行尾（与相册页维度行同构）。
  */
 
 /** 类型 tab 文案 → 协议 MediaType（「综合」不传；MediaType 枚举 image/animated_image/video，无 audio） */
@@ -112,30 +114,26 @@ export default function SearchPage() {
           </button>
         ))}
       </div>
-      {/* 排序行已删（2026-09-17）：原 .s-sort「综合排序/最多点击」两档撤除，
-          排序三档进面板首行；本行只剩右对齐的「更多筛选」钮（.s-toolbar flex-end） */}
-      <div className="s-toolbar">
-        <button
-          type="button"
-          className={`more-filter${panelOpen ? ' open' : ''}`}
-          aria-expanded={panelOpen}
-          onClick={() => setPanelOpen((v) => !v)}
-        >
-          更多筛选
-          <ChevronDownIcon />
-        </button>
-      </div>
-      {/* 分区胶囊（复用相册页 pill 样式，默认全部=常规∪COS，2026-09-04 用户拍板）：
-          全部=includeCos、常规=不传（DOMAIN_RULES §6 隔离口径，主动切换才排除）、COS=cosOnly。
-          位置在工具行之后——首两行是对齐锚（HANDOVER_UI §4.5 规则 3：类型行中心↔首页项中心），
-          上方插行会把行推离侧栏锚位；横向 24px 贴线（规则 1），
-          行距交给 .page gap 不加额外 padding */}
+      {/* 分区胶囊与「更多筛选」钮同行（2026-09-17 用户拍板：胶囊和更多筛选一行，
+          与相册页维度行同构；原独立 .s-toolbar 工具行随排序行一并消亡）：
+          全部=includeCos、常规=不传（DOMAIN_RULES §6 隔离口径，主动切换才排除）、
+          COS=cosOnly。类型行仍是首行对齐锚（HANDOVER_UI §4.5 规则 3：类型行中心
+          ↔首页项中心）；横向 24px 贴线（规则 1），行距交给 .page gap 不加额外 padding */}
       <div className="pill-row" role="group" aria-label="内容分区" style={{ padding: '0 24px' }}>
         {PARTITION_OPTIONS.map((pt) => (
           <Pill key={pt} active={page.partition === pt} onClick={() => setPageField('partition', pt)}>
             {pt}
           </Pill>
         ))}
+        <button
+          type="button"
+          className={`more-filter${panelOpen ? ' open' : ''}${isPanelActive(panel.state) ? ' active' : ''}`}
+          aria-expanded={panelOpen}
+          onClick={() => setPanelOpen((v) => !v)}
+        >
+          更多筛选
+          <ChevronDownIcon />
+        </button>
       </div>
       <PanelFilters
         hidden={!panelOpen}
