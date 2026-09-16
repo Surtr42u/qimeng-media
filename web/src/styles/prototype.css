@@ -41,10 +41,6 @@
   --fab-shadow-hover: 0 6px 20px rgba(0, 0, 0, 0.16), 0 2px 6px rgba(0, 0, 0, 0.1);
   /* 搜索面板阴影 */
   --search-pop-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
-  /* 卡片/画布分层（2026-09-17 层次感微调）：page 画布比卡片面低半档，卡片以 --bg+阴影浮出 */
-  --qm-canvas: #f2f3f5;
-  --qm-card-shadow: 0 1px 2px rgba(24, 25, 28, 0.04), 0 4px 12px rgba(24, 25, 28, 0.05);
-  --qm-card-shadow-hover: 0 4px 12px rgba(24, 25, 28, 0.08), 0 12px 28px rgba(66, 80, 175, 0.1);
   /* 日志徽章（浅色） */
   --log-warn-bg: #fef3c7;
   --log-warn-text: #b45309;
@@ -72,10 +68,6 @@
   --faint: #3a3a3f;
   --hover-bg: #1f1f1f;
   --elev: #26262a; /* 深色下表层面（占位封面 / 输入框），与 .pop-chip 共用 */
-  /* 分层 token 深色值（随 2026-09-17 层次感微调）：画布再暗半档、阴影加深才在深底可见 */
-  --qm-canvas: #0b0b0d;
-  --qm-card-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 14px rgba(0, 0, 0, 0.35);
-  --qm-card-shadow-hover: 0 4px 12px rgba(0, 0, 0, 0.5), 0 12px 30px rgba(0, 0, 0, 0.45);
   --border: #2a2a2a;
   --overlay-bg: rgba(0, 0, 0, .6); /* W-2 弹窗遮罩暗色加深 */
   --dialog-shadow: 0 8px 28px rgba(0, 0, 0, .5); /* W-2 弹窗面板阴影暗色值 */
@@ -453,7 +445,7 @@ body {
 /* ===== 旧 UI 页面（搬自 panel-demo：相册 / 我的 / 数据 / 维护 / 设置）===== */
 .page-head h2 { font-size: 18px; font-weight: 600; }
 .page-head p { margin-top: 4px; font-size: 12px; color: var(--text-sub); }
-.page { display: flex; flex-direction: column; gap: 16px; background: var(--qm-canvas); } /* 画布色：卡片以 --bg 浮出（层次感微调 2026-09-17） */
+.page { display: flex; flex-direction: column; gap: 16px; }
 /* display:flex 会覆盖 hidden 属性默认的 display:none，须显式声明 */
 .page[hidden] { display: none; }
 .pop-block[hidden], .hist-card[hidden], .hist-group2[hidden] { display: none; }
@@ -472,12 +464,6 @@ body {
 .chart-card h3, .rank-card h3, .donut-card h3, .entry-card h3 { font-size: 14px; font-weight: 600; }
 .chart-card > p, .donut-card > p, .rank-note, .m-note, .hist-sub,
 .entry-card > p, .entry-sub, .settings-card > p { font-size: 12px; color: var(--text-sub); margin-top: 4px; }
-
-/* 卡片浮出画布（2026-09-17 层次感微调）：统一分层阴影；.filter-card 去卡片化覆写不参与 */
-.chart-card, .profile-card, .settings-card,
-.metric-card, .rank-card, .donut-card, .gauge-card, .entry-card {
-  box-shadow: var(--qm-card-shadow);
-}
 
 /* 两段式胶囊 */
 /* 相册筛选区：去卡片盒（用户拍板对齐）——行缘与网格/内容线同线 */
@@ -1135,19 +1121,9 @@ button.more-filter,
 }
 
 /* ===== 维护子页（文件管理/回收站，2026-09-03 实际功能页新增，量最少原则）===== */
-/* 入口卡可点击态：链接语义 + 主色描边 + 悬停浮起（2026-09-17 层次感微调，动效走 token） */
-.entry-card--link {
-  cursor: pointer;
-  transition: border-color var(--qm-duration-fast) var(--qm-ease-out),
-    box-shadow var(--qm-duration-base) var(--qm-ease-out),
-    transform var(--qm-duration-base) var(--qm-ease-out);
-}
-.entry-card--link:hover {
-  border-color: var(--qm-primary);
-  box-shadow: var(--qm-card-shadow-hover);
-  transform: translateY(-2px);
-}
-.entry-card--link:active { transform: translateY(0); box-shadow: var(--qm-card-shadow); }
+/* 入口卡可点击态：链接语义 + 主色描边 hover（复用 .entry-card 底样式） */
+.entry-card--link { cursor: pointer; transition: border-color .15s; }
+.entry-card--link:hover { border-color: var(--qm-primary); }
 /* 注册库表单的 select：与 .settings-field input 同规格（原型只有 input 档） */
 .settings-field select {
   width: 100%; height: 34px;
