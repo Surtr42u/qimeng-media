@@ -3,5 +3,11 @@
   "identifier": "qimeng-desktop-capability",
   "description": "绮梦影库桌面壳最小权限：setup.html 通过 window.__TAURI__ 调用自定义命令，核心默认权限兜底（自定义 command 不在 ACL 管控内，window/event 等 core 能力按需放行默认集）",
   "windows": ["main", "setup"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:default",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-close",
+    "core:window:allow-start-dragging"
+  ]
 }

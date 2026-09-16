@@ -33,6 +33,8 @@ const MAIN_WINDOW_MIN_WIDTH: f64 = 900.0;
 const MAIN_WINDOW_MIN_HEIGHT: f64 = 600.0;
 /// 改地址的兜底入口：`绮梦影库 --setup` 直接进设置窗
 const SETUP_FLAG: &str = "--setup";
+/// 主窗口无边框注入脚本（B 站同款：去系统边框，Web UI 顶栏即标题栏，见 titlebar.js 头注）
+const TITLEBAR_INJECT: &str = include_str!("titlebar.js");
 const TRAY_ID_OPEN_MAIN: &str = "tray-open-main";
 const TRAY_ID_CHANGE_SERVER: &str = "tray-change-server";
 const TRAY_ID_QUIT: &str = "tray-quit";
@@ -82,6 +84,10 @@ fn open_main_window(app: &AppHandle, server: &tauri::Url) -> Result<(), String> 
     let app_for_guard = app.clone();
     WebviewWindowBuilder::new(app, MAIN_WINDOW_LABEL, WebviewUrl::External(server.clone()))
         .title(APP_TITLE)
+        // B 站同款无边框：窗口行为（拖动/三按钮）由 TITLEBAR_INJECT 注入给 Web UI 既有件，
+        // 页面加载失败时托盘菜单仍是退出兜底
+        .decorations(false)
+        .initialization_script(TITLEBAR_INJECT)
         .inner_size(MAIN_WINDOW_WIDTH, MAIN_WINDOW_HEIGHT)
         .min_inner_size(MAIN_WINDOW_MIN_WIDTH, MAIN_WINDOW_MIN_HEIGHT)
         .on_navigation(move |target| navigation_allowed_by_state(&app_for_guard, target))
