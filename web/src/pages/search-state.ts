@@ -20,7 +20,7 @@ export interface SearchFilterState {
 
 /** 排序/顺位/区间档位选项（文案=原型）。分区顺序=相册页 all/regular/cos 同款（用户 2026-09-04 拍板） */
 export const PARTITION_OPTIONS = ['全部', '常规', 'COS'] as const
-export const SORT_TABS = ['综合排序', '最多点击', '文件大小'] as const
+export const SORT_TABS = ['综合排序', '最多点击'] as const
 export const ORDER_OPTIONS = ['降序', '升序'] as const
 export const PLAYS_OPTIONS = ['全部', '未播放', '1-5', '5-20', '>20'] as const
 export const SIZE_OPTIONS = ['全部', '<1MB', '1-10MB', '10-50MB', '>50MB'] as const

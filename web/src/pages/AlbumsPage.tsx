@@ -4,6 +4,7 @@ import type { AssetSummary } from '@/api/generated'
 import { MediaCard } from '@/components/media/MediaCard'
 import { InfiniteTail } from '@/components/media/InfiniteTail'
 import { Pill } from '@/components/ui/pill'
+import { ChevronDownIcon } from '@/components/shell/icons'
 import { DEFAULT_PAGE_SIZE, LOCALE_ZH } from '@/lib/constants'
 import { groupAlbumsByDate } from '@/lib/album-grouping'
 import { ALBUMS_PATH, assetDetailWithSearch, type OverlayDetailState } from '@/lib/route-keys'
@@ -52,12 +53,9 @@ const DIM_LABELS: Record<DimKey, string> = {
 }
 
 /** 排序档（文案与原型一致）→ 协议 sort/order 参数 */
+/** 排序档（2026-09-17 用户拍板对齐手机任务1三档：默认/观看次数/文件大小；收进「更多筛选」面板首行） */
 const SORTS: { label: string; sort: AssetSort; order: 'asc' | 'desc' }[] = [
-  { label: '精选', sort: 'default', order: 'desc' },
-  { label: '最新', sort: 'fileDate', order: 'desc' },
-  { label: '最旧', sort: 'fileDate', order: 'asc' },
-  { label: '按名称', sort: 'name', order: 'asc' },
-  // 任务1三档补齐（2026-09-17 用户拍板：与手机排序 默认/观看次数/文件大小 对齐——精选=default 即「默认」）
+  { label: '默认', sort: 'default', order: 'desc' },
   { label: '观看次数', sort: 'viewCount', order: 'desc' },
   { label: '文件大小', sort: 'sizeBytes', order: 'desc' },
 ]
@@ -83,6 +81,8 @@ export default function AlbumsPage() {
   // 筛选值行默认收起（2026-09-17 用户拍板「元素1默认收起，最右侧加筛选」）：
   // 有选中值时自动展开并点亮按钮（不做筛选=默认列表），手动开合走 filterOpen
   const [filterOpen, setFilterOpen] = useState(false)
+  // 「更多筛选」面板开合（2026-09-17：面板首行=排序三档，形态对齐搜索页同款组件）
+  const [panelOpen, setPanelOpen] = useState(false)
   const [sortIdx, setSortIdx] = useState(0)
 
   const sort = SORTS[sortIdx]
@@ -296,15 +296,16 @@ export default function AlbumsPage() {
           ))}
           <button
             type="button"
-            className={`filter-toggle${hasFilter ? ' active' : ''}`}
-            aria-expanded={filterOpen || hasFilter}
-            onClick={() => setFilterOpen((v) => !v)}
+            className={`more-filter${panelOpen ? ' open' : ''}${hasFilter ? ' active' : ''}`}
+            aria-expanded={panelOpen}
+            onClick={() => setPanelOpen((v) => !v)}
           >
-            筛选 {filterOpen || hasFilter ? '⌃' : '⌄'}
+            更多筛选
+            <ChevronDownIcon />
           </button>
         </div>
         {/* 值行：当前维度值胶囊（超阈值默认收起两行）；无筛选且未点开时整行隐藏 */}
-        <div className={`pill-row value-row${expanded ? ' expanded' : ''}${filterOpen || hasFilter ? '' : ' collapsed'}`}>
+        <div className={`pill-row value-row${expanded ? ' expanded' : ''}${filterOpen || panelOpen || hasFilter ? '' : ' collapsed'}`}>
           {dimValues.map(({ label, count, ...opt }) => (
             <Pill
               key={`${opt.kind ?? ''}:${opt.value}`}
@@ -323,15 +324,38 @@ export default function AlbumsPage() {
             {expanded ? '收起 ⌃' : '展开 ⌄'}
           </button>
         ) : null}
-        {/* 排序组（独立于维度筛选，文案=原型） */}
-        <div className="pill-row sort-row">
-          <span className="sort-label">排序</span>
-          {SORTS.map((s, i) => (
-            <Pill key={s.label} active={sortIdx === i} onClick={() => setSortIdx(i)}>
-              {s.label}
-            </Pill>
-          ))}
+        {/* 更多筛选面板（形态对齐搜索页 search-filters）：首行=排序三档（2026-09-17 用户拍板），
+            其后为分区/类型两行；作者/角色行留在页内胶囊（点维度胶囊弹开）不进面板 */}
+        <div className={`search-filters${panelOpen ? '' : ' hidden'}`}>
+          <div className="f-row">
+            <span className="f-label">排序</span>
+            <div className="f-opts">
+              {SORTS.map((s, i) => (
+                <Pill key={s.label} active={sortIdx === i} onClick={() => setSortIdx(i)}>
+                  {s.label}
+                </Pill>
+              ))}
+            </div>
+          </div>
+          <div className="f-row">
+            <span className="f-label">分区</span>
+            <div className="f-opts">
+              <Pill active={partition === 'all'} onClick={() => setPartition('all')}>全部</Pill>
+              <Pill active={partition === 'regular'} onClick={() => setPartition('regular')}>常规</Pill>
+              <Pill active={partition === 'cos'} onClick={() => setPartition('cos')}>COS</Pill>
+            </div>
+          </div>
+          <div className="f-row">
+            <span className="f-label">类型</span>
+            <div className="f-opts">
+              <Pill active={mediaType === null} onClick={() => setMediaType(null)}>全部</Pill>
+              <Pill active={mediaType === 'image'} onClick={() => setMediaType('image')}>图片</Pill>
+              <Pill active={mediaType === 'animated_image'} onClick={() => setMediaType('animated_image')}>动图</Pill>
+              <Pill active={mediaType === 'video'} onClick={() => setMediaType('video')}>视频</Pill>
+            </div>
+          </div>
         </div>
+        {/* 排序组已收进「更多筛选」面板首行（2026-09-17 用户拍板） */}
       </section>
 
       {/* 时间分区组：组头（今天/昨天/周X/yyyy-MM-dd + N 项）+ 组内网格（保持原序） */}
