@@ -95,7 +95,7 @@ const val PANEL_DEFAULT_YEAR_FROM = 2020
  * 只含面板字段，不含四维芯片（分区/作者/角色/类型）与药丸展开态。
  */
 data class AlbumPanelDraft(
-    val sort: AssetSort = AssetSort.FILE_DATE, // 默认对齐 AlbumFilterState（文件 mtime 口径，2026-09-15 批）
+    val sort: AssetSort = AssetSort.DEFAULT, // 默认对齐 AlbumFilterState（协议缺省档，2026-09-17 拍板）
     val order: SortOrder = SortOrder.DESC,
     val viewRange: PanelCountRange = PanelCountRange.ALL,
     val playRange: PanelCountRange = PanelCountRange.ALL,
@@ -144,8 +144,8 @@ fun AlbumFilterState.withPanelDraft(draft: AlbumPanelDraft): AlbumFilterState = 
  * 点亮语义专指万能面板字段）；expanded 为展示态非筛选条件。
  */
 fun AlbumFilterState.hasActiveFilters(): Boolean =
-    // 2026-09-15 拍板变更：默认排序=FILE_DATE（文件时间），点亮判定基准随默认走
-    sort != AssetSort.FILE_DATE ||
+    // 2026-09-17 拍板变更：默认排序=DEFAULT（协议缺省档；2026-09-15 的 FILE_DATE 基准随该档删除作废）
+    sort != AssetSort.DEFAULT ||
         order != SortOrder.DESC ||
         viewRange != PanelCountRange.ALL ||
         playRange != PanelCountRange.ALL ||

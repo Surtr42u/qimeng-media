@@ -183,12 +183,12 @@ class AlbumFilterPanelTest {
         val repo = FakeMediaRepository()
         val vm = viewModel(repo)
         vm.openFilterSheet()
-        vm.updatePanelDraft(AlbumPanelDraft(sort = media.qimeng.app.core.model.AssetSort.NAME))
+        vm.updatePanelDraft(AlbumPanelDraft(sort = AssetSort.VIEW_COUNT))
         vm.dismissFilterSheet()
         advanceUntilIdle()
 
         assertFalse(vm.panelState.value.visible)
-        assertEquals(media.qimeng.app.core.model.AssetSort.FILE_DATE, vm.uiState.value.filter.sort) // 2026-09-16 拍板变更：默认文件时间
+        assertEquals(AssetSort.DEFAULT, vm.uiState.value.filter.sort) // 2026-09-17 拍板变更：默认档=「默认」
         // 重开面板 = 重新拷贝已应用值
         vm.openFilterSheet()
         assertEquals(AlbumPanelDraft(), vm.panelState.value.draft)
@@ -237,36 +237,36 @@ class AlbumFilterPanelTest {
     // ---------- 排序经面板（任务L L4：页头排序行删除，排序唯一编辑入口回归面板） ----------
 
     @Test
-    fun `面板选排序 - 最旧档 sort=file_date order=asc 写入已应用态且请求携带`() =
+    fun `面板选排序 - 观看次数档 sort=view_count 写入已应用态且请求携带`() =
         runTest(mainDispatcherRule.testDispatcher) {
             val repo = FakeMediaRepository()
             val vm = viewModel(repo)
             vm.openFilterSheet()
-            // 面板「排序方式=文件日期 + 顺位=升序」即旧版「最旧」语义
+            // 面板三档之一「观看次数」（2026-09-17 精简：默认/观看次数/文件大小），顺位=升序验证透传
             vm.updatePanelDraft(
-                AlbumPanelDraft(sort = AssetSort.FILE_DATE, order = SortOrder.ASC),
+                AlbumPanelDraft(sort = AssetSort.VIEW_COUNT, order = SortOrder.ASC),
             )
             vm.applyPanelDraft()
             advanceUntilIdle()
 
-            assertEquals(AssetSort.FILE_DATE, vm.uiState.value.filter.sort)
+            assertEquals(AssetSort.VIEW_COUNT, vm.uiState.value.filter.sort)
             assertEquals(SortOrder.ASC, vm.uiState.value.filter.order)
             val appliedQuery = repo.assetsCalls.last().query
-            assertEquals(AssetSort.FILE_DATE, appliedQuery.sort)
+            assertEquals(AssetSort.VIEW_COUNT, appliedQuery.sort)
             assertEquals(SortOrder.ASC, appliedQuery.order)
         }
 
     @Test
-    fun `重置清空排序 - 回默认文件时间降序（2026-09-16 拍板）且刷新请求不携带非默认排序`() =
+    fun `重置清空排序 - 回默认档降序（2026-09-17 拍板）且刷新请求不携带非默认排序`() =
         runTest(mainDispatcherRule.testDispatcher) {
             val repo = FakeMediaRepository()
             val vm = viewModel(repo)
-            // 先经面板应用非默认排序
+            // 先经面板应用非默认排序（观看次数为三档之一）
             vm.openFilterSheet()
-            vm.updatePanelDraft(AlbumPanelDraft(sort = AssetSort.NAME, order = SortOrder.ASC))
+            vm.updatePanelDraft(AlbumPanelDraft(sort = AssetSort.VIEW_COUNT, order = SortOrder.ASC))
             vm.applyPanelDraft()
             advanceUntilIdle()
-            assertEquals(AssetSort.NAME, vm.uiState.value.filter.sort)
+            assertEquals(AssetSort.VIEW_COUNT, vm.uiState.value.filter.sort)
 
             vm.openFilterSheet()
             advanceUntilIdle() // 放行在途请求后再取基线，避免误记
@@ -274,11 +274,11 @@ class AlbumFilterPanelTest {
             vm.resetPanelDraft()
             advanceUntilIdle()
 
-            assertEquals(AssetSort.FILE_DATE, vm.uiState.value.filter.sort) // 2026-09-16 拍板变更
+            assertEquals(AssetSort.DEFAULT, vm.uiState.value.filter.sort) // 2026-09-17 拍板变更
             assertEquals(SortOrder.DESC, vm.uiState.value.filter.order)
             assertEquals(AlbumPanelDraft(), vm.panelState.value.draft)
             val resetQuery = repo.assetsCalls.last().query
-            assertEquals(AssetSort.FILE_DATE, resetQuery.sort) // 2026-09-16 拍板变更
+            assertEquals(AssetSort.DEFAULT, resetQuery.sort) // 2026-09-17 拍板变更
             assertEquals(SortOrder.DESC, resetQuery.order)
             assertEquals(callsBeforeReset + 1, repo.assetsCalls.size) // 重置触发一次刷新
         }
@@ -295,7 +295,7 @@ class AlbumFilterPanelTest {
         advanceUntilIdle()
 
         // 草稿态：已应用态与请求不变（面板内点选不触发刷新——编辑态语义）
-        assertEquals(AssetSort.FILE_DATE, vm.uiState.value.filter.sort) // 2026-09-16 拍板变更
+        assertEquals(AssetSort.DEFAULT, vm.uiState.value.filter.sort) // 2026-09-17 拍板变更
         assertEquals(callsBeforeEdit, repo.assetsCalls.size)
         assertEquals(AssetSort.VIEW_COUNT, vm.panelState.value.draft.sort)
     }

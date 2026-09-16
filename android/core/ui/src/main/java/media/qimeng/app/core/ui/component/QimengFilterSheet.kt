@@ -104,9 +104,9 @@ fun QimengFilterSheet(
                 SheetTitle()
                 // 排序方式/顺位两段（任务L L4 从 git 历史 5536d79^ 恢复，结构为本仓自己的
                 // Compose 实现）：G5 曾按「排序提页头」删除面板排序段，L4 按用户拍板删除页头
-                // 四档行、排序唯一编辑入口回归面板——两段位置/档序/文案逐字照旧版实录
-                // filter_sheet.txt（标题下首两段：排序方式七档 → 顺位二档），映射既有
-                // AlbumPanelDraft.sort/order（panelDraft/withPanelDraft 原样携带，零协议改动）。
+                // 四档行、排序唯一编辑入口回归面板——2026-09-17 再按用户拍板精简为三档
+                // （默认/观看次数/文件大小），映射既有 AlbumPanelDraft.sort/order
+                // （panelDraft/withPanelDraft 原样携带，零协议改动）。
                 FilterSection(
                     label = stringResource(R.string.ui_filter_sort_section),
                     options = sortOptions(),
