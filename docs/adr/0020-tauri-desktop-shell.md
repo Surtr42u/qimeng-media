@@ -24,8 +24,10 @@
 - `web/`、`android/`、`server/`、`api/openapi.yaml` **零改动**；
 - **不做**内嵌服务端单机版——若将来立项须另写 ADR，本 ADR 范围仅连接模式。
 
-构建纪律：Rust 首次编译有依赖峰值，统一 `CARGO_BUILD_JOBS=8` 限核（对齐
-项目 Gradle ≤50% CPU 口径，20 核机）；日常使用零编译。
+构建纪律：**不设任何 CPU 限核**——Rust 首次编译有依赖峰值属正常现象，一律
+全量构建（2026-09-16 用户拍板：项目内一切 CPU 限核约束全部解除，旧 Gradle
+`--max-workers`/`-Dorg.gradle.priority=low` 与 Cargo `CARGO_BUILD_JOBS` 限核
+口径一并作废，不得重建）；日常使用零编译。
 
 ## 状态（Status）
 
@@ -36,6 +38,6 @@ Accepted——已接受（2026-09-16）。
 - 新增独立 `desktop/` 目录（Tauri 2 工程），与 web/android/server 并列；
 - 桌面端 commit scope 约定为 **`desktop`**（现有 `api/web/app/server/docs`
   约定之外的扩展，在此记档）；
-- 代价：引入 Rust 工具链，首次编译存在依赖峰值（已用 `CARGO_BUILD_JOBS=8`
-  限核）；Windows 端依赖系统 WebView2 组件（一般已随系统预装）；
+- 代价：引入 Rust 工具链，首次编译存在依赖峰值（全核构建，不限核）；
+  Windows 端依赖系统 WebView2 组件（一般已随系统预装）；
 - 受影响文件/文档：`desktop/`（新增）、`docs/adr/INDEX.md`、`docs/CHANGELOG.md`。
