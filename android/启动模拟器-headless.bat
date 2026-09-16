@@ -40,4 +40,9 @@ if not exist "%EMULATOR_EXE%" (
 
 "%EMULATOR_EXE%" -avd qimeng_api35 -no-window -no-audio -gpu swiftshader_indirect -no-snapshot
 
+REM Unreachable while emulator keeps running; on instant exit (e.g. AVD
+REM locked by a leftover instance) this keeps the window open so the
+REM error is readable instead of a flash-close.
+pause
+
 endlocal
