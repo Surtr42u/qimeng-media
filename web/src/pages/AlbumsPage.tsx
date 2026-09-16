@@ -77,9 +77,19 @@ export default function AlbumsPage() {
   const [characterSel, setCharacterSel] = useState<RowSel>(null)
   const [mediaType, setMediaType] = useState<MediaType | null>(null)
   const [expanded, setExpanded] = useState(false)
+  // 筛选值行默认收起（2026-09-17 用户拍板「元素1默认收起，最右侧加筛选」）：
+  // 有选中值时自动展开并点亮按钮（不做筛选=默认列表），手动开合走 filterOpen
+  const [filterOpen, setFilterOpen] = useState(false)
   const [sortIdx, setSortIdx] = useState(0)
 
   const sort = SORTS[sortIdx]
+
+  // 是否有筛选生效（分区「全部」为缺省不算筛选）：有则值行自动展开、筛选钮点亮
+  const hasFilter =
+    partition !== DEFAULT_PARTITION ||
+    authorSel !== null ||
+    characterSel !== null ||
+    mediaType !== null
 
   // 作者行选中 → GET /assets 参数（source 与 authorId 二选一）
   const authorParams = useMemo(
@@ -258,7 +268,7 @@ export default function AlbumsPage() {
   return (
     <div className="page" id="page-albums">
       <section className="filter-card">
-        {/* 维度行：分区 / 作者 / 角色 / 类型（徽标=各维排自身候选数） */}
+        {/* 维度行：分区 / 作者 / 角色 / 类型（徽标=各维排自身候选数）+ 最右侧筛选开合 */}
         <div className="pill-row" role="group" aria-label="筛选维度">
           {(Object.keys(DIM_LABELS) as DimKey[]).map((d, i) => (
             <span key={d} className="pill-row-item">
@@ -268,9 +278,17 @@ export default function AlbumsPage() {
               </Pill>
             </span>
           ))}
+          <button
+            type="button"
+            className={`filter-toggle${hasFilter ? ' active' : ''}`}
+            aria-expanded={filterOpen || hasFilter}
+            onClick={() => setFilterOpen((v) => !v)}
+          >
+            筛选 {filterOpen || hasFilter ? '⌃' : '⌄'}
+          </button>
         </div>
-        {/* 值行：当前维度值胶囊（超阈值默认收起两行） */}
-        <div className={`pill-row value-row${expanded ? ' expanded' : ''}`}>
+        {/* 值行：当前维度值胶囊（超阈值默认收起两行）；无筛选且未点开时整行隐藏 */}
+        <div className={`pill-row value-row${expanded ? ' expanded' : ''}${filterOpen || hasFilter ? '' : ' collapsed'}`}>
           {dimValues.map(({ label, count, ...opt }) => (
             <Pill
               key={`${opt.kind ?? ''}:${opt.value}`}
