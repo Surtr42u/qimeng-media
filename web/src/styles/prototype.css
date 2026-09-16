@@ -1252,6 +1252,14 @@ button.confirm-btn--danger:hover { filter: brightness(1.08); }
    注入样式，主题色经 --art-theme 由组件运行时读 --qm-primary 写入 */
 .asset-stage { position: relative; --stage-max-h: 68vh; } /* 徽标定位锚点；高度与上方既有 68vh 约束同源 */
 .video-player-box { width: 100%; height: var(--stage-max-h); }
+/* ArtPlayer 设置包装器（倍速等面板）防右缘裁切：官方 JS 以 zoom 1.1 失真坐标内联 left，
+   网页全屏下包装器溢出窗口右缘 72px（2026-09-17 用户反馈「倍速显示遮挡一部分」；
+   诊断实证 .art-settings computed right=-65px）。CSS !important 可压内联 left，
+   钉回播放器右内侧；左选择器同时覆盖常规挂载与网页全屏挪挂到 body 两种形态 */
+.art-video-player .art-settings {
+  left: auto !important;
+  right: 24px !important;
+}
 .watched-badge {
   position: absolute;
   top: 10px;

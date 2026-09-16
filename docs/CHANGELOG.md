@@ -13,6 +13,15 @@
 ---
 ---
 ---
+## fix(web): 播放器设置面板（倍速）右缘裁切根治——钉住 .art-settings 定位（2026-09-17 第二百九十三笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- 用户反馈「倍速按钮显示会遮挡一部分」。浏览器实测复现（8421 测试库视频页）：设置包装器 `.art-settings` 官方 JS 以全局 zoom 1.1 失真坐标内联 `left: 979px`，computed `right: -65px` → 面板溢出窗口右缘 72px 被裁（「播放速度」行显示不全）——与第二百二十一笔记过的进度条 seek 偏移同族（zoom 下官方坐标换算失真）。
+- 修复：`.art-video-player .art-settings { left: auto !important; right: 24px !important }`（CSS !important 压内联 left；选择器同时覆盖常规挂载与网页全屏挪挂到 body 两种形态）。实测：面板右缘 1352→1254（viewport 1280），完整可见。
+- 附带诊断结论：网页全屏功能本体正常（点击后播放器铺满窗口、`document.fullscreenElement` 保持 null 不触发系统全屏；截图存证）；用户报告的三现象中「网页全屏消失」= 旧页面未刷新（PWA SW 旧缓存，强刷即现）、「右上角三按钮无反应」= 网页全屏激活时播放器 z-index 盖住顶栏（B 站同款设计行为，退出网页全屏即恢复），非缺陷。
+- 门禁：npm run build ✓。
+---
 ## feat(web): 播放器双全屏——补网页全屏（铺满客户端窗口），与系统全屏并存（2026-09-17 第二百九十二笔）
 
 执行 AI：GLM-5.3-Flash（主代理）
