@@ -998,13 +998,16 @@ button.save-btn {
 .s-toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  /* 排序胶囊中心与侧栏「相册」项中心同高（静止态实测定值；2026-09-04 随类型行
-     重校连锁：padding 2px+无 margin → margin 1.5px，实测偏差 +0.5px） */
+  /* 排序行已删（2026-09-17 拍板：排序三档进「更多筛选」面板首行），行内只剩
+     「更多筛选」钮——space-between 随左子元素消亡改为 flex-end 右对齐（与相册页
+     筛选钮同行右端位置一致）；margin-top 维持原排序行锚定值（行高不变，
+     分区胶囊行位置不受影响。原排序胶囊中心↔侧栏「相册」项锚位随行删撤） */
+  justify-content: flex-end;
   margin-top: 1.5px;
   padding: 0 24px;
 }
-.s-sort { display: flex; align-items: center; gap: 6px; }
+/* .s-sort 排序胶囊行随 2026-09-17 对齐拍板消亡，规则已删；
+   .sort-pill 保留——作者管理页（AuthorsPage）排序行仍在用 */
 .sort-pill { padding: 8px 16px; border-radius: 8px; font-size: 14px; color: var(--text-main); white-space: nowrap; flex: none; }
 .sort-pill:hover { color: var(--accent-deep); }
 .sort-pill.active {

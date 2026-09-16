@@ -3,17 +3,20 @@ import { useLocation, useNavigate } from 'react-router'
 import type { AssetSummary } from '@/api/generated'
 import { MediaCard } from '@/components/media/MediaCard'
 import { InfiniteTail } from '@/components/media/InfiniteTail'
+import { PanelFilters } from '@/components/filters/PanelFilters'
 import { Pill } from '@/components/ui/pill'
 import { ChevronDownIcon } from '@/components/shell/icons'
 import { DEFAULT_PAGE_SIZE, LOCALE_ZH } from '@/lib/constants'
 import { groupAlbumsByDate } from '@/lib/album-grouping'
+import { isPanelActive } from '@/lib/panel-filters'
 import { ALBUMS_PATH, assetDetailWithSearch, type OverlayDetailState } from '@/lib/route-keys'
 import { useAutoMore } from '@/hooks/use-auto-more'
+import { panelAssetParams, usePanelFilters } from '@/hooks/use-panel-filters'
 import {
   assetToCard,
   useAssetsInfinite, useAssetFacets, facetToOptions,
   type FacetOptionKind,
-  type AssetSort, type MediaType, type Partition,
+  type AssetListParams, type MediaType, type Partition,
 } from '@/hooks/use-assets'
 
 /**
@@ -33,8 +36,11 @@ import {
  *   - 类型 = MediaType 四档（含全部）。
  * 计数口径：每个维的候选计数都"排自身"（忽略该维自身选择）——四个 facets
  * 请求各缺一个自己的参数，任何一维的徽标/值行都是排自身计数。
- * 排序映射（文案=原型）：精选=default / 最新=fileDate desc / 最旧=fileDate asc /
- * 按名称=name asc。
+ * 排序与面板七行（排序三档/顺位/播放次数/文件大小/时间范围/标签模式/标签）
+ * 口径单源 lib/panel-filters.ts + hooks/use-panel-filters.ts——2026-09-17
+ * 用户拍板与搜索页「更多筛选」面板内容对齐同构（排序 默认/观看次数/文件大小，
+ * 「默认」=default 即时间排序；原页内排序行与面板 分区/类型 两行撤除，
+ * 分区/类型仍由页内维度胶囊承担）。
  * 网格时间分区（原型 #5）：口径单源 lib/album-grouping.ts（按 modifiedAt 的
  * dateLabel 分组、组间按组首时间降序）；胶囊切换只改变 items，
  * 分组是其上的纯函数。
@@ -51,14 +57,6 @@ const DIM_LABELS: Record<DimKey, string> = {
   character: '角色',
   type: '类型',
 }
-
-/** 排序档（文案与原型一致）→ 协议 sort/order 参数 */
-/** 排序档（2026-09-17 用户拍板对齐手机任务1三档：默认/观看次数/文件大小；收进「更多筛选」面板首行） */
-const SORTS: { label: string; sort: AssetSort; order: 'asc' | 'desc' }[] = [
-  { label: '默认', sort: 'default', order: 'desc' },
-  { label: '观看次数', sort: 'viewCount', order: 'desc' },
-  { label: '文件大小', sort: 'sizeBytes', order: 'desc' },
-]
 
 /** 值行超过该数量（含「全部」）默认收起两行（原型交互阈值） */
 const VALUE_COLLAPSE_THRESHOLD = 9
@@ -81,18 +79,20 @@ export default function AlbumsPage() {
   // 筛选值行默认收起（2026-09-17 用户拍板「元素1默认收起，最右侧加筛选」）：
   // 有选中值时自动展开并点亮按钮（不做筛选=默认列表），手动开合走 filterOpen
   const [filterOpen, setFilterOpen] = useState(false)
-  // 「更多筛选」面板开合（2026-09-17：面板首行=排序三档，形态对齐搜索页同款组件）
+  // 「更多筛选」面板开合：面板=与搜索页同一共享组件 PanelFilters（首行排序三档，
+  // 其后 顺位/播放次数/文件大小/时间范围/标签模式/标签），状态在 usePanelFilters
   const [panelOpen, setPanelOpen] = useState(false)
-  const [sortIdx, setSortIdx] = useState(0)
 
-  const sort = SORTS[sortIdx]
+  const panel = usePanelFilters()
 
-  // 是否有筛选生效（分区「全部」为缺省不算筛选）：有则值行自动展开、筛选钮点亮
+  // 是否有筛选生效（分区「全部」为缺省不算筛选）：页面维或面板任一非缺省即
+  // 值行自动展开、筛选钮点亮（面板口径单源 isPanelActive）
   const hasFilter =
     partition !== DEFAULT_PARTITION ||
     authorSel !== null ||
     characterSel !== null ||
-    mediaType !== null
+    mediaType !== null ||
+    isPanelActive(panel.state)
 
   // 作者行选中 → GET /assets 参数（source 与 authorId 二选一）
   const authorParams = useMemo(
@@ -115,18 +115,18 @@ export default function AlbumsPage() {
     [characterSel],
   )
 
-  // 内容网格：四维选择 → GET /assets 参数（分区三态开关映射见 hooks 注释）
-  const listParams = useMemo(
+  // 内容网格：页面维 + 面板七行选择 → GET /assets 参数（分区三态开关映射见
+  // hooks 注释；排序/顺位/区间/标签映射单源 panelAssetParams，与搜索页同口径）
+  const listParams = useMemo<AssetListParams>(
     () => ({
       ...(partition === 'all' ? { includeCos: true } : partition === 'cos' ? { cosOnly: true } : {}),
       ...authorParams,
       ...characterParams,
       ...(mediaType ? { mediaType } : {}),
-      sort: sort.sort,
-      order: sort.order,
+      ...panelAssetParams(panel.state),
       limit: DEFAULT_PAGE_SIZE,
     }),
-    [partition, authorParams, characterParams, mediaType, sort],
+    [partition, authorParams, characterParams, mediaType, panel.state],
   )
 
   const {
@@ -324,38 +324,23 @@ export default function AlbumsPage() {
             {expanded ? '收起 ⌃' : '展开 ⌄'}
           </button>
         ) : null}
-        {/* 更多筛选面板（形态对齐搜索页 search-filters）：首行=排序三档（2026-09-17 用户拍板），
-            其后为分区/类型两行；作者/角色行留在页内胶囊（点维度胶囊弹开）不进面板 */}
-        <div className={`search-filters${panelOpen ? '' : ' hidden'}`}>
-          <div className="f-row">
-            <span className="f-label">排序</span>
-            <div className="f-opts">
-              {SORTS.map((s, i) => (
-                <Pill key={s.label} active={sortIdx === i} onClick={() => setSortIdx(i)}>
-                  {s.label}
-                </Pill>
-              ))}
-            </div>
-          </div>
-          <div className="f-row">
-            <span className="f-label">分区</span>
-            <div className="f-opts">
-              <Pill active={partition === 'all'} onClick={() => setPartition('all')}>全部</Pill>
-              <Pill active={partition === 'regular'} onClick={() => setPartition('regular')}>常规</Pill>
-              <Pill active={partition === 'cos'} onClick={() => setPartition('cos')}>COS</Pill>
-            </div>
-          </div>
-          <div className="f-row">
-            <span className="f-label">类型</span>
-            <div className="f-opts">
-              <Pill active={mediaType === null} onClick={() => setMediaType(null)}>全部</Pill>
-              <Pill active={mediaType === 'image'} onClick={() => setMediaType('image')}>图片</Pill>
-              <Pill active={mediaType === 'animated_image'} onClick={() => setMediaType('animated_image')}>动图</Pill>
-              <Pill active={mediaType === 'video'} onClick={() => setMediaType('video')}>视频</Pill>
-            </div>
-          </div>
-        </div>
-        {/* 排序组已收进「更多筛选」面板首行（2026-09-17 用户拍板） */}
+        {/* 更多筛选面板（与搜索页同一共享组件 PanelFilters——2026-09-17 用户拍板
+            两页面板内容对齐同构）：首行排序三档 + 顺位/播放次数/文件大小/时间范围/
+            标签模式/标签；原面板 分区/类型 两行撤除（页内维度胶囊已承担），作者/角色
+            行留在页内胶囊（点维度胶囊弹开）不进面板 */}
+        <PanelFilters
+          hidden={!panelOpen}
+          state={panel.state}
+          tagPool={panel.tagPool}
+          tagInputOpen={panel.tagInputOpen}
+          setFilter={panel.setFilter}
+          onToggleTag={panel.toggleTag}
+          onRemoveTag={panel.removeTag}
+          onOpenTagInput={panel.openTagInput}
+          onCloseTagInput={panel.closeTagInput}
+          onAddTag={panel.addTag}
+        />
+        {/* 页内排序行与面板 排序/分区/类型 三行已撤（2026-09-17 对齐拍板） */}
       </section>
 
       {/* 时间分区组：组头（今天/昨天/周X/yyyy-MM-dd + N 项）+ 组内网格（保持原序） */}
