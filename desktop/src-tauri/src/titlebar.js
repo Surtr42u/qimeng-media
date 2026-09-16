@@ -14,9 +14,13 @@
   if (window.__QIMENG_TITLEBAR__) return;
   window.__QIMENG_TITLEBAR__ = true;
 
-  var tauriWin = window.__TAURI__ && window.__TAURI__.window;
-  var appWindow = tauriWin && tauriWin.getCurrentWindow ? tauriWin.getCurrentWindow() : null;
-  if (!appWindow) return; // 拿不到句柄则静默退化：三按钮维持装饰原状，托盘仍可退出
+  // 惰性解析窗口句柄：初始化脚本可能先于 Tauri 内部 __TAURI__ 注入执行
+  // （此前脚本顶部直接读 __TAURI__，取不到就整体退出 → 三按钮永远无反应）。
+  // 点击/拖拽必然发生在页面加载完成之后，届时再取即可。
+  function getAppWindow() {
+    var t = window.__TAURI__ && window.__TAURI__.window;
+    return t && t.getCurrentWindow ? t.getCurrentWindow() : null;
+  }
 
   // —— ① 顶栏三按钮：装饰件转真按钮 ——
   // 用捕获阶段监听，冒泡前就接管；目标按钮本身无 React 行为，无事件冲突
@@ -25,10 +29,14 @@
     function (e) {
       var btn = e.target && e.target.closest && e.target.closest('button.win-btn');
       if (!btn) return;
+      var aw = getAppWindow();
+      var aw = getAppWindow();
+      if (!aw) return;
       var t = btn.getAttribute('title');
-      if (t === '最小化') appWindow.minimize();
-      else if (t === '最大化') appWindow.toggleMaximize();
-      else if (t === '关闭') appWindow.close();
+      document.title = 'DBG click:' + t + ' tauri=' + (aw ? 'ok' : 'null');
+      if (t === '最小化') aw.minimize();
+      else if (t === '最大化') aw.toggleMaximize();
+      else if (t === '关闭') aw.close();
     },
     true
   );
@@ -45,9 +53,11 @@
       if (!target || !target.closest) return;
       if (!target.closest('header')) return;
       if (target.closest(INTERACTIVE_SELECTOR)) return;
+      var aw = getAppWindow();
+      if (!aw) return;
       e.preventDefault(); // 阻止拖动时选中文字
-      if (e.detail === 2) appWindow.toggleMaximize();
-      else appWindow.startDragging();
+      if (e.detail === 2) aw.toggleMaximize();
+      else aw.startDragging();
     },
     true
   );
