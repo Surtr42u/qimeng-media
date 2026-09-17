@@ -8,6 +8,7 @@ import { STATUS_POLL_INTERVAL_MS } from '@/lib/constants'
 import { formatBytes, formatDateTime } from '@/lib/format'
 import { Line, LineChart, ResponsiveContainer, Tooltip, YAxis } from 'recharts'
 import { TIP_STYLE, TrendLegend } from '@/components/data/chart-shared'
+import { MAINTENANCE_FILES_PATH } from '@/lib/route-keys'
 
 /** 曲线采样：最近 2 分钟、每 2 秒一点（60 点）；与轮询周期（2s）耦合 */
 const RATE_WINDOW = 60
@@ -191,7 +192,7 @@ export default function MaintenancePage() {
         <p>文件管理与客户端异常排查</p>
       </div>
       <div className="entry-grid">
-        <div className="entry-card entry-card--link" onClick={() => navigate('/app/maintenance/files')}>
+        <div className="entry-card entry-card--link" onClick={() => navigate(MAINTENANCE_FILES_PATH)}>
           <div className="entry-head">
             <FolderMonitorIcon />
             <h3>文件管理</h3>

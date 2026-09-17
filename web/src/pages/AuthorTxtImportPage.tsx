@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router'
 import { TxtAuthorImportCard } from '@/components/manage/TxtAuthorImportCard'
 import { Pill } from '@/components/ui/pill'
+import { MAINTENANCE_FILES_PATH } from '@/lib/route-keys'
 
 /**
  * 作者 TXT 导入子页（数据管理 hub「作者 TXT 导入」卡 →
@@ -13,7 +14,7 @@ export default function AuthorTxtImportPage() {
   return (
     <div className="page" id="page-maintenance-files-authors-txt">
       <div className="settings-actions">
-        <Pill onClick={() => navigate('/app/maintenance/files')}>← 返回数据管理</Pill>
+        <Pill onClick={() => navigate(MAINTENANCE_FILES_PATH)}>← 返回数据管理</Pill>
       </div>
       <div className="page-head">
         <h2>作者 TXT 导入</h2>

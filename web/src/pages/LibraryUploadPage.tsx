@@ -3,6 +3,7 @@ import { DirBrowser } from '@/components/manage/DirBrowser'
 import { UploadCard } from '@/components/manage/UploadCard'
 import { Pill } from '@/components/ui/pill'
 import { useLibraries } from '@/hooks/use-libraries'
+import { MAINTENANCE_FILES_PATH } from '@/lib/route-keys'
 
 /**
  * 上传子页（数据管理 hub「上传文件」卡 → /app/maintenance/files/upload）：
@@ -17,7 +18,7 @@ export default function LibraryUploadPage() {
   return (
     <div className="page" id="page-maintenance-files-upload">
       <div className="settings-actions">
-        <Pill onClick={() => navigate('/app/maintenance/files')}>← 返回数据管理</Pill>
+        <Pill onClick={() => navigate(MAINTENANCE_FILES_PATH)}>← 返回数据管理</Pill>
       </div>
       <div className="page-head">
         <h2>上传文件</h2>

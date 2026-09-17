@@ -13,6 +13,10 @@ export const HOME_PATH = '/app/home'
 /** 相册页路由（F5 列表↔详情叠加组第二个底衬列表键；Sidebar/后续引用一律走此常量） */
 export const ALBUMS_PATH = '/app/albums'
 
+/** 数据管理 hub 路由（库管理/上传/作者导入/备份四个子页的「← 返回数据管理」
+ *  共用入口；曾散写 5 处，2026-09-17 全检后收口至此，子页路径字面量归 router.tsx） */
+export const MAINTENANCE_FILES_PATH = '/app/maintenance/files'
+
 /** 集合子页 kind（路由段 /app/collection/:kind/:name） */
 export const COLLECTION_TAG = 'tag'
 export const COLLECTION_AUTHOR = 'author'
