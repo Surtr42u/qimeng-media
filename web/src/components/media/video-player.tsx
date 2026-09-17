@@ -156,6 +156,9 @@ export default function VideoPlayer({
       // 官方 option（artplayer.org/document option#fullscreenweb），控制栏独立按钮
       fullscreenWeb: true,
       highlight: initial.highlights,
+      // 默认静音（2026-09-17 用户拍板）：打开视频初始 muted，点控制栏音量/取消
+      // 静音后正常发声（官方 option#muted，types/option.d.ts）
+      muted: true,
     })
 
     // 倍速菜单文案：官方 selector 标签生成用 toFixed(1)，0.75/1.25 显示成

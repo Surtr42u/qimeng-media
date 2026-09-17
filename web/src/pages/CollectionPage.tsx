@@ -33,7 +33,7 @@ import { assetDetail } from '@/lib/route-keys'
  * 选中状态拼进 useAssetsInfinite 参数（work/character/mediaType，协议单值参数，
  * 故每维单选：点已选胶囊取消、点同行另一胶囊切换）。交互对齐旧版：点值胶囊
  * 只更新选中不收起（多选不退出）、点「收起 ▲」折叠且区域完全隐藏、点维度胶囊
- * 再展开。
+ * 再展开。初始默认收起（2026-09-17 用户拍板，对齐相册/搜索页口径）。
  */
 
 /** 「 ·COS」后缀 = format.ts authorDisplayName 给 COS 作者追加的展示标识。
@@ -72,7 +72,9 @@ export default function CollectionPage() {
   const [attrSel, setAttrSel] = useState<string | null>(null)
   const [mediaType, setMediaType] = useState<MediaType | null>(null)
   const [dim, setDim] = useState<'attr' | 'type'>('attr')
-  const [expanded, setExpanded] = useState(true)
+  // 默认收起（2026-09-17 用户拍板，对齐相册/搜索页「默认收起+按钮点亮」口径）；
+  // 点维度胶囊/切维度仍按旧版交互展开
+  const [expanded, setExpanded] = useState(false)
 
   // 路由复用组件实例（/app/collection/:kind/:name 只换参数）：作者切换时重置
   // 筛选，防止上一作者页的选中胶囊泄漏到新作者页。用 React 官方「渲染期调整
@@ -85,7 +87,7 @@ export default function CollectionPage() {
     setAttrSel(null)
     setMediaType(null)
     setDim('attr')
-    setExpanded(true)
+    setExpanded(false) // 重置=回默认态，默认收起（同上）
   }
 
   // 胶囊计数（排自身口径）：作品/角色维请求缺自身参数（带类型选择），类型维

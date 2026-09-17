@@ -14,6 +14,13 @@
 ---
 ---
 ---
+## fix(web): 集合子页筛选胶囊默认收起+视频播放器默认静音（2026-09-17 第三百零三笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理）
+
+- 用户反馈「这几个榜点进去后默认弹开胶囊，应该默认不弹开的」：定位依据——榜单子页本体 RanksPage（/app/ranks/*）无任何胶囊（ContentRankGrid/RankRowList 均纯渲染组件、无展开态），「胶囊默认弹开」实为榜单/数据页点行进入的**集合子页 CollectionPage** 作者筛选卡 `expanded` 初始 `useState(true)`。改默认收起：初始值与路由复用换作者时的重置分支均改 `setExpanded(false)`（对齐相册/搜索页「默认收起+钮点亮」口径）；点维度胶囊展开、切维度展开等既有交互不动。
+- 用户拍板「改个默认静音」：video-player.tsx ArtPlayer 构造项加 `muted: true`（node_modules artplayer types/option.d.ts 第 98-100 行确认 `muted?: boolean`，非凭记忆）——打开视频初始静音，用户手动点开声音后正常发声。组件原无音量/静音记忆逻辑，按缺省即静音处理。
+- 门禁：npm run build ✓ + vitest 162/162 ✓ + oxlint 18 warnings=基线 0 errors（改动文件无新增告警）；默认态为组件 useState 初始值（非纯函数），按纪律不加单测；浏览器验证由主代理负责。PWA 踩坑照旧：SW 缓存旧构建，实测前必须注销 SW/强刷才能看到新版。
 ---
 ## fix(web): 数据页三榜卡等高对齐——标签榜空白改行距均分填充（2026-09-17 第三百零二笔）
 
