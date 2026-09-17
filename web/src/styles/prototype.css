@@ -589,10 +589,11 @@ button.seg,
 
 /* 排行榜卡 */
 .rank-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-/* --2（数据页三榜卡行）：各卡按内容自高、不互相拉伸——标签榜行是单行（名+计数）而
-   作者榜/作者总览行带副标题（双行更高），默认 stretch 会把矮卡撑出大片卡内底部
-   空白（2026-09-17 用户反馈）；代价是本行卡底沿不齐，属内容差异的预期形态 */
-.rank-grid--2 { align-items: start; }
+/* --2（数据页三榜卡行）：三卡等高对齐（2026-09-17 用户拍板「长宽高视觉对齐」，推翻
+   第三百零一笔内容自高方案——卡底沿不齐不合预期）。标签榜内容天然矮一截（单行行 vs
+   作者行带副标题双行），由 ul 弹性填充 + 行距均分吸收，卡内不再留整块底部空白 */
+.rank-grid--2 .rank-card { display: flex; flex-direction: column; }
+.rank-grid--2 .rank-card ul { flex: 1; display: flex; flex-direction: column; justify-content: space-between; }
 .rank-stack { display: flex; flex-direction: column; gap: 16px; }
 .rank-head { display: flex; align-items: center; justify-content: space-between; }
 .rank-head a { font-size: 12px; color: var(--text-sub); text-decoration: none; }
