@@ -42,7 +42,7 @@ func TestParseEncodersHasLibwebp(t *testing.T) {
 		},
 		{
 			name: "描述文本提及libwebp不算（第2列才是编码器名）",
-			in: " V....D fakeenc             wrapper for libwebp stuff\n",
+			in:   " V....D fakeenc             wrapper for libwebp stuff\n",
 			want: false,
 		},
 		{
