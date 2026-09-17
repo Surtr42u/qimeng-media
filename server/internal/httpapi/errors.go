@@ -49,6 +49,7 @@ const (
 	codeDataDirConflict    = "DATA_DIR_CONFLICT"
 	codeConflict           = "CONFLICT"
 	codeBadRequest         = "BAD_REQUEST"
+	codeRateLimited        = "RATE_LIMITED"
 )
 
 // contentTypeJSON 全部 JSON 响应的 Content-Type 唯一取值（charset 显式

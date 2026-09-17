@@ -146,6 +146,7 @@ type Server struct {
 	logger    *slog.Logger
 
 	authState  *authState
+	authLimit  *authLimiter
 	sse        *events.Handler
 	scanStates *scanStateMap // 库扫描态（内存跟踪；库表无此列，scanner 接线后回写）
 	// spa 是 Web SPA 构建产物处理器（nil = 静态目录不可用，回退内嵌验收页）。
@@ -203,6 +204,7 @@ func New(deps Deps) (*Server, error) {
 		now:        now,
 		logger:     logger,
 		authState:  newAuthState(),
+		authLimit:  newAuthLimiter(authRateLimitMax, authRateLimitWindow),
 		scanStates: newScanStateMap(),
 	}
 	// 服务重启后 Bearer token 仍有效：从库加载首行 token 哈希到内存
@@ -266,8 +268,20 @@ func New(deps Deps) (*Server, error) {
 	// healthcheck 与容器编排继续用根路径，三端 SDK 只看 /api/v1。
 	mux.HandleFunc("GET /healthz", Healthz)
 	mux.HandleFunc("GET /readyz", s.GetApiV1Readyz)
-	s.handler = &topRouter{s: s, api: api}
+	s.handler = nosniffHeader(&topRouter{s: s, api: api})
 	return s, nil
+}
+
+// nosniffHeader 给所有响应补 X-Content-Type-Options: nosniff
+// （SECURITY 安全响应头基线：MIME 嗅探防护——浏览器不再把声明的
+// Content-Type 之外的内容"猜"成可执行类型，图片/文本响应被注入
+// HTML/JS 的攻击面直接关闭）。与 SSE/媒体流的显式 Content-Type 设置
+// 不冲突：本头只约束浏览器嗅探行为，不改变服务端声明的类型。
+func nosniffHeader(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		next.ServeHTTP(w, r)
+	})
 }
 
 // Handler 返回完整路由与鉴权链的 http.Handler。

@@ -34,19 +34,32 @@ paths:
       responses:
         "201": { description: 创建成功，返回 token（仅此一次明文显示）, content: { application/json: { schema: { $ref: "#/components/schemas/AuthToken" } } } }
         "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/RateLimited" }
   /api/v1/auth/verify:
     post:
       summary: 校验 token 有效性
       responses:
         "204": { description: 有效 }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/auth/logout:
+    post:
+      summary: 登出（吊销当前会话 token）
+      description: |
+        多会话模型下的单设备登出：吊销请求所携带的 Bearer token 对应的
+        会话（auth_sessions 行删除），其他设备的会话不受影响。幂等语义：
+        token 已吊销后再调用会先被鉴权中间件以 401 拦下，走到本端点即
+        视为成功，恒 204。
+      responses:
+        "204": { description: 当前会话已吊销 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /api/v1/auth/login:
     post:
       summary: 密码登录（换发 token；换设备/清浏览器缓存后找回访问权）
       description: |
         用管理密码换取新 token——解决「token 仅 setup 明文一次」在换浏览器、
-        清缓存、新设备场景下的死锁。单用户单 token 模型：登录成功即重铸
-        token，旧 token 随之失效（旧浏览器需重新登录）。
+        清缓存、新设备场景下的死锁。多会话模型（2026-09-17 起，migration
+        0011 auth_sessions）：每次登录签发独立会话 token，既有会话不失效
+        ——多端（Web/App）可同时在线互不挤兑；吊销单设备走 /auth/logout。
       security: []
       requestBody:
         required: true
@@ -56,6 +69,7 @@ paths:
       responses:
         "200": { description: 登录成功，返回新 token, content: { application/json: { schema: { $ref: "#/components/schemas/AuthToken" } } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
 
   # ---------- 认证（开发专用，勿用于生产） ----------
   /api/v1/auth/dev-login:
@@ -63,15 +77,17 @@ paths:
       summary: 开发模式免密登录（仅 auth_dev_mode 开启时可用）
       description: |
         仅服务端 config/auth_dev_mode=true 时启用：免密码直接签发 token
-        （与 /auth/login 同语义：签发即重铸，旧 token 随之失效；未初始化时
-        自动创建 admin 占位用户）。未开启时一律 404——生产环境该端点不存在
-        于语义层面，前端据此回退正常 setup/login 表单，行为零变化。
+        （与 /auth/login 同为多会话语义：签发独立会话 token，既有会话不
+        失效；未初始化时自动创建 admin 占位用户）。未开启时一律 404——
+        生产环境该端点不存在于语义层面，前端据此回退正常 setup/login
+        表单，行为零变化。
         仅限本机开发调试（用户约定：项目未完成前免密码直奔 UI），
         禁止配合公网/隧道使用（SECURITY.md 红线 5 单点例外说明）。
       security: []
       responses:
         "200": { description: 签发成功，返回新 token, content: { application/json: { schema: { $ref: "#/components/schemas/AuthToken" } } } }
         "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
 
   # ---------- 库（媒体目录） ----------
   /api/v1/libraries:
@@ -840,6 +856,7 @@ components:
     Unauthorized: { description: 未认证,   content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
     NotFound:    { description: 不存在,   content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
     Conflict:    { description: 冲突,     content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    RateLimited: { description: 尝试过于频繁（auth 端点进程内限速）, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
 
   schemas:
     Error:
