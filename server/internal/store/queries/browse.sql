@@ -36,6 +36,10 @@
 -- just (sort_key, asset_id) of the last row of the previous page.
 -- 'default' falls back to addedDate for M1 (the real default sort is
 -- the recommendation algorithm, which lands with M2/M3).
+--   [2026-09-17 superseded] 'default' no longer reaches this CASE: the
+--   /assets handler aliases sort=default to the fileDate tier first
+--   (DOMAIN_RULES §3 -- "默认"=文件时间). 'addedDate' still hits the
+--   ELSE below as the explicit 入库时间 tier.
 --
 -- ============ Cursor predicate ============
 -- Strict tuple comparison (sort_key, asset_id) < (or >) the cursor,

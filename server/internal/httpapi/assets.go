@@ -15,6 +15,13 @@ import (
 	"qimeng-media/server/internal/store/db"
 )
 
+// 「默认」排序的协议枚举字面值（openapi GET /assets sort 枚举 default 档；
+// 协议侧改动须同步此处，反之亦然）。
+const sortKeyDefault = "default"
+
+// 「文件日期」排序的协议枚举字面值（mtime 档）——「默认」在服务端别名为本档。
+const sortKeyFileDate = "fileDate"
+
 // GetApiV1Assets 资产列表：动态筛选 + 排序 + keyset 分页。
 // 语义唯一权威是 docs/DOMAIN_RULES §3；SQL 侧的取舍见
 // internal/store/queries/browse.sql 文件头。
@@ -28,9 +35,18 @@ func (s *Server) GetApiV1Assets(w http.ResponseWriter, r *http.Request, params g
 	if !ok {
 		return
 	}
-	sortKey := "default"
+	sortKey := sortKeyDefault
 	if params.Sort != nil {
 		sortKey = string(*params.Sort)
+	}
+	// 「默认」排序语义 = 文件时间（DOMAIN_RULES §3，2026-09-17 晚拍板）：
+	// default 档在此单点别名到 fileDate 档（mtime），不再回退入库时间——
+	// 单机形态整批一次性扫描的库入库时间趋同且顺序=扫描顺序，按入库时间排
+	// 会让默认视图被扫描顺序支配（同目录同类型整段聚堆、跨端表现随机）。
+	// 别名收在 handler 而非 browse.sql 加 WHEN 分支：sqlc 解析器对 CASE 内
+	// 新增参数行敏感（实测报错），且别名是协议语义层的事，不该进 SQL。
+	if sortKey == sortKeyDefault {
+		sortKey = sortKeyFileDate
 	}
 	asc := params.Order != nil && *params.Order == gen.Asc
 
