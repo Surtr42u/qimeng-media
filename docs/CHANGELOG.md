@@ -11,6 +11,17 @@
 
 ---
 ---
+---
+## fix(desktop): 全屏死锁止血——Tauri 壳内播放器只留网页全屏+清 titlebar 调试残留（2026-09-17 第三百零五笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- 用户实测：桌面壳（Tauri 2/WebView2，无边框窗口）播放器点「全屏」再切「网页全屏」后整窗卡死；卡死时进程全存活且 **CPU 零增量**（3 秒采样实证）＝阻塞死锁非忙等。只读研究定案根因＝壳层 tauri-runtime-wry 内建「HTML5 全屏联动宿主窗口」实现：退出全屏过渡期 tao `set_fullscreen` 同步 `SetWindowPos`→`WM_SIZE`→wry 同步 COM `controller.SetBounds` 回打 WebView2，与其自身全屏过渡互等；与 tauri#11254 同型（标记关闭但 #11355 只改 JS 命令 async，原生回调路径未修）。web 侧 ArtPlayer 用法符合官方文档、浏览器内正常，**web 无缺陷**。
+- 止血（研究方案 A）：`video-player.tsx` 构造项 `fullscreen: !('__TAURI__' in window)`——桌面壳内系统全屏按钮不再出现，只留网页全屏（铺满窗口）；死锁触发路径（requestFullscreen/exitFullscreen→ContainsFullScreenElementChanged→SetFullscreen）归零。浏览器环境不受影响（双全屏照旧）。
+- 顺带清理（研究附赠发现）：`desktop/src-tauri/src/titlebar.js` 删重复 `var aw` 声明与调试残留行 `document.title='DBG click:...'`（此前每点窗口钮都会改写窗口标题）。桌面 exe 已 `cargo build --release` 增量重编。
+- 跟进正解（未立项，留拍板）：研究方案 B＝壳内系统全屏改走 Tauri 窗口 `setFullscreen` API（capabilities 加权限+Esc 接线，约半天工作量），恢复真系统全屏；方案 C（升级依赖）无可指望的官方修复不取。
+- 门禁：npm run build ✓；cargo build --release ✓。
+
 ## fix(app): 相册缺省分区含COS对齐web口径核验+筛选面板三桶行一行化（2026-09-17 第三百零四笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理）

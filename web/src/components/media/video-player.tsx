@@ -143,6 +143,8 @@ export default function VideoPlayer({
     // 倍速档位表是静态属性（构造时读取），必须先覆盖再实例化
     Artplayer.PLAYBACK_RATE = PLAYBACK_RATES
     playGateRef.current = 'idle' // 新播放器实例 = 新播放会话，闸门归零
+    // 桌面壳检测（Tauri v2 withGlobalTauri 注入 window.__TAURI__）：壳内禁用系统全屏
+    const isTauriShell = '__TAURI__' in window
     const art = new Artplayer({
       container,
       url: initial.src,
@@ -151,7 +153,10 @@ export default function VideoPlayer({
       lang: 'zh-cn',
       setting: true, // 设置面板开关（倍速入口依赖）
       playbackRate: true,
-      fullscreen: true,
+      // 系统全屏在桌面壳内禁用（2026-09-17 实测卡死+研究定案）：壳层「HTML5 全屏
+      // 联动宿主窗口」在退出全屏过渡期同步回打 WebView2 互等死锁（tauri#11254 同型、
+      // 未真修）；桌面内只留网页全屏（铺满窗口），根治（壳层窗口 API 接管）留跟进批
+      fullscreen: !isTauriShell,
       // 网页全屏（铺满页面=桌面客户端里「占满窗口」，与系统全屏并存两种）：
       // 官方 option（artplayer.org/document option#fullscreenweb），控制栏独立按钮
       fullscreenWeb: true,

@@ -30,10 +30,8 @@
       var btn = e.target && e.target.closest && e.target.closest('button.win-btn');
       if (!btn) return;
       var aw = getAppWindow();
-      var aw = getAppWindow();
       if (!aw) return;
       var t = btn.getAttribute('title');
-      document.title = 'DBG click:' + t + ' tauri=' + (aw ? 'ok' : 'null');
       if (t === '最小化') aw.minimize();
       else if (t === '最大化') aw.toggleMaximize();
       else if (t === '关闭') aw.close();
