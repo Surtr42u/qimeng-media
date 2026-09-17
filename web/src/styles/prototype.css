@@ -589,6 +589,10 @@ button.seg,
 
 /* 排行榜卡 */
 .rank-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+/* --2（数据页三榜卡行）：各卡按内容自高、不互相拉伸——标签榜行是单行（名+计数）而
+   作者榜/作者总览行带副标题（双行更高），默认 stretch 会把矮卡撑出大片卡内底部
+   空白（2026-09-17 用户反馈）；代价是本行卡底沿不齐，属内容差异的预期形态 */
+.rank-grid--2 { align-items: start; }
 .rank-stack { display: flex; flex-direction: column; gap: 16px; }
 .rank-head { display: flex; align-items: center; justify-content: space-between; }
 .rank-head a { font-size: 12px; color: var(--text-sub); text-decoration: none; }
