@@ -11,7 +11,13 @@
 
 ---
 ---
----
+## fix(app): 相册缺省分区含COS对齐web口径核验+筛选面板三桶行一行化（2026-09-17 第三百零四笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理）
+
+- **相册缺省分区含 COS（核验性修复）**：真机现场「相册页 6341 文件（PC 真库 7347）」确诊「没把 COS 的一起算了」。逐层核对 App 链路——`AlbumFilterState` 缺省 `partition = Zone.ALL`、`AlbumFilter.toAssetQuery` 分区 全部=显式 `includeCos=true` / 常规=不传 / COS=`cosOnly=true`（M4-2 批 4acb128 起即此口径）、SdkMediaRepository→SDK 生成物序列化（`includeCos != null` 即入查询串）——**当前 HEAD 代码与 web 口径（HANDOVER_UI 第五笔）完全一致**。8421 隔离实例实测坐实：注册 kind=cos 测试库（%TEMP%\qimeng-cos-test，COS_作者A/作品X 等 4 图，ffmpeg 生成）后，curl 三态 94/98/4、facets partition=all 三桶 all=98/regular=94/cos=4；qimeng_api35 模拟器装本批 debug 包（显式 AVD，未碰真机/雷电）实测相册页缺省「98 文件」且 4 张 COS 图混入「今天」组、「作品 (5)」=出处3∪COS作者2（web 同口径）、logcat 实发 `GET /assets cursor=null limit=60 includeCos=true sort=DEFAULT order=DESC`；切 常规→`GET /assets`（不传分区参数=服务端缺省排除）、切 COS→`cosOnly=true`，隔离浏览不变；下拉刷新后计数仍 98、分组与排序稳定（刷新请求同带 includeCos=true）。**真机 6341 在本批构建上不复现，判定为真机所装旧包（上批排序三档终包之前的版本）**，本批新出终包替换即愈；「facets partition 恒显式传」App 端既有实现维持（logcat 四路 `GET /assets/facets partition=ALL`）。
+- **筛选面板三桶行一行化（用户拍板「都一行即可，微调一下」）**：真机截图 观看次数/点击次数/文件大小 三行第 5 档（>20次/>50MB）掉行。修法：`FilterPill` 水平内边距改用面板局部常量 `FILTER_PILL_HORIZONTAL_PADDING = 10.dp`（原引共享 token ChipHorizontalPadding 14dp），实算 360dp 屏宽三桶行 326/342dp → 286/302dp 单行容纳；不动共享 token、排序方式行（默认/观看次数/文件大小）只松不挤。模拟器实测+uiautomator dump：三行末档与首档同 y（1191/1364/1539），排序行 y=845 三档同行未动坏。
+- 门禁：`assembleDebug assembleRelease testDebugUnitTest :core:model:test :core:ui:lintDebug` 全绿（单测 684/0）；`lintDebug` 全仓存量 1 error（BackupScreen.kt:168 WrongConstant，5ee0c52 批引入，与本批改动零关联，记档待后续批次清偿）。出包（make app-embedded 装配三件套后双形态）：`..\qimeng-相册COS口径+面板一行化-终包-debug双ABI-20260917.apk`（与排序三档终包同形态，模拟器已实测验证）+ `..\qimeng-相册COS口径+面板一行化-终包-release-arm64-20260917.apk`（arm64+R8，按任务纪律未装机，装机验收归主代理）。证据截图 .walk/304-*.png。
 ---
 ---
 ## fix(web): 集合子页筛选胶囊默认收起+视频播放器默认静音（2026-09-17 第三百零三笔）

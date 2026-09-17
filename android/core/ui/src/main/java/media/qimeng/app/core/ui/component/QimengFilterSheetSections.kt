@@ -106,7 +106,9 @@ private fun FilterPill(label: String, selected: Boolean, onClick: () -> Unit) {
             // 无 48dp 最小触达（selectable 无该下限）——旧版 Chip 恰为 30dp 高紧凑触区
             .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
             .height(QimengDimens.ChipHeight)
-            .padding(horizontal = QimengDimens.ChipHorizontalPadding),
+            // 水平内边距用面板局部常量（FILTER_PILL_HORIZONTAL_PADDING 10dp）：
+            // 三桶行一行化拍板（2026-09-17），不再引用页面药丸共享的 ChipHorizontalPadding 14dp
+            .padding(horizontal = FILTER_PILL_HORIZONTAL_PADDING),
         contentAlignment = Alignment.Center,
     ) {
         Text(

@@ -50,6 +50,15 @@ internal val FILTER_PILL_FONT_SIZE = 12.sp
 internal val FILTER_PILL_ROW_SPACING = 4.dp
 
 /**
+ * 面板胶囊水平内边距 10dp（2026-09-17 用户拍板「观看/点击/文件大小三桶行一行化」）：
+ * 原 14dp（[QimengDimens.ChipHorizontalPadding]，页面维度药丸共享 token）下 360dp 屏宽
+ * 减面板左右边距后三桶行第 5 档（>20次 / >50MB）掉行；收紧至 10dp 后 5 档单行放下
+ * （实算约 286/302dp < 320dp 可用宽）。仅面板胶囊局部值，不动共享 token；排序行本就单行，
+ * 收紧只会更宽松不会挤坏。
+ */
+internal val FILTER_PILL_HORIZONTAL_PADDING = 10.dp
+
+/**
  * 万能筛选面板（M4-2A-B3）：全项目唯一实现于 :core:ui（任务A §5.2 组件单源），
  * 分区标题与选项文案逐字照旧版 uiautomator 实录（filter_sheet.txt / filter_sheet_rest.txt）。
  *
