@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router'
 import { BackupCard } from '@/components/manage/BackupCard'
 import { Pill } from '@/components/ui/pill'
+import { MAINTENANCE_FILES_PATH } from '@/lib/route-keys'
 
 /**
  * 备份导入导出子页（数据管理 hub「备份导入导出」卡 →
@@ -13,7 +14,7 @@ export default function BackupImportExportPage() {
   return (
     <div className="page" id="page-maintenance-files-backup">
       <div className="settings-actions">
-        <Pill onClick={() => navigate('/app/maintenance/files')}>← 返回数据管理</Pill>
+        <Pill onClick={() => navigate(MAINTENANCE_FILES_PATH)}>← 返回数据管理</Pill>
       </div>
       <div className="page-head">
         <h2>备份导入导出</h2>

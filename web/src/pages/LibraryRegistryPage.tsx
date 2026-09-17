@@ -10,6 +10,7 @@ import {
   useDeleteLibrary, useLibraries, useRegisterLibrary, useScanLibrary, useSetLibraryEnabled,
 } from '@/hooks/use-libraries'
 import type { Library } from '@/api/generated'
+import { MAINTENANCE_FILES_PATH } from '@/lib/route-keys'
 
 /**
  * 库管理子页（数据管理 hub「库管理」卡 → /app/maintenance/files/libraries）：
@@ -80,7 +81,7 @@ export default function LibraryRegistryPage() {
   return (
     <div className="page" id="page-maintenance-files-libraries">
       <div className="settings-actions">
-        <Pill onClick={() => navigate('/app/maintenance/files')}>← 返回数据管理</Pill>
+        <Pill onClick={() => navigate(MAINTENANCE_FILES_PATH)}>← 返回数据管理</Pill>
       </div>
       <div className="page-head">
         <h2>库管理</h2>

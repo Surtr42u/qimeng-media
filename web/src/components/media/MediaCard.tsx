@@ -30,7 +30,8 @@ export function MediaCard({ id, cover, title, duration, up, date, onClick }: Med
       role={onClick ? 'button' : undefined}
     >
       <div className="card--cover">
-        <img src={cover} alt={title} loading="lazy" />
+        {/* decoding=async：缩略图解码移出主线程（滚动中大量卡片时避免掉帧） */}
+        <img src={cover} alt={title} loading="lazy" decoding="async" />
         {duration ? <span className="card--duration">{duration}</span> : null}
       </div>
       <div className="card--title">{title}</div>

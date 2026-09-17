@@ -17,6 +17,7 @@ import {
   usePrefs,
   useSavePrefs,
 } from '@/hooks/use-prefs'
+import { useAuthLogout } from '@/hooks/use-session'
 
 /**
  * 设置页（原型 #page-settings 移植）。
@@ -40,6 +41,8 @@ const BOUND_HINTS = {
 export default function SettingsPage() {
   const { data } = usePrefs()
   const savePrefs = useSavePrefs()
+  // 登出（ADR-0021 多会话）：吊销本设备会话后清本地态，AuthGate 切回登录门禁
+  const logout = useAuthLogout()
 
   // 客户端配置（扫描/上传卡）：GET 回填 + 本地草稿；保存按钮一次 PUT 全量四字段
   const { data: cfgData } = useConfig()
@@ -195,6 +198,14 @@ export default function SettingsPage() {
           onClick={doSaveConfig}
         >
           {saveConfig.isPending ? '保存中…' : '保存设置'}
+        </button>
+        <button
+          className="save-btn"
+          type="button"
+          disabled={logout.isPending}
+          onClick={() => logout.mutate()}
+        >
+          {logout.isPending ? '登出中…' : '退出登录'}
         </button>
       </div>
     </div>

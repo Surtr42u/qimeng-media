@@ -3,8 +3,8 @@
  */
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { useMutation } from '@tanstack/react-query'
-import { postApiV1AuthDevLogin, postApiV1AuthLogin, postApiV1AuthSetup, postApiV1AuthVerify } from '@/api/generated'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { postApiV1AuthDevLogin, postApiV1AuthLogin, postApiV1AuthLogout, postApiV1AuthSetup, postApiV1AuthVerify } from '@/api/generated'
 import {
   clearToken as clearStoredToken,
   getToken,
@@ -105,5 +105,23 @@ export function useDevLogin() {
     mutationFn: () => unwrapSdkResult(postApiV1AuthDevLogin()),
     // 404/409 是业务预期（dev 模式未开启），重试无意义
     retry: 0,
+  })
+}
+
+/**
+ * 登出：POST /auth/logout 吊销当前会话（ADR-0021 多会话模型——只吊销本
+ * 设备的 token，其他设备不受影响）。onSettled 而非 onSuccess：无论服务端
+ * 吊销成败（网络失败也要完成本地登出，服务端会话留待自然收敛），本地
+ * token 与全部查询缓存都清——AuthGate 据 token 为 null 切回登录门禁。
+ */
+export function useAuthLogout() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => unwrapSdkResult(postApiV1AuthLogout()),
+    retry: 0,
+    onSettled: () => {
+      clearStoredToken()
+      void queryClient.clear()
+    },
   })
 }

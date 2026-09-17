@@ -6,6 +6,7 @@
  */
 
 import { useCallback, useMemo, useState } from 'react'
+import { toast } from 'sonner'
 import type { AssetListParams, AssetSort } from '@/hooks/use-assets'
 import { useCreateTag, useTags } from '@/hooks/use-tags'
 import { newPanelState, type PanelFilterState, type SortOption } from '@/lib/panel-filters'
@@ -70,7 +71,11 @@ export function usePanelFilters() {
         .then((tag) => {
           if (tag.id) setState((s) => (s.tags.includes(tag.id!) ? s : { ...s, tags: [...s.tags, tag.id!] }))
         })
-        .catch(() => {})
+        .catch(() => {
+          // 创建失败（网络/409/500）不再静默：用户视角是「标签神秘没选上」，
+          // toast 报错但不打断筛选流程（输入框照常收起，可重试）
+          toast.error(`标签「${v}」创建失败，请重试`)
+        })
     },
     [tagPool, createTag],
   )
