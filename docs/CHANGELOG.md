@@ -33,6 +33,15 @@
 - 门禁：npm run build ✓；cargo build --release ✓。
 
 ---
+---
+## fix(app): 「默认」档发参同步 fileDate——面板展开单源 withPanelDraft 翻译改道（2026-09-17 第三百零八笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- 与第三百零七笔同一根因的 App 端修复：`AlbumPanelFilter.withPanelDraft`（相册页与首页 COS 流共用的发参单源）把休息档 `AssetSort.DEFAULT` 翻译为 `FILE_DATE` 后再进查询包（SDK 已有 fileDate 序列化 SdkMappers.kt:158）；UI 休息档、hasActiveFilters 点亮判定、面板「默认」选中态均不变，仅发参改道——相册缺省首载与点「默认」+刷新自此均为媒体文件时间降序。
+- 测试：:core:model 三处断言随发参语义更新（默认态发参/排序键映射表/面板草稿透传，期望改 FILE_DATE），:core:model:test 绿；真库预期=相册首屏即媒体时间降序图视频混排（fileDate 实测 31/29），刷新与切胶囊/分区不再出现视频批次顶置。
+- 门禁：assembleDebug/assembleRelease（make app-embedded 出双形态终包）绿。
+
 ## fix(web): 「默认」排序档发参改媒体文件时间 fileDate——修正入库序顶置视频批次的排序语义（2026-09-17 第三百零七笔）
 
 执行 AI：GLM-5.3-Flash（主代理）

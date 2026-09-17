@@ -222,9 +222,9 @@ class AlbumFilterStateTest {
     }
 
     @Test
-    fun `相册页排序默认档降序（2026-09-17 用户拍板：默认选中档=默认，取代 2026-09-15 文件时间拍板）`() {
+    fun `相册页排序默认档降序（2026-09-17 307 笔：「默认」发参=媒体文件时间 fileDate，非协议缺省入库序）`() {
         val query = AlbumFilter.toAssetQuery(AlbumFilterState())
-        assertEquals(AssetSort.DEFAULT, query.sort) // 2026-09-17 拍板变更：协议缺省档
+        assertEquals(AssetSort.FILE_DATE, query.sort)
         assertEquals(SortOrder.DESC, query.order)
     }
 

@@ -175,7 +175,12 @@ fun AssetQuery.withPanelDraft(draft: AlbumPanelDraft, today: LocalDate = LocalDa
             null
         }
     return copy(
-        sort = draft.sort,
+        // 「默认」档发参 = FILE_DATE（媒体文件时间）而非协议缺省键 'default'：拍板原话
+        // 「默认=default 即时间排序那个」的时间语义指媒体时间；协议 'default' 实为入库
+        // 时间（created_at），真库实测入库序把新导入视频批次顶置、日期分组碎裂——
+        // 「点默认+刷新只剩视频」的根因（2026-09-17 第三百零七笔）。UI 休息档仍为
+        // AssetSort.DEFAULT（hasActiveFilters 与面板选中判定不变），仅发参翻译改道。
+        sort = if (draft.sort == AssetSort.DEFAULT) AssetSort.FILE_DATE else draft.sort,
         order = draft.order,
         viewRange = draft.viewRange.toQuery(),
         playRange = draft.playRange.toQuery(),

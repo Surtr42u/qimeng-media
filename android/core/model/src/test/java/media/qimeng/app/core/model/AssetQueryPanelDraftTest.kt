@@ -41,7 +41,7 @@ class AssetQueryPanelDraftTest {
     @Test
     fun `默认草稿 - 面板参数全部不传，排序为默认档降序（2026-09-17 拍板）`() {
         val next = AssetQuery(cosOnly = true).withPanelDraft(AlbumPanelDraft(), today = today)
-        assertEquals(AssetSort.DEFAULT, next.sort) // 2026-09-17 拍板变更：默认选中档=「默认」
+        assertEquals(AssetSort.FILE_DATE, next.sort) // 2026-09-17 307 笔：「默认」档发参=媒体文件时间
         assertEquals(SortOrder.DESC, next.order)
         assertNull(next.viewRange)
         assertNull(next.playRange)
