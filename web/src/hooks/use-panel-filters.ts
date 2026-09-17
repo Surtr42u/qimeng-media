@@ -11,9 +11,12 @@ import { useCreateTag, useTags } from '@/hooks/use-tags'
 import { newPanelState, type PanelFilterState, type SortOption } from '@/lib/panel-filters'
 import { dateRangeFor, PLAYS_TO_RANGE, SIZE_TO_RANGE } from '@/lib/search-mapping'
 
-/** 排序三档文案 → 协议 AssetSort（默认=default 时间排序；协议八排序键全保留，DOMAIN_RULES §3） */
+/** 排序三档文案 → 协议 AssetSort。「默认」=fileDate（媒体文件时间）——拍板原话
+ * 「默认=default 即时间排序那个」的时间语义指媒体时间；协议 'default' 键实为入库
+ * 时间 created_at，真库实测入库序把新导入视频批次顶置、日期分组碎裂（2026-09-17
+ * 第三百零七笔根因）。协议八排序键全保留，DOMAIN_RULES §3。 */
 const SORT_TO_ASSET: Record<SortOption, AssetSort> = {
-  默认: 'default',
+  默认: 'fileDate',
   观看次数: 'viewCount',
   文件大小: 'sizeBytes',
 }
