@@ -594,6 +594,34 @@ func TestAssetListPaginationFilterSort(t *testing.T) {
 	}
 }
 
+// TestAssetListSortDefaultIsFileDate：「默认」排序档 = 文件时间（DOMAIN_RULES
+// §3，2026-09-17 晚拍板）。夹具三资产 created_at 全同（整批一次性扫描形态）
+// 而 mtime 各异——按入库时间排序会退化为 asset_id 字典序（不确定、被扫描
+// 顺序支配），按文件时间则恒为 mtime 降序 c.mp4/b.jpg/a.jpg。断言覆盖
+// 缺省不传、显式 default、显式 fileDate 三种入参形态（别名后应逐一等价）。
+func TestAssetListSortDefaultIsFileDate(t *testing.T) {
+	env := newTestEnv(t)
+	want := "c.mp4 b.jpg a.jpg"
+	for _, q := range []string{"", "?sort=default", "?sort=fileDate"} {
+		resp := env.do(t, "GET", "/api/v1/assets"+q, "")
+		var page gen.AssetPage
+		if err := decodeBody(resp, &page); err != nil {
+			t.Fatalf("解析失败: %v", err)
+		}
+		closeBody(resp)
+		names := make([]string, 0, len(deref(page.Items)))
+		for _, it := range deref(page.Items) {
+			if it.FileName == nil {
+				t.Fatal("条目缺 fileName")
+			}
+			names = append(names, *it.FileName)
+		}
+		if got := strings.Join(names, " "); got != want {
+			t.Fatalf("query %q 默认排序应按 mtime 降序 %q，得到 %q", q, want, got)
+		}
+	}
+}
+
 // TestAssetListAuthorNamesAndDuration：列表端点的卡片增强字段。
 // authorNames = 该资产全部作者显示名（常规∪COS，DOMAIN_RULES 6）；
 // 无作者 = 空数组（协议约定，与字段省略区分，客户端据此回退出处）。

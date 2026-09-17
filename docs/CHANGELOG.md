@@ -13,6 +13,14 @@
 ---
 ---
 ---
+## fix(server): 「默认」排序档服务端别名 fileDate——浏览面缺省排序统一文件时间（2026-09-17 第三百零九笔）
+
+执行 AI：GLM-5.3-Flash（主代理·上一会话实施，本会话补提交）
+
+- 306/308 笔把 web/app 端「默认」档发参改为 fileDate，本笔补齐服务端兜底：`/assets` handler 将 `sort=default` 单点别名到 `fileDate`（mtime 降序），不再回退 addedDate——单机形态整批一次性扫描的库入库时间趋同且顺序=扫描顺序，按入库时间排会让默认视图被扫描顺序支配（同目录同类型整段聚堆、跨端表现随机）。别名收在 handler 而非 browse.sql 的 CASE 分支：sqlc 解析器对 CASE 内新增参数行敏感（实测报错），且别名属协议语义层。
+- DOMAIN_RULES §3 增补「默认」排序语义定案记录（2026-09-17 晚拍板：任何库默认视图都按媒体自身新旧有序，与旧版绮梦影库「全部」页口径一致）。
+- 门禁：go test ./... 14 包全绿（含新增 TestAssetListSortDefaultIsFileDate：缺省不传/显式 default/显式 fileDate 三种入参形态等价断言，夹具 created_at 全同而 mtime 各异）。
+
 ## fix(web): 数据页三榜卡行等分填充——五行跨卡横向逐行对齐（2026-09-17 第三百零六笔）
 
 执行 AI：GLM-5.3-Flash（主代理）
