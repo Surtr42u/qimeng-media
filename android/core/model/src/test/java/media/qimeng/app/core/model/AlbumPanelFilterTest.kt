@@ -23,7 +23,7 @@ class AlbumPanelFilterTest {
     @Test
     fun `默认态 - 面板参数全部不传，排序为默认档降序（2026-09-17 拍板）`() {
         val q = query(AlbumFilterState())
-        assertEquals(AssetSort.DEFAULT, q.sort) // 2026-09-17 拍板变更：默认选中档=「默认」
+        assertEquals(AssetSort.FILE_DATE, q.sort) // 2026-09-17 307 笔：「默认」档发参=媒体文件时间
         assertEquals(SortOrder.DESC, q.order)
         assertNull(q.viewRange)
         assertNull(q.playRange)
@@ -41,7 +41,7 @@ class AlbumPanelFilterTest {
     @Test
     fun `排序键映射 - 逐一映射到 sort（协议镜像全枚举；面板档位 2026-09-17 精简为三档但映射不变）`() {
         val cases = mapOf(
-            AssetSort.DEFAULT to AssetSort.DEFAULT,
+            AssetSort.DEFAULT to AssetSort.FILE_DATE, // 307 笔：「默认」休息档发参翻译为媒体文件时间
             AssetSort.FILE_DATE to AssetSort.FILE_DATE,
             AssetSort.ADDED_DATE to AssetSort.ADDED_DATE,
             AssetSort.VIEW_COUNT to AssetSort.VIEW_COUNT,
