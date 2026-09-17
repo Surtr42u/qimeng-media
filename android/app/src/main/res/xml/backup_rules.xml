@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 云/系统备份排除规则（API <31 的 fullBackupContent 通道；31+ 走
+     data_extraction_rules.xml，两文件保持同集）。
+     排除项：DataStore 的 server_config.preferences_pb——内含明文 Bearer
+     token（明文存储是 2026-09-06 风险接受决策，见
+     DataStoreServerConfigDataSource 注释），接受"本机落盘明文"不代表
+     接受"随 adb 备份/云备份外带到任意恢复端"；token 多会话模型下
+     泄露即长期有效（ADR-0021 无 TTL），备份通道必须关闭。 -->
+<full-backup-content>
+    <exclude domain="file" path="datastore/server_config.preferences_pb" />
+</full-backup-content>

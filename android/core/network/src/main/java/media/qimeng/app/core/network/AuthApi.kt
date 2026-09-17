@@ -11,7 +11,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * 认证流程所需的最小服务端操作端口（探活 + 密码登录）。
+ * 认证流程所需的最小服务端操作端口（探活 + 登录 + 登出）。
  *
  * 为什么包一层接口而不让 Repository 直接用 [DefaultApi]：AuthRepository 需要在「地址尚未持久化」
  * 的登录瞬间对用户输入的地址发起请求，且其单测需要对协议错误分类做替身——接口化后两件事都干净。
@@ -28,7 +28,8 @@ interface AuthApi {
 
     /**
      * 密码登录 `POST /auth/login`。
-     * @return 新签发的 token（服务端单用户单 token：签发即重铸，旧 token 随之失效）
+     * @return 新签发的 token（ADR-0021 多设备并发会话：每次登录签发一条独立会话，
+     * 既有会话不失效——本设备登录不挤掉其他设备；吊销单条会话走 [logout]）
      * @throws ClientException statusCode=401 表示密码错误；其他 4xx 为请求侧问题
      * @throws IOException 网络不通
      */
@@ -42,6 +43,16 @@ interface AuthApi {
      * @throws IOException 网络不通
      */
     suspend fun devLogin(): String
+
+    /**
+     * 登出并吊销当前会话 `POST /auth/logout`（ADR-0021 多设备并发会话）：只吊销请求所携带
+     * Bearer token 对应的单条 auth_sessions 会话，其他设备不受影响。幂等 204——token 已
+     * 吊销/过期时请求会被鉴权中间件以 401 拦下（表现见 @throws），走到端点即恒 204。
+     * @throws ClientException statusCode=401 表示本会话 token 已失效（无会话可吊销，调用方可忽略）
+     * @throws ServerException 服务端 5xx
+     * @throws IOException 网络不通
+     */
+    suspend fun logout()
 }
 
 /** [AuthApi] 的生成 SDK 实现（阻塞调用挪到 IO 线程——OkHttp 同步 execute 不许占主线程）。 */
@@ -59,6 +70,8 @@ class SdkAuthApi(private val api: DefaultApi) : AuthApi {
     override suspend fun devLogin(): String = withContext(Dispatchers.IO) {
         api.apiV1AuthDevLoginPost().token ?: throw IOException("登录响应缺少 token")
     }
+
+    override suspend fun logout() = withContext(Dispatchers.IO) { api.apiV1AuthLogoutPost() }
 }
 
 /** 按任意 base URL 构造 [AuthApi]（登录时地址来自用户输入、尚未持久化，故不能只依赖「当前地址」）。 */

@@ -13,6 +13,25 @@
 ---
 ---
 ---
+## fix(app): 登录探活5xx崩溃+登出吊销服务端会话+上传通道超时+备份排除token（2026-09-17 第三百一十一笔）
+
+执行 AI：GLM-5.3（主代理）+ 执行子代理（实施）+ 审查子代理（全检发现）
+
+- 全检审查发现 P0：`AuthRepositoryImpl.probe()` 只 catch IOException/ClientException，SDK 对 5xx 抛 `ServerException`（非 IOException 子类）——反代 502/503 时探活异常穿透 viewModelScope 未捕获即崩溃。补 ServerException → ServerUnreachable（对齐 login 段既有语义）+ 回归测试「服务端内部故障_探活5xx返回ServerUnreachable且不试登录」。
+- P1 多会话语义适配：App 登出/切换服务器原先只清本地 token，服务端会话永久存活（dev-login 每次登录净增一个活会话）。现 `logout()`/`logoutWithStagedUrl()` 先对旧地址尽力吊销（runCatching + 3s 超时常量，失败不阻断本地登出；401 触发的 sessionExpired 广播在登出流中无害），AuthApi/SdkAuthApi 增 `logout()` 走生成 SDK `apiV1AuthLogoutPost`。
+- P1 上传通道：AssetUploader 复用单例 OkHttp 的 10s 读超时——大文件上传后等服务端落盘建库行 >10s 即 SocketTimeout → WorkManager 整文件重传。`@UploadClient` 派生 60s 读超时专用客户端（对齐 Coil 60s 先例 BUG-A）。
+- P2：serverUrl/token Flow 加 distinctUntilChanged（DataStore 任一键变更重发射快照，token 写入曾触发内嵌服务启停判定空转）；EmbeddedServerService 通知文案手抄的 18430 改 `LOCAL_MODE_PORT` 插值；三处「单 token 重铸」过时注释改多会话口径（ADR-0021）。
+- 安全（SECURITY.md 增「已知安全边界」节）：备份排除规则 `dataExtractionRules`/`fullBackupContent` 排除 `server_config.preferences_pb`——明文 token 不再随系统/云备份外带（明文本机落盘是 2026-09-06 风险接受决策，备份外带不在接受范围）。
+- 测试收口：修复两支 ebc87c0 遗留失败断言（「默认」档发参翻译 FILE_DATE 后 AlbumFilterPanelTest/HomeViewModelTest 的请求级断言未跟进——UI 休息档=DEFAULT、出参=FILE_DATE 的双语义逐点对齐）；`make app-test` 全绿（含新增 probe 5xx / 未登录登出 / logout 吊销时序用例，AuthRepositoryImplTest 12 条 0 失败）。
+
+## fix(web): 设置页登出接线（吊销服务端会话）+路由常量收口+标签创建失败可见（2026-09-17 第三百一十二笔）
+
+执行 AI：GLM-5.3（主代理）
+
+- 全检审查发现 P1：web 端此前没有任何登出入口（唯一退出路径=被动 401 清本地 token，服务端会话持续存活）。设置页 settings-actions 增「退出登录」按钮；`useAuthLogout` 走生成 SDK `postApiV1AuthLogout`（onSettled 清 token + queryClient.clear——服务端吊销失败也完成本地登出，会话留待自然收敛/管理端重置）。
+- P2：`/app/maintenance/files` 散写 5 处收口为 route-keys.ts 的 `MAINTENANCE_FILES_PATH`；筛选面板新建标签失败原先 `.catch(() => {})` 静默改为 toast 报错（用户视角的「标签神秘没选上」）；MediaCard img 补 `decoding="async"`（缩略图解码移出主线程）。
+- 门禁：npm run build ✓ + oxlint 0 errors（18 条 React Compiler 提示级 warning 为存量，router.tsx 懒加载声明处疑似误报）。
+
 ## feat(server): 多设备并发会话 token（auth_sessions）——多端登录互不挤兑 + /auth/logout + auth 限速（2026-09-17 第三百一十笔）
 
 执行 AI：GLM-5.3（主代理）+ 执行子代理（服务端实施）+ 审查子代理（对抗复核）

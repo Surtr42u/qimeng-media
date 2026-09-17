@@ -274,11 +274,15 @@ class AlbumFilterPanelTest {
             vm.resetPanelDraft()
             advanceUntilIdle()
 
-            assertEquals(AssetSort.DEFAULT, vm.uiState.value.filter.sort) // 2026-09-17 拍板变更
+            // 2026-09-17 晚拍板+ebc87c0：UI 休息档=DEFAULT（面板选中判定），但查询态
+            // 与出参经 withPanelDraft 单源翻译为 FILE_DATE（协议 default=入库时间，
+            // 默认视图须按媒体文件时间，见 DOMAIN_RULES §3）
+            assertEquals(AssetSort.FILE_DATE, vm.uiState.value.filter.sort)
             assertEquals(SortOrder.DESC, vm.uiState.value.filter.order)
             assertEquals(AlbumPanelDraft(), vm.panelState.value.draft)
+            assertEquals(AssetSort.DEFAULT, vm.panelState.value.draft.sort) // 草稿休息档不翻译
             val resetQuery = repo.assetsCalls.last().query
-            assertEquals(AssetSort.DEFAULT, resetQuery.sort) // 2026-09-17 拍板变更
+            assertEquals(AssetSort.FILE_DATE, resetQuery.sort) // 「默认」档发参=fileDate
             assertEquals(SortOrder.DESC, resetQuery.order)
             assertEquals(callsBeforeReset + 1, repo.assetsCalls.size) // 重置触发一次刷新
         }

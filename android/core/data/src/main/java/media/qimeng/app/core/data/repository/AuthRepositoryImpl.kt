@@ -3,6 +3,7 @@ package media.qimeng.app.core.data.repository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withTimeoutOrNull
 import media.qimeng.app.core.network.AuthApiFactory
 import media.qimeng.app.core.network.ServerAddress
 import media.qimeng.app.core.network.ServerConfigDataSource
@@ -12,6 +13,13 @@ import media.qimeng.sdk.infrastructure.ServerException
 import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
+
+/**
+ * 登出时吊销服务端会话的时限（毫秒）。为什么 3 秒：切换目标常是「旧地址已不通」场景
+ * （内嵌本机服务已停 / 旧 NAS 已关机），若沿用全局客户端 10s 读超时会拖死登出/切换流程；
+ * 3s 覆盖局域网正常往返，超时即放弃吊销——本地 token 照清，残留会话由服务端过期策略兜底。
+ */
+internal const val logoutRevokeTimeoutMs = 3_000L
 
 /**
  * [AuthRepository] 实现：编排探活→登录→持久化三步；不持有任何服务端地址假设
@@ -45,6 +53,10 @@ class AuthRepositoryImpl @Inject constructor(
         } catch (e: ClientException) {
             // 探针端点免鉴权且恒 200，收到 4xx 说明对端不是绮梦服务端——对用户而言等同地址不通
             return LoginResult.Failure(LoginError.ServerUnreachable)
+        } catch (e: ServerException) {
+            // 5xx：地址可达但服务端自身故障（探针恒 200 的协议语义下 5xx 即不可用）——
+            // 对登录阶段的用户仍是「这台服务现在用不了」，归入地址不通而非细节错误
+            return LoginResult.Failure(LoginError.ServerUnreachable)
         }
 
         // 第二步：登录（密码非空走密码登录；空密码走 dev-login 免密通道——仅 dev 模式服务端可用）；
@@ -69,10 +81,29 @@ class AuthRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun logout() = serverConfig.clearToken()
+    // 清 token 前尽力吊销当前会话（ADR-0021 多设备并发会话：登录不再挤掉其他设备，本设备的
+    // 会话也就必须显式吊销，否则服务端 auth_sessions 行会一直活到过期）。尽力语义：吊销失败/
+    // 超时一律忽略、本地照清——登出是本地状态切换，不许被网络问题（旧地址已停机等）阻塞。
+    // 已知且无害的副作用：吊销请求若收 401（token 已过期/已被吊销）会触发 AuthInterceptor 的
+    // sessionExpired 广播——登出流中壳层本来就要切登录页，冗余事件无实害。
+    private suspend fun revokeCurrentSessionBestEffort() {
+        val baseUrl = serverConfig.currentServerUrl() ?: return // 从未登录过：无会话可吊销
+        runCatching {
+            withTimeoutOrNull(logoutRevokeTimeoutMs) {
+                authApiFactory.create(baseUrl).logout()
+            }
+        }
+    }
 
-    // 先写地址再清 token——顺序理由见接口 KDoc（换登录页回填的确定性）
+    override suspend fun logout() {
+        revokeCurrentSessionBestEffort()
+        serverConfig.clearToken()
+    }
+
+    // 吊销用的是此刻仍是旧值的 token/地址（先吊销再切地址），随后按既定次序先写地址再清 token
+    // ——顺序理由见接口 KDoc（换登录页回填的确定性）
     override suspend fun logoutWithStagedUrl(url: String) {
+        revokeCurrentSessionBestEffort()
         serverConfig.updateServerUrl(url)
         serverConfig.clearToken()
     }

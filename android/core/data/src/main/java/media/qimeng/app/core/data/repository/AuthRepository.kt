@@ -51,13 +51,18 @@ interface AuthRepository {
      */
     suspend fun login(rawAddress: String, password: String): LoginResult
 
-    /** 退出登录：清 token、保留地址（下次登录自动回填）。 */
+    /**
+     * 退出登录：先尽力吊销当前服务端会话（ADR-0021 多设备并发会话——不吊销则这条
+     * auth_sessions 会话会活到过期；「尽力」= 失败/超时忽略，登出不被旧地址停机阻塞，
+     * 见实现），再清 token、保留地址（下次登录自动回填）。
+     */
     suspend fun logout()
 
     /**
      * 登出并预置下次登录的服务器地址（任务T T3 本机模式快捷入口专用；地址仍只经
      * ServerConfigDataSource 单点流转，ADR-0015）。预置值是「登录页带出的未提交输入」，
      * 用户在登录页确认（走 [login] 既有探活→登录→持久化）才真正切换。
+     * 吊销时机：切地址前先对当前旧地址尽力吊销旧会话（此刻 token/地址都还是旧值）。
      * 为什么先写地址再清 token：token 流翻 false 壳层立即切登录页并回填「记忆上次」，
      * 若先清 token，回填可能抢在地址写入前读到旧值（顺序换确定性）。窗口如实记档：
      * updateServerUrl 与 clearToken 两个连续挂起调用之间确有短暂窗口（业务 API 构造
