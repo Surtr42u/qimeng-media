@@ -17,6 +17,7 @@ INSERT INTO users (id, name, password_hash, role, token_hash, created_at)
 VALUES (?, ?, ?, ?, ?, ?);
 
 -- name: UpdateUserTokenHash :exec
--- Token re-issue on password login: single-user single-token model --
--- the new token invalidates the old one by replacing its hash.
+-- DEPRECATED since 2026-09-17: the multi-session model writes auth_sessions
+-- (see sessions.sql); login no longer overwrites the single users.token_hash.
+-- Kept (unused) so historical generated code stays untouched.
 UPDATE users SET token_hash = ? WHERE id = (SELECT id FROM users ORDER BY created_at LIMIT 1);

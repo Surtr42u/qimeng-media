@@ -1,6 +1,6 @@
 // auth_login_test.go：密码登录端点（/auth/login）测试。
-// 覆盖：正确密码换新 token 且旧 token 失效（单用户单 token 重铸语义）、
-// 错误密码 401、重复登录各自拿到可用 token（每次重铸）。
+// 覆盖：正确密码签发新会话 token 且旧 token 仍有效（多设备并发会话
+// 模型，migration 0011）、错误密码 401、重复登录的多个 token 并存。
 package httpapi
 
 import (
@@ -48,9 +48,10 @@ func doWithToken(t *testing.T, e *testEnv, token, method, path string) int {
 	return resp.StatusCode
 }
 
-// TestLogin_correctPassword_issuesNewTokenAndInvalidatesOld：
-// 正确密码 → 新 token 可用、setup 时的旧 token 失效（重铸语义）。
-func TestLogin_correctPassword_issuesNewTokenAndInvalidatesOld(t *testing.T) {
+// TestLogin_correctPassword_oldTokenStaysValid：
+// 正确密码 → 新 token 可用，setup 时的旧 token 仍有效（多会话并存，
+// 旧"签发即重铸"语义已随 0011 废弃）。
+func TestLogin_correctPassword_oldTokenStaysValid(t *testing.T) {
 	e := newTestEnv(t)
 	oldToken := e.token // newTestEnv 内 setupAndSeed 产生的初始 token
 
@@ -62,13 +63,13 @@ func TestLogin_correctPassword_issuesNewTokenAndInvalidatesOld(t *testing.T) {
 		t.Fatal("登录响应应携带新 token")
 	}
 	if *tok.Token == oldToken {
-		t.Fatal("登录应重铸新 token，不应复用旧 token")
+		t.Fatal("登录应签发新会话 token，不应复用旧 token")
 	}
 	if got := doWithToken(t, e, *tok.Token, http.MethodGet, "/api/v1/libraries"); got != http.StatusOK {
 		t.Errorf("新 token 访问应 200，got %d", got)
 	}
-	if got := doWithToken(t, e, oldToken, http.MethodGet, "/api/v1/libraries"); got != http.StatusUnauthorized {
-		t.Errorf("旧 token 应被重铸失效（401），got %d", got)
+	if got := doWithToken(t, e, oldToken, http.MethodGet, "/api/v1/libraries"); got != http.StatusOK {
+		t.Errorf("多会话模型：登录不应吊销旧 token（应 200），got %d", got)
 	}
 }
 
@@ -84,9 +85,9 @@ func TestLogin_wrongPassword_returns401(t *testing.T) {
 	}
 }
 
-// TestLogin_reloginEachIssuesWorkingToken：连续两次登录，各自的 token
-// 在下一次登录前均有效（第二次登录重铸后才失效第一次的）。
-func TestLogin_reloginEachIssuesWorkingToken(t *testing.T) {
+// TestLogin_reloginTokensCoexist：连续两次登录，两个 token 并存有效
+// （多设备并发会话：手机/电脑各持一个 token 互不干扰）。
+func TestLogin_reloginTokensCoexist(t *testing.T) {
 	e := newTestEnv(t)
 	_, first := loginBody(t, e, testPasswordMain)
 	if got := doWithToken(t, e, *first.Token, http.MethodGet, "/api/v1/libraries"); got != http.StatusOK {
@@ -96,7 +97,7 @@ func TestLogin_reloginEachIssuesWorkingToken(t *testing.T) {
 	if got := doWithToken(t, e, *second.Token, http.MethodGet, "/api/v1/libraries"); got != http.StatusOK {
 		t.Errorf("第二次登录 token 应有效，got %d", got)
 	}
-	if got := doWithToken(t, e, *first.Token, http.MethodGet, "/api/v1/libraries"); got != http.StatusUnauthorized {
-		t.Errorf("第二次登录后第一次的 token 应失效（401），got %d", got)
+	if got := doWithToken(t, e, *first.Token, http.MethodGet, "/api/v1/libraries"); got != http.StatusOK {
+		t.Errorf("多会话模型：第二次登录后第一次的 token 应仍有效（200），got %d", got)
 	}
 }

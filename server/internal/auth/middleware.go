@@ -9,7 +9,8 @@ import (
 
 // Principal 表示已通过鉴权的请求主体。
 //
-// 单用户起步阶段只有 TokenHash（唯一有效 token 的 SHA-256 即身份）；
+// 单用户起步阶段只有 TokenHash（多会话模型 ADR-0021 下 = 命中的那条
+// 会话的 token 哈希，单用户时它即身份；logout 端点靠它精确定位会话）；
 // SECURITY 要求用户表第一天就按多用户设计，届时在接入层把
 // UserID/角色填进来，中间件与下游读取方式不变。
 type Principal struct {

@@ -62,6 +62,14 @@ type AssetsFt struct {
 	AssetID string
 }
 
+type AuthSession struct {
+	ID          string
+	UserID      string
+	TokenHash   string
+	DeviceLabel string
+	CreatedAt   string
+}
+
 type Author struct {
 	ID          string
 	DisplayName string

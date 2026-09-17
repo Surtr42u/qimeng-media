@@ -13,6 +13,16 @@
 ---
 ---
 ---
+## feat(server): 多设备并发会话 token（auth_sessions）——多端登录互不挤兑 + /auth/logout + auth 限速（2026-09-17 第三百一十笔）
+
+执行 AI：GLM-5.3（主代理）+ 执行子代理（服务端实施）+ 审查子代理（对抗复核）
+
+- 根因（手机反复掉线，sess_9f8dff39 交接）：旧「单用户单 token」模型每次登录 `UPDATE users.token_hash` 覆盖唯一哈希，任一端登录（含 dev-login）立即把其他端踢回登录页。本笔改多会话模型（ADR-0021）：migration 0011 建 `auth_sessions` 表（token 哈希 + User-Agent 截 128 存 device_label），每次 setup/login/dev-login INSERT 一条独立会话，多端并存；迁移回填把旧唯一哈希转 legacy 会话——升级后已登录设备不掉线；每用户会话上限 16 裁最旧（防 dev-login 每次冷启动无限涨行）。
+- 协议（openapi 先行）：新增 `POST /api/v1/auth/logout`（吊销当前 Bearer 对应单条会话，他端不受影响，幂等 204）；setup/login/dev-login 增 429 响应；login/dev-login 描述改多会话语义。`make sdk` 三端重生成（Go 接口 + TS + Kotlin），sdk.lock 203 条。
+- 安全加固（SECURITY.md 鉴权设计节同步改写）：auth 三端点进程内固定窗口限速 10 次/分钟（authlimit.go，标准库实现不引 x/time——argon2id m=64MB/次的暴力猜解与内存 DoS 缓冲，超限 429 RATE_LIMITED）；全响应 `X-Content-Type-Options: nosniff`（nosniffHeader 中间件包最外层，含测试断言）；token 泄露应急口径更新（「再登录一次」不再吊销旧 token，吊销走 logout/清库）。
+- 验证流程：执行子代理实施自测（14 包全绿）→ 对抗审查子代理独立重跑（build/vet/全量测试/sqlc 生成物逐字节比对/sdk.lock 全量哈希校验）判「通过-有遗留」→ 本笔补齐遗留（nosniff 测试断言、CHANGELOG 条目、middleware.go 陈旧注释）。已知存量问题（非本笔引入、不阻塞）：sqlc generate 官方命令在 browse.sql 上解析失败（生成物已验证无漂移）；sdk.lock 中 gradle-wrapper.jar 一条指纹与盘上不符（HEAD 即如此）。
+- 门禁：go build / go vet / go test ./... -count=1 全绿；golangci-lint 0 issues；make sdk 全链过。
+
 ## fix(server): 「默认」排序档服务端别名 fileDate——浏览面缺省排序统一文件时间（2026-09-17 第三百零九笔）
 
 执行 AI：GLM-5.3-Flash（主代理·上一会话实施，本会话补提交）

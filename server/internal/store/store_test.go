@@ -233,9 +233,10 @@ func idForIndex(i int) string {
 
 // TestMigrateDownThenUp：down migration 必须可执行（生产禁用，测试与灾备依赖），
 // 且 down 后能再次 up（幂等重建）。migration 演进后回退步数随之变化：
-// 第零步验证 0010 down（客户端幂等键列+唯一索引删除、0009 对象保留），
-// 次步验证 0009 down（时间轴标签颜色列删除、0008 对象保留），
-// 再下验证 0008 down（COS 作品列删除、0007 对象保留），
+// 第零步验证 0011 down（auth_sessions 表删除、0010 对象保留），
+// 次步验证 0010 down（客户端幂等键列+唯一索引删除、0009 对象保留），
+// 再下验证 0009 down（时间轴标签颜色列删除、0008 对象保留），
+// 又次验证 0008 down（COS 作品列删除、0007 对象保留），
 // 第二步验证 0007 down（库开关列删除、0006 对象保留），
 // 第三步验证 0006 down（播放进度/编码列删除、0005 对象保留），
 // 第四步验证 0005 down（物化表/关注列/COS 库列删除、0004 对象保留），
@@ -245,7 +246,17 @@ func idForIndex(i int) string {
 // 第八步验证 0001 down（业务表全删）。
 func TestMigrateDownThenUp(t *testing.T) {
 	conn, _ := openTestDB(t) // 已 up
-	// 第零步：0010 down（客户端幂等键列+唯一索引删除、0009 对象保留）
+	// 第零步：0011 down（会话表删除、0010 的幂等键列保留）
+	if err := MigrateDown(conn, 1); err != nil {
+		t.Fatalf("MigrateDown 失败: %v", err)
+	}
+	if objExists(t, conn, "table", "auth_sessions") {
+		t.Error("0011 down 后 auth_sessions 仍存在（down.sql 缺 DROP TABLE）")
+	}
+	if !columnExists(t, conn, "view_events", "client_event_id") {
+		t.Error("0011 down 后 view_events.client_event_id 应保留（只回退了一个版本）")
+	}
+	// 次步：0010 down（客户端幂等键列+唯一索引删除、0009 对象保留）
 	if err := MigrateDown(conn, 1); err != nil {
 		t.Fatalf("MigrateDown 失败: %v", err)
 	}

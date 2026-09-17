@@ -20,14 +20,17 @@
 ## 鉴权设计
 
 - **单用户起步**：首次启动 `POST /api/v1/auth/setup` 设置管理密码 → 服务端用 `crypto/rand` 生成 token 返回（只显示一次）；后续请求 `Authorization: Bearer <token>`。
+- **多设备并发会话（ADR-0021，2026-09-17 起）**：有效 token 哈希存 `auth_sessions` 表（migration 0011）——每次登录/setup/dev-login 签发一条独立会话，多端并存互不挤兑（旧「单 token 签发即重铸」模型废弃，它是手机反复掉线的根因）；`POST /auth/logout` 按请求 token 吊销单条会话，其他设备不受影响；每用户会话上限 16，超限自动裁最旧。升级兼容：旧模型唯一哈希由迁移回填成一条 legacy 会话，已登录设备不掉线。`users.token_hash` 列弃用不删（NOT NULL 兼容占位）。
 - 用户表结构第一天就按多用户设计（id/名称/密码哈希/角色/token），实现先只放一行。密码哈希用 argon2id（标准库外选型写 ADR）。
+- **auth 端点限速（2026-09-17 起）**：setup/login/dev-login 共享进程内固定窗口限速（默认 10 次/分钟，超限 429 `RATE_LIMITED`）——缓冲暴力猜解与 argon2id（m=64MB/次）的内存 DoS；Bearer 业务端点与 /auth/verify 不受限速影响。
+- **安全响应头基线（2026-09-17 起）**：全部响应带 `X-Content-Type-Options: nosniff`（MIME 嗅探防护，媒体/文本响应被注入可执行内容的攻击面关闭）。
 - **签名直链**：`/media/orig/...?exp=...&sig=HMAC(路径+过期时间, 服务端密钥)`——浏览器/播放器无需带 header 即可加载，但链接有时效。
-- token 泄露应急（当前机制，无管理端点）：停服后删除数据目录下 `media-secret` 文件再启动 = 重铸直链签名密钥，**全部已签发直链立即失效**（main.go mediaSecretFile 注释口径）。「管理端一键重置 token」为规划项，尚未实现。
+- token 泄露应急（多会话模型口径）：受控设备直接 `POST /auth/logout` 吊销对应会话；**注意「自己再登录一次」不再吊销旧 token**（旧模型的挤兑行为已废除）。全部会话吊销 = 停服清空 `auth_sessions` 表（或删除数据目录重建）；直链吊销仍走删除 `media-secret` 文件。「管理端一键重置全部 token」为规划项。
 
 ## 开发模式（红线 5 的单点例外，仅限本机）
 
 - **默认关闭**：`config.auth_dev_mode`（env `QIMENG_AUTH_DEV_MODE`）默认 false；关闭时 `POST /api/v1/auth/dev-login` 恒 404，所有 API 依旧要求 Bearer token——生产/默认部署零行为变化。
-- **开启时语义**：`/auth/dev-login` 免密码直接签发 token（未初始化自动创建 admin 占位用户；签发即重铸，与 /auth/login 同语义）。
+- **开启时语义**：`/auth/dev-login` 免密码直接签发 token（未初始化自动创建 admin 占位用户；多会话语义与 /auth/login 相同，ADR-0021——签发独立会话，既有会话不失效）。
 - **App 端免密通道（2026-09-06 起）**：Android 客户端登录时**密码留空即走 dev-login**（`AuthRepositoryImpl` 空密码分支）；服务端未开启 dev 模式时 404 → App 提示「该服务器未开启免密模式，请输入密码登录」并要求密码，生产部署零影响。纯客户端行为，协议面无改动（dev-login 端点 2026-09-03 即有）。
 - **边界**：仅限开发阶段本机调试（用户约定：项目未完成前免密码直奔 UI）；**禁止**与 `listen: ":0.0.0.0"`、公网、Tailscale 等任何远程访问组合使用——它等价于"无凭据登录通道"，必须保持在内网受信主机之内。服务端启动时对该组合打 Warn 日志（dev 模式开启且监听地址非回环，2026-09-07 起；只提醒不阻止，本机开发脚本的既定用法）。
 - **本机开发脚本**：仓库根 `启动服务端.bat` 已默认带 `QIMENG_AUTH_DEV_MODE=1`（2026-09-03 起）——生产/远程部署**必须移除该行**（或改回 `0`）。

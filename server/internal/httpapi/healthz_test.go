@@ -58,3 +58,23 @@ func TestHealthzRouting(t *testing.T) {
 		}
 	}
 }
+
+// TestNosniffHeaderAllResponses：全部响应必须带 X-Content-Type-Options:
+// nosniff（SECURITY 安全响应头基线，ADR-0021 附带决策）。取免鉴权
+// （/healthz 200）与鉴权拦截（/api/v1/libraries 无 token 401）两类路径
+// 代表——nosniffHeader 中间件包在最外层 topRouter 之外，任何分支的
+// 响应都不该漏头。
+func TestNosniffHeaderAllResponses(t *testing.T) {
+	env := newTestEnvRaw(t)
+
+	for _, path := range []string{"/healthz", "/api/v1/libraries"} {
+		resp, err := http.Get(env.ts.URL + path)
+		if err != nil {
+			t.Fatalf("请求 %s 失败: %v", path, err)
+		}
+		_ = resp.Body.Close()
+		if got := resp.Header.Get("X-Content-Type-Options"); got != "nosniff" {
+			t.Errorf("%s 缺 X-Content-Type-Options: nosniff（得到 %q）", path, got)
+		}
+	}
+}

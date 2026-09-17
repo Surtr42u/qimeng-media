@@ -1,6 +1,7 @@
 // auth_dev_test.go：开发模式免密登录端点（/auth/dev-login）测试。
 // 覆盖：dev 开关关闭时恒 404（生产零行为变化）、开启时未初始化自动建
-// admin 并签发可用 token、二次调用重铸 token（旧 token 失效，与 login 同语义）。
+// admin 并签发可用 token、二次调用再签一条会话（旧 token 仍有效，与
+// login 的多会话语义一致）。
 package httpapi
 
 import (
@@ -62,9 +63,9 @@ func TestDevLogin_enabled_bootstrapsAndIssuesWorkingToken(t *testing.T) {
 	}
 }
 
-// TestDevLogin_enabled_recastsTokenOnSecondCall：二次调用重铸 token，
-// 第一次的 token 失效（与 /auth/login 的单 token 语义一致）。
-func TestDevLogin_enabled_recastsTokenOnSecondCall(t *testing.T) {
+// TestDevLogin_secondCallBothTokensValid：二次调用再签一条会话，
+// 第一次的 token 仍有效（与 /auth/login 的多会话语义一致）。
+func TestDevLogin_secondCallBothTokensValid(t *testing.T) {
 	e := newTestEnvRaw(t)
 	e.cfg.AuthDevMode = true
 
@@ -74,12 +75,12 @@ func TestDevLogin_enabled_recastsTokenOnSecondCall(t *testing.T) {
 	}
 	_, second := devLogin(t, e)
 	if *first.Token == *second.Token {
-		t.Fatal("dev-login 应重铸新 token，不应复用旧 token")
+		t.Fatal("dev-login 应签发新会话 token，不应复用旧 token")
 	}
 	if got := doWithToken(t, e, *second.Token, http.MethodGet, "/api/v1/libraries"); got != http.StatusOK {
 		t.Errorf("第二次 dev token 应有效，got %d", got)
 	}
-	if got := doWithToken(t, e, *first.Token, http.MethodGet, "/api/v1/libraries"); got != http.StatusUnauthorized {
-		t.Errorf("重铸后旧 token 应失效（401），got %d", got)
+	if got := doWithToken(t, e, *first.Token, http.MethodGet, "/api/v1/libraries"); got != http.StatusOK {
+		t.Errorf("多会话模型：第二次签发后第一次的 token 应仍有效（200），got %d", got)
 	}
 }
