@@ -103,8 +103,12 @@ func TestDetachedGroup不同key各自执行(t *testing.T) {
 	dg := newDetachedGroup()
 	var a, b atomic.Int32
 	done := make(chan struct{}, 2)
-	go func() { _ = dg.do("x", context.Background(), func() error { a.Add(1); done <- struct{}{}; return nil }) }()
-	go func() { _ = dg.do("y", context.Background(), func() error { b.Add(1); done <- struct{}{}; return nil }) }()
+	go func() {
+		_ = dg.do("x", context.Background(), func() error { a.Add(1); done <- struct{}{}; return nil })
+	}()
+	go func() {
+		_ = dg.do("y", context.Background(), func() error { b.Add(1); done <- struct{}{}; return nil })
+	}()
 	<-done
 	<-done
 	if a.Load() != 1 || b.Load() != 1 {
