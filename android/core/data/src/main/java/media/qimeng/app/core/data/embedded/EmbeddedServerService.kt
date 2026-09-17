@@ -171,7 +171,7 @@ class EmbeddedServerService : Service() {
         if (serverProcess !== process) return // 已被新一轮拉起取代
         serverProcess = null
         postStoppedNotification(
-            "本机服务端进程已退出（常见原因：端口 18430 被占用——Termux 形态 A 在跑请先停；" +
+            "本机服务端进程已退出（常见原因：端口 ${ServerAddress.LOCAL_MODE_PORT} 被占用——Termux 形态 A 在跑请先停；" +
                 "详情见 ${EmbeddedServerConfig.DATA_DIR_NAME}/${EmbeddedServerConfig.LOG_FILE_NAME}）",
         )
         stopSelf()

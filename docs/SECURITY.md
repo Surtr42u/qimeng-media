@@ -73,6 +73,13 @@
 5. 白名单外扩展名、伪造扩展名（.jpg 实为 .exe）→ 400
 6. 删除资产 → 文件出现在回收站而非消失
 
+## 已知安全边界（2026-09-17 全检审计记档，均为风险接受而非遗漏）
+
+- **App 全局明文 HTTP**（`usesCleartextTraffic`，无 network_security_config）：局域网 http 是既定部署形态（本机 18430 与 LAN 8420 都是 http），远程访问走隧道兜底（红线 8）。network_security_config 只能按域名放行明文、无法表达「任意私网 IP 放行、其余拒绝」，收窄会直接断掉核心场景，故维持现状；陌生 WiFi 下连局域网地址时 token/媒体明文过空口属用户责任边界。
+- **Android 内嵌形态 dev-login 跑在设备共享回环**（127.0.0.1:18430 + AUTH_DEV_MODE=1）：Android loopback 全设备共享，同机恶意 App 理论上可免密登录读库（App 持 MANAGE_EXTERNAL_STORAGE 放大后果）。缓解规划 = App 拉起内嵌进程时注入共享密钥、dev-login 校验该密钥，待单机形态真机验收（ADR-0015 T7）后立项。
+- **App token 明文 DataStore**：2026-09-06 风险接受决策（代码注释记档）。2026-09-17 补备份排除规则（`dataExtractionRules`/`fullBackupContent` 排除 `server_config.preferences_pb`）——明文本机落盘在接受范围，随系统/云备份外带不在，已关闭。
+- **web token 存 localStorage**：Bearer-SPA 常见取舍（XSS 可读面）；多会话模型下泄露后果收敛为单会话（可 logout 吊销），维持现状，有实测需求再动协议（cookie/刷新机制）。
+
 ## 远程访问姿势（将来启用）
 
 NAS 与手机均装 Tailscale（免费档够用），登录同一账号组成虚拟内网。服务端 HTTP 不变，加密由隧道保证。**禁止**自行在路由器做端口映射 + 反代裸露服务。

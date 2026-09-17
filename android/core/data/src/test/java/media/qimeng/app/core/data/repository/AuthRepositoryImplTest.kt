@@ -100,6 +100,9 @@ class AuthRepositoryImplTest {
                         }
                     }
 
+                    // 登出吊销（ADR-0021 多会话）：幂等 204——走到端点即成功
+                    "/api/v1/auth/logout" -> testResponse(chain, 204, body = "")
+
                     else -> testResponse(chain, 404, body = """{"code":"NOT_FOUND"}""")
                 }
             },
@@ -173,6 +176,18 @@ class AuthRepositoryImplTest {
     }
 
     @Test
+    fun `服务端内部故障_探活5xx返回ServerUnreachable且不试登录`() = runTest {
+        // P0 回归锁：SDK 对 5xx 抛 ServerException（非 IOException 子类），此前未捕获会
+        // 透传到 viewModelScope 崩溃——现在必须收敛为 ServerUnreachable
+        healthzStatus = 500
+
+        val result = repository.login(FAKE_BASE_URL, correctPassword)
+
+        assertEquals(LoginResult.Failure(LoginError.ServerUnreachable), result)
+        assertEquals(0, hitCounts["/api/v1/auth/login"] ?: 0)
+    }
+
+    @Test
     fun `非法地址_不发任何请求`() = runTest {
         val result = repository.login("not a url", correctPassword)
 
@@ -200,6 +215,16 @@ class AuthRepositoryImplTest {
         assertFalse(repository.isLoggedIn.first())
         // 「记忆上次」：地址保留给登录页回填
         assertEquals(FAKE_BASE_URL, serverConfig.serverUrl.first())
+        // P1a：清 token 前对当前地址吊销了本设备会话（ADR-0021 多会话）
+        assertEquals(1, hitCounts["/api/v1/auth/logout"] ?: 0)
+    }
+
+    @Test
+    fun `未登录登出_无会话可吊销不发请求也不崩`() = runTest {
+        repository.logout()
+
+        assertEquals(null, serverConfig.token.first())
+        assertTrue(hitCounts.isEmpty())
     }
 
     @Test
@@ -213,6 +238,8 @@ class AuthRepositoryImplTest {
         assertEquals(null, serverConfig.token.first())
         assertFalse(repository.isLoggedIn.first())
         assertEquals(ServerAddress.LOCAL_MODE_PRESET, serverConfig.serverUrl.first())
+        // P1a：吊销发生在切地址之前（用的是旧地址上的旧会话 token）
+        assertEquals(1, hitCounts["/api/v1/auth/logout"] ?: 0)
     }
 
     private companion object {

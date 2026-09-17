@@ -19,6 +19,7 @@ import okhttp3.RequestBody
 import okio.BufferedSink
 import media.qimeng.app.core.data.repository.BusinessApiFactory
 import media.qimeng.app.core.model.UploadItem
+import media.qimeng.app.core.network.di.UploadClient
 import java.io.IOException
 import java.io.InputStream
 import javax.inject.Inject
@@ -29,7 +30,8 @@ import javax.inject.Singleton
  *
  * 为什么不走生成 SDK：SDK 的 apiV1AssetsUploadPost 只收 `java.io.File`，而 SAF/系统分享
  * 给的是 content:// URI（无文件路径）——"先拷缓存再上传"会双倍占空间（HANDOVER_APP M4-5
- * 存疑停手项的权衡），故按冻结口径用注入的 OkHttpClient（带 AuthInterceptor 的同款客户端）
+ * 存疑停手项的权衡），故按冻结口径用注入的 OkHttpClient（UploadClient 专用客户端：带
+ * AuthInterceptor 的全局单例派生 + 60s 读超时/不限总时长，大文件等服务端落盘不被 10s 掐断）
  * 流式直传。请求路径/参数与 api/openapi.yaml 的 `/api/v1/assets/upload` 双同步：
  * 协议侧改动须同步此处，反之亦然。
  *
@@ -39,7 +41,7 @@ import javax.inject.Singleton
 @Singleton
 class AssetUploader @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val okHttpClient: OkHttpClient,
+    @UploadClient private val okHttpClient: OkHttpClient,
     private val apiFactory: BusinessApiFactory,
 ) {
 
@@ -101,9 +103,9 @@ class AssetUploader @Inject constructor(
 
                     response.code in CLIENT_ERROR_MIN..CLIENT_ERROR_MAX ->
                         // 4xx 一律终局不重试（含 401，上传 401 终局口径）：token 失效时后台重试无意义——
-                        // 服务端登录即重铸 token，旧 token 的下一次请求必然再 401（SessionEventBus 口径），
-                        // 而 Worker 拿不到新凭据无法自愈，盲目重试只会烧满退避额度。401 时 AuthInterceptor
-                        // 已清 token 并广播事件跳登录，用户重登后重新入队即可
+                        // ADR-0021 多会话模型下 401 说明本设备这条会话已被吊销/过期（其他设备会话不受
+                        // 影响，但 Worker 拿不到新凭据无法自愈），盲目重试只会烧满退避额度。401 时
+                        // AuthInterceptor 已清 token 并广播事件跳登录，用户重登后重新入队即可
                         UploadOutcome.Permanent(
                             UploadApiBodies.serverErrorMessage(bodyText, response.code),
                         )

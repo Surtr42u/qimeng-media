@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -24,8 +25,9 @@ import javax.inject.Singleton
  * 本文件有意不引入加密层——①威胁模型按 SECURITY.md 是纯内网单用户，防御目标是局域网误访问与
  * 横向渗透，不覆盖「物理拿到已解锁设备」的攻击者；该场景下明文 token 才构成实质风险；②官方加密
  * 方案 androidx.security-crypto（EncryptedSharedPreferences）已整体弃用，官方指向 Android Keystore
- * 自行封装——自造加密存储引入的出错面大于收益；③泄露可收敛：服务端登录即重铸 token，且管理端
- * 「重置 token」一键吊销（SECURITY.md 鉴权设计）。远期若威胁模型升级（多用户/公网面），此处是
+ * 自行封装——自造加密存储引入的出错面大于收益；③泄露可收敛：本设备登出走 POST /auth/logout
+ * 吊销自己的会话，管理端「重置 token」一键吊销全部会话（ADR-0021 多会话模型，
+ * SECURITY.md 鉴权设计）。远期若威胁模型升级（多用户/公网面），此处是
  * 改造点：换 Keystore 加密包装的存储实现，接口不变。
  */
 @Singleton
@@ -49,9 +51,13 @@ class DataStoreServerConfigDataSource @Inject constructor(
         }
     }
 
-    override val serverUrl: Flow<String> = dataStore.data.map { it[KEY_SERVER_URL].orEmpty() }
+    // distinctUntilChanged：DataStore 的 data Flow 在任一键变更时都会重发射整个 preferences 快照
+    // （同值也算新发射）——不去重的话，token 每次写入都会让订阅方空转（MainViewModel 的内嵌
+    // 服务启停判定跟着重跑一遍无意义的判定）。
+    override val serverUrl: Flow<String> =
+        dataStore.data.map { it[KEY_SERVER_URL].orEmpty() }.distinctUntilChanged()
 
-    override val token: Flow<String?> = dataStore.data.map { it[KEY_TOKEN] }
+    override val token: Flow<String?> = dataStore.data.map { it[KEY_TOKEN] }.distinctUntilChanged()
 
     override fun currentToken(): String? = cachedToken
 
@@ -76,7 +82,7 @@ class DataStoreServerConfigDataSource @Inject constructor(
         /** 服务端地址键（ServerAddress.normalize 的产物，规范化 base URL）。 */
         val KEY_SERVER_URL = stringPreferencesKey("server_url")
 
-        /** 登录 token 键（POST /auth/login 返回；单用户单 token，服务端登录即重铸）。 */
+        /** 登录 token 键（POST /auth/login 返回；ADR-0021 多设备并发会话——本设备持有一条独立会话 token，登录新设备不再重铸旧 token，吊销走 POST /auth/logout）。 */
         val KEY_TOKEN = stringPreferencesKey("token")
     }
 }

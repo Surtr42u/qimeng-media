@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 云/系统备份排除规则（API 31+ 的 dataExtractionRules 通道；<31 走
+     backup_rules.xml，两文件保持同集）。排除理由同彼处：server_config
+     .preferences_pb 内含明文 Bearer token，禁止随云备份/设备迁移外带。 -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="file" path="datastore/server_config.preferences_pb" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="file" path="datastore/server_config.preferences_pb" />
+    </device-transfer>
+</data-extraction-rules>
