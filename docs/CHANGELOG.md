@@ -13,6 +13,15 @@
 ---
 ---
 ---
+## ci+app: 任务P P5② vico 2.5.1→2.5.2 补丁线——3.3.1 major 跳线记档顺延（2026-09-18 第三百三十一笔）
+
+执行 AI：GLM-5.3-Flash（主代理直改，锁版依据=第三百二十五笔）
+
+- 版本面：toml `vico 2.5.1→2.5.2`（2.x 线末位补丁：修 AreaFill 填充 bug #1517，无 API 变化；S3 时代否决升级的门禁已全部解除）。头注改写。
+- **3.3.1 major 跳线记档顺延**（不立项）：官方已宣布 vico 2 修复期止于 2026-07-31（EOL），3 线对 compose-m3 坐标名不变但 3.0.0 移除废弃 API、3.2.0 `LineProvider.getLine` 加 seriesKey（Kotlin 函数式接口不兼容改签名）——须 feature:stats 四文件用点全核对 + ADR-0018 补记，超轻量批口径。**再评估触发条件写入 toml**：Android 10 真机图表崩溃报障（3.3.1 修 ART JIT 崩溃 b/553511933），或下次涉 ADR-0018 的图表批次。
+- 三关验证：AAR minCompileSdk ≤37/Hilt×Kotlin metadata/三连门禁绿（1m43s）+ 模拟器走查（qimeng_api35c）：数据统计页 Vico 浏览趋势折线（平涂面积+空心点+轴标签）渲染与 2.5.1 同观感、统计卡/内容榜正常，零 FATAL。截图 `android/.walk/p5/stats-vico252.png`。
+
+
 ## ci+app: 任务P P5① media3 1.8.0→1.11.1——线内 stable 最新+【待联网复核】清偿（2026-09-18 第三百三十笔）
 
 执行 AI：GLM-5.3-Flash（主代理直改，锁版依据=第三百二十五笔）
