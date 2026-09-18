@@ -170,6 +170,9 @@ func main() {
 	apiSrv.SetScanner(newScannerAdapter(scan, queries, apiSrv, logger))
 	// 自动预生成缩略图（2026-09-15 批）：开机回填历史积压 + 周期兜底（daemon）
 	apiSrv.StartThumbnailWarmup()
+	// 推荐流缓存开机预热（2026-09-18 性能批二段）：后台预计算 App 首屏同键
+	// 默认流（seed=1&limit=200），首条请求经单飞共享同一次计算
+	apiSrv.StartRecommendPrewarm()
 
 	handler := apiSrv.Handler()
 

@@ -38,10 +38,9 @@ const trashIDSep = "_"
 
 // publishLibraryChanged 广播库变更（列表/详情端已变，各端刷新）。
 // 广播型触发帧不带 payload（LibraryChangedEvent.data 可为 null）。
-// 库内容变更同时是推荐流缓存的结构性失效点（recommend_cache.go 语义边界）：
-// 标签/回收站/上传/整理全部经此汇点，推荐缓存失效收在这里一处覆盖。
+// 推荐流缓存失效不再在此直调：library.changed 事件的失效已收口到 Server
+// 装配期的总线订阅（server.go New，一处覆盖所有发布点，2026-09-18 性能批二段）。
 func (s *Server) publishLibraryChanged() {
-	s.invalidateRecommendCache()
 	if err := s.bus.Publish(events.Event{Topic: events.TopicLibraryChanged}); err != nil {
 		s.logger.Warn("发布库变更事件失败", "err", err)
 	}

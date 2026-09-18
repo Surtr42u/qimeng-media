@@ -12,10 +12,14 @@
 //     但排序所用的计数快照不随命中刷新——同键请求在 TTL 内恒同序（旧行为
 //     是每次按最新计数重排），累计的每日惩罚在下次未命中重算时统一生效。
 //   - 高频行为事件（浏览 open/play/dwell）不做主动失效——每开一个视频就失效
-//     会让缓存常冷、形同虚设；行为维度（engagement/recency）的影响在 TTL
-//     到期后自然反映，偏差窗口 ≤ recommendCacheTTL。
-//   - 低频结构性变更（点赞/收藏/标签/库开关/扫描/上传/导入/整理/作者重建）
-//     走 invalidateRecommendCache 主动失效，修订号让旧条目整体作废。
+//     会让缓存常冷；行为维度（engagement/recency）的影响在 TTL 到期后自然
+//     反映，偏差窗口 ≤ recommendCacheTTL。
+//   - 结构性变更的失效主通道 = Server 装配期订阅 library.changed 事件
+//     （server.go New：watch 增量/扫描完成/上传/回收站/标签/整理/库开关全部
+//     汇此，一处覆盖）；不发该事件的变更（点赞/收藏/导入/作者重建）由各
+//     handler 直接调 invalidateRecommendCache。修订号让旧条目整体作废。
+//   - 冷启动首击由开机预热承接（recommend_prewarm.go）：起监听即后台预计算
+//     App 首屏同键默认流，与首条请求经 do() 的单飞共享同一次计算。
 package httpapi
 
 import (
@@ -62,13 +66,58 @@ type recommendCacheEntry struct {
 // recommendCache 并发安全的推荐响应缓存；rev 随 invalidate 递增，
 // 旧修订号的键永不命中（免逐条清理）。
 type recommendCache struct {
-	mu      sync.Mutex
-	rev     int64
-	entries map[recommendCacheKey]recommendCacheEntry
+	mu       sync.Mutex
+	rev      int64
+	entries  map[recommendCacheKey]recommendCacheEntry
+	inflight map[recommendCacheKey]*recommendInflightCall
+}
+
+// recommendInflightCall 一轮进行中的计算（单飞）：冷启动首条请求与开机预热
+// 并发到达时共享同一次全库计算，避免重复跑聚合+打分管线。
+type recommendInflightCall struct {
+	done chan struct{}
+	body []gen.AssetSummary
+	ids  []string
+	err  error
 }
 
 func newRecommendCache() *recommendCache {
-	return &recommendCache{entries: make(map[recommendCacheKey]recommendCacheEntry)}
+	return &recommendCache{
+		entries:  make(map[recommendCacheKey]recommendCacheEntry),
+		inflight: make(map[recommendCacheKey]*recommendInflightCall),
+	}
+}
+
+// do 缓存主入口：命中返回缓存条目；未命中在单飞保护下执行 compute（并发
+// 同键只跑一次，其余等待共享同一结果），成功后登记缓存。compute 按约定
+// 不写展示计数——计数是「真实展示」语义（DOMAIN_RULES §1.4.3），由真实
+// 服务路径取得结果后自行回写，预热路径刻意不回写。
+func (c *recommendCache) do(key recommendCacheKey, compute func() ([]gen.AssetSummary, []string, error)) ([]gen.AssetSummary, []string, error) {
+	if e, ok := c.get(key); ok {
+		return e.body, e.assetIDs, nil
+	}
+	c.mu.Lock()
+	if call, ok := c.inflight[key]; ok {
+		c.mu.Unlock()
+		<-call.done
+		return call.body, call.ids, call.err
+	}
+	call := &recommendInflightCall{done: make(chan struct{})}
+	c.inflight[key] = call
+	c.mu.Unlock()
+
+	body, ids, err := compute()
+	call.body, call.ids, call.err = body, ids, err
+	close(call.done)
+
+	c.mu.Lock()
+	delete(c.inflight, key)
+	c.mu.Unlock()
+
+	if err == nil {
+		c.put(key, body, ids)
+	}
+	return body, ids, err
 }
 
 // get 命中返回条目副本（值拷贝，body/assetIDs 共享底层数组——只读约定，

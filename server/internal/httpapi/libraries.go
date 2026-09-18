@@ -293,8 +293,7 @@ func (s *Server) DeleteApiV1LibrariesLibraryId(w http.ResponseWriter, r *http.Re
 		return
 	}
 	s.scanStates.set(libraryID, "idle")
-	// 删库改变推荐候选集（recommend_cache.go 结构性失效口径），缓存失效
-	s.invalidateRecommendCache()
+	// 删库改变推荐候选集：推荐缓存失效经下方 library.changed 事件的装配期订阅统一触发
 	if err := s.bus.Publish(events.Event{Topic: events.TopicLibraryChanged}); err != nil {
 		s.logger.Warn("广播 library.changed 失败", "err", err)
 	}
@@ -332,9 +331,8 @@ func (s *Server) PutApiV1LibrariesLibraryIdEnabled(w http.ResponseWriter, r *htt
 		writeErr(w, http.StatusInternalServerError, codeInternal, "内部错误")
 		return
 	}
-	// enabled 是推荐候选查询的 WHERE 条件（recommend.sql kill-switch），
-	// 开关切换后推荐缓存失效
-	s.invalidateRecommendCache()
+	// enabled 是推荐候选查询的 WHERE 条件（recommend.sql kill-switch）：
+	// 推荐缓存失效经下方 library.changed 事件的装配期订阅统一触发
 	if err := s.bus.Publish(events.Event{Topic: events.TopicLibraryChanged}); err != nil {
 		s.logger.Warn("广播 library.changed 失败", "err", err)
 	}
@@ -352,10 +350,9 @@ func (s *Server) FinishScan(libraryID string, failed bool) {
 	s.scanStates.set(libraryID, state)
 	// 库内容可能已变化：广播 library.changed 让各端刷新（openapi
 	// /api/v1/events 事件清单）。扫描完成是 library_files 指标的刷新点
-	//（成败都刷：失败时磁盘现状同样变了，刷新反而更准）。
+	//（成败都刷：失败时磁盘现状同样变了，刷新反而更准）。推荐流缓存失效
+	// 由该事件的装配期订阅统一触发（server.go New）。
 	s.refreshLibraryFileMetrics()
-	// 扫描增删/变更资产会改变推荐候选集与打分输入，推荐缓存失效
-	s.invalidateRecommendCache()
 	if err := s.bus.Publish(events.Event{Topic: events.TopicLibraryChanged}); err != nil {
 		s.logger.Warn("广播 library.changed 失败", "err", err)
 	}
