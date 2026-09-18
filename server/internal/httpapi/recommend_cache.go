@@ -23,6 +23,7 @@
 package httpapi
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -92,6 +93,8 @@ func newRecommendCache() *recommendCache {
 // 同键只跑一次，其余等待共享同一结果），成功后登记缓存。compute 按约定
 // 不写展示计数——计数是「真实展示」语义（DOMAIN_RULES §1.4.3），由真实
 // 服务路径取得结果后自行回写，预热路径刻意不回写。
+// panic 契约（2026-09-18 评审补丁）：compute panic 时等待方拿到转译错误
+// 返回而非永久阻塞，席位 goroutine 原样上抛交上层 recover——见 runSingleflight。
 func (c *recommendCache) do(key recommendCacheKey, compute func() ([]gen.AssetSummary, []string, error)) ([]gen.AssetSummary, []string, error) {
 	if e, ok := c.get(key); ok {
 		return e.body, e.assetIDs, nil
@@ -106,17 +109,35 @@ func (c *recommendCache) do(key recommendCacheKey, compute func() ([]gen.AssetSu
 	c.inflight[key] = call
 	c.mu.Unlock()
 
-	body, ids, err := compute()
-	call.body, call.ids, call.err = body, ids, err
-	close(call.done)
-
-	c.mu.Lock()
-	delete(c.inflight, key)
-	c.mu.Unlock()
-
+	body, ids, err := c.runSingleflight(key, call, compute)
 	if err == nil {
 		c.put(key, body, ids)
 	}
+	return body, ids, err
+}
+
+// runSingleflight 席位持有者的计算执行体。回填结果→放行等待方→清理槽位
+// 三步全部收在 defer 里：compute panic 也必须走完（否则等待方永久阻塞，
+// inflight 槽位泄漏会让该键后续所有请求挂死到重启）；恢复路径把 panic
+// 转译成错误交给等待方后原样 re-panic，堆栈仍由上层（net/http recover）
+// 记录，不吞。放行先于清槽：close(done) 与 delete 之间到达的并发请求还能
+// 挂上 inflight 即刻取走结果，不触发重复计算。
+func (c *recommendCache) runSingleflight(key recommendCacheKey, call *recommendInflightCall, compute func() ([]gen.AssetSummary, []string, error)) (body []gen.AssetSummary, ids []string, err error) {
+	defer func() {
+		p := recover()
+		if p != nil {
+			body, ids, err = nil, nil, fmt.Errorf("推荐流计算 panic: %v", p)
+		}
+		call.body, call.ids, call.err = body, ids, err
+		close(call.done)
+		c.mu.Lock()
+		delete(c.inflight, key)
+		c.mu.Unlock()
+		if p != nil {
+			panic(p)
+		}
+	}()
+	body, ids, err = compute()
 	return body, ids, err
 }
 
