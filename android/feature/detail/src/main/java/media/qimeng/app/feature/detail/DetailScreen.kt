@@ -191,9 +191,11 @@ fun DetailScreen(
 
     if (state.isLoading) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // 加载/错误态保留朴素顶行（沉浸 chrome 随舞台挂载，加载期无舞台可浮）
+            // 加载/错误态保留朴素顶行（沉浸 chrome 随舞台挂载，加载期无舞台可浮）。
+            // 不再显示「加载中」文案（2026-09-18 用户反馈去除）：详情 JSON 走回环
+            // 毫秒级，整屏文案一闪反而显慢；海报慢链路已由 md 先行承接（VideoStage
+            // 分层）。加载期仅留返回键顶行、正文留白，数据到位整屏换入。
             DetailTopRow(onBack = onBack)
-            DetailLoadingState()
         }
     } else if (state.asset == null) {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -655,18 +657,6 @@ private val ERROR_BANNER_VERTICAL_PADDING = 4.dp
  * 加载/错误态顶行：复用 DetailSections.kt 既有 [DetailTopRow]（单源；I7 重写稿曾在本文件
  * 重复定义引发 overload 冲突，收口回单源）。
  */
-
-/** 加载态：居中「加载中…」（Web 首屏 grid-empty 同文案） */
-@Composable
-private fun DetailLoadingState() {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(
-            text = stringResource(R.string.detail_loading),
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
 
 /** 错误态（无内容可恢复：加载失败/路由缺参）：错误文案 + 重试 */
 @Composable
