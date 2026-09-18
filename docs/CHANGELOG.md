@@ -13,6 +13,15 @@
 ---
 ---
 ---
+## fix(app): AuthRepositoryImplTest 登出用例 flaky 真因根治——runTest 虚拟时钟烧掉吊销超时（2026-09-19 第三百三十五笔）
+
+执行 AI：GLM-5.3-Flash（主代理直改）
+
+- **修正 332 笔的诊断**：332 笔将 hitCounts 换 ConcurrentHashMap（保留，跨线程基本功仍在）并未治住 flaky——本轮 P4b 门禁同两用例仍红（断言行号恰 +3=注释行数，实锤同一断言）。真因：**runTest 虚拟时钟自动推进 vs Retrofit/OkHttp 真线程响应的竞态**——登出链路 `revokeCurrentSessionBestEffort` 的 `withTimeoutOrNull(3_000L)` 在测试协程挂起等待真线程响应期间被虚拟时钟瞬间烧掉，吊销请求被取消、`hitCounts["/api/v1/auth/logout"]` 恒 0；机器满载时 OkHttp 线程变慢则虚拟时钟必胜（红）、空载则真响应几乎必胜（绿），与「满载红/空载绿/隔离跑绿/两次红的断言行不同」全部观测吻合。
+- 修法（仅测试文件）：两个登出用例（`退出登录_清token保留地址`/`登出并预置地址_...`）runTest→**runBlocking**（真时钟=生产语义：3s 真超时、fake 拦截器微秒级返回，确定性通过）；其余用例无虚拟时间依赖不动；hitCounts 注释同步改写（并发安全容器保留，与真因解耦）。
+- 验证：:core:data 全量 107 用例满载门禁复跑全绿（随 336 笔 P4b 联合门禁实证）。
+
+
 ## docs: 任务P P6 收官——reviewer 对抗审查通过+终包出盘+#47 终态记档（2026-09-18 第三百三十四笔）
 
 执行 AI：GLM-5.3-Flash（主代理；全卷对抗审查=reviewer 子代理）
