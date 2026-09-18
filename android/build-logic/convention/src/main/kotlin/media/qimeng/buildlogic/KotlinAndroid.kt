@@ -6,8 +6,6 @@ import org.gradle.api.Project
 import org.gradle.api.plugins.JavaPluginExtension
 import org.gradle.kotlin.dsl.configure
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-import org.jetbrains.kotlin.gradle.dsl.KotlinAndroidProjectExtension
-import org.jetbrains.kotlin.gradle.dsl.KotlinBaseExtension
 import org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension
 
 // Android 公共版本面（原 17 个模块 build 文件逐字平移的收敛点；取值来源与升级论证统一见
@@ -35,8 +33,8 @@ internal fun Project.configureKotlinAndroid(commonExtension: CommonExtension) {
             targetCompatibility = JavaVersion.VERSION_17
         }
     }
-
-    configureKotlinJvmTarget<KotlinAndroidProjectExtension>()
+    // AGP 内置 Kotlin（任务P P3 迁移后）：jvmTarget 默认跟随 compileOptions.targetCompatibility（=17，
+    // 官方迁移文档明示无需再设 kotlin.compilerOptions.jvmTarget），故不再走 KGP Android DSL。
 }
 
 /**
@@ -49,19 +47,16 @@ internal fun Project.configureKotlinJvm() {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    configureKotlinJvmTarget<KotlinJvmProjectExtension>()
+    configureKotlinJvmTarget()
 }
 
 /**
- * Kotlin 编译器公共选项收敛点：jvmTarget 统一 17（原各模块 kotlin{compilerOptions{}} 的唯一去处）。
+ * Kotlin 编译器公共选项收敛点（纯 JVM 模块 = :sdk/:core:model 等 KGP kotlin("jvm") 宿主）：
+ * jvmTarget 统一 17。Android 模块在内置 Kotlin 下不再经过此处（jvmTarget 随 compileOptions）。
  */
-private inline fun <reified T : KotlinBaseExtension> Project.configureKotlinJvmTarget() =
-    configure<T> {
-        when (this) {
-            is KotlinAndroidProjectExtension -> compilerOptions
-            is KotlinJvmProjectExtension -> compilerOptions
-            else -> TODO("Unsupported project extension $this ${T::class}")
-        }.apply {
+private fun Project.configureKotlinJvmTarget() =
+    configure<KotlinJvmProjectExtension> {
+        compilerOptions.apply {
             jvmTarget.set(JvmTarget.JVM_17)
         }
     }

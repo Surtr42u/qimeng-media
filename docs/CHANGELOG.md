@@ -13,6 +13,17 @@
 ---
 ---
 ---
+## ci+app: 任务P P3 内置 Kotlin 迁移落地——撤双官方旁路 flag，:sdk 混合形态实证（2026-09-18 第三百二十八笔）
+
+执行 AI：GLM-5.3-Flash（主代理；官方迁移语境调研=只读子代理）
+
+- **裁决=a) worktree 实验全绿主树落地**（V6 范式隔离实验，主树零污染后单 commit 平移）：改动面 4 文件——gradle.properties 撤 `android.builtInKotlin`/`android.newDsl` 两官方临时 flag（注释块改写为迁移记档；AGP 10 起两 flag 不可用，到期前主动迁移）+ AndroidApplication/LibraryConventionPlugin 去 `apply org.jetbrains.kotlin.android` + KotlinAndroid.kt 收敛（KGP DSL 仅留纯 JVM 路径）——**不超过任务书影响面清单**（settings classpath 无需动：根 plugins apply false 经 catalog 已锁 KGP 2.4.20）。
+- 关键取舍：官方迁移文档明示内置 Kotlin 下 jvmTarget 默认随 compileOptions.targetCompatibility（=17）——「内置 Kotlin 扩展类名未确认」难题整体绕开，Android 模块不再走 KGP Android DSL；纯 JVM 模块（:sdk/:core:model）保留 KGP `kotlin("jvm")`，**混合形态经 worktree 全量构建+测试实证可用**（官方语义「内置 Kotlin 仅取代 kotlin-android 插件」+作用域限 apply AGP 的模块），P3 调研存疑点就此闭环。
+- Hilt 2.60.1（≥2.59 AGP9 支持线）/KSP 2.3.12/core-data `configure<KspExtension>`/compose 编译器插件（kotlin.plugin.compose）零改动直过。
+- 门禁：worktree 内三连+:sdk:jar+lintDebug 绿 + assembleRelease（R8）绿 + 内置 Kotlin 构建包装机冒烟（登录态保留/首页缩略图全载，截图 `android/.walk/p3/`）；主树落地后三连复核绿。worktree 首轮撞 AuthRepositoryImplTest 满载 2 红=326 笔记档的预存 flaky 同款（隔离复跑绿+空载全量绿定性），非本批回归。
+- 收益与风险：收益=撤两枚「AGP 10 定时炸弹」flag + **S3 252 笔 Step4 缓项就此销账**（#47 台账仅剩 targetSdk 拍板一项）；风险=内置 Kotlin 为 AGP 9.3 新默认路径，convention 与 KGP android 插件的交互层整体移除（理论减险）。回退=revert 本 commit 即恢复双 flag 过桥形态。
+
+
 ## ci+app: 任务P P2 Compose BOM 2026.09.00 + V6 LoadingIndicator 用点清偿（2026-09-18 第三百二十七笔）
 
 执行 AI：GLM-5.3-Flash（主代理直改，锁版依据=第三百二十五笔）
