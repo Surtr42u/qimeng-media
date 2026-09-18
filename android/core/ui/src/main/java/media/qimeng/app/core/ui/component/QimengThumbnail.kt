@@ -10,7 +10,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import coil3.compose.AsyncImage
+import coil3.request.CachePolicy
+import coil3.request.ImageRequest
 
 /**
  * 签名直链图片渲染（Coil 3 AsyncImage）：
@@ -27,6 +30,10 @@ import coil3.compose.AsyncImage
  *   true 且尚未成功加载过 → 暂不下发请求只出占位底（滚动结束后恢复加载）；**已成功加载的
  *   保持画面不清空**（对齐旧版 Glide pauseOnScroll 语义：滚动中不闪白，仅推迟新请求）。
  *   默认 false（首页/搜索/全部页等既有调用方行为零变化）
+ * @param diskCacheEnabled 磁盘缓存开关（2026-09-18 新增，默认 true 零行为变化）：
+ *   调用方对**动图原件直链**传 false——原件不落盘（U10-5 口径外延到网格：原件体积大，
+ *   落盘会挤爆 LRU 档位把小缩略图淘掉，反向造成「已缓存仍重新下载」；会话内回看由
+ *   内存缓存兜底）。静态缩略图直链照常落盘不受影响。
  */
 @Composable
 fun QimengThumbnail(
@@ -34,13 +41,25 @@ fun QimengThumbnail(
     modifier: Modifier = Modifier,
     contentDescription: String? = null,
     paused: Boolean = false,
+    diskCacheEnabled: Boolean = true,
 ) {
     // 「成功加载过」逐 model 记账：paused 恢复后（或 model 换新）重置，重新参与暂停门控
     var loaded by remember(model) { mutableStateOf(false) }
+    val context = LocalContext.current
+    // 不落盘须构造请求级 ImageRequest；remember 防 recomposition 重建请求重复发起
+    val uncachedModel = remember(model, diskCacheEnabled) {
+        model?.takeIf { !diskCacheEnabled }?.let {
+            ImageRequest.Builder(context).data(it).diskCachePolicy(CachePolicy.DISABLED).build()
+        }
+    }
     // 占位/错误底：旧版 ?attr/qmColorChipBg → 本项目主题角色映射 secondaryContainer
     // （Theme.kt 映射注释；日 #F0F0F2 / 夜 #2E2E2E 成对），任务L L1 起替代 surfaceVariant
     AsyncImage(
-        model = if (paused && !loaded) null else model,
+        model = when {
+            paused && !loaded -> null
+            uncachedModel != null -> uncachedModel
+            else -> model
+        },
         contentDescription = contentDescription,
         contentScale = ContentScale.Crop,
         placeholder = ColorPainter(MaterialTheme.colorScheme.secondaryContainer),
