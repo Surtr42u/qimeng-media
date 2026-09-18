@@ -13,6 +13,15 @@
 ---
 ---
 ---
+## ci+app: 任务P P2 Compose BOM 2026.09.00 + V6 LoadingIndicator 用点清偿（2026-09-18 第三百二十七笔）
+
+执行 AI：GLM-5.3-Flash（主代理直改，锁版依据=第三百二十五笔）
+
+- BOM 2026.08.00→**2026.09.00**（toml 单行+composeBom 头注改写）：官方 POM 实证管控 ui/foundation/animation/runtime 1.12.0→**1.12.1**（补丁位，compose-animation 注释同步改写）；material3 **维持显式 1.5.0-alpha28**——1.5.0 stable 未发（maven latest=alpha28 即线末位 2026-09-09），BOM 管控仍 1.4.0，撤显式 ref=降级不成立，「BOM 不覆盖 1.5.0-alpha 线」特殊口径保留；bom-mapping 页滞后未收录 2026.09.00，以 maven POM 为准（P0 锁版记档）。
+- **V6 遗留清偿（LoadingIndicator 用点 API 签名复核，此项销账）**：全仓 grep 实存 5 用点（DetailFileOpsDialogs/DetailTagSheet/LoginScreen/UploadScreen/LibraryManageScreen，Dimens.kt 为常量档）与 V6 记档 4 处+后续新增 1 处口径一致；全部只用基础重载 `LoadingIndicator(modifier=…)`，alpha28 下该 API 无签名变化（alpha19 曾回退 stable 转正、仍属实验 API，各用点 @OptIn 齐备=编译即证）。
+- 门禁：三连 + assembleRelease 全绿；模拟器走查（qimeng_api35c 无头）：详情页渲染与共享元素转场正常、标签管理 ModalBottomSheet 版式完好（U10-2 对齐口径；本 Sheet 无点外关闭=取消/保存双钮设计——S1b 的点外关闭系作者 Sheet，非回归）、数据页统计卡+Vico 浏览趋势折线（平涂面积+空心点）渲染正常、内容榜含本会话新播放事件（p1-smoke-video.mp4 1 次=打点链路端到端通）。截图 `android/.walk/p2/`。
+
+
 ## ci+app: 任务P P1 Gradle 9.7.0×AGP 9.3.1 配对升级——KGP gradle96 变体闭环+门禁预存缺陷两处清偿（2026-09-18 第三百二十六笔）
 
 执行 AI：GLM-5.3-Flash（主代理直改，锁版依据=第三百二十五笔）

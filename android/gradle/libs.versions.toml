@@ -16,11 +16,11 @@
 #                  彻底对齐需 Gradle ≥9.6，wrapper 升级留后续批））
 #                  https://repo1.maven.org/maven2/com/google/devtools/ksp/symbol-processing-api/
 #                  （KSP 2.3.0 起与 Kotlin 编译器版本解耦，2.3.12 为当前稳定，随本批配套升级）
-#   composeBom     https://developer.android.com/develop/ui/compose/bom/bom-mapping（BOM 2026.08.00
-#                  -> ui/animation 1.12.0 / material3(BOM 管控) 1.4.0，dl.google.com maven-metadata
-#                  实存核查 2026-09-13。compose 1.12 AAR 元数据要求 compileSdk 37 + AGP ≥9.1.1——
-#                  S3 第 3 步 compileSdk 37 落地后解锁；2026.09.00 已发布，本批按备忘录第 3 步口径
-#                  锚定 37 门禁线首版 2026.08.00，2026.09+ 留后续批评估）
+#   composeBom     https://developer.android.com/develop/ui/compose/bom/bom-mapping（BOM 2026.09.00
+#                  -> ui/foundation/animation/runtime 1.12.1 / material3(BOM 管控) 1.4.0，官方 POM 实存
+#                  核查 dl.google.com 2026-09-18；bom-mapping 页滞后未收录 2026.09.00，以 maven POM 为准。
+#                  compose 1.12 AAR 元数据要求 compileSdk 37 + AGP ≥9.1.1——S3 第 3 步已满足；
+#                  2026-09-18 任务P P2 批自 2026.08.00 升入（1.12.0→1.12.1 补丁位））
 #   navigation     https://developer.android.com/jetpack/androidx/releases/navigation（2.10 线 stable
 #                  末位 2.10.1；2.10.0 起要求 compileSdk 37 的门禁已随 S3 第 3 步解除）
 #   activity       https://developer.android.com/jetpack/androidx/releases/activity（1.13.0 stable；
@@ -55,7 +55,7 @@
 agp = "9.3.1"
 kotlin = "2.4.20"
 ksp = "2.3.12"
-composeBom = "2026.08.00"
+composeBom = "2026.09.00"
 activityCompose = "1.13.0"
 navigationCompose = "2.10.1"
 lifecycle = "2.11.0"
@@ -132,7 +132,7 @@ compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }
 compose-foundation = { group = "androidx.compose.foundation", name = "foundation" }
 compose-material3 = { group = "androidx.compose.material3", name = "material3", version.ref = "material3" }
 # 共享元素转场（exp#3 试点）：SharedTransitionLayout/sharedBounds 在 animation 构件，
-# 版本随 BOM（2026.08.00 → animation 1.12.0，compose ui·animation 同步发布），禁止单独升级
+# 版本随 BOM（2026.09.00 → animation 1.12.1，compose ui·animation 同步发布），禁止单独升级
 compose-animation = { group = "androidx.compose.animation", name = "animation" }
 # rememberSaveable 所在构件（QimengValuePillBlock 两行钳制展开态）：foundation 传递可见但本仓
 # 显式依赖纪律下 core:ui 直用须自声明，版本随 BOM，禁止单独升级
