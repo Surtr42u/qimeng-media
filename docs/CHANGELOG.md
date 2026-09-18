@@ -13,6 +13,14 @@
 ---
 ---
 ---
+## fix(app): AuthRepositoryImplTest hitCounts 竞态根治——ConcurrentHashMap 化（2026-09-18 第三百三十二笔）
+
+执行 AI：GLM-5.3-Flash（主代理直改）
+
+- 仅测试胶水改动（零生产行为）：fake 传输层拦截器跑在 OkHttp 线程写 `hitCounts`、断言在 runTest 调度线程读，普通 HashMap 跨线程无可见性保证——全量套件+机器满载时偶发 AssertionError（330 笔记档的预存 flaky，本会话已 3 次污染门禁定性），`ConcurrentHashMap` 化根治，注释记档成因。
+- 验证：与 333 笔 room 批联合门禁实跑——:core:data 全量 107 用例满载场景全绿，连续两轮无复发。
+
+
 ## ci+app: 任务P P5② vico 2.5.1→2.5.2 补丁线——3.3.1 major 跳线记档顺延（2026-09-18 第三百三十一笔）
 
 执行 AI：GLM-5.3-Flash（主代理直改，锁版依据=第三百二十五笔）
