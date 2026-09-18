@@ -50,10 +50,13 @@ private val DECODE_ERROR_HORIZONTAL_PADDING = 24.dp
  *
  * 解码失败兜底（RES #27，D7 发现的清偿）：损坏原件（截断 JPEG 等）此前解码失败后
  * 舞台黑屏无任何提示。现 Target.onError 触发舞台中央中文提示 + 重试/返回——不崩、
- * 不黑屏哑失败。Coil 的 Target 不区分网络失败与解码失败，文案两者兼顾（「可能已损坏
- * 或格式不受支持」）；重试 = 重发请求（错误结果不入缓存，必然真重拉）。视频态不涉
- * （Media3 播放器错误面自成体系，且 Web 端编码兼容提示条已按 2026-09-05 用户拍板移除，
- * 无可对照口径——记档见交付报告）。
+ * 不黑屏哑失败。Coil 的 Target 不区分网络失败与解码失败（onError 只回调 null Image），
+ * 归因走请求级 listener(onError) 的 ErrorResult.throwable（[isNetworkTransferFailure]
+ * cause 链判传输类）：传输类 → 「网络不畅」文案（重试即恢复的多数派，2026-09-18 真机
+ * BUG-A 复发把超时误报成「文件已损坏」后分档）；其余 → 「无法解码」兜底。
+ * 重试 = 重发请求（错误结果不入缓存，必然真重拉）。视频态不涉（Media3 播放器错误面
+ * 自成体系，且 Web 端编码兼容提示条已按 2026-09-05 用户拍板移除，无可对照口径——
+ * 记档见交付报告）。
  *
  * 图片舞台（[ImageStage]）：单击=切换沉浸 chrome、横滑=兄弟切换（I7 起）。缩放沉浸
  * （2026-09-13 用户反馈驱动，非旧版对齐）：放大跨过阈值经 [onZoomImmersiveChanged] 上报，
@@ -86,6 +89,10 @@ internal fun ZoomableOriginalImage(
     // 解码失败态（RES #27）：只反映「最近一次完成的结果」——请求发起时清零，
     // onError 置位、onSuccess 清零；重试经 [retryAttempt] 递增触发请求重建
     var decodeFailed by remember { mutableStateOf(false) }
+    // 失败归因（2026-09-18 文案分档）：传输类失败（超时/断流）与真解码失败分档提示——
+    // Target.onError 拿不到异常对象（coil3 只回调 null Image），归因走请求级
+    // listener(onError) 的 ErrorResult.throwable（coil 3.6.2 字节码核实）
+    var networkLikeFailure by remember { mutableStateOf(false) }
     var retryAttempt by remember { mutableIntStateOf(0) }
 
     // 加载期底色记档（修复B，2026-09-14）：exp#4 的整屏 secondaryContainer 灰色占位翼
@@ -113,6 +120,7 @@ internal fun ZoomableOriginalImage(
 
         if (decodeFailed) {
             DecodeErrorOverlay(
+                networkLikeFailure = networkLikeFailure,
                 onRetry = {
                     decodeFailed = false
                     retryAttempt += 1
@@ -134,6 +142,7 @@ internal fun ZoomableOriginalImage(
             // 新请求在途：清旧失败态（失败态只反映最近一次完成的结果）；占位翼已撤
             // （修复B记档见上），加载期透出调用方 backdrop，旧版同款不闪白
             decodeFailed = false
+            networkLikeFailure = false
             val request = ImageRequest.Builder(context)
                 .data(url)
                 // 口径②：不降采样。Size.ORIGINAL =「按原图尺寸解码」的显式表达；
@@ -144,6 +153,12 @@ internal fun ZoomableOriginalImage(
                 // 联网观看的预期是「即看即取」而非「下载留存」（对齐旧版本地直读体验）。
                 // 会话内回看由内存缓存兜底（memoryCachePolicy 全局 ENABLED）。
                 .diskCachePolicy(CachePolicy.DISABLED)
+                // 失败归因（文案分档）：异常经 cause 链判传输类（见 isNetworkTransferFailure）
+                .listener(
+                    onError = { _, result ->
+                        networkLikeFailure = isNetworkTransferFailure(result.throwable)
+                    },
+                )
                 .target(
                     object : Target {
                         // coil3 多平台 Image → Android Drawable（asDrawable 官方转换，
@@ -180,6 +195,7 @@ internal fun ZoomableOriginalImage(
  */
 @Composable
 private fun DecodeErrorOverlay(
+    networkLikeFailure: Boolean,
     onRetry: () -> Unit,
     onExit: () -> Unit,
     modifier: Modifier = Modifier,
@@ -187,7 +203,15 @@ private fun DecodeErrorOverlay(
     Box(modifier = modifier.background(Color.Black), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
-                text = stringResource(R.string.detail_image_decode_failed),
+                // 文案分档（2026-09-18）：传输类失败提示网络问题（重试即恢复的多数派），
+                // 其余保留「无法解码」兜底——此前一律报「可能已损坏」误导用户
+                text = stringResource(
+                    if (networkLikeFailure) {
+                        R.string.detail_image_network_failed
+                    } else {
+                        R.string.detail_image_decode_failed
+                    },
+                ),
                 color = Color.White,
                 modifier = Modifier.padding(horizontal = DECODE_ERROR_HORIZONTAL_PADDING),
             )
