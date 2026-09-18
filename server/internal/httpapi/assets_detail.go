@@ -182,6 +182,13 @@ func (s *Server) GetApiV1AssetsAssetId(w http.ResponseWriter, r *http.Request, a
 	detail.OrigUrl = &orig
 	thumb := s.thumbURL(row.AssetID, "lg")
 	detail.ThumbUrl = &thumb
+	// thumbUrlMd（2026-09-18 协议新增）：md 档签名直链。回填只预生成 md 档
+	//（thumbnail_warmup 只投 SizeGrid），网格浏览过的资产 md 必在盘上；客户端
+	// 详情海报先用 md 立即显示、lg 就绪后换上——lg 首开要现场跑 ffmpeg 全管线
+	//（秒级起步 + genSlots 排队），此前整屏灰块干等就是这条链（DOMAIN_RULES
+	// §11 档位分工：md=网格/详情快出档，lg=详情最终档）。
+	thumbMd := s.thumbURL(row.AssetID, "md")
+	detail.ThumbUrlMd = &thumbMd
 	if row.DurationMs.Valid {
 		detail.DurationMs = ptr(row.DurationMs.Int64)
 	}
