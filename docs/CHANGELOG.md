@@ -13,6 +13,14 @@
 ---
 ---
 ---
+## fix(web): 过滤跨源掩码 "Script error." 噪音上报（2026-09-18 第三百二十一笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- 维护页异常表曾积 4 条 "Script error."（9 月 3–5 日）零信息量记录：本站全部脚本同源（index.html 仅内联脚本 + 同源 module），浏览器只对「无 crossorigin 的跨源脚本」掩码 message——该签名且无错误对象 = 浏览器扩展/注入脚本的第三方噪音。
+- `lib/client-logs.ts` onerror 处理器加过滤：message 恰为 "Script error." 且无堆栈不上报；带堆栈的照常上报兜底。给资源加 crossorigin 属性的方案被否——站内没有跨源脚本可加，治不了扩展噪音（同日桌面壳排查时确认）。
+- 验证：`npm run build`（tsc + vite）绿、oxlint 0 errors（18 warnings 为存量基线）。
+
 ## feat(app): 客户端异常上报通道接线+图片加载失败文案分档（2026-09-18 第三百二十笔）
 
 执行 AI：GLM-5.3-Flash（主代理）

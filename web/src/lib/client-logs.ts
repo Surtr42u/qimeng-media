@@ -100,8 +100,14 @@ export function installClientLogs(): void {
 
   window.onerror = (message, source, lineno, colno, error) => {
     try {
+      const text = String(message)
+      // 跨源掩码噪音过滤（2026-09-18）：本站全部脚本同源（index.html 仅内联脚本 +
+      // 同源 module），浏览器只对「无 crossorigin 的跨源脚本」把 message 掩码成
+      // "Script error."——收到该签名且无错误对象 = 浏览器扩展/注入脚本的第三方
+      // 噪音，零排障价值不上报（维护页曾积 4 条同类记录）；带堆栈的仍照常上报。
+      if (text === 'Script error.' && !error?.stack) return
       const where = source ? ` (${source}:${lineno ?? '?'}:${colno ?? '?'})` : ''
-      record(entry(`${String(message)}${where}`, error?.stack))
+      record(entry(`${text}${where}`, error?.stack))
     } catch {
       /* 上报器自身异常绝不外抛（防递归） */
     }
