@@ -74,8 +74,12 @@ func (s *Server) GetApiV1Recommendations(w http.ResponseWriter, r *http.Request,
 		offset:    offset,
 		limit:     limit,
 	}
+	// 计算核脱离请求取消（WithoutCancel，2026-09-18 评审补丁）：单飞计算被
+	// 并发同键请求共享，席位持有者的客户端断开不得中止计算——否则共享方
+	// 继承取消错误 500。计算核无副作用（计数回写在本函数收尾），脱离安全；
+	// 断开方算完的结果照常落缓存供后续请求命中（预热路径用 Background 同理）。
 	body, ids, err := s.recommendCache.do(key, func() ([]gen.AssetSummary, []string, error) {
-		return s.computeRecommendPage(r.Context(), day, seed, mediaType, cosOnly, offset, limit, prefs)
+		return s.computeRecommendPage(context.WithoutCancel(r.Context()), day, seed, mediaType, cosOnly, offset, limit, prefs)
 	})
 	if err != nil {
 		s.internalErr(w, "推荐流计算失败", err)

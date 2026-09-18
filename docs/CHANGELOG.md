@@ -13,6 +13,16 @@
 ---
 ---
 ---
+## fix(server): 推荐缓存单飞取消传染+panic 放行+预热键漂移断言（2026-09-18 第三百一十九笔）
+
+执行 AI：GLM-5.3（主代理）
+
+- 评审补丁（对三百一十八笔推荐缓存批的三处加固，行为口径 DOMAIN_RULES §1.4 不变）。
+- 单飞取消传染：席位计算核改 `context.WithoutCancel`——修复并发同键请求中席位持有者客户端断开时，共享方继承取消错误 500（单飞经典坑，x/sync/singleflight 同款要求）；计算核无副作用，脱离取消安全，断开方算完的结果照常落缓存供后续命中。
+- panic 放行：`do()` 的回填结果/放行等待方/清理槽位三步收进 defer（抽 `runSingleflight`）——修复 compute panic 时等待方永久阻塞、inflight 槽位泄漏导致该键后续所有请求挂死到重启；panic 转译为错误交给等待方后原样 re-panic，堆栈仍由 net/http recover 记录。
+- 预热键漂移断言：新增 `TestRecommendPrewarmKeyMatchesAppFirstScreen`，用字面量 1/200 独立复述 App 首屏契约（刻意不引 server 常量，同源漂移测不出），server 侧预热键漂移即测试变红；App 侧漂移仍靠 recommend_prewarm.go 双向注释（跨仓库无机械锁）。
+- 测试：recommend_cache_test 增至 8 用例（panic 放行用例锁定修复前必挂死）；`go build ./...`、`go test ./... -count=1` 全绿，gofmt 零差异（race 检测因本机无 CGO 未跑）。
+
 ## perf(server): 推荐缓存开机预热+单飞合并+library.changed 订阅失效（2026-09-18 第三百一十八笔）
 
 执行 AI：GLM-5.3-Flash（主代理）
