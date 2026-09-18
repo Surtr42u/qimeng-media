@@ -6,6 +6,10 @@ package media.qimeng.app.core.model
  *
  * @param title 详情标题：cosWork 优先、回退 fileName（由 mapper 算好，与列表卡同口径）
  * @param thumbUrl 已拼 base 的签名缩略图绝对直链（签名 URL 禁改写，ADR-0002）
+ * @param thumbUrlMd 已拼 base 的签名缩略图 md 档（512）绝对直链（可空口径与 thumbUrl 一致）。
+ *   协议批 2026-09-18：md 档与列表网格同源、服务端开机预生成，详情海报先用本档立即出图、
+ *   thumbUrl（lg）就绪后换上——lg 不在预生成范围，首开详情直等 lg 会触发现场 ffmpeg 生成
+ *   （秒级起步）。null = 旧服务端/异常，UI 退化为直接 lg（现状行为）
  * @param origUrl 已拼 base 的签名原件绝对直链（"查看永远发原件"；3a 占位未消费，3b 播放器/原图用）
  * @param lastPositionSeconds 断点续播位置秒（协议 BigDecimal → Double；已看完判定在 3b/3c 消费）
  * @param tags 详情标签（服务端按关联时间倒序返回——「最近添加置顶」，LEGACY §A）
@@ -26,6 +30,8 @@ data class AssetDetail(
     /** 当日是否已点赞（本地日历日，每资产每日一次；点赞按钮初始态，协议注释明文） */
     val likedToday: Boolean,
     val thumbUrl: String?,
+    /** md 档缩略图（512，预生成）；海报 md 先行策略见类 KDoc，null 退化直接 lg */
+    val thumbUrlMd: String? = null,
     val origUrl: String?,
     val durationMs: Long?,
     val cosWork: String?,

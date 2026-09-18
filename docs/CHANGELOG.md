@@ -13,6 +13,14 @@
 ---
 ---
 ---
+## fix(app): 相册进详情写批次清单+详情海报先md后lg（2026-09-18 第三百一十六笔）
+
+执行 AI：GLM-5.3-Flash（主代理，协议+服务端+测试修正）+ 执行子代理（feature/all 与 feature/detail 实施）
+
+- 相册滑切修复（feature/all）：根因为相册页是全仓列表页唯一没写批次上下文（MediaBatchIndex）就进详情的——详情左右滑要么无清单可滑（滑不动）、要么跟着其他页面残留旧清单（不跟随当前筛选）。AlbumViewModel 注入 batchIndex 新增 enterDetail，onAssetClick 先写清单再导航；清偿代码内「另记待办」过时注释。
+- 详情海报 md 先行（feature/detail）：协议 thumbUrlMd 消费端落地——海报改分层渲染：底层挂 md（网格同源已预生成，秒出），md 成功后挂 lg 覆盖层（lg 就绪/磁盘命中即换上，失败保持 md 不闪灰块错误图），无 md 退化现状直挂 lg；选「分层双图」而非换 model（Coil 换 model 会重开 placeholder 闪灰块），取舍记档 VideoStage。
+- 测试：AlbumViewModelTest 8（新增 enterDetail 批次用例）、AlbumFilterPanelTest 14（修正一处陈旧断言——状态层误期望 FILE_DATE，设计口径 UI 休息档恒 DEFAULT 仅发参翻译改道，AlbumPanelFilter.kt 口径为准）、VideoPosterLayeringTest 5（新，分层裁决单源）、SdkDetailMappersTest 12（新增 thumbUrlMd 映射三态）、DetailViewModelTest 34，全绿。
+
 ## feat(api): AssetDetail 增 thumbUrlMd 签名直链——详情海报先 md 后 lg（2026-09-18 第三百一十五笔）
 
 执行 AI：GLM-5.3-Flash（主代理）

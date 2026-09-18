@@ -111,6 +111,25 @@ class SdkDetailMappersTest {
     }
 
     @Test
+    fun `thumbUrlMd映射 - 相对路径absolutize 绝对URL原样 缺省null`() {
+        // 协议批 2026-09-18：md 档（512，预生成）= 详情海报「md 先行」消费源，
+        // 与 thumbUrl（lg）同款 absolutize 口径（签名 URL 禁改写，ADR-0002）
+        val domain = SdkDetailMappers.toAssetDetail(
+            sdkDetail().copy(thumbUrlMd = "/media/thumb/abc?size=md&sig=m"),
+            baseUrl,
+        )
+        assertEquals("http://192.168.1.10:8420/media/thumb/abc?size=md&sig=m", domain.thumbUrlMd)
+        // 已是绝对 URL 原样保留（不二次拼接）
+        val absolute = SdkDetailMappers.toAssetDetail(
+            sdkDetail().copy(thumbUrlMd = "https://cdn.example.com/thumb/md"),
+            baseUrl,
+        )
+        assertEquals("https://cdn.example.com/thumb/md", absolute.thumbUrlMd)
+        // 旧服务端缺省 null（App 端退化直接 lg，VideoPosterLayering 口径）
+        assertNull(SdkDetailMappers.toAssetDetail(sdkDetail(), baseUrl).thumbUrlMd)
+    }
+
+    @Test
     fun `媒体类型-互动字段-断点位置映射`() {
         val domain = SdkDetailMappers.toAssetDetail(
             sdkDetail(

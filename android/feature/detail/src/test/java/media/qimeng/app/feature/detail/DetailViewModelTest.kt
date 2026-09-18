@@ -201,6 +201,7 @@ class DetailViewModelTest {
         isFavorite: Boolean = false,
         origUrl: String? = null,
         thumbUrl: String? = null,
+        thumbUrlMd: String? = null,
         width: Int? = null,
         height: Int? = null,
         durationMs: Long? = null,
@@ -217,6 +218,7 @@ class DetailViewModelTest {
         likeCount = 0,
         likedToday = false,
         thumbUrl = thumbUrl,
+        thumbUrlMd = thumbUrlMd,
         origUrl = origUrl,
         durationMs = durationMs,
         cosWork = cosWork,
@@ -269,6 +271,21 @@ class DetailViewModelTest {
         assertEquals(3, state.batchSize)
         // 当前资产自身只取 1 次（批次 [a,b,c] 的窗口预载会另拉 c/a，见预载用例）
         assertEquals(1, repo.detailCallsById["b"])
+    }
+
+    // 协议批 2026-09-18：thumbUrlMd（md 档，预生成）随详情落地透出到 UiState——海报
+    // 「md 先行」换图策略的 VM 侧数据源（absolutize 映射口径由 core:data SdkDetailMappersTest
+    // 锁定，此处断言领域模型经 VM 全链透传不丢字段）
+    @Test
+    fun `详情模型含thumbUrlMd - 随UiState透出供海报md先行`() = runTest(mainDispatcherRule.testDispatcher) {
+        val repo = FakeDetailRepository().apply {
+            detailResult = detail("b", thumbUrl = "https://x/b.lg", thumbUrlMd = "https://x/b.md")
+        }
+        val vm = viewModel(repo)
+        advanceUntilIdle()
+        assertNull(vm.uiState.value.errorMessage)
+        assertEquals("https://x/b.md", vm.uiState.value.asset?.thumbUrlMd)
+        assertEquals("https://x/b.lg", vm.uiState.value.asset?.thumbUrl)
     }
 
     @Test

@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import media.qimeng.app.core.data.repository.DataStoreGridPrefsRepository
 import media.qimeng.app.core.data.repository.GridPrefsRepository
+import media.qimeng.app.core.data.repository.MediaBatchIndex
 import media.qimeng.app.core.data.repository.MediaRepository
 import media.qimeng.app.core.data.repository.AssetOrigUrlResolver
 import media.qimeng.app.core.data.repository.TagNameConflictException
@@ -67,6 +68,7 @@ data class AlbumUiState(
 class AlbumViewModel @Inject constructor(
     private val mediaRepository: MediaRepository,
     private val gridPrefs: GridPrefsRepository,
+    private val batchIndex: MediaBatchIndex,
     val origUrlResolver: AssetOrigUrlResolver,
 ) : ViewModel() {
 
@@ -291,6 +293,17 @@ class AlbumViewModel @Inject constructor(
         if (target != albumColumns.value) {
             viewModelScope.launch { gridPrefs.setAlbumColumns(target) }
         }
+    }
+
+    /**
+     * 进详情前的批次上下文写入（详情页「i / N」序号与左右滑切换的数据链，首页/收藏/历史同款机制）：
+     * 「已加载 = 当前显示清单」口径——相册页 items 即当前筛选后的已显示清单，快照式整体替换
+     * [MediaBatchIndex.ids]，详情页滑切才跟随相册当前筛选而非其他页面残留清单；清单未落地
+     * （首载在途/失败）时 items 为空 → 空批次，详情页序号区不显示（调用点在 AllScreen
+     * 卡片点击，先写批次再交壳层导航）。
+     */
+    fun enterDetail(assetId: String) {
+        batchIndex.ids = _uiState.value.items.map { it.id }
     }
 
     fun clearError() {
