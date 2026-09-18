@@ -89,6 +89,8 @@ func (s *Server) PostApiV1ImportQimengBackup(w http.ResponseWriter, r *http.Requ
 	}
 	if !imp.aborted {
 		imp.res.Warnings = &imp.warnings // 始终非 nil，空时序列化为 []
+		// 全量导入改变了资产/行为/标签等推荐输入，推荐缓存失效
+		s.invalidateRecommendCache()
 		writeJSON(w, http.StatusOK, imp.res)
 	}
 }

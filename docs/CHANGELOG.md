@@ -13,6 +13,16 @@
 ---
 ---
 ---
+## perf(server): 推荐流短TTL响应缓存+展示计数批量事务+缩略图开机回填静默窗（2026-09-18 第三百一十三笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- 动机：单机形态（ADR-0015）手机真机反馈「本地登录首页过一小会才显示内容」。三处服务端慢点：/recommendations 每请求全库聚合+打分+逐条写、展示计数 200 次隐式事务逐条提交、起监听即开跑 ffmpeg 批量回填与登录期抢 CPU/IO。
+- 推荐流响应短缓存（recommend_cache.go 新增）：60s TTL + 修订号失效，键=（修订号,日界,seed,mediaType,cosOnly,权重指纹,offset,limit）（offset/limit 双值——OffsetPaging 用例抓过「只存和值串页」）；命中仍回写当日展示计数（§1.4.3 不破坏），语义记档 DOMAIN_RULES §1.4 第 4 条：TTL 内同键同序、浏览事件不失效（防缓存常冷）、结构性变更即时失效——失效挂点 9 处：publishLibraryChanged 汇点（标签/回收站/上传/整理）+ 点赞/收藏（engagement）+ 库开关与 FinishScan（libraries）+ 全量导入（import）+ 作者导入/删除/重建（authors）。
+- 展示计数单事务批量写（recordDailyShownBatch）：语义与逐条等价（每返回项 +1），一次提交替代 200 次隐式事务落盘；命中/未命中两条路径共用。
+- 缩略图开机回填静默窗：`thumbnail.warmup_delay`（yaml，默认 60s=DefaultThumbnailWarmupDelay；env `QIMENG_THUMBNAIL_WARMUP_DELAY`，0 关闭）；启动回填与窗内扫描后预热顺延窗尾，周期兜底不受影响。
+- 测试：recommend_cache_test 3 用例（修订号作废/TTL 拨老/库开关端到端失效）；既有推荐 7 用例跨缓存路径全绿；`go test ./...` 全绿、`make lint` exit 0。
+
 ## fix(app): 登录探活5xx崩溃+登出吊销服务端会话+上传通道超时+备份排除token（2026-09-17 第三百一十一笔）
 
 执行 AI：GLM-5.3（主代理）+ 执行子代理（实施）+ 审查子代理（全检发现）

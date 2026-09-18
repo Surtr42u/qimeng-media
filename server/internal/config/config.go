@@ -30,6 +30,14 @@ const defaultDataDir = "./data"
 // httpapi.DefaultTokenTTL 是它的别名（代码卫生约束：同值不双写）。
 const DefaultTokenTTL = 6 * time.Hour
 
+// DefaultThumbnailWarmupDelay 是缩略图开机回填的默认静默窗（60s）：服务端
+// 起监听后先等这么久再开跑批量回填。为什么默认不等零：单机形态（ADR-0015）
+// 服务端起监听与 App 登录几乎同时发生，ffmpeg 批量转码若立刻开跑会与首屏
+// 请求/按需缩略图抢 CPU/IO，用户感知为「登录后前几十秒整机发闷」（2026-09-18
+// 反馈）；延后回填对 NAS/PC 形态无害（回填本来就是后台渐进任务）。部署方
+// 显式配 0 可关闭等待（低配 NAS 若想尽早建满缩略图）。
+const DefaultThumbnailWarmupDelay = time.Minute
+
 // ThumbnailConfig 缩略图管线配置。
 type ThumbnailConfig struct {
 	// Workers 是缩略图工作池大小；0 表示按 CPU 核数自动决定（交由 runtime 决策，
@@ -48,6 +56,12 @@ type ThumbnailConfig struct {
 	// 自动发现）。消费方除缩略图管线外还有扫描入库与上传的视频探测——
 	// 三处共用 Generator 装配出的同一个解析结果（见 thumbnail.Generator）。
 	FFprobePath string `yaml:"ffprobe_path"`
+	// WarmupDelay 是开机回填的启动静默窗：进程启动后先等这么久才开始批量
+	// 回填（扫描后补齐与周期兜底同样受窗约束——窗内的触发顺延到窗尾执行，
+	// 见 httpapi/thumbnail_warmup.go waitForBootQuietWindow）。0 或负 = 不
+	// 等待。时长语法与 token_ttl 同口径（yaml "60s" / env
+	// QIMENG_THUMBNAIL_WARMUP_DELAY）；默认 DefaultThumbnailWarmupDelay。
+	WarmupDelay time.Duration `yaml:"warmup_delay"`
 }
 
 // UploadConfig 上传管线配置（DOMAIN_RULES §9：单文件大小上限可配置）。
@@ -127,7 +141,7 @@ func Load(path string) (*Config, error) {
 		Listen:    defaultListen,
 		DataDir:   defaultDataDir,
 		LogLevel:  "info",
-		Thumbnail: ThumbnailConfig{Workers: 0, LongSide: 0},
+		Thumbnail: ThumbnailConfig{Workers: 0, LongSide: 0, WarmupDelay: DefaultThumbnailWarmupDelay},
 		Upload:    UploadConfig{MaxBytes: DefaultUploadMaxBytes},
 		Web:       WebConfig{StaticDir: defaultWebStaticDir},
 		TokenTTL:  DefaultTokenTTL,
@@ -181,6 +195,13 @@ func applyEnv(cfg *Config) error {
 	}
 	if v := os.Getenv("QIMENG_THUMBNAIL_FFPROBE_PATH"); v != "" {
 		cfg.Thumbnail.FFprobePath = v
+	}
+	if v := os.Getenv("QIMENG_THUMBNAIL_WARMUP_DELAY"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			return fmt.Errorf("环境变量 QIMENG_THUMBNAIL_WARMUP_DELAY=%q 不是合法时长（如 60s、2m）: %w", v, err)
+		}
+		cfg.Thumbnail.WarmupDelay = d
 	}
 	if v := os.Getenv("QIMENG_DB_PATH"); v != "" {
 		cfg.DbPath = v

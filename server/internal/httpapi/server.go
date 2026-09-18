@@ -149,6 +149,11 @@ type Server struct {
 	authLimit  *authLimiter
 	sse        *events.Handler
 	scanStates *scanStateMap // 库扫描态（内存跟踪；库表无此列，scanner 接线后回写）
+	// recommendCache 推荐流响应缓存（recommend_cache.go，2026-09-18 性能批）。
+	recommendCache *recommendCache
+	// startedAt 进程装配时刻（≈启动时刻）：缩略图开机回填静默窗的时间基准
+	//（thumbnail_warmup.go waitForBootQuietWindow）。
+	startedAt time.Time
 	// spa 是 Web SPA 构建产物处理器（nil = 静态目录不可用，回退内嵌验收页）。
 	// topRouter 的免鉴权判定依赖它是否存在（见 topRouter.ServeHTTP 注释）。
 	spa     *spaHandler
@@ -191,21 +196,23 @@ func New(deps Deps) (*Server, error) {
 		logger = slog.Default()
 	}
 	s := &Server{
-		conn:       deps.Conn,
-		q:          deps.Queries,
-		bus:        deps.Bus,
-		cfg:        deps.Cfg,
-		thumbs:     deps.Thumbs,
-		scanner:    sc,
-		sysStatus:  deps.SysStatus,
-		metrics:    deps.Metrics,
-		secret:     deps.MediaSecret,
-		ttl:        ttl,
-		now:        now,
-		logger:     logger,
-		authState:  newAuthState(),
-		authLimit:  newAuthLimiter(authRateLimitMax, authRateLimitWindow),
-		scanStates: newScanStateMap(),
+		conn:           deps.Conn,
+		q:              deps.Queries,
+		bus:            deps.Bus,
+		cfg:            deps.Cfg,
+		thumbs:         deps.Thumbs,
+		scanner:        sc,
+		sysStatus:      deps.SysStatus,
+		metrics:        deps.Metrics,
+		secret:         deps.MediaSecret,
+		ttl:            ttl,
+		now:            now,
+		logger:         logger,
+		authState:      newAuthState(),
+		authLimit:      newAuthLimiter(authRateLimitMax, authRateLimitWindow),
+		scanStates:     newScanStateMap(),
+		recommendCache: newRecommendCache(),
+		startedAt:      now(),
 	}
 	// 服务重启后 Bearer token 仍有效：从库加载首行 token 哈希到内存
 	//（SECURITY「鉴权设计」：库中只存哈希，明文 token 永不落库）。
