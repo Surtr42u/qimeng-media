@@ -13,6 +13,14 @@
 ---
 ---
 ---
+## docs: 任务P P4 targetSdk37 拍板材料出齐——主树零改动，等用户拍板（2026-09-18 第三百二十九笔）
+
+执行 AI：GLM-5.3-Flash（主代理；行为变更清单调研=只读子代理+主代理英文原页复核）
+
+- 拍板材料三件落盘（仓库外《QimengNAS\待拍板-任务P-P4-targetSdk37.md》）：①行为变更影响表（Android 17 targetSdk=37 共 17 条逐一对照——**唯一硬成本=ACCESS_LOCAL_NETWORK 运行时权限**（局域网 NAS 连接全依赖，现 manifest 无此权限）；后台音频 WIU 加固=中（无 mediaPlayback FGS，真机 17 定性）；CT/ECH/W^X/16KB/WorkManager 等经复核无影响）；②试装对照报告（worktree 仅改 targetSdk=37 于 P3 HEAD 出包，qimeng_api35c 与 36 包全链等价、零崩溃，截图 .walk/p4/；**能力边界如实记档**：API 35 模拟器无法触发 Android 17 专属行为，真机定性留 P4b 后）；③升 vs 维持代价收益（维持 36=零成本免费延期，行为变更只对 target 37 生效）。
+- **主树零改动**（targetSdk 行未动）；试装包用后即弃（worktree 已回收）。**挂起等用户拍板**（升 37→P4b 单 commit；维持→记档销账），不阻塞 P5。
+
+
 ## ci+app: 任务P P3 内置 Kotlin 迁移落地——撤双官方旁路 flag，:sdk 混合形态实证（2026-09-18 第三百二十八笔）
 
 执行 AI：GLM-5.3-Flash（主代理；官方迁移语境调研=只读子代理）
