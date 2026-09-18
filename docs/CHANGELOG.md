@@ -13,6 +13,16 @@
 ---
 ---
 ---
+## feat(app): 备份页跨端同步暂存——本机⇄服务器免来回导文件（2026-09-18 第三百二十四笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- 动机（用户拍板）：本机⇄服务器元数据同步原来要「导出文件→切换→选文件导入」来回折腾，改为 App 内一步暂存、一步导入。
+- 备份页主卡新增「跨端同步」行：①「暂存当前库」=复用导出链同一段序列化，写入 App 内部存储（`filesDir/sync-staging/`，只保留最新一份覆盖写；来源服务端地址入元数据防导错方向，core:data 实现方经 ServerConfigDataSource 自取，feature 不触达地址单点）；②切换登录另一端后「导入暂存」=与「选择文件」完全同一条 BackupValidator→确认弹窗→幂等导入链路（口径单源）。行内常显暂存状态（来自哪端/时间/体积）。
+- 语义（诚实口径）：标签/作者/收藏/点赞/时间轴按唯一键合并（最新覆盖）；浏览统计/历史按批次回放——同一份暂存重复导入不翻倍，**重新暂存（新 exportedAtMillis 批次）再导入会重复累计浏览统计**（DOMAIN_RULES §10 既有导入语义；事件级内容去重属服务端改造，留待拍板）。规则说明第四条同步写明。
+- 新增 `SyncStagingRepository` 端口 + `InternalFileSyncStagingRepository` 内部存储实现（元数据 Properties 落盘；半截写入读侧 null 自愈）+ DataModule 绑定。
+- 测试：BackupViewModelTest 增 3 用例（暂存落仓与 KB 反馈/导入走同链路确认前零出网/无暂存错误横幅），feature:manage 全绿；SyncStagingRepository 文件胶水未单测（Context 依赖、本仓无 Robolectric）记档。
+
 ## feat(app): 数据页「常看文件」改「内容榜」走 /rankings（2026-09-18 第三百二十三笔）
 
 执行 AI：GLM-5.3-Flash（主代理；执行子代理落地）

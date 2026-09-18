@@ -35,6 +35,7 @@ import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -63,6 +64,17 @@ private const val SYNC_SUBTITLE_SUFFIX = "断网先存本机联网自动补传"
 private const val ROW_SYNC_ACTION = "立即同步"
 private const val ROW_SYNC_ACTION_BUSY = "同步中…"
 
+// ---------- 跨端同步行（2026-09-18 用户拍板：本机⇄服务器同步免来回导文件，
+// App 内暂存中转；导入走既有文件导入的校验→确认→幂等导入链路） ----------
+private const val ROW_STAGE_TITLE = "跨端同步"
+private const val ROW_STAGE_SUBTITLE_EMPTY =
+    "连着哪端就先「暂存当前库」；切换登录另一端后「导入暂存」合并（免导出文件）"
+private const val STAGED_SUBTITLE_TEMPLATE = "已暂存：来自 %s · %s · %d KB；切到另一端登录后点「导入暂存」"
+private const val ROW_STAGE_ACTION = "暂存当前库"
+private const val ROW_STAGE_ACTION_BUSY = "暂存中…"
+private const val ROW_STAGE_IMPORT = "导入暂存"
+private const val ROW_STAGE_IMPORT_BUSY = "导入中…"
+
 private const val DIALOG_CONFIRM = "导入恢复"
 private const val DIALOG_CANCEL = "取消"
 
@@ -82,11 +94,12 @@ private const val AUTO_LAST_NEVER = "未运行"
 private const val AUTO_RUN_NOW = "立即备份"
 private const val AUTO_RUN_BUSY = "备份中…"
 
-/** 规则说明三条（Web L297-299 逐字；2026-09-16 用户反馈缩小置于主卡下方） */
+/** 规则说明三条（Web L297-299 逐字；2026-09-16 用户反馈缩小置于主卡下方；2026-09-18 增跨端同步口径） */
 private val RULE_LINES = listOf(
     "· 导入幂等：同一备份重复导入不翻倍（作者/标签/关联按唯一键合并）",
     "· 统计/历史按事件回放重建；mediaFiles 仅在文件名能匹配到库内文件时建立关联",
     "· 扫描源等设备本机段不迁移，导入后请核对库注册与根路径",
+    "· 跨端同步：标签/作者/收藏按最新合并；浏览统计按批次回放——重新暂存（新批次）后再导入会重复累计浏览统计",
 )
 
 /** 16dp：内容水平内边距（上传子页同档） */
@@ -109,6 +122,9 @@ private val JSON_MIME_TYPES = arrayOf("application/json")
 
 /** 导出文件预填名（旧版固定约定 qimeng_backup.json，DATA_MIGRATION_SPEC §2；Web BACKUP_FILE_NAME 同源） */
 private const val EXPORT_FILE_NAME = "qimeng_backup.json"
+
+/** KB 换算分母（暂存行体积展示与 VM NOTICE_EXPORT 同口径） */
+private const val BYTES_PER_KB = 1024.0
 
 /**
  * 备份导入/导出页（U10-6b；2026-09-16 用户反馈改版）：主卡三行（导入/导出/同步）统一
@@ -234,6 +250,31 @@ fun BackupScreen(
                     ) {
                         TextButton(enabled = !state.eventSyncing, onClick = viewModel::syncEventsNow) {
                             Text(if (state.eventSyncing) ROW_SYNC_ACTION_BUSY else ROW_SYNC_ACTION)
+                        }
+                    }
+                    // 跨端同步（2026-09-18）：暂存=导出进 App 内部存储（免 SAF 挑文件）；
+                    // 导入暂存=与「选择文件」同一条校验→确认弹窗→幂等导入链路（VM 单源）
+                    ActionRow(
+                        title = ROW_STAGE_TITLE,
+                        subtitle = when (val staged = state.staged) {
+                            null -> ROW_STAGE_SUBTITLE_EMPTY
+                            else -> STAGED_SUBTITLE_TEMPLATE.format(
+                                staged.sourceUrl,
+                                formatLastRun(staged.stagedAtMillis),
+                                (staged.sizeBytes / BYTES_PER_KB).roundToInt(),
+                            )
+                        },
+                    ) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(QimengDimens.SpaceXS)) {
+                            TextButton(enabled = !state.stagingBusy, onClick = viewModel::stageForSync) {
+                                Text(if (state.stagingBusy) ROW_STAGE_ACTION_BUSY else ROW_STAGE_ACTION)
+                            }
+                            TextButton(
+                                enabled = state.staged != null && !state.importing,
+                                onClick = viewModel::importStaged,
+                            ) {
+                                Text(if (state.importing) ROW_STAGE_IMPORT_BUSY else ROW_STAGE_IMPORT)
+                            }
                         }
                     }
                 }

@@ -94,6 +94,11 @@ interface DataModule {
     @Singleton
     fun bindRecommendPrefsRepository(impl: media.qimeng.app.core.data.repository.SdkRecommendPrefsRepository): media.qimeng.app.core.data.repository.RecommendPrefsRepository
 
+    // 跨端同步暂存（2026-09-18 用户拍板：本机⇄服务器同步免来回导文件，App 内暂存中转）
+    @Binds
+    @Singleton
+    fun bindSyncStagingRepository(impl: media.qimeng.app.core.data.repository.InternalFileSyncStagingRepository): media.qimeng.app.core.data.repository.SyncStagingRepository
+
     @Binds
     @Singleton
     fun bindSystemInfoRepository(impl: media.qimeng.app.core.data.repository.SdkSystemInfoRepository): media.qimeng.app.core.data.repository.SystemInfoRepository
