@@ -99,6 +99,27 @@ class SdkMediaRepository @Inject constructor(
         )
     }
 
+    override suspend fun allThumbUrls(): List<String> {
+        // 复用 assets() 而非直调 SDK：thumbUrl 经 SdkMappers.absolutize 拼绝对直链，
+        // 与首页网格完全同源的 URL 构造路径（签名相对路径禁改写，ADR-0002）。
+        // includeCos 必须显式 true（reviewer P1 修正）：GET /assets 服务端缺省排除 COS
+        //（openapi includeCos default=false，default=true 那处是 /history——Zone.kt
+        // 「请求侧须显式传」口径）；不传则 COS 分区缩略图永远不会被预取。
+        val urls = mutableListOf<String>()
+        var cursor: String? = null
+        var pages = 0
+        do {
+            val page = assets(
+                AssetQuery(cursor = cursor, limit = ALL_THUMBS_PAGE_LIMIT, includeCos = true),
+            )
+            page.items.forEach { asset -> asset.thumbUrl?.let(urls::add) }
+            cursor = page.nextCursor
+        } while (cursor != null && ++pages < ALL_THUMBS_MAX_PAGES)
+        // 服务端列表已去重，这里只滤翻页窗口内文件变动导致的跨页重复 URL（防同图重复预取；
+        // 进度口径「本轮已处理/本轮总数」以 distinct 后列表为准，不做跨轮全局精确去重）
+        return urls.distinct()
+    }
+
     override suspend fun facets(query: FacetsQuery): FacetsResult {
         val api = apiFactory.create()
         logRequest("GET /assets/facets", query.toLogString())
@@ -202,6 +223,16 @@ class SdkMediaRepository @Inject constructor(
 
         /** HTTP 409：POST /tags 重名（服务端唯一语义化 4xx，领域化为 [TagNameConflictException]） */
         private const val HTTP_CONFLICT = 409
+
+        /** 全库缩略图分页每页条数：openapi GET /assets limit 上限即 200（单页最大减少翻页往返）。 */
+        private const val ALL_THUMBS_PAGE_LIMIT = 200
+
+        /**
+         * 全库缩略图分页安全阀（页数上限）：正常按 nextCursor 翻完即止，此值只防
+         * 异常服务端回环返回相同 cursor 导致调用方永久挂起——200 页 × 200 条 = 4 万
+         * 资产封顶，超限按已收到的部分继续（宁少不挂）。
+         */
+        private const val ALL_THUMBS_MAX_PAGES = 200
     }
 }
 

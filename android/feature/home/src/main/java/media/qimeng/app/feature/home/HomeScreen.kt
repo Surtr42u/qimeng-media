@@ -57,6 +57,8 @@ import media.qimeng.app.core.ui.component.QimengFilterSheet
 import media.qimeng.app.core.ui.component.QimengMediaGrid
 import media.qimeng.app.core.ui.component.QimengPill
 import media.qimeng.app.core.ui.component.QimengPullToRefresh
+import media.qimeng.app.core.ui.component.QimengSkeletonGrid
+import media.qimeng.app.core.ui.component.QIMENG_SKELETON_GRID_ROWS
 import media.qimeng.app.core.ui.component.TabScrollController
 import media.qimeng.app.core.ui.icon.Grid1Icon
 import media.qimeng.app.core.ui.icon.HomeFilterIcon
@@ -259,6 +261,7 @@ fun HomeScreen(
             when (HomeTab.entries[page]) {
                 HomeTab.RECOMMEND -> RecommendPage(
                     state = state.recommend,
+                    hasError = state.errorMessage != null,
                     columns = columns,
                     listState = recommendListState,
                     animatedUrlResolver = animatedUrlResolver,
@@ -268,6 +271,7 @@ fun HomeScreen(
                 )
                 HomeTab.COS -> CosPage(
                     state = state.cos,
+                    hasError = state.errorMessage != null,
                     columns = columns,
                     listState = cosListState,
                     animatedUrlResolver = animatedUrlResolver,
@@ -276,7 +280,8 @@ fun HomeScreen(
                     onAssetClick = onAssetClick,
                 )
                 HomeTab.RANK -> RankPage(
-                    items = state.rank.items,
+                    state = state.rank,
+                    hasError = state.errorMessage != null,
                     columns = columns,
                     listState = rankListState,
                     animatedUrlResolver = animatedUrlResolver,
@@ -448,10 +453,29 @@ private fun HomeTopIconButton(
     }
 }
 
-/** 推荐流页：一次拉满 200、分批揭示；空态保持空白（规格书语义） */
+/**
+ * 三 tab 共用的「列表空」分支（2026-09-18 首页冷启动空白修复）：首屏在途 → [QimengSkeletonGrid]
+ * 骨架屏，替代此前 loading 期间整页空白（旧实现 loading 中什么都不渲染）。
+ * 骨架条件 = 未 loaded 且无真错误：同时覆盖「探针等待 + 请求在途 + 静默退避间隙」整段窗口
+ * （三者 errorMessage 恒 null、loaded 恒 false），骨架↔空态不在退避节奏里来回闪；
+ * 预算耗尽/用户动作失败亮横幅（hasError）后回落空态，不伪装加载中；已 loaded 且真库空 →
+ * 空态（规格书语义）。数据在单次 state copy 中原子落地，骨架→网格一次切换不闪烁；
+ * 下拉刷新已有数据走网格分支，不出现骨架。
+ */
+@Composable
+private fun EmptyOrSkeleton(isLoaded: Boolean, hasError: Boolean, columns: Int, emptyText: String) {
+    if (!isLoaded && !hasError) {
+        QimengSkeletonGrid(columns = columns, itemCount = columns * QIMENG_SKELETON_GRID_ROWS)
+    } else {
+        QimengEmptyState(text = emptyText)
+    }
+}
+
+/** 推荐流页：一次拉满 200、分批揭示；空态保持空白（规格书语义）；首屏在途出骨架屏（2026-09-18） */
 @Composable
 private fun RecommendPage(
     state: RecommendState,
+    hasError: Boolean,
     columns: Int,
     listState: LazyGridState,
     animatedUrlResolver: suspend (String) -> String?,
@@ -461,7 +485,7 @@ private fun RecommendPage(
 ) {
     QimengPullToRefresh(isRefreshing = state.isRefreshing, onRefresh = onRefresh) {
         if (state.pulled.isEmpty()) {
-            if (!state.isLoading) QimengEmptyState(text = "")
+            EmptyOrSkeleton(isLoaded = state.loaded, hasError = hasError, columns = columns, emptyText = "")
             return@QimengPullToRefresh
         }
         QimengMediaGrid(
@@ -477,10 +501,11 @@ private fun RecommendPage(
     }
 }
 
-/** COS 流页：独立入口 cosOnly=1，cursor 分页 */
+/** COS 流页：独立入口 cosOnly=1，cursor 分页；首屏在途出骨架屏（2026-09-18，口径同推荐流） */
 @Composable
 private fun CosPage(
     state: CosState,
+    hasError: Boolean,
     columns: Int,
     listState: LazyGridState,
     animatedUrlResolver: suspend (String) -> String?,
@@ -490,7 +515,7 @@ private fun CosPage(
 ) {
     QimengPullToRefresh(isRefreshing = state.isRefreshing, onRefresh = onRefresh) {
         if (state.items.isEmpty()) {
-            if (!state.isLoading) QimengEmptyState(text = "")
+            EmptyOrSkeleton(isLoaded = state.loaded, hasError = hasError, columns = columns, emptyText = "")
             return@QimengPullToRefresh
         }
         QimengMediaGrid(
@@ -504,10 +529,11 @@ private fun CosPage(
     }
 }
 
-/** 排行榜页：日/周/月/年周期（缺省日榜）；类型筛选为客户端投影 */
+/** 排行榜页：日/周/月/年周期（缺省日榜）；类型筛选为客户端投影；首屏在途出骨架屏（2026-09-18） */
 @Composable
 private fun RankPage(
-    items: List<MediaAsset>,
+    state: RankState,
+    hasError: Boolean,
     columns: Int,
     listState: LazyGridState,
     animatedUrlResolver: suspend (String) -> String?,
@@ -515,12 +541,13 @@ private fun RankPage(
     onAssetClick: (MediaAsset) -> Unit,
 ) {
     QimengPullToRefresh(isRefreshing = false, onRefresh = onRefresh) {
-        if (items.isEmpty()) {
-            QimengEmptyState(text = "暂无数据")
+        if (state.items.isEmpty()) {
+            // 改动前加载中也显「暂无数据」的误导空态，2026-09-18 起在途窗口由骨架屏接管
+            EmptyOrSkeleton(isLoaded = state.loaded, hasError = hasError, columns = columns, emptyText = "暂无数据")
             return@QimengPullToRefresh
         }
         QimengMediaGrid(
-            sections = listOf(GridSection(label = "", items = items)),
+            sections = listOf(GridSection(label = "", items = state.items)),
             columns = columns,
             animatedUrlResolver = animatedUrlResolver,
             listState = listState,

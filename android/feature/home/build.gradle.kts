@@ -16,6 +16,8 @@ dependencies {
     // feature 只许依赖 core（单向依赖，ADR-0014）；core:ui 已 api 传递 :core:model
     implementation(project(":core:ui"))
     implementation(project(":core:data"))
+    // 2026-09-18 首屏探针接线：HomeViewModel 构造注入 ServerReadinessProbe（feature→core 方向合法）
+    implementation(project(":core:network"))
 
     implementation(libs.compose.material3)
     implementation(libs.compose.foundation)

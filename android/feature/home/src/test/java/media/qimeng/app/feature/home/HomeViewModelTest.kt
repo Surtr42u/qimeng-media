@@ -1,8 +1,10 @@
 package media.qimeng.app.feature.home
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -28,7 +30,15 @@ import media.qimeng.app.core.model.MediaAsset
 import media.qimeng.app.core.model.MediaKind
 import media.qimeng.app.core.model.NameSuggestion
 import media.qimeng.app.core.model.RankingPeriod
+import media.qimeng.app.core.network.AuthApi
+import media.qimeng.app.core.network.AuthApiFactory
+import media.qimeng.app.core.network.ServerConfigDataSource
+import media.qimeng.app.core.network.ServerReadinessProbe
 import media.qimeng.app.core.testing.MainDispatcherRule
+import java.io.IOException
+
+/** 探针替身用的假地址（替身 probe 不发真实 IO，任意合法 URL 串即可） */
+private const val TEST_FAKE_SERVER_URL = "http://qimeng.test"
 
 /**
  * 首页 ViewModel 单测（2026-09-06 审查清偿）：排行榜周期切换的代际防乱序——
@@ -130,6 +140,37 @@ class HomeViewModelTest {
         override suspend fun setAlbumColumns(columns: Int) = Unit
     }
 
+    // ---------- 服务端就绪探针替身（2026-09-18 探针接线适配） ----------
+    // ServerReadinessProbe 是 final 类不可 override：替身=真实探针 + 可编程依赖组装。
+    // ready=true：已配置地址 + probe() 立即成功 → awaitReady 首枪即通；
+    // ready=false：未配置地址（currentServerUrl=null）→ pollUntilReady 首行短路立即 false。
+    // 探针内部 async 挂与 Main 同调度器的 UnconfinedTestDispatcher：替身 probe 无挂起点，
+    // awaitReady 同步完成、不悬 VM 协程，虚拟时间保持全确定。
+
+    private fun stubReadinessProbe(ready: Boolean): ServerReadinessProbe {
+        val api = object : AuthApi {
+            override suspend fun probe() = Unit // 首枪即通：不抛 = healthz 200
+            override suspend fun login(password: String): String = throw IOException("替身不触达")
+            override suspend fun devLogin(): String = throw IOException("替身不触达")
+            override suspend fun logout() = throw IOException("替身不触达")
+        }
+        return ServerReadinessProbe(
+            serverConfig = object : ServerConfigDataSource {
+                override val serverUrl: Flow<String> = MutableStateFlow(if (ready) TEST_FAKE_SERVER_URL else "")
+                override val token: Flow<String?> = MutableStateFlow<String?>(null)
+                override fun currentToken(): String? = null
+                override fun currentServerUrl(): String? = if (ready) TEST_FAKE_SERVER_URL else null
+                override suspend fun updateServerUrl(url: String) = Unit
+                override suspend fun updateToken(token: String) = Unit
+                override suspend fun clearToken() = Unit
+            },
+            authApiFactory = object : AuthApiFactory {
+                override fun create(baseUrl: String): AuthApi = api
+            },
+            scope = CoroutineScope(UnconfinedTestDispatcher(mainDispatcherRule.testDispatcher.scheduler)),
+        )
+    }
+
     // ---------- 造数 ----------
 
     private fun asset(id: String) = MediaAsset(
@@ -152,11 +193,14 @@ class HomeViewModelTest {
     private fun viewModel(
         repo: FakeMediaRepository,
         likeTracker: LikeMutationTracker = LikeMutationTracker(),
+        probe: ServerReadinessProbe? = null,
     ): HomeViewModel = HomeViewModel(
         mediaRepository = repo,
         gridPrefs = FakeGridPrefsRepository(),
         batchIndex = MediaBatchIndex(),
         likeMutationTracker = likeTracker,
+        // 默认注入「立即就绪」替身：既有用例时序与探针接线前逐位一致（2026-09-18）
+        readinessProbe = probe ?: stubReadinessProbe(ready = true),
         origUrlResolver = object : AssetOrigUrlResolver {
             override suspend fun origUrl(assetId: String): String? = null
         },
@@ -664,7 +708,7 @@ class HomeViewModelTest {
             }
             val viewModel = viewModel(repo)
 
-            // 只推进到首枪失败落地（重试还在 1.5s 退避中，不推进虚拟时间）
+            // 只推进到首枪失败落地（重试还在退避中——首档 300ms，不推进虚拟时间）
             runCurrent()
             assertFalse(viewModel.uiState.value.recommend.loaded)
             assertFalse(viewModel.uiState.value.recommend.isLoading) // 退避间隙，非在途
@@ -712,5 +756,34 @@ class HomeViewModelTest {
             advanceUntilIdle()
             assertNull(viewModel.uiState.value.errorMessage)
             assertTrue(viewModel.uiState.value.recommend.loaded)
+        }
+
+    // ---------- 探针接线（2026-09-18 单机形态冷启动）：init 先 awaitReady 再首拉 ----------
+
+    @Test
+    fun `探针就绪后首屏照常发起并落地 - 探针只等服务端不吞首拉`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val repo = FakeMediaRepository().apply { recommendationsResult = listOf(asset("r1")) }
+            val viewModel = viewModel(repo, probe = stubReadinessProbe(ready = true))
+            advanceUntilIdle()
+            // 探针只负责「等服务端起来」：就绪（或超时）后首拉必须照常发出并落地，
+            // 失败反馈链路（静默重试→预算耗尽亮横幅）不被探针截断
+            assertEquals(listOf(1L), repo.recommendationsCalls)
+            assertTrue(viewModel.uiState.value.recommend.loaded)
+            assertNull(viewModel.uiState.value.errorMessage)
+        }
+
+    @Test
+    fun `探针未就绪也照常发起首屏 - awaitReady false 不阻塞首拉照常落地`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            // ready=false 替身：未配置地址 → awaitReady 走 pollUntilReady 首行短路返回 false
+            //（探针哨兵修复后此分支才可经真实探针触发），验证调用方契约「false 照常发起」
+            val repo = FakeMediaRepository().apply { recommendationsResult = listOf(asset("r1")) }
+            val viewModel = viewModel(repo, probe = stubReadinessProbe(ready = false))
+            advanceUntilIdle()
+            // 探针超时/未配置不吞首拉：业务请求照发，落地路径与就绪场景完全一致
+            assertEquals(listOf(1L), repo.recommendationsCalls)
+            assertTrue(viewModel.uiState.value.recommend.loaded)
+            assertNull(viewModel.uiState.value.errorMessage)
         }
 }
