@@ -54,3 +54,36 @@ WHERE
               JOIN authors au ON au.id = aa.author_id
               WHERE aa.asset_id = a.asset_id AND au.type = 'cos')))
 ORDER BY a.asset_id;
+
+-- Windowed ranking heat inputs (DOMAIN_RULES 2, 2026-09-18): period
+-- rankings aggregate per-day data inside the window instead of lifetime
+-- totals. Both queries take fromDay = local calendar day (YYYY-MM-DD) of
+-- now - window; day >= fromDay includes the whole cutoff day (day-level
+-- bucketing is the finest granularity the two tables have).
+--
+-- Rows are keyed by asset_id only; the rankings handler joins them to the
+-- already library/COS-filtered ListAssetsRecommendInput rows in Go, so
+-- extra rows (COS-linked or disabled-library assets) are simply never
+-- looked up. Assets without any window activity simply have no row
+-- (zero heat -> excluded from period boards by the admission rule).
+
+-- SumWindowedDailyStats: per-asset window sums from the "asset x day"
+-- materialized table (cache of the view_events stream; DOMAIN_RULES 5).
+-- name: SumWindowedDailyStats :many
+SELECT asset_daily_stats.asset_id AS asset_id,
+       CAST(SUM(asset_daily_stats.view_count) AS INTEGER) AS view_count,
+       CAST(SUM(asset_daily_stats.play_count) AS INTEGER) AS play_count
+FROM asset_daily_stats
+WHERE asset_daily_stats.day >= sqlc.arg(from_day)
+GROUP BY asset_daily_stats.asset_id;
+
+-- CountWindowedLikes: per-asset window like counts. likes is keyed
+-- (asset_id, day) (one like per asset per day, DOMAIN_RULES 5), so the
+-- table has native day granularity -- window likes = row count with
+-- day >= fromDay.
+-- name: CountWindowedLikes :many
+SELECT likes.asset_id AS asset_id,
+       CAST(COUNT(*) AS INTEGER) AS like_count
+FROM likes
+WHERE likes.day >= sqlc.arg(from_day)
+GROUP BY likes.asset_id;

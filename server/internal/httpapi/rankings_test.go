@@ -1,8 +1,9 @@
 package httpapi
 
-// 排行榜端点（M3）测试：无周期内浏览 → 200 空数组；周期过滤只留
-// 当日浏览过的资产；limit 生效。热度口径（view+play+like）已在
-// recommend 包单测锁定，这里只测接线（HTTP 层行为）。
+// 排行榜端点（M3）测试：无窗口内活动 → 200 空数组；非 all 周期准入 =
+// 窗口内热度 > 0（2026-09-18 窗口化口径，7 天/30 天榜单随窗口滚动）；
+// limit/offset 生效。热度口径（窗口化排序）已在 recommend 包单测锁定，
+// 这里只测接线（HTTP 层行为）。
 
 import (
 	"encoding/json"
@@ -30,9 +31,17 @@ func rankList(t *testing.T, env *testEnv, query string) []gen.AssetSummary {
 // reportView 上报一次 open 浏览事件（startedAt 固定为测试钟当天上午）。
 func reportView(t *testing.T, env *testEnv, assetID, session string) {
 	t.Helper()
+	reportViewAt(t, env, assetID, session, "2026-08-22T10:00:00Z")
+}
+
+// reportViewAt 上报一次指定时刻的 open 浏览事件（窗口滚动测试用：
+// startedAt 可落在历史日期，事件日按本地日历日落进对应 asset_daily_stats
+// 行与 likes 无关——open 事件只进事件流+物化表）。
+func reportViewAt(t *testing.T, env *testEnv, assetID, session, startedAt string) {
+	t.Helper()
 	resp := env.do(t, http.MethodPost, "/api/v1/events/view",
-		`{"assetId":"`+assetID+`","kind":"open","startedAt":"2026-08-22T10:00:00Z","sessionId":"`+session+`"}`)
-	_ = resp.Body.Close()
+		`{"assetId":"`+assetID+`","kind":"open","startedAt":"`+startedAt+`","sessionId":"`+session+`"}`)
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusAccepted {
 		t.Fatalf("view 上报期望 202，得到 %d", resp.StatusCode)
 	}
@@ -141,5 +150,36 @@ func TestRankingsOffsetPaging(t *testing.T) {
 	}
 	if got := rankList(t, env, "?period=all&limit=1&offset=50"); len(got) != 0 {
 		t.Errorf("offset=50（深越界）期望空数组，得到 %d 条", len(got))
+	}
+}
+
+// TestRankingsWeekMonthWindows_differ：窗口化核心行为锁（2026-09-18，
+// 修复「切换 7天/30天 榜单不变」）——20 天前浏览过的 c.mp4 只进月榜、
+// 不进周榜（窗口内无活动被准入过滤排除）；当日浏览过的 b.jpg 两榜都有。
+// 月榜两资产窗口热度同分（各 1 次 open）→ 按 mtime 降序，mtime 更新的
+// c.mp4（测试钟 +2 天）排在前。
+func TestRankingsWeekMonthWindows_differ(t *testing.T) {
+	env := newTestEnv(t)
+	bID, okB := env.assetIDByName(t, "b.jpg")
+	cID, okC := env.assetIDByName(t, "c.mp4")
+	if !okB || !okC {
+		t.Fatal("测试前置失败：测试资产缺失")
+	}
+	reportView(t, env, bID, "w-recent")                        // 测试钟当日（2026-08-22）
+	reportViewAt(t, env, cID, "w-old", "2026-08-02T10:00:00Z") // 20 天前 → 仅在月窗口内
+
+	week := rankList(t, env, "?period=week")
+	if len(week) != 1 || week[0].FileName == nil || *week[0].FileName != "b.jpg" {
+		t.Fatalf("周榜期望只含 b.jpg（20 天前活动不进 7 天窗口），得到 %v", week)
+	}
+	month := rankList(t, env, "?period=month")
+	if len(month) != 2 {
+		t.Fatalf("月榜期望含 2 条，得到 %d", len(month))
+	}
+	if month[0].FileName == nil || *month[0].FileName != "c.mp4" {
+		t.Fatalf("月榜同分应按 mtime 降序 c.mp4 在前，得到 %v", month)
+	}
+	if month[1].FileName == nil || *month[1].FileName != "b.jpg" {
+		t.Fatalf("月榜第 2 位应为 b.jpg，得到 %v", month)
 	}
 }

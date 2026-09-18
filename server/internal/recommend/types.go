@@ -16,8 +16,23 @@ type Item struct {
 	Stats      Stats
 	Tags       []string // 库内标签（手动标签池，DOMAIN_RULES §7）
 	LikeCount  int
-	ShownToday int // 今日已被推荐展示次数（dailyPenalty 输入，零点后查询侧自然归零）
+	ShownToday int          // 今日已被推荐展示次数（dailyPenalty 输入，零点后查询侧自然归零）
+	Window     WindowCounts // 周期窗口内行为计数（排行输入，DOMAIN_RULES §2；推荐流不消费）
 }
+
+// WindowCounts 是周期窗口内的行为计数（排行热度输入，DOMAIN_RULES §2
+// 2026-09-18 窗口化口径）：由查询层按「资产×日」数据（asset_daily_stats
+// 物化表 + likes 的资产×日行，day ≥ cutoffDay）聚合后填进 Item.Window，
+// Rank 只消费不计算（保持纯函数）。零值 = 窗口内无活动，period 榜单
+// 据此准入过滤。
+type WindowCounts struct {
+	ViewCount int
+	PlayCount int
+	LikeCount int
+}
+
+// Heat 窗口热度总分（view + play + like）。
+func (w WindowCounts) Heat() int { return w.ViewCount + w.PlayCount + w.LikeCount }
 
 // Stats 是行为聚合（view/play/dwell 事件与最近浏览时间）。
 type Stats struct {
