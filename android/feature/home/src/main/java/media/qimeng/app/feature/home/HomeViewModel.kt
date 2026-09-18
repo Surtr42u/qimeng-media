@@ -28,6 +28,7 @@ import media.qimeng.app.core.model.PanelFeedback
 import media.qimeng.app.core.model.RankingPeriod
 import media.qimeng.app.core.model.RecommendPaging
 import media.qimeng.app.core.model.withPanelDraft
+import media.qimeng.app.core.network.ServerReadinessProbe
 
 /** 首页三 tab（GUIDE_UI §首页：推荐 / COS / 排行榜，左右横滑切换）；展示文案在 feature strings.xml（tabLabelRes 映射），不进状态层 */
 enum class HomeTab {
@@ -96,6 +97,9 @@ class HomeViewModel @Inject constructor(
     private val gridPrefs: GridPrefsRepository,
     private val batchIndex: MediaBatchIndex,
     private val likeMutationTracker: LikeMutationTracker,
+    // 2026-09-18 探针接线（单机形态冷启动空白修复）：首屏请求前先等服务端就绪（ADR-0015
+    // 内嵌服务端有秒级未就绪窗口）。仅 init 首屏使用；switchTab 懒加载不加探针（见该处注释）。
+    private val readinessProbe: ServerReadinessProbe,
     val origUrlResolver: AssetOrigUrlResolver,
 ) : ViewModel() {
 
@@ -151,7 +155,13 @@ class HomeViewModel @Inject constructor(
     // 重试成功又不清横幅——冷启动必闪且残留假错误。改为：首屏路径（isInitial 且非刷新且尚未
     // loaded）失败若还有重试预算则**静默**调度重试（保持加载/空白态，不亮横幅），预算耗尽
     // 仍失败才亮横幅=真故障反馈；用户主动动作（下拉刷新/翻页追加/切周期）失败照旧立即亮。
-    // 任意加载成功清陈旧横幅并归零该 tab 重试预算（自愈后不残留「加载失败」）。 ----------
+    // 任意加载成功清陈旧横幅并归零该 tab 重试预算（自愈后不残留「加载失败」）。
+    // 2026-09-18 演进（单机形态冷启动空白修复）：init 首拉前先经 [ServerReadinessProbe]
+    // awaitReady 等服务端就绪（/healthz 300ms 粒度探活），替代此前「盲目首枪失败→固定间隔
+    // 重试去撞就绪窗口」；探针超时（返回 false）也照常发起首拉——探针只负责「等服务端起来」，
+    // 失败反馈仍走本节静默重试→预算耗尽亮横幅的既有路径。固定 1.5s 间隔改梯度退避
+    // （300ms × 2^n 封顶 2000ms，取值理由见常量 KDoc）：「服务端未就绪」主场景已由探针
+    // 覆盖，退避只兜瞬态失败，300ms 起步让真故障也能快速自愈。 ----------
     private val initialRetryAttempts = mutableMapOf<HomeTab, Int>()
 
     /** @return 是否成功调度了重试（false=预算已耗尽，调用方应亮真错误横幅） */
@@ -159,8 +169,10 @@ class HomeViewModel @Inject constructor(
         val n = initialRetryAttempts.getOrDefault(tab, 0)
         if (n >= INITIAL_RETRY_MAX) return false
         initialRetryAttempts[tab] = n + 1
+        // 梯度退避：第 n 次延迟 = min(300ms × 2^n, 2000ms)（为什么这么取值见常量 KDoc）
+        val delayMs = minOf(INITIAL_RETRY_BASE_DELAY_MS * (1L shl n), INITIAL_RETRY_MAX_DELAY_MS)
         viewModelScope.launch {
-            delay(INITIAL_RETRY_DELAY_MS)
+            delay(delayMs)
             // 用户已切走该 tab 则放弃（切回时 switchTab 懒加载兜底）
             if (_uiState.value.currentTab != tab) return@launch
             when (tab) {
@@ -173,14 +185,24 @@ class HomeViewModel @Inject constructor(
     }
 
     init {
-        // 首屏只加载当前 tab；其余 tab 首次切换时懒加载（tab 缓存独立）
-        loadRecommend(isInitial = true)
+        // 首屏只加载当前 tab；其余 tab 首次切换时懒加载（tab 缓存独立）。
+        // 2026-09-18 演进（单机形态冷启动空白修复）：首拉前先等服务端就绪探针
+        // （/healthz 300ms 粒度轮询，替代此前「首枪必失败→固定间隔重试撞就绪窗口」——
+        // 服务端 200ms 就绪了也得白等满 1.5s 的根因）。awaitReady 返回 false（预算内
+        // 未就绪/未配置地址）也照常发起：探针只负责「等服务端起来」，失败反馈仍走
+        // scheduleInitialRetry 静默重试→预算耗尽亮横幅的既有路径。
+        viewModelScope.launch {
+            readinessProbe.awaitReady()
+            loadRecommend(isInitial = true)
+        }
     }
 
     fun switchTab(tab: HomeTab) {
         // 刷新哨兵抑制窗口起点（任务J J3a，台账 #35）：见 [onNearBottom] 窗口判定
         lastTabSwitchAtMs = clockMs()
         _uiState.value = _uiState.value.copy(currentTab = tab)
+        // 懒加载不加探针：能切 tab 说明首屏已渲染、init 探活已过，服务端必已就绪；
+        // 再探只徒增等待，真有瞬态失败也有静默退避重试兜底（2026-09-18 探针接线记档）
         when (tab) {
             HomeTab.RECOMMEND -> if (!_uiState.value.recommend.loaded) loadRecommend(isInitial = true)
             HomeTab.COS -> if (!_uiState.value.cos.loaded) loadCosPage(isInitial = true)
@@ -624,8 +646,16 @@ class HomeViewModel @Inject constructor(
          */
         const val SENTINEL_SUPPRESS_AFTER_TAB_SWITCH_MS = 500L
 
-        /** 首屏失败重试：间隔与上限（服务端冷启动秒级就绪，10 次 × 1.5s = 15s 冗余足够） */
-        const val INITIAL_RETRY_DELAY_MS = 1_500L
+        /**
+         * 首屏失败重试：梯度退避参数（2026-09-18 演进，原固定 1.5s 间隔退役）。
+         * 为什么 300ms 起步 2^n 爬升 2000ms 封顶：「服务端未就绪」主场景已由 init 的
+         * 就绪探针覆盖，退避只兜瞬态失败——固定 1.5s 对真故障自愈太慢（最坏全窗口白等
+         * 十几秒），300ms 起步让偶发瞬态一两次内自愈、持续故障指数退到 2s 不刷爆回环。
+         * 上限 [INITIAL_RETRY_MAX] 保持 10（总窗口 ≈300+600+1200+2000×7 ≈ 16s，与原
+         * 10×1.5s=15s 同量级，冷启动冗余足够）。
+         */
+        const val INITIAL_RETRY_BASE_DELAY_MS = 300L
+        const val INITIAL_RETRY_MAX_DELAY_MS = 2_000L
         const val INITIAL_RETRY_MAX = 10
 
         /** COS 流分页大小（协议 /assets 缺省 60；同真 cosOnly 优先） */

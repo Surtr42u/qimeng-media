@@ -25,6 +25,16 @@ interface MediaRepository {
     /** 资产列表（cursor 分页）——相册/收藏/搜索/首页 COS 流共用 */
     suspend fun assets(query: AssetQuery): AssetPageResult
 
+    /**
+     * 全库缩略图直链（缩略图预取器专用，2026-09-18）：按 /assets cursor 分页
+     * 翻完全量（实现必须显式传 includeCos=true——/assets 服务端缺省排除 COS，
+     * openapi 口径；Zone.kt「请求侧须显式传」同源），
+     * 返回全部非空 md 缩略图绝对 URL（与首页网格同源构造路径）。
+     * 带默认实现的原因同本文件 tags 族注释：feature 各页测试替身只实现抽象方法，
+     * 新增抽象方法会破坏其编译；默认值 =「无预取数据」，唯一生产实现 SdkMediaRepository 全覆盖。
+     */
+    suspend fun allThumbUrls(): List<String> = emptyList()
+
     /** 四维候选（排自身计数；四请求各缺自身参数由调用方状态机构造） */
     suspend fun facets(query: FacetsQuery): FacetsResult
 

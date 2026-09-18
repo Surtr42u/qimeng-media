@@ -14,7 +14,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -27,20 +26,45 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import media.qimeng.app.core.data.prefetch.PrefetchUiState
 import media.qimeng.app.core.model.DiskCacheQuota
 import media.qimeng.app.core.ui.component.QimengSegPill
 import media.qimeng.app.core.ui.component.QimengTopBar
 import media.qimeng.app.core.ui.component.formatBytesHumanReadable
 import media.qimeng.app.core.ui.theme.QimengDimens
 
-/** 页面文案（2026-09-16 用户反馈新建页；进度文案自拟对齐「已生成 X / Y」口径） */
+/**
+ * 页面文案（2026-09-16 用户反馈新建页；2026-09-18 拆「服务器缩略图/本地缩略图」
+ * 两分区并新增预取区块。进度文案口径「已生成 X / Y」沿用，预取口径「已缓存 X / Y」）。
+ */
 private const val SCREEN_TITLE = "缩略图缓存"
-private const val PROGRESS_SECTION = "生成进度"
+
+// —— 分区一：服务器缩略图（服务端生成进度，GET /thumbnails/progress + 手动刷新） ——
+private const val SERVER_SECTION = "服务器缩略图"
+private const val SERVER_SECTION_SUBTITLE =
+    "由服务端生成并缓存，同一份图不会重复生成；新入库文件会在扫描后自动补齐"
 private const val PROGRESS_TEMPLATE = "已生成 %d / %d"
 private const val PROGRESS_UNKNOWN = "已生成 — / —"
-private const val PROGRESS_SUBTITLE = "服务端在后台自动预生成，浏览无需等待；新入库文件会在扫描后自动补齐"
 private const val PROGRESS_REFRESH = "刷新"
 private const val PROGRESS_REFRESHING = "刷新中…"
+
+// —— 分区二：本地缩略图（Coil 磁盘缓存档位/清空 + 预取） ——
+private const val LOCAL_SECTION = "本地缩略图"
+private const val QUOTA_TITLE = "图片缓存上限"
+private const val QUOTA_USED_TEMPLATE = "已用 %s"
+private const val QUOTA_RESTART_NOTE = "重启应用后生效（缓存目录正在使用中，运行中扩缩容会损坏缓存）"
+private const val QUOTA_CLEAR = "清空图片缓存"
+private const val QUOTA_CLEARING = "清空中…"
+
+/** 预取区块（状态/按钮文案；Running 进度条复用 LinearProgressIndicator） */
+private const val PREFETCH_SECTION = "预取"
+private const val PREFETCH_IDLE_HINT = "登录后自动预取全库缩略图，之后浏览直接读本地缓存"
+private const val PREFETCH_RUNNING_TEMPLATE = "已缓存 %d / %d"
+private const val PREFETCH_WAITING_HINT = "当前为计费网络，已暂停；切换到非计费网络后自动继续"
+private const val PREFETCH_DONE_TEMPLATE = "本轮完成，已缓存 %d / %d"
+private const val PREFETCH_DONE_EMPTY = "本轮完成：暂无可预取的缩略图"
+private const val PREFETCH_START = "开始预取"
+private const val PREFETCH_STOP = "停止"
 
 /** 16dp：内容水平内边距（上传子页同档） */
 private val ScreenContentPadding = 16.dp
@@ -55,9 +79,11 @@ private val RowInnerSpacing = 8.dp
 private val CardInnerPadding = 12.dp
 
 /**
- * 缩略图缓存页（2026-09-16 用户反馈）：缩略图生成进度 + 磁盘缓存上限合并一页，
- * 数据管理 hub 加行入口。视觉/交互基准 = 同模块 BackupScreen/LibraryManageScreen
- * （QimengTopBar + 16dp 竖滚列 + Card 卡）。业务全在 ViewModel（铁律 7）。
+ * 缩略图缓存页（2026-09-16 用户反馈新建；2026-09-18 拆两分区）：分区一「服务器缩略图」
+ * = 服务端生成进度（原样搬入 + 分区标题）；分区二「本地缩略图」= Coil 磁盘缓存档位/
+ * 清空（原样搬入）+ 预取区块（状态直读 ViewModel 透出的 [PrefetchUiState]）。
+ * 视觉/交互基准 = 同模块 BackupScreen/LibraryManageScreen
+ * （QimengTopBar + 16dp 竖滚列 + Card 卡）。业务全在 ViewModel/预取器（铁律 7）。
  */
 @Composable
 fun ThumbnailCacheScreen(
@@ -66,6 +92,7 @@ fun ThumbnailCacheScreen(
     viewModel: ThumbnailCacheViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val prefetchState by viewModel.prefetchState.collectAsStateWithLifecycle()
 
     Column(modifier = modifier.fillMaxSize()) {
         QimengTopBar(title = SCREEN_TITLE, onBack = onBack)
@@ -83,7 +110,7 @@ fun ThumbnailCacheScreen(
                 }
             }
 
-            // 卡1：生成进度（进度条 + 已生成计数 + 刷新；progress=null 显「—」降级）
+            // 分区一：服务器缩略图（进度条 + 已生成计数 + 刷新；progress=null 显「—」降级）
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(
                     modifier = Modifier
@@ -93,7 +120,7 @@ fun ThumbnailCacheScreen(
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = PROGRESS_SECTION,
+                            text = SERVER_SECTION,
                             style = MaterialTheme.typography.titleSmall,
                             modifier = Modifier.weight(1f),
                         )
@@ -113,19 +140,21 @@ fun ThumbnailCacheScreen(
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     Text(
-                        text = PROGRESS_SUBTITLE,
+                        text = SERVER_SECTION_SUBTITLE,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
 
-            // 卡2：缓存上限（SettingsCards.QuotaCard 原款拷贝，见下方注）
-            QuotaCard(
-                current = state.quota,
-                sizeBytes = state.cacheSizeBytes,
+            // 分区二：本地缩略图（缓存上限/清空原样搬入 + 预取区块）
+            LocalThumbnailsCard(
+                state = state,
+                prefetchState = prefetchState,
                 onSelectQuota = viewModel::setQuota,
                 onClear = viewModel::clearCache,
+                onStartPrefetch = viewModel::startPrefetch,
+                onStopPrefetch = viewModel::stopPrefetch,
             )
 
             Spacer(modifier = Modifier.height(ScreenBottomSpacing))
@@ -134,33 +163,40 @@ fun ThumbnailCacheScreen(
 }
 
 /**
- * 缓存卡：LRU 档位四选（写入 DataStore，重启生效）+ 清空按钮（清后容量归零核对）；卡底对齐全页纯白卡语言。
- *  缓存容量展示改走 :core:ui 共享 formatBytesHumanReadable（与统计页同源，原文件尾注记档随迁）
+ * 本地缩略图分区卡：上半 = 磁盘缓存 LRU 档位四选（写入 DataStore，重启生效）+ 清空按钮；
+ * 下半 = 预取区块（状态行 + 进行中进度条 + 开始/停止按钮）。
  *
- * 【2026-09-16 用户反馈拷贝注】本件从 feature:settings SettingsCards.kt QuotaCard 整段拷入
- * （原为 settings 模块 internal，跨模块不可见；manage 模块自持复制而非引用——与 DataManageScreen
- * HubEntryRow 的「第三处消费方应上提 core:ui」注同款裁量，QuotaCard 现为第二处）。文案/尺寸档/
- * 交互逐字随迁，行为零变化；后续出现第三处消费方时应上提 core:ui 收单源，禁止三处平行实现。
+ * 【拷贝注沿革】原 2026-09-16 从 feature:settings SettingsCards.kt QuotaCard 整段拷入
+ * （原为 settings 模块 internal，跨模块不可见；manage 自持复制而非引用，QuotaCard
+ * 现为第二处消费方）。2026-09-18 拆分区时外壳由 Surface 归一为本页 Card 卡语言、
+ * 并入分区二，档位/清空的文案与交互逐字保留（行为零变化）；后续出现第三处消费方时
+ * 仍应上提 core:ui 收单源，禁止三处平行实现。
  */
 @Composable
-private fun QuotaCard(
-    current: DiskCacheQuota,
-    sizeBytes: Long?,
+private fun LocalThumbnailsCard(
+    state: ThumbnailCacheUiState,
+    prefetchState: PrefetchUiState,
     onSelectQuota: (DiskCacheQuota) -> Unit,
     onClear: () -> Unit,
+    onStartPrefetch: () -> Unit,
+    onStopPrefetch: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var clearing by remember { mutableStateOf(false) }
-    Surface(
-        color = MaterialTheme.colorScheme.surface,
-        shape = RoundedCornerShape(QimengDimens.CardCornerRadius),
-        modifier = modifier.fillMaxWidth(),
-    ) {
-        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Card(modifier = modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(CardInnerPadding),
+            verticalArrangement = Arrangement.spacedBy(RowInnerSpacing),
+        ) {
+            Text(text = LOCAL_SECTION, style = MaterialTheme.typography.titleSmall)
+
+            // —— 图片缓存上限（QuotaCard 原款，见拷贝注沿革） ——
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(text = "图片缓存上限", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                Text(text = QUOTA_TITLE, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                 Text(
-                    text = "已用 ${formatBytesHumanReadable(sizeBytes)}",
+                    text = QUOTA_USED_TEMPLATE.format(formatBytesHumanReadable(state.cacheSizeBytes)),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -169,13 +205,13 @@ private fun QuotaCard(
                 DiskCacheQuota.entries.forEach { quota ->
                     QimengSegPill(
                         text = quota.label,
-                        selected = current == quota,
+                        selected = state.quota == quota,
                         onClick = { onSelectQuota(quota) },
                     )
                 }
             }
             Text(
-                text = "重启应用后生效（缓存目录正在使用中，运行中扩缩容会损坏缓存）",
+                text = QUOTA_RESTART_NOTE,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -183,7 +219,46 @@ private fun QuotaCard(
                 clearing = true
                 onClear()
                 clearing = false
-            }) { Text(text = if (clearing) "清空中…" else "清空图片缓存") }
+            }) { Text(text = if (clearing) QUOTA_CLEARING else QUOTA_CLEAR) }
+
+            // —— 预取区块（2026-09-18 新增） ——
+            Text(text = PREFETCH_SECTION, style = MaterialTheme.typography.titleSmall)
+            Text(
+                text = prefetchStatusText(prefetchState),
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (prefetchState is PrefetchUiState.Failed) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
+            val running = prefetchState as? PrefetchUiState.Running
+            if (running != null && running.total > 0) {
+                LinearProgressIndicator(
+                    progress = { running.done.toFloat() / running.total },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                val inFlight = prefetchState is PrefetchUiState.Running ||
+                    prefetchState is PrefetchUiState.WaitingNetwork
+                TextButton(onClick = if (inFlight) onStopPrefetch else onStartPrefetch) {
+                    Text(text = if (inFlight) PREFETCH_STOP else PREFETCH_START)
+                }
+            }
         }
     }
+}
+
+/** 预取状态行文案（Failed 直接显预取器给的中文原因） */
+private fun prefetchStatusText(state: PrefetchUiState): String = when (state) {
+    PrefetchUiState.Idle -> PREFETCH_IDLE_HINT
+    is PrefetchUiState.Running -> PREFETCH_RUNNING_TEMPLATE.format(state.done, state.total)
+    PrefetchUiState.WaitingNetwork -> PREFETCH_WAITING_HINT
+    is PrefetchUiState.Done ->
+        if (state.total > 0) PREFETCH_DONE_TEMPLATE.format(state.done, state.total) else PREFETCH_DONE_EMPTY
+    is PrefetchUiState.Failed -> state.reason
 }

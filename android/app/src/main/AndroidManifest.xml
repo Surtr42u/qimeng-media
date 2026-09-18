@@ -5,6 +5,10 @@
     <!-- 访问 NAS 服务端（局域网 http）必需；M4-1 起有真实网络请求（探活/登录） -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- 缩略图预取计费网络门（2026-09-18）：ConnectivityManager.isActiveNetworkMetered /
+         registerDefaultNetworkCallback 查询网络计费态必需（normal 权限，安装即授予） -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
     <!-- 上传进度/完成通知（M4-5）：API 33+ 运行时申请，未授权只影响可见性不阻断上传 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- FGS 权限与 dataSync 类型声明在 :core:data（setForeground 使用方模块，随清单合并） -->

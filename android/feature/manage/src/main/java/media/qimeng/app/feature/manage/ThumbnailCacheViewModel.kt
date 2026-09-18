@@ -12,6 +12,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import media.qimeng.app.core.data.di.IoDispatcher
+import media.qimeng.app.core.data.prefetch.PrefetchUiState
+import media.qimeng.app.core.data.prefetch.ThumbnailPrefetcher
 import media.qimeng.app.core.data.repository.CoilCacheManager
 import media.qimeng.app.core.data.repository.DiskCachePrefsRepository
 import media.qimeng.app.core.data.repository.ThumbnailProgressRepository
@@ -19,9 +21,11 @@ import media.qimeng.app.core.model.DiskCacheQuota
 import media.qimeng.app.core.model.ThumbnailCacheProgress
 
 /**
- * 缩略图缓存页 UI 状态（2026-09-16 用户反馈：缩略图生成进度 + 磁盘缓存上限合并一页）。
+ * 缩略图缓存页 UI 状态（2026-09-16 用户反馈：缩略图生成进度 + 磁盘缓存上限合并一页；
+ * 2026-09-18 拆「服务器缩略图/本地缩略图」两分区并新增预取）。
  * 进度与容量两块读路径独立：进度是服务端状态（可刷新），容量是本机 Coil 磁盘缓存
- * （进页读一次、清空后重读归零核对）。
+ * （进页读一次、清空后重读归零核对）。预取状态不经本类转写，直接透出预取器
+ * 的 [PrefetchUiState]（预取生命周期属于 App 全局而非本页，本类只转发用户意图）。
  */
 data class ThumbnailCacheUiState(
     /** 当前缓存档位（持续跟随 DataStore 流，含其他入口改档后的回填） */
@@ -40,8 +44,9 @@ data class ThumbnailCacheUiState(
 )
 
 /**
- * 缩略图缓存页 ViewModel（2026-09-16 用户反馈）：缩略图生成进度（服务端
- * /thumbnails/progress 单值端口轮询/手动刷新）+ 磁盘缓存档位持久化与清空归零。
+ * 缩略图缓存页 ViewModel（2026-09-16 用户反馈；2026-09-18 页面拆两分区 + 预取接线）：
+ * 缩略图生成进度（服务端 /thumbnails/progress 手动刷新）+ 磁盘缓存档位持久化与清空归零
+ * + 预取启停（状态直透 [ThumbnailPrefetcher.state]，启停只转发用户意图，铁律 7）。
  * 缓存三件套逻辑 = SettingsViewModel 现口径原样搬运（语义不变：档位写 DataStore
  * 重启生效、清空 IO 线程执行后重读）；进度读失败降级 null 不弹横幅（装饰性计数
  * 失败不构成操作反馈，同 SettingsViewModel 数量卡口径）。
@@ -52,12 +57,16 @@ class ThumbnailCacheViewModel @Inject constructor(
     private val diskCachePrefsRepository: DiskCachePrefsRepository,
     private val coilCacheManager: CoilCacheManager,
     private val thumbnailProgressRepository: ThumbnailProgressRepository,
+    private val thumbnailPrefetcher: ThumbnailPrefetcher,
     /** DiskCache.size/clear 触发磁盘扫描（IO 性质），调用点统一挂 IO 调度器 */
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ThumbnailCacheUiState())
     val uiState: StateFlow<ThumbnailCacheUiState> = _uiState.asStateFlow()
+
+    /** 预取轮状态（预取器全局单飞的直读透出；本页只是其众多潜在观察者之一） */
+    val prefetchState: StateFlow<PrefetchUiState> = thumbnailPrefetcher.state
 
     init {
         loadCacheState()
@@ -107,6 +116,19 @@ class ThumbnailCacheViewModel @Inject constructor(
             withContext(ioDispatcher) { coilCacheManager.clear() }
             _uiState.update { it.copy(cacheSizeBytes = readCacheSize()) }
         }
+    }
+
+    /**
+     * 手动开始预取（「开始预取」按钮）：无视计费网络门的显式用户意图，
+     * 预取逻辑全在 [ThumbnailPrefetcher]（铁律 7：本层只转发意图）。
+     */
+    fun startPrefetch() {
+        viewModelScope.launch { thumbnailPrefetcher.startManual() }
+    }
+
+    /** 停止预取（「停止」按钮）：同上只转发意图；状态复位由预取器收口 */
+    fun stopPrefetch() {
+        thumbnailPrefetcher.stopRound()
     }
 
     private fun loadCacheState() {

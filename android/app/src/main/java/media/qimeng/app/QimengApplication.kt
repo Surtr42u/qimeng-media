@@ -9,6 +9,7 @@ import coil3.SingletonImageLoader
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 import media.qimeng.app.core.data.events.EventSyncBootstrapper
+import media.qimeng.app.core.data.prefetch.ThumbnailPrefetcher
 
 /**
  * Hilt 应用入口：全 App 依赖注入的根（ADR-0014：新依赖一律走 Hilt，禁手写单例容器）。
@@ -23,6 +24,9 @@ import media.qimeng.app.core.data.events.EventSyncBootstrapper
  *
  * 行为上报离线队列（M4-4）：onCreate 一次接好补传三通道中的②③——周期兜底注册 +
  * ProcessLifecycleOwner ON_START（启动进前台/回前台即补传），接线细节在 EventSyncBootstrapper。
+ *
+ * 缩略图预取（2026-09-18）：onCreate 构造 ThumbnailPrefetcher 挂上登录态观察——
+ * 登录后自动把全库缩略图预取进 Coil 磁盘缓存（逻辑全在 :core:data prefetch 包）。
  */
 @HiltAndroidApp
 class QimengApplication : Application(), Configuration.Provider, SingletonImageLoader.Factory {
@@ -36,6 +40,10 @@ class QimengApplication : Application(), Configuration.Provider, SingletonImageL
     @Inject
     lateinit var eventSyncBootstrapper: EventSyncBootstrapper
 
+    /** 缩略图预取器（2026-09-18）：此处唯一作用是进程启动即构造，让登录态观察挂上电 */
+    @Inject
+    lateinit var thumbnailPrefetcher: ThumbnailPrefetcher
+
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()
             .setWorkerFactory(workerFactory)
@@ -44,6 +52,7 @@ class QimengApplication : Application(), Configuration.Provider, SingletonImageL
     override fun onCreate() {
         super.onCreate()
         eventSyncBootstrapper.onAppCreate()
+        thumbnailPrefetcher.onAppCreate()
     }
 
     override fun newImageLoader(context: PlatformContext): ImageLoader = imageLoader

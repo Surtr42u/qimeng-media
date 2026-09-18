@@ -13,6 +13,17 @@
 ---
 ---
 ---
+## perf(app): 首页就绪探针+梯度退避+骨架屏+缩略图缓存页拆分+登录后自动预取全部缩略图（2026-09-18 第三百一十四笔）
+
+执行 AI：GLM-5.3-Flash（主代理，探针+服务端）+ 执行子代理（feature/home 与 core/data/feature/manage 实施）+ 审查子代理（对抗复核，抓出 P1 一处）
+
+- 动机：真机反馈「本地登录首页过一小会才显示内容」「本地比旧绮梦影库慢」。根因三件套：内嵌服务端冷启动未就绪窗口靠固定 1.5s 盲重试撞、加载期整页空白无骨架、缩略图按需下载反复触发。
+- 就绪探针 `ServerReadinessProbe`（core/network 新增）：/api/v1/healthz 300ms 轮询单飞（多调用方共享一次探测）+ 就绪结论 5s 短窗，HomeViewModel 冷启动先探针后首拉（false 也照常发起走既有失败路径）。探针初版「Long.MIN_VALUE 哨兵参与减法回绕→首调恒判就绪」的 bug 由执行子代理自测抓出、主代理修复（NOT_READY_SENTINEL 仅作相等判定）。
+- 首屏重试梯度退避：固定 1.5s 改 300ms×2^n 封顶 2s（300/600/1200/2000…，10 次预算不变）；骨架屏 `QimengSkeletonGrid`（core/ui 新增）替代三 tab 加载期整页空白（条件 !loaded && !hasError，退避间隙不闪骨架），顺带修 RankPage 加载中误显「暂无数据」。
+- 缩略图缓存页（feature/manage）拆「服务器缩略图」（服务端生成进度）与「本地缩略图」（Coil 磁盘档位/清空+预取）两块。
+- 缩略图自动预取 `ThumbnailPrefetcher`（core/data 新增）：登录后自动分页 /assets 把全部 md 缩略图预取进 Coil 磁盘缓存（execute 无 target=取消即断、memoryCachePolicy=DISABLED 不挤浏览位、Semaphore(4) 并发闸；缓存键剥签名 SignedMediaCacheKeys 既有机制→重登/重启命中不重下）。审查修正 [P1]：includeCos 必须显式 true（/assets 缺省排除 COS，openapi 177 行；此前注释误引 /history 的缺省 true）。计费网络门：非计费网或回环地址（isLocalModePreset）才自动跑，手动启动无视门；无游标持久化（磁盘命中重跑只读盘，取舍记档类 KDoc）。ACCESS_NETWORK_STATE 权限 + QimengApplication 接线（EventSyncBootstrapper 同款）。
+- 测试：core:network 7（探针全路径）、feature:home 19（探针 true/false 两分支契约）、core:data+feature:manage 145，全绿；审查子代理独立复跑 go test -count=1 与四模块 gradle 测试确认。
+
 ## perf(server): 推荐流短TTL响应缓存+展示计数批量事务+缩略图开机回填静默窗（2026-09-18 第三百一十三笔）
 
 执行 AI：GLM-5.3-Flash（主代理）
