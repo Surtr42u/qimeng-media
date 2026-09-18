@@ -2,9 +2,10 @@
 //
 // 映射总纲：作者/标签/关联/时间轴/收藏按唯一键 upsert（重复导入天然不翻倍）；
 // mediaStats/dailyBrowse/history/likes/favorites 转换为 ViewEvent 回放与
-// likes/favorites 行，统计从事件重建。幂等锚点 = kv_settings 的批次标记
-// （exportedAtMillis）：同批次重复导入时事件回放整体跳过（事件流无唯一键，
-// 只能靠批次标记防翻倍），段级 upsert 照常执行。
+// likes/favorites 行，统计从事件重建。批次标记 = kv_settings 的
+// exportedAtMillis：同批次重复导入时事件回放整体跳过（快速路径；跨批次
+// 幂等由事件内容键 client_event_id 保证，见 import_replay.go），段级
+// upsert 照常执行。
 //
 // 事件回放口径（总量守恒，与旧库数字一致）：
 //   - dailyBrowse 是旧库「每文件每天」明细（唯一真相源）→ 全量回放；
@@ -38,7 +39,8 @@ import (
 
 const (
 	// 与 prefs.go 的 settingKeyRecommendPrefs 同包共用；本文件新增批次标记。
-	// 幂等锚点：值 = 上次成功导入的 exportedAtMillis（十进制字符串）。
+	// 批次锚点（快速路径）：值 = 上次成功导入的 exportedAtMillis（十进制
+	// 字符串），同批次整体跳过回放；跨批次幂等由事件内容键保证。
 	settingKeyLegacyImportBatch = "legacy_import_batch"
 
 	// 回放事件会话标识：标记数据来源是旧备份迁移（区别于真实浏览会话）。

@@ -1,6 +1,7 @@
 // import_test.go：旧版迁移端点测试（DOMAIN_RULES §10 映射 + 幂等批次）。
 // 用例语义对照：段级计数、总量守恒回放（dailyBrowse 全量 + mediaStats 差额
-// + history 补漏）、同批次重复导入事件不翻倍、cos_ 前缀保留、可选段缺省。
+// + history 补漏）、同批次快速跳过、换批次内容键增量合并（不重复累计）、
+// cos_ 前缀保留、可选段缺省。
 package httpapi
 
 import (
@@ -334,8 +335,11 @@ func TestImport_idempotentReplay(t *testing.T) {
 	}
 }
 
-// TestImport_newBatchReplays：不同 exportedAtMillis 视为新批次，事件重新回放。
-func TestImport_newBatchReplays(t *testing.T) {
+// TestImport_newBatchIdenticalContent_dedup：同一内容换新批次（新
+// exportedAtMillis）再导入——确定性内容键相同，事件零回放零新增（跨批次
+// 幂等由内容键保证，批次锚点只是快速路径；§10 语义变更前此场景全量重放
+// 会导致浏览统计翻倍）。
+func TestImport_newBatchIdenticalContent_dedup(t *testing.T) {
 	e := newTestEnv(t)
 	base := gen.LegacyBackupImport{
 		Format: "qimeng_backup", SchemaVersion: 1, AppIdentifier: "com.qimeng.media",
@@ -351,10 +355,110 @@ func TestImport_newBatchReplays(t *testing.T) {
 	req1, req2 := base, base
 	req1.ExportedAtMillis = ptr(int64(1000))
 	req2.ExportedAtMillis = ptr(int64(2000))
-	importBackup(t, e, req1)
-	_, res := importBackup(t, e, req2)
-	if got := derefVal(res.EventsReplayed); got != 1 {
-		t.Errorf("新批次应重新回放 1 条，got %d", got)
+	if code, _ := importBackup(t, e, req1); code != http.StatusOK {
+		t.Fatalf("首次导入应 200")
+	}
+	first := countEvents(t, e, "")
+	code, res := importBackup(t, e, req2)
+	if code != http.StatusOK {
+		t.Fatalf("换批次再导入应 200")
+	}
+	if got := derefVal(res.EventsReplayed); got != 0 {
+		t.Errorf("同内容换批次 EventsReplayed = %d, want 0（内容键去重）", got)
+	}
+	if got := countEvents(t, e, ""); got != first {
+		t.Errorf("换批次导入后事件数 %d 变化了，want %d（内容键幂等）", got, first)
+	}
+}
+
+// TestImport_newBatchIncrementalMerge：同一来源两次导出（批次号不同），
+// 第二次日明细与统计缺口增长——首次全量入库，二次仅补写新增事件（内容键
+// 拦重），浏览统计不重复累计、dwell 秒数取首写值（DOMAIN_RULES §10）。
+func TestImport_newBatchIncrementalMerge(t *testing.T) {
+	e := newTestEnv(t)
+	day := int64(1756377600000)
+	base := gen.LegacyBackupImport{
+		Format: "qimeng_backup", SchemaVersion: 1, AppIdentifier: "com.qimeng.media",
+		Data: gen.LegacyBackupData{
+			MediaFiles: &[]gen.LegacyMediaFile{
+				{RecordKey: "a.jpg", FileName: "a.jpg", MediaType: "image", SizeBytes: 100, ModifiedAtMillis: 1},
+			},
+			DailyBrowse: &[]gen.LegacyDailyBrowse{
+				{RecordKey: "a.jpg", FileName: "a.jpg", MediaType: "image", DayStartMillis: day, ViewCount: ptr(2), PlayCount: ptr(0), TotalBrowseSeconds: ptr(int64(20))},
+			},
+			MediaStats: &[]gen.LegacyMediaStats{
+				{RecordKey: "a.jpg", FileName: "a.jpg", ViewCount: ptr(3), PlayCount: ptr(0), TotalBrowseSeconds: ptr(int64(50)), LastOpenedAtMillis: ptr(int64(1756460000000))},
+			},
+		},
+	}
+	req1 := base
+	req1.ExportedAtMillis = ptr(int64(1000))
+	code, res1 := importBackup(t, e, req1)
+	if code != http.StatusOK {
+		t.Fatalf("首次导入应 200，got %d", code)
+	}
+	// 首次全量：日明细 open 2 + dwell 1（20s），缺口 open 1 + dwell 1（30s）= 5 条。
+	if got := derefVal(res1.EventsReplayed); got != 5 {
+		t.Fatalf("首次导入 EventsReplayed = %d, want 5", got)
+	}
+	if got := countEvents(t, e, "open"); got != 3 {
+		t.Fatalf("首次 open = %d, want 3（明细 2 + 缺口 1）", got)
+	}
+	if got := countEvents(t, e, "dwell"); got != 2 {
+		t.Fatalf("首次 dwell = %d, want 2", got)
+	}
+	if got := sumDwellSeconds(t, e); got != 50 {
+		t.Fatalf("首次停留秒 = %d, want 50", got)
+	}
+
+	// 第二次导出：日明细 open 2→3、play 0→1、秒 20→40；累计 view 3→5、
+	// play 0→2、秒 50→80；LastOpenedAtMillis 漂移（内容键不含时间戳）。
+	req2 := base
+	req2.ExportedAtMillis = ptr(int64(2000))
+	req2.Data.DailyBrowse = &[]gen.LegacyDailyBrowse{
+		{RecordKey: "a.jpg", FileName: "a.jpg", MediaType: "image", DayStartMillis: day, ViewCount: ptr(3), PlayCount: ptr(1), TotalBrowseSeconds: ptr(int64(40))},
+	}
+	req2.Data.MediaStats = &[]gen.LegacyMediaStats{
+		{RecordKey: "a.jpg", FileName: "a.jpg", ViewCount: ptr(5), PlayCount: ptr(2), TotalBrowseSeconds: ptr(int64(80)), LastOpenedAtMillis: ptr(int64(1756500000000))},
+	}
+	code, res2 := importBackup(t, e, req2)
+	if code != http.StatusOK {
+		t.Fatalf("二次导入应 200，got %d", code)
+	}
+	// 二次仅补增量：明细 open 序号 2（+1）、play 序号 0（+1）；缺口 open
+	// 序号 1（+1）、play 序号 0（+1）= 4 条；两条 dwell 键已存在（秒数取
+	// 首写值）不重复累计。
+	if got := derefVal(res2.EventsReplayed); got != 4 {
+		t.Errorf("二次导入 EventsReplayed = %d, want 4（仅新增事件）", got)
+	}
+	if got := countEvents(t, e, "open"); got != 5 {
+		t.Errorf("二次后 open = %d, want 5（明细 3 + 缺口 2，无重复累计）", got)
+	}
+	if got := countEvents(t, e, "play"); got != 2 {
+		t.Errorf("二次后 play = %d, want 2（明细 1 + 缺口 1）", got)
+	}
+	if got := countEvents(t, e, "dwell"); got != 2 {
+		t.Errorf("二次后 dwell = %d, want 2（不翻倍）", got)
+	}
+	if got := sumDwellSeconds(t, e); got != 50 {
+		t.Errorf("二次后停留秒 = %d, want 50（dwell 秒数取首写值）", got)
+	}
+	// 落点核验：全部事件带 legacy: 内容键；gap dwell identity 稳定复用
+	//（一资产一条，不随批次增长）。
+	assetID := queryAssetID(t, e, "a.jpg")
+	var total, withKey int
+	if err := e.conn.QueryRow(`SELECT COUNT(*) FROM view_events`).Scan(&total); err != nil {
+		t.Fatalf("统计事件失败: %v", err)
+	}
+	if err := e.conn.QueryRow(`SELECT COUNT(*) FROM view_events WHERE client_event_id LIKE 'legacy:%'`).Scan(&withKey); err != nil {
+		t.Fatalf("统计内容键失败: %v", err)
+	}
+	if total != 9 || withKey != total {
+		t.Errorf("内容键覆盖 = %d/%d, want 9/9", withKey, total)
+	}
+	var gd int
+	if err := e.conn.QueryRow(`SELECT COUNT(*) FROM view_events WHERE client_event_id = ?`, "legacy:gd:"+assetID).Scan(&gd); err != nil || gd != 1 {
+		t.Errorf("gap dwell 键 legacy:gd:<asset> = %d err=%v, want 1（identity 稳定复用）", gd, err)
 	}
 }
 

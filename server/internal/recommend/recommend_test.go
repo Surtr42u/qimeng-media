@@ -309,22 +309,38 @@ func TestRank_tieScore_newerModifiedAtFirst(t *testing.T) {
 	}
 }
 
-func TestRank_dayPeriod_onlyIncludesPeriodFiles(t *testing.T) {
-	// 周期筛选：非总榜只保留周期内有浏览记录的文件；周期依据
-	// lastViewedAt >= now - 窗口（服务端口径：open 事件的 MAX(started_at)）。
-	recentHistory := makeItem("keyRecentHistory", "image", fixedNow)
-	oldHistory := makeItem("keyOldHistory", "image", fixedNow)
-	recentStat := makeItem("keyRecentStat", "image", fixedNow)
-	nowMinusHour := fixedNow.Add(-time.Hour)
-	recentHistory.Stats.LastViewedAt = &fixedNow
-	oldHistory.Stats.LastViewedAt = ptrTime(fixedNow.Add(-10 * 24 * time.Hour))
-	recentStat.Stats.LastViewedAt = &nowMinusHour
-	recentStat.Stats.ViewCount = 5
-	got := Rank([]Item{recentHistory, oldHistory, recentStat}, PeriodDay, fixedNow)
-	// keyOldHistory 超出日榜周期被排除；剩余两项中 keyRecentStat(5)
-	// 热度高于 keyRecentHistory(0)
-	if want := []string{"keyRecentStat", "keyRecentHistory"}; !reflect.DeepEqual(ids(got), want) {
-		t.Fatalf("期望 %v，得到 %v", want, ids(got))
+func TestRank_windowPeriod_admitsByWindowHeat(t *testing.T) {
+	// 周期筛选（2026-09-18 窗口化口径）：准入 = 窗口内热度 > 0，与窗口
+	// 聚合自洽——Rank 不再消费 LastViewedAt 时间戳（窗口最近浏览但窗口
+	// 计数为零的条目同样排除；原 lastViewedAt 时间戳准入口径废止）。
+	inWindow := makeItem("keyInWindow", "image", fixedNow)
+	noWindowActivity := makeItem("keyNoWindowActivity", "image", fixedNow)
+	viewedNoWindowCount := makeItem("keyViewedNoCount", "image", fixedNow)
+	inWindow.Window.ViewCount = 5
+	viewedNoWindowCount.Stats.LastViewedAt = ptrTime(fixedNow)
+	viewedNoWindowCount.Stats.ViewCount = 5 // 累计热度存在，但窗口计数未预算到
+	got := Rank([]Item{inWindow, noWindowActivity, viewedNoWindowCount}, PeriodDay, fixedNow)
+	if want := []string{"keyInWindow"}; !reflect.DeepEqual(ids(got), want) {
+		t.Fatalf("日榜期望只含窗口内有活动的 %v，得到 %v", want, ids(got))
+	}
+}
+
+func TestRank_windowPeriod_usesWindowHeatNotCumulative(t *testing.T) {
+	// 窗口热度与累计热度分离（2026-09-18 口径的核心行为锁）：累计热度
+	// 高但窗口内仅 1 次的条目，周期榜排在窗口内 2 次的条目之后；同一
+	// 输入 period=all 仍按累计热度排序（旧行为不变）。
+	legacy := makeItem("keyLegacy", "image", fixedNow.Add(-time.Millisecond))
+	recent := makeItem("keyRecent", "image", fixedNow)
+	legacy.Stats.ViewCount = 1000
+	legacy.Window.ViewCount = 1
+	recent.Window.ViewCount = 2
+	got := Rank([]Item{legacy, recent}, PeriodWeek, fixedNow)
+	if want := []string{"keyRecent", "keyLegacy"}; !reflect.DeepEqual(ids(got), want) {
+		t.Fatalf("周榜期望按窗口热度排序 %v，得到 %v", want, ids(got))
+	}
+	got = Rank([]Item{legacy, recent}, PeriodAll, fixedNow)
+	if want := []string{"keyLegacy", "keyRecent"}; !reflect.DeepEqual(ids(got), want) {
+		t.Fatalf("总榜期望按累计热度排序 %v，得到 %v", want, ids(got))
 	}
 }
 
