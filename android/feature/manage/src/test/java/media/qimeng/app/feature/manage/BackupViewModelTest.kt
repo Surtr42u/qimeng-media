@@ -10,6 +10,9 @@ import media.qimeng.app.core.data.events.ViewEventSendResult
 import media.qimeng.app.core.data.repository.BackupAutoPrefs
 import media.qimeng.app.core.data.repository.BackupAutoPrefsRepository
 import media.qimeng.app.core.data.repository.BackupRepository
+import media.qimeng.app.core.data.repository.StagedBackup
+import media.qimeng.app.core.data.repository.StagedBackupMeta
+import media.qimeng.app.core.data.repository.SyncStagingRepository
 import media.qimeng.app.core.testing.MainDispatcherRule
 import media.qimeng.sdk.models.LegacyBackupData
 import media.qimeng.sdk.models.LegacyBackupFile
@@ -59,12 +62,14 @@ class BackupViewModelTest {
         repository: FakeBackupRepository = FakeBackupRepository(),
         queue: ViewEventQueue = ViewEventQueue(FakeEventDao(), FakeEventSender(fail = false), clock = FixedEventClock),
         prefs: BackupAutoPrefsRepository = FakeBackupAutoPrefs(),
+        staging: FakeSyncStagingRepository = FakeSyncStagingRepository(),
     ) = Pair(
         BackupViewModel(
             backupRepository = repository,
             viewEventQueue = queue,
             autoBackupPrefs = prefs,
             autoBackupRunner = newAutoBackupRunner(repository, prefs),
+            syncStaging = staging,
         ).also { driveIdle() },
         repository,
     )
@@ -262,6 +267,58 @@ class BackupViewModelTest {
         assertEquals(1, dao.rows.size) // 本地优先：失败不丢行
     }
 
+    // ---------- 跨端同步暂存（2026-09-18 用户拍板：App 内暂存中转，免来回导文件） ----------
+
+    @Test
+    fun `跨端同步 - 暂存当前库落暂存仓并置KB反馈`() = runTest(mainDispatcherRule.testDispatcher) {
+        val staging = FakeSyncStagingRepository()
+        val (vm, repository) = newViewModel(staging = staging)
+        vm.stageForSync()
+        // buildExportJson 内 withContext(Dispatchers.Default) 是真实线程跳板（advanceUntilIdle
+        // 只推进调度器虚拟时间、不等真实线程池）：轮询等暂存收口（busy 复位=结果已进状态），
+        // 防续体在 resetMain 后恢复污染下一用例（自动备份用例同款范式）
+        val deadline = System.currentTimeMillis() + 5_000
+        while (vm.uiState.value.stagingBusy && System.currentTimeMillis() < deadline) {
+            advanceUntilIdle()
+            Thread.sleep(10)
+        }
+        advanceUntilIdle()
+        assertEquals(1, staging.stageCalls.size)
+        assertEquals(1, repository.exportCalls.size) // 与导出备份共用同一段序列化
+        val staged = vm.uiState.value.staged
+        assertNotNull(staged)
+        assertTrue(staged!!.sourceUrl.isNotEmpty()) // 来源端记档（实现方自取，防导错方向）
+        assertTrue(vm.uiState.value.noticeMessage!!.startsWith("已暂存当前库（"))
+        assertFalse(vm.uiState.value.stagingBusy)
+    }
+
+    @Test
+    fun `跨端同步 - 导入暂存走与文件导入同一条确认链路`() = runTest(mainDispatcherRule.testDispatcher) {
+        val staging = FakeSyncStagingRepository().apply { stagedJson = validBytes.decodeToString() }
+        val (vm, repository) = newViewModel(staging = staging)
+        vm.importStaged()
+        driveIdle()
+        // 确认前零出网：与 onFilePicked 同构，只开弹窗
+        assertTrue(repository.importCalls.isEmpty())
+        val pending = vm.uiState.value.pendingImport
+        assertNotNull(pending)
+        assertEquals("qimeng_backup.json", pending!!.summary.fileName)
+        // 确认后走同一幂等导入
+        vm.confirmImport()
+        driveIdle()
+        assertEquals(1, repository.importCalls.size)
+        assertNull(vm.uiState.value.pendingImport)
+    }
+
+    @Test
+    fun `跨端同步 - 无暂存时导入置错误横幅不出网`() = runTest(mainDispatcherRule.testDispatcher) {
+        val (vm, repository) = newViewModel()
+        vm.importStaged()
+        driveIdle()
+        assertEquals("暂存数据不存在或已损坏，请重新暂存", vm.uiState.value.errorMessage)
+        assertTrue(repository.importCalls.isEmpty())
+    }
+
     // ---------- 自动备份（2026-09-16 用户反馈：prefs 回流 + 立即备份反馈可见） ----------
 
     @Test
@@ -426,5 +483,30 @@ private class FakeBackupAutoPrefs : BackupAutoPrefsRepository {
 
     override suspend fun setLastRunMillis(millis: Long) {
         _state.value = _state.value.copy(lastRunMillis = millis)
+    }
+}
+
+/** 跨端暂存替身：内存单份暂存（覆盖写语义与实现一致），可预置内容与清空 */
+private class FakeSyncStagingRepository : SyncStagingRepository {
+    var stagedJson: String? = null
+    var stagedSource: String? = null
+    val stageCalls = mutableListOf<String>()
+
+    override suspend fun stage(json: String): StagedBackupMeta {
+        stageCalls.add(json)
+        stagedJson = json
+        stagedSource = "http://192.168.1.8:8420"
+        return StagedBackupMeta(
+            stagedAtMillis = 1_000L,
+            sourceUrl = stagedSource!!,
+            sizeBytes = json.toByteArray(Charsets.UTF_8).size.toLong(),
+        )
+    }
+
+    override suspend fun loadStaged(): StagedBackup? = stagedJson?.let {
+        StagedBackup(
+            meta = StagedBackupMeta(1_000L, stagedSource ?: "", it.length.toLong()),
+            json = it,
+        )
     }
 }

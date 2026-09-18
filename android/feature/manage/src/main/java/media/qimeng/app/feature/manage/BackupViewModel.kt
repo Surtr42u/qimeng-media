@@ -15,6 +15,8 @@ import media.qimeng.app.core.data.backup.AutoBackupRunner
 import media.qimeng.app.core.data.events.ViewEventQueue
 import media.qimeng.app.core.data.repository.BackupAutoPrefsRepository
 import media.qimeng.app.core.data.repository.BackupRepository
+import media.qimeng.app.core.data.repository.StagedBackupMeta
+import media.qimeng.app.core.data.repository.SyncStagingRepository
 import media.qimeng.sdk.infrastructure.Serializer
 import media.qimeng.sdk.models.LegacyBackupFile
 import media.qimeng.sdk.models.LegacyBackupImport
@@ -65,6 +67,11 @@ data class BackupUiState(
     val autoBackupLastRunMillis: Long = 0,
     /** 立即备份进行中（按钮禁用防重，文案「备份中…」） */
     val autoBackupBusy: Boolean = false,
+    // ---------- 跨端同步暂存（2026-09-18 用户拍板：本机⇄服务器同步免来回导文件） ----------
+    /** 当前暂存元数据（null=无暂存；进页读一次，暂存成功后随结果更新） */
+    val staged: StagedBackupMeta? = null,
+    /** 暂存进行中（按钮禁用防重，文案「暂存中…」） */
+    val stagingBusy: Boolean = false,
 )
 
 /**
@@ -81,6 +88,7 @@ class BackupViewModel @Inject constructor(
     private val viewEventQueue: ViewEventQueue,
     private val autoBackupPrefs: BackupAutoPrefsRepository,
     private val autoBackupRunner: AutoBackupRunner,
+    private val syncStaging: SyncStagingRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(BackupUiState())
@@ -89,6 +97,7 @@ class BackupViewModel @Inject constructor(
     init {
         loadPendingEvents()
         observeAutoBackupPrefs()
+        loadStagedMeta()
     }
 
     /**
@@ -101,20 +110,25 @@ class BackupViewModel @Inject constructor(
         if (current.exporting || current.pendingExport != null) return null
         _uiState.update { it.copy(exporting = true, errorMessage = null, noticeMessage = null) }
         return try {
-            // 数十 MB 备份的 Moshi 序列化 + UTF-8 全量拷贝是纯 CPU 重活，必须离开主线程
-            // （reviewer P2：Main 线程跑会整页冻结甚至 ANR；repository 出网已收口 IO，
-            // 这里把序列化段一并推到 Default 池）
-            val export = withContext(Dispatchers.Default) {
-                val file = backupRepository.export()
-                val json = Serializer.moshi.adapter(LegacyBackupFile::class.java).toJson(file)
-                BackupExportFile(json = json, sizeBytes = json.toByteArray(Charsets.UTF_8).size)
-            }
+            val export = buildExportJson()
             _uiState.update { it.copy(exporting = false, pendingExport = export) }
             export
         } catch (e: Exception) {
             _uiState.update { it.copy(exporting = false, errorMessage = ERROR_EXPORT) }
             null
         }
+    }
+
+    /**
+     * 导出信封 → JSON 文本（导出落盘与跨端暂存共用的同一段序列化；单源纪律）。
+     * 数十 MB 备份的 Moshi 序列化 + UTF-8 全量拷贝是纯 CPU 重活，必须离开主线程
+     * （reviewer P2：Main 线程跑会整页冻结甚至 ANR；repository 出网已收口 IO，
+     * 这里把序列化段一并推到 Default 池）。
+     */
+    private suspend fun buildExportJson(): BackupExportFile = withContext(Dispatchers.Default) {
+        val file = backupRepository.export()
+        val json = Serializer.moshi.adapter(LegacyBackupFile::class.java).toJson(file)
+        BackupExportFile(json = json, sizeBytes = json.toByteArray(Charsets.UTF_8).size)
     }
 
     /**
@@ -299,6 +313,58 @@ class BackupViewModel @Inject constructor(
         }
     }
 
+    // ---------- 跨端同步暂存（2026-09-18 用户拍板：本机⇄服务器同步免来回导文件。
+    // 流程=连着 A 端「暂存当前库」→ 切换登录 B 端 →「导入暂存」走既有幂等导入链路；
+    // 暂存只保留最新一份（覆盖写），导入与文件导入同走 BackupValidator→确认弹窗→import） ----------
+
+    /** 进页回流暂存元数据（读失败按无暂存处理，不横幅——首次使用是常态） */
+    private fun loadStagedMeta() {
+        viewModelScope.launch {
+            val meta = runCatching { syncStaging.loadStaged() }.getOrNull()?.meta
+            _uiState.update { it.copy(staged = meta) }
+        }
+    }
+
+    /**
+     * 暂存当前库：导出全量信封（与「导出备份」同一段序列化）写进 App 内部暂存；
+     * 来源服务端地址由暂存实现方捕获（导入侧展示「来自哪端」，防导错方向）。
+     */
+    fun stageForSync() {
+        if (_uiState.value.stagingBusy) return
+        _uiState.update { it.copy(stagingBusy = true, errorMessage = null, noticeMessage = null) }
+        viewModelScope.launch {
+            try {
+                val export = buildExportJson()
+                val meta = syncStaging.stage(export.json)
+                _uiState.update {
+                    it.copy(
+                        stagingBusy = false,
+                        staged = meta,
+                        noticeMessage = NOTICE_STAGED.format((meta.sizeBytes / BYTES_PER_KB).roundToInt()),
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(stagingBusy = false, errorMessage = ERROR_STAGE) }
+            }
+        }
+    }
+
+    /**
+     * 导入暂存：读暂存信封后走与「选择文件」完全相同的校验→确认弹窗→幂等导入链路
+     * （onFilePicked 单源口径）。成功后暂存保留（同一份重复导入不翻倍，可作重试兜底）。
+     */
+    fun importStaged() {
+        if (_uiState.value.importing) return
+        viewModelScope.launch {
+            val staged = runCatching { syncStaging.loadStaged() }.getOrNull()
+            if (staged == null) {
+                _uiState.update { it.copy(errorMessage = ERROR_STAGED_MISSING) }
+                return@launch
+            }
+            onFilePicked(STAGED_FILE_NAME, staged.json.toByteArray(Charsets.UTF_8))
+        }
+    }
+
     private companion object {
         /** KB 换算分母（Web (sizeBytes/1024).toFixed(0) 同口径；四舍五入由 roundToInt 承担） */
         const val BYTES_PER_KB = 1024.0
@@ -320,5 +386,11 @@ class BackupViewModel @Inject constructor(
 
         /** 浏览数据同步失败文案（SettingsViewModel 原款随迁） */
         const val EVENT_SYNC_FAILED_MESSAGE = "同步失败，请重试"
+
+        /** 跨端暂存文案 */
+        const val ERROR_STAGE = "暂存失败，请重试"
+        const val ERROR_STAGED_MISSING = "暂存数据不存在或已损坏，请重新暂存"
+        const val NOTICE_STAGED = "已暂存当前库（%d KB），切换到另一端登录后即可导入"
+        const val STAGED_FILE_NAME = "qimeng_backup.json"
     }
 }
