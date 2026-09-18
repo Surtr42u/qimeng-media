@@ -107,11 +107,15 @@ room = "2.8.4"
 # Vico（2026-09-09 任务H H2 引入，统计页折线图，ADR-0018；白名单外一次性拍板：用户 2026-09-08
 # 「不要自绘」「统计页折线图换 Vico」原话）。官方仓库/Maven group = patrykandpatrick/vico
 # （https://github.com/patrykandpatrick/vico + https://repo1.maven.org/maven2/com/patrykandpatrick/vico/）。
-# 2.5.1（2026-09-09 冻结档锁版：当时否决 3.3.1/2.5.2 的因 = @Metadata 超出 Hilt 2.58 的
-#   kotlin-metadata-jvm 上限 2.3.0 + minCompileSdk 门禁）已随 S3 第 1+2+3 步全部解除
-#   （Hilt 2.60.1 + compileSdk 37 + Kotlin 2.4.20），升 3.3.1/2.5.2 技术上已可行；
-#   但 Vico 不在 S3 第 3 步改动清单内，本批不动，升级留后续批当场核查官方版本再锁。
-vico = "2.5.1"
+# 2.5.2（2026-09-18 任务P P5② 升级，2.x 线末位补丁：修 AreaFill 填充 bug #1517，无 API 变化；
+#   当时否决 3.3.1/2.5.2 的因 = @Metadata 超出 Hilt 2.58 的 kotlin-metadata-jvm 上限 2.3.0 +
+#   minCompileSdk 门禁）已随 S3 第 1+2+3 步全部解除（Hilt 2.60.1 + compileSdk 37 + Kotlin 2.4.20）。
+#   3.3.1 = major 跳线记档顺延（官方宣布 vico 2 修复期止于 2026-07-31 已 EOL）：3.0.0 移除废弃
+#   API/3.2.0 LineProvider.getLine 加 seriesKey 参数（Kotlin 函数式接口不兼容改签名）须
+#   QimengTrendLineChart 等 feature:stats 四文件用点全核对 + ADR-0018 补记，超轻量批口径；
+#   3.3.1 修 LineCartesianLayer 在 Android 10 的 ART JIT 崩溃 b/553511933——再评估触发条件 =
+#   Android 10 真机图表崩溃报障，或下次涉 ADR-0018 的图表批次。
+vico = "2.5.2"
 # material3 1.5.0-alpha28（2026-09-13 S3 第 3 步升级，1.5.0-alpha 线内末位；任务V V6 于 2026-09-11
 # 曾锁 alpha15，其「解锁条件 = AGP 9 + SDK 37 整体路线开启后升回线内最新」现满足）：Google Maven
 #   官方索引锁版 https://dl.google.com/android/maven2/androidx/compose/material3/material3/
