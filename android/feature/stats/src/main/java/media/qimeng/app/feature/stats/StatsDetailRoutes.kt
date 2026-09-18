@@ -15,8 +15,8 @@ enum class StatsDetailMode(val title: String) {
     /** 分类型趋势（图片/视频/动图多系列折线 + 来源浏览趋势 常规/COS 双系列） */
     TYPE_TREND("分类型趋势"),
 
-    /** 常看文件（详情=seconds 榜：窗口内停留时长累计倒序 Top 20） */
-    MOST_VIEWED("常看文件"),
+    /** 内容榜（2026-09-18 批更名：原「常看文件」——详情页含内容榜 /rankings + seconds 榜双档） */
+    MOST_VIEWED("内容榜"),
 
     /** 常看作者与标签（双排行卡：常看作者 Top15 + 常看标签 Top10） */
     AUTHORS_TAGS("常看作者与标签"),

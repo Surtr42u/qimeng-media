@@ -39,7 +39,6 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.patrykandpatrick.vico.compose.cartesian.marker.rememberToggleOnTap
 import com.patrykandpatrick.vico.core.cartesian.marker.CartesianMarkerController
-import media.qimeng.app.core.model.MostViewedEntry
 import media.qimeng.app.core.model.StatsRangeOption
 import media.qimeng.app.core.model.TopAuthorEntry
 import media.qimeng.app.core.model.TopTagEntry
@@ -56,7 +55,8 @@ import media.qimeng.app.core.ui.icon.BackIcon
  * - 摘要卡：2 列白卡网格（旧版 renderSummary/createSummaryCard），每格独立 20dp 圆角卡；
  * - 洞察卡：「数据洞察」+「· 文案」条目（旧版 renderInsights；空列表不出卡）；
  * - TYPE_TREND：类型/来源两张趋势卡（胶囊多选 + 图例 + 240dp 折线）；
- * - MOST_VIEWED：「常看排行」卡 + 按热度/按时长排序胶囊（双榜取数，[StatsDetailViewModel.toggleFilesSort]）；
+ * - MOST_VIEWED：「内容榜/常看排行」卡 + 按热度/按时长排序胶囊（按热度=内容榜 GET /rankings，
+ *   2026-09-18 批换源；按时长=seconds 榜，[StatsDetailViewModel.toggleFilesSort] 切换）；
  * - AUTHORS_TAGS：常看作者 Top15 + 常看标签 Top10 双排行卡；
  * - DISTRIBUTION：类型/来源两张分布对比卡（行标签 + 数量/大小/浏览三指标）；
  * - 排行行 = 独立白卡：名次列 28dp 前三名 primary 高亮 + 进度条 accent 灰（陷阱#7）；
@@ -111,12 +111,13 @@ fun StatsDetailScreen(
                         item { InsightCard(lines = mostViewedInsightLines(state, viewModel.range)) }
                         item {
                             RankingCard(
-                                title = FILES_RANK_CARD_TITLE,
+                                // 标题随排序档切换：按热度档=内容榜（2026-09-18 批换源）、按时长档保留旧「常看排行」
+                                title = if (filesSortByHeat) CONTENT_RANK_CARD_TITLE else FILES_RANK_CARD_TITLE,
                                 subtitle = "共 ${state.filesWithViewRecords} 个有浏览记录的文件",
-                                rows = mostViewedRankRows(state, filesSortByHeat) { entry ->
+                                rows = mostViewedRankRows(state, filesSortByHeat) { assetId ->
                                     // 榜单作批次上下文（J1）：先写快照清单再导航
-                                    viewModel.enterDetail(entry.assetId)
-                                    onOpenAsset(entry.assetId)
+                                    viewModel.enterDetail(assetId)
+                                    onOpenAsset(assetId)
                                 },
                                 sortToggleText = if (filesSortByHeat) SORT_BY_HEAT_TEXT else SORT_BY_SECONDS_TEXT,
                                 onSortToggle = viewModel::toggleFilesSort,
@@ -663,31 +664,33 @@ private fun mostViewedInsightLines(state: StatsDetailUiState, range: StatsRangeO
 )
 
 /**
- * 常看文件排行行（旧版热度/时长双档同构）：
- * 按热度=views 榜（值「N 次」，副标题「浏览 N 次 · 停留 D」）；按时长=seconds 榜（值=人读时长，
- * 副标题「浏览 N 次」）。停留时长按 assetId 从 seconds 榜 join——协议无单文件 dwell 直出，
- * Top20 之外的文件 join 不到则省略「· 停留」段（记档交付报告）。
+ * 常看文件排行行（热度/时长双档同构）：
+ * 按热度=内容榜 GET /rankings（2026-09-18 批换源：原 most-viewed views 榜——值=累计浏览次数
+ * 「N 次」，副标题「浏览 N 次 · 停留 D」，热度排序口径=浏览+播放+点赞累计）；按时长=seconds 榜
+ * （值=人读时长，副标题「浏览 N 次」）。停留时长按 assetId 从 seconds 榜 join——协议无单文件
+ * dwell 直出，Top20 之外的文件 join 不到则省略「· 停留」段（记档交付报告）。
+ * 回调只携带 assetId：双榜条目类型不同（RankingEntry vs MostViewedEntry），跳转只需 id。
  */
 private fun mostViewedRankRows(
     state: StatsDetailUiState,
     sortByHeat: Boolean,
-    onEntryClick: (MostViewedEntry) -> Unit,
+    onEntryClick: (String) -> Unit,
 ): List<RankRowUi> {
     val dwellByAsset = state.secondsRanking.associate { it.assetId to it.value }
-    val viewsByAsset = state.viewsRanking.associate { it.assetId to it.value }
+    val viewsByAsset = state.contentRanking.associate { it.assetId to it.viewCount }
     return if (sortByHeat) {
-        val maxValue = state.viewsRanking.firstOrNull()?.value ?: 0
-        state.viewsRanking.mapIndexed { index, entry ->
+        val maxValue = state.contentRanking.firstOrNull()?.viewCount ?: 0
+        state.contentRanking.mapIndexed { index, entry ->
             val dwell = dwellByAsset[entry.assetId]
             RankRowUi(
                 rank = index + 1,
-                title = entry.fileName,
-                subtitle = "浏览 ${entry.value} 次" +
+                title = entry.title,
+                subtitle = "浏览 ${entry.viewCount} 次" +
                     dwell?.takeIf { it > 0 }?.let { " · 停留 ${formatDurationDetail(it.toLong())}" }.orEmpty(),
-                valueText = "${entry.value} 次",
-                progressValue = entry.value.toLong(),
+                valueText = "${entry.viewCount} 次",
+                progressValue = entry.viewCount.toLong(),
                 progressMax = maxValue.toLong(),
-                onClick = { onEntryClick(entry) },
+                onClick = { onEntryClick(entry.assetId) },
             )
         }
     } else {
@@ -700,7 +703,7 @@ private fun mostViewedRankRows(
                 valueText = formatDurationDetail(entry.value.toLong()),
                 progressValue = entry.value.toLong(),
                 progressMax = maxValue.toLong(),
-                onClick = { onEntryClick(entry) },
+                onClick = { onEntryClick(entry.assetId) },
             )
         }
     }
@@ -989,8 +992,11 @@ private const val SOURCE_DISTRIBUTION_CARD_SUBTITLE = "常规 vs COS"
 /** 分布模式顶栏标题（陷阱#8：不带档位后缀，旧版 observeDistributionMode 逐字） */
 private const val DISTRIBUTION_DETAIL_TITLE = "分布统计详情"
 
-/** 常看文件排行卡标题（旧版 listTitleText 逐字） */
+/** 常看排行卡标题——按时长（seconds）档保留旧版逐字（2026-09-18 批：按热度档改用内容榜标题） */
 private const val FILES_RANK_CARD_TITLE = "常看排行"
+
+/** 内容榜卡标题（2026-09-18 批：按热度档数据源换 GET /rankings，标题随档与主页顶卡同字） */
+private const val CONTENT_RANK_CARD_TITLE = "内容榜"
 
 /** 作者/标签排行卡标题（旧版 tagListTitleText/listTitleText 逐字） */
 private const val AUTHORS_CARD_TITLE = "常看作者"

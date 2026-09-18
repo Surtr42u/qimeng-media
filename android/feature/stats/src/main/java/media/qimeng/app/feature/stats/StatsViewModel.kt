@@ -10,15 +10,16 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import media.qimeng.app.core.data.repository.MediaBatchIndex
+import media.qimeng.app.core.data.repository.RankingEntry
 import media.qimeng.app.core.data.repository.StatsRepository
 import media.qimeng.app.core.model.DEFAULT_STATS_RANGE
-import media.qimeng.app.core.model.MostViewedEntry
 import media.qimeng.app.core.model.StatsOverviewValues
 import media.qimeng.app.core.model.StatsRangeOption
 import media.qimeng.app.core.model.TopAuthorEntry
 import media.qimeng.app.core.model.TopTagEntry
 import media.qimeng.app.core.model.TrendPoint
 import media.qimeng.app.core.model.apiRange
+import media.qimeng.app.core.model.rankingsPeriod
 
 /** 数字卡/常看卡共享的 Top 条数（GUIDE_UI §数据统计页「紧凑文本列表 Top 3」） */
 internal const val TOP_CARD_LIMIT = 3
@@ -43,7 +44,8 @@ data class TopAuthorTagEntry(
  *   「各桶之和=窗口总量」口径），随档位联动——与趋势同一次 /stats/trends 响应派生，天然同源；
  * - 第二行总文件数/总占用空间 = /stats/overview 静态库存值；「平均浏览次数」N3 #31a 解冻：
  *   overview(range).avgViewsPerFile 随档位联动（分母 0 → null → 「—」占位，降级语义保留）；
- * - 常看文件卡 Top3（/stats/most-viewed metric=views）、常看作者/标签卡混合 Top3
+ * - 内容榜卡 Top3（GET /rankings，2026-09-18 批换源：原 /stats/most-viewed metric=views——
+ *   Web 数据页同款口径，热度=浏览+播放+点赞累计、period 准入、排除 COS）、常看作者/标签卡混合 Top3
  *   （/stats/top-authors + /stats/top-tags）——全部随档位联动；失败/空数据 → 空表 → 卡内空态；
  * - 序号防重（GUIDE_UI L212）：窗口指标/趋势/常看族/均值同请求通道共用 [StatsViewModel.windowRequestId]，
  *   桶求和是响应落地后的纯派生（无独立异步通道）。
@@ -54,8 +56,8 @@ data class StatsUiState(
     val selectedRange: StatsRangeOption = DEFAULT_STATS_RANGE,
     val trends: List<TrendPoint> = emptyList(),
     val trendsLoading: Boolean = true,
-    /** 常看文件卡 Top3（metric=views；失败/空=空表 → 卡内空态） */
-    val mostViewed: List<MostViewedEntry> = emptyList(),
+    /** 内容榜卡 Top3（GET /rankings；2026-09-18 批换源，失败/空=空表 → 卡内空态） */
+    val rankings: List<RankingEntry> = emptyList(),
     /** 常看作者卡数据源（详情页 Top15 亦用本通道，主页面只取前 3 混排） */
     val topAuthors: List<TopAuthorEntry> = emptyList(),
     /** 常看标签卡数据源 */
@@ -67,8 +69,8 @@ data class StatsUiState(
     /** 趋势空态（规格 §数据统计页：空态文案「暂无趋势数据」） */
     val trendsEmpty: Boolean get() = !trendsLoading && trends.isEmpty()
 
-    /** 常看文件卡空态（加载完且无数据——空态保留口径） */
-    val mostViewedEmpty: Boolean get() = !trendsLoading && mostViewed.isEmpty()
+    /** 内容榜卡空态（加载完且无数据——空态保留口径） */
+    val rankingsEmpty: Boolean get() = !trendsLoading && rankings.isEmpty()
 
     /** 常看作者与标签卡空态 */
     val topAuthorsTagsEmpty: Boolean get() = !trendsLoading && topAuthors.isEmpty() && topTags.isEmpty()
@@ -107,7 +109,8 @@ data class StatsUiState(
  *   overview 供库存两格（进页拉一次不随档位重拉）+ 窗口均值 avgViewsPerFile（随档位经
  *   overview(range) 联动，N3 #31a 解冻）；
  * - 趋势来自 /stats/trends，档位切换重拉；range 参数只经 StatsRangeOption.apiRange 产出；
- * - 常看族三口（most-viewed metric=views / top-authors / top-tags）随档位联动（N4 I3b）；
+ * - 常看族三口（/rankings 内容榜 + top-authors + top-tags）随档位联动（N4 I3b；内容榜
+ *   2026-09-18 批换源：原 most-viewed metric=views）；
  * - 快速切换防覆盖（GUIDE_UI §数据统计页「序号防重」）：响应带发起时的档位快照，
  *   回写时当前选中档已变则丢弃——晚完成的旧协程不得覆盖新结果（含窗口指标派生源）；
  *   常看族/均值单口失败降级为空表/null，不拖垮同通道其余数据（getOrDefault 隔离）。
@@ -138,8 +141,10 @@ class StatsViewModel @Inject constructor(
         viewModelScope.launch {
             // 单口失败各自降级（空表/null），不互相拖垮——常看卡空态保留、均值「—」占位
             val points = runCatching { statsRepository.trends(rangeParam) }.getOrDefault(emptyList())
-            val mostViewed = runCatching {
-                statsRepository.mostViewed(rangeParam, METRIC_VIEWS, TOP_CARD_LIMIT)
+            // 内容榜走 /rankings：period 与 trends 的 range 是两套枚举轴（7d→week 陷阱档），
+            // 只经 rankingsPeriod 产出，禁止复用 rangeParam（2026-09-18 批换源）
+            val rankings = runCatching {
+                statsRepository.rankings(option.rankingsPeriod, TOP_CARD_LIMIT)
             }.getOrDefault(emptyList())
             val topAuthors = runCatching { statsRepository.topAuthors(rangeParam, TOP_CARD_LIMIT) }
                 .getOrDefault(emptyList())
@@ -153,7 +158,7 @@ class StatsViewModel @Inject constructor(
                 if (isStale) current else current.copy(
                     trends = points,
                     trendsLoading = false,
-                    mostViewed = mostViewed,
+                    rankings = rankings,
                     topAuthors = topAuthors,
                     topTags = topTags,
                     avgViewsPerFile = avgViews,
@@ -171,17 +176,12 @@ class StatsViewModel @Inject constructor(
     }
 
     /**
-     * 常看文件条目进详情前的批次上下文写入（任务J J1，GUIDE_UI L218-224 跳转链；
+     * 内容榜条目进详情前的批次上下文写入（任务J J1，GUIDE_UI L218-224 跳转链；
      * HomeViewModel/FavoriteViewModel 的 enterDetail 同款范式）：「已加载=当前显示清单」
-     * 口径——主页面常看卡即 Top3 榜单，快照式整体替换 [MediaBatchIndex.ids]，
+     * 口径——主页面内容榜卡即 Top3 榜单，快照式整体替换 [MediaBatchIndex.ids]，
      * DetailViewModel 既有消费零改动。参数保留 assetId 与同款签名对齐（触发时机语义）。
      */
     fun enterDetail(assetId: String) {
-        batchIndex.ids = _uiState.value.mostViewed.map { it.assetId }
-    }
-
-    private companion object {
-        /** /stats/most-viewed 的 metric 参数值（协议 views|seconds；主页面卡=views 榜） */
-        const val METRIC_VIEWS = "views"
+        batchIndex.ids = _uiState.value.rankings.map { it.assetId }
     }
 }

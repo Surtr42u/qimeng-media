@@ -10,6 +10,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import media.qimeng.app.core.data.repository.MediaBatchIndex
+import media.qimeng.app.core.data.repository.RankingEntry
 import media.qimeng.app.core.data.repository.StatsRepository
 import media.qimeng.app.core.model.MostViewedEntry
 import media.qimeng.app.core.model.StatsOverviewValues
@@ -22,7 +23,8 @@ import media.qimeng.app.core.testing.MainDispatcherRule
 /**
  * 统计详情页 ViewModel 单测（任务I I3 + N4 I3b）：模式/档位路由解析、分类型趋势多系列拼装
  * （mediaType 单值逐类型取数）、来源趋势双系列（N3 #31b）、常看文件 seconds 榜、
- * 常看作者标签双卡、分布卡类型/来源库存派生、空态。
+ * 内容榜 /rankings（2026-09-18 批换源：原 most-viewed views 榜）、常看作者标签双卡、
+ * 分布卡类型/来源库存派生、空态。
  */
 class StatsDetailViewModelTest {
 
@@ -36,6 +38,7 @@ class StatsDetailViewModelTest {
         val trendsByType = mutableMapOf<String, List<TrendPoint>>()
         val trendsBySource = mutableMapOf<String, List<TrendPoint>>()
         var mostViewedProvider: suspend (String, String, Int) -> List<MostViewedEntry> = { _, _, _ -> emptyList() }
+        var rankingsProvider: suspend (String, Int) -> List<RankingEntry> = { _, _ -> emptyList() }
         var topAuthorsProvider: suspend (String, Int) -> List<TopAuthorEntry> = { _, _ -> emptyList() }
         var topTagsProvider: suspend (String, Int) -> List<TopTagEntry> = { _, _ -> emptyList() }
 
@@ -62,6 +65,9 @@ class StatsDetailViewModelTest {
 
         override suspend fun mostViewed(range: String, metric: String, limit: Int): List<MostViewedEntry> =
             mostViewedProvider(range, metric, limit)
+
+        override suspend fun rankings(period: String, limit: Int): List<RankingEntry> =
+            rankingsProvider(period, limit)
 
         override suspend fun topAuthors(range: String, limit: Int): List<TopAuthorEntry> =
             topAuthorsProvider(range, limit)
@@ -142,17 +148,13 @@ class StatsDetailViewModelTest {
         val repository = FakeStatsRepository()
         repository.mostViewedProvider = { range, metric, limit ->
             assertEquals("7d", range)
+            // 2026-09-18 批换源后 most-viewed 只剩 seconds 榜一路（内容榜走 /rankings）
+            assertEquals("seconds", metric)
             assertEquals(20, limit)
-            // 2026-09-13 视觉复刻批：排序胶囊双榜并发，本用例只喂 seconds 档
-            if (metric == "seconds") {
-                listOf(
-                    MostViewedEntry("id-1", "长看.mp4", "video", null, 300),
-                    MostViewedEntry("id-2", "短看.jpg", "image", null, 45),
-                )
-            } else {
-                assertEquals("views", metric)
-                emptyList()
-            }
+            listOf(
+                MostViewedEntry("id-1", "长看.mp4", "video", null, 300),
+                MostViewedEntry("id-2", "短看.jpg", "image", null, 45),
+            )
         }
         val viewModel = StatsDetailViewModel(handle(StatsDetailMode.MOST_VIEWED), repository, MediaBatchIndex())
         advanceUntilIdle()
@@ -164,7 +166,7 @@ class StatsDetailViewModelTest {
     }
 
     @Test
-    fun `常看文件双榜取数与排序切换批次快照`() = runTest {
+    fun `内容榜与秒榜取数与排序切换批次快照`() = runTest {
         val repository = FakeStatsRepository().apply {
             overviewValue = StatsOverviewValues(
                 totalFiles = 10, imageCount = 6, videoCount = 3,
@@ -173,20 +175,22 @@ class StatsDetailViewModelTest {
             )
         }
         repository.mostViewedProvider = { _, metric, _ ->
-            if (metric == "views") {
-                listOf(MostViewedEntry("v-1", "热.mp4", "video", null, 12))
-            } else {
-                listOf(MostViewedEntry("s-1", "久.mp4", "video", null, 600))
-            }
+            assertEquals("seconds", metric)
+            listOf(MostViewedEntry("s-1", "久.mp4", "video", null, 600))
+        }
+        repository.rankingsProvider = { period, limit ->
+            assertEquals("week", period) // 陷阱档：7 天 → period=week（period 准入轴，非 trends range 轴）
+            assertEquals(20, limit)
+            listOf(RankingEntry("v-1", "热.mp4", 12))
         }
         val batchIndex = MediaBatchIndex()
         val viewModel = StatsDetailViewModel(handle(StatsDetailMode.MOST_VIEWED), repository, batchIndex)
         advanceUntilIdle()
         val state = viewModel.uiState.value
-        assertEquals(listOf("热.mp4"), state.viewsRanking.map { it.fileName })
+        assertEquals(listOf("热.mp4"), state.contentRanking.map { it.title })
         assertEquals(600, state.secondsRanking.first().value)
         assertEquals(true, viewModel.filesSortByHeat.value)
-        // 默认按热度档：批次快照=views 榜整表（「已加载=当前显示清单」）
+        // 默认按热度档：批次快照=内容榜整表（「已加载=当前显示清单」）
         viewModel.enterDetail("v-1")
         assertEquals(listOf("v-1"), batchIndex.ids)
         // 切到按时长档：批次快照随之换源
@@ -330,7 +334,9 @@ class StatsDetailViewModelTest {
     @Test
     fun `seconds榜条目点击写批次上下文 - 快照等于榜清单`() = runTest {
         val repository = FakeStatsRepository()
-        repository.mostViewedProvider = { _, _, _ ->
+        repository.mostViewedProvider = { _, metric, _ ->
+            // 2026-09-18 批换源后 most-viewed 只喂 seconds 档（内容榜由 rankingsProvider 另喂）
+            assertEquals("seconds", metric)
             listOf(
                 MostViewedEntry("sec-1", "长看.mp4", "video", null, 300),
                 MostViewedEntry("sec-2", "中看.mp4", "video", null, 120),
