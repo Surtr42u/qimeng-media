@@ -806,6 +806,11 @@ func TestAssetDetail(t *testing.T) {
 	if d.ThumbUrl == nil || !strings.Contains(*d.ThumbUrl, "size=lg") {
 		t.Fatalf("thumbUrl 应为大图档：%v", d.ThumbUrl)
 	}
+	// thumbUrlMd（2026-09-18 协议新增）：详情同时下发 md 档直链，客户端海报
+	// 先 md 秒出、lg 就绪后换上（md 为回填预生成档，首开不等现场生成）
+	if d.ThumbUrlMd == nil || !strings.Contains(*d.ThumbUrlMd, "size=md") {
+		t.Fatalf("thumbUrlMd 应为网格档：%v", d.ThumbUrlMd)
+	}
 	if d.RelPath == nil || *d.RelPath != "a.jpg" || d.Directory == nil || *d.Directory != "" {
 		t.Fatalf("路径字段不符：%v %v", d.RelPath, d.Directory)
 	}

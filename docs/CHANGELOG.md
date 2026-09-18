@@ -13,6 +13,15 @@
 ---
 ---
 ---
+## feat(api): AssetDetail 增 thumbUrlMd 签名直链——详情海报先 md 后 lg（2026-09-18 第三百一十五笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- 根因（真机反馈「视频详情页点开过一会才加载」）：详情接口 thumbUrl 恒 lg 档（1024），lg 不在开机回填预生成范围（回填只做网格 md 档），首开详情必触发服务端现场 ffmpeg 全管线（ffprobe+最多 8 候选点采样+抽帧+缩放，预算 60s 上界）再叠加生成队列排队；页面在此前只画灰色块。真机监控抓到 3 条详情请求「context canceled」= 用户等不及取消，与此链互证。
+- 协议（openapi 先行）：AssetDetail 新增可选 `thumbUrlMd`（md 档签名直链，与网格同源预生成档；GET /assets/{id} 恒填充）；`make sdk` 三端重生成（Go/TS/Kotlin），sdk.lock 203 条。
+- 服务端：assets_detail 组装处与 lg 并行下发 md 直链；browse_test 详情用例补 size=md 断言。
+- 文档：GUIDE_API.md「关键机制」增条目。
+
 ## perf(app): 首页就绪探针+梯度退避+骨架屏+缩略图缓存页拆分+登录后自动预取全部缩略图（2026-09-18 第三百一十四笔）
 
 执行 AI：GLM-5.3-Flash（主代理，探针+服务端）+ 执行子代理（feature/home 与 core/data/feature/manage 实施）+ 审查子代理（对抗复核，抓出 P1 一处）
