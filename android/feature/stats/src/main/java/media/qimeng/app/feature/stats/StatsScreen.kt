@@ -27,7 +27,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.patrykandpatrick.vico.compose.cartesian.marker.rememberToggleOnTap
 import com.patrykandpatrick.vico.core.cartesian.marker.CartesianMarker
 import com.patrykandpatrick.vico.core.cartesian.marker.CartesianMarkerController
-import media.qimeng.app.core.model.MostViewedEntry
+import media.qimeng.app.core.data.repository.RankingEntry
 import media.qimeng.app.core.model.StatsRangeOption
 import media.qimeng.app.core.model.TrendPoint
 import media.qimeng.app.core.ui.component.Dimens
@@ -44,10 +44,11 @@ import media.qimeng.app.core.ui.component.formatBytesHumanReadable
  * - 浏览趋势卡（L213）：点击数据点高亮+数值气泡（Vico DefaultCartesianMarker，
  *   rememberTrendValueMarker + rememberToggleOnTap）；点击卡片/右上「分类型趋势 ›」进统计详情页；
  * - 分布统计小入口卡（L214）：纯文字卡，点击进分布统计详情（来源构成 N3 #31b 解冻，详情页呈现）；
- * - 常看文件卡（L215）：文件名+浏览次数紧凑 Top3（/stats/most-viewed metric=views），
- *   点击进常看文件详情（seconds 榜）；常看作者与标签卡（L216）：作者/标签混合 Top3
+ * - 内容榜卡（L215，2026-09-18 批换源：原「常看文件」卡）：文件名+浏览次数紧凑 Top3
+ *   （GET /rankings，Web 数据页同款口径——热度=浏览+播放+点赞累计、period 准入、排除 COS），
+ *   点击进常看文件详情（默认按热度档=本榜）；常看作者与标签卡（L216）：作者/标签混合 Top3
  *   （/stats/top-authors + /stats/top-tags），点击进常看作者标签详情——空数据卡内空态保留；
- * - 详情页跳转链（任务J J1，GUIDE_UI L218-224）：常看文件**条目**→详情页（榜单作批次
+ * - 详情页跳转链（任务J J1，GUIDE_UI L218-224）：内容榜**条目**→详情页（榜单作批次
  *   上下文，[StatsViewModel.enterDetail] 写快照清单）；常看作者条目→作者集合页（真实
  *   authorId）；常看标签条目→搜索页携词——均经回调上抛壳层导航，本层零路由耦合。
  */
@@ -95,10 +96,10 @@ fun StatsScreen(
             )
         }
         item {
-            MostViewedCard(
-                entries = state.mostViewed,
+            ContentRankCard(
+                entries = state.rankings,
                 loading = state.trendsLoading,
-                empty = state.mostViewedEmpty,
+                empty = state.rankingsEmpty,
                 onOpen = { onOpenDetail(StatsDetailMode.MOST_VIEWED, state.selectedRange) },
                 onEntryClick = { entry ->
                     // 榜单作批次上下文（J1）：先写快照清单再导航，详情页 i/N 与滑动链以 Top3 榜为批次
@@ -310,17 +311,19 @@ private fun DistributionEntryCard(onOpen: () -> Unit) {
 }
 
 /**
- * 常看文件卡（GUIDE_UI L215）：文件名 + 浏览次数紧凑文本列表 Top 3
- * （/stats/most-viewed metric=views，随档位联动），点击进常看文件详情（seconds 榜）。
+ * 内容榜卡（2026-09-18 批换源：原「常看文件」卡 /stats/most-viewed metric=views →
+ * GET /rankings，Web 数据页同款口径——热度=浏览+播放+点赞累计倒序、period 只做准入过滤、
+ * 排除 COS；角标=累计浏览次数「N 次」）：文件名 + 浏览次数紧凑文本列表 Top 3，
+ * 随档位联动（period 经 rankingsPeriod 映射），点击进常看文件详情（默认按热度档=本榜）。
  * 加载中/空数据卡内文案占位（空态保留，不隐藏卡）。
  */
 @Composable
-private fun MostViewedCard(
-    entries: List<MostViewedEntry>,
+private fun ContentRankCard(
+    entries: List<RankingEntry>,
     loading: Boolean,
     empty: Boolean,
     onOpen: () -> Unit,
-    onEntryClick: (MostViewedEntry) -> Unit,
+    onEntryClick: (RankingEntry) -> Unit,
 ) {
     Surface(
         onClick = onOpen,
@@ -335,7 +338,7 @@ private fun MostViewedCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = "常看文件",
+                    text = "内容榜",
                     style = MaterialTheme.typography.titleMedium.copy(fontSize = 14.sp, fontWeight = FontWeight.Bold),
                 )
                 Text(
@@ -349,8 +352,8 @@ private fun MostViewedCard(
                 empty -> CompactEmptyText()
                 else -> entries.forEach { entry ->
                     CompactRow(
-                        text = entry.fileName,
-                        value = entry.value.toDisplayText() + VIEW_SUFFIX,
+                        text = entry.title,
+                        value = entry.viewCount.toDisplayText() + VIEW_SUFFIX,
                         onClick = { onEntryClick(entry) },
                     )
                 }

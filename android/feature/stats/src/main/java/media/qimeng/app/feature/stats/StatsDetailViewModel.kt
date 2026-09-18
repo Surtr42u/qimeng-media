@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import media.qimeng.app.core.data.repository.MediaBatchIndex
+import media.qimeng.app.core.data.repository.RankingEntry
 import media.qimeng.app.core.data.repository.StatsRepository
 import media.qimeng.app.core.model.DEFAULT_STATS_RANGE
 import media.qimeng.app.core.model.MostViewedEntry
@@ -21,6 +22,7 @@ import media.qimeng.app.core.model.StatsRangeOption
 import media.qimeng.app.core.model.TopAuthorEntry
 import media.qimeng.app.core.model.TopTagEntry
 import media.qimeng.app.core.model.apiRange
+import media.qimeng.app.core.model.rankingsPeriod
 import kotlin.math.roundToInt
 
 /**
@@ -57,8 +59,9 @@ data class StatsDetailUiState(
     val sourceDistribution: List<TypeStockEntry> = emptyList(),
     /** 常看文件 seconds 榜（窗口内 dwell 秒数累计倒序 Top 20） */
     val secondsRanking: List<MostViewedEntry> = emptyList(),
-    /** 常看文件 views 榜（窗口内 open 次数倒序 Top 20；「按热度」排序档数据源） */
-    val viewsRanking: List<MostViewedEntry> = emptyList(),
+    /** 内容榜（GET /rankings 热度=浏览+播放+点赞累计倒序 Top 20；2026-09-18 批换源：
+     * 原 most-viewed views 榜——「按热度」排序档数据源） */
+    val contentRanking: List<RankingEntry> = emptyList(),
     /** 常看作者 Top15 */
     val topAuthors: List<TopAuthorEntry> = emptyList(),
     /** 常看标签 Top10 */
@@ -82,7 +85,7 @@ data class StatsDetailUiState(
             typeSeries.all { it.values.isEmpty() } &&
             sourceSeries.all { it.values.isEmpty() } &&
             distribution.isEmpty() && sourceDistribution.isEmpty() &&
-            secondsRanking.isEmpty() && viewsRanking.isEmpty() &&
+            secondsRanking.isEmpty() && contentRanking.isEmpty() &&
             topAuthors.isEmpty() && topTags.isEmpty()
 }
 
@@ -98,7 +101,8 @@ internal fun deriveFilesWithViewRecords(windowViews: Int, avgViewsPerFile: Doubl
  * 统计详情页 ViewModel（GUIDE_UI §统计详情页 L225-234，N4 I3b 全量接线）：
  * - 分类型趋势：mediaType 单值逐类型调 /stats/trends 拼系列（image/video/animated_image）
  *   + 「来源浏览趋势」卡（N3 #31b 解冻：source=normal|cos 两次取数双系列）；
- * - 常看文件：/stats/most-viewed 双榜（metric=views 按热度 + metric=seconds 按时长，Top 20）；
+ * - 常看文件：内容榜 GET /rankings（热度=view+play+like 累计倒序；2026-09-18 批换源，
+ *   原 most-viewed metric=views）+ 秒榜 /stats/most-viewed metric=seconds（停留时长倒序），各 Top 20；
  * - 常看作者与标签：/stats/top-authors Top15 + /stats/top-tags Top10 双排行卡；
  * - 分布统计：/stats/overview 类型库存 + 来源构成 + 窗口浏览（/stats/trends 逐路派生）。
  * 摘要卡/洞察卡/排序胶囊所需窗口聚合全部复用既有端点（2026-09-13 视觉复刻批）。
@@ -179,15 +183,16 @@ class StatsDetailViewModel @Inject constructor(
         }
     }
 
-    /** 常看文件：双榜并发（views=按热度 / seconds=按时长，旧版排序胶囊两档）+ 窗口聚合派生 */
+    /** 常看文件：内容榜（/rankings）+ 秒榜（most-viewed=seconds）并发 + 窗口聚合派生 */
     private fun loadMostViewed() {
         viewModelScope.launch {
             val secondsDeferred = async {
                 runCatching { statsRepository.mostViewed(range.apiRange, METRIC_SECONDS, RANKING_LIMIT_MOST_VIEWED) }
                     .getOrDefault(emptyList())
             }
-            val viewsDeferred = async {
-                runCatching { statsRepository.mostViewed(range.apiRange, METRIC_VIEWS, RANKING_LIMIT_MOST_VIEWED) }
+            // 内容榜 period 与秒榜 range 是两套枚举轴（7d→week 陷阱档），只经 rankingsPeriod 产出
+            val contentDeferred = async {
+                runCatching { statsRepository.rankings(range.rankingsPeriod, RANKING_LIMIT_MOST_VIEWED) }
                     .getOrDefault(emptyList())
             }
             // 窗口聚合（摘要卡「总浏览/浏览时长」+ 洞察行 + 有浏览记录文件数派生）：
@@ -195,18 +200,18 @@ class StatsDetailViewModel @Inject constructor(
             val window = runCatching { statsRepository.trends(range.apiRange) }.getOrDefault(emptyList())
             val overview = runCatching { statsRepository.overview(range.apiRange) }.getOrNull()
             val secondsRanking = secondsDeferred.await()
-            val viewsRanking = viewsDeferred.await()
+            val contentRanking = contentDeferred.await()
             val windowViews = window.sumOf { it.viewCount }
             _uiState.update {
                 it.copy(
                     loading = false,
                     secondsRanking = secondsRanking,
-                    viewsRanking = viewsRanking,
+                    contentRanking = contentRanking,
                     windowViewCount = windowViews,
                     windowPlayCount = window.sumOf { point -> point.playCount },
                     windowSeconds = window.sumOf { point -> point.seconds.toLong() },
                     overviewValues = overview,
-                    filesWithViewRecords = deriveFilesWithViewRecords(windowViews, overview?.avgViewsPerFile, viewsRanking.size),
+                    filesWithViewRecords = deriveFilesWithViewRecords(windowViews, overview?.avgViewsPerFile, contentRanking.size),
                 )
             }
         }
@@ -241,8 +246,12 @@ class StatsDetailViewModel @Inject constructor(
      * 参数保留 assetId 对齐签名。
      */
     fun enterDetail(assetId: String) {
-        val ranking = if (filesSortByHeat.value) _uiState.value.viewsRanking else _uiState.value.secondsRanking
-        batchIndex.ids = ranking.map { it.assetId }
+        // 双榜条目类型不同（RankingEntry vs MostViewedEntry），各分支各自取 assetId
+        batchIndex.ids = if (filesSortByHeat.value) {
+            _uiState.value.contentRanking.map { it.assetId }
+        } else {
+            _uiState.value.secondsRanking.map { it.assetId }
+        }
     }
 
     /**
@@ -331,10 +340,7 @@ class StatsDetailViewModel @Inject constructor(
         /** metric=seconds（常看文件详情=停留时长榜） */
         const val METRIC_SECONDS = "seconds"
 
-        /** metric=views（按热度档；协议 most-viewed 双 metric 枚举） */
-        const val METRIC_VIEWS = "views"
-
-        /** 常看文件榜条数（协议 limit 上限 50；详情页 Top 20 与旧版榜同档） */
+        /** 榜条数（most-viewed limit 上限 50、/rankings limit 缺省 50；详情页 Top 20 与旧版榜同档） */
         const val RANKING_LIMIT_MOST_VIEWED = 20
 
         /** 常看作者 Top15 / 常看标签 Top10（GUIDE_UI §统计详情页 MODE_AUTHORS 逐字） */

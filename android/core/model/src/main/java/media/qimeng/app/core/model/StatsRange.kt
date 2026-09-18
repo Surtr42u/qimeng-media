@@ -26,6 +26,22 @@ val StatsRangeOption.apiRange: String
         StatsRangeOption.ALL -> "all"
     }
 
+/**
+ * 档位 → `/rankings` period 参数映射（openapi 6 档枚举 day/week/month/quarter/year/all
+ * 的 3 档子集；2026-09-18 内容榜批，数据页「常看文件」榜换源 /rankings 时新增）。
+ *
+ * 【命名陷阱】7 天档传 `week` 而非趋势侧直觉的 "7d"（/rankings period 没有 7d）——
+ * 且 period 在此端点**只做准入过滤**（week=近 7 天内有浏览/播放/点赞记录的资产才进榜），
+ * 排序仍按累计热度（view+play+like），不是窗口内增量——Web 数据页同款口径。
+ * 协议侧改动须同步此处，反之亦然（openapi.yaml /rankings period 枚举）。
+ */
+val StatsRangeOption.rankingsPeriod: String
+    get() = when (this) {
+        StatsRangeOption.SEVEN_DAYS -> "week"
+        StatsRangeOption.THIRTY_DAYS -> "month"
+        StatsRangeOption.ALL -> "all"
+    }
+
 /** 统计页默认档位（进页先看近 7 天，与 Web 数据页默认一致） */
 val DEFAULT_STATS_RANGE: StatsRangeOption = StatsRangeOption.SEVEN_DAYS
 

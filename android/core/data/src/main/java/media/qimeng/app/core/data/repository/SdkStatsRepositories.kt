@@ -139,6 +139,36 @@ class SdkStatsRepository @Inject constructor(
         }
     }
 
+    /**
+     * 内容榜（2026-09-18 内容榜批：GET /rankings；Web 数据页同款口径——热度=浏览+播放+点赞
+     * 累计倒序、period 只做准入过滤、排除 COS）。period 只认协议六值
+     * （rankingsPeriod 只产出 week/month/all，其余分支为防御性兜底——all=不设准入窗口的超集）；
+     * 此处打日志即验收证据。
+     */
+    override suspend fun rankings(period: String, limit: Int): List<RankingEntry> {
+        Log.d(SdkMediaRepository.LOG_TAG, "GET /rankings period=$period limit=$limit")
+        val api = withContext(Dispatchers.IO) { apiFactory.create() }
+        val sdkPeriod = when (period) {
+            "day" -> media.qimeng.sdk.apis.DefaultApi.PeriodApiV1RankingsGet.day
+            "week" -> media.qimeng.sdk.apis.DefaultApi.PeriodApiV1RankingsGet.week
+            "month" -> media.qimeng.sdk.apis.DefaultApi.PeriodApiV1RankingsGet.month
+            "quarter" -> media.qimeng.sdk.apis.DefaultApi.PeriodApiV1RankingsGet.quarter
+            "year" -> media.qimeng.sdk.apis.DefaultApi.PeriodApiV1RankingsGet.year
+            else -> media.qimeng.sdk.apis.DefaultApi.PeriodApiV1RankingsGet.all
+        }
+        val items = withContext(Dispatchers.IO) {
+            api.apiV1RankingsGet(period = sdkPeriod, limit = limit, offset = 0)
+        }
+        return items.map { item ->
+            RankingEntry(
+                assetId = item.id?.toString().orEmpty(),
+                // 标题口径与列表卡一致：cosWork 优先、回退 fileName（SdkMappers.toMediaAsset 同款）
+                title = item.cosWork ?: item.fileName.orEmpty(),
+                viewCount = item.viewCount ?: 0,
+            )
+        }
+    }
+
     override suspend fun topAuthors(range: String, limit: Int): List<TopAuthorEntry> {
         Log.d(SdkMediaRepository.LOG_TAG, "GET /stats/top-authors range=$range limit=$limit")
         val api = withContext(Dispatchers.IO) { apiFactory.create() }

@@ -11,6 +11,20 @@ import media.qimeng.app.core.model.TopTagEntry
 import media.qimeng.app.core.model.TrendPoint
 
 /**
+ * GET /rankings 单条（2026-09-18 内容榜批；映射自 AssetSummary）。
+ * /rankings 按热度（view+play+like 累计）降序返回，但协议不直出热度值——展示角标取
+ * [viewCount]（累计浏览次数）；标题口径与列表卡一致：cosWork 优先、回退 fileName
+ * （SdkMappers.toMediaAsset 同款）。
+ */
+data class RankingEntry(
+    val assetId: String,
+    /** 展示标题（AssetSummary.cosWork ?: fileName，客户端卡片标题统一口径） */
+    val title: String,
+    /** 累计浏览次数（kind='open' 事件计数；「N 次」角标数据源） */
+    val viewCount: Int,
+)
+
+/**
  * 统计页数据端口（M4-6；任务I I3 增补 mediaType 维度趋势取数口；N4 消费批 I3b 增补
  * 常看族三端点 + overview range 维度——N3 协议批 #31 解冻的 GET /stats/most-viewed、
  * /stats/top-authors、/stats/top-tags 与 /stats/overview 的 range 参数）。
@@ -26,6 +40,9 @@ import media.qimeng.app.core.model.TrendPoint
  * 【边界注（N4 I3b）】本批新增四方法沿用同款「默认方法重载」先例：既有抽象方法不动
  * （既有实现/调用零感知），新增重载给默认实现（overview(range) 委托无参版、其余返回空表），
  * 仅 SdkStatsRepository 覆写实传——feature:stats 消费端经此四口取数。
+ *
+ * 【边界注（2026-09-18 内容榜批）】新增 [StatsRepository.rankings] 沿用同款先例：
+ * 默认空表（既有实现零感知），仅 SdkStatsRepository 覆写实传。
  */
 interface StatsRepository {
 
@@ -61,6 +78,16 @@ interface StatsRepository {
      * 默认空表（无该端点感知的实现给空态，不崩），SDK 实现覆写实传。
      */
     suspend fun mostViewed(range: String, metric: String, limit: Int): List<MostViewedEntry> = emptyList()
+
+    /**
+     * 内容榜（2026-09-18 内容榜批：GET /rankings，Web 数据页同款口径——热度=浏览+播放+点赞
+     * 累计倒序、period 只做准入过滤、排除 COS；数据页顶卡与详情页「按热度」档数据源，
+     * 替换原 most-viewed metric=views 榜）。
+     * period 只经 [media.qimeng.app.core.model.StatsRangeOption.rankingsPeriod] 产出，
+     * 实现层不拼字符串（C1 映射单点收口，同 range 纪律）。
+     * 默认空表（无该端点感知的实现给空态，不崩），SDK 实现覆写实传。
+     */
+    suspend fun rankings(period: String, limit: Int): List<RankingEntry> = emptyList()
 
     /** 常看作者（N3 #31d；窗口内作者关联资产 open 次数倒序）。默认空表，SDK 实现覆写实传。 */
     suspend fun topAuthors(range: String, limit: Int): List<TopAuthorEntry> = emptyList()

@@ -10,8 +10,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import media.qimeng.app.core.data.repository.MediaBatchIndex
+import media.qimeng.app.core.data.repository.RankingEntry
 import media.qimeng.app.core.data.repository.StatsRepository
-import media.qimeng.app.core.model.MostViewedEntry
 import media.qimeng.app.core.model.StatsOverviewValues
 import media.qimeng.app.core.model.StatsRangeOption
 import media.qimeng.app.core.model.TopAuthorEntry
@@ -22,7 +22,8 @@ import media.qimeng.app.core.testing.MainDispatcherRule
 /**
  * 统计页 ViewModel 单测：三档→range 参数集成（I3 回改后的消费侧）、数字卡 6 指标
  * （窗口三指标=趋势桶求和随档位联动；GUIDE_UI L209-211）、快速切换防覆盖（GUIDE_UI L212 序号防重）、
- * N4 I3b 常看族装配/空态/降级（most-viewed + top-authors + top-tags + 均值联动）。
+ * 常看族装配/空态/降级（内容榜 /rankings + top-authors + top-tags + 均值联动；
+ * 内容榜 2026-09-18 批换源：原 most-viewed metric=views）。
  */
 class StatsViewModelTest {
 
@@ -32,10 +33,11 @@ class StatsViewModelTest {
     private class FakeStatsRepository : StatsRepository {
         val trendRequests = mutableListOf<String>()
         val overviewRangeCalls = mutableListOf<String?>() // null=无参版
+        val rankingsPeriodCalls = mutableListOf<String>()
         var overviewFailure = false
         var avgViewsByRange: Map<String, Double?> = emptyMap()
         var trendsProvider: suspend (String) -> List<TrendPoint> = { emptyList() }
-        var mostViewedProvider: suspend (String, String, Int) -> List<MostViewedEntry> = { _, _, _ -> emptyList() }
+        var rankingsProvider: suspend (String, Int) -> List<RankingEntry> = { _, _ -> emptyList() }
         var topAuthorsProvider: suspend (String, Int) -> List<TopAuthorEntry> = { _, _ -> emptyList() }
         var topTagsProvider: suspend (String, Int) -> List<TopTagEntry> = { _, _ -> emptyList() }
 
@@ -64,8 +66,10 @@ class StatsViewModelTest {
             return trendsProvider(range)
         }
 
-        override suspend fun mostViewed(range: String, metric: String, limit: Int): List<MostViewedEntry> =
-            mostViewedProvider(range, metric, limit)
+        override suspend fun rankings(period: String, limit: Int): List<RankingEntry> {
+            rankingsPeriodCalls += period
+            return rankingsProvider(period, limit)
+        }
 
         override suspend fun topAuthors(range: String, limit: Int): List<TopAuthorEntry> =
             topAuthorsProvider(range, limit)
@@ -193,17 +197,17 @@ class StatsViewModelTest {
         assertTrue(viewModel.uiState.value.trendsEmpty)
     }
 
-    // ---------- N4 I3b：常看族装配/空态/降级 ----------
+    // ---------- N4 I3b：常看族装配/空态/降级（内容榜 2026-09-18 批换源 /rankings） ----------
 
     @Test
     fun `常看族装配 - 卡数据随档位联动 均值取overview窗口值`() = runTest {
         val repository = FakeStatsRepository()
-        repository.mostViewedProvider = { range, metric, limit ->
-            assertEquals("views", metric)
+        repository.rankingsProvider = { period, limit ->
+            assertEquals("week", period) // 陷阱档：7 天 → period=week（/rankings 无 7d）
             assertEquals(TOP_CARD_LIMIT, limit)
             listOf(
-                MostViewedEntry("id-1", "A.mp4", "video", null, 12),
-                MostViewedEntry("id-2", "B.jpg", "image", null, 6),
+                RankingEntry("id-1", "A.mp4", 12),
+                RankingEntry("id-2", "B.jpg", 6),
             )
         }
         repository.topAuthorsProvider = { _, limit ->
@@ -216,18 +220,19 @@ class StatsViewModelTest {
         advanceUntilIdle()
 
         val state = viewModel.uiState.value
-        assertEquals(2, state.mostViewed.size)
-        assertEquals("A.mp4", state.mostViewed.first().fileName)
+        assertEquals(2, state.rankings.size)
+        assertEquals("A.mp4", state.rankings.first().title)
         // 混合 Top3：作者甲(8) > 塞尔达(5) > 作者乙(3)
         assertEquals(listOf("作者甲", "塞尔达", "作者乙"), state.topAuthorsTagsMixed.map { it.name })
         assertEquals(3.5, state.avgViewsPerFile!!, 0.0001)
-        assertFalse(state.mostViewedEmpty)
+        assertFalse(state.rankingsEmpty)
         assertFalse(state.topAuthorsTagsEmpty)
 
-        // 切档：常看族与均值都随新档重拉
+        // 切档：常看族与均值都随新档重拉（period 轴独立于 trends 的 range 轴）
         viewModel.selectRange(StatsRangeOption.THIRTY_DAYS)
         advanceUntilIdle()
         assertEquals(2.0, viewModel.uiState.value.avgViewsPerFile!!, 0.0001)
+        assertEquals(listOf("week", "month"), repository.rankingsPeriodCalls)
     }
 
     @Test
@@ -236,7 +241,7 @@ class StatsViewModelTest {
         val viewModel = StatsViewModel(repository, MediaBatchIndex())
         advanceUntilIdle()
         val state = viewModel.uiState.value
-        assertTrue(state.mostViewedEmpty)
+        assertTrue(state.rankingsEmpty)
         assertTrue(state.topAuthorsTagsEmpty)
         assertTrue(state.topAuthorsTagsMixed.isEmpty())
     }
@@ -244,7 +249,7 @@ class StatsViewModelTest {
     @Test
     fun `常看族降级 - 单口失败不影响其余通道`() = runTest {
         val repository = FakeStatsRepository()
-        repository.mostViewedProvider = { _, _, _ -> throw java.io.IOException("most-viewed 失败") }
+        repository.rankingsProvider = { _, _ -> throw java.io.IOException("rankings 失败") }
         repository.topAuthorsProvider = { _, _ -> throw java.io.IOException("top-authors 失败") }
         repository.topTagsProvider = { _, _ -> listOf(TopTagEntry("只有标签", 2)) }
         repository.trendsProvider = { listOf(point("07/01", 4)) }
@@ -252,7 +257,7 @@ class StatsViewModelTest {
         advanceUntilIdle()
         val state = viewModel.uiState.value
         // 失败口降级空表（卡内空态），趋势与标签照常落地——不互相拖垮
-        assertTrue(state.mostViewed.isEmpty())
+        assertTrue(state.rankings.isEmpty())
         assertTrue(state.topAuthors.isEmpty())
         assertEquals(listOf("只有标签"), state.topAuthorsTagsMixed.map { it.name })
         assertEquals(4L, state.windowViews)
@@ -281,13 +286,13 @@ class StatsViewModelTest {
     // ---------- 任务J J1：详情页跳转链（GUIDE_UI L218-224） ----------
 
     @Test
-    fun `常看文件条目点击写批次上下文 - 快照等于当前榜单清单`() = runTest {
+    fun `内容榜条目点击写批次上下文 - 快照等于当前榜单清单`() = runTest {
         val repository = FakeStatsRepository()
-        repository.mostViewedProvider = { _, _, _ ->
+        repository.rankingsProvider = { _, _ ->
             listOf(
-                MostViewedEntry("id-1", "A.mp4", "video", null, 12),
-                MostViewedEntry("id-2", "B.jpg", "image", null, 6),
-                MostViewedEntry("id-3", "C.mp4", "video", null, 3),
+                RankingEntry("id-1", "A.mp4", 12),
+                RankingEntry("id-2", "B.jpg", 6),
+                RankingEntry("id-3", "C.mp4", 3),
             )
         }
         val batchIndex = MediaBatchIndex()
@@ -295,7 +300,7 @@ class StatsViewModelTest {
         advanceUntilIdle()
 
         viewModel.enterDetail("id-2")
-        // 批次上下文 = 当前常看卡榜单整体（「已加载=当前显示清单」口径，快照式整体替换）
+        // 批次上下文 = 当前内容榜卡榜单整体（「已加载=当前显示清单」口径，快照式整体替换）
         assertEquals(listOf("id-1", "id-2", "id-3"), batchIndex.ids)
         assertEquals(1, batchIndex.indexOf("id-2")) // 详情页 i/N 序号定位正确
     }

@@ -13,6 +13,15 @@
 ---
 ---
 ---
+## feat(app): 数据页「常看文件」改「内容榜」走 /rankings（2026-09-18 第三百二十三笔）
+
+执行 AI：GLM-5.3-Flash（主代理；执行子代理落地）
+
+- 动机（用户拍板）：Web 数据页内容榜与 App 常看文件榜不一致——两套榜本是不同端点不同口径（Web /rankings=热度 view+play+like 累计、period 只做准入过滤、排除 COS，DOMAIN_RULES §2；App /stats/most-viewed=窗口内 open 计数、含 COS，§5），拍板为 App 向 Web 对齐。
+- `StatsRangeOption` 增 `rankingsPeriod` 映射（7天→week / 30天→month / 全部→all；协议枚举 day/week/month/quarter/year/all，协议侧改动须同步此处）；`StatsRepository` 增 `rankings(period, limit)` 返回 `RankingEntry(assetId, title=cosWork?:fileName, viewCount=累计浏览)`。
+- 顶卡与详情页热度榜切 rankings（秒榜 metric=seconds 保留不动）；文案「常看文件」→「内容榜」（详情页顶栏随动；摘要格「常看文件」=窗口内有浏览记录的文件数，非榜单，保留原名）。口径注：榜单角标=AssetSummary.viewCount 累计浏览，热度合计协议不直出。
+- 测试：core:model 132 / feature:stats 39 / core:data 107 全绿（含 rankingsPeriod 映射与双源详情用例）。
+
 ## fix(app): 缓存治理——网格动图原件不落盘+缓存页文案明确（2026-09-18 第三百二十二笔）
 
 执行 AI：GLM-5.3-Flash（主代理）
