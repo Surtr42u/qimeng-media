@@ -13,7 +13,10 @@ android {
 
     defaultConfig {
         applicationId = "media.qimeng.app"
-        targetSdk = 36
+        // targetSdk 37（任务P P4b，2026-09-19 用户拍板「升」，材料=仓库外待拍板-任务P-P4-targetSdk37.md）：
+        // 唯一硬适配点 ACCESS_LOCAL_NETWORK 已随本批落地（manifest+运行时两入口）；其余 37 行为
+        // 变更经逐条对照无涉（ADR-0022）。
+        targetSdk = 37
         versionCode = 1
         versionName = "0.2.0" // M4-2 列表族批次
     }

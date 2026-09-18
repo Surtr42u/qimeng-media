@@ -18,4 +18,7 @@
     <string name="login_error_wrong_password">密码错误，请重新输入</string>
     <string name="login_error_dev_unavailable">该服务器未开启免密模式，请输入密码登录</string>
     <string name="login_error_other">登录失败，请稍后重试</string>
+
+    <!-- 局域网权限被拒引导（任务P P4b，ADR-0022）：Android 17+ 连 NAS 必需，拒绝则不出网直接引导去系统设置 -->
+    <string name="login_error_local_network_denied">连接局域网 NAS 需要「本地网络」权限：请在系统设置 → 应用 → 绮梦影库 → 权限中允许后重试</string>
 </resources>

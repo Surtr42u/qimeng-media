@@ -1,6 +1,8 @@
 package media.qimeng.app
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -8,8 +10,10 @@ import android.view.Display
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import dagger.hilt.android.AndroidEntryPoint
+import media.qimeng.app.core.network.shouldRequestLocalNetworkPermission
 import media.qimeng.app.core.ui.theme.QimengTheme
 import media.qimeng.app.navigation.QimengNavRoot
 import media.qimeng.app.session.MainViewModel
@@ -28,10 +32,16 @@ class MainActivity : ComponentActivity() {
 
     private val mainViewModel: MainViewModel by viewModels()
 
+    /** 局域网权限请求回调（任务P P4b）：拒绝不做动作——登录页提交门有定向引导，
+     *  已登录老用户由既有失败态/下次冷启动兜底（系统对永久拒绝不再弹窗，无打扰循环）。 */
+    private val localNetworkPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         requestHighestRefreshRate()
+        maybeRequestLocalNetworkPermission()
         handleShareIntent(intent)
         setContent {
             QimengTheme {
@@ -43,6 +53,23 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleShareIntent(intent)
+    }
+
+    /**
+     * 局域网权限冷启动补请求（任务P P4b，ADR-0022；判定单源 core:network）：Android 17+
+     * 对 targetSdk 37 强制该权限（未授权连不了局域网 NAS）。放壳层冷启动是因为已登录
+     * 老用户升级装包后不再经过登录页，首次冷启动即补一次系统询问；未授权回调不做动作，
+     * 未登录者到登录页提交门有定向引导、已登录者走既有「加载失败」态，下次冷启动再补。
+     */
+    private fun maybeRequestLocalNetworkPermission() {
+        if (shouldRequestLocalNetworkPermission(
+                sdkInt = Build.VERSION.SDK_INT,
+                granted = checkSelfPermission(Manifest.permission.ACCESS_LOCAL_NETWORK) ==
+                    PackageManager.PERMISSION_GRANTED,
+            )
+        ) {
+            localNetworkPermissionLauncher.launch(Manifest.permission.ACCESS_LOCAL_NETWORK)
+        }
     }
 
     /**

@@ -22,6 +22,22 @@
 - 验证：:core:data 全量 107 用例满载门禁复跑全绿（随 336 笔 P4b 联合门禁实证）。
 
 
+## ci+app: 任务P P4b targetSdk 37 落地+ACCESS_LOCAL_NETWORK 权限适配——用户拍板「升」（2026-09-19 第三百三十六笔）
+
+执行 AI：GLM-5.3-Flash（主代理直改）
+
+- 拍板闭环：用户 2026-09-19 就 P4 材料拍板「升」，P4b 单 commit 落地（329 笔材料三件+英文原页复核为基础；**#47 台账最后一条就此销账**，ADR-0022 补记并同步 INDEX）。
+- 版本面：`android/app/build.gradle.kts` targetSdk 36→**37**（注释写明拍板来源与适配面）。
+- **唯一硬适配点 ACCESS_LOCAL_NETWORK（Android 17 对 targetSdk 37 强制，未授权连不了局域网 NAS）**：
+  - 判定口径单源：`core:network/LocalNetworkAccessPolicy.kt`——`ANDROID_17_SDK_INT` 常量 + `shouldRequestLocalNetworkPermission(sdkInt, granted)` 纯函数（无 Android 依赖）+ 3 用例单测（版本门×授权态组合口径锁定）；
+  - manifest：:app 声明 `ACCESS_LOCAL_NETWORK`（注释写明强制线依据与两入口）；
+  - 入口①登录提交门（feature:login LoginScreen）：点登录/键盘 Done 统一先过权限门——未授权先请求、授权即登录、**拒绝不出网**改出定向引导文案（strings 新增 login_error_local_network_denied，引导去系统设置开启）；本机模式回环地址统一走门（免 UI 内嵌地址解析，误授无害）；
+  - 入口②冷启动补请求（:app MainActivity）：覆盖已登录老用户升级后不再经过登录页的场景，首次冷启动补一次系统询问；拒绝不做动作（既有失败态兜底+下次冷启动再补，系统对永久拒绝不重复弹窗）。
+- **刻意不做记档**（ADR-0022）：后台音频 mediaPlayback FGS（无退后台音频需求，Android 17 真机定性留待有需另立批）；本机模式权限豁免；usesCleartextTraffic→NSC 迁移（17 不强制，另记账）。
+- 门禁：三连+新单测+lintDebug+assembleRelease（R8）+server `go build ./...`；模拟器冒烟（qimeng_api35c 无头，API 35 上新权限请求路径不触发=旧系统行为零变化实证）：登录态/浏览/播放全链通。Android 17 真机弹窗与拒绝路径=用户装机节点实测（现网 ROM ≤16 无感）。
+- CI：github.com 断连延续（334 笔挂账），push 后统一盯 CI。
+
+
 ## docs: 任务P P6 收官——reviewer 对抗审查通过+终包出盘+#47 终态记档（2026-09-18 第三百三十四笔）
 
 执行 AI：GLM-5.3-Flash（主代理；全卷对抗审查=reviewer 子代理）
