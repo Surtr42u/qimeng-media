@@ -86,13 +86,17 @@ coil = "3.6.2"
 #   （Android 15+ 断网时 constraint 误通过/后台网络调用失败）——上传队列依赖网络约束，
 #   必须落在此修复线。work-testing 为官方同家族测试件（HANDOVER_APP §4.9 允许口径）。
 work = "2.11.2"
-# Media3（2026-09-07 M4-3 3c 引入，视频播放器 BiliPlayerView 桥接）。离线批次锁版来源：
-#   ①旧项目 QimengMedia gradle/libs.versions.toml:20（BiliPlayerView 原生宿主版本，桥接兼容性已验证）；
-#   ②本地 Gradle 缓存 ~/.gradle/caches/modules-2/files-2.1/androidx.media3/ 已有完整 1.8.0 构件
-#     （media3-exoplayer/media3-ui 实测在列，离线可解析）。
-#   【待联网复核】下一批次联网时对照官方 release 页
-#   （https://developer.android.com/jetpack/androidx/releases/media3）复核 1.8.0 stable 定位后移除本标注。
-media3 = "1.8.0"
+# Media3（2026-09-07 M4-3 3c 引入，视频播放器 BiliPlayerView 桥接；2026-09-18 任务P P5①
+# 升 1.11.1=线内 stable 最新）。锁版依据（Google Maven maven-metadata 实存核查 2026-09-18）：
+#   1.8.0 原锁（旧项目桥接兼容验证版+本地缓存件），【待联网复核】标注就此清偿——复核结论：
+#   1.8.0 系 2025 年旧 stable 线，其后 1.9.x/1.10.x/1.11.x 三条 stable 线更迭；
+#   1.11.0 = stable 头版（官方 release 页 2026-08-05），1.11.1 = 线内末位补丁（maven
+#   <release> 2026-09-11，无逐条 changelog=patch 惯例）。升级要点：media3-common 的 Kotlin
+#   升 2.2.0（消费端 2.4.20 兼容）、ExoPlayer 动态调度默认启用、MediaSession 线程约束收紧、
+#   移除一批废弃符号——BiliPlayerView 宿主=PlayerView（public API 未动）。
+#   BiliPlayerView 桥接兼容性=P5① 最高风险点（ADR-0014 AndroidView 互操作例外件），
+#   已过全形态视频走查（任务P P5① 冒烟：起播/推进/退出重进，截图 android/.walk/p5/）。
+media3 = "1.11.1"
 # Room（2026-09-07 M4-4 引入，行为上报离线队列 pending_view_events）。
 # 版本 2.8.4 = 主会话冻结口径（2.x stable 线末位；androidx.room3 新包不取）。核查线索：
 #   https://developer.android.com/jetpack/androidx/releases/room（2.x 线收尾于 2.8.x）；

@@ -13,6 +13,15 @@
 ---
 ---
 ---
+## ci+app: 任务P P5① media3 1.8.0→1.11.1——线内 stable 最新+【待联网复核】清偿（2026-09-18 第三百三十笔）
+
+执行 AI：GLM-5.3-Flash（主代理直改，锁版依据=第三百二十五笔）
+
+- 版本面：toml `media3 1.8.0→1.11.1`（线内 stable 最新：1.11.0=stable 头版 2026-08-05 官方 release 页，1.11.1=线内末位补丁 maven `<release>` 2026-09-11；原 1.8.0 锁=旧项目桥接兼容验证版，【待联网复核】标注按复核结论清偿——1.8.0 系 2025 年旧 stable 线，其后 1.9.x/1.10.x/1.11.x 三条 stable 线更迭）。toml 头注改写（升级要点：common 的 Kotlin 2.2.0 消费端兼容/MediaSession 线程收紧/废弃符号移除+桥接风险项）。
+- 三关验证：AAR minCompileSdk ≤37（assembleDebug checkDebugAarMetadata 实过）/Hilt 2.60.1×Kotlin 2.4.20 metadata 全链编译过/三连门禁绿（1m59s 含新构件全量解析）。
+- **BiliPlayerView 桥接（P5 最高风险点，ADR-0014 AndroidView 互操作例外件）走查通过**：qimeng_api35c 无头装机——起播/播放至片尾/重播重启（画面内嵌时间码 00:00:00.500·帧 12 实证推进）/控制面板全件（进度条 0:00-0:15、静音、倍速、书签、全屏）/进度持久化恢复链，全程零 FATAL。截图 `android/.walk/p5/`。附带确认：1.11.0 的 PlayerView shutter 抑制崩溃修复（#3264）对本仓桥接宿主场景为有益修复。
+
+
 ## docs: 任务P P4 targetSdk37 拍板材料出齐——主树零改动，等用户拍板（2026-09-18 第三百二十九笔）
 
 执行 AI：GLM-5.3-Flash（主代理；行为变更清单调研=只读子代理+主代理英文原页复核）
