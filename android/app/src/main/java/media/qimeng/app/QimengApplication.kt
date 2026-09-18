@@ -8,6 +8,7 @@ import coil3.PlatformContext
 import coil3.SingletonImageLoader
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
+import media.qimeng.app.core.data.diagnostics.DiagnosticsBootstrapper
 import media.qimeng.app.core.data.events.EventSyncBootstrapper
 import media.qimeng.app.core.data.prefetch.ThumbnailPrefetcher
 
@@ -25,6 +26,10 @@ import media.qimeng.app.core.data.prefetch.ThumbnailPrefetcher
  * 行为上报离线队列（M4-4）：onCreate 一次接好补传三通道中的②③——周期兜底注册 +
  * ProcessLifecycleOwner ON_START（启动进前台/回前台即补传），接线细节在 EventSyncBootstrapper。
  *
+ * 客户端异常上报（2026-09-18）：onCreate 挂 DiagnosticsBootstrapper——全局未捕获异常
+ * 上报 + 回前台补发（POST /api/v1/client-logs，Web 端 lib/client-logs.ts 同款策略），
+ * Coil 图片加载错误在 CoilModule 经 CoilErrorLogListener 汇入同一通道。
+ *
  * 缩略图预取（2026-09-18）：onCreate 构造 ThumbnailPrefetcher 挂上登录态观察——
  * 登录后自动把全库缩略图预取进 Coil 磁盘缓存（逻辑全在 :core:data prefetch 包）。
  */
@@ -40,6 +45,10 @@ class QimengApplication : Application(), Configuration.Provider, SingletonImageL
     @Inject
     lateinit var eventSyncBootstrapper: EventSyncBootstrapper
 
+    /** 客户端异常上报接线（2026-09-18）：构造即挂全局崩溃处理器 + 回前台补传 */
+    @Inject
+    lateinit var diagnosticsBootstrapper: DiagnosticsBootstrapper
+
     /** 缩略图预取器（2026-09-18）：此处唯一作用是进程启动即构造，让登录态观察挂上电 */
     @Inject
     lateinit var thumbnailPrefetcher: ThumbnailPrefetcher
@@ -52,6 +61,7 @@ class QimengApplication : Application(), Configuration.Provider, SingletonImageL
     override fun onCreate() {
         super.onCreate()
         eventSyncBootstrapper.onAppCreate()
+        diagnosticsBootstrapper.onAppCreate()
         thumbnailPrefetcher.onAppCreate()
     }
 

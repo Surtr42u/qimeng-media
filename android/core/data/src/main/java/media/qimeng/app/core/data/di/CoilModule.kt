@@ -3,7 +3,6 @@ package media.qimeng.app.core.data.di
 import android.content.Context
 import android.os.Build
 import android.util.Log
-import coil3.EventListener
 import coil3.ImageLoader
 import coil3.disk.DiskCache
 import coil3.disk.directory
@@ -11,12 +10,12 @@ import coil3.gif.AnimatedImageDecoder
 import coil3.gif.GifDecoder
 import coil3.memory.MemoryCache
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
-import coil3.request.ErrorResult
-import coil3.request.ImageRequest
 import coil3.request.crossfade
 import coil3.request.allowHardware
 import media.qimeng.app.core.data.coil.SignedMediaDiskKeyInterceptor
 import media.qimeng.app.core.data.coil.SignedMediaUriKeyer
+import media.qimeng.app.core.data.diagnostics.ClientLogRecorder
+import media.qimeng.app.core.data.diagnostics.CoilErrorLogListener
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -63,6 +62,7 @@ object CoilModule {
     fun provideImageLoader(
         @ApplicationContext context: Context,
         diskCachePrefs: DiskCachePrefsRepository,
+        clientLogRecorder: ClientLogRecorder,
     ): ImageLoader = ImageLoader.Builder(context)
         .components {
             // 任务U10-5 缓存键漂移根治（2026-09-15 批次2）：媒体直链 = HMAC 签名 URL，
@@ -130,14 +130,10 @@ object CoilModule {
         // Coil 官方 FAQ 口径）；静态图无需 crossfade（列表滚动场景，旧版同款）
         .allowHardware(false)
         .crossfade(false)
-        // 全局错误可观测性（同上 BUG-A 修因配套）：onError 只记 Throwable 类名进 logcat，
-        // 供区分「解码失败」与「网络超时/断流」；不改变请求自身的 onError UI 行为。
-        // EventListener（coil3）除 onError 外全部有默认实现，匿名对象只覆写 onError 即可。
-        .eventListener(object : EventListener() {
-            override fun onError(request: ImageRequest, result: ErrorResult) {
-                Log.w(CACHE_LOG_TAG, "图片加载失败 throwable=${result.throwable.javaClass.name}")
-            }
-        })
+        // 全局错误可观测性（同上 BUG-A 修因配套）：onError 记 Throwable 进 logcat 并
+        // 送客户端异常上报通道（2026-09-18 接线——本机设备 logcat 不可用，服务端
+        // 维护页异常表是唯一现场来源）；不改变请求自身的 onError UI 行为。
+        .eventListener(CoilErrorLogListener(clientLogRecorder))
         .build()
 
     /** 磁盘缓存目录名（Coil 官方示例同款 image_cache） */

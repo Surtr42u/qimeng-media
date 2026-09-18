@@ -21,8 +21,12 @@
     <string name="detail_play_video">播放视频</string>
     <!-- 图片舞台无障碍描述（3b ZoomImageView 桥接：手势语义入文案，TalkBack 用户可发现交互） -->
     <string name="detail_image_zoom_desc">图片预览，双指缩放，左右滑动切换相邻</string>
-    <!-- 图片态解码失败提示（RES #27：损坏原件不黑屏哑失败；Coil Target 不区分网络/解码失败，文案两者兼顾） -->
+    <!-- 图片态解码失败提示（RES #27：损坏原件不黑屏哑失败；Coil Target 不区分网络/解码失败）。
+        2026-09-18 文案分档：传输类失败（超时/断流，重试即恢复的多数派）改用 detail_image_network_failed，
+        本条只留给真解码失败——此前一律报「可能已损坏」误导用户 -->
     <string name="detail_image_decode_failed">该文件无法解码，可能已损坏或格式不受支持</string>
+    <!-- 图片态传输类失败提示（2026-09-18 分档新增：isNetworkTransferFailure 归因） -->
+    <string name="detail_image_network_failed">网络不畅，图片加载失败，请重试</string>
 
     <!-- 尺寸格式串（任务X X2：下滑区 meta 行退役，其浏览/播放两条计数文案随之删除；
         resolution 保留——详细信息 Sheet「尺寸」行沿用，值格式口径单源） -->

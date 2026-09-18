@@ -13,6 +13,16 @@
 ---
 ---
 ---
+## feat(app): 客户端异常上报通道接线+图片加载失败文案分档（2026-09-18 第三百二十笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- 动机（真机 BUG-A 复发排查）：详情原图拉流失败被 UI 误报「无法解码」，但服务端 client-logs 缓冲零记录——GUIDE_API「客户端异常」行声明的「Web/Android 通道」Android 侧从未接线（只有 SDK 生成物），且本机设备 logcat 完全不可用（流式/dump 均 0 行），上报通道是唯一现场来源。
+- 新增 :core:data `diagnostics` 包：`ClientLogRecorder`（内存队列：满 10 条即 flush / 30s 定时 / 容量 200 对齐服务端环形丢最旧 / message 截 2000 字、stack 截 8000 字符同 Web 口径 / 失败即弃不重试；崩溃路径起后台线程限时 3s 同步补发）；`SdkClientLogSender`（WithHttpInfo 只认 204）；`DiagnosticsBootstrapper`（全局未捕获异常处理器包装原处理器 + ON_START 回前台补传，QimengApplication onCreate 接线）；`CoilErrorLogListener`（Coil 全局 onError → logcat + 上报，替换 CoilModule 原仅 logcat 的匿名监听）。
+- 图片加载失败文案分档（feature/detail）：请求级 `listener(onError)` 拿 `ErrorResult.throwable`（coil 3.6.2 字节码核实 Target.onError 只回调 null Image 拿不到异常），新增纯函数 `isNetworkTransferFailure`（cause 链限深 5 判 IOException 族）——传输类失败显示新文案「网络不畅，图片加载失败，请重试」（`detail_image_network_failed`），「可能已损坏或格式不受支持」只留给真解码失败。
+- 取舍记档：崩溃/错误发生在离线时随批丢弃（与 Web「失败即弃」一致），不做磁盘持久化离线队列——低频排障辅助不值得第二套持久化队列。
+- 测试：`ClientLogRecorderTest` 5 用例（切块 50/容量 200 丢最旧/失败即弃不重试/截断/level wire 枚举全映射）+ `ImageLoadErrorClassifierTest` 7 用例（超时/DNS/包裹链/自引用环限深/非 IO 反例）；两模块全量单测 + `:app:assembleDebug` 绿。**记档存量抖动**：`AuthRepositoryImplTest` 退出登录族用例存在时序抖动（吊销请求计数偶发 0，干净树与改动树均偶发、本轮 3 连过后全量绿）——与本次改动无关，留待加固。
+
 ## fix(server): 推荐缓存单飞取消传染+panic 放行+预热键漂移断言（2026-09-18 第三百一十九笔）
 
 执行 AI：GLM-5.3（主代理）
