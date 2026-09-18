@@ -1,6 +1,7 @@
 package media.qimeng.app.feature.manage
 
 import android.content.Context
+import android.annotation.SuppressLint
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -181,6 +182,9 @@ fun BackupScreen(
     ) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         runCatching {
+            // WrongConstant 假阳性：TREE_PERMISSION_FLAGS 是 const val 的 FLAG_READ or FLAG_WRITE
+            // 双 flag 合法组合，AGP 9.3 lint 无法跨模块内联 Kotlin or 表达式常量（任务P P1 记档）
+            @SuppressLint("WrongConstant")
             context.contentResolver.takePersistableUriPermission(uri, AutoBackupRunner.TREE_PERMISSION_FLAGS)
         }.onSuccess { viewModel.onAutoBackupDirPicked(uri.toString()) }
     }

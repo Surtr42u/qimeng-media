@@ -13,6 +13,19 @@
 ---
 ---
 ---
+## ci+app: 任务P P1 Gradle 9.7.0×AGP 9.3.1 配对升级——KGP gradle96 变体闭环+门禁预存缺陷两处清偿（2026-09-18 第三百二十六笔）
+
+执行 AI：GLM-5.3-Flash（主代理直改，锁版依据=第三百二十五笔）
+
+- 版本面（2 文件）：wrapper distributionUrl 9.5.0→**9.7.0**（发行包走腾讯镜像 curl + 官方 sha256 `84fbba45…` + Content-Length 150,308,896 双核验后预置 wrapper 缓存——services.gradle.org 307→GitHub 资产 CDN 慢速不可用，JVM 直连不可靠沿 250 笔纪律）；toml `agp 9.2.1→9.3.1`。两文件头注释同步改写（配对下限 9.5.0/KGP 矩阵/同批动纪律/大文件预置流程）。
+- **动机①闭环实证**：Gradle 9.7.0 下 KGP 2.4.20 按属性匹配选中 **gradle96 变体**——gradle 缓存实存 `kotlin-gradle-plugin-2.4.20-gradle96.jar`（下载时间 2026-09-19 00:09 本批构建拉取；gradle813.jar 为 09-13 S3 时代旧物），250 笔「矩阵外回退 gradle813 变体」遗留就此销账。
+- AGP 9.3.1 零机械适配：build-logic convention 三插件/CommonExtension（去泛型化）/core-data KspExtension（project 层）全部直过（9.3.0 release notes 对本仓无行为变更，P0 已核）；`:sdk:compileKotlin`/`:sdk:jar` 新工具链直过，生成物零改动。
+- **门禁**：assembleDebug + testDebugUnitTest + :core:model:test + lintDebug 全绿 + assembleRelease（R8 链）绿 + server `go build ./...` 零影响 + 模拟器冒烟（qimeng_api35c 无头，铁律 13 显式指定）：冷启动/换址重登（logoutWithStagedUrl 真机链路顺带验证）/推荐流缩略图全载（滚动连刷+新入库文件缩略图服务端现生成）/新入库视频起播推进至 4.9s+（内嵌时间码实证，截图 `android/.walk/p1/`）。**CI 全 job 暂不可验挂账 P6**：github.com 断连（git pull/push Recv failure 连接重置；dl.google.com/repo1 正常，纯 github 节点问题）。
+- **门禁拦出的预存缺陷两处，随本批清偿（d66173f 起未过 CI 窗口期的存量，均零行为变化）**：①:core:data manifest 补 `ACCESS_NETWORK_STATE` 声明——ThumbnailPrefetcher 直连 ConnectivityManager 两处（isActiveNetworkMetered/registerDefaultNetworkCallback），lint MissingPermission 库级门禁要求；:app 已有同名权限，合并结果零变化。②BackupScreen `takePersistableUriPermission` 定点 `@SuppressLint("WrongConstant")`——TREE_PERMISSION_FLAGS 为 const val 双 flag 合法 or 组合，AGP 9.3 lint 无法跨模块内联 Kotlin or 表达式（假阳性，注释记档）。
+- **预存 flaky 记档（不阻塞，根修留专项）**：AuthRepositoryImplTest 两个登出用例在全量套件偶发 AssertionError（单类隔离 3 连跑全绿=U10 20d5aec 同族口径；两次套件红的是不同断言行=非确定性）。根因定位：`hitCounts` 为 OkHttp 线程写/测试线程读的无同步 HashMap，机器满载时偶发可见性/时序问题；本批空载复跑全绿。根治=ConcurrentHashMap 化，属测试代码改动超本卷「行为面零改动」口径，记档留专项。
+- 环境记档：①qimeng_api35c 上 App 存量地址指向已死的 `10.0.2.2:18461`（前转会话遗留）致首页缩略图骨架假象——换址 8421 后全载，**非工具链回归**；②U11视频诊断库根目录 `.tmp-u11-video-lib` 曾被删致两个彩条测试视频流 404（app 侧 404→「无法解码/播放失败」错误横幅接线正确），重建目录+ffmpeg 新样本后扫描链自愈（added:1 removed:4，死链清偿）。
+
+
 ## docs: 任务P P0 预检与锁版批——网络四探全通+执行日锁版（2026-09-18 第三百二十五笔）
 
 执行 AI：GLM-5.3-Flash（主代理；三路版本调研=只读子代理并行）

@@ -13,6 +13,12 @@
          子类型属性声明（API 34+ 必填）。 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
+    <!-- 网络状态读取（314 笔 ThumbnailPrefetcher 计费网拦截/网络回调）：模块内直连
+         ConnectivityManager.isActiveNetworkMetered / registerDefaultNetworkCallback，
+         库模块须自带声明（:app 已声明同名权限，合并结果零变化）；lint MissingPermission
+         库级门禁要求（任务P P1 首次以全模块 lintDebug 拦截——d66173f 落地时 CI 未跑）。 -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
     <application>
         <service
             android:name="androidx.work.impl.foreground.SystemForegroundService"
