@@ -98,12 +98,13 @@ work = "2.11.2"
 #   已过全形态视频走查（任务P P5① 冒烟：起播/推进/退出重进，截图 android/.walk/p5/）。
 media3 = "1.11.1"
 # Room（2026-09-07 M4-4 引入，行为上报离线队列 pending_view_events）。
-# 版本 2.8.4 = 主会话冻结口径（2.x stable 线末位；androidx.room3 新包不取）。核查线索：
+# 2.8.5（2026-09-18 任务P P5③ 升级，2.x stable 线末位=2026-09-09 补丁：修 DB 关闭后调
+#   suspend 查询/invalidation tracker 抛 IllegalStateException b/543076356；maven-metadata
+#   实存核查 dl.google.com 2026-09-18。androidx.room3 新包不取）。核查线索：
 #   https://developer.android.com/jetpack/androidx/releases/room（2.x 线收尾于 2.8.x）；
-#   本地 Gradle 缓存已有完整 2.8.4 构件（room-runtime/room-compiler 实测在列，离线可解析）。
 #   注意：2.8 线起 room-ktx 已并入 room-runtime（官方迁移说明），勿再单独引 room-ktx；
-#   Room 2.8.4 room-compiler × Kotlin 2.4.20 / KSP 2.3.12（S3 第 3 步升级后）兼容性以 assembleDebug 实测为准。
-room = "2.8.4"
+#   Room 2.8.5 room-compiler × Kotlin 2.4.20 / KSP 2.3.12 兼容性经 assembleDebug（KSP 全链）实测。
+room = "2.8.5"
 # Vico（2026-09-09 任务H H2 引入，统计页折线图，ADR-0018；白名单外一次性拍板：用户 2026-09-08
 # 「不要自绘」「统计页折线图换 Vico」原话）。官方仓库/Maven group = patrykandpatrick/vico
 # （https://github.com/patrykandpatrick/vico + https://repo1.maven.org/maven2/com/patrykandpatrick/vico/）。

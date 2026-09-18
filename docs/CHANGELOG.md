@@ -13,6 +13,15 @@
 ---
 ---
 ---
+## ci+app: 任务P P5③ room 2.8.4→2.8.5——2.x 线末位补丁+P5 收尾（2026-09-18 第三百三十三笔）
+
+执行 AI：GLM-5.3-Flash（主代理直改，锁版依据=第三百二十五笔）
+
+- 版本面：toml `room 2.8.4→2.8.5`（2.x stable 线末位 2026-09-09：修 DB 关闭后调 suspend 查询/invalidation tracker 抛 IllegalStateException b/543076356；maven-metadata 实存核查，androidx.room3 新包不取）。头注改写。行为上报离线队列（pending_view_events）语义零改动（patch 位）。
+- 三关验证：AAR minCompileSdk ≤37（checkDebugAarMetadata 过）/room-compiler×KSP 2.3.12×Kotlin 2.4.20 全链编译过/三连门禁绿（与 332 笔 flaky 根治联合实跑，满载场景 :core:data 107 用例全绿）。
+- **P5 收尾**：datastore 维持 1.2.1（1.3 线全 alpha）/work 维持 2.11.2（2.12.0-rc01 非 stable）/hilt 维持 2.60.1（即最新 stable）——三处按 P0 锁版记档维持；okhttp/moshi 生成物锁定未动。**toml 五处「留后续批」挂账全部清偿或记档完毕**（media3✓/vico✓/room✓/datastore·work·hilt 维持记档）。
+
+
 ## fix(app): AuthRepositoryImplTest hitCounts 竞态根治——ConcurrentHashMap 化（2026-09-18 第三百三十二笔）
 
 执行 AI：GLM-5.3-Flash（主代理直改）
