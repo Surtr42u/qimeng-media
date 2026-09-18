@@ -23,7 +23,7 @@ internal object SdkDetailMappers {
 
     /**
      * 详情映射（字段取子集，口径逐条对照 [SdkMappers.toMediaAsset] 同名属性）。
-     * @param baseUrl 服务端根地址：thumbUrl/origUrl 是签名相对路径（/media/...），
+     * @param baseUrl 服务端根地址：thumbUrl/thumbUrlMd/origUrl 是签名相对路径（/media/...），
      *   必须一次性拼成绝对直链——签名 URL 禁止客户端改写任何参数（ADR-0002）。
      */
     fun toAssetDetail(detail: SdkAssetDetail, baseUrl: String): AssetDetail = AssetDetail(
@@ -39,6 +39,8 @@ internal object SdkDetailMappers {
         likeCount = detail.likeCount ?: 0,
         likedToday = detail.likedToday ?: false,
         thumbUrl = detail.thumbUrl?.let { SdkMappers.absolutize(it, baseUrl) },
+        // md 档（512，预生成）与 lg 同款绝对化：详情海报 md 先行消费源（协议批 2026-09-18）
+        thumbUrlMd = detail.thumbUrlMd?.let { SdkMappers.absolutize(it, baseUrl) },
         origUrl = detail.origUrl?.let { SdkMappers.absolutize(it, baseUrl) },
         durationMs = detail.durationMs,
         cosWork = detail.cosWork,

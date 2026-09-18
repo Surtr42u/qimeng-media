@@ -226,9 +226,13 @@ fun AllScreen(
                     // 修复D-3：滚动暂停缩略图加载（对齐收藏/历史页任务I I5 口径——拖拽/fling
                     // 期间暂缓新缩略图请求，停滚自动恢复），滚动时帧预算让位交互响应
                     pauseThumbnailsWhileScrolling = true,
-                    // 卡片点击进详情（D3 顺手修复：onAssetClick 有默认空实现漏传即静默无反应；
-                    // 相册页暂无 Home 式批次上下文写入，详情 i/N 滑动链缺口另记待办）
-                    onAssetClick = { asset: MediaAsset -> onOpenAsset(asset.id) },
+                    // 卡片点击进详情（D3 顺手修复：onAssetClick 有默认空实现漏传即静默无反应）：
+                    // 先写批次清单再交壳层导航——详情页 i/N 序号与左右滑沿相册当前筛选后的
+                    // 已加载清单取邻位，滑切才跟随相册筛选而非其他页面残留的旧清单
+                    onAssetClick = { asset: MediaAsset ->
+                        viewModel.enterDetail(asset.id)
+                        onOpenAsset(asset.id)
+                    },
                 )
             }
         }

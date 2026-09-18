@@ -123,6 +123,33 @@ internal fun posterSwipeDelta(dragX: Float, velocityX: Float, swipeDistancePx: F
     else -> null
 }
 
+/**
+ * 详情海报分层裁决（协议批 2026-09-18「md 先行」，纯函数无 Compose 依赖，JVM 单测锁定
+ * 见 VideoPosterLayeringTest）：lg 档（1024）不在服务端预生成范围，首开详情直等 lg 会
+ * 触发现场 ffmpeg 生成（秒级起步）；md 档（512）与列表网格同源、开机预生成——
+ * - [VideoPosterLayering.baseModel]：有 md 先挂 md（立即出图）；无 md（旧服务端/异常）
+ *   退化直接 lg（现状行为）；
+ * - [VideoPosterLayering.upgradeToLg]：仅当 md 已成功加载且 lg 存在且**与 md 不同 URL**
+ *   才放行 lg 覆盖层（md==lg 防重复请求；md 未就绪不放行=lg 恰好只发这一次）。
+ */
+internal data class VideoPosterLayering(
+    /** 底层海报数据源（md 优先，无 md 回退 lg；两者皆 null = 走占位） */
+    val baseModel: String?,
+    /** 是否挂 lg 覆盖层（md 就绪后的升级换图） */
+    val upgradeToLg: Boolean,
+)
+
+/** [VideoPosterLayering] 裁决单源（口径见其 KDoc） */
+internal fun videoPosterLayering(
+    thumbUrlMd: String?,
+    thumbUrl: String?,
+    mdSucceeded: Boolean,
+): VideoPosterLayering = VideoPosterLayering(
+    baseModel = thumbUrlMd ?: thumbUrl,
+    upgradeToLg = mdSucceeded && thumbUrlMd != null &&
+        thumbUrl != null && thumbUrl != thumbUrlMd,
+)
+
 // 快捷标签字面量不再本地定义：写入用 TimelineTagColors.HEART_TAG/STAR_TAG（单源，
 // 2026-09-07 审查 P2 前❤字面量三处独立定义且口径分叉，已收敛）。
 
@@ -511,15 +538,36 @@ internal fun VideoStage(
             // 与网格卡 QimengThumbnail 占位/错误底同 token，未就绪期舞台以可辨「色块」形态
             // 出现；加载完成后的 letterbox 底仍是调用方打底的 backdrop（K1 单源口径不动：
             // 本占位只作用于未就绪瞬间，不参与稳态渲染）。
-            // 错误底保留 backdrop（K1 既有口径：对齐旧版海报透出 qmColorBg，不在本翼扩权）
+            // 错误底保留 backdrop（K1 既有口径：对齐旧版海报透出 qmColorBg，不在本翼扩权）。
+            //
+            // 海报 md 先行（协议批 2026-09-18，分层裁决单源 [videoPosterLayering]）：底层
+            // 挂 md（预生成，立即出图；无 md 退化直接 lg=现状行为，占位/错误画法不变）；
+            // md 成功后才挂 lg 覆盖层（同 Fit 同盒，几何逐像素对齐）——覆盖层不设
+            // placeholder/error，加载中/失败都画空、底层 md 画面保持不动（不闪灰块/错误图；
+            // Coil 换 model 重开会回占位，故用分层而非换 model），lg 命中磁盘缓存时解码
+            // 即达=立即换上；md 失败维持既有占位/错误底不回退 lg。两层都是同 UI 状态
+            // （asset）派生的纯渲染，不触碰数据链（铁律 7 不受影响）
+            var mdSucceeded by remember(asset.thumbUrlMd) { mutableStateOf(false) }
+            val posterLayering = videoPosterLayering(asset.thumbUrlMd, asset.thumbUrl, mdSucceeded)
             AsyncImage(
-                model = asset.thumbUrl,
+                model = posterLayering.baseModel,
                 contentDescription = stringResource(R.string.detail_media_stage),
                 contentScale = ContentScale.Fit,
                 placeholder = ColorPainter(MaterialTheme.colorScheme.secondaryContainer),
                 error = ColorPainter(backdrop),
+                // md==null 时底层挂的就是 lg，成功不得记账（守卫见 videoPosterLayering）
+                onSuccess = { if (asset.thumbUrlMd != null) mdSucceeded = true },
                 modifier = Modifier.fillMaxSize(),
             )
+            if (posterLayering.upgradeToLg) {
+                AsyncImage(
+                    model = asset.thumbUrl,
+                    // 语义描述已由底层海报承担，读屏不重复播报（纯视觉升级层）
+                    contentDescription = null,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
             Surface(
                 shape = CircleShape,
                 color = Color.Black.copy(alpha = STAGE_PLAY_SCRIM_ALPHA),
