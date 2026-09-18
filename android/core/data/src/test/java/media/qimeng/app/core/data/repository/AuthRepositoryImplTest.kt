@@ -44,8 +44,11 @@ class AuthRepositoryImplTest {
     /** dev-login 免密通道开关（模拟服务端 auth_dev_mode；默认开=测试/开发环境口径）。 */
     private var devLoginEnabled = true
 
-    /** 各路径命中记录（断言登录端点未被触达等）。 */
-    private val hitCounts = mutableMapOf<String, Int>()
+    /** 各路径命中记录（断言登录端点未被触达等）。
+     *  须并发安全容器：拦截器跑在 OkHttp 线程、断言读在 runTest 调度线程，普通 HashMap
+     *  跨线程无可见性保证——全量套件+机器满载时偶发 AssertionError（任务P P1 第三百三十
+     *  笔记档的预存 flaky，本处根治；仅测试胶水，零生产行为）。 */
+    private val hitCounts = java.util.concurrent.ConcurrentHashMap<String, Int>()
 
     private val serverConfig = InMemoryServerConfig()
 
