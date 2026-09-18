@@ -1,5 +1,10 @@
 package media.qimeng.app.feature.login
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -26,8 +31,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
@@ -36,6 +45,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import media.qimeng.app.core.data.repository.LoginError
+import media.qimeng.app.core.network.shouldRequestLocalNetworkPermission
 import media.qimeng.app.core.ui.component.Dimens
 import media.qimeng.app.core.ui.component.QimengCapsuleTextField
 import media.qimeng.app.core.ui.theme.QimengDimens
@@ -49,6 +59,11 @@ import media.qimeng.app.core.ui.theme.qimengFilledButtonColors
  * innerPadding 让位系统栏——根容器自行补系统栏三段 padding（G3；审查清偿：底部改
  * ime union navigationBars 取最大值——两类 insets 顺序叠加会在键盘弹出时多让出
  * 一个手势条高度）。
+ *
+ * 局域网权限门（任务P P4b，ADR-0022）：Android 17+ 对 targetSdk 37 强制
+ * ACCESS_LOCAL_NETWORK（未授权连不了局域网 NAS），登录/键盘 Done 提交统一先过门——
+ * 未授权先请求，授权即登录、拒绝不出网改出引导文案。判定口径单源
+ * core:network [shouldRequestLocalNetworkPermission]。
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -58,6 +73,27 @@ fun LoginScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val errorMessage = uiState.error?.let { stringResource(it.toMessageRes()) }
+    val context = LocalContext.current
+    var localNetworkGuidance by rememberSaveable { mutableStateOf(false) }
+
+    val localNetworkLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) viewModel.submit() else localNetworkGuidance = true
+    }
+    val submit: () -> Unit = {
+        localNetworkGuidance = false
+        if (shouldRequestLocalNetworkPermission(
+                sdkInt = Build.VERSION.SDK_INT,
+                granted = context.checkSelfPermission(Manifest.permission.ACCESS_LOCAL_NETWORK) ==
+                    PackageManager.PERMISSION_GRANTED,
+            )
+        ) {
+            localNetworkLauncher.launch(Manifest.permission.ACCESS_LOCAL_NETWORK)
+        } else {
+            viewModel.submit()
+        }
+    }
 
     Surface(modifier = modifier.fillMaxSize()) {
         Column(
@@ -103,7 +139,7 @@ fun LoginScreen(
                 enabled = !uiState.isSubmitting,
                 visualTransformation = PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = { viewModel.submit() }),
+                keyboardActions = KeyboardActions(onDone = { submit() }),
                 modifier = Modifier.fillMaxWidth(),
             )
             if (errorMessage != null) {
@@ -114,9 +150,18 @@ fun LoginScreen(
                     color = MaterialTheme.colorScheme.error,
                 )
             }
+            if (localNetworkGuidance) {
+                // 拒绝局域网权限的定向引导（与既有 LoginError 错误行同款式；任务P P4b）
+                Spacer(modifier = Modifier.height(FieldSpacing))
+                Text(
+                    text = stringResource(R.string.login_error_local_network_denied),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
             Spacer(modifier = Modifier.height(FieldSpacing))
             Button(
-                onClick = viewModel::submit,
+                onClick = { submit() },
                 enabled = !uiState.isSubmitting,
                 // 提交中=禁用态大面积容器，夜间走不透明禁用底消 dither 横带（W6 #49）
                 colors = qimengFilledButtonColors(),

@@ -9,6 +9,13 @@
          registerDefaultNetworkCallback 查询网络计费态必需（normal 权限，安装即授予） -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!-- 局域网访问（任务P P4b，2026-09-19 用户拍板升 targetSdk 37）：Android 17 / API 37 起
+         对 targetSdk 37 应用强制运行时申请，未授权连不了局域网设备——本 App 数据面（浏览/
+         播放/上传/打点）全走局域网连 NAS，是 37 行为变更里唯一硬适配点。运行时请求两入口：
+         登录提交门（feature:login LoginScreen）与冷启动补请求（:app MainActivity），
+         判定口径单源 core:network LocalNetworkAccessPolicy。 -->
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
+
     <!-- 上传进度/完成通知（M4-5）：API 33+ 运行时申请，未授权只影响可见性不阻断上传 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- FGS 权限与 dataSync 类型声明在 :core:data（setForeground 使用方模块，随清单合并） -->
