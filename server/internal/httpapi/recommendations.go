@@ -1,9 +1,11 @@
 // recommendations.go：推荐流端点（M3 十维算法，DOMAIN_RULES §1）。
 //
-// 数据流：ListAssetsRecommendInput（单行一聚合，含当日展示计数）+
-// ListAllAssetTags → 组装 []recommend.Item → Recommend（纯函数）→
-// offset 翻页切片 [offset, offset+limit) → 对切片后返回项逐条写每日
-// 展示计数（先读后写：惩罚基于展示前计数，展示后 +1）→ buildSummary 输出。Assembly 层职责：行→Item 翻译、偏好装载、计数回写；
+// 数据流：响应缓存查找（recommend_cache.go，键=日界/seed/类型/COS/权重/翻页
+// 窗+修订号；命中即回写计数后返回）→ ListAssetsRecommendInput（单行一聚合，
+// 含当日展示计数）+ ListAllAssetTags → 组装 []recommend.Item → Recommend
+// （纯函数）→ offset 翻页切片 [offset, offset+limit) → 装配响应并登记缓存 →
+// 对返回项单事务批量写每日展示计数（先读后写：惩罚基于展示前计数，展示后
+// +1）。Assembly 层职责：行→Item 翻译、偏好装载、计数回写；
 // 算法本体在 internal/recommend（无 IO），与旧项目 App 的语义差异
 // （FNV/确定性 RNG 等）见该包 doc.go。
 package httpapi
@@ -55,6 +57,27 @@ func (s *Server) GetApiV1Recommendations(w http.ResponseWriter, r *http.Request,
 	// 当日展示计数的"日"（本地时区日界，0001「日」字段约定）；
 	// 一次调用内统一一个日界，跨零点请求不漂移。
 	day := store.FormatDay(s.now())
+
+	// 推荐偏好快照：无论命中缓存与否都要装载——权重变化即换键（缓存键维度）。
+	prefs := s.recommendPrefsFromSettings(r.Context())
+
+	// 响应缓存查找（语义边界见 recommend_cache.go 头注释）：命中返回首算
+	// 切片，仍回写当日展示计数（§1.4.3），只是不重算排序。
+	key := recommendCacheKey{
+		rev:       s.recommendCache.revision(),
+		day:       day,
+		seed:      seed,
+		mediaType: mediaType.String, // Valid=false 时为 "" = 全部类型
+		cosOnly:   cosOnly == 1,
+		prefs:     recommendPrefsFingerprint(prefs),
+		offset:    offset,
+		limit:     limit,
+	}
+	if entry, ok := s.recommendCache.get(key); ok {
+		s.recordDailyShownBatch(r.Context(), entry.assetIDs, day)
+		writeJSON(w, http.StatusOK, entry.body)
+		return
+	}
 
 	rows, err := s.q.ListAssetsRecommendInput(r.Context(), db.ListAssetsRecommendInputParams{
 		Day: day, MediaType: mediaType, CosOnly: cosOnly,
@@ -109,23 +132,13 @@ func (s *Server) GetApiV1Recommendations(w http.ResponseWriter, r *http.Request,
 	ordered := recommend.Recommend(items, recommend.Params{
 		Limit: ask,
 		Seed:  seed,
-		Prefs: s.recommendPrefsFromSettings(r.Context()),
+		Prefs: prefs,
 		Now:   s.now(),
 	})
 	ordered = slicePage(ordered, offset, limit)
 
-	// 展示计数回写：先读后写（惩罚基于展示前计数，展示后 +1）。
-	// 只对切片后真正返回给客户端的项执行——「展示过才 +1」，未展示的
-	// 深页候选不得提前计入当日展示（否则一次深翻页就把全库计入惩罚）。
-	// 失败只警告不阻塞响应——计数是缓存性质可丢弃重建（0001 表注释）；
-	// 单用户场景逐条写即可，不做事务。
-	for _, it := range ordered {
-		if err := s.q.IncrementDailyShown(r.Context(), db.IncrementDailyShownParams{
-			AssetID: it.AssetID, Day: day,
-		}); err != nil {
-			s.logger.Warn("推荐展示计数写入失败（忽略，可丢弃重建）", "err", err, "asset_id", it.AssetID)
-		}
-	}
+	// 展示计数回写延后到响应装配完成后统一执行：单事务批量提交 + 缓存登记
+	// （见 writeJSON 前的收尾段），计数语义注释随执行点走。
 
 	out := make([]gen.AssetSummary, 0, len(ordered))
 	for _, it := range ordered {
@@ -143,6 +156,18 @@ func (s *Server) GetApiV1Recommendations(w http.ResponseWriter, r *http.Request,
 	// cosWork：COS 推荐模式（cos tab）卡片标题数据源，与 GET /assets
 	// 同口径批量装配（协议 AssetSummary.cosWork 描述）。
 	s.fillListCosWork(r.Context(), out)
+
+	// 展示计数回写：先读后写（惩罚基于展示前计数，展示后 +1）。只对切片后
+	// 真正返回给客户端的项执行——「展示过才 +1」，未展示的深页候选不得提前
+	// 计入当日展示（否则一次深翻页就把全库计入惩罚）。2026-09-18 性能批：
+	// 逐条隐式事务改单事务批量提交（语义不变；SQLite 每个隐式事务一次落盘
+	// 提交，200 条逐条写在手机存储上可观测耗时），并连同响应一起登记进缓存。
+	assetIDs := make([]string, 0, len(ordered))
+	for _, it := range ordered {
+		assetIDs = append(assetIDs, it.AssetID)
+	}
+	s.recommendCache.put(key, out, assetIDs)
+	s.recordDailyShownBatch(r.Context(), assetIDs, day)
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -234,4 +259,45 @@ func paramOr(def float64, v *float64) float64 {
 		return def
 	}
 	return *v
+}
+
+// recommendPrefsFingerprint 权重快照的缓存键指纹：JSON 序列化（Weights 全是
+// 导出 float64 字段，文本化稳定），nil 权重同样得到稳定串。指纹只用于键判等，
+// 不用于解析还原。
+func recommendPrefsFingerprint(w *recommend.Weights) string {
+	b, err := json.Marshal(w)
+	if err != nil {
+		// Weights 无自定义类型，序列化按构造不会失败；兜底返回空串（退化为
+		// 「所有 nil 权重同一键」的保守判等，不会错命中不同权重）
+		return ""
+	}
+	return string(b)
+}
+
+// recordDailyShownBatch 当日展示计数批量回写：每个返回项 +1 的语义与旧逐条
+// 写一致，但失败粒度不同并已接受（2026-09-18 性能批）：旧逐条写部分失败时
+// 已写的行保留；本实现单事务内任一条失败即整批回滚（warn 不阻塞响应）。
+// 计数是缓存性质可丢弃重建（0001 表注释），整批回滚的下一次请求即重算补齐。
+// 收进单事务的动机：SQLite 每个隐式事务一次落盘提交，200 条逐条写在手机
+// 存储（ADR-0015 单机形态）上是可观测的耗时。
+func (s *Server) recordDailyShownBatch(ctx context.Context, assetIDs []string, day string) {
+	if len(assetIDs) == 0 {
+		return
+	}
+	tx, err := s.conn.BeginTx(ctx, nil)
+	if err != nil {
+		s.logger.Warn("展示计数事务开启失败（忽略，可丢弃重建）", "err", err)
+		return
+	}
+	qtx := s.q.WithTx(tx)
+	for _, id := range assetIDs {
+		if err := qtx.IncrementDailyShown(ctx, db.IncrementDailyShownParams{AssetID: id, Day: day}); err != nil {
+			s.logger.Warn("推荐展示计数写入失败（忽略，可丢弃重建）", "err", err, "asset_id", id)
+			_ = tx.Rollback()
+			return
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		s.logger.Warn("展示计数事务提交失败（忽略，可丢弃重建）", "err", err)
+	}
 }

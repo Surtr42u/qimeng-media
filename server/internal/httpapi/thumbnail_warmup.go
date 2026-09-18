@@ -7,7 +7,8 @@
 //   - 周期兜底扫（清漏：懒生成删除、缓存清理等漂移）。
 //
 // 生成走既有 WorkerPool（GenSlots 进程闸限并发）；投递端 200ms 节流给按需
-// 请求留闸位——预热永远不与前台浏览抢 ffmpeg 预算（无感优先）。
+// 请求留闸位——预热永远不与前台浏览抢 ffmpeg 预算（无感优先）。开机另有
+// 静默窗（waitForBootQuietWindow，2026-09-18 批）避开登录期争抢。
 package httpapi
 
 import (
@@ -49,10 +50,32 @@ func (s *Server) WarmupAfterScan() {
 	go s.warmupOnce("扫描后预热")
 }
 
+// waitForBootQuietWindow 开机静默窗：等到「进程启动 + 配置延迟」之后才返回，
+// warmup 全在自己的 goroutine 里，阻塞等待无碍。为什么：单机形态（ADR-0015）
+// 服务端起监听与 App 登录几乎同时发生，ffmpeg 批量回填若立刻开跑会和登录后的
+// 首屏请求/按需缩略图生成抢 CPU/IO，表现为「登录后前几十秒整机发闷」（2026-09-18
+// 反馈）；启动回填与窗内的扫描后预热都顺延到窗尾执行（周期兜底在 10min 后到点，
+// 窗早已过、即时返回）。配置 0 或负 = 关闭等待；默认值见 config
+// DefaultThumbnailWarmupDelay。
+func (s *Server) waitForBootQuietWindow(reason string) {
+	delay := s.cfg.Thumbnail.WarmupDelay
+	if delay <= 0 {
+		return
+	}
+	remain := delay - time.Since(s.startedAt)
+	if remain <= 0 {
+		return
+	}
+	s.logger.Info("缩略图回填等待开机静默窗结束", "reason", reason,
+		"wait", remain.Round(time.Second).String())
+	time.Sleep(remain)
+}
+
 // warmupOnce 一轮回填：全量拉启用库资产（ListThumbnailWarmup 轻查询），按缓存键
 // os.Stat 挑缺 md 档的投递生成。md 是网格唯一预生成档——其余尺寸属低频显式请求，
 // 保持懒生成即可（预生成预算全给浏览主路径）。
 func (s *Server) warmupOnce(reason string) {
+	s.waitForBootQuietWindow(reason)
 	rows, err := s.q.ListThumbnailWarmup(context.Background())
 	if err != nil {
 		s.logger.Warn("缩略图预热候选查询失败", "reason", reason, "err", err)

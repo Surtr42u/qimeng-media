@@ -91,6 +91,8 @@ func (s *Server) PostApiV1AuthorsImportTxt(w http.ResponseWriter, r *http.Reques
 		s.internalErr(w, "导入作者 TXT", err)
 		return
 	}
+	// 作者-文件关联变了（COS 分流与 cosWork 装配输入），推荐缓存失效
+	s.invalidateRecommendCache()
 	writeJSON(w, http.StatusOK, res)
 }
 
@@ -397,6 +399,8 @@ func (s *Server) DeleteApiV1AuthorsImportTxt(w http.ResponseWriter, r *http.Requ
 		s.internalErr(w, "移除 TXT 片段", err)
 		return
 	}
+	// 片段移除触发关联重建，推荐输入变了，缓存失效
+	s.invalidateRecommendCache()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -440,6 +444,8 @@ func (s *Server) PostApiV1AuthorsImportTxtRebuild(w http.ResponseWriter, r *http
 		return
 	}
 	imported := len(merged)
+	// 关联全量重建，推荐输入变了，缓存失效
+	s.invalidateRecommendCache()
 	writeJSON(w, http.StatusOK, gen.TxtImportResult{AuthorsImported: &imported, FilesMatched: &filesMatched})
 }
 

@@ -163,6 +163,8 @@ func (s *Server) PutApiV1AssetsAssetIdLike(w http.ResponseWriter, r *http.Reques
 		s.internalErr(w, "点赞", err)
 		return
 	}
+	// likeCount 是推荐打分输入（§1.1 likeScore），点赞/取消后推荐缓存失效
+	s.invalidateRecommendCache()
 	count, err := s.q.CountAssetLikes(r.Context(), assetID.String())
 	if err != nil {
 		s.internalErr(w, "统计点赞数", err)
@@ -198,5 +200,7 @@ func (s *Server) PutApiV1AssetsAssetIdFavorite(w http.ResponseWriter, r *http.Re
 		s.internalErr(w, "取消收藏", err)
 		return
 	}
+	// is_favorite 是推荐输入行字段（recommend.sql），收藏变更后推荐缓存失效
+	s.invalidateRecommendCache()
 	w.WriteHeader(http.StatusNoContent)
 }
