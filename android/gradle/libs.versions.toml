@@ -1,8 +1,13 @@
 # 依赖版本唯一收口（HANDOVER_APP 通用约束 3：版本号必须当场查官方来源并锁版本，锁后本批次内不得升级）。
 # 核查日 2026-09-04，来源链接（交付报告同引）：
 #   agp            https://developer.android.com/build/releases/gradle-plugin（原 8.13 线最新 8.13.2；
-#                  2026-09-13 S3 基座升级批按仓库外 a-s3-agp9-upgrade-memo.md 升至 9.2 线最新 9.2.1，
-#                  配对 Gradle 9.5.0，maven-metadata 实存核查 dl.google.com 2026-09-13）
+#                  2026-09-13 S3 基座升级批按仓库外 a-s3-agp9-upgrade-memo.md 升至 9.2 线最新 9.2.1；
+#                  2026-09-18 任务P P1 批升至 9.3.1（AGP 9.3 配对下限 Gradle 9.5.0，本仓 Gradle 9.7.0）。
+#                  maven 实存 9.x 最新 stable=9.4.1，但 KGP 2.4.20 官方 fully-supported AGP 区间
+#                  8.5.2-9.3.1（kotlinlang.org 配对表，AGP 侧仅声明 KGP 下限无上限，两官方页不互认），
+#                  按任务P 存疑停手规则回退一档锁 9.3.1；9.4.1 无 release notes 页不锁。AGP 9.4 线挂账：
+#                  解锁条件=KGP 配对表覆盖 9.4 线，届时连动 Hilt metadata 复测。maven-metadata 实存核查
+#                  dl.google.com 2026-09-18）
 #   kotlin/ksp     https://github.com/JetBrains/kotlin/releases/tag/v2.4.20（2.4 线最新 stable，repo1
 #                  maven-metadata 实存核查 2026-09-13：2.4.0/2.4.10/2.4.20；S3 第 3 步随 Coil 3.6.2
 #                  解锁升级——Coil 3.5.0 起以 Kotlin 2.4 编译。KGP 2.4.20 含 gradle96 变体（构建于
@@ -46,7 +51,8 @@
 # Coil/Media3/Room/DataStore/WorkManager 到对应批次（M4-3/4/5/6）再当场查官方版本锁入，禁止提前占位。
 
 [versions]
-agp = "9.2.1"
+# 2026-09-18 任务P P1：AGP 9.3.1（KGP 2.4.20 fully-supported 上限，论证见上方 agp 头注）
+agp = "9.3.1"
 kotlin = "2.4.20"
 ksp = "2.3.12"
 composeBom = "2026.08.00"
