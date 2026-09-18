@@ -36,20 +36,22 @@ import media.qimeng.app.core.ui.theme.QimengDimens
 /**
  * 页面文案（2026-09-16 用户反馈新建页；2026-09-18 拆「服务器缩略图/本地缩略图」
  * 两分区并新增预取区块。进度文案口径「已生成 X / Y」沿用，预取口径「已缓存 X / Y」）。
+ * 2026-09-18 用户拍板改名：分区标题「服务器缓存/本地缓存」明确缓存归属，
+ * 服务器进度条文案明确为「已缓存 X / Y 个文件」。
  */
 private const val SCREEN_TITLE = "缩略图缓存"
 
-// —— 分区一：服务器缩略图（服务端生成进度，GET /thumbnails/progress + 手动刷新） ——
-private const val SERVER_SECTION = "服务器缩略图"
+// —— 分区一：服务器缓存（服务端生成进度，GET /thumbnails/progress + 手动刷新） ——
+private const val SERVER_SECTION = "服务器缓存"
 private const val SERVER_SECTION_SUBTITLE =
     "由服务端生成并缓存，同一份图不会重复生成；新入库文件会在扫描后自动补齐"
-private const val PROGRESS_TEMPLATE = "已生成 %d / %d"
-private const val PROGRESS_UNKNOWN = "已生成 — / —"
+private const val PROGRESS_TEMPLATE = "已缓存 %d / %d 个文件"
+private const val PROGRESS_UNKNOWN = "已缓存 — / — 个文件"
 private const val PROGRESS_REFRESH = "刷新"
 private const val PROGRESS_REFRESHING = "刷新中…"
 
-// —— 分区二：本地缩略图（Coil 磁盘缓存档位/清空 + 预取） ——
-private const val LOCAL_SECTION = "本地缩略图"
+// —— 分区二：本地缓存（Coil 磁盘缓存档位/清空 + 预取） ——
+private const val LOCAL_SECTION = "本地缓存"
 private const val QUOTA_TITLE = "图片缓存上限"
 private const val QUOTA_USED_TEMPLATE = "已用 %s"
 private const val QUOTA_RESTART_NOTE = "重启应用后生效（缓存目录正在使用中，运行中扩缩容会损坏缓存）"
@@ -110,7 +112,7 @@ fun ThumbnailCacheScreen(
                 }
             }
 
-            // 分区一：服务器缩略图（进度条 + 已生成计数 + 刷新；progress=null 显「—」降级）
+            // 分区一：服务器缓存（进度条 + 已缓存文件计数 + 刷新；progress=null 显「—」降级）
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(
                     modifier = Modifier

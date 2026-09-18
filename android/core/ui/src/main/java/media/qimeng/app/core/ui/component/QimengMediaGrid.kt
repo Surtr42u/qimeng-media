@@ -150,7 +150,15 @@ private fun preloadDetailPoster(context: Context, mediaType: MediaKind, posterUr
     val request = ImageRequest.Builder(context)
         .data(posterUrl)
         .memoryCachePolicy(DETAIL_POSTER_PRELOAD_CACHE_POLICY)
-        .apply { if (mediaType != MediaKind.VIDEO) size(Size.ORIGINAL) }
+        .apply {
+            if (mediaType != MediaKind.VIDEO) {
+                size(Size.ORIGINAL)
+                // 原件不落盘（2026-09-18 对齐 DetailScreen 预载链/U10-5 口径）：本预载
+                // 目的=内存热身（见 DETAIL_POSTER_PRELOAD_CACHE_POLICY 注），原件落盘
+                // 只会挤爆 LRU 档位把小缩略图淘掉；视频海报帧=小缩略图，保持落盘省流量
+                diskCachePolicy(CachePolicy.DISABLED)
+            }
+        }
         .build()
     SingletonImageLoader.get(context).enqueue(request)
 }
@@ -304,15 +312,19 @@ private fun AssetCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val thumbModel = if (asset.mediaType == MediaKind.ANIMATED_IMAGE) {
-        var origUrl by remember(asset.id) { mutableStateOf<String?>(asset.thumbUrl) }
+    // 动图原件解析（拍板条目 9：动图卡必须动画）：解析完成前先渲服务端缩略图。
+    // animatedOrigUrl=null 表示静态图，或动图尚未解析完成（此刻 model 仍是缩略图直链）
+    var animatedOrigUrl by remember(asset.id) { mutableStateOf<String?>(null) }
+    if (asset.mediaType == MediaKind.ANIMATED_IMAGE) {
         LaunchedEffect(asset.id) {
-            animatedUrlResolver(asset.id)?.let { origUrl = it }
+            animatedOrigUrl = animatedUrlResolver(asset.id)
         }
-        origUrl
-    } else {
-        asset.thumbUrl
     }
+    val thumbModel = animatedOrigUrl ?: asset.thumbUrl
+    // 原件不落盘（2026-09-18，U10-5 口径外延到网格）：动图卡一旦切到原件直链即关磁盘
+    // 缓存——原件体积大，落盘会挤爆 LRU 档位把小缩略图淘掉（用户实测本地缓存 1.7GB vs
+    // 服务端缩略图仅 155MB 的主因）；缩略图阶段/静态图照常落盘
+    val diskCacheEnabled = animatedOrigUrl == null
     // 旧版圆角是像素值：运行时按屏幕密度换算（KDoc 规格要求的 toDp() 写法）
     val cornerRadius = with(LocalDensity.current) { LEGACY_CARD_CORNER_RADIUS_PX.toDp() }
     // exp#4 预载翼的入队上下文（单例 ImageLoader 经 context 取，与详情预载链同源）
@@ -335,6 +347,7 @@ private fun AssetCard(
             model = thumbModel,
             contentDescription = asset.title,
             paused = paused,
+            diskCacheEnabled = diskCacheEnabled,
             modifier = Modifier.fillMaxSize(),
         )
         if (asset.mediaType in DURATION_BADGE_TYPES) {
