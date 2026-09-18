@@ -13,6 +13,21 @@
 ---
 ---
 ---
+## docs: 任务P P0 预检与锁版批——网络四探全通+执行日锁版（2026-09-18 第三百二十五笔）
+
+执行 AI：GLM-5.3-Flash（主代理；三路版本调研=只读子代理并行）
+
+- 立卷：仓库外《任务P-AGP9收尾与依赖跟进卷.md》（基点 d1ba7a9），性质=基建/工具链卷，行为面零改动目标（唯一例外=P4 拍板 targetSdk），批次 P0→P6 串行独立 commit。本笔=P0 预检与锁版批（纯文档）。
+- **网络预检全通（整卷可执行结论）**：dl.google.com / repo1.maven.org / services.gradle.org（curl 通道）实测 200；maven.google.com 000 维持「历史不作门禁」口径。
+- **锁版（全部官方来源执行日实存核查，锁后批内不升；明细见任务书 §锁版记档）**：
+  - **Gradle wrapper 9.5.0→9.7.0**（P1 执行）：9.7.1 为 Gradle current 但超 KGP 2.4.20 fully-supported Gradle 上限 9.7.0（kotlinlang 配对表 2026-09-18 实查 7.6.3–9.7.0）；`gradle-9.7.0-bin.zip` 307→GitHub 资产 CDN **200 实存核验（Content-Length 150,308,896）**；满足 AGP 9.3 配对下限 9.5.0；≥9.6 即触发 KGP gradle96 变体按属性匹配选中（250 笔「矩阵外回退 gradle813」遗留的闭环条件）。
+  - **AGP 9.2.1→9.3.1**（P1 执行）：maven 实存 9.x 最新 stable=9.4.1（9.4.1 无 release notes 页=内容未确认不锁，9.5.0 仅 alpha），但 KGP 2.4.20 官方 fully-supported AGP 区间 **8.5.2–9.3.1**（AGP 侧仅声明 KGP 下限 2.2.10 无上限，两官方页不互认）——按任务书存疑停手规则「官方配对表不满足→回退一档」锁 9.3.1。**AGP 9.4 线挂账**：解锁条件=KGP 配对表覆盖 9.4 线，届时连动 Hilt metadata 复测。AGP 9.3.0 notes 对本仓零行为变更（新 optimization DSL 为可选新能力；newDsl/builtInKotlin 两 flag、CommonExtension、KspExtension 均无涉）；9.3.2 的「JDK 17 lint 崩溃」bug 不涉本仓（本机与 CI Android job 均 JDK 21，CI sdk-chain 的 JDK 17 只跑 make sdk 生成器，实证 ci.yml:79/107）。
+  - **Kotlin 2.4.20 / KSP 2.3.12 不动**（默认不动 Kotlin 纪律；动则连动 Hilt metadata 复测）。
+  - **Compose BOM 2026.08.00→2026.09.00**（P2 执行，官方 POM 实证管控 ui/foundation/animation/runtime 1.12.1，要求 AGP ≥9.2；bom-mapping 页滞后未收录，以 maven POM 为准）；**material3 维持显式 1.5.0-alpha28**：1.5.0 stable 未发（maven latest=alpha28 即线末位 2026-09-09），BOM 管控仍 1.4.0——撤显式 ref=降级不成立，「BOM 不覆盖 1.5.0-alpha 线」特殊口径保留。
+  - **P5 五族**：media3 1.8.0→**1.11.1**（maven `<release>` 实存；1.11.0=stable 头版 2026-08-05，1.11.1=2026-09-11 补丁；toml【待联网复核】标注就此清偿——1.8.0 系 2025 年旧 stable 线，BiliPlayerView 桥接回归=P5 最高风险点）；room 2.8.4→**2.8.5**（2026-09-09 补丁）；vico 2.5.1→**2.5.2** 补丁线（官方已宣布 2.x 修复期止于 2026-07-31；3.3.1 major 跳线视 QimengTrendLineChart 用点核对工作量定走或记档）；**datastore 维持 1.2.1**（1.3 线全 alpha，最新 alpha11）；**work 维持 2.11.2**（2.12.0-rc01 非 stable，网络约束修复在线内不丢）；**hilt 维持 2.60.1**（双源确认即最新 stable，无任何更新发布）。okhttp/moshi 禁动（生成物单版本原则）。
+- 环境锚：本机 JDK 21（AGP ≥17 满足）；本地 wrapper 缓存实存 8.10.2/8.13/9.3.0/9.4.1/9.5.0，9.7.0 按 250 笔大文件纪律 curl 断点续传预置（官方 Content-Length 核验）；AVD 四台在册核实，本卷复用 **qimeng_api35c** 无头冷启动（不碰 b/t 与雷电）。
+
+
 ## feat(app): 备份页跨端同步暂存——本机⇄服务器免来回导文件（2026-09-18 第三百二十四笔）
 
 执行 AI：GLM-5.3-Flash（主代理）
