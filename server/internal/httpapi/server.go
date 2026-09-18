@@ -219,6 +219,21 @@ func New(deps Deps) (*Server, error) {
 	if err := s.authState.load(context.Background(), s.q); err != nil {
 		return nil, err
 	}
+	// 推荐流缓存失效主通道（2026-09-18 性能批二段）：订阅 library.changed——
+	// watch 增量事件/手动扫描完成/上传入库/回收站/标签/整理/库开关全部经此
+	// 事件汇出，一处订阅全覆盖（跨包触发走事件总线，AI_README 代码卫生约束
+	// 7）。不发该事件的变更（点赞/收藏/导入/作者重建）保留各 handler 直接
+	// 调用 invalidateRecommendCache。周期轮询扫描零变更时不发事件，缓存得以
+	// 跨扫描存活。
+	if sub, err := s.bus.Subscribe(events.TopicLibraryChanged); err != nil {
+		logger.Warn("推荐缓存失效订阅失败（仅影响缓存新鲜度，TTL 兜底）", "err", err)
+	} else {
+		go func() {
+			for range sub.C {
+				s.invalidateRecommendCache()
+			}
+		}()
+	}
 	// SSE 连接数 gauge（OBSERVABILITY sse_connections）经 Option 回调注入：
 	// events 包不感知 sysmon，装配期单点接线（绝对值 Set 语义在回调侧）。
 	s.sse = events.NewHandler(deps.Bus, events.WithVersion(deps.Version),

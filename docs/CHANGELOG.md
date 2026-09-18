@@ -13,6 +13,16 @@
 ---
 ---
 ---
+## perf(server): 推荐缓存开机预热+单飞合并+library.changed 订阅失效（2026-09-18 第三百一十八笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- 动机（真机反馈冷启动首页仍有一次延迟）：缓存是进程级的，冷启动首击必 miss——首条请求仍现场跑全库聚合+打分（手机 SoC 秒级）。
+- 开机预热（recommend_prewarm.go）：起监听即后台预计算 App 首屏同键默认流（seed=1&limit=200&offset=0，与 App 端 HomeViewModel.INITIAL_SEED/RecommendPaging.PULL_LIMIT 常量互指），预热**只算不服务、不写展示计数**（DOMAIN_RULES §1.4 记档）；失败退化为既有现场计算路径。
+- 单飞合并（recommendCache.do）：冷启动首条请求与预热并发到达共享同一次全库计算，不重复跑管线。
+- 失效主通道收口：Server 装配期订阅 library.changed 事件统一失效（watch 增量/扫描完成/上传/回收站/标签/整理/库开关一处全覆盖——修复 watch 增量文件变动此前不失效的缺口）；撤除 publishLibraryChanged/库开关/删库/FinishScan 四处直调；点赞/收藏/导入/作者重建保留直调（不发该事件）。周期轮询扫描零变更不发事件，缓存跨扫描存活。
+- 测试：recommend_cache_test 增至 6 用例（事件失效白盒/预热不计数/单飞一次计算），httpapi 全量 -count=1 全绿、gofmt 零差异。
+
 ## fix(app): 详情页去除「加载中」整屏文案（2026-09-18 第三百一十七笔）
 
 执行 AI：GLM-5.3-Flash（主代理）

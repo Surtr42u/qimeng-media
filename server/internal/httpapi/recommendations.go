@@ -61,8 +61,9 @@ func (s *Server) GetApiV1Recommendations(w http.ResponseWriter, r *http.Request,
 	// 推荐偏好快照：无论命中缓存与否都要装载——权重变化即换键（缓存键维度）。
 	prefs := s.recommendPrefsFromSettings(r.Context())
 
-	// 响应缓存查找（语义边界见 recommend_cache.go 头注释）：命中返回首算
-	// 切片，仍回写当日展示计数（§1.4.3），只是不重算排序。
+	// 响应缓存查找/单飞计算（语义边界见 recommend_cache.go 头注释）：命中、
+	// 或与开机预热共享同一次计算；取得结果后回写当日展示计数（§1.4.3 真实
+	// 展示语义——计算与预热本身不计数，谁把结果真正服务给客户端谁回写）。
 	key := recommendCacheKey{
 		rev:       s.recommendCache.revision(),
 		day:       day,
@@ -73,23 +74,31 @@ func (s *Server) GetApiV1Recommendations(w http.ResponseWriter, r *http.Request,
 		offset:    offset,
 		limit:     limit,
 	}
-	if entry, ok := s.recommendCache.get(key); ok {
-		s.recordDailyShownBatch(r.Context(), entry.assetIDs, day)
-		writeJSON(w, http.StatusOK, entry.body)
+	body, ids, err := s.recommendCache.do(key, func() ([]gen.AssetSummary, []string, error) {
+		return s.computeRecommendPage(r.Context(), day, seed, mediaType, cosOnly, offset, limit, prefs)
+	})
+	if err != nil {
+		s.internalErr(w, "推荐流计算失败", err)
 		return
 	}
+	s.recordDailyShownBatch(r.Context(), ids, day)
+	writeJSON(w, http.StatusOK, body)
+}
 
-	rows, err := s.q.ListAssetsRecommendInput(r.Context(), db.ListAssetsRecommendInputParams{
+// computeRecommendPage 推荐页计算核（缓存未命中路径的唯一计算体；预热与
+// 请求经 recommendCache.do 单飞共享）。除缓存登记外的副作用为零——展示
+// 计数是「真实展示」语义（DOMAIN_RULES §1.4.3），由真实服务路径在取得
+// 结果后自行回写，预热路径（recommend_prewarm.go）刻意不回写。
+func (s *Server) computeRecommendPage(ctx context.Context, day string, seed int, mediaType sql.NullString, cosOnly int64, offset, limit int, prefs *recommend.Weights) ([]gen.AssetSummary, []string, error) {
+	rows, err := s.q.ListAssetsRecommendInput(ctx, db.ListAssetsRecommendInputParams{
 		Day: day, MediaType: mediaType, CosOnly: cosOnly,
 	})
 	if err != nil {
-		s.internalErr(w, "查询推荐输入", err)
-		return
+		return nil, nil, err
 	}
-	tagRows, err := s.q.ListAllAssetTags(r.Context())
+	tagRows, err := s.q.ListAllAssetTags(ctx)
 	if err != nil {
-		s.internalErr(w, "查询全库标签", err)
-		return
+		return nil, nil, err
 	}
 	tagsByAsset := make(map[string][]string, len(tagRows))
 	for _, tr := range tagRows {
@@ -137,9 +146,6 @@ func (s *Server) GetApiV1Recommendations(w http.ResponseWriter, r *http.Request,
 	})
 	ordered = slicePage(ordered, offset, limit)
 
-	// 展示计数回写延后到响应装配完成后统一执行：单事务批量提交 + 缓存登记
-	// （见 writeJSON 前的收尾段），计数语义注释随执行点走。
-
 	out := make([]gen.AssetSummary, 0, len(ordered))
 	for _, it := range ordered {
 		row := rowByID[it.AssetID]
@@ -152,23 +158,16 @@ func (s *Server) GetApiV1Recommendations(w http.ResponseWriter, r *http.Request,
 	}
 	// authorNames：推荐流是首页默认 tab 的卡片数据源，与 GET /assets
 	// 同口径填充作者行（协议 AssetSummary.authorNames 描述）。
-	s.fillListAuthorNames(r.Context(), out)
+	s.fillListAuthorNames(ctx, out)
 	// cosWork：COS 推荐模式（cos tab）卡片标题数据源，与 GET /assets
 	// 同口径批量装配（协议 AssetSummary.cosWork 描述）。
-	s.fillListCosWork(r.Context(), out)
+	s.fillListCosWork(ctx, out)
 
-	// 展示计数回写：先读后写（惩罚基于展示前计数，展示后 +1）。只对切片后
-	// 真正返回给客户端的项执行——「展示过才 +1」，未展示的深页候选不得提前
-	// 计入当日展示（否则一次深翻页就把全库计入惩罚）。2026-09-18 性能批：
-	// 逐条隐式事务改单事务批量提交（语义不变；SQLite 每个隐式事务一次落盘
-	// 提交，200 条逐条写在手机存储上可观测耗时），并连同响应一起登记进缓存。
 	assetIDs := make([]string, 0, len(ordered))
 	for _, it := range ordered {
 		assetIDs = append(assetIDs, it.AssetID)
 	}
-	s.recommendCache.put(key, out, assetIDs)
-	s.recordDailyShownBatch(r.Context(), assetIDs, day)
-	writeJSON(w, http.StatusOK, out)
+	return out, assetIDs, nil
 }
 
 // parseLastViewed 把 sqlc 的 MAX(started_at) 结果翻译为 *time.Time；
