@@ -4,6 +4,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import media.qimeng.app.core.network.SdkAuthApiFactory
 import media.qimeng.app.core.network.ServerAddress
@@ -45,9 +46,8 @@ class AuthRepositoryImplTest {
     private var devLoginEnabled = true
 
     /** 各路径命中记录（断言登录端点未被触达等）。
-     *  须并发安全容器：拦截器跑在 OkHttp 线程、断言读在 runTest 调度线程，普通 HashMap
-     *  跨线程无可见性保证——全量套件+机器满载时偶发 AssertionError（任务P P1 第三百三十
-     *  笔记档的预存 flaky，本处根治；仅测试胶水，零生产行为）。 */
+     *  并发安全容器：拦截器跑在 OkHttp 线程、断言读在测试线程（跨线程基本功底，
+     *  与下述登出用例的 flaky 真因相互独立）。 */
     private val hitCounts = java.util.concurrent.ConcurrentHashMap<String, Int>()
 
     private val serverConfig = InMemoryServerConfig()
@@ -208,8 +208,16 @@ class AuthRepositoryImplTest {
         assertEquals("http://$bareAddress", serverConfig.serverUrl.first())
     }
 
+    /**
+     * 登出族用例用 [runBlocking]（真时钟）而非 runTest（虚拟时钟）——flaky 真因（335 笔
+     * 修正 332 笔的诊断）：runTest 在测试协程挂起等待「真线程上的 Retrofit/OkHttp 响应」
+     * 时会自动推进虚拟时钟，把 [logoutRevokeTimeoutMs] 的 3s 虚拟超时瞬间烧掉，吊销请求
+     * 被取消 → hitCounts 到不了 1；机器满载时 OkHttp 线程变慢则必输，空载则几乎必赢，
+     * 与全部观测吻合（满载红/空载绿/两用例同源）。runBlocking 走真时钟 = 生产语义
+     * （3s 真超时，fake 拦截器微秒级返回，确定性通过）。无虚拟时间依赖，其余用例不动。
+     */
     @Test
-    fun `退出登录_清token保留地址`() = runTest {
+    fun `退出登录_清token保留地址`() = runBlocking {
         repository.login(FAKE_BASE_URL, correctPassword)
 
         repository.logout()
@@ -231,7 +239,7 @@ class AuthRepositoryImplTest {
     }
 
     @Test
-    fun `登出并预置地址_token清空且serverUrl为预置值`() = runTest {
+    fun `登出并预置地址_token清空且serverUrl为预置值`() = runBlocking {
         repository.login(FAKE_BASE_URL, correctPassword)
 
         repository.logoutWithStagedUrl(ServerAddress.LOCAL_MODE_PRESET)
