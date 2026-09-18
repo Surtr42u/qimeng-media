@@ -13,6 +13,18 @@
 ---
 ---
 ---
+## docs: 任务P P6 收官——reviewer 对抗审查通过+终包出盘+#47 终态记档（2026-09-18 第三百三十四笔）
+
+执行 AI：GLM-5.3-Flash（主代理；全卷对抗审查=reviewer 子代理）
+
+- **reviewer 对抗审查：通过**（7/7 项 pass、0 P1/P2）——版本证据链（curl 亲复核 AGP 9.3.1/Gradle 9.7.0 sha256/media3 1.11.1/vico 2.5.2/room 2.8.5/BOM 2026.09.00 官方实存）、KGP gradle96 实证、9 份门禁日志交叉核验（失败全留痕无粉饰）、行为面零改动纪律、生成物边界（android/sdk diff 为空、okhttp/moshi 零动）、commit 卫生（文件集一一对应、笔号 325~333 连续）全过。
+- P3 观察项 6 条处置：①KGP 变体补强实证=`./gradlew buildEnvironment` 实存 `org.jetbrains.kotlin:kotlin-gradle-plugin:2.2.10 -> 2.4.20`（AGP 9.3.1 内置依赖被本仓 catalog 声明按官方「高者胜」拉高，/tmp/p6-buildenv.log 留档）；②332 笔「两轮无复发」第二轮=本笔 P6 终局门禁（p6-gate.log 107 用例全绿）；③`go build ./...` 复跑存档（/tmp/p6-gobuild.log）；④329 笔「17 条」=P4 材料表 14 行+#14 行归并 7 个无影响子项，口径已在材料注明；⑤CI 挂账=push 后 CI 全绿闭合（见下）；⑥sha256 已是强于 Content-Length 的完整性证据，无动作。
+- **终局门禁**：三连全绿（p6-gate.log）+ assembleRelease 实跑（:app:minifyReleaseWithR8 非缓存执行，p6-release.log）。**终包出盘**：`QimengNAS\qimeng-任务P-终包-20260918.apk`（26.6MB，debug 签名档，含内嵌三件套），待用户装机验收节点。
+- **toml 头注收官刷新**：datastore/work/hilt 三处「维持」项补 2026-09-18 复核结论与再评估触发条件；至此全卷「留后续批」「待联网复核」标记清零。
+- **#47 残项终态（整条销账）**：Step4 built-in Kotlin=P3 落地（328 笔，撤双 flag+:sdk 混合形态实证）；targetSdk 37=**材料出齐待用户拍板**（329 笔+仓库外《待拍板-任务P-P4-targetSdk37.md》），拍板后走 P4b 单 commit 或记档销账——#47 台账在 targetSdk 拍板落地时彻底关闭。
+- **CI 全 job 验证挂账（如实记档）**：github.com 自 2026-09-18 起本网络断连（git pull/push Recv failure，dl.google.com/repo1 正常=纯 github 节点问题），本卷 9 个 commit（5b6eb78→beef79a+本笔）未能 push、CI 未跑；本机门禁已全量等效执行（三连+lint 全模块+assembleRelease+模拟器冒烟+server go build）。**push 与 CI 绿确认在网络恢复后补做**（下次会话先 `git pull --rebase && git push`，盯 CI 五 job 绿后本卷方正式收官）。
+
+
 ## ci+app: 任务P P5③ room 2.8.4→2.8.5——2.x 线末位补丁+P5 收尾（2026-09-18 第三百三十三笔）
 
 执行 AI：GLM-5.3-Flash（主代理直改，锁版依据=第三百二十五笔）
