@@ -128,7 +128,8 @@ class SdkUploadRepository @Inject constructor(
         }
     }
 
-    /** 单任务取消（C-2）：协作式置标记；worker 自行终止，链上其余任务不受影响。 */
+    /** 单任务取消（C-2）：协作式置标记；worker 自行终止并以 success+取消标志落终态
+     *  （failure 会级联杀链，342 笔返工修正）——链上其余任务不受影响。 */
     override fun cancel(localId: String) {
         Log.i(SdkMediaRepository.LOG_TAG, "cancel upload localId=$localId")
         cancelRegistry.cancel(localId)
@@ -151,20 +152,19 @@ class SdkUploadRepository @Inject constructor(
         val displayName = info.progress.getString(UploadWorkSpec.KEY_DISPLAY_NAME)
             ?: knownNames[localId]
             ?: "上传任务"
+        // 取消标志两侧识别（342 笔返工）：取消终态走 success 载荷（failure 会级联杀链，
+        // 见 UploadWorkSpec.outcomeToResult）——SUCCEEDED+标志=CANCELLED；FAILED+标志
+        // 保留兜底（防旧数据/其他路径）。WorkManager 的 State.CANCELLED 是引擎自身
+        // 取消态，客户端从不主动触发（见 UploadCancelRegistry），出现时按失败兜底
+        val output = info.outputData
+        val cancelledByUser = output.getBoolean(UploadWorkSpec.KEY_CANCELLED, false)
         val status = when (info.state) {
             WorkInfo.State.ENQUEUED, WorkInfo.State.BLOCKED -> UploadStatus.QUEUED
             WorkInfo.State.RUNNING -> UploadStatus.UPLOADING
-            WorkInfo.State.SUCCEEDED -> UploadStatus.SUCCEEDED
-            // 终局失败里的用户取消（输出带 CANCELLED 标志）单列 CANCELLED：
-            // WorkManager 的 State.FAILED 不区分取消与失败，语义由输出数据承载
-            // （worker 正常结束路径）；State.CANCELLED 是 WorkManager 自身取消态，
-            // 客户端从不主动触发（见 UploadCancelRegistry），出现时按失败兜底
+            WorkInfo.State.SUCCEEDED ->
+                if (cancelledByUser) UploadStatus.CANCELLED else UploadStatus.SUCCEEDED
             WorkInfo.State.FAILED, WorkInfo.State.CANCELLED ->
-                if (info.outputData.getBoolean(UploadWorkSpec.KEY_CANCELLED, false)) {
-                    UploadStatus.CANCELLED
-                } else {
-                    UploadStatus.FAILED
-                }
+                if (cancelledByUser) UploadStatus.CANCELLED else UploadStatus.FAILED
         }
         // 取消标记已置位但 WorkManager 终态未落（排队中刚点取消）：立即展示「已取消」，
         // 等任务轮到时 worker 短路落终态，状态不回跳（终态映射与标记一致）

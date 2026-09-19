@@ -244,7 +244,8 @@ private fun LocalModeCard(
     onLocalUrlChange: (String) -> Unit,
     onSwitch: () -> Unit,
     modifier: Modifier = Modifier,
-) {    CardContainer(modifier = modifier) {
+) {
+    CardContainer(modifier = modifier) {
         Text(text = SECTION_LOCAL_MODE, style = MaterialTheme.typography.titleSmall)
         Text(
             text = SUBTITLE_LOCAL_MODE,

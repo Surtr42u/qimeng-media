@@ -49,6 +49,8 @@ interface UploadRepository {
      * 协作式取消（置标记 → worker 自行终止），不调 WorkManager cancelWorkById——
      * 官方语义下取消会级联取消链上依赖它的后续任务，违反单任务取消（依据记档在
      * [media.qimeng.app.core.data.upload.UploadCancelRegistry]）。
+     * 终态经 success+取消标志落盘（failure 同样级联杀链，342 笔返工修正），
+     * 取消任务的下游排队任务正常解锁执行。
      */
     fun cancel(localId: String)
 

@@ -16,8 +16,13 @@ import kotlinx.coroutines.flow.asStateFlow
  * ——本队列为 unique 串行链（后入队任务以前置任务为 prerequisite），对链上任一任务调用
  * cancelWorkById 会把其后排队中的任务连坐取消，直接违反本需求「单任务取消」冻结语义；
  * 官方没有「从链中摘除单个 work 且不级联」的 API。故改为协作式取消：
- * 标记置位 → UI 立即把该行翻成「已取消」→ worker 执行前/写流中检查标记自行终止
- * （Result.failure(CANCELLED 标志) 落终态），链结构与串行语义零改动。
+ * 标记置位 → UI 立即把该行翻成「已取消」→ worker 执行前/写流中检查标记自行终止。
+ *
+ * 终态通道同样是级联敏感点（342 笔返工，reviewer P1）：取消终态必须以
+ * **Result.success + KEY_CANCELLED 标志**落盘，绝不能 Result.failure——failure 与
+ * cancel 一样触发引擎级联（iterativelyFailWorkAndDependents 会把链上全部后续任务
+ * 标 FAILED、永不执行）；success 不级联，下游正常解锁执行，取消语义由输出键承载
+ * （映射见 UploadWorkSpec.outcomeToResult，两侧识别见 SdkUploadRepository.toEntry）。
  *
  * 残留边界（记档）：标记置位后进程被杀的极小窗口内，WorkManager 会把 RUNNING 任务
  * 重新入队、重启后 registry 为空 → 该任务继续上传（用户可再次取消）；localId 为 UUID
