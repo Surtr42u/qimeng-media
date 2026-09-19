@@ -116,6 +116,11 @@ interface DataModule {
     @Singleton
     fun bindThumbnailProgressRepository(impl: media.qimeng.app.core.data.repository.SdkThumbnailProgressRepository): media.qimeng.app.core.data.repository.ThumbnailProgressRepository
 
+    // 预取状态只读面（批S4 2026-09-19：预取为纯默认自动行为、手动按钮删除，外界只读状态）
+    @Binds
+    @Singleton
+    fun bindThumbnailPrefetchMonitor(impl: media.qimeng.app.core.data.prefetch.ThumbnailPrefetcher): media.qimeng.app.core.data.prefetch.ThumbnailPrefetchMonitor
+
     @Binds
     @Singleton
     fun bindBackupAutoPrefsRepository(impl: media.qimeng.app.core.data.repository.DataStoreBackupAutoPrefsRepository): media.qimeng.app.core.data.repository.BackupAutoPrefsRepository

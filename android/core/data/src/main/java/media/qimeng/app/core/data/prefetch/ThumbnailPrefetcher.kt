@@ -53,8 +53,22 @@ sealed interface PrefetchUiState {
 }
 
 /**
+ * 预取状态观察端口（2026-09-19 批S4）：预取自本批起是**纯默认自动行为**（登录后
+ * 自动一轮，无手动启停——用户拍板「不需要手动按钮」），外界只读状态、无法干预；
+ * 缩略图缓存页经本端口透出进度。独立成接口：VM 只依赖只读面（铁律 7 + 可测性），
+ * 不持有预取器的控制柄。
+ */
+interface ThumbnailPrefetchMonitor {
+
+    /** 预取轮状态流（只读） */
+    val state: StateFlow<PrefetchUiState>
+}
+
+/**
  * 全库缩略图预取器（2026-09-18 用户需求）：登录服务端后自动把全部 md 缩略图
  * 预取进本机 Coil 磁盘缓存，此后浏览网格直接读盘不再反复下载。
+ * 2026-09-19 批S4 拍板：预取是默认自动行为，手动「开始预取/停止」按钮与 startManual/
+ * stopRound 手动链路删除——自动触发（登录回放/登录事件）是唯一入口。
  *
  * **为什么磁盘键天然一致**：预取请求的 model 就是首页网格同一来源的绝对直链
  * （列表接口直出 → SdkMappers.absolutize），全局 ImageLoader 装配的
@@ -87,12 +101,12 @@ class ThumbnailPrefetcher @Inject constructor(
     private val authRepository: AuthRepository,
     private val readinessProbe: ServerReadinessProbe,
     @ApplicationScope private val appScope: CoroutineScope,
-) {
+) : ThumbnailPrefetchMonitor {
 
     private val _state = MutableStateFlow<PrefetchUiState>(PrefetchUiState.Idle)
 
-    /** 预取轮状态流（缩略图缓存页收集渲染） */
-    val state: StateFlow<PrefetchUiState> = _state.asStateFlow()
+    /** 预取轮状态流（缩略图缓存页收集渲染；[ThumbnailPrefetchMonitor] 只读面实现） */
+    override val state: StateFlow<PrefetchUiState> = _state.asStateFlow()
 
     /** 启停转换互斥（防「登出取消」与「手动开始」竞态开出两轮） */
     private val transitionMutex = Mutex()
@@ -103,35 +117,23 @@ class ThumbnailPrefetcher @Inject constructor(
     /**
      * App 启动接线（QimengApplication.onCreate 调一次，EventSyncBootstrapper 同款模式）：
      * 观察登录态——冷启动已登录由 StateFlow 回放立即触发；false→true 登录后自动跑一轮；
-     * true→false 登出取消进行中的一轮并复位空闲。
+     * true→false 登出取消进行中的一轮并复位空闲。这是预取唯一的触发/终止入口
+     * （2026-09-19 批S4：手动按钮删除，预取为纯默认自动行为）。
      */
     fun onAppCreate() {
         appScope.launch {
             authRepository.isLoggedIn.collect { loggedIn ->
                 transitionMutex.withLock {
-                    if (loggedIn) startRoundLocked(manual = false) else cancelRoundLocked()
+                    if (loggedIn) startRoundLocked() else cancelRoundLocked()
                 }
             }
         }
     }
 
-    /**
-     * 用户在缩略图缓存页手动点「开始预取」：与自动触发同一条链路，唯一差别是
-     * **无视计费网络门**（用户显式表达了付费流量也要现在预取的意图）。
-     */
-    suspend fun startManual() {
-        transitionMutex.withLock { startRoundLocked(manual = true) }
-    }
-
-    /** 手动停止（「停止」按钮）：取消本轮；状态复位由本轮协程的取消收口完成。 */
-    fun stopRound() {
-        roundJob?.cancel()
-    }
-
     /** 持锁调用。单飞：已有一轮在跑则复用不叠加（与 ServerReadinessProbe 同款裁量）。 */
-    private fun startRoundLocked(manual: Boolean) {
+    private fun startRoundLocked() {
         if (roundJob?.isActive == true) return
-        roundJob = appScope.launch { runRound(manual) }
+        roundJob = appScope.launch { runRound() }
     }
 
     /** 持锁调用。只取消不改状态——取消后的复位统一在 [runRound] 的取消收口处做，单点管理。 */
@@ -140,13 +142,13 @@ class ThumbnailPrefetcher @Inject constructor(
         roundJob = null
     }
 
-    private suspend fun runRound(manual: Boolean) {
+    private suspend fun runRound() {
         try {
             _state.value = PrefetchUiState.Running(done = 0, total = 0)
             // 服务端就绪探针：返回 false 也继续——让首个列表请求自己失败报错，
             // 与首页「探针超时走既有失败路径」语义一致（ServerReadinessProbe KDoc 口径）
             readinessProbe.awaitReady()
-            if (!manual) awaitUsableNetworkForAutoStart()
+            awaitUsableNetworkForAutoStart()
             // 与首页网格完全同源的 md 缩略图绝对 URL（全量分页在 repository 内做）
             val urls = mediaRepository.allThumbUrls()
             val total = urls.size
@@ -174,7 +176,7 @@ class ThumbnailPrefetcher @Inject constructor(
             }
             _state.value = PrefetchUiState.Done(done = total, total = total)
         } catch (e: CancellationException) {
-            // 登出 / 手动停止：复位空闲（startManual 可再起新轮）
+            // 登出取消：复位空闲（下轮由下次登录重新触发）
             _state.value = PrefetchUiState.Idle
             throw e
         } catch (e: Exception) {
@@ -196,8 +198,10 @@ class ThumbnailPrefetcher @Inject constructor(
     }
 
     /**
-     * 计费网络门（仅自动触发）：计费网络 + 当前地址非本机回环预设（回环=免费流量）
+     * 计费网络门：计费网络 + 当前地址非本机回环预设（回环=免费流量）
      * → 状态置「等待非计费网络」并挂起，直到网络变化后复查通过才继续。
+     * （2026-09-19 批S4 后预取只有自动触发，本门恒生效——原「手动触发可绕过」
+     * 的 startManual 链路已删除。）
      * 每次复查重读 serverUrl——等待期间用户登出会直接取消整轮，不会死等。
      */
     private suspend fun awaitUsableNetworkForAutoStart() {

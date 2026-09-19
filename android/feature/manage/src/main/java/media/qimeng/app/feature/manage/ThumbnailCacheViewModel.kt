@@ -13,7 +13,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import media.qimeng.app.core.data.di.IoDispatcher
 import media.qimeng.app.core.data.prefetch.PrefetchUiState
-import media.qimeng.app.core.data.prefetch.ThumbnailPrefetcher
+import media.qimeng.app.core.data.prefetch.ThumbnailPrefetchMonitor
 import media.qimeng.app.core.data.repository.CoilCacheManager
 import media.qimeng.app.core.data.repository.DiskCachePrefsRepository
 import media.qimeng.app.core.data.repository.ThumbnailProgressRepository
@@ -22,17 +22,22 @@ import media.qimeng.app.core.model.ThumbnailCacheProgress
 
 /**
  * 缩略图缓存页 UI 状态（2026-09-16 用户反馈：缩略图生成进度 + 磁盘缓存上限合并一页；
- * 2026-09-18 拆「服务器缩略图/本地缩略图」两分区并新增预取）。
- * 进度与容量两块读路径独立：进度是服务端状态（可刷新），容量是本机 Coil 磁盘缓存
- * （进页读一次、清空后重读归零核对）。预取状态不经本类转写，直接透出预取器
- * 的 [PrefetchUiState]（预取生命周期属于 App 全局而非本页，本类只转发用户意图）。
+ * 2026-09-18 拆两分区 + 预取；2026-09-19 批S4 重排为「本地缩略图缓存/服务器缓存」
+ * 两条目并补占用口径：本地侧增文件数，服务器侧拆「占用=缓存文件数」与「资产数」
+ * 两个独立口径——排查结论见 CHANGELOG 第三百四十九笔，分子文件数含多档与孤儿，
+ * 与资产数不同口径，不再组 X/Y 分数式误导）。
+ * 进度与容量两块读路径独立：进度是服务端状态（可刷新），容量/条目数是本机 Coil
+ * 磁盘缓存（进页读一次、清空后重读归零核对）。预取状态不经本类转写，直接透出
+ * 监视端口的 [PrefetchUiState]（预取自批S4 起为纯默认自动行为，本页只读展示）。
  */
 data class ThumbnailCacheUiState(
     /** 当前缓存档位（持续跟随 DataStore 流，含其他入口改档后的回填） */
     val quota: DiskCacheQuota = DiskCacheQuota.DEFAULT,
     /** 磁盘缓存当前已用字节（null = 未就绪/读失败，UI 显「—」）；清空后归零供核对 */
     val cacheSizeBytes: Long? = null,
-    /** 缩略图覆盖进度（GET /thumbnails/progress；null=未就绪或读失败，UI 显「—」降级不崩） */
+    /** 磁盘缓存当前条目数 = 已缓存图片张数（null = 未就绪/读失败，UI 显「—」） */
+    val cacheFileCount: Int? = null,
+    /** 服务端缓存进度（GET /thumbnails/progress；null=未就绪或读失败，UI 显「—」降级不崩） */
     val progress: ThumbnailCacheProgress? = null,
     /** 进度读取进行中（「刷新」按钮防重） */
     val progressLoading: Boolean = false,
@@ -44,12 +49,12 @@ data class ThumbnailCacheUiState(
 )
 
 /**
- * 缩略图缓存页 ViewModel（2026-09-16 用户反馈；2026-09-18 页面拆两分区 + 预取接线）：
- * 缩略图生成进度（服务端 /thumbnails/progress 手动刷新）+ 磁盘缓存档位持久化与清空归零
- * + 预取启停（状态直透 [ThumbnailPrefetcher.state]，启停只转发用户意图，铁律 7）。
- * 缓存三件套逻辑 = SettingsViewModel 现口径原样搬运（语义不变：档位写 DataStore
- * 重启生效、清空 IO 线程执行后重读）；进度读失败降级 null 不弹横幅（装饰性计数
- * 失败不构成操作反馈，同 SettingsViewModel 数量卡口径）。
+ * 缩略图缓存页 ViewModel（2026-09-16 用户反馈；2026-09-19 批S4 重排：删手动预取
+ * 启停——预取为纯默认自动行为，本类只经 [ThumbnailPrefetchMonitor] 只读透出状态；
+ * 容量读改为字节+条目数双口径）：缩略图生成进度（服务端 /thumbnails/progress 手动
+ * 刷新）+ 磁盘缓存档位持久化与清空归零核对。缓存三件套逻辑 = SettingsViewModel
+ * 现口径原样搬运（语义不变：档位写 DataStore 重启生效、清空 IO 线程执行后重读）；
+ * 进度读失败降级 null 不弹横幅（装饰性计数失败不构成操作反馈）。
  * 业务规则一律走 :core:model 纯函数与 :core:data 仓库，本层只做状态编排（铁律 7）。
  */
 @HiltViewModel
@@ -57,16 +62,17 @@ class ThumbnailCacheViewModel @Inject constructor(
     private val diskCachePrefsRepository: DiskCachePrefsRepository,
     private val coilCacheManager: CoilCacheManager,
     private val thumbnailProgressRepository: ThumbnailProgressRepository,
-    private val thumbnailPrefetcher: ThumbnailPrefetcher,
-    /** DiskCache.size/clear 触发磁盘扫描（IO 性质），调用点统一挂 IO 调度器 */
+    /** 预取状态只读监视端口（预取生命周期属于 App 全局而非本页，本类不干预） */
+    prefetchMonitor: ThumbnailPrefetchMonitor,
+    /** DiskCache.size/文件遍历触发磁盘扫描（IO 性质），调用点统一挂 IO 调度器 */
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ThumbnailCacheUiState())
     val uiState: StateFlow<ThumbnailCacheUiState> = _uiState.asStateFlow()
 
-    /** 预取轮状态（预取器全局单飞的直读透出；本页只是其众多潜在观察者之一） */
-    val prefetchState: StateFlow<PrefetchUiState> = thumbnailPrefetcher.state
+    /** 预取轮状态（监视端口只读透出；本页只是其众多潜在观察者之一） */
+    val prefetchState: StateFlow<PrefetchUiState> = prefetchMonitor.state
 
     init {
         loadCacheState()
@@ -74,21 +80,16 @@ class ThumbnailCacheViewModel @Inject constructor(
     }
 
     /**
-     * 刷新（「刷新」按钮与进页共用链路）：重读缩略图进度 + 已用字节。加载中防重；
-     * 进度读失败降级 null（UI 显「—」），已用字节读失败同口径。
+     * 刷新（「刷新」按钮与进页共用链路）：重读缩略图进度 + 已用字节/条目数。加载中防重；
+     * 进度读失败降级 null（UI 显「—」），本机容量两口径读失败同口径。
      */
     fun refresh() {
         if (_uiState.value.progressLoading) return
         _uiState.update { it.copy(progressLoading = true) }
         viewModelScope.launch {
             val progress = runCatching { thumbnailProgressRepository.progress() }.getOrNull()
-            _uiState.update {
-                it.copy(
-                    progress = progress,
-                    progressLoading = false,
-                    cacheSizeBytes = readCacheSize(),
-                )
-            }
+            _uiState.update { it.copy(progress = progress, progressLoading = false) }
+            applyLocalCacheUsage()
         }
     }
 
@@ -110,41 +111,33 @@ class ThumbnailCacheViewModel @Inject constructor(
         _uiState.update { it.copy(writeError = null) }
     }
 
-    /** 清空磁盘缓存（SettingsViewModel 同口径：清后容量归零核对）；IO 线程执行，完成后重读已用字节 */
+    /** 清空磁盘缓存（SettingsViewModel 同口径：清后容量归零核对）；IO 线程执行，完成后重读本机两口径 */
     fun clearCache() {
         viewModelScope.launch {
             withContext(ioDispatcher) { coilCacheManager.clear() }
-            _uiState.update { it.copy(cacheSizeBytes = readCacheSize()) }
+            applyLocalCacheUsage()
         }
-    }
-
-    /**
-     * 手动开始预取（「开始预取」按钮）：无视计费网络门的显式用户意图，
-     * 预取逻辑全在 [ThumbnailPrefetcher]（铁律 7：本层只转发意图）。
-     */
-    fun startPrefetch() {
-        viewModelScope.launch { thumbnailPrefetcher.startManual() }
-    }
-
-    /** 停止预取（「停止」按钮）：同上只转发意图；状态复位由预取器收口 */
-    fun stopPrefetch() {
-        thumbnailPrefetcher.stopRound()
     }
 
     private fun loadCacheState() {
-        // 档位持续跟随 DataStore（含其他入口改档后的回填）；已用字节进页读一次、清空后重读
+        // 档位持续跟随 DataStore（含其他入口改档后的回填）；本机两口径进页读一次、清空后重读
         viewModelScope.launch {
             diskCachePrefsRepository.quota.collect { q -> _uiState.update { it.copy(quota = q) } }
         }
-        viewModelScope.launch {
-            _uiState.update { it.copy(cacheSizeBytes = readCacheSize()) }
-        }
+        viewModelScope.launch { applyLocalCacheUsage() }
     }
 
-    private suspend fun readCacheSize(): Long? = runCatching {
-        // DiskCache.size 触发磁盘扫描（IO 性质），调用点已挂 IO 调度器
-        withContext(ioDispatcher) { coilCacheManager.sizeBytes() }
-    }.getOrNull()
+    /** 本机缓存两口径（字节 + 条目数）：磁盘扫描属 IO，读失败降级 null（UI 显「—」） */
+    private suspend fun readLocalCacheUsage(): Pair<Long?, Int?> = withContext(ioDispatcher) {
+        runCatching { coilCacheManager.sizeBytes() }.getOrNull() to
+            runCatching { coilCacheManager.fileCount() }.getOrNull()
+    }
+
+    /** 把刚读到的本机两口径合入状态（只覆盖这两个字段，其余不动） */
+    private suspend fun applyLocalCacheUsage() {
+        val (bytes, count) = readLocalCacheUsage()
+        _uiState.update { it.copy(cacheSizeBytes = bytes, cacheFileCount = count) }
+    }
 
     private companion object {
         /** 写失败反馈文案（SettingsViewModel P2-3 同口径）：中文、可重试指向；成功路径永不产生 */

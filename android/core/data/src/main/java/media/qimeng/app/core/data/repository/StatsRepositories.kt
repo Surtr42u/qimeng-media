@@ -136,6 +136,16 @@ interface CoilCacheManager {
     fun sizeBytes(): Long?
 
     /**
+     * 当前缓存条目数 = 已缓存图片张数（批S4 2026-09-19 本地缓存「文件数」口径）。
+     * Coil 的 DiskCache 不暴露条目计数（3.6.2 官方 API 只有 size/maxSize/directory），
+     * 口径取磁盘缓存目录里的**数据文件**数——每张缓存图恰一个数据文件（coil 3.6.2
+     * DiskLruCache.kt Entry：每条目 = key.0 元数据文件 + key.1 数据文件，
+     * RealDiskCache.kt valueCount=2/ENTRY_DATA=1；journal 与 .tmp 中转文件天然不匹配）。
+     * DiskCache 未装配时为 null。
+     */
+    fun fileCount(): Int?
+
+    /**
      * 档位上限字节数。Coil 3 的 DiskCache 接口不暴露 maxSize（只有 Builder 有），
      * 容量口径取当前持久化档位字节——与 ImageLoader 装配时读的是同一个 DataStore 键。
      */
