@@ -24,9 +24,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.sync.withPermit
 import media.qimeng.app.core.data.repository.AuthRepository
 import media.qimeng.app.core.data.repository.MediaRepository
 import media.qimeng.app.core.network.ServerAddress
@@ -156,20 +154,25 @@ class ThumbnailPrefetcher @Inject constructor(
                 _state.value = PrefetchUiState.Done(done = 0, total = 0)
                 return
             }
-            // Semaphore 限并发（官方并发原语）：全量 URL 各起一个子协程排队取许可，
-            // 同时刻至多 PREFETCH_CONCURRENCY 条在途；不做逐条人为延时
-            val throttle = Semaphore(PREFETCH_CONCURRENCY)
+            // 固定 worker 池限并发（2026-09-20 全库审查 P2 改法）：此前「全量 URL
+            // 各起一个子协程排队抢 Semaphore」在全库 4 万上限时同时驻留 4 万个挂起
+            // 协程（数十 MB 级纯调度开销）；改为 PREFETCH_CONCURRENCY 个 worker
+            // 按步进分片取活（worker i 取第 i, i+C, i+2C…条），并发上限=worker 数、
+            // 取消语义（登出取消 scope 即全部停）与进度口径（原子计数，成功失败
+            // 都算处理过）与原实现逐字一致，不做逐条人为延时。
             val processed = AtomicInteger(0)
             coroutineScope {
-                urls.forEach { url ->
+                repeat(PREFETCH_CONCURRENCY) { worker ->
                     launch {
-                        throttle.withPermit {
+                        var i = worker
+                        while (i < total) {
+                            val url = urls[i]
                             prefetchOne(url)
-                            // 进度口径：按「本轮已处理」计（成功失败都算处理过，不精确去重）
                             _state.value = PrefetchUiState.Running(
                                 done = processed.incrementAndGet(),
                                 total = total,
                             )
+                            i += PREFETCH_CONCURRENCY
                         }
                     }
                 }

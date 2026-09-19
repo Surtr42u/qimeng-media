@@ -186,7 +186,9 @@ class BackupViewModelTest {
         viewModel.onAutoBackupDirPicked("content://tree/primary%3Abackup")
         advanceUntilIdle()
         viewModel.importFromBackupDir()
-        advanceUntilIdle()
+        // 校验段已下 Default 线程（2026-09-20 审查：与导出序列化段同款真实线程跳板，
+        // advanceUntilIdle 不等真实线程池）——按导出用例同款纪律轮询到弹窗载荷落位
+        awaitUntil { viewModel.uiState.value.pendingImport != null }
         // 确认前零出网（Web 同构：pending 非 null 只开弹窗，确认弹窗保留）
         assertTrue(repository.importCalls.isEmpty())
         val pending = viewModel.uiState.value.pendingImport
