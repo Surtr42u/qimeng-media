@@ -26,6 +26,14 @@
 - **测试**：backup 包 8 用例（命名白名单+本地时间格式、轮转保留删最旧、并发触发断言恰好一次成功且执行器只进一次、删除/打开白名单零副作用、404 路径、建删闭环、惰性目录、外来文件隔离、组装校验）；httpapi 端到端 5 用例（真实临时库 VACUUM INTO 全链：201→快照文件头=SQLite 魔数→列表+schedule 回显→下载逐字节一致+attachment→删除 204→404 闭环；慢快照闸内二次触发 409 BACKUP_IN_PROGRESS；白名单 400；四端点无 token 401；retention=3 五次触发经端点面轮转到 3 份）；config 3 用例（默认值/yaml 覆盖/env 优先级+非法值报错）。
 - **门禁**（§4 原文四条全绿，输出原文存 %TEMP%\qimeng-qB-evidence\）：①make sdk（validate→go→ts→kotlin+sdk-lock 209 条）；②cd server && go test ./...（14 包 ok）&& go vet ./...（0 输出）；③make lint（redocly 0 error / golangci 0 issues / TS 18 warnings 0 errors——warnings 全部为 router.tsx/SearchPage 既有项，非本批文件）；④cd web && npx tsc --noEmit（0）&& npm run build（397ms 过）&& npm test（16 文件 162 用例全绿）。
 
+## feat(web): 维护页备份卡（2026-09-19 第三百三十九笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理）
+
+- **任务Q 批B Web 段**：维护页（/app/maintenance）新增「库文件快照备份」卡（新组件 `web/src/components/manage/DbBackupCard.tsx`，渲染逻辑 ≤120 行）：立即备份按钮（POST，进行中禁用+「快照中…」态，成功 toast 快照名+大小，409 进度错误原样提示）+ 快照列表（时间/大小，复用 .log-table 语言；空态提示）+ 逐行下载/删除（删除复用 ConfirmDialog 原型风格弹窗 danger 二次确认）；副标题展示调度摘要「自动备份：已启用 · 每 24h · 保留 7 份」（GET /backups 的 schedule 回显直出）+ 恢复=停服替换库文件提示行常驻。
+- **hooks 新文件 `web/src/hooks/use-db-backups.ts`**（铁律 7，组件零直接调 API）：useDbBackups/useCreateDbBackup/useDeleteDbBackup（失效 BACKUPS_QUERY_KEY）/useDownloadDbBackup——下载走裸 fetch+getAuthHeaders 旁路（与 use-backup 导出同款约定：二进制库文件 SDK 会按文本解析，裸 fetch 拿原始 Blob 落盘保证逐字节一致）。命名与 use-backup.ts（旧版 JSON 备份导入导出）明确区分，两套并存注释互指。
+- MaintenancePage.tsx 仅加挂载点与文档注释同步（组件化防页面超 300 行警戒线）；样式全部复用既有 token 类（.chart-card/.save-btn/.pill/.log-table/.grid-empty/.save-tip），零硬编码颜色。
+
 ## build(server): 直接依赖六项升级（x/crypto 0.57/sqlite 1.59/migrate 4.20.1 等）（2026-09-19 第三百三十七笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理）
