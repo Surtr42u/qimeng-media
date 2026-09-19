@@ -71,6 +71,35 @@ type UploadConfig struct {
 	MaxBytes int64 `yaml:"max_bytes"`
 }
 
+// 备份热备默认值（任务Q 批B v1 冻结口径）。三个常量是 backup 包与
+// httpapi 调度摘要端点（GET /api/v1/backups 的 schedule 回显）的共同来源。
+const (
+	// DefaultBackupEnabled 自动备份默认开启：快照只在本地磁盘多占一份库
+	// 副本，不停服不伤性能（VACUUM INTO 走 WAL），默认收益远大于成本；
+	// 不想要由部署方显式关闭。
+	DefaultBackupEnabled = true
+	// DefaultBackupInterval 定时快照间隔（默认 24 小时）：一天一份足够
+	// 家庭场景回滚粒度（媒体库以天为单位变化），再密只是徒增磁盘占用。
+	// 单位 time.Duration；首次快照在进程启动一个间隔后触发，启动后想要
+	// 立即备份走维护页手动触发（POST /api/v1/backups）。
+	DefaultBackupInterval = 24 * time.Hour
+	// DefaultBackupRetention 快照保留份数（默认 7 份）：一周回滚窗口，
+	// 超出自动删最旧；按库体积 7 份的磁盘占用可控（库文件量级远小于
+	// 媒体本身）。单位=份数。
+	DefaultBackupRetention = 7
+)
+
+// BackupConfig 备份热备配置（快照 = VACUUM INTO 库文件副本，存 DataDir/backups）。
+type BackupConfig struct {
+	// Enabled 定时快照开关；false = 不跑定时调度，但手动触发端点
+	//（POST /api/v1/backups）仍然可用（v1 口径：开关只管定时面）。
+	Enabled bool `yaml:"enabled"`
+	// Interval 定时快照间隔；<=0 = 用 DefaultBackupInterval。
+	Interval time.Duration `yaml:"interval"`
+	// Retention 快照保留份数；<=0 = 用 DefaultBackupRetention。
+	Retention int `yaml:"retention"`
+}
+
 // defaultUploadMaxBytes 是单文件上传上限默认值（2GB）。
 // 手机拍摄视频普遍 1~4GB，2GB 覆盖绝大多数短视频/截图场景又不至于
 // 让一次误传拖垮磁盘；真有超大文件需求由部署方显式调大。
@@ -129,6 +158,8 @@ type Config struct {
 	// 非空 = 每个注册库的 root_path 必须位于任一前缀之下（含前缀本身），
 	// 否则 POST /api/v1/libraries 返回 400。
 	AllowedLibraryRoots []string `yaml:"allowed_library_roots"`
+	// Backup 是备份热备（库文件在线快照）配置。
+	Backup BackupConfig `yaml:"backup"`
 }
 
 // Load 按优先级加载配置：内置默认值 < yaml 文件 < 环境变量。
@@ -145,6 +176,11 @@ func Load(path string) (*Config, error) {
 		Upload:    UploadConfig{MaxBytes: DefaultUploadMaxBytes},
 		Web:       WebConfig{StaticDir: defaultWebStaticDir},
 		TokenTTL:  DefaultTokenTTL,
+		Backup: BackupConfig{
+			Enabled:   DefaultBackupEnabled,
+			Interval:  DefaultBackupInterval,
+			Retention: DefaultBackupRetention,
+		},
 	}
 
 	if path != "" {
@@ -241,6 +277,28 @@ func applyEnv(cfg *Config) error {
 	// 与 os.PathListSeparator（Unix 为 ':'）——跨平台 compose 只需记住一种写法。
 	if v := os.Getenv("QIMENG_ALLOWED_LIBRARY_ROOTS"); v != "" {
 		cfg.AllowedLibraryRoots = splitPathList(v)
+	}
+	// 备份热备三键（QIMENG_BACKUP_*）：空值 = 未设置、保留 yaml/默认。
+	if v := os.Getenv("QIMENG_BACKUP_ENABLED"); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return fmt.Errorf("环境变量 QIMENG_BACKUP_ENABLED=%q 不是合法布尔值（1/true/0/false）: %w", v, err)
+		}
+		cfg.Backup.Enabled = b
+	}
+	if v := os.Getenv("QIMENG_BACKUP_INTERVAL"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			return fmt.Errorf("环境变量 QIMENG_BACKUP_INTERVAL=%q 不是合法时长（如 24h、12h30m）: %w", v, err)
+		}
+		cfg.Backup.Interval = d
+	}
+	if v := os.Getenv("QIMENG_BACKUP_RETENTION"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 {
+			return fmt.Errorf("环境变量 QIMENG_BACKUP_RETENTION=%q 不是合法正整数: %w", v, err)
+		}
+		cfg.Backup.Retention = n
 	}
 	return nil
 }

@@ -48,17 +48,18 @@ const (
 type BusinessMetrics struct {
 	registry *prometheus.Registry
 
-	httpRequests   *prometheus.CounterVec
-	httpDuration   *prometheus.HistogramVec
-	mediaBytes     *prometheus.CounterVec
-	uploads        *prometheus.CounterVec
-	uploadBytes    prometheus.Counter
-	sseConnections prometheus.Gauge
-	scanDuration   prometheus.Gauge
-	libraryFiles   *prometheus.GaugeVec
-	thumbQueue     prometheus.Gauge
-	trashItems     prometheus.Gauge
-	trashBytes     prometheus.Gauge
+	httpRequests      *prometheus.CounterVec
+	httpDuration      *prometheus.HistogramVec
+	mediaBytes        *prometheus.CounterVec
+	uploads           *prometheus.CounterVec
+	uploadBytes       prometheus.Counter
+	sseConnections    prometheus.Gauge
+	scanDuration      prometheus.Gauge
+	libraryFiles      *prometheus.GaugeVec
+	thumbQueue        prometheus.Gauge
+	trashItems        prometheus.Gauge
+	trashBytes        prometheus.Gauge
+	backupLastSuccess prometheus.Gauge
 }
 
 // Default 是进程级默认实例，供 httpapi 接线 /metrics 时使用；
@@ -126,6 +127,10 @@ func NewBusinessMetrics() *BusinessMetrics {
 			Name: "trash_bytes",
 			Help: "回收站当前占用字节数",
 		}),
+		backupLastSuccess: f.NewGauge(prometheus.GaugeOpts{
+			Name: "backup_last_success_timestamp",
+			Help: "最近一次成功备份快照的完成时刻（Unix 秒；0 = 本进程内尚无成功快照）",
+		}),
 	}
 }
 
@@ -174,6 +179,11 @@ func (m *BusinessMetrics) SetSSEConnections(n int64) {
 // SetScanDuration 设置上次全量扫描耗时（秒）。
 func (m *BusinessMetrics) SetScanDuration(seconds float64) {
 	m.scanDuration.Set(seconds)
+}
+
+// SetBackupLastSuccess 设置最近一次成功备份快照的完成时刻（Unix 秒）。
+func (m *BusinessMetrics) SetBackupLastSuccess(unixSec float64) {
+	m.backupLastSuccess.Set(unixSec)
 }
 
 // SetLibraryFiles 设置库内某类型文件数。

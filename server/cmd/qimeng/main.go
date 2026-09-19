@@ -22,6 +22,7 @@ import (
 	"syscall"
 	"time"
 
+	"qimeng-media/server/internal/backup"
 	"qimeng-media/server/internal/config"
 	"qimeng-media/server/internal/events"
 	"qimeng-media/server/internal/httpapi"
@@ -143,6 +144,24 @@ func main() {
 		logger.Info("ffmpeg/ffprobe 自检通过", "ffmpeg", ffBin, "ffprobe", fpBin)
 	}
 
+	// 备份热备管理器（任务Q 批B）：快照执行器 = store.VacuumInto 适配
+	// （SQL 属 store 边界，backup 包不碰数据库）；成功回调接 sysmon 指标
+	//（backup_last_success_timestamp，装配期单点接线，与 SSE gauge 同款）。
+	// 手动触发端点无论 enabled 与否都可用（开关只管定时面）。
+	backupMgr, err := backup.NewManager(backup.Options{
+		Dir: filepath.Join(cfg.DataDir, backup.DirName),
+		Snapshot: func(ctx context.Context, dest string) error {
+			return store.VacuumInto(conn, dest)
+		},
+		Retention: cfg.Backup.Retention,
+		Logger:    logger,
+		OnSuccess: func(at time.Time) { sysmon.Default.SetBackupLastSuccess(float64(at.Unix())) },
+	})
+	if err != nil {
+		logger.Error("组装备份管理器失败", "error", err)
+		os.Exit(1)
+	}
+
 	apiSrv, err := httpapi.New(httpapi.Deps{
 		Conn:        conn,
 		Queries:     queries,
@@ -152,6 +171,7 @@ func main() {
 		Scanner:     nil, // 下面用真扫描器适配器覆盖（先建 Server 再接 FinishScan 钩子）
 		SysStatus:   newSysStatusAdapter(sysCollector, queries, cfg.DataDir, version).snapshot,
 		Metrics:     sysmon.Default.Handler(),
+		Backup:      backupMgr,
 		MediaSecret: secret,
 		TokenTTL:    cfg.TokenTTL,
 		Logger:      logger,
@@ -196,6 +216,13 @@ func main() {
 			logger.Error("轮询扫描退出", "err", err)
 		}
 	}()
+
+	// 定时快照调度（任务Q 批B）：enabled=true 时按 backup.interval 周期
+	// 快照（首个快照在一个间隔后触发；退出随 ctx 取消）。手动触发端点
+	// 不受此开关影响。
+	if cfg.Backup.Enabled {
+		backupMgr.Start(ctx, cfg.Backup.Interval)
+	}
 
 	// errCh 把 goroutine 里的监听错误传回主流程——不允许 err 悄悄丢失。
 	errCh := make(chan error, 1)
