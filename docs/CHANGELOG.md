@@ -13,6 +13,17 @@
 ---
 ---
 ---
+## refactor(app): 备份页收敛两卡——导入导出直读直写备份目录+暂存机制退役（2026-09-19 第三百四十六笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理）
+
+- **用户二轮拍板记档（任务S §0，任务R 四入口装机实测后原话要义）**：「选项太多、有重复 UI；一键没必要；导入导出不选文件夹直接定向备份目录」——备份页从两卡+暂存卡收敛为**两张功能卡**：卡1「导入导出」（文案标明作用于**当前连接的端**）+ 卡2「自动备份」（开关/目录/上次备份时间），浏览数据同步区原位不动。
+- **卡1「导入导出」（直读直写备份目录，不弹 SAF 选择器）**：备份文件状态行（目录里有 qimeng_backup.json 显示 大小·修改时间，无则空态提示）；[导出]=直接覆盖写备份目录固定名文件（未设备份目录→横幅「请先在自动备份中设置备份目录」且**不出网**——连 GET /export 都不发；成功翻新「上次备份时间」=上次写目录时间，固定文件名覆盖式永远最新）；[导入]=直读该文件→BackupValidator 前置校验（64MB 三方双写闸保留）→**确认弹窗保留**（显示文件数/作者数防导错方向）→幂等合并导入当前连接端（目录无文件→横幅「备份目录还没有备份文件，请先在源端导出」；状态查得到但读失败→「读取文件失败」区分文案）。**「立即备份」按钮删除**（与导出同一写路径，重复入口）。
+- **实现收口（core:data）**：新增 `BackupDirAccess` 端口+SafBackupDirAccess 实现（备份目录固定名文件的写 openOutputStream("wt") 覆盖/读 openInputStream/元数据查询（SIZE·LAST_MODIFIED）单源收口，AutoBackupRunner 原写链路迁入——同一持久化 URI 读写都合法）；AutoBackupRunner 增 `readBackupBytes()/readFileStatus()`、`writeNow()` 改返回实写字节数（KB 口径源）并保持写成功翻新 lastRunMillis 语义；**导出序列化段保留在 Default 池**（reviewer P2 纪律随写链路迁入 runner）；AutoBackupRunner 的 Context 依赖随 SAF 细节出迁而移除。**备份出网仍走 @BackupClient 300s 长超时通道**（任务R 修复，SdkBackupRepository/NetworkModule 未动未回退）。
+- **暂存机制退役（git rm+引用清偿，grep 零残留）**：`SyncStagingRepository`（含 StagedBackupMeta/StagedBackup/InternalFileSyncStagingRepository 与 DataModule 绑定）整个删除；BackupViewModel 的 stageForSync/importStaged/staged/stagedMediaFiles/loadStagedMeta/stagedSummaryMediaFiles 及 UI 的 StagedSyncCard、跨端同步卡、「同步到另一端」入口删净；grep `syncStaging` 零命中、`staged` 仅剩无关的 `logoutWithStagedUrl`（U10-4 换址回填机制）与测试文件退役说明注释。
+- **feature:manage**：BackupViewModel 两卡状态机（exportToBackupDir/importFromBackupDir，导入复用 onFilePicked 单源校验链）；BackupScreen 退役 CreateDocument/OpenDocument 两选择器（屏幕层唯一平台胶水=OpenDocumentTree 目录授权+持久化）；BackupCards 新 ImportExportCard（状态行+导出/导入钮）、AutoBackupCard 删立即备份行、规则说明第四条暂存措辞改导出口径（「重新导出再导入会重复累计浏览统计」语义保留）。
+- **测试**：BackupViewModelTest 删 5 个暂存用例+「未选目录立即备份」用例，新增 5 用例（导出成功直写并刷新上次备份与状态行/未设备份目录导出提示且不出网/**目录无文件导入提示且不出网**/目录文件读取失败置读取横幅/目录有文件导入走校验确认链路），Unsafe 绕构造注入改 inject backupRepository/prefs/dirAccess 三字段（FakeBackupDirAccess 内存单文件替身）；BackupValidatorTest 未动。**定向门禁原文**：`./gradlew :feature:manage:testDebugUnitTest :core:data:testDebugUnitTest :core:network:testDebugUnitTest` → `BUILD SUCCESSFUL in 30s`，三模块合计 tests=184 failures=0 errors=0 skipped=0（BackupViewModelTest tests=14，BackupValidatorTest tests=9）。全量三连+R8 由任务S 收官批统一跑。
+
 ## fix(app): 暂存摘要解析移出主线程——进页全量解析冻结主线程（2026-09-19 第三百四十五笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理）

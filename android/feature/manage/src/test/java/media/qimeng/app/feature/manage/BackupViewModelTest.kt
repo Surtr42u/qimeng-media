@@ -1,6 +1,8 @@
 package media.qimeng.app.feature.manage
 
 import media.qimeng.app.core.data.backup.AutoBackupRunner
+import media.qimeng.app.core.data.backup.BackupDirAccess
+import media.qimeng.app.core.data.backup.BackupFileStatus
 import media.qimeng.app.core.data.events.EventClock
 import media.qimeng.app.core.data.events.PendingViewEventDao
 import media.qimeng.app.core.data.events.PendingViewEventEntity
@@ -10,14 +12,12 @@ import media.qimeng.app.core.data.events.ViewEventSendResult
 import media.qimeng.app.core.data.repository.BackupAutoPrefs
 import media.qimeng.app.core.data.repository.BackupAutoPrefsRepository
 import media.qimeng.app.core.data.repository.BackupRepository
-import media.qimeng.app.core.data.repository.StagedBackup
-import media.qimeng.app.core.data.repository.StagedBackupMeta
-import media.qimeng.app.core.data.repository.SyncStagingRepository
 import media.qimeng.app.core.testing.MainDispatcherRule
 import media.qimeng.sdk.models.LegacyBackupData
 import media.qimeng.sdk.models.LegacyBackupFile
 import media.qimeng.sdk.models.LegacyBackupImport
 import media.qimeng.sdk.models.LegacyImportResult
+import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.assertEquals
@@ -31,14 +31,14 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 
 /**
- * 备份导入/导出状态机锁定（U10-6b）：导出成功与 KB 反馈/导出防重/导入取消静默/确认调用/
- * 前置校验拒绝/错误态。fake 只在测试源集内（LibraryManageViewModelTest 同款模式）。
- * 注：导出 SAF 选位「用户取消（uri=null）」发生在屏幕层 launcher 回调（SettingsScreen
- * 先例），VM 层对应的静默语义 = 取消确认（dismissImport）不触发出网，在此锁定。
- * 2026-09-16 用户反馈：自动备份 prefs 回流/立即备份反馈入锁；「导出未上传」取数端
- * （exportPending/onExported）随按钮退役，不再有对应用例。
- * 2026-09-19 任务R 四入口重做：暂存卡 N 文件项（读暂存过 Validator 摘要）入锁；
- * 暂存成功提示措辞更新为「请切换到目标端登录后回来导入」。
+ * 备份导入/导出状态机锁定（U10-6b）：导出直写备份目录与 KB 反馈/未设目录不出网/导入直读
+ * 备份目录与无文件提示/导入取消静默/确认调用/前置校验拒绝/错误态。fake 只在测试源集内
+ * （LibraryManageViewModelTest 同款模式）。
+ * 注：「用户取消 SAF 选位」类屏幕层语义已随任务S 两卡收敛退役（导入导出不再弹选择器，
+ * 屏幕层仅剩目录授权）——VM 层对应的静默语义 = 取消确认（dismissImport）不触发出网，在此锁定。
+ * 2026-09-16 用户反馈：自动备份 prefs 回流入锁；「导出未上传」取数端随按钮退役，不再有对应用例。
+ * 2026-09-19 任务S 两卡收敛：跨端暂存机制退役（stageForSync/importStaged 及其用例删除）；
+ * 导出/导入改直读直写备份目录，新增「未设目录导出提示」「目录无文件导入提示」用例。
  */
 class BackupViewModelTest {
 
@@ -48,9 +48,9 @@ class BackupViewModelTest {
     private fun driveIdle() = mainDispatcherRule.testDispatcher.scheduler.advanceUntilIdle()
 
     /**
-     * 等 Default 池真实线程跳板收口（reviewer P1 返工后：暂存摘要解析/JSON 字节拷贝已离
-     * Main）：advanceUntilIdle 只推进调度器虚拟时间、不等真实线程池——按条件轮询到状态
-     * 落位，并防续体在 resetMain 后恢复污染下一用例（stageForSync/自动备份用例同款纪律）。
+     * 等 Default 池真实线程跳板收口（reviewer P1 返工后：导出序列化已离 Main）：advanceUntilIdle
+     * 只推进调度器虚拟时间、不等真实线程池——按条件轮询到状态落位，并防续体在 resetMain 后
+     * 恢复污染下一用例（导出/自动备份用例同款纪律）。
      */
     private fun kotlinx.coroutines.test.TestScope.awaitUntil(condition: () -> Boolean) {
         val deadline = System.currentTimeMillis() + 5_000
@@ -61,122 +61,143 @@ class BackupViewModelTest {
         advanceUntilIdle()
     }
 
-    private val exportFile = LegacyBackupFile(
-        format = "qimeng_backup",
-        schemaVersion = 1,
-        appIdentifier = "com.qimeng.media",
-        data = LegacyBackupData(),
-    )
-
     /** 合法信封字节（经 BackupValidator 真·前置校验，mock 不掺进校验链） */
     private val validBytes = """
         {"format": "qimeng_backup", "schemaVersion": 1, "appIdentifier": "com.qimeng.media",
          "data": {"authors": [{"authorId": "A1", "displayName": "作者一"}]}}
     """.trimIndent().toByteArray()
 
-    /** 含 2 个媒体文件的合法信封（暂存卡 N 文件项 = Validator 摘要 mediaFiles 数） */
-    private val stagedWithFilesBytes = """
-        {"format": "qimeng_backup", "schemaVersion": 1, "appIdentifier": "com.qimeng.media",
-         "data": {"mediaFiles": [
-           {"recordKey": "a.jpg", "fileName": "a.jpg", "mediaType": "image", "sizeBytes": 1, "modifiedAtMillis": 1},
-           {"recordKey": "b.jpg", "fileName": "b.jpg", "mediaType": "video", "sizeBytes": 2, "modifiedAtMillis": 2}
-         ]}}
-    """.trimIndent().toByteArray()
-
     private fun newViewModel(
         repository: FakeBackupRepository = FakeBackupRepository(),
         queue: ViewEventQueue = ViewEventQueue(FakeEventDao(), FakeEventSender(fail = false), clock = FixedEventClock),
         prefs: BackupAutoPrefsRepository = FakeBackupAutoPrefs(),
-        staging: FakeSyncStagingRepository = FakeSyncStagingRepository(),
+        dirAccess: FakeBackupDirAccess = FakeBackupDirAccess(),
     ) = Pair(
         BackupViewModel(
             backupRepository = repository,
             viewEventQueue = queue,
             autoBackupPrefs = prefs,
-            autoBackupRunner = newAutoBackupRunner(repository, prefs),
-            syncStaging = staging,
+            autoBackupRunner = newAutoBackupRunner(repository, prefs, dirAccess),
         ).also { driveIdle() },
         repository,
     )
 
     /**
-     * AutoBackupRunner 测试实例（Unsafe 绕过构造器）：其构造器要求非空 Context，JVM 单测
-     * 无真实对象可给（android.jar stub 的 Context 是抽象类，本仓库无 mock 依赖），而本测试组
-     * 只覆盖「未选目录 → writeNow 短路返回 false」路径，context 永不被触达——故绕过构造
-     * 仅注入 backupRepository/prefs 两个真实依赖，context 字段留 null。
+     * AutoBackupRunner 测试实例（Unsafe 绕过构造器）：其构造器要求注入 Context 依赖链
+     * （Hilt @ApplicationContext），JVM 单测无真实对象可给（android.jar stub 的 Context 是
+     * 抽象类，本仓库无 mock 依赖）——故绕过构造注入 backupRepository/prefs/dirAccess 三个
+     * 纯 Kotlin 依赖，SAF 细节由 fake BackupDirAccess 承载（任务S 起读/写路径均可测）。
      */
     private fun newAutoBackupRunner(
         repository: BackupRepository,
         prefs: BackupAutoPrefsRepository,
+        dirAccess: BackupDirAccess,
     ): AutoBackupRunner {
+        val injected = mapOf(
+            "backupRepository" to repository,
+            "prefs" to prefs,
+            "dirAccess" to dirAccess,
+        )
         val unsafeField = Class.forName("sun.misc.Unsafe").getDeclaredField("theUnsafe")
         unsafeField.isAccessible = true
         val unsafe = unsafeField.get(null)
         val allocate = unsafe.javaClass.getMethod("allocateInstance", Class::class.java)
         val runner = allocate.invoke(unsafe, AutoBackupRunner::class.java) as AutoBackupRunner
         AutoBackupRunner::class.java.declaredFields
-            .filter { it.name == "backupRepository" || it.name == "prefs" }
+            .filter { it.name in injected }
             .forEach { field ->
                 field.isAccessible = true
-                when (field.name) {
-                    "backupRepository" -> field.set(runner, repository)
-                    "prefs" -> field.set(runner, prefs)
-                }
+                field.set(runner, injected[field.name])
             }
         return runner
     }
 
     @Test
-    fun `导出成功出序列化内容且写入回执置KB反馈`() = runTest(mainDispatcherRule.testDispatcher) {
-        val (viewModel, repository) = newViewModel()
-        val export = viewModel.prepareExport()
-        driveIdle()
-        // 内容来自 GET /export/qimeng-backup 且已序列化为旧版信封 JSON
+    fun `导出成功直写备份目录并刷新上次备份与状态行`() = runTest(mainDispatcherRule.testDispatcher) {
+        val dirAccess = FakeBackupDirAccess()
+        val (viewModel, repository) = newViewModel(dirAccess = dirAccess)
+        viewModel.onAutoBackupDirPicked("content://tree/primary%3Abackup")
+        advanceUntilIdle()
+        viewModel.exportToBackupDir()
+        // writeToDir 内 withContext(Dispatchers.Default) 是真实线程跳板（序列化段；advanceUntilIdle
+        // 只推进调度器虚拟时间、不等真实线程池）：轮询等结果落位。必须在本用例内等协程收敛——
+        // 否则续体在 resetMain 之后才恢复，会以 UncaughtExceptions 污染下一用例
+        awaitUntil { viewModel.uiState.value.noticeMessage != null }
+        advanceUntilIdle()
+        // 内容来自 GET /export/qimeng-backup 且已序列化为旧版信封 JSON 直写备份目录
         assertEquals(1, repository.exportCalls.size)
-        assertNotNull(export)
-        assertTrue(export!!.json.contains("\"format\":\"qimeng_backup\""))
-        assertEquals(export.json.toByteArray(Charsets.UTF_8).size, export.sizeBytes)
-        assertTrue(viewModel.uiState.value.pendingExport != null)
-        // 屏幕层落盘回执：2048 字节 → Web (sizeBytes/1024).toFixed(0) KB 逐字
-        viewModel.onExportWritten(2048)
-        val state = viewModel.uiState.value
-        assertEquals("已导出 qimeng_backup.json（2 KB）", state.noticeMessage)
-        assertNull(state.pendingExport)
-        assertNull(state.errorMessage)
+        val written = dirAccess.writtenJsons.single()
+        assertTrue(written.contains("\"format\":\"qimeng_backup\""))
+        // Web (sizeBytes/1024).toFixed(0) KB 逐字（预期按实写字节数现算，不硬编码）
+        val expectedKb = (written.toByteArray(Charsets.UTF_8).size / 1024.0).roundToInt()
+        assertEquals("已导出 qimeng_backup.json（$expectedKb KB）", viewModel.uiState.value.noticeMessage)
+        assertFalse(viewModel.uiState.value.exporting)
+        assertNull(viewModel.uiState.value.errorMessage)
+        // 手动导出刷新「上次备份时间」（任务S 冻结语义）+ 状态行随 prefs 回流翻新
+        assertTrue(viewModel.uiState.value.autoBackupLastRunMillis > 0)
+        val status = viewModel.uiState.value.backupFileStatus
+        assertNotNull(status)
+        assertEquals(written.toByteArray(Charsets.UTF_8).size.toLong(), status!!.sizeBytes)
     }
 
     @Test
-    fun `导出防重进行中与待写未消费时不出第二次`() = runTest(mainDispatcherRule.testDispatcher) {
+    fun `未设备份目录导出提示且不出网`() {
         val (viewModel, repository) = newViewModel()
-        viewModel.prepareExport()
-        driveIdle()
-        // pendingExport 未被屏幕层消费前，再次 prepareExport 是 no-op（按钮已禁用，双保险）
-        assertNull(viewModel.prepareExport())
-        driveIdle()
-        assertEquals(1, repository.exportCalls.size)
+        viewModel.exportToBackupDir()
+        // 目录未设 → 冻结文案横幅；导出对象在备份目录里，此时连 GET /export 都不发
+        assertEquals("请先在自动备份中设置备份目录", viewModel.uiState.value.errorMessage)
+        assertEquals(0, repository.exportCalls.size)
+        assertFalse(viewModel.uiState.value.exporting)
     }
 
     @Test
-    fun `导出请求失败置错误态且无待写内容`() = runTest(mainDispatcherRule.testDispatcher) {
-        val (viewModel, _) = newViewModel(
-            FakeBackupRepository().apply { exportError = RuntimeException("boom") },
-        )
-        val export = viewModel.prepareExport()
-        driveIdle()
-        assertNull(export)
-        assertEquals("导出失败，请重试", viewModel.uiState.value.errorMessage)
-        assertNull(viewModel.uiState.value.pendingExport)
+    fun `目录无文件导入提示且不出网`() = runTest(mainDispatcherRule.testDispatcher) {
+        val (viewModel, repository) = newViewModel()
+        viewModel.onAutoBackupDirPicked("content://tree/primary%3Abackup")
+        advanceUntilIdle()
+        viewModel.importFromBackupDir()
+        advanceUntilIdle()
+        // 目录里没有备份文件 → 冻结文案横幅（提示先在源端导出）；零出网零弹窗
+        assertEquals("备份目录还没有备份文件，请先在源端导出", viewModel.uiState.value.errorMessage)
+        assertTrue(repository.importCalls.isEmpty())
+        assertNull(viewModel.uiState.value.pendingImport)
     }
 
     @Test
-    fun `写入失败置错误横幅并清待写`() = runTest(mainDispatcherRule.testDispatcher) {
-        val (viewModel, _) = newViewModel()
-        viewModel.prepareExport()
-        driveIdle()
-        viewModel.onExportWritten(null)
-        val state = viewModel.uiState.value
-        assertEquals("写入备份文件失败，请重试", state.errorMessage)
-        assertNull(state.pendingExport)
+    fun `目录文件读取失败置读取横幅不出网`() = runTest(mainDispatcherRule.testDispatcher) {
+        val dirAccess = FakeBackupDirAccess().apply {
+            file = validBytes
+            readError = true
+        }
+        val (viewModel, repository) = newViewModel(dirAccess = dirAccess)
+        viewModel.onAutoBackupDirPicked("content://tree/primary%3Abackup")
+        advanceUntilIdle()
+        viewModel.importFromBackupDir()
+        advanceUntilIdle()
+        // 状态查得到但字节读不出（授权被回收/IO 异常）→ 与「无文件」区分的可读文案
+        assertEquals("读取文件失败，请重试", viewModel.uiState.value.errorMessage)
+        assertTrue(repository.importCalls.isEmpty())
+    }
+
+    @Test
+    fun `目录有文件导入走校验确认链路`() = runTest(mainDispatcherRule.testDispatcher) {
+        val dirAccess = FakeBackupDirAccess().apply { file = validBytes }
+        val (viewModel, repository) = newViewModel(dirAccess = dirAccess)
+        viewModel.onAutoBackupDirPicked("content://tree/primary%3Abackup")
+        advanceUntilIdle()
+        viewModel.importFromBackupDir()
+        advanceUntilIdle()
+        // 确认前零出网（Web 同构：pending 非 null 只开弹窗，确认弹窗保留）
+        assertTrue(repository.importCalls.isEmpty())
+        val pending = viewModel.uiState.value.pendingImport
+        assertNotNull(pending)
+        assertEquals("qimeng_backup.json", pending!!.summary.fileName)
+        assertEquals(1, pending.summary.authors)
+        // 确认后走同一幂等导入
+        viewModel.confirmImport()
+        advanceUntilIdle()
+        assertEquals(1, repository.importCalls.size)
+        assertNull(viewModel.uiState.value.pendingImport)
     }
 
     @Test
@@ -292,91 +313,7 @@ class BackupViewModelTest {
         assertEquals(1, dao.rows.size) // 本地优先：失败不丢行
     }
 
-    // ---------- 跨端同步暂存（2026-09-18 用户拍板：App 内暂存中转，免来回导文件） ----------
-
-    @Test
-    fun `跨端同步 - 暂存当前库落暂存仓并置KB反馈`() = runTest(mainDispatcherRule.testDispatcher) {
-        val staging = FakeSyncStagingRepository()
-        val (vm, repository) = newViewModel(staging = staging)
-        vm.stageForSync()
-        // buildExportJson 内 withContext(Dispatchers.Default) 是真实线程跳板（advanceUntilIdle
-        // 只推进调度器虚拟时间、不等真实线程池）：轮询等暂存收口（busy 复位=结果已进状态），
-        // 防续体在 resetMain 后恢复污染下一用例（自动备份用例同款范式）
-        val deadline = System.currentTimeMillis() + 5_000
-        while (vm.uiState.value.stagingBusy && System.currentTimeMillis() < deadline) {
-            advanceUntilIdle()
-            Thread.sleep(10)
-        }
-        advanceUntilIdle()
-        assertEquals(1, staging.stageCalls.size)
-        assertEquals(1, repository.exportCalls.size) // 与导出备份共用同一段序列化
-        val staged = vm.uiState.value.staged
-        assertNotNull(staged)
-        assertTrue(staged!!.sourceUrl.isNotEmpty()) // 来源端记档（实现方自取，防导错方向）
-        assertTrue(vm.uiState.value.noticeMessage!!.startsWith("已暂存（"))
-        // 暂存卡 N 文件项与文件导入同源 Validator（fake 信封无 mediaFiles → 0）
-        assertEquals(0, vm.uiState.value.stagedMediaFiles)
-        assertFalse(vm.uiState.value.stagingBusy)
-    }
-
-    @Test
-    fun `跨端同步 - 进页暂存回流含元数据与N文件数且不出网`() = runTest(mainDispatcherRule.testDispatcher) {
-        val staging = FakeSyncStagingRepository().apply { stagedJson = stagedWithFilesBytes.decodeToString() }
-        val (vm, repository) = newViewModel(staging = staging)
-        // 摘要解析在 Default 真实线程池（reviewer P1 返工），轮询等回填落位
-        awaitUntil { vm.uiState.value.stagedMediaFiles != null }
-        // 暂存卡数据（任务R：来自/时间/大小在 meta，N 文件 = Validator 摘要）
-        val staged = vm.uiState.value.staged
-        assertNotNull(staged)
-        assertEquals(2, vm.uiState.value.stagedMediaFiles)
-        assertTrue(repository.importCalls.isEmpty()) // 摘要回流是本地读，零出网
-    }
-
-    @Test
-    fun `跨端同步 - 暂存内容未过校验时回流元数据但隐藏N`() = runTest(mainDispatcherRule.testDispatcher) {
-        val staging = FakeSyncStagingRepository().apply { stagedJson = "不是json" }
-        val (vm, _) = newViewModel(staging = staging)
-        // 元数据仍在（卡照常展示），N 项隐藏（null）；导入侧会再完整校验出可读错误。
-        // 校验未过时摘要终值与初值同 null、无状态可观察——固定短轮询排空 Default 池续体
-        // （µs 级解析，20×10ms 远超量级），防其在 resetMain 后恢复污染下一用例
-        repeat(20) {
-            advanceUntilIdle()
-            Thread.sleep(10)
-        }
-        advanceUntilIdle()
-        assertNotNull(vm.uiState.value.staged)
-        assertNull(vm.uiState.value.stagedMediaFiles)
-    }
-
-    @Test
-    fun `跨端同步 - 导入暂存走与文件导入同一条确认链路`() = runTest(mainDispatcherRule.testDispatcher) {
-        val staging = FakeSyncStagingRepository().apply { stagedJson = validBytes.decodeToString() }
-        val (vm, repository) = newViewModel(staging = staging)
-        vm.importStaged()
-        // JSON→字节拷贝在 Default 真实线程池（reviewer P1 返工），轮询等确认弹窗落位
-        awaitUntil { vm.uiState.value.pendingImport != null }
-        // 确认前零出网：与 onFilePicked 同构，只开弹窗
-        assertTrue(repository.importCalls.isEmpty())
-        val pending = vm.uiState.value.pendingImport
-        assertNotNull(pending)
-        assertEquals("qimeng_backup.json", pending!!.summary.fileName)
-        // 确认后走同一幂等导入
-        vm.confirmImport()
-        driveIdle()
-        assertEquals(1, repository.importCalls.size)
-        assertNull(vm.uiState.value.pendingImport)
-    }
-
-    @Test
-    fun `跨端同步 - 无暂存时导入置错误横幅不出网`() = runTest(mainDispatcherRule.testDispatcher) {
-        val (vm, repository) = newViewModel()
-        vm.importStaged()
-        driveIdle()
-        assertEquals("暂存数据不存在或已损坏，请重新暂存", vm.uiState.value.errorMessage)
-        assertTrue(repository.importCalls.isEmpty())
-    }
-
-    // ---------- 自动备份（2026-09-16 用户反馈：prefs 回流 + 立即备份反馈可见） ----------
+    // ---------- 自动备份（2026-09-16 用户反馈：prefs 回流；任务S：手动触发并入卡1「导出」） ----------
 
     @Test
     fun `自动备份 - prefs状态回流进UI状态且开关目录写回`() = runTest(mainDispatcherRule.testDispatcher) {
@@ -394,27 +331,6 @@ class BackupViewModelTest {
 
         assertTrue(vm.uiState.value.autoBackupEnabled)
         assertEquals("content://tree/primary%3Abackup", vm.uiState.value.autoBackupDirUri)
-    }
-
-    @Test
-    fun `自动备份 - 未选目录立即备份失败有反馈且busy复位`() = runTest(mainDispatcherRule.testDispatcher) {
-        val (vm, _) = newViewModel()
-        advanceUntilIdle()
-        vm.writeAutoBackupNow()
-        // writeNow 内部 withContext(Dispatchers.IO) 是真实线程跳板（advanceUntilIdle 只推进
-        // 调度器虚拟时间、不等真实 IO）：轮询等写回执落位（busy 复位=结果已进状态）。必须在
-        // 本用例内等协程收敛——否则续体在 resetMain 之后才恢复，会以 UncaughtExceptions
-        // 污染下一用例（与其他直接调 suspend 方法的用例不同，这里无法零等待收口）
-        val deadline = System.currentTimeMillis() + 5_000
-        while (vm.uiState.value.autoBackupBusy && System.currentTimeMillis() < deadline) {
-            advanceUntilIdle()
-            Thread.sleep(10)
-        }
-        advanceUntilIdle()
-        // 无目录可写 → runner false → 错误横幅可见（结果反馈不静默）、防重位复位
-        assertEquals("自动备份写入失败，请重试（请先选择备份目录）", vm.uiState.value.errorMessage)
-        assertFalse(vm.uiState.value.autoBackupBusy)
-        assertNull(vm.uiState.value.noticeMessage)
     }
 
     /** 预置一条未上传事件（幂等键合规，避免触发懒回填路径干扰断言） */
@@ -543,27 +459,24 @@ private class FakeBackupAutoPrefs : BackupAutoPrefsRepository {
     }
 }
 
-/** 跨端暂存替身：内存单份暂存（覆盖写语义与实现一致），可预置内容与清空 */
-private class FakeSyncStagingRepository : SyncStagingRepository {
-    var stagedJson: String? = null
-    var stagedSource: String? = null
-    val stageCalls = mutableListOf<String>()
+/** 备份目录访问替身（任务S 两卡收敛）：内存单文件（null=无文件），读写记录与可编程读失败 */
+private class FakeBackupDirAccess : BackupDirAccess {
+    var file: ByteArray? = null
+    var readError: Boolean = false
+    val writtenJsons = mutableListOf<String>()
 
-    override suspend fun stage(json: String): StagedBackupMeta {
-        stageCalls.add(json)
-        stagedJson = json
-        stagedSource = "http://192.168.1.8:8420"
-        return StagedBackupMeta(
-            stagedAtMillis = 1_000L,
-            sourceUrl = stagedSource!!,
-            sizeBytes = json.toByteArray(Charsets.UTF_8).size.toLong(),
-        )
+    override suspend fun fileStatus(dirUri: String): BackupFileStatus? =
+        file?.let { BackupFileStatus(sizeBytes = it.size.toLong(), lastModifiedMillis = 1_000L) }
+
+    override suspend fun readBytes(dirUri: String): ByteArray? {
+        if (readError) return null
+        return file
     }
 
-    override suspend fun loadStaged(): StagedBackup? = stagedJson?.let {
-        StagedBackup(
-            meta = StagedBackupMeta(1_000L, stagedSource ?: "", it.length.toLong()),
-            json = it,
-        )
+    override suspend fun writeBytes(dirUri: String, json: String): Long? {
+        writtenJsons.add(json)
+        val bytes = json.toByteArray(Charsets.UTF_8)
+        file = bytes
+        return bytes.size.toLong()
     }
 }
