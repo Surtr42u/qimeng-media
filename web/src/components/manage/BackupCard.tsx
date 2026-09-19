@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 import { backupSummaryText, parseLegacyBackupFile, type LegacyBackupSummary } from '@/lib/backup'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { useExportQimengBackup, useImportQimengBackup } from '@/hooks/use-backup'
+import { UploadDropIcon } from '@/components/manage/UploadDropIcon'
 import type { LegacyBackupImport } from '@/api/generated'
 
 /**
@@ -91,20 +92,7 @@ export function BackupCard() {
           <b>导入中…</b>
         ) : (
           <>
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              style={{ width: 22, height: 22, display: 'block', margin: '0 auto 6px', color: 'var(--qm-primary)' }}
-              aria-hidden="true"
-            >
-              <path d="M12 16V4" />
-              <path d="m6 9 6-6 6 6" />
-              <path d="M4 20h16" />
-            </svg>
+            <UploadDropIcon />
             <b>选择备份文件导入恢复</b>
             <div>点击选择旧版导出的 qimeng_backup.json，确认后按唯一键合并导入（不删除现有数据）</div>
           </>

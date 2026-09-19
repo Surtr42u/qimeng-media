@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
 import type { HistoryItem } from '@/api/generated'
 import { MediaCard } from '@/components/media/MediaCard'
@@ -10,7 +10,7 @@ import { useAuthors, useToggleFollow } from '@/hooks/use-authors'
 import { useHistoryInfinite } from '@/hooks/use-history'
 import { useLibraries } from '@/hooks/use-libraries'
 import { useStatsOverview } from '@/hooks/use-stats'
-import { LOCALE_ZH } from '@/lib/constants'
+import { DEFAULT_PAGE_SIZE, LOCALE_ZH } from '@/lib/constants'
 import { formatBytes, formatDateTime, formatDuration } from '@/lib/format'
 import { groupHistory } from '@/lib/history-grouping'
 import { assetDetail } from '@/lib/route-keys'
@@ -38,7 +38,8 @@ function HistCardItem({ item, onClick }: { item: HistRenderItem; onClick?: () =>
   return (
     <article className="hist-card" onClick={onClick} role={onClick ? 'button' : undefined}>
       <div className="hc-cover">
-        <img src={item.thumbUrl ?? ''} alt="" />
+        {/* 与 MediaCard 同款优化口径：lazy + 异步解码避免滚动掉帧 */}
+        <img src={item.thumbUrl ?? ''} alt="" loading="lazy" decoding="async" />
         {item.isDone ? <span className="hc-done">已看完</span> : null}
         <span className="hc-time">{formatDateTime(item.lastViewedAt)}</span>
         {item.durationMs ? <span className="hc-duration">{formatDuration(item.durationMs)}</span> : null}
@@ -54,16 +55,26 @@ export default function MinePage() {
   const [tab, setTab] = useState<MineTab>('follow')
   const [query, setQuery] = useState('')
 
+  // 稳定打开回调（MediaCard memo 生效前提，2026-09-20 全库审查）
+  const openCard = useCallback(
+    (id?: string) => {
+      if (id) navigate(assetDetail(id))
+    },
+    [navigate],
+  )
+
   const { data: libraries } = useLibraries()
   const { data: overview } = useStatsOverview()
   const { data: authors = [], isLoading: authorsLoading } = useAuthors()
   const toggleFollow = useToggleFollow()
 
-  // 收藏：favoriteAt 倒序（协议 sort=favoriteAt 仅在收藏筛选下语义成立，DOMAIN_RULES §3）
-  const favQuery = useAssetsInfinite({ favorite: true, sort: 'favoriteAt', order: 'desc' })
+  // 收藏：favoriteAt 倒序（协议 sort=favoriteAt 仅在收藏筛选下语义成立，DOMAIN_RULES §3）。
+  // enabled 按 tab 挂起（2026-09-20 审查：此前进页即三连发——默认关注 tab 下
+  // 收藏 60 条+历史 60 条白打；切换时再拉，缓存命中即时显示）
+  const favQuery = useAssetsInfinite({ favorite: true, sort: 'favoriteAt', order: 'desc' }, tab === 'fav')
   const favItems = useMemo(() => favQuery.data?.pages.flatMap((p) => p.items ?? []) ?? [], [favQuery.data])
 
-  const histQuery = useHistoryInfinite()
+  const histQuery = useHistoryInfinite(DEFAULT_PAGE_SIZE, tab === 'history')
   const histItems = useMemo(
     () => histQuery.data?.pages.flatMap((p) => p.items ?? []) ?? [],
     [histQuery.data],
@@ -71,7 +82,8 @@ export default function MinePage() {
 
   // E3 无感加载哨兵 ×2（收藏/历史两 pane 各自，对齐首页 use-auto-more 语义：
   // 触底提前 6 项拉下一页）。onHit 双守卫：isFetchingNextPage 防重复拉页；
-  // isPlaceholderData 前瞻防混拼（两 hook 均未配 placeholderData 恒 false）。
+  // isPlaceholderData 前瞻防混拼（useAssetsInfinite 已配 keepPreviousData，
+  // 守卫在换键期间真实生效；useHistoryInfinite 无换键场景恒 false）。
   // pane 切换走 hidden 属性——display:none 下 IO 恒不相交，隐藏 pane 不会误拉。
   const favSentinelRef = useAutoMore(favQuery.hasNextPage, () => {
     if (!favQuery.isFetchingNextPage && !favQuery.isPlaceholderData) void favQuery.fetchNextPage()
@@ -154,11 +166,7 @@ export default function MinePage() {
         </div>
         <div className="media-grid" id="favGrid">
           {favItems.map((f) => (
-            <MediaCard
-              key={f.id}
-              {...assetToCard(f)}
-              onClick={() => f.id && navigate(assetDetail(f.id))}
-            />
+            <MediaCard key={f.id} {...assetToCard(f)} onOpen={openCard} />
           ))}
           {favItems.length === 0 && !favQuery.isFetching ? (
             <p className="grid-empty">暂无收藏内容</p>

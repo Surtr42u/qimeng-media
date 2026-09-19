@@ -5,18 +5,19 @@
  */
 
 import { useLocation, useNavigate } from 'react-router'
-import { ALBUMS_PATH, HOME_PATH } from '@/lib/route-keys'
+import { ALBUMS_PATH, DATA_PATH, HOME_PATH, MAINTENANCE_PATH, MINE_PATH, SETTINGS_PATH } from '@/lib/route-keys'
 import { toggleTheme } from '@/lib/theme'
 import {
   AlbumsIcon, BackIcon, DataIcon, HomeIcon, MineIcon, MoonIcon, SettingsIcon, WrenchIcon,
 } from './icons'
 
 const MAIN_NAV = [
-  // F2/F5 审查清偿：主导航路由串全走 route-keys 常量（路由键唯一来源）
+  // F2/F5 审查清偿：主导航路由串全走 route-keys 常量（路由键唯一来源）；
+  // 2026-09-20 全库审查补齐 mine/data 与底部 maintenance/settings 四处收口
   { to: HOME_PATH, label: '首页', Icon: HomeIcon },
   { to: ALBUMS_PATH, label: '相册', Icon: AlbumsIcon },
-  { to: '/app/mine', label: '我的', Icon: MineIcon },
-  { to: '/app/data', label: '数据', Icon: DataIcon },
+  { to: MINE_PATH, label: '我的', Icon: MineIcon },
+  { to: DATA_PATH, label: '数据', Icon: DataIcon },
 ] as const
 
 export function Sidebar() {
@@ -51,10 +52,10 @@ export function Sidebar() {
         <li className="settings-item" title="明暗主题" onClick={toggleTheme}>
           <MoonIcon />
         </li>
-        <li className="settings-item" title="维护" onClick={() => navigate('/app/maintenance')}>
+        <li className="settings-item" title="维护" onClick={() => navigate(MAINTENANCE_PATH)}>
           <WrenchIcon />
         </li>
-        <li className="settings-item" title="设置" onClick={() => navigate('/app/settings')}>
+        <li className="settings-item" title="设置" onClick={() => navigate(SETTINGS_PATH)}>
           <SettingsIcon />
         </li>
       </ul>

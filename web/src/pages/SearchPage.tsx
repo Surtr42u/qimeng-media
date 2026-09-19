@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 import { MediaCard } from '@/components/media/MediaCard'
 import { InfiniteTail } from '@/components/media/InfiniteTail'
@@ -53,13 +53,25 @@ export default function SearchPage() {
   const { data: totalAnimated = 0 } = useAssetsTotal('animated_image', pk)
   const { data: totalImage = 0 } = useAssetsTotal('image', pk)
 
-  // 新搜索整体重置（数据态重置，非 DOM 操作，属 useEffect 合理场景；panel.reset 引用稳定）
-  const resetPanel = panel.reset
-  useEffect(() => {
+  // 新搜索词整体重置：React 官方「渲染期调整状态」模式（同 CollectionPage
+  // 作者切换重置的先例）——重置发生在 q 变化的同一帧渲染内。此前 useEffect
+  // 版本首帧会先以「旧筛选 + 新 q」发一针过渡请求再换键重取（2026-09-20
+  // 全库审查清偿：每次换词多一次无效请求 + 过渡期列表按旧筛选收窄闪烁）。
+  const [prevQ, setPrevQ] = useState(q)
+  if (prevQ !== q) {
+    setPrevQ(q)
     setPage(newSearchPageState())
     setPanelOpen(false)
-    resetPanel()
-  }, [q, resetPanel])
+    panel.reset()
+  }
+
+  // 稳定打开回调：MediaCard 已 memo 化，onOpen 引用稳定才能让浅等比较生效
+  const openCard = useCallback(
+    (id?: string) => {
+      if (id) navigate(assetDetail(id))
+    },
+    [navigate],
+  )
 
   const setPageField = <K extends keyof SearchPageState>(key: K, value: SearchPageState[K]) =>
     setPage((s) => ({ ...s, [key]: value }))
@@ -81,7 +93,7 @@ export default function SearchPage() {
 
   // E3 无感加载哨兵：enabled 与原 pill 的 when 同口径（q==='' 不挂不拉）。
   // onHit 双守卫：isFetchingNextPage 防重复拉页；isPlaceholderData 前瞻防混拼
-  // （useAssetsInfinite 未配 placeholderData 恒 false，守卫零成本）。
+  // （useAssetsInfinite 已配 keepPreviousData，换词占位期间守卫真实生效）。
   const sentinelRef = useAutoMore(q !== '' && hasNextPage, () => {
     if (!isFetchingNextPage && !isPlaceholderData) void fetchNextPage()
   })
@@ -152,11 +164,7 @@ export default function SearchPage() {
           <p className="grid-empty">在顶部搜索框输入关键词开始搜索</p>
         ) : items.length ? (
           items.map((a) => (
-            <MediaCard
-              key={a.id}
-              {...assetToCard(a)}
-              onClick={() => a.id && navigate(assetDetail(a.id))}
-            />
+            <MediaCard key={a.id} {...assetToCard(a)} onOpen={openCard} />
           ))
         ) : isLoading ? (
           <p className="grid-empty">加载中…</p>

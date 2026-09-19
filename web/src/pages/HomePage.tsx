@@ -1,12 +1,12 @@
 import { DEFAULT_PAGE_SIZE, QM_REFRESH_EVENT } from '@/lib/constants'
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 import type { AssetSummary } from '@/api/generated'
 import { MediaCard } from '@/components/media/MediaCard'
 import { assetToCard, useRecommendations } from '@/hooks/use-assets'
 import { useRankingsInfinite } from '@/hooks/use-stats'
 import { useAutoMore } from '@/hooks/use-auto-more'
-import { parseRankPeriod, type HomeRankPeriod, type HomeTabKey } from '@/lib/home-tabs'
+import { parseHomeTab, parseRankPeriod, type HomeRankPeriod } from '@/lib/home-tabs'
 import { assetDetailWithSearch, type AssetNavState } from '@/lib/route-keys'
 
 /**
@@ -27,7 +27,8 @@ import { assetDetailWithSearch, type AssetNavState } from '@/lib/route-keys'
 export default function HomePage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const tab: HomeTabKey = (searchParams.get('tab') as HomeTabKey) ?? 'recommend'
+  // 非法 ?tab= 值回退推荐（parseHomeTab），不再静默落进 cos 分支
+  const tab = parseHomeTab(searchParams.get('tab'))
   const period = parseRankPeriod(searchParams.get('period'))
 
   // E5：nav = 当前已加载流的 id 快照 + 所点下标（StreamCards 组装），经
@@ -146,8 +147,10 @@ function StreamCards({ stream, onOpen, emptyHint, footer, endHint, gridClassName
 }) {
   const { items, isLoading, isFetchingNextPage, hasNextPage, isPlaceholderData, isError, refetch, sentinelRef } = stream
   // E5 批次导航快照：当前已渲染（去重后）流的 id 序与所点下标。协议 id 可空：
-  // 无 id 项不可跳详情也不入快照（快照与可点项保持同序同集）
-  const navContext = (() => {
+  // 无 id 项不可跳详情也不入快照（快照与可点项保持同序同集）。useMemo 化：
+  // 流状态 tick（拉页中/失效中）也走本组件渲染，O(n) Map 不该每次重建
+  // （AlbumsPage 同构代码已 memo，2026-09-20 全库审查对齐）。
+  const navContext = useMemo(() => {
     const ids: string[] = []
     const indexAt = new Map<string, number>()
     for (const a of items) {
@@ -156,22 +159,23 @@ function StreamCards({ stream, onOpen, emptyHint, footer, endHint, gridClassName
       ids.push(a.id)
     }
     return { ids, indexAt }
-  })()
+  }, [items])
+  // 稳定打开回调（MediaCard memo 生效前提）：items 不变的渲染 tick 中引用不变
+  const openCard = useCallback(
+    (id?: string) => {
+      if (id === undefined) {
+        onOpen(undefined)
+        return
+      }
+      onOpen(id, { ids: navContext.ids, index: navContext.indexAt.get(id) ?? 0 })
+    },
+    [onOpen, navContext],
+  )
   return (
     <>
       <div className={gridClassName}>
         {items.map((a) => (
-          <MediaCard
-            key={a.id}
-            {...assetToCard(a)}
-            onClick={() => {
-              if (a.id === undefined) {
-                onOpen(undefined)
-                return
-              }
-              onOpen(a.id, { ids: navContext.ids, index: navContext.indexAt.get(a.id) ?? 0 })
-            }}
-          />
+          <MediaCard key={a.id} {...assetToCard(a)} onOpen={openCard} />
         ))}
       </div>
       {/* 提示行区（网格之下全宽直挂）：加载中/错误/空态/页脚/到底了/哨兵。

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import type { AssetSummary } from '@/api/generated'
 import { MediaCard } from '@/components/media/MediaCard'
@@ -136,7 +136,7 @@ export default function AlbumsPage() {
 
   // E3 无感加载哨兵（对齐首页 use-auto-more 语义：触底提前 6 项拉下一页）。
   // onHit 双守卫：isFetchingNextPage 防重复拉页；isPlaceholderData 前瞻防混拼
-  // （useAssetsInfinite 未配 placeholderData 恒 false，守卫零成本）。
+  // （useAssetsInfinite 已配 keepPreviousData，换键占位期间守卫真实生效）。
   const sentinelRef = useAutoMore(hasNextPage, () => {
     if (!isFetchingNextPage && !isPlaceholderData) void fetchNextPage()
   })
@@ -164,17 +164,23 @@ export default function AlbumsPage() {
     return { ids, indexAt }
   }, [groups])
 
-  const openDetail = (id?: string): void => {
-    if (!id) return
-    // 叠加组导航统一入口 assetDetailWithSearch（search 原样携带，现相册页无
-    // 查询串即空串不加 ?；日后相册页做 URL 保态时此处自动续接）
-    const navState: OverlayDetailState = {
-      ids: navContext.ids,
-      index: navContext.indexAt.get(id) ?? 0,
-      backdrop: ALBUMS_PATH,
-    }
-    navigate(assetDetailWithSearch(id, search), { state: navState })
-  }
+  // useCallback 稳定引用：MediaCard 已 memo 化，renderCard 的 onOpen 引用
+  // 稳定后「面板开合等兄弟 state 变化 → 数百卡片全量重渲染」消失（2026-09-20
+  // 全库审查）。依赖均为 memo 化值（navContext 随 groups=items 变化）。
+  const openDetail = useCallback(
+    (id?: string): void => {
+      if (!id) return
+      // 叠加组导航统一入口 assetDetailWithSearch（search 原样携带，现相册页无
+      // 查询串即空串不加 ?；日后相册页做 URL 保态时此处自动续接）
+      const navState: OverlayDetailState = {
+        ids: navContext.ids,
+        index: navContext.indexAt.get(id) ?? 0,
+        backdrop: ALBUMS_PATH,
+      }
+      navigate(assetDetailWithSearch(id, search), { state: navState })
+    },
+    [navContext, search, navigate],
+  )
 
   // 四维 facets：每个请求"缺自身参数"（服务端排自身计数）。
   // partition 恒显式传参（不再依赖服务端缺省=all 的隐式行为）。
@@ -277,7 +283,7 @@ export default function AlbumsPage() {
     <MediaCard
       key={a.id}
       {...assetToCard(a)}
-      onClick={() => openDetail(a.id)}
+      onOpen={openDetail}
     />
   )
 
