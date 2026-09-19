@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"qimeng-media/server/internal/auth"
+	"qimeng-media/server/internal/backup"
 	"qimeng-media/server/internal/config"
 	"qimeng-media/server/internal/events"
 	"qimeng-media/server/internal/httpapi/gen"
@@ -113,6 +114,9 @@ type Deps struct {
 	// 挂载点与版本号由 main 决定）；nil 时 /system/status 返回 503，
 	// 与 noScanner 同语义：显式错误优于隐式 nil panic。
 	SysStatus func(ctx context.Context) (sysmon.SystemStatus, error)
+	// Backup 备份快照管理器（调度/轮转/文件管理在 backup 包）；nil 时
+	// /backups* 四端点返回 503（与 SysStatus 同语义：显式优于隐式 panic）。
+	Backup *backup.Manager
 	// Metrics 是 Prometheus 文本输出 handler（sysmon.Default.Handler()）；
 	// nil 时 /metrics 返回 503。
 	Metrics http.HandlerFunc
@@ -139,6 +143,7 @@ type Server struct {
 	thumbs    *thumbnail.Generator
 	scanner   Scanner
 	sysStatus func(ctx context.Context) (sysmon.SystemStatus, error)
+	backup    *backup.Manager
 	metrics   http.HandlerFunc
 	secret    []byte
 	ttl       time.Duration
@@ -203,6 +208,7 @@ func New(deps Deps) (*Server, error) {
 		thumbs:         deps.Thumbs,
 		scanner:        sc,
 		sysStatus:      deps.SysStatus,
+		backup:         deps.Backup,
 		metrics:        deps.Metrics,
 		secret:         deps.MediaSecret,
 		ttl:            ttl,

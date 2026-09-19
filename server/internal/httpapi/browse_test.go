@@ -30,6 +30,7 @@ import (
 	"github.com/google/uuid"
 
 	"qimeng-media/server/internal/authoring"
+	"qimeng-media/server/internal/backup"
 	"qimeng-media/server/internal/config"
 	"qimeng-media/server/internal/events"
 	"qimeng-media/server/internal/httpapi/gen"
@@ -204,11 +205,33 @@ func newTestEnvRaw(t *testing.T) *testEnv {
 
 	clock := &fakeClock{now: time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)}
 	secret := []byte("test-secret-0123456789abcdef0123456789")
-	cfg := &config.Config{DataDir: dataDir, Thumbnail: config.ThumbnailConfig{LongSide: 512}}
+	// Backup 三键对齐生产默认值（任务Q 批B）：备份端点用例消费 schedule
+	// 回显，其余用例零感知。
+	cfg := &config.Config{
+		DataDir:   dataDir,
+		Thumbnail: config.ThumbnailConfig{LongSide: 512},
+		Backup: config.BackupConfig{
+			Enabled:   config.DefaultBackupEnabled,
+			Interval:  config.DefaultBackupInterval,
+			Retention: config.DefaultBackupRetention,
+		},
+	}
 	fscan := &fakeScanner{q: q, libID: lib.ID}
+	// 备份管理器与生产 main 同款装配：快照执行器 = store.VacuumInto（真实
+	// 临时库跑通 VACUUM INTO 全链），时钟复用 fakeClock。
+	backupMgr, err := backup.NewManager(backup.Options{
+		Dir:       filepath.Join(dataDir, backup.DirName),
+		Snapshot:  func(ctx context.Context, dest string) error { return store.VacuumInto(conn, dest) },
+		Retention: cfg.Backup.Retention,
+		Now:       clock.Now,
+	})
+	if err != nil {
+		t.Fatalf("组装备份管理器失败: %v", err)
+	}
 	apisrv, err := New(Deps{
 		Conn: conn, Queries: q, Bus: events.NewBus(nil, 0), Cfg: cfg,
 		Thumbs: thumbnail.NewGenerator(dataDir, nil, thumbnail.Options{}), Scanner: fscan,
+		Backup:      backupMgr,
 		MediaSecret: secret, Now: clock.Now,
 	})
 	if err != nil {

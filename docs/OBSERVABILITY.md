@@ -2,7 +2,7 @@
 
 > 对应用户需求 #9：「NAS 后端要有统计，比如负载、流量那种」。
 > 方案定论：**服务端内置轻量监控**（零外部依赖），Prometheus/Grafana 全家桶作为后置可选增强。
-> 最后更新：2026-09-12（文档准确性清偿：系统指标表两处未采集项如实标注、访问日志/轮转标规划、仪表盘路由勘误、轮询周期勘误、readyz 检查面勘误）
+> 最后更新：2026-09-19（新增 backup_last_success_timestamp gauge——备份快照成功时刻，任务Q 批B）。2026-09-12（文档准确性清偿：系统指标表两处未采集项如实标注、访问日志/轮转标规划、仪表盘路由勘误、轮询周期勘误、readyz 检查面勘误）
 
 ## 内置监控（M2 交付）
 
@@ -31,6 +31,7 @@
 | library_files{type=image\|video}（Gauge） | 库内文件数 |
 | thumb_queue_depth（Gauge） | 待生成缩略图队列深度 |
 | trash_items / trash_bytes（Gauge） | 回收站条目数与占用 |
+| backup_last_success_timestamp（Gauge） | 最近一次成功备份快照的完成时刻（Unix 秒；0=进程内尚无成功快照，2026-09-19 任务Q 批B 起） |
 
 系统快照 `sysmon.Collector.Snapshot()` 输出与 openapi SystemStatus 对齐；PerCore（按核 CPU 明细）已补进协议并接线 `/api/v1/system/status` 与 `/metrics`（Bearer 鉴权，httpapi/system.go，2026-08-27 M2 后端）。
 
@@ -48,6 +49,7 @@
 | library_files{type} | httpapi/libraries.go `refreshLibraryFileMetrics` | 变更点推送刷新（见下） |
 | thumb_queue_depth | thumbnail/pool.go Submit 入队/work 取任务 | 队列每变化一次 |
 | trash_items / trash_bytes | httpapi/trash.go `refreshTrashMetrics` | 变更点推送刷新（见下） |
+| backup_last_success_timestamp | backup 包 `OnSuccess` 回调（main 装配期接 `sysmon.Default.SetBackupLastSuccess`，backup 包自身不感知 sysmon） | 每次快照成功后 |
 
 **口径注记（改动埋点或解读指标前必读）**：
 

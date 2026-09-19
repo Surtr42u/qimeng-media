@@ -13,6 +13,19 @@
 ---
 ---
 ---
+## feat(api): 备份热备四端点+服务端定时快照轮转+测试（2026-09-19 第三百三十八笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理）
+
+- **任务Q 批B 落地**（任务书=仓库外《QimengNAS\任务Q-依赖备份与体验收尾卷.md》§4，协议先行铁律 1；零 migration、零 Android 构建——SDK 再生的编译验证并入批C，§8 合并门禁拍板明示豁免）。
+- **CI 终态补记**：批A 附记的 CI run 35414462168 终态=五 job 全绿，任务P CI 闭合。
+- **协议（openapi.yaml，路径 54→58）**：①POST /api/v1/backups——手动触发 VACUUM INTO 快照，201 返回 BackupInfo{name,sizeBytes,createdAt}，409=已有快照进行中（BACKUP_IN_PROGRESS，定时调度与手动共用防重入闸）；②GET /api/v1/backups——列表+调度摘要一次往返 `{items, schedule{enabled,intervalHours,retention}}`（schedule=config backup.* 只读回显；intervalHours 不足 1h 向上取整展示）；③GET /api/v1/backups/{name}/file——下载 application/octet-stream + Content-Disposition attachment（http.ServeContent 支持 Range）；④DELETE /api/v1/backups/{name}——删除单份 204；错误码 404 name 不存在 / 400 name 非法；BackupName parameter 带 pattern 白名单。`make sdk` 三端再生 + api/sdk.lock 同步（209 条，指纹入库≠产物入库；生成物不入库照 ADR-0009）。
+- **服务端**：①新包 `server/internal/backup`（单职责+doc.go，ADR-0010）：调度（标准库 ticker，Start(ctx, interval)，首个快照一个间隔后触发；失败 slog 结构化日志、下周期自愈重试）+ 防重入（mu+running 闸，并发触发只成功一次，其余 ErrInProgress）+ 轮转（保留 N 份，超出删最旧，文件名字典序=时间序）+ 目录管理（DataDir/backups 惰性创建、外来文件不碰不删）；快照执行器 SnapshotFunc 由 main 注入 store.VacuumInto（SQL 属 store 边界，backup 包零 SQLite 感知）；OnSuccess 回调外流指标（包不感知 sysmon）。②store 新增 `VacuumInto`（VACUUM INTO 文件名参数绑定，store 包内唯一手写 SQL——sqlc 不支持 VACUUM 语句；modernc 驱动实测正常）。③config 新增 backup.enabled/interval/retention（yaml 键 + QIMENG_BACKUP_ENABLED/INTERVAL/RETENTION env + 默认值具名常量 true/24h/7，非法 env 值报错不静默）。④httpapi/backups.go 四 handler（nil 管理器 503 BACKUP_UNAVAILABLE 与 SysStatus 同语义）+ errors.go 新增 BACKUP_IN_PROGRESS/BACKUP_UNAVAILABLE 两码。⑤main 组合根接线：manager 构造（快照执行器=store.VacuumInto 适配、OnSuccess=sysmon.Default.SetBackupLastSuccess）+ Deps.Backup + enabled 时 Start(ctx, interval)。⑥sysmon 新增 backup_last_success_timestamp gauge（OBSERVABILITY.md 已同步）。
+- **安全红线逐条核对**（docs/SECURITY.md 新增「备份快照」节）：快照含 argon2 口令哈希=敏感数据，四端点全部走既有 Bearer 中间件（无 security: [] 豁免）；{name} 严格白名单 ^qimeng-\d{8}-\d{6}\.db$（非法 400，不触文件系统）+ os.Root 锚定备份目录（Go 1.24+，与 spa.go/trash.go 同底座；OpenFile 打开后即关 Root 句柄防 Windows 目录占用）；备份目录在 DataDir 内（扫描自噬两道防线天然覆盖）；删除=物理删除不走回收站（快照可再生，铁律 4 不覆盖服务端自产副本，SECURITY 节记档）；恢复=停服替换库文件手动流程（v1 无在线恢复端点，防误操作单按钮覆盖）。
+- **明确不做（v1 冻结记档）**：缩略图目录不进快照（可再生缓存）；数据目录其余文件（回收站 meta/直链密钥）不进快照——快照只保库文件，全目录备份仍走冷拷贝指南（批D deploy/README 备份节承接）；远端自动备份；备份设置 Web UI（v1 走 yaml/env 配置+重启）。
+- **测试**：backup 包 8 用例（命名白名单+本地时间格式、轮转保留删最旧、并发触发断言恰好一次成功且执行器只进一次、删除/打开白名单零副作用、404 路径、建删闭环、惰性目录、外来文件隔离、组装校验）；httpapi 端到端 5 用例（真实临时库 VACUUM INTO 全链：201→快照文件头=SQLite 魔数→列表+schedule 回显→下载逐字节一致+attachment→删除 204→404 闭环；慢快照闸内二次触发 409 BACKUP_IN_PROGRESS；白名单 400；四端点无 token 401；retention=3 五次触发经端点面轮转到 3 份）；config 3 用例（默认值/yaml 覆盖/env 优先级+非法值报错）。
+- **门禁**（§4 原文四条全绿，输出原文存 %TEMP%\qimeng-qB-evidence\）：①make sdk（validate→go→ts→kotlin+sdk-lock 209 条）；②cd server && go test ./...（14 包 ok）&& go vet ./...（0 输出）；③make lint（redocly 0 error / golangci 0 issues / TS 18 warnings 0 errors——warnings 全部为 router.tsx/SearchPage 既有项，非本批文件）；④cd web && npx tsc --noEmit（0）&& npm run build（397ms 过）&& npm test（16 文件 162 用例全绿）。
+
 ## build(server): 直接依赖六项升级（x/crypto 0.57/sqlite 1.59/migrate 4.20.1 等）（2026-09-19 第三百三十七笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理）

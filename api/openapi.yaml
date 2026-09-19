@@ -842,6 +842,54 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/LegacyBackupFile" }
 
+  # ---------- 备份热备（库文件在线快照） ----------
+  /api/v1/backups:
+    post:
+      summary: 手动触发一次库文件快照（VACUUM INTO 在线快照，不停服）
+      description: |
+        备份热备（v1）：把 SQLite 库文件做一致性快照写入 DataDir/backups/
+        qimeng-YYYYMMDD-HHMMSS.db（本地时间命名）。VACUUM INTO 在 WAL 模式下
+        安全不停服；快照完成后按 backup.retention 轮转（超出保留份数自动删
+        最旧）。定时调度（backup.interval）与手动触发共用同一防重入闸：已有
+        快照进行中返回 409。快照含 argon2 口令哈希等敏感数据，走全局 Bearer
+        鉴权（无 security: [] 豁免）；恢复 = 停服替换库文件的手动流程（文档化，
+        v1 无在线恢复端点）。
+      responses:
+        "201": { description: 快照完成，返回新快照信息, content: { application/json: { schema: { $ref: "#/components/schemas/BackupInfo" } } } }
+        "409": { description: 已有快照进行中（定时调度与手动触发共用防重入闸）, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    get:
+      summary: 快照列表与调度摘要（维护页一次往返拿全）
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/BackupList" } } } }
+  /api/v1/backups/{name}:
+    delete:
+      summary: 删除单份快照（物理删除管理操作，二次确认场景）
+      description: |
+        name 严格白名单 ^qimeng-\d{8}-\d{6}\.db$（非法 400 INVALID_PARAM，
+        防路径穿越；服务端另以 os.Root 把文件访问锚定在备份目录内）。
+        name 不存在返回 404 NOT_FOUND。删除即物理删除（快照可再生，不走回收站）。
+      parameters: [ { $ref: "#/components/parameters/BackupName" } ]
+      responses:
+        "204": { description: 已删除 }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/backups/{name}/file:
+    get:
+      summary: 下载单份快照（附件流，可直接落盘做异地保管）
+      description: |
+        application/octet-stream + Content-Disposition: attachment。
+        快照为完整 SQLite 库文件（含口令哈希），属敏感数据——本端点无
+        security: [] 豁免，必须 Bearer token。
+      parameters: [ { $ref: "#/components/parameters/BackupName" } ]
+      responses:
+        "200":
+          description: 快照库文件字节流（支持 Range 断点续传）
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
 components:
   securitySchemes:
     bearerAuth: { type: http, scheme: bearer, bearerFormat: "QM token" }
@@ -850,6 +898,7 @@ components:
     LibraryId: { name: libraryId, in: path, required: true, schema: { type: string } }
     AssetId:   { name: assetId,   in: path, required: true, schema: { type: string, format: uuid } }
     TrashId:   { name: trashId,   in: path, required: true, schema: { type: string } }
+    BackupName: { name: name, in: path, required: true, schema: { type: string, pattern: "^qimeng-\\d{8}-\\d{6}\\.db$" }, description: 快照文件名（qimeng-YYYYMMDD-HHMMSS.db，本地时间） }
 
   responses:
     BadRequest:  { description: 参数错误, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
@@ -876,6 +925,32 @@ components:
       type: object
       properties:
         token: { type: string, description: 仅 setup 响应中明文返回一次 }
+
+    BackupInfo:
+      type: object
+      description: 一份库文件快照（DataDir/backups 下的 .db 文件）
+      required: [name, sizeBytes, createdAt]
+      properties:
+        name:      { type: string, description: 快照文件名（qimeng-YYYYMMDD-HHMMSS.db，本地时间命名） }
+        sizeBytes: { type: integer, format: int64, description: 快照文件大小（字节） }
+        createdAt: { type: integer, format: int64, description: 快照完成时刻（Unix 毫秒） }
+
+    BackupSchedule:
+      type: object
+      description: 定时快照调度摘要（config backup.* 只读回显；v1 调整走 yaml/env + 重启，无设置端点）
+      required: [enabled, intervalHours, retention]
+      properties:
+        enabled:       { type: boolean, description: 自动备份开关（backup.enabled，默认 true） }
+        intervalHours: { type: integer, description: 快照间隔小时数（backup.interval，默认 24；不足 1 小时按 1 小时向上取整展示，精确值以服务端配置为准） }
+        retention:     { type: integer, description: 保留份数（backup.retention，默认 7；超出自动删最旧） }
+
+    BackupList:
+      type: object
+      description: GET /api/v1/backups 响应：快照列表 + 调度摘要（一次往返，维护页直用）
+      required: [items, schedule]
+      properties:
+        items:    { type: array, items: { $ref: "#/components/schemas/BackupInfo" }, description: 按创建时间倒序（新→旧） }
+        schedule: { $ref: "#/components/schemas/BackupSchedule" }
 
     MediaType:
       type: string

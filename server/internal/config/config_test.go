@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // writeYAML 把内容写进临时目录下的配置文件，返回文件路径。
@@ -241,5 +242,78 @@ func TestLoadAllowedLibraryRoots(t *testing.T) {
 	}
 	if len(cfg.AllowedLibraryRoots) != 2 {
 		t.Errorf("env 空值应保留 yaml 白名单，得到 %v", cfg.AllowedLibraryRoots)
+	}
+}
+
+// TestLoadBackupDefaults 锁定备份热备默认值（任务Q 批B 冻结口径）：
+// enabled=true / interval=24h / retention=7。
+func TestLoadBackupDefaults(t *testing.T) {
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load(\"\") 报错: %v", err)
+	}
+	if !cfg.Backup.Enabled {
+		t.Error("默认 Backup.Enabled = false, 期望 true")
+	}
+	if cfg.Backup.Interval != DefaultBackupInterval {
+		t.Errorf("默认 Backup.Interval = %v, 期望 %v", cfg.Backup.Interval, DefaultBackupInterval)
+	}
+	if cfg.Backup.Retention != DefaultBackupRetention {
+		t.Errorf("默认 Backup.Retention = %d, 期望 %d", cfg.Backup.Retention, DefaultBackupRetention)
+	}
+}
+
+// TestLoadBackupYAMLOverride yaml 三键覆盖 + 未写键保留默认。
+func TestLoadBackupYAMLOverride(t *testing.T) {
+	path := writeYAML(t, "backup:\n  enabled: false\n  interval: 12h\n")
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load 报错: %v", err)
+	}
+	if cfg.Backup.Enabled {
+		t.Error("yaml backup.enabled=false 应生效")
+	}
+	if cfg.Backup.Interval != 12*time.Hour {
+		t.Errorf("yaml backup.interval = %v, 期望 12h", cfg.Backup.Interval)
+	}
+	if cfg.Backup.Retention != DefaultBackupRetention {
+		t.Errorf("未写的 backup.retention 应保留默认 7, 得到 %d", cfg.Backup.Retention)
+	}
+}
+
+// TestLoadBackupEnvPriority env > yaml > 默认三键优先级 + 非法值报错。
+func TestLoadBackupEnvPriority(t *testing.T) {
+	path := writeYAML(t, "backup:\n  interval: 12h\n")
+	t.Setenv("QIMENG_BACKUP_INTERVAL", "6h")
+	t.Setenv("QIMENG_BACKUP_ENABLED", "0")
+	t.Setenv("QIMENG_BACKUP_RETENTION", "3")
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load 报错: %v", err)
+	}
+	if cfg.Backup.Enabled {
+		t.Error("env QIMENG_BACKUP_ENABLED=0 应生效")
+	}
+	if cfg.Backup.Interval != 6*time.Hour {
+		t.Errorf("env interval = %v, 期望 6h（env 优先于 yaml 12h）", cfg.Backup.Interval)
+	}
+	if cfg.Backup.Retention != 3 {
+		t.Errorf("env retention = %d, 期望 3", cfg.Backup.Retention)
+	}
+
+	// 非法值必须报错而非静默回落默认（排障可见性，与其他 env 键同口径）。
+	t.Setenv("QIMENG_BACKUP_ENABLED", "maybe")
+	if _, err := Load(path); err == nil {
+		t.Error("QIMENG_BACKUP_ENABLED 非法布尔应报错")
+	}
+	t.Setenv("QIMENG_BACKUP_ENABLED", "true")
+	t.Setenv("QIMENG_BACKUP_INTERVAL", "不是时长")
+	if _, err := Load(path); err == nil {
+		t.Error("QIMENG_BACKUP_INTERVAL 非法时长应报错")
+	}
+	t.Setenv("QIMENG_BACKUP_INTERVAL", "6h")
+	t.Setenv("QIMENG_BACKUP_RETENTION", "0")
+	if _, err := Load(path); err == nil {
+		t.Error("QIMENG_BACKUP_RETENTION 非正整数应报错")
 	}
 }

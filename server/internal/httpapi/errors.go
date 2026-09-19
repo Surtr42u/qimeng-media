@@ -50,6 +50,8 @@ const (
 	codeConflict           = "CONFLICT"
 	codeBadRequest         = "BAD_REQUEST"
 	codeRateLimited        = "RATE_LIMITED"
+	codeBackupInProgress   = "BACKUP_IN_PROGRESS"
+	codeBackupUnavailable  = "BACKUP_UNAVAILABLE"
 )
 
 // contentTypeJSON 全部 JSON 响应的 Content-Type 唯一取值（charset 显式
