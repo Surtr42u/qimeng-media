@@ -261,8 +261,22 @@ class HomeViewModel @Inject constructor(
     fun onHomeResumed() {
         val snapshot = likeMutationTracker.fingerprint()
         val last = lastLikeFingerprint
+        if (last == null || last == snapshot) {
+            // 首次采纳基线 / 指纹无变化（纯浏览返回）：不重拉
+            lastLikeFingerprint = snapshot
+            return
+        }
+        // 在途（首载/上次重拉在跑）不叠加：不采纳指纹，下次 resume 重试——
+        // FavoriteViewModel.onResumed 同口径（2026-09-20 全库审查对齐：此前先采纳
+        // 指纹再进 load*，而 load* 的 isLoading 防重会静默吞掉本次重拉，指纹已
+        // 消费、点赞触发的重排丢失到下次点赞才补）。
+        val tabLoading = when (_uiState.value.currentTab) {
+            HomeTab.RECOMMEND -> _uiState.value.recommend.isLoading
+            HomeTab.COS -> _uiState.value.cos.isLoading
+            HomeTab.RANK -> _uiState.value.rank.isLoading
+        }
+        if (tabLoading) return
         lastLikeFingerprint = snapshot
-        if (last == null || last == snapshot) return
         when (_uiState.value.currentTab) {
             HomeTab.RECOMMEND -> loadRecommend(isInitial = false, isRefresh = true)
             HomeTab.COS -> loadCosPage(isInitial = false, isRefresh = true)

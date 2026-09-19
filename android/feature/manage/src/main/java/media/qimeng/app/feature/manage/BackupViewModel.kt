@@ -5,11 +5,13 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlin.math.roundToInt
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import media.qimeng.app.core.data.backup.AutoBackupRunner
 import media.qimeng.app.core.data.backup.BackupFileStatus
 import media.qimeng.app.core.data.events.ViewEventQueue
@@ -129,18 +131,32 @@ class BackupViewModel @Inject constructor(
                 _uiState.update { it.copy(errorMessage = ERROR_READ_FILE) }
                 return@launch
             }
-            onFilePicked(AutoBackupRunner.BACKUP_FILE_NAME, bytes)
+            // 校验下 Default 线程（2026-09-20 全库审查 P1）：64MB 上限的字节→字符串→
+            // 双次 Moshi 解析是页内最重的 CPU 活，Main 线程执行是 ANR 风险——R2 已修
+            // 导出侧（AutoBackupRunner 序列化段同口径），导入/校验侧此处补齐。
+            // onFilePicked 的同步入口仅供小体量直调/测试，生产大文件路径恒走本链。
+            val result = withContext(Dispatchers.Default) {
+                BackupValidator.validate(AutoBackupRunner.BACKUP_FILE_NAME, bytes)
+            }
+            stageValidation(result)
         }
     }
 
     /**
-     * 导入前置校验入口（文件名+字节 → BackupValidator → 确认弹窗）。前置校验失败
+     * 导入前置校验入口（文件名+字节 → BackupValidator → 确认弹窗）。同步执行——
+     * 生产大文件路径恒走 [importFromBackupDir] 的 Default 线程链，本入口留给
+     * 测试/小体量直调；调用方自行保证不在主线程塞大文件。前置校验失败
      * （超限/坏 JSON/格式不符）置错误横幅不出网；通过则进二次确认弹窗（旧版
      * 「检测到备份数据…」语义）。
      */
     fun onFilePicked(fileName: String, bytes: ByteArray) {
         if (_uiState.value.importing) return
-        when (val result = BackupValidator.validate(fileName, bytes)) {
+        stageValidation(BackupValidator.validate(fileName, bytes))
+    }
+
+    /** 校验结果落地（两条入口共用的单一出口：失败→错误横幅，通过→确认弹窗载荷） */
+    private fun stageValidation(result: BackupValidator.Result) {
+        when (result) {
             is BackupValidator.Result.Invalid -> _uiState.update { it.copy(errorMessage = result.message) }
             is BackupValidator.Result.Ok -> _uiState.update {
                 it.copy(pendingImport = PendingBackupImport(result.payload, result.summary), errorMessage = null)

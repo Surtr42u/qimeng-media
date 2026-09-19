@@ -153,7 +153,12 @@ fun AuthorScreen(
                     .fillMaxSize()
                     .padding(horizontal = QimengDimens.ScreenPaddingHorizontal),
             ) {
-                val rows = viewModel.visibleRows(state)
+                // 全量过滤+排序按四输入 memo（2026-09-20 全库审查）：此前每次重组
+                // （下拉刷新指示器/其他 state tick）都重算 applyAuthorRows——作者量
+                // 有界但纯浪费；四键不变时直接复用上次结果
+                val rows = remember(state.authors, state.zone, state.keyword, state.sort) {
+                    viewModel.visibleRows(state)
+                }
                 if (rows.isEmpty()) {
                     // 首载中不占位（既有行为保持）；无匹配行给卡内小字空态（Web .a-empty 口径）
                     if (!state.isLoading) {

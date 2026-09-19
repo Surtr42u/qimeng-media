@@ -281,26 +281,32 @@ class ZoomImageView @JvmOverloads constructor(
      * - 普通图长边 > GPU 上限 → LAYER_TYPE_SOFTWARE 回退（避免超 OpenGL 纹理限制渲染异常）
      */
     private fun applyOptimalLayerType(drawable: Drawable?) {
+        // 日志里 GPU 上限用非阻塞版 maxTextureSizeOrDefault（2026-09-20 全库审查）：
+        // 字符串模板实参在调用点 eager 求值，log 内的 isLoggable 拦不住求值本身——
+        // 阻塞版 maxTextureSize 首调会在主线程等 EGL 探测 latch（典型几十 ms、
+        // 探测线程异常时最坏 2s）；分层决策自 Z 批起已改用 HARDWARE_RENDER_SAFE_SIZE
+        // 常量，阻塞版自此只剩这四处日志引用，全部换非阻塞版（探测异步进行，
+        // 未就绪时显示默认值，不影响任何决策）。
         if (containsAnimatedDrawable(drawable)) {
             setLayerType(LAYER_TYPE_HARDWARE, null)
-            log("applyOptimalLayerType: GIF→HARDWARE longside=${drawableLongSide(drawable)} gpuMax=${GpuInfo.maxTextureSize()}")
+            log("applyOptimalLayerType: GIF→HARDWARE longside=${drawableLongSide(drawable)} gpuMax=${GpuInfo.maxTextureSizeOrDefault()}")
             return
         }
         val longside = drawableLongSide(drawable)
         if (longside <= 0) {
             // 无尺寸信息（图尚未解码），保守用 SOFTWARE
             setLayerType(LAYER_TYPE_SOFTWARE, null)
-            log("applyOptimalLayerType: 无尺寸→SOFTWARE safeMax=$HARDWARE_RENDER_SAFE_SIZE gpuMax=${GpuInfo.maxTextureSize()}")
+            log("applyOptimalLayerType: 无尺寸→SOFTWARE safeMax=$HARDWARE_RENDER_SAFE_SIZE gpuMax=${GpuInfo.maxTextureSizeOrDefault()}")
             return
         }
         // 渲染层用安全阈值（4096）而非 GPU 纹理上限（maxTextureSize 探测值如 16384）：
         // 超大 bitmap 走 HARDWARE 时厂商驱动无法正确应用 MATRIX 缩放，超大图必须走 SOFTWARE 保正确性
         if (longside <= HARDWARE_RENDER_SAFE_SIZE) {
             setLayerType(LAYER_TYPE_HARDWARE, null)
-            log("applyOptimalLayerType: longside=$longside ≤ safeMax=$HARDWARE_RENDER_SAFE_SIZE → HARDWARE (gpuMax=${GpuInfo.maxTextureSize()})")
+            log("applyOptimalLayerType: longside=$longside ≤ safeMax=$HARDWARE_RENDER_SAFE_SIZE → HARDWARE (gpuMax=${GpuInfo.maxTextureSizeOrDefault()})")
         } else {
             setLayerType(LAYER_TYPE_SOFTWARE, null)
-            log("applyOptimalLayerType: longside=$longside > safeMax=$HARDWARE_RENDER_SAFE_SIZE → SOFTWARE (gpuMax=${GpuInfo.maxTextureSize()})")
+            log("applyOptimalLayerType: longside=$longside > safeMax=$HARDWARE_RENDER_SAFE_SIZE → SOFTWARE (gpuMax=${GpuInfo.maxTextureSizeOrDefault()})")
         }
     }
 
