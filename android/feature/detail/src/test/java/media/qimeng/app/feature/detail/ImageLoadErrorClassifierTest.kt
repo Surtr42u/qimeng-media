@@ -1,5 +1,7 @@
 package media.qimeng.app.feature.detail
 
+import coil3.network.HttpException
+import coil3.network.NetworkResponse
 import java.io.IOException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
@@ -55,5 +57,20 @@ class ImageLoadErrorClassifierTest {
     @Test
     fun `io exception base class counts`() {
         assertTrue(isNetworkTransferFailure(IOException("generic io")))
+    }
+
+    /** 批S6：Coil 网络层 504（离线 only-if-cached 合成）等 HttpException 是 RuntimeException 非 IOException */
+    @Test
+    fun `coil http exception is network failure`() {
+        assertTrue(isNetworkTransferFailure(HttpException(NetworkResponse(code = 504))))
+    }
+
+    @Test
+    fun `wrapped coil http exception via cause chain is network failure`() {
+        val wrapped = RuntimeException(
+            "image load failed",
+            HttpException(NetworkResponse(code = 502)),
+        )
+        assertTrue(isNetworkTransferFailure(wrapped))
     }
 }

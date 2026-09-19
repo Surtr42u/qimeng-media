@@ -4,11 +4,13 @@ import android.content.Context
 import android.os.Build
 import android.util.Log
 import coil3.ImageLoader
+import coil3.annotation.ExperimentalCoilApi
 import coil3.disk.DiskCache
 import coil3.disk.directory
 import coil3.gif.AnimatedImageDecoder
 import coil3.gif.GifDecoder
 import coil3.memory.MemoryCache
+import coil3.network.ConnectivityChecker
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.crossfade
 import coil3.request.allowHardware
@@ -66,6 +68,10 @@ object CoilModule {
 
     @Provides
     @Singleton
+    // OptIn 范围最小化：仅本函数引用 ExperimentalCoilApi 标记的 ConnectivityChecker.ONLINE
+    // （Coil 3.6.2 ConnectivityChecker.kt：fun interface ConnectivityChecker 整体 @ExperimentalCoilApi，
+    // 工厂重载 OkHttpNetworkFetcherFactory 自身无注解）。文件其余装配不引用实验 API。
+    @OptIn(ExperimentalCoilApi::class)
     fun provideImageLoader(
         @ApplicationContext context: Context,
         splitDiskCache: Lazy<SplitDiskCache>,
@@ -103,6 +109,23 @@ object CoilModule {
                             .callTimeout(NETWORK_CALL_TIMEOUT_DISABLED, TimeUnit.SECONDS)
                             .build()
                     },
+                    // 批S6（2026-09-19 断外网图片误报「无法解码」修复）：官方「naive always-online」
+                    // 常量 ConnectivityChecker.ONLINE（恒返回 true），替换默认的 ConnectivityCheckerApi23
+                    // 系统联网态判定。根因链（Coil 3.6.2 NetworkFetcher.kt L208-227 源码核实）：
+                    // Coil 默认判定按 activeNetwork 是否有 NET_CAPABILITY_INTERNET 报离线，且**全局
+                    // 生效不豁免回环**——用户断外网时（本地端 127.0.0.1 回环本身仍通）判定离线，
+                    // newRequest() 被改写为 Cache-Control: no-cache, only-if-cached；本模块给 Coil 的
+                    // OkHttpClient 无 .cache() 实例，only-if-cached 无缓存可用 → OkHttp 合成 504
+                    // Unsatisfiable Request → 抛 coil3.network.HttpException（RuntimeException 非
+                    // IOException）→ 详情页 ImageLoadErrorClassifier 只认 IOException，误归因为
+                    // 非网络类 → 文案误报「该文件无法解码，可能已损坏」（视频走 Media3 自有
+                    // DataSource 不经 Coil，故视频正常）。恒在线后回环请求永不进离线分支，照常
+                    // 发出即成功；真断网（含局域网全断）时 OkHttp 真发请求抛 IOException 族异常，
+                    // 既有文案分档正确显示「网络不畅」，无回退。官方依据：Coil 3.x ConnectivityChecker
+                    // KDoc——"If false ... the request will fail with a '504 Unsatisfiable Request'
+                    // response"，即离线判定 → 504 是该组件的文档化行为；ONLINE 注释
+                    // "A naive ConnectivityChecker implementation that is always online"。
+                    connectivityChecker = { ConnectivityChecker.ONLINE },
                 ),
             )
             // GIF 解码分档（Coil 官方建议）：API 28+ 用 AnimatedImageDecoder（硬件加速逐帧），
