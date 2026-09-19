@@ -13,6 +13,15 @@
 ---
 ---
 ---
+## fix(app): 断外网时本地端图片误报解码失败——Coil 离线门改恒在线判定（2026-09-19 第三百五十二笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理）
+
+- **现象**：用户断外网时连本地端（127.0.0.1:18430 回环，内嵌服务端本身可达），详情页原图显示「该文件无法解码，可能已损坏或格式不受支持」；同资产视频正常播放；恢复外网后图片即正常。
+- **根因链（主会话 researcher 定稿，执行前按铁律 8 复核：Coil 3.6.2 依赖产物 javap + GitHub 3.6.2 tag 源码双重核实）**：①Coil 3.6.2 默认 ConnectivityChecker（ConnectivityCheckerApi23：activeNetwork=null 或无 NET_CAPABILITY_INTERNET → 判离线）**全局生效不豁免回环**——断外网时回环本地端也被判离线；②离线分支下 NetworkFetcher.newRequest() 把请求改写为 `Cache-Control: no-cache, only-if-cached`（官方 ConnectivityChecker KDoc 明言该语义："If false ... the request will fail with a '504 Unsatisfiable Request' response"）；③本 App 给 Coil 的 OkHttpClient 无 `.cache()` HTTP 缓存实例 → only-if-cached 无缓存可用 → OkHttp 合成 504 响应 → Coil 抛 `coil3.network.HttpException`——**它是 RuntimeException 不是 IOException**；④详情页 ImageLoadErrorClassifier.isNetworkTransferFailure 旧判据只认 IOException → HttpException 被误归非网络类 → 文案落入「无法解码」兜底档。视频走 Media3 ExoPlayer 自有 DataSource 不经 Coil，故不受影响——与现象完全互证。
+- **修法（最小，官方 API）**：①`CoilModule.provideImageLoader` 的 `OkHttpNetworkFetcherFactory` 增传官方「naive always-online」常量 `connectivityChecker = { ConnectivityChecker.ONLINE }`（3.6.2 ConnectivityChecker.kt `@JvmField val ONLINE = ConnectivityChecker { true }`；ConnectivityChecker fun interface 整体 @ExperimentalCoilApi → 函数级 @OptIn 最小范围，文件其余装配不涉及）——回环请求永不进离线分支照常发出即成功；真断网（含局域网全断）时 OkHttp 真发请求抛 IOException 族 → 既有文案分档正确显示「网络不畅」，无回退；磁盘缓存读取在 Coil 取数链路先于 NetworkFetcher（diskCache 命中不进网络层），该改动不触碰缓存行为。②防御层：`ImageLoadErrorClassifier.isNetworkTransferFailure` 把 `coil3.network.HttpException`（HTTP 层非 2xx 包装异常，含离线 504 语义与服务端 5xx）并入网络/服务档——与既有「HTTP 层错误归传输/服务类」口径一致，杜绝未来 reintroduce 离线判定或服务端 5xx 时文案再误报「文件损坏」。
+- **测试**：`ImageLoadErrorClassifierTest` 新增 2 用例（HttpException(504)→网络类；cause 链包裹 HttpException(502)→网络类；IOException→网络类与非 IO→非网络类既有用例覆盖）。**定向门禁原文**：`./gradlew :core:data:testDebugUnitTest :feature:detail:testDebugUnitTest` → `BUILD SUCCESSFUL in 16s`（ImageLoadErrorClassifierTest tests=9 failures=0 errors=0，含 2 新用例；core:data 各类 SignedMediaCacheKeysTest 12/SplitDiskCacheTest 13/CoilModuleDataFileNameTest 4 等全绿）+ `./gradlew :app:compileDebugKotlin`（Hilt 图聚合校验）→ `BUILD SUCCESSFUL`。全量三连+R8 由主会话统一跑。
+
 ## feat(app): 缩略图缓存按端分池——路由 DiskCache 双目录+两卡实际占用展示（2026-09-19 第三百五十一笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理）
