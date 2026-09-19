@@ -13,6 +13,15 @@
 ---
 ---
 ---
+## feat(app): 缩略图缓存按端分池——路由 DiskCache 双目录+两卡实际占用展示（2026-09-19 第三百五十一笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理）
+
+- **用户拍板语义（任务S 卷批S5 冻结）**：缩略图缓存 = 手机 App 侧缓存，按连接来源分两池——「服务器缓存」（连 NAS 时缓存的图）与「本地缓存」（连本地端 18430 时缓存的图）；两条目 UI 一致（照搬原服务器卡条目样式），原「缓存上限」行改为「实际占用」（字节），各自显示文件数 + 占用；**不共享缓存**（两端库内容不同，共享会串图）。
+- **调研结论（researcher 方案 A' 定稿；执行前铁律 8 复核）**：①Coil 3.6.2 DiskCache 接口经 gradle 缓存产物 javap 核实恰 9 成员（size/maxSize/directory/fileSystem/openSnapshot/openEditor/remove/clear/shutdown），与调研结论零出入，且 openSnapshot/openEditor 收到的是**原始键字符串**（Coil 内部落盘才 SHA-256 哈希）→ 路由包装器可行；②缓存键含 host（SignedMediaCacheKeys 剥 exp/sig 后的完整 URL）但落盘只剩哈希文件名、`.0` 元数据无 URL（NetworkFetcher 只写响应头，researcher 核实）→ **事后分流不可行，必须写入时分**；③运行时换 ImageLoader 官方不支持（SingletonImageLoader.setSafe 已建则 no-op）→ 单 ImageLoader + 路由 DiskCache 是唯一正路；同目录双 DiskCache 实例并发 = 官方明言损坏，**双物理目录**（各自独立 journal）无此问题。
+- **实现**：①新增 `core/data/coil/SplitDiskCache.kt`——`SplitDiskCache` 实现 coil3 DiskCache 接口，内部持两 RealDiskCache（`image_cache_nas`/`image_cache_local`），openSnapshot/openEditor/remove 按键路由（纯函数 `resolveCachePool(key, isLocalPredicate)` + `isHttpCacheKey`：http(s) 键交 `ServerAddress.isLocalModePreset` 判定——回环 host + 端口 18430 → 本地池，否则 NAS 池；非 http 键兜底 NAS 池并记 debug 档日志）；size=两池之和，maxSize=两池聚合（只读口径），clear/shutdown 委托两池，fileSystem 共用实例。②`CoilModule`：磁盘缓存改挂 SplitDiskCache 单例（provideImageLoader 注入 `dagger.Lazy` 保住「首次用到磁盘缓存才读 DataStore/开目录」的既有惰性时机），**存量迁移** `migrateLegacyImageCacheDir`（幂等：旧 `image_cache` 目录存在且 `image_cache_nas` 不存在 → 整体重命名归 NAS 口径——历史缓存几乎全来自 NAS 连接；本地池惰性创建；执行时机=两池 RealDiskCache 打开目录之前，杜绝两实例共管同目录）。③maxSize 口径决策：现状恒显式设值（DataStore 档位，默认 1GB），「Coil 默认档」分支不适用记档——NAS 池=现值不回退、本地池=现值一半（`LOCAL_POOL_QUOTA_DIVISOR=2`，本地端=手机内嵌服务端，库内容远小于 NAS 全库，半档足用）。④`CoilCacheManager` 端口分池化：聚合口径 clear/sizeBytes/fileCount/capacityBytes（后者已无消费方）退役，改 `clearPool/poolSizeBytes/poolFileCount(pool)`；文件数沿用 S4 数据文件谓词 `isDiskCacheDataFileName` 分池目录计数（口径单源不动）。⑤`ThumbnailCacheViewModel/Screen` 两卡重写：服务器缓存（NAS 池）卡 = 文件数+实际占用+预取状态区（预取热身的正是 NAS 池，自原本地卡移入）+清空本池；本地缓存卡 = 同样字段+清空本池；「缓存上限」行与档位四选删除（实际占用取代；本页是全 App 唯一档位选择 UI，删除后改档入口空缺——记档待拍板，是否在设置页补回档位卡由用户定）；VM 数据获取全走只读端口（铁律 7）；服务端生成进度行（资产数/刷新按钮）随两卡口径重写一并退场（`/thumbnails/progress` 端口与 SDK 实现保留不动）。
+- **测试**：`SplitDiskCacheTest` 新增 13 用例（NAS URL/本机预设/localhost 变体/https 远程/本地端口非回环/10.0.2.2:18430 锁现状口径/非 http 键兜底/注入谓词跟随/isHttpCacheKey 前缀判定 + 迁移成功含内容搬运/迁移幂等二调/无存量空转/两目录并存不合并）；`ThumbnailCacheViewModelTest` 重写 5 用例（init 两池四口径/读失败四口径降级 null/清服务器池只清 NAS 并归零且本地池不牵连/清本地池对称/预取状态只读透出）。**定向门禁原文**：`./gradlew :core:data:testDebugUnitTest :feature:manage:testDebugUnitTest` → `BUILD SUCCESSFUL`（SplitDiskCacheTest tests=13 / ThumbnailCacheViewModelTest tests=5 / CoilModuleDataFileNameTest tests=4，failures=0 errors=0）+ `./gradlew :app:compileDebugKotlin`（Hilt 图聚合校验）→ `BUILD SUCCESSFUL`。全量三连+R8 由任务S 收官批统一跑。
+
 ## docs: 任务S 收官——备份收敛+视频交互+地址固化+缩略图缓存四批交付（2026-09-19 第三百五十笔）
 
 执行 AI：GLM-5.3-Flash（主代理调度，四批=执行子代理，对抗审查=reviewer 子代理）
