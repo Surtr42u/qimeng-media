@@ -77,7 +77,11 @@ data class ThumbnailCacheProgress(
     val totalAssets: Int,
     val thumbsOnDisk: Int,
 ) {
-    /** 0~1 覆盖率（分母为 0 视为已满，避免除零） */
+    /**
+     * 0~1 覆盖率（分母为 0 视为已满，避免除零）。2026-09-19 批S4 勘误：分子是缓存目录
+     * 落盘**文件数**（多档并存按文件计 + 已删资产遗留孤儿，真库实测可 > 资产数），
+     * 原实现不钳制会让进度比例越界（>1）；钳到 1f = 覆盖语义下的「已满」降级。
+     */
     val fraction: Float
-        get() = if (totalAssets <= 0) 1f else thumbsOnDisk.toFloat() / totalAssets
+        get() = if (totalAssets <= 0) 1f else (thumbsOnDisk.toFloat() / totalAssets).coerceIn(0f, 1f)
 }

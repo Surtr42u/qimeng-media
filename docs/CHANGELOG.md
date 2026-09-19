@@ -13,6 +13,16 @@
 ---
 ---
 ---
+## feat(app): 缩略图缓存页本地/服务器两条目+占用上限展示+预取自动化（2026-09-19 第三百四十九笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理）
+
+- **用户拍板（任务S §0 批S4 原话）**：「缩略图缓存的文件数显示异常排查一下 6477 6342 怎么多了几个；缓存不够直观，应该 1 本地缩略图缓存指本地缩略图，2 服务器缓存 UI 一致即原来的服务器缓存，再加缓存上限和占用；预取是接服务器自动下载服务器缓存？这个是默认行为不需要手动按钮」。
+- **6477 vs 6342 排查结论（真库 8420 只读核查：qimeng.db 以 ro 模式打开 + thumbs 目录计数 + v2 缓存键 SHA-256 复算，全程未连写）**：缓存页显示数 = GET /thumbnails/progress 的 thumbsOnDisk = 服务端 thumbs 目录落盘**文件数**（server/internal/thumbnail/generate.go `CountOnDisk`，WalkDir 计所有文件），分母 totalAssets = 启用库资产数——**分子分母根本不同口径**。2026-09-19 实测：磁盘 7386 个 .webp（256 个 hash 前缀子目录）= 6341 个 md(512) 网格档（当前 6341 资产 100% 覆盖、每资产一份）+ 175 个 lg(1024) 详情档（详情页浏览懒生成，「一资产多档」）+ **870 个孤儿**（不匹配任何现存资产任何档位的 v2 键；mtime 分布 08-30~09-16，与「08-30 首扫 7347 → 现存 6341」的删改时间线吻合 = 已删/重导入资产的旧缩略图）。用户 6477 快照 ≈ 09-16 预热再生成尖峰中途计数（09-16 单日 +2025，收盘 6487），与 09-19 的 7386/6341 非同刻；「6342」= 取数时刻资产数（期间删过 1 资产，trash_items 现为 0）。**缺陷判定两条**：①App 侧显示口径缺陷——「已缓存 X / Y 个文件」把文件数当覆盖进度组分数式，多档+孤儿下 X>Y 必然出现（本批修，见下）；②服务端缺口——删除资产不清缩略图（trash.go 删库行+移媒体进回收站，无 thumbs 清理路径；cachekey.go 自述「孤儿由后续对账任务清理」未实现，870 个 ≈ 12% 为死文件）。②属 server/**，按批S4 边界**停手记档待拍板**（孤儿对账清理任务；如需字节占用/可配缓存上限需协议扩展，同待）。
+- **UI 重排（两条目冻结：本地在上、服务器在下，行语言统一 `cacheInfoRow`）**：①「本地缩略图缓存」= 本机 Coil 磁盘缓存：新增「占用」（DiskCache.size 已用字节）与「文件数」（新增 `CoilCacheManager.fileCount`——Coil 3.6.2 DiskCache 无条目计数 API，口径 = 磁盘缓存目录**数据文件**数 `{key}.1`，DiskLruCache.kt Entry/RealDiskCache.kt valueCount=2 官方源码核实，一条数据文件 = 一张缓存图，journal/.tmp 天然排除；谓词 `isDiskCacheDataFileName` 单测锁定）两行；档位四选/清空/重启生效注记原样保留。**口径决策记档**：任务书「本机模式（18430）侧」按用户原话「指本地缩略图」落地为设备侧 Coil 缓存——18430 内嵌服务端缩略图无字节口径（协议无字段）且仅本机模式在线，无法恒显「占用/文件数」；连本机模式时「服务器缓存」条目自动显示内嵌服务端数据（progress 走当前连接单点流转），语义自然覆盖。②「服务器缓存」原条目保留：进度条保留（`ThumbnailCacheProgress.fraction` 在 :core:model 钳制 0~1——孤儿/多档致分子>分母时视觉饱和不越界，勘误记入模型 KDoc），「已缓存 X / Y 个文件」分数式废止，改三行并列：「占用」= X 个文件、「资产数」= Y、「缓存上限」=「不限」（服务端按 DOMAIN_RULES §11 永不因上限删除有效缓存，按既有口径显示，禁止新造协议；字节占用协议无字段，记档待拍板），口径说明文案同步更新。
+- **预取自动化（预取语义结论）**：读码确认——预取**本就是默认自动行为**（ThumbnailPrefetcher.onAppCreate 观察登录态：冷启动已登录回放立即触发/登录后自动一轮/登出取消复位；计费网络门挂起等待自动续），「开始预取/停止」按钮只是叠加的手动干预（startManual 唯一差异 = 无视计费门）。按拍板删除手动面：ThumbnailCacheScreen 删两按钮，ThumbnailCacheViewModel 删 startPrefetch/stopPrefetch，ThumbnailPrefetcher 删 startManual/stopRound 与 manual 参数链路（预取时机/Semaphore 并发节流/Coil 键策略 U10-5 成果零触碰，不新增后台轮询）；状态行与进度条保留（自动行为可视）。新增只读端口 `ThumbnailPrefetchMonitor`（state: StateFlow<PrefetchUiState>，ThumbnailPrefetcher 实现 + DataModule @Binds）——VM 只依赖只读面，预取器控制柄不再进入页面层。
+- **测试**：ThumbnailCacheViewModelTest 新增 9 用例（本机两口径读取/读失败降级 null/进度拉取/进度失败降级不弹横幅/在途刷新防重（CompletableDeferred 门）/清空归零核对/切档成败两路/预取状态只读透出）；ThumbnailCacheProgressTest 新增 4 用例（常规比例/分子>分母钳 1/分母 0/分子 0）；CoilModuleDataFileNameTest 新增 4 用例（数据文件谓词：.1 命中、.0/journal/.tmp 排除）。**定向门禁原文**：`./gradlew :feature:manage:compileDebugKotlin :core:data:compileDebugKotlin :core:model:compileKotlin` → `BUILD SUCCESSFUL`；`./gradlew :feature:manage:testDebugUnitTest :core:data:testDebugUnitTest :core:model:test` → `BUILD SUCCESSFUL`（ThumbnailCacheViewModelTest tests=9 / CoilModuleDataFileNameTest tests=4 / ThumbnailCacheProgressTest tests=4，failures=0 errors=0）；`./gradlew :app:compileDebugKotlin`（Hilt 图聚合校验）→ `BUILD SUCCESSFUL`。全量三连+R8 由任务S 收官批统一跑。
+
 ## feat(app): 服务器地址固化——本机模式切换不覆盖 NAS 地址记忆（2026-09-19 第三百四十八笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理）

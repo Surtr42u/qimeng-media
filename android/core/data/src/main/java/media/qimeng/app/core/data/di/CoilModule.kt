@@ -172,5 +172,25 @@ class RealCoilCacheManager @javax.inject.Inject constructor(
 
     override fun sizeBytes(): Long? = imageLoader.diskCache?.size
 
+    override fun fileCount(): Int? {
+        val diskCache = imageLoader.diskCache ?: return null
+        // 纯谓词 [isDiskCacheDataFileName] 已有单测锁定；磁盘遍历属 IO 性质，
+        // 调用点（ViewModel readCacheSize 链路）统一挂 IO 调度器
+        return diskCache.fileSystem.listRecursively(diskCache.directory)
+            .count { isDiskCacheDataFileName(it.name) }
+    }
+
     override fun capacityBytes(): Long = runBlocking { diskCachePrefs.quota.first().bytes }
 }
+
+/**
+ * 磁盘缓存目录内「数据文件」文件名谓词（批S4 2026-09-19 缓存条目数口径的单一来源）。
+ * Coil 3.6.2 磁盘缓存布局（DiskLruCache.kt/RealDiskCache.kt 官方源码核实）：
+ * 每条目 = `{key}.0`（元数据）+ `{key}.1`（数据），写盘中转 = `{key}.N.tmp`，
+ * 日志文件 = journal / journal.tmp / journal.bkp——只有 `.1` 结尾是数据文件，
+ * 一条 = 一张缓存图。接口 KDoc 与本谓词互为口径注记，改动须同批同步测试。
+ */
+internal fun isDiskCacheDataFileName(name: String): Boolean = name.endsWith(DATA_FILE_SUFFIX)
+
+/** 数据文件后缀（ENTRY_DATA=1，见 [isDiskCacheDataFileName] 口径注记） */
+private const val DATA_FILE_SUFFIX = ".1"
