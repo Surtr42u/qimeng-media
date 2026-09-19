@@ -34,6 +34,10 @@ data class ServerSettingsUiState(
     val urlInvalid: Boolean = false,
     /** 本机模式卡输入规范化失败 */
     val localUrlInvalid: Boolean = false,
+    /** 当前地址是否本机模式（批C 任务Q C-3：决定「仅充电时扫描」行可见性） */
+    val isLocalMode: Boolean = false,
+    /** 「仅充电时扫描」设置项（默认开；DataStore 持久化，仅本机模式 UI 可见可改） */
+    val chargeOnlyScanEnabled: Boolean = true,
 )
 
 /** 一次性事件：登出完成（壳层登录态流随即切登录页；本事件是切页前的兜底退栈信号） */
@@ -45,11 +49,13 @@ sealed interface ServerSettingsEvent {
  * 服务器设置页 ViewModel（U10-4）：地址修改（保存并重新登录）与本机模式切换（原
  * SettingsViewModel.fillLocalModeForNextLogin 整体迁入）共用一条换址链路。
  * 业务规则一律走 :core:data 仓库与 :core:network 纯函数（规范化），本层只做状态编排。
+ * 批C 任务Q C-3：注入 [ScanChargeController] 承接「仅充电时扫描」设置项（仅本机模式可见）。
  */
 @HiltViewModel
 class ServerSettingsViewModel @Inject constructor(
     private val authRepository: AuthRepository,
     private val embeddedServerController: EmbeddedServerController,
+    private val scanChargeController: media.qimeng.app.core.data.scan.ScanChargeController,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ServerSettingsUiState())
@@ -64,12 +70,21 @@ class ServerSettingsViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             authRepository.serverUrl.collect { url ->
+                // C-3：本机模式判定随地址流实时刷新（连 localhost:18430 = isLocalModePreset）
+                val localMode = ServerAddress.isLocalModePreset(url)
                 if (!inputSeeded && url.isNotEmpty()) {
                     inputSeeded = true
-                    _uiState.update { it.copy(currentUrl = url, urlInput = url) }
+                    _uiState.update {
+                        it.copy(currentUrl = url, urlInput = url, isLocalMode = localMode)
+                    }
                 } else {
-                    _uiState.update { it.copy(currentUrl = url) }
+                    _uiState.update { it.copy(currentUrl = url, isLocalMode = localMode) }
                 }
+            }
+        }
+        viewModelScope.launch {
+            scanChargeController.chargeOnlyScanEnabled.collect { enabled ->
+                _uiState.update { it.copy(chargeOnlyScanEnabled = enabled) }
             }
         }
     }
@@ -80,6 +95,13 @@ class ServerSettingsViewModel @Inject constructor(
 
     fun onLocalUrlChange(value: String) {
         _uiState.update { it.copy(localUrlInput = value, localUrlInvalid = false) }
+    }
+
+    /** 「仅充电时扫描」Switch 直写持久化（C-3；仅本机模式 UI 暴露） */
+    fun onChargeOnlyScanChange(enabled: Boolean) {
+        viewModelScope.launch {
+            scanChargeController.setChargeOnlyScanEnabled(enabled)
+        }
     }
 
     /** 保存并重新登录：规范化新地址 → 登出并预置为下次登录带出值 */

@@ -14,8 +14,9 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.withContext
+import media.qimeng.app.core.data.upload.UploadCancelRegistry
 import media.qimeng.app.core.data.upload.UploadWorker
 import media.qimeng.app.core.data.upload.UploadWorkSpec
 import media.qimeng.app.core.model.DirNode
@@ -39,6 +40,7 @@ import javax.inject.Singleton
 class SdkUploadRepository @Inject constructor(
     @ApplicationContext private val context: Context,
     private val apiFactory: BusinessApiFactory,
+    private val cancelRegistry: UploadCancelRegistry,
 ) : UploadRepository {
 
     /** localId -> 展示名（本会话入队记忆；进程重启后由 worker 进度数据补齐） */
@@ -126,14 +128,23 @@ class SdkUploadRepository @Inject constructor(
         }
     }
 
+    /** 单任务取消（C-2）：协作式置标记；worker 自行终止，链上其余任务不受影响。 */
+    override fun cancel(localId: String) {
+        Log.i(SdkMediaRepository.LOG_TAG, "cancel upload localId=$localId")
+        cancelRegistry.cancel(localId)
+    }
+
     override fun queueUpdates(): Flow<List<UploadQueueEntry>> =
-        WorkManager.getInstance(context)
-            .getWorkInfosForUniqueWorkFlow(UploadWorkSpec.UNIQUE_WORK_NAME)
-            .map { infos ->
-                infos.mapNotNull(::toEntry).sortedBy { entry ->
-                    queueOrder.indexOf(entry.localId).let { if (it < 0) Int.MAX_VALUE else it }
-                }
+        combine(
+            WorkManager.getInstance(context)
+                .getWorkInfosForUniqueWorkFlow(UploadWorkSpec.UNIQUE_WORK_NAME),
+            // 取消标记版本流：标记置位即刻重算（不等 WorkManager 状态轮转），UI 立即翻「已取消」
+            cancelRegistry.updates,
+        ) { infos, _ ->
+            infos.mapNotNull(::toEntry).sortedBy { entry ->
+                queueOrder.indexOf(entry.localId).let { if (it < 0) Int.MAX_VALUE else it }
             }
+        }
 
     private fun toEntry(info: WorkInfo): UploadQueueEntry? {
         val localId = UploadWorkSpec.localIdFromTag(info.tags) ?: return null
@@ -144,12 +155,30 @@ class SdkUploadRepository @Inject constructor(
             WorkInfo.State.ENQUEUED, WorkInfo.State.BLOCKED -> UploadStatus.QUEUED
             WorkInfo.State.RUNNING -> UploadStatus.UPLOADING
             WorkInfo.State.SUCCEEDED -> UploadStatus.SUCCEEDED
-            WorkInfo.State.FAILED, WorkInfo.State.CANCELLED -> UploadStatus.FAILED
+            // 终局失败里的用户取消（输出带 CANCELLED 标志）单列 CANCELLED：
+            // WorkManager 的 State.FAILED 不区分取消与失败，语义由输出数据承载
+            // （worker 正常结束路径）；State.CANCELLED 是 WorkManager 自身取消态，
+            // 客户端从不主动触发（见 UploadCancelRegistry），出现时按失败兜底
+            WorkInfo.State.FAILED, WorkInfo.State.CANCELLED ->
+                if (info.outputData.getBoolean(UploadWorkSpec.KEY_CANCELLED, false)) {
+                    UploadStatus.CANCELLED
+                } else {
+                    UploadStatus.FAILED
+                }
+        }
+        // 取消标记已置位但 WorkManager 终态未落（排队中刚点取消）：立即展示「已取消」，
+        // 等任务轮到时 worker 短路落终态，状态不回跳（终态映射与标记一致）
+        val effectiveStatus = if (status != UploadStatus.SUCCEEDED && status != UploadStatus.FAILED &&
+            cancelRegistry.isCancelled(localId)
+        ) {
+            UploadStatus.CANCELLED
+        } else {
+            status
         }
         return UploadQueueEntry(
             localId = localId,
             displayName = displayName,
-            status = status,
+            status = effectiveStatus,
             progressPercent = info.progress.getInt(UploadWorkSpec.KEY_PROGRESS_PERCENT, -1)
                 .takeIf { it >= 0 },
             finalFileName = info.outputData.getString(UploadWorkSpec.KEY_FINAL_FILE_NAME),

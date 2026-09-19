@@ -2,6 +2,7 @@ package media.qimeng.app.feature.settings
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -13,6 +14,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -22,6 +24,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -57,6 +60,11 @@ private const val BUTTON_SAVE_AND_RELOGIN = "保存并重新登录"
 private const val ERROR_INVALID_URL = "服务器地址格式不正确，请检查后重试"
 private const val SECTION_LOCAL_MODE = "本机模式"
 private const val BUTTON_SWITCH_LOCAL = "一键切换本机模式"
+
+// ---------- 仅充电时扫描（批C 任务Q C-3，仅本机模式渲染） ----------
+private const val SECTION_CHARGE_ONLY_SCAN = "仅充电时扫描"
+private const val SUBTITLE_CHARGE_ONLY_SCAN =
+    "本机模式下扫描耗本机电量：未充电时点「重新扫描」会先记下，接入电源后自动开始"
 
 /** 本机模式卡副文案（原设置页 SUBTITLE_LOCAL_MODE 随 U10-4 迁此，行入口改卡内说明；插值预设常量） */
 private val SUBTITLE_LOCAL_MODE =
@@ -161,6 +169,15 @@ fun ServerSettingsScreen(
                 },
                 modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
             )
+            // 仅充电时扫描（批C 任务Q C-3）：仅本机模式渲染——扫描烧的是手机自己的电；
+            // 连 NAS 的常规模式不受限（冻结语义），整行隐藏而非禁用，避免无效开关噪音
+            if (state.isLocalMode) {
+                ChargeOnlyScanCard(
+                    enabled = state.chargeOnlyScanEnabled,
+                    onEnabledChange = viewModel::onChargeOnlyScanChange,
+                    modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
+                )
+            }
             StoragePermissionCard(modifier = Modifier.padding(bottom = QimengDimens.SpaceL))
             Text(
                 text = HINT_RELOGIN,
@@ -227,8 +244,7 @@ private fun LocalModeCard(
     onLocalUrlChange: (String) -> Unit,
     onSwitch: () -> Unit,
     modifier: Modifier = Modifier,
-) {
-    CardContainer(modifier = modifier) {
+) {    CardContainer(modifier = modifier) {
         Text(text = SECTION_LOCAL_MODE, style = MaterialTheme.typography.titleSmall)
         Text(
             text = SUBTITLE_LOCAL_MODE,
@@ -255,6 +271,31 @@ private fun LocalModeCard(
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(text = BUTTON_SWITCH_LOCAL)
+        }
+    }
+}
+
+/**
+ * 仅充电时扫描卡（批C 任务Q C-3，PROJECT_PLAN M6 性能项）：本机模式下扫描烧手机自己的
+ * 电，默认开启「未充电时不立即扫、记待扫标记，接通电源自动补扫」。仅本机模式渲染
+ * （调用方条件已保证）；Switch 直写 DataStore（经 [ServerSettingsViewModel]），无协议交互。
+ */
+@Composable
+private fun ChargeOnlyScanCard(
+    enabled: Boolean,
+    onEnabledChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    CardContainer(modifier = modifier) {
+        Text(text = SECTION_CHARGE_ONLY_SCAN, style = MaterialTheme.typography.titleSmall)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = SUBTITLE_CHARGE_ONLY_SCAN,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+            Switch(checked = enabled, onCheckedChange = onEnabledChange)
         }
     }
 }

@@ -73,5 +73,12 @@ class FakeUploadRepository : UploadRepository {
         return items.map { QueuedUpload(localId = "local-${it.hashCode()}", displayName = it.displayName) }
     }
 
+    /** 取消调用记录（断言取消透传，批C 任务Q C-2） */
+    val cancelCalls = mutableListOf<String>()
+
+    override fun cancel(localId: String) {
+        cancelCalls.add(localId)
+    }
+
     override fun queueUpdates(): Flow<List<UploadQueueEntry>> = _queue.asStateFlow()
 }

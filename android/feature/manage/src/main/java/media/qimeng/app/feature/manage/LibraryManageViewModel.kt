@@ -38,12 +38,14 @@ data class LibraryManageUiState(
 
 /**
  * 库管理 ViewModel（U10-6）：库表五操作（注册/重扫/删除/启停/列表）+ 注册表单编排。
- * 全走 [LibraryRepository]，UI 零直调（铁律 7）；scanState 无实时推送（SSE 未接，
- * 实时进度走 SSE 列入后续），页面 ON_START 与每个写操作成功后重查拉平。
+ * 全走 [LibraryRepository] 与 [ScanChargeController]，UI 零直调（铁律 7）；
+ * scanState 无实时推送（SSE 未接，实时进度走 SSE 列入后续），页面 ON_START 与每个
+ * 写操作成功后重查拉平。
  */
 @HiltViewModel
 class LibraryManageViewModel @Inject constructor(
     private val libraryRepository: LibraryRepository,
+    private val scanChargeController: media.qimeng.app.core.data.scan.ScanChargeController,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(LibraryManageUiState())
@@ -133,16 +135,27 @@ class LibraryManageViewModel @Inject constructor(
         }
     }
 
-    /** 行内「重新扫描」（202 受理即成功；进度由下一次刷新的 scanState 呈现） */
+    /**
+     * 行内「重新扫描」（批C 任务Q C-3 起经充电门）：本机模式+设置开+未充电 → 记待扫
+     * 标记不立即扫（判定在 [ScanChargeController]，ScanGate 纯函数锁定）；否则立即扫
+     * （202 受理即成功；进度由下一次刷新的 scanState 呈现）。决策三分型对应三段反馈。
+     */
     fun rescan(library: LibrarySummary) {
         viewModelScope.launch {
             _uiState.update { it.copy(errorMessage = null, noticeMessage = null) }
-            try {
-                libraryRepository.scan(library.id)
-                _uiState.update { it.copy(noticeMessage = NOTICE_RESCAN_SUCCESS.format(library.name)) }
-                refresh()
-            } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = ERROR_SCAN) }
+            when (scanChargeController.requestRescan(library.id)) {
+                media.qimeng.app.core.data.scan.RescanDecision.STARTED -> {
+                    _uiState.update { it.copy(noticeMessage = NOTICE_RESCAN_SUCCESS.format(library.name)) }
+                    refresh()
+                }
+
+                media.qimeng.app.core.data.scan.RescanDecision.DEFERRED ->
+                    _uiState.update {
+                        it.copy(noticeMessage = NOTICE_RESCAN_DEFERRED.format(library.name))
+                    }
+
+                media.qimeng.app.core.data.scan.RescanDecision.FAILED ->
+                    _uiState.update { it.copy(errorMessage = ERROR_SCAN) }
             }
         }
     }
@@ -219,6 +232,9 @@ class LibraryManageViewModel @Inject constructor(
         /** 注册成功但续接扫描失败：注册事实不回滚（与 Web 注册/扫描 toast 分离同口径） */
         const val NOTICE_REGISTER_SCAN_FAILED = "已注册「%s」，但触发扫描失败，请稍后在列表重新扫描"
         const val NOTICE_RESCAN_SUCCESS = "「%s」扫描已触发"
+
+        /** 重扫被充电门推迟（C-3）：待扫标记已记，UI 可感知反馈（冒烟剧本 2 的断言点） */
+        const val NOTICE_RESCAN_DEFERRED = "「%s」未接通电源，已记入待扫描，接入电源后自动开始"
         const val NOTICE_DELETE_SUCCESS = "「%s」已删除"
         const val NOTICE_ENABLED_SUCCESS = "「%s」已启用"
         const val NOTICE_DISABLED_SUCCESS = "「%s」已停用（浏览面隐藏，记录保留）"

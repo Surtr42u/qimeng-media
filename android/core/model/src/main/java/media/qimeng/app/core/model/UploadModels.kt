@@ -68,7 +68,11 @@ data class UploadQueueEntry(
     val errorMessage: String?,
 )
 
-enum class UploadStatus { QUEUED, UPLOADING, SUCCEEDED, FAILED }
+/**
+ * 队列任务状态。CANCELLED（批C 任务Q）：用户主动取消的终态——与 FAILED 分列，聚合行
+ * 「失败 N」不把取消计入失败数（用户取消不是失败，UI 文案也分列「已取消」）。
+ */
+enum class UploadStatus { QUEUED, UPLOADING, SUCCEEDED, FAILED, CANCELLED }
 
 /**
  * 上传纯规则（无 IO，单测锁定）：目录路径拼装与本地校验。

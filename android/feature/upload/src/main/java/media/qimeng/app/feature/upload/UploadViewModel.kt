@@ -56,7 +56,8 @@ data class UploadUiState(
     val hasActiveWork: Boolean
         get() = queue.any { it.status == UploadStatus.QUEUED || it.status == UploadStatus.UPLOADING }
 
-    /** 队列聚合行「共 N 个 · 成功 X · 失败 Y」（空队列 null；从 queue 派生，UI 只渲染） */
+    /** 队列聚合行「共 N 个 · 成功 X · 失败 Y」（空队列 null；从 queue 派生，UI 只渲染）。
+     *  取消（CANCELLED）不计失败数——用户取消不是失败（批C 任务Q C-2）。 */
     val queueSummary: String?
         get() = queue.takeIf { it.isNotEmpty() }?.let { entries ->
             "共 ${entries.size} 个 · 成功 ${entries.count { it.status == UploadStatus.SUCCEEDED }}" +
@@ -290,6 +291,15 @@ class UploadViewModel @Inject constructor(
         val limitMb = limits?.maxBytesMb ?: UNKNOWN_LIMIT_MB
         val names = blocked.joinToString("、") { it.displayName }
         return "以下文件超过服务端上限 $limitMb MB，已停止上传：$names"
+    }
+
+    /**
+     * 取消单个队列任务（批C 任务Q C-2；排队中与上传中皆可，对齐 Web 无需二次确认）。
+     * 协作式取消全在 core 层（UploadCancelRegistry + worker 检查），VM 只透传；
+     * 队列行状态由 queueUpdates 流即时翻「已取消」，UI 无本地回滚状态。
+     */
+    fun cancel(entry: UploadQueueEntry) {
+        uploadRepository.cancel(entry.localId)
     }
 
     private companion object {

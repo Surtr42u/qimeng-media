@@ -53,6 +53,10 @@ class QimengApplication : Application(), Configuration.Provider, SingletonImageL
     @Inject
     lateinit var thumbnailPrefetcher: ThumbnailPrefetcher
 
+    /** 扫描充电联动接线（批C 任务Q C-3）：注册 ACTION_POWER_CONNECTED 接收器 + 启动兜底补扫 */
+    @Inject
+    lateinit var scanChargeRegistrar: media.qimeng.app.ScanChargeRegistrar
+
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()
             .setWorkerFactory(workerFactory)
@@ -63,6 +67,7 @@ class QimengApplication : Application(), Configuration.Provider, SingletonImageL
         eventSyncBootstrapper.onAppCreate()
         diagnosticsBootstrapper.onAppCreate()
         thumbnailPrefetcher.onAppCreate()
+        scanChargeRegistrar.onAppCreate(this)
     }
 
     override fun newImageLoader(context: PlatformContext): ImageLoader = imageLoader

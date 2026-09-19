@@ -346,6 +346,48 @@ class UploadViewModelTest {
         val (viewModel, _) = newViewModel()
         assertNull(viewModel.uiState.value.queueSummary)
     }
+
+    // ---- 批C 任务Q C-2：单任务取消 ----
+
+    @Test
+    fun `取消透传localId到仓库且无需二次确认`() {
+        val (viewModel, repository) = newViewModel()
+        val entry = queueEntry(UploadStatus.UPLOADING).copy(localId = "local-42")
+        viewModel.cancel(entry)
+        driveIdle()
+        assertEquals(listOf("local-42"), repository.cancelCalls)
+    }
+
+    @Test
+    fun `排队中任务同样可取消`() {
+        val (viewModel, repository) = newViewModel()
+        val entry = queueEntry(UploadStatus.QUEUED).copy(localId = "local-7")
+        viewModel.cancel(entry)
+        driveIdle()
+        assertEquals(listOf("local-7"), repository.cancelCalls)
+    }
+
+    @Test
+    fun `取消不计入聚合行失败数`() {
+        val (viewModel, repository) = newViewModel()
+        repository.pushQueue(
+            listOf(
+                queueEntry(UploadStatus.SUCCEEDED),
+                queueEntry(UploadStatus.CANCELLED),
+                queueEntry(UploadStatus.FAILED),
+            ),
+        )
+        driveIdle()
+        assertEquals("共 3 个 · 成功 1 · 失败 1", viewModel.uiState.value.queueSummary)
+    }
+
+    @Test
+    fun `取消态不算活跃任务`() {
+        val (viewModel, repository) = newViewModel()
+        repository.pushQueue(listOf(queueEntry(UploadStatus.CANCELLED)))
+        driveIdle()
+        assertFalse(viewModel.uiState.value.hasActiveWork)
+    }
 }
 
 /** [FolderScanner] 测试替身：结果可编程、可挂起在 gate 模拟扫描中（JVM 纯 Kotlin）。 */
