@@ -187,21 +187,8 @@ func parseLastViewed(v any) *time.Time {
 	return &t
 }
 
-// resolvePageOffset 分页偏移公共语义（协议 offset default=0/minimum=0）：
-// 缺省 0；负数写 400 INVALID_PARAM（错误风格与 pagination.go 的 limit 族
-// 一致）。本应与 limit 族同居 pagination.go，但本次改动范围锁定在推荐/
-// 排行端点两文件，暂居于此——后续若第三个端点需要 offset 再迁。
-func resolvePageOffset(w http.ResponseWriter, offset *int) (int, bool) {
-	if offset == nil {
-		return 0, true
-	}
-	if *offset < 0 {
-		writeErr(w, http.StatusBadRequest, codeInvalidParam, "offset 取值范围 >=0")
-		return 0, false
-	}
-	return *offset, true
-}
-
+// resolvePageOffset 已迁往 pagination.go 与 limit 族同处（2026-09-20
+// 全库审查清偿其自述的放置债：recommendations 与 rankings 两消费方）。
 // slicePage 对已排序结果做 [offset : offset+limit) 切片（推荐/排行端点的
 // 翻页语义，openapi 两端点 offset 参数描述）。越界自然为空：offset 落在
 // 末页之后返回 nil（调用方输出层 make([]T, 0, ...) 保证 JSON 仍为 []，

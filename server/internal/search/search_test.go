@@ -63,7 +63,7 @@ func TestRebuildIndex(t *testing.T) {
 	if n != 1 {
 		t.Fatalf("清空应删除 1 行，得到 %d", n)
 	}
-	if err := RebuildIndex(ctx, q); err != nil {
+	if err := RebuildIndex(ctx, conn); err != nil {
 		t.Fatalf("RebuildIndex 失败: %v", err)
 	}
 	items, err := q.ListAssetsFilteredDesc(ctx, db.ListAssetsFilteredDescParams{

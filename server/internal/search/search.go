@@ -2,6 +2,7 @@ package search
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 
@@ -11,14 +12,30 @@ import (
 // RebuildIndex 全量重建 assets_fts（清空后按 asset_search_text 重灌）。
 //
 // 触发器的增量维护已覆盖全部写路径，此函数只在索引与主数据失配时使用
-// （例如手工修库后、迁移器故障后自检）；数据量级为库内资产行数，重建
-// 在批次事务中执行以防插入中途失败留下半套索引。
-func RebuildIndex(ctx context.Context, q *db.Queries) error {
+// （例如手工修库后、迁移器故障后自检）；数据量级为库内资产行数。
+// Clear 与 Fill 必须同事务执行（2026-09-20 全库审查 F2 根修：此前两条
+// 语句各自独立 autocommit，Clear 成功后 Fill 失败/进程被杀会留下空索引
+// ——比"半套索引"更糟，全部搜索静默零结果；同事务下失败整体回滚，
+// 索引要么旧要么新，不存在空窗态）。
+func RebuildIndex(ctx context.Context, conn *sql.DB) error {
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("search: 开启重建事务: %w", err)
+	}
+	defer func() {
+		// Commit 之后的 Rollback 返回 ErrTxDone，是预期内的 no-op
+		// （与 recommendations.go 的事务惯用法同款）。
+		_ = tx.Rollback()
+	}()
+	q := db.New(tx)
 	if _, err := q.RebuildAssetsFtsClear(ctx); err != nil {
 		return fmt.Errorf("search: 清空 FTS 索引: %w", err)
 	}
 	if _, err := q.RebuildAssetsFtsFill(ctx); err != nil {
 		return fmt.Errorf("search: 重灌 FTS 索引: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("search: 提交重建事务: %w", err)
 	}
 	return nil
 }

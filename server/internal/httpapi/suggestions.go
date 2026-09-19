@@ -13,6 +13,7 @@ package httpapi
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -36,7 +37,7 @@ func (s *Server) GetApiV1SearchSuggestions(w http.ResponseWriter, r *http.Reques
 	if params.Limit != nil {
 		if *params.Limit < 1 || *params.Limit > maxSuggestionLimit {
 			writeErr(w, http.StatusBadRequest, codeInvalidParam,
-				"limit 取值范围 1..50")
+				fmt.Sprintf("limit 取值范围 1..%d", maxSuggestionLimit))
 			return
 		}
 		limit = *params.Limit

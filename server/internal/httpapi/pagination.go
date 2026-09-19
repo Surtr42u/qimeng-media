@@ -50,3 +50,17 @@ func resolveRankingLimit(w http.ResponseWriter, limit *int) (int, bool) {
 	}
 	return *limit, true
 }
+
+// resolvePageOffset 分页偏移公共语义（协议 offset default=0/minimum=0）：
+// 缺省 0；负数写 400 INVALID_PARAM（错误风格与上方 limit 族一致）。
+// 消费方：recommendations / rankings（推荐流与排行榜的 offset 翻页）。
+func resolvePageOffset(w http.ResponseWriter, offset *int) (int, bool) {
+	if offset == nil {
+		return 0, true
+	}
+	if *offset < 0 {
+		writeErr(w, http.StatusBadRequest, codeInvalidParam, "offset 取值范围 >=0")
+		return 0, false
+	}
+	return *offset, true
+}
