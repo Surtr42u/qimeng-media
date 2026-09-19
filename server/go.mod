@@ -4,16 +4,16 @@ go 1.27.0
 
 require (
 	github.com/fsnotify/fsnotify v1.10.1
-	github.com/golang-migrate/migrate/v4 v4.19.1
+	github.com/golang-migrate/migrate/v4 v4.20.1
 	github.com/google/uuid v1.6.0
 	github.com/oapi-codegen/runtime v1.7.0
 	github.com/prometheus/client_golang v1.24.1
-	github.com/prometheus/common v0.70.1
-	github.com/shirou/gopsutil/v4 v4.26.7
-	golang.org/x/crypto v0.46.0
-	golang.org/x/sync v0.21.0
+	github.com/prometheus/common v0.71.0
+	github.com/shirou/gopsutil/v4 v4.26.8
+	golang.org/x/crypto v0.57.0
+	golang.org/x/sync v0.23.0
 	gopkg.in/yaml.v3 v3.0.1
-	modernc.org/sqlite v1.57.0
+	modernc.org/sqlite v1.59.0
 )
 
 require (
@@ -34,9 +34,9 @@ require (
 	github.com/tklauser/go-sysconf v0.3.16 // indirect
 	github.com/tklauser/numcpus v0.11.0 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
-	golang.org/x/sys v0.47.0 // indirect
-	google.golang.org/protobuf v1.36.11 // indirect
-	modernc.org/libc v1.74.4 // indirect
+	golang.org/x/sys v0.48.0 // indirect
+	google.golang.org/protobuf v1.36.12 // indirect
+	modernc.org/libc v1.75.7 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
-	modernc.org/memory v1.11.0 // indirect
+	modernc.org/memory v1.12.1 // indirect
 )
