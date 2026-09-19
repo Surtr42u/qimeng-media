@@ -14,6 +14,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 
 /**
  * 全屏查看覆盖层共享外壳（D2 抽取）：**Dialog 独立窗口 + 系统栏透明口径 + 黑底铺满 + 返回退出**
@@ -26,22 +27,27 @@ import androidx.core.view.WindowCompat
  *   inset 收窄区内，且部分设备系统栏隐藏后 top inset 不归零，Box 覆盖层顶部永远差一条白条；
  * - **Dialog 开独立窗口**：usePlatformDefaultWidth=false 解除宽度钳制 + decorFitsSystemWindows
  *   =false 不消费 inset → 内容物理铺满整屏；
- * - **系统栏由本 Dialog 窗口自己做**（任务S S7，2026-09-19 用户拍板「主流相册 app 风格：
- *   透明的手机状态栏」，纠正批S2「播放期恒隐」旧口径——横屏全屏属视频播放链，状态栏
- *   **透明显示不隐藏**，与 Activity 窗 SystemBarsImmersiveEffect 同口径）：Dialog 取焦后
- *   默认把系统栏带回来，S7 起顺势保留——本窗口不再 hide/show systemBars，仅保证栏底
- *   透明（API<35 用弃用的 statusBarColor=TRANSPARENT，androidx enableEdgeToEdge
- *   EdgeToEdgeApi26-30 同款官方路径；API 35+ 平台忽略该参数且强制 edge-to-edge 恒透明）
- *   并设浅色图标（覆盖层恒黑底 [FULLSCREEN_OVERLAY_BACKGROUND]）；图标明暗随窗口销毁
- *   自然失效，焦点回 Activity 窗后由既有效果接管，两窗互不影响；
+ * - **系统栏由本 Dialog 窗口自己做，显隐随内容控制条联动**（任务S S9 恢复联动，纠正
+ *   批S7「恒显」方向；2026-09-19 用户拍板竖屏两态语义——控制条显=状态栏透明、控制条
+ *   隐=全隐纯视频，横屏全屏与竖屏播放态同语义）：显隐由内容件内部控制条驱动
+ *   （[systemBarsVisible]，源=BiliPlayerView showController 单点上报），显=透明+浅色
+ *   图标（栏底透明 API<35 用弃用的 statusBarColor=TRANSPARENT，androidx enableEdgeToEdge
+ *   EdgeToEdgeApi26-30 同款官方路径；API 35+ 平台忽略该参数且强制 edge-to-edge 恒透明），
+ *   隐=hide systemBars（WindowInsetsController，与 Activity 窗 SystemBarsImmersiveEffect
+ *   同源同语义）；Dialog 取焦默认把系统栏带回来，show 分支顺势幂等收敛；图标明暗随
+ *   窗口销毁自然失效，焦点回 Activity 窗后由既有效果接管，两窗互不影响；
  * - **返回语义**：onDismissRequest=onDismiss（视频=退横屏全屏回排版态，由调用方状态机裁决）；
  *   dismissOnClickOutside=false——内容铺满窗口不存在「外部」。
  *
+ * @param systemBarsVisible 系统栏应显（true=透明+浅色图标）/应隐（false=hide）——由
+ *   内容件内部控制条显隐单点驱动（视频=BiliPlayerView onControllerVisibilityChanged
+ *   镜像；G9 自动隐藏/拖拽隐/长按隐/ENDED 强制显全路径同源）
  * @param onDismiss 退出覆盖层（系统返回共用；内容件自管单击/手势退出）
  * @param content 覆盖层内容件（视频=BiliPlayerView 桥接）
  */
 @Composable
 internal fun FullscreenOverlayShell(
+    systemBarsVisible: Boolean,
     onDismiss: () -> Unit,
     content: @Composable BoxScope.() -> Unit,
 ) {
@@ -56,11 +62,10 @@ internal fun FullscreenOverlayShell(
             dismissOnClickOutside = false,
         ),
     ) {
-        // 系统栏透明显示（S7，与详情页 Activity 窗同口径）：本窗口不 hide/show
-        // systemBars——Dialog 取焦默认把栏带回来即顺势保留（透明+浅色图标），机制与
-        // 依据见类 KDoc 第三条
+        // 系统栏透明口径 + 显隐联动（S9）：透明底/浅色图标为显示态常态设定；hide/show
+        // 随 [systemBarsVisible] 幂等重跑（重键重跑时全部设定幂等重申，无序次敏感状态）
         val view = LocalView.current
-        DisposableEffect(view) {
+        DisposableEffect(view, systemBarsVisible) {
             // Compose Dialog 的内容视图宿主实现 DialogWindowProvider（material3
             // ModalBottomSheet 同款取窗方式）
             val dialogWindow = (view.parent as? DialogWindowProvider)?.window
@@ -72,16 +77,21 @@ internal fun FullscreenOverlayShell(
                 @Suppress("DEPRECATION")
                 dialogWindow.statusBarColor = android.graphics.Color.TRANSPARENT
             }
-            // 覆盖层恒黑底（FULLSCREEN_OVERLAY_BACKGROUND）→ 状态栏/导航栏图标恒浅色
-            //（含导航栏同口径，X8 记档惯例）
-            dialogWindow?.let { WindowCompat.getInsetsController(it, view) }?.apply {
+            val controller = dialogWindow?.let { WindowCompat.getInsetsController(it, view) }
+            // 显示态=覆盖层恒黑底（FULLSCREEN_OVERLAY_BACKGROUND）→ 状态栏/导航栏图标
+            // 恒浅色（含导航栏同口径，X8 记档惯例）
+            controller?.apply {
                 isAppearanceLightStatusBars = false
                 isAppearanceLightNavigationBars = false
             }
+            // 显隐联动（S9 恢复）：控制条显=show（透明+浅图标，上面已设）、控制条隐=
+            // hide——与竖屏播放态 SystemBarsImmersiveEffect 的 playerActive 分支同语义
+            val bars = WindowInsetsCompat.Type.systemBars()
+            if (systemBarsVisible) controller?.show(bars) else controller?.hide(bars)
             onDispose {
-                // S7 后无显隐需恢复（栏恒显示）；本窗口图标明暗设定随 Dialog 窗口销毁
-                // 自然失效，焦点回 Activity 窗后由 SystemBarsImmersiveEffect 的既有
-                // 设定接管（其键未变则值不变，无须协调）
+                // 无恢复动作：重键重跑时上方逻辑幂等重设；窗口销毁后本窗口的图标明暗/
+                // 显隐设定自然失效，焦点回 Activity 窗后由 SystemBarsImmersiveEffect
+                // 既有三分支编排接管（排版态按其裁决值重申显隐），两窗互不影响
             }
         }
         Box(

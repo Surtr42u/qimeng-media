@@ -59,8 +59,8 @@ import media.qimeng.app.core.ui.theme.QimengDimens
  * 随沉浸切换：chrome 显=主题底/沉浸或播放中=黑，见 [stageBackdropColor]；图片态
  * ZoomImageView 链 / 视频态 BiliPlayerView 链）+ 上下渐变 chrome 浮层（顶：返回/n/N/信息；
  * 底：点赞N/收藏/标签/作者四胶囊——任务W W3「整理」退役换作者，[DetailChromeBars]）+
- * 单击显隐（图片态单击舞台切 chrome，L271-276；S7 起系统栏不随切——恒透明显示，见
- * [SystemBarsImmersiveEffect]）；媒体层下方仅剩错误横幅
+ * 单击显隐（图片态单击舞台切 chrome，L271-276；S9 起图片常态系统栏不随切——恒透明
+ * 显示，播放态/放大态系统栏随控制条显隐，见 [SystemBarsImmersiveEffect]）；媒体层下方仅剩错误横幅
  * （任务X X2 下滑区裁剪终态：标题/meta/标签行整段退役，页面主体=舞台+四胶囊；
  * chrome 挂在舞台盒内随第一屏滚动，只覆盖第一屏）。
  *
@@ -80,22 +80,23 @@ import media.qimeng.app.core.ui.theme.QimengDimens
  * 视频播放态 chrome（任务S S2，2026-09-19 用户拍板「单击变成显示 ui 就是视频的 ui 和
  * 上方的 ui；现在视频播放不显示手机状态栏；双击才是暂停」=解冻令，推翻 GUIDE_UI L185-186
  * 旧口径「竖屏单击播停/横屏单击显隐/竖屏双击无功能」——冲突优先级用户最新要求 > 规格书）：
- * 播放期单击切「播放器控制器（视频的 ui）+ 详情顶栏（上方的 ui）」整体显隐——控制器显隐
- * 由桥接件 showController 单点上报（onControllerVisibilityChanged）经 VideoStage/
- * DetailMediaStage 转发为 [playbackChromeVisible] 镜像（G9 自动隐藏/拖拽隐/长按隐/ENDED
- * 强制显同拍同源，无第二事实源），DetailTopChrome 以「chromeEffective || 播放态镜像」
- * 追加显隐；双击=播停。**系统栏播放期透明显示不隐藏**（任务S S7，2026-09-19 同日
- * 用户拍板纠正批S2 理解偏差：S2 曾把用户原话「现在视频播放不显示手机状态栏」当维持
- * 隐藏令执行，实为对现状的抱怨——正确口径=主流相册 app 风格，系统状态栏透明恒显、
- * 图标浮在播放画面上，chromeEffective 口径对本效果只剩图标明暗判定，记档见
- * [SystemBarsImmersiveEffect]）；底色纯黑/锁滚/
+ * 播放期单击切「播放器控制器（视频的 ui）」显隐——控制器显隐由桥接件 showController
+ * 单点上报（onControllerVisibilityChanged）经 VideoStage/DetailMediaStage 转发为
+ * [playbackChromeVisible] 镜像（G9 自动隐藏/拖拽隐/长按隐/ENDED 强制显同拍同源，无
+ * 第二事实源）；双击=播停。**详情顶栏播放态恒不显示**（任务S S9，2026-09-19 用户再次
+ * 拍板纠正批S2/S7 拼接偏差：「应该是显示播放时的 ui，就是下方进度条，这时候依旧会显示
+ * 上方的手机状态栏，不是详情页 ui，就是 b 站手机竖屏的那种」——S2 的「chromeEffective
+ * || 播放态镜像」顶栏追加显隐废止，顶栏只在非播放态按 chromeEffective 显隐）；
+ * **系统栏随控制条联动**（S9 定稿两态：显示态=控制条+状态栏透明浅图标、沉浸态=控制条+
+ * 状态栏全隐纯视频，单击两态切换；S7「播放期透明恒显」与 S2「顶栏随镜像显隐」两截半
+ * 成品由本拍板合流，三分支判定记档见 [SystemBarsImmersiveEffect]）；底色纯黑/锁滚/
  * 底部四胶囊隐等 chromeEffective 口径全部不动（U6 逐帧动画机制不动）。
  *
  * 图片态缩放沉浸（2026-09-13 用户实测反馈驱动，非旧版对齐——旧版单击无条件切 chrome）：
  * 图片放大跨过 1.05x（ZoomImageView.emitZoomImmersive 上报）即并入 chromeEffective——
  * 上下渐变 chrome 隐藏、舞台底转黑、滚动锁死（同沉浸口径，消除「放大时上下白色
- * 渐变压在图上」观感；系统栏 S7 起不随沉浸隐藏——恒透明显示，批C「状态栏隐藏」
- * 口径一并纠正）；缩回落回收束点恢复。放大态单击舞台无操作（防 chrome 显隐奇偶
+ * 渐变压在图上」观感；系统栏 S9 起随放大沉浸隐藏——批C「状态栏隐藏」口径在放大态
+ * 恢复，图片常态仍 S7 恒透明显示，见 [SystemBarsImmersiveEffect]）；缩回落回收束点恢复。放大态单击舞台无操作（防 chrome 显隐奇偶
  * 漂移）。链路：ZoomImageView → ZoomableOriginalImage 桥 → DetailMediaStage → 本页
  * zoomImmersive 单点并入 chromeEffective。
  *
@@ -126,10 +127,11 @@ fun DetailScreen(
     var chromeVisible by rememberSaveable { mutableStateOf(!SiblingSwipeImmersionRequest.consume()) }
     // 视频播放器活动态镜像（VideoStage 上报）：活动期 chrome 让位播放器控制器
     var playerActive by remember { mutableStateOf(false) }
-    // S2 播放态 chrome 镜像（2026-09-19 拍板，见类 KDoc）：桥接件控制器显隐单点上报——
-    // 播放期单击切「播放器控制器+详情顶栏」整体显隐。remember 非 saveable：播放会话
-    // 内 ephemeral 态（进程重建即回海报态，同 stageMode 口径），退出播放态随
-    // onPlayerActiveChanged(false) 复位，不带入浏览态
+    // S2 播放态镜像（2026-09-19 拍板引入，S9 同日定语义，见类 KDoc）：桥接件控制器显隐
+    // 单点上报——播放期驱动系统状态栏显隐（B 站竖屏两态：控制条显=状态栏透明显示、控制
+    // 条隐=状态栏隐藏）；详情顶栏不再消费本镜像（S9：播放态顶栏恒不显示）。remember 非
+    // saveable：播放会话内 ephemeral 态（进程重建即回海报态，同 stageMode 口径），退出
+    // 播放态随 onPlayerActiveChanged(false) 复位，不带入浏览态
     var playbackChromeVisible by remember { mutableStateOf(false) }
     // 图片态缩放沉浸镜像（ZoomImageView 上报，2026-09-13 用户反馈「放大时上下白色渐变
     // 压在图上观感不适」）：跨过 1.05x 即时 true、回落收束点 false（非对称滞回在搬运件）。
@@ -146,10 +148,15 @@ fun DetailScreen(
     var infoSheetVisible by rememberSaveable { mutableStateOf(false) }
     var jumpSheetVisible by rememberSaveable { mutableStateOf(false) }
     var authorSheetVisible by rememberSaveable { mutableStateOf(false) }
-    // S7 系统栏透明显示（2026-09-19 拍板纠正批S2）：chrome 显隐不再连动系统栏隐藏——
-    // 系统状态栏/导航栏恒显示且透明（主流相册 app 风格，图标浮在媒体内容上），本效果
-    // 仅同步图标明暗（判定链见 [statusBarIconsDark]）
-    SystemBarsImmersiveEffect(chromeVisible = chromeEffective)
+    // S9 系统栏三分支编排（2026-09-19 拍板纠正批S2/S7）：图片常态恒显示透明（S7 保留）；
+    // 视频播放态随 [playbackChromeVisible] 显隐、图片放大态恒隐（B 站竖屏两态语义）；
+    // 显隐判定单源见 [systemBarsShouldShow]，图标明暗判定链见 [statusBarIconsDark]
+    SystemBarsImmersiveEffect(
+        chromeVisible = chromeEffective,
+        zoomImmersive = zoomImmersive,
+        playerActive = playerActive,
+        playbackChromeVisible = playbackChromeVisible,
+    )
 
     // 3d 生命周期接线：onPause → dwell 当前段兜底 flush + 进度 force 补报；onResume → dwell
     // 开新段（分段累加口径，见 DwellSessionTracker）；onDispose（组合离场，先于 VM onCleared
@@ -428,12 +435,11 @@ fun DetailScreen(
                     // [CHROME_FADE_MS]）；此前整条 AnimatedVisibility 一起 fadeIn/fadeOut，
                     // 背景跟着渐隐导致实测消失拖尾 325-400ms，已清偿
                     DetailTopChrome(
-                        // S2 播放态 chrome（2026-09-19 拍板）：播放期「上方的 ui」（顶栏）随
-                        // 播放器控制器同拍显隐（playbackChromeVisible 镜像，playerActive 与
-                        // 门槛双保险防跨态残留）；浏览态 chromeEffective 口径不动。系统栏
-                        // 透明恒显不随动（S7 拍板纠正批S2「恒隐」旧口径：状态栏图标浮在
-                        // 播放画面上，见类 KDoc 与 SystemBarsImmersiveEffect）
-                        contentVisible = chromeEffective || (playerActive && playbackChromeVisible),
+                        // S9 播放态顶栏退场（2026-09-19 拍板纠正批S2）：播放期「不是详情页
+                        // ui」——顶栏只在非播放态按 chromeEffective 显隐，S2 的「播放态镜像
+                        // 追加显隐」分支废止；playbackChromeVisible 镜像改驱动系统栏（见类
+                        // KDoc 与 SystemBarsImmersiveEffect）
+                        contentVisible = chromeEffective,
                         batchIndex = state.batchIndex,
                         batchSize = state.batchSize,
                         onBack = onBack,
@@ -589,42 +595,58 @@ private fun DetailContentSections(
 }
 
 /**
- * 系统栏透明显示效果（任务S S7，2026-09-19 用户拍板「是主流的相册app的那种显示手机
- * 状态栏的…现在显示的是app的状态栏错了，应该是透明的手机状态栏」——纠正批S2 对同日
- * 拍板的理解偏差）：系统状态栏/导航栏**恒显示且透明**，本效果不再调 hide/show——
+ * 系统栏显隐/透明编排（任务S S9 三分支定稿，2026-09-19 用户拍板「应该是显示播放时的
+ * ui，就是下方进度条，这时候依旧会显示上方的手机状态栏，不是详情页 ui，就是 b 站手机
+ * 竖屏的那种；再点击就是沉浸的视频浏览，这时候上面手机状态栏和下方 ui 都没了」——纠正
+ * 批S2/S7 两截半成品：S2 让顶栏随播放镜像显隐+状态栏播放期恒隐，S7 改状态栏恒显但顶栏
+ * 仍随镜像，均非 B 站竖屏语义）。显隐判定单源 [systemBarsShouldShow]（纯函数，单测锁定）：
+ * - zoomImmersive（图片放大沉浸）→ 隐藏（批C 口径在放大态恢复）；
+ * - playerActive（视频播放态）→ 随 playbackChromeVisible（控制条显=状态栏透明显示，
+ *   控制条隐=状态栏隐藏——「再点击就是沉浸的视频浏览」）；
+ * - 其余（图片常态）→ 恒显示且透明（S7 主流相册口径保留）。
+ *
  * 栏底透明由 MainActivity.enableEdgeToEdge 全局保证（androidx activity 1.10.1
  * EdgeToEdgeApi26-30：auto 档状态栏 scrim 恒 Color.TRANSPARENT；API 35+ 且
  * targetSdk 35+ 平台强制 edge-to-edge，弃用的 statusBarColor 参数被忽略），内容
- * edge-to-edge 延伸到栏后，图标恒浮在媒体内容上。chrome（App 顶栏）显隐与系统栏
- * 彻底解耦：单击切换/缩放联动（批C）/播放态镜像（批S2）只动 chrome，不再连动隐藏
- * 系统栏。沿革：3b~S2 旧口径「chrome 显隐连动 hide/show systemBars」（BEHAVIOR_
- * DEFAULT 下滑临时呼出）随本拍板整体删除；只控图标不触发布局重排的性质不变
- * （decorFitsSystemWindows(false) 恒成立，不重复设置也不恢复 true，避免整窗重排）。
+ * edge-to-edge 延伸到栏后；hide/show 用 WindowInsetsController systemBars（S7 前既有
+ * 链原样接回，无新 API 面），只控显隐不触发布局重排（decorFitsSystemWindows(false)
+ * 恒成立，不重复设置也不恢复 true，避免整窗重排）。键面=controller + 裁决值：两态
+ * 切换幂等收敛，不依赖历史状态。
  *
- * 本效果现职责=图标明暗同步（任务X X7 判定链原样保留）：沉浸/播放/放大黑底
- * （chromeVisible=chromeEffective=false）→ 浅色图标；chrome 显态舞台底=主题背景 →
- * 随系统明暗（日=暗图标/夜=浅图标，与 enableEdgeToEdge 的 auto 语义一致）。判定
- * 单源 [statusBarIconsDark]（isAppearanceLightStatusBars 平台语义=「浅底配暗图标」，
- * apply 处取反），JVM 单测锁定见 SystemBarIconAppearanceTest。键面=controller +
- * chromeVisible + darkTheme：日夜切换（uiMode 原地换肤，不 recreate）时 effect
- * 重跑，设定幂等。沿革记档：X7 修复的「沉浸态（黑底）图标仍是暗色不可辨」在 S7
- * 后依然存在（图标恒浮在内容上），故明暗链必须保留——本批唯一不变的判定链。
+ * 图标明暗同步（任务X X7 判定链，S9 保留）：显示分支按 [statusBarIconsDark]——
+ * chromeEffective（chrome 显态舞台底=主题背景）→ 随系统明暗（日=暗图标/夜=浅图标，
+ * 与 enableEdgeToEdge 的 auto 语义一致）；沉浸/播放/放大黑底 → 浅色图标。JVM 单测见
+ * SystemBarIconAppearanceTest。键面=controller + chromeVisible + darkTheme：日夜切换
+ * （uiMode 原地换肤，不 recreate）时 effect 重跑，设定幂等。
  *
  * onDispose（LEGACY_REQUIREMENTS E：controller 判空 + 生命周期清理）：离页兜底
- * show(systemBars)——S7 后 App 内已无隐藏路径，正常恒 no-op，保留防未来其他路径的
- * 隐藏残留波及其他页面；S2 的 handoff-ack 门控原样保留（滑切 push 详情→详情跳过
- * show，其「1-2 帧白条」根因已随 hide 链退役，机制退化为无操作，记档防误删）。
- * 图标明暗回设随系统明暗（X7，rememberUpdatedState 取最新值——DisposableEffect
- * 不以 darkTheme 为键）。
+ * show(systemBars)——S9 后 App 内 hide 路径恢复（播放沉浸/放大沉浸），本兜底重新成为
+ * 有效防线。S2 handoff-ack 门控语义重估（S9 记档）：该门控只服务「滑切 push 详情→详情」
+ * 的栏显隐竞态，而播放态无滑切路径（播放器手势接管触摸，海报态横滑只导航不起隐栏）且
+ * 播放镜像为 remember 非持久态——滑切交接时新旧屏均在图片常态（显）分支 show 幂等汇合，
+ * 门控不影响播放态显隐，机制原样保留。图标明暗回设随系统明暗（X7，rememberUpdatedState
+ * 取最新值——DisposableEffect 不以 darkTheme 为键）。
  */
 @Composable
-private fun SystemBarsImmersiveEffect(chromeVisible: Boolean) {
+private fun SystemBarsImmersiveEffect(
+    chromeVisible: Boolean,
+    zoomImmersive: Boolean,
+    playerActive: Boolean,
+    playbackChromeVisible: Boolean,
+) {
     val view = LocalView.current
     val activity = LocalContext.current.findActivity()
     val darkTheme = isSystemInDarkTheme()
     val controller = remember(activity, view) {
         activity?.window?.let { window -> WindowCompat.getInsetsController(window, view) }
     }
+    // 显隐三分支裁决单源（S9，纯函数见 [systemBarsShouldShow]）：把 S7 删掉的 hide/show
+    // 链按分支语义接回，show/hide 均 WindowInsetsController systemBars 幂等操作
+    val systemBarsVisible = systemBarsShouldShow(
+        zoomImmersive = zoomImmersive,
+        playerActive = playerActive,
+        playbackChromeVisible = playbackChromeVisible,
+    )
     // 图标明暗应用单点：键控重跑（chrome 显隐/日夜切换）与离页回设共用同一判定
     //（[statusBarIconsDark]），两处各自手写一份必然渐行渐远
     fun applyIconAppearance(visible: Boolean) {
@@ -638,11 +660,16 @@ private fun SystemBarsImmersiveEffect(chromeVisible: Boolean) {
     LaunchedEffect(controller, chromeVisible, darkTheme) {
         applyIconAppearance(chromeVisible)
     }
+    // 显隐链（S9 恢复）：键控幂等重跑，hide/show 按裁决值收敛
+    LaunchedEffect(controller, systemBarsVisible) {
+        val bars = WindowInsetsCompat.Type.systemBars()
+        if (systemBarsVisible) controller?.show(bars) else controller?.hide(bars)
+    }
     val latestDarkTheme by rememberUpdatedState(darkTheme)
     DisposableEffect(controller) {
         onDispose {
-            // 离页兜底 show（S7 后恒 no-op，见上 KDoc）+ 图标明暗回设随系统明暗（X7）。
-            // S2 handoff-ack 门控原样保留（机制退化记档见上 KDoc）
+            // 离页兜底 show（S9 后 hide 路径恢复，本兜底重新有效）+ 图标明暗回设随系统
+            // 明暗（X7）。S2 handoff-ack 门控原样保留（S9 重估不影响播放态，记档见 KDoc）
             if (!SiblingSwipeImmersionRequest.consumeHandoffAndClear()) {
                 controller?.show(WindowInsetsCompat.Type.systemBars())
             }
@@ -656,13 +683,35 @@ private fun SystemBarsImmersiveEffect(chromeVisible: Boolean) {
 
 /**
  * 系统栏图标暗色判定单源（任务S S7 抽取；判定链自 X7 原样保留，仅从 hide/show 大
- * 效果中拆出可测——S7 显隐链退役后这是本效果唯一残留的态依赖）：chrome 有效显示且
- * 系统日间 → 暗色图标（chrome 显态舞台底=浅色主题背景）；其余（沉浸/播放/放大黑底，
- * 或系统夜间）→ 浅色图标。isAppearanceLightStatusBars 的平台语义是「浅底配暗图标」，
- * 调用方（SystemBarsImmersiveEffect）取反后 apply。
+ * 效果中拆出可测；S9 显隐链恢复后与本效果显隐编排并存各管一事——本函数管「栏上图标
+ * 颜色」，[systemBarsShouldShow] 管「栏在不在」）：chrome 有效显示且系统日间 → 暗色
+ * 图标（chrome 显态舞台底=浅色主题背景）；其余（沉浸/播放/放大黑底，或系统夜间）→
+ * 浅色图标。isAppearanceLightStatusBars 的平台语义是「浅底配暗图标」，调用方
+ * （SystemBarsImmersiveEffect）取反后 apply。
  */
 internal fun statusBarIconsDark(chromeVisible: Boolean, isSystemDarkTheme: Boolean): Boolean =
     chromeVisible && !isSystemDarkTheme
+
+/**
+ * 系统栏显隐三分支裁决单源（任务S S9 抽取，2026-09-19 用户拍板 B 站竖屏两态语义；
+ * JVM 单测锁定见 SystemBarIconAppearanceTest）：
+ * - zoomImmersive（图片放大沉浸，批C 链路）→ 隐藏（S7「恒显」在本分支回收）；
+ * - playerActive（视频播放态）→ 跟随 playbackChromeVisible（桥接件控制条显隐单点镜像，
+ *   G9 自动隐藏/拖拽隐/长按隐/ENDED 强制显全路径同源）——控制条显=状态栏透明显示、
+ *   控制条隐=状态栏隐藏（「再点击就是沉浸的视频浏览」）；
+ * - 其余（图片常态）→ 恒显示（S7 恒透明显示口径保留，排版/浏览两态均显）。
+ * 入参有意不含 chromeVisible：图片态系统栏不随 chrome 单击显隐（S7 定稿），只有播放
+ * 镜像与放大沉浸能改变系统栏。
+ */
+internal fun systemBarsShouldShow(
+    zoomImmersive: Boolean,
+    playerActive: Boolean,
+    playbackChromeVisible: Boolean,
+): Boolean = when {
+    zoomImmersive -> false
+    playerActive -> playbackChromeVisible
+    else -> true
+}
 
 // chrome 显隐动画档与逐帧语义单源已迁 DetailChromeBars.kt（任务U6：AnimatedVisibility
 // 只包条内内容，条容器恒组合，常量随组件走）

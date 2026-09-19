@@ -172,14 +172,14 @@ private const val FULLSCREEN_TOGGLE_DEBOUNCE_MS = 800L
  *   状态机退回海报态 + [onExitToChromeBrowse]（chrome 恢复显示）；播放器已 prepare 的同源
  *   媒体保留位置，再点播放走同源续播不归零（L165 同款语义）；
  * - **播放器活动态上报**：[onPlayerActiveChanged]（海报态=false，播放/暂停/ENDED=true）——
- *   DetailScreen 据此让 chrome 与系统栏让位播放器（chromeEffective=false；S2 2026-09-19
- *   拍板后播放态「上方的 ui」顶栏改经 [onPlaybackChromeChanged] 随播放器控制器同拍显隐，
- *   系统栏播放期恒隐不变）；
- * - **播放态点按 chrome（S2 2026-09-19 拍板「单击显示视频的 ui 和上方的 ui；双击才是
- *   暂停」）**：桥接件手势映射已改版（BiliPlayerView 适配点⑪）——单击切「播放器控制器+
- *   详情顶栏」整体显隐、双击播停；控制器显隐经 [onControllerVisibilityChanged]（桥接件
- *   showController 单点）→ 本舞台 [onPlaybackChromeChanged] 转发 DetailScreen 镜像，
- *   无第二事实源。
+ *   DetailScreen 据此让 chrome 让位播放器（chromeEffective=false；S9 2026-09-19 拍板后
+ *   播放态系统栏改经 [onPlaybackChromeChanged] 随控制条显隐——B 站竖屏两态语义，
+ *   详情顶栏播放态恒不显示）；
+ * - **播放态点按（S2 2026-09-19 拍板「单击显示视频的 ui 和上方的 ui；双击才是暂停」，
+ *   S9 同日定稿语义：播放 ui=控制条+透明状态栏，不含详情顶栏）**：桥接件手势映射已
+ *   改版（BiliPlayerView 适配点⑪）——单击切「播放器控制器」显隐并联动系统状态栏、
+ *   双击播停；控制器显隐经 [onControllerVisibilityChanged]（桥接件 showController
+ *   单点）→ 本舞台 [onPlaybackChromeChanged] 转发 DetailScreen 镜像，无第二事实源。
  *
  * 播放错误承接（2026-09-13 用户真机反馈 BUG-B 次修）：PlaybackException → 状态机回退
  * 海报态（全屏态先退层级，均走既有状态机 API，见 [handlePlayerError]）+ 舞台顶部轻提示
@@ -216,12 +216,12 @@ private const val FULLSCREEN_TOGGLE_DEBOUNCE_MS = 800L
  * @param onToggleChrome 沉浸模式 chrome 开关回调（视频态不接：海报单击=起播（L163 优先，
  *   与 L271 冲突取旧版语义并记档）；播放单击=S2 2026-09-19 拍板改切播放态 chrome（见
  *   [onPlaybackChromeChanged]）；保留参数与图片舞台签名对齐）
- * @param onPlayerActiveChanged 播放器活动态上报（I7：chrome 恒隐的驱动源；S2 后系统栏
- *   播放期恒隐仍由本链驱动）
- * @param onPlaybackChromeChanged 播放态 chrome 显隐上报（S2 2026-09-19 拍板「单击显示
- *   视频的 ui 和上方的 ui」）：桥接件 showController 单点上报转发 DetailScreen 播放态
- *   镜像，单击切「播放器控制器+详情顶栏」整体显隐；G9 自动隐藏/拖拽隐/长按隐/ENDED
- *   强制显同拍同源（仅视频分支消费）
+ * @param onPlayerActiveChanged 播放器活动态上报（I7：chrome 让位的驱动源；S9 后播放态
+ *   系统栏改随 playbackChromeVisible，本链只承担 chromeEffective/底色/锁滚口径）
+ * @param onPlaybackChromeChanged 播放态系统栏显隐镜像上报（S2 2026-09-19 拍板引入，
+ *   S9 同日定稿语义「b 站手机竖屏的那种」：桥接件 showController 单点上报转发
+ *   DetailScreen，驱动播放态系统状态栏随控制条显隐——详情顶栏不再消费本镜像（播放态
+ *   恒不显示）；G9 自动隐藏/拖拽隐/长按隐/ENDED 强制显同拍同源（仅视频分支消费）
  * @param onExitToChromeBrowse 播放中按返回退 chrome 浏览模式后 chrome 恢复显示（I7，L279）
  * @param onPlaybackStarted 起播回调（打点 play 用；VM 侧幂等，重复回调安全）
  * @param onPositionChanged 播放位置 tick（秒；VM 侧节流，逐 tick 喂入安全）
@@ -497,8 +497,9 @@ internal fun VideoStage(
         exitToChromeBrowseMode()
     }
 
-    // 播放器活动态上报（I7）：海报态=false、播放/暂停/ENDED=true——DetailScreen chromeEffective
-    // 的驱动源（chrome 让位播放器自有控制器，系统栏随隐）
+    // 播放器活动态上报（I7）：海报态=false、播放/暂停/ENDED=true——DetailScreen
+    // chromeEffective 的驱动源（chrome 让位播放器自有控制器；S9 起播放态系统栏不随本链，
+    // 改随 onPlaybackChromeChanged 联动控制条）
     LaunchedEffect(stageMode) {
         onPlayerActiveChanged(stageMode != VideoStageMode.POSTER)
     }
@@ -637,9 +638,9 @@ internal fun VideoStage(
                         // 播放错误 → 状态机回退海报态 + 轻提示（BUG-B 次修；全屏覆盖层视图
                         // 未接线，但其未挂时本视图听众仍在共享播放器上，错误同样经此承接）
                         onPlayerError = { handlePlayerError(it) }
-                        // S2 播放态 chrome 上报（2026-09-19 拍板）：控制器显隐单点转发
-                        // DetailScreen 镜像——须先于 startPlayback 挂线（起播即
-                        // showController(true) 上报，顶栏与控制器同拍显现）
+                        // S2 播放态镜像上报（2026-09-19 拍板引入，S9 定稿语义）：控制器显隐
+                        // 单点转发 DetailScreen 镜像——须先于 startPlayback 挂线（起播即
+                        // showController(true) 上报，状态栏与控制条同拍显现，B 站竖屏语义）
                         onControllerVisibilityChanged = { visible ->
                             latestOnPlaybackChromeChanged(visible)
                         }
