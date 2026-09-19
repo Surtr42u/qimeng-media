@@ -16,6 +16,19 @@ interface ServerConfigDataSource {
     /** 当前服务端 base URL；空串 = 从未配置（首次安装）。地址在退出登录后保留（「记忆上次」）。 */
     val serverUrl: Flow<String>
 
+    /**
+     * 最近一次成功登录的 NAS 地址记忆（任务S 批S3 服务器地址固化）。空串 = 从未有过。
+     * 只记非本机模式地址；本机模式（127.0.0.1:18430）的切换/登录**不覆盖**本槽——
+     * 从本机模式切回 NAS 时，设置页地址卡用它回填，用户免重输。
+     */
+    val rememberedNasUrl: Flow<String>
+
+    /**
+     * 最近一次成功登录的本机模式地址记忆（M6 单机形态口；可含自定义端口回环地址）。
+     * 与 [rememberedNasUrl] 各归各槽：切换时互换回填（本机模式卡/登录页快捷填入取本值）。
+     */
+    val rememberedLocalUrl: Flow<String>
+
     /** 当前登录 token；null = 未登录。此流驱动壳层登录态分支与 401 跳登录。 */
     val token: Flow<String?>
 
@@ -34,6 +47,14 @@ interface ServerConfigDataSource {
 
     /** 记住服务端地址（登录成功时调用；退出登录不清除——下次登录自动带出）。 */
     suspend fun updateServerUrl(url: String)
+
+    /**
+     * 成功登录时按地址类型分流记忆（批S3）：本机模式（[ServerAddress.isLocalModePreset]）
+     * 进 [rememberedLocalUrl]，其余（局域网 NAS 等）进 [rememberedNasUrl]。
+     * 只在登录成功路径（含 dev-login 免密链路）调用；[updateServerUrl] 的另一调用方
+     * 「换址预置」（logoutWithStagedUrl）**不写记忆**——预置值未经登录确认，不算成功登录。
+     */
+    suspend fun rememberLoginAddress(url: String)
 
     /** 保存登录 token（登录成功时调用）。 */
     suspend fun updateToken(token: String)

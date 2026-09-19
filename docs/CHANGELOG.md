@@ -13,6 +13,16 @@
 ---
 ---
 ---
+## feat(app): 服务器地址固化——本机模式切换不覆盖 NAS 地址记忆（2026-09-19 第三百四十八笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理）
+
+- **用户口径（任务S §0 批S3 原话）**：「每次切换到本地端后服务器的地址也会变成本地，目前只使用这个局域网就是电脑网络的这个作为局域网」——NAS 地址恒定=电脑局域网地址（192.168.1.8:8420）；切到本机端（18430）后该地址不能丢，切回 NAS 时自动恢复，不许用户重输。
+- **覆盖路径调研结论（改动前实测代码路径）**：全 App 唯一地址键=DataStore `server_url`（DataStoreServerConfigDataSource KEY_SERVER_URL，ADR-0015 单点流转），两个既有写入点都会把它覆盖成本机地址——①设置页「一键切换本机模式」：ServerSettingsViewModel.switchToLocalMode → AuthRepositoryImpl.logoutWithStagedUrl → updateServerUrl(18430)（换址预置即覆写主键）；②本机模式登录成功：AuthRepositoryImpl.login → updateServerUrl(18430)。登录页预填（LoginViewModel.init 读 serverUrl 首值）与设置页地址卡回填（ServerSettingsViewModel.init 首个非空地址 seed 输入框）均读同一键——主键被覆盖=两处回填全变 18430，NAS 地址只能重输。
+- **实现（ADR-0015 单点流转不动；「当前连着谁」与「记得哪些地址」分离为两份状态）**：ServerConfigDataSource 新增两记忆槽 `rememberedNasUrl`/`rememberedLocalUrl`（DataStore 新键 remembered_nas_url / remembered_local_url，随 server_config.preferences_pb 持久）与分流写入口 `rememberLoginAddress(url)`——端型判定直用 core 纯函数 ServerAddress.isLocalModePreset（回环+18430 进本地槽，其余进 NAS 槽，无第二判定源）；AuthRepositoryImpl.login 成功路径（**dev-login 免密链路同为「成功登录」**）在写 token 前调用分流记忆——本机模式切换/登录永远只写本地槽，NAS 槽不被触碰；换址预置 logoutWithStagedUrl **不写记忆**（预置值未经登录确认，不算成功登录）。主地址键语义零变化。
+- **回填语义（两端地址各记各的、切换互换回填）**：①设置页地址卡输入框 seed 按当前端型取值——当前端=本机模式时回填 NAS 记忆（无记忆回退当前地址=既有行为），当前端=NAS 时维持回填当前地址；「保存并重新登录」→ 登录页预填 NAS 地址 → 用户直接点登录即切回，全程零重输。②本机模式卡预填与登录页「本机模式」快捷填入改为优先取记忆的本机模式地址（M6 单机形态口，自定义端口也能带出），无记忆回退 LOCAL_MODE_PRESET 常量（首次行为不变；登录页在 init 预取记忆缓存，快捷填入同步可取——异步版曾造出「点填入后立刻提交读到空地址」窗口期，单测抓出后改缓存制）。③登录页主字段预填语义不变（=预置/当前地址）——本机模式时若强行改填 NAS 记忆会打断「切本机→登录页确认 18430」既有切换流，故切回 NAS 的回填落点=设置页地址卡。UI 仅地址卡内加一行说明文案，零新增设置项（任务书 §3 UI 冻结口径）。
+- **测试**：DataStoreServerConfigDataSourceTest +2（记忆按端型分流且本机模式不覆盖 NAS 槽/两记忆槽随持久化文件冷启动恢复）；AuthRepositoryImplTest +2（登录成功按端型分流记忆、本机 dev 登录不覆盖 NAS 记忆；换址预置不写记忆槽）并强化密码错误用例（失败不写记忆）；LoginViewModelTest +1（快捷填入优先带出记忆的本机地址）；ServerSettingsViewModelTest +4（本机模式地址卡回填 NAS 记忆/无记忆回退当前地址/本机卡预填记忆地址/用户已编辑不被晚到记忆覆盖）。**定向门禁原文**：`./gradlew :core:network:testDebugUnitTest :core:data:testDebugUnitTest :feature:login:testDebugUnitTest :feature:settings:testDebugUnitTest :feature:home:testDebugUnitTest` → `BUILD SUCCESSFUL`（core/network 30、core/data 112、feature/login 9、feature/settings 22、feature/home 25，合计 198 tests / 0 failures / 0 errors）+ `./gradlew :app:compileDebugKotlin` → `BUILD SUCCESSFUL`。全量三连+R8 由任务S 收官批统一跑。
+
 ## feat(app): 视频单击切控制层+双击暂停+播放沉浸系统栏（2026-09-19 第三百四十七笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理）

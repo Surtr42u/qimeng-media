@@ -57,6 +57,12 @@ class DataStoreServerConfigDataSource @Inject constructor(
     override val serverUrl: Flow<String> =
         dataStore.data.map { it[KEY_SERVER_URL].orEmpty() }.distinctUntilChanged()
 
+    override val rememberedNasUrl: Flow<String> =
+        dataStore.data.map { it[KEY_REMEMBERED_NAS_URL].orEmpty() }.distinctUntilChanged()
+
+    override val rememberedLocalUrl: Flow<String> =
+        dataStore.data.map { it[KEY_REMEMBERED_LOCAL_URL].orEmpty() }.distinctUntilChanged()
+
     override val token: Flow<String?> = dataStore.data.map { it[KEY_TOKEN] }.distinctUntilChanged()
 
     override fun currentToken(): String? = cachedToken
@@ -66,6 +72,18 @@ class DataStoreServerConfigDataSource @Inject constructor(
     override suspend fun updateServerUrl(url: String) {
         dataStore.edit { it[KEY_SERVER_URL] = url }
         cachedServerUrl = url
+    }
+
+    // 批S3 服务器地址固化：按端型分流记忆（本机模式=回环+18430 进本地槽，其余进 NAS 槽）。
+    // 这是「切到本机模式后 NAS 地址不丢」的唯一保证点——主地址键（KEY_SERVER_URL）会被
+    // 本机模式切换/登录照常覆盖（那是「当前连着谁」的真相），NAS 记忆只在独立的槽里。
+    override suspend fun rememberLoginAddress(url: String) {
+        if (url.isEmpty()) return
+        if (ServerAddress.isLocalModePreset(url)) {
+            dataStore.edit { it[KEY_REMEMBERED_LOCAL_URL] = url }
+        } else {
+            dataStore.edit { it[KEY_REMEMBERED_NAS_URL] = url }
+        }
     }
 
     override suspend fun updateToken(token: String) {
@@ -84,5 +102,14 @@ class DataStoreServerConfigDataSource @Inject constructor(
 
         /** 登录 token 键（POST /auth/login 返回；ADR-0021 多设备并发会话——本设备持有一条独立会话 token，登录新设备不再重铸旧 token，吊销走 POST /auth/logout）。 */
         val KEY_TOKEN = stringPreferencesKey("token")
+
+        /**
+         * 最近一次成功登录的 NAS 地址记忆槽（批S3）：本机模式切换/登录不覆盖，
+         * 从本机切回 NAS 时设置页地址卡/登录页据此免重输回填。
+         */
+        val KEY_REMEMBERED_NAS_URL = stringPreferencesKey("remembered_nas_url")
+
+        /** 最近一次成功登录的本机模式地址记忆槽（M6 单机形态口；与 NAS 槽各归各、切换互换回填）。 */
+        val KEY_REMEMBERED_LOCAL_URL = stringPreferencesKey("remembered_local_url")
     }
 }

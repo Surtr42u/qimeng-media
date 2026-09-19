@@ -15,12 +15,18 @@ class FakeServerConfigDataSource(
 
     private val serverUrlState = MutableStateFlow(initialServerUrl)
     private val tokenState = MutableStateFlow(initialToken)
+    private val rememberedNasState = MutableStateFlow("")
+    private val rememberedLocalState = MutableStateFlow("")
 
     /** 测试观察口：当前内存缓存（对应实现类的 currentToken 写穿缓存）。 */
     var cachedTokenForTest: String? = initialToken
         private set
 
     override val serverUrl: Flow<String> = serverUrlState
+
+    override val rememberedNasUrl: Flow<String> = rememberedNasState
+
+    override val rememberedLocalUrl: Flow<String> = rememberedLocalState
 
     override val token: Flow<String?> = tokenState
 
@@ -30,6 +36,16 @@ class FakeServerConfigDataSource(
 
     override suspend fun updateServerUrl(url: String) {
         serverUrlState.value = url
+    }
+
+    // 分流判定与 DataStore 实现同口径（同模块直用 ServerAddress，不跨模块复制逻辑）
+    override suspend fun rememberLoginAddress(url: String) {
+        if (url.isEmpty()) return
+        if (ServerAddress.isLocalModePreset(url)) {
+            rememberedLocalState.value = url
+        } else {
+            rememberedNasState.value = url
+        }
     }
 
     override suspend fun updateToken(token: String) {

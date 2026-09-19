@@ -36,6 +36,12 @@ interface AuthRepository {
     /** 当前服务端 base URL（登录页「记忆上次」的数据源；退出登录后仍有值）。 */
     val serverUrl: Flow<String>
 
+    /** 最近一次成功登录的 NAS 地址记忆（批S3 服务器地址固化；透传自 ServerConfigDataSource，本机模式不覆盖）。 */
+    val rememberedNasUrl: Flow<String>
+
+    /** 最近一次成功登录的本机模式地址记忆（M6 单机形态口；与 NAS 记忆各归各槽、切换互换回填）。 */
+    val rememberedLocalUrl: Flow<String>
+
     /** 登录态：token 非空且已持久化。壳层据此决定起始页（杀进程重启仍登录=直进壳）。 */
     val isLoggedIn: Flow<Boolean>
 
