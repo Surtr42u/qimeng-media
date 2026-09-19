@@ -13,6 +13,18 @@
 ---
 ---
 ---
+## fix(app): 详情页系统状态栏透明显示不隐藏——主流相册 app 风格（2026-09-19 第三百五十三笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理）
+
+- **用户拍板（任务S 批S7 冻结，纠正批S2 理解偏差）**：详情页（图片态+视频态+横屏全屏覆盖层）的「状态栏」做错了——批S2 把用户原话「现在视频播放不显示手机状态栏」当维持隐藏令执行（S2 记档「播放期 chromeEffective 恒 false，SystemBarsImmersiveEffect 维持隐藏」），实为对现状的抱怨。正确口径=主流相册 app 风格：**系统状态栏恒显示且透明**（内容 edge-to-edge 延伸到状态栏后面，图标浮在媒体内容上，不隐藏）；单击切换显隐的只是 App 自己的顶栏（chrome）。chrome 显隐逻辑不变（单击切换/缩放联动自动隐/播放态镜像全保留），只把「连动隐藏系统状态栏」这一行为摘除（原话：「是主流的相册app的那种显示手机状态栏的…现在显示的是app的状态栏错了，应该是透明的手机状态栏」）。
+- **现状调研（执行前定位）**：①`DetailScreen.kt` SystemBarsImmersiveEffect(chromeEffective) 驱动 hide/show(systemBars)——chrome 单击隐藏/缩放沉浸（批C）/播放态（批S2）三链共用同一隐藏点；②`FullscreenOverlayShell.kt` 视频横屏全屏 Dialog 独立窗口另行 hide(systemBars)；③`MainActivity.kt` enableEdgeToEdge 全局已开——App 本就 edge-to-edge，「隐藏系统栏」是详情页自加的行为。
+- **铁律 8 官方依据（外网 developer.android.com 不可达，改以本地 Gradle 缓存的 androidx 官方源码双核，均为项目实际依赖版）**：androidx activity 1.10.1 `EdgeToEdge.kt`——enableEdgeToEdge 默认 `SystemBarStyle.auto(TRANSPARENT, TRANSPARENT)`，EdgeToEdgeApi26-30 以弃用参数 `window.statusBarColor = Color.TRANSPARENT` 设透明栏底（androidx 自身 @Suppress("DEPRECATION") 同款用法），API 29+ auto 档状态栏 scrim 恒透明；API 35+ 且 targetSdk 35+ 平台强制 edge-to-edge、statusBarColor 被忽略。androidx core 1.17.0 `WindowCompat.java`——setDecorFitsSystemWindows 按 API 16/30/35 分 impl。结论：S7 语义（栏恒显示）下 show/hide 全无必要，透明底已全局成立。
+- **修法（最小改动）**：①`SystemBarsImmersiveEffect`（DetailScreen.kt）删除 hide/show(systemBars)、BEHAVIOR_DEFAULT 设定与 U11 ON_RESUME 重申观察者（存在理由=重申显隐，随显隐链退役）——chrome 显隐与系统栏彻底解耦；保留 X7 图标明暗判定链（沉浸/播放/放大黑底→浅色图标；chrome 显→随系统明暗），拆纯函数 `statusBarIconsDark(chromeVisible, isSystemDarkTheme)` 单源；onDispose 离页兜底 show 与 S2 handoff-ack 门控原样保留（App 内已无隐藏路径，show 恒 no-op，机制退化为无操作——KDoc 记档防误删，SiblingSwipeImmersionRequest 本体不动）。②`FullscreenOverlayShell`（视频横屏全屏 Dialog 窗）同口径：删 hide/show；API<35 显式 statusBarColor=TRANSPARENT（官方弃用参数路径），API 35+ 不设（平台强制透明）；图标恒浅色（覆盖层恒黑底）。③S7 记档落 KDoc：DetailScreen 类注释三处（单击显隐/播放态/缩放沉浸）、效果调用点与 DetailTopChrome 调用点注释、SystemBarsImmersiveEffect 与 FullscreenOverlayShell 全 KDoc，均标「S7 用户拍板：状态栏透明显示不隐藏」。
+- **回归面自查**：chrome 显隐链零改动（chromeVisible/chromeEffective/playerActive/playbackChromeVisible/zoomImmersive 五态判定与 onToggleChrome/onPlayerActiveChanged/onPlaybackChromeChanged/onZoomImmersiveChanged 上报链逐位不动）；批C 缩放联动语义保留（只改「系统栏隐藏」为「透明保留」，上下渐变 chrome 隐藏/舞台底转黑/滚动锁死不动——U4 拍板成果）；舞台几何（W2 冻结式+X1 钳制+D1 垫条）未触碰，inset 恒定后几何退化为恒稳定值（StageViewportHeightTest/StageEdgeToEdgeCompensationTest/StageBackdropTest 全绿佐证）；其他页面（列表/设置等）状态栏行为零改动（SystemBarsImmersiveEffect 仅详情页挂载，onDispose 图标明暗回设链保留）；letterbox/舞台底色口径不动；openapi/SDK/migration 无涉。
+- **测试**：新增 `SystemBarIconAppearanceTest` 4 用例（chrome 显+日=暗图标；chrome 显+夜=浅图标；chrome 隐黑底+日=浅图标；chrome 隐+夜=浅图标）。**定向门禁原文**：`./gradlew :feature:detail:testDebugUnitTest` → EXIT=0，22 套件 178 例 failures=0 errors=0（SystemBarIconAppearanceTest tests=4 skipped=0 failures=0 errors=0；SiblingSwipeImmersionRequestTest 7/SiblingSwipePolicyTest 12/StageBackdropTest 5/StageViewportHeightTest 6/StageEdgeToEdgeCompensationTest 4/DetailViewModelTest 34 等既有件全绿）+ `./gradlew :app:compileDebugKotlin`（Hilt 图聚合校验）→ `BUILD SUCCESSFUL in 12s`（180 actionable tasks: 2 executed, 178 up-to-date）。全量三连+R8 由主会话统一跑。
+- **遗留记档**：①`BiliPlayerView.kt` 适配点⑪ KDoc 仍有「播放期恒隐由 Compose 侧沉浸链承担（SystemBarsImmersiveEffect/FullscreenOverlayShell，拍板『视频播放不显示手机状态栏』）」旧口径表述——该文件本批未改动（其主句「系统栏显隐不在本控件」仍真），S7 口径以本笔与本页 KDoc 记档为准；②Insets 运行时观感（真机状态栏透明浮于媒体上）由用户真机验收，本批不做模拟器（任务书定）。
+
 ## fix(app): 断外网时本地端图片误报解码失败——Coil 离线门改恒在线判定（2026-09-19 第三百五十二笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理）
