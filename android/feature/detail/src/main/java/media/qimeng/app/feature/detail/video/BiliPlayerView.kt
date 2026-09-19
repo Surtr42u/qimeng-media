@@ -92,6 +92,25 @@ import kotlin.math.min
  *      全路径同源，无第二事实源）。系统栏显隐不在本控件——播放期恒隐由 Compose 侧既有
  *      沉浸链承担（SystemBarsImmersiveEffect/FullscreenOverlayShell，拍板「视频播放不
  *      显示手机状态栏」），播放态顶栏显示不带动系统栏。其余逐行原样。
+ *   ⑫ S10（2026-09-19 用户拍板「去掉播放器的上方返回键」=解冻令）顶部栏整条退役：
+ *      旧版顶栏（topBar）仅含返回钮一枚（backBtn），无其他元素，故连条整删（横屏全屏
+ *      覆盖层与竖屏内嵌同源同删）；播放器退出路径=系统返回手势（Activity 返回链不动，
+ *      覆盖层另有 Dialog onDismissRequest），onBack 回调属性保留（既有接线链不动，仅
+ *      无 UI 入口调用，清偿待后续批次）。GUIDE_UI L183「顶部栏含返回」旧规格被本拍板
+ *      推翻（冲突优先级：用户最新要求 > 规格书，CHANGELOG 第三百五十六笔记档）。
+ *      其余逐行原样。
+ *   ⑬ S10（2026-09-19 用户拍板「手机状态栏消失比较慢，和下面的进度条速度同步」=解冻令）
+ *      控制条显隐加 250ms 淡入淡出动画：实证旧实现 showController 瞬时 isVisible 翻转
+ *      且 onControllerVisibilityChanged 同拍瞬时发出——回调时机本就无延迟（S2 设计如
+ *      此），状态栏慢的观感根源=控制条瞬隐而系统栏 hide 自带平台动画（约 300ms 平移
+ *      渐隐），两段视觉不同步。修法=控制条 hide 改 250ms 淡出（与 Compose 侧
+ *      DetailChromeBars.CHROME_FADE_MS=250 同档，跨 View/Compose 世界注释互指）、show
+ *      对称淡入，onControllerVisibilityChanged 保持**动画开始瞬间**发出（即 showController
+ *      入口处原位不动）——Compose 侧系统栏 hide/show 平台动画与控制条淡出/淡入并发，
+ *      同起同收即观感同步（G9 五秒自动隐/单击切换/拖拽隐/ENDED 强制显全路径共用
+ *      showController 单点，自动同改）。拖拽手势预览路径（GESTURE_PROGRESS 强制实心显/
+ *      ACTION_UP 瞬隐）不经动画走 setBarImmediate，与动画互斥防 alpha 残留串态。
+ *      其余逐行原样。
  *
  * 手势冻结口径（G1~G9；G1/G2 已由 2026-09-19 拍板改版，沿革见适配点⑪）：
  * G1 单击（双向）显隐控制器；G2 双击（双向）播停；
@@ -110,7 +129,6 @@ class BiliPlayerView @JvmOverloads constructor(
 ) : FrameLayout(context, attrs, defStyleAttr) {
 
     private val playerView: PlayerView
-    private val topBar: LinearLayout
     private val bottomBar: LinearLayout
     private val playPauseBtn: ImageView
     private val speedBtn: TextView
@@ -118,7 +136,6 @@ class BiliPlayerView @JvmOverloads constructor(
     private val currentTimeText: TextView
     private val totalTimeText: TextView
     private val progressBar: SeekBar
-    private val backBtn: ImageView
 
     private val gestureIndicator: LinearLayout
     private val gestureText: TextView
@@ -135,6 +152,11 @@ class BiliPlayerView @JvmOverloads constructor(
     private val fullscreenBtn: ImageView
     private var isFullscreen = false
 
+    /**
+     * 返回回调（适配点⑫ 后无 UI 入口调用）：顶部栏整条退役，唯一调用方 backBtn 已删；
+     * 属性与既有接线链保留（VideoFullScreenOverlay 的 onBack=onExit 等），播放器退出
+     * 走系统返回手势链，本属性清偿待后续批次裁决
+     */
     var onBack: (() -> Unit)? = null
     var onFullscreen: (() -> Unit)? = null
     var onBookmark: (() -> Unit)? = null
@@ -201,6 +223,13 @@ class BiliPlayerView @JvmOverloads constructor(
         const val GESTURE_NONE = 0
         const val GESTURE_PROGRESS = 1
         const val HIDE_DELAY = 5000L
+        /**
+         * 控制条淡入淡出档（S10 适配点⑬ 显隐同步，ms）：与 Compose 侧
+         * DetailChromeBars.CHROME_FADE_MS（250）同档——跨 View/Compose 两世界无法单源，
+         * 注释互指，两侧改动须同步评估；系统栏 hide/show 平台动画与控制条淡出并发，
+         * 同起同收即 B 站观感同步
+         */
+        const val CONTROLLER_FADE_MS = 250L
         const val TOP_INDICATOR_DELAY = 1500L
         const val LONG_PRESS_SPEED = 2f
         /**
@@ -340,25 +369,9 @@ class BiliPlayerView @JvmOverloads constructor(
         lockSpeedHint.addView(lockSpeedHintText)
         addView(lockSpeedHint)
 
-        topBar = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(12.dp(context), 10.dp(context), 12.dp(context), 6.dp(context))
-            setBackgroundColor(0x88000000.toInt())
-            visibility = View.GONE
-            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
-                gravity = Gravity.TOP
-            }
-        }
-        backBtn = ImageView(context).apply {
-            setImageResource(R.drawable.ic_detail_back)
-            setPadding(9.dp(context), 9.dp(context), 9.dp(context), 9.dp(context))
-            layoutParams = LinearLayout.LayoutParams(40.dp(context), 40.dp(context))
-            setColorFilter(Color.WHITE)
-            setOnClickListener { onBack?.invoke() }
-        }
-        topBar.addView(backBtn)
-        addView(topBar)
+        // 适配点⑫（S10 用户拍板「去掉播放器的上方返回键」）：旧顶部栏（topBar+backBtn）
+        // 整条退役——原条仅含返回钮一枚，播放器退出走系统返回手势（onBack 链保留无入口，
+        // 见属性 KDoc）；横屏全屏覆盖层与本视图同源，同批生效
 
         bottomBar = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -720,10 +733,12 @@ class BiliPlayerView @JvmOverloads constructor(
 
     private fun showController(visible: Boolean) {
         controllerVisible = visible
-        topBar.isVisible = visible
-        bottomBar.isVisible = visible
-        // S2 显隐上报（适配点⑪）：全路径单点发出（单击切换/G9 自动隐藏/拖拽隐/长按隐/
-        // ENDED 强制显），Compose 侧播放态 chrome 镜像同拍，不设第二事实源
+        // S10 显隐同步（适配点⑬）：控制条淡入/淡出动画（原瞬时 isVisible 翻转）；回调在
+        // **动画开始瞬间**发出（位置在动画启动之后、同拍执行）——Compose 侧系统栏平台
+        // hide/show 动画与控制条淡出/淡入并发，同起同收即观感同步（用户拍板「状态栏
+        // 消失和下面的进度条速度同步」）。G9 自动隐/单击切换/拖拽隐/ENDED 强制显全路径
+        // 共用本方法，时机口径单点
+        animateControllerBar(bottomBar, visible)
         onControllerVisibilityChanged?.invoke(visible)
         if (visible) {
             removeCallbacks(hideControllerRunnable)
@@ -732,6 +747,35 @@ class BiliPlayerView @JvmOverloads constructor(
             removeCallbacks(hideControllerRunnable)
             speedPopup?.dismiss()
         }
+    }
+
+    /**
+     * 控制条显隐动画（S10 适配点⑬）：show=立即 VISIBLE 后 alpha 淡入；hide=alpha 淡出、
+     * 结束才 GONE（withEndAction 以 [controllerVisible] 为准，动画期间反向 show 被取消
+     * 时不会误藏——ViewPropertyAnimator cancel 不触发 endAction）。动画从当前 alpha 起
+     * 步，重复调用幂等。
+     */
+    private fun animateControllerBar(bar: View, visible: Boolean) {
+        bar.animate().cancel()
+        if (visible) {
+            bar.isVisible = true
+            bar.animate().alpha(1f).setDuration(CONTROLLER_FADE_MS).start()
+        } else {
+            bar.animate().alpha(0f).setDuration(CONTROLLER_FADE_MS)
+                .withEndAction { if (!controllerVisible) bar.isVisible = false }
+                .start()
+        }
+    }
+
+    /**
+     * 拖拽手势预览路径的立即实心显/隐（S10 适配点⑬）：不经动画（拖拽进度预览须即时
+     * 反馈、松手瞬隐同旧观感），先 cancel 在途动画并复位 alpha，防与 showController
+     * 的淡出动画串态（半透明残留）。参数含义同 [showController] 的 bar 显隐位
+     */
+    private fun setBarImmediate(bar: View, visible: Boolean) {
+        bar.animate().cancel()
+        bar.alpha = 1f
+        bar.isVisible = visible
     }
 
     private fun showTopIndicator(text: String) {
@@ -792,7 +836,9 @@ class BiliPlayerView @JvmOverloads constructor(
                                     gestureIndicator.isVisible = true
                                     progressBar.progress = ((newPos * 1000) / d).toInt()
                                     currentTimeText.text = formatMs(newPos)
-                                    bottomBar.isVisible = true
+                                    // S10 适配点⑬：拖拽进度预览立即实心显（不经动画，防与
+                                    // showController(false) 的淡出串态半透明）
+                                    setBarImmediate(bottomBar, true)
                                     playerView.player?.seekTo(newPos)
                                 }
                             }
@@ -844,7 +890,8 @@ class BiliPlayerView @JvmOverloads constructor(
                     if (controllerVisible) {
                         showController(true)
                     } else {
-                        bottomBar.isVisible = false
+                        // S10 适配点⑬：松手瞬隐走立即路径（同旧观感，防淡出动画串态）
+                        setBarImmediate(bottomBar, false)
                     }
                 }
                 isGestureDragging = false

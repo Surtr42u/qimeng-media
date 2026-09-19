@@ -46,11 +46,16 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil3.BitmapImage
+import coil3.Image
 import coil3.SingletonImageLoader
 import coil3.request.CachePolicy
 import coil3.request.Disposable
 import coil3.request.ImageRequest
+import coil3.request.allowHardware
 import coil3.size.Size
+import coil3.target.Target
+import media.qimeng.app.core.model.MediaKind
 import media.qimeng.app.core.ui.theme.QimengDimens
 
 /**
@@ -91,6 +96,13 @@ import media.qimeng.app.core.ui.theme.QimengDimens
  * 状态栏全隐纯视频，单击两态切换；S7「播放期透明恒显」与 S2「顶栏随镜像显隐」两截半
  * 成品由本拍板合流，三分支判定记档见 [SystemBarsImmersiveEffect]）；底色纯黑/锁滚/
  * 底部四胶囊隐等 chromeEffective 口径全部不动（U6 逐帧动画机制不动）。
+ *
+ * 状态栏图标随背景反色（任务S 批S10 件1，2026-09-19 用户拍板「状态栏和背景一个色了，
+ * 应该是白色上面状态栏就是反色这种……就是手机相册那种」）：图标明暗收敛本页单值
+ * statusBarDark——视频态恒浅（黑底）、chrome 显态随系统明暗（主题背景）、chrome 隐藏态
+ * 按原图顶部 1/3 亮度采样自适应（48px allowHardware(false) 小图，纯函数判定
+ * StatusBarLuminance.kt，失败兜底浅）；同批修复 apply 处「取反后 apply」双重否定
+ * （S7 引入，净输出恒与判定相反=用户反馈根因，记档见 SystemBarsImmersiveEffect KDoc）。
  *
  * 图片态缩放沉浸（2026-09-13 用户实测反馈驱动，非旧版对齐——旧版单击无条件切 chrome）：
  * 图片放大跨过 1.05x（ZoomImageView.emitZoomImmersive 上报）即并入 chromeEffective——
@@ -140,6 +152,27 @@ fun DetailScreen(
     // 故不持久化（chromeVisible 仍 saveable：chrome 开关是用户显式选择，语义不同）
     var zoomImmersive by remember { mutableStateOf(false) }
     val chromeEffective = chromeVisible && !playerActive && !zoomImmersive
+    // S10 件1（2026-09-19 用户拍板「白色上面状态栏就是反色这种……就是手机相册那种」）：
+    // 图片资产原图顶部 1/3 亮度采样值（null=未加载/失败/视频资产）——chrome 隐藏后状态栏
+    // 浮在图片内容上，图标明暗按本值自适应反色（相册语义）；null 兜底浅色图标（黑底语义，
+    // 沉浸舞台底=黑）。采样链见下方 DisposableEffect（48px allowHardware(false) 小图），
+    // 判定纯函数见 [statusBarIconsDarkForLuminance]（StatusBarLuminance.kt，单测锁定）。
+    // remember 非 saveable：采样值是图片内容派生态，进程重建随采样重跑自愈，不持久化
+    var imageTopLuminance by remember { mutableStateOf<Double?>(null) }
+    // 系统状态栏图标明暗单值（S10 收敛进本页单一状态，SystemBarsImmersiveEffect 只消费）：
+    // - 视频播放态（playerActive）→ 恒 false 浅色图标（舞台底=黑，U4 拍板，与控制条显隐
+    //   无关——显示态控制条也是黑底渐变，B 站同款浅图标）；
+    // - chrome 有效显示（排版/浏览态）→ 沿用 chrome 显态判定（浮在主题背景上：浅色主题=
+    //   深色图标，随系统明暗，X7 链）；
+    // - 其余（图片态 chrome 隐藏/放大沉浸/视频海报态沉浸）→ 浮在图片内容上，按采样亮度
+    //   自适应；null 兜底浅色图标（黑底语义）。放大态状态栏虽隐藏（systemBarsShouldShow
+    //   false），明暗值仍随本判定收敛、回显时生效——放大后浮的是图片内容，同相册语义。
+    val darkTheme = isSystemInDarkTheme()
+    val statusBarDark = when {
+        playerActive -> false
+        chromeEffective -> statusBarIconsDark(chromeVisible = true, isSystemDarkTheme = darkTheme)
+        else -> imageTopLuminance?.let { statusBarIconsDarkForLuminance(it) } ?: false
+    }
     // 信息/快速转跳/作者 BottomSheet 开关（纯 UI 弹层无数据请求，页面局部状态；进程重建后
     // 关闭态恢复——与 chromeVisible 同 rememberSaveable 语义）。任务V V3：「快速转跳」
     // 不进首屏四胶囊（主代理保守裁决待用户确认），入口随旧图标行消失——jumpSheetVisible
@@ -149,13 +182,16 @@ fun DetailScreen(
     var jumpSheetVisible by rememberSaveable { mutableStateOf(false) }
     var authorSheetVisible by rememberSaveable { mutableStateOf(false) }
     // S9 系统栏三分支编排（2026-09-19 拍板纠正批S2/S7）：图片常态恒显示透明（S7 保留）；
-    // 视频播放态随 [playbackChromeVisible] 显隐、图片放大态恒隐（B 站竖屏两态语义）；
-    // 显隐判定单源见 [systemBarsShouldShow]，图标明暗判定链见 [statusBarIconsDark]
+    // 视频播放态随 [playbackChromeVisible] 显隐、图片放大态恒隐（B 站竖屏两态语义）。
+    // S10 起显隐与图标明暗两值均在上方收敛成单值（[systemBarsShouldShow] 纯函数 +
+    // [statusBarDark] when），效果只消费（KDoc 见 [SystemBarsImmersiveEffect]）
     SystemBarsImmersiveEffect(
-        chromeVisible = chromeEffective,
-        zoomImmersive = zoomImmersive,
-        playerActive = playerActive,
-        playbackChromeVisible = playbackChromeVisible,
+        systemBarsVisible = systemBarsShouldShow(
+            zoomImmersive = zoomImmersive,
+            playerActive = playerActive,
+            playbackChromeVisible = playbackChromeVisible,
+        ),
+        statusBarDark = statusBarDark,
     )
 
     // 3d 生命周期接线：onPause → dwell 当前段兜底 flush + 进度 force 补报；onResume → dwell
@@ -236,6 +272,47 @@ fun DetailScreen(
         }
     } else {
         val asset = requireNotNull(state.asset)
+        // S10 件1：图片资产原图顶部亮度采样（与原图加载同时发起，chrome 隐藏反色判定面
+        // 就绪在先——2026-09-19 用户拍板「白色上面状态栏就是反色这种……手机相册那种」）。
+        // 48px 小图请求（allowHardware(false)=软件位图，硬件位图禁 getPixels；size 参与
+        // Coil 内存缓存 key，与口径②原图请求互不命中、互不干扰）。缓存口径：内存 ENABLED
+        // （会话内回看秒回）；磁盘 DISABLED——守 U10-5 拍板「原件不落盘防磁盘缓存膨胀」，
+        // 采样请求同样不得把原件写进磁盘缓存。仅图片资产采样：视频资产无「原图」语义
+        // （origUrl 是视频原件），海报态沉浸按 null 兜底浅色图标。onError 不回调即保持
+        // null → 兜底浅图标（黑底语义）。纯函数判定见 StatusBarLuminance.kt（单测锁定）
+        val sampleOrigUrl = asset.origUrl
+        DisposableEffect(asset.id, sampleOrigUrl) {
+            imageTopLuminance = null // 切资产先回兜底值，旧资产采样值不串新资产
+            if (asset.mediaType == MediaKind.VIDEO || sampleOrigUrl.isNullOrEmpty()) {
+                onDispose { }
+            } else {
+                val request = ImageRequest.Builder(context)
+                    .data(sampleOrigUrl)
+                    .size(STATUS_BAR_SAMPLE_SIZE_PX)
+                    .allowHardware(false)
+                    .memoryCachePolicy(CachePolicy.ENABLED)
+                    .diskCachePolicy(CachePolicy.DISABLED)
+                    .target(
+                        object : Target {
+                            override fun onSuccess(result: Image) {
+                                val bitmap = (result as? BitmapImage)?.bitmap ?: return
+                                val pixels = IntArray(bitmap.width * bitmap.height)
+                                bitmap.getPixels(
+                                    pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height,
+                                )
+                                imageTopLuminance = topRegionAverageLuminance(
+                                    pixels = pixels,
+                                    cols = bitmap.width,
+                                    rows = bitmap.height,
+                                )
+                            }
+                        },
+                    )
+                    .build()
+                val disposable = SingletonImageLoader.get(context).enqueue(request)
+                onDispose { disposable.dispose() }
+            }
+        }
         // 舞台底色单源裁决（任务K K1 黑底污染清偿，对齐旧版 MediaDetailFragment 颜色口径）：
         // chrome 有效显示=主题背景（≈旧 qmColorBg，日 #FAFAFA/夜 #1A1A1A，非纯黑——媒体
         // contain letterbox 与状态栏后区域同色，negate-inset 平移出的顶部区无黑条/主题色条
@@ -595,15 +672,12 @@ private fun DetailContentSections(
 }
 
 /**
- * 系统栏显隐/透明编排（任务S S9 三分支定稿，2026-09-19 用户拍板「应该是显示播放时的
- * ui，就是下方进度条，这时候依旧会显示上方的手机状态栏，不是详情页 ui，就是 b 站手机
- * 竖屏的那种；再点击就是沉浸的视频浏览，这时候上面手机状态栏和下方 ui 都没了」——纠正
- * 批S2/S7 两截半成品：S2 让顶栏随播放镜像显隐+状态栏播放期恒隐，S7 改状态栏恒显但顶栏
- * 仍随镜像，均非 B 站竖屏语义）。显隐判定单源 [systemBarsShouldShow]（纯函数，单测锁定）：
- * - zoomImmersive（图片放大沉浸）→ 隐藏（批C 口径在放大态恢复）；
- * - playerActive（视频播放态）→ 随 playbackChromeVisible（控制条显=状态栏透明显示，
- *   控制条隐=状态栏隐藏——「再点击就是沉浸的视频浏览」）；
- * - 其余（图片常态）→ 恒显示且透明（S7 主流相册口径保留）。
+ * 系统栏显隐/图标明暗编排（任务S S9 显隐三分支定稿 + S10 图标明暗收敛为单值消费，
+ * 2026-09-19 用户拍板）。本效果不再持有裁决：显隐值=[systemBarsShouldShow] 纯函数在
+ * DetailScreen 现算（zoomImmersive→隐；playerActive→随 playbackChromeVisible——B 站
+ * 竖屏两态；其余→恒显示透明），图标明暗值=[statusBarDark] when 收敛（视频态恒浅/chrome
+ * 显随系统明暗/图片态按采样亮度自适应，见 DetailScreen 内注释），两值均随调用参数进入，
+ * 键控幂等重跑。
  *
  * 栏底透明由 MainActivity.enableEdgeToEdge 全局保证（androidx activity 1.10.1
  * EdgeToEdgeApi26-30：auto 档状态栏 scrim 恒 Color.TRANSPARENT；API 35+ 且
@@ -613,11 +687,14 @@ private fun DetailContentSections(
  * 恒成立，不重复设置也不恢复 true，避免整窗重排）。键面=controller + 裁决值：两态
  * 切换幂等收敛，不依赖历史状态。
  *
- * 图标明暗同步（任务X X7 判定链，S9 保留）：显示分支按 [statusBarIconsDark]——
- * chromeEffective（chrome 显态舞台底=主题背景）→ 随系统明暗（日=暗图标/夜=浅图标，
- * 与 enableEdgeToEdge 的 auto 语义一致）；沉浸/播放/放大黑底 → 浅色图标。JVM 单测见
- * SystemBarIconAppearanceTest。键面=controller + chromeVisible + darkTheme：日夜切换
- * （uiMode 原地换肤，不 recreate）时 effect 重跑，设定幂等。
+ * 图标明暗应用单点（S10 件1 反色修复）：`isAppearanceLightStatusBars = statusBarDark`
+ * **直接赋值不取反**——S10 前调用方按「图标暗→取反 apply」写（S7 记档「取反后 apply」），
+ * 实为双重否定：平台语义「true=浅底配深图标」（isAppearanceLight=true 即系统画深图标）
+ * 下，取反使净输出恒与判定相反——日间 chrome 显态（判定深图标）实际输出浅图标压白底、
+ * 黑底态（判定浅图标）实际输出深图标压黑底，两态图标均与背景同色不可辨，即用户真机
+ * 反馈「状态栏和背景一个色了」的根因（2026-09-19 批S10 修复记档）。导航栏
+ * isAppearanceLightNavigationBars 同口径同步。JVM 单测：显隐三分支见
+ * SystemBarIconAppearanceTest、采样阈值见 StatusBarLuminanceTest。
  *
  * onDispose（LEGACY_REQUIREMENTS E：controller 判空 + 生命周期清理）：离页兜底
  * show(systemBars)——S9 后 App 内 hide 路径恢复（播放沉浸/放大沉浸），本兜底重新成为
@@ -625,14 +702,13 @@ private fun DetailContentSections(
  * 的栏显隐竞态，而播放态无滑切路径（播放器手势接管触摸，海报态横滑只导航不起隐栏）且
  * 播放镜像为 remember 非持久态——滑切交接时新旧屏均在图片常态（显）分支 show 幂等汇合，
  * 门控不影响播放态显隐，机制原样保留。图标明暗回设随系统明暗（X7，rememberUpdatedState
- * 取最新值——DisposableEffect 不以 darkTheme 为键）。
+ * 取最新值——DisposableEffect 不以 darkTheme 为键；回设是「浅底深图标」直写式
+ * `!darkTheme`，语义本就正确，不随本次取反修复变化）。
  */
 @Composable
 private fun SystemBarsImmersiveEffect(
-    chromeVisible: Boolean,
-    zoomImmersive: Boolean,
-    playerActive: Boolean,
-    playbackChromeVisible: Boolean,
+    systemBarsVisible: Boolean,
+    statusBarDark: Boolean,
 ) {
     val view = LocalView.current
     val activity = LocalContext.current.findActivity()
@@ -640,27 +716,19 @@ private fun SystemBarsImmersiveEffect(
     val controller = remember(activity, view) {
         activity?.window?.let { window -> WindowCompat.getInsetsController(window, view) }
     }
-    // 显隐三分支裁决单源（S9，纯函数见 [systemBarsShouldShow]）：把 S7 删掉的 hide/show
-    // 链按分支语义接回，show/hide 均 WindowInsetsController systemBars 幂等操作
-    val systemBarsVisible = systemBarsShouldShow(
-        zoomImmersive = zoomImmersive,
-        playerActive = playerActive,
-        playbackChromeVisible = playbackChromeVisible,
-    )
-    // 图标明暗应用单点：键控重跑（chrome 显隐/日夜切换）与离页回设共用同一判定
-    //（[statusBarIconsDark]），两处各自手写一份必然渐行渐远
-    fun applyIconAppearance(visible: Boolean) {
-        val iconsDark = statusBarIconsDark(visible, darkTheme)
+    // 图标明暗应用单点：键控重跑（明暗值变化）与离页回设共用同一入参，两处各自手写一份
+    // 必然渐行渐远。S10 修复：直接赋值（平台语义 true=浅底配深图标，见 KDoc 记档）
+    fun applyIconAppearance(iconsDark: Boolean) {
         controller?.let { insets ->
-            insets.isAppearanceLightStatusBars = !iconsDark
+            insets.isAppearanceLightStatusBars = iconsDark
             // X8 第二百一十八笔记档顺手清偿（任务S S2）：导航栏图标明暗与状态栏同口径
-            insets.isAppearanceLightNavigationBars = !iconsDark
+            insets.isAppearanceLightNavigationBars = iconsDark
         }
     }
-    LaunchedEffect(controller, chromeVisible, darkTheme) {
-        applyIconAppearance(chromeVisible)
+    LaunchedEffect(controller, statusBarDark) {
+        applyIconAppearance(statusBarDark)
     }
-    // 显隐链（S9 恢复）：键控幂等重跑，hide/show 按裁决值收敛
+    // 显隐链（S9 恢复，S10 改消费现成单值）：键控幂等重跑，hide/show 按裁决值收敛
     LaunchedEffect(controller, systemBarsVisible) {
         val bars = WindowInsetsCompat.Type.systemBars()
         if (systemBarsVisible) controller?.show(bars) else controller?.hide(bars)
@@ -682,12 +750,14 @@ private fun SystemBarsImmersiveEffect(
 }
 
 /**
- * 系统栏图标暗色判定单源（任务S S7 抽取；判定链自 X7 原样保留，仅从 hide/show 大
- * 效果中拆出可测；S9 显隐链恢复后与本效果显隐编排并存各管一事——本函数管「栏上图标
- * 颜色」，[systemBarsShouldShow] 管「栏在不在」）：chrome 有效显示且系统日间 → 暗色
- * 图标（chrome 显态舞台底=浅色主题背景）；其余（沉浸/播放/放大黑底，或系统夜间）→
- * 浅色图标。isAppearanceLightStatusBars 的平台语义是「浅底配暗图标」，调用方
- * （SystemBarsImmersiveEffect）取反后 apply。
+ * chrome 显态系统栏图标暗色判定单源（任务S S7 抽取；S10 起只服务 chrome 有效显示分支——
+ * 本页 [statusBarDark] when 的 chromeEffective 分支，采样/黑底分支见
+ * [statusBarIconsDarkForLuminance]）：chrome 有效显示且系统日间 → 暗色图标（chrome 显态
+ * 状态栏浮在主题背景上，浅色主题配深图标=相册语义）；系统夜间 → 浅色图标。
+ * isAppearanceLightStatusBars 的平台语义是「true=浅底配深图标」——S10 修复前调用方误按
+ * 「取反后 apply」接入，净输出与本判定恒相反（用户真机反馈图标与背景同色不可辨的根因，
+ * 修复记档见 SystemBarsImmersiveEffect KDoc）；S10 起判定值直赋平台 API，本函数返回值
+ * 语义=「图标应否深色」原样生效。
  */
 internal fun statusBarIconsDark(chromeVisible: Boolean, isSystemDarkTheme: Boolean): Boolean =
     chromeVisible && !isSystemDarkTheme
