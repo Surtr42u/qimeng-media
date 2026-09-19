@@ -37,8 +37,11 @@ object UploadWorkSpec {
     const val KEY_ERROR_MESSAGE = "errorMessage"
 
     /**
-     * 取消标志（批C 任务Q C-2）：outputData 键。WorkInfo.State 只有 FAILED/CANCELLED
-     * 两态都读不出「用户取消」——用输出键承载语义，队列映射据此落 UploadStatus.CANCELLED。
+     * 取消标志（批C 任务Q C-2，342 笔返工改走 success 载荷）：outputData 键。
+     * 取消终态映射为 **Result.success + 本标志**——不落 failure（failure 会经
+     * iterativelyFailWorkAndDependents 级联杀链，见 [outcomeToResult] 注释）；
+     * 队列映射在 State.SUCCEEDED 与 State.FAILED 两侧都识别本标志落
+     * UploadStatus.CANCELLED。
      */
     const val KEY_CANCELLED = "cancelled"
 
@@ -91,11 +94,18 @@ object UploadWorkSpec {
     fun isRetryExhausted(runAttemptCount: Int): Boolean = runAttemptCount >= MAX_RETRIES
 
     /**
-     * 失败重试状态机（单测锁定）：
+     * 失败重试状态机（单测锁定；批C 342 笔返工修正取消分支）：
      * - 成功 → success（携带最终文件名）；
      * - 永久失败（服务端 4xx）→ failure（透传文案，不重试）；
-     * - 用户取消（C-2）→ failure（携带 CANCELLED 标志，不重试——取消无重试语义）；
-     * - 可重试失败 → 未耗尽重试额度走 retry（官方退避重试语义），耗尽转 failure。
+     * - 用户取消（C-2）→ **success 携带 CANCELLED 标志**——取消绝不能映射 failure：
+     *   WorkManager 引擎对 failure 会走 iterativelyFailWorkAndDependents 级联，把
+     *   unique 链上该任务之后的全部排队任务标 FAILED（outputData 为空、永不执行、
+     *   UI 显示「失败：未知原因」），直接违反「单任务取消」冻结语义（reviewer
+     *   反汇编 work-runtime 2.11.2 实证，批C 341 笔 P1）；success 不级联，下游
+     *   正常解锁执行，取消语义由输出键 [KEY_CANCELLED] 承载；
+     * - 可重试失败 → 未耗尽重试额度走 retry（官方退避重试语义），耗尽转 failure
+     *   （重试耗尽的 failure 同样会级联杀链——既有行为，串行队列全链共享同一
+     *   重试命运在「耗尽」场景可接受；单任务取消场景已由 success 通道避开）。
      */
     fun outcomeToResult(outcome: UploadOutcome, runAttemptCount: Int): ListenableWorker.Result =
         when (outcome) {
@@ -107,7 +117,7 @@ object UploadWorkSpec {
                 workDataOf(KEY_ERROR_MESSAGE to outcome.serverMessage),
             )
 
-            is UploadOutcome.Cancelled -> ListenableWorker.Result.failure(
+            is UploadOutcome.Cancelled -> ListenableWorker.Result.success(
                 workDataOf(
                     KEY_CANCELLED to true,
                     KEY_ERROR_MESSAGE to CANCELLED_MESSAGE,

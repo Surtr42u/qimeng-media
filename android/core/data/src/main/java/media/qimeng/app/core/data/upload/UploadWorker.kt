@@ -84,8 +84,9 @@ class UploadWorker @AssistedInject constructor(
             }
 
             is UploadOutcome.Cancelled -> {
-                // C-2 取消：状态行翻「已取消」（输出带 KEY_CANCELLED 标志）+ 完成通知同步；
-                // 前台进度通知随 worker 正常结束由 WorkManager 自动撤销
+                // C-2 取消：状态行翻「已取消」+ 完成通知同步；前台进度通知随 worker
+                // 正常结束由 WorkManager 自动撤销。终态映射为 success+取消标志
+                // （outcomeToResult）——failure 会级联杀链，342 笔返工修正
                 Log.i(LOG_TAG, "cancelled file=${spec.displayName}")
                 notifyDone(spec.localId, spec.displayName, "上传已取消：${spec.displayName}")
             }

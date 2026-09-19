@@ -99,14 +99,37 @@ class UploadWorkSpecTest {
     }
 
     @Test
-    fun `用户取消映射为failure并携带取消标志与文案`() {
+    fun `用户取消映射为success并携带取消标志与文案`() {
         val result = UploadWorkSpec.outcomeToResult(
             UploadOutcome.Cancelled,
             runAttemptCount = 0,
         )
-        val failure = result as ListenableWorker.Result.Failure
-        assertTrue(failure.outputData.getBoolean(UploadWorkSpec.KEY_CANCELLED, false))
-        assertEquals(UploadWorkSpec.CANCELLED_MESSAGE, failure.outputData.getString(UploadWorkSpec.KEY_ERROR_MESSAGE))
+        // 必须是 Success 类型（批C 342 笔 P1 返工）：failure 会经 WorkManager 引擎
+        // iterativelyFailWorkAndDependents 级联把 unique 链上后续任务全部标 FAILED
+        // （永不执行）——取消走 success 载荷承载语义，下游正常解锁执行
+        val success = result as ListenableWorker.Result.Success
+        assertTrue(success.outputData.getBoolean(UploadWorkSpec.KEY_CANCELLED, false))
+        assertEquals(UploadWorkSpec.CANCELLED_MESSAGE, success.outputData.getString(UploadWorkSpec.KEY_ERROR_MESSAGE))
+    }
+
+    @Test
+    fun `取消不传播——success类型即解锁下游的唯一前提`() {
+        // 传播语义的纯函数表达：引擎只对 Failure 级联（CancelWorkRunnable/
+        // iterativelyFailWorkAndDependents），Success 恒不级联。断言三种终态映射的
+        // 类型面——取消与成功同为 Success（不触发级联）、永久失败与重试耗尽为 Failure
+        // （既有级联语义，非本批取消路径）。
+        val cancelled = UploadWorkSpec.outcomeToResult(UploadOutcome.Cancelled, 0)
+        val success = UploadWorkSpec.outcomeToResult(UploadOutcome.Success("a.jpg"), 0)
+        assertTrue(cancelled is ListenableWorker.Result.Success)
+        assertTrue(success is ListenableWorker.Result.Success)
+
+        val permanent = UploadWorkSpec.outcomeToResult(UploadOutcome.Permanent("4xx"), 0)
+        val exhausted = UploadWorkSpec.outcomeToResult(
+            UploadOutcome.Retryable("网络异常"),
+            UploadWorkSpec.MAX_RETRIES,
+        )
+        assertTrue(permanent is ListenableWorker.Result.Failure)
+        assertTrue(exhausted is ListenableWorker.Result.Failure)
     }
 
     @Test
