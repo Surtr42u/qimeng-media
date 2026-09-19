@@ -201,6 +201,15 @@ func Load(path string) (*Config, error) {
 	if err := applyEnv(cfg); err != nil {
 		return nil, err
 	}
+	// 备份间隔兜底：BackupConfig.Interval 的注释承诺「<=0 = 用
+	// DefaultBackupInterval」，但 yaml 显式写 0 / env 传 0s 都会把默认值
+	// 覆盖成零值直通出去——不在此兜底，Manager.Start 会走 interval<=0 的
+	// Warn 分支把定时快照悄悄关掉，且 GET /backups 的调度回显会把 0 取整
+	// 成「每 1h」误导运维（reviewer P2 清偿）。Retention 的同类兜底在
+	// backup.NewManager（<=0 回落），两处注释互指。
+	if cfg.Backup.Interval <= 0 {
+		cfg.Backup.Interval = DefaultBackupInterval
+	}
 	return cfg, nil
 }
 

@@ -317,3 +317,39 @@ func TestLoadBackupEnvPriority(t *testing.T) {
 		t.Error("QIMENG_BACKUP_RETENTION 非正整数应报错")
 	}
 }
+
+// TestLoadBackupIntervalZeroFallback 非法间隔兜底（reviewer P2 清偿）：
+// 能通过 Load 的零/负间隔必须回落 DefaultBackupInterval（24h）——否则
+// 直通 Manager.Start 会关掉定时调度，调度回显也会把 0 展示成「每 1h」
+// 误导运维。三条路径分开锁定：
+//   - yaml `interval: 0`（裸整数）= yaml.v3 解析期直接报错（!!int 无法
+//     解析成 time.Duration），fail-fast 起不来服务——不测回落，测报错；
+//   - yaml `interval: -1h`（负时长字符串可解析）与 env `0s` = 实际可达
+//     的直通路径，必须回落。
+func TestLoadBackupIntervalZeroFallback(t *testing.T) {
+	// yaml 裸整数 0：解析期报错（fail-fast，不静默）。
+	path := writeYAML(t, "backup:\n  interval: 0\n")
+	if _, err := Load(path); err == nil {
+		t.Error("yaml interval: 0（裸整数）应解析报错")
+	}
+
+	// yaml 负时长字符串：可达路径，回落 24h。
+	path = writeYAML(t, "backup:\n  interval: -1h\n")
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load 报错: %v", err)
+	}
+	if cfg.Backup.Interval != DefaultBackupInterval {
+		t.Errorf("yaml interval: -1h 应回落 %v, 得到 %v", DefaultBackupInterval, cfg.Backup.Interval)
+	}
+
+	// env 0s（env 优先级下同样兜底）。
+	t.Setenv("QIMENG_BACKUP_INTERVAL", "0s")
+	cfg, err = Load(path)
+	if err != nil {
+		t.Fatalf("Load 报错: %v", err)
+	}
+	if cfg.Backup.Interval != DefaultBackupInterval {
+		t.Errorf("env 0s 应回落 %v, 得到 %v", DefaultBackupInterval, cfg.Backup.Interval)
+	}
+}
