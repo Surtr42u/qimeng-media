@@ -13,6 +13,16 @@
 ---
 ---
 ---
+## fix(app): 视频播放态显隐对齐B站竖屏——顶栏退场+状态栏跟控制条联动（2026-09-19 第三百五十五笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理）
+
+- **用户拍板（任务S 批S9 冻结，纠正批S2/S7 拼接偏差）**：竖屏视频播放态单击两态=「应该是显示播放时的 ui，就是下方进度条，这时候依旧会显示上方的手机状态栏，不是详情页 ui，就是 b 站手机竖屏的那种；再点击就是沉浸的视频浏览，这时候上面手机状态栏和下方 ui 都没了」。定稿语义：**显示态**=播放器控制条显示+系统状态栏显示且透明（浅图标），详情页顶栏（DetailTopChrome）播放态永不出现；**沉浸态**=控制条+状态栏全隐（纯视频）；单击两态切换（onSingleTapConfirmed→onControllerVisibilityChanged 上报链不动，只改下游响应）。图片详情态不变（状态栏恒显示透明+chrome 单击显隐+批C 缩放联动保留）；横屏全屏覆盖层（FullscreenOverlayShell）状态栏改回跟随其内部控制条显隐（显=透明/隐=hide）——S7 把它改恒显是错的方向。
+- **与 S2/S7 差异记档**：①批S2 让详情顶栏随播放镜像显隐（`chromeEffective || (playerActive && playbackChromeVisible)`）——S9 废止该分支，顶栏只在非播放态按 chromeEffective 显隐；②批S7 把播放态系统栏改恒显透明——S9 在播放态分支回收恒显，改为随 playbackChromeVisible 显隐（S7 的图片常态恒显保留）；③批S7 把横屏全屏 Dialog 窗状态栏改恒显——S9 恢复与内部控制条联动（竖屏两态语义横竖对齐）。
+- **实现**：①`DetailScreen.kt`：DetailTopChrome contentVisible 去播放态分支=chromeEffective；playbackChromeVisible 镜像消费点从顶栏改到系统栏；SystemBarsImmersiveEffect 重写为三分支编排（恢复 hide/show systemBars——S7 前既有 WindowInsetsController 链原样接回，无新 API 面，铁律 8 沿用 S7 已核对的 enableEdgeToEdge/WindowCompat 结论），显隐判定抽纯函数 `systemBarsShouldShow(zoomImmersive, playerActive, playbackChromeVisible)` 单源（zoomImmersive→隐；playerActive→随镜像；其余→恒显透明）；onDispose 离页兜底 show 保留（hide 路径恢复后重新有效）；S2 handoff-ack 门控语义重估=保留（播放态无滑切路径且镜像非持久，滑切交接时新旧屏均在图片常态显分支 show 幂等汇合，门控不影响播放态显隐——KDoc 记档）。②`FullscreenOverlayShell.kt`：新增 systemBarsVisible 参数，Dialog 窗 DisposableEffect（键 view+systemBarsVisible，幂等重申）显=透明+浅图标/隐=hide systemBars。③`VideoFullScreenOverlay.kt`：controllerVisible remember 镜像接线 onControllerVisibilityChanged（先于 setFullscreen(true) 挂线——其内部 showController(false) 即上报初值）传入外壳；G9 五秒自动隐/拖拽隐/长按隐/ENDED 强制显全路径同源自动联动。④`VideoStage.kt`/`DetailStage.kt` 仅同步注释（S2 旧口径表述改 S9 语义，行为零改动）；`BiliPlayerView.kt` 零改动。
+- **测试**：`SystemBarIconAppearanceTest` 新增 systemBarsShouldShow 4 用例（播放态显示=true/播放态沉浸=false/图片常态恒=true/图片放大=false）+ S7 的 statusBarIconsDark 4 用例**保留**（判定链 S9 未动仍在用——「替换 S7 4 用例」的执行裁量记档：S7 用例语义未被 S9 推翻，删除将使在用纯函数失去测试锁定；新显隐函数与图标函数并存各管一事，总数 4→8）。**定向门禁原文**：`./gradlew :feature:detail:testDebugUnitTest` → `BUILD SUCCESSFUL in 15s`（22 套件 182 例 failures=0 errors=0，SystemBarIconAppearanceTest tests=8 skipped=0 failures=0 errors=0；DetailViewModelTest 34/PlayerMathTest 12/SiblingSwipePolicyTest 12 等既有件全绿）+ `./gradlew :app:compileDebugKotlin`（Hilt 图聚合校验）→ `BUILD SUCCESSFUL in 8s`（180 actionable tasks: 2 executed, 178 up-to-date）。全量三连+R8 由主会话统一跑。
+- **遗留记档**：①U11 批次B 曾有的 ON_RESUME 重申显隐防御（防 OEM ROM 后台自行恢复系统栏）已随 S7 删除、本批未随 hide 链回归——S9 的 hide 路径（播放沉浸/放大沉浸）理论上重暴露于该 ROM 行为，待用户真机反馈再议（不加未冻结机制）；②横屏全屏进出与竖屏两态切换的窗口交接观感（Dialog 窗 hide/show 与 Activity 窗编排的交接帧）由用户真机验收，本批不做模拟器（任务书定）；③`BiliPlayerView.kt` 适配点⑪ KDoc「播放期恒隐由 Compose 侧沉浸链承担」旧口径句本批未动（该文件零改动），以本笔记档为准。
+
 ## fix(app): 登录页本机模式死锁——登录前拉起内嵌服务并等端口就绪（2026-09-19 第三百五十四笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理）

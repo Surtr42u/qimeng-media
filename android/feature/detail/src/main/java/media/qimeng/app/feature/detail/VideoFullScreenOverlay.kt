@@ -28,9 +28,9 @@ import media.qimeng.app.feature.detail.video.TimelineTagEntity
  * 把 surface 迁回排版态视图（不迁移则排版态只留末帧=画面假死）。
  *
  * 覆盖层视图恒 `setFullscreen(true)`：全屏态手势统一走全屏档（单击显隐控制器/
- * 双击播停——S2 2026-09-19 拍板后 G1/G2 双向同语义，全屏档与排版档无差；控制器显隐
- * 不接上报，详情顶栏在 Dialog 之下不可见无需联动），全屏钮图标=退出全屏、控制器默认
- * 隐藏、底栏避让导航栏。
+ * 双击播停——S2 2026-09-19 拍板后 G1/G2 双向同语义，全屏档与排版档无差；S9 起
+ * 控制器显隐经 onControllerVisibilityChanged 上报驱动本覆盖层窗口系统栏联动，B 站
+ * 两态语义横竖屏对齐），全屏钮图标=退出全屏、控制器默认隐藏、底栏避让导航栏。
  *
  * @param player VideoStage 持有的 ExoPlayer（唯一播放实例，覆盖层只挂不建）
  * @param tagEntities 时间轴标签（与排版态同源，变化经 LaunchedEffect 同步到本视图）
@@ -57,6 +57,11 @@ internal fun VideoFullScreenOverlay(
 ) {
     // 桥接视图引用（退场清理 + 标签同步用；factory 一次性闭包经 State 捕获）
     var bridgeView by remember { mutableStateOf<BiliPlayerView?>(null) }
+    // 控制条显隐镜像（任务S S9）：桥接件 showController 单点上报（单击切换/G9 自动隐/
+    // 拖拽隐/长按隐/ENDED 强制显全路径同源）→ FullscreenOverlayShell 据此驱动本 Dialog
+    // 窗口系统栏（显=透明/隐=hide，对齐竖屏播放两态语义）。初值 false=全屏态控制器默认
+    // 隐藏（setFullscreen(true) 内部 showController(false) 同拍上报，口径自洽）
+    var controllerVisible by remember { mutableStateOf(false) }
 
     // 退场序列：先摘听众/断引用，再交还 surface（顺序无关二重保险：rebind 直接底层重绑
     // 画面目标，detach 的置空只作用于本退场视图，见 BiliPlayerView 两方法 KDoc）
@@ -68,11 +73,18 @@ internal fun VideoFullScreenOverlay(
         }
     }
 
-    FullscreenOverlayShell(onDismiss = onExit) {
+    FullscreenOverlayShell(
+        // S9：本窗口系统栏随内部控制条显隐联动（见 controllerVisible 注释与外壳 KDoc）
+        systemBarsVisible = controllerVisible,
+        onDismiss = onExit,
+    ) {
         AndroidView(
             factory = { ctx ->
                 BiliPlayerView(ctx).apply {
                     setPlayer(player, adoptCurrentState = true)
+                    // S9 控制器显隐上报接线（须先于 setFullscreen 挂线——其内部
+                    // showController(false) 即上报初值，与镜像初值一致）
+                    onControllerVisibilityChanged = { controllerVisible = it }
                     // 覆盖层恒为全屏态（K2 单级横屏全屏）：按钮图标=退出全屏、控制器默认隐藏、
                     // 底栏避让导航栏；层内不随配置回写，方向变化只影响窗口尺寸
                     setFullscreen(true)
