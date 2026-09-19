@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { FolderMonitorIcon, TrashIcon } from '@/components/shell/icons'
+import { DbBackupCard } from '@/components/manage/DbBackupCard'
 import { useClientLogs } from '@/hooks/use-client-logs'
 import { useSystemStatus } from '@/hooks/use-system-status'
 import { useTrash } from '@/hooks/use-trash'
@@ -28,7 +29,8 @@ interface RatePoint {
  * 监控数据 = GET /system/status（2s 轮询）：4 圆环卡（CPU/内存/系统盘/存储合计）、
  * 4 指标卡（上下行速率=轮询差分本地计算、存储合计、运行时长）、网络负载曲线
  * （本地 60 点环形采样）；「客户端异常」表 = GET /client-logs（上报器写入，
- * 服务端环形缓冲最新 200 条，2026-09-04 接真）。
+ * 服务端环形缓冲最新 200 条，2026-09-04 接真）；「库文件快照备份」卡 =
+ * /backups 四端点（任务Q 批B，渲染在 DbBackupCard 共享组件）。
  */
 
 /** 客户端异常级别中文标签（协议 level 枚举 error/warn/info） */
@@ -189,7 +191,7 @@ export default function MaintenancePage() {
       </div>
       <div className="page-head">
         <h2>维护工具</h2>
-        <p>文件管理与客户端异常排查</p>
+        <p>文件管理、备份快照与客户端异常排查</p>
       </div>
       <div className="entry-grid">
         <div className="entry-card entry-card--link" onClick={() => navigate(MAINTENANCE_FILES_PATH)}>
@@ -210,6 +212,7 @@ export default function MaintenancePage() {
           <p className="entry-sub">恢复或彻底清除都在回收站页</p>
         </div>
       </div>
+      <DbBackupCard />
       <div className="chart-card">
         <h3>用户端崩溃 / 错误日志</h3>
         <p>客户端异常上报 · 服务端保留最新 200 条 · 新在上</p>
