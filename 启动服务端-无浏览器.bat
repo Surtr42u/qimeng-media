@@ -4,6 +4,10 @@ REM Qimeng Media Server launcher (no-browser variant)
 REM
 REM Same as the main launcher bat but: minimized window, no
 REM auto-browser, stdout/stderr appended to server\console.log.
+REM NOTE: startup logic is DUPLICATED in the main launcher bat
+REM ("启动服务端.bat" - env vars, dev-mode line, go build). If you
+REM change anything here, check that file too - especially the
+REM QIMENG_AUTH_DEV_MODE line below (security-sensitive).
 REM Comments are ASCII-only on purpose (legacy codepage safety).
 REM Stop the server: close the minimized window, or
 REM   taskkill /F /IM qimeng-server.exe

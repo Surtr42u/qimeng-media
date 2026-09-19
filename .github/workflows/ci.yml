@@ -101,8 +101,10 @@ jobs:
         with: { node-version: 24 }
       - uses: actions/setup-go@v6
         with: { go-version: "1.27.x", cache-dependency-path: server/go.sum }
-      # JDK 21 与本机 Android Studio jbr 对齐（AGP 8.13 最低 17）；ubuntu runner 预装 Android SDK，
-      # platforms/build-tools 覆盖 compileSdk 36 所需，无需 sdkmanager（runner 镜像 Readme 为准）
+      # JDK 21 与本机 Android Studio jbr 对齐（AGP 9.3.1 最低 17）；ubuntu runner 预装 Android SDK，
+      # platforms/build-tools 覆盖 compileSdk 37 所需，无需 sdkmanager（runner 镜像 Readme 为准）
+      # （2026-09-20 全库审查：注释自 2026-09-13 后未随任务P 批升级刷新，按 libs.versions.toml
+      #  agp=9.3.1 与 build-logic ANDROID_COMPILE_SDK=37 勘正；升级若致 runner 缺 platform 再补 sdkmanager）
       - uses: actions/setup-java@v5
         with: { distribution: temurin, java-version: 21 }
       # wrapper 校验 + gradle-user-home 缓存；只调 ./gradlew，不碰 runner 预装 gradle
