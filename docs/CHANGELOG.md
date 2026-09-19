@@ -13,6 +13,15 @@
 ---
 ---
 ---
+## fix(app): 暂存摘要解析移出主线程——进页全量解析冻结主线程（2026-09-19 第三百四十五笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理）
+
+- **reviewer 对抗审查【打回】P1×1 返工**（其余全 PASS，含超时修复实证与 50 处调用点回归面）：批R1 的 `stagedSummaryMediaFiles` 在 **Main 线程**对暂存 JSON 做双遍 Moshi 全量解析+UTF-8 全量字节拷贝，且 `loadStagedMeta` 由 init 进页自动触发——真库（6341 资产）量级信封几 MB～几十 MB，每次进备份页主线程冻结；与同文件 `buildExportJson` 已修的 reviewer P2（344 笔前序批）同款问题。
+- **三处精确修（只动 BackupViewModel.kt）**：①`stagedSummaryMediaFiles` 改挂起函数、整体 `withContext(Dispatchers.Default)`（双遍解析+字节拷贝一并离 Main）；`loadStagedMeta` 改两段式——元数据先进状态（暂存卡先现）、摘要池内算好后单独回填；②`stageForSync` 的摘要预先在 Default 池算好再进 `_uiState.update`（update lambda 内禁止重活；busy 复位与摘要落位同一 update，语义不变）；③`importStaged` 的 `staged.json.toByteArray(Charsets.UTF_8)` 同切 Default 池再进既有校验链。零行为变化（纯线程调度），零协议改动。
+- **测试同步**：三个涉 Default 真实线程跳板的暂存用例改用本文件既有「条件轮询」纪律（新增 `TestScope.awaitUntil` 辅助：进页暂存回流轮询 N 文件数落位、导入暂存轮询确认弹窗落位、未过校验用例固定短轮询排空续体防 resetMain 污染）。**单测原文**：`./gradlew :feature:manage:testDebugUnitTest` → `BUILD SUCCESSFUL in 10s`，feature:manage tests=51 failures+errors=0，BackupViewModelTest tests=19 failures=0 errors=0 time=0.563s。
+- **门禁与终包**：`./gradlew :app:assembleRelease` → `BUILD SUCCESSFUL in 1m 14s`（exit=0）；`qimeng-任务R-终包-20260919.apk` 以返工后产物覆盖（26,598,803 字节，待主会话装真机 <真机序列号>）。
+
 ## feat(app): 备份页四入口重做+备份通道长超时修复（2026-09-19 第三百四十四笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理）
@@ -26,7 +35,7 @@
 - **真库事实（写档口径，2026-09-19 主会话只读核查）**：8420 当前 6341 资产 / 3 库 / 143 作者 / 19 标签。
 - **终包**：`QimengNAS\qimeng-任务R-终包-20260919.apk`（26,598,643 字节 release/R8）已出盘待主会话装真机 <真机序列号>。
 
-
+## docs: 任务Q 收官——原型退役+工作区清理+漂移复核（2026-09-19 第三百四十三笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理）
 
