@@ -12,10 +12,7 @@ import coil3.memory.MemoryCache
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.crossfade
 import coil3.request.allowHardware
-import media.qimeng.app.core.data.coil.SignedMediaDiskKeyInterceptor
-import media.qimeng.app.core.data.coil.SignedMediaUriKeyer
-import media.qimeng.app.core.data.diagnostics.ClientLogRecorder
-import media.qimeng.app.core.data.diagnostics.CoilErrorLogListener
+import dagger.Lazy
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -24,15 +21,22 @@ import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
-import media.qimeng.app.core.data.repository.CoilCacheManager
+import media.qimeng.app.core.data.coil.CachePool
+import media.qimeng.app.core.data.coil.LEGACY_DISK_CACHE_DIR
+import media.qimeng.app.core.data.coil.LOCAL_DISK_CACHE_DIR
+import media.qimeng.app.core.data.coil.LOG_TAG
+import media.qimeng.app.core.data.coil.NAS_DISK_CACHE_DIR
+import media.qimeng.app.core.data.coil.SplitDiskCache
+import media.qimeng.app.core.data.coil.SignedMediaDiskKeyInterceptor
+import media.qimeng.app.core.data.coil.SignedMediaUriKeyer
+import media.qimeng.app.core.data.coil.migrateLegacyImageCacheDir
+import media.qimeng.app.core.data.diagnostics.ClientLogRecorder
+import media.qimeng.app.core.data.diagnostics.CoilErrorLogListener
 import media.qimeng.app.core.data.repository.DiskCachePrefsRepository
 import media.qimeng.app.core.model.DiskCacheQuota
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
-
-/** logcat 标签（验收证据协议：grep 'QimengCache' 看缓存装配/清空痕迹）；文件级单一定义，CoilModule 与 RealCoilCacheManager 共用 */
-private const val CACHE_LOG_TAG = "QimengCache"
 
 /**
  * Coil ImageLoader 全局单例装配（M4-6 C5；ADR-0014：全局单例走 Hilt）。
@@ -43,9 +47,12 @@ private const val CACHE_LOG_TAG = "QimengCache"
  *
  * 磁盘缓存行为拍板（C5）：
  * - LRU 档位 512MB/1GB/2GB/5GB（默认 1GB），字节值来自 [DiskCachePrefsRepository]（DataStore 持久化）；
- * - **档位变更重启生效**：Coil 官方源码明言「同一目录下多个 DiskCache 实例并发会损坏缓存」
- *   （ImageLoader.Builder.diskCache 注释），运行中重建 ImageLoader 官方不支持（SingletonImageLoader.setSafe
+ * - **档位变更重启生效**：运行中重建 ImageLoader 官方不支持（SingletonImageLoader.setSafe
  *   语义 = 不可覆盖已创建实例）——重启生效是官方安全路径，设置页 UI 注明；
+ * - **批S5（2026-09-19 用户拍板）按连接来源分池**：缩略图缓存 = 手机 App 侧缓存，分
+ *   「服务器（NAS）池/本地端池」两个物理目录（[SplitDiskCache] 按键路由），互不共享
+ *   （两端库内容不同，共享会串图）；NAS 池容量 = 档位字节（保持现值不回退），本地池
+ *   = 档位一半（本地端=手机内嵌服务端，库内容远小于 NAS 全库，半档足用，[LOCAL_POOL_QUOTA_DIVISOR]）；
  * - GIF 原件直链**进**磁盘缓存（C5 拍板：网络缓存不损动画语义——落盘的是原始 GIF 字节，
  *   解码仍由 GIF 解码器逐帧动画）。**任务U10-5（2026-09-14 用户拍板）调整**：详情页
  *   原件请求改为 request 级 `diskCachePolicy(DISABLED)`（GIF 原件含在内，即看即取不落盘，
@@ -61,7 +68,7 @@ object CoilModule {
     @Singleton
     fun provideImageLoader(
         @ApplicationContext context: Context,
-        diskCachePrefs: DiskCachePrefsRepository,
+        splitDiskCache: Lazy<SplitDiskCache>,
         clientLogRecorder: ClientLogRecorder,
     ): ImageLoader = ImageLoader.Builder(context)
         .components {
@@ -112,19 +119,11 @@ object CoilModule {
                 .build()
         }
         .diskCache {
-            // lazy initializer：首次真正用到磁盘缓存时才读 DataStore（阻塞一拍，毫秒级首读；
-            // 不在 App 启动关键路径上）。runBlocking 限此一处，读取失败回落默认档。
-            val quotaBytes = runBlocking {
-                runCatching { diskCachePrefs.quota.first().bytes }
-                    .onFailure { Log.w(CACHE_LOG_TAG, "读缓存档位失败，回落默认档", it) }
-                    .getOrDefault(DiskCacheQuota.DEFAULT.bytes)
-            }
-            Log.i(CACHE_LOG_TAG, "DiskCache 装配 maxSizeBytes=$quotaBytes")
-            DiskCache.Builder()
-                // coil3.disk 的 File 重载扩展（官方 JVM 桥）：内部走 okio.Path
-                .directory(context.cacheDir.resolve(DISK_CACHE_DIR))
-                .maxSizeBytes(quotaBytes)
-                .build()
+            // 批S5 分池磁盘缓存：dagger.Lazy 保持「首次真正用到磁盘缓存才构建」的既有
+            // 惰性时机（DataStore 档位读 + 存量迁移都在 [provideSplitDiskCache] 里，
+            // ImageLoader 构建本身不触发）。 dagger.Lazy.get() 幂等返回同一单例，
+            // 与 RealCoilCacheManager 注入的是同一实例。
+            splitDiskCache.get()
         }
         // 动图逐帧解码禁硬件位图（AnimatedImageDecoder 与硬件位图组合会导致动图退化为静态首帧，
         // Coil 官方 FAQ 口径）；静态图无需 crossfade（列表滚动场景，旧版同款）
@@ -136,11 +135,58 @@ object CoilModule {
         .eventListener(CoilErrorLogListener(clientLogRecorder))
         .build()
 
-    /** 磁盘缓存目录名（Coil 官方示例同款 image_cache） */
-    private const val DISK_CACHE_DIR = "image_cache"
+    /**
+     * 分池磁盘缓存单例（批S5）：存量迁移 + 双池装配。注入 [Lazy] 给 ImageLoader，
+     * 保持「首次用到磁盘缓存才读 DataStore/开目录」的启动关键路径零负担。
+     */
+    @Provides
+    @Singleton
+    fun provideSplitDiskCache(
+        @ApplicationContext context: Context,
+        diskCachePrefs: DiskCachePrefsRepository,
+    ): SplitDiskCache {
+        // 档位读（runBlocking 自原 diskCache lambda 迁移至此；lazy 构建时才执行，毫秒级首读，
+        // 不在 App 启动关键路径上）。读取失败回落默认档。
+        val quotaBytes = runBlocking {
+            runCatching { diskCachePrefs.quota.first().bytes }
+                .onFailure { Log.w(LOG_TAG, "读缓存档位失败，回落默认档", it) }
+                .getOrDefault(DiskCacheQuota.DEFAULT.bytes)
+        }
+        // 存量迁移（幂等）：旧 image_cache 混合目录整体重命名为 NAS 池目录（历史缓存
+        // 几乎全来自 NAS 连接，整体归 NAS 口径；本地池从空开始惰性创建）。
+        // 必须在两个池打开目录之前执行——两实例共管同一目录才是官方损坏场景，迁移完成后
+        // 各池目录只归各自实例独管。
+        val migrated = migrateLegacyImageCacheDir(context.cacheDir)
+        if (migrated) {
+            Log.i(LOG_TAG, "存量缓存目录迁移完成：$LEGACY_DISK_CACHE_DIR → $NAS_DISK_CACHE_DIR")
+        }
+        Log.i(
+            LOG_TAG,
+            "SplitDiskCache 装配 quotaBytes=$quotaBytes " +
+                "(nas=${NAS_DISK_CACHE_DIR} maxSize=$quotaBytes, " +
+                "local=${LOCAL_DISK_CACHE_DIR} maxSize=${quotaBytes / LOCAL_POOL_QUOTA_DIVISOR})",
+        )
+        return SplitDiskCache(
+            nasPool = DiskCache.Builder()
+                // coil3.disk 的 File 重载扩展（官方 JVM 桥）：内部走 okio.Path
+                .directory(context.cacheDir.resolve(NAS_DISK_CACHE_DIR))
+                .maxSizeBytes(quotaBytes)
+                .build(),
+            localPool = DiskCache.Builder()
+                .directory(context.cacheDir.resolve(LOCAL_DISK_CACHE_DIR))
+                .maxSizeBytes(quotaBytes / LOCAL_POOL_QUOTA_DIVISOR)
+                .build(),
+        )
+    }
 
     /** 内存缓存占最大堆比例（Coil 默认 25% 惯例档，M4-2 起沿用） */
     private const val MEMORY_CACHE_PERCENT = 0.25
+
+    /**
+     * 本地池容量 = 档位字节的除数（批S5 口径：NAS 池保持现值不回退，本地池给现值一半——
+     * 本地端为手机内嵌服务端，库内容远小于 NAS 全库；且两池上限独立、各池 LRU 自治）。
+     */
+    private const val LOCAL_POOL_QUOTA_DIVISOR = 2L
 
     /** 网络层连接超时（秒）：局域网/NAS 握手 10s（:core:network 同款）足够，略放余量。 */
     private const val NETWORK_CONNECT_TIMEOUT_SECONDS = 15L
@@ -156,39 +202,37 @@ object CoilModule {
     private const val NETWORK_CALL_TIMEOUT_DISABLED = 0L
 }
 
-/** [CoilCacheManager] 实现：清空/容量委托单例 ImageLoader 的 DiskCache（容量读持久化档位） */
+/** [media.qimeng.app.core.data.repository.CoilCacheManager] 实现：分池统计/清空委托 [SplitDiskCache] 单例 */
 @Singleton
 class RealCoilCacheManager @javax.inject.Inject constructor(
-    private val imageLoader: ImageLoader,
-    private val diskCachePrefs: DiskCachePrefsRepository,
-) : CoilCacheManager {
+    private val splitDiskCache: SplitDiskCache,
+) : media.qimeng.app.core.data.repository.CoilCacheManager {
 
-    override fun clear() {
-        // 清空调用点已在 IO 线程（SettingsViewModel 调度）；这里只留证据日志
-        Log.i(CACHE_LOG_TAG, "DiskCache.clear() 之前 size=${imageLoader.diskCache?.size}")
-        imageLoader.diskCache?.clear()
-        Log.i(CACHE_LOG_TAG, "DiskCache.clear() 之后 size=${imageLoader.diskCache?.size}")
+    override fun clearPool(pool: CachePool) {
+        val target = splitDiskCache.pool(pool)
+        // 清空调用点已在 IO 线程（ViewModel 调度）；这里只留证据日志
+        Log.i(LOG_TAG, "DiskCache.clearPool($pool) 之前 size=${target.size}")
+        target.clear()
+        Log.i(LOG_TAG, "DiskCache.clearPool($pool) 之后 size=${target.size}")
     }
 
-    override fun sizeBytes(): Long? = imageLoader.diskCache?.size
+    override fun poolSizeBytes(pool: CachePool): Long = splitDiskCache.pool(pool).size
 
-    override fun fileCount(): Int? {
-        val diskCache = imageLoader.diskCache ?: return null
+    override fun poolFileCount(pool: CachePool): Int {
+        val target = splitDiskCache.pool(pool)
         // 纯谓词 [isDiskCacheDataFileName] 已有单测锁定；磁盘遍历属 IO 性质，
-        // 调用点（ViewModel readCacheSize 链路）统一挂 IO 调度器
-        return diskCache.fileSystem.listRecursively(diskCache.directory)
+        // 调用点（ViewModel 读用量链路）统一挂 IO 调度器
+        return target.fileSystem.listRecursively(target.directory)
             .count { isDiskCacheDataFileName(it.name) }
     }
-
-    override fun capacityBytes(): Long = runBlocking { diskCachePrefs.quota.first().bytes }
 }
 
 /**
- * 磁盘缓存目录内「数据文件」文件名谓词（批S4 2026-09-19 缓存条目数口径的单一来源）。
- * Coil 3.6.2 磁盘缓存布局（DiskLruCache.kt/RealDiskCache.kt 官方源码核实）：
- * 每条目 = `{key}.0`（元数据）+ `{key}.1`（数据），写盘中转 = `{key}.N.tmp`，
- * 日志文件 = journal / journal.tmp / journal.bkp——只有 `.1` 结尾是数据文件，
- * 一条 = 一张缓存图。接口 KDoc 与本谓词互为口径注记，改动须同批同步测试。
+ * 磁盘缓存目录内「数据文件」文件名谓词（批S4 2026-09-19 缓存条目数口径的单一来源；
+ * 批S5 起按池分目录计数，谓词本身不变）。Coil 3.6.2 磁盘缓存布局（DiskLruCache.kt/
+ * RealDiskCache.kt 官方源码核实）：每条目 = `{key}.0`（元数据）+ `{key}.1`（数据），
+ * 写盘中转 = `{key}.N.tmp`，日志文件 = journal / journal.tmp / journal.bkp——只有 `.1`
+ * 结尾是数据文件，一条 = 一张缓存图。接口 KDoc 与本谓词互为口径注记，改动须同批同步测试。
  */
 internal fun isDiskCacheDataFileName(name: String): Boolean = name.endsWith(DATA_FILE_SUFFIX)
 

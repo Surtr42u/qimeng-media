@@ -1,6 +1,7 @@
 package media.qimeng.app.core.data.repository
 
 import kotlinx.coroutines.flow.Flow
+import media.qimeng.app.core.data.coil.CachePool
 import media.qimeng.app.core.model.ThumbnailCacheProgress
 import media.qimeng.app.core.model.DiskCacheQuota
 import media.qimeng.app.core.model.MostViewedEntry
@@ -124,32 +125,31 @@ interface DiskCachePrefsRepository {
 }
 
 /**
- * Coil 磁盘缓存运行时操作端口（C5：清空按钮 + 容量核对）。
- * 实现委托给全局单例 ImageLoader 的 DiskCache（clear 非 suspend，IO 调用方自挪线程）。
+ * Coil 磁盘缓存运行时操作端口（C5 引入：清空 + 容量核对；批S5 2026-09-19 分池化——
+ * 缩略图缓存按连接来源分「服务器（NAS）池/本地端池」两池（[CachePool]），统计与
+ * 清空一律按池操作。两池内容按来源隔离、互不共享：两端库内容不同，共享会串图
+ * （用户拍板冻结）。原聚合口径 clear/sizeBytes/fileCount/capacityBytes 随消费方
+ * （缓存页两卡改分池展示）一并退役——「缓存上限」行拍板改为显示实际占用）。
+ * 实现委托全局单例 [media.qimeng.app.core.data.coil.SplitDiskCache]
+ * （clear 非 suspend，IO 调用方自挪线程）。
  */
 interface CoilCacheManager {
 
-    /** 清空磁盘缓存（Coil DiskCache.clear()；耗时 IO，调用方须在 IO 线程调用） */
-    fun clear()
+    /** 清空指定池（子池 DiskCache.clear()；耗时 IO，调用方须在 IO 线程调用） */
+    fun clearPool(pool: CachePool)
 
-    /** 当前已用字节数（DiskCache.size；DiskCache 未装配时为 null） */
-    fun sizeBytes(): Long?
+    /** 指定池当前已用字节数（子池 DiskCache.size；磁盘扫描属 IO，调用方自挪线程） */
+    fun poolSizeBytes(pool: CachePool): Long
 
     /**
-     * 当前缓存条目数 = 已缓存图片张数（批S4 2026-09-19 本地缓存「文件数」口径）。
-     * Coil 的 DiskCache 不暴露条目计数（3.6.2 官方 API 只有 size/maxSize/directory），
-     * 口径取磁盘缓存目录里的**数据文件**数——每张缓存图恰一个数据文件（coil 3.6.2
+     * 指定池当前缓存条目数 = 已缓存图片张数（批S4 口径沿用、批S5 起分池）。
+     * Coil 的 DiskCache 接口不暴露条目计数（3.6.2 官方 API 只有 size/maxSize/directory），
+     * 口径取**池目录**里的数据文件数——每张缓存图恰一个数据文件（coil 3.6.2
      * DiskLruCache.kt Entry：每条目 = key.0 元数据文件 + key.1 数据文件，
      * RealDiskCache.kt valueCount=2/ENTRY_DATA=1；journal 与 .tmp 中转文件天然不匹配）。
-     * DiskCache 未装配时为 null。
+     * 谓词单源与目录布局注记见 di 包 [media.qimeng.app.core.data.di.isDiskCacheDataFileName]。
      */
-    fun fileCount(): Int?
-
-    /**
-     * 档位上限字节数。Coil 3 的 DiskCache 接口不暴露 maxSize（只有 Builder 有），
-     * 容量口径取当前持久化档位字节——与 ImageLoader 装配时读的是同一个 DataStore 键。
-     */
-    fun capacityBytes(): Long?
+    fun poolFileCount(pool: CachePool): Int
 }
 
 /** 自动备份持久化态（2026-09-15 批：备份导入导出页的自动备份卡数据源） */
