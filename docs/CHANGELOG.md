@@ -13,7 +13,20 @@
 ---
 ---
 ---
-## docs: 任务Q 收官——原型退役+工作区清理+漂移复核（2026-09-19 第三百四十三笔）
+## feat(app): 备份页四入口重做+备份通道长超时修复（2026-09-19 第三百四十四笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理）
+
+- **用户拍板规格记档（任务R §1 冻结）**：手机实测「服务器→本地」跨端导入失败后拍板重做——App 内导入/导出对象恒=**当前连接的服务端**（连 NAS 操作 NAS 数据，连手机本地操作手机本地数据；导入=合并进当前连接的端），备份页收敛为四入口：①导出备份（SAF 写 qimeng_backup.json，文案明确「导出当前连接的服务端」）②导入备份（SAF 选文件→BackupValidator 前置校验→二次确认弹窗→幂等合并导入当前连接的端）③跨端同步（源端一键「同步到另一端」=导出+写 App 内部暂存→提示切换；目标端 staged 非 null 时顶部显著展示暂存卡「待同步：来自 <sourceUrl>（时间，大小，N 文件）」+「导入并合并到当前端」走与②完全相同的校验→确认→导入链路；暂存只保留最新一份语义不变）④自动备份（既有保留）。浏览数据同步（立即同步）与作者 TXT 导入不动。
+- **导入超时根因（任务R §2，用户点名「避免这次的导入 bug」）**：App 主 OkHttp 客户端 readTimeout=10s，而 POST /import/qimeng-backup 是同步长处理（真库 6341 资产逐条幂等合并 SQL，手机端分钟级）→ 主客户端必超时；与上传通道「上传完却报失败重传」（NetworkModule 注释在案）同款根因，当时只修了上传通道。**修复**：core/network NetworkModule 新增 `@BackupClient` Qualifier+Provider（主 client `newBuilder().readTimeout(300s).callTimeout(0)` 派生，UploadClient 60s 先例的加长版，注释写明根因与先例）；`BusinessApiFactory` 增 `createWith(client)`；SdkBackupRepository 的 export/import 两条链路均改走该客户端（**导出链路同修**——大库导出同为长响应；派生共享 AuthInterceptor 鉴权不丢）。零协议改动（openapi/sdk 不动）。
+- **四入口实现（feature:manage）**：BackupScreen 305 行+新 BackupCards.kt 243 行（入口卡/顶部暂存卡/自动备份卡/规则说明拆分，单文件 ≤500 行纪律；同包 RowInnerSpacing/CardInnerPadding/RuleNotes 与 ThumbnailCacheScreen/AuthorTxtImportScreen 既有私有声明撞名→Backup 前缀消歧）；BackupViewModel 增 `stagedMediaFiles` 状态（暂存卡 N 文件项=读暂存过 BackupValidator 摘要 mediaFiles，校验未过隐藏该项、导入侧仍完整重校验）；暂存成功文案按拍板措辞改「已暂存（%d KB），请切换到目标端登录后回来导入」；旧主卡「暂存当前库/导入暂存」散装按钮收敛进跨端同步卡与顶部暂存卡。
+- **测试**：新增 `NetworkModuleBackupClientTest`（读超时 300s/callTimeout 0/连接写超时随主客户端不放大/拦截器与线程池共享=鉴权不丢）；BackupViewModelTest 暂存措辞断言更新+新增 2 用例（进页暂存回流含 N 文件数且零出网/暂存内容未过校验时回流元数据但隐藏 N）；feature:manage 51 测试+core:network 28 测试全绿（BackupValidatorTest 未改动不回归）。
+- **门禁（§3 两笔构建，全核）**：`make app-build && make app-test && make app-lint` 三连 exit=0（BUILD SUCCESSFUL in 16s / 12s / 1m 39s）+ `cd android && ./gradlew :app:assembleRelease`（BUILD SUCCESSFUL in 1m 17s，R8）。
+- **模拟器冒烟四剧本全 PASS**（qimeng_api35 显式 -avd 无头后台，emulator-5556，未碰雷电 5554；8421 存量测试库≈100 文件为端 A、8422 空库为端 B，QIMENG_AUTH_DEV_MODE=1）：①导出备份→/sdcard/Download/qimeng_backup.json 落盘 62392 字节+「已导出（61 KB）」；②该文件导入回同端两遍→幂等（服务端 authors 0/tags 1/assets 190 两遍后不变，第二遍事件回放 0 条）；③跨端同步全流程→A 端暂存（暂存卡「来自 http://10.0.2.2:8421（2026-09-19 07:43，63 KB，190 文件）」+提示切换）→登出→连 B 端→暂存卡可见→一键导入→合并成功（标签 0→1，匹配文件 0/190=B 端无注册库的规则内正确口径）；④自动备份→SAF 授权目录→立即备份→/sdcard/Download/d7bulk/qimeng_backup.json 落盘+「上次备份：2026-09-19 07:48」翻新。logcat QimengApi 6 条出网记录与剧本一一对应（证据 %TEMP%\qimeng-r1-evidence\，截图 android/.walk/qR1-*）。测试后模拟器与 8421/8422 实例均已杀。
+- **真库事实（写档口径，2026-09-19 主会话只读核查）**：8420 当前 6341 资产 / 3 库 / 143 作者 / 19 标签。
+- **终包**：`QimengNAS\qimeng-任务R-终包-20260919.apk`（26,598,643 字节 release/R8）已出盘待主会话装真机 <真机序列号>。
+
+
 
 执行 AI：GLM-5.3-Flash（执行子代理）
 

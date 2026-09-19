@@ -34,6 +34,11 @@ annotation class ApplicationScope
 @Retention(AnnotationRetention.RUNTIME)
 annotation class UploadClient
 
+/** 备份通道专用 OkHttpClient 标记（SdkBackupRepository 注入；导出/导入跨端备份走此客户端）。 */
+@Qualifier
+@Retention(AnnotationRetention.RUNTIME)
+annotation class BackupClient
+
 /** 接口绑定（@Binds 必须在 abstract/interface 模块）。 */
 @Module
 @InstallIn(SingletonComponent::class)
@@ -85,6 +90,24 @@ object NetworkModule {
             .callTimeout(0, TimeUnit.MILLISECONDS)
             .build()
 
+    /**
+     * 备份通道专用客户端：同样从全局单例派生（newBuilder 共享 AuthInterceptor 与连接池，
+     * 鉴权不丢），只放大读超时、禁用总时限。为什么：备份导出/导入是同步长处理——导入
+     * POST /import/qimeng-backup 在服务端逐条幂等合并（真库 6341 资产在手机端是分钟级），
+     * 导出 GET /export/qimeng-backup 大库同为长响应，主客户端 10s 读超时必掐断（2026-09-19
+     * 用户手机实测跨端导入失败的根因，与上传通道「上传完却报失败重传」同款、当时只修了
+     * 上传）。callTimeout=0 是 OkHttp 语义「不设总时限」，时长只由读/写超时管——
+     * UploadClient 60s 先例的加长版。
+     */
+    @Provides
+    @Singleton
+    @BackupClient
+    fun provideBackupOkHttpClient(okHttpClient: OkHttpClient): OkHttpClient =
+        okHttpClient.newBuilder()
+            .readTimeout(BACKUP_READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .callTimeout(0, TimeUnit.MILLISECONDS)
+            .build()
+
     /** DataStore 单例：IO 专用作用域（DataStore 内部磁盘读写全挂它，NIA 同款装配）。 */
     @Provides
     @Singleton
@@ -110,4 +133,7 @@ object NetworkModule {
 
     /** 上传读超时（秒）：等的是「请求体发完→服务端落盘+建库行」这段无数据回传的窗口，60s 给足（见 provideUploadOkHttpClient 注释）。 */
     private const val UPLOAD_READ_TIMEOUT_SECONDS = 60L
+
+    /** 备份读超时（秒）：导入是服务端同步长处理（逐条幂等合并，6341 资产手机端分钟级）、导出大库同为长响应，10s 必超时——300s 给足（见 provideBackupOkHttpClient 注释）。 */
+    private const val BACKUP_READ_TIMEOUT_SECONDS = 300L
 }

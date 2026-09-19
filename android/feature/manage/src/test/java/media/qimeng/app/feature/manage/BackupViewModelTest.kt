@@ -37,6 +37,8 @@ import kotlinx.coroutines.test.runTest
  * 先例），VM 层对应的静默语义 = 取消确认（dismissImport）不触发出网，在此锁定。
  * 2026-09-16 用户反馈：自动备份 prefs 回流/立即备份反馈入锁；「导出未上传」取数端
  * （exportPending/onExported）随按钮退役，不再有对应用例。
+ * 2026-09-19 任务R 四入口重做：暂存卡 N 文件项（读暂存过 Validator 摘要）入锁；
+ * 暂存成功提示措辞更新为「请切换到目标端登录后回来导入」。
  */
 class BackupViewModelTest {
 
@@ -56,6 +58,15 @@ class BackupViewModelTest {
     private val validBytes = """
         {"format": "qimeng_backup", "schemaVersion": 1, "appIdentifier": "com.qimeng.media",
          "data": {"authors": [{"authorId": "A1", "displayName": "作者一"}]}}
+    """.trimIndent().toByteArray()
+
+    /** 含 2 个媒体文件的合法信封（暂存卡 N 文件项 = Validator 摘要 mediaFiles 数） */
+    private val stagedWithFilesBytes = """
+        {"format": "qimeng_backup", "schemaVersion": 1, "appIdentifier": "com.qimeng.media",
+         "data": {"mediaFiles": [
+           {"recordKey": "a.jpg", "fileName": "a.jpg", "mediaType": "image", "sizeBytes": 1, "modifiedAtMillis": 1},
+           {"recordKey": "b.jpg", "fileName": "b.jpg", "mediaType": "video", "sizeBytes": 2, "modifiedAtMillis": 2}
+         ]}}
     """.trimIndent().toByteArray()
 
     private fun newViewModel(
@@ -288,8 +299,32 @@ class BackupViewModelTest {
         val staged = vm.uiState.value.staged
         assertNotNull(staged)
         assertTrue(staged!!.sourceUrl.isNotEmpty()) // 来源端记档（实现方自取，防导错方向）
-        assertTrue(vm.uiState.value.noticeMessage!!.startsWith("已暂存当前库（"))
+        assertTrue(vm.uiState.value.noticeMessage!!.startsWith("已暂存（"))
+        // 暂存卡 N 文件项与文件导入同源 Validator（fake 信封无 mediaFiles → 0）
+        assertEquals(0, vm.uiState.value.stagedMediaFiles)
         assertFalse(vm.uiState.value.stagingBusy)
+    }
+
+    @Test
+    fun `跨端同步 - 进页暂存回流含元数据与N文件数且不出网`() = runTest(mainDispatcherRule.testDispatcher) {
+        val staging = FakeSyncStagingRepository().apply { stagedJson = stagedWithFilesBytes.decodeToString() }
+        val (vm, repository) = newViewModel(staging = staging)
+        driveIdle()
+        // 暂存卡数据（任务R：来自/时间/大小在 meta，N 文件 = Validator 摘要）
+        val staged = vm.uiState.value.staged
+        assertNotNull(staged)
+        assertEquals(2, vm.uiState.value.stagedMediaFiles)
+        assertTrue(repository.importCalls.isEmpty()) // 摘要回流是本地读，零出网
+    }
+
+    @Test
+    fun `跨端同步 - 暂存内容未过校验时回流元数据但隐藏N`() = runTest(mainDispatcherRule.testDispatcher) {
+        val staging = FakeSyncStagingRepository().apply { stagedJson = "不是json" }
+        val (vm, _) = newViewModel(staging = staging)
+        driveIdle()
+        // 元数据仍在（卡照常展示），N 项隐藏（null）；导入侧会再完整校验出可读错误
+        assertNotNull(vm.uiState.value.staged)
+        assertNull(vm.uiState.value.stagedMediaFiles)
     }
 
     @Test
