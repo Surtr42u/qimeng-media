@@ -146,6 +146,15 @@ func (g *Generator) thumbDst(assetID string, size Size) string {
 }
 
 func (g *Generator) ensureOne(ctx context.Context, assetID, srcPath string, kind Kind, size Size) error {
+	// 档位归一化必须在取 dst 与缩放前完成：md 档（SizeGrid）的像素由
+	// LongSide 配置决定（构造时 <=0 已回落 SizeGrid）。此前只有 thumbDst
+	// 的缓存键做了换算、scaleStill 仍用 512 占位值——long_side≠512 时
+	// 预热路径产出"512px 内容配换算后像素的键"，配置静默失效（2026-09-20
+	// 全库审查 F1 根修：懒生成路径由调用方换算传入故从未显现，默认配置
+	// 下两值相等也不显现）。
+	if size == SizeGrid {
+		size = Size(g.longSide)
+	}
 	dst := g.thumbDst(assetID, size)
 	if _, err := os.Stat(dst); err == nil {
 		return nil // 缓存命中

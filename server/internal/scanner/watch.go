@@ -171,6 +171,15 @@ func (w *watcher) schedule(ctx context.Context, path string) {
 	w.mu.Unlock()
 
 	time.AfterFunc(w.debounce, func() {
+		// ctx 已取消（服务关停/库移除）时不再进 processFile：否则用已取消
+		// ctx 打库只会产出 ctx.Canceled 的 warn 噪音（2026-09-20 全库审查 F5，
+		// 关停窗口内 pending 定时器到点的路径）。
+		if ctx.Err() != nil {
+			w.mu.Lock()
+			delete(w.pending, path)
+			w.mu.Unlock()
+			return
+		}
 		w.mu.Lock()
 		delete(w.pending, path)
 		w.mu.Unlock()

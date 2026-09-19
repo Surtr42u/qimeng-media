@@ -245,7 +245,7 @@ func TestSearchRebuildIndex(t *testing.T) {
 	if items := searchItems(t, env, "q="+url.QueryEscape("露西")); len(items) != 0 {
 		t.Fatalf("索引清空后搜索应无命中: %v", names(items))
 	}
-	if err := search.RebuildIndex(context.Background(), env.q); err != nil {
+	if err := search.RebuildIndex(context.Background(), env.conn); err != nil {
 		t.Fatalf("RebuildIndex 失败: %v", err)
 	}
 	if items := searchItems(t, env, "q="+url.QueryEscape("露西")); len(items) != 1 || names(items)[0] != "a.jpg" {

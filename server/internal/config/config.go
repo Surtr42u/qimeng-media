@@ -260,8 +260,12 @@ func applyEnv(cfg *Config) error {
 	}
 	if v := os.Getenv("QIMENG_UPLOAD_MAX_BYTES"); v != "" {
 		n, err := strconv.ParseInt(v, 10, 64)
-		if err != nil || n < 1 {
+		// 分支拆开：n<1 时 err==nil，%w 包 nil 会渲染成 %!w(<nil>) 畸形消息。
+		if err != nil {
 			return fmt.Errorf("环境变量 QIMENG_UPLOAD_MAX_BYTES=%q 不是合法正整数: %w", v, err)
+		}
+		if n < 1 {
+			return fmt.Errorf("环境变量 QIMENG_UPLOAD_MAX_BYTES=%q 不是合法正整数（须 >=1）", v)
 		}
 		cfg.Upload.MaxBytes = n
 	}
@@ -304,8 +308,12 @@ func applyEnv(cfg *Config) error {
 	}
 	if v := os.Getenv("QIMENG_BACKUP_RETENTION"); v != "" {
 		n, err := strconv.Atoi(v)
-		if err != nil || n < 1 {
+		// 同 QIMENG_UPLOAD_MAX_BYTES：拆分支防 %w 包 nil。
+		if err != nil {
 			return fmt.Errorf("环境变量 QIMENG_BACKUP_RETENTION=%q 不是合法正整数: %w", v, err)
+		}
+		if n < 1 {
+			return fmt.Errorf("环境变量 QIMENG_BACKUP_RETENTION=%q 不是合法正整数（须 >=1）", v)
 		}
 		cfg.Backup.Retention = n
 	}
