@@ -47,6 +47,20 @@ class BackupViewModelTest {
 
     private fun driveIdle() = mainDispatcherRule.testDispatcher.scheduler.advanceUntilIdle()
 
+    /**
+     * 等 Default 池真实线程跳板收口（reviewer P1 返工后：暂存摘要解析/JSON 字节拷贝已离
+     * Main）：advanceUntilIdle 只推进调度器虚拟时间、不等真实线程池——按条件轮询到状态
+     * 落位，并防续体在 resetMain 后恢复污染下一用例（stageForSync/自动备份用例同款纪律）。
+     */
+    private fun kotlinx.coroutines.test.TestScope.awaitUntil(condition: () -> Boolean) {
+        val deadline = System.currentTimeMillis() + 5_000
+        while (!condition() && System.currentTimeMillis() < deadline) {
+            advanceUntilIdle()
+            Thread.sleep(10)
+        }
+        advanceUntilIdle()
+    }
+
     private val exportFile = LegacyBackupFile(
         format = "qimeng_backup",
         schemaVersion = 1,
@@ -309,7 +323,8 @@ class BackupViewModelTest {
     fun `跨端同步 - 进页暂存回流含元数据与N文件数且不出网`() = runTest(mainDispatcherRule.testDispatcher) {
         val staging = FakeSyncStagingRepository().apply { stagedJson = stagedWithFilesBytes.decodeToString() }
         val (vm, repository) = newViewModel(staging = staging)
-        driveIdle()
+        // 摘要解析在 Default 真实线程池（reviewer P1 返工），轮询等回填落位
+        awaitUntil { vm.uiState.value.stagedMediaFiles != null }
         // 暂存卡数据（任务R：来自/时间/大小在 meta，N 文件 = Validator 摘要）
         val staged = vm.uiState.value.staged
         assertNotNull(staged)
@@ -321,8 +336,14 @@ class BackupViewModelTest {
     fun `跨端同步 - 暂存内容未过校验时回流元数据但隐藏N`() = runTest(mainDispatcherRule.testDispatcher) {
         val staging = FakeSyncStagingRepository().apply { stagedJson = "不是json" }
         val (vm, _) = newViewModel(staging = staging)
-        driveIdle()
-        // 元数据仍在（卡照常展示），N 项隐藏（null）；导入侧会再完整校验出可读错误
+        // 元数据仍在（卡照常展示），N 项隐藏（null）；导入侧会再完整校验出可读错误。
+        // 校验未过时摘要终值与初值同 null、无状态可观察——固定短轮询排空 Default 池续体
+        // （µs 级解析，20×10ms 远超量级），防其在 resetMain 后恢复污染下一用例
+        repeat(20) {
+            advanceUntilIdle()
+            Thread.sleep(10)
+        }
+        advanceUntilIdle()
         assertNotNull(vm.uiState.value.staged)
         assertNull(vm.uiState.value.stagedMediaFiles)
     }
@@ -332,7 +353,8 @@ class BackupViewModelTest {
         val staging = FakeSyncStagingRepository().apply { stagedJson = validBytes.decodeToString() }
         val (vm, repository) = newViewModel(staging = staging)
         vm.importStaged()
-        driveIdle()
+        // JSON→字节拷贝在 Default 真实线程池（reviewer P1 返工），轮询等确认弹窗落位
+        awaitUntil { vm.uiState.value.pendingImport != null }
         // 确认前零出网：与 onFilePicked 同构，只开弹窗
         assertTrue(repository.importCalls.isEmpty())
         val pending = vm.uiState.value.pendingImport

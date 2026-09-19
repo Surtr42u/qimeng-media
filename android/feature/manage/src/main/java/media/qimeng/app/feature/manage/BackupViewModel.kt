@@ -327,11 +327,13 @@ class BackupViewModel @Inject constructor(
     private fun loadStagedMeta() {
         viewModelScope.launch {
             val staged = runCatching { syncStaging.loadStaged() }.getOrNull()
-            _uiState.update {
-                it.copy(
-                    staged = staged?.meta,
-                    stagedMediaFiles = staged?.let { s -> stagedSummaryMediaFiles(s.json) },
-                )
+            // 元数据先进状态（卡先现），摘要过 Validator 后单独回填——摘要解析是 MB 级重活
+            // （reviewer P1：真库量级信封双遍 Moshi 全量解析+字节拷贝跑 Main 会整页冻结），
+            // 已由 [stagedSummaryMediaFiles] 收进 Default 池
+            _uiState.update { it.copy(staged = staged?.meta) }
+            if (staged != null) {
+                val mediaFiles = stagedSummaryMediaFiles(staged.json)
+                _uiState.update { it.copy(stagedMediaFiles = mediaFiles) }
             }
         }
     }
@@ -340,10 +342,14 @@ class BackupViewModel @Inject constructor(
      * 暂存内容过 BackupValidator 取媒体文件数（任务R：暂存卡 N 文件项）。校验未过返回
      * null（卡上隐藏该项）；导入侧 confirm 前仍会完整重校验，此处不拦截不横幅——
      * 摘要展示与导入校验职责分离，单源都在 BackupValidator。
+     * 为什么挂起+Default 池：validate 内是双遍 Moshi 全量解析+UTF-8 全量拷贝，真库
+     * （6341 资产）量级信封几 MB～几十 MB，跑 Main 是进页冻结级重活——与
+     * [buildExportJson] 序列化同款约束（reviewer P1 返工）。
      */
-    private fun stagedSummaryMediaFiles(json: String): Int? =
+    private suspend fun stagedSummaryMediaFiles(json: String): Int? = withContext(Dispatchers.Default) {
         (BackupValidator.validate(STAGED_FILE_NAME, json.toByteArray(Charsets.UTF_8)) as? BackupValidator.Result.Ok)
             ?.summary?.mediaFiles
+    }
 
     /**
      * 源端一键「同步到另一端」：导出全量信封（与「导出备份」同一段序列化）写进 App 内部
@@ -356,11 +362,13 @@ class BackupViewModel @Inject constructor(
             try {
                 val export = buildExportJson()
                 val meta = syncStaging.stage(export.json)
+                // 摘要预先在 Default 池算好再进状态（update lambda 内禁止重活，reviewer P1 同款）
+                val mediaFiles = stagedSummaryMediaFiles(export.json)
                 _uiState.update {
                     it.copy(
                         stagingBusy = false,
                         staged = meta,
-                        stagedMediaFiles = stagedSummaryMediaFiles(export.json),
+                        stagedMediaFiles = mediaFiles,
                         noticeMessage = NOTICE_STAGED.format((meta.sizeBytes / BYTES_PER_KB).roundToInt()),
                     )
                 }
@@ -373,6 +381,7 @@ class BackupViewModel @Inject constructor(
     /**
      * 导入暂存：读暂存信封后走与「选择文件」完全相同的校验→确认弹窗→幂等导入链路
      * （onFilePicked 单源口径）。成功后暂存保留（同一份重复导入不翻倍，可作重试兜底）。
+     * JSON→字节拷贝同样是 MB 级重活，先切 Default 池再进校验链（reviewer P1 同款）。
      */
     fun importStaged() {
         if (_uiState.value.importing) return
@@ -382,7 +391,8 @@ class BackupViewModel @Inject constructor(
                 _uiState.update { it.copy(errorMessage = ERROR_STAGED_MISSING) }
                 return@launch
             }
-            onFilePicked(STAGED_FILE_NAME, staged.json.toByteArray(Charsets.UTF_8))
+            val bytes = withContext(Dispatchers.Default) { staged.json.toByteArray(Charsets.UTF_8) }
+            onFilePicked(STAGED_FILE_NAME, bytes)
         }
     }
 
