@@ -28,7 +28,9 @@ import media.qimeng.app.feature.detail.video.TimelineTagEntity
  * 把 surface 迁回排版态视图（不迁移则排版态只留末帧=画面假死）。
  *
  * 覆盖层视图恒 `setFullscreen(true)`：全屏态手势统一走全屏档（单击显隐控制器/
- * 双击播停，G1/G2 横屏语义），全屏钮图标=退出全屏、控制器默认隐藏、底栏避让导航栏。
+ * 双击播停——S2 2026-09-19 拍板后 G1/G2 双向同语义，全屏档与排版档无差；控制器显隐
+ * 不接上报，详情顶栏在 Dialog 之下不可见无需联动），全屏钮图标=退出全屏、控制器默认
+ * 隐藏、底栏避让导航栏。
  *
  * @param player VideoStage 持有的 ExoPlayer（唯一播放实例，覆盖层只挂不建）
  * @param tagEntities 时间轴标签（与排版态同源，变化经 LaunchedEffect 同步到本视图）

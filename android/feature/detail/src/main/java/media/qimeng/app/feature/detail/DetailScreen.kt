@@ -77,6 +77,18 @@ import media.qimeng.app.core.ui.theme.QimengDimens
  * 海报态单击=起播（L163 旧版语义优先，与 L271 单击切 chrome 的冲突记档：海报态不接
  * chrome 切换，▶ 随 chrome 恒显）。
  *
+ * 视频播放态 chrome（任务S S2，2026-09-19 用户拍板「单击变成显示 ui 就是视频的 ui 和
+ * 上方的 ui；现在视频播放不显示手机状态栏；双击才是暂停」=解冻令，推翻 GUIDE_UI L185-186
+ * 旧口径「竖屏单击播停/横屏单击显隐/竖屏双击无功能」——冲突优先级用户最新要求 > 规格书）：
+ * 播放期单击切「播放器控制器（视频的 ui）+ 详情顶栏（上方的 ui）」整体显隐——控制器显隐
+ * 由桥接件 showController 单点上报（onControllerVisibilityChanged）经 VideoStage/
+ * DetailMediaStage 转发为 [playbackChromeVisible] 镜像（G9 自动隐藏/拖拽隐/长按隐/ENDED
+ * 强制显同拍同源，无第二事实源），DetailTopChrome 以「chromeEffective || 播放态镜像」
+ * 追加显隐；双击=播停。**系统栏播放期恒隐不随顶栏回归**：chromeEffective 恒 false（
+ * SystemBarsImmersiveEffect 维持隐藏，拍板「视频播放不显示手机状态栏」——这是本拍板对
+ * GUIDE_UI L273「chrome 显隐与系统栏联动」在播放态的定向覆盖，记档）；底色纯黑/锁滚/
+ * 底部四胶囊隐等 chromeEffective 口径全部不动（U6 逐帧动画机制不动）。
+ *
  * 图片态缩放沉浸（2026-09-13 用户实测反馈驱动，非旧版对齐——旧版单击无条件切 chrome）：
  * 图片放大跨过 1.05x（ZoomImageView.emitZoomImmersive 上报）即并入 chromeEffective——
  * 系统栏/上下渐变 chrome 隐藏、舞台底转黑、滚动锁死（同沉浸口径，消除「放大时上下白色
@@ -111,6 +123,11 @@ fun DetailScreen(
     var chromeVisible by rememberSaveable { mutableStateOf(!SiblingSwipeImmersionRequest.consume()) }
     // 视频播放器活动态镜像（VideoStage 上报）：活动期 chrome 让位播放器控制器
     var playerActive by remember { mutableStateOf(false) }
+    // S2 播放态 chrome 镜像（2026-09-19 拍板，见类 KDoc）：桥接件控制器显隐单点上报——
+    // 播放期单击切「播放器控制器+详情顶栏」整体显隐。remember 非 saveable：播放会话
+    // 内 ephemeral 态（进程重建即回海报态，同 stageMode 口径），退出播放态随
+    // onPlayerActiveChanged(false) 复位，不带入浏览态
+    var playbackChromeVisible by remember { mutableStateOf(false) }
     // 图片态缩放沉浸镜像（ZoomImageView 上报，2026-09-13 用户反馈「放大时上下白色渐变
     // 压在图上观感不适」）：跨过 1.05x 即时 true、回落收束点 false（非对称滞回在搬运件）。
     // remember 而非 rememberSaveable：放大态属 ZoomImageView 实例态，进程重建后 View 重建、
@@ -381,7 +398,14 @@ fun DetailScreen(
                         // zoomImmersive 压 false，单击若照常翻转 chromeVisible 会在缩回后以
                         // 反转态恢复（奇偶漂移），故门控掉
                         onToggleChrome = { if (!zoomImmersive) chromeVisible = !chromeVisible },
-                        onPlayerActiveChanged = { playerActive = it },
+                        // S2：退播放态顺带复位播放态 chrome 镜像（进播放态由桥接件
+                        // startPlayback→showController(true) 上报置位，此处不预置）
+                        onPlayerActiveChanged = {
+                            playerActive = it
+                            if (!it) playbackChromeVisible = false
+                        },
+                        // S2 播放态 chrome 上报（桥接件控制器显隐单点，见类 KDoc）
+                        onPlaybackChromeChanged = { playbackChromeVisible = it },
                         // 图片态缩放沉浸上报（链路见类 KDoc；视频分支在 DetailMediaStage 不消费）
                         onZoomImmersiveChanged = { zoomImmersive = it },
                         onExitToChromeBrowse = { chromeVisible = true },
@@ -399,7 +423,12 @@ fun DetailScreen(
                     // [CHROME_FADE_MS]）；此前整条 AnimatedVisibility 一起 fadeIn/fadeOut，
                     // 背景跟着渐隐导致实测消失拖尾 325-400ms，已清偿
                     DetailTopChrome(
-                        contentVisible = chromeEffective,
+                        // S2 播放态 chrome（2026-09-19 拍板）：播放期「上方的 ui」（顶栏）随
+                        // 播放器控制器同拍显隐（playbackChromeVisible 镜像，playerActive 与
+                        // 门槛双保险防跨态残留）；浏览态 chromeEffective 口径不动。系统栏
+                        // 不随之显示——播放期 chromeEffective 恒 false（SystemBarsImmersive
+                        // Effect 维持隐藏，拍板「视频播放不显示手机状态栏」，记档见类 KDoc）
+                        contentVisible = chromeEffective || (playerActive && playbackChromeVisible),
                         batchIndex = state.batchIndex,
                         batchSize = state.batchSize,
                         onBack = onBack,

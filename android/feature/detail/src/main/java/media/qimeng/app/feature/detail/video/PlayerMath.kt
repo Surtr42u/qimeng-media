@@ -73,3 +73,24 @@ internal fun formatDurationMs(ms: Long): String {
  */
 internal fun totalDurationText(durationMs: Long): String? =
     if (durationMs > 0L) formatDurationMs(durationMs) else null
+
+/** S2 点按动作（2026-09-19 拍板冻结件）：控制器显隐切换 / 播放暂停切换 */
+internal enum class PlayerTapAction {
+    /** 单击：切换「播放器控制条+顶栏」显隐（Compose 侧详情顶栏经显隐上报同拍联动） */
+    TOGGLE_CONTROLLER,
+
+    /** 双击：播放/暂停切换（播停语义自单击让位给双击） */
+    TOGGLE_PLAY_PAUSE,
+}
+
+/**
+ * 播放器点按动作映射（S2 2026-09-19 用户拍板「单击变成显示 ui 就是视频的 ui 和上方的
+ * ui……双击才是暂停」=解冻令，纯函数无 Android 依赖，JVM 单测锁定）：
+ * 单击确认 → 切控制器显隐；双击 → 播停；**排版态与全屏态同语义**——
+ * 推翻 GUIDE_UI L185-186 旧口径（竖屏单击播停/横屏单击显隐控制器/竖屏双击无功能），
+ * 冲突优先级「用户最新要求 > 规格书」（CHANGELOG 第三百四十七笔记档）。
+ * [isFullscreen] 现参与但两档同语义：入参保留使「双向同语义」冻结口径在调用点显式可见，
+ * 未来若要分档必先改本函数与单测（防调用点静默分叉）。
+ */
+internal fun resolvePlayerTapAction(isFullscreen: Boolean, isDoubleTap: Boolean): PlayerTapAction =
+    if (isDoubleTap) PlayerTapAction.TOGGLE_PLAY_PAUSE else PlayerTapAction.TOGGLE_CONTROLLER

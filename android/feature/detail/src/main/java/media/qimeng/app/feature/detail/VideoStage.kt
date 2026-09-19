@@ -172,7 +172,14 @@ private const val FULLSCREEN_TOGGLE_DEBOUNCE_MS = 800L
  *   状态机退回海报态 + [onExitToChromeBrowse]（chrome 恢复显示）；播放器已 prepare 的同源
  *   媒体保留位置，再点播放走同源续播不归零（L165 同款语义）；
  * - **播放器活动态上报**：[onPlayerActiveChanged]（海报态=false，播放/暂停/ENDED=true）——
- *   DetailScreen 据此让 chrome 让位播放器自有控制器（chrome 恒隐）。
+ *   DetailScreen 据此让 chrome 与系统栏让位播放器（chromeEffective=false；S2 2026-09-19
+ *   拍板后播放态「上方的 ui」顶栏改经 [onPlaybackChromeChanged] 随播放器控制器同拍显隐，
+ *   系统栏播放期恒隐不变）；
+ * - **播放态点按 chrome（S2 2026-09-19 拍板「单击显示视频的 ui 和上方的 ui；双击才是
+ *   暂停」）**：桥接件手势映射已改版（BiliPlayerView 适配点⑪）——单击切「播放器控制器+
+ *   详情顶栏」整体显隐、双击播停；控制器显隐经 [onControllerVisibilityChanged]（桥接件
+ *   showController 单点）→ 本舞台 [onPlaybackChromeChanged] 转发 DetailScreen 镜像，
+ *   无第二事实源。
  *
  * 播放错误承接（2026-09-13 用户真机反馈 BUG-B 次修）：PlaybackException → 状态机回退
  * 海报态（全屏态先退层级，均走既有状态机 API，见 [handlePlayerError]）+ 舞台顶部轻提示
@@ -207,8 +214,14 @@ private const val FULLSCREEN_TOGGLE_DEBOUNCE_MS = 800L
  * @param onSiblingNavigate 左右滑切换相邻资产回调（海报态横滑 V2 起距离或速度任一达阈值即切，
  *   慢拖可切件；播放态不接——播放器手势接管，K3 定案）
  * @param onToggleChrome 沉浸模式 chrome 开关回调（视频态不接：海报单击=起播（L163 优先，
- *   与 L271 冲突取旧版语义并记档）、播放单击=播停归播放器手势；保留参数与图片舞台签名对齐）
- * @param onPlayerActiveChanged 播放器活动态上报（I7：chrome 恒隐的驱动源）
+ *   与 L271 冲突取旧版语义并记档）；播放单击=S2 2026-09-19 拍板改切播放态 chrome（见
+ *   [onPlaybackChromeChanged]）；保留参数与图片舞台签名对齐）
+ * @param onPlayerActiveChanged 播放器活动态上报（I7：chrome 恒隐的驱动源；S2 后系统栏
+ *   播放期恒隐仍由本链驱动）
+ * @param onPlaybackChromeChanged 播放态 chrome 显隐上报（S2 2026-09-19 拍板「单击显示
+ *   视频的 ui 和上方的 ui」）：桥接件 showController 单点上报转发 DetailScreen 播放态
+ *   镜像，单击切「播放器控制器+详情顶栏」整体显隐；G9 自动隐藏/拖拽隐/长按隐/ENDED
+ *   强制显同拍同源（仅视频分支消费）
  * @param onExitToChromeBrowse 播放中按返回退 chrome 浏览模式后 chrome 恢复显示（I7，L279）
  * @param onPlaybackStarted 起播回调（打点 play 用；VM 侧幂等，重复回调安全）
  * @param onPositionChanged 播放位置 tick（秒；VM 侧节流，逐 tick 喂入安全）
@@ -228,6 +241,8 @@ internal fun VideoStage(
     onSiblingNavigate: (delta: Int) -> Unit,
     onToggleChrome: () -> Unit,
     onPlayerActiveChanged: (Boolean) -> Unit,
+    /** 播放态 chrome 显隐上报（S2 2026-09-19 拍板，见类 KDoc 与 @param 说明） */
+    onPlaybackChromeChanged: (Boolean) -> Unit,
     onExitToChromeBrowse: () -> Unit,
     onPlaybackStarted: () -> Unit,
     onPositionChanged: (positionSeconds: Double) -> Unit,
@@ -404,6 +419,8 @@ internal fun VideoStage(
     val latestOnSiblingNavigate by rememberUpdatedState(onSiblingNavigate)
     val latestOnPlayerActiveChanged by rememberUpdatedState(onPlayerActiveChanged)
     val latestOnExitToChromeBrowse by rememberUpdatedState(onExitToChromeBrowse)
+    // S2 播放态 chrome 上报（桥接件 factory 一次性闭包经最新值桥转发，同上防线）
+    val latestOnPlaybackChromeChanged by rememberUpdatedState(onPlaybackChromeChanged)
 
     fun beginPlayback() {
         // 视频源 = asset.origUrl（缺直链则保持海报，理论不发生的兜底）
@@ -620,16 +637,23 @@ internal fun VideoStage(
                         // 播放错误 → 状态机回退海报态 + 轻提示（BUG-B 次修；全屏覆盖层视图
                         // 未接线，但其未挂时本视图听众仍在共享播放器上，错误同样经此承接）
                         onPlayerError = { handlePlayerError(it) }
+                        // S2 播放态 chrome 上报（2026-09-19 拍板）：控制器显隐单点转发
+                        // DetailScreen 镜像——须先于 startPlayback 挂线（起播即
+                        // showController(true) 上报，顶栏与控制器同拍显现）
+                        onControllerVisibilityChanged = { visible ->
+                            latestOnPlaybackChromeChanged(visible)
+                        }
                         // 起播（内含 ENDED 回 0 口径）；此后触摸由控件手势循环接管
                         startPlayback()
                     }.also { playerView = it }
                 },
                 update = { view ->
                     // G6 注释修订（层级真源自 D2 起为 Compose 侧 VideoFullscreenStateMachine，
-                    // K2 改单级语义）：本回写只表达「当前配置方向」→ 控件手势档（G1 竖屏单击
-                    // 播停/横屏单击显隐控制器）与按钮图标，全屏层级由覆盖层视图恒
-                    // setFullscreen(true) 表达、不经此处。用 LocalConfiguration（配置变化会
-                    // 触发重组）而非 context.resources——后者在旋转后不刷新，会卡死在旧方向
+                    // K2 改单级语义）：本回写只表达「当前配置方向」→ 控件手势档与按钮图标，
+                    // 全屏层级由覆盖层视图恒 setFullscreen(true) 表达、不经此处。S2（2026-09-19
+                    // 拍板）后 G1/G2 双向同语义（单击切控制器/双击播停），本回写仅余按钮图标
+                    // 与「进横屏默认隐控制器」差异。用 LocalConfiguration（配置变化会触发重组）
+                    // 而非 context.resources——后者在旋转后不刷新，会卡死在旧方向
                     //（LocalContextConfigurationRead lint）
                     val landscape = configuration.orientation ==
                         Configuration.ORIENTATION_LANDSCAPE

@@ -122,6 +122,9 @@ internal fun DetailMediaStage(
     onZoomImmersiveChanged: (Boolean) -> Unit = {},
     /** 视频播放器活动态上报（I7：海报态=false，播放/暂停/ENDED=true——chrome 让位播放器控制器） */
     onPlayerActiveChanged: (Boolean) -> Unit,
+    /** 播放态 chrome 显隐上报（S2 2026-09-19 拍板「单击显示视频的 ui 和上方的 ui」：
+     *  桥接件控制器显隐单点转发，仅视频分支消费直传） */
+    onPlaybackChromeChanged: (Boolean) -> Unit = {},
     /** 播放中按返回先退 chrome 浏览模式（L279）后 chrome 恢复显示的回调 */
     onExitToChromeBrowse: () -> Unit,
     /** 图片态解码失败覆盖层「返回」（RES #27；离开详情页 popBackStack 语义，仅图片分支消费） */
@@ -148,6 +151,7 @@ internal fun DetailMediaStage(
             onSiblingNavigate = onSiblingNavigate,
             onToggleChrome = onToggleChrome,
             onPlayerActiveChanged = onPlayerActiveChanged,
+            onPlaybackChromeChanged = onPlaybackChromeChanged,
             onExitToChromeBrowse = onExitToChromeBrowse,
             onPlaybackStarted = onPlaybackStarted,
             onPositionChanged = onPositionChanged,

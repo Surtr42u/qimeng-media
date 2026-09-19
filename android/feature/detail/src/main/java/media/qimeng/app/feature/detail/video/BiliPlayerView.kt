@@ -81,8 +81,20 @@ import kotlin.math.min
  *      PlaybackException 处理（prepare 失败=黑屏无提示），本控件只增回调转发不改任何
  *      既有行为；错误后的状态回退与提示由 Compose 侧 VideoStage 承接（状态机裁决）。
  *      其余逐行原样。
+ *   ⑪ S2（2026-09-19 用户拍板「单击变成显示 ui 就是视频的 ui 和上方的 ui；现在视频播放
+ *      不显示手机状态栏；双击才是暂停」=解冻令）G1/G2 手势映射改版：单击改**双向**=
+ *      显隐控制器（竖屏原「单击播停」废止——播停让位双击），双击改**双向**=播停（竖屏
+ *      原「双击无功能」废止）；映射收敛纯函数 [resolvePlayerTapAction]（PlayerMathTest
+ *      锁「双向同语义」）。GUIDE_UI L185-186 旧口径被拍板推翻（冲突优先级：用户最新
+ *      要求 > 规格书；CHANGELOG 第三百四十七笔记档）。新增 [onControllerVisibilityChanged]
+ *      显隐上报（[showController] 单点发出）：「上方的 ui」（详情顶栏）由 Compose 侧
+ *      DetailScreen 播放态 chrome 镜像同拍同步（G9 自动隐藏/拖拽隐/长按隐/ENDED 强制显
+ *      全路径同源，无第二事实源）。系统栏显隐不在本控件——播放期恒隐由 Compose 侧既有
+ *      沉浸链承担（SystemBarsImmersiveEffect/FullscreenOverlayShell，拍板「视频播放不
+ *      显示手机状态栏」），播放态顶栏显示不带动系统栏。其余逐行原样。
  *
- * 手势冻结口径（G1~G9）：G1 竖屏单击播停/横屏单击显隐控制器；G2 横屏双击播停；
+ * 手势冻结口径（G1~G9；G1/G2 已由 2026-09-19 拍板改版，沿革见适配点⑪）：
+ * G1 单击（双向）显隐控制器；G2 双击（双向）播停；
  * G3 长按 2x 松开还原（竖屏下方锁速区拖入锁定/拖出退出，长按期间禁起拖）；
  * G4 水平拖进度（24dp 起拖阈值且 |dx|>|dy|，上限见 [gestureSeekCapMs]，无时长忽略）；
  * G5 亮度/音量手势=不做（旧版无此功能）；G6 全屏钮=仅横屏视频可点（K2 单级横屏全屏收口，
@@ -129,6 +141,13 @@ class BiliPlayerView @JvmOverloads constructor(
     var onTagLongPress: ((TimelineTagEntity) -> Unit)? = null
     /** 播放错误上报（适配点⑩）：转发 Player.Listener.onPlayerError，状态回退/提示由 Compose 侧裁决 */
     var onPlayerError: ((PlaybackException) -> Unit)? = null
+    /**
+     * 控制器显隐上报（S2 适配点⑪，2026-09-19 拍板）：[showController] 单点发出，Compose 侧
+     * （VideoStage → DetailScreen 播放态 chrome 镜像）据同一拍同步「上方的 ui」（详情顶栏）
+     * 显隐——单击切换/G9 自动隐藏/拖拽隐/长按隐/ENDED 强制显全路径同源。全屏覆盖层视图不
+     * 接线（顶栏在 Dialog 之下不可见，无需同步）。
+     */
+    var onControllerVisibilityChanged: ((Boolean) -> Unit)? = null
 
     private var controllerVisible = false
     private var currentSpeed = 1f
@@ -198,22 +217,22 @@ class BiliPlayerView @JvmOverloads constructor(
     private val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
         override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
             performClick()
-            if (isFullscreen) {
-                // 横屏：单击显隐控制器
-                showController(!controllerVisible)
-            } else {
-                // 竖屏：单击切换播放/暂停
-                togglePlayPause()
+            // S2 拍板（适配点⑪）：单击=切控制层显隐（双向同语义，映射单源
+            // resolvePlayerTapAction）；「上方的 ui」（详情顶栏）随 showController 的
+            // 显隐上报由 Compose 侧同拍联动
+            when (resolvePlayerTapAction(isFullscreen, isDoubleTap = false)) {
+                PlayerTapAction.TOGGLE_CONTROLLER -> showController(!controllerVisible)
+                PlayerTapAction.TOGGLE_PLAY_PAUSE -> togglePlayPause()
             }
             return true
         }
 
         override fun onDoubleTap(e: MotionEvent): Boolean {
-            if (isFullscreen) {
-                // 横屏：双击切换播放/暂停
-                togglePlayPause()
+            // S2 拍板（适配点⑪）：双击=播停（双向同语义；旧版仅横屏生效、竖屏无功能已废止）
+            when (resolvePlayerTapAction(isFullscreen, isDoubleTap = true)) {
+                PlayerTapAction.TOGGLE_CONTROLLER -> showController(!controllerVisible)
+                PlayerTapAction.TOGGLE_PLAY_PAUSE -> togglePlayPause()
             }
-            // 竖屏：双击无功能
             return true
         }
 
@@ -703,6 +722,9 @@ class BiliPlayerView @JvmOverloads constructor(
         controllerVisible = visible
         topBar.isVisible = visible
         bottomBar.isVisible = visible
+        // S2 显隐上报（适配点⑪）：全路径单点发出（单击切换/G9 自动隐藏/拖拽隐/长按隐/
+        // ENDED 强制显），Compose 侧播放态 chrome 镜像同拍，不设第二事实源
+        onControllerVisibilityChanged?.invoke(visible)
         if (visible) {
             removeCallbacks(hideControllerRunnable)
             postDelayed(hideControllerRunnable, HIDE_DELAY)
