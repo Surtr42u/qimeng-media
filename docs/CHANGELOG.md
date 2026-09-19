@@ -13,6 +13,18 @@
 ---
 ---
 ---
+## feat(app): 视频单击切控制层+双击暂停+播放沉浸系统栏（2026-09-19 第三百四十七笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理）
+
+- **用户拍板三件（任务S §0 批S2，原话）**：「单击变成显示 ui 就是视频的 ui 和上方的 ui；现在视频播放不显示手机状态栏；双击才是暂停，一起做了」。
+- **GUIDE_UI 视频节语义核对结论（规格书=旧项目 C:\QimengMedia\docs\GUIDE_UI.md）**：L185「手势控制（竖屏）：单击切换播放/暂停、双击无功能」；L186「手势控制（横屏）：单击显隐控制器、双击切换播放/暂停；进入横屏默认隐藏控制器」；L183 控制器 UI=顶部栏（返回）+底部栏（播放/静音/进度条/时间/倍速/全屏）；L273 沉浸联动「单击媒体切换沉浸模式：显隐 App 顶栏/底部操作栏 + 显隐系统状态栏/导航栏」；GUIDE_UI 无「播放期手势临时唤出系统栏」专门条目。**拍板推翻 L185-186**（冲突优先级：用户最新要求 > 规格书）：单击改**双向**=切控制层显隐（竖屏「单击播停」废止）、双击改**双向**=播停（竖屏「双击无功能」废止）；播放期手势唤出**规格书无条目，按用户拍板+标准语义**（BEHAVIOR_DEFAULT=平台现行推荐值，语义即 BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE 瞬态呼出档，铁律 8 已核对 androidx.core 官方文档现行 API）。
+- **件1 单击=切控制层（B 站式 chrome 整体切换）**：桥接件 BiliPlayerView 手势映射改版（适配点⑪解冻令记档入 KDoc）——单击确认统一 `showController(!controllerVisible)`（G1 双向）；映射收敛纯函数 `resolvePlayerTapAction(isFullscreen, isDoubleTap)`（PlayerMath.kt，入参保留使「双向同语义」口径在调用点显式可见，单测锁分叉）；新增 `onControllerVisibilityChanged` 显隐上报（showController **单点**发出——单击切换/G9 五秒自动隐藏/拖拽隐/长按隐/ENDED 强制显全路径同源，无第二事实源）；Compose 侧 DetailScreen 新增 `playbackChromeVisible` 播放态镜像（VideoStage→DetailMediaStage 具名透传），DetailTopChrome 以 `chromeEffective || (playerActive && playbackChromeVisible)` 追加显隐——单击同拍切「播放器控制条+顶栏（视频的 ui+上方的 ui）」整体；退播放态随 onPlayerActiveChanged(false) 复位不带入浏览态；底部四胶囊/底色纯黑/锁滚等 chromeEffective 既有口径零变化（U6 逐帧动画机制不动）。
+- **件2 双击=暂停/恢复**：`onDoubleTap` 统一 `togglePlayPause()`（G2 双向；起播/暂停后控制层照旧显示 5s=G9 既有口径）；海报态单击起播不变（L163 优先语义不动）。
+- **件3 播放/全屏隐藏系统状态栏（沉浸式）**：核对既有链已覆盖并保持——排版态播放期 chromeEffective 恒 false → SystemBarsImmersiveEffect hide(systemBars)（状态栏+导航栏一并，对齐 GUIDE_UI L273 系统栏整体口径）；横屏全屏=FullscreenOverlayShell 在 Dialog 窗口 hide(systemBars)+BEHAVIOR_DEFAULT；退出恢复=onDispose show/chromeEffective 回 true；ON_RESUME 幂等重申（U11 既有）。**本批关键保证：件1 的播放态顶栏显示不带动系统栏回归**——playbackChromeVisible 只追加 DetailTopChrome 显隐，chromeEffective（系统栏驱动源）播放期恒 false，拍板「视频播放不显示手机状态栏」成立（此为对 GUIDE_UI L273「chrome 与系统栏联动」在播放态的定向覆盖，记档）。
+- **桥接清单（ADR-0014 例外③）**：本批未新增桥接件；既有 BiliPlayerView 搬运件（3c 入清单）内部手势映射改版+新增显隐上报回调，未动 G3~G9 手势参数与播放内核（清晰度/倍速/进度/加载逻辑零触碰）。
+- **测试**：PlayerMathTest 新增 2 用例锁「双向同语义」（singleTapTogglesControllerInBothOrientations/doubleTapTogglesPlayPauseInBothOrientations）。**定向门禁原文**：`./gradlew :feature:detail:compileDebugKotlin :feature:detail:testDebugUnitTest` → `BUILD SUCCESSFUL in 7s`（75 tasks），模块 tests=172 failures=0 errors=0 skipped=0（21 个测试类，PlayerMathTest tests=12 failures=0）。全量三连+R8+模拟器冒烟由任务S 收官批统一跑（InsetsController 运行时路径届时覆盖）。
+
 ## refactor(app): 备份页收敛两卡——导入导出直读直写备份目录+暂存机制退役（2026-09-19 第三百四十六笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理）

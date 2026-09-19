@@ -90,4 +90,34 @@ class PlayerMathTest {
         assertEquals("-0:05", formatDurationMs(-5_000L))
         assertEquals("-1:00:00", formatDurationMs(-3_600_000L))
     }
+
+    // ---------- S2：点按动作映射（2026-09-19 拍板冻结口径） ----------
+
+    @Test
+    fun singleTapTogglesControllerInBothOrientations() {
+        // 拍板「单击变成显示 ui」：单击=切控制层显隐，排版态/全屏态同语义
+        // （推翻 GUIDE_UI L185-186 旧口径「竖屏单击播停」——播停让位双击）
+        assertEquals(
+            PlayerTapAction.TOGGLE_CONTROLLER,
+            resolvePlayerTapAction(isFullscreen = false, isDoubleTap = false),
+        )
+        assertEquals(
+            PlayerTapAction.TOGGLE_CONTROLLER,
+            resolvePlayerTapAction(isFullscreen = true, isDoubleTap = false),
+        )
+    }
+
+    @Test
+    fun doubleTapTogglesPlayPauseInBothOrientations() {
+        // 拍板「双击才是暂停」：双击=播停，排版态/全屏态同语义
+        // （旧版「竖屏双击无功能」废止；横屏双击播停语义保持）
+        assertEquals(
+            PlayerTapAction.TOGGLE_PLAY_PAUSE,
+            resolvePlayerTapAction(isFullscreen = false, isDoubleTap = true),
+        )
+        assertEquals(
+            PlayerTapAction.TOGGLE_PLAY_PAUSE,
+            resolvePlayerTapAction(isFullscreen = true, isDoubleTap = true),
+        )
+    }
 }
