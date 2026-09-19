@@ -33,8 +33,9 @@ import androidx.core.view.WindowInsetsCompat
  *   （[systemBarsVisible]，源=BiliPlayerView showController 单点上报），显=透明+浅色
  *   图标（栏底透明 API<35 用弃用的 statusBarColor=TRANSPARENT，androidx enableEdgeToEdge
  *   EdgeToEdgeApi26-30 同款官方路径；API 35+ 平台忽略该参数且强制 edge-to-edge 恒透明），
- *   隐=hide systemBars（WindowInsetsController，与 Activity 窗 SystemBarsImmersiveEffect
- *   同源同语义）；Dialog 取焦默认把系统栏带回来，show 分支顺势幂等收敛；图标明暗随
+ *   隐=瞬时隐藏（S11，2026-09-19 用户拍板「状态栏也瞬时」：controlWindowInsetsAnimation
+ *   零时长，见 [hideSystemBarsInstantly]，与 Activity 窗 SystemBarsImmersiveEffect 同源
+ *   同语义）；Dialog 取焦默认把系统栏带回来，show 分支顺势幂等收敛；图标明暗随
  *   窗口销毁自然失效，焦点回 Activity 窗后由既有效果接管，两窗互不影响；
  * - **返回语义**：onDismissRequest=onDismiss（视频=退横屏全屏回排版态，由调用方状态机裁决）；
  *   dismissOnClickOutside=false——内容铺满窗口不存在「外部」。
@@ -84,10 +85,17 @@ internal fun FullscreenOverlayShell(
                 isAppearanceLightStatusBars = false
                 isAppearanceLightNavigationBars = false
             }
-            // 显隐联动（S9 恢复）：控制条显=show（透明+浅图标，上面已设）、控制条隐=
-            // hide——与竖屏播放态 SystemBarsImmersiveEffect 的 playerActive 分支同语义
+            // 显隐联动（S9 恢复，S11 hide 改瞬时）：控制条显=show（透明+浅图标，上面已设）、
+            // 控制条隐=瞬时隐藏（controlWindowInsetsAnimation 零时长消灭平台 ~300ms 动画
+            // 拖尾，compat 档位核查与兜底见 [hideSystemBarsInstantly] / InstantSystemBars.kt
+            // KDoc；show 保持普通 show()）——与竖屏播放态 SystemBarsImmersiveEffect 的
+            // playerActive 分支同语义
             val bars = WindowInsetsCompat.Type.systemBars()
-            if (systemBarsVisible) controller?.show(bars) else controller?.hide(bars)
+            if (systemBarsVisible) {
+                controller?.show(bars)
+            } else {
+                controller?.let { hideSystemBarsInstantly(it, bars) }
+            }
             onDispose {
                 // 无恢复动作：重键重跑时上方逻辑幂等重设；窗口销毁后本窗口的图标明暗/
                 // 显隐设定自然失效，焦点回 Activity 窗后由 SystemBarsImmersiveEffect

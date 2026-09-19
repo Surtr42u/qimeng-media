@@ -99,17 +99,14 @@ import kotlin.math.min
  *      无 UI 入口调用，清偿待后续批次）。GUIDE_UI L183「顶部栏含返回」旧规格被本拍板
  *      推翻（冲突优先级：用户最新要求 > 规格书，CHANGELOG 第三百五十六笔记档）。
  *      其余逐行原样。
- *   ⑬ S10（2026-09-19 用户拍板「手机状态栏消失比较慢，和下面的进度条速度同步」=解冻令）
- *      控制条显隐加 250ms 淡入淡出动画：实证旧实现 showController 瞬时 isVisible 翻转
- *      且 onControllerVisibilityChanged 同拍瞬时发出——回调时机本就无延迟（S2 设计如
- *      此），状态栏慢的观感根源=控制条瞬隐而系统栏 hide 自带平台动画（约 300ms 平移
- *      渐隐），两段视觉不同步。修法=控制条 hide 改 250ms 淡出（与 Compose 侧
- *      DetailChromeBars.CHROME_FADE_MS=250 同档，跨 View/Compose 世界注释互指）、show
- *      对称淡入，onControllerVisibilityChanged 保持**动画开始瞬间**发出（即 showController
- *      入口处原位不动）——Compose 侧系统栏 hide/show 平台动画与控制条淡出/淡入并发，
- *      同起同收即观感同步（G9 五秒自动隐/单击切换/拖拽隐/ENDED 强制显全路径共用
- *      showController 单点，自动同改）。拖拽手势预览路径（GESTURE_PROGRESS 强制实心显/
- *      ACTION_UP 瞬隐）不经动画走 setBarImmediate，与动画互斥防 alpha 残留串态。
+ *   ⑬ S10→S11（2026-09-19 两连拍板）显隐节奏定稿「都瞬时」：S10 曾按用户「手机状态栏
+ *      消失比较慢，和下面的进度条速度同步」把控制条显隐改 250ms 淡入淡出去迁就系统栏
+ *      慢动画；S11 用户纠正「我要的是状态栏也瞬时，你搞反了」——慢的根源是系统栏 hide
+ *      的平台动画（约 300ms），正确修法是让**状态栏瞬时**而非拖慢控制条。本文件代码
+ *      全量复位=S10 之前行为：bottomBar 恢复瞬时 VISIBLE/GONE、onControllerVisibilityChanged
+ *      瞬时发出（S10 曾引入的 animateControllerBar/setBarImmediate/CONTROLLER_FADE_MS
+ *      整组撤除）；状态栏瞬时隐藏由 Compose 侧承接（controlWindowInsetsAnimation 零时长，
+ *      见 InstantSystemBars.kt，show 保持普通 show()——显出带系统动画是正常观感）。
  *      其余逐行原样。
  *
  * 手势冻结口径（G1~G9；G1/G2 已由 2026-09-19 拍板改版，沿革见适配点⑪）：
@@ -223,13 +220,6 @@ class BiliPlayerView @JvmOverloads constructor(
         const val GESTURE_NONE = 0
         const val GESTURE_PROGRESS = 1
         const val HIDE_DELAY = 5000L
-        /**
-         * 控制条淡入淡出档（S10 适配点⑬ 显隐同步，ms）：与 Compose 侧
-         * DetailChromeBars.CHROME_FADE_MS（250）同档——跨 View/Compose 两世界无法单源，
-         * 注释互指，两侧改动须同步评估；系统栏 hide/show 平台动画与控制条淡出并发，
-         * 同起同收即 B 站观感同步
-         */
-        const val CONTROLLER_FADE_MS = 250L
         const val TOP_INDICATOR_DELAY = 1500L
         const val LONG_PRESS_SPEED = 2f
         /**
@@ -733,12 +723,12 @@ class BiliPlayerView @JvmOverloads constructor(
 
     private fun showController(visible: Boolean) {
         controllerVisible = visible
-        // S10 显隐同步（适配点⑬）：控制条淡入/淡出动画（原瞬时 isVisible 翻转）；回调在
-        // **动画开始瞬间**发出（位置在动画启动之后、同拍执行）——Compose 侧系统栏平台
-        // hide/show 动画与控制条淡出/淡入并发，同起同收即观感同步（用户拍板「状态栏
-        // 消失和下面的进度条速度同步」）。G9 自动隐/单击切换/拖拽隐/ENDED 强制显全路径
-        // 共用本方法，时机口径单点
-        animateControllerBar(bottomBar, visible)
+        // S11（适配点⑬）：瞬时 VISIBLE/GONE（=S10 之前行为；S11 用户拍板「状态栏也瞬时，
+        // 进度条恢复瞬时」——状态栏慢的根源由 Compose 侧 InstantSystemBars 零时长隐藏承接，
+        // 本控件不再迁就系统栏动画）
+        bottomBar.isVisible = visible
+        // S2 显隐上报（适配点⑪）：全路径单点发出（单击切换/G9 自动隐藏/拖拽隐/长按隐/
+        // ENDED 强制显），Compose 侧播放态 chrome 镜像同拍，不设第二事实源
         onControllerVisibilityChanged?.invoke(visible)
         if (visible) {
             removeCallbacks(hideControllerRunnable)
@@ -747,35 +737,6 @@ class BiliPlayerView @JvmOverloads constructor(
             removeCallbacks(hideControllerRunnable)
             speedPopup?.dismiss()
         }
-    }
-
-    /**
-     * 控制条显隐动画（S10 适配点⑬）：show=立即 VISIBLE 后 alpha 淡入；hide=alpha 淡出、
-     * 结束才 GONE（withEndAction 以 [controllerVisible] 为准，动画期间反向 show 被取消
-     * 时不会误藏——ViewPropertyAnimator cancel 不触发 endAction）。动画从当前 alpha 起
-     * 步，重复调用幂等。
-     */
-    private fun animateControllerBar(bar: View, visible: Boolean) {
-        bar.animate().cancel()
-        if (visible) {
-            bar.isVisible = true
-            bar.animate().alpha(1f).setDuration(CONTROLLER_FADE_MS).start()
-        } else {
-            bar.animate().alpha(0f).setDuration(CONTROLLER_FADE_MS)
-                .withEndAction { if (!controllerVisible) bar.isVisible = false }
-                .start()
-        }
-    }
-
-    /**
-     * 拖拽手势预览路径的立即实心显/隐（S10 适配点⑬）：不经动画（拖拽进度预览须即时
-     * 反馈、松手瞬隐同旧观感），先 cancel 在途动画并复位 alpha，防与 showController
-     * 的淡出动画串态（半透明残留）。参数含义同 [showController] 的 bar 显隐位
-     */
-    private fun setBarImmediate(bar: View, visible: Boolean) {
-        bar.animate().cancel()
-        bar.alpha = 1f
-        bar.isVisible = visible
     }
 
     private fun showTopIndicator(text: String) {
@@ -836,9 +797,7 @@ class BiliPlayerView @JvmOverloads constructor(
                                     gestureIndicator.isVisible = true
                                     progressBar.progress = ((newPos * 1000) / d).toInt()
                                     currentTimeText.text = formatMs(newPos)
-                                    // S10 适配点⑬：拖拽进度预览立即实心显（不经动画，防与
-                                    // showController(false) 的淡出串态半透明）
-                                    setBarImmediate(bottomBar, true)
+                                    bottomBar.isVisible = true
                                     playerView.player?.seekTo(newPos)
                                 }
                             }
@@ -890,8 +849,7 @@ class BiliPlayerView @JvmOverloads constructor(
                     if (controllerVisible) {
                         showController(true)
                     } else {
-                        // S10 适配点⑬：松手瞬隐走立即路径（同旧观感，防淡出动画串态）
-                        setBarImmediate(bottomBar, false)
+                        bottomBar.isVisible = false
                     }
                 }
                 isGestureDragging = false

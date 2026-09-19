@@ -12,6 +12,17 @@
 ---
 ---
 ---
+## fix(app): 状态栏瞬时隐藏+进度条恢复瞬时显隐（撤销 250ms 渐隐方向修正）（2026-09-19 第三百五十七笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理）
+
+- **用户拍板（任务S 批S11 冻结，纠正批S10 件3 方向）**：「我要的是状态栏也瞬时，你搞反了」——批S10 件3 把播放器控制条改 250ms 淡入淡出去迁就系统栏 hide 的慢动画，方向反了。正确语义=**进度条恢复瞬时显隐（批S10 之前原行为）+ 状态栏改为瞬时隐藏**（消灭 ~300ms 平台 hide 动画拖尾=「状态栏消失比下面的进度条慢」的观感根源）。批S10 件1（状态栏图标随背景反色采样）与件2（去播放器返回键）不动。
+- **compat 行为核查结论（铁律 8，执行前本地 Gradle 缓存 androidx.core 官方源码核实，非凭记忆写；在用 core 1.19.0，缓存 1.17.0 sources.jar 两版 API 面一致）**：`WindowInsetsControllerCompat.controlWindowInsetsAnimation`——API >= 30（Impl30/31/35）委托平台 `WindowInsetsController.controlWindowInsetsAnimation`，真实受控动画 durationMs=0 生效（主路径；用户真机 Android 16=API 36 走此路）；**API < 30（Impl/Impl20）为空实现 no-op，listener 的 onReady/onCancelled 永不回调**（Javadoc 原文「This method only works on API >= 30 since there is no way to control the window in the system on prior APIs」）→ backport 不支持，<30 分支直接普通 hide()（minSdk=26 的存量带动画语义不回退）；失败通道=onCancelled（compat 监听器接口无 onFailure，平台「控制权立即获取失败」时无前置 onReady 直接 onCancelled）→ 兜底回退普通 hide()。
+- **实现**：①撤批S10 件3（`BiliPlayerView.kt` 适配点⑬ 记档改写为 S10→S11 两连拍板沿革）：`animateControllerBar`/`setBarImmediate`/`CONTROLLER_FADE_MS`（250ms 淡入淡出组）整组撤除，showController 恢复瞬时 `bottomBar.isVisible` 翻转 + onControllerVisibilityChanged 瞬时发出（=S10 之前行为），GESTURE_PROGRESS 拖拽实心显/ACTION_UP 松手瞬隐恢复 `isVisible` 直写。②新建 `InstantSystemBars.kt`：`hideSystemBarsInstantly(controller, types)`——API>=30 走 `controlWindowInsetsAnimation(types, 0ms, null, null, listener)`，onReady 里 `setInsetsAndAlpha(instantHideTargetInsets(currentInsets), 1f, 0f)` 一步置零后立即 `finish(false)` 以隐态收束（0ms 会话内完成，无平台动画）；onCancelled 兜底普通 hide()；<30 直通普通 hide()。纯函数三件（`supportsInstantInsetsAnimation` API 档门/`INSTANT_HIDE_DURATION_MS`=0/`instantHideTargetInsets` 置零计算单源）。③接入点=全部 hide 路径：`DetailScreen.kt` SystemBarsImmersiveEffect 显隐 LaunchedEffect（视频播放态沉浸+图片放大沉浸 zoomImmersive）与 `FullscreenOverlayShell.kt`（横屏全屏 Dialog 窗）的 hide 全走瞬时通道；**show 保持普通 show()**（用户只反馈消失慢；显出带系统动画是正常观感，批S11 定稿口径）。
+- **测试**：新增 `InstantSystemBarsTest` 6 用例（API 26/28/29→false、API 30/35/36→true、零时长常量锁定、非零 inset 置零、零 inset 幂等）；动画控制本体（onReady 置零+finish(false)、onCancelled 兜底）是 Android 运行时行为，编译+既有套件覆盖，真机观感用户验收。**定向门禁原文**：`./gradlew :feature:detail:testDebugUnitTest :app:compileDebugKotlin` → `BUILD SUCCESSFUL in 36s`（**24 套件 200 例 failures=0 errors=0 skipped=0**，InstantSystemBarsTest tests=6 failures=0；23 个既有套件全数保持绿，StatusBarLuminanceTest 12/SystemBarIconAppearanceTest 8/DetailViewModelTest 34 等；:app:compileDebugKotlin 通过=Hilt 图聚合校验过）。全量三连+R8 由主会话统一跑。
+- **遗留记档**：①状态栏瞬时观感由用户真机验收——若个别 ROM 对 0ms 会话仍有最小时长，回退路径=onCancelled 兜底普通 hide()，观感退回带动画不劣化；②用户手势从屏幕顶边下拉唤出状态栏时，若恰与一次零时长控制会话竞争（窗口极小），onCancelled 兜底会立即再隐——B 站播放态单击两态语义下可再单击显出，记档不另设门控；③批S10 遗留③（`ic_detail_back` 资源无消费者）随 onBack 链清偿同批处理，本批不动。
+
+---
 ## fix(app): 状态栏图标随背景反色+去播放器返回键+状态栏显隐与控制条同步（2026-09-19 第三百五十六笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理）

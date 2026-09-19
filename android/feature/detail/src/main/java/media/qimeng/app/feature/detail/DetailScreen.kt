@@ -94,7 +94,9 @@ import media.qimeng.app.core.ui.theme.QimengDimens
  * || 播放态镜像」顶栏追加显隐废止，顶栏只在非播放态按 chromeEffective 显隐）；
  * **系统栏随控制条联动**（S9 定稿两态：显示态=控制条+状态栏透明浅图标、沉浸态=控制条+
  * 状态栏全隐纯视频，单击两态切换；S7「播放期透明恒显」与 S2「顶栏随镜像显隐」两截半
- * 成品由本拍板合流，三分支判定记档见 [SystemBarsImmersiveEffect]）；底色纯黑/锁滚/
+ * 成品由本拍板合流，三分支判定记档见 [SystemBarsImmersiveEffect]；S11 起隐藏侧改瞬时
+ * ——controlWindowInsetsAnimation 零时长消灭平台 hide 动画拖尾，播放器控制条同批复位
+ * 瞬时显隐=「都瞬时」定稿，见 InstantSystemBars.kt KDoc）；底色纯黑/锁滚/
  * 底部四胶囊隐等 chromeEffective 口径全部不动（U6 逐帧动画机制不动）。
  *
  * 状态栏图标随背景反色（任务S 批S10 件1，2026-09-19 用户拍板「状态栏和背景一个色了，
@@ -682,10 +684,13 @@ private fun DetailContentSections(
  * 栏底透明由 MainActivity.enableEdgeToEdge 全局保证（androidx activity 1.10.1
  * EdgeToEdgeApi26-30：auto 档状态栏 scrim 恒 Color.TRANSPARENT；API 35+ 且
  * targetSdk 35+ 平台强制 edge-to-edge，弃用的 statusBarColor 参数被忽略），内容
- * edge-to-edge 延伸到栏后；hide/show 用 WindowInsetsController systemBars（S7 前既有
- * 链原样接回，无新 API 面），只控显隐不触发布局重排（decorFitsSystemWindows(false)
- * 恒成立，不重复设置也不恢复 true，避免整窗重排）。键面=controller + 裁决值：两态
- * 切换幂等收敛，不依赖历史状态。
+ * edge-to-edge 延伸到栏后；显隐用 WindowInsetsController systemBars——S11（2026-09-19
+ * 用户拍板「我要的是状态栏也瞬时，你搞反了」，纠正批S10 件3 方向）起 hide 改瞬时通道
+ * [hideSystemBarsInstantly]（controlWindowInsetsAnimation 零时长，消灭平台 ~300ms hide
+ * 动画拖尾=「状态栏消失比进度条慢」观感根源；show 保持普通 show()，显出带系统动画是
+ * 正常观感），只控显隐不触发布局重排（decorFitsSystemWindows(false) 恒成立，不重复
+ * 设置也不恢复 true，避免整窗重排）。键面=controller + 裁决值：两态切换幂等收敛，
+ * 不依赖历史状态。
  *
  * 图标明暗应用单点（S10 件1 反色修复）：`isAppearanceLightStatusBars = statusBarDark`
  * **直接赋值不取反**——S10 前调用方按「图标暗→取反 apply」写（S7 记档「取反后 apply」），
@@ -728,10 +733,17 @@ private fun SystemBarsImmersiveEffect(
     LaunchedEffect(controller, statusBarDark) {
         applyIconAppearance(statusBarDark)
     }
-    // 显隐链（S9 恢复，S10 改消费现成单值）：键控幂等重跑，hide/show 按裁决值收敛
+    // 显隐链（S9 恢复，S10 改消费现成单值，S11 hide 改瞬时通道）：键控幂等重跑；show 保持
+    // 普通 show()（显出带系统动画是正常观感），hide 走 controlWindowInsetsAnimation 零时长
+    // （消灭平台 ~300ms hide 动画拖尾=批S11 用户拍板「状态栏也瞬时」，compat 档位核查与
+    // 兜底语义见 [hideSystemBarsInstantly] / InstantSystemBars.kt KDoc）
     LaunchedEffect(controller, systemBarsVisible) {
         val bars = WindowInsetsCompat.Type.systemBars()
-        if (systemBarsVisible) controller?.show(bars) else controller?.hide(bars)
+        if (systemBarsVisible) {
+            controller?.show(bars)
+        } else {
+            controller?.let { hideSystemBarsInstantly(it, bars) }
+        }
     }
     val latestDarkTheme by rememberUpdatedState(darkTheme)
     DisposableEffect(controller) {
