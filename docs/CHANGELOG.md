@@ -13,6 +13,23 @@
 ---
 ---
 ---
+## build(server): 直接依赖六项升级（x/crypto 0.57/sqlite 1.59/migrate 4.20.1 等）（2026-09-19 第三百三十七笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理）
+
+- **任务Q 批A 落地**（任务书=仓库外《QimengNAS\任务Q-依赖备份与体验收尾卷.md》§3，冻结范围仅此 6 项，零 Android 侧改动）。开卷记账：HANDOVER.md「当前待办」节顶部已追加任务Q 立卷行（五批 A→E 范围一句话+恢复口令「新会话说『执行任务Q』」）。
+- **六项升级与 release notes 要点**（升级前逐项读官方 changelog，铁律 8）：
+  - `golang.org/x/crypto` 0.46.0→**0.57.0**：跨度 102 提交逐笔核对，argon2 包仅 1 笔（`argon2: update RFC 9106 parameter recommendations`）且为**纯文档变更**（0 行非注释增删，参数由调用方显式传入不受建议值影响）；其余为 ssh/acme/pbkdf2/hkdf 面（项目未用）；go directive 升至 1.26.0（本地 Go 1.27.0 兼容）。出处：github.com/golang/crypto/compare/v0.46.0...v0.57.0。
+  - `modernc.org/sqlite` 1.57.0→**1.59.0**：v1.58.0=SQLite 升 3.53.4（上游自带 journal-rollback 损坏修复，v1.56.0 本地补丁撤除、恢复行为不变）+ libc 1.75.6；v1.59.0=libc 1.75.7 bump+Linux 原生 Go mem 函数（性能）+UDF 回调 FunctionContext 池化（仅影响注册 UDF 的调用方，项目未注册）；OFD 锁为 Linux opt-in 默认关。无 API 破坏。出处：官方 GitHub 镜像 modernc-org/sqlite CHANGELOG.md（gitlab.com 本网络不通）。
+  - `github.com/golang-migrate/migrate/v4` 4.19.1→**4.20.1**：v4.20.0=CI/依赖/各 driver 内部修复（pgx v5、aws_s3 分页、lazy migrations index 等）；v4.20.1=仅发布流水线补发。核心 migrate 类型/New/Up/driver 接口零变化（项目仅用 iofs+sqlite driver+Up/Steps）。出处：github.com/golang-migrate/migrate/releases。
+  - `github.com/prometheus/common` 0.70.1→**0.71.0**：promslog NopLogger 改 slog.DiscardHandler、OpenMetrics 2.0 gauge/counter 支持、model 标签排序去 sort.Interface；sysmon 注册面无 API 变化。出处：github.com/prometheus/common/releases（v0.71.0）。
+  - `github.com/shirou/gopsutil/v4` 4.26.7→**4.26.8**：patch 位——disk/aix statfs、net/darwin netstat 短输出、Windows 进程命令行 NtQueryInformationProcess；无 API 变化。出处：github.com/shirou/gopsutil/releases（v4.26.8）。
+  - `golang.org/x/sync` 0.21.0→**0.23.0**：仅 3 提交——semaphore 负权重/负容量 panic（项目只用 errgroup 未用 semaphore）+go directive 1.26.0。errgroup 面零变化。出处：github.com/golang/sync/compare/v0.21.0...v0.23.0。
+- **go.mod 变更面核对**：直接依赖恰 6 项 + 链上间接件（x/sys 0.48/protobuf 1.36.12/libc 1.75.7/memory 1.12.1）+ migrate 链 go.sum 校验行，全部在目标依赖链内；无 vendor 目录（纯 Go 模块）。
+- **门禁五条全绿**（§8 合并门禁总账 A 批口径，输出原文存 `%TEMP%\qimeng-qA-evidence\`）：①`go build ./... && go vet ./...` 过；②`go test ./...` 14 包全绿（auth/store/httpapi 22.3s/sysmon 含）；③`make lint` 过（redocly valid / gofmt 过 / golangci 0 issues / TS 0 errors）——首跑 redocly 的 npx 进程退出期遇 libuv 断言崩溃（`src\win\async.c` Assertion，Windows Node 已知崩溃族，协议校验本身已报 valid），重跑全绿，非代码问题记档；④`make server-android-arm64` 过（23.2MB）；⑤`make server-android-amd64` 过（NDK clang，24.4MB）——sqlite/libc 变更 × 内嵌形态两 target 交叉编译实证。
+- **回退项清单：无**（六项全绿落地，零回退；无停手点触发）。
+- 附记：任务Q 第〇步 push 挂账已清偿：2026-09-19 10:02 主会话推送 ec5f026..3ba3d9f（19 笔），CI run 35414462168 进行中，终态由调度会话核验后记档。
+
 ## fix(app): AuthRepositoryImplTest 登出用例 flaky 真因根治——runTest 虚拟时钟烧掉吊销超时（2026-09-19 第三百三十五笔）
 
 执行 AI：GLM-5.3-Flash（主代理直改）
