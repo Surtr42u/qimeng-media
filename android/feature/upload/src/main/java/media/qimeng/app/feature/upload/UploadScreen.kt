@@ -2,9 +2,13 @@ package media.qimeng.app.feature.upload
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.ActivityResult
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -74,6 +78,7 @@ fun UploadScreen(
     viewModel: UploadViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
 
     // 系统分享接收：进入本页即接手分享内容并通知壳层消费（避免重复触发）
     LaunchedEffect(sharedUris) {
@@ -83,20 +88,31 @@ fun UploadScreen(
         }
     }
 
-    // SAF 多选（图片/视频；类型校验唯一口径在服务端四道检查，前端只给选择面）
+    // SAF 多选（图片/视频；类型校验唯一口径在服务端四道检查，前端只给选择面）。
+    // C-1（批C 任务Q）持久化授权：不用 OpenMultipleDocuments contract——其 createIntent
+    // 不带 FLAG_GRANT_PERSISTABLE_URI_PERMISSION（androidx.activity 1.13.0 反编译实证），
+    // 返回的 URI 无 persistable grant、takePersistableUriPermission 必抛 SecurityException。
+    // 自建 Intent 带该 flag，回调里立刻 take（官方时机），进程被回收后离线队列残余重试仍可读。
     val documentPicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenMultipleDocuments(),
-    ) { uris ->
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        val uris = extractOpenDocumentUris(result)
+        takePersistableRead(context, uris)
         if (uris.isNotEmpty()) viewModel.acceptUris(uris.map { it.toString() })
     }
 
-    // 选文件夹（U10-6c）：OpenDocumentTree 即用即弃、不 takePersistableUriPermission
-    // （M4-5 先例，读权限覆盖本会话队列重试窗口）；递归枚举与扩展名过滤收口在
-    // core:data FolderScanner，UI 只把 treeUri 交给 ViewModel（ADR-0008 铁律 7）
+    // 选文件夹（U10-6c）：同 C-1 口径自建 ACTION_OPEN_DOCUMENT_TREE Intent 并 take 树授权
+    // （persist 一个 tree grant 覆盖其下全部 document URI，整树只需一个 grant——512 上限
+    // 下的最省形态）；递归枚举与扩展名过滤收口在 core:data FolderScanner，UI 只把
+    // treeUri 交给 ViewModel（ADR-0008 铁律 7）
     val folderPicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocumentTree(),
-    ) { treeUri ->
-        if (treeUri != null) viewModel.acceptFolderTree(treeUri.toString())
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        val treeUri = result.data?.data
+        if (treeUri != null) {
+            takePersistableRead(context, listOf(treeUri))
+            viewModel.acceptFolderTree(treeUri.toString())
+        }
     }
 
     // 通知权限（API 33+ 运行时申请；拒绝只影响可见性、不阻断上传）
@@ -105,7 +121,6 @@ fun UploadScreen(
     ) { }
 
     var showCreateDirDialog by rememberSaveable { mutableStateOf(false) }
-    val context = LocalContext.current
 
     Column(modifier = modifier.fillMaxSize()) {
         QimengTopBar(title = "上传", onBack = onDone)
@@ -122,9 +137,9 @@ fun UploadScreen(
             viewModel = viewModel,
             onPickFiles = {
                 requestNotificationPermissionIfNeeded(context, notificationPermission)
-                documentPicker.launch(arrayOf(MIME_IMAGE, MIME_VIDEO))
+                documentPicker.launch(buildOpenDocumentIntent())
             },
-            onPickFolder = { folderPicker.launch(null) },
+            onPickFolder = { folderPicker.launch(buildOpenDocumentTreeIntent()) },
             onCreateDir = { showCreateDirDialog = true },
             onEnqueue = {
                 requestNotificationPermissionIfNeeded(context, notificationPermission)
@@ -235,7 +250,7 @@ private fun UploadForm(
 
         // —— 上传队列 ——
         if (state.queue.isNotEmpty()) {
-            QueueSection(queue = state.queue, summary = state.queueSummary)
+            QueueSection(queue = state.queue, summary = state.queueSummary, onCancel = viewModel::cancel)
         }
 
         Spacer(modifier = Modifier.height(24.dp))
@@ -315,9 +330,16 @@ private fun PickerRow(
     )
 }
 
-/** 队列区：聚合行「共 N 个 · 成功 X · 失败 Y」+ 逐条状态行（行样式不动） */
+/**
+ * 队列区：聚合行「共 N 个 · 成功 X · 失败 Y」+ 逐条状态行 + 取消控件（C-2）。
+ * 取消交互对齐 Web 上传队列：点击即取消、无二次确认。
+ */
 @Composable
-private fun QueueSection(queue: List<UploadQueueEntry>, summary: String?) {
+private fun QueueSection(
+    queue: List<UploadQueueEntry>,
+    summary: String?,
+    onCancel: (UploadQueueEntry) -> Unit,
+) {
     SectionTitle("上传队列")
     summary?.let {
         Text(
@@ -326,7 +348,7 @@ private fun QueueSection(queue: List<UploadQueueEntry>, summary: String?) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
-    queue.forEach { entry -> QueueRow(entry) }
+    queue.forEach { entry -> QueueRow(entry, onCancel) }
 }
 
 @Composable
@@ -462,10 +484,20 @@ private fun DirRow(
     }
 }
 
+/** 队列行：文件名 + 状态 + 取消控件（排队中/上传中可取消；C-2 冻结语义「皆可取消」） */
 @Composable
-private fun QueueRow(entry: UploadQueueEntry) {
+private fun QueueRow(entry: UploadQueueEntry, onCancel: (UploadQueueEntry) -> Unit) {
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-        Text(entry.displayName, style = MaterialTheme.typography.bodyMedium)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(entry.displayName, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            when (entry.status) {
+                UploadStatus.QUEUED, UploadStatus.UPLOADING -> TextButton(onClick = { onCancel(entry) }) {
+                    Text(QUEUE_ACTION_CANCEL)
+                }
+
+                else -> Unit
+            }
+        }
         when (entry.status) {
             UploadStatus.QUEUED ->
                 StatusText("排队中（串行队列）", MaterialTheme.colorScheme.onSurfaceVariant)
@@ -493,6 +525,12 @@ private fun QueueRow(entry: UploadQueueEntry) {
             UploadStatus.FAILED -> StatusText(
                 "失败：${entry.errorMessage ?: "未知原因"}",
                 MaterialTheme.colorScheme.error,
+            )
+
+            // 取消不计入失败（与 FAILED 分列；errorMessage=「已取消」仅诊断用，UI 文案定版）
+            UploadStatus.CANCELLED -> StatusText(
+                QUEUE_CANCELLED_TEXT,
+                MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
@@ -550,6 +588,55 @@ private fun requestNotificationPermissionIfNeeded(context: Context, launcher: Ac
     }
 }
 
+// ---------- C-1 content:// 持久化授权（批C 任务Q）：自建选择器 Intent 与 persistable grant ----------
+// 官方查证（铁律 8）：takePersistableUriPermission 只能持久化「以 FLAG_GRANT_PERSISTABLE_
+// URI_PERMISSION 授予」的 grant（ContentResolver.takePersistableUriPermission 文档）；
+// androidx 的 OpenMultipleDocuments/OpenDocumentTree contract 均不带该 flag（1.13.0 反编译
+// 实证），故自建 Intent。grant 上限 512/package（AOSP UriGrantsManagerService
+// MAX_PERSISTED_URI_GRANTS），超限系统按 persistedTime 自动淘汰最旧、take 不抛异常——
+// v1 不做 releasePersistableUriPermission 的取舍依据（授权随卸载回收，泄漏无害；见交付报告）。
+
+/** 构建文件多选 Intent：ACTION_OPEN_DOCUMENT + 多选 + 图片/视频过滤 + persistable flag（对齐原 contract 行为） */
+private fun buildOpenDocumentIntent(): Intent =
+    Intent(Intent.ACTION_OPEN_DOCUMENT)
+        .setType(MIME_ANY)
+        .putExtra(Intent.EXTRA_MIME_TYPES, arrayOf(MIME_IMAGE, MIME_VIDEO))
+        .putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+        .addFlags(PERSISTABLE_GRANT_FLAGS)
+
+/** 构建文件夹选择 Intent：ACTION_OPEN_DOCUMENT_TREE + persistable flag（树 grant 覆盖整树） */
+private fun buildOpenDocumentTreeIntent(): Intent =
+    Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+        .addFlags(PERSISTABLE_GRANT_FLAGS)
+
+/** 从 SAF 结果提取 URI 列表（多选走 clipData，部分选择器单选只给 data） */
+private fun extractOpenDocumentUris(result: ActivityResult): List<Uri> {
+    val data = result.data ?: return emptyList()
+    val clip = data.clipData
+    return when {
+        clip != null && clip.itemCount > 0 -> (0 until clip.itemCount).mapNotNull { clip.getItemAt(it).uri }
+        data.data != null -> listOf(data.data!!)
+        else -> emptyList()
+    }
+}
+
+/**
+ * SAF 返回即 take 持久读授权（官方时机：拿到 URI 后立刻 take）。
+ * 失败不阻断本会话：本会话读权限已由 grant 生效（原 M4-5 行为不变），持久化失败只
+ * 意味着进程回收后重试窗口的兜底失效——记日志留证（文本证据协议），交既有 retry 上限兜底。
+ */
+private fun takePersistableRead(context: Context, uris: List<Uri>) {
+    val resolver = context.contentResolver
+    uris.forEach { uri ->
+        try {
+            // flag 组合对齐授予权限的读侧（写授权从未申请/从未使用）
+            resolver.takePersistableUriPermission(uri, PERSIST_READ_FLAG)
+        } catch (e: Exception) {
+            Log.w(LOG_TAG, "takePersistableUriPermission 失败（不阻断本会话）uri=$uri", e)
+        }
+    }
+}
+
 /** 字节数人性化展示（未知 -1 显示"大小未知"） */
 private fun formatBytes(bytes: Long): String = when {
     bytes < 0 -> SIZE_UNKNOWN
@@ -579,6 +666,29 @@ private const val DIR_TOGGLE_AREA_HEIGHT_DP = 32
 
 private const val MIME_IMAGE = "image/*"
 private const val MIME_VIDEO = "video/*"
+
+/** 自建 ACTION_OPEN_DOCUMENT Intent 的 setType 兜底值（真实过滤走 EXTRA_MIME_TYPES） */
+private const val MIME_ANY = "*/*"
+
+/** logcat 证据标签（C-1 take 失败留证；与 UploadWorker.LOG_TAG 同为 grep 锚点） */
+private const val LOG_TAG = "QimengUpload"
+
+/**
+ * 选择器 Intent 的 flag 组合（C-1，官方查证）：
+ * - READ：上传只需要读流（原 grant 行为）；
+ * - PERSISTABLE：takePersistableUriPermission 的前提——只有以该 flag 授予的 grant 可持久化。
+ */
+private const val PERSISTABLE_GRANT_FLAGS =
+    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+
+/** takePersistableUriPermission 的 modeFlags（只持读侧） */
+private const val PERSIST_READ_FLAG = Intent.FLAG_GRANT_READ_URI_PERMISSION
+
+/** 队列行取消控件文案（对齐 Web 上传队列：取消无需二次确认） */
+private const val QUEUE_ACTION_CANCEL = "取消"
+
+/** 队列行取消态文案（与 FAILED 分列：用户取消不计失败） */
+private const val QUEUE_CANCELLED_TEXT = "已取消"
 
 /** 字节换算基数（1024 进位） */
 private const val KB_UNIT = 1024L

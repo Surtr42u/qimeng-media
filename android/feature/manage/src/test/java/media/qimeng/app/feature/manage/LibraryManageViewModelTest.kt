@@ -1,5 +1,6 @@
 package media.qimeng.app.feature.manage
 
+import kotlinx.coroutines.flow.Flow
 import media.qimeng.app.core.data.repository.LibraryRepository
 import media.qimeng.app.core.model.LibraryKind
 import media.qimeng.app.core.model.LibraryScanState
@@ -35,8 +36,15 @@ class LibraryManageViewModelTest {
         kind = LibraryKind.NORMAL,
     )
 
-    private fun newViewModel(repository: FakeLibraryRepository = FakeLibraryRepository()) =
-        Pair(LibraryManageViewModel(repository).also { driveIdle() }, repository)
+    private fun newViewModel(
+        repository: FakeLibraryRepository = FakeLibraryRepository(),
+        scanChargeController: FakeScanChargeController = FakeScanChargeController(repository),
+    ): Triple<LibraryManageViewModel, FakeLibraryRepository, FakeScanChargeController> =
+        Triple(
+            LibraryManageViewModel(repository, scanChargeController).also { driveIdle() },
+            repository,
+            scanChargeController,
+        )
 
     @Test
     fun `init加载库列表无错误`() {
@@ -145,13 +153,44 @@ class LibraryManageViewModelTest {
 
     @Test
     fun `重扫触发后刷新列表`() {
-        val (viewModel, repository) = newViewModel(
+        val (viewModel, repository, controller) = newViewModel(
             FakeLibraryRepository().apply { seed.add(libraryA) },
         )
+        controller.decision = media.qimeng.app.core.data.scan.RescanDecision.STARTED
         viewModel.rescan(libraryA)
         driveIdle()
         assertEquals(listOf("lib-a"), repository.scanCalls)
+        assertEquals(listOf("lib-a"), controller.requestCalls)
         assertTrue(viewModel.uiState.value.libraries.single().scanState == LibraryScanState.SCANNING)
+        assertEquals("「图集库」扫描已触发", viewModel.uiState.value.noticeMessage)
+    }
+
+    @Test
+    fun `重扫被充电门推迟时给待扫反馈且不触发扫描`() {
+        val (viewModel, repository, controller) = newViewModel(
+            FakeLibraryRepository().apply { seed.add(libraryA) },
+        )
+        controller.decision = media.qimeng.app.core.data.scan.RescanDecision.DEFERRED
+        viewModel.rescan(libraryA)
+        driveIdle()
+        assertEquals(listOf("lib-a"), controller.requestCalls)
+        assertTrue(repository.scanCalls.isEmpty())
+        assertEquals(
+            "「图集库」未接通电源，已记入待扫描，接入电源后自动开始",
+            viewModel.uiState.value.noticeMessage,
+        )
+        assertNull(viewModel.uiState.value.errorMessage)
+    }
+
+    @Test
+    fun `重扫触发失败给错误横幅`() {
+        val (viewModel, _, controller) = newViewModel(
+            FakeLibraryRepository().apply { seed.add(libraryA) },
+        )
+        controller.decision = media.qimeng.app.core.data.scan.RescanDecision.FAILED
+        viewModel.rescan(libraryA)
+        driveIdle()
+        assertNotNull(viewModel.uiState.value.errorMessage)
     }
 
     @Test
@@ -287,4 +326,40 @@ private class FakeLibraryRepository : LibraryRepository {
             if (seed[index].id == libraryId) seed[index] = transform(seed[index])
         }
     }
+}
+
+/**
+ * [ScanChargeController] 测试替身（批C 任务Q C-3）：决策可编程（STARTED 时模拟 controller
+ * 内部直扫路径调 repository.scan，与生产实现同构）；充电判定/持久化不在本层测——
+ * ScanGate 纯函数单测 + 模拟器冒烟覆盖。
+ */
+private class FakeScanChargeController(
+    private val repository: FakeLibraryRepository,
+) : media.qimeng.app.core.data.scan.ScanChargeController {
+
+    var decision = media.qimeng.app.core.data.scan.RescanDecision.STARTED
+
+    val requestCalls = mutableListOf<String>()
+
+    private val chargeOnly = kotlinx.coroutines.flow.MutableStateFlow(true)
+
+    override val chargeOnlyScanEnabled: Flow<Boolean> = chargeOnly
+
+    override suspend fun setChargeOnlyScanEnabled(enabled: Boolean) {
+        chargeOnly.value = enabled
+    }
+
+    override suspend fun requestRescan(libraryId: String): media.qimeng.app.core.data.scan.RescanDecision {
+        requestCalls.add(libraryId)
+        if (decision == media.qimeng.app.core.data.scan.RescanDecision.STARTED) {
+            // 模拟生产 controller 的直扫路径（requestRescan 内部调 repository.scan）
+            repository.scan(libraryId)
+            return media.qimeng.app.core.data.scan.RescanDecision.STARTED
+        }
+        return decision
+    }
+
+    override suspend fun onPowerConnected() = Unit
+
+    override suspend fun resumeDeferredIfCharging() = Unit
 }

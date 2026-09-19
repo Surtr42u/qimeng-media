@@ -2,6 +2,7 @@ package media.qimeng.app.core.data.upload
 
 import androidx.work.ListenableWorker
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -95,6 +96,30 @@ class UploadWorkSpecTest {
         val failure = result as ListenableWorker.Result.Failure
         val message = failure.outputData.getString(UploadWorkSpec.KEY_ERROR_MESSAGE)
         assertTrue(message!!.contains("重试 ${UploadWorkSpec.MAX_RETRIES} 次"))
+    }
+
+    @Test
+    fun `用户取消映射为failure并携带取消标志与文案`() {
+        val result = UploadWorkSpec.outcomeToResult(
+            UploadOutcome.Cancelled,
+            runAttemptCount = 0,
+        )
+        val failure = result as ListenableWorker.Result.Failure
+        assertTrue(failure.outputData.getBoolean(UploadWorkSpec.KEY_CANCELLED, false))
+        assertEquals(UploadWorkSpec.CANCELLED_MESSAGE, failure.outputData.getString(UploadWorkSpec.KEY_ERROR_MESSAGE))
+    }
+
+    @Test
+    fun `取消标记注册表置位与消费`() {
+        val registry = UploadCancelRegistry()
+        assertFalse(registry.isCancelled("local-1"))
+        registry.cancel("local-1")
+        assertTrue(registry.isCancelled("local-1"))
+        // 幂等置位 + consume 清除
+        registry.cancel("local-1")
+        assertTrue(registry.isCancelled("local-1"))
+        registry.consume("local-1")
+        assertFalse(registry.isCancelled("local-1"))
     }
 
     // ---- 进度计算 ----

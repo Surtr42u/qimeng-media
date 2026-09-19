@@ -118,6 +118,11 @@ interface DataModule {
     @Binds
     @Singleton
     fun bindBackupAutoPrefsRepository(impl: media.qimeng.app.core.data.repository.DataStoreBackupAutoPrefsRepository): media.qimeng.app.core.data.repository.BackupAutoPrefsRepository
+
+    // 扫描充电联动（批C 任务Q C-3，PROJECT_PLAN M6 性能项）：设置项+待扫标记+补扫编排
+    @Binds
+    @Singleton
+    fun bindScanChargeController(impl: media.qimeng.app.core.data.scan.DataStoreScanChargeController): media.qimeng.app.core.data.scan.ScanChargeController
 }
 
 /** 客户端本地偏好 DataStore 限定符（与 :core:network 的 server_config DataStore 区分绑定） */

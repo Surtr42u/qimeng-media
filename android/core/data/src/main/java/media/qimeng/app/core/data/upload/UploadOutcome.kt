@@ -17,4 +17,11 @@ sealed interface UploadOutcome {
 
     /** 网络中断/服务端 5xx/本地流读取失败：按 WorkManager 官方 retry 语义保留重试路径 */
     data class Retryable(val reason: String) : UploadOutcome
+
+    /**
+     * 用户取消（批C 任务Q C-2）：写流中检测到取消标记（[UploadCancelRegistry]）→
+     * 立即断流。不走 retry（取消不重试）、不走 4xx 文案透传，worker 据此落
+     * CANCELLED 终态并同步通知。
+     */
+    data object Cancelled : UploadOutcome
 }

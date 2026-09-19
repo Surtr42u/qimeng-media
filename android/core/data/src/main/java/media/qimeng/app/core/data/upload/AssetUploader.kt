@@ -53,13 +53,19 @@ class AssetUploader @Inject constructor(
     /**
      * 上传一个文件到 目标库+目录。服务端冲突自动重命名：成功返回最终文件名。
      * IO 全程 Dispatchers.IO；永不抛异常，失败全部收敛为 [UploadOutcome]。
+     *
+     * [isCancelled]（批C 任务Q C-2）：每次分块写入前查询；返回 true 时抛
+     * [UploadCancelledException] 立即断流（64KB 网络写入粒度，亚秒级生效），
+     * 由 [UploadOutcome.Cancelled] 收敛为取消终态。
      */
     suspend fun upload(
         item: UploadItem,
         libraryId: String,
         dir: String,
+        isCancelled: () -> Boolean = { false },
         onProgress: ProgressListener,
     ): UploadOutcome = withContext(Dispatchers.IO) {
+        if (isCancelled()) return@withContext UploadOutcome.Cancelled
         val base = apiFactory.currentBaseUrl().toHttpUrlOrNull()
             ?: return@withContext UploadOutcome.Retryable("服务端地址不合法")
         val url = base.newBuilder()
@@ -74,7 +80,9 @@ class AssetUploader @Inject constructor(
 
         coroutineScope {
             val updates = Channel<Long>(capacity = Channel.CONFLATED)
-            val body = StreamingRequestBody(source, item.sizeBytes) { done -> updates.trySend(done) }
+            val body = StreamingRequestBody(source, item.sizeBytes, isCancelled) { done ->
+                updates.trySend(done)
+            }
             val forwarder = launch {
                 for (done in updates) {
                     val total = item.sizeBytes
@@ -113,6 +121,11 @@ class AssetUploader @Inject constructor(
                     else -> UploadOutcome.Retryable("服务端错误 HTTP ${response.code}")
                 }
             }
+        } catch (e: UploadCancelledException) {
+            // 用户取消不是网络异常：断流（客户端 socket 关闭即触发服务端流式接收的
+            // 失败清理路径，半成品临时文件不入库——server/internal/httpapi/upload.go
+            // receiveUploadToTmp 的 io.Copy 失败分支，批C 任务Q 核对结论）
+            UploadOutcome.Cancelled
         } catch (e: IOException) {
             // 断网/中断：交给 WorkManager 官方 retry 语义（退避 + 网络约束）
             UploadOutcome.Retryable("网络异常：${e.message ?: e.javaClass.simpleName}")
@@ -194,10 +207,13 @@ private val OCTET_STREAM: MediaType = "application/octet-stream".toMediaType()
 /**
  * 流式请求体：从 content:// 输入流分块写向网络，不整文件落内存/缓存。
  * contentLength 来自 describe 阶段（未知传 -1 → OkHttp 走 chunked）。
+ * [isCancelled] 每块写完检查一次（C-2 用户取消）：命中即抛 [UploadCancelledException]
+ * 让 OkHttp 调用栈展开断流——写线程是阻塞调用，协程取消无法打断它，主动异常是唯一可靠出口。
  */
 private class StreamingRequestBody(
     private val source: InputStream,
     private val totalBytes: Long,
+    private val isCancelled: () -> Boolean,
     private val onChunk: (bytesDone: Long) -> Unit,
 ) : RequestBody() {
 
@@ -209,6 +225,7 @@ private class StreamingRequestBody(
         val buffer = ByteArray(CHUNK_BYTES)
         var done = 0L
         while (true) {
+            if (isCancelled()) throw UploadCancelledException()
             val read = source.read(buffer)
             if (read == -1) break
             sink.write(buffer, 0, read)
@@ -223,3 +240,10 @@ private class StreamingRequestBody(
         const val CHUNK_BYTES = 64 * 1024
     }
 }
+
+/**
+ * 用户取消上传的信号异常（IOException 子类，批C 任务Q C-2）。
+ * 必须是 IOException 才能穿过 OkHttp 的调用栈（writeTo 不声明受检异常），
+ * execute 侧用 instanceof 优先于泛 IOException 分支识别，避免被误归为可重试。
+ */
+class UploadCancelledException : IOException("上传已被用户取消")

@@ -44,6 +44,14 @@ interface UploadRepository {
      */
     fun enqueue(items: List<UploadItem>, libraryId: String, dir: String): List<QueuedUpload>
 
+    /**
+     * 取消单个队列任务（批C 任务Q C-2，排队中与上传中皆可）。
+     * 协作式取消（置标记 → worker 自行终止），不调 WorkManager cancelWorkById——
+     * 官方语义下取消会级联取消链上依赖它的后续任务，违反单任务取消（依据记档在
+     * [media.qimeng.app.core.data.upload.UploadCancelRegistry]）。
+     */
+    fun cancel(localId: String)
+
     /** 队列状态流（WorkManager WorkInfo 映射；UI 直接渲染 UploadQueueEntry） */
     fun queueUpdates(): Flow<List<UploadQueueEntry>>
 }

@@ -37,6 +37,12 @@ object UploadWorkSpec {
     const val KEY_ERROR_MESSAGE = "errorMessage"
 
     /**
+     * 取消标志（批C 任务Q C-2）：outputData 键。WorkInfo.State 只有 FAILED/CANCELLED
+     * 两态都读不出「用户取消」——用输出键承载语义，队列映射据此落 UploadStatus.CANCELLED。
+     */
+    const val KEY_CANCELLED = "cancelled"
+
+    /**
      * 重试上限（次）。第 1 次执行 + 最多 3 次重试 = 4 次尝试；超过即终局失败
      * （文案进 KEY_ERROR_MESSAGE）。退避节奏由请求侧 BackoffPolicy.EXPONENTIAL +
      * MIN_BACKOFF_MILLIS（10s，WorkManager 系统钳制下限）决定。
@@ -88,6 +94,7 @@ object UploadWorkSpec {
      * 失败重试状态机（单测锁定）：
      * - 成功 → success（携带最终文件名）；
      * - 永久失败（服务端 4xx）→ failure（透传文案，不重试）；
+     * - 用户取消（C-2）→ failure（携带 CANCELLED 标志，不重试——取消无重试语义）；
      * - 可重试失败 → 未耗尽重试额度走 retry（官方退避重试语义），耗尽转 failure。
      */
     fun outcomeToResult(outcome: UploadOutcome, runAttemptCount: Int): ListenableWorker.Result =
@@ -98,6 +105,13 @@ object UploadWorkSpec {
 
             is UploadOutcome.Permanent -> ListenableWorker.Result.failure(
                 workDataOf(KEY_ERROR_MESSAGE to outcome.serverMessage),
+            )
+
+            is UploadOutcome.Cancelled -> ListenableWorker.Result.failure(
+                workDataOf(
+                    KEY_CANCELLED to true,
+                    KEY_ERROR_MESSAGE to CANCELLED_MESSAGE,
+                ),
             )
 
             is UploadOutcome.Retryable ->
@@ -111,6 +125,9 @@ object UploadWorkSpec {
                     ListenableWorker.Result.retry()
                 }
         }
+
+    /** 用户取消的队列行文案（errorMessage 与通知共用，单一来源） */
+    const val CANCELLED_MESSAGE = "已取消"
 
     /** 进度百分比（0..100 钳制；总长未知（<=0）恒 0，通知退化为不定进度文案）。 */
     fun progressPercent(bytesDone: Long, totalBytes: Long): Int {

@@ -1,5 +1,6 @@
 package media.qimeng.app.feature.settings
 
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
@@ -37,9 +38,11 @@ class ServerSettingsViewModelTest {
 
     private fun viewModel(
         auth: FakeAuthRepository = FakeAuthRepository(initialServerUrl = initialUrl, initialLoggedIn = true),
+        scanCharge: FakeScanChargeController = FakeScanChargeController(),
     ): ServerSettingsViewModel = ServerSettingsViewModel(
         authRepository = auth,
         embeddedServerController = FakeEmbeddedServerController().also { fakeController = it },
+        scanChargeController = scanCharge,
     )
 
     @Test
@@ -147,8 +150,38 @@ class ServerSettingsViewModelTest {
         assertEquals("http://10.1.2.3:9999", vm.uiState.value.urlInput)
         assertEquals("http://192.168.1.99", vm.uiState.value.currentUrl)
     }
-}
 
+    // ---- 批C 任务Q C-3：仅充电时扫描（仅本机模式可见） ----
+
+    @Test
+    fun `本机预设地址时isLocalMode为真且NAS地址为假`() = runTest(mainDispatcherRule.testDispatcher) {
+        val localAuth = FakeAuthRepository(
+            initialServerUrl = ServerAddress.LOCAL_MODE_PRESET,
+            initialLoggedIn = true,
+        )
+        val localVm = viewModel(localAuth)
+        advanceUntilIdle()
+        assertTrue(localVm.uiState.value.isLocalMode)
+
+        // 同一 VM 换 NAS 地址后判定翻转（地址流驱动，设置行随登录地址显隐）
+        localAuth.logoutWithStagedUrl("http://192.168.1.99")
+        localAuth.setLoggedIn(true)
+        advanceUntilIdle()
+        assertFalse(localVm.uiState.value.isLocalMode)
+    }
+
+    @Test
+    fun `仅充电开关切换写入控制器`() = runTest(mainDispatcherRule.testDispatcher) {
+        val scanCharge = FakeScanChargeController()
+        val vm = viewModel(scanCharge = scanCharge)
+        advanceUntilIdle()
+        assertTrue(vm.uiState.value.chargeOnlyScanEnabled)
+        vm.onChargeOnlyScanChange(false)
+        advanceUntilIdle()
+        assertFalse(scanCharge.chargeOnly.value)
+        assertFalse(vm.uiState.value.chargeOnlyScanEnabled)
+    }
+}
 
 /** U11 批次D：内嵌服务端控制桩——ViewModel 只消费 ensureStartedIfLocalMode 的返回语义 */
 private class FakeEmbeddedServerController : EmbeddedServerController {
@@ -158,4 +191,17 @@ private class FakeEmbeddedServerController : EmbeddedServerController {
         return serverUrl == ServerAddress.LOCAL_MODE_PRESET
     }
     override fun stop() = Unit
+}
+
+/** C-3：扫描充电控制桩——设置项流内存态，持久化行为由 DataStore 实现层保证 */
+private class FakeScanChargeController : media.qimeng.app.core.data.scan.ScanChargeController {
+    val chargeOnly = kotlinx.coroutines.flow.MutableStateFlow(true)
+    override val chargeOnlyScanEnabled: Flow<Boolean> = chargeOnly
+    override suspend fun setChargeOnlyScanEnabled(enabled: Boolean) {
+        chargeOnly.value = enabled
+    }
+    override suspend fun requestRescan(libraryId: String) =
+        media.qimeng.app.core.data.scan.RescanDecision.STARTED
+    override suspend fun onPowerConnected() = Unit
+    override suspend fun resumeDeferredIfCharging() = Unit
 }

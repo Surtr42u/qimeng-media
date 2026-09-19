@@ -28,6 +28,7 @@ class UploadWorker @AssistedInject constructor(
     @Assisted appContext: Context,
     @Assisted params: WorkerParameters,
     private val uploader: AssetUploader,
+    private val cancelRegistry: UploadCancelRegistry,
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result {
@@ -35,6 +36,14 @@ class UploadWorker @AssistedInject constructor(
         if (spec == null) {
             Log.e(LOG_TAG, "任务载荷缺失，终局失败")
             return Result.failure(workDataOf(UploadWorkSpec.KEY_ERROR_MESSAGE to "任务数据异常（载荷缺失）"))
+        }
+
+        // C-2 用户取消：排队中任务被标记取消时，轮到执行即直接落取消终态（不发起上传）。
+        // 不调 WorkManager cancelWorkById 的原因见 [UploadCancelRegistry]（链级联取消违单任务语义）。
+        if (cancelRegistry.isCancelled(spec.localId)) {
+            Log.i(LOG_TAG, "cancelled-before-start file=${spec.displayName}")
+            cancelRegistry.consume(spec.localId)
+            return UploadWorkSpec.outcomeToResult(UploadOutcome.Cancelled, runAttemptCount)
         }
 
         Log.i(
@@ -47,6 +56,7 @@ class UploadWorker @AssistedInject constructor(
             UploadItem(spec.uri, spec.displayName, spec.sizeBytes),
             spec.libraryId,
             spec.dir,
+            isCancelled = { cancelRegistry.isCancelled(spec.localId) },
         ) { done, total, percent ->
             setProgress(
                 workDataOf(
@@ -59,6 +69,7 @@ class UploadWorker @AssistedInject constructor(
                 Log.d(LOG_TAG, "progress file=${spec.displayName} $done/$total ($percent%)")
             }
         }
+        cancelRegistry.consume(spec.localId)
 
         val result = UploadWorkSpec.outcomeToResult(outcome, runAttemptCount)
         when (outcome) {
@@ -70,6 +81,13 @@ class UploadWorker @AssistedInject constructor(
             is UploadOutcome.Permanent -> {
                 Log.w(LOG_TAG, "rejected file=${spec.displayName} msg=${outcome.serverMessage}")
                 notifyDone(spec.localId, spec.displayName, "上传失败：${outcome.serverMessage}")
+            }
+
+            is UploadOutcome.Cancelled -> {
+                // C-2 取消：状态行翻「已取消」（输出带 KEY_CANCELLED 标志）+ 完成通知同步；
+                // 前台进度通知随 worker 正常结束由 WorkManager 自动撤销
+                Log.i(LOG_TAG, "cancelled file=${spec.displayName}")
+                notifyDone(spec.localId, spec.displayName, "上传已取消：${spec.displayName}")
             }
 
             is UploadOutcome.Retryable -> {
