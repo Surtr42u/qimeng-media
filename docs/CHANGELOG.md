@@ -12,6 +12,16 @@
 ---
 ---
 ---
+## fix(server/web/app): 全库审查批——1×P1 缩略图档位根修+Android 主线程解析补修+6×P2 效率+规范清偿（2026-09-20 第三百六十笔）
+
+执行 AI：GLM-5.3（主代理；五路只读审查子代理并行）
+
+- **执行方式与约束（用户令）**：新分支 `review/20260920-full-audit`（master 未动），**全程零构建零测试零 lint**（仅 gofmt 语法级校验+diff 自审），夜间低负载执行；明日用户自行构建，**排错抓手=《docs/AUDIT-20260920.md》**（修复清单/未修台账/构建失败定位表/运行时回归观察点全在内）。
+- **修复**：server 6 项（P1 缩略图 md 档 long_side 配置静默失效根修——缓存键与缩放像素归一；FTS 重建事务化；config 错误消息 %w 包 nil 勘正×2；watch 关停期噪音；补全消息字面量提常量；resolvePageOffset 迁 pagination.go）｜web 11 项（搜索换词过渡请求根修=渲染期重置；MediaCard memo+onOpen 稳定回调五调用点收口；useAssetsInfinite 补 keepPreviousData；?tab= 非法值回退；登录错误按状态码分流；路由常量四处收口；上传 SVG 抽共享件；我的页按 tab 挂起省 4 针请求；navContext useMemo；设置页数字模板化；标签输入 maxLength 提常量）｜android 5 项（**P1：备份导入校验 64MB 双解析下 Default 线程**——R2 漏网侧，测试随改 awaitUntil 跳板模式；预取协程风暴改 4 固定 worker 步进分片；Home 指纹守卫对齐 Favorite 口径；GpuInfo 日志 eager 求值改非阻塞版；AuthorScreen visibleRows 包 remember）｜工程 2 项（ci.yml 注释漂移勘正 AGP9.3.1/compileSdk37；双启动 .bat 互指注释防安全行漂移）。
+- **记录未修台账 14 项**（AUDIT 报告 §3）：协议债四项（/rankings maximum、POST /libraries 409、统计秒数口径、lastViewedAt 双面孔）待白天 make sdk 批；N+1 两项待 sqlc 再生成；行为变化类（dirs 缓存/点赞失效面收窄）待拍板；其余窄窗口竞态与工程卫生低优先。
+- **审查阴性结论留档**：安全红线/协议一致性/迁移纪律/生成物纪律/推荐公式常量/筛选代际守卫/SSE/打点去重全部核查通过（五路审查员报告要点已并入 AUDIT §5，后续会话免重查）。
+
+---
 ## docs: 用户拍板收官记档——M6 收官+缩略图清理销项+协议缺口放弃（2026-09-20 第三百五十九笔）
 
 执行 AI：GLM-5.3-Flash（主代理）

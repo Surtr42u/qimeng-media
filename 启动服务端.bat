@@ -1,5 +1,8 @@
 @echo off
 title Qimeng Media Server
+rem NOTE: startup logic is DUPLICATED in "启动服务端-无浏览器.bat" (env vars,
+rem dev-mode line, go build). If you change anything here, check that file
+rem too - especially the QIMENG_AUTH_DEV_MODE line below (security-sensitive).
 cd /d "%~dp0server"
 set QIMENG_DATA_DIR=%~dp0qimeng-data
 rem Dev-mode passwordless login (user agreement: no password flow until project is done).
