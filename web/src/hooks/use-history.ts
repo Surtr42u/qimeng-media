@@ -11,12 +11,15 @@ import { unwrapSdkResult } from '@/lib/api-client'
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants'
 import { HISTORY_QUERY_KEY } from '@/lib/query-keys'
 
-export function useHistoryInfinite(limit = DEFAULT_PAGE_SIZE) {
+/** enabled=false 时挂起不发请求（我的页默认停在关注 tab，切到历史 tab 再拉，
+ *  免去每次进页的三连发白请求；缓存命中时切换即时显示）。 */
+export function useHistoryInfinite(limit = DEFAULT_PAGE_SIZE, enabled = true) {
   return useInfiniteQuery({
     queryKey: [...HISTORY_QUERY_KEY, limit],
     queryFn: ({ pageParam }) =>
       unwrapSdkResult(getApiV1History({ query: { cursor: pageParam, limit } })),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextCursor ?? undefined,
+    enabled,
   })
 }

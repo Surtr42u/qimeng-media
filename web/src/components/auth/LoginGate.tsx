@@ -11,6 +11,7 @@ const MIN_PASSWORD_LENGTH = 8
 /** 登录面板提示文案 */
 const HINT_INITIALIZED = '系统已初始化过，请输入管理密码登录'
 const HINT_LOGIN_FAILED = '密码错误，请重试'
+const HINT_LOGIN_UNREACHABLE = '无法连接服务器，请检查网络或服务端是否在运行'
 const HINT_SETUP_FAILED = '初始化失败，请重试'
 const HINT_COPIED = 'token 已复制，请妥善保存（仅此一次明文展示）'
 const TOKEN_NOT_SHOWN = 'token 未返回，请查看服务端日志'
@@ -107,7 +108,15 @@ export function LoginGate() {
         // token 落 store（localStorage 持久），之后无需再输密码
         setToken(token)
       },
-      onError: () => toast.error(HINT_LOGIN_FAILED),
+      onError: (error) => {
+        // 按状态码分流（2026-09-20 全库审查：此前一切失败都报「密码错误」，
+        // 网络/5xx 场景误导排查；401=凭据问题，其余=连不上/服务端问题）
+        if (statusOf(error) === 401) {
+          toast.error(HINT_LOGIN_FAILED)
+        } else {
+          toast.error(HINT_LOGIN_UNREACHABLE)
+        }
+      },
       // onSuccess 无需其他处理：store 更新会触发 AuthGate 重渲染放行
     })
   }
@@ -200,11 +209,13 @@ export function LoginGate() {
 }
 
 /** 判断后端错误是否为 409（已初始化）；unknown 错误类型下按结构字段判断 */
+/** unwrapSdkResult 拼进 error 的 HTTP 状态码（无 status 的网络层错误返回 null） */
+function statusOf(error: unknown): number | null {
+  if (typeof error !== 'object' || error === null || !('status' in error)) return null
+  const status = (error as { status?: number }).status
+  return typeof status === 'number' ? status : null
+}
+
 function is409(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'status' in error &&
-    (error as { status?: number }).status === 409
-  )
+  return statusOf(error) === 409
 }

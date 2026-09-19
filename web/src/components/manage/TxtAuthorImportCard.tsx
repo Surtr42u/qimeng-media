@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 import {
   useDeleteImportedTxt, useImportAuthorTxt, useRebuildAuthorTxt, useTxtImportedFiles,
 } from '@/hooks/use-authors'
+import { UploadDropIcon } from '@/components/manage/UploadDropIcon'
 
 /**
  * 作者 TXT 导入卡（旧版数据管理「TXT导入作者」的 web 对等物）：
@@ -89,20 +90,7 @@ export function TxtAuthorImportCard() {
           <b>导入中…</b>
         ) : (
           <>
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              style={{ width: 22, height: 22, display: 'block', margin: '0 auto 6px', color: 'var(--qm-primary)' }}
-              aria-hidden="true"
-            >
-              <path d="M12 16V4" />
-              <path d="m6 9 6-6 6 6" />
-              <path d="M4 20h16" />
-            </svg>
+            <UploadDropIcon />
             <b>选择 TXT 导入</b>
             <div>
               {files.length === 0

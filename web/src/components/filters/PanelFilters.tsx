@@ -21,6 +21,11 @@ import {
 import { Pill } from '@/components/ui/pill'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
 
+/** 新建标签输入的字数上限（客户端自定值，原型沿袭——协议无标签名长度上限，
+ *  服务端只拦空名；截断只发生在输入框层，超长粘贴不炸布局即可，2026-09-20
+ *  全库审查自裸魔法值提常量）。 */
+const TAG_NAME_MAX_LENGTH = 12
+
 function FilterRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="f-row">
@@ -107,7 +112,7 @@ function TagRow({ pool, selected, inputOpen, onToggle, onRemove, onOpenInput, on
           className="tag-input"
           type="text"
           placeholder="新标签，回车添加"
-          maxLength={12}
+          maxLength={TAG_NAME_MAX_LENGTH}
           autoFocus
           onKeyDown={(e) => {
             // 回车入池并收起（原型 innerHTML 重渲染后输入框复位）；Esc 直接还原

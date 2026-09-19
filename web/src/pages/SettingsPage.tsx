@@ -123,7 +123,7 @@ export default function SettingsPage() {
               value={cfg.scan.workers}
               onChange={(e) => setScan('workers', e.target.value)}
             />
-            <small>1–4，超出可能加重 NAS 负载 · 预留字段，暂不生效</small>
+            <small>{CONFIG_BOUNDS.workers.min}–{CONFIG_BOUNDS.workers.max}，超出可能加重 NAS 负载 · 预留字段，暂不生效</small>
           </label>
           <label className="settings-field">
             <span>缩略图长边</span>
@@ -135,7 +135,7 @@ export default function SettingsPage() {
               value={cfg.scan.thumbEdge}
               onChange={(e) => setScan('thumbEdge', e.target.value)}
             />
-            <small>200–1600 px · 预留字段，暂不生效</small>
+            <small>{CONFIG_BOUNDS.thumbEdge.min}–{CONFIG_BOUNDS.thumbEdge.max} px · 预留字段，暂不生效</small>
           </label>
         </div>
       </div>
@@ -152,7 +152,7 @@ export default function SettingsPage() {
             value={cfg.upload.maxBytesMb}
             onChange={(e) => setUpload('maxBytesMb', e.target.value)}
           />
-          <small>64–8192 MB（与配置文件上限取更严者）</small>
+          <small>{CONFIG_BOUNDS.maxBytesMb.min}–{CONFIG_BOUNDS.maxBytesMb.max} MB（与配置文件上限取更严者）</small>
         </label>
         <label className="settings-switch">
           {/* radix Switch 接管行为（Space 切换/aria-checked/焦点环），滑块视觉走

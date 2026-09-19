@@ -13,6 +13,19 @@ export const HOME_PATH = '/app/home'
 /** 相册页路由（F5 列表↔详情叠加组第二个底衬列表键；Sidebar/后续引用一律走此常量） */
 export const ALBUMS_PATH = '/app/albums'
 
+/** 我的页路由（Sidebar 主导航第三项；2026-09-20 全库审查：Sidebar 注释宣称
+ *  路由串全走本文件常量，实际 mine/data/maintenance/settings 四处仍是字面量，收口） */
+export const MINE_PATH = '/app/mine'
+
+/** 数据页路由（Sidebar 主导航第四项） */
+export const DATA_PATH = '/app/data'
+
+/** 维护页路由（Sidebar 底部图标组入口） */
+export const MAINTENANCE_PATH = '/app/maintenance'
+
+/** 设置页路由（Sidebar 底部图标组入口） */
+export const SETTINGS_PATH = '/app/settings'
+
 /** 数据管理 hub 路由（库管理/上传/作者导入/备份四个子页的「← 返回数据管理」
  *  共用入口；曾散写 5 处，2026-09-17 全检后收口至此，子页路径字面量归 router.tsx） */
 export const MAINTENANCE_FILES_PATH = '/app/maintenance/files'

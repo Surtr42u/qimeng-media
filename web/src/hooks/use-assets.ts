@@ -93,8 +93,12 @@ export function useRecommendations(limit = DEFAULT_PAGE_SIZE, seed = 0, cosOnly 
   })
 }
 
-/** 资产列表无限滚动（游标分页；相册/搜索/集合页共用口径）。
- *  enabled=false 用于"无搜索词/未找到合集实体"时避免无效请求（q 为空仍要渲染空态）。 */
+/** 资产列表无限滚动（游标分页；相册/搜索/收藏/集合页共用口径）。
+ *  enabled=false 用于"无搜索词/未找到合集实体"时避免无效请求（q 为空仍要渲染空态）。
+ *  换键（筛选/分区/搜索词变化）期间保留旧列表占位（对齐 useRecommendations/
+ *  useRankingsInfinite 的 E1 口径，2026-09-20 全库审查补齐——此前四页换键
+ *  整列表闪「加载中…」；消费方哨兵的 isPlaceholderData 守卫自此真实生效，
+ *  防换键期间 fetchNextPage 用旧游标打新键）。 */
 export function useAssetsInfinite(params: AssetListParams = {}, enabled = true) {
   return useInfiniteQuery({
     queryKey: [...ASSETS_LIST_QUERY_KEY, params],
@@ -103,6 +107,7 @@ export function useAssetsInfinite(params: AssetListParams = {}, enabled = true) 
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextCursor ?? undefined,
     enabled,
+    placeholderData: keepPreviousData,
   })
 }
 

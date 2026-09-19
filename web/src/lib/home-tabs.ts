@@ -28,3 +28,12 @@ const RANK_PERIOD_KEYS: readonly string[] = RANK_PERIODS.map((p) => p.key)
 export function parseRankPeriod(v: string | null): HomeRankPeriod {
   return v !== null && RANK_PERIOD_KEYS.includes(v) ? (v as HomeRankPeriod) : 'day'
 }
+
+const HOME_TAB_KEYS: readonly string[] = HOME_TABS.map((t) => t.key)
+
+/** URL tab 参数 → 合法 tab（非法/缺省回退推荐——与 parseRankPeriod 同款防御：
+ *  手误/旧链接的垃圾值不再落进「其余=cos」分支静默渲染 COS 流（2026-09-20
+ *  全库审查；此前 ?tab=xx 会渲染 cos tab 且顶栏无高亮）。 */
+export function parseHomeTab(v: string | null): HomeTabKey {
+  return v !== null && HOME_TAB_KEYS.includes(v) ? (v as HomeTabKey) : 'recommend'
+}

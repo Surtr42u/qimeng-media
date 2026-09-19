@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { MediaCard } from '@/components/media/MediaCard'
 import { InfiniteTail } from '@/components/media/InfiniteTail'
@@ -49,6 +49,14 @@ export default function CollectionPage() {
   const { kind = 'tag', name = '' } = useParams()
   const isAuthor = kind === 'author'
   const kindLabel = isAuthor ? '作者' : '标签'
+
+  // 稳定打开回调（MediaCard memo 生效前提，2026-09-20 全库审查）
+  const openCard = useCallback(
+    (id?: string) => {
+      if (id) navigate(assetDetail(id))
+    },
+    [navigate],
+  )
 
   const { data: tags, isLoading: tagsLoading } = useTags()
   const { data: authors, isLoading: authorsLoading } = useAuthors()
@@ -235,11 +243,7 @@ export default function CollectionPage() {
       ) : items.length ? (
         <div className="media-grid">
           {items.map((a) => (
-            <MediaCard
-              key={a.id}
-              {...assetToCard(a)}
-              onClick={() => a.id && navigate(assetDetail(a.id))}
-            />
+            <MediaCard key={a.id} {...assetToCard(a)} onOpen={openCard} />
           ))}
         </div>
       ) : (
