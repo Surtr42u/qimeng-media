@@ -63,6 +63,8 @@ M3 完成后当天就在用户 PC 上实机跑通全流程，明天的活从这�
 
 ### 当前待办（2026-09-04 用户拍板：UI 收尾 + M4 完整任务，按序）
 
+**任务R（2026-09-19 立卷+批R1 完成态）——备份导入导出重做**：手机实测跨端导入失败后用户拍板（卷=仓库外《QimengNAS\任务R-备份导入导出重做卷.md》）。批R1 已落地：①备份页四入口重做（feature:manage BackupScreen+BackupCards 拆分——导出备份/导入备份/跨端同步/自动备份，对象恒=当前连接的服务端；跨端同步=源端一键「同步到另一端」暂存+目标端顶部显著暂存卡（含 N 文件摘要）+一键「导入并合并到当前端」走既有校验→确认→幂等导入链路；浏览数据同步/作者 TXT 导入不动）②备份通道长超时修复（NetworkModule `@BackupClient`：主 client 派生 readTimeout=300s+callTimeout=0，SdkBackupRepository export/import 双链路改走，根因=主客户端 10s 读超时掐断服务端分钟级同步导入/导出，UploadClient 60s 先例加长版；零协议改动）。门禁两笔全绿（三连 exit=0+assembleRelease）+冒烟四剧本全 PASS（qimeng_api35 显式 serial+8421/8422 隔离实例，导出落盘/同文件回导幂等不翻倍/跨端暂存→换端导入合并计数/自动备份落盘，证据 %TEMP%\qimeng-r1-evidence\ 与 android/.walk/qR1-*）；终包 `QimengNAS\qimeng-任务R-终包-20260919.apk` 已出盘，**待主会话装真机 <真机序列号> + R2 reviewer 对抗审查**。
+
 **任务Q（2026-09-19 收官）——五批完成态：批A 服务端六项依赖升级 53449b8 ｜ 批B 备份热备（VACUUM INTO 四端点+定时快照+Web 维护页备份卡）41db2dc+c7c3175（reviewer P2×2 当场清偿）｜ 批C Android 体验三件套 a119b6d+返工 4f81f92（reviewer 打回 1 轮 P1 返工后通过；终包 `QimengNAS\qimeng-任务Q-终包-20260919.apk`=返工后 R8 产物）｜ 批E 文档与工作区收官（media-ui-prototype 退役+仓库外清理+漂移复核，CHANGELOG 第三百四十三笔）｜ 批D M5 开发侧 Docker 化**顺延挂用户节点**（Docker Desktop 未安装且须用户手动下载，无人值守会话无法完成 UAC/WSL2/重启级安装）。6 笔已 push（origin/master=4f81f92），CI run 35426266795 五 job 全绿；任务书=仓库外《QimengNAS\任务Q-依赖备份与体验收尾卷.md》。
 
 **⭐ 用户节点清单（非 AI 工作，任务Q §11 原文，批E 置顶）：**

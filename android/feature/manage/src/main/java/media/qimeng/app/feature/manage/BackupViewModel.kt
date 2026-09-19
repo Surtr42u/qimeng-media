@@ -67,17 +67,22 @@ data class BackupUiState(
     val autoBackupLastRunMillis: Long = 0,
     /** 立即备份进行中（按钮禁用防重，文案「备份中…」） */
     val autoBackupBusy: Boolean = false,
-    // ---------- 跨端同步暂存（2026-09-18 用户拍板：本机⇄服务器同步免来回导文件） ----------
+    // ---------- 跨端同步暂存（2026-09-18 用户拍板：本机⇄服务器同步免来回导文件；
+    // 2026-09-19 任务R 四入口重做：暂存/导入暂存收敛进「跨端同步」卡与顶部暂存卡） ----------
     /** 当前暂存元数据（null=无暂存；进页读一次，暂存成功后随结果更新） */
     val staged: StagedBackupMeta? = null,
+    /** 暂存信封的媒体文件数（读暂存过 BackupValidator 所得；null=暂存内容未过校验，卡上隐藏该项） */
+    val stagedMediaFiles: Int? = null,
     /** 暂存进行中（按钮禁用防重，文案「暂存中…」） */
     val stagingBusy: Boolean = false,
 )
 
 /**
- * 备份导入/导出 ViewModel（U10-6b，DOMAIN_RULES §10）：导出全量备份（序列化在 VM，
- * SAF 落盘在屏幕层）+ 选 JSON → 前置校验（BackupValidator）→ 二次确认 → 幂等导入。
- * 成功反馈文案逐字对齐 Web LibraryManagePage.tsx BackupCard 各 mutate onSuccess toast。
+ * 备份导入/导出 ViewModel（U10-6b，DOMAIN_RULES §10；2026-09-19 任务R 四入口重做）：
+ * 备份页收敛为导出备份/导入备份/跨端同步/自动备份四入口，导入/导出对象恒=当前连接的
+ * 服务端。导出全量备份（序列化在 VM，SAF 落盘在屏幕层）+ 选 JSON → 前置校验
+ * （BackupValidator）→ 二次确认 → 幂等导入。成功反馈文案逐字对齐 Web
+ * LibraryManagePage.tsx BackupCard 各 mutate onSuccess toast。
  * 2026-09-16 用户反馈：浏览数据「导出未上传」入口退役（exportPending/onExported 删除，
  * 立即同步保留）；新增自动备份状态编排（开关/目录/上次运行持久化态回流 + 立即备份，
  * 执行体在 core:data AutoBackupRunner）。
@@ -313,21 +318,36 @@ class BackupViewModel @Inject constructor(
         }
     }
 
-    // ---------- 跨端同步暂存（2026-09-18 用户拍板：本机⇄服务器同步免来回导文件。
-    // 流程=连着 A 端「暂存当前库」→ 切换登录 B 端 →「导入暂存」走既有幂等导入链路；
-    // 暂存只保留最新一份（覆盖写），导入与文件导入同走 BackupValidator→确认弹窗→import） ----------
+    // ---------- 跨端同步（2026-09-18 用户拍板：本机⇄服务器同步免来回导文件；2026-09-19
+    // 任务R 四入口重做：源端一键「同步到另一端」=导出+暂存→提示切换；目标端 staged 非 null
+    // 时顶部暂存卡+「导入并合并到当前端」走既有校验→确认→幂等导入链路。暂存只保留最新
+    // 一份覆盖写的语义不变） ----------
 
-    /** 进页回流暂存元数据（读失败按无暂存处理，不横幅——首次使用是常态） */
+    /** 进页回流暂存元数据+摘要（读失败按无暂存处理，不横幅——首次使用是常态） */
     private fun loadStagedMeta() {
         viewModelScope.launch {
-            val meta = runCatching { syncStaging.loadStaged() }.getOrNull()?.meta
-            _uiState.update { it.copy(staged = meta) }
+            val staged = runCatching { syncStaging.loadStaged() }.getOrNull()
+            _uiState.update {
+                it.copy(
+                    staged = staged?.meta,
+                    stagedMediaFiles = staged?.let { s -> stagedSummaryMediaFiles(s.json) },
+                )
+            }
         }
     }
 
     /**
-     * 暂存当前库：导出全量信封（与「导出备份」同一段序列化）写进 App 内部暂存；
-     * 来源服务端地址由暂存实现方捕获（导入侧展示「来自哪端」，防导错方向）。
+     * 暂存内容过 BackupValidator 取媒体文件数（任务R：暂存卡 N 文件项）。校验未过返回
+     * null（卡上隐藏该项）；导入侧 confirm 前仍会完整重校验，此处不拦截不横幅——
+     * 摘要展示与导入校验职责分离，单源都在 BackupValidator。
+     */
+    private fun stagedSummaryMediaFiles(json: String): Int? =
+        (BackupValidator.validate(STAGED_FILE_NAME, json.toByteArray(Charsets.UTF_8)) as? BackupValidator.Result.Ok)
+            ?.summary?.mediaFiles
+
+    /**
+     * 源端一键「同步到另一端」：导出全量信封（与「导出备份」同一段序列化）写进 App 内部
+     * 暂存；来源服务端地址由暂存实现方捕获（导入侧展示「来自哪端」，防导错方向）。
      */
     fun stageForSync() {
         if (_uiState.value.stagingBusy) return
@@ -340,6 +360,7 @@ class BackupViewModel @Inject constructor(
                     it.copy(
                         stagingBusy = false,
                         staged = meta,
+                        stagedMediaFiles = stagedSummaryMediaFiles(export.json),
                         noticeMessage = NOTICE_STAGED.format((meta.sizeBytes / BYTES_PER_KB).roundToInt()),
                     )
                 }
@@ -387,10 +408,10 @@ class BackupViewModel @Inject constructor(
         /** 浏览数据同步失败文案（SettingsViewModel 原款随迁） */
         const val EVENT_SYNC_FAILED_MESSAGE = "同步失败，请重试"
 
-        /** 跨端暂存文案 */
+        /** 跨端暂存文案（任务R 2026-09-19 拍板措辞：提示切换到目标端） */
         const val ERROR_STAGE = "暂存失败，请重试"
         const val ERROR_STAGED_MISSING = "暂存数据不存在或已损坏，请重新暂存"
-        const val NOTICE_STAGED = "已暂存当前库（%d KB），切换到另一端登录后即可导入"
+        const val NOTICE_STAGED = "已暂存（%d KB），请切换到目标端登录后回来导入"
         const val STAGED_FILE_NAME = "qimeng_backup.json"
     }
 }

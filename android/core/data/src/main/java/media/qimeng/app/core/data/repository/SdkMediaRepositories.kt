@@ -39,10 +39,14 @@ class BusinessApiFactory @Inject constructor(
     private val serverConfig: ServerConfigDataSource,
     private val okHttpClient: OkHttpClient,
 ) {
-    fun create(): DefaultApi {
-        val baseUrl = currentBaseUrl()
-        return DefaultApi(baseUrl, okHttpClient)
-    }
+    fun create(): DefaultApi = createWith(okHttpClient)
+
+    /**
+     * 指定客户端构造 API（备份通道用 @BackupClient 长超时客户端；UploadClient 先例同源）。
+     * 地址来源与 [create] 同一单点（ServerConfigDataSource），鉴权随客户端自带
+     * （派生 client 经 newBuilder 共享 AuthInterceptor，备份请求不会丢 token）。
+     */
+    fun createWith(client: OkHttpClient): DefaultApi = DefaultApi(currentBaseUrl(), client)
 
     /** 当前服务端根地址（缩略图相对路径拼绝对直链用） */
     fun currentBaseUrl(): String = requireNotNull(serverConfig.currentServerUrl()) {
