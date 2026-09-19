@@ -8,7 +8,7 @@
 ## 1. 任务背景与当前路线（用户拍板）
 
 1. 用户要求复刻桌面 PC 客户端 UI，并把这个界面的**侧边栏**移植进 qimeng-media 项目。
-2. **UI 主路线 = `media-ui-prototype/`**（桌面客户端风格的静态原型：纯 HTML/CSS/JS）。
+2. **UI 主路线曾是 `media-ui-prototype/`**（桌面客户端风格的静态原型：纯 HTML/CSS/JS）——**该原型目录已于 2026-09-19 退役删除**（整体移植进 web 正式代码后完成使命，历史可溯 git 与 CHANGELOG）；现行 UI = web 端 React 重建（访问 8420）。
 3. **v2（`web/src/panel-demo/`）也已删除（2026-09-01）**——web 端只保留鉴权基建（AuthGate/RootLayout/SseBridge/LoginGate）与生成 SDK、共享工具，首页为占位提示；
    ~~待原型敲定后把功能移植进 web 重建页面~~ **已完成（2026-09-02，阶段 A mock）**：九页+壳层已用 React 重建进 web（`web/src/pages/`、`components/shell/`、`styles/prototype.css`），访问 `http://127.0.0.1:8420/` 即原型界面；**接真实数据（阶段 B）未启动**。
 4. **v1 旧壳与 v2 panel-demo 已于 2026-09-01 彻底删除**（v1：pages/、旧壳专属 components、旧 hooks、/legacy 与 /detail；v2：panel-demo/、components/tremor/、lib/tremor、相应依赖包），web 端仅保留鉴权基建与工具层。
@@ -56,7 +56,7 @@ curl http://127.0.0.1:9222/json
 
 主题色（已统一为侧边栏主色）：`#4250af`（激活 tab/激活侧栏项），激活深色 `#35428f`；文字 `#18191C`；次要 `#9499A0`；分割 `#E3E5E7`。深色模式由侧栏月亮按钮切换（`.dark`，主色 oklch(0.836 0.074 258.58)）。
 
-## 4. 原型现状（media-ui-prototype/，已完成并逐页截图验证）
+## 4. 原型现状（media-ui-prototype/，已于 2026-09-19 退役删除——整体移植进 web 正式代码后完成使命，`git rm` 清理、本地不留副本；历史可溯 git 与 CHANGELOG，下文结构/状态表仅作历史规格存档）
 
 ```
 media-ui-prototype/
@@ -113,7 +113,7 @@ media-ui-prototype/
    - **第七笔（2026-09-03，第六笔移植 web 正式端，见 CHANGELOG「原型七组缺陷 web 正式端移植」）**：协议 AssetSummary 新增 `authorNames`（GET /assets、GET /recommendations 返回，make sdk 三端重建）；卡片作者行+时长角标（`assetToCard` 收敛全部 MediaCard 调用方：up=formatCardUp 首作者「名 等N」/回退 source、duration 仅视频 m:ss/h:mm:ss，MediaCard meta 两行）；作者榜=常看作者（DataPage Top5 / RanksPage 全量，viewCount>0 按浏览降序，note「按浏览」）；作者总览/管理页行副标题「N 个文件 · 浏览 M 次」（RankRowList 扩展可选 sub）+ `authorDisplayName` 给 COS 作者加「 ·COS」；相册时间分区（`lib/format.ts` dateLabel + AlbumsPage 分组：组内原序、组间组首 modifiedAt 降序、空日期组最后不渲染组头）。原型另修 2 处 CSS 缺陷（TXT 面板 `#authorImportFile/#authorImportText` 选择器对齐、副标题 flex-wrap+flex-basis:100%+order:1 两行布局）。后续（09-04 用户反馈）：数据页作者总览卡改 **Top5 行预览**（按文件数降序，与相邻榜单卡行数一致——真库 122 作者全量渲染致栏目过长；完整列表在作者管理页，总量看卡头注）。
 3. 阶段 A 交互与原型的已知差异（用户裁决项）：顶栏 tab 激活态挂 URL（离开首页即丢）；作者页搜索图标 r=8（原型 7，≤1px）；sonner toast 主题跟系统未跟月亮按钮（next-themes 未接）。
 4. 跑法：不要单独拉前端——统一访问 `http://127.0.0.1:8420`（后端托管 `web/dist`）；改前端先 `npm --prefix web run build`。
-   原型目录（media-ui-prototype/）保留作对照基准，单独预览：`cd media-ui-prototype && node serve.mjs 8099`。
+   原型目录（media-ui-prototype/）已于 2026-09-19 退役删除，不再单独预览——原型视觉以 web 端 8420 实况为准；历史源码可溯 git 与 CHANGELOG。
 5. 铁律 7：UI 组件禁止直接调 API、禁止内嵌业务规则——接数据走 hooks/客户端逻辑层（阶段 A 已遵守：pages 内零 SDK 调用）。
 6. UI 工作另见 `docs/adr/0008`（UI 解耦策略）。
 7. web 端类型检查必须用 `npx tsc --noEmit -p tsconfig.app.json`——根 tsconfig 是 solution-style，裸 `tsc --noEmit` 是假通过。
@@ -278,5 +278,5 @@ media-ui-prototype/
 ## 7. 给下一位 AI 的起点建议
 
 1. **先读 §4（原型现状）、§4.5（对齐纪律——硬规则，尤其第 5 条动画污染）、踩坑记录**，再动代码；对齐类改动交付必须附浏览器静止态实测数字（边缘 spread / 中心偏差 ≤1px）。
-2. 浏览器打开 `http://127.0.0.1:8099/`（服务若未起：`cd media-ui-prototype && node serve.mjs 8099`）逐页过一遍：侧栏切页 + 月亮切深色 + 数据页排行三卡（内容榜封面卡/作者总览「管理」进作者管理页）+ 搜索回车进结果页 + 返回按钮 + 悬浮刷新。
+2. ~~浏览器打开 `http://127.0.0.1:8099/`（服务若未起：`cd media-ui-prototype && node serve.mjs 8099`）逐页过一遍~~（原型目录已于 2026-09-19 退役删除，对照基准改为 web 端 `http://127.0.0.1:8420/` 实况）：侧栏切页 + 月亮切深色 + 数据页排行三卡（内容榜封面卡/作者总览「管理」进作者管理页）+ 搜索回车进结果页 + 返回按钮 + 悬浮刷新。
 3. 用户会继续逐项提修改；改完按 §4.5 自查（记得静止态实测），不用等用户提醒对齐。

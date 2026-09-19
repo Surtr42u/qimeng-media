@@ -18,7 +18,7 @@
 - **M0 地基 ✅**、**M1 服务端核心闭环 ✅**、**M2 后端先行全部完成 ✅**、**M2 UI 段（Web）✅（2026-08-29，commit 82f1935 存档含并行 M3 后端件）**、**M3 后端五项 ✅（2026-08-30，推荐算法/统计/SourceMatcher/作者体系/迁移端点全量接线，见下方 M3 完成记录）**
 - **M3 全部完成**：最后一项「推荐偏好设置页」已于 2026-09-03 随阶段 B 接真（设置页 9 维滑杆 + 4 预设卡，走 GET/PUT /recommendations/prefs）
 - **M3 后端遗留已清零（2026-08-31）**：① 孤立 COS 作者清理（扫描收尾+增量删除后自动，旧项目 deleteOrphanCosAuthors 语义）；② custom_sources 写入端点（GET/PUT /sources/custom，整体替换+后台全库存量重算，已入库资产不依赖重扫）；③ filing 改名/移动的 cos 库作者映射修正（EnrichAsset/移动合并两条路径都按新目录首段重算）。协议债两项同清：/dirs 的 libraryId 标 required、AssetDetail 补 libraryId。细节见 CHANGELOG「M3 后端收尾」条目
-- **UI 路线现状（2026-09-04 对齐口径：阶段 B 全量完成，mock 全部退役）**：web 端九页全接真数据（首页推荐流/cos/榜单 tab、相册四维筛选、详情、搜索、我的、数据、文件管理、回收站、设置、维护、作者管理、集合子页），`pages/mock.ts` 已删（2026-09-03）。原型 `media-ui-prototype/` 已整体移植进 web 正式代码（React 重建，访问 8420 即原型界面）；v1 旧壳与 v2 panel-demo 均已于 2026-09-01 删除。对齐纪律（HANDOVER_UI §4.5）在 web 端继续适用。**剩余 UI 待办三项**——ArtPlayer 播放器 UI（现用原生 video）、confirm 换原型风格弹窗、**上传 UI 入口**（2026-09-04 审查发现：后端 POST /assets/upload 四道校验齐全、SSE upload.done 已桥接、设置页上传配置已接，但页面无上传入口——通道就绪前端缺壳；手机直传以 M4 App 为主通道）。详见 HANDOVER_UI.md §5/§6
+- **UI 路线现状（2026-09-04 对齐口径：阶段 B 全量完成，mock 全部退役）**：web 端九页全接真数据（首页推荐流/cos/榜单 tab、相册四维筛选、详情、搜索、我的、数据、文件管理、回收站、设置、维护、作者管理、集合子页），`pages/mock.ts` 已删（2026-09-03）。原型 `media-ui-prototype/` **已于 2026-09-19 退役删除**（整体移植进 web 正式代码后保留的原型对照目录，目录已 `git rm`，历史可溯 git 与 CHANGELOG；web 端 React 重建访问 8420 即原型界面）；v1 旧壳与 v2 panel-demo 均已于 2026-09-01 删除。对齐纪律（HANDOVER_UI §4.5）在 web 端继续适用。**剩余 UI 待办三项**——ArtPlayer 播放器 UI（现用原生 video）、confirm 换原型风格弹窗、**上传 UI 入口**（2026-09-04 审查发现：后端 POST /assets/upload 四道校验齐全、SSE upload.done 已桥接、设置页上传配置已接，但页面无上传入口——通道就绪前端缺壳；手机直传以 M4 App 为主通道）。详见 HANDOVER_UI.md §5/§6
 - **全库质量审查+清债完成（2026-09-04，CHANGELOG 第十一/十二笔）**：三路研究子代理并行抽查（架构符合度 / 三端代码质量 / 协议·迁移·安全纪律），结论——纪律执行整体优秀、无方向性偏离（安全三红线、协议↔实现 60 操作双向一致、迁移零改史、生成物历史零入库全过）；发现的轻微偏离已全部清零（server：assets.go 拆分 + main.go 常量 + 写错误注释；web：分层纪律收紧 + prototype.css 30 处颜色收敛 token，口径固化 HANDOVER_UI §5.8）。本行及上方 UI 路线现状的口径修正即审查后同步
 - **当前执行路线（2026-09-04 用户两次拍板后定稿）**：**① Web UI 收尾三批**（任务书 HANDOVER_UI §5.9：W-1 上传入口 → W-2 弹窗 → W-3 ArtPlayer）→ **② M4 Android 八批次·Compose 重建**（ADR-0014「先进优先」，原任务书 HANDOVER_APP.md 已于 2026-09-11 删除，批次记录见 CHANGELOG）→ **③ M6 Android 单机形态**（ADR-0015：Go 服务端内嵌手机替代旧项目，日常价值优先）→ **④ M5 NAS 部署验收**（PROJECT_PLAN M5，用户自测虚拟机节奏）
 - **501 stub 已全部清零**（notImplemented 机制退役，errors.go 该函数已删——新端点接线模式：实现进各自文件、无 stub 可删）
@@ -63,7 +63,14 @@ M3 完成后当天就在用户 PC 上实机跑通全流程，明天的活从这�
 
 ### 当前待办（2026-09-04 用户拍板：UI 收尾 + M4 完整任务，按序）
 
-**当前卷（2026-09-19 立卷）——任务Q：依赖升级+备份热备+Android 体验收尾+M5 开发侧，五批 A→E 严格串行执行中**（批A=服务端六项 Go 直接依赖升级；批B=备份热备 VACUUM INTO 协议先行；批C=Android 体验收尾三件套=全卷唯一 Android 门禁；批D=M5 开发侧 Docker 化；批E=文档与工作区卫生收官；合并门禁策略=批内只用定向测试、Android Gradle 全卷仅批C 2 次）。任务书=仓库外《QimengNAS\任务Q-依赖备份与体验收尾卷.md》；恢复=新会话说「执行任务Q」。
+**任务Q（2026-09-19 收官）——五批完成态：批A 服务端六项依赖升级 53449b8 ｜ 批B 备份热备（VACUUM INTO 四端点+定时快照+Web 维护页备份卡）41db2dc+c7c3175（reviewer P2×2 当场清偿）｜ 批C Android 体验三件套 a119b6d+返工 4f81f92（reviewer 打回 1 轮 P1 返工后通过；终包 `QimengNAS\qimeng-任务Q-终包-20260919.apk`=返工后 R8 产物）｜ 批E 文档与工作区收官（media-ui-prototype 退役+仓库外清理+漂移复核，CHANGELOG 第三百四十三笔）｜ 批D M5 开发侧 Docker 化**顺延挂用户节点**（Docker Desktop 未安装且须用户手动下载，无人值守会话无法完成 UAC/WSL2/重启级安装）。6 笔已 push（origin/master=4f81f92），CI run 35426266795 五 job 全绿；任务书=仓库外《QimengNAS\任务Q-依赖备份与体验收尾卷.md》。
+
+**⭐ 用户节点清单（非 AI 工作，任务Q §11 原文，批E 置顶）：**
+1. ~~网络恢复后 push + CI 盯绿~~ ✅ 已闭合（任务P 积压 19 笔 CI run 35414462168 + 任务Q 6 笔 run 35426266795 五 job 全绿）。
+2. **任务Q 终包装机验收**：上传取消/充电联动/进程回收重试三剧本 + P4b 遗留的 Android 17 权限弹窗实测。
+3. 首次全量扫描实测报告（M6 遗留，与 T7 断网验收同场做）。
+4. T7 验收链不变（断网全流程 → 旧项目退役拍板 → M6 文档收官）。
+5. 真机 NAS 就绪（未来）：**批D 前置=Docker Desktop 用户浏览器手动下载安装（教程 `..\dev-tools\TOOLCHAIN_GUIDE.md`）**→ 执行批D 开发侧三项（Docker buildx 双架构镜像/docker-compose 生产样例/deploy/README.md）→ 执行 M5 部署验收清单（大库扫描压测/手机访问/断电重启/回收站恢复）——虚拟机彩排不再补做。
 
 **最新（2026-09-15 夜）——任务U11 批次A~E 完成+全量审查清偿（执行会话=GLM-5.3）：待真机装机验收（原立卷摘要）**：当日用户拍板「任务T 剩余范围=T6+T7、T4 备份迁移删除（手机已有库，旧项目行为数据放弃）、未解 bug 一起修」。**已完成勿重做**：①U10 追加批终包装真机（`qimeng-任务U10追加批-终包-20260915.apk`）+U10-1 旋转三步实验——安装无辜、触发点=App 启动（VideoStage requestedOrientation 兜底写点）、主嫌疑=nubia ROM 反应，旧结论两处推翻（详见 U10 卷 §10）；②`:core:network` DataStore 单测预存红根治 20d5aec（上游 Windows JVM 缺陷族/生产无真缺陷/测试内同构 Storage 桥接，3/3 绿×3 次）；③缩略图缓存键根治 b6b6b37（U10-5 主项：Coil Keyer+磁盘键 Interceptor，**size query 参数保留键内**防三档互撞，模拟器实证二次浏览零下载 -91%，证据 android/.walk/）。批次A~E 已全部完成（见文头）；终包已出盘待装机；**下一步=真机装机（serial <真机序列号>，`adb install -r QimengNAS\qimeng-任务U11-终包-20260915.apk` + 拉起）→用户按任务U11 卷 §2 收尾节验收清单验收（六项，含 U10 三处 UI 拍板与 T6 内嵌「不开 Termux 全流程可用」；真机先停 Termux 形态 A 的 18430 再测内嵌）→验收通过后启动 T7**。git 已全推（origin=master）；CHANGELOG 至二百七十六笔。恢复=新会话说「执行任务U11 收尾验收」或「执行任务T7」。
 
