@@ -4,6 +4,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withTimeoutOrNull
+import media.qimeng.app.core.data.embedded.EmbeddedServerController
+import media.qimeng.app.core.data.embedded.LocalServerWarmup
 import media.qimeng.app.core.network.AuthApiFactory
 import media.qimeng.app.core.network.ServerAddress
 import media.qimeng.app.core.network.ServerConfigDataSource
@@ -30,6 +32,8 @@ class AuthRepositoryImpl @Inject constructor(
     private val serverConfig: ServerConfigDataSource,
     private val authApiFactory: AuthApiFactory,
     sessionEventBus: SessionEventBus,
+    private val embeddedServerController: EmbeddedServerController,
+    private val localServerWarmup: LocalServerWarmup,
 ) : AuthRepository {
 
     override val serverUrl: Flow<String> = serverConfig.serverUrl
@@ -47,6 +51,9 @@ class AuthRepositoryImpl @Inject constructor(
     override suspend fun login(rawAddress: String, password: String): LoginResult {
         val baseUrl = ServerAddress.normalize(rawAddress)
             ?: return LoginResult.Failure(LoginError.InvalidAddress)
+        // 批S8 用户实测死锁修复：本机模式地址须在发请求前先把内嵌服务端拉起来（详见
+        // [warmUpLocalServerIfNeeded]）——旧链路登录成功才 updateServerUrl(18430)，服务没起登录必败，死锁
+        warmUpLocalServerIfNeeded(baseUrl)
         val api = authApiFactory.create(baseUrl)
 
         // 第一步：探活（协议面路径 /api/v1/healthz）。不通即「地址不通」，不把网络问题误报成密码错
@@ -87,6 +94,22 @@ class AuthRepositoryImpl @Inject constructor(
         } catch (e: ServerException) {
             LoginResult.Failure(LoginError.Other("login server error ${e.statusCode}"))
         }
+    }
+
+    /**
+     * 批S8 用户实测死锁修复（M6 形态 B 主入口）：未登录态经登录页「本机模式」进入时，
+     * serverUrl 主键仍是 NAS——壳层自检链（MainViewModel 的 serverUrl collect）在登录
+     * 成功前永远 collect 到 NAS，ensureStartedIfLocalMode 不会触发 18430 拉起；而旧链路
+     * 是「登录成功才 updateServerUrl(18430)」→ 死锁：服务没起 → 探活必败 → 登录必败 →
+     * 主键永不切换。故在本方法构造出 baseUrl 后、发登录请求前就地拉起（幂等，Service
+     * 收到重复 START intent 无副作用）并等端口就绪（见 [LocalServerWarmup]）。
+     * 与壳层自检链互补不冲突：登录成功后主键切换，collector 再触发 ensure 为幂等 no-op。
+     * 等待超时不造新错误——继续走既有探活/登录链，由其报 ServerUnreachable「地址不通」。
+     */
+    private suspend fun warmUpLocalServerIfNeeded(baseUrl: String) {
+        if (!ServerAddress.isLocalModePreset(baseUrl)) return
+        embeddedServerController.ensureStartedIfLocalMode(baseUrl)
+        localServerWarmup.awaitReady()
     }
 
     // 清 token 前尽力吊销当前会话（ADR-0021 多设备并发会话：登录不再挤掉其他设备，本设备的

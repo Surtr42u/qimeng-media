@@ -13,6 +13,16 @@
 ---
 ---
 ---
+## fix(app): 登录页本机模式死锁——登录前拉起内嵌服务并等端口就绪（2026-09-19 第三百五十四笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理）
+
+- **用户实测现象（任务S 批S8，真机复现）**：手机 server_url=NAS（192.0.2.8:8420）、未登录停在登录页，点登录页「本机模式」按钮（fillLocalMode 填入 127.0.0.1:18430）→ 点登录 → 报「地址不通：无法连接服务器」——18430 无监听。「未登录态经登录页进入本机模式」（M6 形态 B 主入口）完全不可用，必修。
+- **死锁链（file:line 确认）**：旧链路登录成功才 updateServerUrl(18430)（AuthRepositoryImpl.kt login 持久化段）→ MainViewModel 的 serverUrl collector（MainViewModel.kt:79-87）才 ensureStartedIfLocalMode 拉起 EmbeddedServerService（MainViewModel.kt:82）——该自检链只对「serverUrl 主键变化」生效，登录页路径下主键仍是 NAS，永不触发；服务没起 → login 首步探活即 IOException → ServerUnreachable（AuthRepositoryImpl.kt:62）→ 登录必败 → updateServerUrl(18430) 永不发生 → 18430 永无监听。闭环死锁，壳层自检救不了登录页路径。
+- **修法（冻结口径）**：AuthRepositoryImpl.login() 构造 baseUrl 后、发登录请求前，若 ServerAddress.isLocalModePreset(baseUrl) → embeddedServerController.ensureStartedIfLocalMode(baseUrl)（幂等）+ LocalServerWarmup.awaitReady() 轮询等端口就绪——TCP connect 探测 127.0.0.1:18430，间隔 200ms 上限 5s（withTimeoutOrNull+delay 挂调度器实现，runTest 虚拟时钟可测）；SocketLocalPortProber 真探针经 @IoDispatcher 挪 IO 线程（login 链跑在主线程 viewModelScope，socket connect 不得上主线程）。**等待超时也继续发登录请求**，由既有探活/登录错误链报「地址不通」，不造新错误文案。新增 core:data embedded 包 LocalServerWarmup.kt（接口+Impl+LocalPortProber fun interface+SocketLocalPortProber 四件，探测端口经 ServerAddress.LOCAL_MODE_PORT 单值互指）；EmbeddedServerModule 增 LocalServerWarmup/LocalPortProber 两绑定；FakeAuthRepository（core:testing）实现的是 AuthRepository 接口、不持 Impl 构造器依赖，核验无需改动。LoginViewModel 不动（入口不重复触发）；MainViewModel 自检链不动——登录成功后主键切换、collector 再触发 ensure 为幂等 no-op，两链互补不冲突。
+- **测试**：AuthRepositoryImplTest 新增 3 用例（①本机模式登录→事件序铁证 ensure→warmup:await→transport:healthz→transport:dev-login，锁「先拉起→等就绪→才发请求」修复核心次序；②远程 NAS 地址→ensure/await 零触发且事件序仅两笔传输；③端口等待超时→仍走既有登录链成功=不造新错误），既有 14 例全数保留；LocalServerWarmupTest 新增 5 用例（首探即中零空转/轮询渐就绪/超时按虚拟时钟走完等待窗/超时上限与间隔可注入/真实 socket 探针有监听可连、无监听拒绝——临时端口不依赖 18430 被占与否）。**定向门禁原文**：`./gradlew :core:data:testDebugUnitTest` → BUILD SUCCESSFUL in 18s（模块合计 tests=137 skipped=0 failures=0 errors=0，AuthRepositoryImplTest 17 例含 3 新、LocalServerWarmupTest 5 例全新）+ `./gradlew :app:compileDebugKotlin`（Hilt 图聚合校验）→ BUILD SUCCESSFUL in 19s（180 actionable tasks: 38 executed, 142 up-to-date）。全量三连+R8 由主会话统一跑。
+- **遗留记档**：①等待超时的实机观感=登录提交期最多多 5s 才报错——Go 服务端冷启动亚秒级，正常路径体感无变化；仅二进制缺失/端口被占等异常场景才吃满 5s 后报「地址不通」，此时 Service 自身的「本机服务端已停止」通知同步给因。②Service 秒退（端口被占/缺二进制）时预热只能等满超时窗——FGS start intent 无同步回执通道，不做跨进程等待轮询 UI 状态（保持最小改动），靠既有通知+登录错误链兜底。
+
 ## fix(app): 详情页系统状态栏透明显示不隐藏——主流相册 app 风格（2026-09-19 第三百五十三笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理）
