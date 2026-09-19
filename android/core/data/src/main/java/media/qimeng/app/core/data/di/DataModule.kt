@@ -94,10 +94,11 @@ interface DataModule {
     @Singleton
     fun bindRecommendPrefsRepository(impl: media.qimeng.app.core.data.repository.SdkRecommendPrefsRepository): media.qimeng.app.core.data.repository.RecommendPrefsRepository
 
-    // 跨端同步暂存（2026-09-18 用户拍板：本机⇄服务器同步免来回导文件，App 内暂存中转）
+    // 备份目录 SAF 访问（任务S 2026-09-19 两卡收敛：备份页导入导出与自动备份共用同目录读写，
+    // SAF 细节单源收口；2026-09-18 的跨端暂存仓退役——备份目录直读直写替代）
     @Binds
     @Singleton
-    fun bindSyncStagingRepository(impl: media.qimeng.app.core.data.repository.InternalFileSyncStagingRepository): media.qimeng.app.core.data.repository.SyncStagingRepository
+    fun bindBackupDirAccess(impl: media.qimeng.app.core.data.backup.SafBackupDirAccess): media.qimeng.app.core.data.backup.BackupDirAccess
 
     @Binds
     @Singleton
