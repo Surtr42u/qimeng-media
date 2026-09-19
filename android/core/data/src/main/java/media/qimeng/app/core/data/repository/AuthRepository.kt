@@ -49,7 +49,8 @@ interface AuthRepository {
     val unauthorizedEvents: Flow<Unit>
 
     /**
-     * 登录：规范化地址 → `GET /api/v1/healthz` 探活 → 登录 → 持久化地址+token。
+     * 登录：规范化地址 → （本机模式预设地址先拉起内嵌服务端并等端口就绪，批S8 用户实测
+     * 死锁修复，超时不造新错误继续走原链）→ `GET /api/v1/healthz` 探活 → 登录 → 持久化地址+token。
      * 探活在登录前：先确认「这是可达的绮梦服务端」，密码错误才不会被误报成地址不通。
      * 密码非空走 `POST /auth/login`；**空密码走 `POST /auth/dev-login` 免密通道**（2026-09-06
      * 用户拍板：测试环境免输密码；仅服务端开启 auth_dev_mode 时可用，未开启报

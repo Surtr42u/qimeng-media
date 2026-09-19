@@ -6,6 +6,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
+import media.qimeng.app.core.data.embedded.EmbeddedServerController
+import media.qimeng.app.core.data.embedded.LocalServerWarmup
 import media.qimeng.app.core.network.SdkAuthApiFactory
 import media.qimeng.app.core.network.ServerAddress
 import media.qimeng.app.core.network.ServerConfigDataSource
@@ -50,12 +52,22 @@ class AuthRepositoryImplTest {
      *  与下述登出用例的 flaky 真因相互独立）。 */
     private val hitCounts = java.util.concurrent.ConcurrentHashMap<String, Int>()
 
+    /** 批S8 事件序记录（跨线程安全）：fake 预热件与 fake 传输拦截器共同追加，
+     *  锁定「先拉起→等就绪→才发探活」的修复核心次序。 */
+    private val eventLog = java.util.concurrent.CopyOnWriteArrayList<String>()
+
     private val serverConfig = InMemoryServerConfig()
+
+    private val fakeEmbeddedServerController = FakeEmbeddedServerController(eventLog)
+
+    private val fakeLocalServerWarmup = FakeLocalServerWarmup(eventLog)
 
     private val repository = AuthRepositoryImpl(
         serverConfig = serverConfig,
         authApiFactory = SdkAuthApiFactory(fakeTransportClient()),
         sessionEventBus = SessionEventBus(),
+        embeddedServerController = fakeEmbeddedServerController,
+        localServerWarmup = fakeLocalServerWarmup,
     )
 
     @Before
@@ -63,6 +75,10 @@ class AuthRepositoryImplTest {
         healthzStatus = 200
         devLoginEnabled = true
         hitCounts.clear()
+        eventLog.clear()
+        fakeEmbeddedServerController.ensureCalls.clear()
+        fakeLocalServerWarmup.nextResult = true
+        fakeLocalServerWarmup.awaitCount = 0
     }
 
     @After
@@ -80,6 +96,7 @@ class AuthRepositoryImplTest {
                 val request = chain.request()
                 val path = request.url.encodedPath
                 hitCounts[path] = (hitCounts[path] ?: 0) + 1
+                eventLog += "transport:$path"
                 when (path) {
                     "/api/v1/healthz" -> testResponse(chain, healthzStatus, body = "alive")
                     "/api/v1/auth/login" -> {
@@ -164,6 +181,8 @@ class AuthRepositoryImplTest {
             serverConfig = serverConfig,
             authApiFactory = SdkAuthApiFactory(OkHttpClient()),
             sessionEventBus = SessionEventBus(),
+            embeddedServerController = fakeEmbeddedServerController,
+            localServerWarmup = fakeLocalServerWarmup,
         )
 
         val result = unreachableRepository.login("http://127.0.0.1:$deadPort", correctPassword)
@@ -286,6 +305,49 @@ class AuthRepositoryImplTest {
         assertEquals("", serverConfig.rememberedLocalUrl.first())
     }
 
+    // ---------- 登录前本机服务端预热（批S8 用户实测死锁修复） ----------
+
+    @Test
+    fun `本机模式登录_先拉起内嵌服务并等端口就绪再发探活`() = runTest {
+        val result = repository.login(ServerAddress.LOCAL_MODE_PRESET, "")
+
+        assertEquals(LoginResult.Success, result)
+        assertEquals(listOf(ServerAddress.LOCAL_MODE_PRESET), fakeEmbeddedServerController.ensureCalls)
+        assertEquals(1, fakeLocalServerWarmup.awaitCount)
+        // 事件序铁证（死锁修复核心次序）：拉起 → 等就绪 → 才有探活/登录出网
+        assertEquals(
+            listOf("ensure", "warmup:await", "transport:/api/v1/healthz", "transport:/api/v1/auth/dev-login"),
+            eventLog,
+        )
+    }
+
+    @Test
+    fun `远程NAS地址登录_不触发内嵌服务拉起与等待`() = runTest {
+        val result = repository.login(FAKE_BASE_URL, correctPassword)
+
+        assertEquals(LoginResult.Success, result)
+        assertTrue(fakeEmbeddedServerController.ensureCalls.isEmpty())
+        assertEquals(0, fakeLocalServerWarmup.awaitCount)
+        // 预热零参与：事件序里只有探活+密码登录两笔传输
+        assertEquals(
+            listOf("transport:/api/v1/healthz", "transport:/api/v1/auth/login"),
+            eventLog,
+        )
+    }
+
+    @Test
+    fun `本机模式登录_端口等待超时仍继续走既有登录链不造新错误`() = runTest {
+        fakeLocalServerWarmup.nextResult = false // 模拟 5s 等待超时仍未就绪
+
+        val result = repository.login(ServerAddress.LOCAL_MODE_PRESET, "")
+
+        // 超时不是失败：继续发探活+登录（fake 服务端就绪故成功）；错误文案仍由既有链给出，
+        // 本层绝不新增「等待超时」类错误（冻结口径）
+        assertEquals(LoginResult.Success, result)
+        assertEquals(1, fakeLocalServerWarmup.awaitCount)
+        assertTrue(fakeEmbeddedServerController.ensureCalls.isNotEmpty())
+    }
+
     private companion object {
         /** fake 传输层不出网，URL 仅须合法（AuthApi 按此拼协议面路径；路由按 path 分派不关心端口） */
         const val FAKE_BASE_URL = "http://127.0.0.1:1"
@@ -325,6 +387,33 @@ class AuthRepositoryImplTest {
             } else {
                 rememberedNas.value = url
             }
+        }
+    }
+
+    /** [EmbeddedServerController] 测试替身：忠实回放「预设地址才触发拉起」语义并记录调用。 */
+    private class FakeEmbeddedServerController(
+        private val eventLog: MutableList<String> = mutableListOf(),
+    ) : EmbeddedServerController {
+        val ensureCalls = mutableListOf<String>()
+
+        override fun ensureStartedIfLocalMode(serverUrl: String): Boolean {
+            ensureCalls += serverUrl
+            eventLog += "ensure"
+            return ServerAddress.isLocalModePreset(serverUrl)
+        }
+
+        override fun stop() = Unit
+    }
+
+    /** [LocalServerWarmup] 测试替身：记录调用、可编程返回（nextResult=false = 模拟等待超时）。 */
+    private class FakeLocalServerWarmup(private val eventLog: MutableList<String>) : LocalServerWarmup {
+        var awaitCount = 0
+        var nextResult = true
+
+        override suspend fun awaitReady(timeoutMs: Long, pollIntervalMs: Long): Boolean {
+            awaitCount++
+            eventLog += "warmup:await"
+            return nextResult
         }
     }
 }
