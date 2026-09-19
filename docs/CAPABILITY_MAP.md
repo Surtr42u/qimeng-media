@@ -28,7 +28,7 @@
 | 标签/收藏/点赞/时间轴 | 标签池/替换式绑定/级联删除/排序口径、收藏、每日点赞 toggle、时间轴标签全部端点 + Web UI | — | 已有（M2） |
 | 作者体系 | TXT 三格式导入统一重建 + COS 目录扫描双体系 + 关注；孤立 COS 作者自动清理、COS 目录变更映射重算、自定义出处（/sources/custom 写入+存量重算） | COS 库改名场景的其他维度（normal 已覆盖） | 已有（M3） |
 | 监控面板 | sysmon 指标采集 + /metrics + /system/status + Web 维护页仪表盘 /app/maintenance（内置指标，登录门禁内） | 长期历史曲线（Grafana 增强包，OBSERVABILITY「后置可选」） | 已有（M2） |
-| 部署 | Docker Compose 目标形态已定（docker-compose.yml 样例） | buildx 双架构镜像、fnOS 虚拟机彩排（M5） | 规划中（M5） |
+| 部署 | Docker Compose 目标形态已定（docker-compose.yml 样例） | buildx 双架构镜像、docker-compose 生产样例、deploy/README.md（任务Q 批D **顺延挂用户节点**——前置=Docker Desktop 用户手动下载安装，见 dev-tools/TOOLCHAIN_GUIDE.md）；fnOS 虚拟机彩排已豁免不再补做（2026-09-19 用户拍板，真机 NAS 直接执行部署验收清单） | 顺延（M5，批D 挂用户节点） |
 
 ## 规划中
 

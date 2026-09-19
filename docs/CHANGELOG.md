@@ -13,6 +13,18 @@
 ---
 ---
 ---
+## docs: 任务Q 收官——原型退役+工作区清理+漂移复核（2026-09-19 第三百四十三笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理）
+
+- **任务Q 批E 落地（文档与工作区卫生收官，零编译批——收官快验门禁三条外零构建）**（任务书=仓库外《QimengNAS\任务Q-依赖备份与体验收尾卷.md》§7）。
+- **media-ui-prototype/ 退役**：全量 grep 引用点后改写边界判断——只改「指向现状的活引用」：docs/HANDOVER.md:21（原型已整体移植句→「已于 2026-09-19 退役删除，历史可溯 git 与 CHANGELOG」）、docs/HANDOVER_UI.md:11（§1 UI 主路线行）、:59（§4 标题改退役记档+结构/状态表降级为历史规格存档）、:116（§5 跑法「保留作对照基准，单独预览」句）、:281（§7 起点建议 8099 预览指引，对照基准改 web 端 8420 实况）；**历史记录不改写**（docs/CHANGELOG.md 历史笔 3607/3621/3634/3638/3910/4004/4025/4032 行、docs/.p2-progress-P2-6.md:12、docs/P2-修复执行报告.md:84、HANDOVER_UI §5 第六/七笔历史段均保持原样）。随后 `git rm -r media-ui-prototype/`（22 文件，git 历史可溯，本地不留副本）。
+- **仓库外工作区清理（QimengNAS\ 根，仅任务书 §7-2 点名两个文件）**：删《待拍板-任务P-P4-targetSdk37.md》（P4b 已落地消费，338 笔前收官）；《任务P-AGP9收尾与依赖跟进卷.md》移入 `_archive-20260917\任务书\`（对齐既有归档结构）；《00-总说明.md》刷新——阶段行（任务Q 完成+批D 顺延态）、文件夹结构（2026-09-19 收官后实况：最新终包指针=qimeng-任务Q-终包-20260919.apk、历史终包 4 个/批C 冒烟素材目录 qimeng-qC-upload-test 标注可清理、归档任务书目录补 P-AGP9 卷）、多端入口补手机本机模式（M6 Termux 127.0.0.1:18430）。
+- **文档漂移复核（常驻任务①，批Q 相关面 4 项，2 项发现即修）**：①PROJECT_PLAN——M6 性能项批C 勾选在案无漂移；**M5 节按「批D 顺延后」状态改写**（§0-3 拍板口径落档：开发侧三项=必须、虚拟机彩排=豁免不再补做；Docker 三项标注批D 顺延挂用户节点+前置=Docker Desktop 用户手动下载）；②CAPABILITY_MAP——备份行（批B）/移动端行（批C 三项销账）已同步无漂移；**部署行改「顺延（M5，批D 挂用户节点）」**并记虚拟机彩排豁免；③GUIDE_API「端点分组速览（59 路径）」与 api/openapi.yaml 实数比对=59=59 一致；④OBSERVABILITY backup_last_success_timestamp 指标表/采集点两表在案（批B 已同步）。
+- **收官门禁（零代码改动快验，三条各 1 次，输出原文留存）**：①`cd server && go test ./...`——14 包全 ok（auth/authoring/backup/config/events/filing/httpapi/recommend/scanner/search/sourcematcher/stats/store/sysmon/thumbnail）；②`cd web && npm test`——Test Files 16 passed (16)，Tests 162 passed (162)；③`make lint`——redocly「Woohoo! Your API description is valid.」+ golangci「0 issues.」+ oxlint「Found 18 warnings and 0 errors.」（18 warnings=既有基线，非本批文件）。`git status` 复核：工作树仅含本批文件（4 文档修改+22 原型删除）。
+- **HANDOVER「当前待办」节刷新**：任务Q 五批完成态（含各 commit hash）置顶+用户节点清单（任务书 §11 五条）置顶——第 1 条 push+CI 已闭合标注完成；第 5 条补充批D 前置=Docker Desktop 用户手动下载安装（TOOLCHAIN_GUIDE 教程路径）后再执行批D 开发侧三项与 M5 部署验收清单。
+- **批D 顺延记档（本笔转记）**：Docker Desktop 未安装（dev-tools\installers\ 无安装包），TOOLCHAIN_GUIDE.md 明文「Docker Desktop 需用户浏览器手动下载（AI 命令行下载多次被网络重置）」→ 无人值守会话无法完成 UAC/WSL2/重启级安装 → 整批顺延挂用户节点；批E 不依赖批D 产物，漂移复核已按顺延后状态落档（PROJECT_PLAN M5 节/CAPABILITY_MAP 部署行）。
+
 ## fix(app): 上传取消终态改 success 标志——failure 级联杀链违反单任务取消语义（2026-09-19 第三百四十二笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理）
