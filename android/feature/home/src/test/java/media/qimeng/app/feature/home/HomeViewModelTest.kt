@@ -157,12 +157,15 @@ class HomeViewModelTest {
         return ServerReadinessProbe(
             serverConfig = object : ServerConfigDataSource {
                 override val serverUrl: Flow<String> = MutableStateFlow(if (ready) TEST_FAKE_SERVER_URL else "")
+                override val rememberedNasUrl: Flow<String> = MutableStateFlow("")
+                override val rememberedLocalUrl: Flow<String> = MutableStateFlow("")
                 override val token: Flow<String?> = MutableStateFlow<String?>(null)
                 override fun currentToken(): String? = null
                 override fun currentServerUrl(): String? = if (ready) TEST_FAKE_SERVER_URL else null
                 override suspend fun updateServerUrl(url: String) = Unit
                 override suspend fun updateToken(token: String) = Unit
                 override suspend fun clearToken() = Unit
+                override suspend fun rememberLoginAddress(url: String) = Unit
             },
             authApiFactory = object : AuthApiFactory {
                 override fun create(baseUrl: String): AuthApi = api

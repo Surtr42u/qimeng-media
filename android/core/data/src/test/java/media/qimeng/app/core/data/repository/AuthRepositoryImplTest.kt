@@ -129,6 +129,9 @@ class AuthRepositoryImplTest {
         assertEquals(LoginResult.Failure(LoginError.WrongPassword), result)
         assertFalse(repository.isLoggedIn.first())
         assertEquals(null, serverConfig.token.first())
+        // 批S3：登录失败不写地址记忆槽（记忆只跟成功登录走）
+        assertEquals("", serverConfig.rememberedNasUrl.first())
+        assertEquals("", serverConfig.rememberedLocalUrl.first())
     }
 
     @Test
@@ -253,6 +256,36 @@ class AuthRepositoryImplTest {
         assertEquals(1, hitCounts["/api/v1/auth/logout"] ?: 0)
     }
 
+    // ---------- 登录记忆分流（任务S 批S3 服务器地址固化） ----------
+
+    @Test
+    fun `登录成功按端型分流记忆_本机登录不覆盖NAS记忆`() = runBlocking {
+        // 先成功登录「NAS」地址（FAKE_BASE_URL 端口非 18430 → 归 NAS 槽）
+        assertEquals(LoginResult.Success, repository.login(FAKE_BASE_URL, correctPassword))
+        assertEquals(FAKE_BASE_URL, serverConfig.rememberedNasUrl.first())
+
+        // 再成功登录本机模式地址（dev-login 免密链路同为「成功登录」）
+        assertEquals(LoginResult.Success, repository.login(ServerAddress.LOCAL_MODE_PRESET, ""))
+
+        // 主地址键跟随当前端（切到本机=主键变 18430，既有语义不动）；NAS 记忆槽不被覆盖
+        assertEquals(ServerAddress.LOCAL_MODE_PRESET, serverConfig.serverUrl.first())
+        assertEquals(ServerAddress.LOCAL_MODE_PRESET, serverConfig.rememberedLocalUrl.first())
+        assertEquals(FAKE_BASE_URL, serverConfig.rememberedNasUrl.first())
+    }
+
+    @Test
+    fun `换址预置不写登录记忆`() = runBlocking {
+        assertEquals(LoginResult.Success, repository.login(FAKE_BASE_URL, correctPassword))
+        assertEquals(FAKE_BASE_URL, serverConfig.rememberedNasUrl.first())
+
+        // logoutWithStagedUrl 是「预置下次登录带出值」，未经登录确认——不算成功登录，不动记忆槽
+        repository.logoutWithStagedUrl("http://192.0.2.77")
+
+        assertEquals("http://192.0.2.77", serverConfig.serverUrl.first())
+        assertEquals(FAKE_BASE_URL, serverConfig.rememberedNasUrl.first())
+        assertEquals("", serverConfig.rememberedLocalUrl.first())
+    }
+
     private companion object {
         /** fake 传输层不出网，URL 仅须合法（AuthApi 按此拼协议面路径；路由按 path 分派不关心端口） */
         const val FAKE_BASE_URL = "http://127.0.0.1:1"
@@ -271,12 +304,27 @@ class AuthRepositoryImplTest {
     private class InMemoryServerConfig : ServerConfigDataSource {
         private val url = MutableStateFlow("")
         private val tokenState = MutableStateFlow<String?>(null)
+        private val rememberedNas = MutableStateFlow("")
+        private val rememberedLocal = MutableStateFlow("")
         override val serverUrl: Flow<String> = url
+        override val rememberedNasUrl: Flow<String> = rememberedNas
+        override val rememberedLocalUrl: Flow<String> = rememberedLocal
         override val token: Flow<String?> = tokenState
         override fun currentToken(): String? = tokenState.value
         override fun currentServerUrl(): String? = url.value.ifEmpty { null }
         override suspend fun updateServerUrl(url: String) { this.url.value = url }
         override suspend fun updateToken(token: String) { tokenState.value = token }
         override suspend fun clearToken() { tokenState.value = null }
+
+        // 分流判定与 DataStore 实现同口径（经 ServerAddress.isLocalModePreset；仓库级用例
+        // 锁「登录成功触发记忆 + 本机登录不动 NAS 槽」，槽内部分流细则由 :core:network 锁定）
+        override suspend fun rememberLoginAddress(url: String) {
+            if (url.isEmpty()) return
+            if (ServerAddress.isLocalModePreset(url)) {
+                rememberedLocal.value = url
+            } else {
+                rememberedNas.value = url
+            }
+        }
     }
 }

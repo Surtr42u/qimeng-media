@@ -17,6 +17,8 @@ import media.qimeng.app.core.data.repository.LoginResult
 class FakeAuthRepository(
     initialServerUrl: String = "",
     initialLoggedIn: Boolean = false,
+    initialRememberedNasUrl: String = "",
+    initialRememberedLocalUrl: String = "",
 ) : AuthRepository {
 
     /** 一次登录调用的参数记录（断言「ViewModel 原样透传用户输入」用）。 */
@@ -36,9 +38,15 @@ class FakeAuthRepository(
 
     private val serverUrlState = MutableStateFlow(initialServerUrl)
     private val loggedInState = MutableStateFlow(initialLoggedIn)
+    private val rememberedNasState = MutableStateFlow(initialRememberedNasUrl)
+    private val rememberedLocalState = MutableStateFlow(initialRememberedLocalUrl)
     private val unauthorizedFlow = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
 
     override val serverUrl: Flow<String> = serverUrlState
+
+    override val rememberedNasUrl: Flow<String> = rememberedNasState
+
+    override val rememberedLocalUrl: Flow<String> = rememberedLocalState
 
     override val isLoggedIn: Flow<Boolean> = loggedInState
 
@@ -65,6 +73,16 @@ class FakeAuthRepository(
     /** 测试驱动：模拟登录成功（token 已持久化）。 */
     fun setLoggedIn(value: Boolean) {
         loggedInState.value = value
+    }
+
+    /** 测试驱动：预置 NAS 地址记忆（批S3 回填语义用例）。 */
+    fun setRememberedNasUrl(value: String) {
+        rememberedNasState.value = value
+    }
+
+    /** 测试驱动：预置本机模式地址记忆（批S3 回填语义用例）。 */
+    fun setRememberedLocalUrl(value: String) {
+        rememberedLocalState.value = value
     }
 
     /** 测试驱动：模拟 AuthInterceptor 收到 401 后广播的鉴权失效事件。 */

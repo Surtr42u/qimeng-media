@@ -34,6 +34,10 @@ class AuthRepositoryImpl @Inject constructor(
 
     override val serverUrl: Flow<String> = serverConfig.serverUrl
 
+    override val rememberedNasUrl: Flow<String> = serverConfig.rememberedNasUrl
+
+    override val rememberedLocalUrl: Flow<String> = serverConfig.rememberedLocalUrl
+
     override val isLoggedIn: Flow<Boolean> = serverConfig.token
         .map { it != null }
         .distinctUntilChanged()
@@ -64,6 +68,10 @@ class AuthRepositoryImpl @Inject constructor(
         return try {
             val token = if (password.isEmpty()) api.devLogin() else api.login(password)
             serverConfig.updateServerUrl(baseUrl)
+            // 批S3 服务器地址固化：登录成功（dev-login 免密链路同为「成功登录」）按端型分流记忆——
+            // 本机模式登录只写本地记忆槽，NAS 记忆不被覆盖。写记忆放在写 token 前：壳层由 token
+            // 流驱动跳壳，地址相关的持久化（主键+记忆槽）都完成后再翻登录态。
+            serverConfig.rememberLoginAddress(baseUrl)
             serverConfig.updateToken(token)
             LoginResult.Success
         } catch (e: IOException) {

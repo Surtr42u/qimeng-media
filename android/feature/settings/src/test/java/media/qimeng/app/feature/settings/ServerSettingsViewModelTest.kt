@@ -151,6 +151,54 @@ class ServerSettingsViewModelTest {
         assertEquals("http://192.0.2.99", vm.uiState.value.currentUrl)
     }
 
+    // ---- 任务S 批S3：服务器地址固化（记忆槽回填） ----
+
+    @Test
+    fun `本机模式时地址卡回填记忆的NAS地址`() = runTest(mainDispatcherRule.testDispatcher) {
+        // 用户当前连本机模式、此前登录过 NAS：地址卡输入框自动带出 NAS 记忆，切回免重输
+        val auth = FakeAuthRepository(
+            initialServerUrl = ServerAddress.LOCAL_MODE_PRESET,
+            initialLoggedIn = true,
+            initialRememberedNasUrl = "http://192.0.2.99",
+        )
+        val vm = viewModel(auth)
+        advanceUntilIdle()
+        assertEquals(ServerAddress.LOCAL_MODE_PRESET, vm.uiState.value.currentUrl) // 展示位=当前端
+        assertEquals("http://192.0.2.99", vm.uiState.value.urlInput) // 输入框=NAS 记忆
+        assertTrue(vm.uiState.value.isLocalMode)
+    }
+
+    @Test
+    fun `本机模式无NAS记忆时地址卡回退当前地址`() = runTest(mainDispatcherRule.testDispatcher) {
+        // 从未登录过 NAS（记忆槽空）：回退当前地址=批S3 前既有行为
+        val auth = FakeAuthRepository(initialServerUrl = ServerAddress.LOCAL_MODE_PRESET, initialLoggedIn = true)
+        val vm = viewModel(auth)
+        advanceUntilIdle()
+        assertEquals(ServerAddress.LOCAL_MODE_PRESET, vm.uiState.value.urlInput)
+    }
+
+    @Test
+    fun `本机模式卡预填记忆的本机地址`() = runTest(mainDispatcherRule.testDispatcher) {
+        // 本机模式地址自身也记忆（M6 口）：预填带出记忆值而非恒常量（端口值自常量派生）
+        val rememberedLocal = ServerAddress.LOCAL_MODE_PRESET.dropLast(1) + "1"
+        val auth = FakeAuthRepository(initialServerUrl = initialUrl, initialRememberedLocalUrl = rememberedLocal)
+        val vm = viewModel(auth)
+        advanceUntilIdle()
+        assertEquals(rememberedLocal, vm.uiState.value.localUrlInput)
+    }
+
+    @Test
+    fun `用户已编辑本机预填时晚到的记忆不覆盖`() = runTest(mainDispatcherRule.testDispatcher) {
+        // 用户先编辑、记忆流读取后到：用户输入优先（回填只在进页瞬间发生一次）
+        val rememberedLocal = ServerAddress.LOCAL_MODE_PRESET.dropLast(1) + "2"
+        val auth = FakeAuthRepository(initialRememberedLocalUrl = rememberedLocal)
+        val vm = viewModel(auth)
+        val edited = ServerAddress.LOCAL_MODE_PRESET.dropLast(1) + "3"
+        vm.onLocalUrlChange(edited) // 先编辑（此时尚未 advance，记忆读取未跑）
+        advanceUntilIdle()
+        assertEquals(edited, vm.uiState.value.localUrlInput)
+    }
+
     // ---- 批C 任务Q C-3：仅充电时扫描（仅本机模式可见） ----
 
     @Test

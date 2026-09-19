@@ -38,6 +38,13 @@ class LoginViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(LoginUiState())
     val uiState: StateFlow<LoginUiState> = _uiState.asStateFlow()
 
+    /**
+     * 记忆的本机模式地址缓存（批S3，init 预取一次）：快捷填入必须同步可取——若在点击时
+     * 才异步读记忆，「本机模式→立刻点登录」会出现提交空地址的窗口期（真机测试踩过）。
+     * 缓存未就绪时回退预设常量，与批S3 前行为一致。
+     */
+    private var rememberedLocalCache: String = ""
+
     init {
         // 「记忆上次输入」：回填上次登录成功的服务器地址（退出登录不清地址，故退出后仍能带出）
         viewModelScope.launch {
@@ -46,6 +53,10 @@ class LoginViewModel @Inject constructor(
                 _uiState.update { it.copy(serverUrl = lastUrl) }
             }
         }
+        // 批S3：预取记忆的本机模式地址（M6 口，自定义端口也能带出）
+        viewModelScope.launch {
+            rememberedLocalCache = authRepository.rememberedLocalUrl.first()
+        }
     }
 
     fun onServerUrlChange(value: String) {
@@ -53,12 +64,16 @@ class LoginViewModel @Inject constructor(
     }
 
     /**
-     * 本机模式快捷填入（任务T T3，ADR-0015 单点预留兑现）：把预设地址一键填入地址输入框。
+     * 本机模式快捷填入（任务T T3，ADR-0015 单点预留兑现）：把本机模式地址一键填入地址输入框。
      * 只是未提交的输入框赋值——用户看到/确认后仍走既有 [submit]（探活→登录→持久化），
      * 不在此处直接保存（UI 快捷入口禁内嵌保存行为，地址单点流转红线不动）。
+     * 批S3 服务器地址固化：优先取记忆的本机模式地址（两端地址各记各的、切换互换回填），
+     * 无记忆回退预设常量——首次切换行为与批S3 前一致。
      */
     fun fillLocalMode() {
-        _uiState.update { it.copy(serverUrl = ServerAddress.LOCAL_MODE_PRESET, error = null) }
+        _uiState.update {
+            it.copy(serverUrl = rememberedLocalCache.ifEmpty { ServerAddress.LOCAL_MODE_PRESET }, error = null)
+        }
     }
 
     fun onPasswordChange(value: String) {

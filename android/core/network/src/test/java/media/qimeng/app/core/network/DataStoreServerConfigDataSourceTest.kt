@@ -132,6 +132,41 @@ class DataStoreServerConfigDataSourceTest {
         assertEquals("persisted-token", rebooted.currentToken())
         assertEquals("http://192.0.2.10:8420", rebooted.serverUrl.first())
     }
+
+    // ---------- 登录记忆槽（任务S 批S3 服务器地址固化） ----------
+
+    @Test
+    fun `登录记忆按端型分流_本机模式不覆盖NAS记忆槽`() = runTest {
+        val dataSource = DataStoreServerConfigDataSource(
+            dataStore = newDataStore(tmpFolder.newFolder()),
+            appScope = CoroutineScope(UnconfinedTestDispatcher()),
+        )
+
+        // 先后两次「成功登录」：NAS 地址 → 本机模式地址（真实顺序=先 NAS 后切本机）
+        dataSource.rememberLoginAddress("http://192.0.2.10:8420")
+        dataSource.rememberLoginAddress(ServerAddress.LOCAL_MODE_PRESET)
+
+        // 各归各槽：NAS 槽不被本机模式登录覆盖（切回 NAS 免重输的核心保证）
+        assertEquals("http://192.0.2.10:8420", dataSource.rememberedNasUrl.first())
+        assertEquals(ServerAddress.LOCAL_MODE_PRESET, dataSource.rememberedLocalUrl.first())
+        // 记忆写入不碰主地址键——「当前连着谁」与「记得哪些地址」是两份独立状态
+        assertEquals("", dataSource.serverUrl.first())
+    }
+
+    @Test
+    fun `登录记忆槽随持久化文件冷启动恢复`() = runTest {
+        val dir = tmpFolder.newFolder()
+        val dataStore = newDataStore(dir)
+        val first = DataStoreServerConfigDataSource(dataStore, CoroutineScope(UnconfinedTestDispatcher()))
+        first.rememberLoginAddress("http://192.0.2.10:8420")
+        first.rememberLoginAddress(ServerAddress.LOCAL_MODE_PRESET)
+
+        // 同一文件新实例 = 模拟进程重启：两个记忆槽都要活过重启
+        val rebooted = DataStoreServerConfigDataSource(dataStore, CoroutineScope(UnconfinedTestDispatcher()))
+
+        assertEquals("http://192.0.2.10:8420", rebooted.rememberedNasUrl.first())
+        assertEquals(ServerAddress.LOCAL_MODE_PRESET, rebooted.rememberedLocalUrl.first())
+    }
 }
 
 /**

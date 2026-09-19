@@ -9,6 +9,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -67,19 +69,36 @@ class ServerSettingsViewModel @Inject constructor(
     /** 输入框只回填一次（首个非空地址）；置位后仓库流再变只刷展示位，不动用户输入 */
     private var inputSeeded = false
 
+    /** 本机模式卡预填是否已被用户编辑（批S3：记忆流晚到不覆盖用户输入） */
+    private var localInputEdited = false
+
     init {
         viewModelScope.launch {
-            authRepository.serverUrl.collect { url ->
+            // 批S3 服务器地址固化：地址卡回填按当前端型取记忆——当前端=本机模式时回填
+            // 记忆的 NAS 地址（切回 NAS 免重输，无记忆回退当前地址=既有行为）；当前端=NAS
+            // 时回填当前地址（此时当前地址即 NAS 记忆，等价）
+            combine(authRepository.serverUrl, authRepository.rememberedNasUrl) { url, nasMemory ->
+                url to nasMemory
+            }.collect { (url, nasMemory) ->
                 // C-3：本机模式判定随地址流实时刷新（连 localhost:18430 = isLocalModePreset）
                 val localMode = ServerAddress.isLocalModePreset(url)
                 if (!inputSeeded && url.isNotEmpty()) {
                     inputSeeded = true
+                    val seed = if (localMode) nasMemory.ifEmpty { url } else url
                     _uiState.update {
-                        it.copy(currentUrl = url, urlInput = url, isLocalMode = localMode)
+                        it.copy(currentUrl = url, urlInput = seed, isLocalMode = localMode)
                     }
                 } else {
                     _uiState.update { it.copy(currentUrl = url, isLocalMode = localMode) }
                 }
+            }
+        }
+        // 批S3：本机模式卡预填=记忆的本机模式地址（M6 单机形态口，自定义端口也能带出），
+        // 无记忆保持预设常量初值；用户已编辑则晚到的记忆不覆盖
+        viewModelScope.launch {
+            val rememberedLocal = authRepository.rememberedLocalUrl.first()
+            if (rememberedLocal.isNotEmpty() && !localInputEdited) {
+                _uiState.update { it.copy(localUrlInput = rememberedLocal) }
             }
         }
         viewModelScope.launch {
@@ -94,6 +113,7 @@ class ServerSettingsViewModel @Inject constructor(
     }
 
     fun onLocalUrlChange(value: String) {
+        localInputEdited = true
         _uiState.update { it.copy(localUrlInput = value, localUrlInvalid = false) }
     }
 

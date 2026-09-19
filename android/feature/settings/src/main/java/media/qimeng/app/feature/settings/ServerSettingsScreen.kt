@@ -74,6 +74,13 @@ private val SUBTITLE_LOCAL_MODE =
 private const val HINT_RELOGIN =
     "媒体库与账号都归这台服务端管；更换地址会退出当前登录，保存后在新地址上重新登录"
 
+/**
+ * 地址固化说明（任务S 批S3）：本机模式连接不覆盖 NAS 地址记忆，切回时地址卡自动带出
+ * 免重输——与 ServerSettingsViewModel 的记忆回填逻辑（地址卡按端型取记忆槽）互为表里。
+ */
+private const val HINT_URL_MEMORY =
+    "连接本机模式不会覆盖记住的服务器地址：切回时这里会自动带出上次登录的 NAS 地址，无需重新输入"
+
 // ---------- 媒体库存储权限卡（2026-09-15 批）：内嵌服务端读注册媒体根唯一通道=「所有文件
 // 访问」（ADR-0015 预留方案；手机实测 .nomedia 隐藏目录内 376 文件、无权限时服务端直读 0）。
 // 清单声明 MANAGE_EXTERNAL_STORAGE 后系统开关才可拨，本卡=非技术用户的授权引导入口。 ----------
@@ -219,6 +226,12 @@ private fun ServerUrlEditCard(
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(onDone = { onSave() }),
             modifier = Modifier.fillMaxWidth(),
+        )
+        // 地址固化说明（批S3）：一行文案，无新设置项（任务书 §3 UI 冻结口径）
+        Text(
+            text = HINT_URL_MEMORY,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         if (invalid) {
             InvalidHint()

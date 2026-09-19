@@ -53,6 +53,18 @@ class LoginViewModelTest {
     }
 
     @Test
+    fun `快捷填入优先带出记忆的本机模式地址`() {
+        // 批S3：本机模式地址自身也记忆（M6 口）——快捷填入带出记忆值（端口值自常量派生，测试零新增字面量）
+        val rememberedLocal = ServerAddress.LOCAL_MODE_PRESET.dropLast(1) + "1"
+        val repository = FakeAuthRepository().apply { setRememberedLocalUrl(rememberedLocal) }
+        val viewModel = LoginViewModel(repository)
+        driveIdle() // init 预取记忆完成
+        viewModel.fillLocalMode()
+        assertEquals(rememberedLocal, viewModel.uiState.value.serverUrl)
+        assertNull(viewModel.uiState.value.error)
+    }
+
+    @Test
     fun `快捷填入后提交按既有登录流程原样透传预设地址`() {
         val repository = FakeAuthRepository()
         val viewModel = LoginViewModel(repository)
