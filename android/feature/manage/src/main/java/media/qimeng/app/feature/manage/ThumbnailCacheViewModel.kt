@@ -59,6 +59,23 @@ class ThumbnailCacheViewModel @Inject constructor(
 
     init {
         refreshUsage()
+        // 数字跟着进度条走（第三百六十六笔，用户反馈「文件数/实际占用不跟着进度条动」）：
+        // 预取进行中按步长重采样两池统计（每轮约 50 次，不做逐条磁盘扫描）；轮终/失败/复位
+        // 各终采一次收口。磁盘遍历挂 IO 调度器，扫描成本与进页面时同源。
+        var resampleCursor = 0
+        viewModelScope.launch {
+            prefetchMonitor.state.collect { state ->
+                when (state) {
+                    is PrefetchUiState.Running -> {
+                        resampleCursor++
+                        val step = maxOf(1, state.total / USAGE_RESAMPLE_STEPS)
+                        if (resampleCursor % step == 0) refreshUsage()
+                    }
+                    is PrefetchUiState.Done, is PrefetchUiState.Failed -> refreshUsage()
+                    PrefetchUiState.Idle, PrefetchUiState.WaitingNetwork -> Unit
+                }
+            }
+        }
     }
 
     /** 清空服务器（NAS）池（清后重读归零核对；IO 线程执行） */
@@ -94,5 +111,14 @@ class ThumbnailCacheViewModel @Inject constructor(
     private suspend fun readPoolUsage(pool: CachePool): Pair<Long?, Int?> = withContext(ioDispatcher) {
         runCatching { coilCacheManager.poolSizeBytes(pool) }.getOrNull() to
             runCatching { coilCacheManager.poolFileCount(pool) }.getOrNull()
+    }
+
+    private companion object {
+        /**
+         * 预取进行中的统计重采样步数（第三百六十六笔）：每轮重采样约 [USAGE_RESAMPLE_STEPS]
+         * 次（按 done 均匀分布），文件数/实际占用随进度条同节奏刷新；逐条扫描磁盘成本不可接受，
+         * 全程只扫 50 次是「数字跟手感」与 IO 成本的折中。
+         */
+        const val USAGE_RESAMPLE_STEPS = 50
     }
 }
