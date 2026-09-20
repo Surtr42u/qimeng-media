@@ -18,7 +18,11 @@ import (
 // ExistsViewEventOnDay（assetId+kind+sessionId+事件发生日），当日该会话
 // 已有同类事件 → 直接 202 不插入（横滑切走切回不重复计）。dwell 例外：
 // 停留时长每次都有效（时长是累加量而非计数，去重会丢真实停留时间），
-// 逐条插入并把秒数累加进物化表。
+// 逐条插入并把秒数累加进物化表。R10（审计 2026-09-20）：先查后插存在
+// TOCTOU 竞态窗口（并发双击双双通过存在性检查 → 双计），migration 0014
+// 部分唯一索引 (asset,kind,session,day) WHERE kind IN (open,play) 做数据
+// 库层兜底——竞态输家的插入静默 0 行，走下方 inserted==0 路径不计数；
+// 先查保留为快路径（省一次写事务）。
 //
 // 客户端幂等（任务L L5「本地优先合并」，拍板 #7）：ViewEventReport.clientEventId
 // 是客户端在事件产生时生成、随本地暂存持久的 UUID，重试/补传携带同一 id。
@@ -89,14 +93,20 @@ func (s *Server) PostApiV1EventsView(w http.ResponseWriter, r *http.Request) {
 		StartedAt:     startedAt,
 		Seconds:       seconds,
 		ClientEventID: clientEventID,
+		// R10（审计 2026-09-20）：本地日历日，与物化表 delta.Day 同源同值；
+		// 会话去重部分唯一索引（migration 0014）的判重键。导入回放侧
+		// 显式写 NULL（见 import_replay.go）。
+		Day: sql.NullString{String: store.FormatDay(req.StartedAt), Valid: true},
 	})
 	if err != nil {
 		s.internalErr(w, "写入浏览事件", err)
 		return
 	}
 	if inserted == 0 {
-		// 幂等命中：同 clientEventId 已入库（重发/补传），原样 202 但不重复计数
-		//——事务内零写入，提交即空转；跳过物化累加（dwell 不重加秒、open/play 不重计）
+		// 0 行写入 = 幂等/去重命中，原样 202 但不重复计数——事务内零写入，
+		// 提交即空转；跳过物化累加（dwell 不重加秒、open/play 不重计）。
+		// 两条命中路径（migration 0010 client_event_id / 0014 会话日索引
+		// TOCTOU 兜底）响应语义一致：重发与竞态输家都拿到 202。
 		if err := tx.Commit(); err != nil {
 			s.internalErr(w, "提交浏览事件", err)
 			return
@@ -106,6 +116,7 @@ func (s *Server) PostApiV1EventsView(w http.ResponseWriter, r *http.Request) {
 	}
 	var delta db.UpsertAssetDailyStatsParams
 	delta.AssetID = req.AssetId.String()
+	// 与插入侧 day 同一取值（0014 去重键与物化日同源，一个口径两处使用）
 	delta.Day = store.FormatDay(req.StartedAt)
 	switch req.Kind {
 	case gen.Open: // 图片 viewCount：当日同会话去重后 +1
@@ -157,11 +168,16 @@ func (s *Server) PutApiV1AssetsAssetIdLike(w http.ResponseWriter, r *http.Reques
 			s.internalErr(w, "取消点赞", err)
 			return
 		}
-	} else if err := s.q.AddLike(r.Context(), db.AddLikeParams{
+	} else if inserted, err := s.q.AddLikeOnDayIdempotent(r.Context(), db.AddLikeOnDayIdempotentParams{
 		AssetID: assetID.String(), Day: day, CreatedAt: store.FormatTimestamp(s.now()),
 	}); err != nil {
 		s.internalErr(w, "点赞", err)
 		return
+	} else if inserted == 0 {
+		// R10（审计 2026-09-20）：并发双击两个请求都通过 HasLikedOnDay=0，
+		// 输家撞 (asset_id, day) 主键。旧行为是 500；现按「竞态输家」处理
+		// ——不取消、不报错，往下走重新计数并回 liked=true（下方 liked
+		// 变量来自写前读=0，LikedToday=liked==0 恰为 true，语义正确）。
 	}
 	// likeCount 是推荐打分输入（§1.1 likeScore），点赞/取消后推荐缓存失效
 	s.invalidateRecommendCache()

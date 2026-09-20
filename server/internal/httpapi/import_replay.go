@@ -118,6 +118,11 @@ func (imp *legacyImport) insertEvent(qx *db.Queries, dedupeKey, assetID string, 
 		StartedAt:     store.FormatTimestamp(at),
 		Seconds:       sql.NullInt64{Int64: seconds, Valid: seconds > 0},
 		ClientEventID: sql.NullString{String: dedupeKey, Valid: dedupeKey != ""},
+		// R10（审计 2026-09-20）：导入回放 day 恒 NULL——0014 会话日去重
+		// 索引只服务真实上报通道；导入共用常量 session_id，非 NULL day 会
+		// 让同日增量事件被唯一索引误吞。导入幂等由内容键 client_event_id
+		// 承担（DOMAIN_RULES §10），与此索引无关。
+		Day: sql.NullString{},
 	})
 	if err != nil {
 		imp.fail("回放浏览事件", err)

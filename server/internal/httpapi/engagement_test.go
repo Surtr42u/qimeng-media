@@ -9,7 +9,9 @@ package httpapi
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -18,6 +20,7 @@ import (
 
 	"qimeng-media/server/internal/httpapi/gen"
 	"qimeng-media/server/internal/store"
+	"qimeng-media/server/internal/store/db"
 )
 
 // postDwellEvent 上报一条带秒数的 dwell 事件。
@@ -154,5 +157,85 @@ func TestEngagementDedupResetsNextDay(t *testing.T) {
 	nextDay := store.FormatDay(env.clock.Now())
 	if view, _, _, ok := readDailyStats(t, env, a.id, nextDay); !ok || view != 1 {
 		t.Fatalf("次日物化行期望 view=1，得到 view=%d found=%v", view, ok)
+	}
+}
+
+// TestEngagementSessionDedupBackstop（审计 R10，2026-09-20）：migration
+// 0014 部分唯一索引是「先查后插」TOCTOU 窗口的数据库层兜底。分两层验证：
+//  1. db 层确定性——同键 open 二次插入返回 0 行（索引拦重），dwell 与
+//     NULL day（导入回放形态）不受索引约束；
+//  2. handler 层竞态——并发同键 open 全部 202，事件流恰 1 行、物化恰 1。
+func TestEngagementSessionDedupBackstop(t *testing.T) {
+	env := newTestEnv(t)
+	a := testFiles[0]
+	day := store.FormatDay(env.clock.Now())
+
+	// db 层：输家插入 0 行；dwell / NULL day 不被索引拦截
+	tx, err := env.conn.BeginTx(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("开事务失败: %v", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	qtx := env.q.WithTx(tx)
+	base := db.InsertViewEventIdempotentParams{
+		AssetID: a.id, Kind: "open", SessionID: "sess-bk",
+		StartedAt: store.FormatTimestamp(env.clock.Now()),
+		Day:       sql.NullString{String: day, Valid: true},
+	}
+	if n, err := qtx.InsertViewEventIdempotent(context.Background(), base); err != nil || n != 1 {
+		t.Fatalf("首插应 1 行, got %d, err %v", n, err)
+	}
+	if n, err := qtx.InsertViewEventIdempotent(context.Background(), base); err != nil || n != 0 {
+		t.Fatalf("同键二插应被 0014 索引拦成 0 行, got %d, err %v", n, err)
+	}
+	dwell := base
+	dwell.Kind = "dwell"
+	if n, err := qtx.InsertViewEventIdempotent(context.Background(), dwell); err != nil || n != 1 {
+		t.Fatalf("dwell 不受去重索引约束, got %d, err %v", n, err)
+	}
+	legacy := base
+	legacy.Day = sql.NullString{} // 导入回放形态：day NULL
+	if n, err := qtx.InsertViewEventIdempotent(context.Background(), legacy); err != nil || n != 1 {
+		t.Fatalf("NULL day（导入回放）不应被索引拦截, got %d, err %v", n, err)
+	}
+	if err := tx.Rollback(); err != nil {
+		t.Fatalf("回滚失败: %v", err)
+	}
+
+	// handler 层：并发同键 open，全部 202，恰 1 行
+	const n = 8
+	errs := make(chan error, n)
+	for i := 0; i < n; i++ {
+		go func() {
+			body, err := json.Marshal(gen.ViewEventReport{
+				AssetId:   uuid.MustParse(a.id),
+				Kind:      gen.Open,
+				SessionId: "sess-race",
+				StartedAt: env.clock.Now(),
+			})
+			if err != nil {
+				errs <- err
+				return
+			}
+			resp := env.do(t, http.MethodPost, "/api/v1/events/view", string(body))
+			defer func() { _ = resp.Body.Close() }()
+			if resp.StatusCode != http.StatusAccepted {
+				errs <- fmt.Errorf("期望 202, 得到 %d", resp.StatusCode)
+				return
+			}
+			errs <- nil
+		}()
+	}
+	for i := 0; i < n; i++ {
+		if err := <-errs; err != nil {
+			t.Fatalf("并发上报失败: %v", err)
+		}
+	}
+	if got := countViewEvents(t, env, a.id, "open"); got != 1 {
+		t.Fatalf("并发后 open 事件应恰 1 行（0014 兜底）, got %d", got)
+	}
+	view, _, _, found := readDailyStats(t, env, a.id, day)
+	if !found || view != 1 {
+		t.Fatalf("物化 view_count 应为 1, got %d (found=%v)", view, found)
 	}
 }
