@@ -156,6 +156,8 @@ type Server struct {
 	scanStates *scanStateMap // 库扫描态（内存跟踪；库表无此列，scanner 接线后回写）
 	// recommendCache 推荐流响应缓存（recommend_cache.go，2026-09-18 性能批）。
 	recommendCache *recommendCache
+	// dirs 目录树缓存（dirs_cache.go，审计 R3 2026-09-20 性能批）。
+	dirs *dirsCache
 	// startedAt 进程装配时刻（≈启动时刻）：缩略图开机回填静默窗的时间基准
 	//（thumbnail_warmup.go waitForBootQuietWindow）。
 	startedAt time.Time
@@ -218,6 +220,7 @@ func New(deps Deps) (*Server, error) {
 		authLimit:      newAuthLimiter(authRateLimitMax, authRateLimitWindow),
 		scanStates:     newScanStateMap(),
 		recommendCache: newRecommendCache(),
+		dirs:           newDirsCache(now),
 		startedAt:      now(),
 	}
 	// 服务重启后 Bearer token 仍有效：从库加载首行 token 哈希到内存
