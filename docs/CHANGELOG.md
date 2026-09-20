@@ -8,6 +8,17 @@
 - 子代理执行的工作标注"（执行子代理）"，主对话直接完成的标注"（主代理）"。
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
+## feat(api): 审计清偿协议批 R5~R8——四项协议债一次 make sdk 收敛（2026-09-20 第三百六十八笔）
+
+执行 AI：GLM-5.3-Flash（执行 AI）
+
+- **背景**：`docs/AUDIT-20260920.md` §3 台账协议面四项（任务书 docs/任务书-审计清偿批-20260920.md Batch A），协议先行一次 `make sdk` 收敛。
+- **R5**：/rankings limit 补声明 minimum 1/maximum 200（缺省 50 不变）——服务端 pagination.go `maxRankingLimit=200` 越界 400 早已实现，纯协议声明；pagination.go 注释同步（原「协议未声明 maximum」协议债关闭，双写同步责任条款兑现）。
+- **R6**：POST /libraries 补声明 409 CONFLICT（UNIQUE(root_path)，服务端 libraries.go 已实现）——内联 description 写法对齐 /backups POST 409 先例。
+- **R7**：统计秒数整数口径闭环（四处纯描述，零行为变化）——ViewEventReport.seconds 补入库口径句；AssetDetail.totalBrowseSeconds / MostViewedItem.value / TrendBucket.seconds 描述补整数口径；DOMAIN_RULES §5 浏览时长 bullet 追加口径句。实际截断点=入库（engagement.go int64 向零截断 + 列 INTEGER），聚合链路天然全整数。
+- **R8**：AssetDetail.lastViewedAt 由 date-time 字符串统一为 int64 Unix 毫秒（nullable，null=从未浏览）——与 HistoryItem 同型的响应侧根修；原字符串面经全客户端检索零消费（Web 仅消费 HistoryItem 毫秒面、Android SdkDetailMappers 未映射该字段）；服务端 assets_detail.go 适配（parseStoreTime→UnixMilli，解析失败省略字段防 1970 前负毫秒）。
+- **测试**：make sdk 三端再生（api/sdk.lock 209 条随 commit）；server go build/test/vet + web build/tsc/vitest + app assembleDebug/testDebugUnitTest/lint 全绿。
+
 ## fix(server): go1.27 gofmt doc 注释引号规范化+unconvert 冗余转换清理——门禁基线修复（2026-09-20 第三百六十七笔）
 
 执行 AI：GLM-5.3-Flash（执行 AI）

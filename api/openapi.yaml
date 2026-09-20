@@ -104,6 +104,7 @@ paths:
             schema: { $ref: "#/components/schemas/LibraryCreate" }
       responses:
         "201": { description: 已创建, content: { application/json: { schema: { $ref: "#/components/schemas/Library" } } } }
+        "409": { description: 该根路径已注册为库（UNIQUE(root_path)；code=CONFLICT，服务端已实现，2026-09-20 审计清偿批补声明）, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
   /api/v1/libraries/{libraryId}:
     delete:
@@ -643,7 +644,7 @@ paths:
       summary: 排行榜（热度=view+play+like；周期过滤）
       parameters:
         - { name: period, in: query, schema: { type: string, enum: [day, week, month, quarter, year, all], default: week } }
-        - { name: limit,  in: query, schema: { type: integer, default: 50 } }
+        - { name: limit,  in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
         - { name: offset, in: query, schema: { type: integer, default: 0, minimum: 0 }, description: '与 limit 组合做翻页切片：返回热度降序的 [offset, offset+limit) 切片（越界为空数组）' }
       responses:
         "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/AssetSummary" } } } } }
@@ -1108,8 +1109,8 @@ components:
             authors:      { type: array, items: { $ref: "#/components/schemas/Author" } }
             viewCount:    { type: integer }
             playCount:    { type: integer }
-            totalBrowseSeconds: { type: integer }
-            lastViewedAt: { type: [string, "null"], format: date-time }
+            totalBrowseSeconds: { type: integer, description: 累计浏览秒数（dwell 事件整数秒累加；事件级向零截断口径见 ViewEventReport.seconds） }
+            lastViewedAt: { type: [integer, "null"], format: int64, description: '最近一次 kind=open 事件时刻（Unix 毫秒；null=从未浏览）。2026-09-20 审计清偿批与 HistoryItem.lastViewedAt 统一为毫秒整型——原 date-time 字符串面经全客户端检索零消费，响应侧根修（先例：lastPositionSeconds format double 根修）' }
             origUrl:      { type: string, description: 签名原图/视频直链（查看永远发原件，无缩放副本） }
             thumbUrlMd:   { type: string, description: '签名缩略图直链 md 档（512，与列表网格同源、开机预生成覆盖）。客户端详情海报先用本档立即显示、thumbUrl（lg）就绪后换上——lg 不在预生成范围，首开详情直接等 lg 会触发现场 ffmpeg 生成（秒级起步）。2026-09-18 新增' }
 
@@ -1144,7 +1145,7 @@ components:
         assetId:   { type: string, format: uuid }
         kind:      { type: string, enum: [open, play, dwell] }
         startedAt: { type: string, format: date-time }
-        seconds:   { type: number, format: double, description: dwell 时的停留秒数（format double：客户端 SDK 走原生小数类型直接序列化为 JSON 数字——无 format 时 Kotlin 生成 BigDecimal 被序列化为带引号字符串导致服务端 400，协议批 2026-09-09 根修） }
+        seconds:   { type: number, format: double, description: dwell 时的停留秒数（format double：客户端 SDK 走原生小数类型直接序列化为 JSON 数字——无 format 时 Kotlin 生成 BigDecimal 被序列化为带引号字符串导致服务端 400，协议批 2026-09-09 根修）；入库口径：服务端按事件逐条向零截断为整数秒（int64 转换、列 INTEGER），聚合链路（每日物化/榜单 value/TrendBucket.seconds/详情 totalBrowseSeconds）全为整数——事件级截断，非累加后取整（2026-09-20 审计清偿批闭环） }
         sessionId: { type: string, description: "客户端会话标识（App 启动/Web 标签页生成，UUID 即可）；open/play 按当日会话级去重（同 assetId+kind+sessionId+事件发生日已有同类事件则不重复计数），dwell 不去重——停留秒逐条累加、不减不重（DOMAIN_RULES §5）" }
         clientEventId:
           type: string
@@ -1246,7 +1247,7 @@ components:
         fileName: { type: string }
         mediaType: { $ref: "#/components/schemas/MediaType" }
         thumbUrl: { type: string, description: 签名缩略图 URL（与 AssetSummary.thumbUrl 同一签名机制） }
-        value:    { type: integer, description: metric=views 时 = 窗口内 open 事件次数；metric=seconds 时 = 窗口内 dwell 秒数累计 }
+        value:    { type: integer, description: metric=views 时 = 窗口内 open 事件次数；metric=seconds 时 = 窗口内 dwell 秒数累计（整数，事件级向零截断后累加） }
 
     TopAuthorItem:
       type: object
@@ -1271,7 +1272,7 @@ components:
         end:       { type: string, format: date }
         viewCount: { type: integer }
         playCount: { type: integer }
-        seconds:   { type: integer }
+        seconds:   { type: integer, description: 窗口内 dwell 秒数累加（整数，事件级向零截断口径见 ViewEventReport.seconds） }
 
     # SSE 事件载荷（/api/v1/events 业务事件 data 帧 JSON）。
     # 字段与 server/internal/scanner/scanner.go 的事件构造结构体一一对应，

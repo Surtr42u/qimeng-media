@@ -208,8 +208,12 @@ func (s *Server) GetApiV1AssetsAssetId(w http.ResponseWriter, r *http.Request, a
 		detail.AudioCodec = ptr(row.AudioCodec.String)
 	}
 	if lv, ok := st.lastViewed.(string); ok && lv != "" {
-		t := parseStoreTime(lv)
-		detail.LastViewedAt = &t
+		// R8（审计清偿批）：协议统一毫秒整型（与 HistoryItem 同型）；解析失败
+		// （零值）省略字段而非落 1970 前的负毫秒。
+		if t := parseStoreTime(lv); !t.IsZero() {
+			ms := t.UnixMilli()
+			detail.LastViewedAt = &ms
+		}
 	}
 	writeJSON(w, http.StatusOK, detail)
 }
