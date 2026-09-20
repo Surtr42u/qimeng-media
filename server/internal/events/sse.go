@@ -22,6 +22,12 @@ const (
 	DefaultHeartbeat = 15 * time.Second
 	// DefaultRetryMS 首帧下发的重连等待（毫秒）：客户端意外断线后按此间隔自动重连。
 	DefaultRetryMS = 3000
+	// sseFrameWriteTimeout 单帧写截止（审计 R9，2026-09-20）：SSE 帧仅数百
+	// 字节，正常瞬间完成；对端僵死（TCP 零窗口不读）时 Write 会阻塞在内核
+	// 发送缓冲上，无截止则占位中的连接槽（DefaultMaxConns 配额）被无限占用。
+	// 超时令 Write 返回错误 → 事件循环 return → defer 链释放连接。取值远
+	// 大于正常帧耗时、不大于心跳间隔即可。
+	sseFrameWriteTimeout = 15 * time.Second
 	// sseNoCache SSE 流的缓存策略：事件帧是一次性推送，中间缓存只会把
 	// "实时"变"重放"（HTTP 惯例值，跨包不与 httpapi 共享常量——边界所限
 	// 各自具名即可）。
@@ -128,6 +134,21 @@ func (h *Handler) notifyConns() {
 	}
 }
 
+// deadlineWriter 检测底层 ResponseWriter 是否支持写截止（net/http 服务端
+// writer 实现；测试 fake writer 不实现 → 尽力而为跳过，不影响功能）。
+type deadlineWriter interface {
+	SetWriteDeadline(time.Time) error
+}
+
+// setSSEFrameDeadline 每帧写前重置写截止（审计 R9）：把「僵死对端占连接槽」
+// 的上限压到 sseFrameWriteTimeout。SetWriteDeadline 失败仅意味着该 writer
+// 不支持超时，放弃即可（_ = 为审计已论证的惯例豁免形态）。
+func setSSEFrameDeadline(w http.ResponseWriter) {
+	if dw, ok := w.(deadlineWriter); ok {
+		_ = dw.SetWriteDeadline(time.Now().Add(sseFrameWriteTimeout))
+	}
+}
+
 // ServeHTTP 处理 GET /api/v1/events（SSE 流）。
 // 生命周期：占坑（并发计数）→ 校验 → 订阅 → 首帧（retry+hello）→ 事件循环 → defer 清理。
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -170,6 +191,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// 首帧立即下发：retry 告知客户端断线重连等待；hello 让前端无需等业务事件
 	// 即知流已建立，并携带服务端版本便于排查端云不一致。
+	setSSEFrameDeadline(w)
 	if _, err := fmt.Fprintf(w, "retry: %d\n\n", DefaultRetryMS); err != nil {
 		return // 写失败=对端已断开，交给 defer 清理
 	}
@@ -194,6 +216,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		case <-ticker.C:
 			// SSE 注释行（冒号开头）：客户端与中间层都会忽略内容，仅用于保活
+			setSSEFrameDeadline(w)
 			if _, err := fmt.Fprint(w, ": ping\n\n"); err != nil {
 				return
 			}
@@ -203,6 +226,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return // 总线关闭，流自然结束
 			}
 			id++
+			setSSEFrameDeadline(w)
 			if err := h.writeEvent(w, id, e); err != nil {
 				return
 			}
