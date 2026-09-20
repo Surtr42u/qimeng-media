@@ -68,7 +68,7 @@ private const val LOCAL_SECTION_SUBTITLE =
 /** 预取状态区（自动行为的状态展示；Running 进度条复用 LinearProgressIndicator） */
 private const val PREFETCH_SECTION = "预取"
 private const val PREFETCH_IDLE_HINT = "登录后自动预取全库缩略图，之后浏览直接读本地缓存"
-private const val PREFETCH_RUNNING_TEMPLATE = "已缓存 %d / %d"
+private const val PREFETCH_RUNNING_TEMPLATE = "已缓存 %1\$d / %2\$d（%3\$d%%）"
 private const val PREFETCH_WAITING_HINT = "当前为计费网络，已暂停；切换到非计费网络后自动继续"
 private const val PREFETCH_DONE_TEMPLATE = "本轮完成，已缓存 %d / %d"
 private const val PREFETCH_DONE_EMPTY = "本轮完成：暂无可预取的缩略图"
@@ -242,10 +242,13 @@ private fun LocalCacheCard(
     }
 }
 
-/** 预取状态行文案（Failed 直接显预取器给的中文原因） */
+/** 预取状态行文案（Failed 直接显预取器给的中文原因；Running 带实时百分比） */
 private fun prefetchStatusText(state: PrefetchUiState): String = when (state) {
     PrefetchUiState.Idle -> PREFETCH_IDLE_HINT
-    is PrefetchUiState.Running -> PREFETCH_RUNNING_TEMPLATE.format(state.done, state.total)
+    is PrefetchUiState.Running -> {
+        val percent = if (state.total > 0) state.done * 100 / state.total else 0
+        PREFETCH_RUNNING_TEMPLATE.format(state.done, state.total, percent)
+    }
     PrefetchUiState.WaitingNetwork -> PREFETCH_WAITING_HINT
     is PrefetchUiState.Done ->
         if (state.total > 0) PREFETCH_DONE_TEMPLATE.format(state.done, state.total) else PREFETCH_DONE_EMPTY

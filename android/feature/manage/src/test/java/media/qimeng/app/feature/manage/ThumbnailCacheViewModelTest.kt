@@ -145,4 +145,25 @@ class ThumbnailCacheViewModelTest {
         assertEquals(10, running.done)
         assertEquals(20, running.total)
     }
+
+    @Test
+    fun `预取进行中文件数占用随进度重采样刷新`() {
+        // 第三百六十六笔：数字跟着进度条走——Running 发射触发重采样（total=50 → 步长 1 逐条刷），
+        // Done 终采一次收口
+        val coil = FakeCoilCacheManager(nasCount = 0)
+        val monitor = FakePrefetchMonitor()
+        val viewModel = newViewModel(coil = coil, prefetch = monitor)
+        driveIdle()
+        assertEquals(0, viewModel.uiState.value.nasFileCount)
+
+        monitor.state.value = PrefetchUiState.Running(done = 1, total = 50)
+        coil.nasCount = 1
+        driveIdle()
+        assertEquals(1, viewModel.uiState.value.nasFileCount)
+
+        monitor.state.value = PrefetchUiState.Done(done = 50, total = 50)
+        coil.nasCount = 50
+        driveIdle()
+        assertEquals(50, viewModel.uiState.value.nasFileCount)
+    }
 }
