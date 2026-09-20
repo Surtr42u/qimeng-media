@@ -26,7 +26,7 @@ func (q *Queries) CountEnabledLibraryAssets(ctx context.Context) (int64, error) 
 }
 
 const getAsset = `-- name: GetAsset :one
-SELECT asset_id, library_id, rel_path, file_name, media_type, size_bytes, mtime, duration_ms, width, height, source, created_at, updated_at, last_position_seconds, video_codec, audio_codec, cos_work FROM assets WHERE asset_id = ?
+SELECT asset_id, library_id, rel_path, file_name, media_type, size_bytes, mtime, duration_ms, width, height, source, created_at, updated_at, last_position_seconds, video_codec, audio_codec, cos_work, tag_set_updated_at FROM assets WHERE asset_id = ?
 `
 
 func (q *Queries) GetAsset(ctx context.Context, assetID string) (Asset, error) {
@@ -50,13 +50,14 @@ func (q *Queries) GetAsset(ctx context.Context, assetID string) (Asset, error) {
 		&i.VideoCodec,
 		&i.AudioCodec,
 		&i.CosWork,
+		&i.TagSetUpdatedAt,
 	)
 	return i, err
 }
 
 const getAssetByPath = `-- name: GetAssetByPath :one
 
-SELECT asset_id, library_id, rel_path, file_name, media_type, size_bytes, mtime, duration_ms, width, height, source, created_at, updated_at, last_position_seconds, video_codec, audio_codec, cos_work FROM assets WHERE library_id = ? AND rel_path = ?
+SELECT asset_id, library_id, rel_path, file_name, media_type, size_bytes, mtime, duration_ms, width, height, source, created_at, updated_at, last_position_seconds, video_codec, audio_codec, cos_work, tag_set_updated_at FROM assets WHERE library_id = ? AND rel_path = ?
 `
 
 type GetAssetByPathParams struct {
@@ -88,12 +89,13 @@ func (q *Queries) GetAssetByPath(ctx context.Context, arg GetAssetByPathParams) 
 		&i.VideoCodec,
 		&i.AudioCodec,
 		&i.CosWork,
+		&i.TagSetUpdatedAt,
 	)
 	return i, err
 }
 
 const listAssetsAfterCursor = `-- name: ListAssetsAfterCursor :many
-SELECT asset_id, library_id, rel_path, file_name, media_type, size_bytes, mtime, duration_ms, width, height, source, created_at, updated_at, last_position_seconds, video_codec, audio_codec, cos_work FROM assets
+SELECT asset_id, library_id, rel_path, file_name, media_type, size_bytes, mtime, duration_ms, width, height, source, created_at, updated_at, last_position_seconds, video_codec, audio_codec, cos_work, tag_set_updated_at FROM assets
 WHERE created_at < ? OR (created_at = ? AND asset_id < ?)
 ORDER BY created_at DESC, asset_id DESC
 LIMIT ?
@@ -138,6 +140,7 @@ func (q *Queries) ListAssetsAfterCursor(ctx context.Context, arg ListAssetsAfter
 			&i.VideoCodec,
 			&i.AudioCodec,
 			&i.CosWork,
+			&i.TagSetUpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -154,7 +157,7 @@ func (q *Queries) ListAssetsAfterCursor(ctx context.Context, arg ListAssetsAfter
 
 const listAssetsFirstPage = `-- name: ListAssetsFirstPage :many
 
-SELECT asset_id, library_id, rel_path, file_name, media_type, size_bytes, mtime, duration_ms, width, height, source, created_at, updated_at, last_position_seconds, video_codec, audio_codec, cos_work FROM assets
+SELECT asset_id, library_id, rel_path, file_name, media_type, size_bytes, mtime, duration_ms, width, height, source, created_at, updated_at, last_position_seconds, video_codec, audio_codec, cos_work, tag_set_updated_at FROM assets
 ORDER BY created_at DESC, asset_id DESC
 LIMIT ?
 `
@@ -194,6 +197,7 @@ func (q *Queries) ListAssetsFirstPage(ctx context.Context, limit int64) ([]Asset
 			&i.VideoCodec,
 			&i.AudioCodec,
 			&i.CosWork,
+			&i.TagSetUpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -348,7 +352,7 @@ ON CONFLICT (library_id, rel_path) DO UPDATE SET
     source       = excluded.source,
     cos_work     = excluded.cos_work,
     updated_at   = excluded.updated_at
-RETURNING asset_id, library_id, rel_path, file_name, media_type, size_bytes, mtime, duration_ms, width, height, source, created_at, updated_at, last_position_seconds, video_codec, audio_codec, cos_work
+RETURNING asset_id, library_id, rel_path, file_name, media_type, size_bytes, mtime, duration_ms, width, height, source, created_at, updated_at, last_position_seconds, video_codec, audio_codec, cos_work, tag_set_updated_at
 `
 
 type UpsertAssetParams struct {
@@ -425,6 +429,7 @@ func (q *Queries) UpsertAsset(ctx context.Context, arg UpsertAssetParams) (Asset
 		&i.VideoCodec,
 		&i.AudioCodec,
 		&i.CosWork,
+		&i.TagSetUpdatedAt,
 	)
 	return i, err
 }

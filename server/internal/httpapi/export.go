@@ -201,21 +201,32 @@ func (exp *legacyExport) fillFiles(data *gen.LegacyBackupData, assets []*exportA
 		}
 		folder := path.Base(path.Dir(a.row.RelPath))
 		isDup := strings.Contains(a.recordKey, recordKeySep)
+		// 标签组改动时间（§10 标签组同步语义）：'' 哨兵（旧数据/未知）→ 字段缺省，
+		// 导入端按未知回退并集合并，不参与新旧判定。
+		var tagsAt *int64
+		if a.row.TagSetUpdatedAt != "" {
+			ms, err := millisOf(a.row.TagSetUpdatedAt)
+			if err != nil {
+				return fmt.Errorf("资产 %s tag_set_updated_at 解析: %w", a.row.AssetID, err)
+			}
+			tagsAt = &ms
+		}
 		files = append(files, gen.LegacyMediaFile{
-			RecordKey:        a.recordKey,
-			FileName:         a.row.FileName,
-			DisplayName:      ptr(strings.TrimSuffix(a.row.FileName, path.Ext(a.row.FileName))),
-			Extension:        ptr(strings.TrimPrefix(path.Ext(a.row.FileName), ".")),
-			MediaType:        gen.LegacyMediaFileMediaType(a.row.MediaType),
-			FolderName:       &folder,
-			SizeBytes:        a.row.SizeBytes,
-			ModifiedAtMillis: mtime,
-			Width:            nullIntToPtr(a.row.Width),
-			Height:           nullIntToPtr(a.row.Height),
-			DurationMillis:   nullInt64ToPtr(a.row.DurationMs),
-			IsDuplicateName:  ptr(isDup),
-			IsCosFile:        ptr(a.row.LibraryKind == "cos"),
-			IndexedAtMillis:  &indexedAt,
+			RecordKey:           a.recordKey,
+			FileName:            a.row.FileName,
+			DisplayName:         ptr(strings.TrimSuffix(a.row.FileName, path.Ext(a.row.FileName))),
+			Extension:           ptr(strings.TrimPrefix(path.Ext(a.row.FileName), ".")),
+			MediaType:           gen.LegacyMediaFileMediaType(a.row.MediaType),
+			FolderName:          &folder,
+			SizeBytes:           a.row.SizeBytes,
+			ModifiedAtMillis:    mtime,
+			Width:               nullIntToPtr(a.row.Width),
+			Height:              nullIntToPtr(a.row.Height),
+			DurationMillis:      nullInt64ToPtr(a.row.DurationMs),
+			IsDuplicateName:     ptr(isDup),
+			IsCosFile:           ptr(a.row.LibraryKind == "cos"),
+			IndexedAtMillis:     &indexedAt,
+			TagsUpdatedAtMillis: tagsAt,
 		})
 	}
 	data.MediaFiles = &files

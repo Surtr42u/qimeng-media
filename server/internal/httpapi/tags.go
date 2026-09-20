@@ -4,6 +4,7 @@
 package httpapi
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"net/http"
@@ -74,9 +75,23 @@ func (s *Server) DeleteApiV1TagsTagId(w http.ResponseWriter, r *http.Request, ta
 		s.internalErr(w, "查询标签", err)
 		return
 	}
+	// 受影响资产名单先取（§10 级联清关联随动；删除后关联行消失无法回溯）。
+	affectedAssetIDs, err := s.q.ListAssetIDsByTag(r.Context(), tagID)
+	if err != nil {
+		s.internalErr(w, "查询标签关联资产", err)
+		return
+	}
 	if err := s.q.DeleteTag(r.Context(), tagID); err != nil {
 		s.internalErr(w, "删除标签", err)
 		return
+	}
+	// 级联清关联也是标签组变更（§10）：受影响资产逐一随动。名单必须在删除前取
+	// （删除后 asset_tags 行已级联消失，无法回溯受影响集）。
+	for _, id := range affectedAssetIDs {
+		if err := s.touchAssetTagSetNow(r.Context(), id); err != nil {
+			s.internalErr(w, "更新标签组改动时间", err)
+			return
+		}
 	}
 	s.publishLibraryChanged()
 	w.WriteHeader(http.StatusNoContent)
@@ -145,12 +160,30 @@ func (s *Server) PutApiV1AssetsAssetIdTags(w http.ResponseWriter, r *http.Reques
 			return
 		}
 	}
+	// 标签组改动时间随动（§10）：与清空/挂载同事务，时间与内容原子一致。
+	if err := qtx.TouchAssetTagSet(r.Context(), db.TouchAssetTagSetParams{
+		AssetID:         assetID.String(),
+		TagSetUpdatedAt: store.FormatTimestamp(s.now()),
+	}); err != nil {
+		s.internalErr(w, "更新标签组改动时间", err)
+		return
+	}
 	if err := tx.Commit(); err != nil {
 		s.internalErr(w, "提交标签替换", err)
 		return
 	}
 	s.publishLibraryChanged()
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// touchAssetTagSetNow 标签组改动时间随动（migration 0012，DOMAIN_RULES §10
+// 标签组同步语义）：任何 asset_tags 变更路径都必须调用——导入端靠它判定
+// 「备份与库内谁新」。时间恒取服务器当前时刻（导入替换路径除外，写备份时刻）。
+func (s *Server) touchAssetTagSetNow(ctx context.Context, assetID string) error {
+	return s.q.TouchAssetTagSet(ctx, db.TouchAssetTagSetParams{
+		AssetID:         assetID,
+		TagSetUpdatedAt: store.FormatTimestamp(s.now()),
+	})
 }
 
 // timelineTagColorRe 颜色协议形态（openapi pattern 同款）：hex 6 位。
@@ -299,6 +332,11 @@ func (s *Server) DeleteApiV1AssetsAssetIdTagsTag(w http.ResponseWriter, r *http.
 		return
 	}
 	if n > 0 {
+		// 单关联解绑也是标签组变更（§10 随动）；n=0 = 本就未挂载，集合未变不触发。
+		if err := s.touchAssetTagSetNow(r.Context(), assetID.String()); err != nil {
+			s.internalErr(w, "更新标签组改动时间", err)
+			return
+		}
 		s.publishLibraryChanged()
 	}
 	w.WriteHeader(http.StatusNoContent)

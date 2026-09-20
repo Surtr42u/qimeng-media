@@ -178,6 +178,37 @@ func (q *Queries) ListAllAssetTags(ctx context.Context) ([]ListAllAssetTagsRow, 
 	return items, nil
 }
 
+const listAssetIDsByTag = `-- name: ListAssetIDsByTag :many
+SELECT asset_id FROM asset_tags WHERE tag_id = ?
+`
+
+// Assets holding the tag, read BEFORE DeleteTag: the FK cascade removes
+// asset_tags rows server-side, so after the delete the join is empty and
+// the affected set is unrecoverable. Those assets' tag sets changed ->
+// each needs a TouchAssetTagSet bump (DOMAIN_RULES 10).
+func (q *Queries) ListAssetIDsByTag(ctx context.Context, tagID string) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listAssetIDsByTag, tagID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var asset_id string
+		if err := rows.Scan(&asset_id); err != nil {
+			return nil, err
+		}
+		items = append(items, asset_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTags = `-- name: ListTags :many
 
 SELECT t.id, t.name, COUNT(at.asset_id) AS file_count
@@ -281,6 +312,28 @@ func (q *Queries) RemoveAssetTagByName(ctx context.Context, arg RemoveAssetTagBy
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const touchAssetTagSet = `-- name: TouchAssetTagSet :exec
+UPDATE assets SET tag_set_updated_at = ? WHERE asset_id = ?
+`
+
+type TouchAssetTagSetParams struct {
+	TagSetUpdatedAt string
+	AssetID         string
+}
+
+// Bump the asset's tag-set modification time (migration 0012 column,
+// DOMAIN_RULES 10 tag-set sync semantics, 2026-09-20 user decision).
+// Called by every asset_tags mutation path: replace-style PUT, single
+// unbind, tag-delete cascade (via ListAssetIDsByTag BEFORE the delete),
+// and the import's "backup newer" replace -- the last one writes the
+// BACKUP's timestamp, not now. ” sentinel (never written) = unknown
+// provenance: import falls back to union merge when either side is
+// unknown (never fabricate a version for a merged state).
+func (q *Queries) TouchAssetTagSet(ctx context.Context, arg TouchAssetTagSetParams) error {
+	_, err := q.db.ExecContext(ctx, touchAssetTagSet, arg.TagSetUpdatedAt, arg.AssetID)
+	return err
 }
 
 const updateTimelineTag = `-- name: UpdateTimelineTag :one

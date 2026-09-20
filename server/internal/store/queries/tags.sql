@@ -77,3 +77,21 @@ DELETE FROM timeline_tags WHERE id = ? AND asset_id = ?;
 DELETE FROM asset_tags
 WHERE asset_id = ?
   AND tag_id = (SELECT id FROM tags WHERE name = ?);
+
+-- name: TouchAssetTagSet :exec
+-- Bump the asset's tag-set modification time (migration 0012 column,
+-- DOMAIN_RULES 10 tag-set sync semantics, 2026-09-20 user decision).
+-- Called by every asset_tags mutation path: replace-style PUT, single
+-- unbind, tag-delete cascade (via ListAssetIDsByTag BEFORE the delete),
+-- and the import's "backup newer" replace -- the last one writes the
+-- BACKUP's timestamp, not now. '' sentinel (never written) = unknown
+-- provenance: import falls back to union merge when either side is
+-- unknown (never fabricate a version for a merged state).
+UPDATE assets SET tag_set_updated_at = ? WHERE asset_id = ?;
+
+-- name: ListAssetIDsByTag :many
+-- Assets holding the tag, read BEFORE DeleteTag: the FK cascade removes
+-- asset_tags rows server-side, so after the delete the join is empty and
+-- the affected set is unrecoverable. Those assets' tag sets changed ->
+-- each needs a TouchAssetTagSet bump (DOMAIN_RULES 10).
+SELECT asset_id FROM asset_tags WHERE tag_id = ?;
