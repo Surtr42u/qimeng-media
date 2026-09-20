@@ -8,14 +8,12 @@
 - 子代理执行的工作标注"（执行子代理）"，主对话直接完成的标注"（主代理）"。
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
-## fix(server): 工程卫生批——Makefile help ASCII 化+CI 去 make sdk 双跑+.gitattributes 行尾根治——审计 R14（2026-09-20 第三百七十二笔）
+## fix(server): SSE 单帧写截止——僵死 TCP 不再无限占连接槽——审计 R9（2026-09-20 第三百七十四笔）
 
 执行 AI：GLM-5.3-Flash（执行 AI）
 
-- **Makefile help ASCII**：`##` 帮助文案 18 处中文化为 ASCII 英文（Makefile 头部「运行时输出一律 ASCII」约束自违——Windows make.exe 按本地代码页转码输出会乱码）；中文语义保留在 `#` 注释层。`make help` 输出已验证纯 ASCII。
-- **CI 双跑去重**：sdk-chain job 的 `make sdk` 产物（android/sdk）经 artifact 下发复用，android job 改 `needs: sdk-chain` + download-artifact，删除其二次 `make sdk` 与配套 node/go/make 安装——生成链全链只跑一次，锁校验通过才下发。
-- **.gitattributes 行尾根治**（环境遗留，用户拍板「全修复」）：`* text=auto eol=lf` + `*.bat`/`*.cmd` CRLF 例外——根修 Windows autocrlf 反复制造的 gofmt 假阳性与 sqlc 解析崩（本日两起事故根因同源）。仓库 blob 本已全 LF（78 个二进制不受影响），`git add --renormalize .` 实证零内容变化，规则纯锁未来 checkout 行为。
-- **测试**：make help 输出目视；yml/json 结构合法（yaml 由 CI 语法兜底）；renormalize 空 diff。
+- **修复**：SSE 各写点（retry/hello 首帧、心跳 ping、业务事件帧）写前 `SetWriteDeadline(now+15s)`（具名常量 sseFrameWriteTimeout，不大于心跳间隔）。SSE 帧仅数百字节正常瞬间完成；对端僵死（TCP 零窗口不读）时原实现 Write 阻塞在内核发送缓冲上，占位中的连接槽（DefaultMaxConns=16 配额）被无限占用——超时令 Write 报错 → 事件循环 return → defer 链释放连接与订阅。
+- **兼容**：测试 fake writer 不实现 SetWriteDeadline 时尽力而为跳过（`_ =` 惯例豁免形态，注释记档）；events 包既有测试全绿。
 
 ## fix(app): 桌面壳 Tauri CSP 落地（csp null→本地页 self 基线+IPC 白名单）——审计 R14（2026-09-20 第三百七十三笔）
 
@@ -24,6 +22,15 @@
 - **背景**：审计 R14 记档 desktop Tauri `csp: null`（CSP 完全关闭）。桌面壳双窗口形态：设置窗 = 本地 `ui/setup.html`（CSP 管辖面）；主窗 = `WebviewUrl::External` 加载服务端远端页（远端页响应头归服务端管，壳 CSP 天然不覆盖，README 已注明）。
 - **修复**：CSP 设为本地页基线——`default-src 'self'`；script/style 放行 `'unsafe-inline'`（setup.html 为内置静态表单，内联 `<script>` 调 `window.__TAURI__.core.invoke`，无外链资源）；`connect-src ipc: http://ipc.localhost`（Tauri 2 IPC 官方基线）；Tauri 自身注入脚本由运行时自动补 nonce。README「行为说明」同步管辖边界。
 - **测试**：tauri.conf.json 合法 JSON；CSP 值人工核对 setup.html 资源面（零外链）。
+
+## fix(server): 工程卫生批——Makefile help ASCII 化+CI 去 make sdk 双跑+.gitattributes 行尾根治——审计 R14（2026-09-20 第三百七十二笔）
+
+执行 AI：GLM-5.3-Flash（执行 AI）
+
+- **Makefile help ASCII**：`##` 帮助文案 18 处中文化为 ASCII 英文（Makefile 头部「运行时输出一律 ASCII」约束自违——Windows make.exe 按本地代码页转码输出会乱码）；中文语义保留在 `#` 注释层。`make help` 输出已验证纯 ASCII。
+- **CI 双跑去重**：sdk-chain job 的 `make sdk` 产物（android/sdk）经 artifact 下发复用，android job 改 `needs: sdk-chain` + download-artifact，删除其二次 `make sdk` 与配套 node/go/make 安装——生成链全链只跑一次，锁校验通过才下发。
+- **.gitattributes 行尾根治**（环境遗留，用户拍板「全修复」）：`* text=auto eol=lf` + `*.bat`/`*.cmd` CRLF 例外——根修 Windows autocrlf 反复制造的 gofmt 假阳性与 sqlc 解析崩（本日两起事故根因同源）。仓库 blob 本已全 LF（78 个二进制不受影响），`git add --renormalize .` 实证零内容变化，规则纯锁未来 checkout 行为。
+- **测试**：make help 输出目视；yml/json 结构合法（yaml 由 CI 语法兜底）；renormalize 空 diff。
 
 ## feat(server): view_events 补 (kind,started_at) 复合索引（migration 0013）——stats 族全表扫变索引范围扫——审计 R4（2026-09-20 第三百七十一笔）
 
