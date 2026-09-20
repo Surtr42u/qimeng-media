@@ -58,3 +58,13 @@ WHERE NOT EXISTS (
 -- (asset_id, tag_id) PK. First association's created_at wins on re-import.
 INSERT INTO asset_tags (asset_id, tag_id, created_at) VALUES (?, ?, ?)
 ON CONFLICT (asset_id, tag_id) DO NOTHING;
+
+-- name: ListAssetNameIndex :many
+-- Full name->path projection for legacy-import file matching (audit R1,
+-- 2026-09-20): one scan builds an in-memory fileName index instead of one
+-- query per backup file (the old N+1). ORDER BY created_at keeps
+-- ListAssetsByFileName's earliest-first tie-break (folder disambiguation
+-- falls back to rows[0] -- behavior must stay identical).
+SELECT asset_id, rel_path, file_name
+FROM assets
+ORDER BY created_at;

@@ -8,6 +8,15 @@
 - 子代理执行的工作标注"（执行子代理）"，主对话直接完成的标注"（主代理）"。
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
+## perf(server): 旧备份导入匹配 N+1 根修+作者重建匹配域索引化——审计 R1/R2（2026-09-20 第三百六十九笔）
+
+执行 AI：GLM-5.3-Flash（执行 AI）
+
+- **R1（import N+1）**：legacy_import.sql 新增 `ListAssetNameIndex` 全表投影（asset_id/rel_path/file_name，ORDER BY created_at 保 tie-break 序）；matchFiles 改一次查询建 fileName→行集内存索引，替代逐备份文件查库（数千文件=数千次 SQL → 1 次）；pickAssetByFolder 消歧/tie-break 语义不变（行类型换 ListAssetNameIndexRow，函数体逐字未动）。
+- **R2（作者重建匹配域索引化）**：match.go 抽 `normalizeWork`/`fileBaseOf` 共享归一（原逻辑逐字搬运，MatchWorks 输出逐字节不变，既有 authoring_test 全绿锁定）；新 fileindex.go `FileIndex` 双桶（规范基础名/去 (N) 尾基础名），桶键 `foldKey`=SimpleFold 轨道最小元（与 strings.EqualFold 严格等价——ToLower 在 ſ/s 等奇异折叠对上不等价，禁用）；authors.go insertLinks 接 BuildFileIndex（每个 (作者, 作品) 匹配从全域线性扫降为桶内候选过滤）；fileindex_test.go 逐元素对照测试（语料含 wmv/txt 扩展名判定、(N) 变体、大小写、空格折叠、文件名 Round-trip、空 work）。
+- **顺手修（本批 sqlc 再生的前置阻断）**：browse.sql 06d0b57 引入的两行中文注释含非 ASCII 字节（§/默认/入库时间）——实证为 sqlc v1.31.1 SQLite 解析器毒（预注解区含任意非 ASCII 即整文件不可再生；五版本同崩、逐元素收缩定位；CI 无 sqlc 步骤故潜伏 3 天），已改写 ASCII 并留 ASCII-only 约定注释；db/browse.sql.go 注释随再生同步（零语义差异，证实旧生成物仅注释级陈旧）。另 queries/ 目录 8 文件工作区 CRLF 已归一 LF（git 零 diff）。
+- **测试**：sqlc v1.31.1 generate 全绿；go build/vet + authoring/httpapi 全量测试通过。
+
 ## feat(api): 审计清偿协议批 R5~R8——四项协议债一次 make sdk 收敛（2026-09-20 第三百六十八笔）
 
 执行 AI：GLM-5.3-Flash（执行 AI）
