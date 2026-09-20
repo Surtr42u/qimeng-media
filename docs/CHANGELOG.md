@@ -8,6 +8,14 @@
 - 子代理执行的工作标注"（执行子代理）"，主对话直接完成的标注"（主代理）"。
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
+## fix(web): AppErrorBoundary 渲染异常接入 client-logs 旁路（防递归）——审计 R12（2026-09-20 第三百七十六笔）
+
+执行 AI：GLM-5.3-Flash（执行 AI）
+
+- **背景**：渲染期异常被错误边界接住后不再冒泡成 uncaught error——window.onerror 兜不住，此前只进 console，维护页（client-logs 环形缓冲）看不到前端白屏类故障。
+- **修复**：client-logs 暴露 `reportRenderError`（componentDidCatch 专用入口）：条目 message 带 `[RenderError]` 前缀，stack = JS 堆栈 + React 组件树栈（定位抛错组件）；全程 try-catch 吞异常——兜底链路（边界 → 兜底页重渲染）期间上报器自身任何错误都绝不外抛不回流（与 install 两个 handler 同一防递归纪律）。`entry()` 补无 window 环境防御（page 置空）。
+- **测试**：新增 client-logs.test.ts（node 环境纯函数 + 打桩）：条目组装/组件栈拼接/超长截断、上报后 flush 发出（fetch/localStorage 打桩经 vi.hoisted 先于导入打桩——api-client 模块顶层读 localStorage）、内部机制破坏时绝不外抛两场景；web 17 文件 169 测试全绿。
+
 ## fix(server): 事件会话去重 TOCTOU 与点赞 toggle 并发根治（migration 0014）——审计 R10（2026-09-20 第三百七十五笔）
 
 执行 AI：GLM-5.3-Flash（执行 AI）
