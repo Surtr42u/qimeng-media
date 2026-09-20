@@ -961,4 +961,47 @@ class DetailViewModelTest {
         assertEquals("移入回收站失败，请重试", vm.uiState.value.errorMessage)
         assertFalse(vm.uiState.value.fileOpsPending)
     }
+
+    @Test
+    fun `解绑失败 - 只回滚本标签乐观态不整覆盖（审计R13）`() = runTest(mainDispatcherRule.testDispatcher) {
+        val repo = FakeDetailRepository().apply {
+            detailById["b"] = detail("b", tags = listOf(DetailTag("t1", "甲"), DetailTag("t2", "乙")))
+            tagPool = listOf(TagChip("t1", "甲"), TagChip("t2", "乙"))
+            unbindTagError = RuntimeException("net down")
+        }
+        val vm = viewModel(repo)
+        advanceUntilIdle()
+        // 先开标签面板：tagPool/selectedTagIds 由 openTagSheet 装配（unbind 前置条件）
+        vm.openTagSheet()
+        advanceUntilIdle()
+        vm.unbindTag("t1")
+        // 乐观态落地后、失败回调执行前：用户在标签面板又把 t2 的草稿勾选去掉
+        // （旧实现失败回滚整覆盖快照，会把这个窗口期内的用户操作一并吞掉）
+        vm.toggleTagSelection("t2")
+        advanceUntilIdle()
+
+        val s = vm.uiState.value
+        // t1 被回滚回标签列表（乐观移除撤销）、不在途、错误文案在
+        assertEquals(listOf("t1", "t2"), s.asset?.tags?.map { it.id })
+        assertTrue(s.unbindingTagIds.isEmpty())
+        assertNotNull(s.errorMessage)
+        // 关键回归：窗口期的用户草稿操作保留（t2 的勾选移除不被快照复活）
+        assertFalse("t2" in s.selectedTagIds)
+        // t1 恢复勾选（快照里本有 t1，乐观解勾被回滚）
+        assertTrue("t1" in s.selectedTagIds)
+    }
+
+    @Test
+    fun `尺寸缓存 - 超上限淘汰最老条目（审计R13）`() {
+        val cache = DetailImageDimCache()
+        for (i in 0 until 600) cache.put("k$i", ImageDims(10, 10))
+        assertNull(cache.dimsOf("k0")) // 最老条目被 LRU 淘汰（上限 512）
+        assertNotNull(cache.dimsOf("k599")) // 最新条目保留
+        // 命中续期：把 k100 读成「最近使用」，再灌 100 条新键——k100 存活，
+        // 未续期的 k90 被挤掉
+        assertNotNull(cache.dimsOf("k100"))
+        for (i in 600 until 700) cache.put("k$i", ImageDims(10, 10))
+        assertNotNull(cache.dimsOf("k100"))
+        assertNull(cache.dimsOf("k90"))
+    }
 }
