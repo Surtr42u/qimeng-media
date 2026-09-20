@@ -89,18 +89,24 @@ jobs:
             echo "::error::api/sdk.lock 与三端生成物重算结果不一致。请在本地运行 make sdk 重新生成后，将更新后的 api/sdk.lock 与本次协议/生成器改动同 commit 提交（指纹入库≠产物入库，见 ADR-0009）。"
             exit 1
           fi
+      # R14（2026-09-20 审计清偿）：android/sdk 生成一次、artifact 下发复用，
+      # 消除 android job 二次 make sdk 的全链双跑冗余；锁校验通过才上传。
+      - name: 上传 android/sdk 生成物（android job 复用）
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-sdk
+          path: android/sdk
 
   android:
-    name: Android 客户端（make sdk + assembleDebug + test + lint）
+    name: Android 客户端（assembleDebug + test + lint）
+    needs: sdk-chain
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      # android/sdk 是 make sdk 生成物（.gitignore，checkout 后不存在）——构建第一步必须重建，
-      # 与 web job 先跑 openapi-ts、sdk-chain 跑 make sdk 同理（ADR-0009 生成物不入库）
-      - uses: actions/setup-node@v5
-        with: { node-version: 24 }
-      - uses: actions/setup-go@v6
-        with: { go-version: "1.27.x", cache-dependency-path: server/go.sum }
+      # android/sdk 消费 sdk-chain job 的 make sdk 产物（artifact 下发）——
+      # 生成链已在该 job 校验过 sdk.lock，本 job 不再二次生成（R14 去双跑）。
+      - uses: actions/download-artifact@v4
+        with: { name: android-sdk, path: android/sdk }
       # JDK 21 与本机 Android Studio jbr 对齐（AGP 9.3.1 最低 17）；ubuntu runner 预装 Android SDK，
       # platforms/build-tools 覆盖 compileSdk 37 所需，无需 sdkmanager（runner 镜像 Readme 为准）
       # （2026-09-20 全库审查：注释自 2026-09-13 后未随任务P 批升级刷新，按 libs.versions.toml
@@ -109,9 +115,6 @@ jobs:
         with: { distribution: temurin, java-version: 21 }
       # wrapper 校验 + gradle-user-home 缓存；只调 ./gradlew，不碰 runner 预装 gradle
       - uses: gradle/actions/setup-gradle@v4
-      - run: sudo apt-get update && sudo apt-get install -y make
-      - name: 生成三端 SDK（android/sdk 生成物重建）
-        run: make sdk
       - name: 构建 + 单测 + Lint
         run: |
           cd android

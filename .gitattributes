@@ -1,0 +1,11 @@
+# .gitattributes：行尾策略（2026-09-20 审计清偿批环境根治）。
+# 背景：本机 Windows core.autocrlf=true 使 checkout 出的 CRLF 工作区反复
+# 触发 gofmt 假阳性、sqlc 解析崩（queries 预注解区遇 \r 即败）；CI 在
+# Linux 上无此问题，故只在开发机反复踩。本规则锁死：凡 git 判定为文本的
+# 文件，工作区一律 LF（blob 本已全 LF，此规则零内容变化、只锁 checkout）；
+# Windows 脚本例外（cmd.exe 对 LF 的 .bat 行为敏感，保持 CRLF）。
+# 生成物目录（server/internal/httpapi/gen、web/src/api/generated、
+# android/sdk）同样受此规则约束——三端生成器均接受 LF。
+* text=auto eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf

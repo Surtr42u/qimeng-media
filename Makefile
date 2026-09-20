@@ -73,10 +73,10 @@ GOLANGCI_LINT ?= $(GOBIN_DIR)/golangci-lint
 
 .PHONY: help sdk sdk-validate sdk-go sdk-ts sdk-kotlin sdk-lock app-build app-test app-lint server-run server-test server-android-arm64 server-android-amd64 app-embedded-arm64 app-embedded-x86_64 app-embedded web-build web-dev web-test docker-build lint
 
-help: ## 显示全部命令
+help: ## show all targets
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
 
-sdk: sdk-validate sdk-go sdk-ts sdk-kotlin ## 从 api/openapi.yaml 生成三端 SDK（Go 接口层 + TS + Kotlin）
+sdk: sdk-validate sdk-go sdk-ts sdk-kotlin ## generate 3-end SDK from api/openapi.yaml (Go iface + TS + Kotlin)
 	@echo "sdk: all done (validate -> go -> ts -> kotlin)"
 	@# sdk-lock 放 recipe 末尾调用而非并列 prerequisite：make -j 下同级
 	@# prerequisite 执行顺序不保证，锁必须等三端生成物全部就绪后再算。
@@ -142,7 +142,7 @@ sdk-kotlin:
 # 同步即在此拦截，见 ci.yml sdk-chain）。
 # 同步责任（铁律 1）：协议侧改动（openapi.yaml）或 make sdk 重新生成后，
 # 必须同 commit 更新 api/sdk.lock。
-sdk-lock: ## 重算三端 SDK 生成物指纹并写入 api/sdk.lock
+sdk-lock: ## recompute 3-end SDK fingerprint lock into api/sdk.lock
 	@{ \
 		find server/internal/httpapi/gen -maxdepth 1 -type f -name '*.gen.go'; \
 		find web/src/api/generated -type f \( -name '*.js' -o -name '*.ts' \); \
@@ -160,21 +160,21 @@ sdk-lock: ## 重算三端 SDK 生成物指纹并写入 api/sdk.lock
 # Android 客户端（M4，ADR-0014 Compose 重建）：走 wrapper，禁止依赖本机全局 gradle。
 # 前置：android/sdk 生成物存在（干净 checkout 先跑 make sdk；缺 :sdk 的报错一律重跑 make sdk，
 # 禁止手改生成物）。命令行构建需 JAVA_HOME 指向 JDK 17+（本机=Android Studio jbr，见 HANDOVER_APP）。
-app-build: ## Android Debug 构建（android/app/build/outputs/apk/debug/app-debug.apk）
+app-build: ## Android debug build (android/app/build/outputs/apk/debug/app-debug.apk)
 	cd android && ./gradlew assembleDebug
 
 # :core:model 是纯 JVM kotlin("jvm") 模块，测试任务叫 test（没有 testDebugUnitTest 变体），
 # 只跑 testDebugUnitTest 覆盖不到它——故显式追加 :core:model:test（A-S1 补账）。
-app-test: ## Android 单元测试（Android 模块 testDebugUnitTest + :core:model 纯 JVM test）
+app-test: ## Android unit tests (testDebugUnitTest + :core:model pure-JVM test)
 	cd android && ./gradlew testDebugUnitTest :core:model:test
 
-app-lint: ## Android Lint（全部模块 lintDebug，error 即失败）
+app-lint: ## Android lint (lintDebug on all modules; fails on error)
 	cd android && ./gradlew lintDebug
 
-server-run: ## 本地运行服务端（:8420；自定义配置直接 go run ./server/cmd/qimeng -config <yaml>）
+server-run: ## run server locally (:8420; custom cfg: go run ./server/cmd/qimeng -config <yaml>)
 	cd server && go run ./cmd/qimeng
 
-server-test: ## 服务端全部测试（-race 由 CI 跑；本机 Windows 无 gcc 编译器）
+server-test: ## all server tests (-race runs in CI; no gcc on Windows host)
 	cd server && go test ./... -count=1
 
 # Android 服务端交叉编译（M6 单机形态，ADR-0015）。产物投放口径：
@@ -189,10 +189,10 @@ ANDROID_NDK_HOME ?= <AndroidSdk>/ndk/28.2.13676358
 # 需按本机 NDK prebuilt 目录改写（arm64 target 不依赖 NDK，跨宿主无此问题）。
 NDK_X64_CLANG := $(ANDROID_NDK_HOME)/toolchains/llvm/prebuilt/windows-x86_64/bin/x86_64-linux-android35-clang.cmd
 
-server-android-arm64: ## 交叉编译 Android arm64 服务端（真机投放；build/android/arm64-v8a/qimeng-server）
+server-android-arm64: ## cross-compile arm64 server for Android device (build/android/arm64-v8a/qimeng-server)
 	cd server && GOOS=android GOARCH=arm64 CGO_ENABLED=0 go build -o ../build/android/arm64-v8a/qimeng-server ./cmd/qimeng
 
-server-android-amd64: ## 交叉编译 Android x86_64 服务端（模拟器验证专用；build/android/x86_64/qimeng-server）
+server-android-amd64: ## cross-compile x86_64 server for Android emulator (build/android/x86_64/qimeng-server)
 	cd server && GOOS=android GOARCH=amd64 CGO_ENABLED=1 CC="$(NDK_X64_CLANG)" go build -o ../build/android/x86_64/qimeng-server ./cmd/qimeng
 
 # ---------- 内嵌形态三件套装配（任务U11 批次D，ADR-0015 形态 B）----------
@@ -200,35 +200,35 @@ server-android-amd64: ## 交叉编译 Android x86_64 服务端（模拟器验证
 EMBEDDED_JNILIBS := android/app/src/main/jniLibs
 
 
-app-embedded-arm64: server-android-arm64 ## 装配内嵌形态 arm64 三件套（release 终包）
+app-embedded-arm64: server-android-arm64 ## assemble embedded arm64 trio (release final; jniLibs + ffmpeg)
 	mkdir -p "$(EMBEDDED_JNILIBS)/arm64-v8a"
 	cp build/android/arm64-v8a/qimeng-server "$(EMBEDDED_JNILIBS)/arm64-v8a/libqimeng.so"
 	powershell -NoProfile -ExecutionPolicy Bypass -File deploy/embedded/fetch-ffmpeg-arm64.ps1
 
-app-embedded-x86_64: server-android-amd64 ## 装配模拟器验壳件（x86_64 服务端；ffmpeg 复用 arm64 经 binfmt 翻译）
+app-embedded-x86_64: server-android-amd64 ## assemble embedded x86_64 shell (emulator verify; ffmpeg reused from arm64 via binfmt)
 	mkdir -p "$(EMBEDDED_JNILIBS)/x86_64"
 	cp build/android/x86_64/qimeng-server "$(EMBEDDED_JNILIBS)/x86_64/libqimeng.so"
 	[ -f "$(EMBEDDED_JNILIBS)/arm64-v8a/libffmpeg_cli.so" ] || $(MAKE) app-embedded-arm64
 	cp "$(EMBEDDED_JNILIBS)/arm64-v8a/libffmpeg_cli.so" "$(EMBEDDED_JNILIBS)/x86_64/libffmpeg_cli.so"
 	cp "$(EMBEDDED_JNILIBS)/arm64-v8a/libffprobe_cli.so" "$(EMBEDDED_JNILIBS)/x86_64/libffprobe_cli.so"
 
-app-embedded: app-embedded-arm64 app-embedded-x86_64 ## 全 ABI 装配（本地验壳+出包一步到位）
+app-embedded: app-embedded-arm64 app-embedded-x86_64 ## assemble all ABIs (local shell verify + package in one step)
 
-web-build: ## 构建 Web 前端产物（web/dist）——服务端 SPA 托管依赖此产物（默认 web.static_dir=../web/dist，见 server/internal/config）；未构建时服务端回退内嵌验收页，页面功能不完整但服务不挂
+web-build: ## build web dist (web/dist; server SPA hosting depends on it, fallback page without it)
 	npm --prefix web run build
 
-web-dev: ## Web 开发服务器（vite dev）
+web-dev: ## web dev server (vite)
 	npm --prefix web run dev
 
-web-test: ## Web 检查（tsc 类型检查 + oxlint；package.json 无独立 check script，组合 build+lint）
+web-test: ## web checks (tsc + oxlint; build + lint combo)
 	@test -d web/node_modules || npm --prefix web install
 	npm --prefix web run build
 	npm --prefix web run lint
 
-docker-build: ## 双架构镜像（amd64+arm64，含 ffmpeg）——未实现
+docker-build: ## dual-arch image (amd64+arm64, ffmpeg) -- not implemented yet (see PROJECT_PLAN M5)
 	@echo "TODO(M5): image delivery not implemented yet; see PROJECT_PLAN M5 (docker buildx build --platform linux/amd64,linux/arm64)"
 
-lint: ## 全部静态检查（openapi 协议 + Go gofmt/golangci-lint + TS）
+lint: ## all static checks (openapi spec + gofmt/golangci-lint + TS)
 	@echo "==> openapi spec lint (redocly; errors fail the build)"
 	$(REDOCLY) lint api/openapi.yaml
 	@echo "==> Go gofmt（格式不一致即失败）"
