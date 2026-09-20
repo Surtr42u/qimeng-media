@@ -84,6 +84,13 @@ class AuthRepositoryImpl @Inject constructor(
             // 本机模式登录只写本地记忆槽，NAS 记忆不被覆盖。写记忆放在写 token 前：壳层由 token
             // 流驱动跳壳，地址相关的持久化（主键+记忆槽）都完成后再翻登录态。
             serverConfig.rememberLoginAddress(baseUrl)
+            // 默认登录端跟随实际登录端（2026-09-20 第三百六十三笔，用户拍板迭代）：登录成功=
+            // 用户实际选了这一端，「默认登录」选项同步改写——设置页单选只预置下一次登录，
+            // 登录后被实际选择覆盖，保证登录页预选与用户真实用法一致（修复「切回 NAS 却总被
+            // 预填成本机」的预置覆盖类困惑）。
+            serverConfig.setDefaultEndpoint(
+                if (ServerAddress.isLocalModePreset(baseUrl)) DefaultEndpoint.LOCAL else DefaultEndpoint.NAS,
+            )
             serverConfig.updateToken(token)
             LoginResult.Success
         } catch (e: IOException) {

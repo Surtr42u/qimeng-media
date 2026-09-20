@@ -7,6 +7,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,15 +21,16 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -38,6 +40,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.input.KeyboardType
@@ -45,6 +48,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import media.qimeng.app.core.data.repository.LoginError
+import media.qimeng.app.core.network.DefaultEndpoint
 import media.qimeng.app.core.network.shouldRequestLocalNetworkPermission
 import media.qimeng.app.core.ui.component.Dimens
 import media.qimeng.app.core.ui.component.QimengCapsuleTextField
@@ -111,25 +115,35 @@ fun LoginScreen(
                 color = MaterialTheme.colorScheme.onBackground,
             )
             Spacer(modifier = Modifier.height(TitleSpacing))
-            // 胶囊输入框 label 走 placeholder 语义（G6：对齐 Web，组件不支持 label 浮动）
-            QimengCapsuleTextField(
-                value = uiState.serverUrl,
-                onValueChange = viewModel::onServerUrlChange,
-                placeholder = stringResource(R.string.login_server_url_placeholder),
-                singleLine = true,
+            // 登录端两选项（第三百六十三笔，用户拍板：外部登录只留「服务器 / 本机」两个选项）；
+            // 服务器选项下挂地址输入（进页按记忆解析回填、可改），本机选项只读展示地址
+            EndpointRow(
+                label = stringResource(R.string.login_option_server),
+                caption = uiState.serverUrl,
+                selected = uiState.selected == DefaultEndpoint.NAS,
                 enabled = !uiState.isSubmitting,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next),
-                modifier = Modifier.fillMaxWidth(),
+                onClick = { viewModel.onEndpointSelected(DefaultEndpoint.NAS) },
             )
-            // 本机模式快捷填入（T3，ADR-0015）：只加入口不加页面（UI 结构零改动）——
-            // 一键把预设地址填入上方输入框（未提交态），确认仍走既有登录按钮
-            TextButton(
-                onClick = viewModel::fillLocalMode,
-                enabled = !uiState.isSubmitting,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(text = stringResource(R.string.login_fill_local_mode))
+            if (uiState.selected == DefaultEndpoint.NAS) {
+                // 胶囊输入框 label 走 placeholder 语义（G6：对齐 Web，组件不支持 label 浮动）；
+                // 冻结占位示例 http://192.168.x.x:8420（规范化在 core ServerAddress，UI 不校验格式）
+                QimengCapsuleTextField(
+                    value = uiState.serverUrl,
+                    onValueChange = viewModel::onServerUrlChange,
+                    placeholder = stringResource(R.string.login_server_url_placeholder),
+                    singleLine = true,
+                    enabled = !uiState.isSubmitting,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next),
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
+            EndpointRow(
+                label = stringResource(R.string.login_option_local),
+                caption = uiState.localUrl,
+                selected = uiState.selected == DefaultEndpoint.LOCAL,
+                enabled = !uiState.isSubmitting,
+                onClick = { viewModel.onEndpointSelected(DefaultEndpoint.LOCAL) },
+            )
             Spacer(modifier = Modifier.height(FieldSpacing))
             QimengCapsuleTextField(
                 value = uiState.password,
@@ -186,6 +200,51 @@ private fun LoginError.toMessageRes(): Int = when (this) {
     LoginError.DevLoginUnavailable -> R.string.login_error_dev_unavailable
     is LoginError.Other -> R.string.login_error_other
 }
+
+/**
+ * 登录端选项行（第三百六十三笔）：单选钮 + 端名 + 地址小字（选中态高亮整行可点）。
+ * 视觉语义与设置页「默认登录」单选一致——同一概念在两页同款式。
+ */
+@Composable
+private fun EndpointRow(
+    label: String,
+    caption: String,
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .selectable(
+                selected = selected,
+                enabled = enabled,
+                role = Role.RadioButton,
+                onClick = onClick,
+            )
+            .padding(vertical = RowVerticalPadding),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(selected = selected, onClick = null)
+        Column(modifier = Modifier.padding(start = RowLabelSpacing)) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onBackground,
+            )
+            if (caption.isNotEmpty()) {
+                Text(
+                    text = caption,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+private val RowVerticalPadding = 8.dp
+private val RowLabelSpacing = 4.dp
 
 private val TitleSpacing = 24.dp
 private val FieldSpacing = 12.dp

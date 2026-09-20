@@ -141,6 +141,20 @@ class AuthRepositoryImplTest {
     }
 
     @Test
+    fun `登录成功_默认登录端同步为NAS`() = runTest {
+        assertTrue(repository.login(FAKE_BASE_URL, correctPassword) is LoginResult.Success)
+        // 第三百六十三笔：登录成功=实际选择了该端，默认登录选项跟随——设置页单选只预置
+        // 下一次登录，登录后被实际选择覆盖（登录页预选与真实用法一致）
+        assertEquals(DefaultEndpoint.NAS, serverConfig.defaultEndpoint.first())
+    }
+
+    @Test
+    fun `本机登录成功_默认登录端同步为本机`() = runTest {
+        assertTrue(repository.login(ServerAddress.LOCAL_MODE_PRESET, "") is LoginResult.Success)
+        assertEquals(DefaultEndpoint.LOCAL, serverConfig.defaultEndpoint.first())
+    }
+
+    @Test
     fun `密码错误_返回WrongPassword且不落盘`() = runTest {
         val result = repository.login(FAKE_BASE_URL, "wrong-password")
 

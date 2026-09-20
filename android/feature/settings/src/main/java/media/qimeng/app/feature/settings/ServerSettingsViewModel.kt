@@ -162,6 +162,9 @@ class ServerSettingsViewModel @Inject constructor(
      * 地址仍经 ServerConfigDataSource 单点流转（与旧设置页快捷入口同语义）。
      * 规范化失败只置错误态不发仓库调用（中文文案在屏幕层）；提交后不回滚 isSaving——
      * 登出成功即整页离树（壳层切登录页），重入位随页面销毁消失。
+     * 默认登录端同步改写（第三百六十三笔，用户拍板）：显式切换到哪端，「默认登录」就记
+     * 哪端——登录页预选与切换目标一致。这是「切到本机后从地址卡切回 NAS 却依旧登回本机」
+     * 的根修：切换意图先落默认端，登录页不再用过期默认覆盖刚预置的地址。
      */
     private fun stageAndLogout(rawInput: String, onInvalid: () -> Unit) {
         if (_uiState.value.isSaving) return
@@ -174,8 +177,10 @@ class ServerSettingsViewModel @Inject constructor(
         // 回填 18430 后用户点登录时服务端已在启动中；非预设地址（自定义端口=
         // 自带 Termux 服务端场景）不触发内嵌拉起
         embeddedServerController.ensureStartedIfLocalMode(normalized)
+        val endpoint = if (ServerAddress.isLocalModePreset(normalized)) DefaultEndpoint.LOCAL else DefaultEndpoint.NAS
         _uiState.update { it.copy(isSaving = true) }
         viewModelScope.launch {
+            authRepository.setDefaultEndpoint(endpoint)
             authRepository.logoutWithStagedUrl(normalized)
             _events.send(ServerSettingsEvent.LoggedOut)
         }
