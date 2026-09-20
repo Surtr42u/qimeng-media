@@ -8,6 +8,14 @@
 - 子代理执行的工作标注"（执行子代理）"，主对话直接完成的标注"（主代理）"。
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
+## feat(server): view_events 补 (kind,started_at) 复合索引（migration 0013）——stats 族全表扫变索引范围扫——审计 R4（2026-09-20 第三百七十一笔）
+
+执行 AI：GLM-5.3-Flash（执行 AI）
+
+- **R4（拍板：只加索引、不建物化表）**：stats 族查询（CountOpenEventsAll/CountOpenEventsOnDay/SummarizeOpenWindow/Top* 榜单）谓词 = kind 等值 + started_at 窗口范围；既有 idx_view_events_asset(asset_id, kind) 与 idx_view_events_started(started_at) 的前导列均不能服务 kind 过滤，CountOpenEventsAll 只能全表扫。0013 落 `idx_view_events_kind_started(kind, started_at)`，查询零改动变索引范围扫。物化表方案明确不做（口径逐位等价无法离线验证，审计原结论维持）；触发条件记台账：overview P95 > 500ms 再议。
+- **migration 0013**（只加不改，ADR-0011）：up = CREATE INDEX；down = DROP INDEX IF EXISTS（格式对齐 0012）；embed `*.sql` 模式自动覆盖。
+- **测试连带**：store_test.go TestMigrateDownThenUp 按「新增迁移在链首插入验证步」既有流程补 0013 步（索引删除 + 既有 idx_view_events_asset 保留断言）；sqlc 以 migrations 为 schema 复验通过；server 全量 build/vet/test 绿。
+
 ## perf(server): GET /dirs 目录树 10s TTL 进程内缓存+建目录即时失效——审计 R3（2026-09-20 第三百七十笔）
 
 执行 AI：GLM-5.3-Flash（执行 AI）
