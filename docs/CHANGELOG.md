@@ -31,7 +31,7 @@
 执行 AI：GLM-5.3-Flash（执行 AI）
 
 - **R10-a（open/play 去重先查后插 TOCTOU）**：migration 0014 落 `view_events.day` 列 + 部分唯一索引 `(asset_id,kind,session_id,day) WHERE kind IN ('open','play')`——并发双击双双通过 ExistsViewEventOnDay 后，输家插入静默 0 行，走既有「0 行 → 202 不计数」路径；先查降级为快路径。day 显式列的原因：去重窗口是本地日历日而 started_at 存 UTC 串，UTC 前缀 ≠ 本地日且时区随部署机走，表达式索引不可移植；day 由写入侧 store.FormatDay 填充（与物化表同源）。**导入回放显式 day=NULL**：导入共用常量 session_id，非 NULL 会被索引误吞同日增量（导入幂等由内容键 client_event_id 承担）；存量行 NULL 不受索引约束（0010 先例）。InsertViewEventIdempotent 改无目标 `ON CONFLICT DO NOTHING`（同时覆盖 0010/0014 两索引，CHECK 类约束仍照常报错）。
-- **R10-b（点赞 toggle 并发双击 500）**：AddLike 严格 INSERT 改 AddLikeOnDayIdempotent（ON CONFLICT DO NOTHING :execrows）——双击双过 HasLikedOnDay=0 时输家 0 行，响应按「竞态输家」处理（liked=true 语义由既有 liked==0 推导恰为正确），(asset_id, day) 主键兜底不变、永不双计。
+- **R10-b（点赞 toggle 并发双击 500）**：AddLike 严格 INSERT 改 AddLikeOnDayIdempotent（ON CONFLICT DO NOTHING :execrows）——双击双过 HasLikedOnDay=0 时输家 0 行，响应按「竞态输家」处理（liked=true 语义由既有 liked==0 推导恰为正确），(asset_id, day) 主键兜底不变、永不双计。（随批补：SA9003 空分支消除——竞态说明移入注释、0 行返回值显式忽略，无行为变化。）
 - **ADR 立场更新**：view_events.sql 头注记档——表默认无唯一约束（去重规则代码侧主裁）立场不变，0010/0014 两个 schema 级幂等兜底为例外先例。
 - **测试**：TestEngagementSessionDedupBackstop（db 层确定性四象限 + handler 层 8 goroutine 并发恰 1 行/恰 1 计数）；store 唯一约束测试迁移为行数断言；TestMigrateDownThenUp 补 0014 步；server 全量绿。
 
