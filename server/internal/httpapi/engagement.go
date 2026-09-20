@@ -168,17 +168,17 @@ func (s *Server) PutApiV1AssetsAssetIdLike(w http.ResponseWriter, r *http.Reques
 			s.internalErr(w, "取消点赞", err)
 			return
 		}
-	} else if inserted, err := s.q.AddLikeOnDayIdempotent(r.Context(), db.AddLikeOnDayIdempotentParams{
+	} else if _, err := s.q.AddLikeOnDayIdempotent(r.Context(), db.AddLikeOnDayIdempotentParams{
 		AssetID: assetID.String(), Day: day, CreatedAt: store.FormatTimestamp(s.now()),
 	}); err != nil {
 		s.internalErr(w, "点赞", err)
 		return
-	} else if inserted == 0 {
-		// R10（审计 2026-09-20）：并发双击两个请求都通过 HasLikedOnDay=0，
-		// 输家撞 (asset_id, day) 主键。旧行为是 500；现按「竞态输家」处理
-		// ——不取消、不报错，往下走重新计数并回 liked=true（下方 liked
-		// 变量来自写前读=0，LikedToday=liked==0 恰为 true，语义正确）。
 	}
+	// R10（审计 2026-09-20）：AddLikeOnDayIdempotent 的 0 行返回值无需在此
+	// 分支——它对应「并发双击竞态输家」（双方都通过 HasLikedOnDay=0 后，
+	// 输家撞 (asset_id, day) 主键被静默吸收）。旧行为此处 500；现在输家
+	// 自然落到下方统一响应：liked 变量来自写前读=0，LikedToday=liked==0
+	// 恰为 true，likeCount 重新计数即含竞态赢家的那一行。
 	// likeCount 是推荐打分输入（§1.1 likeScore），点赞/取消后推荐缓存失效
 	s.invalidateRecommendCache()
 	count, err := s.q.CountAssetLikes(r.Context(), assetID.String())
