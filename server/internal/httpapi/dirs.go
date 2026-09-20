@@ -31,7 +31,17 @@ func (s *Server) GetApiV1Dirs(w http.ResponseWriter, r *http.Request, params gen
 		s.internalErr(w, "查询库", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, buildDirTree(lib.RootPath, ""))
+	// R3（审计 2026-09-20）：树构建=全量递归遍历磁盘，按 libraryId 做 10s
+	// TTL 进程内缓存。命中直接写回；未命中构建后先 put 再写回——树只构建
+	// 一次、写回两次共用同一棵（dirsCacheEntry 内共享同一 *gen.DirTree
+	// 指针字段，序列化只读安全）。
+	if tree, ok := s.dirs.get(params.LibraryId); ok {
+		writeJSON(w, http.StatusOK, tree)
+		return
+	}
+	tree := buildDirTree(lib.RootPath, "")
+	s.dirs.put(params.LibraryId, tree)
+	writeJSON(w, http.StatusOK, tree)
 }
 
 // buildDirTree 递归组装 DirTree。fileCount = 该目录直接子文件数
@@ -105,5 +115,8 @@ func (s *Server) PostApiV1Dirs(w http.ResponseWriter, r *http.Request) {
 		s.internalErr(w, "创建目录", err)
 		return
 	}
+	// 服务端自身建目录 → 该库目录树缓存即时失效（新目录立即可见；
+	// dirs_cache.go 文件头说明 upload/move 的 MkdirAll 为何不接失效）。
+	s.dirs.invalidate(req.LibraryID)
 	w.WriteHeader(http.StatusCreated)
 }
