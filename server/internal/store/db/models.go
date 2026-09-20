@@ -26,6 +26,7 @@ type Asset struct {
 	VideoCodec          sql.NullString
 	AudioCodec          sql.NullString
 	CosWork             sql.NullString
+	TagSetUpdatedAt     string
 }
 
 type AssetAuthor struct {

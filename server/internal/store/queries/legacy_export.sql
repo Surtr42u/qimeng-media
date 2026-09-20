@@ -22,6 +22,9 @@ SELECT a.asset_id         AS asset_id,
        a.width            AS width,
        a.height           AS height,
        a.created_at       AS created_at,
+       -- tag-set mtime for the backup's tagsUpdatedAtMillis (DOMAIN_RULES 10
+       -- tag-set sync semantics); '' sentinel exports as omitted field.
+       a.tag_set_updated_at AS tag_set_updated_at,
        l.kind             AS library_kind
 FROM assets AS a
 JOIN libraries AS l ON l.id = a.library_id

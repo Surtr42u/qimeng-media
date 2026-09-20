@@ -320,6 +320,9 @@ SELECT a.asset_id         AS asset_id,
        a.width            AS width,
        a.height           AS height,
        a.created_at       AS created_at,
+       -- tag-set mtime for the backup's tagsUpdatedAtMillis (DOMAIN_RULES 10
+       -- tag-set sync semantics); '' sentinel exports as omitted field.
+       a.tag_set_updated_at AS tag_set_updated_at,
        l.kind             AS library_kind
 FROM assets AS a
 JOIN libraries AS l ON l.id = a.library_id
@@ -327,17 +330,18 @@ ORDER BY a.file_name, a.rel_path
 `
 
 type ExportListAssetsRow struct {
-	AssetID     string
-	FileName    string
-	RelPath     string
-	MediaType   string
-	SizeBytes   int64
-	Mtime       string
-	DurationMs  sql.NullInt64
-	Width       sql.NullInt64
-	Height      sql.NullInt64
-	CreatedAt   string
-	LibraryKind string
+	AssetID         string
+	FileName        string
+	RelPath         string
+	MediaType       string
+	SizeBytes       int64
+	Mtime           string
+	DurationMs      sql.NullInt64
+	Width           sql.NullInt64
+	Height          sql.NullInt64
+	CreatedAt       string
+	TagSetUpdatedAt string
+	LibraryKind     string
 }
 
 // legacy_export.sql: legacy-format backup export dumps (new library ->
@@ -371,6 +375,7 @@ func (q *Queries) ExportListAssets(ctx context.Context) ([]ExportListAssetsRow, 
 			&i.Width,
 			&i.Height,
 			&i.CreatedAt,
+			&i.TagSetUpdatedAt,
 			&i.LibraryKind,
 		); err != nil {
 			return nil, err

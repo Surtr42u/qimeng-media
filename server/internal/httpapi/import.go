@@ -107,6 +107,9 @@ type legacyImport struct {
 	res        gen.LegacyImportResult
 	warnings   []string          // 累积提示，结束时回填 res.Warnings
 	keyToAsset map[string]string // recordKey → 匹配到的 asset_id
+	// recordKey → 备份侧标签组改动毫秒（§10 标签组同步语义；nil = 备份未带
+	// 时间 = 未知，导入端回退并集合并）。
+	keyToTagsTime map[string]*int64
 }
 
 // fail 写 500 并置中止标记（后续段跳过；幂等保证修复后重跑不翻倍）。
@@ -168,6 +171,7 @@ func (imp *legacyImport) matchFiles(files *[]gen.LegacyMediaFile) {
 	list := sliceOrEmpty(files)
 	imp.res.MediaFilesTotal = ptr(len(list))
 	imp.keyToAsset = make(map[string]string, len(list))
+	imp.keyToTagsTime = make(map[string]*int64, len(list))
 	for _, f := range list {
 		rows, err := imp.s.q.ListAssetsByFileName(imp.ctx, f.FileName)
 		if err != nil {
@@ -177,6 +181,7 @@ func (imp *legacyImport) matchFiles(files *[]gen.LegacyMediaFile) {
 		if assetID := pickAssetByFolder(rows, f.FolderName); assetID != "" {
 			imp.keyToAsset[f.RecordKey] = assetID
 		}
+		imp.keyToTagsTime[f.RecordKey] = f.TagsUpdatedAtMillis
 	}
 	imp.res.AssetsMatched = ptr(len(imp.keyToAsset))
 }
@@ -252,8 +257,11 @@ func (imp *legacyImport) bump(p **int) {
 	**p++
 }
 
-// importTags：按 name 去重建标签（旧 tagId 忽略）+ 关联写入；ref 的
-// createdAtMillis 缺省（v1.19 前备份）回退导入时刻。
+// importTags：按 name 去重建标签（旧 tagId 忽略）+ 关联写入（§10 标签组同步
+// 语义）。关联按资产聚合后逐资产判定：备份侧时间与库内 tag_set_updated_at 都
+// 已知且备份较新 → 该资产标签组整体替换（清空重挂 + 库内时间改写为备份时间）；
+// 其余情况并集合并（只增不删）且不改库内时间——并集结果没有单一来源时刻，
+// 宁可保留「未知」也不造假版本。
 func (imp *legacyImport) importTags(tags *[]gen.LegacyTag, refs *[]gen.LegacyMediaTagRef) {
 	if imp.aborted {
 		return
@@ -267,21 +275,89 @@ func (imp *legacyImport) importTags(tags *[]gen.LegacyTag, refs *[]gen.LegacyMed
 		}
 		tagIDs[t.Name] = id
 	}
+	// 按资产聚合备份关联：同一资产的多个 ref 可能来自不同 recordKey（同名
+	// 消歧变体），备份时间取已知值中的最大者（新者生效，保守不丢新改动）。
+	type assetPlan struct {
+		refs     []gen.LegacyMediaTagRef
+		backupMs int64
+		hasTime  bool
+	}
+	plans := make(map[string]*assetPlan)
 	for _, ref := range sliceOrEmpty(refs) {
 		assetID, okAsset := imp.keyToAsset[ref.RecordKey]
-		tagID, okTag := tagIDs[ref.TagName]
+		_, okTag := tagIDs[ref.TagName]
 		if !okAsset || !okTag {
 			imp.bump(&imp.res.TagRefsSkipped)
 			continue
 		}
-		err := imp.s.q.ImportAddAssetTag(imp.ctx, db.ImportAddAssetTagParams{
-			AssetID: assetID, TagID: tagID, CreatedAt: nowOrMillis(ref.CreatedAtMillis, imp.s.now()),
-		})
+		plan := plans[assetID]
+		if plan == nil {
+			plan = &assetPlan{}
+			plans[assetID] = plan
+		}
+		plan.refs = append(plan.refs, ref)
+		if ms := imp.keyToTagsTime[ref.RecordKey]; ms != nil && *ms > 0 {
+			if !plan.hasTime || *ms > plan.backupMs {
+				plan.backupMs = *ms
+			}
+			plan.hasTime = true
+		}
+	}
+	now := imp.s.now()
+	for assetID, plan := range plans {
+		server, err := imp.s.q.GetAsset(imp.ctx, assetID)
 		if err != nil {
-			imp.fail("导入标签关联", err)
+			imp.fail("查询资产标签组时间", err)
 			return
 		}
-		imp.bump(&imp.res.TagRefsImported)
+		// 库内时间已知性：'' 哨兵或解析失败一律视为未知（§10 回退并集）。
+		serverKnown := false
+		var serverMs int64
+		if server.TagSetUpdatedAt != "" {
+			if ms, err := millisOf(server.TagSetUpdatedAt); err == nil {
+				serverKnown, serverMs = true, ms
+			}
+		}
+		if !plan.hasTime || !serverKnown || plan.backupMs <= serverMs {
+			// 并集合并（缺省路径）：只增不删，不改库内时间。
+			for _, ref := range plan.refs {
+				err := imp.s.q.ImportAddAssetTag(imp.ctx, db.ImportAddAssetTagParams{
+					AssetID: assetID, TagID: tagIDs[ref.TagName],
+					CreatedAt: nowOrMillis(ref.CreatedAtMillis, now),
+				})
+				if err != nil {
+					imp.fail("导入标签关联", err)
+					return
+				}
+				imp.bump(&imp.res.TagRefsImported)
+			}
+			continue
+		}
+		// 备份较新：整体替换（清空重挂；时间改写为备份时刻——同备份重导时
+		// 备份时间 == 库内时间，落回并集路径，幂等性不破）。
+		if err := imp.s.q.DeleteAssetTags(imp.ctx, assetID); err != nil {
+			imp.fail("替换标签组清空", err)
+			return
+		}
+		for _, ref := range plan.refs {
+			err := imp.s.q.ImportAddAssetTag(imp.ctx, db.ImportAddAssetTagParams{
+				AssetID: assetID, TagID: tagIDs[ref.TagName],
+				CreatedAt: nowOrMillis(ref.CreatedAtMillis, now),
+			})
+			if err != nil {
+				imp.fail("替换标签组挂载", err)
+				return
+			}
+			imp.bump(&imp.res.TagRefsImported)
+		}
+		if err := imp.s.q.TouchAssetTagSet(imp.ctx, db.TouchAssetTagSetParams{
+			AssetID:         assetID,
+			TagSetUpdatedAt: store.FormatTimestamp(time.UnixMilli(plan.backupMs)),
+		}); err != nil {
+			imp.fail("改写标签组改动时间", err)
+			return
+		}
+		imp.bump(&imp.res.AssetsTagsReplaced)
 	}
 }
 

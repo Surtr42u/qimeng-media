@@ -1461,6 +1461,7 @@ components:
         isDuplicateName:  { type: boolean }
         isCosFile:        { type: boolean }
         indexedAtMillis:  { type: integer, format: int64 }
+        tagsUpdatedAtMillis: { type: [integer, "null"], format: int64, description: 资产标签组最后改动毫秒（DOMAIN_RULES §10 标签组同步语义；缺省/≤0 = 未知，旧版备份恒缺省——导入端按未知回退并集合并） }
         sourceUri:        { type: [string, "null"] }
 
     LegacySetting:
@@ -1599,6 +1600,7 @@ components:
         tagsImported:           { type: integer }
         tagRefsImported:        { type: integer }
         tagRefsSkipped:         { type: integer }
+        assetsTagsReplaced:     { type: [integer, "null"], description: 标签组被备份整体替换的资产数（备份时间较新才替换，§10 标签组同步语义；旧版客户端忽略此字段） }
         eventsReplayed:         { type: integer, description: ViewEvent 回放条数；同批次重复导入为 0 }
         likesImported:          { type: integer }
         favoritesImported:      { type: integer }

@@ -8,9 +8,18 @@
 - 子代理执行的工作标注"（执行子代理）"，主对话直接完成的标注"（主代理）"。
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
+## feat(api): 备份标签组同步语义——改动时间+备份较新整体替换（2026-09-20 第三百六十一笔）
 
----
----
+执行 AI：GLM-5.3（主代理）
+
+- **背景（用户报障+拍板）**：导入导出后标签两边并集合并（只增不删），一侧移除的标签在同步后复活；用户问「标签有改动时间吗」——答案是没有（tags 仅 created_at、asset_tags 无时间戳），遂拍板加改动时间做真·最新覆盖。
+- **协议**：openapi.yaml 两字段——LegacyMediaFile.tagsUpdatedAtMillis（资产标签组改动毫秒，缺省/≤0=未知，旧版备份恒缺省）+ LegacyImportResult.assetsTagsReplaced（替换资产数）；make sdk 三端重生成，api/sdk.lock 同 commit 更新（209 项）。
+- **库**：migration 0012 assets.tag_set_updated_at（RFC3339，'' 哨兵=未知；只加不改，down=DROP COLUMN）；sqlc v1.31.1 重生成（TouchAssetTagSet/ListAssetIDsByTag 新增，assets 全 SELECT 补列）。
+- **随动点**：替换式 PUT（事务内）、单关联解绑（n>0）、删除标签级联清关联（删前取受影响名单删后逐一随动）——httpapi/tags.go 收敛 touchAssetTagSetNow 单点。
+- **导入判定（import.go，逐资产）**：两侧时间都已知且备份>库内 → 整体替换（清空重挂+库内时间改写为备份时刻）；其余并集合并且不改库内时间（并集结果无单一来源时刻，不造假版本）；同备份重导时间相等落回并集路径=幂等不破。标签池恒并集 upsert。导出恒回带 tagsUpdatedAtMillis（'' 哨兵→字段缺省，旧版 App 容错）。
+- **测试**：新增 tagset_sync_test.go 六用例（较新替换/较旧并集/未知回退/重导幂等/导出回带/三条随动路径）；TestMigrateDownThenUp 链首插入 0012 步；go test ./... 15 包全绿。
+- **环境记档**：本机 sqlc（v1.27/v1.31.1 同样）解析 browse.sql 的 CASE+sqlc.arg 查询报 antlr 语法错（2026-09-18 同内容可过，环境漂移未定位）——临时挪出 browse.sql 完成生成后原样还原，其生成物 browse.sql.go 未变动（保持 09-18 版）；后续 sqlc 再生成需留意此坑。
+
 ---
 ## fix(server/web/app): 全库审查批——1×P1 缩略图档位根修+Android 主线程解析补修+6×P2 效率+规范清偿（2026-09-20 第三百六十笔）
 
