@@ -8,6 +8,17 @@
 - 子代理执行的工作标注"（执行子代理）"，主对话直接完成的标注"（主代理）"。
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
+## fix(app): 补回迁移丢失的 largeHeap 大堆声明——根修详情原图 OOM 误报「文件损坏」+归因三档（2026-09-20 第三百六十四笔）
+
+执行 AI：GLM-5.3（主代理）
+
+- **背景（用户报障+两轮追问驱动复盘）**：详情页大图不加载、报「该文件无法解码，可能已损坏或格式不受支持」，重试无效；用户追问「服务端传的怎么会坏」「旧版为什么没有这个问题，而且旧版明明也预加载」。期间按用户指令暂停修改、翻查旧项目完整源码（`Desktop/QimengMedia`）对照。
+- **实锤（诊断通道首功）**：CoilErrorLogListener 上报的客户端异常表抓到真实错误 = `OutOfMemoryError`（堆 target footprint 268435456 即 256MB 耗尽，发生在 Coil 经 OkHttp 拉原图流的 okio 读取途中）——OOM 非 IOException，旧两分法把它误归「无法解码/文件损坏」。服务端全程零错误：文件没坏，是手机解码内存不够。
+- **根因（旧版对照实证）**：旧版同样「预加载相邻图全尺寸解码 + allowHardware(false) 全落 Java 堆」，但 manifest 声明 `android:largeHeap="true"`（大堆 512MB）+ 内存缓存 0.35；新 App Compose 重建时丢失 largeHeap 声明 → 堆砍半 256MB，同口径必然爆堆。「原图不降采样」拍板（LEGACY_REQUIREMENTS v1.16）本身没有错，错的是堆水位没跟过来。
+- **修复（对齐旧版，口径②不动）**：① AndroidManifest 补回 `android:largeHeap="true"`（对齐旧版 512MB 堆水位）；② 失败归因两分法扩为三档 `classifyImageFailure`（NETWORK/MEMORY/DECODE）——OOM 提示「手机内存不足」不再误报「文件损坏」（新文案 detail_image_memory_failed，覆盖层/ViewModel 随动）。
+- **回退记档**：期间曾草拟「解码长边封顶 4096」方案，与 v1.16 用户拍板（原图不降采样、勿再推销降采样方案）冲突，按用户「暂停修改」指令回退，相关半成品未进入提交。
+- **测试**：ImageLoadErrorClassifierTest 随三档重写（+OOM 直抛/包装 OOM/链上网络优先于 OOM 共 3 新用例，原 9 用例迁移）；全量 testDebugUnitTest + assembleDebug 通过。
+
 ## fix(app): 登录页改「服务器/本机」两选项+切换同步默认端——修「切回 NAS 依旧本机」+设置页排序文案（2026-09-20 第三百六十三笔）
 
 执行 AI：GLM-5.3（主代理）
