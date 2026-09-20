@@ -43,6 +43,8 @@ data class ServerSettingsUiState(
     val chargeOnlyScanEnabled: Boolean = true,
     /** 「默认登录」选项（2026-09-20 用户拍板；null = 未设置 → 登录页保持「记忆上次」） */
     val defaultEndpoint: DefaultEndpoint? = null,
+    /** 当前实际连接的端（第三百六十四笔「正在使用」标记数据源；null = 无地址） */
+    val activeEndpoint: DefaultEndpoint? = null,
 )
 
 /** 一次性事件：登出完成（壳层登录态流随即切登录页；本事件是切页前的兜底退栈信号） */
@@ -85,14 +87,20 @@ class ServerSettingsViewModel @Inject constructor(
             }.collect { (url, nasMemory) ->
                 // C-3：本机模式判定随地址流实时刷新（连 localhost:18430 = isLocalModePreset）
                 val localMode = ServerAddress.isLocalModePreset(url)
+                // 「正在使用」标记数据源（第三百六十四笔）：当前生效地址的端型
+                val active = when {
+                    url.isEmpty() -> null
+                    localMode -> DefaultEndpoint.LOCAL
+                    else -> DefaultEndpoint.NAS
+                }
                 if (!inputSeeded && url.isNotEmpty()) {
                     inputSeeded = true
                     val seed = if (localMode) nasMemory.ifEmpty { url } else url
                     _uiState.update {
-                        it.copy(currentUrl = url, urlInput = seed, isLocalMode = localMode)
+                        it.copy(currentUrl = url, urlInput = seed, isLocalMode = localMode, activeEndpoint = active)
                     }
                 } else {
-                    _uiState.update { it.copy(currentUrl = url, isLocalMode = localMode) }
+                    _uiState.update { it.copy(currentUrl = url, isLocalMode = localMode, activeEndpoint = active) }
                 }
             }
         }

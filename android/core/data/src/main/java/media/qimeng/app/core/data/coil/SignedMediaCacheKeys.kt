@@ -45,11 +45,13 @@ object SignedMediaCacheKeys {
     private val HTTPS_PREFIX = ServerAddress.SCHEME_HTTPS
     private const val QUERY_SEPARATOR = "?"
     private const val PARAM_SEPARATOR = "&"
+    private const val SCHEME_SUFFIX = "://"
+    private const val PATH_ROOT = "/"
 
     /**
      * 由签名直链推导稳定缓存键（纯函数，行为由单元测试锁定）：
-     * - 剥掉 query 中随响应轮换的 `exp`/`sig`，其余参数（`size` 等）原样保留、顺序不变；
-     * - 无 query 的 http(s) URL 原样返回；
+     * - 剥掉 scheme/host（换地址访问同实例复用同一缓存，第三百六十五笔）与 query 中
+     *   随响应轮换的 `exp`/`sig`；其余参数（`size` 等）原样保留、顺序不变；
      * - 非签名家族（path 不含 [MEDIA_PATH_PREFIX]）、非 http(s) 协议、空/blank
      *   输入 → null（调用方交回 Coil 默认键逻辑，异常输入安全兜底）。
      */
@@ -57,11 +59,15 @@ object SignedMediaCacheKeys {
         if (url.isBlank()) return null
         if (!url.startsWith(HTTP_PREFIX) && !url.startsWith(HTTPS_PREFIX)) return null
         val queryStart = url.indexOf(QUERY_SEPARATOR)
-        val path = if (queryStart < 0) url else url.substring(0, queryStart)
-        // 家族判定先于 query 处理：非签名家族一律回 null（无 query 交回默认键 = 原串，语义等价）
-        if (!path.contains(MEDIA_PATH_PREFIX)) return null
-        // 无 query：URL 本身已是稳定键（签名漂移只发生在 query 里），原样返回
-        if (queryStart < 0) return url
+        val withAuthority = if (queryStart < 0) url else url.substring(0, queryStart)
+        // 家族判定先于其余处理：非签名家族一律回 null（无 query 交回默认键 = 原串，语义等价）
+        if (!withAuthority.contains(MEDIA_PATH_PREFIX)) return null
+        // 剥 scheme://host——同服务实例换地址（USB 反代/WiFi/域名变更）复用同一缓存
+        // 条目（真机实证：换址后整库缩略图重复缓存，NAS 池 2.4 万文件/294MB）
+        val schemeEnd = withAuthority.indexOf(SCHEME_SUFFIX) + SCHEME_SUFFIX.length
+        val slash = withAuthority.indexOf(PATH_ROOT, schemeEnd.coerceAtMost(withAuthority.length))
+        val path = if (slash < 0) PATH_ROOT else withAuthority.substring(slash)
+        if (queryStart < 0) return path
         val keptParams = url.substring(queryStart + 1)
             .split(PARAM_SEPARATOR)
             .filter { it.substringBefore('=') !in ROTATING_PARAMS }

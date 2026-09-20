@@ -71,6 +71,7 @@ private const val LABEL_ENDPOINT_NAS = "NAS 服务器"
 private const val LABEL_ENDPOINT_LOCAL = "本机模式"
 private const val HINT_DEFAULT_ENDPOINT =
     "登录页默认选中的端；实际登录成功后也会自动跟随你登的端"
+private const val BADGE_ACTIVE_ENDPOINT = "正在使用"
 
 // ---------- 仅充电时扫描（批C 任务Q C-3，仅本机模式渲染） ----------
 private const val SECTION_CHARGE_ONLY_SCAN = "仅充电时扫描"
@@ -188,9 +189,10 @@ fun ServerSettingsScreen(
                 modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
             )
             // 默认登录端单选（2026-09-20 用户拍板；排序拍板=第三张卡：服务器→本机→默认）：
-            // 登录页预选跟随本选项，直写持久化
+            // 登录页预选跟随本选项，直写持久化；行尾「正在使用」标记当前实际连接的端
             DefaultEndpointCard(
                 selected = state.defaultEndpoint,
+                activeEndpoint = state.activeEndpoint,
                 onSelect = viewModel::onDefaultEndpointChange,
                 modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
             )
@@ -267,10 +269,13 @@ private fun ServerUrlEditCard(
 /**
  * 默认登录端卡（2026-09-20 用户拍板）：两个单选行，选中即直写持久化；null = 未选
  * （登录页保持「记忆上次」）。语义仅「下次登录预填哪个端」，不动当前连接。
+ * 行尾「正在使用」小徽标（第三百六十四笔）标记当前实际连接的端——默认/预选与
+ * 「正在用」是两个概念，视觉上分开避免再混淆。
  */
 @Composable
 private fun DefaultEndpointCard(
     selected: DefaultEndpoint?,
+    activeEndpoint: DefaultEndpoint?,
     onSelect: (DefaultEndpoint) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -283,21 +288,24 @@ private fun DefaultEndpointCard(
         )
         EndpointRow(
             label = LABEL_ENDPOINT_NAS,
+            inUse = activeEndpoint == DefaultEndpoint.NAS,
             selected = selected == DefaultEndpoint.NAS,
             onClick = { onSelect(DefaultEndpoint.NAS) },
         )
         EndpointRow(
             label = LABEL_ENDPOINT_LOCAL,
+            inUse = activeEndpoint == DefaultEndpoint.LOCAL,
             selected = selected == DefaultEndpoint.LOCAL,
             onClick = { onSelect(DefaultEndpoint.LOCAL) },
         )
     }
 }
 
-/** 单选行：RadioButton + 标签整行可点（selectable 语义，无障碍 role 随单选钮）。 */
+/** 单选行：RadioButton + 标签整行可点（selectable 语义，无障碍 role 随单选钮）+「正在使用」徽标。 */
 @Composable
 private fun EndpointRow(
     label: String,
+    inUse: Boolean,
     selected: Boolean,
     onClick: () -> Unit,
 ) {
@@ -309,8 +317,32 @@ private fun EndpointRow(
     ) {
         RadioButton(selected = selected, onClick = null)
         Text(text = label, style = MaterialTheme.typography.bodyMedium)
+        if (inUse) {
+            ActiveEndpointBadge(modifier = Modifier.padding(start = BadgeSpacing))
+        }
     }
 }
+
+/** 「正在使用」小徽标（第三百六十四笔）：主色小胶囊，标在当前实际连接的端旁。 */
+@Composable
+private fun ActiveEndpointBadge(modifier: Modifier = Modifier) {
+    Surface(
+        color = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        shape = RoundedCornerShape(percent = 50),
+        modifier = modifier,
+    ) {
+        Text(
+            text = BADGE_ACTIVE_ENDPOINT,
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(horizontal = BadgeHorizontalPadding, vertical = BadgeVerticalPadding),
+        )
+    }
+}
+
+private val BadgeSpacing = 8.dp
+private val BadgeHorizontalPadding = 8.dp
+private val BadgeVerticalPadding = 2.dp
 
 /**
  * 本机模式卡：预设地址说明 + 预填输入框 +「一键切换本机模式」（原设置页入口行迁入）。
