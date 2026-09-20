@@ -17,9 +17,10 @@ const (
 	// defaultRankingLimit 排行榜默认条数（api/openapi.yaml /rankings limit
 	// default=50；协议侧改默认值必须同步这里，反之亦然）。
 	defaultRankingLimit = 50
-	// maxRankingLimit 排行榜防御性上限：openapi /rankings 未声明 maximum，
-	// 但排行榜不分页且按热度全表排序，服务端仍需单次响应上限（与推荐流
-	// maxPageLimit 同值 200）——协议侧若给 maximum 必须同步这里。
+	// maxRankingLimit 排行榜单次响应上限：openapi /rankings limit 已声明
+	// maximum: 200（2026-09-20 审计清偿批 R5 补声明），与本常量同值双写——
+	// 协议侧改上限必须同步这里，反之亦然（原「防御性上限、协议未声明」
+	// 的协议债就此关闭）。
 	maxRankingLimit = 200
 )
 
