@@ -27,6 +27,9 @@
     <string name="detail_image_decode_failed">该文件无法解码，可能已损坏或格式不受支持</string>
     <!-- 图片态传输类失败提示（2026-09-18 分档新增：isNetworkTransferFailure 归因） -->
     <string name="detail_image_network_failed">网络不畅，图片加载失败，请重试</string>
+    <!-- 图片态内存不足提示（第三百六十四笔分档新增：classifyImageFailure 把 OOM 与
+        真解码失败区分——原两分法把内存压力误报成「文件损坏」误导用户） -->
+    <string name="detail_image_memory_failed">手机内存不足，图片加载失败，请重试或稍后再看</string>
 
     <!-- 尺寸格式串（任务X X2：下滑区 meta 行退役，其浏览/播放两条计数文案随之删除；
         resolution 保留——详细信息 Sheet「尺寸」行沿用，值格式口径单源） -->

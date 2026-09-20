@@ -44,16 +44,19 @@ private val DECODE_ERROR_HORIZONTAL_PADDING = 24.dp
  * 口径与原 ImageStage 实现逐字一致（抽取零行为变化）：
  * - **原图不降采样（口径②）**：请求用 [AssetDetail.origUrl]（签名直链，「查看永远发原件」）
  *   且显式 `.size(Size.ORIGINAL)`——Coil 默认会按目标 View 尺寸自动降采样，必须显式关掉；
- *   GPU 上限防护在渲染侧由 ZoomImageView 分层兜底（长边>4096 走 SOFTWARE，搬运件已含）；
+ *   GPU 上限防护在渲染侧由 ZoomImageView 分层兜底（长边>4096 走 SOFTWARE，搬运件已含）。
+ *   堆水位对齐：口径成立的前提是 largeHeap（旧版 manifest 同款声明，2026-09-20 迁移
+ *   缺失致 OOM 复发已补回）；
  * - **手势语义（冻结）**：单击 → [onSingleTap]；单指横滑 → [onSwipe](±1)；双指缩放/双击
  *   toggle 全在 ZoomImageView 内部（搬运件行为，不因宿主场景分叉）。
  *
  * 解码失败兜底（RES #27，D7 发现的清偿）：损坏原件（截断 JPEG 等）此前解码失败后
  * 舞台黑屏无任何提示。现 Target.onError 触发舞台中央中文提示 + 重试/返回——不崩、
  * 不黑屏哑失败。Coil 的 Target 不区分网络失败与解码失败（onError 只回调 null Image），
- * 归因走请求级 listener(onError) 的 ErrorResult.throwable（[isNetworkTransferFailure]
- * cause 链判传输类）：传输类 → 「网络不畅」文案（重试即恢复的多数派，2026-09-18 真机
- * BUG-A 复发把超时误报成「文件已损坏」后分档）；其余 → 「无法解码」兜底。
+ * 归因走请求级 listener(onError) 的 ErrorResult.throwable（[classifyImageFailure]
+ * cause 链三档判别）：传输类 → 「网络不畅」（重试即恢复的多数派，2026-09-18 真机
+ * BUG-A 复发把超时误报成「文件已损坏」后分档）、OOM → 「内存不足」（第三百六十四笔
+ * 扩档：客户端异常表实证解码链 OOM 被误报成损坏）、其余 → 「无法解码」兜底。
  * 重试 = 重发请求（错误结果不入缓存，必然真重拉）。视频态不涉（Media3 播放器错误面
  * 自成体系，且 Web 端编码兼容提示条已按 2026-09-05 用户拍板移除，无可对照口径——
  * 记档见交付报告）。
@@ -89,10 +92,10 @@ internal fun ZoomableOriginalImage(
     // 解码失败态（RES #27）：只反映「最近一次完成的结果」——请求发起时清零，
     // onError 置位、onSuccess 清零；重试经 [retryAttempt] 递增触发请求重建
     var decodeFailed by remember { mutableStateOf(false) }
-    // 失败归因（2026-09-18 文案分档）：传输类失败（超时/断流）与真解码失败分档提示——
-    // Target.onError 拿不到异常对象（coil3 只回调 null Image），归因走请求级
-    // listener(onError) 的 ErrorResult.throwable（coil 3.6.2 字节码核实）
-    var networkLikeFailure by remember { mutableStateOf(false) }
+    // 失败归因（2026-09-18 文案分档；第三百六十四笔扩三档 +内存档）：Target.onError
+    // 拿不到异常对象（coil3 只回调 null Image），归因走请求级 listener(onError) 的
+    // ErrorResult.throwable（coil 3.6.2 字节码核实）
+    var failureKind by remember { mutableStateOf(ImageFailureKind.DECODE) }
     var retryAttempt by remember { mutableIntStateOf(0) }
 
     // 加载期底色记档（修复B，2026-09-14）：exp#4 的整屏 secondaryContainer 灰色占位翼
@@ -120,7 +123,7 @@ internal fun ZoomableOriginalImage(
 
         if (decodeFailed) {
             DecodeErrorOverlay(
-                networkLikeFailure = networkLikeFailure,
+                failureKind = failureKind,
                 onRetry = {
                     decodeFailed = false
                     retryAttempt += 1
@@ -142,11 +145,11 @@ internal fun ZoomableOriginalImage(
             // 新请求在途：清旧失败态（失败态只反映最近一次完成的结果）；占位翼已撤
             // （修复B记档见上），加载期透出调用方 backdrop，旧版同款不闪白
             decodeFailed = false
-            networkLikeFailure = false
+            failureKind = ImageFailureKind.DECODE
             val request = ImageRequest.Builder(context)
                 .data(url)
-                // 口径②：不降采样。Size.ORIGINAL =「按原图尺寸解码」的显式表达；
-                // 缺省时 Coil 会按目标 View 尺寸解析出降采样尺寸
+                // 口径②：不降采样（LEGACY_REQUIREMENTS 用户拍板；堆水位对齐旧版由
+                // manifest largeHeap 承担——2026-09-20 OOM 复发根因即迁移时丢失该声明）
                 .size(Size.ORIGINAL)
                 // 任务U10-5（2026-09-14 用户拍板）：原图即看即取**不落盘**——
                 // 磁盘缓存只留给缩略图；原件体积大，落盘会让缓存无谓膨胀且损耗存储，
@@ -156,7 +159,7 @@ internal fun ZoomableOriginalImage(
                 // 失败归因（文案分档）：异常经 cause 链判传输类（见 isNetworkTransferFailure）
                 .listener(
                     onError = { _, result ->
-                        networkLikeFailure = isNetworkTransferFailure(result.throwable)
+                        failureKind = classifyImageFailure(result.throwable)
                     },
                 )
                 .target(
@@ -195,7 +198,7 @@ internal fun ZoomableOriginalImage(
  */
 @Composable
 private fun DecodeErrorOverlay(
-    networkLikeFailure: Boolean,
+    failureKind: ImageFailureKind,
     onRetry: () -> Unit,
     onExit: () -> Unit,
     modifier: Modifier = Modifier,
@@ -203,13 +206,13 @@ private fun DecodeErrorOverlay(
     Box(modifier = modifier.background(Color.Black), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
-                // 文案分档（2026-09-18）：传输类失败提示网络问题（重试即恢复的多数派），
-                // 其余保留「无法解码」兜底——此前一律报「可能已损坏」误导用户
+                // 文案分档（2026-09-18 两档；第三百六十四笔扩 +内存档）：传输类提示网络
+                // 问题、OOM 提示内存不足（均与「文件损坏」严格区分），其余保留「无法解码」兜底
                 text = stringResource(
-                    if (networkLikeFailure) {
-                        R.string.detail_image_network_failed
-                    } else {
-                        R.string.detail_image_decode_failed
+                    when (failureKind) {
+                        ImageFailureKind.NETWORK -> R.string.detail_image_network_failed
+                        ImageFailureKind.MEMORY -> R.string.detail_image_memory_failed
+                        ImageFailureKind.DECODE -> R.string.detail_image_decode_failed
                     },
                 ),
                 color = Color.White,
