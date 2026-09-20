@@ -50,6 +50,39 @@ func allHaveMediaExt(names []string) bool {
 	return true
 }
 
+// workKey 是作品名归一结果（MatchWorks 与 FileIndex 共用同一归一，防漂移）。
+type workKey struct {
+	base        string // 去扩展名（仅媒体扩展名时剥）+ 去全部半角空格的比较域
+	ext         string // 小写扩展名；无媒体扩展名时空串不参与比较
+	hasExt      bool
+	seqTolerant bool // 规则 2 触发条件：不带媒体扩展名且自身不含 (N)
+}
+
+// normalizeWork 把作品名归一为 workKey（原 MatchWorks 内联逻辑逐字搬运；
+// 调用方须先 TrimSpace 并排除空串）。
+func normalizeWork(work string) workKey {
+	hasExt := hasMediaExt(work)
+	// 比较域 = 去扩展名（仅带媒体扩展名时剥）+ 去全部半角空格；全角空格不折叠
+	//（与 sourcematcher collapse 的保真决策一致，规则权威同源）。
+	base := work
+	if hasExt {
+		base = strings.TrimSuffix(work, filepath.Ext(work))
+	}
+	base = strings.ReplaceAll(base, " ", "")
+	// 扩展名检查域（小写）：hasMediaExt=false 时为空串且不参与比较
+	ext := strings.ToLower(filepath.Ext(work))
+	// 规则 2 触发条件：作品名自身不含序号括号（在去空格域检测——去空格
+	// 不影响 (N) 形态）。带扩展名的作品名不触发规则 2（GUIDE_AUTHOR：
+	// "写 守望先锋 天使 4.jpg（带扩展名）不会触发规则 2，只做精确匹配"）。
+	return workKey{base: base, ext: ext, hasExt: hasExt, seqTolerant: !hasExt && !workSuffixRe.MatchString(base)}
+}
+
+// fileBaseOf 文件侧比较域：去扩展名 + 去全部半角空格（文件名不判定媒体
+// 扩展名，一律剥尾扩展名——与原 MatchWorks 循环体逐字一致）。
+func fileBaseOf(name string) string {
+	return strings.ReplaceAll(strings.TrimSuffix(name, filepath.Ext(name)), " ", "")
+}
+
 // MatchWorks 把一个 TXT 作品名与匹配域（normal 库资产）中的文件名匹配
 // （GUIDE_AUTHOR「文件名匹配规则」，两层按优先级；逐字对齐旧项目
 // AuthorImportUseCase.findMatchingMediaLight）：
@@ -70,37 +103,23 @@ func MatchWorks(work string, files []MediaFile) []MediaFile {
 	if work == "" {
 		return nil
 	}
-	hasExt := hasMediaExt(work)
-	// 比较域 = 去扩展名（仅带媒体扩展名时剥）+ 去全部半角空格；全角空格不折叠
-	//（与 sourcematcher collapse 的保真决策一致，规则权威同源）。
-	base := work
-	if hasExt {
-		base = strings.TrimSuffix(work, filepath.Ext(work))
-	}
-	workBase := strings.ReplaceAll(base, " ", "")
-	// 扩展名检查域（小写）：hasMediaExt=false 时为空串且不参与比较
-	workExt := strings.ToLower(filepath.Ext(work))
-
-	// 规则 2 触发条件：作品名自身不含序号括号（在去空格域检测——去空格
-	// 不影响 (N) 形态）。带扩展名的作品名不触发规则 2（GUIDE_AUTHOR：
-	// "写 守望先锋 天使 4.jpg（带扩展名）不会触发规则 2，只做精确匹配"）。
-	seqTolerant := !hasExt && !workSuffixRe.MatchString(workBase)
+	wk := normalizeWork(work)
 
 	var exact, seq []MediaFile
 	for _, f := range files {
-		fileBase := strings.ReplaceAll(strings.TrimSuffix(f.FileName, filepath.Ext(f.FileName)), " ", "")
-		if hasExt {
+		fileBase := fileBaseOf(f.FileName)
+		if wk.hasExt {
 			// 规则 1（带媒体扩展名作品）：基础名一致 + 扩展名一致
-			if strings.EqualFold(fileBase, workBase) && strings.ToLower(filepath.Ext(f.FileName)) == workExt {
+			if strings.EqualFold(fileBase, wk.base) && strings.ToLower(filepath.Ext(f.FileName)) == wk.ext {
 				exact = append(exact, f)
 				continue
 			}
-		} else if strings.EqualFold(fileBase, workBase) {
+		} else if strings.EqualFold(fileBase, wk.base) {
 			// 规则 1（无媒体扩展名作品）：基础名一致即命中（任意扩展名/无扩展名）
 			exact = append(exact, f)
 			continue
 		}
-		if seqTolerant && strings.EqualFold(fileSuffixTailRe.ReplaceAllString(fileBase, ""), workBase) {
+		if wk.seqTolerant && strings.EqualFold(fileSuffixTailRe.ReplaceAllString(fileBase, ""), wk.base) {
 			seq = append(seq, f)
 		}
 	}

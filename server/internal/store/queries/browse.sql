@@ -38,8 +38,12 @@
 -- the recommendation algorithm, which lands with M2/M3).
 --   [2026-09-17 superseded] 'default' no longer reaches this CASE: the
 --   /assets handler aliases sort=default to the fileDate tier first
---   (DOMAIN_RULES §3 -- "默认"=文件时间). 'addedDate' still hits the
---   ELSE below as the explicit 入库时间 tier.
+--   (DOMAIN_RULES 3 -- "default"=file mtime). 'addedDate' still hits the
+--   ELSE below as the explicit added-at tier.
+--   (NOTE: keep this comment ASCII-only -- sqlc v1.31.1's SQLite parser
+--   fails on non-ASCII bytes in the pre-query header region, which made
+--   the whole file un-regeneratable between 2026-09-17 and 2026-09-20;
+--   found while regenerating for audit R1.)
 --
 -- ============ Cursor predicate ============
 -- Strict tuple comparison (sort_key, asset_id) < (or >) the cursor,

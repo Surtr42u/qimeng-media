@@ -224,6 +224,10 @@ func (s *Server) insertLinks(ctx context.Context, qtx *db.Queries, merged map[st
 	for _, row := range rows {
 		domain = append(domain, authoring.MediaFile{AssetID: row.AssetID, FileName: row.FileName})
 	}
+	// R2（审计 2026-09-20）：域级预计算索引，把每个 (作者, 作品) 的匹配从
+	// 全域线性扫降为桶内候选过滤；语义与 authoring.MatchWorks 等价
+	// （fileindex 对照测试锁定）。
+	ix := authoring.BuildFileIndex(domain)
 
 	filesMatched := 0
 	for _, id := range orderedAuthorIDs(merged) {
@@ -239,7 +243,7 @@ func (s *Server) insertLinks(ctx context.Context, qtx *db.Queries, merged map[st
 				continue
 			}
 			seenWork[w] = true
-			matches := authoring.MatchWorks(w, domain)
+			matches := ix.MatchWorks(w)
 			for _, f := range matches {
 				if err := qtx.AddAssetAuthor(ctx, db.AddAssetAuthorParams{
 					AssetID: f.AssetID, AuthorID: id,

@@ -142,6 +142,46 @@ func (q *Queries) ImportUpsertAuthor(ctx context.Context, arg ImportUpsertAuthor
 	return err
 }
 
+const listAssetNameIndex = `-- name: ListAssetNameIndex :many
+SELECT asset_id, rel_path, file_name
+FROM assets
+ORDER BY created_at
+`
+
+type ListAssetNameIndexRow struct {
+	AssetID  string
+	RelPath  string
+	FileName string
+}
+
+// Full name->path projection for legacy-import file matching (audit R1,
+// 2026-09-20): one scan builds an in-memory fileName index instead of one
+// query per backup file (the old N+1). ORDER BY created_at keeps
+// ListAssetsByFileName's earliest-first tie-break (folder disambiguation
+// falls back to rows[0] -- behavior must stay identical).
+func (q *Queries) ListAssetNameIndex(ctx context.Context) ([]ListAssetNameIndexRow, error) {
+	rows, err := q.db.QueryContext(ctx, listAssetNameIndex)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAssetNameIndexRow
+	for rows.Next() {
+		var i ListAssetNameIndexRow
+		if err := rows.Scan(&i.AssetID, &i.RelPath, &i.FileName); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAssetsByFileName = `-- name: ListAssetsByFileName :many
 
 SELECT asset_id, library_id, rel_path, file_name

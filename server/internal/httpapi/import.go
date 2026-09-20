@@ -164,6 +164,9 @@ func nowOrMillis(m *int64, now time.Time) string {
 
 // matchFiles 按文件名精确匹配建 recordKey→asset 映射（§10）。同名多命中
 // 时用旧 folderName 与 rel_path 的父目录段消歧，仍无法区分取最早入库行。
+// R1（审计 2026-09-20）：旧实现按备份文件逐条 ListAssetsByFileName 查库
+// （N+1，数千文件=数千次 SQL）；改一次全表建 fileName→行集 内存索引，
+// 消歧与 tie-break 语义不变（ORDER BY created_at 保持最早入库行优先）。
 func (imp *legacyImport) matchFiles(files *[]gen.LegacyMediaFile) {
 	if imp.aborted {
 		return
@@ -172,13 +175,17 @@ func (imp *legacyImport) matchFiles(files *[]gen.LegacyMediaFile) {
 	imp.res.MediaFilesTotal = ptr(len(list))
 	imp.keyToAsset = make(map[string]string, len(list))
 	imp.keyToTagsTime = make(map[string]*int64, len(list))
+	rows, err := imp.s.q.ListAssetNameIndex(imp.ctx)
+	if err != nil {
+		imp.fail("按文件名匹配资产", err)
+		return
+	}
+	byName := make(map[string][]db.ListAssetNameIndexRow, len(rows))
+	for _, row := range rows {
+		byName[row.FileName] = append(byName[row.FileName], row)
+	}
 	for _, f := range list {
-		rows, err := imp.s.q.ListAssetsByFileName(imp.ctx, f.FileName)
-		if err != nil {
-			imp.fail("按文件名匹配资产", err)
-			return
-		}
-		if assetID := pickAssetByFolder(rows, f.FolderName); assetID != "" {
+		if assetID := pickAssetByFolder(byName[f.FileName], f.FolderName); assetID != "" {
 			imp.keyToAsset[f.RecordKey] = assetID
 		}
 		imp.keyToTagsTime[f.RecordKey] = f.TagsUpdatedAtMillis
@@ -188,7 +195,7 @@ func (imp *legacyImport) matchFiles(files *[]gen.LegacyMediaFile) {
 
 // pickAssetByFolder 唯一命中直接用；多命中优先父目录段等于旧 folderName
 // 的行（recordKey 规则「文件名 @ 文件夹」的等价消歧）。
-func pickAssetByFolder(rows []db.ListAssetsByFileNameRow, folderName *string) string {
+func pickAssetByFolder(rows []db.ListAssetNameIndexRow, folderName *string) string {
 	switch {
 	case len(rows) == 0:
 		return ""
