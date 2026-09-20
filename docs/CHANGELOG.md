@@ -8,6 +8,15 @@
 - 子代理执行的工作标注"（执行子代理）"，主对话直接完成的标注"（主代理）"。
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
+## fix(server): go1.27 gofmt doc 注释引号规范化+unconvert 冗余转换清理——门禁基线修复（2026-09-20 第三百六十七笔）
+
+执行 AI：GLM-5.3-Flash（执行 AI）
+
+- **背景（审计清偿批 Step 0 基线门禁红）**：`make lint` 在 gofmt 与 golangci-lint 两步红灯，定位均为存量问题而非本批引入——①`tagset_sync_test.go` 5 处声明级 doc 注释里的 `''` 空串哨兵写法，被 go1.19 起 gofmt 的 doc 注释规范化强制改写为弯引号 `”`（golang/go#76975 争议行为；CI 与本机同为 go1.27.x，该文件在任何平台都无法过 `test -z "$(gofmt -l .)"` 门禁）；②同行 `ptr(int64(ms))` 中 `ms` 已是 int64，unconvert 报冗余转换。
+- **修复**：按锁定工具链 gofmt 规范化 5 处注释引号；`ptr(int64(ms))` → `ptr(ms)`（同值同型，零行为变化）。测试文件注释与构造器微调，不触任何被测逻辑。
+- **另记（本地环境，不入库）**：Windows `core.autocrlf=true` 使审查批合并时 checkout 的 9 个 Go 文件工作区呈 CRLF、gofmt 误报「需格式化」——已就地归一为 LF（内容与 blob 零差异，git 无变更）；建议后续加 `.gitattributes`（`*.go text eol=lf`）根治，属仓库级决策另行拍板。
+- **测试**：`make lint` 全绿；`go test ./internal/httpapi -run TestTagSync` 通过。
+
 ## fix(app): 缩略图缓存页文件数/占用随预取进度实时刷新（2026-09-20 第三百六十六笔）
 
 执行 AI：GLM-5.3（主代理）

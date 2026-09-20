@@ -16,7 +16,7 @@ import (
 )
 
 // seedAssetWithTag 库内侧造数：资产（fileName 即备份匹配键）+ 已挂标签 +
-// 标签组改动时间置为毫秒 tagSetMs（0 = 保持 '' 哨兵，模拟未知/旧数据）。
+// 标签组改动时间置为毫秒 tagSetMs（0 = 保持 ” 哨兵，模拟未知/旧数据）。
 func seedAssetWithTag(t *testing.T, e *testEnv, assetID, fileName, tagName string, tagSetMs int64) string {
 	t.Helper()
 	now := e.clock.Now().Format(time.RFC3339Nano)
@@ -63,7 +63,7 @@ func assetTagNames(t *testing.T, e *testEnv, assetID string) map[string]bool {
 	return out
 }
 
-// tagSetTimeRaw 查标签组改动时间原值（'' = 未知哨兵）。
+// tagSetTimeRaw 查标签组改动时间原值（” = 未知哨兵）。
 func tagSetTimeRaw(t *testing.T, e *testEnv, assetID string) string {
 	t.Helper()
 	var raw string
@@ -81,7 +81,7 @@ func tagsBackup(ms int64, tag string, fileName string) gen.LegacyBackupImport {
 		Data: gen.LegacyBackupData{
 			MediaFiles: &[]gen.LegacyMediaFile{
 				{RecordKey: fileName, FileName: fileName, MediaType: "image", SizeBytes: 1,
-					ModifiedAtMillis: 1, TagsUpdatedAtMillis: ptr(int64(ms))},
+					ModifiedAtMillis: 1, TagsUpdatedAtMillis: ptr(ms)},
 			},
 			Tags:         &[]gen.LegacyTag{{Name: tag}},
 			MediaTagRefs: &[]gen.LegacyMediaTagRef{{RecordKey: fileName, TagName: tag}},
@@ -137,8 +137,8 @@ func TestTagSync_olderBackupStaysUnion(t *testing.T) {
 	}
 }
 
-// TestTagSync_unknownTimeFallsBackToUnion：任一侧未知（库内 '' 哨兵）→ 回退
-// 并集合并，库内时间保持 ''（不造假版本，§10）。
+// TestTagSync_unknownTimeFallsBackToUnion：任一侧未知（库内 ” 哨兵）→ 回退
+// 并集合并，库内时间保持 ”（不造假版本，§10）。
 func TestTagSync_unknownTimeFallsBackToUnion(t *testing.T) {
 	e := newTestEnv(t)
 	assetID := "01900000-0000-7000-8000-00000000ca03"
@@ -183,7 +183,7 @@ func TestTagSync_reimportSameBackupIdempotent(t *testing.T) {
 }
 
 // TestTagSync_exportCarriesTagSetTime：导出回带 tagsUpdatedAtMillis；
-// 无时间资产（'' 哨兵）该字段缺省（旧版 App 容错读取）。
+// 无时间资产（” 哨兵）该字段缺省（旧版 App 容错读取）。
 func TestTagSync_exportCarriesTagSetTime(t *testing.T) {
 	e := newTestEnv(t)
 	var assetID, fileName string
