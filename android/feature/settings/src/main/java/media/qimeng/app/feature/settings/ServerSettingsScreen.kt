@@ -70,7 +70,7 @@ private const val SECTION_DEFAULT_ENDPOINT = "默认登录"
 private const val LABEL_ENDPOINT_NAS = "NAS 服务器"
 private const val LABEL_ENDPOINT_LOCAL = "本机模式"
 private const val HINT_DEFAULT_ENDPOINT =
-    "选一个常用的：下次打开 App，登录页会直接预填它的地址。不选则预填上次登录用的地址"
+    "登录页默认选中的端；实际登录成功后也会自动跟随你登的端"
 
 // ---------- 仅充电时扫描（批C 任务Q C-3，仅本机模式渲染） ----------
 private const val SECTION_CHARGE_ONLY_SCAN = "仅充电时扫描"
@@ -86,11 +86,11 @@ private const val HINT_RELOGIN =
     "媒体库与账号都归这台服务端管；更换地址会退出当前登录，保存后在新地址上重新登录"
 
 /**
- * 地址固化说明（任务S 批S3）：本机模式连接不覆盖 NAS 地址记忆，切回时地址卡自动带出
- * 免重输——与 ServerSettingsViewModel 的记忆回填逻辑（地址卡按端型取记忆槽）互为表里。
+ * 地址固化说明（任务S 批S3 → 第三百六十三笔按新行为改写）：地址卡改的是「服务器」
+ * 端的地址；保存后回登录页确认，登录成功才落记忆槽（本机连接不覆盖 NAS 槽）。
  */
 private const val HINT_URL_MEMORY =
-    "连接本机模式不会覆盖记住的服务器地址：切回时这里会自动带出上次登录的 NAS 地址，无需重新输入"
+    "这里修改的是「服务器」的地址：保存后回到登录页确认；登录成功会自动记住，下次免填"
 
 // ---------- 媒体库存储权限卡（2026-09-15 批）：内嵌服务端读注册媒体根唯一通道=「所有文件
 // 访问」（ADR-0015 预留方案；手机实测 .nomedia 隐藏目录内 376 文件、无权限时服务端直读 0）。
@@ -176,12 +176,6 @@ fun ServerSettingsScreen(
                 onSave = viewModel::saveAndRelogin,
                 modifier = Modifier.padding(top = QimengDimens.SpaceL, bottom = QimengDimens.SpaceL),
             )
-            // 默认登录端单选（2026-09-20 用户拍板）：登录页地址预填跟随本选项，直写持久化
-            DefaultEndpointCard(
-                selected = state.defaultEndpoint,
-                onSelect = viewModel::onDefaultEndpointChange,
-                modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
-            )
             LocalModeCard(
                 localUrlInput = state.localUrlInput,
                 saving = state.isSaving,
@@ -191,6 +185,13 @@ fun ServerSettingsScreen(
                     requestNotificationPermissionIfNeeded()
                     viewModel.switchToLocalMode()
                 },
+                modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
+            )
+            // 默认登录端单选（2026-09-20 用户拍板；排序拍板=第三张卡：服务器→本机→默认）：
+            // 登录页预选跟随本选项，直写持久化
+            DefaultEndpointCard(
+                selected = state.defaultEndpoint,
+                onSelect = viewModel::onDefaultEndpointChange,
                 modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
             )
             // 仅充电时扫描（批C 任务Q C-3）：仅本机模式渲染——扫描烧的是手机自己的电；

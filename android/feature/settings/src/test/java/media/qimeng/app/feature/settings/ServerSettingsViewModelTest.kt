@@ -59,8 +59,7 @@ class ServerSettingsViewModelTest {
     }
 
     @Test
-    fun `保存换址登出并预置规范化新地址且发登出事件`() = runTest(mainDispatcherRule.testDispatcher) {
-        val auth = FakeAuthRepository(initialServerUrl = initialUrl, initialLoggedIn = true)
+    fun `保存换址登出并预置规范化新地址且发登出事件`() = runTest(mainDispatcherRule.testDispatcher) {        val auth = FakeAuthRepository(initialServerUrl = initialUrl, initialLoggedIn = true)
         val vm = viewModel(auth)
         val received = mutableListOf<ServerSettingsEvent>()
         launch { vm.events.take(1).toList(received) }
@@ -108,6 +107,37 @@ class ServerSettingsViewModelTest {
         assertEquals(listOf(ServerSettingsEvent.LoggedOut), received)
         // U11 批次D（reviewer P3-10 补断言）：预设地址切换必须触发内嵌服务端拉起
         assertEquals(ServerAddress.LOCAL_MODE_PRESET, fakeController.lastStartedUrl)
+    }
+
+    @Test
+    fun `地址卡切换NAS同步写默认登录端为NAS`() = runTest(mainDispatcherRule.testDispatcher) {
+        // 第三百六十三笔根修：显式切换到哪端，「默认登录」就记哪端——登录页预选与切换
+        // 目标一致，不再被过期默认覆盖预置地址（「切回 NAS 依旧登回本机」的根因）
+        val auth = FakeAuthRepository(
+            initialServerUrl = ServerAddress.LOCAL_MODE_PRESET,
+            initialLoggedIn = true,
+            initialDefaultEndpoint = DefaultEndpoint.LOCAL,
+        )
+        val vm = viewModel(auth)
+        advanceUntilIdle()
+        vm.onUrlChange("192.0.2.50")
+        vm.saveAndRelogin()
+        advanceUntilIdle()
+        assertEquals(DefaultEndpoint.NAS, auth.defaultEndpoint.first())
+    }
+
+    @Test
+    fun `一键切本机同步写默认登录端为本机`() = runTest(mainDispatcherRule.testDispatcher) {
+        val auth = FakeAuthRepository(
+            initialServerUrl = initialUrl,
+            initialLoggedIn = true,
+            initialDefaultEndpoint = DefaultEndpoint.NAS,
+        )
+        val vm = viewModel(auth)
+        advanceUntilIdle()
+        vm.switchToLocalMode()
+        advanceUntilIdle()
+        assertEquals(DefaultEndpoint.LOCAL, auth.defaultEndpoint.first())
     }
 
     @Test

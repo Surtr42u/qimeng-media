@@ -3,6 +3,7 @@ package media.qimeng.app.feature.login
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -14,22 +15,37 @@ import media.qimeng.app.core.data.repository.LoginError
 import media.qimeng.app.core.data.repository.LoginResult
 import media.qimeng.app.core.network.DefaultEndpoint
 import media.qimeng.app.core.network.ServerAddress
-import javax.inject.Inject
 
 /**
- * 登录页 UI 状态。错误只存 [LoginError] 分类、不存文案——中文文案在 UI 层经资源表映射
+ * 登录页 UI 状态（第三百六十三笔：登录页改为「服务器 / 本机」两个选项）。
+ * 错误只存 [LoginError] 分类、不存文案——中文文案在 UI 层经资源表映射
  * （「地址不通」与「密码错」分开提示，M4-1 冻结口径）。
  */
 data class LoginUiState(
+    /** 当前选中的登录端（两张选项卡点选）；null = 尚未选中（未选就点登录报 InvalidAddress） */
+    val selected: DefaultEndpoint? = null,
+    /** 「服务器」选项的地址（进页解析一次，可编辑；解析优先级见 [LoginViewModel] init 注释） */
     val serverUrl: String = "",
+    /** 「本机」选项的地址（记忆槽或预设常量，只读展示；端口定制在设置页本机模式卡） */
+    val localUrl: String = "",
     val password: String = "",
     val isSubmitting: Boolean = false,
     val error: LoginError? = null,
 )
 
 /**
- * 登录页 ViewModel：持有表单状态，提交时原样透传给 [AuthRepository]（探活→登录→持久化的
- * 编排在 core，本层零业务规则）。登录成功不需要显式导航——token 持久化后壳层的登录态流自动进主壳。
+ * 登录页 ViewModel（第三百六十三笔，用户拍板：登录页改「服务器 / 本机」两选项）：
+ * 持有选项与表单状态，提交时把选中端的地址原样透传给 [AuthRepository]（探活→登录→
+ * 持久化的编排在 core，本层零业务规则）。登录成功不需要显式导航——token 持久化后
+ * 壳层的登录态流自动进主壳。
+ *
+ * 进页预选与地址解析（一次性，`first()` 取快照）：
+ * - 预选 = 「默认登录」选项（设置页单选；登录成功后仓库层会把它改写为实际登录端）；
+ *   未设置时按当前记忆地址的端型推定；全空则不预选。
+ * - 服务器地址 = 当前记忆地址优先（含换址流程刚预置的新地址——「app 内改地址同步
+ *   记录」的落点），非本机型才可用；否则回退 NAS 记忆槽。
+ * - 本机地址 = 本机记忆槽，无则回退 [ServerAddress.LOCAL_MODE_PRESET]（与旧快捷
+ *   填入口径一致）。
  */
 @HiltViewModel
 class LoginViewModel @Inject constructor(
@@ -39,64 +55,56 @@ class LoginViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(LoginUiState())
     val uiState: StateFlow<LoginUiState> = _uiState.asStateFlow()
 
-    /**
-     * 记忆的本机模式地址缓存（批S3，init 预取一次）：快捷填入必须同步可取——若在点击时
-     * 才异步读记忆，「本机模式→立刻点登录」会出现提交空地址的窗口期（真机测试踩过）。
-     * 缓存未就绪时回退预设常量，与批S3 前行为一致。
-     */
-    private var rememberedLocalCache: String = ""
-
     init {
-        // 「默认登录」优先（2026-09-20 用户拍板）：设置页选了默认端 → 预填该端记忆地址
-        // （NAS 端无记忆回退当前地址=批S3 前行为；本机端无记忆回退预设常量，与快捷填入同口径）；
-        // 未设置 → 「记忆上次」（回填上次登录成功的服务器地址，既有行为不变；
-        // 退出登录不清地址，故退出后仍能带出）
         viewModelScope.launch {
-            val seed = when (authRepository.defaultEndpoint.first()) {
-                DefaultEndpoint.NAS -> authRepository.rememberedNasUrl.first()
-                    .ifEmpty { authRepository.serverUrl.first() }
-                DefaultEndpoint.LOCAL -> authRepository.rememberedLocalUrl.first()
-                    .ifEmpty { ServerAddress.LOCAL_MODE_PRESET }
-                null -> authRepository.serverUrl.first()
-            }
-            if (seed.isNotEmpty()) {
-                _uiState.update { it.copy(serverUrl = seed) }
+            val current = authRepository.serverUrl.first()
+            val rememberedNas = authRepository.rememberedNasUrl.first()
+            val default = authRepository.defaultEndpoint.first()
+            val currentIsNas = current.isNotEmpty() && !ServerAddress.isLocalModePreset(current)
+            val selected = default
+                ?: if (current.isNotEmpty()) {
+                    if (currentIsNas) DefaultEndpoint.NAS else DefaultEndpoint.LOCAL
+                } else {
+                    null
+                }
+            val nasAddress = if (currentIsNas) current else rememberedNas
+            val localAddress = authRepository.rememberedLocalUrl.first().ifEmpty { ServerAddress.LOCAL_MODE_PRESET }
+            _uiState.update {
+                it.copy(selected = selected, serverUrl = nasAddress, localUrl = localAddress)
             }
         }
-        // 批S3：预取记忆的本机模式地址（M6 口，自定义端口也能带出）
-        viewModelScope.launch {
-            rememberedLocalCache = authRepository.rememberedLocalUrl.first()
-        }
+    }
+
+    /** 选项卡点选（选中即高亮；登录成功后仓库层把默认端同步为本端） */
+    fun onEndpointSelected(endpoint: DefaultEndpoint) {
+        _uiState.update { it.copy(selected = endpoint, error = null) }
     }
 
     fun onServerUrlChange(value: String) {
         _uiState.update { it.copy(serverUrl = value, error = null) }
     }
 
-    /**
-     * 本机模式快捷填入（任务T T3，ADR-0015 单点预留兑现）：把本机模式地址一键填入地址输入框。
-     * 只是未提交的输入框赋值——用户看到/确认后仍走既有 [submit]（探活→登录→持久化），
-     * 不在此处直接保存（UI 快捷入口禁内嵌保存行为，地址单点流转红线不动）。
-     * 批S3 服务器地址固化：优先取记忆的本机模式地址（两端地址各记各的、切换互换回填），
-     * 无记忆回退预设常量——首次切换行为与批S3 前一致。
-     */
-    fun fillLocalMode() {
-        _uiState.update {
-            it.copy(serverUrl = rememberedLocalCache.ifEmpty { ServerAddress.LOCAL_MODE_PRESET }, error = null)
-        }
-    }
-
     fun onPasswordChange(value: String) {
         _uiState.update { it.copy(password = value, error = null) }
     }
 
-    /** 提交登录。提交中禁重复触发（探活+登录两个往返期间按钮禁用是 UI 表现，此处兜底状态机）。 */
+    /** 提交登录：取选中端解析出的地址透传。提交中禁重复触发（UI 禁用之外的状态机兜底）。 */
     fun submit() {
         val current = _uiState.value
         if (current.isSubmitting) return
+        val address = when (current.selected) {
+            DefaultEndpoint.NAS -> current.serverUrl
+            DefaultEndpoint.LOCAL -> current.localUrl
+            null -> ""
+        }
+        if (address.isEmpty()) {
+            // 未选端或服务器地址为空：走「地址格式不正确」分类（UI 文案已有），不发仓库调用
+            _uiState.update { it.copy(error = LoginError.InvalidAddress) }
+            return
+        }
         _uiState.update { it.copy(isSubmitting = true, error = null) }
         viewModelScope.launch {
-            val result = authRepository.login(current.serverUrl, current.password)
+            val result = authRepository.login(address, current.password)
             _uiState.update { state ->
                 when (result) {
                     is LoginResult.Success -> state.copy(isSubmitting = false, error = null)
