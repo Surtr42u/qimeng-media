@@ -6,7 +6,8 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
- * [SignedMediaCacheKeys.stableKey] 行为锁定（任务U10-5 缓存键漂移根治）。
+ * [SignedMediaCacheKeys.stableKey] 行为锁定（任务U10-5 缓存键漂移根治；
+ * 第三百六十五笔：键再剥 scheme/host——同实例换地址复用同一缓存）。
  *
  * 用例 URL 形态与服务端实际生成一致（`assets_media_url.go signedMediaURL`）：
  * `<base>/media/thumb/<uuid>?exp=<unix秒>&sig=<hex>&size=<sm|md|lg>`、
@@ -30,6 +31,24 @@ class SignedMediaCacheKeysTest {
         assertEquals(SignedMediaCacheKeys.stableKey(first), SignedMediaCacheKeys.stableKey(second))
     }
 
+    // ---- 第三百六十五笔：scheme/host 不进键——换地址访问同实例复用同一缓存 ----
+
+    @Test
+    fun `同实例换地址同资产同键`() {
+        val viaUsb = SignedMediaCacheKeys.stableKey("http://127.0.0.1:8420/media/thumb/a?exp=1&sig=x&size=md")
+        val viaWifi = SignedMediaCacheKeys.stableKey("http://192.168.1.8:8420/media/thumb/a?exp=2&sig=y&size=md")
+        assertEquals(viaWifi, viaUsb)
+        assertEquals("/media/thumb/a?size=md", viaUsb)
+    }
+
+    @Test
+    fun `键为纯path不含scheme与host`() {
+        assertEquals(
+            "/media/orig/asset-a",
+            SignedMediaCacheKeys.stableKey("http://192.168.1.8:8420/media/orig/asset-a?exp=1&sig=abc"),
+        )
+    }
+
     // ---- size 维度不碰撞：剥签名但保留 size ----
 
     @Test
@@ -39,7 +58,7 @@ class SignedMediaCacheKeysTest {
         val md = SignedMediaCacheKeys.stableKey("$base&size=md")!!
         val lg = SignedMediaCacheKeys.stableKey("$base&size=lg")!!
         // size 参数原样保留在键尾（与服务端 query 形态一致，避免错尺寸命中）
-        assertEquals("http://10.0.2.2:8421/media/thumb/550e8400-e29b-41d4?size=md", md)
+        assertEquals("/media/thumb/550e8400-e29b-41d4?size=md", md)
         assertNotEquals(sm, md)
         assertNotEquals(md, lg)
         assertNotEquals(sm, lg)
@@ -57,19 +76,12 @@ class SignedMediaCacheKeysTest {
         assertNotEquals(a, SignedMediaCacheKeys.stableKey(otherAsset))
     }
 
-    @Test
-    fun `不同服务器同资产path键互异含host`() {
-        val serverA = SignedMediaCacheKeys.stableKey("http://192.168.1.8:8420/media/thumb/a?exp=1&sig=x")
-        val serverB = SignedMediaCacheKeys.stableKey("http://10.0.2.2:8421/media/thumb/a?exp=1&sig=x")
-        assertNotEquals(serverA, serverB)
-    }
-
-    // ---- 无 query URL 原样 ----
+    // ---- 无 query URL：键 = 纯 path ----
 
     @Test
-    fun `无query的URL原样返回`() {
+    fun `无query的URL键为纯path`() {
         assertEquals(
-            "http://192.168.1.8:8420/media/thumb/asset-a",
+            "/media/thumb/asset-a",
             SignedMediaCacheKeys.stableKey("http://192.168.1.8:8420/media/thumb/asset-a"),
         )
     }
@@ -77,7 +89,7 @@ class SignedMediaCacheKeysTest {
     @Test
     fun `query仅含exp与sig时键为纯path`() {
         assertEquals(
-            "http://h:8420/media/orig/asset-a",
+            "/media/orig/asset-a",
             SignedMediaCacheKeys.stableKey("http://h:8420/media/orig/asset-a?exp=1&sig=abc"),
         )
     }
@@ -87,7 +99,7 @@ class SignedMediaCacheKeysTest {
     @Test
     fun `exp与sig位置不同仍剥净且未知参数保序`() {
         val stripped = SignedMediaCacheKeys.stableKey("http://h/media/thumb/a?size=md&exp=1&sig=x&v=2")
-        assertEquals("http://h/media/thumb/a?size=md&v=2", stripped)
+        assertEquals("/media/thumb/a?size=md&v=2", stripped)
         assertEquals(
             SignedMediaCacheKeys.stableKey("http://h/media/thumb/a?exp=1&sig=x&size=md"),
             SignedMediaCacheKeys.stableKey("http://h/media/thumb/a?size=md&exp=1&sig=x"),
@@ -122,6 +134,6 @@ class SignedMediaCacheKeysTest {
         assertNull(SignedMediaCacheKeys.stableKey("http://"))
         assertNull(SignedMediaCacheKeys.stableKey("?"))
         // 只有分隔符没有参数值也不炸
-        assertEquals("http://h/media/thumb/a?", SignedMediaCacheKeys.stableKey("http://h/media/thumb/a?"))
+        assertEquals("/media/thumb/a?", SignedMediaCacheKeys.stableKey("http://h/media/thumb/a?"))
     }
 }

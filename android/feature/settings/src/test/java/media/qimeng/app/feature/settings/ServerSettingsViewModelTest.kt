@@ -263,6 +263,20 @@ class ServerSettingsViewModelTest {
     }
 
     @Test
+    fun `正在使用标记跟随当前连接端型`() = runTest(mainDispatcherRule.testDispatcher) {
+        // 第三百六十四笔「正在使用」徽标：数据源=当前生效地址的端型（与默认端独立）
+        val auth = FakeAuthRepository(initialServerUrl = ServerAddress.LOCAL_MODE_PRESET, initialLoggedIn = true)
+        val vm = viewModel(auth)
+        advanceUntilIdle()
+        assertEquals(DefaultEndpoint.LOCAL, vm.uiState.value.activeEndpoint)
+
+        val nasAuth = FakeAuthRepository(initialServerUrl = initialUrl, initialLoggedIn = true)
+        val nasVm = viewModel(nasAuth)
+        advanceUntilIdle()
+        assertEquals(DefaultEndpoint.NAS, nasVm.uiState.value.activeEndpoint)
+    }
+
+    @Test
     fun `默认登录端单选直写仓库并随流回灌状态`() = runTest(mainDispatcherRule.testDispatcher) {
         val auth = FakeAuthRepository(initialServerUrl = initialUrl, initialLoggedIn = true)
         val vm = viewModel(auth)
