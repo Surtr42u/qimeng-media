@@ -467,8 +467,10 @@ class DetailViewModel @Inject constructor(
         val id = assetId ?: return
         if (tagId in current.unbindingTagIds) return // 同标签在途防重
         val chip = current.tagPool.firstOrNull { it.id == tagId } ?: return
-        // 乐观态快照（失败回滚基准；StateFlow 值可被并发替换，不能依赖链式引用）
-        val snapshotAsset = asset
+        val removedTagIndex = asset.tags.indexOfFirst { it.id == tagId }
+        if (removedTagIndex < 0) return // 不在当前标签列表：无可解绑（防御）
+        val removedTag = asset.tags[removedTagIndex]
+        // 乐观态快照（StateFlow 值可被并发替换，不能依赖链式引用）
         val snapshotSelected = current.selectedTagIds
         _uiState.value = current.copy(
             unbindingTagIds = current.unbindingTagIds + tagId,
@@ -486,11 +488,23 @@ class DetailViewModel @Inject constructor(
                     reloadAssetOnly()
                 }
                 .onFailure { error ->
+                    // R13（审计 2026-09-20）：失败只回滚「本 tagId 的乐观改动」，
+                    // 不再整覆盖乐观态快照——乐观态与失败回调之间可能有更新的
+                    // 状态落入 _uiState（窗口邻位重拉完成/用户其他操作），整覆盖
+                    // 会把它们一并回退到旧时刻。
                     val rollback = _uiState.value
+                    val restoredAsset = rollback.asset?.let { cur ->
+                        if (cur.tags.any { it.id == tagId }) {
+                            cur // 已被后续重拉恢复：不重复插回
+                        } else {
+                            val idx = removedTagIndex.coerceAtMost(cur.tags.size)
+                            cur.copy(tags = cur.tags.toMutableList().apply { add(idx, removedTag) })
+                        }
+                    }
                     _uiState.value = rollback.copy(
                         unbindingTagIds = rollback.unbindingTagIds - tagId,
-                        asset = snapshotAsset,
-                        selectedTagIds = snapshotSelected,
+                        asset = restoredAsset,
+                        selectedTagIds = if (tagId in snapshotSelected) rollback.selectedTagIds + tagId else rollback.selectedTagIds,
                         errorMessage = "$ERROR_UNBIND_TAG${error.message ?: ""}",
                     )
                 }
@@ -615,11 +629,11 @@ class DetailViewModel @Inject constructor(
     }
 
     override fun onCleared() {
-        // 兜底链最后一环：destroy 内 dwell flush 若仍需出网，viewModelScope 已被取消、
-        // 不再送达——可靠路径是 onScreenDisposed（先于 onCleared 且 scope 存活）；
-        // 此处幂等 no-op 居多（onDispose 已 flush 过），只为「无组合即销毁」的极端时序兜底。
+        // R13（审计 2026-09-20）清死代码：原此处还调 flushProgressNow()，但
+        // onCleared 时 viewModelScope 已取消、其内部 launch 永不执行——网络
+        // 补报在此不可能送达，可靠路径是 onScreenDisposed（先于 onCleared
+        // 且 scope 存活）。只保留同步的 destroy()（释放分析器会话句柄）。
         analyticsReporter?.destroy()
-        flushProgressNow()
         super.onCleared()
     }
 

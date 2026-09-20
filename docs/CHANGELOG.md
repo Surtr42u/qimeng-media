@@ -8,6 +8,16 @@
 - 子代理执行的工作标注"（执行子代理）"，主对话直接完成的标注"（主代理）"。
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
+## fix(app): 详情页四项小修——unbindTag 失败精准回滚+尺寸缓存有界化+onCleared 死代码清理——审计 R13（2026-09-20 第三百七十七笔）
+
+执行 AI：GLM-5.3-Flash（执行 AI）
+
+- **unbindTag 失败精准回滚**：原失败分支用乐观态快照**整覆盖** `_uiState`——乐观态与失败回调之间落入的新状态（窗口邻位重拉完成/用户草稿勾选）被一并回退到旧时刻。改为只回滚本 tagId 的乐观改动：按记录的下标把被删 chip 插回（已被后续重拉恢复则不重复插）、勾选恢复仅当快照中确有该 tag。
+- **DetailImageDimCache 有界化**：原 ConcurrentHashMap 进程级无上限；改访问序 LinkedHashMap LRU 上限 512（条目极小，命中语义不变，超出只丢最老尺寸记录无正确性影响）。不用 android.util.LruCache——JVM 单测直构本类，避开 android.jar stub。
+- **onCleared 死代码清理**：删 `flushProgressNow()`——onCleared 时 viewModelScope 已取消、其内部 launch 永不执行，网络补报在此不可能送达（可靠路径 onScreenDisposed 先于 onCleared 且 scope 存活）；保留同步的 `analyticsReporter.destroy()`。
+- **维持现状（审计自注）**：CoilModule 的 runBlocking 是 lazy 构建内毫秒级首读且已注释记档， restructuring 风险>收益不动。
+- **测试**：DetailViewModelTest 新增「解绑失败只回滚本标签（窗口期用户草稿不被吞）」「尺寸缓存超上限淘汰/命中续期」两用例；:feature:detail 207 测试全绿。
+
 ## fix(web): AppErrorBoundary 渲染异常接入 client-logs 旁路（防递归）——审计 R12（2026-09-20 第三百七十六笔）
 
 执行 AI：GLM-5.3-Flash（执行 AI）
