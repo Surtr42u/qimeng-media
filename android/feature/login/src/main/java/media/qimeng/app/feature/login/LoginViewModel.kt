@@ -12,6 +12,7 @@ import kotlinx.coroutines.launch
 import media.qimeng.app.core.data.repository.AuthRepository
 import media.qimeng.app.core.data.repository.LoginError
 import media.qimeng.app.core.data.repository.LoginResult
+import media.qimeng.app.core.network.DefaultEndpoint
 import media.qimeng.app.core.network.ServerAddress
 import javax.inject.Inject
 
@@ -46,11 +47,20 @@ class LoginViewModel @Inject constructor(
     private var rememberedLocalCache: String = ""
 
     init {
-        // 「记忆上次输入」：回填上次登录成功的服务器地址（退出登录不清地址，故退出后仍能带出）
+        // 「默认登录」优先（2026-09-20 用户拍板）：设置页选了默认端 → 预填该端记忆地址
+        // （NAS 端无记忆回退当前地址=批S3 前行为；本机端无记忆回退预设常量，与快捷填入同口径）；
+        // 未设置 → 「记忆上次」（回填上次登录成功的服务器地址，既有行为不变；
+        // 退出登录不清地址，故退出后仍能带出）
         viewModelScope.launch {
-            val lastUrl = authRepository.serverUrl.first()
-            if (lastUrl.isNotEmpty()) {
-                _uiState.update { it.copy(serverUrl = lastUrl) }
+            val seed = when (authRepository.defaultEndpoint.first()) {
+                DefaultEndpoint.NAS -> authRepository.rememberedNasUrl.first()
+                    .ifEmpty { authRepository.serverUrl.first() }
+                DefaultEndpoint.LOCAL -> authRepository.rememberedLocalUrl.first()
+                    .ifEmpty { ServerAddress.LOCAL_MODE_PRESET }
+                null -> authRepository.serverUrl.first()
+            }
+            if (seed.isNotEmpty()) {
+                _uiState.update { it.copy(serverUrl = seed) }
             }
         }
         // 批S3：预取记忆的本机模式地址（M6 口，自定义端口也能带出）

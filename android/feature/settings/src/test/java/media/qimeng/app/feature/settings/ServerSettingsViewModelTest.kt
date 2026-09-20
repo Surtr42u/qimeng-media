@@ -9,10 +9,12 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import media.qimeng.app.core.data.embedded.EmbeddedServerController
+import media.qimeng.app.core.network.DefaultEndpoint
 import media.qimeng.app.core.network.ServerAddress
 import media.qimeng.app.core.testing.FakeAuthRepository
 import media.qimeng.app.core.testing.MainDispatcherRule
@@ -228,6 +230,23 @@ class ServerSettingsViewModelTest {
         advanceUntilIdle()
         assertFalse(scanCharge.chargeOnly.value)
         assertFalse(vm.uiState.value.chargeOnlyScanEnabled)
+    }
+
+    @Test
+    fun `默认登录端单选直写仓库并随流回灌状态`() = runTest(mainDispatcherRule.testDispatcher) {
+        val auth = FakeAuthRepository(initialServerUrl = initialUrl, initialLoggedIn = true)
+        val vm = viewModel(auth)
+        advanceUntilIdle()
+        // 未设置初值 = null（登录页保持「记忆上次」）
+        assertNull(vm.uiState.value.defaultEndpoint)
+        vm.onDefaultEndpointChange(DefaultEndpoint.NAS)
+        advanceUntilIdle()
+        assertEquals(DefaultEndpoint.NAS, vm.uiState.value.defaultEndpoint)
+        assertEquals(DefaultEndpoint.NAS, auth.defaultEndpoint.first())
+        // 可改选另一端（单选互斥语义）
+        vm.onDefaultEndpointChange(DefaultEndpoint.LOCAL)
+        advanceUntilIdle()
+        assertEquals(DefaultEndpoint.LOCAL, auth.defaultEndpoint.first())
     }
 }
 

@@ -1,6 +1,7 @@
 package media.qimeng.app.core.data.repository
 
 import kotlinx.coroutines.flow.Flow
+import media.qimeng.app.core.network.DefaultEndpoint
 
 /** 登录失败分类：驱动登录页分文案（「地址不通」与「密码错」必须分开给中文提示，M4-1 冻结口径）。 */
 sealed interface LoginError {
@@ -41,6 +42,12 @@ interface AuthRepository {
 
     /** 最近一次成功登录的本机模式地址记忆（M6 单机形态口；与 NAS 记忆各归各槽、切换互换回填）。 */
     val rememberedLocalUrl: Flow<String>
+
+    /** 默认登录端选项（2026-09-20 用户拍板；透传自 ServerConfigDataSource）。null = 未设置（登录页「记忆上次」）。 */
+    val defaultEndpoint: Flow<DefaultEndpoint?>
+
+    /** 写默认登录端选项（服务器设置页单选直写；语义仅「下次登录预填」，不动当前连接）。 */
+    suspend fun setDefaultEndpoint(endpoint: DefaultEndpoint?)
 
     /** 登录态：token 非空且已持久化。壳层据此决定起始页（杀进程重启仍登录=直进壳）。 */
     val isLoggedIn: Flow<Boolean>

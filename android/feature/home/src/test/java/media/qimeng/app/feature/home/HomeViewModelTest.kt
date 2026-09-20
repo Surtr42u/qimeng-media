@@ -32,6 +32,7 @@ import media.qimeng.app.core.model.NameSuggestion
 import media.qimeng.app.core.model.RankingPeriod
 import media.qimeng.app.core.network.AuthApi
 import media.qimeng.app.core.network.AuthApiFactory
+import media.qimeng.app.core.network.DefaultEndpoint
 import media.qimeng.app.core.network.ServerConfigDataSource
 import media.qimeng.app.core.network.ServerReadinessProbe
 import media.qimeng.app.core.testing.MainDispatcherRule
@@ -160,6 +161,8 @@ class HomeViewModelTest {
                 override val rememberedNasUrl: Flow<String> = MutableStateFlow("")
                 override val rememberedLocalUrl: Flow<String> = MutableStateFlow("")
                 override val token: Flow<String?> = MutableStateFlow<String?>(null)
+                override val defaultEndpoint: Flow<DefaultEndpoint?> = MutableStateFlow<DefaultEndpoint?>(null)
+                override suspend fun setDefaultEndpoint(endpoint: DefaultEndpoint?) = Unit
                 override fun currentToken(): String? = null
                 override fun currentServerUrl(): String? = if (ready) TEST_FAKE_SERVER_URL else null
                 override suspend fun updateServerUrl(url: String) = Unit

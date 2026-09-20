@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import media.qimeng.app.core.data.embedded.EmbeddedServerController
 import media.qimeng.app.core.data.repository.AuthRepository
+import media.qimeng.app.core.network.DefaultEndpoint
 import media.qimeng.app.core.network.ServerAddress
 
 /** 服务器设置页 UI 状态（U10-4：原设置页「服务器地址」卡与「本机模式」入口行合并入本页） */
@@ -40,6 +41,8 @@ data class ServerSettingsUiState(
     val isLocalMode: Boolean = false,
     /** 「仅充电时扫描」设置项（默认开；DataStore 持久化，仅本机模式 UI 可见可改） */
     val chargeOnlyScanEnabled: Boolean = true,
+    /** 「默认登录」选项（2026-09-20 用户拍板；null = 未设置 → 登录页保持「记忆上次」） */
+    val defaultEndpoint: DefaultEndpoint? = null,
 )
 
 /** 一次性事件：登出完成（壳层登录态流随即切登录页；本事件是切页前的兜底退栈信号） */
@@ -106,6 +109,12 @@ class ServerSettingsViewModel @Inject constructor(
                 _uiState.update { it.copy(chargeOnlyScanEnabled = enabled) }
             }
         }
+        // 默认登录端选项（2026-09-20 用户拍板）：仓库流直灌状态，单选写入后界面随持久化回灌刷新
+        viewModelScope.launch {
+            authRepository.defaultEndpoint.collect { endpoint ->
+                _uiState.update { it.copy(defaultEndpoint = endpoint) }
+            }
+        }
     }
 
     fun onUrlChange(value: String) {
@@ -121,6 +130,16 @@ class ServerSettingsViewModel @Inject constructor(
     fun onChargeOnlyScanChange(enabled: Boolean) {
         viewModelScope.launch {
             scanChargeController.setChargeOnlyScanEnabled(enabled)
+        }
+    }
+
+    /**
+     * 「默认登录」单选直写持久化（2026-09-20 用户拍板）。语义仅「下次登录预填哪个端」——
+     * 不动当前连接（换端仍走地址卡/本机卡的同一条登出预置链路）；直写后状态随仓库流回灌。
+     */
+    fun onDefaultEndpointChange(endpoint: DefaultEndpoint) {
+        viewModelScope.launch {
+            authRepository.setDefaultEndpoint(endpoint)
         }
     }
 

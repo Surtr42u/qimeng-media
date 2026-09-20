@@ -17,6 +17,7 @@ class FakeServerConfigDataSource(
     private val tokenState = MutableStateFlow(initialToken)
     private val rememberedNasState = MutableStateFlow("")
     private val rememberedLocalState = MutableStateFlow("")
+    private val defaultEndpointState = MutableStateFlow<DefaultEndpoint?>(null)
 
     /** 测试观察口：当前内存缓存（对应实现类的 currentToken 写穿缓存）。 */
     var cachedTokenForTest: String? = initialToken
@@ -29,6 +30,12 @@ class FakeServerConfigDataSource(
     override val rememberedLocalUrl: Flow<String> = rememberedLocalState
 
     override val token: Flow<String?> = tokenState
+
+    override val defaultEndpoint: Flow<DefaultEndpoint?> = defaultEndpointState
+
+    override suspend fun setDefaultEndpoint(endpoint: DefaultEndpoint?) {
+        defaultEndpointState.value = endpoint
+    }
 
     override fun currentToken(): String? = cachedTokenForTest
 
