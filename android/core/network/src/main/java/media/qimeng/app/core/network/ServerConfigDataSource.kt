@@ -3,6 +3,25 @@ package media.qimeng.app.core.network
 import kotlinx.coroutines.flow.Flow
 
 /**
+ * 默认登录端选项（2026-09-20 用户拍板）：用户在服务器设置页指定「下次登录预填哪个端」。
+ * storageValue 是持久化字面量——枚举项改名不影响已落盘数据。
+ */
+enum class DefaultEndpoint(val storageValue: String) {
+    /** 局域网 NAS（登录页预填 NAS 地址记忆槽）。 */
+    NAS("nas"),
+
+    /** 本机模式（登录页预填本机记忆地址，无记忆回退 [ServerAddress.LOCAL_MODE_PRESET]）。 */
+    LOCAL("local"),
+
+    ;
+
+    companion object {
+        /** 按持久化字面量还原；未知值（跨版本）按未设置处理。 */
+        fun fromStorage(value: String): DefaultEndpoint? = entries.firstOrNull { it.storageValue == value }
+    }
+}
+
+/**
  * 服务端定位单点（ADR-0015 预留）：全 App 唯一知晓「服务端在哪 + 用什么 token」的地方。
  *
  * 任何模块禁止另行假设服务端位置（HANDOVER_APP §4.5）——单机形态（M6 服务端内嵌手机）
@@ -31,6 +50,15 @@ interface ServerConfigDataSource {
 
     /** 当前登录 token；null = 未登录。此流驱动壳层登录态分支与 401 跳登录。 */
     val token: Flow<String?>
+
+    /**
+     * 默认登录端选项（2026-09-20 用户拍板）：登录页地址预填跟随本选项；null = 未设置
+     * （保持「记忆上次」行为）。语义仅「下次登录预填」——不改变当前已登录的连接。
+     */
+    val defaultEndpoint: Flow<DefaultEndpoint?>
+
+    /** 写入默认登录端选项（服务器设置页单选项直写；null = 清除回到「记忆上次」）。 */
+    suspend fun setDefaultEndpoint(endpoint: DefaultEndpoint?)
 
     /**
      * 拦截器同步读 token（内存缓存，非阻塞）。

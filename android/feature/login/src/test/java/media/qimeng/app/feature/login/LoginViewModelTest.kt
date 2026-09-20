@@ -8,6 +8,7 @@ import org.junit.Rule
 import org.junit.Test
 import media.qimeng.app.core.data.repository.LoginError
 import media.qimeng.app.core.data.repository.LoginResult
+import media.qimeng.app.core.network.DefaultEndpoint
 import media.qimeng.app.core.network.ServerAddress
 import media.qimeng.app.core.testing.FakeAuthRepository
 import media.qimeng.app.core.testing.MainDispatcherRule
@@ -36,6 +37,64 @@ class LoginViewModelTest {
         val viewModel = LoginViewModel(FakeAuthRepository())
         driveIdle()
         assertEquals("", viewModel.uiState.value.serverUrl)
+    }
+
+    // ---------- 默认登录端预填（2026-09-20 用户拍板） ----------
+
+    @Test
+    fun `默认登录端为NAS时预填NAS记忆地址而非上次登录地址`() {
+        // 上次登录是本机模式（主地址=回环），默认端=NAS → 应带出 NAS 记忆槽
+        val repository = FakeAuthRepository(
+            initialServerUrl = ServerAddress.LOCAL_MODE_PRESET,
+            initialRememberedNasUrl = "http://192.168.1.8:8420",
+            initialDefaultEndpoint = DefaultEndpoint.NAS,
+        )
+        val viewModel = LoginViewModel(repository)
+        driveIdle()
+        assertEquals("http://192.168.1.8:8420", viewModel.uiState.value.serverUrl)
+    }
+
+    @Test
+    fun `默认登录端为NAS但无记忆时回退当前地址`() {
+        val repository = FakeAuthRepository(
+            initialServerUrl = "http://192.168.1.8:8420",
+            initialDefaultEndpoint = DefaultEndpoint.NAS,
+        )
+        val viewModel = LoginViewModel(repository)
+        driveIdle()
+        assertEquals("http://192.168.1.8:8420", viewModel.uiState.value.serverUrl)
+    }
+
+    @Test
+    fun `默认登录端为本机时预填本机记忆地址`() {
+        val rememberedLocal = ServerAddress.LOCAL_MODE_PRESET.dropLast(1) + "1"
+        val repository = FakeAuthRepository(
+            initialServerUrl = "http://192.168.1.8:8420",
+            initialRememberedLocalUrl = rememberedLocal,
+            initialDefaultEndpoint = DefaultEndpoint.LOCAL,
+        )
+        val viewModel = LoginViewModel(repository)
+        driveIdle()
+        assertEquals(rememberedLocal, viewModel.uiState.value.serverUrl)
+    }
+
+    @Test
+    fun `默认登录端为本机但无记忆时回退预设常量`() {
+        val repository = FakeAuthRepository(
+            initialServerUrl = "http://192.168.1.8:8420",
+            initialDefaultEndpoint = DefaultEndpoint.LOCAL,
+        )
+        val viewModel = LoginViewModel(repository)
+        driveIdle()
+        assertEquals(ServerAddress.LOCAL_MODE_PRESET, viewModel.uiState.value.serverUrl)
+    }
+
+    @Test
+    fun `未设置默认登录端时保持记忆上次行为`() {
+        val repository = FakeAuthRepository(initialServerUrl = "http://10.0.2.2:8420")
+        val viewModel = LoginViewModel(repository)
+        driveIdle()
+        assertEquals("http://10.0.2.2:8420", viewModel.uiState.value.serverUrl)
     }
 
     // ---------- 本机模式快捷填入（任务T T3，ADR-0015 预设） ----------

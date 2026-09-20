@@ -8,6 +8,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import media.qimeng.app.core.data.embedded.EmbeddedServerController
 import media.qimeng.app.core.data.embedded.LocalServerWarmup
+import media.qimeng.app.core.network.DefaultEndpoint
 import media.qimeng.app.core.network.SdkAuthApiFactory
 import media.qimeng.app.core.network.ServerAddress
 import media.qimeng.app.core.network.ServerConfigDataSource
@@ -368,10 +369,13 @@ class AuthRepositoryImplTest {
         private val tokenState = MutableStateFlow<String?>(null)
         private val rememberedNas = MutableStateFlow("")
         private val rememberedLocal = MutableStateFlow("")
+        private val defaultEndpointState = MutableStateFlow<DefaultEndpoint?>(null)
         override val serverUrl: Flow<String> = url
         override val rememberedNasUrl: Flow<String> = rememberedNas
         override val rememberedLocalUrl: Flow<String> = rememberedLocal
         override val token: Flow<String?> = tokenState
+        override val defaultEndpoint: Flow<DefaultEndpoint?> = defaultEndpointState
+        override suspend fun setDefaultEndpoint(endpoint: DefaultEndpoint?) { defaultEndpointState.value = endpoint }
         override fun currentToken(): String? = tokenState.value
         override fun currentServerUrl(): String? = url.value.ifEmpty { null }
         override suspend fun updateServerUrl(url: String) { this.url.value = url }

@@ -14,6 +14,9 @@ android {
 dependencies {
     // api：消费方测试直接 import AuthRepository/LoginResult 与 junit/coroutines-test，不必重复声明
     api(project(":core:data"))
+    // FakeAuthRepository 需实现 defaultEndpoint 成员（DefaultEndpoint 在 core:network；
+    // core:data 用 implementation 引它不传递，故本模块显式声明）
+    implementation(project(":core:network"))
     api(libs.junit)
     api(libs.kotlinx.coroutines.test)
     implementation(libs.kotlinx.coroutines.android)

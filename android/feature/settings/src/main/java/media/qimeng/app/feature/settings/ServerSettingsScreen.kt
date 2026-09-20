@@ -7,12 +7,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -26,6 +28,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -46,6 +49,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import media.qimeng.app.core.network.DefaultEndpoint
 import media.qimeng.app.core.network.ServerAddress
 import media.qimeng.app.core.ui.component.QimengCapsuleTextField
 import media.qimeng.app.core.ui.component.QimengTopBar
@@ -60,6 +64,13 @@ private const val BUTTON_SAVE_AND_RELOGIN = "保存并重新登录"
 private const val ERROR_INVALID_URL = "服务器地址格式不正确，请检查后重试"
 private const val SECTION_LOCAL_MODE = "本机模式"
 private const val BUTTON_SWITCH_LOCAL = "一键切换本机模式"
+
+// ---------- 默认登录端（2026-09-20 用户拍板） ----------
+private const val SECTION_DEFAULT_ENDPOINT = "默认登录"
+private const val LABEL_ENDPOINT_NAS = "NAS 服务器"
+private const val LABEL_ENDPOINT_LOCAL = "本机模式"
+private const val HINT_DEFAULT_ENDPOINT =
+    "选一个常用的：下次打开 App，登录页会直接预填它的地址。不选则预填上次登录用的地址"
 
 // ---------- 仅充电时扫描（批C 任务Q C-3，仅本机模式渲染） ----------
 private const val SECTION_CHARGE_ONLY_SCAN = "仅充电时扫描"
@@ -165,6 +176,12 @@ fun ServerSettingsScreen(
                 onSave = viewModel::saveAndRelogin,
                 modifier = Modifier.padding(top = QimengDimens.SpaceL, bottom = QimengDimens.SpaceL),
             )
+            // 默认登录端单选（2026-09-20 用户拍板）：登录页地址预填跟随本选项，直写持久化
+            DefaultEndpointCard(
+                selected = state.defaultEndpoint,
+                onSelect = viewModel::onDefaultEndpointChange,
+                modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
+            )
             LocalModeCard(
                 localUrlInput = state.localUrlInput,
                 saving = state.isSaving,
@@ -243,6 +260,54 @@ private fun ServerUrlEditCard(
         ) {
             Text(text = BUTTON_SAVE_AND_RELOGIN)
         }
+    }
+}
+
+/**
+ * 默认登录端卡（2026-09-20 用户拍板）：两个单选行，选中即直写持久化；null = 未选
+ * （登录页保持「记忆上次」）。语义仅「下次登录预填哪个端」，不动当前连接。
+ */
+@Composable
+private fun DefaultEndpointCard(
+    selected: DefaultEndpoint?,
+    onSelect: (DefaultEndpoint) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    CardContainer(modifier = modifier) {
+        Text(text = SECTION_DEFAULT_ENDPOINT, style = MaterialTheme.typography.titleSmall)
+        Text(
+            text = HINT_DEFAULT_ENDPOINT,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        EndpointRow(
+            label = LABEL_ENDPOINT_NAS,
+            selected = selected == DefaultEndpoint.NAS,
+            onClick = { onSelect(DefaultEndpoint.NAS) },
+        )
+        EndpointRow(
+            label = LABEL_ENDPOINT_LOCAL,
+            selected = selected == DefaultEndpoint.LOCAL,
+            onClick = { onSelect(DefaultEndpoint.LOCAL) },
+        )
+    }
+}
+
+/** 单选行：RadioButton + 标签整行可点（selectable 语义，无障碍 role 随单选钮）。 */
+@Composable
+private fun EndpointRow(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(selected = selected, onClick = null)
+        Text(text = label, style = MaterialTheme.typography.bodyMedium)
     }
 }
 

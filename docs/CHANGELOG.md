@@ -20,6 +20,18 @@
 - **测试**：新增 tagset_sync_test.go 六用例（较新替换/较旧并集/未知回退/重导幂等/导出回带/三条随动路径）；TestMigrateDownThenUp 链首插入 0012 步；go test ./... 15 包全绿。
 - **环境记档**：本机 sqlc（v1.27/v1.31.1 同样）解析 browse.sql 的 CASE+sqlc.arg 查询报 antlr 语法错（2026-09-18 同内容可过，环境漂移未定位）——临时挪出 browse.sql 完成生成后原样还原，其生成物 browse.sql.go 未变动（保持 09-18 版）；后续 sqlc 再生成需留意此坑。
 
+## feat(app): 服务器设置页「默认登录」单选——登录页预填跟随（2026-09-20 第三百六十二笔）
+
+执行 AI：GLM-5.3（主代理）
+
+- **背景（用户报障+拍板）**：真机上次用本机模式，重开 App 按批S3「记住上次」自动连回本机内嵌服务端，用户误以为连不上 NAS；拍板方案=加一个「默认服务器」选项，我选哪个登录哪个。
+- **core:network**：ServerConfigDataSource 增 defaultEndpoint: Flow<DefaultEndpoint?> + setDefaultEndpoint（null=未设置保持「记忆上次」）；DefaultEndpoint{NAS,LOCAL} 以 storageValue 字面量持久化（键 default_endpoint），枚举改名不影响落盘数据。
+- **core:data**：AuthRepository/AuthRepositoryImpl 透传。
+- **feature/settings**：服务器设置页新增「默认登录」单选卡（NAS 服务器/本机模式；直写持久化、状态随仓库流回灌，语义仅「下次登录预填」不动当前连接）。
+- **feature/login**：登录页预填改判——默认端=NAS → 预填 NAS 记忆槽（无记忆回退当前地址）；=LOCAL → 预填本机记忆（无记忆回退 LOCAL_MODE_PRESET，与快捷填入同口径）；未设置 → 「记忆上次」既有行为不变。换端仍走既有「保存并重新登录」链路（地址单点流转红线不动）。
+- **测试**：LoginViewModelTest 5 新用例（NAS 带记忆/无记忆回退/LOCAL 带记忆/无记忆回退预设/未设置保持原行为）+ ServerSettingsViewModelTest 直写回灌用例；FakeAuthRepository/InMemoryServerConfig/FakeServerConfigDataSource 补齐新成员；:core:testing 增 core:network implementation 依赖（DefaultEndpoint 需直引，core:data 为 implementation 不传递）。
+- **验证**：feature/login、feature/settings、core:data、core:network testDebugUnitTest 全绿；全量 testDebugUnitTest + :core:model:test + assembleDebug 通过。
+
 ---
 ## fix(server/web/app): 全库审查批——1×P1 缩略图档位根修+Android 主线程解析补修+6×P2 效率+规范清偿（2026-09-20 第三百六十笔）
 

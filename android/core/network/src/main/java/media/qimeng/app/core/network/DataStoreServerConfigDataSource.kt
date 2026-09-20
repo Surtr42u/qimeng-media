@@ -65,6 +65,15 @@ class DataStoreServerConfigDataSource @Inject constructor(
 
     override val token: Flow<String?> = dataStore.data.map { it[KEY_TOKEN] }.distinctUntilChanged()
 
+    override val defaultEndpoint: Flow<DefaultEndpoint?> =
+        dataStore.data.map { it[KEY_DEFAULT_ENDPOINT]?.let(DefaultEndpoint::fromStorage) }.distinctUntilChanged()
+
+    override suspend fun setDefaultEndpoint(endpoint: DefaultEndpoint?) {
+        dataStore.edit {
+            if (endpoint == null) it.remove(KEY_DEFAULT_ENDPOINT) else it[KEY_DEFAULT_ENDPOINT] = endpoint.storageValue
+        }
+    }
+
     override fun currentToken(): String? = cachedToken
 
     override fun currentServerUrl(): String? = cachedServerUrl
@@ -111,5 +120,8 @@ class DataStoreServerConfigDataSource @Inject constructor(
 
         /** 最近一次成功登录的本机模式地址记忆槽（M6 单机形态口；与 NAS 槽各归各、切换互换回填）。 */
         val KEY_REMEMBERED_LOCAL_URL = stringPreferencesKey("remembered_local_url")
+
+        /** 默认登录端选项键（存 [DefaultEndpoint.storageValue] 字面量；缺键 = 未设置）。 */
+        val KEY_DEFAULT_ENDPOINT = stringPreferencesKey("default_endpoint")
     }
 }

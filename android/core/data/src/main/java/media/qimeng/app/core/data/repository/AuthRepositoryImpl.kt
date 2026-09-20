@@ -7,6 +7,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import media.qimeng.app.core.data.embedded.EmbeddedServerController
 import media.qimeng.app.core.data.embedded.LocalServerWarmup
 import media.qimeng.app.core.network.AuthApiFactory
+import media.qimeng.app.core.network.DefaultEndpoint
 import media.qimeng.app.core.network.ServerAddress
 import media.qimeng.app.core.network.ServerConfigDataSource
 import media.qimeng.app.core.network.SessionEventBus
@@ -41,6 +42,10 @@ class AuthRepositoryImpl @Inject constructor(
     override val rememberedNasUrl: Flow<String> = serverConfig.rememberedNasUrl
 
     override val rememberedLocalUrl: Flow<String> = serverConfig.rememberedLocalUrl
+
+    override val defaultEndpoint: Flow<DefaultEndpoint?> = serverConfig.defaultEndpoint
+
+    override suspend fun setDefaultEndpoint(endpoint: DefaultEndpoint?) = serverConfig.setDefaultEndpoint(endpoint)
 
     override val isLoggedIn: Flow<Boolean> = serverConfig.token
         .map { it != null }

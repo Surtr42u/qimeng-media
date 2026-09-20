@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import media.qimeng.app.core.data.repository.AuthRepository
 import media.qimeng.app.core.data.repository.LoginResult
+import media.qimeng.app.core.network.DefaultEndpoint
 
 /**
  * [AuthRepository] 内存替身（AuthRepositoryImpl 的全链路行为测试在 :core:data 自带；
@@ -19,6 +20,7 @@ class FakeAuthRepository(
     initialLoggedIn: Boolean = false,
     initialRememberedNasUrl: String = "",
     initialRememberedLocalUrl: String = "",
+    initialDefaultEndpoint: DefaultEndpoint? = null,
 ) : AuthRepository {
 
     /** 一次登录调用的参数记录（断言「ViewModel 原样透传用户输入」用）。 */
@@ -40,6 +42,7 @@ class FakeAuthRepository(
     private val loggedInState = MutableStateFlow(initialLoggedIn)
     private val rememberedNasState = MutableStateFlow(initialRememberedNasUrl)
     private val rememberedLocalState = MutableStateFlow(initialRememberedLocalUrl)
+    private val defaultEndpointState = MutableStateFlow(initialDefaultEndpoint)
     private val unauthorizedFlow = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
 
     override val serverUrl: Flow<String> = serverUrlState
@@ -47,6 +50,12 @@ class FakeAuthRepository(
     override val rememberedNasUrl: Flow<String> = rememberedNasState
 
     override val rememberedLocalUrl: Flow<String> = rememberedLocalState
+
+    override val defaultEndpoint: Flow<DefaultEndpoint?> = defaultEndpointState
+
+    override suspend fun setDefaultEndpoint(endpoint: DefaultEndpoint?) {
+        defaultEndpointState.value = endpoint
+    }
 
     override val isLoggedIn: Flow<Boolean> = loggedInState
 
