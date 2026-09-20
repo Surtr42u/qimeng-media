@@ -735,7 +735,7 @@ func TestAssetListLikedFilter(t *testing.T) {
 	a := testFiles[0]
 
 	// 直接写 likes 行（PUT /like 是当日 toggle，测试要的多日历史行用查询层写入）
-	if err := env.q.AddLike(context.Background(), db.AddLikeParams{
+	if _, err := env.q.AddLikeOnDayIdempotent(context.Background(), db.AddLikeOnDayIdempotentParams{
 		AssetID: a.id, Day: "2026-08-20", CreatedAt: store.FormatTimestamp(env.clock.Now()),
 	}); err != nil {
 		t.Fatalf("写赞失败: %v", err)
@@ -1064,9 +1064,9 @@ func TestAssetLikedToday(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("a 点赞期望 200，得到 %d", resp.StatusCode)
 	}
-	// b.jpg：曾赞非今日（昨日行，直接走点赞端点同一写入路径 AddLike）
+	// b.jpg：曾赞非今日（昨日行，直接走点赞端点同一写入路径 AddLikeOnDayIdempotent）
 	yesterday := store.FormatDay(env.clock.Now().AddDate(0, 0, -1))
-	if err := env.q.AddLike(ctx, db.AddLikeParams{
+	if _, err := env.q.AddLikeOnDayIdempotent(ctx, db.AddLikeOnDayIdempotentParams{
 		AssetID: b.id, Day: yesterday, CreatedAt: store.FormatTimestamp(env.clock.Now()),
 	}); err != nil {
 		t.Fatalf("插入昨日点赞行失败: %v", err)

@@ -183,6 +183,15 @@ type InsertViewEventParams struct {
 // UPDATE/DELETE must never appear in this file).
 // ASCII-only comments here; see assets.sql header note and
 // migrations/0001_init.up.sql for Chinese explanations.
+//
+// Uniqueness stance (updated 2026-09-20, audit R10): the table started
+// with no unique constraint on purpose (dedup decided in code only).
+// Two schema-level idempotency backstops were later added WITHOUT
+// moving the rule: migration 0010 (client_event_id, client retry) and
+// migration 0014 (asset+kind+session+day partial index, TOCTOU race
+// backstop). The code-side checks (ExistsViewEventOnDay pre-check,
+// 0-rows -> 202) remain the primary decision point; the indexes only
+// make the race loser a no-op.
 // InsertViewEvent: the only write entry point. Session-level dedup
 // (one open/play per session, DOMAIN_RULES 5) is decided server-side
 // BEFORE the insert; the table has no unique constraint on purpose
@@ -200,9 +209,9 @@ func (q *Queries) InsertViewEvent(ctx context.Context, arg InsertViewEventParams
 
 const insertViewEventIdempotent = `-- name: InsertViewEventIdempotent :execrows
 
-INSERT INTO view_events (asset_id, kind, session_id, started_at, seconds, client_event_id)
-VALUES (?, ?, ?, ?, ?, ?)
-ON CONFLICT (client_event_id) DO NOTHING
+INSERT INTO view_events (asset_id, kind, session_id, started_at, seconds, client_event_id, day)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT DO NOTHING
 `
 
 type InsertViewEventIdempotentParams struct {
@@ -212,6 +221,7 @@ type InsertViewEventIdempotentParams struct {
 	StartedAt     string
 	Seconds       sql.NullInt64
 	ClientEventID sql.NullString
+	Day           sql.NullString
 }
 
 // InsertViewEventIdempotent: write entry for the live report endpoint
@@ -227,6 +237,17 @@ type InsertViewEventIdempotentParams struct {
 // normally; idempotency applies only to id-bearing events. Append-only
 // discipline intact: no UPDATE/DELETE, DO NOTHING merely skips the
 // insert (the first submission always wins, byte-for-byte).
+//
+// Audit R10 (2026-09-20): targetless ON CONFLICT DO NOTHING (instead of
+// the 0010 client_event_id-only target) so the migration-0014 partial
+// unique index (asset+kind+session+day WHERE kind IN open/play) also
+// resolves as a 0-row write -- the ExistsViewEventOnDay pre-check is
+// a fast path, this index is the TOCTOU backstop. `day` is the event's
+// LOCAL calendar day (store.FormatDay, same source as the daily
+// materialized table); the import replay writes NULL day on purpose --
+// it shares one constant session_id and its idempotency key is the
+// content key (client_event_id), so non-NULL day would let this index
+// swallow same-day incremental imports (see migrations/0014 header).
 func (q *Queries) InsertViewEventIdempotent(ctx context.Context, arg InsertViewEventIdempotentParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, insertViewEventIdempotent,
 		arg.AssetID,
@@ -235,6 +256,7 @@ func (q *Queries) InsertViewEventIdempotent(ctx context.Context, arg InsertViewE
 		arg.StartedAt,
 		arg.Seconds,
 		arg.ClientEventID,
+		arg.Day,
 	)
 	if err != nil {
 		return 0, err

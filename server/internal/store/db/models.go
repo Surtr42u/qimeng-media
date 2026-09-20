@@ -153,4 +153,5 @@ type ViewEvent struct {
 	StartedAt     string
 	Seconds       sql.NullInt64
 	ClientEventID sql.NullString
+	Day           sql.NullString
 }

@@ -3,13 +3,18 @@
 -- ASCII-only comments here; see assets.sql header note and
 -- migrations/0001_init.up.sql for Chinese explanations.
 
--- AddLike: plain INSERT -- a second row for the same (asset_id, day) is
--- rejected by PRIMARY KEY (asset_id, day): the "once per day" rule is
--- enforced at the database layer, so concurrency/retry double-clicks
--- cannot double-count. Check HasLikedOnDay before writing.
+-- AddLikeOnDayIdempotent: ON CONFLICT DO NOTHING insert (audit R10,
+-- 2026-09-20). The old strict INSERT turned a concurrent double-click
+-- (both pass HasLikedOnDay=0) into a spurious 500 for the loser: the
+-- PK (asset_id, day) rejection now resolves as a 0-row write instead;
+-- rows==0 tells the caller the race was lost ("already liked by the
+-- winner") and the LikeState math reports liked=true. The "once per
+-- day" rule stays enforced at the database layer -- a lost race can
+-- never double-count.
 
--- name: AddLike :exec
-INSERT INTO likes (asset_id, day, created_at) VALUES (?, ?, ?);
+-- name: AddLikeOnDayIdempotent :execrows
+INSERT INTO likes (asset_id, day, created_at) VALUES (?, ?, ?)
+ON CONFLICT (asset_id, day) DO NOTHING;
 
 -- HasLikedOnDay: today's like status (0/1). day is YYYY-MM-DD in the
 -- server's local timezone (see migration header "day" convention).

@@ -66,7 +66,7 @@ func seedExportData(t *testing.T, e *testEnv) {
 
 	// 点赞两日（聚合导出 = 累计 2 / 最后 2026-08-21）+ 收藏 c.mp4。
 	for _, day := range []string{"2026-08-20", "2026-08-21"} {
-		if err := e.q.AddLike(ctx, db.AddLikeParams{AssetID: aID, Day: day, CreatedAt: stamp}); err != nil {
+		if _, err := e.q.AddLikeOnDayIdempotent(ctx, db.AddLikeOnDayIdempotentParams{AssetID: aID, Day: day, CreatedAt: stamp}); err != nil {
 			t.Fatalf("造点赞失败: %v", err)
 		}
 	}

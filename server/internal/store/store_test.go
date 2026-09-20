@@ -233,9 +233,11 @@ func idForIndex(i int) string {
 
 // TestMigrateDownThenUp：down migration 必须可执行（生产禁用，测试与灾备依赖），
 // 且 down 后能再次 up（幂等重建）。migration 演进后回退步数随之变化：
-// 新增迁移在链首插入对应验证步——首步验证 0013 down（stats 族复合索引删除、
+// 新增迁移在链首插入对应验证步——首步验证 0014 down（会话去重 day 列与
+// 部分唯一索引删除、0013 索引保留），
+// 次步验证 0013 down（stats 族复合索引删除、
 // 既有索引保留），
-// 次步验证 0012 down（标签组时间列删除、0011 对象保留），
+// 又次验证 0012 down（标签组时间列删除、0011 对象保留），
 // 第零步验证 0011 down（auth_sessions 表删除、0010 对象保留），
 // 又次验证 0010 down（客户端幂等键列+唯一索引删除、0009 对象保留），
 // 再下验证 0009 down（时间轴标签颜色列删除、0008 对象保留），
@@ -249,7 +251,20 @@ func idForIndex(i int) string {
 // 第八步验证 0001 down（业务表全删）。
 func TestMigrateDownThenUp(t *testing.T) {
 	conn, _ := openTestDB(t) // 已 up
-	// 首步：0013 down（stats 族复合索引删除；view_events 表与既有索引保留）
+	// 首步：0014 down（会话去重 day 列 + 部分唯一索引删除；0013 索引保留）
+	if err := MigrateDown(conn, 1); err != nil {
+		t.Fatalf("MigrateDown 失败: %v", err)
+	}
+	if columnExists(t, conn, "view_events", "day") {
+		t.Error("0014 down 后 view_events.day 仍存在（0014 down 缺 DROP COLUMN）")
+	}
+	if objExists(t, conn, "index", "idx_view_events_session_day") {
+		t.Error("0014 down 后 idx_view_events_session_day 仍存在（0014 down 缺 DROP INDEX）")
+	}
+	if !objExists(t, conn, "index", "idx_view_events_kind_started") {
+		t.Error("0014 down 后 0013 的 idx_view_events_kind_started 应保留（只回退了一个版本）")
+	}
+	// 次步：0013 down（stats 族复合索引删除；view_events 表与既有索引保留）
 	if err := MigrateDown(conn, 1); err != nil {
 		t.Fatalf("MigrateDown 失败: %v", err)
 	}
@@ -494,16 +509,19 @@ func TestUniqueConstraints(t *testing.T) {
 	assertUniqueViolation(t, "asset_tags", "(asset_id, tag_id)", err)
 
 	// 5) likes 每资产每日一次（DOMAIN_RULES §5 的数据库层兜底）。
+	// R10（2026-09-20）后业务写入走 OR IGNORE 变体：约束表达从「报错」
+	// 变为「输家 0 行」，主键本身不变——次日可再赞。
 	today := FormatDay(time.Now())
-	if err := q.AddLike(ctx, db.AddLikeParams{AssetID: "dup-a", Day: today, CreatedAt: now}); err != nil {
-		t.Fatalf("当日首次点赞失败: %v", err)
+	if n, err := q.AddLikeOnDayIdempotent(ctx, db.AddLikeOnDayIdempotentParams{AssetID: "dup-a", Day: today, CreatedAt: now}); err != nil || n != 1 {
+		t.Fatalf("当日首次点赞应写 1 行, got %d, err %v", n, err)
 	}
-	err = q.AddLike(ctx, db.AddLikeParams{AssetID: "dup-a", Day: today, CreatedAt: now})
-	assertUniqueViolation(t, "likes", "(asset_id, day)", err)
+	if n, err := q.AddLikeOnDayIdempotent(ctx, db.AddLikeOnDayIdempotentParams{AssetID: "dup-a", Day: today, CreatedAt: now}); err != nil || n != 0 {
+		t.Fatalf("当日二赞应被 (asset_id, day) 主键拦成 0 行, got %d, err %v", n, err)
+	}
 	// 次日可再赞。
 	tomorrow := FormatDay(time.Now().AddDate(0, 0, 1))
-	if err := q.AddLike(ctx, db.AddLikeParams{AssetID: "dup-a", Day: tomorrow, CreatedAt: now}); err != nil {
-		t.Errorf("次日点赞不应被拒: %v", err)
+	if n, err := q.AddLikeOnDayIdempotent(ctx, db.AddLikeOnDayIdempotentParams{AssetID: "dup-a", Day: tomorrow, CreatedAt: now}); err != nil || n != 1 {
+		t.Errorf("次日点赞不应被拦, got %d, err %v", n, err)
 	}
 }
 
@@ -606,7 +624,7 @@ func TestLikesDailyStateAndFavoritesToggle(t *testing.T) {
 	if n, err := q.HasLikedOnDay(ctx, db.HasLikedOnDayParams{AssetID: "like-1", Day: today}); err != nil || n != 0 {
 		t.Fatalf("初始当日状态应为 0: n=%d err=%v", n, err)
 	}
-	if err := q.AddLike(ctx, db.AddLikeParams{AssetID: "like-1", Day: today, CreatedAt: now}); err != nil {
+	if _, err := q.AddLikeOnDayIdempotent(ctx, db.AddLikeOnDayIdempotentParams{AssetID: "like-1", Day: today, CreatedAt: now}); err != nil {
 		t.Fatalf("点赞失败: %v", err)
 	}
 	if n, err := q.HasLikedOnDay(ctx, db.HasLikedOnDayParams{AssetID: "like-1", Day: today}); err != nil || n != 1 {
