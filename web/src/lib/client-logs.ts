@@ -33,13 +33,13 @@ let flushTimer: ReturnType<typeof setTimeout> | null = null
 let flushing = false
 let installed = false
 
-/** 组装一条 error 级别条目（ts=当前毫秒，page=当前路由路径） */
+/** 组装一条 error 级别条目（ts=当前毫秒，page=当前路由路径；无 window 的环境 page 置空，便于纯函数单测） */
 function entry(message: string, stack?: string): ClientLogEntry {
   return {
     ts: Date.now(),
     level: 'error',
     message: message.slice(0, MESSAGE_MAX),
-    page: window.location.pathname,
+    page: typeof window === 'undefined' ? '' : window.location.pathname,
     ...(stack ? { stack: stack.slice(0, STACK_MAX) } : {}),
   }
 }
@@ -86,6 +86,31 @@ export async function flushClientLogs(): Promise<void> {
     } else if (queue.length > 0 && flushTimer === null) {
       flushTimer = setTimeout(() => void flushClientLogs(), FLUSH_INTERVAL_MS)
     }
+  }
+}
+
+/**
+ * 渲染期异常条目组装（纯函数，便于单测锁定前缀/堆栈拼接与截断）。
+ * 堆栈 = JS 堆栈 + React 组件树栈（定位"哪个组件渲染时抛的"）。
+ */
+export function renderErrorEntry(error: Error, componentStack?: string | null): ClientLogEntry {
+  const parts = [error.stack]
+  if (componentStack) parts.push(`Component stack:\n${componentStack}`)
+  return entry(`[RenderError] ${error.message}`, parts.filter(Boolean).join('\n\n'))
+}
+
+/**
+ * 渲染期异常上报入口（AppErrorBoundary.componentDidCatch 专用，审计 R12）：
+ * window.onerror 兜不住被错误边界接住的渲染异常——边界接手后异常不再冒泡
+ * 成 uncaught error。全程吞异常：兜底链路（边界 → 兜底页重渲染）期间
+ * 上报器自身任何错误都绝不外抛、不回流（防递归，与 install 的两个
+ * handler 同一纪律）。
+ */
+export function reportRenderError(error: Error, componentStack?: string | null): void {
+  try {
+    record(renderErrorEntry(error, componentStack))
+  } catch {
+    /* 防递归：吞掉 */
   }
 }
 

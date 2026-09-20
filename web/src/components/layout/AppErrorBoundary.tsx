@@ -1,4 +1,5 @@
 import { Component, type CSSProperties, type ErrorInfo, type ReactNode } from 'react'
+import { reportRenderError } from '@/lib/client-logs'
 import { HOME_PATH } from '@/lib/route-keys'
 
 interface AppErrorBoundaryProps {
@@ -41,8 +42,10 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
     // window.onerror（installClientLogs）兜不住被边界接住的渲染异常——它不再
-    // 冒泡成 uncaught error，这里补一条控制台记录便于排查
+    // 冒泡成 uncaught error。控制台留痕 + client-logs 旁路上报（审计 R12）：
+    // reportRenderError 全程吞异常，兜底链路上绝不二次抛错（防递归）。
     console.error('[AppErrorBoundary] 渲染期异常', error, info.componentStack)
+    reportRenderError(error, info.componentStack)
   }
 
   render() {
