@@ -8,6 +8,18 @@
 - 子代理执行的工作标注"（执行子代理）"，主对话直接完成的标注"（主代理）"。
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
+## docs: 文档一致性清偿 14 处+审计任务书入库+工作区整理——例行维护批收官（2026-09-21 第三百八十一笔）
+
+执行 AI：GLM-5.3（主代理）
+
+- **桌面壳已交付口径四文档联改**（ADR-0020 于 2026-09-16 交付，四份文档仍写「未来/后置储备」）：PROJECT_PLAN M7+ 把 Tauri 桌面壳移出储备清单（补已交付注记）；README 架构图「未来: TV/桌面壳」拆行（桌面壳=现行端、TV 留未来）+ 仓库结构补 `desktop/`；ARCHITECTURE §2 图同改 + §8 客户端矩阵桌面壳行改「已交付」+ 文头更新日期；llms.txt 一句话补桌面壳、CI「四 job」勘误为五 job、ADR 索引范围 0011 勘误为 0022、子目录入口补 desktop。
+- **M6 收官措辞对齐**（2026-09-20 已收官，入口文档仍写「预留/待退役」）：AGENTS 项目一句话与「与旧项目的关系」、AI_README_FIRST、HANDOVER 接手第一步/领域知识库节——「单机形态预留」→「已随 M6 收官落地」、「旧项目待退役」→「退役链已完成（物理归档动作由用户自行处理）」。
+- **scope 与残留修正**：AGENTS 铁律 10 与 AI_README_FIRST git 约束的 scope 枚举补 `desktop`（与 ADR-0020 声明对齐，此前声明与实操两头不一致）；AGENTS 路由表 GUIDE_API「（建立后）」过时残留删除、UI 行补 desktop 指引；AI_README_FIRST commit 示例原指向已删除的 GUIDE_APP.md 改为 CHANGELOG.md。
+- **矛盾与过时陈述修正**：HANDOVER_UI §1「接真实数据（阶段 B）未启动」与同文件 §5 及 HANDOVER 自相矛盾（实际 2026-09-03 完成）改勾销注记；PROJECT_PLAN M2 阶段 B 引用块「ArtPlayer 播放器 UI 待做」补已交付注（W-3，2026-09-05）；HANDOVER「当前进度/当前待办」节标题日期 2026-09-04 更新为截至 2026-09-21；CAPABILITY_MAP 部署行 dev-tools 路径补「仓库外」标注；AUDIT-20260920 文头「master 未动」补时态说明、§6 三条后续建议补已落地状态（协议批 6ed8129/性能批 a465ae6/R3 e1b0562/R4 819b7c4）。
+- **审计任务书入库**：`docs/任务书-审计清偿批-20260920.md`（原 untracked）随本笔入库——AUDIT §3.1 清偿记录引用它为路径，不入库则克隆/换机后引用断裂。
+- **工作区整理**（外移非删除，暂存=`QimengNAS\仓库清理暂存-20260921\`，含 README 说明）：`.walk/`+`android/.walk/`（走查对照截图）、`.run-screens/`、`.tmp-u11-video-lib/`、根 `data/`（2026-09-06 裸启动残留，正式数据 qimeng-data/ 未动）、`server/console*.log`、`server/qimeng-server.exe.bak-20260921`——合计约 35MB 全部原本就被 .gitignore 忽略；`.gitignore` 补 `*.exe.bak-*` 防带日期 exe 备份再入 untracked。HANDOVER 文头已随本批刷新（最后更新=2026-09-21 维护批）。
+- **审查与门禁总账**：四路只读对抗审查（server/web/android/docs）零 P1；三端门禁修复前后两轮全绿（server build/vet/gofmt/test/golangci；web build/oxlint/vitest 169；android assembleDebug/testDebugUnitTest/:core:model:test/lintDebug）。pull/push 因 github 暂不可达未执行（本地领先 4 笔，网络恢复后补推）。
+
 ## fix(app): unbindTag 失败回滚 distinct 防重复 tagId+NetworkModule callTimeout 零时限提常量——维护审查清偿（2026-09-21 第三百八十笔）
 
 执行 AI：GLM-5.3（主代理）

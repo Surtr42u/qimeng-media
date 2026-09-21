@@ -10,7 +10,7 @@
 1. 用户要求复刻桌面 PC 客户端 UI，并把这个界面的**侧边栏**移植进 qimeng-media 项目。
 2. **UI 主路线曾是 `media-ui-prototype/`**（桌面客户端风格的静态原型：纯 HTML/CSS/JS）——**该原型目录已于 2026-09-19 退役删除**（整体移植进 web 正式代码后完成使命，历史可溯 git 与 CHANGELOG）；现行 UI = web 端 React 重建（访问 8420）。
 3. **v2（`web/src/panel-demo/`）也已删除（2026-09-01）**——web 端只保留鉴权基建（AuthGate/RootLayout/SseBridge/LoginGate）与生成 SDK、共享工具，首页为占位提示；
-   ~~待原型敲定后把功能移植进 web 重建页面~~ **已完成（2026-09-02，阶段 A mock）**：九页+壳层已用 React 重建进 web（`web/src/pages/`、`components/shell/`、`styles/prototype.css`），访问 `http://127.0.0.1:8420/` 即原型界面；**接真实数据（阶段 B）未启动**。
+   ~~待原型敲定后把功能移植进 web 重建页面~~ **已完成（2026-09-02，阶段 A mock）**：九页+壳层已用 React 重建进 web（`web/src/pages/`、`components/shell/`、`styles/prototype.css`），访问 `http://127.0.0.1:8420/` 即原型界面；~~接真实数据（阶段 B）未启动~~ **阶段 B 已于 2026-09-03 全部完成、mock 全部退役（见 §5；2026-09-21 维护批勘误——本行原「未启动」为过时残留）**。
 4. **v1 旧壳与 v2 panel-demo 已于 2026-09-01 彻底删除**（v1：pages/、旧壳专属 components、旧 hooks、/legacy 与 /detail；v2：panel-demo/、components/tremor/、lib/tremor、相应依赖包），web 端仅保留鉴权基建与工具层。
 5. 原型内已**去除所有平台命名痕迹**（标题、注释、数据字段、任务书），措辞统一中性化；后续新代码同样不提及。
 

@@ -1,6 +1,6 @@
 # qimeng-media（绮梦影库·NAS 多端版）
 
-> 自托管家庭媒体库：Go 单体服务端 + React Web(PWA) + Kotlin/Compose Android 薄客户端，OpenAPI 协议先行，全部代码由 AI 生成、文档体系驱动协作。
+> 自托管家庭媒体库：Go 单体服务端 + React Web(PWA) + Kotlin/Compose Android 薄客户端 + Tauri 桌面壳（ADR-0020），OpenAPI 协议先行，全部代码由 AI 生成、文档体系驱动协作。
 
 ## 先读（AI 协作入口）
 
@@ -11,7 +11,7 @@
 
 ## 核心文档（docs/）
 
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)：架构唯一权威（技术选型、模块边界强制 §5.1、数据身份、CI 四 job）
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)：架构唯一权威（技术选型、模块边界强制 §5.1、数据身份、CI 五 job）
 - [docs/DOMAIN_RULES.md](docs/DOMAIN_RULES.md)：领域规则唯一权威（推荐算法/筛选/统计/作者/缩略图，标注「逐字遵守」的公式禁止擅改）
 - [docs/CAPABILITY_MAP.md](docs/CAPABILITY_MAP.md)：能力地图（对标 Jellyfin/Immich/Plex 的现状与缺口，AI 主动提案的依据）
 - [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md)：里程碑 M0-M6+ 与验收标准（进度唯一真相）
@@ -24,7 +24,7 @@
 ## 决策记录（docs/adr/）
 
 - [docs/adr/INDEX.md](docs/adr/INDEX.md)：ADR 决策索引（编号 | 一句话决策 | 受影响文件）
-- [docs/adr/0001-技术栈与monorepo.md](docs/adr/0001-技术栈与monorepo.md) 至 [docs/adr/0011-数据库演进式迁移纪律.md](docs/adr/0011-数据库演进式迁移纪律.md)：ADR-0001~0011（0009 SDK 生成物不入库 / 0010 模块边界三层强制 / 0011 迁移纪律）
+- [docs/adr/0001-技术栈与monorepo.md](docs/adr/0001-技术栈与monorepo.md) 至 [docs/adr/0022-targetSdk37与局域网权限适配.md](docs/adr/0022-targetSdk37与局域网权限适配.md)：ADR-0001~0022（0009 SDK 生成物不入库 / 0010 模块边界三层强制 / 0011 迁移纪律 / 0014 Android Compose 重建 / 0015 Android 单机形态 / 0019 编排层下沉 / 0020 Tauri 桌面壳 / 0021 多设备会话 token 等，全量见 INDEX.md）
 - [docs/templates/adr-template.md](docs/templates/adr-template.md)：ADR 模板（Nygard 五段）
 
 ## 协议与工程
@@ -38,3 +38,4 @@
 - [server/](server/README.md)：Go 服务端（模块化单体，internal 包边界 + depguard 红线，见 server/.golangci.yml）
 - [web/](web/README.md)：React + Vite + shadcn/ui PWA（设计 token 规范）
 - [android/](android/README.md)：Kotlin + Compose 薄客户端（SDK 生成物 android/sdk/ 不入库）
+- [desktop/](desktop/README.md)：Tauri 2 桌面壳（连接模式薄壳，ADR-0020）

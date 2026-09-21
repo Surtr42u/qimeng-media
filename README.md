@@ -31,8 +31,9 @@
 ```
 手机 App (Compose) ─┐                      ┌─ 扫描器 (fsnotify 增量)
 浏览器/PWA (React) ─┼──► Go 服务端 (Docker) ─┼─ 缩略图管线 (ffmpeg)
-未来: TV/桌面壳    ─┘   SQLite + REST/SSE   ├─ 推荐与统计 (纯函数)
-                          ▲                 └─ 媒体直链 (HTTP Range)
+桌面壳 (Tauri)     ─┤    SQLite + REST/SSE  ├─ 推荐与统计 (纯函数)
+未来: TV           ─┘                       └─ 媒体直链 (HTTP Range)
+                          ▲
                           │
                     openapi.yaml ← 协议宪法，三端 SDK 自动生成
 ```
@@ -45,6 +46,7 @@ qimeng-media/
 ├── server/              Go 服务端（模块化单体）
 ├── web/                 React + Vite + shadcn/ui (PWA)
 ├── android/             Kotlin + Compose 薄客户端
+├── desktop/             Tauri 2 桌面壳（连接模式：加载服务端 Web UI，ADR-0020）
 └── docs/                架构、领域规则、安全、监控、计划、ADR
 ```
 
