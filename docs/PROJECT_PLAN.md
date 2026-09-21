@@ -103,10 +103,11 @@
 **目标**：真实 NAS 环境全流程可用。
 
 > **2026-09-19 口径改写（用户拍板，任务Q §0-3；批D 顺延记档=任务Q 批E）**：开发侧三项（Docker buildx 双架构镜像、docker-compose 生产样例、deploy/README.md）= 上 NAS 的必经之路必须做；fnOS 虚拟机彩排 = 非必须不再补做（虚拟机只是排练，将来真机 NAS 直接执行部署验收清单）。**批D 执行态：顺延挂用户节点**——Docker Desktop 未安装且须用户浏览器手动下载（AI 命令行下载多次被网络重置，教程见 `..\dev-tools\TOOLCHAIN_GUIDE.md`），用户装好后执行 M5 部署验收清单。
+> **2026-09-22 部分清偿（用户主动要求虚拟机实测彩排）**：绕开宿主机 Docker Desktop 的路径 = 直接在 fnOS 虚拟机内构建镜像（宿主机只做交叉编译 + web 构建）。开发侧三项中的 compose 样例与部署文档已交付勾销，镜像 amd64 半边实测通过；同场完成 M5 之外的局域网全链路彩排（装机→建库→扫描→缩略图→播放→上传→自重启，合成测试库，未触碰真实库数据）。
 
-- [ ] Docker buildx 双架构镜像（含 ffmpeg）——任务Q 批D 顺延（前置=Docker Desktop 用户手动下载安装）
-- [ ] docker-compose 生产样例（卷挂载/健康检查/自动重启）——同上批D 顺延
-- [ ] 部署文档 `deploy/README.md`——同上批D 顺延
+- [ ] Docker buildx 双架构镜像（含 ffmpeg）——任务Q 批D 顺延（前置=Docker Desktop 用户手动下载安装）**2026-09-22 进展：amd64 单架构已交付并在 fnOS 1.2 虚拟机实测通过（`deploy/Dockerfile`，容器内 ffmpeg 自检过）；buildx 双架构的 arm64 半边挂真机节点补**
+- [x] docker-compose 生产样例（卷挂载/健康检查/自动重启）（2026-09-22：`deploy/docker-compose.yml` 交付，fnOS 虚拟机实测 healthy + 自重启拉起）
+- [x] 部署文档 `deploy/README.md`（2026-09-22 交付，含镜像源备注/安全红线自查/实测记录）
 - [ ] 部署验收清单：大库扫描压测、手机真机访问、断电重启数据完好、回收站恢复——挂「真机 NAS 就绪」用户节点（虚拟机彩排已豁免）
 
 **验收**：真机 NAS 全功能可用（虚拟机彩排按 2026-09-19 拍板豁免）。

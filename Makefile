@@ -71,7 +71,7 @@ export SDK_GRADLE_FILE
 #   go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.1
 GOLANGCI_LINT ?= $(GOBIN_DIR)/golangci-lint
 
-.PHONY: help sdk sdk-validate sdk-go sdk-ts sdk-kotlin sdk-lock app-build app-test app-lint server-run server-test server-android-arm64 server-android-amd64 app-embedded-arm64 app-embedded-x86_64 app-embedded web-build web-dev web-test docker-build lint
+.PHONY: help sdk sdk-validate sdk-go sdk-ts sdk-kotlin sdk-lock app-build app-test app-lint server-run server-test server-android-arm64 server-android-amd64 server-linux-amd64 app-embedded-arm64 app-embedded-x86_64 app-embedded web-build web-dev web-test docker-build lint
 
 help: ## show all targets
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
@@ -195,6 +195,9 @@ server-android-arm64: ## cross-compile arm64 server for Android device (build/an
 server-android-amd64: ## cross-compile x86_64 server for Android emulator (build/android/x86_64/qimeng-server)
 	cd server && GOOS=android GOARCH=amd64 CGO_ENABLED=1 CC="$(NDK_X64_CLANG)" go build -o ../build/android/x86_64/qimeng-server ./cmd/qimeng
 
+server-linux-amd64: ## cross-compile x86_64 server for NAS/Docker (build/linux/amd64/qimeng-server)
+	cd server && GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o ../build/linux/amd64/qimeng-server ./cmd/qimeng
+
 # ---------- 内嵌形态三件套装配（任务U11 批次D，ADR-0015 形态 B）----------
 # jniLibs 不入 git（~57MB）；装配口径/供应链哈希/W^X 红线见 deploy/embedded/README.md。
 EMBEDDED_JNILIBS := android/app/src/main/jniLibs
@@ -225,8 +228,11 @@ web-test: ## web checks (tsc + oxlint; build + lint combo)
 	npm --prefix web run build
 	npm --prefix web run lint
 
-docker-build: ## dual-arch image (amd64+arm64, ffmpeg) -- not implemented yet (see PROJECT_PLAN M5)
-	@echo "TODO(M5): image delivery not implemented yet; see PROJECT_PLAN M5 (docker buildx build --platform linux/amd64,linux/arm64)"
+docker-build: ## build amd64 image via deploy/Dockerfile (arm64 dual-arch pending real-NAS node)
+	@echo "Building amd64 image (context: build/docker-ctx, see deploy/README.md)..."
+	test -f build/docker-ctx/qimeng-server || { echo "missing build/docker-ctx/qimeng-server - run: make server-linux-amd64 && assemble ctx per deploy/README.md"; exit 1; }
+	docker build -f deploy/Dockerfile -t qimeng-media:1.0 build/docker-ctx
+	@echo "NOTE: arm64 half of dual-arch still pending (real-NAS node, see PROJECT_PLAN M5)."
 
 lint: ## all static checks (openapi spec + gofmt/golangci-lint + TS)
 	@echo "==> openapi spec lint (redocly; errors fail the build)"

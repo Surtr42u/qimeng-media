@@ -8,6 +8,16 @@
 - 子代理执行的工作标注"（执行子代理）"，主对话直接完成的标注"（主代理）"。
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
+## feat(server): Docker 部署三件套交付 + fnOS 虚拟机部署实测——M5 批D 部分清偿（2026-09-22 第三百八十二笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- **背景**：用户主动要求用 VirtualBox + fnOS 镜像做 NAS 实测彩排（2026-09-19 曾豁免虚拟机彩排，本笔按用户最新要求恢复执行并顺势清偿批D 开发侧产物）。路径绕开宿主机 Docker Desktop（仍未安装）：宿主机只交叉编译 + 构建 web 产物，镜像在 fnOS 虚拟机内构建。
+- **deploy 三件套入库**：`deploy/Dockerfile`（debian-slim + ffmpeg/curl + 纯 Go 静态二进制 + SPA 产物，端口 8420 标注协议双同步责任）、`deploy/config-docker.yaml`（容器内兜底基线，auth_dev_mode 默认关闭，库白名单 /media）、`deploy/docker-compose.yml`（端口/卷挂载/healthcheck/restart=unless-stopped 样例）、`deploy/README.md`（构建→导入→部署全流程 + 国内镜像源备注 + 安全红线自查 + 实测记录）。
+- **Makefile**：新增 `server-linux-amd64` 交叉编译目标；`docker-build` 占位 TODO 落地为 amd64 实构建（arm64 半边仍挂真机节点，输出诚实提示）。
+- **fnOS 虚拟机实测**（VirtualBox 7.2.16 + fnOS 1.2.0401→在线升级 1.2.0604）：镜像 `qimeng-media:1.0`（590MB）构建成功、容器内 ffmpeg/ffprobe 自检通过；compose 部署后局域网 `GET /api/v1/healthz` 200（约 2ms）、Web 托管正常、容器 healthy；systemd 版与 Docker 版前后台切换验证端口与数据互斥；全链路彩排=建库（白名单校验）→扫描 8 个合成测试文件→缩略图/时长探测→局域网流式播放→上传 201 入库→重启自动拉起。测试媒体全部为 ffmpeg 合成图案，未触碰真实库数据。
+- **环境备忘**：fnOS 自带 ffmpeg 8.1.1（mediasrv 版）与 Debian 源 ffmpeg 5.x 冲突，apt 安装报错后以 fnOS 自带版运行（dpkg 已修复）；Docker Hub 直连超时，镜像经 `docker.m.daocloud.io` 拉取（README 已记做法）；fnOS SSH 的 /home/admin 需 sudo 手工补建属其发行版惯例，公钥部署一次通过。
+
 ## docs: 文档一致性清偿 14 处+审计任务书入库+工作区整理——例行维护批收官（2026-09-21 第三百八十一笔）
 
 执行 AI：GLM-5.3（主代理）
