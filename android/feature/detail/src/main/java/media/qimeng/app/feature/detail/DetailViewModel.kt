@@ -504,7 +504,12 @@ class DetailViewModel @Inject constructor(
                     _uiState.value = rollback.copy(
                         unbindingTagIds = rollback.unbindingTagIds - tagId,
                         asset = restoredAsset,
-                        selectedTagIds = if (tagId in snapshotSelected) rollback.selectedTagIds + tagId else rollback.selectedTagIds,
+                        // distinct 防重复：窗口期用户可能在弹窗重新勾回同一标签
+                        // （List + element 追加不去重，重复 id 会随 saveTags 整体
+                        // 替换 PUT 上行）——createAndSelectTag 同款口径（2026-09-21 维护批）。
+                        selectedTagIds = (
+                            if (tagId in snapshotSelected) rollback.selectedTagIds + tagId else rollback.selectedTagIds
+                            ).distinct(),
                         errorMessage = "$ERROR_UNBIND_TAG${error.message ?: ""}",
                     )
                 }

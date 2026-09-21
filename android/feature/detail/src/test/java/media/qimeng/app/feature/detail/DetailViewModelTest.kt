@@ -992,6 +992,28 @@ class DetailViewModelTest {
     }
 
     @Test
+    fun `解绑失败 - 窗口期重新勾回同一标签 回滚不产生重复id（维护批2026-09-21）`() = runTest(mainDispatcherRule.testDispatcher) {
+        val repo = FakeDetailRepository().apply {
+            detailById["b"] = detail("b", tags = listOf(DetailTag("t1", "甲"), DetailTag("t2", "乙")))
+            tagPool = listOf(TagChip("t1", "甲"), TagChip("t2", "乙"))
+            unbindTagError = RuntimeException("net down")
+        }
+        val vm = viewModel(repo)
+        advanceUntilIdle()
+        vm.openTagSheet()
+        advanceUntilIdle()
+        vm.unbindTag("t1")
+        // 乐观解勾落地后、失败回调执行前：用户在弹窗把 t1 重新勾回（草稿已含 t1）
+        vm.toggleTagSelection("t1")
+        advanceUntilIdle()
+
+        val s = vm.uiState.value
+        // 回滚补回不与窗口期草稿叠加出重复 id（List + element 不去重；重复 id
+        // 会随 saveTags 整体替换 PUT 上行）
+        assertEquals(listOf("t2", "t1"), s.selectedTagIds)
+    }
+
+    @Test
     fun `尺寸缓存 - 超上限淘汰最老条目（审计R13）`() {
         val cache = DetailImageDimCache()
         for (i in 0 until 600) cache.put("k$i", ImageDims(10, 10))
