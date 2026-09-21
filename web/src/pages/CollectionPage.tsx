@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router'
 import { MediaCard } from '@/components/media/MediaCard'
 import { InfiniteTail } from '@/components/media/InfiniteTail'
 import { Pill } from '@/components/ui/pill'
+import { LoadingHint } from '@/components/ui/loading-hint'
 import { useAutoMore } from '@/hooks/use-auto-more'
 import {
   useAssetsInfinite,
@@ -239,7 +240,7 @@ export default function CollectionPage() {
         </section>
       ) : null}
       {loading ? (
-        <p className="grid-empty">加载中…</p>
+        <LoadingHint />
       ) : items.length ? (
         <div className="media-grid">
           {items.map((a) => (

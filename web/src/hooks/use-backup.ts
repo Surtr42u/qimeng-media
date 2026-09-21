@@ -17,6 +17,7 @@ import {
   type LegacyImportResult,
 } from '@/api/generated'
 import { getAuthHeaders, unwrapSdkResult } from '@/lib/api-client'
+import { downloadBlob } from '@/lib/download'
 import {
   ASSETS_QUERY_KEY,
   AUTHORS_QUERY_KEY,
@@ -42,17 +43,7 @@ export function useExportQimengBackup() {
         throw new Error(`导出失败（HTTP ${resp.status}）`)
       }
       const blob = await resp.blob()
-      const url = URL.createObjectURL(blob)
-      try {
-        const a = document.createElement('a')
-        a.href = url
-        a.download = BACKUP_FILE_NAME
-        document.body.appendChild(a)
-        a.click()
-        a.remove()
-      } finally {
-        URL.revokeObjectURL(url)
-      }
+      downloadBlob(blob, BACKUP_FILE_NAME)
       return { sizeBytes: blob.size }
     },
   })

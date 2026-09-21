@@ -8,6 +8,15 @@
 - 子代理执行的工作标注"（执行子代理）"，主对话直接完成的标注"（主代理）"。
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
+## refactor(web): Blob 下载收敛 downloadBlob+「加载中…」占位 9 处收敛 LoadingHint+client-logs 空转用例改实锁——维护审查清偿（2026-09-21 第三百七十九笔）
+
+执行 AI：GLM-5.3（主代理）
+
+- **downloadBlob 共享函数**（卫生约束 6）：use-backup 旧版 JSON 导出与 use-db-backups 快照下载原先逐行手抄同一段 objectURL/锚点 click/revoke 命令式逻辑（仅文件名不同），收敛进 `lib/download.ts` 单一来源。
+- **LoadingHint 共享件**（卫生约束 6）：`<p className="grid-empty">加载中…</p>` 在 7 文件 9 处手抄（AssetDetailPage×2/HomePage×2/CollectionPage/DirBrowser/DirFileList/TxtAuthorImportCard/InfiniteTail），收敛为 `components/ui/loading-hint.tsx`——文案/类名改动全端单点生效；其余非「加载中」语义的 grid-empty 空态文案不动。
+- **client-logs.test.ts 空转用例改实锁**（R12 审查 P3）：原「内部机制异常时绝不外抛」用例打桩 localStorage/fetch，但 reportRenderError→renderErrorEntry→entry 路径根本不经过它们（record 队列未满只挂定时器），断言空转；改为毒化 `error.message` getter 使条目组装在 try 内真抛错，真实锁定吞异常纪律（防递归）。
+- **门禁**：tsc -b + vite build、oxlint 0 error、vitest 17 文件 169 测试全绿。
+
 ## fix(server): 删库补目录树缓存失效+会话去重竞态用例 goroutine 去 t.Fatalf——维护审查清偿（2026-09-21 第三百七十八笔）
 
 执行 AI：GLM-5.3（主代理）
