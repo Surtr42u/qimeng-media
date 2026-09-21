@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -202,7 +203,10 @@ func TestEngagementSessionDedupBackstop(t *testing.T) {
 		t.Fatalf("回滚失败: %v", err)
 	}
 
-	// handler 层：并发同键 open，全部 202，恰 1 行
+	// handler 层：并发同键 open，全部 202，恰 1 行。goroutine 内不走 env.do
+	// ——其构造/传输失败分支直接 t.Fatalf，而 testing 包要求 FailNow 只能在
+	// 测试主 goroutine 调用（goroutine 内 Goexit 会让下方收包循环永等挂起）；
+	// 这里改走 errs 通道（2026-09-21 维护批，测试基建健壮性）。
 	const n = 8
 	errs := make(chan error, n)
 	for i := 0; i < n; i++ {
@@ -217,7 +221,18 @@ func TestEngagementSessionDedupBackstop(t *testing.T) {
 				errs <- err
 				return
 			}
-			resp := env.do(t, http.MethodPost, "/api/v1/events/view", string(body))
+			req, err := http.NewRequest(http.MethodPost, env.ts.URL+"/api/v1/events/view", strings.NewReader(string(body)))
+			if err != nil {
+				errs <- err
+				return
+			}
+			req.Header.Set("Authorization", "Bearer "+env.token)
+			req.Header.Set("Content-Type", "application/json")
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				errs <- err
+				return
+			}
 			defer func() { _ = resp.Body.Close() }()
 			if resp.StatusCode != http.StatusAccepted {
 				errs <- fmt.Errorf("期望 202, 得到 %d", resp.StatusCode)

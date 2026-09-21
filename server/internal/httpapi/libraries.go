@@ -292,6 +292,10 @@ func (s *Server) DeleteApiV1LibrariesLibraryId(w http.ResponseWriter, r *http.Re
 		writeErr(w, http.StatusInternalServerError, codeInternal, "内部错误")
 		return
 	}
+	// 删库失效目录树缓存：读路径先 GetLibrary→404，滞留条目本不可达，但
+	// dirsCache 过期只 miss 不 delete，不失效会占内存到进程重启（2026-09-21
+	// 维护批补——R3 批只接了 POST /dirs 建目录这一失效端点）。
+	s.dirs.invalidate(libraryID)
 	s.scanStates.set(libraryID, "idle")
 	// 删库改变推荐候选集：推荐缓存失效经下方 library.changed 事件的装配期订阅统一触发
 	if err := s.bus.Publish(events.Event{Topic: events.TopicLibraryChanged}); err != nil {
