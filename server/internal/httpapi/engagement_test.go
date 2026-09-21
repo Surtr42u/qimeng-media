@@ -254,3 +254,37 @@ func TestEngagementSessionDedupBackstop(t *testing.T) {
 		t.Fatalf("物化 view_count 应为 1, got %d (found=%v)", view, found)
 	}
 }
+
+// TestEngagementEventForDeletedAsset（2026-09-22 fnOS 虚拟机彩排实测修复）：
+// 旧客户端对新一代库重放事件（引用已删/未入库资产）时——事件流保留、
+// 物化表不收、响应 202。修复前统计累加外键约束失败直接 500，客户端按
+// 「2xx 才删本地暂存」约定无限重试（彩排中旧标签页重放 44 次）。语义
+// 与 RebuildAssetDailyStatsFromEvents 的 live 过滤（ADR-0005）同口径。
+func TestEngagementEventForDeletedAsset(t *testing.T) {
+	env := newTestEnv(t)
+	ghost := "00000000-0000-0000-0000-0000000000aa" // 从未入库的资产
+	today := store.FormatDay(env.clock.Now())
+
+	// dwell：逐条插入路径，统计累加处触发外键失败
+	postDwellEvent(t, env, ghost, "sess-ghost", env.clock.Now(), 10)
+	// open：会话去重查询后插入，同样触发外键失败
+	postViewEvent(t, env, ghost, gen.Open, "sess-ghost", env.clock.Now())
+
+	// 事件流保留（真相源，孤儿事件合法）
+	if n := countViewEvents(t, env, ghost, "dwell"); n != 1 {
+		t.Fatalf("孤儿 dwell 事件应保留 1 行，得到 %d", n)
+	}
+	if n := countViewEvents(t, env, ghost, "open"); n != 1 {
+		t.Fatalf("孤儿 open 事件应保留 1 行，得到 %d", n)
+	}
+	// 物化表不收（未找到 = 合格）
+	if _, _, _, ok := readDailyStats(t, env, ghost, today); ok {
+		t.Fatalf("已删资产的物化行不应存在")
+	}
+
+	// 同会话二次 open：会话去重直接 202（孤儿事件也参与去重，收敛重试）
+	postViewEvent(t, env, ghost, gen.Open, "sess-ghost", env.clock.Now())
+	if n := countViewEvents(t, env, ghost, "open"); n != 1 {
+		t.Fatalf("同会话二次 open 应被去重，仍期望 1 行，得到 %d", n)
+	}
+}

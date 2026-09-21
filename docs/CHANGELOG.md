@@ -8,6 +8,15 @@
 - 子代理执行的工作标注"（执行子代理）"，主对话直接完成的标注"（主代理）"。
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
+## fix(server): 浏览事件引用已删资产时统计累加外键失败——孤儿事件按 ADR-0005 口径入库跳过统计（2026-09-22 第三百八十三笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- **来源**：fnOS 虚拟机 Docker 彩排的日志监控抓到 `累加按天统计失败: FOREIGN KEY constraint failed (787)` 共 48 次——用户浏览器里仍开着的旧标签页持有上一代库的资产 ID，持续向全新库重放浏览事件：事件插入成功（view_events 无外键，ADR-0005），物化表 asset_daily_stats 累加外键失败 → 500 → 客户端按「2xx 才删本地暂存」约定无限重试。真机迁移场景（手机离线队列旧事件灌入新库）必然复现。
+- **修复**（engagement.go）：UpsertAssetDailyStats 外键失败时按 ADR-0005 既有口径处理——孤儿事件照常入库（事件流是真相源）、统计累加跳过、原样 202 让离线队列收敛；与 RebuildAssetDailyStatsFromEvents 的 live 过滤（stats.go「已删资产：物化表不收，事件流保留」）同口径。错误判定沿用 libraries.go 的约束错误字符串匹配惯例（本机无 sqlc，未动生成物）。
+- **测试**：新增 TestEngagementEventForDeletedAsset 锁定三类行为——孤儿 dwell/open 事件各保留 1 行、物化表无对应行、同会话二次 open 被去重收敛；`go test ./...` 15 包全绿。
+- **部署**：随本修复重建 linux/amd64 二进制与 qimeng-media 镜像，fnOS 虚拟机 Docker 实例同步更新。
+
 ## feat(server): Docker 部署三件套交付 + fnOS 虚拟机部署实测——M5 批D 部分清偿（2026-09-22 第三百八十二笔）
 
 执行 AI：GLM-5.3-Flash（主代理）
