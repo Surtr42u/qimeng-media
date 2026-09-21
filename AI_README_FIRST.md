@@ -80,7 +80,7 @@
 ## git 约束
 
 - 代码 + 文档 + migration 同一个 commit。
-- commit 格式：`类型(scope): 简述 | 文档: 已更新XXX`——scope 区分端：`api`（协议）/`web`（Web 端）/`app`（Android 端）/`server`（服务端）/`docs`（纯文档）。示例：`feat(api): 新增回收站恢复端点 | 文档: openapi.yaml, GUIDE_API.md`、`feat(web): 列表页筛选面板 | 文档: CHANGELOG.md, HANDOVER_UI.md`、`feat(app): 系统分享接收上传 | 文档: GUIDE_APP.md`。
+- commit 格式：`类型(scope): 简述 | 文档: 已更新XXX`——scope 区分端：`api`（协议）/`web`（Web 端）/`app`（Android 端）/`server`（服务端）/`desktop`（桌面壳，ADR-0020）/`docs`（纯文档）。示例：`feat(api): 新增回收站恢复端点 | 文档: openapi.yaml, GUIDE_API.md`、`feat(web): 列表页筛选面板 | 文档: CHANGELOG.md, HANDOVER_UI.md`、`feat(app): 系统分享接收上传 | 文档: CHANGELOG.md`。
 - 提交前 `git pull`。
 
 ## 禁止行为
