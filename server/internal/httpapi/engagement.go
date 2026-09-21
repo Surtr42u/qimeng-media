@@ -3,7 +3,9 @@ package httpapi
 import (
 	"database/sql"
 	"errors"
+	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -45,6 +47,9 @@ import (
 //
 // 事件插入与 asset_daily_stats 累加在同一事务：物化表是事件流的缓存
 // （migrations/0005 表注释），半写状态会让统计口径漂移。
+//
+// 已删资产的迟到事件：事件入库、统计跳过、原样 202（与 rebuild 的 live
+// 过滤同口径，ADR-0005）——实现见下方 upsert 错误分支（2026-09-22）。
 func (s *Server) PostApiV1EventsView(w http.ResponseWriter, r *http.Request) {
 	var req gen.PostApiV1EventsViewJSONRequestBody
 	if !decodeJSON(w, r, &req) {
@@ -127,6 +132,24 @@ func (s *Server) PostApiV1EventsView(w http.ResponseWriter, r *http.Request) {
 		delta.BrowseSeconds = seconds.Int64
 	}
 	if err := qtx.UpsertAssetDailyStats(r.Context(), delta); err != nil {
+		// 已删资产的迟到事件（换库/重建后旧客户端补传的典型场景）：事件流
+		// 是真相源，孤儿事件照常入库（ADR-0005：view_events 无外键）；物化表
+		// 只收存活资产，跳过累加并原样 202——与 RebuildAssetDailyStatsFromEvents
+		// 的 live 过滤同口径。返回 202 而非 500 是客户端「2xx 才删本地暂存」
+		// 约定的安全前提：500 会让离线队列对一条孤儿事件无限重试
+		//（2026-09-22 fnOS 虚拟机彩排实测：旧标签页重放 44 次）。
+		// 错误判定沿用 libraries.go 的约束错误字符串匹配惯例（sqlc 查询层
+		// 不区分约束种类，驱动错误文本在 modernc sqlite 稳定）。
+		if strings.Contains(err.Error(), "FOREIGN KEY constraint failed") {
+			if err := tx.Commit(); err != nil {
+				s.internalErr(w, "提交浏览事件", err)
+				return
+			}
+			slog.Warn("浏览事件资产已删除：事件入库、统计跳过",
+				"assetId", req.AssetId.String(), "kind", string(req.Kind))
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
 		s.internalErr(w, "累加按天统计", err)
 		return
 	}
