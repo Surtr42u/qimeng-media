@@ -1,0 +1,33 @@
+# qimeng-media 生产样例（M5 部署三件套之一；fnOS 1.2 虚拟机 amd64 实测通过）
+#
+# 用法:
+#   docker compose up -d      # 启动（后台）
+#   docker compose logs -f    # 跟日志
+#   docker compose down       # 停止（数据卷不删）
+#   升级: 换 image tag 后重新 up -d 即滚动替换
+#
+# 实测口径: 容器状态 healthy（healthcheck 走 GET /api/v1/healthz），
+# restart=unless-stopped 已验证断电/重启自动拉起。
+services:
+  qimeng-media:
+    image: qimeng-media:1.0
+    container_name: qimeng-media
+    ports:
+      - "8420:8420" # 端口与 api/openapi.yaml servers 一致（协议宪法），改动两处双同步
+    environment:
+      # 免密直进开关——仅限内网测试，生产部署必须保持注释（基线=关闭）
+      # QIMENG_AUTH_DEV_MODE: "1"
+      # 其余可调项（上传上限 QIMENG_UPLOAD_MAX_BYTES、缩略图 QIMENG_THUMBNAIL_*、
+      # 备份 QIMENG_BACKUP_* 等）见 server/internal/config/config.go 的 applyEnv 覆盖表
+    volumes:
+      # 媒体库根：按实际路径改；读写挂载（上传/回收站需要写权限）
+      - /vol1/1000/media-test:/media
+      # 服务端私有数据（数据库/缩略图/回收站/备份）：绝不能指向媒体库目录内
+      - /vol1/1000/qimeng-docker/data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8420/api/v1/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

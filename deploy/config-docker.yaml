@@ -1,0 +1,11 @@
+# 容器内兜底配置（打进镜像的基线；部署差异一律走 QIMENG_* 环境变量覆盖，
+# 可覆盖项清单见 server/internal/config/config.go 的 applyEnv）。
+# 安全基线：auth_dev_mode 不在此配置 = 默认关闭（免密只允许内网测试临时开启）。
+listen: ":8420"
+data_dir: /data
+log_level: info
+web:
+  static_dir: /app/web-dist
+# 库注册白名单：容器内约定把媒体库根挂载到 /media（compose 样例同口径）
+allowed_library_roots:
+  - /media
