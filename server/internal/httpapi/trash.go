@@ -138,7 +138,7 @@ func (s *Server) DeleteApiV1AssetsAssetId(w http.ResponseWriter, r *http.Request
 		s.internalErr(w, "创建回收站目录", err)
 		return
 	}
-	if err := os.Rename(src, trashFile); err != nil {
+	if err := filing.MoveFile(src, trashFile); err != nil {
 		s.internalErr(w, "移入回收站", err)
 		return
 	}
@@ -152,7 +152,7 @@ func (s *Server) DeleteApiV1AssetsAssetId(w http.ResponseWriter, r *http.Request
 	if err := writeTrashMeta(metaFile, meta); err != nil {
 		// meta 是回收站真相源，写失败必须回滚文件移动，否则产生
 		// "有文件无 meta"的不可恢复条目。
-		if rbErr := os.Rename(trashFile, src); rbErr != nil {
+		if rbErr := filing.MoveFile(trashFile, src); rbErr != nil {
 			s.logger.Error("回收站 meta 写入失败且回滚移动失败（需人工介入）",
 				"err", err, "rollbackErr", rbErr, "trashFile", trashFile)
 		}
@@ -350,7 +350,7 @@ func (s *Server) PostApiV1TrashTrashIdRestore(w http.ResponseWriter, r *http.Req
 		if err := os.MkdirAll(filepath.Dir(target), dirPerm); err != nil {
 			return fmt.Errorf("创建恢复目录: %w", err)
 		}
-		return os.Rename(e.file, target)
+		return filing.MoveFile(e.file, target)
 	})
 	switch {
 	case gerr == nil:
