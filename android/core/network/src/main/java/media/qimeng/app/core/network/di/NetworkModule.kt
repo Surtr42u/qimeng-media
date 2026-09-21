@@ -87,7 +87,7 @@ object NetworkModule {
     fun provideUploadOkHttpClient(okHttpClient: OkHttpClient): OkHttpClient =
         okHttpClient.newBuilder()
             .readTimeout(UPLOAD_READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-            .callTimeout(0, TimeUnit.MILLISECONDS)
+            .callTimeout(CALL_TIMEOUT_DISABLED, TimeUnit.MILLISECONDS)
             .build()
 
     /**
@@ -105,7 +105,7 @@ object NetworkModule {
     fun provideBackupOkHttpClient(okHttpClient: OkHttpClient): OkHttpClient =
         okHttpClient.newBuilder()
             .readTimeout(BACKUP_READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-            .callTimeout(0, TimeUnit.MILLISECONDS)
+            .callTimeout(CALL_TIMEOUT_DISABLED, TimeUnit.MILLISECONDS)
             .build()
 
     /** DataStore 单例：IO 专用作用域（DataStore 内部磁盘读写全挂它，NIA 同款装配）。 */
@@ -136,4 +136,7 @@ object NetworkModule {
 
     /** 备份读超时（秒）：导入是服务端同步长处理（逐条幂等合并，6341 资产手机端分钟级）、导出大库同为长响应，10s 必超时——300s 给足（见 provideBackupOkHttpClient 注释）。 */
     private const val BACKUP_READ_TIMEOUT_SECONDS = 300L
+
+    /** 总时限禁用值（毫秒）：OkHttp 语义 callTimeout=0 =「不设总时限」，时长只由读/写超时管。上传/备份两条长通道共用（卫生约束 5：0 在此并非自明值，CoilModule NETWORK_CALL_TIMEOUT_DISABLED 同款口径）。 */
+    private const val CALL_TIMEOUT_DISABLED = 0L
 }

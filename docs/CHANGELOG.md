@@ -8,6 +8,14 @@
 - 子代理执行的工作标注"（执行子代理）"，主对话直接完成的标注"（主代理）"。
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
+## fix(app): unbindTag 失败回滚 distinct 防重复 tagId+NetworkModule callTimeout 零时限提常量——维护审查清偿（2026-09-21 第三百八十笔）
+
+执行 AI：GLM-5.3（主代理）
+
+- **回滚防重复 tagId**（审查 P3 状态卫生缺陷）：R13 的精准回滚在「窗口期用户重新勾回同一标签 + 请求失败」路径会产生重复 id——`rollback.selectedTagIds + tagId`（List + element 追加不去重）叠加草稿里已勾回的同 id，重复清单会随 saveTags 整体替换 PUT 上行。补 `.distinct()`（createAndSelectTag:531 同款口径）+ 新增回归用例「解绑失败 - 窗口期重新勾回同一标签 回滚不产生重复id」。
+- **callTimeout 零时限提常量**（卫生约束 5）：UploadClient/BackupClient 两处 `callTimeout(0, MILLISECONDS)` 内联——0 在此并非自明值（OkHttp 语义=不设总时限，时长只由读/写超时管），提 `CALL_TIMEOUT_DISABLED = 0L` 具名常量（CoilModule NETWORK_CALL_TIMEOUT_DISABLED 同款口径）。
+- **门禁**：assembleDebug + testDebugUnitTest + :core:model:test + lintDebug 全绿。
+
 ## refactor(web): Blob 下载收敛 downloadBlob+「加载中…」占位 9 处收敛 LoadingHint+client-logs 空转用例改实锁——维护审查清偿（2026-09-21 第三百七十九笔）
 
 执行 AI：GLM-5.3（主代理）
