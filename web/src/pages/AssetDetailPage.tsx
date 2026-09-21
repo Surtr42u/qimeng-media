@@ -16,6 +16,7 @@ import { AuthorCard } from '@/components/detail/AuthorCard'
 import { AssetTagRow } from '@/components/detail/AssetTagRow'
 import { FileOpsButton } from '@/components/detail/FileOpsButton'
 import { UpNextList } from '@/components/detail/UpNextList'
+import { LoadingHint } from '@/components/ui/loading-hint'
 import { formatBytes, formatCount, formatShortDate } from '@/lib/format'
 import { assetDetailWithSearch, readAssetNavState, readBackdropKey, type OverlayDetailState } from '@/lib/route-keys'
 import { ensureSessionId } from '@/hooks/use-session'
@@ -187,7 +188,7 @@ export default function AssetDetailPage() {
     // keepPreviousData 占位不会走到这里（不闪「加载中…」）
     return (
       <div className="page asset-overlay" id="page-asset">
-        <p className="grid-empty">加载中…</p>
+        <LoadingHint />
       </div>
     )
   }
@@ -205,7 +206,7 @@ export default function AssetDetailPage() {
               // （防新播放器以旧资产 tags 首挂定格，契约见 useTimelineTags 注释）；
               // 占位窗口很短，舞台显示加载行过渡
               tagsPending || tagsPlaceholder ? (
-                <p className="grid-empty">加载中…</p>
+                <LoadingHint />
               ) : (
                 <VideoPlayer
                   key={d.id ?? assetId}

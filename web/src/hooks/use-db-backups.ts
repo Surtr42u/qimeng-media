@@ -19,6 +19,7 @@ import {
   type BackupInfo,
 } from '@/api/generated'
 import { getAuthHeaders, unwrapSdkResult } from '@/lib/api-client'
+import { downloadBlob } from '@/lib/download'
 
 /** 查询键（无跨 hook 失效需求，按卫生约束第 2 条留在本文件） */
 export const BACKUPS_QUERY_KEY = ['api/v1/backups'] as const
@@ -64,17 +65,7 @@ export function useDownloadDbBackup() {
         throw new Error(`下载失败（HTTP ${resp.status}）`)
       }
       const blob = await resp.blob()
-      const url = URL.createObjectURL(blob)
-      try {
-        const a = document.createElement('a')
-        a.href = url
-        a.download = info.name
-        document.body.appendChild(a)
-        a.click()
-        a.remove()
-      } finally {
-        URL.revokeObjectURL(url)
-      }
+      downloadBlob(blob, info.name)
       return info
     },
   })

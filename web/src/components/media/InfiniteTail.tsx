@@ -2,8 +2,10 @@
  * 无限加载尾部三件套（E3 无感加载）：加载中占位 / 到底计数 / 触底哨兵。
  * 相册/集合/搜索/我的收藏/我的历史五个列表原各自复制此段 JSX——按
  * 「第 2 次出现即抽共享」收拢于此；文案与哨兵写法（height:1 + aria-hidden）
- * 单一来源，改动全端生效。
+ * 单一来源，改动全端生效。加载中行复用 LoadingHint（同一文案的共享件）。
  */
+
+import { LoadingHint } from '@/components/ui/loading-hint'
 
 export interface InfiniteTailProps {
   /** 正在拉取下一页（TanStack Query isFetchingNextPage） */
@@ -27,7 +29,7 @@ export function InfiniteTail({
 }: InfiniteTailProps) {
   return (
     <>
-      {isFetchingNextPage ? <p className="grid-empty">加载中…</p> : null}
+      {isFetchingNextPage ? <LoadingHint /> : null}
       {!hasNextPage && itemCount > 0 ? (
         <p className="grid-empty">共 {itemCount} 项 · 到底了</p>
       ) : null}

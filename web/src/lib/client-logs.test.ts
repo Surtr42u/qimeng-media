@@ -63,18 +63,17 @@ describe('reportRenderError（防递归纪律）', () => {
   })
 
   it('内部机制异常时绝不外抛（吞掉，与 install 的 handler 同一纪律）', () => {
-    // fetch 打桩为同步抛错的 getter 触发 record 链路里的异常路径也吞
-    vi.stubGlobal('fetch', undefined)
-    vi.stubGlobal('localStorage', {
-      get getItem() {
-        throw new Error('storage broken')
+    // 真实失败路径：renderErrorEntry 组装读 error.message——毒化 getter 在
+    // reportRenderError 的 try 内同步抛错，其 catch 必须吞掉。（此前版本打桩
+    // localStorage/fetch，但该路径根本不经过它们——断言空转，2026-09-21 维护批改实锁。）
+    const poisoned = Object.create(Error.prototype, {
+      message: {
+        get() {
+          throw new Error('message getter broken')
+        },
       },
-    })
-    try {
-      expect(() => reportRenderError(new Error('still no throw'))).not.toThrow()
-    } finally {
-      vi.unstubAllGlobals()
-    }
+    }) as Error
+    expect(() => reportRenderError(poisoned, 'at Widget')).not.toThrow()
   })
 
   it('record 自身被外部破坏时也不外抛（队列 push 失败路径）', () => {

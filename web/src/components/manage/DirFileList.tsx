@@ -11,6 +11,7 @@ import {
 import { BatchOpsPanel } from '@/components/ui/batch-ops-panel'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { MultiSelectBar } from '@/components/ui/multi-select-bar'
+import { LoadingHint } from '@/components/ui/loading-hint'
 import { useAssetsInDirectory } from '@/hooks/use-assets'
 import { useBatchRunner } from '@/hooks/use-batch-runner'
 import { useDeleteAsset, useMoveAsset } from '@/hooks/use-file-ops'
@@ -177,7 +178,7 @@ export function DirFileList({ libraryId, directory }: { libraryId: string; direc
         </MultiSelectBar>
       )}
       {isLoading ? (
-        <p className="grid-empty">加载中…</p>
+        <LoadingHint />
       ) : files.length === 0 ? (
         <p className="grid-empty">该目录下暂无文件。</p>
       ) : (

@@ -4,6 +4,7 @@ import {
   useDeleteImportedTxt, useImportAuthorTxt, useRebuildAuthorTxt, useTxtImportedFiles,
 } from '@/hooks/use-authors'
 import { UploadDropIcon } from '@/components/manage/UploadDropIcon'
+import { LoadingHint } from '@/components/ui/loading-hint'
 
 /**
  * 作者 TXT 导入卡（旧版数据管理「TXT导入作者」的 web 对等物）：
@@ -126,7 +127,7 @@ export function TxtAuthorImportCard() {
         />
       </div>
       {isLoading ? (
-        <p className="grid-empty">加载中…</p>
+        <LoadingHint />
       ) : files.length === 0 ? (
         <p className="grid-empty">还没有导入片段——从上方选择 .txt 开始。</p>
       ) : (

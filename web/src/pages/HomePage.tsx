@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { useNavigate, useSearchParams } from 'react-router'
 import type { AssetSummary } from '@/api/generated'
 import { MediaCard } from '@/components/media/MediaCard'
+import { LoadingHint } from '@/components/ui/loading-hint'
 import { assetToCard, useRecommendations } from '@/hooks/use-assets'
 import { useRankingsInfinite } from '@/hooks/use-stats'
 import { useAutoMore } from '@/hooks/use-auto-more'
@@ -187,8 +188,8 @@ function StreamCards({ stream, onOpen, emptyHint, footer, endHint, gridClassName
           同键失败才保留已载卡片，页脚/到底了让位错误行，恢复路径都是「重试」
           一颗钮（错误期哨兵卸载，不再自动续拉）。样式复用 pill/grid-empty
           既有 token，零新颜色字面量 */}
-      {isLoading && <p className="grid-empty">加载中…</p>}
-      {!isError && isFetchingNextPage && <p className="grid-empty">加载中…</p>}
+      {isLoading && <LoadingHint />}
+      {!isError && isFetchingNextPage && <LoadingHint />}
       {isError ? (
         <p className="grid-empty">
           加载失败
