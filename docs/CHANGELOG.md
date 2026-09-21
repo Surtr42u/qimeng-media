@@ -8,6 +8,14 @@
 - 子代理执行的工作标注"（执行子代理）"，主对话直接完成的标注"（主代理）"。
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
+## fix(server): 删库补目录树缓存失效+会话去重竞态用例 goroutine 去 t.Fatalf——维护审查清偿（2026-09-21 第三百七十八笔）
+
+执行 AI：GLM-5.3（主代理）
+
+- **删库补目录树缓存失效**：`DeleteApiV1LibrariesLibraryId` 删行成功后补 `s.dirs.invalidate(libraryID)`——R3 批只接了 POST /dirs 建目录这一失效端点，漏了删库；读路径先 GetLibrary→404 使滞留条目不可达，但 dirsCache 过期只 miss 不 delete，不失效会占内存到进程重启（例行维护四路对抗审查 P3，审查报告未入档独立文件，结论随本笔落账）。
+- **测试基建健壮性**：`TestEngagementSessionDedupBackstop` 的 8 路并发 goroutine 不再走 `env.do`（其构造/传输失败分支直接 t.Fatalf，而 testing 包要求 FailNow 只能在测试主 goroutine 调用——goroutine 内 Goexit 会让收包循环永等挂起），改为手工 `http.NewRequest` + 错误全部送 errs 通道。
+- **门禁**：go build/vet/test ./... + gofmt + golangci-lint 全绿。
+
 ## fix(app): 详情页四项小修——unbindTag 失败精准回滚+尺寸缓存有界化+onCleared 死代码清理——审计 R13（2026-09-20 第三百七十七笔）
 
 执行 AI：GLM-5.3-Flash（执行 AI）
