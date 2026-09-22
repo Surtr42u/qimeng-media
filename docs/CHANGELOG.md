@@ -8,12 +8,22 @@
 - 子代理执行的工作标注"（执行子代理）"，主对话直接完成的标注"（主代理）"。
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
+## docs: 文档严格清理与对齐——删过时交接/任务书，HANDOVER 重写为现状-only（2026-09-22 第三百八十七笔）
+
+执行 AI：MiMo（主代理）
+
+- **删除**（历史可溯 git）：`docs/任务书-审计清偿批-20260920.md`、`docs/.p2-progress-P2-1..6.md`、`docs/P2-修复执行报告.md`、`docs/REPLICATION_GAPS.md`、`docs/AUDIT-20260920.md`、`docs/HANDOVER_UI.md`、仓库外 `_archive-20260917/`。
+- **重写**：`docs/HANDOVER.md`（现状-only）；`00-总说明.md` 同步。
+- **活引用对齐**：`AGENTS.md`、`AI_README_FIRST.md`、`PROJECT_PLAN.md`、`CAPABILITY_MAP.md`、`adr/0014`。
+- **原则**：CHANGELOG 历史笔不改写；现行文档只保留可验证事实。
+
 ## docs: 文档漂移修正——HANDOVER UI 待办与 HANDOVER_UI 发现项对齐已交付实现（2026-09-22 第三百八十六笔）
 
 执行 AI：MiMo（主代理）
 
 - **背景**：`docs/REVIEW-20260922.md` 审查误报「Web 上传入口/图片查看器/批次导航」为缺口；对照代码（`LibraryUploadPage`/`UploadCard`/`image-viewer.tsx`/`.asset-pager`）与 CHANGELOG（W-1 `6690b12`、E5 第一百一十八笔）确认均已交付。根因=`HANDOVER.md`「UI 路线现状」与 `HANDOVER_UI` 发现项/详情大改遗留句未跟上交付，形成文档漂移。
-- **修正**：①`HANDOVER.md`「UI 路线现状」改写为已交付清单（W-1/W-2/W-3/E5/详情互动行），删除「剩余 UI 待办三项…上传 UI 入口」过时表述；②`HANDOVER_UI.md` §5.9 发现项与详情大改第 8 条遗留句标注 E5 清偿；③`REVIEW-20260922.md` 补勘误表两行。
+- **修正**：①`HANDOVER.md`「UI 路线现状」改写为已交付清单（W-1/W-2/W-3/E5/详情互动行），删除「剩余 UI 待办三项…上传 UI 入口」过时表述；②`HANDOVER_UI.md` §5.9 发现项与详情大改第 8 条遗留句标注 E5 清偿；③`REVIEW-20260922.md` 补勘误表。
+- **同日追加勘误（用户批注）**：审查报告「回收站/备份设置 Web UI」表述不准——`TrashPage`/`BackupCard`/`DbBackupCard` 均已有；能力地图「备份设置 Web UI」实指**备份调度参数编辑**（启用/间隔/保留份数）仍 yaml/env+重启的窄缺口。报告表已改。
 - **范围**：纯文档，零代码/零协议/零迁移。
 
 ## docs: M5 fnOS 虚拟机彩排收官+虚拟机删除——手机实测/断电恢复/回收站全过，SC 别名误命中记档不修（2026-09-22 第三百八十五笔）
