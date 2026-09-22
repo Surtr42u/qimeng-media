@@ -8,6 +8,19 @@
 - 子代理执行的工作标注"（执行子代理）"，主对话直接完成的标注"（主代理）"。
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
+## feat(server): 磁盘生命周期与安全加固批——回收站到期清扫 + 缩略图删除联动 + Host 校验防 DNS rebinding（2026-09-22 第三百八十九笔）
+
+执行 AI：GLM-5.3（主代理）
+
+- **回收站到期自动物理清除**（清偿 DOMAIN_RULES §9 规划项与 REVIEW §2.2/Top5 #2，根因=`filing.TrashExpired` 判定函数自 M1 备好但零调用方）：新配置 `trash.retention_days`（默认 30，与 `filing.DefaultTrashRetentionDays` 同值互指）/`trash.sweep_interval`（默认 1h），yaml+env（`QIMENG_TRASH_RETENTION_DAYS`/`QIMENG_TRASH_SWEEP_INTERVAL`）双通道，零值 Load 兜底、非法值报错；后台清扫 `httpapi/trash_sweeper.go`（`backup.Manager.Start` 同款 ctx 生命周期，无 enabled 开关——到期清除是 §9 核心语义）；trash 列表 `ExpiresAt` 改与清扫判定同源取生效值（防配置覆盖后展示与实际清除漂移）；误配兜底沿用 `TrashExpired` 的 retention<1 永不判过期。
+- **缩略图删除时机联动**（§11「孤儿由对账清理」的写侧半边，REVIEW §2.3/Top5 #2）：新增 `thumbnail.DeleteAssetThumbs`（全档位 256/512/1024+生效 md 档 × webp/jpg 双扩展名 × long_side 配置漂移键，幂等尽力而为）；四入口接线——回收站单条物理删除、清空回收站（先收集 meta 再 RemoveAll，meta 是真相源）、到期清扫、删除库（FK 级联前先取资产清单；缩略图=服务端自有缓存，不属「磁盘媒体文件不动」保护范围）。软删除→恢复刻意不清（asset_id 不变、同键缓存继续命中）。扫描器外部删除（deleteGone/removeIfPresent）孤儿仍待全量对账任务（§11 记档为规划项）。
+- **Host 校验防 DNS rebinding**（复查新发现，安全子代理审查定位）：最外层中间件 `hostCheck`——默认白名单 = IP 直连（v4/v6 字面量）+ localhost，其余 Host 403；`trusted_hosts`/`QIMENG_TRUSTED_HOSTS`（`,`/`;` 分隔）放行域名（Tailscale MagicDNS 场景）。默认零配置零影响（既有访问形态全是 IP/本机名）；空 Host 放行（不构成 rebinding 向量，兼容古董客户端）。动机：无 CORS 输出挡不住 rebinding 伪同源，dev 免密形态下 dev-login 等于向攻击页面送 admin token。
+- **安全响应头基线补 `X-Frame-Options: DENY`**（点击劫持防护；`<img>`/`<video>` 消费直链不受影响）。
+- **正确性修复三件**（复查正确性子代理定位）：`listTrash` 遍历对并发 RemoveAll 的竞态容忍（回收站面板开着时另一端清空，Windows 目录枚举竞态偶发 500；容忍口径对齐 scanner.WalkDir）；缩略图 warmup 投递循环遇 `ErrPoolClosed` 中止整轮（原实现停机后 250ms 空转到进程退出）；auth setup 的 argon2 哈希移出写锁（双检锁：无锁快路径 409 保留——已初始化时不为注定失败的请求付 64MB 哈希成本）。附带 `config.applyEnv` 超函数警戒线拆分（节段函数，语义零变化）。
+- **测试**：新增 10 用例——config 5（默认值/双通道覆盖/零值兜底/非法拒绝/Host 白名单拆分）、thumbnail 2（全档位清理+不误删他资产/漂移键覆盖）、httpapi 3 文件（到期清扫含未到期保留与缩略图联动、ExpiresAt 配置联动、物理删/清空联动、Host 判定表驱动+中间件端到端）。`go test ./...` 15 包全绿；golangci-lint 零告警。
+- **文档**（行为先行同步）：DOMAIN_RULES §9/§11 口径改写+文头记档；SECURITY.md 回收站节改写、新增「Host 校验」节、安全头基线补 DENY；deploy/README 环境变量表补三键 + 遗留项 M5 收官改写；REVIEW-20260922 M5 表述更新+复核后记（Top5 #2/#4/#5 清偿记档）。
+- **协议/迁移**：零改动（无新端点、无 schema 变化；`trusted_hosts`/`trash.*` 均为服务端私有配置）。
+
 ## docs: M5 收官回写 + 全库文档对齐——启动脚本收敛、根 compose 删除、死引用清偿（2026-09-22 第三百八十八笔）
 
 执行 AI：GLM-5.3（主代理）

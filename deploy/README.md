@@ -57,6 +57,9 @@ docker pull docker.m.daocloud.io/library/debian:bookworm-slim
 | `QIMENG_UPLOAD_MAX_BYTES` | 单文件上传上限（字节，默认 2GB） |
 | `QIMENG_THUMBNAIL_WORKERS` | 缩略图并发（默认按 CPU 核数） |
 | `QIMENG_ALLOWED_LIBRARY_ROOTS` | 库注册白名单（镜像基线为 `/media`） |
+| `QIMENG_TRASH_RETENTION_DAYS` | 回收站保留天数（默认 30；到期自动物理清除） |
+| `QIMENG_TRASH_SWEEP_INTERVAL` | 回收站到期巡检间隔（默认 1h） |
+| `QIMENG_TRUSTED_HOSTS` | 允许的 Host 域名白名单（默认只放行 IP 直连与 localhost；用域名/魔法 DNS 访问时配置） |
 
 ## 安全红线（部署时逐条自查）
 
@@ -67,8 +70,8 @@ docker pull docker.m.daocloud.io/library/debian:bookworm-slim
 
 ## 遗留项
 
-- **buildx 双架构（arm64）**：当前实测为 amd64 单架构；arm64 NAS 需 `docker buildx` + QEMU
-  交叉构建，挂真机节点执行（构建方法同本文档，产物换 `GOARCH=arm64`）。
+- **buildx 双架构（arm64）**：2026-09-22 用户完成真机 NAS 部署测试（M5 收官，见 PROJECT_PLAN）；实测部署形态为 amd64，arm64 镜像移为按需储备（未来部署 arm64 NAS 时按本文档同法构建，产物换 `GOARCH=arm64` + `docker buildx`）。
+- 非 root 运行（compose `user: "1000:1000"`）：可选加固项，未在实测路径验证过，启用前需确认两个挂载卷对 uid 1000 可写。
 - 端口改动属协议改动：`api/openapi.yaml`、`config-docker.yaml`、compose 三处同步。
 
 ## 实测记录（2026-09-22，fnOS 虚拟机彩排）

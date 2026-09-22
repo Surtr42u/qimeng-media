@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -100,6 +101,28 @@ type BackupConfig struct {
 	Retention int `yaml:"retention"`
 }
 
+// 回收站到期清扫默认值（DOMAIN_RULES §9）。DefaultTrashRetentionDays 与
+// filing.DefaultTrashRetentionDays 的关系：config 不 import filing
+// （backup 三键同款惯例），两常量同值互指，改须双同步。
+const (
+	// DefaultTrashRetentionDays 回收站默认保留天数（30 天）：到期条目由后台
+	// 清扫物理清除；filing.TrashExpired 对 <1 的 retention 永不判过期（误配
+	// 兜底，见该函数注释）。
+	DefaultTrashRetentionDays = 30
+	// DefaultTrashSweepInterval 到期清扫巡检间隔（默认 1 小时）：一轮清扫
+	// 只是回收站 meta 遍历（轻 IO），小时级巡检让「到期」与「实际清除」的
+	// 误差远小于保留天数本身的粒度；过密只会在回收站极大时白跑遍历。
+	DefaultTrashSweepInterval = time.Hour
+)
+
+// TrashConfig 回收站生命周期配置（到期自动物理清除，DOMAIN_RULES §9）。
+type TrashConfig struct {
+	// RetentionDays 回收站保留天数；<=0 = 用 DefaultTrashRetentionDays。
+	RetentionDays int `yaml:"retention_days"`
+	// SweepInterval 到期清扫的巡检间隔；<=0 = 用 DefaultTrashSweepInterval。
+	SweepInterval time.Duration `yaml:"sweep_interval"`
+}
+
 // defaultUploadMaxBytes 是单文件上传上限默认值（2GB）。
 // 手机拍摄视频普遍 1~4GB，2GB 覆盖绝大多数短视频/截图场景又不至于
 // 让一次误传拖垮磁盘；真有超大文件需求由部署方显式调大。
@@ -158,8 +181,16 @@ type Config struct {
 	// 非空 = 每个注册库的 root_path 必须位于任一前缀之下（含前缀本身），
 	// 否则 POST /api/v1/libraries 返回 400。
 	AllowedLibraryRoots []string `yaml:"allowed_library_roots"`
+	// TrustedHosts 是允许作为 Host 头访问本服务的域名白名单（DNS
+	// rebinding 防御，docs/SECURITY.md「Host 校验」）。默认空 = 只放行
+	// IP 直连与 localhost——局域网/隧道的既定访问形态全是 IP 或本机名，
+	// 默认零配置零影响；需要域名访问（如 Tailscale MagicDNS 主机名）的
+	// 部署把主机名加进本表（大小写不敏感）。
+	TrustedHosts []string `yaml:"trusted_hosts"`
 	// Backup 是备份热备（库文件在线快照）配置。
 	Backup BackupConfig `yaml:"backup"`
+	// Trash 是回收站生命周期（到期自动物理清除）配置。
+	Trash TrashConfig `yaml:"trash"`
 }
 
 // Load 按优先级加载配置：内置默认值 < yaml 文件 < 环境变量。
@@ -180,6 +211,10 @@ func Load(path string) (*Config, error) {
 			Enabled:   DefaultBackupEnabled,
 			Interval:  DefaultBackupInterval,
 			Retention: DefaultBackupRetention,
+		},
+		Trash: TrashConfig{
+			RetentionDays: DefaultTrashRetentionDays,
+			SweepInterval: DefaultTrashSweepInterval,
 		},
 	}
 
@@ -210,13 +245,41 @@ func Load(path string) (*Config, error) {
 	if cfg.Backup.Interval <= 0 {
 		cfg.Backup.Interval = DefaultBackupInterval
 	}
+	// 回收站两键兜底：与 Backup.Interval 同款问题——yaml 显式 0 / env 传 0
+	// 会把默认值覆盖成零值直通。RetentionDays 兜底后必 >=1（TrashExpired
+	// 的 <1 永不过期语义留给判定侧做误配防御，不让它从配置通道触达）。
+	if cfg.Trash.RetentionDays <= 0 {
+		cfg.Trash.RetentionDays = DefaultTrashRetentionDays
+	}
+	if cfg.Trash.SweepInterval <= 0 {
+		cfg.Trash.SweepInterval = DefaultTrashSweepInterval
+	}
 	return cfg, nil
 }
 
 // applyEnv 用环境变量覆盖已加载的配置。
 // 环境变量命名规则：QIMENG_<大写配置名>；错误必须返回而非静默忽略，
 // 否则非法值会被默认值悄悄顶替，排障时无从得知。
+// 按配置域拆成节段函数（曾为单一 100+ 行函数，超函数警戒线；各段只碰
+// 自己的 Config 子树，顺序无关）。
 func applyEnv(cfg *Config) error {
+	for _, section := range []func(*Config) error{
+		applyBasicEnv,
+		applyThumbnailEnv,
+		applyUploadEnv,
+		applyAuthEnv,
+		applyBackupEnv,
+		applyTrashEnv,
+	} {
+		if err := section(cfg); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// applyBasicEnv 覆盖监听/数据目录/日志/库路径/密钥/SPA 目录/直链 TTL。
+func applyBasicEnv(cfg *Config) error {
 	if v := os.Getenv("QIMENG_LISTEN"); v != "" {
 		cfg.Listen = v
 	}
@@ -226,6 +289,30 @@ func applyEnv(cfg *Config) error {
 	if v := os.Getenv("QIMENG_LOG_LEVEL"); v != "" {
 		cfg.LogLevel = v
 	}
+	if v := os.Getenv("QIMENG_DB_PATH"); v != "" {
+		cfg.DbPath = v
+	}
+	if v := os.Getenv("QIMENG_TOKEN_TTL"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			return fmt.Errorf("环境变量 QIMENG_TOKEN_TTL=%q 不是合法时长（如 6h、30m）: %w", v, err)
+		}
+		cfg.TokenTTL = d
+	}
+	if v := os.Getenv("QIMENG_MEDIA_SECRET"); v != "" {
+		cfg.MediaSecret = v
+	}
+	// 注意 QIMENG_WEB_STATIC_DIR 置空值（""）等于未设置、保留默认值：
+	// 显式禁用 SPA 托管请走 yaml（web.static_dir: ""），env 的语义是覆盖
+	// 为"默认不可见"，空串在 os.Getenv 层面无法与"未设置"区分。
+	if v := os.Getenv("QIMENG_WEB_STATIC_DIR"); v != "" {
+		cfg.Web.StaticDir = v
+	}
+	return nil
+}
+
+// applyThumbnailEnv 覆盖缩略图管线四键。
+func applyThumbnailEnv(cfg *Config) error {
 	if v := os.Getenv("QIMENG_THUMBNAIL_WORKERS"); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil {
@@ -248,16 +335,11 @@ func applyEnv(cfg *Config) error {
 		}
 		cfg.Thumbnail.WarmupDelay = d
 	}
-	if v := os.Getenv("QIMENG_DB_PATH"); v != "" {
-		cfg.DbPath = v
-	}
-	if v := os.Getenv("QIMENG_TOKEN_TTL"); v != "" {
-		d, err := time.ParseDuration(v)
-		if err != nil {
-			return fmt.Errorf("环境变量 QIMENG_TOKEN_TTL=%q 不是合法时长（如 6h、30m）: %w", v, err)
-		}
-		cfg.TokenTTL = d
-	}
+	return nil
+}
+
+// applyUploadEnv 覆盖上传上限。
+func applyUploadEnv(cfg *Config) error {
 	if v := os.Getenv("QIMENG_UPLOAD_MAX_BYTES"); v != "" {
 		n, err := strconv.ParseInt(v, 10, 64)
 		// 分支拆开：n<1 时 err==nil，%w 包 nil 会渲染成 %!w(<nil>) 畸形消息。
@@ -269,15 +351,11 @@ func applyEnv(cfg *Config) error {
 		}
 		cfg.Upload.MaxBytes = n
 	}
-	if v := os.Getenv("QIMENG_MEDIA_SECRET"); v != "" {
-		cfg.MediaSecret = v
-	}
-	// 注意 QIMENG_WEB_STATIC_DIR 置空值（""）等于未设置、保留默认值：
-	// 显式禁用 SPA 托管请走 yaml（web.static_dir: ""），env 的语义是覆盖
-	// 为"默认不可见"，空串在 os.Getenv 层面无法与"未设置"区分。
-	if v := os.Getenv("QIMENG_WEB_STATIC_DIR"); v != "" {
-		cfg.Web.StaticDir = v
-	}
+	return nil
+}
+
+// applyAuthEnv 覆盖鉴权/安全三键（dev 免密、库根白名单、Host 白名单）。
+func applyAuthEnv(cfg *Config) error {
 	if v := os.Getenv("QIMENG_AUTH_DEV_MODE"); v != "" {
 		b, err := strconv.ParseBool(v)
 		if err != nil {
@@ -285,13 +363,23 @@ func applyEnv(cfg *Config) error {
 		}
 		cfg.AuthDevMode = b
 	}
-	// 白名单是路径列表：空值 = 未设置、保留 yaml/默认（空 = 不限制）。
+	// 库根白名单是路径列表：空值 = 未设置、保留 yaml/默认（空 = 不限制）。
 	// 分隔符同时接受 ';'（Windows 路径列表习惯，也是本平台 PathListSeparator）
 	// 与 os.PathListSeparator（Unix 为 ':'）——跨平台 compose 只需记住一种写法。
 	if v := os.Getenv("QIMENG_ALLOWED_LIBRARY_ROOTS"); v != "" {
 		cfg.AllowedLibraryRoots = splitPathList(v)
 	}
-	// 备份热备三键（QIMENG_BACKUP_*）：空值 = 未设置、保留 yaml/默认。
+	// Host 白名单是域名列表：分隔符用 ',' 与 ';'（不用 splitPathList——
+	// Unix 上它额外按 ':' 切，会误切带端口的写法）。空值 = 未设置、保留
+	// yaml/默认（空 = 只放行 IP 直连与 localhost）。
+	if v := os.Getenv("QIMENG_TRUSTED_HOSTS"); v != "" {
+		cfg.TrustedHosts = splitList(v, ",;")
+	}
+	return nil
+}
+
+// applyBackupEnv 覆盖备份热备三键：空值 = 未设置、保留 yaml/默认。
+func applyBackupEnv(cfg *Config) error {
 	if v := os.Getenv("QIMENG_BACKUP_ENABLED"); v != "" {
 		b, err := strconv.ParseBool(v)
 		if err != nil {
@@ -318,6 +406,56 @@ func applyEnv(cfg *Config) error {
 		cfg.Backup.Retention = n
 	}
 	return nil
+}
+
+// applyTrashEnv 覆盖回收站生命周期两键：空值 = 未设置、保留 yaml/默认。
+func applyTrashEnv(cfg *Config) error {
+	if v := os.Getenv("QIMENG_TRASH_RETENTION_DAYS"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("环境变量 QIMENG_TRASH_RETENTION_DAYS=%q 不是合法正整数: %w", v, err)
+		}
+		// 须 >=1：0 在判定侧是「永不清除」的防御语义（filing.TrashExpired），
+		// 不该能从配置通道达成——想不清除请配超大天数。
+		if n < 1 {
+			return fmt.Errorf("环境变量 QIMENG_TRASH_RETENTION_DAYS=%q 不是合法正整数（须 >=1）", v)
+		}
+		cfg.Trash.RetentionDays = n
+	}
+	if v := os.Getenv("QIMENG_TRASH_SWEEP_INTERVAL"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			return fmt.Errorf("环境变量 QIMENG_TRASH_SWEEP_INTERVAL=%q 不是合法时长（如 1h、30m）: %w", v, err)
+		}
+		cfg.Trash.SweepInterval = d
+	}
+	return nil
+}
+
+// splitList 按给定单字节分隔符集合切列表，空段与首尾空白跳过/裁剪
+// （避免把 "" 或 " b" 当成有效条目）。splitPathList 的通用底座；
+// Host 白名单等非路径列表复用。
+func splitList(v string, seps string) []string {
+	in := map[byte]bool{}
+	for i := 0; i < len(seps); i++ {
+		in[seps[i]] = true
+	}
+	var out []string
+	start := 0
+	flush := func(end int) {
+		p := strings.TrimSpace(v[start:end])
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	for i := 0; i < len(v); i++ {
+		if in[v[i]] {
+			flush(i)
+			start = i + 1
+		}
+	}
+	flush(len(v))
+	return out
 }
 
 // splitPathList 把环境变量里的路径列表拆成切片。
