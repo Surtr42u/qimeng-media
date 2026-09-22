@@ -129,7 +129,7 @@ export default function SearchPage() {
       {/* 分区胶囊与「更多筛选」钮同行（2026-09-17 用户拍板：胶囊和更多筛选一行，
           与相册页维度行同构；原独立 .s-toolbar 工具行随排序行一并消亡）：
           全部=includeCos、常规=不传（DOMAIN_RULES §6 隔离口径，主动切换才排除）、
-          COS=cosOnly。类型行仍是首行对齐锚（HANDOVER_UI §4.5 规则 3：类型行中心
+          COS=cosOnly。类型行仍是首行对齐锚（原型对齐规则：类型行中心
           ↔首页项中心）；横向 24px 贴线（规则 1），行距交给 .page gap 不加额外 padding */}
       <div className="pill-row" role="group" aria-label="内容分区" style={{ padding: '0 24px' }}>
         {PARTITION_OPTIONS.map((pt) => (

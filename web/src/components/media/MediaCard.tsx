@@ -1,8 +1,8 @@
 /**
  * 媒体卡（首页卡片流 / 相册网格 / 收藏 / 搜索结果共用）。
  *
- * 合并原型 app.js 的 renderCard 与 mediaCardHtml（HANDOVER_UI §5 记账债：
- * 两者输出结构相同，移植进 web 前抽共享函数——本组件即合并结果）。
+ * 合并原型 app.js 的 renderCard 与 mediaCardHtml（两者输出结构相同，
+ * 移植进 web 前抽共享函数——本组件即合并结果；原型出处历史见 CHANGELOG）。
  * 类名与原型逐字一致（styles/prototype.css 消费），阶段 B 接真实数据时
  * props 增加 assetId 等字段，展示结构保持不变。
  */

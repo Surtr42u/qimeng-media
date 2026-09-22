@@ -228,11 +228,11 @@ web-test: ## web checks (tsc + oxlint; build + lint combo)
 	npm --prefix web run build
 	npm --prefix web run lint
 
-docker-build: ## build amd64 image via deploy/Dockerfile (arm64 dual-arch pending real-NAS node)
+docker-build: ## build amd64 image via deploy/Dockerfile (arm64 = on-demand, M7+ backlog)
 	@echo "Building amd64 image (context: build/docker-ctx, see deploy/README.md)..."
 	test -f build/docker-ctx/qimeng-server || { echo "missing build/docker-ctx/qimeng-server - run: make server-linux-amd64 && assemble ctx per deploy/README.md"; exit 1; }
 	docker build -f deploy/Dockerfile -t qimeng-media:1.0 build/docker-ctx
-	@echo "NOTE: arm64 half of dual-arch still pending (real-NAS node, see PROJECT_PLAN M5)."
+	@echo "NOTE: arm64 image is on-demand backlog (PROJECT_PLAN M7+); deploy README has the recipe."
 
 lint: ## all static checks (openapi spec + gofmt/golangci-lint + TS)
 	@echo "==> openapi spec lint (redocly; errors fail the build)"

@@ -32,6 +32,9 @@ qimeng-data/
 # Mimosa 钩子产物
 .mimosa/
 
+# ZCode 会话产物（截图等，随会话产生）
+.zcode/
+
 # 前端
 web/dist/
 web/.vite/

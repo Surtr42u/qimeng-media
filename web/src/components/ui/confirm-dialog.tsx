@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
  * AlertDialog 为其中一个命名空间，无需新增 @radix-ui/react-alert-dialog 依赖。
  * 样式全部走原型 token（prototype.css 追加段 .confirm-*），组件层零颜色字面量。
  * ESC 关闭 / 焦点圈禁 / 初始聚焦由 radix 自带；danger = 物理删除/清空类主按钮
- * 深色强调（原型色板无红，用户拍板语义，见 docs/HANDOVER_UI.md §5.9）。
+ * 深色强调（原型色板无红，用户拍板语义；原型规范历史见 CHANGELOG）。
  */
 export interface ConfirmDialogProps {
   open: boolean

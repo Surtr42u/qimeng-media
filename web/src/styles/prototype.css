@@ -1131,7 +1131,7 @@ button.more-filter,
 /* React 挂载点占满视口：原型 body 直接子元素是 .layout，React 多包一层 #root */
 #root { height: 100%; }
 
-/* 内容榜 5 列网格窄屏回退（HANDOVER_UI §5 记账债）：窄窗口单列防挤压 */
+/* 内容榜 5 列网格窄屏回退（原型移植补账）：窄窗口单列防挤压 */
 @media (max-width: 900px) {
   .rank-cards { grid-template-columns: 1fr; }
 }

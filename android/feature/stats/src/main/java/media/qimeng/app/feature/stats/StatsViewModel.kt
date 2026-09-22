@@ -105,7 +105,7 @@ data class StatsUiState(
 
 /**
  * 统计页 ViewModel：
- * - 数字卡窗口指标 = /stats/trends 桶求和（协议内联动方案，REPLICATION_GAPS §3.3 裁定 2），
+ * - 数字卡窗口指标 = /stats/trends 桶求和（协议内联动方案，口径见 docs/DOMAIN_RULES.md §5；裁定历史见 CHANGELOG），
  *   overview 供库存两格（进页拉一次不随档位重拉）+ 窗口均值 avgViewsPerFile（随档位经
  *   overview(range) 联动，N3 #31a 解冻）；
  * - 趋势来自 /stats/trends，档位切换重拉；range 参数只经 StatsRangeOption.apiRange 产出；

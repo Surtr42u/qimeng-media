@@ -8,7 +8,7 @@ import media.qimeng.app.core.model.StatsRangeOption
  * 反向引用此处合法；mode/range 取枚举 name（纯 ASCII 标识符，无需 URL 编码）。
  *
  * GUIDE_UI §统计详情页四模式（N4 消费批 I3b 全量落地——N3 协议批 #31 解冻三端点后
- * 常看文件/常看作者标签两模式由冻结转可达成，冻结口径记档于 REPLICATION_GAPS §4）。
+ * 常看文件/常看作者标签两模式由冻结转可达成；冻结期口径的历史记档见 CHANGELOG）。
  */
 enum class StatsDetailMode(val title: String) {
 

@@ -27,7 +27,7 @@ import kotlin.math.roundToInt
 
 /**
  * 分类型趋势的一条系列（统计详情页「类型浏览趋势」卡）：按协议 /stats/trends 的 mediaType
- * 单值参数逐类型取数拼接（REPLICATION_GAPS §3.3 裁定 6），labels 与各系列 values 下标对齐。
+ * 单值参数逐类型取数拼接（口径见 docs/DOMAIN_RULES.md §5；历史裁定出处见 CHANGELOG），labels 与各系列 values 下标对齐。
  */
 data class TypeTrendSeries(
     val mediaType: String,

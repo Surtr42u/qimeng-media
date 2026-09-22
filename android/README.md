@@ -1,6 +1,6 @@
 # android/ — Android 客户端（M4 · Compose 重建路线，ADR-0014）
 
-> M4 里程碑在此开发。动手前必读：`../AI_README_FIRST.md`、`../docs/adr/0008`、`../docs/adr/0014`（技术路线）、`../docs/adr/0015`（单机形态预留）；批次进度与决策记录见 `../docs/CHANGELOG.md`（原 `../docs/HANDOVER_APP.md` 已于 2026-09-11 删除）。
+> M4 里程碑在此开发。动手前必读：`../AI_README_FIRST.md`、`../docs/HANDOVER.md`（现状）、`../docs/adr/0008`、`../docs/adr/0014`（技术路线）、`../docs/adr/0015`（单机形态预留）；历史决策见 `../docs/CHANGELOG.md`。
 
 ## 技术栈（2026-09-04 二次定论，ADR-0014：先进优先，Compose 全新实现）
 
