@@ -60,7 +60,7 @@ make server-test   # 服务端全部测试（go test ./...）
 make web-dev       # 本地跑 Web 开发服务器
 make web-test      # Web 检查（tsc 类型检查 + lint）
 make lint          # 全部静态检查（redocly + golangci-lint + TS）
-make docker-build  # 双架构镜像（TODO(M5)：尚未实现，见 PROJECT_PLAN M5）
+make docker-build  # amd64 镜像（deploy/Dockerfile；构建全流程见 deploy/README.md，arm64 为按需储备）
 ```
 
 CI（GitHub Actions 五 job：openapi 协议校验 / server vet+test+build+golangci-lint / web tsc+build / sdk-chain 生成链重建 / android make sdk+assembleDebug+test+lint）与 `make lint` 同源同配置，本地全绿 ≈ CI 全绿。

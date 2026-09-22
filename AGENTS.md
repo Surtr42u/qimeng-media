@@ -21,7 +21,7 @@
 | 数据库改动 | `docs/adr/0003`、`docs/adr/0004`（身份机制）、`docs/adr/0011`（迁移纪律）+ migrations 规则 |
 | 安全相关（鉴权/上传/文件操作） | `docs/SECURITY.md`（红线清单） |
 | 监控/指标 | `docs/OBSERVABILITY.md` |
-| UI 开发（web/android/desktop） | `docs/adr/0008`（UI 解耦策略）+ **Android 另读 `docs/adr/0014`**（M4 Compose 路线；批次任务书=仓库外 `..\任务*.md`，批次记录见 `docs/CHANGELOG.md`）+ **桌面壳另读 `docs/adr/0020` 与 `desktop/README.md`**（连接模式薄壳，UI 全复用 Web） |
+| UI 开发（web/android/desktop） | `docs/adr/0008`（UI 解耦）+ Android 另读 `docs/adr/0014` + 桌面壳另读 `docs/adr/0020` 与 `desktop/README.md`；现状/待办见 `docs/HANDOVER.md`（HANDOVER_UI/HANDOVER_APP 已删，历史见 CHANGELOG） |
 | 新增 Go 包 / 模块边界 | `docs/adr/0010` + `docs/ARCHITECTURE.md` §5.1 |
 | 能力缺口评估 / 新功能提案 | `docs/CAPABILITY_MAP.md`（能力地图）+ `docs/adr/INDEX.md` |
 | 部署/Docker/NAS | `docs/PROJECT_PLAN.md` M5 + 仓库外 `..\dev-tools\TOOLCHAIN_GUIDE.md` |

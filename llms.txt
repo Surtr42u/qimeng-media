@@ -31,7 +31,7 @@
 
 - [api/openapi.yaml](api/openapi.yaml)：协议宪法（三端 SDK 唯一事实源；先改协议再生成代码）
 - [Makefile](Makefile)：一键命令（sdk / lint / server-run / server-test / web-dev / web-test / docker-build）
-- [docker-compose.yml](docker-compose.yml)：部署目标形态样例（M5 完善）
+- [deploy/](deploy/README.md)：NAS 部署三件套（Dockerfile / 生产 compose / 部署文档，M5 已收官）
 
 ## 子目录入口
 

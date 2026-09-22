@@ -8,6 +8,16 @@
 - 子代理执行的工作标注"（执行子代理）"，主对话直接完成的标注"（主代理）"。
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
+## docs: M5 收官回写 + 全库文档对齐——启动脚本收敛、根 compose 删除、死引用清偿（2026-09-22 第三百八十八笔）
+
+执行 AI：GLM-5.3（主代理）
+
+- **M5 收官**：用户确认真机 NAS 测试完成（2026-09-22）。PROJECT_PLAN M5 全勾 + 收官口径记档（arm64 移 M7+ 按需储备——实测部署形态 amd64；大库压测不设专项，真机真实库日常使用覆盖）；HANDOVER §3/§5、CAPABILITY_MAP 部署行、README/ARCHITECTURE 部署行、Makefile docker-build 注释、仓库外 00-总说明 同步。deploy/README 与 REVIEW-20260922 的收官改写随下一笔（server 批）提交。
+- **上笔删除的提交收尾**：第三百八十七笔宣称的 8 个文件删除本次随笔入 git（前笔仅提交了 CHANGELOG 与活引用对齐，删除悬在工作区，HEAD 与 CHANGELOG 矛盾）。
+- **过时句修正**：README「docker-build 尚未实现」、ARCHITECTURE「双架构镜像构建未落地/semver tag M5 落地」→ amd64 已交付+M5 收官现状；OBSERVABILITY 的 `deploy/grafana/` 死路径（目录不存在，改为随增强包交付）；llms.txt 部署导航改指 `deploy/`。
+- **死引用清偿（注释级零行为改动）**：web 4 处（confirm-dialog/MediaCard/SearchPage/prototype.css 原指向已删 HANDOVER_UI）与 android stats 模块 4 处（原指向已删 REPLICATION_GAPS）改自包含表述或改指 DOMAIN_RULES §5；HANDOVER_APP 群保留（第三百八十七笔既有决定：出处级引用、约束自包含）。
+- **工程卫生（REVIEW Top5 #5 清偿）**：两份 `启动服务端*.bat` 收敛为 `_server-common.cmd` 单一逻辑源（两 bat 改薄壳包装、行为不变，安全敏感的 `QIMENG_AUTH_DEV_MODE` 行从双写变单点）；根 `docker-compose.yml` 删除（内容失实——"CI 构建的双架构镜像"无此事实；生产样例唯一权威=`deploy/docker-compose.yml`，llms.txt 指针同步；非 root 加固项记入 deploy/README 遗留项）；`.gitignore` 增 `.zcode/`。
+
 ## docs: 文档严格清理与对齐——删过时交接/任务书，HANDOVER 重写为现状-only（2026-09-22 第三百八十七笔）
 
 执行 AI：MiMo（主代理）

@@ -67,7 +67,7 @@
 | Web | React + Vite + TypeScript + shadcn/ui + Tailwind + TanStack Query + Framer Motion | AI 语料最大；组件生态解决 UI 美观；动效生态成熟 |
 | Android | Kotlin + Jetpack Compose + Coil 3 + Media3 | 用户 Kotlin 经验延续；Coil/ExoPlayer 原生支持 HTTP 直链 |
 | 客户端 SDK | openapi-generator（TS: @hey-api；Kotlin: 生成器） | 协议改动三端自动同步（adr/0001） |
-| 部署 | Docker buildx 双架构（linux/amd64 + linux/arm64） | 开发 PC → fnOS 虚拟机 → 真 NAS 零改动迁移（M5 交付，`make docker-build` 当前未实现） |
+| 部署 | Docker 镜像（linux/amd64 已交付；arm64 按需储备）+ deploy/ 三件套 | 开发 PC → fnOS → 真 NAS 零改动迁移（M5 已收官，`make docker-build` / `deploy/README.md`） |
 
 ## 4. 三层 UI 解耦（需求 #2 的落地）
 
@@ -163,10 +163,10 @@
   4. `sdk-chain`：`make sdk` 三端生成链可重建（生成物防漂移的结构性门禁，ADR-0009）
   5. `android`：`make sdk` 重建 android/sdk → temurin 21 + gradle wrapper 缓存 → assembleDebug + testDebugUnitTest + lintDebug（M4-0 起）
 - **安全测试无独立 job**：401/路径穿越/签名防伪/超限上传等安全用例以单元测试形式随 server job 的 `go test` 运行
-- **双架构镜像构建未落地**：`make docker-build` 为 TODO(M5) 占位，镜像交付属 M5（如实记录，不提前宣称）
+- **镜像构建**：`make docker-build` 构建 amd64 镜像（debian-slim + ffmpeg + 静态二进制 + SPA，deploy/Dockerfile），2026-09-22 fnOS 虚拟机彩排 + 真机 NAS 测试通过（M5 收官）；CI 暂无镜像 job，arm64 双架构与「CI 构建镜像才允许部署 + digest 固定」为规划项
 - **依赖更新**：Dependabot 自动 PR（计划中，尚未配置）
 - **Makefile 一键命令**：`make sdk / lint / server-run / server-test / web-dev / web-test / docker-build`（lint = redocly + golangci-lint + TS 三连）
-- **版本策略**：API `/api/v1` 前缀；镜像 semver tag（M5 落地）
+- **版本策略**：API `/api/v1` 前缀；镜像 tag 当前手动（qimeng-media:1.0），semver 规则随 CI 镜像 job 一并落定
 
 ## 11. 与旧项目的数据迁移
 

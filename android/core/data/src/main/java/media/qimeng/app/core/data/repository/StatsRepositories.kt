@@ -32,7 +32,8 @@ data class RankingEntry(
  * range 参数只经 [media.qimeng.app.core.model.StatsRangeOption.apiRange] 产出，
  * 实现层不拼字符串（C1 映射单点收口）。
  *
- * 【边界注（I3 执行披露）】mediaType 形参为本批为清偿 REPLICATION_GAPS §3.3 裁定 6
+ * 【边界注（I3 执行披露）】mediaType 形参为本批为清偿「分类型趋势按 mediaType 单值参数取数」
+ * 裁定（口径现记 docs/DOMAIN_RULES.md §5；历史裁定出处见 CHANGELOG）
  * （详情页分类型趋势「mediaType 单值三次调用拼系列——按协议 /stats/trends mediaType 参数」）
  * 增补的加参改动：core:data 原不在 I3 授权共享文件清单，已向主会话报备未获回复，
  * 按裁定 6 的明示要求以「默认方法重载」最小面落地——单参方法保留为抽象（既有实现/调用零感知），

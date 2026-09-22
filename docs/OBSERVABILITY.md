@@ -77,7 +77,7 @@
 
 ## 后置可选：Grafana 增强包（不进默认部署）
 
-想看长期历史曲线（7 天/30 天）时：docker-compose 追加 Prometheus + Grafana 两个容器，抓取 /metrics，导入预置 Dashboard JSON（仓库 `deploy/grafana/`）。默认不装——单用户内网场景内置面板覆盖 95% 需求，全家桶只服务"想折腾"的场景。
+想看长期历史曲线（7 天/30 天）时：docker-compose 追加 Prometheus + Grafana 两个容器，抓取 /metrics，导入预置 Dashboard JSON（接入本增强包时随包交付，当前仓库未内置）。默认不装——单用户内网场景内置面板覆盖 95% 需求，全家桶只服务"想折腾"的场景。
 
 ## 事件推送（SSE）与监控的关系
 
