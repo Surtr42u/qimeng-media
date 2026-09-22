@@ -59,8 +59,9 @@ const trashMetricsRefreshTimeout = 3 * time.Second
 // 真实源是磁盘 meta 文件（listTrash 遍历），不走库表——trash_items 表是
 // 历史迁移遗留的死表（迁移只加不删，留着但不读）。bytes 逐条 os.Stat 求和
 // 文件本体大小（与回收站面板 GetApiV1Trash 同口径，不含 meta 自身）。
-// 变更点推送刷新：删除入站/恢复/单条物理删除/清空四个时机各调一次，
-// 不做定时轮询（OBSERVABILITY 口径：推送刷新）。失败只记日志：指标刷新
+// 变更点推送刷新：删除入站/恢复/单条物理删除/清空四个时机各调一次，到期
+// 清扫有清除时也刷（trash_sweeper.go；零清除的巡检不刷）；除此之外不做定时
+// 轮询（OBSERVABILITY 口径：推送刷新）。失败只记日志：指标刷新
 // 失败不影响业务路径的成功响应。
 func (s *Server) refreshTrashMetrics() {
 	done := make(chan struct{})
@@ -211,7 +212,18 @@ func (s *Server) listTrash() ([]trashEntry, error) {
 	var metaRels []string
 	err = filepath.WalkDir(root, func(p string, d fs.DirEntry, werr error) error {
 		if werr != nil {
-			return werr
+			// 根都打不开（dataDir 异常）：致命上抛。子项失联跳过——列表/
+			// 恢复与物理删除/清空/到期清扫无互斥，并发删改时 Windows 上
+			// 目录枚举会撞上刚被 RemoveAll 的子树（偶发 500 的根因）；
+			// 容忍口径与 scanner 的 WalkDir 一致（坏角落不毁整个列表）。
+			if p == root {
+				return werr
+			}
+			s.logger.Warn("回收站遍历失败，跳过", "path", p, "err", werr)
+			if d != nil && d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
 		}
 		if d.IsDir() || !strings.HasSuffix(p, filing.TrashMetaSuffix) {
 			return nil
@@ -269,7 +281,9 @@ func (s *Server) GetApiV1Trash(w http.ResponseWriter, r *http.Request) {
 		name := path.Base(e.meta.OriginalPath)
 		orig := e.meta.OriginalPath
 		deleted := e.meta.DeletedAt
-		expires := e.meta.DeletedAt.AddDate(0, 0, filing.DefaultTrashRetentionDays)
+		// 到期展示与到期清扫（trash_sweeper.go）必须同源取保留天数，
+		// 否则配置覆盖后面板日期与实际清除漂移（trashRetentionDays 兜底链）。
+		expires := e.meta.DeletedAt.AddDate(0, 0, s.trashRetentionDays())
 		sb := size
 		items = append(items, gen.TrashItem{
 			Id:           &id,
@@ -416,6 +430,9 @@ func (s *Server) DeleteApiV1TrashTrashId(w http.ResponseWriter, r *http.Request,
 		s.internalErr(w, "物理删除回收站条目", err)
 		return
 	}
+	// 条目永久消失：该资产缩略图缓存不再可达，联动清理（软删除→恢复
+	// 路径不清——asset_id 不变恢复后继续命中缓存，见 thumbnail/cleanup.go）。
+	s.thumbs.DeleteAssetThumbs(e.meta.AssetID)
 	s.logger.Info("回收站条目已物理删除", "id", e.id, "originalPath", e.meta.OriginalPath)
 	// 库内文件数不变（条目早已出库），只刷回收站两 gauge（变更点推送）。
 	s.refreshTrashMetrics()
@@ -424,6 +441,12 @@ func (s *Server) DeleteApiV1TrashTrashId(w http.ResponseWriter, r *http.Request,
 
 // DeleteApiV1Trash 清空回收站（物理删除全部条目）。
 func (s *Server) DeleteApiV1Trash(w http.ResponseWriter, r *http.Request) {
+	// meta 是回收站真相源：RemoveAll 之后无法再反查 assetID，缩略图联动
+	// 清理必须先收集（遍历失败只降级——缓存残留待对账兜底，不拦清空）。
+	entries, err := s.listTrash()
+	if err != nil {
+		s.logger.Warn("清空前遍历回收站失败（缩略图联动清理跳过）", "err", err)
+	}
 	root := filepath.Join(s.cfg.DataDir, filing.TrashRootName)
 	if err := os.RemoveAll(root); err != nil {
 		s.internalErr(w, "清空回收站", err)
@@ -432,6 +455,9 @@ func (s *Server) DeleteApiV1Trash(w http.ResponseWriter, r *http.Request) {
 	if err := os.MkdirAll(root, dirPerm); err != nil {
 		s.internalErr(w, "重建回收站目录", err)
 		return
+	}
+	for _, e := range entries {
+		s.thumbs.DeleteAssetThumbs(e.meta.AssetID)
 	}
 	s.logger.Info("回收站已清空")
 	// 清空后回收站归零：gauge 显式 Set 回 0（变更点推送）。

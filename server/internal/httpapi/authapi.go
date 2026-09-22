@@ -162,23 +162,18 @@ func (s *Server) PostApiV1AuthSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.authState.mu.Lock()
-	defer s.authState.mu.Unlock()
-	if len(s.authState.hashes) != 0 {
+	// 双检锁的第一检（无锁快路径）：已初始化的系统直接 409，不为注定
+	// 失败的请求付 argon2 哈希成本（免鉴权端点，防无谓 CPU 消耗面）。
+	s.authState.mu.RLock()
+	initialized := len(s.authState.hashes) != 0
+	s.authState.mu.RUnlock()
+	if initialized {
 		writeErr(w, http.StatusConflict, codeAlreadySetup, "系统已初始化，禁止重复设置")
 		return
 	}
-	// 双保险：内存态来自库，但为防多实例/外部写库的边角，落库前再查一次。
-	n, err := s.q.CountUsers(r.Context())
-	if err != nil {
-		s.internalErr(w, "auth setup: 查询用户数", err)
-		return
-	}
-	if n > 0 {
-		writeErr(w, http.StatusConflict, codeAlreadySetup, "系统已初始化，禁止重复设置")
-		return
-	}
-
+	// 慢操作（argon2id m=64MB，亚秒~秒级）在锁外预计算：曾放锁内，期间
+	// 全部 Bearer 请求的 verify（RLock）被写锁挡住——首装时刻并发量低，
+	// 但修复成本为零、语义不变（下方锁内仍有双保险复查）。
 	token, err := auth.GenerateToken()
 	if err != nil {
 		s.internalErr(w, "auth setup: 生成 token", err)
@@ -189,6 +184,25 @@ func (s *Server) PostApiV1AuthSetup(w http.ResponseWriter, r *http.Request) {
 		s.internalErr(w, "auth setup: 哈希密码", err)
 		return
 	}
+
+	s.authState.mu.Lock()
+	defer s.authState.mu.Unlock()
+	if len(s.authState.hashes) != 0 {
+		writeErr(w, http.StatusConflict, codeAlreadySetup, "系统已初始化，禁止重复设置")
+		return
+	}
+	// 双检锁的第二检（双保险）：内存态来自库，但为防多实例/外部写库的
+	// 边角，落库前再查一次。
+	n, err := s.q.CountUsers(r.Context())
+	if err != nil {
+		s.internalErr(w, "auth setup: 查询用户数", err)
+		return
+	}
+	if n > 0 {
+		writeErr(w, http.StatusConflict, codeAlreadySetup, "系统已初始化，禁止重复设置")
+		return
+	}
+
 	userID := uuid.NewString()
 	if err := s.q.CreateUser(r.Context(), db.CreateUserParams{
 		ID:           userID,

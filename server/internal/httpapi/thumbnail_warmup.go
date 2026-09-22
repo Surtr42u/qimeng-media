@@ -13,6 +13,7 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"path/filepath"
 	"time"
@@ -100,8 +101,15 @@ func (s *Server) warmupOnce(reason string) {
 	submitted := 0
 	for _, t := range missing {
 		for {
-			if err := s.thumbs.Submit(t); err == nil {
+			err := s.thumbs.Submit(t)
+			if err == nil {
 				break
+			}
+			// 池已关闭（停机路径 thumbs.Close，main 优雅收尾）：放弃整轮
+			// 投递——对关闭的池无限重试只会每 250ms 空转到进程退出。
+			if errors.Is(err, thumbnail.ErrPoolClosed) {
+				s.logger.Info("缩略图工作池已关闭，中止本轮预热投递", "reason", reason)
+				return
 			}
 			time.Sleep(thumbnailWarmupRetryPause)
 		}

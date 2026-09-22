@@ -2,7 +2,7 @@
 
 > 威胁模型：纯内网单用户起步。防御目标 = 局域网内误访问与横向渗透（访客 WiFi、被入侵的智能设备）+ 未来远程访问的暴露面。不防御公网级 DDoS/爬虫。
 > 每条规则都配有 API 集成测试用例（进 CI），**安全靠机制和门禁，不靠自觉**。
-> 最后更新：2026-09-19（新增「备份快照」节：快照含 argon2 口令哈希属敏感数据，端点面 Bearer+白名单+os.Root 三道防线；任务Q 批B）。2026-09-12（文档准确性清偿：回收站保留期/直链吊销/上传速率上限/Dependabot 四处「文档先行于实现」的表述改为如实标注未实现；正文既有条目口径不变）
+> 最后更新：2026-09-22（回收站到期自动清除落地（trash.retention_days/sweep_interval，原「尚未实现」表述废止）；新增「Host 校验（DNS rebinding 防御）」节与 trusted_hosts 配置；安全响应头基线补 `X-Frame-Options: DENY`）。2026-09-19（新增「备份快照」节）。2026-09-12（文档准确性清偿：四处「文档先行于实现」如实标注）
 
 ## 红线清单（AI 改代码时逐条自查）
 
@@ -23,7 +23,7 @@
 - **多设备并发会话（ADR-0021，2026-09-17 起）**：有效 token 哈希存 `auth_sessions` 表（migration 0011）——每次登录/setup/dev-login 签发一条独立会话，多端并存互不挤兑（旧「单 token 签发即重铸」模型废弃，它是手机反复掉线的根因）；`POST /auth/logout` 按请求 token 吊销单条会话，其他设备不受影响；每用户会话上限 16，超限自动裁最旧。升级兼容：旧模型唯一哈希由迁移回填成一条 legacy 会话，已登录设备不掉线。`users.token_hash` 列弃用不删（NOT NULL 兼容占位）。
 - 用户表结构第一天就按多用户设计（id/名称/密码哈希/角色/token），实现先只放一行。密码哈希用 argon2id（标准库外选型写 ADR）。
 - **auth 端点限速（2026-09-17 起）**：setup/login/dev-login 共享进程内固定窗口限速（默认 10 次/分钟，超限 429 `RATE_LIMITED`）——缓冲暴力猜解与 argon2id（m=64MB/次）的内存 DoS；Bearer 业务端点与 /auth/verify 不受限速影响。
-- **安全响应头基线（2026-09-17 起）**：全部响应带 `X-Content-Type-Options: nosniff`（MIME 嗅探防护，媒体/文本响应被注入可执行内容的攻击面关闭）。
+- **安全响应头基线（2026-09-17 起；2026-09-22 补 frame 头）**：全部响应带 `X-Content-Type-Options: nosniff`（MIME 嗅探防护）+ `X-Frame-Options: DENY`（点击劫持防护——SPA/验收页/管理页禁止被第三方 iframe 嵌套；`<img>`/`<video>` 标签消费媒体直链不受 framing 头影响）。
 - **签名直链**：`/media/orig/...?exp=...&sig=HMAC(路径+过期时间, 服务端密钥)`——浏览器/播放器无需带 header 即可加载，但链接有时效。
 - token 泄露应急（多会话模型口径）：受控设备直接 `POST /auth/logout` 吊销对应会话；**注意「自己再登录一次」不再吊销旧 token**（旧模型的挤兑行为已废除）。全部会话吊销 = 停服清空 `auth_sessions` 表（或删除数据目录重建）；直链吊销仍走删除 `media-secret` 文件。「管理端一键重置全部 token」为规划项。
 
@@ -55,8 +55,16 @@
 
 - 位置：数据目录内（`/data/trash/`），与媒体库隔离。
 - 结构：保留原相对路径结构 + 元数据 JSON（原路径/删除时间/asset_id）。
-- 恢复：原路径被占用时冲突重命名；保留判定口径 30 天（`filing.DefaultTrashRetentionDays`，trash 列表按此返回到期时间）。**到期自动物理清除尚未实现**——回收站内容在手动恢复/彻底删除/清空操作前一直保留（自动清除待立项，实现时须新增 config 键 + 后台巡检 goroutine）。
+- 恢复：原路径被占用时冲突重命名。
+- **到期自动物理清除（2026-09-22 实现原规划项）**：后台清扫按 `trash.sweep_interval`（默认 1h，env `QIMENG_TRASH_SWEEP_INTERVAL`）巡检，超过 `trash.retention_days`（默认 30 天，env `QIMENG_TRASH_RETENTION_DAYS`）的条目物理清除并联动清理缩略图缓存；trash 列表 ExpiresAt 按生效保留天数返回（DOMAIN_RULES §9）。误配兜底：retention <1 永不判过期（`filing.TrashExpired`）。
 - 清空回收站 = 二次确认的显式管理操作。
+
+## Host 校验（DNS rebinding 防御，2026-09-22 起）
+
+- **威胁形态**：恶意页面把自有域名解析到内网 IP，其页面对本服务的请求在浏览器同源判定下"看起来同源"——本服务无 CORS 输出、Bearer 走 Authorization 头，正常跨域读取默认被拒，但 rebinding 伪同源绕过这层；dev 免密形态下 `dev-login` 等于凭空送出 admin token，未初始化形态下 `setup` 可被抢跑。
+- **机制**：最外层中间件校验 Host 头——默认白名单 = IP 直连（v4/v6 字面量）+ `localhost`，其余一律 403 `INVALID_PARAM`。局域网/隧道的既定访问形态全是 IP 或本机名，**默认零配置零影响**；空 Host（HTTP/1.0 古董客户端）放行（rebinding 必须携带攻击者域名，空 Host 不构成该向量）。
+- **域名访问**：需要域名（如 Tailscale MagicDNS 主机名）访问的部署，把主机名加入 `trusted_hosts`（yaml）/ `QIMENG_TRUSTED_HOSTS`（env，`,` 或 `;` 分隔）；匹配大小写不敏感。
+- 测试锁定：`httpapi/host_check_test.go`（判定表驱动 + 中间件端到端，含伪 IP 域名 `192.0.2.5.evil.com` 拒绝用例）。
 
 ## 备份快照（库文件热备，2026-09-19 任务Q 批B 起）
 
@@ -72,7 +80,7 @@
 ## 依赖与供应链
 
 - Dependabot 尚未配置（计划中，与 ARCHITECTURE §10 口径一致）；当前依赖更新靠 AI 会话按「新技术先读官方文档」纪律人工核对。
-- 镜像构建（官方基础镜像 + 固定 digest；CI 构建的镜像才允许部署）为 M5 规划项——`make docker-build` 目前是 TODO 占位。
+- 镜像构建（官方基础镜像 + 固定 digest；CI 构建的镜像才允许部署）：`make docker-build` **amd64 已实构建**（2026-09-22 fnOS 彩排过）；**arm64 半边挂真机 NAS**。
 - 引入任何新依赖必须：官方文档确认维护状态 + 无已知 CVE + 写 ADR。
 
 ## 安全测试（进 CI，全绿才许合并）

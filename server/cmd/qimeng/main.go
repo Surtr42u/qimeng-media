@@ -224,6 +224,11 @@ func main() {
 		backupMgr.Start(ctx, cfg.Backup.Interval)
 	}
 
+	// 回收站到期清扫（DOMAIN_RULES §9，2026-09-22）：按 trash.sweep_interval
+	// 周期物理清除超过 trash.retention_days 的条目并联动清缩略图
+	//（退出随 ctx 取消；无 enabled 开关，见 StartTrashSweeper 注释）。
+	apiSrv.StartTrashSweeper(ctx)
+
 	// errCh 把 goroutine 里的监听错误传回主流程——不允许 err 悄悄丢失。
 	errCh := make(chan error, 1)
 	go func() {

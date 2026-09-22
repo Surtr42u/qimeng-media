@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -299,20 +300,71 @@ func New(deps Deps) (*Server, error) {
 	// healthcheck 与容器编排继续用根路径，三端 SDK 只看 /api/v1。
 	mux.HandleFunc("GET /healthz", Healthz)
 	mux.HandleFunc("GET /readyz", s.GetApiV1Readyz)
-	s.handler = nosniffHeader(&topRouter{s: s, api: api})
+	// 中间件链（外→内）：安全响应头 → Host 校验（DNS rebinding 防御，
+	// 403 响应也带安全头）→ 鉴权分发。
+	s.handler = securityHeaders(s.hostCheck(&topRouter{s: s, api: api}))
 	return s, nil
 }
 
-// nosniffHeader 给所有响应补 X-Content-Type-Options: nosniff
-// （SECURITY 安全响应头基线：MIME 嗅探防护——浏览器不再把声明的
-// Content-Type 之外的内容"猜"成可执行类型，图片/文本响应被注入
-// HTML/JS 的攻击面直接关闭）。与 SSE/媒体流的显式 Content-Type 设置
-// 不冲突：本头只约束浏览器嗅探行为，不改变服务端声明的类型。
-func nosniffHeader(next http.Handler) http.Handler {
+// securityHeaders 给所有响应补安全响应头基线（docs/SECURITY.md）：
+//   - X-Content-Type-Options: nosniff——MIME 嗅探防护，浏览器不再把声明的
+//     Content-Type 之外的内容"猜"成可执行类型，图片/文本响应被注入
+//     HTML/JS 的攻击面直接关闭；
+//   - X-Frame-Options: DENY——点击劫持防护，SPA/验收页/管理页禁止被任何
+//     第三方站点 iframe 嵌套（本服务无被嵌套的合法场景；媒体直链同理，
+//     <img>/<video> 标签消费不受 framing 头影响）。
+//
+// 与 SSE/媒体流的显式 Content-Type 设置不冲突：本头只约束浏览器行为，
+// 不改变服务端声明的类型。
+func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("X-Content-Type-Options", "nosniff")
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
 		next.ServeHTTP(w, r)
 	})
+}
+
+// hostCheck 校验 Host 头防 DNS rebinding（docs/SECURITY.md「Host 校验」，
+// 2026-09-22）。攻击形态：恶意页面把自有域名解析到内网 IP，其页面对本
+// 服务的请求在浏览器同源判定下"看起来同源"——本服务无 CORS 输出、
+// Bearer 走 Authorization 头，正常跨域读取本已默认拒绝，但 rebinding
+// 伪同源绕过这层；dev 免密形态下 dev-login 等于凭空送出 admin token，
+// 未初始化形态下 setup 可被抢跑。默认白名单 = IP 直连（v4/v6 字面量）
+// + localhost：局域网/隧道的既定访问形态全部命中，零配置零影响；域名
+// 访问（如 Tailscale MagicDNS）加入 trusted_hosts 即可。
+// 空 Host（HTTP/1.0 古董客户端）放行：rebinding 必须携带攻击者域名，
+// 空 Host 不构成该向量，卡它只会误伤老客户端。
+func (s *Server) hostCheck(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if host := r.Host; host != "" && !s.hostAllowed(host) {
+			s.logger.Warn("拒绝非白名单 Host 的请求（DNS rebinding 防御）",
+				"host", host, "path", r.URL.Path)
+			writeErr(w, http.StatusForbidden, codeInvalidParam, "请求的 Host 不被允许")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// hostAllowed 判定 Host 是否放行：剥端口（含 "[v6]:port" 形态）→
+// localhost / IP 字面量 / trusted_hosts 大小写不敏感匹配。剥失败（裸
+// IPv6 如 "::1"）按整串参与判定，ParseIP 兜住。
+func (s *Server) hostAllowed(host string) bool {
+	h := host
+	if hp, _, err := net.SplitHostPort(host); err == nil {
+		h = hp
+	}
+	h = strings.ToLower(h)
+	if h == "localhost" || net.ParseIP(h) != nil {
+		return true
+	}
+	for _, t := range s.cfg.TrustedHosts {
+		if strings.EqualFold(t, h) {
+			return true
+		}
+	}
+	return false
 }
 
 // Handler 返回完整路由与鉴权链的 http.Handler。

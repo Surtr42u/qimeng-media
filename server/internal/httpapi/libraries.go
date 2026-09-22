@@ -272,6 +272,9 @@ func (s *Server) PostApiV1LibrariesLibraryIdScan(w http.ResponseWriter, r *http.
 // 两个刻意的不变量（与单资产物理删除同语义）：
 //   - view_events 事件流保留：历史统计数据，注释见 0001 migration（只追加表无外键）；
 //   - 磁盘媒体文件与回收站条目不动：文件删除只走回收站（铁律 4）。
+//     例外（2026-09-22，DOMAIN_RULES §11）：缩略图缓存是服务端自有数据
+//     （dataDir/thumbs，不在"磁盘媒体文件不动"的保护范围内），资产行级联
+//     消失后缓存永不可达，删库时联动清理。
 //
 // 已知限制：扫描进行中删除 → 扫描 goroutine 结束时 upsert 因外键失败自然终止
 // （scanState 留在内存最终被覆盖），调试场景可接受；生产如需"扫描锁内禁删"
@@ -287,10 +290,21 @@ func (s *Server) DeleteApiV1LibrariesLibraryId(w http.ResponseWriter, r *http.Re
 		writeErr(w, http.StatusInternalServerError, codeInternal, "内部错误")
 		return
 	}
+	// 缩略图联动的前置收集：DeleteLibrary 的 FK 级联会连资产行一起清掉，
+	// 行没了就无法反查该清哪些缓存。只读清单失败不拦删库（缓存残留待
+	// 对账兜底）——删除是用户显式管理操作，不该被一次读毛刺卡住。
+	assets, lerr := s.q.ListAssetsByLibrary(r.Context(), libraryID)
+	if lerr != nil {
+		s.logger.Warn("删库前查询资产清单失败（缩略图联动清理跳过）",
+			"err", lerr, "libraryId", libraryID)
+	}
 	if err := s.q.DeleteLibrary(r.Context(), libraryID); err != nil {
 		s.logger.Error("删除库失败", "err", err, "libraryId", libraryID)
 		writeErr(w, http.StatusInternalServerError, codeInternal, "内部错误")
 		return
+	}
+	for _, a := range assets {
+		s.thumbs.DeleteAssetThumbs(a.AssetID)
 	}
 	// 删库失效目录树缓存：读路径先 GetLibrary→404，滞留条目本不可达，但
 	// dirsCache 过期只 miss 不 delete，不失效会占内存到进程重启（2026-09-21
