@@ -55,6 +55,14 @@ class MainActivity : ComponentActivity() {
         handleShareIntent(intent)
     }
 
+    override fun onStart() {
+        super.onStart()
+        // 前台回归自检（2026-09-25 冻结事故）：本机模式下内嵌服务端子进程可能随壳进程
+        // 一起被系统冻结成「活着但调度停摆」，回前台必须探测一次 /healthz，无响应自动
+        // 重拉——否则用户面对的就是详情页/全 App 加载失败，只能手动重启 App
+        mainViewModel.onAppForeground()
+    }
+
     /**
      * 局域网权限冷启动补请求（任务P P4b，ADR-0022；判定单源 core:network）：Android 17+
      * 对 targetSdk 37 强制该权限（未授权连不了局域网 NAS）。放壳层冷启动是因为已登录

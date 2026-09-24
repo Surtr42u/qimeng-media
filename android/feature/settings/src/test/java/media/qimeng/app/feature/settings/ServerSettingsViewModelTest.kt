@@ -301,6 +301,8 @@ private class FakeEmbeddedServerController : EmbeddedServerController {
         lastStartedUrl = serverUrl
         return serverUrl == ServerAddress.LOCAL_MODE_PRESET
     }
+    override fun ensureHealthyIfLocalMode(serverUrl: String): Boolean =
+        serverUrl == ServerAddress.LOCAL_MODE_PRESET
     override fun stop() = Unit
 }
 

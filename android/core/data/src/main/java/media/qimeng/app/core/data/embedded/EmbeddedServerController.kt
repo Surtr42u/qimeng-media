@@ -21,6 +21,12 @@ interface EmbeddedServerController {
     /** 若 URL 为内嵌预设地址则拉起服务端（幂等）。@return 是否触发了拉起 */
     fun ensureStartedIfLocalMode(serverUrl: String): Boolean
 
+    /**
+     * 前台回归健康检查（2026-09-25 冻结事故自愈）：URL 为内嵌预设时向服务发
+     * HEALTH_CHECK intent——服务端探测 /healthz，无响应即杀掉重拉。@return 是否触发了检查
+     */
+    fun ensureHealthyIfLocalMode(serverUrl: String): Boolean
+
     /** 停止内嵌服务端（切回 NAS 地址回收本机进程；通知随 Service 销毁消失） */
     fun stop()
 }
@@ -33,6 +39,12 @@ class EmbeddedServerControllerImpl @Inject constructor(
     override fun ensureStartedIfLocalMode(serverUrl: String): Boolean {
         if (!ServerAddress.isLocalModePreset(serverUrl)) return false
         EmbeddedServerService.start(context)
+        return true
+    }
+
+    override fun ensureHealthyIfLocalMode(serverUrl: String): Boolean {
+        if (!ServerAddress.isLocalModePreset(serverUrl)) return false
+        EmbeddedServerService.requestHealthCheck(context)
         return true
     }
 
