@@ -1,0 +1,151 @@
+import { useRef, useState } from 'react'
+import { useAuthorSuggest } from '@/hooks/use-authors'
+import { SUGGEST_DEBOUNCE_MS, useDebouncedValue } from '@/hooks/use-debounced-value'
+import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
+import { ClearIcon } from '@/components/shell/icons'
+
+/**
+ * 作者挂靠字段（上传卡消费；REQ-上传指定作者与来源 §3.1①）。
+ * 受控 {value, onChange}：
+ * - 点选联想项 = 确定作者身份（onChange 带 authorId——选的是身份不是文本）；
+ * - 回车 = 输入与联想项 displayName 大小写不敏感全等时选定该作者，否则
+ *   新建作者（带 authorName，身份归一在服务端 generateAuthorId，大小写/
+ *   符号变体不会裂分身）——语义与 Android 端一致；
+ * - null = 不指定（上传行为与现状一致）。
+ * 联想 = GET /authors/suggest（hooks 封装，铁律 7）：子串大小写不敏感命中、
+ * 别名命中同一作者都由服务端负责，本组件只展示；防抖/Popover 范式照 TopBar
+ * 搜索补全（含 .search-pop--popper 面板与 .pop-suggest-* 行样式复用）。
+ * 选中后输入框回显 displayName，再编辑即退回自由输入态（onChange(null)）。
+ */
+
+/** 挂靠值（上传卡入队快照的来源）：displayName 仅前端回显用，不进协议 */
+export interface AuthorAttachValue {
+  authorId?: string
+  authorName?: string
+  displayName?: string
+}
+
+export function AuthorSuggestField({
+  value,
+  onChange,
+}: {
+  value: AuthorAttachValue | null
+  onChange: (next: AuthorAttachValue | null) => void
+}) {
+  const [text, setText] = useState('')
+  const [popOpen, setPopOpen] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const boxRef = useRef<HTMLDivElement>(null)
+
+  // 已确定挂靠（点选或回车新建）后不再弹联想；编辑即退回自由输入态
+  const attached = value != null && (value.authorId != null || value.authorName != null)
+  const display = attached ? (value?.displayName ?? value?.authorName ?? '') : text
+
+  const debounced = useDebouncedValue(display, SUGGEST_DEBOUNCE_MS)
+  const { data: suggestions = [], isPending } = useAuthorSuggest(debounced, popOpen && !attached)
+  // 协议 id/displayName 均可选；缺 id 无法确定身份（正常响应不会缺），不进可点列表
+  const rows = suggestions.filter((s) => s.id != null && s.displayName != null)
+
+  const open = popOpen && !attached && display.trim() !== ''
+
+  const onInputChange = (raw: string): void => {
+    setText(raw)
+    if (attached) onChange(null) // 再编辑 = 放弃已确定身份，退回自由输入态
+  }
+
+  const onEnter = (): void => {
+    const name = display.trim()
+    if (name === '') return
+    // 回车语义与 Android 端一致（REQ §3.1「交互要求对两端一致」）：
+    // 输入与某联想项 displayName 大小写不敏感全等 → 视为选定该作者身份
+    // （走 authorId）；否则按输入原文新建（归一在服务端 generateAuthorId）。
+    const exact = rows.find((s) => s.displayName != null && s.displayName.toLowerCase() === name.toLowerCase())
+    if (exact && exact.id != null) {
+      onChange({ authorId: exact.id, displayName: exact.displayName })
+    } else {
+      onChange({ authorName: name })
+    }
+    setPopOpen(false)
+    inputRef.current?.blur()
+  }
+
+  const clear = (): void => {
+    onChange(null)
+    setText('')
+    inputRef.current?.focus()
+  }
+
+  return (
+    <label className="settings-field upload-attach-field">
+      <span>作者（可选，整批上传生效）</span>
+      <Popover open={open} onOpenChange={setPopOpen}>
+        <div className="attach-input-box" ref={boxRef}>
+          <PopoverAnchor asChild>
+            <input
+              ref={inputRef}
+              type="text"
+              placeholder="输入作者名联想选择；无匹配回车新建"
+              autoComplete="off"
+              value={display}
+              onChange={(e) => onInputChange(e.target.value)}
+              onFocus={() => setPopOpen(true)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') onEnter()
+              }}
+            />
+          </PopoverAnchor>
+          {display !== '' && (
+            <button className="attach-clear" type="button" aria-label="清除已选作者" onClick={clear}>
+              <ClearIcon />
+            </button>
+          )}
+          {open ? (
+            <PopoverContent
+              className="search-pop search-pop--popper"
+              side="bottom"
+              align="start"
+              sideOffset={8}
+              avoidCollisions={false}
+              // 打开不抢焦点：焦点留在输入框继续打字（同 TopBar 口径）
+              onOpenAutoFocus={(e) => e.preventDefault()}
+              // 输入框区域内点击（定位光标/清空按钮）不关面板
+              onInteractOutside={(e) => {
+                if (boxRef.current?.contains(e.target as Node)) e.preventDefault()
+              }}
+            >
+              {isPending ? (
+                <p className="pop-suggest-hint">正在获取联想…</p>
+              ) : rows.length > 0 ? (
+                <div className="pop-suggest-list">
+                  {rows.map((s) => (
+                    <button
+                      key={s.id}
+                      className="pop-suggest-item"
+                      type="button"
+                      onClick={() => {
+                        onChange({ authorId: s.id, displayName: s.displayName })
+                        setPopOpen(false)
+                      }}
+                    >
+                      <span className="pop-suggest-name">{s.displayName}</span>
+                      <span className="pop-suggest-badge">{s.fileCount ?? 0} 个文件</span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="pop-suggest-hint">没有匹配的作者，回车新建「{display.trim()}」</p>
+              )}
+            </PopoverContent>
+          ) : null}
+        </div>
+      </Popover>
+      <small>
+        {attached
+          ? value?.authorId != null
+            ? '已选作者——本批文件将挂到该作者名下'
+            : '将新建作者并挂靠本批文件'
+          : '留空 = 不指定作者，上传行为与现状一致'}
+      </small>
+    </label>
+  )
+}

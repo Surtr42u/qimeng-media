@@ -1969,3 +1969,50 @@ li.dir-file-row.ms-row-selected { background: var(--hover-bg); }
   color: var(--text-main);
 }
 .batch-fail-reason { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-sub); }
+
+/* ===== 上传挂靠字段 + TXT 重导入冲突面板（REQ-上传指定作者与来源，2026-09-25）=====
+   挂靠字段（AuthorSuggestField/SourceSelectField）复用 .settings-field 表单
+   规格与 .search-pop/.pop-suggest-* 联想面板语言，本段只补布局位；冲突面板
+   与 .batch-panel 同族（描边卡内面板）。颜色全走既有 token，零颜色字面量 */
+
+/* 上传卡挂靠区：目录选择与文件选择之间的两字段纵排 */
+.upload-attach { display: grid; gap: 10px; margin-top: 10px; }
+/* 字段内复用 .tag-newrow（详情标签输入行）时去掉它面向对话框的段距 */
+.upload-attach-field .tag-newrow { margin-top: 0; }
+/* 联想输入框：清除按钮叠在右侧（复用 .settings-field input 规格本体） */
+.attach-input-box { position: relative; display: block; }
+.attach-input-box input { padding-right: 30px; }
+.attach-clear {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  display: flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; border-radius: 50%;
+  color: var(--text-sub); cursor: pointer;
+}
+.attach-clear:hover { background: var(--hover-bg); color: var(--text-mid); }
+/* 来源词表胶囊池：超出换行；禁用态（未选作者）整字段压透明度并拦指针 */
+.source-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.source-empty-hint { font-size: 12px; color: var(--text-sub); }
+.upload-attach-field.disabled { opacity: .55; }
+.upload-attach-field.disabled .source-chips { pointer-events: none; }
+
+/* TXT 重导入冲突面板（409 TXT_CONFLICT 载荷渲染）：标题 + 按作者分组条目 + 三按钮 */
+.txt-conflict-panel {
+  display: grid; gap: 8px;
+  margin-top: 10px; padding: 10px 12px;
+  border: 1px solid var(--qm-primary);
+  border-radius: var(--qm-radius);
+}
+.txt-conflict-head { display: flex; align-items: baseline; gap: 10px; font-size: 13px; }
+.txt-conflict-head b { color: var(--text-main); }
+.txt-conflict-file { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--text-sub); }
+.txt-conflict-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; max-height: 180px; overflow-y: auto; }
+.txt-conflict-list li { display: grid; gap: 4px; }
+.txt-conflict-author { font-size: 13px; color: var(--text-mid); }
+.txt-conflict-entries { display: flex; flex-wrap: wrap; gap: 4px; }
+.txt-conflict-chip {
+  padding: 2px 8px; border-radius: 999px; /* 与 .pop-suggest-badge 同款灰底胶囊 */
+  background: var(--pop-chip-hover-bg);
+  font-size: 12px; color: var(--text-sub);
+  max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.txt-conflict-actions { display: flex; align-items: center; gap: 8px; }

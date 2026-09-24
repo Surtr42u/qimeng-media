@@ -360,9 +360,12 @@ paths:
     post:
       summary: 上传文件（流式；四道安全校验见 SECURITY.md；原样落盘永不转码）
       parameters:
-        - { name: libraryId, in: query, required: true, schema: { type: string }, description: 目标库 ID（多库场景必须显式指定） }
+        - { name: libraryId, in: query, required: true, schema: { type: string }, description: 目标库 ID（多库场景必须显式指定）。支持作者挂靠的库类型由 Library.capabilities.authorAttach 声明 }
         - { name: dir, in: query, required: true, schema: { type: string }, description: 目标目录（库内相对路径；空 = 库根） }
         - { name: filename, in: query, required: true, schema: { type: string } }
+        - { name: authorId, in: query, required: false, schema: { type: string }, description: 可选；挂靠目标=已有作者（GET /authors/suggest 点选返回的作者 ID）。与 authorName 互斥（同传 400 INVALID_PARAM）；须为常规作者且存在（否则 404）。仅支持作者挂靠的库类型生效（Library.capabilities.authorAttach=false 的库传任一挂靠参数 → 400 INVALID_PARAM，DOMAIN_RULES §6） }
+        - { name: authorName, in: query, required: false, schema: { type: string, maxLength: 200 }, description: 可选；新建作者显示名（联想无结果回车新建）。与 authorId 互斥；身份遵循 generateAuthorId 归一规则——大小写/符号变体归并同一作者，不会裂成分身 }
+        - { name: source, in: query, required: false, schema: { type: array, items: { type: string, maxLength: 500 }, maxItems: 32 }, style: form, explode: true, description: 可选；作者来源/出处词（query 同名重复传多值，与 GET /assets 的 source 数组同款传法）。仅指定作者时合法（否则 400）；留空=不改动该作者来源；并入去重永不覆盖既有来源；来源仅记录不参与任何匹配（DOMAIN_RULES §6） }
       requestBody:
         required: true
         content:
@@ -522,6 +525,30 @@ paths:
       summary: 作者列表（常规与 COS 统一返回，type 区分；排序与筛选见 DOMAIN_RULES §6）
       responses:
         "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Author" } } } } }
+  /api/v1/authors/suggest:
+    get:
+      summary: 作者联想（上传挂靠输入框；常规作者，含零关联文件者）
+      description: |
+        q 对 displayName 做子串匹配（contains 语义，ASCII 大小写不敏感，同
+        DOMAIN_RULES §3 搜索口径）；displayName 已含 " / " 连接的全部别名，
+        别名片段可命中同一作者。只返回常规作者（type=regular）——挂靠是
+        TXT 常规作者体系能力，COS 作者由目录结构派生不参与。q trim 后为空
+        返回空列表；按 displayName 升序截断到 limit。
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string }, description: 联想词 }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 50, default: 10 } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/AuthorSuggest" } } } } }
+  /api/v1/authors/sources:
+    get:
+      summary: 作者来源词表（上传挂靠来源快捷选项数据源）
+      description: |
+        全部已导入 TXT 片段「来源/出处」区解析出的去重词汇；authorCount=
+        引用该来源的不同作者数（常用优先=按 authorCount 降序、name 升序）。
+        随上传并入的新来源自动进入词表。与 §4 资产出处分区（SourceMatcher/
+        custom_sources）互不相干，禁止混用。
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/AuthorSourceVocabulary" } } } }
   /api/v1/authors/import-txt:
     post:
       summary: 导入作者 TXT（三种格式自动识别；统一重建语义）
@@ -529,9 +556,14 @@ paths:
         required: true
         content:
           application/json:
-            schema: { type: object, required: [content], properties: { filename: { type: string }, content: { type: string } } }
+            schema: { type: object, required: [content], properties: { filename: { type: string }, content: { type: string }, conflictResolution: { type: string, enum: [keep, remove], description: 可选；同文件名重导入且新内容缺少上传写入条目（作品行/来源行）时的处置——缺省不传：返回 409 TXT_CONFLICT 由用户二选一；keep=把上传条目自动并回新内容后替换落库；remove=按用户明示移除这些条目（出处元数据一并清除） } } }
       responses:
         "200": { description: 导入结果统计, content: { application/json: { schema: { $ref: "#/components/schemas/TxtImportResult" } } } }
+        "409":
+          description: 新内容会丢弃上传写入的条目，须带 conflictResolution 重发（TXT 真相重导入保护）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TxtImportConflict" }
     get:
       summary: 已导入的 TXT 文件名列表（旧版数据管理「TXT导入作者」卡片）
       description: 片段存于 kv_settings（imported_txt_sources）；同 filename 重导入为覆盖更新。
@@ -560,6 +592,39 @@ paths:
         文件关联数。无已存片段时返回零值（两个计数均为 0）。
       responses:
         "200": { description: 重建结果统计, content: { application/json: { schema: { $ref: "#/components/schemas/TxtImportResult" } } } }
+  /api/v1/authors/import-txt/export:
+    get:
+      summary: 导出片段原文（下载备份/跨设备；往返一致——重导出不触发上传条目保护）
+      parameters:
+        - { name: filename, in: query, required: false, schema: { type: string }, description: 片段名（空/缺省=匿名导入的最近一份） }
+      responses:
+        "200":
+          description: 片段原文（text/plain；Content-Disposition attachment，文件名=片段名，匿名片段用「作者清单.txt」）
+          content:
+            text/plain:
+              schema: { type: string }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/authors/mirror:
+    get:
+      summary: 作者总表镜像配置读取
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/AuthorMirrorConfig" } } } }
+    put:
+      summary: 作者总表镜像配置保存（服务端把片段真相自动镜像到该本地 txt）
+      description: |
+        path 空=关闭（默认）。保存成功即尝试一次镜像刷新（尽力而为）。path
+        必须是服务端可写的绝对路径（相对路径 400 INVALID_PARAM）——这是用户
+        显式配置的唯一例外写点（SECURITY.md「作者总表镜像」），服务端不获得
+        写任意路径的能力。镜像单向（服务端→本地），本地手改会被下一次服务端
+        变更覆盖。fragmentFilename 空=镜像最近导入的片段。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AuthorMirrorConfig" }
+      responses:
+        "200": { description: 已保存（回显存储后配置）, content: { application/json: { schema: { $ref: "#/components/schemas/AuthorMirrorConfig" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
   /api/v1/authors/{authorId}/follow:
     put:
       summary: 设置/取消关注作者（DOMAIN_RULES §6/§7 关注语义）
@@ -1008,6 +1073,7 @@ components:
         scanState: { type: string, enum: [idle, scanning, error] }
         enabled:   { type: boolean, default: true, description: 库启用开关（PUT 到本库的 enabled 子资源）——停用仅从浏览/搜索/推荐列表隐藏，资产记录/事件流/统计/磁盘文件全部保留（migration 0007，ADR-0012） }
         kind:      { type: string, enum: [normal, cos], default: normal, description: 库类型——normal 常规媒体库；cos COS 作者库（按 作者/作品/文件 目录结构扫描建 cos_ 作者，DOMAIN_RULES §6），COS 文件不进常规浏览流 }
+        capabilities: { $ref: "#/components/schemas/LibraryCapabilities" }
 
     LibraryCreate:
       type: object
@@ -1201,6 +1267,7 @@ components:
       properties:
         authorsImported: { type: integer }
         filesMatched:    { type: integer }
+        mergedUploadEntries: { type: integer, description: conflictResolution=keep 时自动并回的上传条目行数（作品行+来源行；其余情况为 0/缺省） }
 
     TxtImportedFile:
       type: object
@@ -1208,6 +1275,55 @@ components:
       required: [filename]
       properties:
         filename: { type: string, description: 片段名（空串=匿名导入的最近一份） }
+        importedAt: { type: string, description: 最近导入时刻（RFC3339；旧数据零值缺省=最旧） }
+
+    LibraryCapabilities:
+      type: object
+      description: 库类型能力声明（ADR-0012 接入清单项；服务端按 kind 注册表单一来源产出，客户端显隐一律读此字段、禁止写死 kind==normal）
+      properties:
+        authorAttach: { type: boolean, description: 是否支持上传挂靠作者/来源（normal=true，cos=false——COS 作者由目录结构派生） }
+
+    AuthorSuggest:
+      type: object
+      description: 作者联想结果条目（GET /authors/suggest）
+      properties:
+        id:        { type: string }
+        displayName: { type: string }
+        fileCount: { type: integer }
+
+    AuthorSourceStat:
+      type: object
+      properties:
+        name: { type: string }
+        authorCount: { type: integer, description: 引用该来源的不同作者数 }
+
+    AuthorSourceVocabulary:
+      type: object
+      description: 作者来源词表（GET /authors/sources）
+      properties:
+        sources: { type: array, items: { $ref: "#/components/schemas/AuthorSourceStat" } }
+
+    TxtImportConflictAuthor:
+      type: object
+      properties:
+        authorId: { type: string }
+        displayName: { type: string }
+        works: { type: array, items: { type: string }, description: 将被丢弃的上传写入作品行 }
+        sources: { type: array, items: { type: string }, description: 将被丢弃的上传写入来源行 }
+
+    TxtImportConflict:
+      type: object
+      description: 409 载荷：同文件名重导入会丢弃的上传写入条目清单（须带 conflictResolution=keep|remove 重发）
+      properties:
+        filename: { type: string }
+        authors: { type: array, items: { $ref: "#/components/schemas/TxtImportConflictAuthor" } }
+
+    AuthorMirrorConfig:
+      type: object
+      description: 作者总表镜像配置（GET/PUT /authors/mirror；持久化键 kv_settings author_mirror）
+      properties:
+        path: { type: string, description: 镜像文件绝对路径；空=关闭（默认） }
+        fragmentFilename: { type: string, description: 镜像目标片段名；空=最近导入的片段 }
 
     StatsOverview:
       type: object

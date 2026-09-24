@@ -88,6 +88,9 @@ func (s *Server) GetApiV1Libraries(w http.ResponseWriter, r *http.Request) {
 		state := gen.LibraryScanState(s.scanStates.get(l.ID))
 		kind := gen.LibraryKind(l.Kind)
 		enabled := l.Enabled == 1
+		// 能力声明（ADR-0012）：客户端 UI 的挂靠输入显隐一律读此字段，
+		// 禁止写死 kind==normal；判定单一来源在 scanner.SupportsAuthorAttach。
+		authorAttach := scanner.SupportsAuthorAttach(l.Kind)
 		out = append(out, gen.Library{
 			Id:         &l.ID,
 			Name:       &l.Name,
@@ -98,6 +101,9 @@ func (s *Server) GetApiV1Libraries(w http.ResponseWriter, r *http.Request) {
 			ScanState:  &state,
 			Enabled:    &enabled,
 			Kind:       &kind,
+			Capabilities: &gen.LibraryCapabilities{
+				AuthorAttach: &authorAttach,
+			},
 		})
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -175,12 +181,18 @@ func (s *Server) PostApiV1Libraries(w http.ResponseWriter, r *http.Request) {
 	id, name, root := lib.ID, lib.Name, lib.RootPath
 	createdKind := gen.LibraryKind(lib.Kind)
 	state := gen.LibraryScanState("idle")
+	// 能力声明与 GET 列表同源（scanner 单一来源，ADR-0012）——注册方
+	// （Web 管理页/App）拿到 201 即可读能力，无需再发一次列表。
+	authorAttach := scanner.SupportsAuthorAttach(lib.Kind)
 	writeJSON(w, http.StatusCreated, gen.Library{
 		Id:        &id,
 		Name:      &name,
 		RootPath:  &root,
 		ScanState: &state,
 		Kind:      &createdKind,
+		Capabilities: &gen.LibraryCapabilities{
+			AuthorAttach: &authorAttach,
+		},
 	})
 }
 

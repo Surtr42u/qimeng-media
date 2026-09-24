@@ -29,7 +29,20 @@ const (
 	// SettingKeyClientLogs 存客户端异常上报环形缓冲 JSON 数组（openapi
 	// ClientLogEntry 结构，容量 200 条超出丢最旧；读写方 httpapi clientlogs.go）。
 	SettingKeyClientLogs = "client_logs"
+
+	// SettingKeyAuthorMirror 存作者总表镜像配置 JSON（openapi AuthorMirrorConfig；
+	// 读写方 authorattach；path 空=关闭——用户显式配置的唯一例外写点）。
+	SettingKeyAuthorMirror = "author_mirror"
+
+	// SettingKeyUploadEntries 存按片段文件名分组的上传写入条目 JSON（重导入
+	// 保护的比对依据；出处元数据而非第二真相——真相永远是 imported_txt_sources
+	// 的片段本体，REQ §4.2）。读写方 authorattach。
+	SettingKeyUploadEntries = "imported_txt_upload_entries"
 )
+
+// AutoFragmentFilename 服务端无任何片段时上传挂靠自动创建的片段名（此后它
+// 即「最近导入的片段」；与手工导入片段同构同待遇）。
+const AutoFragmentFilename = "上传自动挂靠.txt"
 
 // 作者类型存储值（migrations/0001 authors.type CHECK 约束；scanner/httpapi
 // 共用，禁止手抄字符串）。

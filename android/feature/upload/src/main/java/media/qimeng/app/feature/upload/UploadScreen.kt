@@ -26,6 +26,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -48,19 +50,25 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import media.qimeng.app.core.model.AuthorSuggestion
 import media.qimeng.app.core.model.DirNode
 import media.qimeng.app.core.model.UploadItem
 import media.qimeng.app.core.model.UploadQueueEntry
 import media.qimeng.app.core.model.UploadRules
 import media.qimeng.app.core.model.UploadStatus
 import media.qimeng.app.core.ui.component.QimengCapsuleTextField
+import media.qimeng.app.core.ui.component.QimengChipRow
+import media.qimeng.app.core.ui.component.QimengPill
 import media.qimeng.app.core.ui.component.QimengSegPill
 import media.qimeng.app.core.ui.component.QimengTopBar
+import media.qimeng.app.core.ui.component.QimengWordPillFlow
 import media.qimeng.app.core.ui.theme.qimengFilledButtonColors
 
 /**
@@ -224,6 +232,23 @@ private fun UploadForm(
             )
         }
 
+        // —— 作者与来源（REQ §3.1：仅 capabilities.authorAttach=true 的库渲染，
+        //     显隐判据在 UiState.authorAttachEnabled，本层禁止写死 kind）——
+        if (state.authorAttachEnabled) {
+            AuthorSection(
+                state = state,
+                onQueryChange = viewModel::onAuthorQueryChange,
+                onPickSuggestion = viewModel::selectAuthorSuggestion,
+                onCommitInput = viewModel::commitAuthorInput,
+                onClear = viewModel::clearAuthor,
+            )
+            SourceSection(
+                state = state,
+                onToggle = viewModel::toggleSource,
+                onAddCustom = viewModel::addCustomSource,
+            )
+        }
+
         // —— 待上传文件 ——
         SectionTitle("待上传文件（${state.pendingItems.size}）")
         PickerRow(
@@ -328,6 +353,173 @@ private fun PickerRow(
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
+}
+
+/**
+ * 作者段（REQ §3.1①：单选、可留空）：未确定 = 胶囊输入框 + 联想列表（无匹配时尾部
+ * 固定「新建作者」行）；已确定 = 选中胶囊（点按清除）。状态与规则全在 ViewModel，
+ * 本组件只渲染回调（ADR-0008 铁律 7）。
+ */
+@Composable
+private fun AuthorSection(
+    state: UploadUiState,
+    onQueryChange: (String) -> Unit,
+    onPickSuggestion: (AuthorSuggestion) -> Unit,
+    onCommitInput: () -> Unit,
+    onClear: () -> Unit,
+) {
+    SectionTitle("作者（可选）")
+    val committedName = state.selectedAuthor?.displayName ?: state.pendingNewAuthor
+    if (committedName != null) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            // 胶囊单源（QimengSegPill）：点按即清除；新建作者前缀区分两种确定态
+            QimengSegPill(
+                text = if (state.selectedAuthor != null) "$committedName ✕" else "新建：$committedName ✕",
+                selected = true,
+                onClick = onClear,
+            )
+            Text(
+                text = if (state.selectedAuthor != null) "已选作者" else "将新建作者",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    } else {
+        QimengCapsuleTextField(
+            value = state.authorQuery,
+            onValueChange = onQueryChange,
+            placeholder = "输入作者名（联想选择，回车新建）",
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(onDone = { onCommitInput() }),
+        )
+        if (state.authorQuery.isNotBlank()) {
+            AuthorSuggestionList(
+                suggestions = state.authorSuggestions,
+                query = state.authorQuery.trim(),
+                onPick = onPickSuggestion,
+                onCreateNew = onCommitInput,
+            )
+        }
+    }
+}
+
+/**
+ * 联想列表：命中行 = displayName + 文件数（照 AuthorScreen 作者行双行口径）；
+ * 无匹配时尾部固定「新建作者 "xxx"」行（点击=回车提交同一路径）。
+ * 用固定 Card+Column 而非 LazyColumn：列表上限 = 协议 limit 10 + 1 行，且外层是
+ * verticalScroll 表单（嵌套滚动反向冲突），固定高度内容交给外层滚动即可。
+ */
+@Composable
+private fun AuthorSuggestionList(
+    suggestions: List<AuthorSuggestion>,
+    query: String,
+    onPick: (AuthorSuggestion) -> Unit,
+    onCreateNew: () -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(vertical = 4.dp)) {
+            suggestions.forEach { suggestion ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onPick(suggestion) }
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = suggestion.displayName,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        text = "${suggestion.fileCount} 个文件",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            // 无匹配时的回车新建固定尾行（REQ §3.1①）
+            if (suggestions.isEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = onCreateNew)
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "新建作者 \"$query\"",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 来源段（REQ §3.1②：多选、可留空）：已选胶囊流 + 快捷词表横滚胶囊 + 自由输入行。
+ * 未选作者时整段禁用/降透明并提示「先选择作者」（来源仅指定作者时合法，协议 400 口径；
+ * 误触另有 VM 门槛双保险）。
+ */
+@Composable
+private fun SourceSection(
+    state: UploadUiState,
+    onToggle: (String) -> Unit,
+    onAddCustom: (String) -> Unit,
+) {
+    SectionTitle("来源（可选）")
+    val enabled = state.hasAuthor
+    Column(
+        modifier = if (enabled) {
+            Modifier
+        } else {
+            Modifier.alpha(DISABLED_SECTION_ALPHA)
+        },
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        if (!enabled) {
+            Text(
+                text = "先选择作者",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (state.sources.isNotEmpty()) {
+            QimengWordPillFlow(
+                pills = state.sources.map { name -> QimengPill(text = name, selected = true) },
+                onPillClick = { index -> onToggle(state.sources[index]) },
+            )
+        }
+        if (state.sourceOptions.isNotEmpty()) {
+            // 快捷词表横滚胶囊（点击 toggle；选中态由 VM 状态驱动，组件本身受控）
+            val names = state.sourceOptions.map { it.name }
+            QimengChipRow(
+                pills = names.map { name -> QimengPill(text = name, selected = name in state.sources) },
+                onPillClick = { index -> onToggle(names[index]) },
+            )
+        }
+        var customInput by rememberSaveable { mutableStateOf("") }
+        QimengCapsuleTextField(
+            value = customInput,
+            onValueChange = { customInput = it },
+            placeholder = "输入新站点或 URL，回车加入",
+            singleLine = true,
+            enabled = enabled,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(
+                onDone = {
+                    onAddCustom(customInput)
+                    customInput = ""
+                },
+            ),
+        )
+    }
 }
 
 /**
@@ -686,6 +878,9 @@ private const val PERSIST_READ_FLAG = Intent.FLAG_GRANT_READ_URI_PERMISSION
 
 /** 队列行取消控件文案（对齐 Web 上传队列：取消无需二次确认） */
 private const val QUEUE_ACTION_CANCEL = "取消"
+
+/** 来源段未选作者时的降透明系数（整段禁用的视觉表达；点击由 VM 门槛兜底） */
+private const val DISABLED_SECTION_ALPHA = 0.5f
 
 /** 队列行取消态文案（与 FAILED 分列：用户取消不计失败） */
 private const val QUEUE_CANCELLED_TEXT = "已取消"

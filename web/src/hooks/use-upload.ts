@@ -4,8 +4,9 @@
  * 为什么裸 XHR 而非生成 SDK：SDK 走 fetch，拿不到上传字节级进度事件，也无法
  * 按单文件中止——W-1 冻结约束明确 XHR + application/octet-stream 流式 + abort。
  * 端点常量复用 lib/constants.ts 的 UPLOAD_PATH（协议 POST /api/v1/assets/upload，
- * libraryId/dir/filename 走 query、body=原始字节流）；鉴权复用 getAuthHeaders
- * （api-client 注释已预留本文件为裸请求场景）。
+ * libraryId/dir/filename/可选挂靠 authorId|authorName/source[] 走 query、
+ * body=原始字节流——query 组装口径单一来源 lib/upload-params.ts）；
+ * 鉴权复用 getAuthHeaders（api-client 注释已预留本文件为裸请求场景）。
  *
  * 口径（W-1 冻结 + 2026-09-05 拍板补充）：
  * - libraryId 必填（协议 required）；目标目录 dir = 库内相对路径（'' = 库根）；
@@ -20,9 +21,10 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { ASSETS_QUERY_KEY, DIRS_QUERY_KEY, LIBRARIES_QUERY_KEY } from '@/lib/query-keys'
+import { ASSETS_QUERY_KEY, AUTHORS_QUERY_KEY, AUTHOR_SOURCES_QUERY_KEY, DIRS_QUERY_KEY, LIBRARIES_QUERY_KEY } from '@/lib/query-keys'
 import { getAuthHeaders } from '@/lib/api-client'
 import { UPLOAD_PATH } from '@/lib/constants'
+import { buildUploadQuery, type UploadAuthorAttach } from '@/lib/upload-params'
 
 /** MB → 字节换算（与服务端 config 口径一致：1MB = 1<<20，见 upload.go kvMax） */
 const BYTES_PER_MB = 1 << 20
@@ -42,6 +44,10 @@ export interface UploadItem {
   targetLibraryId?: string
   /** 入队时快照的目标目录（库内相对路径，'' = 库根） */
   targetDir?: string
+  /** 入队时快照的作者挂靠（authorId=点选联想项；authorName=回车新建；undefined/null=不挂靠） */
+  targetAuthor?: UploadAuthorAttach | null
+  /** 入队时快照的作者来源词（仅 targetAuthor 非空时有效；空数组=不改动来源） */
+  targetSources?: string[]
   /** 失败原因（4xx 透传服务端 message；前置拦截/网络错误为客户端中文文案） */
   errorText?: string
 }
@@ -102,11 +108,15 @@ export function useUploadQueue(options: UploadQueueOptions) {
   )
 
   /** 上传入库成功后的本地失效（SseBridge 只覆盖其他端上传的场景——其注释约定本 hook 负责本页失效）；
-   *  资产族按根键失效：除列表外，类型徽标 total/筛选 facets 也随新文件变化 */
+   *  资产族按根键失效：除列表外，类型徽标 total/筛选 facets 也随新文件变化；
+   *  作者族一并失效：新文件可被 TXT 已导入作品行按文件名命中，挂靠上传
+   *  （REQ-上传指定作者与来源）更直接改写作者数据与来源词表 */
   const invalidateUploaded = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ASSETS_QUERY_KEY })
     void queryClient.invalidateQueries({ queryKey: LIBRARIES_QUERY_KEY })
     void queryClient.invalidateQueries({ queryKey: DIRS_QUERY_KEY })
+    void queryClient.invalidateQueries({ queryKey: AUTHORS_QUERY_KEY })
+    void queryClient.invalidateQueries({ queryKey: AUTHOR_SOURCES_QUERY_KEY })
   }, [queryClient])
 
   /** 4xx/5xx 响应体透传：服务端 {code,message} 的 message 是唯一口径；解析失败兜底状态码文案 */
@@ -121,16 +131,20 @@ export function useUploadQueue(options: UploadQueueOptions) {
   }
 
   /** 发送单条；resolve 于终态（done/failed/canceled），供队列顺序推进。
-   *  目标只认入队快照（item.targetLibraryId/targetDir）——发送途中用户切换
-   *  库/目录不影响已排队条目（§5 第 10 条修法）。 */
+   *  目标只认入队快照（item.targetLibraryId/targetDir/targetAuthor/targetSources）
+   *  ——发送途中用户切换库/目录/作者/来源不影响已排队条目（§5 第 10 条修法，
+   *  挂靠快照与 dir 同一批次口径，REQ §3.1「对整批生效」）。 */
   const uploadOne = useCallback(
     (item: QueueEntry) =>
       new Promise<void>((resolve) => {
-        const params = new URLSearchParams({
-          libraryId: item.targetLibraryId ?? '',
-          dir: item.targetDir ?? '',
-          filename: item.name,
-        })
+        // query 组装收敛在 lib/upload-params.ts 纯函数（行为由测试锁定）
+        const params = buildUploadQuery(
+          item.targetLibraryId ?? '',
+          item.targetDir ?? '',
+          item.name,
+          item.targetAuthor,
+          item.targetSources,
+        )
         const xhr = new XMLHttpRequest()
         xhrsRef.current.set(item.id, xhr)
         xhr.open('POST', `${UPLOAD_PATH}?${params.toString()}`)
@@ -191,8 +205,13 @@ export function useUploadQueue(options: UploadQueueOptions) {
     }
   }, [patchItem, uploadOne])
 
+  /**
+   * 入队（目标此刻定格，渲染字段即发送字段）：批量上传途中切换库/目录/作者/
+   * 来源只影响之后新入队的文件。attach 为可选挂靠快照（REQ §3.1：作者/来源
+   * 可留空=行为与现状一致；authorId 与 authorName 互斥由调用方口径保证）。
+   */
   const enqueue = useCallback(
-    (files: File[]) => {
+    (files: File[], attach?: { author?: UploadAuthorAttach | null; sources?: string[] }) => {
       const opts = optionsRef.current
       const created: QueueEntry[] = files
         .filter((f) => f.name !== '')
@@ -205,6 +224,8 @@ export function useUploadQueue(options: UploadQueueOptions) {
           // 目标此刻定格（渲染字段即发送字段）：批量上传途中切换库/目录只影响之后新入队的文件
           targetLibraryId: opts.libraryId,
           targetDir: opts.dir,
+          targetAuthor: attach?.author ?? null,
+          targetSources: attach?.sources ?? [],
           file: f,
         }))
       if (created.length === 0) return

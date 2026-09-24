@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"qimeng-media/server/internal/auth"
+	"qimeng-media/server/internal/authorattach"
 	"qimeng-media/server/internal/backup"
 	"qimeng-media/server/internal/config"
 	"qimeng-media/server/internal/events"
@@ -133,6 +134,13 @@ type Deps struct {
 	Logger *slog.Logger
 	// Version 服务版本（SSE hello 帧回显）。
 	Version string
+	// Attach 上传挂靠编排服务（authorattach.Service，ADR-0019）；nil 时
+	// New 内部用自身 Logger 构造缺省实例——Service 无外部依赖，缺省即
+	// 生产实现，既有测试调用点零改动。
+	Attach *authorattach.Service
+	// Mirror 作者总表镜像写入器；nil 时同上构造缺省实例（尽力而为投影，
+	// 失败只告警）。组合根（main）显式装配是规范形态（ADR-0019 DI 在 main）。
+	Mirror *authorattach.MirrorWriter
 }
 
 // Server 实现 gen.ServerInterface，并持有跨 handler 共享的状态。
@@ -166,6 +174,10 @@ type Server struct {
 	// topRouter 的免鉴权判定依赖它是否存在（见 topRouter.ServeHTTP 注释）。
 	spa     *spaHandler
 	handler http.Handler // New() 组装完成的完整路由（Handler() 返回它）
+	// attach 上传挂靠编排服务（Deps.Attach 的落位；nil 兜底见 New）。
+	attach *authorattach.Service
+	// mirror 作者总表镜像写入器（Deps.Mirror 的落位）。
+	mirror *authorattach.MirrorWriter
 }
 
 // New 组装 HTTP 服务。返回 *Server；main 用 Handler() 拿到带完整
@@ -203,6 +215,14 @@ func New(deps Deps) (*Server, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	attach := deps.Attach
+	if attach == nil {
+		attach = &authorattach.Service{Logger: logger}
+	}
+	mirror := deps.Mirror
+	if mirror == nil {
+		mirror = &authorattach.MirrorWriter{Logger: logger}
+	}
 	s := &Server{
 		conn:           deps.Conn,
 		q:              deps.Queries,
@@ -217,6 +237,8 @@ func New(deps Deps) (*Server, error) {
 		ttl:            ttl,
 		now:            now,
 		logger:         logger,
+		attach:         attach,
+		mirror:         mirror,
 		authState:      newAuthState(),
 		authLimit:      newAuthLimiter(authRateLimitMax, authRateLimitWindow),
 		scanStates:     newScanStateMap(),

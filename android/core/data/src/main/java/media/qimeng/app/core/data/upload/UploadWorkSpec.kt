@@ -31,6 +31,11 @@ object UploadWorkSpec {
     const val KEY_DISPLAY_NAME = "displayName"
     const val KEY_SIZE_BYTES = "sizeBytes"
 
+    // ---- 挂靠可选键位（REQ §3.1：authorId/authorName 互斥只写其一；缺键 = 不挂靠，向后兼容） ----
+    const val KEY_AUTHOR_ID = "authorId"
+    const val KEY_AUTHOR_NAME = "authorName"
+    const val KEY_SOURCES = "sources"
+
     // ---- 过程/输出 Data 键位（worker setProgress / Result.outputData） ----
     const val KEY_PROGRESS_PERCENT = "progressPercent"
     const val KEY_FINAL_FILE_NAME = "finalFileName"
@@ -60,16 +65,31 @@ object UploadWorkSpec {
         val dir: String,
         val displayName: String,
         val sizeBytes: Long,
+        /**
+         * 挂靠目标=已有作者 ID（GET /authors/suggest 点选）；与 [authorName] 互斥。
+         * null = 不挂靠（留空上传行为与旧版完全一致，REQ §3.1 留空口径）。
+         */
+        val authorId: String? = null,
+        /** 挂靠目标=新建作者显示名（联想无结果回车新建）；与 [authorId] 互斥 */
+        val authorName: String? = null,
+        /** 作者来源词多选（仅挂靠时随批并入；空列表 = 不改动该作者来源） */
+        val sources: List<String> = emptyList(),
     )
 
-    fun itemToInputData(spec: UploadRequestSpec): Data = workDataOf(
-        KEY_LOCAL_ID to spec.localId,
-        KEY_URI to spec.uri,
-        KEY_LIBRARY_ID to spec.libraryId,
-        KEY_DIR to spec.dir,
-        KEY_DISPLAY_NAME to spec.displayName,
-        KEY_SIZE_BYTES to spec.sizeBytes,
-    )
+    fun itemToInputData(spec: UploadRequestSpec): Data = Data.Builder()
+        .putString(KEY_LOCAL_ID, spec.localId)
+        .putString(KEY_URI, spec.uri)
+        .putString(KEY_LIBRARY_ID, spec.libraryId)
+        .putString(KEY_DIR, spec.dir)
+        .putString(KEY_DISPLAY_NAME, spec.displayName)
+        .putLong(KEY_SIZE_BYTES, spec.sizeBytes)
+        // 可选键只在有值时写（缺键即反解为 null/空，与旧载荷双向兼容）
+        .apply {
+            if (spec.authorId != null) putString(KEY_AUTHOR_ID, spec.authorId)
+            if (spec.authorName != null) putString(KEY_AUTHOR_NAME, spec.authorName)
+            if (spec.sources.isNotEmpty()) putStringArray(KEY_SOURCES, spec.sources.toTypedArray())
+        }
+        .build()
 
     /** 反解入队载荷；缺任一必需键返回 null（worker 直接终局失败——防御性兜底）。 */
     fun specFromInputData(data: Data): UploadRequestSpec? {
@@ -85,6 +105,9 @@ object UploadWorkSpec {
             dir = dir,
             displayName = displayName,
             sizeBytes = data.getLong(KEY_SIZE_BYTES, -1L),
+            authorId = data.getString(KEY_AUTHOR_ID),
+            authorName = data.getString(KEY_AUTHOR_NAME),
+            sources = data.getStringArray(KEY_SOURCES)?.toList().orEmpty(),
         )
     }
 

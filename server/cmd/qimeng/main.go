@@ -22,6 +22,7 @@ import (
 	"syscall"
 	"time"
 
+	"qimeng-media/server/internal/authorattach"
 	"qimeng-media/server/internal/backup"
 	"qimeng-media/server/internal/config"
 	"qimeng-media/server/internal/events"
@@ -176,6 +177,10 @@ func main() {
 		TokenTTL:    cfg.TokenTTL,
 		Logger:      logger,
 		Version:     version,
+		// 上传挂靠编排 + 作者总表镜像（ADR-0019：DI 在 main；两服务无
+		// 外部依赖，缺省实例即生产实现，这里显式装配是规范形态）。
+		Attach: &authorattach.Service{Logger: logger},
+		Mirror: &authorattach.MirrorWriter{Logger: logger},
 	})
 	if err != nil {
 		logger.Error("组装 HTTP 服务失败", "error", err)
