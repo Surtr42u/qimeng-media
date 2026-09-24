@@ -420,6 +420,9 @@ class AuthRepositoryImplTest {
             return ServerAddress.isLocalModePreset(serverUrl)
         }
 
+        override fun ensureHealthyIfLocalMode(serverUrl: String): Boolean =
+            ServerAddress.isLocalModePreset(serverUrl)
+
         override fun stop() = Unit
     }
 

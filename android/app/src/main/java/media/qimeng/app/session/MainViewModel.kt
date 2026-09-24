@@ -43,6 +43,11 @@ class MainViewModel @Inject constructor(
 
     private val sessionExpired = MutableStateFlow(false)
 
+    /** 最近一次读到的服务端地址（主线程写读：collect 与 onAppForeground 都在主线程，
+     *  无需同步）；null = 地址流尚未首个值，前台自检无从判定模式。注意 StateFlow 首
+     *  值是空串（未配置语义），消费侧用 isNotBlank 区分 */
+    private var lastServerUrl: String? = null
+
     /** 待消费的系统分享 URI（M4-5 上传入口①）；壳层进上传流后消费清空 */
     private val _pendingShareUris = MutableStateFlow<List<String>>(emptyList())
     val pendingShareUris: StateFlow<List<String>> = _pendingShareUris.asStateFlow()
@@ -78,6 +83,7 @@ class MainViewModel @Inject constructor(
         // 后台态 FGS 启动限制（进程后台恢复场景——此时登录页交互后设置页路径仍可拉起）。
         viewModelScope.launch {
             authRepository.serverUrl.collect { url ->
+                lastServerUrl = url
                 runCatching {
                     if (!embeddedServerController.ensureStartedIfLocalMode(url)) {
                         embeddedServerController.stop()
@@ -85,6 +91,19 @@ class MainViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    /**
+     * 前台回归自检（2026-09-25 冻结事故，壳层 onStart 调用）：本机模式下 App 退后台
+     * 时内嵌服务端子进程会随壳进程一起被系统冻结，解冻后可能停留在「进程活着但调度
+     * 停摆」形态——isAlive 探不出，用户看到的就是详情页/全 App 加载失败。回前台时对
+     * 子进程做一次 /healthz 探测，无响应自动重拉（判定与防误杀口径见 Service 层）。
+     * 与上面 ensureStartedIfLocalMode 的区别：那条只在地址流变化时拉起存活检查，
+     * 探不出「活着但僵死」的子进程。
+     */
+    fun onAppForeground() {
+        val url = lastServerUrl?.takeIf { it.isNotBlank() } ?: return
+        runCatching { embeddedServerController.ensureHealthyIfLocalMode(url) }
     }
 
     /** 系统分享到达（MainActivity 解包 SEND/SEND_MULTIPLE 后调用；覆盖上一次未消费的分享） */

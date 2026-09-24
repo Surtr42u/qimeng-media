@@ -62,11 +62,42 @@ class MainViewModelTest {
         driveIdle()
         assertEquals(SessionState.LoggedOut, viewModel.sessionState.value)
     }
+
+    @Test
+    fun `前台回归透传最近地址给健康检查（2026-09-25 冻结自检接线）`() {
+        val repository = FakeAuthRepository(initialServerUrl = "http://192.0.2.10:18430")
+        val controller = RecordingEmbeddedServerController()
+        val viewModel = MainViewModel(repository, controller, NoopAutoBackupRunner)
+        driveIdle()
+        viewModel.onAppForeground()
+        assertEquals(listOf("http://192.0.2.10:18430"), controller.healthCheckUrls)
+    }
+
+    @Test
+    fun `地址流尚无首个值时前台自检不触发`() {
+        val controller = RecordingEmbeddedServerController()
+        val viewModel = MainViewModel(FakeAuthRepository(), controller, NoopAutoBackupRunner)
+        driveIdle()
+        viewModel.onAppForeground()
+        assertEquals(emptyList<String>(), controller.healthCheckUrls)
+    }
 }
 
 /** U11 批次D：壳层自检消费桩——地址流驱动启停的触发不进本测试的关注面 */
 private object NoopEmbeddedServerController : EmbeddedServerController {
     override fun ensureStartedIfLocalMode(serverUrl: String): Boolean = false
+    override fun ensureHealthyIfLocalMode(serverUrl: String): Boolean = false
+    override fun stop() = Unit
+}
+
+/** 前台回归自检（2026-09-25 冻结事故）的记录桩：断言触发条件与透传地址 */
+private class RecordingEmbeddedServerController : EmbeddedServerController {
+    val healthCheckUrls = mutableListOf<String>()
+    override fun ensureStartedIfLocalMode(serverUrl: String): Boolean = false
+    override fun ensureHealthyIfLocalMode(serverUrl: String): Boolean {
+        healthCheckUrls += serverUrl
+        return true
+    }
     override fun stop() = Unit
 }
 

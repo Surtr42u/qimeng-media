@@ -64,4 +64,18 @@ class EmbeddedServerConfigTest {
         assertFalse(ServerAddress.isLocalModePreset("http://localhost:18500"))
         assertFalse(ServerAddress.isLocalModePreset("http://192.0.2.8:8420"))
     }
+
+    @Test
+    fun `pid 文件解析收合法正数拒脏数据（2026-09-25 残留回收配套）`() {
+        assertEquals(12345, EmbeddedServerConfig.parseRecordedPid("12345"))
+        // 真机写出的文件带换行尾
+        assertEquals(678, EmbeddedServerConfig.parseRecordedPid("678\n"))
+        assertEquals(678, EmbeddedServerConfig.parseRecordedPid(" 678 "))
+        // 脏数据/空文件一律返回 null，回收层按无线索跳过——绝不误杀
+        assertEquals(null, EmbeddedServerConfig.parseRecordedPid(null))
+        assertEquals(null, EmbeddedServerConfig.parseRecordedPid(""))
+        assertEquals(null, EmbeddedServerConfig.parseRecordedPid("abc"))
+        assertEquals(null, EmbeddedServerConfig.parseRecordedPid("0"))
+        assertEquals(null, EmbeddedServerConfig.parseRecordedPid("-42"))
+    }
 }

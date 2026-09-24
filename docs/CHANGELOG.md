@@ -8,6 +8,18 @@
 - 子代理执行的工作标注"（执行子代理）"，主对话直接完成的标注"（主代理）"。
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
+## feat(app): 本机模式冻结自愈 + 内嵌服务端二进制重出——2026-09-25 真机「详情页加载失败」事故修复（2026-09-25 第三百九十笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- **事故与根因**（真机某品牌真机 / Android 16 排查）：用户报「本机模式详情页加载失败」。经 adb forward 直打 API 复现，详情 JSON/标签/时间轴/签名缩略图/签名原图全链 200 毫秒级——接口与数据无恙；真机本机 curl `/healthz` 30s 无响应 + SIGQUIT goroutine dump 定位为**内嵌服务端子进程调度整体停摆**（accept 停在 netpoll、连接协程/scanner 定时器/warmup sleep 全部「计时器已到期、goroutine 已就绪、无线程调度」）。触发规律：两次冻结均在 App 退后台后、插电/回前台后解冻——Android 16 + OEM 省电对后台进程组的冻结/压制连坐裸子进程（与壳进程同 cgroup），FGS 管不到。诊断动作：对已冻死子进程 SIGQUIT 抓堆栈（服务本就无响应，非额外损害）。
+- **冻结自愈**（`EmbeddedServerService`）：新增 `ACTION_HEALTH_CHECK`——探测 `/healthz`（回环、免鉴权、不碰数据库；3s 超时），两次探测（间隔 2s）均无响应即 `destroyForcibly`（冻结进程不执行 SIGTERM 处理器）并原位重拉，发「已自动恢复」一次性通知。触发链：`MainActivity.onStart` → `MainViewModel.onAppForeground()`（记录最近服务端地址，空串=未配置不触发）→ `EmbeddedServerController.ensureHealthyIfLocalMode`。刻意不在看护协程做后台探测：冻结时 Service 与子进程一起被冻，探测跑不动也救不了；前台回归时刻壳进程必已解冻、动作必可执行。配套：`startMutex`（启动序列异步化后防重复 START 并发拉起双子进程）、健康检查单飞闸（AtomicBoolean）、自愈前先摘看护（防 watchdog 把自愈误判为进程死亡而 stopSelf）、身份守卫对齐 `onServerDied`。
+- **残留子进程回收（「后端占用」形态）**：Service 销毁重建后子进程句柄丢失，孤儿仍占 18430 → 新子进程 bind 失败秒退、反复「已退出」。新增 pid 落盘（`files/server/server.pid`，每次启动覆写）+ 启动前回收（`parseRecordedPid` 纯逻辑 + /proc cmdline 须仍含 `libqimeng.so` 防误杀 + SIGKILL 后轮询等端口释放）。子进程 pid 定位用扫 /proc（cmdline 匹配二进制 + stat 的 ppid==壳进程）：compileSdk 37 平台桩的 `java/lang/Process.class` 缺 `pid()`（API 24+ 官方方法编译期不可见，实测）。
+- **内嵌服务端二进制重出**：jniLibs 里的 `libqimeng.so`（arm64 09-18 / x86_64 09-17 旧货）落后于 09-22 服务端批（FK 降级修复/Host 校验/回收站清扫等）——旧二进制下「浏览事件指向已删资产」走 ERROR+500 路径，客户端离线队列对孤儿事件反复重放（真机日志实测三条 FK ERROR）。本次双 ABI 重出随包，FK 场景回归 Warn+202 语义。
+- **测试**：`EmbeddedServerConfigTest` 新增 pid 解析表驱动（合法/带换行/空白/脏数据/负数）；`MainViewModelTest` 新增前台自检透传与无地址不触发两用例 + Recording 桩；既有三处控制器桩（`NoopEmbeddedServerController`/`ServerSettingsViewModelTest`/`AuthRepositoryImplTest` Fake）补新接口方法。相关三模块 testDebugUnitTest 全绿。
+- **文档**：HANDOVER §4 Android 行同步自愈能力记档。
+- **协议/迁移**：零改动（无新端点、无 schema 变化；pid 文件为 App 私有排障产物）。
+
 ## feat(server): 磁盘生命周期与安全加固批——回收站到期清扫 + 缩略图删除联动 + Host 校验防 DNS rebinding（2026-09-22 第三百八十九笔）
 
 执行 AI：GLM-5.3（主代理）

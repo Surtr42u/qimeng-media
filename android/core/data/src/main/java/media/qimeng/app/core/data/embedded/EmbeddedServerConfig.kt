@@ -37,6 +37,20 @@ object EmbeddedServerConfig {
     /** 服务端 stdout/stderr 落盘文件名（Go 结构化日志，排障用；每次启动截断） */
     const val LOG_FILE_NAME = "server.log"
 
+    /** 子进程 pid 落盘文件名（残留子进程回收用，见 [parseRecordedPid]；每次启动覆写） */
+    const val PID_FILE_NAME = "server.pid"
+
+    /**
+     * 解析 pid 文件里的子进程 pid（2026-09-25 冻结事故修复的配套件）。为什么回收要靠
+     * 落盘 pid：Service 销毁重建后手里的子进程句柄丢失，而孤儿子进程仍占着 18430 端口
+     * ——新子进程 bind 失败秒退、本机模式反复「已退出」。pid 文件是跨 Service 生命
+     * 周期的唯一线索；误杀防线在 Service 侧（/proc cmdline 仍是本服务端二进制才动手）。
+     *
+     * 纯逻辑（JVM 单测锁定）：trim 后 toIntOrNull，非正数视为脏数据返回 null。
+     */
+    fun parseRecordedPid(pidFileText: String?): Int? =
+        pidFileText?.trim()?.toIntOrNull()?.takeIf { it > 0 }
+
     /**
      * 子进程环境变量（QIMENG_* 语义与 deploy/termux 脚本同源）：
      * - LISTEN 回环固定端口（端口红线）；DATA_DIR 独立数据根；
