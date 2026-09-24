@@ -6,16 +6,21 @@
 package httpapi
 
 import (
+	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 
 	"github.com/google/uuid"
 
+	"qimeng-media/server/internal/authorattach"
+	"qimeng-media/server/internal/authoring"
 	"qimeng-media/server/internal/config"
 	"qimeng-media/server/internal/events"
 	"qimeng-media/server/internal/filing"
@@ -44,8 +49,10 @@ var errUploadTargetEscape = errors.New("upload target escapes library root")
 //
 // 超函数警戒线（>100 行）理由：oapi-codegen 生成的接口签名 + 单请求
 // 直线流（校验→收流落 tmp→锁内冲突解析与改名→入库→富化→广播→响应装配），
-// 收流段已拆出 receiveUploadToTmp，剩余的局部状态（finalName/maxBytes/lib）
-// 贯穿装配响应全流程，再拆只会提升为结构体在函数间传递。
+// 收流段已拆出 receiveUploadToTmp，入库+挂靠事务段已拆出
+// persistUploadedAsset，挂靠参数校验已拆出 resolveUploadAttach；剩余的局部
+// 状态（finalName/maxBytes/lib）贯穿装配响应全流程，再拆只会提升为结构体
+// 在函数间传递。
 func (s *Server) PostApiV1AssetsUpload(w http.ResponseWriter, r *http.Request, params gen.PostApiV1AssetsUploadParams) {
 	// 第④道前置：文件名清洗（落盘名的唯一来源；ValidateUpload 内部
 	// 校验的是同一规则，这里提前拿清洗结果构造后续路径）。
@@ -77,6 +84,14 @@ func (s *Server) PostApiV1AssetsUpload(w http.ResponseWriter, r *http.Request, p
 	}
 	if err != nil {
 		s.internalErr(w, "查询库", err)
+		return
+	}
+
+	// 挂靠参数校验前置到收流之前（REQ §3.3：拿不到流就开始拒绝，fail-fast
+	// ——参数错误的大请求不该先收完几百 MB 才回 400）。零参数 = 不挂靠，
+	// 后续代码路径与旧上传完全等价（REQ #4 向后兼容）。
+	attachParams, ok := s.resolveUploadAttach(w, r, lib, params)
+	if !ok {
 		return
 	}
 
@@ -213,8 +228,15 @@ func (s *Server) PostApiV1AssetsUpload(w http.ResponseWriter, r *http.Request, p
 			params_.Height = sql.NullInt64{Int64: int64(probeRes.Height), Valid: true}
 		}
 	}
-	asset, err := s.q.UpsertAsset(r.Context(), params_)
+	// 入库 + 挂靠同一事务（REQ §3.3 第 6 条失败安全），细节见
+	// persistUploadedAsset。
+	asset, attachRes, err := s.persistUploadedAsset(r.Context(), params_, finalName, attachParams)
 	if err != nil {
+		// 前置校验已查过作者存在，这里是防御兜底（事务已由被调方回滚）。
+		if errors.Is(err, authorattach.ErrAuthorNotFound) {
+			writeErr(w, http.StatusNotFound, codeNotFound, msgAuthorNotFound)
+			return
+		}
 		s.internalErr(w, "入库上传资产", err)
 		return
 	}
@@ -275,7 +297,51 @@ func (s *Server) PostApiV1AssetsUpload(w http.ResponseWriter, r *http.Request, p
 	if asset.Height.Valid {
 		detail.Height = ptr(int(asset.Height.Int64))
 	}
+	if attachParams.present() {
+		// 挂靠即时可见（REQ §3.3 第 1 条）：响应直接带回挂上的作者，
+		// 客户端无需再发详情请求。协议 Authors 是 Author 对象数组，
+		// 其余字段零值即可（刚建立无统计）。
+		detail.Authors = ptr([]gen.Author{{
+			Id: &attachRes.AuthorID, DisplayName: &attachRes.DisplayName,
+		}})
+		// 片段内容已变：同步刷新本地镜像（尽力而为，REQ §3.4——镜像失败
+		// 不影响上传结果，事务已提交）。
+		s.mirror.Refresh(r.Context(), s.q)
+	}
 	writeJSON(w, http.StatusCreated, detail)
+}
+
+// persistUploadedAsset 把「资产入库 + 挂靠」写入同一事务（REQ §3.3 第 6 条
+// 失败安全）：资产行、片段挂靠、作者行、即时关联要么全成要么全无——挂靠
+// 失败时资产行不落库（文件已落盘但无 DB 行 = 既有语义不变，重传自愈，
+// 不得半更新）。attach 零值（不挂靠）时事务里只有一条 UpsertAsset
+// （SQLite 单写者，与旧上传行为等价）。finalName 传锁内冲突解析后的最终
+// 落盘名——绝不传用户原始 params.Filename（REQ §3.3 第 3 条）。
+func (s *Server) persistUploadedAsset(ctx context.Context, row db.UpsertAssetParams, finalName string, attach uploadAttachParams) (db.Asset, authorattach.AttachResult, error) {
+	tx, err := s.conn.BeginTx(ctx, nil)
+	if err != nil {
+		return db.Asset{}, authorattach.AttachResult{}, err
+	}
+	defer func() { _ = tx.Rollback() }() // Commit 后 Rollback 是无害空操作
+	qtx := s.q.WithTx(tx)
+	asset, err := qtx.UpsertAsset(ctx, row)
+	if err != nil {
+		return db.Asset{}, authorattach.AttachResult{}, err
+	}
+	var res authorattach.AttachResult
+	if attach.present() {
+		res, err = s.attach.Apply(ctx, qtx, s.now(), authorattach.AttachRequest{
+			AssetID:    asset.AssetID,
+			FinalName:  finalName,
+			AuthorID:   attach.authorID,
+			AuthorName: attach.authorName,
+			Sources:    attach.sources,
+		})
+		if err != nil {
+			return db.Asset{}, authorattach.AttachResult{}, err
+		}
+	}
+	return asset, res, tx.Commit()
 }
 
 // 上传临时文件名的前后缀：与最终落盘名同目录（同卷才能原子 rename）。
@@ -371,4 +437,113 @@ func newUploadAssetID() string {
 		return uuid.NewString()
 	}
 	return id.String()
+}
+
+// 上传挂靠参数（source 数组）的协议上限。与 api/openapi.yaml
+// PostApiV1AssetsUploadParams 的 source 参数（maxItems: 32、items
+// maxLength: 500）双写同步：协议侧改动须同步这里，反之亦然
+// （同步责任注释风格见 pagination.go）。
+const (
+	maxAttachSources   = 32
+	maxAttachSourceLen = 500
+)
+
+// msgAuthorNotFound 是挂靠路径「作者不存在」的用户可读文案（前置校验与
+// Apply 防御兜底两处共用；与关注端点同文案属巧合对齐，非机器同步值）。
+const msgAuthorNotFound = "作者不存在"
+
+// uploadAttachParams 是挂靠三参数（authorId/authorName/source）的规范化
+// 形态：指针参数统一 trim，source 数组逐项 trim、去空、保序去重。零值 =
+// 本次上传不挂靠（与旧上传行为完全一致）。
+type uploadAttachParams struct {
+	authorID   string
+	authorName string
+	sources    []string
+}
+
+// present 报告是否携带任一挂靠参数（校验分派与响应装配的开关）。
+func (p uploadAttachParams) present() bool {
+	return p.authorID != "" || p.authorName != "" || len(p.sources) > 0
+}
+
+// resolveUploadAttach 校验并规范化挂靠参数（收流之前 fail-fast）。
+// 校验顺序即拒绝顺序：上限 → 互斥 → source 须随作者 → 库类型能力 →
+// 作者名合法性 → 作者存在性（REQ §3.3）。失败时响应已写完，返回 ok=false。
+func (s *Server) resolveUploadAttach(w http.ResponseWriter, r *http.Request, lib db.Library, params gen.PostApiV1AssetsUploadParams) (uploadAttachParams, bool) {
+	var out uploadAttachParams
+	if params.AuthorId != nil {
+		out.authorID = strings.TrimSpace(*params.AuthorId)
+	}
+	if params.AuthorName != nil {
+		out.authorName = strings.TrimSpace(*params.AuthorName)
+	}
+	if params.Source != nil {
+		// 项数上限按原始数组判（协议 maxItems 约束数组本身，空串项不豁免）。
+		if len(*params.Source) > maxAttachSources {
+			writeErr(w, http.StatusBadRequest, codeInvalidParam,
+				fmt.Sprintf("source 超过 %d 项上限", maxAttachSources))
+			return out, false
+		}
+		seen := make(map[string]bool, len(*params.Source))
+		for _, raw := range *params.Source {
+			item := strings.TrimSpace(raw)
+			if item == "" {
+				continue // 空项静默丢弃（客户端表单常见空尾巴）
+			}
+			if len(item) > maxAttachSourceLen {
+				writeErr(w, http.StatusBadRequest, codeInvalidParam,
+					fmt.Sprintf("单个 source 超过 %d 字符上限", maxAttachSourceLen))
+				return out, false
+			}
+			// 控制字符注入拦截：source 含换行/回车可向 TXT 真相注入任意行
+			//（审查 PoC：`source=x\n作品\n恶意行.png`），与既有上限校验并排
+			//（rune 上限常量在 authoring.MaxSourceWordRunes，与 openapi
+			// maxLength: 500 双写）。
+			if !authoring.ValidSourceWord(item) {
+				writeErr(w, http.StatusBadRequest, codeInvalidParam, "来源含非法字符")
+				return out, false
+			}
+			if seen[item] {
+				continue // 重复勾选幂等（REQ §3.3 第 4 条）
+			}
+			seen[item] = true
+			out.sources = append(out.sources, item)
+		}
+	}
+	switch {
+	case out.authorID != "" && out.authorName != "":
+		writeErr(w, http.StatusBadRequest, codeInvalidParam, "authorId 与 authorName 互斥，只能填一个")
+		return out, false
+	case len(out.sources) > 0 && out.authorID == "" && out.authorName == "":
+		writeErr(w, http.StatusBadRequest, codeInvalidParam, "source 须与作者参数同时出现")
+		return out, false
+	case out.present() && !scanner.SupportsAuthorAttach(lib.Kind):
+		writeErr(w, http.StatusBadRequest, codeInvalidParam, "该库类型不支持作者挂靠")
+		return out, false
+	case out.authorName != "" && !authoring.ValidNewAuthorName(out.authorName):
+		writeErr(w, http.StatusBadRequest, codeInvalidParam, "作者名不合法")
+		return out, false
+	}
+	if out.authorID != "" {
+		// 存在性 + 常规作者双条件：COS 作者 id（cos_ 前缀）不允许挂靠
+		//（挂靠写 TXT 片段，COS 体系隔离）。全量 ListAuthors 内存找——
+		// 作者表量级百级，不为单查开新查询（与 authorattach 同拍板）。
+		rows, err := s.q.ListAuthors(r.Context())
+		if err != nil {
+			s.internalErr(w, "查询挂靠作者", err)
+			return out, false
+		}
+		found := false
+		for _, row := range rows {
+			if row.ID == out.authorID && row.Type == authoring.AuthorTypeRegular {
+				found = true
+				break
+			}
+		}
+		if !found {
+			writeErr(w, http.StatusNotFound, codeNotFound, msgAuthorNotFound)
+			return out, false
+		}
+	}
+	return out, true
 }

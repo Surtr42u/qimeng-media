@@ -56,6 +56,10 @@ class UploadWorker @AssistedInject constructor(
             UploadItem(spec.uri, spec.displayName, spec.sizeBytes),
             spec.libraryId,
             spec.dir,
+            // 挂靠参数随载荷透传（REQ §3.1；入队快照经 WorkManager Data 原样带到请求 query）
+            authorId = spec.authorId,
+            authorName = spec.authorName,
+            sources = spec.sources,
             isCancelled = { cancelRegistry.isCancelled(spec.localId) },
         ) { done, total, percent ->
             setProgress(

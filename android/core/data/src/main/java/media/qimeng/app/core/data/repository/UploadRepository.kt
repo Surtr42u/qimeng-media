@@ -1,6 +1,8 @@
 package media.qimeng.app.core.data.repository
 
 import kotlinx.coroutines.flow.Flow
+import media.qimeng.app.core.model.AuthorSourceStat
+import media.qimeng.app.core.model.AuthorSuggestion
 import media.qimeng.app.core.model.DirNode
 import media.qimeng.app.core.model.LibraryChoice
 import media.qimeng.app.core.model.UploadItem
@@ -19,8 +21,20 @@ data class QueuedUpload(
  */
 interface UploadRepository {
 
-    /** 可选目标库列表（GET /libraries） */
+    /** 可选目标库列表（GET /libraries；authorAttach 来自 Library.capabilities） */
     suspend fun libraries(): List<LibraryChoice>
+
+    /**
+     * 作者联想（GET /authors/suggest；上传挂靠输入框数据源，REQ §3.1①）。
+     * 子串匹配/别名命中/大小写不敏感全在服务端，客户端只透传词条。
+     */
+    suspend fun suggestAuthors(q: String, limit: Int = DEFAULT_SUGGEST_LIMIT): List<AuthorSuggestion>
+
+    /**
+     * 作者来源词表（GET /authors/sources；上传挂靠来源快捷选项数据源，REQ §3.1②）。
+     * 服务端单一来源（ADR-0008：客户端禁硬编码词表）。
+     */
+    suspend fun authorSources(): List<AuthorSourceStat>
 
     /** 目标库目录树（GET /dirs，libraryId 必填；根节点 path=""） */
     suspend fun dirTree(libraryId: String): DirNode
@@ -41,8 +55,19 @@ interface UploadRepository {
     /**
      * 入队（串行 unique 链，并发=1）。返回入队回执（含客户端 localId）。
      * 网络约束 + 退避重试在请求侧声明：断网自动等待恢复，中断按官方 retry 语义续跑。
+     *
+     * 挂靠参数（REQ §3.1，与 dir 同为「入队时刻快照」）：[authorId]（点选既有作者）与
+     * [authorName]（回车新建）互斥，调用方保证只传其一；[sources] 为来源词多选。
+     * 三者留空/空列表 = 行为与既有上传完全一致（协议向后兼容）。
      */
-    fun enqueue(items: List<UploadItem>, libraryId: String, dir: String): List<QueuedUpload>
+    fun enqueue(
+        items: List<UploadItem>,
+        libraryId: String,
+        dir: String,
+        authorId: String? = null,
+        authorName: String? = null,
+        sources: List<String> = emptyList(),
+    ): List<QueuedUpload>
 
     /**
      * 取消单个队列任务（批C 任务Q C-2，排队中与上传中皆可）。
@@ -56,4 +81,12 @@ interface UploadRepository {
 
     /** 队列状态流（WorkManager WorkInfo 映射；UI 直接渲染 UploadQueueEntry） */
     fun queueUpdates(): Flow<List<UploadQueueEntry>>
+
+    companion object {
+        /**
+         * 作者联想默认条数——与 openapi.yaml GET /authors/suggest 的 limit default=10 双写，
+         * 协议侧改动须同步此处，反之亦然（代码卫生约束 3）。
+         */
+        const val DEFAULT_SUGGEST_LIMIT = 10
+    }
 }

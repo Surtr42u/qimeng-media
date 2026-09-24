@@ -61,6 +61,15 @@ const (
 	LibraryKindCos    = "cos"
 )
 
+// SupportsAuthorAttach 报告库类型是否支持上传挂靠作者/来源：normal=true，
+// cos=false（COS 作者由目录结构派生，挂靠无意义，REQ §3.2）。
+// 这是「是否支持作者挂靠」能力声明的单一来源（ADR-0012 接入清单项）：
+// 新增库类型在此注册；协议侧 Library.capabilities.authorAttach 的产出与
+// 上传端点的挂靠参数校验都调用本函数，禁止在 handler 写死 kind 字符串。
+func SupportsAuthorAttach(kind string) bool {
+	return kind == LibraryKindNormal
+}
+
 // loadCustomSources 读取用户自定义出处名列表（JSON 字符串数组）。
 // 任何失败（无记录/损坏 JSON）降级为空集——自定义出处是增强能力，
 // 不允许它阻断扫描；损坏情况 warn 留痕便于排查。

@@ -1,22 +1,28 @@
 import { useRef, useState, type ChangeEvent, type DragEvent } from 'react'
 import { toast } from 'sonner'
 import type { Library } from '@/api/generated'
+import { AuthorSuggestField, type AuthorAttachValue } from '@/components/manage/AuthorSuggestField'
 import { DirTreeNodes } from '@/components/manage/DirTree'
+import { SourceSelectField } from '@/components/manage/SourceSelectField'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
 import { mergeClientConfig, useConfig } from '@/hooks/use-config'
 import { useDirTree } from '@/hooks/use-libraries'
 import { useUploadQueue, type UploadItem } from '@/hooks/use-upload'
 import { formatBytes } from '@/lib/format'
+import type { UploadAuthorAttach } from '@/lib/upload-params'
 
 /**
  * 上传卡（W-1：文件管理页「上传」入口；后端 POST /assets/upload 四道校验
  * 早已就绪，本卡只补前端壳）。流程 = 选库 → 目录树选目标目录（默认库根）
- * → 点击/拖入文件 → 队列表（文件名/大小/进度条/状态）→ 逐条 toast。
+ * → 可选作者/来源挂靠（REQ-上传指定作者与来源 §3.1；仅
+ * capabilities.authorAttach===true 的库显示，禁止写死 kind）→ 点击/拖入文件
+ * → 队列表（文件名/大小/进度条/状态）→ 逐条 toast。
  *
  * 口径：上传逻辑全在 hooks/use-upload.ts（铁律 7）；大小上限前置读
  * GET /config 的 upload 项（设置页实时生效），类型白名单不在前端复制——
  * 服务端四道校验是唯一口径，4xx 文案原样透传展示；切路由由 hook 卸载
- * 清理自动 abort 整队。
+ * 清理自动 abort 整队。挂靠目标（作者身份+来源）在入队时刻与 dir 同一
+ * 批次快照：整批生效，入队后改选不影响已排队条目。
  */
 
 /** 状态列文案（uploading 按 percent 分两段：字节传输中 / 服务端入库处理中） */
@@ -39,10 +45,19 @@ export function UploadCard({ libraries }: { libraries: Library[] }) {
   const [libId, setLibId] = useState('')
   // 目标目录 = 库内相对路径（协议 dir 参数，'' = 库根）；切库必须重选（旧库路径对新库无意义）
   const [dir, setDir] = useState('')
+  // 挂靠两字段（REQ §3.1）：作者/来源均为可选；来源依附作者（未选作者时禁用）
+  const [author, setAuthor] = useState<AuthorAttachValue | null>(null)
+  const [sources, setSources] = useState<string[]>([])
   const [dragOver, setDragOver] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const enabled = libId !== ''
+  // 挂靠字段显隐只看能力声明（capabilities.authorAttach，ADR-0012 接入清单项；
+  // 服务端按 kind 注册表单一来源产出）——禁止写死 kind==='normal'（REQ §3.2）
+  const selectedLib = libraries.find((l) => l.id === libId)
+  const attachEnabled = selectedLib?.capabilities?.authorAttach === true
+  const authorAttached =
+    author != null && (author.authorId != null || author.authorName != null)
   // 目录树复用既有数据源（GET /dirs）；未选库时挂起不发请求
   const { data: tree } = useDirTree(libId, enabled)
   const { data: config } = useConfig()
@@ -59,23 +74,38 @@ export function UploadCard({ libraries }: { libraries: Library[] }) {
     },
   })
 
+  /** 入队挂靠快照（与 dir 同一批次口径）：有作者身份才带 authorId/authorName，
+   *  来源仅在挂靠非空时传（协议 source 仅指定作者时合法） */
+  const attachSnapshot = (): { author?: UploadAuthorAttach; sources?: string[] } | undefined => {
+    if (author?.authorId) return { author: { authorId: author.authorId }, sources }
+    if (author?.authorName) return { author: { authorName: author.authorName }, sources }
+    return undefined
+  }
+
   const pickFiles = (e: ChangeEvent<HTMLInputElement>): void => {
     const files = Array.from(e.target.files ?? [])
     e.target.value = '' // 置空以允许重复选择同一文件
-    queue.enqueue(files)
+    queue.enqueue(files, attachSnapshot())
   }
 
   const onDrop = (e: DragEvent<HTMLDivElement>): void => {
     e.preventDefault()
     setDragOver(false)
     if (!enabled) return
-    queue.enqueue(Array.from(e.dataTransfer.files ?? []))
+    queue.enqueue(Array.from(e.dataTransfer.files ?? []), attachSnapshot())
   }
 
-  /** 切库同时清空已选目录：目录是库内相对路径，跨库残留会指到错误位置 */
+  /** 切库同时清空已选目录：目录是库内相对路径，跨库残留会指到错误位置；
+   *  挂靠字段同理一并复位（新库不支持挂靠时残留的作者/来源无意义） */
   const onLibChange = (next: string): void => {
     setLibId(next)
     setDir('')
+    const nextSupportsAttach =
+      libraries.find((l) => l.id === next)?.capabilities?.authorAttach === true
+    if (!nextSupportsAttach) {
+      setAuthor(null)
+      setSources([])
+    }
   }
 
   return (
@@ -111,6 +141,13 @@ export function UploadCard({ libraries }: { libraries: Library[] }) {
               onSelect={(node) => setDir(node.path ?? '')}
             />
           </ul>
+        </div>
+      )}
+      {/* 挂靠两字段位于目录选择与文件选择之间（REQ §3.1）：均留空=不指定 */}
+      {enabled && attachEnabled && (
+        <div className="upload-attach">
+          <AuthorSuggestField value={author} onChange={setAuthor} />
+          <SourceSelectField selected={sources} onChange={setSources} disabled={!authorAttached} />
         </div>
       )}
       <div

@@ -43,6 +43,15 @@ export const SEARCH_SUGGESTIONS_QUERY_KEY = ['api/v1/search/suggestions'] as con
 /** 已导入作者 TXT 片段列表（/authors/import-txt） */
 export const TXT_FILES_QUERY_KEY = [...AUTHORS_QUERY_KEY, 'import-txt'] as const
 
+/** 作者联想（q 追加为子段；/authors/suggest——上传挂靠字段消费，无失效需求靠 staleTime 控制） */
+export const AUTHOR_SUGGEST_QUERY_KEY = [...AUTHORS_QUERY_KEY, 'suggest'] as const
+
+/** 作者来源词表（/authors/sources——上传挂靠来源快捷选项，staleTime 控制时效） */
+export const AUTHOR_SOURCES_QUERY_KEY = [...AUTHORS_QUERY_KEY, 'sources'] as const
+
+/** 作者总表镜像配置（/authors/mirror——设置页镜像卡读取，保存后失效） */
+export const AUTHOR_MIRROR_QUERY_KEY = [...AUTHORS_QUERY_KEY, 'mirror'] as const
+
 export const TRASH_QUERY_KEY = ['api/v1/trash'] as const
 
 /** 推荐流（limit 追加为第二段；上传入库后首页卡片流需刷新） */

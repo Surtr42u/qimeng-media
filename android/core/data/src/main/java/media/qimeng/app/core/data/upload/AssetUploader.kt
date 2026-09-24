@@ -54,6 +54,11 @@ class AssetUploader @Inject constructor(
      * 上传一个文件到 目标库+目录。服务端冲突自动重命名：成功返回最终文件名。
      * IO 全程 Dispatchers.IO；永不抛异常，失败全部收敛为 [UploadOutcome]。
      *
+     * 挂靠可选参数（REQ §3.1，透传到上传 query）：[authorId]（点选既有作者）与
+     * [authorName]（回车新建）互斥，调用方保证只传其一；[sources] 为来源词多选——
+     * query 同名 `source` 重复 addQueryParameter（与 GET /assets 数组参数同款传法）。
+     * 三者留空 = 请求与旧版完全一致（协议向后兼容）。
+     *
      * [isCancelled]（批C 任务Q C-2）：每次分块写入前查询；返回 true 时抛
      * [UploadCancelledException] 立即断流（64KB 网络写入粒度，亚秒级生效），
      * 由 [UploadOutcome.Cancelled] 收敛为取消终态。
@@ -62,6 +67,9 @@ class AssetUploader @Inject constructor(
         item: UploadItem,
         libraryId: String,
         dir: String,
+        authorId: String? = null,
+        authorName: String? = null,
+        sources: List<String> = emptyList(),
         isCancelled: () -> Boolean = { false },
         onProgress: ProgressListener,
     ): UploadOutcome = withContext(Dispatchers.IO) {
@@ -73,6 +81,12 @@ class AssetUploader @Inject constructor(
             .addQueryParameter("libraryId", libraryId)
             .addQueryParameter("dir", dir)
             .addQueryParameter("filename", item.displayName)
+            .apply {
+                // 挂靠参数仅在有值时拼（null/空列表 = 与旧版请求逐字节一致）
+                if (authorId != null) addQueryParameter("authorId", authorId)
+                if (authorName != null) addQueryParameter("authorName", authorName)
+                sources.forEach { addQueryParameter("source", it) }
+            }
             .build()
 
         val source = openSource(item.uri)

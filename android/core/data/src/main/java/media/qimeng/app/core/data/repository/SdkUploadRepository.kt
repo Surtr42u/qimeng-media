@@ -19,6 +19,8 @@ import kotlinx.coroutines.withContext
 import media.qimeng.app.core.data.upload.UploadCancelRegistry
 import media.qimeng.app.core.data.upload.UploadWorker
 import media.qimeng.app.core.data.upload.UploadWorkSpec
+import media.qimeng.app.core.model.AuthorSourceStat
+import media.qimeng.app.core.model.AuthorSuggestion
 import media.qimeng.app.core.model.DirNode
 import media.qimeng.app.core.model.LibraryChoice
 import media.qimeng.app.core.model.UploadItem
@@ -54,7 +56,30 @@ class SdkUploadRepository @Inject constructor(
         val libs = withContext(Dispatchers.IO) { apiFactory.create().apiV1LibrariesGet() }
         return libs.mapNotNull { lib ->
             val id = lib.id ?: return@mapNotNull null
-            LibraryChoice(id = id, name = lib.name ?: id)
+            LibraryChoice(
+                id = id,
+                name = lib.name ?: id,
+                // 挂靠能力显隐唯一判据（REQ §3.2：读能力声明，禁止写死 kind）
+                authorAttach = lib.capabilities?.authorAttach ?: false,
+            )
+        }
+    }
+
+    override suspend fun suggestAuthors(q: String, limit: Int): List<AuthorSuggestion> {
+        Log.d(SdkMediaRepository.LOG_TAG, "GET /authors/suggest q=$q limit=$limit")
+        val items = withContext(Dispatchers.IO) { apiFactory.create().apiV1AuthorsSuggestGet(q, limit) }
+        return items.mapNotNull { item ->
+            val id = item.id ?: return@mapNotNull null
+            AuthorSuggestion(id = id, displayName = item.displayName ?: id, fileCount = item.fileCount ?: 0)
+        }
+    }
+
+    override suspend fun authorSources(): List<AuthorSourceStat> {
+        Log.d(SdkMediaRepository.LOG_TAG, "GET /authors/sources")
+        val vocabulary = withContext(Dispatchers.IO) { apiFactory.create().apiV1AuthorsSourcesGet() }
+        return vocabulary.sources.orEmpty().mapNotNull { stat ->
+            val name = stat.name?.trim()?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+            AuthorSourceStat(name = name, authorCount = stat.authorCount ?: 0)
         }
     }
 
@@ -84,7 +109,14 @@ class SdkUploadRepository @Inject constructor(
         uris.map { uriString -> describeOne(Uri.parse(uriString)) }
     }
 
-    override fun enqueue(items: List<UploadItem>, libraryId: String, dir: String): List<QueuedUpload> {
+    override fun enqueue(
+        items: List<UploadItem>,
+        libraryId: String,
+        dir: String,
+        authorId: String?,
+        authorName: String?,
+        sources: List<String>,
+    ): List<QueuedUpload> {
         val workManager = WorkManager.getInstance(context)
         return items.map { item ->
             val localId = UUID.randomUUID().toString()
@@ -100,6 +132,10 @@ class SdkUploadRepository @Inject constructor(
                 dir = itemDir,
                 displayName = item.displayName,
                 sizeBytes = item.sizeBytes,
+                // 挂靠参数随批快照（REQ §3.1：整批共用同一作者/来源；留空不传=行为不变）
+                authorId = authorId,
+                authorName = authorName,
+                sources = sources,
             )
             val request = OneTimeWorkRequestBuilder<UploadWorker>()
                 .setInputData(UploadWorkSpec.itemToInputData(spec))
@@ -120,9 +156,13 @@ class SdkUploadRepository @Inject constructor(
             workManager
                 .beginUniqueWork(UploadWorkSpec.UNIQUE_WORK_NAME, ExistingWorkPolicy.APPEND_OR_REPLACE, request)
                 .enqueue()
+            // 挂靠参数留证（文本证据协议）；新建作者走 authorName，点选走 authorId，"-"=未指定
+            val authorIdText = authorId ?: "-"
+            val authorNameText = authorName ?: "-"
             Log.i(
                 SdkMediaRepository.LOG_TAG,
-                "enqueue upload localId=$localId file=${item.displayName} dir=$itemDir",
+                "enqueue upload localId=$localId file=${item.displayName} dir=$itemDir" +
+                    " authorId=$authorIdText authorName=$authorNameText sources=$sources",
             )
             QueuedUpload(localId = localId, displayName = item.displayName)
         }

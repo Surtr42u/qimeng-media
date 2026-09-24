@@ -11,9 +11,10 @@
  *   推荐搜索（recommend=1 随机五维词，服务端随机、每次打开换一批）。
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router'
 import type { SearchSuggestion, SearchSuggestionType } from '@/api/generated'
+import { SUGGEST_DEBOUNCE_MS, useDebouncedValue } from '@/hooks/use-debounced-value'
 import { useRecommendSearchWords, useSearchSuggestions } from '@/hooks/use-suggestions'
 import { HOME_TABS, RANK_PERIODS, parseRankPeriod } from '@/lib/home-tabs'
 import { HOME_PATH } from '@/lib/route-keys'
@@ -26,9 +27,6 @@ const HISTORY_STORAGE_KEY = 'qimeng_search_history'
 const HISTORY_MAX_ENTRIES = 20
 /** 面板默认展示条数（超出收进「展开更多」；MOCK 常量 SEARCH_HISTORY_VISIBLE_COUNT 已废弃） */
 const HISTORY_VISIBLE_COUNT = 8
-
-/** 补全请求防抖（ms）：逐键请求是无意义的请求风暴，停顿 200ms 才取数 */
-const SUGGEST_DEBOUNCE_MS = 200
 
 /** 补全候选维度 → 徽标文案（协议 SearchSuggestionType 五个法值，缺一不可） */
 const SUGGEST_TYPE_LABELS: Record<SearchSuggestionType, string> = {
@@ -52,16 +50,6 @@ function loadHistory(): string[] {
 /** 写回搜索历史（去重最新在前 + 上限截断） */
 function saveHistory(list: string[]): void {
   localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(list.slice(0, HISTORY_MAX_ENTRIES)))
-}
-
-/** 输入防抖：值稳定 delayMs 后才同步给消费方（TopBar 内联实现，仅此一处使用） */
-function useDebouncedValue<T>(value: T, delayMs: number): T {
-  const [debounced, setDebounced] = useState(value)
-  useEffect(() => {
-    const timer = setTimeout(() => setDebounced(value), delayMs)
-    return () => clearTimeout(timer)
-  }, [value, delayMs])
-  return debounced
 }
 
 /** 推荐词去重：跨维同名（作者与角色同名等）在 chip 流里只保留一个词 */

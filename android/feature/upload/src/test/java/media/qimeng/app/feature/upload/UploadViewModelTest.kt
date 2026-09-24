@@ -10,6 +10,8 @@ import org.junit.Rule
 import org.junit.Test
 import media.qimeng.app.core.data.upload.FolderScanResult
 import media.qimeng.app.core.data.upload.FolderScanner
+import media.qimeng.app.core.model.AuthorSuggestion
+import media.qimeng.app.core.model.AuthorSourceStat
 import media.qimeng.app.core.model.LibraryChoice
 import media.qimeng.app.core.model.UploadItem
 import media.qimeng.app.core.model.UploadLimits
@@ -22,6 +24,7 @@ import media.qimeng.app.core.testing.MainDispatcherRule
 /**
  * 上传流表单状态机锁定（M4-5）：超限本地拦截 / 入队参数与顺序 / 新建目录校验 / 分享接收 / 队列透传。
  * U10-6c 追加：选文件夹扫描合并（去重/相对目录入队映射/截断跳过提示/扫描中防抖）。
+ * 挂靠批追加（REQ §3.1）：作者联想/回车新建/来源多选/显隐挂 capabilities.authorAttach。
  * 队列串行执行本身由 WorkManager unique 链官方语义保证（UploadWorkSpec 注释），
  * 实机串行时间线走模拟器文本证据（HANDOVER_APP §4.7）。
  */
@@ -387,6 +390,217 @@ class UploadViewModelTest {
         repository.pushQueue(listOf(queueEntry(UploadStatus.CANCELLED)))
         driveIdle()
         assertFalse(viewModel.uiState.value.hasActiveWork)
+    }
+
+    // ---- REQ §3.1：上传挂靠作者与来源 ----
+
+    /** authorAttach=true 的默认库（libraryA 补能力）+ 预置来源词表 */
+    private fun attachRepository(): FakeUploadRepository = FakeUploadRepository().apply {
+        librariesResult = listOf(libraryA.copy(authorAttach = true), libraryB)
+        authorSourcesResult = listOf(AuthorSourceStat("kemono", 3), AuthorSourceStat("r34", 1))
+    }
+
+    @Test
+    fun `不支持挂靠的库不启用作者区且入队不带挂靠参数`() {
+        val (viewModel, repository) = newViewModel() // libraryA 默认 authorAttach=false
+        assertFalse(viewModel.uiState.value.authorAttachEnabled)
+        viewModel.acceptUris(listOf("content://x/1"))
+        driveIdle()
+        viewModel.enqueue()
+        driveIdle()
+        val call = repository.enqueueCalls.single()
+        assertNull(call.authorId)
+        assertNull(call.authorName)
+        assertTrue(call.sources.isEmpty())
+    }
+
+    @Test
+    fun `authorAttach库启用作者区并预载来源词表`() {
+        val (viewModel, _) = newViewModel(attachRepository())
+        assertTrue(viewModel.uiState.value.authorAttachEnabled)
+        assertEquals(listOf("kemono", "r34"), viewModel.uiState.value.sourceOptions.map { it.name })
+    }
+
+    @Test
+    fun `enqueue成功后重新请求来源词表`() {
+        val repository = attachRepository()
+        val (viewModel, _) = newViewModel(repository)
+        assertEquals(1, repository.authorSourcesCallCount) // 进入界面首载一次
+        // 服务端词表在上传间被新数据扩充（如上一批入队写入的新来源）
+        repository.authorSourcesResult = listOf(AuthorSourceStat("kemono", 3), AuthorSourceStat("新站点", 1))
+        viewModel.acceptUris(listOf("content://x/1"))
+        driveIdle()
+        viewModel.enqueue()
+        driveIdle()
+        assertEquals(2, repository.authorSourcesCallCount) // 入队成功后强制重拉（REQ §3.1② 词表随作者数据自动扩充）
+        assertEquals(listOf("kemono", "新站点"), viewModel.uiState.value.sourceOptions.map { it.name })
+    }
+
+    @Test
+    fun `作者联想防抖后才发查询并回填`() {
+        val (viewModel, repository) = newViewModel(
+            attachRepository().apply {
+                suggestResult = { listOf(AuthorSuggestion("a-1", "作者X / 别名", 5)) }
+            },
+        )
+        viewModel.onAuthorQueryChange("作者X")
+        // 防抖窗口内未出网（虚拟时间未推进）
+        assertTrue(repository.suggestCalls.isEmpty())
+        driveIdle()
+        assertEquals(listOf("作者X"), repository.suggestCalls)
+        assertEquals(1, viewModel.uiState.value.authorSuggestions.size)
+    }
+
+    @Test
+    fun `点选联想作者入队带authorId不带authorName`() {
+        val (viewModel, repository) = newViewModel(
+            attachRepository().apply {
+                suggestResult = { listOf(AuthorSuggestion("a-1", "作者X / 别名", 5)) }
+            },
+        )
+        viewModel.onAuthorQueryChange("作者X")
+        driveIdle()
+        viewModel.selectAuthorSuggestion(viewModel.uiState.value.authorSuggestions.single())
+        viewModel.acceptUris(listOf("content://x/1"))
+        driveIdle()
+        viewModel.enqueue()
+        driveIdle()
+        val call = repository.enqueueCalls.single()
+        assertEquals("a-1", call.authorId)
+        assertNull(call.authorName)
+        assertTrue(call.sources.isEmpty())
+    }
+
+    @Test
+    fun `联想无匹配回车新建入队带authorName`() {
+        val (viewModel, repository) = newViewModel(attachRepository()) // suggestResult 默认空
+        viewModel.onAuthorQueryChange("  全新作者  ")
+        driveIdle()
+        viewModel.commitAuthorInput()
+        driveIdle() // uiState 经 combine().stateIn 异步传播，直调后需推进调度器
+        assertEquals("全新作者", viewModel.uiState.value.pendingNewAuthor)
+        viewModel.acceptUris(listOf("content://x/1"))
+        driveIdle()
+        viewModel.enqueue()
+        driveIdle()
+        val call = repository.enqueueCalls.single()
+        assertNull(call.authorId)
+        assertEquals("全新作者", call.authorName)
+    }
+
+    @Test
+    fun `大小写变体回车归并到既有作者不裂分身`() {
+        val (viewModel, repository) = newViewModel(
+            attachRepository().apply {
+                suggestResult = { listOf(AuthorSuggestion("a-1", "FGnilin", 3)) }
+            },
+        )
+        viewModel.onAuthorQueryChange("fgnilin")
+        driveIdle()
+        viewModel.commitAuthorInput()
+        driveIdle() // uiState 异步传播
+        assertEquals("a-1", viewModel.uiState.value.selectedAuthor?.id)
+        viewModel.acceptUris(listOf("content://x/1"))
+        driveIdle()
+        viewModel.enqueue()
+        driveIdle()
+        val call = repository.enqueueCalls.single()
+        assertEquals("a-1", call.authorId)
+        assertNull(call.authorName)
+    }
+
+    @Test
+    fun `authorAttach库留空上传不带挂靠参数行为不变`() {
+        val (viewModel, repository) = newViewModel(attachRepository())
+        viewModel.acceptUris(listOf("content://x/1"))
+        driveIdle()
+        viewModel.enqueue()
+        driveIdle()
+        val call = repository.enqueueCalls.single()
+        assertNull(call.authorId)
+        assertNull(call.authorName)
+        assertTrue(call.sources.isEmpty())
+    }
+
+    @Test
+    fun `来源toggle与自由输入trim去重`() {
+        val (viewModel, repository) = newViewModel(attachRepository())
+        viewModel.onAuthorQueryChange("作者X")
+        driveIdle()
+        viewModel.selectAuthorSuggestion(AuthorSuggestion("a-1", "作者X", 5))
+        viewModel.toggleSource("kemono")
+        viewModel.toggleSource("r34")
+        viewModel.toggleSource("kemono") // 再点取消
+        viewModel.addCustomSource("  新站点  ") // trim
+        viewModel.addCustomSource("新站点") // 去重
+        driveIdle() // uiState 异步传播
+        assertEquals(listOf("r34", "新站点"), viewModel.uiState.value.sources)
+        viewModel.acceptUris(listOf("content://x/1"))
+        driveIdle()
+        viewModel.enqueue()
+        driveIdle()
+        assertEquals(listOf("r34", "新站点"), repository.enqueueCalls.single().sources)
+    }
+
+    @Test
+    fun `未选作者时来源不可编辑`() {
+        val (viewModel, repository) = newViewModel(attachRepository())
+        viewModel.toggleSource("kemono")
+        viewModel.addCustomSource("kemono")
+        driveIdle() // uiState 异步传播
+        assertTrue(viewModel.uiState.value.sources.isEmpty())
+        assertFalse(viewModel.uiState.value.hasAuthor)
+        // 入队同样不带来源（VM 门槛之外再由快照口径兜底）
+        viewModel.acceptUris(listOf("content://x/1"))
+        driveIdle()
+        viewModel.enqueue()
+        driveIdle()
+        assertTrue(repository.enqueueCalls.single().sources.isEmpty())
+    }
+
+    @Test
+    fun `输入新文本先清确定态重新草拟`() {
+        val (viewModel, _) = newViewModel(attachRepository())
+        viewModel.onAuthorQueryChange("作者X")
+        driveIdle()
+        viewModel.selectAuthorSuggestion(AuthorSuggestion("a-1", "作者X", 5))
+        viewModel.onAuthorQueryChange("改主意")
+        driveIdle() // uiState 异步传播
+        assertNull(viewModel.uiState.value.selectedAuthor)
+        assertNull(viewModel.uiState.value.pendingNewAuthor)
+        assertEquals("改主意", viewModel.uiState.value.authorQuery)
+    }
+
+    @Test
+    fun `切库清空作者与来源状态`() {
+        val (viewModel, _) = newViewModel(attachRepository())
+        viewModel.onAuthorQueryChange("作者X")
+        driveIdle()
+        viewModel.selectAuthorSuggestion(AuthorSuggestion("a-1", "作者X", 5))
+        viewModel.toggleSource("kemono")
+        viewModel.selectLibrary(libraryB)
+        driveIdle()
+        val state = viewModel.uiState.value
+        assertEquals("", state.authorQuery)
+        assertNull(state.selectedAuthor)
+        assertNull(state.pendingNewAuthor)
+        assertTrue(state.sources.isEmpty())
+        assertFalse(state.authorAttachEnabled) // libraryB 无挂靠能力
+    }
+
+    @Test
+    fun `清除作者连带清来源`() {
+        val (viewModel, _) = newViewModel(attachRepository())
+        viewModel.onAuthorQueryChange("作者X")
+        driveIdle()
+        viewModel.selectAuthorSuggestion(AuthorSuggestion("a-1", "作者X", 5))
+        viewModel.toggleSource("kemono")
+        viewModel.clearAuthor()
+        driveIdle() // uiState 异步传播
+        val state = viewModel.uiState.value
+        assertNull(state.selectedAuthor)
+        assertEquals("", state.authorQuery)
+        assertTrue(state.sources.isEmpty())
     }
 }
 
