@@ -57,7 +57,10 @@ import media.qimeng.app.core.ui.component.QimengTopBar
 import media.qimeng.app.core.ui.theme.qimengFilledButtonColors
 
 /**
- * 上传主通道页（M4-5）：选库 → 选目录（可新建）→ 选文件 → 暂存逐项编辑 → 串行队列进度。
+ * 上传主通道页（M4-5；2026-09-25 流程重排）：先选文件进暂存区 → 在暂存区配置
+ * （目标库必选 → 目标目录 → 批次默认 → 逐项编辑）→ 串行队列进度。
+ * 空态（无待传项）只有选文件入口 + 引导文案，不展示任何配置项；未选库时开始上传
+ * 禁用并提示（enqueue 侧保留必填兜底，见 [UploadViewModel.enqueue]）。
  * 入口：①系统分享接收（壳层带分享 URI 导航至此）②App 内数据管理页入口。
  * 选文件（2026-09-25 拍板）：弃系统 SAF 选择器，改 App 内置相册式选择器
  * （[MediaPickerDialog]，MediaStore 网格多选；媒体读权限运行时申请，未授权不进选择器）。
@@ -152,7 +155,9 @@ fun UploadScreen(
 }
 
 /**
- * 表单滚动主体：横幅 → 目标库 → 目标目录 → 待上传 → 入队 → 队列。
+ * 表单滚动主体：横幅 → 选文件入口 →（空态引导 | 暂存区配置块与待传项/入队）→ 队列。
+ * 2026-09-25 流程重排：目标库/目录/批次默认全部移入暂存区，库为配置块首行必选项；
+ * 未选库时开始上传禁用并提示（门禁口径在 [UploadUiState.canEnqueue]）。
  * 选择行为以回调注入（launcher/权限留在本壳层），函数行数收敛到百行红线内。
  */
 @Composable
@@ -187,65 +192,54 @@ private fun UploadForm(
             }
         }
 
-        // —— 目标库 ——
-        SectionTitle("目标库")
-        if (state.libraries.isEmpty()) {
-            Text("暂无可选库", style = MaterialTheme.typography.bodyMedium)
+        if (state.pendingItems.isEmpty()) {
+            // —— 空态：只有选文件入口 + 引导文案，不展示任何配置项 ——
+            PickerRow(hint = EMPTY_STATE_HINT, onPickMedia = onPickMedia)
         } else {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                state.libraries.forEach { library ->
-                    QimengSegPill(
-                        text = library.name,
-                        selected = state.selectedLibrary?.id == library.id,
-                        onClick = { viewModel.selectLibrary(library) },
-                    )
-                }
+            // —— 待上传区（暂存态）——
+            SectionTitle("待上传文件（${state.pendingItems.size}）")
+            PickerRow(hint = PICKER_FORMAT_HINT, onPickMedia = onPickMedia)
+            // 配置块：目标库（必选）→ 目标目录 → 批次作者 → 批次来源 → 应用到全部
+            LibrarySection(state = state, viewModel = viewModel)
+            state.dirTree?.let { tree ->
+                SectionTitle("目标目录")
+                DirTreePanel(
+                    tree = tree,
+                    selectedDirPath = state.selectedDirPath,
+                    onSelect = viewModel::selectDir,
+                    onCreateDir = onCreateDir,
+                )
             }
-        }
+            // 批次默认区（挂靠批）：新进项自动继承；已有待传项可「应用到全部」
+            BatchDefaultSection(state = state, viewModel = viewModel)
+            state.pendingItems.forEach { item ->
+                PendingItemRow(
+                    item = item,
+                    editing = state.editingUri == item.uri,
+                    itemAuthorQuery = state.itemAuthorQuery,
+                    itemAuthorSuggestions = state.itemAuthorSuggestions,
+                    sourceOptions = state.sourceOptions,
+                    viewModel = viewModel,
+                )
+                HorizontalDivider()
+            }
 
-        // —— 目标目录 ——
-        SectionTitle("目标目录")
-        state.dirTree?.let { tree ->
-            DirTreePanel(
-                tree = tree,
-                selectedDirPath = state.selectedDirPath,
-                onSelect = viewModel::selectDir,
-                onCreateDir = onCreateDir,
-            )
-        }
-
-        // —— 待上传文件 ——
-        SectionTitle("待上传文件（${state.pendingItems.size}）")
-        PickerRow(onPickMedia = onPickMedia)
-        // 批次默认区（挂靠批）：先设默认再选文件即自动继承；已有待传项可「应用到全部」
-        BatchDefaultSection(state = state, viewModel = viewModel)
-        state.pendingItems.forEach { item ->
-            PendingItemRow(
-                item = item,
-                editing = state.editingUri == item.uri,
-                itemAuthorQuery = state.itemAuthorQuery,
-                itemAuthorSuggestions = state.itemAuthorSuggestions,
-                sourceOptions = state.sourceOptions,
-                viewModel = viewModel,
-            )
-            HorizontalDivider()
-        }
-
-        Button(
-            onClick = onEnqueue,
-            enabled = state.pendingItems.isNotEmpty() &&
-                state.selectedLibrary != null &&
-                !state.enqueueing,
-            // 第 196 笔噪点横带本尊：禁用态通栏容器夜间走不透明底消 dither（W6 #49）
-            colors = qimengFilledButtonColors(),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text(if (state.enqueueing) "正在创建任务…" else "开始上传（${state.pendingItems.size} 个）")
+            Button(
+                onClick = onEnqueue,
+                enabled = state.canEnqueue,
+                // 第 196 笔噪点横带本尊：禁用态通栏容器夜间走不透明底消 dither（W6 #49）
+                colors = qimengFilledButtonColors(),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(if (state.enqueueing) "正在创建任务…" else "开始上传（${state.pendingItems.size} 个）")
+            }
+            state.enqueueGateHint?.let { hint ->
+                Text(
+                    text = hint,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
 
         // —— 上传队列 ——
@@ -254,6 +248,30 @@ private fun UploadForm(
         }
 
         Spacer(modifier = Modifier.height(24.dp))
+    }
+}
+
+/** 目标库选择（暂存区配置块首行，必选；复用页面原库 pills 控件与 VM 数据源） */
+@Composable
+private fun LibrarySection(state: UploadUiState, viewModel: UploadViewModel) {
+    SectionTitle("目标库（必选）")
+    if (state.libraries.isEmpty()) {
+        Text("暂无可选库", style = MaterialTheme.typography.bodyMedium)
+    } else {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            state.libraries.forEach { library ->
+                QimengSegPill(
+                    text = library.name,
+                    selected = state.selectedLibrary?.id == library.id,
+                    onClick = { viewModel.selectLibrary(library) },
+                )
+            }
+        }
     }
 }
 
@@ -304,14 +322,17 @@ private fun DirTreePanel(
     }
 }
 
-/** 选媒体入口（内置相册选择器，2026-09-25 拍板替代 SAF） */
+/**
+ * 选媒体入口（内置相册选择器，2026-09-25 拍板替代 SAF）；提示文案随页面状态切换
+ * （空态引导 / 暂存态格式说明）。
+ */
 @Composable
-private fun PickerRow(onPickMedia: () -> Unit) {
+private fun PickerRow(hint: String, onPickMedia: () -> Unit) {
     Button(onClick = onPickMedia, modifier = Modifier.fillMaxWidth()) {
         Text("从相册选择")
     }
     Text(
-        text = "支持图片/视频常见格式；类型与大小校验在服务端，超限项本地拦截",
+        text = hint,
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
@@ -493,6 +514,12 @@ private fun openPickerOrRequestPermission(
 
 /** 目录树根路径（协议口径：空串 = 库根） */
 private const val ROOT_PATH = ""
+
+/** 空态引导文案（2026-09-25 流程重排：选文件是第一步，配置项在暂存区出现） */
+private const val EMPTY_STATE_HINT = "选择手机里的图片/视频，上传前可编辑作品名与作者"
+
+/** 暂存态选文件入口的格式说明（超限拦截口径在 VM/服务端） */
+private const val PICKER_FORMAT_HINT = "支持图片/视频常见格式；类型与大小校验在服务端，超限项本地拦截"
 
 private const val DIR_ROOT_LABEL = "（库根）"
 
