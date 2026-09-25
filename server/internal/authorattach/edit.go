@@ -106,40 +106,50 @@ func displayNameAliases(displayName string) []string {
 	return names
 }
 
-// ReplaceAuthorSources 整体替换作者块的来源区（调用方事务内执行）：
-//   - 块命中 → authoring.ReplaceSources 原地替换该片段；
-//   - 未命中 → 最近导入片段新建作者块（AppendAuthorBlock，编号行别名由
-//     作者显示名按 " / " 拆分重建——displayName 是规范别名的连接串而非单
-//     别名，整串写入会让块解析回读的 id 漂移，见 displayNameAliases）；
-//   - 库中无片段 → 自动创建 AutoFragmentFilename 承载片段（ImportedAt=
-//     now，此后即最近导入；与 Apply 同待遇）。
+// SourcesWriteMode 决定作者块来源区的写入语义（PUT /authors/{authorId}/sources
+// 的 mode 参数）：replace=编辑页整体替换；append=上传流程自动挂靠的并入语义
+// （ADR-0023 原上传来源口径——上传是补充不是编辑，永不冲掉作者既有来源区）。
+type SourcesWriteMode string
+
+const (
+	SourcesModeReplace SourcesWriteMode = "replace"
+	SourcesModeAppend  SourcesWriteMode = "append"
+)
+
+// ReplaceAuthorSources 写入作者块的来源区（调用方事务内执行）。mode：
+//   - replace：块命中 → authoring.ReplaceSources 原地整体替换；
+//   - append：块命中 → authoring.AppendSources 并入去重（只补缺行，永不
+//     覆盖既有来源行，幂等）。
 //
-// 片段内容变化时同步修剪该片段的上传条目元数据。返回替换后的来源区
-// （即调用方规范化后的输入）。
-func (s *Service) ReplaceAuthorSources(ctx context.Context, qtx *db.Queries, now time.Time, authorID, displayName string, sources []string) ([]string, error) {
+// 两模式共用其余路径：未命中 → 最近导入片段新建作者块（AppendAuthorBlock，
+// 编号行别名由作者显示名按 " / " 拆分重建——displayName 是规范别名的连接串
+// 而非单别名，整串写入会让块解析回读的 id 漂移，见 displayNameAliases；
+// 无块时不存在「既有来源区可被覆盖」，append 无需独立路径）；库中无片段 →
+// 自动创建 AutoFragmentFilename 承载片段（ImportedAt=now，此后即最近导入；
+// 与 Apply 同待遇）。片段内容变化时同步修剪该片段的上传条目元数据（统一
+// 修剪流程见 persistSourcesAndPrune）。返回写入后的来源区：replace=调用方
+// 规范化输入；append=既有区 ∪ 新增（保序去重，即解析回读结果）。
+func (s *Service) ReplaceAuthorSources(ctx context.Context, qtx *db.Queries, now time.Time, authorID, displayName string, sources []string, mode SourcesWriteMode) ([]string, error) {
 	fragments, err := LoadSources(ctx, qtx)
 	if err != nil {
 		return nil, err
 	}
-	idx, _, found := findAuthorBlock(fragments, authorID)
-	var fragment, content string
+	idx, block, found := findAuthorBlock(fragments, authorID)
 	if found {
-		fragment, content = fragments[idx].Filename, fragments[idx].Content
-		newContent, _ := authoring.ReplaceSources(content, authorID, sources)
+		fragment, content := fragments[idx].Filename, fragments[idx].Content
+		newContent, echo := writeAuthorBlockSources(content, authorID, sources, mode, block.Sources)
 		if newContent == content {
-			return sources, nil // 幂等：内容无变化不写 kv
+			return echo, nil // 幂等：内容无变化不写 kv
 		}
 		fragments[idx].Content = newContent
-		if err := PersistSources(ctx, qtx, now, fragments); err != nil {
+		if err := s.persistSourcesAndPrune(ctx, qtx, now, fragment, fragments, newContent); err != nil {
 			return nil, err
 		}
-		if err := s.pruneFragmentEntries(ctx, qtx, now, fragment, newContent); err != nil {
-			return nil, err
-		}
-		return sources, nil
+		return echo, nil
 	}
 	// 无块：最近导入片段新建作者块；库中无片段则自动创建承载片段。
 	ti := mostRecentIndex(fragments)
+	var fragment, content string
 	if ti < 0 {
 		fragment = authoring.AutoFragmentFilename
 	} else {
@@ -154,13 +164,43 @@ func (s *Service) ReplaceAuthorSources(ctx context.Context, qtx *db.Queries, now
 	} else {
 		fragments[ti].Content = newContent
 	}
-	if err := PersistSources(ctx, qtx, now, fragments); err != nil {
-		return nil, err
-	}
-	if err := s.pruneFragmentEntries(ctx, qtx, now, fragment, newContent); err != nil {
+	if err := s.persistSourcesAndPrune(ctx, qtx, now, fragment, fragments, newContent); err != nil {
 		return nil, err
 	}
 	return sources, nil
+}
+
+// writeAuthorBlockSources 对已定位的作者块按 mode 做纯函数手术，返回
+// （新内容, 写入后应回显的来源区）：
+//   - replace：ReplaceSources 整体替换，回显=调用方规范化输入（块已定位，
+//     found 恒 true，与既有代码同款忽略第二返回值）；
+//   - append：AppendSources 并入去重，回显=既有区 ∪ 新增（mergeLines 保序
+//     去重）——AppendSources 的写入结果正是「既有行 + 补缺行」，回显不得
+//     用请求输入（那不是写入后的来源区）。
+func writeAuthorBlockSources(content, authorID string, sources []string, mode SourcesWriteMode, existing []string) (string, []string) {
+	if mode == SourcesModeAppend {
+		newContent, _ := authoring.AppendSources(content, authorID, sources)
+		merged := mergeLines(existing, sources)
+		if merged == nil {
+			merged = []string{} // 回显恒非 nil（与 GET 空数组语义对齐，禁 JSON null）
+		}
+		return newContent, merged
+	}
+	newContent, _ := authoring.ReplaceSources(content, authorID, sources)
+	return newContent, sources
+}
+
+// persistSourcesAndPrune 落库片段数组并修剪 fragment 片段的上传条目元数据
+// （块命中/新建块 × replace/append 四条路径统一收口）。append 不移除行，
+// PruneUploadEntries 对它恒为 no-op——仍统一走修剪而不是按模式分支，是因为
+// imported_txt_upload_entries 的口径「只修剪不新增」必须只有一份实现：本端点
+// 是编辑语义、从不产生新条目（新增只属于上传挂靠 recordAddedLines），分叉
+// 修剪流程必然在未来某次改动中漏掉一条路径，导致重导入 409 误报。
+func (s *Service) persistSourcesAndPrune(ctx context.Context, qtx *db.Queries, now time.Time, fragment string, fragments []Source, newContent string) error {
+	if err := PersistSources(ctx, qtx, now, fragments); err != nil {
+		return err
+	}
+	return s.pruneFragmentEntries(ctx, qtx, now, fragment, newContent)
 }
 
 // ReplaceAssetAuthors 整体替换资产的常规作者关联（调用方事务内执行；

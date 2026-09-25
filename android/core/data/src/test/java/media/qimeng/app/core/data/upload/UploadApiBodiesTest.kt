@@ -25,13 +25,30 @@ class UploadApiBodiesTest {
     }
 
     @Test
-    fun `2xx解析最终文件名`() {
-        val body = """{"id":"uuid","fileName":"IMG (2).jpg","mediaType":"image"}"""
-        assertEquals("IMG (2).jpg", UploadApiBodies.parseFinalFileName(body))
+    fun `2xx解析id与最终文件名`() {
+        val body = """{"id":"3f2a7c1e-0000-0000-0000-000000000001","fileName":"IMG (2).jpg","mediaType":"image"}"""
+        val parsed = UploadApiBodies.parseUploadResult(body)
+        assertEquals("3f2a7c1e-0000-0000-0000-000000000001", parsed?.id)
+        assertEquals("IMG (2).jpg", parsed?.fileName)
     }
 
     @Test
-    fun `2xx缺fileName字段返回null由调用方回退`() {
-        assertNull(UploadApiBodies.parseFinalFileName("""{"id":"uuid"}"""))
+    fun `2xx缺id字段id为null由worker收敛挂靠失败`() {
+        val parsed = UploadApiBodies.parseUploadResult("""{"fileName":"IMG (2).jpg"}""")
+        assertEquals("IMG (2).jpg", parsed?.fileName)
+        assertNull(parsed?.id)
+    }
+
+    @Test
+    fun `2xx缺fileName字段fileName为null由调用方回退`() {
+        val parsed = UploadApiBodies.parseUploadResult("""{"id":"uuid"}""")
+        assertEquals("uuid", parsed?.id)
+        assertNull(parsed?.fileName)
+    }
+
+    @Test
+    fun `2xx响应体非JSON返回null`() {
+        assertNull(UploadApiBodies.parseUploadResult("<html>bad</html>"))
+        assertNull(UploadApiBodies.parseUploadResult(""))
     }
 }

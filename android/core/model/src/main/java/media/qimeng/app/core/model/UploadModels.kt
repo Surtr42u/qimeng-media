@@ -19,7 +19,23 @@ data class UploadItem(
      * 入队时与页面已选目录由 UploadRules.joinUploadDirPath 拼成每个任务自己的 dir。
      */
     val relativeDir: String = "",
-)
+    /**
+     * 编辑后的落库文件名（暂存列表逐项编辑；null/blank = 未编辑，回退 [displayName]）。
+     * 这是上传 filename 查询参数的实际值（作者匹配与展示依据），实际取值统一走
+     * [effectiveUploadName]（单一口径，UI/入队/worker 均不自行回退）。
+     */
+    val uploadFileName: String? = null,
+    /** 上传成功后自动挂靠的作者 id（null = 该项不带挂靠；来源挂靠以其存在为前提） */
+    val attachAuthorId: String? = null,
+    /** 挂靠作者的展示名（纯 UI 展示；不进 WorkManager 载荷，服务端只认 id） */
+    val attachAuthorName: String? = null,
+    /** 上传成功后并入作者来源区的来源词（append 语义永不覆盖；null/空 = 不挂来源） */
+    val attachSources: List<String>? = null,
+) {
+    /** 上传 filename 参数实际取值（编辑优先、trim 后非空才生效，否则回退展示名） */
+    val effectiveUploadName: String
+        get() = uploadFileName?.trim()?.takeIf { it.isNotEmpty() } ?: displayName
+}
 
 /** 上传目标库（GET /libraries 的展示子集） */
 data class LibraryChoice(
@@ -75,15 +91,17 @@ data class UploadQueueEntry(
     val progressPercent: Int?,
     /** 服务端冲突自动重命名后的最终文件名（成功时携带） */
     val finalFileName: String?,
-    /** 失败原因（4xx 服务端文案透传 / 重试耗尽说明） */
+    /** 失败原因（4xx 服务端文案透传 / 重试耗尽说明）；ATTACH_FAILED 时为补挂指引文案 */
     val errorMessage: String?,
 )
 
 /**
  * 队列任务状态。CANCELLED（批C 任务Q）：用户主动取消的终态——与 FAILED 分列，聚合行
  * 「失败 N」不把取消计入失败数（用户取消不是失败，UI 文案也分列「已取消」）。
+ * ATTACH_FAILED（挂靠批）：文件已入库但自动挂靠失败——文件本身成功（finalFileName 在），
+ * 聚合行既不计成功也不计失败、单独「挂靠失败 Z」计数。
  */
-enum class UploadStatus { QUEUED, UPLOADING, SUCCEEDED, FAILED, CANCELLED }
+enum class UploadStatus { QUEUED, UPLOADING, SUCCEEDED, FAILED, CANCELLED, ATTACH_FAILED }
 
 /**
  * 上传纯规则（无 IO，单测锁定）：目录路径拼装与本地校验。

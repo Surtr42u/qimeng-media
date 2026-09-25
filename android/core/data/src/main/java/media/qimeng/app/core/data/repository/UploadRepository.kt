@@ -24,9 +24,8 @@ interface UploadRepository {
     suspend fun libraries(): List<LibraryChoice>
 
     /**
-     * 作者联想（GET /authors/suggest；资产编辑页添加作者输入框数据源）。
-     * 子串匹配/别名命中/大小写不敏感全在服务端，客户端只透传词条。
-     * （协议批 2026-09-25：上传挂靠退役后本方法仅剩编辑页消费者。）
+     * 作者联想（GET /authors/suggest）：上传页挂靠（批次默认/逐项编辑）与资产编辑页
+     * 添加作者输入框共用数据源。子串匹配/别名命中/大小写不敏感全在服务端，客户端只透传词条。
      */
     suspend fun suggestAuthors(q: String, limit: Int = DEFAULT_SUGGEST_LIMIT): List<AuthorSuggestion>
 
@@ -49,7 +48,8 @@ interface UploadRepository {
     /**
      * 入队（串行 unique 链，并发=1）。返回入队回执（含客户端 localId）。
      * 网络约束 + 退避重试在请求侧声明：断网自动等待恢复，中断按官方 retry 语义续跑。
-     * 协议批 2026-09-25：挂靠参数（authorId/authorName/source）随协议退役，纯上传入队。
+     * 挂靠批：UploadItem 的 effectiveUploadName/attachAuthorId/attachSources 随载荷入队；
+     * 挂靠执行在 worker 的 201 之后（UploadAttacher，mode=append，失败不重试不级联）。
      */
     fun enqueue(
         items: List<UploadItem>,

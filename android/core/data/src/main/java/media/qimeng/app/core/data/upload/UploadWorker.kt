@@ -18,6 +18,7 @@ import media.qimeng.app.core.model.UploadItem
  * 上传 Worker（M4-5 串行队列的执行端）：
  * - 执行前升级前台服务（dataSync 类型，API 34+ 强制声明类型），进度走通知；
  * - 上传中节流回写 WorkManager progress（UI 观察队列状态用）；
+ * - 201 之后按入队载荷执行自动挂靠序列（[UploadAttacher]：先 authors 后 sources append）；
  * - 终局判定全部收敛在 [UploadWorkSpec.outcomeToResult]（纯函数，单测锁定）。
  *
  * 前台服务升级失败（系统后台限制等）不阻断上传：catch 后继续以普通后台任务执行
@@ -28,6 +29,7 @@ class UploadWorker @AssistedInject constructor(
     @Assisted appContext: Context,
     @Assisted params: WorkerParameters,
     private val uploader: AssetUploader,
+    private val attacher: UploadAttacher,
     private val cancelRegistry: UploadCancelRegistry,
 ) : CoroutineWorker(appContext, params) {
 
@@ -52,23 +54,31 @@ class UploadWorker @AssistedInject constructor(
         )
         setForegroundSafely(spec.displayName)
 
-        val outcome = uploader.upload(
-            UploadItem(spec.uri, spec.displayName, spec.sizeBytes),
-            spec.libraryId,
-            spec.dir,
-            isCancelled = { cancelRegistry.isCancelled(spec.localId) },
-        ) { done, total, percent ->
-            setProgress(
-                workDataOf(
-                    UploadWorkSpec.KEY_PROGRESS_PERCENT to percent,
-                    UploadWorkSpec.KEY_DISPLAY_NAME to spec.displayName,
+        val outcome = resolveOutcome(
+            uploadOutcome = uploader.upload(
+                UploadItem(
+                    uri = spec.uri,
+                    displayName = spec.displayName,
+                    sizeBytes = spec.sizeBytes,
+                    uploadFileName = spec.uploadFileName,
                 ),
-            )
-            updateForegroundNotification(spec.displayName, percent)
-            if (percent % LOG_PROGRESS_STEP == 0) {
-                Log.d(LOG_TAG, "progress file=${spec.displayName} $done/$total ($percent%)")
-            }
-        }
+                spec.libraryId,
+                spec.dir,
+                isCancelled = { cancelRegistry.isCancelled(spec.localId) },
+            ) { done, total, percent ->
+                setProgress(
+                    workDataOf(
+                        UploadWorkSpec.KEY_PROGRESS_PERCENT to percent,
+                        UploadWorkSpec.KEY_DISPLAY_NAME to spec.displayName,
+                    ),
+                )
+                updateForegroundNotification(spec.displayName, percent)
+                if (percent % LOG_PROGRESS_STEP == 0) {
+                    Log.d(LOG_TAG, "progress file=${spec.displayName} $done/$total ($percent%)")
+                }
+            },
+            spec = spec,
+        )
         cancelRegistry.consume(spec.localId)
 
         val result = UploadWorkSpec.outcomeToResult(outcome, runAttemptCount)
@@ -76,6 +86,17 @@ class UploadWorker @AssistedInject constructor(
             is UploadOutcome.Success -> {
                 Log.i(LOG_TAG, "success file=${spec.displayName} final=${outcome.finalFileName}")
                 notifyDone(spec.localId, spec.displayName, "上传完成：${outcome.finalFileName}")
+            }
+
+            is UploadOutcome.AttachFailed -> {
+                // 挂靠批失败语义：文件已入库，绝不重试（重试=重复上传）；success+标志终态
+                Log.w(LOG_TAG, "attach-failed file=${spec.displayName} final=${outcome.finalFileName}")
+                notifyDone(
+                    spec.localId,
+                    spec.displayName,
+                    "上传完成：${outcome.finalFileName}，" +
+                        UploadWorkSpec.attachFailedMessage(outcome.attachMessage),
+                )
             }
 
             is UploadOutcome.Permanent -> {
@@ -110,6 +131,30 @@ class UploadWorker @AssistedInject constructor(
             }
         }
         return result
+    }
+
+    /**
+     * 上传终局 → 本次执行终局：上传成功且载荷带挂靠参数时执行挂靠序列（先 authors 后
+     * sources，见 [UploadAttacher]），失败收敛为 [UploadOutcome.AttachFailed]；上传非成功
+     * 或无挂靠参数时原样透传（既有重试/取消/永久失败路径分毫不动）。
+     *
+     * 为什么挂靠失败不走 Result.retry：本函数返回后 outcomeToResult 对 AttachFailed 落
+     * success+标志——worker 级重试会连文件一起重传（挂靠批失败语义红线）；挂靠调用本身
+     * 一次机会，补挂由用户到作品编辑页完成。进程死亡窗口（201 落库后、挂靠完成前）由
+     * WorkManager 重跑任务 + 服务端冲突自动重命名兜底，不引入主动重试路径。
+     */
+    private suspend fun resolveOutcome(
+        uploadOutcome: UploadOutcome,
+        spec: UploadWorkSpec.UploadRequestSpec,
+    ): UploadOutcome {
+        val needsAttach = spec.attachAuthorId != null || !spec.attachSources.isNullOrEmpty()
+        if (uploadOutcome !is UploadOutcome.Success || !needsAttach) return uploadOutcome
+        val assetId = uploadOutcome.assetId
+            ?: return UploadOutcome.AttachFailed(uploadOutcome.finalFileName, ATTACH_NO_ASSET_ID)
+        return when (val attach = attacher.attach(assetId, spec.attachAuthorId, spec.attachSources)) {
+            is AttachOutcome.Done -> uploadOutcome
+            is AttachOutcome.Failed -> UploadOutcome.AttachFailed(uploadOutcome.finalFileName, attach.message)
+        }
     }
 
     /** 前台服务升级：API 34+ 必须带 dataSync 类型；任何失败降级为普通后台任务。 */
@@ -167,5 +212,8 @@ class UploadWorker @AssistedInject constructor(
 
         /** 进度日志步长（%）：全量打点刷屏，25% 粒度足够串行时间线举证 */
         private const val LOG_PROGRESS_STEP = 25
+
+        /** 201 响应体缺 id 时的挂靠失败原因（协议 AssetDetail.id 理论恒在，防御性兜底） */
+        private const val ATTACH_NO_ASSET_ID = "服务端未返回资产 id，无法挂靠"
     }
 }

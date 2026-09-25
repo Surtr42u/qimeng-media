@@ -29,6 +29,37 @@ class UploadModelsTest {
         assertFalse(limits.overLimit(-1))
     }
 
+    // ---- UploadItem.effectiveUploadName（挂靠批：编辑后落库名回退口径） ----
+
+    @Test
+    fun `未编辑回退展示名`() {
+        val item = UploadItem(uri = "u", displayName = "IMG_1.jpg", sizeBytes = 1)
+        assertNull(item.uploadFileName)
+        assertEquals("IMG_1.jpg", item.effectiveUploadName)
+    }
+
+    @Test
+    fun `编辑名trim后非空即生效`() {
+        val item = UploadItem(
+            uri = "u",
+            displayName = "IMG_1.jpg",
+            sizeBytes = 1,
+            uploadFileName = "  作品名.jpg ",
+        )
+        assertEquals("作品名.jpg", item.effectiveUploadName)
+    }
+
+    @Test
+    fun `编辑名空白回退展示名`() {
+        val item = UploadItem(
+            uri = "u",
+            displayName = "IMG_1.jpg",
+            sizeBytes = 1,
+            uploadFileName = "   ",
+        )
+        assertEquals("IMG_1.jpg", item.effectiveUploadName)
+    }
+
     // ---- UploadRules.isValidDirName ----
 
     @Test

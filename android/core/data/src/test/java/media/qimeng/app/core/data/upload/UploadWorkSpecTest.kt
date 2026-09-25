@@ -14,6 +14,9 @@ class UploadWorkSpecTest {
     private fun spec(
         uri: String = "content://media/external/images/1",
         displayName: String = "IMG_2026.jpg",
+        uploadFileName: String = "IMG_2026.jpg",
+        attachAuthorId: String? = null,
+        attachSources: List<String>? = null,
     ) = UploadWorkSpec.UploadRequestSpec(
         localId = "local-1",
         uri = uri,
@@ -21,6 +24,9 @@ class UploadWorkSpecTest {
         dir = "photos/2026",
         displayName = displayName,
         sizeBytes = 12345L,
+        uploadFileName = uploadFileName,
+        attachAuthorId = attachAuthorId,
+        attachSources = attachSources,
     )
 
     // ---- 入队载荷映射 ----
@@ -36,6 +42,54 @@ class UploadWorkSpecTest {
         assertEquals("photos/2026", back.dir)
         assertEquals("IMG_2026.jpg", back.displayName)
         assertEquals(12345L, back.sizeBytes)
+    }
+
+    // ---- 挂靠批：编辑名与挂靠键往返 ----
+
+    @Test
+    fun `编辑名与挂靠键往返无损`() {
+        val data = UploadWorkSpec.itemToInputData(
+            spec(
+                uploadFileName = "作品名.jpg",
+                attachAuthorId = "author-1",
+                attachSources = listOf("kemono", "r34"),
+            ),
+        )
+        val back = UploadWorkSpec.specFromInputData(data)
+        assertNotNull(back)
+        assertEquals("作品名.jpg", back!!.uploadFileName)
+        assertEquals("author-1", back.attachAuthorId)
+        assertEquals(listOf("kemono", "r34"), back.attachSources)
+    }
+
+    @Test
+    fun `无挂靠键反解为不带挂靠`() {
+        val back = UploadWorkSpec.specFromInputData(UploadWorkSpec.itemToInputData(spec()))
+        assertNotNull(back)
+        assertNull(back!!.attachAuthorId)
+        assertNull(back.attachSources)
+    }
+
+    @Test
+    fun `缺uploadFileName的旧载荷回退displayName`() {
+        val legacy = androidx.work.Data.Builder()
+            .putString(UploadWorkSpec.KEY_LOCAL_ID, "local-1")
+            .putString(UploadWorkSpec.KEY_URI, "content://media/external/images/1")
+            .putString(UploadWorkSpec.KEY_LIBRARY_ID, "lib-uuid")
+            .putString(UploadWorkSpec.KEY_DIR, "photos/2026")
+            .putString(UploadWorkSpec.KEY_DISPLAY_NAME, "IMG_2026.jpg")
+            .putLong(UploadWorkSpec.KEY_SIZE_BYTES, 12345L)
+            .build()
+        val back = UploadWorkSpec.specFromInputData(legacy)
+        assertNotNull(back)
+        assertEquals("IMG_2026.jpg", back!!.uploadFileName)
+        assertNull(back.attachAuthorId)
+    }
+
+    @Test
+    fun `空挂靠来源数组不写入载荷`() {
+        val data = UploadWorkSpec.itemToInputData(spec(attachSources = emptyList()))
+        assertNull(data.getStringArray(UploadWorkSpec.KEY_ATTACH_SOURCES))
     }
 
     // ---- 兼容锁定：旧在途载荷（含已退役挂靠键）反解为纯上传 ----
@@ -113,6 +167,35 @@ class UploadWorkSpecTest {
         )
         val success = result as ListenableWorker.Result.Success
         assertEquals("IMG_2026 (2).jpg", success.outputData.getString(UploadWorkSpec.KEY_FINAL_FILE_NAME))
+    }
+
+    // ---- 挂靠批：已入库但挂靠失败的终态映射 ----
+
+    @Test
+    fun `挂靠失败映射为success并携带标志与补挂指引`() {
+        val result = UploadWorkSpec.outcomeToResult(
+            UploadOutcome.AttachFailed(finalFileName = "a.jpg", attachMessage = "来源挂靠失败"),
+            runAttemptCount = 0,
+        )
+        // 必须是 Success 类型（同取消通道依据）：failure 会级联杀链，retry 等于重复上传文件
+        val success = result as ListenableWorker.Result.Success
+        assertEquals("a.jpg", success.outputData.getString(UploadWorkSpec.KEY_FINAL_FILE_NAME))
+        assertTrue(success.outputData.getBoolean(UploadWorkSpec.KEY_ATTACH_FAILED, false))
+        val message = success.outputData.getString(UploadWorkSpec.KEY_ERROR_MESSAGE)
+        assertTrue(message!!.contains("已入库但挂靠失败"))
+        assertTrue(message.contains("来源挂靠失败"))
+        assertTrue(message.contains("作品详情→作者→编辑 补挂"))
+    }
+
+    @Test
+    fun `挂靠失败不产生retry与failure`() {
+        val attachFailed = UploadWorkSpec.outcomeToResult(
+            UploadOutcome.AttachFailed("a.jpg", "x"),
+            runAttemptCount = 0,
+        )
+        assertTrue(attachFailed is ListenableWorker.Result.Success)
+        assertFalse(attachFailed is ListenableWorker.Result.Retry)
+        assertFalse(attachFailed is ListenableWorker.Result.Failure)
     }
 
     @Test
