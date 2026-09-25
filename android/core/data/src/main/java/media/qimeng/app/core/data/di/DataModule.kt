@@ -76,6 +76,12 @@ interface DataModule {
     @Singleton
     fun bindUploadRepository(impl: media.qimeng.app.core.data.repository.SdkUploadRepository): media.qimeng.app.core.data.repository.UploadRepository
 
+    // 上传暂存仓（2026-09-25 暂存区重做）：暂存条目/批次配置/收件箱路径持久化 + 收件箱
+    // File 侧操作（扫描/失效探测/归档）的单一数据端口
+    @Binds
+    @Singleton
+    fun bindStagingRepository(impl: media.qimeng.app.core.data.repository.DataStoreStagingRepository): media.qimeng.app.core.data.repository.StagingRepository
+
     // 内置相册式选择器（2026-09-25 拍板）：本地 MediaStore 图片/视频查询数据面
     @Binds
     @Singleton

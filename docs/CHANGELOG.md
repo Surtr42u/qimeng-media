@@ -8,6 +8,19 @@
 - 子代理执行的工作标注"（执行子代理）"，主对话直接完成的标注"（主代理）"。
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
+## feat(api/web/app/server): 持久暂存区+下载收件箱+作品名序号联想+通用词表出厂预填（2026-09-25 第三百九十五笔）
+
+执行 AI：GLM-5.3-Flash（主代理：协议/文档/审查收口；服务端与 Android 由并行执行子代理实现，对抗审查子代理复核）
+
+- **需求**（用户固化工作流）：① 下载文件在手机 `.xxx` 点前缀隐藏文件夹（相册扫不到）可能放数日——暂存区必须**持久化**（改到一半跨进程/跨天保留）；② 指定一个文件夹作**收件箱**，放进去的文件自动进暂存区；③ 暂存项**缩略图卡片、点开交互编辑**；④ 作品名编辑**序号联想**（输入「守望先锋dva」→ 库里有「守望先锋 DVA 12」→ 推荐「守望先锋 DVA 13」）+ **扩展名锁定**不可改；⑤ 出处推荐恢复「常见的那几个」——通用词表出厂**自动预填**通用平台名（单作者个人地址/链接形态排除）。
+- **协议（65→66）**：新增 `GET /assets/name-suggestions?libraryId&q` → `{suggestions: []string}`（规范化前缀匹配+**少空格吸附**〔移除全部空白比对，命中「守望先锋 DVA 12」〕、族键=去尾部序号基名〔裸「名 12」/括号「名 (2)」两风格〕、建议=族内既有命名**原样风格**+最大序号+1〔用户脏输入自动吸附规范写法〕、无序号成员的族不产生建议、序号跨扩展名共用、每族一条 cap 3、前导零不保留〔审查记档口径，代码注释+文档双写〕；libraryId 空 400/库不存在 404/cos 库可用）；`make sdk` 三端重生成 + sdk.lock 同批更新。
+- **服务端**：`filing/namesuggest.go` 纯函数 `SuggestSeriesNames`（22 子用例表驱动：风格提取/规范化/多族确定性）+ `httpapi/assets_namesuggest.go`（端到端含 cos 库）；`authorattach/vocabulary_prefill.go` 预填纯函数（不同作者数统计跨片段去重、≥2 保留、排除 http/www./含点号域名、authorCount 降序 name 升序 cap 20、有结果才写键）+ `EnsureSourceVocabulary`（键不存在才预填；PUT 恒写键故用户清空不复活；DSN `_txlock=immediate` 下 GET 触发写无并发插窗）+ httpapi 五态端到端。
+- **Android**：暂存持久层 `StagingRepository/DataStoreStagingRepository`（client_prefs 三键：条目/批次配置/收件箱路径，moshi JSON 坏数据宁空不崩）+ **原子读改写**（`editItems/editBatchConfig` 收进单次 DataStore edit——审查定位的 first()+update 两步竞态返工修复，真 DataStore JVM 测试 6 例含并发叠加）；**收件箱** `InboxFileStore`（File API 扫描：白名单扩展名过滤〔与上传校验同源〕、排除 uploaded/、mtime 倒序、点前缀目录天然支持）+ 设置页「下载收件箱」App 内目录浏览器（InboxSettingsScreen，授权引导，无系统弹窗）；暂存 UI 缩略图卡片（Coil 直载 File/uri、视频角标、失效行「文件已不存在」可清除）+ 点开交互编辑（作品名联想回填+扩展名锁定拼接 `UploadNaming` 纯函数）；上传成功/挂靠失败后收件箱源文件移入 `uploaded/` 归档（renameTo 失败不阻断，同目录子目录无 EXDEV）。
+- **对抗审查（Rv 复核）**：P0 sdk.lock 已重算同 commit；P1 文档本笔补齐；P2 暂存写竞态返工修复（原子变换下沉仓层）；P3 前导零口径注释+真 DataStore 往返测试（6 例）落地。审查确认：联想纯函数边界（无空格紧贴数字不算序号/全角不崩/溢出安全/多字节安全）、预填一次性语义、归档无 EXDEV 风险、门禁与超限保留语义。
+- **测试**：server `go build/vet/gofmt` + `go test ./... -count=1` 15 包全绿；android 全仓单测 **929 例 0 失败** + assembleDebug 通过（新增 namesuggest 相关 + InboxFileStore 12/StagingJson 6/Models 12/InboxSettings 5/DataStore 往返 6/VM 50）；web tsc/oxlint 过（新端点类型已生成，Web 端本批不接线）。
+- **文档**：ADR-0024 修订记录 2；DOMAIN_RULES §6 词表预填口径；GUIDE_API 66 路径+新端点条+词表预填；HANDOVER 同步。
+- **记档**：收件箱只扫一级文件不递归（选存储根为收件箱亦有界）；库覆盖项入队落库根（dir=""，服务端 NormalizeRelPath 兜底）；Web 端收件箱/暂存/联想不接线（桌面无此工作流，编辑页已覆盖）。
+
 ## feat(app): 上传页流程重排——先选文件、暂存区配置目标库/作者/来源、门禁上传递（2026-09-25 第三百九十四笔）
 
 执行 AI：GLM-5.3-Flash（主代理派执行子代理实现）

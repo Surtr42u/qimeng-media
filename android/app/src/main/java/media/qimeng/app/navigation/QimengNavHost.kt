@@ -73,6 +73,7 @@ import media.qimeng.app.feature.manage.DataManageScreen
 import media.qimeng.app.feature.manage.LibraryManageScreen
 import media.qimeng.app.feature.manage.ThumbnailCacheScreen
 import media.qimeng.app.feature.search.SearchScreen
+import media.qimeng.app.feature.settings.InboxSettingsScreen
 import media.qimeng.app.feature.settings.ServerSettingsScreen
 import media.qimeng.app.feature.settings.SettingsScreen
 import media.qimeng.app.feature.stats.StatsDetailRoutes
@@ -118,6 +119,12 @@ object Routes {
 
     /** 覆盖页面：服务器设置（U10-4：设置页「服务器」入口行 → 地址修改/本机模式/换址说明子页） */
     const val SERVER = "server"
+
+    /**
+     * 覆盖页面：下载收件箱设置（2026-09-25 暂存区重做：设置页「下载收件箱」入口行 →
+     * 收件箱路径选择子页，路径持久化后作为上传页「从收件箱导入」的扫描源）
+     */
+    const val INBOX = "inbox"
 
     /**
      * 覆盖页面：数据管理 hub（U10-6：我的页「数据管理」合并入口 → 上传文件/库管理
@@ -488,6 +495,13 @@ fun QimengNavHost(
                     onBack = { navController.popBackStack() },
                 )
             }
+            // 下载收件箱设置子页（2026-09-25 暂存区重做）：设置页「下载收件箱」入口行进本页；
+            // pushed 覆盖页——底栏隐藏与幕帘由既有 currentRoute 机制自动生效
+            composable(Routes.INBOX) {
+                InboxSettingsScreen(
+                    onBack = { navController.popBackStack() },
+                )
+            }
             // 数据管理 hub（U10-6）：我的页「数据管理」合并入口二级页；上传行复用既有
             // Routes.UPLOAD 页（不搬路由），库管理/作者 TXT 导入/备份导入导出（U10-6b）
             // /缩略图缓存（2026-09-16 用户反馈）走各自新增子页
@@ -849,6 +863,8 @@ private fun ResidentTabScreen(route: String, navController: NavHostController) {
             // U10-6：原「上传文件」行升级为「数据管理」合并入口行（上传/注册媒体目录/
             // 库管理进 hub 二级页；上传页本身复用 Routes.UPLOAD 不搬路由）
             onOpenDataManage = { navController.navigate(Routes.DATA_MANAGE) },
+            // 2026-09-25 暂存区重做：「下载收件箱」入口行 → 收件箱路径选择子页
+            onOpenInbox = { navController.navigate(Routes.INBOX) },
             // U10-4：「服务器」入口行 → 地址修改/本机模式/换址说明子页
             onOpenServerDetail = { navController.navigate(Routes.SERVER) },
         )

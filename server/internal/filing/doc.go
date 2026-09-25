@@ -11,6 +11,7 @@
 //   - path.go     路径安全（SECURITY 红线 #1）：NormalizeRelPath / PathWithinRoot
 //   - reserved.go Windows 保留设备名判定（路径与文件名共用）
 //   - filename.go 文件名清洗与冲突重命名
+//   - namesuggest.go 作品名序号联想（GET /assets/name-suggestions 纯函数判定）
 //   - mime.go     文件头魔数嗅探（不信扩展名，SECURITY 红线 #4 第②道）
 //   - upload.go   上传四道校验（SECURITY 红线 #4）与扩展名白名单
 //   - trash.go    回收站路径布局与保留期计算（ADR-0007）

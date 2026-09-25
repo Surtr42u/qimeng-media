@@ -12,7 +12,9 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import media.qimeng.app.core.data.repository.InboxFileStore
 import media.qimeng.app.core.model.UploadItem
+import media.qimeng.app.core.model.UploadRules
 
 /**
  * 上传 Worker（M4-5 串行队列的执行端）：
@@ -31,6 +33,7 @@ class UploadWorker @AssistedInject constructor(
     private val uploader: AssetUploader,
     private val attacher: UploadAttacher,
     private val cancelRegistry: UploadCancelRegistry,
+    private val inboxFileStore: InboxFileStore,
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result {
@@ -85,7 +88,11 @@ class UploadWorker @AssistedInject constructor(
         when (outcome) {
             is UploadOutcome.Success -> {
                 Log.i(LOG_TAG, "success file=${spec.displayName} final=${outcome.finalFileName}")
-                notifyDone(spec.localId, spec.displayName, "上传完成：${outcome.finalFileName}")
+                notifyDone(
+                    spec.localId,
+                    spec.displayName,
+                    "上传完成：${outcome.finalFileName}" + archiveNote(spec),
+                )
             }
 
             is UploadOutcome.AttachFailed -> {
@@ -95,7 +102,7 @@ class UploadWorker @AssistedInject constructor(
                     spec.localId,
                     spec.displayName,
                     "上传完成：${outcome.finalFileName}，" +
-                        UploadWorkSpec.attachFailedMessage(outcome.attachMessage),
+                        UploadWorkSpec.attachFailedMessage(outcome.attachMessage) + archiveNote(spec),
                 )
             }
 
@@ -157,6 +164,30 @@ class UploadWorker @AssistedInject constructor(
         }
     }
 
+    /**
+     * 收件箱源文件归档（2026-09-25 暂存区重做）：文件已入库（上传成功/挂靠失败两态皆是
+     * ——文件本体已 201 落库）且源为收件箱绝对路径类时，把源文件移入其所在目录的
+     * uploaded/ 子目录（File.renameTo）。移动失败不阻断上传完成，只记日志与完成通知
+     * 提示（源文件留在收件箱，下次扫描会再进暂存区由用户处置）。
+     * content:// 类条目无文件路径可移，原样返回空提示。
+     */
+    private fun archiveInboxSource(spec: UploadWorkSpec.UploadRequestSpec): Boolean {
+        if (!UploadRules.isAbsoluteFilePath(spec.uri)) return false
+        val moved = inboxFileStore.archiveToUploaded(spec.uri)
+        if (!moved) {
+            Log.w(LOG_TAG, "inbox-archive-failed file=${spec.displayName} src=${spec.uri}")
+        }
+        return moved
+    }
+
+    /** 归档结果提示后缀（归档成功/非收件箱条目 = 空串；失败才提示） */
+    private fun archiveNote(spec: UploadWorkSpec.UploadRequestSpec): String =
+        if (UploadRules.isAbsoluteFilePath(spec.uri) && !archiveInboxSource(spec)) {
+            ARCHIVE_FAILED_NOTE
+        } else {
+            ""
+        }
+
     /** 前台服务升级：API 34+ 必须带 dataSync 类型；任何失败降级为普通后台任务。 */
     private suspend fun setForegroundSafely(title: String) {
         try {
@@ -215,5 +246,8 @@ class UploadWorker @AssistedInject constructor(
 
         /** 201 响应体缺 id 时的挂靠失败原因（协议 AssetDetail.id 理论恒在，防御性兜底） */
         private const val ATTACH_NO_ASSET_ID = "服务端未返回资产 id，无法挂靠"
+
+        /** 收件箱源文件归档失败的完成通知提示（不阻断上传完成口径） */
+        private const val ARCHIVE_FAILED_NOTE = "（收件箱归档失败：源文件保留在收件箱）"
     }
 }
