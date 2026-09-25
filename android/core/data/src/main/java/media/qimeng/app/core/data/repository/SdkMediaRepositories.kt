@@ -25,7 +25,7 @@ import media.qimeng.sdk.models.ApiV1AuthorsAuthorIdFollowPutRequest
 import media.qimeng.sdk.models.ApiV1AuthorsImportTxtPostRequest
 import media.qimeng.sdk.models.ApiV1TagsPostRequest
 import media.qimeng.sdk.models.AssetAuthorsReplaceRequest
-import media.qimeng.sdk.models.SourceVocabulary
+import media.qimeng.sdk.models.AuthorSourcesWriteRequest
 import media.qimeng.sdk.models.TxtImportedFile
 import media.qimeng.sdk.models.TxtImportResult
 import okhttp3.OkHttpClient
@@ -330,7 +330,7 @@ class SdkAuthorRepository @Inject constructor(
         }
     }
 
-    // ── 资产编辑页族（2026-09-25：上传挂靠退役批——作者关联与来源维护收口本端口）──
+    // ── 资产编辑页族（作者关联与来源维护收口本端口；挂靠批起 append 通道另供 UploadWorker 自动挂靠）──
 
     override suspend fun sourceVocabulary(): List<String> {
         Log.d(SdkMediaRepository.LOG_TAG, "GET /authors/source-vocabulary")
@@ -345,11 +345,29 @@ class SdkAuthorRepository @Inject constructor(
     }
 
     override suspend fun replaceAuthorSources(authorId: String, sources: List<String>) {
-        Log.d(SdkMediaRepository.LOG_TAG, "PUT /authors/$authorId/sources count=${sources.size}")
+        Log.d(SdkMediaRepository.LOG_TAG, "PUT /authors/$authorId/sources mode=replace count=${sources.size}")
         withContext(Dispatchers.IO) {
             apiFactory.create().apiV1AuthorsAuthorIdSourcesPut(
                 authorId = authorId,
-                sourceVocabulary = SourceVocabulary(sources = sources),
+                authorSourcesWriteRequest = AuthorSourcesWriteRequest(
+                    sources = sources,
+                    mode = AuthorSourcesWriteRequest.Mode.replace,
+                ),
+            )
+        }
+    }
+
+    override suspend fun appendAuthorSources(authorId: String, sources: List<String>) {
+        Log.d(SdkMediaRepository.LOG_TAG, "PUT /authors/$authorId/sources mode=append count=${sources.size}")
+        withContext(Dispatchers.IO) {
+            // mode=append（上传自动挂靠专用语义，ADR-0023 原上传来源口径）：
+            // 服务端并入去重、永不覆盖该作者既有来源
+            apiFactory.create().apiV1AuthorsAuthorIdSourcesPut(
+                authorId = authorId,
+                authorSourcesWriteRequest = AuthorSourcesWriteRequest(
+                    sources = sources,
+                    mode = AuthorSourcesWriteRequest.Mode.append,
+                ),
             )
         }
     }

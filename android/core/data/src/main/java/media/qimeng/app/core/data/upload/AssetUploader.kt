@@ -51,11 +51,11 @@ class AssetUploader @Inject constructor(
     }
 
     /**
-     * 上传一个文件到 目标库+目录。服务端冲突自动重命名：成功返回最终文件名。
+     * 上传一个文件到 目标库+目录。服务端冲突自动重命名：成功返回最终文件名与资产 id。
      * IO 全程 Dispatchers.IO；永不抛异常，失败全部收敛为 [UploadOutcome]。
      *
-     * 协议批 2026-09-25：上传 query 只保留 libraryId/dir/filename——挂靠参数
-     * （authorId/authorName/source）已随协议退役，作者关联/来源维护改走资产编辑页。
+     * 挂靠批：上传 query 只保留 libraryId/dir/filename（filename = 编辑后落库名）——
+     * 挂靠不进上传请求，由 worker 在 201 之后经 [UploadAttacher] 走 PUT 端点。
      *
      * [isCancelled]（批C 任务Q C-2）：每次分块写入前查询；返回 true 时抛
      * [UploadCancelledException] 立即断流（64KB 网络写入粒度，亚秒级生效），
@@ -75,7 +75,9 @@ class AssetUploader @Inject constructor(
             .addPathSegments(UPLOAD_PATH)
             .addQueryParameter("libraryId", libraryId)
             .addQueryParameter("dir", dir)
-            .addQueryParameter("filename", item.displayName)
+            // filename = 暂存列表编辑后的落库名（未编辑回退展示名，单一口径 effectiveUploadName）；
+            // OkHttp addQueryParameter 自带 URL 编码（查询串口径）
+            .addQueryParameter("filename", item.effectiveUploadName)
             .build()
 
         val source = openSource(item.uri)
@@ -108,9 +110,14 @@ class AssetUploader @Inject constructor(
             okHttpClient.newCall(request).execute().use { response ->
                 val bodyText = response.body?.string().orEmpty()
                 when {
-                    response.isSuccessful -> UploadOutcome.Success(
-                        UploadApiBodies.parseFinalFileName(bodyText) ?: FALLBACK_FINAL_NAME,
-                    )
+                    response.isSuccessful -> {
+                        val parsed = UploadApiBodies.parseUploadResult(bodyText)
+                        UploadOutcome.Success(
+                            finalFileName = parsed?.fileName ?: FALLBACK_FINAL_NAME,
+                            // 挂靠序列的目标 id（挂靠批）；缺 id 由 worker 收敛为挂靠失败
+                            assetId = parsed?.id,
+                        )
+                    }
 
                     response.code in CLIENT_ERROR_MIN..CLIENT_ERROR_MAX ->
                         // 4xx 一律终局不重试（含 401，上传 401 终局口径）：token 失效时后台重试无意义——
@@ -170,7 +177,7 @@ class AssetUploader @Inject constructor(
 }
 
 /**
- * 上传响应体解析（internal：单测直接锁定透传/重命名文案逻辑）。
+ * 上传响应体解析（internal：单测直接锁定透传/重命名文案与资产 id 提取）。
  * moshi 反射（SDK 生成物同款 KotlinJsonAdapterFactory，不另引 codegen）。
  */
 internal object UploadApiBodies {
@@ -179,9 +186,16 @@ internal object UploadApiBodies {
         .add(KotlinJsonAdapterFactory())
         .build()
 
-    /** 2xx 响应体的 AssetDetail.fileName（冲突重命名后的最终名）；解析失败回退 null。 */
-    fun parseFinalFileName(body: String): String? = try {
-        moshi.adapter(UploadResultDto::class.java).fromJson(body)?.fileName
+    /** 2xx 响应体关心的字段（AssetDetail 子集；字段名与协议一致） */
+    data class UploadResult(val id: String?, val fileName: String?)
+
+    /**
+     * 2xx 响应体的 AssetDetail.id + fileName（冲突重命名后的最终名）；
+     * 解析失败回退 null（fileName 缺失由调用方回退展示文案、id 缺失收敛为挂靠失败）。
+     */
+    fun parseUploadResult(body: String): UploadResult? = try {
+        moshi.adapter(UploadResultDto::class.java).fromJson(body)
+            ?.let { UploadResult(id = it.id, fileName = it.fileName) }
     } catch (e: Exception) {
         null
     }
@@ -198,7 +212,7 @@ internal object UploadApiBodies {
     private fun defaultClientError(httpCode: Int): String = "服务端拒绝（HTTP $httpCode）"
 
     /** 2xx 响应只关心的字段（AssetDetail 子集；字段名与协议一致） */
-    private class UploadResultDto(val fileName: String? = null)
+    private class UploadResultDto(val id: String? = null, val fileName: String? = null)
 
     /** 4xx 响应体（协议 components.schemas.Error） */
     private class ApiErrorDto(val code: String? = null, val message: String? = null)

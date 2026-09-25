@@ -119,8 +119,16 @@ interface AuthorRepository {
     /** 某作者来源集（GET /authors/{authorId}/sources；服务端已排序，客户端不重排） */
     suspend fun authorSourcesById(authorId: String): List<String> = emptyList()
 
-    /** 整体替换某作者来源集（PUT /authors/{authorId}/sources，body {sources}） */
+    /** 整体替换某作者来源集（PUT /authors/{authorId}/sources，body {sources, mode=replace}） */
     suspend fun replaceAuthorSources(authorId: String, sources: List<String>) = Unit
+
+    /**
+     * 并入来源（PUT /authors/{authorId}/sources，body {sources, mode=append}；挂靠批）：
+     * append = 服务端并入去重、永不覆盖该作者既有来源（上传自动挂靠专用语义，
+     * ADR-0023 原上传来源口径）；与 [replaceAuthorSources]（编辑页整体替换）分立方法，
+     * 调用方语义一目了然、不靠 mode 参数自辨。
+     */
+    suspend fun appendAuthorSources(authorId: String, sources: List<String>) = Unit
 
     /**
      * 整体替换资产作者关联（PUT /assets/{assetId}/authors，body {authorIds} 全集）；

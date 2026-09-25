@@ -117,6 +117,10 @@ class SdkUploadRepository @Inject constructor(
                 dir = itemDir,
                 displayName = item.displayName,
                 sizeBytes = item.sizeBytes,
+                // 编辑后落库名统一在此解析为实际值（uploadFileName 为空回退 displayName，单一口径）
+                uploadFileName = item.effectiveUploadName,
+                attachAuthorId = item.attachAuthorId,
+                attachSources = item.attachSources,
             )
             val request = OneTimeWorkRequestBuilder<UploadWorker>()
                 .setInputData(UploadWorkSpec.itemToInputData(spec))
@@ -140,7 +144,10 @@ class SdkUploadRepository @Inject constructor(
             // 入队留证（文本证据协议）
             Log.i(
                 SdkMediaRepository.LOG_TAG,
-                "enqueue upload localId=$localId file=${item.displayName} dir=$itemDir",
+                "enqueue upload localId=$localId file=${item.effectiveUploadName} dir=$itemDir" +
+                    item.attachAuthorId?.let { " author=$it" }.orEmpty() +
+                    item.attachSources?.takeIf { s -> s.isNotEmpty() }
+                        ?.let { s -> " sources=${s.size}" }.orEmpty(),
             )
             QueuedUpload(localId = localId, displayName = item.displayName)
         }
@@ -174,13 +181,20 @@ class SdkUploadRepository @Inject constructor(
         // 见 UploadWorkSpec.outcomeToResult）——SUCCEEDED+标志=CANCELLED；FAILED+标志
         // 保留兜底（防旧数据/其他路径）。WorkManager 的 State.CANCELLED 是引擎自身
         // 取消态，客户端从不主动触发（见 UploadCancelRegistry），出现时按失败兜底
+        // 挂靠批：SUCCEEDED+挂靠失败标志=ATTACH_FAILED（文件已入库、挂靠未成的专项态，
+        // 同样走 success 通道——failure 会级联杀链，重试路径被挂靠批失败语义红线禁用）
         val output = info.outputData
         val cancelledByUser = output.getBoolean(UploadWorkSpec.KEY_CANCELLED, false)
+        val attachFailed = output.getBoolean(UploadWorkSpec.KEY_ATTACH_FAILED, false)
         val status = when (info.state) {
             WorkInfo.State.ENQUEUED, WorkInfo.State.BLOCKED -> UploadStatus.QUEUED
             WorkInfo.State.RUNNING -> UploadStatus.UPLOADING
             WorkInfo.State.SUCCEEDED ->
-                if (cancelledByUser) UploadStatus.CANCELLED else UploadStatus.SUCCEEDED
+                when {
+                    cancelledByUser -> UploadStatus.CANCELLED
+                    attachFailed -> UploadStatus.ATTACH_FAILED
+                    else -> UploadStatus.SUCCEEDED
+                }
             WorkInfo.State.FAILED, WorkInfo.State.CANCELLED ->
                 if (cancelledByUser) UploadStatus.CANCELLED else UploadStatus.FAILED
         }

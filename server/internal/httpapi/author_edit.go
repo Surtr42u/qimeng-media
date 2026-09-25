@@ -115,16 +115,22 @@ func (s *Server) GetApiV1AuthorsAuthorIdSources(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusOK, gen.SourceVocabulary{Sources: sources})
 }
 
-// PutApiV1AuthorsAuthorIdSources 整体替换作者片段来源区（编辑页保存）：
-// 块命中→原地替换；无块→最近导入片段新建作者块；库中无片段→自动创建
-// 「上传自动挂靠.txt」。校验同通用来源词表；片段内容变化后同步修剪上传
-// 条目元数据（防重导入 409 误报）。200 回显替换后来源区。
+// PutApiV1AuthorsAuthorIdSources 写入作者片段来源区：mode=replace（缺省，
+// 编辑页保存语义）块命中→原地整体替换、无块→最近导入片段新建作者块、
+// 库中无片段→自动创建「上传自动挂靠.txt」；mode=append（上传流程自动挂靠）
+// 并入去重、永不覆盖既有来源（ADR-0023 原上传来源口径）。校验同通用来源
+// 词表；片段内容变化后同步修剪上传条目元数据（防重导入 409 误报）。
+// 200 回显写入后来源区（replace=提交值；append=并入结果）。
 func (s *Server) PutApiV1AuthorsAuthorIdSources(w http.ResponseWriter, r *http.Request, authorId string) {
 	var body gen.PutApiV1AuthorsAuthorIdSourcesJSONRequestBody
 	if !decodeJSON(w, r, &body) {
 		return
 	}
 	sources, ok := normalizeSourceWords(w, body.Sources)
+	if !ok {
+		return
+	}
+	mode, ok := parseSourcesWriteMode(w, body.Mode)
 	if !ok {
 		return
 	}
@@ -140,7 +146,7 @@ func (s *Server) PutApiV1AuthorsAuthorIdSources(w http.ResponseWriter, r *http.R
 		s.writeAuthorEditErr(w, "替换作者来源区", err)
 		return
 	}
-	saved, err := s.attach.ReplaceAuthorSources(r.Context(), qtx, s.now(), authorId, displayName, sources)
+	saved, err := s.attach.ReplaceAuthorSources(r.Context(), qtx, s.now(), authorId, displayName, sources, mode)
 	if err != nil {
 		s.internalErr(w, "替换作者来源区", err)
 		return
@@ -153,6 +159,23 @@ func (s *Server) PutApiV1AuthorsAuthorIdSources(w http.ResponseWriter, r *http.R
 	// 编辑结果，事务已提交）。
 	s.mirror.Refresh(r.Context(), s.q)
 	writeJSON(w, http.StatusOK, gen.SourceVocabulary{Sources: saved})
+}
+
+// parseSourcesWriteMode 把协议 mode 字段映射为编排层写入语义：nil=缺省
+// replace（协议 default，编辑页与既有客户端的兼容口径）。gen 侧的 mode 是
+// plain string 别名且 decodeJSON 走 encoding/json、无枚举校验，未知值在此
+// 兜底 400——放行会被静默当 replace，上传流程误用时将冲掉作者既有来源区
+// （append 语义正是为此存在的，ADR-0023）。
+func parseSourcesWriteMode(w http.ResponseWriter, raw *gen.AuthorSourcesWriteRequestMode) (authorattach.SourcesWriteMode, bool) {
+	switch {
+	case raw == nil || *raw == gen.Replace:
+		return authorattach.SourcesModeReplace, true
+	case *raw == gen.Append:
+		return authorattach.SourcesModeAppend, true
+	default:
+		writeErr(w, http.StatusBadRequest, codeInvalidParam, "mode 仅支持 replace 或 append")
+		return "", false
+	}
 }
 
 // PutApiV1AssetsAssetIdAuthors 整体替换资产作者关联（编辑页保存）：

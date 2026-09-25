@@ -30,11 +30,24 @@ object UploadWorkSpec {
     const val KEY_DIR = "dir"
     const val KEY_DISPLAY_NAME = "displayName"
     const val KEY_SIZE_BYTES = "sizeBytes"
+    /** 编辑后的落库文件名（入队时已解析为实际值——非空恒写；旧在途载荷缺键回退 displayName） */
+    const val KEY_UPLOAD_FILE_NAME = "uploadFileName"
+    /** 自动挂靠作者 id（可空键：不带挂靠的任务不写） */
+    const val KEY_ATTACH_AUTHOR_ID = "attachAuthorId"
+    /** 自动挂靠来源词数组（可空键：不带挂靠的任务不写；mode=append 由 worker 侧固定） */
+    const val KEY_ATTACH_SOURCES = "attachSources"
 
     // ---- 过程/输出 Data 键位（worker setProgress / Result.outputData） ----
     const val KEY_PROGRESS_PERCENT = "progressPercent"
     const val KEY_FINAL_FILE_NAME = "finalFileName"
     const val KEY_ERROR_MESSAGE = "errorMessage"
+
+    /**
+     * 挂靠失败标志（挂靠批）：outputData 键。挂靠失败 = 文件已入库——终态必须走
+     * **Result.success + 本标志**（failure 会经 iterativelyFailWorkAndDependents 级联杀链，
+     * 与取消通道同一依据），队列映射在 State.SUCCEEDED 侧识别本标志落 UploadStatus.ATTACH_FAILED。
+     */
+    const val KEY_ATTACH_FAILED = "attachFailed"
 
     /**
      * 取消标志（批C 任务Q C-2，342 笔返工改走 success 载荷）：outputData 键。
@@ -54,8 +67,9 @@ object UploadWorkSpec {
 
     /**
      * 入队载荷：一个任务的全部执行参数（worker 侧反解见 [specFromInputData]）。
-     * 协议批 2026-09-25：上传挂靠参数（authorId/authorName/source）已随协议退役——
-     * 上传只做纯上传，作者关联/来源维护改走资产编辑页（PUT /assets/{id}/authors 等）。
+     * uploadFileName 为入队时已解析的实际落库名（UploadItem.effectiveUploadName，
+     * 恒非空）；attachAuthorId/attachSources 可空 = 不带挂靠（来源挂靠以作者存在为前提，
+     * UI 侧单源保证，worker 防御性兜底见 [UploadAttacher]）。
      */
     data class UploadRequestSpec(
         val localId: String,
@@ -64,6 +78,9 @@ object UploadWorkSpec {
         val dir: String,
         val displayName: String,
         val sizeBytes: Long,
+        val uploadFileName: String,
+        val attachAuthorId: String? = null,
+        val attachSources: List<String>? = null,
     )
 
     fun itemToInputData(spec: UploadRequestSpec): Data = Data.Builder()
@@ -73,12 +90,19 @@ object UploadWorkSpec {
         .putString(KEY_DIR, spec.dir)
         .putString(KEY_DISPLAY_NAME, spec.displayName)
         .putLong(KEY_SIZE_BYTES, spec.sizeBytes)
+        .putString(KEY_UPLOAD_FILE_NAME, spec.uploadFileName)
+        .apply {
+            // 可空键不写（缺键 = 不带挂靠；写 null 值会被 Data 拒绝）
+            spec.attachAuthorId?.let { putString(KEY_ATTACH_AUTHOR_ID, it) }
+            spec.attachSources?.takeIf { it.isNotEmpty() }?.let { putStringArray(KEY_ATTACH_SOURCES, it.toTypedArray()) }
+        }
         .build()
 
     /**
      * 反解入队载荷；缺任一必需键返回 null（worker 直接终局失败——防御性兜底）。
-     * 兼容口径（冻结）：挂靠批之前/挂靠批形态的旧在途载荷可能携带 authorId/authorName/
-     * sources 等本版已删除的键——按 Data 语义未知键自然忽略，反解为纯上传任务。
+     * 兼容口径（冻结）：历史在途载荷可能缺新键——uploadFileName 缺失回退 displayName、
+     * 挂靠键缺失 = 不带挂靠（纯上传）；更早挂靠批形态的 authorId/authorName/source
+     * 等已删除键按 Data「未知键忽略」语义自然忽略。
      */
     fun specFromInputData(data: Data): UploadRequestSpec? {
         val localId = data.getString(KEY_LOCAL_ID) ?: return null
@@ -93,6 +117,9 @@ object UploadWorkSpec {
             dir = dir,
             displayName = displayName,
             sizeBytes = data.getLong(KEY_SIZE_BYTES, -1L),
+            uploadFileName = data.getString(KEY_UPLOAD_FILE_NAME)?.takeIf { it.isNotBlank() } ?: displayName,
+            attachAuthorId = data.getString(KEY_ATTACH_AUTHOR_ID),
+            attachSources = data.getStringArray(KEY_ATTACH_SOURCES)?.toList(),
         )
     }
 
@@ -104,6 +131,10 @@ object UploadWorkSpec {
     /**
      * 失败重试状态机（单测锁定；批C 342 笔返工修正取消分支）：
      * - 成功 → success（携带最终文件名）；
+     * - 已入库但挂靠失败（挂靠批）→ **success 携带挂靠失败标志**——文件已入库，重试
+     *   worker 等于重复上传文件（挂靠批失败语义红线）；failure 同样会级联杀链（同取消
+     *   通道依据），故走 success 载荷：KEY_FINAL_FILE_NAME + KEY_ATTACH_FAILED +
+     *   KEY_ERROR_MESSAGE（补挂指引文案），下游任务正常解锁执行；
      * - 永久失败（服务端 4xx）→ failure（透传文案，不重试）；
      * - 用户取消（C-2）→ **success 携带 CANCELLED 标志**——取消绝不能映射 failure：
      *   WorkManager 引擎对 failure 会走 iterativelyFailWorkAndDependents 级联，把
@@ -120,6 +151,17 @@ object UploadWorkSpec {
             is UploadOutcome.Success -> ListenableWorker.Result.success(
                 workDataOf(KEY_FINAL_FILE_NAME to outcome.finalFileName),
             )
+
+            is UploadOutcome.AttachFailed ->
+                // 绝不 retry/failure：文件已入库（重试=重复上传），failure 会级联杀链——
+                // 唯一终态 = success + 挂靠失败标志（UI 据此落 ATTACH_FAILED 专项状态）
+                ListenableWorker.Result.success(
+                    workDataOf(
+                        KEY_FINAL_FILE_NAME to outcome.finalFileName,
+                        KEY_ATTACH_FAILED to true,
+                        KEY_ERROR_MESSAGE to attachFailedMessage(outcome.attachMessage),
+                    ),
+                )
 
             is UploadOutcome.Permanent -> ListenableWorker.Result.failure(
                 workDataOf(KEY_ERROR_MESSAGE to outcome.serverMessage),
@@ -146,6 +188,10 @@ object UploadWorkSpec {
 
     /** 用户取消的队列行文案（errorMessage 与通知共用，单一来源） */
     const val CANCELLED_MESSAGE = "已取消"
+
+    /** 挂靠失败补挂指引（队列行 errorMessage 与完成通知共用，单一来源；含失败环节原因） */
+    fun attachFailedMessage(attachMessage: String): String =
+        "已入库但挂靠失败：$attachMessage；请到 作品详情→作者→编辑 补挂"
 
     /** 进度百分比（0..100 钳制；总长未知（<=0）恒 0，通知退化为不定进度文案）。 */
     fun progressPercent(bytesDone: Long, totalBytes: Long): Int {

@@ -598,20 +598,22 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
     put:
-      summary: 整体替换作者片段来源区（编辑页保存）
+      summary: 写入作者片段来源区（编辑页整体替换 / 上传流程自动并入）
       description: |
-        整体替换该作者块的来源区（落点=作者块所在数组序第一个片段；无块=在
-        最近导入片段新建作者块，库中无片段自动建「上传自动挂靠.txt」）；写出
-        内容与手工片段同构、可被解析器原样读回。上传机器写入来源条目元数据同
-        步修剪（编辑是有意变更，不触发重导入 409 误报）。校验同通用来源词表。
+        落点=作者块所在数组序第一个片段；无块=在最近导入片段新建作者块，库中
+        无片段自动建「上传自动挂靠.txt」；写出内容与手工片段同构、可被解析器
+        原样读回。上传机器写入来源条目元数据同步修剪（编辑是有意变更，不触发
+        重导入 409 误报）。校验同通用来源词表。mode=replace（缺省，编辑页语
+        义）整体替换该作者块来源区；mode=append（上传流程自动挂靠语义）并入
+        去重、永不覆盖既有来源（对齐 ADR-0023 原上传来源口径）。
       parameters: [ { name: authorId, in: path, required: true, schema: { type: string } } ]
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/SourceVocabulary" }
+            schema: { $ref: "#/components/schemas/AuthorSourcesWriteRequest" }
       responses:
-        "200": { description: 已替换（回显替换后来源区）, content: { application/json: { schema: { $ref: "#/components/schemas/SourceVocabulary" } } } }
+        "200": { description: 已写入（回显写入后来源区）, content: { application/json: { schema: { $ref: "#/components/schemas/SourceVocabulary" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
   /api/v1/authors/import-txt:
@@ -1391,6 +1393,14 @@ components:
       required: [authorIds]
       properties:
         authorIds: { type: array, items: { type: string }, description: 替换后的常规作者 ID 全集（空数组=解除全部常规作者关联）；作者须已存在且 type=regular（否则 404） }
+
+    AuthorSourcesWriteRequest:
+      type: object
+      description: 作者来源区写入请求（PUT /authors/{authorId}/sources）
+      required: [sources]
+      properties:
+        sources: { type: array, items: { type: string, maxLength: 500 }, maxItems: 32, description: 来源词（获取渠道/平台名；服务端 trim+去重+逐项校验——控制字符/超长/超 32 项 400） }
+        mode: { type: string, enum: [replace, append], default: replace, description: replace=整体替换该作者块来源区（编辑页语义，缺省）；append=并入去重、永不覆盖既有来源（上传流程自动挂靠语义，ADR-0023 原上传来源口径） }
 
     StatsOverview:
       type: object

@@ -30,7 +30,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -45,16 +44,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import media.qimeng.app.core.model.DirNode
-import media.qimeng.app.core.model.UploadItem
-import media.qimeng.app.core.model.UploadQueueEntry
 import media.qimeng.app.core.model.UploadRules
-import media.qimeng.app.core.model.UploadStatus
 import media.qimeng.app.core.ui.component.QimengCapsuleTextField
 import media.qimeng.app.core.ui.component.QimengMessageCard
 import media.qimeng.app.core.ui.component.QimengSegPill
@@ -62,12 +57,13 @@ import media.qimeng.app.core.ui.component.QimengTopBar
 import media.qimeng.app.core.ui.theme.qimengFilledButtonColors
 
 /**
- * 上传主通道页（M4-5）：选库 → 选目录（可新建）→ 选文件 → 串行队列进度。
+ * 上传主通道页（M4-5）：选库 → 选目录（可新建）→ 选文件 → 暂存逐项编辑 → 串行队列进度。
  * 入口：①系统分享接收（壳层带分享 URI 导航至此）②App 内数据管理页入口。
  * 选文件（2026-09-25 拍板）：弃系统 SAF 选择器，改 App 内置相册式选择器
  * （[MediaPickerDialog]，MediaStore 网格多选；媒体读权限运行时申请，未授权不进选择器）。
- * 作者/来源挂靠已随协议退役（原 SAF 亦随之拆除）——资产编辑页（feature:detail）承接
- * 作者关联与来源维护。
+ * 挂靠批：暂存区批次默认（作者联想 + 来源多选 + 应用到全部；新进项自动继承）+ 逐项
+ * 展开编辑（作品名/作者/来源，复用 core:ui 无状态段组件）；挂靠执行在 worker 的 201
+ * 之后（mode=append，失败不重试，队列行落「已入库但挂靠失败」专项态）。
  * UI 只做表单编排与状态渲染，业务规则在 ViewModel/core 层（ADR-0008 铁律 7）。
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -180,6 +176,11 @@ private fun UploadForm(
                 viewModel.dismissError()
             }
         }
+        state.noticeMessage?.let { message ->
+            QimengMessageCard(text = message, container = MaterialTheme.colorScheme.tertiaryContainer) {
+                viewModel.dismissNotice()
+            }
+        }
         state.blockMessage?.let { message ->
             QimengMessageCard(text = message, container = MaterialTheme.colorScheme.tertiaryContainer) {
                 viewModel.dismissBlock()
@@ -221,8 +222,17 @@ private fun UploadForm(
         // —— 待上传文件 ——
         SectionTitle("待上传文件（${state.pendingItems.size}）")
         PickerRow(onPickMedia = onPickMedia)
+        // 批次默认区（挂靠批）：先设默认再选文件即自动继承；已有待传项可「应用到全部」
+        BatchDefaultSection(state = state, viewModel = viewModel)
         state.pendingItems.forEach { item ->
-            PendingItemRow(item = item, onRemove = { viewModel.removeItem(item) })
+            PendingItemRow(
+                item = item,
+                editing = state.editingUri == item.uri,
+                itemAuthorQuery = state.itemAuthorQuery,
+                itemAuthorSuggestions = state.itemAuthorSuggestions,
+                sourceOptions = state.sourceOptions,
+                viewModel = viewModel,
+            )
             HorizontalDivider()
         }
 
@@ -307,60 +317,13 @@ private fun PickerRow(onPickMedia: () -> Unit) {
     )
 }
 
-/**
- * 队列区：聚合行「共 N 个 · 成功 X · 失败 Y」+ 逐条状态行 + 取消控件（C-2）。
- * 取消交互对齐 Web 上传队列：点击即取消、无二次确认。
- */
 @Composable
-private fun QueueSection(
-    queue: List<UploadQueueEntry>,
-    summary: String?,
-    onCancel: (UploadQueueEntry) -> Unit,
-) {
-    SectionTitle("上传队列")
-    summary?.let {
-        Text(
-            text = it,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-    queue.forEach { entry -> QueueRow(entry, onCancel) }
-}
-
-@Composable
-private fun SectionTitle(text: String) {
+internal fun SectionTitle(text: String) {
     Text(
         text = text,
         style = MaterialTheme.typography.titleMedium,
         modifier = Modifier.padding(top = 8.dp),
     )
-}
-
-/** 待上传文件行：展示名 + 相对子目录（选文件夹上传时）+ 大小 + 移除 */
-@Composable
-private fun PendingItemRow(item: UploadItem, onRemove: () -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(item.displayName, style = MaterialTheme.typography.bodyMedium)
-            if (item.relativeDir.isNotEmpty()) {
-                Text(
-                    text = "子目录：${item.relativeDir}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Text(
-                text = formatBytes(item.sizeBytes),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        TextButton(onClick = onRemove) { Text("移除") }
-    }
 }
 
 /** 目录树行（递归渲染；深度缩进 + 展开/收起 + 点选为目标目录） */
@@ -443,67 +406,6 @@ private fun DirRow(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
-}
-
-/** 队列行：文件名 + 状态 + 取消控件（排队中/上传中可取消；C-2 冻结语义「皆可取消」） */
-@Composable
-private fun QueueRow(entry: UploadQueueEntry, onCancel: (UploadQueueEntry) -> Unit) {
-    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(entry.displayName, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-            when (entry.status) {
-                UploadStatus.QUEUED, UploadStatus.UPLOADING -> TextButton(onClick = { onCancel(entry) }) {
-                    Text(QUEUE_ACTION_CANCEL)
-                }
-
-                else -> Unit
-            }
-        }
-        when (entry.status) {
-            UploadStatus.QUEUED ->
-                StatusText("排队中（串行队列）", MaterialTheme.colorScheme.onSurfaceVariant)
-
-            UploadStatus.UPLOADING -> {
-                entry.progressPercent?.let { percent ->
-                    LinearProgressIndicator(
-                        progress = { percent / 100f },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(4.dp),
-                    )
-                }
-                StatusText(
-                    "上传中${entry.progressPercent?.let { " $it%" } ?: "…"}",
-                    MaterialTheme.colorScheme.primary,
-                )
-            }
-
-            UploadStatus.SUCCEEDED -> StatusText(
-                "上传成功：${entry.finalFileName ?: entry.displayName}",
-                MaterialTheme.colorScheme.primary,
-            )
-
-            UploadStatus.FAILED -> StatusText(
-                "失败：${entry.errorMessage ?: "未知原因"}",
-                MaterialTheme.colorScheme.error,
-            )
-
-            // 取消不计入失败（与 FAILED 分列；errorMessage=「已取消」仅诊断用，UI 文案定版）
-            UploadStatus.CANCELLED -> StatusText(
-                QUEUE_CANCELLED_TEXT,
-                MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-}
-
-@Composable
-private fun StatusText(text: String, color: Color) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.bodySmall,
-        color = color,
-    )
 }
 
 @Composable
@@ -589,15 +491,6 @@ private fun openPickerOrRequestPermission(
     }
 }
 
-/** 字节数人性化展示（未知 -1 显示"大小未知"） */
-private fun formatBytes(bytes: Long): String = when {
-    bytes < 0 -> SIZE_UNKNOWN
-    bytes < KB_UNIT -> "$bytes B"
-    bytes < MB_UNIT -> "${bytes / KB_UNIT} KB"
-    bytes < GB_UNIT -> String.format("%.1f MB", bytes.toDouble() / MB_UNIT)
-    else -> String.format("%.2f GB", bytes.toDouble() / GB_UNIT)
-}
-
 /** 目录树根路径（协议口径：空串 = 库根） */
 private const val ROOT_PATH = ""
 
@@ -615,16 +508,3 @@ private const val DIR_TOGGLE_AREA_WIDTH_DP = 48
  * 点击热区翻倍至 48×32（Material 密集列表 32dp 档），清偿「收起热区低于最小触摸目标」审查回退。
  */
 private const val DIR_TOGGLE_AREA_HEIGHT_DP = 32
-
-/** 队列行取消控件文案（对齐 Web 上传队列：取消无需二次确认） */
-private const val QUEUE_ACTION_CANCEL = "取消"
-
-/** 队列行取消态文案（与 FAILED 分列：用户取消不计失败） */
-private const val QUEUE_CANCELLED_TEXT = "已取消"
-
-/** 字节换算基数（1024 进位） */
-private const val KB_UNIT = 1024L
-private const val MB_UNIT = KB_UNIT * 1024L
-private const val GB_UNIT = MB_UNIT * 1024L
-
-private const val SIZE_UNKNOWN = "大小未知"

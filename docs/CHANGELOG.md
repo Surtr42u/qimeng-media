@@ -8,6 +8,17 @@
 - 子代理执行的工作标注"（执行子代理）"，主对话直接完成的标注"（主代理）"。
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
+## feat(api/web/app/server): 上传流程自动挂靠——App 暂存列表逐项快捷编辑（作品名/作者/来源）+ 上传 201 后自动挂靠（来源 append 并入）| 文档: adr/0024 修订, DOMAIN_RULES §6, GUIDE_API, CHANGELOG.md（2026-09-25 第三百九十三笔）
+
+执行 AI：GLM-5.3-Flash（主代理：协议/文档/终验；服务端与 Android 由并行执行子代理实现）
+
+- **需求澄清（用户纠正第三百九十二笔的理解）**：真实工作流=下载文件先核对**作品名/作者/来源再上传**，App 内一步完成而非上传后另去编辑页。定稿形态：上传协议**保持纯上传**（ADR-0024 决策 1 不回收）；App 上传流程在单文件 201 后由客户端依次调用 `PUT /assets/{assetId}/authors`（authorIds 单项——新上传资产零关联，无覆盖风险）与 `PUT /authors/{authorId}/sources`（**mode=append**，不覆盖作者既有来源）；挂靠失败**不重试上传**（重试=文件重复入库），条目落「已入库待挂靠」态由资产编辑页补挂——编辑页兼任上传流程的失败恢复路径。上传前暂存列表逐项编辑**作品名**（=upload 既有 filename 参数，落库文件名即作者匹配与展示依据）与作者/来源，批次默认一键套用、逐项可覆盖、新进项继承批次默认。
+- **协议（api/openapi.yaml，路径数不变 65）**：`PUT /authors/{authorId}/sources` 请求体 SourceVocabulary → **AuthorSourcesWriteRequest** `{sources, mode?=replace|append}`（缺省 replace=整体替换〔编辑页语义不变〕；append=并入去重、永不覆盖既有来源〔对齐 ADR-0023 原上传来源口径〕）；`make sdk` 三端重生成 + sdk.lock 同批更新。
+- **服务端**：`authorattach/edit.go` `ReplaceAuthorSources` 增 mode（新增 `SourcesWriteMode` 常量与 `writeAuthorBlockSources` 分派助手：replace=`authoring.ReplaceSources`、append=`authoring.AppendSources` 幂等并入、回显=写入后来源区；无块新建路径两模式共用——displayNameAliases 修复原样复用）；`httpapi/author_edit.go` 适配新 gen 请求体 + `parseSourcesWriteMode`（nil/replace→replace、append→append、非法 400 INVALID_PARAM——decodeJSON 无枚举校验此处即唯一校验点）；kv 修剪两模式统一收口（append 后修剪恒 no-op，单一实现防口径漂移）。测试 +5（append 既有区保序去重/幂等零写入/无块新建回读不漂移/缺省 replace 回归/非法 mode 400 无副作用）。
+- **Android**：`UploadItem` 增 `uploadFileName`（null 回退 displayName 的唯一回退口径 `effectiveUploadName`）/`attachAuthorId`/`attachSources`；`UploadStatus` 增 **ATTACH_FAILED** 专项态；暂存区批次默认控件（作者联想+来源多选+应用到全部）+ 逐项展开编辑（作品名/作者/来源，UploadPendingSection/UploadQueueSection 拆分守 600 行红线）；WorkManager 载荷增 `KEY_UPLOAD_FILE_NAME`/`KEY_ATTACH_AUTHOR_ID`/`KEY_ATTACH_SOURCES`（可空键不写，旧在途载荷反解兼容）；**`UploadAttacher`**（@Singleton 走生成 SDK：先 replaceAssetAuthors 单项、后 appendAuthorSources，任一失败收敛不外抛）+ Worker `resolveOutcome`（挂靠失败 → Result.success + ATTACH_FAILED 标志与「到 作品详情→作者→编辑 补挂」指引文案〔单一文案源〕，永不触发整 worker 重试）；`AssetUploader` 201 响应体解析 assetId（moshi，无新依赖）。
+- **测试**：server `go build/vet/gofmt` + `go test ./... -count=1` 15 包全绿；android `testDebugUnitTest :core:model:test` 730 例全绿 + assembleDebug 通过（新增 UploadAttacherTest 8、WorkSpec 往返/兼容 +5、UploadViewModel 挂靠用例 +15）；web tsc/oxlint 过（生成类型 mode 可选，编辑页 hook 无需改动）。
+- **文档**：ADR-0024 追加「修订记录（同日，上传流程自动挂靠）」；DOMAIN_RULES §6 sources 端点 mode 口径 + 新增「上传流程自动挂靠」条；GUIDE_API「作者」行与「关键机制」条同步。
+
 ## feat(api/web/app/server): 上传拆分 + 资产编辑页 + 通用来源词表 + Web 拖拽目录/Android 相册式选择器 | 文档: adr/0024, adr/0023 修订, adr/INDEX.md, DOMAIN_RULES.md, GUIDE_API.md, SECURITY.md, ARCHITECTURE.md, CAPABILITY_MAP.md, HANDOVER.md, CHANGELOG.md（2026-09-25 第三百九十二笔）
 
 执行 AI：GLM-5.3-Flash（主代理：协议/编排/审查返工收口；协议前探索与三端实现/文档由并行执行子代理完成，对抗审查子代理复核）

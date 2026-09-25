@@ -6,8 +6,20 @@ package media.qimeng.app.core.data.upload
  */
 sealed interface UploadOutcome {
 
-    /** 服务端 2xx：已入库；finalFileName = 冲突自动重命名后的最终名（UI 展示口径） */
-    data class Success(val finalFileName: String) : UploadOutcome
+    /**
+     * 服务端 2xx：已入库；finalFileName = 冲突自动重命名后的最终名（UI 展示口径）。
+     * assetId = 201 响应体 AssetDetail.id（自动挂靠的目标；解析失败为 null——此时
+     * 挂靠序列无法发起，worker 收敛为 [AttachFailed]）。
+     */
+    data class Success(val finalFileName: String, val assetId: String? = null) : UploadOutcome
+
+    /**
+     * 已入库但自动挂靠失败（挂靠批）：文件本身已成功上传（重试挂靠绝不能重传文件），
+     * worker 对本分支落 **Result.success + 挂靠失败标志**（failure 会级联杀链，同取消
+     * 通道），队列行/UI 通知按「已入库但挂靠失败」专项文案指引补挂。
+     * attachMessage = 失败环节与原因（作者/来源分步透传）。
+     */
+    data class AttachFailed(val finalFileName: String, val attachMessage: String) : UploadOutcome
 
     /**
      * 服务端 4xx：重试无意义（类型不白名单/超限/上传已关闭等）。
