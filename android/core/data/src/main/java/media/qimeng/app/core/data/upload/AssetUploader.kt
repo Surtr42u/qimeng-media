@@ -19,7 +19,9 @@ import okhttp3.RequestBody
 import okio.BufferedSink
 import media.qimeng.app.core.data.repository.BusinessApiFactory
 import media.qimeng.app.core.model.UploadItem
+import media.qimeng.app.core.model.UploadRules
 import media.qimeng.app.core.network.di.UploadClient
+import java.io.FileInputStream
 import java.io.IOException
 import java.io.InputStream
 import javax.inject.Inject
@@ -142,11 +144,19 @@ class AssetUploader @Inject constructor(
         }
     }
 
+    /**
+     * 打开源输入流：收件箱类条目（绝对路径，UploadRules.isAbsoluteFilePath 单源判定，
+     * 2026-09-25 暂存区重做）走 FileInputStream 直读；content:// 类走 ContentResolver。
+     * 失败（SecurityException 授权失效/FileNotFoundException 文件被移走）都归为可重试：
+     * 授权到重启前有效，队列重试窗口内通常可恢复；持续失败由重试上限兜底。
+     */
     private fun openSource(uri: String): InputStream? = try {
-        context.contentResolver.openInputStream(Uri.parse(uri))
+        if (UploadRules.isAbsoluteFilePath(uri)) {
+            FileInputStream(uri)
+        } else {
+            context.contentResolver.openInputStream(Uri.parse(uri))
+        }
     } catch (e: Exception) {
-        // SecurityException（授权失效）/FileNotFoundException（文件被移走）都归为可重试：
-        // 授权到重启前有效，队列重试窗口内通常可恢复；持续失败由重试上限兜底
         null
     }
 

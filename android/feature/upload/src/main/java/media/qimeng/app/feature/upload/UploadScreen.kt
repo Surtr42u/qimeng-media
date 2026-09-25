@@ -57,16 +57,17 @@ import media.qimeng.app.core.ui.component.QimengTopBar
 import media.qimeng.app.core.ui.theme.qimengFilledButtonColors
 
 /**
- * 上传主通道页（M4-5；2026-09-25 流程重排）：先选文件进暂存区 → 在暂存区配置
- * （目标库必选 → 目标目录 → 批次默认 → 逐项编辑）→ 串行队列进度。
- * 空态（无待传项）只有选文件入口 + 引导文案，不展示任何配置项；未选库时开始上传
- * 禁用并提示（enqueue 侧保留必填兜底，见 [UploadViewModel.enqueue]）。
+ * 上传主通道页（M4-5；2026-09-25 流程重排 + 暂存区重做）：先选文件进持久暂存区 →
+ * 在暂存区配置（目标库必选 → 目标目录 → 批次默认 → 逐项编辑）→ 串行队列进度。
+ * 暂存条目/批次默认/收件箱路径全部持久化（杀进程重启不丢），页面只 collect 持久流渲染。
+ * 空态（无暂存项）只有两个选文件入口（相册式选择器 / 下载收件箱导入）+ 引导文案；
+ * 未选库时开始上传禁用并提示（enqueue 侧保留必填兜底，见 [UploadViewModel.enqueue]）。
  * 入口：①系统分享接收（壳层带分享 URI 导航至此）②App 内数据管理页入口。
- * 选文件（2026-09-25 拍板）：弃系统 SAF 选择器，改 App 内置相册式选择器
- * （[MediaPickerDialog]，MediaStore 网格多选；媒体读权限运行时申请，未授权不进选择器）。
- * 挂靠批：暂存区批次默认（作者联想 + 来源多选 + 应用到全部；新进项自动继承）+ 逐项
- * 展开编辑（作品名/作者/来源，复用 core:ui 无状态段组件）；挂靠执行在 worker 的 201
- * 之后（mode=append，失败不重试，队列行落「已入库但挂靠失败」专项态）。
+ * 选文件：内置相册式选择器（MediaStore 网格多选，媒体读权限运行时申请）+ 下载收件箱
+ * （设置页选定的文件夹，含点前缀隐藏目录，白名单过滤后一键进暂存区）。
+ * 挂靠批：暂存区批次默认（作者联想 + 来源多选 + 应用到全部）+ 逐项展开编辑
+ * （作品名联想/作者/来源/库覆盖，复用 core:ui 无状态段组件）；挂靠执行在 worker 的
+ * 201 之后（mode=append，失败不重试，队列行落「已入库但挂靠失败」专项态）。
  * UI 只做表单编排与状态渲染，业务规则在 ViewModel/core 层（ADR-0008 铁律 7）。
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -124,6 +125,7 @@ fun UploadScreen(
                 requestNotificationPermissionIfNeeded(context, notificationPermission)
                 openPickerOrRequestPermission(context, mediaPermission) { showPicker = true }
             },
+            onImportInbox = viewModel::importFromInbox,
             onCreateDir = { showCreateDirDialog = true },
             onEnqueue = {
                 requestNotificationPermissionIfNeeded(context, notificationPermission)
@@ -155,9 +157,10 @@ fun UploadScreen(
 }
 
 /**
- * 表单滚动主体：横幅 → 选文件入口 →（空态引导 | 暂存区配置块与待传项/入队）→ 队列。
+ * 表单滚动主体：横幅 → 选文件入口 →（空态引导 | 暂存区配置块与暂存条目/入队）→ 队列。
  * 2026-09-25 流程重排：目标库/目录/批次默认全部移入暂存区，库为配置块首行必选项；
  * 未选库时开始上传禁用并提示（门禁口径在 [UploadUiState.canEnqueue]）。
+ * 暂存区重做：暂存条目来自持久流（收件箱导入 + 相册多选共用），失效条目原位提示可清除。
  * 选择行为以回调注入（launcher/权限留在本壳层），函数行数收敛到百行红线内。
  */
 @Composable
@@ -165,6 +168,7 @@ private fun UploadForm(
     state: UploadUiState,
     viewModel: UploadViewModel,
     onPickMedia: () -> Unit,
+    onImportInbox: () -> Unit,
     onCreateDir: () -> Unit,
     onEnqueue: () -> Unit,
 ) {
@@ -194,11 +198,11 @@ private fun UploadForm(
 
         if (state.pendingItems.isEmpty()) {
             // —— 空态：只有选文件入口 + 引导文案，不展示任何配置项 ——
-            PickerRow(hint = EMPTY_STATE_HINT, onPickMedia = onPickMedia)
+            AddSourcesRow(state = state, onPickMedia = onPickMedia, onImportInbox = onImportInbox, emptyState = true)
         } else {
-            // —— 待上传区（暂存态）——
-            SectionTitle("待上传文件（${state.pendingItems.size}）")
-            PickerRow(hint = PICKER_FORMAT_HINT, onPickMedia = onPickMedia)
+            // —— 暂存区（暂存态）——
+            SectionTitle("暂存文件（${state.pendingItems.size}）")
+            AddSourcesRow(state = state, onPickMedia = onPickMedia, onImportInbox = onImportInbox, emptyState = false)
             // 配置块：目标库（必选）→ 目标目录 → 批次作者 → 批次来源 → 应用到全部
             LibrarySection(state = state, viewModel = viewModel)
             state.dirTree?.let { tree ->
@@ -210,15 +214,18 @@ private fun UploadForm(
                     onCreateDir = onCreateDir,
                 )
             }
-            // 批次默认区（挂靠批）：新进项自动继承；已有待传项可「应用到全部」
+            // 批次默认区（挂靠批）：新进项自动继承；已有暂存项可「应用到全部」
             BatchDefaultSection(state = state, viewModel = viewModel)
             state.pendingItems.forEach { item ->
-                PendingItemRow(
+                StagedItemRow(
                     item = item,
-                    editing = state.editingUri == item.uri,
+                    editing = state.editingSource == item.source,
+                    missing = item.source in state.missingSources,
                     itemAuthorQuery = state.itemAuthorQuery,
                     itemAuthorSuggestions = state.itemAuthorSuggestions,
+                    itemNameSuggestions = state.itemNameSuggestions,
                     sourceOptions = state.sourceOptions,
+                    libraries = state.libraries,
                     viewModel = viewModel,
                 )
                 HorizontalDivider()
@@ -248,6 +255,49 @@ private fun UploadForm(
         }
 
         Spacer(modifier = Modifier.height(24.dp))
+    }
+}
+
+/**
+ * 选文件入口行（暂存区重做两条管道）：「从相册选择」（内置相册式选择器）+
+ * 「从收件箱导入」（设置页选定的下载收件箱一键扫描入暂存区）。未设收件箱时导入按钮
+ * 禁用并给引导提示（设置页路径）；收件箱扫描进行中按钮转文案防重。
+ */
+@Composable
+private fun AddSourcesRow(
+    state: UploadUiState,
+    onPickMedia: () -> Unit,
+    onImportInbox: () -> Unit,
+    emptyState: Boolean,
+) {
+    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Button(onClick = onPickMedia, modifier = Modifier.weight(1f)) {
+                Text(PICKER_BUTTON_TEXT)
+            }
+            Button(
+                onClick = onImportInbox,
+                enabled = state.inboxPath != null && !state.scanningInbox,
+                modifier = Modifier.weight(1f),
+            ) {
+                Text(if (state.scanningInbox) INBOX_SCANNING_TEXT else INBOX_BUTTON_TEXT)
+            }
+        }
+        if (state.inboxPath == null) {
+            Text(
+                text = INBOX_NOT_SET_HINT,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Text(
+            text = if (emptyState) EMPTY_STATE_HINT else STAGED_STATE_HINT,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -320,22 +370,6 @@ private fun DirTreePanel(
     OutlinedButton(onClick = onCreateDir) {
         Text("在当前目录下新建子目录")
     }
-}
-
-/**
- * 选媒体入口（内置相册选择器，2026-09-25 拍板替代 SAF）；提示文案随页面状态切换
- * （空态引导 / 暂存态格式说明）。
- */
-@Composable
-private fun PickerRow(hint: String, onPickMedia: () -> Unit) {
-    Button(onClick = onPickMedia, modifier = Modifier.fillMaxWidth()) {
-        Text("从相册选择")
-    }
-    Text(
-        text = hint,
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
 }
 
 @Composable
@@ -515,11 +549,20 @@ private fun openPickerOrRequestPermission(
 /** 目录树根路径（协议口径：空串 = 库根） */
 private const val ROOT_PATH = ""
 
-/** 空态引导文案（2026-09-25 流程重排：选文件是第一步，配置项在暂存区出现） */
-private const val EMPTY_STATE_HINT = "选择手机里的图片/视频，上传前可编辑作品名与作者"
+/** 选文件入口按钮文案 */
+private const val PICKER_BUTTON_TEXT = "从相册选择"
+private const val INBOX_BUTTON_TEXT = "从收件箱导入"
+private const val INBOX_SCANNING_TEXT = "导入中…"
+
+/** 收件箱未设置时的入口提示（指向设置页收件箱卡） */
+private const val INBOX_NOT_SET_HINT = "未设置下载收件箱：请到 设置 → 下载收件箱 选择文件夹"
+
+/** 空态引导文案（暂存区重做：两条管道 + 暂存区持久化口径） */
+private const val EMPTY_STATE_HINT =
+    "从相册选择，或把论坛下载的文件放进手机文件夹后在 设置 → 下载收件箱 里指定，即可长期暂存"
 
 /** 暂存态选文件入口的格式说明（超限拦截口径在 VM/服务端） */
-private const val PICKER_FORMAT_HINT = "支持图片/视频常见格式；类型与大小校验在服务端，超限项本地拦截"
+private const val STAGED_STATE_HINT = "支持图片/视频常见格式；类型与大小校验在服务端，超限项本地拦截"
 
 private const val DIR_ROOT_LABEL = "（库根）"
 

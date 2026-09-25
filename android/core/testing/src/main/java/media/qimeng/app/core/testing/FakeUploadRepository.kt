@@ -28,6 +28,9 @@ class FakeUploadRepository : UploadRepository {
     /** GET /authors/suggest 返回值（按词条可编程；作者联想用例） */
     var suggestResult: (String) -> List<AuthorSuggestion> = { emptyList() }
 
+    /** GET /assets/name-suggestions 返回值（按词条可编程；作品名联想用例，暂存区重做） */
+    var suggestNamesResult: (String) -> List<String> = { emptyList() }
+
     /** describe 阶段对每个 uri 字符串给出的元数据（可编程） */
     var describedItem: (String) -> UploadItem = { uri ->
         UploadItem(uri = uri, displayName = "file-${uri.hashCode()}", sizeBytes = 100L)
@@ -53,6 +56,9 @@ class FakeUploadRepository : UploadRepository {
     /** 作者联想调用词条记录（防抖/透传断言用） */
     val suggestCalls = mutableListOf<String>()
 
+    /** 作品名联想调用词条记录（防抖/透传断言用，暂存区重做） */
+    val suggestNameCalls = mutableListOf<String>()
+
     /** 队列状态流（测试直接推状态驱动 UI 断言） */
     private val _queue = MutableStateFlow<List<UploadQueueEntry>>(emptyList())
     val queue: StateFlow<List<UploadQueueEntry>> = _queue.asStateFlow()
@@ -66,6 +72,11 @@ class FakeUploadRepository : UploadRepository {
     override suspend fun suggestAuthors(q: String, limit: Int): List<AuthorSuggestion> {
         suggestCalls.add(q)
         return suggestResult(q)
+    }
+
+    override suspend fun suggestNames(libraryId: String, q: String): List<String> {
+        suggestNameCalls.add(q)
+        return suggestNamesResult(q)
     }
 
     override suspend fun dirTree(libraryId: String): DirNode = dirTreeResult

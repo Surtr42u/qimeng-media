@@ -158,4 +158,41 @@ object UploadRules {
      */
     fun shouldExpandOnSelect(hasChildren: Boolean, alreadyExpanded: Boolean): Boolean =
         hasChildren && !alreadyExpanded
+
+    // ---- 收件箱扫描/源标识判定（2026-09-25 暂存区重做）----
+
+    /**
+     * 扩展名白名单（点前缀小写形态），镜像 server/internal/filing/upload.go 的
+     * allowedExtensions（含 m4v 超集决策：与 mp4 同为 ISO BMFF 容器）——
+     * 收件箱扫描过滤用（客户端不复制上传校验的魔数/大小道，类型越界由服务端 4xx 兜底）。
+     * 协议/服务端清单变更须同步此处（单源镜像，勿在 Android 侧散写第二份）。
+     */
+    private val ALLOWED_MEDIA_EXTENSIONS = setOf(
+        ".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif",
+        ".mp4", ".m4v", ".mkv", ".webm", ".mov", ".avi",
+    )
+
+    /** 视频扩展名子集（收件箱扫描条目的 isVideo 判定，缩略图角标用） */
+    private val VIDEO_EXTENSIONS = setOf(".mp4", ".m4v", ".mkv", ".webm", ".mov", ".avi")
+
+    /** 文件名扩展名（点前缀小写）；无扩展名/点前缀隐藏文件返回 null */
+    private fun extensionLowerOf(fileName: String): String? {
+        val idx = fileName.lastIndexOf('.')
+        if (idx <= 0) return null
+        return fileName.substring(idx).lowercase()
+    }
+
+    /** 文件名是否在上传媒体扩展名白名单内（大小写不敏感；收件箱扫描过滤口径） */
+    fun isAllowedMediaExtension(fileName: String): Boolean =
+        extensionLowerOf(fileName)?.let { it in ALLOWED_MEDIA_EXTENSIONS } == true
+
+    /** 文件名是否为视频扩展名（大小写不敏感） */
+    fun isVideoExtension(fileName: String): Boolean =
+        extensionLowerOf(fileName)?.let { it in VIDEO_EXTENSIONS } == true
+
+    /**
+     * 源标识是否为收件箱类绝对路径（与 content:// 类区分：路径类走 File API 读流/
+     * 存在性校验/上传成功归档 uploaded/）。纯函数，worker/上传器/暂存仓共用单源。
+     */
+    fun isAbsoluteFilePath(source: String): Boolean = source.startsWith("/")
 }

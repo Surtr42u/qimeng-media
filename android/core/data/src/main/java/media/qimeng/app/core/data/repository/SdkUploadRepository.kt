@@ -71,6 +71,13 @@ class SdkUploadRepository @Inject constructor(
         }
     }
 
+    override suspend fun suggestNames(libraryId: String, q: String): List<String> {
+        Log.d(SdkMediaRepository.LOG_TAG, "GET /assets/name-suggestions libraryId=$libraryId q=$q")
+        return withContext(Dispatchers.IO) {
+            apiFactory.create().apiV1AssetsNameSuggestionsGet(libraryId, q).suggestions
+        }
+    }
+
     override suspend fun dirTree(libraryId: String): DirNode {
         Log.d(SdkMediaRepository.LOG_TAG, "GET /dirs libraryId=$libraryId")
         val tree = withContext(Dispatchers.IO) { apiFactory.create().apiV1DirsGet(libraryId) }

@@ -1,0 +1,129 @@
+package media.qimeng.app.core.data.repository
+
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import java.io.File
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import media.qimeng.app.core.model.StagedUpload
+import media.qimeng.app.core.model.StagingBatchConfig
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Rule
+import org.junit.Test
+import org.junit.rules.TemporaryFolder
+
+/**
+ * [DataStoreStagingRepository] 原子读-改-写锁定（2026-09-25 P2 竞态修复）：
+ * editItems/editBatchConfig 在 DataStore edit 内基于最新持久值变换——连续/并发两次变换
+ * 叠加生效而非互相覆盖（旧「first()+updateItems 两步」模式下在途写可乱序落地互相回退）。
+ * JVM 直测真 DataStore（临时目录文件仓；File 侧行为不在此测，归 InboxFileStoreTest）。
+ */
+class DataStoreStagingRepositoryTest {
+
+    @get:Rule
+    val tmp = TemporaryFolder()
+
+    private var scope: CoroutineScope? = null
+
+    @After
+    fun tearDown() {
+        scope?.cancel()
+        scope = null
+    }
+
+    /** 每例独立 DataStore 文件（不预先创建文件：不存在 = 默认空数据；空文件会被判损坏） */
+    private fun newRepository(): DataStoreStagingRepository {
+        val s = CoroutineScope(Dispatchers.IO + Job())
+        scope = s
+        val produceFile: () -> File = { File(tmp.root, "staging.preferences_pb") }
+        val dataStore = PreferenceDataStoreFactory.create(scope = s, produceFile = produceFile)
+        return DataStoreStagingRepository(dataStore, InboxFileStore())
+    }
+
+    private fun item(name: String) = StagedUpload(
+        source = "/storage/emulated/0/.dl/$name.jpg",
+        isPathSource = true,
+        displayName = "$name.jpg",
+        sizeBytes = 1L,
+        isVideo = false,
+        uploadBaseName = name,
+        addedAtMs = 1_730_000_000_000L,
+    )
+
+    // ---- editItems：edit 内基于最新值变换 ----
+
+    @Test
+    fun `连续两次editItems各加一项叠加为两项`() = runBlocking {
+        val repo = newRepository()
+        repo.editItems { it + item("a") }
+        repo.editItems { it + item("b") }
+        assertEquals(listOf("a", "b"), repo.stagedItems.first().map { it.uploadBaseName })
+        Unit
+    }
+
+    @Test
+    fun `并发两次editItems各加一项两项都在不互相覆盖`() = runBlocking {
+        val repo = newRepository()
+        val first = async { repo.editItems { it + item("a") } }
+        val second = async { repo.editItems { it + item("b") } }
+        first.await()
+        second.await()
+        assertEquals(setOf("a", "b"), repo.stagedItems.first().map { it.uploadBaseName }.toSet())
+        Unit
+    }
+
+    @Test
+    fun `editItems内按source定点替换不影响其他条目`() = runBlocking {
+        val repo = newRepository()
+        repo.editItems { listOf(item("a"), item("b")) }
+        repo.editItems { items ->
+            items.map { if (it.source == "/storage/emulated/0/.dl/a.jpg") it.copy(uploadBaseName = "改") else it }
+        }
+        val staged = repo.stagedItems.first()
+        assertEquals("改", staged.single { it.source.endsWith("/a.jpg") }.uploadBaseName)
+        assertEquals("b", staged.single { it.source.endsWith("/b.jpg") }.uploadBaseName)
+        Unit
+    }
+
+    @Test
+    fun `editItems变换为空表删键读侧回空暂存区`() = runBlocking {
+        val repo = newRepository()
+        repo.editItems { listOf(item("a")) }
+        assertEquals(1, repo.stagedItems.first().size)
+        repo.editItems { emptyList() }
+        assertTrue(repo.stagedItems.first().isEmpty())
+        Unit
+    }
+
+    // ---- editBatchConfig：同款口径 ----
+
+    @Test
+    fun `连续两次editBatchConfig变换基于最新值叠加`() = runBlocking {
+        val repo = newRepository()
+        repo.editBatchConfig { it.copy(libraryId = "lib-a") }
+        repo.editBatchConfig { it.copy(authorId = "author-a", sources = it.sources + "kemono") }
+        assertEquals(
+            StagingBatchConfig(libraryId = "lib-a", authorId = "author-a", sources = listOf("kemono")),
+            repo.batchConfig.first(),
+        )
+        Unit
+    }
+
+    @Test
+    fun `并发两次editBatchConfig来源各加一词两词都在`() = runBlocking {
+        val repo = newRepository()
+        repo.editBatchConfig { it.copy(authorId = "author-a") }
+        val first = async { repo.editBatchConfig { it.copy(sources = it.sources + "a") } }
+        val second = async { repo.editBatchConfig { it.copy(sources = it.sources + "b") } }
+        first.await()
+        second.await()
+        assertEquals(setOf("a", "b"), repo.batchConfig.first().sources.toSet())
+        Unit
+    }
+}

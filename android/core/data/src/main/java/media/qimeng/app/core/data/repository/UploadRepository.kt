@@ -29,6 +29,13 @@ interface UploadRepository {
      */
     suspend fun suggestAuthors(q: String, limit: Int = DEFAULT_SUGGEST_LIMIT): List<AuthorSuggestion>
 
+    /**
+     * 作品名序号联想（GET /assets/name-suggestions，2026-09-25 暂存区重做）：
+     * 服务端按库内既有命名风格 + 下一序号返回建议**基名**（不含扩展名，最多 3 条）。
+     * 客户端展示与回填时锁定拼接条目自身的扩展名（UploadNaming.composeUploadName 单源）。
+     */
+    suspend fun suggestNames(libraryId: String, q: String): List<String>
+
     /** 目标库目录树（GET /dirs，libraryId 必填；根节点 path=""） */
     suspend fun dirTree(libraryId: String): DirNode
 

@@ -43,6 +43,8 @@ private const val ROW_AUTHORS = "作者总览"
 private const val ROW_FAVORITE = "收藏"
 private const val ROW_HISTORY = "浏览历史"
 private const val ROW_DATA_MANAGE = "数据管理"
+// 2026-09-25 暂存区重做：下载收件箱入口行（收件箱路径选择子页，上传页导入管道的前置）
+private const val ROW_INBOX = "下载收件箱"
 private const val ROW_THEME = "主题色彩"
 
 /** 推荐偏好行文案：入口行与 PrefsBottomSheet 标题同串单源（Sheet 在 SettingsCards.kt，
@@ -68,6 +70,7 @@ private const val SUBTITLE_PREFS = "调整首页推荐算法的权重偏好"
 // 由子页承载）
 private const val SUBTITLE_SERVER = "服务器地址、本机模式与换址说明"
 private const val SUBTITLE_DATA_MANAGE = "上传文件、注册媒体目录、库管理"
+private const val SUBTITLE_INBOX = "选择上传来源的下载文件夹"
 
 private const val VERSION_UNKNOWN = "未知"
 
@@ -106,6 +109,8 @@ fun SettingsScreen(
     onOpenAuthors: () -> Unit = {},
     // U10-6：原 onOpenUpload（上传文件行）退役——上传入口并入「数据管理」hub 二级页
     onOpenDataManage: () -> Unit = {},
+    // 2026-09-25 暂存区重做：「下载收件箱」入口行 → 收件箱路径选择子页
+    onOpenInbox: () -> Unit = {},
     // U10-4：服务器子页入口（地址修改/本机模式/换址说明合并单入口）
     onOpenServerDetail: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
@@ -126,6 +131,7 @@ fun SettingsScreen(
             onOpenFavorite = onOpenFavorite,
             onOpenHistory = onOpenHistory,
             onOpenDataManage = onOpenDataManage,
+            onOpenInbox = onOpenInbox,
             onOpenPrefs = viewModel::openPrefsSheet,
         )
         settingsFooterItems(state = state, viewModel = viewModel)
@@ -202,6 +208,7 @@ private fun LazyListScope.settingsEntryRowItems(
     onOpenFavorite: () -> Unit,
     onOpenHistory: () -> Unit,
     onOpenDataManage: () -> Unit,
+    onOpenInbox: () -> Unit,
     onOpenPrefs: () -> Unit,
 ) {
     // 服务器入口行（U10-4：原「服务器地址」只展示卡与「本机模式」快捷行合并为单入口，
@@ -251,6 +258,18 @@ private fun LazyListScope.settingsEntryRowItems(
             label = ROW_DATA_MANAGE,
             subtitle = SUBTITLE_DATA_MANAGE,
             onClick = onOpenDataManage,
+            modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
+        )
+    }
+
+    // 下载收件箱入口（2026-09-25 暂存区重做：收件箱=用户指定的真实文件夹，论坛下载
+    // 常落点前缀隐藏目录、系统相册扫不到；点击进路径选择子页，路径持久化后上传页
+    // 「从收件箱导入」以该文件夹为扫描源）
+    item {
+        EntryRow(
+            label = ROW_INBOX,
+            subtitle = SUBTITLE_INBOX,
+            onClick = onOpenInbox,
             modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
         )
     }

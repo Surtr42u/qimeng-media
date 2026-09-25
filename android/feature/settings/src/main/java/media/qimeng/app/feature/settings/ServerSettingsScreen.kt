@@ -105,8 +105,10 @@ private const val STORAGE_PERM_MISSING = "未授权：本机模式的媒体库�
 private fun hasAllFilesAccess(context: Context): Boolean =
     Build.VERSION.SDK_INT < 30 || Environment.isExternalStorageManager()
 
-/** 打开系统的「所有文件访问」授权页（部分 ROM 无 per-app 页时退回全量列表页） */
-private fun openAllFilesAccessSettings(context: Context) {
+/** 打开系统的「所有文件访问」授权页（部分 ROM 无 per-app 页时退回全量列表页）。
+ *  internal：下载收件箱设置页（InboxSettingsScreen，2026-09-25 暂存区重做）复用同一
+ *  授权引导入口——单源不散写第二份 Intent 装配 */
+internal fun openAllFilesAccessSettings(context: Context) {
     val perApp = Intent(
         Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
         Uri.parse("package:${context.packageName}"),

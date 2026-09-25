@@ -69,10 +69,24 @@ func (s *Server) writeAuthorEditErr(w http.ResponseWriter, what string, err erro
 }
 
 // GetApiV1AuthorsSourceVocabulary 通用来源词表（来源建议唯一数据源；无记录
-// = 空数组）。
+// = 空数组）。kv 键不存在（出厂态：从未预填且用户从未 PUT——PUT 恒写键，
+// 清空也写空数组）时执行一次性自动预填：从全部已导入片段统计被多位作者
+// 共用的通用平台名（authorattach.PrefillSourceVocabulary 口径），有结果才
+// 写键并返回预填结果；键存在即用户已表态，永不再预填。事务包住「查键→
+// 统计→写键」，并发读取不会交叉覆盖窗口期内的用户 PUT。
 func (s *Server) GetApiV1AuthorsSourceVocabulary(w http.ResponseWriter, r *http.Request) {
-	list, err := authorattach.LoadSourceVocabulary(r.Context(), s.q)
+	tx, err := s.conn.BeginTx(r.Context(), nil)
 	if err != nil {
+		s.internalErr(w, "读取来源词表", err)
+		return
+	}
+	defer func() { _ = tx.Rollback() }()
+	list, err := authorattach.EnsureSourceVocabulary(r.Context(), s.q.WithTx(tx), s.now())
+	if err != nil {
+		s.internalErr(w, "读取来源词表", err)
+		return
+	}
+	if err := tx.Commit(); err != nil {
 		s.internalErr(w, "读取来源词表", err)
 		return
 	}
