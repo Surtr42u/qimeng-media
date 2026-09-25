@@ -5,20 +5,20 @@ import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { ClearIcon } from '@/components/shell/icons'
 
 /**
- * 作者挂靠字段（上传卡消费；REQ-上传指定作者与来源 §3.1①）。
+ * 作者联想字段（资产编辑页消费，ADR-0024——上传挂靠入口已退役）。
  * 受控 {value, onChange}：
  * - 点选联想项 = 确定作者身份（onChange 带 authorId——选的是身份不是文本）；
- * - 回车 = 输入与联想项 displayName 大小写不敏感全等时选定该作者，否则
- *   新建作者（带 authorName，身份归一在服务端 generateAuthorId，大小写/
- *   符号变体不会裂分身）——语义与 Android 端一致；
- * - null = 不指定（上传行为与现状一致）。
+ * - 回车 = 输入与联想项 displayName 大小写不敏感全等时选定该作者；无匹配
+ *   回车产出 authorName 形态——本组件不做创建（协议无按名新建作者端点，
+ *   新建作者先经 TXT 导入），消费方负责对该形态给出提示；
+ * - null = 清空动作。
  * 联想 = GET /authors/suggest（hooks 封装，铁律 7）：子串大小写不敏感命中、
  * 别名命中同一作者都由服务端负责，本组件只展示；防抖/Popover 范式照 TopBar
  * 搜索补全（含 .search-pop--popper 面板与 .pop-suggest-* 行样式复用）。
  * 选中后输入框回显 displayName，再编辑即退回自由输入态（onChange(null)）。
  */
 
-/** 挂靠值（上传卡入队快照的来源）：displayName 仅前端回显用，不进协议 */
+/** 联想值：authorName 形态=新建意图（消费方提示）；displayName 仅前端回显用，不进协议 */
 export interface AuthorAttachValue {
   authorId?: string
   authorName?: string
@@ -77,14 +77,14 @@ export function AuthorSuggestField({
 
   return (
     <label className="settings-field upload-attach-field">
-      <span>作者（可选，整批上传生效）</span>
+      <span>添加作者（联想选择）</span>
       <Popover open={open} onOpenChange={setPopOpen}>
         <div className="attach-input-box" ref={boxRef}>
           <PopoverAnchor asChild>
             <input
               ref={inputRef}
               type="text"
-              placeholder="输入作者名联想选择；无匹配回车新建"
+              placeholder="输入作者名联想选择"
               autoComplete="off"
               value={display}
               onChange={(e) => onInputChange(e.target.value)}
@@ -133,7 +133,7 @@ export function AuthorSuggestField({
                   ))}
                 </div>
               ) : (
-                <p className="pop-suggest-hint">没有匹配的作者，回车新建「{display.trim()}」</p>
+                <p className="pop-suggest-hint">没有匹配的作者——新建作者请先经 TXT 导入创建</p>
               )}
             </PopoverContent>
           ) : null}
@@ -142,9 +142,9 @@ export function AuthorSuggestField({
       <small>
         {attached
           ? value?.authorId != null
-            ? '已选作者——本批文件将挂到该作者名下'
-            : '将新建作者并挂靠本批文件'
-          : '留空 = 不指定作者，上传行为与现状一致'}
+            ? '已选作者——保存后关联到本作品'
+            : '新建作者请先经 TXT 导入创建'
+          : '输入名字从联想中点选要关联的作者'}
       </small>
     </label>
   )

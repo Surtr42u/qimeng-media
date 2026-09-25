@@ -1,5 +1,5 @@
 a6ed8f4e275eee926d27e0c52f30f2d1c4d8409465ac1fbc4511f7cc62de51db  android/sdk/.openapi-generator-ignore
-dd22ff700af56c4dc5612cb597a189611c639be71990f59ef018f2fb2353a651  android/sdk/README.md
+a08f168385614cce45f45fe529161ef7b6fd7456e5e0beb2e91274bada72791d  android/sdk/README.md
 e1ae6b63efe3560b7c732868dd25f5ed3d035a6ccc135c73a36eede7cc122d9c  android/sdk/build.gradle
 eea4a2fbb55559a8bfd8a5814ffb33d9cfd9257f63b0b4c921636c9c9a5fed69  android/sdk/docs/ApiV1AssetsAssetIdFavoritePutRequest.md
 0e9420002b77d68069a191f4d95f97428738785bf9aee6ec721e27f1159f4db0  android/sdk/docs/ApiV1AssetsAssetIdTagsPutRequest.md
@@ -10,6 +10,7 @@ bd9b223dca2b5d4faccae7956d7a9738f9d00c8ba4cc5b3d2afa6365ebd5082f  android/sdk/do
 b61e200ee1dbc553aa2f07ba87d04d71dbc7fc9e0e2b181a336242b9d82e84bf  android/sdk/docs/ApiV1DirsPostRequest.md
 0cc7dab03a34c71e7f85e21ee29dfa7b14b997479261a507430bf19e84d2b71a  android/sdk/docs/ApiV1LibrariesLibraryIdEnabledPutRequest.md
 7f960d566131ea5b6d4a8eaf0c285f3692b6231c7e096093a29e1f789afa8e6f  android/sdk/docs/ApiV1TagsPostRequest.md
+ef0489c02251f0099a7d7346a19414c8a8011d36d8cc7515e373a2e43069ab2c  android/sdk/docs/AssetAuthorsReplaceRequest.md
 0dfd0cd9eed2300d5b382cc21850e3a548c16a30a0f96de42d9a1981d84438ab  android/sdk/docs/AssetDetail.md
 c8d6f3cf1ebf7e4928d97ebe6712ba648ee989f93cbab954eee41b24994157a0  android/sdk/docs/AssetFacets.md
 c2aa1e77f26fc0325c7bd79b46e00a965becdb463766c74acef0ac2b76a2db47  android/sdk/docs/AssetPage.md
@@ -32,7 +33,7 @@ ecdbfc4970e14842d655920b780a5a700b2620f8ed88675bba9d91db5ddb5693  android/sdk/do
 23118505965fec56ce30c5135dce954797f6f60a845fd1c3a6f8d296d089ca16  android/sdk/docs/ClientLogPage.md
 e2898794031d13940be56f63eb4fe7d780182e75427a03cd12e51d2a435af5a2  android/sdk/docs/CountRange.md
 8e14d1bf41d868a2a10323e9c841a8fd887bf01641e01127e62c10b795fcd1f0  android/sdk/docs/CustomSources.md
-762ab0f3d22309a499dee105d2533397094c04add4959f43e11c5bfae0b5d510  android/sdk/docs/DefaultApi.md
+1c6e1cc2c259fd872cefe9067e4b0d1889bc0b122a590b60022c1d639b80083f  android/sdk/docs/DefaultApi.md
 95a269db44976a5d094437cfbe51341cde2231a40224d1b38abc848256ebba1c  android/sdk/docs/DirTree.md
 331127b77188cfc84a49da9b491b4604d4384a91fe2741145b688d68ccca3a84  android/sdk/docs/Error.md
 e13f7d25da4386abdc82a5236f8e46d666c2b03e84a3880842392f53547b6eba  android/sdk/docs/FacetBucket.md
@@ -57,7 +58,7 @@ e4a8d402ffe333b040adc55d553ff955b883c8f8f8081630873cee5a3144885e  android/sdk/do
 0f3acd2ce08195f61a66d3a63de6f8bc2d49c1a9b1e7ad2c68322f4627d9eac7  android/sdk/docs/LegacyTag.md
 b5e9c5db8158d7b454d4bbc6efda490b480c2a48e6251ec370ecee7204df06cb  android/sdk/docs/LegacyTimelineTag.md
 c770508b3055f6ecd019bc722c15aa831b0172361f6cff8736f5087d302ef944  android/sdk/docs/Library.md
-d1c3ce05b8d7f92f999e8d78bc567b8cc3097d202da72811ec3795f022faf3e2  android/sdk/docs/LibraryCapabilities.md
+cfac3fe31ff2c4ac0f262dfce76d3ed55ea7f92e94daf8daade668db9f1db683  android/sdk/docs/LibraryCapabilities.md
 4a4536cc6b2ad005f8b0c99061352aa1dc323164285e19e74077615e01db4cf8  android/sdk/docs/LibraryChangedEvent.md
 3f23ff4a3fbce10b0840bd5dd51f5fe83596ab0c761d05d7d59bd062ee6a54df  android/sdk/docs/LibraryCreate.md
 8f1a9ea0ccbc20ee80be3c2f60ffad529b0e03cad823a013f4e241e847e9890c  android/sdk/docs/LikeState.md
@@ -73,6 +74,7 @@ fdcb409c93cda30fcf7a6dd611396ba178760fd9e0668a75de6bcaabcf7b7e61  android/sdk/do
 910116f273a3b8a90d384add11a7eb320b3ea3524dfef8557ccb35f1fd32ce1e  android/sdk/docs/SearchSuggestions.md
 5124f44ddc7364eff6fecfbff25078389e9bca08fda54946017260366b5922aa  android/sdk/docs/SizeRange.md
 bd76e55243be556ae9c36b1169753fbd0141a5ed16498633f5ab46e41a422e5c  android/sdk/docs/SourceCount.md
+a2279befc2dc99285e063c54d5c4d5bf19b665851c00aa9611eeae7607496245  android/sdk/docs/SourceVocabulary.md
 f9db60d765cc03cb29f94f85165f129d9139d0c14c4c83698202290e9e4c7ed4  android/sdk/docs/StatsOverview.md
 2edeb526c15922e98939dd416cd2910beda58632117ea8d32b15fc0eb118eb5e  android/sdk/docs/StatsSizeBySource.md
 9b660f96cd6d140a91aaf0dc5d3b954202e861db91cc042a47a6e1f8ae1a6c7b  android/sdk/docs/StatsSizeByType.md
@@ -97,7 +99,7 @@ fecdc6c20679342c8623b72eeb8d7155ee9d9151bd2c0d5a4c7486e62ad8de72  android/sdk/gr
 2209f919a22528af59a2af2ad97e8d056cca18e39f7d87aa3fd549a73b180150  android/sdk/gradlew.bat
 b30ad969fcb6498e130da05624a77797593457e0c30ef5dc76aca2a17c17d623  android/sdk/sdk.gradle
 8aa8fdd6a92c41df3cd31295c1aa2be12d0ffa178790983ab815ae4d98b63741  android/sdk/settings.gradle
-740c02f58d893859e3a06d30e158fb163647c1bf253b9740fa8ad56bdf5955d3  android/sdk/src/main/kotlin/media/qimeng/sdk/apis/DefaultApi.kt
+6d96586b31fe9739e57c8ac06755a28402722bd342a20c7372a63d7d1b915da4  android/sdk/src/main/kotlin/media/qimeng/sdk/apis/DefaultApi.kt
 27f34e346b13e09b9794d8400c23677418e1dabc5777e4dd205908e9a7e2056c  android/sdk/src/main/kotlin/media/qimeng/sdk/infrastructure/ApiAbstractions.kt
 6220ecd56413b3ddc9cb07a1e9272532d41f5ce330b393fa24fc0991864c3cf5  android/sdk/src/main/kotlin/media/qimeng/sdk/infrastructure/ApiClient.kt
 07fbd42f3d8ed46d32a594fbd35d31ec619224d479d96b2e4b5d61dec51abba7  android/sdk/src/main/kotlin/media/qimeng/sdk/infrastructure/ApiResponse.kt
@@ -124,6 +126,7 @@ c9fadbcc680db938815a40b313aa4f8ff02eef447d53649f12fe907a9db9006c  android/sdk/sr
 37ae493709c075207b4dad07d92057403e30f968d1381b7459c52eeb2f48d9cf  android/sdk/src/main/kotlin/media/qimeng/sdk/models/ApiV1DirsPostRequest.kt
 ee9c9908e9f720e18955d84029538f27e8e84c35f6631b43a3c00868d090e57c  android/sdk/src/main/kotlin/media/qimeng/sdk/models/ApiV1LibrariesLibraryIdEnabledPutRequest.kt
 92c4a209c4ff038542f220d1c78db8c36cbca42bc5d980efdb401146cd2bc9b1  android/sdk/src/main/kotlin/media/qimeng/sdk/models/ApiV1TagsPostRequest.kt
+8db1a536210b909ad0a3b0ef84277a39537a34175199885f6cc0921a68baa44d  android/sdk/src/main/kotlin/media/qimeng/sdk/models/AssetAuthorsReplaceRequest.kt
 5cf7c07cb4714ce3dcdc0f4225cc0a3ff500eb386410e0d501ed952d3579e9f5  android/sdk/src/main/kotlin/media/qimeng/sdk/models/AssetDetail.kt
 18ab7f5690b7f3b29673f90bdb661026a4bb65ad44ef50f4f92c5ee464ddad87  android/sdk/src/main/kotlin/media/qimeng/sdk/models/AssetFacets.kt
 5b9d9f74949b0e48ff75f8ed7914b36d2709d2acd131f1f2315de3b4ebb6ad42  android/sdk/src/main/kotlin/media/qimeng/sdk/models/AssetPage.kt
@@ -132,8 +135,6 @@ bc02e57fff2209f6396e3480ed49b85613a1c948dc5dbe9942637a276b70a3aa  android/sdk/sr
 cd6266c705ecbd46c66b8d4689a16a0fa5ee248508a9eee0f7b0159e7a01cf66  android/sdk/src/main/kotlin/media/qimeng/sdk/models/AuthToken.kt
 9480025ba82c315223e2b9e957ae6f59df749abcf3d8190054dcc00e89c267c2  android/sdk/src/main/kotlin/media/qimeng/sdk/models/Author.kt
 75855645e1a67c67ac6ac49774549b3c615dc76da9becc9fd6675643b8d23c20  android/sdk/src/main/kotlin/media/qimeng/sdk/models/AuthorMirrorConfig.kt
-22abe6e7c61234d9bd2e0aa05b3fdd6bae7204b3f7f843aaaeddf88f5304d070  android/sdk/src/main/kotlin/media/qimeng/sdk/models/AuthorSourceStat.kt
-25f053a6c0aea87cb3060fb5a7dba26a6cdb69d4afd66b21efae869b90c1c1ca  android/sdk/src/main/kotlin/media/qimeng/sdk/models/AuthorSourceVocabulary.kt
 28af2940d53e3bb7702a0321596caaf93428a7db895de96cc4bb462d737627e0  android/sdk/src/main/kotlin/media/qimeng/sdk/models/AuthorSuggest.kt
 3043259a6e33d5eb14141aaad6378bc84c9cc7ad9b5781b2f8d4d0c0f4a78453  android/sdk/src/main/kotlin/media/qimeng/sdk/models/BackupInfo.kt
 f966184ee02cfa9667b301790dc89e37c7b2d0666be44c2e8ae70f0ee9b2a533  android/sdk/src/main/kotlin/media/qimeng/sdk/models/BackupList.kt
@@ -170,7 +171,7 @@ c21b934749376fe3394d9ba1c32453ced33faad370d56309016cdc45682fd687  android/sdk/sr
 8cd8250e7bdc4146efdaa2e5e2fbe3bed92fce08a9a5f17c05099479f4e3a850  android/sdk/src/main/kotlin/media/qimeng/sdk/models/LegacyTag.kt
 49d584d429db41d37564a649f6d9bd1ddb24764161d9d9f24fedb276c794a68c  android/sdk/src/main/kotlin/media/qimeng/sdk/models/LegacyTimelineTag.kt
 869b62268a454d55c89356eb84c0e4db3414477663f150f7acffef02eb946ac4  android/sdk/src/main/kotlin/media/qimeng/sdk/models/Library.kt
-d66cb262cccb616eacd3d5663959cb0e7b4e37edee9e1d21896aadb26660da18  android/sdk/src/main/kotlin/media/qimeng/sdk/models/LibraryCapabilities.kt
+f96f80a23f8f389973e9928cfc670ae898389af5d4dcbf26dff623e103efb7d3  android/sdk/src/main/kotlin/media/qimeng/sdk/models/LibraryCapabilities.kt
 7a6179aaadb04cb8c3b38e89136832d5885027af0ce46360731e13d9d36d4728  android/sdk/src/main/kotlin/media/qimeng/sdk/models/LibraryChangedEvent.kt
 8d3b136a345a7d7ea07a085c63d32df31254aba2f99bd95e1e1cb5a9ba4e419f  android/sdk/src/main/kotlin/media/qimeng/sdk/models/LibraryCreate.kt
 2847c990aa92e2602cf5e7e7374905050d524d2ae26f6d8c7ac4e052d9787d8d  android/sdk/src/main/kotlin/media/qimeng/sdk/models/LikeState.kt
@@ -186,6 +187,7 @@ ac16322ce4891f8f442e17e8cf1629211b039c24fd044877b7fd15c5256737cd  android/sdk/sr
 a7a900f42211dd9bb7a37a7dc76490622baf7e1cd0726fc154e9ea9d55ef7b8b  android/sdk/src/main/kotlin/media/qimeng/sdk/models/SearchSuggestions.kt
 3bfef7cb927e8aefc5a14e44c468c77e4e56ccbeb71de541167ef590f9601343  android/sdk/src/main/kotlin/media/qimeng/sdk/models/SizeRange.kt
 ef91355b64aa53ab8479f18a57c02a1bfb52b482ba0a5f9ed3597a41aad07bd1  android/sdk/src/main/kotlin/media/qimeng/sdk/models/SourceCount.kt
+34e3132b5a398c8453df65cc9963a08705c9393e84e16b54352e6fb37c0292ad  android/sdk/src/main/kotlin/media/qimeng/sdk/models/SourceVocabulary.kt
 fac86ce517a46a79f6bd5c25eb918bfa9f753184ba49fc39a01a3537686ef21a  android/sdk/src/main/kotlin/media/qimeng/sdk/models/StatsOverview.kt
 ede78f932af2fd9bc29bece4a38900a6e1b42df8b66976a736d1f7b915828ad9  android/sdk/src/main/kotlin/media/qimeng/sdk/models/StatsSizeBySource.kt
 b463818604db032723c0a83252bc2d358aafa1e422c59640cc89057979e7aebc  android/sdk/src/main/kotlin/media/qimeng/sdk/models/StatsSizeByType.kt
@@ -204,7 +206,7 @@ e01cf7aa9014f8f45a7aa6cd52e107946291b90b1238bfc3fbcf00466a5cf0d4  android/sdk/sr
 874242b85d6d617a09b7729bcc09adbf175b0f95a3735748ff3770018fba7c6d  android/sdk/src/main/kotlin/media/qimeng/sdk/models/TxtImportedFile.kt
 3267541c502ac93fc4acd7b7b20889807d3851ff4d1085a4dda783bef3777af9  android/sdk/src/main/kotlin/media/qimeng/sdk/models/UploadDoneEvent.kt
 946d74093a5a44f46b9f6da73f21625e2b83cdb4aba11c1514e43ff5350563c2  android/sdk/src/main/kotlin/media/qimeng/sdk/models/ViewEventReport.kt
-ce7d3e9b8cbae4f6c5458fca4b0b41e3570a5331afd6fb00ccd5462fac011eba  server/internal/httpapi/gen/types.gen.go
+447cd94f70c9df11ad4338da7a993b15a207c2bfc433ff4306a35746511edaa1  server/internal/httpapi/gen/types.gen.go
 b325822184abc7aed91c42bb1ea0697bb8ae178833c3fca97f6ec498398c1377  web/src/api/generated/client.gen.ts
 8a17b0bf1540258734a128f176f6cb915c849b97d8064a613dba5ef8390e58d9  web/src/api/generated/client/client.gen.ts
 949cc7333527c91928c32410c4a4a2dd2b90b99fe080eb8ce4505647852fbe1b  web/src/api/generated/client/index.ts
@@ -218,6 +220,6 @@ adc570c9357a08624cce81dc503abd8d8ff60a76d25bd4d3a4afbe349d82d1f0  web/src/api/ge
 df993567abbe3e5b477d81517fb967cf63cf40b7866957d5dc6cc03238cb1426  web/src/api/generated/core/serverSentEvents.gen.ts
 0c33c5e096608fc1f859d89bc17ce428e306c7aa3c2c30acd8affa5a734370af  web/src/api/generated/core/types.gen.ts
 1b637c521d8136dfdbf8dfc4fcc8bb73e0c554466e4d2ca9c9086d4c712983c4  web/src/api/generated/core/utils.gen.ts
-65757a1e77663bf606537935a92eccc029d6e40e80b295b9160623f88cbd91a1  web/src/api/generated/index.ts
-27257994783124a3f89c59c1720c5fd05390f92f46db82c9ca1bc5d37cdffb44  web/src/api/generated/sdk.gen.ts
-c2b02420fad2e2a3907e1c871473a764dc31f4a406ac7d4ed22d962272dd2f09  web/src/api/generated/types.gen.ts
+e2e6bfa5d3f5310a39335c7c7e502f2ca7bae31326043abf24f6cfe85ef448fe  web/src/api/generated/index.ts
+75d887f3ed8bf61a94f2089efac42e641855fb9d06ee696bcb7574941204462d  web/src/api/generated/sdk.gen.ts
+a8762e0084eb2af61382531394dccc57bec36b3e7f879fe783dbc16ac8d69a60  web/src/api/generated/types.gen.ts

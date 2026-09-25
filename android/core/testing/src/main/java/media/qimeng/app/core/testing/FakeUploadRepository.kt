@@ -6,7 +6,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import media.qimeng.app.core.data.repository.QueuedUpload
 import media.qimeng.app.core.data.repository.UploadRepository
-import media.qimeng.app.core.model.AuthorSourceStat
 import media.qimeng.app.core.model.AuthorSuggestion
 import media.qimeng.app.core.model.DirNode
 import media.qimeng.app.core.model.LibraryChoice
@@ -26,11 +25,8 @@ class FakeUploadRepository : UploadRepository {
     /** GET /config 返回值（可编程） */
     var limitsResult: UploadLimits = UploadLimits(maxBytesMb = 2048, autoAccept = true)
 
-    /** GET /authors/suggest 返回值（按词条可编程；挂靠作者用例） */
+    /** GET /authors/suggest 返回值（按词条可编程；作者联想用例） */
     var suggestResult: (String) -> List<AuthorSuggestion> = { emptyList() }
-
-    /** GET /authors/sources 返回值（可编程；来源词表用例） */
-    var authorSourcesResult: List<AuthorSourceStat> = emptyList()
 
     /** describe 阶段对每个 uri 字符串给出的元数据（可编程） */
     var describedItem: (String) -> UploadItem = { uri ->
@@ -43,14 +39,11 @@ class FakeUploadRepository : UploadRepository {
     /** createDir 抛错模拟（新建目录失败场景） */
     var createDirError: Exception? = null
 
-    /** 入队调用记录（断言入队参数与顺序，含挂靠快照） */
+    /** 入队调用记录（断言入队参数与顺序；协议批 2026-09-25 起纯上传载荷） */
     data class EnqueueCall(
         val items: List<UploadItem>,
         val libraryId: String,
         val dir: String,
-        val authorId: String?,
-        val authorName: String?,
-        val sources: List<String>,
     )
 
     val enqueueCalls = mutableListOf<EnqueueCall>()
@@ -59,10 +52,6 @@ class FakeUploadRepository : UploadRepository {
 
     /** 作者联想调用词条记录（防抖/透传断言用） */
     val suggestCalls = mutableListOf<String>()
-
-    /** GET /authors/sources 调用计数（词表首载/入队后重拉时序断言用） */
-    var authorSourcesCallCount = 0
-        private set
 
     /** 队列状态流（测试直接推状态驱动 UI 断言） */
     private val _queue = MutableStateFlow<List<UploadQueueEntry>>(emptyList())
@@ -79,11 +68,6 @@ class FakeUploadRepository : UploadRepository {
         return suggestResult(q)
     }
 
-    override suspend fun authorSources(): List<AuthorSourceStat> {
-        authorSourcesCallCount++
-        return authorSourcesResult
-    }
-
     override suspend fun dirTree(libraryId: String): DirNode = dirTreeResult
 
     override suspend fun createDir(libraryId: String, path: String) {
@@ -93,18 +77,22 @@ class FakeUploadRepository : UploadRepository {
 
     override suspend fun uploadLimits(): UploadLimits = limitsResult
 
-    override suspend fun describe(uris: List<String>): List<UploadItem> = uris.map(describedItem)
+    override suspend fun describe(uris: List<String>): List<UploadItem> {
+        describeCalls += uris.size
+        return uris.map(describedItem)
+    }
+
+    /** describe 调用条目计数（选择器路径不走 describe 的时序断言用） */
+    var describeCalls = 0
+        private set
 
     override fun enqueue(
         items: List<UploadItem>,
         libraryId: String,
         dir: String,
-        authorId: String?,
-        authorName: String?,
-        sources: List<String>,
     ): List<QueuedUpload> {
         enqueueError?.let { throw it }
-        enqueueCalls.add(EnqueueCall(items, libraryId, dir, authorId, authorName, sources))
+        enqueueCalls.add(EnqueueCall(items, libraryId, dir))
         return items.map { QueuedUpload(localId = "local-${it.hashCode()}", displayName = it.displayName) }
     }
 

@@ -48,6 +48,9 @@ dependencies {
     // 显式组件先行覆盖，见 CoilModule 注释），此处 implementation 不改变对外依赖面。
     implementation(libs.coil.core)
     implementation(libs.coil.gif)
+    // 视频帧解码器（coil-video，同家族白名单）：内置相册选择器（2026-09-25 拍板）网格直载
+    // MediaStore 视频 content URI 出首帧缩略图（CoilModule 显式装配）。
+    implementation(libs.coil.video)
     implementation(libs.coil.network.okhttp)
 
     // 上传队列（M4-5）：WorkManager 白名单依赖 + @HiltWorker（androidx.hilt 同族接线）。

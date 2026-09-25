@@ -228,6 +228,7 @@ internal fun DetailAuthorSheet(
     followPending: Boolean,
     onToggleFollow: (String) -> Unit,
     onOpenAuthor: (authorId: String, displayName: String) -> Unit,
+    onEdit: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     ModalBottomSheet(
@@ -315,6 +316,32 @@ internal fun DetailAuthorSheet(
                         )
                     }
                 }
+            }
+            // 编辑作者与来源（2026-09-25 上传挂靠退役批）：资产级入口恒显示（无作者资产的
+            // 添加作者主路径也在此），点击跳编辑页并收 Sheet（同上方跳转收口语义）
+            val editLabel = stringResource(R.string.asset_edit_title)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        onEdit()
+                        onDismiss()
+                    }
+                    .padding(vertical = QimengDimens.SpaceM),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = editLabel,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.weight(1f),
+                )
+                Icon(
+                    imageVector = ChevronRightIcon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }

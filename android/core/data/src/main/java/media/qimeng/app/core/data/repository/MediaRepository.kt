@@ -105,6 +105,28 @@ interface AuthorRepository {
 
     /** 幂等重放已存片段重建作者-文件关联（POST /authors/import-txt/rebuild；无片段返回零值） */
     suspend fun rebuildTxt(): TxtImportResult = throw UnsupportedOperationException("rebuildTxt 未实现")
+
+    // ------------------------------------------------------------------
+    // 资产编辑页族（2026-09-25：上传挂靠退役批——作者关联与来源维护收口本端口）。
+    // 带默认实现的原因同本文件 tags 族注释：feature:detail 既有测试替身
+    // （DetailViewModelTest.FakeAuthorRepository）只实现前两方法，抽象化会破坏其编译；
+    // 默认值=「无编辑能力」，唯一生产实现 SdkAuthorRepository 全覆盖。
+    // ------------------------------------------------------------------
+
+    /** 全站来源词表（GET /authors/source-vocabulary；服务端单一来源，客户端禁硬编码词表） */
+    suspend fun sourceVocabulary(): List<String> = emptyList()
+
+    /** 某作者来源集（GET /authors/{authorId}/sources；服务端已排序，客户端不重排） */
+    suspend fun authorSourcesById(authorId: String): List<String> = emptyList()
+
+    /** 整体替换某作者来源集（PUT /authors/{authorId}/sources，body {sources}） */
+    suspend fun replaceAuthorSources(authorId: String, sources: List<String>) = Unit
+
+    /**
+     * 整体替换资产作者关联（PUT /assets/{assetId}/authors，body {authorIds} 全集）；
+     * 200 回 AssetDetail（关联即落库，调用方按需重查详情）。
+     */
+    suspend fun replaceAssetAuthors(assetId: String, authorIds: List<String>) = Unit
 }
 
 /**

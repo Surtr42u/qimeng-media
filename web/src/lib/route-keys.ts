@@ -75,6 +75,21 @@ export function assetDetailWithSearch(id: string, search: string): string {
 }
 
 /**
+ * 资产编辑路由模板（router.tsx /app 下 asset/:assetId/edit 段同形；模板串
+ * 全库仅此一处）。与叠加组详情路由 asset/:assetId 不同形不冲突：edit 是
+ * 静态子段、路由排名更优，只吞 /app/asset/:assetId/edit 自己。
+ */
+export const ASSET_EDIT_PATTERN = '/app/asset/:assetId/edit'
+
+/**
+ * 资产编辑路由（详情页「编辑」按钮跳转唯一来源，禁散写字面量）。
+ * assetId 由 generatePath 内部 percent-encode，与 assetDetail 同口径。
+ */
+export function assetEdit(id: string): string {
+  return generatePath(ASSET_EDIT_PATTERN, { assetId: id })
+}
+
+/**
  * 当前 pathname 是否资产详情（E1 叠加层打开态判定：router 叠加布局的底衬
  * inert 与 AppShell 的滚动复位门/回顶部按钮显隐共用，单一来源）
  */

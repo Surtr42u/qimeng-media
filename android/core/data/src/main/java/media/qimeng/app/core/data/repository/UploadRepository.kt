@@ -1,7 +1,6 @@
 package media.qimeng.app.core.data.repository
 
 import kotlinx.coroutines.flow.Flow
-import media.qimeng.app.core.model.AuthorSourceStat
 import media.qimeng.app.core.model.AuthorSuggestion
 import media.qimeng.app.core.model.DirNode
 import media.qimeng.app.core.model.LibraryChoice
@@ -21,20 +20,15 @@ data class QueuedUpload(
  */
 interface UploadRepository {
 
-    /** 可选目标库列表（GET /libraries；authorAttach 来自 Library.capabilities） */
+    /** 可选目标库列表（GET /libraries） */
     suspend fun libraries(): List<LibraryChoice>
 
     /**
-     * 作者联想（GET /authors/suggest；上传挂靠输入框数据源，REQ §3.1①）。
+     * 作者联想（GET /authors/suggest；资产编辑页添加作者输入框数据源）。
      * 子串匹配/别名命中/大小写不敏感全在服务端，客户端只透传词条。
+     * （协议批 2026-09-25：上传挂靠退役后本方法仅剩编辑页消费者。）
      */
     suspend fun suggestAuthors(q: String, limit: Int = DEFAULT_SUGGEST_LIMIT): List<AuthorSuggestion>
-
-    /**
-     * 作者来源词表（GET /authors/sources；上传挂靠来源快捷选项数据源，REQ §3.1②）。
-     * 服务端单一来源（ADR-0008：客户端禁硬编码词表）。
-     */
-    suspend fun authorSources(): List<AuthorSourceStat>
 
     /** 目标库目录树（GET /dirs，libraryId 必填；根节点 path=""） */
     suspend fun dirTree(libraryId: String): DirNode
@@ -55,18 +49,12 @@ interface UploadRepository {
     /**
      * 入队（串行 unique 链，并发=1）。返回入队回执（含客户端 localId）。
      * 网络约束 + 退避重试在请求侧声明：断网自动等待恢复，中断按官方 retry 语义续跑。
-     *
-     * 挂靠参数（REQ §3.1，与 dir 同为「入队时刻快照」）：[authorId]（点选既有作者）与
-     * [authorName]（回车新建）互斥，调用方保证只传其一；[sources] 为来源词多选。
-     * 三者留空/空列表 = 行为与既有上传完全一致（协议向后兼容）。
+     * 协议批 2026-09-25：挂靠参数（authorId/authorName/source）随协议退役，纯上传入队。
      */
     fun enqueue(
         items: List<UploadItem>,
         libraryId: String,
         dir: String,
-        authorId: String? = null,
-        authorName: String? = null,
-        sources: List<String> = emptyList(),
     ): List<QueuedUpload>
 
     /**

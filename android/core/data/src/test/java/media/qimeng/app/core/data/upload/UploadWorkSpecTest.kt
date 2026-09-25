@@ -38,33 +38,41 @@ class UploadWorkSpecTest {
         assertEquals(12345L, back.sizeBytes)
     }
 
-    // ---- REQ §3.1：挂靠可选键往返 ----
+    // ---- 兼容锁定：旧在途载荷（含已退役挂靠键）反解为纯上传 ----
 
+    /**
+     * 协议批 2026-09-25：上传挂靠参数（authorId/authorName/source）随协议退役，
+     * 键位常量与新载荷一并拆除。WorkManager 在途旧队列可能仍携带挂靠键——
+     * Data 反解按「未知键忽略」语义收敛为纯上传任务（缺读新键即静默降级），本组
+     * 用例锁定该兼容口径：反解成功、必需字段无损。
+     */
     @Test
-    fun `挂靠载荷往返无损`() {
-        val data = UploadWorkSpec.itemToInputData(
-            spec().copy(authorId = "a-1", sources = listOf("kemono", "r34")),
-        )
-        val back = UploadWorkSpec.specFromInputData(data)
+    fun `含未知挂靠键的旧载荷反解为纯上传且正常执行`() {
+        val legacyWithAttach = androidx.work.Data.Builder()
+            .putString(UploadWorkSpec.KEY_LOCAL_ID, "local-1")
+            .putString(UploadWorkSpec.KEY_URI, "content://media/external/images/1")
+            .putString(UploadWorkSpec.KEY_LIBRARY_ID, "lib-uuid")
+            .putString(UploadWorkSpec.KEY_DIR, "photos/2026")
+            .putString(UploadWorkSpec.KEY_DISPLAY_NAME, "IMG_2026.jpg")
+            .putLong(UploadWorkSpec.KEY_SIZE_BYTES, 12345L)
+            // 旧版挂靠键（本版已删常量，按字符串字面量写）：反解必须整体忽略
+            .putString("authorId", "a-1")
+            .putString("authorName", "旧作者")
+            .putStringArray("sources", arrayOf("kemono", "r34"))
+            .build()
+        val back = UploadWorkSpec.specFromInputData(legacyWithAttach)
         assertNotNull(back)
-        assertEquals("a-1", back!!.authorId)
-        assertNull(back.authorName) // authorId/authorName 互斥：未写键反解为 null
-        assertEquals(listOf("kemono", "r34"), back.sources)
+        assertEquals("local-1", back!!.localId)
+        assertEquals("content://media/external/images/1", back.uri)
+        assertEquals("lib-uuid", back.libraryId)
+        assertEquals("photos/2026", back.dir)
+        assertEquals("IMG_2026.jpg", back.displayName)
+        assertEquals(12345L, back.sizeBytes)
     }
 
     @Test
-    fun `新建作者载荷往返无损`() {
-        val data = UploadWorkSpec.itemToInputData(spec().copy(authorName = "全新作者"))
-        val back = UploadWorkSpec.specFromInputData(data)
-        assertNotNull(back)
-        assertEquals("全新作者", back!!.authorName)
-        assertNull(back.authorId)
-        assertTrue(back.sources.isEmpty())
-    }
-
-    @Test
-    fun `旧载荷无挂靠键反解为空不挂靠`() {
-        // 兼容口径：挂靠批之前形态的入队载荷（只写旧必需键）照常反解，挂靠字段全空
+    fun `旧载荷无挂靠键反解为纯上传`() {
+        // 兼容口径：挂靠批之前形态的入队载荷（只写必需键）照常反解
         val legacy = androidx.work.Data.Builder()
             .putString(UploadWorkSpec.KEY_LOCAL_ID, "local-1")
             .putString(UploadWorkSpec.KEY_URI, "content://media/external/images/1")
@@ -75,9 +83,8 @@ class UploadWorkSpecTest {
             .build()
         val back = UploadWorkSpec.specFromInputData(legacy)
         assertNotNull(back)
-        assertNull(back!!.authorId)
-        assertNull(back.authorName)
-        assertTrue(back.sources.isEmpty())
+        assertEquals("IMG_2026.jpg", back!!.displayName)
+        assertEquals(12345L, back.sizeBytes)
     }
 
     @Test

@@ -10,6 +10,7 @@ import (
 	"errors"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -171,6 +172,50 @@ func TestApplyExistingAuthorFirstFragment(t *testing.T) {
 	}
 	if row := authorRow(t, q, "bamhor"); row.FileCount != 1 {
 		t.Errorf("FileCount=%d, want 1", row.FileCount)
+	}
+}
+
+// AuthorID 路径 + 多别名 displayName 作者无块：新建块编号行必须按空格分隔
+// 各别名写回——整串当单别名会让解析回读的 GenerateAuthorID 漂移成幻影作者。
+func TestApplyMultiAliasAuthorIDNoBlock(t *testing.T) {
+	q := newTestDB(t)
+	seedAsset(t, q, "asset-1", "b.png")
+	ctx := context.Background()
+	frag := "1  other\n作品\nx.png\n"
+	if err := PersistSources(ctx, q, testNow, []Source{
+		{Filename: "新.txt", Content: frag, ImportedAt: store.FormatTimestamp(testNow)},
+	}); err != nil {
+		t.Fatalf("预置片段失败: %v", err)
+	}
+	if err := q.UpsertAuthor(ctx, db.UpsertAuthorParams{
+		ID: "night", DisplayName: "Night / Cry", Type: authoring.AuthorTypeRegular, CreatedAt: store.FormatTimestamp(testNow),
+	}); err != nil {
+		t.Fatalf("预置作者失败: %v", err)
+	}
+
+	res := mustApply(t, q, AttachRequest{
+		AssetID: "asset-1", FinalName: "b.png", AuthorID: "night",
+	})
+	if res.Fragment != "新.txt" {
+		t.Errorf("Fragment=%q, want 新.txt", res.Fragment)
+	}
+	sources, _ := LoadSources(ctx, q)
+	if !strings.Contains(sources[0].Content, "2  Night  Cry") {
+		t.Errorf("编号行未按空格分隔别名写回: %q", sources[0].Content)
+	}
+	found := false
+	for i := range sources {
+		for _, b := range authoring.ParseAuthorBlocks(sources[i].Content) {
+			if len(b.AuthorNames) > 0 && authoring.GenerateAuthorID(b.AuthorNames[0]) == "night" {
+				found = true
+				if !reflect.DeepEqual(b.AuthorNames, []string{"Night", "Cry"}) {
+					t.Errorf("AuthorNames=%v, want [Night Cry]", b.AuthorNames)
+				}
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("回读不到 id=night 的作者块（幻影作者形态）")
 	}
 }
 

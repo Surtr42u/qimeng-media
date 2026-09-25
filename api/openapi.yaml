@@ -294,6 +294,31 @@ paths:
       parameters: [ { $ref: "#/components/parameters/AssetId" } ]
       responses:
         "200": { description: 已移入回收站 }
+  /api/v1/assets/{assetId}/authors:
+    put:
+      summary: 整体替换资产作者关联（编辑页保存；TXT 片段真相原地更新，ADR-0024）
+      description: |
+        语义（DOMAIN_RULES §6）：提交的 authorIds 就是该资产的作者全集（空数
+        组=解除全部常规作者关联）。新增关联=把资产当前文件名作为作品行追加进
+        对应作者块（落点规则与原上传挂靠一致：作者块所在数组序第一个片段，未
+        命中任何块并入最近导入片段，库中无片段自动建「上传自动挂靠.txt」）；
+        移除关联=遍历全部片段删除该资产的作品行（行文本精确匹配优先、trim+
+        小写+去空格归一匹配回退——归一保留扩展名，png/mp4 同名互不误伤）。
+        同事务更新 asset_authors；上传机器写入条目元数据同步修
+        剪（编辑是有意变更，不触发重导入 409 误报）。仅 capabilities.authorAtt
+        ach=true 的库可用（否则 400）。已知缺口：资产改名/移动不回写片段作品行
+        （既有行为），按当前文件名匹配不到的残留行会被统一重建重新关联——
+        ADR-0024 记档为后续项。
+      parameters: [ { $ref: "#/components/parameters/AssetId" } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AssetAuthorsReplaceRequest" }
+      responses:
+        "200": { description: 已替换（回资产详情，authors 为替换后全集）, content: { application/json: { schema: { $ref: "#/components/schemas/AssetDetail" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /api/v1/sources:
     get:
       summary: 出处列表（按规范名分组的文件计数；相册按出处分组用）
@@ -360,12 +385,9 @@ paths:
     post:
       summary: 上传文件（流式；四道安全校验见 SECURITY.md；原样落盘永不转码）
       parameters:
-        - { name: libraryId, in: query, required: true, schema: { type: string }, description: 目标库 ID（多库场景必须显式指定）。支持作者挂靠的库类型由 Library.capabilities.authorAttach 声明 }
+        - { name: libraryId, in: query, required: true, schema: { type: string }, description: 目标库 ID（多库场景必须显式指定） }
         - { name: dir, in: query, required: true, schema: { type: string }, description: 目标目录（库内相对路径；空 = 库根） }
         - { name: filename, in: query, required: true, schema: { type: string } }
-        - { name: authorId, in: query, required: false, schema: { type: string }, description: 可选；挂靠目标=已有作者（GET /authors/suggest 点选返回的作者 ID）。与 authorName 互斥（同传 400 INVALID_PARAM）；须为常规作者且存在（否则 404）。仅支持作者挂靠的库类型生效（Library.capabilities.authorAttach=false 的库传任一挂靠参数 → 400 INVALID_PARAM，DOMAIN_RULES §6） }
-        - { name: authorName, in: query, required: false, schema: { type: string, maxLength: 200 }, description: 可选；新建作者显示名（联想无结果回车新建）。与 authorId 互斥；身份遵循 generateAuthorId 归一规则——大小写/符号变体归并同一作者，不会裂成分身 }
-        - { name: source, in: query, required: false, schema: { type: array, items: { type: string, maxLength: 500 }, maxItems: 32 }, style: form, explode: true, description: 可选；作者来源/出处词（query 同名重复传多值，与 GET /assets 的 source 数组同款传法）。仅指定作者时合法（否则 400）；留空=不改动该作者来源；并入去重永不覆盖既有来源；来源仅记录不参与任何匹配（DOMAIN_RULES §6） }
       requestBody:
         required: true
         content:
@@ -527,7 +549,7 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Author" } } } } }
   /api/v1/authors/suggest:
     get:
-      summary: 作者联想（上传挂靠输入框；常规作者，含零关联文件者）
+      summary: 作者联想（作者输入框联想：编辑页挂靠等；常规作者，含零关联文件者）
       description: |
         q 对 displayName 做子串匹配（contains 语义，ASCII 大小写不敏感，同
         DOMAIN_RULES §3 搜索口径）；displayName 已含 " / " 连接的全部别名，
@@ -539,16 +561,59 @@ paths:
         - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 50, default: 10 } }
       responses:
         "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/AuthorSuggest" } } } } }
-  /api/v1/authors/sources:
+  /api/v1/authors/source-vocabulary:
     get:
-      summary: 作者来源词表（上传挂靠来源快捷选项数据源）
+      summary: 通用来源词表（来源建议唯一数据源；服务端手动维护的小清单，ADR-0024）
       description: |
-        全部已导入 TXT 片段「来源/出处」区解析出的去重词汇；authorCount=
-        引用该来源的不同作者数（常用优先=按 authorCount 降序、name 升序）。
-        随上传并入的新来源自动进入词表。与 §4 资产出处分区（SourceMatcher/
-        custom_sources）互不相干，禁止混用。
+        用户维护的「获取渠道/平台」通用词表（如「老王论坛」），kv_settings
+        author_source_vocabulary 持久化；无记录=空数组。来源建议一律取本词表
+        （个人片段来源区词表不再作为建议源——作者各自的个人链接对他人无意义）；
+        自由输入的新词由用户在词表卡手动收编。与 §4 资产出处分区（SourceMatcher/
+        custom_sources）互不相干，禁止混用（DOMAIN_RULES §6）。
       responses:
-        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/AuthorSourceVocabulary" } } } }
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/SourceVocabulary" } } } }
+    put:
+      summary: 整体替换通用来源词表
+      description: |
+        整体替换语义：提交列表 trim+去重后就是生效词表（空数组=清空）；单项
+        超长/含控制字符 400 INVALID_PARAM；超 32 项 400。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SourceVocabulary" }
+      responses:
+        "200": { description: 已保存（回显存储后词表）, content: { application/json: { schema: { $ref: "#/components/schemas/SourceVocabulary" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /api/v1/authors/{authorId}/sources:
+    get:
+      summary: 读取作者片段来源区（编辑页回显）
+      description: |
+        常规作者在其所在片段（数组序第一个命中块）的「来源/出处」区词列表；
+        无块=空数组。作者不存在 404；COS 作者 400（挂靠/编辑是 TXT 常规作者
+        体系能力，COS 作者由目录结构派生，DOMAIN_RULES §6）。
+      parameters: [ { name: authorId, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/SourceVocabulary" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      summary: 整体替换作者片段来源区（编辑页保存）
+      description: |
+        整体替换该作者块的来源区（落点=作者块所在数组序第一个片段；无块=在
+        最近导入片段新建作者块，库中无片段自动建「上传自动挂靠.txt」）；写出
+        内容与手工片段同构、可被解析器原样读回。上传机器写入来源条目元数据同
+        步修剪（编辑是有意变更，不触发重导入 409 误报）。校验同通用来源词表。
+      parameters: [ { name: authorId, in: path, required: true, schema: { type: string } } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SourceVocabulary" }
+      responses:
+        "200": { description: 已替换（回显替换后来源区）, content: { application/json: { schema: { $ref: "#/components/schemas/SourceVocabulary" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /api/v1/authors/import-txt:
     post:
       summary: 导入作者 TXT（三种格式自动识别；统一重建语义）
@@ -1281,7 +1346,7 @@ components:
       type: object
       description: 库类型能力声明（ADR-0012 接入清单项；服务端按 kind 注册表单一来源产出，客户端显隐一律读此字段、禁止写死 kind==normal）
       properties:
-        authorAttach: { type: boolean, description: 是否支持上传挂靠作者/来源（normal=true，cos=false——COS 作者由目录结构派生） }
+        authorAttach: { type: boolean, description: 是否支持作者挂靠/编辑（TXT 片段真相维护：资产编辑页作者关联与来源区读写；normal=true，cos=false——COS 作者由目录结构派生） }
 
     AuthorSuggest:
       type: object
@@ -1291,17 +1356,12 @@ components:
         displayName: { type: string }
         fileCount: { type: integer }
 
-    AuthorSourceStat:
+    SourceVocabulary:
       type: object
+      description: 来源词表通用载荷（GET/PUT /authors/source-vocabulary 通用来源词表；GET/PUT /authors/{authorId}/sources 单作者片段来源区）
+      required: [sources]
       properties:
-        name: { type: string }
-        authorCount: { type: integer, description: 引用该来源的不同作者数 }
-
-    AuthorSourceVocabulary:
-      type: object
-      description: 作者来源词表（GET /authors/sources）
-      properties:
-        sources: { type: array, items: { $ref: "#/components/schemas/AuthorSourceStat" } }
+        sources: { type: array, items: { type: string, maxLength: 500 }, maxItems: 32, description: 来源词（获取渠道/平台名，如「老王论坛」；服务端 trim+去重+逐项校验——控制字符/超长/超 32 项 400） }
 
     TxtImportConflictAuthor:
       type: object
@@ -1324,6 +1384,13 @@ components:
       properties:
         path: { type: string, description: 镜像文件绝对路径；空=关闭（默认） }
         fragmentFilename: { type: string, description: 镜像目标片段名；空=最近导入的片段 }
+
+    AssetAuthorsReplaceRequest:
+      type: object
+      description: 资产作者关联整体替换请求（PUT /assets/{assetId}/authors，ADR-0024）
+      required: [authorIds]
+      properties:
+        authorIds: { type: array, items: { type: string }, description: 替换后的常规作者 ID 全集（空数组=解除全部常规作者关联）；作者须已存在且 type=regular（否则 404） }
 
     StatsOverview:
       type: object

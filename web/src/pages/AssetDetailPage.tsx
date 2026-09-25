@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router'
-import { ChevronLeft, ChevronRight, Star, ThumbsUp } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Pencil, Star, ThumbsUp } from 'lucide-react'
 import {
   useAssetDetail,
   useReportView,
@@ -18,7 +18,7 @@ import { FileOpsButton } from '@/components/detail/FileOpsButton'
 import { UpNextList } from '@/components/detail/UpNextList'
 import { LoadingHint } from '@/components/ui/loading-hint'
 import { formatBytes, formatCount, formatShortDate } from '@/lib/format'
-import { assetDetailWithSearch, readAssetNavState, readBackdropKey, type OverlayDetailState } from '@/lib/route-keys'
+import { assetDetailWithSearch, assetEdit, readAssetNavState, readBackdropKey, type OverlayDetailState } from '@/lib/route-keys'
 import { ensureSessionId } from '@/hooks/use-session'
 
 /**
@@ -298,6 +298,16 @@ export default function AssetDetailPage() {
             >
               <Star />
               <b>{d.isFavorite ? '已收藏' : '收藏'}</b>
+            </button>
+            {/* 资产编辑入口（2026-09-25 协议批）：作者关联/来源区编辑收敛到
+                独立子页（上传挂靠已退役），跳转路由走 assetEdit 常量 */}
+            <button
+              className="detail-act"
+              onClick={() => navigate(assetEdit(d.id ?? assetId ?? ''))}
+              title="编辑关联作者与来源"
+            >
+              <Pencil />
+              <b>编辑</b>
             </button>
             {/* B-1 文件管理操作化：整理（移动/重命名）+ 移入回收站。
                 挂详情页的原因与待拍板口径见 FileOpsButton 头注释 */}

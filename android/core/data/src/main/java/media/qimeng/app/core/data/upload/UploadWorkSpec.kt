@@ -31,11 +31,6 @@ object UploadWorkSpec {
     const val KEY_DISPLAY_NAME = "displayName"
     const val KEY_SIZE_BYTES = "sizeBytes"
 
-    // ---- 挂靠可选键位（REQ §3.1：authorId/authorName 互斥只写其一；缺键 = 不挂靠，向后兼容） ----
-    const val KEY_AUTHOR_ID = "authorId"
-    const val KEY_AUTHOR_NAME = "authorName"
-    const val KEY_SOURCES = "sources"
-
     // ---- 过程/输出 Data 键位（worker setProgress / Result.outputData） ----
     const val KEY_PROGRESS_PERCENT = "progressPercent"
     const val KEY_FINAL_FILE_NAME = "finalFileName"
@@ -57,7 +52,11 @@ object UploadWorkSpec {
      */
     const val MAX_RETRIES = 3
 
-    /** 入队载荷：一个任务的全部执行参数（worker 侧反解见 [specFromInputData]）。 */
+    /**
+     * 入队载荷：一个任务的全部执行参数（worker 侧反解见 [specFromInputData]）。
+     * 协议批 2026-09-25：上传挂靠参数（authorId/authorName/source）已随协议退役——
+     * 上传只做纯上传，作者关联/来源维护改走资产编辑页（PUT /assets/{id}/authors 等）。
+     */
     data class UploadRequestSpec(
         val localId: String,
         val uri: String,
@@ -65,15 +64,6 @@ object UploadWorkSpec {
         val dir: String,
         val displayName: String,
         val sizeBytes: Long,
-        /**
-         * 挂靠目标=已有作者 ID（GET /authors/suggest 点选）；与 [authorName] 互斥。
-         * null = 不挂靠（留空上传行为与旧版完全一致，REQ §3.1 留空口径）。
-         */
-        val authorId: String? = null,
-        /** 挂靠目标=新建作者显示名（联想无结果回车新建）；与 [authorId] 互斥 */
-        val authorName: String? = null,
-        /** 作者来源词多选（仅挂靠时随批并入；空列表 = 不改动该作者来源） */
-        val sources: List<String> = emptyList(),
     )
 
     fun itemToInputData(spec: UploadRequestSpec): Data = Data.Builder()
@@ -83,15 +73,13 @@ object UploadWorkSpec {
         .putString(KEY_DIR, spec.dir)
         .putString(KEY_DISPLAY_NAME, spec.displayName)
         .putLong(KEY_SIZE_BYTES, spec.sizeBytes)
-        // 可选键只在有值时写（缺键即反解为 null/空，与旧载荷双向兼容）
-        .apply {
-            if (spec.authorId != null) putString(KEY_AUTHOR_ID, spec.authorId)
-            if (spec.authorName != null) putString(KEY_AUTHOR_NAME, spec.authorName)
-            if (spec.sources.isNotEmpty()) putStringArray(KEY_SOURCES, spec.sources.toTypedArray())
-        }
         .build()
 
-    /** 反解入队载荷；缺任一必需键返回 null（worker 直接终局失败——防御性兜底）。 */
+    /**
+     * 反解入队载荷；缺任一必需键返回 null（worker 直接终局失败——防御性兜底）。
+     * 兼容口径（冻结）：挂靠批之前/挂靠批形态的旧在途载荷可能携带 authorId/authorName/
+     * sources 等本版已删除的键——按 Data 语义未知键自然忽略，反解为纯上传任务。
+     */
     fun specFromInputData(data: Data): UploadRequestSpec? {
         val localId = data.getString(KEY_LOCAL_ID) ?: return null
         val uri = data.getString(KEY_URI) ?: return null
@@ -105,9 +93,6 @@ object UploadWorkSpec {
             dir = dir,
             displayName = displayName,
             sizeBytes = data.getLong(KEY_SIZE_BYTES, -1L),
-            authorId = data.getString(KEY_AUTHOR_ID),
-            authorName = data.getString(KEY_AUTHOR_NAME),
-            sources = data.getStringArray(KEY_SOURCES)?.toList().orEmpty(),
         )
     }
 

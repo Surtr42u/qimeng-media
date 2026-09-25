@@ -101,7 +101,13 @@ func (s *Service) Apply(ctx context.Context, qtx *db.Queries, now time.Time, req
 		fragment, content = sources[idx].Filename, sources[idx].Content
 	}
 
-	// 纯函数文本手术（块缺失走新建块路径）。
+	// 纯函数文本手术（块缺失走新建块路径）。AuthorID 路径无别名来源（names
+	// 为空）时从 displayName 重建别名列表——整串当单别名写编号行会让解析
+	// 回读的 GenerateAuthorID(首别名) 与真实 id 分裂（幻影作者，同
+	// edit.go displayNameAliases 口径）。
+	if len(names) == 0 {
+		names = displayNameAliases(displayName)
+	}
 	entryNames, entryDisplay := entryIdentity(names, blockNames, displayName)
 	works := []string{req.FinalName}
 	newContent, blockFound := authoring.AppendWorks(content, id, works)
@@ -196,18 +202,24 @@ func entryIdentity(names, blockNames []string, displayName string) ([]string, st
 	return []string{displayName}, displayName
 }
 
-// targetFragmentIndex 定位挂靠目标片段：作者块命中的片段取数组序第一个；
-// 作者不在任何片段 → 最近导入的片段；返回 -1 = 库中无任何片段。命中时一并
-// 返回该块解析出的 AuthorNames（条目元数据 Names 的往返安全来源，Apply
-// 定位块时顺手取解析结果，不二次解析）。
-func targetFragmentIndex(sources []Source, authorID string) (int, []string) {
+// findAuthorBlock 在片段数组中定位作者块的所在片段：作者块命中的片段取
+// 数组序第一个；一并返回该块解析结果（AuthorNames 是条目元数据与新建块
+// 编号行的往返安全来源，Sources 供编辑端点回显——定位块时顺手取解析
+// 结果，不二次解析）。ok=false = 作者不在任何片段。
+func findAuthorBlock(sources []Source, authorID string) (int, authoring.AuthorBlock, bool) {
 	for i := range sources {
 		for _, b := range authoring.ParseAuthorBlocks(sources[i].Content) {
 			if len(b.AuthorNames) > 0 && authoring.GenerateAuthorID(b.AuthorNames[0]) == authorID {
-				return i, b.AuthorNames
+				return i, b, true
 			}
 		}
 	}
+	return -1, authoring.AuthorBlock{}, false
+}
+
+// mostRecentIndex 返回最近导入片段的下标：importedAt 字典序最大（统一时间
+// 戳格式下字典序 == 时间序），平局取数组靠后（后写入者覆盖语义）；无片段 -1。
+func mostRecentIndex(sources []Source) int {
 	best := -1
 	for i := range sources {
 		// >=：平局取数组靠后，与 MostRecent 语义一致。
@@ -215,7 +227,18 @@ func targetFragmentIndex(sources []Source, authorID string) (int, []string) {
 			best = i
 		}
 	}
-	return best, nil
+	return best
+}
+
+// targetFragmentIndex 定位挂靠目标片段：作者块命中的片段取数组序第一个；
+// 作者不在任何片段 → 最近导入的片段；返回 -1 = 库中无任何片段。命中时一并
+// 返回该块解析出的 AuthorNames（条目元数据 Names 的往返安全来源）。
+func targetFragmentIndex(sources []Source, authorID string) (int, []string) {
+	idx, block, ok := findAuthorBlock(sources, authorID)
+	if ok {
+		return idx, block.AuthorNames
+	}
+	return mostRecentIndex(sources), nil
 }
 
 // recordAddedLines 把本次新追加的行并入 map[fragment] 的对应作者条目（条目

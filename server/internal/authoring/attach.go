@@ -10,7 +10,6 @@ package authoring
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 	"unicode/utf8"
 )
@@ -360,57 +359,16 @@ func ValidNewAuthorName(name string) bool {
 }
 
 // MaxSourceWordRunes 是单个来源词的 rune 数上限。与 api/openapi.yaml
-// PostApiV1AssetsUploadParams 的 source 参数（items maxLength: 500）双写
-// 同步：协议侧改动须同步这里，反之亦然（maxItems 32 的项数上限在 httpapi
-// resolveUploadAttach 侧执行）。
+// SourceVocabulary 的 sources 参数（items maxLength: 500）双写同步：协议侧
+// 改动须同步这里，反之亦然（maxItems 32 的项数上限在 httpapi
+// normalizeSourceWords 侧执行）。
 const MaxSourceWordRunes = 500
 
-// ValidSourceWord 校验上传来源词：不含控制字符（换行/回车可向 TXT 真相
-// 注入任意行，与 ValidNewAuthorName 同一红线）且长度不超 MaxSourceWordRunes。
+// ValidSourceWord 校验来源词（编辑端点与通用来源词表共用）：不含控制字符
+// （换行/回车可向 TXT 真相注入任意行，与 ValidNewAuthorName 同一红线）且
+// 长度不超 MaxSourceWordRunes。
 func ValidSourceWord(s string) bool {
 	return !hasControlChars(s) && utf8.RuneCountInString(s) <= MaxSourceWordRunes
-}
-
-// SourceStat 来源词表条目（GET /authors/sources 数据源，纯聚合）。
-type SourceStat struct {
-	Name        string
-	AuthorCount int
-}
-
-// ExtractSourceVocabulary 从全部片段原文提取去重来源词表：authorCount=
-// 引用该来源的不同作者数（按 GenerateAuthorID(首名) 判作者身份）；排序=
-// authorCount 降序、name 升序（常用优先）。
-func ExtractSourceVocabulary(contents []string) []SourceStat {
-	// source → 引用它的作者 id 集合（跨片段同名作者按身份去重）。
-	authorsBySource := make(map[string]map[string]bool)
-	for _, content := range contents {
-		for _, block := range ParseAuthorBlocks(content) {
-			if len(block.AuthorNames) == 0 {
-				continue
-			}
-			id := GenerateAuthorID(block.AuthorNames[0])
-			for _, s := range block.Sources {
-				if s = strings.TrimSpace(s); s == "" {
-					continue
-				}
-				if authorsBySource[s] == nil {
-					authorsBySource[s] = make(map[string]bool)
-				}
-				authorsBySource[s][id] = true
-			}
-		}
-	}
-	out := make([]SourceStat, 0, len(authorsBySource))
-	for name, ids := range authorsBySource {
-		out = append(out, SourceStat{Name: name, AuthorCount: len(ids)})
-	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].AuthorCount != out[j].AuthorCount {
-			return out[i].AuthorCount > out[j].AuthorCount
-		}
-		return out[i].Name < out[j].Name
-	})
-	return out
 }
 
 // MissingUploadEntries 计算 entries 未被 content 覆盖的部分：作者块缺失→

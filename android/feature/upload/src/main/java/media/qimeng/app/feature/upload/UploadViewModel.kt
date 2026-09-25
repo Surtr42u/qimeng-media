@@ -4,8 +4,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -15,13 +13,9 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import media.qimeng.app.core.data.repository.UploadRepository
-import media.qimeng.app.core.data.upload.FolderScanPolicy
-import media.qimeng.app.core.data.upload.FolderScanResult
-import media.qimeng.app.core.data.upload.FolderScanner
-import media.qimeng.app.core.model.AuthorSourceStat
-import media.qimeng.app.core.model.AuthorSuggestion
 import media.qimeng.app.core.model.DirNode
 import media.qimeng.app.core.model.LibraryChoice
+import media.qimeng.app.core.model.LocalMediaItem
 import media.qimeng.app.core.model.UploadItem
 import media.qimeng.app.core.model.UploadLimits
 import media.qimeng.app.core.model.UploadQueueEntry
@@ -51,38 +45,12 @@ data class UploadUiState(
     val creatingDir: Boolean = false,
     /** 入队请求进行中 */
     val enqueueing: Boolean = false,
-    /** 文件夹扫描进行中（U10-6c） */
-    val scanningFolder: Boolean = false,
     /** 队列实时状态（WorkManager WorkInfo 映射） */
     val queue: List<UploadQueueEntry> = emptyList(),
-    // ---- 作者挂靠（REQ §3.1：仅 authorAttach 库渲染，全部可留空） ----
-    /** 作者联想输入框自由文本（未确定态的草稿） */
-    val authorQuery: String = "",
-    /** 联想结果（防抖查询回填；点选其一 = 确定作者） */
-    val authorSuggestions: List<AuthorSuggestion> = emptyList(),
-    /** 点选联想确定的作者（身份=作者 ID；与 [pendingNewAuthor] 互斥） */
-    val selectedAuthor: AuthorSuggestion? = null,
-    /** 联想无匹配回车新建的作者显示名（trim 原文；与 [selectedAuthor] 互斥） */
-    val pendingNewAuthor: String? = null,
-    /** 已选来源词（多选；仅作者确定后可编辑） */
-    val sources: List<String> = emptyList(),
-    /** 来源快捷词表（GET /authors/sources；authorAttach 库进入加载 + 入队成功后重载，失败静默降级） */
-    val sourceOptions: List<AuthorSourceStat> = emptyList(),
 ) {
     /** 队列里仍有活跃任务（排队/上传中） */
     val hasActiveWork: Boolean
         get() = queue.any { it.status == UploadStatus.QUEUED || it.status == UploadStatus.UPLOADING }
-
-    /**
-     * 当前库是否显示作者/来源输入段——唯一判据 = Library.capabilities.authorAttach
-     * （REQ §3.2：挂能力声明，禁止写死 kind==normal；未选库按不显示）。
-     */
-    val authorAttachEnabled: Boolean
-        get() = selectedLibrary?.authorAttach == true
-
-    /** 作者已确定（点选或回车新建）——来源区编辑的门槛（来源仅指定作者时合法，协议 400 口径） */
-    val hasAuthor: Boolean
-        get() = selectedAuthor != null || !pendingNewAuthor.isNullOrEmpty()
 
     /** 队列聚合行「共 N 个 · 成功 X · 失败 Y」（空队列 null；从 queue 派生，UI 只渲染）。
      *  取消（CANCELLED）不计失败数——用户取消不是失败（批C 任务Q C-2）。 */
@@ -97,17 +65,15 @@ data class UploadUiState(
  * 上传流 ViewModel（M4-5）：表单编排 + 超限本地拦截；字节流与队列全在 core 层。
  * 拦截口径（冻结）：大小上限读 GET /config 的 upload 项（入队时现取现判——服务端实时生效），
  * 超限项本地拦截不出网；类型白名单不复制，服务端 4xx 文案透传展示。
+ * 协议批 2026-09-25：上传挂靠（作者/来源）随协议退役——本页回归纯上传，作者关联与
+ * 来源维护改走资产编辑页（feature:detail AssetEditScreen）。
  */
 @HiltViewModel
 class UploadViewModel @Inject constructor(
     private val uploadRepository: UploadRepository,
-    private val folderScanner: FolderScanner,
 ) : ViewModel() {
 
     private val form = MutableStateFlow(UploadUiState())
-
-    /** 作者联想防抖任务（输入变化即取消重建，同 SearchViewModel.suggestJob 口径） */
-    private var suggestJob: Job? = null
 
     /**
      * 队列状态（WorkManager WorkInfo 流）与表单状态合并。
@@ -139,7 +105,6 @@ class UploadViewModel @Inject constructor(
                 }
                 form.value.selectedLibrary?.let {
                     loadDirTree(it.id)
-                    loadSourceOptionsIfNeeded(it)
                 }
                 refreshLimits()
             } catch (e: Exception) {
@@ -160,152 +125,20 @@ class UploadViewModel @Inject constructor(
         }
     }
 
-    /** 切换目标库：目录树随库重载、目标目录回到库根；挂靠状态随库清空（REQ §3.2 跨库不继承） */
+    /** 切换目标库：目录树随库重载、目标目录回到库根 */
     fun selectLibrary(library: LibraryChoice) {
         viewModelScope.launch {
-            suggestJob?.cancel()
             form.update {
                 it.copy(
                     selectedLibrary = library,
                     errorMessage = null,
-                    authorQuery = "",
-                    authorSuggestions = emptyList(),
-                    selectedAuthor = null,
-                    pendingNewAuthor = null,
-                    sources = emptyList(),
                 )
             }
-            loadSourceOptionsIfNeeded(library)
             try {
                 loadDirTree(library.id)
             } catch (e: Exception) {
                 form.update { it.copy(errorMessage = DIR_LOAD_FAILED_MESSAGE) }
             }
-        }
-    }
-
-    /**
-     * 来源快捷词表加载（authorAttach 库进入即取一次；入队成功后 [force]=true 复位
-     * 已加载标记强制重拉——词表随作者数据自动扩充，长会话不滞后，同 Web 端上传成功
-     * 后失效重取口径；REQ §3.1②）：词表只是快捷选项，失败静默降级为纯自由输入，
-     * 不拦上传、不报错横幅。
-     */
-    private fun loadSourceOptionsIfNeeded(library: LibraryChoice, force: Boolean = false) {
-        if (!library.authorAttach) return
-        if (!force && form.value.sourceOptions.isNotEmpty()) return
-        viewModelScope.launch {
-            try {
-                val options = uploadRepository.authorSources()
-                // 仍停留在同库才回填（防切库竞态串库写入）；非强制仅词表仍为空才写（首载防重复回填）
-                form.update { state ->
-                    val inSameLibrary = state.selectedLibrary?.id == library.id
-                    when {
-                        force && inSameLibrary -> state.copy(sourceOptions = options)
-                        !force && inSameLibrary && state.sourceOptions.isEmpty() -> state.copy(sourceOptions = options)
-                        else -> state
-                    }
-                }
-            } catch (e: Exception) {
-                // 词表不可达：来源仍可自由输入，静默
-            }
-        }
-    }
-
-    // ---- 作者挂靠（REQ §3.1①：单选联想 / 回车新建；规则全在 VM，UI 零业务逻辑） ----
-
-    /**
-     * 作者输入变化：清确定态（输入新文本先清 selectedAuthor/pendingNewAuthor——重新草拟），
-     * 防抖后拉联想。空串/无挂靠能力的库不发起查询（后者整段不渲染，属防御性兜底）。
-     */
-    fun onAuthorQueryChange(query: String) {
-        form.update { it.copy(authorQuery = query, selectedAuthor = null, pendingNewAuthor = null) }
-        suggestJob?.cancel()
-        val trimmed = query.trim()
-        if (trimmed.isEmpty() || !form.value.authorAttachEnabled) {
-            form.update { it.copy(authorSuggestions = emptyList()) }
-            return
-        }
-        suggestJob = viewModelScope.launch {
-            delay(AUTHOR_SUGGEST_DEBOUNCE_MS)
-            runCatching { uploadRepository.suggestAuthors(trimmed) }
-                .onSuccess { list ->
-                    // 防竞态：仅当词条未再变化时回填（同 SearchViewModel 口径）
-                    if (form.value.authorQuery.trim() == trimmed) {
-                        form.update { it.copy(authorSuggestions = list) }
-                    }
-                }
-        }
-    }
-
-    /** 点选联想项 = 确定作者（身份=作者 ID，不是输入文本）；清 pendingNewAuthor（互斥）。 */
-    fun selectAuthorSuggestion(author: AuthorSuggestion) {
-        suggestJob?.cancel()
-        form.update {
-            it.copy(
-                selectedAuthor = author,
-                pendingNewAuthor = null,
-                authorQuery = author.displayName,
-                authorSuggestions = emptyList(),
-            )
-        }
-    }
-
-    /**
-     * 回车提交（联想无匹配的新建入口；REQ §3.1「大小写不一致归同一作者」）：
-     * 大小写不敏感精确命中联想项 → 选定该既有作者（走 authorId，不裂分身）；
-     * 否则 → pendingNewAuthor=输入原文（trim），入队走 authorName（服务端按
-     * generateAuthorId 归一规则归并大小写/符号变体）。
-     */
-    fun commitAuthorInput() {
-        val current = form.value
-        val trimmed = current.authorQuery.trim()
-        if (trimmed.isEmpty() || current.selectedAuthor != null) return
-        val exact = current.authorSuggestions.firstOrNull {
-            it.displayName.equals(trimmed, ignoreCase = true)
-        }
-        if (exact != null) {
-            selectAuthorSuggestion(exact)
-        } else {
-            suggestJob?.cancel()
-            form.update { it.copy(pendingNewAuthor = trimmed, authorSuggestions = emptyList()) }
-        }
-    }
-
-    /** 清除已确定作者（点选中胶囊的 ×）：连带清来源（无作者的来源无意义，协议 400 口径）。 */
-    fun clearAuthor() {
-        suggestJob?.cancel()
-        form.update {
-            it.copy(
-                authorQuery = "",
-                selectedAuthor = null,
-                pendingNewAuthor = null,
-                authorSuggestions = emptyList(),
-                sources = emptyList(),
-            )
-        }
-    }
-
-    // ---- 来源挂靠（REQ §3.1②：多选词表 + 自由输入；仅作者确定后可编辑） ----
-
-    /** 词表/已选胶囊点击 toggle（VM 门槛挡未选作者的误触，UI 同时禁用降透明）。 */
-    fun toggleSource(name: String) {
-        if (!form.value.hasAuthor) return
-        val normalized = name.trim()
-        if (normalized.isEmpty()) return
-        form.update { state ->
-            state.copy(
-                sources = if (normalized in state.sources) state.sources - normalized else state.sources + normalized,
-            )
-        }
-    }
-
-    /** 自由输入加入来源：trim、去重；空串忽略。 */
-    fun addCustomSource(raw: String) {
-        if (!form.value.hasAuthor) return
-        val normalized = raw.trim()
-        if (normalized.isEmpty()) return
-        form.update { state ->
-            if (normalized in state.sources) state else state.copy(sources = state.sources + normalized)
         }
     }
 
@@ -355,51 +188,27 @@ class UploadViewModel @Inject constructor(
     }
 
     /**
-     * 选文件夹入口（U10-6c）：treeUri 交 [FolderScanner] 递归枚举（SAF 细节收口在
-     * core:data），扫描结果走 [acceptFolder] 合并。VM 不 import android.*（JVM 单测注入 fake）。
+     * 接收内置相册选择器的选中项（2026-09-25 拍板：上传选取弃 SAF 改 App 内置相册式选择器）。
+     * 与 SAF 结果同管道进 pendingItems（后续超限拦截/入队共用），但元数据不走 describe
+     * 重查——MediaStore 查询已给出展示名与字节数（客户端现成数据直接复用）。
      */
-    fun acceptFolderTree(treeUri: String) {
-        if (form.value.scanningFolder) return
-        viewModelScope.launch {
-            form.update { it.copy(scanningFolder = true, errorMessage = null) }
-            val scan = try {
-                folderScanner.scan(treeUri)
-            } catch (e: Exception) {
-                form.update { it.copy(scanningFolder = false, errorMessage = FOLDER_SCAN_FAILED_MESSAGE) }
-                return@launch
-            }
-            form.update { it.copy(scanningFolder = false) }
-            acceptFolder(scan)
-        }
-    }
-
-    /**
-     * 合并文件夹扫描结果进待上传列表（去重口径同 [acceptUris]：按 uri，先到先得）。
-     * 跳过/截断提示走 blockMessage 横幅（MessageCard 既有模式）；全空给空文件夹提示。
-     */
-    fun acceptFolder(scanResult: FolderScanResult) {
-        if (scanResult.files.isEmpty()) {
-            form.update { it.copy(blockMessage = folderScanNotice(scanResult) ?: FOLDER_EMPTY_MESSAGE) }
-            return
-        }
+    fun acceptPickedItems(picked: List<LocalMediaItem>) {
+        if (picked.isEmpty()) return
         form.update { current ->
             val existing = current.pendingItems.map { it.uri }.toSet()
             current.copy(
-                pendingItems = current.pendingItems + scanResult.files.filterNot { it.uri in existing },
-                blockMessage = folderScanNotice(scanResult),
+                pendingItems = current.pendingItems + picked.filterNot { it.uri in existing }.map(::toUploadItem),
+                blockMessage = null,
             )
         }
     }
 
-    /** 扫描提示文案：截断（口径③）+ 跳过计数（口径②）；无提示返回 null。 */
-    private fun folderScanNotice(scan: FolderScanResult): String? {
-        val parts = mutableListOf<String>()
-        if (scan.truncated) {
-            parts += "文件夹过大：已选前 ${FolderScanPolicy.MAX_FOLDER_FILES} 个，共 ${scan.totalUploadable} 个"
-        }
-        if (scan.skippedCount > 0) parts += "已跳过 ${scan.skippedCount} 个非媒体文件"
-        return parts.joinToString("；").ifEmpty { null }
-    }
+    /** 选择器条目 → 待上传条目（文件级上传：relativeDir 恒空串） */
+    private fun toUploadItem(item: LocalMediaItem) = UploadItem(
+        uri = item.uri,
+        displayName = item.displayName,
+        sizeBytes = item.sizeBytes,
+    )
 
     fun removeItem(item: UploadItem) {
         form.update { it.copy(pendingItems = it.pendingItems.filterNot { candidate -> candidate.uri == item.uri }) }
@@ -417,8 +226,7 @@ class UploadViewModel @Inject constructor(
     /**
      * 开始上传：现取服务端配置做超限本地拦截（实时生效口径），未超限项进串行队列。
      * 全部被拦时不入队；部分被拦时拦截文案列出被移除项、其余照常上传。
-     * 挂靠快照与 dir 同口径（入队时刻取值随批入队）：不支持挂靠的库一律传空
-     * （服务端对 authorAttach=false 的库收挂靠参数回 400，协议口径）。
+     * 协议批 2026-09-25：挂靠参数退役，入队为纯上传载荷。
      */
     fun enqueue() {
         val current = form.value
@@ -426,10 +234,6 @@ class UploadViewModel @Inject constructor(
         val items = current.pendingItems
         if (items.isEmpty()) return
         if (current.enqueueing) return
-        val attach = current.authorAttachEnabled
-        val authorId = if (attach) current.selectedAuthor?.id else null
-        val authorName = if (attach) current.pendingNewAuthor else null
-        val authorSources = if (attach) current.sources else emptyList()
 
         viewModelScope.launch {
             form.update { it.copy(enqueueing = true, blockMessage = null, errorMessage = null) }
@@ -452,9 +256,6 @@ class UploadViewModel @Inject constructor(
                     allowed,
                     library.id,
                     current.selectedDirPath,
-                    authorId = authorId,
-                    authorName = authorName,
-                    sources = authorSources,
                 )
                 form.update {
                     it.copy(
@@ -463,8 +264,6 @@ class UploadViewModel @Inject constructor(
                         blockMessage = blockText(limits, blocked),
                     )
                 }
-                // 上传可能写入新作者/来源：强制重拉词表（失败静默），长会话词表不滞后（非挂靠库在加载口早退）
-                loadSourceOptionsIfNeeded(library, force = true)
             } catch (e: Exception) {
                 form.update { it.copy(enqueueing = false, errorMessage = ENQUEUE_FAILED_MESSAGE) }
             }
@@ -492,20 +291,11 @@ class UploadViewModel @Inject constructor(
         /** 配置不可达时的文案兜底值（正常不出现；仅展示层） */
         const val UNKNOWN_LIMIT_MB = 2048L
 
-        /**
-         * 作者联想防抖（ms）——与 Web 端 web/src/hooks/use-debounced-value.ts 的
-         * SUGGEST_DEBOUNCE_MS=200 保持两端一致口径（改任一端须同步另一端）；
-         * 联想端点轻量（服务端内存子串匹配），该档兼顾打字流畅与请求频次。
-         */
-        const val AUTHOR_SUGGEST_DEBOUNCE_MS = 200L
-
         const val LOAD_FAILED_MESSAGE = "加载库列表失败：请检查登录与服务端连接"
         const val DIR_LOAD_FAILED_MESSAGE = "目录树加载失败，请重试"
         const val DIR_CREATE_FAILED_MESSAGE = "新建目录失败，请重试"
         const val INVALID_DIR_NAME_MESSAGE = "目录名不合法：不能为空、点段或包含路径分隔符"
         const val DESCRIBE_FAILED_MESSAGE = "读取所选文件信息失败，请重试"
         const val ENQUEUE_FAILED_MESSAGE = "上传任务创建失败，请重试"
-        const val FOLDER_SCAN_FAILED_MESSAGE = "扫描文件夹失败，请重试"
-        const val FOLDER_EMPTY_MESSAGE = "所选文件夹中没有可上传的媒体文件"
     }
 }

@@ -1,7 +1,8 @@
-// authors_suggest.go：上传挂靠的四个辅助端点（REQ §3.1 / §3.4）——
-// 作者联想（suggest）、来源词表（sources）、片段导出（export）、本地镜像
-// 配置（mirror）。核心挂靠编排与片段存取分别在 authorattach / authoring
-// 包，本文件只做 HTTP 接线与参数校验（ADR-0019：编排不堆 httpapi）。
+// authors_suggest.go：作者辅助端点（REQ §3.1 / §3.4）——作者联想（suggest）、
+// 片段导出（export）、本地镜像配置（mirror）。来源词表（通用词表与单作者
+// 片段来源区）随编辑端点拆到 author_edit.go（ADR-0024）；核心挂靠编排与
+// 片段存取分别在 authorattach / authoring 包，本文件只做 HTTP 接线与参数
+// 校验（ADR-0019：编排不堆 httpapi）。
 package httpapi
 
 import (
@@ -64,29 +65,6 @@ func (s *Server) GetApiV1AuthorsSuggest(w http.ResponseWriter, r *http.Request, 
 		out = append(out, gen.AuthorSuggest{Id: &id, DisplayName: &name, FileCount: &fileCount})
 	}
 	writeJSON(w, http.StatusOK, out)
-}
-
-// GetApiV1AuthorsSources 作者来源词表（上传挂靠来源快捷选项数据源）：
-// 全部已导入片段「来源/出处」区解析出的去重词汇，authorCount = 引用该来源
-// 的不同作者数（聚合与排序在 authoring.ExtractSourceVocabulary 纯函数）。
-// 与 §4 资产出处分区（SourceMatcher/custom_sources）互不相干，禁止混用。
-func (s *Server) GetApiV1AuthorsSources(w http.ResponseWriter, r *http.Request) {
-	sources, err := authorattach.LoadSources(r.Context(), s.q)
-	if err != nil {
-		s.internalErr(w, "查询作者来源词表", err)
-		return
-	}
-	contents := make([]string, 0, len(sources))
-	for _, src := range sources {
-		contents = append(contents, src.Content)
-	}
-	stats := authoring.ExtractSourceVocabulary(contents)
-	out := make([]gen.AuthorSourceStat, 0, len(stats))
-	for _, st := range stats {
-		name, count := st.Name, st.AuthorCount
-		out = append(out, gen.AuthorSourceStat{Name: &name, AuthorCount: &count})
-	}
-	writeJSON(w, http.StatusOK, gen.AuthorSourceVocabulary{Sources: &out})
 }
 
 // exportAnonymousName 是导出匿名片段（filename 空/缺省）时的下载文件名。
