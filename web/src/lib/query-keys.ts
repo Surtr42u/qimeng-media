@@ -43,11 +43,16 @@ export const SEARCH_SUGGESTIONS_QUERY_KEY = ['api/v1/search/suggestions'] as con
 /** 已导入作者 TXT 片段列表（/authors/import-txt） */
 export const TXT_FILES_QUERY_KEY = [...AUTHORS_QUERY_KEY, 'import-txt'] as const
 
-/** 作者联想（q 追加为子段；/authors/suggest——上传挂靠字段消费，无失效需求靠 staleTime 控制） */
+/** 作者联想（q 追加为子段；/authors/suggest——资产编辑页添加作者消费，无失效需求靠 staleTime 控制） */
 export const AUTHOR_SUGGEST_QUERY_KEY = [...AUTHORS_QUERY_KEY, 'suggest'] as const
 
-/** 作者来源词表（/authors/sources——上传挂靠来源快捷选项，staleTime 控制时效） */
-export const AUTHOR_SOURCES_QUERY_KEY = [...AUTHORS_QUERY_KEY, 'sources'] as const
+/** 通用来源词表（/authors/source-vocabulary——来源建议小清单，服务端手动维护；
+ *  设置页词表卡读取/保存，资产编辑页来源区快捷选项共用） */
+export const SOURCE_VOCABULARY_QUERY_KEY = [...AUTHORS_QUERY_KEY, 'source-vocabulary'] as const
+
+/** 单作者来源区根键（GET/PUT /authors/{authorId}/sources；authorId 追加为
+ *  子段，键形 [...本键, authorId]——保存后按作者粒度失效） */
+export const AUTHOR_SOURCES_BY_ID_QUERY_KEY = [...AUTHORS_QUERY_KEY, 'sources'] as const
 
 /** 作者总表镜像配置（/authors/mirror——设置页镜像卡读取，保存后失效） */
 export const AUTHOR_MIRROR_QUERY_KEY = [...AUTHORS_QUERY_KEY, 'mirror'] as const

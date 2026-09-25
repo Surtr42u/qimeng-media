@@ -59,6 +59,8 @@ import media.qimeng.app.feature.all.AllScreen
 import media.qimeng.app.feature.author.AuthorCollectionRoutes
 import media.qimeng.app.feature.author.AuthorCollectionScreen
 import media.qimeng.app.feature.author.AuthorScreen
+import media.qimeng.app.feature.detail.AssetEditRoutes
+import media.qimeng.app.feature.detail.AssetEditScreen
 import media.qimeng.app.feature.detail.DetailRoutes
 import media.qimeng.app.feature.detail.DetailScreen
 import media.qimeng.app.feature.favorite.FavoriteScreen
@@ -580,6 +582,20 @@ fun QimengNavHost(
                             AuthorCollectionRoutes.authorCollectionRoute(authorId, displayName),
                         )
                     },
+                    // 作者 Sheet「编辑作者与来源」进资产编辑页（2026-09-25 上传挂靠退役批）
+                    onEditAsset = { assetId ->
+                        navController.navigate(AssetEditRoutes.assetEditRoute(assetId))
+                    },
+                )
+            }
+            // 资产编辑页（2026-09-25）：路由契约单源在 feature:detail（DetailRoutes 同范式），
+            // assetId 参数由 AssetEditViewModel 经 SavedStateHandle 读取，此处无需展开 arguments。
+            // pushed 覆盖页——底栏隐藏与幕帘由既有 currentRoute 机制自动生效
+            composable(AssetEditRoutes.ASSET_EDIT_ROUTE) {
+                AssetEditScreen(
+                    onBack = { navController.popBackStack() },
+                    // 保存成功返回与手动返回同一条 pop 路径（语义分开供页面注入）
+                    onSaved = { navController.popBackStack() },
                 )
             }
         }

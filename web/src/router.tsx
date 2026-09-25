@@ -27,6 +27,7 @@ const RanksPage = lazy(() => import('@/pages/RanksPage'))
 const AuthorsPage = lazy(() => import('@/pages/AuthorsPage'))
 const CollectionPage = lazy(() => import('@/pages/CollectionPage'))
 const AssetDetailPage = lazy(() => import('@/pages/AssetDetailPage'))
+const AssetEditPage = lazy(() => import('@/pages/AssetEditPage'))
 const LibraryManagePage = lazy(() => import('@/pages/LibraryManagePage'))
 const LibraryUploadPage = lazy(() => import('@/pages/LibraryUploadPage'))
 const LibraryRegistryPage = lazy(() => import('@/pages/LibraryRegistryPage'))
@@ -74,6 +75,10 @@ export const router = createBrowserRouter([
               { path: 'search', element: <Suspense fallback={null}><SearchPage /></Suspense> },
               { path: 'ranks/:rank', element: <Suspense fallback={null}><RanksPage /></Suspense> },
               { path: 'authors', element: <Suspense fallback={null}><AuthorsPage /></Suspense> },
+              // 资产编辑子页（详情页「编辑」进入）：与叠加组 asset/:assetId 不同形
+              // 不冲突——edit 静态子段排名更优，详情叠加只吞不带 /edit 的精确路径；
+              // 平铺在 AppShell 下（同 maintenance/* 风格），不在叠加组内
+              { path: 'asset/:assetId/edit', element: <Suspense fallback={null}><AssetEditPage /></Suspense> },
               // 查询串深链归一（?author=/?tag= → 路径形态，见 CollectionDeepLink）：
               // 未注册裸 /app/collection 时这类外部深链整树无匹配 → 白屏（F1）
               { path: 'collection', element: <CollectionDeepLink /> },

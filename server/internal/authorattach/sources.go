@@ -64,13 +64,8 @@ func PersistSources(ctx context.Context, q *db.Queries, now time.Time, sources [
 // MostRecent 返回最近导入的片段：importedAt 字典序最大（统一时间戳格式下
 // 字典序 == 时间序），平局取数组靠后（后写入者覆盖语义）；无片段 false。
 func MostRecent(sources []Source) (Source, bool) {
-	var best Source
-	found := false
-	for _, s := range sources {
-		// >=：平局时取数组靠后的那份，与「同文件名重导覆盖」直觉一致。
-		if !found || s.ImportedAt >= best.ImportedAt {
-			best, found = s, true
-		}
+	if i := mostRecentIndex(sources); i >= 0 {
+		return sources[i], true
 	}
-	return best, found
+	return Source{}, false
 }

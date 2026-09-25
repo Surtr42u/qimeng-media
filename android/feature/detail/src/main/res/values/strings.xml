@@ -117,4 +117,20 @@
     <!-- 快速转跳 BottomSheet（GUIDE_UI L172：当前文件关联作者列表，点击进作者集合页） -->
     <string name="detail_jump_sheet_title">快速转跳</string>
     <string name="detail_jump_empty">该文件暂无关联作者</string>
+
+    <!-- 资产编辑页（2026-09-25：上传挂靠退役批——作者关联与来源维护从上传页迁入编辑页；
+        入口 = 作者 Sheet「编辑作者与来源」行） -->
+    <string name="asset_edit_title">编辑作者与来源</string>
+    <string name="asset_edit_authors_section">已关联作者</string>
+    <string name="asset_edit_no_authors">尚未关联作者，可在下方添加</string>
+    <string name="asset_edit_remove_author">移除</string>
+    <string name="asset_edit_add_author_section">添加作者</string>
+    <string name="asset_edit_sources_label">来源</string>
+    <string name="asset_edit_sources_hint">每个作者可单独维护来源区</string>
+    <string name="asset_edit_save">保存</string>
+    <string name="asset_edit_saving">保存中…</string>
+    <string name="asset_edit_load_failed">加载资产信息失败，请重试</string>
+    <string name="asset_edit_save_failed">保存失败：请重试</string>
+    <string name="asset_edit_author_exists">该作者已关联</string>
+    <string name="asset_edit_only_existing_authors">未找到该作者：编辑页仅能关联已有作者，请从联想中选择</string>
 </resources>

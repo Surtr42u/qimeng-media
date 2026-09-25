@@ -24,6 +24,8 @@ import media.qimeng.sdk.infrastructure.ClientException
 import media.qimeng.sdk.models.ApiV1AuthorsAuthorIdFollowPutRequest
 import media.qimeng.sdk.models.ApiV1AuthorsImportTxtPostRequest
 import media.qimeng.sdk.models.ApiV1TagsPostRequest
+import media.qimeng.sdk.models.AssetAuthorsReplaceRequest
+import media.qimeng.sdk.models.SourceVocabulary
 import media.qimeng.sdk.models.TxtImportedFile
 import media.qimeng.sdk.models.TxtImportResult
 import okhttp3.OkHttpClient
@@ -325,6 +327,41 @@ class SdkAuthorRepository @Inject constructor(
         Log.d(SdkMediaRepository.LOG_TAG, "POST /authors/import-txt/rebuild")
         return withContext(Dispatchers.IO) {
             apiFactory.create().apiV1AuthorsImportTxtRebuildPost()
+        }
+    }
+
+    // ── 资产编辑页族（2026-09-25：上传挂靠退役批——作者关联与来源维护收口本端口）──
+
+    override suspend fun sourceVocabulary(): List<String> {
+        Log.d(SdkMediaRepository.LOG_TAG, "GET /authors/source-vocabulary")
+        return withContext(Dispatchers.IO) { apiFactory.create().apiV1AuthorsSourceVocabularyGet().sources }
+    }
+
+    override suspend fun authorSourcesById(authorId: String): List<String> {
+        Log.d(SdkMediaRepository.LOG_TAG, "GET /authors/$authorId/sources")
+        return withContext(Dispatchers.IO) {
+            apiFactory.create().apiV1AuthorsAuthorIdSourcesGet(authorId).sources
+        }
+    }
+
+    override suspend fun replaceAuthorSources(authorId: String, sources: List<String>) {
+        Log.d(SdkMediaRepository.LOG_TAG, "PUT /authors/$authorId/sources count=${sources.size}")
+        withContext(Dispatchers.IO) {
+            apiFactory.create().apiV1AuthorsAuthorIdSourcesPut(
+                authorId = authorId,
+                sourceVocabulary = SourceVocabulary(sources = sources),
+            )
+        }
+    }
+
+    override suspend fun replaceAssetAuthors(assetId: String, authorIds: List<String>) {
+        Log.d(SdkMediaRepository.LOG_TAG, "PUT /assets/$assetId/authors count=${authorIds.size}")
+        withContext(Dispatchers.IO) {
+            // 协议路径参数为 UUID（GET /assets/{id} 同口径：列表 DTO 的 id 字符串在此回解析）
+            apiFactory.create().apiV1AssetsAssetIdAuthorsPut(
+                assetId = java.util.UUID.fromString(assetId),
+                assetAuthorsReplaceRequest = AssetAuthorsReplaceRequest(authorIds = authorIds),
+            )
         }
     }
 }

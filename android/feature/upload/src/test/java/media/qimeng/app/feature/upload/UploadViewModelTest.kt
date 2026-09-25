@@ -1,6 +1,5 @@
 package media.qimeng.app.feature.upload
 
-import kotlinx.coroutines.CompletableDeferred
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -8,23 +7,20 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
-import media.qimeng.app.core.data.upload.FolderScanResult
-import media.qimeng.app.core.data.upload.FolderScanner
-import media.qimeng.app.core.model.AuthorSuggestion
-import media.qimeng.app.core.model.AuthorSourceStat
 import media.qimeng.app.core.model.LibraryChoice
+import media.qimeng.app.core.model.LocalMediaItem
 import media.qimeng.app.core.model.UploadItem
 import media.qimeng.app.core.model.UploadLimits
 import media.qimeng.app.core.model.UploadQueueEntry
-import media.qimeng.app.core.model.UploadRules
 import media.qimeng.app.core.model.UploadStatus
 import media.qimeng.app.core.testing.FakeUploadRepository
 import media.qimeng.app.core.testing.MainDispatcherRule
 
 /**
  * 上传流表单状态机锁定（M4-5）：超限本地拦截 / 入队参数与顺序 / 新建目录校验 / 分享接收 / 队列透传。
- * U10-6c 追加：选文件夹扫描合并（去重/相对目录入队映射/截断跳过提示/扫描中防抖）。
- * 挂靠批追加（REQ §3.1）：作者联想/回车新建/来源多选/显隐挂 capabilities.authorAttach。
+ * 协议批 2026-09-25：上传挂靠（作者/来源）随协议退役——挂靠批用例随之删除；新增内置
+ * 相册选择器选中项合并（acceptPickedItems）用例；文件夹上传（U10-6c）整体退役，
+ * 扫描合并/防抖用例随之删除。
  * 队列串行执行本身由 WorkManager unique 链官方语义保证（UploadWorkSpec 注释），
  * 实机串行时间线走模拟器文本证据（HANDOVER_APP §4.7）。
  */
@@ -38,13 +34,10 @@ class UploadViewModelTest {
     private val libraryA = LibraryChoice(id = "lib-a", name = "测试库A")
     private val libraryB = LibraryChoice(id = "lib-b", name = "测试库B")
 
-    private lateinit var scanner: FakeFolderScanner
-
     private fun newViewModel(repository: FakeUploadRepository = FakeUploadRepository().apply {
         librariesResult = listOf(libraryA, libraryB)
     }): Pair<UploadViewModel, FakeUploadRepository> {
-        scanner = FakeFolderScanner()
-        val viewModel = UploadViewModel(repository, scanner)
+        val viewModel = UploadViewModel(repository)
         driveIdle()
         return viewModel to repository
     }
@@ -216,11 +209,6 @@ class UploadViewModelTest {
         assertEquals("", viewModel.uiState.value.selectedDirPath)
     }
 
-    // ---- U10-6c：选文件夹上传 ----
-
-    private fun folderItem(uri: String, name: String, relativeDir: String) =
-        UploadItem(uri = uri, displayName = name, sizeBytes = 100L, relativeDir = relativeDir)
-
     private fun queueEntry(status: UploadStatus) = UploadQueueEntry(
         localId = status.name,
         displayName = "f.jpg",
@@ -229,105 +217,6 @@ class UploadViewModelTest {
         finalFileName = null,
         errorMessage = null,
     )
-
-    @Test
-    fun `acceptFolder合并进待传并按uri去重`() {
-        val (viewModel, _) = newViewModel()
-        viewModel.acceptFolder(
-            FolderScanResult(files = listOf(folderItem("u1", "a.jpg", "作者A")), skippedCount = 0, truncated = false, totalUploadable = 1),
-        )
-        viewModel.acceptFolder(
-            FolderScanResult(
-                files = listOf(folderItem("u1", "a.jpg", "作者A"), folderItem("u2", "b.jpg", "作者A/子")),
-                skippedCount = 0,
-                truncated = false,
-                totalUploadable = 2,
-            ),
-        )
-        driveIdle() // uiState 经 combine().stateIn 异步传播，直调后需推进调度器
-        val pending = viewModel.uiState.value.pendingItems
-        assertEquals(2, pending.size)
-        assertEquals("作者A", pending[0].relativeDir)
-        assertEquals("作者A/子", pending[1].relativeDir)
-    }
-
-    @Test
-    fun `acceptFolderTree走扫描并把相对目录带到入队`() {
-        val (viewModel, repository) = newViewModel()
-        scanner.result = FolderScanResult(
-            files = listOf(folderItem("content://doc/1", "a.jpg", "作者A")),
-            skippedCount = 0,
-            truncated = false,
-            totalUploadable = 1,
-        )
-        viewModel.selectDir("photos")
-        viewModel.acceptFolderTree("content://tree/x")
-        driveIdle()
-        assertEquals(listOf("content://tree/x"), scanner.scannedUris)
-        viewModel.enqueue()
-        driveIdle()
-        val call = repository.enqueueCalls.single()
-        assertEquals("photos", call.dir)
-        val enqueued = call.items.single()
-        assertEquals("作者A", enqueued.relativeDir)
-        // per-item spec dir（口径①：所选文件夹名作为 dir 首段，叠加页面已选目录）
-        assertEquals("photos/作者A", UploadRules.joinUploadDirPath(call.dir, enqueued.relativeDir))
-        assertNull(viewModel.uiState.value.blockMessage)
-    }
-
-    @Test
-    fun `文件夹截断与跳过提示文案`() {
-        val (viewModel, _) = newViewModel()
-        viewModel.acceptFolder(
-            FolderScanResult(
-                files = listOf(folderItem("u1", "a.jpg", "作者A")),
-                skippedCount = 2,
-                truncated = true,
-                totalUploadable = 1001,
-            ),
-        )
-        driveIdle() // uiState 异步传播
-        val message = viewModel.uiState.value.blockMessage
-        assertTrue(message?.contains("已选前 1000 个") == true)
-        assertTrue(message?.contains("共 1001 个") == true)
-        assertTrue(message?.contains("已跳过 2 个非媒体文件") == true)
-    }
-
-    @Test
-    fun `空文件夹扫描给空提示`() {
-        val (viewModel, _) = newViewModel()
-        viewModel.acceptFolder(FolderScanResult.EMPTY)
-        driveIdle() // uiState 异步传播
-        assertEquals("所选文件夹中没有可上传的媒体文件", viewModel.uiState.value.blockMessage)
-        assertTrue(viewModel.uiState.value.pendingItems.isEmpty())
-    }
-
-    @Test
-    fun `扫描失败给错误横幅且不进待传`() {
-        val (viewModel, _) = newViewModel()
-        scanner.error = IllegalStateException("provider 失效")
-        viewModel.acceptFolderTree("content://tree/x")
-        driveIdle()
-        assertNotNull(viewModel.uiState.value.errorMessage)
-        assertTrue(viewModel.uiState.value.pendingItems.isEmpty())
-        assertFalse(viewModel.uiState.value.scanningFolder)
-    }
-
-    @Test
-    fun `扫描中状态防抖且完成后恢复`() {
-        val (viewModel, _) = newViewModel()
-        scanner.gate = CompletableDeferred()
-        viewModel.acceptFolderTree("content://tree/x")
-        driveIdle() // scan 挂起在 gate：扫描中状态可见
-        assertTrue(viewModel.uiState.value.scanningFolder)
-        viewModel.acceptFolderTree("content://tree/x") // 扫描中再点不重复触发
-        driveIdle()
-        assertEquals(1, scanner.scannedUris.size)
-        scanner.gate?.complete(Unit)
-        driveIdle()
-        assertFalse(viewModel.uiState.value.scanningFolder)
-        assertEquals(1, scanner.scannedUris.size)
-    }
 
     @Test
     fun `队列聚合行按状态计数`() {
@@ -392,234 +281,39 @@ class UploadViewModelTest {
         assertFalse(viewModel.uiState.value.hasActiveWork)
     }
 
-    // ---- REQ §3.1：上传挂靠作者与来源 ----
+    // ---- 2026-09-25：内置相册式选择器选中项合并（acceptPickedItems） ----
 
-    /** authorAttach=true 的默认库（libraryA 补能力）+ 预置来源词表 */
-    private fun attachRepository(): FakeUploadRepository = FakeUploadRepository().apply {
-        librariesResult = listOf(libraryA.copy(authorAttach = true), libraryB)
-        authorSourcesResult = listOf(AuthorSourceStat("kemono", 3), AuthorSourceStat("r34", 1))
-    }
+    private fun picked(uri: String, name: String, size: Long) =
+        LocalMediaItem(uri = uri, displayName = name, sizeBytes = size, isVideo = false)
 
     @Test
-    fun `不支持挂靠的库不启用作者区且入队不带挂靠参数`() {
-        val (viewModel, repository) = newViewModel() // libraryA 默认 authorAttach=false
-        assertFalse(viewModel.uiState.value.authorAttachEnabled)
-        viewModel.acceptUris(listOf("content://x/1"))
-        driveIdle()
-        viewModel.enqueue()
-        driveIdle()
-        val call = repository.enqueueCalls.single()
-        assertNull(call.authorId)
-        assertNull(call.authorName)
-        assertTrue(call.sources.isEmpty())
-    }
-
-    @Test
-    fun `authorAttach库启用作者区并预载来源词表`() {
-        val (viewModel, _) = newViewModel(attachRepository())
-        assertTrue(viewModel.uiState.value.authorAttachEnabled)
-        assertEquals(listOf("kemono", "r34"), viewModel.uiState.value.sourceOptions.map { it.name })
-    }
-
-    @Test
-    fun `enqueue成功后重新请求来源词表`() {
-        val repository = attachRepository()
-        val (viewModel, _) = newViewModel(repository)
-        assertEquals(1, repository.authorSourcesCallCount) // 进入界面首载一次
-        // 服务端词表在上传间被新数据扩充（如上一批入队写入的新来源）
-        repository.authorSourcesResult = listOf(AuthorSourceStat("kemono", 3), AuthorSourceStat("新站点", 1))
-        viewModel.acceptUris(listOf("content://x/1"))
-        driveIdle()
-        viewModel.enqueue()
-        driveIdle()
-        assertEquals(2, repository.authorSourcesCallCount) // 入队成功后强制重拉（REQ §3.1② 词表随作者数据自动扩充）
-        assertEquals(listOf("kemono", "新站点"), viewModel.uiState.value.sourceOptions.map { it.name })
-    }
-
-    @Test
-    fun `作者联想防抖后才发查询并回填`() {
-        val (viewModel, repository) = newViewModel(
-            attachRepository().apply {
-                suggestResult = { listOf(AuthorSuggestion("a-1", "作者X / 别名", 5)) }
-            },
+    fun `acceptPickedItems元数据直用不查describe并按uri去重`() {
+        val (viewModel, repository) = newViewModel()
+        viewModel.acceptPickedItems(
+            listOf(picked("content://media/img/1", "IMG_1.jpg", 2048L)),
         )
-        viewModel.onAuthorQueryChange("作者X")
-        // 防抖窗口内未出网（虚拟时间未推进）
-        assertTrue(repository.suggestCalls.isEmpty())
         driveIdle()
-        assertEquals(listOf("作者X"), repository.suggestCalls)
-        assertEquals(1, viewModel.uiState.value.authorSuggestions.size)
-    }
-
-    @Test
-    fun `点选联想作者入队带authorId不带authorName`() {
-        val (viewModel, repository) = newViewModel(
-            attachRepository().apply {
-                suggestResult = { listOf(AuthorSuggestion("a-1", "作者X / 别名", 5)) }
-            },
+        viewModel.acceptPickedItems(
+            listOf(
+                picked("content://media/img/1", "IMG_1.jpg", 2048L),
+                picked("content://media/img/2", "IMG_2.jpg", 4096L),
+            ),
         )
-        viewModel.onAuthorQueryChange("作者X")
         driveIdle()
-        viewModel.selectAuthorSuggestion(viewModel.uiState.value.authorSuggestions.single())
-        viewModel.acceptUris(listOf("content://x/1"))
-        driveIdle()
-        viewModel.enqueue()
-        driveIdle()
-        val call = repository.enqueueCalls.single()
-        assertEquals("a-1", call.authorId)
-        assertNull(call.authorName)
-        assertTrue(call.sources.isEmpty())
+        val pending = viewModel.uiState.value.pendingItems
+        assertEquals(2, pending.size)
+        // MediaStore 已给出元数据：不再触发 describe 重查（SAF/分享路径才走 describe）
+        assertEquals(0, repository.describeCalls)
+        assertEquals("IMG_1.jpg", pending[0].displayName)
+        assertEquals(2048L, pending[0].sizeBytes)
+        assertEquals("", pending[0].relativeDir)
     }
 
     @Test
-    fun `联想无匹配回车新建入队带authorName`() {
-        val (viewModel, repository) = newViewModel(attachRepository()) // suggestResult 默认空
-        viewModel.onAuthorQueryChange("  全新作者  ")
+    fun `acceptPickedItems空列表忽略`() {
+        val (viewModel, _) = newViewModel()
+        viewModel.acceptPickedItems(emptyList())
         driveIdle()
-        viewModel.commitAuthorInput()
-        driveIdle() // uiState 经 combine().stateIn 异步传播，直调后需推进调度器
-        assertEquals("全新作者", viewModel.uiState.value.pendingNewAuthor)
-        viewModel.acceptUris(listOf("content://x/1"))
-        driveIdle()
-        viewModel.enqueue()
-        driveIdle()
-        val call = repository.enqueueCalls.single()
-        assertNull(call.authorId)
-        assertEquals("全新作者", call.authorName)
-    }
-
-    @Test
-    fun `大小写变体回车归并到既有作者不裂分身`() {
-        val (viewModel, repository) = newViewModel(
-            attachRepository().apply {
-                suggestResult = { listOf(AuthorSuggestion("a-1", "FGnilin", 3)) }
-            },
-        )
-        viewModel.onAuthorQueryChange("fgnilin")
-        driveIdle()
-        viewModel.commitAuthorInput()
-        driveIdle() // uiState 异步传播
-        assertEquals("a-1", viewModel.uiState.value.selectedAuthor?.id)
-        viewModel.acceptUris(listOf("content://x/1"))
-        driveIdle()
-        viewModel.enqueue()
-        driveIdle()
-        val call = repository.enqueueCalls.single()
-        assertEquals("a-1", call.authorId)
-        assertNull(call.authorName)
-    }
-
-    @Test
-    fun `authorAttach库留空上传不带挂靠参数行为不变`() {
-        val (viewModel, repository) = newViewModel(attachRepository())
-        viewModel.acceptUris(listOf("content://x/1"))
-        driveIdle()
-        viewModel.enqueue()
-        driveIdle()
-        val call = repository.enqueueCalls.single()
-        assertNull(call.authorId)
-        assertNull(call.authorName)
-        assertTrue(call.sources.isEmpty())
-    }
-
-    @Test
-    fun `来源toggle与自由输入trim去重`() {
-        val (viewModel, repository) = newViewModel(attachRepository())
-        viewModel.onAuthorQueryChange("作者X")
-        driveIdle()
-        viewModel.selectAuthorSuggestion(AuthorSuggestion("a-1", "作者X", 5))
-        viewModel.toggleSource("kemono")
-        viewModel.toggleSource("r34")
-        viewModel.toggleSource("kemono") // 再点取消
-        viewModel.addCustomSource("  新站点  ") // trim
-        viewModel.addCustomSource("新站点") // 去重
-        driveIdle() // uiState 异步传播
-        assertEquals(listOf("r34", "新站点"), viewModel.uiState.value.sources)
-        viewModel.acceptUris(listOf("content://x/1"))
-        driveIdle()
-        viewModel.enqueue()
-        driveIdle()
-        assertEquals(listOf("r34", "新站点"), repository.enqueueCalls.single().sources)
-    }
-
-    @Test
-    fun `未选作者时来源不可编辑`() {
-        val (viewModel, repository) = newViewModel(attachRepository())
-        viewModel.toggleSource("kemono")
-        viewModel.addCustomSource("kemono")
-        driveIdle() // uiState 异步传播
-        assertTrue(viewModel.uiState.value.sources.isEmpty())
-        assertFalse(viewModel.uiState.value.hasAuthor)
-        // 入队同样不带来源（VM 门槛之外再由快照口径兜底）
-        viewModel.acceptUris(listOf("content://x/1"))
-        driveIdle()
-        viewModel.enqueue()
-        driveIdle()
-        assertTrue(repository.enqueueCalls.single().sources.isEmpty())
-    }
-
-    @Test
-    fun `输入新文本先清确定态重新草拟`() {
-        val (viewModel, _) = newViewModel(attachRepository())
-        viewModel.onAuthorQueryChange("作者X")
-        driveIdle()
-        viewModel.selectAuthorSuggestion(AuthorSuggestion("a-1", "作者X", 5))
-        viewModel.onAuthorQueryChange("改主意")
-        driveIdle() // uiState 异步传播
-        assertNull(viewModel.uiState.value.selectedAuthor)
-        assertNull(viewModel.uiState.value.pendingNewAuthor)
-        assertEquals("改主意", viewModel.uiState.value.authorQuery)
-    }
-
-    @Test
-    fun `切库清空作者与来源状态`() {
-        val (viewModel, _) = newViewModel(attachRepository())
-        viewModel.onAuthorQueryChange("作者X")
-        driveIdle()
-        viewModel.selectAuthorSuggestion(AuthorSuggestion("a-1", "作者X", 5))
-        viewModel.toggleSource("kemono")
-        viewModel.selectLibrary(libraryB)
-        driveIdle()
-        val state = viewModel.uiState.value
-        assertEquals("", state.authorQuery)
-        assertNull(state.selectedAuthor)
-        assertNull(state.pendingNewAuthor)
-        assertTrue(state.sources.isEmpty())
-        assertFalse(state.authorAttachEnabled) // libraryB 无挂靠能力
-    }
-
-    @Test
-    fun `清除作者连带清来源`() {
-        val (viewModel, _) = newViewModel(attachRepository())
-        viewModel.onAuthorQueryChange("作者X")
-        driveIdle()
-        viewModel.selectAuthorSuggestion(AuthorSuggestion("a-1", "作者X", 5))
-        viewModel.toggleSource("kemono")
-        viewModel.clearAuthor()
-        driveIdle() // uiState 异步传播
-        val state = viewModel.uiState.value
-        assertNull(state.selectedAuthor)
-        assertEquals("", state.authorQuery)
-        assertTrue(state.sources.isEmpty())
-    }
-}
-
-/** [FolderScanner] 测试替身：结果可编程、可挂起在 gate 模拟扫描中（JVM 纯 Kotlin）。 */
-private class FakeFolderScanner : FolderScanner {
-
-    var result: FolderScanResult = FolderScanResult.EMPTY
-
-    var error: Exception? = null
-
-    /** 置非空则 scan 挂起直至手动放行（驱动"扫描中"状态与防抖断言） */
-    var gate: CompletableDeferred<Unit>? = null
-
-    val scannedUris = mutableListOf<String>()
-
-    override suspend fun scan(treeUri: String): FolderScanResult {
-        scannedUris += treeUri
-        gate?.await()
-        error?.let { throw it }
-        return result
+        assertTrue(viewModel.uiState.value.pendingItems.isEmpty())
     }
 }

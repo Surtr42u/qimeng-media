@@ -483,41 +483,6 @@ func TestValidSourceWord(t *testing.T) {
 	}
 }
 
-// ---------- ExtractSourceVocabulary ----------
-
-func TestExtractSourceVocabulary(t *testing.T) {
-	contents := []string{
-		// aaa → kemono
-		"1  aaa\n出处  kemono\n作品\na.png\n",
-		// bbb → kemono、pixiv
-		"2  bbb\n来源\nkemono\npixiv\n作品\nb.png\n",
-		// CRLF 片段：ccc → kemono；bbb 再引一次 kemono（同作者不重复计数）
-		"3  ccc\r\n出处  kemono\r\n作品\r\nc.png\r\n2  bbb\r\n来源\r\nkemono\r\n",
-	}
-	got := ExtractSourceVocabulary(contents)
-	want := []SourceStat{
-		{Name: "kemono", AuthorCount: 3}, // aaa+bbb+ccc，bbb 跨片段只计一次
-		{Name: "pixiv", AuthorCount: 1},
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("vocabulary=%v, want %v", got, want)
-	}
-
-	// 同计数按名字升序（常用优先的稳定次序）。
-	tie := ExtractSourceVocabulary([]string{
-		"1  aaa\n来源\nzeta\nalpha\n作品\na.png\n",
-	})
-	wantTie := []SourceStat{{Name: "alpha", AuthorCount: 1}, {Name: "zeta", AuthorCount: 1}}
-	if !reflect.DeepEqual(tie, wantTie) {
-		t.Errorf("tie=%v, want %v", tie, wantTie)
-	}
-
-	// 无来源 → 空词表。
-	if got := ExtractSourceVocabulary([]string{"1  aaa\n作品\na.png\n"}); len(got) != 0 {
-		t.Errorf("无来源词表=%v, want 空", got)
-	}
-}
-
 // ---------- MissingUploadEntries / MergeUploadEntries ----------
 
 func TestMissingAndMergeUploadEntries(t *testing.T) {

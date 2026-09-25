@@ -6,32 +6,41 @@
  * TXT 导入作者（旧版数据管理「TXT导入作者」卡）：POST 导入=统一重建语义
  * （跨 TXT 同名作者关联并集），GET 列出已导入文件名，DELETE 移除单个片段并
  * 从剩余片段重建——删除/导入都会改变作者表与关联，需失效作者列表。
- * 上传挂靠族（REQ-上传指定作者与来源 §3.1）：联想/来源词表供上传卡两个
- * 挂靠字段消费；导出/镜像分别供 TXT 导入卡与设置页镜像卡消费。
+ * 来源词表族（2026-09-25 协议批）：通用来源词表（GET/PUT
+ * /authors/source-vocabulary，服务端手动维护的小清单）+ 单作者来源区
+ * （GET/PUT /authors/{authorId}/sources，个人片段词）——设置页词表卡与
+ * 资产编辑页来源区消费；导出/镜像分别供 TXT 导入卡与设置页镜像卡消费。
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   deleteApiV1AuthorsImportTxt,
   getApiV1Authors,
+  getApiV1AuthorsByAuthorIdSources,
   getApiV1AuthorsImportTxt,
   getApiV1AuthorsImportTxtExport,
   getApiV1AuthorsMirror,
-  getApiV1AuthorsSources,
+  getApiV1AuthorsSourceVocabulary,
   getApiV1AuthorsSuggest,
   postApiV1AuthorsImportTxt,
   postApiV1AuthorsImportTxtRebuild,
+  putApiV1AssetsByAssetIdAuthors,
   putApiV1AuthorsByAuthorIdFollow,
+  putApiV1AuthorsByAuthorIdSources,
   putApiV1AuthorsMirror,
+  putApiV1AuthorsSourceVocabulary,
   type AuthorMirrorConfig,
+  type SourceVocabulary,
 } from '@/api/generated'
 import { unwrapSdkResult } from '@/lib/api-client'
 import { downloadBlob } from '@/lib/download'
 import {
+  ASSETS_QUERY_KEY,
   AUTHOR_MIRROR_QUERY_KEY,
-  AUTHOR_SOURCES_QUERY_KEY,
+  AUTHOR_SOURCES_BY_ID_QUERY_KEY,
   AUTHOR_SUGGEST_QUERY_KEY,
   AUTHORS_QUERY_KEY,
+  SOURCE_VOCABULARY_QUERY_KEY,
   TXT_FILES_QUERY_KEY,
 } from '@/lib/query-keys'
 
@@ -122,15 +131,15 @@ export function useDeleteImportedTxt() {
   })
 }
 
-/* ===== 上传挂靠（REQ-上传指定作者与来源 §3.1）：联想/词表/导出/镜像 ===== */
+/* ===== 来源词表族（2026-09-25 协议批）：通用词表/单作者来源区/联想/导出/镜像 ===== */
 
 /** 作者联想条数上限（与 openapi /authors/suggest limit default=10 双写——
  *  协议侧改动须同步此处，反之亦然；定位 api/openapi.yaml 该端点 limit 参数） */
 const AUTHOR_SUGGEST_LIMIT = 10
 
-/** 作者来源词表缓存时效：词表随作者数据缓慢扩充（上传并入新来源才变），
- *  5 分钟内重复打开上传卡不重发请求；上传成功后由调用方按需失效 */
-const AUTHOR_SOURCES_STALE_MS = 5 * 60 * 1000
+/** 来源词表缓存时效：通用词表是服务端手动维护的小清单、单作者来源区随
+ *  编辑低频变化，5 分钟内重复打开不重发请求；保存后由各自 mutation 按键失效 */
+const SOURCE_VOCABULARY_STALE_MS = 5 * 60 * 1000
 
 /** 导出片段的 MIME（协议 200 响应 text/plain；charset 显式 utf-8 保证含
  *  中文作者名的片段往返一致） */
@@ -155,13 +164,76 @@ export function useAuthorSuggest(q: string, enabled = true) {
   })
 }
 
-/** 作者来源词表（GET /authors/sources；常用优先=服务端已按 authorCount 降序，
- *  前端不再排。与 §4 资产出处分区词表互不相干，禁止混用）。 */
-export function useAuthorSources() {
+/** 通用来源词表（GET /authors/source-vocabulary）：来源建议=获取渠道平台名
+ *  （如「老王论坛」），服务端手动维护的小清单、全员共享（个人片段词已退出
+ *  建议场景）；服务端已按固定序返回，前端不再排。设置页词表卡与资产编辑页
+ *  来源区快捷选项共用。 */
+export function useSourceVocabulary() {
   return useQuery({
-    queryKey: AUTHOR_SOURCES_QUERY_KEY,
-    queryFn: () => unwrapSdkResult(getApiV1AuthorsSources()),
-    staleTime: AUTHOR_SOURCES_STALE_MS,
+    queryKey: SOURCE_VOCABULARY_QUERY_KEY,
+    queryFn: () => unwrapSdkResult(getApiV1AuthorsSourceVocabulary()),
+    staleTime: SOURCE_VOCABULARY_STALE_MS,
+  })
+}
+
+/** 保存通用来源词表（PUT /authors/source-vocabulary，整体替换；空数组=清空）。
+ *  保存成功失效自身键，读侧（设置页/编辑页）即时反映。 */
+export function useSaveSourceVocabulary() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: SourceVocabulary) =>
+      unwrapSdkResult(putApiV1AuthorsSourceVocabulary({ body })),
+    onSuccess: () => qc.invalidateQueries({ queryKey: SOURCE_VOCABULARY_QUERY_KEY }),
+  })
+}
+
+/** 单作者来源区回显（GET /authors/{authorId}/sources）：该作者 TXT 片段
+ *  「来源/出处」区的当前词表；authorId 空=挂起不发请求（编辑页按行调用，
+ *  键形 [...AUTHOR_SOURCES_BY_ID_QUERY_KEY, authorId]）。 */
+export function useAuthorSourcesById(authorId: string | null | undefined) {
+  return useQuery({
+    queryKey: [...AUTHOR_SOURCES_BY_ID_QUERY_KEY, authorId ?? ''],
+    queryFn: () =>
+      unwrapSdkResult(getApiV1AuthorsByAuthorIdSources({ path: { authorId: authorId! } })),
+    enabled: !!authorId,
+  })
+}
+
+/** 保存单作者来源区（PUT /authors/{authorId}/sources，整体替换；空数组=清空）。
+ *  保存成功失效该作者的回显键。 */
+export function useSaveAuthorSources() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (args: { authorId: string; sources: string[] }) =>
+      unwrapSdkResult(
+        putApiV1AuthorsByAuthorIdSources({
+          path: { authorId: args.authorId },
+          body: { sources: args.sources },
+        }),
+      ),
+    onSuccess: (_res, args) =>
+      qc.invalidateQueries({ queryKey: [...AUTHOR_SOURCES_BY_ID_QUERY_KEY, args.authorId] }),
+  })
+}
+
+/** 资产作者关联整体替换（PUT /assets/{assetId}/authors，ADR-0024）：body=
+ *  常规作者 ID 全集（空数组=解除全部常规关联；作者须已存在且 type=regular）。
+ *  失效资产族（详情 authors/列表作者列/推荐流）与作者族（fileCount 随关联
+ *  变化）；200 回 AssetDetail，由调用方按需消费。 */
+export function useReplaceAssetAuthors() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (args: { assetId: string; authorIds: string[] }) =>
+      unwrapSdkResult(
+        putApiV1AssetsByAssetIdAuthors({
+          path: { assetId: args.assetId },
+          body: { authorIds: args.authorIds },
+        }),
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ASSETS_QUERY_KEY })
+      qc.invalidateQueries({ queryKey: AUTHORS_QUERY_KEY })
+    },
   })
 }
 

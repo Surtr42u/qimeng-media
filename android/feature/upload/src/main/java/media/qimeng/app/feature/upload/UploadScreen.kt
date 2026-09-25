@@ -2,13 +2,10 @@ package media.qimeng.app.feature.upload
 
 import android.Manifest
 import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Build
-import android.util.Log
+import android.os.Environment
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.ActivityResult
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -26,8 +23,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -50,30 +45,29 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import media.qimeng.app.core.model.AuthorSuggestion
 import media.qimeng.app.core.model.DirNode
 import media.qimeng.app.core.model.UploadItem
 import media.qimeng.app.core.model.UploadQueueEntry
 import media.qimeng.app.core.model.UploadRules
 import media.qimeng.app.core.model.UploadStatus
 import media.qimeng.app.core.ui.component.QimengCapsuleTextField
-import media.qimeng.app.core.ui.component.QimengChipRow
-import media.qimeng.app.core.ui.component.QimengPill
+import media.qimeng.app.core.ui.component.QimengMessageCard
 import media.qimeng.app.core.ui.component.QimengSegPill
 import media.qimeng.app.core.ui.component.QimengTopBar
-import media.qimeng.app.core.ui.component.QimengWordPillFlow
 import media.qimeng.app.core.ui.theme.qimengFilledButtonColors
 
 /**
- * 上传主通道页（M4-5）：选库 → 选目录（可新建）→ 选文件（SAF/分享接收）→ 串行队列进度。
- * 入口：①系统分享接收（壳层带分享 URI 导航至此）②App 内后续入口（设置页，M4-6 接线）。
+ * 上传主通道页（M4-5）：选库 → 选目录（可新建）→ 选文件 → 串行队列进度。
+ * 入口：①系统分享接收（壳层带分享 URI 导航至此）②App 内数据管理页入口。
+ * 选文件（2026-09-25 拍板）：弃系统 SAF 选择器，改 App 内置相册式选择器
+ * （[MediaPickerDialog]，MediaStore 网格多选；媒体读权限运行时申请，未授权不进选择器）。
+ * 作者/来源挂靠已随协议退役（原 SAF 亦随之拆除）——资产编辑页（feature:detail）承接
+ * 作者关联与来源维护。
  * UI 只做表单编排与状态渲染，业务规则在 ViewModel/core 层（ADR-0008 铁律 7）。
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -96,39 +90,23 @@ fun UploadScreen(
         }
     }
 
-    // SAF 多选（图片/视频；类型校验唯一口径在服务端四道检查，前端只给选择面）。
-    // C-1（批C 任务Q）持久化授权：不用 OpenMultipleDocuments contract——其 createIntent
-    // 不带 FLAG_GRANT_PERSISTABLE_URI_PERMISSION（androidx.activity 1.13.0 反编译实证），
-    // 返回的 URI 无 persistable grant、takePersistableUriPermission 必抛 SecurityException。
-    // 自建 Intent 带该 flag，回调里立刻 take（官方时机），进程被回收后离线队列残余重试仍可读。
-    val documentPicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult(),
-    ) { result ->
-        val uris = extractOpenDocumentUris(result)
-        takePersistableRead(context, uris)
-        if (uris.isNotEmpty()) viewModel.acceptUris(uris.map { it.toString() })
-    }
-
-    // 选文件夹（U10-6c）：同 C-1 口径自建 ACTION_OPEN_DOCUMENT_TREE Intent 并 take 树授权
-    // （persist 一个 tree grant 覆盖其下全部 document URI，整树只需一个 grant——512 上限
-    // 下的最省形态）；递归枚举与扩展名过滤收口在 core:data FolderScanner，UI 只把
-    // treeUri 交给 ViewModel（ADR-0008 铁律 7）
-    val folderPicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult(),
-    ) { result ->
-        val treeUri = result.data?.data
-        if (treeUri != null) {
-            takePersistableRead(context, listOf(treeUri))
-            viewModel.acceptFolderTree(treeUri.toString())
-        }
-    }
+    // 选择器/新建目录弹层（saveable：进程重建后关闭态恢复，与页面弹窗同语义）
+    var showPicker by rememberSaveable { mutableStateOf(false) }
+    var showCreateDirDialog by rememberSaveable { mutableStateOf(false) }
 
     // 通知权限（API 33+ 运行时申请；拒绝只影响可见性、不阻断上传）
     val notificationPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { }
 
-    var showCreateDirDialog by rememberSaveable { mutableStateOf(false) }
+    // 媒体读权限（内置相册选择器数据面前置）：API 33+ 细分图片/视频两权限，
+    // 低版本 READ_EXTERNAL_STORAGE（manifest 声明 maxSdkVersion=32）。任一授予即进选择器
+    // （只授图片也能选图片）；全拒 = 留在本页（错误横幅由选择器空态承载，不另弹窗）。
+    val mediaPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { grants ->
+        if (grants.values.any { it }) showPicker = true
+    }
 
     Column(modifier = modifier.fillMaxSize()) {
         QimengTopBar(title = "上传", onBack = onDone)
@@ -143,11 +121,10 @@ fun UploadScreen(
         UploadForm(
             state = state,
             viewModel = viewModel,
-            onPickFiles = {
+            onPickMedia = {
                 requestNotificationPermissionIfNeeded(context, notificationPermission)
-                documentPicker.launch(buildOpenDocumentIntent())
+                openPickerOrRequestPermission(context, mediaPermission) { showPicker = true }
             },
-            onPickFolder = { folderPicker.launch(buildOpenDocumentTreeIntent()) },
             onCreateDir = { showCreateDirDialog = true },
             onEnqueue = {
                 requestNotificationPermissionIfNeeded(context, notificationPermission)
@@ -166,18 +143,27 @@ fun UploadScreen(
             creating = state.creatingDir,
         )
     }
+
+    if (showPicker) {
+        MediaPickerDialog(
+            onConfirm = { picked ->
+                showPicker = false
+                viewModel.acceptPickedItems(picked)
+            },
+            onDismiss = { showPicker = false },
+        )
+    }
 }
 
 /**
  * 表单滚动主体：横幅 → 目标库 → 目标目录 → 待上传 → 入队 → 队列。
- * 选择行为以回调注入（launcher 留在 [UploadScreen] 壳层），函数行数收敛到百行红线内。
+ * 选择行为以回调注入（launcher/权限留在本壳层），函数行数收敛到百行红线内。
  */
 @Composable
 private fun UploadForm(
     state: UploadUiState,
     viewModel: UploadViewModel,
-    onPickFiles: () -> Unit,
-    onPickFolder: () -> Unit,
+    onPickMedia: () -> Unit,
     onCreateDir: () -> Unit,
     onEnqueue: () -> Unit,
 ) {
@@ -190,12 +176,12 @@ private fun UploadForm(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         state.errorMessage?.let { message ->
-            MessageCard(text = message, container = MaterialTheme.colorScheme.errorContainer) {
+            QimengMessageCard(text = message, container = MaterialTheme.colorScheme.errorContainer) {
                 viewModel.dismissError()
             }
         }
         state.blockMessage?.let { message ->
-            MessageCard(text = message, container = MaterialTheme.colorScheme.tertiaryContainer) {
+            QimengMessageCard(text = message, container = MaterialTheme.colorScheme.tertiaryContainer) {
                 viewModel.dismissBlock()
             }
         }
@@ -232,30 +218,9 @@ private fun UploadForm(
             )
         }
 
-        // —— 作者与来源（REQ §3.1：仅 capabilities.authorAttach=true 的库渲染，
-        //     显隐判据在 UiState.authorAttachEnabled，本层禁止写死 kind）——
-        if (state.authorAttachEnabled) {
-            AuthorSection(
-                state = state,
-                onQueryChange = viewModel::onAuthorQueryChange,
-                onPickSuggestion = viewModel::selectAuthorSuggestion,
-                onCommitInput = viewModel::commitAuthorInput,
-                onClear = viewModel::clearAuthor,
-            )
-            SourceSection(
-                state = state,
-                onToggle = viewModel::toggleSource,
-                onAddCustom = viewModel::addCustomSource,
-            )
-        }
-
         // —— 待上传文件 ——
         SectionTitle("待上传文件（${state.pendingItems.size}）")
-        PickerRow(
-            onPickFiles = onPickFiles,
-            onPickFolder = onPickFolder,
-            scanningFolder = state.scanningFolder,
-        )
+        PickerRow(onPickMedia = onPickMedia)
         state.pendingItems.forEach { item ->
             PendingItemRow(item = item, onRemove = { viewModel.removeItem(item) })
             HorizontalDivider()
@@ -329,197 +294,17 @@ private fun DirTreePanel(
     }
 }
 
-/** 选文件/选文件夹两入口并排（U10-6c）；扫描中文案换态并禁用，避免并发扫描 */
+/** 选媒体入口（内置相册选择器，2026-09-25 拍板替代 SAF） */
 @Composable
-private fun PickerRow(
-    onPickFiles: () -> Unit,
-    onPickFolder: () -> Unit,
-    scanningFolder: Boolean,
-) {
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Button(onClick = onPickFiles, modifier = Modifier.weight(1f)) {
-            Text("选择文件")
-        }
-        OutlinedButton(
-            onClick = onPickFolder,
-            enabled = !scanningFolder,
-            modifier = Modifier.weight(1f),
-        ) {
-            Text(if (scanningFolder) "正在扫描…" else "选择文件夹")
-        }
+private fun PickerRow(onPickMedia: () -> Unit) {
+    Button(onClick = onPickMedia, modifier = Modifier.fillMaxWidth()) {
+        Text("从相册选择")
     }
     Text(
-        text = "支持图片/视频常见格式；选文件夹时保留子目录结构、自动跳过其他文件",
+        text = "支持图片/视频常见格式；类型与大小校验在服务端，超限项本地拦截",
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
-}
-
-/**
- * 作者段（REQ §3.1①：单选、可留空）：未确定 = 胶囊输入框 + 联想列表（无匹配时尾部
- * 固定「新建作者」行）；已确定 = 选中胶囊（点按清除）。状态与规则全在 ViewModel，
- * 本组件只渲染回调（ADR-0008 铁律 7）。
- */
-@Composable
-private fun AuthorSection(
-    state: UploadUiState,
-    onQueryChange: (String) -> Unit,
-    onPickSuggestion: (AuthorSuggestion) -> Unit,
-    onCommitInput: () -> Unit,
-    onClear: () -> Unit,
-) {
-    SectionTitle("作者（可选）")
-    val committedName = state.selectedAuthor?.displayName ?: state.pendingNewAuthor
-    if (committedName != null) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            // 胶囊单源（QimengSegPill）：点按即清除；新建作者前缀区分两种确定态
-            QimengSegPill(
-                text = if (state.selectedAuthor != null) "$committedName ✕" else "新建：$committedName ✕",
-                selected = true,
-                onClick = onClear,
-            )
-            Text(
-                text = if (state.selectedAuthor != null) "已选作者" else "将新建作者",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    } else {
-        QimengCapsuleTextField(
-            value = state.authorQuery,
-            onValueChange = onQueryChange,
-            placeholder = "输入作者名（联想选择，回车新建）",
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-            keyboardActions = KeyboardActions(onDone = { onCommitInput() }),
-        )
-        if (state.authorQuery.isNotBlank()) {
-            AuthorSuggestionList(
-                suggestions = state.authorSuggestions,
-                query = state.authorQuery.trim(),
-                onPick = onPickSuggestion,
-                onCreateNew = onCommitInput,
-            )
-        }
-    }
-}
-
-/**
- * 联想列表：命中行 = displayName + 文件数（照 AuthorScreen 作者行双行口径）；
- * 无匹配时尾部固定「新建作者 "xxx"」行（点击=回车提交同一路径）。
- * 用固定 Card+Column 而非 LazyColumn：列表上限 = 协议 limit 10 + 1 行，且外层是
- * verticalScroll 表单（嵌套滚动反向冲突），固定高度内容交给外层滚动即可。
- */
-@Composable
-private fun AuthorSuggestionList(
-    suggestions: List<AuthorSuggestion>,
-    query: String,
-    onPick: (AuthorSuggestion) -> Unit,
-    onCreateNew: () -> Unit,
-) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(vertical = 4.dp)) {
-            suggestions.forEach { suggestion ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onPick(suggestion) }
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = suggestion.displayName,
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Text(
-                        text = "${suggestion.fileCount} 个文件",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-            // 无匹配时的回车新建固定尾行（REQ §3.1①）
-            if (suggestions.isEmpty()) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(onClick = onCreateNew)
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = "新建作者 \"$query\"",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
-            }
-        }
-    }
-}
-
-/**
- * 来源段（REQ §3.1②：多选、可留空）：已选胶囊流 + 快捷词表横滚胶囊 + 自由输入行。
- * 未选作者时整段禁用/降透明并提示「先选择作者」（来源仅指定作者时合法，协议 400 口径；
- * 误触另有 VM 门槛双保险）。
- */
-@Composable
-private fun SourceSection(
-    state: UploadUiState,
-    onToggle: (String) -> Unit,
-    onAddCustom: (String) -> Unit,
-) {
-    SectionTitle("来源（可选）")
-    val enabled = state.hasAuthor
-    Column(
-        modifier = if (enabled) {
-            Modifier
-        } else {
-            Modifier.alpha(DISABLED_SECTION_ALPHA)
-        },
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        if (!enabled) {
-            Text(
-                text = "先选择作者",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        if (state.sources.isNotEmpty()) {
-            QimengWordPillFlow(
-                pills = state.sources.map { name -> QimengPill(text = name, selected = true) },
-                onPillClick = { index -> onToggle(state.sources[index]) },
-            )
-        }
-        if (state.sourceOptions.isNotEmpty()) {
-            // 快捷词表横滚胶囊（点击 toggle；选中态由 VM 状态驱动，组件本身受控）
-            val names = state.sourceOptions.map { it.name }
-            QimengChipRow(
-                pills = names.map { name -> QimengPill(text = name, selected = name in state.sources) },
-                onPillClick = { index -> onToggle(names[index]) },
-            )
-        }
-        var customInput by rememberSaveable { mutableStateOf("") }
-        QimengCapsuleTextField(
-            value = customInput,
-            onValueChange = { customInput = it },
-            placeholder = "输入新站点或 URL，回车加入",
-            singleLine = true,
-            enabled = enabled,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-            keyboardActions = KeyboardActions(
-                onDone = {
-                    onAddCustom(customInput)
-                    customInput = ""
-                },
-            ),
-        )
-    }
 }
 
 /**
@@ -550,22 +335,6 @@ private fun SectionTitle(text: String) {
         style = MaterialTheme.typography.titleMedium,
         modifier = Modifier.padding(top = 8.dp),
     )
-}
-
-/** 拦截/错误横幅（点击关闭）：错误用 error 容器色、超限拦截用 tertiary 容器色 */
-@Composable
-private fun MessageCard(text: String, container: Color, onDismiss: () -> Unit) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onDismiss() },
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.padding(12.dp),
-        )
-    }
 }
 
 /** 待上传文件行：展示名 + 相对子目录（选文件夹上传时）+ 大小 + 移除 */
@@ -780,52 +549,43 @@ private fun requestNotificationPermissionIfNeeded(context: Context, launcher: Ac
     }
 }
 
-// ---------- C-1 content:// 持久化授权（批C 任务Q）：自建选择器 Intent 与 persistable grant ----------
-// 官方查证（铁律 8）：takePersistableUriPermission 只能持久化「以 FLAG_GRANT_PERSISTABLE_
-// URI_PERMISSION 授予」的 grant（ContentResolver.takePersistableUriPermission 文档）；
-// androidx 的 OpenMultipleDocuments/OpenDocumentTree contract 均不带该 flag（1.13.0 反编译
-// 实证），故自建 Intent。grant 上限 512/package（AOSP UriGrantsManagerService
-// MAX_PERSISTED_URI_GRANTS），超限系统按 persistedTime 自动淘汰最旧、take 不抛异常——
-// v1 不做 releasePersistableUriPermission 的取舍依据（授权随卸载回收，泄漏无害；见交付报告）。
+// ---------- 媒体读权限与内置相册选择器入口（2026-09-25 拍板，替代 SAF 选择器） ----------
+// 官方查证（铁律 8）：MediaStore 图片/视频读取 API 33+ 走 READ_MEDIA_IMAGES/READ_MEDIA_VIDEO
+// 细分权限（READ_EXTERNAL_STORAGE 在 33+ 失效），26~32 走 READ_EXTERNAL_STORAGE。
+// MediaStore 记录 URI 的跨进程读授权随这些运行时权限存活，无需 takePersistableUriPermission
+// （该 API 只作用于 SAF grant，对 MediaStore URI 本就不适用）。
 
-/** 构建文件多选 Intent：ACTION_OPEN_DOCUMENT + 多选 + 图片/视频过滤 + persistable flag（对齐原 contract 行为） */
-private fun buildOpenDocumentIntent(): Intent =
-    Intent(Intent.ACTION_OPEN_DOCUMENT)
-        .setType(MIME_ANY)
-        .putExtra(Intent.EXTRA_MIME_TYPES, arrayOf(MIME_IMAGE, MIME_VIDEO))
-        .putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-        .addFlags(PERSISTABLE_GRANT_FLAGS)
+/** 本选择器需要的媒体读权限集（按系统版本；官方粒度最小化口径） */
+private fun requiredMediaPermissions(): List<String> =
+    if (Build.VERSION.SDK_INT >= 33) {
+        listOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO)
+    } else {
+        listOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+    }
 
-/** 构建文件夹选择 Intent：ACTION_OPEN_DOCUMENT_TREE + persistable flag（树 grant 覆盖整树） */
-private fun buildOpenDocumentTreeIntent(): Intent =
-    Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
-        .addFlags(PERSISTABLE_GRANT_FLAGS)
-
-/** 从 SAF 结果提取 URI 列表（多选走 clipData，部分选择器单选只给 data） */
-private fun extractOpenDocumentUris(result: ActivityResult): List<Uri> {
-    val data = result.data ?: return emptyList()
-    val clip = data.clipData
-    return when {
-        clip != null && clip.itemCount > 0 -> (0 until clip.itemCount).mapNotNull { clip.getItemAt(it).uri }
-        data.data != null -> listOf(data.data!!)
-        else -> emptyList()
+/**
+ * 媒体读权限判定。MANAGE_EXTERNAL_STORAGE（「所有文件访问」，ADR-0015 本机模式用户
+ * 可能已授予）视为已授权——All-Files-Access 隐含 MediaStore 读，无需重复弹细分授权。
+ */
+private fun hasMediaReadPermission(context: Context): Boolean {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && Environment.isExternalStorageManager()) {
+        return true
+    }
+    return requiredMediaPermissions().all {
+        context.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED
     }
 }
 
-/**
- * SAF 返回即 take 持久读授权（官方时机：拿到 URI 后立刻 take）。
- * 失败不阻断本会话：本会话读权限已由 grant 生效（原 M4-5 行为不变），持久化失败只
- * 意味着进程回收后重试窗口的兜底失效——记日志留证（文本证据协议），交既有 retry 上限兜底。
- */
-private fun takePersistableRead(context: Context, uris: List<Uri>) {
-    val resolver = context.contentResolver
-    uris.forEach { uri ->
-        try {
-            // flag 组合对齐授予权限的读侧（写授权从未申请/从未使用）
-            resolver.takePersistableUriPermission(uri, PERSIST_READ_FLAG)
-        } catch (e: Exception) {
-            Log.w(LOG_TAG, "takePersistableUriPermission 失败（不阻断本会话）uri=$uri", e)
-        }
+/** 已授权直接进选择器；否则发起运行时申请（回调里任一授予即打开，见 [UploadScreen]） */
+private fun openPickerOrRequestPermission(
+    context: Context,
+    launcher: ActivityResultLauncher<Array<String>>,
+    onOpen: () -> Unit,
+) {
+    if (hasMediaReadPermission(context)) {
+        onOpen()
+    } else {
+        launcher.launch(requiredMediaPermissions().toTypedArray())
     }
 }
 
@@ -856,31 +616,8 @@ private const val DIR_TOGGLE_AREA_WIDTH_DP = 48
  */
 private const val DIR_TOGGLE_AREA_HEIGHT_DP = 32
 
-private const val MIME_IMAGE = "image/*"
-private const val MIME_VIDEO = "video/*"
-
-/** 自建 ACTION_OPEN_DOCUMENT Intent 的 setType 兜底值（真实过滤走 EXTRA_MIME_TYPES） */
-private const val MIME_ANY = "*/*"
-
-/** logcat 证据标签（C-1 take 失败留证；与 UploadWorker.LOG_TAG 同为 grep 锚点） */
-private const val LOG_TAG = "QimengUpload"
-
-/**
- * 选择器 Intent 的 flag 组合（C-1，官方查证）：
- * - READ：上传只需要读流（原 grant 行为）；
- * - PERSISTABLE：takePersistableUriPermission 的前提——只有以该 flag 授予的 grant 可持久化。
- */
-private const val PERSISTABLE_GRANT_FLAGS =
-    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
-
-/** takePersistableUriPermission 的 modeFlags（只持读侧） */
-private const val PERSIST_READ_FLAG = Intent.FLAG_GRANT_READ_URI_PERMISSION
-
 /** 队列行取消控件文案（对齐 Web 上传队列：取消无需二次确认） */
 private const val QUEUE_ACTION_CANCEL = "取消"
-
-/** 来源段未选作者时的降透明系数（整段禁用的视觉表达；点击由 VM 门槛兜底） */
-private const val DISABLED_SECTION_ALPHA = 0.5f
 
 /** 队列行取消态文案（与 FAILED 分列：用户取消不计失败） */
 private const val QUEUE_CANCELLED_TEXT = "已取消"

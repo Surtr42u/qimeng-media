@@ -121,6 +121,8 @@ import media.qimeng.app.core.ui.theme.QimengDimens
  *   [SiblingSwipeImmersionRequest] 交接单让目标屏 chromeVisible 以 false 起步
  *   （对标旧版「媒体层恒全屏」；海报态滑切目标仍落排版态）
  * @param onOpenAuthor 跳作者集合页（作者 Sheet「进入作者主页」，壳层导航 push 叠栈）
+ * @param onEditAsset 跳资产编辑页（作者 Sheet「编辑作者与来源」，2026-09-25 上传挂靠
+ *   退役批：作者关联与来源维护收口编辑页；壳层导航 push 叠栈）
  */
 @Composable
 fun DetailScreen(
@@ -128,6 +130,7 @@ fun DetailScreen(
     onBack: () -> Unit,
     onOpenAsset: (assetId: String) -> Unit,
     onOpenAuthor: (authorId: String, displayName: String) -> Unit = { _, _ -> },
+    onEditAsset: (assetId: String) -> Unit = { _ -> },
     viewModel: DetailViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -581,6 +584,7 @@ fun DetailScreen(
                 followPending = state.followPendingAuthorId != null,
                 onToggleFollow = viewModel::toggleFollow,
                 onOpenAuthor = onOpenAuthor,
+                onEdit = { onEditAsset(assetId) },
                 onDismiss = { authorSheetVisible = false },
             )
         }

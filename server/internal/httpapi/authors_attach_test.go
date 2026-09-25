@@ -7,7 +7,6 @@ package httpapi
 
 import (
 	"net/http"
-	"net/url"
 	"strings"
 	"testing"
 
@@ -70,18 +69,27 @@ func importTXTRes(t *testing.T, e *testEnv, filename, content, resolution string
 	return resp.StatusCode, res, conf
 }
 
-// TestImportTxtConflictFlow（验收 #11）：挂靠后重导同文件名旧版清单——
-// 缺省 409（载荷含作者与缺失作品行）；keep 并回（片段完整、关联保留、
-// mergedUploadEntries≥1）；remove 明示移除（行与关联消失、元数据清除后
-// 不再 409）；非法 resolution 400。
+// TestImportTxtConflictFlow（验收 #11）：编辑挂靠 + 存量上传条目后重导同
+// 文件名旧版清单——缺省 409（载荷含作者与缺失作品行）；keep 并回（片段
+// 完整、关联保留、mergedUploadEntries≥1）；remove 明示移除（行与关联消失、
+// 元数据清除后不再 409）；非法 resolution 400。
+// 上传挂靠已退役（ADR-0024 上传减法）：片段行经编辑端点写入，上传条目
+// 用 seedUploadEntry 模拟存量数据。
 func TestImportTxtConflictFlow(t *testing.T) {
 	env := newTestEnv(t)
 	x := authoring.GenerateAuthorID("作者X")
 	stale := "1  作者X\n作品\na.jpg\n"
 	importTXT(t, env, "清单A.txt", stale)
 
-	jpg := makeJPG(t, env.media, 64, 64)
-	uploadAttach201(t, env.uploadAttach(t, env.libID, "f.jpg", jpg, url.Values{"authorId": {x}}))
+	d := uploadOne(t, env, "f.jpg")
+	if resp := env.putAssetAuthors(t, d.Id.String(), []string{x}); resp.StatusCode != http.StatusOK {
+		t.Fatalf("编辑挂靠期望 200，得到 %d", resp.StatusCode)
+	} else {
+		closeBody(resp)
+	}
+	seedUploadEntry(t, env, "清单A.txt", authoring.UploadEntry{
+		AuthorID: x, DisplayName: "作者X", Names: []string{"作者X"}, Works: []string{"f.jpg"},
+	})
 	if a := findAuthor(t, listAuthors(t, env), x); a.FileCount == nil || *a.FileCount != 2 {
 		t.Fatalf("挂靠后 fileCount=%v, want 2", a.FileCount)
 	}
@@ -149,10 +157,31 @@ func TestImportTxtConflictMultiAuthor(t *testing.T) {
 	base := "1  作者M\n作品\na.jpg\nb.jpg\n\n2  作者N\n作品\nc.mp4\n"
 	importTXT(t, env, "多作者.txt", base)
 
-	jpg := makeJPG(t, env.media, 64, 64)
-	uploadAttach201(t, env.uploadAttach(t, env.libID, "g1.jpg", jpg,
-		url.Values{"authorId": {m}, "source": {"老王论坛"}}))
-	uploadAttach201(t, env.uploadAttach(t, env.libID, "g2.jpg", jpg, url.Values{"authorId": {n}}))
+	// 编辑挂靠两资产到两位作者，M 追加来源行（编辑端点写入片段真相）。
+	g1 := uploadOne(t, env, "g1.jpg")
+	g2 := uploadOne(t, env, "g2.jpg")
+	if resp := env.putAssetAuthors(t, g1.Id.String(), []string{m}); resp.StatusCode != http.StatusOK {
+		t.Fatalf("M 挂靠期望 200，得到 %d", resp.StatusCode)
+	} else {
+		closeBody(resp)
+	}
+	if resp := env.putAuthorSources(t, m, []string{"老王论坛"}); resp.StatusCode != http.StatusOK {
+		t.Fatalf("M 来源区写入期望 200，得到 %d", resp.StatusCode)
+	} else {
+		closeBody(resp)
+	}
+	if resp := env.putAssetAuthors(t, g2.Id.String(), []string{n}); resp.StatusCode != http.StatusOK {
+		t.Fatalf("N 挂靠期望 200，得到 %d", resp.StatusCode)
+	} else {
+		closeBody(resp)
+	}
+	// 存量上传条目（挂靠退役后条目只剩历史数据；重导入保护的比对输入）。
+	seedUploadEntry(t, env, "多作者.txt", authoring.UploadEntry{
+		AuthorID: m, DisplayName: "作者M", Names: []string{"作者M"}, Works: []string{"g1.jpg"}, Sources: []string{"老王论坛"},
+	})
+	seedUploadEntry(t, env, "多作者.txt", authoring.UploadEntry{
+		AuthorID: n, DisplayName: "作者N", Names: []string{"作者N"}, Works: []string{"g2.jpg"},
+	})
 
 	code, _, conf := importTXTRes(t, env, "多作者.txt", base, "")
 	if code != http.StatusConflict {
@@ -209,8 +238,12 @@ func TestExportTxtRoundTrip(t *testing.T) {
 	env := newTestEnv(t)
 	aid := authoring.GenerateAuthorID("导出作者")
 	importTXT(t, env, "E.txt", "1  导出作者\n作品\na.jpg\n")
-	jpg := makeJPG(t, env.media, 64, 64)
-	uploadAttach201(t, env.uploadAttach(t, env.libID, "e1.jpg", jpg, url.Values{"authorId": {aid}}))
+	d := uploadOne(t, env, "e1.jpg")
+	if resp := env.putAssetAuthors(t, d.Id.String(), []string{aid}); resp.StatusCode != http.StatusOK {
+		t.Fatalf("编辑挂靠期望 200，得到 %d", resp.StatusCode)
+	} else {
+		closeBody(resp)
+	}
 
 	resp := env.do(t, "GET", "/api/v1/authors/import-txt/export?filename=E.txt", "")
 	if resp.StatusCode != http.StatusOK {

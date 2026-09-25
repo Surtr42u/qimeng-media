@@ -38,6 +38,11 @@ const (
 	// 保护的比对依据；出处元数据而非第二真相——真相永远是 imported_txt_sources
 	// 的片段本体，REQ §4.2）。读写方 authorattach。
 	SettingKeyUploadEntries = "imported_txt_upload_entries"
+
+	// SettingKeyAuthorSourceVocabulary 存通用来源词表 JSON 字符串数组（来源=
+	// 获取渠道平台名，仅记录永不参与匹配；来源建议的唯一数据源，ADR-0024）。
+	// 与 §4 资产出处分区（custom_sources）互不相干。读写方 authorattach。
+	SettingKeyAuthorSourceVocabulary = "author_source_vocabulary"
 )
 
 // AutoFragmentFilename 服务端无任何片段时上传挂靠自动创建的片段名（此后它

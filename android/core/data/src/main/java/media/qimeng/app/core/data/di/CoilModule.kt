@@ -59,8 +59,10 @@ import javax.inject.Singleton
  *   解码仍由 GIF 解码器逐帧动画）。**任务U10-5（2026-09-14 用户拍板）调整**：详情页
  *   原件请求改为 request 级 `diskCachePolicy(DISABLED)`（GIF 原件含在内，即看即取不落盘，
  *   防磁盘缓存膨胀与写盘损耗）——本加载器的磁盘缓存自此主要承载缩略图/海报帧等小对象；
- * - **视频不落盘**：播放走 Media3 直链流式（不经 Coil），上传走 WorkManager/okhttp（不经 Coil），
- *   全 App 无任何「用 Coil 加载视频 URL」的路径——不落盘由架构保证而非开关。
+ * - **视频不落盘**：播放走 Media3 直链流式（不经 Coil），上传字节流走 WorkManager/okhttp
+ *   （不经 Coil）。2026-09-25 起唯一例外 = 内置相册选择器网格的视频**首帧缩略图**（经 Coil
+ *   + coil-video 解码），其请求级 diskCachePolicy(DISABLED) 保证视频源文件不进磁盘缓存
+ *   （仅内存缓存帧位图）——不落盘仍由请求侧保证而非开关。
  */
 @Module
 @InstallIn(SingletonComponent::class)
@@ -135,6 +137,11 @@ object CoilModule {
             } else {
                 add(GifDecoder.Factory())
             }
+            // 视频帧解码器（2026-09-25 内置相册选择器批）：MediaStore 视频 content URI
+            // 直载首帧缩略图。消费方（feature:upload MediaPickerScreen）请求级
+            // diskCachePolicy(DISABLED)——视频源文件绝不进磁盘缓存（下行「视频不落盘」
+            // 口径由请求侧保证），仅内存缓存帧位图。
+            add(coil3.video.VideoFrameDecoder.Factory())
         }
         .memoryCache {
             MemoryCache.Builder()

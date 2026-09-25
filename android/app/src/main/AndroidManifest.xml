@@ -20,6 +20,16 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- FGS 权限与 dataSync 类型声明在 :core:data（setForeground 使用方模块，随清单合并） -->
 
+    <!-- 内置相册式选择器（2026-09-25 拍板：上传选取弃 SAF 改 MediaStore 网格多选）：
+         API 33+ 走细分媒体读权限（图片/视频分别授予，粒度最小化），API 26~32 走
+         READ_EXTERNAL_STORAGE（maxSdkVersion=32 声明上限）。运行时申请入口在上传页
+         「从相册选择」（feature:upload UploadScreen），未授权不进选择器。 -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+
     <!-- 内嵌服务端读媒体库根（ADR-0015 单机形态，2026-09-15 批）：注册库走「手输绝对路径→
          服务端直读文件系统」的 NAS 范式，scoped storage 下唯有 ALL FILES ACCESS 能放行
          （媒体三权限只覆盖 MediaStore 索引项，.nomedia 隐藏目录内的文件读不到——手机实测

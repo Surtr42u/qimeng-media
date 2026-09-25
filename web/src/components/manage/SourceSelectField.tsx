@@ -1,14 +1,15 @@
 import { useState } from 'react'
-import { useAuthorSources } from '@/hooks/use-authors'
+import { useSourceVocabulary } from '@/hooks/use-authors'
 import { Pill } from '@/components/ui/pill'
 
 /**
- * 作者来源/出处多选字段（上传卡消费；REQ-上传指定作者与来源 §3.1②）。
- * 快捷选项词表 = GET /authors/sources（hooks 封装，铁律 7）——全部已导入
- * TXT 片段「来源/出处」区解析出的去重词汇；常用优先 = 服务端已按 authorCount
- * 降序，前端不再排。注意这是作者级来源词表，与资产出处分区（§4 SourceMatcher/
- * custom_sources）互不相干。自由输入行允许加入词表外新站点/URL（回车确认）。
- * 来源必须依附作者：未选作者时整字段 disabled（协议 source 仅指定作者时合法）。
+ * 作者来源/出处多选字段（资产编辑页每作者来源区消费；2026-09-25 协议批）。
+ * 快捷选项词表 = GET /authors/source-vocabulary 通用来源词表（hooks 封装，
+ * 铁律 7）——服务端手动维护的来源建议小清单（获取渠道/平台名，如「老王论坛」
+ * ），全员共享；个人片段词表（GET /authors/sources）已删除，不再有第二词表。
+ * 服务端已按固定序返回，前端不再排。自由输入行允许加入词表外新站点/URL
+ * （回车确认）。props 契约不变：selected/onChange/disabled 仍由调用方持有
+ * 草稿态，本组件不做任何请求之外的副作用。
  */
 export function SourceSelectField({
   selected,
@@ -19,14 +20,12 @@ export function SourceSelectField({
   onChange: (next: string[]) => void
   disabled?: boolean
 }) {
-  const { data: vocab, isLoading } = useAuthorSources()
+  const { data: vocab, isLoading } = useSourceVocabulary()
   const [input, setInput] = useState('')
 
   const selectedSet = new Set(selected)
-  // 词表序=服务端常用优先；词表外已选词（本批自由输入的）排在后面
-  const vocabNames = (vocab?.sources ?? [])
-    .map((s) => s.name)
-    .filter((n): n is string => n != null)
+  // 词表序=服务端返回序；词表外已选词（自由输入的）排在后面
+  const vocabNames = vocab?.sources ?? []
   const customNames = selected.filter((n) => !vocabNames.includes(n))
 
   const toggle = (name: string): void => {
@@ -82,8 +81,8 @@ export function SourceSelectField({
       </div>
       <small>
         {disabled
-          ? '先选择作者，来源必须依附作者'
-          : '留空 = 不改动该作者既有来源；已选来源并入且不重复（点击已选可移除）'}
+          ? '来源字段当前不可用'
+          : '留空 = 不改动该作者既有来源；已选来源保存时整体替换（点击已选可移除）'}
       </small>
     </div>
   )

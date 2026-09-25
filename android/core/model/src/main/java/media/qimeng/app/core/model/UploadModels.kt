@@ -21,16 +21,10 @@ data class UploadItem(
     val relativeDir: String = "",
 )
 
-/**
- * 上传目标库（GET /libraries 的展示子集）。
- * [authorAttach] 来自协议 Library.capabilities.authorAttach（服务端按 kind 注册表单一来源
- * 产出）——上传页作者/来源输入段的显隐唯一判据，禁止客户端写死 kind==normal（REQ §3.2）。
- */
+/** 上传目标库（GET /libraries 的展示子集） */
 data class LibraryChoice(
     val id: String,
     val name: String,
-    /** 是否支持上传挂靠作者/来源（normal=true，cos=false；协议缺省按 false 兜底） */
-    val authorAttach: Boolean = false,
 )
 
 /**
@@ -42,16 +36,6 @@ data class AuthorSuggestion(
     val displayName: String,
     /** 该作者名下文件数（联想行副文案） */
     val fileCount: Int,
-)
-
-/**
- * 作者来源词表条目（GET /authors/sources 映射；REQ §3.1② 快捷选项数据源）。
- * 服务端已按 authorCount 降序、name 升序排好（常用优先），客户端不重排。
- */
-data class AuthorSourceStat(
-    val name: String,
-    /** 引用该来源的不同作者数（服务端排序依据；客户端可展示可不展示） */
-    val authorCount: Int,
 )
 
 /**
