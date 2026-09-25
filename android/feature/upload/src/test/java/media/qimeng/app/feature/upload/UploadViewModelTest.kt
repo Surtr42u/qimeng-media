@@ -20,6 +20,8 @@ import media.qimeng.app.core.testing.MainDispatcherRule
 
 /**
  * 上传流表单状态机锁定（M4-5）：超限本地拦截 / 入队参数与顺序 / 新建目录校验 / 分享接收 / 队列透传。
+ * 流程重排（2026-09-25 拍板）：先选文件进暂存区、库在暂存区手选——init 不再自动选库/加载目录树，
+ * enqueue 保留目标库必填兜底（未选库拦截 + 文案），门禁状态由 canEnqueue/enqueueGateHint 派生。
  * 挂靠批：批次默认（作者联想 + 来源 + 应用到全部；新进项继承）/ 逐项编辑（作品名/作者/来源，
  * 清作者连带清来源）/ 入队载荷携带编辑值。队列串行执行本身由 WorkManager unique 链官方
  * 语义保证（UploadWorkSpec 注释），实机串行时间线走模拟器文本证据。
@@ -45,15 +47,32 @@ class UploadViewModelTest {
         return Triple(viewModel, repository, authorRepository)
     }
 
+    /** 流程重排（2026-09-25）：库改在暂存区手选，入队类用例先选库再 enqueue */
+    private fun selectDefaultLibrary(viewModel: UploadViewModel) {
+        viewModel.selectLibrary(libraryA)
+        driveIdle()
+    }
+
     @Test
-    fun `init加载库列表并默认选第一个库`() {
+    fun `init加载库列表但不自动选库`() {
         val (viewModel, _, _) = newViewModel()
         val state = viewModel.uiState.value
         assertEquals(listOf(libraryA, libraryB), state.libraries)
-        assertEquals(libraryA, state.selectedLibrary)
-        assertNotNull(state.dirTree)
+        assertNull(state.selectedLibrary)
+        assertNull(state.dirTree)
         assertNull(state.errorMessage)
     }
+
+    @Test
+    fun `选库后才加载目录树`() {
+        val (viewModel, _, _) = newViewModel()
+        viewModel.selectLibrary(libraryA)
+        driveIdle()
+        assertEquals(libraryA, viewModel.uiState.value.selectedLibrary)
+        assertNotNull(viewModel.uiState.value.dirTree)
+    }
+
+    // ---- 流程重排（2026-09-25）：未选库直接选文件 + 开始上传门禁 ----
 
     @Test
     fun `acceptUris去重进待上传列表`() {
@@ -66,10 +85,46 @@ class UploadViewModelTest {
     }
 
     @Test
+    fun `未选库enqueue被拦截并提示选库后正常入队`() {
+        val (viewModel, repository, _) = newViewModel()
+        viewModel.acceptPickedItems(listOf(picked("content://media/img/1", "IMG_1.jpg", 100L)))
+        driveIdle()
+        viewModel.enqueue()
+        driveIdle()
+        assertTrue(repository.enqueueCalls.isEmpty())
+        assertEquals("先选择目标库", viewModel.uiState.value.blockMessage)
+        // 同一批待传项，选库后正常入队
+        selectDefaultLibrary(viewModel)
+        viewModel.enqueue()
+        driveIdle()
+        assertEquals(1, repository.enqueueCalls.size)
+        assertEquals("lib-a", repository.enqueueCalls.single().libraryId)
+        assertTrue(viewModel.uiState.value.pendingItems.isEmpty())
+    }
+
+    @Test
+    fun `开始上传门禁派生未选库禁用并提示`() {
+        val (viewModel, _, _) = newViewModel()
+        // 无待传项：门禁关闭且不提示
+        assertFalse(viewModel.uiState.value.canEnqueue)
+        assertNull(viewModel.uiState.value.enqueueGateHint)
+        viewModel.acceptPickedItems(listOf(picked("content://media/img/1", "IMG_1.jpg", 100L)))
+        driveIdle()
+        // 有待传项未选库：禁用 + 提示
+        assertFalse(viewModel.uiState.value.canEnqueue)
+        assertEquals("先选择目标库", viewModel.uiState.value.enqueueGateHint)
+        selectDefaultLibrary(viewModel)
+        // 选库后门禁放行、提示消失
+        assertTrue(viewModel.uiState.value.canEnqueue)
+        assertNull(viewModel.uiState.value.enqueueGateHint)
+    }
+
+    @Test
     fun `enqueue正常入队并清空待上传`() {
         val (viewModel, repository, _) = newViewModel()
         viewModel.acceptUris(listOf("content://x/1"))
         driveIdle()
+        selectDefaultLibrary(viewModel)
         viewModel.enqueue()
         driveIdle()
         val state = viewModel.uiState.value
@@ -85,6 +140,7 @@ class UploadViewModelTest {
         val (viewModel, repository, _) = newViewModel()
         viewModel.acceptUris(listOf("content://x/1", "content://x/2"))
         driveIdle()
+        selectDefaultLibrary(viewModel)
         viewModel.enqueue()
         driveIdle()
         val names = repository.enqueueCalls.single().items.map { it.displayName }
@@ -107,6 +163,7 @@ class UploadViewModelTest {
         )
         viewModel.acceptUris(listOf("content://x/big"))
         driveIdle()
+        selectDefaultLibrary(viewModel)
         viewModel.enqueue()
         driveIdle()
         val state = viewModel.uiState.value
@@ -132,6 +189,7 @@ class UploadViewModelTest {
         )
         viewModel.acceptUris(listOf("content://x/big", "content://x/small"))
         driveIdle()
+        selectDefaultLibrary(viewModel)
         viewModel.enqueue()
         driveIdle()
         val state = viewModel.uiState.value
@@ -154,6 +212,7 @@ class UploadViewModelTest {
         )
         viewModel.acceptUris(listOf("content://x/edge"))
         driveIdle()
+        selectDefaultLibrary(viewModel)
         viewModel.enqueue()
         driveIdle()
         assertTrue(repository.enqueueCalls.isNotEmpty())
@@ -172,6 +231,7 @@ class UploadViewModelTest {
     @Test
     fun `新建子目录成功后选中新路径`() {
         val (viewModel, repository, _) = newViewModel()
+        selectDefaultLibrary(viewModel)
         viewModel.selectDir("photos")
         viewModel.createSubDir("2026")
         driveIdle()
@@ -325,13 +385,14 @@ class UploadViewModelTest {
     private val authorA = AuthorSuggestion(id = "author-a", displayName = "作者A", fileCount = 3)
     private val authorB = AuthorSuggestion(id = "author-b", displayName = "作者B", fileCount = 5)
 
-    /** 装配：批次作者已选（可带来源）→ 加入一个待传项 */
+    /** 装配：批次作者已选（可带来源）→ 加入一个待传项；库为入队前置，一并选中 */
     private fun seededWithBatch(
         sources: List<String> = emptyList(),
     ): Triple<UploadViewModel, FakeUploadRepository, FakeAuthorRepository> {
         val (viewModel, repository, authorRepository) = newViewModel(
             authorRepository = FakeAuthorRepository().apply { vocabularyResult = listOf("kemono") },
         )
+        selectDefaultLibrary(viewModel)
         viewModel.pickBatchAuthor(authorA)
         sources.forEach { viewModel.toggleBatchSource(it) }
         viewModel.acceptPickedItems(listOf(picked("content://media/img/1", "IMG_1.jpg", 100L)))

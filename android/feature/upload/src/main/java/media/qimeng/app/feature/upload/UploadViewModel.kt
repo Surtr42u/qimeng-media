@@ -25,12 +25,16 @@ import media.qimeng.app.core.model.UploadQueueEntry
 import media.qimeng.app.core.model.UploadRules
 import media.qimeng.app.core.model.UploadStatus
 
+/** 目标库必选提示（2026-09-25 流程重排：开始上传门禁，按钮提示与 enqueue 兜底同源） */
+private const val LIBRARY_REQUIRED_MESSAGE = "先选择目标库"
+
 /** 上传流 UI 状态（表单 + 拦截/错误文案 + 队列实时状态 + 挂靠批次默认/逐项编辑） */
 data class UploadUiState(
     /** 首屏库列表加载中 */
     val loading: Boolean = false,
     /** 可选目标库（GET /libraries） */
     val libraries: List<LibraryChoice> = emptyList(),
+    /** 目标库（暂存区必选项，用户手选；null = 未选） */
     val selectedLibrary: LibraryChoice? = null,
     /** 目标库目录树（GET /dirs；null = 未加载） */
     val dirTree: DirNode? = null,
@@ -56,7 +60,7 @@ data class UploadUiState(
     val itemAuthorSuggestions: List<AuthorSuggestion> = emptyList(),
     /** 服务端配置 upload 组（超限本地拦截口径） */
     val limits: UploadLimits? = null,
-    /** 超限本地拦截文案（入队时生成；不阻断其余未超限项） */
+    /** 超限/门禁拦截文案（入队时生成：未选库兜底、超限本地拦截；不阻断其余未超限项） */
     val blockMessage: String? = null,
     /** 非拦截类错误（加载失败/新建目录失败等） */
     val errorMessage: String? = null,
@@ -73,6 +77,14 @@ data class UploadUiState(
     val hasActiveWork: Boolean
         get() = queue.any { it.status == UploadStatus.QUEUED || it.status == UploadStatus.UPLOADING }
 
+    /** 开始上传门禁（2026-09-25 流程重排）：有待传项且已选目标库才可入队 */
+    val canEnqueue: Boolean
+        get() = pendingItems.isNotEmpty() && selectedLibrary != null && !enqueueing
+
+    /** 未选库时的门禁提示（有待传项才提示；按钮提示与 enqueue 兜底文案同源） */
+    val enqueueGateHint: String?
+        get() = if (pendingItems.isNotEmpty() && selectedLibrary == null) LIBRARY_REQUIRED_MESSAGE else null
+
     /** 队列聚合行「共 N 个 · 成功 X · 失败 Y · 挂靠失败 Z」（空队列 null；从 queue 派生）。
      *  取消（CANCELLED）不计失败数——用户取消不是失败（批C 任务Q C-2）；
      *  挂靠失败（ATTACH_FAILED，挂靠批）文件已入库，成功/失败都不计、单独分列。 */
@@ -86,7 +98,9 @@ data class UploadUiState(
 }
 
 /**
- * 上传流 ViewModel（M4-5）：表单编排 + 超限本地拦截；字节流与队列全在 core 层。
+ * 上传流 ViewModel（M4-5；2026-09-25 流程重排）：表单编排 + 超限本地拦截；字节流与队列全在 core 层。
+ * 流程重排：先选文件进暂存区，目标库/目录/批次默认全在暂存区配置——库列表进页面即拉但不自动选，
+ * 目录树随 selectLibrary 加载；enqueue 保留目标库必填兜底（未选库拦截 + 文案）。
  * 拦截口径（冻结）：大小上限读 GET /config 的 upload 项（入队时现取现判——服务端实时生效），
  * 超限项本地拦截不出网；类型白名单不复制，服务端 4xx 文案透传展示。
  * 挂靠批：暂存列表逐项快捷编辑（作品名/作者/来源）+ 批次默认（作者联想 + 来源多选 +
@@ -125,21 +139,17 @@ class UploadViewModel @Inject constructor(
         refreshSourceOptions()
     }
 
+    /**
+     * 拉取库列表（进页面即拉，不阻塞选文件/选择器——选择器只查 MediaStore，与库无关）。
+     * 2026-09-25 流程重排：不再自动选中第一个库——目标库是暂存区必选项，由用户手选；
+     * 目录树随 selectLibrary 加载。limits 与库列表同批拉取（入队超限拦截用）。
+     */
     private fun refreshLibraries() {
         viewModelScope.launch {
             form.update { it.copy(loading = true, errorMessage = null) }
             try {
                 val libs = uploadRepository.libraries()
-                form.update {
-                    it.copy(
-                        loading = false,
-                        libraries = libs,
-                        selectedLibrary = it.selectedLibrary ?: libs.firstOrNull(),
-                    )
-                }
-                form.value.selectedLibrary?.let {
-                    loadDirTree(it.id)
-                }
+                form.update { it.copy(loading = false, libraries = libs) }
                 refreshLimits()
             } catch (e: Exception) {
                 form.update { it.copy(loading = false, errorMessage = LOAD_FAILED_MESSAGE) }
@@ -167,7 +177,7 @@ class UploadViewModel @Inject constructor(
         }
     }
 
-    /** 切换目标库：目录树随库重载、目标目录回到库根 */
+    /** 选择目标库（暂存区必选项）：目录树加载/随库重载、目标目录回到库根 */
     fun selectLibrary(library: LibraryChoice) {
         viewModelScope.launch {
             form.update {
@@ -486,13 +496,18 @@ class UploadViewModel @Inject constructor(
      * 开始上传：现取服务端配置做超限本地拦截（实时生效口径），未超限项进串行队列。
      * 全部被拦时不入队；部分被拦时拦截文案列出被移除项、其余照常上传。
      * 挂靠批：编辑值（effectiveUploadName/attachAuthorId/attachSources）随 UploadItem 入队。
+     * 2026-09-25 流程重排：目标库改在暂存区手选——UI 按钮已按 canEnqueue 门禁禁用，
+     * 此处保留必填兜底（未选库拦截 + 文案，拦 VM 直达调用）。
      */
     fun enqueue() {
         val current = form.value
-        val library = current.selectedLibrary ?: return
         val items = current.pendingItems
         if (items.isEmpty()) return
         if (current.enqueueing) return
+        val library = current.selectedLibrary ?: run {
+            form.update { it.copy(blockMessage = LIBRARY_REQUIRED_MESSAGE) }
+            return
+        }
 
         viewModelScope.launch {
             form.update { it.copy(enqueueing = true, blockMessage = null, errorMessage = null) }
