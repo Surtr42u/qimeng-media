@@ -30,9 +30,12 @@ internal const val INVALID_DIR_NAME_MESSAGE = "目录名不合法：不能为空
 internal const val DESCRIBE_FAILED_MESSAGE = "读取所选文件信息失败，请重试"
 internal const val ENQUEUE_FAILED_MESSAGE = "上传任务创建失败，请重试"
 internal const val ONLY_EXISTING_AUTHORS = "未找到该作者：仅能选择已有作者，请从联想中选择"
-internal const val INBOX_NOT_SET_MESSAGE = "尚未设置下载收件箱：请到 设置 → 下载收件箱 选择文件夹"
+internal const val INBOX_NOT_SET_MESSAGE = "尚未设置下载收件箱：请到 数据管理 → 上传收件箱与归档 选择文件夹"
 internal const val INBOX_NO_NEW_MESSAGE = "收件箱里没有新文件"
 internal const val INBOX_SCAN_FAILED_MESSAGE = "读取收件箱失败：请检查文件夹是否仍在"
+
+/** 浏览文件弹层确认后零新进（所选全部已在暂存区；2026-09-28「浏览文件」入口） */
+internal const val BROWSE_NO_NEW_MESSAGE = "所选文件都已在暂存区"
 
 /** 超限拦截文案（中文；列明上限与被拦文件；VM 与状态同文件单源） */
 internal fun blockText(limits: UploadLimits?, blocked: List<StagedUpload>): String? {
@@ -72,6 +75,9 @@ data class UploadUiState(
     val batchAuthorSuggestions: List<AuthorSuggestion> = emptyList(),
     /** 全站来源词表（GET /authors/source-vocabulary；失败静默 = 纯自由输入） */
     val sourceOptions: List<String> = emptyList(),
+    /** 空输入作者种子（GET /authors 全量过滤常规作者；suggest 协议空 q 必返空，
+     *  空输入的默认全显只能走全量接口；批次与逐项作者框共用，失败静默为空） */
+    val authorSeeds: List<AuthorSuggestion> = emptyList(),
     /** 当前展开编辑的暂存条目 source（null = 无展开项；同时至多一项展开） */
     val editingSource: String? = null,
     /** 展开项的作者联想输入草稿 */

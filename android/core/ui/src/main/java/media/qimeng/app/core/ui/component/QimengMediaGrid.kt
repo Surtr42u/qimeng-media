@@ -171,6 +171,12 @@ private fun preloadDetailPoster(context: Context, mediaType: MediaKind, posterUr
  * @param sections 分组段；组内保持列表原序
  * @param loadThumbnail 字节加载器（透传给 [QimengThumbnail]）
  * @param onNearBottom 可见末项距列表尾 ≤[GRID_PRELOAD_DISTANCE] 项时回调（去重由调用方负责）
+ * @param reloadTick 加载结束信号（问题A 哨兵哑火修复，2026-09-28）：调用方 ViewModel 每次列表
+ *   加载成功结束后自增传入。为什么需要：触底哨兵 LaunchedEffect 以 (shouldLoadMore, totalCount)
+ *   为 key，用户钉在底部时若一轮加载既不失败也不改变条数（如翻页成功但新页为空、推荐换轮
+ *   全去重等），两个 key 均无变化 → 哨兵永不重触发 → 钉底用户再也拉不到下一页。加本 tick 作
+ *   第三 key，让「加载结束」本身成为重评估信号，钉底时加载一结束哨兵立即复评。默认 0 保证
+ *   未接线的消费方行为不变（key 恒不变=与修复前一致）。
  * @param bottomContentPadding 列表底部预留（clipToPadding=false 语义）——默认与网格间距同档；
  *   相册页传 [QimengDimens.ListBottomContentPadding]（180dp，防悬浮药丸面板遮挡末行，
  *   旧版 fragment_all_files.xml L149）
@@ -196,6 +202,8 @@ fun QimengMediaGrid(
     // 必传参数把漏接变成编译错误
     onAssetClick: (MediaAsset) -> Unit,
     onNearBottom: () -> Unit = {},
+    // 问题A 哨兵哑火修复（2026-09-28）：加载结束重评估信号，语义见参数 KDoc
+    reloadTick: Int = 0,
     pauseThumbnailsWhileScrolling: Boolean = false,
     tightenLeadingHeader: Boolean = false,
 ) {
@@ -203,14 +211,15 @@ fun QimengMediaGrid(
     val cells = remember(sections) { flattenGridCells(sections) }
     val totalCount = cells.size
 
-    // 距底哨兵：可见末项接近总尾即回调（LaunchedEffect 挂 listState 一次性收集快照流）
+    // 距底哨兵：可见末项接近总尾即回调（LaunchedEffect 挂 listState 一次性收集快照流）。
+    // reloadTick 为第三 key（问题A 修复）：条数不变的加载结束也能重触发哨兵，防钉底死锁
     val shouldLoadMore by remember(totalCount) {
         derivedStateOf {
             val lastVisibleIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
             lastVisibleIndex >= totalCount - 1 - GRID_PRELOAD_DISTANCE
         }
     }
-    LaunchedEffect(shouldLoadMore, totalCount) {
+    LaunchedEffect(shouldLoadMore, totalCount, reloadTick) {
         if (totalCount > 0 && shouldLoadMore) onNearBottom()
     }
 

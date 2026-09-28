@@ -108,6 +108,7 @@ class SdkUploadRepository @Inject constructor(
         items: List<UploadItem>,
         libraryId: String,
         dir: String,
+        libraryName: String,
     ): List<QueuedUpload> {
         val workManager = WorkManager.getInstance(context)
         return items.map { item ->
@@ -128,6 +129,8 @@ class SdkUploadRepository @Inject constructor(
                 uploadFileName = item.effectiveUploadName,
                 attachAuthorId = item.attachAuthorId,
                 attachSources = item.attachSources,
+                // 库名：条目级优先（逐项库覆盖组各自带名）、调用级兜底（同组同库的整组传参）
+                libraryName = item.libraryName.takeIf { it.isNotBlank() } ?: libraryName,
             )
             val request = OneTimeWorkRequestBuilder<UploadWorker>()
                 .setInputData(UploadWorkSpec.itemToInputData(spec))

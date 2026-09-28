@@ -6,6 +6,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -19,9 +20,11 @@ import media.qimeng.app.core.data.repository.FavoriteFingerprint
 import media.qimeng.app.core.data.repository.FavoriteMutationTracker
 import media.qimeng.app.core.data.repository.DataStoreGridPrefsRepository
 import media.qimeng.app.core.data.repository.GridPrefsRepository
+import media.qimeng.app.core.data.prefetch.ThumbnailPrefetchThrottle
 import media.qimeng.app.core.model.AlbumDim
 import media.qimeng.app.core.model.AlbumFilter
 import media.qimeng.app.core.model.AlbumFilterState
+import media.qimeng.app.core.model.APPEND_RETRY_DELAYS_MS
 import media.qimeng.app.core.model.AssetQuery
 import media.qimeng.app.core.model.AssetSort
 import media.qimeng.app.core.model.FacetOption
@@ -53,6 +56,8 @@ data class FavoriteUiState(
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
     val errorMessage: String? = null,
+    /** 列表加载成功结束信号（问题A 哨兵哑火修复，2026-09-28；语义见 AlbumViewModel.AlbumUiState.reloadTick） */
+    val reloadTick: Int = 0,
 ) {
     /**
      * 空态文案资源（旧仓库 FavoriteFragment.kt L370-380 逐字双分支）：COS 分区单行
@@ -77,6 +82,9 @@ class FavoriteViewModel @Inject constructor(
     // 本地收藏变更指纹（任务V V1，2026-09-10 返回刷新缺陷修复）：详情 toggleFavorite 成功处
     // 上报，此处 ON_RESUME 对比指纹变化才重拉——纯浏览返回零网络零重组（tracker KDoc 口径）
     private val favoriteMutationTracker: FavoriteMutationTracker,
+    // 预取避让（问题B 下拉刷新响应慢修复，2026-09-28）：下拉刷新开始时让全库缩略图预取
+    // 暂停抢带宽（窄接口，语义见 ThumbnailPrefetchThrottle KDoc）
+    private val prefetchThrottle: ThumbnailPrefetchThrottle,
     val origUrlResolver: AssetOrigUrlResolver,
 ) : ViewModel() {
 
@@ -200,6 +208,8 @@ class FavoriteViewModel @Inject constructor(
     }
 
     fun refresh() {
+        // 预取避让（问题B 2026-09-28）：刷新首屏与登录后全库预取抢 NAS 带宽，入口先让路
+        prefetchThrottle.pauseForForegroundRefresh()
         reloadAll(isRefresh = true)
     }
 
@@ -236,33 +246,49 @@ class FavoriteViewModel @Inject constructor(
 
     private fun loadItems(cursor: String?, append: Boolean, isRefresh: Boolean = false) {
         val state = _uiState.value
-        // 防重语义（与代际防乱序正交）：分页/下拉刷新在途时照旧丢弃重复触发；
-        // 筛选重载不受 isLoading 拦截——在途的是旧代请求，其响应会被代际校验丢弃
-        if ((append || isRefresh) && state.isLoading) return
+        // 防重语义（问题B 2026-09-28 收窄）：只拦**翻页**在途时的重复触发；下拉刷新改为立即
+        // 受理（受理即递增代际作废在途旧响应，不再吞刷新手势）；筛选重载照旧不受 isLoading
+        // 拦截（在途的是旧代请求，其响应会被代际校验丢弃）——AlbumViewModel.loadItems 同范式
+        if (append && state.isLoading) return
+        if (isRefresh) filterGeneration += 1
         val gen = filterGeneration
         _uiState.value = state.copy(isLoading = true, isRefreshing = isRefresh)
         viewModelScope.launch {
-            runCatching {
-                val base = AlbumFilter.toAssetQuery(state.filter, limit = LIST_PAGE_SIZE, cursor = cursor)
-                // 收藏固定口径：favorite=true + 收藏时间倒序（sort=favoriteAt 仅在收藏语义成立）
-                mediaRepository.assets(
-                    base.copy(favorite = true, sort = AssetSort.FAVORITE_AT, order = SortOrder.DESC),
-                )
-            }.onSuccess { page ->
-                if (gen != filterGeneration) return@onSuccess // 旧代迟到响应，丢弃
+            var retryAttempt = 0
+            while (true) {
+                val page = runCatching {
+                    val base = AlbumFilter.toAssetQuery(state.filter, limit = LIST_PAGE_SIZE, cursor = cursor)
+                    // 收藏固定口径：favorite=true + 收藏时间倒序（sort=favoriteAt 仅在收藏语义成立）
+                    mediaRepository.assets(
+                        base.copy(favorite = true, sort = AssetSort.FAVORITE_AT, order = SortOrder.DESC),
+                    )
+                }.getOrElse {
+                    if (gen != filterGeneration) return@launch // 旧代失败不污染新筛选态
+                    // 翻页失败自动重试（问题A 2026-09-28，范围/取舍见 APPEND_RETRY_DELAYS_MS KDoc；
+                    // 重试期间 isLoading 保持 true 不阻塞刷新/筛选，同 AlbumViewModel.loadItems）
+                    if (append && retryAttempt < APPEND_RETRY_DELAYS_MS.size) {
+                        delay(APPEND_RETRY_DELAYS_MS[retryAttempt])
+                        retryAttempt++
+                        if (gen != filterGeneration) return@launch // 退避期间刷新/筛选已接管，弃残局
+                        continue
+                    }
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        isRefreshing = false,
+                        errorMessage = LIST_LOAD_FAILED_MESSAGE,
+                    )
+                    return@launch
+                }
+                if (gen != filterGeneration) return@launch // 旧代迟到响应，丢弃
                 _uiState.value = _uiState.value.copy(
                     items = if (append) _uiState.value.items + page.items else page.items,
                     nextCursor = page.nextCursor,
                     isLoading = false,
                     isRefreshing = false,
+                    // 问题A：成功结束 bump 哨兵重评估信号（KDoc 见 FavoriteUiState.reloadTick）
+                    reloadTick = _uiState.value.reloadTick + 1,
                 )
-            }.onFailure {
-                if (gen != filterGeneration) return@onFailure // 旧代失败不污染新筛选态
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    isRefreshing = false,
-                    errorMessage = LIST_LOAD_FAILED_MESSAGE,
-                )
+                return@launch
             }
         }
     }

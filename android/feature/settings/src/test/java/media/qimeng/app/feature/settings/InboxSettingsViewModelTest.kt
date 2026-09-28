@@ -107,4 +107,75 @@ class InboxSettingsViewModelTest {
         assertNull(viewModel.uiState.value.selectedInboxPath)
         assertEquals(listOf<String?>(null), staging.inboxPathCalls)
     }
+
+    // ---- 上传归档文件夹（2026-09-28 归档文件夹功能：与收件箱共用浏览器导航） ----
+
+    @Test
+    fun `init回放持久化归档文件夹路径`() {
+        val staging = fakeStaging().apply { seedArchivePath("/storage/emulated/0/archive") }
+        val viewModel = InboxSettingsViewModel(staging)
+        driveIdle()
+        assertEquals("/storage/emulated/0/archive", viewModel.uiState.value.selectedArchivePath)
+    }
+
+    @Test
+    fun `选定当前目录为归档文件夹持久化且不影响收件箱选定`() {
+        val staging = fakeStaging().apply { seedInboxPath("/storage/emulated/0/.download") }
+        val viewModel = InboxSettingsViewModel(staging)
+        driveIdle()
+
+        viewModel.enter("/storage/emulated/0/.download")
+        driveIdle()
+        viewModel.selectCurrentAsArchive()
+        driveIdle()
+
+        // 两个选定各自独立持久化（同一浏览位置可同时是收件箱与归档文件夹）
+        assertEquals(listOf("/storage/emulated/0/.download"), staging.archivePathCalls)
+        assertEquals("/storage/emulated/0/.download", viewModel.uiState.value.selectedArchivePath)
+        assertEquals("/storage/emulated/0/.download", viewModel.uiState.value.selectedInboxPath)
+        // 收件箱写路径不被归档选定触碰
+        assertTrue(staging.inboxPathCalls.isEmpty())
+    }
+
+    @Test
+    fun `清除归档文件夹写null且选定归空`() {
+        val staging = fakeStaging().apply { seedArchivePath("/storage/emulated/0/archive") }
+        val viewModel = InboxSettingsViewModel(staging)
+        driveIdle()
+        viewModel.clearArchive()
+        driveIdle()
+        assertNull(viewModel.uiState.value.selectedArchivePath)
+        assertEquals(listOf<String?>(null), staging.archivePathCalls)
+    }
+
+    // ---- 浏览器收起与再开（2026-09-28 装机直报：选完文件夹即收起，重新选择再开） ----
+
+    @Test
+    fun `初始浏览器可见且选定收件箱后收起再开保留浏览位置`() {
+        val viewModel = InboxSettingsViewModel(fakeStaging())
+        driveIdle()
+        assertTrue(viewModel.uiState.value.browserVisible)
+
+        viewModel.enter("/storage/emulated/0/.download")
+        driveIdle()
+        viewModel.selectCurrentAsInbox()
+        driveIdle()
+        assertFalse(viewModel.uiState.value.browserVisible)
+
+        // 重新选择：只翻可见位，浏览位置不清零（免重新逐层下钻）
+        viewModel.reopenBrowser()
+        assertEquals(true, viewModel.uiState.value.browserVisible)
+        assertEquals("/storage/emulated/0/.download", viewModel.uiState.value.browsingPath)
+    }
+
+    @Test
+    fun `选定归档文件夹同样收起浏览器`() {
+        val viewModel = InboxSettingsViewModel(fakeStaging())
+        driveIdle()
+        viewModel.enter("/storage/emulated/0/.download")
+        driveIdle()
+        viewModel.selectCurrentAsArchive()
+        driveIdle()
+        assertFalse(viewModel.uiState.value.browserVisible)
+    }
 }

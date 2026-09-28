@@ -57,11 +57,15 @@ interface UploadRepository {
      * 网络约束 + 退避重试在请求侧声明：断网自动等待恢复，中断按官方 retry 语义续跑。
      * 挂靠批：UploadItem 的 effectiveUploadName/attachAuthorId/attachSources 随载荷入队；
      * 挂靠执行在 worker 的 201 之后（UploadAttacher，mode=append，失败不重试不级联）。
+     * libraryName（2026-09-28 上传归档文件夹功能）：目标库展示名随载荷入队，worker 上传
+     * 成功后归档分派用（<归档文件夹>/<库名>/）；空串/缺省 = 调用方未解析到库名，
+     * worker 回退既有 uploaded/ 归档。条目自身带非空 libraryName 时优先于调用级参数。
      */
     fun enqueue(
         items: List<UploadItem>,
         libraryId: String,
         dir: String,
+        libraryName: String = "",
     ): List<QueuedUpload>
 
     /**

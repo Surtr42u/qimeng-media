@@ -132,6 +132,11 @@ interface DataModule {
     @Singleton
     fun bindThumbnailPrefetchMonitor(impl: media.qimeng.app.core.data.prefetch.ThumbnailPrefetcher): media.qimeng.app.core.data.prefetch.ThumbnailPrefetchMonitor
 
+    // 预取避让面（问题B 2026-09-28）：列表 VM 下拉刷新时让预取暂停抢带宽，窄接口防误用控制柄
+    @Binds
+    @Singleton
+    fun bindThumbnailPrefetchThrottle(impl: media.qimeng.app.core.data.prefetch.ThumbnailPrefetcher): media.qimeng.app.core.data.prefetch.ThumbnailPrefetchThrottle
+
     @Binds
     @Singleton
     fun bindBackupAutoPrefsRepository(impl: media.qimeng.app.core.data.repository.DataStoreBackupAutoPrefsRepository): media.qimeng.app.core.data.repository.BackupAutoPrefsRepository

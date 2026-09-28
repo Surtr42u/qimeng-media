@@ -113,11 +113,17 @@ class AlbumFilterPanelTest {
         }
     }
 
+    // 预取避让替身（问题B 2026-09-28 构造签名适配）：单测不触达预取器，空实现即可
+    private object NoopPrefetchThrottle : media.qimeng.app.core.data.prefetch.ThumbnailPrefetchThrottle {
+        override fun pauseForForegroundRefresh() = Unit
+    }
+
     private fun viewModel(repo: FakeMediaRepository): AlbumViewModel = AlbumViewModel(
         mediaRepository = repo,
         gridPrefs = FakeGridPrefs(),
         // 本文件用例不涉批次链，给独立空实例即可（MediaBatchIndex 为进程内可变单点，测试间不得共享）
         batchIndex = MediaBatchIndex(),
+        prefetchThrottle = NoopPrefetchThrottle,
         origUrlResolver = object : AssetOrigUrlResolver {
             override suspend fun origUrl(assetId: String): String? = null
         },

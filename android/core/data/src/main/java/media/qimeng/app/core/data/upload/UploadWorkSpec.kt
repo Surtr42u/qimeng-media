@@ -36,6 +36,12 @@ object UploadWorkSpec {
     const val KEY_ATTACH_AUTHOR_ID = "attachAuthorId"
     /** 自动挂靠来源词数组（可空键：不带挂靠的任务不写；mode=append 由 worker 侧固定） */
     const val KEY_ATTACH_SOURCES = "attachSources"
+    /**
+     * 目标库展示名（2026-09-28 上传归档文件夹功能：worker 归档分派用——归档根已设置且
+     * 库名非空才走 <归档根>/<库名>/ 新路径）。空串不写键（挂靠键同款可空口径），
+     * 旧在途载荷缺键反解回退空串。
+     */
+    const val KEY_LIBRARY_NAME = "libraryName"
 
     // ---- 过程/输出 Data 键位（worker setProgress / Result.outputData） ----
     const val KEY_PROGRESS_PERCENT = "progressPercent"
@@ -81,6 +87,8 @@ object UploadWorkSpec {
         val uploadFileName: String,
         val attachAuthorId: String? = null,
         val attachSources: List<String>? = null,
+        /** 目标库展示名（空串 = 未解析到/旧载荷，worker 归档分派回退 uploaded/） */
+        val libraryName: String = "",
     )
 
     fun itemToInputData(spec: UploadRequestSpec): Data = Data.Builder()
@@ -92,9 +100,10 @@ object UploadWorkSpec {
         .putLong(KEY_SIZE_BYTES, spec.sizeBytes)
         .putString(KEY_UPLOAD_FILE_NAME, spec.uploadFileName)
         .apply {
-            // 可空键不写（缺键 = 不带挂靠；写 null 值会被 Data 拒绝）
+            // 可空键不写（缺键 = 不带挂靠/无库名；写 null 值会被 Data 拒绝）
             spec.attachAuthorId?.let { putString(KEY_ATTACH_AUTHOR_ID, it) }
             spec.attachSources?.takeIf { it.isNotEmpty() }?.let { putStringArray(KEY_ATTACH_SOURCES, it.toTypedArray()) }
+            spec.libraryName.takeIf { it.isNotBlank() }?.let { putString(KEY_LIBRARY_NAME, it) }
         }
         .build()
 
@@ -120,6 +129,8 @@ object UploadWorkSpec {
             uploadFileName = data.getString(KEY_UPLOAD_FILE_NAME)?.takeIf { it.isNotBlank() } ?: displayName,
             attachAuthorId = data.getString(KEY_ATTACH_AUTHOR_ID),
             attachSources = data.getStringArray(KEY_ATTACH_SOURCES)?.toList(),
+            // 缺键回退空串（挂靠键同款旧载荷兼容口径：归档分派侧按空串回退 uploaded/）
+            libraryName = data.getString(KEY_LIBRARY_NAME).orEmpty(),
         )
     }
 

@@ -126,4 +126,26 @@ class DataStoreStagingRepositoryTest {
         assertEquals(setOf("a", "b"), repo.batchConfig.first().sources.toSet())
         Unit
     }
+
+    // ---- 归档文件夹路径持久化（2026-09-28 上传归档文件夹功能） ----
+
+    @Test
+    fun `归档路径设置读取与清除往返`() = runBlocking {
+        val repo = newRepository()
+        assertEquals(null, repo.archivePath.first())
+        repo.setArchivePath("/storage/emulated/0/qimeng-archive")
+        assertEquals("/storage/emulated/0/qimeng-archive", repo.archivePath.first())
+        repo.setArchivePath(null)
+        assertEquals(null, repo.archivePath.first())
+        Unit
+    }
+
+    @Test
+    fun `归档路径空串按清除处理读侧归一null`() = runBlocking {
+        val repo = newRepository()
+        repo.setArchivePath("/storage/emulated/0/qimeng-archive")
+        repo.setArchivePath("")
+        assertEquals(null, repo.archivePath.first())
+        Unit
+    }
 }

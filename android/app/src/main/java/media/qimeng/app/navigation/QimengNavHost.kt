@@ -121,8 +121,9 @@ object Routes {
     const val SERVER = "server"
 
     /**
-     * 覆盖页面：下载收件箱设置（2026-09-25 暂存区重做：设置页「下载收件箱」入口行 →
-     * 收件箱路径选择子页，路径持久化后作为上传页「从收件箱导入」的扫描源）
+     * 覆盖页面：上传收件箱与归档设置（2026-09-25 暂存区重做：收件箱路径选择子页，路径
+     * 持久化后作为上传页「从收件箱导入」的扫描源；2026-09-28 归档文件夹批：子页扩归档
+     * 文件夹双设定并改由数据管理 hub 进入——路由串不变，仅入口行搬家）
      */
     const val INBOX = "inbox"
 
@@ -504,7 +505,9 @@ fun QimengNavHost(
             }
             // 数据管理 hub（U10-6）：我的页「数据管理」合并入口二级页；上传行复用既有
             // Routes.UPLOAD 页（不搬路由），库管理/作者 TXT 导入/备份导入导出（U10-6b）
-            // /缩略图缓存（2026-09-16 用户反馈）走各自新增子页
+            // /缩略图缓存（2026-09-16 用户反馈）走各自新增子页；
+            // 上传收件箱与归档（2026-09-28 归档文件夹批）：自我页入口行迁入本 hub，
+            // 路由复用 Routes.INBOX 不搬家
             composable(Routes.DATA_MANAGE) {
                 DataManageScreen(
                     onBack = { navController.popBackStack() },
@@ -513,6 +516,7 @@ fun QimengNavHost(
                     onOpenAuthorTxt = { navController.navigate(Routes.AUTHOR_TXT_IMPORT) },
                     onOpenBackup = { navController.navigate(Routes.BACKUP) },
                     onOpenThumbCache = { navController.navigate(Routes.THUMBNAIL_CACHE) },
+                    onOpenInbox = { navController.navigate(Routes.INBOX) },
                 )
             }
             // 库管理子页（U10-6）：库表 + 注册媒体目录表单（Web 文件管理页对齐物）
@@ -863,8 +867,8 @@ private fun ResidentTabScreen(route: String, navController: NavHostController) {
             // U10-6：原「上传文件」行升级为「数据管理」合并入口行（上传/注册媒体目录/
             // 库管理进 hub 二级页；上传页本身复用 Routes.UPLOAD 不搬路由）
             onOpenDataManage = { navController.navigate(Routes.DATA_MANAGE) },
-            // 2026-09-25 暂存区重做：「下载收件箱」入口行 → 收件箱路径选择子页
-            onOpenInbox = { navController.navigate(Routes.INBOX) },
+            // 2026-09-28 归档文件夹批：原 onOpenInbox（下载收件箱行）随入口迁入数据管理
+            // hub 退役——接线改在上方 Routes.DATA_MANAGE 组合处
             // U10-4：「服务器」入口行 → 地址修改/本机模式/换址说明子页
             onOpenServerDetail = { navController.navigate(Routes.SERVER) },
         )

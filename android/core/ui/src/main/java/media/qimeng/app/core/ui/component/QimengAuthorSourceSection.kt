@@ -5,7 +5,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Card
@@ -31,6 +34,8 @@ import media.qimeng.app.core.model.AuthorSuggestion
  *
  * @param committedName 已确定作者显示名（点选既有 or 待新建）；null = 未确定（渲染输入态）
  * @param committedIsExisting true = 点选既有作者（副文案「已选作者」）；false = 待新建
+ * @param seeds 空输入种子列表（调用方从全量常规作者拉取）：输入为空且非空时默认全显，
+ *   让用户不输入也能看到有哪些作者可选（suggest 协议空 q 必返空，禁改协议）
  */
 @Composable
 fun QimengAuthorSuggestSection(
@@ -39,6 +44,7 @@ fun QimengAuthorSuggestSection(
     committedName: String?,
     committedIsExisting: Boolean,
     suggestions: List<AuthorSuggestion>,
+    seeds: List<AuthorSuggestion> = emptyList(),
     onQueryChange: (String) -> Unit,
     onPickSuggestion: (AuthorSuggestion) -> Unit,
     onCommitInput: () -> Unit,
@@ -80,6 +86,9 @@ fun QimengAuthorSuggestSection(
                     query = query.trim(),
                     onPick = onPickSuggestion,
                 )
+            } else if (seeds.isNotEmpty()) {
+                // 空输入不输入也能看到可选作者：suggest 空查询无结果，种子全显兜底
+                QimengAuthorSeedList(seeds = seeds, onPick = onPickSuggestion)
             }
         }
     }
@@ -100,26 +109,55 @@ fun QimengAuthorSuggestionList(
     Card(modifier = modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(vertical = 4.dp)) {
             suggestions.forEach { suggestion ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onPick(suggestion) }
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = suggestion.displayName,
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Text(
-                        text = "${suggestion.fileCount} 个文件",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                AuthorSuggestionRow(suggestion = suggestion, onPick = onPick)
             }
         }
+    }
+}
+
+/**
+ * 空输入种子列表（无状态）：与联想列表同一行渲染，但数据源是全量常规作者
+ * （无协议条数上限），必须限高内滚防把外层表单撑爆——限高内滚用 LazyColumn
+ * 而非联想列表的固定 Column（全量作者可能数百行，全组合不可接受）。
+ */
+@Composable
+private fun QimengAuthorSeedList(
+    seeds: List<AuthorSuggestion>,
+    onPick: (AuthorSuggestion) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Card(modifier = modifier.fillMaxWidth()) {
+        LazyColumn(modifier = Modifier.heightIn(max = AUTHOR_SEED_LIST_MAX_HEIGHT_DP.dp)) {
+            items(seeds, key = { it.id }) { seed ->
+                AuthorSuggestionRow(suggestion = seed, onPick = onPick)
+            }
+        }
+    }
+}
+
+/** 联想/种子共用的命中行（displayName + 文件数副文案，照 AuthorScreen 作者行双行口径） */
+@Composable
+private fun AuthorSuggestionRow(
+    suggestion: AuthorSuggestion,
+    onPick: (AuthorSuggestion) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onPick(suggestion) }
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = suggestion.displayName,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            text = "${suggestion.fileCount} 个文件",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -200,6 +238,9 @@ private fun SectionTitleText(text: String) {
 
 /** 来源段未启用时的降透明系数（整段禁用的视觉表达） */
 private const val DISABLED_SECTION_ALPHA = 0.5f
+
+/** 空输入种子列表限高（dp）：全量常规作者无条数上限，限高内滚防撑爆外层长表单 */
+private const val AUTHOR_SEED_LIST_MAX_HEIGHT_DP = 200
 
 /**
  * 拦截/错误横幅（点击关闭；原 UploadScreen MessageCard 同款抽出，上传页与编辑页共用）：

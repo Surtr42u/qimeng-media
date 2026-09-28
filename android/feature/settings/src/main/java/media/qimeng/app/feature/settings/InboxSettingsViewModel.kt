@@ -32,6 +32,10 @@ data class InboxSettingsUiState(
     val entries: List<InboxDirEntry> = emptyList(),
     /** 当前选定的收件箱路径（持久化；null = 未设置） */
     val selectedInboxPath: String? = null,
+    /** 当前选定的上传归档文件夹路径（持久化；null = 未设置 → 维持 uploaded/ 归档） */
+    val selectedArchivePath: String? = null,
+    /** 目录浏览器是否展示（初始 true；选定成功即收起，「重新选择」再展开且保留浏览位置） */
+    val browserVisible: Boolean = true,
     /** 目录读取失败等非致命错误（点按重试） */
     val errorMessage: String? = null,
 )
@@ -51,7 +55,13 @@ class InboxSettingsViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            _uiState.update { it.copy(selectedInboxPath = stagingRepository.inboxPath.first()) }
+            // 两个选定值同批回放（收件箱 + 上传归档文件夹；2026-09-28 归档文件夹功能）
+            _uiState.update {
+                it.copy(
+                    selectedInboxPath = stagingRepository.inboxPath.first(),
+                    selectedArchivePath = stagingRepository.archivePath.first(),
+                )
+            }
         }
         refresh()
     }
@@ -100,7 +110,8 @@ class InboxSettingsViewModel @Inject constructor(
         if (path.isEmpty()) return
         viewModelScope.launch {
             stagingRepository.setInboxPath(path)
-            _uiState.update { it.copy(selectedInboxPath = path, errorMessage = null) }
+            // 选定成功即收起浏览器（选完即消失的用户预期）；再开走 reopenBrowser
+            _uiState.update { it.copy(selectedInboxPath = path, browserVisible = false, errorMessage = null) }
         }
     }
 
@@ -109,6 +120,37 @@ class InboxSettingsViewModel @Inject constructor(
         viewModelScope.launch {
             stagingRepository.setInboxPath(null)
             _uiState.update { it.copy(selectedInboxPath = null) }
+        }
+    }
+
+    /**
+     * 选用当前浏览中的文件夹为上传归档文件夹（持久化；2026-09-28 归档文件夹功能）。
+     * 浏览器与收件箱共用一套导航——两个「设为」按钮对同一浏览位置分别赋值，选定值独立
+     * 持久化（收件箱与归档文件夹可以不同路径）。
+     */
+    fun selectCurrentAsArchive() {
+        val path = _uiState.value.browsingPath
+        if (path.isEmpty()) return
+        viewModelScope.launch {
+            stagingRepository.setArchivePath(path)
+            // 与收件箱选定同款：选定成功即收起浏览器，两个「设为」共享一套收起/再开
+            _uiState.update { it.copy(selectedArchivePath = path, browserVisible = false, errorMessage = null) }
+        }
+    }
+
+    /**
+     * 重新展开目录浏览器（选定成功即收起后的再入口）：只翻可见位，浏览位置不清零——
+     * 用户常是「选定后发现不对换一个」，保留位置免去重新逐层下钻。
+     */
+    fun reopenBrowser() {
+        _uiState.update { it.copy(browserVisible = true) }
+    }
+
+    /** 清除上传归档文件夹（worker 归档回退源文件同目录 uploaded/ 既有行为） */
+    fun clearArchive() {
+        viewModelScope.launch {
+            stagingRepository.setArchivePath(null)
+            _uiState.update { it.copy(selectedArchivePath = null) }
         }
     }
 

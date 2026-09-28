@@ -1,6 +1,7 @@
 package media.qimeng.app.core.data.repository
 
 import java.io.File
+import java.io.FileInputStream
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -110,6 +111,64 @@ class InboxFileStoreTest {
         assertTrue(store.listDirectories("").isEmpty())
     }
 
+    // ---- 目录文件列举（2026-09-28 上传页「浏览文件」弹层） ----
+
+    @Test
+    fun `文件列举只收白名单媒体文件并按名称升序`() {
+        val dir = tmp.newFolder("browse")
+        write(dir, "note.txt")
+        write(dir, "app.exe")
+        write(dir, "clip.MP4", content = "video") // 扩展名大小写不敏感
+        write(dir, "b.jpg")
+        write(dir, "a.png")
+
+        val files = store.listMediaFiles(dir.absolutePath)
+
+        assertEquals(listOf("a.png", "b.jpg", "clip.MP4"), files.map { it.name })
+    }
+
+    @Test
+    fun `文件列举带绝对路径与字节数`() {
+        val dir = tmp.newFolder("browse-meta")
+        val file = write(dir, "pic.jpg", content = "12345")
+
+        val entry = store.listMediaFiles(dir.absolutePath).single()
+
+        assertEquals(file.absolutePath, entry.path)
+        assertEquals(file.length(), entry.sizeBytes)
+    }
+
+    @Test
+    fun `文件列举包含点前缀隐藏目录内的文件`() {
+        // 隐藏目录内的合法媒体文件必须可见——这正是「浏览文件」入口存在的原因
+        val hidden = File(tmp.newFolder("browse-hidden"), ".stash").apply { mkdirs() }
+        write(hidden, "pic.jpg")
+        write(hidden, "junk.exe")
+
+        val files = store.listMediaFiles(hidden.absolutePath)
+
+        assertEquals(listOf("pic.jpg"), files.map { it.name })
+    }
+
+    @Test
+    fun `文件列举含点前缀隐藏媒体文件且不收子目录与深层文件`() {
+        val dir = tmp.newFolder("browse-scope")
+        write(dir, ".cover.jpg") // 隐藏媒体文件（扩展名合法）不按文件名排除
+        val sub = File(dir, "sub").apply { mkdirs() }
+        write(sub, "deep.jpg")
+
+        val files = store.listMediaFiles(dir.absolutePath)
+
+        assertEquals(listOf(".cover.jpg"), files.map { it.name })
+    }
+
+    @Test
+    fun `文件列举根不存在或非目录返回空`() {
+        assertTrue(store.listMediaFiles(tmp.root.resolve("不存在").absolutePath).isEmpty())
+        val file = tmp.newFile("plain2.txt")
+        assertTrue(store.listMediaFiles(file.absolutePath).isEmpty())
+    }
+
     // ---- 存在性探测 ----
 
     @Test
@@ -167,6 +226,110 @@ class InboxFileStoreTest {
     @Test
     fun `归档源文件不存在返回false不抛错`() {
         assertFalse(store.archiveToUploaded(tmp.root.resolve("不存在.jpg").absolutePath))
+    }
+
+    // ---- 归档文件夹（archiveToLibraryRoot，2026-09-28 上传归档文件夹功能） ----
+
+    @Test
+    fun `归档到库根目录正常移动且原位置消失`() {
+        val inbox = tmp.newFolder("inbox2")
+        val archiveRoot = tmp.root.resolve("archive") // 归档根不存在：须连根一并创建
+        val source = write(inbox, "done.mp4", content = "payload")
+
+        assertTrue(store.archiveToLibraryRoot(archiveRoot.absolutePath, "测试库A", source))
+
+        val archived = File(File(archiveRoot, "测试库A"), "done.mp4")
+        assertTrue(archived.isFile)
+        assertEquals("payload", archived.readText())
+        assertFalse(source.exists())
+    }
+
+    @Test
+    fun `库名含非法字符被替换为下划线`() {
+        val inbox = tmp.newFolder("inbox3")
+        val source = write(inbox, "pic.jpg")
+
+        assertTrue(store.archiveToLibraryRoot(tmp.root.absolutePath, "a/b\\c:d*e?f\"g<h>i|j", source))
+
+        // 全部 Windows 保留字符 + 路径分隔符统一替换为 _，不产生嵌套目录
+        assertTrue(File(tmp.root, "a_b_c_d_e_f_g_h_i_j").isDirectory)
+        assertTrue(File(File(tmp.root, "a_b_c_d_e_f_g_h_i_j"), "pic.jpg").isFile)
+    }
+
+    @Test
+    fun `目标同名且内容不同时加序号不覆盖既有文件`() {
+        val libDir = tmp.newFolder("archive-lib")
+        // 既有归档文件（用户已手动整理过）：同名但内容不同
+        write(libDir, "done.jpg", content = "old-archived")
+        val source = write(tmp.newFolder("inbox4"), "done.jpg", content = "new-upload")
+
+        assertTrue(store.archiveToLibraryRoot(tmp.root.absolutePath, "archive-lib", source))
+
+        // 既有文件原样保留，新文件落到 (1) 序号位
+        assertEquals("old-archived", File(libDir, "done.jpg").readText())
+        assertEquals("new-upload", File(libDir, "done (1).jpg").readText())
+        assertFalse(source.exists())
+    }
+
+    @Test
+    fun `目标同名且内容相同时删旧放新结果与源一致`() {
+        val libDir = tmp.newFolder("archive-lib2")
+        write(libDir, "dup.jpg", content = "same")
+        val source = write(tmp.newFolder("inbox5"), "dup.jpg", content = "same")
+
+        assertTrue(store.archiveToLibraryRoot(tmp.root.absolutePath, "archive-lib2", source))
+
+        // 同内容重复上传：目标内容一致（源文件本体落位），原位置清空
+        assertEquals("same", File(libDir, "dup.jpg").readText())
+        assertFalse(source.exists())
+    }
+
+    @Test
+    fun `库名空白返回false且源文件不动`() {
+        val source = write(tmp.newFolder("inbox6"), "keep.jpg")
+
+        assertFalse(store.archiveToLibraryRoot(tmp.root.absolutePath, "   ", source))
+        assertFalse(store.archiveToLibraryRoot(tmp.root.absolutePath, "", source))
+        // 归档失败不吞源文件（调用方回退 uploaded/ 归档的兜底前提）
+        assertTrue(source.isFile)
+    }
+
+    @Test
+    fun `源文件不存在返回false`() {
+        assertFalse(
+            store.archiveToLibraryRoot(
+                tmp.root.absolutePath,
+                "任意库",
+                tmp.root.resolve("不存在.jpg"),
+            ),
+        )
+    }
+
+    @Test
+    fun `copy兜底落位后不残留part文件`() {
+        val libDir = tmp.newFolder("archive-copy")
+        val source = write(tmp.newFolder("inbox-copy"), "big.mp4", content = "payload")
+
+        // 强制走 copy 兜底：renameTo 需要对源文件的删除访问权，Windows JVM 上源被打开的
+        // 流持有时（句柄不带 FILE_SHARE_DELETE）rename/delete 均失败——锁住源即锁死直改
+        // 路径。POSIX 上 rename 不受打开句柄影响会直改成功，此时本测试退化为对
+        // 「无 .part 残留」不变式的验证（copy 路径在 Windows 开发/CI 机被覆盖）。
+        FileInputStream(source).use { locked ->
+            locked.read() // 建立真实句柄，防惰性打开差异
+
+            val result = store.archiveToLibraryRoot(tmp.root.absolutePath, "archive-copy", source)
+
+            // 无论直改还是兜底：目标必须就位且内容与源一致
+            val archived = File(libDir, "big.mp4")
+            assertTrue(archived.isFile)
+            assertEquals("payload", archived.readText())
+            // .part 半截文件不得残留（copy 兜底 finally 清理口径）
+            assertTrue(
+                libDir.listFiles().orEmpty().none { it.name.endsWith(".part") },
+            )
+            // 删源失败按失败上报的有意语义：false 时源仍在（不吞文件）、true 时源已移走
+            if (result) assertFalse(source.exists()) else assertTrue(source.exists())
+        }
     }
 
     /** 写入测试文件（内容默认一行，返回文件引用） */

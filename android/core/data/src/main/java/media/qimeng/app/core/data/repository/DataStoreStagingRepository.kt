@@ -44,6 +44,9 @@ class DataStoreStagingRepository @Inject constructor(
     override val inboxPath: Flow<String?> =
         dataStore.data.map { it[KEY_INBOX_PATH]?.takeIf { path -> path.isNotEmpty() } }.distinctUntilChanged()
 
+    override val archivePath: Flow<String?> =
+        dataStore.data.map { it[KEY_ARCHIVE_PATH]?.takeIf { path -> path.isNotEmpty() } }.distinctUntilChanged()
+
     override suspend fun addItems(items: List<StagedUpload>) {
         if (items.isEmpty()) return
         withContext(Dispatchers.IO) {
@@ -119,6 +122,15 @@ class DataStoreStagingRepository @Inject constructor(
         }
     }
 
+    override suspend fun setArchivePath(path: String?) {
+        // 键卫生口径与 setInboxPath 一致：清除/空串不占键，读侧缺键与空串等价 null
+        withContext(Dispatchers.IO) {
+            dataStore.edit {
+                if (path.isNullOrBlank()) it.remove(KEY_ARCHIVE_PATH) else it[KEY_ARCHIVE_PATH] = path
+            }
+        }
+    }
+
     override suspend fun hasAllFilesAccess(): Boolean =
         withContext(Dispatchers.IO) { fileStore.hasAllFilesAccess() }
 
@@ -146,6 +158,9 @@ class DataStoreStagingRepository @Inject constructor(
 
         /** 下载收件箱路径键（空串不存，读侧归一 null） */
         val KEY_INBOX_PATH = stringPreferencesKey("upload_inbox_path")
+
+        /** 上传归档文件夹路径键（空串不存，读侧归一 null；键名风格与 upload_inbox_path 一致） */
+        val KEY_ARCHIVE_PATH = stringPreferencesKey("upload_archive_path")
     }
 }
 

@@ -327,6 +327,8 @@ private fun ResultPhase(
                 columns = displayColumns,
                 animatedUrlResolver = animatedUrlResolver,
                 onNearBottom = onNearBottom,
+                // 问题A（2026-09-28）：加载结束重评估信号（KDoc 见 QimengMediaGrid.reloadTick）
+                reloadTick = state.reloadTick,
                 // 卡片点击进详情（D3 同族顺手修复：onAssetClick 默认空实现漏传即静默无反应，
                 // 镜像相册/收藏/历史三页接线；批次上下文写入已由 RES R3 补齐——见调用方注释）
                 onAssetClick = onAssetClick,

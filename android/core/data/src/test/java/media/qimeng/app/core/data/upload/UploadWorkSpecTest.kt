@@ -17,6 +17,7 @@ class UploadWorkSpecTest {
         uploadFileName: String = "IMG_2026.jpg",
         attachAuthorId: String? = null,
         attachSources: List<String>? = null,
+        libraryName: String = "",
     ) = UploadWorkSpec.UploadRequestSpec(
         localId = "local-1",
         uri = uri,
@@ -27,6 +28,7 @@ class UploadWorkSpecTest {
         uploadFileName = uploadFileName,
         attachAuthorId = attachAuthorId,
         attachSources = attachSources,
+        libraryName = libraryName,
     )
 
     // ---- 入队载荷映射 ----
@@ -90,6 +92,35 @@ class UploadWorkSpecTest {
     fun `空挂靠来源数组不写入载荷`() {
         val data = UploadWorkSpec.itemToInputData(spec(attachSources = emptyList()))
         assertNull(data.getStringArray(UploadWorkSpec.KEY_ATTACH_SOURCES))
+    }
+
+    // ---- 库名键（2026-09-28 上传归档文件夹功能） ----
+
+    @Test
+    fun `库名随载荷往返无损`() {
+        val data = UploadWorkSpec.itemToInputData(spec(libraryName = "测试库A"))
+        val back = UploadWorkSpec.specFromInputData(data)
+        assertNotNull(back)
+        assertEquals("测试库A", back!!.libraryName)
+    }
+
+    @Test
+    fun `空库名不写入载荷旧载荷缺键反解回退空串`() {
+        // 空串不写键（挂靠键同款可空口径）
+        assertNull(UploadWorkSpec.itemToInputData(spec()).getString(UploadWorkSpec.KEY_LIBRARY_NAME))
+        // 旧在途载荷缺库名键：反解回退空串（worker 归档分派按空串走 b 语义——收件箱
+        // 来源仍 uploaded/，其它路径来源不动）
+        val legacy = androidx.work.Data.Builder()
+            .putString(UploadWorkSpec.KEY_LOCAL_ID, "local-1")
+            .putString(UploadWorkSpec.KEY_URI, "/storage/emulated/0/.dl/a.jpg")
+            .putString(UploadWorkSpec.KEY_LIBRARY_ID, "lib-uuid")
+            .putString(UploadWorkSpec.KEY_DIR, "")
+            .putString(UploadWorkSpec.KEY_DISPLAY_NAME, "a.jpg")
+            .putLong(UploadWorkSpec.KEY_SIZE_BYTES, 1L)
+            .build()
+        val back = UploadWorkSpec.specFromInputData(legacy)
+        assertNotNull(back)
+        assertEquals("", back!!.libraryName)
     }
 
     // ---- 兼容锁定：旧在途载荷（含已退役挂靠键）反解为纯上传 ----

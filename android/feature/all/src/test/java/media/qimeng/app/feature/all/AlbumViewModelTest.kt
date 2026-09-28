@@ -10,17 +10,20 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+import media.qimeng.app.core.data.prefetch.ThumbnailPrefetchThrottle
 import media.qimeng.app.core.data.repository.AssetOrigUrlResolver
 import media.qimeng.app.core.data.repository.GridPrefsRepository
 import media.qimeng.app.core.data.repository.MediaBatchIndex
 import media.qimeng.app.core.data.repository.MediaRepository
 import media.qimeng.app.core.model.AlbumDim
+import media.qimeng.app.core.model.APPEND_RETRY_DELAYS_MS
 import media.qimeng.app.core.model.AssetPageResult
 import media.qimeng.app.core.model.AssetQuery
 import media.qimeng.app.core.model.FacetOption
 import media.qimeng.app.core.model.FacetParamKind
 import media.qimeng.app.core.model.FacetsQuery
 import media.qimeng.app.core.model.FacetsResult
+import media.qimeng.app.core.model.LIST_LOAD_FAILED_MESSAGE
 import media.qimeng.app.core.model.MediaAsset
 import media.qimeng.app.core.model.MediaKind
 import media.qimeng.app.core.model.NameSuggestion
@@ -108,6 +111,11 @@ class AlbumViewModelTest {
         }
     }
 
+    // 预取避让替身（问题B 2026-09-28 构造签名适配）：单测不触达预取器，空实现即可
+    private object NoopPrefetchThrottle : ThumbnailPrefetchThrottle {
+        override fun pauseForForegroundRefresh() = Unit
+    }
+
     // ---------- 造数 ----------
 
     private fun asset(id: String) = MediaAsset(
@@ -145,6 +153,7 @@ class AlbumViewModelTest {
         mediaRepository = repo,
         gridPrefs = prefs,
         batchIndex = batchIndex,
+        prefetchThrottle = NoopPrefetchThrottle,
         origUrlResolver = object : AssetOrigUrlResolver {
             override suspend fun origUrl(assetId: String): String? = null
         },
@@ -339,5 +348,41 @@ class AlbumViewModelTest {
             // 滑切数据链（详情页 moveBy 消费）：邻位可达、尾件越界返回 null
             assertEquals("c", batchIndex.assetIdAt(batchIndex.indexOf("b"), +1))
             assertNull(batchIndex.assetIdAt(batchIndex.indexOf("c"), +1))
+        }
+
+    // ---------- 问题A（2026-09-28）：翻页失败自动重试（APPEND_RETRY_DELAYS_MS 退避封顶） ----------
+
+    @Test
+    fun `翻页失败自动重试 - 两次退避重试仍失败后停手，错误横幅保留且不再多发请求`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val repo = FakeMediaRepository()
+            val viewModel = viewModel(repo)
+            advanceUntilIdle()
+
+            // 首页落地一件（带 cursor 可翻页）
+            repo.assetsCalls[0].gate.complete(
+                AssetPageResult(items = listOf(asset("a")), nextCursor = "c1", totalMatched = 1),
+            )
+            advanceUntilIdle()
+            assertEquals(listOf("a"), viewModel.uiState.value.items.map { it.id })
+
+            // 触底翻页：首次 + 两次退避重试（1s/3s，虚拟时间即刻跳过）全部失败
+            viewModel.onNearBottom()
+            advanceUntilIdle() // 请求注册在 viewModelScope.launch 内，先推进调度再取 gate
+            val firstAppendIndex = 1
+            repeat(1 + APPEND_RETRY_DELAYS_MS.size) { attempt ->
+                // 逐发失败：每轮失败→delay 退避（advanceUntilIdle 跳过）→ 下一请求注册
+                repo.assetsCalls[firstAppendIndex + attempt].gate.completeExceptionally(
+                    RuntimeException("injected append failure $attempt"),
+                )
+                advanceUntilIdle()
+            }
+
+            // 上限封顶：首载 1 + 翻页 3 次尝试（1 首发 + 2 重试），无无限锤击
+            assertEquals(1 + 1 + APPEND_RETRY_DELAYS_MS.size, repo.assetsCalls.size)
+            // 仍失败停手：错误横幅保留（真故障反馈），isLoading 收圈，已载数据不被清
+            assertEquals(LIST_LOAD_FAILED_MESSAGE, viewModel.uiState.value.errorMessage)
+            assertFalse(viewModel.uiState.value.isLoading)
+            assertEquals(listOf("a"), viewModel.uiState.value.items.map { it.id })
         }
 }

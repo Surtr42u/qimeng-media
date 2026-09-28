@@ -12,7 +12,12 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import media.qimeng.app.core.data.repository.InboxFileStore
+import media.qimeng.app.core.data.repository.StagingRepository
 import media.qimeng.app.core.model.UploadItem
 import media.qimeng.app.core.model.UploadRules
 
@@ -34,6 +39,7 @@ class UploadWorker @AssistedInject constructor(
     private val attacher: UploadAttacher,
     private val cancelRegistry: UploadCancelRegistry,
     private val inboxFileStore: InboxFileStore,
+    private val stagingRepository: StagingRepository,
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result {
@@ -165,28 +171,62 @@ class UploadWorker @AssistedInject constructor(
     }
 
     /**
-     * 收件箱源文件归档（2026-09-25 暂存区重做）：文件已入库（上传成功/挂靠失败两态皆是
-     * ——文件本体已 201 落库）且源为收件箱绝对路径类时，把源文件移入其所在目录的
-     * uploaded/ 子目录（File.renameTo）。移动失败不阻断上传完成，只记日志与完成通知
-     * 提示（源文件留在收件箱，下次扫描会再进暂存区由用户处置）。
-     * content:// 类条目无文件路径可移，原样返回空提示。
+     * 源文件归档分派（2026-09-25 暂存区重做上传成功归档；2026-09-28 上传归档文件夹
+     * 功能改三分派）：文件已入库（上传成功/挂靠失败两态皆是——文件本体已 201 落库）
+     * 且源为绝对路径类时执行，相册（content://）来源无文件路径可移、任何分支都不动。
+     * - a) 归档文件夹已设置 且 载荷库名非空 → 移入 <归档文件夹>/<库名>/<文件名>
+     *   （用户手动复制同步到电脑的自留归档区；收件箱与文件浏览器两种路径来源同权）；
+     * - b) 未设置归档根：仅收件箱来源维持 uploaded/ 旧行为（源父目录 == 收件箱目录，
+     *   判定见 [isInboxSource]），其它路径来源不动源文件（浏览文件选中的 Download/
+     *   私人文件夹等不属于收件箱，擅自在其内建 uploaded/ 子目录移走文件超出旧行为）；
+     * - c) 已设置但载荷库名为空（旧在途载荷缺键/入队时解析不到库名）→ 回退 b 语义：
+     *   收件箱来源仍归 uploaded/（缺名不丢文件），其它路径来源同样不动。
+     * 归档路径读取：doWork 本身即 suspend 协程，直接 archivePath/inboxPath.first() 取
+     * 首快照，无需 runBlocking（Worker 无 DataStore 常驻 Flow 场景，单值即所需）。
+     * 文件操作段（copy/内容比对可达 GB 级视频）切 [Dispatchers.IO]：CoroutineWorker
+     * 默认跑 Default 调度器，在其上阻塞既拖住完成通知也占满 CPU 线程池。
+     * 移动失败不阻断上传完成，只记日志与完成通知提示（与原 uploaded/ 归档同口径）。
      */
-    private fun archiveInboxSource(spec: UploadWorkSpec.UploadRequestSpec): Boolean {
-        if (!UploadRules.isAbsoluteFilePath(spec.uri)) return false
-        val moved = inboxFileStore.archiveToUploaded(spec.uri)
-        if (!moved) {
-            Log.w(LOG_TAG, "inbox-archive-failed file=${spec.displayName} src=${spec.uri}")
+    private suspend fun archiveNote(spec: UploadWorkSpec.UploadRequestSpec): String {
+        if (!UploadRules.isAbsoluteFilePath(spec.uri)) return ""
+        val archiveRoot = stagingRepository.archivePath.first()
+        val useArchiveRoot = archiveRoot != null && spec.libraryName.isNotBlank()
+        val sourceFile = File(spec.uri)
+        val archived = withContext(Dispatchers.IO) {
+            when {
+                useArchiveRoot -> inboxFileStore.archiveToLibraryRoot(
+                    requireNotNull(archiveRoot),
+                    spec.libraryName,
+                    sourceFile,
+                )
+                isInboxSource(sourceFile) -> inboxFileStore.archiveToUploaded(spec.uri)
+                // 非收件箱来源：不动源文件、返回空注记（语义见 KDoc b 分支）
+                else -> null
+            }
         }
-        return moved
+        if (archived == null) return ""
+        if (!archived) {
+            Log.w(LOG_TAG, "source-archive-failed file=${spec.displayName} src=${spec.uri} toArchiveRoot=$useArchiveRoot")
+        }
+        return when {
+            archived -> ""
+            useArchiveRoot -> ARCHIVE_ROOT_FAILED_NOTE
+            else -> ARCHIVE_FAILED_NOTE
+        }
     }
 
-    /** 归档结果提示后缀（归档成功/非收件箱条目 = 空串；失败才提示） */
-    private fun archiveNote(spec: UploadWorkSpec.UploadRequestSpec): String =
-        if (UploadRules.isAbsoluteFilePath(spec.uri) && !archiveInboxSource(spec)) {
-            ARCHIVE_FAILED_NOTE
-        } else {
-            ""
-        }
+    /**
+     * 收件箱来源判定：源文件父目录与收件箱目录 canonicalFile 精确相等。scanInbox 只扫
+     * 收件箱一级文件，收件箱来源的父目录必为收件箱本身；文件浏览器选中的任意目录
+     * （Download、私人文件夹等）不满足此判定。canonical 抛异常按非收件箱处理——
+     * 宁可不动作也不误搬。收件箱未设置（null）同理恒非收件箱来源。
+     */
+    private suspend fun isInboxSource(sourceFile: File): Boolean {
+        val inboxDir = stagingRepository.inboxPath.first()?.let(::File) ?: return false
+        return runCatching {
+            sourceFile.parentFile?.canonicalFile == inboxDir.canonicalFile
+        }.getOrDefault(false)
+    }
 
     /** 前台服务升级：API 34+ 必须带 dataSync 类型；任何失败降级为普通后台任务。 */
     private suspend fun setForegroundSafely(title: String) {
@@ -247,7 +287,10 @@ class UploadWorker @AssistedInject constructor(
         /** 201 响应体缺 id 时的挂靠失败原因（协议 AssetDetail.id 理论恒在，防御性兜底） */
         private const val ATTACH_NO_ASSET_ID = "服务端未返回资产 id，无法挂靠"
 
-        /** 收件箱源文件归档失败的完成通知提示（不阻断上传完成口径） */
+        /** 收件箱源文件归档失败的完成通知提示（不阻断上传完成口径；b/c 回退路径用） */
         private const val ARCHIVE_FAILED_NOTE = "（收件箱归档失败：源文件保留在收件箱）"
+
+        /** 归档文件夹路径归档失败的完成通知提示（a 新路径用；不阻断上传完成口径） */
+        private const val ARCHIVE_ROOT_FAILED_NOTE = "（归档到归档文件夹失败：源文件保留在原位置）"
     }
 }

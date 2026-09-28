@@ -54,6 +54,21 @@ fun List<AuthorSummary>.applyAuthorRows(
         )
 }
 
+/**
+ * 常规作者种子：全量作者 → 空输入联想回退列表（GET /authors/suggest 协议规定空 q 必返空，
+ * 空输入的「默认全显」只能走全量接口在此映射）。挂靠/关联仅支持常规作者（COS 作者走
+ * 独立 COS 流口径），type 过滤收口此纯函数单源，上传与资产编辑两个 VM 共用禁止各自复制。
+ * fileCount 空（新作者无文件）按 0 显示，对齐联想行副文案口径。
+ */
+fun List<AuthorSummary>.toRegularAuthorSeeds(): List<AuthorSuggestion> =
+    filter { it.type == AuthorType.REGULAR }.map { author ->
+        AuthorSuggestion(
+            id = author.id,
+            displayName = author.displayName,
+            fileCount = author.fileCount ?: 0,
+        )
+    }
+
 /** 搜索建议领域模型（映射 SDK SearchSuggestion） */
 data class NameSuggestion(
     val name: String,

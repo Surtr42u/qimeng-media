@@ -14,6 +14,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+import media.qimeng.app.core.data.prefetch.ThumbnailPrefetchThrottle
 import media.qimeng.app.core.data.repository.AssetOrigUrlResolver
 import media.qimeng.app.core.data.repository.GridPrefsRepository
 import media.qimeng.app.core.data.repository.LikeMutationTracker
@@ -101,6 +102,14 @@ class HomeViewModelTest {
          */
         var recommendationsFailFirstN = 0
 
+        /**
+         * 推荐流逐调用结果脚本（问题A fresh==0 续轮适配，2026-09-28）：非空时按调用次序逐个
+         * 消费，空/耗尽回落 [recommendationsResult]。为什么需要：追加轮若返回与已拉取清单完全
+         * 相同的结果（fresh==0），appendNextSeedRound 会自动换 seed 续拉直至穷尽——只验证
+         * 「一轮追加落地」的既有哨兵用例必须给追加轮配新条目，防误入续轮循环。
+         */
+        val recommendationsScript = mutableListOf<List<MediaAsset>>()
+
         override suspend fun assets(query: AssetQuery): AssetPageResult {
             assetsCalls += query
             if (!assetsGated) return assetsResult
@@ -118,6 +127,7 @@ class HomeViewModelTest {
             recommendationsFailFirstN--
             throw RuntimeException("injected recommendations failure")
         }
+        if (recommendationsScript.isNotEmpty()) return recommendationsScript.removeAt(0)
         return recommendationsResult
     }
 
@@ -139,6 +149,11 @@ class HomeViewModelTest {
         override suspend fun setHomeColumns(columns: Int) = Unit
 
         override suspend fun setAlbumColumns(columns: Int) = Unit
+    }
+
+    // 预取避让替身（问题B 2026-09-28 构造签名适配）：单测不触达预取器，空实现即可
+    private object NoopPrefetchThrottle : ThumbnailPrefetchThrottle {
+        override fun pauseForForegroundRefresh() = Unit
     }
 
     // ---------- 服务端就绪探针替身（2026-09-18 探针接线适配） ----------
@@ -207,6 +222,7 @@ class HomeViewModelTest {
         likeMutationTracker = likeTracker,
         // 默认注入「立即就绪」替身：既有用例时序与探针接线前逐位一致（2026-09-18）
         readinessProbe = probe ?: stubReadinessProbe(ready = true),
+        prefetchThrottle = NoopPrefetchThrottle,
         origUrlResolver = object : AssetOrigUrlResolver {
             override suspend fun origUrl(assetId: String): String? = null
         },
@@ -276,32 +292,41 @@ class HomeViewModelTest {
     }
 
     @Test
-    fun `下拉刷新防重保持 - 刷新在途时重复触发丢弃，归位不覆盖数据`() = runTest(mainDispatcherRule.testDispatcher) {
-        val repo = FakeMediaRepository()
-        val viewModel = viewModel(repo)
-        advanceUntilIdle()
+    fun `下拉刷新立即受理 - 在途时重复触发发起新代请求，旧代响应作废不覆盖数据`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val repo = FakeMediaRepository()
+            val viewModel = viewModel(repo)
+            advanceUntilIdle()
 
-        viewModel.switchTab(HomeTab.RANK)
-        advanceUntilIdle()
-        repo.rankingsCalls[0].gate.complete(listOf(asset("a")))
-        advanceUntilIdle()
-        assertEquals(listOf("a"), viewModel.uiState.value.rank.items.map { it.id })
+            viewModel.switchTab(HomeTab.RANK)
+            advanceUntilIdle()
+            repo.rankingsCalls[0].gate.complete(listOf(asset("a")))
+            advanceUntilIdle()
+            assertEquals(listOf("a"), viewModel.uiState.value.rank.items.map { it.id })
 
-        // 下拉刷新在途时再次触发：被防重拦截，不重复请求
-        viewModel.refresh()
-        advanceUntilIdle()
-        assertEquals(2, repo.rankingsCalls.size)
-        assertTrue(viewModel.uiState.value.rank.isRefreshing)
-        viewModel.refresh()
-        advanceUntilIdle()
-        assertEquals(2, repo.rankingsCalls.size)
+            // 下拉刷新立即受理（问题B 2026-09-28）：不再被在途 isLoading 拦截吞掉
+            viewModel.refresh()
+            advanceUntilIdle()
+            assertEquals(2, repo.rankingsCalls.size)
+            assertTrue(viewModel.uiState.value.rank.isRefreshing)
 
-        // 刷新归位：替换展示
-        repo.rankingsCalls[1].gate.complete(listOf(asset("b")))
-        advanceUntilIdle()
-        assertEquals(listOf("b"), viewModel.uiState.value.rank.items.map { it.id })
-        assertFalse(viewModel.uiState.value.rank.isRefreshing)
-    }
+            // 在途未收圈时再次下拉：同样新代请求照发——乱序防线是代际校验而非防重拦截
+            viewModel.refresh()
+            advanceUntilIdle()
+            assertEquals(3, repo.rankingsCalls.size)
+
+            // 旧代响应迟到归位：作废丢弃——不覆盖数据、不收刷新指示器（新代仍在途）
+            repo.rankingsCalls[1].gate.complete(listOf(asset("stale")))
+            advanceUntilIdle()
+            assertEquals(listOf("a"), viewModel.uiState.value.rank.items.map { it.id })
+            assertTrue(viewModel.uiState.value.rank.isRefreshing)
+
+            // 新代响应归位：替换展示并收圈
+            repo.rankingsCalls[2].gate.complete(listOf(asset("b")))
+            advanceUntilIdle()
+            assertEquals(listOf("b"), viewModel.uiState.value.rank.items.map { it.id })
+            assertFalse(viewModel.uiState.value.rank.isRefreshing)
+        }
 
     // ---------- 任务I I1：下拉刷新清空三 tab 缓存（GUIDE_UI §下拉刷新 L86） ----------
 
@@ -473,6 +498,8 @@ class HomeViewModelTest {
         runTest(mainDispatcherRule.testDispatcher) {
             val repo = FakeMediaRepository().apply {
                 recommendationsResult = listOf(asset("r1"), asset("r2"))
+                // 追加轮配新条目（fresh 非空一轮落地）：防 fresh==0 误入自动续轮循环（见替身 KDoc）
+                recommendationsScript += listOf(asset("r3"), asset("r4"))
             }
             val viewModel = viewModel(repo)
             advanceUntilIdle()
@@ -485,7 +512,7 @@ class HomeViewModelTest {
             fakeNow += HomeViewModel.SENTINEL_SUPPRESS_AFTER_TAB_SWITCH_MS // 恰出窗口
             viewModel.onNearBottom()
             advanceUntilIdle()
-            // 窗口外哨兵是真实触底：批次尽换 seed 追加（既有行为不回归）
+            // 窗口外哨兵是真实触底：批次尽换 seed 追加一轮并落地（既有行为不回归）
             assertEquals(listOf(1L, 2L), repo.recommendationsCalls)
         }
 
@@ -495,6 +522,8 @@ class HomeViewModelTest {
             // 初值 Long.MIN_VALUE（非 switchTab 写入）：冷启动布局回流的哨兵触发不被吞
             val repo = FakeMediaRepository().apply {
                 recommendationsResult = listOf(asset("r1"), asset("r2"))
+                // 追加轮配新条目（fresh 非空一轮落地）：防 fresh==0 误入自动续轮循环（见替身 KDoc）
+                recommendationsScript += listOf(asset("r3"), asset("r4"))
             }
             val viewModel = viewModel(repo)
             advanceUntilIdle()
@@ -502,6 +531,35 @@ class HomeViewModelTest {
             viewModel.onNearBottom() // 未经任何 switchTab（真实时钟差恒正且巨大）
             advanceUntilIdle()
             assertEquals(listOf(1L, 2L), repo.recommendationsCalls)
+        }
+
+    // ---------- 问题A（2026-09-28）：推荐流 fresh==0 续轮上限 ----------
+
+    @Test
+    fun `换seed全空连续达上限 - 置exhausted停手不再续拉，触底也不再发请求`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            // 每轮推荐返回同两条（对已拉取清单全重复=fresh 恒空）：有限库深翻页掏干的替身
+            val repo = FakeMediaRepository().apply {
+                recommendationsResult = listOf(asset("r1"), asset("r2"))
+            }
+            val viewModel = viewModel(repo)
+            advanceUntilIdle()
+            assertEquals(listOf("r1", "r2"), viewModel.uiState.value.recommend.pulled.map { it.id })
+
+            // 触底换 seed：追加轮全空自动续下一 seed，连续 MAX_EMPTY_SEED_ROUNDS 轮仍空即穷尽
+            viewModel.onNearBottom()
+            advanceUntilIdle()
+            // init 1 轮 + 追加路径恰好 MAX_EMPTY_SEED_ROUNDS 轮（不多发=上限生效，不发=死锁没修）
+            assertEquals(1 + HomeViewModel.MAX_EMPTY_SEED_ROUNDS, repo.recommendationsCalls.size)
+            assertTrue(viewModel.uiState.value.recommend.exhausted) // 穷尽到底
+            assertFalse(viewModel.uiState.value.recommend.isLoading)
+            // 已拉取清单不被空轮污染（旧数据保持可见）
+            assertEquals(listOf("r1", "r2"), viewModel.uiState.value.recommend.pulled.map { it.id })
+
+            // 穷尽后再触底：onNearBottom 的 exhausted 拦截兜住，不再白打请求
+            viewModel.onNearBottom()
+            advanceUntilIdle()
+            assertEquals(1 + HomeViewModel.MAX_EMPTY_SEED_ROUNDS, repo.recommendationsCalls.size)
         }
 
     // ---------- 任务R R1：COS 流筛选代际防乱序（cosGeneration，Y4b 起） ----------

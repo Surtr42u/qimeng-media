@@ -16,6 +16,7 @@ import media.qimeng.app.core.data.repository.AssetOrigUrlResolver
 import media.qimeng.app.core.data.repository.MediaBatchIndex
 import media.qimeng.app.core.data.repository.MediaRepository
 import media.qimeng.app.core.data.repository.SearchHistoryRepository
+import media.qimeng.app.core.model.APPEND_RETRY_DELAYS_MS
 import media.qimeng.app.core.model.AssetQuery
 import media.qimeng.app.core.model.LIST_PAGE_SIZE
 import media.qimeng.app.core.model.MediaAsset
@@ -39,6 +40,8 @@ data class SearchUiState(
     val nextCursor: String? = null,
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
+    /** 列表加载成功结束信号（问题A 哨兵哑火修复，2026-09-28；语义见 AlbumViewModel.AlbumUiState.reloadTick） */
+    val reloadTick: Int = 0,
     /**
      * 深链标记（修复E，2026-09-14）：携词跳转（SearchScreen 的 LaunchedEffect(initialQuery)
      * 经 [submitFromDeepLink]）置位。UI 返回分发据此三分支——深链结果态（词未变）返回直接
@@ -235,35 +238,50 @@ class SearchViewModel @Inject constructor(
 
     private fun loadItems(cursor: String?, append: Boolean) {
         val state = _uiState.value
-        // 防重语义（与代际防乱序正交）：翻页在途时丢弃重复触发；
-        // 提交重载不受 isLoading 拦截——在途的是旧代请求，其响应会被代际校验丢弃
+        // 防重语义（与代际防乱序正交）：翻页在途时丢弃重复触发（问题A 2026-09-28 起翻页失败
+        // 有自动重试，在途窗口含退避等待）；提交重载不受 isLoading 拦截——在途的是旧代请求，
+        // 其响应会被代际校验丢弃
         if (append && state.isLoading) return
         val gen = queryGeneration
         _uiState.value = state.copy(isLoading = true)
         viewModelScope.launch {
-            runCatching {
-                mediaRepository.assets(
-                    AssetQuery(
-                        cursor = cursor,
-                        limit = LIST_PAGE_SIZE,
-                        // 旧版搜索=合并常规+COS（GUIDE_UI §首页搜索范围），固定 includeCos=1
-                        includeCos = true,
-                        q = state.submittedQuery,
-                    ),
-                )
-            }.onSuccess { page ->
-                if (gen != queryGeneration) return@onSuccess // 旧代迟到响应，丢弃
+            var retryAttempt = 0
+            while (true) {
+                val page = runCatching {
+                    mediaRepository.assets(
+                        AssetQuery(
+                            cursor = cursor,
+                            limit = LIST_PAGE_SIZE,
+                            // 旧版搜索=合并常规+COS（GUIDE_UI §首页搜索范围），固定 includeCos=1
+                            includeCos = true,
+                            q = state.submittedQuery,
+                        ),
+                    )
+                }.getOrElse {
+                    if (gen != queryGeneration) return@launch // 旧代失败不污染新查询态
+                    // 翻页失败自动重试（问题A 2026-09-28，范围/取舍见 APPEND_RETRY_DELAYS_MS KDoc；
+                    // 重试期间 isLoading 保持 true 不阻塞提交重载（代际绕过拦截），同 AlbumViewModel）
+                    if (append && retryAttempt < APPEND_RETRY_DELAYS_MS.size) {
+                        delay(APPEND_RETRY_DELAYS_MS[retryAttempt])
+                        retryAttempt++
+                        if (gen != queryGeneration) return@launch // 退避期间新查询已接管，弃残局
+                        continue
+                    }
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        errorMessage = LOAD_FAILED_MESSAGE,
+                    )
+                    return@launch
+                }
+                if (gen != queryGeneration) return@launch // 旧代迟到响应，丢弃
                 _uiState.value = _uiState.value.copy(
                     items = if (append) _uiState.value.items + page.items else page.items,
                     nextCursor = page.nextCursor,
                     isLoading = false,
+                    // 问题A：成功结束 bump 哨兵重评估信号（KDoc 见 SearchUiState.reloadTick）
+                    reloadTick = _uiState.value.reloadTick + 1,
                 )
-            }.onFailure {
-                if (gen != queryGeneration) return@onFailure // 旧代失败不污染新查询态
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    errorMessage = LOAD_FAILED_MESSAGE,
-                )
+                return@launch
             }
         }
     }
