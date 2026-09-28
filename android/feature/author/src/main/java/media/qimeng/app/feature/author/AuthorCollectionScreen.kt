@@ -153,6 +153,8 @@ fun AuthorCollectionScreen(
                     // 已无遮挡末行之忧，保留作列表底部呼吸区（与相册页 G5 后口径一致）
                     bottomContentPadding = QimengDimens.ListBottomContentPadding,
                     onNearBottom = viewModel::onNearBottom,
+                    // 问题A（2026-09-28）：加载结束重评估信号（KDoc 见 QimengMediaGrid.reloadTick）
+                    reloadTick = state.reloadTick,
                     // 修复C（2026-09-14 用户反馈「下面的文件时间离胶囊过远」）：间距链=
                     // 组件网格顶距 SpaceM=8dp + 组头上距 18dp（旧版 GroupedMediaAdapter
                     // setPadding(4,18,4,10) 对齐档，语义=与上一组末卡隔断）——列表顶部无

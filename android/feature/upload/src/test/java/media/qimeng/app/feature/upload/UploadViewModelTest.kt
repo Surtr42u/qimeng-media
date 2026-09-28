@@ -8,6 +8,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import media.qimeng.app.core.model.AuthorSuggestion
+import media.qimeng.app.core.model.AuthorType
 import media.qimeng.app.core.model.LibraryChoice
 import media.qimeng.app.core.model.LocalMediaItem
 import media.qimeng.app.core.model.StagedUpload
@@ -76,6 +77,24 @@ class UploadViewModelTest {
         assertNull(state.selectedLibrary)
         assertNull(state.dirTree)
         assertNull(state.errorMessage)
+    }
+
+    // ---- 空输入作者种子（全量接口回退；suggest 空 q 必返空） ----
+
+    @Test
+    fun `init拉全量作者过滤COS生成空输入种子`() {
+        val authorRepository = FakeAuthorRepository().apply {
+            authorsResult = listOf(
+                FakeAuthorRepository.summary("author-a", "作者A").copy(fileCount = 3),
+                FakeAuthorRepository.summary("author-cos", "COS作者").copy(type = AuthorType.COS),
+            )
+        }
+        val (viewModel, _, _, _) = newViewModel(authorRepository = authorRepository)
+        val seeds = viewModel.uiState.value.authorSeeds
+        // 挂靠仅支持常规作者：COS 作者必须从种子里排除
+        assertEquals(listOf("author-a"), seeds.map { it.id })
+        assertEquals(listOf("作者A"), seeds.map { it.displayName })
+        assertEquals(listOf(3), seeds.map { it.fileCount })
     }
 
     @Test
@@ -197,6 +216,44 @@ class UploadViewModelTest {
         assertEquals(listOf("IMG_1.jpg"), overrideCall.items.map { it.displayName })
         // 入队项全部移出暂存区
         assertTrue(viewModel.uiState.value.pendingItems.isEmpty())
+    }
+
+    @Test
+    fun `enqueue解析库名随载荷入队覆盖组带各自库名`() {
+        val (viewModel, repository, _, _) = newViewModel()
+        selectDefaultLibrary(viewModel)
+        viewModel.acceptPickedItems(
+            listOf(
+                picked("content://media/img/1", "IMG_1.jpg", 100L),
+                picked("content://media/img/2", "IMG_2.jpg", 100L),
+            ),
+        )
+        driveIdle()
+        viewModel.toggleItemLibrary(viewModel.uiState.value.pendingItems.first(), libraryB)
+        driveIdle()
+        viewModel.enqueue()
+        driveIdle()
+
+        // 批次组带批次库名、覆盖组带覆盖库名（worker 归档到 <归档文件夹>/<库名>/ 用）
+        assertEquals("测试库A", repository.enqueueCalls.single { it.libraryId == "lib-a" }.items.single().libraryName)
+        assertEquals("测试库B", repository.enqueueCalls.single { it.libraryId == "lib-b" }.items.single().libraryName)
+    }
+
+    @Test
+    fun `enqueue库名解析不到时传空串回退uploaded归档`() {
+        // 库列表加载失败/库已被删：id 解析不到名——空串入队，worker 侧回退 uploaded/ 归档
+        val repository = FakeUploadRepository().apply { librariesResult = emptyList() }
+        val staging = FakeStagingRepository().apply {
+            seedBatch(StagingBatchConfig(libraryId = "lib-gone"))
+        }
+        val viewModel = UploadViewModel(repository, FakeAuthorRepository(), staging)
+        driveIdle()
+        viewModel.acceptPickedItems(listOf(picked("content://media/img/1", "IMG_1.jpg", 100L)))
+        driveIdle()
+        viewModel.enqueue()
+        driveIdle()
+
+        assertEquals("", repository.enqueueCalls.single().items.single().libraryName)
     }
 
     @Test
@@ -468,7 +525,9 @@ class UploadViewModelTest {
         val (viewModel, _, _, staging) = newViewModel()
         viewModel.importFromInbox()
         driveIdle()
-        assertEquals("尚未设置下载收件箱：请到 设置 → 下载收件箱 选择文件夹", viewModel.uiState.value.noticeMessage)
+        // 引导文案与 UploadUiState 常量同源断言（入口已迁 数据管理 → 上传收件箱与归档；
+        // 引用常量防文案再改时测试漂移成死链）
+        assertEquals(INBOX_NOT_SET_MESSAGE, viewModel.uiState.value.noticeMessage)
         assertEquals(0, staging.scanCalls)
     }
 

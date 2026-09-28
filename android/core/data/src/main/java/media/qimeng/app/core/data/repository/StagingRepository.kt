@@ -30,6 +30,13 @@ interface StagingRepository {
     /** 下载收件箱路径（null = 未设置；设置页目录浏览器选定后持久化） */
     val inboxPath: Flow<String?>
 
+    /**
+     * 上传归档文件夹路径（null = 未设置；2026-09-28 上传归档文件夹功能）。
+     * 设置后，上传成功的路径类源文件移入 <该文件夹>/<库名>/<原文件名>（用户手动复制同步
+     * 到电脑的自留归档区）；未设置则维持源文件同目录 uploaded/ 的既有归档（向后兼容）。
+     */
+    val archivePath: Flow<String?>
+
     /** 新进项合并入库（按 source 去重，已存在的忽略；新项按传入序追加在尾部） */
     suspend fun addItems(items: List<StagedUpload>)
 
@@ -54,6 +61,9 @@ interface StagingRepository {
 
     /** 设置/清除收件箱路径（null = 清除） */
     suspend fun setInboxPath(path: String?)
+
+    /** 设置/清除上传归档文件夹路径（null = 清除，回退 uploaded/ 归档） */
+    suspend fun setArchivePath(path: String?)
 
     /**
      * 「所有文件访问」授权判定（收件箱目录浏览/扫描的前置）。

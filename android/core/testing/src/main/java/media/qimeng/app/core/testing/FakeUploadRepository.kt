@@ -47,6 +47,7 @@ class FakeUploadRepository : UploadRepository {
         val items: List<UploadItem>,
         val libraryId: String,
         val dir: String,
+        val libraryName: String = "",
     )
 
     val enqueueCalls = mutableListOf<EnqueueCall>()
@@ -101,9 +102,10 @@ class FakeUploadRepository : UploadRepository {
         items: List<UploadItem>,
         libraryId: String,
         dir: String,
+        libraryName: String,
     ): List<QueuedUpload> {
         enqueueError?.let { throw it }
-        enqueueCalls.add(EnqueueCall(items, libraryId, dir))
+        enqueueCalls.add(EnqueueCall(items, libraryId, dir, libraryName))
         return items.map { QueuedUpload(localId = "local-${it.hashCode()}", displayName = it.displayName) }
     }
 

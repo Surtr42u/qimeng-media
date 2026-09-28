@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import media.qimeng.app.core.data.repository.AuthorRepository
+import media.qimeng.app.core.data.repository.BrowserFileEntry
 import media.qimeng.app.core.data.repository.StagingRepository
 import media.qimeng.app.core.data.repository.UploadRepository
 import media.qimeng.app.core.model.AuthorSuggestion
@@ -27,12 +28,14 @@ import media.qimeng.app.core.model.UploadLimits
 import media.qimeng.app.core.model.UploadQueueEntry
 import media.qimeng.app.core.model.UploadRules
 import media.qimeng.app.core.model.UploadStatus
+import media.qimeng.app.core.model.toRegularAuthorSeeds
 
 /**
  * 上传流 ViewModel（M4-5；2026-09-25 流程重排 + 暂存区重做）。
  * 暂存区重做：暂存条目与批次默认（库/作者/来源）全部落 StagingRepository 持久层
- * （跨进程重启/隔天不丢），页面只 collect 持久流渲染；新进暂存三条管道单源——
- * 收件箱扫描（importFromInbox）/ 相册多选（acceptPickedItems）/ 分享与 SAF（acceptUris）。
+ * （跨进程重启/隔天不丢），页面只 collect 持久流渲染；新进暂存四条管道单源——
+ * 收件箱扫描（importFromInbox）/ 相册多选（acceptPickedItems）/ 分享与 SAF（acceptUris）/
+ * 浏览文件多选（acceptPickedFiles，2026-09-28 补齐隐藏目录场景）。
  * 作品名联想：展开项基名输入防抖拉 GET /assets/name-suggestions（建议基名不含扩展名，
  * 回填后扩展名锁定拼接，见 StagedUpload.effectiveUploadName）。
  * 拦截口径（冻结）：大小上限读 GET /config 的 upload 项（入队时现取现判——服务端实时生效），
@@ -89,6 +92,7 @@ class UploadViewModel @Inject constructor(
     init {
         refreshLibraries()
         refreshSourceOptions()
+        refreshAuthorSeeds()
         observeMissingSources()
     }
 
@@ -119,6 +123,16 @@ class UploadViewModel @Inject constructor(
         viewModelScope.launch {
             val options = runCatching { authorRepository.sourceVocabulary() }.getOrDefault(emptyList())
             form.update { it.copy(sourceOptions = options) }
+        }
+    }
+
+    /** 空输入作者种子（全量接口过滤常规作者）：suggest 空 q 必返空，空输入默认全显
+     *  只能走全量；失败静默为空列表（联想输入仍可用，不阻断页面） */
+    private fun refreshAuthorSeeds() {
+        viewModelScope.launch {
+            val seeds = runCatching { authorRepository.authors().toRegularAuthorSeeds() }
+                .getOrDefault(emptyList())
+            form.update { it.copy(authorSeeds = seeds) }
         }
     }
 
@@ -293,7 +307,7 @@ class UploadViewModel @Inject constructor(
         stagingRepository.editBatchConfig(transform)
     }
 
-    // ---- 新进暂存（收件箱扫描 / 相册多选 / 分享与 SAF；编排单源在 [ingestor]） ----
+    // ---- 新进暂存（收件箱扫描 / 相册多选 / 分享与 SAF / 浏览文件多选；编排单源在 [ingestor]） ----
 
     /**
      * 收件箱导入（暂存区重做）：扫描收件箱 → 新文件按批次默认进暂存区（已暂存去重跳过）。
@@ -318,12 +332,33 @@ class UploadViewModel @Inject constructor(
     }
 
     /**
+     * 「浏览文件」入口的「所有文件访问」闸门判定：转发 [StagingRepository.hasAllFilesAccess]
+     * 单源（口径实现收口 InboxFileStore，与收件箱设置页同一数据面）——此前 UploadScreen
+     * 私有第三份同款实现已删，防三处口径漂移。
+     */
+    suspend fun hasAllFilesAccess(): Boolean = stagingRepository.hasAllFilesAccess()
+
+    /**
      * 接收内置相册选择器的选中项（2026-09-25 拍板：上传选取弃 SAF 改 App 内置相册式选择器）。
      * 元数据不走 describe 重查——MediaStore 查询已给出展示名与字节数（现成数据直接复用），
      * 按批次默认进持久暂存区。
      */
     fun acceptPickedItems(picked: List<LocalMediaItem>) {
         viewModelScope.launch { ingestor.ingestPicked(picked) }
+    }
+
+    /**
+     * 接收浏览文件弹层的选中项（2026-09-28「浏览文件」入口）：绝对路径类条目，
+     * File 元数据列举侧已带齐，按 source 去重（与收件箱导入同款）后按批次默认进暂存区；
+     * 全部已暂存给提示。
+     */
+    fun acceptPickedFiles(files: List<BrowserFileEntry>) {
+        if (files.isEmpty()) return
+        viewModelScope.launch {
+            if (ingestor.ingestPickedFiles(files) == 0) {
+                form.update { it.copy(noticeMessage = BROWSE_NO_NEW_MESSAGE) }
+            }
+        }
     }
 
     /** 接收 SAF 多选 / 系统分享的 uri 字符串：解元数据进持久暂存区（去重，继承批次默认） */
@@ -563,7 +598,7 @@ class UploadViewModel @Inject constructor(
         val batchGroup = allowed.filter { it.libraryIdOverride == null }
         if (batchGroup.isNotEmpty()) {
             uploadRepository.enqueue(
-                batchGroup.map { it.toUploadItem() },
+                batchGroup.map { it.toUploadItem(libraryNameOf(batchLibraryId)) },
                 requireNotNull(batchLibraryId),
                 form.value.selectedDirPath,
             )
@@ -571,12 +606,24 @@ class UploadViewModel @Inject constructor(
         allowed.filter { it.libraryIdOverride != null }
             .groupBy { requireNotNull(it.libraryIdOverride) }
             .forEach { (libraryId, group) ->
-                uploadRepository.enqueue(group.map { it.toUploadItem() }, libraryId, "")
+                uploadRepository.enqueue(
+                    group.map { it.toUploadItem(libraryNameOf(libraryId)) },
+                    libraryId,
+                    "",
+                )
             }
     }
 
+    /**
+     * 库 id -> 展示名（2026-09-28 上传归档文件夹功能：库名随载荷入队，worker 上传成功后
+     * 归档到 <归档文件夹>/<库名>/）。解析不到（库列表加载失败/库已被删）回退空串——
+     * worker 侧对空库名回退既有 uploaded/ 归档，归档不会因缺名而丢文件。
+     */
+    private fun libraryNameOf(libraryId: String?): String =
+        libraryId?.let { id -> uiState.value.libraries.firstOrNull { it.id == id }?.name }.orEmpty()
+
     /** 暂存条目 → 入队条目（uploadFileName 解析为实际值：编辑基名+锁定扩展名/回退展示名） */
-    private fun StagedUpload.toUploadItem() = UploadItem(
+    private fun StagedUpload.toUploadItem(libraryName: String) = UploadItem(
         uri = source,
         displayName = displayName,
         sizeBytes = sizeBytes,
@@ -584,6 +631,7 @@ class UploadViewModel @Inject constructor(
         attachAuthorId = attachAuthorId,
         attachAuthorName = attachAuthorName,
         attachSources = attachSources,
+        libraryName = libraryName,
     )
 
     /**

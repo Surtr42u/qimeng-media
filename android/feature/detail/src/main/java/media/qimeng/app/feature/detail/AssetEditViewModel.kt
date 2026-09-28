@@ -17,6 +17,7 @@ import media.qimeng.app.core.data.repository.DetailRepository
 import media.qimeng.app.core.data.repository.UploadRepository
 import media.qimeng.app.core.model.AuthorSuggestion
 import media.qimeng.app.core.model.DetailAuthor
+import media.qimeng.app.core.model.toRegularAuthorSeeds
 
 /**
  * 资产编辑页 UI 状态（2026-09-25 上传挂靠退役批）：作者关联全集 + 逐作者来源维护。
@@ -34,6 +35,9 @@ data class AssetEditUiState(
     val authorQuery: String = "",
     /** 联想结果（防抖回填） */
     val authorSuggestions: List<AuthorSuggestion> = emptyList(),
+    /** 空输入作者种子（GET /authors 全量过滤常规作者；suggest 空 q 必返空，
+     *  空输入的默认全显走全量接口；失败静默为空，不阻断编辑页） */
+    val authorSeeds: List<AuthorSuggestion> = emptyList(),
     /** 每作者来源编辑副本（authorId → 来源集；保存前不落服务端） */
     val sourcesByAuthor: Map<String, List<String>> = emptyMap(),
     /** 来源被改动过的作者 id 集（保存时逐个 PUT；未改动的作者不发请求） */
@@ -116,6 +120,7 @@ class AssetEditViewModel @Inject constructor(
                 }
                 loadSourceEcho()
                 loadVocabulary()
+                loadAuthorSeeds()
             } catch (e: Exception) {
                 _uiState.update { it.copy(loading = false, errorMessage = LOAD_FAILED) }
             }
@@ -139,6 +144,13 @@ class AssetEditViewModel @Inject constructor(
     private suspend fun loadVocabulary() {
         val options = runCatching { authorRepository.sourceVocabulary() }.getOrDefault(emptyList())
         _uiState.update { it.copy(sourceOptions = options) }
+    }
+
+    /** 空输入作者种子（全量接口过滤常规作者）：suggest 空 q 必返空，空输入默认全显
+     *  只能走全量；失败静默为空（同词表降级口径，不阻断编辑页） */
+    private suspend fun loadAuthorSeeds() {
+        val seeds = runCatching { authorRepository.authors().toRegularAuthorSeeds() }.getOrDefault(emptyList())
+        _uiState.update { it.copy(authorSeeds = seeds) }
     }
 
     // ---- 添加作者（联想选择；规则与旧上传页一致，去掉新建通道） ----

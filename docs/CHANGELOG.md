@@ -8,6 +8,21 @@
 - 子代理执行的工作标注"（执行子代理）"，主对话直接完成的标注"（主代理）"。
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
+## feat(app): 上传归档文件夹+浏览文件入口+作者默认全显+列表加载刷新修复（2026-09-28 第三百九十六笔）
+
+执行 AI：GLM-5.3-Flash（主代理 GLM-5.3 调度：拆批派发/门禁/亲核审查结论/文档收口；四个执行子代理实现+接力子代理+对抗审查子代理+修复子代理+视觉验证子代理，全部 GLM-5.3-Flash）
+
+- **需求**（用户七项）：① 上传配置选项默认全显（不要输入后才出）；② 下载收件箱改为「上传归档文件夹」——上传完的文件按 `<库名>/<文件名>` 存到指定文件夹供手动复制同步电脑；③ 上传选文件能看到 `.xxx` 隐藏文件夹（系统相册扫不到）；④ App 列表滑到底不再加载（回归）；⑤ 下拉刷新响应慢；⑥ 问 Web 端是否同步（结论：不需要，见尾）；⑦ 收件箱设置迁到数据管理页。**协议零改动**（全 App 客户端行为；作者全显复用既有 GET /authors 过滤 COS，不动 /authors/suggest 空q口径）。
+- **上传归档文件夹（②⑦）**：DataStore 新键 `upload_archive_path`；`InboxFileStore.archiveToLibraryRoot`（库名按 Windows 保留字符集 sanitize——归档根会被复制到电脑取更严口径；同名异容加「 (N)」序号绝不覆盖、同名同内容删旧放新；renameTo 优先+copy 兜底且 copy 走 `.part` 临时名落地防半截残留）；库名经 `UploadRequestSpec.libraryName` 载荷传递（入队时 VM 从库列表解析，旧载荷缺键回退空串）；`UploadWorker.archiveNote` 三分派：设归档根且有库名→归档根；未设→**仅收件箱来源**（源父目录与收件箱目录 canonical 精确相等）维持 uploaded/ 旧口径，其它路径来源不动（审查 P1：原实现把 uploaded/ 搬移扩散到任意浏览目录，已收窄）；相册来源永不移动；归档切 `Dispatchers.IO`（审查 P2：GB 级文件比对拖住 Default 线程与完成通知）。设置页更名「上传收件箱与归档」（收件箱+归档双卡共用 core:ui `DirectoryBrowserCard`），入口从设置页迁数据管理页（三处引导文案同步改，审查 P1 文案死链）。
+- **浏览文件入口（③）**：上传页第三入口「浏览文件」——目录/文件浏览器（`DirectoryBrowserCard` 从 InboxSettingsScreen 上提 core:ui 单源，含点前缀隐藏目录）+ 当前目录白名单文件多选（`InboxFileStore.listMediaFiles`）入暂存区（isPathSource 同收件箱口径）；MANAGE_EXTERNAL_STORAGE 闸门未授权弹引导跳系统设置；闸门判定收归 `InboxFileStore.hasAllFilesAccess` 单源（审查 P2：第三份同口径实现）。
+- **作者默认全显（①）**：`toRegularAuthorSeeds` 纯函数（GET /authors 过滤 COS）单源供三消费方（批次默认/逐项编辑/资产编辑页）；`QimengAuthorSuggestSection` 新增 seeds 参数，空输入显示种子列表（限高 200dp 可滚）、输入后仍走服务端联想；拉取失败静默降级空列表。目标库 pills 与来源 chips 本就默认全显未动。
+- **列表加载与刷新（④⑤）**：触底哨兵 `QimengMediaGrid` 加第三 key `reloadTick`（各 VM 加载成功落地 bump——失败不 bump，防与自动重试互喂请求风暴；钉底状态下加载结束即重评估，治「滑到底哑火」结构性缺陷）；推荐流 `appendNextSeedRound` fresh==0 换 seed 续拉上限 `MAX_EMPTY_SEED_ROUNDS=3` 后置 exhausted（上次第二百七十九笔只治 revealed 不推进，本次补齐去重空轮断路）；翻页失败 `APPEND_RETRY_DELAYS_MS=[1s,3s]` 退避自动重试（六 VM cursor 路径，重试间代际复检弃残局）；下拉刷新立即受理（isLoading 拦截收窄到翻页；推荐流新增 recommendGeneration 代际作废在途旧响应——既有筛选代际防乱序机制与 500ms tab 抑制窗原样保留）；数据落地即 `isRefreshing=false` 收圈（不等 facets）；`ThumbnailPrefetcher` 刷新窗口避让（`refreshPausedUntilMs` 15s 自愈时间窗，防漏恢复饿死预取）。
+- **测试与门禁**：新增/改写约 20 条用例（InboxFileStoreTest 24 全含 copy 兜底无 .part 残留/冲突序号/sanitize/隐藏目录文件；UploadViewModelTest 53；HomeViewModelTest fresh==0 上限+刷新新代语义；AlbumViewModelTest 退避封顶；DataStore/WorkSpec/InboxSettings 同步）；`make app-build` + `make app-test` + `make app-lint` 全绿；对抗审查（独立重跑全部受影响模块测试）无 P0，2 P1+3 P2 数据安全项已返工收口。
+- **Web 端（⑥）**：经核无同类问题——Web 列表是 IntersectionObserver+TanStack 哨兵无「key 不变永不触发」缺陷、无下拉刷新机制；上传页作者/来源控件已随 ADR-0024 退役无对应交互；收件箱/归档/浏览文件是 App 特有。不同步改。
+- **记档（P2 不修）**：UploadScreen 685 行/UploadViewModel 646 行/HomeViewModel 799 行新破 600 软线（清偿需独立重构批）；Favorite/History/Search/AuthorCollection 四 VM 的重试+代际改造无本地行为测试（同范式靠 Album/Home 用例背书）；病态「空页+非空 cursor」服务端响应下 reloadTick 自喂无上限（Go 端尾页恒 null cursor，不构成现实路径）；收件箱设置页浏览器组件 selectedPath 恒 null，原「已选目录 ● 标记」由双当前值卡替代。
+- **装机实测与收口（视觉验证子代理，qimeng_api35 + 隔离服务端 18499/临时数据目录，未触碰 8420 与 qimeng-data）**：入口迁移/设置页/作者空输入全显/暂存→上传→归档落盘（设备侧 `Download/测试归档库a/a1.png` 出现且源消失）/列表刷新回归 全部实测通过。实测发现两缺陷当批收口：① 浏览文件弹层目录行点击无响应（P0）——根因 `FileBrowserViewModel.refresh()` 漏回写 storageRoot，`enter()` 以空根触发 loadDirectory 空根保护静默 return（对照：文件行 toggle 不经该路径、设置页 VM 有回写，双证据定位）；补回写修复，装机复验下钻/返回正常，`goUp` 同链路一并恢复。② 「上传收件箱与归档」设置页选定后浏览器不收起（用户直报）——UiState 加 `browserVisible`（选定即收起），当前值卡加「重新选择」按钮原位再开（保留浏览位置），装机复验通过。记档：FileBrowserViewModel 无 JVM 单测（InboxFileStore 为 final 且直调 Environment，引 Robolectric 超本批边界），Bug A 回归以装机闭环覆盖。
+- **文档**：ADR-0024 修订3（归档文件夹/浏览入口/作者全显/入口迁移）、HANDOVER §4、本笔；GUIDE_API/DOMAIN_RULES 无涉（协议与领域口径零改动）。
+
 ## feat(api/web/app/server): 持久暂存区+下载收件箱+作品名序号联想+通用词表出厂预填（2026-09-25 第三百九十五笔）
 
 执行 AI：GLM-5.3-Flash（主代理：协议/文档/审查收口；服务端与 Android 由并行执行子代理实现，对抗审查子代理复核）

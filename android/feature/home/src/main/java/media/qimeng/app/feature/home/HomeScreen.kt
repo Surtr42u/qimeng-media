@@ -496,6 +496,9 @@ private fun RecommendPage(
             animatedUrlResolver = animatedUrlResolver,
             listState = listState,
             onNearBottom = onNearBottom,
+            // 问题A（2026-09-28）：加载结束重评估信号——换轮成功但 fresh==0（或空页追加）时
+            // totalCount 不变，哨兵需靠 tick 重触发（含 fresh==0 续轮后的穷尽停手，由 VM 拦截兜底）
+            reloadTick = state.reloadTick,
             onAssetClick = onAssetClick,
         )
     }
@@ -524,6 +527,9 @@ private fun CosPage(
             animatedUrlResolver = animatedUrlResolver,
             listState = listState,
             onNearBottom = onNearBottom,
+            // 问题A（2026-09-28）：加载结束重评估信号——翻页成功但新页为空时 totalCount 不变，
+            // 哨兵需靠 tick 重触发（KDoc 见 QimengMediaGrid.reloadTick）
+            reloadTick = state.reloadTick,
             onAssetClick = onAssetClick,
         )
     }

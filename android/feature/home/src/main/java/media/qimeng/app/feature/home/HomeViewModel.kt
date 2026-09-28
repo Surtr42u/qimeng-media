@@ -19,9 +19,11 @@ import media.qimeng.app.core.data.repository.MediaBatchIndex
 import media.qimeng.app.core.data.repository.MediaRepository
 import media.qimeng.app.core.data.repository.TagNameConflictException
 import media.qimeng.app.core.data.repository.AssetOrigUrlResolver
+import media.qimeng.app.core.data.prefetch.ThumbnailPrefetchThrottle
 import media.qimeng.app.core.model.AlbumPanelDraft
 import media.qimeng.app.core.model.AssetQuery
 import media.qimeng.app.core.model.FilterPanelUiState
+import media.qimeng.app.core.model.APPEND_RETRY_DELAYS_MS
 import media.qimeng.app.core.model.LIST_LOAD_FAILED_MESSAGE
 import media.qimeng.app.core.model.MediaAsset
 import media.qimeng.app.core.model.PanelFeedback
@@ -45,6 +47,14 @@ data class RecommendState(
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
     val loaded: Boolean = false,
+    /** 换轮穷尽标记（问题A fresh==0 死锁修复，2026-09-28）：连续空轮达上限后置位，
+     *  [onNearBottom] 据此停发换轮请求；刷新/首载成功即复位（新一轮重新计数） */
+    val exhausted: Boolean = false,
+    /** 列表加载成功结束信号（问题A 哨兵哑火修复，2026-09-28）：成功落地即自增，
+     *  QimengMediaGrid 触底哨兵以它为重评估 key——钉底用户在「成功但条数不变」的加载
+     *  （空页追加等）后哨兵不再哑火。失败不 bump：失败路径已由横幅+手动回滚兜底，
+     *  bump 会与自动重试叠加成无限锤击循环（见 appendNextSeedRound 注释） */
+    val reloadTick: Int = 0,
 ) {
     companion object {
         /** seed 起始值：协议 seed>0 才打散（openapi /recommendations seed 注释），从 1 起步 */
@@ -60,6 +70,8 @@ data class CosState(
     val isRefreshing: Boolean = false,
     val exhausted: Boolean = false,
     val loaded: Boolean = false,
+    /** 列表加载成功结束信号（问题A 哨兵哑火修复，2026-09-28，语义见 RecommendState.reloadTick） */
+    val reloadTick: Int = 0,
 )
 
 /** 排行榜状态（缺省日榜显式传 period=day；周期四档） */
@@ -100,6 +112,9 @@ class HomeViewModel @Inject constructor(
     // 2026-09-18 探针接线（单机形态冷启动空白修复）：首屏请求前先等服务端就绪（ADR-0015
     // 内嵌服务端有秒级未就绪窗口）。仅 init 首屏使用；switchTab 懒加载不加探针（见该处注释）。
     private val readinessProbe: ServerReadinessProbe,
+    // 预取避让（问题B 下拉刷新响应慢修复，2026-09-28）：下拉刷新开始时让全库缩略图预取
+    // 暂停抢带宽（窄接口，语义见 ThumbnailPrefetchThrottle KDoc）
+    private val prefetchThrottle: ThumbnailPrefetchThrottle,
     val origUrlResolver: AssetOrigUrlResolver,
 ) : ViewModel() {
 
@@ -123,8 +138,18 @@ class HomeViewModel @Inject constructor(
      * COS 流筛选代际号（任务Y Y4b，AlbumViewModel.filterGeneration 同范式互指）：面板筛选
      * 应用即递增。请求发起时快照代际、响应落地前校验——旧代响应（含失败）一律丢弃，
      * 不再覆盖新筛选态。读写都在 Main（viewModelScope 与状态更新同线程），无需原子类。
+     * 问题B（2026-09-28）：下拉刷新也在此代际框架内受理——refresh 递增代际作废在途旧响应，
+     * 刷新不再被 isLoading 拦截吞掉（受理路径改造，代际机制本身未动）。
      */
     private var cosGeneration = 0
+
+    /**
+     * 推荐流代际号（问题B 刷新不被吞，2026-09-28）：与 rankGeneration/cosGeneration 同范式。
+     * 推荐流此前无代际（旧注释「推荐流无代际语义」自此作废）——刷新被在途拦截时要么静默
+     * 丢弃刷新手势、要么放行后在途旧响应乱序覆盖新轮。现刷新路径递增本代际：在途旧响应
+     * （含换 seed 追加轮）一律作废；首载/静默重试/追加路径不递增、照旧快照校验。
+     */
+    private var recommendGeneration = 0
 
     /**
      * 上次 tab 切换时间戳（哨兵抑制窗口判定，任务J J3a）：初值取极小让冷启动
@@ -223,14 +248,24 @@ class HomeViewModel @Inject constructor(
      * （推荐=B 站式换 seed 全量重排；COS/排行=重拉当前页），另两 tab 数据缓存清空标脏
      * （items 清空 + loaded=false），切入时经 [switchTab] 懒重拉——不再残留刷新前的旧数据。
      * 当前 tab 不预清数据：刷新在途旧内容保持可见（防在途防重拦截后白屏），响应落地即整体替换。
+     * 问题B（2026-09-28）：刷新改为「立即受理」——在途加载不再吞掉刷新手势（各 load* 的
+     * isLoading 拦截只保留翻页语义），在途旧响应由代际校验丢弃；入口处先让全库预取避让
+     * （刷新首屏与预取抢 NAS 带宽是刷新慢的叠加因素）。
      */
     fun refresh() {
+        prefetchThrottle.pauseForForegroundRefresh()
         val current = _uiState.value
         _uiState.value = current.copy(
             recommend = if (current.currentTab == HomeTab.RECOMMEND) {
                 current.recommend
             } else {
-                current.recommend.copy(pulled = emptyList(), revealed = 0, loaded = false)
+                // exhausted 一并复位：另两 tab 标脏重拉时换轮穷尽标记随缓存清空失去意义
+                current.recommend.copy(
+                    pulled = emptyList(),
+                    revealed = 0,
+                    loaded = false,
+                    exhausted = false,
+                )
             },
             cos = if (current.currentTab == HomeTab.COS) {
                 current.cos
@@ -440,7 +475,9 @@ class HomeViewModel @Inject constructor(
         when (_uiState.value.currentTab) {
             HomeTab.RECOMMEND -> {
                 val s = _uiState.value.recommend
-                if (s.isLoading || s.isRefreshing) return
+                // exhausted（问题A fresh==0 修复）：换轮穷尽后不再发请求——否则钉底哨兵每次
+                // 重触发都白打一轮 4 请求（连续空轮已达上限=库已掏干，刷新换 seed 才有新序）
+                if (s.isLoading || s.isRefreshing || s.exhausted) return
                 val target = RecommendPaging.nextReveal(s.revealed, s.pulled.size)
                 if (target != null) {
                     _uiState.value = _uiState.value.copy(recommend = s.copy(revealed = target))
@@ -476,7 +513,11 @@ class HomeViewModel @Inject constructor(
 
     private fun loadRecommend(isInitial: Boolean, isRefresh: Boolean = false) {
         val current = _uiState.value
-        if (current.recommend.isLoading) return
+        // 防重（问题B 2026-09-28 收窄）：只拦首载/静默重试路径的在途重复触发；下拉刷新立即
+        // 受理——在途旧响应由 recommendGeneration 作废，不再吞刷新手势（原「在途直接 return」
+        // 是刷新响应慢主因之一：慢网下首拉在途时用户下拉毫无反馈直到旧请求收圈）
+        if (!isRefresh && current.recommend.isLoading) return
+        val gen = if (isRefresh) ++recommendGeneration else recommendGeneration
         val nextSeed = if (isRefresh || !isInitial) current.recommend.seed + 1 else current.recommend.seed
         _uiState.value = current.copy(
             recommend = current.recommend.copy(
@@ -493,6 +534,7 @@ class HomeViewModel @Inject constructor(
                     mediaType = null,
                 )
             }.onSuccess { items ->
+                if (gen != recommendGeneration) return@onSuccess // 旧代迟到响应（后续刷新已接管），丢弃
                 // 自愈即清账：横幅清空（刷新失败亮过牌后重试/再刷成功不残留）+ 重试预算归零
                 initialRetryAttempts.remove(HomeTab.RECOMMEND)
                 _uiState.value = _uiState.value.copy(
@@ -503,9 +545,14 @@ class HomeViewModel @Inject constructor(
                         isLoading = false,
                         isRefreshing = false,
                         loaded = true,
+                        // 新一轮 200 条整体替换：换轮穷尽标记复位（新一轮重新计数）
+                        exhausted = false,
+                        // 问题A：成功结束 bump 哨兵重评估信号（KDoc 见 RecommendState.reloadTick）
+                        reloadTick = _uiState.value.recommend.reloadTick + 1,
                     ),
                 )
             }.onFailure { error ->
+                if (gen != recommendGeneration) return@onFailure // 旧代失败不污染新轮
                 val retryScheduled = isInitial && !isRefresh &&
                     !_uiState.value.recommend.loaded &&
                     scheduleInitialRetry(HomeTab.RECOMMEND)
@@ -519,66 +566,128 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    /** 批次尽触底：换 seed 追加一轮（无限流；追加前去重，渲染顺序 = 服务端给出的打散序） */
+    /**
+     * 批次尽触底：换 seed 追加一轮（无限流；追加前去重，渲染顺序 = 服务端给出的打散序）。
+     *
+     * fresh==0 续轮（问题A 死锁断路点①修复，2026-09-28）：此前一轮 200 条对已拉取清单全部
+     * 去重后（fresh 为空）不更新任何状态——pulled/revealed 不变 → 网格 totalCount 不变 →
+     * QimengMediaGrid 触底哨兵 LaunchedEffect(shouldLoadMore, totalCount) 两个 key 均无变化
+     * 永不重触发，钉底用户永久死锁（2026-09-15 的修复只治了 revealed 不推进，没治 fresh==0）。
+     * 现改为：本轮全空则**不落地、自动换下一个 seed 续拉**，连续空轮达 [MAX_EMPTY_SEED_ROUNDS]
+     * 上限仍空则置 exhausted 到底（有限库深翻页掏干即停，防无限续拉；无限库正常轮次必出
+     * 新条目不会触顶）。成功落地与穷尽停手两条终路都结束加载，成功路径 bump reloadTick
+     * 让哨兵立即复评——条数不变的终态（穷尽）由 onNearBottom 的 exhausted 拦截兜住不发新请求。
+     */
     private fun appendNextSeedRound() {
         val current = _uiState.value
-        val nextSeed = current.recommend.seed + 1
+        if (current.recommend.isLoading || current.recommend.isRefreshing) return // 防重（onNearBottom 已挡，直调双保险）
+        val gen = recommendGeneration // 快照：续轮期间用户下拉刷新即作废本整轮（含已续到的空轮）
+        var seed = current.recommend.seed + 1
         _uiState.value = current.copy(
-            recommend = current.recommend.copy(isLoading = true, seed = nextSeed),
+            recommend = current.recommend.copy(isLoading = true, seed = seed),
         )
         viewModelScope.launch {
-            runCatching {
-                mediaRepository.recommendations(nextSeed, RecommendPaging.PULL_LIMIT, null)
-            }.onSuccess { items ->
+            var emptyRounds = 0
+            while (true) {
+                val items = runCatching {
+                    mediaRepository.recommendations(seed, RecommendPaging.PULL_LIMIT, null)
+                }.getOrElse {
+                    if (gen != recommendGeneration) return@launch // 旧轮失败（刷新已接管状态），静默弃局
+                    // 追加失败维持既有口径：亮横幅停手，不自动重试（自动重试范围=cursor 翻页路径，
+                    // 见 APPEND_RETRY_DELAYS_MS KDoc）；钉底用户经「上滚 6 项再回滚」哨兵重触发
+                    // 即可手动重试。不 bump reloadTick：失败若 bump，哨兵立即重触发本轮=持续故障
+                    // 下无限锤击（问题A 修复刻意避开的坑）
+                    _uiState.value = _uiState.value.copy(
+                        errorMessage = LIST_LOAD_FAILED_MESSAGE,
+                        recommend = _uiState.value.recommend.copy(isLoading = false),
+                    )
+                    return@launch
+                }
+                if (gen != recommendGeneration) return@launch // 旧轮迟到响应（含成功），丢弃
                 val seen = _uiState.value.recommend.pulled.map { it.id }.toHashSet()
                 val fresh = items.filterNot { seen.contains(it.id) }
-                // 2026-09-15 用户反馈「下滑到底无法加载新的」修复：追加后必须同步推进
-                // 一批揭示——revealed 不动时网格 take(revealed) 的 totalCount 不变，
-                // QimengMediaGrid 触底哨兵 LaunchedEffect(shouldLoadMore, totalCount)
-                // 两个 key 均无变化不再触发，用户钉在底部即永久死锁（新条目永远不显示）。
-                // 推进 +BATCH_SIZE 让 totalCount 变化、哨兵恢复工作，且用户视口底部
-                // 立即出现新条目（视觉可感知「加载到了」）。
-                val oldRevealed = _uiState.value.recommend.revealed
-                val newPulled = _uiState.value.recommend.pulled + fresh
-                _uiState.value = _uiState.value.copy(
-                    recommend = _uiState.value.recommend.copy(
-                        pulled = newPulled,
-                        revealed = minOf(newPulled.size, oldRevealed + RecommendPaging.BATCH_SIZE),
-                        isLoading = false,
-                    ),
-                )
-            }.onFailure {
-                _uiState.value = _uiState.value.copy(
-                    errorMessage = LIST_LOAD_FAILED_MESSAGE,
-                    recommend = _uiState.value.recommend.copy(isLoading = false),
-                )
+                if (fresh.isNotEmpty()) {
+                    // 2026-09-15 用户反馈「下滑到底无法加载新的」修复：追加后必须同步推进
+                    // 一批揭示——revealed 不动时网格 take(revealed) 的 totalCount 不变，
+                    // 哨兵 key 无变化不再触发，用户钉在底部即永久死锁（新条目永远不显示）。
+                    // 推进 +BATCH_SIZE 让 totalCount 变化、哨兵恢复工作，且用户视口底部
+                    // 立即出现新条目（视觉可感知「加载到了」）。
+                    val oldRevealed = _uiState.value.recommend.revealed
+                    val newPulled = _uiState.value.recommend.pulled + fresh
+                    _uiState.value = _uiState.value.copy(
+                        recommend = _uiState.value.recommend.copy(
+                            pulled = newPulled,
+                            revealed = minOf(newPulled.size, oldRevealed + RecommendPaging.BATCH_SIZE),
+                            isLoading = false,
+                            // 问题A：成功结束 bump 哨兵重评估信号（KDoc 见 RecommendState.reloadTick）
+                            reloadTick = _uiState.value.recommend.reloadTick + 1,
+                        ),
+                    )
+                    return@launch
+                }
+                // 本轮全空：连续空轮计数达上限即穷尽停手（库已掏干），否则换下一 seed 续拉
+                emptyRounds++
+                if (emptyRounds >= MAX_EMPTY_SEED_ROUNDS) {
+                    _uiState.value = _uiState.value.copy(
+                        recommend = _uiState.value.recommend.copy(
+                            isLoading = false,
+                            exhausted = true,
+                        ),
+                    )
+                    return@launch
+                }
+                seed++
             }
         }
     }
 
     private fun loadCosPage(isInitial: Boolean, isRefresh: Boolean = false) {
         val current = _uiState.value
-        // 防重语义（与代际防乱序正交，AlbumViewModel.loadItems 同范式）：分页/下拉刷新在途时
-        // 照旧丢弃重复触发；筛选重载与 tab 首次揭示（isInitial 且非刷新）不受 isLoading 拦截
-        // ——在途的是旧代请求，其响应会被代际校验丢弃；同代重复触发会多发一次请求但整页
-        // 等价替换，无数据损害（Y7 审查 P2-1 记档）
-        if ((isRefresh || !isInitial) && current.cos.isLoading) return
-        val gen = cosGeneration
+        // 防重语义（问题B 2026-09-28 收窄）：只拦**翻页**（!isInitial && !isRefresh）在途时的
+        // 重复触发；下拉刷新改为立即受理（受理即递增代际作废在途旧响应，不再吞刷新手势）；
+        // 筛选重载与 tab 首次揭示照旧不受 isLoading 拦截——在途的是旧代请求，其响应会被
+        // 代际校验丢弃；同代重复触发会多发一次请求但整页等价替换，无数据损害（Y7 审查 P2-1 记档）
+        if (!isInitial && !isRefresh && current.cos.isLoading) return
+        val gen = if (isRefresh) ++cosGeneration else cosGeneration
+        val isPagination = !isInitial && !isRefresh // 翻页形态：失败启用自动重试（范围见 APPEND_RETRY_DELAYS_MS KDoc）
         _uiState.value = current.copy(cos = current.cos.copy(isLoading = true, isRefreshing = isRefresh))
         viewModelScope.launch {
-            runCatching {
-                mediaRepository.assets(
-                    // 任务Y Y4b：排序/顺位/观看/点击/大小/时间/标签由已应用面板草稿经
-                    // AssetQuery.withPanelDraft 展开（core/model 单源；默认草稿=协议缺省不传，
-                    // Y4b 前行为不变）。cursor/limit/cosOnly 为本调用方持有字段，覆写不触碰。
-                    AssetQuery(
-                        cursor = if (isRefresh || isInitial) null else _uiState.value.cos.nextCursor,
-                        limit = COS_PAGE_SIZE,
-                        cosOnly = true,
-                    ).withPanelDraft(_uiState.value.cosFilter),
-                )
-            }.onSuccess { page ->
-                if (gen != cosGeneration) return@onSuccess // 旧代迟到响应，丢弃
+            var retryAttempt = 0
+            while (true) {
+                val page = runCatching {
+                    mediaRepository.assets(
+                        // 任务Y Y4b：排序/顺位/观看/点击/大小/时间/标签由已应用面板草稿经
+                        // AssetQuery.withPanelDraft 展开（core/model 单源；默认草稿=协议缺省不传，
+                        // Y4b 前行为不变）。cursor/limit/cosOnly 为本调用方持有字段，覆写不触碰。
+                        AssetQuery(
+                            cursor = if (isRefresh || isInitial) null else _uiState.value.cos.nextCursor,
+                            limit = COS_PAGE_SIZE,
+                            cosOnly = true,
+                        ).withPanelDraft(_uiState.value.cosFilter),
+                    )
+                }.getOrElse {
+                    if (gen != cosGeneration) return@launch // 旧代失败不污染新筛选态
+                    // 翻页失败自动重试（问题A「翻页失败即卡死」，2026-09-28）：钉底用户等在底部，
+                    // 不重试就必须上滚 6 项再回滚才能再触发。重试期间 isLoading 保持 true——
+                    // 不阻塞其它操作（刷新/筛选/首载路径均已绕过 isLoading 拦截），翻页防重
+                    // 顺延到重试结束。首载/刷新失败不重试（各有静默重试/立即反馈语义）
+                    if (isPagination && retryAttempt < APPEND_RETRY_DELAYS_MS.size) {
+                        delay(APPEND_RETRY_DELAYS_MS[retryAttempt])
+                        retryAttempt++
+                        if (gen != cosGeneration) return@launch // 退避期间刷新/筛选已接管，弃残局
+                        continue
+                    }
+                    val retryScheduled = isInitial && !isRefresh &&
+                        !_uiState.value.cos.loaded &&
+                        scheduleInitialRetry(HomeTab.COS)
+                    _uiState.value = _uiState.value.copy(
+                        // 静默重试在途不亮牌 / 预算耗尽或用户主动路径失败立即亮（口径同 loadRecommend）
+                        errorMessage = if (retryScheduled) null else LIST_LOAD_FAILED_MESSAGE,
+                        cos = _uiState.value.cos.copy(isLoading = false, isRefreshing = false),
+                    )
+                    return@launch
+                }
+                if (gen != cosGeneration) return@launch // 旧代迟到响应，丢弃
                 // 自愈即清账：横幅清空 + 重试预算归零（同 loadRecommend onSuccess 注释）
                 initialRetryAttempts.remove(HomeTab.COS)
                 _uiState.value = _uiState.value.copy(
@@ -594,28 +703,21 @@ class HomeViewModel @Inject constructor(
                         isLoading = false,
                         isRefreshing = false,
                         loaded = true,
+                        // 问题A：成功结束 bump 哨兵重评估信号（KDoc 见 CosState.reloadTick）
+                        reloadTick = _uiState.value.cos.reloadTick + 1,
                     ),
                 )
-            }.onFailure {
-                if (gen != cosGeneration) return@onFailure // 旧代失败不污染新筛选态
-                val retryScheduled = isInitial && !isRefresh &&
-                    !_uiState.value.cos.loaded &&
-                    scheduleInitialRetry(HomeTab.COS)
-                _uiState.value = _uiState.value.copy(
-                    // 静默重试在途不亮牌 / 预算耗尽或用户主动路径失败立即亮（口径同 loadRecommend）
-                    errorMessage = if (retryScheduled) null else LIST_LOAD_FAILED_MESSAGE,
-                    cos = _uiState.value.cos.copy(isLoading = false, isRefreshing = false),
-                )
+                return@launch
             }
         }
     }
 
     private fun loadRank(isInitial: Boolean, isRefresh: Boolean = false) {
         val current = _uiState.value
-        // 防重语义（与代际防乱序正交）：下拉刷新在途时照旧丢弃重复触发；
-        // 切周期重载不受 isLoading 拦截——在途的是旧代请求，其响应会被代际校验丢弃
-        if (isRefresh && current.rank.isLoading) return
-        val gen = rankGeneration
+        // 问题B（2026-09-28）：下拉刷新立即受理——受理即递增代际作废在途旧周期响应，原「刷新
+        // 在途被 isLoading 拦截丢弃」退役；首载/切周期路径本就不受 isLoading 拦截（代际防乱序
+        // 兜底，同代重复触发整页等价替换无数据损害），故本函数不再有 isLoading 拦截
+        val gen = if (isRefresh) ++rankGeneration else rankGeneration
         _uiState.value = current.copy(rank = current.rank.copy(isLoading = true, isRefreshing = isRefresh))
         viewModelScope.launch {
             runCatching {
@@ -674,6 +776,15 @@ class HomeViewModel @Inject constructor(
 
         /** COS 流分页大小（协议 /assets 缺省 60；同真 cosOnly 优先） */
         const val COS_PAGE_SIZE = 60
+
+        /**
+         * 推荐流换 seed 追加的连续空轮上限（问题A fresh==0 死锁修复，2026-09-28）：
+         * 追加轮 200 条对已拉取清单全去重（fresh==0）时自动换下一 seed 续拉，连续
+         * [MAX_EMPTY_SEED_ROUNDS] 轮全空即置 exhausted 到底。取 3：无限库正常轮次必出
+         * 新条目不触顶；有限库深翻页掏干后 3 轮空转（≈3 个请求）即可判定穷尽，多试只会
+         * 白打请求。上限防「无限续拉」：不加此限，钉底哨兵与续轮循环会无限互相喂招。
+         */
+        const val MAX_EMPTY_SEED_ROUNDS = 3
 
         /** 排行榜单次拉取量（协议 /rankings limit 缺省 50，榜单展示规模足够） */
         const val RANK_PULL_LIMIT = 50

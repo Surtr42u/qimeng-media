@@ -223,6 +223,9 @@ fun AllScreen(
                     // 已无遮挡末行之忧，保留作列表底部呼吸区（行为不变项零改动，任务G G5）
                     bottomContentPadding = QimengDimens.ListBottomContentPadding,
                     onNearBottom = viewModel::onNearBottom,
+                    // 问题A（2026-09-28）：加载结束重评估信号——翻页成功但新页为空时 totalCount
+                    // 不变，哨兵需靠 tick 重触发（KDoc 见 QimengMediaGrid.reloadTick）
+                    reloadTick = state.reloadTick,
                     // 修复D-3：滚动暂停缩略图加载（对齐收藏/历史页任务I I5 口径——拖拽/fling
                     // 期间暂缓新缩略图请求，停滚自动恢复），滚动时帧预算让位交互响应
                     pauseThumbnailsWhileScrolling = true,

@@ -154,6 +154,8 @@ fun HistoryScreen(
                     // 已无遮挡末行之忧，保留作列表底部呼吸区（与相册页 G5 后口径一致）
                     bottomContentPadding = QimengDimens.ListBottomContentPadding,
                     onNearBottom = viewModel::onNearBottom,
+                    // 问题A（2026-09-28）：加载结束重评估信号（KDoc 见 QimengMediaGrid.reloadTick）
+                    reloadTick = state.reloadTick,
                     // 滚动暂停缩略图加载（任务I I5，GUIDE_UI §浏览历史 L394）：拖拽/fling 期间
                     // 暂缓新缩略图请求、停滚恢复（门控在 QimengThumbnail；QimengMediaGrid 开关）
                     pauseThumbnailsWhileScrolling = true,

@@ -63,6 +63,22 @@ interface ThumbnailPrefetchMonitor {
 }
 
 /**
+ * 预取避让端口（问题B 下拉刷新响应慢修复，2026-09-28）：列表页下拉刷新开始时调用
+ * [pauseForForegroundRefresh]，预取循环在避让窗口内暂停下载、把带宽让给刷新请求
+ * （登录后全库预取 4 并发与用户正在等的刷新首屏抢同一 NAS 带宽，是刷新慢的叠加因素）。
+ *
+ * 为什么是「截止时间」语义而非 pause/resume 配对：刷新可能在代际乱序中被丢弃、VM 也可能在
+ * 在途时被销毁，「开始置 true / 结束置 false」的配对在这些路径上无法可靠闭环——一旦漏掉
+ * 一次置 false，预取就永久饿死。改为每次调用续一个有界窗口（见实现 KDoc），窗口自愈过期，
+ * 无泄漏风险；刷新仍未完成时预取恢复抢带宽也只是回到修复前的行为，可接受。
+ */
+interface ThumbnailPrefetchThrottle {
+
+    /** 前台刷新开始时调用：预取在窗口内让路（幂等，可重复调用续期） */
+    fun pauseForForegroundRefresh()
+}
+
+/**
  * 全库缩略图预取器（2026-09-18 用户需求）：登录服务端后自动把全部 md 缩略图
  * 预取进本机 Coil 磁盘缓存，此后浏览网格直接读盘不再反复下载。
  * 2026-09-19 批S4 拍板：预取是默认自动行为，手动「开始预取/停止」按钮与 startManual/
@@ -99,12 +115,23 @@ class ThumbnailPrefetcher @Inject constructor(
     private val authRepository: AuthRepository,
     private val readinessProbe: ServerReadinessProbe,
     @ApplicationScope private val appScope: CoroutineScope,
-) : ThumbnailPrefetchMonitor {
+) : ThumbnailPrefetchMonitor, ThumbnailPrefetchThrottle {
 
     private val _state = MutableStateFlow<PrefetchUiState>(PrefetchUiState.Idle)
 
     /** 预取轮状态流（缩略图缓存页收集渲染；[ThumbnailPrefetchMonitor] 只读面实现） */
     override val state: StateFlow<PrefetchUiState> = _state.asStateFlow()
+
+    /**
+     * 预取避让窗口截止时间（EpochMs；0=无避让）。[ThumbnailPrefetchThrottle] 实现，
+     * 语义见该接口 KDoc。多线程读写（调用方=Main、读方=预取 worker 协程），用原子字段。
+     */
+    private val refreshPausedUntilMs = java.util.concurrent.atomic.AtomicLong(0L)
+
+    /** 前台刷新避让（问题B，2026-09-28）：续一个有界避让窗口，预取循环到期自愈恢复 */
+    override fun pauseForForegroundRefresh() {
+        refreshPausedUntilMs.set(System.currentTimeMillis() + PREFETCH_REFRESH_YIELD_WINDOW_MS)
+    }
 
     /** 启停转换互斥（防「登出取消」与「手动开始」竞态开出两轮） */
     private val transitionMutex = Mutex()
@@ -166,6 +193,12 @@ class ThumbnailPrefetcher @Inject constructor(
                     launch {
                         var i = worker
                         while (i < total) {
+                            // 前台刷新避让（问题B，2026-09-28）：窗口内逐周期跳过下载让带宽——
+                            // 登录后全库预取 4 并发会与用户正下拉等待的刷新首屏抢 NAS 带宽；
+                            // delay 一个周期而非挂起整轮，窗口到期即恢复原节奏（自愈语义见接口 KDoc）
+                            while (System.currentTimeMillis() < refreshPausedUntilMs.get()) {
+                                delay(PREFETCH_REFRESH_YIELD_POLL_MS)
+                            }
                             val url = urls[i]
                             prefetchOne(url)
                             _state.value = PrefetchUiState.Running(
@@ -266,5 +299,15 @@ class ThumbnailPrefetcher @Inject constructor(
 
         /** ConnectivityManager 不可得时的兜底轮询周期（毫秒）：低频复查防忙转，真机不会走到。 */
         const val NETWORK_POLL_FALLBACK_MS = 30_000L
+
+        /**
+         * 前台刷新避让窗口时长（毫秒，问题B 2026-09-28）：刷新触发一次续一窗，窗口内预取
+         * 暂停下载。取 15s：覆盖列表首屏+facets 在弱网下的完成时长；超窗自愈恢复预取——
+         * 即使刷新异常拖长，也只是回到修复前「共享带宽」状态，不永久饿死预取。
+         */
+        const val PREFETCH_REFRESH_YIELD_WINDOW_MS = 15_000L
+
+        /** 避让窗口内的预取复查周期（毫秒）：秒级粒度足够（避让不追求毫秒精准），不做忙等 */
+        const val PREFETCH_REFRESH_YIELD_POLL_MS = 1_000L
     }
 }

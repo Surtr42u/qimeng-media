@@ -11,6 +11,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+import media.qimeng.app.core.data.prefetch.ThumbnailPrefetchThrottle
 import media.qimeng.app.core.data.repository.DataStoreGridPrefsRepository
 import media.qimeng.app.core.data.repository.GridPrefsRepository
 import media.qimeng.app.core.data.repository.MediaBatchIndex
@@ -112,6 +113,11 @@ class AuthorCollectionViewModelTest {
         }
     }
 
+    // 预取避让替身（问题B 2026-09-28 构造签名适配）：单测不触达预取器，空实现即可
+    private object NoopPrefetchThrottle : ThumbnailPrefetchThrottle {
+        override fun pauseForForegroundRefresh() = Unit
+    }
+
     private fun viewModel(
         repo: FakeMediaRepository,
         gridPrefs: FakeGridPrefsRepository = FakeGridPrefsRepository(),
@@ -122,6 +128,7 @@ class AuthorCollectionViewModelTest {
         mediaRepository = repo,
         gridPrefs = gridPrefs,
         batchIndex = batchIndex,
+        prefetchThrottle = NoopPrefetchThrottle,
         origUrlResolver = object : media.qimeng.app.core.data.repository.AssetOrigUrlResolver {
             override suspend fun origUrl(assetId: String): String? = null
         },

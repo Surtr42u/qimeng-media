@@ -27,6 +27,10 @@ class FakeStagingRepository : StagingRepository {
     private val _inboxPath = MutableStateFlow<String?>(null)
     override val inboxPath: Flow<String?> = _inboxPath.asStateFlow()
 
+    /** 上传归档文件夹路径（持久层真源；2026-09-28 上传归档文件夹功能） */
+    private val _archivePath = MutableStateFlow<String?>(null)
+    override val archivePath: Flow<String?> = _archivePath.asStateFlow()
+
     // ---- 写调用记录（断言 VM -> 仓的写路径）----
 
     val addCalls = mutableListOf<List<StagedUpload>>()
@@ -39,6 +43,9 @@ class FakeStagingRepository : StagingRepository {
     /** 批次配置写调用记录（setBatchConfig 与 editBatchConfig 同录，形态同为写后的完整配置） */
     val batchConfigCalls = mutableListOf<StagingBatchConfig>()
     val inboxPathCalls = mutableListOf<String?>()
+
+    /** 归档文件夹写调用记录（选定/清除断言用） */
+    val archivePathCalls = mutableListOf<String?>()
 
     // ---- File 侧行为（可编程）----
 
@@ -80,6 +87,11 @@ class FakeStagingRepository : StagingRepository {
         _inboxPath.value = path
     }
 
+    /** 测试播种：直改归档文件夹内存层（绕过写记录，模拟既有持久化状态） */
+    fun seedArchivePath(path: String?) {
+        _archivePath.value = path
+    }
+
     override suspend fun addItems(items: List<StagedUpload>) {
         addCalls.add(items)
         val known = _items.value.mapTo(mutableSetOf()) { it.source }
@@ -117,6 +129,11 @@ class FakeStagingRepository : StagingRepository {
     override suspend fun setInboxPath(path: String?) {
         inboxPathCalls.add(path)
         _inboxPath.value = path?.takeIf { it.isNotBlank() }
+    }
+
+    override suspend fun setArchivePath(path: String?) {
+        archivePathCalls.add(path)
+        _archivePath.value = path?.takeIf { it.isNotBlank() }
     }
 
     override suspend fun hasAllFilesAccess(): Boolean = allFilesAccess

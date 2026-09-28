@@ -38,13 +38,13 @@ import media.qimeng.app.core.ui.theme.QimengDimens
  *  收藏同款外部入口行（用户问题8），点击经壳层 onOpenAuthors 进全部作者页；
  *  U10-4：原「服务器地址」卡与「本机模式」行合并为「服务器」单入口行，子页承载；
  *  U10-6：原「上传文件」行升级为「数据管理」合并入口行（上传/注册媒体目录/库管理
- *  三件事进 feature:manage 的 hub 二级页），常量与副文案本文件单源） */
+ *  三件事进 feature:manage 的 hub 二级页），常量与副文案本文件单源；
+ *  2026-09-28 上传归档文件夹功能：原「下载收件箱」入口行迁入数据管理 hub
+ *  （用户拍板「下载箱移到数据管理中，不需要在外面单独一个显示」），常量随之退役 */
 private const val ROW_AUTHORS = "作者总览"
 private const val ROW_FAVORITE = "收藏"
 private const val ROW_HISTORY = "浏览历史"
 private const val ROW_DATA_MANAGE = "数据管理"
-// 2026-09-25 暂存区重做：下载收件箱入口行（收件箱路径选择子页，上传页导入管道的前置）
-private const val ROW_INBOX = "下载收件箱"
 private const val ROW_THEME = "主题色彩"
 
 /** 推荐偏好行文案：入口行与 PrefsBottomSheet 标题同串单源（Sheet 在 SettingsCards.kt，
@@ -70,7 +70,6 @@ private const val SUBTITLE_PREFS = "调整首页推荐算法的权重偏好"
 // 由子页承载）
 private const val SUBTITLE_SERVER = "服务器地址、本机模式与换址说明"
 private const val SUBTITLE_DATA_MANAGE = "上传文件、注册媒体目录、库管理"
-private const val SUBTITLE_INBOX = "选择上传来源的下载文件夹"
 
 private const val VERSION_UNKNOWN = "未知"
 
@@ -109,8 +108,8 @@ fun SettingsScreen(
     onOpenAuthors: () -> Unit = {},
     // U10-6：原 onOpenUpload（上传文件行）退役——上传入口并入「数据管理」hub 二级页
     onOpenDataManage: () -> Unit = {},
-    // 2026-09-25 暂存区重做：「下载收件箱」入口行 → 收件箱路径选择子页
-    onOpenInbox: () -> Unit = {},
+    // 2026-09-28 归档文件夹批：onOpenInbox（下载收件箱行）退役——入口迁数据管理 hub，
+    // 路由 Routes.INBOX 不变，接线改在 QimengNavHost 的 DataManageScreen 组合处
     // U10-4：服务器子页入口（地址修改/本机模式/换址说明合并单入口）
     onOpenServerDetail: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
@@ -131,7 +130,6 @@ fun SettingsScreen(
             onOpenFavorite = onOpenFavorite,
             onOpenHistory = onOpenHistory,
             onOpenDataManage = onOpenDataManage,
-            onOpenInbox = onOpenInbox,
             onOpenPrefs = viewModel::openPrefsSheet,
         )
         settingsFooterItems(state = state, viewModel = viewModel)
@@ -208,7 +206,6 @@ private fun LazyListScope.settingsEntryRowItems(
     onOpenFavorite: () -> Unit,
     onOpenHistory: () -> Unit,
     onOpenDataManage: () -> Unit,
-    onOpenInbox: () -> Unit,
     onOpenPrefs: () -> Unit,
 ) {
     // 服务器入口行（U10-4：原「服务器地址」只展示卡与「本机模式」快捷行合并为单入口，
@@ -252,24 +249,14 @@ private fun LazyListScope.settingsEntryRowItems(
     }
 
     // 数据管理入口（U10-6：原「上传文件」行原位升级为合并入口——上传/注册媒体目录/
-    // 库管理进 feature:manage hub 二级页；副文案概括 hub 三件事，保持其他入口行两行节奏）
+    // 库管理进 feature:manage hub 二级页；副文案概括 hub 三件事，保持其他入口行两行节奏。
+    // 2026-09-28 归档文件夹批：「上传收件箱与归档」入口行随用户拍板迁入本 hub
+    // （「下载箱移到数据管理中，不需要在外面单独一个显示」），本页不再单列收件箱行）
     item {
         EntryRow(
             label = ROW_DATA_MANAGE,
             subtitle = SUBTITLE_DATA_MANAGE,
             onClick = onOpenDataManage,
-            modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
-        )
-    }
-
-    // 下载收件箱入口（2026-09-25 暂存区重做：收件箱=用户指定的真实文件夹，论坛下载
-    // 常落点前缀隐藏目录、系统相册扫不到；点击进路径选择子页，路径持久化后上传页
-    // 「从收件箱导入」以该文件夹为扫描源）
-    item {
-        EntryRow(
-            label = ROW_INBOX,
-            subtitle = SUBTITLE_INBOX,
-            onClick = onOpenInbox,
             modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
         )
     }

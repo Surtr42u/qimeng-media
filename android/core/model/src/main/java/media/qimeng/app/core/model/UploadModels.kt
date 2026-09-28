@@ -31,6 +31,12 @@ data class UploadItem(
     val attachAuthorName: String? = null,
     /** 上传成功后并入作者来源区的来源词（append 语义永不覆盖；null/空 = 不挂来源） */
     val attachSources: List<String>? = null,
+    /**
+     * 目标库展示名（2026-09-28 上传归档文件夹功能：worker 上传成功后把路径类源文件归档到
+     * <归档文件夹>/<库名>/，库名经此随载荷入队）。空串 = 入队时未解析到库名（旧调用/
+     * 解析失败），worker 侧回退既有 uploaded/ 归档。
+     */
+    val libraryName: String = "",
 ) {
     /** 上传 filename 参数实际取值（编辑优先、trim 后非空才生效，否则回退展示名） */
     val effectiveUploadName: String

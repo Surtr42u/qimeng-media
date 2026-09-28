@@ -2,9 +2,12 @@ package media.qimeng.app.feature.upload
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
@@ -40,6 +43,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -48,6 +52,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.launch
 import media.qimeng.app.core.model.DirNode
 import media.qimeng.app.core.model.UploadRules
 import media.qimeng.app.core.ui.component.QimengCapsuleTextField
@@ -60,11 +65,12 @@ import media.qimeng.app.core.ui.theme.qimengFilledButtonColors
  * 上传主通道页（M4-5；2026-09-25 流程重排 + 暂存区重做）：先选文件进持久暂存区 →
  * 在暂存区配置（目标库必选 → 目标目录 → 批次默认 → 逐项编辑）→ 串行队列进度。
  * 暂存条目/批次默认/收件箱路径全部持久化（杀进程重启不丢），页面只 collect 持久流渲染。
- * 空态（无暂存项）只有两个选文件入口（相册式选择器 / 下载收件箱导入）+ 引导文案；
+ * 空态（无暂存项）只有选文件入口（相册式选择器 / 浏览文件 / 下载收件箱导入）+ 引导文案；
  * 未选库时开始上传禁用并提示（enqueue 侧保留必填兜底，见 [UploadViewModel.enqueue]）。
  * 入口：①系统分享接收（壳层带分享 URI 导航至此）②App 内数据管理页入口。
- * 选文件：内置相册式选择器（MediaStore 网格多选，媒体读权限运行时申请）+ 下载收件箱
- * （设置页选定的文件夹，含点前缀隐藏目录，白名单过滤后一键进暂存区）。
+ * 选文件：内置相册式选择器（MediaStore 网格多选，媒体读权限运行时申请）+ 浏览文件
+ * （2026-09-28：纯 File API 全盘浏览多选，「所有文件访问」闸门在入口——补齐相册扫不到
+ * 的点前缀隐藏目录场景）+ 下载收件箱（设置页选定的文件夹，白名单过滤后一键进暂存区）。
  * 挂靠批：暂存区批次默认（作者联想 + 来源多选 + 应用到全部）+ 逐项展开编辑
  * （作品名联想/作者/来源/库覆盖，复用 core:ui 无状态段组件）；挂靠执行在 worker 的
  * 201 之后（mode=append，失败不重试，队列行落「已入库但挂靠失败」专项态）。
@@ -81,6 +87,8 @@ fun UploadScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    // 「浏览文件」闸门判定是 suspend（走 VM → StagingRepository 单源），click 内起协程承载
+    val scope = rememberCoroutineScope()
 
     // 系统分享接收：进入本页即接手分享内容并通知壳层消费（避免重复触发）
     LaunchedEffect(sharedUris) {
@@ -90,9 +98,11 @@ fun UploadScreen(
         }
     }
 
-    // 选择器/新建目录弹层（saveable：进程重建后关闭态恢复，与页面弹窗同语义）
+    // 选择器/新建目录/浏览文件弹层（saveable：进程重建后关闭态恢复，与页面弹窗同语义）
     var showPicker by rememberSaveable { mutableStateOf(false) }
     var showCreateDirDialog by rememberSaveable { mutableStateOf(false) }
+    var showBrowser by rememberSaveable { mutableStateOf(false) }
+    var showBrowserPermHint by rememberSaveable { mutableStateOf(false) }
 
     // 通知权限（API 33+ 运行时申请；拒绝只影响可见性、不阻断上传）
     val notificationPermission = rememberLauncherForActivityResult(
@@ -126,6 +136,13 @@ fun UploadScreen(
                 openPickerOrRequestPermission(context, mediaPermission) { showPicker = true }
             },
             onImportInbox = viewModel::importFromInbox,
+            onBrowseFiles = {
+                // 「浏览文件」闸门：已持「所有文件访问」直接开弹层，未持先弹说明（跳授权在对话框内）；
+                // 判定单源在 StagingRepository（经 VM 转发），本页不再留私有同款实现
+                scope.launch {
+                    if (viewModel.hasAllFilesAccess()) showBrowser = true else showBrowserPermHint = true
+                }
+            },
             onCreateDir = { showCreateDirDialog = true },
             onEnqueue = {
                 requestNotificationPermissionIfNeeded(context, notificationPermission)
@@ -154,6 +171,27 @@ fun UploadScreen(
             onDismiss = { showPicker = false },
         )
     }
+
+    // 「浏览文件」未授权说明：授权后返回本页再点入口重新过闸门（无 ON_RESUME 自动重开）
+    if (showBrowserPermHint) {
+        BrowsePermissionDialog(
+            onGrant = {
+                showBrowserPermHint = false
+                openAllFilesAccessSettings(context)
+            },
+            onDismiss = { showBrowserPermHint = false },
+        )
+    }
+
+    if (showBrowser) {
+        FileBrowserDialog(
+            onConfirm = { files ->
+                showBrowser = false
+                viewModel.acceptPickedFiles(files)
+            },
+            onDismiss = { showBrowser = false },
+        )
+    }
 }
 
 /**
@@ -169,6 +207,7 @@ private fun UploadForm(
     viewModel: UploadViewModel,
     onPickMedia: () -> Unit,
     onImportInbox: () -> Unit,
+    onBrowseFiles: () -> Unit,
     onCreateDir: () -> Unit,
     onEnqueue: () -> Unit,
 ) {
@@ -198,11 +237,23 @@ private fun UploadForm(
 
         if (state.pendingItems.isEmpty()) {
             // —— 空态：只有选文件入口 + 引导文案，不展示任何配置项 ——
-            AddSourcesRow(state = state, onPickMedia = onPickMedia, onImportInbox = onImportInbox, emptyState = true)
+            AddSourcesRow(
+                state = state,
+                onPickMedia = onPickMedia,
+                onImportInbox = onImportInbox,
+                onBrowseFiles = onBrowseFiles,
+                emptyState = true,
+            )
         } else {
             // —— 暂存区（暂存态）——
             SectionTitle("暂存文件（${state.pendingItems.size}）")
-            AddSourcesRow(state = state, onPickMedia = onPickMedia, onImportInbox = onImportInbox, emptyState = false)
+            AddSourcesRow(
+                state = state,
+                onPickMedia = onPickMedia,
+                onImportInbox = onImportInbox,
+                onBrowseFiles = onBrowseFiles,
+                emptyState = false,
+            )
             // 配置块：目标库（必选）→ 目标目录 → 批次作者 → 批次来源 → 应用到全部
             LibrarySection(state = state, viewModel = viewModel)
             state.dirTree?.let { tree ->
@@ -223,6 +274,7 @@ private fun UploadForm(
                     missing = item.source in state.missingSources,
                     itemAuthorQuery = state.itemAuthorQuery,
                     itemAuthorSuggestions = state.itemAuthorSuggestions,
+                    authorSeeds = state.authorSeeds,
                     itemNameSuggestions = state.itemNameSuggestions,
                     sourceOptions = state.sourceOptions,
                     libraries = state.libraries,
@@ -259,15 +311,18 @@ private fun UploadForm(
 }
 
 /**
- * 选文件入口行（暂存区重做两条管道）：「从相册选择」（内置相册式选择器）+
- * 「从收件箱导入」（设置页选定的下载收件箱一键扫描入暂存区）。未设收件箱时导入按钮
- * 禁用并给引导提示（设置页路径）；收件箱扫描进行中按钮转文案防重。
+ * 选文件入口行（三条管道）：「从相册选择」（内置相册式选择器）+「从收件箱导入」
+ * （设置页选定的下载收件箱一键扫描入暂存区）一行两钮；「浏览文件」（2026-09-28，
+ * 纯 File API 全盘浏览多选，补齐相册看不到的点前缀隐藏目录场景）通栏一行——
+ * 三个按钮同排会在窄屏挤压中文文案。未设收件箱时导入按钮禁用并给引导提示
+ * （设置页路径）；收件箱扫描进行中按钮转文案防重。
  */
 @Composable
 private fun AddSourcesRow(
     state: UploadUiState,
     onPickMedia: () -> Unit,
     onImportInbox: () -> Unit,
+    onBrowseFiles: () -> Unit,
     emptyState: Boolean,
 ) {
     Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -285,6 +340,9 @@ private fun AddSourcesRow(
             ) {
                 Text(if (state.scanningInbox) INBOX_SCANNING_TEXT else INBOX_BUTTON_TEXT)
             }
+        }
+        Button(onClick = onBrowseFiles, modifier = Modifier.fillMaxWidth()) {
+            Text(BROWSE_BUTTON_TEXT)
         }
         if (state.inboxPath == null) {
             Text(
@@ -506,6 +564,43 @@ private fun requestNotificationPermissionIfNeeded(context: Context, launcher: Ac
     }
 }
 
+// ---------- 「浏览文件」入口（2026-09-28）：全盘 File 浏览的「所有文件访问」闸门 ----------
+// 闸门判定（hasAllFilesAccess）走 UploadViewModel → StagingRepository → InboxFileStore
+// 单源，本文件不再留实现。
+
+/**
+ * 跳系统「所有文件访问」授权页（部分 ROM 无 per-app 页时退回全量列表页）。
+ * Intent 装配与 feature:settings 的 openAllFilesAccessSettings 逐行同款——其为 internal
+ * 且 feature 间禁止互相依赖（ADR-0014 单向 core），无法跨模块复用，此处等价重写并注明出处。
+ */
+private fun openAllFilesAccessSettings(context: Context) {
+    val perApp = Intent(
+        Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+        Uri.parse("package:${context.packageName}"),
+    )
+    runCatching { context.startActivity(perApp) }
+        .recoverCatching { context.startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)) }
+}
+
+/**
+ * 「浏览文件」未授权说明对话框：为何需要（隐藏目录系统相册扫不到）+ 跳系统授权页。
+ * 授权返回后不自动开弹层——用户再点一次入口重新过闸门（避免授权页往返时序竞态）。
+ */
+@Composable
+private fun BrowsePermissionDialog(onGrant: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(BROWSE_PERM_TITLE) },
+        text = { Text(BROWSE_PERM_EXPLAIN) },
+        confirmButton = {
+            TextButton(onClick = onGrant) { Text(BROWSE_PERM_GRANT) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(BROWSE_PERM_CANCEL) }
+        },
+    )
+}
+
 // ---------- 媒体读权限与内置相册选择器入口（2026-09-25 拍板，替代 SAF 选择器） ----------
 // 官方查证（铁律 8）：MediaStore 图片/视频读取 API 33+ 走 READ_MEDIA_IMAGES/READ_MEDIA_VIDEO
 // 细分权限（READ_EXTERNAL_STORAGE 在 33+ 失效），26~32 走 READ_EXTERNAL_STORAGE。
@@ -554,12 +649,23 @@ private const val PICKER_BUTTON_TEXT = "从相册选择"
 private const val INBOX_BUTTON_TEXT = "从收件箱导入"
 private const val INBOX_SCANNING_TEXT = "导入中…"
 
-/** 收件箱未设置时的入口提示（指向设置页收件箱卡） */
-private const val INBOX_NOT_SET_HINT = "未设置下载收件箱：请到 设置 → 下载收件箱 选择文件夹"
+/** 「浏览文件」入口按钮文案（2026-09-28：File API 全盘浏览多选，补齐隐藏目录场景） */
+private const val BROWSE_BUTTON_TEXT = "浏览文件"
 
-/** 空态引导文案（暂存区重做：两条管道 + 暂存区持久化口径） */
+/** 「浏览文件」未授权说明对话框文案（解释口径对齐收件箱设置页 PERM_MISSING_TEXT 的隐藏目录语义） */
+private const val BROWSE_PERM_TITLE = "需要「所有文件访问」"
+private const val BROWSE_PERM_EXPLAIN =
+    "浏览文件需要直接读取主存储：目标文件夹常是点前缀隐藏目录（论坛/下载器缓存多在此类目录），" +
+        "系统相册选择器看不到它们。请在系统设置里打开「所有文件访问」，返回后再点一次「浏览文件」。"
+private const val BROWSE_PERM_GRANT = "去系统设置授权"
+private const val BROWSE_PERM_CANCEL = "取消"
+
+/** 收件箱未设置时的入口提示（指向收件箱设置页；2026-09-28 入口迁至数据管理 hub） */
+private const val INBOX_NOT_SET_HINT = "未设置下载收件箱：请到 数据管理 → 上传收件箱与归档 选择文件夹"
+
+/** 空态引导文案（三条管道 + 暂存区持久化口径；收件箱入口同上迁至数据管理 hub） */
 private const val EMPTY_STATE_HINT =
-    "从相册选择，或把论坛下载的文件放进手机文件夹后在 设置 → 下载收件箱 里指定，即可长期暂存"
+    "从相册选择、「浏览文件」直选手机文件夹（含点前缀隐藏目录），或在 数据管理 → 上传收件箱与归档 指定文件夹一键导入"
 
 /** 暂存态选文件入口的格式说明（超限拦截口径在 VM/服务端） */
 private const val STAGED_STATE_HINT = "支持图片/视频常见格式；类型与大小校验在服务端，超限项本地拦截"
