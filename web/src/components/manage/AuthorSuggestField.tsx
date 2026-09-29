@@ -28,9 +28,15 @@ export interface AuthorAttachValue {
 export function AuthorSuggestField({
   value,
   onChange,
+  label = '添加作者（联想选择）',
+  attachedHint = '已选作者——保存后关联到本作品',
 }: {
   value: AuthorAttachValue | null
   onChange: (next: AuthorAttachValue | null) => void
+  /** 字段标题（编辑页/上传工作台语境不同；缺省 = 编辑页原文案） */
+  label?: string
+  /** 已选定作者时的提示行（缺省 = 编辑页语义） */
+  attachedHint?: string
 }) {
   const [text, setText] = useState('')
   const [popOpen, setPopOpen] = useState(false)
@@ -77,7 +83,7 @@ export function AuthorSuggestField({
 
   return (
     <label className="settings-field upload-attach-field">
-      <span>添加作者（联想选择）</span>
+      <span>{label}</span>
       <Popover open={open} onOpenChange={setPopOpen}>
         <div className="attach-input-box" ref={boxRef}>
           <PopoverAnchor asChild>
@@ -142,7 +148,7 @@ export function AuthorSuggestField({
       <small>
         {attached
           ? value?.authorId != null
-            ? '已选作者——保存后关联到本作品'
+            ? attachedHint
             : '新建作者请先经 TXT 导入创建'
           : '输入名字从联想中点选要关联的作者'}
       </small>

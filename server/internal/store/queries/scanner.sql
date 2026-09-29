@@ -35,3 +35,16 @@ UPDATE assets
 SET rel_path = ?, file_name = ?, updated_at = ?
 WHERE asset_id = ?
 RETURNING *;
+
+-- ListLibraryRelinkSamples: fingerprint samples for auto-relink (ADR-0025).
+-- When a library root disappears from disk, the scanner compares a handful
+-- of known assets (relative path + exact byte size) against candidate
+-- directories under the old root's parent. Smallest files first: they are
+-- the cheapest to stat and the most likely to be unique content.
+-- Row cap is the relinkSampleCount constant in server/internal/scanner.
+
+-- name: ListLibraryRelinkSamples :many
+SELECT rel_path, size_bytes FROM assets
+WHERE library_id = ?
+ORDER BY size_bytes ASC
+LIMIT ?;

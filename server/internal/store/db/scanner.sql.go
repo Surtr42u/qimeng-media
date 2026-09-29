@@ -81,6 +81,53 @@ func (q *Queries) ListAssetsByLibrary(ctx context.Context, libraryID string) ([]
 	return items, nil
 }
 
+const listLibraryRelinkSamples = `-- name: ListLibraryRelinkSamples :many
+
+SELECT rel_path, size_bytes FROM assets
+WHERE library_id = ?
+ORDER BY size_bytes ASC
+LIMIT ?
+`
+
+type ListLibraryRelinkSamplesParams struct {
+	LibraryID string
+	Limit     int64
+}
+
+type ListLibraryRelinkSamplesRow struct {
+	RelPath   string
+	SizeBytes int64
+}
+
+// ListLibraryRelinkSamples: fingerprint samples for auto-relink (ADR-0025).
+// When a library root disappears from disk, the scanner compares a handful
+// of known assets (relative path + exact byte size) against candidate
+// directories under the old root's parent. Smallest files first: they are
+// the cheapest to stat and the most likely to be unique content.
+// Row cap is the relinkSampleCount constant in server/internal/scanner.
+func (q *Queries) ListLibraryRelinkSamples(ctx context.Context, arg ListLibraryRelinkSamplesParams) ([]ListLibraryRelinkSamplesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listLibraryRelinkSamples, arg.LibraryID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListLibraryRelinkSamplesRow
+	for rows.Next() {
+		var i ListLibraryRelinkSamplesRow
+		if err := rows.Scan(&i.RelPath, &i.SizeBytes); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const moveAssetPath = `-- name: MoveAssetPath :one
 
 UPDATE assets

@@ -63,6 +63,12 @@ func (s *Scanner) Watch(ctx context.Context, lib db.Library) error {
 	}
 	defer fw.Close() // 幂等；重复 Close 返回 nil 被忽略
 
+	// 库根自动重挂（ADR-0025，relink.go）：与 Scan 同一保障——监听注册前
+	// 根不在则先按资产样本找回；失败走下方 addTree 的原有失败路径。
+	if err := s.ensureLibraryRoot(ctx, &lib); err != nil {
+		return fmt.Errorf("scanner: 注册库 %s 监听: %w", lib.RootPath, err)
+	}
+
 	debounce := s.watchDebounce
 	if debounce <= 0 { // 直接构造 Scanner 未走 New 时的兜底
 		debounce = DefaultDebounce
