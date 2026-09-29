@@ -1,6 +1,8 @@
 package media.qimeng.app.core.data.embedded
 
 import java.io.File
+import java.security.SecureRandom
+import java.util.Base64
 
 /**
  * 内嵌服务端（任务T T6 / 任务U11 批次D，ADR-0015 形态 B）的装配纯逻辑：
@@ -41,6 +43,35 @@ object EmbeddedServerConfig {
     const val PID_FILE_NAME = "server.pid"
 
     /**
+     * dev 共享密钥原始字节数：32 字节 = 256 bit 熵——一次性随机数抗暴力猜解的
+     * 通用下限（NIST SP 800-133 对称密钥量级），再长只增加环境变量长度不增益安全。
+     * 每次拉起子进程新生成（SecureRandom），生命周期=子进程，不落盘。
+     */
+    const val DEV_SHARED_SECRET_BYTES = 32
+
+    /**
+     * 子进程环境变量键（与 Go 服务端 config.go 的 QIMENG_AUTH_DEV_SHARED_SECRET
+     * 同名同源——协议侧互指：App 生成注入 / 服务端读取校验 devLogin 请求头
+     * X-Qimeng-Dev-Secret，堵「同机其他 App 打 127.0.0.1:18430 免密拿管理员 token」）。
+     */
+    const val DEV_SHARED_SECRET_ENV = "QIMENG_AUTH_DEV_SHARED_SECRET"
+
+    private val secureRandom = SecureRandom()
+
+    /**
+     * 生成一次性的 dev 共享密钥（2026-09-30 批A，内嵌形态防同机越权）：
+     * SecureRandom 取 [DEV_SHARED_SECRET_BYTES] 字节，Base64 URL-safe 无换行无填充
+     * 编码——URL-safe 是因为值经进程环境变量传递，避免任何转义歧义；无填充让长度
+     * 定长（ceil(256bit/6) = 43 字符）便于校验。密钥只经环境变量进子进程 + 内存槽
+     * 供 App 侧 devLogin 带出，绝不落盘、绝不入日志。
+     */
+    fun generateDevSharedSecret(): String {
+        val bytes = ByteArray(DEV_SHARED_SECRET_BYTES)
+        secureRandom.nextBytes(bytes)
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
+    }
+
+    /**
      * 解析 pid 文件里的子进程 pid（2026-09-25 冻结事故修复的配套件）。为什么回收要靠
      * 落盘 pid：Service 销毁重建后手里的子进程句柄丢失，而孤儿子进程仍占着 18430 端口
      * ——新子进程 bind 失败秒退、本机模式反复「已退出」。pid 文件是跨 Service 生命
@@ -57,14 +88,24 @@ object EmbeddedServerConfig {
      * - THUMBNAIL 两路径直喂 nativeLibraryDir 成品——服务端路径配置化
      *   （config.go QIMENG_THUMBNAIL_FFMPEG_PATH）的既有通道，不拼 PATH；
      * - AUTH_DEV_MODE 与 Termux 形态 A 同款（qimeng-start.sh 口径）：回环监听 +
-     *   用户本地免密约定（AI_README 用户约定①），风险面=本机 localhost only。
+     *   用户本地免密约定（AI_README 用户约定①），风险面=本机 localhost only；
+     * - AUTH_DEV_SHARED_SECRET（2026-09-30 批A）：同机越权防护的共享密钥，devLogin
+     *   必须带头 X-Qimeng-Dev-Secret 才放行——键名与 server config.go 同名同源。
+     *   密钥由调用方每次拉起前经 [generateDevSharedSecret] 新生成（生命周期=子进程），
+     *   参数收口成必传而非内部生成：调用方要同时把同值写入内存槽供 App 侧 devLogin
+     *   带出，集中在一处显式传递避免「环境变量与内存槽两个值」的分叉。
      */
-    fun environment(dataDir: String, nativeLibraryDir: String): Map<String, String> = mapOf(
+    fun environment(
+        dataDir: String,
+        nativeLibraryDir: String,
+        devSharedSecret: String,
+    ): Map<String, String> = mapOf(
         "QIMENG_LISTEN" to LISTEN_ADDRESS,
         "QIMENG_DATA_DIR" to dataDir,
         "QIMENG_THUMBNAIL_FFMPEG_PATH" to File(nativeLibraryDir, FFMPEG_BINARY).absolutePath,
         "QIMENG_THUMBNAIL_FFPROBE_PATH" to File(nativeLibraryDir, FFPROBE_BINARY).absolutePath,
         "QIMENG_AUTH_DEV_MODE" to "1",
+        DEV_SHARED_SECRET_ENV to devSharedSecret,
     )
 
     /** 服务端数据目录（filesDir/server） */

@@ -83,9 +83,21 @@ paths:
         表单，行为零变化。
         仅限本机开发调试（用户约定：项目未完成前免密码直奔 UI），
         禁止配合公网/隧道使用（SECURITY.md 红线 5 单点例外说明）。
+        可选共享密钥门禁（2026-09-30 批A，内嵌形态防同机越权）：服务端
+        配置了 auth_dev_shared_secret 时，请求须携带 X-Qimeng-Dev-Secret
+        头且值匹配，否则 401；未配置该密钥时不校验——Web 端 bat 免密、
+        日常开发零影响。Android 内嵌形态拉起子进程时随机生成注入，
+        devLogin 调用同源带出。
       security: []
+      parameters:
+        - name: X-Qimeng-Dev-Secret
+          in: header
+          required: false
+          schema: { type: string }
+          description: 共享密钥（仅服务端已配置 auth_dev_shared_secret 时校验；未配置时忽略）
       responses:
         "200": { description: 签发成功，返回新 token, content: { application/json: { schema: { $ref: "#/components/schemas/AuthToken" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
         "429": { $ref: "#/components/responses/RateLimited" }
 
@@ -1624,6 +1636,7 @@ components:
         netTxBytes:    { type: integer, format: int64, description: 自启动累计上行（媒体流量主项） }
         uptimeSeconds: { type: integer, format: int64 }
         version:       { type: string }
+        devMode:       { type: boolean, description: 开发模式（auth_dev_mode 免密登录）是否开启——Web 维护页「开发模式未关」提醒条数据源（2026-09-30 批A）；生产部署应为 false }
 
     # ---- 旧版迁移（qimeng_backup.json）：字段级权威定义在旧仓库 DATA_MIGRATION_SPEC.md，
     # ---- 段级映射见 DOMAIN_RULES §10；可选字段缺省语义（旧备份可能缺后加字段），导入端不假设全字段存在。

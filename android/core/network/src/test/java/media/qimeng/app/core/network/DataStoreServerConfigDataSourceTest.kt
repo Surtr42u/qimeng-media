@@ -167,6 +167,43 @@ class DataStoreServerConfigDataSourceTest {
         assertEquals("http://192.168.1.10:8420", rebooted.rememberedNasUrl.first())
         assertEquals(ServerAddress.LOCAL_MODE_PRESET, rebooted.rememberedLocalUrl.first())
     }
+
+    // ---------- 内嵌 dev 共享密钥内存槽（2026-09-30 批A 防同机越权） ----------
+
+    @Test
+    fun `共享密钥纯内存槽_覆写可读且null清空`() = runTest {
+        val dataSource = DataStoreServerConfigDataSource(
+            dataStore = newDataStore(tmpFolder.newFolder()),
+            appScope = CoroutineScope(UnconfinedTestDispatcher()),
+        )
+
+        // 初始态：子进程未拉起 = null（devLogin 不带头，等价旧行为）
+        assertNull(dataSource.currentEmbeddedDevSecret())
+
+        // 每次拉起重生成并覆写（生命周期=子进程），后写覆盖前写
+        dataSource.updateEmbeddedDevSecret("secret-1")
+        assertEquals("secret-1", dataSource.currentEmbeddedDevSecret())
+        dataSource.updateEmbeddedDevSecret("secret-2")
+        assertEquals("secret-2", dataSource.currentEmbeddedDevSecret())
+
+        // null = 主动清空（防御性收口）
+        dataSource.updateEmbeddedDevSecret(null)
+        assertNull(dataSource.currentEmbeddedDevSecret())
+    }
+
+    @Test
+    fun `共享密钥内存槽不随持久化文件冷启动恢复`() = runTest {
+        val dir = tmpFolder.newFolder()
+        val dataStore = newDataStore(dir)
+        val first = DataStoreServerConfigDataSource(dataStore, CoroutineScope(UnconfinedTestDispatcher()))
+        first.updateEmbeddedDevSecret("transient-secret")
+
+        // 同一文件新实例 = 模拟进程重启：密钥生命周期=子进程，重启必为 null——
+        // 「密钥不落盘」是结构保证而非纪律约定（DataStore 路径上不存在这个键）
+        val rebooted = DataStoreServerConfigDataSource(dataStore, CoroutineScope(UnconfinedTestDispatcher()))
+
+        assertNull(rebooted.currentEmbeddedDevSecret())
+    }
 }
 
 /**

@@ -25,8 +25,9 @@ import (
 )
 
 // newSystemEnv 建系统端点最小环境并完成 setup 拿 Bearer token，
-// 返回测试服务器与 token。
-func newSystemEnv(t *testing.T, sysStatus func(context.Context) (sysmon.SystemStatus, error), metrics http.HandlerFunc) (*httptest.Server, string) {
+// 返回测试服务器与 token。cfgMods 按需调整服务端配置（如 devMode
+// 两态用例改 AuthDevMode）；不传 = 全默认配置，既有用例零感知。
+func newSystemEnv(t *testing.T, sysStatus func(context.Context) (sysmon.SystemStatus, error), metrics http.HandlerFunc, cfgMods ...func(*config.Config)) (*httptest.Server, string) {
 	t.Helper()
 	dataDir := t.TempDir()
 	conn, err := store.Open(filepath.Join(dataDir, "test.db"))
@@ -37,9 +38,13 @@ func newSystemEnv(t *testing.T, sysStatus func(context.Context) (sysmon.SystemSt
 	if err := store.Migrate(conn); err != nil {
 		t.Fatalf("迁移失败: %v", err)
 	}
+	cfg := &config.Config{DataDir: dataDir}
+	for _, mod := range cfgMods {
+		mod(cfg)
+	}
 	apisrv, err := New(Deps{
 		Conn: conn, Queries: db.New(conn), Bus: events.NewBus(nil, 0),
-		Cfg:       &config.Config{DataDir: dataDir},
+		Cfg:       cfg,
 		Thumbs:    thumbnail.NewGenerator(dataDir, nil, thumbnail.Options{}),
 		SysStatus: sysStatus, Metrics: metrics,
 		MediaSecret: []byte("test-secret-0123456789abcdef0123456789"),
@@ -115,6 +120,47 @@ func TestSystemStatusOK(t *testing.T) {
 	}
 	if got["version"] != "test-v1" || got["uptimeSeconds"].(float64) != 5 {
 		t.Errorf("version/uptimeSeconds = %v/%v, 期望 test-v1/5", got["version"], got["uptimeSeconds"])
+	}
+}
+
+// TestSystemStatusDevMode：devMode 布尔透出服务端 cfg.AuthDevMode
+// （开/关两态都必须出现在响应里，不能只透 true）——Web 维护页
+// 「开发模式未关」提醒条的数据源。
+func TestSystemStatusDevMode(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		devMode bool
+	}{
+		{"开启", true},
+		{"关闭", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ts, token := newSystemEnv(t, func(context.Context) (sysmon.SystemStatus, error) {
+				return fakeSystemStatus(), nil
+			}, nil, func(cfg *config.Config) { cfg.AuthDevMode = tc.devMode })
+			req, err := http.NewRequest(http.MethodGet, ts.URL+"/api/v1/system/status", nil)
+			if err != nil {
+				t.Fatalf("构造请求失败: %v", err)
+			}
+			req.Header.Set("Authorization", "Bearer "+token)
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatalf("请求失败: %v", err)
+			}
+			defer func() { _ = resp.Body.Close() }()
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("状态码 = %d, 期望 200", resp.StatusCode)
+			}
+			var got struct {
+				DevMode *bool `json:"devMode"`
+			}
+			if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+				t.Fatalf("解析响应失败: %v", err)
+			}
+			if got.DevMode == nil || *got.DevMode != tc.devMode {
+				t.Errorf("devMode = %v, 期望 %v（指针缺失同样算失败：字段必须透出）", got.DevMode, tc.devMode)
+			}
+		})
 	}
 }
 

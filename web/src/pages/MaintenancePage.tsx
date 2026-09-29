@@ -125,6 +125,13 @@ export default function MaintenancePage() {
 
   return (
     <div className="page" id="page-maintenance">
+      {/* 服务端报告 dev 模式开启时置顶提醒（纯可见性：只读 /system/status 的 devMode 字段，
+          不动任何鉴权/免密逻辑；严格 === true，关闭/未知时零渲染零占位） */}
+      {status?.devMode === true && (
+        <div className="dev-mode-banner" role="alert">
+          开发模式未关：此服务器免密登录已开启，请勿暴露到公网/隧道
+        </div>
+      )}
       <div className="page-head">
         <h2>性能监控</h2>
         <p>服务器硬件实时状态 · 每 2 秒自动刷新</p>

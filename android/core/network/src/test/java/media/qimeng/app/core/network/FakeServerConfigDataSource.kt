@@ -23,6 +23,9 @@ class FakeServerConfigDataSource(
     var cachedTokenForTest: String? = initialToken
         private set
 
+    /** 批A：内嵌 dev 共享密钥内存槽（与 DataStore 实现同语义：纯内存、不持久化）。 */
+    private var embeddedDevSecretState: String? = null
+
     override val serverUrl: Flow<String> = serverUrlState
 
     override val rememberedNasUrl: Flow<String> = rememberedNasState
@@ -40,6 +43,12 @@ class FakeServerConfigDataSource(
     override fun currentToken(): String? = cachedTokenForTest
 
     override fun currentServerUrl(): String? = serverUrlState.value.ifEmpty { null }
+
+    override fun currentEmbeddedDevSecret(): String? = embeddedDevSecretState
+
+    override fun updateEmbeddedDevSecret(value: String?) {
+        embeddedDevSecretState = value
+    }
 
     override suspend fun updateServerUrl(url: String) {
         serverUrlState.value = url

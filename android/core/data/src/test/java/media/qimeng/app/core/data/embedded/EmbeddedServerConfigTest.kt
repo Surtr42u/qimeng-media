@@ -24,10 +24,12 @@ class EmbeddedServerConfigTest {
     }
 
     @Test
-    fun `环境变量五键齐备且路径直指 nativeLibraryDir 成品`() {
+    fun `环境变量六键齐备且路径直指 nativeLibraryDir 成品`() {
+        val secret = "test-secret-value"
         val env = EmbeddedServerConfig.environment(
             dataDir = "$filesDir/server",
             nativeLibraryDir = nativeDir,
+            devSharedSecret = secret,
         )
         assertEquals("127.0.0.1:18430", env["QIMENG_LISTEN"])
         assertEquals("$filesDir/server", env["QIMENG_DATA_DIR"])
@@ -36,6 +38,30 @@ class EmbeddedServerConfigTest {
         assertEquals(File(nativeDir, "libffmpeg_cli.so").absolutePath, env["QIMENG_THUMBNAIL_FFMPEG_PATH"])
         assertEquals(File(nativeDir, "libffprobe_cli.so").absolutePath, env["QIMENG_THUMBNAIL_FFPROBE_PATH"])
         assertEquals("1", env["QIMENG_AUTH_DEV_MODE"])
+        // 批A：密钥键与 server config.go 同名同源，值=传入值（环境变量与内存槽同源不分叉）
+        assertEquals(secret, env["QIMENG_AUTH_DEV_SHARED_SECRET"])
+    }
+
+    // ---------- dev 共享密钥（2026-09-30 批A 防同机越权） ----------
+
+    @Test
+    fun `共享密钥长度定长且两次生成互不相同`() {
+        val first = EmbeddedServerConfig.generateDevSharedSecret()
+        val second = EmbeddedServerConfig.generateDevSharedSecret()
+        // 32 字节 = 256bit，Base64 无填充 = ceil(256/6) = 43 字符（由常量推导，实现改字节数必须显式改测试）
+        val expectedLength = (EmbeddedServerConfig.DEV_SHARED_SECRET_BYTES * 8 + 5) / 6
+        assertEquals(expectedLength, first.length)
+        // 一次性凭据：每次拉起重生成，两次输出相同=密钥轮换失效
+        assertTrue(first != second)
+    }
+
+    @Test
+    fun `共享密钥字符集为 URL-safe 且熵源非平凡`() {
+        repeat(16) {
+            val secret = EmbeddedServerConfig.generateDevSharedSecret()
+            // URL-safe Base64 无填充：仅 [A-Za-z0-9_-]，无 + / =（经环境变量传递零转义歧义）
+            assertTrue(secret.matches(Regex("[A-Za-z0-9_-]+")))
+        }
     }
 
     @Test

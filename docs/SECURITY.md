@@ -32,8 +32,9 @@
 - **默认关闭**：`config.auth_dev_mode`（env `QIMENG_AUTH_DEV_MODE`）默认 false；关闭时 `POST /api/v1/auth/dev-login` 恒 404，所有 API 依旧要求 Bearer token——生产/默认部署零行为变化。
 - **开启时语义**：`/auth/dev-login` 免密码直接签发 token（未初始化自动创建 admin 占位用户；多会话语义与 /auth/login 相同，ADR-0021——签发独立会话，既有会话不失效）。
 - **App 端免密通道（2026-09-06 起）**：Android 客户端登录时**密码留空即走 dev-login**（`AuthRepositoryImpl` 空密码分支）；服务端未开启 dev 模式时 404 → App 提示「该服务器未开启免密模式，请输入密码登录」并要求密码，生产部署零影响。纯客户端行为，协议面无改动（dev-login 端点 2026-09-03 即有）。
+- **内嵌形态共享密钥门禁（2026-09-30 批A）**：服务端配置 `auth_dev_shared_secret`（env `QIMENG_AUTH_DEV_SHARED_SECRET`）时，`/auth/dev-login` 须携带 `X-Qimeng-Dev-Secret` 请求头且匹配（`subtle.ConstantTimeCompare` 恒时比对）否则 401。校验顺序=限流 → dev 模式 404 → 密钥 401（404 语义优先，不泄露密钥配置状态；401 在自动建户之前，越权者触发不了占位用户创建）。**未配置密钥时零校验零影响**（Web 端 bat 免密/日常开发完全不变）。Android 内嵌形态由 `EmbeddedServerConfig.generateDevSharedSecret()` 每次拉起子进程随机生成（SecureRandom 32 字节 URL-safe，256bit 熵下限），经 ServerConfigDataSource **内存槽**（不落盘不进日志，生命周期=子进程）供 devLogin 同源带出。
 - **边界**：仅限开发阶段本机调试（用户约定：项目未完成前免密码直奔 UI）；**禁止**与 `listen: ":0.0.0.0"`、公网、Tailscale 等任何远程访问组合使用——它等价于"无凭据登录通道"，必须保持在内网受信主机之内。服务端启动时对该组合打 Warn 日志（dev 模式开启且监听地址非回环，2026-09-07 起；只提醒不阻止，本机开发脚本的既定用法）。
-- **本机开发脚本**：仓库根 `启动服务端.bat` 已默认带 `QIMENG_AUTH_DEV_MODE=1`（2026-09-03 起）——生产/远程部署**必须移除该行**（或改回 `0`）。
+- **本机开发脚本**：仓库根 `_server-common.cmd`（两份 `启动服务端*.bat` 共用的启动链单点）已默认带 `QIMENG_AUTH_DEV_MODE=1`（2026-09-03 起）——生产/远程部署**必须移除该行**（或改回 `0`）。
 - 部署清单检查项：docker-compose / 生产 yaml **不得**出现 `auth_dev_mode: true`（CI 不做强制 gate，靠部署者自查 + 文档双签）。
 
 ## 媒体库注册（allowed_library_roots）
@@ -101,7 +102,7 @@
 ## 已知安全边界（2026-09-17 全检审计记档，均为风险接受而非遗漏）
 
 - **App 全局明文 HTTP**（`usesCleartextTraffic`，无 network_security_config）：局域网 http 是既定部署形态（本机 18430 与 LAN 8420 都是 http），远程访问走隧道兜底（红线 8）。network_security_config 只能按域名放行明文、无法表达「任意私网 IP 放行、其余拒绝」，收窄会直接断掉核心场景，故维持现状；陌生 WiFi 下连局域网地址时 token/媒体明文过空口属用户责任边界。
-- **Android 内嵌形态 dev-login 跑在设备共享回环**（127.0.0.1:18430 + AUTH_DEV_MODE=1）：Android loopback 全设备共享，同机恶意 App 理论上可免密登录读库（App 持 MANAGE_EXTERNAL_STORAGE 放大后果）。缓解规划 = App 拉起内嵌进程时注入共享密钥、dev-login 校验该密钥，待单机形态真机验收（ADR-0015 T7）后立项。
+- **Android 内嵌形态 dev-login 跑在设备共享回环**（127.0.0.1:18430 + AUTH_DEV_MODE=1）：Android loopback 全设备共享，同机恶意 App 理论上可免密登录读库（App 持 MANAGE_EXTERNAL_STORAGE 放大后果）。~~缓解规划 = App 拉起内嵌进程时注入共享密钥、dev-login 校验该密钥，待单机形态真机验收（ADR-0015 T7）后立项~~ —— **已实现（2026-09-30 批A）**：App 拉起子进程随机生成 256bit 密钥注入 `QIMENG_AUTH_DEV_SHARED_SECRET`，dev-login 携带 `X-Qimeng-Dev-Secret` 头校验，不匹配 401（机制详见「开发模式」节）。
 - **App token 明文 DataStore**：2026-09-06 风险接受决策（代码注释记档）。2026-09-17 补备份排除规则（`dataExtractionRules`/`fullBackupContent` 排除 `server_config.preferences_pb`）——明文本机落盘在接受范围，随系统/云备份外带不在，已关闭。
 - **web token 存 localStorage**：Bearer-SPA 常见取舍（XSS 可读面）；多会话模型下泄露后果收敛为单会话（可 logout 吊销），维持现状，有实测需求再动协议（cookie/刷新机制）。
 

@@ -23,7 +23,7 @@ func (s *Server) GetApiV1SystemStatus(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.logger.Warn("系统快照部分采集失败", "err", err)
 	}
-	writeJSON(w, http.StatusOK, toGenSystemStatus(st))
+	writeJSON(w, http.StatusOK, toGenSystemStatus(st, s.cfg.AuthDevMode))
 }
 
 // GetMetrics 代理 Prometheus 文本输出。指标集的注册与命名全在 sysmon
@@ -44,12 +44,14 @@ type genDisk = struct {
 	UsedBytes  *int64  `json:"usedBytes,omitempty"`
 }
 
-// toGenSystemStatus 把 sysmon 采集结构映射为协议生成类型。
+// toGenSystemStatus 把 sysmon 采集结构映射为协议生成类型（devMode 是
+// 服务端配置的透传项，与采集无关——Web 维护页「开发模式未关」提醒条
+// 数据源）。
 //
 // 为什么逐字段映射而不让 sysmon 直接输出协议 JSON：gen 类型是协议的
 // 编译期表示，协议改动（加字段/改类型）在这里变成编译错误显式暴露，
 // 而不是运行期 JSON 悄悄丢字段——字段对齐由编译器兜底。
-func toGenSystemStatus(st sysmon.SystemStatus) gen.SystemStatus {
+func toGenSystemStatus(st sysmon.SystemStatus, devMode bool) gen.SystemStatus {
 	disks := make([]genDisk, len(st.Disks))
 	for i, d := range st.Disks {
 		mount := d.Mount
@@ -73,5 +75,6 @@ func toGenSystemStatus(st sysmon.SystemStatus) gen.SystemStatus {
 		NetTxBytes:    &tx,
 		UptimeSeconds: &uptime,
 		Version:       &version,
+		DevMode:       &devMode,
 	}
 }

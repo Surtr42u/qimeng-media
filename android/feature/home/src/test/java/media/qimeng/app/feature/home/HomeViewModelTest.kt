@@ -185,6 +185,9 @@ class HomeViewModelTest {
                 override suspend fun updateToken(token: String) = Unit
                 override suspend fun clearToken() = Unit
                 override suspend fun rememberLoginAddress(url: String) = Unit
+                // 批A 接口新增成员的编译适配：替身场景无内嵌子进程，恒 null（不带头）
+                override fun currentEmbeddedDevSecret(): String? = null
+                override fun updateEmbeddedDevSecret(value: String?) = Unit
             },
             authApiFactory = object : AuthApiFactory {
                 override fun create(baseUrl: String): AuthApi = api
