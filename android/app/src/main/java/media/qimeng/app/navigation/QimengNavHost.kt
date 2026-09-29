@@ -20,6 +20,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -41,6 +42,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
@@ -660,7 +663,30 @@ fun QimengNavHost(
                     key(tabRoute) {
                         // per-tab owner 落位：本 Tab 的 entry，缺登记帧回落 home entry
                         // （隐藏屏暂停收集/回首页收集，安全档——见上方 owner 注释）
-                        val tabOwner = tabEntries[tabRoute] ?: residentEntry
+                        val registeredEntry = tabEntries[tabRoute]
+                        val tabOwner = registeredEntry ?: residentEntry
+                        // ── 死 owner 门控（2026-09-29 闪退根修）──
+                        // 切 Tab = popUpTo(start){saveState} 即销毁旧 entry 对象（其状态/VM
+                        // store 由 NavController saveState 保留，重访 restoreState 时恢复）；
+                        // 空壳跳板只在组合时登记、销毁不清理——tabEntries 从此挂着死 entry
+                        // 给隐藏屏当 owner。隐藏屏任意一次重组（返回该 Tab 的同帧竞速、或任
+                        // 何绕过已停摆生命周期的失效）都会让 hiltViewModel() 在死 owner 上
+                        // 解析 ViewModel → IllegalStateException 闪退（实机两次 data_app_crash
+                        // 同签名：AllScreen 于 NavBackStackEntry destroyed 后解析 VM）。
+                        // 这里把「entry 死亡」转成快照状态：死亡当帧即把该 Tab 真身撤出组合
+                        // （SaveableStateHolder 保留 rememberSaveable，重访经跳板重登记新
+                        // entry 后原样复活）；entry 存活期照常常驻，owner 语义不变。
+                        // 为什么必须走观察者而不是重组时读 currentState：lifecycle 状态不
+                        // 是快照状态，销毁本身不会触发重组——不加观察者，门控只在「下一次
+                        // 重组」才生效，恰好漏掉致崩的那次。
+                        var ownerAlive by remember(registeredEntry) { mutableStateOf(true) }
+                        DisposableEffect(registeredEntry) {
+                            val observer = LifecycleEventObserver { _, event ->
+                                if (event == Lifecycle.Event.ON_DESTROY) ownerAlive = false
+                            }
+                            registeredEntry?.lifecycle?.addObserver(observer)
+                            onDispose { registeredEntry?.lifecycle?.removeObserver(observer) }
+                        }
                         val isCurrentTab = tabRoute == currentTabRoute
                         CompositionLocalProvider(
                             LocalLifecycleOwner provides tabOwner,
@@ -683,7 +709,9 @@ fun QimengNavHost(
                                     ),
                             ) {
                                 stateHolder.SaveableStateProvider(tabRoute) {
-                                    ResidentTabScreen(route = tabRoute, navController = navController)
+                                    if (ownerAlive) {
+                                        ResidentTabScreen(route = tabRoute, navController = navController)
+                                    }
                                 }
                                 // 触摸死层：Compose 命中测试中「无 pointer input 的节点」不拦截触摸——
                                 // 当前 Tab 的非交互区（如顶栏留白）下压会命中隐藏 Tab 的可交互节点

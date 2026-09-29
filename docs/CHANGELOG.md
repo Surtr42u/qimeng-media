@@ -8,6 +8,19 @@
 - 子代理执行的工作标注"（执行子代理）"，主对话直接完成的标注"（主代理）"。
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
+## fix(app/server): 首页四症结实机取证根治——常驻层死 owner 闪退+推荐冷算 25 倍提速+下拉反馈与到底告知（2026-09-29 第四百零三笔）
+
+执行 AI：GLM-5.3-Flash（主代理：双通道实机取证/根因定位/两端手术/测试/装机冒烟）
+
+- **需求**（用户四条+实机两崩）：② App 下滑不会继续加载 ③ 刷新半天才加载新内容 + COS 下拉无效 + 排行榜显示不对；操作中两次闪退。用户授权全程实机取证（dropbox 崩溃记录 + 内嵌服务端日志 + 接口只读探测）。
+- **闪退（两次 data_app_crash 同签名 `IllegalStateException: NavBackStackEntry destroyed`，全在相册页）**：常驻层 per-tab owner=NavBackStackEntry，切 Tab 走 `popUpTo(start){saveState}` 即销毁旧 entry 对象，空壳跳板只在组合时登记、销毁不清理——`tabEntries` 从此挂死 entry 给隐藏屏当 owner，隐藏屏任意一次重组（返回该 Tab 的同帧竞速等）都让 `hiltViewModel()` 在死 owner 上解析 VM 直接崩。修复（QimengNavHost）：DisposableEffect 挂 LifecycleEventObserver 把「entry 死亡」翻转成快照状态，死亡当帧即把该 Tab 真身撤出组合（SaveableStateHolder 保 rememberSaveable，重访经跳板重登记新 entry 原样复活；VM store 由 NavController saveState 保留）；为什么必须观察者而非重组时读 currentState——lifecycle 状态不是快照状态，不加观察者门控恰好漏掉致崩的那次重组。真机冒烟：切 Tab 往返×3+双击回顶+统计页，PID 恒定、dropbox 零新增。
+- **刷新慢（服务端，实测冷算 3.6~4.5s）**：/recommendations 每新 seed 全量重算，`ListAssetsRecommendInput` 782 行×~10 关联子查询在手机 SoC 上秒级——页缓存默认 ~2MiB 放不下 17MB 库，冷下探全走闪存。热缓存命中 0.02s 证明装配/计数回写不贵。修复三件套：① view_events 五个子查询改单遍预聚合派生表 LEFT JOIN（GROUP BY 保行数不变=无扇出；WHERE 仍不触碰派生别名——sqlc v1.31.1 解析限制铁律，cos 过滤分支保持关联 EXISTS 原形）② store DSN 加 `cache_size(-32000)` 32MiB 页缓存（负值=KiB；整库进缓存后热路径 seek 全走内存）③ 冷算分段耗时日志（query/algorithm/assemble/total，OBSERVABILITY 同步）。**实测真机：冷算 4.5s → 70~153ms（~25-40×）**。原拟「缓存键改内容池+seed 只重排」方案在深读算法后否决：randomFactor=FNV1a(assetID)⊕seed 直接参与打分（DOMAIN_RULES §1.1），拆缓存必改算法行为——改为把计算本身提速，行为零变化。
+- **排行榜下拉显示不对**：RankPage 的 `QimengPullToRefresh(isRefreshing=false)` 写死——下拉真发刷新但转圈永远不出现。接线 `state.rank.isRefreshing`（字段本就存在）。
+- **COS/排行下拉「无效」**：实测定案——刷新确实执行且成功（0.14s），服务端返回同页同序数据、界面零变化，用户无法区分「没反应」和「没新的」。修复：刷新成功但内容与刷新前完全一致时亮「已是最新」轻提示（HomeUiState.infoMessage + InfoBanner 中性横幅，2.5s 自动消退；推荐流换 seed 重排自带可见反馈不接此路径）；新增两例单测锁定（同内容亮+超时消退、新内容不亮）。
+- **下滑到底无告知**：此前穷尽后界面静默，「到底了」和「坏了」无法区分。QimengMediaGrid 新增 `endFooterText` 跨全列尾标（不参与去重/哨兵计数），推荐/COS 流 exhausted 时亮「已到底」。
+- **附带闭环**：COS 库旧路径 `…/3  cos图集` 已不存在（用户改过文件夹名、登记早于跟随改名特性）——用户自行在库管理重指向后实测扫描器 `no such file` 报错归零。
+- **测试**：go test ./... 16 包全绿；:feature:home 新增两例+既有 24 例全绿；:core:ui/:core:model/:app 编译+测试全绿。
+
 ## feat(app): 上传选文件精简为唯一「系统文件」入口+收件箱设置回显修复（2026-09-29 第四百零二笔）
 
 执行 AI：GLM-5.3（主代理：需求调研/根因定位/入口精简手术/测试迁移/收口）+ 执行子代理（SAF 入口实现与收件箱回显修复，中途按用户指令叫停后由主代理续完并重定义范围）

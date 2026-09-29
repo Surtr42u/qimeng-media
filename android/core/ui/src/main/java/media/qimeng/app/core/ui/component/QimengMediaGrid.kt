@@ -34,6 +34,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -88,6 +89,9 @@ private val DURATION_BADGE_TYPES = setOf(MediaKind.VIDEO)
  *  滚动往复不再跨型重组合 */
 private const val GRID_CELL_TYPE_HEADER = "gridHeader"
 private const val GRID_CELL_TYPE_ASSET = "gridAsset"
+
+/** 网格项 contentType 第三型（「已到底」尾标，跨全列文本；修复D-2 分型口径的补位） */
+private const val GRID_CELL_TYPE_FOOTER = "gridFooter"
 
 // ---------- 旧版极简卡视觉参数（任务L L1，2026-09-09 拍板；来源=旧仓库 item_media_thumbnail.xml，勿改值） ----------
 
@@ -204,6 +208,14 @@ fun QimengMediaGrid(
     onNearBottom: () -> Unit = {},
     // 问题A 哨兵哑火修复（2026-09-28）：加载结束重评估信号，语义见参数 KDoc
     reloadTick: Int = 0,
+    /**
+     * 列表末尾的「已到底」尾标（2026-09-29「下滑不会继续加载」反馈修复的告知半边）：
+     * 分页流穷尽（exhausted）时由调用方传入——此前到底后界面静默，用户无法区分
+     * 「到底了」和「坏了」。null=不渲染（全量列表/未穷尽的分页流）。
+     * 尾标是网格最后一个跨全列项，不算进 [flattenGridCells] 产物——距底哨兵的
+     * totalCount 口径不变（触底判定仍以资产/组头格为准；尾标可见本身即触底）。
+     */
+    endFooterText: String? = null,
     pauseThumbnailsWhileScrolling: Boolean = false,
     tightenLeadingHeader: Boolean = false,
 ) {
@@ -295,6 +307,25 @@ fun QimengMediaGrid(
                         onClick = { onAssetClick(asset) },
                     )
                 }
+            }
+        }
+        // 「已到底」尾标（语义见 [endFooterText] KDoc）：跨全列、不参与去重/哨兵计数，
+        // key 用 header 前缀同款字符串约定（与资产 id 不可能冲突）
+        endFooterText?.let { footer ->
+            item(
+                key = "footer:$footer",
+                span = { GridItemSpan(maxLineSpan) },
+                contentType = { GRID_CELL_TYPE_FOOTER },
+            ) {
+                Text(
+                    text = footer,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = QimengDimens.SpaceL, bottom = QimengDimens.SpaceL),
+                )
             }
         }
     }

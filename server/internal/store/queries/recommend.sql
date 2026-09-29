@@ -4,14 +4,23 @@
 -- multi-byte comment parser bug). Chinese explanations live in
 -- migrations/0001_init.up.sql and docs/DOMAIN_RULES.md.
 --
--- Why one row per asset instead of joins: SQLite aggregation fan-out
--- (likes x view_events x daily_shown) would multiply rows; scalar
--- subqueries keep the row count == asset count (single-level pattern,
--- see browse.sql header rule 3).
+-- Row-count invariant (single-level pattern, browse.sql header rule 3):
+-- one output row per candidate asset. The view_events aggregates used to
+-- be per-row correlated scalar subqueries (5 B-tree descents per row);
+-- on the embedded phone host (ADR-0015) a cold seed paid ~4s for that
+-- (page-cache misses per descent). They now aggregate ONCE per asset in
+-- a pre-grouped derived table joined LEFT: no fan-out (GROUP BY keeps
+-- one row per asset_id), one sequential index-ordered pass over
+-- view_events instead of 5*N descents. WHERE still touches no derived
+-- alias (sqlc v1.31.1 parser rule 3), so the library/media/COS filters
+-- keep their correlated EXISTS shapes.
 --
--- last_viewed_at is MAX(started_at) of kind='open' -> NULL when the
--- asset was never opened; the algorithm maps NULL to the recency
--- default 0.3 (DOMAIN_RULES 1.1).
+-- last_viewed_at is MAX(started_at) among kind='open' events -> NULL
+-- when the asset was never opened; the algorithm maps NULL to the
+-- recency default 0.3 (DOMAIN_RULES 1.1). MAX over TEXT keeps
+-- lexicographic == chronological order (store-wide RFC3339-ms format,
+-- see browse.sql sorting design) -- same value as the old correlated
+-- MAX(subquery).
 
 -- name: ListAssetsRecommendInput :many
 SELECT
@@ -19,10 +28,10 @@ SELECT
     a.size_bytes, a.mtime, a.duration_ms, a.source, a.created_at,
     EXISTS(SELECT 1 FROM favorites fv WHERE fv.asset_id = a.asset_id) AS is_favorite,
     (SELECT COUNT(*) FROM likes l WHERE l.asset_id = a.asset_id) AS like_count,
-    (SELECT COUNT(*) FROM view_events v WHERE v.asset_id = a.asset_id AND v.kind = 'open') AS view_count,
-    (SELECT COUNT(*) FROM view_events v WHERE v.asset_id = a.asset_id AND v.kind = 'play') AS play_count,
-    (SELECT COALESCE(SUM(v.seconds), 0) FROM view_events v WHERE v.asset_id = a.asset_id AND v.kind = 'dwell') AS browse_seconds,
-    (SELECT MAX(v.started_at) FROM view_events v WHERE v.asset_id = a.asset_id AND v.kind = 'open') AS last_viewed_at,
+    COALESCE(ve.view_count, 0) AS view_count,
+    COALESCE(ve.play_count, 0) AS play_count,
+    COALESCE(ve.browse_seconds, 0) AS browse_seconds,
+    ve.last_viewed_at AS last_viewed_at,
     -- Column refs (ds.count) with a zero-row FROM return an EMPTY result
     -- set -> NULL in expression context; COALESCE outside the zero-row
     -- select is not executed. Nest the row pick inside COALESCE:
@@ -31,6 +40,15 @@ SELECT
     (SELECT COALESCE((SELECT ds.count FROM daily_shown ds
         WHERE ds.asset_id = a.asset_id AND ds.day = sqlc.arg(day)), 0)) AS shown_today
 FROM assets a
+LEFT JOIN (
+    SELECT v.asset_id AS asset_id,
+           CAST(SUM(CASE WHEN v.kind = 'open' THEN 1 ELSE 0 END) AS INTEGER) AS view_count,
+           CAST(SUM(CASE WHEN v.kind = 'play' THEN 1 ELSE 0 END) AS INTEGER) AS play_count,
+           CAST(COALESCE(SUM(CASE WHEN v.kind = 'dwell' THEN v.seconds ELSE 0 END), 0) AS INTEGER) AS browse_seconds,
+           MAX(CASE WHEN v.kind = 'open' THEN v.started_at END) AS last_viewed_at
+    FROM view_events v
+    GROUP BY v.asset_id
+) ve ON ve.asset_id = a.asset_id
 WHERE
     -- library kill-switch: disabled libraries vanish from browse/search/
     -- recommend lists; all records are kept (migration 0007, adr/0012)

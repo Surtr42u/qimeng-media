@@ -27,6 +27,7 @@ import media.qimeng.app.core.model.AssetSort
 import media.qimeng.app.core.model.FacetsQuery
 import media.qimeng.app.core.model.FacetsResult
 import media.qimeng.app.core.model.LIST_LOAD_FAILED_MESSAGE
+import media.qimeng.app.core.model.LIST_UP_TO_DATE_MESSAGE
 import media.qimeng.app.core.model.MediaAsset
 import media.qimeng.app.core.model.MediaKind
 import media.qimeng.app.core.model.NameSuggestion
@@ -327,6 +328,61 @@ class HomeViewModelTest {
             assertEquals(listOf("b"), viewModel.uiState.value.rank.items.map { it.id })
             assertFalse(viewModel.uiState.value.rank.isRefreshing)
         }
+
+    // ---------- 刷新同内容轻提示（2026-09-29「COS 下拉无效」反馈：刷新成功但服务端
+    // 返回同页同序数据、界面零变化，用户无法区分「没反应」和「没新的」） ----------
+
+    @Test
+    fun `刷新同内容轻提示 - COS刷新返回与刷新前一致的内容亮提示，超时自动消退`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val repo = FakeMediaRepository()
+            repo.assetsResult = AssetPageResult(
+                items = listOf(asset("c1"), asset("c2")),
+                nextCursor = "cur",
+                totalMatched = 2,
+            )
+            val viewModel = viewModel(repo)
+            advanceUntilIdle()
+            viewModel.switchTab(HomeTab.COS)
+            advanceUntilIdle()
+            assertEquals(listOf("c1", "c2"), viewModel.uiState.value.cos.items.map { it.id })
+            assertNull(viewModel.uiState.value.infoMessage)
+
+            // 刷新返回同页同序数据：提示亮出（成功路径告知；这里用 runCurrent 而非
+            // advanceUntilIdle——advanceUntilIdle 会连带跑完自动消退的虚拟延迟）
+            viewModel.refresh()
+            runCurrent()
+            assertEquals(LIST_UP_TO_DATE_MESSAGE, viewModel.uiState.value.infoMessage)
+            assertFalse(viewModel.uiState.value.cos.isRefreshing)
+
+            // 消退窗口过后自动清空（走调度器推进虚拟时间：advanceTimeBy/runCurrent 都是
+            // TestCoroutineScheduler 的成员）
+            mainDispatcherRule.testDispatcher.scheduler.advanceTimeBy(HomeViewModel.INFO_HINT_AUTO_CLEAR_MS + 1)
+            mainDispatcherRule.testDispatcher.scheduler.runCurrent()
+            assertNull(viewModel.uiState.value.infoMessage)
+        }
+
+    @Test
+    fun `刷新同内容轻提示 - COS刷新返回新内容不亮提示`() = runTest(mainDispatcherRule.testDispatcher) {
+        val repo = FakeMediaRepository()
+        repo.assetsResult = AssetPageResult(items = listOf(asset("c1")), nextCursor = "cur", totalMatched = 1)
+        val viewModel = viewModel(repo)
+        advanceUntilIdle()
+        viewModel.switchTab(HomeTab.COS)
+        advanceUntilIdle()
+        assertEquals(listOf("c1"), viewModel.uiState.value.cos.items.map { it.id })
+
+        // 刷新返回不同内容：整页替换落地，不亮「已是最新」
+        repo.assetsResult = AssetPageResult(
+            items = listOf(asset("c1"), asset("c2")),
+            nextCursor = "cur2",
+            totalMatched = 2,
+        )
+        viewModel.refresh()
+        advanceUntilIdle()
+        assertEquals(listOf("c1", "c2"), viewModel.uiState.value.cos.items.map { it.id })
+        assertNull(viewModel.uiState.value.infoMessage)
+    }
 
     // ---------- 任务I I1：下拉刷新清空三 tab 缓存（GUIDE_UI §下拉刷新 L86） ----------
 
