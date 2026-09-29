@@ -8,8 +8,9 @@ import { individualSourceWords } from '@/lib/source-options'
  * 快捷选项词表 = GET /authors/source-vocabulary 通用来源词表（hooks 封装，
  * 铁律 7）——服务端手动维护的来源建议小清单（获取渠道/平台名，如「老王论坛」
  * ），全员共享；个人片段词表（GET /authors/sources）已删除，不再有第二词表。
- * 快捷 chip 只出「单独」词（lib/source-options 过滤组合形态，2026-09-28——
- * 组合如「kemono  小红车」可经下方自由输入获得，不占建议位；词表管理卡仍显全量）。
+ * 快捷 chip = 全词表按空白**拆词提取**的单独词（lib/source-options，2026-09-29——
+ * 组合条目里的平台词如 hanime1/r34 只存在于组合中，只过滤会漏词；组合形态本身
+ * 可经下方自由输入获得，不占建议位；词表管理卡仍显全量原始词表）。
  * 服务端已按固定序返回，前端不再排。自由输入行允许加入词表外新站点/URL
  * （回车确认）。props 契约不变：selected/onChange/disabled 仍由调用方持有
  * 草稿态，本组件不做任何请求之外的副作用。

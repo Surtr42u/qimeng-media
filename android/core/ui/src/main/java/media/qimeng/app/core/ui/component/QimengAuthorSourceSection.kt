@@ -12,9 +12,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -28,14 +31,18 @@ import androidx.compose.ui.unit.dp
 import media.qimeng.app.core.model.AuthorSuggestion
 
 /**
- * 作者联想段（无状态；2026-09-25 上传挂靠退役批自 UploadScreen 抽出，现由资产编辑页
- * 消费）：未确定 = 胶囊输入框 + 联想列表；已确定 = 选中胶囊（点按清除）。
+ * 作者联想段（无状态；2026-09-25 上传挂靠退役批自 UploadScreen 抽出，上传页与资产
+ * 编辑页共用）：未确定 = 胶囊输入框 + 浮层联想菜单；已确定 = 选中胶囊（点按清除）。
  * 状态与业务规则（防抖/互斥/归并）全在调用方 ViewModel，本组件零逻辑（ADR-0008 铁律 7）。
+ *
+ * 联想弹层（2026-09-29 用户拍板「搜索那种」）：输入非空时建议以 DropdownMenu 浮层
+ * 展示在输入框正下方——原内联 Card 会把整张长表单往下顶（每敲一字全表单重排，
+ * 用户实测「提取太卡」且观感是个胶囊框），浮层零布局位移、与搜索补全同范式。
  *
  * @param committedName 已确定作者显示名（点选既有 or 待新建）；null = 未确定（渲染输入态）
  * @param committedIsExisting true = 点选既有作者（副文案「已选作者」）；false = 待新建
- * @param seeds 空输入种子列表（调用方从全量常规作者拉取）：输入为空且非空时默认全显，
- *   让用户不输入也能看到有哪些作者可选（suggest 协议空 q 必返空，禁改协议）
+ * @param seeds 空输入种子列表（调用方从全量常规作者拉取；2026-09-29 起上传页不传，
+ *   资产编辑页保留空输入全显）：输入为空且非空时默认全显
  */
 @Composable
 fun QimengAuthorSuggestSection(
@@ -72,6 +79,11 @@ fun QimengAuthorSuggestSection(
                 )
             }
         } else {
+            // 浮层开合状态（用户手动关闭后，继续输入即重新打开——搜索补全惯例）
+            var menuOpen by rememberSaveable { mutableStateOf(true) }
+            LaunchedEffect(query) {
+                if (query.isNotBlank()) menuOpen = true
+            }
             QimengCapsuleTextField(
                 value = query,
                 onValueChange = onQueryChange,
@@ -80,14 +92,16 @@ fun QimengAuthorSuggestSection(
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { onCommitInput() }),
             )
-            if (query.isNotBlank()) {
-                QimengAuthorSuggestionList(
+            if (query.isNotBlank() && suggestions.isNotEmpty()) {
+                AuthorSuggestionMenu(
                     suggestions = suggestions,
-                    query = query.trim(),
+                    visible = menuOpen,
+                    onDismiss = { menuOpen = false },
                     onPick = onPickSuggestion,
                 )
-            } else if (seeds.isNotEmpty()) {
-                // 空输入不输入也能看到可选作者：suggest 空查询无结果，种子全显兜底
+            }
+            if (query.isBlank() && seeds.isNotEmpty()) {
+                // 空输入不输入也能看到可选作者（仅资产编辑页传入；suggest 空查询无结果）
                 QimengAuthorSeedList(seeds = seeds, onPick = onPickSuggestion)
             }
         }
@@ -95,22 +109,35 @@ fun QimengAuthorSuggestSection(
 }
 
 /**
- * 联想列表（无状态）：命中行 = displayName + 文件数（照 AuthorScreen 作者行双行口径）。
- * 用固定 Card+Column 而非 LazyColumn：列表上限 = 协议 limit 10，且外层是
- * verticalScroll 表单（嵌套滚动反向冲突），固定高度内容交给外层滚动即可。
+ * 联想浮层菜单（无状态；搜索式下拉，不占表单布局空间）：命中行 = displayName +
+ * 文件数（照 AuthorScreen 作者行口径）。列表上限 = 协议 limit 10，超出菜单内部自滚。
  */
 @Composable
-fun QimengAuthorSuggestionList(
+private fun AuthorSuggestionMenu(
     suggestions: List<AuthorSuggestion>,
-    query: String,
+    visible: Boolean,
+    onDismiss: () -> Unit,
     onPick: (AuthorSuggestion) -> Unit,
-    modifier: Modifier = Modifier,
 ) {
-    Card(modifier = modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(vertical = 4.dp)) {
-            suggestions.forEach { suggestion ->
-                AuthorSuggestionRow(suggestion = suggestion, onPick = onPick)
-            }
+    DropdownMenu(
+        expanded = visible,
+        onDismissRequest = onDismiss,
+    ) {
+        suggestions.forEach { suggestion ->
+            DropdownMenuItem(
+                text = { Text(suggestion.displayName, style = MaterialTheme.typography.bodyMedium) },
+                trailingIcon = {
+                    Text(
+                        text = "${suggestion.fileCount} 个文件",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                },
+                onClick = {
+                    onDismiss()
+                    onPick(suggestion)
+                },
+            )
         }
     }
 }
