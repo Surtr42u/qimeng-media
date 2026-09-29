@@ -1,12 +1,15 @@
 import { useState } from 'react'
 import { useSourceVocabulary } from '@/hooks/use-authors'
 import { Pill } from '@/components/ui/pill'
+import { individualSourceWords } from '@/lib/source-options'
 
 /**
  * 作者来源/出处多选字段（资产编辑页每作者来源区消费；2026-09-25 协议批）。
  * 快捷选项词表 = GET /authors/source-vocabulary 通用来源词表（hooks 封装，
  * 铁律 7）——服务端手动维护的来源建议小清单（获取渠道/平台名，如「老王论坛」
  * ），全员共享；个人片段词表（GET /authors/sources）已删除，不再有第二词表。
+ * 快捷 chip 只出「单独」词（lib/source-options 过滤组合形态，2026-09-28——
+ * 组合如「kemono  小红车」可经下方自由输入获得，不占建议位；词表管理卡仍显全量）。
  * 服务端已按固定序返回，前端不再排。自由输入行允许加入词表外新站点/URL
  * （回车确认）。props 契约不变：selected/onChange/disabled 仍由调用方持有
  * 草稿态，本组件不做任何请求之外的副作用。
@@ -33,8 +36,8 @@ export function SourceSelectField({
   const [input, setInput] = useState('')
 
   const selectedSet = new Set(selected)
-  // 词表序=服务端返回序；词表外已选词（自由输入的）排在后面
-  const vocabNames = vocab?.sources ?? []
+  // 词表序=服务端返回序（仅单独词，组合过滤见 lib/source-options）；词表外已选词（自由输入的）排在后面
+  const vocabNames = individualSourceWords(vocab?.sources ?? [])
   const customNames = selected.filter((n) => !vocabNames.includes(n))
 
   const toggle = (name: string): void => {

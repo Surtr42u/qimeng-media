@@ -8,6 +8,16 @@
 - 子代理执行的工作标注"（执行子代理）"，主对话直接完成的标注"（主代理）"。
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
+## fix(app/web): 作者联想改百度式按需显示+来源建议只出单独词（2026-09-29 第三百九十八笔）
+
+执行 AI：GLM-5.3-Flash（主代理直接实现：定位/双端修改/测试/文档收口，无子代理）
+
+- **需求**（用户两项）：① 上传页作者联想「持续显示」改为百度搜索式——输入后才出建议列表；② 批次来源建议里不出现组合条目（如「kemono  小红车」），只保留单独词。Web 作者联想经核本就是百度式（`open` 门控空输入不弹），问题仅 App 端 seeds 常驻全显（第三百九十六笔「作者默认全显」的反转，用户当日复测后改主意）。
+- **App 作者联想拆 seeds（①）**：上传页批次默认与逐项编辑的 `QimengAuthorSuggestSection` 不再传 seeds——空输入零建议、输入后走既有服务端联想（/authors/suggest 空 q 必返空，协议不动）；`UploadUiState.authorSeeds` 字段、`UploadViewModel.refreshAuthorSeeds()` 及 UI 三处传参链整体拆除（死代码零残留）；`toRegularAuthorSeeds` 保留（资产编辑页仍用全显，用户未要求改）。
+- **来源建议只出单独词（②，双端同口径）**：新纯函数过滤——App `core:model` `individualSourceWords()`（含空白字符的条目视为组合形态过滤，空串/纯空白一并过滤，原序保留；SourceWordsTest 4 用例）+ Web `lib/source-options.ts`（vitest 4 用例）；消费点：App UploadViewModel `refreshSourceOptions`（批次+逐项共用）与 AssetEditViewModel `loadVocabulary`（编辑页同规则保持一致）、Web `SourceSelectField`（编辑页/上传工作台共用一处）；词表管理卡（SourceVocabularyCard）仍展示全量词表不过滤（维护场景要见组合原貌）；已选过的组合值回落「词表外已选」区仍可见可移除；自由输入不受限（组合可手输获得）。
+- **测试与门禁**：web vitest 201 全绿（+4）、build 通过、lint 0 error（18 warning 均既有基线）；app `:feature:upload` 全部用例绿（seeds 测试改写为词表过滤测试，断言组合过滤+空输入无建议列表）、`:core:model:test` 全绿（含新 SourceWordsTest）、`:feature:detail` 编译通过。
+- **文档**：本笔；HANDOVER §4 已在上一笔改写上传交互描述，本次为行为微调不再改现状段。协议零改动。
+
 ## feat(web/app/server): Web上传工作台对齐App+词表镜像迁移+App配置区固化+库根自动重挂（2026-09-28 第三百九十七笔）
 
 执行 AI：GLM-5.3-Flash（主代理调度：现状核查/三执行子代理并行派发/对抗审查/文档收口；Web/Android/服务端三个执行子代理+对抗审查子代理，全部 GLM-5.3-Flash）

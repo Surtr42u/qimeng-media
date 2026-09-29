@@ -17,6 +17,7 @@ import media.qimeng.app.core.data.repository.DetailRepository
 import media.qimeng.app.core.data.repository.UploadRepository
 import media.qimeng.app.core.model.AuthorSuggestion
 import media.qimeng.app.core.model.DetailAuthor
+import media.qimeng.app.core.model.individualSourceWords
 import media.qimeng.app.core.model.toRegularAuthorSeeds
 
 /**
@@ -140,10 +141,10 @@ class AssetEditViewModel @Inject constructor(
         }
     }
 
-    /** 全站来源词表（快捷选项；失败静默=纯自由输入，同旧上传页词表降级口径） */
+    /** 全站来源词表（快捷选项，仅单独词；失败静默=纯自由输入，同旧上传页词表降级口径） */
     private suspend fun loadVocabulary() {
         val options = runCatching { authorRepository.sourceVocabulary() }.getOrDefault(emptyList())
-        _uiState.update { it.copy(sourceOptions = options) }
+        _uiState.update { it.copy(sourceOptions = options.individualSourceWords()) }
     }
 
     /** 空输入作者种子（全量接口过滤常规作者）：suggest 空 q 必返空，空输入默认全显

@@ -73,11 +73,8 @@ data class UploadUiState(
     val batchAuthorQuery: String = "",
     /** 批次作者联想结果（防抖回填） */
     val batchAuthorSuggestions: List<AuthorSuggestion> = emptyList(),
-    /** 全站来源词表（GET /authors/source-vocabulary；失败静默 = 纯自由输入） */
+    /** 全站来源词表（GET /authors/source-vocabulary，仅单独词；失败静默 = 纯自由输入） */
     val sourceOptions: List<String> = emptyList(),
-    /** 空输入作者种子（GET /authors 全量过滤常规作者；suggest 协议空 q 必返空，
-     *  空输入的默认全显只能走全量接口；批次与逐项作者框共用，失败静默为空） */
-    val authorSeeds: List<AuthorSuggestion> = emptyList(),
     /** 当前展开编辑的暂存条目 source（null = 无展开项；同时至多一项展开） */
     val editingSource: String? = null,
     /** 展开项的作者联想输入草稿 */
