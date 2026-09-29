@@ -26,9 +26,14 @@ export const MAINTENANCE_PATH = '/app/maintenance'
 /** 设置页路由（Sidebar 底部图标组入口） */
 export const SETTINGS_PATH = '/app/settings'
 
-/** 数据管理 hub 路由（库管理/上传/作者导入/备份四个子页的「← 返回数据管理」
- *  共用入口；曾散写 5 处，2026-09-17 全检后收口至此，子页路径字面量归 router.tsx） */
+/** 数据管理 hub 路由（库管理/上传/来源词表/作者导入/备份五个子页的
+ *  「← 返回数据管理」共用入口；曾散写 5 处，2026-09-17 全检后收口至此，
+ *  子页路径字面量归 router.tsx） */
 export const MAINTENANCE_FILES_PATH = '/app/maintenance/files'
+
+/** 来源词表子页路由（2026-09-29 自上传文件页拆出独立页；上传页指引链接与
+ *  hub 入口卡共用此常量） */
+export const MAINTENANCE_FILES_VOCABULARY_PATH = '/app/maintenance/files/vocabulary'
 
 /** 集合子页 kind（路由段 /app/collection/:kind/:name） */
 export const COLLECTION_TAG = 'tag'

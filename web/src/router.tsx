@@ -30,6 +30,7 @@ const AssetDetailPage = lazy(() => import('@/pages/AssetDetailPage'))
 const AssetEditPage = lazy(() => import('@/pages/AssetEditPage'))
 const LibraryManagePage = lazy(() => import('@/pages/LibraryManagePage'))
 const LibraryUploadPage = lazy(() => import('@/pages/LibraryUploadPage'))
+const LibraryVocabularyPage = lazy(() => import('@/pages/LibraryVocabularyPage'))
 const LibraryRegistryPage = lazy(() => import('@/pages/LibraryRegistryPage'))
 const AuthorTxtImportPage = lazy(() => import('@/pages/AuthorTxtImportPage'))
 const BackupImportExportPage = lazy(() => import('@/pages/BackupImportExportPage'))
@@ -83,10 +84,12 @@ export const router = createBrowserRouter([
               // 未注册裸 /app/collection 时这类外部深链整树无匹配 → 白屏（F1）
               { path: 'collection', element: <CollectionDeepLink /> },
               { path: 'collection/:kind/:name', element: <Suspense fallback={null}><CollectionPage /></Suspense> },
-              // 数据管理 hub + 四子页（2026-09-17 原单页「文件管理」拆分，扁平同层
-              // 注册与 maintenance/* 既有风格一致；页面内容零改动只做信息架构拆分）
+              // 数据管理 hub + 子页（2026-09-17 原单页「文件管理」拆分，扁平同层
+              // 注册与 maintenance/* 既有风格一致；页面内容零改动只做信息架构拆分。
+              // 2026-09-29 增 vocabulary 子页：来源词表/作者镜像自上传页再拆独立页）
               { path: 'maintenance/files', element: <Suspense fallback={null}><LibraryManagePage /></Suspense> },
               { path: 'maintenance/files/upload', element: <Suspense fallback={null}><LibraryUploadPage /></Suspense> },
+              { path: 'maintenance/files/vocabulary', element: <Suspense fallback={null}><LibraryVocabularyPage /></Suspense> },
               { path: 'maintenance/files/libraries', element: <Suspense fallback={null}><LibraryRegistryPage /></Suspense> },
               { path: 'maintenance/files/authors-txt', element: <Suspense fallback={null}><AuthorTxtImportPage /></Suspense> },
               { path: 'maintenance/files/backup', element: <Suspense fallback={null}><BackupImportExportPage /></Suspense> },
