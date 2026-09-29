@@ -81,13 +81,14 @@ class UploadViewModelTest {
     // ---- 来源词表建议过滤（2026-09-28：仅单独词，组合条目不出现在快捷 chip） ----
 
     @Test
-    fun `init拉来源词表过滤组合只留单独词`() {
+    fun `init拉来源词表拆词提取只出单独词`() {
         val authorRepository = FakeAuthorRepository().apply {
-            vocabularyResult = listOf("kemono", "kemono  小红车", "小红车  kemono", "", "小红车", "x")
+            // hanime1 只存在于组合里：拆词提取后同样必须出现在建议中（用户实测反馈漏词）
+            vocabularyResult = listOf("kemono", "kemono  小红车", "hanime1  小红车", "")
         }
         val (viewModel, _, _, _) = newViewModel(authorRepository = authorRepository)
-        // 组合（含空白分隔多词）与空串被过滤，原序保留；作者联想为百度式（空输入无建议列表）
-        assertEquals(listOf("kemono", "小红车", "x"), viewModel.uiState.value.sourceOptions)
+        // 组合按空白拆词去重、空串过滤；作者联想为百度式（空输入无建议列表）
+        assertEquals(listOf("kemono", "小红车", "hanime1"), viewModel.uiState.value.sourceOptions)
         assertTrue(viewModel.uiState.value.batchAuthorSuggestions.isEmpty())
     }
 
