@@ -15,12 +15,10 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import media.qimeng.app.core.data.repository.AuthorRepository
-import media.qimeng.app.core.data.repository.BrowserFileEntry
 import media.qimeng.app.core.data.repository.StagingRepository
 import media.qimeng.app.core.data.repository.UploadRepository
 import media.qimeng.app.core.model.AuthorSuggestion
 import media.qimeng.app.core.model.LibraryChoice
-import media.qimeng.app.core.model.LocalMediaItem
 import media.qimeng.app.core.model.StagedUpload
 import media.qimeng.app.core.model.StagingBatchConfig
 import media.qimeng.app.core.model.UploadItem
@@ -33,9 +31,9 @@ import media.qimeng.app.core.model.individualSourceWords
 /**
  * 上传流 ViewModel（M4-5；2026-09-25 流程重排 + 暂存区重做）。
  * 暂存区重做：暂存条目与批次默认（库/作者/来源）全部落 StagingRepository 持久层
- * （跨进程重启/隔天不丢），页面只 collect 持久流渲染；新进暂存四条管道单源——
- * 收件箱扫描（importFromInbox）/ 相册多选（acceptPickedItems）/ 分享与 SAF（acceptUris）/
- * 浏览文件多选（acceptPickedFiles，2026-09-28 补齐隐藏目录场景）。
+ * （跨进程重启/隔天不丢），页面只 collect 持久流渲染；新进暂存单管道——系统文件 SAF
+ * 多选与系统分享共用（acceptUris，2026-09-29 入口精简：相册多选/收件箱扫描/浏览文件
+ * 三管道随入口退役，Ingestor 对应方法同步删除）。
  * 作品名联想：展开项基名输入防抖拉 GET /assets/name-suggestions（建议基名不含扩展名，
  * 回填后扩展名锁定拼接，见 StagedUpload.effectiveUploadName）。
  * 拦截口径（冻结）：大小上限读 GET /config 的 upload 项（入队时现取现判——服务端实时生效），
@@ -55,7 +53,7 @@ class UploadViewModel @Inject constructor(
     /** 页面会话态（持久字段由 uiState combine 侧以仓库流覆写，见下） */
     private val form = MutableStateFlow(UploadUiState())
 
-    /** 新进暂存摄取器（三条管道单源编排，见 UploadStagingIngestor；VM 组合注入仓库） */
+    /** 新进暂存摄取器（SAF/分享单管道单源编排，见 UploadStagingIngestor；VM 组合注入仓库） */
     private val ingestor = UploadStagingIngestor(uploadRepository, stagingRepository)
 
     /**
@@ -66,16 +64,14 @@ class UploadViewModel @Inject constructor(
         form,
         stagingRepository.stagedItems,
         stagingRepository.batchConfig,
-        stagingRepository.inboxPath,
         uploadRepository.queueUpdates(),
-    ) { current, items, batch, inbox, queue ->
+    ) { current, items, batch, queue ->
         current.copy(
             pendingItems = items,
             batchLibraryId = batch.libraryId,
             batchAuthorId = batch.authorId,
             batchAuthorName = batch.authorName,
             batchSources = batch.sources,
-            inboxPath = inbox,
             queue = queue,
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, UploadUiState())
@@ -296,59 +292,7 @@ class UploadViewModel @Inject constructor(
         stagingRepository.editBatchConfig(transform)
     }
 
-    // ---- 新进暂存（收件箱扫描 / 相册多选 / 分享与 SAF / 浏览文件多选；编排单源在 [ingestor]） ----
-
-    /**
-     * 收件箱导入（暂存区重做）：扫描收件箱 → 新文件按批次默认进暂存区（已暂存去重跳过）。
-     * 未设收件箱给设置引导；扫描无新文件给提示；扫描失败给错误横幅。
-     */
-    fun importFromInbox() {
-        viewModelScope.launch {
-            form.update { it.copy(scanningInbox = true, blockMessage = null) }
-            try {
-                when (val result = ingestor.importFromInbox()) {
-                    null -> form.update { it.copy(scanningInbox = false, noticeMessage = INBOX_NOT_SET_MESSAGE) }
-                    else -> if (result.itemsAdded == 0) {
-                        form.update { it.copy(scanningInbox = false, noticeMessage = INBOX_NO_NEW_MESSAGE) }
-                    } else {
-                        form.update { it.copy(scanningInbox = false) }
-                    }
-                }
-            } catch (e: Exception) {
-                form.update { it.copy(scanningInbox = false, errorMessage = INBOX_SCAN_FAILED_MESSAGE) }
-            }
-        }
-    }
-
-    /**
-     * 「浏览文件」入口的「所有文件访问」闸门判定：转发 [StagingRepository.hasAllFilesAccess]
-     * 单源（口径实现收口 InboxFileStore，与收件箱设置页同一数据面）——此前 UploadScreen
-     * 私有第三份同款实现已删，防三处口径漂移。
-     */
-    suspend fun hasAllFilesAccess(): Boolean = stagingRepository.hasAllFilesAccess()
-
-    /**
-     * 接收内置相册选择器的选中项（2026-09-25 拍板：上传选取弃 SAF 改 App 内置相册式选择器）。
-     * 元数据不走 describe 重查——MediaStore 查询已给出展示名与字节数（现成数据直接复用），
-     * 按批次默认进持久暂存区。
-     */
-    fun acceptPickedItems(picked: List<LocalMediaItem>) {
-        viewModelScope.launch { ingestor.ingestPicked(picked) }
-    }
-
-    /**
-     * 接收浏览文件弹层的选中项（2026-09-28「浏览文件」入口）：绝对路径类条目，
-     * File 元数据列举侧已带齐，按 source 去重（与收件箱导入同款）后按批次默认进暂存区；
-     * 全部已暂存给提示。
-     */
-    fun acceptPickedFiles(files: List<BrowserFileEntry>) {
-        if (files.isEmpty()) return
-        viewModelScope.launch {
-            if (ingestor.ingestPickedFiles(files) == 0) {
-                form.update { it.copy(noticeMessage = BROWSE_NO_NEW_MESSAGE) }
-            }
-        }
-    }
+    // ---- 新进暂存（系统文件 SAF 多选与系统分享共用 acceptUris；编排单源在 [ingestor]） ----
 
     /** 接收 SAF 多选 / 系统分享的 uri 字符串：解元数据进持久暂存区（去重，继承批次默认） */
     fun acceptUris(uris: List<String>) {

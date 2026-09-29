@@ -6,8 +6,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
-import android.os.Environment
-import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
@@ -43,7 +41,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -52,7 +49,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import kotlinx.coroutines.launch
 import media.qimeng.app.core.model.DirNode
 import media.qimeng.app.core.model.UploadRules
 import media.qimeng.app.core.ui.component.QimengCapsuleTextField
@@ -70,9 +66,9 @@ import media.qimeng.app.core.ui.theme.qimengFilledButtonColors
  * 收件箱路径全部持久化（杀进程重启不丢），页面只 collect 持久流渲染。
  * 未选库时开始上传禁用并提示（enqueue 侧保留必填兜底，见 [UploadViewModel.enqueue]）。
  * 入口：①系统分享接收（壳层带分享 URI 导航至此）②App 内数据管理页入口。
- * 选文件：内置相册式选择器（MediaStore 网格多选，媒体读权限运行时申请）+ 浏览文件
- * （2026-09-28：纯 File API 全盘浏览多选，「所有文件访问」闸门在入口——补齐相册扫不到
- * 的点前缀隐藏目录场景）+ 下载收件箱（设置页选定的文件夹，白名单过滤后一键进暂存区）。
+ * 选文件：唯一入口「系统文件」（SAF 文档选择器多选，MIME 限 image 与 video 通配两类，
+ * 天然能见点前缀隐藏目录且不需要任何存储权限——2026-09-29 用户拍板精简，一口覆盖
+ * 原相册选择器/收件箱导入/浏览文件三入口的全部场景，三入口及其选择器/弹层/权限链退役）。
  * 挂靠批：批次默认（作者联想 + 来源多选 + 应用到全部）+ 逐项展开编辑
  * （作品名联想/作者/来源/库覆盖，复用 core:ui 无状态段组件）；挂靠执行在 worker 的
  * 201 之后（mode=append，失败不重试，队列行落「已入库但挂靠失败」专项态）。
@@ -89,8 +85,6 @@ fun UploadScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    // 「浏览文件」闸门判定是 suspend（走 VM → StagingRepository 单源），click 内起协程承载
-    val scope = rememberCoroutineScope()
 
     // 系统分享接收：进入本页即接手分享内容并通知壳层消费（避免重复触发）
     LaunchedEffect(sharedUris) {
@@ -100,24 +94,40 @@ fun UploadScreen(
         }
     }
 
-    // 选择器/新建目录/浏览文件弹层（saveable：进程重建后关闭态恢复，与页面弹窗同语义）
-    var showPicker by rememberSaveable { mutableStateOf(false) }
+    // 新建目录弹层（saveable：进程重建后关闭态恢复，与页面弹窗同语义）
     var showCreateDirDialog by rememberSaveable { mutableStateOf(false) }
-    var showBrowser by rememberSaveable { mutableStateOf(false) }
-    var showBrowserPermHint by rememberSaveable { mutableStateOf(false) }
 
     // 通知权限（API 33+ 运行时申请；拒绝只影响可见性、不阻断上传）
     val notificationPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { }
 
-    // 媒体读权限（内置相册选择器数据面前置）：API 33+ 细分图片/视频两权限，
-    // 低版本 READ_EXTERNAL_STORAGE（manifest 声明 maxSdkVersion=32）。任一授予即进选择器
-    // （只授图片也能选图片）；全拒 = 留在本页（错误横幅由选择器空态承载，不另弹窗）。
-    val mediaPermission = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions(),
-    ) { grants ->
-        if (grants.values.any { it }) showPicker = true
+    // 「系统文件」唯一选文件入口（2026-09-29 用户拍板精简：相册/收件箱导入/浏览文件
+    // 三入口退役，SAF 一口覆盖——隐藏目录可见 + 免存储授权 + 多选）：SAF
+    // ACTION_OPEN_DOCUMENT 多选，系统文档选择器天然能见点前缀隐藏目录，读授权由
+    // DocumentsUI 随结果授予，本 App 不需要任何存储权限（manifest 零改动）。
+    // 官方查证（铁律 8）：OpenMultipleDocuments = Contract<String[], List<Uri>>（launch
+    // 入参即 MIME 类型数组，androidx.activity 1.13.0 字节码核实，底层 ACTION_OPEN_DOCUMENT），
+    // 结果 URI 带 FLAG_GRANT_READ_URI_PERMISSION + FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+    // （项目先例：BackupScreen 的 OpenDocumentTree 同链路 takePersistableUriPermission）。
+    // 逐 URI takePersistableUriPermission 的理由：暂存条目跨进程重启持久（StagingRepository），
+    // 真正读流在 worker 上传时（AssetUploader openInputStream；acceptUris→describe 只在摄取
+    // 瞬间解元数据）——DocumentsUI 的临时授权撑不到上传时刻，持久化后才能跨进程/重启存活。
+    // 个别 provider 不给持久授权时降级照收（摄取期 describe 仍可读，上传读流失败走 worker
+    // 既有重试兜底），不因授权失败丢弃用户选择。
+    val systemFilesLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments(),
+    ) { uris ->
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
+        uris.forEach { uri ->
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                )
+            }
+        }
+        viewModel.acceptUris(uris.map { it.toString() })
     }
 
     Column(modifier = modifier.fillMaxSize()) {
@@ -133,18 +143,7 @@ fun UploadScreen(
         UploadForm(
             state = state,
             viewModel = viewModel,
-            onPickMedia = {
-                requestNotificationPermissionIfNeeded(context, notificationPermission)
-                openPickerOrRequestPermission(context, mediaPermission) { showPicker = true }
-            },
-            onImportInbox = viewModel::importFromInbox,
-            onBrowseFiles = {
-                // 「浏览文件」闸门：已持「所有文件访问」直接开弹层，未持先弹说明（跳授权在对话框内）；
-                // 判定单源在 StagingRepository（经 VM 转发），本页不再留私有同款实现
-                scope.launch {
-                    if (viewModel.hasAllFilesAccess()) showBrowser = true else showBrowserPermHint = true
-                }
-            },
+            onSystemFiles = { systemFilesLauncher.launch(SYSTEM_FILES_MIME_TYPES) },
             onCreateDir = { showCreateDirDialog = true },
             onEnqueue = {
                 requestNotificationPermissionIfNeeded(context, notificationPermission)
@@ -163,37 +162,6 @@ fun UploadScreen(
             creating = state.creatingDir,
         )
     }
-
-    if (showPicker) {
-        MediaPickerDialog(
-            onConfirm = { picked ->
-                showPicker = false
-                viewModel.acceptPickedItems(picked)
-            },
-            onDismiss = { showPicker = false },
-        )
-    }
-
-    // 「浏览文件」未授权说明：授权后返回本页再点入口重新过闸门（无 ON_RESUME 自动重开）
-    if (showBrowserPermHint) {
-        BrowsePermissionDialog(
-            onGrant = {
-                showBrowserPermHint = false
-                openAllFilesAccessSettings(context)
-            },
-            onDismiss = { showBrowserPermHint = false },
-        )
-    }
-
-    if (showBrowser) {
-        FileBrowserDialog(
-            onConfirm = { files ->
-                showBrowser = false
-                viewModel.acceptPickedFiles(files)
-            },
-            onDismiss = { showBrowser = false },
-        )
-    }
 }
 
 /**
@@ -210,9 +178,7 @@ fun UploadScreen(
 private fun UploadForm(
     state: UploadUiState,
     viewModel: UploadViewModel,
-    onPickMedia: () -> Unit,
-    onImportInbox: () -> Unit,
-    onBrowseFiles: () -> Unit,
+    onSystemFiles: () -> Unit,
     onCreateDir: () -> Unit,
     onEnqueue: () -> Unit,
 ) {
@@ -255,14 +221,10 @@ private fun UploadForm(
         // —— 批次默认区（挂靠批）：新进项自动继承；已有暂存项可「应用到全部」——
         BatchDefaultSection(state = state, viewModel = viewModel)
 
-        // —— 放文件：三条管道入口（相册 / 收件箱 / 浏览文件），常驻 ——
+        // —— 放文件：唯一入口「系统文件」（SAF，2026-09-29 用户拍板精简：相册/收件箱
+        // 导入/浏览文件三入口退役——SAF 隐藏目录可见 + 免存储授权，一口全覆盖），常驻 ——
         SectionTitle("添加文件")
-        AddSourcesRow(
-            state = state,
-            onPickMedia = onPickMedia,
-            onImportInbox = onImportInbox,
-            onBrowseFiles = onBrowseFiles,
-        )
+        AddSourcesRow(onSystemFiles = onSystemFiles)
 
         // —— 逐项校对：暂存列表（空态给引导文案；有项时逐条展开编辑）——
         if (state.pendingItems.isEmpty()) {
@@ -312,45 +274,21 @@ private fun UploadForm(
 }
 
 /**
- * 选文件入口行（三条管道，常驻）：「从相册选择」（内置相册式选择器）+「从收件箱导入」
- * （设置页选定的下载收件箱一键扫描入暂存区）一行两钮；「浏览文件」（2026-09-28，
- * 纯 File API 全盘浏览多选，补齐相册看不到的点前缀隐藏目录场景）通栏一行——
- * 三个按钮同排会在窄屏挤压中文文案。未设收件箱时导入按钮禁用并给引导提示
- * （设置页路径）；收件箱扫描进行中按钮转文案防重。
+ * 选文件入口（唯一管道「系统文件」，常驻；2026-09-29 用户拍板精简，原相册选择器/
+ * 收件箱导入/浏览文件三入口退役）：SAF 文档选择器多选——能见点前缀隐藏目录且免
+ * 「所有文件访问」授权，一口覆盖三个退役入口的全部场景。
  */
 @Composable
-private fun AddSourcesRow(
-    state: UploadUiState,
-    onPickMedia: () -> Unit,
-    onImportInbox: () -> Unit,
-    onBrowseFiles: () -> Unit,
-) {
+private fun AddSourcesRow(onSystemFiles: () -> Unit) {
     Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Button(onClick = onPickMedia, modifier = Modifier.weight(1f)) {
-                Text(PICKER_BUTTON_TEXT)
-            }
-            Button(
-                onClick = onImportInbox,
-                enabled = state.inboxPath != null && !state.scanningInbox,
-                modifier = Modifier.weight(1f),
-            ) {
-                Text(if (state.scanningInbox) INBOX_SCANNING_TEXT else INBOX_BUTTON_TEXT)
-            }
+        Button(onClick = onSystemFiles, modifier = Modifier.fillMaxWidth()) {
+            Text(SYSTEM_FILES_BUTTON_TEXT)
         }
-        Button(onClick = onBrowseFiles, modifier = Modifier.fillMaxWidth()) {
-            Text(BROWSE_BUTTON_TEXT)
-        }
-        if (state.inboxPath == null) {
-            Text(
-                text = INBOX_NOT_SET_HINT,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+        Text(
+            text = SYSTEM_FILES_HINT,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         Text(
             text = ADD_FILES_FORMAT_HINT,
             style = MaterialTheme.typography.bodySmall,
@@ -577,104 +515,24 @@ private fun requestNotificationPermissionIfNeeded(context: Context, launcher: Ac
     }
 }
 
-// ---------- 「浏览文件」入口（2026-09-28）：全盘 File 浏览的「所有文件访问」闸门 ----------
-// 闸门判定（hasAllFilesAccess）走 UploadViewModel → StagingRepository → InboxFileStore
-// 单源，本文件不再留实现。
-
-/**
- * 跳系统「所有文件访问」授权页（部分 ROM 无 per-app 页时退回全量列表页）。
- * Intent 装配与 feature:settings 的 openAllFilesAccessSettings 逐行同款——其为 internal
- * 且 feature 间禁止互相依赖（ADR-0014 单向 core），无法跨模块复用，此处等价重写并注明出处。
- */
-private fun openAllFilesAccessSettings(context: Context) {
-    val perApp = Intent(
-        Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
-        Uri.parse("package:${context.packageName}"),
-    )
-    runCatching { context.startActivity(perApp) }
-        .recoverCatching { context.startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)) }
-}
-
-/**
- * 「浏览文件」未授权说明对话框：为何需要（隐藏目录系统相册扫不到）+ 跳系统授权页。
- * 授权返回后不自动开弹层——用户再点一次入口重新过闸门（避免授权页往返时序竞态）。
- */
-@Composable
-private fun BrowsePermissionDialog(onGrant: () -> Unit, onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(BROWSE_PERM_TITLE) },
-        text = { Text(BROWSE_PERM_EXPLAIN) },
-        confirmButton = {
-            TextButton(onClick = onGrant) { Text(BROWSE_PERM_GRANT) }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text(BROWSE_PERM_CANCEL) }
-        },
-    )
-}
-
-// ---------- 媒体读权限与内置相册选择器入口（2026-09-25 拍板，替代 SAF 选择器） ----------
-// 官方查证（铁律 8）：MediaStore 图片/视频读取 API 33+ 走 READ_MEDIA_IMAGES/READ_MEDIA_VIDEO
-// 细分权限（READ_EXTERNAL_STORAGE 在 33+ 失效），26~32 走 READ_EXTERNAL_STORAGE。
-// MediaStore 记录 URI 的跨进程读授权随这些运行时权限存活，无需 takePersistableUriPermission
-// （该 API 只作用于 SAF grant，对 MediaStore URI 本就不适用）。
-
-/** 本选择器需要的媒体读权限集（按系统版本；官方粒度最小化口径） */
-private fun requiredMediaPermissions(): List<String> =
-    if (Build.VERSION.SDK_INT >= 33) {
-        listOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO)
-    } else {
-        listOf(Manifest.permission.READ_EXTERNAL_STORAGE)
-    }
-
-/**
- * 媒体读权限判定。MANAGE_EXTERNAL_STORAGE（「所有文件访问」，ADR-0015 本机模式用户
- * 可能已授予）视为已授权——All-Files-Access 隐含 MediaStore 读，无需重复弹细分授权。
- */
-private fun hasMediaReadPermission(context: Context): Boolean {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && Environment.isExternalStorageManager()) {
-        return true
-    }
-    return requiredMediaPermissions().all {
-        context.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED
-    }
-}
-
-/** 已授权直接进选择器；否则发起运行时申请（回调里任一授予即打开，见 [UploadScreen]） */
-private fun openPickerOrRequestPermission(
-    context: Context,
-    launcher: ActivityResultLauncher<Array<String>>,
-    onOpen: () -> Unit,
-) {
-    if (hasMediaReadPermission(context)) {
-        onOpen()
-    } else {
-        launcher.launch(requiredMediaPermissions().toTypedArray())
-    }
-}
+// —— 相册选择器（MediaPickerScreen，含媒体读权限申请）与浏览文件弹层（FileBrowserScreen，
+//    含「所有文件访问」闸门）已随 2026-09-29 入口精简退役，文件整体删除（死代码零残留）——
 
 /** 目录树根路径（协议口径：空串 = 库根） */
 private const val ROOT_PATH = ""
 
-/** 选文件入口按钮文案 */
-private const val PICKER_BUTTON_TEXT = "从相册选择"
-private const val INBOX_BUTTON_TEXT = "从收件箱导入"
-private const val INBOX_SCANNING_TEXT = "导入中…"
+// ---------- 「系统文件」唯一入口（2026-09-29）：SAF 文档选择器，隐藏目录可见 + 免存储授权 ----------
+// launcher 与持久授权链见 UploadScreen 内 systemFilesLauncher 注释；管道落点 acceptUris
+// （与系统分享同一条暂存摄取管道，UploadStagingIngestor.ingestUris）。
 
-/** 「浏览文件」入口按钮文案（2026-09-28：File API 全盘浏览多选，补齐隐藏目录场景） */
-private const val BROWSE_BUTTON_TEXT = "浏览文件"
+/** SAF 多选 MIME 限定（图片 + 视频；白名单校验仍在服务端，此处只收窄选择器可见类型） */
+private val SYSTEM_FILES_MIME_TYPES = arrayOf("image/*", "video/*")
 
-/** 「浏览文件」未授权说明对话框文案（解释口径对齐收件箱设置页 PERM_MISSING_TEXT 的隐藏目录语义） */
-private const val BROWSE_PERM_TITLE = "需要「所有文件访问」"
-private const val BROWSE_PERM_EXPLAIN =
-    "浏览文件需要直接读取主存储：目标文件夹常是点前缀隐藏目录（论坛/下载器缓存多在此类目录），" +
-        "系统相册选择器看不到它们。请在系统设置里打开「所有文件访问」，返回后再点一次「浏览文件」。"
-private const val BROWSE_PERM_GRANT = "去系统设置授权"
-private const val BROWSE_PERM_CANCEL = "取消"
+private const val SYSTEM_FILES_BUTTON_TEXT = "系统文件"
 
-/** 收件箱未设置时的入口提示（指向收件箱设置页；2026-09-28 入口迁至数据管理 hub） */
-private const val INBOX_NOT_SET_HINT = "未设置下载收件箱：请到 数据管理 → 上传收件箱与归档 选择文件夹"
+/** 「系统文件」入口副文案（选文件唯一入口；免授权也能见隐藏目录是它的覆盖面来源） */
+private const val SYSTEM_FILES_HINT =
+    "「系统文件」用系统文档选择器：可直接选到点前缀隐藏目录里的媒体，无需「所有文件访问」授权"
 
 /** 暂存列表空态引导（动线指引：添加 → 自动继承批次默认 → 逐项校对 → 上传） */
 private const val STAGING_EMPTY_GUIDE =

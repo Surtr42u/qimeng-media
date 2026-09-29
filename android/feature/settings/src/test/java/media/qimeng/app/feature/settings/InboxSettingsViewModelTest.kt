@@ -178,4 +178,55 @@ class InboxSettingsViewModelTest {
         driveIdle()
         assertFalse(viewModel.uiState.value.browserVisible)
     }
+
+    // ---- 回显决策（2026-09-29 修复：任一已有选定进页不再展开浏览器，清到两者皆空重开） ----
+
+    @Test
+    fun `已设置收件箱进页浏览器不展开`() {
+        val staging = fakeStaging().apply { seedInboxPath("/storage/emulated/0/.download") }
+        val viewModel = InboxSettingsViewModel(staging)
+        driveIdle()
+        assertEquals("/storage/emulated/0/.download", viewModel.uiState.value.selectedInboxPath)
+        // 已有选定：回显当前值卡 + 「重新选择」，不再回显「选择文件夹」浏览器
+        assertFalse(viewModel.uiState.value.browserVisible)
+    }
+
+    @Test
+    fun `仅设置归档文件夹进页浏览器同样不展开`() {
+        val staging = fakeStaging().apply { seedArchivePath("/storage/emulated/0/archive") }
+        val viewModel = InboxSettingsViewModel(staging)
+        driveIdle()
+        assertFalse(viewModel.uiState.value.browserVisible)
+    }
+
+    @Test
+    fun `清除唯一选定后浏览器重开保住再选入口`() {
+        val staging = fakeStaging().apply { seedInboxPath("/storage/emulated/0/.download") }
+        val viewModel = InboxSettingsViewModel(staging)
+        driveIdle()
+        assertFalse(viewModel.uiState.value.browserVisible)
+
+        viewModel.clearInbox()
+        driveIdle()
+        assertNull(viewModel.uiState.value.selectedInboxPath)
+        // 两者皆空：当前值卡不再渲染「重新选择」，浏览器必须重开（唯一再选入口）
+        assertTrue(viewModel.uiState.value.browserVisible)
+    }
+
+    @Test
+    fun `仅清一个选定且另一仍在时浏览器保持收起`() {
+        val staging = fakeStaging().apply {
+            seedInboxPath("/storage/emulated/0/.download")
+            seedArchivePath("/storage/emulated/0/archive")
+        }
+        val viewModel = InboxSettingsViewModel(staging)
+        driveIdle()
+        assertFalse(viewModel.uiState.value.browserVisible)
+
+        viewModel.clearInbox()
+        driveIdle()
+        assertNull(viewModel.uiState.value.selectedInboxPath)
+        // 归档仍有选定：其当前值卡的「重新选择」可用，浏览器不展开
+        assertFalse(viewModel.uiState.value.browserVisible)
+    }
 }
