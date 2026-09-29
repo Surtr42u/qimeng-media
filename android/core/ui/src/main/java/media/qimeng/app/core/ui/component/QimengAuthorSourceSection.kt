@@ -2,6 +2,7 @@ package media.qimeng.app.core.ui.component
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -84,21 +85,26 @@ fun QimengAuthorSuggestSection(
             LaunchedEffect(query) {
                 if (query.isNotBlank()) menuOpen = true
             }
-            QimengCapsuleTextField(
-                value = query,
-                onValueChange = onQueryChange,
-                placeholder = "输入作者名（联想选择，回车新建）",
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = { onCommitInput() }),
-            )
-            if (query.isNotBlank() && suggestions.isNotEmpty()) {
-                AuthorSuggestionMenu(
-                    suggestions = suggestions,
-                    visible = menuOpen,
-                    onDismiss = { menuOpen = false },
-                    onPick = onPickSuggestion,
+            // 输入框与菜单必须同包一个 Box：DropdownMenu 锚定其**直接父容器**的矩形，
+            // 父容器是大表单 Column 时菜单会翻转到屏幕顶部（2026-09-29 真机实测）；锚定
+            // 输入框自身的 Box 才能贴着输入框正下方展开。
+            Box {
+                QimengCapsuleTextField(
+                    value = query,
+                    onValueChange = onQueryChange,
+                    placeholder = "输入作者名（联想选择，回车新建）",
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { onCommitInput() }),
                 )
+                if (query.isNotBlank() && suggestions.isNotEmpty()) {
+                    AuthorSuggestionMenu(
+                        suggestions = suggestions,
+                        visible = menuOpen,
+                        onDismiss = { menuOpen = false },
+                        onPick = onPickSuggestion,
+                    )
+                }
             }
             if (query.isBlank() && seeds.isNotEmpty()) {
                 // 空输入不输入也能看到可选作者（仅资产编辑页传入；suggest 空查询无结果）

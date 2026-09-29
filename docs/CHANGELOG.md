@@ -14,7 +14,7 @@
 
 - **需求**（用户复测反馈两项）：① 批次来源建议「少了好几个单独的」——上一笔只过滤组合条目，但 hanime1/r34/i站/老王论坛 这些平台词**只存在于组合条目里**（真库词表 9 条中 6 条是组合），被连词过滤掉了；② App 作者联想「提取太卡」且弹层观感是个内联胶囊 Card——每敲一字建议卡把整张长表单往下顶、全表单重排。
 - **来源建议拆词提取（①，双端同口径）**：`individualSourceWords` 语义从「过滤组合」改为「**按空白拆词+去重**」——组合条目拆出的平台词全部纳入建议、首现顺序保留（App core:model 与 Web lib/source-options 各自实现同口径；真库词表实测 9 条 → 7 个平台词 kemono/小红车/老王论坛/x/hanime1/r34/i站）。消费点不变（App UploadViewModel/AssetEditViewModel、Web SourceSelectField）；词表管理卡仍显全量原始条目（组合原貌维护场景可见）；已选组合值回落「词表外已选」仍可见可移除。测试：App SourceWordsTest 重写 5 用例（含真库出厂词表全形态用例）、Web vitest 同步 5 用例；feature:upload 用例改断言拆词提取（只存在于组合的词必须出现）。
-- **App 联想弹层改浮层下拉（②，用户拍板「搜索那种」）**：`QimengAuthorSuggestSection` 输入非空时的建议从内联 Card（`QimengAuthorSuggestionList`，已删）改为 **DropdownMenu 浮层**悬于输入框正下方——零布局位移治「敲字全表单重排」的卡顿，观感即搜索补全式弹层（行内容不变：displayName + 文件数；上限协议 10 条，菜单内自滚）；手动点外部关闭后继续输入自动重开（搜索惯例）。资产编辑页共用本组件同步受益；其空输入种子全显（inline 限高列表）保留不动。上笔的百度式空输入零建议行为不变。
+- **App 联想弹层改浮层下拉（②，用户拍板「搜索那种」）**：`QimengAuthorSuggestSection` 输入非空时的建议从内联 Card（`QimengAuthorSuggestionList`，已删）改为 **DropdownMenu 浮层**悬于输入框正下方——零布局位移治「敲字全表单重排」的卡顿，观感即搜索补全式弹层（行内容不变：displayName + 文件数；上限协议 10 条，菜单内自滚）；手动点外部关闭后继续输入自动重开（搜索惯例）。资产编辑页共用本组件同步受益；其空输入种子全显（inline 限高列表）保留不动。上笔的百度式空输入零建议行为不变。**同日装机补修**：DropdownMenu 锚定其直接父容器矩形——初版父容器是分节 Column，菜单翻转到了屏幕顶部（真机截图实证）；输入框与菜单同包一个 Box 令锚点=输入框自身，菜单贴输入框正下方展开。
 - **测试与门禁**：web vitest 202 全绿（21 文件）、build 通过、lint 0 error；app `:core:model:test`（含新 SourceWordsTest）+ `:feature:upload:testDebugUnitTest` 全绿、`:core:ui`/`:feature:detail` 编译通过。
 - **文档**：本笔。协议零改动。
 
