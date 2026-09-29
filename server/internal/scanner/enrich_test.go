@@ -106,6 +106,48 @@ func TestScanCosLibraryCreatesAuthors(t *testing.T) {
 	}
 }
 
+// TestScanRelinksOrphanCosAssets：零关联 COS 资产在扫描收尾自愈重挂作者
+// （2026-09-29「COS 文件漏进首页推荐」实证：入库与作者关联是两条独立语句，
+// 半途失败/进程死亡留下永久漏网者——隔离判定按作者关联走，无关联即漏进
+// 常规流；轮询扫描对已存在文件跳过 re-ingest、永不自愈，必须显式兜底）。
+func TestScanRelinksOrphanCosAssets(t *testing.T) {
+	probe := newProbeStub(nil, nil)
+	env := newTestEnv(t, probe.call)
+	if _, err := env.conn.Exec(`UPDATE libraries SET kind = 'cos' WHERE id = ?`, env.lib.ID); err != nil {
+		t.Fatalf("置 cos kind 失败: %v", err)
+	}
+	env.lib.Kind = LibraryKindCos
+	env.writeFile(t, "蠢沫沫/水色/蠢沫沫 -水色1.jpg", 100)
+
+	if _, err := env.s.Scan(context.Background(), env.lib); err != nil {
+		t.Fatalf("首扫失败: %v", err)
+	}
+	hit := env.assetByPath(t, "蠢沫沫/水色/蠢沫沫 -水色1.jpg")
+	refs, err := env.q.ListAssetAuthorRefs(context.Background(), hit.AssetID)
+	if err != nil || len(refs) != 1 {
+		t.Fatalf("首扫后关联=%+v err=%v, want 恰 1 条 cos 关联", refs, err)
+	}
+
+	// 复现历史缺陷形态：删光作者关联（入库成功、关联半途丢失后的存量形态）。
+	if err := env.q.DeleteAssetAuthorsByAssetID(context.Background(), hit.AssetID); err != nil {
+		t.Fatalf("删除作者关联失败: %v", err)
+	}
+
+	// 复扫：文件 size+mtime 未变 → walk 跳过 re-ingest（正是历史漏网者无法
+	// 自愈的原因），收尾自愈必须重挂作者。
+	if _, err := env.s.Scan(context.Background(), env.lib); err != nil {
+		t.Fatalf("复扫失败: %v", err)
+	}
+	healed, err := env.q.ListAssetAuthorRefs(context.Background(), hit.AssetID)
+	if err != nil {
+		t.Fatalf("ListAssetAuthorRefs 失败: %v", err)
+	}
+	wantID := authoring.GenerateCosAuthorID("蠢沫沫")
+	if len(healed) != 1 || healed[0].ID != wantID || healed[0].Type != authoring.AuthorTypeCos {
+		t.Errorf("自愈后关联=%+v, want [{%s cos}]", healed, wantID)
+	}
+}
+
 // TestRenameWithMtimeRecomputesEnrichment：改名 + mtime 变化 → 不走移动合并、
 // 重 ingest → source/角色按新文件名重算（覆盖语义，enrich.go 文件头注释）。
 func TestRenameWithMtimeRecomputesEnrichment(t *testing.T) {
