@@ -144,4 +144,14 @@ class UploadModelsTest {
     fun `叶子目录点行不展开`() {
         assertFalse(UploadRules.shouldExpandOnSelect(hasChildren = false, alreadyExpanded = false))
     }
+
+    // ---- UploadRules.isAbsoluteFilePath（源标识判定：路径类 vs content uri 类）----
+
+    @Test
+    fun `源标识路径类判定`() {
+        assertTrue(UploadRules.isAbsoluteFilePath("/storage/emulated/0/.dl/a.jpg"))
+        assertTrue(UploadRules.isAbsoluteFilePath("/tmp/x"))
+        assertFalse(UploadRules.isAbsoluteFilePath("content://media/external/images/1"))
+        assertFalse(UploadRules.isAbsoluteFilePath(""))
+    }
 }

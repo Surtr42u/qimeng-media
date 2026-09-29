@@ -8,7 +8,9 @@ import { MAINTENANCE_FILES_PATH, MAINTENANCE_FILES_VOCABULARY_PATH } from '@/lib
 /**
  * 上传子页（数据管理 hub「上传文件」卡 → /app/maintenance/files/upload）。
  * 2026-09-28 重排：UploadCard 升级为 UploadWorkbench（交互同构 App 上传页：
- * 批次库/目录 + 批次挂靠默认 + 暂存列表逐项编辑 + 门禁上传递，配置区常驻）。
+ * 批次库/目录 + 批次挂靠默认 + 门禁上传递，配置区常驻）。2026-09-29 去暂存化
+ * （用户拍板「暂存了没意义，去掉」）：暂存列表/逐项编辑/开始上传按钮退役，
+ * 选完文件立即上传。
  * 2026-09-29 再拆：通用来源词表与作者总表镜像迁出为独立页（用户拍板「拆成
  * 两个」——本页只留上传动线），页顶留一行指引链接；目录浏览卡保留在后
  * （文件整理动线，与上传无耦合）。libraries 同源取数（useLibraries）。

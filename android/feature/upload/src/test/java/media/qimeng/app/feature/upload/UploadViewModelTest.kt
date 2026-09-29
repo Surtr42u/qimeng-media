@@ -9,7 +9,6 @@ import org.junit.Rule
 import org.junit.Test
 import media.qimeng.app.core.model.AuthorSuggestion
 import media.qimeng.app.core.model.LibraryChoice
-import media.qimeng.app.core.model.StagedUpload
 import media.qimeng.app.core.model.StagingBatchConfig
 import media.qimeng.app.core.model.UploadItem
 import media.qimeng.app.core.model.UploadLimits
@@ -21,15 +20,14 @@ import media.qimeng.app.core.testing.FakeUploadRepository
 import media.qimeng.app.core.testing.MainDispatcherRule
 
 /**
- * 上传流表单状态机锁定（M4-5；2026-09-25 暂存区重做）：
- * - 暂存持久化：暂存条目/批次默认全部走 StagingRepository（写路径断言 add/update/remove/
- *   batchConfig 调用），跨进程恢复语义由持久层单测锁定（StagingJson/InboxFileStore）；
- * - 超限本地拦截：被拦项保留在暂存区，其余照常入队；
- * - 门禁：批次库必选——逐项全覆盖时可缺省；分组入队（批次项走已选目录、覆盖项走库根）；
- * - SAF 单管道摄取（2026-09-29 入口精简）：describe 解元数据 + 按 uri 去重；
- * - 失效探测：路径类条目源不存在标「文件已不存在」，移除通道与普通移除同源；
- * - 作品名联想：防抖 + 建议回填（基名回填，扩展名锁定拼接）；
- * - 挂靠批：批次默认（作者/来源/应用到全部，新进项继承）/ 逐项编辑（清作者连带清来源）。
+ * 上传流表单状态机锁定（M4-5；2026-09-29 直传化）：
+ * - 直传管道（暂存区退役，选完即传）：describe 解元数据 → 未选库门禁 → 逐项判超限
+ *   （超限项本地拦截不出网给 blockText 文案，未超限项照常入队）→ enqueue 继承批次默认
+ *   快照（批次库 + 已选目录 + 作者/来源 + 库名）；
+ * - 批次默认持久化：库/作者/来源走 StagingRepository.batchConfig（写路径断言
+ *   batchConfigCalls），跨进程恢复语义由持久层单测锁定（StagingJson/DataStoreStagingRepository）；
+ * - 批次作者联想：防抖 + 回车精确命中 + 未命中提示；
+ * - 队列：状态透传、聚合行计数（取消不计失败、挂靠失败分列）、取消透传。
  */
 class UploadViewModelTest {
 
@@ -44,8 +42,8 @@ class UploadViewModelTest {
     private fun newViewModel(
         repository: FakeUploadRepository = FakeUploadRepository().apply {
             librariesResult = listOf(libraryA, libraryB)
-            // SAF 管道元数据单源（入口精简后 describe 是唯一入暂存前置）：默认按 uri 尾段
-            // 给 IMG_N.jpg 形态展示名——扩展名锁定类用例（effectiveUploadName 拼接）的前提
+            // 直传管道元数据单源（describe 是唯一入队前置）：默认按 uri 尾段给 IMG_N.jpg
+            // 形态展示名——超限拦截文案断言（big.jpg 等）的前提
             describedItem = { uri ->
                 UploadItem(uri = uri, displayName = "IMG_${uri.substringAfterLast('/')}.jpg", sizeBytes = 100L)
             }
@@ -58,16 +56,16 @@ class UploadViewModelTest {
         return Quad(viewModel, repository, authorRepository, staging)
     }
 
-    /** 装配记录四元组（原 Triple 因暂存仓注入扩为四元） */
+    /** 装配记录四元组（库/作者/批次默认仓三依赖 + VM） */
     private data class Quad<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
 
-    /** 流程重排（2026-09-25）：库改在暂存区手选（持久化批次配置），入队类用例先选库再 enqueue */
+    /** 批次库是直传门禁前置（持久化批次配置），入队类用例先选库再 submitUris */
     private fun selectDefaultLibrary(viewModel: UploadViewModel) {
         viewModel.selectLibrary(libraryA)
         driveIdle()
     }
 
-    // ---- 流程重排（2026-09-25）：未选库直接选文件 + 开始上传门禁 ----
+    // ---- 首屏加载 ----
 
     @Test
     fun `init加载库列表但不自动选库`() {
@@ -112,164 +110,96 @@ class UploadViewModelTest {
     }
 
     @Test
-    fun `acceptUris去重进持久暂存区`() {
-        val (viewModel, _, _, staging) = newViewModel()
-        viewModel.acceptUris(listOf("content://x/1"))
-        driveIdle()
-        viewModel.acceptUris(listOf("content://x/1", "content://x/2"))
-        driveIdle()
-        assertEquals(2, viewModel.uiState.value.pendingItems.size)
-        assertEquals(2, staging.addCalls.size)
-    }
-
-    @Test
-    fun `未选库enqueue被拦截并提示选库后正常入队`() {
-        val (viewModel, repository, _, _) = newViewModel()
-        viewModel.acceptUris(listOf("content://media/img/1"))
-        driveIdle()
-        viewModel.enqueue()
-        driveIdle()
-        assertTrue(repository.enqueueCalls.isEmpty())
-        assertEquals("先选择目标库", viewModel.uiState.value.blockMessage)
-        // 同一批暂存项，选库后正常入队
-        selectDefaultLibrary(viewModel)
-        viewModel.enqueue()
-        driveIdle()
-        assertEquals(1, repository.enqueueCalls.size)
-        assertEquals("lib-a", repository.enqueueCalls.single().libraryId)
-        assertTrue(viewModel.uiState.value.pendingItems.isEmpty())
-    }
-
-    @Test
-    fun `开始上传门禁派生未选库禁用并提示`() {
+    fun `切库重载目录树且目标目录回库根`() {
         val (viewModel, _, _) = newViewModel()
-        // 无暂存项：门禁关闭且不提示
-        assertFalse(viewModel.uiState.value.canEnqueue)
-        assertNull(viewModel.uiState.value.enqueueGateHint)
-        viewModel.acceptUris(listOf("content://media/img/1"))
+        viewModel.selectDir("photos")
+        viewModel.selectLibrary(libraryB)
         driveIdle()
-        // 有暂存项未选库：禁用 + 提示
-        assertFalse(viewModel.uiState.value.canEnqueue)
-        assertEquals("先选择目标库", viewModel.uiState.value.enqueueGateHint)
-        selectDefaultLibrary(viewModel)
-        // 选库后门禁放行、提示消失
-        assertTrue(viewModel.uiState.value.canEnqueue)
-        assertNull(viewModel.uiState.value.enqueueGateHint)
+        assertEquals(libraryB, viewModel.uiState.value.selectedLibrary)
+        assertEquals("", viewModel.uiState.value.selectedDirPath)
     }
 
-    @Test
-    fun `逐项全覆盖时未选批次库门禁放行`() {
-        val (viewModel, _, _) = newViewModel()
-        viewModel.acceptUris(listOf("content://media/img/1"))
-        driveIdle()
-        val item = viewModel.uiState.value.pendingItems.single()
-        viewModel.toggleItemLibrary(item, libraryA)
-        driveIdle()
-        assertTrue(viewModel.uiState.value.canEnqueue)
-        assertNull(viewModel.uiState.value.enqueueGateHint)
-    }
+    // ---- 直传管道（2026-09-29：选完即传，无暂存/无开始上传按钮） ----
 
     @Test
-    fun `覆盖项与批次项混合时未选库仍拦截`() {
-        val (viewModel, _, _) = newViewModel()
-        viewModel.acceptUris(
-            listOf(
-                "content://media/img/1",
-                "content://media/img/2",
-            ),
-        )
-        driveIdle()
-        viewModel.toggleItemLibrary(viewModel.uiState.value.pendingItems.first(), libraryA)
-        driveIdle()
-        assertFalse(viewModel.uiState.value.canEnqueue)
-        assertNotNull(viewModel.uiState.value.enqueueGateHint)
-    }
-
-    @Test
-    fun `enqueue分组入队批次项走已选目录覆盖项走库根`() {
+    fun `submitUris选完即传入队并继承批次默认`() {
         val (viewModel, repository, _, _) = newViewModel()
         selectDefaultLibrary(viewModel)
         viewModel.selectDir("photos")
-        viewModel.acceptUris(
-            listOf(
-                "content://media/img/1",
-                "content://media/img/2",
-            ),
-        )
+        viewModel.pickBatchAuthor(AuthorSuggestion(id = "author-a", displayName = "作者A", fileCount = 3))
+        viewModel.toggleBatchSource("kemono")
         driveIdle()
-        viewModel.toggleItemLibrary(viewModel.uiState.value.pendingItems.first(), libraryB)
+        viewModel.submitUris(listOf("content://media/img/1"))
         driveIdle()
-        viewModel.enqueue()
-        driveIdle()
-        // 两条分组：批次组（lib-a + photos）与覆盖组（lib-b + 库根）
-        val calls = repository.enqueueCalls
-        assertEquals(2, calls.size)
-        val batchCall = calls.first { it.libraryId == "lib-a" }
-        assertEquals("photos", batchCall.dir)
-        assertEquals(listOf("IMG_2.jpg"), batchCall.items.map { it.displayName })
-        val overrideCall = calls.first { it.libraryId == "lib-b" }
-        assertEquals("", overrideCall.dir)
-        assertEquals(listOf("IMG_1.jpg"), overrideCall.items.map { it.displayName })
-        // 入队项全部移出暂存区
-        assertTrue(viewModel.uiState.value.pendingItems.isEmpty())
+
+        // 单次入队：批次库 + 已选目录；载荷继承批次默认（作者/来源）与库名（归档分派用）
+        val call = repository.enqueueCalls.single()
+        assertEquals("lib-a", call.libraryId)
+        assertEquals("photos", call.dir)
+        assertEquals(listOf("IMG_1.jpg"), call.items.map { it.displayName })
+        assertEquals("author-a", call.items.single().attachAuthorId)
+        assertEquals("作者A", call.items.single().attachAuthorName)
+        assertEquals(listOf("kemono"), call.items.single().attachSources)
+        assertEquals("测试库A", call.items.single().libraryName)
+        // 直传化：无拦截横幅残留
+        assertNull(viewModel.uiState.value.blockMessage)
     }
 
     @Test
-    fun `enqueue解析库名随载荷入队覆盖组带各自库名`() {
+    fun `submitUris经describe解元数据入队`() {
         val (viewModel, repository, _, _) = newViewModel()
         selectDefaultLibrary(viewModel)
-        viewModel.acceptUris(
-            listOf(
-                "content://media/img/1",
-                "content://media/img/2",
-            ),
-        )
+        viewModel.submitUris(listOf("content://media/img/1", "content://media/img/2"))
         driveIdle()
-        viewModel.toggleItemLibrary(viewModel.uiState.value.pendingItems.first(), libraryB)
-        driveIdle()
-        viewModel.enqueue()
-        driveIdle()
-
-        // 批次组带批次库名、覆盖组带覆盖库名（worker 归档到 <归档文件夹>/<库名>/ 用）
-        assertEquals("测试库A", repository.enqueueCalls.single { it.libraryId == "lib-a" }.items.single().libraryName)
-        assertEquals("测试库B", repository.enqueueCalls.single { it.libraryId == "lib-b" }.items.single().libraryName)
+        val enqueued = repository.enqueueCalls.single().items
+        assertEquals(listOf("IMG_1.jpg", "IMG_2.jpg"), enqueued.map { it.displayName })
+        // describe 是直传管道唯一元数据来源：逐 uri 调用过
+        assertEquals(2, repository.describeCalls)
     }
 
     @Test
-    fun `enqueue库名解析不到时传空串回退uploaded归档`() {
-        // 库列表加载失败/库已被删：id 解析不到名——空串入队，worker 侧回退 uploaded/ 归档
-        val repository = FakeUploadRepository().apply { librariesResult = emptyList() }
-        val staging = FakeStagingRepository().apply {
-            seedBatch(StagingBatchConfig(libraryId = "lib-gone"))
-        }
-        val viewModel = UploadViewModel(repository, FakeAuthorRepository(), staging)
-        driveIdle()
-        viewModel.acceptUris(listOf("content://media/img/1"))
-        driveIdle()
-        viewModel.enqueue()
-        driveIdle()
-
-        assertEquals("", repository.enqueueCalls.single().items.single().libraryName)
-    }
-
-    @Test
-    fun `enqueue正常入队并清空暂存区`() {
+    fun `submitUris空列表忽略`() {
         val (viewModel, repository, _, _) = newViewModel()
-        viewModel.acceptUris(listOf("content://x/1"))
-        driveIdle()
         selectDefaultLibrary(viewModel)
-        viewModel.enqueue()
+        viewModel.submitUris(emptyList())
         driveIdle()
-        val state = viewModel.uiState.value
-        assertTrue(state.pendingItems.isEmpty())
+        assertTrue(repository.enqueueCalls.isEmpty())
+        assertEquals(0, repository.describeCalls)
+    }
+
+    @Test
+    fun `未选库submitUris被拦截并提示选库后正常入队`() {
+        val (viewModel, repository, _, _) = newViewModel()
+        viewModel.submitUris(listOf("content://media/img/1"))
+        driveIdle()
+        // 未选库：不 describe 不入队，横幅提示
+        assertTrue(repository.enqueueCalls.isEmpty())
+        assertEquals(0, repository.describeCalls)
+        assertEquals("先选择目标库", viewModel.uiState.value.blockMessage)
+        // 选库后同一批文件正常入队
+        selectDefaultLibrary(viewModel)
+        viewModel.submitUris(listOf("content://media/img/1"))
+        driveIdle()
         assertEquals(1, repository.enqueueCalls.size)
         assertEquals("lib-a", repository.enqueueCalls.single().libraryId)
-        assertEquals("", repository.enqueueCalls.single().dir)
-        assertNull(state.blockMessage)
+        assertNull(viewModel.uiState.value.blockMessage)
     }
 
     @Test
-    fun `全部超限时拦截文案生成且不入队`() {
+    fun `未设批次默认时入队项不带挂靠`() {
+        val (viewModel, repository, _, _) = newViewModel()
+        selectDefaultLibrary(viewModel)
+        viewModel.submitUris(listOf("content://media/img/1"))
+        driveIdle()
+        val item = repository.enqueueCalls.single().items.single()
+        assertNull(item.attachAuthorId)
+        assertNull(item.attachSources)
+        // 库名仍随载荷入队（worker 归档分派用）
+        assertEquals("测试库A", item.libraryName)
+    }
+
+    @Test
+    fun `全部超限时拦截文案生成且不出网`() {
         val (viewModel, repository, _, _) = newViewModel(
             repository = FakeUploadRepository().apply {
                 librariesResult = listOf(libraryA)
@@ -279,19 +209,17 @@ class UploadViewModelTest {
                 }
             },
         )
-        viewModel.acceptUris(listOf("content://x/big"))
-        driveIdle()
         selectDefaultLibrary(viewModel)
-        viewModel.enqueue()
+        viewModel.submitUris(listOf("content://x/big"))
         driveIdle()
-        val state = viewModel.uiState.value
         assertTrue(repository.enqueueCalls.isEmpty())
+        val state = viewModel.uiState.value
         assertTrue(state.blockMessage?.contains("超过服务端上限 64 MB") == true)
         assertTrue(state.blockMessage?.contains("big.jpg") == true)
     }
 
     @Test
-    fun `部分超限时被拦项保留在暂存区其余照常入队`() {
+    fun `部分超限时被拦项拦下其余照常入队`() {
         val (viewModel, repository, _, _) = newViewModel(
             repository = FakeUploadRepository().apply {
                 librariesResult = listOf(libraryA)
@@ -305,17 +233,14 @@ class UploadViewModelTest {
                 }
             },
         )
-        viewModel.acceptUris(listOf("content://x/big", "content://x/small"))
-        driveIdle()
         selectDefaultLibrary(viewModel)
-        viewModel.enqueue()
+        viewModel.submitUris(listOf("content://x/big", "content://x/small"))
         driveIdle()
-        val state = viewModel.uiState.value
+        // 未超限项照常入队，超限项本地拦截（文案列名）
         val enqueued = repository.enqueueCalls.single().items
         assertEquals(listOf("small.jpg"), enqueued.map { it.displayName })
-        assertNotNull(state.blockMessage)
-        // 持久层语义：入队成功的项移除、被拦项保留（用户可移除或下次再传）
-        assertEquals(listOf("big.jpg"), state.pendingItems.map { it.displayName })
+        assertNotNull(viewModel.uiState.value.blockMessage)
+        assertTrue(viewModel.uiState.value.blockMessage?.contains("big.jpg") == true)
     }
 
     @Test
@@ -329,14 +254,43 @@ class UploadViewModelTest {
                 }
             },
         )
-        viewModel.acceptUris(listOf("content://x/edge"))
-        driveIdle()
         selectDefaultLibrary(viewModel)
-        viewModel.enqueue()
+        viewModel.submitUris(listOf("content://x/edge"))
         driveIdle()
         assertTrue(repository.enqueueCalls.isNotEmpty())
         assertNull(viewModel.uiState.value.blockMessage)
     }
+
+    @Test
+    fun `describe失败给错误横幅且不入队`() {
+        val (viewModel, repository, _, _) = newViewModel(
+            repository = FakeUploadRepository().apply {
+                librariesResult = listOf(libraryA)
+                describedItem = { throw IllegalStateException("describe boom") }
+            },
+        )
+        selectDefaultLibrary(viewModel)
+        viewModel.submitUris(listOf("content://media/img/1"))
+        driveIdle()
+        assertEquals(DESCRIBE_FAILED_MESSAGE, viewModel.uiState.value.errorMessage)
+        assertTrue(repository.enqueueCalls.isEmpty())
+    }
+
+    @Test
+    fun `入队失败给错误横幅`() {
+        val (viewModel, repository, _, _) = newViewModel(
+            repository = FakeUploadRepository().apply {
+                librariesResult = listOf(libraryA)
+                enqueueError = IllegalStateException("enqueue boom")
+            },
+        )
+        selectDefaultLibrary(viewModel)
+        viewModel.submitUris(listOf("content://media/img/1"))
+        driveIdle()
+        assertEquals(ENQUEUE_FAILED_MESSAGE, viewModel.uiState.value.errorMessage)
+    }
+
+    // ---- 新建子目录 ----
 
     @Test
     fun `新建子目录非法名不发起请求`() {
@@ -357,6 +311,8 @@ class UploadViewModelTest {
         assertEquals(listOf("lib-a" to "photos/2026"), repository.createDirCalls)
         assertEquals("photos/2026", viewModel.uiState.value.selectedDirPath)
     }
+
+    // ---- 队列（状态透传/聚合行/取消） ----
 
     @Test
     fun `队列状态透传到UI状态`() {
@@ -379,16 +335,6 @@ class UploadViewModelTest {
         assertEquals(UploadStatus.UPLOADING, queue.single().status)
         assertEquals(42, queue.single().progressPercent)
         assertTrue(viewModel.uiState.value.hasActiveWork)
-    }
-
-    @Test
-    fun `切库重载目录树且目标目录回库根`() {
-        val (viewModel, _, _) = newViewModel()
-        viewModel.selectDir("photos")
-        viewModel.selectLibrary(libraryB)
-        driveIdle()
-        assertEquals(libraryB, viewModel.uiState.value.selectedLibrary)
-        assertEquals("", viewModel.uiState.value.selectedDirPath)
     }
 
     private fun queueEntry(status: UploadStatus) = UploadQueueEntry(
@@ -444,267 +390,31 @@ class UploadViewModelTest {
         assertEquals("共 3 个 · 成功 1 · 失败 1", viewModel.uiState.value.queueSummary)
     }
 
-    // ---- 2026-09-25 暂存区重做：收件箱导入 ----
-
-    private fun inboxItem(path: String, name: String, video: Boolean = false) = StagedUpload(
-        source = path,
-        isPathSource = true,
-        displayName = name,
-        sizeBytes = 2048L,
-        isVideo = video,
-        addedAtMs = 1_730_000_000_000L,
-    )
-
-    // ---- 收件箱导入用例已随 2026-09-29 入口精简退役删除（管道删除；失效探测的路径类
-    //      暂存条目构造改由 seedItems 直供，不再依赖收件箱扫描前置） ----
-
-    // ---- 失效探测（暂存区重做）：文件已不存在可清除 ----
-
     @Test
-    fun `路径类条目源不存在标记失效且不阻塞其他项`() {
-        val staging = FakeStagingRepository().apply {
-            missingSources = setOf("/storage/emulated/0/.dl/gone.jpg")
-            seedItems(
-                listOf(
-                    inboxItem("/storage/emulated/0/.dl/gone.jpg", "gone.jpg"),
-                    inboxItem("/storage/emulated/0/.dl/here.jpg", "here.jpg"),
-                ),
-            )
-        }
-        val (viewModel, _, _, _) = newViewModel(staging = staging)
-        driveIdle()
-        val missing = viewModel.uiState.value.missingSources
-        assertEquals(setOf("/storage/emulated/0/.dl/gone.jpg"), missing)
-        assertEquals(2, viewModel.uiState.value.pendingItems.size)
-    }
-
-    @Test
-    fun `失效条目清除与普通移除同一通道`() {
-        val gone = inboxItem("/storage/emulated/0/.dl/gone.jpg", "gone.jpg")
-        val staging = FakeStagingRepository().apply { seedItems(listOf(gone)) }
-        val (viewModel, _, _, repo) = newViewModel(staging = staging)
-        driveIdle()
-        viewModel.removeItem(gone)
-        driveIdle()
-        assertEquals(listOf(listOf(gone.source)), repo.removeCalls)
-        assertTrue(viewModel.uiState.value.pendingItems.isEmpty())
-    }
-
-    @Test
-    fun `content类条目不做失效探测`() {
-        val staging = FakeStagingRepository().apply {
-            seedItems(
-                listOf(
-                    StagedUpload(
-                        source = "content://media/external/images/1",
-                        isPathSource = false,
-                        displayName = "IMG_1.jpg",
-                        sizeBytes = 1,
-                        isVideo = false,
-                    ),
-                ),
-            )
-        }
-        val (viewModel, _, _, repo) = newViewModel(staging = staging)
-        driveIdle()
-        assertTrue(viewModel.uiState.value.missingSources.isEmpty())
-        assertTrue(repo.existsCalls.isEmpty())
-    }
-
-    // ---- SAF 单管道摄取（2026-09-29 入口精简：系统文件 SAF 多选与系统分享共用 acceptUris，
-    //      describe 解元数据是唯一入暂存前置） ----
-
-    @Test
-    fun `acceptUris经describe解元数据进暂存并按uri去重`() {
+    fun `队列聚合行挂靠失败单独计数`() {
         val (viewModel, repository, _, _) = newViewModel()
-        viewModel.acceptUris(listOf("content://media/img/1"))
-        driveIdle()
-        viewModel.acceptUris(listOf("content://media/img/1", "content://media/img/2"))
-        driveIdle()
-        val pending = viewModel.uiState.value.pendingItems
-        assertEquals(2, pending.size)
-        // describe 是单管道唯一元数据来源：逐 uri 调用过、且暂存条目来自 describe 结果
-        assertEquals(3, repository.describeCalls)
-    }
-
-    @Test
-    fun `acceptUris空列表忽略`() {
-        val (viewModel, _, _) = newViewModel()
-        viewModel.acceptUris(emptyList())
-        driveIdle()
-        assertTrue(viewModel.uiState.value.pendingItems.isEmpty())
-    }
-
-    // ---- 挂靠批：批次默认 + 逐项编辑 ----
-
-    private val authorA = AuthorSuggestion(id = "author-a", displayName = "作者A", fileCount = 3)
-    private val authorB = AuthorSuggestion(id = "author-b", displayName = "作者B", fileCount = 5)
-
-    /** 装配：批次作者已选（可带来源）→ 加入一个暂存项；库为入队前置，一并选中 */
-    private fun seededWithBatch(
-        sources: List<String> = emptyList(),
-    ): Quad<UploadViewModel, FakeUploadRepository, FakeAuthorRepository, FakeStagingRepository> {
-        val (viewModel, repository, authorRepository, staging) = newViewModel(
-            authorRepository = FakeAuthorRepository().apply { vocabularyResult = listOf("kemono") },
-        )
-        selectDefaultLibrary(viewModel)
-        viewModel.pickBatchAuthor(authorA)
-        sources.forEach { viewModel.toggleBatchSource(it) }
-        viewModel.acceptUris(listOf("content://media/img/1"))
-        driveIdle()
-        return Quad(viewModel, repository, authorRepository, staging)
-    }
-
-    @Test
-    fun `新进项继承批次默认作者与来源`() {
-        val (viewModel, _, _, _) = seededWithBatch(sources = listOf("kemono"))
-        val item = viewModel.uiState.value.pendingItems.single()
-        assertEquals("author-a", item.attachAuthorId)
-        assertEquals("作者A", item.attachAuthorName)
-        assertEquals(listOf("kemono"), item.attachSources)
-    }
-
-    @Test
-    fun `未设批次默认时新进项不带挂靠`() {
-        val (viewModel, _, _, _) = newViewModel()
-        viewModel.acceptUris(listOf("content://media/img/1"))
-        driveIdle()
-        val item = viewModel.uiState.value.pendingItems.single()
-        assertNull(item.attachAuthorId)
-        assertNull(item.attachSources)
-    }
-
-    @Test
-    fun `应用到全部覆盖既有暂存项`() {
-        val (viewModel, _, _, _) = newViewModel()
-        viewModel.acceptUris(
+        repository.pushQueue(
             listOf(
-                "content://media/img/1",
-                "content://media/img/2",
+                queueEntry(UploadStatus.SUCCEEDED),
+                queueEntry(UploadStatus.ATTACH_FAILED),
+                queueEntry(UploadStatus.FAILED),
             ),
         )
         driveIdle()
-        viewModel.pickBatchAuthor(authorB)
-        viewModel.toggleBatchSource("kemono")
-        viewModel.applyBatchToAll()
-        driveIdle()
-        viewModel.uiState.value.pendingItems.forEach { item ->
-            assertEquals("author-b", item.attachAuthorId)
-            assertEquals(listOf("kemono"), item.attachSources)
-        }
+        assertEquals("共 3 个 · 成功 1 · 失败 1 · 挂靠失败 1", viewModel.uiState.value.queueSummary)
     }
 
     @Test
-    fun `批次未选来源时应用到全部不清既有逐项来源`() {
-        val (viewModel, _, _, _) = newViewModel()
-        viewModel.acceptUris(listOf("content://media/img/1"))
-        driveIdle()
-        // 来源 toggle 以作者为前提：先挂作者再设逐项来源
-        viewModel.pickItemAuthor(viewModel.uiState.value.pendingItems.single(), authorA)
-        viewModel.toggleItemSource(viewModel.uiState.value.pendingItems.single(), "旧来源")
-        driveIdle()
-        viewModel.pickBatchAuthor(authorA)
-        viewModel.applyBatchToAll()
-        driveIdle()
-        val item = viewModel.uiState.value.pendingItems.single()
-        assertEquals("author-a", item.attachAuthorId)
-        // 「应用」只写批次已配置的维度：批次未选来源时保留逐项来源
-        assertEquals(listOf("旧来源"), item.attachSources)
-    }
-
-    @Test
-    fun `逐项覆盖作者按source定点更新`() {
-        val (viewModel, _, _, _) = seededWithBatch()
-        viewModel.toggleItemExpanded(viewModel.uiState.value.pendingItems.first())
-        viewModel.pickItemAuthor(viewModel.uiState.value.pendingItems.first(), authorB)
-        driveIdle()
-        assertEquals("author-b", viewModel.uiState.value.pendingItems.single().attachAuthorId)
-        assertEquals("作者B", viewModel.uiState.value.pendingItems.single().attachAuthorName)
-    }
-
-    @Test
-    fun `清空某项作者连带清来源为不带挂靠`() {
-        val (viewModel, _, _, _) = seededWithBatch(sources = listOf("kemono"))
-        val item = viewModel.uiState.value.pendingItems.single()
-        viewModel.clearItemAuthor(item)
-        driveIdle()
-        val cleared = viewModel.uiState.value.pendingItems.single()
-        assertNull(cleared.attachAuthorId)
-        assertNull(cleared.attachAuthorName)
-        assertNull(cleared.attachSources)
-    }
-
-    @Test
-    fun `作品名基名编辑拼接锁定扩展名并入队载荷携带`() {
-        val (viewModel, repository, _, _) = seededWithBatch(sources = listOf("kemono"))
-        val item = viewModel.uiState.value.pendingItems.single()
-        viewModel.onItemNameChanged(item, "我的作品名")
-        driveIdle()
-        val edited = viewModel.uiState.value.pendingItems.single()
-        assertEquals("我的作品名.jpg", edited.effectiveUploadName)
-        viewModel.enqueue()
-        driveIdle()
-        val enqueued = repository.enqueueCalls.single().items.single()
-        assertEquals("我的作品名.jpg", enqueued.effectiveUploadName)
-        assertEquals("author-a", enqueued.attachAuthorId)
-        assertEquals(listOf("kemono"), enqueued.attachSources)
-    }
-
-    @Test
-    fun `作品名清空回退展示名`() {
-        val (viewModel, repository, _, _) = seededWithBatch()
-        val item = viewModel.uiState.value.pendingItems.single()
-        viewModel.onItemNameChanged(item, "   ")
-        driveIdle()
-        assertEquals("IMG_1.jpg", viewModel.uiState.value.pendingItems.single().effectiveUploadName)
-        viewModel.enqueue()
-        driveIdle()
-        assertEquals("IMG_1.jpg", repository.enqueueCalls.single().items.single().effectiveUploadName)
-    }
-
-    // ---- 作品名联想（暂存区重做）：防抖 + 建议回填 + 扩展名锁定 ----
-
-    @Test
-    fun `作品名输入防抖拉联想并回填基名`() {
-        val (viewModel, repository, _, _) = seededWithBatch()
-        repository.suggestNamesResult = { q -> if (q == "守望先锋dva") listOf("守望先锋 DVA 13") else emptyList() }
-        val item = viewModel.uiState.value.pendingItems.single()
-        viewModel.toggleItemExpanded(item)
-        viewModel.onItemNameChanged(item, "守望先锋dva")
-        driveIdle()
-        assertEquals(listOf("守望先锋 DVA 13"), viewModel.uiState.value.itemNameSuggestions)
-        viewModel.pickNameSuggestion(item, "守望先锋 DVA 13")
-        driveIdle()
-        val edited = viewModel.uiState.value.pendingItems.single()
-        assertEquals("守望先锋 DVA 13", edited.uploadBaseName)
-        // 扩展名锁定拼接：展示与入队都是基名 + 原扩展名
-        assertEquals("守望先锋 DVA 13.jpg", edited.effectiveUploadName)
-    }
-
-    @Test
-    fun `作品名联想未选库时不发请求`() {
+    fun `挂靠失败态不算活跃任务`() {
         val (viewModel, repository, _, _) = newViewModel()
-        viewModel.acceptUris(listOf("content://media/img/1"))
+        repository.pushQueue(listOf(queueEntry(UploadStatus.ATTACH_FAILED)))
         driveIdle()
-        val item = viewModel.uiState.value.pendingItems.single()
-        viewModel.toggleItemExpanded(item)
-        viewModel.onItemNameChanged(item, "某作品")
-        driveIdle()
-        assertTrue(repository.suggestNameCalls.isEmpty())
-        assertTrue(viewModel.uiState.value.itemNameSuggestions.isEmpty())
-    }
-
-    @Test
-    fun `作品名联想空输入不发请求`() {
-        val (viewModel, repository, _, _) = seededWithBatch()
-        val item = viewModel.uiState.value.pendingItems.single()
-        viewModel.toggleItemExpanded(item)
-        viewModel.onItemNameChanged(item, "  ")
-        driveIdle()
-        assertTrue(repository.suggestNameCalls.isEmpty())
+        assertFalse(viewModel.uiState.value.hasActiveWork)
     }
 
     // ---- 批次作者联想（口径保持：防抖 + 回车精确命中 + 未命中提示） ----
+
+    private val authorA = AuthorSuggestion(id = "author-a", displayName = "作者A", fileCount = 3)
 
     @Test
     fun `批次作者联想防抖回填且回车精确命中`() {
@@ -754,54 +464,5 @@ class UploadViewModelTest {
         viewModel.toggleBatchSource("kemono")
         driveIdle()
         assertEquals(listOf("kemono"), viewModel.uiState.value.batchSources)
-    }
-
-    @Test
-    fun `逐项来源toggle需该项已有作者`() {
-        val (viewModel, _, _, _) = newViewModel()
-        viewModel.acceptUris(listOf("content://media/img/1"))
-        driveIdle()
-        val item = viewModel.uiState.value.pendingItems.single()
-        viewModel.toggleItemSource(item, "kemono")
-        driveIdle()
-        assertNull(viewModel.uiState.value.pendingItems.single().attachSources)
-        // 挂上作者后 toggle 生效
-        viewModel.pickItemAuthor(viewModel.uiState.value.pendingItems.single(), authorA)
-        viewModel.toggleItemSource(viewModel.uiState.value.pendingItems.single(), "kemono")
-        driveIdle()
-        assertEquals(listOf("kemono"), viewModel.uiState.value.pendingItems.single().attachSources)
-    }
-
-    @Test
-    fun `入队后清空暂存并复位编辑态`() {
-        val (viewModel, repository, _, _) = seededWithBatch()
-        viewModel.toggleItemExpanded(viewModel.uiState.value.pendingItems.first())
-        viewModel.enqueue()
-        driveIdle()
-        assertTrue(viewModel.uiState.value.pendingItems.isEmpty())
-        assertNull(viewModel.uiState.value.editingSource)
-        assertEquals(1, repository.enqueueCalls.size)
-    }
-
-    @Test
-    fun `队列聚合行挂靠失败单独计数`() {
-        val (viewModel, repository, _, _) = newViewModel()
-        repository.pushQueue(
-            listOf(
-                queueEntry(UploadStatus.SUCCEEDED),
-                queueEntry(UploadStatus.ATTACH_FAILED),
-                queueEntry(UploadStatus.FAILED),
-            ),
-        )
-        driveIdle()
-        assertEquals("共 3 个 · 成功 1 · 失败 1 · 挂靠失败 1", viewModel.uiState.value.queueSummary)
-    }
-
-    @Test
-    fun `挂靠失败态不算活跃任务`() {
-        val (viewModel, repository, _, _) = newViewModel()
-        repository.pushQueue(listOf(queueEntry(UploadStatus.ATTACH_FAILED)))
-        driveIdle()
-        assertFalse(viewModel.uiState.value.hasActiveWork)
     }
 }

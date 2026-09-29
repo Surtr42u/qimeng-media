@@ -555,7 +555,10 @@ button.seg,
 .seg.active { background: var(--qm-primary); border-color: var(--qm-primary); color: var(--invert); }
 .seg-note { margin-left: auto; font-size: 12px; color: var(--text-sub); }
 
-.metric-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+/* 指标两排（gauge 仪表排 + metric 数值排）统一列定义：此前 gauge=150px/auto-fit 与
+   metric=190px/auto-fill 两套基准，同视口下列数列宽不一致 → 两排卡片错位（2026-09-29 用户
+   实测「元素没对齐」）；210px 在常规桌面宽下恰好 4 列满行 */
+.metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
 .m-label { font-size: 12px; color: var(--text-sub); }
 .m-value { margin-top: 6px; font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .m-sub { margin-top: 4px; font-size: 12px; color: var(--text-sub); }
@@ -682,7 +685,7 @@ button.seg,
 .a-list .a-sub { order: 1; }
 
 /* 性能圆环 */
-.gauge-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.gauge-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
 .gauge-card { display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; }
 .gauge { width: 104px; height: 104px; transform: rotate(-90deg); }
 .gauge .ring { fill: none; stroke: var(--border); stroke-width: 10; }

@@ -9,7 +9,6 @@ import {
   getApiV1Assets,
   getApiV1AssetsByAssetId,
   getApiV1AssetsFacets,
-  getApiV1AssetsNameSuggestions,
   getApiV1Recommendations,
   getApiV1Sources,
   putApiV1AssetsByAssetIdFavorite,
@@ -132,10 +131,6 @@ function toSdkAssetListQuery(params: AssetListParams) {
  *  maximum）。目录内直接子文件量级小，一次拉全不分页（协议侧改动须同步此处）。 */
 const DIR_FILES_LIMIT = 200
 
-/** 作品名/作者类联想输入的缓存时效：回到最近输过的词直接命中缓存秒出，不重发请求
- *  （同 useSearchSuggestions 的输入态补全口径） */
-const SUGGEST_STALE_MS = 60 * 1000
-
 /**
  * 目录树选中目录的直接子文件清单（B-5 目录树文件行数据源；GET /assets 的
  * directory 过滤是 B-4 协议扩展：库内相对目录精确匹配、只含直接子文件、
@@ -158,26 +153,6 @@ export function useAssetsInDirectory(libraryId: string, directory: string, enabl
     // 保留旧列表占位（TanStack 官方模式），消费方配 isLoading 只在真正无数据时显示加载态
     placeholderData: keepPreviousData,
     select: (page) => page.items ?? [],
-  })
-}
-
-/**
- * 作品名序号联想（GET /assets/name-suggestions；上传暂存区作品名输入框消费，
- * ADR-0024 修订）：规范化前缀匹配库内既有文件名，返回「既有命名风格 + 下一
- * 序号」的建议基名（不含扩展名，调用方拼接锁定扩展名）。q 规范化后为空不发
- * 请求；防抖由调用方做（同 useAuthorSuggest 口径，键用 trim 后的词）。
- */
-export function useNameSuggestions(libraryId: string | undefined, q: string, enabled: boolean) {
-  const trimmed = q.trim()
-  return useQuery({
-    queryKey: [...ASSETS_QUERY_KEY, 'name-suggestions', libraryId ?? '', trimmed],
-    queryFn: () =>
-      unwrapSdkResult(
-        getApiV1AssetsNameSuggestions({ query: { libraryId: libraryId ?? '', q: trimmed } }),
-      ),
-    enabled: enabled && trimmed !== '' && !!libraryId,
-    staleTime: SUGGEST_STALE_MS,
-    select: (res) => res.suggestions ?? [],
   })
 }
 

@@ -28,8 +28,8 @@ import media.qimeng.app.core.ui.theme.QimengDimens
  *  和备份的介绍太长没和其他的视觉对齐」：后两行副文案压缩回 ≤15 字单行节奏，细节由子页承载。
  *  2026-09-16 用户反馈：末行追加「缩略图缓存」入口，进生成进度与缓存上限合并子页。
  *  2026-09-28 归档文件夹批：追加「上传收件箱与归档」入口行——自我页迁入（用户拍板
- *  「下载箱移到数据管理中，不需要在外面单独一个显示」），子页承担收件箱路径与
- *  上传归档文件夹双设定） */
+ *  「下载箱移到数据管理中，不需要在外面单独一个显示」）。2026-09-29 直传化收窄：
+ *  收件箱目标随上传页导入入口退役，卡文案改「上传归档文件夹」单设定） */
 private const val HUB_TITLE = "数据管理"
 private const val HUB_ROW_UPLOAD = "上传文件"
 private const val HUB_ROW_UPLOAD_SUBTITLE = "选择本地图片和视频上传到媒体库"
@@ -41,8 +41,8 @@ private const val HUB_ROW_BACKUP = "备份导入导出"
 private const val HUB_ROW_BACKUP_SUBTITLE = "备份导入恢复与浏览数据同步"
 private const val HUB_ROW_THUMB_CACHE = "缩略图缓存"
 private const val HUB_ROW_THUMB_CACHE_SUBTITLE = "生成进度与缓存上限"
-private const val HUB_ROW_INBOX = "上传收件箱与归档"
-private const val HUB_ROW_INBOX_SUBTITLE = "收件箱监视与上传后归档文件夹"
+private const val HUB_ROW_INBOX = "上传归档文件夹"
+private const val HUB_ROW_INBOX_SUBTITLE = "上传后源文件的归档文件夹"
 
 /** 16dp：hub 内容水平内边距（对齐上传子页 16dp 档；区别于我的页 20dp 档） */
 private val HubContentPadding = 16.dp
@@ -103,8 +103,9 @@ fun DataManageScreen(
                 subtitle = HUB_ROW_THUMB_CACHE_SUBTITLE,
                 onClick = onOpenThumbCache,
             )
-            // 上传收件箱与归档（2026-09-28 归档文件夹批自我页迁入：收件箱监视与上传后
-            // 归档文件夹设定，均属服务端内容管理域，与 hub 其余行同类）
+            // 上传归档文件夹（2026-09-28 归档文件夹批自我页迁入；2026-09-29 直传化收窄
+            // 为归档单设定——上传成功后源文件的归档文件夹，属服务端内容管理域，与 hub
+            // 其余行同类）
             HubEntryRow(
                 label = HUB_ROW_INBOX,
                 subtitle = HUB_ROW_INBOX_SUBTITLE,

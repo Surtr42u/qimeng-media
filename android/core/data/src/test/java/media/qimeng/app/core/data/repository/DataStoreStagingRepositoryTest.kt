@@ -9,20 +9,18 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
-import media.qimeng.app.core.model.StagedUpload
 import media.qimeng.app.core.model.StagingBatchConfig
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
 /**
  * [DataStoreStagingRepository] 原子读-改-写锁定（2026-09-25 P2 竞态修复）：
- * editItems/editBatchConfig 在 DataStore edit 内基于最新持久值变换——连续/并发两次变换
- * 叠加生效而非互相覆盖（旧「first()+updateItems 两步」模式下在途写可乱序落地互相回退）。
- * JVM 直测真 DataStore（临时目录文件仓；File 侧行为不在此测，归 InboxFileStoreTest）。
+ * editBatchConfig 在 DataStore edit 内基于最新持久值变换——连续/并发两次变换
+ * 叠加生效而非互相覆盖。JVM 直测真 DataStore（临时目录文件仓；File 侧行为不在此测，
+ * 归 InboxFileStoreTest）。2026-09-29 直传化收窄：暂存条目面随暂存区退役删除。
  */
 class DataStoreStagingRepositoryTest {
 
@@ -46,62 +44,7 @@ class DataStoreStagingRepositoryTest {
         return DataStoreStagingRepository(dataStore, InboxFileStore())
     }
 
-    private fun item(name: String) = StagedUpload(
-        source = "/storage/emulated/0/.dl/$name.jpg",
-        isPathSource = true,
-        displayName = "$name.jpg",
-        sizeBytes = 1L,
-        isVideo = false,
-        uploadBaseName = name,
-        addedAtMs = 1_730_000_000_000L,
-    )
-
-    // ---- editItems：edit 内基于最新值变换 ----
-
-    @Test
-    fun `连续两次editItems各加一项叠加为两项`() = runBlocking {
-        val repo = newRepository()
-        repo.editItems { it + item("a") }
-        repo.editItems { it + item("b") }
-        assertEquals(listOf("a", "b"), repo.stagedItems.first().map { it.uploadBaseName })
-        Unit
-    }
-
-    @Test
-    fun `并发两次editItems各加一项两项都在不互相覆盖`() = runBlocking {
-        val repo = newRepository()
-        val first = async { repo.editItems { it + item("a") } }
-        val second = async { repo.editItems { it + item("b") } }
-        first.await()
-        second.await()
-        assertEquals(setOf("a", "b"), repo.stagedItems.first().map { it.uploadBaseName }.toSet())
-        Unit
-    }
-
-    @Test
-    fun `editItems内按source定点替换不影响其他条目`() = runBlocking {
-        val repo = newRepository()
-        repo.editItems { listOf(item("a"), item("b")) }
-        repo.editItems { items ->
-            items.map { if (it.source == "/storage/emulated/0/.dl/a.jpg") it.copy(uploadBaseName = "改") else it }
-        }
-        val staged = repo.stagedItems.first()
-        assertEquals("改", staged.single { it.source.endsWith("/a.jpg") }.uploadBaseName)
-        assertEquals("b", staged.single { it.source.endsWith("/b.jpg") }.uploadBaseName)
-        Unit
-    }
-
-    @Test
-    fun `editItems变换为空表删键读侧回空暂存区`() = runBlocking {
-        val repo = newRepository()
-        repo.editItems { listOf(item("a")) }
-        assertEquals(1, repo.stagedItems.first().size)
-        repo.editItems { emptyList() }
-        assertTrue(repo.stagedItems.first().isEmpty())
-        Unit
-    }
-
-    // ---- editBatchConfig：同款口径 ----
+    // ---- editBatchConfig：edit 内基于最新值变换 ----
 
     @Test
     fun `连续两次editBatchConfig变换基于最新值叠加`() = runBlocking {

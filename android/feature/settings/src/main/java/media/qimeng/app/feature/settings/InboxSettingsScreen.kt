@@ -28,20 +28,15 @@ import media.qimeng.app.core.ui.component.QimengMessageCard
 import media.qimeng.app.core.ui.component.QimengTopBar
 
 // ---------- 页面文案（模块惯例：展示文案在代码常量） ----------
-// 2026-09-28 上传归档文件夹功能：页面由单一「下载收件箱」扩为收件箱 + 上传归档文件夹
-// 双设定（入口随迁数据管理页），标题与文案同步改「上传收件箱与归档」
-private const val PAGE_TITLE = "上传收件箱与归档"
-private const val SECTION_CURRENT = "收件箱"
+// 2026-09-29 直传化收窄：暂存区退役后收件箱目标失去消费方（上传页「从收件箱导入」
+// 已于同日入口精简退役），页面由「上传收件箱与归档」双设定收窄为「上传归档文件夹」单设定
+private const val PAGE_TITLE = "上传归档文件夹"
 private const val SECTION_ARCHIVE = "上传归档文件夹"
 private const val LABEL_NOT_SET = "未设置"
-private const val BUTTON_CLEAR = "清除收件箱"
 private const val BUTTON_CLEAR_ARCHIVE = "清除归档文件夹"
-private const val BUTTON_SELECT_INBOX = "设为收件箱"
 private const val BUTTON_SELECT_ARCHIVE = "设为归档文件夹"
 private const val SECTION_BROWSER = "选择文件夹（含点前缀隐藏目录）"
 private const val BUTTON_RESELECT = "重新选择"
-private const val HINT_INBOX_SEMANTICS =
-    "上传页「从收件箱导入」扫描此文件夹；上传成功后源文件移入其中的 uploaded/ 子目录归档"
 private const val HINT_ARCHIVE_SEMANTICS =
     "设置后，上传成功的文件会移动到 该文件夹/库名/ 下，用于手动复制同步到电脑；" +
         "不设置则维持原 uploaded/ 归档"
@@ -50,19 +45,18 @@ private const val HINT_ARCHIVE_SEMANTICS =
 private const val PERM_GRANTED_TEXT =
     "已授权：可浏览主存储全部目录（含点前缀隐藏目录）"
 private const val PERM_MISSING_TEXT =
-    "未授权：收件箱通常是隐藏文件夹（点前缀目录），需要「所有文件访问」才能浏览选择"
+    "未授权：归档文件夹可能是隐藏文件夹（点前缀目录），需要「所有文件访问」才能浏览选择"
 private const val BUTTON_GRANT_STORAGE = "去系统设置授权"
 
 /**
- * 上传收件箱与归档设置子页（2026-09-25 暂存区重做；2026-09-28 归档文件夹功能扩双设定，
- * 入口随迁数据管理页；2026-09-29 回显修复：浏览器初始展开态随持久化选定走，两者皆未
- * 设置才展开，任一已有选定则收起——已设置用户进页只见当前值卡 + 「重新选择」）：授权引导卡
- * （MANAGE_EXTERNAL_STORAGE 未授权时整页引导，复用 ServerSettingsScreen 的系统授权页跳转）+
- * 收件箱当前卡 + 归档文件夹当前卡 + 目录浏览器
- * （App 内纯 File API 列目录，不用系统弹窗；含点前缀隐藏目录）。
- * 浏览器导航一套共用，「设为收件箱 / 设为归档文件夹」两个按钮对同一浏览位置分别赋值——
- * 两个选定各自持久化到 StagingRepository；上传页「从收件箱导入」以收件箱路径为扫描源，
- * worker 上传成功后的归档分派以归档文件夹路径为准（未设置则维持 uploaded/ 归档）。
+ * 上传归档文件夹设置子页（2026-09-25 暂存区重做；2026-09-28 归档文件夹功能扩双设定；
+ * 2026-09-29 直传化收窄为归档单设定，页面标题同步改「上传归档文件夹」；2026-09-29
+ * 回显修复保留：浏览器初始展开态随持久化选定走，未设置才展开，已有选定则收起——
+ * 已设置用户进页只见当前值卡 + 「重新选择」）：授权引导卡（MANAGE_EXTERNAL_STORAGE
+ * 未授权时整页引导，复用 ServerSettingsScreen 的系统授权页跳转）+ 归档文件夹当前卡 +
+ * 目录浏览器（App 内纯 File API 列目录，不用系统弹窗；含点前缀隐藏目录）+ 「设为归档
+ * 文件夹」单按钮。选定持久化到 StagingRepository.archivePath；worker 上传成功后的归档
+ * 分派以该路径为准（未设置则维持 uploaded/ 归档）。
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -101,13 +95,6 @@ fun InboxSettingsScreen(
         } else {
             PermissionGuideCard(text = PERM_GRANTED_TEXT, onGrant = null)
             CurrentValueCard(
-                sectionTitle = SECTION_CURRENT,
-                selectedPath = state.selectedInboxPath,
-                clearButtonText = BUTTON_CLEAR,
-                onClear = viewModel::clearInbox,
-                onReselect = viewModel::reopenBrowser,
-            )
-            CurrentValueCard(
                 sectionTitle = SECTION_ARCHIVE,
                 selectedPath = state.selectedArchivePath,
                 clearButtonText = BUTTON_CLEAR_ARCHIVE,
@@ -119,14 +106,13 @@ fun InboxSettingsScreen(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            // 浏览器可见性决策在 VM（init 回放 + 选定收起 + 清到两者皆空重开，2026-09-29
-            // 回显修复）：browserVisible=false 时浏览器/双按钮行/收件箱语义提示整组隐藏，
-            // 再入口在上方两张当前值卡的「重新选择」；两者皆空时浏览器必然可见（唯一再选入口）
+            // 浏览器可见性决策在 VM（init 回放 + 选定收起 + 清空重开，2026-09-29 回显修复
+            // 语义保留：未设归档文件夹时默认展开）：browserVisible=false 时浏览器/设为按钮
+            // 整组隐藏，再入口在上方当前值卡的「重新选择」；未设置时浏览器必然可见（唯一再选入口）
             if (state.browserVisible) {
-                // 目录浏览器（2026-09-28 上提 core:ui 单源：上传页「浏览文件」弹层复用同一组件，
-                // 本页只保留标题与 ViewModel 状态注入）。收件箱与归档文件夹两个目标共用导航，
-                // 组件内建「选用当前目录」单按钮容纳不下双目标（组件按红线不可改），故隐藏内建
-                // 按钮、由下方双赋值按钮行承接选定动作
+                // 目录浏览器（2026-09-28 上提 core:ui 单源，本页只保留标题与 ViewModel
+                // 状态注入）。组件内建「选用当前目录」按钮保持隐藏（onSelectCurrent=null），
+                // 由下方「设为归档文件夹」单按钮承接选定动作
                 DirectoryBrowserCard(
                     title = SECTION_BROWSER,
                     currentPath = state.browsingPath,
@@ -138,27 +124,12 @@ fun InboxSettingsScreen(
                     onGoUp = viewModel::goUp,
                     onSelectCurrent = null,
                 )
-                Row(
+                Button(
+                    onClick = viewModel::selectCurrentAsArchive,
+                    // 与 DirectoryBrowserCard 内建按钮同一启用口径：未进入任何目录不可选定
+                    enabled = state.browsingPath.isNotEmpty(),
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Button(
-                        onClick = viewModel::selectCurrentAsInbox,
-                        // 与 DirectoryBrowserCard 内建按钮同一启用口径：未进入任何目录不可选定
-                        enabled = state.browsingPath.isNotEmpty(),
-                        modifier = Modifier.weight(1f),
-                    ) { Text(BUTTON_SELECT_INBOX) }
-                    Button(
-                        onClick = viewModel::selectCurrentAsArchive,
-                        enabled = state.browsingPath.isNotEmpty(),
-                        modifier = Modifier.weight(1f),
-                    ) { Text(BUTTON_SELECT_ARCHIVE) }
-                }
-                Text(
-                    text = HINT_INBOX_SEMANTICS,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                ) { Text(BUTTON_SELECT_ARCHIVE) }
             }
         }
     }
@@ -178,11 +149,11 @@ private fun PermissionGuideCard(text: String, onGrant: (() -> Unit)?) {
 }
 
 /**
- * 当前选定值卡（收件箱与上传归档文件夹共用形态）：选定路径 + 「重新选择」/清除按钮行；
- * 未设置给占位文案（「重新选择」只在选定后出现——它是浏览器选定即收起后的再入口；
- * 该卡被清空后无按钮，两者皆空时浏览器由 VM 重开补位，见 InboxSettingsViewModel）。
- * 2026-09-28 归档文件夹功能：原 CurrentInboxCard 泛化（双目标同款卡片规格，参数化标题
- * 与清除文案）；同日浏览器收起改造加「重新选择」。
+ * 当前选定值卡：选定路径 + 「重新选择」/清除按钮行；未设置给占位文案（「重新选择」
+ * 只在选定后出现——它是浏览器选定即收起后的再入口；该卡被清空后无按钮，浏览器由 VM
+ * 重开补位，见 InboxSettingsViewModel）。
+ * 2026-09-28 归档文件夹功能引入的泛化形态（参数化标题与清除文案）；同日浏览器收起
+ * 改造加「重新选择」；2026-09-29 直传化收窄后仅归档文件夹一个目标使用本卡。
  */
 @Composable
 private fun CurrentValueCard(
@@ -218,4 +189,3 @@ private fun CurrentValueCard(
         }
     }
 }
-
