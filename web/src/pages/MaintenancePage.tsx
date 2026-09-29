@@ -2,10 +2,14 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { FolderMonitorIcon, TrashIcon } from '@/components/shell/icons'
 import { DbBackupCard } from '@/components/manage/DbBackupCard'
+import { Pill } from '@/components/ui/pill'
 import { useClientLogs } from '@/hooks/use-client-logs'
 import { useSystemStatus } from '@/hooks/use-system-status'
 import { useTrash } from '@/hooks/use-trash'
 import { STATUS_POLL_INTERVAL_MS } from '@/lib/constants'
+
+/** 客户端日志卡折叠态可见条数（服务端环形缓冲 200 条全渲染会刷屏淹没页面） */
+const CLIENT_LOGS_PREVIEW_COUNT = 5
 import { formatBytes, formatDateTime } from '@/lib/format'
 import { Line, LineChart, ResponsiveContainer, Tooltip, YAxis } from 'recharts'
 import { TIP_STYLE, TrendLegend } from '@/components/data/chart-shared'
@@ -49,6 +53,8 @@ export default function MaintenancePage() {
 
   // 速率环形缓冲：每帧拿 netRx/netTx 与上一帧累计值差分 ÷ 轮询间隔秒 → B/s
   const [rates, setRates] = useState<RatePoint[]>([])
+  /** 客户端日志卡默认折叠（只显最近几条；同质错误刷屏淹没维护页，2026-09-29 用户反馈） */
+  const [logsExpanded, setLogsExpanded] = useState(false)
   const accumRef = useRef<{ rx: number; tx: number } | null>(null)
   useEffect(() => {
     if (!status || !status.netRxBytes || !status.netTxBytes) return
@@ -219,26 +225,34 @@ export default function MaintenancePage() {
         {clientLogs.length === 0 ? (
           <p className="grid-empty">暂无客户端异常上报（环形缓冲为空——没出错就是好消息）</p>
         ) : (
-          <table className="log-table">
-            <thead>
-              <tr>
-                <th style={{ width: 110 }}>时间</th>
-                <th style={{ width: 60 }}>级别</th>
-                <th>消息</th>
-                <th style={{ width: 180 }}>页面</th>
-              </tr>
-            </thead>
-            <tbody>
-              {clientLogs.map((e, i) => (
-                <tr key={`${e.ts}-${i}`}>
-                  <td>{formatDateTime(e.ts)}</td>
-                  <td>{LOG_LEVEL_LABELS[e.level] ?? e.level}</td>
-                  <td>{e.message}</td>
-                  <td>{e.page || '—'}</td>
+          <>
+            <table className="log-table">
+              <thead>
+                <tr>
+                  <th style={{ width: 110 }}>时间</th>
+                  <th style={{ width: 60 }}>级别</th>
+                  <th>消息</th>
+                  <th style={{ width: 180 }}>页面</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {/* 默认只显最近几条（2026-09-29 用户反馈同质刷屏淹没页面），按需展开全量 */}
+                {(logsExpanded ? clientLogs : clientLogs.slice(0, CLIENT_LOGS_PREVIEW_COUNT)).map((e, i) => (
+                  <tr key={`${e.ts}-${i}`}>
+                    <td>{formatDateTime(e.ts)}</td>
+                    <td>{LOG_LEVEL_LABELS[e.level] ?? e.level}</td>
+                    <td>{e.message}</td>
+                    <td>{e.page || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {clientLogs.length > CLIENT_LOGS_PREVIEW_COUNT && (
+              <Pill onClick={() => setLogsExpanded((v) => !v)}>
+                {logsExpanded ? `收起（只看最近 ${CLIENT_LOGS_PREVIEW_COUNT} 条）` : `查看全部 ${clientLogs.length} 条`}
+              </Pill>
+            )}
+          </>
         )}
       </div>
     </div>

@@ -30,7 +30,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -55,23 +54,22 @@ import media.qimeng.app.core.ui.component.QimengCapsuleTextField
 import media.qimeng.app.core.ui.component.QimengMessageCard
 import media.qimeng.app.core.ui.component.QimengSegPill
 import media.qimeng.app.core.ui.component.QimengTopBar
-import media.qimeng.app.core.ui.theme.qimengFilledButtonColors
 
 /**
- * 上传主通道页（M4-5；2026-09-25 流程重排 + 暂存区重做；2026-09-28 配置区固化常驻）：
- * 页面自上而下按动线「选库 → 放文件 → 逐项校对 → 上传」单列贯通——
- * 目标库（必选）→ 目标目录 → 批次默认（作者/来源，新进项自动继承）→ 添加文件入口 →
- * 暂存列表（空态给引导文案）→ 开始上传 → 串行队列进度。
- * 配置区进入页面即常驻显示（不再等选完文件进暂存才出现）；暂存条目/批次默认/
- * 收件箱路径全部持久化（杀进程重启不丢），页面只 collect 持久流渲染。
- * 未选库时开始上传禁用并提示（enqueue 侧保留必填兜底，见 [UploadViewModel.enqueue]）。
+ * 上传主通道页（M4-5；2026-09-29 直传化；2026-09-28 配置区固化常驻）：
+ * 页面自上而下按动线「选库 → 批次默认 → 添加文件」单列贯通——
+ * 目标库（必选）→ 目标目录 → 批次默认（作者/来源，新进文件自动继承）→ 添加文件入口
+ * （选完即传）→ 串行队列进度。无暂存列表、无逐项编辑、无「开始上传」按钮
+ * （2026-09-29 用户拍板「暂存了好像没意义啊，去掉吧；只保上传完会在指定文件夹保留
+ * （修改后）的文件」——归档链路在 worker 侧，本页零改动）。暂存条目已退役，批次默认
+ * 仍持久化（杀进程重启不丢），页面只 collect 持久流渲染。
+ * 未选库时选文件不传，横幅提示先选目标库（submitUris 门禁，见 [UploadViewModel.submitUris]）。
  * 入口：①系统分享接收（壳层带分享 URI 导航至此）②App 内数据管理页入口。
  * 选文件：唯一入口「系统文件」（SAF 文档选择器多选，MIME 限 image 与 video 通配两类，
  * 天然能见点前缀隐藏目录且不需要任何存储权限——2026-09-29 用户拍板精简，一口覆盖
  * 原相册选择器/收件箱导入/浏览文件三入口的全部场景，三入口及其选择器/弹层/权限链退役）。
- * 挂靠批：批次默认（作者联想 + 来源多选 + 应用到全部）+ 逐项展开编辑
- * （作品名联想/作者/来源/库覆盖，复用 core:ui 无状态段组件）；挂靠执行在 worker 的
- * 201 之后（mode=append，失败不重试，队列行落「已入库但挂靠失败」专项态）。
+ * 挂靠批：批次默认（作者联想 + 来源多选）随载荷入队，新进文件自动继承；挂靠执行在
+ * worker 的 201 之后（mode=append，失败不重试，队列行落「已入库但挂靠失败」专项态）。
  * UI 只做表单编排与状态渲染，业务规则在 ViewModel/core 层（ADR-0008 铁律 7）。
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -86,10 +84,10 @@ fun UploadScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
-    // 系统分享接收：进入本页即接手分享内容并通知壳层消费（避免重复触发）
+    // 系统分享接收：进入本页即接手分享内容并通知壳层消费（避免重复触发）；选完即传
     LaunchedEffect(sharedUris) {
         if (sharedUris.isNotEmpty()) {
-            viewModel.acceptUris(sharedUris)
+            viewModel.submitUris(sharedUris)
             onSharedConsumed()
         }
     }
@@ -110,9 +108,9 @@ fun UploadScreen(
     // 入参即 MIME 类型数组，androidx.activity 1.13.0 字节码核实，底层 ACTION_OPEN_DOCUMENT），
     // 结果 URI 带 FLAG_GRANT_READ_URI_PERMISSION + FLAG_GRANT_PERSISTABLE_URI_PERMISSION
     // （项目先例：BackupScreen 的 OpenDocumentTree 同链路 takePersistableUriPermission）。
-    // 逐 URI takePersistableUriPermission 的理由：暂存条目跨进程重启持久（StagingRepository），
-    // 真正读流在 worker 上传时（AssetUploader openInputStream；acceptUris→describe 只在摄取
-    // 瞬间解元数据）——DocumentsUI 的临时授权撑不到上传时刻，持久化后才能跨进程/重启存活。
+    // 逐 URI takePersistableUriPermission 的理由：选完即传，但队列在 WorkManager 持久
+    // （断网重试/进程重启后续跑），真正读流在 worker 上传时（AssetUploader
+    // openInputStream）——DocumentsUI 的临时授权撑不到上传时刻，持久化后才能跨进程存活。
     // 个别 provider 不给持久授权时降级照收（摄取期 describe 仍可读，上传读流失败走 worker
     // 既有重试兜底），不因授权失败丢弃用户选择。
     val systemFilesLauncher = rememberLauncherForActivityResult(
@@ -127,7 +125,8 @@ fun UploadScreen(
                 )
             }
         }
-        viewModel.acceptUris(uris.map { it.toString() })
+        requestNotificationPermissionIfNeeded(context, notificationPermission)
+        viewModel.submitUris(uris.map { it.toString() })
     }
 
     Column(modifier = modifier.fillMaxSize()) {
@@ -145,10 +144,6 @@ fun UploadScreen(
             viewModel = viewModel,
             onSystemFiles = { systemFilesLauncher.launch(SYSTEM_FILES_MIME_TYPES) },
             onCreateDir = { showCreateDirDialog = true },
-            onEnqueue = {
-                requestNotificationPermissionIfNeeded(context, notificationPermission)
-                viewModel.enqueue()
-            },
         )
     }
 
@@ -165,13 +160,10 @@ fun UploadScreen(
 }
 
 /**
- * 表单滚动主体（2026-09-28 配置区固化常驻）：横幅 → 选库（目标库/目标目录）→
- * 批次默认（作者/来源，新进项自动继承）→ 添加文件入口 →（空态引导 | 暂存条目 +
- * 开始上传）→ 队列。
- * 配置区进入页面即显示、不再随暂存区有无切换（选完才显示的旧布局移除），动线
- * 「选库 → 放文件 → 逐项校对 → 上传」自上而下单列贯通；开始上传按钮仅在有暂存项时
- * 出现（门禁口径在 [UploadUiState.canEnqueue]）。
- * 暂存条目来自持久流（收件箱导入 + 相册多选共用），失效条目原位提示可清除。
+ * 表单滚动主体（2026-09-29 直传化）：横幅 → 选库（目标库/目标目录）→
+ * 批次默认（作者/来源，新进文件自动继承）→ 添加文件入口（选完即传）→ 队列。
+ * 配置区进入页面即显示（2026-09-28 固化布局延续）；暂存列表与「开始上传」按钮随
+ * 暂存区退役删除，添加文件区下常驻直传说明。
  * 选择行为以回调注入（launcher/权限留在本壳层），函数行数收敛到百行红线内。
  */
 @Composable
@@ -180,7 +172,6 @@ private fun UploadForm(
     viewModel: UploadViewModel,
     onSystemFiles: () -> Unit,
     onCreateDir: () -> Unit,
-    onEnqueue: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -218,51 +209,14 @@ private fun UploadForm(
             )
         }
 
-        // —— 批次默认区（挂靠批）：新进项自动继承；已有暂存项可「应用到全部」——
+        // —— 批次默认区（挂靠批）：新进文件自动继承 ——
         BatchDefaultSection(state = state, viewModel = viewModel)
 
         // —— 放文件：唯一入口「系统文件」（SAF，2026-09-29 用户拍板精简：相册/收件箱
-        // 导入/浏览文件三入口退役——SAF 隐藏目录可见 + 免存储授权，一口全覆盖），常驻 ——
+        // 导入/浏览文件三入口退役——SAF 隐藏目录可见 + 免存储授权，一口全覆盖），选完即传 ——
         SectionTitle("添加文件")
         AddSourcesRow(onSystemFiles = onSystemFiles)
-
-        // —— 逐项校对：暂存列表（空态给引导文案；有项时逐条展开编辑）——
-        if (state.pendingItems.isEmpty()) {
-            StagingEmptyGuide()
-        } else {
-            SectionTitle("暂存文件（${state.pendingItems.size}）")
-            state.pendingItems.forEach { item ->
-                StagedItemRow(
-                    item = item,
-                    editing = state.editingSource == item.source,
-                    missing = item.source in state.missingSources,
-                    itemAuthorQuery = state.itemAuthorQuery,
-                    itemAuthorSuggestions = state.itemAuthorSuggestions,
-                    itemNameSuggestions = state.itemNameSuggestions,
-                    sourceOptions = state.sourceOptions,
-                    libraries = state.libraries,
-                    viewModel = viewModel,
-                )
-                HorizontalDivider()
-            }
-
-            Button(
-                onClick = onEnqueue,
-                enabled = state.canEnqueue,
-                // 第 196 笔噪点横带本尊：禁用态通栏容器夜间走不透明底消 dither（W6 #49）
-                colors = qimengFilledButtonColors(),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(if (state.enqueueing) "正在创建任务…" else "开始上传（${state.pendingItems.size} 个）")
-            }
-            state.enqueueGateHint?.let { hint ->
-                Text(
-                    text = hint,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
+        DirectUploadGuide()
 
         // —— 上传队列 ——
         if (state.queue.isNotEmpty()) {
@@ -298,13 +252,13 @@ private fun AddSourcesRow(onSystemFiles: () -> Unit) {
 }
 
 /**
- * 暂存列表空态引导（2026-09-28 配置区固化常驻）：配置区不再承担「选完文件才出现」的
- * 状态切换，空态改为指引动线——添加后自动继承批次默认，逐项校对无误再开始上传。
+ * 直传说明（2026-09-29 直传化：暂存区退役，原「暂存空态引导」改为添加文件区常驻说明）：
+ * 选完文件立即上传，自动继承批次作者与来源。
  */
 @Composable
-private fun StagingEmptyGuide() {
+private fun DirectUploadGuide() {
     Text(
-        text = STAGING_EMPTY_GUIDE,
+        text = DIRECT_UPLOAD_GUIDE,
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
@@ -517,13 +471,15 @@ private fun requestNotificationPermissionIfNeeded(context: Context, launcher: Ac
 
 // —— 相册选择器（MediaPickerScreen，含媒体读权限申请）与浏览文件弹层（FileBrowserScreen，
 //    含「所有文件访问」闸门）已随 2026-09-29 入口精简退役，文件整体删除（死代码零残留）——
+//    暂存列表/逐项编辑器（StagedItemRow/StagedItemEditor）同日随暂存区退役删除——
+//    选完文件即传，无暂存、无逐项校对、无「开始上传」按钮。
 
 /** 目录树根路径（协议口径：空串 = 库根） */
 private const val ROOT_PATH = ""
 
 // ---------- 「系统文件」唯一入口（2026-09-29）：SAF 文档选择器，隐藏目录可见 + 免存储授权 ----------
-// launcher 与持久授权链见 UploadScreen 内 systemFilesLauncher 注释；管道落点 acceptUris
-// （与系统分享同一条暂存摄取管道，UploadStagingIngestor.ingestUris）。
+// launcher 与持久授权链见 UploadScreen 内 systemFilesLauncher 注释；管道落点 submitUris
+// （与系统分享同一条直传管道，UploadViewModel.submitUris）。
 
 /** SAF 多选 MIME 限定（图片 + 视频；白名单校验仍在服务端，此处只收窄选择器可见类型） */
 private val SYSTEM_FILES_MIME_TYPES = arrayOf("image/*", "video/*")
@@ -534,11 +490,11 @@ private const val SYSTEM_FILES_BUTTON_TEXT = "系统文件"
 private const val SYSTEM_FILES_HINT =
     "「系统文件」用系统文档选择器：可直接选到点前缀隐藏目录里的媒体，无需「所有文件访问」授权"
 
-/** 暂存列表空态引导（动线指引：添加 → 自动继承批次默认 → 逐项校对 → 上传） */
-private const val STAGING_EMPTY_GUIDE =
-    "暂无待传文件：添加后自动继承批次作者与来源，逐项校对无误再开始上传"
+/** 直传说明（选完即传；批次默认继承口径在 VM/持久层） */
+private const val DIRECT_UPLOAD_GUIDE =
+    "选择文件后立即上传，自动继承批次作者与来源"
 
-/** 添加文件入口的格式说明（超限拦截口径在 VM/服务端；常驻布局后不再分空态/暂存态文案） */
+/** 添加文件入口的格式说明（超限拦截口径在 VM/服务端） */
 private const val ADD_FILES_FORMAT_HINT = "支持图片/视频常见格式；类型与大小校验在服务端，超限项本地拦截"
 
 private const val DIR_ROOT_LABEL = "（库根）"

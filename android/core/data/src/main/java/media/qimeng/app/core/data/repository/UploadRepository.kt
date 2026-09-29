@@ -24,17 +24,10 @@ interface UploadRepository {
     suspend fun libraries(): List<LibraryChoice>
 
     /**
-     * 作者联想（GET /authors/suggest）：上传页挂靠（批次默认/逐项编辑）与资产编辑页
+     * 作者联想（GET /authors/suggest）：上传页挂靠批次默认与资产编辑页
      * 添加作者输入框共用数据源。子串匹配/别名命中/大小写不敏感全在服务端，客户端只透传词条。
      */
     suspend fun suggestAuthors(q: String, limit: Int = DEFAULT_SUGGEST_LIMIT): List<AuthorSuggestion>
-
-    /**
-     * 作品名序号联想（GET /assets/name-suggestions，2026-09-25 暂存区重做）：
-     * 服务端按库内既有命名风格 + 下一序号返回建议**基名**（不含扩展名，最多 3 条）。
-     * 客户端展示与回填时锁定拼接条目自身的扩展名（UploadNaming.composeUploadName 单源）。
-     */
-    suspend fun suggestNames(libraryId: String, q: String): List<String>
 
     /** 目标库目录树（GET /dirs，libraryId 必填；根节点 path=""） */
     suspend fun dirTree(libraryId: String): DirNode
