@@ -72,6 +72,9 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 /** 首页标题（GUIDE_UI §首页 顶行） */
 private const val HOME_TITLE = "首页"
 
+/** 「已到底」尾标文案（推荐/COS 流穷尽告知，2026-09-29；两页共用故提常量，语义见 QimengMediaGrid.endFooterText） */
+private const val EXHAUSTED_FOOTER_TEXT = "已到底"
+
 /** 首页在壳导航里的路由（双击 Tab 回顶事件的过滤键） */
 private const val HOME_ROUTE = "home"
 
@@ -248,6 +251,11 @@ fun HomeScreen(
         }
         state.errorMessage?.let { message ->
             ErrorBanner(message = message, onDismiss = viewModel::clearError)
+        }
+        // 刷新成功但内容与刷新前一致的轻提示（「COS 下拉无效」反馈修复；自动消退，
+        // 语义见 HomeUiState.infoMessage KDoc——与失败横幅 ErrorBanner 分流）
+        state.infoMessage?.let { message ->
+            InfoBanner(message = message)
         }
         HorizontalPager(
             state = pagerState,
@@ -499,6 +507,9 @@ private fun RecommendPage(
             // 问题A（2026-09-28）：加载结束重评估信号——换轮成功但 fresh==0（或空页追加）时
             // totalCount 不变，哨兵需靠 tick 重触发（含 fresh==0 续轮后的穷尽停手，由 VM 拦截兜底）
             reloadTick = state.reloadTick,
+            // 穷尽到底告知（2026-09-29「下滑不会继续加载」反馈）：换轮穷尽后到底尾标，
+            // 与「坏了」区分（语义见 QimengMediaGrid.endFooterText）
+            endFooterText = if (state.exhausted) EXHAUSTED_FOOTER_TEXT else null,
             onAssetClick = onAssetClick,
         )
     }
@@ -530,6 +541,8 @@ private fun CosPage(
             // 问题A（2026-09-28）：加载结束重评估信号——翻页成功但新页为空时 totalCount 不变，
             // 哨兵需靠 tick 重触发（KDoc 见 QimengMediaGrid.reloadTick）
             reloadTick = state.reloadTick,
+            // 翻页穷尽到底告知（口径同 RecommendPage，2026-09-29）
+            endFooterText = if (state.exhausted) EXHAUSTED_FOOTER_TEXT else null,
             onAssetClick = onAssetClick,
         )
     }
@@ -546,7 +559,9 @@ private fun RankPage(
     onRefresh: () -> Unit,
     onAssetClick: (MediaAsset) -> Unit,
 ) {
-    QimengPullToRefresh(isRefreshing = false, onRefresh = onRefresh) {
+    // 2026-09-29「排行榜下拉显示不对」修复：此前写死 false——下拉手势确实触发刷新，
+    // 但转圈指示器永远不出现，观感是「下拉没反应」；接线真实状态（RankState.isRefreshing）
+    QimengPullToRefresh(isRefreshing = state.isRefreshing, onRefresh = onRefresh) {
         if (state.items.isEmpty()) {
             // 改动前加载中也显「暂无数据」的误导空态，2026-09-18 起在途窗口由骨架屏接管
             EmptyOrSkeleton(isLoaded = state.loaded, hasError = hasError, columns = columns, emptyText = "暂无数据")
@@ -576,6 +591,30 @@ private fun ErrorBanner(message: String, onDismiss: () -> Unit) {
                 text = message,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onErrorContainer,
+            )
+        }
+    }
+}
+
+/**
+ * 刷新成功但内容未变的轻提示横幅（HomeUiState.infoMessage 的渲染壳，2026-09-29）。
+ * 与 [ErrorBanner] 的分流：这是**成功路径**的告知（中性色 secondaryContainer，非
+ * errorContainer），不可点击——自动消退由 VM 侧计时（INFO_HINT_AUTO_CLEAR_MS），
+ * 无操作语义。
+ */
+@Composable
+private fun InfoBanner(message: String) {
+    Surface(
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+    ) {
+        Box(modifier = Modifier.padding(8.dp)) {
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
             )
         }
     }

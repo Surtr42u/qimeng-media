@@ -69,6 +69,7 @@
 
 - `slog` 结构化 JSON 日志：时间/级别/模块/事件/关键字段（直写 stdout，无轮转落盘——按大小滚动/存数据目录为规划项）。
 - 访问日志（方法/路径/状态/耗时/token 前 4 位）为规划项未实现：当前请求级可观测性由 http_requests_total / http_request_duration_seconds 指标覆盖（计数与延迟，不含逐请求日志）。实现时须遵守 SECURITY 红线 7 脱敏口径。
+- `推荐流冷算分段耗时`（2026-09-29）：/recommendations 缓存未命中路径的分段观测——query（候选聚合 SQL）/algorithm（打分+打散纯函数）/assemble（摘要装配）三段与 total，附 seed/candidates/limit。手机单机形态冷算秒级时用它区分「查询贵/算法贵/装配贵」，免拉库取证（2026-09-29「刷新半天才加载」排查落地）。
 - 等级：默认 info；`QM_LOG_LEVEL=debug` 排障；循环内禁止逐条日志（旧项目"50 次记 1 条采样"经验保留）。
 
 ## 健康检查

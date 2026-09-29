@@ -25,6 +25,7 @@ import media.qimeng.app.core.model.AssetQuery
 import media.qimeng.app.core.model.FilterPanelUiState
 import media.qimeng.app.core.model.APPEND_RETRY_DELAYS_MS
 import media.qimeng.app.core.model.LIST_LOAD_FAILED_MESSAGE
+import media.qimeng.app.core.model.LIST_UP_TO_DATE_MESSAGE
 import media.qimeng.app.core.model.MediaAsset
 import media.qimeng.app.core.model.PanelFeedback
 import media.qimeng.app.core.model.RankingPeriod
@@ -97,6 +98,15 @@ data class HomeUiState(
     /** 已应用面板筛选（COS 流 AssetQuery 展开源；默认=全缺省档，查询行为与 Y4b 前一致） */
     val cosFilter: AlbumPanelDraft = AlbumPanelDraft(),
     val errorMessage: String? = null,
+
+    /**
+     * 刷新成功但内容与刷新前完全一致的轻提示（问题「COS 下拉无效」，2026-09-29）：
+     * 刷新确实执行且成功、但服务端返回同页同序数据，界面零变化——用户无法区分
+     * 「没反应」和「刷新了但没新的」。命中时短暂亮一次中性提示（自动消失，
+     * [INFO_HINT_AUTO_CLEAR_MS]），内容有变化时清空。与 [errorMessage]（失败横幅）
+     * 分流：这是成功路径的告知，不是错误。
+     */
+    val infoMessage: String? = null,
 )
 
 /**
@@ -256,6 +266,8 @@ class HomeViewModel @Inject constructor(
         prefetchThrottle.pauseForForegroundRefresh()
         val current = _uiState.value
         _uiState.value = current.copy(
+            // 新一轮刷新受理即撤上一轮的「已是最新」提示（本轮结果落地后按新对比重判）
+            infoMessage = null,
             recommend = if (current.currentTab == HomeTab.RECOMMEND) {
                 current.recommend
             } else {
@@ -498,6 +510,26 @@ class HomeViewModel @Inject constructor(
     }
 
     /**
+     * 刷新结果轻提示（内容未变才提示；语义见 [HomeUiState.infoMessage] KDoc）：
+     * 只服务刷新路径——首载/翻页/筛选重载没有「和刷新前比」的语义。内容一致=
+     * 短暂亮提示后自动消退；有变化=顺带清掉可能残留的旧提示。推荐流刷新不走
+     * 此路径：刷新即换 seed 重排，顺序变化本身就是可见反馈。
+     */
+    private fun reportRefreshOutcome(oldIds: List<String>, newIds: List<String>) {
+        if (oldIds != newIds) {
+            _uiState.value = _uiState.value.copy(infoMessage = null)
+            return
+        }
+        _uiState.value = _uiState.value.copy(infoMessage = LIST_UP_TO_DATE_MESSAGE)
+        viewModelScope.launch {
+            delay(INFO_HINT_AUTO_CLEAR_MS)
+            if (_uiState.value.infoMessage == LIST_UP_TO_DATE_MESSAGE) {
+                _uiState.value = _uiState.value.copy(infoMessage = null)
+            }
+        }
+    }
+
+    /**
      * 进详情前的批次上下文写入（详情页「i / N」序号与 3b 滑动切换的数据链）：
      * 「已加载 = 当前显示清单」口径——recommend=pulled.take(revealed)（分批揭示的可见部分）、
      * cos/rank=items（整页即显示）。快照式整体替换 [MediaBatchIndex.ids]。
@@ -690,6 +722,8 @@ class HomeViewModel @Inject constructor(
                 if (gen != cosGeneration) return@launch // 旧代迟到响应，丢弃
                 // 自愈即清账：横幅清空 + 重试预算归零（同 loadRecommend onSuccess 注释）
                 initialRetryAttempts.remove(HomeTab.COS)
+                // 刷新同内容轻提示：旧清单 id 快照须在整体替换前抓取（下方 copy 即覆盖）
+                val oldIds = if (isRefresh) _uiState.value.cos.items.map { it.id } else null
                 _uiState.value = _uiState.value.copy(
                     errorMessage = null,
                     cos = _uiState.value.cos.copy(
@@ -707,6 +741,7 @@ class HomeViewModel @Inject constructor(
                         reloadTick = _uiState.value.cos.reloadTick + 1,
                     ),
                 )
+                if (oldIds != null) reportRefreshOutcome(oldIds, page.items.map { it.id })
                 return@launch
             }
         }
@@ -730,6 +765,8 @@ class HomeViewModel @Inject constructor(
                 if (gen != rankGeneration) return@onSuccess // 旧代迟到响应，丢弃
                 // 自愈即清账：横幅清空 + 重试预算归零（同 loadRecommend onSuccess 注释）
                 initialRetryAttempts.remove(HomeTab.RANK)
+                // 刷新同内容轻提示：旧清单 id 快照须在整体替换前抓取（口径同 loadCosPage）
+                val oldIds = if (isRefresh) _uiState.value.rank.items.map { it.id } else null
                 _uiState.value = _uiState.value.copy(
                     errorMessage = null,
                     rank = _uiState.value.rank.copy(
@@ -739,6 +776,7 @@ class HomeViewModel @Inject constructor(
                         loaded = true,
                     ),
                 )
+                if (oldIds != null) reportRefreshOutcome(oldIds, items.map { it.id })
             }.onFailure {
                 if (gen != rankGeneration) return@onFailure // 旧代失败不污染新周期
                 val retryScheduled = isInitial && !isRefresh &&
@@ -776,6 +814,14 @@ class HomeViewModel @Inject constructor(
 
         /** COS 流分页大小（协议 /assets 缺省 60；同真 cosOnly 优先） */
         const val COS_PAGE_SIZE = 60
+
+        /**
+         * 「已是最新」轻提示自动消退窗口（HomeUiState.infoMessage，2026-09-29「COS 下拉
+         * 无效」反馈修复）：取 2.5s——短于一次用户注意力转移（对齐双击回顶防抖/哨兵抑制
+         * 窗的亚秒量级之上、错误横幅的常驻语义之下），足够读到又不遮挡后续操作；不做
+         * 点击消退（提示是成功路径告知，无操作语义）。
+         */
+        const val INFO_HINT_AUTO_CLEAR_MS = 2_500L
 
         /**
          * 推荐流换 seed 追加的连续空轮上限（问题A fresh==0 死锁修复，2026-09-28）：

@@ -59,14 +59,26 @@ func FormatDay(t time.Time) string {
 //     失败模式；单用户场景写并发本就有限，排队代价可忽略。
 //   - foreign_keys(1)：SQLite 默认关闭外键约束，必须逐连接显式开启，
 //     否则 migration 里精心设计的 CASCADE 全部形同虚设。
+//   - cache_size(-32000)：页缓存 32MiB（负值=KiB）。SQLite 默认 ~2MiB，
+//     而单机库体量是十几 MiB 起步——默认值放不下整库，推荐流聚合这类
+//     「数百行 × 关联子查询」的访问形态每次 B 树下探都可能冷读闪存，
+//     手机上实测单个新 seed 冷算秒级（2026-09-29 用户反馈「刷新半天才
+//     加载新内容」的成因之一）。放整库进缓存后，热路径 seek 全走内存。
+//     database/sql 默认 MaxIdleConns=2，实际增量 ≤ 2×32MiB 且按需惰性
+//     分配，单机形态可接受。
 //
 // busyTimeoutMS SQLite busy_timeout（毫秒）：写锁被占时的等待上限，
 // 与上方 Open 注释「等待 15 秒」联动——调整须两处同步。
 const busyTimeoutMS = 15000
 
+// pageCacheKiB SQLite 页缓存上限（KiB，负值=KiB 口径），语义见 Open 注释
+// cache_size 条目。与库体量联动——库显著增长（>256MiB）时再评估加大或改
+// 页缓存淘汰策略。
+const pageCacheKiB = 32000
+
 func Open(path string) (*sql.DB, error) {
-	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(%d)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_txlock=immediate",
-		path, busyTimeoutMS)
+	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(%d)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=cache_size(-%d)&_txlock=immediate",
+		path, busyTimeoutMS, pageCacheKiB)
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("store: 打开数据库 %s: %w", path, err)

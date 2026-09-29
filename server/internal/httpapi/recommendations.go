@@ -94,6 +94,11 @@ func (s *Server) GetApiV1Recommendations(w http.ResponseWriter, r *http.Request,
 // 计数是「真实展示」语义（DOMAIN_RULES §1.4.3），由真实服务路径在取得
 // 结果后自行回写，预热路径（recommend_prewarm.go）刻意不回写。
 func (s *Server) computeRecommendPage(ctx context.Context, day string, seed int, mediaType sql.NullString, cosOnly int64, offset, limit int, prefs *recommend.Weights) ([]gen.AssetSummary, []string, error) {
+	// 分段计时（2026-09-29「刷新半天才加载」排查落地的常驻观测）：单机形态
+	// 手机 SoC 上冷算秒级，出问题时靠这三段区分「查询贵/算法贵/装配贵」，
+	// 免去每次拉库取证的往返。Info 级合理：冷算只在换 seed/TTL 过期/结构
+	// 失效后发生（用户动作粒度），不刷屏。
+	pageStart := time.Now()
 	rows, err := s.q.ListAssetsRecommendInput(ctx, db.ListAssetsRecommendInputParams{
 		Day: day, MediaType: mediaType, CosOnly: cosOnly,
 	})
@@ -104,6 +109,7 @@ func (s *Server) computeRecommendPage(ctx context.Context, day string, seed int,
 	if err != nil {
 		return nil, nil, err
 	}
+	queryElapsed := time.Since(pageStart)
 	tagsByAsset := make(map[string][]string, len(tagRows))
 	for _, tr := range tagRows {
 		tagsByAsset[tr.AssetID] = append(tagsByAsset[tr.AssetID], tr.Name)
@@ -148,6 +154,7 @@ func (s *Server) computeRecommendPage(ctx context.Context, day string, seed int,
 		Prefs: prefs,
 		Now:   s.now(),
 	})
+	algorithmElapsed := time.Since(pageStart) - queryElapsed
 	ordered = slicePage(ordered, offset, limit)
 
 	out := make([]gen.AssetSummary, 0, len(ordered))
@@ -171,6 +178,12 @@ func (s *Server) computeRecommendPage(ctx context.Context, day string, seed int,
 	for _, it := range ordered {
 		assetIDs = append(assetIDs, it.AssetID)
 	}
+	s.logger.Info("推荐流冷算分段耗时",
+		"seed", seed, "candidates", len(items), "limit", limit,
+		"query", queryElapsed.Round(time.Millisecond).String(),
+		"algorithm", algorithmElapsed.Round(time.Millisecond).String(),
+		"assemble", (time.Since(pageStart) - queryElapsed - algorithmElapsed).Round(time.Millisecond).String(),
+		"total", time.Since(pageStart).Round(time.Millisecond).String())
 	return out, assetIDs, nil
 }
 
