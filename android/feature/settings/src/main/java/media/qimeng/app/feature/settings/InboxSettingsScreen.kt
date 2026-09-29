@@ -55,8 +55,10 @@ private const val BUTTON_GRANT_STORAGE = "去系统设置授权"
 
 /**
  * 上传收件箱与归档设置子页（2026-09-25 暂存区重做；2026-09-28 归档文件夹功能扩双设定，
- * 入口随迁数据管理页）：授权引导卡（MANAGE_EXTERNAL_STORAGE 未授权时整页引导，复用
- * ServerSettingsScreen 的系统授权页跳转）+ 收件箱当前卡 + 归档文件夹当前卡 + 目录浏览器
+ * 入口随迁数据管理页；2026-09-29 回显修复：浏览器初始展开态随持久化选定走，两者皆未
+ * 设置才展开，任一已有选定则收起——已设置用户进页只见当前值卡 + 「重新选择」）：授权引导卡
+ * （MANAGE_EXTERNAL_STORAGE 未授权时整页引导，复用 ServerSettingsScreen 的系统授权页跳转）+
+ * 收件箱当前卡 + 归档文件夹当前卡 + 目录浏览器
  * （App 内纯 File API 列目录，不用系统弹窗；含点前缀隐藏目录）。
  * 浏览器导航一套共用，「设为收件箱 / 设为归档文件夹」两个按钮对同一浏览位置分别赋值——
  * 两个选定各自持久化到 StagingRepository；上传页「从收件箱导入」以收件箱路径为扫描源，
@@ -117,8 +119,9 @@ fun InboxSettingsScreen(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            // 选定成功即收起浏览器（browserVisible=false 时浏览器/双按钮行/收件箱语义提示
-            // 整组隐藏，再入口在上方两张当前值卡的「重新选择」；原版单目标设计就是选定后收起）
+            // 浏览器可见性决策在 VM（init 回放 + 选定收起 + 清到两者皆空重开，2026-09-29
+            // 回显修复）：browserVisible=false 时浏览器/双按钮行/收件箱语义提示整组隐藏，
+            // 再入口在上方两张当前值卡的「重新选择」；两者皆空时浏览器必然可见（唯一再选入口）
             if (state.browserVisible) {
                 // 目录浏览器（2026-09-28 上提 core:ui 单源：上传页「浏览文件」弹层复用同一组件，
                 // 本页只保留标题与 ViewModel 状态注入）。收件箱与归档文件夹两个目标共用导航，
@@ -176,8 +179,8 @@ private fun PermissionGuideCard(text: String, onGrant: (() -> Unit)?) {
 
 /**
  * 当前选定值卡（收件箱与上传归档文件夹共用形态）：选定路径 + 「重新选择」/清除按钮行；
- * 未设置给占位文案（未设置时浏览器必然可见，「重新选择」只在选定后出现——它是浏览器
- * 选定即收起后的再入口）。
+ * 未设置给占位文案（「重新选择」只在选定后出现——它是浏览器选定即收起后的再入口；
+ * 该卡被清空后无按钮，两者皆空时浏览器由 VM 重开补位，见 InboxSettingsViewModel）。
  * 2026-09-28 归档文件夹功能：原 CurrentInboxCard 泛化（双目标同款卡片规格，参数化标题
  * 与清除文案）；同日浏览器收起改造加「重新选择」。
  */

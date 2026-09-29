@@ -8,6 +8,17 @@
 - 子代理执行的工作标注"（执行子代理）"，主对话直接完成的标注"（主代理）"。
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
+## feat(app): 上传选文件精简为唯一「系统文件」入口+收件箱设置回显修复（2026-09-29 第四百零二笔）
+
+执行 AI：GLM-5.3（主代理：需求调研/根因定位/入口精简手术/测试迁移/收口）+ 执行子代理（SAF 入口实现与收件箱回显修复，中途按用户指令叫停后由主代理续完并重定义范围）
+
+- **需求**（用户四条）：① App 上传「选项太多」——只保留「系统文件」一个入口（相册/收件箱导入/浏览文件全撤）② 收件箱设置页选完再次进入仍显示「选择文件夹」（应显示当前值）③ 上传选文件要能像收件箱那样看到点前缀隐藏目录（不开「所有文件访问」）④ 隐私约束：无头测试只允许截上传/设置页。
+- **「系统文件」唯一入口（①③，SAF ACTION_OPEN_DOCUMENT 多选）**：系统文档选择器天然能见点前缀隐藏目录、多选、免任何存储权限（manifest 零改动）；逐 URI `takePersistableUriPermission`（暂存条目跨进程重启持久，真正读流在 worker 上传时刻，DocumentsUI 临时授权撑不到）；选完走 acceptUris 暂存管道（与系统分享同源）。
+- **入口精简手术（①）**：相册选择器（MediaPickerScreen/ViewModel + 媒体读权限运行时申请）、浏览文件弹层（FileBrowserScreen/ViewModel + 「所有文件访问」闸门）、收件箱导入（VM importFromInbox + Ingestor 三管道）**整体退役删除**（5 文件删 + UploadScreen/UploadViewModel/UploadUiState/UploadStagingIngestor 同步瘦身，死代码零残留）；StagingRepository 收件箱数据面保留（收件箱设置页仍读写，归档文件夹共用）；UploadViewModelTest 收件箱导入 5 用例删、相册管道用例改写为 acceptUris 版（describe 元数据单源 fake）、17 处调用批量迁移，48 用例全绿。
+- **收件箱设置回显修复（②，执行子代理实现）**：根因 = `browserVisible` 默认展开导致每次进页无视已持久化选定值仍显示目录浏览器——改为 init 回放后**收件箱与归档文件夹两者都未设置才默认展开**（首用直达），任一已设置则显示当前值卡 + 「重新选择」（既有 reopenBrowser 流程不动）；含 InboxSettingsViewModelTest 用例更新。
+- **测试与门禁**：`:feature:settings:testDebugUnitTest` + `:feature:upload:testDebugUnitTest` + 两模块编译 + assembleDebug 全绿；真机 <真机序列号> 装机实测入口精简后冒烟通过。
+- **文档**：本笔。协议零改动（SAF 是端内选文件方式，不涉服务端）。
+
 ## feat(web): 上传文件页拆两页——上传工作台对齐App动线+来源词表独立页（2026-09-29 第四百零一笔）
 
 执行 AI：GLM-5.3（主代理：需求调研/方案/审查/收口）+ 执行子代理（结构重排与拆页实现/门禁自测）
