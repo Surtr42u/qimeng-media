@@ -24,15 +24,16 @@ import media.qimeng.app.core.ui.component.QimengSourceSection
 import media.qimeng.app.core.ui.component.QimengThumbnail
 
 /**
- * 上传页暂存区（2026-09-25 暂存区重做自 UploadScreen 拆出，控制 600 行红线）：
- * 批次默认区（持久化配置）+ 暂存条目卡（缩略图 + 失效态 + 编辑入口）。
+ * 上传页批次默认区与暂存条目卡（2026-09-25 暂存区重做自 UploadScreen 拆出，控制 600 行红线）：
+ * 批次默认区（持久化配置，2026-09-28 起为常驻配置区）+ 暂存条目卡（缩略图 + 失效态 + 编辑入口）。
  * UI 只做渲染与 VM 调用，业务规则全在 UploadViewModel（ADR-0008 铁律 7）。
  */
 
 /**
- * 批次默认区：作者联想 + 来源多选 + 一键应用到全部。三项配置均持久化
- * （StagingRepository.batchConfig），新进暂存项自动继承；来源区在批次作者未选时禁用
- * （来源挂在作者块下，服务端口径——同编辑页门槛）。
+ * 批次默认区（常驻配置区之一，2026-09-28 固化布局）：作者联想 + 来源多选 + 一键应用到全部。
+ * 三项配置均持久化（StagingRepository.batchConfig），新进暂存项自动继承；来源区在批次作者
+ * 未选时禁用（来源挂在作者块下，服务端口径——同编辑页门槛）。
+ * 「应用到全部」仅在有暂存项时出现（空列表无作用对象，不渲染禁用态按钮）。
  */
 @Composable
 internal fun BatchDefaultSection(state: UploadUiState, viewModel: UploadViewModel) {
@@ -58,11 +59,13 @@ internal fun BatchDefaultSection(state: UploadUiState, viewModel: UploadViewMode
             onToggle = viewModel::toggleBatchSource,
             onAddCustom = viewModel::addCustomBatchSource,
         )
-        TextButton(
-            onClick = viewModel::applyBatchToAll,
-            enabled = state.batchAuthorId != null && state.pendingItems.isNotEmpty(),
-        ) {
-            Text("应用到全部（${state.pendingItems.size} 项）")
+        if (state.pendingItems.isNotEmpty()) {
+            TextButton(
+                onClick = viewModel::applyBatchToAll,
+                enabled = state.batchAuthorId != null,
+            ) {
+                Text("应用到全部（${state.pendingItems.size} 项）")
+            }
         }
     }
 }

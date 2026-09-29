@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
-import type { AuthorMirrorConfig, ClientConfig, RecommendPrefs } from '@/api/generated'
+import type { ClientConfig, RecommendPrefs } from '@/api/generated'
 import { Pill } from '@/components/ui/pill'
 import { Switch } from '@/components/ui/switch'
 import {
@@ -10,7 +10,6 @@ import {
   useConfig,
   useSaveConfig,
 } from '@/hooks/use-config'
-import { useAuthorMirror, useSaveAuthorMirror, useSaveSourceVocabulary, useSourceVocabulary } from '@/hooks/use-authors'
 import {
   DEFAULT_PREFS,
   PREFS_KEYS,
@@ -19,7 +18,6 @@ import {
   useSavePrefs,
 } from '@/hooks/use-prefs'
 import { useAuthLogout } from '@/hooks/use-session'
-import { batchFailureReason } from '@/lib/batch'
 
 /**
  * 设置页（原型 #page-settings 移植）。
@@ -31,8 +29,8 @@ import { batchFailureReason } from '@/lib/batch'
  * 界面卡维持静态说明。
  * 阶段 E4（2026-09-07）：推荐偏好只留 4 预设（口径对齐旧版 GUIDE_UI:255）——
  * 移除 9 维滑杆/保存按钮/本地草稿，点击预设即 PUT；激活态对服务端保存值逐维比较。
- * 镜像卡（REQ-上传指定作者与来源 §3.4 自动镜像，2026-09-25）：GET/PUT
- * /authors/mirror——path 空=关闭；保存成功即触发一次镜像刷新（尽力而为）。
+ * 2026-09-28：「作者总表镜像」「通用来源词表」两卡迁往文件管理域（数据管理 →
+ * 上传文件，与上传挂靠工作台同页维护），此处只留指引文案。
  */
 
 /** 越界提示（协议 400 之前本地先拦，文案与 CONFIG_BOUNDS 对齐） */
@@ -95,69 +93,8 @@ export default function SettingsPage() {
     })
   }
 
-  // 作者总表镜像卡（REQ §3.4）：GET 回填 + 本地草稿（同扫描/上传卡范式），
-  // 保存一次 PUT 两字段（path 空=关闭）
-  const { data: mirrorData } = useAuthorMirror()
-  const saveMirror = useSaveAuthorMirror()
-  const [mirrorDraft, setMirrorDraft] = useState<AuthorMirrorConfig | null>(null)
-  const mirror: AuthorMirrorConfig = mirrorDraft ?? {
-    path: mirrorData?.path ?? '',
-    fragmentFilename: mirrorData?.fragmentFilename ?? '',
-  }
-
-  const setMirrorField = (key: keyof AuthorMirrorConfig, raw: string): void => {
-    setMirrorDraft({ ...mirror, [key]: raw })
-  }
-
-  const doSaveMirror = (): void => {
-    saveMirror.mutate(
-      { path: mirror.path ?? '', fragmentFilename: mirror.fragmentFilename ?? '' },
-      {
-        onSuccess: () => {
-          setMirrorDraft(null)
-          // 保存成功即尝试一次镜像刷新（服务端尽力而为）——照现有卡的反馈样式
-          toast.success('镜像配置已保存')
-        },
-        onError: (err) =>
-          // 4xx 时 unwrapSdkResult 抛的是 {code,message,status} 错误体（非 Error
-          // 实例），弱模式会落成 "[object Object]"——统一走 batchFailureReason 提取
-          toast.error(`镜像配置保存失败：${batchFailureReason(err)}`),
-      },
-    )
-  }
-
-  // 通用来源词表卡（2026-09-25 协议批）：GET 回填 + 本地草稿（同镜像卡范式）；
-  // 保存一次 PUT 整体替换。条目增删走草稿：逐条点击移除 / 输入框回车添加
-  // （trim 非空、重复不加——与服务端 400 去重口径对齐，省一次白打请求）
-  const { data: vocabData, isLoading: vocabLoading } = useSourceVocabulary()
-  const saveVocab = useSaveSourceVocabulary()
-  const [vocabDraft, setVocabDraft] = useState<string[] | null>(null)
-  const [vocabInput, setVocabInput] = useState('')
-  const vocab: string[] = vocabDraft ?? vocabData?.sources ?? []
-
-  const addVocabWord = (): void => {
-    const word = vocabInput.trim()
-    if (word === '') return
-    if (!vocab.includes(word)) setVocabDraft([...vocab, word])
-    setVocabInput('')
-  }
-
-  const removeVocabWord = (word: string): void => {
-    setVocabDraft(vocab.filter((w) => w !== word))
-  }
-
-  const doSaveVocab = (): void => {
-    saveVocab.mutate(
-      { sources: vocab },
-      {
-        onSuccess: () => {
-          setVocabDraft(null)
-          toast.success('通用来源词表已保存')
-        },
-        onError: (err) => toast.error(`通用来源词表保存失败：${batchFailureReason(err)}`),
-      },
-    )
-  }
+  // 作者总表镜像卡与通用来源词表卡已迁往「数据管理 → 上传文件」（组件 =
+  // components/manage/AuthorMirrorCard.tsx / SourceVocabularyCard.tsx，零逻辑改动）
 
   // 当前生效值 = 服务端保存值（缺字段兜底默认），无本地草稿——预设点击即 PUT（方案拍板语义）。
   // 激活态对它逐维比较：保存 pending 期间滞后一拍（invalidate 后到位）可接受。
@@ -235,96 +172,8 @@ export default function SettingsPage() {
         </label>
       </div>
       <div className="settings-card">
-        <h3>作者总表镜像</h3>
-        <p>服务端把作者总表片段自动镜像到该路径 · 保存即生效</p>
-        <div className="settings-grid">
-          <label className="settings-field">
-            <span>镜像文件路径</span>
-            <input
-              type="text"
-              placeholder="服务端可写的绝对路径；留空 = 关闭"
-              autoComplete="off"
-              value={mirror.path ?? ''}
-              onChange={(e) => setMirrorField('path', e.target.value)}
-            />
-            <small>须为服务端文件系统内的绝对路径（相对路径被拒绝）；留空 = 关闭镜像</small>
-          </label>
-          <label className="settings-field">
-            <span>镜像目标片段</span>
-            <input
-              type="text"
-              placeholder="留空=最近导入的片段"
-              autoComplete="off"
-              value={mirror.fragmentFilename ?? ''}
-              onChange={(e) => setMirrorField('fragmentFilename', e.target.value)}
-            />
-            <small>多片段场景指明镜像哪份片段</small>
-          </label>
-        </div>
-        {/* 单向镜像口径必须向用户言明（REQ §3.4）：本地手改会被覆盖 */}
-        <p className="rank-note" style={{ marginTop: 10 }}>
-          单向同步：本地手改该文件会在下次服务端变更时被覆盖——需要手工编辑清单时，复制一份改完再导入。
-        </p>
-        <div className="settings-actions" style={{ marginTop: 12 }}>
-          <button
-            className="save-btn"
-            type="button"
-            disabled={saveMirror.isPending}
-            onClick={doSaveMirror}
-          >
-            {saveMirror.isPending ? '保存中…' : '保存镜像配置'}
-          </button>
-        </div>
-      </div>
-      <div className="settings-card">
-        <h3>通用来源词表</h3>
-        <p>资产编辑页来源区的建议词（获取渠道/平台名，如「老王论坛」）· 全员共享，服务端统一保存</p>
-        <div className="source-chips">
-          {vocab.map((word) => (
-            <Pill
-              key={word}
-              active
-              disabled={saveVocab.isPending}
-              onClick={() => removeVocabWord(word)}
-              title="点击移除该建议词"
-            >
-              {word}
-            </Pill>
-          ))}
-          {vocabLoading && vocab.length === 0 ? (
-            <span className="source-empty-hint">词表加载中…</span>
-          ) : null}
-          {!vocabLoading && vocab.length === 0 ? (
-            <span className="source-empty-hint">暂无建议词，在下方输入框回车添加</span>
-          ) : null}
-        </div>
-        <div className="tag-newrow">
-          <input
-            className="tag-input"
-            type="text"
-            placeholder="新来源词，回车加入词表草稿"
-            autoComplete="off"
-            value={vocabInput}
-            onChange={(e) => setVocabInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault()
-                addVocabWord()
-              }
-            }}
-          />
-        </div>
-        <small>点击词表条目移除 · 回车添加（自动去空白，重复词不加）· 保存为整体替换</small>
-        <div className="settings-actions" style={{ marginTop: 12 }}>
-          <button
-            className="save-btn"
-            type="button"
-            disabled={saveVocab.isPending || (vocabDraft === null && vocab.length === 0)}
-            onClick={doSaveVocab}
-          >
-            {saveVocab.isPending ? '保存中…' : '保存来源词表'}
-          </button>
-        </div>
+        <h3>来源与镜像</h3>
+        <p>通用来源词表与作者总表镜像已移至「数据管理 → 上传文件」页维护（与上传挂靠同页）。</p>
       </div>
       <div className="settings-card">
         <h3>界面</h3>

@@ -8,6 +8,19 @@
 - 子代理执行的工作标注"（执行子代理）"，主对话直接完成的标注"（主代理）"。
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
+## feat(web/app/server): Web上传工作台对齐App+词表镜像迁移+App配置区固化+库根自动重挂（2026-09-28 第三百九十七笔）
+
+执行 AI：GLM-5.3-Flash（主代理调度：现状核查/三执行子代理并行派发/对抗审查/文档收口；Web/Android/服务端三个执行子代理+对抗审查子代理，全部 GLM-5.3-Flash）
+
+- **需求**（用户四项）：① 来源词表与作者镜像移入文件管理独立卡；② PC 上传对齐手机功能；③ 库根目录改名/移动自动跟随（「固化识别」，当日 3→2 cos图集 改名为实证场景）；④ 两端上传选项固化常显+排版操作逻辑优化。
+- **Web 上传工作台（执行子代理）**：`UploadWorkbench` 替代退役的 `UploadCard`——批次目标库 pills+目录树+批次挂靠默认（作者联想/来源多选/应用到全部）+暂存区（点击/拖文件/拖目录）逐项编辑（作品名基名+扩展名锁定+序号联想 GET /assets/name-suggestions、作者、来源）+门禁上传递（超限/未选库前置拦截文案与 App 同口径）+常驻队列（聚合行+4xx message 原样透传更显眼）；201 后自动挂靠对齐 App（先 PUT /assets/{id}/authors 单项整体替换，后 PUT /authors/{id}/sources mode=append 并入，挂靠失败落「已入库·挂靠失败」专项态不重试）；新增 lib/upload-naming、lib/staged-upload 纯函数（vitest 7 用例锁定）。**词表/镜像迁移**：SourceVocabularyCard、AuthorMirrorCard 自设置页迁入 数据管理→上传文件，设置页留指引卡。三段式布局全部常驻显示、空态给引导。
+- **App 配置区固化（执行子代理）**：UploadScreen 重排为常驻配置区（进入页面即见 选库→目标目录→批次默认作者/来源→添加文件→暂存列表→队列 全动线），删除「空态只显添加入口、配置区等暂存非空才出现」分支；空态给动线引导；「应用到全部」空列表不再渲染禁用态。纯交互层重排，VM/业务规则零改动（铁律 7）。
+- **服务端库根自动重挂（执行子代理，ADR-0025）**：扫描器发现库根不存在时，取库内最小 5 条资产 (rel_path+size_bytes) 指纹，在旧父目录一层子目录中找**唯一**全命中候选——恰 1 个才改挂 root_path+显示名（跟随新目录 basename，用户拍板）并广播 library.changed（零计数载荷，SseBridge 零改动消费），0/≥2 候选保持原失败行为绝不猜测；匹配判定纯函数（relink.go，7 表驱动用例+6 端到端）；sqlc 新查询 ListLibraryRelinkSamples（v1.31.1 生成）；Scan/Watch 两调用点；协议/openapi/sdk.lock 零改动。**对抗审查【可合入】**（审查子代理独立重跑 build/vet/test 全绿、逐项核数据安全防线/并发/协议/测试真实性，2 条 P3 注释精度问题已顺手修正：Watch 启动期不持闸的并发表述、UpdateLibrary 目前唯一调用方是重挂本身；可选硬化「候选排除其他库 root_path」记档于 ADR 后果段）。
+- **真库实证（主代理）**：重启后手动触发扫描——`库根自动重挂` 日志 oldRoot=…3  cos图集 → newRoot=…2  cos图集、displayName=2  cos图集、samples=5；5564 条旧资产零扰动找回（added/updated/moved/removed 路径零身份变更），另新收 4 张改名期间放入、扫描器此前进不去的新图（fileCount 5564→5568），缩略图/原图恢复 200。重挂前预演：5 条样本在新目录字节数全匹配、在 1  图集 零命中，唯一性成立。
+- **当日装机实测数据核对（主代理，非代码变更）**：PC 上传 7 次=3×201（4.2MB IMG_20260927_234126.jpg 等成功件，其中 1 次为主代理白名单复现测试已入回收站即物理清除）+4×400（服务端四道校验拒绝，白名单 jpg/jpeg/png/gif/webp/avif/mp4/m4v/mkv/webm/mov/avi，具体被拒文件类型待用户补充）；手机端 16:55–16:59 正常浏览播放（守望先锋 5 部扫描新件已看、卡芙卡 12 播放进度 42.7s 存档），~200 条图片加载告警为 cos库根不可达期间的原图失败，重挂后应消失待复测。
+- **测试与门禁**：web vitest 197 全绿+build 通过+lint 0 error（18 warning 均为既有基线）；app `:feature:upload` 58/58+`:core:model` 全绿（`:core:data` DataStoreStagingRepositoryTest 8 失败为既有 Windows DataStore 改名竞态，stash 基线比对证实与本批无关，已记 HANDOVER 已知问题）；server go build+go test ./... 全绿+gofmt 干净+golangci-lint 0 issues。
+- **文档**：ADR-0025（库根自动重挂）+ INDEX 追加行、HANDOVER §4/§5 已知问题、本笔；GUIDE_API/DOMAIN_RULES 无涉（协议与领域口径零改动）。
+
 ## feat(app): 上传归档文件夹+浏览文件入口+作者默认全显+列表加载刷新修复（2026-09-28 第三百九十六笔）
 
 执行 AI：GLM-5.3-Flash（主代理 GLM-5.3 调度：拆批派发/门禁/亲核审查结论/文档收口；四个执行子代理实现+接力子代理+对抗审查子代理+修复子代理+视觉验证子代理，全部 GLM-5.3-Flash）

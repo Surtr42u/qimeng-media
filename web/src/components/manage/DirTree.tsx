@@ -8,7 +8,7 @@ import { dirLabel } from '@/lib/format'
  *   B-1 起可选传 renderActions，目录行升级为 flex 行容器（hover 显示行尾操作）；
  *   B-5 起可同时传 onSelect + renderActions（组合模式）：行内 select 按钮 +
  *   行尾操作并存（选中目录 → 树下列文件行）；
- * - UploadCard / MoveDialog（上传卡/整理弹窗）：选择模式——传 onSelect/
+ * - UploadWorkbench / MoveDialog（上传工作台/整理弹窗）：选择模式——传 onSelect/
  *   selectedPath 时渲染按钮行，点击选中该目录作为目标（两弹窗只传选择、
  *   不传 renderActions，行内已有选中语义，不混入操作）。
  * 标签口径：取路径末段（协议 path 统一 '/' 分隔，兼容 Windows 反斜杠）；

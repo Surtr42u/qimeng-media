@@ -15,10 +15,19 @@ export function SourceSelectField({
   selected,
   onChange,
   disabled = false,
+  label = '来源/出处（可选，并入该作者的来源记录）',
+  hint = '留空 = 不改动该作者既有来源；已选来源保存时整体替换（点击已选可移除）',
+  disabledHint = '来源字段当前不可用',
 }: {
   selected: string[]
   onChange: (next: string[]) => void
   disabled?: boolean
+  /** 字段标题（编辑页/上传工作台语境不同；缺省 = 编辑页原文案） */
+  label?: string
+  /** 提示行（编辑页=整体替换语义，上传=并入语义，调用方按语境给） */
+  hint?: string
+  /** 禁用态提示行（上传工作台提示先选作者） */
+  disabledHint?: string
 }) {
   const { data: vocab, isLoading } = useSourceVocabulary()
   const [input, setInput] = useState('')
@@ -41,7 +50,7 @@ export function SourceSelectField({
 
   return (
     <div className={`settings-field upload-attach-field${disabled ? ' disabled' : ''}`}>
-      <span>来源/出处（可选，并入该作者的来源记录）</span>
+      <span>{label}</span>
       <div className="source-chips">
         {vocabNames.map((name) => (
           <Pill
@@ -79,11 +88,7 @@ export function SourceSelectField({
           }}
         />
       </div>
-      <small>
-        {disabled
-          ? '来源字段当前不可用'
-          : '留空 = 不改动该作者既有来源；已选来源保存时整体替换（点击已选可移除）'}
-      </small>
+      <small>{disabled ? disabledHint : hint}</small>
     </div>
   )
 }

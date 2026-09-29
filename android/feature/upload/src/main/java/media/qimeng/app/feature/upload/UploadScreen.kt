@@ -62,16 +62,18 @@ import media.qimeng.app.core.ui.component.QimengTopBar
 import media.qimeng.app.core.ui.theme.qimengFilledButtonColors
 
 /**
- * 上传主通道页（M4-5；2026-09-25 流程重排 + 暂存区重做）：先选文件进持久暂存区 →
- * 在暂存区配置（目标库必选 → 目标目录 → 批次默认 → 逐项编辑）→ 串行队列进度。
- * 暂存条目/批次默认/收件箱路径全部持久化（杀进程重启不丢），页面只 collect 持久流渲染。
- * 空态（无暂存项）只有选文件入口（相册式选择器 / 浏览文件 / 下载收件箱导入）+ 引导文案；
+ * 上传主通道页（M4-5；2026-09-25 流程重排 + 暂存区重做；2026-09-28 配置区固化常驻）：
+ * 页面自上而下按动线「选库 → 放文件 → 逐项校对 → 上传」单列贯通——
+ * 目标库（必选）→ 目标目录 → 批次默认（作者/来源，新进项自动继承）→ 添加文件入口 →
+ * 暂存列表（空态给引导文案）→ 开始上传 → 串行队列进度。
+ * 配置区进入页面即常驻显示（不再等选完文件进暂存才出现）；暂存条目/批次默认/
+ * 收件箱路径全部持久化（杀进程重启不丢），页面只 collect 持久流渲染。
  * 未选库时开始上传禁用并提示（enqueue 侧保留必填兜底，见 [UploadViewModel.enqueue]）。
  * 入口：①系统分享接收（壳层带分享 URI 导航至此）②App 内数据管理页入口。
  * 选文件：内置相册式选择器（MediaStore 网格多选，媒体读权限运行时申请）+ 浏览文件
  * （2026-09-28：纯 File API 全盘浏览多选，「所有文件访问」闸门在入口——补齐相册扫不到
  * 的点前缀隐藏目录场景）+ 下载收件箱（设置页选定的文件夹，白名单过滤后一键进暂存区）。
- * 挂靠批：暂存区批次默认（作者联想 + 来源多选 + 应用到全部）+ 逐项展开编辑
+ * 挂靠批：批次默认（作者联想 + 来源多选 + 应用到全部）+ 逐项展开编辑
  * （作品名联想/作者/来源/库覆盖，复用 core:ui 无状态段组件）；挂靠执行在 worker 的
  * 201 之后（mode=append，失败不重试，队列行落「已入库但挂靠失败」专项态）。
  * UI 只做表单编排与状态渲染，业务规则在 ViewModel/core 层（ADR-0008 铁律 7）。
@@ -195,10 +197,13 @@ fun UploadScreen(
 }
 
 /**
- * 表单滚动主体：横幅 → 选文件入口 →（空态引导 | 暂存区配置块与暂存条目/入队）→ 队列。
- * 2026-09-25 流程重排：目标库/目录/批次默认全部移入暂存区，库为配置块首行必选项；
- * 未选库时开始上传禁用并提示（门禁口径在 [UploadUiState.canEnqueue]）。
- * 暂存区重做：暂存条目来自持久流（收件箱导入 + 相册多选共用），失效条目原位提示可清除。
+ * 表单滚动主体（2026-09-28 配置区固化常驻）：横幅 → 选库（目标库/目标目录）→
+ * 批次默认（作者/来源，新进项自动继承）→ 添加文件入口 →（空态引导 | 暂存条目 +
+ * 开始上传）→ 队列。
+ * 配置区进入页面即显示、不再随暂存区有无切换（选完才显示的旧布局移除），动线
+ * 「选库 → 放文件 → 逐项校对 → 上传」自上而下单列贯通；开始上传按钮仅在有暂存项时
+ * 出现（门禁口径在 [UploadUiState.canEnqueue]）。
+ * 暂存条目来自持久流（收件箱导入 + 相册多选共用），失效条目原位提示可清除。
  * 选择行为以回调注入（launcher/权限留在本壳层），函数行数收敛到百行红线内。
  */
 @Composable
@@ -235,38 +240,35 @@ private fun UploadForm(
             }
         }
 
+        // —— 选库：目标库（必选）→ 目标目录（选库后展示目录树），常驻 ——
+        LibrarySection(state = state, viewModel = viewModel)
+        state.dirTree?.let { tree ->
+            SectionTitle("目标目录")
+            DirTreePanel(
+                tree = tree,
+                selectedDirPath = state.selectedDirPath,
+                onSelect = viewModel::selectDir,
+                onCreateDir = onCreateDir,
+            )
+        }
+
+        // —— 批次默认区（挂靠批）：新进项自动继承；已有暂存项可「应用到全部」——
+        BatchDefaultSection(state = state, viewModel = viewModel)
+
+        // —— 放文件：三条管道入口（相册 / 收件箱 / 浏览文件），常驻 ——
+        SectionTitle("添加文件")
+        AddSourcesRow(
+            state = state,
+            onPickMedia = onPickMedia,
+            onImportInbox = onImportInbox,
+            onBrowseFiles = onBrowseFiles,
+        )
+
+        // —— 逐项校对：暂存列表（空态给引导文案；有项时逐条展开编辑）——
         if (state.pendingItems.isEmpty()) {
-            // —— 空态：只有选文件入口 + 引导文案，不展示任何配置项 ——
-            AddSourcesRow(
-                state = state,
-                onPickMedia = onPickMedia,
-                onImportInbox = onImportInbox,
-                onBrowseFiles = onBrowseFiles,
-                emptyState = true,
-            )
+            StagingEmptyGuide()
         } else {
-            // —— 暂存区（暂存态）——
             SectionTitle("暂存文件（${state.pendingItems.size}）")
-            AddSourcesRow(
-                state = state,
-                onPickMedia = onPickMedia,
-                onImportInbox = onImportInbox,
-                onBrowseFiles = onBrowseFiles,
-                emptyState = false,
-            )
-            // 配置块：目标库（必选）→ 目标目录 → 批次作者 → 批次来源 → 应用到全部
-            LibrarySection(state = state, viewModel = viewModel)
-            state.dirTree?.let { tree ->
-                SectionTitle("目标目录")
-                DirTreePanel(
-                    tree = tree,
-                    selectedDirPath = state.selectedDirPath,
-                    onSelect = viewModel::selectDir,
-                    onCreateDir = onCreateDir,
-                )
-            }
-            // 批次默认区（挂靠批）：新进项自动继承；已有暂存项可「应用到全部」
-            BatchDefaultSection(state = state, viewModel = viewModel)
             state.pendingItems.forEach { item ->
                 StagedItemRow(
                     item = item,
@@ -311,7 +313,7 @@ private fun UploadForm(
 }
 
 /**
- * 选文件入口行（三条管道）：「从相册选择」（内置相册式选择器）+「从收件箱导入」
+ * 选文件入口行（三条管道，常驻）：「从相册选择」（内置相册式选择器）+「从收件箱导入」
  * （设置页选定的下载收件箱一键扫描入暂存区）一行两钮；「浏览文件」（2026-09-28，
  * 纯 File API 全盘浏览多选，补齐相册看不到的点前缀隐藏目录场景）通栏一行——
  * 三个按钮同排会在窄屏挤压中文文案。未设收件箱时导入按钮禁用并给引导提示
@@ -323,7 +325,6 @@ private fun AddSourcesRow(
     onPickMedia: () -> Unit,
     onImportInbox: () -> Unit,
     onBrowseFiles: () -> Unit,
-    emptyState: Boolean,
 ) {
     Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(
@@ -352,14 +353,27 @@ private fun AddSourcesRow(
             )
         }
         Text(
-            text = if (emptyState) EMPTY_STATE_HINT else STAGED_STATE_HINT,
+            text = ADD_FILES_FORMAT_HINT,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
 
-/** 目标库选择（暂存区配置块首行，必选；复用页面原库 pills 控件与 VM 数据源） */
+/**
+ * 暂存列表空态引导（2026-09-28 配置区固化常驻）：配置区不再承担「选完文件才出现」的
+ * 状态切换，空态改为指引动线——添加后自动继承批次默认，逐项校对无误再开始上传。
+ */
+@Composable
+private fun StagingEmptyGuide() {
+    Text(
+        text = STAGING_EMPTY_GUIDE,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+/** 目标库选择（页面配置区首行，必选、常驻；复用页面原库 pills 控件与 VM 数据源） */
 @Composable
 private fun LibrarySection(state: UploadUiState, viewModel: UploadViewModel) {
     SectionTitle("目标库（必选）")
@@ -663,12 +677,12 @@ private const val BROWSE_PERM_CANCEL = "取消"
 /** 收件箱未设置时的入口提示（指向收件箱设置页；2026-09-28 入口迁至数据管理 hub） */
 private const val INBOX_NOT_SET_HINT = "未设置下载收件箱：请到 数据管理 → 上传收件箱与归档 选择文件夹"
 
-/** 空态引导文案（三条管道 + 暂存区持久化口径；收件箱入口同上迁至数据管理 hub） */
-private const val EMPTY_STATE_HINT =
-    "从相册选择、「浏览文件」直选手机文件夹（含点前缀隐藏目录），或在 数据管理 → 上传收件箱与归档 指定文件夹一键导入"
+/** 暂存列表空态引导（动线指引：添加 → 自动继承批次默认 → 逐项校对 → 上传） */
+private const val STAGING_EMPTY_GUIDE =
+    "暂无待传文件：添加后自动继承批次作者与来源，逐项校对无误再开始上传"
 
-/** 暂存态选文件入口的格式说明（超限拦截口径在 VM/服务端） */
-private const val STAGED_STATE_HINT = "支持图片/视频常见格式；类型与大小校验在服务端，超限项本地拦截"
+/** 添加文件入口的格式说明（超限拦截口径在 VM/服务端；常驻布局后不再分空态/暂存态文案） */
+private const val ADD_FILES_FORMAT_HINT = "支持图片/视频常见格式；类型与大小校验在服务端，超限项本地拦截"
 
 private const val DIR_ROOT_LABEL = "（库根）"
 

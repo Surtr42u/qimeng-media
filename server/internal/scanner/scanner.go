@@ -197,6 +197,13 @@ func (s *Scanner) Scan(ctx context.Context, lib db.Library) (ScanResult, error) 
 
 	res := ScanResult{LibraryID: lib.ID}
 
+	// 库根自动重挂（ADR-0025，relink.go）：根被改名/移动后先按资产样本找回；
+	// 失败则保持既有失败行为——返回遍历错误（轮询下一周期再试，API 触发向
+	// 调用方报错）。成功时 lib（本地副本）已持新根，本轮扫描继续正常执行。
+	if err := s.ensureLibraryRoot(ctx, &lib); err != nil {
+		return res, fmt.Errorf("scanner: 遍历库 %s: %w", lib.RootPath, err)
+	}
+
 	// 库内现存记录快照：变更检测查内存（每文件 0 次 SQL），差集也算它。
 	existing, err := s.q.ListAssetsByLibrary(ctx, lib.ID)
 	if err != nil {
