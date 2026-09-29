@@ -8,7 +8,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import media.qimeng.app.core.model.AuthorSuggestion
-import media.qimeng.app.core.model.AuthorType
 import media.qimeng.app.core.model.LibraryChoice
 import media.qimeng.app.core.model.LocalMediaItem
 import media.qimeng.app.core.model.StagedUpload
@@ -79,22 +78,17 @@ class UploadViewModelTest {
         assertNull(state.errorMessage)
     }
 
-    // ---- 空输入作者种子（全量接口回退；suggest 空 q 必返空） ----
+    // ---- 来源词表建议过滤（2026-09-28：仅单独词，组合条目不出现在快捷 chip） ----
 
     @Test
-    fun `init拉全量作者过滤COS生成空输入种子`() {
+    fun `init拉来源词表过滤组合只留单独词`() {
         val authorRepository = FakeAuthorRepository().apply {
-            authorsResult = listOf(
-                FakeAuthorRepository.summary("author-a", "作者A").copy(fileCount = 3),
-                FakeAuthorRepository.summary("author-cos", "COS作者").copy(type = AuthorType.COS),
-            )
+            vocabularyResult = listOf("kemono", "kemono  小红车", "小红车  kemono", "", "小红车", "x")
         }
         val (viewModel, _, _, _) = newViewModel(authorRepository = authorRepository)
-        val seeds = viewModel.uiState.value.authorSeeds
-        // 挂靠仅支持常规作者：COS 作者必须从种子里排除
-        assertEquals(listOf("author-a"), seeds.map { it.id })
-        assertEquals(listOf("作者A"), seeds.map { it.displayName })
-        assertEquals(listOf(3), seeds.map { it.fileCount })
+        // 组合（含空白分隔多词）与空串被过滤，原序保留；作者联想为百度式（空输入无建议列表）
+        assertEquals(listOf("kemono", "小红车", "x"), viewModel.uiState.value.sourceOptions)
+        assertTrue(viewModel.uiState.value.batchAuthorSuggestions.isEmpty())
     }
 
     @Test

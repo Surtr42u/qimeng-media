@@ -276,7 +276,6 @@ private fun UploadForm(
                     missing = item.source in state.missingSources,
                     itemAuthorQuery = state.itemAuthorQuery,
                     itemAuthorSuggestions = state.itemAuthorSuggestions,
-                    authorSeeds = state.authorSeeds,
                     itemNameSuggestions = state.itemNameSuggestions,
                     sourceOptions = state.sourceOptions,
                     libraries = state.libraries,

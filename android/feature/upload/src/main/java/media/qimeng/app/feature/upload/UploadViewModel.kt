@@ -28,7 +28,7 @@ import media.qimeng.app.core.model.UploadLimits
 import media.qimeng.app.core.model.UploadQueueEntry
 import media.qimeng.app.core.model.UploadRules
 import media.qimeng.app.core.model.UploadStatus
-import media.qimeng.app.core.model.toRegularAuthorSeeds
+import media.qimeng.app.core.model.individualSourceWords
 
 /**
  * 上传流 ViewModel（M4-5；2026-09-25 流程重排 + 暂存区重做）。
@@ -92,7 +92,6 @@ class UploadViewModel @Inject constructor(
     init {
         refreshLibraries()
         refreshSourceOptions()
-        refreshAuthorSeeds()
         observeMissingSources()
     }
 
@@ -118,21 +117,11 @@ class UploadViewModel @Inject constructor(
         }
     }
 
-    /** 全站来源词表（快捷选项；失败静默 = 纯自由输入，同编辑页词表降级口径） */
+    /** 全站来源词表（快捷选项，仅单独词；失败静默 = 纯自由输入，同编辑页词表降级口径） */
     private fun refreshSourceOptions() {
         viewModelScope.launch {
             val options = runCatching { authorRepository.sourceVocabulary() }.getOrDefault(emptyList())
-            form.update { it.copy(sourceOptions = options) }
-        }
-    }
-
-    /** 空输入作者种子（全量接口过滤常规作者）：suggest 空 q 必返空，空输入默认全显
-     *  只能走全量；失败静默为空列表（联想输入仍可用，不阻断页面） */
-    private fun refreshAuthorSeeds() {
-        viewModelScope.launch {
-            val seeds = runCatching { authorRepository.authors().toRegularAuthorSeeds() }
-                .getOrDefault(emptyList())
-            form.update { it.copy(authorSeeds = seeds) }
+            form.update { it.copy(sourceOptions = options.individualSourceWords()) }
         }
     }
 
