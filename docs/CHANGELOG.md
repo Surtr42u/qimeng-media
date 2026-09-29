@@ -8,6 +8,20 @@
 - 子代理执行的工作标注"（执行子代理）"，主对话直接完成的标注"（主代理）"。
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
+## fix(app): 作者联想浮层三轮定位缺陷根治——弃 DropdownMenu 换自锚 Popup+一体式观感（2026-09-29 第四百笔）
+
+执行 AI：GLM-5.3（主代理：真机取证/根因定位/自锚定位与键盘修复/性能优化/文档收口）+ 执行子代理（夸克式一体化视觉实现与真机截图验证；子代理中途被用户叫停，收尾由主代理完成）
+
+- **需求**（用户复测三轮未根治 + 本轮四条追加反馈）：作者联想浮层应贴输入框正下方（搜索式）；追加①不得遮挡输入法②观感要一体式③一体式要「夸克浏览器那种点击后整个扩大」——直角拼接版仍被感知为「两个元素」④夸克式定稿后「有点卡卡的」。
+- **根因（真机取证，非猜测）**：material3 1.5.0-alpha28 的 `DropdownMenu` 在 `verticalScroll` 容器内锚定坐标 **y 丢失**（x 正常）——uiautomator dump 实证：输入框 bounds y=647，浮层却出现在 y≈140（窗口顶部），两轮「Box 包裹锚定」修复无效坐实非锚容器问题、非旧包残留（每次装机均复现）。alpha28 坐标链不可信，`Popup` 原生锚（positionProvider 收到的 anchorBounds）同一管线同样不可信。
+- **修复（自锚 Popup，绕开内部坐标链）**：`AuthorSuggestionMenu` 从 DropdownMenu 重写为裸 `Popup` + 自定义 `PopupPositionProvider`——输入框 `onGloballyPositioned` 自抓 `boundsInWindow()` 作为唯一坐标源，provider **忽略**框架传入的内部锚；State 整只传 provider（经 snapshot 读取链），滚动/键盘移动锚时浮层实时跟随重定位。`focusable=false` 不抢输入框焦点，敲字连续联想不闪断；点外部关闭、继续输入自动重开（既有 `menuOpen` 逻辑保留）。
+- **键盘遮挡修复（追加①）**：下方可用空间 = 窗口可视底 − 键盘高——可视底按 `WindowInsets.ime` 实时扣（adjustResize 的窗口收缩是过渡动画，`rootView.height` 滞后会把下方空间高估导致浮层伸进键盘区，首轮装机用户实测复现）。下方容不下且上方更宽裕时上翻（让位区盖输入框上半），展开方向组合期定死、与限高/顺序/定位三处同源。
+- **夸克式点击扩大一体化（追加②③，执行子代理实现，用户以夸克浏览器实拍定稿）**：浮层定位 y 改到输入框**中线**、自中线起覆盖输入框下半部——真输入框的顶部弧充当容器顶部，浮层补齐下半部与列表，两层拼成单一背景色大圆角容器：让位区（高=胶囊半径 17dp）中间透明（Popup 窗口局部透明，露出真输入框文字下半与光标）、两侧 `Canvas`+`Path` 弧形补块填平胶囊底弧缺口使容器边缘垂直连续；列表区矩形 Surface 衔接边直角、外侧两角 12dp 圆角、底色同聚焦态输入框（surfaceContainerHigh）、零阴影。上翻方向全镜像。已知代价（用户接受）：浮层窗口无法局部穿透触摸，输入框下半 17dp 条带点击被浮层吃掉（打字联想场景输入框必已聚焦，影响可忽略）。
+- **卡顿治理（追加④）**：键盘弹出动画期 ime insets 逐帧变 → 浮层整棵每帧重组，且每帧新建 provider 实例触发 Popup updateParameters→updateViewLayout 与位置跟随的 updateViewLayout 叠加成每帧双重窗口重排——两处优化：①定位器实例 `remember(anchorBounds, expandUp)` 稳定化（仅方向翻转时重建）；②下方/上方空间值量化到整数 dp 再用（限高多数帧同值免 Surface 逐帧重测，方向判定阈值附近不抖动翻转）。
+- **影响面**：仅 `core/ui` `QimengAuthorSourceSection.kt` 单文件；上传页批次作者、逐项编辑、资产编辑页添加作者三处共用组件同批受益；资产编辑页空输入种子全显行为不动。协议/服务端/Web 零改动。
+- **测试与门禁**：`:core:ui:compileDebugKotlin` + `:feature:detail:compileDebugKotlin` + `:feature:upload:testDebugUnitTest` + `:core:model:test` 全绿。
+- **文档**：本笔。协议零改动。
+
 ## fix(app/web): 来源建议拆词提取补漏词+App作者联想改浮层下拉（2026-09-29 第三百九十九笔）
 
 执行 AI：GLM-5.3-Flash（主代理直接实现：定位/双端修改/测试/文档收口，无子代理）
