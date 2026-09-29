@@ -174,6 +174,13 @@ type Config struct {
 	// 流程，调试 UI 用。仅限本机开发，生产必须关闭；SECURITY 红线 5 的
 	// 单点例外，说明见 docs/SECURITY.md「开发模式」节。
 	AuthDevMode bool `yaml:"auth_dev_mode"`
+	// AuthDevSharedSecret 是 dev-login 的可选共享密钥（默认空 = 不校验，
+	// 行为与未引入本字段前一致）。非空时 POST /auth/dev-login 必须携带
+	// 相等密钥（X-Qimeng-Dev-Secret 请求头，恒时比对）才签发 token——
+	// 内嵌形态（ADR-0015，服务端跑在 Android loopback:18430）防同机其他
+	// App 走免密登录拿管理员 token：Android 拉起子进程时随机生成并注入，
+	// Web/生产部署留空即零影响。说明见 docs/SECURITY.md「开发模式」节。
+	AuthDevSharedSecret string `yaml:"auth_dev_shared_secret"`
 	// AllowedLibraryRoots 是媒体库注册根路径白名单。
 	// 为什么：注册库 = 把磁盘目录交给扫描器/直链/回收站管线，路径一旦
 	// 误指（如 /、/etc、家目录）会把无关文件暴露进媒体面或被误扫。
@@ -354,7 +361,7 @@ func applyUploadEnv(cfg *Config) error {
 	return nil
 }
 
-// applyAuthEnv 覆盖鉴权/安全三键（dev 免密、库根白名单、Host 白名单）。
+// applyAuthEnv 覆盖鉴权/安全四键（dev 免密+共享密钥、库根白名单、Host 白名单）。
 func applyAuthEnv(cfg *Config) error {
 	if v := os.Getenv("QIMENG_AUTH_DEV_MODE"); v != "" {
 		b, err := strconv.ParseBool(v)
@@ -362,6 +369,12 @@ func applyAuthEnv(cfg *Config) error {
 			return fmt.Errorf("环境变量 QIMENG_AUTH_DEV_MODE=%q 不是合法布尔值（1/true/0/false）: %w", v, err)
 		}
 		cfg.AuthDevMode = b
+	}
+	// dev-login 共享密钥是敏感明文：空值 = 未设置、保留 yaml/默认（空 =
+	// 不校验）。与 QIMENG_MEDIA_SECRET 同款直覆盖语义（纯字符串，无非法
+	// 值可判）——Android 内嵌形态靠它把随机密钥传给拉起的子进程。
+	if v := os.Getenv("QIMENG_AUTH_DEV_SHARED_SECRET"); v != "" {
+		cfg.AuthDevSharedSecret = v
 	}
 	// 库根白名单是路径列表：空值 = 未设置、保留 yaml/默认（空 = 不限制）。
 	// 分隔符同时接受 ';'（Windows 路径列表习惯，也是本平台 PathListSeparator）

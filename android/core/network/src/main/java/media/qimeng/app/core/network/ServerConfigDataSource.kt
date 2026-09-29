@@ -73,6 +73,24 @@ interface ServerConfigDataSource {
      */
     fun currentServerUrl(): String?
 
+    /**
+     * 内嵌形态 dev 共享密钥的纯内存槽（2026-09-30 批A，防同机越权）：EmbeddedServerService
+     * 每次拉起子进程时新生成并覆写，App 侧 devLogin 据此带头 `X-Qimeng-Dev-Secret`。
+     * null = 子进程未拉起/已清空——此形态下 devLogin 不带头（连 NAS dev 服务器时
+     * 服务端未配置密钥、不校验，等价旧行为）。生命周期=子进程：**有意不持久化**，
+     * 详见实现类与 [updateEmbeddedDevSecret]。
+     */
+    fun currentEmbeddedDevSecret(): String?
+
+    /**
+     * 覆写内嵌 dev 共享密钥内存槽；null = 清空（测试用；生产路径只在拉起子进程时
+     * 写非 null，停止/失败不清槽——下次拉起即覆写，残留旧值最多对已配密钥的服务端
+     * 得一个 401，无越权面）。
+     * 为什么只进内存不进 DataStore：密钥与「本次拉起的子进程」一一对应，持久化反而
+     * 制造跨生命周期的过期值；不落盘也让「密钥不进存储」成为结构保证而非纪律约定。
+     */
+    fun updateEmbeddedDevSecret(value: String?)
+
     /** 记住服务端地址（登录成功时调用；退出登录不清除——下次登录自动带出）。 */
     suspend fun updateServerUrl(url: String)
 

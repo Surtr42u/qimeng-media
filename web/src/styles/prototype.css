@@ -2034,3 +2034,15 @@ li.dir-file-row.ms-row-selected { background: var(--hover-bg); }
   max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .txt-conflict-actions { display: flex; align-items: center; gap: 8px; }
+
+/* 维护页「开发模式未关」提醒条：底/字用 log-warn token（浅/深色自动切换），不新增色值；
+   布局密度同卡片（qm-radius 圆角、小 padding 低于 16px 卡片规格——单行提醒不占版面） */
+.dev-mode-banner {
+  padding: 10px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--qm-radius);
+  background: var(--log-warn-bg);
+  color: var(--log-warn-text);
+  font-size: 13px;
+  font-weight: 500;
+}

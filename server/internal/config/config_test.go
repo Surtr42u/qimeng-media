@@ -353,3 +353,34 @@ func TestLoadBackupIntervalZeroFallback(t *testing.T) {
 		t.Errorf("env 0s 应回落 %v, 得到 %v", DefaultBackupInterval, cfg.Backup.Interval)
 	}
 }
+
+// TestLoadAuthDevSharedSecret 锁定 dev-login 共享密钥三态：默认空
+// （不校验，Web/生产零影响）、yaml 覆盖、env 优先覆盖（Android 内嵌
+// 形态靠 env 把随机密钥传给拉起的子进程）。
+func TestLoadAuthDevSharedSecret(t *testing.T) {
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load(\"\") 报错: %v", err)
+	}
+	if cfg.AuthDevSharedSecret != "" {
+		t.Errorf("默认 AuthDevSharedSecret = %q, 期望空串（空 = 不校验）", cfg.AuthDevSharedSecret)
+	}
+
+	path := writeYAML(t, "auth_dev_shared_secret: \"from-yaml\"\n")
+	cfg, err = Load(path)
+	if err != nil {
+		t.Fatalf("Load 报错: %v", err)
+	}
+	if cfg.AuthDevSharedSecret != "from-yaml" {
+		t.Errorf("AuthDevSharedSecret = %q, 期望被 yaml 覆盖为 from-yaml", cfg.AuthDevSharedSecret)
+	}
+
+	t.Setenv("QIMENG_AUTH_DEV_SHARED_SECRET", "from-env")
+	cfg, err = Load(path)
+	if err != nil {
+		t.Fatalf("Load 报错: %v", err)
+	}
+	if cfg.AuthDevSharedSecret != "from-env" {
+		t.Errorf("AuthDevSharedSecret = %q, 期望 env 优先覆盖为 from-env", cfg.AuthDevSharedSecret)
+	}
+}

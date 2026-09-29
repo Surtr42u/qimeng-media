@@ -8,6 +8,13 @@
 - 子代理执行的工作标注"（执行子代理）"，主对话直接完成的标注"（主代理）"。
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
+## feat(api): 批A 安全卫生收口——内嵌形态 dev-login 共享密钥门禁 + 维护页开发模式提醒条（2026-09-30 第四百零六笔）
+
+- **dev-login 共享密钥门禁（SECURITY.md 规划项落地，防同机越权）**：Android loopback 端口全设备共享，同机其他 App 可连 `127.0.0.1:18430` 走免密登录拿管理员 token（App 持 MANAGE_EXTERNAL_STORAGE 放大后果）。三端落地：①协议——`POST /auth/dev-login` 新增可选 header `X-Qimeng-Dev-Secret` + 401 响应（`api/openapi.yaml`，三端 SDK 重生成 + sdk.lock 指纹更新）；②server——config 新键 `auth_dev_shared_secret`（env `QIMENG_AUTH_DEV_SHARED_SECRET`），配置后校验请求头（`subtle.ConstantTimeCompare` 恒时比对；顺序=限流→dev 404→密钥 401，401 在自动建户之前），未配置零行为变化（Web bat 免密/日常开发完全不变）（执行子代理）；③App——`EmbeddedServerConfig.generateDevSharedSecret()`（SecureRandom 32 字节 URL-safe）每次拉起子进程生成，注入 env + ServerConfigDataSource 纯内存槽（不落盘不进日志），`SdkAuthApi.devLogin` 同源带出（执行子代理）。
+- **维护页「开发模式未关」提醒条（A3）**：`GET /system/status` 响应新增 `devMode` 布尔字段（cfg.AuthDevMode 透出）；Web 维护页顶部 dev 模式开启时显示警示条（严格 `=== true`，纯可见性不动免密机制；token 全用 --log-warn-* 既有变量）（执行子代理）。
+- **文档修正（A2）**：HANDOVER「bat/compose 二选一」过时句改写（根 compose 已删、生产样例唯一权威 = deploy/docker-compose.yml）；SECURITY dev 模式位置指向修正 `_server-common.cmd` 单点；GUIDE_API dev-login 行补密钥门禁、system 行补 devMode；SECURITY「开发模式」节补门禁机制说明、:104 规划项标记已实现。
+- 验证：server `go build`+`go test ./internal/httpapi/ ./internal/config/` 全绿（含密钥三分支/devMode 两态/env 三态新测试，取证代理 -count=1 复跑）；web build+test 全绿（202 测试）；android `make app-test` 全绿（取证代理复跑）。（GLM-5.3 主代理：协议/SDK/文档收口+取证裁决；执行子代理×3 施工）
+
 ## feat(app/web): 上传直传化收窄——暂存区整体退役+收件箱入口退役+维护页观感修复（2026-09-30 第四百零五笔）
 
 - **上传直传化（2026-09-29 用户拍板「暂存了好像没意义啊，去掉吧」）**：双端暂存区退役，选完文件即传。App 侧 StagedUpload 暂存条目模型 / StagedItemEditor 逐项编辑器 / UploadStagingIngestor 摄取器整体删除，系统文件 SAF 多选与系统分享共用 submitUris 单管道（describe 解元数据 → 未选库提示不传 → 逐项判超限（拦截不出网，blockText 文案）→ 其余继承批次默认快照直接入队）；Web 侧 lib/staged-upload.ts 与 StagedUploadList.tsx 退役，工作台「暂存列表/逐项编辑/开始上传按钮」删除，添加文件（点击/拖拽）后立即上传。批次默认（目标库/作者/来源）双端保留持久化（core:model `StagingBatchConfig`，跨进程/隔天不丢），入队时刻快照继承——之后改默认只影响下一批；201 后自动挂靠口径不变（mode=append 不覆盖、失败不重试）。

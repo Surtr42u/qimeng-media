@@ -42,6 +42,16 @@ class DataStoreServerConfigDataSource @Inject constructor(
     @Volatile
     private var cachedServerUrl: String? = null
 
+    /**
+     * 内嵌 dev 共享密钥纯内存槽（2026-09-30 批A）。@Volatile 写线程=Service 拉起协程
+     * （Dispatchers.Default）、读线程=devLogin 的 OkHttp IO 线程，必须保证可见。
+     * 为什么不进 DataStore：密钥生命周期=本次拉起的子进程（Service 每次拉起重新生成
+     * 覆写、App 重启必然重拉），持久化只会留过期值；且「密钥不落盘」是本卡红线——
+     * 内存槽让该约束成为结构保证（DataStore 路径上根本不存在这个键）。
+     */
+    @Volatile
+    private var cachedEmbeddedDevSecret: String? = null
+
     init {
         // 进程冷启动预热：把持久化的 token/地址灌进内存缓存（只取一次，后续靠写穿维持一致）
         appScope.launch {
@@ -77,6 +87,12 @@ class DataStoreServerConfigDataSource @Inject constructor(
     override fun currentToken(): String? = cachedToken
 
     override fun currentServerUrl(): String? = cachedServerUrl
+
+    override fun currentEmbeddedDevSecret(): String? = cachedEmbeddedDevSecret
+
+    override fun updateEmbeddedDevSecret(value: String?) {
+        cachedEmbeddedDevSecret = value
+    }
 
     override suspend fun updateServerUrl(url: String) {
         dataStore.edit { it[KEY_SERVER_URL] = url }

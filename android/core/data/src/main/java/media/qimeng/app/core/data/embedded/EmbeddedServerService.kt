@@ -11,11 +11,13 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import dagger.hilt.android.AndroidEntryPoint
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -27,6 +29,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import media.qimeng.app.core.network.ServerAddress
+import media.qimeng.app.core.network.ServerConfigDataSource
 
 /**
  * 内嵌服务端前台 Service（任务T T6 / 任务U11 批次D，ADR-0015 形态 B；Kotlin 全新
@@ -49,7 +52,11 @@ import media.qimeng.app.core.network.ServerAddress
  *   编码自然退出——reviewer P3-8 勘误原「自带超时」表述），不级联追杀。
  * - **FGS 类型 specialUse**：本地媒体服务端不属于任何标准类型；dataSync 已被
  *   上传链路占用且语义不符。API34+ 必填子类型属性在 manifest 声明。
+ * - **dev 共享密钥**（2026-09-30 批A）：每次拉起子进程前新生成（[EmbeddedServerConfig.generateDevSharedSecret]），
+ *   经环境变量注入子进程 + 内存槽供 App 侧 devLogin 带头——防同机其他 App 打
+ *   127.0.0.1:18430 免密拿管理员 token。密钥不落盘、不入日志（红线）。
  */
+@AndroidEntryPoint
 class EmbeddedServerService : Service() {
 
     companion object {
@@ -122,6 +129,10 @@ class EmbeddedServerService : Service() {
      *  ~8s，放行并发检查会重复探测甚至重复重拉 */
     private val healthCheckInFlight = AtomicBoolean(false)
 
+    /** dev 共享密钥写入槽（2026-09-30 批A）：devLogin 带头 X-Qimeng-Dev-Secret 的同源值 */
+    @Inject
+    lateinit var serverConfigDataSource: ServerConfigDataSource
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -189,10 +200,20 @@ class EmbeddedServerService : Service() {
         }
         reclaimStaleChild(dataDir)
 
+        // 批A 防同机越权：每次拉起都新生成一次性共享密钥——先写内存槽（devLogin 同源
+        // 带出）再随环境变量进子进程，两侧值必然一致；生命周期=本次子进程，重启子进程
+        // 即轮换，故不落盘也不入日志（密钥值禁入任何通知/异常文案）
+        val devSharedSecret = EmbeddedServerConfig.generateDevSharedSecret()
+        serverConfigDataSource.updateEmbeddedDevSecret(devSharedSecret)
+
         runCatching {
             val processBuilder = ProcessBuilder(binary.absolutePath).apply {
                 environment().putAll(
-                    EmbeddedServerConfig.environment(dataDir.absolutePath, applicationInfo.nativeLibraryDir),
+                    EmbeddedServerConfig.environment(
+                        dataDir.absolutePath,
+                        applicationInfo.nativeLibraryDir,
+                        devSharedSecret,
+                    ),
                 )
                 redirectErrorStream(true)
                 // 每次启动截断：日志只服务当次运行排障，无限制追加会撑爆存储

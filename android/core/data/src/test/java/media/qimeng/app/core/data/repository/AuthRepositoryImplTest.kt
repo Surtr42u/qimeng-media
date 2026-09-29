@@ -65,7 +65,8 @@ class AuthRepositoryImplTest {
 
     private val repository = AuthRepositoryImpl(
         serverConfig = serverConfig,
-        authApiFactory = SdkAuthApiFactory(fakeTransportClient()),
+        // 批A：工厂第二参=密钥供给源（内存槽），测试内传同一 InMemoryServerConfig（默认 null = 不带头）
+        authApiFactory = SdkAuthApiFactory(fakeTransportClient(), serverConfig),
         sessionEventBus = SessionEventBus(),
         embeddedServerController = fakeEmbeddedServerController,
         localServerWarmup = fakeLocalServerWarmup,
@@ -194,7 +195,7 @@ class AuthRepositoryImplTest {
         val deadPort = ServerSocket(0).let { server -> val p = server.localPort; server.close(); p }
         val unreachableRepository = AuthRepositoryImpl(
             serverConfig = serverConfig,
-            authApiFactory = SdkAuthApiFactory(OkHttpClient()),
+            authApiFactory = SdkAuthApiFactory(OkHttpClient(), serverConfig),
             sessionEventBus = SessionEventBus(),
             embeddedServerController = fakeEmbeddedServerController,
             localServerWarmup = fakeLocalServerWarmup,
@@ -395,6 +396,11 @@ class AuthRepositoryImplTest {
         override suspend fun updateServerUrl(url: String) { this.url.value = url }
         override suspend fun updateToken(token: String) { tokenState.value = token }
         override suspend fun clearToken() { tokenState.value = null }
+
+        // 批A：内嵌 dev 共享密钥纯内存槽（默认 null = 未拉起，devLogin 不带头等价旧行为）
+        private var embeddedDevSecret: String? = null
+        override fun currentEmbeddedDevSecret(): String? = embeddedDevSecret
+        override fun updateEmbeddedDevSecret(value: String?) { embeddedDevSecret = value }
 
         // 分流判定与 DataStore 实现同口径（经 ServerAddress.isLocalModePreset；仓库级用例
         // 锁「登录成功触发记忆 + 本机登录不动 NAS 槽」，槽内部分流细则由 :core:network 锁定）

@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"crypto/subtle"
 	"database/sql"
 	"errors"
 	"net/http"
@@ -289,11 +290,12 @@ func (s *Server) PostApiV1AuthLogin(w http.ResponseWriter, r *http.Request) { //
 //
 // 安全边界（SECURITY.md「开发模式」节）：仅 config.AuthDevMode=true 时
 // 生效，否则恒 404——生产环境该端点"不存在于语义层面"，前端据此回退
-// 正常 setup/login 表单。与 /auth/login 同语义：每次调用签发一条新会话
-// （dev 冷启动频繁，会话上限裁剪兜底防涨行）；未初始化时自动创建
-// admin 占位用户，保证"免密码直奔 UI"的开发体验（用户约定：项目未
-// 完成前不要密码流程）。
-func (s *Server) PostApiV1AuthDevLogin(w http.ResponseWriter, r *http.Request) { //nolint:revive // 生成接口要求的方法名
+// 正常 setup/login 表单。可选共享密钥门禁（config.AuthDevSharedSecret
+// 非空时生效，见下方校验块注释）防内嵌形态同机其他 App 越权。与
+// /auth/login 同语义：每次调用签发一条新会话（dev 冷启动频繁，会话上限
+// 裁剪兜底防涨行）；未初始化时自动创建 admin 占位用户，保证"免密码直奔
+// UI"的开发体验（用户约定：项目未完成前不要密码流程）。
+func (s *Server) PostApiV1AuthDevLogin(w http.ResponseWriter, r *http.Request, params gen.PostApiV1AuthDevLoginParams) { //nolint:revive // 生成接口要求的方法名
 	if !s.authLimit.allow(s.now()) {
 		writeErr(w, http.StatusTooManyRequests, codeRateLimited, "尝试过于频繁，请稍后再试")
 		return
@@ -301,6 +303,23 @@ func (s *Server) PostApiV1AuthDevLogin(w http.ResponseWriter, r *http.Request) {
 	if !s.cfg.AuthDevMode {
 		writeErr(w, http.StatusNotFound, codeDevDisabled, "开发模式未开启")
 		return
+	}
+	// 共享密钥门禁（内嵌形态防同机越权）：仅服务端配置了
+	// auth_dev_shared_secret 时才校验——密钥未配置时本块整体跳过，
+	// 一行都不多执行，行为与门禁引入前逐字节一致（Web/生产留空零影响）。
+	// 位置在 AuthDevMode 404 之后：dev 模式关闭时端点"不存在"（404 语义
+	// 优先于 401），不泄露密钥配置状态。
+	if s.cfg.AuthDevSharedSecret != "" {
+		got := ""
+		if params.XQimengDevSecret != nil {
+			got = *params.XQimengDevSecret
+		}
+		// 恒时比对防时序侧信道：内容比对恒时（返回 1 才算相等）。注意 stdlib
+		// 语义——长度不等时提前返回 0（时序可泄露长度差异；密钥长度非机密，接受）。
+		if subtle.ConstantTimeCompare([]byte(got), []byte(s.cfg.AuthDevSharedSecret)) != 1 {
+			writeErr(w, http.StatusUnauthorized, codeUnauthorized, "开发密钥校验失败")
+			return
+		}
 	}
 
 	s.authState.mu.Lock()
