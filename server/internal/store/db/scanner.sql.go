@@ -81,6 +81,52 @@ func (q *Queries) ListAssetsByLibrary(ctx context.Context, libraryID string) ([]
 	return items, nil
 }
 
+const listCosAssetsWithoutAuthor = `-- name: ListCosAssetsWithoutAuthor :many
+SELECT asset_id, rel_path FROM assets
+WHERE library_id = ?
+  AND instr(rel_path, '/') > 0
+  AND NOT EXISTS (SELECT 1 FROM asset_authors aa WHERE aa.asset_id = assets.asset_id)
+`
+
+type ListCosAssetsWithoutAuthorRow struct {
+	AssetID string
+	RelPath string
+}
+
+// ListCosAssetsWithoutAuthor: zero-author-link assets of one library, the
+// scan-end self-heal input (scanner enrich.go relinkOrphanCosAssets). A
+// COS-library asset MUST carry its directory author link -- the stream
+// isolation predicate (DOMAIN_RULES 6) tests the cos-author link, so a
+// linkless asset leaks into regular streams AND vanishes from the COS
+// tab. Partial states were possible because ingest (UpsertAsset) and the
+// link (AddAssetAuthor) run as separate statements: process death or a
+// single-statement failure between them left a permanent leaker that
+// periodic scans never heal (unchanged files skip re-ingest entirely).
+// rel_path containing '/' = has an author directory segment; root-level
+// files are legitimately linkless (ingestCosFile semantics), excluded here.
+func (q *Queries) ListCosAssetsWithoutAuthor(ctx context.Context, libraryID string) ([]ListCosAssetsWithoutAuthorRow, error) {
+	rows, err := q.db.QueryContext(ctx, listCosAssetsWithoutAuthor, libraryID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCosAssetsWithoutAuthorRow
+	for rows.Next() {
+		var i ListCosAssetsWithoutAuthorRow
+		if err := rows.Scan(&i.AssetID, &i.RelPath); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listLibraryRelinkSamples = `-- name: ListLibraryRelinkSamples :many
 
 SELECT rel_path, size_bytes FROM assets

@@ -48,3 +48,20 @@ SELECT rel_path, size_bytes FROM assets
 WHERE library_id = ?
 ORDER BY size_bytes ASC
 LIMIT ?;
+
+-- ListCosAssetsWithoutAuthor: zero-author-link assets of one library, the
+-- scan-end self-heal input (scanner enrich.go relinkOrphanCosAssets). A
+-- COS-library asset MUST carry its directory author link -- the stream
+-- isolation predicate (DOMAIN_RULES 6) tests the cos-author link, so a
+-- linkless asset leaks into regular streams AND vanishes from the COS
+-- tab. Partial states were possible because ingest (UpsertAsset) and the
+-- link (AddAssetAuthor) run as separate statements: process death or a
+-- single-statement failure between them left a permanent leaker that
+-- periodic scans never heal (unchanged files skip re-ingest entirely).
+-- rel_path containing '/' = has an author directory segment; root-level
+-- files are legitimately linkless (ingestCosFile semantics), excluded here.
+-- name: ListCosAssetsWithoutAuthor :many
+SELECT asset_id, rel_path FROM assets
+WHERE library_id = ?
+  AND instr(rel_path, '/') > 0
+  AND NOT EXISTS (SELECT 1 FROM asset_authors aa WHERE aa.asset_id = assets.asset_id);

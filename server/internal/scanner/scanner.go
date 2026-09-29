@@ -311,6 +311,11 @@ func (s *Scanner) Scan(ctx context.Context, lib db.Library) (ScanResult, error) 
 	// 收尾清理：作者目录文件全消失后残留的孤立 COS 作者（随删空目录/
 	// 改名目录一起消失的旧作者行），与 reconcile 的资产删除联动。
 	s.cleanupOrphanCosAuthors(ctx)
+	// COS 库收尾自愈：零关联资产重挂作者（入库/关联两语句的半途失败形态，
+	// 漏进常规流的根因，为什么必须显式兜底见 relinkOrphanCosAssets 注释）。
+	if lib.Kind == LibraryKindCos {
+		s.relinkOrphanCosAssets(ctx, lib)
+	}
 
 	// 只在有实际变更时发 library.changed：轮询兜底每 5 分钟一次全量扫描，
 	// 无条件广播会驱动所有在线端做无意义刷新。

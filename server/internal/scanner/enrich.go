@@ -273,6 +273,45 @@ func (s *Scanner) UpdateCustomSources(_ context.Context, names []string) {
 	s.matcher.UpdateCustomSources(names)
 }
 
+// relinkOrphanCosAssets 扫描收尾自愈：重挂零关联 COS 资产的作者。
+//
+// 为什么必须兜底：入库（UpsertAsset）与作者关联（AddAssetAuthor /
+// recomputeCosAuthor）是两条独立语句，进程死亡或单语句失败会留下「有资产
+// 无关联」的永久漏网者——隔离判定按作者关联走（DOMAIN_RULES §6），无关联
+// 即漏进常规流（首页推荐）且从 COS tab 消失；而轮询扫描对已存在文件跳过
+// re-ingest，永不自愈（2026-09-29 实证：蠢沫沫/水色/138.jpg 增量入库后进程
+// 被杀，作者关联未落，出现在首页推荐）。applyMoveMerge 注释里的「重扫自愈」
+// 由本函数兑现（重算失败的历史漏网者同样在此重挂）。
+//
+// 重算失败不阻断扫描：warn 后留待下轮扫描重试（幂等，零关联查询下一轮
+// 仍会列出它）。成功即广播 library.changed——隔离判定变化（漏网者回归
+// COS tab / 退出常规流）对客户端是结构性变更，推荐缓存需作废。
+// 库根直放文件（rel 无目录段）合法无关联，SQL 侧已排除。
+func (s *Scanner) relinkOrphanCosAssets(ctx context.Context, lib db.Library) {
+	rows, err := s.q.ListCosAssetsWithoutAuthor(ctx, lib.ID)
+	if err != nil {
+		s.logger.Warn("scanner: 零关联 COS 资产查询失败（下轮重试）", "libraryId", lib.ID, "err", err)
+		return
+	}
+	if len(rows) == 0 {
+		return
+	}
+	relinked := 0
+	for _, r := range rows {
+		if err := s.recomputeCosAuthor(ctx, r.AssetID, r.RelPath); err != nil {
+			s.logger.Warn("scanner: 零关联 COS 资产重挂作者失败（下轮重试）",
+				"assetId", r.AssetID, "relPath", r.RelPath, "err", err)
+			continue
+		}
+		relinked++
+	}
+	if relinked > 0 {
+		s.logger.Info("scanner: 零关联 COS 资产已重挂作者",
+			"libraryId", lib.ID, "relinked", relinked, "candidates", len(rows))
+		s.publish(events.TopicLibraryChanged, ScanResult{LibraryID: lib.ID, Updated: relinked})
+	}
+}
+
 // RecomputeEnrichment 对单库全部资产重算富化（自定义出处变更后的存量
 // 重算：资产 size+mtime 未变，全量扫描只跳过不会重 ingest，必须显式触发）。
 // normal 库重算出处/角色；cos 库无来源匹配语义，跳过。
