@@ -6,6 +6,7 @@ import { CreateDirDialog } from '@/components/manage/CreateDirDialog'
 import { DirTreeNodes } from '@/components/manage/DirTree'
 import { SourceSelectField } from '@/components/manage/SourceSelectField'
 import { StagedUploadList } from '@/components/manage/StagedUploadList'
+import { UploadQueueTable } from '@/components/manage/UploadQueueTable'
 import { Pill } from '@/components/ui/pill'
 import { mergeClientConfig, useConfig } from '@/hooks/use-config'
 import { useDirTree } from '@/hooks/use-libraries'
@@ -17,14 +18,15 @@ import {
   type DroppedFile,
   type EntryLike,
 } from '@/lib/folder-upload'
-import { formatBytes } from '@/lib/format'
 import { makeStagedItem, type BatchAttachDefaults, type StagedUploadItem } from '@/lib/staged-upload'
 
 /**
- * 上传工作台（2026-09-28 重做替换原 UploadCard；交互同构 App 上传页
- * UploadScreen 暂存区重做，只学交互不搬实现）。动线：先选库 → 再放文件 →
- * 逐项校对 → 一键上传；批次区/暂存区/队列三段常驻显示（空态给引导文案，
- * 不再"选完文件才出现"）。
+ * 上传工作台（2026-09-28 重做替换原 UploadCard，交互同构 App 上传页
+ * UploadScreen，只学交互不搬实现；2026-09-29 内部分节重排对齐 App 配置区
+ * 固化常驻版动线，只动结构与观感、上传/挂靠/队列管道零改动）。单列自上而下：
+ * 选库（目标库必选 → 目标目录树）→ 批次默认（作者/来源，新进项自动继承 +
+ * 应用到全部）→ 添加文件入口（点击/拖拽，常驻）→ 暂存列表（空态给引导，
+ * 有项时逐项展开校对）→ 开始上传（有暂存项才出现）→ 上传队列。
  *
  * - 批次目标：目标库 pills（必选）+ 目标目录树（库内相对路径，'' = 库根；
  *   支持在当前目录下新建子目录）。
@@ -38,26 +40,6 @@ import { makeStagedItem, type BatchAttachDefaults, type StagedUploadItem } from 
  *   每条 201 后自动挂靠（201 先后 PUT /assets/{id}/authors 与
  *   PUT /authors/{id}/sources mode=append，挂靠失败落专项态不重试）。
  */
-
-/** 状态列文案（uploading 按 percent 分两段：字节传输中 / 服务端入库处理中） */
-function statusText(item: { status: string; percent: number }): string {
-  switch (item.status) {
-    case 'queued':
-      return '排队中'
-    case 'uploading':
-      return item.percent < 100 ? `上传中 ${item.percent}%` : '服务器处理中…'
-    case 'done':
-      return '已完成'
-    case 'failed':
-      return '失败'
-    case 'attach-failed':
-      return '已入库·挂靠失败'
-    case 'canceled':
-      return '已取消'
-    default:
-      return item.status
-  }
-}
 
 /** 超限拦截文案（与 App blockText 同口径：列明上限与被拦文件名） */
 function overLimitBlockText(limitMb: number | null, blocked: StagedUploadItem[]): string {
@@ -204,11 +186,11 @@ export function UploadWorkbench({ libraries }: { libraries: Library[] }) {
         <h3>上传</h3>
       </div>
       <p className="rank-note">
-        动线：选目标库 → 放文件 → 逐项校对挂靠 → 开始上传
+        动线：选库 → 放文件 → 逐项校对 → 开始上传
         {maxBytesMb != null ? ` · 单文件上限 ${maxBytesMb} MB，超限项开始上传时拦截` : ' · 类型与大小校验以服务端为准'}
       </p>
 
-      {/* ① 批次目标（常驻显示；未选库给引导） */}
+      {/* —— 选库（配置区常驻）：目标库（必选）→ 目标目录，未选库给引导 —— */}
       <div className="upload-subhead">目标库（必选）</div>
       <div className="source-chips">
         {libraries.map((l) =>
@@ -245,7 +227,7 @@ export function UploadWorkbench({ libraries }: { libraries: Library[] }) {
         <p className="grid-empty">{enabled ? '目录树加载中…' : '先选择目标库，目录树在此展示。'}</p>
       )}
 
-      {/* ② 批次挂靠默认（常驻显示；留空 = 不挂靠，行为与现状一致） */}
+      {/* —— 批次默认（挂靠批）：新进暂存项自动继承；已有暂存项可「应用到全部」 —— */}
       <div className="upload-subhead">批次挂靠默认 <small className="staged-sub">新进暂存项自动继承</small></div>
       <AuthorSuggestField
         label="批次作者（可选，联想选择）"
@@ -267,8 +249,8 @@ export function UploadWorkbench({ libraries }: { libraries: Library[] }) {
         </Pill>
       </div>
 
-      {/* ③ 暂存区（常驻显示；选库与放文件解耦——没选库也能先进暂存） */}
-      <div className="upload-subhead">暂存文件（{staged.length}）</div>
+      {/* —— 放文件：添加文件入口（点击/拖拽统一入口，常驻） —— */}
+      <div className="upload-subhead">添加文件 <small className="staged-sub">目录递归展开，落库到上方所选库/目录</small></div>
       <div
         className={`upload-drop${dragOver ? ' over' : ''}`}
         role="button"
@@ -281,9 +263,12 @@ export function UploadWorkbench({ libraries }: { libraries: Library[] }) {
         onDragLeave={() => setDragOver(false)}
         onDrop={onDrop}
       >
-        点击选择文件，或把文件/文件夹拖到这里（目录递归展开；落库目标 = 上方批次库/目录）
+        点击选择文件，或把文件/文件夹拖到这里
       </div>
       <input ref={inputRef} type="file" multiple hidden onChange={pickFiles} aria-label="选择要上传的文件" />
+
+      {/* —— 逐项校对：暂存列表（空态给引导；有项时逐条展开编辑） —— */}
+      <div className="upload-subhead">暂存列表（{staged.length}） <small className="staged-sub">点「编辑」逐项校对作品名/作者/来源</small></div>
       <StagedUploadList
         items={staged}
         libraryId={libId}
@@ -291,38 +276,42 @@ export function UploadWorkbench({ libraries }: { libraries: Library[] }) {
         onRemove={(id) => setStaged((prev) => prev.filter((it) => it.id !== id))}
       />
 
-      {/* ④ 门禁上传递（批次库必选 + 超限前置拦截文案；失败原因在队列行透传） */}
+      {/* —— 开始上传（有暂存项才出现）+ 门禁拦截文案（超限/未选库前置提示） —— */}
       {blockMsg && (
         <p className="rank-note" style={{ color: 'var(--danger)' }}>
           {blockMsg}{' '}
           <Pill onClick={() => setBlockMsg(null)}>知道了</Pill>
         </p>
       )}
-      <div className="settings-actions" style={{ marginTop: 12 }}>
-        <button
-          className="save-btn"
-          type="button"
-          disabled={staged.length === 0 || !enabled}
-          onClick={beginUpload}
-        >
-          开始上传（{staged.length} 个）
-        </button>
-        {queue.isBusy && (
-          <button className="pill" type="button" onClick={queue.cancelAll}>
-            全部取消
-          </button>
-        )}
-        {queue.hasFinished && !queue.isBusy && (
-          <button className="pill" type="button" onClick={queue.clearFinished}>
-            清除已完成
-          </button>
-        )}
-      </div>
+      {(staged.length > 0 || queue.isBusy || queue.hasFinished) && (
+        <div className="settings-actions" style={{ marginTop: 12 }}>
+          {staged.length > 0 && (
+            <button
+              className="save-btn"
+              type="button"
+              disabled={!enabled}
+              onClick={beginUpload}
+            >
+              开始上传（{staged.length} 个）
+            </button>
+          )}
+          {queue.isBusy && (
+            <button className="pill" type="button" onClick={queue.cancelAll}>
+              全部取消
+            </button>
+          )}
+          {queue.hasFinished && !queue.isBusy && (
+            <button className="pill" type="button" onClick={queue.clearFinished}>
+              清除已完成
+            </button>
+          )}
+        </div>
+      )}
       {staged.length > 0 && !enabled && (
         <small className="staged-sub">先在上方选择目标库，再开始上传。</small>
       )}
 
-      {/* ⑤ 上传队列（常驻显示；逐条串行，挂靠在每条 201 之后自动执行） */}
+      {/* —— 上传队列（常驻；逐条串行，挂靠在每条 201 之后自动执行） —— */}
       <div className="upload-subhead">上传队列</div>
       {queue.items.length === 0 ? (
         <p className="grid-empty">暂无上传任务——点「开始上传」后，逐条进度与结果在这里显示。</p>
@@ -332,64 +321,7 @@ export function UploadWorkbench({ libraries }: { libraries: Library[] }) {
             共 {queue.items.length} 个 · 成功 {doneCount} · 失败 {failedCount}
             {attachFailedCount > 0 ? ` · 挂靠失败 ${attachFailedCount}` : ''}
           </p>
-          <table className="log-table">
-            <thead>
-              <tr>
-                <th>文件</th>
-                <th style={{ width: 150 }}>挂靠</th>
-                <th style={{ width: 140 }}>目标</th>
-                <th style={{ width: 90 }}>大小</th>
-                <th style={{ width: 110 }}>进度</th>
-                <th style={{ width: 150 }}>状态</th>
-              </tr>
-            </thead>
-            <tbody>
-              {queue.items.map((item) => {
-                // 目标显示 = 入队快照（item.targetLibraryId/targetDir），不随当前选择器变化；
-                // 库被删等查不到名时回落显示 ID（仍是快照真值）
-                const libName =
-                  libraries.find((l) => l.id === item.targetLibraryId)?.name ?? item.targetLibraryId
-                const targetText = `${libName || ''}/${item.targetDir === '' || item.targetDir === undefined ? '库根' : item.targetDir}`
-                return (
-                  <tr key={item.id}>
-                    <td style={{ maxWidth: 240 }}>
-                      <div
-                        style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                        title={item.originalName ?? item.name}
-                      >
-                        {item.name}
-                      </div>
-                      {item.originalName && <div className="staged-sub">原文件名：{item.originalName}</div>}
-                    </td>
-                    <td style={{ maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                      title={item.attach ? `${item.attach.authorName} · 来源 ${item.attach.sources.join('、')}` : '不挂靠'}>
-                      {item.attach
-                        ? `${item.attach.authorName}${item.attach.sources.length > 0 ? ` · 来源×${item.attach.sources.length}` : ''}`
-                        : '—'}
-                    </td>
-                    <td
-                      style={{ maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                      title={targetText}
-                    >
-                      {targetText}
-                    </td>
-                    <td>{formatBytes(item.sizeBytes)}</td>
-                    <td>
-                      <div className="progress">
-                        <i style={{ width: `${item.percent}%` }} />
-                      </div>
-                    </td>
-                    <td>
-                      <span className={item.status === 'done' ? 'upload-done' : undefined}>{statusText(item)}</span>
-                      {item.errorText && (
-                        <div className="upload-err" title={item.errorText}>{item.errorText}</div>
-                      )}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+          <UploadQueueTable items={queue.items} libraries={libraries} />
         </>
       )}
 

@@ -141,7 +141,7 @@ export function StagedUploadList({
   if (items.length === 0) {
     return (
       <p className="grid-empty">
-        暂无待传文件——点击上方上传区选择文件，或把文件/文件夹拖进来（目录递归展开）。
+        还没有待传文件——在上方「添加文件」点选或拖入（目录递归展开），新进项自动继承批次默认，逐项校对无误再开始上传。
       </p>
     )
   }
