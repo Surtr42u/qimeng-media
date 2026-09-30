@@ -36,18 +36,25 @@ internal fun isHttpCacheKey(key: String): Boolean =
 
 /**
  * 缓存键 → 池路由（纯函数，行为由单元测试锁定）：
- * - http(s) 键交 [isLocalUrl] 判定（实参恒为 [ServerAddress.isLocalModePreset]：
- *   回环 host + 端口 18430 → LOCAL，否则 NAS）；
- * - **非 http 键兜底 NAS 池**：Coil 磁盘键正常只有签名直链/裸 URL 两族（均含
- *   host:port 可判），file/data 等键族外样本不该出现在缩略图缓存，兜底归主池不丢数据。
+ * - **http(s) 键按键判**（实参 [isLocalUrl] 恒为 [ServerAddress.isLocalModePreset]：
+ *   回环 host + 端口 18430 → LOCAL，否则 NAS）——完整 URL 键仍含 host:port 可判；
+ * - **非 http 键跟随 [activePool]**（当前连接来源）：第四百一十一笔修复——U10-5 剥
+ *   host 后签名直链的稳定键形如 `/media/thumb/<uuid>?size=md`，不含 host 不可判，
+ *   原「非 http 键兜底 NAS」口径把本地端来源的稳定键全部错路由进 NAS 池（分池
+ *   被架空：真机实证 image_cache_local 仅 1 文件）；稳定键主体 + file/data 等
+ *   键族外样本统一跟随当前连接来源路由（写入/读取同源同池，读写自洽）。
  *
  * 为什么必须「写入时分」而不能事后分流：磁盘键落盘后只剩 SHA-256 哈希文件名 +
  * `.0` 元数据（NetworkFetcher 只写响应头，无 URL），事后无法从目录内容还原键的来源。
  */
-internal fun resolveCachePool(key: String, isLocalUrl: (String) -> Boolean): CachePool = when {
-    !isHttpCacheKey(key) -> CachePool.NAS
-    isLocalUrl(key) -> CachePool.LOCAL
-    else -> CachePool.NAS
+internal fun resolveCachePool(
+    key: String,
+    isLocalUrl: (String) -> Boolean,
+    activePool: CachePool = CachePool.NAS,
+): CachePool = when {
+    isHttpCacheKey(key) && isLocalUrl(key) -> CachePool.LOCAL
+    isHttpCacheKey(key) -> CachePool.NAS
+    else -> activePool
 }
 
 /**
@@ -77,6 +84,8 @@ internal fun migrateLegacyImageCacheDir(cacheRoot: File): Boolean {
  *
  * 路由时机：openSnapshot/openEditor/remove 收到的是**原始键**（接口层字符串，Coil
  * 内部落盘才哈希），读写同键同路由——写入时分即达成两池分离（[resolveCachePool]）。
+ * 第四百一十一笔起非 http 键（剥 host 稳定键主体）按 [updateActivePool] 记忆的当前
+ * 连接来源路由（接线方 CachePoolBinder），http 键仍按键内 host 判定。
  *
  * 成员口径：size = 两池之和；maxSize = 两池聚合（只读口径，无消费方，Coil 各子池
  * 驱逐只认各自 maxSize）；clear/shutdown 委托两池；directory 返回 NAS 池目录（接口
@@ -86,6 +95,21 @@ class SplitDiskCache(
     private val nasPool: DiskCache,
     private val localPool: DiskCache,
 ) : DiskCache {
+
+    /**
+     * 当前连接来源对应的池（第四百一十一笔）：签名直链稳定键剥掉了 host 不可判来源，
+     * 非 http 键的路由由本字段驱动——接线方 [media.qimeng.app.core.data.coil.CachePoolBinder]
+     * 观察登录 serverUrl 更新（连本地端预设 → LOCAL，否则 NAS）。默认 NAS（进程冷启动
+     * 接线落地前的首个写请求、登出态等无来源语境场景归主池，与历史兜底口径一致）。
+     */
+    private val activePool = java.util.concurrent.atomic.AtomicReference(CachePool.NAS)
+
+    /** 更新当前连接来源池（CachePoolBinder 登录态接线调用；幂等重写无副作用，记档留证据） */
+    fun updateActivePool(pool: CachePool) {
+        if (activePool.getAndSet(pool) != pool) {
+            Log.i(LOG_TAG, "分池路由来源切换：activePool=$pool")
+        }
+    }
 
     /** 取指定池（分池统计/清空与 ImageLoader 装配两侧共用同一实例，口径单源） */
     fun pool(pool: CachePool): DiskCache = when (pool) {
@@ -117,11 +141,14 @@ class SplitDiskCache(
         localPool.shutdown()
     }
 
-    /** 键路由到池；非 http 键属键族外样本，兜底 NAS 池并记档（debug 级，不刷屏） */
+    /**
+     * 键路由到池：http 键（含 host 的完整 URL 键族）按键判；剥 host 稳定键与
+     * file/data 等非 http 键跟随 [activePool]（口径见 [resolveCachePool] 第四百一十一笔）。
+     */
     private fun poolFor(key: String): DiskCache {
-        val pool = resolveCachePool(key, ServerAddress::isLocalModePreset)
+        val pool = resolveCachePool(key, ServerAddress::isLocalModePreset, activePool.get())
         if (!isHttpCacheKey(key)) {
-            Log.d(LOG_TAG, "SplitDiskCache 非 http 缓存键兜底 NAS 池 key=$key")
+            Log.d(LOG_TAG, "SplitDiskCache 非 http 缓存键按当前来源路由 key=$key pool=$pool")
         }
         return pool(pool)
     }

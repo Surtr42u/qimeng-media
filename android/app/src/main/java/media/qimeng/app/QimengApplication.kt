@@ -32,6 +32,9 @@ import media.qimeng.app.core.data.prefetch.ThumbnailPrefetcher
  *
  * 缩略图预取（2026-09-18）：onCreate 构造 ThumbnailPrefetcher 挂上登录态观察——
  * 登录后自动把全库缩略图预取进 Coil 磁盘缓存（逻辑全在 :core:data prefetch 包）。
+ *
+ * 分池路由来源接线（第四百一十一笔）：onCreate 构造 CachePoolBinder 挂 serverUrl
+ * 观察——剥 host 稳定键无来源信息，连接来源（NAS/本地端）驱动 SplitDiskCache 池路由。
  */
 @HiltAndroidApp
 class QimengApplication : Application(), Configuration.Provider, SingletonImageLoader.Factory {
@@ -53,6 +56,10 @@ class QimengApplication : Application(), Configuration.Provider, SingletonImageL
     @Inject
     lateinit var thumbnailPrefetcher: ThumbnailPrefetcher
 
+    /** 分池路由来源接线（第四百一十一笔）：进程启动即构造，serverUrl 变化驱动缓存池路由 */
+    @Inject
+    lateinit var cachePoolBinder: media.qimeng.app.core.data.coil.CachePoolBinder
+
     /** 扫描充电联动接线（批C 任务Q C-3）：注册 ACTION_POWER_CONNECTED 接收器 + 启动兜底补扫 */
     @Inject
     lateinit var scanChargeRegistrar: media.qimeng.app.ScanChargeRegistrar
@@ -67,6 +74,7 @@ class QimengApplication : Application(), Configuration.Provider, SingletonImageL
         eventSyncBootstrapper.onAppCreate()
         diagnosticsBootstrapper.onAppCreate()
         thumbnailPrefetcher.onAppCreate()
+        cachePoolBinder.onAppCreate()
         scanChargeRegistrar.onAppCreate(this)
     }
 

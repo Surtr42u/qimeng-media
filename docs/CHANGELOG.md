@@ -8,6 +8,17 @@
 - 子代理执行的工作标注"（执行子代理）"，主对话直接完成的标注"（主代理）"。
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
+## fix(app): 缩略图预取磁盘探测短路+分池路由来源化——反复缓存根治与本地池架空修复（2026-09-30 第四百一十一笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- **根因（真机取证）**：用户报「App 反复缓存」。真机（NX721J）数据实锤：缓存主池 6371 条全部当日写入（凌晨 04 时 1534 条 + 傍晚 18 时 4827 条 + 白天零星），journal 累计 CLEAN 18353 ≈ 现存条目 2.9 倍、REMOVE=0（无 LRU 驱逐，远未满 1GB 档位），当前进程启动后 journal 尾部全是 READ（预取轮再次触发）。结论：`ThumbnailPrefetcher` 登录后自动全库预取**无断点游标**（KDoc 有意简化口径），每次冷启动/重新登录都从头全库重扫，且单轮频繁中断（进程被杀后重开 App 即重触发）——已缓存条目虽不重复下载（键稳定，历史两轮修复有效），但每轮仍做全量列表拉取 + 全库逐条磁盘打开与位图解码，缩略图缓存页进度条反复从头跑全库，观感即「反复缓存」。**后续 datastore 取证补正**：用户日常连接为本地端模式（`server_url=http://127.0.0.1:18430`），该池条目实为本地端来源经分池 bug 错放（见第三条），连本地端时回环下载速度快（18 时轮 4827 条约 3 分钟），全程真实重复下载发生过多轮。
+- **主修：预取磁盘探测短路**（新增 `prefetch/PrefetchDiskProbe`）：单条预取前按 `SignedMediaCacheKeys.stableKey` 直查 `SplitDiskCache.openSnapshot`（键与写入侧同源，即取即闭；Coil DiskLruCache `Entry.snapshot()` 源码核实——物理文件缺失的幽灵条目会正确返回 null 并 REMOVE，探测语义安全），命中即跳过 execute（不发请求、不解码、只计入进度）；探测失败按未缓存退化为原路径，正确性不受影响。中断重跑/缓存齐全轮次从「全库重扫」退化为「只补缺口」，齐全轮次秒级收口；轮终在 logcat `QimengCache` 记档 `total/磁盘命中/网络下载` 汇总。`ThumbnailPrefetcher` 注入 `dagger.Lazy<SplitDiskCache>`（保持惰性装配拍板）。
+- **顺手发现并修复：分池路由被剥 host 键架空（本单最关键一笔）**：U10-5（第三百六十五笔）剥 host 后签名直链稳定键形如 `/media/thumb/<uuid>?size=md` 不含来源信息，`resolveCachePool` 原「非 http 键兜底 NAS」口径把**本地端来源**的稳定键全部错路由进 NAS 池（分池机制自剥 host 起形同虚设：真机实证 `image_cache_local` 仅 1 文件而主池 6371 条；若两端资产 id 重叠即触发批S5 拍板要防的串图）。修复：非 http 键跟随「当前连接来源」路由——`SplitDiskCache.updateActivePool`（AtomicReference，默认 NAS）+ 新增 `coil/CachePoolBinder`（EventSyncBootstrapper 同款接线：QimengApplication.onCreate 观察 `AuthRepository.serverUrl`，本地端预设→LOCAL 其余→NAS，实时跟随切换）；http 键（含 host 的完整 URL 键族）仍按键内 host 判定。
+- **测试**：`SplitDiskCacheTest` 新增 3 组（剥 host 稳定键跟随来源/http 键优先按键判/族外非 http 键跟随来源，16 全绿）；新增 `PrefetchDiskProbeTest` 4 组（真实 RealDiskCache + TemporaryFolder：命中/未命中/非签名家族恒 false/探测跟随当前来源池切换）。`:core:data:testDebugUnitTest` 与 `:app:assembleDebug` 全绿。
+- **真机部署验证（NX721J，debug 覆盖装）**：① 分池来源化生效——重启后本轮预取 6350 条全部正确落入本地池（`image_cache_local` 0→6350 条/230MB，回环下载约 4 分钟），UI 缩略图缓存页报「本轮完成 6350/6350」；② 探测短路「只补缺口」实锤——本地池删 1 条重启后 CLEAN 6350→6351、文件数复原、新条目 mtime 即重启时刻，其余 6349 条零动作零下载；③ 全命中轮次零下载（NAS 池 journal 全程无新写入）。（设备 logcat 被厂商 ROM 限制，验证证据全部取自 run-as 文件系统 + UI dump）
+- **遗留（待用户拍板）**：NAS 池 6370 条/474MB 为历史混合数据（本地端来源错放为主，可能混少量真 NAS 来源缓存），磁盘条目无法事后区分来源——建议用户连 NAS 前在缩略图缓存页手动「清空服务器缓存」一次（消除两端资产 id 重叠时的低概率串图风险 + 释放空间），重连后预取自动补齐；每轮开头 ~32 页（200/页）全量列表拉取仍在（`allThumbUrls` 口径不变）；若日后全库缩略图总量超过缓存档位，LRU 驱逐与全库预取会互相追赶，届时再议「上轮完成时刻门槛」或协议层库 revision。（GLM-5.3-Flash 主代理）
+
 ## chore(repo): 任务书总纲出库——docs 工作文档清空（2026-09-30 第四百一十笔）
 
 执行 AI：GLM-5.3（主代理）
