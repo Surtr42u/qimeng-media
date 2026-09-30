@@ -4,7 +4,7 @@
 
 ## 先读（AI 协作入口）
 
-- [AGENTS.md](AGENTS.md)：任务 → 文档路由表 + 十条铁律 + 回复签名约定
+- [AGENTS.md](AGENTS.md)：任务 → 文档路由表 + 十四条铁律 + 回复签名约定
 - [AI_README_FIRST.md](AI_README_FIRST.md)：协作强制规则（自审清单、文档同步、冲突优先级、警戒线）
 - [README.md](README.md)：项目总览与开发命令（make sdk / server-run / server-test / web-dev / web-test / lint）
 - [docs/HANDOVER.md](docs/HANDOVER.md)：AI 交接说明（当前进度/剩余工作/特色纪律）

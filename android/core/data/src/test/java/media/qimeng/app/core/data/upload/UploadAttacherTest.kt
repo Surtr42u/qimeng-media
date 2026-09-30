@@ -53,7 +53,7 @@ class UploadAttacherTest {
 
     @Test
     fun `作者与来源按序挂靠且参数正确`() = runTest {
-        val outcome = attacher.attach("asset-uuid", "author-1", listOf("kemono", "r34"))
+        val outcome = attacher.attach("asset-uuid", "author-1", listOf("site-a", "site-f"))
         assertTrue(outcome is AttachOutcome.Done)
         // 时序红线：authors 先（可能触发服务端建作者块），sources append 依赖块存在
         assertEquals(1, assetAuthorLog().size)
@@ -61,7 +61,7 @@ class UploadAttacherTest {
         assertTrue(repository.callLog.indexOfFirst { it.startsWith("asset-authors:") } <
             repository.callLog.indexOfFirst { it.startsWith("sources-append:") })
         assertEquals("asset-authors:asset-uuid=[author-1]", assetAuthorLog().single())
-        assertEquals("sources-append:author-1=[kemono, r34]", appendLog().single())
+        assertEquals("sources-append:author-1=[site-a, site-f]", appendLog().single())
     }
 
     @Test
@@ -81,7 +81,7 @@ class UploadAttacherTest {
 
     @Test
     fun `有来源无作者归为Failed且零调用`() = runTest {
-        val outcome = attacher.attach("asset-uuid", null, listOf("kemono"))
+        val outcome = attacher.attach("asset-uuid", null, listOf("site-a"))
         assertTrue(outcome is AttachOutcome.Failed)
         assertTrue(outcome.failedMessage()!!.contains("未选作者"))
         assertTrue(repository.callLog.isEmpty())
@@ -90,7 +90,7 @@ class UploadAttacherTest {
     @Test
     fun `作者挂靠失败归为Failed且不触发sources调用`() = runTest {
         repository.replaceAssetAuthorsError = RuntimeException("HTTP 500")
-        val outcome = attacher.attach("asset-uuid", "author-1", listOf("kemono"))
+        val outcome = attacher.attach("asset-uuid", "author-1", listOf("site-a"))
         assertTrue(outcome is AttachOutcome.Failed)
         assertEquals("HTTP 500", outcome.failedMessage())
         // sources append 依赖作者块：authors 失败后不得继续调 sources
@@ -100,7 +100,7 @@ class UploadAttacherTest {
     @Test
     fun `来源挂靠失败归为Failed携带原因`() = runTest {
         repository.appendAuthorSourcesError = RuntimeException("HTTP 500")
-        val outcome = attacher.attach("asset-uuid", "author-1", listOf("kemono"))
+        val outcome = attacher.attach("asset-uuid", "author-1", listOf("site-a"))
         assertTrue(outcome is AttachOutcome.Failed)
         assertEquals("HTTP 500", outcome.failedMessage())
         // authors 已成功（文件入库 + 作者已挂），仅 sources 环节失败
@@ -109,9 +109,9 @@ class UploadAttacherTest {
 
     @Test
     fun `来源词trim与空串过滤`() = runTest {
-        val outcome = attacher.attach("asset-uuid", "author-1", listOf(" kemono ", "  ", ""))
+        val outcome = attacher.attach("asset-uuid", "author-1", listOf(" site-a ", "  ", ""))
         assertTrue(outcome is AttachOutcome.Done)
-        assertEquals("sources-append:author-1=[kemono]", appendLog().single())
+        assertEquals("sources-append:author-1=[site-a]", appendLog().single())
     }
 
     @Test

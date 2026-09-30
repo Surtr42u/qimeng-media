@@ -45,7 +45,7 @@ export function SourceVocabularyCard() {
   return (
     <div className="settings-card">
       <h3>通用来源词表</h3>
-      <p>资产编辑页来源区与上传挂靠来源区的建议词（获取渠道/平台名，如「老王论坛」）· 全员共享，服务端统一保存</p>
+      <p>资产编辑页来源区与上传挂靠来源区的建议词（获取渠道/平台名，如「forum-c」）· 全员共享，服务端统一保存</p>
       <div className="source-chips">
         {vocab.map((word) => (
           <Pill

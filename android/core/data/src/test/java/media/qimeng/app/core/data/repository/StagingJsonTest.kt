@@ -16,7 +16,7 @@ class StagingJsonTest {
             libraryId = "lib-1",
             authorId = "author-1",
             authorName = "作者A",
-            sources = listOf("kemono"),
+            sources = listOf("site-a"),
         )
         assertEquals(config, StagingJson.batchFromJson(StagingJson.batchToJson(config)))
     }

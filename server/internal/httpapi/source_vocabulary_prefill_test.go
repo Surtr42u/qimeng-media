@@ -61,9 +61,9 @@ func TestSourceVocabularyAutoPrefillE2E(t *testing.T) {
 		t.Fatal("预填结果应写入词表键")
 	}
 
-	// 键已存在：新导入引入新的共用词（老王论坛）不再触发预填。
-	importTXT(t, env, "c.txt", "1  作者丙\n来源\nlofter\n老王论坛\n作品\nc.jpg\n\n"+
-		"2  作者丁\n来源\n老王论坛\n作品\nd.jpg\n")
+	// 键已存在：新导入引入新的共用词（forum-c）不再触发预填。
+	importTXT(t, env, "c.txt", "1  作者丙\n来源\nlofter\nforum-c\n作品\nc.jpg\n\n"+
+		"2  作者丁\n来源\nforum-c\n作品\nd.jpg\n")
 	if code, got := getVocabulary(t, env); code != http.StatusOK || !reflect.DeepEqual(got, []string{"lofter"}) {
 		t.Fatalf("键存在后再 GET=（%d, %v）, want（200, [lofter]）不得再预填", code, got)
 	}

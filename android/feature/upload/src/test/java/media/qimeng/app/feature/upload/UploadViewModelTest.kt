@@ -82,12 +82,12 @@ class UploadViewModelTest {
     @Test
     fun `init拉来源词表拆词提取只出单独词`() {
         val authorRepository = FakeAuthorRepository().apply {
-            // hanime1 只存在于组合里：拆词提取后同样必须出现在建议中（用户实测反馈漏词）
-            vocabularyResult = listOf("kemono", "kemono  小红车", "hanime1  小红车", "")
+            // site-d 只存在于组合里：拆词提取后同样必须出现在建议中（用户实测反馈漏词）
+            vocabularyResult = listOf("site-a", "site-a  site-b", "site-d  site-b", "")
         }
         val (viewModel, _, _, _) = newViewModel(authorRepository = authorRepository)
         // 组合按空白拆词去重、空串过滤；作者联想为百度式（空输入无建议列表）
-        assertEquals(listOf("kemono", "小红车", "hanime1"), viewModel.uiState.value.sourceOptions)
+        assertEquals(listOf("site-a", "site-b", "site-d"), viewModel.uiState.value.sourceOptions)
         assertTrue(viewModel.uiState.value.batchAuthorSuggestions.isEmpty())
     }
 
@@ -127,7 +127,7 @@ class UploadViewModelTest {
         selectDefaultLibrary(viewModel)
         viewModel.selectDir("photos")
         viewModel.pickBatchAuthor(AuthorSuggestion(id = "author-a", displayName = "作者A", fileCount = 3))
-        viewModel.toggleBatchSource("kemono")
+        viewModel.toggleBatchSource("site-a")
         driveIdle()
         viewModel.submitUris(listOf("content://media/img/1"))
         driveIdle()
@@ -139,7 +139,7 @@ class UploadViewModelTest {
         assertEquals(listOf("IMG_1.jpg"), call.items.map { it.displayName })
         assertEquals("author-a", call.items.single().attachAuthorId)
         assertEquals("作者A", call.items.single().attachAuthorName)
-        assertEquals(listOf("kemono"), call.items.single().attachSources)
+        assertEquals(listOf("site-a"), call.items.single().attachSources)
         assertEquals("测试库A", call.items.single().libraryName)
         // 直传化：无拦截横幅残留
         assertNull(viewModel.uiState.value.blockMessage)
@@ -446,7 +446,7 @@ class UploadViewModelTest {
     fun `清空批次作者连带清批次来源`() {
         val (viewModel, _, _, _) = newViewModel()
         viewModel.pickBatchAuthor(authorA)
-        viewModel.toggleBatchSource("kemono")
+        viewModel.toggleBatchSource("site-a")
         driveIdle()
         viewModel.clearBatchAuthor()
         driveIdle()
@@ -457,12 +457,12 @@ class UploadViewModelTest {
     @Test
     fun `批次来源toggle需先选作者`() {
         val (viewModel, _, _, _) = newViewModel()
-        viewModel.toggleBatchSource("kemono")
+        viewModel.toggleBatchSource("site-a")
         driveIdle()
         assertTrue(viewModel.uiState.value.batchSources.isEmpty())
         viewModel.pickBatchAuthor(authorA)
-        viewModel.toggleBatchSource("kemono")
+        viewModel.toggleBatchSource("site-a")
         driveIdle()
-        assertEquals(listOf("kemono"), viewModel.uiState.value.batchSources)
+        assertEquals(listOf("site-a"), viewModel.uiState.value.batchSources)
     }
 }

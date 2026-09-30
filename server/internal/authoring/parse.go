@@ -22,7 +22,7 @@ type AuthorBlock struct {
 }
 
 // 来源/出处标记词（两者等价，GUIDE_AUTHOR 格式规范）；标记行可同行带平台名
-// （`出处  kemono`）。
+// （`出处  site-a`）。
 const (
 	markerSources = "来源"
 	markerWorks   = "作品"
@@ -164,7 +164,7 @@ func splitAliases(rest string) []string {
 }
 
 // stripAliasNote 去除作者名中的括号备注：`()`、`[]`、`（）`、`【】` 及其后
-// 内容（GUIDE_AUTHOR：`紙飛行機(小红车资源出处)` → `紙飛行機`，
+// 内容（GUIDE_AUTHOR：`紙飛行機(site-b资源出处)` → `紙飛行機`，
 // `bamhor[3D]` → `bamhor`）。截断点取最先出现的任一括号起始字符。
 func stripAliasNote(name string) string {
 	idx := -1
@@ -198,7 +198,7 @@ func isSourcesMarker(line string) bool {
 // markerOutsource 是 `出处`（与 `来源` 同义，GUIDE_AUTHOR：两者均识别）。
 const markerOutsource = "出处"
 
-// platformName 提取来源标记行同行携带的平台名（`出处  kemono` → `kemono`）。
+// platformName 提取来源标记行同行携带的平台名（`出处  site-a` → `site-a`）。
 func platformName(line string) string {
 	for _, m := range []string{markerSources, markerOutsource} {
 		if rest, ok := strings.CutPrefix(line, m); ok {

@@ -26,7 +26,7 @@ func blocksWorks(b AuthorBlock) []string { return b.Works }
 // 照译 parseAuthorBlocks_formatB2_singleBlockParsed：格式 B2（编号+单作者+出处+作品）。
 func TestParseAuthorBlocksFormatB2SingleBlockParsed(t *testing.T) {
 	text := "1  that_maskey\n" +
-		"出处  kemono\n" +
+		"出处  site-a\n" +
 		"作品\n" +
 		"尼尔 机械纪元  2B 1 (1).png\n" +
 		"守望先锋  天使 16 (1).png\n"
@@ -70,7 +70,7 @@ func TestParseAuthorBlocksFormatBMultiBlockParsed(t *testing.T) {
 
 // 照译 parseAuthorBlocks_parenthesizedAlias_stripsSuffix：括号备注自动去除。
 func TestParseAuthorBlocksParenthesizedAliasStripsSuffix(t *testing.T) {
-	text := "1  kamihikoki_mmd  紙飛行機(小红车资源出处)\n" +
+	text := "1  kamihikoki_mmd  紙飛行機(site-b资源出处)\n" +
 		"作品\n" +
 		"a.mp4\n"
 
@@ -89,7 +89,7 @@ func TestParseAuthorBlocksParenthesizedAliasStripsSuffix(t *testing.T) {
 // 照译 parseAuthorBlocks_digitLeadingFileNameInWorks_keptAsWork。
 func TestParseAuthorBlocksDigitLeadingFileNameInWorksKeptAsWork(t *testing.T) {
 	text := "6  Takerskiy\n" +
-		"出处  kemono\n" +
+		"出处  site-a\n" +
 		"作品\n" +
 		"2077  帕南.png\n" +
 		"守望先锋  雾子 7 (1).jpg\n"
@@ -112,7 +112,7 @@ func TestParseAuthorBlocksDigitLeadingFileNameOutsideWorksIgnored(t *testing.T) 
 	text := "2077  朱迪+帕南.png\n" +
 		"\n" +
 		"1  Keu3D\n" +
-		"出处  kemono\n" +
+		"出处  site-a\n" +
 		"作品\n" +
 		"最终幻想  蒂法+爱丽丝 1 (1).png\n"
 

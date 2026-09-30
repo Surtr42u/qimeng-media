@@ -18,7 +18,7 @@ import (
 )
 
 // TestReplaceAuthorSourcesAppendExistingBlock：块命中 append = 并入去重、
-// 永不覆盖（[kemono] ∪ [kemono pixiv] → [kemono pixiv]）；回显=既有区 ∪
+// 永不覆盖（[site-a] ∪ [site-a pixiv] → [site-a pixiv]）；回显=既有区 ∪
 // 新增（保序，非请求输入）；作品行不动；目标片段 ImportedAt 不变；条目
 // 元数据只修剪不新增（append 无移除行，PruneUploadEntries 恒 no-op，且不为
 // 新行新增条目）；重复调用幂等（内容与条目零变化）。
@@ -26,7 +26,7 @@ func TestReplaceAuthorSourcesAppendExistingBlock(t *testing.T) {
 	q := newTestDB(t)
 	ctx := context.Background()
 	if err := PersistSources(ctx, q, testNow, []Source{
-		{Filename: "f.txt", Content: "1  aaa\n来源\nkemono\n作品\nx.png\n", ImportedAt: store.FormatTimestamp(testNow)},
+		{Filename: "f.txt", Content: "1  aaa\n来源\nsite-a\n作品\nx.png\n", ImportedAt: store.FormatTimestamp(testNow)},
 	}); err != nil {
 		t.Fatalf("预置片段失败: %v", err)
 	}
@@ -38,7 +38,7 @@ func TestReplaceAuthorSourcesAppendExistingBlock(t *testing.T) {
 	// 存量上传条目（append 前预置：append 追加 pixiv 后它必须原样保留）。
 	wantEntries := []authoring.UploadEntry{{
 		AuthorID: "aaa", DisplayName: "aaa", Names: []string{"aaa"},
-		Works: []string{"x.png"}, Sources: []string{"kemono"},
+		Works: []string{"x.png"}, Sources: []string{"site-a"},
 	}}
 	if err := SaveUploadEntries(ctx, q, testNow, map[string][]authoring.UploadEntry{
 		"f.txt": wantEntries,
@@ -47,11 +47,11 @@ func TestReplaceAuthorSourcesAppendExistingBlock(t *testing.T) {
 	}
 
 	saved, err := (&Service{}).ReplaceAuthorSources(ctx, q, testNow, "aaa", "aaa",
-		[]string{"kemono", "pixiv"}, SourcesModeAppend)
+		[]string{"site-a", "pixiv"}, SourcesModeAppend)
 	if err != nil {
 		t.Fatalf("append 写入失败: %v", err)
 	}
-	if want := []string{"kemono", "pixiv"}; !reflect.DeepEqual(saved, want) {
+	if want := []string{"site-a", "pixiv"}; !reflect.DeepEqual(saved, want) {
 		t.Errorf("回显=%v, want %v（既有区在前保序去重）", saved, want)
 	}
 	sources, err := LoadSources(ctx, q)
@@ -65,7 +65,7 @@ func TestReplaceAuthorSourcesAppendExistingBlock(t *testing.T) {
 	if len(blocks) != 1 {
 		t.Fatalf("解析块数=%d, want 1:\n%s", len(blocks), sources[0].Content)
 	}
-	if want := []string{"kemono", "pixiv"}; !reflect.DeepEqual(blocks[0].Sources, want) {
+	if want := []string{"site-a", "pixiv"}; !reflect.DeepEqual(blocks[0].Sources, want) {
 		t.Errorf("片段来源区=%v, want %v（并入非覆盖）", blocks[0].Sources, want)
 	}
 	if want := []string{"x.png"}; !reflect.DeepEqual(blocks[0].Works, want) {
@@ -81,7 +81,7 @@ func TestReplaceAuthorSourcesAppendExistingBlock(t *testing.T) {
 
 	// 重复 append 同内容：幂等——片段与条目零变化。
 	if _, err := (&Service{}).ReplaceAuthorSources(ctx, q, testNow, "aaa", "aaa",
-		[]string{"kemono", "pixiv"}, SourcesModeAppend); err != nil {
+		[]string{"site-a", "pixiv"}, SourcesModeAppend); err != nil {
 		t.Fatalf("重复 append 失败: %v", err)
 	}
 	sources2, _ := LoadSources(ctx, q)
@@ -113,11 +113,11 @@ func TestReplaceAuthorSourcesAppendNoBlockAuthor(t *testing.T) {
 	}
 
 	saved, err := (&Service{}).ReplaceAuthorSources(ctx, q, testNow, "night", "Night / Cry",
-		[]string{"老王论坛"}, SourcesModeAppend)
+		[]string{"forum-c"}, SourcesModeAppend)
 	if err != nil {
 		t.Fatalf("append 写入失败: %v", err)
 	}
-	if want := []string{"老王论坛"}; !reflect.DeepEqual(saved, want) {
+	if want := []string{"forum-c"}; !reflect.DeepEqual(saved, want) {
 		t.Errorf("回显=%v, want %v", saved, want)
 	}
 	sources, err := LoadSources(ctx, q)
@@ -134,7 +134,7 @@ func TestReplaceAuthorSourcesAppendNoBlockAuthor(t *testing.T) {
 	for _, b := range authoring.ParseAuthorBlocks(sources[0].Content) {
 		if len(b.AuthorNames) > 0 && authoring.GenerateAuthorID(b.AuthorNames[0]) == "night" {
 			found = true
-			if want := []string{"老王论坛"}; !reflect.DeepEqual(b.Sources, want) {
+			if want := []string{"forum-c"}; !reflect.DeepEqual(b.Sources, want) {
 				t.Errorf("新块来源区=%v, want %v", b.Sources, want)
 			}
 		}

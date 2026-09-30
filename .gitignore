@@ -87,3 +87,6 @@ server/data/
 
 # U11 批次D：内嵌形态三件套（~57MB 二进制不入 git，make app-embedded 装配；缺目录=普通 NAS 客户端）
 android/app/src/main/jniLibs/
+
+# 仓库根目录的 AI 交接/任务临时文档（含真机与环境细节，严禁入库；2026-09-30 开源审计加盖）
+/交接报告*.md

@@ -8,6 +8,16 @@
 - 子代理执行的工作标注"（执行子代理）"，主对话直接完成的标注"（主代理）"。
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
+## chore(repo): 开源隐私收口——出厂词表与全库站点词中性化+仓库外目录指代中性化+交接文档防御（2026-09-30 第四百零七笔）
+
+执行 AI：GLM-5.3（主代理）
+
+- **背景**（2026-09-30 开源后审计第二笔）：脱敏首笔清除了口令/序列号/本机路径，但复审发现两类残留——①「通用来源词表出厂预填」及关联测试/文档含真实平台词（个人获取渠道偏好，36 文件约 300 处，含 server `vocabulary_prefill.go`/`parse.go`、web `source-options.ts`、android `SourceWords.kt` 等源码与三端测试）；②58 处仓库外工作区目录名指代（CHANGELOG/REVIEW/ADR-0017）。
+- **站点词中性化**：统一映射为合成词（site-a~g/forum-c 系），源码出厂预填语义不变（仅示例词面变化）；`api/openapi.yaml` description 示例同步、`make sdk` 三端重生成+`api/sdk.lock` 指纹更新（229 条）；DOMAIN_RULES 多值筛选示例与来源口径、GUIDE_API 作者来源节、REQ 需求书示例词表同步。唯一行为适配：`vocabulary_prefill_test.go` 域名排除用例期望序随新词字典位次修正（排序口径 count 降序+字典序不变）。
+- **目录指代中性化**：仓库外工作区目录名 →「工作区」（CHANGELOG 58 处、REVIEW 标题改 qimeng-media、ADR-0017 一处）；`llms.txt`「十条铁律」→「十四条」计数漂移修正。
+- **交接文档防御**：仓库根《交接报告-作者联想弹层.md》（含真机序列号+本机路径，铁律14红线内容，未入库）按用户拍板删除；`.gitignore` 加盖 `/交接报告*.md` 防再次误入。
+- 验证：server `go test ./...` 16 包全绿；web vitest 21 文件 202 测试全绿；android `:core:model:test` + `:core:data`/`:feature:upload`/`:feature:detail` testDebugUnitTest 全部 0 失败；全树复扫站点词/目录名零残留（生成物经重生成清除）。（GLM-5.3 主代理）
+
 ## feat(api): 批A 安全卫生收口——内嵌形态 dev-login 共享密钥门禁 + 维护页开发模式提醒条（2026-09-30 第四百零六笔）
 
 - **dev-login 共享密钥门禁（SECURITY.md 规划项落地，防同机越权）**：Android loopback 端口全设备共享，同机其他 App 可连 `127.0.0.1:18430` 走免密登录拿管理员 token（App 持 MANAGE_EXTERNAL_STORAGE 放大后果）。三端落地：①协议——`POST /auth/dev-login` 新增可选 header `X-Qimeng-Dev-Secret` + 401 响应（`api/openapi.yaml`，三端 SDK 重生成 + sdk.lock 指纹更新）；②server——config 新键 `auth_dev_shared_secret`（env `QIMENG_AUTH_DEV_SHARED_SECRET`），配置后校验请求头（`subtle.ConstantTimeCompare` 恒时比对；顺序=限流→dev 404→密钥 401，401 在自动建户之前），未配置零行为变化（Web bat 免密/日常开发完全不变）（执行子代理）；③App——`EmbeddedServerConfig.generateDevSharedSecret()`（SecureRandom 32 字节 URL-safe）每次拉起子进程生成，注入 env + ServerConfigDataSource 纯内存槽（不落盘不进日志），`SdkAuthApi.devLogin` 同源带出（执行子代理）。
@@ -84,8 +94,8 @@
 
 执行 AI：GLM-5.3-Flash（主代理直接实现：定位/双端修改/测试/文档收口，无子代理）
 
-- **需求**（用户复测反馈两项）：① 批次来源建议「少了好几个单独的」——上一笔只过滤组合条目，但 hanime1/r34/i站/老王论坛 这些平台词**只存在于组合条目里**（真库词表 9 条中 6 条是组合），被连词过滤掉了；② App 作者联想「提取太卡」且弹层观感是个内联胶囊 Card——每敲一字建议卡把整张长表单往下顶、全表单重排。
-- **来源建议拆词提取（①，双端同口径）**：`individualSourceWords` 语义从「过滤组合」改为「**按空白拆词+去重**」——组合条目拆出的平台词全部纳入建议、首现顺序保留（App core:model 与 Web lib/source-options 各自实现同口径；真库词表实测 9 条 → 7 个平台词 kemono/小红车/老王论坛/x/hanime1/r34/i站）。消费点不变（App UploadViewModel/AssetEditViewModel、Web SourceSelectField）；词表管理卡仍显全量原始条目（组合原貌维护场景可见）；已选组合值回落「词表外已选」仍可见可移除。测试：App SourceWordsTest 重写 5 用例（含真库出厂词表全形态用例）、Web vitest 同步 5 用例；feature:upload 用例改断言拆词提取（只存在于组合的词必须出现）。
+- **需求**（用户复测反馈两项）：① 批次来源建议「少了好几个单独的」——上一笔只过滤组合条目，但 site-d/site-f/site-g/forum-c 这些平台词**只存在于组合条目里**（真库词表 9 条中 6 条是组合），被连词过滤掉了；② App 作者联想「提取太卡」且弹层观感是个内联胶囊 Card——每敲一字建议卡把整张长表单往下顶、全表单重排。
+- **来源建议拆词提取（①，双端同口径）**：`individualSourceWords` 语义从「过滤组合」改为「**按空白拆词+去重**」——组合条目拆出的平台词全部纳入建议、首现顺序保留（App core:model 与 Web lib/source-options 各自实现同口径；真库词表实测 9 条 → 7 个平台词 site-a/site-b/forum-c/x/site-d/site-f/site-g）。消费点不变（App UploadViewModel/AssetEditViewModel、Web SourceSelectField）；词表管理卡仍显全量原始条目（组合原貌维护场景可见）；已选组合值回落「词表外已选」仍可见可移除。测试：App SourceWordsTest 重写 5 用例（含真库出厂词表全形态用例）、Web vitest 同步 5 用例；feature:upload 用例改断言拆词提取（只存在于组合的词必须出现）。
 - **App 联想弹层改浮层下拉（②，用户拍板「搜索那种」）**：`QimengAuthorSuggestSection` 输入非空时的建议从内联 Card（`QimengAuthorSuggestionList`，已删）改为 **DropdownMenu 浮层**悬于输入框正下方——零布局位移治「敲字全表单重排」的卡顿，观感即搜索补全式弹层（行内容不变：displayName + 文件数；上限协议 10 条，菜单内自滚）；手动点外部关闭后继续输入自动重开（搜索惯例）。资产编辑页共用本组件同步受益；其空输入种子全显（inline 限高列表）保留不动。上笔的百度式空输入零建议行为不变。**同日装机补修**：DropdownMenu 锚定其直接父容器矩形——初版父容器是分节 Column，菜单翻转到了屏幕顶部（真机截图实证）；输入框与菜单同包一个 Box 令锚点=输入框自身，菜单贴输入框正下方展开。
 - **测试与门禁**：web vitest 202 全绿（21 文件）、build 通过、lint 0 error；app `:core:model:test`（含新 SourceWordsTest）+ `:feature:upload:testDebugUnitTest` 全绿、`:core:ui`/`:feature:detail` 编译通过。
 - **文档**：本笔。协议零改动。
@@ -94,7 +104,7 @@
 
 执行 AI：GLM-5.3-Flash（主代理直接实现：定位/双端修改/测试/文档收口，无子代理）
 
-- **需求**（用户两项）：① 上传页作者联想「持续显示」改为百度搜索式——输入后才出建议列表；② 批次来源建议里不出现组合条目（如「kemono  小红车」），只保留单独词。Web 作者联想经核本就是百度式（`open` 门控空输入不弹），问题仅 App 端 seeds 常驻全显（第三百九十六笔「作者默认全显」的反转，用户当日复测后改主意）。
+- **需求**（用户两项）：① 上传页作者联想「持续显示」改为百度搜索式——输入后才出建议列表；② 批次来源建议里不出现组合条目（如「site-a  site-b」），只保留单独词。Web 作者联想经核本就是百度式（`open` 门控空输入不弹），问题仅 App 端 seeds 常驻全显（第三百九十六笔「作者默认全显」的反转，用户当日复测后改主意）。
 - **App 作者联想拆 seeds（①）**：上传页批次默认与逐项编辑的 `QimengAuthorSuggestSection` 不再传 seeds——空输入零建议、输入后走既有服务端联想（/authors/suggest 空 q 必返空，协议不动）；`UploadUiState.authorSeeds` 字段、`UploadViewModel.refreshAuthorSeeds()` 及 UI 三处传参链整体拆除（死代码零残留）；`toRegularAuthorSeeds` 保留（资产编辑页仍用全显，用户未要求改）。
 - **来源建议只出单独词（②，双端同口径）**：新纯函数过滤——App `core:model` `individualSourceWords()`（含空白字符的条目视为组合形态过滤，空串/纯空白一并过滤，原序保留；SourceWordsTest 4 用例）+ Web `lib/source-options.ts`（vitest 4 用例）；消费点：App UploadViewModel `refreshSourceOptions`（批次+逐项共用）与 AssetEditViewModel `loadVocabulary`（编辑页同规则保持一致）、Web `SourceSelectField`（编辑页/上传工作台共用一处）；词表管理卡（SourceVocabularyCard）仍展示全量词表不过滤（维护场景要见组合原貌）；已选过的组合值回落「词表外已选」区仍可见可移除；自由输入不受限（组合可手输获得）。
 - **测试与门禁**：web vitest 201 全绿（+4）、build 通过、lint 0 error（18 warning 均既有基线）；app `:feature:upload` 全部用例绿（seeds 测试改写为词表过滤测试，断言组合过滤+空输入无建议列表）、`:core:model:test` 全绿（含新 SourceWordsTest）、`:feature:detail` 编译通过。
@@ -165,7 +175,7 @@
 
 执行 AI：GLM-5.3-Flash（主代理：协议/编排/审查返工收口；协议前探索与三端实现/文档由并行执行子代理完成，对抗审查子代理复核）
 
-- **需求与决策**（ADR-0024，用户拍板三选一）：① 上传回归纯上传——openapi 删 `POST /assets/upload` 的 authorId/authorName/source 三参数，Web/Android 上传卡撤作者/来源控件；挂靠改由**资产编辑页**承载（事后可纠错，上传是批量动作归属需看图确认）。② 来源语义修正：来源=「获取渠道/平台名」（如「老王论坛」），**不是** §4 作品出处；建议词表弃用个人片段词表（作者 A 的个人链接对作者 B 无意义），改服务端手动维护的**通用来源词表**小清单。③ Android 上传选取弃系统 SAF 选择器（外部文件夹弹窗麻烦且不美观），改**内置相册式选择器**；Web 文件夹上传去 webkitdirectory 弹窗按钮、拖拽为主。
+- **需求与决策**（ADR-0024，用户拍板三选一）：① 上传回归纯上传——openapi 删 `POST /assets/upload` 的 authorId/authorName/source 三参数，Web/Android 上传卡撤作者/来源控件；挂靠改由**资产编辑页**承载（事后可纠错，上传是批量动作归属需看图确认）。② 来源语义修正：来源=「获取渠道/平台名」（如「forum-c」），**不是** §4 作品出处；建议词表弃用个人片段词表（作者 A 的个人链接对作者 B 无意义），改服务端手动维护的**通用来源词表**小清单。③ Android 上传选取弃系统 SAF 选择器（外部文件夹弹窗麻烦且不美观），改**内置相册式选择器**；Web 文件夹上传去 webkitdirectory 弹窗按钮、拖拽为主。
 - **协议（api/openapi.yaml，路径 63→65）**：删三上传参数与 `GET /authors/sources`；新增 `GET/PUT /authors/source-vocabulary`（kv_settings `author_source_vocabulary`；GET 无记录=空数组；PUT 整体替换，trim+去重、单项 ValidSourceWord〔控制字符/超 500 rune 400〕、原始数组超 32 项 400）；新增 `GET/PUT /authors/{authorId}/sources`（常规作者片段来源区读写；GET 无块=空数组、不存在 404、COS 400；PUT 整体替换该作者块来源区，无块=最近导入片段新建块）；新增 `PUT /assets/{assetId}/authors`（body authorIds 全集整体替换；200 回 AssetDetail；仅 capabilities.authorAttach=true 库可用）。`make sdk` 三端重生成 + sdk.lock（223→225 entries）同批更新。
 - **服务端**：`authoring/edit.go` 新纯函数 `RemoveWorks`（首遇块作品区删行：行文本精确匹配优先、trim+小写+去空格归一回退且**归一保留扩展名**——png/mp4 同名互不误伤）/`ReplaceSources`（来源区整体替换，空区标记行不残留、裸块补标记，写出可被 ParseAuthorBlocks 原样读回）/`PruneUploadEntries`；`authorattach/edit.go` 编辑编排 `ReplaceAssetAuthors`（新增=作品行写作者块〔落点规则与 Apply 共用 findAuthorBlock/mostRecentIndex〕、移除=遍历全部片段删行、同事务 swap asset_authors）与 `ReplaceAuthorSources`、`vocabulary.go` 词表 kv；`httpapi/author_edit.go` 5 个 handler（PUT 资产作者复用 GET 详情装配保证口径不漂移）。两处编辑落库后按 `MissingUploadEntries` 反向**修剪 kv `imported_txt_upload_entries`**（编辑是有意变更，防重导入 409 误报；编辑不新增登记条目，重导入保护此后只覆盖存量条目）。上传减法：`upload.go` 删 resolveUploadAttach 全分支（四道校验/落盘/响应零变化）。镜像刷新挂点=资产作者/来源编辑保存后。
 - **对抗审查返工（Rv1 两项 P1 + 死代码清欠）**：① 无块新建路径把多别名 displayName（" / " 连接）整串当单别名写编号行 → 解析回读 GenerateAuthorID 漂移成幻影作者——`displayNameAliases` 拆分归一修复 edit.go 两处 + Apply AuthorID 路径（grep 新发现的第三处同型）共三点，新增多别名无块往返防回归测试 ×3（含变异验证：改回缺陷形态立即 FAIL）；② sdk.lock 未随协议更新 + android/sdk 陈旧生成物残留（已删 AuthorSourceStat/AuthorSourceVocabulary 四文件后重算）；③ 死代码：server `ExtractSourceVocabulary`/`SourceStat`、Android `AuthorSourceStat`/`LibraryChoice.authorAttach`/`acceptFolderTree`+FolderScanner 整族/showCreateNew 死分支。遗留记档：资产改名/移动不回写片段作品行（残留行被统一重建重关联，后续项）；同片段跨块同名作者 RemoveWorks 只清首遇块（解析器身份口径一致，重建兜底）；Android `UploadItem.relativeDir` 链路存活但恒空串（文件夹上传退役后的占位）。
@@ -285,7 +295,7 @@
 - **scope 与残留修正**：AGENTS 铁律 10 与 AI_README_FIRST git 约束的 scope 枚举补 `desktop`（与 ADR-0020 声明对齐，此前声明与实操两头不一致）；AGENTS 路由表 GUIDE_API「（建立后）」过时残留删除、UI 行补 desktop 指引；AI_README_FIRST commit 示例原指向已删除的 GUIDE_APP.md 改为 CHANGELOG.md。
 - **矛盾与过时陈述修正**：HANDOVER_UI §1「接真实数据（阶段 B）未启动」与同文件 §5 及 HANDOVER 自相矛盾（实际 2026-09-03 完成）改勾销注记；PROJECT_PLAN M2 阶段 B 引用块「ArtPlayer 播放器 UI 待做」补已交付注（W-3，2026-09-05）；HANDOVER「当前进度/当前待办」节标题日期 2026-09-04 更新为截至 2026-09-21；CAPABILITY_MAP 部署行 dev-tools 路径补「仓库外」标注；AUDIT-20260920 文头「master 未动」补时态说明、§6 三条后续建议补已落地状态（协议批 6ed8129/性能批 a465ae6/R3 e1b0562/R4 819b7c4）。
 - **审计任务书入库**：`docs/任务书-审计清偿批-20260920.md`（原 untracked）随本笔入库——AUDIT §3.1 清偿记录引用它为路径，不入库则克隆/换机后引用断裂。
-- **工作区整理**（外移非删除，暂存=`QimengNAS\仓库清理暂存-20260921\`，含 README 说明）：`.walk/`+`android/.walk/`（走查对照截图）、`.run-screens/`、`.tmp-u11-video-lib/`、根 `data/`（2026-09-06 裸启动残留，正式数据 qimeng-data/ 未动）、`server/console*.log`、`server/qimeng-server.exe.bak-20260921`——合计约 35MB 全部原本就被 .gitignore 忽略；`.gitignore` 补 `*.exe.bak-*` 防带日期 exe 备份再入 untracked。HANDOVER 文头已随本批刷新（最后更新=2026-09-21 维护批）。
+- **工作区整理**（外移非删除，暂存=`工作区\仓库清理暂存-20260921\`，含 README 说明）：`.walk/`+`android/.walk/`（走查对照截图）、`.run-screens/`、`.tmp-u11-video-lib/`、根 `data/`（2026-09-06 裸启动残留，正式数据 qimeng-data/ 未动）、`server/console*.log`、`server/qimeng-server.exe.bak-20260921`——合计约 35MB 全部原本就被 .gitignore 忽略；`.gitignore` 补 `*.exe.bak-*` 防带日期 exe 备份再入 untracked。HANDOVER 文头已随本批刷新（最后更新=2026-09-21 维护批）。
 - **审查与门禁总账**：四路只读对抗审查（server/web/android/docs）零 P1；三端门禁修复前后两轮全绿（server build/vet/gofmt/test/golangci；web build/oxlint/vitest 169；android assembleDebug/testDebugUnitTest/:core:model:test/lintDebug）。pull/push 因 github 暂不可达未执行（本地领先 4 笔，网络恢复后补推）。
 
 ## fix(app): unbindTag 失败回滚 distinct 防重复 tagId+NetworkModule callTimeout 零时限提常量——维护审查清偿（2026-09-21 第三百八十笔）
@@ -499,7 +509,7 @@
 
 执行 AI：GLM-5.3-Flash（主代理）
 
-- **用户反馈：安卓验收全部完成**（2026-09-20）——任务Q/R/S 全部装机改动（备份两卡跨端同步、视频单击两态/状态栏反色瞬时显隐/去返回键、本机模式登录、NAS 地址记忆、缩略图分池、断网图片修复等）验收通过。当前唯一有效终包=`QimengNAS\qimeng-任务S-终包-20260919.apk`（master HEAD dfd143d 构建，含全部历史批次；历史终包 7 个全部删除）。
+- **用户反馈：安卓验收全部完成**（2026-09-20）——任务Q/R/S 全部装机改动（备份两卡跨端同步、视频单击两态/状态栏反色瞬时显隐/去返回键、本机模式登录、NAS 地址记忆、缩略图分池、断网图片修复等）验收通过。当前唯一有效终包=`工作区\qimeng-任务S-终包-20260919.apk`（master HEAD dfd143d 构建，含全部历史批次；历史终包 7 个全部删除）。
 - **仓库外清理**：删被取代历史终包 7 个、批C 冒烟素材 qimeng-qC-upload-test\（5.3GB）、遗留 build\（qimeng-server-r1.exe）、隔离测试数据 qimeng-data-8421/8422\（可再生，重建命令见 HANDOVER 历史记档）；归档内 APK 子目录同删；完成任务书 Q/R/S 三卷+旧备忘 a-s3-agp9 归档入 `_archive-20260917\任务书\`/`备忘\`；00-总说明.md 刷新（新结构+当前阶段=任务Q/R/S 全收官+验收完成）。dev-tools\ 保留（fnos ISO 3.3GB 真机 NAS 装机要用，装完可删；jdk17/immich-ref 构建链在用）。
 - **待用户**：①批D Docker 化（前置=Docker Desktop 手动安装，装好喊「执行任务Q 批D」）；②服务端孤儿缩略图清理批拍板；③若安卓验收已含 T7 断网全流程，说一声即做旧 App 退役+M6 文档收官。
 
@@ -583,7 +593,7 @@
 执行 AI：GLM-5.3-Flash（主代理调度，四批=执行子代理，对抗审查=reviewer 子代理）
 
 - **任务S 四批全交付+reviewer 对抗审查【通过】**（0 P1/P2，P3×4 记档：BackupDirAccess 双次 toByteArray 纯效率、SAF 查询失败与无文件文案合并的有意取舍、S3 登录页主字段不回填 NAS 记忆的记档偏差、S4 本地缩略图=设备侧 Coil 缓存的口径决策）。四批：`59294f5` 备份页两卡收敛（导入导出直读直写备份目录+暂存机制退役+删「立即备份」重复钮，用户实测四入口后二轮拍板「选项太多有重复/一键没必要/不选文件夹」）→ `56c77a6` 视频交互三件（单击=切控制层+顶栏显隐、双击=暂停/恢复——GUIDE_UI L185 竖屏单击暂停旧语义被用户拍板推翻已记档；播放态系统栏恒隐保障，播放内核零触碰）→ `5e50c74` 服务器地址固化（根因调研=switchToLocalMode 换址预置覆写 server_url 主键；双记忆槽 remembered_nas/local_url，只有成功登录写记忆，本机切换不覆盖 NAS 槽，设置页地址卡本机模式时回填 NAS 记忆——切回 NAS 免重输）→ `b1462d7` 缩略图缓存（6477vs6342 排查实证：7386 文件=6341 md 档+175 lg 多档+870 孤儿，孤儿=删除资产不清缩略图的服务端缺口停手记档待拍板；App 显示口径修——分数式废止改「占用/资产数/缓存上限」三行并列+fraction 钳制；本地缩略图缓存条目=设备侧 Coil 缓存口径决策记档；预取确认本就是默认自动行为，删手动「开始/停止预取」按钮）。
-- **收官门禁（全核一次）**：`make app-build` 13s + `make app-test` 10s + `make app-lint` 1m28s + `:app:assembleRelease` R8 1m12s 四段 BUILD SUCCESSFUL。终包 `QimengNAS\qimeng-任务S-终包-20260919.apk`（26,598,039 字节）。
+- **收官门禁（全核一次）**：`make app-build` 13s + `make app-test` 10s + `make app-lint` 1m28s + `:app:assembleRelease` R8 1m12s 四段 BUILD SUCCESSFUL。终包 `工作区\qimeng-任务S-终包-20260919.apk`（26,598,039 字节）。
 - **待用户拍板项（记档不阻塞）**：①服务端孤儿缩略图对账清理（870 个≈12% 死文件，trash.go 无 thumbs 清理路径；如需字节占用/可配缓存上限需协议扩展 /thumbnails/progress）——建议另立 server 批；②S3 登录页是否要 NAS 快捷入口（对称本机模式按钮）如需说一声。
 - 任务R（1d68bf9 四入口+e18fb63 主线程修复）已被本卷 S1 收敛替代，任务R 卷就此闭合；真库事实引用：6341 资产/3 库/143 作者/19 标签（2026-09-19 只读核查）。
 
@@ -650,15 +660,15 @@
 - **门禁（§3 两笔构建，全核）**：`make app-build && make app-test && make app-lint` 三连 exit=0（BUILD SUCCESSFUL in 16s / 12s / 1m 39s）+ `cd android && ./gradlew :app:assembleRelease`（BUILD SUCCESSFUL in 1m 17s，R8）。
 - **模拟器冒烟四剧本全 PASS**（qimeng_api35 显式 -avd 无头后台，emulator-5556，未碰雷电 5554；8421 存量测试库≈100 文件为端 A、8422 空库为端 B，QIMENG_AUTH_DEV_MODE=1）：①导出备份→/sdcard/Download/qimeng_backup.json 落盘 62392 字节+「已导出（61 KB）」；②该文件导入回同端两遍→幂等（服务端 authors 0/tags 1/assets 190 两遍后不变，第二遍事件回放 0 条）；③跨端同步全流程→A 端暂存（暂存卡「来自 http://10.0.2.2:8421（2026-09-19 07:43，63 KB，190 文件）」+提示切换）→登出→连 B 端→暂存卡可见→一键导入→合并成功（标签 0→1，匹配文件 0/190=B 端无注册库的规则内正确口径）；④自动备份→SAF 授权目录→立即备份→/sdcard/Download/d7bulk/qimeng_backup.json 落盘+「上次备份：2026-09-19 07:48」翻新。logcat QimengApi 6 条出网记录与剧本一一对应（证据 %TEMP%\qimeng-r1-evidence\，截图 android/.walk/qR1-*）。测试后模拟器与 8421/8422 实例均已杀。
 - **真库事实（写档口径，2026-09-19 主会话只读核查）**：8420 当前 6341 资产 / 3 库 / 143 作者 / 19 标签。
-- **终包**：`QimengNAS\qimeng-任务R-终包-20260919.apk`（26,598,643 字节 release/R8）已出盘待主会话装真机 <真机序列号>。
+- **终包**：`工作区\qimeng-任务R-终包-20260919.apk`（26,598,643 字节 release/R8）已出盘待主会话装真机 <真机序列号>。
 
 ## docs: 任务Q 收官——原型退役+工作区清理+漂移复核（2026-09-19 第三百四十三笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理）
 
-- **任务Q 批E 落地（文档与工作区卫生收官，零编译批——收官快验门禁三条外零构建）**（任务书=仓库外《QimengNAS\任务Q-依赖备份与体验收尾卷.md》§7）。
+- **任务Q 批E 落地（文档与工作区卫生收官，零编译批——收官快验门禁三条外零构建）**（任务书=仓库外《工作区\任务Q-依赖备份与体验收尾卷.md》§7）。
 - **media-ui-prototype/ 退役**：全量 grep 引用点后改写边界判断——只改「指向现状的活引用」：docs/HANDOVER.md:21（原型已整体移植句→「已于 2026-09-19 退役删除，历史可溯 git 与 CHANGELOG」）、docs/HANDOVER_UI.md:11（§1 UI 主路线行）、:59（§4 标题改退役记档+结构/状态表降级为历史规格存档）、:116（§5 跑法「保留作对照基准，单独预览」句）、:281（§7 起点建议 8099 预览指引，对照基准改 web 端 8420 实况）；**历史记录不改写**（docs/CHANGELOG.md 历史笔 3607/3621/3634/3638/3910/4004/4025/4032 行、docs/.p2-progress-P2-6.md:12、docs/P2-修复执行报告.md:84、HANDOVER_UI §5 第六/七笔历史段均保持原样）。随后 `git rm -r media-ui-prototype/`（22 文件，git 历史可溯，本地不留副本）。
-- **仓库外工作区清理（QimengNAS\ 根，仅任务书 §7-2 点名两个文件）**：删《待拍板-任务P-P4-targetSdk37.md》（P4b 已落地消费，338 笔前收官）；《任务P-AGP9收尾与依赖跟进卷.md》移入 `_archive-20260917\任务书\`（对齐既有归档结构）；《00-总说明.md》刷新——阶段行（任务Q 完成+批D 顺延态）、文件夹结构（2026-09-19 收官后实况：最新终包指针=qimeng-任务Q-终包-20260919.apk、历史终包 4 个/批C 冒烟素材目录 qimeng-qC-upload-test 标注可清理、归档任务书目录补 P-AGP9 卷）、多端入口补手机本机模式（M6 Termux 127.0.0.1:18430）。
+- **仓库外工作区清理（工作区\ 根，仅任务书 §7-2 点名两个文件）**：删《待拍板-任务P-P4-targetSdk37.md》（P4b 已落地消费，338 笔前收官）；《任务P-AGP9收尾与依赖跟进卷.md》移入 `_archive-20260917\任务书\`（对齐既有归档结构）；《00-总说明.md》刷新——阶段行（任务Q 完成+批D 顺延态）、文件夹结构（2026-09-19 收官后实况：最新终包指针=qimeng-任务Q-终包-20260919.apk、历史终包 4 个/批C 冒烟素材目录 qimeng-qC-upload-test 标注可清理、归档任务书目录补 P-AGP9 卷）、多端入口补手机本机模式（M6 Termux 127.0.0.1:18430）。
 - **文档漂移复核（常驻任务①，批Q 相关面 4 项，2 项发现即修）**：①PROJECT_PLAN——M6 性能项批C 勾选在案无漂移；**M5 节按「批D 顺延后」状态改写**（§0-3 拍板口径落档：开发侧三项=必须、虚拟机彩排=豁免不再补做；Docker 三项标注批D 顺延挂用户节点+前置=Docker Desktop 用户手动下载）；②CAPABILITY_MAP——备份行（批B）/移动端行（批C 三项销账）已同步无漂移；**部署行改「顺延（M5，批D 挂用户节点）」**并记虚拟机彩排豁免；③GUIDE_API「端点分组速览（59 路径）」与 api/openapi.yaml 实数比对=59=59 一致；④OBSERVABILITY backup_last_success_timestamp 指标表/采集点两表在案（批B 已同步）。
 - **收官门禁（零代码改动快验，三条各 1 次，输出原文留存）**：①`cd server && go test ./...`——14 包全 ok（auth/authoring/backup/config/events/filing/httpapi/recommend/scanner/search/sourcematcher/stats/store/sysmon/thumbnail）；②`cd web && npm test`——Test Files 16 passed (16)，Tests 162 passed (162)；③`make lint`——redocly「Woohoo! Your API description is valid.」+ golangci「0 issues.」+ oxlint「Found 18 warnings and 0 errors.」（18 warnings=既有基线，非本批文件）。`git status` 复核：工作树仅含本批文件（4 文档修改+22 原型删除）。
 - **HANDOVER「当前待办」节刷新**：任务Q 五批完成态（含各 commit hash）置顶+用户节点清单（任务书 §11 五条）置顶——第 1 条 push+CI 已闭合标注完成；第 5 条补充批D 前置=Docker Desktop 用户手动下载安装（TOOLCHAIN_GUIDE 教程路径）后再执行批D 开发侧三项与 M5 部署验收清单。
@@ -681,7 +691,7 @@
 
 执行 AI：GLM-5.3-Flash（执行子代理）
 
-- **任务Q 批C 落地（Android 体验收尾三件套，全卷唯一 Android 全门禁批）**（任务书=仓库外《QimengNAS\任务Q-依赖备份与体验收尾卷.md》§5；覆盖批B SDK 再生的编译验证——零协议零 SDK 改动，批B 生成物编译面随本批三连通过）。
+- **任务Q 批C 落地（Android 体验收尾三件套，全卷唯一 Android 全门禁批）**（任务书=仓库外《工作区\任务Q-依赖备份与体验收尾卷.md》§5；覆盖批B SDK 再生的编译验证——零协议零 SDK 改动，批B 生成物编译面随本批三连通过）。
 - **C-1 content:// 持久化授权（M4-5 观察项销账）**：UploadScreen 弃用 `ActivityResultContracts.OpenMultipleDocuments/OpenDocumentTree`——官方查证（铁律 8）：①两者 createIntent 均不带 `FLAG_GRANT_PERSISTABLE_URI_PERMISSION`（androidx.activity 1.13.0 反编译实证，javap 输出存证据目录），takePersistableUriPermission 必抛 SecurityException（官方 ContentResolver 文档「Only URI permissions granted with FLAG_GRANT_PERSISTABLE_URI_PERMISSION can be persisted」）；②改 `StartActivityForResult` + 自建 Intent（ACTION_OPEN_DOCUMENT 多选/ACTION_OPEN_DOCUMENT_TREE + READ|PERSISTABLE flag），SAF 返回即 take（官方时机），runCatching 失败不阻断本会话（记日志留证，交既有 retry 兜底）；③grant 上限查证=AOSP `UriGrantsManagerService.MAX_PERSISTED_URI_GRANTS=512`/package（API 30+），超限 `maybePrunePersistedUriGrantsLocked` 按 persistedTime 自动淘汰最旧、take 不抛异常——**与 v1 不做 release 方案不冲突**：树 grant 覆盖整树每文件夹只占 1 个；极端高频批量后最旧授权被淘汰的回退=原缺陷语义（重试失败）而非崩溃。v1 不 release 记档理由：授权随卸载回收，泄漏无害。
 - **C-2 上传队列单任务取消（M4-7 观察项销账）**：新增 `UploadCancelRegistry`（:core:data，协作式取消标记+版本流）——**实现路径按官方文档查证结果调整并记档**：任务书冻结「WorkManager cancelWorkById」，但官方《Managing work》明文 cancelWorkById 会「将依赖该 work 的所有 WorkRequest 一并 CANCELLED」——unique 串行链中取消链上任一任务会连坐取消其后排队任务，直接违反「单任务取消」冻结语义，且官方无「链中摘除单个 work」API；故改为协作式：VM 透传 `UploadRepository.cancel(localId)` 置标记 → UI 经 registry 版本流 combine 立即翻「已取消」（不等 WorkManager 状态轮转）→ worker 执行前短路（排队中）或 OkHttp 流式 body 每 64KB 块检查标记抛 `UploadCancelledException`（进行中亚秒断流）。`UploadOutcome.Cancelled` → `KEY_CANCELLED` 输出标志 → `UploadStatus.CANCELLED`（新枚举值，与 FAILED 分列：聚合行「失败 N」不计取消、通知文案「上传已取消」）【**342 笔勘误**：取消终态经 `Result.success`+标志落盘而非 failure——failure 会经 WorkManager 引擎 `iterativelyFailWorkAndDependents` 级联杀链，本笔初版映射与注释失实，返工详见 342 笔】；取消标记消费后残留边界（置位即进程被杀的极小窗口）记档于类注释。队列行取消控件=排队中与上传中皆可，无二次确认（对齐 Web 交互）。
 - **C-3 扫描充电联动（PROJECT_PLAN M6 性能项）**：①`ScanGate.shouldDeferScan(isCharging, settingOn, isLocalMode)` 纯函数（:core:model，4 单测锁定=本机+设置开+未充电才推迟）；②`ScanChargeController`（:core:data scan 包，client_prefs DataStore 两键：`charge_only_scan_enabled` 默认开 + `deferred_scan_library_ids` 待扫标记持久化）+ DataModule 绑定；③`ScanChargeRegistrar/ScanChargeReceiver`（:app）运行时注册 ACTION_POWER_CONNECTED（API 33+ 显式 `Context.RECEIVER_NOT_EXPORTED`，lint WrongConstant 实证只认 Context 原生常量非 ContextCompat 派生）+ Application onCreate 启动兜底补扫（进程回收后 receiver 丢失的补链）；④ServerSettingsScreen 新「仅充电时扫描」卡（仅本机模式=ServerAddress.isLocalModePreset 渲染，Switch 直写）；⑤LibraryManageViewModel.rescan 经充电门，三分型反馈（已触发/未接通电源已记入待扫描/触发失败）；充电态查询=官方姿势（ACTION_BATTERY_CHANGED sticky registerReceiver(null)，CHARGING|FULL）。**广播竞态修正（冒烟实证）**：ACTION_POWER_CONNECTED 可先于 status 字段更新到达（模拟器 `dumpsys battery set ac 1` 不更新 status；真机同样存在时序竞态）——onPowerConnected 不二次查询 status、广播语义即充电（启动兜底路径仍查询）。本机模式判定语义=连 127.0.0.1/localhost:18430（ServerAddress 单源），连 NAS 常规模式不受限（设置行隐藏）。注册流程「注册并扫描」不设门（任务书冻结范围仅「重扫」按钮，记档防扩围）。
@@ -701,7 +711,7 @@
 
 执行 AI：GLM-5.3-Flash（执行子代理）
 
-- **任务Q 批B 落地**（任务书=仓库外《QimengNAS\任务Q-依赖备份与体验收尾卷.md》§4，协议先行铁律 1；零 migration、零 Android 构建——SDK 再生的编译验证并入批C，§8 合并门禁拍板明示豁免）。
+- **任务Q 批B 落地**（任务书=仓库外《工作区\任务Q-依赖备份与体验收尾卷.md》§4，协议先行铁律 1；零 migration、零 Android 构建——SDK 再生的编译验证并入批C，§8 合并门禁拍板明示豁免）。
 - **CI 终态补记**：批A 附记的 CI run 35414462168 终态=五 job 全绿，任务P CI 闭合。
 - **协议（openapi.yaml，路径 56→59）**：①POST /api/v1/backups——手动触发 VACUUM INTO 快照，201 返回 BackupInfo{name,sizeBytes,createdAt}，409=已有快照进行中（BACKUP_IN_PROGRESS，定时调度与手动共用防重入闸）；②GET /api/v1/backups——列表+调度摘要一次往返 `{items, schedule{enabled,intervalHours,retention}}`（schedule=config backup.* 只读回显；intervalHours 不足 1h 向上取整展示）；③GET /api/v1/backups/{name}/file——下载 application/octet-stream + Content-Disposition attachment（http.ServeContent 支持 Range）；④DELETE /api/v1/backups/{name}——删除单份 204；错误码 404 name 不存在 / 400 name 非法；BackupName parameter 带 pattern 白名单。`make sdk` 三端再生 + api/sdk.lock 同步（209 条，指纹入库≠产物入库；生成物不入库照 ADR-0009）。
 - **服务端**：①新包 `server/internal/backup`（单职责+doc.go，ADR-0010）：调度（标准库 ticker，Start(ctx, interval)，首个快照一个间隔后触发；失败 slog 结构化日志、下周期自愈重试）+ 防重入（mu+running 闸，并发触发只成功一次，其余 ErrInProgress）+ 轮转（保留 N 份，超出删最旧，文件名字典序=时间序）+ 目录管理（DataDir/backups 惰性创建、外来文件不碰不删）；快照执行器 SnapshotFunc 由 main 注入 store.VacuumInto（SQL 属 store 边界，backup 包零 SQLite 感知）；OnSuccess 回调外流指标（包不感知 sysmon）。②store 新增 `VacuumInto`（VACUUM INTO 文件名参数绑定，store 包内唯一手写 SQL——sqlc 不支持 VACUUM 语句；modernc 驱动实测正常）。③config 新增 backup.enabled/interval/retention（yaml 键 + QIMENG_BACKUP_ENABLED/INTERVAL/RETENTION env + 默认值具名常量 true/24h/7，非法 env 值报错不静默）。④httpapi/backups.go 四 handler（nil 管理器 503 BACKUP_UNAVAILABLE 与 SysStatus 同语义）+ errors.go 新增 BACKUP_IN_PROGRESS/BACKUP_UNAVAILABLE 两码。⑤main 组合根接线：manager 构造（快照执行器=store.VacuumInto 适配、OnSuccess=sysmon.Default.SetBackupLastSuccess）+ Deps.Backup + enabled 时 Start(ctx, interval)。⑥sysmon 新增 backup_last_success_timestamp gauge（OBSERVABILITY.md 已同步）。
@@ -722,7 +732,7 @@
 
 执行 AI：GLM-5.3-Flash（执行子代理）
 
-- **任务Q 批A 落地**（任务书=仓库外《QimengNAS\任务Q-依赖备份与体验收尾卷.md》§3，冻结范围仅此 6 项，零 Android 侧改动）。开卷记账：HANDOVER.md「当前待办」节顶部已追加任务Q 立卷行（五批 A→E 范围一句话+恢复口令「新会话说『执行任务Q』」）。
+- **任务Q 批A 落地**（任务书=仓库外《工作区\任务Q-依赖备份与体验收尾卷.md》§3，冻结范围仅此 6 项，零 Android 侧改动）。开卷记账：HANDOVER.md「当前待办」节顶部已追加任务Q 立卷行（五批 A→E 范围一句话+恢复口令「新会话说『执行任务Q』」）。
 - **六项升级与 release notes 要点**（升级前逐项读官方 changelog，铁律 8）：
   - `golang.org/x/crypto` 0.46.0→**0.57.0**：跨度 102 提交逐笔核对，argon2 包仅 1 笔（`argon2: update RFC 9106 parameter recommendations`）且为**纯文档变更**（0 行非注释增删，参数由调用方显式传入不受建议值影响）；其余为 ssh/acme/pbkdf2/hkdf 面（项目未用）；go directive 升至 1.26.0（本地 Go 1.27.0 兼容）。出处：github.com/golang/crypto/compare/v0.46.0...v0.57.0。
   - `modernc.org/sqlite` 1.57.0→**1.59.0**：v1.58.0=SQLite 升 3.53.4（上游自带 journal-rollback 损坏修复，v1.56.0 本地补丁撤除、恢复行为不变）+ libc 1.75.6；v1.59.0=libc 1.75.7 bump+Linux 原生 Go mem 函数（性能）+UDF 回调 FunctionContext 池化（仅影响注册 UDF 的调用方，项目未注册）；OFD 锁为 Linux opt-in 默认关。无 API 破坏。出处：官方 GitHub 镜像 modernc-org/sqlite CHANGELOG.md（gitlab.com 本网络不通）。
@@ -766,7 +776,7 @@
 
 - **reviewer 对抗审查：通过**（7/7 项 pass、0 P1/P2）——版本证据链（curl 亲复核 AGP 9.3.1/Gradle 9.7.0 sha256/media3 1.11.1/vico 2.5.2/room 2.8.5/BOM 2026.09.00 官方实存）、KGP gradle96 实证、9 份门禁日志交叉核验（失败全留痕无粉饰）、行为面零改动纪律、生成物边界（android/sdk diff 为空、okhttp/moshi 零动）、commit 卫生（文件集一一对应、笔号 325~333 连续）全过。
 - P3 观察项 6 条处置：①KGP 变体补强实证=`./gradlew buildEnvironment` 实存 `org.jetbrains.kotlin:kotlin-gradle-plugin:2.2.10 -> 2.4.20`（AGP 9.3.1 内置依赖被本仓 catalog 声明按官方「高者胜」拉高，/tmp/p6-buildenv.log 留档）；②332 笔「两轮无复发」第二轮=本笔 P6 终局门禁（p6-gate.log 107 用例全绿）；③`go build ./...` 复跑存档（/tmp/p6-gobuild.log）；④329 笔「17 条」=P4 材料表 14 行+#14 行归并 7 个无影响子项，口径已在材料注明；⑤CI 挂账=push 后 CI 全绿闭合（见下）；⑥sha256 已是强于 Content-Length 的完整性证据，无动作。
-- **终局门禁**：三连全绿（p6-gate.log）+ assembleRelease 实跑（:app:minifyReleaseWithR8 非缓存执行，p6-release.log）。**终包出盘**：`QimengNAS\qimeng-任务P-终包-20260918.apk`（26.6MB，debug 签名档，含内嵌三件套），待用户装机验收节点。
+- **终局门禁**：三连全绿（p6-gate.log）+ assembleRelease 实跑（:app:minifyReleaseWithR8 非缓存执行，p6-release.log）。**终包出盘**：`工作区\qimeng-任务P-终包-20260918.apk`（26.6MB，debug 签名档，含内嵌三件套），待用户装机验收节点。
 - **toml 头注收官刷新**：datastore/work/hilt 三处「维持」项补 2026-09-18 复核结论与再评估触发条件；至此全卷「留后续批」「待联网复核」标记清零。
 - **#47 残项终态（整条销账）**：Step4 built-in Kotlin=P3 落地（328 笔，撤双 flag+:sdk 混合形态实证）；targetSdk 37=**材料出齐待用户拍板**（329 笔+仓库外《待拍板-任务P-P4-targetSdk37.md》），拍板后走 P4b 单 commit 或记档销账——#47 台账在 targetSdk 拍板落地时彻底关闭。
 - **CI 全 job 验证挂账（如实记档）**：github.com 自 2026-09-18 起本网络断连（git pull/push Recv failure，dl.google.com/repo1 正常=纯 github 节点问题），本卷 9 个 commit（5b6eb78→beef79a+本笔）未能 push、CI 未跑；本机门禁已全量等效执行（三连+lint 全模块+assembleRelease+模拟器冒烟+server go build）。**push 与 CI 绿确认在网络恢复后补做**（下次会话先 `git pull --rebase && git push`，盯 CI 五 job 绿后本卷方正式收官）。
@@ -811,7 +821,7 @@
 
 执行 AI：GLM-5.3-Flash（主代理；行为变更清单调研=只读子代理+主代理英文原页复核）
 
-- 拍板材料三件落盘（仓库外《QimengNAS\待拍板-任务P-P4-targetSdk37.md》）：①行为变更影响表（Android 17 targetSdk=37 共 17 条逐一对照——**唯一硬成本=ACCESS_LOCAL_NETWORK 运行时权限**（局域网 NAS 连接全依赖，现 manifest 无此权限）；后台音频 WIU 加固=中（无 mediaPlayback FGS，真机 17 定性）；CT/ECH/W^X/16KB/WorkManager 等经复核无影响）；②试装对照报告（worktree 仅改 targetSdk=37 于 P3 HEAD 出包，qimeng_api35c 与 36 包全链等价、零崩溃，截图 .walk/p4/；**能力边界如实记档**：API 35 模拟器无法触发 Android 17 专属行为，真机定性留 P4b 后）；③升 vs 维持代价收益（维持 36=零成本免费延期，行为变更只对 target 37 生效）。
+- 拍板材料三件落盘（仓库外《工作区\待拍板-任务P-P4-targetSdk37.md》）：①行为变更影响表（Android 17 targetSdk=37 共 17 条逐一对照——**唯一硬成本=ACCESS_LOCAL_NETWORK 运行时权限**（局域网 NAS 连接全依赖，现 manifest 无此权限）；后台音频 WIU 加固=中（无 mediaPlayback FGS，真机 17 定性）；CT/ECH/W^X/16KB/WorkManager 等经复核无影响）；②试装对照报告（worktree 仅改 targetSdk=37 于 P3 HEAD 出包，qimeng_api35c 与 36 包全链等价、零崩溃，截图 .walk/p4/；**能力边界如实记档**：API 35 模拟器无法触发 Android 17 专属行为，真机定性留 P4b 后）；③升 vs 维持代价收益（维持 36=零成本免费延期，行为变更只对 target 37 生效）。
 - **主树零改动**（targetSdk 行未动）；试装包用后即弃（worktree 已回收）。**挂起等用户拍板**（升 37→P4b 单 commit；维持→记档销账），不阻塞 P5。
 
 
@@ -1224,7 +1234,7 @@
 
 - **决策（用户 2026-09-16）**：项目中的 CPU 限制全部去除，文档中的限核约束一并去除——①**构建侧一律全核**：Gradle 构建不再附加 `--max-workers=N`/`-Dorg.gradle.priority=low`，Cargo/Tauri 构建不再设 `CARGO_BUILD_JOBS`，「编译 CPU≤50%」「20 核机限核」历史口径与 Job Object HARD_CAP/构建前预捕获守护进程方案**全部作废、不得重建**；②**运行时代码排查结论：无任何低于全核的 CPU 限速**——缩略图 WorkerPool 默认 worker 数=NumCPU、ffmpeg 进程闸容量=GOMAXPROCS，两者均为「满核防超卖」的稳定性结构而非限速，保留不动；argon2 并行度 p=4 为密码学成本参数非 CPU 限制；docker-compose.yml/启动脚本/CI 均无 CPU 配额。
 - **文档清偿**：ADR-0020「构建纪律」「代价」两处 `CARGO_BUILD_JOBS=8` 限核表述改写为不限核全量构建；`adr/INDEX.md` ADR-0020 行同步；`HANDOVER.md` 顶部拍板记档+U10 追加批「CPU 限流结论…留档备重建」就地作废。本文件及 HANDOVER 日期条目中的历史限核记载仅作存档，不再构成约束。
-- **工作区清理（仓库外 `QimengNAS/` 根，用户授权「删除多余的安装包和计划书」）**：删除 4 份已被 `qimeng-任务U11-终包-20260915.apk`（release 含三件套，真机验收唯一在办件）取代的旧终包 APK——U9/U10/U10四批/U10追加批；删除已消费计划书 `m6-next-steps.md`（§1 Termux 设计稿已落地为仓库 `deploy/termux/` 三脚本=T2 批 79ea051、§2 内嵌 ffmpeg 方案已随 U11 批次D 出包，任务T 卷「储备材料」指向随之失效，T7/M6 收官以仓库与 ADR 为准）。保留：`a-s3-agp9-upgrade-memo.md`（gradle.properties 活引用）、`m4-6-runtime-notes.md`（协议口径事实长期保留）、`m6-ffmpeg-memo.md`+`m6-poc/`（既有保留拍板）、U11 终包与全部活跃任务卷/台账。
+- **工作区清理（仓库外 `工作区/` 根，用户授权「删除多余的安装包和计划书」）**：删除 4 份已被 `qimeng-任务U11-终包-20260915.apk`（release 含三件套，真机验收唯一在办件）取代的旧终包 APK——U9/U10/U10四批/U10追加批；删除已消费计划书 `m6-next-steps.md`（§1 Termux 设计稿已落地为仓库 `deploy/termux/` 三脚本=T2 批 79ea051、§2 内嵌 ffmpeg 方案已随 U11 批次D 出包，任务T 卷「储备材料」指向随之失效，T7/M6 收官以仓库与 ADR 为准）。保留：`a-s3-agp9-upgrade-memo.md`（gradle.properties 活引用）、`m4-6-runtime-notes.md`（协议口径事实长期保留）、`m6-ffmpeg-memo.md`+`m6-poc/`（既有保留拍板）、U11 终包与全部活跃任务卷/台账。
 
 ---
 ## feat(desktop): 任务D-桌面壳批 Tauri 2 连接模式壳交付——首启填址+托盘+导航守卫+17单测全绿（2026-09-16 第二百八十二笔）
@@ -1392,7 +1402,7 @@
 执行 AI：GLM-5.3-Flash（主代理）
 
 - **当日会话全景**（两批缺陷修复详见第二百六十五/二百六十六笔，本笔记调度与立卷）：①U10 追加批终包 `qimeng-任务U10追加批-终包-20260915.apk` 编译（assembleDebug/assembleRelease/lintDebug 绿，限核档）并装真机 真机 拉起；②**U10-1 旋转三步实验**——装机前后对照+隔离实验（仅启动不安装 10s 内翻转）+静置对照（仅启动瞬间一次）：「安装导致」不成立、触发点=App 启动；主嫌疑=nubia ROM 对 VideoStage requestedOrientation 启动兜底写点的反应；U10 卷 §2 旧结论「grep 零处 requestedOrientation」「安装导致」双推翻，追记 U10 卷 §10；③用户三拍板：任务T 剩余范围=T6+T7、**T4 真备份迁移删除**（手机已有库，旧项目行为数据放弃，媒体不受影响；T5 真机首扫节点并入验收顺带观察）、未解 bug 与 T6 同期修；拍板已同步任务T 卷（总表 T4 行划除+范围注）。
-- **立卷**：仓库外《QimengNAS\任务U11-内嵌形态与缺陷清偿卷.md》——吸收任务T 剩余（T6 内嵌批次D/E+T7 收官）与 U10/U8 遗留缺陷批次（A=FolderScanPolicyTest 预存红裁定修复（f0ee67f 引入）/B=沉浸静置自动退/U10 卷 §10 三步实验续/C=U10-1 写点条件化），含已完成勿重做区（20d5aec/b6b6b37 关键结论+证据位置）、小债台账（http 字面量两处提常量/metrics 未接线/Keyer 适配器无单测等）、用户验收清单与恢复惯例（**新会话说「执行任务U11」**）。任务T 卷 T6/T7 勾选行加执行迁入指针。
+- **立卷**：仓库外《工作区\任务U11-内嵌形态与缺陷清偿卷.md》——吸收任务T 剩余（T6 内嵌批次D/E+T7 收官）与 U10/U8 遗留缺陷批次（A=FolderScanPolicyTest 预存红裁定修复（f0ee67f 引入）/B=沉浸静置自动退/U10 卷 §10 三步实验续/C=U10-1 写点条件化），含已完成勿重做区（20d5aec/b6b6b37 关键结论+证据位置）、小债台账（http 字面量两处提常量/metrics 未接线/Keyer 适配器无单测等）、用户验收清单与恢复惯例（**新会话说「执行任务U11」**）。任务T 卷 T6/T7 勾选行加执行迁入指针。
 - **git**：本地领先 origin/master 2 笔（20d5aec/b6b6b37）待网络恢复补推；工作树干净。
 - 待用户：真机 U10 追加批验收照旧（三处 UI 拍板/TXT/备份/文件夹上传/数据管理砍三项），或等 U11 终包一并验收。
 
@@ -1450,8 +1460,8 @@
 - **U10-6 「数据管理」合并入口**（新模块 `feature/manage`+core 层）：我的页新增「数据管理」行→hub（`DataManageScreen`：上传文件/库管理两入口，上传复用既有 `Routes.UPLOAD` 不搬路由零回归）→`LibraryManageScreen`（库行卡=名称/kind 徽标/路径小字/scanState 文案/文件数/启停 Switch/重新扫描/删除 AlertDialog 二次确认；注册新库表单=名称/根路径/类型 SegPill+「注册并扫描」两步链对齐 Web `submitRegister`）+`LibraryRepository`/`SdkLibraryRepository`（GET/POST /libraries、DELETE、scan 202、PUT enabled 五端点，零协议改动零 SDK 再生）+`core:model` LibraryModels（scanState 文案映射单源，与 Web LibraryManagePage.tsx L387 双写同步责任入注释）+`DataModule` 绑定；合并后我的页「上传文件」卡删除；**明确排除项未动**（收藏/点赞/浏览历史/作者总览）。**砍项记档（任务书口径修正，需用户知悉）**：①库改名——openapi libraries 族无 rename 端点、Web 文件管理页亦无此功能，砍；②「服务端路径浏览→注册」——协议无任意路径浏览端点（GET /dirs 是库内相对树），注册=手输 rootPath 绝对路径对齐 Web，表单带「不能位于服务端数据目录内；COS 库按作者/作品/文件目录结构组织」提示；③文件行移动/删除——不在卷清单。HubEntryRow 与 settings EntryRow 同规格两份私有实现（第三处消费方出现时上提 core:ui，注释记档）。
 - **reviewer 对抗审查**（四批全量 diff+交叉破坏+测试质量）：P1=U10-6 register 成功后 scan 失败被误报「注册失败，请重试」且表单不清（重复注册风险，偏离 Web 注册/扫描 toast 分离）——已修：scan 独立 try/catch，失败报「已注册「%s」，但触发扫描失败，请稍后在列表重新扫描」照常清表单+注册成功事实，补 2 用例（注册成功扫描失败/注册失败表单保留）；P2=ServerSettings 种子位一次性无回归守卫——已补用例；P3 记档（筛选钮触区收窄 30dp 对齐旧版、FilterListIcon 留档勿删、isSaving 不复位与 HEAD 等价、缺 id 跳过扫描时 notice 仍称「开始扫描」与 Web 一致）。总评：U8 红线零接触、U10-3 语义零变化、U10-4 迁移逐字保真、SDK 签名逐一核实。
 - **门禁与走查**：assembleDebug/assembleRelease/testDebugUnitTest+:core:model:test/lintDebug 全绿（单测 638=524+114，全程限核）；模拟器无头全链走查（qimeng_api35 显式指定+8421 虚拟库）：四区域前后对照截图存 `.walk/`；E2E 实测=注册临时库→扫描入库（2 个库+「已注册…开始扫描」）→删除二次确认→「已删除」回到 1 个库且磁盘文件保留、标签「cosplay」添加→保存→API 验证 fileCount=1 持久化、筛选「名字+应用筛选」面板关闭列表刷新。走查插曲记档：会话内 curl dev-login 重铸 token 顶掉 App 登录态（签发即重铸设计行为）——排查类操作后 App 需重登。
-- **环境**：8421 隔离虚拟库重建=新数据目录 `QimengNAS\qimeng-data-8421`（`QIMENG_LISTEN=127.0.0.1:8421 QIMENG_AUTH_DEV_MODE=1 build\qimeng-server-8421.exe`），注册UI测试库 90 文件 facets 正常；无头模拟器 qimeng_api35（emulator-5554，`-no-window -no-audio -gpu swiftshader_indirect -no-snapshot`，`android/启动模拟器-headless.bat` 同参）；每日 08:50「暂停会话一切任务」自动化建档（automation-ac3e42c2）。
-- **终包**=`QimengNAS\qimeng-任务U10四批-终包-20260915.apk`（release+debug 签名可直装，含 U9/U10-5 全部内容）。**待用户真机**：①U10-2/U10-3 同屏对比旧版拍板「对齐了」（含单选胶囊纠正确认）；②U10-4 合并子页（换址/本机模式流程不回退）；③U10-6 数据管理全套内容管理操作体验拍板；④砍项三项（改名/路径浏览/文件行操作）如需恢复请指示（改名需先动 openapi.yaml）。U10-1 自动旋转排查保持低优先。
+- **环境**：8421 隔离虚拟库重建=新数据目录 `工作区\qimeng-data-8421`（`QIMENG_LISTEN=127.0.0.1:8421 QIMENG_AUTH_DEV_MODE=1 build\qimeng-server-8421.exe`），注册UI测试库 90 文件 facets 正常；无头模拟器 qimeng_api35（emulator-5554，`-no-window -no-audio -gpu swiftshader_indirect -no-snapshot`，`android/启动模拟器-headless.bat` 同参）；每日 08:50「暂停会话一切任务」自动化建档（automation-ac3e42c2）。
+- **终包**=`工作区\qimeng-任务U10四批-终包-20260915.apk`（release+debug 签名可直装，含 U9/U10-5 全部内容）。**待用户真机**：①U10-2/U10-3 同屏对比旧版拍板「对齐了」（含单选胶囊纠正确认）；②U10-4 合并子页（换址/本机模式流程不回退）；③U10-6 数据管理全套内容管理操作体验拍板；④砍项三项（改名/路径浏览/文件行操作）如需恢复请指示（改名需先动 openapi.yaml）。U10-1 自动旋转排查保持低优先。
 ---
 ## fix(app): 任务U10-5 原图不落盘——详情页原件请求 diskCachePolicy(DISABLED) 根治磁盘缓存膨胀（2026-09-14 第二百六十二笔）
 
@@ -1460,7 +1470,7 @@
 - **用户反馈**：设置页图片缓存显示 2.9GB；预期是「缩略图缓存到手机、点开详情才传文件」，即看即取（流式），反复落盘既损耗存储又违背初衷。
 - **核实**：详情页「查看永远发原件」（`Size.ORIGINAL`）+ 预载链对邻位原件预取，这些原件请求经 Coil 默认**写进磁盘缓存**，浏览越多攒越多；放大因素=6 小时签名轮换致缓存键漂移（U10-5 主嫌疑），同图反复下载、旧条目滞留。旧版没这么多=旧版本地直读原件不落盘（缓存大头仅缩略图）。
 - **修复**：`ZoomableOriginalImage`（主图）与 `DetailScreen`（预载链）的图片原件请求 `diskCachePolicy(DISABLED)`——即看即取不落盘，会话内回看由内存缓存兜底；视频海报帧与列表缩略图保持磁盘缓存；GIF 原件随之改为不落盘（C5 口径调整，CoilModule 注释同步）。用户初看缓存 2.9GB 的存量清理=设置页「清空」一次。
-- **门禁**：`:feature:detail` 单测 + assembleRelease 绿。**终包**=`QimengNAS\qimeng-任务U10-终包-20260914.apk`（含 U9 全部内容，已装真机）。
+- **门禁**：`:feature:detail` 单测 + assembleRelease 绿。**终包**=`工作区\qimeng-任务U10-终包-20260914.apk`（含 U9 全部内容，已装真机）。
 
 ---
 ## chore(app): M6 T2 真机单机形态跑通（Termux 全自动装机+正式 Web 界面上机）+任务U10 开卷+#24/#26 勘误闭环（2026-09-14 第二百六十一笔）
@@ -1470,7 +1480,7 @@
 - **M6 T2 真机节点核心通过**：用户开代理后 PC 直下 Termux v0.118.3 arm64（GitHub release，35MB 断点续传）adb 装机；`make server-android-arm64` 产物（26.3MB）+deploy/termux 脚本三件 push 至 Download；Termux 内授权存储→归位→`qimeng-start.sh` 跑通→healthz 200（adb forward 隧道从 PC 核验）。装机全程 adb input 驱动 Termux 终端自动完成（用户零输入）。**两个插曲与教训**：①adb `input text` 参数中的 `&&` 被手机侧 shell 拆分、且用户浏览器前台会抢走输入焦点，部分命令静默丢失——改绝对路径单命令重发+发前核对 topResumedActivity+screencap 目视确认；②根路径返回 M1 验收页=web/dist 未随二进制投放（服务端 spa.go 托管磁盘目录、缺失即回退验收页）——构建 web/dist（1.9M/67 文件）推送至 Termux 并在启动脚本注入 `QIMENG_WEB_STATIC_DIR`，重启后 / 返回正式 SPA。
 - **deploy/termux/qimeng-start.sh 增强**：①`QIMENG_AUTH_DEV_MODE=1`——App 登录流无「首次设密码」对接（只实现 login/dev-login）、服务端仅监听 127.0.0.1（暴露面=手机自身）、与用户 PC 8420 同口径（用户约定「本地免密直到项目完成」）；②`QIMENG_WEB_STATIC_DIR=$HOME/.qimeng/web/dist`——目录缺失自动回退验收页（原行为不变）。
 - **#24/#26 勘误闭环**：seconds 序列化根修实为 2026-09-09 N2 协议批 P1 已落地（第一百六十三笔），此前 HANDOVER/台账「待协议批修」为过期信息。今日端到端实证：dwell 事件 202 入库（数字直传）、PUT progress 204 且 lastPositionSeconds 持久化读回一致。排查中曾见 500 系测试请求体误套 `events` 数组包装（协议实为单事件平铺 `ViewEventReport`），服务端无缺陷。
-- **任务U10 开卷**：用户真机 6 条反馈入卷《QimengNAS\任务U10-体验对齐与缓存优化卷.md》——详情页标签管理胶囊对齐旧版（用户更正口径）/筛选面板对齐旧版/设置页「服务器+本机模式」合并单入口子页（本地端口 18430 写入子页）/缩略图磁盘缓存与带宽治理（嫌疑=签名 URL 变动致 Coil 缓存键漂移，6h TTL 每次响应重算）/手机自动旋转排查（App 与安装均无机制写该设置，已代关回）/遗留挂起清单汇总。
+- **任务U10 开卷**：用户真机 6 条反馈入卷《工作区\任务U10-体验对齐与缓存优化卷.md》——详情页标签管理胶囊对齐旧版（用户更正口径）/筛选面板对齐旧版/设置页「服务器+本机模式」合并单入口子页（本地端口 18430 写入子页）/缩略图磁盘缓存与带宽治理（嫌疑=签名 URL 变动致 Coil 缓存键漂移，6h TTL 每次响应重算）/手机自动旋转排查（App 与安装均无机制写该设置，已代关回）/遗留挂起清单汇总。
 - **环境**：8420 正式服务重启至 0.0.0.0（原实例被旧会话 QIMENG_LISTEN 绑死 127.0.0.1 致手机不可达）+二进制按 bat 流程重建（含 U7 统计新字段）；期间一次按进程名清理误杀 8420 已即时恢复（数据无损）——**教训记档：多实例共存时清理必须按 PID**。手机 App 已接真实库 `http://192.0.2.8:8420`；手机 Termux 服务端监听 `127.0.0.1:18430`。
 - **待用户**：手机浏览器刷新 `127.0.0.1:18430`（正式界面已上机）→ 文件管理注册相册文件夹触发扫描；完成后 T2 真机节点收官。App 原生浏览：我的→本机模式。
 
@@ -1485,8 +1495,8 @@
 - **根因**：`EnterTransition.None/ExitTransition.None` 的语义是「无动画属性」而非「零时长」——转场存续期内进出两页都以全不透明参与合成；一旦转场因 navigation 2.10 内部状态或慢帧滞留超过 1 帧（release/R8 包更易触发），即呈现「退出后旧页叠层残留 1~2 秒才消失」。L2 拍板的「瞬时交换」意图被 None 的字面语义架空。
 - **修复**：QimengNavHost 四参转场 None→`fadeIn/fadeOut(snap())`——snap() 第一帧即把退出页 alpha 硬置 0、进入页置 1，转场无论滞留多久都无叠影，视觉仍为瞬时交换（L2 拍板口径不变）；撤除 5 处 per-destination `popEnterTransition=None` 与详情路由 `popExit/popEnter=None` 冗余覆盖（继承顶层即可，None 残留反而重新引入风险）；同步两处转场时序耦合 KDoc（QimengNavHost 常驻层节历史叙述 + SiblingSwipeImmersionRequest 耦合声明——其依赖的「无动画时长」性质不变，字面 None 表述更新）。
 - **验证**：release 包逐帧复验 2 轮 ×4 进出全净——零叠影零残留，每次 pop 约 1 帧内干净切回「我的」；换页瞬间仅 1 帧（~33ms）空白为瞬时交换语义固有、不可感知。门禁：:app 单测全绿、lintDebug+assembleRelease 绿。
-- **目录清理（用户拍板）**：`QimengNAS\` 删已完成任务书卷 9 份（N 两份/R/S/V/W/X/Y/Z）与被替代终包 9 个（任务S/U/U3+SDK37/U4/U5/U6/U7/U8/液态玻璃试验版）；保留《任务T-M6单机形态卷》（T2/T4/T5 真机节点挂起）、《任务U8-相册触摸无响应诊断卷》+附1 真机日志（真机验收口径与证据）。
-- **终包**=`QimengNAS\qimeng-任务U9-终包-20260914.apk`（debug 签名可直装）。**待用户真机**：①装 U9 复验「我的」四选项进出无叠层残留；②U8 相册胶囊验收项（≤100ms/50 次连点/F10 不复现）一并在真机确认。
+- **目录清理（用户拍板）**：`工作区\` 删已完成任务书卷 9 份（N 两份/R/S/V/W/X/Y/Z）与被替代终包 9 个（任务S/U/U3+SDK37/U4/U5/U6/U7/U8/液态玻璃试验版）；保留《任务T-M6单机形态卷》（T2/T4/T5 真机节点挂起）、《任务U8-相册触摸无响应诊断卷》+附1 真机日志（真机验收口径与证据）。
+- **终包**=`工作区\qimeng-任务U9-终包-20260914.apk`（debug 签名可直装）。**待用户真机**：①装 U9 复验「我的」四选项进出无叠层残留；②U8 相册胶囊验收项（≤100ms/50 次连点/F10 不复现）一并在真机确认。
 
 
 ---
@@ -1502,7 +1512,7 @@
 - **模拟器全链实测（qimeng_api35 显式指定 + 8421 隔离库 90 文件真实数据）**：①四胶囊 100% 即时响应——分区/作品/角色/类型轮转切换与 toggle 折叠，每次点击值区行/分组列表立即刷新（uiautomator dump 即点即验，旧行为 F2=连涟漪都没有）；②网格滚动正常（组头滚出/滚回视口）；③**F10 回归通过**——点胶囊→切首页→回相册，值区与过滤列表状态完整保持，无需「离开+刷新才显示」；④统计首载 3 秒出全数据（总文件数 90/325.8MB/分布统计/浏览趋势，§4-A 卡死消除）；⑤四 tab 轮转 3 圈+详情进返+搜索进出无异常；⑥约 50 次连续操作零无响应（中途抽查状态与预期一致）。
 - **记档不做两项**：①Coil 全局 `allowHardware(false)` 软件位图的性能收窄（涉 GIF 渲染行为，需单独立项，任务U8 卷 §10-7）；②dev-login 单会话互踢（设计行为，`authapi.go`）。
 - **重构清扫**：AuthorsPage.tsx 关注按钮 `a.id &&` 表达式改 if 语句（lint 卫生）；router.tsx/fast-refresh 既有警告保留记档不扩围。
-- **终包**=`QimengNAS\qimeng-任务U8-终包-20260914.apk`（debug 签名可直装）。**待用户真机验收**（任务U8 卷 §8 口径）：胶囊点击可见变化 ≤100ms（对照真机 F13 基线 0.5~2.6s）、连续 50 次操作零无响应、F10 不复现、其他页面无新问题。模拟器 dump 精度（~1s）无法度量 100ms，最终口径以真机为准。
+- **终包**=`工作区\qimeng-任务U8-终包-20260914.apk`（debug 签名可直装）。**待用户真机验收**（任务U8 卷 §8 口径）：胶囊点击可见变化 ≤100ms（对照真机 F13 基线 0.5~2.6s）、连续 50 次操作零无响应、F10 不复现、其他页面无新问题。模拟器 dump 精度（~1s）无法度量 100ms，最终口径以真机为准。
 
 
 ---
@@ -1525,7 +1535,7 @@
 - **四胶囊等宽排布（用户拍板「均匀统一+之间留空间」）**：DetailActionButton 增 modifier/singleLine/contentHorizontalPadding 参数，四枚 `weight(1f)` 等宽槽+内容居中+`spacedBy(SpaceM=8dp)`；首版 12dp 间隔在窄槽压出文字折行（走查 FAIL，证据 .walk/u7/04_detail_capsules.png）→ 二轮 `LocalCapsuleSingleLine`+`CapsuleText` 单行档+内容横 padding 14→10dp（新常量 CHROME_CAPSULE_CONTENT_H_PADDING）修正，模拟器复核 PASS（04b 截图全单行）。
 - **详情图片占位翼撤除（用户反馈深色模式「中间固定一块加载区」）**：exp#4 的整屏 secondaryContainer 灰块（夜间 #2E2E2E vs 舞台 #1A1A1A 高辨识）删除，对齐旧版「透明底+保留上一张、切换不闪白」（旧 MediaDetailFragment.kt:441/:486-490）；decodeFailed 覆盖层保留；VideoStage 海报占位未动（属视频预览链另行裁量）。走查 night yes 多帧无灰块 PASS。
 - **作者页组头间距（用户反馈「文件时间离胶囊过远」）**：芯片行→首日期组头 26dp（网格顶距 8+组头顶距 18 两层叠加）→8dp（QimengMediaGrid 新参数 tightenLeadingHeader，仅作者页开启，其余共用网格页面字节级不变）。
-- **门禁**：go test stats 15 全绿+go build/vet 干净；:feature:detail/author/all/search/stats 单测全绿（search 含深链 2 新用例）；:app assembleDebug/assembleRelease 绿；R8 桩存活核验（mapping.txt 命中）。U7 终包=`QimengNAS\qimeng-任务U7-终包-20260914.apk`（含诊断桩）。
+- **门禁**：go test stats 15 全绿+go build/vet 干净；:feature:detail/author/all/search/stats 单测全绿（search 含深链 2 新用例）；:app assembleDebug/assembleRelease 绿；R8 桩存活核验（mapping.txt 命中）。U7 终包=`工作区\qimeng-任务U7-终包-20260914.apk`（含诊断桩）。
 - **新发现未修记档（防丢失，详见任务U8 卷 §8/§10）**：①统计主页首载卡死>2min 自愈（服务端 1-200ms、App 零错误日志）；②dev-login 单会话互踢；③沉浸态静置自动退沉浸（U6 起两轮复现）；④相册 facets 全 (0) 待核实。
 
 
@@ -1540,7 +1550,7 @@
 - **逐帧复测（同设备同协议，.walk/u6-after/）**：底色消失=单帧瞬切（≈0-10ms，黑底即刻不可见）；图标内容 256-272ms（与 250ms 常量吻合，标准 FastOutSlowIn 衰减形态）；感知总时长 389-402→256-272ms；恢复向底色 1 帧瞬切+内容 233-295ms；无闪烁/无塌缩跳动（胶囊 y 重心 2247.46±0.03 恒定，执行子代理「容器塌缩」疑点被帧证据排除）/无残影。
 - **作者界面间距**（用户反馈「作者文件数和胶囊挤在一起」+同类扫描）：AuthorCollectionScreen 计数行→维度芯片行、芯片行→错误文案两处竖向 0 间距补 SpaceM(8dp，token 出处 fragment_all_files.xml L72)；DetailAuthorSheet padding 16/12 对齐旧版 sheetContainer 20/18（新常量 AUTHOR_SHEET_PADDING_*，来源=MediaDetailFragment.kt:1252-1256；底距保留 24dp 并注明不对齐 28dp 的依据=三 Sheet 共享单源）；作者名与 FollowButton 间补 SpaceM 最小水平间隔。注：8421 dev 虚拟库无作者数据，间距视觉效果待用户真机验收（空态结构截图已存档）。
 - **胶囊位置核查（用户问「上一版对下方胶囊有改动吗，位置好像变了」）**：before/after 非沉浸详情页截图像素级比对，胶囊内容区 y[2224,2269] 完全一致——U5/U6 均未移动胶囊几何；「位置变了」观感=U5 底色由「下端才有色的渐变」改「整条 0xF2 纯色」（与旧版运行时逐字同构）所致；胶囊化几何差异本身属 W3 拍板重排，非本两批回归。
-- **门禁**：:feature:detail 153+:feature:author 27 testDebugUnitTest 全绿；:app assembleDebug/assembleRelease 全绿（均低 CPU 参数）。U6 终包=`QimengNAS\qimeng-任务U6-终包-20260914.apk`。
+- **门禁**：:feature:detail 153+:feature:author 27 testDebugUnitTest 全绿；:app assembleDebug/assembleRelease 全绿（均低 CPU 参数）。U6 终包=`工作区\qimeng-任务U6-终包-20260914.apk`。
 - **遗留观察记档**：①沉浸态静置数分钟 App 会自动退出沉浸（before/after 均复现，本批未定位，留后续批次）；②夜间构建降载参数 `--max-workers=2 -Dorg.gradle.priority=low` 建议夜间沿用。
 
 
@@ -1569,7 +1579,7 @@
   - 时段三档（7天/30天/全部）由三枚独立 `QimengSegPill` 改合体分段控件 **QimengSegmentedControl**（core:ui 新共享件；token 对照旧版 fragment_data_stats.xml：36dp 轨道/3dp 内边距/13sp/全圆角，选中段 primary 浮丸+onPrimary 字，未选 onSurfaceVariant）；
   - 趋势折线图（QimengTrendLineChart）对齐旧版 LineChartView 视觉：渐变面积改**平涂**（alpha=40/255，旧 Canvas areaPaint alpha=40 逐字同源）+ 数据点**空心化**（shapeComponent strokeFill 主色环 2dp+卡底色内圈，旧版外圈 4dp/内圈 2dp 同构，点径 6→8dp）+ 补 4 条水平网格线（VerticalAxis.rememberStart 隐轴线/刻度/标签只留 guideline，outlineVariant 1dp）+ X 轴标签转次色（onSurfaceVariant）；Vico 2.5.1 strokeFill/strokeThickness/rememberStart 参数名经 Gradle 缓存类文件核实（非凭记忆）；
   - 数字格式对齐旧版：数字卡千分位改紧凑计数（新 `formatCountCompact`：6339→「6.3k」，k/M 双档 1 位小数去尾零，Int/Long 双型，单测新增 7 断言）；总浏览时长「N分钟」→「N分」（旧版「38分」口径，测试同步）；`formatBytesHumanReadable` GB 档 2 位→1 位小数（「191.11GB」→「191.1GB」，同时根治数字卡「191.11G B」断行；设置页「已用缓存」同源联动）；统计五卡（6 数字格+趋势+分布+常看×2）圆角对齐旧版 bg_stat_card=20dp（新 STAT_CARD_CORNER_RADIUS 档）。
-- **门禁与验证**：:feature:stats 单测全绿（时长档用例更新+紧凑计数用例新增）+:feature:stats/:feature:detail/:core:ui 编译+:app assembleDebug/assembleRelease 全绿；模拟器（emulator-5562=qimeng_api35 显式指定）走查分段控件合体形态与卡片圆角生效；数据卡「加载中…」为该模拟器旧 token 失效的环境现象（服务端 8421 curl 带新 token 实测 overview/trends 均 2ms 正常返回），非本批回归——真机以用户终验为准。终包=`QimengNAS\qimeng-任务U4-终包-20260913.apk`。
+- **门禁与验证**：:feature:stats 单测全绿（时长档用例更新+紧凑计数用例新增）+:feature:stats/:feature:detail/:core:ui 编译+:app assembleDebug/assembleRelease 全绿；模拟器（emulator-5562=qimeng_api35 显式指定）走查分段控件合体形态与卡片圆角生效；数据卡「加载中…」为该模拟器旧 token 失效的环境现象（服务端 8421 curl 带新 token 实测 overview/trends 均 2ms 正常返回），非本批回归——真机以用户终验为准。终包=`工作区\qimeng-任务U4-终包-20260913.apk`。
 
 
 ---
@@ -1683,7 +1693,7 @@
 - **本卷概况（S1~S5）**：S1 对齐小修批 ✅（39b9a28/241 笔）→ S2 系统栏架构根治批 ✅（9824001/242 笔，专项对抗审查 8 项全 PASS）→ S3 基座升级 **SKIPPED**（6430681/243 笔，网络不可达不硬做）→ S4 清欠批 ✅（de9d5f0/244 笔）→ S5 收官（本笔）。每批独立 commit+CHANGELOG 落账；模拟器验证全程 qimeng_api35c（headless，铁律 13 合规）+18461 隔离虚构库。
 - **收官对抗审查（S1/S3/S4 全审+S2 接口一致性）【通过】无必修项**：S1 断言（消费链断开/协议镜像保留/反射用例非恒真/冻结件沿革与 165/220 笔吻合）逐项实证；S4 断言（gate.go 并发正确性/upload 重构无双解析/sentinel 语义逐字保留/并发测试真实竞争/sdk-lock 幂等 git diff CLEAN）独立复跑核实；卷一致性（笔号 241~244 连续无撞号、协议零改动、生成物零手改、任务T 在途 14 文件与 4 笔零交集）。存疑点入档：并发用例无 start-gate barrier（检出力概率性）、干净 checkout 单跑 sdk-lock 会产残锁（CI 先 make sdk 不受影响）、filing 包内无 gate 直测（端到端等效，与任务书字面偏差如实记档）。
 - **门禁三连（干净树）**：git worktree 干净检出 HEAD（de9d5f0）跑 assembleRelease+testDebugUnitTest+:core:model:test+lintDebug 全绿（BUILD SUCCESSFUL 4m58s，1478 tasks；worktree 需复制 sdk 生成物——不入库件，本卷零协议改动故主树生成物即 HEAD 态）。**为什么 worktree**：主工作树混有任务T 会话在途 android/{login,settings,network,data,testing} 未提交改动（非本卷产物，已如实披露未卷入任何 S 卷 commit）——出包与门禁必须与 T 在途隔离。
-- **终包重出+验签+冒烟**：app-release.apk 4.6MB（现基座 AGP8 线——S3 SKIPPED 口径），apksigner verify 过（debug 签名档=本仓本地口径，build.gradle.kts:23-25 注释），装 qimeng_api35c 冒烟（登录态保留/首页渲染/详情 6-20 chrome 完整无崩溃）。**终包留盘**：`QimengNAS\qimeng-任务S-终包-20260913.apk`——交付说明：最终真机包以本卷为准，知会用户重装实测（实测点清单见 HANDOVER「当前待办」2026-09-13 段：时间轴芯片前缀档色/作者 Sheet 点外/滑切白条真机复验/域回归）。
+- **终包重出+验签+冒烟**：app-release.apk 4.6MB（现基座 AGP8 线——S3 SKIPPED 口径），apksigner verify 过（debug 签名档=本仓本地口径，build.gradle.kts:23-25 注释），装 qimeng_api35c 冒烟（登录态保留/首页渲染/详情 6-20 chrome 完整无崩溃）。**终包留盘**：`工作区\qimeng-任务S-终包-20260913.apk`——交付说明：最终真机包以本卷为准，知会用户重装实测（实测点清单见 HANDOVER「当前待办」2026-09-13 段：时间轴芯片前缀档色/作者 Sheet 点外/滑切白条真机复验/域回归）。
 - **台账同步**：待拍板-20260907.md「任务S/T 立卷落账」节追加 2026-09-13 销账段——#9/#10/#28 关闭、#5 改注（语义不可复原，四条不对称点推定待核销）、#47 改注维持开放（S3 SKIPPED）；W9 三项交付状态注记（③真机复验强制待办）。
 - **HANDOVER 同步**：「当前待办」节首段改写为 S 卷收官状态+用户实测点清单+遗留待办（CI 首跑 sdk-chain/-race、#5 核销、S3 重探）。
 - **等用户处理项汇总**：①真机装终包实测（四点见上）；②CI 首跑核 sdk-chain 校验与 server -race 结果（S4 新增门禁）；③#5 语义核销（是否按推定四条立机械改进批）；④S3 择机重探网络（下会话说「执行任务S S3」或按 a-s3 备忘录单开）；⑤滑切白条闭环判定待真机逐帧复验后生效。
@@ -1756,7 +1766,7 @@
 - **首扫基准（%TEMP%\qimeng-t5-evidence\，45 PASS/0 FAIL + scan-report.md）**：Termux 实装环境（qimeng_api35t，服务端 com.termux uid，媒体 Termux 私有目录）2000 假文件（1200jpg/600mp4/200gif×20 目录，tar 一次传输）——**首扫 6.48s（≈18.5k 文件/分钟，计时粒度 2s 的下界值）**；二扫空扫 4.30s（变更检测短路）；**无 ffmpeg 降级路径实测**：600 mp4 probe 全失败不阻扫描（日志逐条「元数据留空待重探」）、库计数 2000/600/1400 全对、缩略图 404 THUMBNAIL_FAILED 占位——降级形态完整可用，吞吐非瓶颈（真瓶颈=有 ffmpeg 形态的缩略图生成，真机测）。
 - **充电联动停手记档**：首版口径「设置项手动+充电时自动」两档（服务端 config 扫描窗口参数 + App 壳层 BatteryManager 广播触发既有扫描端点，零协议改动）——**停手原因**：android/** 文件集与并行任务S 冲突 + 触发点应随 T3 单机闭环联调验证；实施时点=S 收官后单机联调批。
 - **真机报告挂起**（等用户）：arm64+ffmpeg 首扫含缩略图吞吐、batterystats 耗电粗估、FUSE 共享存储路径对照。
-- 任务书：《QimengNAS\任务T-M6单机形态卷.md》T5 勾选（仓库外；真机子项挂起记档）。
+- 任务书：《工作区\任务T-M6单机形态卷.md》T5 勾选（仓库外；真机子项挂起记档）。
 
 
 ---
@@ -1769,7 +1779,7 @@
 - **环境坑七连修记档（Git Bash on Windows 验证工程经验）**：①EVID 用 mixed 形态（Windows 原生 python 不认 /tmp）；②共享存储对 app uid 在 headless 模拟器不可达（scoped storage 授权 UI 无法复现）——媒体布局改 Termux 私有目录（next-steps §1.2 备选），共享存储注册扫描挂真机节点；③while read 循环内 adb 吞 stdin（首文件后全漏投）——循环内 adb 一律 </dev/null；④Windows python 重定向文件 CRLF 三处剥离（表消费/幂等比较/asset-ids）；⑤详情跨轮残留旧 asset-id 文件混入 map——清场段连清 details*/；⑥导入前拉取的详情不含导入后状态——步骤7 开头重拉重建；⑦断言键名以 import 响应实键为准（authorRefsSkipped/tagRefsSkipped 不存在，executor 预设字段勘误）。
 - **deploy/termux/MIGRATION.md 入库**：面向用户的迁移指引——前置确认/媒体原地注册（含 COS 库 kind=cos 重扫重建语义）/curl 与 Web 双通道导入/幂等安全说明/warnings 7 类解读表/迁移完整性核对表（计数对照+App 抽查项）/退役与双向备份说明。
 - **真机节点挂起（夜间模式，不阻塞）**：真备份 `<旧项目目录>\qimeng_backup.json` 迁移=用户确认后执行（2026-09-04 搁置项⑤由本批激活待命）；Termux 共享存储 ~/storage/shared 路径注册扫描同挂真机验证。
-- 任务书：《QimengNAS\任务T-M6单机形态卷.md》T4 勾选（仓库外；真迁移子项挂起记档）。
+- 任务书：《工作区\任务T-M6单机形态卷.md》T4 勾选（仓库外；真迁移子项挂起记档）。
 
 
 ---
@@ -1794,7 +1804,7 @@
 - **实测门禁**：qimeng_api35 装包全功能走查（登录/首页三 tab/筛选面板+应用+重置/列数切换/详情图片缩放/详情视频播放/搜索/我的=设置，21 张截图 `%TEMP%\qimeng-r2-evidence\shots\`）——**logcat 全程零 FATAL EXCEPTION**；视觉子代理逐张核对 20/21 直接过+无任何 R8 典型症状（无崩溃弹窗/黑屏/默认图标/@string 泄漏），07 列数空白+24 统计「—」两项复核实证均为**过程插曲假象**（走查中段自建 18463 隔离实例前的服务端死亡窗口瞬态；活服务端重测列数两态饱满渲染 484/531KB、统计 16/5 与服务端 JSON 全等）；视频播放以双帧哈希差异实证（画面推进非静止）。ExoPlayer Init 日志在案。
 - **冷启动**（am start -W×5 弃首跑）：before 中位 274ms vs after 284ms——模拟器 swiftshader 噪声淹没差异（首跑 437→257 有方向性改善）；**真机收益待用户实测**（R3 收官包即 R8 版，顺带验 Y5 高刷待验项）。
 - **记档（环境插曲，非本卷产物）**：走查中途 18461 虚构实例与 8420 实机库双双下线（旧会话进程消亡）——自铸隔离实例 18463 应对：git worktree 干净检出 master 编服务端（含拷贝 httpapi/gen 生成物）、注册 ui-compare-harness/testmedia/library-normal 虚构库 21 资产；**服务端进程多次静默消亡**（沙箱作业对象收割子进程，最终 WMI 创建通道存活 ~5 分钟仍死，T 会话同期加 1d1504a 最小化启动器印证是环境级问题）——走查按「服务端活窗口」分段完成，统计/列数两假象即源于死亡窗口。COS tab 空=normal 库无 COS 资产的数据集属性（18461 期 03 截图有 6 卡实证 cosOnly 管线本身正常）；排行榜单无序号/搜索推荐词空/版本信息「未知」为同窗口观察项，未单独复验。
-- 任务书：《QimengNAS\任务R-R8性能优化与单测补强卷.md》R2 勾选（仓库外）。
+- 任务书：《工作区\任务R-R8性能优化与单测补强卷.md》R2 勾选（仓库外）。
 
 
 ---
@@ -1807,7 +1817,7 @@
 - **验证（双层，%TEMP%\qimeng-t2-evidence\）**：**层1**=宿主 Git Bash 编排等价（stub 化 termux-*/pgrep+Windows 服务端 exe）：start 全链/防重/自检兜底/轮转/ffmpeg 三分支//dev/tcp 路/stop 主路径（SIGTERM 编排+wake-unlock）——13+5+4 断言留档，FAIL 项均为 Windows 进程树收割伪影（层2 真环境闭合）；**层2**=Termux v0.118.3 x86_64 APK 实装 qimeng_api35t（run-as com.termux + LD_LIBRARY_PATH 注入 + amd64 服务端）：**16/16 全绿**——start 全链（真 bash+真无 ffmpeg 降级 WARN+healthz）/防重（真 pgrep）/stop（真 kill+SIGTERM 优雅退出"已完全退出"日志）/watchdog nohup 后台拉回（真进程存活）/服务端自检 Warn——adb shell 多行参数拆散、run-as 域重定向权限两个验证工程坑记档于证据脚本注释。
 - reviewer 打回修复（P2×4：wake-unlock 公共路径/boot chmod/退避口径/层1 补证留档；P3×5：半投放 WARN/pgrep 锚定/T3 前瞻措辞/curl 自洽/双拉示例去重）全部清偿；层1 harness 自身三轮 stub 缺陷定案（tasklist GBK×UTF-8 grep 误判/无 PID 输出/harness 重建覆盖 stub）记档。
 - **真机节点挂起（夜间模式，不阻塞后续）**：用户手机装 Termux→投放 arm64 二进制（build/android/arm64-v8a/qimeng-server 已备）→跑通脚本→modernc sqlite arm64 真机行为复验（POC 最大存疑）——等用户参与，T3 照常推进。
-- 任务书：《QimengNAS\任务T-M6单机形态卷.md》T2 勾选（仓库外；真机验收子项挂起记档）。
+- 任务书：《工作区\任务T-M6单机形态卷.md》T2 勾选（仓库外；真机验收子项挂起记档）。
 
 
 ---
@@ -1822,7 +1832,7 @@
 - **验证证据（%TEMP%\qimeng-t1-evidence\）**：隔离 git worktree（HEAD+本批6文件，规避并行会话在途代码污染）双 target 构建通过 + `go test ./... -p 2` 14 包全绿；模拟器闭环 11 步 PASS（终版 20s）——**无 ffmpeg 降级三件证据**：视频 durationMs/width/height/videoCodec 全空（无 ffprobe）+ 缩略图 404 THUMBNAIL_FAILED（无 ffmpeg）+ 扫描器"元数据留空待重探"日志；**sysmon Android 取值核对**（POC 存疑点4 模拟器路径闭合）：memTotalBytes 2,592,722,944B 与 /proc/meminfo 2531956kB 精确一致、CPU 4 核与 abilist 一致、磁盘 totalBytes 与 df 精确一致；modernc SQLite WAL 三件套齐备（存疑点3 amd64 侧复证）。
 - **reviewer P3×4 现场修复**：扫描终态轮询"先见 scanning"防窗口逻辑在快扫描下成死路径（两轮实测白等满 120s）→ 改"非 scanning 且已见 scanning 或轮询≥3 次"；轮询循环 grep/curl 补 || true（set -e 下瞬时失败杀脚本）；README 依赖说法勘误（make/go 非 Git 自带）；NDK 宿主三元组 Windows-only 注释。另修 curl -o 中转文件偶发 exit 23（Git Bash 新建文件写失败）→ 7.3/7.7 体+码合并捕获。
 - 并行纪律执行：与任务R/S 共树全程零冲突（本批文件集=Makefile+cmd/qimeng+thumbnail×2+deploy×2，对方 231 笔主动避让互认）；arm64 真机投放与运行时验证= T2 真机节点（用户参与，夜间模式挂起不阻塞）。
-- 任务书：《QimengNAS\任务T-M6单机形态卷.md》T1 勾选（仓库外）。
+- 任务书：《工作区\任务T-M6单机形态卷.md》T1 勾选（仓库外）。
 
 
 ---
@@ -1871,7 +1881,7 @@
 - **锁定行为**：①筛选A在途时应用筛选B——A 迟到成功响应整代丢弃（items/loading/nextCursor 均不被污染），B 整页落地，且两次请求 `AssetQuery.sort` 各携带当次快照（VIEW_COUNT/NAME，证明非「最终态重放」）；②A 迟到**失败**不弹错误不收 loading；③翻页在途（isInitial=false，代际不递增）时应用新筛选——翻页旧代响应丢弃不追加、cursor 不改写，新代整页替换（isInitial=true 绕过 isLoading 防重、exhausted 随 null cursor 置位；可控时钟绕开 J3a 哨兵抑制窗触发触底）；④resetPanelDraft 走 applyPanelDraft 同链（草稿与已应用态回默认、代际推进、在途旧代响应丢弃）。
 - **实测**：`:feature:home:testDebugUnitTest` 14/14 绿（10 旧+4 新）；门禁三连（assembleDebug+testDebugUnitTest+:core:model:test+lintDebug，--max-workers=2 低 CPU 档）BUILD SUCCESSFUL 1m33s，证据 `%TEMP%\qimeng-r1-evidence\gate-r1.log`。
 - 记档：`ExperimentalCoroutinesApi` opt-in 警告为该文件既有状况（L159 起即有），本批未新增警告类别；全量 opt-in 需触碰既有声明区，超出「只加不改」红线未动。
-- 任务书：《QimengNAS\任务R-R8性能优化与单测补强卷.md》R1 勾选（仓库外）。
+- 任务书：《工作区\任务R-R8性能优化与单测补强卷.md》R1 勾选（仓库外）。
 
 
 ---
@@ -1879,8 +1889,8 @@
 
 执行 AI：GLM-5.3（主代理）
 
-- **用户拍板（2026-09-12，详见《QimengNAS\待拍板-20260907.md》「任务S/T 立卷落账」节）**：Y 遗留①时间轴标签颜色=对齐旧版（App 消费侧降级服务端色覆盖）；②首页筛选扩展推荐/排行榜=不用拓展（**销账，永不立项**）；任务W W9 新增待拍板三项（63px 沉浸位移/作者 Sheet 点外关闭/滑切 push 白条）=全修复；#47 AGP9/SDK37/material3 升级=做（网络不通仍按 SKIPPED 纪律）。M5 NAS 部署维持不做。
-- **立卷（仓库外）**：《QimengNAS\任务S-收尾修复与基座升级卷.md》（S1 对齐小修/S2 系统栏根治重批/S3 AGP9 基座升级/S4 清欠 #9TOCTOU+#10CI校验+工具批/S5 收官；前置=任务R 收官——R2 与 S3 文件集重叠 build.gradle.kts）与《QimengNAS\任务T-M6单机形态卷.md》（T1~T7 对应 PROJECT_PLAN M6 七项；**M6 首次立项**）。
+- **用户拍板（2026-09-12，详见《工作区\待拍板-20260907.md》「任务S/T 立卷落账」节）**：Y 遗留①时间轴标签颜色=对齐旧版（App 消费侧降级服务端色覆盖）；②首页筛选扩展推荐/排行榜=不用拓展（**销账，永不立项**）；任务W W9 新增待拍板三项（63px 沉浸位移/作者 Sheet 点外关闭/滑切 push 白条）=全修复；#47 AGP9/SDK37/material3 升级=做（网络不通仍按 SKIPPED 纪律）。M5 NAS 部署维持不做。
+- **立卷（仓库外）**：《工作区\任务S-收尾修复与基座升级卷.md》（S1 对齐小修/S2 系统栏根治重批/S3 AGP9 基座升级/S4 清欠 #9TOCTOU+#10CI校验+工具批/S5 收官；前置=任务R 收官——R2 与 S3 文件集重叠 build.gradle.kts）与《工作区\任务T-M6单机形态卷.md》（T1~T7 对应 PROJECT_PLAN M6 七项；**M6 首次立项**）。
 - **调度**：双会话并行——会话A=「执行任务R」（R1~R3 承接，此前未开工）→ 接「执行任务S」；会话B=「执行任务T」（T1/T2 即刻可开不等 R/S，文件集互斥 server+deploy vs android；T3 前置 S2 收官、T6 前置 T2 真机验收+S3 收官）。任务Z 真机包实测点合并到任务R 收官出包后一并验 Z+R 改动。
 - **澄清记档**：任务R 的「R8」= Android R8 编译器混淆优化，与里程碑 M6 无关。
 - **执行约束五条（用户 2026-09-12 定，入两卷红线）**：①子代理 ≤3 持续并发（写码串行/只读并行）②headless 无头模拟器+低 CPU 档构建 ③视觉+代码双检测对齐旧版 ④全新独立模拟器（S=qimeng_api35c、T=qimeng_api35t，禁碰 qimeng_api35/qimeng_api35b/雷电 5554）⑤虚拟库纪律+提交纪律+存疑停手。
@@ -2138,7 +2148,7 @@
 
 执行 AI：GLM-5.3-Flash（主代理，用户拍板「整个文件都删除」）
 
-- **删除**：`docs/HANDOVER_APP.md`（85KB/203 行）。定性：M4 交接手册+批次任务书职能已随 M4 里程碑达成（2026-09-08）终结——「最后更新」链/批次总表/各卷记录与 CHANGELOG 逐笔重复；M4-0~M4-7 任务书与已收官卷（D/E/F/G/H/I/J/K/L/V）的执行记录以 CHANGELOG 为事实源，在办卷任务书以仓库外《QimengNAS\任务*.md》为事实源；§4 通用约束的活条款（门禁三连命令/测试纪律/存疑停手）分散存活于 AGENTS.md 铁律、HANDOVER.md「执行调度」节与各在办任务书「流程约束」节，无信息丢失。
+- **删除**：`docs/HANDOVER_APP.md`（85KB/203 行）。定性：M4 交接手册+批次任务书职能已随 M4 里程碑达成（2026-09-08）终结——「最后更新」链/批次总表/各卷记录与 CHANGELOG 逐笔重复；M4-0~M4-7 任务书与已收官卷（D/E/F/G/H/I/J/K/L/V）的执行记录以 CHANGELOG 为事实源，在办卷任务书以仓库外《工作区\任务*.md》为事实源；§4 通用约束的活条款（门禁三连命令/测试纪律/存疑停手）分散存活于 AGENTS.md 铁律、HANDOVER.md「执行调度」节与各在办任务书「流程约束」节，无信息丢失。
 - **仓库内引用同步（8 文件）**：AGENTS.md（路由表 UI 行+旧项目节）、android/README.md（必读清单）、docs/HANDOVER.md（接手第一步/执行调度 2·3·8 条/当前待办指针）、docs/adr/0014（后果节指针）、docs/adr/INDEX.md（ADR-0013/0014 两行落实文件列）、docs/PROJECT_PLAN.md（M4 执行批次说明+四条勾选注改指 CHANGELOG）、docs/REPLICATION_GAPS.md（⑩行裁决依据改指 CHANGELOG）。
 - **仓库外在办任务书同步（2 文件）**：《任务W-详情精简与播放体验卷.md》（W6 收官批清单与 commit 格式去掉 HANDOVER_APP，W3~W6 继续执行不受阻）、《任务N-原生View移植卷.md》（模拟器纪律节引用措辞）。
 - 历史记录（CHANGELOG 往笔正文、废弃 ADR-0013 正文、HANDOVER_UI/HANDOVER 文头叙事）中的 HANDOVER_APP 提及按「历史不改写」惯例保留；Makefile/libs.versions.toml 及 Kotlin 注释中约 14 处「HANDOVER_APP 通用约束 N」为出处级引用、约束正文均自包含，不为此翻动代码文件，一并保留。
@@ -2176,7 +2186,7 @@
 执行 AI：GLM-5.3-Flash（执行子代理，任务V V9 收官批，纯文档零代码）；主代理（收官裁决/提交）：GLM-5.3-Flash
 
 - **全卷总结（任务V-动效合入与详情对齐卷，2026-09-10 立，2026-09-11 晨收官 ✅）**：V1~V9 九批全落地——V1 动效合入+返回刷新缺陷修复（第一百八十八/一百八十九笔）→ V2 详情对齐（第一百九十笔）→ V3 详情互动行重排·首屏四胶囊+删除归整理（第一百九十一笔，c9ba16b）→ V4 #42 日夜切换原地重组·manifest 追加 uiMode（第一百九十二笔，26909ae）→ V5 #8 web 打点口径 B·<1s dwell 段上报+play 兜底单发（第一百九十三笔，cd8139a）→ V6 material3 锁 1.5.0-alpha15+LoadingIndicator 试点（第一百九十四笔，c35948e）→ V7 COS 子文件夹点行展开+作者总览卡导航排版（第一百九十五笔，ab45712）→ V8 全应用系统性视觉走查·46 图扫查+三项排版修复（第一百九十六笔，884a4cc）→ V9 收官（本笔，纯文档）。门禁纪律=**每批三连绿**（app-build/app-test/app-lint，V3 起统一低 CPU 档）+**每批独立对抗审查 0 P1/P2**（独立 reviewer 逐批）。证据 %TEMP%\qimeng-v{1..8}-evidence\（保留勿删）。
-- **待拍板台账落账（`QimengNAS\待拍板-20260907.md`，格式逐字守现行结构）**：关闭两条——#42 日夜切换重建（V4 清偿，26909ae）/ #8 打点两口径（V5 清偿，cd8139a）；#1 改注「已被任务L L5 推翻」（本地优先+幂等合并，见 #25）；维持 #2/#5/#11/#22/#28 记档不关，归属确认 #9 留 server 专项/#6 留 M5/#4 留 M6/#10 并入下次 CI 批；新增待确认项 Consolidated 入表=#43~#50+U-4 注记九行。
+- **待拍板台账落账（`工作区\待拍板-20260907.md`，格式逐字守现行结构）**：关闭两条——#42 日夜切换重建（V4 清偿，26909ae）/ #8 打点两口径（V5 清偿，cd8139a）；#1 改注「已被任务L L5 推翻」（本地优先+幂等合并，见 #25）；维持 #2/#5/#11/#22/#28 记档不关，归属确认 #9 留 server 专项/#6 留 M5/#4 留 M6/#10 并入下次 CI 批；新增待确认项 Consolidated 入表=#43~#50+U-4 注记九行。
 - **全卷待用户确认项 Consolidated（六条，浓缩）**：①V3 两处保守裁决——快速转跳不进四胶囊（DetailJumpSheet 恒关闭态保留）、删除归整理（整理弹窗内「移入回收站」入口，铁律 4 不变）；②V5 两处口径细节——<1s dwell 段全量上报（seconds=0 行合法）、play 补兜底单发=替换语义（play∪video:play 防重非双发）；③V6 锁版裁决——material3 锁 1.5.0-alpha15 不追线内最新 alpha28（后者撞 AGP9+SDK37 死局），解锁条件=AGP9+SDK37 整体开启，toml 注释已记档；④V7 单调展开语义——点行展开后再点不收起，收起唯一入口=▾ 箭头；⑤V8 两条拍板候选——夜间禁用钮渲染噪点带（真实渲染噪声，screenrecord 实锤）、BiliPlayerView totalTimeText 仅 STATE_READY 赋值一次致 0:00 显示卡死（冻结件只记档）；⑥U-4 前进 morph 骨架悬置——V1 实证前进方向结构性无可见 morph（转场窗口内舞台未挂载），维持「暂不进批」，用户实机看过返回 morph 效果后点头才加批。
 - **遗留挂账汇总**：U-4 前进 morph 骨架悬置（同上⑥）；夜间禁用钮噪点带、totalTimeText 冻结件（同上⑤，均留用户拍板）；LoadingIndicator 升回线内最新时需复核 4 处用点 API 签名（V6 遗留，挂 AGP9+SDK37 解锁条件）；Web 4xx 终局标记等任务L 遗留维持（L6 已记档，不重开）。
 
@@ -2294,7 +2304,7 @@
 
 - **全卷总结（任务L-缩略图导航首页与数据合并卷，2026-09-09 立，2026-09-10 收官）**：范围=缩略图旧版化（L1）+底 Tab 防叠屏（L2）+#37 卡半屏高优必修（L3）+删相册页头排序行与面板排序回归（L4）+浏览数据本地优先与两端幂等合并（L5，原独立任务M 并入）+收官（L6）。六批全部交付：37b8566+fb76003+1d68ead → 9db061f → e766630 → 68e8fdb → 2e4c591/1865556/92c2ade → 本笔。审查方式=**每批独立对抗审查**（独立 reviewer 逐批），五批全过 0 P1/P2（收口笔=54e1480/b10a0c5/187c968/e47cf07，L5 P2 CRLF 由主代理亲笔随收口清偿）。与任务K 两卷并行红线全程未破（L 零触碰 feature:detail）。全卷证据目录 %TEMP%\qimeng-l{1..6}-evidence\（保留勿删）。
 - **P3 清偿三处（本笔代码改动，`make app-build`/`app-test`/`app-lint` 三连绿复验 EXIT=0）**：①HomeScreen 日志 tag 台账号 `QimengL37` 改功能域名 `QimengHomePagerSync`（L3 审查收口记档的清理候选）；②ViewEventSender.kt 注释残留已废止「毒丸连败≥3丢弃/先删后发」旧口径改现行语义（发送成功再删/IO·5xx 退避重试不丢/4xx 终局标记不删行保留导出）；③第一百八十三笔「ViewEventQueueTest 14 例」勘误为实数 13 例（随本卷审查收口 ⑤ 口径，原句处注明）。
-- **待拍板销账（`QimengNAS\待拍板-20260907.md`，格式仿 #23）**：#37 卡半屏→L3 e766630 清偿关闭；#25 本地优先合并→L5 三笔（clientEventId 幂等+两端并集）关闭；#38 删排序行→L4 68e8fdb 关闭；#40 底 Tab 叠屏→L2 9db061f 覆盖关闭；#41 缩略图旧版极简卡→L1 37b8566 覆盖关闭；#39 详情黑底=非 L 范围（L1~L5 文件集不含 feature:detail），注记 K1（96b1959）已随任务K 收官清偿；**#19 切维语义明确不关**（维持现状，与本卷无关未动）。
+- **待拍板销账（`工作区\待拍板-20260907.md`，格式仿 #23）**：#37 卡半屏→L3 e766630 清偿关闭；#25 本地优先合并→L5 三笔（clientEventId 幂等+两端并集）关闭；#38 删排序行→L4 68e8fdb 关闭；#40 底 Tab 叠屏→L2 9db061f 覆盖关闭；#41 缩略图旧版极简卡→L1 37b8566 覆盖关闭；#39 详情黑底=非 L 范围（L1~L5 文件集不含 feature:detail），注记 K1（96b1959）已随任务K 收官清偿；**#19 切维语义明确不关**（维持现状，与本卷无关未动）。
 - **收官走查记档**：①旧版UI实录对照——qimeng_api35 无头模拟器+18461 虚构库，首页/相册两页网格截图+dump 对照《旧版UI实录》逐项核对极简卡形态（16:9 图+时长角标/无文字层/卡间 10dp）与组头跨行，差异逐条记档（见 %TEMP%\qimeng-l6-evidence\README.md）；②数据合并联调——模拟器断网浏览 2 件→恢复网络→「立即同步」→curl stats 核对数字一致（原始 curl 输出存档）。
 - **遗留挂账（全卷，均已在 HANDOVER_APP 任务L 节落档）**：Web 4xx 无终局标记且无导出抢救入口（幂等兜底下有界）；server legacy 放行测试建议补 raw body 断言；`.gitattributes` eol 根治候选（拍板候选未擅改）。
 
@@ -2419,7 +2429,7 @@
 执行 AI：GLM-5.3-Flash（执行子代理，任务L L1 补齐小批；主代理验收拍板两项）
 
 - **网格密度回归**：QimengMediaGrid 的横纵 `spacedBy(SpaceM)` 归零（新增 GRID_INTER_ITEM_SPACING=0dp 常量并注明依据）——旧版卡间视觉距=卡片自 padding 5dp×2=10dp，此前 8dp 网格间距致总距 18dp 偏疏；卡片 5dp padding 与 contentPadding（8dp）不动
-- **组头样式核对**（不凭「主色粗体」一句话改）：查《QimengNAS\旧版UI实录》all_partition.xml / all_work_mode.xml 组头节点——uiautomator 树无色彩/字重属性，无法确证主色粗体；跨满行结构（x 48→1068 满宽）与 J2 现状一致 → **维持现状**，两案中取「无法确证保持」案
+- **组头样式核对**（不凭「主色粗体」一句话改）：查《工作区\旧版UI实录》all_partition.xml / all_work_mode.xml 组头节点——uiautomator 树无色彩/字重属性，无法确证主色粗体；跨满行结构（x 48→1068 满宽）与 J2 现状一致 → **维持现状**，两案中取「无法确证保持」案
 - **走查**：qimeng_api35 复用（emu avd name 核实），重装后首页/相册重截——卡间收紧为 10dp 视觉距，组头跨满行与网格左缘对齐无贴边错位（dump 组头 bounds [21,498][1059,551] 满宽）；证据 %TEMP%\qimeng-l1-evidence\（shot-11/21-*-dense.png + dump）
 - 门禁四连绿：app-build/app-test/app-lint/make lint 全 EXIT=0（gate2-*.log）
 
@@ -2908,7 +2918,7 @@
 执行 AI：GLM-5.3（主代理；流程合规审查子代理 + 研究子代理六项根因定位）
 
 - **流程合规审查结论**：今日 25 笔提交无铁律/安全/生成物/迁移/协议红线违规；3 处文档失实本笔清偿——①adr/INDEX.md ADR-0017 行「CI 接入记待办」滞后 → 闭环（F4 批 run 34173261179 验证）；②HANDOVER.md 任务书入口段「D 卷仍开放」与文头矛盾 → 三卷收官口径；③E1~E6 hash 回填：8dac898/263d255/89e688a/5097402/e0f9f57/c28a9e1（对齐 D/F 卷回填惯例，此前仅在 HANDOVER 文头）。另记：commit「文档：」栏今后不列仓库外文件（7970592 教训）。
-- **任务G 立卷**（用户六项反馈：详情页对齐 Web/作者总览进我的/状态栏遮挡/搜索胶囊/相册排版/内部 UI 理念）：任务书=仓库外《QimengNAS/任务G-Android对齐卷.md》（G0~G7 八批，根因定位到文件行级）；关键拍板=G5 相册基准以 Web 现版为准（调研实证旧版与 Web 形态互斥，用户断言 Web=旧版手机 UI，按冲突优先级第 1 条用户最新要求裁决，**推翻 B6 豁免档相册页相关豁免**）；G2=我的页作者总览卡（Web DataPage 式）+ AuthorScreen 按 Web AuthorsPage 重排；流程约束重申=双会话隔离/三子代理并发/异步子代理/后台执行/无真实文件（8420 真库永不连）/多种测试（JVM 单测+三连绿+模拟器实测）。零协议零 SDK 再生（所需端点已核验在生成物内）。
+- **任务G 立卷**（用户六项反馈：详情页对齐 Web/作者总览进我的/状态栏遮挡/搜索胶囊/相册排版/内部 UI 理念）：任务书=仓库外《工作区/任务G-Android对齐卷.md》（G0~G7 八批，根因定位到文件行级）；关键拍板=G5 相册基准以 Web 现版为准（调研实证旧版与 Web 形态互斥，用户断言 Web=旧版手机 UI，按冲突优先级第 1 条用户最新要求裁决，**推翻 B6 豁免档相册页相关豁免**）；G2=我的页作者总览卡（Web DataPage 式）+ AuthorScreen 按 Web AuthorsPage 重排；流程约束重申=双会话隔离/三子代理并发/异步子代理/后台执行/无真实文件（8420 真库永不连）/多种测试（JVM 单测+三连绿+模拟器实测）。零协议零 SDK 再生（所需端点已核验在生成物内）。
 
 
 ---
@@ -3048,7 +3058,7 @@
 - **代码修复 1 处**：QimengEmptyState Box fillMaxWidth→fillMaxSize——空态文案改剩余区域垂直居中，对齐旧仓库口径（fragment_favorite/fragment_browse_history 均 weight=1+gravity=center）；修复前钉顶与旧版可见位置差是 S9 空态文案 26.8% 差的根因。8 处调用方逐一核安全（7 处 PTR content + search ResultPhase 独占 Box）；pair_C8_S9_favorite_empty.png 双证（新 y≈1359 居中形态 vs 旧 y≈1856 下半区居中；残差=旧构建空态下药丸容器占位，复刻缺陷不跟，报告已记）。
 - **harness 场景补全与修正**（ui-compare-harness，仓库外）：新增 S9 收藏页（8 签名空态对称基线）/S10 历史页（5 签名，作品芯片=/history 协议缺口不入签、清除按钮不入签）；S1/S4 分组标题签名改双侧同规日期头宽匹配+CAUSE_DATE_DRIFT（原钉「今天」随日历翻转腐化产生假结构红）；S2 补 CAUSE_COUNT（23 件数据集演化计数差）。
 - **豁免重审**（79 项按用户视角全部重审，以复跑为唯一依据）：三轮全量对照收敛，round3 终版 10 场景 104 签名 100 红**全部有解释**（文案 19/结构 4/视觉 96）=修复 1+假红修复 2+豁免 97（V14 拆分：S2/S3≈91% 真实交互口径差=待拍板 #2 维持现状；S1/S4≈50% 裁片配准伪差亲证排除）。判据纪律：known_cause 只豁免文本列、结构缺失/视觉差不洗白。
-- **B6 五项交付**（QimengNAS/m42a-review/C8-visual-report.md）：①任务书预估勘误成文 ②统计行容量降级汇编 ③旧构建三条口径差异（含日期标签行为级断言：旧构建同日历档渲染绝对日期、新版按 DOMAIN_RULES §8 渲染周X）④P8 虚构数据对称降级说明 ⑤隔离环境截图标注口径成文；附 #17/#20/#3 差异记录。
+- **B6 五项交付**（工作区/m42a-review/C8-visual-report.md）：①任务书预估勘误成文 ②统计行容量降级汇编 ③旧构建三条口径差异（含日期标签行为级断言：旧构建同日历档渲染绝对日期、新版按 DOMAIN_RULES §8 渲染周X）④P8 虚构数据对称降级说明 ⑤隔离环境截图标注口径成文；附 #17/#20/#3 差异记录。
 - **审查**：独立 reviewer 通过——100 红逐项可溯抽查全命中、场景幂等性（round2→round3 逐值一致）、时间线取证（报告头 GMT 时区疑点经设备时钟+APK 哈希+dex 反汇编排除）；P2 注释失实（search 调用方不在 PTR 内）与 P3 行号漂移已随本笔顺带修正（改按符号定位防再漂）。
 - **验收**：三连绿（app-test 当时 186 tests/23 XML 0 失败——**注**：该 XML 证据已被并行批次后续测试运行覆盖，终态以本笔工作树三连与后续 D5/D7 复跑为准）；修复面仅 core/ui 两文件。证据 %TEMP%\qimeng-d4-evidence\ + shots/pair_C8_*.png。
 
@@ -3189,8 +3199,8 @@
 
 执行 AI：GLM-5.3（主会话调度；审查/修复由执行子代理并发完成，四路审查+两路修复）
 
-- **任务书重组（用户指令：删多余任务书、并为两份可并行的新书）**：删除仓库外《任务A-UI对齐.md》《任务B-详情页.md》《任务C-回归修复与体验对齐.md》《待拍板-20260905夜2.md》《待拍板-20260905夜集群.md》，全部存活内容吸收为两份新任务书——《QimengNAS/任务D-Android卷.md》（D0~D7：C1 图片全屏/C2 视频两级全屏+方向恢复/C7 胶囊收起/C8 截图对照+B6 收尾/M4-4 离线队列/M4-3 整批自查/M4-7 验收）与《QimengNAS/任务E-Web卷.md》（E0~E6：C3 叠加路由保态/C4 加载过渡/C5 五页无感加载/C6 偏好只留预设/Web 回补批自研图片查看器+批次导航/vitest 基建）。双卷文件集互斥（android/** vs web/**）、共享文件（docs/协议/Makefile）冻结由主会话串行写——并行零代码冲突；夜间执行=单调度会话+双写车道+常驻读车道（持续 ≥3 子代理、异步可中途微调、免授权全程后台）；拍板存量合并为《QimengNAS/待拍板-20260907.md》。
-- **证据协议更新（用户 2026-09-07 决策）**：截图解禁但仅限虚构测试数据（HANDOVER_APP §4.7 改写）；**8420 真库/真机永不连写截图**——今早用户复查曾连真库，已切回：App pm clear 重登 18461 虚构实例（dump 证据全是「测试出处A/B/C」标记，存 `QimengNAS/run-screens-20260907/`），真实截图移出仓库，`.gitignore` 增 `.run-screens/` 防再犯。
+- **任务书重组（用户指令：删多余任务书、并为两份可并行的新书）**：删除仓库外《任务A-UI对齐.md》《任务B-详情页.md》《任务C-回归修复与体验对齐.md》《待拍板-20260905夜2.md》《待拍板-20260905夜集群.md》，全部存活内容吸收为两份新任务书——《工作区/任务D-Android卷.md》（D0~D7：C1 图片全屏/C2 视频两级全屏+方向恢复/C7 胶囊收起/C8 截图对照+B6 收尾/M4-4 离线队列/M4-3 整批自查/M4-7 验收）与《工作区/任务E-Web卷.md》（E0~E6：C3 叠加路由保态/C4 加载过渡/C5 五页无感加载/C6 偏好只留预设/Web 回补批自研图片查看器+批次导航/vitest 基建）。双卷文件集互斥（android/** vs web/**）、共享文件（docs/协议/Makefile）冻结由主会话串行写——并行零代码冲突；夜间执行=单调度会话+双写车道+常驻读车道（持续 ≥3 子代理、异步可中途微调、免授权全程后台）；拍板存量合并为《工作区/待拍板-20260907.md》。
+- **证据协议更新（用户 2026-09-07 决策）**：截图解禁但仅限虚构测试数据（HANDOVER_APP §4.7 改写）；**8420 真库/真机永不连写截图**——今早用户复查曾连真库，已切回：App pm clear 重登 18461 虚构实例（dump 证据全是「测试出处A/B/C」标记，存 `工作区/run-screens-20260907/`），真实截图移出仓库，`.gitignore` 增 `.run-screens/` 防再犯。
 - **ADR-0017 预落**：web 测试基建 vitest（仅 devDependency；E6 批实施，npm registry 例外授权）。
 - **文档同步**：HANDOVER.md（头部+当前待办改双卷入口）、HANDOVER_APP.md（头部+批次表 B6/任务C 段+§4.7）、`docs/adr/INDEX.md`、仓库外 00-总说明.md 任务入口句。
 
@@ -3231,7 +3241,7 @@
 
 执行 AI：GLM-5.3-Flash（主会话，规划会话）
 
-- **范围（用户 2026-09-07 实测反馈 8 项）**：新建仓库外《QimengNAS/任务C-回归修复与体验对齐.md》（自足任务书，同任务A/B 体例）：C1 Android 详情页图片点击全屏缺失、C2 视频全屏两级制+退出详情页恢复竖屏、C3 web 首页详情返回保态、C4 首页加载/刷新过渡、C5 相册等四页无感加载、C6 推荐偏好只留预设去参数、C7 Android 维度胶囊默认收起、C8 新旧相册截图对照修复；并与今晚既定队列（任务A B6 收尾④⑤→M4-4→M4-7→Web 回补批→自审）合并为一条夜间队列（任务书 §4）。
+- **范围（用户 2026-09-07 实测反馈 8 项）**：新建仓库外《工作区/任务C-回归修复与体验对齐.md》（自足任务书，同任务A/B 体例）：C1 Android 详情页图片点击全屏缺失、C2 视频全屏两级制+退出详情页恢复竖屏、C3 web 首页详情返回保态、C4 首页加载/刷新过渡、C5 相册等四页无感加载、C6 推荐偏好只留预设去参数、C7 Android 维度胶囊默认收起、C8 新旧相册截图对照修复；并与今晚既定队列（任务A B6 收尾④⑤→M4-4→M4-7→Web 回补批→自审）合并为一条夜间队列（任务书 §4）。
 - **根因定位（主会话实读代码，写入任务书供执行者免复研）**：C1=`DetailStage.kt:54-57` 固定宽高比舞台+`DetailScreen.kt:133` 单击只切 chrome；C2=`VideoStage.kt:273-277` requestedOrientation 无 onDispose 兜底（用户截图实证退出详情后 App 卡横屏）+全屏直接锁横屏无竖屏全屏中间态；C3=`router.tsx:44,54` 路由切换卸载 HomePage（seed useState 复位/滚动位置丢）；C4=卡片无入场动画+qm:refresh 整流重置；C5=`AlbumsPage.tsx:296-301` LoadMorePill 手动按钮（首页已有 use-auto-more 哨兵）；C6=`SettingsPage.tsx:211-227` 9 维滑杆+百分比（旧版 GUIDE_UI:255=仅 4 预设）；C7=`AlbumFilterState.kt:35` expanded 默认 true+三 VM 切维强制展开（覆盖 M4-2「B8 拍板」口径）；C8=吸收任务A B6 的 79 项视觉豁免重审+场景补全 S9/S10。
 - **关键拍板落档（用户 2026-09-07 口径）**：视频全屏两级制（先竖屏全屏再可选横屏，覆盖旧版 GUIDE_UI:195 竖屏视频不可全屏句）；推荐偏好只显示选项；胶囊默认不弹开；C8 截图对照例外（仅限对照环境虚构数据，8420 真库/真机仍禁）。
 - **文档同步**：`docs/HANDOVER.md`（头部最后更新+当前待办新增最优先条目）、`docs/HANDOVER_APP.md`（头部最后更新+批次表区任务C 段）。本笔=纯文档，无代码改动；协议零改动。
@@ -3335,9 +3345,9 @@
 
 执行 AI：GLM-5.3-Flash（主代理）
 
-- **动机（用户指示）**：B2 已提交（cdef8f1）后，仓库外《QimengNAS/任务A-UI对齐.md》仍留有已消费的「§1 B2 续作」接手指引与 B2 限流期的「一次一个执行子代理」临时条款——前者易误导新会话重读已完成流程，后者与任务A 实际并发纪律不符（正确约束=**在跑子代理 ≤3**）。
+- **动机（用户指示）**：B2 已提交（cdef8f1）后，仓库外《工作区/任务A-UI对齐.md》仍留有已消费的「§1 B2 续作」接手指引与 B2 限流期的「一次一个执行子代理」临时条款——前者易误导新会话重读已完成流程，后者与任务A 实际并发纪律不符（正确约束=**在跑子代理 ≤3**）。
 - **改动**：任务A 文档 §0 执行顺序更新为「B2 已完成、可开任务B 通知已发过一次，当前 B3→B6」；§1 续作指引归档化（指向 cdef8f1 与 B2-round1.md）；§0 持续执行条款与 §3 P11 勘误为「在跑 ≤3」（保留被杀快照/冷却协议）。仓库侧 HANDOVER_APP M4-2A 进度块同步该清理与下一批指引（B3 万能筛选面板，B2 已铺 QimengTitleRow 单源与悬浮药丸底座）。
-- **工作区核验**：被取消的 B3 执行子代理经查未在工作区留下任何改动（git status 干净 @ cdef8f1）；删除 B2 中断会话遗留的未跟踪临时目录 `.tmp/`（token 候选/截图等 15 个调试草稿文件，非验收材料——验收文本证据在 `%TEMP%\qimeng-m42a-evidence\` 与 `QimengNAS/m42a-review/`）。
+- **工作区核验**：被取消的 B3 执行子代理经查未在工作区留下任何改动（git status 干净 @ cdef8f1）；删除 B2 中断会话遗留的未跟踪临时目录 `.tmp/`（token 候选/截图等 15 个调试草稿文件，非验收材料——验收文本证据在 `%TEMP%\qimeng-m42a-evidence\` 与 `工作区/m42a-review/`）。
 - **注**：纯文档与工作区清理卷，无代码改动；B3~B6 由新会话按《任务A-UI对齐.md》§2 续作。
 
 
@@ -3349,9 +3359,9 @@
 - **动机（任务A-UI对齐.md 批 B2）**：相册页外部行为完全对齐旧版——统计行「N 文件」（P9-1，totalMatched）、四维芯片字样「分区/作品/角色/类型」（P9-2/3）、分组四模式（分区与类型=日期分组 DOMAIN_RULES §8；作品=authorNames→source→其他；角色=characters∪cosWork，P9-5；「N 项」两空格组头、其他恒沉底 P10）、TitleRow 换 ic_grid_2~5 图标+双指缩放（≥2 指 calculateZoom、结束持久化一次、clamp 2..5）、药丸区改悬浮 overlay（4dp elevation/屏高限高/内部滚动，不推挤网格）。
 - **改动面**：`feature/all`（AllScreen 接线重写、AlbumViewModel +onDimChipClicked/pinch 列数、strings.xml 新建 all_title）、`core/model`（DateGrouping 分组四模式、FourDimPills 芯片/药丸纯函数、AlbumFilterState 维度字样、MediaAsset+cosWork）、`core/data`（SdkMappers 补 cosWork 映射，零协议改动）、`core/ui`（QimengMediaGrid 组头行、QimengPills 限高滚动变体、QimengGridPinchGesture 新建通用 Modifier、QimengTitleRow 新建并从 feature/all 收编单源、QimengIcons ic_grid_2~5、Dimens 补 IconDefaultSize、core/ui strings.xml 新建）。
 - **审查与修复**：对抗审查（reviewer 子代理，七维）初审 0 P1/4 P2 全清偿——P2-1 characterGroupKey 改 characters→cosWork→其他 +source 空边界测试；P2-2 删除零计数药丸隐藏（引据不存在的「拍板条目 4」，实录「角色 (0)」为据，药丸可见性只由数据行决定）；P2-3 TitleRow 迁 :core:ui 单源。elem_compare 全量重跑再揪出两深层缺陷并修复：**P1 authorGroupKey 与真实载荷不符**（服务端对未匹配出处与 COS 资产的 source 都填字面「其他」非 null，实测 `/assets?includeCos=true` 证实；组键改 authorNames 首个→source→其他，测试改镜像真实载荷+混排回归）；**切维滚动位置保留**（实录切维后首组恒在视口顶，AllScreen 补 `LaunchedEffect(activeDim){scrollToItem(0)}`）。
-- **验收工具校准**（`QimengNAS/ui-compare-harness/`，仓库外）：修复 elem_compare `do_tap` 空 regex 缺陷（B0 起 `("tap", 正则, "re:")` 写法下正则取自 mode 尾部为空串，点击落在首节点，**基线报告 S2/S3/S4 新版侧实为分区模式态**）；compare_scenes 签名按 P9 口径校准（统计行/芯片字样/组头两空格/列数 desc/S2S3 首组钉死单值+P10 豁免可见化），余红=筛选面板（B3）+已裁决口径差异（带可见 known_cause）+视觉裁片残差（B6 豁免清单收口）。
+- **验收工具校准**（`工作区/ui-compare-harness/`，仓库外）：修复 elem_compare `do_tap` 空 regex 缺陷（B0 起 `("tap", 正则, "re:")` 写法下正则取自 mode 尾部为空串，点击落在首节点，**基线报告 S2/S3/S4 新版侧实为分区模式态**）；compare_scenes 签名按 P9 口径校准（统计行/芯片字样/组头两空格/列数 desc/S2S3 首组钉死单值+P10 豁免可见化），余红=筛选面板（B3）+已裁决口径差异（带可见 known_cause）+视觉裁片残差（B6 豁免清单收口）。
 - **测试**：新增 15 条（DateGrouping 7：四模式/两空格格式/真实载荷混排+沉底/空边界/source 空角色边界；FourDimPills 5：维度字样/类型折叠文案/零计数照常显示/类型行降序；AlbumViewModel 3：clamp 越界+持久化一次/无步进不落盘/芯片切换）；既有代际防乱序 14 条全绿；四命令（app-build/app-test/app-lint/lint）全绿；grep `Color(0x` 触达面零命中。
-- **记录**：旧 App 冷启重扫使对照数据 21→22 件（计数口径差异已消失，豁免文案留作历史注记）；点已激活维芯片=切换展开/折叠（GUIDE_UI.md:344/347 逐字核对为正确语义）；审查与校准全文存 `QimengNAS/m42a-review/B2-round1.md`。
+- **记录**：旧 App 冷启重扫使对照数据 21→22 件（计数口径差异已消失，豁免文案留作历史注记）；点已激活维芯片=切换展开/折叠（GUIDE_UI.md:344/347 逐字核对为正确语义）；审查与校准全文存 `工作区/m42a-review/B2-round1.md`。
 
 
 ---
@@ -3361,7 +3371,7 @@
 
 - **动机（任务书拍板 P4）**：M4-2A UI 对齐批（派发任务书-20260906-UI对齐.md）首批——新版主题从 Web 品牌蓝系（#4250af）整体换为旧版中性极简灰系，深浅两套都换，唯一来源=旧仓库 `res/values/colors.xml` + `values-night/colors.xml`（P2「外部视觉完全复刻旧版」的组成基座）。
 - **改动面**（仅 `core/ui/theme/` 三文件）：`Color.kt` 24 个 token（浅/夜 12 组）全量换值，逐 token 注释旧版 colors.xml 来源行号，另立 4 个带 alpha soft 常量（旧版底栏选中指示器/浸润底依赖）；`Theme.kt` M3 全槽位灰系重排（补 tertiary/secondaryContainer/inverse 族/surfaceContainer 族防 Material 默认紫粉漏出；error/scrim 留 M3 基线——旧版同样未定制，已注释声明）；新建 `Dimens.kt` 22 个尺寸常量（来源=旧 fragment_all_files.xml/styles.xml/drawable/组件现状，逐条注释文件+行号；旧仓库无 dimens.xml 已核实）。
-- **验证**：grep `Color(0x` 全仓仅 Color.kt 自身命中（feature/core/app 零散落——任务书预估「约 20 处散落」经查为 token 文件自身字面量数，M4-0 起组件层从未有硬编码）；make app-build/app-test/app-lint + make lint 四条全绿；对抗审查 B1-round1（色值逐位转录核对 22 token、alpha 换算手算复核、Dimens 22 常量来源行号 51 处全命中、越界零触碰）0 P1/P2，报告存 `QimengNAS/m42a-review/B1-round1.md`。
+- **验证**：grep `Color(0x` 全仓仅 Color.kt 自身命中（feature/core/app 零散落——任务书预估「约 20 处散落」经查为 token 文件自身字面量数，M4-0 起组件层从未有硬编码）；make app-build/app-test/app-lint + make lint 四条全绿；对抗审查 B1-round1（色值逐位转录核对 22 token、alpha 换算手算复核、Dimens 22 常量来源行号 51 处全命中、越界零触碰）0 P1/P2，报告存 `工作区/m42a-review/B1-round1.md`。
 - **注**：M4-2A 各批（B0~B6）的 HANDOVER_APP 批次表勾选按任务书 §6 统一在 B6 收口；本批表内进度以 CHANGELOG 为准。
 
 
@@ -3375,7 +3385,7 @@
 - **改动面**：`:core:network` AuthApi 增 `devLogin()`（SDK `apiV1AuthDevLoginPost`）；`:core:data` AuthRepositoryImpl 登录编排空密码分支 + 404 映射（`HTTP_NOT_FOUND` 常量，协议侧改动须同步注释）；`:feature:login` 密码标签改「密码（开发模式服务器可留空）」+ 新错误文案资源。
 - **测试**：AuthRepositoryImplTest 新增 2 条——`空密码_走dev-login免密登录成功且不触密码端点`（含路由命中断言：dev-login=1 且 /auth/login=0）、`空密码_dev模式未开启_404返回DevLoginUnavailable不落盘`；fake 传输层路由表补 `/api/v1/auth/dev-login` 通道（开关变量模拟 auth_dev_mode）。
 - **验证**：模块单测全绿 → make app-test（BUILD SUCCESSFUL）→ make app-lint（BUILD SUCCESSFUL）→ 模拟器实测：pm clear 后仅输地址、密码留空、一键登录成功直进首页（隔离实例 18461 开 dev 模式，2026-09-06 晚实测）。
-- **配套（同日非本 commit）**：对照环境 `QimengNAS/ui-compare-harness/` 隔离服务端同步开 dev 模式（server.sh），M4-2A/M4-3 两批任务书已记录免密口径。
+- **配套（同日非本 commit）**：对照环境 `工作区/ui-compare-harness/` 隔离服务端同步开 dev 模式（server.sh），M4-2A/M4-3 两批任务书已记录免密口径。
 
 
 ---
@@ -3449,7 +3459,7 @@
 
 - **A 车道夜2战果**：M4-1 登录 88af1b9 → M4-2 列表族+导航四化 4acb128 → M4-5 上传主通道 294a576（独立对抗审查 14 项全过）→ M4-6 缓存/设置/统计/我的 944cac5 → A-S1 build-logic 收敛 0ff017a → ci 补 :core:model:test 21813e3 → 自审返工 a105280。自审 R1 判 P2×3（相册筛选请求乱序覆盖/设置页写操作静默失败/CI 覆盖缺口）→ 返工批 → R2 全过；Android 模块 72 + :core:model 59 用例全绿，四件套全绿，294a576..a105280 已 push。
 - **M4-3 详情页留 09-06 夜首发**（04:30 时间门未赶上四批齐）；派发口径=待拍板条目 10（ZoomImageView/BiliPlayerView 桥接、详情原图不降采样、规格书式标签管理、视频海报态+默认静音条目 8）。今夜链建议：M4-3 → M4-2.1 筛选面板（条目 11）→ M4-4（备忘录已备；dwell 先删后发口径=条目 13，待用户拍）。
-- **备忘录三份落 QimengNAS**：A-S2 图标自持策略（官方停更 material-icons 库族，维持手绘 vector 按需补）/ A-S3 AGP9+compileSdk37 三步走升级路线（M4-7 后独立基建批）/ M4-4 离线队列前置验证（DDL/调度/失败语义/测试矩阵）。
+- **备忘录三份落 工作区**：A-S2 图标自持策略（官方停更 material-icons 库族，维持手绘 vector 按需补）/ A-S3 AGP9+compileSdk37 三步走升级路线（M4-7 后独立基建批）/ M4-4 离线队列前置验证（DDL/调度/失败语义/测试矩阵）。
 - **新建**：`android/启动模拟器-headless.bat`（无窗口+禁音频一键启动）；8:50 晨间收尾定时自动化建档（automation-ebea7fc2）。
 - **遗留**：加做项 a（core 单测补强）未做；M4-5 审查观察项 5 条已入 HANDOVER_APP §3 M4-7 验收清单；B 车道移交项已全部清零（其收工档 ec9c1a5）。
 ## fix(app): 自审返工——筛选请求代际防乱序/设置页写失败反馈/卫生清偿（含 M4-7 验收清单与 headless 启动脚本）（2026-09-06 第八十九笔）
@@ -3636,7 +3646,7 @@
 
 执行 AI：GLM-5.3-Flash（B 会话·read-only 批，仓库外产出）
 
-- **产出**：仓库外《QimengNAS/m6-next-steps.md》（约 200 行）——①Termux 形态一键启动脚本设计稿（termux-setup-storage 授权流/二进制投放路径/三层保活/伪代码含失败兜底，未实测处逐条标注「设计稿·未实测」）；②App 内嵌形态 ffmpeg 方案扫描（官方主线 9.0.1 NDK 自编译 / gomobile 桥接 / 社区分支 FFmpegKitNext·ffmpegkit-maintained·hzw1199 预编译成品，各含成熟度/维护/成本/架构契合点）。
+- **产出**：仓库外《工作区/m6-next-steps.md》（约 200 行）——①Termux 形态一键启动脚本设计稿（termux-setup-storage 授权流/二进制投放路径/三层保活/伪代码含失败兜底，未实测处逐条标注「设计稿·未实测」）；②App 内嵌形态 ffmpeg 方案扫描（官方主线 9.0.1 NDK 自编译 / gomobile 桥接 / 社区分支 FFmpegKitNext·ffmpegkit-maintained·hzw1199 预编译成品，各含成熟度/维护/成本/架构契合点）。
 - **关键事实（3 轮网络核实 15 组来源）**：arthenica/ffmpeg-kit 2026-07-02 归档；FFmpegKitNext 为官方续作（源码分发、Kotlin API、无 CLI）；ffmpeg 主线 9.0.1（2026-08-12）；Android 16KB 页对齐现行口径 2027-02-01。
 - **建议口径**已落仓库外《待拍板-20260905夜2.md》条目 3（Termux 先行第一根烟囱；内嵌形态 jniLibs exec 三件套；不采纳 gomobile bind 与 ffmpeg-kit 系 AAR）。本笔仓库零代码改动（read-only 批）。
 ## feat(web): 全局动效现代化——页面过渡 token 化/卡片进场 stagger/弹层统一进出场/reduced-motion 归零层（2026-09-06 第六十九笔）
@@ -3654,8 +3664,8 @@
 - **完成项**：详情页互动行文件三操作（重命名/移动/删除入回收站）+ 目录树新建子目录（目录树文件行操作待 B-4/B-5 协议扩展与接线）——重命名/移动（POST /assets/{id}/move，targetDir 必填 + newName 可选一端点两用：改名=同目录+新名、移动=新目录+原名；服务端保证 asset_id 与全部关联数据零改动，移动后自动重算出处/COS 富化）/删除=入回收站（DELETE /assets/{id}，铁律 4 DELETE 语义永不物理删，确认文案明示「移入回收站」）；目录行新建子目录（POST /dirs，幂等，已存在视为成功）。操作成功后目录树/回收站相关 query 失效（本地 onSuccess + 服务端 library.changed SSE 双保险，TanStack invalidate 幂等）；失败 toast 透传服务端文案。协议零改动（全走既有端点）。
 - **新增代码**：`hooks/use-file-ops.ts`（useMoveAsset/useDeleteAsset/useCreateDir，铁律 7 UI 组件禁直调 API）+ `components/manage/DirBrowser.tsx`/`MoveDialog.tsx`/`CreateDirDialog.tsx` + `components/detail/FileOpsButton.tsx`（详情页已接线）。
 - **验收结论**：`npx tsc --noEmit -p tsconfig.app.json` 0 错；`npm --prefix web run build` 成功；`npm --prefix web run lint` 改动 9 文件 0 告警（存量 17 告警在 router.tsx/SearchPage 等，不属本批不扩围）。隔离实例 curl 全链：新建目录 201 + 重放幂等、移动+重命名 200、目标已存在 409 TARGET_EXISTS、删除→回收站可查→恢复 200。证据目录 %TEMP%\qimeng-b1\（保留勿删）。
-- **待办与待拍板**：目录树批量多选本批不做记待办；两项待拍板见仓库外《QimengNAS/待拍板-20260905夜2.md》（条目 1=目录树文件行缺协议数据源→B-4 批解决；条目 2=嵌套子树对齐存量问题）。
-## docs(docs): QimengNAS 工作区清理——删除重复/过时文件，拍板指针归一夜2（2026-09-06 第六十七笔）
+- **待办与待拍板**：目录树批量多选本批不做记待办；两项待拍板见仓库外《工作区/待拍板-20260905夜2.md》（条目 1=目录树文件行缺协议数据源→B-4 批解决；条目 2=嵌套子树对齐存量问题）。
+## docs(docs): 工作区 工作区清理——删除重复/过时文件，拍板指针归一夜2（2026-09-06 第六十七笔）
 
 执行 AI：GLM-5.3（主代理·计划）
 
@@ -3666,7 +3676,7 @@
 
 执行 AI：GLM-5.3（主代理·计划）
 
-- 用户 2026-09-06 01:05 拍板：删除旧任务书《QimengNAS/派发任务书-20260905夜.md》，只保留当夜《派发任务书-20260905夜2.md》。
+- 用户 2026-09-06 01:05 拍板：删除旧任务书《工作区/派发任务书-20260905夜.md》，只保留当夜《派发任务书-20260905夜2.md》。
 - 删除前先把旧书独有内容并入夜2（避免断链）：M4-2 拍板 1A/2B/3B/4A+A3/A4+B 组 B1~B8 执行口径+存疑五条处置、M4-6 拍板 C1~C6、M4-3 五条拍板（likedToday 已就绪段跳过）——合并为夜2「A 车道批次拍板与执行口径」节；A 会话任务书引用全部改为「HANDOVER_APP §3 + 夜2 专节」，夜2 成为自包含唯一任务书。
 - HANDOVER「单批任务书」引用同步订正；旧任务书涉及的 m4-2/3/6-spec-notes 备忘录与待拍板/进度盘点文件非任务书，保留。
 ## docs(docs): 夜2计划两会话定稿——每会话 ≤3 并发子代理，C 车道裁撤并入 B 链（2026-09-06 第六十五笔）
@@ -3687,14 +3697,14 @@
 
 执行 AI：GLM-5.3（主代理·计划）
 
-- 用户 00:15 拍板：夜2集群执行模式改为**用户自开两个持久会话**（A=Android、B=Web）按仓库外《QimengNAS/派发任务书-20260905夜2.md》并行自驱（做完一批验收即接下一批，链条耗尽进调研批）；计划会话只出计划书不执行，其 23:40 试派的首批执行子代理已全部叫停，急停现场报告归档进蓝本「当前磁盘状态」节。
+- 用户 00:15 拍板：夜2集群执行模式改为**用户自开两个持久会话**（A=Android、B=Web）按仓库外《工作区/派发任务书-20260905夜2.md》并行自驱（做完一批验收即接下一批，链条耗尽进调研批）；计划会话只出计划书不执行，其 23:40 试派的首批执行子代理已全部叫停，急停现场报告归档进蓝本「当前磁盘状态」节。
 - **首批半成品留工作树未提交（后续会话续做，现场与恢复步骤见蓝本）**：B-1 文件管理增强代码基本完成（tsc/build 过、隔离实例 curl 全链证据在 %TEMP%\qimeng-b1*；含 b1-temp-orig/b1-temp-dirbrowser 两个 stash 待依序 pop）；M4-1 登录 core 层（network/data）写完但从未编译，settings.gradle 已 include 未建的 :feature:login——直接构建必失败，续做先建该模块骨架。
 - 订正 HANDOVER「夜2执行中」口径为双会话并行模式；计划会话的心跳/收停自动化已删除（手动会话自守 08:30 硬停线）。
 ## docs(docs): 夜2集群启动落档——Android 导航四化 + M4-3 排版基准 + 无截图证据协议（2026-09-05 第六十二笔）
 
 执行 AI：GLM-5.3（主代理·调度）
 
-- 用户三处规格变更落档（夜间双车道集群，蓝本 = 仓库外《QimengNAS/派发任务书-20260905夜2.md》）：①**Android 导航 5 Tab→4 Tab**——「全部」更名「相册」（只改 label，route `all` 不变）、原「相册」Tab 删除，feature:album 空壳模块一并移除，M4-2 批落地；②**M4-3 详情页排版基准 = Web 现版**（B站式双栏移动端移植：媒体舞台→标题→meta 行→互动行→标签行→作者卡→接下来播放；手势/播放器规格照旧）；③**验收证据协议改无截图**（用户明令禁截图/录屏/视觉查看——敏感内容）：一律文本证据（uiautomator dump 文本树/logcat/curl JSON/单测输出/DOM 数值实测）。
+- 用户三处规格变更落档（夜间双车道集群，蓝本 = 仓库外《工作区/派发任务书-20260905夜2.md》）：①**Android 导航 5 Tab→4 Tab**——「全部」更名「相册」（只改 label，route `all` 不变）、原「相册」Tab 删除，feature:album 空壳模块一并移除，M4-2 批落地；②**M4-3 详情页排版基准 = Web 现版**（B站式双栏移动端移植：媒体舞台→标题→meta 行→互动行→标签行→作者卡→接下来播放；手势/播放器规格照旧）；③**验收证据协议改无截图**（用户明令禁截图/录屏/视觉查看——敏感内容）：一律文本证据（uiautomator dump 文本树/logcat/curl JSON/单测输出/DOM 数值实测）。
 - 能力地图漂移修复：备份域「缺口」→「已有」（导入端点 M3 + 导出端点 8344920 + 维护页备份卡）。
 - 本笔纯文档落档，无代码改动。
 ## feat(api): 备份导入/导出——旧版格式导出端点 + 维护页备份卡；导入幂等修复（2026-09-05 第六十一笔）
@@ -3906,7 +3916,7 @@ W-4 批次交付时由执行代理发现、移交主代理处置的仓库级基�
 
 执行 AI：GLM-5.3-Flash（执行子代理，W 车道 W-4 批次）
 
-W-4 批次（打点缺口补齐，任务书=仓库外《QimengNAS/派发任务书-20260905夜.md》）。**断点定位结论**：M2 记录「DetailPage open/dwell 打点」与实际不符——`useReportView`（hooks/use-assets.ts）三种 kind 均支持，但全库唯一调用点是 AssetDetailPage 进页的 `open`，play/dwell 从未接线（040df17 全库 playCount/浏览时长为零的直接原因，属"从未实现"而非"路径未生效"）。
+W-4 批次（打点缺口补齐，任务书=仓库外《工作区/派发任务书-20260905夜.md》）。**断点定位结论**：M2 记录「DetailPage open/dwell 打点」与实际不符——`useReportView`（hooks/use-assets.ts）三种 kind 均支持，但全库唯一调用点是 AssetDetailPage 进页的 `open`，play/dwell 从未接线（040df17 全库 playCount/浏览时长为零的直接原因，属"从未实现"而非"路径未生效"）。
 
 - **play**：`components/media/video-player.tsx` 新增 `onPlay` prop（`art.on('play')`；已核对 5.4.0 dist——该事件仅由 `art.play()` 发出，UI 大播放键 `.art-state`/控制条/空格键全走该路径，原生兜底层是 `video:play` 前缀事件不混用）；AssetDetailPage 每次起播如实逐条上报，同会话当日去重由服务端 202 幂等吸收（DOMAIN_RULES §5）。
 - **dwell**：新增 `hooks/use-dwell-report.ts`——进入详情页计时，离开（卸载/详情→详情切资产）与页面隐藏（visibilitychange hidden + pagehide 兜底）flush 恰好一条；segmentRef 单点持有、取走即置空（同段重复 flush 一律 no-op，防累加口径时长虚增）；隐藏期间不计停留、回可见开新段；<1s 停留段不上报（秒数四舍五入后为 0，防零值噪声事件，数值口径不受影响）。图片与视频通用（挂详情页层级，组件零参与）；sessionId 沿用 sessionStorage UUID（ensureSessionId）。
@@ -3927,13 +3937,13 @@ Q2-1 拍板（A 方案）落地：给 M4-3 详情页点赞按钮提供初始态�
 
 执行 AI：GLM-5.3（主代理，ZCode 调度）
 
-用户晨间一次性拍板四组全部按建议（详细记录=仓库外《QimengNAS/待拍板-20260905午.md》，已从询问报表转为拍板记录）：
+用户晨间一次性拍板四组全部按建议（详细记录=仓库外《工作区/待拍板-20260905午.md》，已从询问报表转为拍板记录）：
 
 - **Q1=A 补齐 web play/dwell 打点**：新增 W-4 批次（web 车道，可与 Android 链并行）——修通 dwell+补 play，口径 DOMAIN_RULES §5，隔离实例验收。
 - **Q2 五条（M4-3 解锁）**：likedToday 协议补字段（M4-3 内协议先行，web 端增量零适配）+今日已赞再点=撤销今日赞；其他标签名字序降级；时间轴颜色 ❤/⭐ name 前缀约定；批次导航=左右滑相邻切换+预加载窗口；媒体清单=列表传已加载 ID 列表。
 - **Q3 六条（M4-6 解锁）**：统计时段四档对齐 Web（含 range=day=近30天命名陷阱注释）；数字卡静态不随档；常看卡/详情四模式维持砍；我的页加推荐偏性行；GIF 进磁盘缓存；版本信息显示服务端版本。
 - **Q4 记账项**：AGP9+Gradle9+compileSdk37 等 M4 全完后一次升；build-logic 收敛 M4-7 做；五 Tab 图标维持自持；App label 沿用「绮梦影库」。
-- **执行模式变更**：用户手动派发（贴单批任务书开新会话），主会话只做规划不派发；六份自包含任务书（W-4/M4-1/M4-2/M4-3/M4-5/M4-6，含环境快照+08:30 硬停线）=仓库外《QimengNAS/派发任务书-20260905夜.md》。推荐派发序：Android 串行 M4-1→M4-2→M4-5→M4-6（07:00 后不新贴批），W-4 随时并行，M4-3 最重留明晚首发。
+- **执行模式变更**：用户手动派发（贴单批任务书开新会话），主会话只做规划不派发；六份自包含任务书（W-4/M4-1/M4-2/M4-3/M4-5/M4-6，含环境快照+08:30 硬停线）=仓库外《工作区/派发任务书-20260905夜.md》。推荐派发序：Android 串行 M4-1→M4-2→M4-5→M4-6（07:00 后不新贴批），W-4 随时并行，M4-3 最重留明晚首发。
 - 08:50 定时暂停自动化的收尾口径同步更新（晨报只报执行结果——拍板已全部完成）。
 ## 晨间复查与派发链规划：今晚 M4-1→M4-2→M4-5，M4-3/M4-6 待拍板暂缓（2026-09-05 第三十五笔）
 
@@ -3943,7 +3953,7 @@ Q2-1 拍板（A 方案）落地：给 M4-3 详情页点赞按钮提供初始态�
 
 - **今晚可跑链（无拍板依赖，串行派发）**：M4-1（登录+ServerConfigDataSource）→ M4-2（列表族，含拍板 1A/2B/3B/4A 落地；备忘录 A3/A4 两处规格冲突依 DOMAIN_RULES §6/§3 已拍板口径执行=首页 cos tab 走 /assets cosOnly、搜索页「全部/常规/COS」分区胶囊缺省全部，交付报告注明出处）→ M4-5（上传主通道，重批次带 reviewer 对抗审查）。每批执行代理内置 08:30 硬停线（用户 08:50 暂停要求的前置保障）。
 - **暂缓链**：M4-3（卡详情页五条拍板）→ M4-4（前置 M4-3）→ M4-6（卡 C1~C6 拍板）→ M4-7（全部前置）；M6 在 M4 后（真机 arm64 复验第一优先，需用户实体手机）。
-- **待拍板汇总报表**：仓库外《QimengNAS/待拍板-20260905午.md》——★web play/dwell 打点缺口、★M4-3 五条、M4-6 C1~C6、M4-0 记账项四条，每条附候选与建议，供用户中午一次性定夺；详情页发现项已拍板（M4 后回补）不再列入。
+- **待拍板汇总报表**：仓库外《工作区/待拍板-20260905午.md》——★web play/dwell 打点缺口、★M4-3 五条、M4-6 C1~C6、M4-0 记账项四条，每条附候选与建议，供用户中午一次性定夺；详情页发现项已拍板（M4 后回补）不再列入。
 - **08:50 定时暂停**：单次自动化今日 08:50 触发（免费 Flash 额度 09:00 截止前 10 分钟）——停派新批、收尾在途、补记报表夜间结果段、晨报归档。
 ## 夜间集群晨间汇总：W 链 + M4-0 + S-1 + M6 POC 完成，多会话并行归档（2026-09-05 第三十四笔）
 
@@ -4318,7 +4328,7 @@ UI 收尾三批第一笔（HANDOVER_UI §5.9 任务书，夜间集群模式首�
 - **角色行**：全部（all）分区 = 常规角色名（kind=character）∪ COS 作品名（kind=work）合并（第三笔只合并了 author 维度，角色维只在单分区各自生效——已修）；character 与 work 同属角色行，排自身时一起忽略。
 - **FacetSourceCounts 新查询**（facets.sql）：非 COS 关联资产按 source 分组（含 NULL 行=「其他」）；FacetAuthorCounts 收敛 `au.type='cos'`；其余四查询（角色/类型/分区两维）统一补 source 谓词（author 行选中对其他三维生效）与排自身维度表文件头。
 - **Web 相册页**：修分区默认值 bug——原 `partition !== regular ? {partition} : {}` 在缺省分区不传参，服务端按 all 处理致作者行语义错乱；现在 partition **恒显式传参**。作者/角色值行候选携带 kind，点出处胶囊→source 筛选、点 COS 作者→authorId、点角色→character、点 COS 作品→work；分区缺省改「全部」（= 旧版「全部」tab，两集合并排可见），切分区清作者/角色（候选命名空间随分区变化）。作者行/角色行前补「全部」胶囊（value='' 清除本行）。
-- 测试：facets_test 重写 2 用例 + 夹具补 source（a.jpg 无出处→「其他」、b.jpg kemono、c.mp4 视频无出处）锁定新口径（作者行 全部=其他2+kemono1+COS作者2、regular 只出处、cos 只 COS 作者、选角色后作者行=含该角色资产的出处、选出处后角色行排自身全量等）；go test 14 包全绿。
+- 测试：facets_test 重写 2 用例 + 夹具补 source（a.jpg 无出处→「其他」、b.jpg site-a、c.mp4 视频无出处）锁定新口径（作者行 全部=其他2+site-a1+COS作者2、regular 只出处、cos 只 COS 作者、选角色后作者行=含该角色资产的出处、选出处后角色行排自身全量等）；go test 14 包全绿。
 
 ### ② 首页 cos/排行榜 tab 生效（Web，URL 驱动）
 

@@ -98,9 +98,9 @@ func TestAuthorsImportTxtFullChain(t *testing.T) {
 	kami := authoring.GenerateAuthorID("kamihikoki_mmd")
 
 	// 格式 A（编号 + 多别名 + 来源区）：两作品分别精确命中 a.jpg / c.mp4。
-	txtA := "1  kamihikoki_mmd  紙飛行機(小红车资源出处)\n" +
+	txtA := "1  kamihikoki_mmd  紙飛行機(site-b资源出处)\n" +
 		"来源\n" +
-		"`https://hanime1.me/`\n" +
+		"`https://site-d.me/`\n" +
 		"作品\n" +
 		"a.jpg\n" +
 		"c.mp4\n"
@@ -111,7 +111,7 @@ func TestAuthorsImportTxtFullChain(t *testing.T) {
 	// 格式 B2（编号 + 单作者 + 出处同行）：同名作者跨 TXT，作品 "b" 无扩展名
 	// 精确命中 b.jpg；重建后关联 = 两 TXT 匹配文件的并集（a/c/b 共 3）。
 	txtB := "2  kamihikoki_mmd  第二别名\n" +
-		"出处  kemono\n" +
+		"出处  site-a\n" +
 		"作品\n" +
 		"b\n"
 	if imported, matched := importTXT(t, env, "b.txt", txtB); imported != 1 || matched != 1 {

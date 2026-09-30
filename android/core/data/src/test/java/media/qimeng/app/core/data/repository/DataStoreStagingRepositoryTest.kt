@@ -50,9 +50,9 @@ class DataStoreStagingRepositoryTest {
     fun `连续两次editBatchConfig变换基于最新值叠加`() = runBlocking {
         val repo = newRepository()
         repo.editBatchConfig { it.copy(libraryId = "lib-a") }
-        repo.editBatchConfig { it.copy(authorId = "author-a", sources = it.sources + "kemono") }
+        repo.editBatchConfig { it.copy(authorId = "author-a", sources = it.sources + "site-a") }
         assertEquals(
-            StagingBatchConfig(libraryId = "lib-a", authorId = "author-a", sources = listOf("kemono")),
+            StagingBatchConfig(libraryId = "lib-a", authorId = "author-a", sources = listOf("site-a")),
             repo.batchConfig.first(),
         )
         Unit

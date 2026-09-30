@@ -34,7 +34,7 @@ func editHasLine(content, line string) bool {
 
 func TestRemoveWorks(t *testing.T) {
 	id := GenerateAuthorID("甲")
-	base := "1  甲\n来源\nkemono\n作品\na.jpg\nb.png\nc.mp4\n\n2  乙\n作品\na.jpg\n"
+	base := "1  甲\n来源\nsite-a\n作品\na.jpg\nb.png\nc.mp4\n\n2  乙\n作品\na.jpg\n"
 	cases := []struct {
 		name      string
 		content   string
@@ -153,16 +153,16 @@ func TestReplaceSources(t *testing.T) {
 	}{
 		{
 			name:       "替换既有来源区",
-			content:    "1  甲\n来源\nkemono\n老王论坛\n作品\na.jpg\n",
+			content:    "1  甲\n来源\nsite-a\nforum-c\n作品\na.jpg\n",
 			sources:    []string{"新站点"},
 			wantSrcs:   []string{"新站点"},
 			wantWorks:  []string{"a.jpg"},
-			wantRawNo:  "kemono",
+			wantRawNo:  "site-a",
 			wantRawHas: "来源  新站点",
 		},
 		{
 			name:      "清空来源区标记行不残留",
-			content:   "1  甲\n来源\nkemono\n作品\na.jpg\n",
+			content:   "1  甲\n来源\nsite-a\n作品\na.jpg\n",
 			sources:   nil,
 			wantSrcs:  nil,
 			wantWorks: []string{"a.jpg"},
@@ -170,11 +170,11 @@ func TestReplaceSources(t *testing.T) {
 		},
 		{
 			name:       "出处标记行形态一并清除",
-			content:    "1  甲\n出处  kemono\n作品\na.jpg\n",
+			content:    "1  甲\n出处  site-a\n作品\na.jpg\n",
 			sources:    []string{"新站点"},
 			wantSrcs:   []string{"新站点"},
 			wantWorks:  []string{"a.jpg"},
-			wantRawNo:  "kemono",
+			wantRawNo:  "site-a",
 			wantRawHas: "来源  新站点",
 		},
 		{
@@ -200,7 +200,7 @@ func TestReplaceSources(t *testing.T) {
 		},
 		{
 			name:      "输入去重",
-			content:   "1  甲\n来源\nkemono\n",
+			content:   "1  甲\n来源\nsite-a\n",
 			sources:   []string{"a", "a", " b "},
 			wantSrcs:  []string{"a", "b"},
 			wantWorks: nil,
@@ -223,9 +223,9 @@ func TestReplaceSources(t *testing.T) {
 		},
 		{
 			name:      "幂等替换",
-			content:   "1  甲\n来源  kemono\n作品\na.jpg\n",
-			sources:   []string{"kemono"},
-			wantSrcs:  []string{"kemono"},
+			content:   "1  甲\n来源  site-a\n作品\na.jpg\n",
+			sources:   []string{"site-a"},
+			wantSrcs:  []string{"site-a"},
 			wantWorks: []string{"a.jpg"},
 		},
 	}
@@ -256,7 +256,7 @@ func TestReplaceSources(t *testing.T) {
 }
 
 func TestReplaceSourcesBlockNotFound(t *testing.T) {
-	base := "1  甲\n来源\nkemono\n"
+	base := "1  甲\n来源\nsite-a\n"
 	got, found := ReplaceSources(base, GenerateAuthorID("乙"), []string{"x"})
 	if found {
 		t.Fatal("块不存在应返回 found=false")
@@ -268,8 +268,8 @@ func TestReplaceSourcesBlockNotFound(t *testing.T) {
 
 func TestReplaceSourcesIdempotent(t *testing.T) {
 	id := GenerateAuthorID("甲")
-	once, _ := ReplaceSources("1  甲\n作品\na.jpg\n", id, []string{"kemono", "老王论坛"})
-	twice, _ := ReplaceSources(once, id, []string{"kemono", "老王论坛"})
+	once, _ := ReplaceSources("1  甲\n作品\na.jpg\n", id, []string{"site-a", "forum-c"})
+	twice, _ := ReplaceSources(once, id, []string{"site-a", "forum-c"})
 	if once != twice {
 		t.Fatalf("幂等替换应逐字一致：\n--- 一次 ---\n%s\n--- 两次 ---\n%s", once, twice)
 	}
@@ -279,10 +279,10 @@ func TestPruneUploadEntries(t *testing.T) {
 	id := GenerateAuthorID("甲")
 	nid := GenerateAuthorID("乙")
 	entries := []UploadEntry{
-		{AuthorID: id, DisplayName: "甲", Names: []string{"甲"}, Works: []string{"f.jpg", "keep.png"}, Sources: []string{"kemono"}},
+		{AuthorID: id, DisplayName: "甲", Names: []string{"甲"}, Works: []string{"f.jpg", "keep.png"}, Sources: []string{"site-a"}},
 		{AuthorID: nid, DisplayName: "乙", Names: []string{"乙"}, Works: []string{"g.jpg"}},
 	}
-	content := "1  甲\n来源\nkemono\n作品\nkeep.png\n\n2  乙\n作品\ng.jpg\n"
+	content := "1  甲\n来源\nsite-a\n作品\nkeep.png\n\n2  乙\n作品\ng.jpg\n"
 	got := PruneUploadEntries(entries, content)
 	if len(got) != 2 {
 		t.Fatalf("条目数=%d, want 2（甲保留缺行条目、乙完整保留）：%+v", len(got), got)
@@ -290,7 +290,7 @@ func TestPruneUploadEntries(t *testing.T) {
 	if !reflect.DeepEqual(got[0].Works, []string{"keep.png"}) {
 		t.Fatalf("甲条目应剔除已不存在的 f.jpg：%+v", got[0].Works)
 	}
-	if !reflect.DeepEqual(got[0].Sources, []string{"kemono"}) {
+	if !reflect.DeepEqual(got[0].Sources, []string{"site-a"}) {
 		t.Fatalf("来源行与作品行独立裁剪：%+v", got[0].Sources)
 	}
 	if got[0].DisplayName != "甲" || !reflect.DeepEqual(got[0].Names, []string{"甲"}) {
@@ -308,7 +308,7 @@ func TestPruneUploadEntries(t *testing.T) {
 	}
 
 	// 无缺失时原样返回（含同一底层数组，不产生新分配）。
-	full := "1  甲\n来源\nkemono\n作品\nf.jpg\nkeep.png\n\n2  乙\n作品\ng.jpg\n"
+	full := "1  甲\n来源\nsite-a\n作品\nf.jpg\nkeep.png\n\n2  乙\n作品\ng.jpg\n"
 	got = PruneUploadEntries(entries, full)
 	if len(got) != 2 {
 		t.Fatalf("无缺失应原样返回：%+v", got)

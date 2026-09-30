@@ -165,7 +165,7 @@ export function useAuthorSuggest(q: string, enabled = true) {
 }
 
 /** 通用来源词表（GET /authors/source-vocabulary）：来源建议=获取渠道平台名
- *  （如「老王论坛」），服务端手动维护的小清单、全员共享（个人片段词已退出
+ *  （如「forum-c」），服务端手动维护的小清单、全员共享（个人片段词已退出
  *  建议场景）；服务端已按固定序返回，前端不再排。设置页词表卡与资产编辑页
  *  来源区快捷选项共用。 */
 export function useSourceVocabulary() {
