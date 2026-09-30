@@ -8,6 +8,15 @@
 - 子代理执行的工作标注"（执行子代理）"，主对话直接完成的标注"（主代理）"。
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
+## fix(app): 预取跳过记录捆绑服务器标识+SKIP 前抽样核对——换服务器撞号与缓存漂移双修（2026-09-30 第四百一十三笔）
+
+执行 AI：GLM-5.3（主代理，executor+reviewer 子代理协作）
+
+- **动机（第四百一十二笔复查确认两个真实缺陷）**：① 换端撞号——预取修订号记录只有 Long 值、不记是哪台服务器，本地端与 NAS 是独立计数器且播种基线同为 `COUNT(assets)+1`，两端库规模相近时修订号可相等，切服务器后被错误 SKIP，新服务器一张图没缓存过也永远不预取（旧文档「换服务端不区分多拉无害」论证失实：真实风险是错误 SKIP 而非多拉）；② 缓存漂移——Coil 磁盘缓存池 maxSize LRU 驱逐/系统存储紧张清整个 cache 目录/备份恢复把服务端 `library_revision` 一起回滚，都不动客户端记录，「记录说全量、实际缺一片」且修订号不变永不自愈。修法失败方向全部落在「多拉一轮无害」，协议与服务端零改动。
+- **改动（ADR-0026 修订节，决策 7/8）**：`PrefetchRevisionStore` 记录升级三元组（`last_prefetch_revision` 修订号 + 新增 `last_prefetch_server` 服务器 base URL 原串 + 新增 `last_prefetch_sample` 随机抽样），三键同一次 DataStore edit 原子写入；原串精确比较不规范化（同实例换地址多拉一轮无害）；存量只有旧版修订号键的记录按无记录迁移（下轮 FULL 后写入完整三元组）。`PrefetchRevisionGate` 扩为五分支（serverRev null→FULL / record null→FULL / **serverKey 不等→FULL 换端必走全量** / 相等→SKIP / 其余→FULL），缺省永远偏 FULL 口径不变。新增 `PrefetchSampleGate` 纯函数（无 IO）：`SAMPLE_SIZE=50`（用户拍板）、`MISSING_THRESHOLD_PCT=20` 整数运算、空样本恒维持 SKIP。`ThumbnailPrefetcher` 接线：门判 SKIP 后先用记录端同事务落盘的随机样本经 `PrefetchDiskProbe` 逐条本地磁盘探测（stableKey 剥 exp/sig，URL 带过期签名不影响），缺失达阈值降级全量补拉并轮末写回新样本自愈；`recordRound` 同事务记「修订号+服务器标识+抽样」（空库轮照记空样本）；空样本/样本读失败维持 SKIP（revision 读成功说明 DataStore 基本健康，取舍入注释）。
+- **测试**：`:core:data:testDebugUnitTest` 202 用例全绿（gate 6 分支含换端撞号回归锁 / store 6 含三键同写、样本回读、clear 三键全删、旧版 Long 键迁移为 null / sampleGate 7 含 20% 整除边界与固定种子确定性）；`:feature:manage:testDebugUnitTest` 54 全绿（清池失效接线不回归，桩随接口机械适配）；`:app:assembleDebug` 构建通过。
+- **协作记录**：主代理定稿改动清单，executor 执行（含 feature:manage 测试桩因接口扩签名的连带最小适配），文档四处同步（ADR-0026 修订节/INDEX/HANDOVER/CHANGELOG）。（GLM-5.3 主代理）
+
 ## feat(api): 库内容修订号端点+客户端预取整轮跳过（ADR-0026）——大库预取零列表请求（2026-09-30 第四百一十二笔）
 
 执行 AI：GLM-5.3-Flash（主代理，executor×2 + reviewer 子代理协作）
