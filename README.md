@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) [![Go](https://img.shields.io/badge/Go-1.27-00ADD8.svg)](https://go.dev) [![Node](https://img.shields.io/badge/Node-24%20LTS-339933.svg)](https://nodejs.org)
 
 > 本项目 100% 由 AI 生成，作者无编程基础，依靠完善的文档体系驱动 AI 协作开发。
-> 前身：[绮梦影库](../..)（Android 单机版，作为领域知识库继续存在，架构不共享）。
+> 前身：绮梦影库（Android 单机版，已退役；领域规则提炼进本项目 `docs/DOMAIN_RULES.md`）。
 
 ## 这是什么
 
@@ -78,6 +78,15 @@ CI（GitHub Actions 五 job：openapi 协议校验 / server vet+test+build+golan
 | `docs/OBSERVABILITY.md` | 监控与仪表盘 |
 | `docs/PROJECT_PLAN.md` | 里程碑 M0-M6+ 与验收标准 |
 | `docs/adr/` | 架构决策记录（每个重大决策的"为什么"，索引见 `docs/adr/INDEX.md`） |
+
+## 反馈与讨论
+
+这是一个个人自用项目的开源，主要想交流两件事：**AI 协作开发的工作流**（文档驱动 + 协议先行，见 `AI_README_FIRST.md` 与 `docs/adr/`）和**三端统一的 UI/交互设计**（Web / Android / 桌面）。对界面、交互、架构有任何建议都欢迎提 Issue，聊 UI 的话附截图或录屏最好。
+
+## 开源边界
+
+- 仓库不含任何真实媒体数据、口令与密钥；免密开发模式仅限本机/内网（安全设计见 `docs/SECURITY.md`）。
+- 提 Issue 时请自行脱敏：不要贴服务器地址、口令与涉及个人内容的媒体截图。
 
 ## License
 
