@@ -21,8 +21,9 @@
 set -euo pipefail
 
 # ---------- 常量区 ----------
-# adb 固定取 Android SDK platform-tools（PATH 里可能有别的 adb，显式指定唯一确定）。
-ADB="<AndroidSdk>/platform-tools/adb.exe"
+# adb 固定取 Android SDK platform-tools（PATH 里可能有别的 adb，显式指定唯一确定；
+# 默认按 %LOCALAPPDATA% 定位 SDK，本机 SDK 装在别处时 ADB=/路径/adb.exe 覆盖）。
+ADB="${ADB:-${LOCALAPPDATA}/Android/Sdk/platform-tools/adb.exe}"
 # qimeng_api35t 固定 -port 5581 拉起 → serial 恒为 emulator-5581（头注释口径）。
 EMU_SERIAL="emulator-5581"
 # 服务端只绑设备回环，经 adb forward 映射到宿主机同端口。
@@ -78,7 +79,7 @@ step "1/11 preflight: device online & booted (qimeng_api35t @ ${EMU_SERIAL})"
 "$ADB" devices >"$EVID_DIR/01-adb-devices.txt" 2>&1
 grep -q "^${EMU_SERIAL}[[:space:]]\+device$" "$EVID_DIR/01-adb-devices.txt" \
   || die "emulator ${EMU_SERIAL} (qimeng_api35t) not online. Start it from the main session, e.g.:
-  powershell -Command \"Start-Process -FilePath '<AndroidSdk>/emulator/emulator.exe' -ArgumentList '-avd','qimeng_api35t','-port','5581','-no-snapshot-save'\""
+  powershell -Command \"Start-Process -FilePath \\\"$env:LOCALAPPDATA/Android/Sdk/emulator/emulator.exe\\\" -ArgumentList '-avd','qimeng_api35t','-port','5581','-no-snapshot-save'\""
 boot_ok=""
 for i in $(seq 1 90); do # 轮询上限 180s（90 次 x 2s）
   boot_ok="$("$ADB" -s "$EMU_SERIAL" shell getprop sys.boot_completed 2>/dev/null | tr -d '[:space:]\r')" || true

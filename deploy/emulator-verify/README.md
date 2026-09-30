@@ -19,8 +19,9 @@ sysmon 状态 → SQLite WAL 落盘 → 启动自检 Warn 日志（本批 `Check
   本脚本任何操作。
 - 宿主机（Windows Git Bash）：`curl` / GNU `timeout`（Git for Windows 自带）；
   `make` / `go` 需自行安装并在 PATH（仓库工具链口径见 Makefile 头部 PATH 补丁
-  与 `../dev-tools/TOOLCHAIN_GUIDE.md`）；adb 取
-  `<AndroidSdk>/platform-tools/adb.exe`。
+  与 `../dev-tools/TOOLCHAIN_GUIDE.md`）；adb 默认取
+  `%LOCALAPPDATA%/Android/Sdk/platform-tools/adb.exe`，SDK 装在别处时用
+  `ADB=<路径>/adb.exe` 环境变量覆盖。
 - 服务端免密通道：设备侧环境变量 `QIMENG_AUTH_DEV_MODE=1`（脚本内已带），
   对应 `POST /api/v1/auth/dev-login`。
 

@@ -184,7 +184,9 @@ server-test: ## all server tests (-race runs in CI; no gcc on Windows host)
 # arm64 纯静态零 cgo（POC 实证）；amd64 是 Go 硬限制必须 cgo 外链（android/amd64
 # requires external linking），借 NDK clang 交叉链——cgo 代码量为零（net/os.user 外链），
 # modernc sqlite 仍是纯 Go，见 ../m6-poc/POC-RESULT.md 步骤②.2。
-ANDROID_NDK_HOME ?= <AndroidSdk>/ndk/28.2.13676358
+# 默认取本机 Android SDK 下的 NDK（LOCALAPPDATA 展开为当前用户目录，不硬编码用户名；
+# 其他盘符/版本布局请显式传 ANDROID_NDK_HOME=... 覆盖）。
+ANDROID_NDK_HOME ?= $(subst \,/,$(LOCALAPPDATA))/Android/Sdk/ndk/28.2.13676358
 # 注意 windows-x86_64/.cmd 是 Windows 宿主三元组：非 Windows 宿主跑 server-android-amd64
 # 需按本机 NDK prebuilt 目录改写（arm64 target 不依赖 NDK，跨宿主无此问题）。
 NDK_X64_CLANG := $(ANDROID_NDK_HOME)/toolchains/llvm/prebuilt/windows-x86_64/bin/x86_64-linux-android35-clang.cmd

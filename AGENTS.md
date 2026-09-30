@@ -42,6 +42,7 @@
 11. **模块边界不可违反**——depguard 两条红线（`httpapi/gen` 只许 httpapi 用；业务包与 sysmon 禁反向依赖 httpapi，cmd 组合根例外）+ Go internal 编译器边界（ADR-0010）。被 lint 拦截只能按依赖方向重构，禁止开豁免。
 12. **新功能先对照能力地图找缺口**——主动提案的依据是 `docs/CAPABILITY_MAP.md`（对标 Jellyfin/Immich/Plex 的现状与缺口），不是等用户撞到问题。
 13. **Android 构建部署必须显式指定项目 AVD（qimeng_api35）**——`adb devices` 里的 `emulator-5554` 是用户的雷电游戏模拟器（伪装 MI 9），是"第一个在线设备"的常客，严禁对它安装/拉起本项目任何包、执行 wm/settings 类调试命令；插件与 IDE 的默认设备选择不可信赖，必须显式传 `avd: qimeng_api35`（必要时先冷启动该 AVD）。（2026-09-09 事故：雷电被误当调试机，启梦 App 被装入并顶掉用户游戏）
+14. **明文密钥与隐私不入库**——口令/令牌/密钥/设备序列号/内网拓扑/含用户名的本机绝对路径，一律不得进任何被跟踪文件（代码、配置、测试、文档，含 CHANGELOG/HANDOVER 等记录性文档）；配置只走 `QIMENG_*` 环境变量或 gitignore 的 `*.local`，测试口令必须是明显合成值。提交前自查敏感串；发现已入库立即脱敏，已提交的用 `git filter-repo --replace-text` 重写历史（细则见 `docs/SECURITY.md`「仓库卫生」）。（2026-09-30 开源前审计：CHANGELOG 曾明文记录真实管理口令与真机序列号，已全历史重写清除）
 
 ## 警戒线（软约束）
 

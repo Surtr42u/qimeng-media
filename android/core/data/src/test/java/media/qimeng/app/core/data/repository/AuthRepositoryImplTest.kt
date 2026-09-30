@@ -39,7 +39,7 @@ import okio.Buffer
 @OptIn(ExperimentalCoroutinesApi::class)
 class AuthRepositoryImplTest {
 
-    /** 正确密码（fake 服务端 handler 与测试断言共用）。 */
+    /** 正确密码（fake 服务端 handler 与测试断言共用；合成值，开源红线：不得用任何真实口令）。 */
     private val correctPassword = "test-password-001"
 
     /** healthz 响应状态（默认 200；个别用例改 404 模拟「对端不是绮梦服务端」）。 */

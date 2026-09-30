@@ -96,6 +96,7 @@
 - 禁止手改 SDK 生成物（`server/internal/httpapi/gen/*.gen.go`、`web/src/api/generated/`、`android/sdk/**`）——协议改动只改 openapi.yaml 后 `make sdk`（ADR-0009）。生成物指纹锁 `api/sdk.lock` 入库（#10）：协议改动或 make sdk 重新生成后须同 commit 更新锁文件——指纹入库≠产物入库。
 - 禁止违反 depguard 模块边界或为其开豁免——被 lint 拦截只能按依赖方向重构（ADR-0010）。
 - 禁止修改历史 migration 文件——schema 演进只加文件（ADR-0011）。
+- 禁止把明文口令/密钥/令牌/设备序列号/含用户名的本机绝对路径写进任何入库文件（代码、测试、文档，含 CHANGELOG/HANDOVER 一视同仁）——配置走 `QIMENG_*` 环境变量或 gitignore 的 `*.local`，测试口令用合成值；违例立即脱敏，已提交的须 `git filter-repo --replace-text` 全历史重写（AGENTS.md 铁律 14、`docs/SECURITY.md`「仓库卫生」）。
 
 ## 冲突优先级
 
