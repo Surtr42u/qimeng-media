@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) [![Go](https://img.shields.io/badge/Go-1.27-00ADD8.svg)](https://go.dev) [![Node](https://img.shields.io/badge/Node-24%20LTS-339933.svg)](https://nodejs.org)
 
-> 本项目 100% 由 AI 生成，作者无编程基础，依靠完善的文档体系驱动 AI 协作开发。
+> 本项目 100% 由 AI 生成：以协议先行（`openapi.yaml`）+ 文档驱动的工程体系组织 AI 协作开发，每个重大决策都有 ADR 可追溯（`docs/adr/`）。
 > 前身：绮梦影库（Android 单机版，已退役；领域规则提炼进本项目 `docs/DOMAIN_RULES.md`）。
 
 ## 这是什么
@@ -81,7 +81,7 @@ CI（GitHub Actions 五 job：openapi 协议校验 / server vet+test+build+golan
 
 ## 反馈与讨论
 
-这是一个个人自用项目的开源，主要想交流两件事：**AI 协作开发的工作流**（文档驱动 + 协议先行，见 `AI_README_FIRST.md` 与 `docs/adr/`）和**三端统一的 UI/交互设计**（Web / Android / 桌面）。对界面、交互、架构有任何建议都欢迎提 Issue，聊 UI 的话附截图或录屏最好。
+欢迎围绕两件事交流：**AI 协作开发的工作流**（文档驱动 + 协议先行，见 `AI_README_FIRST.md` 与 `docs/adr/`）和**三端统一的 UI/交互设计**（Web / Android / 桌面）。对界面、交互、架构有任何建议都欢迎提 Issue，聊 UI 的话附截图或录屏最好。
 
 ## 开源边界
 
