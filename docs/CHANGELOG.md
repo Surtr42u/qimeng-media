@@ -8,6 +8,16 @@
 - 子代理执行的工作标注"（执行子代理）"，主对话直接完成的标注"（主代理）"。
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
+## feat(api): 库内容修订号端点+客户端预取整轮跳过（ADR-0026）——大库预取零列表请求（2026-09-30 第四百一十二笔）
+
+执行 AI：GLM-5.3-Flash（主代理，executor×2 + reviewer 子代理协作）
+
+- **动机（用户拍板"未雨绸缪"扩规模）**：第四百一十一笔后预取链路唯一剩的大头 = 每轮冷启动全量分页拉资产列表（10 万资产 = 500 页请求），且 `ALL_THUMBS_MAX_PAGES` 4 万硬上限会静默截断。引入全局库 revision：库没变 → 整轮零列表请求；变了才拉列表+探测补缺。**刻意不做** since 增量清单/墓碑/游标（磁盘探测短路已把变更轮成本压到毫秒级，状态机级复杂度买到的是边际收益——规模到十万级或多端同步需求出现再立项）与 SSE 推送预取（进程存活不可靠）。
+- **服务端**：`GET /api/v1/library/revision` → `{revision: int64}`（Bearer 鉴权，路径 66→67，三端 SDK 重生成 + sdk.lock 更新）。全局单计数器持久化 kv_settings 键 `library_revision`（复用 migration 0003 表，无新 migration；键缺失时 `COUNT(assets)+1` 原子播种）；自增 = SQL 单条 UPDATE 原子 + 应用层互斥串行（`server/internal/libraryrevision/`）。bump 收口：发 `library.changed` 的全部写路径（扫描全链/上传/回收站移入与恢复/整理移动/标签/库删除/库开关/手动扫描）在事件订阅一处 bump；不发事件的 4 条路径（物删单条/清空回收站/到期清扫 removed>0/qimeng-backup 导入）显式 bump；`bumpLibraryRevision` 全仓唯一出口、失败只告警（弱失败=客户端至多多拉一轮）。语义边界：只保证资产集合面（收藏/进度/作者展示字段不保证——当前唯一消费方只用 thumbUrl）。
+- **Android**：`PrefetchRevisionGate` 纯函数四分支（serverRev null→FULL 含旧服务端 404 降级 / lastDone null→FULL / 相等→SKIP / 不等→FULL）+ `PrefetchRevisionStore`（DataStore 键 `last_prefetch_revision`，接口化可打桩）+ `LibraryRevisionRepository` 端口（`revision(): Long?` 永不抛出）。`ThumbnailPrefetcher` 接线：就绪探针+计费网络门后拉 revision 比对，SKIP 置新终态 `PrefetchUiState.Skipped`（UI 显示"缓存已是最新，本轮无需同步"，不调 allThumbUrls）；FULL 轮完成写回轮首 revision（null 不写保旧值，空库轮也写）。**清空任一缓存池必须失效本地 revision 记录**（`ThumbnailCacheViewModel.clearPool` → `store.clear()`，reviewer P1 修复：否则清空后库静态即永久 SKIP 预取失效）。降级全部"多做无害"方向。
+- **测试**：server 17 包全绿（libraryrevision 4 用例含 32 并发自增零丢失；httpapi 全链精确计数「上传→移入→物删→清空」base+1..+6；401 鉴权锁定）；Android core:data 192 / feature:manage 54 / `:app:assembleDebug` 全绿（gate 5 分支 + store 4 含 clear 失效 + VM 清空接线桩）；golangci-lint 0 issues（depguard 红线未触碰）；生成物哈希与 sdk.lock 逐一比对一致（reviewer 亲跑复核）。
+- **协作记录**：executor-A（协议+服务端+生成物）、executor-B（客户端+UI）、reviewer（对抗审查亲跑复核，打回 P1 清缓存失效缺失 + P2 注释失实，均已修复；P2 记档：一次扫描可能双发布使 revision 跳 2 系既有行为方向安全）。真机端到端验证因设备断开未跑成（代码层验证全闭环），用户重连后首次打开 App：库未变时预取状态应显示"缓存已是最新，本轮无需同步"。（GLM-5.3-Flash 主代理）
+
 ## fix(app): 缩略图预取磁盘探测短路+分池路由来源化——反复缓存根治与本地池架空修复（2026-09-30 第四百一十一笔）
 
 执行 AI：GLM-5.3-Flash（主代理）

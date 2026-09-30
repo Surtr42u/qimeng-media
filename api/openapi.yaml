@@ -157,6 +157,20 @@ paths:
       responses:
         "204": { description: 已更新 }
         "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/library/revision:
+    get:
+      summary: 库内容修订号（全局单计数器，客户端增量同步的跳过依据）
+      description: |
+        全局唯一的库内容版本号（不分库）：扫描入库/增量变更/上传/回收站移入/
+        恢复/物理删除/qimeng-backup 导入等任何改变资产集合的写入都会使其自增。
+        客户端（缩略图预取器等全量分页拉列表的消费方）记录上一轮拉取时的
+        revision，本轮读到的值未变即可整轮跳过列表拉取；值变大则全量重拉。
+        语义约定：单调递增、重启不回退（持久化于 kv_settings）；全新部署启动
+        时以 COUNT(assets)+1 为基线初始化（恒 ≥1，避免 0 与"客户端无记录"
+        语义混淆）。弱一致性：写入与自增之间存在毫秒级窗口，客户端多拉一轮
+        永远安全，少拉一轮才需要关心——因此值只会"偏大"不会"偏小"。
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/LibraryRevision" } } } }
   /api/v1/events:
     get:
       summary: SSE 事件流（scan.progress / library.changed / thumbnail.progress / upload.done）
@@ -1177,6 +1191,13 @@ components:
         name:     { type: string }
         rootPath: { type: string, description: 服务端可访问的绝对路径 }
         kind:     { type: string, enum: [normal, cos], default: normal, description: 缺省 normal；COS 作者库传 cos }
+
+    LibraryRevision:
+      type: object
+      description: GET /api/v1/library/revision 响应：全局库内容修订号（持久化于 kv_settings 键 library_revision，语义见该端点 description）
+      required: [revision]
+      properties:
+        revision: { type: integer, format: int64, description: 单调递增的库内容版本号；与上次取值相同即可跳过全量列表拉取 }
 
     AssetSummary:
       type: object

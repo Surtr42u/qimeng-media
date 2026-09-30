@@ -4,6 +4,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import media.qimeng.app.core.data.coil.CachePool
 import media.qimeng.app.core.data.prefetch.PrefetchUiState
+import media.qimeng.app.core.data.prefetch.PrefetchRevisionStore
 import media.qimeng.app.core.data.prefetch.ThumbnailPrefetchMonitor
 import media.qimeng.app.core.data.repository.CoilCacheManager
 import media.qimeng.app.core.testing.MainDispatcherRule
@@ -76,10 +77,28 @@ class ThumbnailCacheViewModelTest {
         override val state = MutableStateFlow<PrefetchUiState>(initial)
     }
 
+    /** 预取修订号仓状态桩：记录当前值与 clear 调用次数（清池失效接线验证用） */
+    private class FakePrefetchRevisionStore : PrefetchRevisionStore {
+        var stored: Long? = null
+        var clearedCount = 0
+
+        override suspend fun lastDoneRevision(): Long? = stored
+
+        override suspend fun setLastDoneRevision(revision: Long) {
+            stored = revision
+        }
+
+        override suspend fun clear() {
+            stored = null
+            clearedCount++
+        }
+    }
+
     private fun newViewModel(
         coil: FakeCoilCacheManager = FakeCoilCacheManager(),
         prefetch: FakePrefetchMonitor = FakePrefetchMonitor(),
-    ) = ThumbnailCacheViewModel(coil, prefetch, ioDispatcher)
+        revisionStore: FakePrefetchRevisionStore = FakePrefetchRevisionStore(),
+    ) = ThumbnailCacheViewModel(coil, prefetch, revisionStore, ioDispatcher)
 
     @Test
     fun `init读取两池四口径`() {
@@ -134,6 +153,26 @@ class ThumbnailCacheViewModelTest {
     }
 
     @Test
+    fun `清空任一缓存池后预取修订号记录失效`() {
+        // P1（清池失效接线）：预置「上一轮完成」记录模拟稳态，清 NAS 池 → clear 一次且
+        // 记录读回 null（下轮门判 FULL 补拉）；清本地池同样失效（修订号全局不分池）
+        val coil = FakeCoilCacheManager()
+        val store = FakePrefetchRevisionStore().apply { stored = 42L }
+        val viewModel = newViewModel(coil = coil, revisionStore = store)
+        driveIdle()
+
+        viewModel.clearNasCache()
+        driveIdle()
+        assertEquals(1, store.clearedCount)
+        assertEquals(null, store.stored)
+
+        viewModel.clearLocalCache()
+        driveIdle()
+        assertEquals(2, store.clearedCount)
+        assertEquals(null, store.stored)
+    }
+
+    @Test
     fun `预取状态只读透出`() {
         val viewModel = newViewModel(
             prefetch = FakePrefetchMonitor(PrefetchUiState.Running(done = 10, total = 20)),
@@ -144,6 +183,19 @@ class ThumbnailCacheViewModelTest {
         val running = state as PrefetchUiState.Running
         assertEquals(10, running.done)
         assertEquals(20, running.total)
+    }
+
+    @Test
+    fun `预取跳过态只读透出`() {
+        // revision 未变整轮跳过（2026-09-30）：VM 对新终态只透出不干预，也不触发重采样
+        val coil = FakeCoilCacheManager(nasCount = 42)
+        val monitor = FakePrefetchMonitor()
+        val viewModel = newViewModel(coil = coil, prefetch = monitor)
+        driveIdle()
+        monitor.state.value = PrefetchUiState.Skipped
+        driveIdle()
+        assertTrue(viewModel.prefetchState.value is PrefetchUiState.Skipped)
+        assertEquals(42, viewModel.uiState.value.nasFileCount)
     }
 
     @Test

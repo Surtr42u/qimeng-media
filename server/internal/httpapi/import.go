@@ -93,6 +93,9 @@ func (s *Server) PostApiV1ImportQimengBackup(w http.ResponseWriter, r *http.Requ
 		imp.res.Warnings = &imp.warnings // 始终非 nil，空时序列化为 []
 		// 全量导入改变了资产/行为/标签等推荐输入，推荐缓存失效
 		s.invalidateRecommendCache()
+		// 导入不发布 library.changed（与推荐缓存同款直调口径），修订号在
+		// 此显式推进（revision.go 的 bump 链清单）。
+		s.bumpLibraryRevision()
 		writeJSON(w, http.StatusOK, imp.res)
 	}
 }
