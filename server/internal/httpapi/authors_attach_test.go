@@ -165,7 +165,7 @@ func TestImportTxtConflictMultiAuthor(t *testing.T) {
 	} else {
 		closeBody(resp)
 	}
-	if resp := env.putAuthorSources(t, m, []string{"老王论坛"}); resp.StatusCode != http.StatusOK {
+	if resp := env.putAuthorSources(t, m, []string{"forum-c"}); resp.StatusCode != http.StatusOK {
 		t.Fatalf("M 来源区写入期望 200，得到 %d", resp.StatusCode)
 	} else {
 		closeBody(resp)
@@ -177,7 +177,7 @@ func TestImportTxtConflictMultiAuthor(t *testing.T) {
 	}
 	// 存量上传条目（挂靠退役后条目只剩历史数据；重导入保护的比对输入）。
 	seedUploadEntry(t, env, "多作者.txt", authoring.UploadEntry{
-		AuthorID: m, DisplayName: "作者M", Names: []string{"作者M"}, Works: []string{"g1.jpg"}, Sources: []string{"老王论坛"},
+		AuthorID: m, DisplayName: "作者M", Names: []string{"作者M"}, Works: []string{"g1.jpg"}, Sources: []string{"forum-c"},
 	})
 	seedUploadEntry(t, env, "多作者.txt", authoring.UploadEntry{
 		AuthorID: n, DisplayName: "作者N", Names: []string{"作者N"}, Works: []string{"g2.jpg"},
@@ -202,8 +202,8 @@ func TestImportTxtConflictMultiAuthor(t *testing.T) {
 	if w := deref(authors[byID[m]].Works); len(w) != 1 || w[0] != "g1.jpg" {
 		t.Fatalf("作者M 缺失作品应只 [g1.jpg]：%v", w)
 	}
-	if s := deref(authors[byID[m]].Sources); len(s) != 1 || s[0] != "老王论坛" {
-		t.Fatalf("作者M 缺失来源应只 [老王论坛]：%v", s)
+	if s := deref(authors[byID[m]].Sources); len(s) != 1 || s[0] != "forum-c" {
+		t.Fatalf("作者M 缺失来源应只 [forum-c]：%v", s)
 	}
 	if w := deref(authors[byID[n]].Works); len(w) != 1 || w[0] != "g2.jpg" {
 		t.Fatalf("作者N 缺失作品应只 [g2.jpg]：%v", w)

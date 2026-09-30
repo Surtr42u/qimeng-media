@@ -37,7 +37,7 @@ func TestAuthorSourcesMultiAliasNoBlockRoundTrip(t *testing.T) {
 		t.Fatalf("删片段后作者行应保留多别名 displayName：%+v", a)
 	}
 
-	if resp := env.putAuthorSources(t, night, []string{"老王论坛"}); resp.StatusCode != http.StatusOK {
+	if resp := env.putAuthorSources(t, night, []string{"forum-c"}); resp.StatusCode != http.StatusOK {
 		t.Fatalf("PUT 来源区期望 200，得到 %d", resp.StatusCode)
 	} else {
 		closeBody(resp)
@@ -48,11 +48,11 @@ func TestAuthorSourcesMultiAliasNoBlockRoundTrip(t *testing.T) {
 	}
 	// blockWorksOf 内部断言块回读 id == night（漂移时 fatal）。
 	_, srcs := blockWorksOf(t, content, night)
-	if len(srcs) != 1 || srcs[0] != "老王论坛" {
-		t.Fatalf("新块来源区=%v, want [老王论坛]", srcs)
+	if len(srcs) != 1 || srcs[0] != "forum-c" {
+		t.Fatalf("新块来源区=%v, want [forum-c]", srcs)
 	}
-	if code, got := getAuthorSources(t, env, night); code != http.StatusOK || len(got) != 1 || got[0] != "老王论坛" {
-		t.Fatalf("GET 来源区=（%d, %v）, want（200, [老王论坛]）", code, got)
+	if code, got := getAuthorSources(t, env, night); code != http.StatusOK || len(got) != 1 || got[0] != "forum-c" {
+		t.Fatalf("GET 来源区=（%d, %v）, want（200, [forum-c]）", code, got)
 	}
 
 	// 统一重建：块按 " / " 连接回读仍命中原 id，来源区保留，无幻影作者。
@@ -60,8 +60,8 @@ func TestAuthorSourcesMultiAliasNoBlockRoundTrip(t *testing.T) {
 		t.Fatalf("重建期望 200，得到 %d", code)
 	}
 	content, _ = fragmentOf(t, env, "other.txt")
-	if _, srcs = blockWorksOf(t, content, night); len(srcs) != 1 || srcs[0] != "老王论坛" {
-		t.Fatalf("重建后来源区=%v, want [老王论坛]", srcs)
+	if _, srcs = blockWorksOf(t, content, night); len(srcs) != 1 || srcs[0] != "forum-c" {
+		t.Fatalf("重建后来源区=%v, want [forum-c]", srcs)
 	}
 	for _, a := range listAuthors(t, env) {
 		if a.Id != nil && *a.Id == "night__cry" {
@@ -129,7 +129,7 @@ func TestAuthorNoBlockSingleAliasStillWorks(t *testing.T) {
 	importTXT(t, env, "c.txt", "Z\n") // 格式 C：零片段常规作者
 	d := uploadOne(t, env, "f.jpg")
 
-	if resp := env.putAuthorSources(t, z, []string{"老王论坛"}); resp.StatusCode != http.StatusOK {
+	if resp := env.putAuthorSources(t, z, []string{"forum-c"}); resp.StatusCode != http.StatusOK {
 		t.Fatalf("PUT 来源区期望 200，得到 %d", resp.StatusCode)
 	} else {
 		closeBody(resp)
@@ -138,8 +138,8 @@ func TestAuthorNoBlockSingleAliasStillWorks(t *testing.T) {
 	if !containsLine(content, "1  Z") {
 		t.Fatalf("编号行应为单别名 Z:\n%s", content)
 	}
-	if _, srcs := blockWorksOf(t, content, z); len(srcs) != 1 || srcs[0] != "老王论坛" {
-		t.Fatalf("来源区=%v, want [老王论坛]", srcs)
+	if _, srcs := blockWorksOf(t, content, z); len(srcs) != 1 || srcs[0] != "forum-c" {
+		t.Fatalf("来源区=%v, want [forum-c]", srcs)
 	}
 
 	if resp := env.putAssetAuthors(t, d.Id.String(), []string{z}); resp.StatusCode != http.StatusOK {
@@ -149,6 +149,6 @@ func TestAuthorNoBlockSingleAliasStillWorks(t *testing.T) {
 	}
 	content, _ = fragmentOf(t, env, authoring.AutoFragmentFilename)
 	if works, srcs := blockWorksOf(t, content, z); len(works) != 1 || works[0] != "f.jpg" || len(srcs) != 1 {
-		t.Fatalf("块=%v/%v, want works [f.jpg] + sources [老王论坛]", works, srcs)
+		t.Fatalf("块=%v/%v, want works [f.jpg] + sources [forum-c]", works, srcs)
 	}
 }

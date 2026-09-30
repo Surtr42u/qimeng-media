@@ -1499,7 +1499,7 @@ func TestAssetListDirectoryFilter(t *testing.T) {
 // TestAssetListMultiValueFilters：source/character/work 多值协议（2026-09-09
 // 协议批，#29）——同维内 OR（数组内任一命中）、跨维 AND；单值=单元素
 // 数组向后兼容；'其他' 桶可与具名出处混选。fixture 复用 seedFacetFixture
-// （a.jpg 无出处+天使 / b.jpg kemono+天使+黑百合 / c.mp4 视频；COS 库
+// （a.jpg 无出处+天使 / b.jpg site-a+天使+黑百合 / c.mp4 视频；COS 库
 // 1.jpg 作品P、2.jpg 无作品——GET /assets 缺省排除 COS）。
 func TestAssetListMultiValueFilters(t *testing.T) {
 	env := newTestEnv(t)
@@ -1541,16 +1541,16 @@ func TestAssetListMultiValueFilters(t *testing.T) {
 	if got := fetchNames(""); len(got) != 3 {
 		t.Fatalf("无筛选应 3 条（a/b/c），得到 %v", got)
 	}
-	// 同维双值 OR：kemono ∪ 其他 → b.jpg + a.jpg（+c.mp4 其他桶）= 3 条。
-	if got := fetchNames("?source=kemono&source=" + percentEncode("其他")); len(got) != 3 {
-		t.Fatalf("source 双值(kemono,其他) 应 3 条，得到 %v", got)
+	// 同维双值 OR：site-a ∪ 其他 → b.jpg + a.jpg（+c.mp4 其他桶）= 3 条。
+	if got := fetchNames("?source=site-a&source=" + percentEncode("其他")); len(got) != 3 {
+		t.Fatalf("source 双值(site-a,其他) 应 3 条，得到 %v", got)
 	}
-	// 同维双值 OR（不含其他）：kemono ∪ 不存在 → 只 b.jpg。
-	if got := fetchNames("?source=kemono&source=no-such"); len(got) != 1 || got[0] != "b.jpg" {
-		t.Fatalf("source 双值(kemono,no-such) 应只 b.jpg，得到 %v", got)
+	// 同维双值 OR（不含其他）：site-a ∪ 不存在 → 只 b.jpg。
+	if got := fetchNames("?source=site-a&source=no-such"); len(got) != 1 || got[0] != "b.jpg" {
+		t.Fatalf("source 双值(site-a,no-such) 应只 b.jpg，得到 %v", got)
 	}
 	// 单值 = 单元素数组（向后兼容，旧调用形态不变）。
-	if got := fetchNames("?source=kemono"); len(got) != 1 || got[0] != "b.jpg" {
+	if got := fetchNames("?source=site-a"); len(got) != 1 || got[0] != "b.jpg" {
 		t.Fatalf("source 单值应只 b.jpg，得到 %v", got)
 	}
 	// '其他' 单值桶 = 无出处常规文件。
@@ -1565,9 +1565,9 @@ func TestAssetListMultiValueFilters(t *testing.T) {
 	if got := fetchNames("?character=" + percentEncode("天使+黑百合")); len(got) != 1 || got[0] != "b.jpg" {
 		t.Fatalf("character=天使+黑百合 应只 b.jpg，得到 %v", got)
 	}
-	// 跨维 AND：source=kemono ∩ character=天使 → 只 b；
+	// 跨维 AND：source=site-a ∩ character=天使 → 只 b；
 	// source=其他 ∩ character=黑百合 → 空。
-	if got := fetchNames("?source=kemono&character=" + percentEncode("天使")); len(got) != 1 || got[0] != "b.jpg" {
+	if got := fetchNames("?source=site-a&character=" + percentEncode("天使")); len(got) != 1 || got[0] != "b.jpg" {
 		t.Fatalf("source∩character 应只 b.jpg，得到 %v", got)
 	}
 	if n := fetchTotal("?source=" + percentEncode("其他") + "&character=" + percentEncode("黑百合")); n != 0 {

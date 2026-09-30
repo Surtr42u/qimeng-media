@@ -32,7 +32,7 @@ type wordAuthorStats struct {
 //   - 词逐项 trim 计（空词跳过；片段行的落库形态本就 trim，防御兜底）；
 //   - 保留 authorCount >= prefillMinAuthorCount 的词（单作者个人词排除）；
 //   - 排除链接形态：含 http/www.（大小写不敏感）或含点号（域名形态 xx.yy；
-//     平台名 lofter/老王论坛 无点号不受影响）；
+//     平台名 lofter/forum-c 无点号不受影响）；
 //   - 排除不可入库词（ValidSourceWord：控制字符/超长——与词表 PUT 通道
 //     同款校验，预填不得写入编辑端点写不进的内容）；
 //   - 排序 authorCount 降序、name 升序（项目惯例），截断 prefillMaxItems；

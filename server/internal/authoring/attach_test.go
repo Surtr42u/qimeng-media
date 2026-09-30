@@ -35,10 +35,10 @@ func TestAppendWorks(t *testing.T) {
 	}{
 		{
 			name:    "有作品区_续写在块尾",
-			content: "1  bamhor\n来源\nkemono\n作品\na.png\n",
+			content: "1  bamhor\n来源\nsite-a\n作品\na.png\n",
 			author:  "bamhor",
 			works:   []string{"b.png"},
-			want:    "1  bamhor\n来源\nkemono\n作品\na.png\nb.png\n",
+			want:    "1  bamhor\n来源\nsite-a\n作品\na.png\nb.png\n",
 			wantOK:  true,
 		},
 		{
@@ -51,10 +51,10 @@ func TestAppendWorks(t *testing.T) {
 		},
 		{
 			name:    "只有来源区的块_补作品标记开新区",
-			content: "1  bamhor\n来源\nkemono\n",
+			content: "1  bamhor\n来源\nsite-a\n",
 			author:  "bamhor",
 			works:   []string{"a.png"},
-			want:    "1  bamhor\n来源\nkemono\n作品\na.png\n",
+			want:    "1  bamhor\n来源\nsite-a\n作品\na.png\n",
 			wantOK:  true,
 		},
 		{
@@ -83,10 +83,10 @@ func TestAppendWorks(t *testing.T) {
 		},
 		{
 			name:    "数字开头作品行_续写不被当新块",
-			content: "6  Takerskiy\n出处  kemono\n作品\n2077  帕南.png\n",
+			content: "6  Takerskiy\n出处  site-a\n作品\n2077  帕南.png\n",
 			author:  "takerskiy",
 			works:   []string{"2077  朱迪.png"},
-			want:    "6  Takerskiy\n出处  kemono\n作品\n2077  帕南.png\n2077  朱迪.png\n",
+			want:    "6  Takerskiy\n出处  site-a\n作品\n2077  帕南.png\n2077  朱迪.png\n",
 			wantOK:  true,
 		},
 		{
@@ -134,7 +134,7 @@ func TestAppendWorks(t *testing.T) {
 
 // 幂等：同一输入重复追加，内容稳定不再变化（REQ §3.3 第 4 条）。
 func TestAppendWorksIdempotent(t *testing.T) {
-	content := "1  bamhor\n出处  kemono\n作品\na.png\n"
+	content := "1  bamhor\n出处  site-a\n作品\na.png\n"
 	once, _ := AppendWorks(content, "bamhor", []string{"b.png"})
 	twice, _ := AppendWorks(once, "bamhor", []string{"b.png"})
 	if twice != once {
@@ -161,58 +161,58 @@ func TestAppendSources(t *testing.T) {
 	}{
 		{
 			name:    "出处带平台名形态_新行并入来源区",
-			content: "1  that_maskey\n出处  kemono\n作品\na.png\n",
+			content: "1  that_maskey\n出处  site-a\n作品\na.png\n",
 			author:  "that_maskey",
 			sources: []string{"pixiv"},
-			want:    "1  that_maskey\n出处  kemono\npixiv\n作品\na.png\n",
+			want:    "1  that_maskey\n出处  site-a\npixiv\n作品\na.png\n",
 			wantOK:  true,
 		},
 		{
 			name:    "裸来源标记_既有行去重只补新行",
-			content: "1  aaa\n来源\nkemono\n作品\na.png\n",
+			content: "1  aaa\n来源\nsite-a\n作品\na.png\n",
 			author:  "aaa",
-			sources: []string{"kemono", "r34"},
-			want:    "1  aaa\n来源\nkemono\nr34\n作品\na.png\n",
+			sources: []string{"site-a", "site-f"},
+			want:    "1  aaa\n来源\nsite-a\nsite-f\n作品\na.png\n",
 			wantOK:  true,
 		},
 		{
 			name:    "来源区在块尾_无作品标记_续写块尾",
-			content: "1  aaa\n来源\nkemono\n",
+			content: "1  aaa\n来源\nsite-a\n",
 			author:  "aaa",
 			sources: []string{"pixiv"},
-			want:    "1  aaa\n来源\nkemono\npixiv\n",
+			want:    "1  aaa\n来源\nsite-a\npixiv\n",
 			wantOK:  true,
 		},
 		{
 			name:    "裸块_编号行后补来源标记",
 			content: "1  aaa\n",
 			author:  "aaa",
-			sources: []string{"kemono"},
-			want:    "1  aaa\n来源\nkemono\n",
+			sources: []string{"site-a"},
+			want:    "1  aaa\n来源\nsite-a\n",
 			wantOK:  true,
 		},
 		{
 			name:    "有作品区无来源区_标记加行插在作品前",
 			content: "1  aaa\n作品\na.png\n",
 			author:  "aaa",
-			sources: []string{"kemono"},
-			want:    "1  aaa\n来源\nkemono\n作品\na.png\n",
+			sources: []string{"site-a"},
+			want:    "1  aaa\n来源\nsite-a\n作品\na.png\n",
 			wantOK:  true,
 		},
 		{
 			name:    "作者不在任何块_found为假",
 			content: "1  aaa\n作品\na.png\n",
 			author:  "zzz",
-			sources: []string{"kemono"},
+			sources: []string{"site-a"},
 			want:    "1  aaa\n作品\na.png\n",
 			wantOK:  false,
 		},
 		{
 			name:    "全部已存在_内容不动",
-			content: "1  aaa\n来源\nkemono\n",
+			content: "1  aaa\n来源\nsite-a\n",
 			author:  "aaa",
-			sources: []string{"kemono"},
-			want:    "1  aaa\n来源\nkemono\n",
+			sources: []string{"site-a"},
+			want:    "1  aaa\n来源\nsite-a\n",
 			wantOK:  true,
 		},
 	}
@@ -250,14 +250,14 @@ func TestAppendSources(t *testing.T) {
 // 自带「来源」标记行（在首个「作品」标记前新开来源区，来源是集合语义，
 // 行序无所谓）。
 func TestAppendSourcesSandwichedSourcesRegion(t *testing.T) {
-	content := "1  aaa\n作品\nx.png\n来源\nkemono\n作品\ny.png\n"
-	got, found := AppendSources(content, "aaa", []string{"r34"})
+	content := "1  aaa\n作品\nx.png\n来源\nsite-a\n作品\ny.png\n"
+	got, found := AppendSources(content, "aaa", []string{"site-f"})
 	if !found {
 		t.Fatal("found=false, want true")
 	}
 	block := blockOf(t, got, "aaa")
-	if !reflect.DeepEqual(block.Sources, []string{"r34", "kemono"}) {
-		t.Errorf("Sources=%v, want [r34 kemono]\n内容:\n%s", block.Sources, got)
+	if !reflect.DeepEqual(block.Sources, []string{"site-f", "site-a"}) {
+		t.Errorf("Sources=%v, want [site-f site-a]\n内容:\n%s", block.Sources, got)
 	}
 	if !reflect.DeepEqual(block.Works, []string{"x.png", "y.png"}) {
 		t.Errorf("Works=%v, want [x.png y.png]（既有作品行不得被破坏）", block.Works)
@@ -287,9 +287,9 @@ func TestAppendAuthorBlock(t *testing.T) {
 			name:    "空内容_从编号1开始_来源作品齐全",
 			content: "",
 			names:   []string{"NewAuthor"},
-			sources: []string{"kemono"},
+			sources: []string{"site-a"},
 			works:   []string{"a.png"},
-			want:    "1  NewAuthor\n来源  kemono\n作品\na.png\n",
+			want:    "1  NewAuthor\n来源  site-a\n作品\na.png\n",
 		},
 		{
 			name:    "已有块_编号顺延最大值",
@@ -309,8 +309,8 @@ func TestAppendAuthorBlock(t *testing.T) {
 			name:    "只来源",
 			content: "1  aaa\n",
 			names:   []string{"bbb"},
-			sources: []string{"kemono"},
-			want:    "1  aaa\n2  bbb\n来源  kemono\n",
+			sources: []string{"site-a"},
+			want:    "1  aaa\n2  bbb\n来源  site-a\n",
 		},
 		{
 			name:    "来源作品都无_整段省略",
@@ -322,9 +322,9 @@ func TestAppendAuthorBlock(t *testing.T) {
 			name:    "显示名数字开头不误伤",
 			content: "",
 			names:   []string{"3cat"},
-			sources: []string{"kemono"},
+			sources: []string{"site-a"},
 			works:   []string{"x.png"},
-			want:    "1  3cat\n来源  kemono\n作品\nx.png\n",
+			want:    "1  3cat\n来源  site-a\n作品\nx.png\n",
 		},
 		{
 			name:    "无尾换行的既有内容_先补换行",
@@ -337,9 +337,9 @@ func TestAppendAuthorBlock(t *testing.T) {
 			name:    "多别名两空格分隔_回读恒等",
 			content: "",
 			names:   []string{"Night", "Cry"},
-			sources: []string{"kemono"},
+			sources: []string{"site-a"},
 			works:   []string{"a.png"},
-			want:    "1  Night  Cry\n来源  kemono\n作品\na.png\n",
+			want:    "1  Night  Cry\n来源  site-a\n作品\na.png\n",
 		},
 	}
 	for _, c := range cases {
@@ -381,7 +381,7 @@ func TestAppendAuthorBlockCanonicalRoundtrip(t *testing.T) {
 			t.Fatalf("CanonicalAuthorNames(%q) 不应为空", in)
 		}
 		wantID := GenerateAuthorID(names[0])
-		got := AppendAuthorBlock("1  别人\n作品\nx.png\n", names, []string{"kemono"}, []string{"a.png"})
+		got := AppendAuthorBlock("1  别人\n作品\nx.png\n", names, []string{"site-a"}, []string{"a.png"})
 		block := blockOf(t, got, wantID)
 		if !reflect.DeepEqual(block.AuthorNames, names) {
 			t.Errorf("输入 %q：回读 AuthorNames=%v, want %v\n内容:\n%s", in, block.AuthorNames, names, got)
@@ -403,7 +403,7 @@ func TestCanonicalAuthorNames(t *testing.T) {
 		{"bamhor[3D]", []string{"bamhor"}},
 		{"bamhor (3D)", []string{"bamhor"}},
 		{"Night Cry", []string{"Night Cry"}},
-		{"  紙飛行機(小红车)  mmd  ", []string{"紙飛行機", "mmd"}},
+		{"  紙飛行機(site-b)  mmd  ", []string{"紙飛行機", "mmd"}},
 		{"rioko凉凉子（全角备注）", []string{"rioko凉凉子"}},
 		{"[3D]", nil},     // 备注截断后为空：丢弃
 		{"", nil},         // 空串
@@ -434,7 +434,7 @@ func TestValidNewAuthorName(t *testing.T) {
 		{"纯数字", "123", false},
 		{"编号行形态", "12 abc", false},
 		{"来源标记词", "来源", false},
-		{"出处带平台名", "出处  kemono", false},
+		{"出处带平台名", "出处  site-a", false},
 		{"作品标记词", "作品", false},
 		{"空串", "", false},
 		{"纯空白", "   ", false},
@@ -466,7 +466,7 @@ func TestValidSourceWord(t *testing.T) {
 		in    string
 		valid bool
 	}{
-		{"kemono", true},
+		{"site-a", true},
 		{"新站点x", true},
 		{"https://example.com/a?b=1", true},
 		{"x\n作品\n恶意行.png", false}, // 审查 PoC 的行注入载荷
@@ -486,9 +486,9 @@ func TestValidSourceWord(t *testing.T) {
 // ---------- MissingUploadEntries / MergeUploadEntries ----------
 
 func TestMissingAndMergeUploadEntries(t *testing.T) {
-	content := "1  aaa\n来源\nkemono\n作品\na.png\nb.png\n"
+	content := "1  aaa\n来源\nsite-a\n作品\na.png\nb.png\n"
 	entries := []UploadEntry{
-		{AuthorID: "aaa", DisplayName: "aaa", Works: []string{"a.png", "c.png"}, Sources: []string{"kemono"}},
+		{AuthorID: "aaa", DisplayName: "aaa", Works: []string{"a.png", "c.png"}, Sources: []string{"site-a"}},
 		{AuthorID: "bbb", DisplayName: "bbb", Works: []string{"x.png"}},
 	}
 
@@ -504,14 +504,14 @@ func TestMissingAndMergeUploadEntries(t *testing.T) {
 
 	// 全都在 → 空。
 	if got := MissingUploadEntries(content, []UploadEntry{{
-		AuthorID: "aaa", DisplayName: "aaa", Works: []string{"a.png", "b.png"}, Sources: []string{"kemono"},
+		AuthorID: "aaa", DisplayName: "aaa", Works: []string{"a.png", "b.png"}, Sources: []string{"site-a"},
 	}}); len(got) != 0 {
 		t.Errorf("全覆盖 missing=%+v, want 空", got)
 	}
 
 	// 并回：既有块补缺行，缺失块开新块保 displayName。
 	merged := MergeUploadEntries(content, missing)
-	wantMerged := "1  aaa\n来源\nkemono\n作品\na.png\nb.png\nc.png\n2  bbb\n作品\nx.png\n"
+	wantMerged := "1  aaa\n来源\nsite-a\n作品\na.png\nb.png\nc.png\n2  bbb\n作品\nx.png\n"
 	if merged != wantMerged {
 		t.Errorf("merged=\n%q\nwant:\n%q", merged, wantMerged)
 	}
@@ -533,14 +533,14 @@ func TestMissingAndMergeUploadEntries(t *testing.T) {
 // MergeUploadEntries 对「块缺失但只有来源行要并回」的条目也开新块承载。
 func TestMergeUploadEntriesSourcesOnly(t *testing.T) {
 	merged := MergeUploadEntries("", []UploadEntry{
-		{AuthorID: "aaa", DisplayName: "aaa", Sources: []string{"kemono"}},
+		{AuthorID: "aaa", DisplayName: "aaa", Sources: []string{"site-a"}},
 	})
-	want := "1  aaa\n来源  kemono\n"
+	want := "1  aaa\n来源  site-a\n"
 	if merged != want {
 		t.Errorf("merged=%q, want %q", merged, want)
 	}
-	if b := blockOf(t, merged, "aaa"); !reflect.DeepEqual(b.Sources, []string{"kemono"}) {
-		t.Errorf("Sources=%v, want [kemono]", b.Sources)
+	if b := blockOf(t, merged, "aaa"); !reflect.DeepEqual(b.Sources, []string{"site-a"}) {
+		t.Errorf("Sources=%v, want [site-a]", b.Sources)
 	}
 }
 
@@ -554,7 +554,7 @@ func TestMergeUploadEntriesNamesRoundtrip(t *testing.T) {
 		DisplayName: "Night / Cry",
 		Names:       []string{"Night", "Cry"},
 		Works:       []string{"a.png"},
-		Sources:     []string{"kemono"},
+		Sources:     []string{"site-a"},
 	}}
 	merged := MergeUploadEntries("", entries)
 	block := blockOf(t, merged, "night")

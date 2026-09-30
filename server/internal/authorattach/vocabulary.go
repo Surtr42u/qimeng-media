@@ -1,7 +1,7 @@
 package authorattach
 
 // vocabulary.go：通用来源词表的 kv 存取（ADR-0024）。来源=获取渠道平台名
-// （如「老王论坛」），仅记录永不参与匹配；词表以用户手动维护为准（PUT 恒
+// （如「forum-c」），仅记录永不参与匹配；词表以用户手动维护为准（PUT 恒
 // 写键，清空也写空数组），出厂态（键不存在）由读取路径做一次性自动预填
 // （EnsureSourceVocabulary + vocabulary_prefill.go 的统计口径）。与 §4 资产
 // 出处分区（custom_sources）互不相干，禁止混用（DOMAIN_RULES §6）。

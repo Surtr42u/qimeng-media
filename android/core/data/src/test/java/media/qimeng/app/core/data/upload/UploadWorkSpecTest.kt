@@ -54,14 +54,14 @@ class UploadWorkSpecTest {
             spec(
                 uploadFileName = "作品名.jpg",
                 attachAuthorId = "author-1",
-                attachSources = listOf("kemono", "r34"),
+                attachSources = listOf("site-a", "site-f"),
             ),
         )
         val back = UploadWorkSpec.specFromInputData(data)
         assertNotNull(back)
         assertEquals("作品名.jpg", back!!.uploadFileName)
         assertEquals("author-1", back.attachAuthorId)
-        assertEquals(listOf("kemono", "r34"), back.attachSources)
+        assertEquals(listOf("site-a", "site-f"), back.attachSources)
     }
 
     @Test
@@ -143,7 +143,7 @@ class UploadWorkSpecTest {
             // 旧版挂靠键（本版已删常量，按字符串字面量写）：反解必须整体忽略
             .putString("authorId", "a-1")
             .putString("authorName", "旧作者")
-            .putStringArray("sources", arrayOf("kemono", "r34"))
+            .putStringArray("sources", arrayOf("site-a", "site-f"))
             .build()
         val back = UploadWorkSpec.specFromInputData(legacyWithAttach)
         assertNotNull(back)

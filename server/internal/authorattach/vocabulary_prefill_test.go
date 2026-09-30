@@ -29,8 +29,8 @@ func TestPrefillSourceVocabulary(t *testing.T) {
 			"多人共用平台保留、单作者词与链接形态排除",
 			[]authoring.AuthorBlock{
 				block("甲", "lofter", "https://yandex.com/abc", "甲的私人x页"),
-				block("乙", "lofter", "老王论坛", "乙的私人x页"),
-				block("丙", "lofter", "kemono.cr"),
+				block("乙", "lofter", "forum-c", "乙的私人x页"),
+				block("丙", "lofter", "site-a.cr"),
 			},
 			[]string{"lofter"},
 		},
@@ -39,17 +39,17 @@ func TestPrefillSourceVocabulary(t *testing.T) {
 			[]authoring.AuthorBlock{
 				block("甲", "lofter"),
 				block("甲", "lofter"),
-				block("乙", "老王论坛"),
+				block("乙", "forum-c"),
 			},
 			[]string{},
 		},
 		{
 			"域名形态（含点号）排除、无点号平台名不受影响",
 			[]authoring.AuthorBlock{
-				block("甲", "kemono.cr", "lofter", "www.example.com", "老王论坛"),
-				block("乙", "kemono.cr", "lofter", "老王论坛"),
+				block("甲", "site-a.cr", "lofter", "www.example.com", "forum-c"),
+				block("乙", "site-a.cr", "lofter", "forum-c"),
 			},
-			[]string{"lofter", "老王论坛"},
+			[]string{"forum-c", "lofter"},
 		},
 		{
 			"http/www. 大小写不敏感排除",
@@ -62,7 +62,7 @@ func TestPrefillSourceVocabulary(t *testing.T) {
 		{
 			"排序：authorCount 降序、name 升序",
 			[]authoring.AuthorBlock{
-				block("甲", "冷门站", "lofter", "老王论坛"),
+				block("甲", "冷门站", "lofter", "forum-c"),
 				block("乙", "冷门站", "lofter"),
 				block("丙", "冷门站"),
 			},
@@ -163,7 +163,7 @@ func TestEnsureSourceVocabulary(t *testing.T) {
 	if err := PersistSources(ctx, q, testNow, []Source{
 		{Filename: "a.txt", Content: "1  作者甲\n来源\nlofter\n作品\na.jpg\n"},
 		{Filename: "b.txt", Content: "1  作者乙\n来源\nlofter\n作品\nb.jpg\n"},
-		{Filename: "c.txt", Content: "1  作者丙\n来源\nlofter\n老王论坛\n作品\nc.jpg\n"},
+		{Filename: "c.txt", Content: "1  作者丙\n来源\nlofter\nforum-c\n作品\nc.jpg\n"},
 	}); err != nil {
 		t.Fatalf("写片段失败: %v", err)
 	}

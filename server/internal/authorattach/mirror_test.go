@@ -61,7 +61,7 @@ func TestMirrorWriterRefresh(t *testing.T) {
 	ctx := context.Background()
 	older := store.FormatTimestamp(testNow)
 	newer := store.FormatTimestamp(testNow.Add(time.Hour))
-	recent := "1  bbb\n来源\nkemono\n作品\nb.png\n"
+	recent := "1  bbb\n来源\nsite-a\n作品\nb.png\n"
 	if err := PersistSources(ctx, q, testNow, []Source{
 		{Filename: "a.txt", Content: "1  aaa\n", ImportedAt: older},
 		{Filename: "b.txt", Content: recent, ImportedAt: newer},
@@ -134,7 +134,7 @@ func TestMirrorWriterUnwritablePath(t *testing.T) {
 func TestMirrorWriterRecoversAfterDirCreated(t *testing.T) {
 	q := newTestDB(t)
 	ctx := context.Background()
-	content := "1  aaa\n来源\nkemono\n作品\na.png\n"
+	content := "1  aaa\n来源\nsite-a\n作品\na.png\n"
 	if err := PersistSources(ctx, q, testNow, []Source{
 		{Filename: "f.txt", Content: content, ImportedAt: store.FormatTimestamp(testNow)},
 	}); err != nil {

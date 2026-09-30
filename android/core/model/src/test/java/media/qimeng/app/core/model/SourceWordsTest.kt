@@ -8,21 +8,21 @@ class SourceWordsTest {
 
     @Test
     fun `组合条目拆词去重单独词保留首现序`() {
-        val vocab = listOf("kemono", "kemono  小红车", "小红车  kemono", "x", "hanime1  小红车", "小红车")
-        // hanime1 只存在于组合里，拆词后同样成为建议（2026-09-29 用户实测反馈漏词）
-        assertEquals(listOf("kemono", "小红车", "x", "hanime1"), vocab.individualSourceWords())
+        val vocab = listOf("site-a", "site-a  site-b", "site-b  site-a", "x", "site-d  site-b", "site-b")
+        // site-d 只存在于组合里，拆词后同样成为建议（2026-09-29 用户实测反馈漏词）
+        assertEquals(listOf("site-a", "site-b", "x", "site-d"), vocab.individualSourceWords())
     }
 
     @Test
     fun `单空格与多空白分隔同样拆词`() {
-        val vocab = listOf("r34  kemono", "小红车\ti站")
-        assertEquals(listOf("r34", "kemono", "小红车", "i站"), vocab.individualSourceWords())
+        val vocab = listOf("site-f  site-a", "site-b\tsite-g")
+        assertEquals(listOf("site-f", "site-a", "site-b", "site-g"), vocab.individualSourceWords())
     }
 
     @Test
     fun `空串与纯空白条目不产出词`() {
-        val vocab = listOf("", "  ", "kemono")
-        assertEquals(listOf("kemono"), vocab.individualSourceWords())
+        val vocab = listOf("", "  ", "site-a")
+        assertEquals(listOf("site-a"), vocab.individualSourceWords())
     }
 
     @Test
@@ -34,11 +34,11 @@ class SourceWordsTest {
     fun `真实出厂词表全形态拆出七个平台词`() {
         // 2026-09-29 真库 GET /authors/source-vocabulary 原样返回
         val vocab = listOf(
-            "kemono", "小红车", "kemono  小红车", "kemono  小红车  老王论坛", "x",
-            "小红车  kemono", "hanime1  小红车", "r34  kemono", "小红车  i站",
+            "site-a", "site-b", "site-a  site-b", "site-a  site-b  forum-c", "x",
+            "site-b  site-a", "site-d  site-b", "site-f  site-a", "site-b  site-g",
         )
         assertEquals(
-            listOf("kemono", "小红车", "老王论坛", "x", "hanime1", "r34", "i站"),
+            listOf("site-a", "site-b", "forum-c", "x", "site-d", "site-f", "site-g"),
             vocab.individualSourceWords(),
         )
     }

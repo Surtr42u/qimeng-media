@@ -4,16 +4,16 @@ import { individualSourceWords } from './source-options'
 describe('individualSourceWords（来源建议拆词提取）', () => {
   it('组合条目拆词去重，单独词保留首现序', () => {
     expect(
-      individualSourceWords(['kemono', 'kemono  小红车', '小红车  kemono', 'x', 'hanime1  小红车', '小红车']),
-    ).toEqual(['kemono', '小红车', 'x', 'hanime1'])
+      individualSourceWords(['site-a', 'site-a  site-b', 'site-b  site-a', 'x', 'site-d  site-b', 'site-b']),
+    ).toEqual(['site-a', 'site-b', 'x', 'site-d'])
   })
 
   it('单空格与多空白分隔同样拆词', () => {
-    expect(individualSourceWords(['r34  kemono', '小红车\ti站'])).toEqual(['r34', 'kemono', '小红车', 'i站'])
+    expect(individualSourceWords(['site-f  site-a', 'site-b\tsite-g'])).toEqual(['site-f', 'site-a', 'site-b', 'site-g'])
   })
 
   it('空串与纯空白条目不产出词', () => {
-    expect(individualSourceWords(['', '  ', 'kemono'])).toEqual(['kemono'])
+    expect(individualSourceWords(['', '  ', 'site-a'])).toEqual(['site-a'])
   })
 
   it('空词表返回空数组', () => {
@@ -22,9 +22,9 @@ describe('individualSourceWords（来源建议拆词提取）', () => {
 
   it('真实出厂词表全形态拆出七个平台词', () => {
     const vocab = [
-      'kemono', '小红车', 'kemono  小红车', 'kemono  小红车  老王论坛', 'x',
-      '小红车  kemono', 'hanime1  小红车', 'r34  kemono', '小红车  i站',
+      'site-a', 'site-b', 'site-a  site-b', 'site-a  site-b  forum-c', 'x',
+      'site-b  site-a', 'site-d  site-b', 'site-f  site-a', 'site-b  site-g',
     ]
-    expect(individualSourceWords(vocab)).toEqual(['kemono', '小红车', '老王论坛', 'x', 'hanime1', 'r34', 'i站'])
+    expect(individualSourceWords(vocab)).toEqual(['site-a', 'site-b', 'forum-c', 'x', 'site-d', 'site-f', 'site-g'])
   })
 })

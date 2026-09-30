@@ -197,7 +197,7 @@ func TestUploadNoAttachParamsUnchanged(t *testing.T) {
 func TestAuthorsSuggest(t *testing.T) {
 	env := newTestEnv(t)
 	kami := authoring.GenerateAuthorID("kamihikoki_mmd")
-	importTXT(t, env, "a.txt", "1  kamihikoki_mmd  紙飛行機(小红车资源出处)\n作品\na.jpg\n")
+	importTXT(t, env, "a.txt", "1  kamihikoki_mmd  紙飛行機(site-b资源出处)\n作品\na.jpg\n")
 	importTXT(t, env, "c.txt", "纯粹零关联\n") // 格式 C：零关联常规作者
 	if err := env.q.UpsertAuthor(context.Background(), db.UpsertAuthorParams{
 		ID: authoring.GenerateCosAuthorID("COS酱"), DisplayName: "COS酱",
@@ -413,7 +413,7 @@ func TestAssetAuthorsEditPrunesUploadEntries(t *testing.T) {
 func TestAuthorSourcesReplace(t *testing.T) {
 	env := newTestEnv(t)
 	aid := authoring.GenerateAuthorID("来源作者")
-	importTXT(t, env, "s.txt", "1  来源作者\n来源\nkemono\n作品\na.jpg\n")
+	importTXT(t, env, "s.txt", "1  来源作者\n来源\nsite-a\n作品\na.jpg\n")
 
 	if code, _ := getAuthorSources(t, env, aid); code != http.StatusOK {
 		t.Fatalf("GET 来源区期望 200，得到 %d", code)
@@ -470,7 +470,7 @@ func TestAuthorSourcesNewBlockInRecentFragment(t *testing.T) {
 	importTXT(t, env, "c.txt", "Z\n") // 格式 C：不存片段
 	importTXT(t, env, "清单.txt", "1  别人\n作品\na.jpg\n")
 
-	resp := env.putAuthorSources(t, z, []string{"老王论坛"})
+	resp := env.putAuthorSources(t, z, []string{"forum-c"})
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("PUT 来源区期望 200，得到 %d", resp.StatusCode)
 	}
@@ -479,11 +479,11 @@ func TestAuthorSourcesNewBlockInRecentFragment(t *testing.T) {
 		t.Fatal("已有片段时不应自动创建承载片段")
 	}
 	content, _ := fragmentOf(t, env, "清单.txt")
-	if _, srcs := blockWorksOf(t, content, z); len(srcs) != 1 || srcs[0] != "老王论坛" {
-		t.Fatalf("新建块来源区=%v, want [老王论坛]", srcs)
+	if _, srcs := blockWorksOf(t, content, z); len(srcs) != 1 || srcs[0] != "forum-c" {
+		t.Fatalf("新建块来源区=%v, want [forum-c]", srcs)
 	}
-	if code, got := getAuthorSources(t, env, z); code != http.StatusOK || len(got) != 1 || got[0] != "老王论坛" {
-		t.Fatalf("GET=（%d, %v）, want（200, [老王论坛]）", code, got)
+	if code, got := getAuthorSources(t, env, z); code != http.StatusOK || len(got) != 1 || got[0] != "forum-c" {
+		t.Fatalf("GET=（%d, %v）, want（200, [forum-c]）", code, got)
 	}
 
 	// 库中无片段（删掉清单片段后；作者行不级联删除，Z 仍是常规作者）：
@@ -515,7 +515,7 @@ func TestSourceVocabularyCRUD(t *testing.T) {
 		t.Fatalf("无记录 GET=（%d, %v）, want（200, 空）", code, got)
 	}
 	resp := env.do(t, "PUT", "/api/v1/authors/source-vocabulary",
-		`{"sources":[" 老王论坛 ","kemono","","老王论坛"]}`)
+		`{"sources":[" forum-c ","site-a","","forum-c"]}`)
 	var saved gen.SourceVocabulary
 	if err := decodeBody(resp, &saved); err != nil {
 		t.Fatalf("解析响应失败: %v", err)
@@ -524,8 +524,8 @@ func TestSourceVocabularyCRUD(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("PUT 词表期望 200，得到 %d", resp.StatusCode)
 	}
-	if len(saved.Sources) != 2 || saved.Sources[0] != "老王论坛" || saved.Sources[1] != "kemono" {
-		t.Fatalf("回显=%v, want [老王论坛 kemono]（trim+去重+剔空）", saved.Sources)
+	if len(saved.Sources) != 2 || saved.Sources[0] != "forum-c" || saved.Sources[1] != "site-a" {
+		t.Fatalf("回显=%v, want [forum-c site-a]（trim+去重+剔空）", saved.Sources)
 	}
 	if code, got := getVocabulary(t, env); code != http.StatusOK || len(got) != 2 {
 		t.Fatalf("回读=（%d, %v）, want（200, 2 项）", code, got)
@@ -697,7 +697,7 @@ func TestAuthorEditMirror(t *testing.T) {
 	assertMirrorFile(t, mirrorPath, imported)
 
 	aid := authoring.GenerateAuthorID("镜像作者")
-	resp = env.putAuthorSources(t, aid, []string{"老王论坛"})
+	resp = env.putAuthorSources(t, aid, []string{"forum-c"})
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("编辑来源区期望 200，得到 %d", resp.StatusCode)
 	}

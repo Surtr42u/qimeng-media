@@ -73,7 +73,7 @@ func TestApplyNewAuthorAutoFragment(t *testing.T) {
 
 	res := mustApply(t, q, AttachRequest{
 		AssetID: "asset-1", FinalName: "守望先锋  天使 1.png",
-		AuthorName: "Night Cry", Sources: []string{"kemono"},
+		AuthorName: "Night Cry", Sources: []string{"site-a"},
 	})
 	if res.AuthorID != "night_cry" || res.DisplayName != "Night Cry" {
 		t.Errorf("身份=%q/%q, want night_cry/Night Cry", res.AuthorID, res.DisplayName)
@@ -97,7 +97,7 @@ func TestApplyNewAuthorAutoFragment(t *testing.T) {
 	if len(blocks) != 1 || blocks[0].DisplayName != "Night Cry" {
 		t.Fatalf("解析块=%+v, want 单个 Night Cry", blocks)
 	}
-	if want := []string{"kemono"}; !reflect.DeepEqual(blocks[0].Sources, want) {
+	if want := []string{"site-a"}; !reflect.DeepEqual(blocks[0].Sources, want) {
 		t.Errorf("Sources=%v, want %v", blocks[0].Sources, want)
 	}
 	if want := []string{"守望先锋  天使 1.png"}; !reflect.DeepEqual(blocks[0].Works, want) {
@@ -117,7 +117,7 @@ func TestApplyNewAuthorAutoFragment(t *testing.T) {
 	wantEntries := map[string][]authoring.UploadEntry{
 		authoring.AutoFragmentFilename: {{
 			AuthorID: "night_cry", DisplayName: "Night Cry", Names: []string{"Night Cry"},
-			Works: []string{"守望先锋  天使 1.png"}, Sources: []string{"kemono"},
+			Works: []string{"守望先锋  天使 1.png"}, Sources: []string{"site-a"},
 		}},
 	}
 	if !reflect.DeepEqual(entries, wantEntries) {
@@ -133,7 +133,7 @@ func TestApplyExistingAuthorFirstFragment(t *testing.T) {
 	ctx := context.Background()
 	older := store.FormatTimestamp(testNow)
 	newer := store.FormatTimestamp(testNow.Add(time.Hour))
-	frag := "1  bamhor\n出处  kemono\n作品\na.png\n"
+	frag := "1  bamhor\n出处  site-a\n作品\na.png\n"
 	if err := PersistSources(ctx, q, testNow, []Source{
 		{Filename: "老.txt", Content: frag, ImportedAt: older},
 		{Filename: "新.txt", Content: "1  other\n作品\nx.png\n", ImportedAt: newer},
@@ -161,7 +161,7 @@ func TestApplyExistingAuthorFirstFragment(t *testing.T) {
 	if len(blocks) != 1 {
 		t.Fatalf("解析块数=%d, want 1", len(blocks))
 	}
-	if want := []string{"kemono", "pixiv"}; !reflect.DeepEqual(blocks[0].Sources, want) {
+	if want := []string{"site-a", "pixiv"}; !reflect.DeepEqual(blocks[0].Sources, want) {
 		t.Errorf("Sources=%v, want %v", blocks[0].Sources, want)
 	}
 	if want := []string{"a.png", "b.png"}; !reflect.DeepEqual(blocks[0].Works, want) {
@@ -280,7 +280,7 @@ func TestApplyIdempotent(t *testing.T) {
 	q := newTestDB(t)
 	seedAsset(t, q, "asset-1", "a.png")
 	req := AttachRequest{
-		AssetID: "asset-1", FinalName: "a.png", AuthorName: "Night Cry", Sources: []string{"kemono"},
+		AssetID: "asset-1", FinalName: "a.png", AuthorName: "Night Cry", Sources: []string{"site-a"},
 	}
 	mustApply(t, q, req)
 	after1, err := LoadSources(context.Background(), q)
@@ -313,7 +313,7 @@ func TestApplyMetadataRecordsOnlyNewLines(t *testing.T) {
 	q := newTestDB(t)
 	seedAsset(t, q, "asset-1", "x.png")
 	ctx := context.Background()
-	content := "1  aaa\n来源\nkemono\n作品\nx.png\n"
+	content := "1  aaa\n来源\nsite-a\n作品\nx.png\n"
 	if err := PersistSources(ctx, q, testNow, []Source{
 		{Filename: "f.txt", Content: content, ImportedAt: store.FormatTimestamp(testNow)},
 	}); err != nil {
@@ -327,7 +327,7 @@ func TestApplyMetadataRecordsOnlyNewLines(t *testing.T) {
 
 	// 全部已存在：内容不动，不写条目元数据。
 	mustApply(t, q, AttachRequest{
-		AssetID: "asset-1", FinalName: "x.png", AuthorID: "aaa", Sources: []string{"kemono"},
+		AssetID: "asset-1", FinalName: "x.png", AuthorID: "aaa", Sources: []string{"site-a"},
 	})
 	sources, _ := LoadSources(ctx, q)
 	if sources[0].Content != content {
@@ -363,7 +363,7 @@ func TestApplyNewAuthorIdentityNormalization(t *testing.T) {
 	seedAsset(t, q, "asset-1", "dup.jpg")
 
 	req := AttachRequest{
-		AssetID: "asset-1", FinalName: "dup.jpg", AuthorName: "Night  Cry", Sources: []string{"kemono"},
+		AssetID: "asset-1", FinalName: "dup.jpg", AuthorName: "Night  Cry", Sources: []string{"site-a"},
 	}
 	res := mustApply(t, q, req)
 	if res.AuthorID != "night" || res.DisplayName != "Night / Cry" {
@@ -406,7 +406,7 @@ func TestApplyNewAuthorIdentityNormalization(t *testing.T) {
 	}
 	wantEntries := []authoring.UploadEntry{{
 		AuthorID: "night", DisplayName: "Night / Cry", Names: []string{"Night", "Cry"},
-		Works: []string{"dup.jpg"}, Sources: []string{"kemono"},
+		Works: []string{"dup.jpg"}, Sources: []string{"site-a"},
 	}}
 	if got := entries[authoring.AutoFragmentFilename]; !reflect.DeepEqual(got, wantEntries) {
 		t.Fatalf("条目元数据=%+v, want %+v", got, wantEntries)
@@ -458,7 +458,7 @@ func TestApplyRollbackOnFailure(t *testing.T) {
 		t.Fatalf("开事务失败: %v", err)
 	}
 	_, err = (&Service{}).Apply(ctx, q.WithTx(tx), testNow, AttachRequest{
-		AssetID: "ghost-asset", FinalName: "a.png", AuthorName: "Night Cry", Sources: []string{"kemono"},
+		AssetID: "ghost-asset", FinalName: "a.png", AuthorName: "Night Cry", Sources: []string{"site-a"},
 	})
 	if err == nil {
 		t.Fatal("资产不存在时 Apply 应报错（外键违反）")

@@ -593,7 +593,7 @@ paths:
     get:
       summary: 通用来源词表（来源建议唯一数据源；服务端手动维护的小清单，ADR-0024）
       description: |
-        用户维护的「获取渠道/平台」通用词表（如「老王论坛」），kv_settings
+        用户维护的「获取渠道/平台」通用词表（如「论坛乙」），kv_settings
         author_source_vocabulary 持久化；无记录=空数组。来源建议一律取本词表
         （个人片段来源区词表不再作为建议源——作者各自的个人链接对他人无意义）；
         自由输入的新词由用户在词表卡手动收编。与 §4 资产出处分区（SourceMatcher/
@@ -1391,7 +1391,7 @@ components:
       description: 来源词表通用载荷（GET/PUT /authors/source-vocabulary 通用来源词表；GET/PUT /authors/{authorId}/sources 单作者片段来源区）
       required: [sources]
       properties:
-        sources: { type: array, items: { type: string, maxLength: 500 }, maxItems: 32, description: 来源词（获取渠道/平台名，如「老王论坛」；服务端 trim+去重+逐项校验——控制字符/超长/超 32 项 400） }
+        sources: { type: array, items: { type: string, maxLength: 500 }, maxItems: 32, description: 来源词（获取渠道/平台名，如「论坛乙」；服务端 trim+去重+逐项校验——控制字符/超长/超 32 项 400） }
 
     TxtImportConflictAuthor:
       type: object

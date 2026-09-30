@@ -52,7 +52,7 @@ func TestPersistLoadSourcesRoundtrip(t *testing.T) {
 	ctx := context.Background()
 	want := []Source{
 		{Filename: "a.txt", Content: "1  aaa\n", ImportedAt: store.FormatTimestamp(testNow)},
-		{Filename: "b.txt", Content: "1  bbb\n来源\nkemono\n"},
+		{Filename: "b.txt", Content: "1  bbb\n来源\nsite-a\n"},
 	}
 	if err := PersistSources(ctx, q, testNow, want); err != nil {
 		t.Fatalf("写片段失败: %v", err)

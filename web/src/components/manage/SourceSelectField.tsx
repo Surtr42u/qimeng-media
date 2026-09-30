@@ -6,10 +6,10 @@ import { individualSourceWords } from '@/lib/source-options'
 /**
  * 作者来源/出处多选字段（资产编辑页每作者来源区消费；2026-09-25 协议批）。
  * 快捷选项词表 = GET /authors/source-vocabulary 通用来源词表（hooks 封装，
- * 铁律 7）——服务端手动维护的来源建议小清单（获取渠道/平台名，如「老王论坛」
+ * 铁律 7）——服务端手动维护的来源建议小清单（获取渠道/平台名，如「forum-c」
  * ），全员共享；个人片段词表（GET /authors/sources）已删除，不再有第二词表。
  * 快捷 chip = 全词表按空白**拆词提取**的单独词（lib/source-options，2026-09-29——
- * 组合条目里的平台词如 hanime1/r34 只存在于组合中，只过滤会漏词；组合形态本身
+ * 组合条目里的平台词如 site-d/site-f 只存在于组合中，只过滤会漏词；组合形态本身
  * 可经下方自由输入获得，不占建议位；词表管理卡仍显全量原始词表）。
  * 服务端已按固定序返回，前端不再排。自由输入行允许加入词表外新站点/URL
  * （回车确认）。props 契约不变：selected/onChange/disabled 仍由调用方持有

@@ -215,8 +215,8 @@ func TestHistoryFilters(t *testing.T) {
 	}
 
 	// ---- 2026-09-09 协议批：source 多值 + authorId 过滤（#30） ----
-	// a.jpg 回写 source=kemono；c.mp4 保持 NULL（'其他' 桶）。
-	if _, err := env.conn.Exec("UPDATE assets SET source = 'kemono' WHERE asset_id = ?", a.id); err != nil {
+	// a.jpg 回写 source=site-a；c.mp4 保持 NULL（'其他' 桶）。
+	if _, err := env.conn.Exec("UPDATE assets SET source = 'site-a' WHERE asset_id = ?", a.id); err != nil {
 		t.Fatalf("回写 source 失败: %v", err)
 	}
 	// a.jpg 挂常规作者。
@@ -228,13 +228,13 @@ func TestHistoryFilters(t *testing.T) {
 	if err := env.q.AddAssetAuthor(ctx, db.AddAssetAuthorParams{AssetID: a.id, AuthorID: "hist_reg_author"}); err != nil {
 		t.Fatalf("关联作者失败: %v", err)
 	}
-	// source=kemono：只剩 a.jpg。
-	if got := names("?source=kemono"); len(got) != 1 || got[0] != "a.jpg" {
-		t.Fatalf("source=kemono 应只含 a.jpg，得到 %v", got)
+	// source=site-a：只剩 a.jpg。
+	if got := names("?source=site-a"); len(got) != 1 || got[0] != "a.jpg" {
+		t.Fatalf("source=site-a 应只含 a.jpg，得到 %v", got)
 	}
-	// source 双值 OR：kemono ∪ 其他（c.mp4 无出处）→ a + c。
-	if got := names("?source=kemono&source=" + percentEncode("其他")); len(got) != 2 {
-		t.Fatalf("source 双值(kemono,其他) 应 2 条，得到 %v", got)
+	// source 双值 OR：site-a ∪ 其他（c.mp4 无出处）→ a + c。
+	if got := names("?source=site-a&source=" + percentEncode("其他")); len(got) != 2 {
+		t.Fatalf("source 双值(site-a,其他) 应 2 条，得到 %v", got)
 	}
 	// source 单值兼容已在上一断言覆盖（单元素数组）；authorId 过滤 → 只 a.jpg。
 	if got := names("?authorId=hist_reg_author"); len(got) != 1 || got[0] != "a.jpg" {

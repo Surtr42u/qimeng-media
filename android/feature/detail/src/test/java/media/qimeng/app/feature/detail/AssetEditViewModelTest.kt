@@ -48,7 +48,7 @@ class AssetEditViewModelTest {
             detailResult = detail(authors = listOf(authorA, authorB))
         },
         authorRepo: FakeEditAuthorRepository = FakeEditAuthorRepository().apply {
-            sourcesByAuthor["a-1"] = listOf("kemono")
+            sourcesByAuthor["a-1"] = listOf("site-a")
         },
         suggestRepo: FakeUploadRepository = FakeUploadRepository(),
     ): Triple<AssetEditViewModel, FakeEditDetailRepository, FakeEditAuthorRepository> {
@@ -95,8 +95,8 @@ class AssetEditViewModelTest {
         assertFalse(state.loading)
         assertEquals("asset-1.jpg", state.assetTitle)
         assertEquals(listOf("a-1", "a-2"), state.authors.map { it.id })
-        // a-1 服务端回显 [kemono]；a-2 无回显条目 → 空编辑副本
-        assertEquals(listOf("kemono"), state.sourcesByAuthor["a-1"])
+        // a-1 服务端回显 [site-a]；a-2 无回显条目 → 空编辑副本
+        assertEquals(listOf("site-a"), state.sourcesByAuthor["a-1"])
         assertEquals(emptyList<String>(), state.sourcesByAuthor["a-2"].orEmpty())
         assertTrue(state.sourceOptions.contains("pixiv"))
         assertFalse(state.canSave)
@@ -156,7 +156,7 @@ class AssetEditViewModelTest {
     @Test
     fun `移除作者连带清来源脏标记`() {
         val (viewModel, _, _) = newViewModel()
-        viewModel.toggleSource("a-1", "kemono") // 记脏
+        viewModel.toggleSource("a-1", "site-a") // 记脏
         viewModel.removeAuthor("a-1")
         driveIdle()
         val state = viewModel.uiState.value
@@ -171,7 +171,7 @@ class AssetEditViewModelTest {
     @Test
     fun `toggleSource记脏且保存逐作者PUT与全集PUT`() {
         val (viewModel, _, authorRepo) = newViewModel()
-        viewModel.toggleSource("a-1", "r34") // 回显 [kemono] + r34
+        viewModel.toggleSource("a-1", "site-f") // 回显 [site-a] + site-f
         viewModel.toggleSource("a-2", "自定义站")
         viewModel.addAuthor(AuthorSuggestion("a-3", "作者C", 1))
         driveIdle()
@@ -181,7 +181,7 @@ class AssetEditViewModelTest {
         assertEquals(listOf("a-1", "a-2", "a-3"), authorRepo.assetAuthorsCalls.single().second)
         // 逐作者 PUT：只覆盖脏作者
         assertEquals(
-            listOf("kemono", "r34"),
+            listOf("site-a", "site-f"),
             authorRepo.sourceReplaceCalls.single { it.first == "a-1" }.second,
         )
         assertEquals(
@@ -195,7 +195,7 @@ class AssetEditViewModelTest {
     @Test
     fun `保存失败呈现错误横幅且不置saved`() {
         val (viewModel, _, authorRepo) = newViewModel()
-        viewModel.toggleSource("a-1", "r34")
+        viewModel.toggleSource("a-1", "site-f")
         driveIdle()
         authorRepo.replaceError = IllegalStateException("500")
         viewModel.save()
@@ -219,7 +219,7 @@ class AssetEditViewModelTest {
         val gate = CompletableDeferred<Unit>()
         val authorRepo = FakeEditAuthorRepository().apply { replaceAssetAuthorsGate = gate }
         val (viewModel, _, _) = newViewModel(authorRepo = authorRepo)
-        viewModel.toggleSource("a-1", "r34")
+        viewModel.toggleSource("a-1", "site-f")
         driveIdle()
         viewModel.save()
         driveIdle() // 保存挂起在 gate
@@ -250,7 +250,7 @@ private class FakeEditAuthorRepository : media.qimeng.app.core.data.repository.A
 
     override suspend fun sourceVocabulary(): List<String> {
         vocabularyCalled = true
-        return listOf("kemono", "pixiv", "r34")
+        return listOf("site-a", "pixiv", "site-f")
     }
 
     override suspend fun authorSourcesById(authorId: String): List<String> =

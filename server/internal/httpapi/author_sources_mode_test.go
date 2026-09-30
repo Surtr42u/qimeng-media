@@ -33,16 +33,16 @@ func (e *testEnv) putAuthorSourcesMode(t *testing.T, authorID string, sources []
 }
 
 // TestAuthorSourcesAppendMerges（mode=append 主链路）：既有来源区
-// [老王论坛 kemono] → PUT {sources:[kemono 新站点], mode:append} →
-// [老王论坛 kemono 新站点]（保序去重）；重复 PUT 同内容幂等不变；上传
+// [forum-c site-a] → PUT {sources:[site-a 新站点], mode:append} →
+// [forum-c site-a 新站点]（保序去重）；重复 PUT 同内容幂等不变；上传
 // 条目元数据只修剪不新增（append 无移除行、修剪恒 no-op，且不为新来源行
 // 新增条目——编辑语义与上传挂靠的口径分界）。
 func TestAuthorSourcesAppendMerges(t *testing.T) {
 	env := newTestEnv(t)
 	aid := authoring.GenerateAuthorID("来源作者")
-	importTXT(t, env, "s.txt", "1  来源作者\n来源\n老王论坛\nkemono\n作品\na.jpg\n")
+	importTXT(t, env, "s.txt", "1  来源作者\n来源\nforum-c\nsite-a\n作品\na.jpg\n")
 
-	resp := env.putAuthorSourcesMode(t, aid, []string{"kemono", "新站点"}, modePtr("append"))
+	resp := env.putAuthorSourcesMode(t, aid, []string{"site-a", "新站点"}, modePtr("append"))
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("PUT 来源区期望 200，得到 %d", resp.StatusCode)
 	}
@@ -51,7 +51,7 @@ func TestAuthorSourcesAppendMerges(t *testing.T) {
 		t.Fatalf("解析响应失败: %v", err)
 	}
 	closeBody(resp)
-	want := []string{"老王论坛", "kemono", "新站点"}
+	want := []string{"forum-c", "site-a", "新站点"}
 	if !reflect.DeepEqual(saved.Sources, want) {
 		t.Fatalf("回显=%v, want %v（既有区在前保序去重）", saved.Sources, want)
 	}
@@ -66,7 +66,7 @@ func TestAuthorSourcesAppendMerges(t *testing.T) {
 
 	// 重复 PUT 同内容：幂等——片段与来源区均不变。
 	before := content
-	resp = env.putAuthorSourcesMode(t, aid, []string{"kemono", "新站点"}, modePtr("append"))
+	resp = env.putAuthorSourcesMode(t, aid, []string{"site-a", "新站点"}, modePtr("append"))
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("重复 PUT 期望 200，得到 %d", resp.StatusCode)
 	}
@@ -82,7 +82,7 @@ func TestAuthorSourcesAppendMerges(t *testing.T) {
 	// 不为新行新增条目。
 	seedUploadEntry(t, env, "s.txt", authoring.UploadEntry{
 		AuthorID: aid, DisplayName: "来源作者", Names: []string{"来源作者"},
-		Works: []string{"a.jpg"}, Sources: []string{"老王论坛"},
+		Works: []string{"a.jpg"}, Sources: []string{"forum-c"},
 	})
 	resp = env.putAuthorSourcesMode(t, aid, []string{"新站点2"}, modePtr("append"))
 	if resp.StatusCode != http.StatusOK {
@@ -95,7 +95,7 @@ func TestAuthorSourcesAppendMerges(t *testing.T) {
 	}
 	wantEntries := []authoring.UploadEntry{{
 		AuthorID: aid, DisplayName: "来源作者", Names: []string{"来源作者"},
-		Works: []string{"a.jpg"}, Sources: []string{"老王论坛"},
+		Works: []string{"a.jpg"}, Sources: []string{"forum-c"},
 	}}
 	if got := entries["s.txt"]; !reflect.DeepEqual(got, wantEntries) {
 		t.Fatalf("append 后条目元数据=%+v, want 原样（只修剪不新增）", got)
@@ -113,7 +113,7 @@ func TestAuthorSourcesAppendNoBlockAuthor(t *testing.T) {
 		t.Fatalf("删片段期望 204，得到 %d", code)
 	}
 
-	resp := env.putAuthorSourcesMode(t, night, []string{"老王论坛"}, modePtr("append"))
+	resp := env.putAuthorSourcesMode(t, night, []string{"forum-c"}, modePtr("append"))
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("PUT 来源区期望 200，得到 %d", resp.StatusCode)
 	}
@@ -123,12 +123,12 @@ func TestAuthorSourcesAppendNoBlockAuthor(t *testing.T) {
 		t.Fatalf("新块编号行应为空格分隔多别名（漂移形态是 \"2  Night / Cry\"）:\n%s", content)
 	}
 	// blockWorksOf 内部断言块回读 id == night（漂移时 fatal）。
-	if _, srcs := blockWorksOf(t, content, night); len(srcs) != 1 || srcs[0] != "老王论坛" {
-		t.Fatalf("新块来源区=%v, want [老王论坛]", srcs)
+	if _, srcs := blockWorksOf(t, content, night); len(srcs) != 1 || srcs[0] != "forum-c" {
+		t.Fatalf("新块来源区=%v, want [forum-c]", srcs)
 	}
 
 	// 幂等：重复 append 不重复建块、来源区不翻倍。
-	resp = env.putAuthorSourcesMode(t, night, []string{"老王论坛"}, modePtr("append"))
+	resp = env.putAuthorSourcesMode(t, night, []string{"forum-c"}, modePtr("append"))
 	closeBody(resp)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("重复 PUT 期望 200，得到 %d", resp.StatusCode)
@@ -138,7 +138,7 @@ func TestAuthorSourcesAppendNoBlockAuthor(t *testing.T) {
 		t.Fatalf("重复 append 后编号行数=%d, want 1（不重复建块）:\n%s", n, content)
 	}
 	if _, srcs := blockWorksOf(t, content, night); len(srcs) != 1 {
-		t.Fatalf("重复 append 来源区=%v, want [老王论坛]（不翻倍）", srcs)
+		t.Fatalf("重复 append 来源区=%v, want [forum-c]（不翻倍）", srcs)
 	}
 	for _, a := range listAuthors(t, env) {
 		if a.Id != nil && *a.Id == "night__cry" {
@@ -153,10 +153,10 @@ func TestAuthorSourcesAppendNoBlockAuthor(t *testing.T) {
 func TestAuthorSourcesModeDefaultAndValidation(t *testing.T) {
 	env := newTestEnv(t)
 	aid := authoring.GenerateAuthorID("来源作者")
-	importTXT(t, env, "s.txt", "1  来源作者\n来源\n老王论坛\nkemono\n作品\na.jpg\n")
+	importTXT(t, env, "s.txt", "1  来源作者\n来源\nforum-c\nsite-a\n作品\na.jpg\n")
 
 	// 缺省（省略 mode 字段）= replace：整体替换而非并入（并入会得到
-	// [老王论坛 kemono 新站点x]，replace 才是 [新站点x]）。
+	// [forum-c site-a 新站点x]，replace 才是 [新站点x]）。
 	if resp := env.putAuthorSourcesMode(t, aid, []string{"新站点x"}, nil); resp.StatusCode != http.StatusOK {
 		t.Fatalf("缺省 PUT 期望 200，得到 %d", resp.StatusCode)
 	} else {

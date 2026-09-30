@@ -30,7 +30,7 @@ func TestUploadEntriesRoundtrip(t *testing.T) {
 	want := map[string][]authoring.UploadEntry{
 		"上传自动挂靠.txt": {
 			{AuthorID: "night", DisplayName: "Night / Cry", Names: []string{"Night", "Cry"},
-				Works: []string{"a.png"}, Sources: []string{"kemono"}},
+				Works: []string{"a.png"}, Sources: []string{"site-a"}},
 			// Names 为空的旧数据形态（字段引入前落库）：缺省 nil 不报错。
 			{AuthorID: "bamhor", DisplayName: "bamhor", Works: []string{"b.png"}},
 		},
