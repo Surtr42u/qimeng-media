@@ -183,7 +183,10 @@ func (g *Generator) ensureOne(ctx context.Context, assetID, srcPath string, kind
 	switch kind {
 	case KindImage:
 		// 原图永不转码：缩放输出是独立副本，源文件只读。
-		return g.scaleStill(ctx, srcPath, int(size), dst)
+		// EXIF 方向显式转正（DOMAIN_RULES §11「静图方向」）：只有这里面对
+		// 用户原图（JPEG 竖拍照主战场）；下方动图/视频的中转帧是 ffmpeg
+		// 自产 PNG，天然无 EXIF，恒按 orientationNormal 跳过滤镜段。
+		return g.scaleStill(ctx, srcPath, jpegOrientationOf(srcPath), int(size), dst)
 	case KindAnimatedImage, KindVideo:
 		// 动图取首帧静帧；视频经黑帧检测选点抽帧。中转帧放系统临时目录：
 		// 它只是 ffmpeg 的中间输入，不进缓存目录，也不污染数据目录布局。
@@ -216,7 +219,7 @@ func (g *Generator) ensureOne(ctx context.Context, assetID, srcPath string, kind
 				return err
 			}
 		}
-		return g.scaleStill(ctx, frame, int(size), dst)
+		return g.scaleStill(ctx, frame, orientationNormal, int(size), dst)
 	default:
 		return fmt.Errorf("未知媒体类型 %q", kind)
 	}

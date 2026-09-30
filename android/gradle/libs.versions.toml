@@ -154,6 +154,11 @@ hilt-android = { group = "com.google.dagger", name = "hilt-android", version.ref
 hilt-compiler = { group = "com.google.dagger", name = "hilt-android-compiler", version.ref = "hilt" }
 androidx-hilt-navigation-compose = { group = "androidx.hilt", name = "hilt-navigation-compose", version.ref = "androidxHilt" }
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
+# okhttp-sse（ADR-0029 Android SSE 消费，2026-10-01）：OkHttp 官方 SSE 工件，与 okhttp 同 family
+# 同版本收口（单版本原则不新增版本号），非白名单外新技术——Maven Central 实存核查
+# com/squareup/okhttp3/okhttp-sse/5.4.0/（2026-10-01），API 面（EventSource/EventSourceListener/
+# EventSources.createFactory/processResponse）经官方 sources jar 实读确认。
+okhttp-sse = { group = "com.squareup.okhttp3", name = "okhttp-sse", version.ref = "okhttp" }
 moshi-kotlin = { group = "com.squareup.moshi", name = "moshi-kotlin", version.ref = "moshi" }
 moshi-adapters = { group = "com.squareup.moshi", name = "moshi-adapters", version.ref = "moshi" }
 kotlin-reflect = { group = "org.jetbrains.kotlin", name = "kotlin-reflect", version.ref = "kotlin" }

@@ -43,12 +43,16 @@ const (
 	codeEventsShutdown     = "EVENTS_SHUTDOWN"
 )
 
-// allTopics SSE 端点固定开放全部四类事件（与 openapi /api/v1/events 定义一致）。
+// allTopics SSE 端点固定开放全部六类事件（与 docs/GUIDE_API.md「实时推送」
+// 行的事件清单一致；favorite/like 两类为运行时事件面不入 openapi，见
+// bus.go 主题常量注释与 ADR-0029）。
 var allTopics = []string{
 	TopicScanProgress,
 	TopicLibraryChanged,
 	TopicThumbnailProgress,
 	TopicUploadDone,
+	TopicFavoriteChanged,
+	TopicLikeChanged,
 }
 
 // helloPayload 首帧 hello 事件的负载：携带服务端版本（占位 "dev"，接线时传构建版本）。

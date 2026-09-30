@@ -299,15 +299,16 @@ class HomeViewModel @Inject constructor(
 
     /**
      * 返回/回前台（ON_RESUME，由 HomeScreen 生命周期观测驱动）：点赞变更指纹
-     * （[LikeMutationTracker]，SSE 无 like 事件，本地感知是协议内唯一路径）与上次留存不一致时
-     * 重拉当前 tab——详情页点赞后返回自动重排（GUIDE_UI §下拉刷新 L89；重排效果由服务端
-     * 打分决定，客户端不做语义假设，只负责整页重拉；推荐走刷新路径换 seed，同 seed 服务端
-     * 返回同一打散序、重排不可见）；无变更不重拉=「浏览退出保持原样」半边天然满足。
-     * 首次回调只采纳基线（进页不误刷）。
-     * TTL 兜底（2026-10-01 跳过门 TTL 化）：指纹只感知本进程本端变更，跨端（Web/另一设备）
-     * 改动指纹永不变化——指纹未变但距上次成功拉取超过 [STALE_AFTER_MS] 时不再跳过，
-     * 重拉当前 tab 自愈（跨端陈旧至多 5 分钟 + 一次返回即纠正；TanStack Query
-     * refetchOnWindowFocus 同款 staleTime 语义，与 FavoriteViewModel.onResumed 同口径）。
+     * （[LikeMutationTracker]，GUIDE_UI §下拉刷新 L89）与上次留存不一致时重拉当前 tab——
+     * 详情页点赞后返回自动重排（重排效果由服务端打分决定，客户端不做语义假设，只负责
+     * 整页重拉；推荐走刷新路径换 seed，同 seed 服务端返回同一打散序、重排不可见）；
+     * 无变更不重拉=「浏览退出保持原样」半边天然满足。首次回调只采纳基线（进页不误刷）。
+     * 跨端感知与兜底（2026-10-01 ADR-0029 门收敛）：isListFetchFresh = TTL 半边
+     * （[STALE_AFTER_MS]，SSE 断线/离线窗口兜底）+ SSE 信号半边（DataFreshnessSignal，
+     * like.changed/library.changed 计数较上次拉取采样增长即放行，跨端点赞/资产集合变更
+     * 秒级感知）——指纹未变但任一半边不满足时重拉当前 tab 自愈；历史口径：SSE 曾无
+     * like 事件、跨端陈旧至多 5 分钟自愈，ADR-0029 服务端补发后收敛为三层
+     * （与 FavoriteViewModel.onResumed 同口径）。
      */
     fun onHomeResumed() {
         val snapshot = likeMutationTracker.fingerprint()

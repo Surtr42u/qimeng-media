@@ -12,6 +12,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import media.qimeng.app.core.data.prefetch.ThumbnailPrefetchThrottle
+import media.qimeng.app.core.data.events.DataFreshnessSignal
 import media.qimeng.app.core.data.repository.AssetOrigUrlResolver
 import media.qimeng.app.core.data.repository.DataStoreGridPrefsRepository
 import media.qimeng.app.core.data.repository.FavoriteMutationTracker
@@ -147,7 +148,8 @@ class FavoriteViewModelTest {
         repo: FakeMediaRepository,
         gridPrefs: FakeGridPrefsRepository = FakeGridPrefsRepository(),
         batchIndex: MediaBatchIndex = MediaBatchIndex(),
-        favoriteTracker: FavoriteMutationTracker = FavoriteMutationTracker(),
+        // 2026-10-01 ADR-0029 门收敛：tracker 构造注入信号汇（跨端变更经 SSE bump 计数）
+        favoriteTracker: FavoriteMutationTracker = FavoriteMutationTracker(DataFreshnessSignal()),
     ): FavoriteViewModel = FavoriteViewModel(
         mediaRepository = repo,
         gridPrefs = gridPrefs,
@@ -339,7 +341,7 @@ class FavoriteViewModelTest {
         runTest(mainDispatcherRule.testDispatcher) {
             val repo = FakeMediaRepository()
             // 任务V V1（2026-09-10）：ON_RESUME 无条件重拉改为 FavoriteMutationTracker 指纹门控
-            val tracker = FavoriteMutationTracker()
+            val tracker = FavoriteMutationTracker(DataFreshnessSignal())
             val viewModel = viewModel(repo, favoriteTracker = tracker)
             advanceUntilIdle()
             assertEquals(1, repo.assetsCalls.size) // init 首载在途
@@ -384,7 +386,7 @@ class FavoriteViewModelTest {
     fun `收藏指纹门控在途防重 - 重拉在途时新变更的resume不叠加 下次resume补拉`() =
         runTest(mainDispatcherRule.testDispatcher) {
             val repo = FakeMediaRepository()
-            val tracker = FavoriteMutationTracker()
+            val tracker = FavoriteMutationTracker(DataFreshnessSignal())
             val viewModel = viewModel(repo, favoriteTracker = tracker)
             advanceUntilIdle()
             viewModel.onResumed() // 首个采纳基线
@@ -422,12 +424,14 @@ class FavoriteViewModelTest {
     // 指纹只感知本进程本端变更，跨端改动指纹永不变化——跳过条件叠加 STALE_AFTER_MS
     // staleTime 上界兜底（TanStack Query refetchOnWindowFocus 同款语义）。「指纹变了→
     // 立即重拉」半边由上方既有指纹门控用例继续锁定，此处只锁 TTL 半边。
+    // 2026-10-01 ADR-0029 修订：同日服务端已补发 favorite.changed，TTL 自此降级为 SSE
+    // 断线/离线窗口的兜底（信号半边见下一组用例）。
 
     @Test
     fun `收藏跳过门TTL兜底 - 指纹未变TTL内返回不重拉 恰越过STALE_AFTER_MS静默重拉自愈`() =
         runTest(mainDispatcherRule.testDispatcher) {
             val repo = FakeMediaRepository()
-            val tracker = FavoriteMutationTracker()
+            val tracker = FavoriteMutationTracker(DataFreshnessSignal())
             var fakeNow = 1_000_000L
             tracker.clockMs = { fakeNow } // Tracker 时钟注入：TTL 判定假钟推进全确定
             val viewModel = viewModel(repo, favoriteTracker = tracker)
@@ -461,6 +465,51 @@ class FavoriteViewModelTest {
             viewModel.onResumed()
             advanceUntilIdle()
             assertEquals(2, repo.assetsCalls.size)
+        }
+
+    // ---------- 2026-10-01 ADR-0029 门收敛：SSE 信号半边（秒级感知跨端变更） ----------
+    // 收藏门关联 favorite.changed + library.changed 两计数（数据面=收藏状态+资产集合）；
+    // 信号在 tracker 内部判定（isListFetchFresh 信号半边），此处只锁 VM 消费点的整体行为。
+
+    @Test
+    fun `收藏跳过门SSE信号 - 跨端收藏或库变更信号到达后返回即静默重拉`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val repo = FakeMediaRepository()
+            val signal = DataFreshnessSignal()
+            val tracker = FavoriteMutationTracker(signal)
+            val viewModel = viewModel(repo, favoriteTracker = tracker)
+            advanceUntilIdle()
+
+            // 首载成功落地（noteListFetchCompleted 采样信号基线）+ 基线采纳
+            repo.assetsCalls[0].gate.complete(page(items = listOf(asset("a"))))
+            repo.completeFacetsBatch(batch = 0, result = facets(total = 1))
+            advanceUntilIdle()
+            viewModel.onResumed()
+
+            // 纯浏览返回（无任何变更）：不重拉
+            viewModel.onResumed()
+            advanceUntilIdle()
+            assertEquals(1, repo.assetsCalls.size)
+
+            // SSE favorite.changed 到达（跨端收藏，本进程指纹不变）：返回即静默重拉
+            signal.onFavoriteChanged()
+            viewModel.onResumed()
+            advanceUntilIdle()
+            assertEquals(2, repo.assetsCalls.size)
+            assertFalse(viewModel.uiState.value.isRefreshing) // 静默路径：指示器不闪
+
+            repo.assetsCalls[1].gate.complete(page(items = listOf(asset("b"))))
+            repo.completeFacetsBatch(batch = 1, result = facets(total = 1))
+            advanceUntilIdle()
+
+            // library.changed 同样失效收藏门（资产被删/恢复改变收藏列表内容）
+            signal.onLibraryChanged()
+            viewModel.onResumed()
+            advanceUntilIdle()
+            assertEquals(3, repo.assetsCalls.size)
+            repo.assetsCalls[2].gate.complete(page(items = listOf(asset("c"))))
+            repo.completeFacetsBatch(batch = 2, result = facets(total = 1))
+            advanceUntilIdle()
         }
 
     // ---------- 批次上下文（2026-09-09 拍板：收藏/历史进详情补批次，首页同款机制） ----------

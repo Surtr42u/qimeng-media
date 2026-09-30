@@ -180,23 +180,39 @@ func (g *Generator) extractAttachedPic(ctx context.Context, src string, streamIn
 
 // scaleStill 把图片（或抽出的中转帧）等比缩放到最长边 longSide，按 Generator
 // 探测出的静图格式编码输出（原子落盘；格式裁决见 stillformat.go）。
+// orientation 是源图的 EXIF 方向（DOMAIN_RULES §11「静图方向」）：缩放前先按
+// orientationFilterChain 显式转正；**输入侧必带 -noautorotate**——新版 ffmpeg
+// 解码 JPEG 会隐式按 EXIF 转向（本仓 9.0.1 实证：Orientation=6 默认解出已转
+// 正的竖帧）、旧版则不转，不关闭它显式滤镜就会在隐式之上再转一次（双重变换
+// 抵消/180° 皆实测复现），关掉它显式滤镜才是唯一方向权威、行为跨版本恒定。
+// -noautorotate 对无方向元数据的输入（视频抽出的中转帧 PNG/gif 首帧）是
+// no-op，不影响视频抽帧侧的 display-matrix autorotate 语义。
 // 为什么用 scale=W:W:force_original_aspect_ratio=decrease 而非字面 scale=w:-1：
 // 实测 20x100 竖图在 scale=32:-1 下得到 32x160，最长边反而超出目标；
 // decrease 的语义是"在 W×W 框内等比缩小"，横图竖图都以 longSide 为最长边，
-// 与 config.Thumbnail.LongSide（最长边像素）的语义一致。
+// 与 config.Thumbnail.LongSide（最长边像素）的语义一致。方向滤镜在前、scale
+// 在后（先转正再适配方框）；目标框是正方形，两滤镜先后对结果尺寸无影响，
+// 顺序只为语义直白。
 // 质量参数见 webpQuality / jpegQuality 常量注释；输出封装格式由临时文件
 // 扩展名（= stillFormat.Ext()）推断，编码段参数由 stillFormat.encodeArgs() 给出。
-func (g *Generator) scaleStill(ctx context.Context, src string, longSide int, dst string) error {
+func (g *Generator) scaleStill(ctx context.Context, src string, orientation exifOrientation, longSide int, dst string) error {
 	if longSide <= 0 {
 		return fmt.Errorf("longSide 必须为正数，得到 %d", longSide)
 	}
 	side := strconv.Itoa(longSide)
+	vf := orientationFilterChain(orientation)
+	if vf != "" {
+		vf += "," // 空方向 = 无滤镜段，链退化为纯 scale（除 -noautorotate 外与旧行为同参）
+	}
+	vf += "scale=" + side + ":" + side + ":force_original_aspect_ratio=decrease"
 	return writeAtomically(dst, func(tmp string) error {
 		var out bytes.Buffer
 		args := []string{
 			"-y",
+			// 输入侧选项（须在 -i 之前）：关闭解码期隐式 EXIF 转向，见函数注释。
+			"-noautorotate",
 			"-i", src,
-			"-vf", "scale=" + side + ":" + side + ":force_original_aspect_ratio=decrease",
+			"-vf", vf,
 			"-frames:v", "1",
 		}
 		args = append(args, g.stillFormat.encodeArgs()...)

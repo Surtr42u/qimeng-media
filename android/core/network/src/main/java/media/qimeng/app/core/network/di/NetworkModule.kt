@@ -20,6 +20,8 @@ import media.qimeng.app.core.network.DataStoreServerConfigDataSource
 import media.qimeng.app.core.network.ServerConfigDataSource
 import media.qimeng.app.core.network.SdkAuthApiFactory
 import okhttp3.OkHttpClient
+import okhttp3.sse.EventSource
+import okhttp3.sse.EventSources
 import java.util.concurrent.TimeUnit
 import javax.inject.Qualifier
 import javax.inject.Singleton
@@ -38,6 +40,11 @@ annotation class UploadClient
 @Qualifier
 @Retention(AnnotationRetention.RUNTIME)
 annotation class BackupClient
+
+/** SSE 长流通道专用 OkHttpClient 标记（EventSource.Factory 生产绑定注入；ADR-0029 事件消费走此客户端）。 */
+@Qualifier
+@Retention(AnnotationRetention.RUNTIME)
+annotation class SseClient
 
 /** 接口绑定（@Binds 必须在 abstract/interface 模块）。 */
 @Module
@@ -107,6 +114,35 @@ object NetworkModule {
             .readTimeout(BACKUP_READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .callTimeout(CALL_TIMEOUT_DISABLED, TimeUnit.MILLISECONDS)
             .build()
+
+    /**
+     * SSE 长流通道专用客户端（ADR-0029，2026-10-01）：同样从全局单例派生（newBuilder 共享
+     * AuthInterceptor 与连接池——**token 注入零第二份逻辑**，SSE 请求鉴权与业务请求同一条
+     * 拦截器链），只禁用读超时。为什么：SSE 是服务端持续推流的长响应，保活靠服务端心跳帧
+     * （server/internal/events/sse.go DefaultHeartbeat=15s，注释改动须双向同步），主客户端
+     * 10s 读超时会周期性把空闲等待掐成 SocketTimeout（永远活不过两个心跳）；读超时置 0 =
+     * OkHttp 语义「不设超时」，断线检测交给 TCP 层错误（对端断开/网络切换即 onFailure）。
+     * callTimeout 不另设：RealEventSource 连接成功后本就取消 call 超时（okhttp-sse 官方行为，
+     * sources jar 实读确认），且总时限对长流语义同样错误。写超时继承不动：GET 无请求体。
+     */
+    @Provides
+    @Singleton
+    @SseClient
+    fun provideSseOkHttpClient(okHttpClient: OkHttpClient): OkHttpClient =
+        okHttpClient.newBuilder()
+            .readTimeout(CALL_TIMEOUT_DISABLED, TimeUnit.MILLISECONDS)
+            .build()
+
+    /**
+     * okhttp-sse 事件源工厂单例：绑定 [provideSseOkHttpClient] 的长流客户端（官方装配姿势，
+     * EventSources.createFactory；工厂自动补 `Accept: text/event-stream` 头）。消费方
+     * （core:data ServerEventConsumer）只注入本工厂，不持有 OkHttpClient——通道配置收口
+     * 在网络层，与 UploadClient/BackupClient 同款装配边界。
+     */
+    @Provides
+    @Singleton
+    fun provideEventSourceFactory(@SseClient okHttpClient: OkHttpClient): EventSource.Factory =
+        EventSources.createFactory(okHttpClient)
 
     /** DataStore 单例：IO 专用作用域（DataStore 内部磁盘读写全挂它，NIA 同款装配）。 */
     @Provides

@@ -31,3 +31,10 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+    # 日志轮转（json-file 驱动的默认行为无上限，长跑会把宿主盘写满）：
+    # 单文件 10MB × 最多 3 份封顶。口径与 docs/OBSERVABILITY.md §日志同步。
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

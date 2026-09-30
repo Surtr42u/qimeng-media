@@ -71,6 +71,8 @@ export const STATS_QUERY_KEY = ['api/v1/stats'] as const
 /**
  * 排行族根键（use-stats 两个 hook 的子键均以本键为首段；备份导入后整族失效）。
  * 注意子键自带 'paged' 段区分整表/分页两种形态，根键失效两者都命中。
+ * SSE 桥在 like.changed 时失效本族（ADR-0029）：排行热度含窗口内点赞计数
+ * （DOMAIN_RULES §2）——上文「SSE 桥不失效排行」仅指 library.changed 范畴。
  */
 export const RANKINGS_QUERY_KEY = ['api/v1/rankings'] as const
 

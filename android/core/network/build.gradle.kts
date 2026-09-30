@@ -18,6 +18,9 @@ dependencies {
     api(project(":sdk"))
     // okhttp 版本与生成物锁定值一致（见 libs.versions.toml 注释）；AuthInterceptor 用
     implementation(libs.okhttp)
+    // okhttp-sse（ADR-0029，2026-10-01）：@SseClient 长流客户端派生 + EventSource.Factory
+    // 生产绑定（消费逻辑在 core:data，本模块只管通道装配）；同 family 同版本收口
+    implementation(libs.okhttp.sse)
     // 服务端地址/token 持久化（ADR-0014 白名单；版本核查记录见 libs.versions.toml）
     implementation(libs.androidx.datastore.preferences)
     // 协程（ADR-0014 技术栈：Coroutine/Flow）——拦截器 401 清 token / AuthApi IO 调度

@@ -9,6 +9,8 @@ package httpapi
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -428,6 +430,66 @@ func TestUploadSessionDirRejects(t *testing.T) {
 	if entries, err := os.ReadDir(filepath.Join(env.dataDir, uploadsess.TempDirName)); err == nil && len(entries) != 0 {
 		t.Errorf("dir 被拒后不应有分片临时文件，残留 %d 个", len(entries))
 	}
+}
+
+// TestUploadSessionTamperedAfterSeal：Seal 之后、落位之前分片成品被塞入
+// 1 字节（违规客户端并发 PATCH 在 rename 间隙写入的确定性等价），落位必须
+// 拒绝（size 复核 → errSealedSizeMismatch → complete 400）且库内无坏文件、
+// 损坏成品随失败路径清理（第四百一十九笔 P2-4 收口）。
+//
+// 走 placeSealedInLibrary 而非 HTTP complete 的原因：complete 入口的 Seal
+// 会先把文件兜底截断回权威 size——complete 之前的篡改必被治愈，持续存活的
+// 损坏只存在于 Seal 与 rename 之间的间隙（该窗口两条系统调用，HTTP 层无法
+// 确定性插入），故按该间隙的成品形态直接构造输入，锁定复核拒绝行为。
+func TestUploadSessionTamperedAfterSeal(t *testing.T) {
+	env := newTestEnv(t)
+	jpg := makeJPG(t, t.TempDir(), 64, 64)
+	sess := env.createUploadSession(t, env.libID, "tampered.jpg", int64(len(jpg)))
+	resp := env.patchUpload(t, sess.Id.String(), 0, jpg)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("分片期望 200，得到 %d", resp.StatusCode)
+	}
+	// 此刻会话已具 Seal 语义（offset==size，文件截断到权威字节数）。向成品
+	// 尾部追加 1 字节模拟 rename 间隙的并发写入。临时路径经目录枚举获得
+	//（uploadsess 不外泄 tempPath；目录内只有本会话一个 .part 文件）。
+	tmpDir := filepath.Join(env.dataDir, uploadsess.TempDirName)
+	entries, err := os.ReadDir(tmpDir)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("前置失败：分片临时目录应有 1 个文件（err=%v, n=%d）", err, len(entries))
+	}
+	partPath := filepath.Join(tmpDir, entries[0].Name())
+	f, err := os.OpenFile(partPath, os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		t.Fatalf("打开分片临时文件失败: %v", err)
+	}
+	if _, err := f.Write([]byte{0xFF}); err != nil {
+		_ = f.Close()
+		t.Fatalf("写入篡改字节失败: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("关闭分片临时文件失败: %v", err)
+	}
+
+	lib, err := env.q.GetLibrary(context.Background(), env.libID)
+	if err != nil {
+		t.Fatalf("查询库失败: %v", err)
+	}
+	seal := uploadsess.SealedSession{
+		ID: sess.Id.String(), LibraryID: env.libID,
+		FileName: "tampered.jpg", Dir: "",
+		Size: int64(len(jpg)), Path: partPath,
+	}
+	_, _, _, perr := env.s.placeSealedInLibrary(lib, seal)
+	if !errors.Is(perr, errSealedSizeMismatch) {
+		t.Fatalf("篡改成品的落位期望 errSealedSizeMismatch，得到 %v", perr)
+	}
+	// 库内无坏文件：落位从未发生。
+	if _, err := os.Stat(filepath.Join(env.media, "tampered.jpg")); !os.IsNotExist(err) {
+		t.Error("被篡改的分片不得落进库")
+	}
+	// 损坏成品（已被预置为 staging）已随失败路径清理，临时目录无残留。
+	assertNoSessionTemp(t, env.dataDir)
 }
 
 // TestUploadSessionUnauthorized：无 token 401（新端点继承全局 Bearer）。

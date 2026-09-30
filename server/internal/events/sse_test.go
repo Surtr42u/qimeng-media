@@ -112,6 +112,40 @@ func TestSSEStreamFrameFormat(t *testing.T) {
 	}
 }
 
+// TestSSEEngagementEventsPassthrough（ADR-0029）：favorite.changed /
+// like.changed 经总线到 SSE 帧原样透传——新事件名对既有帧拼装零特判，
+// 与 library.changed 走同一条 writeEvent 路径，载荷 JSON 形态
+// {"assetId":"..."} 一并锁住（客户端批次按此实现解析）。
+func TestSSEEngagementEventsPassthrough(t *testing.T) {
+	bus := NewBus(nil, 0)
+	defer bus.Close()
+	h := NewHandler(bus, WithHeartbeat(time.Hour))
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, r := sseGet(t, srv, ctx)
+	readFrame(t, r) // retry
+	readFrame(t, r) // hello
+
+	if err := bus.Publish(Event{Topic: TopicFavoriteChanged, Payload: EngagementChangedEvent{AssetID: "018f0000-0000-7000-8000-000000000001"}}); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := readFrame(t, r),
+		"event: favorite.changed\ndata: {\"assetId\":\"018f0000-0000-7000-8000-000000000001\"}\nid: 1\n\n"; got != want {
+		t.Fatalf("favorite.changed 帧逐字节不符:\n got  %q\n want %q", got, want)
+	}
+
+	if err := bus.Publish(Event{Topic: TopicLikeChanged, Payload: EngagementChangedEvent{AssetID: "018f0000-0000-7000-8000-000000000002"}}); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := readFrame(t, r),
+		"event: like.changed\ndata: {\"assetId\":\"018f0000-0000-7000-8000-000000000002\"}\nid: 2\n\n"; got != want {
+		t.Fatalf("like.changed 帧逐字节不符:\n got  %q\n want %q", got, want)
+	}
+}
+
 func TestFrameSplitsMultilineData(t *testing.T) {
 	// 直接测帧拼装函数：多行 data 必须拆成多条 data: 行（WHATWG SSE 规范）。
 	// 经 json.Marshal 的真实 payload 不会含裸换行，此用例锁住防御性拆分逻辑本身。
