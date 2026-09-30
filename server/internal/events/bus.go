@@ -13,11 +13,17 @@ import (
 // （scan.progress→ScanProgressEvent、library.changed→LibraryChangedEvent、
 // upload.done→UploadDoneEvent；thumbnail.progress 的载荷契约待
 // 对应功能接线时补入协议）。
+// 例外（ADR-0029）：favorite.changed / like.changed 是运行时事件面，不入
+// openapi（SSE 事件载荷不进协议建模，客户端按事件名自行解析）——这两类
+// 事件是"变更信号"不是状态面，且严禁订阅方拿它们 bump 库内容修订号
+// （ADR-0026 语义边界：revision 只保证资产集合面，收藏/点赞不改变集合）。
 const (
 	TopicScanProgress      = "scan.progress"      // 扫描进度（尽力而为，允许丢帧）
 	TopicLibraryChanged    = "library.changed"    // 库内容变更（增删改后通知各端刷新）
 	TopicThumbnailProgress = "thumbnail.progress" // 缩略图生成进度
 	TopicUploadDone        = "upload.done"        // 上传入库完成
+	TopicFavoriteChanged   = "favorite.changed"   // 收藏变更（设置/取消后通知各端刷新收藏面）
+	TopicLikeChanged       = "like.changed"       // 点赞变更（点赞/取消后通知各端刷新点赞面）
 )
 
 // DefaultBuffer 每订阅者的投递缓冲大小。

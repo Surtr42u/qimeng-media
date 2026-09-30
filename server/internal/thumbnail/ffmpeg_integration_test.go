@@ -308,7 +308,7 @@ func TestScaleStillIntegration(t *testing.T) {
 	src := makeTallPNG(t, dir)
 	dst := filepath.Join(dir, "out.webp")
 
-	if err := gen.scaleStill(context.Background(), src, 32, dst); err != nil {
+	if err := gen.scaleStill(context.Background(), src, orientationNormal, 32, dst); err != nil {
 		t.Fatalf("scaleStill: %v", err)
 	}
 	w, h := ffprobeImageSize(t, dst)

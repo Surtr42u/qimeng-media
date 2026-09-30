@@ -2,7 +2,7 @@
 
 > 对应用户需求 #9：「NAS 后端要有统计，比如负载、流量那种」。
 > 方案定论：**服务端内置轻量监控**（零外部依赖），Prometheus/Grafana 全家桶作为后置可选增强。
-> 最后更新：2026-09-19（新增 backup_last_success_timestamp gauge——备份快照成功时刻，任务Q 批B）。2026-09-12（文档准确性清偿：系统指标表两处未采集项如实标注、访问日志/轮转标规划、仪表盘路由勘误、轮询周期勘误、readyz 检查面勘误）
+> 最后更新：2026-10-01（Docker 日志轮转落地：deploy/docker-compose.yml json-file 10MB×3——§日志首条同步，第四百一十九笔）。2026-09-19（新增 backup_last_success_timestamp gauge——备份快照成功时刻，任务Q 批B）。2026-09-12（文档准确性清偿：系统指标表两处未采集项如实标注、访问日志/轮转标规划、仪表盘路由勘误、轮询周期勘误、readyz 检查面勘误）
 
 ## 内置监控（M2 交付）
 
@@ -67,7 +67,7 @@
 
 ## 日志
 
-- `slog` 结构化 JSON 日志：时间/级别/模块/事件/关键字段（直写 stdout，无轮转落盘——按大小滚动/存数据目录为规划项）。
+- `slog` 结构化 JSON 日志：时间/级别/模块/事件/关键字段（直写 stdout；容器部署的落盘轮转已实现——`deploy/docker-compose.yml` 对服务配置 json-file 驱动，max-size 10MB × max-file 3 封顶，2026-10-01 第四百一十九笔；非 Docker 形态的应用层自行落盘仍为规划项）。
 - 访问日志（方法/路径/状态/耗时/token 前 4 位）为规划项未实现：当前请求级可观测性由 http_requests_total / http_request_duration_seconds 指标覆盖（计数与延迟，不含逐请求日志）。实现时须遵守 SECURITY 红线 7 脱敏口径。
 - `推荐流冷算分段耗时`（2026-09-29）：/recommendations 缓存未命中路径的分段观测——query（候选聚合 SQL）/algorithm（打分+打散纯函数）/assemble（摘要装配）三段与 total，附 seed/candidates/limit。手机单机形态冷算秒级时用它区分「查询贵/算法贵/装配贵」，免拉库取证（2026-09-29「刷新半天才加载」排查落地）。
 - 等级：默认 info；`QM_LOG_LEVEL=debug` 排障；循环内禁止逐条日志（旧项目"50 次记 1 条采样"经验保留）。

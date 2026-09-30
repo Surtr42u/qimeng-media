@@ -75,5 +75,12 @@ export const QM_REFRESH_EVENT = 'qm:refresh'
 export const EVENT_TOPIC_SCAN_PROGRESS = 'scan.progress'
 export const EVENT_TOPIC_LIBRARY_CHANGED = 'library.changed'
 export const EVENT_TOPIC_UPLOAD_DONE = 'upload.done'
+/**
+ * 收藏/点赞变更轻事件（ADR-0029 新增）：载荷仅 {assetId}——变更信号非状态面，
+ * 消费方只当"收藏/点赞数据可能过期"用（单 assetId 精确失效收益不值复杂度，不消费载荷）。
+ * 不 bump 修订号：favorite/like 不改变资产集合（ADR-0026 修订号语义边界，硬约束）。
+ */
+export const EVENT_TOPIC_FAVORITE_CHANGED = 'favorite.changed'
+export const EVENT_TOPIC_LIKE_CHANGED = 'like.changed'
 /** thumbnail.progress 当前无发布者（server/internal/events/bus.go 注释：载荷契约待定），客户端忽略 */
 export const EVENT_TOPIC_THUMBNAIL_PROGRESS = 'thumbnail.progress'

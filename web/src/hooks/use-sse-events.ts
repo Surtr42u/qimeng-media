@@ -14,6 +14,8 @@ import type {
   UploadDoneEvent,
 } from '@/api/generated'
 import {
+  EVENT_TOPIC_FAVORITE_CHANGED,
+  EVENT_TOPIC_LIKE_CHANGED,
   EVENT_TOPIC_LIBRARY_CHANGED,
   EVENT_TOPIC_SCAN_PROGRESS,
   EVENT_TOPIC_THUMBNAIL_PROGRESS,
@@ -21,6 +23,17 @@ import {
   EVENTS_PATH,
 } from '@/lib/constants'
 import { subscribeSSE, type SSEMessage } from '@/lib/sse'
+
+/**
+ * favorite.changed / like.changed 载荷（ADR-0029：EngagementChangedEvent，两主题同构）。
+ * 为什么本地声明而非生成类型：运行时事件面不入 openapi.yaml（SSE 载荷不进协议建模，
+ * 事件清单以 GUIDE_API.md「实时推送」为准），生成 SDK 无此型。
+ * 载荷不消费口径（ADR-0029）：事件只当"收藏/点赞数据可能过期"的变更信号——
+ * 单 assetId 粒度的精确失效收益不值复杂度，消费方按根键整面失效后重拉权威状态。
+ */
+export interface EngagementChangedEvent {
+  assetId?: string
+}
 
 /** 页面声明关心的主题回调（未声明 = 忽略该主题） */
 export interface SSEEventHandlers {
@@ -33,6 +46,13 @@ export interface SSEEventHandlers {
   onLibraryChanged?: (event: LibraryChangedEvent | null) => void
   /** 上传入库完成（携带 assetId，可精确失效单条而不必刷全列表） */
   onUploadDone?: (event: UploadDoneEvent) => void
+  /**
+   * 收藏变更（ADR-0029 新增）。载荷不消费（见 EngagementChangedEvent）：
+   * 调用方只把它当收藏面数据可能过期的信号，按根键整面失效。
+   */
+  onFavoriteChanged?: (event: EngagementChangedEvent) => void
+  /** 点赞变更（ADR-0029 新增）：口径同 onFavoriteChanged */
+  onLikeChanged?: (event: EngagementChangedEvent) => void
   /** 缩略图生成进度——当前无发布者（服务端注释载荷契约待定），收到也忽略；参数位为将来接入预留 */
   onThumbnailProgress?: (event: unknown) => void
   /**
@@ -107,6 +127,16 @@ function dispatch(handlers: SSEEventHandlers, msg: SSEMessage): void {
     case EVENT_TOPIC_UPLOAD_DONE: {
       const event = parseEventData<UploadDoneEvent>(msg.data)
       if (event) handlers.onUploadDone?.(event)
+      break
+    }
+    case EVENT_TOPIC_FAVORITE_CHANGED:
+    case EVENT_TOPIC_LIKE_CHANGED: {
+      // 两主题载荷同构（EngagementChangedEvent），解析只为容错坏帧（解析失败跳过
+      // 单事件不打断整条流）；载荷本身不消费（ADR-0029），回调形态对齐其余主题
+      const event = parseEventData<EngagementChangedEvent>(msg.data)
+      if (!event) break
+      if (msg.event === EVENT_TOPIC_FAVORITE_CHANGED) handlers.onFavoriteChanged?.(event)
+      else handlers.onLikeChanged?.(event)
       break
     }
     case EVENT_TOPIC_THUMBNAIL_PROGRESS: {

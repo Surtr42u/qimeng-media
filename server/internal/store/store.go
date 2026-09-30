@@ -79,7 +79,7 @@ const pageCacheKiB = 32000
 func Open(path string) (*sql.DB, error) {
 	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(%d)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=cache_size(-%d)&_txlock=immediate",
 		path, busyTimeoutMS, pageCacheKiB)
-	db, err := sql.Open("sqlite", dsn)
+	db, err := sql.Open(driverName, dsn)
 	if err != nil {
 		return nil, fmt.Errorf("store: 打开数据库 %s: %w", path, err)
 	}

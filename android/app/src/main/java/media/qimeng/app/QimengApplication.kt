@@ -10,6 +10,7 @@ import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 import media.qimeng.app.core.data.diagnostics.DiagnosticsBootstrapper
 import media.qimeng.app.core.data.events.EventSyncBootstrapper
+import media.qimeng.app.core.data.events.ServerEventConsumer
 import media.qimeng.app.core.data.prefetch.ThumbnailPrefetcher
 
 /**
@@ -35,6 +36,10 @@ import media.qimeng.app.core.data.prefetch.ThumbnailPrefetcher
  *
  * 分池路由来源接线（第四百一十一笔）：onCreate 构造 CachePoolBinder 挂 serverUrl
  * 观察——剥 host 稳定键无来源信息，连接来源（NAS/本地端）驱动 SplitDiskCache 池路由。
+ *
+ * 服务端 SSE 事件消费（ADR-0029，2026-10-01）：onCreate 构造 ServerEventConsumer 挂
+ * 登录态观察——登录即连 GET /api/v1/events、断线退避重连，favorite/like/library 三类
+ * 变更事件汇入 DataFreshnessSignal 供收藏/点赞跳过门收敛（逻辑全在 :core:data events 包）。
  */
 @HiltAndroidApp
 class QimengApplication : Application(), Configuration.Provider, SingletonImageLoader.Factory {
@@ -60,6 +65,10 @@ class QimengApplication : Application(), Configuration.Provider, SingletonImageL
     @Inject
     lateinit var cachePoolBinder: media.qimeng.app.core.data.coil.CachePoolBinder
 
+    /** SSE 事件消费接线（ADR-0029）：进程启动即构造，登录态变化驱动长连/断开 */
+    @Inject
+    lateinit var serverEventConsumer: ServerEventConsumer
+
     /** 扫描充电联动接线（批C 任务Q C-3）：注册 ACTION_POWER_CONNECTED 接收器 + 启动兜底补扫 */
     @Inject
     lateinit var scanChargeRegistrar: media.qimeng.app.ScanChargeRegistrar
@@ -75,6 +84,7 @@ class QimengApplication : Application(), Configuration.Provider, SingletonImageL
         diagnosticsBootstrapper.onAppCreate()
         thumbnailPrefetcher.onAppCreate()
         cachePoolBinder.onAppCreate()
+        serverEventConsumer.onAppCreate()
         scanChargeRegistrar.onAppCreate(this)
     }
 

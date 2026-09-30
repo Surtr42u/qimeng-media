@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"qimeng-media/server/internal/events"
 	"qimeng-media/server/internal/httpapi/gen"
 	"qimeng-media/server/internal/store"
 	"qimeng-media/server/internal/store/db"
@@ -166,6 +167,8 @@ func (s *Server) PostApiV1EventsView(w http.ResponseWriter, r *http.Request) {
 // likeCount 为累计值。openapi 语义是 toggle——当日已赞时本次请求即
 // "取消今日赞"（删除当日行，累计数相应回退）；当日未赞则记录一次。
 // 「每资产每日一次」由 (asset_id, day) 主键兜底，并发双击不会翻倍。
+// 写成功（含竞态输家的幂等吸收）后广播 like.changed（ADR-0029），不发
+// library.changed、不动修订号（ADR-0026 语义边界，见下方发布点注释）。
 func (s *Server) PutApiV1AssetsAssetIdLike(w http.ResponseWriter, r *http.Request, assetID gen.AssetId) {
 	if _, err := s.q.GetAsset(r.Context(), assetID.String()); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -204,6 +207,17 @@ func (s *Server) PutApiV1AssetsAssetIdLike(w http.ResponseWriter, r *http.Reques
 	// 恰为 true，likeCount 重新计数即含竞态赢家的那一行。
 	// likeCount 是推荐打分输入（§1.1 likeScore），点赞/取消后推荐缓存失效
 	s.invalidateRecommendCache()
+	// 点赞/取消只改行为数据、不改资产集合：广播 like.changed 让其它端即时
+	// 刷新（ADR-0029，跨端数据新鲜度收敛第一半）。刻意不发 library.changed
+	// ——修订号订阅只挂在该事件上，由此保证 favorite/like 永不 bump 修订号
+	//（ADR-0026 语义边界：revision 只保证资产集合面）。发布失败不改变本
+	// 请求的成功语义：丢事件的最坏后果回到各端 TTL 兜底重拉（弱失败方向）。
+	if err := s.bus.Publish(events.Event{
+		Topic:   events.TopicLikeChanged,
+		Payload: events.EngagementChangedEvent{AssetID: assetID.String()},
+	}); err != nil {
+		s.logger.Warn("广播 like.changed 失败", "err", err)
+	}
 	count, err := s.q.CountAssetLikes(r.Context(), assetID.String())
 	if err != nil {
 		s.internalErr(w, "统计点赞数", err)
@@ -214,6 +228,8 @@ func (s *Server) PutApiV1AssetsAssetIdLike(w http.ResponseWriter, r *http.Reques
 }
 
 // PutApiV1AssetsAssetIdFavorite 设置/取消收藏（布尔标记，DOMAIN_RULES §7）。
+// 写成功（含重复收藏的幂等 no-op）后广播 favorite.changed（ADR-0029），
+// 不发 library.changed、不动修订号（ADR-0026 语义边界，见下方发布点注释）。
 func (s *Server) PutApiV1AssetsAssetIdFavorite(w http.ResponseWriter, r *http.Request, assetID gen.AssetId) {
 	var req gen.PutApiV1AssetsAssetIdFavoriteJSONRequestBody
 	if !decodeJSON(w, r, &req) {
@@ -241,5 +257,15 @@ func (s *Server) PutApiV1AssetsAssetIdFavorite(w http.ResponseWriter, r *http.Re
 	}
 	// is_favorite 是推荐输入行字段（recommend.sql），收藏变更后推荐缓存失效
 	s.invalidateRecommendCache()
+	// 收藏/取消广播 favorite.changed（与 like.changed 同构，ADR-0029）：
+	// 只带资产 id 的变更信号，不发 library.changed、不动修订号（理由同上）；
+	// 重复收藏的幂等 no-op（ON CONFLICT 0 行）也照发——消费方多刷一次幂等
+	// 无害，省掉行数判定让发布点与写成功点一一对应更可审计。
+	if err := s.bus.Publish(events.Event{
+		Topic:   events.TopicFavoriteChanged,
+		Payload: events.EngagementChangedEvent{AssetID: assetID.String()},
+	}); err != nil {
+		s.logger.Warn("广播 favorite.changed 失败", "err", err)
+	}
 	w.WriteHeader(http.StatusNoContent)
 }

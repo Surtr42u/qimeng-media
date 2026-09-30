@@ -12,6 +12,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -220,10 +221,19 @@ func (s *Server) PostApiV1UploadsIdComplete(w http.ResponseWriter, r *http.Reque
 	// 搬运 + 冲突解析 + 入库（放置段拆出见 placeSealedInLibrary：重活锁外、
 	// rename 锁内，与直传 #9 关键段同构）。dir 为 create 时校验规范化并存入
 	// 会话的目标子目录（空 = 库根），落位语义与直传逐字一致。
-	finalName, targetRel, targetAbs, gerr := s.placeSealedInLibrary(lib, seal.Path, seal.FileName, seal.Dir)
+	finalName, targetRel, targetAbs, gerr := s.placeSealedInLibrary(lib, seal)
 	if gerr != nil {
 		if errors.Is(gerr, errUploadTargetEscape) {
 			writeErr(w, http.StatusBadRequest, codePathEscape, "目标路径不合法")
+			return
+		}
+		if errors.Is(gerr, errSealedSizeMismatch) {
+			// 400：与「未传完 400」同属 complete 的「校验失败且会话保留」
+			// 语义（协议侧 complete 明文「永不 409」，冲突语义已被同名自动
+			// 重命名占位）——size 复核是四道终检里「最终大小」的加固延伸，
+			// 客户端无从修复（成品字节已不可信），只能放弃重建会话。
+			sysmon.Default.IncUpload(sysmon.UploadFail)
+			writeErr(w, http.StatusBadRequest, codeInvalidParam, "分片成品与会话声明大小不符，请放弃本会话重新上传")
 			return
 		}
 		s.internalErr(w, "落盘分片成品文件", gerr)
@@ -243,21 +253,21 @@ func (s *Server) PostApiV1UploadsIdComplete(w http.ResponseWriter, r *http.Reque
 
 // placeSealedInLibrary 把终结就绪的分片文件搬进库内目标目录（dir 空 = 库根，
 // 与直传 dir 参数同语义）并解析冲突名：重活（跨卷拷贝预置）在库锁外、锁内
-// 只做只读探测与一次 rename——与直传 #9 关键段同构（持库锁时长与文件大小
-// 无关）。dir 在 create 时已过 resolveUploadDir 规范化并存入会话（服务端
-// 持有，complete 不再收客户端路径）；baseDirAbs 的 PathWithinRoot 仍保留为
-// handler 侧兜底（SECURITY 红线 1 纵深防御，与直传同一道闸）。预置/放置
-// 失败清理临时副本；rename 成功后副本已不在（cleanup 报 NotExist 属正常）。
+// 只做只读探测、size 复核与一次 rename——与直传 #9 关键段同构（持库锁时长
+// 与文件大小无关）。dir 在 create 时已过 resolveUploadDir 规范化并存入会话
+//（服务端持有，complete 不再收客户端路径）；baseDirAbs 的 PathWithinRoot 仍
+// 保留为 handler 侧兜底（SECURITY 红线 1 纵深防御，与直传同一道闸）。预置/
+// 放置失败清理临时副本；rename 成功后副本已不在（cleanup 报 NotExist 属正常）。
 // 返回最终落盘名、库内相对路径与绝对路径（rel = dir/最终名，供入库管线）。
-func (s *Server) placeSealedInLibrary(lib db.Library, sealedPath, fileName, dir string) (string, string, string, error) {
+func (s *Server) placeSealedInLibrary(lib db.Library, seal uploadsess.SealedSession) (string, string, string, error) {
 	// 目标子目录（含校验兜底）：预置与最终落点同目录才能原子 rename——
 	// 与直传「先建目录、临时文件与最终文件同目录」同一顺序（MkdirAll 幂等
 	// 且并发安全，在 stageSealedFile 内完成）。
-	baseDirAbs := filepath.Join(lib.RootPath, filepath.FromSlash(dir))
+	baseDirAbs := filepath.Join(lib.RootPath, filepath.FromSlash(seal.Dir))
 	if !filing.PathWithinRoot(lib.RootPath, baseDirAbs) {
 		return "", "", "", errUploadTargetEscape
 	}
-	staging, cleanup, err := s.stageSealedFile(baseDirAbs, sealedPath)
+	staging, cleanup, err := s.stageSealedFile(baseDirAbs, seal.Path)
 	if err != nil {
 		return "", "", "", err
 	}
@@ -271,11 +281,29 @@ func (s *Server) placeSealedInLibrary(lib db.Library, sealedPath, fileName, dir 
 			_, serr := os.Stat(filepath.Join(baseDirAbs, n))
 			return serr == nil
 		}
-		finalName = filing.ResolveConflict(fileName, exists)
-		targetRel = path.Join(dir, finalName)
+		finalName = filing.ResolveConflict(seal.FileName, exists)
+		targetRel = path.Join(seal.Dir, finalName)
 		targetAbs = filepath.Join(lib.RootPath, filepath.FromSlash(targetRel))
 		if !filing.PathWithinRoot(lib.RootPath, targetAbs) {
 			return errUploadTargetEscape
+		}
+		// Seal→落位间隙 size 复核（第四百一十九笔，上批审查 P2-4 收口）：
+		// complete 的 staging/rename 段不持会话锁，违规客户端可在 Seal 之后
+		// 并发 PATCH（offset==size 恰好过 Append 的首道比对）在 rename 间隙
+		// 往分片文件塞字节——落库文件就会与声明 size 不符（Append 自身的
+		// 回滚截断可能落在 rename 之后，截的是已被移走的旧路径，拦不住）。
+		// 锁内 os.Stat 复核 staging 实际字节数，不等 seal.Size 按会话已损坏
+		// 处理（errSealedSizeMismatch → complete 400）。stat 与 rename 相邻
+		// 执行把竞态窗压缩到两条系统调用之间，工程上不可利用；绝对串行须把
+		// 整个落位搬进 session.mu（会话锁横跨库锁与跨卷拷贝），不值得。
+		st, serr := os.Stat(staging)
+		if serr != nil {
+			return fmt.Errorf("复核分片成品大小失败: %w", serr)
+		}
+		if st.Size() != seal.Size {
+			s.logger.Warn("分片成品与会话声明大小不符，拒绝落位", "session", seal.ID,
+				"declared", seal.Size, "actual", st.Size())
+			return errSealedSizeMismatch
 		}
 		return os.Rename(staging, targetAbs)
 	})
@@ -285,6 +313,10 @@ func (s *Server) placeSealedInLibrary(lib db.Library, sealedPath, fileName, dir 
 	}
 	return finalName, targetRel, targetAbs, nil
 }
+
+// errSealedSizeMismatch 落位前复核发现分片成品实际字节数与会话声明 size
+// 不符（Seal 后成品被篡改的信号）：按会话已损坏处理，complete 映射 400。
+var errSealedSizeMismatch = errors.New("uploads: 分片成品与会话声明大小不符")
 
 // DeleteApiV1UploadsId 放弃会话：删临时文件与会话，不入库、不产生任何资产。
 func (s *Server) DeleteApiV1UploadsId(w http.ResponseWriter, r *http.Request, id gen.UploadId) {

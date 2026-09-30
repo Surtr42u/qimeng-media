@@ -72,6 +72,12 @@ dependencies {
     // 上传响应/错误体解析（M4-5）：moshi 反射（SDK 生成物同款 KotlinJsonAdapterFactory，单版本原则）
     implementation(libs.moshi.kotlin)
 
+    // 服务端 SSE 事件消费（ADR-0029，2026-10-01）：ServerEventConsumer 注入 okhttp-sse 的
+    // EventSource.Factory（生产绑定在 core:network NetworkModule，@SseClient 长流客户端派生），
+    // 监听器与事件分发在本模块。okhttp 类型既有直用先例（upload 包经 coil-network-okhttp 传递），
+    // 本处按显式依赖纪律声明，版本随 okhttp 单源收口（见 libs.versions.toml okhttp-sse 注释）。
+    implementation(libs.okhttp.sse)
+
     // 登录流程走真实生成 SDK + JDK HttpServer 打全链路（okhttp 仅为测试内构造客户端）
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

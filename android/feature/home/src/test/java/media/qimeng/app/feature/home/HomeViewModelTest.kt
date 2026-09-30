@@ -14,6 +14,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+import media.qimeng.app.core.data.events.DataFreshnessSignal
 import media.qimeng.app.core.data.prefetch.ThumbnailPrefetchThrottle
 import media.qimeng.app.core.data.repository.AssetOrigUrlResolver
 import media.qimeng.app.core.data.repository.GridPrefsRepository
@@ -218,7 +219,8 @@ class HomeViewModelTest {
 
     private fun viewModel(
         repo: FakeMediaRepository,
-        likeTracker: LikeMutationTracker = LikeMutationTracker(),
+        // 2026-10-01 ADR-0029 门收敛：tracker 构造注入信号汇（跨端变更经 SSE bump 计数）
+        likeTracker: LikeMutationTracker = LikeMutationTracker(DataFreshnessSignal()),
         probe: ServerReadinessProbe? = null,
     ): HomeViewModel = HomeViewModel(
         mediaRepository = repo,
@@ -474,7 +476,7 @@ class HomeViewModelTest {
     fun `点赞指纹变化 - 返回首页重拉当前推荐tab，无变更保持原样`() = runTest(mainDispatcherRule.testDispatcher) {
         val repo = FakeMediaRepository()
         repo.recommendationsResult = listOf(asset("r1"))
-        val tracker = LikeMutationTracker()
+        val tracker = LikeMutationTracker(DataFreshnessSignal())
         val viewModel = viewModel(repo, tracker)
         advanceUntilIdle()
         assertEquals(1, repo.recommendationsCalls.size)
@@ -508,7 +510,7 @@ class HomeViewModelTest {
     @Test
     fun `点赞指纹变化 - 榜单tab返回重拉排行榜`() = runTest(mainDispatcherRule.testDispatcher) {
         val repo = FakeMediaRepository()
-        val tracker = LikeMutationTracker()
+        val tracker = LikeMutationTracker(DataFreshnessSignal())
         val viewModel = viewModel(repo, tracker)
         advanceUntilIdle()
 
@@ -532,12 +534,14 @@ class HomeViewModelTest {
     // 指纹只感知本进程本端变更，跨端改动指纹永不变化——跳过条件叠加 STALE_AFTER_MS
     // staleTime 上界兜底（TanStack Query refetchOnWindowFocus 同款语义）。「指纹变了→
     // 立即重拉」半边由上方既有指纹门控用例继续锁定，此处只锁 TTL 半边。
+    // 2026-10-01 ADR-0029 修订：同日服务端已补发 like.changed，TTL 自此降级为 SSE
+    // 断线/离线窗口的兜底（信号半边见下一组用例）。
 
     @Test
     fun `点赞跳过门TTL兜底 - 指纹未变TTL内返回不重拉 恰越过STALE_AFTER_MS重拉换seed自愈`() =
         runTest(mainDispatcherRule.testDispatcher) {
             val repo = FakeMediaRepository().apply { recommendationsResult = listOf(asset("r1")) }
-            val tracker = LikeMutationTracker()
+            val tracker = LikeMutationTracker(DataFreshnessSignal())
             var fakeNow = 1_000_000L
             tracker.clockMs = { fakeNow } // Tracker 时钟注入：TTL 判定假钟推进全确定
             val viewModel = viewModel(repo, tracker)
@@ -561,6 +565,40 @@ class HomeViewModelTest {
 
             // 重拉成功落地重新打点：回到新鲜窗口，再次返回不重拉（计时已重置）
             fakeNow += 1
+            viewModel.onHomeResumed()
+            advanceUntilIdle()
+            assertEquals(2, repo.recommendationsCalls.size)
+        }
+
+    // ---------- 2026-10-01 ADR-0029 门收敛：SSE 信号半边（秒级感知跨端变更） ----------
+    // 首页门关联 like.changed + library.changed 两计数（数据面=服务端打分/榜单输入+资产集合）；
+    // 信号在 tracker 内部判定（isListFetchFresh 信号半边），此处只锁 VM 消费点的整体行为。
+
+    @Test
+    fun `点赞跳过门SSE信号 - 跨端点赞信号到达后返回即重拉换seed`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val repo = FakeMediaRepository().apply { recommendationsResult = listOf(asset("r1")) }
+            val signal = DataFreshnessSignal()
+            val tracker = LikeMutationTracker(signal)
+            val viewModel = viewModel(repo, tracker)
+            advanceUntilIdle()
+            assertEquals(1, repo.recommendationsCalls.size) // init 首载成功落地 = 信号基线采样
+
+            viewModel.onHomeResumed() // 基线采纳
+
+            // 纯浏览返回（无任何变更）：不重拉
+            viewModel.onHomeResumed()
+            advanceUntilIdle()
+            assertEquals(1, repo.recommendationsCalls.size)
+
+            // SSE like.changed 到达（跨端点赞，本进程指纹不变）：返回即重拉当前 tab（换 seed）
+            signal.onLikeChanged()
+            viewModel.onHomeResumed()
+            advanceUntilIdle()
+            assertEquals(2, repo.recommendationsCalls.size)
+            assertEquals(repo.recommendationsCalls[0] + 1, repo.recommendationsCalls[1])
+
+            // 重拉成功落地重新采样：回到新鲜窗口，再次返回不重拉
             viewModel.onHomeResumed()
             advanceUntilIdle()
             assertEquals(2, repo.recommendationsCalls.size)

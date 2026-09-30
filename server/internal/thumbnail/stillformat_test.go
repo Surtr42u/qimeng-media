@@ -93,7 +93,7 @@ func TestScaleStillJPEGFallbackIntegration(t *testing.T) {
 	src := makeTallPNG(t, dir)
 	dst := filepath.Join(dir, "out.jpg")
 
-	if err := gen.scaleStill(context.Background(), src, 32, dst); err != nil {
+	if err := gen.scaleStill(context.Background(), src, orientationNormal, 32, dst); err != nil {
 		t.Fatalf("scaleStill(jpeg): %v", err)
 	}
 	w, h := ffprobeImageSize(t, dst)
