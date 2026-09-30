@@ -905,8 +905,10 @@ func TestMediaOrigRangeAndSignature(t *testing.T) {
 		t.Fatalf("篡改签名期望 403，得到 %d", resp.StatusCode)
 	}
 
-	// 过期 → 403（时钟前移 7h，超过 6h TTL）
-	env.clock.advance(7 * time.Hour)
+	// 过期 → 403。时钟前移量 = 2*DefaultTokenTTL+1min：exp 窗口对齐
+	// （ADR-0027）后有效期恒 ∈ (TTL, 2*TTL]，只前移一个 TTL 会落在同窗
+	// URL 仍有效的区间内；越过上界才保证任意窗口签发的直链都已过期。
+	env.clock.advance(2*DefaultTokenTTL + time.Minute)
 	resp, err = http.Get(env.ts.URL + *detail.OrigUrl)
 	if err != nil {
 		t.Fatalf("请求失败: %v", err)

@@ -18,12 +18,37 @@ import (
 	"qimeng-media/server/internal/thumbnail"
 )
 
+// mediaURLExpiry 计算签名直链 exp 的窗口对齐上界（ADR-0027）。
+//
+// exp = 下一个窗口上界 + ttl，窗长与直链有效期同值（一个旋钮，URL 每日至多
+// 轮换 4 次）：
+//   - 同一窗口内（对齐 Unix 纪元整点）所有响应生成相同 exp → URL 字符串
+//     逐字节恒定，浏览器 HTTP 缓存与 ETag/304 终于能命中。旧实现
+//     exp=now+TTL 逐响应轮换，同资产同尺寸的 URL 每次响应都不同，击穿全部
+//     HTTP 缓存（Web 端零补偿全量重下；Android 端被迫自建剥签名键栈）。
+//   - 有效期恒 ∈ (ttl, 2*ttl]：最短仍是一个完整 ttl，绝不出现"取到即近
+//     过期"的 URL（纯取窗口上界不叠加 ttl 的备选方案会在窗口尾产出几分钟
+//     内过期的 URL，已否决，见 ADR-0027）。
+//   - 纯函数（只依赖 now 与 ttl）：进程重启/并发请求结果确定，无需状态。
+//
+// ttl 必须传实际生效的直链有效期（Server.ttl，配置 token_ttl，缺省
+// DefaultTokenTTL）而不是硬编码 DefaultTokenTTL——窗口必须跟随配置值，
+// 否则配置长 TTL 时签出的 URL 会在 TTL 内提前过期，违反上界不变量。
+// time.Truncate 按绝对时间（Unix 纪元零点）对齐，与时区无关，无需转换。
+func mediaURLExpiry(now time.Time, ttl time.Duration) int64 {
+	boundary := now.Add(ttl).Truncate(ttl)
+	return boundary.Add(ttl).Unix()
+}
+
 // signedMediaURL 生成带 exp/sig 的签名直链（auth 包协议）。
 // path 必须与校验侧 r.URL.Path 同形态——纯路径（不含查询串），uuid 与
 // hex 签名字符集不含需转义的字符，两形态天然一致。查询参数（如 thumb
 // 的 size）不参与签名：size 属于缓存选择而非授权面，签名始终只锚定路径。
+// exp 走窗口对齐（mediaURLExpiry，ADR-0027）：签名消息构造与验签侧
+// （auth 包）零改动，只改 exp 数值的取法。
 func (s *Server) signedMediaURL(path string) string {
-	exp, sig := auth.SignMediaURL(path, s.now().Add(s.ttl), s.secret)
+	expAt := time.Unix(mediaURLExpiry(s.now(), s.ttl), 0)
+	exp, sig := auth.SignMediaURL(path, expAt, s.secret)
 	return path + "?exp=" + strconv.FormatInt(exp, 10) + "&sig=" + sig
 }
 
