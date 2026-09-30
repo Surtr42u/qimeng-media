@@ -87,6 +87,10 @@ jobs:
           make sdk-lock
           if ! git diff --exit-code -- api/sdk.lock; then
             echo "::error::api/sdk.lock 与三端生成物重算结果不一致。请在本地运行 make sdk 重新生成后，将更新后的 api/sdk.lock 与本次协议/生成器改动同 commit 提交（指纹入库≠产物入库，见 ADR-0009）。"
+            echo "::group::sdk.lock 差异摘要（stat + 前 40 行 diff，供定位漂移文件）"
+            git diff --stat -- api/sdk.lock
+            git diff -- api/sdk.lock | head -40
+            echo "::endgroup::"
             exit 1
           fi
       # R14（2026-09-20 审计清偿）：android/sdk 生成一次、artifact 下发复用，

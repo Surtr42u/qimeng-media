@@ -13,6 +13,12 @@ GOBIN_DIR ?= $(HOME)/go/bin
 # 协议校验工具与生成器版本（协议宪法 api/openapi.yaml 的三端生成链，见 AI_README_FIRST「协议先行」）
 REDOCLY := npx -y @redocly/cli
 OAPI_CODEGEN_VERSION := v2.8.0
+# Kotlin 生成链版本锁定（2026-10-01 CI 指纹锁从未绿排查批）：npm CLI 包
+# @openapitools/openapi-generator-cli（版本体系 2.x）内嵌绑定的 Java 生成器版本
+# （当前 2.41.0 → generator 7.24.0，见生成产物 .openapi-generator/VERSION）——
+# 不锁 CLI 版本则 npm 拉最新、内嵌生成器随发布漂移、生成物与 api/sdk.lock 失配。
+# 升级 = 改此版本号 + make sdk + 同 commit 更新锁。
+OPENAPI_GENERATOR_CLI_VERSION := 2.41.0
 # Kotlin 生成期枚举项改名（官方 --enum-name-mappings，线上值不变）：协议 sort 枚举含合法值
 # "name"（DOMAIN_RULES §3 排序键），生成器直接产出枚举项 name 与 kotlin.Enum.name 冲突、无法编译。
 # 仅改 Kotlin 标识符为 nameValue，@Json(name="name") 与请求线上值保持 "name"。
@@ -71,19 +77,28 @@ export SDK_GRADLE_FILE
 #   go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.1
 GOLANGCI_LINT ?= $(GOBIN_DIR)/golangci-lint
 
-.PHONY: help sdk sdk-validate sdk-go sdk-ts sdk-kotlin sdk-lock app-build app-test app-lint server-run server-test server-android-arm64 server-android-amd64 server-linux-amd64 app-embedded-arm64 app-embedded-x86_64 app-embedded web-build web-dev web-test docker-build lint
+.PHONY: help sdk sdk-clean sdk-validate sdk-go sdk-ts sdk-kotlin sdk-lock app-build app-test app-lint server-run server-test server-android-arm64 server-android-amd64 server-linux-amd64 app-embedded-arm64 app-embedded-x86_64 app-embedded web-build web-dev web-test docker-build lint
 
 help: ## show all targets
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
 
-sdk: sdk-validate sdk-go sdk-ts sdk-kotlin ## generate 3-end SDK from api/openapi.yaml (Go iface + TS + Kotlin)
-	@echo "sdk: all done (validate -> go -> ts -> kotlin)"
+sdk: sdk-validate sdk-clean sdk-go sdk-ts sdk-kotlin ## generate 3-end SDK from api/openapi.yaml (Go iface + TS + Kotlin)
+	@echo "sdk: all done (clean -> validate -> go -> ts -> kotlin)"
 	@# sdk-lock 放 recipe 末尾调用而非并列 prerequisite：make -j 下同级
 	@# prerequisite 执行顺序不保证，锁必须等三端生成物全部就绪后再算。
 	@$(MAKE) --no-print-directory sdk-lock
 
+# 生成前清理三端旧产物（2026-10-01 CI 指纹锁从未绿根因修复）：生成器只覆写不
+# 删除，历次协议演进中被移除端点的陈旧文件会一直留在本地树里被记进 sdk.lock，
+# 而 CI 全新 checkout 只产出当前 openapi 的文件集——两边文件集合天然失配。
+# 清理后生成结果与树的历史状态无关（幂等），锁才跨机可重现。
+sdk-clean:
+	@echo "==> [1/5] clean 3-end generated trees (state-independent regeneration)"
+	rm -rf android/sdk web/src/api/generated
+	rm -f server/internal/httpapi/gen/*.gen.go
+
 sdk-validate:
-	@echo "==> [1/4] validate api/openapi.yaml (redocly; struct errors fail the build)"
+	@echo "==> [2/5] validate api/openapi.yaml (redocly; struct errors fail the build)"
 	@if $(REDOCLY) lint api/openapi.yaml > /tmp/redocly-sdk.log 2>&1; then \
 		echo "    spec OK"; \
 	else \
@@ -93,7 +108,7 @@ sdk-validate:
 	fi
 
 sdk-go:
-	@echo "==> [2/4] generate Go server interface (oapi-codegen $(OAPI_CODEGEN_VERSION) -> server/internal/httpapi/gen/)"
+	@echo "==> [3/5] generate Go server interface (oapi-codegen $(OAPI_CODEGEN_VERSION) -> server/internal/httpapi/gen/)"
 	@if [ ! -x "$(GOBIN_DIR)/oapi-codegen" ] && [ ! -x "$(GOBIN_DIR)/oapi-codegen.exe" ]; then \
 		echo "    first run: installing oapi-codegen..."; \
 		go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@$(OAPI_CODEGEN_VERSION); \
@@ -102,22 +117,22 @@ sdk-go:
 	cd server && go build ./... && echo "    go build ./... OK"
 
 sdk-ts:
-	@echo "==> [3/4] generate TS client (@hey-api/openapi-ts 0.99.0 -> web/src/api/generated/)"
+	@echo "==> [4/5] generate TS client (@hey-api/openapi-ts 0.99.0 -> web/src/api/generated/)"
 	@test -d web/node_modules || npm --prefix web install
 	cd web && npx openapi-ts -f src/api/openapi-ts.config.ts
 
 sdk-kotlin:
-	@echo "==> [4/4] generate Kotlin SDK (openapi-generator)"
+	@echo "==> [5/5] generate Kotlin SDK (openapi-generator $(OPENAPI_GENERATOR_CLI_VERSION))"
 	@# Java 优先取 PATH；否则回退仓库旁的免安装 JDK（升级 JDK 时同步改此路径，见 ../dev-tools/TOOLCHAIN_GUIDE.md）
 	@if command -v java >/dev/null 2>&1; then \
-		npx -y @openapitools/openapi-generator-cli generate -g kotlin \
+		npx -y @openapitools/openapi-generator-cli@$(OPENAPI_GENERATOR_CLI_VERSION) generate -g kotlin \
 			-i api/openapi.yaml -o android/sdk \
 			--additional-properties=packageName=media.qimeng.sdk \
 			--enum-name-mappings $(KOTLIN_ENUM_NAME_MAPPINGS); \
 	elif [ -x "../dev-tools/jdk17/jdk-17.0.20.1+1/bin/java.exe" ]; then \
 		echo "    using bundled JDK (../dev-tools/jdk17)"; \
 		JAVA_HOME="../dev-tools/jdk17/jdk-17.0.20.1+1" PATH="../dev-tools/jdk17/jdk-17.0.20.1+1/bin:$$PATH" \
-		npx -y @openapitools/openapi-generator-cli generate -g kotlin \
+		npx -y @openapitools/openapi-generator-cli@$(OPENAPI_GENERATOR_CLI_VERSION) generate -g kotlin \
 			-i api/openapi.yaml -o android/sdk \
 			--additional-properties=packageName=media.qimeng.sdk \
 			--enum-name-mappings $(KOTLIN_ENUM_NAME_MAPPINGS); \
