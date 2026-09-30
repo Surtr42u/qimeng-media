@@ -81,6 +81,8 @@ func (s *Server) sweepTrashOnce() {
 		s.thumbs.DeleteAssetThumbs(e.meta.AssetID)
 	}
 	if removed > 0 {
+		// 到期清除=物理删除：修订号显式推进（与手动物理删除同一 bump 链）。
+		s.bumpLibraryRevision()
 		s.refreshTrashMetrics()
 	}
 }

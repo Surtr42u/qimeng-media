@@ -13,6 +13,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import media.qimeng.app.core.data.coil.CachePool
 import media.qimeng.app.core.data.di.IoDispatcher
+import media.qimeng.app.core.data.prefetch.PrefetchRevisionStore
 import media.qimeng.app.core.data.prefetch.PrefetchUiState
 import media.qimeng.app.core.data.prefetch.ThumbnailPrefetchMonitor
 import media.qimeng.app.core.data.repository.CoilCacheManager
@@ -47,6 +48,8 @@ class ThumbnailCacheViewModel @Inject constructor(
     private val coilCacheManager: CoilCacheManager,
     /** 预取状态只读监视端口（预取生命周期属于 App 全局而非本页，本类不干预） */
     prefetchMonitor: ThumbnailPrefetchMonitor,
+    /** 预取修订号仓（清空缓存池后失效 last_prefetch_revision，防下轮误跳过——P1） */
+    private val prefetchRevisionStore: PrefetchRevisionStore,
     /** DiskCache.size/文件遍历触发磁盘扫描（IO 性质），调用点统一挂 IO 调度器 */
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) : ViewModel() {
@@ -72,7 +75,8 @@ class ThumbnailCacheViewModel @Inject constructor(
                         if (resampleCursor % step == 0) refreshUsage()
                     }
                     is PrefetchUiState.Done, is PrefetchUiState.Failed -> refreshUsage()
-                    PrefetchUiState.Idle, PrefetchUiState.WaitingNetwork -> Unit
+                    // Skipped（revision 未变整轮跳过）：无下载落盘，两池口径不变，无需重采样
+                    PrefetchUiState.Idle, PrefetchUiState.WaitingNetwork, PrefetchUiState.Skipped -> Unit
                 }
             }
         }
@@ -87,6 +91,14 @@ class ThumbnailCacheViewModel @Inject constructor(
     private fun clearPool(pool: CachePool) {
         viewModelScope.launch {
             withContext(ioDispatcher) { runCatching { coilCacheManager.clearPool(pool) } }
+            // P1（reviewer 2026-09-30）：清池后同步失效预取修订号——池内缩略图已删，
+            // 若保留 last_prefetch_revision，库静态时下轮 revision 相等会误 SKIP，
+            // 已清空的缓存永不补拉且缓存页「已是最新」与事实相反。修订号全局不分池，
+            // NAS/本地任一池清空都作废（读回 null → 下轮 FULL 补拉）。写失败不构成
+            // 清空失败（最坏只回到改动前「重启才补」的行为），静默降级与读侧同款。
+            // 有意不在清空后即时触发新预取轮（预取无手动入口，批S4 拍板）：重启/重登录
+            // 才补，与失效引入前的行为一致。
+            runCatching { prefetchRevisionStore.clear() }
             refreshUsage()
         }
     }

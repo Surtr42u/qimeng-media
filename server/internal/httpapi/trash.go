@@ -433,6 +433,9 @@ func (s *Server) DeleteApiV1TrashTrashId(w http.ResponseWriter, r *http.Request,
 	// 条目永久消失：该资产缩略图缓存不再可达，联动清理（软删除→恢复
 	// 路径不清——asset_id 不变恢复后继续命中缓存，见 thumbnail/cleanup.go）。
 	s.thumbs.DeleteAssetThumbs(e.meta.AssetID)
+	// 物理删除不走 publishLibraryChanged（条目早已出库，不发布库变更），
+	// 修订号在此显式推进（revision.go 的 bump 链清单）。
+	s.bumpLibraryRevision()
 	s.logger.Info("回收站条目已物理删除", "id", e.id, "originalPath", e.meta.OriginalPath)
 	// 库内文件数不变（条目早已出库），只刷回收站两 gauge（变更点推送）。
 	s.refreshTrashMetrics()
@@ -459,6 +462,8 @@ func (s *Server) DeleteApiV1Trash(w http.ResponseWriter, r *http.Request) {
 	for _, e := range entries {
 		s.thumbs.DeleteAssetThumbs(e.meta.AssetID)
 	}
+	// 清空=全部条目物理删除：同单条物理删除，修订号显式推进。
+	s.bumpLibraryRevision()
 	s.logger.Info("回收站已清空")
 	// 清空后回收站归零：gauge 显式 Set 回 0（变更点推送）。
 	s.refreshTrashMetrics()

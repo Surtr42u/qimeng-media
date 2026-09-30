@@ -19,6 +19,7 @@ import (
 	"qimeng-media/server/internal/config"
 	"qimeng-media/server/internal/events"
 	"qimeng-media/server/internal/httpapi/gen"
+	"qimeng-media/server/internal/libraryrevision"
 	"qimeng-media/server/internal/store/db"
 	"qimeng-media/server/internal/sysmon"
 	"qimeng-media/server/internal/thumbnail"
@@ -141,6 +142,10 @@ type Deps struct {
 	// Mirror 作者总表镜像写入器；nil 时同上构造缺省实例（尽力而为投影，
 	// 失败只告警）。组合根（main）显式装配是规范形态（ADR-0019 DI 在 main）。
 	Mirror *authorattach.MirrorWriter
+	// Revision 库内容修订号服务（GET /api/v1/library/revision 与 bump 链
+	// 的唯一读写通道，libraryrevision 包）；nil 时 New 内部用 deps.Queries
+	// 构造缺省实例并引导基线——Service 只依赖 store，缺省即生产实现。
+	Revision *libraryrevision.Service
 }
 
 // Server 实现 gen.ServerInterface，并持有跨 handler 共享的状态。
@@ -178,6 +183,8 @@ type Server struct {
 	attach *authorattach.Service
 	// mirror 作者总表镜像写入器（Deps.Mirror 的落位）。
 	mirror *authorattach.MirrorWriter
+	// rev 库内容修订号服务（Deps.Revision 的落位；handler 与 bump 链共用）。
+	rev *libraryrevision.Service
 }
 
 // New 组装 HTTP 服务。返回 *Server；main 用 Handler() 拿到带完整
@@ -223,6 +230,10 @@ func New(deps Deps) (*Server, error) {
 	if mirror == nil {
 		mirror = &authorattach.MirrorWriter{Logger: logger}
 	}
+	rev := deps.Revision
+	if rev == nil {
+		rev = libraryrevision.NewService(deps.Queries, logger, now)
+	}
 	s := &Server{
 		conn:           deps.Conn,
 		q:              deps.Queries,
@@ -239,6 +250,7 @@ func New(deps Deps) (*Server, error) {
 		logger:         logger,
 		attach:         attach,
 		mirror:         mirror,
+		rev:            rev,
 		authState:      newAuthState(),
 		authLimit:      newAuthLimiter(authRateLimitMax, authRateLimitWindow),
 		scanStates:     newScanStateMap(),
@@ -251,18 +263,28 @@ func New(deps Deps) (*Server, error) {
 	if err := s.authState.load(context.Background(), s.q); err != nil {
 		return nil, err
 	}
+	// 库内容修订号基线引导：键缺失时以 COUNT(assets)+1 播种（幂等）。DB
+	// 失败拒绝启动——与 authState.load 同语义：数据层没准备好，服务不该
+	// 带着未知状态对外提供"跳过同步"的依据。
+	if err := rev.EnsureBaseline(context.Background()); err != nil {
+		return nil, err
+	}
 	// 推荐流缓存失效主通道（2026-09-18 性能批二段）：订阅 library.changed——
 	// watch 增量事件/手动扫描完成/上传入库/回收站/标签/整理/库开关全部经此
 	// 事件汇出，一处订阅全覆盖（跨包触发走事件总线，AI_README 代码卫生约束
 	// 7）。不发该事件的变更（点赞/收藏/导入/作者重建）保留各 handler 直接
 	// 调用 invalidateRecommendCache。周期轮询扫描零变更时不发事件，缓存得以
 	// 跨扫描存活。
+	// 同一订阅顺带推进库内容修订号（revision.go bumpLibraryRevision）：
+	// 扫描/watch/上传/回收站移入恢复等写入路径都发布 library.changed，在
+	// 订阅侧自增一次即全量覆盖，scanner 等业务包零新增依赖（事件总线解耦）。
 	if sub, err := s.bus.Subscribe(events.TopicLibraryChanged); err != nil {
 		logger.Warn("推荐缓存失效订阅失败（仅影响缓存新鲜度，TTL 兜底）", "err", err)
 	} else {
 		go func() {
 			for range sub.C {
 				s.invalidateRecommendCache()
+				s.bumpLibraryRevision()
 			}
 		}()
 	}

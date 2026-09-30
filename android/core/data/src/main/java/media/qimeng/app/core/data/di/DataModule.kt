@@ -22,11 +22,13 @@ import media.qimeng.app.core.data.repository.DetailRepository
 import media.qimeng.app.core.data.repository.GridPrefsRepository
 import media.qimeng.app.core.data.repository.HistoryRepository
 import media.qimeng.app.core.data.repository.LibraryRepository
+import media.qimeng.app.core.data.repository.LibraryRevisionRepository
 import media.qimeng.app.core.data.repository.MediaRepository
 import media.qimeng.app.core.data.repository.SdkAuthorRepository
 import media.qimeng.app.core.data.repository.SdkDetailRepository
 import media.qimeng.app.core.data.repository.SdkHistoryRepository
 import media.qimeng.app.core.data.repository.SdkLibraryRepository
+import media.qimeng.app.core.data.repository.SdkLibraryRevisionRepository
 import media.qimeng.app.core.data.repository.SdkMediaRepository
 import media.qimeng.app.core.data.repository.SearchHistoryRepository
 import media.qimeng.app.core.data.repository.AssetOrigUrlResolver
@@ -92,6 +94,12 @@ interface DataModule {
     @Singleton
     fun bindLibraryRepository(impl: SdkLibraryRepository): LibraryRepository
 
+    // 库修订号单值端口（2026-09-30 预取 revision 跳过批）：GET /library/revision，
+    // 失败降级 null 的约定收口在实现内（预取跳过判定的取数面）
+    @Binds
+    @Singleton
+    fun bindLibraryRevisionRepository(impl: SdkLibraryRevisionRepository): LibraryRevisionRepository
+
     // U10-6b：旧版备份导入/导出（数据管理 hub「备份导入导出」子页的数据面）
     @Binds
     @Singleton
@@ -136,6 +144,11 @@ interface DataModule {
     @Binds
     @Singleton
     fun bindThumbnailPrefetchThrottle(impl: media.qimeng.app.core.data.prefetch.ThumbnailPrefetcher): media.qimeng.app.core.data.prefetch.ThumbnailPrefetchThrottle
+
+    // 预取修订号持久仓（2026-09-30 revision 跳过批；P1 返工起接口化——缓存页清池失效接线也依赖）
+    @Binds
+    @Singleton
+    fun bindPrefetchRevisionStore(impl: media.qimeng.app.core.data.prefetch.DataStorePrefetchRevisionStore): media.qimeng.app.core.data.prefetch.PrefetchRevisionStore
 
     @Binds
     @Singleton

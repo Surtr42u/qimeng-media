@@ -29,6 +29,7 @@ import kotlinx.coroutines.sync.withLock
 import media.qimeng.app.core.data.coil.LOG_TAG
 import media.qimeng.app.core.data.coil.SplitDiskCache
 import media.qimeng.app.core.data.repository.AuthRepository
+import media.qimeng.app.core.data.repository.LibraryRevisionRepository
 import media.qimeng.app.core.data.repository.MediaRepository
 import media.qimeng.app.core.network.ServerAddress
 import media.qimeng.app.core.network.ServerReadinessProbe
@@ -48,6 +49,13 @@ sealed interface PrefetchUiState {
 
     /** 本轮完成（done=total=本轮处理的缩略图数；空库为 0/0） */
     data class Done(val done: Int, val total: Int) : PrefetchUiState
+
+    /**
+     * 库修订号未变：整轮跳过（2026-09-30 revision 跳过批）——未拉全量列表也未下载，
+     * 缓存已是最新。独立终态不复用 Done(0,0)：那是「空库轮」的既有语义，混叠会让
+     * 收集者无法区分「没东西可预取」与「无需预取」。
+     */
+    data object Skipped : PrefetchUiState
 
     /** 失败（[reason] 为中文前缀 + 简要原因，供界面直显） */
     data class Failed(val reason: String) : PrefetchUiState
@@ -112,6 +120,12 @@ interface ThumbnailPrefetchThrottle {
  * logcat QimengCache 记档命中/下载汇总。键推导与写入侧同源（SignedMediaCacheKeys），
  * 探测失败按未缓存退化原 execute 路径，正确性不受影响。
  *
+ * **revision 跳过（2026-09-30）**：轮首先拉一次 GET /library/revision，与 DataStore
+ * 记录的「上一轮完成值」（[PrefetchRevisionStore]）经 [PrefetchRevisionGate] 比对，
+ * 一致 → 整轮跳过进 [PrefetchUiState.Skipped]——库没变时连全量分页拉列表都省掉
+ * （大库下原流程唯一的固定大头；磁盘探测短路只省下载，列表分页拉取仍在）。端点
+ * 失败/首次降级全量，缺省永远偏多拉（服务端「多拉永远安全」同口径）。
+ *
  * **有意简化（不做断点游标持久化）**：预取进度不落盘。Coil 磁盘缓存命中项重跑
  * 时不走网络（本地读盘），进程重启后再跑一轮只是重复读盘 + 补新资产增量，代价
  * 可忽略——为省这点读盘把游标持久化进 DataStore 复杂度不划算（第四百一十一笔
@@ -123,6 +137,8 @@ class ThumbnailPrefetcher @Inject constructor(
     private val imageLoader: ImageLoader,
     private val mediaRepository: MediaRepository,
     private val authRepository: AuthRepository,
+    private val revisionRepository: LibraryRevisionRepository,
+    private val revisionStore: PrefetchRevisionStore,
     private val readinessProbe: ServerReadinessProbe,
     @ApplicationScope private val appScope: CoroutineScope,
     /** 磁盘缓存惰性句柄（探测短路用；dagger.Lazy 保持首次用到才构建的装配拍板） */
@@ -186,10 +202,24 @@ class ThumbnailPrefetcher @Inject constructor(
             // 与首页「探针超时走既有失败路径」语义一致（ServerReadinessProbe KDoc 口径）
             readinessProbe.awaitReady()
             awaitUsableNetworkForAutoStart()
+            // —— revision 跳过判定（2026-09-30）：库未变 → 整轮跳过，不再调 allThumbUrls ——
+            // 放在就绪探针与计费网络门之后：此刻必有可用连接，revision 是单值轻请求。
+            // 「先拉 revision 再拉列表」的次序是安全方向：记录值 ≤ 本轮列表实际新鲜度，
+            // 拉取中途若有变更只会让记录值偏旧、下轮多拉一轮（修订号单调递增，反向
+            // 「少拉」不可能发生）。端点失败降级 null → 门判 FULL 照旧全量。
+            val serverRevision = revisionRepository.revision()
+            val lastDoneRevision = readLastDoneRevision()
+            if (PrefetchRevisionGate.decide(serverRevision, lastDoneRevision) == PrefetchRoundDecision.SKIP) {
+                Log.i(LOG_TAG, "库修订号未变 revision=$serverRevision，本轮跳过全量拉取")
+                _state.value = PrefetchUiState.Skipped
+                return
+            }
             // 与首页网格完全同源的 md 缩略图绝对 URL（全量分页在 repository 内做）
             val urls = mediaRepository.allThumbUrls()
             val total = urls.size
             if (total == 0) {
+                // 空库轮也是一次完成的「全量」：同样记录修订号（空库下轮才能被跳过）
+                recordRoundRevision(serverRevision)
                 _state.value = PrefetchUiState.Done(done = 0, total = 0)
                 return
             }
@@ -234,6 +264,8 @@ class ThumbnailPrefetcher @Inject constructor(
                 LOG_TAG,
                 "预取轮完成 total=$total 磁盘命中=${diskHits.get()} 网络下载=${total - diskHits.get()}",
             )
+            // 轮末（置 Done 前）记「上一轮完成值」：下轮 revision 未变即可整轮跳过
+            recordRoundRevision(serverRevision)
             _state.value = PrefetchUiState.Done(done = total, total = total)
         } catch (e: CancellationException) {
             // 登出取消：复位空闲（下轮由下次登录重新触发）
@@ -241,6 +273,36 @@ class ThumbnailPrefetcher @Inject constructor(
             throw e
         } catch (e: Exception) {
             _state.value = PrefetchUiState.Failed(reason = describeFailure(e))
+        }
+    }
+
+    /**
+     * 读「上一轮完成时的库修订号」；读失败（DataStore IO 异常等）按无记录降级 null
+     * ——门判 FULL 照旧全量，多拉永远安全；取消照常上抛交轮级取消收口（登出复位）。
+     */
+    private suspend fun readLastDoneRevision(): Long? = try {
+        revisionStore.lastDoneRevision()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.w(LOG_TAG, "预取修订号读取失败，按无记录降级全量", e)
+        null
+    }
+
+    /**
+     * 全量轮成功收口：把本轮开头读到的修订号记为「上一轮完成值」（两个 Done 出口
+     * 共用）。拿到 null（revision 端点降级）不写、保持旧值；写失败只影响下一轮的
+     * 跳过判定（下轮降级全量重拉），不构成本轮失败——预取已真正完成，不能因偏好
+     * 写失败把整轮报成错误。取消照常上抛。
+     */
+    private suspend fun recordRoundRevision(revision: Long?) {
+        if (revision == null) return
+        try {
+            revisionStore.setLastDoneRevision(revision)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(LOG_TAG, "预取修订号写回失败（下轮降级全量重拉）", e)
         }
     }
 

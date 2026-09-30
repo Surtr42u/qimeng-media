@@ -72,6 +72,7 @@ private const val PREFETCH_RUNNING_TEMPLATE = "已缓存 %1\$d / %2\$d（%3\$d%%
 private const val PREFETCH_WAITING_HINT = "当前为计费网络，已暂停；切换到非计费网络后自动继续"
 private const val PREFETCH_DONE_TEMPLATE = "本轮完成，已缓存 %d / %d"
 private const val PREFETCH_DONE_EMPTY = "本轮完成：暂无可预取的缩略图"
+private const val PREFETCH_SKIPPED_HINT = "缓存已是最新，本轮无需同步"
 
 /** 16dp：内容水平内边距（上传子页同档） */
 private val ScreenContentPadding = 16.dp
@@ -252,5 +253,6 @@ private fun prefetchStatusText(state: PrefetchUiState): String = when (state) {
     PrefetchUiState.WaitingNetwork -> PREFETCH_WAITING_HINT
     is PrefetchUiState.Done ->
         if (state.total > 0) PREFETCH_DONE_TEMPLATE.format(state.done, state.total) else PREFETCH_DONE_EMPTY
+    PrefetchUiState.Skipped -> PREFETCH_SKIPPED_HINT
     is PrefetchUiState.Failed -> state.reason
 }
