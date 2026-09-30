@@ -8,6 +8,12 @@
 - 子代理执行的工作标注"（执行子代理）"，主对话直接完成的标注"（主代理）"。
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
+## chore(server): gofmt 格式对齐六文件——CI 服务端格式门禁清偿（2026-10-01 第四百二十三笔）
+
+执行 AI：GLM-5.3（主代理，executor+reviewer 子代理协作）
+
+- 执行子代理本地验证只跑了 golangci-lint（不含 gofmt），六个新文件（uploads/uploads_test/orientation/orientation_test/uploadsess 两件）存在 gofmt 格式偏差，CI 的 `test -z "$(gofmt -l .)"` 门禁拦截。本笔纯格式对齐（零逻辑改动，build/vet 复验通过）。（GLM-5.3 主代理）
+
 ## chore(ci): make sdk 生成前清理三端旧产物+Kotlin 生成链锁版本+锁校验失败打印差异——CI 指纹锁从未绿的根因修复（2026-10-01 第四百二十二笔）
 
 执行 AI：GLM-5.3（主代理，executor+reviewer 子代理协作）

@@ -379,7 +379,7 @@ func TestUploadSessionDeleteAndSweep(t *testing.T) {
 }
 
 // TestUploadSessionDirSubdir：create 带 dir → complete 落位库内子目录
-//（与直传 TestUploadJPEGToSubdir 同断言口径；dir 在 create 时校验规范化并存入
+// （与直传 TestUploadJPEGToSubdir 同断言口径；dir 在 create 时校验规范化并存入
 // 会话，complete 只认会话内持有的值落位）。
 func TestUploadSessionDirSubdir(t *testing.T) {
 	env := newTestEnv(t)
