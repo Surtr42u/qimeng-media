@@ -35,11 +35,20 @@ export interface SSEEventHandlers {
   onUploadDone?: (event: UploadDoneEvent) => void
   /** 缩略图生成进度——当前无发布者（服务端注释载荷契约待定），收到也忽略；参数位为将来接入预留 */
   onThumbnailProgress?: (event: unknown) => void
+  /**
+   * 连接（重）建立（每次 HTTP 200 且开始读流都触发，含首次与每次重连成功）。
+   * 为什么存在：SSE 无回放/补发，断线窗口（服务重启/代理超时）错过的事件
+   * 不可追——主流语义是重连成功即重新校验本地缓存（SseBridge 据此失效根
+   * 查询）。首次连接也触发 = 多拉一次，幂等无害。
+   */
+  onOpen?: () => void
 }
 
 /** 模块级单连接的桥接：handler 集合 + 引用计数 */
 type BridgeListener = (msg: SSEMessage) => void
 const bridgeListeners = new Set<BridgeListener>()
+/** 连接建立回调集合（与消息分发并列的独立通道——open 不是一帧消息） */
+const bridgeOpenListeners = new Set<() => void>()
 let unsubscribeBridge: (() => void) | null = null
 let subscribeCount = 0
 
@@ -47,6 +56,10 @@ function ensureConnected(): void {
   if (unsubscribeBridge) return
   unsubscribeBridge = subscribeSSE({
     url: EVENTS_PATH,
+    onOpen: () => {
+      // 复制快照：listener 可能在回调中被移除（组件卸载），遍历中删除会漏发
+      for (const listener of Array.from(bridgeOpenListeners)) listener()
+    },
     onMessage: (msg) => {
       // 复制快照：handler 可能在回调中被移除（组件卸载），遍历中删除会漏发
       for (const listener of Array.from(bridgeListeners)) listener(msg)
@@ -125,10 +138,13 @@ export function useSSEEvents(handlers: SSEEventHandlers): void {
   useEffect(() => {
     const listener: BridgeListener = (msg) => dispatch(handlerRef.current, msg)
     bridgeListeners.add(listener)
+    const openListener: () => void = () => handlerRef.current.onOpen?.()
+    bridgeOpenListeners.add(openListener)
     subscribeCount++
     ensureConnected()
     return () => {
       bridgeListeners.delete(listener)
+      bridgeOpenListeners.delete(openListener)
       releaseIfIdle()
     }
   }, [])

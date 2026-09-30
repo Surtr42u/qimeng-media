@@ -23,6 +23,7 @@ import (
 	"qimeng-media/server/internal/store/db"
 	"qimeng-media/server/internal/sysmon"
 	"qimeng-media/server/internal/thumbnail"
+	"qimeng-media/server/internal/uploadsess"
 )
 
 // Scanner 是 httpapi 对扫描器的最小依赖抽象。
@@ -185,6 +186,9 @@ type Server struct {
 	mirror *authorattach.MirrorWriter
 	// rev 库内容修订号服务（Deps.Revision 的落位；handler 与 bump 链共用）。
 	rev *libraryrevision.Service
+	// uploads 断点续传上传会话管理器（uploadsess 包，ADR-0028；New 内按
+	// Cfg.DataDir 构造，时钟/日志与 Server 同源注入）。
+	uploads *uploadsess.Manager
 }
 
 // New 组装 HTTP 服务。返回 *Server；main 用 Handler() 拿到带完整
@@ -251,6 +255,7 @@ func New(deps Deps) (*Server, error) {
 		attach:         attach,
 		mirror:         mirror,
 		rev:            rev,
+		uploads:        uploadsess.New(deps.Cfg.DataDir, now, logger),
 		authState:      newAuthState(),
 		authLimit:      newAuthLimiter(authRateLimitMax, authRateLimitWindow),
 		scanStates:     newScanStateMap(),

@@ -33,6 +33,15 @@ export const EVENTS_PATH = '/api/v1/events'
 /** 上传端点路径（协议 POST /api/v1/assets/upload；body=原始字节流，元数据全在 query） */
 export const UPLOAD_PATH = '/api/v1/assets/upload'
 
+/**
+ * 断点续传会话通道基础路径（协议 /api/v1/uploads 三路径模板：POST 创建、
+ * GET/PATCH/DELETE /{id} 探测/追加分片/放弃、POST /{id}/complete 完结）。
+ * 供 lib/upload-chunked.ts 的 XHR 直连传输使用（不走生成 SDK 的选型理由见
+ * 该文件头记档）。协议侧改动须同步此处，反之亦然（Android 侧对应物为
+ * core/data/upload/OkHttpUploadSessionClient，双侧注释互指双同步）。
+ */
+export const UPLOADS_SESSION_PATH = '/api/v1/uploads'
+
 /** SSE 断线重连基础延迟（ms）：服务端不发 retry: 帧时的默认值，fatal 后 3s 重连 */
 export const SSE_RECONNECT_DELAY_MS = 3000
 

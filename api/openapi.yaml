@@ -440,6 +440,96 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "403": { description: 上传已关闭（PUT /config 的 upload.autoAccept=false）, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
         "413": { description: 超过大小上限 }
+
+  # ---------- 断点续传上传（tus 1.0 核心语义极简子集，ADR-0028） ----------
+  # 会话由服务端持有（内存注册表 + DataDir/uploads-tmp 临时文件），客户端无状态：
+  # 中断后凭会话 id 先 GET 探测权威 offset，再从断点 PATCH 续传。
+  # 同名冲突语义与直传通道（POST /assets/upload）一致：complete 时自动重命名
+  # "基名 (2).ext"，永不 409（DOMAIN_RULES §9）；小文件直传通道保留（双端
+  # 按 size 阈值分流，Android/Web 双端已接入）。
+  /api/v1/uploads:
+    post:
+      summary: 创建断点续传上传会话（可前置校验在创建时即做）
+      description: |
+        创建即做可前置校验：fileName 清洗（与直传同规则，禁止路径穿越）、
+        dir 目标目录（可选，与直传同一 NormalizeRelPath 校验规范化规则，
+        空/缺省 = 库根，非法路径 400）、
+        扩展名白名单、size ≤ 上传大小上限（upload.max_bytes 与 PUT /config
+        的 maxBytesMb 取小者）、库存在且启用、upload.autoAccept 开关（false
+        时 403 UPLOAD_DISABLED，与直传通道同闸）。
+        会话与已收字节只存服务端（内存注册表 + DataDir/uploads-tmp 临时文件）；
+        未过四道校验的半成品不进库目录。contentType 仅作客户端提示，服务端
+        不信任该声明（MIME 以 complete 终检的魔数嗅探为准）。
+        同名冲突语义与直传通道逐字一致：complete 时自动重命名 "基名 (2).ext"、
+        永不 409（DOMAIN_RULES §9）。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateUploadRequest" }
+      responses:
+        "201": { description: 会话已创建（offset=0 起步）, content: { application/json: { schema: { $ref: "#/components/schemas/UploadSession" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { description: 上传已关闭（PUT /config 的 upload.autoAccept=false，与直传通道同闸）, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "413": { description: 声明的 size 超过单文件大小上限, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /api/v1/uploads/{id}:
+    get:
+      summary: 断点探测（客户端重试/续传前先问服务端"传到哪了"）
+      description: 返回服务端持有的权威 offset；未知或已过期（无活动超时被清扫）的会话一律 404。
+      parameters: [ { $ref: "#/components/parameters/UploadId" } ]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/UploadSession" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      summary: 追加分片（application/octet-stream 原始字节）
+      description: |
+        query 的 offset 必须等于服务端当前 offset（先 GET 探测再续传）：
+        不等 → 409，响应体为权威 UploadSession（客户端据此重同步后重发）；
+        本次分片使累计超出会话声明的 size → 400 UPLOAD_TOO_LARGE；
+        单次分片超过 32MB → 413 UPLOAD_TOO_LARGE（协议选型：分片超限用 413
+        而非 400——语义是载荷过大；累计超 size 属声明不符用 400）。
+        服务端磁盘写满/IO 错误 → 500 且会话保留（客户端可重试）。
+        同一会话的 PATCH 串行追加；过期清扫前无活动时限见服务端常量
+        （uploadsess.SessionTTL，24h）。
+      parameters:
+        - { $ref: "#/components/parameters/UploadId" }
+        - { name: offset, in: query, required: true, schema: { type: integer, format: int64, minimum: 0 }, description: 本分片起始字节（必须等于服务端当前 offset） }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        "200": { description: 已追加（返回追加后的权威 offset）, content: { application/json: { schema: { $ref: "#/components/schemas/UploadSession" } } } }
+        "400": { description: 累计字节超出会话声明的 size, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: offset 与服务端权威值不符（响应体即权威 UploadSession，重同步后重发）, content: { application/json: { schema: { $ref: "#/components/schemas/UploadSession" } } } }
+        "413": { description: 单次分片超过 32MB 上限, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    delete:
+      summary: 放弃上传会话（删临时文件与 会话，不入库）
+      parameters: [ { $ref: "#/components/parameters/UploadId" } ]
+      responses:
+        "204": { description: 已放弃并清理 }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/uploads/{id}/complete:
+    post:
+      summary: 终结会话（对拼装完成的整文件复跑直传上传管线后入库）
+      description: |
+        终检（四道校验对拼装后的整文件全部到位）：扩展名白名单、魔数嗅探
+        （读取拼装文件头部）、最终大小（≤ 上限，且 offset 须已达 size——
+        未传完 400）、目标路径穿越检查。同名语义与直传通道逐字一致：
+        自动重命名 "基名 (2).ext"、永不 409。成功走与直传完全相同的入库
+        管线（library.changed 事件照发、库内容修订号照 bump、upload.done
+        照发、富化照跑），201 返回与 POST /assets/upload 同构的资产详情；
+        临时文件与会话随即删除。
+        校验失败/库已删除时：400/404 返回且临时文件与会话保留（可修正后
+        重试 complete），但计入过期时钟（24h 兜底回收）。
+      parameters: [ { $ref: "#/components/parameters/UploadId" } ]
+      responses:
+        "201": { description: 已入库, content: { application/json: { schema: { $ref: "#/components/schemas/AssetDetail" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { description: 上传已关闭（PUT /config 的 upload.autoAccept=false）, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "404": { description: 会话不存在/已过期，或会话所属库已被删除, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
   /api/v1/assets/{assetId}/move:
     post:
       summary: 移动/重命名（更新路径属性，关联数据无感保留）
@@ -1072,6 +1162,7 @@ components:
   parameters:
     LibraryId: { name: libraryId, in: path, required: true, schema: { type: string } }
     AssetId:   { name: assetId,   in: path, required: true, schema: { type: string, format: uuid } }
+    UploadId:  { name: id,        in: path, required: true, schema: { type: string, format: uuid }, description: 断点续传上传会话 ID（POST /api/v1/uploads 返回） }
     TrashId:   { name: trashId,   in: path, required: true, schema: { type: string } }
     BackupName: { name: name, in: path, required: true, schema: { type: string, pattern: "^qimeng-\\d{8}-\\d{6}\\.db$" }, description: 快照文件名（qimeng-YYYYMMDD-HHMMSS.db，本地时间） }
 
@@ -1126,6 +1217,26 @@ components:
       properties:
         items:    { type: array, items: { $ref: "#/components/schemas/BackupInfo" }, description: 按创建时间倒序（新→旧） }
         schedule: { $ref: "#/components/schemas/BackupSchedule" }
+
+    CreateUploadRequest:
+      type: object
+      description: 断点续传上传会话创建请求（POST /api/v1/uploads，ADR-0028）
+      required: [libraryId, fileName, size]
+      properties:
+        libraryId: { type: string, description: 目标库 ID（必填；须为已注册且启用的库，否则 400） }
+        fileName:  { type: string, description: 文件名（创建时按直传同规则清洗并做扩展名白名单校验；路径分隔符/控制字符/Windows 非法字符剥除，保留设备名拒绝） }
+        size:      { type: integer, format: int64, minimum: 1, description: 文件总字节数（必填正整数；超上传上限 413；complete 终检以拼装落盘事实为准） }
+        contentType: { type: string, description: 客户端声明的 MIME 类型（可选；服务端不信任该声明——SECURITY 上传红线，最终以 complete 终检的魔数嗅探为准） }
+        dir:       { type: string, description: 目标目录（库内相对路径；空 = 库根）——与直传通道 POST /assets/upload 的 dir 参数逐字同语义；可选，缺省 = 库根；创建时按直传同一规则校验规范化（非法路径 400 INVALID_PARAM），complete 按其落位子目录 }
+
+    UploadSession:
+      type: object
+      description: 断点续传上传会话状态（POST/GET /api/v1/uploads* 的 2xx 载荷，也是 PATCH offset 不符时 409 的响应体）。会话由服务端持有（内存注册表 + 临时文件），服务端重启即全部失效（未完成分片作废，客户端重新创建会话）；断点以服务端 offset 为准，客户端无状态
+      required: [id, offset, size]
+      properties:
+        id:     { type: string, format: uuid, description: 会话 ID（PATCH/complete/DELETE 携带） }
+        offset: { type: integer, format: int64, minimum: 0, description: 服务端已接收字节数（权威值；PATCH 的 query offset 必须等于它，不符 409 回本对象） }
+        size:   { type: integer, format: int64, minimum: 1, description: 会话声明的文件总字节数（创建时确定，不可变） }
 
     MediaType:
       type: string
