@@ -125,6 +125,12 @@ interface ThumbnailPrefetchThrottle {
  * 一致 → 整轮跳过进 [PrefetchUiState.Skipped]——库没变时连全量分页拉列表都省掉
  * （大库下原流程唯一的固定大头；磁盘探测短路只省下载，列表分页拉取仍在）。端点
  * 失败/首次降级全量，缺省永远偏多拉（服务端「多拉永远安全」同口径）。
+ * 修订（2026-09-30 撞号与缓存漂移双修，ADR-0026 修订节）：① 记录捆绑服务器标识
+ * （[PrefetchRevisionRecord.serverKey]）——两端修订号是独立计数器且播种基线相同，
+ * 不比服务器键会被撞号错误 SKIP、换端后永不预取，现换服务器必走全量；② SKIP 判定
+ * 通过后先用记录端同事务落盘的随机样本（[PrefetchSampleGate]）逐条本地磁盘探测，
+ * 缺失达阈值降级全量——兜住 LRU 驱逐/系统清缓存目录/备份恢复回滚修订号的
+ * 「记录与实际脱节」。
  *
  * **有意简化（不做断点游标持久化）**：预取进度不落盘。Coil 磁盘缓存命中项重跑
  * 时不走网络（本地读盘），进程重启后再跑一轮只是重复读盘 + 补新资产增量，代价
@@ -208,18 +214,48 @@ class ThumbnailPrefetcher @Inject constructor(
             // 拉取中途若有变更只会让记录值偏旧、下轮多拉一轮（修订号单调递增，反向
             // 「少拉」不可能发生）。端点失败降级 null → 门判 FULL 照旧全量。
             val serverRevision = revisionRepository.revision()
-            val lastDoneRevision = readLastDoneRevision()
-            if (PrefetchRevisionGate.decide(serverRevision, lastDoneRevision) == PrefetchRoundDecision.SKIP) {
-                Log.i(LOG_TAG, "库修订号未变 revision=$serverRevision，本轮跳过全量拉取")
-                _state.value = PrefetchUiState.Skipped
-                return
+            // 记录时连接的服务器标识（原串精确比较）：与修订号成对记入，换服务器必走全量
+            val serverKey = authRepository.serverUrl.first()
+            val lastDoneRecord = readLastDoneRecord()
+            if (PrefetchRevisionGate.decide(serverRevision, lastDoneRecord, serverKey) == PrefetchRoundDecision.SKIP) {
+                // SKIP 前抽样核对（2026-09-30 缓存漂移修复）：修订号比对对本机磁盘缓存
+                // 实况是盲的（池 LRU 驱逐/系统清缓存目录/备份恢复回滚服务端修订号，都会
+                // 造成「记录说全量、实际缺片」且永不自愈），用记录端同事务落盘的随机
+                // 样本逐条本地探测，缺失达阈值降级下方 FULL 路径补拉——失败方向落在多拉。
+                val sample = readStoredSample()
+                if (sample.isEmpty()) {
+                    // 无样本可核对（空库轮/旧记录/样本键读失败）：维持 SKIP。样本读失败
+                    // 而 revision 读取成功说明 DataStore 基本健康；且「读不到证据就多拉」
+                    // 会把单键损坏放大成每轮全量，与磁盘探测短路「失败按未缓存退化」的
+                    // 短路优化定位不符，故空样本按维持跳过收口。
+                    Log.i(LOG_TAG, "库修订号未变 revision=$serverRevision（无抽样可核对），本轮跳过全量拉取")
+                    _state.value = PrefetchUiState.Skipped
+                    return
+                }
+                // probe 在 SKIP 分支内创建（下方 FULL 路径的原有创建点保持不动——本轮
+                // 至多走其中一处，PrefetchDiskProbe 只是 SplitDiskCache 的无状态薄封装，
+                // 降级轮次重复实例化零成本）
+                val probe = PrefetchDiskProbe(splitDiskCache.get())
+                val missing = sample.count { !probe.isDiskCached(it) }
+                if (PrefetchSampleGate.shouldDowngradeToFull(sample.size, missing)) {
+                    Log.w(LOG_TAG, "抽样核对 缺失 $missing/${sample.size} 达阈值，降级全量补拉")
+                    // 不置 Skipped：落到下方 FULL 路径补缺，轮末 recordRound 写回新样本自愈
+                } else {
+                    Log.i(
+                        LOG_TAG,
+                        "库修订号未变 revision=$serverRevision 抽样 ${sample.size - missing}/${sample.size} 在缓存，本轮跳过全量拉取",
+                    )
+                    _state.value = PrefetchUiState.Skipped
+                    return
+                }
             }
             // 与首页网格完全同源的 md 缩略图绝对 URL（全量分页在 repository 内做）
             val urls = mediaRepository.allThumbUrls()
             val total = urls.size
             if (total == 0) {
-                // 空库轮也是一次完成的「全量」：同样记录修订号（空库下轮才能被跳过）
-                recordRoundRevision(serverRevision)
+                // 空库轮也是一次完成的「全量」：同样记录修订号+服务器标识（空库下轮才能
+                // 被跳过；样本为空集合，与「空样本维持 SKIP」语义自洽）
+                recordRound(serverRevision, serverKey, urls)
                 _state.value = PrefetchUiState.Done(done = 0, total = 0)
                 return
             }
@@ -265,7 +301,7 @@ class ThumbnailPrefetcher @Inject constructor(
                 "预取轮完成 total=$total 磁盘命中=${diskHits.get()} 网络下载=${total - diskHits.get()}",
             )
             // 轮末（置 Done 前）记「上一轮完成值」：下轮 revision 未变即可整轮跳过
-            recordRoundRevision(serverRevision)
+            recordRound(serverRevision, serverKey, urls)
             _state.value = PrefetchUiState.Done(done = total, total = total)
         } catch (e: CancellationException) {
             // 登出取消：复位空闲（下轮由下次登录重新触发）
@@ -277,28 +313,47 @@ class ThumbnailPrefetcher @Inject constructor(
     }
 
     /**
-     * 读「上一轮完成时的库修订号」；读失败（DataStore IO 异常等）按无记录降级 null
-     * ——门判 FULL 照旧全量，多拉永远安全；取消照常上抛交轮级取消收口（登出复位）。
+     * 读「上一轮完成记录（服务器标识+修订号）」；读失败（DataStore IO 异常等）按
+     * 无记录降级 null——门判 FULL 照旧全量，多拉永远安全；取消照常上抛交轮级取消
+     * 收口（登出复位）。
      */
-    private suspend fun readLastDoneRevision(): Long? = try {
-        revisionStore.lastDoneRevision()
+    private suspend fun readLastDoneRecord(): PrefetchRevisionRecord? = try {
+        revisionStore.lastDone()
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
-        Log.w(LOG_TAG, "预取修订号读取失败，按无记录降级全量", e)
+        Log.w(LOG_TAG, "预取修订号记录读取失败，按无记录降级全量", e)
         null
     }
 
     /**
-     * 全量轮成功收口：把本轮开头读到的修订号记为「上一轮完成值」（两个 Done 出口
-     * 共用）。拿到 null（revision 端点降级）不写、保持旧值；写失败只影响下一轮的
-     * 跳过判定（下轮降级全量重拉），不构成本轮失败——预取已真正完成，不能因偏好
-     * 写失败把整轮报成错误。取消照常上抛。
+     * 读「记录端抽样样本」（SKIP 前磁盘探测核对用）；读失败按空集合——空样本在
+     * 调用方维持 SKIP（取舍理由见 SKIP 分支注释：revision 读取若也失败早已降级
+     * FULL，样本读失败单独出现说明 DataStore 基本健康）；取消照常上抛。
      */
-    private suspend fun recordRoundRevision(revision: Long?) {
-        if (revision == null) return
+    private suspend fun readStoredSample(): Set<String> = try {
+        revisionStore.storedSample()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.w(LOG_TAG, "预取抽样样本读取失败，按空样本维持跳过", e)
+        emptySet()
+    }
+
+    /**
+     * 全量轮成功收口：把本轮开头读到的修订号、当轮连接的服务器标识与全库随机抽样
+     * 记为「上一轮完成值」（两个 Done 出口共用）。拿到 null（revision 端点降级）不写、
+     * 保持旧值；空库轮也照常记录（样本为空集合）；写失败只影响下一轮的跳过判定
+     * （下轮降级全量重拉），不构成本轮失败——预取已真正完成，不能因偏好写失败把
+     * 整轮报成错误。取消照常上抛。
+     */
+    private suspend fun recordRound(serverRevision: Long?, serverKey: String, urls: List<String>) {
+        if (serverRevision == null) return
         try {
-            revisionStore.setLastDoneRevision(revision)
+            revisionStore.setLastDone(
+                PrefetchRevisionRecord(serverKey = serverKey, revision = serverRevision),
+                PrefetchSampleGate.pickSample(urls),
+            )
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

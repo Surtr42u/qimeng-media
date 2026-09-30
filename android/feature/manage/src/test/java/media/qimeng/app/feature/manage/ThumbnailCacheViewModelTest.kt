@@ -4,6 +4,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import media.qimeng.app.core.data.coil.CachePool
 import media.qimeng.app.core.data.prefetch.PrefetchUiState
+import media.qimeng.app.core.data.prefetch.PrefetchRevisionRecord
 import media.qimeng.app.core.data.prefetch.PrefetchRevisionStore
 import media.qimeng.app.core.data.prefetch.ThumbnailPrefetchMonitor
 import media.qimeng.app.core.data.repository.CoilCacheManager
@@ -77,16 +78,19 @@ class ThumbnailCacheViewModelTest {
         override val state = MutableStateFlow<PrefetchUiState>(initial)
     }
 
-    /** 预取修订号仓状态桩：记录当前值与 clear 调用次数（清池失效接线验证用） */
+    /** 预取修订号仓状态桩：记录当前值与 clear 调用次数（清池失效接线验证用；接口扩为
+     *  三元组后的最小机械适配——本页只消费 clear 语义，样本/lastDone 桩给空实现） */
     private class FakePrefetchRevisionStore : PrefetchRevisionStore {
-        var stored: Long? = null
+        var stored: PrefetchRevisionRecord? = null
         var clearedCount = 0
 
-        override suspend fun lastDoneRevision(): Long? = stored
+        override suspend fun lastDone(): PrefetchRevisionRecord? = stored
 
-        override suspend fun setLastDoneRevision(revision: Long) {
-            stored = revision
+        override suspend fun setLastDone(record: PrefetchRevisionRecord, sampleUrls: Set<String>) {
+            stored = record
         }
+
+        override suspend fun storedSample(): Set<String> = emptySet()
 
         override suspend fun clear() {
             stored = null
@@ -157,7 +161,9 @@ class ThumbnailCacheViewModelTest {
         // P1（清池失效接线）：预置「上一轮完成」记录模拟稳态，清 NAS 池 → clear 一次且
         // 记录读回 null（下轮门判 FULL 补拉）；清本地池同样失效（修订号全局不分池）
         val coil = FakeCoilCacheManager()
-        val store = FakePrefetchRevisionStore().apply { stored = 42L }
+        val store = FakePrefetchRevisionStore().apply {
+            stored = PrefetchRevisionRecord(serverKey = "http://stub.local", revision = 42L)
+        }
         val viewModel = newViewModel(coil = coil, revisionStore = store)
         driveIdle()
 
