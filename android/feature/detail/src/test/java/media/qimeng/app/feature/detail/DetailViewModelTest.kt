@@ -12,6 +12,7 @@ import org.junit.Rule
 import org.junit.Test
 import media.qimeng.app.core.data.repository.AuthorRepository
 import media.qimeng.app.core.data.repository.DetailRepository
+import media.qimeng.app.core.data.events.DataFreshnessSignal
 import media.qimeng.app.core.data.repository.FavoriteMutationTracker
 import media.qimeng.app.core.data.repository.LikeMutationTracker
 import media.qimeng.app.core.data.repository.MediaBatchIndex
@@ -240,8 +241,8 @@ class DetailViewModelTest {
         batchIndex: MediaBatchIndex = MediaBatchIndex(),
         assetId: String? = "b",
         imageDimCache: DetailImageDimCache = DetailImageDimCache(),
-        likeTracker: LikeMutationTracker = LikeMutationTracker(),
-        favoriteTracker: FavoriteMutationTracker = FavoriteMutationTracker(),
+        likeTracker: LikeMutationTracker = LikeMutationTracker(DataFreshnessSignal()),
+        favoriteTracker: FavoriteMutationTracker = FavoriteMutationTracker(DataFreshnessSignal()),
     ): DetailViewModel = DetailViewModel(
         detailRepository = repo,
         authorRepository = authorRepo,
@@ -331,7 +332,7 @@ class DetailViewModelTest {
     fun `点赞成功上报本地点赞变更指纹 - 失败不上报`() = runTest(mainDispatcherRule.testDispatcher) {
         // 任务I I7（LikeMutationTracker KDoc 口径）：详情页点赞成功处 onLikeMutated——
         // 首页返回重拉（GUIDE_UI L89 点赞后返回自动重排）的感知源；失败不上报
-        val tracker = LikeMutationTracker()
+        val tracker = LikeMutationTracker(DataFreshnessSignal())
         val repo = FakeDetailRepository().apply { detailResult = detail("b") }
         val vm = viewModel(repo, likeTracker = tracker)
         advanceUntilIdle()
@@ -353,7 +354,7 @@ class DetailViewModelTest {
     fun `toggleFavorite成功本地翻转 - 失败不变加报错`() = runTest(mainDispatcherRule.testDispatcher) {
         val repo = FakeDetailRepository().apply { detailResult = detail("b", isFavorite = false) }
         // 任务V V1：收藏成功处上报 FavoriteMutationTracker（收藏页返回重拉的感知源），失败不上报
-        val favoriteTracker = FavoriteMutationTracker()
+        val favoriteTracker = FavoriteMutationTracker(DataFreshnessSignal())
         val vm = viewModel(repo, favoriteTracker = favoriteTracker)
         advanceUntilIdle()
 
