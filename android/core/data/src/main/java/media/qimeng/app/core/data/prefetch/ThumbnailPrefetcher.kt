@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
+import android.util.Log
 import coil3.ImageLoader
 import coil3.request.CachePolicy
 import coil3.request.ImageRequest
@@ -25,6 +26,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import media.qimeng.app.core.data.coil.LOG_TAG
+import media.qimeng.app.core.data.coil.SplitDiskCache
 import media.qimeng.app.core.data.repository.AuthRepository
 import media.qimeng.app.core.data.repository.MediaRepository
 import media.qimeng.app.core.network.ServerAddress
@@ -103,9 +106,16 @@ interface ThumbnailPrefetchThrottle {
  * - Recipes 页（coil-kt.github.io/coil/recipes/）「Then enqueue/execute the request
  *   like normal」口径：无 target 请求就是普通请求的执行，无专用 preload API。
  *
+ * **磁盘探测短路（第四百一十一笔）**：单条预取前先按稳定键直查磁盘缓存
+ * （[PrefetchDiskProbe]），已缓存条目不发请求不解码、只计入进度——中断重跑/缓存
+ * 齐全轮次从「全库重扫」退化为「只补缺口」（进度条不再反复从头跑全库），轮终在
+ * logcat QimengCache 记档命中/下载汇总。键推导与写入侧同源（SignedMediaCacheKeys），
+ * 探测失败按未缓存退化原 execute 路径，正确性不受影响。
+ *
  * **有意简化（不做断点游标持久化）**：预取进度不落盘。Coil 磁盘缓存命中项重跑
  * 时不走网络（本地读盘），进程重启后再跑一轮只是重复读盘 + 补新资产增量，代价
- * 可忽略——为省这点读盘把游标持久化进 DataStore 复杂度不划算。
+ * 可忽略——为省这点读盘把游标持久化进 DataStore 复杂度不划算（第四百一十一笔
+ * 探测短路后连重复解码也省掉，该取舍进一步加固）。
  */
 @Singleton
 class ThumbnailPrefetcher @Inject constructor(
@@ -115,6 +125,8 @@ class ThumbnailPrefetcher @Inject constructor(
     private val authRepository: AuthRepository,
     private val readinessProbe: ServerReadinessProbe,
     @ApplicationScope private val appScope: CoroutineScope,
+    /** 磁盘缓存惰性句柄（探测短路用；dagger.Lazy 保持首次用到才构建的装配拍板） */
+    private val splitDiskCache: dagger.Lazy<SplitDiskCache>,
 ) : ThumbnailPrefetchMonitor, ThumbnailPrefetchThrottle {
 
     private val _state = MutableStateFlow<PrefetchUiState>(PrefetchUiState.Idle)
@@ -188,6 +200,8 @@ class ThumbnailPrefetcher @Inject constructor(
             // 取消语义（登出取消 scope 即全部停）与进度口径（原子计数，成功失败
             // 都算处理过）与原实现逐字一致，不做逐条人为延时。
             val processed = AtomicInteger(0)
+            val diskHits = AtomicInteger(0)
+            val probe = PrefetchDiskProbe(splitDiskCache.get())
             coroutineScope {
                 repeat(PREFETCH_CONCURRENCY) { worker ->
                     launch {
@@ -200,7 +214,13 @@ class ThumbnailPrefetcher @Inject constructor(
                                 delay(PREFETCH_REFRESH_YIELD_POLL_MS)
                             }
                             val url = urls[i]
-                            prefetchOne(url)
+                            // 磁盘探测短路（第四百一十一笔）：已缓存条目不发请求不解码，
+                            // 只计入进度——中断重跑/缓存齐全轮次从「全库重扫」退化为「只补缺口」
+                            if (probe.isDiskCached(url)) {
+                                diskHits.incrementAndGet()
+                            } else {
+                                prefetchOne(url)
+                            }
                             _state.value = PrefetchUiState.Running(
                                 done = processed.incrementAndGet(),
                                 total = total,
@@ -210,6 +230,10 @@ class ThumbnailPrefetcher @Inject constructor(
                     }
                 }
             }
+            Log.i(
+                LOG_TAG,
+                "预取轮完成 total=$total 磁盘命中=${diskHits.get()} 网络下载=${total - diskHits.get()}",
+            )
             _state.value = PrefetchUiState.Done(done = total, total = total)
         } catch (e: CancellationException) {
             // 登出取消：复位空闲（下轮由下次登录重新触发）

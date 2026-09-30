@@ -62,14 +62,44 @@ class SplitDiskCacheTest {
         assertEquals(CachePool.NAS, resolveCachePool(key, ServerAddress::isLocalModePreset))
     }
 
-    // ---- 路由口径：非 http 键兜底 NAS 池 ----
+    // ---- 路由口径：非 http 键跟随当前连接来源（第四百一十一笔 分池来源化） ----
 
     @Test
-    fun `非http键兜底NAS池`() {
+    fun `非http键默认来源NAS池`() {
+        // 默认 activePool=NAS（进程冷启动接线落地前/登出态）：数值上与历史兜底口径一致
         assertEquals(CachePool.NAS, resolveCachePool("file:///data/cache/x", ServerAddress::isLocalModePreset))
         assertEquals(CachePool.NAS, resolveCachePool("data:image/png;base64,xxxx", ServerAddress::isLocalModePreset))
         assertEquals(CachePool.NAS, resolveCachePool("android.resource://pkg/raw/img", ServerAddress::isLocalModePreset))
         assertEquals(CachePool.NAS, resolveCachePool("", ServerAddress::isLocalModePreset))
+    }
+
+    @Test
+    fun `剥host稳定键跟随当前来源路由`() {
+        // U10-5 剥 host 后签名直链稳定键不含来源信息——路由由当前连接来源驱动
+        //（CachePoolBinder 写入 SplitDiskCache.updateActivePool）。修复前此处恒 NAS
+        //（本地池被架空：真机实证 image_cache_local 仅 1 文件）。
+        val stableKey = "/media/thumb/550e8400?size=md"
+        assertEquals(CachePool.NAS, resolveCachePool(stableKey, ServerAddress::isLocalModePreset, CachePool.NAS))
+        assertEquals(CachePool.LOCAL, resolveCachePool(stableKey, ServerAddress::isLocalModePreset, CachePool.LOCAL))
+    }
+
+    @Test
+    fun `http键优先按键判定无视当前来源`() {
+        // 含 host 的完整 URL 键（非签名家族等）来源信息自足，不受 activePool 影响
+        assertEquals(
+            CachePool.NAS,
+            resolveCachePool("http://192.0.2.8:8420/media/thumb/x", ServerAddress::isLocalModePreset, CachePool.LOCAL),
+        )
+        assertEquals(
+            CachePool.LOCAL,
+            resolveCachePool("http://127.0.0.1:18430/media/thumb/x", ServerAddress::isLocalModePreset, CachePool.NAS),
+        )
+    }
+
+    @Test
+    fun `族外非http键同样跟随当前来源`() {
+        assertEquals(CachePool.LOCAL, resolveCachePool("file:///x", ServerAddress::isLocalModePreset, CachePool.LOCAL))
+        assertEquals(CachePool.NAS, resolveCachePool("file:///x", ServerAddress::isLocalModePreset, CachePool.NAS))
     }
 
     // ---- 路由口径：谓词注入侧（路由判定与具体谓词解耦） ----
