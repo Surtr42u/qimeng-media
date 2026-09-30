@@ -20,6 +20,7 @@ import media.qimeng.app.core.data.repository.GridPrefsRepository
 import media.qimeng.app.core.data.repository.LikeMutationTracker
 import media.qimeng.app.core.data.repository.MediaBatchIndex
 import media.qimeng.app.core.data.repository.MediaRepository
+import media.qimeng.app.core.data.repository.STALE_AFTER_MS
 import media.qimeng.app.core.model.AlbumPanelDraft
 import media.qimeng.app.core.model.AssetPageResult
 import media.qimeng.app.core.model.AssetQuery
@@ -526,6 +527,44 @@ class HomeViewModelTest {
         advanceUntilIdle()
         assertEquals(listOf("k2", "k3"), viewModel.uiState.value.rank.items.map { it.id })
     }
+
+    // ---------- 2026-10-01 跳过门 TTL 化：跨端改动（Web/另一设备点赞/收藏）陈旧有界化 ----------
+    // 指纹只感知本进程本端变更，跨端改动指纹永不变化——跳过条件叠加 STALE_AFTER_MS
+    // staleTime 上界兜底（TanStack Query refetchOnWindowFocus 同款语义）。「指纹变了→
+    // 立即重拉」半边由上方既有指纹门控用例继续锁定，此处只锁 TTL 半边。
+
+    @Test
+    fun `点赞跳过门TTL兜底 - 指纹未变TTL内返回不重拉 恰越过STALE_AFTER_MS重拉换seed自愈`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val repo = FakeMediaRepository().apply { recommendationsResult = listOf(asset("r1")) }
+            val tracker = LikeMutationTracker()
+            var fakeNow = 1_000_000L
+            tracker.clockMs = { fakeNow } // Tracker 时钟注入：TTL 判定假钟推进全确定
+            val viewModel = viewModel(repo, tracker)
+            advanceUntilIdle()
+            assertEquals(1, repo.recommendationsCalls.size) // init 首载成功落地 = TTL 打点
+
+            viewModel.onHomeResumed() // 基线采纳
+
+            // 指纹未变且未过 TTL（纯浏览返回）：不重拉——「浏览退出保持原样」优化保留
+            fakeNow += STALE_AFTER_MS - 1
+            viewModel.onHomeResumed()
+            advanceUntilIdle()
+            assertEquals(1, repo.recommendationsCalls.size)
+
+            // 指纹未变但恰好越过 TTL：重拉当前 tab（推荐走刷新路径换 seed）
+            fakeNow += 1
+            viewModel.onHomeResumed()
+            advanceUntilIdle()
+            assertEquals(2, repo.recommendationsCalls.size)
+            assertEquals(repo.recommendationsCalls[0] + 1, repo.recommendationsCalls[1])
+
+            // 重拉成功落地重新打点：回到新鲜窗口，再次返回不重拉（计时已重置）
+            fakeNow += 1
+            viewModel.onHomeResumed()
+            advanceUntilIdle()
+            assertEquals(2, repo.recommendationsCalls.size)
+        }
 
     // ---------- 任务J J3a：tab 切换后距底哨兵抑制窗口（台账 #35） ----------
 

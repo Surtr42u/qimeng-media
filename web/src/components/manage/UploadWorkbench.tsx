@@ -32,7 +32,8 @@ import {
  * - 直传门禁：批次库必选（未选库选文件 → 横幅提示不传）；超限文件本地
  *   拦截在入队前判、拦下的给横幅提示不传；类型白名单不在前端复制——
  *   服务端四道校验唯一口径，4xx 文案原样透传展示。
- * - 上传：hooks/use-upload.ts 串行队列（严格串行/切路由 abort/入队快照），
+ * - 上传：hooks/use-upload.ts 订阅 lib/upload-queue-store 模块级单例串行队列
+ *   （严格串行/切路由不取消——队列随页面会话存活/入队快照），
  *   每条 201 后自动挂靠（201 先后 PUT /assets/{id}/authors 与
  *   PUT /authors/{id}/sources mode=append，挂靠失败落专项态不重试）。
  */

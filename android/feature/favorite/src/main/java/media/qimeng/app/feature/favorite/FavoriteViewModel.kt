@@ -80,7 +80,9 @@ class FavoriteViewModel @Inject constructor(
     private val gridPrefs: GridPrefsRepository,
     private val batchIndex: MediaBatchIndex,
     // 本地收藏变更指纹（任务V V1，2026-09-10 返回刷新缺陷修复）：详情 toggleFavorite 成功处
-    // 上报，此处 ON_RESUME 对比指纹变化才重拉——纯浏览返回零网络零重组（tracker KDoc 口径）
+    // 上报，此处 ON_RESUME 对比指纹变化才重拉——纯浏览返回零网络零重组（tracker KDoc 口径）；
+    // 2026-10-01 跳过门 TTL 化：跳过再加「距上次成功拉取未过 STALE_AFTER_MS」半边——
+    // 跨端（Web/另一设备）改动无事件可感知，时间上界兜底（tracker KDoc 详述）
     private val favoriteMutationTracker: FavoriteMutationTracker,
     // 预取避让（问题B 下拉刷新响应慢修复，2026-09-28）：下拉刷新开始时让全库缩略图预取
     // 暂停抢带宽（窄接口，语义见 ThumbnailPrefetchThrottle KDoc）
@@ -146,6 +148,10 @@ class FavoriteViewModel @Inject constructor(
      * 返回共享元素 morph（缩略图飞回）期间列表整体重显 + 刷新指示器闪一轮，缺陷根因）。
      * - 首次回调只采纳基线（进页不误刷）；
      * - 无变更不重拉 =「纯浏览返回保持原样」零网络零重组；
+     * - TTL 兜底（2026-10-01 跳过门 TTL 化）：指纹只感知本进程本端变更，SSE 无 favorite
+     *   事件、跨端（Web/另一设备）改动指纹永不变化——指纹未变但距上次成功拉取超过
+     *   [STALE_AFTER_MS] 时不再跳过，静默重拉一次自愈（跨端陈旧至多 5 分钟 + 一次返回
+     *   即纠正；TanStack Query refetchOnWindowFocus 同款 staleTime 语义）；
      * - 重拉走静默路径（isRefresh=false，不置 isRefreshing）：morph 窗口内指示器不闪，
      *   数据仍整组替换、morph 结束时列表已新。
      */
@@ -154,8 +160,14 @@ class FavoriteViewModel @Inject constructor(
     fun onResumed() {
         val snapshot = favoriteMutationTracker.fingerprint()
         val last = lastFavoriteFingerprint
-        if (last == null || last == snapshot) {
-            // 首次采纳基线 / 指纹无变化（纯浏览返回）：不重拉
+        if (last == null) {
+            // 首次回调：只采纳基线（进页不误刷）
+            lastFavoriteFingerprint = snapshot
+            return
+        }
+        if (last == snapshot && favoriteMutationTracker.isListFetchFresh()) {
+            // 指纹无变化且未过 staleTime 上界（纯浏览返回）：不重拉——零网络零重组；
+            // 超过 STALE_AFTER_MS 则放行到下方重拉（跨端改动无事件可感知，TTL 兜底见 KDoc）
             lastFavoriteFingerprint = snapshot
             return
         }
@@ -288,6 +300,9 @@ class FavoriteViewModel @Inject constructor(
                     // 问题A：成功结束 bump 哨兵重评估信号（KDoc 见 FavoriteUiState.reloadTick）
                     reloadTick = _uiState.value.reloadTick + 1,
                 )
+                // 列表成功落地：打点跳过门 TTL 计时起点（2026-10-01 跳过门 TTL 化；含翻页
+                // 追加，失败不打点——语义见 FavoriteMutationTracker/STALE_AFTER_MS KDoc）
+                favoriteMutationTracker.noteListFetchCompleted()
                 return@launch
             }
         }

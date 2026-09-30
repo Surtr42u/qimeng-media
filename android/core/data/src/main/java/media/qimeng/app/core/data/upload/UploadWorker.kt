@@ -25,6 +25,9 @@ import media.qimeng.app.core.model.UploadRules
  * 上传 Worker（M4-5 串行队列的执行端）：
  * - 执行前升级前台服务（dataSync 类型，API 34+ 强制声明类型），进度走通知；
  * - 上传中节流回写 WorkManager progress（UI 观察队列状态用）；
+ * - 通道分流（ADR-0028）：≥16MB 走 [ChunkedUploader] 分片会话流
+ *   （弱网按服务端权威 offset 续传；dir 已入分片协议，子目录目标同样续传），
+ *   其余走 [AssetUploader] 既有整文件直传；
  * - 201 之后按入队载荷执行自动挂靠序列（[UploadAttacher]：先 authors 后 sources append）；
  * - 终局判定全部收敛在 [UploadWorkSpec.outcomeToResult]（纯函数，单测锁定）。
  *
@@ -36,6 +39,7 @@ class UploadWorker @AssistedInject constructor(
     @Assisted appContext: Context,
     @Assisted params: WorkerParameters,
     private val uploader: AssetUploader,
+    private val chunkedUploader: ChunkedUploader,
     private val attacher: UploadAttacher,
     private val cancelRegistry: UploadCancelRegistry,
     private val inboxFileStore: InboxFileStore,
@@ -63,28 +67,54 @@ class UploadWorker @AssistedInject constructor(
         )
         setForegroundSafely(spec.displayName)
 
-        val outcome = resolveOutcome(
-            uploadOutcome = uploader.upload(
-                UploadItem(
-                    uri = spec.uri,
-                    displayName = spec.displayName,
-                    sizeBytes = spec.sizeBytes,
-                    uploadFileName = spec.uploadFileName,
+        // 进度回调（直传/分片共用同一映射：setProgress + 前台通知 + 取证日志）。
+        // 分片通道按片粒度回调（每片完成推进一次），UI 语义粗粒度化（ADR-0028 任务书记档）。
+        val onProgress = AssetUploader.ProgressListener { done, total, percent ->
+            setProgress(
+                workDataOf(
+                    UploadWorkSpec.KEY_PROGRESS_PERCENT to percent,
+                    UploadWorkSpec.KEY_DISPLAY_NAME to spec.displayName,
                 ),
-                spec.libraryId,
-                spec.dir,
-                isCancelled = { cancelRegistry.isCancelled(spec.localId) },
-            ) { done, total, percent ->
-                setProgress(
-                    workDataOf(
-                        UploadWorkSpec.KEY_PROGRESS_PERCENT to percent,
-                        UploadWorkSpec.KEY_DISPLAY_NAME to spec.displayName,
-                    ),
+            )
+            updateForegroundNotification(spec.displayName, percent)
+            if (percent % LOG_PROGRESS_STEP == 0) {
+                Log.d(LOG_TAG, "progress file=${spec.displayName} $done/$total ($percent%)")
+            }
+        }
+        // ADR-0028 阈值分流：大文件（≥16MB）走分片会话流——弱网中断按服务端
+        // 权威 offset 续传，不再整文件归零；dir 已入分片协议（create 透传、
+        // 服务端按直传同规则落位子目录），子目录目标不再被迫直传。complete
+        // 返回与直传同构的资产详情，下方挂靠/归档后处理管线与终态状态机原样
+        // 复用。小文件维持既有直传（路径行为一字节不变，任务书红线）。
+        val chunked = UploadRouting.useChunkedSession(spec.sizeBytes)
+        if (chunked) {
+            Log.i(LOG_TAG, "chunked channel file=${spec.displayName} size=${spec.sizeBytes} dir=${spec.dir}")
+        }
+        val outcome = resolveOutcome(
+            uploadOutcome = if (chunked) {
+                chunkedUploader.upload(
+                    localId = spec.localId,
+                    uri = spec.uri,
+                    fileName = spec.uploadFileName,
+                    sizeBytes = spec.sizeBytes,
+                    libraryId = spec.libraryId,
+                    dir = spec.dir,
+                    isCancelled = { cancelRegistry.isCancelled(spec.localId) },
+                    onProgress,
                 )
-                updateForegroundNotification(spec.displayName, percent)
-                if (percent % LOG_PROGRESS_STEP == 0) {
-                    Log.d(LOG_TAG, "progress file=${spec.displayName} $done/$total ($percent%)")
-                }
+            } else {
+                uploader.upload(
+                    UploadItem(
+                        uri = spec.uri,
+                        displayName = spec.displayName,
+                        sizeBytes = spec.sizeBytes,
+                        uploadFileName = spec.uploadFileName,
+                    ),
+                    spec.libraryId,
+                    spec.dir,
+                    isCancelled = { cancelRegistry.isCancelled(spec.localId) },
+                    onProgress,
+                )
             },
             spec = spec,
         )

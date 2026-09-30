@@ -18,6 +18,7 @@ import media.qimeng.app.core.data.repository.FavoriteMutationTracker
 import media.qimeng.app.core.data.repository.GridPrefsRepository
 import media.qimeng.app.core.data.repository.MediaBatchIndex
 import media.qimeng.app.core.data.repository.MediaRepository
+import media.qimeng.app.core.data.repository.STALE_AFTER_MS
 import media.qimeng.app.core.model.AlbumDim
 import media.qimeng.app.core.model.AssetPageResult
 import media.qimeng.app.core.model.AssetQuery
@@ -415,6 +416,51 @@ class FavoriteViewModelTest {
             repo.assetsCalls[2].gate.complete(page(items = listOf(asset("c"))))
             advanceUntilIdle()
             assertEquals(listOf("c"), viewModel.uiState.value.items.map { it.id })
+        }
+
+    // ---------- 2026-10-01 跳过门 TTL 化：跨端改动（Web/另一设备收藏）陈旧有界化 ----------
+    // 指纹只感知本进程本端变更，跨端改动指纹永不变化——跳过条件叠加 STALE_AFTER_MS
+    // staleTime 上界兜底（TanStack Query refetchOnWindowFocus 同款语义）。「指纹变了→
+    // 立即重拉」半边由上方既有指纹门控用例继续锁定，此处只锁 TTL 半边。
+
+    @Test
+    fun `收藏跳过门TTL兜底 - 指纹未变TTL内返回不重拉 恰越过STALE_AFTER_MS静默重拉自愈`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val repo = FakeMediaRepository()
+            val tracker = FavoriteMutationTracker()
+            var fakeNow = 1_000_000L
+            tracker.clockMs = { fakeNow } // Tracker 时钟注入：TTL 判定假钟推进全确定
+            val viewModel = viewModel(repo, favoriteTracker = tracker)
+            advanceUntilIdle()
+
+            // 首载成功落地：noteListFetchCompleted 打点 = TTL 计时起点
+            repo.assetsCalls[0].gate.complete(page(items = listOf(asset("a"))))
+            repo.completeFacetsBatch(batch = 0, result = facets(total = 1))
+            advanceUntilIdle()
+            viewModel.onResumed() // 基线采纳
+
+            // 指纹未变且未过 TTL（纯浏览返回）：不重拉——「零网络零重组」优化保留
+            fakeNow += STALE_AFTER_MS - 1
+            viewModel.onResumed()
+            advanceUntilIdle()
+            assertEquals(1, repo.assetsCalls.size)
+
+            // 指纹未变但恰好越过 TTL：放行静默重拉（跨端改动无事件可感知，时间上界兜底）
+            fakeNow += 1
+            viewModel.onResumed()
+            advanceUntilIdle()
+            assertEquals(2, repo.assetsCalls.size)
+            assertNull(repo.assetsCalls[1].query.cursor) // 静默重拉回第一页
+            assertFalse(viewModel.uiState.value.isRefreshing) // 静默路径：指示器不闪
+
+            // 重拉成功落地重新打点：回到新鲜窗口，再次返回不重拉（计时已重置）
+            fakeNow += 1
+            repo.assetsCalls[1].gate.complete(page(items = listOf(asset("b"))))
+            repo.completeFacetsBatch(batch = 1, result = facets(total = 1))
+            advanceUntilIdle()
+            viewModel.onResumed()
+            advanceUntilIdle()
+            assertEquals(2, repo.assetsCalls.size)
         }
 
     // ---------- 批次上下文（2026-09-09 拍板：收藏/历史进详情补批次，首页同款机制） ----------

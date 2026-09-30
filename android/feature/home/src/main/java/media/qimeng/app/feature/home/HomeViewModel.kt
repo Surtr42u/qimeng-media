@@ -304,12 +304,22 @@ class HomeViewModel @Inject constructor(
      * 打分决定，客户端不做语义假设，只负责整页重拉；推荐走刷新路径换 seed，同 seed 服务端
      * 返回同一打散序、重排不可见）；无变更不重拉=「浏览退出保持原样」半边天然满足。
      * 首次回调只采纳基线（进页不误刷）。
+     * TTL 兜底（2026-10-01 跳过门 TTL 化）：指纹只感知本进程本端变更，跨端（Web/另一设备）
+     * 改动指纹永不变化——指纹未变但距上次成功拉取超过 [STALE_AFTER_MS] 时不再跳过，
+     * 重拉当前 tab 自愈（跨端陈旧至多 5 分钟 + 一次返回即纠正；TanStack Query
+     * refetchOnWindowFocus 同款 staleTime 语义，与 FavoriteViewModel.onResumed 同口径）。
      */
     fun onHomeResumed() {
         val snapshot = likeMutationTracker.fingerprint()
         val last = lastLikeFingerprint
-        if (last == null || last == snapshot) {
-            // 首次采纳基线 / 指纹无变化（纯浏览返回）：不重拉
+        if (last == null) {
+            // 首次回调：只采纳基线（进页不误刷）
+            lastLikeFingerprint = snapshot
+            return
+        }
+        if (last == snapshot && likeMutationTracker.isListFetchFresh()) {
+            // 指纹无变化且未过 staleTime 上界（纯浏览返回）：不重拉；超过 STALE_AFTER_MS
+            // 则放行到下方重拉（跨端改动无事件可感知，TTL 兜底见 KDoc 与 LikeMutationTracker）
             lastLikeFingerprint = snapshot
             return
         }
@@ -583,6 +593,9 @@ class HomeViewModel @Inject constructor(
                         reloadTick = _uiState.value.recommend.reloadTick + 1,
                     ),
                 )
+                // 列表成功落地：打点跳过门 TTL 计时起点（2026-10-01 跳过门 TTL 化，失败不打点；
+                // 三 tab 同一首页跳过门，任一落地即刷新计时——语义见 LikeMutationTracker/STALE_AFTER_MS）
+                likeMutationTracker.noteListFetchCompleted()
             }.onFailure { error ->
                 if (gen != recommendGeneration) return@onFailure // 旧代失败不污染新轮
                 val retryScheduled = isInitial && !isRefresh &&
@@ -742,6 +755,8 @@ class HomeViewModel @Inject constructor(
                     ),
                 )
                 if (oldIds != null) reportRefreshOutcome(oldIds, page.items.map { it.id })
+                // 列表成功落地：打点跳过门 TTL 计时起点（loadRecommend 同款注释，失败不打点）
+                likeMutationTracker.noteListFetchCompleted()
                 return@launch
             }
         }
@@ -777,6 +792,8 @@ class HomeViewModel @Inject constructor(
                     ),
                 )
                 if (oldIds != null) reportRefreshOutcome(oldIds, items.map { it.id })
+                // 列表成功落地：打点跳过门 TTL 计时起点（loadRecommend 同款注释，失败不打点）
+                likeMutationTracker.noteListFetchCompleted()
             }.onFailure {
                 if (gen != rankGeneration) return@onFailure // 旧代失败不污染新周期
                 val retryScheduled = isInitial && !isRefresh &&

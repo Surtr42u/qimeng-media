@@ -97,6 +97,11 @@ type Scanner struct {
 	// probe 视频元数据探测（默认 thumbnail.ProbeVideo）。仅 VIDEO 类型调用；
 	// 图片/动图不探测（见 ingestFile 注释）。
 	probe ProbeFunc
+	// deleteThumbs 资产内容变更后的缩略图失效钩子（生产装配传
+	// thumbnail.Generator.DeleteAssetThumbs，main.go 单点接线）。nil 时跳过：
+	// 仅测试与裁剪形态可容忍——生产漏注入不崩，但外部原地换文件后旧内容
+	// 缩略图永不自愈（缓存键不含内容信号，见 invalidateThumbs），必须传。
+	deleteThumbs func(assetID string)
 	// now 时间源（created_at/updated_at/进度节流），测试可注入。
 	now func() time.Time
 	// progressMinEvery 两次 scan.progress 事件的最小间隔（默认 1s；
@@ -147,6 +152,16 @@ func New(q *db.Queries, bus *events.Bus, logger *slog.Logger, dataDir string, pr
 		s.matcher.UpdateCustomSources(names)
 	}
 	return s
+}
+
+// SetThumbsInvalidator 接线内容变更的缩略图失效钩子（生产装配传
+// thumbnail.Generator.DeleteAssetThumbs）。为什么后置 setter 而非 New 参数：
+// 保持既有五参签名稳定（测试装配点不因新依赖变动），且与装配层既有的
+// apiSrv.SetScanner 同款模式（main.go：先构造、后单点接线）。
+// 不接线（nil）的后果：外部原地换文件后旧内容缩略图永不自愈——生产装配
+// 必须调用（漏调是 F1 缺陷复现，见 invalidateThumbs）。
+func (s *Scanner) SetThumbsInvalidator(deleteThumbs func(assetID string)) {
+	s.deleteThumbs = deleteThumbs
 }
 
 // gate 取（或建）某库的闸门。sync.Map 而非锁+map：Scan 是热路径上的
@@ -289,6 +304,9 @@ func (s *Scanner) Scan(ctx context.Context, lib db.Library) (ScanResult, error) 
 			added = append(added, asset)
 			res.Added++
 		} else {
+			// 走到这里的已知路径必然经历了 size/mtime 变化（未变在上方变更
+			// 检测已短路）＝外部原地替换文件成功重入库：失效旧内容缩略图。
+			s.invalidateThumbs(asset.AssetID, rel)
 			res.Updated++
 		}
 
@@ -327,6 +345,23 @@ func (s *Scanner) Scan(ctx context.Context, lib db.Library) (ScanResult, error) 
 	// 都汇聚在本函数，此处单点覆盖。Set 而非 Observe：它是 Gauge。
 	sysmon.Default.SetScanDuration(time.Since(start).Seconds())
 	return res, nil
+}
+
+// invalidateThumbs 资产内容变更后的缩略图失效联动（DOMAIN_RULES §11 删除
+// 时机联动的变更扩展，2026-10-01）：缩略图缓存键 = SHA-256(v2:assetID:size)，
+// 不含内容信号，生成侧"存在即命中"+ HTTP immutable 一年——外部原地替换
+// 文件（NAS 文件管理器直改，ADR-0004 支持的工作流）后重入库了元数据，
+// 三端却会永远拿到旧内容的海报帧，永不自愈。重入库成功的瞬间删掉该资产
+// 全部档位缓存，下次请求按新内容重建（键不变、内容换血）。DeleteAssetThumbs
+// 本身幂等且尽力而为（失败只内部记日志），此处不重复错误处理。
+// 全量扫描重探测与增量处理两条更新路径都必须走这里，漏一边就是增量窗口。
+func (s *Scanner) invalidateThumbs(assetID, rel string) {
+	if s.deleteThumbs == nil {
+		return // 未装配（测试/裁剪形态）：生产装配必须注入，见字段注释
+	}
+	s.deleteThumbs(assetID)
+	s.logger.Info("scanner: 资产内容变更，已失效缩略图缓存（下次请求按新内容重建）",
+		"assetId", assetID, "relPath", rel)
 }
 
 // ingestFile 探测并入库单个文件（UpsertAsset 的身份保持语义——冲突时

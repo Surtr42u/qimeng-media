@@ -192,6 +192,10 @@ func main() {
 	// 配置进库内绝不能扫进库）。探测函数注入 thumbs.ProbeVideo：扫描探测的
 	// ffprobe 路径与缩略图管线同源（thumbnail.ffprobe_path 单点解析）。
 	scan := scanner.New(queries, bus, logger, cfg.DataDir, thumbs.ProbeVideo)
+	// 缩略图失效钩子接线：扫描重探测发现内容变更（size/mtime 变化）时删旧
+	// 缓存，外部原地换文件后海报帧按新内容重建（生产装配单点，漏接线=
+	// 缩略图陈旧不自愈，见 scanner.invalidateThumbs）。
+	scan.SetThumbsInvalidator(thumbs.DeleteAssetThumbs)
 	apiSrv.SetScanner(newScannerAdapter(scan, queries, apiSrv, logger))
 	// 自动预生成缩略图（2026-09-15 批）：开机回填历史积压 + 周期兜底（daemon）
 	apiSrv.StartThumbnailWarmup()
@@ -234,6 +238,10 @@ func main() {
 	//（退出随 ctx 取消；无 enabled 开关，见 StartTrashSweeper 注释）。
 	apiSrv.StartTrashSweeper(ctx)
 
+	// 断点续传上传会话过期清扫（ADR-0028）：无活动超 24h 的会话连同临时
+	// 分片文件一起回收（退出随 ctx 取消；清扫不 bump 修订号——未产生资产）。
+	apiSrv.StartUploadSweeper(ctx)
+
 	// errCh 把 goroutine 里的监听错误传回主流程——不允许 err 悄悄丢失。
 	errCh := make(chan error, 1)
 	go func() {
@@ -261,6 +269,9 @@ func main() {
 	// 工作池先收：等在途缩略图任务排空；再关总线让 SSE 订阅者收流结束，
 	// 最后关库连接——顺序反了会出现"关库后任务/总线还在投递"的竞态窗口。
 	thumbs.Close()
+	// 在途上传会话与临时分片文件的关停清理（ADR-0028）：尽力而为，删不掉
+	// 的遗留由下轮孤儿清理兜底；须在 HTTP 已 Shutdown（无在途 PATCH）后执行。
+	apiSrv.CloseUploadSessions()
 	bus.Close()
 	if err := conn.Close(); err != nil {
 		logger.Error("关闭数据库失败", "error", err)

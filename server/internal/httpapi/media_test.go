@@ -6,9 +6,12 @@
 package httpapi
 
 import (
+	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestCountingResponseWriter_readFromDelegated：底层 writer 实现 io.ReaderFrom
@@ -48,5 +51,28 @@ func TestCountingResponseWriter_readFromFallback(t *testing.T) {
 	}
 	if bottom.Body.String() != payload {
 		t.Errorf("兜底路径内容未写出: got %q", bottom.Body.String())
+	}
+}
+
+// TestMediaOrigCacheControl（ADR-0027 审查遗留 P2 清偿）：orig 直链 200 成功
+// 响应必须带 `Cache-Control: private, max-age=<窗口秒数>`——exp 窗口对齐后
+// 同窗 URL 逐字节恒定，显式 max-age 才有意义（private：授权语义绑在 URL
+// 签名上，禁止共享缓存代发）。Range/签名语义由 browse_test 锁定，本用例
+// 只锁响应头。
+func TestMediaOrigCacheControl(t *testing.T) {
+	env := newTestEnv(t)
+	a := testFiles[0]
+	detail := env.detail(t, a.id)
+	resp, err := http.Get(env.ts.URL + *detail.OrigUrl)
+	if err != nil {
+		t.Fatalf("请求失败: %v", err)
+	}
+	defer closeBody(resp)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("orig 期望 200，得到 %d", resp.StatusCode)
+	}
+	want := "private, max-age=" + strconv.Itoa(int(DefaultTokenTTL/time.Second))
+	if got := resp.Header.Get("Cache-Control"); got != want {
+		t.Errorf("Cache-Control = %q, want %q", got, want)
 	}
 }

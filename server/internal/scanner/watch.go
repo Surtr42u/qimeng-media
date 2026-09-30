@@ -240,9 +240,16 @@ func (w *watcher) processFile(ctx context.Context, absPath string) {
 		return
 	}
 
-	if _, err := w.s.ingestFile(ctx, w.lib, absPath, rel, mediaType, info); err != nil {
-		w.logger.Error("scanner: 增量入库失败", "path", rel, "err", err)
+	asset, ingestErr := w.s.ingestFile(ctx, w.lib, absPath, rel, mediaType, info)
+	if ingestErr != nil {
+		w.logger.Error("scanner: 增量入库失败", "path", rel, "err", ingestErr)
 		return
+	}
+	// 此前有记录（cur 命中）而进了入库＝size/mtime 变化的更新：失效旧内容
+	// 缩略图（与全量扫描重探测同一联动，见 invalidateThumbs）；新增无需
+	// 失效——新 asset_id 名下不可能有历史缓存。
+	if err == nil {
+		w.s.invalidateThumbs(asset.AssetID, rel)
 	}
 	// err==sql.ErrNoRows 即此前无记录 → 新增；否则是更新。
 	changed := ScanResult{LibraryID: w.lib.ID, Updated: 1}

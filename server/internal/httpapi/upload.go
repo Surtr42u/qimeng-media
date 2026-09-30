@@ -9,6 +9,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -61,14 +62,11 @@ func (s *Server) PostApiV1AssetsUpload(w http.ResponseWriter, r *http.Request, p
 		writeErr(w, http.StatusBadRequest, codeInvalidExtension, "扩展名不在白名单")
 		return
 	}
-	// 目标目录：空 = 库根（目录语义，与移动端点一致）；非空过安全校验。
-	dir := params.Dir
-	if dir != "" {
-		dir, err = filing.NormalizeRelPath(dir)
-		if err != nil {
-			writeErr(w, http.StatusBadRequest, codeInvalidParam, "目标目录不合法")
-			return
-		}
+	// 目标目录：空 = 库根（目录语义，与移动端点一致）；非空过安全校验
+	//（与分片续传 create 共用同一入口，见 resolveUploadDir）。
+	dir, ok := resolveUploadDir(w, params.Dir)
+	if !ok {
+		return
 	}
 	// libraryId 是协议必填参数（本次接线补进协议）：多库场景必须显式
 	// 指定目标库，避免"唯一库"隐式约定在第二座库注册后静默漂移。
@@ -82,28 +80,15 @@ func (s *Server) PostApiV1AssetsUpload(w http.ResponseWriter, r *http.Request, p
 		return
 	}
 
-	// 上传上限基线：配置文件 upload.max_bytes（部署方的物理红线）。
-	maxBytes := s.cfg.Upload.MaxBytes
-	if maxBytes <= 0 {
-		maxBytes = config.DefaultUploadMaxBytes
+	// 上传行为约束（直传与分片续传两条通道共用同一闸，见 resolveUploadPolicy）：
+	// autoAccept=false 整体关闸；maxBytesMb 与配置文件上限取小者（min）。
+	policy := s.resolveUploadPolicy(r.Context())
+	if policy.disabled {
+		sysmon.Default.IncUpload(sysmon.UploadFail)
+		writeErr(w, http.StatusForbidden, codeUploadDisabled, "上传已被关闭（设置页自动接收上传开关）")
+		return
 	}
-
-	// 上传行为约束（PUT /config 持久化的客户端配置，实时生效——每次请求
-	// 现读 kv，无缓存）：autoAccept=false 整体关闸；maxBytesMb 与配置文件
-	// 上限取小者（min）。kv 无记录/读失败/解析失败时回落配置文件值、不设门
-	//（storedClientConfig 返回 nil = 无覆盖，见 config.go 注释）。
-	if kvCfg := s.storedClientConfig(r.Context()); kvCfg != nil {
-		if !kvCfg.Upload.AutoAccept {
-			sysmon.Default.IncUpload(sysmon.UploadFail)
-			writeErr(w, http.StatusForbidden, codeUploadDisabled, "上传已被关闭（设置页自动接收上传开关）")
-			return
-		}
-		if kvMax := int64(kvCfg.Upload.MaxBytesMb) << 20; kvMax > 0 && kvMax < maxBytes {
-			// kv 覆盖只在比配置文件上限更严时收窄（min 语义）：
-			// 设置页不能放大部署方在配置文件里收紧的上限。
-			maxBytes = kvMax
-		}
-	}
+	maxBytes := policy.maxBytes
 
 	if r.ContentLength > maxBytes {
 		sysmon.Default.IncUpload(sysmon.UploadFail)
@@ -181,22 +166,83 @@ func (s *Server) PostApiV1AssetsUpload(w http.ResponseWriter, r *http.Request, p
 		s.internalErr(w, "落盘上传文件", gerr)
 		return
 	}
-	sysmon.Default.IncUpload(sysmon.UploadOK)
-
-	// 元数据：size/mtime 以落盘事实为准；视频探测失败留空（scanner 同语义）。
 	targetAbs := filepath.Join(lib.RootPath, filepath.FromSlash(targetRel))
-	fi, err := os.Stat(targetAbs)
+	// 计量→入库→富化→事件→响应装配：直传与分片续传（complete）两条通道
+	// 共用同一管线（ADR-0028），细节见 ingestPlacedUpload。
+	detail, err := s.ingestPlacedUpload(r.Context(), lib.ID, targetAbs, targetRel, finalName, mediaType)
 	if err != nil {
-		s.internalErr(w, "读取上传文件信息", err)
+		s.internalErr(w, "入库上传资产", err)
 		return
+	}
+	writeJSON(w, http.StatusCreated, detail)
+}
+
+// resolveUploadDir 是直传（POST /assets/upload）与分片续传（POST /uploads
+// create）两条上传通道共用的目标目录规范化入口：空 = 库根；非空过
+// filing.NormalizeRelPath（SECURITY 红线 1 的统一实现，穿越/绝对路径/保留
+// 设备名一律拒绝）。校验失败在此写 400 响应并返回 ok=false——dir 校验口径
+// 单一来源（代码卫生约束：同一逻辑第 2 次出现即抽共享函数，禁止两通道各抄一份）。
+func resolveUploadDir(w http.ResponseWriter, raw string) (string, bool) {
+	if raw == "" {
+		return "", true
+	}
+	dir, err := filing.NormalizeRelPath(raw)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, codeInvalidParam, "目标目录不合法")
+		return "", false
+	}
+	return dir, true
+}
+
+// resolveUploadPolicy 汇集一次上传请求的生效约束（直传与分片续传两条通道
+// 共用；PUT /config 持久化的客户端配置实时生效——每次请求现读 kv，无缓存）。
+// kv 无记录/读失败/解析失败时回落配置文件值、不设门（storedClientConfig
+// 返回 nil = 无覆盖，见 config.go 注释）。
+type uploadPolicy struct {
+	maxBytes int64
+	disabled bool
+}
+
+func (s *Server) resolveUploadPolicy(ctx context.Context) uploadPolicy {
+	// 上限基线：配置文件 upload.max_bytes（部署方的物理红线）。
+	maxBytes := s.cfg.Upload.MaxBytes
+	if maxBytes <= 0 {
+		maxBytes = config.DefaultUploadMaxBytes
+	}
+	p := uploadPolicy{maxBytes: maxBytes}
+	if kvCfg := s.storedClientConfig(ctx); kvCfg != nil {
+		if !kvCfg.Upload.AutoAccept {
+			p.disabled = true
+		}
+		if kvMax := int64(kvCfg.Upload.MaxBytesMb) << 20; kvMax > 0 && kvMax < maxBytes {
+			// kv 覆盖只在比配置文件上限更严时收窄（min 语义）：
+			// 设置页不能放大部署方在配置文件里收紧的上限。
+			p.maxBytes = kvMax
+		}
+	}
+	return p
+}
+
+// ingestPlacedUpload 是直传（POST /assets/upload）与分片续传（complete）
+// 两条上传通道共用的入库管线：文件已落到库内最终路径后调用——指标计量、
+// DB 行、视频探测、富化、upload.done / library.changed 事件（后者经事件
+// 订阅推动库内容修订号 bump，ADR-0026）、文件数指标、响应装配一步不缺。
+// 调用方保证 finalPath 处的文件已过四道校验与冲突解析（finalName 即落盘名）；
+// 返回的 detail 直接作为 201 响应体。
+func (s *Server) ingestPlacedUpload(ctx context.Context, libraryID, finalPath, relPath, finalName, mediaType string) (gen.AssetDetail, error) {
+	sysmon.Default.IncUpload(sysmon.UploadOK)
+	// 元数据：size/mtime 以落盘事实为准；视频探测失败留空（scanner 同语义）。
+	fi, err := os.Stat(finalPath)
+	if err != nil {
+		return gen.AssetDetail{}, fmt.Errorf("读取上传文件信息: %w", err)
 	}
 	// 上传字节计量以落盘事实为准（fi.Size()）：此处曾只计魔数头字节数
 	// （≤512B），upload_bytes_total 严重少计（OBSERVABILITY「累计字节」口径）。
 	sysmon.Default.AddUploadBytes(float64(fi.Size()))
 	params_ := db.UpsertAssetParams{
 		AssetID:   newUploadAssetID(),
-		LibraryID: lib.ID,
-		RelPath:   targetRel,
+		LibraryID: libraryID,
+		RelPath:   relPath,
 		FileName:  finalName,
 		MediaType: mediaType,
 		SizeBytes: fi.Size(),
@@ -207,8 +253,8 @@ func (s *Server) PostApiV1AssetsUpload(w http.ResponseWriter, r *http.Request, p
 	if mediaType == scanner.MediaTypeVideo {
 		// 探测走 Generator 出口（s.thumbs 必填，见 Deps 校验）：ffprobe 路径
 		// 与缩略图管线/扫描探测同源（thumbnail.ffprobe_path，空=PATH 自动发现）。
-		if probeRes, perr := s.thumbs.ProbeVideo(r.Context(), targetAbs); perr != nil {
-			s.logger.Warn("上传视频元数据探测失败，留空待重探", "path", targetRel, "err", perr)
+		if probeRes, perr := s.thumbs.ProbeVideo(ctx, finalPath); perr != nil {
+			s.logger.Warn("上传视频元数据探测失败，留空待重探", "path", relPath, "err", perr)
 		} else if probeRes != nil {
 			params_.DurationMs = sql.NullInt64{Int64: probeRes.Duration.Milliseconds(), Valid: true}
 			params_.Width = sql.NullInt64{Int64: int64(probeRes.Width), Valid: true}
@@ -216,10 +262,9 @@ func (s *Server) PostApiV1AssetsUpload(w http.ResponseWriter, r *http.Request, p
 		}
 	}
 	// 入库（独立单写事务），细节见 persistUploadedAsset。
-	asset, err := s.persistUploadedAsset(r.Context(), params_)
+	asset, err := s.persistUploadedAsset(ctx, params_)
 	if err != nil {
-		s.internalErr(w, "入库上传资产", err)
-		return
+		return gen.AssetDetail{}, fmt.Errorf("入库上传资产: %w", err)
 	}
 	// 富化补齐（与 scanner ingest、trash 恢复同口径）：上方 UpsertAsset 只写
 	// 基础列 + 探测元数据，富化列（normal=出处/角色，cos=作者关联/cos_work）
@@ -229,11 +274,11 @@ func (s *Server) PostApiV1AssetsUpload(w http.ResponseWriter, r *http.Request, p
 	// 与上面的探测元数据互补不冲突。尽力而为：失败/扫描器未装配（noScanner）
 	// 都不让上传失败（文件已落盘、记录已入库），富化列缺失可由下次该文件
 	// size/mtime 变化重 ingest 自愈（同 trash 恢复语义）。
-	if err := s.scanner.EnrichAsset(r.Context(), lib.ID, asset.AssetID); err != nil && !errors.Is(err, ErrScannerUnavailable) {
+	if err := s.scanner.EnrichAsset(ctx, libraryID, asset.AssetID); err != nil && !errors.Is(err, ErrScannerUnavailable) {
 		s.logger.Warn("上传落库后富化失败（待重扫自愈）", "assetId", asset.AssetID, "err", err)
 	}
 	// upload.done 载荷型为 events.UploadDoneEvent（协议：UploadDoneEvent schema）；
-	// SSE 客户端据此做上传完成刵新。
+	// SSE 客户端据此做上传完成刷新。
 	if err := s.bus.Publish(events.Event{Topic: events.TopicUploadDone, Payload: events.UploadDoneEvent{AssetID: asset.AssetID}}); err != nil {
 		s.logger.Warn("发布上传完成事件失败", "err", err)
 	}
@@ -241,11 +286,13 @@ func (s *Server) PostApiV1AssetsUpload(w http.ResponseWriter, r *http.Request, p
 	// 上传成功改变了库内文件数：library_files 指标在此刷新（变更点推送，
 	// 其余三个时机见 refreshLibraryFileMetrics 注释）。
 	s.refreshLibraryFileMetrics()
+	return s.assembleUploadDetail(asset), nil
+}
 
-	// 响应返回详情（协议 201 AssetDetail）：新上传资产没有标签/作者/
-	// 统计等关联数据，这里只填基础字段 + 签名直链（与详情端点同一
-	// buildSummary 口径组装基础部分），客户端拿到最终 relPath 无需
-	// 再发一次详情请求。
+// assembleUploadDetail 装配两条上传通道 201 响应的 AssetDetail：新上传资产
+// 没有标签/作者/统计等关联数据，只填基础字段 + 签名直链（与详情端点同一
+// buildSummary 口径组装基础部分），客户端拿到最终 relPath 无需再发一次详情。
+func (s *Server) assembleUploadDetail(asset db.Asset) gen.AssetDetail {
 	base := buildSummary(s, asset.AssetID, asset.FileName, asset.MediaType, asset.SizeBytes,
 		asset.Mtime, asset.CreatedAt, sql.NullString{}, false, 0, nil, nil)
 	detail := gen.AssetDetail{
@@ -278,7 +325,7 @@ func (s *Server) PostApiV1AssetsUpload(w http.ResponseWriter, r *http.Request, p
 	if asset.Height.Valid {
 		detail.Height = ptr(int(asset.Height.Int64))
 	}
-	writeJSON(w, http.StatusCreated, detail)
+	return detail
 }
 
 // persistUploadedAsset 把资产行写入独立单写事务（SQLite 单写者，单条
@@ -323,16 +370,7 @@ func (s *Server) receiveUploadToTmp(w http.ResponseWriter, r *http.Request, para
 	head = head[:n]
 	if err := filing.ValidateUpload(params.Filename, min64(r.ContentLength, maxBytes), maxBytes, head); err != nil {
 		sysmon.Default.IncUpload(sysmon.UploadFail)
-		switch {
-		case errors.Is(err, filing.ErrUploadTooLarge):
-			writeErr(w, http.StatusRequestEntityTooLarge, codeUploadTooLarge, "文件超过大小上限")
-		case errors.Is(err, filing.ErrUploadExtension):
-			writeErr(w, http.StatusBadRequest, codeInvalidExtension, "扩展名不在白名单")
-		case errors.Is(err, filing.ErrUploadMimeMismatch):
-			writeErr(w, http.StatusBadRequest, codeMimeMismatch, "文件内容与扩展名不符")
-		default: // ErrUploadFilename
-			writeErr(w, http.StatusBadRequest, codeInvalidFilename, "文件名不合法")
-		}
+		writeUploadValidationError(w, err)
 		return "", false
 	}
 	tmpAbs := filepath.Join(dirAbs, uploadTmpPrefix+uuid.NewString()+uploadTmpSuffix)
@@ -361,6 +399,21 @@ func (s *Server) receiveUploadToTmp(w http.ResponseWriter, r *http.Request, para
 		return "", false
 	}
 	return tmpAbs, true
+}
+
+// writeUploadValidationError 把四道校验哨兵错误映射为协议响应（直传收流
+// 与分片续传 complete 终检两处共用，映射口径单一来源）。
+func writeUploadValidationError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, filing.ErrUploadTooLarge):
+		writeErr(w, http.StatusRequestEntityTooLarge, codeUploadTooLarge, "文件超过大小上限")
+	case errors.Is(err, filing.ErrUploadExtension):
+		writeErr(w, http.StatusBadRequest, codeInvalidExtension, "扩展名不在白名单")
+	case errors.Is(err, filing.ErrUploadMimeMismatch):
+		writeErr(w, http.StatusBadRequest, codeMimeMismatch, "文件内容与扩展名不符")
+	default: // ErrUploadFilename
+		writeErr(w, http.StatusBadRequest, codeInvalidFilename, "文件名不合法")
+	}
 }
 
 // writeUploadErr 把读流错误映射为协议响应：超限 413、其余 400。

@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -724,5 +725,116 @@ func TestDataDirInsideLibrarySkipped(t *testing.T) {
 		LibraryID: e.lib.ID, RelPath: "data/thumbs/ab/cachekey.webp",
 	}); err == nil {
 		t.Fatal("缩略图缓存被扫进库（自噬防御失效）")
+	}
+}
+
+// ---------- 缩略图内容变更失效联动（F1，2026-10-01） ----------
+
+// newThumbInvalidator 用真实 Generator 在临时数据目录上接管失效钩子：
+// 测试在数据目录里放假缩略图文件，断言变更后磁盘条目被真实删除
+// （路径经 ThumbPath/CacheKey 同一套计算，不是测试另造的约定）。
+func newThumbInvalidator(t *testing.T) (string, func(assetID string)) {
+	t.Helper()
+	dataDir := t.TempDir()
+	g := thumbnail.NewGenerator(dataDir, slog.New(slog.NewTextHandler(io.Discard, nil)), thumbnail.Options{})
+	t.Cleanup(g.Close)
+	return dataDir, g.DeleteAssetThumbs
+}
+
+// placeFakeThumbs 为 assetID 放置全档位×全扩展名的假缩略图（扩展名全集
+// 对齐 thumbnail.cleanupExts：webp/jpeg 两代格式都要断言到），返回全部路径。
+func placeFakeThumbs(t *testing.T, dataDir, assetID string) []string {
+	t.Helper()
+	sizes := []thumbnail.Size{thumbnail.SizeSmall, thumbnail.SizeGrid, thumbnail.SizePreview}
+	exts := []string{".webp", ".jpg"}
+	var paths []string
+	for _, sz := range sizes {
+		for _, ext := range exts {
+			p := thumbnail.ThumbPath(dataDir, thumbnail.CacheKey(assetID, sz), ext)
+			if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+				t.Fatalf("建缩略图目录失败: %v", err)
+			}
+			if err := os.WriteFile(p, []byte("fake-thumb"), 0o644); err != nil {
+				t.Fatalf("写假缩略图失败: %v", err)
+			}
+			paths = append(paths, p)
+		}
+	}
+	return paths
+}
+
+func allExist(paths []string) bool {
+	for _, p := range paths {
+		if _, err := os.Stat(p); err != nil {
+			return false
+		}
+	}
+	return true
+}
+
+// TestScanChangeInvalidatesThumbs：全量扫描重探测检出内容变更（size/mtime
+// 变化重入库）→ 该资产缩略图缓存全部删除；新增入库与未变更复扫不触发失效
+// （误失效会让 immutable 缓存退化为无意义重建）。
+func TestScanChangeInvalidatesThumbs(t *testing.T) {
+	env := newTestEnv(t, nil) // jpg 不探测，probe 无关本用例
+	thumbDir, invalidate := newThumbInvalidator(t)
+	env.s.deleteThumbs = invalidate
+
+	env.writeFile(t, "a.jpg", 8)
+	if _, err := env.s.Scan(context.Background(), env.lib); err != nil {
+		t.Fatalf("首扫失败: %v", err)
+	}
+	asset := env.assetByPath(t, "a.jpg")
+	paths := placeFakeThumbs(t, thumbDir, asset.AssetID)
+
+	// 无变更复扫：缩略图原样保留。
+	if _, err := env.s.Scan(context.Background(), env.lib); err != nil {
+		t.Fatalf("无变更复扫失败: %v", err)
+	}
+	if !allExist(paths) {
+		t.Fatal("无变更复扫不应失效缩略图")
+	}
+
+	// 外部原地替换（size 变化）→ 重扫描更新行 → 全档位缓存被删。
+	env.writeFile(t, "a.jpg", 16)
+	if _, err := env.s.Scan(context.Background(), env.lib); err != nil {
+		t.Fatalf("变更后重扫失败: %v", err)
+	}
+	for _, p := range paths {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Errorf("变更后缩略图应被删除: %s (err=%v)", p, err)
+		}
+	}
+}
+
+// TestWatchChangeInvalidatesThumbs：增量路径（fsnotify 防抖后重入库）检出
+// 更新同样触发失效——与全量扫描同一联动（两条更新路径漏一边就是增量窗口）。
+func TestWatchChangeInvalidatesThumbs(t *testing.T) {
+	env := newTestEnv(t, nil)
+	var mu sync.Mutex
+	var invalidated []string
+	env.s.deleteThumbs = func(assetID string) {
+		mu.Lock()
+		defer mu.Unlock()
+		invalidated = append(invalidated, assetID)
+	}
+
+	env.writeFile(t, "a.jpg", 8)
+	if _, err := env.s.Scan(context.Background(), env.lib); err != nil {
+		t.Fatalf("首扫失败: %v", err)
+	}
+	wantID := env.assetByPath(t, "a.jpg").AssetID
+	startWatch(t, env.s, env.lib, 30*time.Millisecond)
+
+	env.writeFile(t, "a.jpg", 16)
+	eventually(t, 2*time.Second, "增量变更触发缩略图失效", func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(invalidated) > 0
+	})
+	mu.Lock()
+	defer mu.Unlock()
+	if len(invalidated) != 1 || invalidated[0] != wantID {
+		t.Errorf("失效调用=%v, want [%s]（新增/删除不得误触发）", invalidated, wantID)
 	}
 }

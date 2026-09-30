@@ -36,6 +36,24 @@ import (
 // SplitN(_, 2) 拆分无歧义。
 const trashIDSep = "_"
 
+// moveFile 是 filing.MoveFile 的包内可注入替身（生产恒为真实现）：跨卷复制
+// 中途失败无法用真实文件系统在单测稳定注入（EXDEV 需要真实双挂载点、
+// 磁盘满不可造），回收站三个搬运点的"失败即清理半截文件"行为靠它模拟。
+// 生产代码禁止替换。
+var moveFile = filing.MoveFile
+
+// cleanupMoveResidue MoveFile 失败后的目标端半截文件清理（best-effort，
+// F2 根修 2026-10-01）：只删确定残缺的副本（严格小于源，疑似完整的宁留
+// 勿删，见 filing.RemovePartialCopy）。清理失败只警告——不改变主错误的
+// 上抛语义，失败响应保持原样；残留会在下次同路径移动（O_TRUNC）或清空
+// 回收站时收敛。
+func (s *Server) cleanupMoveResidue(src, dst string) {
+	if err := filing.RemovePartialCopy(src, dst); err != nil {
+		s.logger.Warn("MoveFile 失败后清理目标端半截文件失败（可能残留）",
+			"src", src, "dst", dst, "err", err)
+	}
+}
+
 // publishLibraryChanged 广播库变更（列表/详情端已变，各端刷新）。
 // 广播型触发帧不带 payload（LibraryChangedEvent.data 可为 null）。
 // 推荐流缓存失效不再在此直调：library.changed 事件的失效已收口到 Server
@@ -139,7 +157,10 @@ func (s *Server) DeleteApiV1AssetsAssetId(w http.ResponseWriter, r *http.Request
 		s.internalErr(w, "创建回收站目录", err)
 		return
 	}
-	if err := filing.MoveFile(src, trashFile); err != nil {
+	if err := moveFile(src, trashFile); err != nil {
+		// 入站半截副本发生在 meta 写入之前——列表/清扫/指标全按 *.meta.json
+		// 遍历，留着就是永久不可见的幽灵文件，失败即清（best-effort）。
+		s.cleanupMoveResidue(src, trashFile)
 		s.internalErr(w, "移入回收站", err)
 		return
 	}
@@ -153,7 +174,11 @@ func (s *Server) DeleteApiV1AssetsAssetId(w http.ResponseWriter, r *http.Request
 	if err := writeTrashMeta(metaFile, meta); err != nil {
 		// meta 是回收站真相源，写失败必须回滚文件移动，否则产生
 		// "有文件无 meta"的不可恢复条目。
-		if rbErr := filing.MoveFile(trashFile, src); rbErr != nil {
+		if rbErr := moveFile(trashFile, src); rbErr != nil {
+			// 回滚目标的半截副本清掉（best-effort）：它落在库内原路径上，
+			// 残留会被扫描器注册成坏资产。trashFile 本体（完整副本、无 meta）
+			// 故意保留——回滚失败时它是唯一完好副本，宁留勿删。
+			s.cleanupMoveResidue(trashFile, src)
 			s.logger.Error("回收站 meta 写入失败且回滚移动失败（需人工介入）",
 				"err", err, "rollbackErr", rbErr, "trashFile", trashFile)
 		}
@@ -364,7 +389,14 @@ func (s *Server) PostApiV1TrashTrashIdRestore(w http.ResponseWriter, r *http.Req
 		if err := os.MkdirAll(filepath.Dir(target), dirPerm); err != nil {
 			return fmt.Errorf("创建恢复目录: %w", err)
 		}
-		return filing.MoveFile(e.file, target)
+		if err := moveFile(e.file, target); err != nil {
+			// 出站半截落在库内目标路径：不清则 meta 未删、重试恢复因目标名
+			// 被占自动改名，残缺件与完整件并存且扫描器会把残缺件注册成坏
+			// 资产——失败即清（best-effort），错误原样上抛走既有 500 语义。
+			s.cleanupMoveResidue(e.file, target)
+			return err
+		}
+		return nil
 	})
 	switch {
 	case gerr == nil:
