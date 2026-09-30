@@ -8,6 +8,15 @@
 - 子代理执行的工作标注"（执行子代理）"，主对话直接完成的标注"（主代理）"。
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
+## fix(server): 签名直链 exp 窗口对齐——同窗 URL 恒定，浏览器缓存/ETag 生效，根治轮换击穿（2026-10-01 第四百一十四笔）
+
+执行 AI：GLM-5.3（主代理，executor+reviewer 子代理协作）
+
+- **动机**：服务端对每个列表/详情响应把全部媒体 URL 重新签名（`exp=now+TTL` 精确到秒），同一资产同一尺寸的 URL 字符串随每次响应变化——浏览器 HTTP 缓存按完整 URL 做键，URL 每次都变 → `/media/**` 缓存永久不命中：Web 端零补偿全量重下，服务端早已实现的 ETag/If-None-Match 因缓存键不存在永远走不到 304；Android 端被迫自建「剥签名键栈」（`SignedMediaCacheKeys` 剥 exp/sig、`SplitDiskCache` 分池、`PrefetchDiskProbe` 探测），历史上已引发三轮真实 bug（第二百六十六/三百六十五/四百一十一笔）。修法 = S3/CloudFront 签名 URL 的「窗口取整」同款思路（ADR-0027）。
+- **改动（ADR-0027）**：exp 不再是 now+TTL，而是「下一个窗口上界 + 一个 TTL」（`mediaURLExpiry` 纯函数，`assets_media_url.go`；窗长=token_ttl 缺省 6h，对齐 Unix 纪元整点，一个旋钮）——同一时间窗内所有响应生成**逐字节相同**的 URL，浏览器缓存与 ETag/304 自然生效；有效期恒 ∈ (TTL, 2×TTL]（最短仍一个完整 TTL，绝不出现取到即近过期的 URL——纯取窗口上界的备选方案在窗口尾会产出几分钟内过期的 URL，已否决）。验签侧（auth 包签名消息构造/校验顺序）零改动；URL 格式与参数未变，**协议面零改动**（openapi.yaml 与三端生成物未动）。`/media/orig/**` 此前完全无缓存头，补 `private, max-age=<窗口秒数>`（max-age 取实际生效 ttl——缓存条目寿命不超过 URL 有效期下界）；缩略图直链既有 immutable 长缓存不动。**Android 剥签名键栈保留不退役**：窗口轮换下改用全 URL 键每日 4 次全量失键，剥 exp/sig 稳定键严格更优（键不含 exp 值天然无感），三端零适配。
+- **测试**：新增 `assets_media_url_window_test.go` 四组——同窗恒定（10:23 与 11:59 同 exp）/跨窗轮换（11:59 与 12:01 异 exp）/有效期界（全天 15 分钟步进含边界端点 + 亚秒尾时刻，恒 (ttl, 2*ttl]）/URL 级恒定（同窗 origUrl/thumbUrl 逐字节相同、跨窗必变）；存量适配 1 处——`browse_test` 过期 403 用例时钟前移 7h→2*DefaultTokenTTL+1min（窗口语义下有效期上限 2*TTL，越过上界才保证任意窗口签发的直链已过期，403 行为本身不变）；`go test ./...` server 17 包全绿；golangci-lint 0 issues。
+- **协作记录**：主代理定稿改动清单，executor 执行（代码+测试+文档六处同步：ADR-0027/INDEX/HANDOVER/SECURITY/GUIDE_API/CHANGELOG）。（GLM-5.3 主代理）
+
 ## fix(app): 预取跳过记录捆绑服务器标识+SKIP 前抽样核对——换服务器撞号与缓存漂移双修（2026-09-30 第四百一十三笔）
 
 执行 AI：GLM-5.3（主代理，executor+reviewer 子代理协作）

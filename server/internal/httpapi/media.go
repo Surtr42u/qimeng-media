@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"qimeng-media/server/internal/filing"
@@ -23,6 +24,19 @@ import (
 // DOMAIN_RULES §11）与 vite hash 构建产物（spa.go）两类消费方共用此单源
 // ——键/文件名即内容身份，不存在"同键变内容"，激进缓存语义才成立。
 const contentAddressedCacheControl = "public, max-age=31536000, immutable"
+
+// signedOrigCacheControl 原图/原视频直链（/media/orig/**）的缓存策略
+// （ADR-0027）：exp 窗口对齐后同一窗口内 URL 逐字节恒定，显式 max-age 才
+// 有意义——取直链窗口长（实际生效的 Server.ttl，配置 token_ttl），保证
+// 缓存条目不可能比 URL 本身更长寿（URL 最短有效期 = 一个完整 ttl ≥
+// max-age）。private：单用户媒体库，禁止共享缓存代发（授权语义绑在
+// URL 签名上）。缩略图直链不走此头——它是内容寻址键（SHA-256），已有
+// immutable 长缓存（contentAddressedCacheControl）。
+// 与签名侧 exp 窗口（assets_media_url.go mediaURLExpiry）联动：签名侧
+// 改动须同步此处，反之亦然。
+func signedOrigCacheControl(ttl time.Duration) string {
+	return "private, max-age=" + strconv.Itoa(int(ttl/time.Second))
+}
 
 // countingResponseWriter 包装直链响应并累计实际写出的字节数（media_bytes_total
 // 是流量语义：304 空体计 0、Range 只计所发区间——不是文件大小语义）。
@@ -112,6 +126,10 @@ func (s *Server) GetMediaOrigAssetId(w http.ResponseWriter, r *http.Request, ass
 	// ServeContent 对零值 modTime 自动跳过时间条件。
 	// 文件名喂给 ServeContent 做扩展名→ContentType 推断（jpg/mp4/...）。
 	// 经计数器发出，返回后按 kind 累计实际输出字节（304/Range 只计实发）。
+	// exp 窗口对齐（ADR-0027）后同窗 URL 恒定，显式缓存头才有意义：
+	// max-age=直链窗口长，缓存条目寿命不超过 URL 有效期下界（见
+	// signedOrigCacheControl）。放在全部错误分支之后，错误响应不带缓存头。
+	w.Header().Set("Cache-Control", signedOrigCacheControl(s.ttl))
 	cw := &countingResponseWriter{ResponseWriter: w}
 	http.ServeContent(cw, r, row.FileName, parseStoreTime(row.Mtime), f)
 	sysmon.Default.AddMediaBytes(mediaKindFor(row.MediaType), float64(cw.n))
