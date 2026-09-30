@@ -14,9 +14,10 @@
 - **服务端**（Go 单体，跑在 NAS 的 Docker 里）：扫描媒体目录、生成缩略图、存储索引与行为数据、计算推荐、提供 API 与媒体直链
 - **Web 端**（React PWA）：电脑浏览器打开即用，手机可"安装"到桌面
 - **Android 端**（Kotlin + Compose 薄客户端）：原生体验，直链播放
+- **桌面壳**（Tauri 2）：复用同一套 Web UI 的原生桌面应用
 - **使用场景**：媒体文件全部放在 NAS（或任何常开电脑）上，手机下载的资源通过 App 直传 NAS 后删除本地，解放手机与电脑存储
 
-## 核心特性（继承自已验证的单机版需求）
+## 核心特性
 
 - 10 维自适应推荐算法（9 维权重可调 + 随机扰动 + 每日去重惩罚）
 - 排行榜（日/周/月/季/年/总）与多维胶囊筛选
@@ -37,6 +38,17 @@
                           │
                     openapi.yaml ← 协议宪法，三端 SDK 自动生成
 ```
+
+## 快速开始（Docker）
+
+```bash
+git clone https://github.com/Surtr42u/qimeng-media.git
+cd qimeng-media
+make docker-build                     # 构建 amd64 镜像（完整流程见 deploy/README.md）
+cd deploy && docker compose up -d     # 按注释修改媒体目录挂载
+```
+
+浏览器打开 `http://NAS_IP:8420` 注册管理员账号即可使用。免密开发模式（dev-login）默认关闭，仅限本机调试临时开启。
 
 ## 仓库结构
 
@@ -73,20 +85,11 @@ CI（GitHub Actions 五 job：openapi 协议校验 / server vet+test+build+golan
 | `llms.txt` | 文档导航总索引（LLM 抓取入口，llms.txt v2 格式） |
 | `docs/ARCHITECTURE.md` | 架构总纲与技术选型 |
 | `docs/DOMAIN_RULES.md` | 领域规则（推荐算法/筛选/统计/作者——从旧项目继承的完整规格） |
-| `docs/CAPABILITY_MAP.md` | 能力地图（对标 Jellyfin/Immich/Plex 的现状与缺口，AI 主动提案依据） |
+| `docs/CAPABILITY_MAP.md` | 能力地图（对标 Jellyfin/Immich/Plex 的现状与缺口） |
 | `docs/SECURITY.md` | 安全设计（鉴权/路径穿越/上传防护/回收站/远程访问） |
 | `docs/OBSERVABILITY.md` | 监控与仪表盘 |
 | `docs/PROJECT_PLAN.md` | 里程碑 M0-M6+ 与验收标准 |
 | `docs/adr/` | 架构决策记录（每个重大决策的"为什么"，索引见 `docs/adr/INDEX.md`） |
-
-## 反馈与讨论
-
-欢迎围绕两件事交流：**AI 协作开发的工作流**（文档驱动 + 协议先行，见 `AI_README_FIRST.md` 与 `docs/adr/`）和**三端统一的 UI/交互设计**（Web / Android / 桌面）。对界面、交互、架构有任何建议都欢迎提 Issue，聊 UI 的话附截图或录屏最好。
-
-## 开源边界
-
-- 仓库不含任何真实媒体数据、口令与密钥；免密开发模式仅限本机/内网（安全设计见 `docs/SECURITY.md`）。
-- 提 Issue 时请自行脱敏：不要贴服务器地址、口令与涉及个人内容的媒体截图。
 
 ## License
 
