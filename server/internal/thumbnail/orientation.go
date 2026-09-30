@@ -42,7 +42,7 @@ const (
 )
 
 // orientationFilterChain 把 EXIF Orientation 映射为 ffmpeg -vf 滤镜链段
-//（空串 = 无需变换）。映射依据（注释即规格，两份文档对齐）：
+// （空串 = 无需变换）。映射依据（注释即规格，两份文档对齐）：
 //   - EXIF 侧：CIPA DC-008 各值的 0th row/column 方位（见上方常量注释）；
 //   - ffmpeg 侧：transpose 滤镜 dir 取值语义（`ffmpeg -h filter=transpose`
 //     官方输出）：0=rotate counter-clockwise with vertical flip、
@@ -170,8 +170,8 @@ func jpegOrientationFromBytes(b []byte) exifOrientation {
 // TIFF 常量（TIFF 6.0 规范）：魔数 42；IFD 表项固定 12 字节；Orientation
 // tag = 0x0112、类型 SHORT = 3。EXIF 的 IFD 结构就是内嵌的一段 TIFF。
 const (
-	tiffMagic      = 42
-	tiffIFDEntrySz = 12
+	tiffMagic          = 42
+	tiffIFDEntrySz     = 12
 	exifTagOrientation = 0x0112
 	tiffTypeShort      = 3
 )

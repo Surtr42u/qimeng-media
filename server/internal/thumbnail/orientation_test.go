@@ -101,7 +101,7 @@ func buildExifAPP1(bo binary.ByteOrder, tag, typ uint16, count uint32, value uin
 	tiff = boAppendUint16(tiff, bo, typ)
 	tiff = boAppendUint32(tiff, bo, count)
 	tiff = boAppendUint16(tiff, bo, value)
-	tiff = append(tiff, 0, 0)       // SHORT 值占满 4 字节值字段
+	tiff = append(tiff, 0, 0)          // SHORT 值占满 4 字节值字段
 	tiff = boAppendUint32(tiff, bo, 0) // 无下一 IFD
 
 	payload := append([]byte(nil), exifHeaderPrefix...)
@@ -175,22 +175,22 @@ func displayedSampleStored(o exifOrientation, sx, sy int) (r, c int) {
 }
 
 // TestOrientationFilterChain 锁定方向→滤镜映射表：表就是本任务的行为契约
-//（DOMAIN_RULES §11「静图方向」），任何一档被改动必须是有意为之。
+// （DOMAIN_RULES §11「静图方向」），任何一档被改动必须是有意为之。
 func TestOrientationFilterChain(t *testing.T) {
 	cases := []struct {
 		o    exifOrientation
 		want string
 	}{
-		{orientationNormal, ""},                 // 1：不转
-		{orientationMirrorH, "hflip"},           // 2
-		{orientationRot180, "hflip,vflip"},      // 3
-		{orientationMirrorV, "vflip"},           // 4
-		{orientationTranspose, "transpose=0"},   // 5：CCW90+垂直翻转 = 主对角线翻转
-		{orientationRot90CW, "transpose=1"},     // 6：顺时针 90°
-		{orientationTransverse, "transpose=3"},  // 7：CW90+垂直翻转 = 副对角线翻转
-		{orientationRot90CCW, "transpose=2"},    // 8：逆时针 90°
-		{exifOrientation(0), ""},                // 越界值兜底不转
-		{exifOrientation(9), ""},                // 越界值兜底不转
+		{orientationNormal, ""},                // 1：不转
+		{orientationMirrorH, "hflip"},          // 2
+		{orientationRot180, "hflip,vflip"},     // 3
+		{orientationMirrorV, "vflip"},          // 4
+		{orientationTranspose, "transpose=0"},  // 5：CCW90+垂直翻转 = 主对角线翻转
+		{orientationRot90CW, "transpose=1"},    // 6：顺时针 90°
+		{orientationTransverse, "transpose=3"}, // 7：CW90+垂直翻转 = 副对角线翻转
+		{orientationRot90CCW, "transpose=2"},   // 8：逆时针 90°
+		{exifOrientation(0), ""},               // 越界值兜底不转
+		{exifOrientation(9), ""},               // 越界值兜底不转
 	}
 	for _, tc := range cases {
 		if got := orientationFilterChain(tc.o); got != tc.want {
@@ -232,11 +232,11 @@ func TestParseJPEGOrientation(t *testing.T) {
 
 	t.Run("截断与垃圾字节兜底为1", func(t *testing.T) {
 		for name, data := range map[string][]byte{
-			"空":        {},
-			"只有SOI":    {0xFF, 0xD8},
-			"SOI后截断":   {0xFF, 0xD8, 0xFF, 0xE1, 0x00},
-			"段长越界":     append([]byte{0xFF, 0xD8, 0xFF, 0xE1, 0xFF, 0xFF}, make([]byte, 4)...),
-			"纯垃圾":      {0x12, 0x34, 0x56, 0x78},
+			"空":      {},
+			"只有SOI":  {0xFF, 0xD8},
+			"SOI后截断": {0xFF, 0xD8, 0xFF, 0xE1, 0x00},
+			"段长越界":   append([]byte{0xFF, 0xD8, 0xFF, 0xE1, 0xFF, 0xFF}, make([]byte, 4)...),
+			"纯垃圾":    {0x12, 0x34, 0x56, 0x78},
 		} {
 			if got := parseJPEGOrientation(bytes.NewReader(data)); got != orientationNormal {
 				t.Errorf("%s 读到 %d，期望兜底 1", name, got)
@@ -249,10 +249,10 @@ func TestParseJPEGOrientation(t *testing.T) {
 		// 直喂底层解析函数，锁定边界守卫本身（2026-10-01 审查 P1：两处守卫各差
 		// 1/6 字节时这两类输入曾可 panic 打挂进程）。
 		shortSegLen := []byte{0xFF, 0xD8, 0xFF, 0xE1, 0x00} // 段长只读到 1 字节即截断
-		shortTiffHeader := append( // APP1 载荷止于字节序对，TIFF 头不足 8 字节
+		shortTiffHeader := append(                          // APP1 载荷止于字节序对，TIFF 头不足 8 字节
 			[]byte{0xFF, 0xD8, 0xFF, 0xE1, 0x00, 0x0A}, []byte("Exif\x00\x00II")...)[:14:14]
 		for name, data := range map[string][]byte{
-			"段长截断":   shortSegLen,
+			"段长截断":    shortSegLen,
 			"TIFF头截断": shortTiffHeader,
 		} {
 			if got := jpegOrientationFromBytes(data); got != orientationNormal {
@@ -265,8 +265,8 @@ func TestParseJPEGOrientation(t *testing.T) {
 		bo := binary.LittleEndian
 		cases := map[string][]byte{
 			// 值越界（EXIF 只定义 1-8）：
-			"值越界9":  insertAPP1AfterSOI(base, buildExifAPP1(bo, exifTagOrientation, tiffTypeShort, 1, 9)),
-			"值为0":   insertAPP1AfterSOI(base, buildExifAPP1(bo, exifTagOrientation, tiffTypeShort, 1, 0)),
+			"值越界9": insertAPP1AfterSOI(base, buildExifAPP1(bo, exifTagOrientation, tiffTypeShort, 1, 9)),
+			"值为0":  insertAPP1AfterSOI(base, buildExifAPP1(bo, exifTagOrientation, tiffTypeShort, 1, 0)),
 			// 类型不是 SHORT（4=LONG）：解析器只认全现实写法，不造通用解析：
 			"类型LONG": insertAPP1AfterSOI(base, buildExifAPP1(bo, exifTagOrientation, 4, 1, 6)),
 			// APP1 载荷无 "Exif\0\0" 前缀（XMP 形态）：
@@ -330,9 +330,9 @@ func TestScaleStillAppliesEXIFOrientationIntegration(t *testing.T) {
 	gen.stillFormat = StillFormatJPEG
 
 	cases := []struct {
-		name        string
-		orientation exifOrientation
-		withExif    bool
+		name         string
+		orientation  exifOrientation
+		withExif     bool
 		wantW, wantH int
 	}{
 		{"无EXIF不转", orientationNormal, false, quadW, quadH},

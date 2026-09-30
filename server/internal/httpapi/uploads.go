@@ -255,7 +255,7 @@ func (s *Server) PostApiV1UploadsIdComplete(w http.ResponseWriter, r *http.Reque
 // 与直传 dir 参数同语义）并解析冲突名：重活（跨卷拷贝预置）在库锁外、锁内
 // 只做只读探测、size 复核与一次 rename——与直传 #9 关键段同构（持库锁时长
 // 与文件大小无关）。dir 在 create 时已过 resolveUploadDir 规范化并存入会话
-//（服务端持有，complete 不再收客户端路径）；baseDirAbs 的 PathWithinRoot 仍
+// （服务端持有，complete 不再收客户端路径）；baseDirAbs 的 PathWithinRoot 仍
 // 保留为 handler 侧兜底（SECURITY 红线 1 纵深防御，与直传同一道闸）。预置/
 // 放置失败清理临时副本；rename 成功后副本已不在（cleanup 报 NotExist 属正常）。
 // 返回最终落盘名、库内相对路径与绝对路径（rel = dir/最终名，供入库管线）。

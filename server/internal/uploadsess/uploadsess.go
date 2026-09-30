@@ -32,7 +32,7 @@ const (
 
 // TempDirName 是临时分片目录名（相对服务端数据根 DataDir）。具名常量：
 // DataDir/uploads-tmp 与库目录彻底隔离——未过四道校验的半成品绝不进库
-//（ADR-0028），且备份/扫描/直链面都看不到它。导出供 httpapi 测试引用
+// （ADR-0028），且备份/扫描/直链面都看不到它。导出供 httpapi 测试引用
 // 路径时与实现同源（禁止测试手抄目录名字面量）。
 const TempDirName = "uploads-tmp"
 
@@ -106,7 +106,7 @@ type Manager struct {
 }
 
 // New 构造 Manager。临时目录在首次 Create 时惰性创建——构造期零磁盘副作用
-//（测试与内嵌形态组装不碰文件系统）；目录不可用时 Create 返回 ErrTempRoot。
+// （测试与内嵌形态组装不碰文件系统）；目录不可用时 Create 返回 ErrTempRoot。
 func New(dataDir string, now func() time.Time, logger *slog.Logger) *Manager {
 	if now == nil {
 		now = time.Now
