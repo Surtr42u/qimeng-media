@@ -43,6 +43,15 @@ object UploadWorkSpec {
      */
     const val KEY_LIBRARY_NAME = "libraryName"
 
+    /**
+     * 源文件已在归档根标志（2026-10-01 归档一键上传）：true = 条目来自归档文件夹一键上传，
+     * worker 上传成功后跳过归档移动——源文件本就在归档根的库文件夹内，重复归档会对同
+     * 一路径走 archiveToLibraryRoot 的同名同内容「删旧放新」路径（先删目标位再落新），
+     * 源与目标是同一路径时等于删源。仅 true 时写键（可空键同款口径），旧在途载荷缺键
+     * 反解回退 false（既有归档行为不变）。
+     */
+    const val KEY_ALREADY_ARCHIVED = "alreadyArchived"
+
     // ---- 过程/输出 Data 键位（worker setProgress / Result.outputData） ----
     const val KEY_PROGRESS_PERCENT = "progressPercent"
     const val KEY_FINAL_FILE_NAME = "finalFileName"
@@ -89,6 +98,8 @@ object UploadWorkSpec {
         val attachSources: List<String>? = null,
         /** 目标库展示名（空串 = 未解析到/旧载荷，worker 归档分派回退 uploaded/） */
         val libraryName: String = "",
+        /** 源文件已在归档根（一键上传条目）：true 时 worker 上传成功后跳过归档移动 */
+        val alreadyArchived: Boolean = false,
     )
 
     fun itemToInputData(spec: UploadRequestSpec): Data = Data.Builder()
@@ -104,6 +115,8 @@ object UploadWorkSpec {
             spec.attachAuthorId?.let { putString(KEY_ATTACH_AUTHOR_ID, it) }
             spec.attachSources?.takeIf { it.isNotEmpty() }?.let { putStringArray(KEY_ATTACH_SOURCES, it.toTypedArray()) }
             spec.libraryName.takeIf { it.isNotBlank() }?.let { putString(KEY_LIBRARY_NAME, it) }
+            // 布尔标志只 true 时写键（缺键 = false，既有行为；与取消/挂靠失败输出键同口径）
+            if (spec.alreadyArchived) putBoolean(KEY_ALREADY_ARCHIVED, true)
         }
         .build()
 
@@ -131,6 +144,8 @@ object UploadWorkSpec {
             attachSources = data.getStringArray(KEY_ATTACH_SOURCES)?.toList(),
             // 缺键回退空串（挂靠键同款旧载荷兼容口径：归档分派侧按空串回退 uploaded/）
             libraryName = data.getString(KEY_LIBRARY_NAME).orEmpty(),
+            // 缺键回退 false（旧在途载荷无此键，维持既有归档行为）
+            alreadyArchived = data.getBoolean(KEY_ALREADY_ARCHIVED, false),
         )
     }
 

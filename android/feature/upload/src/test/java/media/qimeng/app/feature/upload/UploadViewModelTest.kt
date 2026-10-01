@@ -7,6 +7,8 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
+import java.io.File
 import media.qimeng.app.core.model.AuthorSuggestion
 import media.qimeng.app.core.model.LibraryChoice
 import media.qimeng.app.core.model.StagingBatchConfig
@@ -51,7 +53,8 @@ class UploadViewModelTest {
         authorRepository: FakeAuthorRepository = FakeAuthorRepository(),
         staging: FakeStagingRepository = FakeStagingRepository(),
     ): Quad<UploadViewModel, FakeUploadRepository, FakeAuthorRepository, FakeStagingRepository> {
-        val viewModel = UploadViewModel(repository, authorRepository, staging)
+        // 归档扫描走 IO 调度器（注入测试调度器，driveIdle 确定性驱动）
+        val viewModel = UploadViewModel(repository, authorRepository, staging, mainDispatcherRule.testDispatcher)
         driveIdle()
         return Quad(viewModel, repository, authorRepository, staging)
     }
@@ -464,5 +467,215 @@ class UploadViewModelTest {
         viewModel.toggleBatchSource("site-a")
         driveIdle()
         assertEquals(listOf("site-a"), viewModel.uiState.value.batchSources)
+    }
+
+    // ---- 归档一键上传（2026-10-01：扫描 -> 确认 -> 按匹配库分组入队；入队后防整批重入队
+    //      门禁 + 超限本地过滤 + 库加载失败不隐藏归档区） ----
+
+    @get:Rule
+    val archiveTmp = TemporaryFolder()
+
+    /** 归档测试装配：播种归档路径与临时目录后手工构造 VM（扫描挂在 init 的库列表就绪后） */
+    private fun newArchiveViewModel(
+        staging: FakeStagingRepository,
+        repository: FakeUploadRepository,
+    ): Pair<UploadViewModel, FakeUploadRepository> {
+        val viewModel = UploadViewModel(repository, FakeAuthorRepository(), staging, mainDispatcherRule.testDispatcher)
+        driveIdle()
+        return viewModel to repository
+    }
+
+    @Test
+    fun `归档根未配置时无扫描结果`() {
+        val (viewModel, repository) = newViewModel()
+        assertNull(viewModel.uiState.value.archiveBatch)
+        assertFalse(viewModel.uiState.value.archiveBatchLoading)
+        // 一键路径无从触发：不入队
+        viewModel.onArchiveBatchUpload()
+        driveIdle()
+        assertTrue(repository.enqueueCalls.isEmpty())
+    }
+
+    @Test
+    fun `一键上传按匹配库分组入队且携带alreadyArchived`() {
+        val root = archiveTmp.newFolder("归档")
+        val libADir = archiveTmp.newFolder("归档/测试库A")
+        val libBDir = archiveTmp.newFolder("归档/测试库B/sub")
+        File(libADir, "a.jpg").writeText("123")
+        File(libBDir, "b.mp4").writeText("4567")
+
+        val staging = FakeStagingRepository().apply { seedArchivePath(root.absolutePath) }
+        val repository = FakeUploadRepository().apply { librariesResult = listOf(libraryA, libraryB) }
+        val (viewModel, _) = newArchiveViewModel(staging, repository)
+
+        // 扫描摘要：2 个待传条目、命中 2 库、无未匹配
+        val scan = viewModel.uiState.value.archiveBatch
+        assertNotNull(scan)
+        assertEquals(2, scan!!.items.size)
+        assertEquals("待传 2 个文件 · 命中 2 个库 · 未匹配 0 个文件夹", viewModel.uiState.value.archiveBatchSummary)
+
+        viewModel.onArchiveBatchUpload()
+        driveIdle()
+
+        // 按目标库分组入队（两组），调用级 dir 恒库根、条目 dir 由 relativeDir 承载
+        assertEquals(2, repository.enqueueCalls.size)
+        val callA = repository.enqueueCalls.first { it.libraryId == "lib-a" }
+        assertEquals("", callA.dir)
+        assertEquals("测试库A", callA.libraryName)
+        val itemA = callA.items.single()
+        assertTrue(itemA.alreadyArchived)
+        assertEquals("测试库A", itemA.libraryName)
+        assertEquals(File(libADir, "a.jpg").absolutePath, itemA.uri)
+        assertEquals("", itemA.relativeDir)
+        // 一键路径不继承批次作者/来源（归档区是整理过的存量，整批挂默认作者=错误挂靠）
+        assertNull(itemA.attachAuthorId)
+        assertNull(itemA.attachSources)
+
+        val callB = repository.enqueueCalls.first { it.libraryId == "lib-b" }
+        val itemB = callB.items.single()
+        assertTrue(itemB.alreadyArchived)
+        assertEquals("测试库B", itemB.libraryName)
+        assertEquals("sub", itemB.relativeDir)
+        assertEquals(File(libBDir, "b.mp4").absolutePath, itemB.uri)
+
+        // 入队成功给轻提示（既有 noticeMessage 横幅）
+        assertTrue(viewModel.uiState.value.noticeMessage?.contains("已加入上传队列") == true)
+        assertFalse(viewModel.uiState.value.submitting)
+    }
+
+    @Test
+    fun `一键上传无匹配条目时不入队`() {
+        val root = archiveTmp.newFolder("空归档")
+        val staging = FakeStagingRepository().apply { seedArchivePath(root.absolutePath) }
+        val repository = FakeUploadRepository().apply { librariesResult = listOf(libraryA) }
+        val (viewModel, _) = newArchiveViewModel(staging, repository)
+
+        assertTrue(viewModel.uiState.value.archiveBatch?.items.isNullOrEmpty())
+        viewModel.onArchiveBatchUpload()
+        driveIdle()
+        assertTrue(repository.enqueueCalls.isEmpty())
+    }
+
+    @Test
+    fun `归档扫描未匹配文件夹进结果且不产生条目`() {
+        val root = archiveTmp.newFolder("归档")
+        archiveTmp.newFolder("归档/未知库")
+
+        val staging = FakeStagingRepository().apply { seedArchivePath(root.absolutePath) }
+        val repository = FakeUploadRepository().apply { librariesResult = listOf(libraryA) }
+        val (viewModel, _) = newArchiveViewModel(staging, repository)
+
+        val scan = viewModel.uiState.value.archiveBatch
+        assertNotNull(scan)
+        val unmatched = scan!!.unmatchedFolders.single()
+        assertEquals("未知库", unmatched.first)
+        assertEquals("未找到同名库", unmatched.second)
+        assertTrue(scan.items.isEmpty())
+        // 只有未匹配文件夹时一键路径不允许触发（VM 兜底 + UI 按钮置灰同口径）
+        viewModel.onArchiveBatchUpload()
+        driveIdle()
+        assertTrue(repository.enqueueCalls.isEmpty())
+    }
+
+    @Test
+    fun `一键入队成功后置防重入队门禁且再次调用被拦`() {
+        val root = archiveTmp.newFolder("归档")
+        val libADir = archiveTmp.newFolder("归档/测试库A")
+        File(libADir, "a.jpg").writeText("123")
+
+        val staging = FakeStagingRepository().apply { seedArchivePath(root.absolutePath) }
+        val repository = FakeUploadRepository().apply { librariesResult = listOf(libraryA) }
+        val (viewModel, _) = newArchiveViewModel(staging, repository)
+
+        viewModel.onArchiveBatchUpload()
+        driveIdle()
+
+        assertEquals(1, repository.enqueueCalls.size)
+        assertTrue(viewModel.uiState.value.archiveBatchEnqueued)
+        // 入队成功触发重扫：源文件上传成功前仍原位，文件数未变 → 门禁保持置位
+        assertEquals(1, viewModel.uiState.value.archiveBatch?.items?.size)
+        assertTrue(viewModel.uiState.value.archiveBatchEnqueued)
+
+        // 门禁置位期间再次调用被拦：不产生新的入队调用
+        viewModel.onArchiveBatchUpload()
+        driveIdle()
+        assertEquals(1, repository.enqueueCalls.size)
+    }
+
+    @Test
+    fun `入队后归档区文件数变化重扫复位门禁`() {
+        val root = archiveTmp.newFolder("归档")
+        val libADir = archiveTmp.newFolder("归档/测试库A")
+        File(libADir, "a.jpg").writeText("123")
+
+        val staging = FakeStagingRepository().apply { seedArchivePath(root.absolutePath) }
+        val repository = FakeUploadRepository().apply { librariesResult = listOf(libraryA) }
+        val (viewModel, _) = newArchiveViewModel(staging, repository)
+
+        viewModel.onArchiveBatchUpload()
+        driveIdle()
+        assertTrue(viewModel.uiState.value.archiveBatchEnqueued)
+
+        // 归档区新增文件（重扫文件数与入队时不同）：门禁复位，可再次一键上传
+        File(libADir, "b.jpg").writeText("456")
+        viewModel.refreshArchiveBatch()
+        driveIdle()
+        assertFalse(viewModel.uiState.value.archiveBatchEnqueued)
+        assertEquals(2, viewModel.uiState.value.archiveBatch?.items?.size)
+
+        viewModel.onArchiveBatchUpload()
+        driveIdle()
+        assertEquals(2, repository.enqueueCalls.size)
+        assertEquals(2, repository.enqueueCalls.last().items.size)
+    }
+
+    @Test
+    fun `一键上传超限条目本地过滤不入队`() {
+        val root = archiveTmp.newFolder("归档")
+        val libADir = archiveTmp.newFolder("归档/测试库A")
+        File(libADir, "small.jpg").writeText("123")
+        // >1MB 真实文件：条目大小取 file.length()，超限判定与手动直传同一单源口径
+        val big = File(libADir, "big.jpg")
+        big.outputStream().use { it.write(ByteArray(1024 * 1024 + 1)) }
+
+        val staging = FakeStagingRepository().apply { seedArchivePath(root.absolutePath) }
+        val repository = FakeUploadRepository().apply {
+            librariesResult = listOf(libraryA)
+            limitsResult = UploadLimits(maxBytesMb = 1, autoAccept = true)
+        }
+        val (viewModel, _) = newArchiveViewModel(staging, repository)
+
+        // 确认弹窗摘要口径：1 个超限文件将被跳过
+        assertEquals(1, viewModel.uiState.value.archiveBatchOverLimitCount)
+
+        viewModel.onArchiveBatchUpload()
+        driveIdle()
+
+        // 超限项不入队：只入 small.jpg；文案沿用既有 blockText 来源（列名 + 上限）
+        assertEquals(1, repository.enqueueCalls.size)
+        assertEquals(listOf("small.jpg"), repository.enqueueCalls.single().items.map { it.displayName })
+        assertTrue(viewModel.uiState.value.blockMessage?.contains("big.jpg") == true)
+        assertTrue(viewModel.uiState.value.blockMessage?.contains("超过服务端上限 1 MB") == true)
+        // 部分入队成功：防重入队门禁照常置位（比对基准为入队时整轮扫描数 2）
+        assertTrue(viewModel.uiState.value.archiveBatchEnqueued)
+    }
+
+    @Test
+    fun `库列表加载失败时归档扫描仍执行`() {
+        val root = archiveTmp.newFolder("归档")
+        val libADir = archiveTmp.newFolder("归档/测试库A")
+        File(libADir, "a.jpg").writeText("123")
+
+        val staging = FakeStagingRepository().apply { seedArchivePath(root.absolutePath) }
+        val repository = FakeUploadRepository().apply { librariesError = IllegalStateException("boom") }
+        val (viewModel, _) = newArchiveViewModel(staging, repository)
+
+        // 库加载失败横幅照旧
+        assertEquals(LOAD_FAILED_MESSAGE, viewModel.uiState.value.errorMessage)
+        // 归档区不被静默隐藏：空库列表匹配不到库，「测试库A」如实落未匹配清单
+        val scan = viewModel.uiState.value.archiveBatch
+        assertNotNull(scan)
+        assertEquals("测试库A" to "未找到同名库", scan!!.unmatchedFolders.single())
+        assertTrue(scan.items.isEmpty())
     }
 }

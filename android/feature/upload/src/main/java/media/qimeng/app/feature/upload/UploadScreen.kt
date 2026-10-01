@@ -95,6 +95,9 @@ fun UploadScreen(
     // 新建目录弹层（saveable：进程重建后关闭态恢复，与页面弹窗同语义）
     var showCreateDirDialog by rememberSaveable { mutableStateOf(false) }
 
+    // 归档一键上传确认弹层（2026-10-01；同 saveable 恢复语义）
+    var showArchiveBatchDialog by rememberSaveable { mutableStateOf(false) }
+
     // 通知权限（API 33+ 运行时申请；拒绝只影响可见性、不阻断上传）
     val notificationPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -144,6 +147,7 @@ fun UploadScreen(
             viewModel = viewModel,
             onSystemFiles = { systemFilesLauncher.launch(SYSTEM_FILES_MIME_TYPES) },
             onCreateDir = { showCreateDirDialog = true },
+            onArchiveBatchUpload = { showArchiveBatchDialog = true },
         )
     }
 
@@ -155,6 +159,18 @@ fun UploadScreen(
             },
             onDismiss = { showCreateDirDialog = false },
             creating = state.creatingDir,
+        )
+    }
+
+    // 归档一键上传确认弹窗（2026-10-01）：确认后 VM 走既有入队管道，轻提示走既有横幅
+    if (showArchiveBatchDialog) {
+        ArchiveBatchConfirmDialog(
+            state = state,
+            onConfirm = {
+                showArchiveBatchDialog = false
+                viewModel.onArchiveBatchUpload()
+            },
+            onDismiss = { showArchiveBatchDialog = false },
         )
     }
 }
@@ -172,6 +188,7 @@ private fun UploadForm(
     viewModel: UploadViewModel,
     onSystemFiles: () -> Unit,
     onCreateDir: () -> Unit,
+    onArchiveBatchUpload: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -217,6 +234,10 @@ private fun UploadForm(
         SectionTitle("添加文件")
         AddSourcesRow(onSystemFiles = onSystemFiles)
         DirectUploadGuide()
+
+        // —— 归档一键上传（2026-10-01）：归档根已配置时展示扫描摘要与一键入口，确认弹窗
+        // 在壳层（与新建目录弹层同位置）；扫描/匹配/入队规则全在 core 与 VM ——
+        ArchiveBatchSection(state = state, onUploadClick = onArchiveBatchUpload)
 
         // —— 上传队列 ——
         if (state.queue.isNotEmpty()) {

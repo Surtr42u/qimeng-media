@@ -124,6 +124,8 @@ class SdkUploadRepository @Inject constructor(
                 attachSources = item.attachSources,
                 // 库名：条目级优先（逐项库覆盖组各自带名）、调用级兜底（同组同库的整组传参）
                 libraryName = item.libraryName.takeIf { it.isNotBlank() } ?: libraryName,
+                // 一键重传条目（2026-10-01）：源已在归档根，worker 上传成功后跳过归档移动
+                alreadyArchived = item.alreadyArchived,
             )
             val request = OneTimeWorkRequestBuilder<UploadWorker>()
                 .setInputData(UploadWorkSpec.itemToInputData(spec))

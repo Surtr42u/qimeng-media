@@ -19,6 +19,9 @@ class FakeUploadRepository : UploadRepository {
     /** GET /libraries 返回值（可编程） */
     var librariesResult: List<LibraryChoice> = emptyList()
 
+    /** libraries 抛错模拟（库列表加载失败场景，2026-10-01 归档区不被库加载失败隐藏用例） */
+    var librariesError: Exception? = null
+
     /** GET /dirs 返回值（可编程） */
     var dirTreeResult: DirNode = DirNode(path = "", fileCount = 0, children = emptyList())
 
@@ -62,7 +65,10 @@ class FakeUploadRepository : UploadRepository {
         _queue.value = entries
     }
 
-    override suspend fun libraries(): List<LibraryChoice> = librariesResult
+    override suspend fun libraries(): List<LibraryChoice> {
+        librariesError?.let { throw it }
+        return librariesResult
+    }
 
     override suspend fun suggestAuthors(q: String, limit: Int): List<AuthorSuggestion> {
         suggestCalls.add(q)

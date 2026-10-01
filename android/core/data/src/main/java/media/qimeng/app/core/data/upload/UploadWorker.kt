@@ -210,7 +210,9 @@ class UploadWorker @AssistedInject constructor(
      *   判定见 [isInboxSource]），其它路径来源不动源文件（浏览文件选中的 Download/
      *   私人文件夹等不属于收件箱，擅自在其内建 uploaded/ 子目录移走文件超出旧行为）；
      * - c) 已设置但载荷库名为空（旧在途载荷缺键/入队时解析不到库名）→ 回退 b 语义：
-     *   收件箱来源仍归 uploaded/（缺名不丢文件），其它路径来源同样不动。
+     *   收件箱来源仍归 uploaded/（缺名不丢文件），其它路径来源同样不动；
+     * - 0) 载荷 alreadyArchived=true（2026-10-01 归档一键上传条目）→ 整体跳过归档：
+     *   源文件本就在归档根的库文件夹内（风险说明见方法体注释）。
      * 归档路径读取：doWork 本身即 suspend 协程，直接 archivePath/inboxPath.first() 取
      * 首快照，无需 runBlocking（Worker 无 DataStore 常驻 Flow 场景，单值即所需）。
      * 文件操作段（copy/内容比对可达 GB 级视频）切 [Dispatchers.IO]：CoroutineWorker
@@ -218,6 +220,11 @@ class UploadWorker @AssistedInject constructor(
      * 移动失败不阻断上传完成，只记日志与完成通知提示（与原 uploaded/ 归档同口径）。
      */
     private suspend fun archiveNote(spec: UploadWorkSpec.UploadRequestSpec): String {
+        // 一键重传条目（2026-10-01 归档一键上传，载荷 alreadyArchived=true）：源文件本就在
+        // 归档根的库文件夹内，整体跳过归档移动——若照常归档，archiveToLibraryRoot 会把
+        // 「源 == 目标同一路径」判成同名同内容走「删旧放新」（先删目标位再落新），删除的
+        // 就是源文件本身，改名/copy 再失败即丢文件；跳过后上传/挂靠/清理行为全不变。
+        if (spec.alreadyArchived) return ""
         if (!UploadRules.isAbsoluteFilePath(spec.uri)) return ""
         val archiveRoot = stagingRepository.archivePath.first()
         val useArchiveRoot = archiveRoot != null && spec.libraryName.isNotBlank()
