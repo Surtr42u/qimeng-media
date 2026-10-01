@@ -1,11 +1,6 @@
 package media.qimeng.app.feature.home
 
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -32,10 +28,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -60,10 +53,14 @@ import media.qimeng.app.core.ui.component.QimengPullToRefresh
 import media.qimeng.app.core.ui.component.QimengSkeletonGrid
 import media.qimeng.app.core.ui.component.QIMENG_SKELETON_GRID_ROWS
 import media.qimeng.app.core.ui.component.TabScrollController
+import media.qimeng.app.core.ui.glass.GlassIconButton
+import media.qimeng.app.core.ui.glass.GlassSurface
 import media.qimeng.app.core.ui.icon.Grid1Icon
 import media.qimeng.app.core.ui.icon.HomeFilterIcon
+import media.qimeng.app.core.ui.icon.SearchIcon
 import media.qimeng.app.core.ui.icon.gridIconFor
 import media.qimeng.app.core.ui.theme.QimengDimens
+import media.qimeng.app.core.ui.theme.QimengShapes
 // core/ui 共享文案资源别名导入：防与 feature/home 自身 R 撞名（顶栏图标钮无障碍描述复用）
 import media.qimeng.app.core.ui.R as UiR
 import androidx.compose.foundation.lazy.grid.LazyGridState
@@ -324,13 +321,14 @@ fun HomeScreen(
 }
 
 /**
- * 顶行：[标题][搜索框不可聚焦→跳搜索页][筛选图标钮][列数图标钮]（GUIDE_UI §首页）。
+ * 顶行：[大标题][搜索框不可聚焦→跳搜索页][筛选图标钮][列数图标钮]（GUIDE_UI §首页）。
  * Y4a（2026-09-12 用户拍板「首页搜索地旁边行列不是图标然后筛选没有」）：顶栏控件图标化+筛选入口落地，
  * **反转 2026-09-06「筛选不做」旧拍板**（落档待拍板条目 5 作废；媒体类型筛选参数协议面保留给 Y4b 面板）。
- * 布局逐项对齐旧版 fragment_home.xml 实录：标题 marginEnd=10dp（L31）/搜索框 weight=1 高 40dp（L33-44，
- * F 批已对齐）/筛选钮 40dp 胶囊 marginStart=10dp marginEnd=6dp（L48-52）/列数钮 40dp 胶囊（L53-59）；
- * 筛选在左、列数在右（实录次序）。列数钮图标随列数换（旧版 HomeFragment.toggleColumns L366-374 同款：
+ * 布局逐项对齐旧版 fragment_home.xml 实录：标题 marginEnd=10dp /搜索框 weight=1 高 40dp /
+ * 筛选钮 40dp 胶囊 marginStart=10dp marginEnd=6dp /列数钮 40dp 胶囊；
+ * 筛选在左、列数在右（实录次序）。列数钮图标随列数换（旧版 HomeFragment.toggleColumns 同款：
  * 1→ic_grid_1、2→ic_grid_2；1 档为 Y4a 补齐，[gridIconFor] 既有 2..5 档 clamp 语义不动故先特判 1）。
+ * ADR-0031：标题升 28sp 玻璃排印档；搜索框/动作钮换玻璃形态（GlassSurface/GlassIconButton）。
  */
 @Composable
 private fun HomeTopRow(
@@ -347,117 +345,57 @@ private fun HomeTopRow(
     ) {
         Text(
             text = HOME_TITLE,
-            // Y3 批（2026-09-12 全局字体对齐旧版）：首页标题对齐旧版 fragment_home.xml L25-32
-            // ——24sp Bold + qmColorTextPrimary（onSurface 槽；此前 titleLarge 22sp Regular 偏小）
-            style = MaterialTheme.typography.titleLarge.copy(
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold,
+            // ADR-0031：28sp 页标题档（Type.kt 标题族 SemiBold 兜底字重；旧 24sp 随旧语言退役）
+            style = MaterialTheme.typography.headlineMedium.copy(
+                fontSize = 28.sp,
                 color = MaterialTheme.colorScheme.onSurface,
             ),
             // 旧版 L31 marginEnd=10dp（此前 spacedBy 8dp 均一间距，Y4a 逐项实录化）
             modifier = Modifier.padding(end = 10.dp),
         )
-        // 搜索框不可聚焦（点击整块跳搜索页——规格书语义）；高度 40dp=旧版 fragment_home.xml L37
-        // bg_capsule_soft 胶囊底（F 批 2026-09-09：压回旧版视觉，此前实测 48dp）
-        Surface(
-            shape = RoundedCornerShape(QimengDimens.PillCornerRadius),
-            color = MaterialTheme.colorScheme.surfaceVariant,
+        // 搜索框不可聚焦（点击整块跳搜索页——规格书语义）；高 40dp，玻璃胶囊形态（ADR-0031）
+        GlassSurface(
+            shape = QimengShapes.pill,
             modifier = Modifier
                 .weight(1f)
                 .height(QimengDimens.HomeSearchFieldHeight)
                 .clickable(onClick = onOpenSearch),
         ) {
-            Box(
+            Row(
                 modifier = Modifier.fillMaxHeight(),
-                contentAlignment = Alignment.Center,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
+                Spacer(modifier = Modifier.width(14.dp))
+                Icon(
+                    imageVector = SearchIcon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp),
+                )
                 Text(
                     text = "搜索",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 12.dp),
+                    modifier = Modifier.padding(horizontal = 8.dp),
                 )
             }
         }
         // 筛选钮（左）与列数钮（右）：无障碍文案复用 core/ui 共享资源（QimengTitleRow 同款语义；
-        // 别名导入防与 feature R 撞名）
-        HomeTopIconButton(
+        // 别名导入防与 feature R 撞名）。玻璃胶囊钮单源（ADR-0031 GlassIconButton）
+        GlassIconButton(
             icon = HomeFilterIcon,
             contentDescription = stringResource(UiR.string.ui_filter_icon_desc),
             onClick = onOpenFilter,
+            tint = MaterialTheme.colorScheme.primary,
             // 旧版 L49-50 marginStart/End=10/6dp
             modifier = Modifier.padding(start = 10.dp, end = 6.dp),
         )
-        HomeTopIconButton(
+        GlassIconButton(
             icon = if (columns == 1) Grid1Icon else gridIconFor(columns),
             contentDescription = stringResource(UiR.string.ui_columns_icon_desc),
             onClick = onToggleColumns,
+            tint = MaterialTheme.colorScheme.primary,
         )
-    }
-}
-
-/** 按下缩放最小值（QimengSegPill 同款 0.92，GUIDE_UI §UI约束「按下反馈动画」） */
-private const val HOME_TOP_ICON_PRESSED_SCALE = 0.92f
-
-/** 按下缩放动画时长 ms（QimengSegPill 同款 100ms，旧版 PressAnimation 对应值） */
-private const val HOME_TOP_ICON_PRESS_SCALE_DURATION_MS = 100
-
-/**
- * 首页顶栏 40dp 胶囊图标钮（Y4a）：Surface 胶囊底（[QimengDimens.PillCornerRadius]，对齐旧版
- * bg_capsule_soft；U10-3 底槽统一 surfaceVariant→secondaryContainer——旧 bg_capsule_soft 实色=
- * qmColorChipBg #F0F0F2，Theme.kt 映射 secondaryContainer，与相册页 QimengTitleRow 筛选钮同语言）
- * + 24dp 图标（[QimengDimens.IconDefaultSize]，tint 对齐旧版
- * qmColorPrimary→primary 槽）+ 按压缩放反馈（QimengSegPill 同款 0.92/100ms 机制；旧版 ImageView
- * 无按压反馈，取 GUIDE_UI §UI约束 标准款补齐）。
- * 不走 M3 Surface onClick 重载/IconButton：二者内建 48dp 最小触达会把 40dp 胶囊撑大
- * （同 QimengSegPill F 批 KDoc 实测成因），旧版钮恰为 40dp 必须保形；缩放即反馈，不叠 ripple。
- */
-@Composable
-private fun HomeTopIconButton(
-    icon: ImageVector,
-    contentDescription: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    // 按下态经自持 interactionSource 观测，缩放在 graphicsLayer 块内延迟读取 pressScale，
-    // 缩放动画不触发重组（QimengSegPill 同款机制）
-    val interactionSource = remember { MutableInteractionSource() }
-    val pressed by interactionSource.collectIsPressedAsState()
-    val pressScale by animateFloatAsState(
-        targetValue = if (pressed) HOME_TOP_ICON_PRESSED_SCALE else 1f,
-        animationSpec = tween(
-            durationMillis = HOME_TOP_ICON_PRESS_SCALE_DURATION_MS,
-            easing = FastOutSlowInEasing,
-        ),
-        label = "homeTopIconPressScale",
-    )
-    Surface(
-        shape = RoundedCornerShape(QimengDimens.PillCornerRadius),
-        // U10-3 统一规格：底槽对齐旧 bg_capsule_soft 实色源（secondaryContainer），见 KDoc
-        color = MaterialTheme.colorScheme.secondaryContainer,
-        modifier = modifier
-            .size(QimengDimens.IconButtonSize)
-            .graphicsLayer {
-                scaleX = pressScale
-                scaleY = pressScale
-            }
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick,
-            ),
-    ) {
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = contentDescription,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(QimengDimens.IconDefaultSize),
-            )
-        }
     }
 }
 
@@ -581,12 +519,14 @@ private fun RankPage(
 private fun ErrorBanner(message: String, onDismiss: () -> Unit) {
     Surface(
         color = MaterialTheme.colorScheme.errorContainer,
+        // ADR-0031：横幅入形状阶梯（旧直角矩形退役），内边距统一
+        shape = RoundedCornerShape(16.dp),
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp)
             .clickable(onClick = onDismiss),
     ) {
-        Box(modifier = Modifier.padding(8.dp)) {
+        Box(modifier = Modifier.padding(12.dp)) {
             Text(
                 text = message,
                 style = MaterialTheme.typography.bodySmall,
@@ -606,11 +546,13 @@ private fun ErrorBanner(message: String, onDismiss: () -> Unit) {
 private fun InfoBanner(message: String) {
     Surface(
         color = MaterialTheme.colorScheme.secondaryContainer,
+        // ADR-0031：横幅入形状阶梯（旧直角矩形退役），内边距统一
+        shape = RoundedCornerShape(16.dp),
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp),
     ) {
-        Box(modifier = Modifier.padding(8.dp)) {
+        Box(modifier = Modifier.padding(12.dp)) {
             Text(
                 text = message,
                 style = MaterialTheme.typography.bodySmall,
