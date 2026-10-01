@@ -92,7 +92,7 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
           <button
             type="button"
             onClick={() => window.location.assign(HOME_PATH)}
-            style={{ ...fallbackButtonStyle, background: 'var(--qm-primary)', color: 'var(--qm-primary-foreground)', border: 'none' }}
+            style={{ ...fallbackButtonStyle, background: 'var(--qm-primary)', color: 'var(--qm-on-accent)', border: 'none' }}
           >
             返回首页
           </button>
