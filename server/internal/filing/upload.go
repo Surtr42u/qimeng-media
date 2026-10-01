@@ -24,9 +24,8 @@ var (
 // allowedExtensions 扩展名白名单及其期望 MIME。
 //
 // 清单依据：docs/SECURITY.md「上传安全」与 docs/DOMAIN_RULES.md §9。两处视频
-// 清单有出入（DOMAIN_RULES §9 无 m4v，SECURITY 有），本表取 SECURITY 超集：
-// m4v 与 mp4 同为 ISO BMFF 容器（major_brand 可能相同），拒绝 m4v 会让 iPhone
-// 拍摄的视频无法直传。m4v 与 mp4 因此映射到同一 MediaType。
+// 清单一致（均含 m4v）：m4v 与 mp4 同为 ISO BMFF 容器（major_brand 可能相同），
+// m4v 与 mp4 因此映射到同一 MediaType。
 var allowedExtensions = map[string]MediaType{
 	".jpg":  ImageJPEG,
 	".jpeg": ImageJPEG,

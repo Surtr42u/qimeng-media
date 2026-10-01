@@ -58,7 +58,7 @@
 3. **http 指标不覆盖三类请求**：参数绑定失败的 400（gen 绑定层在中间件之前短路返回）、未匹配路由的 404（ServeMux 直接兜底）与方法不匹配的 405（同为 ServeMux 兜底，不经包装器）。三者均不产生 http_requests_total / duration 序列，属既定口径而非缺陷。
 4. **scan_duration_seconds 仅在扫描成功返回时 Set**（与 help「上次全量扫描耗时」一致）：失败路径保留上次成功值。API 触发与 watch 轮询两条扫描入口汇聚在 `Scanner.Scan`，单点覆盖。
 5. **library_files 与 trash_items/trash_bytes 是变更点推送刷新**，不是定时采样：library_files 刷新时机 = 扫描完成（FinishScan）/上传入库/删除进回收站/回收站恢复四处；trash 刷新时机 = 删除入站/恢复/单条物理删除/清空回收站四处 + 到期清扫有清除时（trash_sweeper.go，2026-09-22 起；零清除的巡检不刷）。两次变更之间指标保持上次值（秒级陈旧可接受）。trash 的真实数据源是磁盘 meta 文件遍历，不是库表（trash_items 表为历史迁移遗留，只留不读）。
-6. **thumb_queue_depth 已接线、当前恒 0**：工作池就绪但 M3 缩略图预热未接入，尚无生产者提交任务——属"接线完成待激活"，非故障；M3 预热接入后自动出数。
+6. **thumb_queue_depth 已接线**：已随缩略图预热接入出数（开机回填/按需生成经 Submit 提交时实时刷新）。
 
 ### 展示（两种）
 
@@ -70,11 +70,11 @@
 - `slog` 结构化 JSON 日志：时间/级别/模块/事件/关键字段（直写 stdout；容器部署的落盘轮转已实现——`deploy/docker-compose.yml` 对服务配置 json-file 驱动，max-size 10MB × max-file 3 封顶，2026-10-01 第四百一十九笔；非 Docker 形态的应用层自行落盘仍为规划项）。
 - 访问日志（方法/路径/状态/耗时/token 前 4 位）为规划项未实现：当前请求级可观测性由 http_requests_total / http_request_duration_seconds 指标覆盖（计数与延迟，不含逐请求日志）。实现时须遵守 SECURITY 红线 7 脱敏口径。
 - `推荐流冷算分段耗时`（2026-09-29）：/recommendations 缓存未命中路径的分段观测——query（候选聚合 SQL）/algorithm（打分+打散纯函数）/assemble（摘要装配）三段与 total，附 seed/candidates/limit。手机单机形态冷算秒级时用它区分「查询贵/算法贵/装配贵」，免拉库取证（2026-09-29「刷新半天才加载」排查落地）。
-- 等级：默认 info；`QM_LOG_LEVEL=debug` 排障；循环内禁止逐条日志（旧项目"50 次记 1 条采样"经验保留）。
+- 等级：默认 info；`QIMENG_LOG_LEVEL=debug` 排障；循环内禁止逐条日志（旧项目"50 次记 1 条采样"经验保留）。
 
 ## 健康检查
 
-`GET /api/v1/healthz`（免鉴权，`api/openapi.yaml` 标 `security: []`）：进程存活；`GET /api/v1/readyz`（免鉴权，同样 `security: []`）：**当前实现只检查数据库可达**（PingContext，httpapi/server.go GetApiV1Readyz；媒体库目录可达/磁盘余量告警为规划扩展，接入时需同步更新本节与协议描述）。服务端同时保留根路径 `/healthz`、`/readyz` 作为运维探针别名（docker/k8s 惯例，行为一致，不属于 API 协议面）——Docker healthcheck 与 fnOS 部署用根路径即可。
+`GET /api/v1/healthz`（免鉴权，`api/openapi.yaml` 标 `security: []`）：进程存活；`GET /api/v1/readyz`（免鉴权，同样 `security: []`）：**当前实现只检查数据库可达**（PingContext，httpapi/server.go GetApiV1Readyz；媒体库目录可达/磁盘余量告警为规划扩展，接入时需同步更新本节与协议描述）。服务端同时保留根路径 `/healthz`、`/readyz` 作为运维探针别名（docker/k8s 惯例，行为一致，不属于 API 协议面）——根路径别名可用；deploy 样例实际用 /api/v1/healthz。
 
 ## 后置可选：Grafana 增强包（不进默认部署）
 
