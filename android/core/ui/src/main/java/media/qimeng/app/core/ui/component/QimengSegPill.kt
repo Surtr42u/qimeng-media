@@ -1,8 +1,8 @@
 package media.qimeng.app.core.ui.component
 
-import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -21,11 +21,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import media.qimeng.app.core.ui.theme.QimengDimens
 
-/** 按下缩放最小值（GUIDE_UI §UI约束「按下反馈动画」0.92→1.0，旧版 PressAnimation 同值） */
-private const val SEG_PILL_PRESSED_SCALE = 0.92f
-
-/** 按下缩放动画时长 ms（旧版 PressAnimation=100ms AccelerateDecelerateInterpolator 的 Compose 对应） */
-private const val SEG_PILL_PRESS_SCALE_DURATION_MS = 100
+/** 按压缩放最小值（ADR-0031 玻璃微交互 0.96；旧 0.92 大幅缩放随旧胶囊语言退役） */
+private const val SEG_PILL_PRESSED_SCALE = 0.96f
 
 /**
  * 分段选择胶囊（任务 H1：内部实现从自绘 Text+clip+background 换 M3 [FilterChip] 标准件）。
@@ -49,8 +46,8 @@ private const val SEG_PILL_PRESS_SCALE_DURATION_MS = 100
  * 收口：首页三胶囊/相册芯片/缓存档位等消费方一并紧凑化，即旧版 30-32dp 紧凑胶囊语言。
  * 字号同步压回 labelMedium 12sp=旧版 textSize 12sp（styles.xml L13，全仓胶囊统一字号）。
  *
- * 按下缩放反馈（GUIDE_UI §UI约束 L312，任务I I1 补齐）：pressed 0.92→1.0（[SEG_PILL_PRESSED_SCALE]/
- * [SEG_PILL_PRESS_SCALE_DURATION_MS]）；全仓胶囊单源在本组件，一处补齐全局生效（首页三胶囊等）。
+ * 按下缩放反馈（ADR-0031 玻璃微交互，2026-10-02 起）：pressed 0.96→1.0 spring 回弹
+ * （旧 GUIDE_UI 0.92/100ms tween 款随旧视觉语言退役）；全仓胶囊单源在本组件，一处改全局生效。
  *
  * 本组件仍是全仓单枚胶囊渲染的唯一来源（PillChip 经此委托）。QimengFilterSheet 标签胶囊
  * 因 M3 芯片无长按能力（两轮标准件化实测破坏功能）保留手绘实现，属已记档例外，
@@ -68,14 +65,16 @@ fun QimengSegPill(
     modifier: Modifier = Modifier,
 ) {
     // 按下态经自持 interactionSource 观测（传入 FilterChip 覆盖其默认源），缩放在
-    // graphicsLayer 块内延迟读取 pressScale，缩放动画不触发重组
+    // graphicsLayer 块内延迟读取 pressScale，缩放动画不触发重组。
+    // ADR-0031：tween(100ms) 换 spring 物理（medium bouncy 回弹=玻璃微交互规范；
+    // 1x-100ms 定宽动画是旧版语言）
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val pressScale by animateFloatAsState(
         targetValue = if (pressed) SEG_PILL_PRESSED_SCALE else 1f,
-        animationSpec = tween(
-            durationMillis = SEG_PILL_PRESS_SCALE_DURATION_MS,
-            easing = FastOutSlowInEasing,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium,
         ),
         label = "qimengSegPillPressScale",
     )

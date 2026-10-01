@@ -21,7 +21,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import media.qimeng.app.core.ui.theme.QimengDimens
 
@@ -39,9 +38,9 @@ private val SKELETON_GRID_INTER_ITEM_SPACING = 0.dp
 /** 卡片外层 padding=5dp（对齐 QimengMediaGrid.CARD_OUTER_PADDING，旧版 item_media_thumbnail.xml root padding） */
 private val SKELETON_CARD_OUTER_PADDING = 5.dp
 
-/** 卡片圆角=旧版 outline 24f **像素**值非 dp（对齐 QimengMediaGrid.LEGACY_CARD_CORNER_RADIUS_PX，
- *  使用处经 [LocalDensity] 运行时 toDp() 换算，不同密度设备观感一致） */
-private const val SKELETON_CARD_CORNER_RADIUS_PX = 24f
+/** 卡片圆角=媒体卡同款 token（ADR-0031：对齐 QimengMediaGrid.CARD_CORNER_RADIUS=18dp，
+ *  旧 24f 像素实录值退役；骨架→真卡同位替换不跳动） */
+private val SKELETON_CARD_CORNER_RADIUS = QimengDimens.MediaCardCornerRadius
 
 // ---------- 脉动动画参数 ----------
 
@@ -86,11 +85,8 @@ fun QimengSkeletonGrid(
         ),
         label = "qimengSkeletonPulseAlpha",
     )
-    // 旧版圆角是像素值：运行时按屏幕密度换算（QimengMediaGrid.AssetCard 同款写法），
-    // 组件级解析一次供全部占位格复用
-    val cellShape = RoundedCornerShape(
-        with(LocalDensity.current) { SKELETON_CARD_CORNER_RADIUS_PX.toDp() },
-    )
+    // 媒体卡同款圆角 token（ADR-0031 对齐，组件级解析一次供全部占位格复用）
+    val cellShape = RoundedCornerShape(SKELETON_CARD_CORNER_RADIUS)
 
     LazyVerticalGrid(
         columns = GridCells.Fixed(columns),

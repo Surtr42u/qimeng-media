@@ -2,6 +2,7 @@ package media.qimeng.app.core.ui.component
 
 import android.content.Context
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -31,7 +32,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -45,6 +45,7 @@ import coil3.size.Size
 import media.qimeng.app.core.model.GridSection
 import media.qimeng.app.core.model.MediaAsset
 import media.qimeng.app.core.model.MediaKind
+import media.qimeng.app.core.ui.glass.pressScale
 import media.qimeng.app.core.ui.theme.QimengDimens
 
 /** 距底预加载阈值（LEGACY §H：距底 ≤6 项提前加载；数值与 RecommendPaging.PRELOAD_DISTANCE 同语义，
@@ -103,9 +104,12 @@ private val CARD_OUTER_PADDING = 5.dp
  *  由 [CARD_OUTER_PADDING] 提供，此处归零即可回归旧版密度） */
 private val GRID_INTER_ITEM_SPACING = 0.dp
 
-/** 旧版圆角 outline 24f——**像素**值非 dp（item_media_thumbnail.xml outline radius 24f），
- *  使用处经 [LocalDensity] 运行时 toDp() 换算，不同密度设备观感一致 */
-private const val LEGACY_CARD_CORNER_RADIUS_PX = 24f
+/** 媒体卡圆角（ADR-0031 大圆角语言 18dp；旧版 outline 24f 像素实录值随旧视觉语言退役）。
+ *  与 QimengSkeletonGrid 骨架格几何对齐（同 token 消费），骨架→真卡同位替换不跳动 */
+private val CARD_CORNER_RADIUS = QimengDimens.MediaCardCornerRadius
+
+/** 媒体卡按压缩放档（ADR-0031 玻璃微交互；媒体面比胶囊略深一档的「捏住」感） */
+private const val CARD_PRESSED_SCALE = 0.95f
 
 /** 时长角标文字样式：白字 12sp + 阴影、无胶囊底（旧版 §缩略图口径；G5 的 clip 胶囊底已删）。
  *  阴影保证浅色画面上可读——规格只要求「有阴影」未定参数，取常规柔和档：
@@ -332,14 +336,13 @@ fun QimengMediaGrid(
 }
 
 /**
- * 资产卡片：旧版极简卡（任务L L1，2026-09-09 拍板，覆盖 G5「Web MediaCard 四层」）——
- * 结构 = 16:9 缩略图 + 视频时长纯文字角标，**无标题 / 无作者 / 无日期**
- * （旧版 item_media_thumbnail.xml 实测口径）。
+ * 资产卡片：结构 = 16:9 缩略图 + 视频时长纯文字角标，**无标题 / 无作者 / 无日期**
+ * （旧版 item_media_thumbnail.xml 实测口径；视觉随 ADR-0031 换装「流光玻璃」语言）。
  * - 外层 padding [CARD_OUTER_PADDING]（旧版 root padding=5dp）；
- * - 圆角 [LEGACY_CARD_CORNER_RADIUS_PX] 为旧版**像素**值，经 [LocalDensity] 运行时换算 dp；
- * - 占位/错误底 = 旧版 qmColorChipBg 等价主题 token（在 [QimengThumbnail] 内，secondaryContainer）；
+ * - 圆角 [CARD_CORNER_RADIUS]（ADR-0031 18dp token；旧版 24f 像素实录值退役）；
+ * - 占位/错误底 = 主题 token（在 [QimengThumbnail] 内，secondaryContainer）；
  * - 角标 [DurationBadgeTextStyle] 白字 12sp + 阴影、右下 8dp、无胶囊底；
- * - 无按下缩放动画（旧版无 scale/press 效果，保持 [clickable] 默认点击态即可，禁止再加缩放修饰）。
+ * - 按压缩放微交互（ADR-0031；旧「禁止缩放修饰」拍板随旧视觉语言退役，见函数体内注释）。
  * 动图（animated_image）走原件直链动画（拍板条目 9）：解析经 [animatedUrlResolver]
  * （VM 侧带内存缓存的 AssetOrigUrlResolver），解析完成前显示服务端缩略图。
  * 详情跳转是 M4-3 交界：onClick 由壳层接线。
@@ -365,8 +368,10 @@ private fun AssetCard(
     // 缓存——原件体积大，落盘会挤爆 LRU 档位把小缩略图淘掉（用户实测本地缓存 1.7GB vs
     // 服务端缩略图仅 155MB 的主因）；缩略图阶段/静态图照常落盘
     val diskCacheEnabled = animatedOrigUrl == null
-    // 旧版圆角是像素值：运行时按屏幕密度换算（KDoc 规格要求的 toDp() 写法）
-    val cornerRadius = with(LocalDensity.current) { LEGACY_CARD_CORNER_RADIUS_PX.toDp() }
+    // ADR-0031：圆角换 [CARD_CORNER_RADIUS]（18dp token，旧 24f 像素实录退役），并补
+    // spring 按压缩放微交互（旧「禁止加缩放修饰」拍板随旧视觉语言退役——缩放在
+    // graphicsLayer 块内延迟读取，动画不触发重组；ripple 关闭，缩放即反馈）
+    val interactionSource = remember { MutableInteractionSource() }
     // exp#4 预载翼的入队上下文（单例 ImageLoader 经 context 取，与详情预载链同源）
     val context = LocalContext.current
     Box(
@@ -374,14 +379,19 @@ private fun AssetCard(
             .padding(CARD_OUTER_PADDING)
             .fillMaxWidth()
             .thumbnailAspectRatio()
-            // 先 clip 后 clickable：ripple 限定在圆角内；仅默认点击态，无缩放/按压动画
-            .clip(RoundedCornerShape(cornerRadius))
-            .clickable(onClick = {
-                // exp#4 预载翼：导航前抢跑海报加载（为什么见 preloadDetailPoster KDoc）；
-                // 卡上持有的正是详情舞台将渲的同一 URL（视频/动图），预载→转场首帧命中
-                preloadDetailPoster(context, asset.mediaType, thumbModel)
-                onClick()
-            }),
+            .pressScale(interactionSource, pressedScale = CARD_PRESSED_SCALE)
+            // 先 clip 后 clickable：ripple 限定在圆角内
+            .clip(RoundedCornerShape(CARD_CORNER_RADIUS))
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = {
+                    // exp#4 预载翼：导航前抢跑海报加载（为什么见 preloadDetailPoster KDoc）；
+                    // 卡上持有的正是详情舞台将渲的同一 URL（视频/动图），预载→转场首帧命中
+                    preloadDetailPoster(context, asset.mediaType, thumbModel)
+                    onClick()
+                },
+            ),
     ) {
         QimengThumbnail(
             model = thumbModel,

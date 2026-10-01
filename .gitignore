@@ -92,3 +92,6 @@ android/app/src/main/jniLibs/
 /交接报告*.md
 /REQ-*.md
 任务书*.md
+
+# 任务2 UI 走查截图（合成测试库帧，仍按截图纪律不入库；ui/app-redesign 分支自建）
+.ui-shots/

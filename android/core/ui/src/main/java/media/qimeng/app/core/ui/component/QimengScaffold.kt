@@ -15,6 +15,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import media.qimeng.app.core.ui.theme.QimengDimens
 
@@ -49,8 +50,10 @@ fun QimengTopBar(
             }
         },
         actions = { actions() },
+        // ADR-0031：顶栏透明化——覆盖页透出壳层极光氛围底，页面间无「顶栏底色断层」；
+        // 滚动内容上浮经顶栏区域时的可读性由页面自身内容短标题区保证（列表页首屏即标题）
         colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = MaterialTheme.colorScheme.background,
+            containerColor = Color.Transparent,
         ),
         modifier = modifier,
     )
