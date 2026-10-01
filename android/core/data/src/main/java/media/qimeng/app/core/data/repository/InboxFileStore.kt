@@ -112,8 +112,10 @@ class InboxFileStore @Inject constructor() {
     /**
      * 库名 -> 归档子目录名：非法字符替换为 [LIBRARY_DIR_SANITIZE_CHAR]。
      * 空/空白（trim 后）返回 null——调用方按归档失败处理（回退 uploaded/ 归档）。
+     * internal（2026-10-01 归档一键上传）：归档读取侧（ArchiveBatchScan.kt）反向匹配
+     * 文件夹名复用同一实现，保证「建目录名」与「匹配目录名」单一事实源；规则本体不变。
      */
-    private fun sanitizeLibraryDirName(libraryName: String): String? {
+    internal fun sanitizeLibraryDirName(libraryName: String): String? {
         val sanitized = buildString {
             for (c in libraryName.trim()) {
                 append(if (c in LIBRARY_DIR_ILLEGAL_CHARS) LIBRARY_DIR_SANITIZE_CHAR else c)

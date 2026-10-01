@@ -3,7 +3,10 @@ package media.qimeng.app.feature.upload
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import java.io.File
 import javax.inject.Inject
+import kotlin.coroutines.coroutineContext
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -14,9 +17,13 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import media.qimeng.app.core.data.di.IoDispatcher
 import media.qimeng.app.core.data.repository.AuthorRepository
 import media.qimeng.app.core.data.repository.StagingRepository
 import media.qimeng.app.core.data.repository.UploadRepository
+import media.qimeng.app.core.data.upload.ArchiveBatchItem
+import media.qimeng.app.core.data.upload.scanArchiveForUpload
 import media.qimeng.app.core.model.AuthorSuggestion
 import media.qimeng.app.core.model.LibraryChoice
 import media.qimeng.app.core.model.StagingBatchConfig
@@ -38,16 +45,32 @@ import media.qimeng.app.core.model.individualSourceWords
  * 挂靠批：批次默认随载荷入队，挂靠执行在 worker 的 201 之后（mode=append、失败不重试）。
  * 作者仅能选既有（服务端无按名新建端点，联想无命中提示不发请求）；
  * 来源挂靠以作者为前提（服务端来源区挂在作者块下），清作者连带清来源。
+ * 归档一键上传（2026-10-01）：归档根已配置时在库列表就绪后 IO 扫描（scanArchiveForUpload
+ * 纯函数 + 内存库列表），确认后按逐条匹配库分组走既有入队管道（alreadyArchived=true，
+ * worker 侧跳过二次归档）；不受「未选库」门禁约束——条目自带逐条目标库。入队成功后
+ * 源文件仍留在归档根，重扫由防重入队门禁（archiveBatchEnqueued）挡住整批重复入队，
+ * 重扫文件数变化自动复位；超限条目本地拦截（与手动直传同一单源）。
  */
 @HiltViewModel
 class UploadViewModel @Inject constructor(
     private val uploadRepository: UploadRepository,
     private val authorRepository: AuthorRepository,
     private val stagingRepository: StagingRepository,
+    /** 归档扫描是磁盘遍历（IO 性质）；测试注入测试调度器保证确定性 */
+    @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) : ViewModel() {
 
     /** 页面会话态（批次默认由 uiState combine 侧以仓库流覆写，见下） */
     private val form = MutableStateFlow(UploadUiState())
+
+    /** 归档扫描任务（新扫描顶替旧扫描，防并发扫描竞写状态） */
+    private var archiveScanJob: Job? = null
+
+    /**
+     * 防重入队门禁的比对基准：入队成功时那一轮扫描的条目总数（null = 本会话尚未成功
+     * 入队过）。重扫结果文件数与该值不同 = 归档区内容已变化，复位门禁（refreshArchiveBatch）。
+     */
+    private var archiveEnqueuedScanCount: Int? = null
 
     /**
      * 会话态 + 持久流合并。Eagerly 而非 WhileSubscribed：上传页是低频页面、队列流只是
@@ -93,6 +116,58 @@ class UploadViewModel @Inject constructor(
                 }
             } catch (e: Exception) {
                 form.update { it.copy(loading = false, errorMessage = LOAD_FAILED_MESSAGE) }
+            }
+            // 归档一键重传扫描（2026-10-01）：在库加载 try/catch 之外独立执行——库列表加载
+            // 失败也让它跑（失败时空库列表会如实落「未找到同名库」未匹配清单，不静默隐藏
+            // 归档区现状），不等待 limits 网络往返
+            refreshArchiveBatch()
+        }
+    }
+
+    /**
+     * 归档一键重传扫描（2026-10-01 归档一键上传）：归档根已配置时在 IO 协程跑
+     * [scanArchiveForUpload] 纯函数（目标库匹配用内存库列表）；未配置则清空扫描态。
+     * 库列表加载失败时仍扫描（调用点在库加载 try/catch 之外）——匹配不到库的文件夹会
+     * 如实落「未找到同名库」未匹配清单，不因网络问题静默隐藏归档区现状。
+     * public：入队成功后 VM 自触发重扫（防重入队门禁的复位判定挂在此处），单测以直调
+     * 驱动「文件数变化复位门禁」路径；新扫描顶替旧扫描（防并发扫描竞写状态）。
+     */
+    fun refreshArchiveBatch() {
+        archiveScanJob?.cancel()
+        archiveScanJob = viewModelScope.launch {
+            val scanJob = coroutineContext[Job]
+            val archiveRoot = stagingRepository.archivePath.first()
+            if (archiveRoot == null) {
+                archiveEnqueuedScanCount = null
+                form.update {
+                    it.copy(archiveBatch = null, archiveBatchLoading = false, archiveBatchEnqueued = false)
+                }
+                return@launch
+            }
+            form.update { it.copy(archiveBatchLoading = true) }
+            try {
+                val result = withContext(ioDispatcher) {
+                    scanArchiveForUpload(File(archiveRoot), form.value.libraries)
+                }
+                // 防重入队门禁复位判定：重扫文件数与入队时不同 = 归档区内容已变化，解除
+                // 门禁允许新一轮一键上传；文件数未变（源文件上传成功前仍原位）则保持置位
+                val enqueuedScanCount = archiveEnqueuedScanCount
+                val gateLifted = enqueuedScanCount != null && result.items.size != enqueuedScanCount
+                if (gateLifted) archiveEnqueuedScanCount = null
+                form.update {
+                    it.copy(
+                        archiveBatch = result,
+                        archiveBatchLoading = false,
+                        archiveBatchEnqueued = it.archiveBatchEnqueued && !gateLifted,
+                    )
+                }
+            } finally {
+                // 审查修整项：job 在 loading=true 后被取消时终态必须复位，否则归档区卡「扫描中」。
+                // 仅当自己仍是当前扫描 job 时才回写——viewModelScope 走 Main.immediate，被顶替的
+                // 旧 job 的取消续体会晚于新 job 体开跑，无守卫会把新扫描刚置位的 loading 清掉
+                if (archiveScanJob === scanJob) {
+                    form.update { it.copy(archiveBatchLoading = false) }
+                }
             }
         }
     }
@@ -272,11 +347,12 @@ class UploadViewModel @Inject constructor(
             }
             refreshLimits()
             val limits = form.value.limits
-            val blocked = limits?.let { rule -> described.filter { rule.overLimit(it.sizeBytes) } }.orEmpty()
-            val blockedUris = blocked.map { it.uri }.toSet()
-            val allowed = described.filterNot { it.uri in blockedUris }
+            // 本地超限拦截（与归档一键路径同一单源 partitionOverLimit；口径见 UploadUiState.kt）
+            val (blocked, allowed) = partitionOverLimit(described, limits) { it.sizeBytes }
             if (allowed.isEmpty()) {
-                form.update { it.copy(submitting = false, blockMessage = blockText(limits, blocked)) }
+                form.update {
+                    it.copy(submitting = false, blockMessage = blockText(limits, blocked) { it.effectiveUploadName })
+                }
                 return@launch
             }
             try {
@@ -285,7 +361,12 @@ class UploadViewModel @Inject constructor(
                     batchLibraryId,
                     form.value.selectedDirPath,
                 )
-                form.update { it.copy(submitting = false, blockMessage = blockText(limits, blocked)) }
+                form.update {
+                    it.copy(
+                        submitting = false,
+                        blockMessage = blockText(limits, blocked) { it.effectiveUploadName },
+                    )
+                }
             } catch (e: Exception) {
                 form.update { it.copy(submitting = false, errorMessage = ENQUEUE_FAILED_MESSAGE) }
             }
@@ -307,6 +388,80 @@ class UploadViewModel @Inject constructor(
      */
     private fun libraryNameOf(libraryId: String?): String =
         libraryId?.let { id -> uiState.value.libraries.firstOrNull { it.id == id }?.name }.orEmpty()
+
+    // ---- 归档一键上传（2026-10-01） ----
+
+    /**
+     * 归档一键上传（用户在确认弹窗点确认后调用）：把扫描条目按目标库分组走**既有入队管道**
+     * ——每条 libraryId/libraryName 用该条文件夹匹配到的库（不用批次默认库，也不继承批次
+     * 作者/来源：归档区是用户整理过的存量，整批挂同一个默认作者等于错误挂靠）；dir 用
+     * 条目 relDir（经 UploadItem.relativeDir 拼接，沿用「库内子目录」dir 语义）；条目一律
+     * alreadyArchived=true（源已在归档根，worker 上传成功后跳过归档移动，见 UploadWorker）。
+     * 门禁口径：不受「未选库」门禁约束（条目自带逐条目标库）；items 为空（无匹配条目）
+     * 不允许触发；防重入队门禁（archiveBatchEnqueued）置位时拦截——入队成功后源文件仍在
+     * 归档根，重扫文件数变化前不允许整批再入队（重复确认 = 服务端同名副本）。
+     * 超限口径：现取服务端配置逐项判超限（与手动直传同一单源 partitionOverLimit），超限
+     * 条目本地拦截不入队、给 blockText 文案；全部超限整批不入队且不置门禁（归档区未变，
+     * 调整配置后可重试）。入队成功后扫描态归零并立即重扫（文件上传成功前仍原位，重扫会
+     * 再列出——由门禁位挡住重复入队，文件数变化时自动复位）；队列进度由既有 queueUpdates
+     * 流呈现（队列区自动出现）。
+     */
+    fun onArchiveBatchUpload() {
+        val scan = form.value.archiveBatch ?: return
+        if (scan.items.isEmpty()) return
+        if (form.value.submitting) return
+        if (form.value.archiveBatchEnqueued) return
+        viewModelScope.launch {
+            form.update { it.copy(submitting = true, blockMessage = null, errorMessage = null) }
+            try {
+                refreshLimits()
+                val limits = form.value.limits
+                val (overLimited, allowed) = partitionOverLimit(scan.items, limits) { it.file.length() }
+                if (allowed.isEmpty()) {
+                    form.update {
+                        it.copy(
+                            submitting = false,
+                            blockMessage = blockText(limits, overLimited) { it.file.name },
+                        )
+                    }
+                    return@launch
+                }
+                allowed.groupBy { it.libraryId }.forEach { (libraryId, groupItems) ->
+                    uploadRepository.enqueue(
+                        groupItems.map { it.toUploadItem() },
+                        libraryId,
+                        // 调用级 dir 传库根：条目各自的 relDir 经 relativeDir 拼成任务自己的 dir
+                        dir = "",
+                        libraryName = groupItems.first().libraryName,
+                    )
+                }
+                // 入队成功：记录比对基准（入队时那轮扫描的条目总数）→ 扫描态归零并立即重扫
+                archiveEnqueuedScanCount = scan.items.size
+                form.update {
+                    it.copy(
+                        submitting = false,
+                        noticeMessage = archiveBatchQueuedMessage(allowed.size),
+                        blockMessage = blockText(limits, overLimited) { it.file.name },
+                        archiveBatch = null,
+                        archiveBatchEnqueued = true,
+                    )
+                }
+                refreshArchiveBatch()
+            } catch (e: Exception) {
+                form.update { it.copy(submitting = false, errorMessage = ENQUEUE_FAILED_MESSAGE) }
+            }
+        }
+    }
+
+    /** 扫描条目 -> 上传条目（路径类 uri 直传 + 逐条目标库/子目录 + alreadyArchived 旗标） */
+    private fun ArchiveBatchItem.toUploadItem() = UploadItem(
+        uri = file.absolutePath,
+        displayName = file.name,
+        sizeBytes = file.length(),
+        relativeDir = relDir,
+        libraryName = libraryName,
+        alreadyArchived = true,
+    )
 
     // ---- 拦截/错误/提示 ----
 

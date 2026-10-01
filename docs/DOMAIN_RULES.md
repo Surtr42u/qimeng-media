@@ -202,7 +202,7 @@
 
 | 旧段 | 新去向 |
 |---|---|
-| mediaFiles | 按文件名匹配建 asset（库内定位后建立 asset_id 映射） |
+| mediaFiles | 按文件名匹配目标库**既有**资产建立 asset_id 映射（不创建资产） |
 | settings/scanSources | 提示用户重新配置库目录（SAF 目录概念不存在） |
 | authors + authorMediaRefs + cosWorks | 作者表 + 关联（cos_ 前缀保留） |
 | tags + mediaTagRefs | 标签 + 关联 |
@@ -213,6 +213,8 @@
 | appPrefs.recommendationPrefs | 用户推荐偏好 |
 
 迁移端点幂等（重复导入按内容去重不翻倍）；幂等范围明示：作者/标签/关联/时间轴/收藏/点赞按唯一键或内容键 upsert 天然幂等，事件回放以 exportedAtMillis 为批次锚点——**同批次**重复导入整体跳过（快速路径，跨批次幂等由内容键保证）；导入回放按确定性内容键幂等去重（键=回放路径前缀:资产:事件类:日/序号，写 client_event_id 唯一索引拦重）——同一来源换新批次再导入只增量补写新事件，浏览统计不再重复累计；统计缺口（gap）合成事件按『路径:资产:类:序号』identity 稳定复用，缺口收窄时旧事件不回收（宁少勿重）；dwell 秒数取首写值。上报路径 POST view-event 自 2026-09-10 起以 `clientEventId` 为幂等唯一键（migration 0010）；导入回放内容键一律带 `legacy:` 前缀，与客户端 UUID 天然区分，两语境不冲突；cosWorks 段不逐条导入（作品为 COS 目录派生信息、无文件级映射可迁），cos_ 作者由 authors 段建立、文件关联以 kind=cos 重新扫描重建。
+
+**未匹配与载荷边界（2026-10-01 文档澄清，第四百二十五笔）**：导入不创建资产、不删除任何既有数据；目标库没有同名文件（recordKey 匹配不上既有资产）时，该文件的作者/标签关联计入响应 skipped 计数，行为数据（浏览/点赞/收藏/时间轴）静默跳过，assetsMatched/mediaFilesTotal 可看匹配率。备份载荷不含媒体文件本体、不含 TXT 作者片段——文件本体走上传通道（直传/分片/ADR-0030 本机同步），TXT 片段单独走 /authors/import-txt/export + POST /authors/import-txt。
 
 **标签组同步语义（2026-09-20 用户拍板）**：资产标签组带改动时间——`assets.tag_set_updated_at`（migration 0012 新增，RFC3339，`''` = 未知/旧数据），任何标签组变更（替换式 PUT、单关联解绑、删除标签级联清关联、导入改写）随动写服务器当前时刻；备份 mediaFiles 条目新增可选 `tagsUpdatedAtMillis`（该资产标签组最后改动毫秒；缺省或 ≤0 = 未知，旧版备份恒缺省）。导入按资产逐个判定：**两侧时间都已知且备份 > 库内** → 该资产标签组整体替换为备份集（清空后按 mediaTagRefs 重挂）并把库内时间改写为备份时间、替换资产数计入结果 `assetsTagsReplaced`；其余情况（任一侧未知 / 备份 ≤ 库内）维持并集合并（只增不删）且**不改写库内时间**——并集结果没有单一来源时刻，宁可保留「未知」也不造假版本。导出恒带 `tagsUpdatedAtMillis`（库内 `''` → 字段缺省）。标签池（tags 段）始终并集 upsert，不参与时间判定。
 

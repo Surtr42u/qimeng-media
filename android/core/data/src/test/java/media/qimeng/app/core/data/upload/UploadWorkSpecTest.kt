@@ -18,6 +18,7 @@ class UploadWorkSpecTest {
         attachAuthorId: String? = null,
         attachSources: List<String>? = null,
         libraryName: String = "",
+        alreadyArchived: Boolean = false,
     ) = UploadWorkSpec.UploadRequestSpec(
         localId = "local-1",
         uri = uri,
@@ -29,6 +30,7 @@ class UploadWorkSpecTest {
         attachAuthorId = attachAuthorId,
         attachSources = attachSources,
         libraryName = libraryName,
+        alreadyArchived = alreadyArchived,
     )
 
     // ---- 入队载荷映射 ----
@@ -121,6 +123,37 @@ class UploadWorkSpecTest {
         val back = UploadWorkSpec.specFromInputData(legacy)
         assertNotNull(back)
         assertEquals("", back!!.libraryName)
+    }
+
+    // ---- alreadyArchived 键（2026-10-01 归档一键上传） ----
+
+    @Test
+    fun `alreadyArchived随载荷往返无损`() {
+        val data = UploadWorkSpec.itemToInputData(spec(alreadyArchived = true))
+        val back = UploadWorkSpec.specFromInputData(data)
+        assertNotNull(back)
+        assertTrue(back!!.alreadyArchived)
+    }
+
+    @Test
+    fun `默认不写alreadyArchived键旧载荷缺键反解回退false`() {
+        // 既有直传管道 spec 默认 alreadyArchived=false：不写键（可空键同款口径）
+        assertFalse(
+            UploadWorkSpec.itemToInputData(spec())
+                .getBoolean(UploadWorkSpec.KEY_ALREADY_ARCHIVED, false),
+        )
+        // 旧在途载荷缺键：反解回退 false，worker 维持既有归档行为
+        val legacy = androidx.work.Data.Builder()
+            .putString(UploadWorkSpec.KEY_LOCAL_ID, "local-1")
+            .putString(UploadWorkSpec.KEY_URI, "/storage/emulated/0/.dl/a.jpg")
+            .putString(UploadWorkSpec.KEY_LIBRARY_ID, "lib-uuid")
+            .putString(UploadWorkSpec.KEY_DIR, "")
+            .putString(UploadWorkSpec.KEY_DISPLAY_NAME, "a.jpg")
+            .putLong(UploadWorkSpec.KEY_SIZE_BYTES, 1L)
+            .build()
+        val back = UploadWorkSpec.specFromInputData(legacy)
+        assertNotNull(back)
+        assertFalse(back!!.alreadyArchived)
     }
 
     // ---- 兼容锁定：旧在途载荷（含已退役挂靠键）反解为纯上传 ----

@@ -1,5 +1,6 @@
 package media.qimeng.app.feature.upload
 
+import media.qimeng.app.core.data.upload.ArchiveBatchScanResult
 import media.qimeng.app.core.model.AuthorSuggestion
 import media.qimeng.app.core.model.DirNode
 import media.qimeng.app.core.model.LibraryChoice
@@ -28,11 +29,31 @@ internal const val DESCRIBE_FAILED_MESSAGE = "读取所选文件信息失败，�
 internal const val ENQUEUE_FAILED_MESSAGE = "上传任务创建失败，请重试"
 internal const val ONLY_EXISTING_AUTHORS = "未找到该作者：仅能选择已有作者，请从联想中选择"
 
-/** 超限拦截文案（中文；列明上限与被拦文件；VM 与状态同文件单源） */
-internal fun blockText(limits: UploadLimits?, blocked: List<UploadItem>): String? {
+/** 归档一键上传入队成功提示（count = 入队文件数；队列进度由既有 queueUpdates 流呈现） */
+internal fun archiveBatchQueuedMessage(count: Int): String = "已加入上传队列：共 $count 个文件"
+
+/**
+ * 本地超限过滤（口径单源：手动直传 submitUris 与归档一键上传两路共用；判定走
+ * [UploadLimits.overLimit] 唯一实现，调用侧禁止复制 MB 换算/边界口径）。
+ * limits 为 null（GET /config 不可得）时不拦——交服务端 413 兜底（冻结口径）。
+ * 返回（超限项, 放行项）。
+ */
+internal fun <T> partitionOverLimit(
+    entries: List<T>,
+    limits: UploadLimits?,
+    sizeOf: (T) -> Long,
+): Pair<List<T>, List<T>> =
+    limits?.let { rule -> entries.partition { rule.overLimit(sizeOf(it)) } }
+        ?: (emptyList<T>() to entries)
+
+/**
+ * 超限拦截文案（中文；列明上限与被拦文件名；VM 与状态同文件单源，直传与归档一键两路
+ * 共用，文件名由 [nameOf] 适配各自条目形态——直传取 effectiveUploadName、归档取 file.name）。
+ */
+internal fun <T> blockText(limits: UploadLimits?, blocked: List<T>, nameOf: (T) -> String): String? {
     if (blocked.isEmpty()) return null
     val limitMb = limits?.maxBytesMb ?: UNKNOWN_LIMIT_MB
-    val names = blocked.joinToString("、") { it.effectiveUploadName }
+    val names = blocked.joinToString("、") { nameOf(it) }
     return "以下文件超过服务端上限 $limitMb MB，已停止上传：$names"
 }
 
@@ -77,6 +98,21 @@ data class UploadUiState(
     val creatingDir: Boolean = false,
     /** 直传提交进行中（describe + 入队窗口；防重复触发） */
     val submitting: Boolean = false,
+    /**
+     * 归档一键重传扫描结果（2026-10-01 归档一键上传；null = 归档根未配置/尚未扫到/
+     * 入队成功后待重扫）。扫描在库列表就绪后 IO 协程执行（scanArchiveForUpload 纯函数），
+     * 本状态只承载结果。
+     */
+    val archiveBatch: ArchiveBatchScanResult? = null,
+    /** 归档扫描进行中（进页面/库列表就绪后的一次性扫描窗口） */
+    val archiveBatchLoading: Boolean = false,
+    /**
+     * 归档一键上传防重入队门禁（2026-10-01 审查修整项）：本会话已成功入队过一轮且重扫
+     * 文件数未变化时为 true——一键按钮与确认键置灰，防止「源文件上传成功前仍在归档根」
+     * 时整批重复入队（同名文件会在服务端生成副本）。重扫文件数与入队时不同（归档区
+     * 内容已变化）由 VM 复位；全被超限拦截未入队时不置位（归档区未变，可调整后重试）。
+     */
+    val archiveBatchEnqueued: Boolean = false,
     /** 队列实时状态（WorkManager WorkInfo 映射） */
     val queue: List<UploadQueueEntry> = emptyList(),
 ) {
@@ -97,5 +133,27 @@ data class UploadUiState(
                 " · 失败 ${entries.count { it.status == UploadStatus.FAILED }}"
             val attachFailed = entries.count { it.status == UploadStatus.ATTACH_FAILED }
             if (attachFailed > 0) "$base · 挂靠失败 $attachFailed" else base
+        }
+
+    /**
+     * 归档一键重传摘要行（null = 未配置/未扫描）：「待传 N 个文件 · 命中 M 个库 ·
+     * 未匹配 K 个文件夹」。命中库数按条目目标库去重（同库多文件夹只计一次）。
+     */
+    val archiveBatchSummary: String?
+        get() = archiveBatch?.let { scan ->
+            val matchedLibraries = scan.items.map { it.libraryId }.distinct().size
+            "待传 ${scan.items.size} 个文件 · 命中 $matchedLibraries 个库 · " +
+                "未匹配 ${scan.unmatchedFolders.size} 个文件夹"
+        }
+
+    /**
+     * 归档扫描中超出服务端上限的文件数（确认弹窗「N 个超限文件将被跳过」的依据）。
+     * 判定走 [partitionOverLimit] 单源（与两条入队管道同一口径）；limits 缺失时 0
+     * （本地不判定，交服务端 413 兜底）。
+     */
+    val archiveBatchOverLimitCount: Int
+        get() {
+            val scan = archiveBatch ?: return 0
+            return partitionOverLimit(scan.items, limits) { it.file.length() }.first.size
         }
 }

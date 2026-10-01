@@ -37,6 +37,13 @@ data class UploadItem(
      * 解析失败），worker 侧回退既有 uploaded/ 归档。
      */
     val libraryName: String = "",
+    /**
+     * 源文件已在归档根标志（2026-10-01 归档一键上传）：true = 条目来自归档文件夹一键上传，
+     * worker 上传成功后跳过归档移动——源文件本就在 <归档根>/<库名>/ 内，重复归档会把
+     * 同一路径走「删旧放新」冲突路径（先删目标位再落新），源与目标同路径时等于删源，必须整体跳过。
+     * 默认 false = 既有归档行为不变。
+     */
+    val alreadyArchived: Boolean = false,
 ) {
     /** 上传 filename 参数实际取值（编辑优先、trim 后非空才生效，否则回退展示名） */
     val effectiveUploadName: String
