@@ -125,3 +125,12 @@ jobs:
           # :core:model 是纯 JVM 模块（kotlin("jvm")）只有 test 任务，testDebugUnitTest 覆盖不到——
           # 与本机 Makefile app-test 的补账对齐（0ff017a）
           ./gradlew assembleDebug testDebugUnitTest :core:model:test lintDebug
+      # APK artifact 下发（ui/app-redesign 分支增补，2026-10-02）：夜间 UI 重设计任务以
+      # 「云端构建产物 + 模拟器重装」代替本地 Compose 热更通道——每次 push 本 job 产出
+      # assembleDebug APK，走查循环 gh run download 后 adb install -r，本地零 Gradle 构建
+      - name: 上传 debug APK（走查装机用）
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
