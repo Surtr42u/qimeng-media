@@ -10,6 +10,17 @@
 
 > **历史条目拆分说明（2026-10-01）**：为控制 AI 上下文体量，本文件只保留 **2026-09-22 及之后**的条目（第三百八十二笔起）；拆分线之前的全部条目已逐字迁入 `docs/history/CHANGELOG-ARCHIVE.md`（零改写，笔号与本文件连续可查）。引用早于拆分线的旧笔号请去历史档查阅。
 
+## feat(api/server)+docs: 备份导出/导入并入 TXT 作者片段——txtFragments 段随备份全量迁移，跨端迁移最后一公里补齐（2026-10-01 第四百二十八笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理）
+
+- **背景**：用户跨端迁移工作流「本机攒 → 登 NAS 导入」最后一公里补齐——媒体文件走归档一键上传/本机同步、行为数据走备份，作者 TXT 片段此前还需再手动走 import-txt 导出/导入往返；本批把 TXT 作者片段并入备份载荷，一次导入全量到位。
+- **协议（api）**：`api/openapi.yaml` `LegacyBackupData` 增可选 `txtFragments` 段 + 新 schema `LegacyTxtFragment`（filename/content/importedAtMillis）、`LegacyImportResult` 增 `txtFragmentsImported`/`txtFragmentsSkipped` 两计数；纯增量扩展、无端点签名变化；**Web 裸字节透传零改动，App 侧备份经 SDK 模型 Moshi 往返（导出重序列化落盘/导入重序列化上传）——旧装机 App 双向静默丢 txtFragments，须升级含新 SDK 的 APK 后 App 端备份链才携带片段**；三端 SDK 重生成、`api/sdk.lock` 同 commit 更新。
+- **服务端（server）**：导出（export.go）全量已导入 TXT 片段逐字导出（kv `imported_txt_sources`，不截断不转换）；导入（import.go）该段在 authors/authorMediaRefs 段**之前**逐片段处理（片段导入触发统一重建，若后处理会冲掉备份携带的作者关联）——目标库无同名片段直接导入；同名且内容相同跳过（幂等）；同名但内容不同按 import-txt **keep** 语义（目标端上传写入条目并回后替换重建，绝不 remove）；旧备份无该段零处理（向后兼容）；响应计数 `txtFragmentsImported`（新增+替换）/ `txtFragmentsSkipped`（内容相同跳过）。
+- **权威口径**：`docs/DOMAIN_RULES.md` §10 新增「TXT 片段（txtFragments 段）」节（导出/导入合并/响应计数的唯一权威），同节「未匹配与载荷边界」TXT 单独通道旧表述同步废止。
+- **测试**：`server/internal/httpapi/import_txtfrag_test.go` 六集成用例全绿（导出全量/新增/幂等跳过/keep 保护上传写入条目/旧备份无段向后兼容/txtFragments 先于 authors 段的顺序保护）。
+- **涉及文档**：`docs/DOMAIN_RULES.md`（§10 新节+载荷边界改口+头部）、`docs/GUIDE_API.md`（「迁移」行+「跨端迁移工作流」小节+头部）、`docs/ARCHITECTURE.md`（§11 备份端点段）、`docs/CAPABILITY_MAP.md`（备份行+头部）、`docs/HANDOVER.md`（§4 服务端行+头部）、本条目。
+
 ## docs(repo): 文档结构优化批——CHANGELOG 拆档 + 现状文档瘦身（2026-10-01 第四百二十七笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理×2 批次；对抗性审查子代理复核零丢失）

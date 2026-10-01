@@ -1,7 +1,7 @@
 # ARCHITECTURE - 架构总纲
 
 > 本文是 qimeng-media 的架构唯一权威文档。技术选型的"为什么"见 `docs/adr/`，业务规则见 `docs/DOMAIN_RULES.md`。
-> 最后更新：2026-10-01（§5 模块边界表补 backup/libraryrevision/uploadsess/localsync 四包）。更早历史见 `docs/CHANGELOG.md`。
+> 最后更新：2026-10-01（§11 备份段更新：18 数据段，txtFragments 并入迁移，keep 合并见 DOMAIN_RULES §10）；此前同日（§5 模块边界表补 backup/libraryrevision/uploadsess/localsync 四包）。更早历史见 `docs/CHANGELOG.md`。
 
 ## 1. 需求起源与产品定位
 
@@ -175,4 +175,4 @@
 
 ## 11. 与旧项目的数据迁移
 
-备份导入端点（幂等合并语义，2026-10-01 澄清）：上传旧版 `qimeng_backup.json`（17 数据段）→ 服务端按 `DOMAIN_RULES.md` §10 的映射表合并入库（recordKey → 通过文件名匹配**既有**资产建立 asset_id 关联，不创建资产、不删既有数据，同源跨批次内容键去重）。旧 App 用户数据零损失升级；亦适用于本机模式导出→登 NAS 导入的跨端迁移（文件本体与 TXT 片段不在备份内，先行走上传/本机同步通道与 import-txt）。
+备份导入端点（幂等合并语义，2026-10-01 澄清）：上传旧版 `qimeng_backup.json`（18 数据段，2026-10-01 起含 txtFragments）→ 服务端按 `DOMAIN_RULES.md` §10 的映射表合并入库（recordKey → 通过文件名匹配**既有**资产建立 asset_id 关联，不创建资产、不删既有数据，同源跨批次内容键去重）。旧 App 用户数据零损失升级；亦适用于本机模式导出→登 NAS 导入的跨端迁移（文件本体不在备份内，先行走上传/本机同步通道；TXT 片段已并入备份迁移〔2026-10-01，keep 合并〕）。

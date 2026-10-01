@@ -13,6 +13,8 @@
 //   - history：最近 500 条 open 事件（对齐旧库 view_history 上限）；
 //   - likes：按点赞行聚合为 { 累计次数, 最后点赞日 }（新库行 = 资产 x 日，
 //     旧格式无逐日明细，COUNT(*) 即最接近的累计值）；
+//   - txtFragments：kv imported_txt_sources 全量逐字导出（DOMAIN_RULES
+//     §10「TXT 片段」；导入端在 authors/authorMediaRefs 段之前按同名合并）；
 //   - settings/scanSources/albumRules/cosWorks：恒导出空数组（SAF 目录是设备
 //     本机概念、COS 作品目录与出处均为派生信息，导入端对空段零警告）；
 //   - appPrefs：只带 recommendationPrefs（kv_settings 原样 JSON，与导入端
@@ -31,6 +33,7 @@ import (
 	"strings"
 	"time"
 
+	"qimeng-media/server/internal/authorattach"
 	"qimeng-media/server/internal/httpapi/gen"
 	"qimeng-media/server/internal/store"
 	"qimeng-media/server/internal/store/db"
@@ -93,6 +96,9 @@ func (exp *legacyExport) build() (*gen.LegacyBackupFile, error) {
 		return nil, err
 	}
 	if err := exp.fillAuthors(&data, byID); err != nil {
+		return nil, err
+	}
+	if err := exp.fillTxtFragments(&data); err != nil {
 		return nil, err
 	}
 	if err := exp.fillTags(&data, byID); err != nil {
@@ -277,6 +283,33 @@ func (exp *legacyExport) fillAuthors(data *gen.LegacyBackupData, byID map[string
 		})
 	}
 	data.AuthorMediaRefs = &refs
+	return nil
+}
+
+// fillTxtFragments TXT 片段段（§10「TXT 片段」）：kv imported_txt_sources
+// 全量逐字导出（不截断不转换），作者表随备份全量同步。importedAt 缺省
+// （旧片段）或解析失败按 0 落载荷——片段正文才是迁移的承重数据，导出不因
+// 元数据坏值整体 500。
+func (exp *legacyExport) fillTxtFragments(data *gen.LegacyBackupData) error {
+	sources, err := authorattach.LoadSources(exp.ctx, exp.s.q)
+	if err != nil {
+		return fmt.Errorf("查询已导入 TXT 片段: %w", err)
+	}
+	frags := make([]gen.LegacyTxtFragment, 0, len(sources))
+	for _, src := range sources {
+		var importedAt int64
+		if src.ImportedAt != "" {
+			if ms, err := millisOf(src.ImportedAt); err == nil {
+				importedAt = ms
+			}
+		}
+		frags = append(frags, gen.LegacyTxtFragment{
+			Filename:         src.Filename,
+			Content:          src.Content,
+			ImportedAtMillis: importedAt,
+		})
+	}
+	data.TxtFragments = &frags
 	return nil
 }
 
