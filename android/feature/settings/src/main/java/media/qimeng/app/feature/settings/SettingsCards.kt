@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -25,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import media.qimeng.app.core.ui.glass.GlassSurface
 import androidx.compose.ui.unit.sp
 import media.qimeng.app.core.model.RecommendPreset
 import media.qimeng.app.core.ui.theme.QimengDimens
@@ -89,18 +91,17 @@ private fun presetDescription(preset: RecommendPreset): String = when (preset) {
 }
 
 /**
- * 页首数量卡（I4，GUIDE_UI L252 + 实录 mine.txt；视觉复刻批对齐旧版运行时：
- * 高 96dp、圆角 20dp、纯白 surface 底、单块两行文本「图片\nN」16sp Bold 双向居中）。
+ * 页首数量卡（I4；ADR-0031 玻璃化：高 96dp/圆角 20dp 不变，「纯白 surface 底」换 GlassSurface
+ * 玻璃面板覆于极光氛围底；单块两行文本「图片\nN」16sp Bold 双向居中）。
  * count=null（未就绪或读失败）→ 数字位显「—」降级，不崩、不弹横幅。
  */
 @Composable
 internal fun CountCard(title: String, count: Int?, modifier: Modifier = Modifier) {
-    Surface(
-        color = MaterialTheme.colorScheme.surface,
+    GlassSurface(
         shape = RoundedCornerShape(CountCardCornerRadius),
         modifier = modifier.height(CountCardHeight),
     ) {
-        Box(contentAlignment = Alignment.Center) {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
             Text(
                 // 旧版是单 TextView 两行文案「图片\nN」（非标题/数字两块），同 16sp Bold
                 text = "$title\n${count?.toString() ?: COUNT_UNKNOWN}",

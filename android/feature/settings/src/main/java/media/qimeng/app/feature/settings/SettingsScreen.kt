@@ -2,9 +2,9 @@ package media.qimeng.app.feature.settings
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -15,7 +15,6 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -24,14 +23,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.io.IOException
 import kotlinx.coroutines.launch
+import media.qimeng.app.core.ui.glass.GlassSurface
+import media.qimeng.app.core.ui.glass.pressScale
+import media.qimeng.app.core.ui.glass.rememberPressScaleSource
 import media.qimeng.app.core.ui.theme.QimengDimens
+import media.qimeng.app.core.ui.theme.QimengShapes
 
 /** 我的页入口行文案（GUIDE_UI §我的页 + M4-2 既有入口 + M4-6 上传入口；
  *  F 批 2026-09-09：删除「作者管理」行；X5 批 2026-09-12：作者总览由内嵌卡改回
@@ -118,9 +120,8 @@ fun SettingsScreen(
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            // 旧版页面底色 = qm_bg（background 槽，浅 #FAFAFA / 夜 #1A1A1A）；壳层已涂底，
-            // 显式声明防宿主容器换底后页面漏色
-            .background(MaterialTheme.colorScheme.background)
+            // ADR-0031：不再涂实底 background——透出壳层极光氛围底，入口行族换玻璃面板
+            // （旧「显式声明防漏色」的问题随壳层全局氛围底一并消失）
             .padding(horizontal = ScreenContentPadding),
     ) {
         settingsHeaderItems(state = state, viewModel = viewModel)
@@ -157,11 +158,11 @@ fun SettingsScreen(
  * 数据源 GET /stats/overview imageCount/videoCount，失败显「—」）。
  */
 private fun LazyListScope.settingsHeaderItems(state: MineUiState, viewModel: SettingsViewModel) {
-    // Z2 批（2026-09-12 我的页字体色彩对齐旧版）：页标题 28sp Bold（旧 profile.xml）
+    // Z2 批页标题 28sp；ADR-0031 起直接取 headlineMedium（M3 28sp + Type.kt 标题族 Bold 字重）
     item {
         Text(
             text = stringResource(R.string.settings_title),
-            style = MaterialTheme.typography.headlineSmall.copy(fontSize = 28.sp, fontWeight = FontWeight.Bold),
+            style = MaterialTheme.typography.headlineMedium,
             // 旧版标题下 24dp 处排数量卡
             modifier = Modifier.padding(bottom = TitleToCardsSpacing),
         )
@@ -305,6 +306,8 @@ private fun LazyListScope.settingsFooterItems(state: MineUiState, viewModel: Set
     item {
         Button(
             onClick = viewModel::logout,
+            // ADR-0031：胶囊语言统一（全 App 按钮圆角单源=主题胶囊档）
+            shape = RoundedCornerShape(QimengDimens.PillCornerRadius),
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(text = stringResource(R.string.settings_logout))
@@ -313,13 +316,13 @@ private fun LazyListScope.settingsFooterItems(state: MineUiState, viewModel: Set
 }
 
 /**
- * 入口行（视觉复刻批对齐旧版 QimengProfileRow 运行时规格：高 72dp、水平 padding 18dp
- * 垂直居中、背景=16dp 圆角纯白 surface 卡、无图标无分隔线；行文字=单块两行文本
- * 「标题\n副标题」15sp 主文字色——旧版副标题与标题同字号同色；subtitle=null 保持单行；
- * detail=右侧灰字（版本行等无副文案的旧形态行保留用）；
+ * 入口行（ADR-0031 玻璃化：高 72dp 下限、水平 padding 18dp 不变；「纯白 surface 卡」换
+ * [GlassSurface] 玻璃面板——半透明体+受光描边覆于极光氛围底；可点行附 spring 按压缩放；
+ * 行文字=单块两行文本「标题\n副标题」，subtitle=null 保持单行；
+ * detail=右侧灰字（版本行等无副文案的行保留用）；
  * onClick=null 为纯展示行（主题色彩，GUIDE_UI L268）。
  * 高度用 min 而非定值：长副文案行（如服务器行）定值 72dp 会截断三行以上文本，
- * 其余短文案行渲染高度与旧版 72dp 完全一致。
+ * 其余短文案行渲染高度与 72dp 完全一致。
  */
 @Composable
 private fun EntryRow(
@@ -329,27 +332,45 @@ private fun EntryRow(
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)?,
 ) {
-    Surface(
-        color = MaterialTheme.colorScheme.surface,
-        shape = RoundedCornerShape(QimengDimens.CardCornerRadius),
+    val interactionSource = if (onClick != null) rememberPressScaleSource() else null
+    GlassSurface(
+        shape = QimengShapes.inset,
         modifier = modifier
             .fillMaxWidth()
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
+            .then(
+                if (onClick != null && interactionSource != null) {
+                    Modifier
+                        .pressScale(interactionSource)
+                        .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
+                } else {
+                    Modifier
+                },
+            ),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = QimengDimens.ProfileRowHeight)
-                .padding(horizontal = QimengDimens.ProfileRowHorizontalPadding),
+                .padding(horizontal = QimengDimens.ProfileRowHorizontalPadding, vertical = QimengDimens.SpaceL),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // 单块两行文本（旧版单个 TextView：标题+副标题同字号同色，非两块 Text）
-            Text(
-                text = if (subtitle != null) "$label\n$subtitle" else label,
-                style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.sp),
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.weight(1f),
-            )
+            // 单块两行文本（旧版单个 TextView：标题+副标题同字号同色，非两块 Text）；
+            // ADR-0031 排印：标题族语义由「label 行加粗」承接——两行拆双 Text，副标题次色小字
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                if (subtitle != null) {
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
+            }
             if (detail != null) {
                 Text(
                     text = detail,
