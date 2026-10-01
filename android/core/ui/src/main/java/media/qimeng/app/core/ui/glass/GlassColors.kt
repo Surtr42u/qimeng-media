@@ -19,9 +19,9 @@ import media.qimeng.app.core.ui.theme.isQimengDarkTheme
  *
  * 降级策略（ADR-0031，与 API 级别无关地成立）：本体系不依赖 backdrop 采样模糊——
  * 官方 Compose 无 backdrop-blur API（已核，2026-10-02）；「被磨砂的景深」由
- * [AuroraBackdrop] 自绘辉光承担（玻璃面板覆于其上即成磨砂观感），`Modifier.blur`
- * 只用于自有内容（如头图氛围层），API < 31 上它自动 no-op，面板回落「半透明纯色层+
- * 阴影」且观感完整——fill alpha 的取值保证无任何模糊时文字对比度仍达标。
+ * [AuroraBackdrop] 自绘辉光承担（玻璃面板覆于其上即成磨砂观感）。当前实现零 blur：
+ * `Modifier.blur` 仅为未来对自有内容（头图/氛围层）做真模糊的预留策略（API < 31
+ * no-op），面板观感各 API 级别一致——fill alpha 的取值保证文字对比度仍达标。
  */
 @Immutable
 data class GlassColors(

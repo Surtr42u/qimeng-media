@@ -32,8 +32,8 @@ private const val SHEEN_FADE_FRACTION = 0.4f
  * 半透明体 + 受光渐变描边（上亮下暗）+ 顶部高光纱 + 可选投影，圆角由 [shape] 定。
  *
  * 纯渲染容器（铁律 7）：不碰 API/业务，视觉参数全部来自 [glassColors] 主题单源。
- * API 26–30 无需分支：本组件不含 blur 依赖，天然就是降级形态「半透明纯色层+阴影」
- * （ADR-0031 降级策略）；真 blur 只用于自有内容氛围层，见 AuroraBackdrop。
+ * API 26–30 无需分支：本组件不含 blur 依赖，观感各 API 级别一致（ADR-0031 降级策略；
+ * 当前实现零 blur，`Modifier.blur` 仅为未来自有内容的预留策略，见 ADR-0031 决策§2）。
  *
  * @param shape 面板形状（默认面板 24dp 圆角；胶囊场合传 QimengShapes.pill）
  * @param strong true=加厚档（底栏/悬浮条等压住滚动内容的场合）
