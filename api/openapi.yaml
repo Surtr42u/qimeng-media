@@ -1839,6 +1839,7 @@ components:
       type: object
       properties:
         mediaFiles:        { type: array, items: { $ref: "#/components/schemas/LegacyMediaFile" } }
+        txtFragments:      { type: array, items: { $ref: "#/components/schemas/LegacyTxtFragment" }, description: TXT 作者片段逐字载荷（2026-10-01 起；旧备份无此段向后兼容，导入端零处理）。导入按 DOMAIN_RULES §10「TXT 片段」口径合并，处理顺序在 authors/authorMediaRefs 段之前（片段导入触发统一重建，后处理会冲掉备份携带的关联数据） }
         settings:          { type: array, items: { $ref: "#/components/schemas/LegacySetting" } }
         authors:           { type: array, items: { $ref: "#/components/schemas/LegacyAuthor" } }
         authorMediaRefs:   { type: array, items: { $ref: "#/components/schemas/LegacyAuthorMediaRef" } }
@@ -2003,12 +2004,23 @@ components:
         version:            { type: integer }
         recommendationPrefs: { $ref: "#/components/schemas/RecommendPrefs" }
 
+    LegacyTxtFragment:
+      type: object
+      description: 已导入 TXT 作者片段的逐字载荷（kv imported_txt_sources 单条；DOMAIN_RULES §10「TXT 片段」）
+      required: [filename, content, importedAtMillis]
+      properties:
+        filename:         { type: string, description: 片段文件名（imported_txt_sources 键） }
+        content:          { type: string, description: 片段全文，逐字导出、不截断不转换 }
+        importedAtMillis: { type: integer, format: int64, description: 原导入时刻毫秒 }
+
     LegacyImportResult:
       type: object
       description: 迁移结果统计；各段计数为本次实际写入量（幂等重复导入时事件段为 0）
       properties:
         mediaFilesTotal:        { type: integer, description: 备份内文件总数 }
         assetsMatched:          { type: integer, description: 按文件名匹配到现有库内资产的文件数 }
+        txtFragmentsImported:   { type: integer, description: TXT 片段新增+替换数（§10「TXT 片段」；旧版客户端忽略此字段） }
+        txtFragmentsSkipped:    { type: integer, description: TXT 片段未产生变更的跳过数（内容相同幂等跳过＋单片段导入失败跳过，失败有 Warn 日志） }
         authorsImported:        { type: integer }
         authorRefsImported:     { type: integer, description: 关联写入数（含因资产未匹配而跳过之外的净写入） }
         authorRefsSkipped:      { type: integer, description: 关联因资产未匹配而跳过数 }

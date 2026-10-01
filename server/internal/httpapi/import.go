@@ -7,6 +7,11 @@
 // 幂等由事件内容键 client_event_id 保证，见 import_replay.go），段级
 // upsert 照常执行。
 //
+// TXT 片段段（§10「TXT 片段」）在 authors/authorMediaRefs 段之前处理：
+// 片段导入触发统一重建（重建只删「片段涉及作者」的关联），若放在后处理
+// 位置会冲掉备份携带的 authorMediaRefs 关联；同名内容相同幂等跳过、内容
+// 不同走 keep 保护（绝不 remove），单片段失败 Warn 跳过不中止整体。
+//
 // 事件回放口径（总量守恒，与旧库数字一致）：
 //   - dailyBrowse 是旧库「每文件每天」明细（唯一真相源）→ 全量回放；
 //   - mediaStats 只补差额（累计值 − dailyBrowse 之和，dailyBrowse 行缺失的
@@ -32,6 +37,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"qimeng-media/server/internal/authorattach"
 	"qimeng-media/server/internal/httpapi/gen"
 	"qimeng-media/server/internal/store"
 	"qimeng-media/server/internal/store/db"
@@ -62,9 +68,11 @@ const (
 	legacyImportMaxBody = 64 << 20
 )
 
-// PostApiV1ImportQimengBackup 迁移主流程：匹配→作者→标签→事件回放→
-// 点赞收藏→时间轴→关注→偏好→warnings。任一数据库错误即中止（500），
-// 幂等性保证修复后重跑不翻倍。
+// PostApiV1ImportQimengBackup 迁移主流程：匹配→TXT 片段→作者→标签→事件
+// 回放→点赞收藏→时间轴→关注→偏好→warnings。任一数据库错误即中止（500），
+// 幂等性保证修复后重跑不翻倍。TXT 片段段必须在 authors/authorMediaRefs 段
+// 之前（§10「TXT 片段」：片段导入触发统一重建，后处理会冲掉备份携带的
+// 关联数据）。
 func (s *Server) PostApiV1ImportQimengBackup(w http.ResponseWriter, r *http.Request) { //nolint:revive // 生成接口要求的方法名
 	var req gen.LegacyBackupImport
 	if !decodeJSONWithLimit(w, r, &req, legacyImportMaxBody) {
@@ -77,6 +85,7 @@ func (s *Server) PostApiV1ImportQimengBackup(w http.ResponseWriter, r *http.Requ
 
 	imp := &legacyImport{s: s, ctx: r.Context(), w: w}
 	imp.matchFiles(req.Data.MediaFiles)
+	imp.importTxtFragments(req.Data.TxtFragments)
 	imp.importAuthors(req.Data.Authors, req.Data.AuthorMediaRefs)
 	imp.importTags(req.Data.Tags, req.Data.MediaTagRefs)
 	imp.replayEvents(&req)
@@ -257,6 +266,43 @@ func (imp *legacyImport) importAuthors(authors *[]gen.LegacyAuthor, refs *[]gen.
 func hasCosPrefix(id string) bool {
 	const prefix = "cos_"
 	return len(id) >= len(prefix) && id[:len(prefix)] == prefix
+}
+
+// importTxtFragments TXT 片段段（§10「TXT 片段」，调用点在 authors/
+// authorMediaRefs 段之前）：逐片段合并——目标库无同名片段 → 直接导入；
+// 同名且内容相同 → 幂等跳过；同名但内容不同 → 走 import-txt 的 keep 语义
+// （目标端上传写入条目并回后替换重建，绝不 remove）。单片段失败记 Warn 跳
+// 过，不中止整体导入（对齐备份导入对未匹配数据的宽容姿态）。旧备份无该段
+// （nil）→ 零处理、响应计数缺省（向后兼容）。
+func (imp *legacyImport) importTxtFragments(frags *[]gen.LegacyTxtFragment) {
+	if imp.aborted || frags == nil {
+		return
+	}
+	existing, err := authorattach.LoadSources(imp.ctx, imp.s.q)
+	if err != nil {
+		imp.fail("读取已导入 TXT 片段", err)
+		return
+	}
+	byName := make(map[string]string, len(existing))
+	for _, src := range existing {
+		byName[src.Filename] = src.Content
+	}
+	imported, skipped := 0, 0
+	for _, f := range *frags {
+		if content, ok := byName[f.Filename]; ok && content == f.Content {
+			skipped++
+			continue
+		}
+		filename := f.Filename
+		if _, err := imp.s.importTxt(imp.ctx, &filename, f.Content, resolutionKeep); err != nil {
+			imp.s.logger.Warn("备份 TXT 片段导入失败，跳过", "filename", f.Filename, "error", err)
+			skipped++
+			continue
+		}
+		imported++
+	}
+	imp.res.TxtFragmentsImported = &imported
+	imp.res.TxtFragmentsSkipped = &skipped
 }
 
 // bump 计数指针安全自增（生成物字段全部 *int 可选）。
