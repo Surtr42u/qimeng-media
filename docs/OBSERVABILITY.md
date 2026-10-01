@@ -2,7 +2,7 @@
 
 > 对应用户需求 #9：「NAS 后端要有统计，比如负载、流量那种」。
 > 方案定论：**服务端内置轻量监控**（零外部依赖），Prometheus/Grafana 全家桶作为后置可选增强。
-> 最后更新：2026-10-01（Docker 日志轮转落地：deploy/docker-compose.yml json-file 10MB×3——§日志首条同步，第四百一十九笔）。2026-09-19（新增 backup_last_success_timestamp gauge——备份快照成功时刻，任务Q 批B）。2026-09-12（文档准确性清偿：系统指标表两处未采集项如实标注、访问日志/轮转标规划、仪表盘路由勘误、轮询周期勘误、readyz 检查面勘误）
+> 最后更新：2026-10-01（Docker 日志轮转落地：compose json-file 10MB×3，§日志首条同步）。更早历史见 `docs/CHANGELOG.md`。
 
 ## 内置监控（M2 交付）
 
