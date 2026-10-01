@@ -44,7 +44,10 @@ export function applyTheme(choice: ThemeChoice, persist = true): void {
   }
   if (persist) localStorage.setItem(THEME_STORAGE_KEY, choice)
   const doc = document as Document & { startViewTransition?: (cb: () => void) => unknown }
-  if (typeof doc.startViewTransition === 'function') {
+  // prefers-reduced-motion 用户直接同步切换：全屏交叉溶解本身就是动画，不该绕过
+  // 全局归零层（CSS 归零层管不到 View Transition 的浏览器合成阶段）
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  if (!reducedMotion && typeof doc.startViewTransition === 'function') {
     doc.startViewTransition(swap)
   } else {
     swap()

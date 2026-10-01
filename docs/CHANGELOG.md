@@ -21,6 +21,17 @@
 - **测试**：`server/internal/httpapi/import_txtfrag_test.go` 六集成用例全绿（导出全量/新增/幂等跳过/keep 保护上传写入条目/旧备份无段向后兼容/txtFragments 先于 authors 段的顺序保护）。
 - **涉及文档**：`docs/DOMAIN_RULES.md`（§10 新节+载荷边界改口+头部）、`docs/GUIDE_API.md`（「迁移」行+「跨端迁移工作流」小节+头部）、`docs/ARCHITECTURE.md`（§11 备份端点段）、`docs/CAPABILITY_MAP.md`（备份行+头部）、`docs/HANDOVER.md`（§4 服务端行+头部）、本条目。
 
+## fix(web): 对抗审查返工批——#root 高度链断裂（长页无滚动）等六处（2026-10-02 第四百三十笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理）
+
+- **P0 滚动断裂**：`styles/glass.css` 补回 `#root { height: 100% }`（v1 prototype.css 同款规则，重写时漏带）——React 多包一层 #root，html/body{height:100%} 传不到 .layout 时长页（首页网格/相册/榜单/设置）被 body overflow:hidden 裁切无滚动；本地 dev server 滚动验证通过（滚到底可达折叠内容）。
+- **P1 死变量**：`AppErrorBoundary.tsx` 错误屏主按钮 `var(--qm-primary-foreground)`（v2 已删）→ `var(--qm-on-accent)`，修复浅色主题紫底深字低对比。
+- **P2 如实记档**：glass.css 头注释「零颜色字面量」改为如实（12 处 oklch：3 处纯黑 α 混合/投影锚点 + 降级块 9 处，均有刻意理由就地注释）；tokens.css 别名块注释改为如实（43 个中在用 10 个，其余 33 个零引用暂不裁剪、清理后整块删）。
+- **P2 行为**：theme.ts 的 startViewTransition 外包 prefers-reduced-motion 短路（减动效用户明暗切换不再收全屏溶解）；vite.config.ts 代理覆盖注释示例泛化（去具体端口）。
+- **文档**：ADR-0031 决策 2/3 同步（别名块在用清单、#root 高度链与 reduced-motion 短路入决策记录）。
+- **涉及文件**：`web/src/styles/glass.css`、`web/src/components/layout/AppErrorBoundary.tsx`、`web/src/lib/theme.ts`、`web/vite.config.ts`、`web/src/tokens.css`（仅注释）、`docs/adr/0031`、本条目。
+
 ## feat(web): Web 全新设计语言「绮梦流光 · Aurora Glass」——暗色优先液态玻璃 + token 体系 v2（2026-10-02 第四百二十九笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理）
