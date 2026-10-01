@@ -6,6 +6,7 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -22,6 +23,7 @@ import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
@@ -29,7 +31,6 @@ import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -52,7 +53,10 @@ import media.qimeng.app.core.network.DefaultEndpoint
 import media.qimeng.app.core.network.shouldRequestLocalNetworkPermission
 import media.qimeng.app.core.ui.component.Dimens
 import media.qimeng.app.core.ui.component.QimengCapsuleTextField
+import media.qimeng.app.core.ui.glass.AuroraBackdrop
+import media.qimeng.app.core.ui.glass.GlassSurface
 import media.qimeng.app.core.ui.theme.QimengDimens
+import media.qimeng.app.core.ui.theme.QimengShapes
 import media.qimeng.app.core.ui.theme.qimengFilledButtonColors
 
 /**
@@ -99,7 +103,10 @@ fun LoginScreen(
         }
     }
 
-    Surface(modifier = modifier.fillMaxSize()) {
+    // ADR-0031 流光玻璃改版：极光氛围底 + 玻璃登录卡（视觉重做；提交门/端点选择/错误映射
+    // 逻辑逐字未动）。原 Surface 实底根容器退役——登录页在主壳 Scaffold 之外，自持氛围底
+    Box(modifier = modifier.fillMaxSize()) {
+        AuroraBackdrop(modifier = Modifier.fillMaxSize())
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -109,84 +116,108 @@ fun LoginScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
+            // 标题区：大字标题 + 一句话定位副标题（玻璃语言的「受光面」排印，Type.kt 标题族 SemiBold）
             Text(
                 text = stringResource(R.string.login_title),
-                style = MaterialTheme.typography.headlineMedium,
+                style = MaterialTheme.typography.headlineLarge,
                 color = MaterialTheme.colorScheme.onBackground,
             )
+            Spacer(modifier = Modifier.height(TitleSpacing / 2))
+            Text(
+                text = stringResource(R.string.login_tagline),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Spacer(modifier = Modifier.height(TitleSpacing))
-            // 登录端两选项（第三百六十三笔，用户拍板：外部登录只留「服务器 / 本机」两个选项）；
-            // 服务器选项下挂地址输入（进页按记忆解析回填、可改），本机选项只读展示地址
-            EndpointRow(
-                label = stringResource(R.string.login_option_server),
-                caption = uiState.serverUrl,
-                selected = uiState.selected == DefaultEndpoint.NAS,
-                enabled = !uiState.isSubmitting,
-                onClick = { viewModel.onEndpointSelected(DefaultEndpoint.NAS) },
-            )
-            if (uiState.selected == DefaultEndpoint.NAS) {
-                // 胶囊输入框 label 走 placeholder 语义（G6：对齐 Web，组件不支持 label 浮动）；
-                // 冻结占位示例 http://192.168.x.x:8420（规范化在 core ServerAddress，UI 不校验格式）
-                QimengCapsuleTextField(
-                    value = uiState.serverUrl,
-                    onValueChange = viewModel::onServerUrlChange,
-                    placeholder = stringResource(R.string.login_server_url_placeholder),
-                    singleLine = true,
-                    enabled = !uiState.isSubmitting,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-            EndpointRow(
-                label = stringResource(R.string.login_option_local),
-                caption = uiState.localUrl,
-                selected = uiState.selected == DefaultEndpoint.LOCAL,
-                enabled = !uiState.isSubmitting,
-                onClick = { viewModel.onEndpointSelected(DefaultEndpoint.LOCAL) },
-            )
-            Spacer(modifier = Modifier.height(FieldSpacing))
-            QimengCapsuleTextField(
-                value = uiState.password,
-                onValueChange = viewModel::onPasswordChange,
-                placeholder = stringResource(R.string.login_password_label),
-                singleLine = true,
-                enabled = !uiState.isSubmitting,
-                visualTransformation = PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = { submit() }),
+            // 玻璃卡承载全部表单（ADR-0031 GlassSurface 单源；API<31 自动降级半透明+阴影）
+            GlassSurface(
                 modifier = Modifier.fillMaxWidth(),
-            )
-            if (errorMessage != null) {
-                Spacer(modifier = Modifier.height(FieldSpacing))
-                Text(
-                    text = errorMessage,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
-            if (localNetworkGuidance) {
-                // 拒绝局域网权限的定向引导（与既有 LoginError 错误行同款式；任务P P4b）
-                Spacer(modifier = Modifier.height(FieldSpacing))
-                Text(
-                    text = stringResource(R.string.login_error_local_network_denied),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
-            Spacer(modifier = Modifier.height(FieldSpacing))
-            Button(
-                onClick = { submit() },
-                enabled = !uiState.isSubmitting,
-                // 提交中=禁用态大面积容器，夜间走不透明禁用底消 dither 横带（W6 #49）
-                colors = qimengFilledButtonColors(),
-                modifier = Modifier.fillMaxWidth(),
+                shape = QimengShapes.panel,
+                elevation = 20.dp,
             ) {
-                if (uiState.isSubmitting) {
-                    // V6：expressive LoadingIndicator 替换（仅控件替换，size 约束原样）
-                    LoadingIndicator(modifier = Modifier.size(ButtonIndicatorSize))
-                    Spacer(modifier = Modifier.width(IndicatorTextSpacing))
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(all = GlassCardPadding),
+                    verticalArrangement = Arrangement.spacedBy(FieldSpacing),
+                ) {
+                    // 登录端两选项（第三百六十三笔，用户拍板：外部登录只留「服务器 / 本机」两个选项）；
+                    // 服务器选项下挂地址输入（进页按记忆解析回填、可改），本机选项只读展示地址
+                    EndpointRow(
+                        label = stringResource(R.string.login_option_server),
+                        caption = uiState.serverUrl,
+                        selected = uiState.selected == DefaultEndpoint.NAS,
+                        enabled = !uiState.isSubmitting,
+                        onClick = { viewModel.onEndpointSelected(DefaultEndpoint.NAS) },
+                    )
+                    if (uiState.selected == DefaultEndpoint.NAS) {
+                        // 胶囊输入框 label 走 placeholder 语义（G6：对齐 Web，组件不支持 label 浮动）；
+                        // 冻结占位示例 http://192.168.x.x:8420（规范化在 core ServerAddress，UI 不校验格式）
+                        QimengCapsuleTextField(
+                            value = uiState.serverUrl,
+                            onValueChange = viewModel::onServerUrlChange,
+                            placeholder = stringResource(R.string.login_server_url_placeholder),
+                            singleLine = true,
+                            enabled = !uiState.isSubmitting,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                    EndpointRow(
+                        label = stringResource(R.string.login_option_local),
+                        caption = uiState.localUrl,
+                        selected = uiState.selected == DefaultEndpoint.LOCAL,
+                        enabled = !uiState.isSubmitting,
+                        onClick = { viewModel.onEndpointSelected(DefaultEndpoint.LOCAL) },
+                    )
+                    QimengCapsuleTextField(
+                        value = uiState.password,
+                        onValueChange = viewModel::onPasswordChange,
+                        placeholder = stringResource(R.string.login_password_label),
+                        singleLine = true,
+                        enabled = !uiState.isSubmitting,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { submit() }),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    if (errorMessage != null) {
+                        Text(
+                            text = errorMessage,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                    if (localNetworkGuidance) {
+                        // 拒绝局域网权限的定向引导（与既有 LoginError 错误行同款式；任务P P4b）
+                        Text(
+                            text = stringResource(R.string.login_error_local_network_denied),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                    Button(
+                        onClick = { submit() },
+                        enabled = !uiState.isSubmitting,
+                        // 提交中=禁用态大面积容器，夜间走不透明禁用底消 dither 横带（W6 #49）
+                        colors = qimengFilledButtonColors(),
+                        // ADR-0031：胶囊形 + 加高（52dp）提交钮——全 App 按钮统一胶囊语言
+                        shape = RoundedCornerShape(QimengDimens.PillCornerRadius),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(SubmitButtonHeight),
+                    ) {
+                        if (uiState.isSubmitting) {
+                            // V6：expressive LoadingIndicator 替换（仅控件替换，size 约束原样）
+                            LoadingIndicator(modifier = Modifier.size(ButtonIndicatorSize))
+                            Spacer(modifier = Modifier.width(IndicatorTextSpacing))
+                        }
+                        Text(
+                            text = stringResource(R.string.login_submit),
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                    }
                 }
-                Text(text = stringResource(R.string.login_submit))
             }
         }
     }
@@ -248,6 +279,12 @@ private val RowLabelSpacing = 4.dp
 
 private val TitleSpacing = 24.dp
 private val FieldSpacing = 12.dp
+
+/** 玻璃登录卡内边距（ADR-0031：面板 20dp 档，与筛选面板同档） */
+private val GlassCardPadding = 20.dp
+
+/** 胶囊提交钮高度（ADR-0031：52dp 主行动档；筛选面板 48dp 次档） */
+private val SubmitButtonHeight = 52.dp
 
 /** 提交钮内指示器直径单源到 QimengDimens（V8 #5：16dp 强缩失衡 → 对齐 labelLarge 文字行高） */
 private val ButtonIndicatorSize = QimengDimens.ButtonLoadingIndicatorSize

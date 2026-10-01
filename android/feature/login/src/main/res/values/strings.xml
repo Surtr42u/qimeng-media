@@ -2,6 +2,8 @@
 <resources>
     <!-- 登录页文案（M4-1）。资源名 login_ 前缀避免与 :app 及其他 feature 模块合并冲突。 -->
     <string name="login_title">登录绮梦影库</string>
+    <!-- 副标题（ADR-0031 流光玻璃改版）：一句话产品定位，纯展示文案 -->
+    <string name="login_tagline">媒体全存 NAS · 随处可看</string>
 
     <string name="login_server_url_label">服务器地址</string>
     <!-- 占位示例即冻结规格：http://192.168.x.x:8420；localhost/127.0.0.1 形式同样合法（规范化在 core ServerAddress） -->
