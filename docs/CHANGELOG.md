@@ -10,6 +10,17 @@
 
 > **历史条目拆分说明（2026-10-01）**：为控制 AI 上下文体量，本文件只保留 **2026-09-22 及之后**的条目（第三百八十二笔起）；拆分线之前的全部条目已逐字迁入 `docs/history/CHANGELOG-ARCHIVE.md`（零改写，笔号与本文件连续可查）。引用早于拆分线的旧笔号请去历史档查阅。
 
+## feat(app)+docs: Android 全新设计语言「流光玻璃」——液态玻璃质感+M3 Expressive+暗色优先，功能守恒的 UI 层重做（2026-10-02 第四百二十九笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理，分支 ui/app-redesign / draft PR #1，夜间任务2）
+
+- **决策（ADR-0031）**：App 端设计语言级重做——暗色第一基准三元强调色板（鸢尾/雾岚/极光青+氛围辉光）、自建玻璃组件族（GlassSurface 分层半透明+受光描边+高光纱+投影；AuroraBackdrop 自绘径向辉光极光底=免 backdrop 采样的景深来源；`Modifier.blur` 只用于自有内容，API<31 天然降级半透明+阴影，零新依赖）、M3 Expressive（MaterialExpressiveTheme+MotionScheme.expressive）、pushed 路由 spring 转场（Tab 切换保持 snap——常驻层防闪烁机制明确排除项）、玻璃底栏 GlassNavBar、pressScale 按压微交互单源、18dp 大圆角媒体卡。**功能守恒**：只动 core:ui/app 壳层与各 feature 渲染层，ViewModel/Repository/SDK/协议/路由字符串零改动。
+- **实现（地基→feature 逐模块提交）**：core/ui theme 全量重写（Color/Theme/Type/Dimens+新 Shape.kt）+ glass 包六件（GlassColors/GlassSurface+GlassCard/AuroraBackdrop/GlassNavBar/QimengMotion/PressScale+GlassButtons）；壳层 16 条 pushed 路由挂 spring 转场、幕帘换极光底、壳层 zIndex(-2) 全局氛围底；feature 批次=login（玻璃登录卡）→home（28sp 标题+玻璃搜索胶囊/动作钮）→settings（玻璃入口行/数量卡+双行排印）→stats（六卡 GlassCard 化）→all+QimengTitleRow+detail chrome（透明度入玻璃档 0.72，U5「纯色条不做渐变」终裁保留）。
+- **CI 通道增补**：android job 增 assembleDebug APK artifact 上传步骤——夜间走查循环以「云端构建产物→`gh run download`→模拟器重装」代替本地 Compose 热更，本地零 Gradle 构建（本地 fallback 配额整夜未动用）。
+- **走查（r1，emulator-5580，暗色）**：登录（深浅双态）/首页信息流（合成库真数据）/相册网格/数据统计六卡/我的玻璃行/详情舞台+玻璃操作坞 六屏自审全过；据此校准玻璃受光边/高光/辉光/选中胶囊 alpha（31c4e16）。
+- **⚠️ 事故记录（第二次同类，机制与首次不同）**：走查初期（01:37–01:43）安装/启动/截图/点按全部落在**雷电模拟器（emulator-5554，用户游戏机）**上——根因=「端口分裂脑」：雷电占 adb 传输端口 5555、项目 AVD 只占控制台 5554，`emu avd name`（走控制台）恒答 qimeng_api35 造成验身假象；01:46 identity-check 截图发现异响后冻结制动，改 `-port 5580` 显式端口重启 + 传输通道 getprop 双验身，后续走查全部在 emulator-5580 正身执行。落雷操作清单=卸载雷电上既有 media.qimeng.app+装入 debug APK+am start+uimode night yes+数十次 input tap/text/screencap；严禁再碰 5554（卸载决策由主代理与用户处置）。硬设备协议沉淀于 ADR-0031「设备纪律」节（双通道门禁/显式端口/禁 kill-server）。
+- **涉及文件**：`.github/workflows/ci.yml`、`android/core/ui/`（theme/*+glass/*+component/QimengScaffold|SegPill|SkeletonGrid|MediaGrid|TitleRow）、`android/app/.../navigation/QimengNavHost.kt`、`android/feature/{login,home,settings,stats,all,detail}/…`、`docs/adr/0031`（新）+`docs/adr/INDEX.md`、`docs/HANDOVER.md`、`android/README.md`、本条目。
+
 ## feat(api/server)+docs: 备份导出/导入并入 TXT 作者片段——txtFragments 段随备份全量迁移，跨端迁移最后一公里补齐（2026-10-01 第四百二十八笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理）

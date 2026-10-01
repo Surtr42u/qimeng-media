@@ -1,6 +1,6 @@
 # HANDOVER - 交接说明
 
-> 写给下一位接手的 AI。人类用户无编程基础，代码由 AI 生成。**最后更新：2026-10-01**：备份导出/导入并入 TXT 作者片段（keep 合并，第四百二十八笔，见 §4 服务端）；§4 收敛为现状短句清单（文档漂移排查批，第四百二十六笔）；同日已落地归档一键上传、本机同步通道、断点续传与收藏/点赞 SSE（ADR-0028/0029/0030）。历史批次见 `docs/CHANGELOG.md`。
+> 写给下一位接手的 AI。人类用户无编程基础，代码由 AI 生成。**最后更新：2026-10-02**：Android 全新设计语言「流光玻璃」落地（分支 ui/app-redesign，ADR-0031；第四百二十九笔，见 §4 Android）+ 夜间走查「端口分裂脑」第二次落雷事故沉淀（硬设备协议入 ADR-0031「设备纪律」节与 §7 约定 4）。历史批次见 `docs/CHANGELOG.md`。
 
 ## 1. 项目一句话
 
@@ -40,6 +40,7 @@
 
 **Android**：
 - 浏览/播放/上传/离线队列/缓存/备份/数据管理/本机模式全功能；后台冻结自愈（回前台探测 /healthz 无响应自动重拉 + 残留子进程 pid 回收）。
+- 全新设计语言「流光玻璃」（2026-10-02，ADR-0031，分支 ui/app-redesign 待并）：暗色优先三元色板+玻璃组件族（GlassSurface/AuroraBackdrop/GlassNavBar，API<31 自动降级半透明+阴影）+M3 Expressive spring 动效+pushed 路由转场；功能守恒只动渲染层（ViewModel/Repository/SDK 零改动）。
 - 上传=唯一「系统文件」SAF 入口 + 系统分享共用 submitUris 单管道，选完即传；批次默认（库/作者/来源）持久化、入队快照继承；归档文件夹一键上传（扫描归档根按「文件夹名=库名」自动匹配〔sanitize 与 ADR-0030 同规范〕、递归子目录映射、条目级库目标入队、alreadyArchived 跳过、防重门禁+超限拦截）。
 - 断点续传接入（ADR-0028）：≥16MB 分片会话流，WorkManager 重试先 GET 探测权威 offset、409 重同步、404 自动重建、取消 best-effort DELETE；complete 后挂靠/归档管线零改动复用；<16MB 直传。
 - 预取 revision 整轮跳过（ADR-0026）：轮首比对 GET /library/revision，未变置 Skipped；记录捆绑服务器标识防撞号，SKIP 前随机样本 50 条本地探测、缺失≥20% 降级全量，清空任一缓存池强制下轮补齐；缩略图预取磁盘探测短路+分池按当前连接 serverUrl 路由（命中免请求免解码，轮终 logcat QimengCache 记档）。
@@ -107,7 +108,7 @@ activePool 冷启动装配竞态（读 miss 重下，无害）；桌面壳无自
 1. 项目日常阶段本地可用 dev 免密；**实机/生产禁止** `auth_dev_mode`（见 `SECURITY.md`）
 2. 不要单独拉前端：统一访问 8420（后端托管 `web/dist`）；改前端先 `npm --prefix web run build`
 3. UI 调试测试库：样例相册目录（见历史 CHANGELOG）；换库/删库前先问
-4. **Android 构建必须显式 AVD `qimeng_api35`**——禁止碰 `emulator-5554`（雷电游戏模拟器）
+4. **Android 构建必须显式 AVD `qimeng_api35` 且走显式端口**——`emulator -port 5580` 启动（serial=emulator-5554 是雷电游戏模拟器，严禁任何 install/拉起/wm/settings/input 类命令；2026-10-02 第二次落雷事故根因=端口分裂脑：雷电占 adb 传输端口 5555、AVD 只占控制台 5554，`emu avd name` 走控制台验身会恒答 qimeng_api35 造成假象）。每批设备命令前双通道门禁：`emu avd name` 答 qimeng_api35 **且** `getprop ro.product.model` 答 sdk_gphone64_x86_64，两验皆过才继续；禁止 adb kill-server/reconnect/connect。细则见 ADR-0031「设备纪律」节
 5. 8420 真库永不写截图；证据用隔离实例虚构数据
 
 ## 8. 文档地图（现行）

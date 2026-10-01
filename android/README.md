@@ -2,6 +2,13 @@
 
 > M4 里程碑在此开发。动手前必读：`../AI_README_FIRST.md`、`../docs/HANDOVER.md`（现状）、`../docs/adr/0008`、`../docs/adr/0014`（技术路线）、`../docs/adr/0015`（单机形态预留）；历史决策见 `../docs/CHANGELOG.md`。
 
+## 设计语言「流光玻璃」（2026-10-02 起，ADR-0031）
+
+- 视觉体系：暗色第一基准三元强调色板（鸢尾/雾岚/极光青 + 氛围辉光四色）+ 大圆角（媒体卡 18dp/面板 24dp/胶囊 100dp）+ 标题族 SemiBold；token 单源 `core/ui/theme/`（Color/Theme/Type/Shape/Dimens）。
+- 玻璃件单源 `core/ui/glass/`：GlassSurface/GlassCard（分层半透明+受光描边+高光纱+投影）、AuroraBackdrop（自绘径向辉光极光底，壳层全局唯一景深来源）、GlassNavBar（底栏坞）、QimengMotion（pushed 路由 spring 转场；**Tab 切换恒 snap**，常驻层防闪烁机制不可动）、pressScale/GlassIconButton（按压微交互）。feature 层禁止自绘玻璃/胶囊/按压动画，一律引用 glass 包。
+- 降级策略：玻璃不依赖 backdrop 采样模糊（官方无此 API）；`Modifier.blur` 只用于自有内容且 API<31 自动 no-op，全部玻璃件天然回落「半透明纯色层+阴影」，无需分支代码。
+- 动效：M3 Expressive（MaterialExpressiveTheme + MotionScheme.expressive）管 M3 标准件；自绘动效规范在 `glass/Motion.kt`。
+
 ## 技术栈（2026-09-04 二次定论，ADR-0014：先进优先，Compose 全新实现）
 
 - Kotlin + Jetpack Compose（Material 3）+ Hilt + Coroutine/Flow + Navigation Compose
