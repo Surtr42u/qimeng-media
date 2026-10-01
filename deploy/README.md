@@ -60,6 +60,9 @@ docker pull docker.m.daocloud.io/library/debian:bookworm-slim
 | `QIMENG_TRASH_RETENTION_DAYS` | 回收站保留天数（默认 30；到期自动物理清除） |
 | `QIMENG_TRASH_SWEEP_INTERVAL` | 回收站到期巡检间隔（默认 1h） |
 | `QIMENG_TRUSTED_HOSTS` | 允许的 Host 域名白名单（默认只放行 IP 直连与 localhost；用域名/魔法 DNS 访问时配置） |
+| `QIMENG_LOCAL_SYNC_ROOT` | 本机文件夹自动同步通道的同步根（**空=关，默认关闭**）；直接子文件夹名=库名自动匹配入库，成功源文件移走、失败原地保留（ADR-0030） |
+| `QIMENG_LOCAL_SYNC_INTERVAL` | 同步根轮询周期（默认 30s；想立即同步走维护页「立即同步」或 POST /local-sync/trigger） |
+| `QIMENG_LOCAL_SYNC_STABLE_AGE` | 文件稳定门槛（默认 60s）：mtime 年龄≥门槛且跨轮 size/mtime 不变才处理，防半截拷贝入库 |
 
 ## 安全红线（部署时逐条自查）
 

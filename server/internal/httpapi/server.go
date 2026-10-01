@@ -189,6 +189,9 @@ type Server struct {
 	// uploads 断点续传上传会话管理器（uploadsess 包，ADR-0028；New 内按
 	// Cfg.DataDir 构造，时钟/日志与 Server 同源注入）。
 	uploads *uploadsess.Manager
+	// localSync 本机自动同步通道运行态（localsync.go，ADR-0030）：观测/失败
+	// 记录/状态端点共享的内存态，全部访问经其 mu 保护。
+	localSync *localSyncState
 }
 
 // New 组装 HTTP 服务。返回 *Server；main 用 Handler() 拿到带完整
@@ -256,6 +259,7 @@ func New(deps Deps) (*Server, error) {
 		mirror:         mirror,
 		rev:            rev,
 		uploads:        uploadsess.New(deps.Cfg.DataDir, now, logger),
+		localSync:      newLocalSyncState(),
 		authState:      newAuthState(),
 		authLimit:      newAuthLimiter(authRateLimitMax, authRateLimitWindow),
 		scanStates:     newScanStateMap(),

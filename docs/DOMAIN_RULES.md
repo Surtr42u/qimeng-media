@@ -192,7 +192,7 @@
 
 ## 9. 文件操作规则（新需求，2026-08-22 确认）
 
-- **上传**：手机/网页上传文件到库内指定目录；类型白名单（图片：jpg/jpeg/png/gif/webp/avif；视频：mp4/mkv/webm/mov/m4v/avi），单文件大小上限可配置（默认 2GB，`upload.max_bytes`/`QIMENG_UPLOAD_MAX_BYTES`）；原样落盘**永不转码**。目标同名文件存在时**自动重命名"基名 (2).ext"**（上传是批量采集通道，同名是常态；最终名以响应 relPath 为准）。media_type 分类与扫描器同口径（gif 单列 animated_image）。
+- **上传**：手机/网页上传文件到库内指定目录；类型白名单（图片：jpg/jpeg/png/gif/webp/avif；视频：mp4/mkv/webm/mov/m4v/avi），单文件大小上限可配置（默认 2GB，`upload.max_bytes`/`QIMENG_UPLOAD_MAX_BYTES`）；原样落盘**永不转码**。目标同名文件存在时**自动重命名"基名 (2).ext"**（上传是批量采集通道，同名是常态；最终名以响应 relPath 为准）。media_type 分类与扫描器同口径（gif 单列 animated_image）。（本机自动同步通道（ADR-0030）入库同款复用本口径，不另设规则。）
 - **移动/重命名**：走 API，更新路径属性，全部关联数据无感保留（见 ARCHITECTURE §6）。目标位置已有同名文件 → 409 拒绝（移动不覆盖，覆盖须显式分步）。cos 库在移动/改名后按新目录首段重算作者映射（§6「COS 作者清理与目录变更」）；normal 库按新文件名重算出出处/角色。
 - **删除**：一律先进回收站（服务端管理的独立目录），可手动恢复或清空；物理删除仅回收站内的显式操作。保留判定口径默认 30 天（`filing.DefaultTrashRetentionDays` = `config.DefaultTrashRetentionDays`，两常量同值互指），可经 `trash.retention_days`/`QIMENG_TRASH_RETENTION_DAYS` 覆盖，trash 列表 ExpiresAt 按生效值返回。**到期自动清除已实现（2026-09-22）**：后台清扫按 `trash.sweep_interval`（默认 1h，`QIMENG_TRASH_SWEEP_INTERVAL`）巡检，超保留期条目物理清除（`filing.TrashExpired` 判定；retention<1 永不判过期——误配兜底），清除时联动清理该资产缩略图缓存（见 §11）。
 - **恢复语义**（M2 实现，2026-08-27）：asset_id 不变（身份机制）；浏览/播放历史保留（ViewEvent 事件流无外键，ADR-0005 设计红利）；**标签/收藏/点赞绑定不随恢复还原**（删除时库行硬删、FK 级联清理，恢复=重建行）——已知限制，用户在意时给回收站 meta 加关联快照；原位置被占用时自动重命名"基名 (2).ext"（恢复永远成功，不因冲突失败）。

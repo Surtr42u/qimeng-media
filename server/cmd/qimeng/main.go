@@ -242,6 +242,13 @@ func main() {
 	// 分片文件一起回收（退出随 ctx 取消；清扫不 bump 修订号——未产生资产）。
 	apiSrv.StartUploadSweeper(ctx)
 
+	// 本机文件夹自动同步通道（ADR-0030）：local_sync.root 配置为空时通道
+	// 关闭（不启动 goroutine），非空按 local_sync.interval 周期轮询同步根
+	//（退出随 ctx 取消；立即触发可走 POST /api/v1/local-sync/trigger）。
+	if cfg.LocalSync.Root != "" {
+		apiSrv.StartLocalSyncRunner(ctx)
+	}
+
 	// errCh 把 goroutine 里的监听错误传回主流程——不允许 err 悄悄丢失。
 	errCh := make(chan error, 1)
 	go func() {
