@@ -5,8 +5,8 @@ import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
 // 开发代理目标：Go 服务端默认监听端口（docs/PROJECT_PLAN.md / server config 默认 :8420）。
-// 隔离调试实例可用 QIMENG_DEV_PROXY_TARGET 覆盖（如 127.0.0.1:18499 的合成测试库），
-// 未设置时行为与旧配置完全一致；仅 dev server 生效，不进生产构建。
+// 隔离调试实例可用 QIMENG_DEV_PROXY_TARGET 覆盖（值形如 http://127.0.0.1:<port>，
+// 指向自起的合成测试库实例），未设置时行为与旧配置完全一致；仅 dev server 生效，不进生产构建。
 const DEV_SERVER_PORT = 8420
 const PROXY_TARGET = process.env.QIMENG_DEV_PROXY_TARGET ?? `http://127.0.0.1:${DEV_SERVER_PORT}`
 

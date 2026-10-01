@@ -43,8 +43,12 @@ M2 落地的 Web 视觉层是桌面客户端原型移植（`styles/prototype.css
   （overlay 10 → modal-panel 51，数值关系沿用 v1 约定）；
 - **shadcn 桥接反向**：v1 是 `--qm-* ← --immich-ui-*`，v2 改为 shadcn 变量（`--background` 等）`← --qm-*`
   （index.css 桥接层）——`--qm-*` 成为全站唯一色彩事实源；组件代码仍只准消费 `--qm-*`；
-- **旧名兼容别名块**：存量 TSX 内联样式/图表组件引用的 v1 变量名（`--text-main`/`--hover-bg`/`--pop-chip-hover-bg`/
-  `--trend-line-sub` 等）全部指向 `--qm-*` 单源，注释标明「新代码禁用」，为后续 TSX 清理留通道；
+- **旧名兼容别名块**：存量 TSX 内联样式/图表组件与 glass.css 个别规则引用的 v1 变量名
+  （在用 10 个：`--text-main`/`--text-sub`/`--border`/`--font`/`--danger`/`--trend-line-sub`/
+  `--pop-chip-hover-bg`/`--scrollbar-thumb`/`--hist-cover-gradient`/`--hist-cover-shade`）
+  全部指向 `--qm-*` 单源，注释标明「新代码禁用」，为后续清理留通道；
+  如实记档：别名共 43 个，其余 33 个当前零引用（含 `--hover-bg` 等在 v2 重写中已改消费
+  `--qm-*` 的），按最小改动暂不裁剪，引用清完后应整块删除；
 - `@immich/ui` 主题包退役：CSS import 与 package.json 依赖一并移除（无 TS 引用）。
 
 **3. 样式层整体替换**：`styles/prototype.css` 删除，新 `styles/glass.css` 按相同类名契约全量重写
@@ -54,10 +58,13 @@ M2 落地的 Web 视觉层是桌面客户端原型移植（`styles/prototype.css
 - v1 的「首行贴侧栏节奏」负 margin 锚点体系（-11.5px/-13.8px/-17.5px 等像素锚）退役，
   改为 `.content` 统一节奏——旧锚位依赖 75px 顶栏 + zoom 1.1 的像素推算，跨 DPI/缩放脆弱；
 - 保留 v1 的**全局 zoom 1.1** 及其全部配套补偿（radix popper wrapper 0.9091、图片查看器 `--zoom-inverse`、
-  `:fullscreen zoom:1`、ArtPlayer `.art-settings` 钉位）——这些都是实证修复，与视觉语言无关；
+  `:fullscreen zoom:1`、ArtPlayer `.art-settings` 钉位），以及 **`#root { height: 100% }` 挂载点高度链**
+  （React 比 v1 原型多包一层 #root，断了它 html/body 的 100% 传不到 .layout，长页被 body
+  overflow:hidden 裁切无滚动）——这些都是实证修复，与视觉语言无关；
 - 动效只增不改纲：卡片进场 stagger、radix data-state 进出场、详情叠加层入场、点赞回弹沿用既有机制，
-  时长/缓动全部走 token；新增**明暗切换 View Transition**（`document.startViewTransition` 全屏交叉溶解，
-  不支持的浏览器同步直切，渐进增强零成本）；`prefers-reduced-motion` 全局归零层沿用。
+  时长/缓动全部走 token；新增**明暗切换 View Transition**（`document.startViewTransition` 全屏交叉溶解；
+  不支持的浏览器或 `prefers-reduced-motion` 用户同步直切——溶解本身是全屏动画，不绕过减动效偏好）；
+  `prefers-reduced-motion` 全局归零层沿用。
 
 **4. backdrop-filter 降级策略**（写死在 glass.css §13）：`@supports not (backdrop-filter...)` 时
 只替换 surface 组变量为**同色不透明等价值** + 模糊参数归零 + 叠加层/查看器/遮罩转实底——

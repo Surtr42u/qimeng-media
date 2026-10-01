@@ -157,8 +157,13 @@
   --qm-font: 'Geist Variable', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'PingFang SC', 'Microsoft YaHei', sans-serif;
 
   /* ================================================================
-   * 四、旧名兼容别名（存量 TSX 内联样式/图例仍在引用；新代码禁止使用，
-   *   全部指向 --qm-* 单源，改值只动上方语义层）
+   * 四、旧名兼容别名（全部指向 --qm-* 单源，改值只动上方语义层；新代码禁止使用）
+   *   如实记档（审查批 2026-10-02）：共 43 个别名，**实际在用 10 个**——
+   *   TSX 内联样式/图表组件引用 7 个：--text-main、--text-sub、--border、--font、
+   *   --danger、--trend-line-sub、--pop-chip-hover-bg；
+   *   glass.css 个别规则沿用 3 个：--scrollbar-thumb、--hist-cover-gradient、--hist-cover-shade。
+   *   其余 33 个当前零引用（含 --hover-bg 等在 v2 重写中已改消费 --qm-hover 的），
+   *   按「最小改动」暂不裁剪，TSX/glass.css 引用清理后应整块删除。
    * ================================================================ */
   --bg: var(--qm-surface);
   --border: var(--qm-border);
