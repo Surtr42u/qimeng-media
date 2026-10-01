@@ -13,31 +13,27 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="绮梦影库" />
-    <!-- 初始浅色；暗色值由下方内联脚本按"手动选择 > 系统主题"切换（浏览器对 theme-color 只取单值，无法写 CSS 变量） -->
-    <meta name="theme-color" content="#ffffff" />
+    <!-- 初始暗色（ADR-0031 暗色优先）；亮色值由下方内联脚本按"手动选择 > 暗色默认"切换（浏览器对 theme-color 只取单值，无法写 CSS 变量） -->
+    <meta name="theme-color" content="#0b0c16" />
     <title>绮梦影库</title>
     <script>
       // 首帧防闪白 + theme-color 同步：在应用 JS 加载前设置 html.dark。
       // 语义与 src/lib/theme.ts 一致（THEME_STORAGE_KEY='qimeng_theme' 双写，改动须两处同步）：
-      // 手动选择（localStorage）优先；无手动选择时跟随系统，且运行中系统变化仅在无手动选择时生效。
-      // 色值：dark #0f0f0f = 原型深色底（styles/prototype.css .dark --bg）；浅色 #ffffff。
+      // 手动选择（localStorage）优先；无手动选择时默认暗色（ADR-0031 暗色优先，不再跟随系统）。
+      // 色值 = tokens.css 画布 --qm-bg 的 hex 形态：dark #0b0c16 / light #f3f3f9（theme.ts 双写）。
       ;(function () {
         var KEY = 'qimeng_theme'
-        var query = window.matchMedia('(prefers-color-scheme: dark)')
         function apply(dark) {
           document.documentElement.classList.toggle('dark', dark)
           var meta = document.querySelector('meta[name="theme-color"]')
-          if (meta) meta.setAttribute('content', dark ? '#0f0f0f' : '#ffffff')
+          if (meta) meta.setAttribute('content', dark ? '#0b0c16' : '#f3f3f9')
         }
         function stored() {
           var v = localStorage.getItem(KEY)
           return v === 'light' || v === 'dark' ? v : null
         }
         var s = stored()
-        apply(s !== null ? s === 'dark' : query.matches)
-        query.addEventListener('change', function (event) {
-          if (stored() === null) apply(event.matches)
-        })
+        apply(s !== null ? s === 'dark' : true)
       })()
     </script>
   </head>

@@ -1,46 +1,130 @@
 /**
- * 设计 token（ADR-0008 / web/README.md 铁律）
- * 颜色/间距/圆角/动效时长的唯一来源；组件禁止硬编码颜色，一律引用 var(--qm-*)。
+ * 设计 token v2「绮梦流光 · Aurora Glass」（ADR-0031 / web/README.md 铁律）
  *
- * 为什么初值大多桥接 shadcn 主题变量（--background/--primary 等）：
- * shadcn 组件内部消费的是它自己的主题变量层，把 --qm-* 映射到同一来源，
- * 后续品牌化（绮梦配色）只需改这一处映射或 shadcn 的 :root 值，两层同时生效。
+ * 颜色/玻璃材质/间距/圆角/动效/层级的唯一来源；组件禁止硬编码颜色，一律引用 var(--qm-*)。
+ * 设计语言：暗色优先的液态玻璃（liquid glass / glassmorphism）——
+ *   1. 画布层：深靛底 + 三团低饱和极光渐变（fixed，不随滚动），给玻璃提供可模糊的色彩；
+ *   2. 玻璃层：半透明面板 + backdrop-filter 模糊提饱和 + 发丝描边 + 顶缘高光；
+ *   3. 内容层：文字三级灰阶 + 极光紫主色 + 图表四辅色。
+ * 明暗双主题：.dark 为设计主角（暗色优先），浅色是「晨雾玻璃」变体——两套都定义完整。
+ *
+ * 层次约定：
+ *   本文件定义 --qm-* 体系 + 旧名兼容别名（别名仅供存量 TSX/图例过渡，新代码禁用）；
+ *   index.css 把 shadcn 主题变量（--background 等）反向桥接到 --qm-*（shadcn ← qm 单向），
+ *   组件只消费 --qm-*（或经 Tailwind 的 --color-* 映射间接消费 shadcn 桥接值）。
+ *
+ * 浏览器兼容（降级策略，见 glass.css 尾部 @supports 块）：
+ *   backdrop-filter 不支持时（老 Firefox <103 / 部分 WebView），玻璃面板退化为
+ *   「同色不透明面板」——--qm-glass-fallback 组变量把所有 surface 的透明度收满，
+ *   布局与层级零变化，只失去透出极光的质感。
  */
 
 :root {
-  /* ---- 颜色（语义映射 shadcn 变量：组件一律用 --qm-*，不直接消费 shadcn 层） ---- */
-  --qm-bg: var(--background);
-  --qm-text: var(--foreground);
-  --qm-text-muted: var(--muted-foreground);
-  --qm-primary: var(--primary);
-  --qm-primary-foreground: var(--primary-foreground);
-  --qm-border: var(--border);
-  --qm-destructive: var(--destructive);
+  /* ================================================================
+   * 一、语义色（浅色 = 晨雾玻璃）
+   * ================================================================ */
 
-  /** 卡片/面板表面（= shadcn card）：白色卡面、深色卡面 */
-  --qm-surface: var(--card);
-  /** 略深一档的表面（= shadcn secondary）：次级区域/悬浮层底 */
-  --qm-surface-soft: var(--secondary);
-  /** 胶囊/标签/提示条的底色（= shadcn muted）：弱化背景，前景用 --qm-text-muted */
-  --qm-chip-bg: var(--muted);
-  /** 品牌强调（= shadcn accent）：hover 高亮面、选项高亮 */
-  --qm-accent: var(--accent);
-  /** 分割线/描边（= shadcn border）：与 --qm-border 同源，语义区分用途 */
-  --qm-divider: var(--border);
-  /**
-   * 主色的透明版：primary 在 10% 透明度下的浅色底（选中态背景/扫码光晕等）。
-   * 为什么用 color-mix 而非单独起色值：跟随 --primary 联动（品牌改色只动一处），
-   * 为什么色空间用 oklab：与主题变量同色域，混合结果无 sRGB 色调偏移。
-   */
-  --qm-primary-soft: color-mix(in oklab, var(--primary) 10%, transparent);
+  /* 画布底色（body 实底；极光渐变叠在其上，见 --qm-aurora） */
+  --qm-bg: oklch(0.965 0.008 285);
+  /** 极光氛围层（body::before 专用，三团 radial-gradient 组合；暗色版见 .dark） */
+  --qm-aurora:
+    radial-gradient(52rem 34rem at 12% -8%, oklch(0.82 0.09 295 / 0.34), transparent 62%),
+    radial-gradient(46rem 30rem at 88% 6%, oklch(0.85 0.07 220 / 0.26), transparent 60%),
+    radial-gradient(50rem 36rem at 58% 112%, oklch(0.85 0.08 330 / 0.16), transparent 64%);
 
-  /* ---- 圆角 ----
-   * 全站圆角随 shadcn --radius（0.75rem）缩放，换视觉风格只改一个变量；
-   * 0.75rem 对齐 Immich 媒体卡片 12px 口径（@immich/ui, MIT） */
-  --qm-radius: var(--radius);
+  /* 文字三级 + 最浅饰色 */
+  --qm-text: oklch(0.26 0.025 280);
+  --qm-text-soft: oklch(0.45 0.02 280);
+  --qm-text-muted: oklch(0.54 0.02 280);
+  --qm-text-faint: oklch(0.68 0.015 280);
 
-  /* ---- 间距节奏 ----
-   * 4px 基数，与 Tailwind spacing（1 unit = 0.25rem）对齐，布局仍可用 utility 类 */
+  /* 品牌主色（极光紫，承旧版 #4250af 色相带）；strong 供 hover/激活强调 */
+  --qm-primary: oklch(0.5 0.17 285);
+  --qm-primary-strong: oklch(0.44 0.18 288);
+  /** 主色浅底（选中态背景/光晕），跟随主色联动（品牌改色只动 --qm-primary） */
+  --qm-primary-soft: color-mix(in oklab, var(--qm-primary) 14%, transparent);
+  /** 主色上的前景字（浅色主题主色够深 → 白字） */
+  --qm-on-accent: oklch(0.99 0.005 285);
+
+  /* ================================================================
+   * 二、玻璃材质（本设计语言的核心组）
+   * ================================================================ */
+
+  /** 常规玻璃面板（卡片/侧栏/顶栏）：半透明 + 模糊后能透出极光色 */
+  --qm-surface: oklch(1 0 0 / 0.58);
+  /** 强玻璃（弹窗/下拉/浮层，需更高遮盖力保证文字对比） */
+  --qm-surface-strong: oklch(1 0 0 / 0.86);
+  /** 软表面（输入框/胶囊底/次级区域）：比面板再透一档 */
+  --qm-surface-soft: oklch(1 0 0 / 0.45);
+  /** 芯片/徽章底（不透明小面积，无需透光） */
+  --qm-chip-bg: oklch(0.93 0.012 285 / 0.8);
+  /** hover 面（列表行/按钮 hover 的轻覆盖） */
+  --qm-hover: oklch(0.5 0.03 285 / 0.08);
+  --qm-hover-strong: oklch(0.5 0.03 285 / 0.14);
+
+  /* 发丝描边（玻璃边缘的明暗两笔：外描边 + 顶缘内高光，玻璃立体感的来源） */
+  --qm-border: oklch(0.35 0.03 285 / 0.14);
+  --qm-border-strong: oklch(0.35 0.03 285 / 0.24);
+  --qm-glass-highlight: linear-gradient(to bottom, oklch(1 0 0 / 0.55), oklch(1 0 0 / 0.06) 38%, transparent 60%);
+
+  /* backdrop-filter 参数（模糊半径/饱和提升；@supports 降级时整组失效退化为不透明） */
+  --qm-glass-blur: 22px;
+  --qm-glass-saturate: 1.5;
+
+  /* 阴影阶梯（玻璃的落影：比实心卡片更轻更散） */
+  --qm-shadow-1: 0 1px 2px oklch(0.3 0.03 285 / 0.08), 0 1px 6px oklch(0.3 0.03 285 / 0.05);
+  --qm-shadow-2: 0 2px 8px oklch(0.3 0.03 285 / 0.1), 0 8px 24px oklch(0.3 0.03 285 / 0.08);
+  --qm-shadow-3: 0 4px 14px oklch(0.3 0.03 285 / 0.12), 0 16px 40px oklch(0.3 0.03 285 / 0.12);
+  /** hover 浮起专用（卡片/FAB 共用） */
+  --qm-shadow-lift: 0 6px 18px oklch(0.35 0.05 285 / 0.16), 0 2px 6px oklch(0.35 0.05 285 / 0.08);
+
+  /* 遮罩（弹窗/查看器底）：深色玻璃幕 */
+  --qm-scrim: oklch(0.25 0.04 285 / 0.4);
+
+  /* 功能色 */
+  --qm-ok: oklch(0.6 0.14 155);
+  --qm-down: oklch(0.58 0.2 25);
+  --qm-danger: oklch(0.58 0.21 25);
+  /* 日志/警示三对（底/字） */
+  --qm-warn-bg: oklch(0.93 0.06 85);
+  --qm-warn-text: oklch(0.5 0.11 70);
+  --qm-info-bg: oklch(0.92 0.04 240);
+  --qm-info-text: oklch(0.5 0.12 255);
+  --qm-err-bg: oklch(0.92 0.05 25);
+  --qm-err-text: oklch(0.5 0.18 25);
+
+  /* 图表五色（主色 + 极光三辅色 + 警示红；甜甜圈 arc-1..4 / recharts 曲线共用） */
+  --qm-chart-1: var(--qm-primary);
+  --qm-chart-2: oklch(0.62 0.12 220);
+  --qm-chart-3: oklch(0.66 0.13 330);
+  --qm-chart-4: oklch(0.72 0.13 80);
+  --qm-chart-5: var(--qm-danger);
+  /** 趋势图对比副线（虚线次序列） */
+  --qm-chart-sub: oklch(0.68 0.02 285);
+
+  /* 媒体封面/舞台专用 */
+  --qm-stage: oklch(0.12 0.01 280);
+  --qm-cover-placeholder: oklch(0.92 0.012 285);
+  --qm-cover-shade: linear-gradient(180deg, oklch(0 0 0 / 0.06) 0%, transparent 30%, transparent 55%, oklch(0 0 0 / 0.55) 100%);
+  --qm-scrim-chip: oklch(0 0 0 / 0.55); /* 封面上浮字（时长/已看完）的半透明黑底 */
+
+  /* ================================================================
+   * 三、布局 / 圆角 / 间距 / 动效 / 层级
+   * ================================================================ */
+
+  /* 壳层尺寸：侧栏加宽一档（72px，玻璃悬浮导航的呼吸空间）、顶栏收窄（64px，
+   * 大屏信息密度向）——玻璃.css 的 .sidebar/.header 与 .asset-overlay 锚点共用 */
+  --qm-sidebar-w: 72px;
+  --qm-header-h: 64px;
+
+  /* 圆角阶梯（玻璃圆角偏大，弧面感）：sm 控件 / md 卡片 / lg 大面板 / full 胶囊 */
+  --qm-radius-sm: 0.625rem;
+  --qm-radius: 0.875rem;
+  --qm-radius-lg: 1.125rem;
+  --qm-radius-xl: 1.5rem;
+  --qm-radius-full: 999px;
+
+  /* 间距节奏：4px 基数，与 Tailwind spacing（1 unit = 0.25rem）对齐 */
   --qm-space-1: 0.25rem;
   --qm-space-2: 0.5rem;
   --qm-space-3: 1rem;
@@ -48,19 +132,129 @@
   --qm-space-5: 2.5rem;
   --qm-space-6: 4rem;
 
-  /* ---- 控件尺寸 ----
-   * 胶囊高度 30px（交互规格定值：筛选 chip 统一高度）；tailwind 无对应档位，token 收口 */
+  /* 控件尺寸：筛选 chip 统一高度（交互规格定值） */
   --qm-chip-height: 1.875rem;
 
-  /* ---- 动效时长 ----
-   * 统一三档，后续 Framer Motion 动画引用，避免各处随手写时长造成节奏混乱 */
-  --qm-duration-fast: 120ms;
-  --qm-duration-base: 200ms;
-  --qm-duration-slow: 360ms;
+  /* 动效时长三档（禁止另起档位） */
+  --qm-duration-fast: 140ms;
+  --qm-duration-base: 240ms;
+  --qm-duration-slow: 420ms;
+  /* 动效缓动（easings.net 标准档 + 一档回弹；样式一律引用 var(--qm-ease-*)） */
+  --qm-ease-out: cubic-bezier(0.22, 1, 0.36, 1); /* easeOutQuint：玻璃进场，先快后极缓 */
+  --qm-ease-in: cubic-bezier(0.64, 0, 0.78, 0); /* easeInCubic：退场/收起 */
+  --qm-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1); /* back-out：微交互弹跳 */
 
-  /* ---- 动效缓动（B-2 全局动效现代化新增）----
-   * 具名常量（曲线取自 easings.net 标准 cubic 档），样式一律引用 var(--qm-ease-*)，
-   * 禁止散落手写曲线；时长一律复用上方三档 --qm-duration-*，禁止另起档位 */
-  --qm-ease-out: cubic-bezier(0.33, 1, 0.68, 1); /* easeOutCubic：进场/展开，先快后缓 */
-  --qm-ease-in: cubic-bezier(0.32, 0, 0.67, 0); /* easeInCubic：退场/收起，先缓后快 */
+  /* 层级阶梯（数字关系为既有约定：叠加层 < 弹层面板 < 搜索框 < 查看器 < FAB < 弹窗） */
+  --qm-z-overlay: 10;
+  --qm-z-pop-panel: 20;
+  --qm-z-search-input: 30;
+  --qm-z-viewer: 35;
+  --qm-z-fab: 40;
+  --qm-z-modal: 50;
+  --qm-z-modal-panel: 51;
+
+  /* 字体栈：Geist Variable 打头（web/index.html 与 @fontsource 引入），中文回退系统字体 */
+  --qm-font: 'Geist Variable', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+
+  /* ================================================================
+   * 四、旧名兼容别名（存量 TSX 内联样式/图例仍在引用；新代码禁止使用，
+   *   全部指向 --qm-* 单源，改值只动上方语义层）
+   * ================================================================ */
+  --bg: var(--qm-surface);
+  --border: var(--qm-border);
+  --elev: var(--qm-surface-strong);
+  --invert: var(--qm-on-accent);
+  --text-main: var(--qm-text);
+  --text-mid: var(--qm-text-soft);
+  --text-sub: var(--qm-text-muted);
+  --faint: var(--qm-text-faint);
+  --hover-bg: var(--qm-hover);
+  --pop-chip-hover-bg: var(--qm-hover-strong);
+  --accent-deep: var(--qm-primary-strong);
+  --accent-2: var(--qm-chart-2);
+  --accent-3: var(--qm-chart-3);
+  --accent-4: var(--qm-chart-4);
+  --ok: var(--qm-ok);
+  --down: var(--qm-down);
+  --danger: var(--qm-danger);
+  --overlay-bg: var(--qm-scrim);
+  --stage-bg: var(--qm-stage);
+  --cover-placeholder: var(--qm-cover-placeholder);
+  --cover-shade: var(--qm-cover-shade);
+  --hist-cover-gradient: linear-gradient(135deg, color-mix(in oklab, var(--qm-chart-1) 14%, transparent), color-mix(in oklab, var(--qm-chart-2) 12%, transparent), color-mix(in oklab, var(--qm-chart-4) 10%, transparent));
+  --hist-cover-shade: linear-gradient(180deg, transparent 55%, oklch(0 0 0 / 0.45) 100%);
+  --hist-done-bg: var(--qm-scrim-chip);
+  --scrollbar-thumb: color-mix(in oklab, var(--qm-text-faint) 55%, transparent);
+  --trend-line-sub: var(--qm-chart-sub);
+  --entry-icon: var(--qm-chart-2);
+  --fab-shadow: var(--qm-shadow-2);
+  --fab-shadow-hover: var(--qm-shadow-lift);
+  --fab-bg: var(--qm-surface-strong);
+  --search-pop-shadow: var(--qm-shadow-3);
+  --search-placeholder: var(--qm-text-faint);
+  --dialog-shadow: var(--qm-shadow-3);
+  --card-shadow-hover: var(--qm-shadow-lift);
+  --log-warn-bg: var(--qm-warn-bg);
+  --log-warn-text: var(--qm-warn-text);
+  --log-info-bg: var(--qm-info-bg);
+  --log-info-text: var(--qm-info-text);
+  --log-err-bg: var(--qm-err-bg);
+  --log-err-text: var(--qm-err-text);
+  --sidebar-w: var(--qm-sidebar-w);
+  --header-h: var(--qm-header-h);
+  --font: var(--qm-font);
+}
+
+/* ================================================================
+ * 暗色主题（设计主角：深空画布 + 更亮的主色 + 更透的玻璃）
+ * ================================================================ */
+.dark {
+  --qm-bg: oklch(0.16 0.02 278);
+  --qm-aurora:
+    radial-gradient(52rem 34rem at 12% -8%, oklch(0.42 0.16 292 / 0.42), transparent 62%),
+    radial-gradient(46rem 30rem at 88% 6%, oklch(0.48 0.12 225 / 0.3), transparent 60%),
+    radial-gradient(50rem 36rem at 58% 112%, oklch(0.38 0.13 330 / 0.26), transparent 64%);
+
+  --qm-text: oklch(0.93 0.012 280);
+  --qm-text-soft: oklch(0.78 0.015 280);
+  --qm-text-muted: oklch(0.66 0.02 280);
+  --qm-text-faint: oklch(0.5 0.02 280);
+
+  --qm-primary: oklch(0.74 0.13 285);
+  --qm-primary-strong: oklch(0.8 0.12 288);
+  --qm-primary-soft: color-mix(in oklab, var(--qm-primary) 18%, transparent);
+  --qm-on-accent: oklch(0.17 0.05 285);
+
+  --qm-surface: oklch(0.24 0.028 280 / 0.52);
+  --qm-surface-strong: oklch(0.24 0.03 280 / 0.88);
+  --qm-surface-soft: oklch(0.28 0.025 280 / 0.5);
+  --qm-chip-bg: oklch(0.3 0.025 280 / 0.75);
+  --qm-hover: oklch(1 0 0 / 0.07);
+  --qm-hover-strong: oklch(1 0 0 / 0.12);
+
+  --qm-border: oklch(1 0 0 / 0.09);
+  --qm-border-strong: oklch(1 0 0 / 0.16);
+  --qm-glass-highlight: linear-gradient(to bottom, oklch(1 0 0 / 0.14), oklch(1 0 0 / 0.03) 38%, transparent 60%);
+
+  --qm-shadow-1: 0 1px 2px oklch(0 0 0 / 0.3), 0 1px 6px oklch(0 0 0 / 0.2);
+  --qm-shadow-2: 0 2px 8px oklch(0 0 0 / 0.36), 0 8px 24px oklch(0 0 0 / 0.28);
+  --qm-shadow-3: 0 4px 14px oklch(0 0 0 / 0.42), 0 16px 40px oklch(0 0 0 / 0.34);
+  --qm-shadow-lift: 0 6px 18px oklch(0 0 0 / 0.44), 0 2px 6px oklch(0 0 0 / 0.3);
+
+  --qm-scrim: oklch(0 0 0 / 0.55);
+
+  --qm-ok: oklch(0.78 0.15 158);
+  --qm-down: oklch(0.7 0.18 22);
+  --qm-danger: oklch(0.7 0.19 22);
+  --qm-warn-bg: oklch(0.4 0.07 85);
+  --qm-warn-text: oklch(0.83 0.12 88);
+  --qm-info-bg: oklch(0.36 0.06 245);
+  --qm-info-text: oklch(0.8 0.09 235);
+  --qm-err-bg: oklch(0.36 0.08 25);
+  --qm-err-text: oklch(0.78 0.12 25);
+
+  --qm-chart-sub: oklch(0.52 0.02 285);
+  --qm-stage: oklch(0.09 0.012 280);
+  --qm-cover-placeholder: var(--qm-surface-soft);
+  --qm-scrim-chip: oklch(0 0 0 / 0.62);
 }
