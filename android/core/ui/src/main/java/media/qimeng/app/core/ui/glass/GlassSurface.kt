@@ -1,8 +1,12 @@
 package media.qimeng.app.core.ui.glass
 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
@@ -99,4 +103,36 @@ private fun androidx.compose.ui.graphics.Outline.cornerRadiusPx(): Float = when 
     // Outline.Rounded 的 RoundRect 属性名是 roundRect（无 ed，ui-graphics 官方签名）
     is androidx.compose.ui.graphics.Outline.Rounded -> roundRect.topLeftCornerRadius.x
     else -> 0f
+}
+
+/** 玻璃内容卡按压缩放档（GlassCard 可点形态的微交互） */
+private const val GLASS_CARD_PRESSED_SCALE = 0.97f
+
+/**
+ * 玻璃内容卡（ADR-0031）：页面级内容区块的标准容器——标准玻璃面板 + 可选点击
+ * （点击形态附 spring 按压缩放）。统计卡/入口卡/详情区块等「Surface(color=surfaceVariant)
+ * 时代」卡片的替换单源，禁止 feature 再各写一套玻璃卡。
+ * 无点击时不加交互修饰（与 Surface 无 onClick 同语义）。
+ */
+@Composable
+fun GlassCard(
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
+    shape: Shape = QimengShapes.panel,
+    content: @Composable BoxScope.() -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    GlassSurface(
+        shape = shape,
+        modifier = modifier.then(
+            if (onClick != null) {
+                Modifier
+                    .pressScale(interactionSource, pressedScale = GLASS_CARD_PRESSED_SCALE)
+                    .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
+            } else {
+                Modifier
+            },
+        ),
+        content = content,
+    )
 }

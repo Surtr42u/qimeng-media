@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -33,6 +32,8 @@ import media.qimeng.app.core.model.TrendPoint
 import media.qimeng.app.core.ui.component.Dimens
 import media.qimeng.app.core.ui.component.QimengSegmentedControl
 import media.qimeng.app.core.ui.component.formatBytesHumanReadable
+import media.qimeng.app.core.ui.glass.GlassCard
+import media.qimeng.app.core.ui.glass.GlassSurface
 
 /**
  * 数据统计页（任务I I3 复刻：GUIDE_UI §数据统计页 L203-224；N4 I3b 常看族解冻接线）：
@@ -70,7 +71,7 @@ fun StatsScreen(
         verticalArrangement = Arrangement.spacedBy(Dimens.ScreenPadding),
     ) {
         // Z4 批（2026-09-12 数据页字体对齐旧 stats.xml）：文案「数据」→「数据统计」+ Bold
-        item { Text(text = "数据统计", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold)) }
+        item { Text(text = "数据统计", style = MaterialTheme.typography.headlineMedium) }
         item {
             // 时段三档合体分段控件（2026-09-13 用户终裁对齐旧版截图：不再是三枚独立胶囊，
             // 换 QimengSegmentedControl 连体轨道+浮丸形态，token 见组件 KDoc）
@@ -184,11 +185,10 @@ private fun OverviewCards(state: StatsUiState) {
 private fun staticPlaceholder(loading: Boolean): String =
     if (loading) LOADING_TEXT else FROZEN_PLACEHOLDER_TEXT
 
-/** 单格指标卡（浅面底 + 数值 + 标题；圆角对齐旧版 bg_stat_card 20dp，见 [STAT_CARD_CORNER_RADIUS]） */
+/** 单格指标卡（ADR-0031 玻璃格 + 数值 + 标题；数值 primary 鸢尾色、标签次色） */
 @Composable
 private fun MetricCell(title: String, value: String, modifier: Modifier = Modifier) {
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceVariant,
+    GlassSurface(
         shape = RoundedCornerShape(STAT_CARD_CORNER_RADIUS),
         modifier = modifier,
     ) {
@@ -227,9 +227,8 @@ private fun TrendCard(
     marker: CartesianMarker,
     onOpenTypeTrend: () -> Unit,
 ) {
-    Surface(
+    GlassCard(
         onClick = onOpenTypeTrend,
-        color = MaterialTheme.colorScheme.surfaceVariant,
         shape = RoundedCornerShape(STAT_CARD_CORNER_RADIUS),
         modifier = Modifier.fillMaxWidth(),
     ) {
@@ -279,9 +278,8 @@ private fun TrendCard(
  */
 @Composable
 private fun DistributionEntryCard(onOpen: () -> Unit) {
-    Surface(
+    GlassCard(
         onClick = onOpen,
-        color = MaterialTheme.colorScheme.surfaceVariant,
         shape = RoundedCornerShape(STAT_CARD_CORNER_RADIUS),
         modifier = Modifier.fillMaxWidth(),
     ) {
@@ -325,9 +323,8 @@ private fun ContentRankCard(
     onOpen: () -> Unit,
     onEntryClick: (RankingEntry) -> Unit,
 ) {
-    Surface(
+    GlassCard(
         onClick = onOpen,
-        color = MaterialTheme.colorScheme.surfaceVariant,
         shape = RoundedCornerShape(STAT_CARD_CORNER_RADIUS),
         modifier = Modifier.fillMaxWidth(),
     ) {
@@ -374,9 +371,8 @@ private fun TopAuthorsTagsCard(
     onOpen: () -> Unit,
     onEntryClick: (TopAuthorTagEntry) -> Unit,
 ) {
-    Surface(
+    GlassCard(
         onClick = onOpen,
-        color = MaterialTheme.colorScheme.surfaceVariant,
         shape = RoundedCornerShape(STAT_CARD_CORNER_RADIUS),
         modifier = Modifier.fillMaxWidth(),
     ) {
