@@ -1,27 +1,22 @@
 package media.qimeng.app.core.ui.component
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import media.qimeng.app.core.ui.R
+import media.qimeng.app.core.ui.glass.GlassIconButton
 import media.qimeng.app.core.ui.icon.BackIcon
 import media.qimeng.app.core.ui.icon.HomeFilterIcon
 import media.qimeng.app.core.ui.icon.gridIconFor
@@ -97,40 +92,23 @@ fun QimengTitleRow(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         if (onFilterClick != null) {
-            // U10-3：对齐旧版 allFilterButton（fragment_all_files.xml L48-57——40dp bg_capsule_soft
-            // 胶囊底 + ic_home_filter tint qmColorPrimary）：裸图标 IconButton 换软底胶囊容器 +
-            // 专用款 [HomeFilterIcon]（旧 ic_home_filter 三页通用，勿用 Material filter_list）。
-            // 不走 IconButton/可点击 Surface：二者内建 48dp 最小触达会把旧版 40dp 胶囊撑大
-            // （HomeTopIconButton 同成因）；内层 clickable 承担点击（ripple 被 Surface 形状裁剪）
-            Surface(
-                shape = RoundedCornerShape(QimengDimens.PillCornerRadius),
-                // U10-2b：无激活筛选=透明底（用户反馈「常亮」——旧版恒显软底系静态容器无状态
-                // 语义，见 KDoc @param filterActive 有意偏离记档）；true 恢复旧版软底
-                color = if (filterActive) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
-                modifier = Modifier.size(QimengDimens.IconButtonSize),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .clickable(onClick = onFilterClick),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = HomeFilterIcon,
-                        contentDescription = stringResource(R.string.ui_filter_icon_desc),
-                        tint = MaterialTheme.colorScheme.primary,
-                    )
-                }
-            }
+            // ADR-0031：玻璃胶囊图标钮单源（GlassIconButton）；激活筛选=primary tint 点亮，
+            // 无激活=次色（U10-2b「防常亮」语义保留，胶囊体恒显——玻璃语言的动作钮是实体）
+            GlassIconButton(
+                icon = HomeFilterIcon,
+                contentDescription = stringResource(R.string.ui_filter_icon_desc),
+                onClick = onFilterClick,
+                tint = if (filterActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
         // 列数控件=图标+回调成对出现：回调为 null（或未配列数）整组不显示，不渲染残缺控件
         if (onToggleColumns != null && columns != null) {
-            IconButton(onClick = onToggleColumns) {
-                Icon(
-                    imageVector = gridIconFor(columns),
-                    contentDescription = stringResource(R.string.ui_columns_icon_desc),
-                )
-            }
+            GlassIconButton(
+                icon = gridIconFor(columns),
+                contentDescription = stringResource(R.string.ui_columns_icon_desc),
+                onClick = onToggleColumns,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

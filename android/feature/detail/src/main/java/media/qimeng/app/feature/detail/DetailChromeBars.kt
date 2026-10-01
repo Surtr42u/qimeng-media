@@ -68,13 +68,13 @@ private val CHROME_CONTENT_FADE = tween<Float>(
 )
 
 /**
- * chrome 条底色不透明度（任务U U5 对齐旧版**运行时**实现）：旧版 MediaDetailFragment
- * setChromeVisible 用 `setBackgroundColor((0xF2 shl 24) or (qmColorBg and 0x00FFFFFF))`——
- * 纯色 0xF2≈95% 半透明条，**不是渐变**；仓库里的 bg_detail_top/bottom_gradient.xml 是被
- * 运行时覆盖的死资源（U5 根因：此前 Y2/I7 按 xml「逐字同源」复刻成上下渐变，正是用户
- * 反复反馈的「上下渐变视觉」源头，2026-09-13 用户终裁对齐旧版代码删除渐变）。
+ * chrome 条底色不透明度（ADR-0031 玻璃化，2026-10-02）：旧版 0xF2≈95% 实色条随旧语言退役，
+ * 换 surface 底 @ [CHROME_BAR_GLASS_ALPHA]（≈72%）——详情页 chrome 覆在媒体内容上，降不
+ * 透明度后滚动内容透出，读作「玻璃面板」；可读性由保留的较高底色兜底（图标/文字对比度
+ * 实测仍达标，走查循环复核）。沿革：任务U U5 曾对齐旧版运行时 0xF2 纯色（渐变由此删除，
+ * 该裁决仍然有效——本批仍是纯色，只是透明度入玻璃档）。
  */
-private const val CHROME_BAR_SOLID_ALPHA = 0xF2 / 0xFF.toFloat()
+private const val CHROME_BAR_SOLID_ALPHA = 0.72f
 
 /** 四胶囊图标字形边长（任务Y Y2 对齐旧版 fragment_media_detail.xml:108-144 四枚 40dp
  *  ImageView 减 9dp padding = 22dp 实际字形；全局默认 QimengDimens.IconDefaultSize=24dp
@@ -346,15 +346,14 @@ internal fun DetailBottomChrome(
 }
 
 /**
- * chrome 条底色（任务U U5，2026-09-13 用户终裁）：主题背景色纯色 @ [CHROME_BAR_SOLID_ALPHA]——
- * 旧版运行时 `setBackgroundColor((0xF2 shl 24) | qmColorBg)` 逐字同构，昼夜随主题槽位
- * 自动适配（旧版 qmColorBg 日 #FAFAFA / 夜 #1A1A1A，与新主题 background 同值）。
+ * chrome 条底色（ADR-0031 玻璃化）：surface 底 @ 玻璃档透明度（常量注释有沿革）。
  * 沿革：Y2/I7 曾按旧仓库 bg_detail_top/bottom_gradient.xml 复刻为上下渐变——该 drawable
- * 是运行时被覆盖的死资源，渐变观感即用户反复反馈的不适源头，本批删除。
+ * 是运行时被覆盖的死资源，渐变观感即用户反复反馈的不适源头，该批删除；U5 终裁「纯色条、
+ * 不做渐变」仍然有效，本批仅把透明度从不透明档（0xF2）降到玻璃档。
  */
 @Composable
 internal fun chromeBarTint(): Color =
-    MaterialTheme.colorScheme.background.copy(alpha = CHROME_BAR_SOLID_ALPHA)
+    MaterialTheme.colorScheme.surface.copy(alpha = CHROME_BAR_SOLID_ALPHA)
 
 @Composable
 private fun ChromeIconButton(

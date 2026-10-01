@@ -17,8 +17,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.flow.collectLatest
@@ -137,15 +135,9 @@ fun AllScreen(
         QimengTitleRow(
             title = stringResource(R.string.all_title),
             statLine = state.totalMatched?.let { stringResource(CoreUiR.string.ui_stat_files, it) } ?: "",
-            // Y3 批（2026-09-12 全局字体对齐旧版）：页标题对齐旧版 fragment_all_files.xml L31-37
-            // ——28sp Bold + qmColorTextPrimary（Theme.kt qmColorTextPrimary→onSurface 槽）；
-            // 行高 36sp 防 28sp 大标题行挤压（此前 titleLarge 22sp Regular 偏小即用户反馈项）
-            titleStyle = MaterialTheme.typography.titleLarge.copy(
-                fontSize = 28.sp,
-                lineHeight = 36.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-            ),
+            // ADR-0031：页标题取 headlineMedium（M3 28sp/36lh + Type.kt 标题族 Bold；旧
+            // titleLarge.copy 三连覆盖随旧语言退役）
+            titleStyle = MaterialTheme.typography.headlineMedium,
             columns = displayColumns,
             onToggleColumns = viewModel::toggleColumns,
             onFilterClick = viewModel::openFilterSheet,

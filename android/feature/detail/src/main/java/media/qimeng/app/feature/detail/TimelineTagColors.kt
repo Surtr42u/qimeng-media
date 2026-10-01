@@ -10,10 +10,9 @@ import androidx.compose.ui.graphics.Color
  * - `⭐` 前缀 → 金色系；
  * - 无前缀 → 调用方传入的主题默认色（通常 MaterialTheme.colorScheme.onSurfaceVariant）。
  *
- * 色值说明：项目主题色板 QimengBrandColors 是中性极简灰系（2026-09-06 拍板），
- * 无红/金既有 token，故在此新增常量（不动 core/ui 冻结文件）；取 Material 常用
- * 红 800 / 红 400、金褐 / 琥珀 300 档位，深浅成对（对齐 QimengBrandColors
- * 浅/深成对惯例：浅色底用深色字保证对比度，深色底反过来）。
+ * 色值说明：主题色板（ADR-0031 流光玻璃）无红/金既有 token，故在此自持常量；
+ * 取 Material 常用红 800 / 红 400、金褐 / 琥珀 300 档位，深浅成对（与主题
+ * 深浅两套同惯例：浅色底用深色字保证对比度，深色底反过来）。
  * startsWith 前缀语义天然兼容变体序列（如 ❤️ = ❤ + U+FE0F 变体选择符，同样命中红）。
  */
 object TimelineTagColors {
