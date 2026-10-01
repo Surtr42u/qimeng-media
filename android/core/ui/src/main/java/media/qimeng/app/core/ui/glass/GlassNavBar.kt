@@ -156,7 +156,8 @@ private fun GlassNavItem(
                             alpha = pillAlpha
                         }
                         .background(
-                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.20f),
+                            // 走查 r1 校准：0.20→0.30，选中胶囊在玻璃坞上可辨
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.30f),
                             shape = RoundedCornerShape(100),
                         ),
                 )

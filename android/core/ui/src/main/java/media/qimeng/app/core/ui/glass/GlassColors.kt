@@ -39,13 +39,13 @@ data class GlassColors(
     val shadow: Color,
 )
 
-/** 暗色玻璃：靛夜体 + 白纱受光（alpha 取值经暗底对比度自查，正文在面板上仍 ≥4.5:1） */
+/** 暗色玻璃：靛夜体 + 白纱受光（走查 r1 校准：edge/sheen 提档让受光边在深底可辨） */
 private val DarkGlass = GlassColors(
-    fill = Color(0xFF1B2033).copy(alpha = 0.66f),
-    fillStrong = Color(0xFF141828).copy(alpha = 0.88f),
-    edgeTop = Color(0xFFFFFFFF).copy(alpha = 0.22f),
-    edgeBottom = Color(0xFFFFFFFF).copy(alpha = 0.05f),
-    sheen = Color(0xFFFFFFFF).copy(alpha = 0.10f),
+    fill = Color(0xFF1B2033).copy(alpha = 0.72f),
+    fillStrong = Color(0xFF151A2C).copy(alpha = 0.94f),
+    edgeTop = Color(0xFFFFFFFF).copy(alpha = 0.30f),
+    edgeBottom = Color(0xFFFFFFFF).copy(alpha = 0.08f),
+    sheen = Color(0xFFFFFFFF).copy(alpha = 0.14f),
     shadow = Color(0xFF04050A).copy(alpha = 0.45f),
 )
 
@@ -70,13 +70,19 @@ fun glowIntensity(): Float = if (isQimengDarkTheme()) 1f else GLOW_LIGHT_SCALE
 /** 浅色主题辉光衰减系数（辉光色 alpha 统一乘子） */
 private const val GLOW_LIGHT_SCALE = 0.55f
 
+/** 辉光基础 alpha 档（走查 r1 校准：ambient 感可感知的最低饱和档） */
+private const val GLOW_IRIS_ALPHA = 0.38f
+private const val GLOW_TEAL_ALPHA = 0.30f
+private const val GLOW_BLOSSOM_ALPHA = 0.20f
+private const val GLOW_VIOLET_ALPHA = 0.26f
+
 /** 主题感知的辉光基础色组（AuroraBackdrop 消费；顺序=鸢尾/极光青/霞粉/霓紫） */
 @Composable
 internal fun glowPalette(): List<Color> = listOf(
-    MaterialTheme.colorScheme.primary.copy(alpha = 0.30f) * glowIntensity(),
-    MaterialTheme.colorScheme.tertiary.copy(alpha = 0.22f) * glowIntensity(),
-    Color(0xFFE85C9A).copy(alpha = 0.16f) * glowIntensity(),
-    Color(0xFF7C4DE8).copy(alpha = 0.20f) * glowIntensity(),
+    MaterialTheme.colorScheme.primary.copy(alpha = GLOW_IRIS_ALPHA) * glowIntensity(),
+    MaterialTheme.colorScheme.tertiary.copy(alpha = GLOW_TEAL_ALPHA) * glowIntensity(),
+    Color(0xFFE85C9A).copy(alpha = GLOW_BLOSSOM_ALPHA) * glowIntensity(),
+    Color(0xFF7C4DE8).copy(alpha = GLOW_VIOLET_ALPHA) * glowIntensity(),
 )
 
 /** Color × 系数的轻量运算（仅用于辉光 alpha 衰减，不走完整色彩空间转换） */
