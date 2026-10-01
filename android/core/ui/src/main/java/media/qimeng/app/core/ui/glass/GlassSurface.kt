@@ -96,6 +96,7 @@ private fun DrawScope.drawGlass(fill: Color, glass: GlassColors, shape: Shape) {
 
 /** outline → 圆角半径 px（非圆角 outline 返回 0，直角描边照常生效） */
 private fun androidx.compose.ui.graphics.Outline.cornerRadiusPx(): Float = when (this) {
-    is androidx.compose.ui.graphics.Outline.Rounded -> roundedRect.topLeftCornerRadius.x
+    // Outline.Rounded 的 RoundRect 属性名是 roundRect（无 ed，ui-graphics 官方签名）
+    is androidx.compose.ui.graphics.Outline.Rounded -> roundRect.topLeftCornerRadius.x
     else -> 0f
 }
