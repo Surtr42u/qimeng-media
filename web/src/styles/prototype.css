@@ -2046,3 +2046,34 @@ li.dir-file-row.ms-row-selected { background: var(--hover-bg); }
   font-size: 13px;
   font-weight: 500;
 }
+
+/* ===== 本机同步卡（LocalSyncCard，维护页）：徽标/警示条/信息行/三段列表。
+   颜色全部引用既有 token（--ok、--log-warn、--danger、--text、--qm-chip-bg 系列），无新增色值 ===== */
+.ls-badges { display: inline-flex; gap: 6px; margin-left: 8px; vertical-align: 2px; }
+.ls-badge { padding: 2px 8px; border-radius: 999px; font-size: 11px; }
+.ls-badge--on { background: color-mix(in oklab, var(--ok) 14%, transparent); color: var(--ok); }
+.ls-badge--off { background: var(--qm-chip-bg); color: var(--qm-text-muted); }
+.ls-badge--paused { background: var(--log-warn-bg); color: var(--log-warn-text); }
+/* 通道级错误警示条：底/字同 .dev-mode-banner 的 log-warn token（浅/深色自动切换） */
+.ls-warn {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: var(--qm-radius);
+  background: var(--log-warn-bg);
+  color: var(--log-warn-text);
+  font-size: 13px;
+}
+.ls-info { margin-top: 10px; display: grid; gap: 4px; font-size: 13px; color: var(--text-sub); }
+.ls-info b { color: var(--text-main); font-weight: 500; word-break: break-all; }
+.ls-summary { margin-top: 10px; font-size: 13px; color: var(--text-mid); }
+.ls-sec { margin-top: 12px; }
+.ls-sec-title { margin: 0 0 2px; font-size: 13px; font-weight: 600; color: var(--text-main); }
+.ls-rows { display: grid; }
+.ls-row { display: grid; gap: 2px; padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.ls-row-path { color: var(--text-main); word-break: break-all; }
+.ls-row-path--muted { color: var(--text-sub); }
+.ls-row-sub { font-size: 12px; color: var(--text-sub); }
+.ls-row-err { font-size: 12px; color: var(--danger); }
+.ls-row-muted { font-size: 12px; color: var(--text-sub); }
+.ls-more { margin-top: 4px; font-size: 12px; color: var(--text-sub); }
+.ls-hint { font-size: 12px; color: var(--text-sub); }

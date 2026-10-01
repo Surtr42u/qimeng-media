@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { FolderMonitorIcon, TrashIcon } from '@/components/shell/icons'
 import { DbBackupCard } from '@/components/manage/DbBackupCard'
+import { LocalSyncCard } from '@/components/manage/LocalSyncCard'
 import { Pill } from '@/components/ui/pill'
 import { useClientLogs } from '@/hooks/use-client-logs'
 import { useSystemStatus } from '@/hooks/use-system-status'
@@ -34,7 +35,8 @@ interface RatePoint {
  * 4 指标卡（上下行速率=轮询差分本地计算、存储合计、运行时长）、网络负载曲线
  * （本地 60 点环形采样）；「客户端异常」表 = GET /client-logs（上报器写入，
  * 服务端环形缓冲最新 200 条，2026-09-04 接真）；「库文件快照备份」卡 =
- * /backups 四端点（任务Q 批B，渲染在 DbBackupCard 共享组件）。
+ * /backups 四端点（任务Q 批B，渲染在 DbBackupCard 共享组件）；「本机同步」卡 =
+ * /local-sync/status + /trigger（本机自动同步通道，渲染在 LocalSyncCard 共享组件）。
  */
 
 /** 客户端异常级别中文标签（协议 level 枚举 error/warn/info） */
@@ -226,6 +228,7 @@ export default function MaintenancePage() {
         </div>
       </div>
       <DbBackupCard />
+      <LocalSyncCard />
       <div className="chart-card">
         <h3>用户端崩溃 / 错误日志</h3>
         <p>客户端异常上报 · 服务端保留最新 200 条 · 新在上</p>

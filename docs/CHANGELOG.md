@@ -8,6 +8,16 @@
 - 子代理执行的工作标注"（执行子代理）"，主对话直接完成的标注"（主代理）"。
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
+## feat(api/server/web): 本机文件夹自动同步通道——服务端轮询监测同步根，库名文件夹自动匹配入库（2026-10-01 第四百二十四笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理）
+
+- **协议（api）**：`api/openapi.yaml` 新增 `GET /api/v1/local-sync/status`（通道状态只读：enabled/root/intervalSeconds/paused/lastError/lastCycleAt/syncedTotal/counts{waitingStable,failed,ignored}/items 上限 500/recentSynced 最近 20）与 `POST /api/v1/local-sync/trigger`（202 异步触发一轮扫描；未启用 409 code=`LOCAL_SYNC_DISABLED`）两端点 + `LocalSyncStatus`/`LocalSyncItem` 两 schema；路径计数 70→72；三端 SDK 重生成、`api/sdk.lock` 同 commit 更新。
+- **服务端（server）**：① 纯逻辑包 `server/internal/localsync/`（match.go 库名 sanitize 匹配〔trim + `\/:*?"<>|` 九字符→`_`，与 Android 归档 `InboxFileStore.sanitizeLibraryDirName` 逐字对齐，大小写敏感；0 命中/多命中/停用/COS 库=失败保留〕、scan.go 目录扫描〔稳定门槛=_mtime 年龄≥门槛且跨轮 size/mtime 不变、隐藏条目与符号链接跳过、NormalizeRelPath+PathWithinRoot 根内限制〕+ doc.go + 单测 11 用例）；② 编排与运行态 `server/internal/httpapi/localsync.go` + `localsync_runner.go`（trash_sweeper 同型先例：轮询 daemon + trigger 闸 + status 运行态）：媒体走直传完全同款链路——`filing.ValidateUpload` 四道校验 + `upload.autoAccept` 闸 + `upload.max_bytes` 上限 + `ResolveConflict` 同名自动改名永不 409 + `WithLibraryGate` 库锁落位 + 落位 size 复核（对齐第四百一十九笔硬化）+ `ingestPlacedUpload`（sysmon/upload.done/library.changed/修订号/富化全同款），成功后源文件 move 入库根；同步根直接下 `*.txt` 走 importTxt 统一重建（conflictResolution 恒 keep、仅 UTF-8 剥 BOM、10MB 护栏），成功后移 `<同步根>/.synced/`（点前缀内部目录，同名加序号）；失败=原地保留每轮重试；安全=同步根与库根/DataDir 双向重叠禁令（含相等）、根不存在=通道级错误不建目录；`server/internal/config/config.go` 增 `LocalSyncConfig` 三键（yaml `local_sync.root/interval/stable_age` / env `QIMENG_LOCAL_SYNC_ROOT`〔空=关〕/`QIMENG_LOCAL_SYNC_INTERVAL` 默认 30s/`QIMENG_LOCAL_SYNC_STABLE_AGE` 默认 60s）；httpapi 集成测试 12 用例（成功/清理对齐 E2E/TXT/未命中/非媒体忽略/根级媒体忽略/稳定门/根重叠/两端点行为/未启用 409/COS 拒绝/autoAccept 暂停）。
+- **Web（web）**：维护页新增「本机同步」卡（`web/src/components/manage/LocalSyncCard.tsx` + `web/src/hooks/use-local-sync.ts`，渲染于 `DbBackupCard` 之后）：状态徽标/信息行/lastError 警示/失败·忽略·最近成功三段列表/立即同步按钮。
+- **边界**：无 DB 迁移、无新依赖；App 端零改动（手动上传保留为备选安全通道）；已开放通道级已知权衡（运行态内存持有重启重建/syncedTotal 归零、move 与注册之间崩溃窗口由扫描器 ≤5min 兜底、GBK 不支持、autoAccept 关闭期媒体暂停）——记档见 ADR-0030。
+- **文档**：新增 `docs/adr/0030-local-folder-sync.md` + `docs/adr/INDEX.md` 索引行；`docs/GUIDE_API.md`（路径计数 70→72、速览补行、「关键机制」新增「本机自动同步通道」小节）；`docs/SECURITY.md`（新增「本机同步通道」节）；`docs/DOMAIN_RULES.md`（§9 上传口径段末一句括注，其余一字未动）；`docs/HANDOVER.md`；`deploy/README.md`（环境变量表补三键）。
+
 ## chore(server): gofmt 格式对齐六文件——CI 服务端格式门禁清偿（2026-10-01 第四百二十三笔）
 
 执行 AI：GLM-5.3（主代理，executor+reviewer 子代理协作）

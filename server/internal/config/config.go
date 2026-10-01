@@ -123,6 +123,34 @@ type TrashConfig struct {
 	SweepInterval time.Duration `yaml:"sweep_interval"`
 }
 
+// 本机文件夹自动同步通道默认值（ADR-0030）。Root 为空 = 通道整体关闭
+// （调度不启动、状态端点报 disabled），这是该通道唯一的开关形态。
+const (
+	// DefaultLocalSyncInterval 同步根轮询周期（默认 30s）：一轮只是 ReadDir
+	// 级轻扫描 + 待处理文件的 mtime 观测，个人库规模成本可忽略；过密只会
+	// 白跑空轮。首次扫描在进程启动一个周期后触发（ticker 语义），想立即
+	// 同步走 POST /api/v1/local-sync/trigger。
+	DefaultLocalSyncInterval = 30 * time.Second
+	// DefaultLocalSyncStableAge 文件稳定门槛（默认 60s）：文件 mtime 年龄
+	// >= 此值且跨轮 size/mtime 完全不变才处理——防半截拷贝（用户往同步根
+	// 拖大文件，mtime 不停刷新，未稳定前入库会搬走残缺字节）。
+	DefaultLocalSyncStableAge = 60 * time.Second
+)
+
+// LocalSyncConfig 本机文件夹自动同步通道配置（ADR-0030）：同步根直接子
+// 文件夹名=库名，媒体走直传同款校验与入库后源文件移入库根；同步根直接下
+// 的 *.txt 走作者片段导入（keep 语义）后归档进 <同步根>/.synced/。
+type LocalSyncConfig struct {
+	// Root 是同步根绝对路径；空 = 通道关闭（默认）。不设 enabled 布尔开关：
+	// 「不配路径」即「不启用」，少一个可互相矛盾的组合（与 Trash 无 enabled
+	// 开关同一设计取舍）。
+	Root string `yaml:"root"`
+	// Interval 是轮询周期；<=0 = 用 DefaultLocalSyncInterval（Load 兜底）。
+	Interval time.Duration `yaml:"interval"`
+	// StableAge 是文件稳定门槛；<=0 = 用 DefaultLocalSyncStableAge（Load 兜底）。
+	StableAge time.Duration `yaml:"stable_age"`
+}
+
 // defaultUploadMaxBytes 是单文件上传上限默认值（2GB）。
 // 手机拍摄视频普遍 1~4GB，2GB 覆盖绝大多数短视频/截图场景又不至于
 // 让一次误传拖垮磁盘；真有超大文件需求由部署方显式调大。
@@ -198,6 +226,8 @@ type Config struct {
 	Backup BackupConfig `yaml:"backup"`
 	// Trash 是回收站生命周期（到期自动物理清除）配置。
 	Trash TrashConfig `yaml:"trash"`
+	// LocalSync 是本机文件夹自动同步通道配置（ADR-0030）。
+	LocalSync LocalSyncConfig `yaml:"local_sync"`
 }
 
 // Load 按优先级加载配置：内置默认值 < yaml 文件 < 环境变量。
@@ -222,6 +252,10 @@ func Load(path string) (*Config, error) {
 		Trash: TrashConfig{
 			RetentionDays: DefaultTrashRetentionDays,
 			SweepInterval: DefaultTrashSweepInterval,
+		},
+		LocalSync: LocalSyncConfig{
+			Interval:  DefaultLocalSyncInterval,
+			StableAge: DefaultLocalSyncStableAge,
 		},
 	}
 
@@ -261,6 +295,15 @@ func Load(path string) (*Config, error) {
 	if cfg.Trash.SweepInterval <= 0 {
 		cfg.Trash.SweepInterval = DefaultTrashSweepInterval
 	}
+	// 本机同步两键兜底：与 Backup.Interval 同款问题——yaml 显式 0 / env 传 0
+	// 会把默认值覆盖成零值直通（ticker 周期为 0 会 panic，稳定门槛为 0 会让
+	// 半截拷贝直接入库）。Root 刻意不兜底：空串 = 通道关闭的合法语义。
+	if cfg.LocalSync.Interval <= 0 {
+		cfg.LocalSync.Interval = DefaultLocalSyncInterval
+	}
+	if cfg.LocalSync.StableAge <= 0 {
+		cfg.LocalSync.StableAge = DefaultLocalSyncStableAge
+	}
 	return cfg, nil
 }
 
@@ -277,6 +320,7 @@ func applyEnv(cfg *Config) error {
 		applyAuthEnv,
 		applyBackupEnv,
 		applyTrashEnv,
+		applyLocalSyncEnv,
 	} {
 		if err := section(cfg); err != nil {
 			return err
@@ -441,6 +485,32 @@ func applyTrashEnv(cfg *Config) error {
 			return fmt.Errorf("环境变量 QIMENG_TRASH_SWEEP_INTERVAL=%q 不是合法时长（如 1h、30m）: %w", v, err)
 		}
 		cfg.Trash.SweepInterval = d
+	}
+	return nil
+}
+
+// applyLocalSyncEnv 覆盖本机同步通道三键：Root 空值 = 未设置、保留 yaml/默认
+// （空 = 通道关闭的合法语义，与 QIMENG_WEB_STATIC_DIR 同款）；两个时长键与
+// QIMENG_BACKUP_INTERVAL 同款 duration 解析。
+func applyLocalSyncEnv(cfg *Config) error {
+	if v := os.Getenv("QIMENG_LOCAL_SYNC_ROOT"); v != "" {
+		// TrimSpace：部署来源常见「配置值带首尾空白」（compose 引号/缩进），
+		// 同步根路径带尾空格在 Windows 上指向不存在的目录，宁可提前清。
+		cfg.LocalSync.Root = strings.TrimSpace(v)
+	}
+	if v := os.Getenv("QIMENG_LOCAL_SYNC_INTERVAL"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			return fmt.Errorf("环境变量 QIMENG_LOCAL_SYNC_INTERVAL=%q 不是合法时长（如 30s、2m）: %w", v, err)
+		}
+		cfg.LocalSync.Interval = d
+	}
+	if v := os.Getenv("QIMENG_LOCAL_SYNC_STABLE_AGE"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			return fmt.Errorf("环境变量 QIMENG_LOCAL_SYNC_STABLE_AGE=%q 不是合法时长（如 60s、5m）: %w", v, err)
+		}
+		cfg.LocalSync.StableAge = d
 	}
 	return nil
 }

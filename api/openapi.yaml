@@ -530,6 +530,19 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "403": { description: 上传已关闭（PUT /config 的 upload.autoAccept=false）, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
         "404": { description: 会话不存在/已过期，或会话所属库已被删除, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
+  # ---------- 本机文件夹自动同步通道（ADR-0030） ----------
+  /api/v1/local-sync/status:
+    get:
+      summary: 本机自动同步通道状态（只读；通道由 QIMENG_LOCAL_SYNC_ROOT 配置启用，ADR-0030）
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/LocalSyncStatus" } } } }
+  /api/v1/local-sync/trigger:
+    post:
+      summary: 立即触发一轮本机同步扫描（异步，不等待完成）
+      responses:
+        "202": { description: 已触发（异步执行，结果经 status 查询） }
+        "409": { description: 通道未启用（QIMENG_LOCAL_SYNC_ROOT 未配置或安全校验未通过），code=LOCAL_SYNC_DISABLED, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
   /api/v1/assets/{assetId}/move:
     post:
       summary: 移动/重命名（更新路径属性，关联数据无感保留）
@@ -1237,6 +1250,46 @@ components:
         id:     { type: string, format: uuid, description: 会话 ID（PATCH/complete/DELETE 携带） }
         offset: { type: integer, format: int64, minimum: 0, description: 服务端已接收字节数（权威值；PATCH 的 query offset 必须等于它，不符 409 回本对象） }
         size:   { type: integer, format: int64, minimum: 1, description: 会话声明的文件总字节数（创建时确定，不可变） }
+
+    LocalSyncStatus:
+      type: object
+      description: 本机自动同步通道状态（GET /api/v1/local-sync/status）。通道=服务端轮询监测本地同步根目录：直接子文件夹名=库名自动匹配入库（媒体走直传同款校验与入库），同步根直接下的 *.txt 走作者片段导入；成功源文件移走、失败原地保留可见（ADR-0030）。items 仅含仍在同步源内的条目；成功条目源文件已被移走，见 recentSynced。
+      properties:
+        enabled: { type: boolean, description: 同步根已配置且目录存在、安全校验（与库根/DataDir 无重叠）通过 }
+        root: { type: string, description: 同步根绝对路径（未配置为空串） }
+        intervalSeconds: { type: integer, description: 轮询周期秒数 }
+        paused: { type: boolean, description: 上传闸门 upload.autoAccept=false 时媒体文件暂停处理（TXT 导入不受影响） }
+        lastError: { type: string, description: 通道级错误（目录不存在/安全校验失败等），无则空串 }
+        lastCycleAt: { type: [string, "null"], format: date-time, description: 上一轮扫描完成时刻，从未运行过为 null }
+        syncedTotal: { type: integer, description: 本次进程启动以来成功同步文件数（重启归零） }
+        counts:
+          type: object
+          description: items 截断前的全量计数
+          properties:
+            waitingStable: { type: integer, description: 首次观测等待大小/mtime 稳定的文件数 }
+            failed: { type: integer, description: 处理失败且仍保留在同步源的文件数 }
+            ignored: { type: integer, description: 明确不处理条目数（非媒体扩展名/根级媒体/隐藏条目/符号链接等） }
+        items:
+          type: array
+          description: 仍在同步源内的待处理/失败/忽略条目（上限 500 条，超出按路径序截断，counts 始终全量口径）
+          items: { $ref: "#/components/schemas/LocalSyncItem" }
+        recentSynced:
+          type: array
+          description: 最近成功条目（环形保留，上限 20 条，重启清空）
+          items: { $ref: "#/components/schemas/LocalSyncItem" }
+
+    LocalSyncItem:
+      type: object
+      description: 本机同步通道条目（LocalSyncStatus.items / recentSynced 元素）
+      properties:
+        path: { type: string, description: 相对同步根的路径（斜杠分隔） }
+        kind: { type: string, enum: [media, txt, other], description: media=媒体扩展名；txt=同步根直接下的 .txt；other=其余 }
+        libraryName: { type: [string, "null"], description: 命中的目标库名（媒体条目且有目标时） }
+        state: { type: string, enum: [waiting-stable, failed, ignored, synced], description: waiting-stable=等待稳定不处理；failed=处理失败文件保留原处每轮重试；ignored=明确不处理（原因见 error）；synced=已成功（仅出现在 recentSynced） }
+        error: { type: string, description: 失败/忽略原因（人读文案），空串=无 }
+        sizeBytes: { type: integer, format: int64 }
+        attempts: { type: integer, description: 处理尝试次数 }
+        lastAttemptAt: { type: [string, "null"], format: date-time }
 
     MediaType:
       type: string
