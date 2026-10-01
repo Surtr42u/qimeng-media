@@ -25,4 +25,4 @@ Accepted（2026-09-19，用户拍板「升级」）
 - 正向：targetSdk 与 compileSdk 对齐（37/37），Android 17 适配债清零；#47 台账（AGP9 基座升级卷）就此整体关闭；不再积「落后两个大版本」的行为变更债。
 - 代价/风险：①Android 17+ 设备上用户会多看到一次「本地网络」系统询问（一次授权长期有效，拒绝后有引导路径）；②已登录用户在 Android 17 上拒绝权限且不经登录页时，表现为既有「加载失败」态而非定向提示（冷启动补请求+重装/重登可恢复，记档接受）；③后台音频行为在 Android 17 真机上的实际表现待实测定性（本机现网 ROM ≤16 无感）。
 - 对旧系统零影响：新检查逻辑不存在于 Android 16 及以下系统，targetSdk 数字变化不改变其上的任何权限与行为（任务P P4 试装对照实测：API 35 模拟器上 37 包与 36 包全链等价）。
-- 联动文件（供 INDEX 反查）：`android/app/build.gradle.kts`（targetSdk 行）、`android/app/src/main/AndroidManifest.xml`、`android/app/src/main/java/media/qimeng/app/MainActivity.kt`、`android/feature/login/`（LoginScreen.kt、strings.xml）、`android/core/network/`（LocalNetworkAccessPolicy.kt 及其单测）、`docs/CHANGELOG.md`（第三百三十五笔）、仓库外《待拍板-任务P-P4-targetSdk37.md》。
+- 联动文件（供 INDEX 反查）：`android/app/build.gradle.kts`（targetSdk 行）、`android/app/src/main/AndroidManifest.xml`、`android/app/src/main/java/media/qimeng/app/MainActivity.kt`、`android/feature/login/`（LoginScreen.kt、strings.xml）、`android/core/network/`（LocalNetworkAccessPolicy.kt 及其单测）、`docs/CHANGELOG.md`（第三百三十五笔（历史档））、仓库外《待拍板-任务P-P4-targetSdk37.md》。

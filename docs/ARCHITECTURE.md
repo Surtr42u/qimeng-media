@@ -1,7 +1,7 @@
 # ARCHITECTURE - 架构总纲
 
 > 本文是 qimeng-media 的架构唯一权威文档。技术选型的"为什么"见 `docs/adr/`，业务规则见 `docs/DOMAIN_RULES.md`。
-> 最后更新：2026-10-01（§5 模块边界表补 0025-0030 批次四包：backup/libraryrevision/uploadsess/localsync）。2026-09-25（§5 模块边界表 `authorattach` 行职责补编辑编排——资产作者/来源编辑端点走 authorattach/edit.go，ADR-0024）；同日此前（§5 模块边界表增 `authorattach`——上传挂靠编排包，ADR-0023/ADR-0019 首个新流程落地）；2026-09-21（维护批一致性清偿：§2/§8 桌面壳由「后置」改为已交付——ADR-0020，desktop/）；2026-09-05（§10 CI 第五 job android 门禁，M4-0）；2026-08-26（底层重构对齐：§5.1 模块边界强制、§10 CI 实况、Makefile 命令名；2026-08-22 v0 项目创立）
+> 最后更新：2026-10-01（§5 模块边界表补 backup/libraryrevision/uploadsess/localsync 四包）。更早历史见 `docs/CHANGELOG.md`。
 
 ## 1. 需求起源与产品定位
 

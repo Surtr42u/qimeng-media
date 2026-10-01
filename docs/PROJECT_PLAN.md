@@ -1,137 +1,49 @@
 # PROJECT_PLAN - 里程碑计划
 
 > 每个里程碑都是**可用闭环**（做完就能用/验收），不做"半成品堆叠"。开发顺序经过依赖推理，禁止跳级。
-> 通用纪律：每个功能完成 = 代码 + 测试 + 文档同步 + 门禁全绿，四件套缺一不可；门禁 = CI 五 job + golangci-lint（本机 `make lint` 同配置；2026-09-05 M4-0 起新增 Android 客户端 job）。
+> 通用纪律：每个功能完成 = 代码 + 测试 + 文档同步 + 门禁全绿，四件套缺一不可；门禁 = CI 五 job + golangci-lint（本机 `make lint` 同配置）。
 > 重构后新增纪律（ADR-0009/0010/0011）：**生成物不手改**（只改 openapi.yaml 后 make sdk）、**新迁移只加文件**（只加不改不删）、**重大决策先写 ADR**（并同步 docs/adr/INDEX.md）。
-> 最后更新：2026-09-22（M5 真机收官回填）。2026-09-20（**M6 收官**：用户确认 T7 断网全流程（含内嵌形态 B 真机 arm64 全链）/旧项目退役链（退役拍板+qimeng-backup 行为数据迁入+手机媒体原地注册）/首次全量扫描实测报告全部完成，M6 全勾；孤儿缩略图清理=用户确认已处理销项；协议缺口 #29~#34+#21=用户拍板放弃（CAPABILITY_MAP 明确不做）；2026-09-06（昨日全量审查清偿：门禁行 M4-0 日期笔误 09-04→09-05 修正；M4 脚手架条目补勾=文档漂移修复，M4-0 已于同日交付 cdc422e；2026-09-04（M4 二次改道：用户拍板「先进优先」走 Compose 重建（ADR-0014，废弃同日 0013），HANDOVER_APP 重写；新增 M6 Android 单机形态里程碑（ADR-0015，服务端内嵌手机替代旧项目），原储备顺延 M7+；同日早前：M4 执行批次定稿 + Web UI 收尾三批任务书；2026-08-31 M3 后端收尾；2026-08-30 M3 后端五项完成；2026-08-27 M2 拆分后端先行/UI 后置 + sysmon 接线完成；2026-08-26 M2-M4 验收标准与底层重构对齐；2026-08-22 制定）
+> 最后更新：2026-09-22（M5 真机收官回填；M6 已于 2026-09-20 收官）。更早历史见 `docs/CHANGELOG.md`。
 
-## M0 · 地基（协议与工具链）
+## M0 · 地基（协议与工具链）✅ 收官（2026-08-22）
 
 **目标**：一切开发的前置设施就绪。
+**范围**：工具链、`server/` Go 骨架（chi+slog+config+healthz）、`web/` Vite+React+TS 骨架、openapi v0.1.0 定稿、`make sdk` 三端生成链（oapi-codegen/openapi-ts/Kotlin）、GitHub 仓库与 CI、GUIDE_API。
+**验收**：全部条目完成——make sdk 一条命令三端编译通过、CI 全绿。
 
-- [x] 安装开发工具（2026-08-22：Go 1.27 / Node 24 / JDK17 免安装 / make 4.4.1 ✅；Docker Desktop 按计划 M1 末手动下载安装；VirtualBox 按 M5）
-- [x] `server/` Go 模块初始化（2026-08-22：module qimeng-media/server，chi+slog+config（yaml+env，默认 :8420），12 个 internal 包骨架+doc.go，healthz 闭环，build/vet/test 全绿）
-- [x] `web/` Vite + React + TS + Tailwind + shadcn 初始化（2026-08-22：Tailwind v4 + shadcn(radix/nova) + TanStack Query + --qm-* 设计 token（tokens.css），build/tsc 全绿）
-- [x] `api/openapi.yaml` v0 实例化（2026-08-22：评审定稿 v0.1.0——补排序/顺位/includeCos/sessionId/标签删除/时间轴删除/作者关注/回收站清空/缩略图尺寸等 9 处，redocly 0 error）
-- [x] Makefile：`make sdk` 打通 oapi-codegen + TS + Kotlin 三端生成链（2026-08-22：oapi-codegen v2.8.0 → Go 接口层；@hey-api/openapi-ts 0.99.0 → TS 客户端；openapi-generator + 免安装 JDK → Kotlin SDK，三端全部实际生成通过）
-- [x] GitHub 仓库 + Actions CI（2026-08-22：私有仓库 Surtr42u/qimeng-media 建立，四 job 首跑全绿；2026-08-26 重构后 server job 增 golangci-lint 门禁）
-- [x] `docs/GUIDE_API.md`（2026-08-22：37 端点分组速览 + 关键机制导读）
+## M1 · 服务端核心闭环 ✅ 收官（2026-08-22 交付，PC 侧全链已验）
 
-**验收**：`make sdk` 一条命令生成三端 SDK 且全部编译通过；CI 在空测试下全绿。
+**目标**：手机浏览器已经能浏览媒体。
+**范围**：配置系统（yaml+env）、SQLite+sqlc+migrate 核心表×14（asset_id 身份/keyset 分页）、scanner 全量+fsnotify+轮询+移动合并、缩略图三档、httpapi（鉴权/库/列表/详情/直链 Range/缩略图）、SSE、内置验收页（永久保留作调试工具）、9 包单测、filing 安全件/sysmon 采集层提前件。
+**验收**：全部条目完成——PC 侧 setup→注册→扫描→列表→原图→视频 Range→缩略图→移动合并全链已验；手机真机浏览器验收随 M5 完成。
 
-## M1 · 服务端核心闭环
+## M2 · Web 端完整体验 ✅ 收官（后端 2026-08-27 起，UI 段 2026-08-29~09-03）
 
-**目标**：手机浏览器已经能浏览媒体（图片与视频，虽然界面简陋）。
+**目标**：Web 端可日常使用，UI 达到"好看"标准。**范围**（按用户拍板拆「后端先行、UI 后置」两段执行）：后端=全文搜索 FTS5、移动/重命名+回收站五端点、上传端点、目录树、标签/时间轴三件套、sysmon 接线、推荐流热度占位；UI=布局/设计 token/列表/详情/推荐流/上传/整理/标签收藏点赞/监控仪表盘/PWA。
+**验收**：全部条目完成——九页+维护面全接真数据，日常"浏览-看图看视频-整理"全部在浏览器完成。
 
-- [x] 配置系统（2026-08-22：yaml + QIMENG_* env，DataDir/DbPath/TokenTTL/MediaSecret；直链密钥持久化 dataDir）
-- [x] SQLite + sqlc + golang-migrate 初始化；核心表 ×14（2026-08-22：modernc 纯 Go 驱动 WAL；view_events 只追加无外键——ADR-0005 实现澄清；keyset 分页零 OFFSET）
-- [x] scanner：全量扫描 + fsnotify 增量 + 轮询兜底（5min）+ 移动合并启发式（2026-08-22：size+mtime 变更检测；数据目录自噬防御两道防线——注册互斥校验 + scanner SkipDir；Watch 增量删除不做合并属 M1 基线，见 watch.go 注释）
-- [x] 身份机制：asset_id（UUIDv7）、路径规范化、size/mtime 变更检测（2026-08-22：移动合并真机验证通过——改名后 asset_id 不变）
-- [x] thumbnail：ffmpeg 抽帧（黑帧检测"全部采样制"语义已澄清入 DOMAIN_RULES §11）+ 图片缩放 + 缓存键 + 三档 sm=256/md=512/lg=1024
-- [x] httpapi：鉴权（argon2id+token 哈希）、库管理、资产列表（分页/筛选/排序；q=FTS5 搜索移至 M2）、详情、媒体直链（Range/206）、缩略图端点（immutable+ETag+304）
-- [x] SSE：扫描进度推送 + 事件总线（慢订阅者丢弃隔离）
-- [x] 内置极简验收页（中文界面：setup→注册库→扫描进度→日期分组网格→原图→视频播放；永久保留作调试工具）
-- [x] 单元测试：9 包全绿（含路径穿越/签名防伪/Range/移动合并/每日点赞 toggle 端到端用例；口径：9 个有代码包 = auth/config/events/filing/httpapi/scanner/store/sysmon/thumbnail，recommend/search/stats 三个 doc.go 空壳包暂无测试）
-- [x] 附带交付（M2 提前件）：filing 安全件（路径穿越/MIME 魔数/上传四道校验/回收站布局，142 子用例）、sysmon 监控采集层（gopsutil+prometheus，指标名入 OBSERVABILITY）
-
-**验收**：PC 侧全链已验（setup→注册→扫描→列表→原图 200 全量→视频 Range 206 拖动无缝→缩略图懒生成→移动合并身份保持）。手机真机浏览器验收待用户执行（PC 同 WiFi 访问 http://<PC局域网IP>:8420，Windows 防火墙放行后）。
-
-## M2 · Web 端完整体验
-
-**目标**：Web 端可日常使用，UI 达到"好看"标准。
-
-> **执行顺序调整（2026-08-27 用户拍板）**：M2 拆为**后端先行、UI 后置**两段——
-> 先完成全部纯后端接线（sysmon、filing 端点、标签/时间轴端点、search FTS5、推荐流热度占位），
-> UI 部分（布局/设计 token/列表页/详情页/仪表盘/PWA）后置到后端验收后再启动。
->
-> **阶段 B（2026-09-03 完成）**：web 九页+维护面（库 CRUD/回收站/目录树/上传/整理）全接真数据；ArtPlayer/confirm/上传入口/图片查看器/批次导航均已交付（W-1~W-3、E5，见 CHANGELOG；**勿再当待办**）。
-> **分工定案（2026-08-29 用户拍板）**：M2 后端已全部完成 ✅（见 M3 前的勾选项与 FTS5 搜索项）；
-> **M2 UI 段（Web 端）后置**——由用户另开的 AI 路线承接，不阻塞 M3；**M3 后端算法为下一会话主线**。
-> UI 段（列表/详情的"前端展示"）是否完全按 Web 端做、或日后复用 Android 端（旧版交互复刻），以用户后续拍板为准。
-
-- [x] 布局系统 + 导航（首页推荐/全部/相册/统计/管理）（2026-08-29：AppShell 5 Tab + AuthGate/RootLayout/SseBridge/LoginGate/router 8 页懒加载 + Toaster 挂载；UI 段随附 executor-B 产出，本次集成冒烟确认）
-- [x] 设计 token 体系（明暗主题、间距、圆角、动效时长统一变量）（2026-08-29：tokens.css 语义 token 补充；暗色仅跟随系统）
-- [x] 后端：全文搜索 FTS5（2026-08-29：迁移 0002 trigram 索引 + 聚合视图 + 11 个同步触发器（assets/标签/作者/角色全写路径自动加索引，存量回填）；browse.sql 三查询 q 谓词——instr 子串语义（trigram MATCH 不支持 2 字短词，SQLite 3.53.3 实测锁定）；search 包 ParseQuery/RebuildIndex；协议 q 描述更新 + upload.done SSE 载荷 schema 补齐（UploadDoneEvent）；13 个新用例，go test 全绿）
-- [x] 列表页：网格 + 日期分组 + 筛选面板 + 排序 + 搜索 + 无限滚动（2026-08-29：AllAssetsPage URL searchParams 状态 + q 防抖 + FilterSheet + GroupedAssetGrid；修复 31 个中间态构建报错后冒烟通过）
-- [x] 详情页：图片（缩放/预加载）、视频播放器（手势/倍速/时间轴标记）（2026-08-29：DetailPage 组装——ImageViewer/VideoPlayer 两态+chrome 互动行+TagManager/InfoSheet/MoveDialog/删除确认+批次导航 replace+open/dwell 打点；key=assetId 复位模式；修复 MoveDialog 目录树缺 libraryId 必填参数的接线 bug）
-- [x] 推荐流 + 排行榜（调用 M3 前先用热度排序占位）（2026-08-29：RecommendPage 三 Tab——推荐（本地轮转换一批）/浏览热度/收藏 cursor 无限滚动；undefined 保护修复）
-  - [x] 后端：推荐流热度占位端点（2026-08-29：viewCount 降序复用 browse.sql 既有排序键，seed 参数 M2 忽略、M3 十维算法接入时只换实现；3 用例）
-- [x] 上传（拖拽 + 文件选择 + 进度）与文件整理（移动/重命名/回收站）（2026-08-29：OrganizePage（库选择/DirTree/新建目录/DropZone+队列）+ TrashPage（恢复/单删/清空全二次确认）+ DetailPage 更多操作接 MoveDialog；上传 UI 交互冒烟受环境限制，XHR 通道与服务端链路已验证 201）
-  - [x] 后端：移动/重命名端点 + 删除→回收站 + 回收站列表/恢复/物理删除/清空五端点（2026-08-27：httpapi/filing.go + trash.go；身份保持、冲突 409、恢复冲突自动重命名、TrashMeta 扩 LibraryID/MediaType、遍历两遍式 os.Root 防 TOCTOU；12 用例全过、golangci 0 issues；恢复语义与已知限制入 DOMAIN_RULES §9）
-  - [x] 后端：上传端点（2026-08-29：流式接收 + 四道校验 + config upload.max_bytes（默认 2GB，env QIMENG_UPLOAD_MAX_BYTES）+ 冲突自动重命名 + 视频探测同 scanner 语义 + media_type 用 scanner.ClassifyMedia 唯一口径；协议补 libraryId 必填参数（多库定位）并 make sdk 三端重建；upload.done 事件以最小载荷发布、SSE 载荷 schema 待补；7 用例）
-  - [x] 后端：目录树端点（2026-08-29：GET 遍历磁盘（目录是文件系统现实，空目录可作整理目标）+ POST 幂等新建 + 穿越拒绝；3 用例）
-- [x] 标签/收藏/点赞交互（2026-08-29：TagManager 弹窗（当前/其他分组+新建+级联删除确认）/useLike 基线/useFavorite 乐观更新；详情页冒烟通过）
-  - [x] 后端：标签池/资产标签（替换式，事务）/时间轴标签三件套（2026-08-29：store 新增 tags.sql 十查询（sqlc 注释须纯 ASCII——多字节文本使解析器报错，已验证）；重名 409、删除级联、跨资产时间轴删除隔离；6 用例）
-- [x] sysmon 接线：/metrics、/system/status（PerCore 快照补进协议 + make sdk；采集层 M1 已提前交付）（2026-08-27：协议补 perCore → make sdk-go → httpapi/system.go 两端点接线（Bearer 鉴权、未装配 503、部分采集失败仍 200）→ main/wire 装配（挂载点动态=DataDir+全部库根、version 常量单一来源）→ 7 用例 + 真机冒烟（20 核差分/真实磁盘容量/metrics 文本输出）全过）
-- [x] 监控仪表盘（Web 维护页 `/app/maintenance`；OBSERVABILITY.md 内置指标——原文记 `/admin` 为路由勘误，2026-09-12 校正）（2026-08-29：Dashboard 修复 data 解构后真机数据渲染确认——perCore/内存/磁盘/运行时长/网络速率 sparkline）
-- [x] PWA：可安装、离线壳（2026-08-29：vite-plugin-pwa autoUpdate + navigateFallback + denylist /api + 图标全套生成；sw.js 产物构建确认）
-
-**验收**：日常"浏览-看图看视频-整理"全部在浏览器完成；Lighthouse PWA 可安装；手机浏览器体验流畅；golangci-lint 门禁绿、生成物不手改、新迁移只加文件、决策先写 ADR。
-
-## M3 · 算法移植与领域完整
+## M3 · 算法移植与领域完整 ✅ 收官（2026-08-30 主体，09-03 推荐偏好页）
 
 **目标**：旧项目的灵魂（推荐与统计）在新系统复活。
+**范围**：recommend 十维算法+自适应权重+三个后处理（DOMAIN_RULES §1）、stats 聚合与趋势分桶（§5）、SourceMatcher 130 组整表移植、作者体系（TXT 三格式+COS 目录双体系）、旧数据迁移端点（§10 映射）、推荐偏好设置页、收尾清偿（COS 孤立作者清理/自定义出处端点/cos 库映射重算/协议债）。
+**验收**：全部条目完成——迁移旧备份后，推荐/排行/统计行为与旧 App 口径一致（对比测试通过）。
 
-- [x] recommend 模块：DOMAIN_RULES §1 全部公式 + 自适应权重 + 三个后处理 + 单测（照旧项目测试用例翻译）（2026-08-29 随并行后端完成：`internal/recommend` 十维评分+权重回收+混合打散+排行，14 用例；2026-08-30 补同分桶打散测试；`/recommendations` `/rankings` `/recommendations/prefs` 端点接线）
-- [x] stats 模块：ViewEvent 聚合、按天聚合物化、趋势分桶口径（§5）（2026-08-30：migration 0005 建 asset_daily_stats 文件×天物化表（可由事件流全量重建）+ 打点路径同步累加 + open/play 会话去重；`internal/stats` BuildTrendBuckets 纯函数——周一对齐/动态分桶/总和守恒，旧项目 StatsFormatHelperTest 7 例全译+6 补充；/stats/overview /stats/trends 接线）
-- [x] SourceMatcher 移植：130 SourceGroup 检索表翻译 + 服务端入库时匹配 + 增补规范（2026-08-30：`internal/sourcematcher` 整表翻译（130 组/475 变体/1388 角色——旧文档记 131 系把 data class 定义行误计，已勘误 §4）+ 匹配引擎（长度降序前缀/角色剥离数字保护/多出处分段/缓存）；scanner 入库富化 + 移动/重命名显式重算；旧 23 例照译+7 新增）
-- [x] 作者体系：TXT 三格式导入 + 统一重建语义 + COS 目录扫描双体系（2026-08-30：`internal/authoring` 解析/匹配/authorId 生成（旧 AuthorImportUseCaseTest 13 例照译，分片存储系旧 Android CursorWindow 规避不实现）；authors.sql + /authors 三端点接线（列表/导入-txt 统一重建/关注）；scanner 按 libraries.kind 分派——normal SourceMatcher 富化、cos 目录结构建 cos_ 作者（migration 0005 加 kind 列））
-- [x] 旧数据迁移端点（qimeng_backup.json，映射表 DOMAIN_RULES §10）（2026-08-30：协议补 LegacyBackupImport 17 段 schema + LegacyImportResult（此前零建模）+ make sdk；实现：文件名匹配映射（folderName 消歧）/作者 cos_ 前缀保留/标签/时间轴/收藏/关注 upsert + 事件回放（dailyBrowse 全量+mediaStats 差额+history 补漏，总量守恒）+ 同批次幂等锚点（kv_settings）+ 不导入段进 warnings；4 用例）
-- [x] 推荐偏好设置页（9 维权重 + 4 预设）（2026-09-03：设置页新增「推荐偏好」卡——4 预设按钮（点击即保存）+ 9 维滑杆（拖动后点保存），GET/PUT /recommendations/prefs 全量提交；数值逐字抄 DOMAIN_RULES §1.3 预设表）
-- [x] M3 后端收尾（2026-08-31，非里程碑项，遗留清零）：COS 孤立作者清理（扫描收尾/增量删除后自动对账）、custom_sources 写入端点（GET/PUT /sources/custom + 运行中 matcher 刷新 + 全库存量重算）、filing 移动/改名 cos 库作者映射重算（EnrichAsset 与扫描移动合并两路径）；协议债：/dirs libraryId 标 required、AssetDetail 补 libraryId | 文档: CHANGELOG(HANDOVER/GUIDE_API/DOMAIN_RULES/CAPABILITY_MAP) 本条
+## M4 · Android 客户端 ✅ 收官（2026-09-08 M4-7 验收通过）
 
-**验收**：迁移旧备份后，推荐/排行/统计行为与旧 App 口径一致（对比测试通过）；golangci-lint 门禁绿、生成物不手改、新迁移只加文件、决策先写 ADR。
-
-## M4 · Android 客户端
-
-**目标**：原生体验的薄客户端。
-
-> **执行批次（2026-09-04 二次改道定稿，ADR-0014）**：M4 拆为八批次（M4-0 工程基建 ~ M4-7 整体验收），批次任务书/冻结决策/验收命令/存疑停手点原见 `docs/HANDOVER_APP.md`（已于 2026-09-11 删除，批次记录见 `docs/CHANGELOG.md`）；本节条目完成情况仍以本文件勾选为准（每批完成后勾对应条目并注明 commit）。
-
-- [x] 项目脚手架：Compose 多模块工程（Now in Android 范式：:app + :core:model/network/data/ui + :feature:*）+ Hilt + 生成 SDK 接入 + make/CI（ADR-0014）（2026-09-05：M4-0 交付，commit cdc422e——16 模块骨架+底部导航壳+应用图标+make app-* 三 target+CI 第五 job；本勾选系同日漂移修复补记）
-- [x] **旧 UI 交互 Compose 复刻（ADR-0014，2026-09-04 用户二次拍板「先进优先」，废弃同日照搬路线 0013）**：以旧仓库 `docs/GUIDE_UI.md` 为交互规格书复刻全部已验证交互——视频手势（暂停/倍速/长按 2x/静音/滑动指示器）、图片双指缩放/双击还原/左右预加载、胶囊筛选联动、标签管理流、时间轴标签跳转回看等；实现代码全部 Compose 新写，复杂自绘控件允许 AndroidView 桥接（清单入交付报告）（2026-09-08：M4-3 3a~3d+D1~D4 全链交付达成——图片全屏覆盖层 2018f9e、视频两级全屏+方向恢复 f5a295c、胶囊默认收起 dd1497c、C8 对照修复 d659833、GIF 停帧修复 40ec778；M4-7 验收八条+五观察项全过，详见 CHANGELOG 第一百二十~一百三十四笔）
-- [x] 登录（服务端地址 + token；ServerConfigDataSource 单点，ADR-0015 单机形态预留）、首页/列表/筛选/搜索（2026-09-06 进度注：登录 M4-1=88af1b9、首页/列表/相册四维胶囊筛选/搜索 M4-2=4acb128 已交付；2026-09-07「万能筛选面板」由 M4-2A-B3 交付（commit bba9d47，详见 CHANGELOG 对应笔与 m42a-review/B3-round2.md），原「M4-2.1 独立批」缺口就此补齐，本条补勾）
-- [x] 详情：Coil 图片（签名直链 + 缩放）、Media3 视频（直链 + 倍速 + 时间轴标记）+ 断点续播（服务端基座 9773213）（2026-09-08：M4-3 四子批+D6 整批自查交付（D6=40ec778）；**已知缺口**：progress/dwell 的 seconds 字段被 SDK 序列化为字符串恒 400——续播位置与 dwell 自 M4-3 起未落库，App 侧机制正确，待拍板 #24/#26 归协议批修——已于 2026-09-09 N2 协议批根修（format: double 三端落位））
-- [x] 行为上报（浏览事件/点赞/收藏，离线排队补传）（2026-09-08：M4-4=D5 交付 3034426——Room 离线队列+三通道触发+dwell 先删后发/毒丸≥3+断网 18461 对账闭环；浏览事件已走队列，点赞/收藏实时失败出中文错误；dwell 服务端落库受 #24 协议缺口阻塞）
-- [x] **上传**：系统分享接收 + 文件选择 + 目标目录浏览 + 队列与进度（手机采集端主通道）（2026-09-06：M4-5 交付，commit 294a576——系统分享接收/SAF/WorkManager 串行队列/前台通知，详见 docs/CHANGELOG.md 对应笔（M4-5））
-- [x] 缓存策略（上限可设 LRU）（2026-09-06：M4-6 交付，commit 944cac5——Coil LRU 档位 512MB/1GB/2GB/5GB 默认 1GB + 设置/统计/我的页，详见 docs/CHANGELOG.md 对应笔（M4-6））
-
-**验收**：手机完整日常使用；上传手机文件 → Web 端立即可见；离线时行为数据不丢；golangci-lint 门禁绿、生成物不手改、新迁移只加文件、决策先写 ADR。
+**目标**：原生体验的薄客户端。**路线**：ADR-0014「先进优先」Compose 重建（用户 2026-09-04 二次拍板，废弃 0013 照搬路线；旧 `docs/GUIDE_UI.md` 为交互规格书），八批次（M4-0~M4-7）全交付。
+**范围**：Compose 多模块脚手架（Hilt）、旧 UI 交互 Compose 复刻（视频手势/图片缩放/胶囊筛选/标签管理流等，复杂自绘控件 AndroidView 桥接）、登录/列表/筛选/搜索、详情（Coil+Media3+断点续播）、行为上报（Room 离线队列+对账闭环）、上传（系统分享+SAF+WorkManager 队列）、缓存（LRU 档位）。
+**验收**：全部条目完成——手机完整日常使用；上传手机文件→Web 立即可见；离线行为数据不丢。
 
 ## M5 · NAS 部署验收 ✅ 收官（2026-09-22 用户确认真机 NAS 测试完成）
 
-**目标**：真实 NAS 环境全流程可用。
+**目标**：真实 NAS 环境全流程可用。**范围**：Docker amd64 镜像（容器内 ffmpeg 自检过）、`deploy/docker-compose.yml` 生产样例、`deploy/README.md`、真机访问/断电重启数据完好/回收站恢复实测（fnOS 虚拟机彩排+真机 NAS）。
+**收官口径**：大库扫描压测销项（真机日常使用覆盖常规扫描路径）；arm64 双架构镜像移 M7+ 按需储备（实测部署形态 amd64）。**验收**：全部条目完成——真机 NAS 全功能可用。
 
-> **2026-09-19 口径改写（用户拍板，任务Q §0-3；批D 顺延记档=任务Q 批E）**：开发侧三项（Docker buildx 双架构镜像、docker-compose 生产样例、deploy/README.md）= 上 NAS 的必经之路必须做；fnOS 虚拟机彩排 = 非必须不再补做（虚拟机只是排练，将来真机 NAS 直接执行部署验收清单）。**批D 执行态：顺延挂用户节点**——Docker Desktop 未安装且须用户浏览器手动下载（AI 命令行下载多次被网络重置，教程见 `..\dev-tools\TOOLCHAIN_GUIDE.md`），用户装好后执行 M5 部署验收清单。
-> **2026-09-22 部分清偿（用户主动要求虚拟机实测彩排）**：绕开宿主机 Docker Desktop 的路径 = 直接在 fnOS 虚拟机内构建镜像（宿主机只做交叉编译 + web 构建）。开发侧三项中的 compose 样例与部署文档已交付勾销，镜像 amd64 半边实测通过；同场完成 M5 之外的局域网全链路彩排（装机→建库→扫描→缩略图→播放→上传→自重启，合成测试库，未触碰真实库数据）。
-> **2026-09-22 收官（用户确认「NAS 测试完成」）**：真机 NAS 部署测试由用户完成，M5 验收达成。两项原挂真机节点的工程项按实情改记：**arm64 双架构镜像移 M7+ 按需储备**（实测部署形态为 amd64，无 arm64 部署目标时不构建）；**大库扫描压测不设专项**（真机真实库日常使用已覆盖常规扫描路径，极限压测以日常观察代替）。
+## M6 · Android 单机形态（ADR-0015）✅ 收官（2026-09-20 用户确认）
 
-- [x] Docker 镜像（含 ffmpeg）——**2026-09-22 amd64 单架构已交付并在 fnOS 1.2 虚拟机实测通过（`deploy/Dockerfile`，容器内 ffmpeg 自检过），随真机 NAS 测试收官；arm64 半边移 M7+ 按需储备**
-- [x] docker-compose 生产样例（卷挂载/健康检查/自动重启）（2026-09-22：`deploy/docker-compose.yml` 交付，fnOS 虚拟机实测 healthy + 自重启拉起）
-- [x] 部署文档 `deploy/README.md`（2026-09-22 交付，含镜像源备注/安全红线自查/实测记录）
-- [x] 手机真机访问（2026-09-22 虚拟机彩排：App 连 NAS 浏览+上传实测通过）
-- [x] 断电重启数据完好（2026-09-22 虚拟机彩排：硬切电重启，容器 healthy 自拉起、库数据完好）
-- [x] 回收站恢复（2026-09-22 虚拟机彩排：删除→回收站→恢复端到端通过，同场验证第三百八十四笔 EXDEV 修复）
-- [x] 大库扫描压测——**2026-09-22 按收官口径销项：真机真实库日常使用覆盖常规扫描路径，不设专项极限压测**
-
-**验收**：真机 NAS 全功能可用——**达成（2026-09-22 用户确认真机 NAS 测试完成）**。
-
-## M6 · Android 单机形态（服务端内嵌手机，ADR-0015）✅ 全部完成（2026-09-20 用户确认收官）
-
-**目标**：手机本机跑完整系统（Go 服务端 + App UI），媒体存手机存储——电脑/NAS 不在线时的日常主力，旧项目（绮梦影库）由此退役，只维护一个项目。
-
-> 实施顺序：M4 完成后启动，优先于 M5（用户日常价值优先；M5 NAS/虚拟机验收按用户自测节奏并行）。技术验证优先项：Go 交叉编译 android/arm64（CGO_ENABLED=0）+ ffmpeg 移动端方案（Termux 形态用其 ffmpeg 包；App 内嵌形态另评估——ffmpeg-kit 已停维护）。
-
-- [x] 服务端 Android 构建：交叉编译目标 + 数据目录/媒体根在手机存储的语义适配（无架构改动，ADR-0015 已论证）（2026-09-13：T1 交付=Makefile server-android-arm64/amd64 双 target+ffmpeg 可配置化+模拟器 shell 域闭环；2026-09-14 arm64 真机运行时复验通过，26.3MB 产物 healthz 200）
-- [x] 运行形态 A（Termux 宿主）：二进制 + 一键启动脚本 + termux-setup-storage 授权（2026-09-14：T2 真机节点核心通过——Termux v0.118.3 真机装机+脚本三件跑通+healthz 200+正式 Web 管理界面上机（QIMENG_WEB_STATIC_DIR 注入）；dev 免密入脚本（仅回环暴露，用户本地免密约定）；目录注册扫描由用户真机进行中，完成后 T2 全收官；T2 已随 2026-09-20 M6 收官）
-- [x] 运行形态 B（App 内嵌，A 验收后评估）：gomobile AAR + 前台 Service + ffmpeg so 方案（2026-09-15 U11 批次D=CHANGELOG 第二百七十二笔：三件套装配流水线 `make app-embedded`+薄前台 Service+本机模式全链接线，模拟器验壳全过；真机 arm64 全链随 T7 于 2026-09-20 用户确认完成）
-- [x] App 单机模式接入：ServerConfigDataSource 指向 localhost，UI 零改动验证（U11 批次D 全链接线；登录死锁修复 a9d9e7b=任务S S8；2026-09-20 用户验收确认）
-- [x] 旧项目数据迁入：`POST /import/qimeng-backup`（行为数据）+ 手机媒体原地注册为库（2026-09-20 用户确认完成）
-- [x] 性能/耗电优化之扫描充电联动：仅本机模式生效，未充电点重扫→记待扫标记，接入电源自动补扫；设置项「仅充电时扫描」默认开（2026-09-19 任务Q 批C：ScanGate 纯函数+DataStore 待扫标记+POWER_CONNECTED 运行时注册 receiver+启动兜底补扫，模拟器三剧本冒烟过，见 CHANGELOG 第三百四十一笔）
-- [x] 性能/耗电优化之首次全量扫描实测报告（2026-09-18 性能批部分落地：缩略图开机回填静默窗 `thumbnail.warmup_delay` 默认 60s + 推荐流短缓存/计数批量写（服务端）、就绪探针/梯度退避/骨架屏/全量缩略图自动预取（App 端），见 CHANGELOG 第三百一十三/三百一十四笔；实测报告=真机用户节点，与 T7 断网验收同场做；2026-09-20 用户确认已完成）
-- [x] 验收：断网（无 PC/NAS）全流程可用——扫描/浏览/播放/打点（离线队列本地落盘）/上传（手机内整理）；旧 App 退役确认（T7，2026-09-20 用户确认完成——断网全流程+内嵌形态 B 真机 arm64 全链+旧 App 退役拍板）
-
-**验收**：手机不依赖任何外部设备完整可用；旧项目数据全量迁入核对；旧项目归档。
+**目标**：手机本机跑完整系统（Go 服务端+App UI），媒体存手机存储——旧项目（绮梦影库）退役，只维护一个项目。
+**范围**：android/arm64 交叉编译+存储语义适配、形态 A（Termux+一键脚本+存储授权）、形态 B（App 内嵌：gomobile AAR+前台 Service+本机模式全链）、单机模式接入（ServerConfigDataSource→localhost）、旧项目数据迁入（/import/qimeng-backup+媒体原地注册）、扫描充电联动、首次全量扫描实测报告。
+**验收**：全部条目完成——断网（无 PC/NAS）全流程可用，旧项目数据全量迁入核对并归档。
 
 ## M7+ · 后置储备（不承诺时间）
 
