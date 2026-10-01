@@ -27,8 +27,9 @@ import media.qimeng.app.core.model.toPrefsValues
 data class MineUiState(
     /**
      * 页首数量卡（I4，GUIDE_UI §我的页 L252：图片/视频两卡；数据源 GET /stats/overview）。
-     * null = 未就绪或读失败（数字卡显示「—」降级，不崩、不弹横幅——纯计数装饰卡，
+     * null = 未就绪（含首次读失败；数字卡显示「—」降级，不崩、不弹横幅——纯计数装饰卡，
      * 失败不构成需要用户介入的操作反馈，与 writeError 操作反馈族不同口径）。
+     * 2026-10-02 起刷新失败不落空（保留旧值），仅初始未就绪才是 null。
      */
     val imageCount: Int? = null,
     val videoCount: Int? = null,
@@ -47,6 +48,7 @@ data class MineUiState(
     val prefsLoadFailed: Boolean = false,
     val prefsSheetOpen: Boolean = false,
     val prefsApplying: Boolean = false,
+    /** 服务端版本（C6；null=未就绪显「未知」；2026-10-02 起刷新失败保留旧值，仅初始未就绪是 null） */
     val serverVersion: String? = null,
     /**
      * 写操作失败反馈（自审 P2-3：applyPreset 失败原实现静默吞错；原 setCacheQuota 一并
@@ -59,6 +61,8 @@ data class MineUiState(
 /**
  * 我的页 ViewModel（M4-6）：页首数量卡（I4：/stats/overview 图片/视频计数）、
  * 推荐偏好四预设（BottomSheet 应用）、服务端版本展示（C6）。
+ * 2026-10-02 状态完整性批：Tab 常驻层使 init 终身一次，增 [onResumed]（ON_RESUME 驱动）
+ * 重拉数量卡与版本——跨端上传/删除后返回本页计数不再陈旧，读失败保留旧值不闪空。
  * 缓存档位持久化与清空（C5）2026-09-16 用户反馈迁往数据管理→缩略图缓存页
  * （feature:manage 单页承接进度+上限），本类不再依赖 DiskCachePrefsRepository/
  * CoilCacheManager，也不再持有 IO 调度器位（原仅缓存清空/读字节的磁盘扫描在用）。
@@ -86,19 +90,36 @@ class SettingsViewModel @Inject constructor(
     }
 
     /**
+     * 回前台/切回本 Tab（ON_RESUME，Screen 侧 DisposableEffect 观察驱动）：重拉数量卡与
+     * 服务端版本。壳层 Tab 常驻层保活使 init 终身只跑一次，跨端上传/删除/扫描入库对
+     * 本页不可感知（数量是纯计数，无指纹类客户端信号可对比），「返回即拉」是最简正确
+     * 新鲜度语义——两请求均为只读幂等轻端点，不加防抖/指纹门。
+     * 刻意不含偏好重拉：loadPrefs 失败会把已持有的 prefsValues 清空进重试态，后台静默
+     * 刷新一旦失败反而降级既有展示；偏好变化由本页 Sheet 操作驱动（应用即持权威值），
+     * 无回前台刷新需求。
+     */
+    fun onResumed() {
+        loadLibraryCounts()
+        loadServerVersion()
+    }
+
+    /**
      * 页首数量卡（I4，GUIDE_UI L252 + 实录 mine.txt 两卡「图片 N」「视频 N」）：
      * GET /stats/overview 的 imageCount/videoCount 纯计数（不触拍板⑤容量豁免）。
-     * 读失败降级为 null（数字卡显「—」），静默不弹横幅——装饰性计数卡失败
-     * 不构成操作反馈（writeError 族保留给写操作）。
+     * 读失败不落空——仅成功才写入（初始即 null，「—」降级显示不变；回前台刷新失败
+     * 保留旧值，陈旧数字优于闪成空白，2026-10-02 随 ON_RESUME 刷新批调整），静默不弹
+     * 横幅——装饰性计数卡失败不构成操作反馈（writeError 族保留给写操作）。
      */
     private fun loadLibraryCounts() {
         viewModelScope.launch {
             val overview = runCatching { statsRepository.overview() }.getOrNull()
-            _uiState.update {
-                it.copy(
-                    imageCount = overview?.imageCount,
-                    videoCount = overview?.videoCount,
-                )
+            if (overview != null) {
+                _uiState.update {
+                    it.copy(
+                        imageCount = overview.imageCount,
+                        videoCount = overview.videoCount,
+                    )
+                }
             }
         }
     }
@@ -162,10 +183,16 @@ class SettingsViewModel @Inject constructor(
         _uiState.update { it.copy(writeError = null) }
     }
 
+    /**
+     * 服务端版本重拉（C6；2026-10-02 随 ON_RESUME 刷新批改为仅成功写入——刷新失败保留
+     * 旧值，理由同 [loadLibraryCounts]；初始 null →「未知」降级显示不变）。
+     */
     private fun loadServerVersion() {
         viewModelScope.launch {
             val version = runCatching { systemInfoRepository.serverVersion() }.getOrNull()
-            _uiState.update { it.copy(serverVersion = version) }
+            if (version != null) {
+                _uiState.update { it.copy(serverVersion = version) }
+            }
         }
     }
 

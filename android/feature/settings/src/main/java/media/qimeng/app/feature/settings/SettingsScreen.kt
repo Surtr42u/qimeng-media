@@ -1,7 +1,5 @@
 package media.qimeng.app.feature.settings
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -13,24 +11,29 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import java.io.IOException
-import kotlinx.coroutines.launch
 import media.qimeng.app.core.ui.theme.QimengDimens
 
 /** 我的页入口行文案（GUIDE_UI §我的页 + M4-2 既有入口 + M4-6 上传入口；
@@ -40,7 +43,9 @@ import media.qimeng.app.core.ui.theme.QimengDimens
  *  U10-6：原「上传文件」行升级为「数据管理」合并入口行（上传/注册媒体目录/库管理
  *  三件事进 feature:manage 的 hub 二级页），常量与副文案本文件单源；
  *  2026-09-28 上传归档文件夹功能：原「下载收件箱」入口行迁入数据管理 hub
- *  （用户拍板「下载箱移到数据管理中，不需要在外面单独一个显示」），常量随之退役 */
+ *  （用户拍板「下载箱移到数据管理中，不需要在外面单独一个显示」），常量随之退役；
+ *  2026-10-02 排版逻辑批：副文案校准为 hub 现有六入口的概括（原三件事表述停留在
+ *  U10-6 时点，作者 TXT/备份/缩略图缓存/归档文件夹均为后续批次追加未随更） */
 private const val ROW_AUTHORS = "作者总览"
 private const val ROW_FAVORITE = "收藏"
 private const val ROW_HISTORY = "浏览历史"
@@ -52,13 +57,20 @@ private const val ROW_THEME = "主题色彩"
 internal const val ROW_PREFS = "推荐偏好"
 private const val ROW_SERVER = "服务器"
 
+/** 版本信息行文案（2026-10-02 提常量：原字符串内联在组合函数体内，违魔法值零容忍） */
+private const val ROW_VERSION = "版本信息"
+
+/** 版本行右侧详情前缀（数据源=服务端版本，C6；与 [VERSION_UNKNOWN] 组成完整详情） */
+private const val VERSION_DETAIL_PREFIX = "服务端 "
+
 /**
  * 入口行副文案（I4 两行化，实录 mine.txt 逐字：收藏/浏览历史/主题色彩/推荐偏好；
  * 推荐偏好行当前预设名不再展示在行上——当前项高亮已在 BottomSheet 内，GUIDE_UI L255；
  * 原作者管理行副文案随行同批删除，F 批 2026-09-09。X5 批新增作者总览行副文案：
  * 入口行不预取数据，无「N 位作者」动态口径，用固定说明文字。U10-4 新增服务器行副文案：
- * 概括子页三件事——地址/本机模式/换址需重新登录。U10-6 新增数据管理行副文案：
- * 概括 hub 合并的三件事——上传/注册媒体目录/库管理）。
+ * 概括子页三件事——地址/本机模式/换址需重新登录。2026-10-02 数据管理行副文案校准：
+ * 概括 hub 现有六入口（上传/库管理/作者 TXT 导入/备份导入导出/缩略图缓存/上传归档
+ * 文件夹）的高频面——原「上传文件、注册媒体目录、库管理」停留在 U10-6 时点）。
  */
 private const val SUBTITLE_AUTHORS = "查看全部作者与作品"
 private const val SUBTITLE_FAVORITE = "查看收藏的图片和视频"
@@ -69,9 +81,16 @@ private const val SUBTITLE_PREFS = "调整首页推荐算法的权重偏好"
 // ——原「查看服务器地址、本机模式；换址需重新登录」折行致行高破 72dp 节奏；换址提示细节
 // 由子页承载）
 private const val SUBTITLE_SERVER = "服务器地址、本机模式与换址说明"
-private const val SUBTITLE_DATA_MANAGE = "上传文件、注册媒体目录、库管理"
+private const val SUBTITLE_DATA_MANAGE = "上传、库管理、备份与缓存"
 
 private const val VERSION_UNKNOWN = "未知"
+
+// ---------- 退出登录确认弹窗文案（2026-10-02 交互批：原一键直登出，误触即回登录页，
+// 重登需重输地址与口令，成本过高——加二次确认；标题复用 settings_logout 单源，
+// M3 AlertDialog 范式对齐库管理页删除确认 DeleteConfirmDialog） ----------
+private const val LOGOUT_CONFIRM_BODY = "退出后将返回登录页，需重新登录才能访问媒体库。"
+private const val LOGOUT_CONFIRM_CONFIRM = "退出"
+private const val LOGOUT_CONFIRM_DISMISS = "取消"
 
 // ---------- 我的页视觉复刻旧版尺寸（2026-09-13 用户反馈「我的界面的 ui 也要和旧版一致」；
 // 逐段实录旧仓库运行时代码规格，口径见各常量注释；可复用档位一律引用 QimengDimens 既有
@@ -86,18 +105,23 @@ private val TitleToCardsSpacing = 24.dp
 /** 16dp：首个入口行上距（旧版运行时行区首行 marginTop 16dp；行下距用 QimengDimens.SpaceL 12dp） */
 private val FirstRowTopSpacing = 16.dp
 
+/** 16dp：页尾呼吸区下距（2026-10-02 交互批：原退出登录按钮滚动到底直接贴住底栏上缘；
+ *  与页首 FirstRowTopSpacing 16dp 首尾对称，无新增档位） */
+private val FooterBottomSpacing = 16.dp
+
 /**
  * 「我的」Tab（M4-6 完整版，单页滚动列表，GUIDE_UI §我的页结构 + I4 复刻清偿；
  * 2026-09-13 视觉复刻批：整页对齐旧版运行时——数量卡 96dp/20dp 圆角纯白 surface、
  * 入口行 QimengProfileRow 规格（72dp 高/18dp 水平 padding/16dp 圆角纯白卡/单块两行
  * 15sp 主文字色）、推荐偏好 Sheet 旧版规格（28dp 圆角/描边选中态/四预设恒渲染 +
  * 加载失败重试态）；大卡区块在 SettingsCards.kt，U10-4 起列表项按头/行/尾三组拆为
- * LazyListScope 扩展（纯代码移动，行序与规格逐字不变，主函数收回 100 行内））：
- * 标题 → 页首数量卡（I4：图片/视频两卡）→ 入口行族（服务器（U10-4 合并入口 →
- * ServerSettingsScreen 子页）→ 作者总览 → 收藏/浏览历史 → 数据管理（U10-6 合并入口 →
- * feature:manage hub 子页）→ 主题色彩（不可点）→
- * 推荐偏好（BottomSheet 四预设整行应用/当前项高亮））→
- * 版本信息（服务端版本，C6）→ 退出登录。
+ * LazyListScope 扩展（纯代码移动，行序与规格逐字不变，主函数收回 100 行内）；
+ * 2026-10-02 排版逻辑批：行序按使用频率与旧版实录重排（见 settingsEntryRowItems）、
+ * 退出登录加二次确认弹窗、回前台 ON_RESUME 自动刷新数量卡与服务端版本）：
+ * 标题 → 页首数量卡（I4：图片/视频两卡）→ 入口行族（收藏 → 浏览历史 → 作者总览 →
+ * 主题色彩（不可点）→ 推荐偏好（BottomSheet 四预设整行应用/当前项高亮）→
+ * 数据管理（合并入口 → feature:manage hub 子页）→ 服务器（合并入口 →
+ * ServerSettingsScreen 子页））→ 版本信息（服务端版本，C6）→ 退出登录（二次确认）。
  * （浏览数据同步卡 2026-09-15 批迁往 feature:manage BackupScreen；缓存区「LRU 档位 +
  * 清空」2026-09-16 用户反馈迁往数据管理→缩略图缓存页，与缩略图生成进度合并展示。）
  */
@@ -115,6 +139,23 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    // 退出登录二次确认开关（2026-10-02 交互批）：误触防线，确认才触达 viewModel.logout()
+    var logoutConfirmOpen by remember { mutableStateOf(false) }
+
+    // 回前台数据新鲜度（2026-10-02 状态完整性批）：本 Tab 走壳层常驻层保活，ViewModel
+    // init 只在首访执行一次——上传/删除/扫描入库后切回本 Tab，数量卡与服务端版本恒陈旧；
+    // 数量卡读失败后更是永无重试路径（偏好有 Sheet 内重试态，此二者没有）。对齐首页
+    // HomeScreen 的 ON_RESUME 观察范式（DisposableEffect + LifecycleEventObserver），
+    // 切回/返回本 Tab 即重拉（纯计数轻端点，只读幂等；重拉语义见 ViewModel.onResumed）
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) viewModel.onResumed()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -132,7 +173,10 @@ fun SettingsScreen(
             onOpenDataManage = onOpenDataManage,
             onOpenPrefs = viewModel::openPrefsSheet,
         )
-        settingsFooterItems(state = state, viewModel = viewModel)
+        settingsFooterItems(
+            state = state,
+            onLogoutClick = { logoutConfirmOpen = true },
+        )
     }
 
     // Sheet 开关只看 prefsSheetOpen——预设四行本身不依赖网络，prefsValues 加载失败
@@ -146,6 +190,16 @@ fun SettingsScreen(
             onRetryLoad = viewModel::retryLoadPrefs,
             onApply = viewModel::applyPreset,
             onDismiss = viewModel::closePrefsSheet,
+        )
+    }
+
+    if (logoutConfirmOpen) {
+        LogoutConfirmDialog(
+            onConfirm = {
+                logoutConfirmOpen = false
+                viewModel.logout()
+            },
+            onDismiss = { logoutConfirmOpen = false },
         )
     }
 }
@@ -195,10 +249,18 @@ private fun LazyListScope.settingsHeaderItems(state: MineUiState, viewModel: Set
 }
 
 /**
- * 入口行族（U10-4 拆分：自 SettingsScreen 逐字迁移；F 批 2026-09-09 起行序：
- * 服务器 → 作者总览 → 收藏/浏览历史 → 数据管理 → 主题色彩（不可点）→ 推荐偏好；
- * 原「作者管理」行按用户拍板删除，作者管理页由作者总览行承担入口；
- * U10-6：原「上传文件」行原位升级为「数据管理」合并入口行）。
+ * 入口行族（2026-10-02 排版逻辑批重排。原序「服务器 → 作者总览 → 收藏/浏览历史 →
+ * 数据管理 → 主题色彩 → 推荐偏好」是批次沿革产物：服务器行顶位承袭自 U10-4 前的
+ * 「服务器地址展示卡」——该卡置顶理由是地址常看，U10-4 改入口行后行上已不展示地址，
+ * 置顶理由消失；低频配置占据页首第一视觉位、高频行为数据入口被压后，违使用频率与
+ * 心智模型。新序对齐旧版实录 mine.txt 行序（收藏/浏览历史/作者管理/主题色彩/推荐偏好/
+ * 数据管理/数据备份）并按频率分四组：
+ * ① 行为数据入口（高频）：收藏 → 浏览历史 → 作者总览；
+ * ② 展示与偏好：主题色彩（不可点）→ 推荐偏好；
+ * ③ 管理与配置（低频）：数据管理 → 服务器（新版独有行归组尾，与页尾版本/退出相邻）；
+ * ④ 页尾：版本信息 → 退出登录（footer 组，见 settingsFooterItems）。
+ * 行规格与 12dp 行距零改动（2026-09-13 视觉复刻批拍板口径不动），分组靠顺序表达——
+ * 不加组间距/分区标题，维持旧版平坦列表形态）。
  */
 private fun LazyListScope.settingsEntryRowItems(
     onOpenServerDetail: () -> Unit,
@@ -208,16 +270,21 @@ private fun LazyListScope.settingsEntryRowItems(
     onOpenDataManage: () -> Unit,
     onOpenPrefs: () -> Unit,
 ) {
-    // 服务器入口行（U10-4：原「服务器地址」只展示卡与「本机模式」快捷行合并为单入口，
-    // 点击 onOpenServerDetail → 壳层 Routes.SERVER 子页；副文案概括地址/本机模式/
-    // 换址需重新登录三件事，行上不再展示地址——地址只在子页内消费）
+    // ① 行为数据入口（高频）——收藏（行区首行上距 16dp，旧版运行时规格同位）
     item {
         EntryRow(
-            label = ROW_SERVER,
-            subtitle = SUBTITLE_SERVER,
-            onClick = onOpenServerDetail,
-            // 行区首行上距 16dp（旧版运行时规格，原资料卡/本机模式行同位）
+            label = ROW_FAVORITE,
+            subtitle = SUBTITLE_FAVORITE,
+            onClick = onOpenFavorite,
             modifier = Modifier.padding(top = FirstRowTopSpacing, bottom = QimengDimens.SpaceL),
+        )
+    }
+    item {
+        EntryRow(
+            label = ROW_HISTORY,
+            subtitle = SUBTITLE_HISTORY,
+            onClick = onOpenHistory,
+            modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
         )
     }
 
@@ -231,37 +298,8 @@ private fun LazyListScope.settingsEntryRowItems(
             modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
         )
     }
-    item {
-        EntryRow(
-            label = ROW_FAVORITE,
-            subtitle = SUBTITLE_FAVORITE,
-            onClick = onOpenFavorite,
-            modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
-        )
-    }
-    item {
-        EntryRow(
-            label = ROW_HISTORY,
-            subtitle = SUBTITLE_HISTORY,
-            onClick = onOpenHistory,
-            modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
-        )
-    }
 
-    // 数据管理入口（U10-6：原「上传文件」行原位升级为合并入口——上传/注册媒体目录/
-    // 库管理进 feature:manage hub 二级页；副文案概括 hub 三件事，保持其他入口行两行节奏。
-    // 2026-09-28 归档文件夹批：「上传收件箱与归档」入口行随用户拍板迁入本 hub
-    // （「下载箱移到数据管理中，不需要在外面单独一个显示」），本页不再单列收件箱行）
-    item {
-        EntryRow(
-            label = ROW_DATA_MANAGE,
-            subtitle = SUBTITLE_DATA_MANAGE,
-            onClick = onOpenDataManage,
-            modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
-        )
-    }
-
-    // 主题色彩（I4，GUIDE_UI L253+L268：不可点击纯展示行，仅跟随系统明暗模式）
+    // ② 展示与偏好——主题色彩（I4，GUIDE_UI L253+L268：不可点击纯展示行，仅跟随系统明暗模式）
     item {
         EntryRow(
             label = ROW_THEME,
@@ -282,21 +320,53 @@ private fun LazyListScope.settingsEntryRowItems(
             modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
         )
     }
+
+    // ③ 管理与配置（低频）——数据管理入口（U10-6：原「上传文件」行原位升级为合并入口——
+    // 上传/注册媒体目录/库管理进 feature:manage hub 二级页。
+    // 2026-09-28 归档文件夹批：「上传收件箱与归档」入口行随用户拍板迁入本 hub
+    // （「下载箱移到数据管理中，不需要在外面单独一个显示」），本页不再单列收件箱行）
+    item {
+        EntryRow(
+            label = ROW_DATA_MANAGE,
+            subtitle = SUBTITLE_DATA_MANAGE,
+            onClick = onOpenDataManage,
+            modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
+        )
+    }
+
+    // 服务器入口行（U10-4：原「服务器地址」只展示卡与「本机模式」快捷行合并为单入口，
+    // 点击 onOpenServerDetail → 壳层 Routes.SERVER 子页；副文案概括地址/本机模式/
+    // 换址需重新登录三件事，行上不再展示地址——地址只在子页内消费；
+    // 2026-10-02 排版逻辑批：自页首行移至管理配置组尾，置顶理由（原地址展示卡位）
+    // 已随 U10-4 消失）
+    item {
+        EntryRow(
+            label = ROW_SERVER,
+            subtitle = SUBTITLE_SERVER,
+            onClick = onOpenServerDetail,
+            modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
+        )
+    }
 }
 
 /**
- * 列表尾两组（U10-4 拆分：自 SettingsScreen 逐字迁移）：版本信息（C6）→ 退出登录。
+ * 列表尾两组：版本信息（C6）→ 退出登录（2026-10-02 交互批：一键直登出改二次确认——
+ * 误触即回登录页、重登需重输地址与口令，成本过高；确认弹窗见 [LogoutConfirmDialog]，
+ * 本组只负责把按钮点击转为打开确认弹窗）。
  * （原首组「浏览数据同步」卡 2026-09-15 批迁往数据管理→备份导入导出页，用户拍板
  * 「外部的浏览数据移植到数据管理中合并到导入备份那个」；原「缓存区（C5）」组——
  * SectionTitle + 缩略图上限档位卡——2026-09-16 用户反馈迁往数据管理→缩略图缓存页，
  * 与缩略图生成进度合并为单页，QuotaCard 随迁 feature:manage。）
  */
-private fun LazyListScope.settingsFooterItems(state: MineUiState, viewModel: SettingsViewModel) {
+private fun LazyListScope.settingsFooterItems(
+    state: MineUiState,
+    onLogoutClick: () -> Unit,
+) {
     // 版本信息（C6：服务端版本）
     item {
         EntryRow(
-            label = "版本信息",
-            detail = "服务端 ${state.serverVersion ?: VERSION_UNKNOWN}",
+            label = ROW_VERSION,
+            detail = "$VERSION_DETAIL_PREFIX${state.serverVersion ?: VERSION_UNKNOWN}",
             onClick = null,
             modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
         )
@@ -304,12 +374,36 @@ private fun LazyListScope.settingsFooterItems(state: MineUiState, viewModel: Set
 
     item {
         Button(
-            onClick = viewModel::logout,
-            modifier = Modifier.fillMaxWidth(),
+            onClick = onLogoutClick,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = FooterBottomSpacing),
         ) {
             Text(text = stringResource(R.string.settings_logout))
         }
     }
+}
+
+/**
+ * 退出登录二次确认弹窗（2026-10-02 交互批；M3 AlertDialog，范式对齐库管理页
+ * DeleteConfirmDialog——title/text/confirm/dismiss 四件套，文案常量见文件头）。
+ */
+@Composable
+private fun LogoutConfirmDialog(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text = stringResource(R.string.settings_logout)) },
+        text = { Text(text = LOGOUT_CONFIRM_BODY) },
+        confirmButton = {
+            TextButton(onClick = onConfirm) { Text(text = LOGOUT_CONFIRM_CONFIRM) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(text = LOGOUT_CONFIRM_DISMISS) }
+        },
+    )
 }
 
 /**

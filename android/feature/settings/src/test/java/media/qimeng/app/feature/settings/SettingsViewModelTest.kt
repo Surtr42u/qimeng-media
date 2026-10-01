@@ -64,16 +64,27 @@ class SettingsViewModelTest {
         }
     }
 
-    private class FakeSystemInfoRepository(private val version: String?) : SystemInfoRepository {
+    private class FakeSystemInfoRepository(version: String?) : SystemInfoRepository {
+        /** 可变：供 onResumed 重拉用例在两次拉取间改值（2026-10-02 刷新批） */
+        var version: String? = version
+
         override suspend fun serverVersion(): String? = version
     }
 
     /** 数量卡替身（I4）：overview 可编程抛出（读失败降级路径锁定）；trends 本页不消费 */
     private class FakeStatsRepository(
-        private val overview: StatsOverviewValues?,
+        overview: StatsOverviewValues?,
     ) : StatsRepository {
-        override suspend fun overview(): StatsOverviewValues =
-            overview ?: throw RuntimeException("network down")
+        /** 可变：供 onResumed 重拉用例在两次拉取间改值/置 null（刷新失败保留旧值路径） */
+        var overview: StatsOverviewValues? = overview
+
+        /** overview 实际被读次数（onResumed 重拉触达断言用） */
+        var overviewCalls = 0
+
+        override suspend fun overview(): StatsOverviewValues {
+            overviewCalls += 1
+            return overview ?: throw RuntimeException("network down")
+        }
 
         override suspend fun trends(range: String): List<TrendPoint> = emptyList()
 
@@ -206,6 +217,61 @@ class SettingsViewModelTest {
         assertNull(settingsViewModel.uiState.value.writeError)
         // 其余初始化链路不受数量卡读失败牵连
         assertEquals("v0.9.0", settingsViewModel.uiState.value.serverVersion)
+    }
+
+    // ---------- ON_RESUME 回前台刷新（2026-10-02 状态完整性批：Tab 常驻层下 init 终身
+    // 一次，返回本 Tab 重拉数量卡/版本；失败保留旧值不闪空） ----------
+
+    @Test
+    fun `onResumed 重拉数量卡与版本 更新到最新值`() = runTest {
+        val stats = FakeStatsRepository(
+            StatsOverviewValues(totalFiles = 6135, imageCount = 5721, videoCount = 414, totalSizeBytes = 0L, todayViews = 0, totalViews = 0L),
+        )
+        val systemInfo = FakeSystemInfoRepository("v0.9.0")
+        val settingsViewModel = SettingsViewModel(
+            authRepository = FakeAuthRepository(initialServerUrl = "http://10.0.2.2:8420", initialLoggedIn = true),
+            statsRepository = stats,
+            prefsRepository = FakePrefsRepository(),
+            systemInfoRepository = systemInfo,
+        )
+        advanceUntilIdle()
+        assertEquals(5721, settingsViewModel.uiState.value.imageCount)
+
+        // 模拟跨端上传/删除后切回本 Tab：假件数据演进 + ON_RESUME
+        stats.overview = StatsOverviewValues(totalFiles = 6137, imageCount = 5720, videoCount = 417, totalSizeBytes = 0L, todayViews = 0, totalViews = 0L)
+        systemInfo.version = "v1.0.0"
+        settingsViewModel.onResumed()
+        advanceUntilIdle()
+        assertEquals(5720, settingsViewModel.uiState.value.imageCount)
+        assertEquals(417, settingsViewModel.uiState.value.videoCount)
+        assertEquals("v1.0.0", settingsViewModel.uiState.value.serverVersion)
+        // init 一次 + onResumed 一次
+        assertEquals(2, stats.overviewCalls)
+    }
+
+    @Test
+    fun `onResumed 刷新失败保留旧值不闪空`() = runTest {
+        val stats = FakeStatsRepository(
+            StatsOverviewValues(totalFiles = 6135, imageCount = 5721, videoCount = 414, totalSizeBytes = 0L, todayViews = 0, totalViews = 0L),
+        )
+        val systemInfo = FakeSystemInfoRepository("v0.9.0")
+        val settingsViewModel = SettingsViewModel(
+            authRepository = FakeAuthRepository(initialServerUrl = "http://10.0.2.2:8420", initialLoggedIn = true),
+            statsRepository = stats,
+            prefsRepository = FakePrefsRepository(),
+            systemInfoRepository = systemInfo,
+        )
+        advanceUntilIdle()
+
+        // 刷新请求失败：已有展示保留（陈旧数字优于闪成空白），也不升级成操作反馈横幅
+        stats.overview = null
+        systemInfo.version = null
+        settingsViewModel.onResumed()
+        advanceUntilIdle()
+        assertEquals(5721, settingsViewModel.uiState.value.imageCount)
+        assertEquals(414, settingsViewModel.uiState.value.videoCount)
+        assertEquals("v0.9.0", settingsViewModel.uiState.value.serverVersion)
+        assertNull(settingsViewModel.uiState.value.writeError)
     }
 
     // ---------- P2-3 写失败反馈（原实现静默吞错的回归锁定） ----------
