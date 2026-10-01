@@ -1,16 +1,18 @@
 /**
- * 明暗主题切换（原型侧栏月亮按钮语义）。
+ * 明暗主题切换（侧栏月亮按钮语义；ADR-0031 起暗色优先）。
  *
- * 与 main.tsx 旧逻辑的差异：旧版"仅跟随系统"（无手动入口），原型验收改为
- * 手动切换（用户拍板）——手动选择持久化 localStorage 且优先于系统；
- * 无手动选择时保持跟随系统（运行中改系统主题仍即时生效）。
+ * v1 行为：手动选择持久化优先，无手动选择时跟随系统。
+ * v2 行为（暗色优先的媒体消费场景拍板）：手动选择持久化仍优先；**无手动选择时
+ * 默认暗色**（媒体库消费场景的主形态），不再跟随系统——浅色是完整但次要的
+ * 「晨雾玻璃」变体，用户可随时月亮按钮切过去并持久化。
  * .dark class 与 shadcn/主题变量层共用（index.css @custom-variant dark），切 class 即全站生效。
  */
 
 const THEME_STORAGE_KEY = 'qimeng_theme'
 
-/** theme-color meta 的两档值（与 index.html 内联脚本双写，改动须两处同步） */
-const THEME_COLOR = { light: '#ffffff', dark: '#0f0f0f' } as const
+/** theme-color meta 的两档值（= tokens.css 画布 --qm-bg 的 hex 形态；
+ *  与 index.html 内联脚本双写，改动须两处同步） */
+const THEME_COLOR = { light: '#f3f3f9', dark: '#0b0c16' } as const
 
 function syncThemeColor(dark: boolean): void {
   const meta = document.querySelector('meta[name="theme-color"]')
@@ -29,11 +31,24 @@ export function isDark(): boolean {
   return document.documentElement.classList.contains('dark')
 }
 
-/** 应用指定主题并持久化为手动选择（此后不再跟随系统） */
-export function applyTheme(choice: ThemeChoice): void {
-  document.documentElement.classList.toggle('dark', choice === 'dark')
-  localStorage.setItem(THEME_STORAGE_KEY, choice)
-  syncThemeColor(choice === 'dark')
+/**
+ * 切 class 并同步 theme-color meta；手动选择由调用方决定是否持久化。
+ * 支持 View Transition 的浏览器（Chromium 111+）用 document.startViewTransition
+ * 做全屏交叉溶解——明暗切换从硬切变成液体玻璃式的柔化过渡；不支持的浏览器
+ * 同步直切（渐进增强，零降级成本）。
+ */
+export function applyTheme(choice: ThemeChoice, persist = true): void {
+  const swap = (): void => {
+    document.documentElement.classList.toggle('dark', choice === 'dark')
+    syncThemeColor(choice === 'dark')
+  }
+  if (persist) localStorage.setItem(THEME_STORAGE_KEY, choice)
+  const doc = document as Document & { startViewTransition?: (cb: () => void) => unknown }
+  if (typeof doc.startViewTransition === 'function') {
+    doc.startViewTransition(swap)
+  } else {
+    swap()
+  }
 }
 
 /** 月亮按钮：在当前 class 基础上取反并持久化 */
@@ -45,20 +60,12 @@ export function toggleTheme(): ThemeChoice {
 
 /**
  * 应用启动时调用（main.tsx）：手动选择优先（刷新后恢复用户上次点击的明暗），
- * 否则跟随系统；系统主题变化的监听仅在"无手动选择"期间生效（手动后系统变化不再覆盖）。
+ * 否则暗色（ADR-0031 暗色优先；本函数只兜底，首帧防闪白已由 index.html 内联
+ * 脚本先行处理，两处语义须一致）。
  */
 export function initTheme(): void {
-  const syncFromSystem = (): void => {
-    if (readStoredTheme() !== null) return
-    const matches = window.matchMedia('(prefers-color-scheme: dark)').matches
-    document.documentElement.classList.toggle('dark', matches)
-  }
-  // 手动选择存在时先恢复它（bug 修复：此前只跟随系统，刷新后手动选择被丢弃）
   const stored = readStoredTheme()
-  if (stored !== null) {
-    document.documentElement.classList.toggle('dark', stored === 'dark')
-    syncThemeColor(stored === 'dark')
-  }
-  syncFromSystem()
-  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', syncFromSystem)
+  const dark = stored !== null ? stored === 'dark' : true
+  document.documentElement.classList.toggle('dark', dark)
+  syncThemeColor(dark)
 }

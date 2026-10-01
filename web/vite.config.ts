@@ -4,9 +4,11 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
-// 开发代理目标：Go 服务端默认监听端口（docs/PROJECT_PLAN.md / server config 默认 :8420）
+// 开发代理目标：Go 服务端默认监听端口（docs/PROJECT_PLAN.md / server config 默认 :8420）。
+// 隔离调试实例可用 QIMENG_DEV_PROXY_TARGET 覆盖（如 127.0.0.1:18499 的合成测试库），
+// 未设置时行为与旧配置完全一致；仅 dev server 生效，不进生产构建。
 const DEV_SERVER_PORT = 8420
-const PROXY_TARGET = `http://127.0.0.1:${DEV_SERVER_PORT}`
+const PROXY_TARGET = process.env.QIMENG_DEV_PROXY_TARGET ?? `http://127.0.0.1:${DEV_SERVER_PORT}`
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -28,9 +30,10 @@ export default defineConfig({
         description: 'NAS 多端媒体库 Web 客户端：媒体全存 NAS，多设备访问',
         lang: 'zh-CN',
         // theme_color/background_color 只接受具体色值（PWA 规范），不能写 CSS var()。
-        // 取浅色主题 --background 的实际值：oklch(1 0 0) = #ffffff（index.css :root）。
-        theme_color: '#ffffff',
-        background_color: '#ffffff',
+        // 取 tokens.css 画布 --qm-bg 的 hex 形态（ADR-0031 暗色优先：manifest 底随暗色画布；
+        // 与 index.html 内联脚本 / lib/theme.ts THEME_COLOR 三处双写，改动须同步）。
+        theme_color: '#0b0c16',
+        background_color: '#0b0c16',
         display: 'standalone',
         start_url: '/',
         icons: [
