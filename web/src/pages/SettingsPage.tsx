@@ -180,7 +180,8 @@ export default function SettingsPage() {
         <p>外观与主题</p>
         <div className="settings-muted">
           <span>主题模式</span>
-          <span>跟随系统（深色由侧栏月亮按钮切换）</span>
+          {/* ADR-0031 暗色优先：无手动选择时默认深色；月亮按钮切换后持久化 */}
+          <span>默认深色（侧栏月亮按钮切换并记忆）</span>
         </div>
       </div>
       <div className="settings-card">

@@ -9,10 +9,9 @@ import { initTheme } from './lib/theme'
 import { installClientLogs } from './lib/client-logs'
 import { QUERY_STALE_TIME_MS } from './lib/constants'
 import './index.css'
-// 原型样式层（媒体库 UI 主题）：必须在 index.css 之后导入——原型 :root 的
-// --qm-primary/--border 与 tokens.css/index.css 同名变量按导入顺序覆盖，
-// 保证 UI 呈现与用户验收的原型逐像素一致
-import './styles/prototype.css'
+// 全新设计语言主题层「绮梦流光 · Aurora Glass」（ADR-0031）：必须在 index.css 之后
+// 导入——组件类名契约不变，视觉体系整体更换（玻璃材质/暗色优先/极光画布/现代动效）
+import './styles/glass.css'
 import './pwa'
 
 /**

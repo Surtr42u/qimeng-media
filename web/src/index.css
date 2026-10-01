@@ -2,11 +2,9 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
-/* Immich 官方 UI 主题包（@immich/ui@0.86.0, MIT）：--immich-ui-* 全套色阶
-   light/dark 双套 okLCH；组件语义（primary/success/danger/warning/info）与
-   中性色（light/dark/muted/gray/default-border）的唯一来源 */
-@import "@immich/ui/theme/default.css";
-/* 设计 token（--qm-*）：组件颜色的唯一合法来源，详见 tokens.css 注释 */
+/* 设计 token（--qm-*「绮梦流光 · Aurora Glass」ADR-0031）：组件颜色的唯一合法来源，
+   详见 tokens.css 注释。v2 起色彩单源在本文件下方桥接层之前定义完毕；
+   @immich/ui 主题包退役（其 --immich-ui-* 色板被 --qm-* 极光体系取代，依赖已移除） */
 @import "./tokens.css";
 
 @custom-variant dark (&:is(.dark *));
@@ -45,85 +43,84 @@
     --color-card: var(--card);
     --color-foreground: var(--foreground);
     --color-background: var(--background);
-    --radius-sm: calc(var(--radius) * 0.6);
-    --radius-md: calc(var(--radius) * 0.8);
+    --radius-sm: calc(var(--radius) * 0.72);
+    --radius-md: calc(var(--radius) * 0.86);
     --radius-lg: var(--radius);
-    --radius-xl: calc(var(--radius) * 1.4);
-    --radius-2xl: calc(var(--radius) * 1.8);
-    --radius-3xl: calc(var(--radius) * 2.2);
-    --radius-4xl: calc(var(--radius) * 2.6);
+    --radius-xl: calc(var(--radius) * 1.3);
+    --radius-2xl: calc(var(--radius) * 1.6);
+    --radius-3xl: calc(var(--radius) * 2);
+    --radius-4xl: calc(var(--radius) * 2.4);
 }
 
-/* 浅色主题：全部颜色引用 @immich/ui 官方 token（MIT），语义值随包升级自动跟随；
-   primary-foreground 是 Immich 未定义的本项目约定（白字在 #4250af 上） */
+/*
+ * shadcn 主题桥接层（v2 反向）：v1 是 --qm-* ← --immich-ui-*，v2 改为 shadcn 变量 ← --qm-*
+ * （ADR-0031：--qm-* 是唯一事实源，shadcn/radix 内部消费的 --background/--primary 等一律
+ * 从 qm 体系派生；品牌改色只动 tokens.css 一处，两层同时生效）。
+ * 组件代码仍只准消费 --qm-*（web/README.md 铁律），本层仅供 shadcn 基建组件内部使用。
+ */
 :root {
-    --background: var(--immich-ui-light);
-    --foreground: var(--immich-ui-dark);
-    --card: var(--immich-ui-light);
-    --card-foreground: var(--immich-ui-dark);
-    --popover: var(--immich-ui-light);
-    --popover-foreground: var(--immich-ui-dark);
-    --primary: var(--immich-ui-primary-500);
-    --primary-foreground: oklch(1 0 0);
-    --secondary: var(--immich-ui-gray);
-    --secondary-foreground: var(--immich-ui-dark);
-    --muted: var(--immich-ui-gray);
-    --muted-foreground: var(--immich-ui-muted);
-    --accent: var(--immich-ui-gray);
-    --accent-foreground: var(--immich-ui-dark);
-    --destructive: var(--immich-ui-danger-500);
-    --border: var(--immich-ui-default-border);
-    --input: var(--immich-ui-default-border);
-    --ring: var(--immich-ui-primary-400);
-    --chart-1: var(--immich-ui-primary-500);
-    --chart-2: var(--immich-ui-info-500);
-    --chart-3: var(--immich-ui-success-500);
-    --chart-4: var(--immich-ui-warning-500);
-    --chart-5: var(--immich-ui-danger-500);
-    --radius: 0.75rem;
-    --sidebar: var(--immich-ui-gray);
-    --sidebar-foreground: var(--immich-ui-dark);
-    --sidebar-primary: var(--immich-ui-primary-500);
-    --sidebar-primary-foreground: oklch(1 0 0);
-    --sidebar-accent: var(--immich-ui-gray);
-    --sidebar-accent-foreground: var(--immich-ui-dark);
-    --sidebar-border: var(--immich-ui-default-border);
-    --sidebar-ring: var(--immich-ui-primary-400);
+    --background: var(--qm-bg);
+    --foreground: var(--qm-text);
+    --card: var(--qm-surface);
+    --card-foreground: var(--qm-text);
+    --popover: var(--qm-surface-strong);
+    --popover-foreground: var(--qm-text);
+    --primary: var(--qm-primary);
+    --primary-foreground: var(--qm-on-accent);
+    --secondary: var(--qm-surface-soft);
+    --secondary-foreground: var(--qm-text);
+    --muted: var(--qm-hover);
+    --muted-foreground: var(--qm-text-muted);
+    --accent: var(--qm-hover);
+    --accent-foreground: var(--qm-text);
+    --destructive: var(--qm-danger);
+    --border: var(--qm-border);
+    --input: var(--qm-border-strong);
+    --ring: var(--qm-primary);
+    --chart-1: var(--qm-chart-1);
+    --chart-2: var(--qm-chart-2);
+    --chart-3: var(--qm-chart-3);
+    --chart-4: var(--qm-chart-4);
+    --chart-5: var(--qm-chart-5);
+    --radius: var(--qm-radius);
+    --sidebar: var(--qm-surface);
+    --sidebar-foreground: var(--qm-text);
+    --sidebar-primary: var(--qm-primary);
+    --sidebar-primary-foreground: var(--qm-on-accent);
+    --sidebar-accent: var(--qm-hover);
+    --sidebar-accent-foreground: var(--qm-text);
+    --sidebar-border: var(--qm-border);
+    --sidebar-ring: var(--qm-primary);
 }
 
-/* 深色主题：全部引用 @immich/ui 官方 token 的 .dark 档（default.css 自带 .dark 覆盖） */
+/* 深色桥接值随 .dark 自动派生（qm token 已成对定义，这里只复指保持结构完整） */
 .dark {
-    --background: var(--immich-ui-light);
-    --foreground: var(--immich-ui-dark);
-    --card: var(--immich-ui-light);
-    --card-foreground: var(--immich-ui-dark);
-    --popover: var(--immich-ui-light);
-    --popover-foreground: var(--immich-ui-dark);
-    --primary: var(--immich-ui-primary-500);
-    --primary-foreground: var(--immich-ui-primary-950);
-    --secondary: var(--immich-ui-gray);
-    --secondary-foreground: var(--immich-ui-dark);
-    --muted: var(--immich-ui-gray);
-    --muted-foreground: var(--immich-ui-muted);
-    --accent: var(--immich-ui-gray);
-    --accent-foreground: var(--immich-ui-dark);
-    --destructive: var(--immich-ui-danger-500);
-    --border: var(--immich-ui-default-border);
-    --input: oklch(1 0 0 / 15%);
-    --ring: var(--immich-ui-primary-500);
-    --chart-1: var(--immich-ui-primary-500);
-    --chart-2: var(--immich-ui-info-500);
-    --chart-3: var(--immich-ui-success-500);
-    --chart-4: var(--immich-ui-warning-500);
-    --chart-5: var(--immich-ui-danger-500);
-    --sidebar: var(--immich-ui-gray);
-    --sidebar-foreground: var(--immich-ui-dark);
-    --sidebar-primary: var(--immich-ui-primary-500);
-    --sidebar-primary-foreground: var(--immich-ui-primary-950);
-    --sidebar-accent: var(--immich-ui-gray);
-    --sidebar-accent-foreground: var(--immich-ui-dark);
-    --sidebar-border: var(--immich-ui-default-border);
-    --sidebar-ring: var(--immich-ui-primary-500);
+    --background: var(--qm-bg);
+    --foreground: var(--qm-text);
+    --card: var(--qm-surface);
+    --card-foreground: var(--qm-text);
+    --popover: var(--qm-surface-strong);
+    --popover-foreground: var(--qm-text);
+    --primary: var(--qm-primary);
+    --primary-foreground: var(--qm-on-accent);
+    --secondary: var(--qm-surface-soft);
+    --secondary-foreground: var(--qm-text);
+    --muted: var(--qm-hover);
+    --muted-foreground: var(--qm-text-muted);
+    --accent: var(--qm-hover);
+    --accent-foreground: var(--qm-text);
+    --destructive: var(--qm-danger);
+    --border: var(--qm-border);
+    --input: var(--qm-border-strong);
+    --ring: var(--qm-primary);
+    --sidebar: var(--qm-surface);
+    --sidebar-foreground: var(--qm-text);
+    --sidebar-primary: var(--qm-primary);
+    --sidebar-primary-foreground: var(--qm-on-accent);
+    --sidebar-accent: var(--qm-hover);
+    --sidebar-accent-foreground: var(--qm-text);
+    --sidebar-border: var(--qm-border);
+    --sidebar-ring: var(--qm-primary);
 }
 
 @layer base {
@@ -136,7 +133,8 @@
   html {
     @apply font-sans;
     }
-}/* Tremor Dialog 开场动画（官方 docs「Update globals.css」段逐字收录）：
+}
+/* Tremor Dialog 开场动画（官方 docs「Update globals.css」段逐字收录）：
  * data-[state=open] 时触发 scale+fade，关闭不做动画（Radix 默认行为）。 */
 @theme {
     --animate-dialog-overlay-show: dialogOverlayShow 150ms cubic-bezier(0.16, 1, 0.3, 1);

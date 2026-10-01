@@ -21,6 +21,21 @@
 - **测试**：`server/internal/httpapi/import_txtfrag_test.go` 六集成用例全绿（导出全量/新增/幂等跳过/keep 保护上传写入条目/旧备份无段向后兼容/txtFragments 先于 authors 段的顺序保护）。
 - **涉及文档**：`docs/DOMAIN_RULES.md`（§10 新节+载荷边界改口+头部）、`docs/GUIDE_API.md`（「迁移」行+「跨端迁移工作流」小节+头部）、`docs/ARCHITECTURE.md`（§11 备份端点段）、`docs/CAPABILITY_MAP.md`（备份行+头部）、`docs/HANDOVER.md`（§4 服务端行+头部）、本条目。
 
+## feat(web): Web 全新设计语言「绮梦流光 · Aurora Glass」——暗色优先液态玻璃 + token 体系 v2（2026-10-02 第四百二十九笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理）
+
+- **背景**：Web 视觉层是 M2 原型移植（亮色优先白底实心卡，色彩挂在 @immich/ui 色板上）；媒体全存 NAS 的桌面/大屏消费场景需要暗色优先的现代设计语言。约束：功能守恒（20 路由页/数据流/类名契约不动）、样式仍只许 token、不引重型新依赖。
+- **设计语言（ADR-0031）**：三层结构——画布层（深靛底 + 三团低饱和极光 radial-gradient 固定氛围层）、玻璃层（半透明表面 + backdrop-filter blur(22px) saturate(1.5) + 发丝描边 + 顶缘内高光 + 轻落影；浮层用 strong 档）、内容层（文字四级灰阶 + 极光紫主色 + 图表五色）。暗色为设计主角，浅色为完整度相同的「晨雾玻璃」变体；**主题默认从「跟随系统」改为「默认深色」**（index.html 首帧内联脚本与 lib/theme.ts 双写同语义，月亮按钮切换持久化不变）。
+- **token 体系 v2（web/src/tokens.css 重写）**：`--qm-*` 语义层全量重构（画布/极光/玻璃材质组/阴影四级/圆角四档/动效三时长三缓动〔新增 spring〕/z 阶梯七档）；**shadcn 桥接反向**（v1 `--qm-*`←immich，v2 shadcn 变量←`--qm-*`，index.css 桥接层）——`--qm-*` 成唯一色彩事实源；旧名兼容别名块（`--text-main` 等存量 TSX 引用指向单源，新代码禁用）；`@immich/ui` 主题包 CSS import 与依赖一并退役。
+- **样式层整体替换**：`styles/prototype.css` 删除 → 新 `styles/glass.css` 按相同类名契约全量重写（约 400 选择器 13 分节；组件 DOM/逻辑零改动）；v1「首行贴侧栏」负 margin 像素锚位体系退役改统一节奏；**保留** zoom 1.1 及三处配套补偿（radix popper/图片查看器 --zoom-inverse/:fullscreen）、reduced-motion 归零层、radix data-state 进出场机制。
+- **降级策略**：`@supports not (backdrop-filter…)` 时 surface 组变量整组替换为同色不透明等价值 + 叠加层/查看器/遮罩转实底——布局/层级/圆角零变化（Safari 走 -webkit- 双写）。
+- **动效**：卡片进场 stagger、详情叠加层入场、点赞回弹沿用机制换 token 档位；新增明暗切换 `document.startViewTransition` 全屏交叉溶解（不支持的浏览器同步直切，渐进增强）；动效零 JS 库。
+- **组件/配置同步（非视觉逻辑）**：SettingsPage 主题模式文案对齐暗色默认；PWA manifest 与 theme-color meta 三处双写改随暗色画布（#0b0c16/#f3f3f9）；vite 开发代理目标支持 `QIMENG_DEV_PROXY_TARGET` 环境变量覆盖（默认 8420 行为不变，隔离调试实例用）。
+- **功能守恒自查**：20 个路由页（home/albums/mine/data/maintenance/settings/search/ranks/authors/collection/asset/asset-edit/maintenance 六子页/trash）CDP 截图走查全部可达且渲染正常（暗/浅双主题）；登录门/搜索面板/上传工作台/确认弹窗类名契约未动。
+- **涉及文档**：`docs/adr/0031`（新增）、`docs/adr/INDEX.md`、`docs/HANDOVER.md`（头部+§4 Web 首行）、`web/README.md`（设计语言节+分层纪律+代理覆盖）、本条目。
+
+
 ## docs(repo): 文档结构优化批——CHANGELOG 拆档 + 现状文档瘦身（2026-10-01 第四百二十七笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理×2 批次；对抗性审查子代理复核零丢失）
