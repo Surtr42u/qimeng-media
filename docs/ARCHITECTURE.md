@@ -1,7 +1,7 @@
 # ARCHITECTURE - 架构总纲
 
 > 本文是 qimeng-media 的架构唯一权威文档。技术选型的"为什么"见 `docs/adr/`，业务规则见 `docs/DOMAIN_RULES.md`。
-> 最后更新：2026-09-25（§5 模块边界表 `authorattach` 行职责补编辑编排——资产作者/来源编辑端点走 authorattach/edit.go，ADR-0024）；同日此前（§5 模块边界表增 `authorattach`——上传挂靠编排包，ADR-0023/ADR-0019 首个新流程落地）；2026-09-21（维护批一致性清偿：§2/§8 桌面壳由「后置」改为已交付——ADR-0020，desktop/）；2026-09-05（§10 CI 第五 job android 门禁，M4-0）；2026-08-26（底层重构对齐：§5.1 模块边界强制、§10 CI 实况、Makefile 命令名；2026-08-22 v0 项目创立）
+> 最后更新：2026-10-01（§5 模块边界表补 0025-0030 批次四包：backup/libraryrevision/uploadsess/localsync）。2026-09-25（§5 模块边界表 `authorattach` 行职责补编辑编排——资产作者/来源编辑端点走 authorattach/edit.go，ADR-0024）；同日此前（§5 模块边界表增 `authorattach`——上传挂靠编排包，ADR-0023/ADR-0019 首个新流程落地）；2026-09-21（维护批一致性清偿：§2/§8 桌面壳由「后置」改为已交付——ADR-0020，desktop/）；2026-09-05（§10 CI 第五 job android 门禁，M4-0）；2026-08-26（底层重构对齐：§5.1 模块边界强制、§10 CI 实况、Makefile 命令名；2026-08-22 v0 项目创立）
 
 ## 1. 需求起源与产品定位
 
@@ -89,12 +89,16 @@
 | `stats` | 统计聚合、趋势分桶 | **任何 IO** |
 | `sourcematcher` | 出处/角色匹配引擎（130 组内置检索表 + 前缀匹配） | **任何 IO**（纯函数；内置表数据文件除外） |
 | `authoring` | 作者 TXT 三格式解析、作者-文件匹配规则、authorId 生成 | **任何 IO**（纯函数） |
-| `authorattach` | 上传挂靠与作者编辑编排（ADR-0023/0024，ADR-0019 首个新流程落地）：TXT 片段存取单一来源 + 挂靠写入与资产作者/来源编辑编排（编辑走 edit.go，在调用方事务内）+ 重导入保护元数据 + 本地总表镜像（尽力而为原子写）；依赖 store/authoring，被 httpapi 调用 | 绕过调用方事务自行提交；片段本体之外的第二真相存储 |
+| `authorattach` | 作者挂靠编辑与本地镜像编排（上传挂靠参数已随 ADR-0024 退役；ADR-0023/0024，ADR-0019 首个新流程落地）：TXT 片段存取单一来源 + 挂靠写入与资产作者/来源编辑编排（编辑走 edit.go，在调用方事务内）+ 重导入保护元数据 + 本地总表镜像（尽力而为原子写）；依赖 store/authoring，被 httpapi 调用 | 绕过调用方事务自行提交；片段本体之外的第二真相存储 |
 | `filing` | 上传、移动、重命名、回收站 | 绕过路径安全校验 |
 | `store` | sqlc 生成代码 + migrations | SQL 字符串拼接 |
 | `events` | 进程内事件总线、SSE | 模块间直接函数调用（跨模块通知走事件） |
 | `auth` | token 签发/校验、签名直链 | — |
 | `sysmon` | 系统指标采集 | — |
+| `backup` | 库文件热备快照调度：VACUUM INTO 在线快照 + 定时调度 + 轮转保留 + 快照目录管理 | 碰媒体库文件与业务表（只管 DataDir/backups 快照） |
+| `libraryrevision` | 库内容修订号单调计数（kv_settings 持久化唯一真相源，ADR-0026） | 语义扩展到资产集合之外的变更面 |
+| `uploadsess` | 断点续传上传会话：内存注册表 + DataDir/uploads-tmp 分片暂存与过期清扫（ADR-0028） | HTTP/协议语义与入库编排（在 httpapi） |
+| `localsync` | 本机同步通道纯逻辑：库名匹配/目录扫描分类/根重叠检查（ADR-0030） | 导入编排与数据库访问（无自有 IO 状态） |
 | `config` | 配置加载（env + yaml） | 任何硬编码路径 |
 
 依赖方向：`httpapi → 各业务模块 → store`；业务模块之间通过 `events` 解耦；`recommend`/`stats`/`sourcematcher`/`authoring` 不依赖任何其他业务模块（只依赖领域类型定义包）。scanner 在扫描入库时调用 sourcematcher/authoring 做出处/角色/作者富化（§4/§6「匹配发生在服务端扫描入库时」）。

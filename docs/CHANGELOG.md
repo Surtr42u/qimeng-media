@@ -8,6 +8,17 @@
 - 子代理执行的工作标注"（执行子代理）"，主对话直接完成的标注"（主代理）"。
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
+## docs(repo): 全库文档漂移排查批——三路对照代码取证，修正 22+ 处（2026-10-01 第四百二十六笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理）
+
+- **背景**：三路只读排查对照代码取证后的全库文档漂移修正批：误导级 5（暂存区/收件箱/相册选择器仍以现状语态描述×3、ADR-0029「第二半待落地」、PROJECT_PLAN progress/dwell「待协议批修」）+ 键名/路径/模块表/计数等十余处；附 server 一处代码注释对齐。DOMAIN_RULES 公式与口径句、CHANGELOG 既有正文、ADR 正文一律未动。
+- **误导级修正**：① `docs/GUIDE_API.md`「关键机制」作者挂靠编辑段暂存列表/逐项编辑现状语态改为退役注记（批次默认持久化+入队快照继承、选完即传），name-suggestions 行尾注改「协议保留、当前无端调用方」；② `docs/DOMAIN_RULES.md` §6 同口径替换暂存列表句；③ `docs/adr/INDEX.md` ADR-0029 行「第二半待落地」改「已同日落地（Android ServerEventConsumer 消费+三层门、Web SseBridge 失效映射）」，ADR-0030 状态行 Accepted→已接受（口径统一）；④ `docs/PROJECT_PLAN.md` M4-3 progress/dwell seconds 序列化 400 补销账（已于 2026-09-09 N2 协议批根修，format: double 三端落位）、M6 形态 A 补「T2 已随 2026-09-20 M6 收官」、头注回填「2026-09-22（M5 真机收官回填）」；⑤ `docs/CAPABILITY_MAP.md` 相册式选择器退役销账（现唯一『系统文件』SAF 入口+系统分享单管道）、#21 拍板放弃对齐、图例「规划中」改 M7+ 口径、缺口列「双端已接入」移入现状列（缺口清空）。
+- **键名/路径/注记类**：`docs/OBSERVABILITY.md` 日志等级键 `QM_LOG_LEVEL`→`QIMENG_LOG_LEVEL`（config.go 实际键名）、thumb_queue_depth 注记 6 改已随缩略图预热出数、健康检查句改「deploy 样例实际用 /api/v1/healthz」；`docs/DOMAIN_RULES.md` §10 上报路径 POST view-event→POST /events/view、§11 孤儿缓存句补「待对账任务兜底，规划项」、§11 实现状态句改 md 档预生成已落地（thumbnail_warmup.go：开机回填/扫描后补齐/10min 周期兜底）+ 双管拆分仍未做；`docs/SECURITY.md` 红线 5 补认证端点豁免（setup/login/dev-login）；`deploy/README.md` 环境变量表补 QIMENG_BACKUP_ENABLED/INTERVAL/RETENTION 一行三键；`docs/ARCHITECTURE.md` §5 模块边界表补 0025-0030 批次四包（backup/libraryrevision/uploadsess/localsync）、authorattach 行职责改「作者挂靠编辑与本地镜像编排（上传挂靠参数已随 ADR-0024 退役）」；`docs/HANDOVER.md` §4 Web 行「刷新存活/断点续传待另立项」改断点续传已接入、§4 资产编辑段暂存区/收件箱/相册选择器/浏览文件入口历史叙事收敛为退役注记（保留仍活能力原文，协议路径 63→65 补「时点数，现 72」）。
+- **README**：`android/README.md` 上传职责行对齐直传化现状（系统文件 SAF 唯一入口+直传/分片双通道+归档一键上传）；`web/README.md` 分层纪律补例外注（lib/upload-chunked.ts 传输层 XHR 直连不走生成 SDK，ADR-0028 记档）。
+- **代码注释（server）**：`server/internal/filing/upload.go` allowedExtensions 清单依据注释对齐现行 DOMAIN_RULES §9（两处视频清单一致均含 m4v，原「§9 无 m4v 取 SECURITY 超集」表述过时）；`gofmt -l internal/filing` 为空。
+- **涉及文档**：`docs/GUIDE_API.md`、`docs/DOMAIN_RULES.md`、`docs/OBSERVABILITY.md`、`docs/SECURITY.md`、`docs/CAPABILITY_MAP.md`、`docs/HANDOVER.md`、`docs/adr/INDEX.md`、`docs/PROJECT_PLAN.md`、`docs/ARCHITECTURE.md`、`deploy/README.md`、`android/README.md`、`web/README.md`、`server/internal/filing/upload.go`、本条目。
+
 ## feat(app)+docs: 归档文件夹一键上传 + 备份导入语义文档澄清（2026-10-01 第四百二十五笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理）
