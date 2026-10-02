@@ -86,7 +86,7 @@ activePool 冷启动装配竞态（读 miss 重下，无害）；桌面壳无自
 **用户节点（非 AI）**：① 真机 NAS buildx arm64+压测已随 2026-09-22 收官（arm64 移 M7+、压测不设专项）；② 本机硬件不稳（WHEA 断电，2026-09-16 记档）——构建/压测前建议排 BIOS/电源；③ 建议换管理密码（真实密码曾明文入历史文档，唯一止血=轮换；见 `docs/history/REVIEW-20260922.md` §2.1）。
 
 **建议立项（按优先级）**：① 安全默认值——日常/生产关闭 `QIMENG_AUTH_DEV_MODE`、换管理密码并勿写入文档（内嵌共享密钥校验已实现=dev-login 门禁三端，见 SECURITY「开发模式」节）；② 磁盘生命周期已实现（trash.retention_days/sweep_interval+到期清扫+缩略图四入口联动），全量对账（扫描器外部删除产生的孤儿）仍为规划项。
-③ 工程卫生已完成（bat 共用逻辑收敛根 `_server-common.cmd`；生产样例唯一权威 = `deploy/docker-compose.yml`）；④ 能力窄缺口——备份**调度参数编辑** UI（现仅可看，改走 yaml/env+重启）、Web 缓存档位选择 UI。
+③ 工程卫生已完成（bat 共用逻辑收敛根 `_server-common.cmd`；生产样例唯一权威 = `deploy/docker-compose.yml`）；④ ~~能力窄缺口——备份调度参数编辑 UI、Web 缓存档位选择 UI~~**已落地（2026-10-03，第四百四十笔）**：备份调度三键走 PUT /api/v1/backups/schedule 热生效+持久化（kv_settings 键 backup_schedule，优先级 kv > env > yaml > 默认；interval 变更重置周期、enabled=false 只停定时面），维护页快照卡直接编辑；Web 缩略图档位偏好（auto/sm/lg）=设置页选择项，localStorage 持久化，接到既有 size 查询参数单点（size 不参与签名、是缓存键组成部分，切换无混存，零协议改动）。
 
 **明确不做（禁止再提案）**：见 `docs/CAPABILITY_MAP.md`「明确不做」：公网裸端口、实时转码、AI 识别、iOS、跨端 UI 框架、多租户 SaaS、协议缺口 #21/#29~#34。
 
