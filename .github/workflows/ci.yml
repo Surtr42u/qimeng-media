@@ -1,5 +1,5 @@
 # CI：每个 PR / push 到 master 必须全绿才允许合并（ARCHITECTURE §10）
-# 五道门禁：协议校验（宪法不容破坏）→ 服务端 → Web →
+# 五道门禁：协议校验（宪法不容破坏）→ 服务端 → Web（含 knip 孤儿依赖门禁）→
 # Android 客户端（含内嵌产物完整性门禁）；外加 make sdk 生成链可跑通
 name: ci
 
@@ -62,6 +62,12 @@ jobs:
       # generated/ 不入库（.gitignore），类型检查前必须先从 openapi.yaml 重建——
       # 否则 SDK 缺失被 TS 解析为 {}，连锁出百余个假类型错误（2026-08-30 CI 实测）
       - run: npx openapi-ts -f src/api/openapi-ts.config.ts
+      # 孤儿依赖门禁（knip，2026-10-02 手搓治理批）：依赖/开发依赖/未声明/未解析/
+      # 死文件五类零孤儿为过；「未用导出/重复导出」等代码卫生面不在拦截口径
+      # （存量已于引入时记档，清偿另行批次）。必须在 openapi-ts 生成之后跑——
+      # @/api/generated 不入库，生成前检会全量误报 Unresolved（与下方 tsc 同一
+      # 前置约束）；豁免清单与口径见 web/knip.ts 头注。
+      - run: npx knip --include dependencies,devDependencies,unlisted,binaries,unresolved,files
       - run: npx tsc --noEmit
       - run: npm run build
       - run: npm test
