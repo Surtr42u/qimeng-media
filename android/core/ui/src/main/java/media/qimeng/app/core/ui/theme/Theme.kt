@@ -96,7 +96,14 @@ private val DarkColorScheme = darkColorScheme(
     outlineVariant = QimengBrandColors.OutlineVariantDark,
 )
 
-/** 「流光玻璃」形状阶梯：大圆角语言（ADR-0031）——小组件 10 / 控件 14 / 卡 18 / 面板 24 / 大面板 28 */
+/**
+ * 「流光玻璃」形状阶梯：大圆角语言（ADR-0031）——小组件 10 / 控件 14 / 卡 18 / 大卡 20 /
+ * 大面板 28（M3 五槽位的真实取值；面板 24dp 属玻璃件 token QimengShapes.panel，不在本阶梯）。
+ * 刻意不引用 QimengShapes.*：玻璃件形状单源在 Shape.kt（玻璃件圆角不走 M3 组件阶梯，
+ * 见其 KDoc），两阶梯仅 28dp（extraLarge↔sheet）同值，属独立取值而非映射关系——
+ * 评审卫生项 5b「改引用 QimengShapes」经核对不成立（5 处裸 dp 仅 1 处同值，替换必改
+ * 视觉数值或造成假耦合），故保留具名数值原样，此注释为核对记档。
+ */
 private val qimengShapes = androidx.compose.material3.Shapes(
     extraSmall = RoundedCornerShape(10.dp),
     small = RoundedCornerShape(14.dp),

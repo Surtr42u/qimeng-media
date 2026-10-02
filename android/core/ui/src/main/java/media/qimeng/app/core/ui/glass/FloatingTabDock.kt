@@ -1,6 +1,7 @@
 package media.qimeng.app.core.ui.glass
 
 import android.os.Build
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -28,6 +29,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
@@ -70,11 +72,17 @@ import media.qimeng.app.core.ui.theme.QimengShapes
  * 且胶囊宽写死 46dp，端部槽位与中段槽位的空隙节奏不一致。本实现：
  * - 全坞只有一颗胶囊，位移用 spring（[Spring.DampingRatioMediumBouncy]/
  *   [Spring.StiffnessMediumLow]）滑到目标槽位中心——过冲只改变位置不改变胶囊尺寸，
- *   正是「液态」滑动语感；
+ *   正是「液态」滑动语感；**首次实测前胶囊不渲染（NaN 门控），实测值到达即 snapTo
+ *   直接落位到选中槽中心（零入场动画）**——若首帧也从 0/空算位起步，弹簧会把胶囊从
+ *   越缘位置滑入槽 0（约 40dp 可见弹入），即旧分支的首帧伪影（评审项 3 根修）；
  * - 胶囊宽 = 槽位实测宽 − 2×槽内边距（[TabDockDefaults.SlotInnerPadding]），派生而非写死；
  * - Row 首尾加与槽内边距等值的水平 padding，使「端部空隙 = 中段相邻空隙」按构造成立：
  *   中段相邻两颗胶囊边缘间距 = 2×槽内边距；端部 = Row 首尾 padding + 槽内边距
  *   = 2×槽内边距，两者恒等，与屏宽/槽位数无关。
+ *
+ * RTL 注记：AndroidManifest 未声明 supportsRtl（App 强制 LTR），胶囊 translationX 按
+ * Row 左缘单向计算成立；未来若开启 RTL，须按 LocalLayoutDirection 镜像位移原点
+ * （RTL 下 Row 首位在右侧，translationX 需改为 Row 宽 − 胶囊左偏）。
  *
  * 弹跳微交互留给图标（选中放大 [ICON_SELECTED_SCALE]，spring
  * [Spring.DampingRatioMediumBouncy]/[Spring.StiffnessMedium]，沿用分支手感）。
@@ -89,7 +97,10 @@ import media.qimeng.app.core.ui.theme.QimengShapes
  * @param selectedIndex 当前选中槽位（越界自动钳制）
  * @param onSelect 点击回调（传槽位下标）
  * @param material 材质档（LIQUID/FROSTED/SOLID；CLASSIC 由壳层拦截不进本组件）
- * @param backdrop 内容层捕获（LIQUID/FROSTED 必传；null 或降级档自动回退伪玻璃渲染器）
+ * @param backdrop 内容层捕获（LIQUID/FROSTED 必传；null 或降级档自动回退伪玻璃渲染器）。
+ *   封装类型 [QimengBackdropState]——库 Backdrop 类型不外泄出 glass 包（评审必修 1：
+ *   :core:ui 对库是 implementation 依赖，公共签名暴露库类型会让 :app 编译炸
+ *   unresolved reference），壳层经 rememberQimengBackdropState 取得
  */
 @Composable
 fun FloatingTabDock(
@@ -97,7 +108,7 @@ fun FloatingTabDock(
     selectedIndex: Int,
     onSelect: (Int) -> Unit,
     material: TabBarMaterial,
-    backdrop: Backdrop?,
+    backdrop: QimengBackdropState?,
     modifier: Modifier = Modifier,
 ) {
     Box(
@@ -111,7 +122,8 @@ fun FloatingTabDock(
     ) {
         DockBody(
             material = material,
-            backdrop = backdrop,
+            // 公共边界解包：库实例只在 glass 包内部流转，不出本文件私有渲染链
+            backdrop = backdrop?.backdrop,
             modifier = Modifier.fillMaxWidth(),
         ) {
             DockItemsRow(
@@ -259,7 +271,13 @@ private fun DockBody(
 /**
  * 真玻璃坞体（Backdrop 库管线，官方 Glass Bottom Bar 教程配方）：
  * drawBackdrop(backdrop, shape=pill, effects, onDrawSurface = 主题色低透明 scrim +
- * 受光发丝描边)。库自带的默认 Highlight/Shadow（教程默认开）提供顶缘高光与投影。
+ * 受光发丝描边)。受光边与落影各只允许一个来源（评审项 4 口径）：
+ * - 受光边唯一来源 = 下方 onDrawSurface 自画的 1dp 发丝描边——库默认 Highlight
+ *   （Highlight.Default：0.5dp 白 50% 环，API≥33 走 AGSL 生效）显式关掉，否则 API 33+
+ *   「库环 + 自画描边」双受光边叠加过亮；
+ * - 落影唯一来源 = 库默认 Shadow（Shadow.Default，drawBackdrop 缺省开启）——坞体
+ *   （本函数 modifier 链）没有自画投影：Modifier.shadow 只存在于伪玻璃档（GlassSurface
+ *   elevation）与 SOLID 档，真玻璃档靠库投影分层，故保留缺省值不传 shadow。
  */
 @Composable
 private fun GlassDockBody(
@@ -278,6 +296,8 @@ private fun GlassDockBody(
                 backdrop = backdrop,
                 shape = { QimengShapes.pill },
                 effects = effects,
+                // 见本函数 KDoc：受光边唯一来源=自画发丝描边，关掉库默认高光环防双描边
+                highlight = { null },
                 onDrawSurface = {
                     // 低透明 scrim：纯采样内容上压一层主题底色保文字可读
                     //（官方教程口径「balance between beauty and readability」）
@@ -363,27 +383,51 @@ private fun DockItemsRow(
         }
     val pillWidthPx = (slotWidthPx - 2 * slotInnerPaddingPx).coerceAtLeast(0f)
     // 目标 = 选中槽位中心（相对 Row 左缘）：首尾 padding + i×槽宽 + 半槽
-    // 单胶囊滑动 spring：MediumBouncy + MediumLow——位移过冲安全（不改胶囊尺寸），
-    // 正是「液态」滑动语感（任务冻结口径）
-    val pillCenterPx by animateFloatAsState(
-        targetValue = slotInnerPaddingPx + selectedIndex * slotWidthPx + slotWidthPx / 2f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMediumLow,
-        ),
-        label = "dockPillSlide",
-    )
+    // 单胶囊滑动：Animatable 初值 NaN（未落位哨兵）——首实测帧 snapTo 直接落位零动画，
+    // 此后切换走 spring（MediumBouncy + MediumLow，位移过冲安全不改胶囊尺寸，
+    // 「液态」滑动语感，任务冻结口径）。评审项 3 根修：animateFloatAsState 首帧以
+    // 「未测量空算目标（≈18dp）」起步，实测后弹簧从越缘位置滑入槽 0（约 40dp 可见弹入）
+    val pillCenter = remember { Animatable(Float.NaN) }
+    LaunchedEffect(slotWidthPx, selectedIndex) {
+        // 未测量帧不落位：slotWidthPx==0 时 target 是空算值（只剩槽内边距 18dp），
+        // 若此刻 snapTo 会提前解除 NaN 哨兵，实测后仍从 18dp 弹到真实槽心——伪影照旧；
+        // 保持 NaN 到实测值到来才落位（评审项 3 的关键缝）
+        if (slotWidthPx <= 0f) return@LaunchedEffect
+        val target = slotInnerPaddingPx + selectedIndex * slotWidthPx + slotWidthPx / 2f
+        if (pillCenter.value.isNaN()) {
+            // 首测量（或进程恢复首帧）：直接落位到选中槽中心，零入场动画
+            pillCenter.snapTo(target)
+        } else {
+            pillCenter.animateTo(
+                target,
+                spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = Spring.StiffnessMediumLow,
+                ),
+            )
+        }
+    }
     val pillTint = MaterialTheme.colorScheme.primary.copy(alpha = PILL_TINT_ALPHA)
 
     Box {
-        // 指示胶囊（首帧实测未就绪时不渲染，避免从 0 位滑入的首帧闪烁）
+        // 指示胶囊：未测量（pillWidthPx==0）不组合；已测量但未落位（NaN）在绘制层整颗
+        // 隐藏（graphicsLayer 内读 Animatable 状态，逐帧只重刷层不触发重组）——
+        // 双门控保证「不落位不画」，杜绝越缘位置闪现
         if (pillWidthPx > 0) {
             Box(
                 modifier = Modifier
                     .align(Alignment.CenterStart)
                     .width(with(density) { pillWidthPx.toDp() })
                     .height(TabDockDefaults.PillHeight)
-                    .graphicsLayer { translationX = pillCenterPx - pillWidthPx / 2f }
+                    .graphicsLayer {
+                        val center = pillCenter.value
+                        if (center.isNaN()) {
+                            alpha = 0f
+                        } else {
+                            alpha = 1f
+                            translationX = center - pillWidthPx / 2f
+                        }
+                    }
                     .background(color = pillTint, shape = RoundedCornerShape(PILL_CORNER_PERCENT)),
             )
         }

@@ -5,7 +5,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.calculateEndPadding
@@ -61,14 +60,15 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import com.kyant.backdrop.backdrops.layerBackdrop
-import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import media.qimeng.app.core.model.TabBarMaterial
 import media.qimeng.app.core.ui.component.TabScrollController
 import media.qimeng.app.core.ui.glass.AuroraBackdrop
 import media.qimeng.app.core.ui.glass.FloatingTabDock
 import media.qimeng.app.core.ui.glass.GlassNavItem
+import media.qimeng.app.core.ui.glass.qimengBackdropSource
+import media.qimeng.app.core.ui.glass.rememberQimengBackdropState
 import media.qimeng.app.core.ui.theme.QimengBrandColors
+import media.qimeng.app.core.ui.theme.isQimengDarkTheme
 import media.qimeng.app.feature.all.AllScreen
 import media.qimeng.app.session.AppearanceViewModel
 import media.qimeng.app.feature.author.AuthorCollectionRoutes
@@ -279,15 +279,14 @@ fun QimengNavHost(
     val appearanceViewModel: AppearanceViewModel = hiltViewModel()
     val tabBarMaterial by appearanceViewModel.tabBarMaterial.collectAsStateWithLifecycle()
 
-    // 玻璃坞的 backdrop 采样源（官方 Glass Bottom Bar 教程配方：base 色 drawRect +
-    // drawContent()——内容稀疏的屏（如设置页顶部留白）模糊仍有色彩基底，不透黑）。
-    // base 色取画布底色（主题 background，与 AuroraBackdrop 的日夜基底同族）；SOLID/
-    // CLASSIC 不挂捕获（零开销），backdrop 对象创建无害。
+    // 玻璃坞的 backdrop 采样源：经 :core:ui glass 包封装 [rememberQimengBackdropState]
+    // （评审必修 1：Backdrop 库是 :core:ui 的 implementation 依赖，壳层编译类路径不可见
+    // ——此前壳层直引库的 rememberLayerBackdrop 属编译必炸的越界直引，现只见包装 API）。
+    // base 色取画布底色（主题 background，与 AuroraBackdrop 的日夜基底同族）；
+    // base 色 drawRect + drawContent()——内容稀疏的屏模糊仍有色彩基底，不透黑，官方
+    // Glass Bottom Bar 教程配方；SOLID/CLASSIC 不挂捕获（零开销），backdrop 对象创建无害。
     val canvasBaseColor = MaterialTheme.colorScheme.background
-    val backdrop = rememberLayerBackdrop {
-        drawRect(canvasBaseColor)
-        drawContent()
-    }
+    val backdrop = rememberQimengBackdropState(baseColor = canvasBaseColor)
 
     // ── 常驻层状态（机制见本函数 KDoc §Tab 常驻层；2026-09-13 根治 Tab 切换闪烁/残留）──
     // 已驻留 Tab，只增不减（对齐旧版 fragmentCache 首访才 add、此后常驻）。rememberSaveable：
@@ -393,7 +392,7 @@ fun QimengNavHost(
                     .consumeWindowInsets(topSidePadding)
                     .then(
                         if (tabBarMaterial.usesBackdrop) {
-                            Modifier.layerBackdrop(backdrop)
+                            Modifier.qimengBackdropSource(backdrop)
                         } else {
                             Modifier
                         },
@@ -1018,7 +1017,11 @@ private fun ClassicBottomBar(
     onSelect: (TopLevelDestination) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val darkTheme = isSystemInDarkTheme()
+    // 暗色判定走主题解析单源 isQimengDarkTheme()（colorScheme 背景亮度，评审必修 2）：
+    // 本批起有手动外观模式（MainActivity 解析 AppearanceMode 后定深浅），本组件若绕开
+    // 主题直查系统夜间档，手动浅色 × 系统深色组合下会用夜间指示器色画在浅色坞上
+    //（PrimarySoftDark 不可见）——isQimengDarkTheme 与 QimengTheme 实际生效的色板同源
+    val darkTheme = isQimengDarkTheme()
     val indicatorColor =
         if (darkTheme) QimengBrandColors.PrimarySoftDark else QimengBrandColors.PrimarySoftLight
     NavigationBar(modifier = modifier) {
