@@ -256,6 +256,7 @@ func (exp *legacyExport) fillAuthors(data *gen.LegacyBackupData, byID map[string
 			AuthorId:        r.ID,
 			DisplayName:     r.DisplayName,
 			CreatedAtMillis: &createdAt,
+			Origin:          &r.Origin, // 溯源透传（ADR-0032）：原始通道原样带出
 		})
 	}
 	data.Authors = &authors
@@ -276,11 +277,20 @@ func (exp *legacyExport) fillAuthors(data *gen.LegacyBackupData, byID map[string
 		if a == nil {
 			continue
 		}
-		refs = append(refs, gen.LegacyAuthorMediaRef{
+		ref := gen.LegacyAuthorMediaRef{
 			AuthorId:  r.AuthorID,
 			RecordKey: a.recordKey,
 			FileName:  a.row.FileName,
-		})
+			Origin:    &r.Origin, // 溯源透传（ADR-0032）
+		}
+		// created_at 可空（0016 存量行 NULL=不可考）：缺省字段=对端未知，
+		// 导入端回退其导入时刻（DOMAIN_RULES §10）。
+		if r.CreatedAt.Valid {
+			if ms, err := millisOf(r.CreatedAt.String); err == nil {
+				ref.CreatedAtMillis = &ms
+			}
+		}
+		refs = append(refs, ref)
 	}
 	data.AuthorMediaRefs = &refs
 	return nil
@@ -339,7 +349,7 @@ func (exp *legacyExport) fillTags(data *gen.LegacyBackupData, byID map[string]*e
 		if a == nil {
 			continue
 		}
-		ref := gen.LegacyMediaTagRef{RecordKey: a.recordKey, TagName: r.TagName}
+		ref := gen.LegacyMediaTagRef{RecordKey: a.recordKey, TagName: r.TagName, Origin: &r.Origin}
 		if ms, err := millisOf(r.CreatedAt); err == nil {
 			ref.CreatedAtMillis = &ms
 		}

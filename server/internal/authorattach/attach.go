@@ -141,11 +141,16 @@ func (s *Service) Apply(ctx context.Context, qtx *db.Queries, now time.Time, req
 
 	if err := qtx.UpsertAuthor(ctx, db.UpsertAuthorParams{
 		ID: id, DisplayName: displayName, Type: authoring.AuthorTypeRegular, CreatedAt: store.FormatTimestamp(now),
+		// 溯源章（ADR-0032）：客户端挂靠通道（上传流程/编辑页新增作者共用
+		// 本编排，web/app 同端点统一盖 client）。
+		Origin: store.OriginClient,
 	}); err != nil {
 		return AttachResult{}, fmt.Errorf("authorattach: upsert 作者 %s: %w", id, err)
 	}
 	if err := qtx.AddAssetAuthor(ctx, db.AddAssetAuthorParams{
 		AssetID: req.AssetID, AuthorID: id,
+		CreatedAt: store.NullTimestamp(store.FormatTimestamp(now)),
+		Origin:    store.OriginClient,
 	}); err != nil {
 		return AttachResult{}, fmt.Errorf("authorattach: 建立资产-作者关联: %w", err)
 	}

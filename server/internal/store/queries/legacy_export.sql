@@ -31,14 +31,22 @@ JOIN libraries AS l ON l.id = a.library_id
 ORDER BY a.file_name, a.rel_path;
 
 -- name: ExportAuthors :many
-SELECT id, display_name, created_at FROM authors ORDER BY id;
+-- origin (ADR-0032): provenance passthrough -- the backup carries each
+-- author row's original creation channel so the receiving side can
+-- adjudicate (DOMAIN_RULES 10); legacy = pre-0016 untraceable rows.
+SELECT id, display_name, created_at, origin FROM authors ORDER BY id;
 
 -- name: ExportFollowedAuthorIDs :many
 SELECT id FROM authors WHERE followed = 1 ORDER BY id;
 
 -- name: ExportAssetAuthors :many
+-- created_at/origin (ADR-0032): provenance passthrough for the
+-- author-media refs (created_at NULL = untraceable, exports as omitted
+-- field; DOMAIN_RULES 10).
 SELECT aa.author_id AS author_id,
-       aa.asset_id  AS asset_id
+       aa.asset_id  AS asset_id,
+       aa.created_at AS created_at,
+       aa.origin     AS origin
 FROM asset_authors AS aa
 ORDER BY aa.author_id, aa.asset_id;
 
@@ -46,9 +54,12 @@ ORDER BY aa.author_id, aa.asset_id;
 SELECT name, created_at FROM tags ORDER BY name;
 
 -- name: ExportAssetTags :many
+-- origin (ADR-0032): provenance passthrough alongside the existing
+-- created_at (DOMAIN_RULES 10).
 SELECT mt.asset_id   AS asset_id,
        t.name        AS tag_name,
-       mt.created_at AS created_at
+       mt.created_at AS created_at,
+       mt.origin     AS origin
 FROM asset_tags AS mt
 JOIN tags AS t ON t.id = mt.tag_id
 ORDER BY mt.asset_id, t.name;

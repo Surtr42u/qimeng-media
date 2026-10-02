@@ -155,6 +155,9 @@ func (s *Server) PutApiV1AssetsAssetIdTags(w http.ResponseWriter, r *http.Reques
 			// 关联时间 = 本次替换时刻（LEGACY_REQUIREMENTS §A：详情页标签
 			// 按"最近添加置顶"；替换式 PUT 重插每行，重添加即置顶）。
 			CreatedAt: store.FormatTimestamp(s.now()),
+			// 溯源章（ADR-0032）：客户端端点写入；web/app 共用端点统一盖
+			// client，服务端不做 UA 猜测。
+			Origin: store.OriginClient,
 		}); err != nil {
 			s.internalErr(w, "挂载资产标签", err)
 			return
