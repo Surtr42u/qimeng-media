@@ -1,10 +1,13 @@
 # CI：每个 PR / push 到 master 必须全绿才允许合并（ARCHITECTURE §10）
 # 五道门禁：协议校验（宪法不容破坏）→ 服务端 → Web → Android 客户端；外加 make sdk 生成链可跑通
+# push 触发含 ui/app-redesign（2026-10-02 预览变体增补）：该分支与 master 分叉后 master 前进，
+# PR 处于冲突态时 GitHub 不建 merge ref、pull_request 事件不触发——云端预览 APK 通道改由分支
+# push 直接触发（五道门禁语义零变动；ADR-0031 预览变体与端口纪律；分支退役时与本开关一并清理）
 name: ci
 
 on:
   push:
-    branches: [master]
+    branches: [master, ui/app-redesign]
   pull_request:
 
 jobs:
