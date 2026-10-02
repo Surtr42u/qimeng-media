@@ -3,7 +3,7 @@
 # SHA-256 verified). Bash port of fetch-ffmpeg-arm64.ps1 for Linux CI / Git Bash
 # hosts; the Windows-local make app-embedded-arm64 target keeps calling the .ps1.
 # Supply-lock values are byte-identical with fetch-ffmpeg-arm64.ps1 and README.md
-# -- upgrading FFmpeg means updating THREE places in sync: this script, the .ps1
+# -- upgrading FFmpeg means updating FOUR places in sync: this script, the .ps1
 # hash table, and the README hash lines (LGPL-2.1 prebuilt, see README.md).
 #
 # Usage: bash deploy/embedded/fetch-ffmpeg-arm64.sh [jniLibs-root]
