@@ -60,6 +60,9 @@ export function UploadWorkbench({ libraries }: { libraries: Library[] }) {
   const [blockMsg, setBlockMsg] = useState<string | null>(null)
   const [createDirOpen, setCreateDirOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  // 刷新恢复条目的重选文件：待恢复条目 id（隐藏 file input 的 onChange 据此回填）
+  const [resumePickId, setResumePickId] = useState<string | null>(null)
+  const resumeInputRef = useRef<HTMLInputElement>(null)
 
   const enabled = libId !== ''
   const hasBatchAuthor = !!batchAuthor?.authorId
@@ -156,10 +159,28 @@ export function UploadWorkbench({ libraries }: { libraries: Library[] }) {
     setDir('')
   }
 
-  // 队列聚合行（口径同 App queueSummary：取消不计失败；挂靠失败单独分列）
+  /** 恢复条目「重选文件」：记住条目 id 后唤起隐藏 file input（拾取链路与
+   *  既有上传同款 input[type=file]；匹配/续传决策在 store，本组件只转发） */
+  const requestResumePick = (id: string): void => {
+    setResumePickId(id)
+    resumeInputRef.current?.click()
+  }
+
+  const onResumePicked = (e: ChangeEvent<HTMLInputElement>): void => {
+    const file = e.target.files?.[0]
+    e.target.value = '' // 置空以允许重复选择同一文件
+    if (file !== undefined && resumePickId !== null) {
+      queue.resumeWithFile(resumePickId, file)
+    }
+    setResumePickId(null)
+  }
+
+  // 队列聚合行（口径同 App queueSummary：取消不计失败；挂靠失败单独分列；
+  // 待重选恢复条目单独计数提示）
   const doneCount = queue.items.filter((it) => it.status === 'done').length
   const failedCount = queue.items.filter((it) => it.status === 'failed').length
   const attachFailedCount = queue.items.filter((it) => it.status === 'attach-failed').length
+  const needsFileCount = queue.items.filter((it) => it.status === 'needs-file').length
 
   return (
     <div className="rank-card">
@@ -242,6 +263,13 @@ export function UploadWorkbench({ libraries }: { libraries: Library[] }) {
         点击选择文件，或把文件/文件夹拖到这里——选择后立即上传
       </div>
       <input ref={inputRef} type="file" multiple hidden onChange={pickFiles} aria-label="选择要上传的文件" />
+      <input
+        ref={resumeInputRef}
+        type="file"
+        hidden
+        onChange={onResumePicked}
+        aria-label="为刷新恢复的上传条目重新选择同名文件"
+      />
 
       {/* —— 直传门禁拦截文案（未选库 / 超限横幅提示） —— */}
       {blockMsg && (
@@ -274,8 +302,14 @@ export function UploadWorkbench({ libraries }: { libraries: Library[] }) {
           <p className="rank-note">
             共 {queue.items.length} 个 · 成功 {doneCount} · 失败 {failedCount}
             {attachFailedCount > 0 ? ` · 挂靠失败 ${attachFailedCount}` : ''}
+            {needsFileCount > 0 ? ` · 待重选文件 ${needsFileCount}` : ''}
           </p>
-          <UploadQueueTable items={queue.items} libraries={libraries} />
+          <UploadQueueTable
+            items={queue.items}
+            libraries={libraries}
+            onResumePick={requestResumePick}
+            onRemoveItem={queue.removeItem}
+          />
         </>
       )}
 

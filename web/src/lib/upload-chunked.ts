@@ -3,8 +3,10 @@
  * 会话流——create → 每轮先 GET 探测服务端权威 offset → File.slice 按 8MB PATCH
  * 追加 → offset 达 size 后 complete。语义照搬 Android 参考实现
  *（core/data/upload/ChunkedUploadSession + UploadRouting，双侧注释互指双同步）：
- * 断点以服务端为唯一真相源（本地不存 offset，每次重试先探测再续传，天然幂等）；
- * PATCH 409 响应体即权威 UploadSession，立即重同步继续（不算失败）；会话 404
+ * 断点以服务端为唯一真相源（每次重试先探测再续传，天然幂等；本地只留最近
+ * 一次权威 offset 快照供上传队列刷新恢复展示与续传资格判定——见
+ * lib/upload-queue-persist，不参与发送决策）；PATCH 409 响应体即权威
+ * UploadSession，立即重同步继续（不算失败）；会话 404
  *（过期被清扫/服务端重启）重建会话从 0（单条上限 2 次防死循环）；网络/5xx/超时
  * 指数退避自动重试（同条上限 3 次，重试上限后终态失败、不自动重新入队）；
  * "offset 连续 8 轮未推进"防御中止（服务端异常实现兜底，正常串行追加不可达）。
@@ -306,6 +308,17 @@ export interface ChunkedUploadArgs {
   onProgress: (percent: number) => void
   /** 在途 XHR 登记钩子（store 纳入 cancelAll abort 范围；null = 摘除） */
   onActiveXhr: (xhr: XMLHttpRequest | null) => void
+  /** 续传既有会话 id（上传队列刷新持久化批：恢复条目重选文件后传持久化的
+   *  会话 id；undefined = 新建会话）。传入后首轮跳过 create 直接 GET 探测；
+   *  探测 404（服务端重启/24h 清扫已失效）走既有 rebuild 路径新建会话从 0，
+   *  不需要调用方区分——协议仍是既有五操作，零新端点零新参数 */
+  sessionId?: string
+  /** 会话建立回调（create 成功传新 id；rebuild 重置传 null）：store 记入条目
+   *  并持久化，刷新恢复才有会话可续传 */
+  onSession?: (sessionId: string | null) => void
+  /** 权威 offset 回调（探测/分片推进/409 重同步后；store 持久化断点偏移——
+   *  断点真相源仍是服务端，持久化值只做恢复展示与续传资格判定） */
+  onOffset?: (offset: number) => void
 }
 
 /** 尚未探测哨兵（offset 合法域 ≥0，Android UNPROBED 同款） */
@@ -317,13 +330,13 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * 单条分片上传全程：create（一次）→ 循环{探测→按片 PATCH→complete}，内含
- * 409 重同步 / 404 重建（上限 2）/ 网络·5xx·超时指数退避重试（上限 3，每次
- * 重试从 GET 探测续传）。终局只落 success/canceled/failed 三态，store 据此
- * 走与直传完全相同的后处理或终态。
+ * 单条分片上传全程：create（一次；传入续传 sessionId 时首轮跳过、直接从探测
+ * 开始）→ 循环{探测→按片 PATCH→complete}，内含 409 重同步 / 404 重建（上限 2）/
+ * 网络·5xx·超时指数退避重试（上限 3，每次重试从 GET 探测续传）。终局只落
+ * success/canceled/failed 三态，store 据此走与直传完全相同的后处理或终态。
  */
 export async function runChunkedUpload(args: ChunkedUploadArgs): Promise<ChunkedOutcome> {
-  let sessionId: string | null = null
+  let sessionId: string | null = args.sessionId ?? null
   let rebuilds = 0
   let transientRetries = 0
   let offset = UNPROBED
@@ -350,6 +363,7 @@ export async function runChunkedUpload(args: ChunkedUploadArgs): Promise<Chunked
     rebuilds += 1
     noAdvanceRounds = 0
     sessionId = null
+    args.onSession?.(null)
     offset = UNPROBED
     return null
   }
@@ -370,6 +384,7 @@ export async function runChunkedUpload(args: ChunkedUploadArgs): Promise<Chunked
       const created = await createSession(args)
       if (created.tag === 'ok') {
         sessionId = created.value
+        args.onSession?.(created.value)
       } else if (created.tag === 'transient') {
         const stop = await transientRetry(`创建上传会话失败：${created.message}`)
         if (stop !== null) return stop
@@ -389,6 +404,7 @@ export async function runChunkedUpload(args: ChunkedUploadArgs): Promise<Chunked
       const probed = await probeSession(sessionId, args.onActiveXhr)
       if (probed.tag === 'ok') {
         offset = probed.value
+        args.onOffset?.(probed.value)
       } else if (probed.tag === 'notFound') {
         const stop = rebuild('断点探测 404（会话已被清扫/服务端重启）')
         if (stop !== null) return stop
@@ -438,12 +454,14 @@ export async function runChunkedUpload(args: ChunkedUploadArgs): Promise<Chunked
       } else {
         noAdvanceRounds = 0
         offset = patched.value
+        args.onOffset?.(patched.value)
         args.onProgress(Math.round((offset / args.sizeBytes) * 100))
       }
     } else if (patched.tag === 'conflict') {
       // offset 过期（权威漂移）：409 响应体即权威 UploadSession，立即重同步
       // 继续发送，不算失败；无权威体的防御分支回退重新探测
       offset = patched.authorityOffset ?? UNPROBED
+      if (offset !== UNPROBED) args.onOffset?.(offset)
     } else if (patched.tag === 'notFound') {
       const stop = rebuild('分片时 404（会话已被清扫）')
       if (stop !== null) return stop

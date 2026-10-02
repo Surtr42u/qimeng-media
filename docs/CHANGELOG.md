@@ -10,7 +10,7 @@
 
 > **历史条目拆分说明（2026-10-01）**：为控制 AI 上下文体量，本文件只保留 **2026-09-22 及之后**的条目（第三百八十二笔起）；拆分线之前的全部条目已逐字迁入 `docs/history/CHANGELOG-ARCHIVE.md`（零改写，笔号与本文件连续可查）。引用早于拆分线的旧笔号请去历史档查阅。
 
-## feat(api/web/server): 数据溯源字段（origin/createdAtMillis）在资产详情响应与 Web 详情页可见——ADR-0032 保留的「详情页 UI 展示独立提案」落地（2026-10-02 第四百三十九笔）
+## feat(api/web/server): 数据溯源字段（origin/createdAtMillis）在资产详情响应与 Web 详情页可见——ADR-0032 保留的「详情页 UI 展示独立提案」落地（2026-10-03 第四百三十九笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理）
 
@@ -23,6 +23,18 @@
 - **已知边界（记档）**：① 角色关联不入详情溯源面——asset_characters 行 origin 恒 scanner、created_at=重算时刻（携带零信息量），且 AssetSummary 的 `characters` 是 string[] 共享列表面，改条目形状即破坏列表端点契约与既有客户端，维持现状；② upload 201 的 AssetDetail 空集不带溯源（新资产零关联，无信息可带）；③ browse.sql 文件头注新增「注释必须纯 ASCII」约束——sqlc v1.31.1 对多字节注释会错乱查询边界（实测：中文注释致下一查询报 ":one without RETURNING"），中文理由写在 Go 装配层注释。
 - **验证**：`go vet ./...` + `go test ./... -count=1` 全绿（server 全包，含新详情溯源测试）；web `tsc -b` 零错误、oxlint 零错误（既有 19 条 warning 不涉本文件）、vitest 222/222 全绿（含新增 6 用例）；`make sdk` 三端生成+锁 245 条目；夜间纪律合规（零产物构建/零模拟器操作，禁触项未触碰），最终以本 draft PR 云端 CI 为准。
 - **涉及文档**：`api/openapi.yaml`、`api/sdk.lock`、`docs/DOMAIN_RULES.md` §10（读取面）、`docs/GUIDE_API.md`、`docs/CHANGELOG.md`（本条）。
+## feat(web): 上传队列刷新持久化——未终态条目入 IndexedDB，刷新恢复「需重新选择文件」态+重选同名文件按既有协议续传（2026-10-03 第四百三十八笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理）
+
+- **背景（HANDOVER §5 待办#2）**：大文件上传中页面刷新造成整条丢失已实际发生一次（2026-10-01 拆 store 批记档「页面刷新仍会丢队列——另立项」，本笔即该立项落地）。File 句柄不跨页面存活是平台客观限制，落地方案取「最小诚实版」：恢复的是队列条目与断点事实，不伪造可续传假象。
+- **持久化（原生 IndexedDB，零新依赖）**：选型决策序第 1 级平台机制命中即停（既有先例=打点账本 qimeng_event_ledger），不引 idb-keyval；新库 `qimeng_upload_queue`（store queue_items，keyPath=id，version 递增只加不改）。持久化字段=条目 id/落库名/原文件名/大小/目标库与目录/挂靠快照/分片会话 id/已传分片偏移/入队与推进时间戳；**只持久化未终态条目**（排队/在传），终态（done/failed/attach-failed/canceled）即删记录，移除/清除已完成兜底同删，不留孤儿。存储失败静默降级（同打点账本口径：只丢「刷新恢复」增强能力，不阻断传输主链路）。建库/单事务 promise 化抽共享件 `web/src/lib/idb.ts`（第 2 个 IndexedDB 消费方出现，代码卫生约束 6，ledger-instance 同批收敛复用）。
+- **恢复与续传（严格既有协议，零新端点零新参数，openapi 不动）**：工作台挂载即 restorePersisted，记录还原为新增 `needs-file` 态——UI 明确标记「需重新选择文件」（重选/移除行内动作+提示文案），因为现有拾取链路是 input[type=file]+DataTransfer（非 File System Access API 句柄），按行为目标不做句柄恢复。用户重选文件后经纯函数 decideResume 判定：名称（编辑过基名按 originalName）或大小不符=mismatch 留在原态并给文案（防把别的文件传进原目标位）；命中则补句柄转 queued 重新入泵——分片条目（≥16MB）带持久化会话 id 走既有 GET 探测→PATCH→complete 续传（探测 404 会话已失效时通道内既有 rebuild 路径自动新建从 0；服务端 offset 唯一真相源，持久化偏移只做恢复展示与续传资格判定），直传条目与无会话分片从头重传。分片通道（lib/upload-chunked）为此增三个可选回调参数：sessionId（续传既有会话）/onSession（会话建立回写）/onOffset（权威断点回写持久化），传输状态机零改动。
+- **架构边界（ADR-0008）**：纯核心 `lib/upload-queue-persist.ts`（decideResume/toRestoredEntry/存储端口，零 IO 可单测）+ 浏览器装配 `lib/upload-queue-persist-instance.ts`（IndexedDB 实现+内存降级+单例，模式同 ledger-instance）+ store 编排（upload-queue-store）；UploadQueueTable/UploadWorkbench 只渲染与转发回调，零业务规则零 API 直调；样式复用既有类与 token，零新增样式。
+- **行为锁定（vitest 216→232，+16 用例）**：①持久化写读往返（存储端口契约 put/getAll 覆盖/删）；②刷新恢复态判定（needs-file 映射、断点推导进度、越界夹取、幂等去重、恢复 id 序号让位防冲突）；③同名续传决策（同/异名、同/异大小、originalName 基准、分片会话续传 GET→PATCH→complete 全链、直传从头重传全链）；④完成清理（入队即写、终态/取消/清除已完成/移除四路删除，清除已完成不替用户丢 needs-file 条目）。
+- **验证**：`tsc -b` 零错误；oxlint 0 error（19 warning 全为既有存量）；vitest 24 文件 232 用例全绿；knip 门禁六类零孤儿（全量报告 25/10/2 与基线逐项相同，新文件零未用导出）；本批遵守夜间纪律零产物构建，最终以 draft PR 云端 CI 为准。
+- **涉及文档**：`docs/CHANGELOG.md`（本条）、`docs/HANDOVER.md` §5（待办#2 勾销记档）。
+
 
 ## docs: 夜间/无人值守执行纪律入册——禁本地产物构建、验证与产物一律云端 CI（2026-10-03 第四百三十七笔）
 
