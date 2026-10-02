@@ -40,6 +40,11 @@ describe('applyThumbSize', () => {
     expect(applyThumbSize('/media/thumb/x?exp=1&sig=a', 'sm')).toBe('/media/thumb/x?exp=1&sig=a&size=sm')
     expect(applyThumbSize('/media/thumb/x', 'sm')).toBe('/media/thumb/x?size=sm')
   })
+  it('异常大写 size 值整体改写不残留（对抗审查加固，防御形态）', () => {
+    expect(applyThumbSize('/media/thumb/x?exp=1&sig=a&size=MD', 'sm')).toBe(
+      '/media/thumb/x?exp=1&sig=a&size=sm',
+    )
+  })
 })
 
 describe('档位 store', () => {

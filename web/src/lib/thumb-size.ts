@@ -67,8 +67,8 @@ export const THUMB_SIZE_OPTIONS: ReadonlyArray<{ value: ThumbSizePref; label: st
  */
 export function applyThumbSize(url: string, pref: ThumbSizePref): string {
   if (pref === 'auto' || url === '') return url
-  if (/[?&]size=[a-z]*/.test(url)) {
-    return url.replace(/([?&])size=[a-z]*/, `$1size=${pref}`)
+  if (/[?&]size=[A-Za-z]*/.test(url)) {
+    return url.replace(/([?&])size=[A-Za-z]*/, `$1size=${pref}`)
   }
   return url + (url.includes('?') ? '&' : '?') + 'size=' + pref
 }
