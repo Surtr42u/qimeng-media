@@ -161,7 +161,7 @@ func TestRecommendCachePanicInComputeReleasesWaiters(t *testing.T) {
 			panic("boom")
 		})
 	}()
-	<-inCompute // 席位持有者已占住 inflight，等待方随后必走共享路径
+	<-inCompute // 席位持有者已占住 singleflight 槽位，等待方随后必走共享路径
 
 	waiterRes := make(chan error, 1)
 	go func() {
@@ -170,7 +170,7 @@ func TestRecommendCachePanicInComputeReleasesWaiters(t *testing.T) {
 		})
 		waiterRes <- err
 	}()
-	time.Sleep(50 * time.Millisecond) // 让等待方挂上 inflight 后再放行 panic
+	time.Sleep(50 * time.Millisecond) // 让等待方挂上 singleflight 槽位后再放行 panic
 	close(release)
 	<-ownerReturned
 
