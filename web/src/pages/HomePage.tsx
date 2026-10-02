@@ -1,5 +1,5 @@
-import { DEFAULT_PAGE_SIZE, QM_REFRESH_EVENT } from '@/lib/constants'
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { DEFAULT_PAGE_SIZE } from '@/lib/constants'
+import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 import type { AssetSummary } from '@/api/generated'
 import { MediaCard } from '@/components/media/MediaCard'
@@ -7,6 +7,7 @@ import { LoadingHint } from '@/components/ui/loading-hint'
 import { assetToCard, useRecommendations } from '@/hooks/use-assets'
 import { useRankingsInfinite } from '@/hooks/use-stats'
 import { useAutoMore } from '@/hooks/use-auto-more'
+import { useShellRefresh } from '@/components/shell/refresh-context'
 import { parseHomeTab, parseRankPeriod, type HomeRankPeriod } from '@/lib/home-tabs'
 import { assetDetailWithSearch, type AssetNavState } from '@/lib/route-keys'
 
@@ -20,8 +21,9 @@ import { assetDetailWithSearch, type AssetNavState } from '@/lib/route-keys'
  *   - hot：内容榜（GET /rankings，?period= 周期由顶栏周期行写入，缺省日榜；
  *     纯热度口径 view+play+like，DOMAIN_RULES §2）。
  * 三个 tab 统一「滚动触底自动加载下一页」（use-auto-more，对齐旧版
- * 「距底部 ≤6 项提前增量加载、不重排」）；AppShell 刷新按钮广播的
- * qm:refresh 收到后重排回第一页（旧版 refreshSeed++ 全量重排语义）。
+ * 「距底部 ≤6 项提前增量加载、不重排」）；AppShell 刷新按钮经
+ * ShellRefreshContext 下发的刷新信号收到后重排回第一页（旧版 refreshSeed++
+ * 全量重排语义，use-shell-refresh）。
  * 卡片点击进详情（图片大图/视频播放）。
  */
 
@@ -61,22 +63,12 @@ export default function HomePage() {
 }
 
 /**
- * 订阅 AppShell 刷新按钮广播的 qm:refresh（事件名以 QM_REFRESH_EVENT 常量
- * 为单一来源，派发侧 AppShell 同源引用，见 constants.ts）。旧版 refreshSeed++
- * 语义的入口：回调里只做「换缓存键」——推荐/cos 换 seed（全量重排并回第一页）、
- * 排行榜换 reloadKey（重置分页重拉），具体由各 tab 自行决定。
+ * 刷新信号消费入口改走 useShellRefresh（components/shell/refresh-context，
+ * 2026-10-02 手搓排查：原 window CustomEvent 'qm:refresh' 手搓总线退役）。
+ * 旧版 refreshSeed++ 语义不变：回调里只做「换缓存键」——推荐/cos 换 seed
+ * （全量重排并回第一页）、排行榜换 reloadKey（重置分页重拉），具体由各 tab
+ * 自行决定。
  */
-function useQmRefresh(onRefresh: () => void): void {
-  const handlerRef = useRef(onRefresh)
-  useEffect(() => {
-    handlerRef.current = onRefresh
-  })
-  useEffect(() => {
-    const fn = (): void => handlerRef.current()
-    window.addEventListener(QM_REFRESH_EVENT, fn)
-    return () => window.removeEventListener(QM_REFRESH_EVENT, fn)
-  }, [])
-}
 
 /**
  * 渲染前按 assetId 去重：推荐流每次请求按当下打分重排切片（协议 offset
@@ -211,11 +203,11 @@ function StreamCards({ stream, onOpen, emptyHint, footer, endHint, gridClassName
   )
 }
 
-/** 推荐 tab（recommend）：卡片流触底增量加载；qm:refresh → seed=Date.now()
+/** 推荐 tab（recommend）：卡片流触底增量加载；刷新信号 → seed=Date.now()
  *  （旧版 refreshSeed++：全量重排并回第一页）。 */
 function RecommendTab({ onOpen }: { onOpen: (id?: string, nav?: AssetNavState) => void }) {
   const [seed, setSeed] = useState(0)
-  useQmRefresh(() => setSeed(Date.now()))
+  useShellRefresh(() => setSeed(Date.now()))
   const stream = useRecommendationStream(seed, false)
   return (
     <StreamCards
@@ -229,10 +221,10 @@ function RecommendTab({ onOpen }: { onOpen: (id?: string, nav?: AssetNavState) =
 
 /** COS 推荐 tab（cos）：旧版「COS 推荐模式」——同套算法跑 COS 子集，
  *  触底增量加载；换一批 = seed 换键重排（与服务端每日展示惩罚自然衔接），
- *  qm:refresh 同语义。 */
+ *  刷新信号同语义。 */
 function CosRecommendTab({ onOpen }: { onOpen: (id?: string, nav?: AssetNavState) => void }) {
   const [seed, setSeed] = useState(0)
-  useQmRefresh(() => setSeed(Date.now()))
+  useShellRefresh(() => setSeed(Date.now()))
   const stream = useRecommendationStream(seed, true)
   return (
     <StreamCards
@@ -261,11 +253,11 @@ function CosRecommendTab({ onOpen }: { onOpen: (id?: string, nav?: AssetNavState
 
 /** 排行榜 tab（hot）：排版与推荐完全一致（MediaCard 卡片流 + 触底增量加载，
  *  原 rank-card「内容榜」标题壳按用户拍板去除）。period 变化经 queryKey
- *  换档天然重置分页；qm:refresh → reloadKey+1 重置分页重拉（排行榜是
+ *  换档天然重置分页；刷新信号 → reloadKey+1 重置分页重拉（排行榜是
  *  确定性排序，不需要 seed 打散）。 */
 function HotRankTab({ period, onOpen }: { period: HomeRankPeriod; onOpen: (id?: string, nav?: AssetNavState) => void }) {
   const [reloadKey, setReloadKey] = useState(0)
-  useQmRefresh(() => setReloadKey((n) => n + 1))
+  useShellRefresh(() => setReloadKey((n) => n + 1))
   const q = useRankingsInfinite(period, DEFAULT_PAGE_SIZE, reloadKey)
   const items = useMemo(() => dedupeByAssetId(q.data?.pages ?? []), [q.data])
   const sentinelRef = useAutoMore(q.hasNextPage, () => {
@@ -276,7 +268,7 @@ function HotRankTab({ period, onOpen }: { period: HomeRankPeriod; onOpen: (id?: 
     isLoading: q.isLoading,
     isFetchingNextPage: q.isFetchingNextPage,
     hasNextPage: q.hasNextPage,
-    // E2：榜单流已配 keepPreviousData——period 换档/qm:refresh 换 reloadKey
+    // E2：榜单流已配 keepPreviousData——period 换档/刷新信号换 reloadKey
     // 重取期间旧榜保留占位，isPlaceholderData 为 true，与推荐流共用口径
     isPlaceholderData: q.isPlaceholderData,
     // F2：错误态透传，与推荐流同口径（见 useRecommendationStream 注释）

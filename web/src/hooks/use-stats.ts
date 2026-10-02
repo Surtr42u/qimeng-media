@@ -56,12 +56,12 @@ export function useRankings(period: RankingPeriod | undefined, limit?: number, o
  * 热度排行无限分页（首页排行榜 tab 触底增量加载；offset 为 pageParam）。
  * 与 useRankings 分立：数据页/榜单页消费整表数组、本 hook 消费分页流，
  * 两种返回形态不能共用一个钩子。
- * - reloadKey 进 queryKey：qm:refresh 收到后 +1 → 整条流重置回第一页重拉
+ * - reloadKey 进 queryKey：AppShell 刷新信号收到后 +1 → 整条流重置回第一页重拉
  *   （「重置分页重拉」语义；排行榜是确定性排序，不需要 seed 打散）。
  * - period 变化即 queryKey 换档，分页天然重置，无需额外 state。
  * - hasNextPage 判据同推荐流，口径单源在 lib/pagination.ts（lengthCursorNext）。
  * - E2（首页加载/刷新过渡）：换键重取期间保留旧榜单占位（TanStack 官方
- *   keepPreviousData 模式，与 use-assets.ts 推荐流同款）——qm:refresh 换
+ *   keepPreviousData 模式，与 use-assets.ts 推荐流同款）——刷新信号换
  *   reloadKey 与 period 换档期间旧榜保留，消费方 isLoading 只在真首屏为 true，
  *   不得整页闪「加载中…」。
  */

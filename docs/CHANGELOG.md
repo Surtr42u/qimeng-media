@@ -10,6 +10,16 @@
 
 > **历史条目拆分说明（2026-10-01）**：为控制 AI 上下文体量，本文件只保留 **2026-09-22 及之后**的条目（第三百八十二笔起）；拆分线之前的全部条目已逐字迁入 `docs/history/CHANGELOG-ARCHIVE.md`（零改写，笔号与本文件连续可查）。引用早于拆分线的旧笔号请去历史档查阅。
 
+## fix(web): 「手搓方案」排查批——窗口事件总线退役改 React context、sonner 主题接线归位并退役孤儿依赖 next-themes（2026-10-02 第四百三十一笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理）
+
+- **背景**：App/服务端侧曾发现「AI 自写小方案而不用成熟主流方案」一类问题，本批对 web 端做同口径全量排查（判定标准：重复实现依赖树已有成熟能力/绕过 ADR-0008 分层与 token 纪律/绕工具链限制的手写 hack/自造事件总线替代 React 已有机制；有注释理由的取舍不构成问题）。全量扫描 `web/src` 结论：**无 P0**；组件直调 API/硬编码颜色/手写防抖/手写弹窗（radix 已封装 select/popover/switch/confirm-dialog/ sonner 接入）均无违例，P1 两处、P2 记档七处（详见 PR 正文排查清单）。
+- **P1-1 事件总线**：AppShell 刷新 FAB → 首页 tab 的「全量重排」信号原走 `window.dispatchEvent('qm:refresh')` 手搓事件总线（constants.ts 存 `QM_REFRESH_EVENT`、HomePage 手写 add/removeEventListener 订阅）——判定标准「自造状态/事件总线替代 React 已有机制」逐字命中。改 React context：新增 `components/shell/refresh-context.tsx`（`ShellRefreshContext` + `useShellRefresh`，prevTickRef 比对保证挂载/StrictMode 双跑不误触发，时序语义与原事件一致），AppShell 持 Provider 递增 tick，HomePage 三 tab 改消费 hook；`QM_REFRESH_EVENT` 常量删除，use-stats/use-assets 相关注释同步。行为等价：刷新仍 = invalidateQueries（全页面）+ 首页推荐/cos 换 seed 回第一页、热榜重置分页。
+- **P1-2 sonner 主题脱钩**：`components/ui/sonner.tsx` 经 `next-themes` 的 `useTheme()` 取主题，但项目从未挂 ThemeProvider（ADR-0031 主题机制自持：index.html 内联脚本 + lib/theme.ts）——`useTheme()` 恒返回缺省 context，sonner.tsx 回退 `"system"` 跟随 OS 的 prefers-color-scheme，与应用 `html.dark`（暗色优先）脱钩：浅色系统 + 默认暗色应用时 richColors 色板按亮色出、浮在暗玻璃上（@immich/ui 退役遗留的半迁移状态，next-themes 在依赖树内无其他消费方）。修复：新增 `hooks/use-is-dark.ts`（MutationObserver 订阅 `.dark` class → React 状态，video-player 主题色观察器同款先例），Toaster `theme` 直读应用主题；`next-themes` 从 package.json/lockfile 退役（净删一个依赖，零新增）。
+- **测试**：`npx tsc --noEmit` 零错；`npx vitest run` 216 用例全绿；oxlint 警告数与改前基线持平（19 条全为存量）；vite dev 按需转换冒烟（改动五模块 + 首页全部 200，无转换错误）。新接线（context/hook）按 ADR-0017 口径不做 React 层单测（vitest 只测 src/lib 纯函数，未装 @testing-library），行为靠 dev 冒烟 + 既有 216 用例回归兜底。
+- **涉及文档**：本条目。代码侧：`web/src/components/shell/refresh-context.tsx`（新增）、`web/src/components/shell/AppShell.tsx`、`web/src/pages/HomePage.tsx`、`web/src/lib/constants.ts`、`web/src/hooks/use-is-dark.ts`（新增）、`web/src/components/ui/sonner.tsx`、`web/src/hooks/use-stats.ts`、`web/src/hooks/use-assets.ts`、`web/package.json`、`web/package-lock.json`。
+
 ## feat(api/server)+docs: 备份导出/导入并入 TXT 作者片段——txtFragments 段随备份全量迁移，跨端迁移最后一公里补齐（2026-10-01 第四百二十八笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理）

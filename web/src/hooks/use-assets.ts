@@ -77,7 +77,7 @@ export interface AssetListParams {
  *  ——调用点 HomePage useRecommendations(DEFAULT_PAGE_SIZE, …) 即从第一页起）。
  *  queryKey 只含数据身份 [limit, seed, cosOnly]：offset 是分页游标，按
  *  TanStack 惯例存于 pageParams 而非缓存键——seed/根键变化（换一批、
- *  qm:refresh、SSE 失效）时整条流重置回第一页，正是旧版 refreshSeed++
+ *  AppShell 刷新信号、SSE 失效）时整条流重置回第一页，正是旧版 refreshSeed++
  *  全量重排语义。
  *  续页判据 hasNextPage 口径单源在 lib/pagination.ts（lengthCursorNext）。 */
 export function useRecommendations(limit = DEFAULT_PAGE_SIZE, seed = 0, cosOnly = false, offset = 0) {
@@ -88,7 +88,7 @@ export function useRecommendations(limit = DEFAULT_PAGE_SIZE, seed = 0, cosOnly 
     initialPageParam: offset,
     getNextPageParam: lengthCursorNext(limit),
     // E1（次生根因）：换键重取期间保留旧流占位（TanStack 官方 keepPreviousData
-    // 模式）——换一批/qm:refresh 与返回首页时不得整流闪「加载中…」
+    // 模式）——换一批/壳层刷新信号与返回首页时不得整流闪「加载中…」
     placeholderData: keepPreviousData,
   })
 }
