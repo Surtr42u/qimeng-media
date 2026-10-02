@@ -10,20 +10,30 @@ import (
 )
 
 const addAssetTag = `-- name: AddAssetTag :exec
-INSERT INTO asset_tags (asset_id, tag_id, created_at) VALUES (?, ?, ?)
+INSERT INTO asset_tags (asset_id, tag_id, created_at, origin) VALUES (?, ?, ?, ?)
 `
 
 type AddAssetTagParams struct {
 	AssetID   string
 	TagID     string
 	CreatedAt string
+	Origin    string
 }
 
 // created_at = association time: the replace-style PUT re-inserts every
 // row, so re-adding a tag bumps it to the top of the detail-page list
 // (LEGACY_REQUIREMENTS A; column added in 0004).
+// origin (ADR-0032, migration 0016) = write channel (store provenance
+// vocabulary, single source store/provenance.go). Strict INSERT: the
+// import channel owns its own heal-capable ImportAddAssetTag in
+// legacy_import.sql (DOMAIN_RULES 10 row-level adjudication).
 func (q *Queries) AddAssetTag(ctx context.Context, arg AddAssetTagParams) error {
-	_, err := q.db.ExecContext(ctx, addAssetTag, arg.AssetID, arg.TagID, arg.CreatedAt)
+	_, err := q.db.ExecContext(ctx, addAssetTag,
+		arg.AssetID,
+		arg.TagID,
+		arg.CreatedAt,
+		arg.Origin,
+	)
 	return err
 }
 

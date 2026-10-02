@@ -299,7 +299,13 @@ func (s *Service) ReplaceAssetAuthors(ctx context.Context, qtx *db.Queries, now 
 		return fmt.Errorf("authorattach: 清空资产作者关联: %w", err)
 	}
 	for _, a := range authors {
-		if err := qtx.AddAssetAuthor(ctx, db.AddAssetAuthorParams{AssetID: assetID, AuthorID: a.ID}); err != nil {
+		if err := qtx.AddAssetAuthor(ctx, db.AddAssetAuthorParams{
+			AssetID: assetID, AuthorID: a.ID,
+			// 溯源章（ADR-0032）：客户端编辑端点（PUT /assets/{id}/authors），
+			// web/app 共用统一盖 client；swap 先删后插，时间=本次替换时刻。
+			CreatedAt: store.NullTimestamp(store.FormatTimestamp(now)),
+			Origin:    store.OriginClient,
+		}); err != nil {
 			return fmt.Errorf("authorattach: 建立资产-作者关联: %w", err)
 		}
 	}

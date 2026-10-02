@@ -77,22 +77,27 @@ func seedExportData(t *testing.T, e *testEnv) {
 	// 作者（常规 + cos_ 前缀）+ 关联 + 时间轴标签 + 关注。
 	if err := e.q.ImportUpsertAuthor(ctx, db.ImportUpsertAuthorParams{
 		ID: "seed_author", DisplayName: "示例作者", Type: "regular", CreatedAt: stamp,
+		Origin: store.OriginTXT, // 溯源章（ADR-0032）：种子按 TXT 通道造
 	}); err != nil {
 		t.Fatalf("造作者失败: %v", err)
 	}
 	if err := e.q.ImportUpsertAuthor(ctx, db.ImportUpsertAuthorParams{
 		ID: "cos_seed_cos", DisplayName: "示例COS", Type: "cos", CreatedAt: stamp,
+		Origin: store.OriginScanner,
 	}); err != nil {
 		t.Fatalf("造COS作者失败: %v", err)
 	}
-	if err := e.q.ImportAddAssetAuthor(ctx, db.ImportAddAssetAuthorParams{AssetID: aID, AuthorID: "seed_author"}); err != nil {
+	if err := e.q.ImportAddAssetAuthor(ctx, db.ImportAddAssetAuthorParams{
+		AssetID: aID, AuthorID: "seed_author",
+		CreatedAt: store.NullTimestamp(stamp), Origin: store.OriginTXT,
+	}); err != nil {
 		t.Fatalf("造作者关联失败: %v", err)
 	}
 	tag, err := e.q.CreateTag(ctx, db.CreateTagParams{ID: "seed-tag", Name: "示例标签", CreatedAt: stamp})
 	if err != nil {
 		t.Fatalf("造标签失败: %v", err)
 	}
-	if err := e.q.AddAssetTag(ctx, db.AddAssetTagParams{AssetID: aID, TagID: tag.ID, CreatedAt: stamp}); err != nil {
+	if err := e.q.AddAssetTag(ctx, db.AddAssetTagParams{AssetID: aID, TagID: tag.ID, CreatedAt: stamp, Origin: store.OriginClient}); err != nil {
 		t.Fatalf("造标签关联失败: %v", err)
 	}
 	if err := e.q.ImportInsertTimelineTag(ctx, db.ImportInsertTimelineTagParams{
@@ -181,6 +186,26 @@ func TestExportQimengBackupRoundTrip(t *testing.T) {
 	}
 	if data.AuthorMediaRefs == nil || len(*data.AuthorMediaRefs) != 1 {
 		t.Fatalf("authorMediaRefs 段异常: %+v", data.AuthorMediaRefs)
+	}
+	// 溯源透传（ADR-0032）：库内盖章原样带出，来历不因搬运失真。
+	for _, a := range *data.Authors {
+		if a.AuthorId == "seed_author" {
+			if a.Origin == nil || *a.Origin != store.OriginTXT {
+				t.Errorf("导出作者 origin = %v, want %q（透传库内盖章）", a.Origin, store.OriginTXT)
+			}
+		}
+	}
+	ref := (*data.AuthorMediaRefs)[0]
+	if ref.Origin == nil || *ref.Origin != store.OriginTXT {
+		t.Errorf("导出作者关联 origin = %v, want %q（透传）", ref.Origin, store.OriginTXT)
+	}
+	if ref.CreatedAtMillis == nil || *ref.CreatedAtMillis <= 0 {
+		t.Errorf("导出作者关联 createdAtMillis = %v, want 毫秒值（透传）", ref.CreatedAtMillis)
+	}
+	for _, tr := range *data.MediaTagRefs {
+		if tr.Origin == nil || *tr.Origin != store.OriginClient {
+			t.Errorf("导出标签关联 origin = %v, want %q（透传）", tr.Origin, store.OriginClient)
+		}
 	}
 	if data.Tags == nil || len(*data.Tags) != 1 || data.MediaTagRefs == nil || len(*data.MediaTagRefs) != 1 {
 		t.Fatalf("标签段异常: %+v %+v", data.Tags, data.MediaTagRefs)

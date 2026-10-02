@@ -12,39 +12,64 @@ import (
 )
 
 const addAssetAuthor = `-- name: AddAssetAuthor :exec
-INSERT INTO asset_authors (asset_id, author_id)
-VALUES (?, ?)
+INSERT INTO asset_authors (asset_id, author_id, created_at, origin)
+VALUES (?, ?, ?, ?)
 ON CONFLICT (asset_id, author_id) DO NOTHING
 `
 
 type AddAssetAuthorParams struct {
-	AssetID  string
-	AuthorID string
+	AssetID   string
+	AuthorID  string
+	CreatedAt sql.NullString
+	Origin    string
 }
 
 // Idempotent many-to-many link (PK asset_id+author_id in 0001). Used by
 // the TXT unified rebuild and by COS scanning (author -> files mapping
 // recorded at scan time, GUIDE_AUTHOR).
+// Provenance (ADR-0032, migration 0016): created_at = link (re)insert
+// moment (RFC3339 millis, rebuild paths delete-then-insert so it refreshes
+// on every rebuild -- same convention as the replace-style tag PUT);
+// origin = write channel (store provenance vocabulary, single source
+// store/provenance.go). DO NOTHING keeps the first stamp when the link
+// already exists from another channel (first-write wins, DOMAIN_RULES 10).
 func (q *Queries) AddAssetAuthor(ctx context.Context, arg AddAssetAuthorParams) error {
-	_, err := q.db.ExecContext(ctx, addAssetAuthor, arg.AssetID, arg.AuthorID)
+	_, err := q.db.ExecContext(ctx, addAssetAuthor,
+		arg.AssetID,
+		arg.AuthorID,
+		arg.CreatedAt,
+		arg.Origin,
+	)
 	return err
 }
 
 const addAssetCharacter = `-- name: AddAssetCharacter :exec
-INSERT INTO asset_characters (asset_id, character_name)
-VALUES (?, ?)
+INSERT INTO asset_characters (asset_id, character_name, created_at, origin)
+VALUES (?, ?, ?, ?)
 ON CONFLICT (asset_id, character_name) DO NOTHING
 `
 
 type AddAssetCharacterParams struct {
 	AssetID       string
 	CharacterName string
+	CreatedAt     sql.NullString
+	Origin        string
 }
 
 // One row per matched character canonical name (multi-character assets
 // get multiple rows; PK asset_id+character_name dedupes).
+// Provenance (ADR-0032, migration 0016): rows are scanner-derived output,
+// so origin is always store.OriginScanner and created_at is the CURRENT
+// derivation moment (delete-then-insert refreshes it on every recompute --
+// it is the truth-refresh time, not the first-appearance time; documented
+// in ADR-0032/DOMAIN_RULES 10).
 func (q *Queries) AddAssetCharacter(ctx context.Context, arg AddAssetCharacterParams) error {
-	_, err := q.db.ExecContext(ctx, addAssetCharacter, arg.AssetID, arg.CharacterName)
+	_, err := q.db.ExecContext(ctx, addAssetCharacter,
+		arg.AssetID,
+		arg.CharacterName,
+		arg.CreatedAt,
+		arg.Origin,
+	)
 	return err
 }
 
@@ -367,10 +392,11 @@ func (q *Queries) UpdateAssetSource(ctx context.Context, arg UpdateAssetSourcePa
 }
 
 const upsertAuthor = `-- name: UpsertAuthor :exec
-INSERT INTO authors (id, display_name, type, followed, created_at)
-VALUES (?, ?, ?, 0, ?)
+INSERT INTO authors (id, display_name, type, followed, created_at, origin)
+VALUES (?, ?, ?, 0, ?, ?)
 ON CONFLICT (id) DO UPDATE SET
-    display_name = excluded.display_name
+    display_name = excluded.display_name,
+    origin = CASE WHEN authors.origin = 'legacy' THEN excluded.origin ELSE authors.origin END
 `
 
 type UpsertAuthorParams struct {
@@ -378,6 +404,7 @@ type UpsertAuthorParams struct {
 	DisplayName string
 	Type        string
 	CreatedAt   string
+	Origin      string
 }
 
 // TXT import / COS scan author upsert keyed by the authoring-generated
@@ -386,12 +413,16 @@ type UpsertAuthorParams struct {
 // the identity, so the ON CONFLICT branch must not touch followed
 // (re-importing a TXT must not reset the follow flag) nor created_at
 // (cold-start freshness, same rule as UpsertAsset).
+// origin (ADR-0032): creation/re-attestation channel stamp; the conflict
+// branch heals only untraceable rows (legacy -> this channel, DOMAIN_RULES
+// 10 heal rule) and never overwrites a known one (first-write wins).
 func (q *Queries) UpsertAuthor(ctx context.Context, arg UpsertAuthorParams) error {
 	_, err := q.db.ExecContext(ctx, upsertAuthor,
 		arg.ID,
 		arg.DisplayName,
 		arg.Type,
 		arg.CreatedAt,
+		arg.Origin,
 	)
 	return err
 }

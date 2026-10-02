@@ -238,6 +238,9 @@ func (imp *legacyImport) importAuthors(authors *[]gen.LegacyAuthor, refs *[]gen.
 		err := imp.s.q.ImportUpsertAuthor(imp.ctx, db.ImportUpsertAuthorParams{
 			ID: a.AuthorId, DisplayName: a.DisplayName, Type: authorType,
 			CreatedAt: nowOrMillis(a.CreatedAtMillis, imp.s.now()),
+			// 溯源（ADR-0032）：透传对端原始来历，缺省/非法兜底 import；
+			// 既有行仅在 legacy（不可考）时被补证（DOMAIN_RULES §10，查询内裁决）。
+			Origin: store.NormalizeOrigin(a.Origin),
 		})
 		if err != nil {
 			imp.fail("导入作者", err)
@@ -253,6 +256,8 @@ func (imp *legacyImport) importAuthors(authors *[]gen.LegacyAuthor, refs *[]gen.
 		}
 		err := imp.s.q.ImportAddAssetAuthor(imp.ctx, db.ImportAddAssetAuthorParams{
 			AssetID: assetID, AuthorID: ref.AuthorId,
+			CreatedAt: store.NullTimestamp(nowOrMillis(ref.CreatedAtMillis, imp.s.now())),
+			Origin:    store.NormalizeOrigin(ref.Origin),
 		})
 		if err != nil {
 			imp.fail("导入作者关联", err)
@@ -294,7 +299,10 @@ func (imp *legacyImport) importTxtFragments(frags *[]gen.LegacyTxtFragment) {
 			continue
 		}
 		filename := f.Filename
-		if _, err := imp.s.importTxt(imp.ctx, &filename, f.Content, resolutionKeep); err != nil {
+		// 溯源章（ADR-0032）：备份 TXT 片段段触发的重建盖 import——关联
+		// 在本端的确立通道是备份导入（对端原始来历随 authorMediaRefs 段
+		// 透传，见 importAuthors）。
+		if _, err := imp.s.importTxt(imp.ctx, &filename, f.Content, resolutionKeep, store.OriginImport); err != nil {
 			imp.s.logger.Warn("备份 TXT 片段导入失败，跳过", "filename", f.Filename, "error", err)
 			skipped++
 			continue
@@ -380,6 +388,7 @@ func (imp *legacyImport) importTags(tags *[]gen.LegacyTag, refs *[]gen.LegacyMed
 				err := imp.s.q.ImportAddAssetTag(imp.ctx, db.ImportAddAssetTagParams{
 					AssetID: assetID, TagID: tagIDs[ref.TagName],
 					CreatedAt: nowOrMillis(ref.CreatedAtMillis, now),
+					Origin:    store.NormalizeOrigin(ref.Origin),
 				})
 				if err != nil {
 					imp.fail("导入标签关联", err)
@@ -399,6 +408,7 @@ func (imp *legacyImport) importTags(tags *[]gen.LegacyTag, refs *[]gen.LegacyMed
 			err := imp.s.q.ImportAddAssetTag(imp.ctx, db.ImportAddAssetTagParams{
 				AssetID: assetID, TagID: tagIDs[ref.TagName],
 				CreatedAt: nowOrMillis(ref.CreatedAtMillis, now),
+				Origin:    store.NormalizeOrigin(ref.Origin),
 			})
 			if err != nil {
 				imp.fail("替换标签组挂载", err)

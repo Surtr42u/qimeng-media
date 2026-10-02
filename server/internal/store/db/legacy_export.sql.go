@@ -12,16 +12,23 @@ import (
 
 const exportAssetAuthors = `-- name: ExportAssetAuthors :many
 SELECT aa.author_id AS author_id,
-       aa.asset_id  AS asset_id
+       aa.asset_id  AS asset_id,
+       aa.created_at AS created_at,
+       aa.origin     AS origin
 FROM asset_authors AS aa
 ORDER BY aa.author_id, aa.asset_id
 `
 
 type ExportAssetAuthorsRow struct {
-	AuthorID string
-	AssetID  string
+	AuthorID  string
+	AssetID   string
+	CreatedAt sql.NullString
+	Origin    string
 }
 
+// created_at/origin (ADR-0032): provenance passthrough for the
+// author-media refs (created_at NULL = untraceable, exports as omitted
+// field; DOMAIN_RULES 10).
 func (q *Queries) ExportAssetAuthors(ctx context.Context) ([]ExportAssetAuthorsRow, error) {
 	rows, err := q.db.QueryContext(ctx, exportAssetAuthors)
 	if err != nil {
@@ -31,7 +38,12 @@ func (q *Queries) ExportAssetAuthors(ctx context.Context) ([]ExportAssetAuthorsR
 	var items []ExportAssetAuthorsRow
 	for rows.Next() {
 		var i ExportAssetAuthorsRow
-		if err := rows.Scan(&i.AuthorID, &i.AssetID); err != nil {
+		if err := rows.Scan(
+			&i.AuthorID,
+			&i.AssetID,
+			&i.CreatedAt,
+			&i.Origin,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -48,7 +60,8 @@ func (q *Queries) ExportAssetAuthors(ctx context.Context) ([]ExportAssetAuthorsR
 const exportAssetTags = `-- name: ExportAssetTags :many
 SELECT mt.asset_id   AS asset_id,
        t.name        AS tag_name,
-       mt.created_at AS created_at
+       mt.created_at AS created_at,
+       mt.origin     AS origin
 FROM asset_tags AS mt
 JOIN tags AS t ON t.id = mt.tag_id
 ORDER BY mt.asset_id, t.name
@@ -58,8 +71,11 @@ type ExportAssetTagsRow struct {
 	AssetID   string
 	TagName   string
 	CreatedAt string
+	Origin    string
 }
 
+// origin (ADR-0032): provenance passthrough alongside the existing
+// created_at (DOMAIN_RULES 10).
 func (q *Queries) ExportAssetTags(ctx context.Context) ([]ExportAssetTagsRow, error) {
 	rows, err := q.db.QueryContext(ctx, exportAssetTags)
 	if err != nil {
@@ -69,7 +85,12 @@ func (q *Queries) ExportAssetTags(ctx context.Context) ([]ExportAssetTagsRow, er
 	var items []ExportAssetTagsRow
 	for rows.Next() {
 		var i ExportAssetTagsRow
-		if err := rows.Scan(&i.AssetID, &i.TagName, &i.CreatedAt); err != nil {
+		if err := rows.Scan(
+			&i.AssetID,
+			&i.TagName,
+			&i.CreatedAt,
+			&i.Origin,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -84,15 +105,19 @@ func (q *Queries) ExportAssetTags(ctx context.Context) ([]ExportAssetTagsRow, er
 }
 
 const exportAuthors = `-- name: ExportAuthors :many
-SELECT id, display_name, created_at FROM authors ORDER BY id
+SELECT id, display_name, created_at, origin FROM authors ORDER BY id
 `
 
 type ExportAuthorsRow struct {
 	ID          string
 	DisplayName string
 	CreatedAt   string
+	Origin      string
 }
 
+// origin (ADR-0032): provenance passthrough -- the backup carries each
+// author row's original creation channel so the receiving side can
+// adjudicate (DOMAIN_RULES 10); legacy = pre-0016 untraceable rows.
 func (q *Queries) ExportAuthors(ctx context.Context) ([]ExportAuthorsRow, error) {
 	rows, err := q.db.QueryContext(ctx, exportAuthors)
 	if err != nil {
@@ -102,7 +127,12 @@ func (q *Queries) ExportAuthors(ctx context.Context) ([]ExportAuthorsRow, error)
 	var items []ExportAuthorsRow
 	for rows.Next() {
 		var i ExportAuthorsRow
-		if err := rows.Scan(&i.ID, &i.DisplayName, &i.CreatedAt); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.DisplayName,
+			&i.CreatedAt,
+			&i.Origin,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

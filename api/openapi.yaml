@@ -1896,6 +1896,7 @@ components:
         displayName:      { type: string }
         createdAtMillis:  { type: integer, format: int64 }
         updatedAtMillis:  { type: integer, format: int64 }
+        origin:           { type: [string, "null"], description: 作者行溯源通道（ADR-0032 受控词表 client/txt/import/local-sync/scanner/legacy，migration 0016 起携带）。缺省=旧版备份未携带，导入端兜底盖 import；非法值同兜底 }
 
     LegacyAuthorMediaRef:
       type: object
@@ -1905,6 +1906,8 @@ components:
         recordKey:        { type: string }
         fileName:         { type: string }
         isMatched:        { type: boolean, description: TXT 自动匹配标志；旧备份可能缺省 }
+        createdAtMillis:  { type: [integer, "null"], format: int64, description: 作者-资产关联成立毫秒（ADR-0032 透传；缺省=旧版备份未携带，导入端回退导入时刻） }
+        origin:           { type: [string, "null"], description: 关联溯源通道（ADR-0032 受控词表，migration 0016 起携带）。缺省=旧版备份未携带，导入端兜底盖 import；非法值同兜底 }
 
     LegacyTag:
       type: object
@@ -1921,6 +1924,7 @@ components:
         recordKey:        { type: string }
         tagName:          { type: string, description: 冗余关联 tags.name（非 tagId） }
         createdAtMillis:  { type: [integer, "null"], format: int64, description: v1.19 起可选；缺省时导入回退导入时刻 }
+        origin:           { type: [string, "null"], description: 关联溯源通道（ADR-0032 受控词表，migration 0016 起携带）。缺省=旧版备份未携带，导入端兜底盖 import；非法值同兜底 }
 
     LegacyMediaStats:
       type: object

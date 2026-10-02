@@ -30,13 +30,17 @@ type Asset struct {
 }
 
 type AssetAuthor struct {
-	AssetID  string
-	AuthorID string
+	AssetID   string
+	AuthorID  string
+	CreatedAt sql.NullString
+	Origin    string
 }
 
 type AssetCharacter struct {
 	AssetID       string
 	CharacterName string
+	CreatedAt     sql.NullString
+	Origin        string
 }
 
 type AssetDailyStat struct {
@@ -56,6 +60,7 @@ type AssetTag struct {
 	AssetID   string
 	TagID     string
 	CreatedAt string
+	Origin    string
 }
 
 type AssetsFt struct {
@@ -77,6 +82,7 @@ type Author struct {
 	Type        string
 	CreatedAt   string
 	Followed    int64
+	Origin      string
 }
 
 type DailyShown struct {
