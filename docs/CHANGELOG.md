@@ -10,6 +10,21 @@
 
 > **历史条目拆分说明（2026-10-01）**：为控制 AI 上下文体量，本文件只保留 **2026-09-22 及之后**的条目（第三百八十二笔起）；拆分线之前的全部条目已逐字迁入 `docs/history/CHANGELOG-ARCHIVE.md`（零改写，笔号与本文件连续可查）。引用早于拆分线的旧笔号请去历史档查阅。
 
+## refactor(server): 浏览历史查询主流化改写——ListHistory 相关标量子查询退役改 CTE 预聚合 JOIN + 计划锁定测试上 CI + ADR-0011 增补索引迁移计划复查工序（2026-10-02 第四百三十三笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理）
+
+- **背景（治本批，叠在应急修复 PR #4 之上）**：第四百二十九笔以 0015 覆盖索引止血后，用户定性根因=手搓非主流形态（ListHistory 用每资产相关标量子查询取 MAX(started_at)，cursor 分支再手抄两份同款），要求主流化改写。本批查询改写 + 计划锁定测试 + 迁移纪律补工序三件套同 commit。
+- **sqlc 限制核实（铁律 8 先验，官方出处 + 锁定版本实证）**：仓库锁定 sqlc v1.31.1（`server/sqlc.yaml` 禁随手升级）。其 SQLite 解析器限制**确凿存在但边界比 history.sql 旧注释「parser rule 3」更窄**：WHERE 引用 CTE/派生表别名报 `table alias does not exist`（上游 [sqlc-dev/sqlc#3639](https://github.com/sqlc-dev/sqlc/issues/3639)，2024-10 报告至今 **Open 无修复**，v1.25 可用、v1.26 起回归；本机以锁定版本对真实 migrations 复现确认）；SELECT/ON 引用别名正常。另实证发现更隐蔽一档：**HAVING 里的 `sqlc.arg`/`sqlc.narg` 宏被静默原样保留且对应参数从生成结构体丢弃（运行时必炸，无告警）**——两 discovered facts 已写入 history.sql 文件头与生成物注释。
+- **改写（recommend.sql 先例同款主流形态）**：`latest` CTE 对 view_events 做**无 WHERE 的 `MAX(CASE WHEN kind='open')` 按 asset_id 预聚合**（单趟顺序索引扫描，GROUP BY 由索引序满足）+ INNER JOIN assets（join 即锚——latest 只含有事件的资产，原 `WHERE EXISTS` 锚冗余删除，孤儿事件照旧被 join 天然排除）+ **游标谓词移入 JOIN 的 ON 子句**（INNER JOIN 下 ON 与 WHERE 逻辑等价；WHERE/HAVING 均因上述解析器限制不可用）。**语义零变化**：kind='open' 口径、每资产 MAX、`(last_viewed_at DESC, asset_id DESC)` 排序、keyset 游标严格续读、字段集与生成类型全同（ListHistoryParams 仅字段顺序变化，httpapi 零改动编译通过）；DOMAIN_RULES §8 为展示层分组口径，对照确认不受影响。
+- **截胡实证（改写过程中的关键取舍）**：首版 CTE 保留 `WHERE kind='open'` 时，无 ANALYZE 的启发式 planner 实测被 0013 索引截胡（`SEARCH ve USING INDEX idx_view_events_kind_started (kind=?)` + `USE TEMP B-TREE FOR GROUP BY`）——印证「CTE 内只要有 seekable kind 约束就会被 kind 前导索引劫持」；终版去掉 CTE 内 WHERE（kind 过滤改由 CASE 聚合承担）**结构性消除该截胡向量**，实测计划变为 `SCAN ve USING COVERING INDEX idx_view_events_asset_kind_started`（0015）单趟顺序扫、无临时树、无任何 view_events 逐行探测。
+- **语义等价佐证（新测试）**：`store/history_test.go` TestListHistorySemantics——每资产一条取 MAX(open)、play/dwell 不计入、孤儿事件与未打开资产不出现、同毫秒 asset_id 决胜、游标两分支严格续读、is_favorite 投影流转；测试还反向验证了 `source_is_other` 恒传 0/1 的调用方契约（NULL 三值逻辑会静默排除全部行，与 handler 行为一致）。
+- **计划锁定测试（新，F1 facets 同型隐患并入）**：`store/db/history_plan_test.go`（必须住 package db——被断言 SQL 常量未导出且生成物禁手改，ADR-0009）——① ListHistory 首屏/游标两分支断言 EXPLAIN QUERY PLAN 文本：覆盖索引单趟扫描、无 GROUP BY 临时树、无 view_events 逐行探测、0013 陷阱索引（kind 前导）禁现；② facets 六查询 history_subset EXISTS 探测（与事故子查询逐字节同型、`GET /assets/facets?history=1` 可达，F1 扫描发现）以 FacetPartitionCounts 为代表断言双等值前缀 `SEARCH veh USING COVERING INDEX …(asset_id=? AND kind=?)`——**实测未被 0013 截胡**（asset_id+kind 双等值天然走 0015 前缀），无需升级处理。断言全部为确定性计划文本比对（全仓无 ANALYZE，同 schema 同驱动必出同计划），零耗时断言；未来任何翻坏计划的索引迁移会被 CI 拦截。
+- **ADR-0011 修订（迁移纪律补工序）**：索引类迁移必须附**同表全部查询族**的 EXPLAIN QUERY PLAN 前后横向复查（结论入迁移头注；有真机只读副本时附规模化耗时对比），关键查询族计划以文本断言入 CI 锁；动机=0013→history 事故（验收只看目标查询族、planner 无统计纯启发式、索引增删静默重排同表全部计划）。`docs/adr/INDEX.md` 同步。
+- **验证**：`go vet ./...` + `go test ./...` 全绿（server 全包，含 httpapi 全链路与迁移链 down/up 测试）；`sqlc@v1.31.1` 重新生成仅 `history.sql.go` 变化；协议零改动（openapi.yaml/sdk.lock 无涉）；禁触项（gradle/npm/vite 构建、模拟器、手机、内嵌打包）未触碰，最终以本 draft PR 云端 CI 为准。
+- **涉及文档**：`docs/CHANGELOG.md`（本条）、`docs/adr/0011`（修订记录：计划影响横向复查）、`docs/adr/INDEX.md`；history.sql 文件头注释重写（sqlc 解析器两 discovered facts + 改写依据）。
+
+
 ## fix(server): 观看历史查询计划退化根治——0015 覆盖索引 (asset_id, kind, started_at)，/history 从 8.85s 回到毫秒级（2026-10-02 第四百三十二笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理）
