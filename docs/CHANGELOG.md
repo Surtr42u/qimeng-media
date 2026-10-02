@@ -10,6 +10,18 @@
 
 > **历史条目拆分说明（2026-10-01）**：为控制 AI 上下文体量，本文件只保留 **2026-09-22 及之后**的条目（第三百八十二笔起）；拆分线之前的全部条目已逐字迁入 `docs/history/CHANGELOG-ARCHIVE.md`（零改写，笔号与本文件连续可查）。引用早于拆分线的旧笔号请去历史档查阅。
 
+## fix(server): 观看历史查询计划退化根治——0015 覆盖索引 (asset_id, kind, started_at)，/history 从 8.85s 回到毫秒级（2026-10-02 第四百三十二笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理）
+
+- **背景（真机事故）**：手机 App（内嵌服务端形态）浏览历史页空白。取证链：内嵌服务端 log 两次「查询观看历史失败: context canceled」（App 侧取消）→ PC 侧直测 GET /history 200 但单页 8.85s → App 主客户端读超时恰为 10s（NetworkModule），冷启动负载下必超时 → OkHttp SocketTimeout 取消请求 → 页面空白。**数据零丢失**（接口正常回 60 条/页，最近浏览 2026-09-30），是纯查询性能问题。
+- **根因（EXPLAIN 实证）**：0013 的 (kind, started_at) 索引（审计 R4，为 stats 族引入）把 ListHistory 的每资产 `MAX(started_at)` 相关子查询带进坏计划——该索引只能服务 `kind=?` 前缀约束（asset_id 不在索引列），每个资产要扫过全部 open 事件（真机库 6350 资产 × ~6.8k open 事件 ≈ 4300 万索引步/请求）。真机库只读副本实测：坏计划下查询 0.16s（PC）≈ 8.85s（手机），叠加冷启动并发与大 WAL 即穿 10s 超时线。
+- **修复**：新迁移 `0015_view_events_asset_kind_started` 加覆盖索引 (asset_id, kind, started_at)——EXISTS 探测与 MAX 聚合都变 `(asset_id=? AND kind=?)` 双等值前缀查找，副本实测 0.16s→0.00s。**查询零改动**（history.sql 逐字节不动），游标分支同型子查询与 browse.sql 同型的每资产聚合同批受益；DOMAIN_RULES §5/§8 口径零变化，纯索引迁移只加不改（ADR-0011），旧索引按纪律保留不删。
+- **测试**：`store_test.go` TestMigrateDownThenUp 按该测试自身约定「新增迁移在链首插入对应验证步」补 0015 down 验证步（索引删除 + 0014 对象保留断言）；首版 PR 漏补此步被 CI 拦下（down 链链首错位一位全链雪崩）——本仓迁移必须同 commit 配测试步的活例。
+- **验证边界（夜间零构建约束）**：诊断全程只读（adb forward 只 GET、真机库只读副本分析、token 仅内存变量未落盘）；本地禁止编译/测试，修复经分支 `fix/history-display` draft PR 走云端 CI 验证，**待晨间构建装机后真机复测浏览历史页**。
+- **涉及文档**：`docs/CHANGELOG.md`（本条目）。迁移文件自身注释含完整根因与取舍（0015 up/down）。
+
+
 ## fix(web): 「手搓方案」排查批——窗口事件总线退役改 React context、sonner 主题接线归位并退役孤儿依赖 next-themes（2026-10-02 第四百三十一笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理）
