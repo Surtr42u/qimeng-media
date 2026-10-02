@@ -1,5 +1,6 @@
 # CI：每个 PR / push 到 master 必须全绿才允许合并（ARCHITECTURE §10）
-# 五道门禁：协议校验（宪法不容破坏）→ 服务端 → Web → Android 客户端；外加 make sdk 生成链可跑通
+# 五道门禁：协议校验（宪法不容破坏）→ 服务端 → Web →
+# Android 客户端（含内嵌产物完整性门禁）；外加 make sdk 生成链可跑通
 name: ci
 
 on:
@@ -117,6 +118,22 @@ jobs:
       #  agp=9.3.1 与 build-logic ANDROID_COMPILE_SDK=37 勘正；升级若致 runner 缺 platform 再补 sdkmanager）
       - uses: actions/setup-java@v5
         with: { distribution: temurin, java-version: 21 }
+      # 内嵌形态装配链（make app-embedded-arm64 的 CI 等价链，与 Makefile 目标
+      # 双向注释互指；Windows 本机走 fetch-ffmpeg-arm64.ps1，此处走同 commit/
+      # 同哈希锁的 bash 移植版 fetch-ffmpeg-arm64.sh，供应链值三处同步：.sh/.ps1/
+      # deploy/embedded/README.md）。jniLibs 目录不入 git（~57MB）——缺此步
+      # assembleDebug 出的是"非内嵌"包，下方产物完整性断言会拦。
+      - uses: actions/setup-go@v6
+        with: { go-version: "1.27.x", cache-dependency-path: server/go.sum }
+      - name: 交叉编译内嵌服务端 arm64（= make server-android-arm64）
+        run: |
+          cd server
+          GOOS=android GOARCH=arm64 CGO_ENABLED=0 go build -o ../build/android/arm64-v8a/qimeng-server ./cmd/qimeng
+      - name: 装配 jniLibs arm64 三件套（= make app-embedded-arm64 装配步；ffmpeg 锁 commit + SHA-256）
+        run: |
+          mkdir -p android/app/src/main/jniLibs/arm64-v8a
+          cp build/android/arm64-v8a/qimeng-server android/app/src/main/jniLibs/arm64-v8a/libqimeng.so
+          bash deploy/embedded/fetch-ffmpeg-arm64.sh
       # wrapper 校验 + gradle-user-home 缓存；只调 ./gradlew，不碰 runner 预装 gradle
       - uses: gradle/actions/setup-gradle@v4
       - name: 构建 + 单测 + Lint
@@ -125,3 +142,17 @@ jobs:
           # :core:model 是纯 JVM 模块（kotlin("jvm")）只有 test 任务，testDebugUnitTest 覆盖不到——
           # 与本机 Makefile app-test 的补账对齐（0ff017a）
           ./gradlew assembleDebug testDebugUnitTest :core:model:test lintDebug
+      # 产物完整性门禁（2026-10-02 手搓治理批）：内嵌三件套（libqimeng.so/
+      # libffmpeg_cli.so/libffprobe_cli.so）必须随包——装配链断一环（忘了跑
+      # app-embedded 等价链 / ffmpeg 下载校验失败 / AGP 过滤掉 ABI）在此拦截，
+      # 而不是真机装机点开"本机模式"才以「未随包打包」通知暴露。
+      - name: 断言内嵌三件套随包（产物完整性门禁）
+        run: bash deploy/embedded/assert-apk-embedded.sh android/app/build/outputs/apk/debug/app-debug.apk
+      # 可装机内嵌调试包下发（命名与普通 debug 包区分，仅内嵌链通过断言后上传；
+      # 短保留期——验装机用途，不作长期存档）
+      - name: 上传内嵌调试包（artifact：app-debug-apk-embedded）
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-apk-embedded
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 7
