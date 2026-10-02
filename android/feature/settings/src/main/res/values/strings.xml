@@ -3,4 +3,18 @@
     <!-- 设置页（我的 Tab）文案。M4-1 最小版只有标题与登出；资源名 settings_ 前缀避免合并冲突。 -->
     <string name="settings_title">我的</string>
     <string name="settings_logout">退出登录</string>
+
+    <!-- 2026-10-03 悬浮玻璃坞批：外观模式三选 + 底栏材质四选（枚举稳定 id 在 core:model，
+         中文显示名只在此处——文案改动不触碰持久化值）。 -->
+    <string name="settings_appearance_title">外观模式</string>
+    <string name="settings_appearance_subtitle">切换 App 的白天/深色外观</string>
+    <string name="settings_appearance_system">跟随系统</string>
+    <string name="settings_appearance_light">浅色</string>
+    <string name="settings_appearance_dark">深色</string>
+    <string name="settings_tab_material_title">底栏材质</string>
+    <string name="settings_tab_material_subtitle">底部导航坞的质感档位</string>
+    <string name="settings_tab_material_liquid">液态玻璃</string>
+    <string name="settings_tab_material_frosted">磨砂玻璃</string>
+    <string name="settings_tab_material_solid">纯色坞</string>
+    <string name="settings_tab_material_classic">经典</string>
 </resources>
