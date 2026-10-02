@@ -5,11 +5,11 @@
  * 语义 → 路由 pathname 驱动；叠加组门见下方 F5 注释）。
  */
 
-import { QM_REFRESH_EVENT } from '@/lib/constants'
 import { useEffect, useRef, useState } from 'react'
 import { Outlet, useLocation } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { HOME_PATH, isAssetDetailPath, listKeyFromPath, readBackdropKey } from '@/lib/route-keys'
+import { ShellRefreshContext } from './refresh-context'
 import { Sidebar } from './Sidebar'
 import { TopBar } from './TopBar'
 import { RefreshIcon, BackTopIcon } from './icons'
@@ -23,6 +23,10 @@ export function AppShell() {
   const queryClient = useQueryClient()
   const [spinning, setSpinning] = useState(false)
   const [showBackTop, setShowBackTop] = useState(false)
+  // 刷新信号（context 版，原 window CustomEvent 'qm:refresh'）：数值递增即
+  // 「刷新按钮被按过一次」，经 ShellRefreshContext 下发给叠加组内的首页 tab
+  // （消费方 useShellRefresh——HomePage 推荐/cos 换 seed、热榜重置分页）
+  const [refreshTick, setRefreshTick] = useState(0)
   // F5 叠加组滚动门（取代 E1 的 inHomeDetailGroup「双在组内」判定——单组多
   // 列表后「组内」不再等于「同一叠加对」）：详情是覆盖在底衬列表上的叠加层，
   // (1) 进/驻详情（列表→详情、详情→详情）不复位 .content——底衬列表的
@@ -74,48 +78,51 @@ export function AppShell() {
   const refresh = (): void => {
     // 真实刷新，两条通道分工：
     // 1) invalidateQueries：失效全部查询缓存，负责普通页面（媒体/人物/设置等）的数据重拉；
-    // 2) 'qm:refresh' 全局事件：HomePage 监听此事件执行旧版 refreshSeed++ 全量重排语义
-    //    （首页三 tab 数据多与旧值相同，invalidate 后无可见变化，故需要显式重排信号）。
-    // 事件名唯一来源 QM_REFRESH_EVENT（lib/constants.ts），与 HomePage 监听方共享。
+    // 2) ShellRefreshContext tick：HomePage 监听此信号执行旧版 refreshSeed++ 全量重排
+    //    语义（首页三 tab 数据多与旧值相同，invalidate 后无可见变化，故需要显式重排
+    //    信号——推荐/cos 换 seed 全量重排并回第一页、热榜重置分页重拉；TanStack 的
+    //    invalidate/resetQueries 均覆盖不了「同 seed 重取可复现、分页需归零」这两点）。
     void queryClient.invalidateQueries()
-    window.dispatchEvent(new CustomEvent(QM_REFRESH_EVENT))
+    setRefreshTick((n) => n + 1)
     setSpinning(false)
     requestAnimationFrame(() => setSpinning(true))
   }
 
   return (
-    <div className="layout">
-      <Sidebar />
-      <div className="main">
-        <TopBar />
-        <main className="content" ref={contentRef}>
-          <Outlet />
-        </main>
-      </div>
-      {/* F7：详情叠加期（含其上打开的图片查看器期）条件卸载，不渲染即不可点
-          （不用 hidden 属性——.layout .refresh-fab 的 display:flex 会压过
-          [hidden] 的 UA display:none，见 prototype.css .page[hidden] 同款坑） */}
-      {!overlayOpen && (
+    <ShellRefreshContext.Provider value={refreshTick}>
+      <div className="layout">
+        <Sidebar />
+        <div className="main">
+          <TopBar />
+          <main className="content" ref={contentRef}>
+            <Outlet />
+          </main>
+        </div>
+        {/* F7：详情叠加期（含其上打开的图片查看器期）条件卸载，不渲染即不可点
+            （不用 hidden 属性——.layout .refresh-fab 的 display:flex 会压过
+            [hidden] 的 UA display:none，见 prototype.css .page[hidden] 同款坑） */}
+        {!overlayOpen && (
+          <button
+            className={`refresh-fab${spinning ? ' spinning' : ''}`}
+            title="刷新"
+            type="button"
+            onClick={refresh}
+            onAnimationEnd={() => setSpinning(false)}
+          >
+            <RefreshIcon />
+          </button>
+        )}
         <button
-          className={`refresh-fab${spinning ? ' spinning' : ''}`}
-          title="刷新"
+          className={`backtop-fab${showBackTopFab ? ' shown' : ''}`}
+          title="回到顶部"
           type="button"
-          onClick={refresh}
-          onAnimationEnd={() => setSpinning(false)}
+          onClick={backToTop}
+          tabIndex={showBackTopFab ? 0 : -1}
         >
-          <RefreshIcon />
+          <BackTopIcon />
+          <p>顶部</p>
         </button>
-      )}
-      <button
-        className={`backtop-fab${showBackTopFab ? ' shown' : ''}`}
-        title="回到顶部"
-        type="button"
-        onClick={backToTop}
-        tabIndex={showBackTopFab ? 0 : -1}
-      >
-        <BackTopIcon />
-        <p>顶部</p>
-      </button>
-    </div>
+      </div>
+    </ShellRefreshContext.Provider>
   )
 }
