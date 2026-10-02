@@ -20,6 +20,7 @@ import media.qimeng.app.core.model.AppearanceMode
 import media.qimeng.app.core.model.RecommendPrefsValues
 import media.qimeng.app.core.model.RecommendPreset
 import media.qimeng.app.core.model.TabBarMaterial
+import media.qimeng.app.core.model.ThemeColorPreset
 import media.qimeng.app.core.model.matchPreset
 import media.qimeng.app.core.model.toPrefsValues
 
@@ -103,6 +104,14 @@ class SettingsViewModel @Inject constructor(
             initialValue = TabBarMaterial.DEFAULT,
         )
 
+    /** 主题色彩六选（极光/青碧/琥珀/绯樱/苍翠/动态取色）；选择器 UI 与壳层 Theme 同源 */
+    val themeColorPreset: StateFlow<ThemeColorPreset> = appearancePrefsRepository.themeColorPreset
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS),
+            initialValue = ThemeColorPreset.DEFAULT,
+        )
+
     init {
         loadLibraryCounts()
         loadPrefs()
@@ -117,6 +126,11 @@ class SettingsViewModel @Inject constructor(
     /** 底栏材质写入 */
     fun setTabBarMaterial(material: TabBarMaterial) {
         viewModelScope.launch { appearancePrefsRepository.setTabBarMaterial(material) }
+    }
+
+    /** 主题色彩写入（DataStore 落盘后壳层 Theme 与坞经流自动跟随） */
+    fun setThemeColorPreset(preset: ThemeColorPreset) {
+        viewModelScope.launch { appearancePrefsRepository.setThemeColorPreset(preset) }
     }
 
     /**

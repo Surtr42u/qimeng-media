@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import media.qimeng.app.core.model.AppearanceMode
 import media.qimeng.app.core.model.TabBarMaterial
+import media.qimeng.app.core.model.ThemeColorPreset
 import org.json.JSONArray
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -113,6 +114,10 @@ class DataStoreAppearancePrefsRepository @Inject constructor(
         TabBarMaterial.fromStored(prefs[KEY_TAB_BAR_MATERIAL])
     }
 
+    override val themeColorPreset: Flow<ThemeColorPreset> = dataStore.data.map { prefs ->
+        ThemeColorPreset.fromStored(prefs[KEY_THEME_COLOR_PRESET])
+    }
+
     override suspend fun setAppearanceMode(mode: AppearanceMode) {
         dataStore.edit { it[KEY_APPEARANCE_MODE] = mode.name }
     }
@@ -121,9 +126,14 @@ class DataStoreAppearancePrefsRepository @Inject constructor(
         dataStore.edit { it[KEY_TAB_BAR_MATERIAL] = material.name }
     }
 
+    override suspend fun setThemeColorPreset(preset: ThemeColorPreset) {
+        dataStore.edit { it[KEY_THEME_COLOR_PRESET] = preset.name }
+    }
+
     companion object {
         // 键值存枚举名（稳定 id）：显示名变化不影响已持久化数据（文案进 strings.xml）
         private val KEY_APPEARANCE_MODE = stringPreferencesKey("appearance_mode")
         private val KEY_TAB_BAR_MATERIAL = stringPreferencesKey("tab_bar_material")
+        private val KEY_THEME_COLOR_PRESET = stringPreferencesKey("theme_color_preset")
     }
 }

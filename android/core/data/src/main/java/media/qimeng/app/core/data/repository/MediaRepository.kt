@@ -14,6 +14,7 @@ import media.qimeng.app.core.model.NameSuggestion
 import media.qimeng.app.core.model.RankingPeriod
 import media.qimeng.app.core.model.TagSummary
 import media.qimeng.app.core.model.TabBarMaterial
+import media.qimeng.app.core.model.ThemeColorPreset
 import media.qimeng.sdk.models.TxtImportedFile
 import media.qimeng.sdk.models.TxtImportResult
 
@@ -168,17 +169,22 @@ interface GridPrefsRepository {
 }
 
 /**
- * 外观偏好端口（2026-10-03 悬浮玻璃坞批）：外观模式（跟随系统/浅色/深色）与底栏材质
- * （液态玻璃/磨砂玻璃/纯色坞/经典）两项手动开关的持久化，重启保留。
- * 枚举单源在 :core:model（[AppearanceMode]/[TabBarMaterial]）；壳层 Theme 解析与玻璃坞
- * 渲染、设置页选择器都从本端口读——DataStore 流是唯一事实源。
+ * 外观偏好端口（2026-10-03 悬浮玻璃坞批）：外观模式（跟随系统/浅色/深色）、底栏材质
+ * （液态玻璃/磨砂玻璃/纯色坞/经典）与主题色彩预设（极光/青碧/琥珀/绯樱/苍翠/动态取色，
+ * 2026-10-03 主题色彩批新增）三项手动开关的持久化，重启保留。
+ * 枚举单源在 :core:model（[AppearanceMode]/[TabBarMaterial]/[ThemeColorPreset]）；壳层
+ * Theme 解析与玻璃坞渲染、设置页选择器都从本端口读——DataStore 流是唯一事实源。
  */
 interface AppearancePrefsRepository {
     val appearanceMode: kotlinx.coroutines.flow.Flow<AppearanceMode>
 
     val tabBarMaterial: kotlinx.coroutines.flow.Flow<TabBarMaterial>
 
+    val themeColorPreset: kotlinx.coroutines.flow.Flow<ThemeColorPreset>
+
     suspend fun setAppearanceMode(mode: AppearanceMode)
 
     suspend fun setTabBarMaterial(material: TabBarMaterial)
+
+    suspend fun setThemeColorPreset(preset: ThemeColorPreset)
 }

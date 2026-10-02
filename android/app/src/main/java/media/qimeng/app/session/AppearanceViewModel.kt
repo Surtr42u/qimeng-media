@@ -11,6 +11,7 @@ import kotlinx.coroutines.launch
 import media.qimeng.app.core.data.repository.AppearancePrefsRepository
 import media.qimeng.app.core.model.AppearanceMode
 import media.qimeng.app.core.model.TabBarMaterial
+import media.qimeng.app.core.model.ThemeColorPreset
 
 /**
  * 外观状态（2026-10-03 悬浮玻璃坞批）：外观模式与底栏材质两项开关的壳层级状态单源。
@@ -44,6 +45,14 @@ class AppearanceViewModel @Inject constructor(
             initialValue = TabBarMaterial.DEFAULT,
         )
 
+    /** 主题色彩预设（极光/青碧/琥珀/绯樱/苍翠/动态取色）；首帧前用默认档（极光）占位 */
+    val themeColorPreset: StateFlow<ThemeColorPreset> = appearancePrefsRepository.themeColorPreset
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS),
+            initialValue = ThemeColorPreset.DEFAULT,
+        )
+
     /** 设置页写入外观模式（DataStore 落盘后经流自动回流到 Theme） */
     fun setAppearanceMode(mode: AppearanceMode) {
         viewModelScope.launch { appearancePrefsRepository.setAppearanceMode(mode) }
@@ -52,6 +61,11 @@ class AppearanceViewModel @Inject constructor(
     /** 设置页写入底栏材质 */
     fun setTabBarMaterial(material: TabBarMaterial) {
         viewModelScope.launch { appearancePrefsRepository.setTabBarMaterial(material) }
+    }
+
+    /** 设置页写入主题色彩预设（DataStore 落盘后经流自动回流到 Theme） */
+    fun setThemeColorPreset(preset: ThemeColorPreset) {
+        viewModelScope.launch { appearancePrefsRepository.setThemeColorPreset(preset) }
     }
 
     companion object {

@@ -4,6 +4,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
@@ -37,6 +39,7 @@ import java.io.IOException
 import kotlinx.coroutines.launch
 import media.qimeng.app.core.model.AppearanceMode
 import media.qimeng.app.core.model.TabBarMaterial
+import media.qimeng.app.core.model.ThemeColorPreset
 import media.qimeng.app.core.ui.component.QimengSegPill
 import media.qimeng.app.core.ui.glass.TabDockDefaults
 import media.qimeng.app.core.ui.theme.QimengDimens
@@ -135,6 +138,8 @@ fun SettingsScreen(
     // 2026-10-03 悬浮玻璃坞批：外观/材质状态（外观偏好端口直读，与壳层 Theme/坞同源）
     val appearanceMode by viewModel.appearanceMode.collectAsStateWithLifecycle()
     val tabBarMaterial by viewModel.tabBarMaterial.collectAsStateWithLifecycle()
+    // 2026-10-03 主题色彩批：六档配色预设（与壳层 Theme 同一份 DataStore 流）
+    val themeColorPreset by viewModel.themeColorPreset.collectAsStateWithLifecycle()
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -155,6 +160,8 @@ fun SettingsScreen(
             onOpenDataManage = onOpenDataManage,
             appearanceMode = appearanceMode,
             onAppearanceModeSelect = viewModel::setAppearanceMode,
+            themeColorPreset = themeColorPreset,
+            onThemeColorPresetSelect = viewModel::setThemeColorPreset,
             tabBarMaterial = tabBarMaterial,
             onTabMaterialSelect = viewModel::setTabBarMaterial,
             onOpenPrefs = viewModel::openPrefsSheet,
@@ -223,8 +230,9 @@ private fun LazyListScope.settingsHeaderItems(state: MineUiState, viewModel: Set
 
 /**
  * 入口行族（U10-4 拆分：自 SettingsScreen 逐字迁移；F 批 2026-09-09 起行序：
- * 服务器 → 作者总览 → 收藏/浏览历史 → 数据管理 → 外观模式/底栏材质（2026-10-03 悬浮
- * 玻璃坞批：原「主题色彩」不可点占位行升级为外观模式三选 + 新增底栏材质四选）→ 推荐偏好；
+ * 服务器 → 作者总览 → 收藏/浏览历史 → 数据管理 → 外观模式/主题色彩/底栏材质（2026-10-03
+ * 悬浮玻璃坞批：原「主题色彩」不可点占位行升级为外观模式三选 + 新增底栏材质四选；
+ * 同日主题色彩批：原占位名「主题色彩」正式落地为六档配色选择行）→ 推荐偏好；
  * 原「作者管理」行按用户拍板删除，作者管理页由作者总览行承担入口；
  * U10-6：原「上传文件」行原位升级为「数据管理」合并入口行）。
  */
@@ -236,6 +244,8 @@ private fun LazyListScope.settingsEntryRowItems(
     onOpenDataManage: () -> Unit,
     appearanceMode: AppearanceMode,
     onAppearanceModeSelect: (AppearanceMode) -> Unit,
+    themeColorPreset: ThemeColorPreset,
+    onThemeColorPresetSelect: (ThemeColorPreset) -> Unit,
     tabBarMaterial: TabBarMaterial,
     onTabMaterialSelect: (TabBarMaterial) -> Unit,
     onOpenPrefs: () -> Unit,
@@ -307,6 +317,27 @@ private fun LazyListScope.settingsEntryRowItems(
             ),
             selectedIndex = AppearanceMode.entries.indexOf(appearanceMode).coerceAtLeast(0),
             onSelect = { index -> onAppearanceModeSelect(AppearanceMode.entries[index]) },
+            modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
+        )
+    }
+
+    // 主题色彩（2026-10-03 主题色彩批新增）：六档配色预设（极光默认=现行鸢尾系观感零
+    // 变化/青碧/琥珀/绯樱/苍翠/动态取色），经 [AppearancePrefsRepository] 持久化，壳层
+    // Theme 按档覆写强调色族；动态取色为 Material You 官方方案（API 31+，低版本回落极光）
+    item {
+        SettingsSelectorCard(
+            title = stringResource(R.string.settings_theme_color_title),
+            subtitle = stringResource(R.string.settings_theme_color_subtitle),
+            options = listOf(
+                stringResource(R.string.settings_theme_color_aurora),
+                stringResource(R.string.settings_theme_color_teal),
+                stringResource(R.string.settings_theme_color_amber),
+                stringResource(R.string.settings_theme_color_rose),
+                stringResource(R.string.settings_theme_color_jade),
+                stringResource(R.string.settings_theme_color_dynamic),
+            ),
+            selectedIndex = ThemeColorPreset.entries.indexOf(themeColorPreset).coerceAtLeast(0),
+            onSelect = { index -> onThemeColorPresetSelect(ThemeColorPreset.entries[index]) },
             modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
         )
     }
@@ -421,8 +452,11 @@ private fun EntryRow(
 
 /**
  * 选择器卡（2026-10-03 悬浮玻璃坞批）：标题/副标题（单块两行文本，对齐 [EntryRow] 语言）
- * + 一行 [QimengSegPill] 分段选项。外观模式三选/底栏材质四选共用此形态。
+ * + 一行 [QimengSegPill] 分段选项。外观模式三选/主题色彩六选/底栏材质四选共用此形态。
  * 视觉 token 只走 MaterialTheme 与 QimengDimens（红线：feature 层禁 import glass 包颜色）。
+ * 选项行加横向滚动（主题色彩批）：六档胶囊（五个二字 + 一个四字）在 360dp 级窄屏超出
+ * 卡内容宽，溢出会被裁剪——横向滚动对三/四档行为无观感变化（内容不超宽滚动即无操作），
+ * 六档窄屏可滑到末尾选项。
  *
  * @param options 选项文案（顺序 = 枚举 entries 序）
  * @param selectedIndex 当前选中下标（越界钳到首项）
@@ -454,7 +488,11 @@ private fun SettingsSelectorCard(
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Spacer(modifier = Modifier.height(SelectorCardTextToOptionsSpacing))
-            Row(horizontalArrangement = Arrangement.spacedBy(SelectorCardOptionSpacing)) {
+            Row(
+                // 六档胶囊窄屏溢出防护（见头注释）：横向滚动，不换行不压缩胶囊
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(SelectorCardOptionSpacing),
+            ) {
                 options.forEachIndexed { index, option ->
                     QimengSegPill(
                         text = option,

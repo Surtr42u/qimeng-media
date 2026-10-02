@@ -17,6 +17,7 @@ import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dagger.hilt.android.AndroidEntryPoint
 import media.qimeng.app.core.model.AppearanceMode
+import media.qimeng.app.core.model.ThemeColorPreset
 import media.qimeng.app.core.network.shouldRequestLocalNetworkPermission
 import media.qimeng.app.core.ui.theme.QimengTheme
 import media.qimeng.app.navigation.QimengNavRoot
@@ -64,7 +65,10 @@ class MainActivity : ComponentActivity() {
                 AppearanceMode.LIGHT -> false
                 AppearanceMode.DARK -> true
             }
-            QimengTheme(darkTheme = darkTheme) {
+            // 主题色彩预设（2026-10-03 主题色彩批）：同一 DataStore 流的第三键，预设只换
+            // 强调色族，暗色判定与预设互不相干（DYNAMIC 低版本回落由 Theme 装配层处理）
+            val themeColorPreset by appearanceViewModel.themeColorPreset.collectAsStateWithLifecycle()
+            QimengTheme(darkTheme = darkTheme, themeColorPreset = themeColorPreset) {
                 QimengNavRoot()
             }
         }

@@ -17,4 +17,15 @@
     <string name="settings_tab_material_frosted">磨砂玻璃</string>
     <string name="settings_tab_material_solid">纯色坞</string>
     <string name="settings_tab_material_classic">经典</string>
+
+    <!-- 2026-10-03 主题色彩批：配色预设六选（枚举 ThemeColorPreset 稳定 id 在 core:model，
+         中文显示名只在此处；动态取色档在 API<31 设备由 Theme 装配层回落极光基座）。 -->
+    <string name="settings_theme_color_title">主题色彩</string>
+    <string name="settings_theme_color_subtitle">App 的强调色（动态取色跟随系统壁纸）</string>
+    <string name="settings_theme_color_aurora">极光</string>
+    <string name="settings_theme_color_teal">青碧</string>
+    <string name="settings_theme_color_amber">琥珀</string>
+    <string name="settings_theme_color_rose">绯樱</string>
+    <string name="settings_theme_color_jade">苍翠</string>
+    <string name="settings_theme_color_dynamic">动态取色</string>
 </resources>
