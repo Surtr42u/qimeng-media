@@ -10,6 +10,18 @@
 
 > **历史条目拆分说明（2026-10-01）**：为控制 AI 上下文体量，本文件只保留 **2026-09-22 及之后**的条目（第三百八十二笔起）；拆分线之前的全部条目已逐字迁入 `docs/history/CHANGELOG-ARCHIVE.md`（零改写，笔号与本文件连续可查）。引用早于拆分线的旧笔号请去历史档查阅。
 
+## feat(app): 悬浮玻璃坞底栏——液态/磨砂玻璃四材质+单颗滑动胶囊+主题拓充+夜间极光板（2026-10-03 第四百四十一笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理实现，主代理编排+独立评审+文档）
+
+- **背景（用户夜间批次拍板）**：把未合并分支 ui/app-redesign 验证过的玻璃坞底栏与日间玻璃配色提取到主线重新实现——底栏改为独立悬浮层、真液态玻璃+真磨砂玻璃双材质、拓充主题模式（官方/开源/主流多方案）、选项卡动效与阴影立体感做足、夜间模式按新 UI 重做（旧灰板用户差评退役）、修复旧实现「胶囊移动时左右空隙不一致」。分支 ui/app-redesign 本体不合并（其预览变体脚手架按其 ADR 自定退役）。
+- **旧胶囊缺陷根因与新解**：旧实现每颗导航项各持一颗胶囊做 scale+alpha spring 交叉淡化（两颗 spring 相位独立，过冲/欠冲叠加=「移动时空隙忽宽忽窄」的主因）+ 胶囊宽写死 46dp + 端部槽位与坞圆壁空隙只有中段一半。新解=坞层单颗胶囊按槽位中心偏移 spring 滑动（slot 实测），胶囊宽随槽位派生（槽宽−2×槽内边距），Row 首尾内边距=槽内边距使「端部空隙=中段相邻空隙」按构造成立；位移 spring 过冲安全（只改位置不改尺寸，即液态滑动语感），弹跳只留给图标点亮 1.12×。
+- **依赖决策（ADR-0033 四问记档）**：新增 Android 运行时依赖 `io.github.kyant0:backdrop:2.0.1`（代码包名 com.kyant.backdrop，Apache-2.0，Maven Central 2026-10-03 实查 release 位可解析，传递依赖 shapes；仅 core:ui 消费）。液态=官方 Glass Bottom Bar 配方（vibrancy+blur+lens 折射+表面高光），磨砂=blur 22dp（与 Web 端 Aurora Glass blur(22px) 同源）+高遮盖 scrim+发丝描边，两档共用一条背景捕获管线。不选 Haze 的可证伪理由：1.x 无折射（液态只能靠其 2.0 实验性 haze-glass，2.x 自述 beta 且 API 全换代），Backdrop 有官方底栏教程且一库覆盖双材质。API 降级链收敛单点：≥33 全量/31–32 去 lens/≤30 伪玻璃。
+- **实现面**：提取（git show 逐字节，不 checkout）glass 六件（GlassColors/GlassSurface/AuroraBackdrop/Motion/PressScale/GlassButtons）+ theme 五件（Color/Theme/Shape/Type/Dimens，Color.kt 补 PrimarySoftLight/Dark 兼容别名仅供 CLASSIC 指示器）；手写 FloatingTabDock（四材质渲染器+TabDockDefaults 几何/让位单源）、core:model UiAppearance 枚举（AppearanceMode/TabBarMaterial）、壳层 QimengNavHost 悬浮改造（Scaffold 去 bottomBar、内容 bottom 置 0 穿透、AuroraBackdrop 玻璃档铺底、内容层 layerBackdrop 捕获仅玻璃档挂）、DataStore 两键（appearance_mode/tab_bar_material，照 ClientPrefs 既有模式+Hilt 绑定）、AppearanceViewModel+MainActivity 单点暗色解析（全 App 唯一判定点，AuroraBackdrop 走 isQimengDarkTheme 与 Theme 同源）、设置页「主题色彩」占位行升级为外观三选+底栏材质四选、四个 tab 页滚动让位接单源常量。
+- **红线守护**：resolveTabTapAction 双击回顶/防抖、常驻层（visitedTabs/currentTabRoute/stateHolder）、tab 转场 fadeIn(snap())/fadeOut(snap()) 防叠影逐字保留，只换视觉容器；feature 层零 import glass 颜色（grep 核验）；SDK_INT 分叉仅 FloatingTabDock 一处；主题开关新增系用户本批明确拍板（推翻 App 流光玻璃 ADR 的「不加开关」约束，用户最新要求优先）；夜间配色=分支暗色极光板。
+- **验证**：夜间纪律合规（零本地产物构建、零模拟器操作，禁触项未触碰）；执行子代理静态自测（17 文件括号平衡、Theme 45 个 token 符号脚本核验齐全、魔法字面量与红线 grep、逐文件通读）；独立评审子代理对抗审查后修正；编译与视觉以 draft PR 云端 CI（android job assembleDebug+test+lint）为准，装机视觉走查（qimeng_api35，四材质×日夜）留用户在场时段按 ADR-0031 设备纪律执行。
+- **涉及文档**：`docs/adr/0033`（新）、`docs/adr/INDEX.md`、`docs/CHANGELOG.md`（本条）。
+
 ## feat(api/web/server): 备份调度参数编辑热生效 + Web 缩略图档位偏好——HANDOVER §5 建议立项④两件能力窄缺口落地（2026-10-03 第四百四十笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理）

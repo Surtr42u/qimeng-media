@@ -3,101 +3,120 @@ package media.qimeng.app.core.ui.theme
 import androidx.compose.ui.graphics.Color
 
 /**
- * 主题色板（唯一来源：旧仓库 QimengMedia `app/src/main/res/values/colors.xml`（浅色）+
- * `values-night/colors.xml`（深色），2026-09-06 用户拍板（M4-2A-B1）——
- * 从 Web 品牌蓝系换装为旧版 App 的中性极简灰系，深浅两套同源）。
+ * 「流光玻璃」色板（ADR-0031，2026-10-02 设计语言级重做）：
+ * 旧「中性极简灰」板（照搬旧仓库 colors.xml）全量退役，换媒体消费场景的三元强调色体系
+ * ——鸢尾（Iris 蓝紫·主）、雾岚（Mist 灰紫·次）、极光青（Aurora Teal·三）+ 氛围辉光四色
+ * （鸢尾/极光青/霞粉/霓紫，仅 AuroraBackdrop/GlassSurface 氛围层用）。暗色为第一基准
+ * （媒体场景暗色优先），浅色为同族低饱和伴随档。
  *
- * 每个颜色注释标注旧版 colors.xml 来源行（如「= values/colors.xml L4 qm_bg」）；
- * 旧版 values 与 values-night 两文件 token 名与行号逐行对应，浅色/深色成对出现。
- * M3 语义角色里旧版没有直接对应的（如 primaryContainer），用旧版透明 token 的实际
- * 合成色近似，注释标明「无旧版不透明 token，近似值」及推导依据。
- *
- * 带 alpha 的 soft 色（primary_soft/accent_soft）不是 M3 色板的槽位（M3 槽位须不透明），
- * 但旧版底栏选中指示器（styles.xml Widget.Qimeng.BottomNavigationView.ActiveIndicator）、
- * 选中态胶囊浸润底都靠它，故登记为具名常量供组件批取用。
+ * 取色依据：主/次/三色按 M3 三角色（primary/secondary/tertiary）的 tone 80/40 明度档手工
+ * 校准（暗色取亮档保证深底对比度、浅色取暗档），容器/描边/文字各槽位按 M3 tonal 阶梯
+ * 对位；辉光色不进 M3 色板槽位（M3 槽位须不透明且承担 UI 语义），仅供氛围层。
+ * 旧板 token 名与色值不再保留——Theme.kt 主题映射与 glass/ 玻璃件是仅有的授权消费方，
+ * feature 层一律经 MaterialTheme.colorScheme 取色，禁止直引本对象。
  */
 object QimengBrandColors {
-    // ---------- 页面背景 / 表面（colors.xml「中性极简：微灰白背景 + 纯白卡片」组） ----------
+    // ---------- 暗色档（第一基准） ----------
 
-    /** 浅色页面底色 = values/colors.xml L4 qm_bg（windowBackground/statusBar/启动屏背景，微灰白） */
-    val BgLight: Color = Color(0xFFFAFAFA)
+    /** 夜基底：近黑的蓝紫夜色（非纯黑，保留层次呼吸） */
+    val BgDark: Color = Color(0xFF0A0C14)
 
-    /** 深色页面底色 = values-night/colors.xml L4 qm_bg（夜：深灰而非纯黑） */
-    val BgDark: Color = Color(0xFF1A1A1A)
+    /** 夜卡面（surface）：略抬一档的深靛 */
+    val SurfaceDark: Color = Color(0xFF121523)
 
-    /** 浅色卡片面 = values/colors.xml L5 qm_surface（纯白卡片/navigationBar 底色） */
+    /** 夜容器阶梯（surfaceContainerLow→Highest，玻璃面板的不透明基调色） */
+    val ContainerLowDark: Color = Color(0xFF171B2B)
+    val ContainerDark: Color = Color(0xFF1D2233)
+    val ContainerHighDark: Color = Color(0xFF262C40)
+    val ContainerHighestDark: Color = Color(0xFF303751)
+
+    /** 主色·鸢尾（暗=亮紫蓝，深底上的高识别强调） */
+    val PrimaryDark: Color = Color(0xFFBEC6FF)
+    val OnPrimaryDark: Color = Color(0xFF28348F)
+    val PrimaryContainerDark: Color = Color(0xFF4050C8)
+    val OnPrimaryContainerDark: Color = Color(0xFFE1E5FF)
+
+    /** 次色·雾岚（暗=灰紫，低调的次级强调） */
+    val SecondaryDark: Color = Color(0xFFC5C8DF)
+    val OnSecondaryDark: Color = Color(0xFF2F3249)
+    val SecondaryContainerDark: Color = Color(0xFF454862)
+    val OnSecondaryContainerDark: Color = Color(0xFFE2E1F8)
+
+    /** 三色·极光青（暗=浅青，数据/正向语义点缀） */
+    val TertiaryDark: Color = Color(0xFF82D8CB)
+    val OnTertiaryDark: Color = Color(0xFF003732)
+    val TertiaryContainerDark: Color = Color(0xFF1E514B)
+    val OnTertiaryContainerDark: Color = Color(0xFF9EF2E5)
+
+    /** 夜文字：主=雾白、次=灰紫 */
+    val TextPrimaryDark: Color = Color(0xFFE4E5F0)
+    val TextSecondaryDark: Color = Color(0xFFC3C5D8)
+
+    /** 夜描边 */
+    val OutlineDark: Color = Color(0xFF8F93A9)
+    val OutlineVariantDark: Color = Color(0xFF454858)
+
+    // ---------- 浅色档（同族低饱和伴随） ----------
+
+    /** 昼基底：冷瓷白（微蓝紫倾向） */
+    val BgLight: Color = Color(0xFFF4F5FB)
     val SurfaceLight: Color = Color(0xFFFFFFFF)
+    val ContainerLowestLight: Color = Color(0xFFFFFFFF)
+    val ContainerLowLight: Color = Color(0xFFF4F5FB)
+    val ContainerLight: Color = Color(0xFFF0F1F9)
+    val ContainerHighLight: Color = Color(0xFFEAECF6)
+    val ContainerHighestLight: Color = Color(0xFFE2E5F2)
 
-    /** 深色卡片面 = values-night/colors.xml L5 qm_surface（略抬起避免压迫感） */
-    val SurfaceDark: Color = Color(0xFF242424)
+    /** 主色·鸢尾（昼=靛蓝） */
+    val PrimaryLight: Color = Color(0xFF4756C8)
+    val OnPrimaryLight: Color = Color(0xFFFFFFFF)
+    val PrimaryContainerLight: Color = Color(0xFFDEE2FF)
+    val OnPrimaryContainerLight: Color = Color(0xFF0F1E86)
 
-    /** 浅色软表面（统计卡） = values/colors.xml L6 qm_surface_soft */
-    val SurfaceSoftLight: Color = Color(0xFFF2F2F4)
+    /** 次色·雾岚（昼=灰蓝紫） */
+    val SecondaryLight: Color = Color(0xFF595D73)
+    val OnSecondaryLight: Color = Color(0xFFFFFFFF)
+    val SecondaryContainerLight: Color = Color(0xFFDEE1F9)
+    val OnSecondaryContainerLight: Color = Color(0xFF161B2C)
 
-    /** 深色软表面 = values-night/colors.xml L6 qm_surface_soft */
-    val SurfaceSoftDark: Color = Color(0xFF2E2E2E)
+    /** 三色·极光青（昼=深青） */
+    val TertiaryLight: Color = Color(0xFF206A62)
+    val OnTertiaryLight: Color = Color(0xFFFFFFFF)
+    val TertiaryContainerLight: Color = Color(0xFFA8F2E5)
+    val OnTertiaryContainerLight: Color = Color(0xFF00201C)
 
-    // ---------- 主色（colors.xml「主色中性深灰，不引入暖色」组） ----------
+    /** 昼文字 */
+    val TextPrimaryLight: Color = Color(0xFF1B1C2E)
+    val TextSecondaryLight: Color = Color(0xFF454A5F)
 
-    /** 浅色主色 = values/colors.xml L8 qm_primary（themes.xml colorPrimary） */
-    val PrimaryLight: Color = Color(0xFF3A3A3A)
+    /** 昼描边 */
+    val OutlineLight: Color = Color(0xFF757A90)
+    val OutlineVariantLight: Color = Color(0xFFC6CAD9)
 
-    /** 深色主色 = values-night/colors.xml L8 qm_primary（夜：浅灰主色） */
-    val PrimaryDark: Color = Color(0xFFC8C8C8)
+    // ---------- 氛围辉光（AuroraBackdrop 专用；不进 M3 槽位） ----------
 
-    /** 浅色主色浸润底 = values/colors.xml L9 qm_primary_soft（#3A3A3A @ α0x12≈7%，底栏选中指示器底色） */
+    /** 辉光·鸢尾（蓝紫主辉） */
+    val GlowIris: Color = Color(0xFF4C5DF0)
+
+    /** 辉光·极光青 */
+    val GlowAurora: Color = Color(0xFF1EC8B6)
+
+    /** 辉光·霞粉 */
+    val GlowBlossom: Color = Color(0xFFE85C9A)
+
+    /** 辉光·霓紫（深景深处补层） */
+    val GlowViolet: Color = Color(0xFF7C4DE8)
+
+    // ---------- 兼容别名（旧灰板退役后保留，新代码禁用） ----------
+
+    // 底栏选中指示器软色（旧「中性极简灰」板 token）。新色板无同义槽位，但壳层 CLASSIC
+    // 材质档仍逐字渲染主线现行 M3 NavigationBar（F 批 2026-09-09 指示器接线，行为零回归
+    // 要求）——该消费点退役（CLASSIC 档下线）前两个别名不得删除。色值=旧板原值（浅
+    // #123A3A3A / 夜 #1AC8C8C8），非新板派生：CLASSIC 档的语义就是「主线旧观感保底」。
+
+    /** 兼容别名，新代码禁用：旧板指示器软色·浅（旧 PrimarySoftLight 原值） */
     val PrimarySoftLight: Color = Color(0x123A3A3A)
 
-    /** 深色主色浸润底 = values-night/colors.xml L9 qm_primary_soft（#C8C8C8 @ α0x1A≈10%） */
+    /** 兼容别名，新代码禁用：旧板指示器软色·夜（旧 PrimarySoftDark 原值） */
     val PrimarySoftDark: Color = Color(0x1AC8C8C8)
-
-    /** 浅色主色容器 = 无旧版不透明 token，近似值：qm_primary_soft(#123A3A3A，α≈7%) 叠在
-     *  qm_bg(#FAFAFA) 上的实际合成色 ≈ #ECECEC（旧版选中态浸润底的视觉等效不透明色） */
-    val PrimaryContainerLight: Color = Color(0xFFECECEC)
-
-    /** 深色主色容器 = 无旧版不透明 token，近似值：夜间 qm_primary_soft(#1AC8C8C8，α≈10%) 叠在
-     *  夜间 qm_bg(#1A1A1A) 上的实际合成色 ≈ #2C2C2C */
-    val PrimaryContainerDark: Color = Color(0xFF2C2C2C)
-
-    // ---------- 强调色（colors.xml「强调色中灰，用于进度条/选中高亮/关键数字」组） ----------
-
-    /** 浅色强调色 = values/colors.xml L11 qm_accent */
-    val AccentLight: Color = Color(0xFF6A6A6A)
-
-    /** 深色强调色 = values-night/colors.xml L11 qm_accent */
-    val AccentDark: Color = Color(0xFFA8A8A8)
-
-    /** 浅色强调浸润底 = values/colors.xml L12 qm_accent_soft（#6A6A6A @ α0x1A≈10%） */
-    val AccentSoftLight: Color = Color(0x1A6A6A6A)
-
-    /** 深色强调浸润底 = values-night/colors.xml L12 qm_accent_soft（#A8A8A8 @ α0x1A≈10%） */
-    val AccentSoftDark: Color = Color(0x1AA8A8A8)
-
-    // ---------- 文字（colors.xml「文字色中性灰，不用纯黑避免刺眼」组） ----------
-
-    /** 浅色文字主色 = values/colors.xml L14 qm_text_primary（themes.xml colorOnSurface） */
-    val TextPrimaryLight: Color = Color(0xFF3A3A3A)
-
-    /** 深色文字主色 = values-night/colors.xml L14 qm_text_primary */
-    val TextPrimaryDark: Color = Color(0xFFC8C8C8)
-
-    /** 浅色文字次级 = values/colors.xml L15 qm_text_secondary */
-    val TextSecondaryLight: Color = Color(0xFF9A9A9A)
-
-    /** 深色文字次级 = values-night/colors.xml L15 qm_text_secondary */
-    val TextSecondaryDark: Color = Color(0xFF808080)
-
-    // ---------- 胶囊 / 分割线（colors.xml「胶囊和分割线浅灰」组） ----------
-
-    /** 浅色胶囊底 = values/colors.xml L17 qm_chip_bg（bg_capsule_soft 填充色） */
-    val ChipBgLight: Color = Color(0xFFF0F0F2)
-
-    /** 深色胶囊底 = values-night/colors.xml L17 qm_chip_bg */
-    val ChipBgDark: Color = Color(0xFF2E2E2E)
-
-    /** 浅色分割线 = values/colors.xml L18 qm_divider */
-    val DividerLight: Color = Color(0xFFECECEE)
-
-    /** 深色分割线 = values-night/colors.xml L18 qm_divider */
-    val DividerDark: Color = Color(0xFF383838)
 }
