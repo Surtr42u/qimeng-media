@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"qimeng-media/server/internal/httpapi/gen"
+	"qimeng-media/server/internal/store"
 	"qimeng-media/server/internal/store/db"
 )
 
@@ -277,6 +278,39 @@ func authorRefAsset(t *testing.T, e *testEnv, authorID string) string {
 		t.Fatalf("查作者关联失败: %v", err)
 	}
 	return assetID
+}
+
+// TestImport_nonPositiveMillisFallbacksToNow：备份携带 createdAtMillis=0/负值
+// 的边界（对抗审查返工，第四百三十五笔）——与缺省同义回退导入时刻，绝不落
+// 1970 纪元字面量（否则与 asset_tags.created_at 的 epoch「不可考」哨兵混淆，
+// 违反 DOMAIN_RULES §10 / ADR-0032 裁决①）。
+func TestImport_nonPositiveMillisFallbacksToNow(t *testing.T) {
+	e := newTestEnv(t)
+	req := gen.LegacyBackupImport{
+		Format: "qimeng_backup", SchemaVersion: 1, AppIdentifier: "com.qimeng.media",
+		ExportedAtMillis: ptr(int64(1756400000000)),
+		Data: gen.LegacyBackupData{
+			Authors: &[]gen.LegacyAuthor{
+				{AuthorId: "author_zero", DisplayName: "零值作者", CreatedAtMillis: ptr(int64(0))},
+			},
+		},
+	}
+	_, res := importBackup(t, e, req)
+	if res.AuthorsImported == nil || *res.AuthorsImported != 1 {
+		t.Fatalf("AuthorsImported = %v, want 1", res.AuthorsImported)
+	}
+	var createdAt string
+	if err := e.conn.QueryRow(`SELECT created_at FROM authors WHERE id='author_zero'`).Scan(&createdAt); err != nil {
+		t.Fatalf("查作者行失败: %v", err)
+	}
+	// fakeClock 固定 → 导入时刻精确可知；断言既非纪元也非纪元附近坏值。
+	want := store.FormatTimestamp(e.clock.Now())
+	if createdAt != want {
+		t.Errorf("createdAtMillis=0 应回退导入时刻: got %q, want %q（而非 1970 纪元字面量）", createdAt, want)
+	}
+	if createdAt == store.TimestampEpoch {
+		t.Error("createdAt 落了 epoch 哨兵字面量——可考章+纪元时间的自相矛盾行")
+	}
 }
 
 // TestImport_idempotentReplay：同批次重复导入——事件零回放、关联不翻倍。
