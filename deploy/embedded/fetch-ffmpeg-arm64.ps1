@@ -1,7 +1,8 @@
 # fetch-ffmpeg-arm64.ps1 - hzw1199 FFmpeg arm64 prebuilt fetch (commit-locked + SHA-256 verified)
 # Task U11 batch D (ADR-0015 form B). Supply-lock values live in README.md next to this
-# script -- upgrading FFmpeg means updating THREE places in sync: this hash table, the
-# README hash lines, and the release notes.
+# script -- upgrading FFmpeg means updating FOUR places in sync: this hash table, the
+# bash twin fetch-ffmpeg-arm64.sh (CI/Git Bash, 2026-10-02), the README hash lines,
+# and the release notes.
 # NOTE: ASCII-only on purpose (Windows PowerShell 5.1 reads BOM-less UTF-8 as GBK and
 # chokes on non-ASCII strings -- project convention for shell-adjacent scripts).
 # Usage: powershell -NoProfile -ExecutionPolicy Bypass -File deploy/embedded/fetch-ffmpeg-arm64.ps1 [-OutDir <jniLibs root>]
