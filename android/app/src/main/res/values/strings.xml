@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- 应用名沿用规格书（旧仓库 GUIDE_UI）名称；改名属产品决策，走用户拍板 -->
-    <string name="app_name">绮梦影库</string>
+    <!-- 应用名已迁 android/app/build.gradle.kts 的 resValue 单源（2026-10-02 预览变体
+         工程化，ADR-0031）：正式「绮梦影库」（沿用规格书/旧仓库 GUIDE_UI 名称，值与历史
+         strings.xml 逐字节一致），预览变体「绮梦影库·流光」（用户拍板）。此处不再定义，
+         与 resValue 双写会触发资源重复编译错。 -->
 
     <!-- 底部四 Tab（顺序见 TopLevelDestination；2026-09-05 夜用户拍板「导航四化」：
          原「全部」更名「相册」承接 COS 能力（route all 不变），原「相册」Tab 删除） -->

@@ -28,9 +28,10 @@ object EmbeddedServerConfig {
 
     /**
      * 监听地址：只绑回环（红线，ADR-0015——媒体服务不出局域网、不出本机）。
-     * 端口单值互指清单见 [media.qimeng.app.core.network.ServerAddress.LOCAL_MODE_PRESET]。
+     * 端口从 [media.qimeng.app.core.network.ServerAddress.LOCAL_MODE_PORT] 单值派生
+     * （端口单值互指清单见其注释；预览变体随该源错开 18431——ADR-0031「预览变体与端口纪律」）。
      */
-    const val LISTEN_ADDRESS = "127.0.0.1:${media.qimeng.app.core.network.ServerAddress.LOCAL_MODE_PORT}"
+    val LISTEN_ADDRESS = "127.0.0.1:${media.qimeng.app.core.network.ServerAddress.LOCAL_MODE_PORT}"
 
     /** 服务端数据目录名（挂 App filesDir 下；与 Termux 形态 A 的 ~/.qimeng 互不相干，
      *  内嵌形态是独立空库，首次使用需重新注册库——ADR-0015 语义） */
@@ -52,7 +53,7 @@ object EmbeddedServerConfig {
     /**
      * 子进程环境变量键（与 Go 服务端 config.go 的 QIMENG_AUTH_DEV_SHARED_SECRET
      * 同名同源——协议侧互指：App 生成注入 / 服务端读取校验 devLogin 请求头
-     * X-Qimeng-Dev-Secret，堵「同机其他 App 打 127.0.0.1:18430 免密拿管理员 token」）。
+     * X-Qimeng-Dev-Secret，堵「同机其他 App 打内嵌回环预设端口免密拿管理员 token」）。
      */
     const val DEV_SHARED_SECRET_ENV = "QIMENG_AUTH_DEV_SHARED_SECRET"
 
@@ -73,8 +74,8 @@ object EmbeddedServerConfig {
 
     /**
      * 解析 pid 文件里的子进程 pid（2026-09-25 冻结事故修复的配套件）。为什么回收要靠
-     * 落盘 pid：Service 销毁重建后手里的子进程句柄丢失，而孤儿子进程仍占着 18430 端口
-     * ——新子进程 bind 失败秒退、本机模式反复「已退出」。pid 文件是跨 Service 生命
+     * 落盘 pid：Service 销毁重建后手里的子进程句柄丢失，而孤儿子进程仍占着内嵌回环
+     * 端口——新子进程 bind 失败秒退、本机模式反复「已退出」。pid 文件是跨 Service 生命
      * 周期的唯一线索；误杀防线在 Service 侧（/proc cmdline 仍是本服务端二进制才动手）。
      *
      * 纯逻辑（JVM 单测锁定）：trim 后 toIntOrNull，非正数视为脏数据返回 null。

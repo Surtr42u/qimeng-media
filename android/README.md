@@ -26,6 +26,31 @@
 - 本地持久化三类：登录配置、可设上限的媒体缓存（LRU）、事件队列
 - 交互规格唯一来源：旧项目（本地仓库外）的 `docs/GUIDE_UI.md`——只继承交互语义，实现代码全部 Compose 新写（禁搬旧 Kotlin；复杂自绘控件允许 AndroidView 桥接，清单入交付报告）
 
+## 云端预览 APK（流光玻璃设计语言装机包，2026-10-02，ADR-0031「预览变体与端口纪律」）
+
+设计语言走查/真机预览的装机包一律走云端 CI 产出（夜间禁止本地构建，验证唯一路径=push 后盯
+CI）；每次 push 本分支，ci.yml 的 android job 在既有 debug APK 之外额外产出**预览变体**：
+
+- 开关：`-PqmPreviewAurora=true`（实现与同步责任见 `android/app/build.gradle.kts` 文件头；
+  端口注入在 `android/core/network/build.gradle.kts`）。正式构建不传该属性，零变化。
+- 与正式包的差异：applicationId `media.qimeng.app.aurora`（与正式包**并存安装**，数据随包名
+  隔离）、应用名「绮梦影库·流光」、版本名 `0.2.0-aurora`、内嵌服务端端口 **18431**（正式包
+  18430；单源 `ServerAddress.LOCAL_MODE_PORT`，两包同装互不抢端口）。AndroidManifest 的
+  `${applicationId}` 占位符不受影响。
+- 签名：CI 从 secrets（`QM_AURORA_PREVIEW_KEYSTORE_B64`）还原专用预览 debug keystore
+  （仓库外 keytool 生成，绝不入库——铁律14）。固定签名=重复下载可直接覆盖安装；若 secrets
+  未配置则自动退回 AGP 随机 debug 签名，**该降级形态下每次下载需先卸载再装**。
+- 单测锁定的是正式端口口径（18430）：跑单测/本地开发不带该属性，属性仅供 CI 预览包构建。
+
+取件（gh CLI，产物名 `qimeng-aurora-preview-debug.apk`，artifact 名 `qimeng-aurora-preview-apk`）：
+
+```bash
+gh run list --branch ui/app-redesign --limit 5
+gh run download <run-id> --repo Surtr42u/qimeng-media --name qimeng-aurora-preview-apk --dir dist/aurora
+# 装机（设备纪律见 docs/adr/0031「设备纪律」：严禁触碰 emulator-5554/雷电）
+adb install -r dist/aurora/qimeng-aurora-preview-debug.apk
+```
+
 ## 单机形态（ADR-0015；形态 B 已落地——任务U11 批次D，2026-09-15）
 
 服务器地址只经 `ServerConfigDataSource`（M4-1）单点流转，支持 localhost。**内嵌形态 B**：

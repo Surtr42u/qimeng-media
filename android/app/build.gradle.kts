@@ -1,3 +1,5 @@
+import java.io.File
+
 // :app —— 组合根：单 Activity + Navigation Compose 壳导航 + Hilt 装配。
 // 只做导航与装配，不含业务规则（ADR-0008）；页面实现全部在各 feature 模块。
 // convention 插件（build-logic，NIA 范式）提供：application + Kotlin Android + Java/Kotlin 17 +
@@ -8,17 +10,40 @@ plugins {
     alias(libs.plugins.qimeng.android.hilt)
 }
 
+// ── 云端预览变体开关（qmPreviewAurora，2026-10-02 用户拍板工程化；ADR-0031「预览变体与端口纪律」）──
+// 用途：「流光玻璃」设计语言的云端预览装机包——换 applicationId 与正式包并存安装，
+// 内嵌服务端端口错开（两包同装互不抢端口，见 :core:network/build.gradle.kts 同名属性）。
+// 用法：./gradlew assembleDebug -PqmPreviewAurora=true（CI android job 的预览步即此命令）。
+// 纪律：禁止手工改文件再还原的临时装机方案（2026-10-02 真机实证曾手工临时改包名，本开关即其工程化）；
+// 跑单测/本地开发不带该属性；预览分支合并/废弃时本开关与 CI 预览步一并清理。
+// 正式构建（不传属性）：applicationId/版本名/应用名/签名全部维持原值，零变化。
+val qmPreviewAurora = providers.gradleProperty("qmPreviewAurora").orNull?.toBoolean() ?: false
+
+// 预览签名稳定化（CI，2026-10-02）：GitHub secrets 还原的专用预览 debug keystore（本机
+// keytool 生成、仓库外保管，绝不入 git——铁律14）。固定签名=用户重复下载可直接覆盖安装，
+// 免 AGP 每次自动生成的随机 debug keystore 导致的卸载重装。本机不设此环境变量或文件不存在
+// =走 AGP 隐式 debug 签名，与历史行为一致。
+val qmPreviewKeystorePath = System.getenv("QM_AURORA_PREVIEW_KEYSTORE")
+    ?.takeIf { path -> File(path).isFile }
+
 android {
     namespace = "media.qimeng.app"
 
     defaultConfig {
-        applicationId = "media.qimeng.app"
+        // 预览变体换包名 media.qimeng.app.aurora：与正式包并存（系统视为两个应用，DataStore/
+        // 数据随包名天然隔离）；正式包名不变。
+        applicationId = if (qmPreviewAurora) "media.qimeng.app.aurora" else "media.qimeng.app"
         // targetSdk 37（任务P P4b，2026-09-19 用户拍板「升」，材料=仓库外待拍板-任务P-P4-targetSdk37.md）：
         // 唯一硬适配点 ACCESS_LOCAL_NETWORK 已随本批落地（manifest+运行时两入口）；其余 37 行为
         // 变更经逐条对照无涉（ADR-0022）。
         targetSdk = 37
         versionCode = 1
-        versionName = "0.2.0" // M4-2 列表族批次
+        // 预览变体版本名加 -aurora 后缀（系统应用列表可与正式包分辨）；升级版本号只改 versionBase
+        val versionBase = "0.2.0" // M4-2 列表族批次
+        versionName = if (qmPreviewAurora) "$versionBase-aurora" else versionBase
+        // 应用名单源迁到 resValue（原 strings.xml）：预览变体「绮梦影库·流光」（2026-10-02 用户
+        // 拍板），正式「绮梦影库」与历史逐字节一致（manifest android:label=@string/app_name 不变）。
+        resValue("string", "app_name", if (qmPreviewAurora) "绮梦影库·流光" else "绮梦影库")
     }
 
     // U11 批次D（ADR-0015 形态 B）：内嵌服务端三件套（libqimeng.so/libffmpeg_cli.so/
@@ -33,6 +58,25 @@ android {
         }
     }
 
+    // resValues 特性：应用名 resValue 注入所需（AGP 9 默认关闭，与 buildConfig 同批默认化）
+    buildFeatures {
+        resValues = true
+    }
+
+    // 预览签名档（仅预览变体 + keystore 已还原时挂到 debug，见文件头注释）：keystore 文件
+    // 本体是需保管的凭据（GitHub secrets 注入 CI），store/key 口令为明显合成值——仅承担
+    // 调试预览签名，不是发布凭据。
+    if (qmPreviewAurora && qmPreviewKeystorePath != null) {
+        signingConfigs {
+            create("auroraPreview") {
+                storeFile = file(qmPreviewKeystorePath!!)
+                storePassword = System.getenv("QM_AURORA_PREVIEW_STORE_PASS")
+                keyAlias = System.getenv("QM_AURORA_PREVIEW_KEY_ALIAS")
+                keyPassword = System.getenv("QM_AURORA_PREVIEW_KEY_PASS")
+            }
+        }
+    }
+
     buildTypes {
         // ABI 分层（U11 批次D 执行时定案并记档）：debug 含 x86_64 供 qimeng_api35
         // 模拟器验壳（服务端 amd64 二进制经 ndk_translation 不行、需真 x86_64 构建物
@@ -41,6 +85,10 @@ android {
         debug {
             ndk {
                 abiFilters += listOf("arm64-v8a", "x86_64")
+            }
+            // 签名稳定化只对预览变体生效；正式 debug 保持 AGP 隐式 debug 签名（历史行为零变化）
+            if (qmPreviewAurora && qmPreviewKeystorePath != null) {
+                signingConfig = signingConfigs.getByName("auroraPreview")
             }
         }
         release {

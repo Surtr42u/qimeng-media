@@ -30,14 +30,23 @@ object ServerAddress {
     const val DEFAULT_PORT = 8420
 
     /**
-     * 本机模式端口（18430）。为什么独立成常量：内嵌形态 Service 的监听地址
-     * （QIMENG_LISTEN）与 [LOCAL_MODE_PRESET] 必须同源——端口漂移=App 连不上自家
-     * 服务端，单值单源是唯一防线。
+     * 本机模式端口。端口单源（App 端唯一字面值点）：内嵌形态 Service 的监听地址
+     * （QIMENG_LISTEN）、健康探测、前台通知、本机预设地址 [LOCAL_MODE_PRESET] 与
+     * [isLocalModePreset] 判定全部从本值派生——端口漂移=App 连不上自家服务端，
+     * 单值单源是唯一防线。部署侧互指清单见 [LOCAL_MODE_PRESET] 注释。
+     *
+     * 为什么改为构建期注入（2026-10-02 预览变体工程化，ADR-0031「预览变体与端口纪律」）：
+     * 云端预览包与正式包并存装机，两内嵌服务端同抢回环端口时后装者
+     * 「bind: address already in use」起不来——预览变体错开 18431。值在
+     * :core:network/build.gradle.kts 经 BuildConfig.QM_LOCAL_MODE_PORT 注入
+     * （正式构建=18430，与历史一致；跑单测不带预览属性，单测锁定正式口径）。
+     * 因值随构建浮动，本属性不再是 const（消费方均为值语义，无需编译期常量）。
      */
-    const val LOCAL_MODE_PORT = 18430
+    val LOCAL_MODE_PORT: Int = BuildConfig.QM_LOCAL_MODE_PORT
 
     /**
-     * 本机模式预设地址（任务T T3 兑现 ADR-0015 单点预留；端口 18430 = T2 批 deploy/termux 定稿口径）。
+     * 本机模式预设地址（任务T T3 兑现 ADR-0015 单点预留；端口跟随 [LOCAL_MODE_PORT] 构建期
+     * 注入，正式=18430 = T2 批 deploy/termux 定稿口径，预览变体=18431——ADR-0031 端口纪律）。
      * 服务端内嵌手机本机（Termux 形态 A / 内嵌形态 B）监听 127.0.0.1 回环、不暴露局域网（ADR-0015），
      * 登录页/设置页快捷填入入口共用本常量，UI 零结构改动。
      *
@@ -46,7 +55,7 @@ object ServerAddress {
      * 「端口 18430 定稿」行 + 内嵌形态 EmbeddedServerConfig 的 QIMENG_LISTEN（:core:data
      * embedded 包，U11 批次D）——多方内嵌同一份常量注释互指，本常量是 App 端唯一对应点。
      */
-    const val LOCAL_MODE_PRESET = "http://127.0.0.1:$LOCAL_MODE_PORT"
+    val LOCAL_MODE_PRESET = "http://127.0.0.1:$LOCAL_MODE_PORT"
 
     /**
      * 是否为内嵌形态预设地址（规范化后的 URL 判定：回环主机名 + 预设端口）。

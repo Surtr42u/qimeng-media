@@ -41,8 +41,9 @@ import media.qimeng.app.core.network.ServerConfigDataSource
  * 红线与取舍（reviewer 对抗重点，批次E）：
  * - **W^X**：只 exec nativeLibraryDir 里的成品，绝不解压/落盘 filesDir 再 exec
  *   （targetSdk≥29 SELinux 拦截 + 安全红线双因素）。
- * - **监听回环**：QIMENG_LISTEN 固定 127.0.0.1:18430（端口单值互指，见
- *   [EmbeddedServerConfig.LISTEN_ADDRESS]），不暴露局域网。
+ * - **监听回环**：QIMENG_LISTEN 固定回环+单源端口（见
+ *   [EmbeddedServerConfig.LISTEN_ADDRESS]；正式 18430、预览变体 18431——ADR-0031
+ *   「预览变体与端口纪律」），不暴露局域网。
  * - **重启语义（V1 定案）**：子进程异常退出不自动重拉——更新通知为「已停止」并
  *   stopSelf。端口被占（真机 Termux 形态 A 还在跑）表现为秒退，读 server.log 可
  *   定位；用户重新点本机模式即重启。避免崩溃循环重拉掩盖根因。
@@ -54,7 +55,7 @@ import media.qimeng.app.core.network.ServerConfigDataSource
  *   上传链路占用且语义不符。API34+ 必填子类型属性在 manifest 声明。
  * - **dev 共享密钥**（2026-09-30 批A）：每次拉起子进程前新生成（[EmbeddedServerConfig.generateDevSharedSecret]），
  *   经环境变量注入子进程 + 内存槽供 App 侧 devLogin 带头——防同机其他 App 打
- *   127.0.0.1:18430 免密拿管理员 token。密钥不落盘、不入日志（红线）。
+ *   内嵌回环预设端口免密拿管理员 token。密钥不落盘、不入日志（红线）。
  */
 @AndroidEntryPoint
 class EmbeddedServerService : Service() {
