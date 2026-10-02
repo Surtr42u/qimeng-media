@@ -1748,9 +1748,8 @@ button.settings-switch-track:focus-visible { outline: 2px solid var(--qm-primary
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
-  background: color-mix(in oklab, var(--qm-bg) 62%, transparent);
-  -webkit-backdrop-filter: blur(var(--qm-glass-blur)) saturate(var(--qm-glass-saturate));
-  backdrop-filter: blur(var(--qm-glass-blur)) saturate(var(--qm-glass-saturate));
+  /* 实底画布（2026-10-02 用户拍板：详情叠加不透底，磨砂质感只保留在浮层组件） */
+  background: var(--qm-bg);
   padding: var(--qm-space-3) var(--qm-space-4) 40px;
   animation: qm-overlay-in var(--qm-duration-base) var(--qm-ease-out);
 }
@@ -2019,8 +2018,7 @@ li.dir-file-row.ms-row-selected { background: var(--qm-hover); }
     --qm-chip-bg: oklch(0.3 0.025 280);
     --qm-glass-blur: 0px;
   }
-  /* 叠加层/查看器的半透明底同步转实底（透出底衬失去模糊支撑会花屏） */
-  .asset-overlay { background: var(--qm-bg); }
+  /* 查看器的半透明底同步转实底（透出底衬失去模糊支撑会花屏）；asset-overlay 基础规则已是实底，无需兜底 */
   .img-viewer { background: var(--qm-stage); -webkit-backdrop-filter: none; backdrop-filter: none; }
   .confirm-overlay, .detail-dialog-overlay { -webkit-backdrop-filter: none; backdrop-filter: none; background: color-mix(in oklab, var(--qm-scrim) 78%, oklch(0 0 0 / 0.3)); }
 }
