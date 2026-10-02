@@ -1,10 +1,16 @@
+// EXPLORE(2026-10-03)：本文件在主线悬浮玻璃坞（ADR-0033 落地件）之上叠加坞体形态实验
+// 参数（液态胶囊拉伸/标签渐隐/选中点缀/触觉反馈/坞高降档），全部为带保守默认值（false=与
+// 主线行为逐帧一致）的可选参数，不覆盖主线实现；开关单源见 [ExploreConfig]，动机/做法/
+// 风险记档见 docs/EXPLORATION-AURORA.md。回退方式：壳层停传参数即逐字回到主线坞。
 package media.qimeng.app.core.ui.glass
 
 import android.os.Build
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -21,9 +27,11 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -43,8 +51,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
@@ -60,6 +70,7 @@ import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
 import media.qimeng.app.core.model.TabBarMaterial
 import media.qimeng.app.core.ui.theme.QimengShapes
+import kotlin.math.abs
 
 /**
  * 悬浮玻璃坞底栏（2026-10-03 悬浮玻璃坞批，ADR-0031 视觉语言的承载件）：
@@ -101,6 +112,14 @@ import media.qimeng.app.core.ui.theme.QimengShapes
  *   封装类型 [QimengBackdropState]——库 Backdrop 类型不外泄出 glass 包（评审必修 1：
  *   :core:ui 对库是 implementation 依赖，公共签名暴露库类型会让 :app 编译炸
  *   unresolved reference），壳层经 rememberQimengBackdropState 取得
+ * @param dockHeight 坞体高度（EXPLORE 3b：默认主线档 [TabDockDefaults.DockHeight]；
+ *   标签渐隐+紧凑档时壳层传 [ExploreConfig.COMPACT_DOCK_HEIGHT]。内容底部让位
+ *   [TabDockDefaults.bottomClearance] 口径不受影响——其取 max(坞档, CLASSIC 80dp)，
+ *   紧凑档 54+10=64 < 80，让位恒为 80dp 不变）
+ * @param liquidPillStretch EXPLORE 3a：胶囊滑动中按「距目标距离比例」横向拉伸（默认关=主线）
+ * @param labelFade EXPLORE 3b：未选中项标签 alpha 0、选中项标签淡入+微放大（默认关=主线常显）
+ * @param iconAccent EXPLORE 3c：选中图标上方小圆点点缀 + 图标着色渐变过渡（默认关=主线瞬变）
+ * @param hapticsOnSelect EXPLORE 4：tab 点击触觉反馈 TextHandleMove 轻档（默认关=主线无触觉）
  */
 @Composable
 fun FloatingTabDock(
@@ -110,6 +129,11 @@ fun FloatingTabDock(
     material: TabBarMaterial,
     backdrop: QimengBackdropState?,
     modifier: Modifier = Modifier,
+    dockHeight: Dp = TabDockDefaults.DockHeight,
+    liquidPillStretch: Boolean = false,
+    labelFade: Boolean = false,
+    iconAccent: Boolean = false,
+    hapticsOnSelect: Boolean = false,
 ) {
     Box(
         modifier = modifier
@@ -124,12 +148,18 @@ fun FloatingTabDock(
             material = material,
             // 公共边界解包：库实例只在 glass 包内部流转，不出本文件私有渲染链
             backdrop = backdrop?.backdrop,
+            dockHeight = dockHeight,
             modifier = Modifier.fillMaxWidth(),
         ) {
             DockItemsRow(
                 items = items,
                 selectedIndex = selectedIndex.coerceIn(0, (items.size - 1).coerceAtLeast(0)),
                 onSelect = onSelect,
+                dockHeight = dockHeight,
+                liquidPillStretch = liquidPillStretch,
+                labelFade = labelFade,
+                iconAccent = iconAccent,
+                hapticsOnSelect = hapticsOnSelect,
             )
         }
     }
@@ -201,11 +231,13 @@ private const val ICON_SELECTED_SCALE = 1.12f
 /**
  * 坞体渲染分派（四材质中 CLASSIC 由壳层拦截，此处只接 LIQUID/FROSTED/SOLID）：
  * LIQUID/FROSTED 按设备能力走真 backdrop 特效或降级伪玻璃；SOLID 走不透明纯色坞。
+ * EXPLORE：[dockHeight] 贯穿三种坞体（主线档/紧凑档由壳层按 [ExploreConfig] 决定）。
  */
 @Composable
 private fun DockBody(
     material: TabBarMaterial,
     backdrop: Backdrop?,
+    dockHeight: Dp,
     modifier: Modifier = Modifier,
     content: @Composable BoxScope.() -> Unit,
 ) {
@@ -213,11 +245,12 @@ private fun DockBody(
     when (material) {
         TabBarMaterial.LIQUID -> when {
             capability == DockGlassCapability.Pseudo || backdrop == null ->
-                PseudoGlassDockBody(modifier, content)
+                PseudoGlassDockBody(dockHeight, modifier, content)
             // API 31–32 无 AGSL（RuntimeShader）：lens 不可用，降级为 blur+vibrancy
             capability == DockGlassCapability.BlurOnly ->
                 GlassDockBody(
                     backdrop = backdrop,
+                    dockHeight = dockHeight,
                     modifier = modifier,
                     scrimAlpha = LIQUID_SCRIM_ALPHA,
                     effects = {
@@ -229,6 +262,7 @@ private fun DockBody(
             else ->
                 GlassDockBody(
                     backdrop = backdrop,
+                    dockHeight = dockHeight,
                     modifier = modifier,
                     scrimAlpha = LIQUID_SCRIM_ALPHA,
                     effects = {
@@ -246,11 +280,12 @@ private fun DockBody(
 
         TabBarMaterial.FROSTED -> when {
             capability == DockGlassCapability.Pseudo || backdrop == null ->
-                PseudoGlassDockBody(modifier, content)
+                PseudoGlassDockBody(dockHeight, modifier, content)
             // FROSTED 无 lens 无 vibrancy，BlurOnly 与 Full 同管线（真模糊即可成立）
             else ->
                 GlassDockBody(
                     backdrop = backdrop,
+                    dockHeight = dockHeight,
                     modifier = modifier,
                     scrimAlpha = FROSTED_SCRIM_ALPHA,
                     effects = {
@@ -261,10 +296,10 @@ private fun DockBody(
         }
 
         // SOLID：不透明 M3 坞——零捕获零模糊（性能/兼容档）
-        TabBarMaterial.SOLID -> SolidDockBody(modifier, content)
+        TabBarMaterial.SOLID -> SolidDockBody(dockHeight, modifier, content)
 
         // 不可达：壳层对 CLASSIC 直接渲染 M3 NavigationBar，不进本组件；兜底走伪玻璃防脏档
-        TabBarMaterial.CLASSIC -> PseudoGlassDockBody(modifier, content)
+        TabBarMaterial.CLASSIC -> PseudoGlassDockBody(dockHeight, modifier, content)
     }
 }
 
@@ -284,6 +319,7 @@ private fun GlassDockBody(
     backdrop: Backdrop,
     scrimAlpha: Float,
     effects: BackdropEffectScope.() -> Unit,
+    dockHeight: Dp,
     modifier: Modifier = Modifier,
     content: @Composable BoxScope.() -> Unit,
 ) {
@@ -291,7 +327,7 @@ private fun GlassDockBody(
     val scrimColor = MaterialTheme.colorScheme.surface.copy(alpha = scrimAlpha)
     Box(
         modifier = modifier
-            .height(TabDockDefaults.DockHeight)
+            .height(dockHeight)
             .drawBackdrop(
                 backdrop = backdrop,
                 shape = { QimengShapes.pill },
@@ -325,6 +361,7 @@ private fun GlassDockBody(
  */
 @Composable
 private fun PseudoGlassDockBody(
+    dockHeight: Dp,
     modifier: Modifier = Modifier,
     content: @Composable BoxScope.() -> Unit,
 ) {
@@ -332,7 +369,7 @@ private fun PseudoGlassDockBody(
         shape = QimengShapes.pill,
         strong = true,
         elevation = PSEUDO_GLASS_ELEVATION,
-        modifier = modifier.height(TabDockDefaults.DockHeight),
+        modifier = modifier.height(dockHeight),
         content = content,
     )
 }
@@ -340,13 +377,14 @@ private fun PseudoGlassDockBody(
 /** 纯色坞体（SOLID）：不透明 surfaceContainerHighest + 轻投影 + pill 形，零采样零特效 */
 @Composable
 private fun SolidDockBody(
+    dockHeight: Dp,
     modifier: Modifier = Modifier,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val glass = glassColors()
     Box(
         modifier = modifier
-            .height(TabDockDefaults.DockHeight)
+            .height(dockHeight)
             // surfaceContainerHighest：深浅两主题下都与页面底色拉开最大一档（对比更稳者）
             .shadow(
                 elevation = SOLID_DOCK_ELEVATION,
@@ -363,12 +401,19 @@ private fun SolidDockBody(
 /**
  * 坞内条目行 + 单颗滑动指示胶囊（根因修复的落点，几何见 FloatingTabDock KDoc）。
  * 胶囊先声明（垫底）后声明条目行（图标压在胶囊上）。
+ * EXPLORE 参数组：[liquidPillStretch]/[labelFade]/[iconAccent]/[hapticsOnSelect] 逐项透传，
+ * 全 false 时与主线实现逐帧一致。
  */
 @Composable
 private fun DockItemsRow(
     items: List<GlassNavItem>,
     selectedIndex: Int,
     onSelect: (Int) -> Unit,
+    dockHeight: Dp,
+    liquidPillStretch: Boolean,
+    labelFade: Boolean,
+    iconAccent: Boolean,
+    hapticsOnSelect: Boolean,
 ) {
     val density = LocalDensity.current
     // Row 实测宽（含自身首尾 padding）：胶囊几何全部由它派生，不写死任何屏宽假设
@@ -426,6 +471,20 @@ private fun DockItemsRow(
                         } else {
                             alpha = 1f
                             translationX = center - pillWidthPx / 2f
+                            // EXPLORE(3a) 胶囊液态拉伸：任务原案是「速度→scaleX 1.0~1.15 映射」，
+                            // 落点改为**距目标距离比例**映射——t = |target−当前|/槽宽，
+                            // 出发时 t=1 拉到最宽、飞行中收窄、落位 t=0 回弹原形。选它而非真
+                            // 速度的原因：Animatable 无逐帧速度回调，真速度须在 draw 层外持久化
+                            // 状态（重组/额外失效），距离比例同样读 Animatable 状态、纯 draw 阶段
+                            // 计算、零额外重组，且与 spring 过冲天然联动（过冲时 t 复升=回弹再
+                            // 拉伸一次，视觉即「液态甩尾」）。视觉上与速度映射等价（速度峰在中段=
+                            // 距离峰在中段）。scaleY 反向微收（体积守恒近似）。
+                            if (liquidPillStretch && slotWidthPx > 0f) {
+                                val t = (abs(pillCenter.targetValue - center) / slotWidthPx)
+                                    .coerceIn(0f, 1f)
+                                scaleX = 1f + t * EXPLORE_PILL_STRETCH_MAX
+                                scaleY = 1f - t * EXPLORE_PILL_SQUASH_MAX
+                            }
                         }
                     }
                     .background(color = pillTint, shape = RoundedCornerShape(PILL_CORNER_PERCENT)),
@@ -433,7 +492,7 @@ private fun DockItemsRow(
         }
         Row(
             modifier = Modifier
-                .height(TabDockDefaults.DockHeight)
+                .height(dockHeight)
                 .onSizeChanged { rowWidthPx = it.width }
                 // 首尾 padding = 槽内边距：「端部空隙 = 中段空隙」按构造成立（KDoc 推导）
                 .padding(horizontal = TabDockDefaults.SlotInnerPadding),
@@ -443,6 +502,9 @@ private fun DockItemsRow(
                     item = item,
                     selected = index == selectedIndex,
                     onClick = { onSelect(index) },
+                    labelFade = labelFade,
+                    iconAccent = iconAccent,
+                    hapticsOnSelect = hapticsOnSelect,
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight(),
@@ -452,15 +514,29 @@ private fun DockItemsRow(
     }
 }
 
-/** 单个坞条目：图标点亮 spring + 常显标签（选中 SemiBold），a11y = Role.Tab + selected */
+/**
+ * 单个坞条目：图标点亮 spring + 常显标签（选中 SemiBold），a11y = Role.Tab + selected。
+ * EXPLORE 叠加（全关=主线行为）：
+ * - [hapticsOnSelect]：点击即发 TextHandleMove 轻触觉（项目内无既有 haptics 惯例，
+ *   grep 已核 2026-10-03；用系统标准 LocalHapticFeedback，轻档不吵手）；
+ * - [iconAccent]：图标上方 4dp 小圆点（选中淡入）+ 图标着色 150ms 渐变（主线=瞬变）；
+ *   点用 offset 负偏移画在图标盒外，不参与布局（坞体几何零变化）；
+ * - [labelFade]：标签 alpha 0↔1 淡入淡出 + 0.9→1 微放大（graphicsLayer 层级，不触发
+ *   重排；标签布局空间恒保留，坞内几何稳定无跳位）。「图标切换交叉旋入」的 rotate
+ *   微量实验合并在此：选中瞬间图标带 6° 回正旋入（rotate 随 spring 缩放同步衰减）。
+ */
 @Composable
 private fun DockNavItem(
     item: GlassNavItem,
     selected: Boolean,
     onClick: () -> Unit,
+    labelFade: Boolean,
+    iconAccent: Boolean,
+    hapticsOnSelect: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
+    val hapticFeedback = LocalHapticFeedback.current
     val iconScale by animateFloatAsState(
         targetValue = if (selected) ICON_SELECTED_SCALE else 1f,
         animationSpec = spring(
@@ -469,17 +545,46 @@ private fun DockNavItem(
         ),
         label = "dockIconScale",
     )
-    val tint = if (selected) {
+    // EXPLORE(3b)：标签 alpha（关=恒 1，与主线一致）
+    val labelAlpha by animateFloatAsState(
+        targetValue = if (!labelFade || selected) 1f else 0f,
+        animationSpec = tween(durationMillis = EXPLORE_LABEL_FADE_MS),
+        label = "dockLabelAlpha",
+    )
+    // EXPLORE(3c)：点缀点 alpha（关时点不组合，此值无消费）
+    val accentAlpha by animateFloatAsState(
+        targetValue = if (selected) 1f else 0f,
+        animationSpec = tween(durationMillis = EXPLORE_ICON_TINT_FADE_MS),
+        label = "dockAccentDotAlpha",
+    )
+    val targetTint = if (selected) {
         MaterialTheme.colorScheme.primary
     } else {
         MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    // EXPLORE(3c)：着色渐变过渡（关=主线瞬变）。条件分支两侧各是稳定的单一调用点，
+    // 选中态翻转只改目标值不换分支，animateColorAsState 记忆安全
+    val tint = if (iconAccent) {
+        animateColorAsState(
+            targetValue = targetTint,
+            animationSpec = tween(durationMillis = EXPLORE_ICON_TINT_FADE_MS),
+            label = "dockIconTint",
+        ).value
+    } else {
+        targetTint
     }
     Column(
         modifier = modifier
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
-                onClick = onClick,
+                onClick = {
+                    // EXPLORE(4)：TextHandleMove 轻档触觉（任务指定档位）；关=零触觉与主线一致
+                    if (hapticsOnSelect) {
+                        hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    }
+                    onClick()
+                },
             )
             // 可读名=标签文本（icon contentDescription 置空防重复朗读），补 Tab 角色与选中态
             .semantics {
@@ -490,6 +595,21 @@ private fun DockNavItem(
         verticalArrangement = Arrangement.Center,
     ) {
         Box(contentAlignment = Alignment.Center) {
+            if (iconAccent) {
+                // 点缀点：offset 出盒不占布局（坞高/列宽零变化）；graphicsLayer 读动画态
+                // 只走 draw 阶段（本文件胶囊同款机制）
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .offset(y = -EXPLORE_ACCENT_DOT_LIFT)
+                        .size(EXPLORE_ACCENT_DOT_SIZE)
+                        .graphicsLayer { alpha = accentAlpha }
+                        .background(
+                            color = MaterialTheme.colorScheme.primary,
+                            shape = CircleShape,
+                        ),
+                )
+            }
             Icon(
                 imageVector = item.icon,
                 contentDescription = null,
@@ -499,6 +619,16 @@ private fun DockNavItem(
                     .graphicsLayer {
                         scaleX = iconScale
                         scaleY = iconScale
+                        // EXPLORE(4) 图标交叉旋入（微量 rotate 与缩放联动）：选中点亮瞬间图标
+                        // 带一点角度弹入，随 spring 落定回正——rotate 与 scale 同读 iconScale，
+                        // 缩放越接近 1 旋转越归零，无需第二根动画。恒赋值（不可走 if 分支）：
+                        // graphicsLayer 块内未赋值的属性保留旧值，选中翻转后取消赋值会残留
+                        // 陈旧角度。过冲段 scale>1 时为 -0.7° 级微反转，可感知阈值之下
+                        rotationZ = if (selected) {
+                            (1f - iconScale) * EXPLORE_ICON_ENTER_ROTATION_DEG
+                        } else {
+                            0f
+                        }
                     },
             )
         }
@@ -509,6 +639,18 @@ private fun DockNavItem(
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
             color = tint,
             maxLines = 1,
+            // EXPLORE(3b)：渐隐模式下标签 alpha+微缩放走 draw 层（布局空间恒保留防跳位）；
+            // 关=无修饰与主线一致
+            modifier = if (labelFade) {
+                Modifier.graphicsLayer {
+                    alpha = labelAlpha
+                    val s = EXPLORE_LABEL_MIN_SCALE + (1f - EXPLORE_LABEL_MIN_SCALE) * labelAlpha
+                    scaleX = s
+                    scaleY = s
+                }
+            } else {
+                Modifier
+            },
         )
     }
 }
@@ -547,6 +689,32 @@ private val SOLID_DOCK_ELEVATION = 6.dp
 
 /** 玻璃坞受光发丝描边宽度（与 GlassSurface 的 GLASS_EDGE_WIDTH 同档 1dp；坞层独立渲染再声明一次） */
 private val DOCK_EDGE_STROKE_WIDTH = 1.dp
+
+// ---------- EXPLORE 实验参数档（2026-10-03；开关在 ExploreConfig，此处只放数值档） ----------
+
+/** EXPLORE 3a：胶囊拉伸上限（任务映射区间 1.0~1.15 取顶格；再大出现「果冻」失真） */
+private const val EXPLORE_PILL_STRETCH_MAX = 0.15f
+
+/** EXPLORE 3a：拉伸时 scaleY 反向微收档（体积守恒近似，sqrt(1/1.15)≈0.93 取缓和档） */
+private const val EXPLORE_PILL_SQUASH_MAX = 0.06f
+
+/** EXPLORE 3b：标签淡入淡出时长（与坞胶囊 spring 落位同量级，快进快出不拖沓） */
+private const val EXPLORE_LABEL_FADE_MS = 140
+
+/** EXPLORE 3b：标签微缩放下限（alpha 0 时缩到 0.9，淡入伴随轻微「展开」感） */
+private const val EXPLORE_LABEL_MIN_SCALE = 0.9f
+
+/** EXPLORE 3c：点缀点直径 */
+private val EXPLORE_ACCENT_DOT_SIZE = 4.dp
+
+/** EXPLORE 3c：点缀点上移量（图标盒顶向上 offset；54dp 紧凑坞内仍留 1~5dp 不触顶，见笔记） */
+private val EXPLORE_ACCENT_DOT_LIFT = 6.dp
+
+/** EXPLORE 3c：着色渐变时长（150ms=玻璃语言 tween 透明度档位惯例） */
+private const val EXPLORE_ICON_TINT_FADE_MS = 150
+
+/** EXPLORE 4：图标旋入角度基数（未点亮差距 1.0 时最大 6°，随 spring 落定归零） */
+private const val EXPLORE_ICON_ENTER_ROTATION_DEG = 6f
 
 /**
  * 真模糊能力档（全坞唯一 SDK 分叉点，禁止散写 SDK_INT）：

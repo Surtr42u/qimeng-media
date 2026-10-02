@@ -1,3 +1,9 @@
+// EXPLORE(2026-10-03)：本文件在主线统计页之上叠加「玻璃统计卡」实验分支
+// （[ExploreConfig.GLASS_STAT_CARDS] 单点开关，false=逐字主线 Surface 卡）：全部卡面从
+// surfaceVariant 实色换 GlassCard 玻璃面（GlassCard 首个页面级消费方），配合全局极光画布
+// 让辉光从卡缝透出。交互差异记档：Surface(onClick) 的 ripple 在玻璃档换成 pressScale spring
+// 按压缩放（GlassCard 既有语义，无 ripple）；卡几何（20dp 圆角/内边距/字号）逐项保留。
+// 动机/观感自评/风险见 docs/EXPLORATION-AURORA.md。
 package media.qimeng.app.feature.stats
 
 import androidx.compose.foundation.clickable
@@ -34,6 +40,8 @@ import media.qimeng.app.core.model.TrendPoint
 import media.qimeng.app.core.ui.component.Dimens
 import media.qimeng.app.core.ui.component.QimengSegmentedControl
 import media.qimeng.app.core.ui.component.formatBytesHumanReadable
+import media.qimeng.app.core.ui.glass.ExploreConfig
+import media.qimeng.app.core.ui.glass.GlassCard
 import media.qimeng.app.core.ui.glass.TabDockDefaults
 
 /**
@@ -192,11 +200,8 @@ private fun staticPlaceholder(loading: Boolean): String =
 /** 单格指标卡（浅面底 + 数值 + 标题；圆角对齐旧版 bg_stat_card 20dp，见 [STAT_CARD_CORNER_RADIUS]） */
 @Composable
 private fun MetricCell(title: String, value: String, modifier: Modifier = Modifier) {
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        shape = RoundedCornerShape(STAT_CARD_CORNER_RADIUS),
-        modifier = modifier,
-    ) {
+    // EXPLORE：卡体内容两档容器共用（玻璃档=GlassCard，主线档=Surface，内容零差异）
+    val body: @Composable () -> Unit = {
         Column(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -212,6 +217,22 @@ private fun MetricCell(title: String, value: String, modifier: Modifier = Modifi
                 style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Normal),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+    }
+    if (ExploreConfig.GLASS_STAT_CARDS) {
+        GlassCard(
+            shape = RoundedCornerShape(STAT_CARD_CORNER_RADIUS),
+            modifier = modifier,
+        ) {
+            body()
+        }
+    } else {
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            shape = RoundedCornerShape(STAT_CARD_CORNER_RADIUS),
+            modifier = modifier,
+        ) {
+            body()
         }
     }
 }
@@ -232,12 +253,8 @@ private fun TrendCard(
     marker: CartesianMarker,
     onOpenTypeTrend: () -> Unit,
 ) {
-    Surface(
-        onClick = onOpenTypeTrend,
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        shape = RoundedCornerShape(STAT_CARD_CORNER_RADIUS),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
+    // EXPLORE：卡体内容两档容器共用
+    val body: @Composable () -> Unit = {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -274,6 +291,24 @@ private fun TrendCard(
             }
         }
     }
+    if (ExploreConfig.GLASS_STAT_CARDS) {
+        GlassCard(
+            onClick = onOpenTypeTrend,
+            shape = RoundedCornerShape(STAT_CARD_CORNER_RADIUS),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            body()
+        }
+    } else {
+        Surface(
+            onClick = onOpenTypeTrend,
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            shape = RoundedCornerShape(STAT_CARD_CORNER_RADIUS),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            body()
+        }
+    }
 }
 
 /**
@@ -284,12 +319,8 @@ private fun TrendCard(
  */
 @Composable
 private fun DistributionEntryCard(onOpen: () -> Unit) {
-    Surface(
-        onClick = onOpen,
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        shape = RoundedCornerShape(STAT_CARD_CORNER_RADIUS),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
+    // EXPLORE：卡体内容两档容器共用
+    val body: @Composable () -> Unit = {
         Row(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 14.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -313,6 +344,24 @@ private fun DistributionEntryCard(onOpen: () -> Unit) {
             )
         }
     }
+    if (ExploreConfig.GLASS_STAT_CARDS) {
+        GlassCard(
+            onClick = onOpen,
+            shape = RoundedCornerShape(STAT_CARD_CORNER_RADIUS),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            body()
+        }
+    } else {
+        Surface(
+            onClick = onOpen,
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            shape = RoundedCornerShape(STAT_CARD_CORNER_RADIUS),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            body()
+        }
+    }
 }
 
 /**
@@ -330,12 +379,8 @@ private fun ContentRankCard(
     onOpen: () -> Unit,
     onEntryClick: (RankingEntry) -> Unit,
 ) {
-    Surface(
-        onClick = onOpen,
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        shape = RoundedCornerShape(STAT_CARD_CORNER_RADIUS),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
+    // EXPLORE：卡体内容两档容器共用
+    val body: @Composable () -> Unit = {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -365,6 +410,24 @@ private fun ContentRankCard(
             }
         }
     }
+    if (ExploreConfig.GLASS_STAT_CARDS) {
+        GlassCard(
+            onClick = onOpen,
+            shape = RoundedCornerShape(STAT_CARD_CORNER_RADIUS),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            body()
+        }
+    } else {
+        Surface(
+            onClick = onOpen,
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            shape = RoundedCornerShape(STAT_CARD_CORNER_RADIUS),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            body()
+        }
+    }
 }
 
 /**
@@ -379,12 +442,8 @@ private fun TopAuthorsTagsCard(
     onOpen: () -> Unit,
     onEntryClick: (TopAuthorTagEntry) -> Unit,
 ) {
-    Surface(
-        onClick = onOpen,
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        shape = RoundedCornerShape(STAT_CARD_CORNER_RADIUS),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
+    // EXPLORE：卡体内容两档容器共用
+    val body: @Composable () -> Unit = {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -412,6 +471,24 @@ private fun TopAuthorsTagsCard(
                     )
                 }
             }
+        }
+    }
+    if (ExploreConfig.GLASS_STAT_CARDS) {
+        GlassCard(
+            onClick = onOpen,
+            shape = RoundedCornerShape(STAT_CARD_CORNER_RADIUS),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            body()
+        }
+    } else {
+        Surface(
+            onClick = onOpen,
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            shape = RoundedCornerShape(STAT_CARD_CORNER_RADIUS),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            body()
         }
     }
 }

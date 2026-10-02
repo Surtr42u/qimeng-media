@@ -1,6 +1,14 @@
+// EXPLORE(2026-10-03)：本文件在主线壳层之上叠加三处实验（开关单源 ExploreConfig）：
+// ①全面极光画布（SOLID/CLASSIC 档也铺 AuroraBackdrop，见内容区极光门控注释）；
+// ②悬浮坞实验参数组接线（液态拉伸/标签渐隐/点缀点/触觉/紧凑坞高，见 FloatingTabDock 调用处）；
+// ③Tab 进入转场（高风险默认关，TAB_ENTER_FADE_TRANSITION=false，红线依据见常驻层注释）。
+// 全部开关翻 false 后与主线逐帧一致；动机/观感自评/风险记档见 docs/EXPLORATION-AURORA.md。
 package media.qimeng.app.navigation
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -63,8 +71,10 @@ import androidx.navigation.navArgument
 import media.qimeng.app.core.model.TabBarMaterial
 import media.qimeng.app.core.ui.component.TabScrollController
 import media.qimeng.app.core.ui.glass.AuroraBackdrop
+import media.qimeng.app.core.ui.glass.ExploreConfig
 import media.qimeng.app.core.ui.glass.FloatingTabDock
 import media.qimeng.app.core.ui.glass.GlassNavItem
+import media.qimeng.app.core.ui.glass.TabDockDefaults
 import media.qimeng.app.core.ui.glass.qimengBackdropSource
 import media.qimeng.app.core.ui.glass.rememberQimengBackdropState
 import media.qimeng.app.core.ui.theme.QimengBrandColors
@@ -375,9 +385,14 @@ fun QimengNavHost(
             end = innerPadding.calculateEndPadding(layoutDirection),
         )
         Box(modifier = Modifier.fillMaxSize()) {
-            // ── 极光氛围底（ADR-0031 玻璃语言的景深来源）：仅玻璃材质档渲染——它是玻璃
-            //  面板「磨砂观感」的垫底；SOLID/CLASSIC 保持主线纯色底（主 Scaffold 容器色）──
-            if (tabBarMaterial.usesBackdrop) {
+            // ── 极光氛围底（ADR-0031 玻璃语言的景深来源）：主线口径=仅玻璃材质档渲染（它是
+            //  玻璃面板「磨砂观感」的垫底；SOLID/CLASSIC 保持纯色底）。EXPLORE(2026-10-03)
+            //  探索1「全面极光画布」：[ExploreConfig.GLOBAL_AURORA_CANVAS] 开启时 SOLID/CLASSIC
+            //  也铺——坞体（纯色/M3）仍压在极光之上可辨，内容页透明缝隙透出极光。
+            //  overdraw 记档：极光=1 屏基底矩形 + 4 团径向渐变（draw 阶段，单 InfiniteTransition
+            //  只触发 draw 无效化），扩展到 SOLID/CLASSIC 增加的即这一层；真玻璃档本就支付此
+            //  成本，SOLID/CLASSIC 扩展属同量级，中端机可承受。回退=开关翻 false 逐字回主线 ──
+            if (tabBarMaterial.usesBackdrop || ExploreConfig.GLOBAL_AURORA_CANVAS) {
                 Box(modifier = Modifier.fillMaxSize().zIndex(-2f)) {
                     AuroraBackdrop(modifier = Modifier.fillMaxSize())
                 }
@@ -695,6 +710,37 @@ fun QimengNavHost(
                 .padding(topSidePadding)
                 .consumeWindowInsets(topSidePadding)
         ) {
+            // ── EXPLORE(2026-10-03) 探索5：Tab 进入转场（高风险实验，默认关）──
+            // 红线依据：主线任务U9 把转场定为 fade*(snap()) 瞬切、任务L L2 拍板「无内容转场」
+            // ——常驻层的可见性瞬时翻转正是「防叠影/残留」的根修手段，动画化常驻层交换曾被
+            // 明确排除（QimengMotion KDoc）。本实验的克制点：退出屏仍瞬时 alpha=0（原机制
+            // 不动，两页永不全不透明同屏，叠影根因不复活），只给**进入屏**加 90ms（≈5 帧
+            // @60fps）的 alpha 0.35→1 + scale 0.98→1——半透明帧露出的底是极光画布（探索1
+            // 已全局常驻）而非旧页。风险：弱机上 90ms 内新屏组合未完成会「先透明后弹出」；
+            // 是否可接受必须实机评估，未经用户拍板 [ExploreConfig.TAB_ENTER_FADE_TRANSITION]
+            // 不得翻 true 合入主线。开关关=进度恒 1、修饰分支不挂，与主线逐帧一致。
+            var tabEnterAnimatedOnce by remember { mutableStateOf(false) }
+            val tabEnterProgress = remember { Animatable(1f) }
+            LaunchedEffect(currentTabRoute, ExploreConfig.TAB_ENTER_FADE_TRANSITION) {
+                if (!ExploreConfig.TAB_ENTER_FADE_TRANSITION) {
+                    tabEnterProgress.snapTo(1f)
+                    return@LaunchedEffect
+                }
+                if (tabEnterAnimatedOnce) {
+                    // 首次驻留（冷启动首 Tab/进程恢复）不动画——对齐坞胶囊首帧 snapTo 落位
+                    // 的零入场口径；仅「已见过一屏后的翻转」才播
+                    tabEnterProgress.snapTo(0f)
+                    tabEnterProgress.animateTo(
+                        1f,
+                        tween(
+                            durationMillis = EXPLORE_TAB_ENTER_FADE_MS,
+                            easing = LinearOutSlowInEasing,
+                        ),
+                    )
+                } else {
+                    tabEnterAnimatedOnce = true
+                }
+            }
             // graph 未就绪（residentEntry==null）的帧不组合 Tab 屏：见上方 owner 注释。
             // 正常路径（首个组合内 graph 已内置）恒非空，此门控不可见
             if (residentEntry != null) {
@@ -736,15 +782,27 @@ fun QimengNavHost(
                                     .fillMaxSize()
                                     .zIndex(if (isCurrentTab) 1f else 0f)
                                     .then(
-                                        if (isCurrentTab) {
-                                            Modifier
-                                        } else {
-                                            // 隐藏 Tab 三重隔离：不绘制（alpha=0）+ a11y 不可达
-                                            // （对齐旧版 hide 的 GONE）+ 触摸死层（下方兜底）
-                                            Modifier
-                                                .graphicsLayer { alpha = 0f }
-                                                .clearAndSetSemantics { }
-                                        }
+                                        when {
+                                            !isCurrentTab ->
+                                                // 隐藏 Tab 三重隔离：不绘制（alpha=0）+ a11y 不可达
+                                                // （对齐旧版 hide 的 GONE）+ 触摸死层（下方兜底）
+                                                Modifier
+                                                    .graphicsLayer { alpha = 0f }
+                                                    .clearAndSetSemantics { }
+                                            // EXPLORE(5)：进入屏 fade+微 scale（开关关=不挂任何
+                                            // 修饰，与主线完全一致——graphicsLayer 都不创建）
+                                            ExploreConfig.TAB_ENTER_FADE_TRANSITION ->
+                                                Modifier.graphicsLayer {
+                                                    val p = tabEnterProgress.value
+                                                    alpha = EXPLORE_TAB_ENTER_INITIAL_ALPHA +
+                                                        (1f - EXPLORE_TAB_ENTER_INITIAL_ALPHA) * p
+                                                    val s = EXPLORE_TAB_ENTER_INITIAL_SCALE +
+                                                        (1f - EXPLORE_TAB_ENTER_INITIAL_SCALE) * p
+                                                    scaleX = s
+                                                    scaleY = s
+                                                }
+                                            else -> Modifier
+                                        },
                                     ),
                             ) {
                                 stateHolder.SaveableStateProvider(tabRoute) {
@@ -814,6 +872,18 @@ fun QimengNavHost(
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
                             .zIndex(3f),
+                        // ── EXPLORE(2026-10-03) 坞体形态实验参数组（开关单源 ExploreConfig，
+                        //  逐项翻 false 即回主线坞；含义/动机/风险见 docs/EXPLORATION-AURORA.md
+                        //  与 FloatingTabDock 各参数 KDoc）──
+                        dockHeight = if (ExploreConfig.DOCK_LABEL_FADE && ExploreConfig.DOCK_COMPACT_HEIGHT) {
+                            ExploreConfig.COMPACT_DOCK_HEIGHT
+                        } else {
+                            TabDockDefaults.DockHeight
+                        },
+                        liquidPillStretch = ExploreConfig.DOCK_LIQUID_PILL_STRETCH,
+                        labelFade = ExploreConfig.DOCK_LABEL_FADE,
+                        iconAccent = ExploreConfig.DOCK_ICON_ACCENT,
+                        hapticsOnSelect = ExploreConfig.DOCK_HAPTICS,
                     )
                 }
             }
@@ -823,6 +893,17 @@ fun QimengNavHost(
 
 /** 顶层路由集合（底栏可见性判定用） */
 private val topLevelRoutes = TopLevelDestination.entries.map { it.route }.toSet()
+
+// ---------- EXPLORE 探索5 参数档（2026-10-03；开关=TAB_ENTER_FADE_TRANSITION 默认关，见常驻层注释） ----------
+
+/** 进入屏 fade 时长 ms（≈5 帧 @60fps，任务映射区间 4~6 帧取中） */
+private const val EXPLORE_TAB_ENTER_FADE_MS = 90
+
+/** 进入屏起始 alpha（0.35：半透明帧露极光画布可感、内容仍可辨） */
+private const val EXPLORE_TAB_ENTER_INITIAL_ALPHA = 0.35f
+
+/** 进入屏起始 scale（0.98 微缩放，再大与详情页 0.92 沉浸转场语言混淆） */
+private const val EXPLORE_TAB_ENTER_INITIAL_SCALE = 0.98f
 
 /**
  * 统计族（统计页/统计详情页）详情跳转回调组（RES R1 去重）：两页的三回调接线原本逐字重复，

@@ -1,3 +1,8 @@
+// EXPLORE(2026-10-03)：本文件在主线首页之上叠加「顶行内容面半透明化」实验分支
+// （[ExploreConfig.GLASS_TOP_ROW] 单点开关，false=逐字主线 Surface 实色面）：搜索胶囊与
+// 两枚顶栏图标钮从 surfaceVariant/secondaryContainer 实色换 GlassSurface 玻璃面——全局
+// 极光画布（探索1）从内容缝隙透出的最小切口。旧版规格（40dp 高/40dp 钮/位置/按压缩放）
+// 逐项保留，只换面材质；动机/观感自评/风险见 docs/EXPLORATION-AURORA.md。
 package media.qimeng.app.feature.home
 
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -32,6 +37,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
@@ -64,6 +70,8 @@ import media.qimeng.app.core.ui.component.TabScrollController
 import media.qimeng.app.core.ui.icon.Grid1Icon
 import media.qimeng.app.core.ui.icon.HomeFilterIcon
 import media.qimeng.app.core.ui.icon.gridIconFor
+import media.qimeng.app.core.ui.glass.ExploreConfig
+import media.qimeng.app.core.ui.glass.GlassSurface
 import media.qimeng.app.core.ui.theme.QimengDimens
 // core/ui 共享文案资源别名导入：防与 feature/home 自身 R 撞名（顶栏图标钮无障碍描述复用）
 import media.qimeng.app.core.ui.R as UiR
@@ -360,24 +368,50 @@ private fun HomeTopRow(
         )
         // 搜索框不可聚焦（点击整块跳搜索页——规格书语义）；高度 40dp=旧版 fragment_home.xml L37
         // bg_capsule_soft 胶囊底（F 批 2026-09-09：压回旧版视觉，此前实测 48dp）
-        Surface(
-            shape = RoundedCornerShape(QimengDimens.PillCornerRadius),
-            color = MaterialTheme.colorScheme.surfaceVariant,
-            modifier = Modifier
-                .weight(1f)
-                .height(QimengDimens.HomeSearchFieldHeight)
-                .clickable(onClick = onOpenSearch),
-        ) {
-            Box(
-                modifier = Modifier.fillMaxHeight(),
-                contentAlignment = Alignment.Center,
+        if (ExploreConfig.GLASS_TOP_ROW) {
+            // EXPLORE(2026-10-03)：玻璃搜索胶囊——实色面换 GlassSurface（普通档玻璃面，
+            // 受光描边+顶部高光纱同源）；clip 后 clickable 让 ripple 仍在胶囊形内。
+            // 几何（weight/40dp 高/圆角）与主线逐项一致，只换面材质
+            GlassSurface(
+                shape = RoundedCornerShape(QimengDimens.PillCornerRadius),
+                modifier = Modifier
+                    .weight(1f)
+                    .height(QimengDimens.HomeSearchFieldHeight)
+                    .clip(RoundedCornerShape(QimengDimens.PillCornerRadius))
+                    .clickable(onClick = onOpenSearch),
             ) {
-                Text(
-                    text = "搜索",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 12.dp),
-                )
+                Box(
+                    modifier = Modifier.fillMaxHeight(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = "搜索",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                    )
+                }
+            }
+        } else {
+            Surface(
+                shape = RoundedCornerShape(QimengDimens.PillCornerRadius),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(QimengDimens.HomeSearchFieldHeight)
+                    .clickable(onClick = onOpenSearch),
+            ) {
+                Box(
+                    modifier = Modifier.fillMaxHeight(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = "搜索",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                    )
+                }
             }
         }
         // 筛选钮（左）与列数钮（右）：无障碍文案复用 core/ui 共享资源（QimengTitleRow 同款语义；
@@ -432,22 +466,8 @@ private fun HomeTopIconButton(
         ),
         label = "homeTopIconPressScale",
     )
-    Surface(
-        shape = RoundedCornerShape(QimengDimens.PillCornerRadius),
-        // U10-3 统一规格：底槽对齐旧 bg_capsule_soft 实色源（secondaryContainer），见 KDoc
-        color = MaterialTheme.colorScheme.secondaryContainer,
-        modifier = modifier
-            .size(QimengDimens.IconButtonSize)
-            .graphicsLayer {
-                scaleX = pressScale
-                scaleY = pressScale
-            }
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick,
-            ),
-    ) {
+    // EXPLORE：钮体内容两档容器共用；modifier 链（size/按压缩放/clickable）两档逐字一致
+    val buttonBody: @Composable () -> Unit = {
         Box(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center,
@@ -459,6 +479,34 @@ private fun HomeTopIconButton(
                 modifier = Modifier.size(QimengDimens.IconDefaultSize),
             )
         }
+    }
+    val buttonModifier = modifier
+        .size(QimengDimens.IconButtonSize)
+        .graphicsLayer {
+            scaleX = pressScale
+            scaleY = pressScale
+        }
+        .clickable(
+            interactionSource = interactionSource,
+            indication = null,
+            onClick = onClick,
+        )
+    if (ExploreConfig.GLASS_TOP_ROW) {
+        // EXPLORE(2026-10-03)：玻璃图标钮——secondaryContainer 实色换 GlassSurface；
+        // 既有按压缩放链原样保留（indication=null，无 ripple 裁剪问题）
+        GlassSurface(
+            shape = RoundedCornerShape(QimengDimens.PillCornerRadius),
+            modifier = buttonModifier,
+            content = { buttonBody() },
+        )
+    } else {
+        Surface(
+            shape = RoundedCornerShape(QimengDimens.PillCornerRadius),
+            // U10-3 统一规格：底槽对齐旧 bg_capsule_soft 实色源（secondaryContainer），见 KDoc
+            color = MaterialTheme.colorScheme.secondaryContainer,
+            modifier = buttonModifier,
+            content = { buttonBody() },
+        )
     }
 }
 

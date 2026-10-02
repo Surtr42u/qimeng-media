@@ -1,9 +1,14 @@
+// EXPLORE(2026-10-03)：本文件在主线旧版极简卡（任务L L1 冻结视觉）之上叠加「玻璃网格卡」
+// 实验分支（[ExploreConfig.GLASS_GRID_CARDS] 单点开关，false=逐字主线行为）：缩略图外圈垫
+// GlassSurface 玻璃衬底，极光画布从卡片缝隙透出。旧版极简卡的视觉规格（padding/圆角/角标/
+// 无按下缩放）在玻璃档全部保留，只加衬底不动结构；动机/性能记档见 docs/EXPLORATION-AURORA.md。
 package media.qimeng.app.core.ui.component
 
 import android.content.Context
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -45,6 +50,8 @@ import coil3.size.Size
 import media.qimeng.app.core.model.GridSection
 import media.qimeng.app.core.model.MediaAsset
 import media.qimeng.app.core.model.MediaKind
+import media.qimeng.app.core.ui.glass.ExploreConfig
+import media.qimeng.app.core.ui.glass.GlassSurface
 import media.qimeng.app.core.ui.theme.QimengDimens
 
 /** 距底预加载阈值（LEGACY §H：距底 ≤6 项提前加载；数值与 RecommendPaging.PRELOAD_DISTANCE 同语义，
@@ -106,6 +113,9 @@ private val GRID_INTER_ITEM_SPACING = 0.dp
 /** 旧版圆角 outline 24f——**像素**值非 dp（item_media_thumbnail.xml outline radius 24f），
  *  使用处经 [LocalDensity] 运行时 toDp() 换算，不同密度设备观感一致 */
 private const val LEGACY_CARD_CORNER_RADIUS_PX = 24f
+
+/** EXPLORE 玻璃网格卡：缩略图四周留的玻璃沿宽（外 padding 5dp 之外再留 4dp，沿宽可辨不喧宾） */
+private val EXPLORE_GLASS_CARD_INSET = 4.dp
 
 /** 时长角标文字样式：白字 12sp + 阴影、无胶囊底（旧版 §缩略图口径；G5 的 clip 胶囊底已删）。
  *  阴影保证浅色画面上可读——规格只要求「有阴影」未定参数，取常规柔和档：
@@ -369,20 +379,15 @@ private fun AssetCard(
     val cornerRadius = with(LocalDensity.current) { LEGACY_CARD_CORNER_RADIUS_PX.toDp() }
     // exp#4 预载翼的入队上下文（单例 ImageLoader 经 context 取，与详情预载链同源）
     val context = LocalContext.current
-    Box(
-        modifier = modifier
-            .padding(CARD_OUTER_PADDING)
-            .fillMaxWidth()
-            .thumbnailAspectRatio()
-            // 先 clip 后 clickable：ripple 限定在圆角内；仅默认点击态，无缩放/按压动画
-            .clip(RoundedCornerShape(cornerRadius))
-            .clickable(onClick = {
-                // exp#4 预载翼：导航前抢跑海报加载（为什么见 preloadDetailPoster KDoc）；
-                // 卡上持有的正是详情舞台将渲的同一 URL（视频/动图），预载→转场首帧命中
-                preloadDetailPoster(context, asset.mediaType, thumbModel)
-                onClick()
-            }),
-    ) {
+    val onCardClick = {
+        // exp#4 预载翼：导航前抢跑海报加载（为什么见 preloadDetailPoster KDoc）；
+        // 卡上持有的正是详情舞台将渲的同一 URL（视频/动图），预载→转场首帧命中
+        preloadDetailPoster(context, asset.mediaType, thumbModel)
+        onClick()
+    }
+    // 卡体内容（缩略图+角标）：EXPLORE 玻璃档与主线档共用同一份内容（BoxScope 接收者
+    // 供角标 align；两处容器 content 槽同型，直接传引用零包装）
+    val cardBody: @Composable BoxScope.() -> Unit = {
         QimengThumbnail(
             model = thumbModel,
             contentDescription = asset.title,
@@ -401,5 +406,42 @@ private fun AssetCard(
                 )
             }
         }
+    }
+    if (ExploreConfig.GLASS_GRID_CARDS) {
+        // EXPLORE(2026-10-03) 玻璃网格卡：旧版极简卡外圈垫一层 GlassSurface 玻璃衬底——
+        // 旧版规格（外 padding 5dp/圆角/16:9/角标/无按压缩放）逐项保留，只加衬底；
+        // 缩略图四周留 [EXPLORE_GLASS_CARD_INSET] 玻璃沿，极光画布（探索1）从沿缝透出。
+        // 性能记档：GlassSurface=drawBehind 三笔（体/高光/描边），无 blur 无 elevation
+        // （网格小面板禁投影，GlassSurface KDoc 口径）；可视卡 6~24 张 × 3 笔纯 draw，
+        // 不触发重组，滚动负载与实色卡同量级；半透明体=每卡区域多一层混合，可接受。
+        GlassSurface(
+            shape = RoundedCornerShape(cornerRadius),
+            modifier = modifier
+                .padding(CARD_OUTER_PADDING)
+                .fillMaxWidth()
+                .thumbnailAspectRatio(),
+        ) {
+            // 内层再 clip 一次：缩略图本体在玻璃沿内自持圆角（GlassSurface 的 clip 只约束
+            // 玻璃层）；先 clip 后 clickable，ripple 限定在缩略图圆角内
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(EXPLORE_GLASS_CARD_INSET)
+                    .clip(RoundedCornerShape(cornerRadius))
+                    .clickable(onClick = onCardClick),
+                content = cardBody,
+            )
+        }
+    } else {
+        Box(
+            modifier = modifier
+                .padding(CARD_OUTER_PADDING)
+                .fillMaxWidth()
+                .thumbnailAspectRatio()
+                // 先 clip 后 clickable：ripple 限定在圆角内；仅默认点击态，无缩放/按压动画
+                .clip(RoundedCornerShape(cornerRadius))
+                .clickable(onClick = onCardClick),
+            content = cardBody,
+        )
     }
 }
