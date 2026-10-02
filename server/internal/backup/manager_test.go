@@ -284,3 +284,92 @@ func TestNewManagerValidation(t *testing.T) {
 		t.Fatalf("retention 回落 = %d, 期望 %d", m.retention, DefaultBackupRetention)
 	}
 }
+
+// TestApplyScheduleHotEffect 热生效行为锁定（2026-10-03 PUT /backups/schedule）：
+// interval 变更重置周期（新间隔生效后快照按新节拍触发）、enabled=false 停
+// 循环、重新启用恢复——用真实短间隔驱动真实 Timer（固定时钟管不了墙钟等待），
+// 阈值放宽防 CI 抖动。
+func TestApplyScheduleHotEffect(t *testing.T) {
+	dir := t.TempDir()
+	m, err := NewManager(Options{Dir: dir, Snapshot: fakeSnapshot(t), Retention: 100})
+	if err != nil {
+		t.Fatalf("组装失败: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	m.StartScheduling(ctx, true, 30*time.Millisecond, 100)
+
+	waitFor := func(want int, what string) {
+		t.Helper()
+		deadline := time.Now().Add(5 * time.Second)
+		for time.Now().Before(deadline) {
+			infos, err := m.List()
+			if err != nil {
+				t.Fatalf("List 失败: %v", err)
+			}
+			if len(infos) >= want {
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		t.Fatalf("等待 %s 超时（期望 ≥%d 份快照）", what, want)
+	}
+	waitFor(2, "首间隔后至少两次定时快照")
+
+	// enabled=false：循环停止，计数冻结。
+	m.ApplySchedule(false, 30*time.Millisecond, 100)
+	infos, _ := m.List()
+	frozen := len(infos)
+	time.Sleep(120 * time.Millisecond)
+	infos, _ = m.List()
+	if len(infos) != frozen {
+		t.Fatalf("停用后快照数应冻结在 %d, 得到 %d", frozen, len(infos))
+	}
+
+	// 重新启用（interval 不变）：计数继续增长。
+	m.ApplySchedule(true, 30*time.Millisecond, 100)
+	waitFor(frozen+1, "重新启用后恢复定时快照")
+
+	// Schedule() 回读当前生效参数。
+	m.ApplySchedule(false, 6*time.Hour, 3)
+	enabled, interval, retention := m.Schedule()
+	if enabled || interval != 6*time.Hour || retention != 3 {
+		t.Fatalf("Schedule() = (%v, %v, %d), 期望 (false, 6h, 3)", enabled, interval, retention)
+	}
+}
+
+// TestApplyScheduleRetentionImmediate retention 热生效即时作用于轮转：
+// 初始 5 份存量，ApplySchedule(retention=2) 后再快照一次，轮转收敛到 2 份
+// （删最旧 4 份——快照即生效，不等下次调度周期）。
+func TestApplyScheduleRetentionImmediate(t *testing.T) {
+	dir := t.TempDir()
+	base := time.Date(2026, 10, 3, 10, 0, 0, 0, time.Local)
+	cur := base
+	m, err := NewManager(Options{
+		Dir: dir, Snapshot: fakeSnapshot(t), Retention: 5,
+		Now: func() time.Time { cur = cur.Add(time.Second); return cur },
+	})
+	if err != nil {
+		t.Fatalf("组装失败: %v", err)
+	}
+	for i := 0; i < 5; i++ {
+		if _, err := m.Create(context.Background()); err != nil {
+			t.Fatalf("第 %d 次 Create 失败: %v", i+1, err)
+		}
+	}
+	m.ApplySchedule(false, 0, 2) // enabled=false 不影响手动 Create；retention 收到 2
+	if _, err := m.Create(context.Background()); err != nil {
+		t.Fatalf("Create 失败: %v", err)
+	}
+	infos, err := m.List()
+	if err != nil {
+		t.Fatalf("List 失败: %v", err)
+	}
+	if len(infos) != 2 {
+		t.Fatalf("retention=2 生效后期望 2 份, 得到 %d", len(infos))
+	}
+	// 留下的必须是最新两份（字典序 = 时间序，取末位）。
+	if infos[0].Name <= infos[1].Name {
+		t.Fatalf("顺序异常: %q 应早于 %q", infos[0].Name, infos[1].Name)
+	}
+}

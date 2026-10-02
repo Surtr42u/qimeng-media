@@ -6,6 +6,8 @@
  */
 
 import type { AssetSummary } from '@/api/generated'
+import { useThumbSize } from '@/hooks/use-thumb-size'
+import { applyThumbSize } from '@/lib/thumb-size'
 
 export function ContentRankGrid({
   items,
@@ -14,13 +16,15 @@ export function ContentRankGrid({
   items: AssetSummary[]
   onOpen: (a: AssetSummary) => void
 }) {
+  // 档位偏好接入选点（与 MediaCard 同口径；auto=服务端下发原样）
+  const [thumbSize] = useThumbSize()
   if (!items.length) return <p className="rank-note">暂无数据</p>
   return (
     <div className="rank-cards">
       {items.map((a) => (
         <div className="rank-item" key={a.id} onClick={() => onOpen(a)} role="button">
           <div className="rank-cover">
-            <img src={a.thumbUrl ?? ''} alt="" loading="lazy" />
+            <img src={applyThumbSize(a.thumbUrl ?? '', thumbSize)} alt="" loading="lazy" />
           </div>
           <p className="rank-title">{a.fileName ?? ''}</p>
         </div>

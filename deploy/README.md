@@ -63,7 +63,7 @@ docker pull docker.m.daocloud.io/library/debian:bookworm-slim
 | `QIMENG_LOCAL_SYNC_ROOT` | 本机文件夹自动同步通道的同步根（**空=关，默认关闭**）；直接子文件夹名=库名自动匹配入库，成功源文件移走、失败原地保留（ADR-0030） |
 | `QIMENG_LOCAL_SYNC_INTERVAL` | 同步根轮询周期（默认 30s；想立即同步走维护页「立即同步」或 POST /local-sync/trigger） |
 | `QIMENG_LOCAL_SYNC_STABLE_AGE` | 文件稳定门槛（默认 60s）：mtime 年龄≥门槛且跨轮 size/mtime 不变才处理，防半截拷贝入库 |
-| `QIMENG_BACKUP_ENABLED` / `QIMENG_BACKUP_INTERVAL` / `QIMENG_BACKUP_RETENTION` | 备份调度（compose 注释亦引用此族）：库文件热备快照 开关（默认 true）/ 间隔（默认 24h）/ 轮转保留份数（默认 7 份） |
+| `QIMENG_BACKUP_ENABLED` / `QIMENG_BACKUP_INTERVAL` / `QIMENG_BACKUP_RETENTION` | 备份调度（compose 注释亦引用此族）：库文件热备快照 开关（默认 true）/ 间隔（默认 24h）/ 轮转保留份数（默认 7 份）。**2026-10-03 起：Web 维护页保存过调度参数后（kv 覆盖），这三键即不再生效**（优先级 kv>env>yaml>默认，热生效免重启；详见 GUIDE_API 备份节） |
 
 ## 安全红线（部署时逐条自查）
 

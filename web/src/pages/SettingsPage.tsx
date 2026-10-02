@@ -18,6 +18,8 @@ import {
   useSavePrefs,
 } from '@/hooks/use-prefs'
 import { useAuthLogout } from '@/hooks/use-session'
+import { useThumbSize } from '@/hooks/use-thumb-size'
+import { THUMB_SIZE_OPTIONS } from '@/lib/thumb-size'
 
 /**
  * 设置页（原型 #page-settings 移植）。
@@ -39,6 +41,20 @@ const BOUND_HINTS = {
   thumbEdge: `缩略图长边须在 ${CONFIG_BOUNDS.thumbEdge.min}–${CONFIG_BOUNDS.thumbEdge.max} px`,
   maxBytesMb: `单文件上限须在 ${CONFIG_BOUNDS.maxBytesMb.min}–${CONFIG_BOUNDS.maxBytesMb.max} MB`,
 } as const
+
+/** 缩略图档位 Pill 组（客户端本地偏好，点击即存 lib/thumb-size 持久化） */
+function ThumbSizePills() {
+  const [thumbSize, setThumbSize] = useThumbSize()
+  return (
+    <>
+      {THUMB_SIZE_OPTIONS.map((o) => (
+        <Pill key={o.value} active={thumbSize === o.value} onClick={() => setThumbSize(o.value)}>
+          {o.label}
+        </Pill>
+      ))}
+    </>
+  )
+}
 
 export default function SettingsPage() {
   const { data } = usePrefs()
@@ -182,6 +198,12 @@ export default function SettingsPage() {
           <span>主题模式</span>
           {/* ADR-0031 暗色优先：无手动选择时默认深色；月亮按钮切换后持久化 */}
           <span>默认深色（侧栏月亮按钮切换并记忆）</span>
+        </div>
+        {/* 缩略图档位偏好（HANDOVER §5④）：localStorage 客户端持久化，
+            点击即存全站生效；改写 size 查询参数语义见 lib/thumb-size.ts */}
+        <p>缩略图清晰度（全站图片，点击即生效并记忆）</p>
+        <div className="settings-grid">
+          <ThumbSizePills />
         </div>
       </div>
       <div className="settings-card">

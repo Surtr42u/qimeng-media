@@ -3,6 +3,8 @@ import { Link, useLocation } from 'react-router'
 import { Shuffle } from 'lucide-react'
 import type { AssetSummary } from '@/api/generated'
 import { useUpNextList, type MediaType } from '@/hooks/use-assets'
+import { useThumbSize } from '@/hooks/use-thumb-size'
+import { applyThumbSize } from '@/lib/thumb-size'
 import { formatDuration } from '@/lib/format'
 import { assetDetailWithSearch, readBackdropKey, type OverlayDetailState } from '@/lib/route-keys'
 
@@ -43,6 +45,8 @@ export function UpNextList({
   // 位置，经 location.state 交详情页渲染上一件/下一件；AssetSummary 无 origUrl
   // 字段故不传 origUrls（邻项不预载，切换走详情接口 origUrl——拍板允许）
   const navIds = items.map((a) => a.id)
+  // 档位偏好接入选点（与 MediaCard 同口径；auto=服务端下发原样）
+  const [thumbSize] = useThumbSize()
 
   return (
     <div className="rank-card upnext-card">
@@ -62,7 +66,7 @@ export function UpNextList({
             state={{ ids: navIds, index: i, ...(backdrop ? { backdrop } : {}) } satisfies OverlayDetailState}
           >
             <span className="upnext-thumb">
-              {a.thumbUrl ? <img src={a.thumbUrl} alt={a.fileName ?? ''} loading="lazy" /> : null}
+              {a.thumbUrl ? <img src={applyThumbSize(a.thumbUrl, thumbSize)} alt={a.fileName ?? ''} loading="lazy" /> : null}
               {a.mediaType === 'video' && a.durationMs ? (
                 <i className="upnext-dur">{formatDuration(a.durationMs)}</i>
               ) : null}

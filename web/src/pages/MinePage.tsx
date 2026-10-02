@@ -11,10 +11,12 @@ import { useAuthors, useToggleFollow } from '@/hooks/use-authors'
 import { useHistoryInfinite } from '@/hooks/use-history'
 import { useLibraries } from '@/hooks/use-libraries'
 import { useStatsOverview } from '@/hooks/use-stats'
+import { useThumbSize } from '@/hooks/use-thumb-size'
 import { DEFAULT_PAGE_SIZE, LOCALE_ZH } from '@/lib/constants'
 import { formatBytes, formatDateTime, formatDuration } from '@/lib/format'
 import { groupHistory } from '@/lib/history-grouping'
 import { assetDetail } from '@/lib/route-keys'
+import { applyThumbSize } from '@/lib/thumb-size'
 
 /**
  * 我的页（原型 #page-mine 移植）：资料卡 + 三 Tab（关注/收藏/历史），阶段 B 已接真实数据。
@@ -36,11 +38,13 @@ type HistRenderItem = HistoryItem & { isDone?: boolean }
 
 /** 历史卡数据（结构照原型 HistCard：封面/标题/已看完徽标/观看时间/视频时长/出处） */
 function HistCardItem({ item, onClick }: { item: HistRenderItem; onClick?: () => void }) {
+  // 档位偏好接入选点（与 MediaCard 同口径；auto=服务端下发原样）
+  const [thumbSize] = useThumbSize()
   return (
     <article className="hist-card" onClick={onClick} role={onClick ? 'button' : undefined}>
       <div className="hc-cover">
         {/* 与 MediaCard 同款优化口径：lazy + 异步解码避免滚动掉帧 */}
-        <img src={item.thumbUrl ?? ''} alt="" loading="lazy" decoding="async" />
+        <img src={applyThumbSize(item.thumbUrl ?? '', thumbSize)} alt="" loading="lazy" decoding="async" />
         {item.isDone ? <span className="hc-done">已看完</span> : null}
         <span className="hc-time">{formatDateTime(item.lastViewedAt)}</span>
         {item.durationMs ? <span className="hc-duration">{formatDuration(item.durationMs)}</span> : null}

@@ -8,6 +8,7 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"errors"
 	"flag"
@@ -145,6 +146,27 @@ func main() {
 		logger.Info("ffmpeg/ffprobe 自检通过", "ffmpeg", ffBin, "ffprobe", fpBin)
 	}
 
+	// 备份调度参数三级裁决（kv 覆盖值 > env QIMENG_BACKUP_* > yaml > 默认，
+	// 与 PUT /api/v1/backups/schedule 协议描述一致）：UI 保存过一次（kv 键
+	// 存在且合法）则整体覆盖三键，env/yaml 对调度面不再生效；键不存在或值
+	// 损坏回落启动配置（损坏不锁死调度，backup.ParseScheduleSetting 注释）。
+	schedCfg := cfg.Backup
+	if raw, err := queries.GetSetting(context.Background(), backup.SettingKey); err == nil {
+		if ov, ok := backup.ParseScheduleSetting(raw); ok {
+			schedCfg = config.BackupConfig{
+				Enabled:   ov.Enabled,
+				Interval:  time.Duration(ov.IntervalHours) * time.Hour,
+				Retention: ov.Retention,
+			}
+			logger.Info("备份调度参数使用 UI 保存值（kv_settings 覆盖，env/yaml 三键不再生效）",
+				"enabled", ov.Enabled, "intervalHours", ov.IntervalHours, "retention", ov.Retention)
+		} else {
+			logger.Warn("备份调度覆盖值不合法，回落启动配置（在维护页重新保存即可修复）", "key", backup.SettingKey)
+		}
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		logger.Warn("读取备份调度覆盖值失败，回落启动配置", "err", err)
+	}
+
 	// 备份热备管理器（任务Q 批B）：快照执行器 = store.VacuumInto 适配
 	// （SQL 属 store 边界，backup 包不碰数据库）；成功回调接 sysmon 指标
 	//（backup_last_success_timestamp，装配期单点接线，与 SSE gauge 同款）。
@@ -154,7 +176,7 @@ func main() {
 		Snapshot: func(ctx context.Context, dest string) error {
 			return store.VacuumInto(conn, dest)
 		},
-		Retention: cfg.Backup.Retention,
+		Retention: schedCfg.Retention,
 		Logger:    logger,
 		OnSuccess: func(at time.Time) { sysmon.Default.SetBackupLastSuccess(float64(at.Unix())) },
 	})
@@ -226,12 +248,11 @@ func main() {
 		}
 	}()
 
-	// 定时快照调度（任务Q 批B）：enabled=true 时按 backup.interval 周期
-	// 快照（首个快照在一个间隔后触发；退出随 ctx 取消）。手动触发端点
-	// 不受此开关影响。
-	if cfg.Backup.Enabled {
-		backupMgr.Start(ctx, cfg.Backup.Interval)
-	}
+	// 定时快照调度（任务Q 批B 起；热生效参数 2026-10-03）：挂生命周期根并
+	// 应用裁决后的三键（首个快照在一个间隔后触发；退出随 ctx 取消）。
+	// enabled=false 时循环不启动，手动触发端点不受影响；运行期改参数走
+	// PUT /api/v1/backups/schedule（热生效，经 ApplySchedule）。
+	backupMgr.StartScheduling(ctx, schedCfg.Enabled, schedCfg.Interval, schedCfg.Retention)
 
 	// 回收站到期清扫（DOMAIN_RULES §9，2026-09-22）：按 trash.sweep_interval
 	// 周期物理清除超过 trash.retention_days 的条目并联动清缩略图

@@ -3,6 +3,7 @@ import {
   BACKUP_MAX_BYTES,
   backupSummaryText,
   parseLegacyBackupFile,
+  validateBackupSchedule,
   type LegacyBackupSummary,
 } from './backup'
 
@@ -69,5 +70,23 @@ describe('backupSummaryText', () => {
     expect(backupSummaryText(s)).toBe(
       '检测到备份数据：1,234 个媒体文件 / 56 位作者 / 7 个标签 / 89 条统计。导入按唯一键合并、不删除现有数据，是否导入恢复？',
     )
+  })
+})
+
+describe('validateBackupSchedule', () => {
+  it('合法值（含两端边界）返回 null', () => {
+    expect(validateBackupSchedule({ enabled: true, intervalHours: 24, retention: 7 })).toBeNull()
+    expect(validateBackupSchedule({ enabled: false, intervalHours: 1, retention: 1 })).toBeNull()
+    expect(validateBackupSchedule({ enabled: true, intervalHours: 8760, retention: 365 })).toBeNull()
+  })
+  it('间隔越界/非整数被拦（与服务端 400 INVALID_PARAM 同口径）', () => {
+    expect(validateBackupSchedule({ enabled: true, intervalHours: 0, retention: 7 })).toMatch(/间隔/)
+    expect(validateBackupSchedule({ enabled: true, intervalHours: 8761, retention: 7 })).toMatch(/间隔/)
+    expect(validateBackupSchedule({ enabled: true, intervalHours: 1.5, retention: 7 })).toMatch(/间隔/)
+  })
+  it('保留份数越界/非整数被拦', () => {
+    expect(validateBackupSchedule({ enabled: true, intervalHours: 24, retention: 0 })).toMatch(/保留/)
+    expect(validateBackupSchedule({ enabled: true, intervalHours: 24, retention: 366 })).toMatch(/保留/)
+    expect(validateBackupSchedule({ enabled: true, intervalHours: 24, retention: 2.5 })).toMatch(/保留/)
   })
 })

@@ -10,6 +10,19 @@
 
 > **历史条目拆分说明（2026-10-01）**：为控制 AI 上下文体量，本文件只保留 **2026-09-22 及之后**的条目（第三百八十二笔起）；拆分线之前的全部条目已逐字迁入 `docs/history/CHANGELOG-ARCHIVE.md`（零改写，笔号与本文件连续可查）。引用早于拆分线的旧笔号请去历史档查阅。
 
+## feat(api/web/server): 备份调度参数编辑热生效 + Web 缩略图档位偏好——HANDOVER §5 建议立项④两件能力窄缺口落地（2026-10-03 第四百四十笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理）
+
+- **背景（HANDOVER §5 建议立项④）**：备份调度参数此前「仅可看」（GET /backups 的 schedule 只读回显，调整走 yaml/env + 重启）；Web 缩略图档位（sm/md/lg）无用户选择面。两件都属窄缺口：协议事实已具备（size 查询参数=缓存键组成部分且不参与签名），只差编辑入口与接入面。
+- **任务①协议先行（铁律 1）**：openapi.yaml 新增 `PUT /api/v1/backups/schedule`（全量提交三键 `{enabled, intervalHours, retention}`，与 BackupSchedule 同形；校验 1–8760 小时 / 1–365 份，越界 400 INVALID_PARAM 两步都不做——持久化与热生效合败不拆，无「看似生效、重启回退」半态），BackupSchedule 描述从「只读回显」改为「当前生效值」并补 minimum/maximum；make sdk 三端生成物再生 + api/sdk.lock 同 commit（245 条目）；GUIDE_API 备份热备行同步（路径 72→73）。
+- **任务①服务端（热生效路线，调研后选定的原因）**：调度器原为 Manager.Start 固定 ticker + retention 装配期固定——但改造面收敛在 backup 包内部（新增 schedMu 锁域 + applyScheduleLocked 单点：停旧循环/起新循环/retention 即时改），持久化复用 kv_settings 既有机制（migrations/0003 文件头「后续设置项加一行键即可」惯例的直接兑现，键 backup_schedule，值 JSON 三键；不另造配置系统），**无需为热生效动任何无关架构**，故取热生效而非「持久化+重启生效」降级版。Manager 三入口：StartScheduling（装配根挂 ctx+初始三键）/ApplySchedule（PUT 持久化成功后调，interval 变更重置周期=从保存时刻重新起算、enabled=false 只停定时面、retention 即时作用下次轮转）/Schedule（GET 回显单点）；调度循环 Ticker→Timer（每轮完成重置，慢快照不背靠背，注释记档语义差异）。启动三级裁决在 main 装配根：kv 覆盖值（UI 保存）> env QIMENG_BACKUP_* > yaml > 默认，覆盖值损坏回落启动配置不锁死调度；httpapi GET 回显从 s.cfg 切到 Manager.Schedule()（消灭双真相）。
+- **任务①Web（组件零业务规则，铁律 7）**：校验逻辑层 lib/backup.ts（BACKUP_SCHEDULE_BOUNDS 三处同值注释：openapi/服务端常量/此处）+ use-db-backups 增 useUpdateDbBackupSchedule；维护页 DbBackupCard 快照卡增编辑区（开关+间隔+保留三字段草稿态，保存即生效 toast 明示「无需重启·周期从保存时刻重新起算」），样式全走既有 settings-grid/settings-field/save-btn 类。
+- **任务②（调研结论：纯客户端可解，零协议改动）**：档位语义=openapi GET /media/thumb/{assetId} 的 size 查询参数（sm/md/lg 三档=缓存键组成部分）；签名只锚定路径（assets_media_url.go 明文「size 属于缓存选择而非授权面」），客户端改写服务端下发 thumbUrl 的 size 参数即可按偏好取图，切换=换缓存键无混存，不发明新缓存层。逻辑层 lib/thumb-size.ts（auto/sm/lg 三档，auto=跟随服务端下发零变化；applyThumbSize 纯字符串函数；localStorage 键 qimeng_thumb_size 同 theme.ts 口径；不设显式 md 档——列表下发本就是 md、显式 md 会静默降详情大图，记档）；hooks/use-thumb-size.ts（useSyncExternalStore 单例 store）；接入六消费点单点化：MediaCard（全站列表卡单点）/ContentRankGrid/UpNextList/MinePage 历史卡/详情页海报帧/编辑页缩略图；设置页「界面」卡增档位 Pill（点击即存，交互同推荐偏好）。
+- **测试**：server 新增 backup/schedule_test.go（解析合法/坏 JSON/越界七用例）+ manager_test.go 增热生效行为锁定（interval 缩短生效、enabled 停启冻结、retention 即时轮转收敛到 2 份、Schedule() 回读）+ httpapi backups_test.go 增 PUT 端点全链（200 回显+kv 落库可还原+Manager 即时可见+GET 切换+缺键/越界 400 且 kv 不变）；web 新增 lib/thumb-size.test.ts 六用例（auto/空 URL 原样、sm/lg 改写保留 exp/sig、无 size 追加、持久化+订阅通知、非法值归一）+ backup.test.ts 增调度校验三用例。
+- **验证**：`go vet ./...` + `go test ./... -count=1` 全绿（19 包）；web `tsc -b` 零错误、oxlint 0 error（19 warning 全为 router/button/chart-shared 既有存量，不涉本批文件）、vitest 26 文件 247/247 全绿；`make sdk` 三端生成+锁 245 条目；夜间纪律合规（零产物构建/零模拟器操作），最终以 draft PR 云端 CI 为准。
+- **涉及文档**：`api/openapi.yaml`、`api/sdk.lock`、`docs/GUIDE_API.md`、`docs/HANDOVER.md` §5（建议立项④勾销）、`docs/CHANGELOG.md`（本条）。
+
 ## feat(api/web/server): 数据溯源字段（origin/createdAtMillis）在资产详情响应与 Web 详情页可见——ADR-0032 保留的「详情页 UI 展示独立提案」落地（2026-10-03 第四百三十九笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理）

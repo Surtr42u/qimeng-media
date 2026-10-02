@@ -11,13 +11,17 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
 	"qimeng-media/server/internal/backup"
 	"qimeng-media/server/internal/httpapi/gen"
+	"qimeng-media/server/internal/store"
+	"qimeng-media/server/internal/store/db"
 )
 
 // backupScheduleIntervalMinHours 是调度摘要 intervalHours 的展示下限：
@@ -47,8 +51,8 @@ func (s *Server) PostApiV1Backups(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, backupInfoToGen(info))
 }
 
-// GetApiV1Backups 快照列表 + 调度摘要（schedule 从 config 只读回显——
-// v1 无备份设置端点，调整走 yaml/env + 重启）。
+// GetApiV1Backups 快照列表 + 调度摘要（schedule 读 Manager 当前生效值——
+// 含 PUT /backups/schedule 覆盖值；未覆盖时为启动配置，s.cfg 不再参与回显）。
 func (s *Server) GetApiV1Backups(w http.ResponseWriter, r *http.Request) {
 	if s.backup == nil {
 		writeErr(w, http.StatusServiceUnavailable, codeBackupUnavailable, "备份功能未装配")
@@ -63,18 +67,89 @@ func (s *Server) GetApiV1Backups(w http.ResponseWriter, r *http.Request) {
 	for _, info := range infos {
 		items = append(items, backupInfoToGen(info))
 	}
-	// intervalHours 向上取整（ceil）：90m 配置展示为 1h 而非 0h。
-	hours := int((s.cfg.Backup.Interval + hourCeilStep - 1) / hourCeilStep)
+	// 当前生效值三键（Manager.Schedule 单点）；intervalHours 向上取整
+	//（ceil）：90m 启动配置展示为 1h 而非 0h。
+	enabled, interval, retention := s.backup.Schedule()
+	hours := int((interval + hourCeilStep - 1) / hourCeilStep)
 	if hours < backupScheduleIntervalMinHours {
 		hours = backupScheduleIntervalMinHours
 	}
 	writeJSON(w, http.StatusOK, gen.BackupList{
 		Items: items,
 		Schedule: gen.BackupSchedule{
-			Enabled:       s.cfg.Backup.Enabled,
+			Enabled:       enabled,
 			IntervalHours: hours,
-			Retention:     s.cfg.Backup.Retention,
+			Retention:     retention,
 		},
+	})
+}
+
+// backupScheduleKeys 是 PUT 请求体的影子结构（指针形态验键齐全——全量替换
+// 惯例同 PutApiV1Config：缺任一键 = 不完整对象，400 而非按零值静默生效）。
+type backupScheduleKeys struct {
+	Enabled       *bool `json:"enabled"`
+	IntervalHours *int  `json:"intervalHours"`
+	Retention     *int  `json:"retention"`
+}
+
+// PutApiV1BackupsSchedule 修改定时快照调度参数：先持久化（kv_settings 键
+// backup.ScheduleSetting）再热生效（Manager.ApplySchedule，不重启进程），
+// 200 回显生效值。持久化失败返回 500 且**不**热生效——避免「看起来生效、
+// 重启回退」的半态；两步合败不拆。校验失败 400（既不持久化也不生效）。
+//
+// 为什么不走 decodeJSON：同 PutApiV1Config——body 消费后无法再做键齐全检查，
+// MaxBytesReader 限额下 ReadAll 后双 Unmarshal（先影子结构验键，成功后取值）。
+func (s *Server) PutApiV1BackupsSchedule(w http.ResponseWriter, r *http.Request) {
+	if s.backup == nil {
+		writeErr(w, http.StatusServiceUnavailable, codeBackupUnavailable, "备份功能未装配")
+		return
+	}
+	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxJSONBody))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, codeInvalidBody, "请求体不是合法 JSON")
+		return
+	}
+	var keys backupScheduleKeys
+	if err := json.Unmarshal(raw, &keys); err != nil || keys.Enabled == nil ||
+		keys.IntervalHours == nil || keys.Retention == nil {
+		writeErr(w, http.StatusBadRequest, codeInvalidParam,
+			"须提交完整调度参数对象（enabled/intervalHours/retention 三键）")
+		return
+	}
+	switch {
+	case *keys.IntervalHours < backup.MinIntervalHours || *keys.IntervalHours > backup.MaxIntervalHours:
+		writeErr(w, http.StatusBadRequest, codeInvalidParam,
+			fmt.Sprintf("intervalHours 须在 %d–%d 小时", backup.MinIntervalHours, backup.MaxIntervalHours))
+		return
+	case *keys.Retention < backup.MinRetention || *keys.Retention > backup.MaxRetention:
+		writeErr(w, http.StatusBadRequest, codeInvalidParam,
+			fmt.Sprintf("retention 须在 %d–%d 份", backup.MinRetention, backup.MaxRetention))
+		return
+	}
+	// 持久化先行（写入即生效语义的锚——重启后 kv 覆盖 env/yaml，见
+	// backup.SettingKey 注释），成功后才热生效。
+	payload, err := json.Marshal(backup.ScheduleSetting{
+		Enabled:       *keys.Enabled,
+		IntervalHours: *keys.IntervalHours,
+		Retention:     *keys.Retention,
+	})
+	if err != nil {
+		s.internalErr(w, "序列化备份调度参数", err)
+		return
+	}
+	if err := s.q.UpsertSetting(r.Context(), db.UpsertSettingParams{
+		Key:       backup.SettingKey,
+		Value:     string(payload),
+		UpdatedAt: store.FormatTimestamp(s.now()),
+	}); err != nil {
+		s.internalErr(w, "持久化备份调度参数", err)
+		return
+	}
+	s.backup.ApplySchedule(*keys.Enabled, time.Duration(*keys.IntervalHours)*time.Hour, *keys.Retention)
+	writeJSON(w, http.StatusOK, gen.BackupSchedule{
+		Enabled:       *keys.Enabled,
+		IntervalHours: *keys.IntervalHours,
+		Retention:     *keys.Retention,
 	})
 }
 

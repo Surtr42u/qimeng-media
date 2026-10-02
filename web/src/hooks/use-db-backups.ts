@@ -16,7 +16,9 @@ import {
   deleteApiV1BackupsByName,
   getApiV1Backups,
   postApiV1Backups,
+  putApiV1BackupsSchedule,
   type BackupInfo,
+  type BackupSchedule,
 } from '@/api/generated'
 import { getAuthHeaders, unwrapSdkResult } from '@/lib/api-client'
 import { downloadBlob } from '@/lib/download'
@@ -50,6 +52,20 @@ export function useDeleteDbBackup() {
   return useMutation({
     mutationFn: (name: string) =>
       unwrapSdkResult(deleteApiV1BackupsByName({ path: { name } })),
+    onSuccess: () => qc.invalidateQueries({ queryKey: BACKUPS_QUERY_KEY }),
+  })
+}
+
+/**
+ * 修改调度参数（PUT /backups/schedule，2026-10-03 热生效批）：服务端先
+ * 持久化（kv_settings）再热生效，无需重启； onSuccess 回传生效值供提示。
+ * 范围校验在 lib/backup.ts（铁律 7），本 hook 只管提交与缓存失效。
+ */
+export function useUpdateDbBackupSchedule() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (schedule: BackupSchedule) =>
+      unwrapSdkResult(putApiV1BackupsSchedule({ body: schedule })),
     onSuccess: () => qc.invalidateQueries({ queryKey: BACKUPS_QUERY_KEY }),
   })
 }

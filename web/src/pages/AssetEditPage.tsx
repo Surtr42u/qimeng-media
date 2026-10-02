@@ -7,6 +7,8 @@ import { SourceSelectField } from '@/components/manage/SourceSelectField'
 import { LoadingHint } from '@/components/ui/loading-hint'
 import { Pill } from '@/components/ui/pill'
 import { useAssetDetail } from '@/hooks/use-assets'
+import { useThumbSize } from '@/hooks/use-thumb-size'
+import { applyThumbSize } from '@/lib/thumb-size'
 import {
   useAuthorSourcesById,
   useReplaceAssetAuthors,
@@ -58,6 +60,8 @@ function AuthorSourcesRow({
 }
 
 export default function AssetEditPage() {
+  // 档位偏好接入选点（与 MediaCard 同口径；auto=服务端下发原样）
+  const [thumbSize] = useThumbSize()
   const { assetId } = useParams()
   const navigate = useNavigate()
   const { data: detail } = useAssetDetail(assetId)
@@ -174,7 +178,7 @@ export default function AssetEditPage() {
             <h3>资产信息</h3>
             <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
               <img
-                src={detail.thumbUrlMd ?? detail.thumbUrl ?? ''}
+                src={applyThumbSize(detail.thumbUrlMd ?? detail.thumbUrl ?? '', thumbSize)}
                 alt={detail.fileName ?? ''}
                 style={{ width: THUMB_SIZE_PX, height: THUMB_SIZE_PX, objectFit: 'cover', borderRadius: 8 }}
               />
