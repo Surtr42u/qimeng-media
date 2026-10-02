@@ -24,8 +24,10 @@ export function openDatabase(
 }
 
 /**
- * 单事务封装：promise 化 request（结果经 request 取回，事务随请求落定）；
- * 事务 abort 视为失败（部分写入不生效）。
+ * 单事务封装：promise 化 request（结果经 request 取回，事务随请求落定）。
+ * best-effort 口径：resolve 发生在 request 成功时——若事务在其后的 commit 期
+ * abort（如配额不足），promise 已 resolve、写入丢失不报错（与打点账本同行为，
+ * 持久化属尽力而为面）；request 期失败或事务显式 abort 才走 reject。
  */
 export function runTx<T>(
   db: IDBDatabase,

@@ -64,8 +64,10 @@ export type ResumeDecision =
   | { kind: 'restart' }
   | { kind: 'mismatch' }
 
-/** 重选文件续传决策（纯函数）：名称或大小任一不符 = mismatch（拒绝恢复，防止
- *  把别的文件传进原条目的目标位置）；同名录且留有分片会话 = resume-session
+/** 重选文件续传决策（纯函数）：名称或大小任一不符 = mismatch（拒绝恢复，防
+ *  他文件传进原条目的目标位置——注意同名同大小但内容不同的文件拦不住：无内
+ *  容指纹属已知边界，记档 CHANGELOG 第四百三十八笔）；同名录且留有分片会话
+ *  = resume-session
  *（既有 GET 探测→PATCH 续传路径，服务端 offset 为唯一真相源）；无会话（直传
  *  条目 / 会话未建立）= restart（同一队列条目从头重传，直传通道本无断点） */
 export function decideResume(
