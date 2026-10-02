@@ -26,9 +26,22 @@ const (
 	DayLayout       = "2006-01-02" // 「日」字段格式，服务器本地时区日界
 )
 
+// TimestampEpoch 是 asset_tags.created_at 的「不可考→视为最旧」哨兵
+// （migration 0004 的列默认值；ADR-0032 记档其与 NULL 哨兵的语义等价性）。
+// 唯一消费点：导入补证裁决（legacy_import.sql 的 epoch→透传值 heal）——
+// 字符串必须与 0004 DEFAULT 逐字节一致，迁移侧改动须同步此处，反之亦然。
+const TimestampEpoch = "1970-01-01T00:00:00.000Z"
+
 // FormatTimestamp 把时间格式化为全库统一时间戳（UTC + 毫秒）。
 func FormatTimestamp(t time.Time) string {
 	return t.UTC().Format(TimestampLayout)
+}
+
+// NullTimestamp 把时间戳字符串包成可空 TEXT 参数（ADR-0032 溯源列专用）：
+// 业务写入恒传非空值（Valid=true）；空串只应出现在存量行/哨兵语义场景
+// （NULL = 不可考，migration 0016），禁止用它携带业务时间。
+func NullTimestamp(s string) sql.NullString {
+	return sql.NullString{String: s, Valid: s != ""}
 }
 
 // FormatDay 把时间格式化为「日」字段（YYYY-MM-DD，本地时区）。

@@ -36,10 +36,14 @@ ORDER BY au.display_name;
 -- the identity, so the ON CONFLICT branch must not touch followed
 -- (re-importing a TXT must not reset the follow flag) nor created_at
 -- (cold-start freshness, same rule as UpsertAsset).
-INSERT INTO authors (id, display_name, type, followed, created_at)
-VALUES (?, ?, ?, 0, ?)
+-- origin (ADR-0032): creation/re-attestation channel stamp; the conflict
+-- branch heals only untraceable rows (legacy -> this channel, DOMAIN_RULES
+-- 10 heal rule) and never overwrites a known one (first-write wins).
+INSERT INTO authors (id, display_name, type, followed, created_at, origin)
+VALUES (?, ?, ?, 0, ?, ?)
 ON CONFLICT (id) DO UPDATE SET
-    display_name = excluded.display_name;
+    display_name = excluded.display_name,
+    origin = CASE WHEN authors.origin = 'legacy' THEN excluded.origin ELSE authors.origin END;
 
 -- name: SetAuthorFollow :execrows
 -- Follow is an author-level boolean (DOMAIN_RULES 5/6: no counter,
@@ -51,8 +55,14 @@ UPDATE authors SET followed = ? WHERE id = ?;
 -- Idempotent many-to-many link (PK asset_id+author_id in 0001). Used by
 -- the TXT unified rebuild and by COS scanning (author -> files mapping
 -- recorded at scan time, GUIDE_AUTHOR).
-INSERT INTO asset_authors (asset_id, author_id)
-VALUES (?, ?)
+-- Provenance (ADR-0032, migration 0016): created_at = link (re)insert
+-- moment (RFC3339 millis, rebuild paths delete-then-insert so it refreshes
+-- on every rebuild -- same convention as the replace-style tag PUT);
+-- origin = write channel (store provenance vocabulary, single source
+-- store/provenance.go). DO NOTHING keeps the first stamp when the link
+-- already exists from another channel (first-write wins, DOMAIN_RULES 10).
+INSERT INTO asset_authors (asset_id, author_id, created_at, origin)
+VALUES (?, ?, ?, ?)
 ON CONFLICT (asset_id, author_id) DO NOTHING;
 
 -- name: DeleteAssetAuthorsByAuthorIds :exec
@@ -85,8 +95,13 @@ DELETE FROM asset_characters WHERE asset_id = ?;
 -- name: AddAssetCharacter :exec
 -- One row per matched character canonical name (multi-character assets
 -- get multiple rows; PK asset_id+character_name dedupes).
-INSERT INTO asset_characters (asset_id, character_name)
-VALUES (?, ?)
+-- Provenance (ADR-0032, migration 0016): rows are scanner-derived output,
+-- so origin is always store.OriginScanner and created_at is the CURRENT
+-- derivation moment (delete-then-insert refreshes it on every recompute --
+-- it is the truth-refresh time, not the first-appearance time; documented
+-- in ADR-0032/DOMAIN_RULES 10).
+INSERT INTO asset_characters (asset_id, character_name, created_at, origin)
+VALUES (?, ?, ?, ?)
 ON CONFLICT (asset_id, character_name) DO NOTHING;
 
 -- name: UpdateAssetSource :exec

@@ -110,6 +110,10 @@ func (s *Scanner) ingestNormalFile(ctx context.Context, params db.UpsertAssetPar
 	for _, c := range chars {
 		if err := s.q.AddAssetCharacter(ctx, db.AddAssetCharacterParams{
 			AssetID: asset.AssetID, CharacterName: c,
+			// 溯源章（ADR-0032）：角色行是扫描器派生数据，created_at 语义
+			// = 本次重算时刻（先删后插，重算即刷新）。
+			CreatedAt: store.NullTimestamp(store.FormatTimestamp(s.now())),
+			Origin:    store.OriginScanner,
 		}); err != nil {
 			return db.Asset{}, fmt.Errorf("scanner: 写入角色 %s/%s: %w", params.RelPath, c, err)
 		}
@@ -141,11 +145,14 @@ func (s *Scanner) ingestCosFile(ctx context.Context, params db.UpsertAssetParams
 		DisplayName: authorDir,
 		Type:        authoring.AuthorTypeCos,
 		CreatedAt:   params.CreatedAt,
+		Origin:      store.OriginScanner, // 溯源章（ADR-0032）：COS 作者由目录结构派生
 	}); err != nil {
 		return db.Asset{}, fmt.Errorf("scanner: upsert COS 作者 %s: %w", authorDir, err)
 	}
 	if err := s.q.AddAssetAuthor(ctx, db.AddAssetAuthorParams{
 		AssetID: asset.AssetID, AuthorID: authorID,
+		CreatedAt: store.NullTimestamp(store.FormatTimestamp(s.now())),
+		Origin:    store.OriginScanner,
 	}); err != nil {
 		return db.Asset{}, fmt.Errorf("scanner: 关联 COS 作者 %s: %w", authorDir, err)
 	}
@@ -221,6 +228,8 @@ func (s *Scanner) recomputeNormalEnrichment(ctx context.Context, assetID, fileNa
 	for _, c := range chars {
 		if err := s.q.AddAssetCharacter(ctx, db.AddAssetCharacterParams{
 			AssetID: assetID, CharacterName: c,
+			CreatedAt: store.NullTimestamp(store.FormatTimestamp(s.now())),
+			Origin:    store.OriginScanner,
 		}); err != nil {
 			return fmt.Errorf("scanner: 写入角色 %s/%s: %w", fileName, c, err)
 		}
@@ -255,11 +264,14 @@ func (s *Scanner) recomputeCosAuthor(ctx context.Context, assetID, rel string) e
 		DisplayName: authorDir,
 		Type:        authoring.AuthorTypeCos,
 		CreatedAt:   store.FormatTimestamp(s.now()),
+		Origin:      store.OriginScanner, // 溯源章（ADR-0032）
 	}); err != nil {
 		return fmt.Errorf("scanner: upsert COS 作者 %s: %w", authorDir, err)
 	}
 	if err := s.q.AddAssetAuthor(ctx, db.AddAssetAuthorParams{
 		AssetID: assetID, AuthorID: authorID,
+		CreatedAt: store.NullTimestamp(store.FormatTimestamp(s.now())),
+		Origin:    store.OriginScanner,
 	}); err != nil {
 		return fmt.Errorf("scanner: 关联 COS 作者 %s: %w", authorDir, err)
 	}

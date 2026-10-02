@@ -270,7 +270,10 @@ func TestImport_fullPipeline(t *testing.T) {
 func authorRefAsset(t *testing.T, e *testEnv, authorID string) string {
 	t.Helper()
 	var assetID string
-	if err := e.conn.QueryRow(`SELECT asset_id FROM asset_authors WHERE author_id=? LIMIT 1`, authorID).Scan(&assetID); err != nil {
+	// ORDER BY rowid 锁定"首个插入的关联"这一确定语义（0016 加列后 planner
+	// 对无序 LIMIT 1 从表扫描转向覆盖索引扫描，裸 LIMIT 1 的返回序随 schema
+	// 漂移——ADR-0011 修订5「加列也会重排计划」在测试面的微缩重演）。
+	if err := e.conn.QueryRow(`SELECT asset_id FROM asset_authors WHERE author_id=? ORDER BY rowid LIMIT 1`, authorID).Scan(&assetID); err != nil {
 		t.Fatalf("查作者关联失败: %v", err)
 	}
 	return assetID

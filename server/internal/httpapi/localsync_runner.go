@@ -25,6 +25,7 @@ import (
 	"qimeng-media/server/internal/filing"
 	"qimeng-media/server/internal/localsync"
 	"qimeng-media/server/internal/scanner"
+	"qimeng-media/server/internal/store"
 	"qimeng-media/server/internal/store/db"
 )
 
@@ -455,7 +456,8 @@ func (s *Server) processLocalSyncTxt(ctx context.Context, entry localsync.Entry)
 		return
 	}
 	filename := path.Base(entry.RelPath)
-	res, err := s.importTxt(ctx, &filename, string(data), resolutionKeep)
+	// 溯源章（ADR-0032）：无人值守自动导入通道，与手动 import-txt 区分。
+	res, err := s.importTxt(ctx, &filename, string(data), resolutionKeep, store.OriginLocalSync)
 	if err != nil {
 		s.lsMarkFailed(entry.RelPath, kind, "", "导入失败: "+err.Error(), entry.Size)
 		return

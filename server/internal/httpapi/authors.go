@@ -118,7 +118,9 @@ func (s *Server) PostApiV1AuthorsImportTxt(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	res, err := s.importTxt(r.Context(), body.Filename, body.Content, resolution)
+	// 溯源章（ADR-0032）：手动 HTTP 导入通道（备份/本机同步各自在调用点
+	// 盖 import/local-sync，见 import.go 与 localsync_runner.go）。
+	res, err := s.importTxt(r.Context(), body.Filename, body.Content, resolution, store.OriginTXT)
 	if err != nil {
 		var conflict *txtImportConflictError
 		if errors.As(err, &conflict) {
@@ -153,10 +155,13 @@ func buildTxtImportConflict(e *txtImportConflictError) gen.TxtImportConflict {
 }
 
 // importTxt 是导入主流程：块格式走统一重建事务；格式 C 只建作者。
+// origin（ADR-0032 溯源章）：本次导入触发的作者行/关联写入通道——手动
+// HTTP 通道传 store.OriginTXT、备份 TXT 片段段传 OriginImport、本机同步
+// 传 OriginLocalSync（调用方各自盖章，词表单源 store/provenance.go）。
 // 计数口径：authorsImported = 本次 TXT 解析出的作者块数（格式 C 为行数）；
 // filesMatched = 本次 TXT 的（作者, 去重作品）对匹配到的库内文件总数；
 // mergedUploadEntries = keep 路径自动并回的上传条目行数（其余 0）。
-func (s *Server) importTxt(ctx context.Context, filename *string, content, resolution string) (gen.TxtImportResult, error) {
+func (s *Server) importTxt(ctx context.Context, filename *string, content, resolution, origin string) (gen.TxtImportResult, error) {
 	blocks := authoring.ParseAuthorBlocks(content)
 	tx, err := s.conn.BeginTx(ctx, nil)
 	if err != nil {
@@ -176,6 +181,7 @@ func (s *Server) importTxt(ctx context.Context, filename *string, content, resol
 				DisplayName: name,
 				Type:        authoring.AuthorTypeRegular,
 				CreatedAt:   now,
+				Origin:      origin,
 			}); err != nil {
 				return gen.TxtImportResult{}, err
 			}
@@ -188,7 +194,7 @@ func (s *Server) importTxt(ctx context.Context, filename *string, content, resol
 		return gen.TxtImportResult{AuthorsImported: &imported, FilesMatched: &zero}, nil
 	}
 
-	filesMatched, merged, err := s.rebuildFromAllSources(ctx, qtx, blocks, filename, content, resolution)
+	filesMatched, merged, err := s.rebuildFromAllSources(ctx, qtx, blocks, filename, content, resolution, origin)
 	if err != nil {
 		return gen.TxtImportResult{}, err
 	}
@@ -242,8 +248,10 @@ func orderedAuthorIDs(merged map[string]*rebuiltAuthor) []string {
 }
 
 // upsertMergedAuthors 事务内：把合并集里的作者写成 regular 作者行（upsert
-// 幂等；格式 C 与旧项目迁移也可能建过同名行，覆盖不删）。
-func (s *Server) upsertMergedAuthors(ctx context.Context, qtx *db.Queries, merged map[string]*rebuiltAuthor) error {
+// 幂等；格式 C 与旧项目迁移也可能建过同名行，覆盖不删）。origin 为本次
+// 重建的溯源章（ADR-0032）：新行盖章；既有行仅 legacy（不可考）被补证，
+// 可考行不被覆盖（DOMAIN_RULES §10 补证/首写优先规则在 UpsertAuthor 内）。
+func (s *Server) upsertMergedAuthors(ctx context.Context, qtx *db.Queries, merged map[string]*rebuiltAuthor, origin string) error {
 	now := store.FormatTimestamp(s.now())
 	for _, id := range orderedAuthorIDs(merged) {
 		ra := merged[id]
@@ -252,6 +260,7 @@ func (s *Server) upsertMergedAuthors(ctx context.Context, qtx *db.Queries, merge
 			DisplayName: ra.displayName,
 			Type:        authoring.AuthorTypeRegular,
 			CreatedAt:   now,
+			Origin:      origin,
 		}); err != nil {
 			return err
 		}
@@ -260,10 +269,12 @@ func (s *Server) upsertMergedAuthors(ctx context.Context, qtx *db.Queries, merge
 }
 
 // insertLinks 事务内：以 merged 为重建来源，按作品名匹配 normal 库资产
-// 全量重插关联（调用方先负责删旧关联）。countWorks 非 nil 时累计
+// 全量重插关联（调用方先负责删旧关联）。origin/created_at 为本次重建的
+// 溯源章（ADR-0032，migration 0016）：重建=先删后插，关联时间与通道章随
+// 每次重建刷新（与替换式标签 PUT 同一口径）。countWorks 非 nil 时累计
 // 「作品 ∈ countWorks[id]」的匹配文件数（导入响应口径=本次导入贡献）；
 // 删除路径传 nil 不计。
-func (s *Server) insertLinks(ctx context.Context, qtx *db.Queries, merged map[string]*rebuiltAuthor, countWorks map[string][]string) (int, error) {
+func (s *Server) insertLinks(ctx context.Context, qtx *db.Queries, merged map[string]*rebuiltAuthor, countWorks map[string][]string, origin string) (int, error) {
 	rows, err := qtx.ListNormalAssetsForAuthorMatch(ctx)
 	if err != nil {
 		return 0, err
@@ -295,6 +306,8 @@ func (s *Server) insertLinks(ctx context.Context, qtx *db.Queries, merged map[st
 			for _, f := range matches {
 				if err := qtx.AddAssetAuthor(ctx, db.AddAssetAuthorParams{
 					AssetID: f.AssetID, AuthorID: id,
+					CreatedAt: store.NullTimestamp(store.FormatTimestamp(s.now())),
+					Origin:    origin,
 				}); err != nil {
 					return 0, err
 				}
@@ -310,15 +323,16 @@ func (s *Server) insertLinks(ctx context.Context, qtx *db.Queries, merged map[st
 // rebuildAll 统一重建事务内主流程：保证 merged（删关联目标）的作者行存在
 // → 删其全部旧关联 → 从 relink（重建来源）全量重插。常规路径 merged 与
 // relink 同集；删除路径 merged=删除前全量、relink=删除后剩余（作者从剩余
-// 片段消失时旧关联被一并清掉）。countWorks 见 insertLinks。
-func (s *Server) rebuildAll(ctx context.Context, qtx *db.Queries, merged, relink map[string]*rebuiltAuthor, countWorks map[string][]string) (int, error) {
-	if err := s.upsertMergedAuthors(ctx, qtx, merged); err != nil {
+// 片段消失时旧关联被一并清掉）。origin 见 insertLinks/upsertMergedAuthors；
+// 删除路径（removeTxtSource）同为 TXT 通道（OriginTXT）。
+func (s *Server) rebuildAll(ctx context.Context, qtx *db.Queries, merged, relink map[string]*rebuiltAuthor, countWorks map[string][]string, origin string) (int, error) {
+	if err := s.upsertMergedAuthors(ctx, qtx, merged, origin); err != nil {
 		return 0, err
 	}
 	if err := qtx.DeleteAssetAuthorsByAuthorIds(ctx, orderedAuthorIDs(merged)); err != nil {
 		return 0, err
 	}
-	return s.insertLinks(ctx, qtx, relink, countWorks)
+	return s.insertLinks(ctx, qtx, relink, countWorks, origin)
 }
 
 // rebuildFromAllSources 统一重建（导入路径，事务内调用）：先覆盖式 upsert
@@ -327,7 +341,7 @@ func (s *Server) rebuildAll(ctx context.Context, qtx *db.Queries, merged, relink
 // （REQ §3.3 第 10/11/12 条）。返回（本次传入 content 的匹配文件数——
 // filesMatched 只统计本次导入的作品不含历史片段贡献；keep 路径并回的上传
 // 条目行数）。
-func (s *Server) rebuildFromAllSources(ctx context.Context, qtx *db.Queries, currentBlocks []authoring.AuthorBlock, filename *string, content, resolution string) (filesMatched, mergedUploadEntries int, err error) {
+func (s *Server) rebuildFromAllSources(ctx context.Context, qtx *db.Queries, currentBlocks []authoring.AuthorBlock, filename *string, content, resolution, origin string) (filesMatched, mergedUploadEntries int, err error) {
 	sources, err := authorattach.LoadSources(ctx, qtx)
 	if err != nil {
 		return 0, 0, err
@@ -372,7 +386,7 @@ func (s *Server) rebuildFromAllSources(ctx context.Context, qtx *db.Queries, cur
 		id := authoring.GenerateAuthorID(b.AuthorNames[0])
 		countWorks[id] = append(countWorks[id], b.Works...)
 	}
-	filesMatched, err = s.rebuildAll(ctx, qtx, mergedAuthors, mergedAuthors, countWorks)
+	filesMatched, err = s.rebuildAll(ctx, qtx, mergedAuthors, mergedAuthors, countWorks, origin)
 	return filesMatched, mergedUploadEntries, err
 }
 
@@ -454,7 +468,7 @@ func (s *Server) removeTxtSource(ctx context.Context, qtx *db.Queries, filename 
 			return err
 		}
 	}
-	_, err = s.rebuildAll(ctx, qtx, mergeTxtSources(before), mergeTxtSources(remaining), nil)
+	_, err = s.rebuildAll(ctx, qtx, mergeTxtSources(before), mergeTxtSources(remaining), nil, store.OriginTXT)
 	return err
 }
 
@@ -539,7 +553,7 @@ func (s *Server) PostApiV1AuthorsImportTxtRebuild(w http.ResponseWriter, r *http
 	for id, ra := range merged {
 		countWorks[id] = ra.works
 	}
-	filesMatched, err := s.rebuildAll(r.Context(), qtx, merged, merged, countWorks)
+	filesMatched, err := s.rebuildAll(r.Context(), qtx, merged, merged, countWorks, store.OriginTXT)
 	if err != nil {
 		s.internalErr(w, "重放 TXT 重建关联", err)
 		return

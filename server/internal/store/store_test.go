@@ -233,7 +233,9 @@ func idForIndex(i int) string {
 
 // TestMigrateDownThenUp：down migration 必须可执行（生产禁用，测试与灾备依赖），
 // 且 down 后能再次 up（幂等重建）。migration 演进后回退步数随之变化：
-// 新增迁移在链首插入对应验证步——首步验证 0015 down（观看历史覆盖索引
+// 新增迁移在链首插入对应验证步——首步验证 0016 down（关联溯源双列删除、
+// 0015 对象保留），
+// 次步验证 0015 down（观看历史覆盖索引
 // 删除、0014 对象保留），
 // 次步验证 0014 down（会话去重 day 列与
 // 部分唯一索引删除、0013 索引保留），
@@ -253,7 +255,29 @@ func idForIndex(i int) string {
 // 第八步验证 0001 down（业务表全删）。
 func TestMigrateDownThenUp(t *testing.T) {
 	conn, _ := openTestDB(t) // 已 up
-	// 首步：0015 down（观看历史覆盖索引删除；0014 对象保留）
+	// 首步：0016 down（关联/作者溯源双列删除；0015 对象保留）
+	if err := MigrateDown(conn, 1); err != nil {
+		t.Fatalf("MigrateDown 失败: %v", err)
+	}
+	for _, col := range []struct{ table, col string }{
+		{"asset_authors", "created_at"}, {"asset_authors", "origin"},
+		{"asset_tags", "origin"}, {"asset_characters", "created_at"},
+		{"asset_characters", "origin"}, {"authors", "origin"},
+	} {
+		if columnExists(t, conn, col.table, col.col) {
+			t.Errorf("0016 down 后 %s.%s 仍存在（0016 down 缺 DROP COLUMN）", col.table, col.col)
+		}
+	}
+	if !columnExists(t, conn, "asset_tags", "created_at") {
+		t.Error("0016 down 后 asset_tags.created_at 应保留（0004 建立的既有列，只回退了一个版本）")
+	}
+	if !columnExists(t, conn, "authors", "created_at") {
+		t.Error("0016 down 后 authors.created_at 应保留（0001 既有列）")
+	}
+	if !objExists(t, conn, "index", "idx_view_events_asset_kind_started") {
+		t.Error("0016 down 后 0015 的 idx_view_events_asset_kind_started 应保留（只回退了一个版本）")
+	}
+	// 次步：0015 down（观看历史覆盖索引删除；0014 对象保留）
 	if err := MigrateDown(conn, 1); err != nil {
 		t.Fatalf("MigrateDown 失败: %v", err)
 	}

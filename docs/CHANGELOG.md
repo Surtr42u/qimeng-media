@@ -10,6 +10,22 @@
 
 > **历史条目拆分说明（2026-10-01）**：为控制 AI 上下文体量，本文件只保留 **2026-09-22 及之后**的条目（第三百八十二笔起）；拆分线之前的全部条目已逐字迁入 `docs/history/CHANGELOG-ARCHIVE.md`（零改写，笔号与本文件连续可查）。引用早于拆分线的旧笔号请去历史档查阅。
 
+## feat(server): 关联/作者类记录溯源体系——migration 0016 补 created_at+origin 双列、备份载荷透传来历、导入补证+首写优先行级裁决（2026-10-02 第四百三十四笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理）
+
+- **背景（ADR-0032）**：2026-10-02 三方数据取证——asset_authors/asset_tags 等关联表无时间戳无来源，PC 多出的 152 条关联「无时间戳可考」无法判定真伪，跨端合并只能靠猜；同批取证另见 view_events 三代回放叠加（1×/3×/6× 每代键不同，09-18 内容键幂等拦不住跨代并存）——该问题不在本批范围（事件流已有 session_id/client_event_id 行级溯源，根因是键空间不同属导入回放专项，ADR-0032 边界记档）。用户拍板：给关联类记录建立专业溯源体系。
+- **migration 0016（只加不改，ADR-0011）**：asset_authors/asset_characters 补 `created_at TEXT`（可空）+`origin TEXT NOT NULL DEFAULT 'legacy'`；asset_tags/authors 补 `origin`（created_at 已有不动：0004 的 epoch=既有「不可考→最旧」哨兵）。存量行 origin 默认 'legacy'（如实记录不可考）、新列时间 NULL=不可考——**禁止伪造时间**；有意不建索引（无新查询族，ADR-0011 修订5 计划横向复查不适用）。时间戳格式沿用库内统一口径 RFC3339 固定毫秒文本（store.FormatTimestamp 单源；非整数毫秒——一致性优先，ADR 记档）。
+- **origin 受控词表**（常量单源 `server/internal/store/provenance.go`，TEXT 存储+Go 校验、不设 SQL CHECK=扩枚举零迁移）：`client`=HTTP 客户端端点（PUT tags/PUT authors/上传挂靠；web/app 共用端点服务端不做 UA 猜测，设备级区分留待协议级客户端标识）、`txt`=TXT 片段统一重建手动导入、`import`=备份导入、`local-sync`=本机同步自动导入（ADR-0030）、`scanner`=扫描器派生（角色行/COS 作者）、`legacy`=0016 回填哨兵（写入端永不主动写）。
+- **写入路径全覆盖盖章**：httpapi/tags.go（替换式 PUT）、authorattach/attach.go（上传挂靠 Apply）、authorattach/edit.go（PUT /assets/{id}/authors swap）→ client；httpapi/authors.go（importTxt 全链——签名增 origin 参数贯穿 rebuildFromAllSources/rebuildAll/upsertMergedAuthors/insertLinks，格式 C/rebuild/删除重建三路径同盖）、removeTxtSource → txt；localsync_runner.go → local-sync；httpapi/import.go（ImportUpsertAuthor/ImportAddAssetAuthor/ImportAddAssetTag+备份 TXT 片段段）→ import；scanner/enrich.go（ingest/refresh/COS 三路径 6 处）→ scanner。asset_characters 的 created_at 语义=当前重算发生时刻（先删后插派生数据，重算即刷新，如实记档）。
+- **合并裁决语义升级（先改 DOMAIN_RULES §10「关联溯源与行级合并裁决」再改代码，铁律 3）**：备份载荷 authors/authorMediaRefs/mediaTagRefs 三段增可空 `origin`（authorMediaRefs 另带 `createdAtMillis`）——**导出透传库内原始来历**（A 端手工创建的关联到 B 端仍是 client，来历不因搬运失真）；导入端词表校验（非法/缺省兜底 import；时间缺省回退导入时刻=「入账时刻」真实事件）+ **补证 heal**（既有行不可考〔legacy/NULL/epoch〕被透传值升级——不可考不等于永久不可知）+ **首写优先 keep**（可考行绝不覆盖，重复导入幂等）。标签组**集级**「谁新听谁」裁决维持 0012 tag_set_updated_at 口径不变，升级的是行级溯源。
+- **协议先行**：openapi.yaml 三 schema 增字段 → `make sdk` 三端再生成 + api/sdk.lock 同 commit 更新；详情/列表响应模型**不动**（溯源读取走 GET /export/qimeng-backup 已全覆盖，详情页 UI 展示留待独立提案）；web/app 对新字段零消费零改动。
+- **测试**：store/provenance_test.go 四组新测试（词表校验/业务盖章+作者行补证/存量行哨兵/导入三分支裁决）；store_test.go TestMigrateDownThenUp 链首插 0016 验证步（六列 down+0015 对象保留+既有列不动）；export_test.go 回环测试增溯源透传断言。**顺带修复一个测试脆弱性**：import_test.go authorRefAsset 裸 `LIMIT 1`（无 ORDER BY）依赖 planner 扫描选择——0016 加列使表行变大、planner 转向覆盖索引扫描、返回序翻转——补 `ORDER BY rowid` 锁定「首个插入」确定语义（ADR-0011 修订5「加列也重排计划」在测试面的微缩重演；全库生产查询均带 ORDER BY，grep 复核零同类暴露）。
+- **验证**：`go vet ./...` + `go test ./... -count=1` 全绿（server 全包）；sqlc@v1.31.1 重新生成（4 查询文件）；`make sdk` 三端生成物+锁 241 条目；禁触项（gradle/npm 生产构建、模拟器、手机）未触碰，最终以本 draft PR 云端 CI 为准。
+- **涉及文档**：`docs/CHANGELOG.md`（本条）、`docs/adr/0032`（新）、`docs/adr/INDEX.md`、`docs/DOMAIN_RULES.md` §10、`docs/GUIDE_API.md`。
+
+
+
 ## chore(governance): 手搓治理方案全量落地——选型铁律入协作规则 + CI 三道横切门禁（产物完整性/孤儿依赖/版本穿越回放）+ 自研点改造（2026-10-02 第四百三十四笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理）
