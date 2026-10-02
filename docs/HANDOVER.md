@@ -79,6 +79,7 @@
 
 **记档级（不立项，防重复怀疑）**：uploadsess 无独立单测（httpapi 集成已覆盖）；ListThumbnailWarmup 每轮 O(N) 全表空扫（十万级前无感）；HEIC 内嵌 EXIF 按方向 1 处理；Web 事件账本（IndexedDB）无行数上限；待扫标记可能指向已删库永不移除；
 activePool 冷启动装配竞态（读 miss 重下，无害）；桌面壳无自动更新器（单用户自用，接受）；字幕域无地图条目；/media/orig 的 If-Modified-Since 用库行 mtime（ADR-0004 已知面）。
+**browse.sql/facets.sql 手抄同型面（2026-10-02 清点记档）**：sqlc v1.31.1 SQLite 解析器限制（browse.sql 文件头 4 条规则：宏裸形态/参数禁作 WHEN 主语/WHERE 禁引 CTE 别名/ORDER BY 禁宏）迫使同型谓词手抄——① browse.sql 的 ListAssetsFilteredDesc/Asc/CountAssetsFiltered 三联体（同 WHERE 收敛家族三份手抄，排序方向烘焙成两个变体）；② facets.sql 六聚合查询（Partition/Source/Author/Character/CosWork/MediaType）各持一份「排除自身维度+应用其余维度」谓词家族，favorite/history 子集 EXISTS 探测在文件内出现 13 处。退役条件：sqlc 升级修复解析限制或换查询形态（history.sql/recommend.sql 的 CTE 预聚合先例，见第四百三十三笔），届时按同款主流化改写收敛；改前必跑 EXPLAIN 计划锁（ADR-0011 修订第 5/6 条），子集探测已由 history_plan_test.go 锁定双等值前缀。
 
 **CI 教训**：`make sdk` 已加生成前清理 + Kotlin 生成器锁版本，锁校验失败 CI 会打印 diff；golangci-lint 不含 gofmt，新 Go 文件须 `gofmt -w`；跨模块签名变更须 grep 全部构造点（CI 首跑抓过 `feature:detail` 测试漏适配）。
 
