@@ -1,0 +1,26 @@
+-- 0015：view_events 补覆盖索引 (asset_id, kind, started_at)——修复观看历史查询计划退化（2026-10-02 真机事故）。
+--
+-- 背景：0013 的 (kind, started_at) 索引把 stats 族全表扫变范围扫，但同时把
+-- /history 的每资产 MAX(started_at) 相关子查询（history.sql：ListHistory 的
+-- last_viewed_at 列与 cursor 分支同型子查询）带进了坏计划：该子查询谓词 =
+-- asset_id 等值 + kind 等值，0013 索引只能服务 kind=? 前缀（asset_id 不在
+-- 索引列里），planner 选中它后每个资产要扫过全部 open 事件才能取 MAX/证明
+-- 无事件——实测 EXPLAIN：SEARCH v USING INDEX idx_view_events_kind_started
+-- (kind=?)。规模 = 资产数 × open 事件数（真机 6350 × ~6.8k ≈ 4300 万索引
+-- 步），PC 副本 0.16s，内嵌形态（手机 CPU + 大 WAL 并发写）实测单页 8.85s，
+-- 贴穿 App 主客户端 10s 读超时（NetworkModule READ_TIMEOUT_SECONDS）→
+-- OkHttp SocketTimeout → 服务端 log「查询观看历史失败: context canceled」
+-- → 浏览历史页空白（用户可见症状）。
+--
+-- 修复：加覆盖索引 (asset_id, kind, started_at)，EXISTS 探测与 MAX 聚合
+-- 都变为 (asset_id=? AND kind=?) 双等值前缀查找；真机库只读副本实测
+-- EXPLAIN 计划由「kind=? 全 open 事件扫描」变双等值前缀，查询 0.16s→
+-- 0.00s。查询零改动（history.sql 逐字节不动），同索引惠及游标分支同型
+-- 子查询与 browse.sql 同型的每资产聚合。
+--
+-- 口径零变化：纯索引迁移，DOMAIN_RULES §5/§8 语义不动；只加不改（ADR-0011）
+-- ——idx_view_events_asset (asset_id, kind) 前缀被本索引包含但保留不删，
+-- 0013 索引继续服务 stats 族（kind 前导），收缩另行走 expand-migrate-contract
+-- 评估，本批不做。
+CREATE INDEX idx_view_events_asset_kind_started
+    ON view_events (asset_id, kind, started_at);
