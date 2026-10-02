@@ -1,5 +1,7 @@
 package media.qimeng.app.feature.settings
 
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -10,13 +12,17 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+import media.qimeng.app.core.data.repository.AppearancePrefsRepository
 import media.qimeng.app.core.data.repository.AuthRepository
 import media.qimeng.app.core.data.repository.RecommendPrefsRepository
 import media.qimeng.app.core.data.repository.StatsRepository
 import media.qimeng.app.core.data.repository.SystemInfoRepository
+import media.qimeng.app.core.model.AppearanceMode
 import media.qimeng.app.core.model.RecommendPrefsValues
 import media.qimeng.app.core.model.RecommendPreset
 import media.qimeng.app.core.model.StatsOverviewValues
+import media.qimeng.app.core.model.TabBarMaterial
+import media.qimeng.app.core.model.ThemeColorPreset
 import media.qimeng.app.core.model.TrendPoint
 import media.qimeng.app.core.model.toPrefsValues
 import media.qimeng.app.core.testing.FakeAuthRepository
@@ -68,6 +74,29 @@ class SettingsViewModelTest {
         override suspend fun serverVersion(): String? = version
     }
 
+    /** 外观偏好替身（悬浮玻璃坞批：ViewModel 注入面新增，内存态即可满足本页编排断言） */
+    private class FakeAppearancePrefsRepository : AppearancePrefsRepository {
+        private val _appearanceMode = MutableStateFlow(AppearanceMode.SYSTEM)
+        private val _tabBarMaterial = MutableStateFlow(TabBarMaterial.DEFAULT)
+        private val _themeColorPreset = MutableStateFlow(ThemeColorPreset.DEFAULT)
+
+        override val appearanceMode: Flow<AppearanceMode> = _appearanceMode
+        override val tabBarMaterial: Flow<TabBarMaterial> = _tabBarMaterial
+        override val themeColorPreset: Flow<ThemeColorPreset> = _themeColorPreset
+
+        override suspend fun setAppearanceMode(mode: AppearanceMode) {
+            _appearanceMode.value = mode
+        }
+
+        override suspend fun setTabBarMaterial(material: TabBarMaterial) {
+            _tabBarMaterial.value = material
+        }
+
+        override suspend fun setThemeColorPreset(preset: ThemeColorPreset) {
+            _themeColorPreset.value = preset
+        }
+    }
+
     /** 数量卡替身（I4）：overview 可编程抛出（读失败降级路径锁定）；trends 本页不消费 */
     private class FakeStatsRepository(
         private val overview: StatsOverviewValues?,
@@ -92,6 +121,7 @@ class SettingsViewModelTest {
         statsRepository = stats,
         prefsRepository = prefs,
         systemInfoRepository = FakeSystemInfoRepository(version),
+        appearancePrefsRepository = FakeAppearancePrefsRepository(),
     )
 
     @Test
