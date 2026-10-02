@@ -11,6 +11,7 @@
 import { postApiV1EventsView } from '@/api/generated'
 import { unwrapSdkResult } from '@/lib/api-client'
 import { createEventLedger, type EventLedger, type EventLedgerStorage, type LedgerViewEvent } from '@/lib/event-ledger'
+import { openDatabase, runTx } from '@/lib/idb'
 
 /** 数据库名/存储名（升级走 version 递增 + onupgradeneeded，只加不改不删） */
 const DB_NAME = 'qimeng_event_ledger'
@@ -20,43 +21,25 @@ const STORE_NAME = 'view_events'
 /**
  * IndexedDB 存储实现。keyPath=幂等键：put 天然按 clientEventId 唯一
  * （同 id 重复记账不产生双行，与服务端唯一索引同构）。
+ * 建库/单事务 promise 化抽共享件 lib/idb（上传队列持久化成为第 2 个消费方
+ * 时收敛，代码卫生约束 6）；本文件只保留账本自身的存储结构与键语义。
  */
 function openIndexedDbStorage(): Promise<EventLedgerStorage> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION)
-    request.onupgradeneeded = () => {
-      const db = request.result
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: 'clientEventId' })
-      }
+  return openDatabase(DB_NAME, DB_VERSION, (db) => {
+    if (!db.objectStoreNames.contains(STORE_NAME)) {
+      db.createObjectStore(STORE_NAME, { keyPath: 'clientEventId' })
     }
-    request.onsuccess = () => {
-      const db = request.result
-      resolve({
-        async put(event: LedgerViewEvent) {
-          await tx(db, 'readwrite', (store) => store.put(event))
-        },
-        async list() {
-          return tx(db, 'readonly', (store) => store.getAll())
-        },
-        async delete(clientEventId: string) {
-          await tx(db, 'readwrite', (store) => store.delete(clientEventId))
-        },
-      })
-    }
-    request.onerror = () => reject(request.error ?? new Error('indexedDB open failed'))
-  })
-}
-
-/** 单事务封装：promise 化 request（结果经 request 取回，事务随请求落定） */
-function tx<T>(db: IDBDatabase, mode: IDBTransactionMode, run: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_NAME, mode)
-    const request = run(transaction.objectStore(STORE_NAME))
-    request.onsuccess = () => resolve(request.result)
-    request.onerror = () => reject(request.error ?? new Error('indexedDB request failed'))
-    transaction.onabort = () => reject(transaction.error ?? new Error('indexedDB transaction aborted'))
-  })
+  }).then((db) => ({
+    async put(event: LedgerViewEvent) {
+      await runTx(db, STORE_NAME, 'readwrite', (store) => store.put(event))
+    },
+    async list() {
+      return runTx(db, STORE_NAME, 'readonly', (store) => store.getAll())
+    },
+    async delete(clientEventId: string) {
+      await runTx(db, STORE_NAME, 'readwrite', (store) => store.delete(clientEventId))
+    },
+  }))
 }
 
 /** 内存存储（IndexedDB 不可用时的降级；标签页关闭即失，仅保会话内重试） */

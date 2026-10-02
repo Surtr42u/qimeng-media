@@ -9,9 +9,11 @@
  * 卸载）自动 abort 整队」的论证已失效——上传已成主通道（直传化/自动挂靠/
  * 目录递归连续多批加强），大文件传输中误触路由切换即几 GB 白传。现行为 =
  * 队列随模块存活全页会话有效，abort 只发生在用户显式「全部取消」；401/登出
- * 处置保持既有语义（条目逐个失败落终态，不整队 abort）。页面刷新仍会丢队列
- * （浏览器语义，XHR 句柄不跨页面存活）；刷新存活需 IndexedDB 持久化——另立项
- *（同会话内的弱网断点续传已随 ADR-0028 分片通道落地，见 lib/upload-chunked.ts）。
+ * 处置保持既有语义（条目逐个失败落终态，不整队 abort）。刷新持久化已落地
+ *（2026-10-02，HANDOVER §5 待办#2）：挂载即 restorePersisted 把 IndexedDB
+ * 里的未终态条目还原为「需重新选择文件」态（File 句柄不跨页面存活是平台
+ * 客观限制），重选同名文件后续传/重传——全在 store 与 lib/upload-queue-persist，
+ * 本文件只补一次触发。
  *
  * 传输实现口径（裸 XHR + octet-stream、严格串行、挂靠序列、大小上限前置
  * 拦截、目标入队快照、≥16MB 分片断点续传分流——lib/upload-chunked.ts）全部
@@ -55,6 +57,11 @@ export function useUploadQueue(options: UploadQueueOptions) {
     uploadQueueStore.attachQueryClient(queryClient)
   }, [queryClient])
 
+  // 刷新恢复：挂载即还原持久化条目（幂等可重触发，单飞闸+按 id 去重在 store 内）
+  useEffect(() => {
+    void uploadQueueStore.restorePersisted()
+  }, [])
+
   // useSyncExternalStore：快照 = store 权威副本引用（写入口替换数组保证
   // 引用变化可感知），订阅/解绑由 React 托管——卸载只是停止订阅，不碰传输
   const items = useSyncExternalStore(uploadQueueStore.subscribe, uploadQueueStore.getItems)
@@ -65,5 +72,14 @@ export function useUploadQueue(options: UploadQueueOptions) {
       it.status === 'done' || it.status === 'failed' || it.status === 'attach-failed' || it.status === 'canceled',
   )
 
-  return { items, enqueue: uploadQueueStore.enqueue, cancelAll: uploadQueueStore.cancelAll, clearFinished: uploadQueueStore.clearFinished, isBusy, hasFinished }
+  return {
+    items,
+    enqueue: uploadQueueStore.enqueue,
+    cancelAll: uploadQueueStore.cancelAll,
+    clearFinished: uploadQueueStore.clearFinished,
+    removeItem: uploadQueueStore.removeItem,
+    resumeWithFile: uploadQueueStore.resumeWithFile,
+    isBusy,
+    hasFinished,
+  }
 }
