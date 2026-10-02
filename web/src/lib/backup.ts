@@ -63,3 +63,37 @@ export function backupSummaryText(s: LegacyBackupSummary): string {
     `${s.statsRows.toLocaleString()} 条统计。导入按唯一键合并、不删除现有数据，是否导入恢复？`
   )
 }
+
+// ---- 库文件快照调度参数（PUT /api/v1/backups/schedule，2026-10-03 热生效批）----
+// 与上面旧版 JSON 备份同属备份域逻辑层：校验规则在 lib、组件只渲染（铁律 7）。
+
+/** 调度参数合法范围。三处同值：openapi BackupSchedule minimum/maximum、
+ * 服务端 backup 包 Min/Max 常量、此处——协议侧改动须三处同步，反之亦然 */
+export const BACKUP_SCHEDULE_BOUNDS = {
+  intervalHours: { min: 1, max: 8760 },
+  retention: { min: 1, max: 365 },
+} as const
+
+/** 服务端返回的调度参数（GET /backups 的 schedule；与生成类型 BackupSchedule
+ * 同形，这里用结构化字面量避免逻辑层依赖生成类型细节） */
+export interface BackupScheduleDraft {
+  enabled: boolean
+  intervalHours: number
+  retention: number
+}
+
+/**
+ * 调度参数本地校验（与服务端 400 INVALID_PARAM 同口径，先拦省一次白打请求）。
+ * 返回 null = 合法；否则返回中文错误信息（数字输入的空串/非数在组件层已挡，
+ * 这里兜底范围面）。
+ */
+export function validateBackupSchedule(draft: BackupScheduleDraft): string | null {
+  const { intervalHours, retention } = BACKUP_SCHEDULE_BOUNDS
+  if (!Number.isInteger(draft.intervalHours) || draft.intervalHours < intervalHours.min || draft.intervalHours > intervalHours.max) {
+    return `快照间隔须在 ${intervalHours.min}–${intervalHours.max} 小时整数`
+  }
+  if (!Number.isInteger(draft.retention) || draft.retention < retention.min || draft.retention > retention.max) {
+    return `保留份数须在 ${retention.min}–${retention.max} 份整数`
+  }
+  return null
+}

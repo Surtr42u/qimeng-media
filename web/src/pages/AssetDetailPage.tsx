@@ -20,6 +20,8 @@ import { LoadingHint } from '@/components/ui/loading-hint'
 import { formatBytes, formatCount, formatShortDate } from '@/lib/format'
 import { assetDetailWithSearch, assetEdit, readAssetNavState, readBackdropKey, type OverlayDetailState } from '@/lib/route-keys'
 import { ensureSessionId } from '@/hooks/use-session'
+import { useThumbSize } from '@/hooks/use-thumb-size'
+import { applyThumbSize } from '@/lib/thumb-size'
 
 /**
  * 资产详情页（/app/asset/:assetId，首页/相册卡片点击进入）。
@@ -75,6 +77,8 @@ export default function AssetDetailPage() {
   // 互动行（B站式）：点赞 toggle（响应 LikeState 回填）/ 收藏显式设置（hooks/use-assets.ts）
   const toggleLike = useToggleLike()
   const setFavorite = useSetFavorite()
+  // 档位偏好接入选点（与 MediaCard 同口径；auto=服务端下发原样）——视频海报帧跟随
+  const [thumbSize] = useThumbSize()
 
   // 已看完徽标与续播起点渲染期直接推导（协议明文口径，客户端推导）；
   // 起点的「定格防 refetch 重建」由 VideoPlayer 挂载时冻结 + key 绑定资产实现
@@ -211,7 +215,7 @@ export default function AssetDetailPage() {
                 <VideoPlayer
                   key={d.id ?? assetId}
                   src={d.origUrl ?? ''}
-                  poster={d.thumbUrl}
+                  poster={d.thumbUrl ? applyThumbSize(d.thumbUrl, thumbSize) : undefined}
                   startTime={startTime}
                   highlights={(timelineTags ?? [])
                     .filter((t) => t.timeMillis != null)

@@ -256,3 +256,77 @@ func TestBackupRotationOverTime(t *testing.T) {
 		t.Fatalf("轮转后列表 = %d 份, 期望 3", len(list.Items))
 	}
 }
+
+// TestPutBackupSchedule 端点行为锁定（2026-10-03 热生效批）：
+// ① 合法 PUT → 200 回显提交值；② kv_settings 落库（backup.SettingKey，
+// 重启后覆盖 env/yaml 的锚）；③ Manager 热生效（Schedule() 立即可见，
+// GET /backups 回显切到新值）；④ 键缺失 400、越界 400 且不落库不生效。
+func TestPutBackupSchedule(t *testing.T) {
+	env := newTestEnv(t)
+
+	// ① 合法提交：关开关 + 缩短间隔 + 减保留（三键全量替换语义）。
+	resp := env.do(t, "PUT", "/api/v1/backups/schedule",
+		`{"enabled":false,"intervalHours":6,"retention":3}`)
+	defer closeBody(resp)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("PUT schedule 期望 200, 得到 %d", resp.StatusCode)
+	}
+	var echoed gen.BackupSchedule
+	if err := decodeBody(resp, &echoed); err != nil {
+		t.Fatalf("解析回显失败: %v", err)
+	}
+	if echoed.Enabled || echoed.IntervalHours != 6 || echoed.Retention != 3 {
+		t.Fatalf("回显 = %+v, 期望 {false 6 3}", echoed)
+	}
+
+	// ② kv 落库验证（值可被 ParseScheduleSetting 还原 = 重启路径可用）。
+	raw, err := env.q.GetSetting(context.Background(), backup.SettingKey)
+	if err != nil {
+		t.Fatalf("kv 未落库: %v", err)
+	}
+	if s, ok := backup.ParseScheduleSetting(raw); !ok || s.Enabled || s.IntervalHours != 6 || s.Retention != 3 {
+		t.Fatalf("kv 值 = %q 解析 %+v ok=%v, 期望 {false 6 3}", raw, s, ok)
+	}
+
+	// ③ Manager 热生效 + GET 回显切换。
+	if enabled, interval, retention := env.s.backup.Schedule(); enabled || interval != 6*time.Hour || retention != 3 {
+		t.Fatalf("Manager.Schedule() = (%v, %v, %d), 期望 (false, 6h, 3)", enabled, interval, retention)
+	}
+	resp2 := env.do(t, "GET", "/api/v1/backups", "")
+	defer closeBody(resp2)
+	var list gen.BackupList
+	if err := decodeBody(resp2, &list); err != nil {
+		t.Fatalf("解析列表失败: %v", err)
+	}
+	if list.Schedule.Enabled || list.Schedule.IntervalHours != 6 || list.Schedule.Retention != 3 {
+		t.Fatalf("GET 回显 = %+v, 期望 {false 6 3}", list.Schedule)
+	}
+
+	// ④ 键缺失（不完整对象）→ 400，且不落库不生效。
+	resp3 := env.do(t, "PUT", "/api/v1/backups/schedule", `{"enabled":true}`)
+	defer closeBody(resp3)
+	if resp3.StatusCode != http.StatusBadRequest {
+		t.Fatalf("缺键 PUT 期望 400, 得到 %d", resp3.StatusCode)
+	}
+	if enabled, _, _ := env.s.backup.Schedule(); enabled {
+		t.Fatal("400 后 Manager 参数不得变化")
+	}
+
+	// ⑤ 越界 → 400（intervalHours=0 / retention=366），kv 值不被覆盖。
+	for _, body := range []string{
+		`{"enabled":true,"intervalHours":0,"retention":7}`,
+		`{"enabled":true,"intervalHours":8761,"retention":7}`,
+		`{"enabled":true,"intervalHours":24,"retention":0}`,
+		`{"enabled":true,"intervalHours":24,"retention":366}`,
+	} {
+		resp4 := env.do(t, "PUT", "/api/v1/backups/schedule", body)
+		closeBody(resp4)
+		if resp4.StatusCode != http.StatusBadRequest {
+			t.Fatalf("越界 PUT %s 期望 400, 得到 %d", body, resp4.StatusCode)
+		}
+	}
+	raw2, err := env.q.GetSetting(context.Background(), backup.SettingKey)
+	if err != nil || raw2 != raw {
+		t.Fatalf("400 后 kv 值不得变化: raw2=%q err=%v", raw2, err)
+	}
+}

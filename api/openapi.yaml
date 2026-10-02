@@ -1139,6 +1139,27 @@ paths:
       summary: 快照列表与调度摘要（维护页一次往返拿全）
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/BackupList" } } } }
+  /api/v1/backups/schedule:
+    put:
+      summary: 修改定时快照调度参数（热生效 + 持久化，无需重启）
+      description: |
+        全量提交三键（enabled/intervalHours/retention，与 BackupSchedule 同形，
+        与 PUT /config 全量替换同款惯例）。服务端先持久化再热生效：写入
+        kv_settings（键 backup_schedule，migrations/0003 既有 KV 机制，不另造
+        配置系统）后立即驱动调度器按新参数运行——interval 变更重置周期、
+        enabled=false 停止定时调度（手动触发 POST /backups 不受影响）、
+        retention 即时作用于下次轮转。**优先级：本端点保存值 > env
+        QIMENG_BACKUP_* > yaml backup: > 默认**——保存过一次后 env/yaml 对
+        备份调度三键不再生效（重新 PUT 即改写）。响应 = 生效后回显。校验失败
+        400 INVALID_PARAM（既不持久化也不生效）。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BackupSchedule" }
+      responses:
+        "200": { description: 已生效，返回生效后的调度参数, content: { application/json: { schema: { $ref: "#/components/schemas/BackupSchedule" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
   /api/v1/backups/{name}:
     delete:
       summary: 删除单份快照（物理删除管理操作，二次确认场景）
@@ -1216,12 +1237,15 @@ components:
 
     BackupSchedule:
       type: object
-      description: 定时快照调度摘要（config backup.* 只读回显；v1 调整走 yaml/env + 重启，无设置端点）
+      description: |
+        定时快照调度参数。GET /backups 回显当前生效值（含 PUT /backups/schedule
+        覆盖值；未覆盖时为 config backup.* 启动值）。PUT /backups/schedule
+        全量提交三键：热生效 + 持久化（kv_settings 键 backup_schedule），无需重启。
       required: [enabled, intervalHours, retention]
       properties:
-        enabled:       { type: boolean, description: 自动备份开关（backup.enabled，默认 true） }
-        intervalHours: { type: integer, description: 快照间隔小时数（backup.interval，默认 24；不足 1 小时按 1 小时向上取整展示，精确值以服务端配置为准） }
-        retention:     { type: integer, description: 保留份数（backup.retention，默认 7；超出自动删最旧） }
+        enabled:       { type: boolean, description: 自动备份开关（默认 true；false 只停定时面，手动触发 POST /backups 仍可用） }
+        intervalHours: { type: integer, minimum: 1, maximum: 8760, description: 快照间隔小时数（默认 24；1–8760，一年上限防误填；不足 1 小时的启动配置按 1 小时向上取整展示） }
+        retention:     { type: integer, minimum: 1, maximum: 365, description: 保留份数（默认 7；1–365；超出自动删最旧） }
 
     BackupList:
       type: object

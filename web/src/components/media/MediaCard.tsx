@@ -8,6 +8,8 @@
  */
 
 import { memo } from 'react'
+import { useThumbSize } from '@/hooks/use-thumb-size'
+import { applyThumbSize } from '@/lib/thumb-size'
 
 export interface MediaCardProps {
   /** 资产标识（阶段 A mock 传视频 id；阶段 B 换 assetId，用于点击跳详情） */
@@ -30,6 +32,10 @@ export interface MediaCardProps {
 
 function MediaCardImpl({ id, cover, title, duration, up, date, onClick, onOpen }: MediaCardProps) {
   const handleClick = onClick ?? (onOpen ? () => onOpen(id) : undefined)
+  // 缩略图档位偏好（HANDOVER §5④）：auto=服务端下发原样；显式档位改写 size
+  // 参数（缓存键随档位切换，无混存）。useSyncExternalStore 订阅——memo 卡片
+  // 靠 store 变化全量重渲染，档位切换全站即时生效。
+  const [thumbSize] = useThumbSize()
   return (
     <div
       className="card"
@@ -39,7 +45,7 @@ function MediaCardImpl({ id, cover, title, duration, up, date, onClick, onOpen }
     >
       <div className="card--cover">
         {/* decoding=async：缩略图解码移出主线程（滚动中大量卡片时避免掉帧） */}
-        <img src={cover} alt={title} loading="lazy" decoding="async" />
+        <img src={applyThumbSize(cover, thumbSize)} alt={title} loading="lazy" decoding="async" />
         {duration ? <span className="card--duration">{duration}</span> : null}
       </div>
       <div className="card--title">{title}</div>

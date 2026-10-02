@@ -94,6 +94,16 @@ type Manager struct {
 	// 快照执行（慢 IO）不持锁，只在进出闸时短暂持锁。
 	mu      sync.Mutex
 	running bool
+
+	// schedMu 保护调度参数（retention/schedEnabled/schedInterval）与调度
+	// 循环生命周期——热生效入口（StartScheduling/ApplySchedule/Schedule）
+	// 与 rotate 读 retention 共用一把锁；调度循环体本身不持锁跑（与 Create
+	// 的防重入闸解耦）。
+	schedMu       sync.Mutex
+	schedCtx      context.Context    // 调度循环生命周期根；nil = 装配根尚未挂（循环等挂后再起）
+	schedCancel   context.CancelFunc // 当前循环的 cancel；nil = 无循环在跑
+	schedEnabled  bool
+	schedInterval time.Duration
 }
 
 // NewManager 组装快照管理器。目录不在此处创建（运行时惰性创建——首次
@@ -178,11 +188,15 @@ func (m *Manager) Create(ctx context.Context) (Info, error) {
 // rotate 按「文件名字典序 = 时间序」（YYYYMMDD-HHMMSS 定长格式的性质）
 // 升序排列后删除最旧的超出份数。在防重入闸内调用，不会碰到进行中的快照。
 func (m *Manager) rotate() error {
+	// retention 由 schedMu 保护（热生效可随时改），这里持锁快照读一次。
+	m.schedMu.Lock()
+	retention := m.retention
+	m.schedMu.Unlock()
 	infos, err := m.list()
 	if err != nil {
 		return err
 	}
-	if len(infos) <= m.retention {
+	if len(infos) <= retention {
 		return nil
 	}
 	root, err := os.OpenRoot(m.dir)
@@ -191,11 +205,11 @@ func (m *Manager) rotate() error {
 	}
 	defer func() { _ = root.Close() }()
 	// list 已按名字升序（最旧在前）；从队首删到只剩 retention 份。
-	for _, info := range infos[:len(infos)-m.retention] {
+	for _, info := range infos[:len(infos)-retention] {
 		if err := root.Remove(info.Name); err != nil {
 			return fmt.Errorf("backup: 删除超龄快照 %s: %w", info.Name, err)
 		}
-		m.logger.Info("超龄快照已轮转删除", "name", info.Name, "retention", m.retention)
+		m.logger.Info("超龄快照已轮转删除", "name", info.Name, "retention", retention)
 	}
 	return nil
 }
@@ -307,31 +321,84 @@ func (m *Manager) OpenFile(name string) (*os.File, fs.FileInfo, error) {
 	return f, st, nil
 }
 
-// Start 启动定时快照调度（goroutine，随 ctx 取消退出）。首个快照在启动后
-// 一个间隔触发（不立即跑——启动期扫描/回填已在忙，立即快照抢 IO；要立即
-// 备份走手动端点）。调度失败只记日志不退出循环（下个周期自愈重试）。
-// 是否启用由组装方判定（config.Backup.Enabled），本包不读 config。
-func (m *Manager) Start(ctx context.Context, interval time.Duration) {
-	if interval <= 0 {
-		m.logger.Warn("备份定时调度间隔非法（<=0），定时快照不启动（手动触发仍可用）", "interval", interval)
+// StartScheduling 挂调度循环生命周期根并应用初始调度参数（装配根 main 在
+// ctx 建好后调用一次；enabled/interval/retention 来自启动配置叠加 kv 覆盖值，
+// 三键裁决在调用方，本包不读 config 不碰数据库）。之后的热生效走 ApplySchedule。
+func (m *Manager) StartScheduling(ctx context.Context, enabled bool, interval time.Duration, retention int) {
+	m.schedMu.Lock()
+	defer m.schedMu.Unlock()
+	m.schedCtx = ctx
+	m.applyScheduleLocked(enabled, interval, retention)
+}
+
+// ApplySchedule 使调度参数热生效（PUT /api/v1/backups/schedule 持久化成功后
+// 调用；不重启进程）：
+//   - retention 立即生效（下次轮转按新值）；
+//   - enabled=false 停止定时调度（手动触发 POST /backups 不受影响）；
+//   - interval 变化重置周期计时——首个快照在生效后一个新间隔触发，周期从
+//     生效时刻重新起算（诚实口径：不追补「按旧周期本应发生的快照」）。
+//
+// 未挂生命周期根（装配根未调 StartScheduling）时只记参数不起循环——防御
+// 装配时序，等挂根后再起（StartScheduling 内部同走 applyScheduleLocked）。
+func (m *Manager) ApplySchedule(enabled bool, interval time.Duration, retention int) {
+	m.schedMu.Lock()
+	defer m.schedMu.Unlock()
+	m.applyScheduleLocked(enabled, interval, retention)
+}
+
+// Schedule 返回当前生效的调度参数（GET /backups 的 schedule 回显来源；
+// 未 StartScheduling 过的零值 Manager 返回零参数——装配根负责初始化）。
+func (m *Manager) Schedule() (enabled bool, interval time.Duration, retention int) {
+	m.schedMu.Lock()
+	defer m.schedMu.Unlock()
+	return m.schedEnabled, m.schedInterval, m.retention
+}
+
+// applyScheduleLocked 应用三键并让调度循环与新参数匹配（须持 schedMu）。
+func (m *Manager) applyScheduleLocked(enabled bool, interval time.Duration, retention int) {
+	if retention > 0 {
+		m.retention = retention
+	}
+	m.schedEnabled = enabled
+	if interval > 0 {
+		m.schedInterval = interval
+	}
+	// 停旧循环（如有）：无论新参数为何，一律按当前参数重判是否起新循环——
+	// 幂等语义「当前调度 = 最近一次 ApplySchedule 的参数，计时从生效起算」。
+	if m.schedCancel != nil {
+		m.schedCancel()
+		m.schedCancel = nil
+	}
+	if !m.schedEnabled || m.schedInterval <= 0 || m.schedCtx == nil {
 		return
 	}
-	ticker := time.NewTicker(interval)
-	go func() {
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				if _, err := m.Create(ctx); err != nil {
-					// ErrInProgress 理论不可达（调度串行），出现说明有并发
-					// 手动触发在跑——跳过本周期即可，不当作故障刷日志。
-					if !errors.Is(err, ErrInProgress) {
-						m.logger.Error("定时快照失败（下个周期自动重试）", "err", err)
-					}
+	loopCtx, cancel := context.WithCancel(m.schedCtx)
+	m.schedCancel = cancel
+	go m.scheduleLoop(loopCtx, m.schedInterval)
+	m.logger.Info("备份调度已应用", "enabled", m.schedEnabled, "interval", m.schedInterval, "retention", m.retention)
+}
+
+// scheduleLoop 定时快照循环（goroutine，随 ctx 取消退出）。首个快照在生效后
+// 一个间隔触发（不立即跑——启动期扫描/回填已在忙，立即快照抢 IO；要立即
+// 备份走手动端点）。用 Timer 而非 Ticker：每轮完成后重置下一周期——慢快照
+// 不会背靠背触发（Ticker 按固定节拍，快照耗时会吞拍；此差异语义更安全）。
+// 调度失败只记日志不退出循环（下个周期自愈重试）。
+func (m *Manager) scheduleLoop(ctx context.Context, interval time.Duration) {
+	timer := time.NewTimer(interval)
+	defer timer.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+			if _, err := m.Create(ctx); err != nil {
+				// ErrInProgress 理论不可达（调度串行），出现说明有并发
+				// 手动触发在跑——跳过本周期即可，不当作故障刷日志。
+				if !errors.Is(err, ErrInProgress) {
+					m.logger.Error("定时快照失败（下个周期自动重试）", "err", err)
 				}
 			}
+			timer.Reset(interval)
 		}
-	}()
+	}
 }

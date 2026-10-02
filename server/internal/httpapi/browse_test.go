@@ -228,6 +228,11 @@ func newTestEnvRaw(t *testing.T) *testEnv {
 	if err != nil {
 		t.Fatalf("组装备份管理器失败: %v", err)
 	}
+	// 调度生命周期挂根 + 初始参数（与生产 main 同款装配——GET /backups 的
+	// schedule 回显读 Manager.Schedule()，缺这步回显退化为零参数）。
+	schedCtx, schedCancel := context.WithCancel(context.Background())
+	t.Cleanup(schedCancel)
+	backupMgr.StartScheduling(schedCtx, cfg.Backup.Enabled, cfg.Backup.Interval, cfg.Backup.Retention)
 	apisrv, err := New(Deps{
 		Conn: conn, Queries: q, Bus: events.NewBus(nil, 0), Cfg: cfg,
 		Thumbs: thumbnail.NewGenerator(dataDir, nil, thumbnail.Options{}), Scanner: fscan,
