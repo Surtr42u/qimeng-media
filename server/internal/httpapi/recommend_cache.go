@@ -24,8 +24,12 @@ package httpapi
 
 import (
 	"fmt"
+	"log/slog"
+	"runtime/debug"
 	"sync"
 	"time"
+
+	"golang.org/x/sync/singleflight"
 
 	"qimeng-media/server/internal/httpapi/gen"
 )
@@ -65,80 +69,92 @@ type recommendCacheEntry struct {
 }
 
 // recommendCache 并发安全的推荐响应缓存；rev 随 invalidate 递增，
-// 旧修订号的键永不命中（免逐条清理）。
+// 旧修订号的键永不命中（免逐条清理）。并发同键去重（单飞）由 sf 承担——
+// 选型记档（AI_README_FIRST「选型约束」轻量通道，2026-10-02 治理批）：
+//   - 业界通行方案 = golang.org/x/sync/singleflight（Go 官方扩展件，本仓
+//     依赖分级决策序第 3 级），替代 2026-09-18 手写的 inflight map + 席位
+//     goroutine 簿记（根因 = 当年规则不对称下条件反射式自研）；
+//   - 不直接采信其默认 panic 语义：上游 doCall 对 compute panic 的处置是
+//     `go panic(e)` 兜底（v0.23.0 singleflight.go 实证）——裸崩进程并遗留
+//     select{} 常驻 goroutine；Do 路径等待方也会跟着 panic。故 compute 的
+//     panic 在进入 Group 前就地转译（safeCompute），Group 永远收到正常
+//     返回，其清理时机（doCall defer：放行等待方→清槽）与原手写版逐点等价；
+//   - 复查条件：x/sync 后续版本若提供「panic 可选转译」官方面（upstream
+//     issue 讨论中）可退役 safeCompute 包装；退役触发 = 转译层引入行为
+//     分叉或上游语义收敛后包装成为死代码。
 type recommendCache struct {
-	mu       sync.Mutex
-	rev      int64
-	entries  map[recommendCacheKey]recommendCacheEntry
-	inflight map[recommendCacheKey]*recommendInflightCall
-}
-
-// recommendInflightCall 一轮进行中的计算（单飞）：冷启动首条请求与开机预热
-// 并发到达时共享同一次全库计算，避免重复跑聚合+打分管线。
-type recommendInflightCall struct {
-	done chan struct{}
-	body []gen.AssetSummary
-	ids  []string
-	err  error
+	mu      sync.Mutex
+	rev     int64
+	entries map[recommendCacheKey]recommendCacheEntry
+	sf      singleflight.Group
 }
 
 func newRecommendCache() *recommendCache {
+	// singleflight.Group 零值可用（内部 map 惰性初始化），无需显式装配。
 	return &recommendCache{
-		entries:  make(map[recommendCacheKey]recommendCacheEntry),
-		inflight: make(map[recommendCacheKey]*recommendInflightCall),
+		entries: make(map[recommendCacheKey]recommendCacheEntry),
 	}
 }
 
-// do 缓存主入口：命中返回缓存条目；未命中在单飞保护下执行 compute（并发
-// 同键只跑一次，其余等待共享同一结果），成功后登记缓存。compute 按约定
-// 不写展示计数——计数是「真实展示」语义（DOMAIN_RULES §1.4.3），由真实
-// 服务路径取得结果后自行回写，预热路径刻意不回写。
-// panic 契约（2026-09-18 评审补丁）：compute panic 时等待方拿到转译错误
-// 返回而非永久阻塞，席位 goroutine 原样上抛交上层 recover——见 runSingleflight。
+// sfKeyString singleflight 字符串键。结构体含 string 字段，禁止位置化拼接
+// （fmt.Sprintf("%v") 一类形态遇字段值含分隔符可碰撞——mediaType 来自查询
+// 参数），逐字段 %q 转义后键语义与旧 inflight map（可比较结构体直接作键）
+// 逐字段等价、无歧义。开销：每未命中请求一次小结构体格式化，相对一次全库
+// 打分管线可忽略。
+func sfKeyString(key recommendCacheKey) string {
+	return fmt.Sprintf("rev=%d|day=%q|seed=%d|mediaType=%q|cosOnly=%t|prefs=%q|offset=%d|limit=%d",
+		key.rev, key.day, key.seed, key.mediaType, key.cosOnly, key.prefs, key.offset, key.limit)
+}
+
+// do 缓存主入口：命中返回缓存条目；未命中在 singleflight 单飞保护下执行
+// compute（并发同键只跑一次，其余等待共享同一结果），成功后登记缓存。
+// compute 按约定不写展示计数——计数是「真实展示」语义（DOMAIN_RULES §1.4.3），
+// 由真实服务路径取得结果后自行回写，预热路径刻意不回写。
+// panic 契约（2026-10-02 治理批改写，2026-09-18 评审补丁的「席位方 re-panic
+// 交 net/http recover」契约退役）：compute 的 panic 在席位 goroutine 就地
+// 转译为错误并 slog 记录堆栈（原 net/http recover 的日志职责收编于此），
+// 全部调用方（含等待方）拿到转译错误而非 panic/永久阻塞；槽位清理由
+// singleflight 的 doCall defer 承担，同键下一轮正常重算。改写动机与上游
+// panic 语义不兼容的实证见 recommendCache 注记与 safeCompute。
 func (c *recommendCache) do(key recommendCacheKey, compute func() ([]gen.AssetSummary, []string, error)) ([]gen.AssetSummary, []string, error) {
 	if e, ok := c.get(key); ok {
 		return e.body, e.assetIDs, nil
 	}
-	c.mu.Lock()
-	if call, ok := c.inflight[key]; ok {
-		c.mu.Unlock()
-		<-call.done
-		return call.body, call.ids, call.err
-	}
-	call := &recommendInflightCall{done: make(chan struct{})}
-	c.inflight[key] = call
-	c.mu.Unlock()
-
-	body, ids, err := c.runSingleflight(key, call, compute)
-	if err == nil {
+	res, err, _ := c.sf.Do(sfKeyString(key), func() (any, error) {
+		body, ids, err := c.safeCompute(compute)
+		if err != nil {
+			return nil, err
+		}
 		c.put(key, body, ids)
+		return sfResult{body: body, ids: ids}, nil
+	})
+	if err != nil {
+		return nil, nil, err
 	}
-	return body, ids, err
+	r := res.(sfResult)
+	return r.body, r.ids, nil
 }
 
-// runSingleflight 席位持有者的计算执行体。回填结果→放行等待方→清理槽位
-// 三步全部收在 defer 里：compute panic 也必须走完（否则等待方永久阻塞，
-// inflight 槽位泄漏会让该键后续所有请求挂死到重启）；恢复路径把 panic
-// 转译成错误交给等待方后原样 re-panic，堆栈仍由上层（net/http recover）
-// 记录，不吞。放行先于清槽：close(done) 与 delete 之间到达的并发请求还能
-// 挂上 inflight 即刻取走结果，不触发重复计算。
-func (c *recommendCache) runSingleflight(key recommendCacheKey, call *recommendInflightCall, compute func() ([]gen.AssetSummary, []string, error)) (body []gen.AssetSummary, ids []string, err error) {
+// sfResult 单飞执行体的结果载体（Do 的 val 通道要求 any）。
+type sfResult struct {
+	body []gen.AssetSummary
+	ids  []string
+}
+
+// safeCompute panic 转译边界：compute 的 panic 不得逃入 singleflight（上游
+// 对 panic 的处置是 `go panic(e)` 兜底 + Do 等待方跟随 panic，v0.23.0 doCall
+// 实证，见 recommendCache 注记）——就地 recover 转译为错误，slog 带堆栈记录
+// （生产语义：原由 net/http recover 记录的崩溃现场仍可追溯，且错误路径让
+// handler 走正常 500 响应而非连接中断）。
+func (c *recommendCache) safeCompute(compute func() ([]gen.AssetSummary, []string, error)) (body []gen.AssetSummary, ids []string, err error) {
 	defer func() {
-		p := recover()
-		if p != nil {
+		if p := recover(); p != nil {
 			body, ids, err = nil, nil, fmt.Errorf("推荐流计算 panic: %v", p)
-		}
-		call.body, call.ids, call.err = body, ids, err
-		close(call.done)
-		c.mu.Lock()
-		delete(c.inflight, key)
-		c.mu.Unlock()
-		if p != nil {
-			panic(p)
+			slog.Error("推荐流计算 panic（单飞席位转译为错误返回）",
+				"panic", p, "stack", string(debug.Stack()))
 		}
 	}()
-	body, ids, err = compute()
-	return body, ids, err
+	return compute()
 }
 
 // get 命中返回条目副本（值拷贝，body/assetIDs 共享底层数组——只读约定，
