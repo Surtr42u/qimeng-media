@@ -1451,14 +1451,32 @@ components:
             audioCodec:   { type: [string, "null"], description: '音频编码（如 aac/flac/opus；无音轨/未知=null）' }
             width:        { type: integer }
             height:       { type: integer }
-            tags:         { type: array, items: { $ref: "#/components/schemas/Tag" } }
-            authors:      { type: array, items: { $ref: "#/components/schemas/Author" } }
+            tags:         { type: array, items: { $ref: "#/components/schemas/AssetDetailTag" } }
+            authors:      { type: array, items: { $ref: "#/components/schemas/AssetDetailAuthor" } }
             viewCount:    { type: integer }
             playCount:    { type: integer }
             totalBrowseSeconds: { type: integer, description: 累计浏览秒数（dwell 事件整数秒累加；事件级向零截断口径见 ViewEventReport.seconds） }
             lastViewedAt: { type: [integer, "null"], format: int64, description: '最近一次 kind=open 事件时刻（Unix 毫秒；null=从未浏览）。2026-09-20 审计清偿批与 HistoryItem.lastViewedAt 统一为毫秒整型——原 date-time 字符串面经全客户端检索零消费，响应侧根修（先例：lastPositionSeconds format double 根修）' }
             origUrl:      { type: string, description: 签名原图/视频直链（查看永远发原件，无缩放副本） }
             thumbUrlMd:   { type: string, description: '签名缩略图直链 md 档（512，与列表网格同源、开机预生成覆盖）。客户端详情海报先用本档立即显示、thumbUrl（lg）就绪后换上——lg 不在预生成范围，首开详情直接等 lg 会触发现场 ffmpeg 生成（秒级起步）。2026-09-18 新增' }
+
+    AssetDetailTag:
+      description: 资产详情响应的标签关联条目（GET /assets/{id} 专属视图：标签池条目 + 关联级溯源两字段；标签池端点 GET /tags 不携带溯源——溯源展示只属详情面，ADR-0032 独立提案 2026-10-02）
+      allOf:
+        - $ref: "#/components/schemas/Tag"
+        - type: object
+          properties:
+            origin:          { type: [string, "null"], description: 关联溯源通道（ADR-0032 受控词表 client/txt/import/local-sync/scanner/legacy，与备份导出 LegacyMediaTagRef.origin 同名同义）。null/缺省=不可考 }
+            createdAtMillis: { type: [integer, "null"], format: int64, description: 关联成立毫秒（与备份导出 LegacyMediaTagRef.createdAtMillis 同名同义）。null/缺省=不可考（存量行 NULL/epoch 哨兵如实记不可考，禁止伪造） }
+
+    AssetDetailAuthor:
+      description: 资产详情响应的作者关联条目（GET /assets/{id} 专属视图：作者条目 + 关联级溯源两字段；作者列表端点 GET /authors 不携带溯源——溯源展示只属详情面，ADR-0032 独立提案 2026-10-02）
+      allOf:
+        - $ref: "#/components/schemas/Author"
+        - type: object
+          properties:
+            origin:          { type: [string, "null"], description: 关联溯源通道（ADR-0032 受控词表 client/txt/import/local-sync/scanner/legacy，与备份导出 LegacyAuthorMediaRef.origin 同名同义）。null/缺省=不可考 }
+            createdAtMillis: { type: [integer, "null"], format: int64, description: 关联成立毫秒（与备份导出 LegacyAuthorMediaRef.createdAtMillis 同名同义）。null/缺省=不可考（存量行 NULL 哨兵如实记不可考，禁止伪造） }
 
     MoveRequest:
       type: object

@@ -1449,12 +1449,19 @@ button.detail-act {
 
 /* 标签行 */
 .detail-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.detail-tags .pill { cursor: default; }
+.detail-tags .pill { cursor: default; display: inline-flex; align-items: center; gap: 5px; }
 button.pill.detail-tag-manage { cursor: pointer; }
+
+/* 关联溯源注记（ADR-0032 详情面）：标签胶囊内缀 / 作者名次行小字；不可考
+   不渲染任何标记（判定在逻辑层 lib/provenance.ts，UI 组件零业务规则） */
+.prov-note { font-size: 12px; font-weight: 400; color: var(--qm-text-muted); min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 
 /* 作者卡（右栏） */
 .author-row { display: flex; align-items: center; gap: 10px; padding: 8px 4px; border-bottom: 1px solid var(--qm-border); border-radius: var(--qm-radius-sm); }
 .author-row:last-child { border-bottom: none; }
+/* author-main 包裹作者名 + 溯源次行（无溯源注记时视觉与旧布局一致） */
+.author-main { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.author-main .author-name { flex: none; max-width: 100%; }
 .author-name { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 13px; color: var(--qm-text); text-decoration: none; transition: color var(--qm-duration-fast) var(--qm-ease-out); }
 .author-name:hover { color: var(--qm-primary-strong); }
 

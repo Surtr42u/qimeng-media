@@ -10,7 +10,8 @@ import media.qimeng.app.core.model.TimelineTag
 import media.qimeng.app.core.model.ViewEventKind
 import media.qimeng.sdk.models.ApiV1AssetsAssetIdTimelineTagsPostRequest
 import media.qimeng.sdk.models.AssetDetail as SdkAssetDetail
-import media.qimeng.sdk.models.Author
+import media.qimeng.sdk.models.AssetDetailAuthor
+import media.qimeng.sdk.models.AssetDetailTag
 import media.qimeng.sdk.models.LikeState
 import media.qimeng.sdk.models.MediaType
 import media.qimeng.sdk.models.ProgressUpdate
@@ -59,15 +60,19 @@ internal object SdkDetailMappers {
         relPath = detail.relPath.orEmpty(),
     )
 
-    fun toDetailTag(tag: Tag): DetailTag = DetailTag(
+    // 详情关联条目自 2026-10-02 协议批（第四百三十九笔）起为 AssetDetailTag/
+    // AssetDetailAuthor（openapi allOf 叠加可空溯源两字段，条目专属视图）。
+    // Android 端本批只做编译适配（协议先行第三步「按编译错误适配各端」），
+    // 溯源字段的详情页 UI 消费留待 ui/app-redesign 合并后批次。
+    fun toDetailTag(tag: AssetDetailTag): DetailTag = DetailTag(
         id = tag.id.orEmpty(),
         name = tag.name.orEmpty(),
     )
 
-    fun toDetailAuthor(author: Author): DetailAuthor = DetailAuthor(
+    fun toDetailAuthor(author: AssetDetailAuthor): DetailAuthor = DetailAuthor(
         id = author.id.orEmpty(),
         displayName = author.displayName.orEmpty(),
-        isCos = author.type == Author.Type.cos,
+        isCos = author.type == AssetDetailAuthor.Type.cos,
         followed = author.followed ?: false,
     )
 

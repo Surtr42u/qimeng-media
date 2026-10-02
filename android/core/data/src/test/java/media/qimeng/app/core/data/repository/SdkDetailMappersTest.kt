@@ -9,10 +9,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import media.qimeng.app.core.model.MediaKind
 import media.qimeng.sdk.models.AssetDetail
-import media.qimeng.sdk.models.Author
+import media.qimeng.sdk.models.AssetDetailAuthor
+import media.qimeng.sdk.models.AssetDetailTag
 import media.qimeng.sdk.models.LikeState
 import media.qimeng.sdk.models.MediaType
-import media.qimeng.sdk.models.Tag
 
 /**
  * 详情映射单测（M4-3 3a）：锁定 title=cosWork??fileName、签名相对路径 absolutize、
@@ -37,8 +37,10 @@ class SdkDetailMappersTest {
         lastPositionSeconds: Double? = null,
         likedToday: Boolean? = null,
         likeCount: Int? = null,
-        tags: List<Tag> = emptyList(),
-        authors: List<Author> = emptyList(),
+        // 2026-10-02 协议批（第四百三十九笔）：详情关联条目为 AssetDetailTag/
+        // AssetDetailAuthor（allOf 叠加可空溯源两字段；本测试只验既有映射语义）
+        tags: List<AssetDetailTag> = emptyList(),
+        authors: List<AssetDetailAuthor> = emptyList(),
         modifiedAt: OffsetDateTime? = null,
     ): AssetDetail = AssetDetail(
         id = UUID.fromString(id),
@@ -155,10 +157,10 @@ class SdkDetailMappersTest {
     fun `作者cos类型与followed-标签映射`() {
         val domain = SdkDetailMappers.toAssetDetail(
             sdkDetail(
-                tags = listOf(Tag(id = "t1", name = "甲")),
+                tags = listOf(AssetDetailTag(id = "t1", name = "甲")),
                 authors = listOf(
-                    Author(id = "cos_1", displayName = "名前", type = Author.Type.cos, followed = true),
-                    Author(id = "a2", displayName = "常规", type = Author.Type.regular, followed = null),
+                    AssetDetailAuthor(id = "cos_1", displayName = "名前", type = AssetDetailAuthor.Type.cos, followed = true),
+                    AssetDetailAuthor(id = "a2", displayName = "常规", type = AssetDetailAuthor.Type.regular, followed = null),
                 ),
             ),
             baseUrl,
