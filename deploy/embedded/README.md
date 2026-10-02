@@ -29,6 +29,10 @@
   - ffprobe `d8e929fcb2b3b5a1a7c8dc234f6d98834eaf8ff2ce408a85060a470b243e0bb5`
 - 许可：FFmpeg 9.0 `--disable-gpl --disable-nonfree`（LGPL-2.1 兼容）+ NDK r28
   minSdk 28；16KB 页对齐已实测（LOAD Align=0x4000，m6-poc）。
+- **双宿主 fetch 脚本（同锁孪生）**：本机 Windows = `fetch-ffmpeg-arm64.ps1`，
+  CI/Linux = `fetch-ffmpeg-arm64.sh`（commit/哈希逐字节同源；2026-10-02 CI 产物
+  完整性门禁随批新增）。升级 FFmpeg = 四处同步：`.ps1` 哈希表、`.sh` 常量区、
+  本 README 哈希行、发布说明。
 
 ## libwebp 事实（U11 批次D 定案）
 
