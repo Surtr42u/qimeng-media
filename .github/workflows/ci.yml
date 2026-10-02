@@ -131,6 +131,13 @@ jobs:
       # assembleDebug 出的是"非内嵌"包，下方产物完整性断言会拦。
       - uses: actions/setup-go@v6
         with: { go-version: "1.27.x", cache-dependency-path: server/go.sum }
+      # gen/ 生成物不入库（.gitignore），Go 构建前必须从 openapi.yaml 重建——
+      # oapi-codegen 版本与 server job / Makefile 保持一致（v2.8.0）。
+      - name: 生成 Go 接口层（oapi-codegen）
+        run: |
+          go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.8.0
+          cd server
+          "$(go env GOPATH)/bin/oapi-codegen" -config internal/httpapi/gen/oapi-codegen.yaml ../api/openapi.yaml
       - name: 交叉编译内嵌服务端 arm64（= make server-android-arm64）
         run: |
           cd server
