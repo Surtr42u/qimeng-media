@@ -15,8 +15,11 @@ dependencies {
     // 网格卡片/分组段需要领域模型（core→core 单向依赖，feature 经此传递可见 :core:model）
     api(project(":core:model"))
 
-    // Backdrop（ADR-0033）：液态玻璃坞底栏的 backdrop 采样/特效单源依赖，玻璃件全收口在
-    // 本模块 glass/ 包，feature 与 :app 经 core:ui 间接获得观感、不得直引库 API
+    // Backdrop（ADR-0033）：液态玻璃坞底栏的 backdrop 采样/特效单源依赖。保持 implementation
+    // （库类型不进消费方编译类路径）：库类型封装收口在本模块 glass/ 包内（QimengBackdrop.kt
+    // 的 QimengBackdropState + rememberQimengBackdropState/qimengBackdropSource），消费方
+    // （feature/:app）只见包装 API，com.kyant 的 import 仅允许出现在 glass/ 包内部
+    // （FloatingTabDock.kt + QimengBackdrop.kt），不得直引库 API
     implementation(libs.backdrop)
     implementation(libs.compose.ui)
     implementation(libs.compose.ui.graphics)
