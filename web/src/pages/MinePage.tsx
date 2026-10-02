@@ -4,6 +4,7 @@ import type { HistoryItem } from '@/api/generated'
 import { MediaCard } from '@/components/media/MediaCard'
 import { InfiniteTail } from '@/components/media/InfiniteTail'
 import { SearchIcon } from '@/components/shell/icons'
+import { LoadingHint } from '@/components/ui/loading-hint'
 import { useAutoMore } from '@/hooks/use-auto-more'
 import { assetToCard, useAssetsInfinite } from '@/hooks/use-assets'
 import { useAuthors, useToggleFollow } from '@/hooks/use-authors'
@@ -168,7 +169,12 @@ export default function MinePage() {
           {favItems.map((f) => (
             <MediaCard key={f.id} {...assetToCard(f)} onOpen={openCard} />
           ))}
-          {favItems.length === 0 && !favQuery.isFetching ? (
+          {/* 首拉中显示加载提示（isLoading = 无数据且在拉取）：此前首拉期间 pane
+              完全空白，服务端慢时用户读作「没有内容」（2026-10-02 浏览历史空白
+              排查同款观感）；有缓存数据后切回瞬时显示，isLoading 恒 false 不闪 */}
+          {favQuery.isLoading ? (
+            <LoadingHint />
+          ) : favItems.length === 0 ? (
             <p className="grid-empty">暂无收藏内容</p>
           ) : null}
         </div>
@@ -214,7 +220,11 @@ export default function MinePage() {
             </div>
           </div>
         ))}
-        {histGroups.length === 0 && !histQuery.isFetching ? (
+        {/* 首拉加载提示：同收藏 pane（isLoading = 无数据且在拉取，切换 tab 才
+            enabled 拉取，慢查询时此前整 pane 空白无反馈） */}
+        {histQuery.isLoading ? (
+          <LoadingHint />
+        ) : histGroups.length === 0 ? (
           <p className="grid-empty">{query.trim() ? '没有匹配的历史记录' : '暂无浏览记录'}</p>
         ) : null}
         {/* E3 无感加载尾部（三件套见 components/media/InfiniteTail） */}
