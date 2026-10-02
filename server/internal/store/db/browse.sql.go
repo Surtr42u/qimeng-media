@@ -298,7 +298,7 @@ func (q *Queries) LastViewedAt(ctx context.Context, assetID string) (interface{}
 }
 
 const listAssetAuthorRefs = `-- name: ListAssetAuthorRefs :many
-SELECT au.id, au.display_name, au.type
+SELECT au.id, au.display_name, au.type, aa.origin, aa.created_at
 FROM asset_authors aa JOIN authors au ON au.id = aa.author_id
 WHERE aa.asset_id = ?
 ORDER BY au.display_name
@@ -308,8 +308,19 @@ type ListAssetAuthorRefsRow struct {
 	ID          string
 	DisplayName string
 	Type        string
+	Origin      string
+	CreatedAt   sql.NullString
 }
 
+// origin/created_at are the association-row provenance columns (ADR-0032,
+// migration 0016): the detail endpoint passes them through verbatim (read
+// side only; DOMAIN_RULES section 10 adjudication semantics untouched). created_at
+// is nullable (legacy rows NULL = untraceable); asset_tags.created_at keeps
+// the 0004 epoch sentinel and is normalized to "untraceable" at assembly
+// time (single point: httpapi provenanceMillis; vocabulary: store/provenance.go).
+// NOTE: comments in this file must stay pure ASCII -- sqlc v1.31.1 mangles
+// query boundaries on multibyte comments (observed: next query reported as
+// ":one without RETURNING"), so Chinese rationale lives in the Go callers.
 func (q *Queries) ListAssetAuthorRefs(ctx context.Context, assetID string) ([]ListAssetAuthorRefsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listAssetAuthorRefs, assetID)
 	if err != nil {
@@ -319,7 +330,13 @@ func (q *Queries) ListAssetAuthorRefs(ctx context.Context, assetID string) ([]Li
 	var items []ListAssetAuthorRefsRow
 	for rows.Next() {
 		var i ListAssetAuthorRefsRow
-		if err := rows.Scan(&i.ID, &i.DisplayName, &i.Type); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.DisplayName,
+			&i.Type,
+			&i.Origin,
+			&i.CreatedAt,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -365,15 +382,17 @@ func (q *Queries) ListAssetCharacterNames(ctx context.Context, assetID string) (
 }
 
 const listAssetTagRefs = `-- name: ListAssetTagRefs :many
-SELECT t.id, t.name
+SELECT t.id, t.name, at.origin, at.created_at
 FROM asset_tags at JOIN tags t ON t.id = at.tag_id
 WHERE at.asset_id = ?
 ORDER BY at.created_at DESC, t.created_at DESC, t.id
 `
 
 type ListAssetTagRefsRow struct {
-	ID   string
-	Name string
+	ID        string
+	Name      string
+	Origin    string
+	CreatedAt string
 }
 
 // Detail-assembly tag list: NEWEST ASSOCIATION FIRST (LEGACY_REQUIREMENTS A:
@@ -396,7 +415,12 @@ func (q *Queries) ListAssetTagRefs(ctx context.Context, assetID string) ([]ListA
 	var items []ListAssetTagRefsRow
 	for rows.Next() {
 		var i ListAssetTagRefsRow
-		if err := rows.Scan(&i.ID, &i.Name); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Origin,
+			&i.CreatedAt,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

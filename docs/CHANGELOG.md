@@ -10,6 +10,19 @@
 
 > **历史条目拆分说明（2026-10-01）**：为控制 AI 上下文体量，本文件只保留 **2026-09-22 及之后**的条目（第三百八十二笔起）；拆分线之前的全部条目已逐字迁入 `docs/history/CHANGELOG-ARCHIVE.md`（零改写，笔号与本文件连续可查）。引用早于拆分线的旧笔号请去历史档查阅。
 
+## feat(api/web/server): 数据溯源字段（origin/createdAtMillis）在资产详情响应与 Web 详情页可见——ADR-0032 保留的「详情页 UI 展示独立提案」落地（2026-10-02 第四百三十九笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理）
+
+- **背景**：ADR-0032（第四百三十五笔）当时拍板「详情/列表响应模型不动，溯源读取走备份导出已全覆盖，详情页 UI 展示留待独立提案」——本批即该独立提案：资产详情响应透出关联行级溯源，Web 详情页作者/标签区呈现来历，跨端核对不再需要导备份。Android 端本批不做（ui/app-redesign 分支未合并，避免冲突；SDK 已再生待其消费），留待后续批。
+- **协议先行（铁律 1）**：openapi.yaml 新增 `AssetDetailTag`/`AssetDetailAuthor` 两 schema（allOf 叠加 Tag/Author，**既有字段不动**），AssetDetail 的 `tags`/`authors` 条目改引之——增可空 `origin`（ADR-0032 受控词表 client/txt/import/local-sync/scanner/legacy，与备份导出 LegacyMediaTagRef/LegacyAuthorMediaRef.origin **同名同义**）+ 可空 `createdAtMillis`（关联成立毫秒）；null/缺省=不可考。详情条目专属视图：标签池 `GET /tags` 与作者列表 `GET /authors` 仍返回原 Tag/Author 不带溯源（溯源展示只属详情面）。`make sdk` 三端生成物再生 + api/sdk.lock 同 commit 更新（245 条目）。**不新增查询参数、不动既有字段**。
+- **服务端（纯透传、口径零变化）**：browse.sql 的 ListAssetTagRefs/ListAssetAuthorRefs 两查询补带 `at.origin/at.created_at`、`aa.origin/aa.created_at`（sqlc v1.31.1 重新生成，仅 browse.sql.go 变化）；httpapi fetchAssetRefs 装配 `gen.AssetDetailTag/AssetDetailAuthor`，新增 `provenanceMillis` 单点归一不可考哨兵（asset_authors.created_at NULL / asset_tags.created_at epoch → 字段缺省，≤0 同待遇，绝不落 1970 纪元字面量——口径对齐 §10「≤0=缺省」）；upload.go 上传 201 响应同模型空集装配。origin 含 legacy 哨兵恒透传（不伪造词表值），是否展示由前端词表映射决定。DOMAIN_RULES §10 补「读取面」一句（纯读零裁决，补证/keep 语义不涉读取面），裁决语义零变化。
+- **Web 详情页（UI 组件零业务规则，ADR-0008）**：新增逻辑层 `lib/provenance.ts`——origin→中文标签映射（客户端/TXT 导入/备份导入/本机同步/扫描器；legacy=不可考不产出）+ 注记组装「客户端 · 10-1 12:30」（时间复用 formatDateTime 口径），词表外值不显示（宁不可考不造假），完全不可考返回 null；组件只渲染其返回值。AssetTagRow 标签胶囊内缀小字、AuthorCard 作者名下次行小字（不可考不渲染任何标记），glass.css 增 `.prov-note`/`.author-main` 三行（颜色全走 --qm-text-muted token，字号沿用全站 12px 惯例）；改动最小化不重设计页面。
+- **测试**：新增 `assets_detail_provenance_test.go`（详情响应装配面，与 store/provenance_test.go 写入面互补）——三情形锁定：client 盖章行可见（origin+毫秒）、legacy 行 origin=legacy 原样透传、时间戳可空（NULL/epoch 哨兵→字段缺省）；新增 `web/src/lib/provenance.test.ts` 六用例（组合/仅词表/仅时间/词表外不显示/legacy 与 null 同待遇/≤0 哨兵）。
+- **已知边界（记档）**：① 角色关联不入详情溯源面——asset_characters 行 origin 恒 scanner、created_at=重算时刻（携带零信息量），且 AssetSummary 的 `characters` 是 string[] 共享列表面，改条目形状即破坏列表端点契约与既有客户端，维持现状；② upload 201 的 AssetDetail 空集不带溯源（新资产零关联，无信息可带）；③ browse.sql 文件头注新增「注释必须纯 ASCII」约束——sqlc v1.31.1 对多字节注释会错乱查询边界（实测：中文注释致下一查询报 ":one without RETURNING"），中文理由写在 Go 装配层注释。
+- **验证**：`go vet ./...` + `go test ./... -count=1` 全绿（server 全包，含新详情溯源测试）；web `tsc -b` 零错误、oxlint 零错误（既有 19 条 warning 不涉本文件）、vitest 222/222 全绿（含新增 6 用例）；`make sdk` 三端生成+锁 245 条目；夜间纪律合规（零产物构建/零模拟器操作，禁触项未触碰），最终以本 draft PR 云端 CI 为准。
+- **涉及文档**：`api/openapi.yaml`、`api/sdk.lock`、`docs/DOMAIN_RULES.md` §10（读取面）、`docs/GUIDE_API.md`、`docs/CHANGELOG.md`（本条）。
+
 ## docs: 夜间/无人值守执行纪律入册——禁本地产物构建、验证与产物一律云端 CI（2026-10-03 第四百三十七笔）
 
 执行 AI：GLM-5.3（主代理）

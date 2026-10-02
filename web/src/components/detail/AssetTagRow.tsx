@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { Dialog } from 'radix-ui'
 import { toast } from 'sonner'
-import type { Tag } from '@/api/generated'
+import type { AssetDetailTag, Tag } from '@/api/generated'
 import { Pill } from '@/components/ui/pill'
 import { useReplaceAssetTags } from '@/hooks/use-assets'
 import { useCreateTag, useTags } from '@/hooks/use-tags'
+import { provenanceNote } from '@/lib/provenance'
 
 /**
  * 详情页标签行（B站式互动行下方）：当前标签胶囊展示 + 「管理」弹窗。
@@ -12,17 +13,23 @@ import { useCreateTag, useTags } from '@/hooks/use-tags'
  * 替换提交（PUT tags 是唯一标签端点，保留项也要一并带上——DOMAIN_RULES §7）。
  * 弹窗按 open 条件挂载：勾选态 useState 惰性初始化即"打开时以详情当前标签
  * 复位"，不需要 effect（React「你可能不需要 Effect」模式，规避 set-state-in-effect）。
+ * 胶囊内缀溯源注记（ADR-0032 详情面）：词表映射与不可考判定在逻辑层
+ * provenanceNote，可考才渲染小字（UI 组件零业务规则，ADR-0008）。
  */
-export function AssetTagRow({ assetId, tags }: { assetId: string; tags: Tag[] }) {
+export function AssetTagRow({ assetId, tags }: { assetId: string; tags: AssetDetailTag[] }) {
   const [open, setOpen] = useState(false)
 
   return (
     <div className="detail-tags">
-      {tags.map((t) => (
-        <span className="pill" key={t.id ?? t.name}>
-          {t.name}
-        </span>
-      ))}
+      {tags.map((t) => {
+        const note = provenanceNote(t)
+        return (
+          <span className="pill" key={t.id ?? t.name} title={note ?? undefined}>
+            {t.name}
+            {note ? <span className="prov-note">{note}</span> : null}
+          </span>
+        )
+      })}
       <button className="pill detail-tag-manage" onClick={() => setOpen(true)}>
         {tags.length > 0 ? '管理' : '+ 添加标签'}
       </button>
