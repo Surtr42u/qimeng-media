@@ -15,6 +15,9 @@ dependencies {
     // 网格卡片/分组段需要领域模型（core→core 单向依赖，feature 经此传递可见 :core:model）
     api(project(":core:model"))
 
+    // Backdrop（ADR-0033）：液态玻璃坞底栏的 backdrop 采样/特效单源依赖，玻璃件全收口在
+    // 本模块 glass/ 包，feature 与 :app 经 core:ui 间接获得观感、不得直引库 API
+    implementation(libs.backdrop)
     implementation(libs.compose.ui)
     implementation(libs.compose.ui.graphics)
     implementation(libs.compose.foundation)

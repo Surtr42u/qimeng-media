@@ -5,16 +5,21 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import media.qimeng.app.core.data.repository.AppearancePrefsRepository
 import media.qimeng.app.core.data.repository.AuthRepository
 import media.qimeng.app.core.data.repository.RecommendPrefsRepository
 import media.qimeng.app.core.data.repository.StatsRepository
 import media.qimeng.app.core.data.repository.SystemInfoRepository
+import media.qimeng.app.core.model.AppearanceMode
 import media.qimeng.app.core.model.RecommendPrefsValues
 import media.qimeng.app.core.model.RecommendPreset
+import media.qimeng.app.core.model.TabBarMaterial
 import media.qimeng.app.core.model.matchPreset
 import media.qimeng.app.core.model.toPrefsValues
 
@@ -74,15 +79,44 @@ class SettingsViewModel @Inject constructor(
     private val statsRepository: StatsRepository,
     private val prefsRepository: RecommendPrefsRepository,
     private val systemInfoRepository: SystemInfoRepository,
+    // 2026-10-03 悬浮玻璃坞批：外观偏好端口直读（与壳层 AppearanceViewModel 同一份
+    // DataStore 流——写入落盘后双方各自收集的流自动回流，无第二份状态）
+    private val appearancePrefsRepository: AppearancePrefsRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(MineUiState())
     val uiState: StateFlow<MineUiState> = _uiState.asStateFlow()
 
+    /** 外观模式三选（跟随系统/浅色/深色）；选择器 UI 与壳层 Theme 同源 */
+    val appearanceMode: StateFlow<AppearanceMode> = appearancePrefsRepository.appearanceMode
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS),
+            initialValue = AppearanceMode.DEFAULT,
+        )
+
+    /** 底栏材质四选（液态玻璃/磨砂玻璃/纯色坞/经典）；选择器 UI 与壳层悬浮坞同源 */
+    val tabBarMaterial: StateFlow<TabBarMaterial> = appearancePrefsRepository.tabBarMaterial
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS),
+            initialValue = TabBarMaterial.DEFAULT,
+        )
+
     init {
         loadLibraryCounts()
         loadPrefs()
         loadServerVersion()
+    }
+
+    /** 外观模式写入（DataStore 落盘后壳层 Theme 与坞经流自动跟随） */
+    fun setAppearanceMode(mode: AppearanceMode) {
+        viewModelScope.launch { appearancePrefsRepository.setAppearanceMode(mode) }
+    }
+
+    /** 底栏材质写入 */
+    fun setTabBarMaterial(material: TabBarMaterial) {
+        viewModelScope.launch { appearancePrefsRepository.setTabBarMaterial(material) }
     }
 
     /**
@@ -177,5 +211,8 @@ class SettingsViewModel @Inject constructor(
     private companion object {
         /** 写失败反馈文案（P2-3）：中文、可重试指向；成功路径永不产生 */
         const val SAVE_FAILED_MESSAGE = "保存失败，请重试"
+
+        /** WhileSubscribed 停收集宽限（5s，配置变更/短暂离屏不重置上游） */
+        const val STOP_TIMEOUT_MS = 5_000L
     }
 }

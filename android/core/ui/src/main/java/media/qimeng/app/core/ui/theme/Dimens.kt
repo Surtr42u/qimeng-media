@@ -182,4 +182,10 @@ object QimengDimens {
      *  与旧版 DetailSheet 底距 28dp 同出该旧文件。特设独立 token 而非借用筛选面板
      *  FilterSheetPaddingHorizontal——同值不同源，防止后续两处口径互相牵连） */
     val DetailSheetPaddingHorizontal: Dp = 20.dp
+
+    // ---------- 流光玻璃（ADR-0031，2026-10-02 新增；旧「照搬旧版实录」档位不再新增） ----------
+
+    /** 18dp：媒体网格卡圆角（ADR-0031 大圆角语言；旧版 24f 像素实录值〔密度3≈8dp〕退役，
+     *  QimengMediaGrid 与 QimengSkeletonGrid 两处消费，几何对齐关系不变） */
+    val MediaCardCornerRadius: Dp = 18.dp
 }

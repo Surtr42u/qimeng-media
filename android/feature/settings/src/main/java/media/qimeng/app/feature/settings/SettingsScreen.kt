@@ -5,9 +5,13 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -31,6 +35,10 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.io.IOException
 import kotlinx.coroutines.launch
+import media.qimeng.app.core.model.AppearanceMode
+import media.qimeng.app.core.model.TabBarMaterial
+import media.qimeng.app.core.ui.component.QimengSegPill
+import media.qimeng.app.core.ui.glass.TabDockDefaults
 import media.qimeng.app.core.ui.theme.QimengDimens
 
 /** 我的页入口行文案（GUIDE_UI §我的页 + M4-2 既有入口 + M4-6 上传入口；
@@ -45,7 +53,6 @@ private const val ROW_AUTHORS = "作者总览"
 private const val ROW_FAVORITE = "收藏"
 private const val ROW_HISTORY = "浏览历史"
 private const val ROW_DATA_MANAGE = "数据管理"
-private const val ROW_THEME = "主题色彩"
 
 /** 推荐偏好行文案：入口行与 PrefsBottomSheet 标题同串单源（Sheet 在 SettingsCards.kt，
  *  Kotlin 文件级 private 跨文件不可见，故本条 internal——模块外不可见） */
@@ -63,7 +70,6 @@ private const val ROW_SERVER = "服务器"
 private const val SUBTITLE_AUTHORS = "查看全部作者与作品"
 private const val SUBTITLE_FAVORITE = "查看收藏的图片和视频"
 private const val SUBTITLE_HISTORY = "查看最近打开过的图片和视频"
-private const val SUBTITLE_THEME = "跟随手机白天/深色模式自动切换"
 private const val SUBTITLE_PREFS = "调整首页推荐算法的权重偏好"
 // 副文案单行节奏 ≤15 字（2026-09-15 用户反馈「服务器的介绍太长了导致没和其他的视觉对齐」
 // ——原「查看服务器地址、本机模式；换址需重新登录」折行致行高破 72dp 节奏；换址提示细节
@@ -72,6 +78,17 @@ private const val SUBTITLE_SERVER = "服务器地址、本机模式与换址说�
 private const val SUBTITLE_DATA_MANAGE = "上传文件、注册媒体目录、库管理"
 
 private const val VERSION_UNKNOWN = "未知"
+
+// ---------- 选择器卡（2026-10-03 悬浮玻璃坞批：外观模式/底栏材质共用） ----------
+
+/** 12dp：选择器卡内文字区上下留白（对齐 EntryRow 行内垂直呼吸档） */
+private val SelectorCardVerticalPadding = 12.dp
+
+/** 8dp：标题/副标题块与选项胶囊行的间距（QimengDimens.SpaceM 同档，本文件独立命名防跨页牵连） */
+private val SelectorCardTextToOptionsSpacing = 8.dp
+
+/** 6dp：选项胶囊间距（QimengDimens.SpaceS 同档） */
+private val SelectorCardOptionSpacing = 6.dp
 
 // ---------- 我的页视觉复刻旧版尺寸（2026-09-13 用户反馈「我的界面的 ui 也要和旧版一致」；
 // 逐段实录旧仓库运行时代码规格，口径见各常量注释；可复用档位一律引用 QimengDimens 既有
@@ -95,7 +112,7 @@ private val FirstRowTopSpacing = 16.dp
  * LazyListScope 扩展（纯代码移动，行序与规格逐字不变，主函数收回 100 行内））：
  * 标题 → 页首数量卡（I4：图片/视频两卡）→ 入口行族（服务器（U10-4 合并入口 →
  * ServerSettingsScreen 子页）→ 作者总览 → 收藏/浏览历史 → 数据管理（U10-6 合并入口 →
- * feature:manage hub 子页）→ 主题色彩（不可点）→
+ * feature:manage hub 子页）→ 外观模式/底栏材质选择卡（2026-10-03）→
  * 推荐偏好（BottomSheet 四预设整行应用/当前项高亮））→
  * 版本信息（服务端版本，C6）→ 退出登录。
  * （浏览数据同步卡 2026-09-15 批迁往 feature:manage BackupScreen；缓存区「LRU 档位 +
@@ -115,6 +132,9 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    // 2026-10-03 悬浮玻璃坞批：外观/材质状态（外观偏好端口直读，与壳层 Theme/坞同源）
+    val appearanceMode by viewModel.appearanceMode.collectAsStateWithLifecycle()
+    val tabBarMaterial by viewModel.tabBarMaterial.collectAsStateWithLifecycle()
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -122,6 +142,9 @@ fun SettingsScreen(
             // 显式声明防宿主容器换底后页面漏色
             .background(MaterialTheme.colorScheme.background)
             .padding(horizontal = ScreenContentPadding),
+        // 2026-10-03 悬浮玻璃坞批：底栏改悬浮层后内容从坞身后滚过，滚动区底部让位到
+        // 坞体上方（core:ui 单源常量，含导航栏 inset）
+        contentPadding = PaddingValues(bottom = TabDockDefaults.bottomClearance()),
     ) {
         settingsHeaderItems(state = state, viewModel = viewModel)
         settingsEntryRowItems(
@@ -130,6 +153,10 @@ fun SettingsScreen(
             onOpenFavorite = onOpenFavorite,
             onOpenHistory = onOpenHistory,
             onOpenDataManage = onOpenDataManage,
+            appearanceMode = appearanceMode,
+            onAppearanceModeSelect = viewModel::setAppearanceMode,
+            tabBarMaterial = tabBarMaterial,
+            onTabMaterialSelect = viewModel::setTabBarMaterial,
             onOpenPrefs = viewModel::openPrefsSheet,
         )
         settingsFooterItems(state = state, viewModel = viewModel)
@@ -196,7 +223,8 @@ private fun LazyListScope.settingsHeaderItems(state: MineUiState, viewModel: Set
 
 /**
  * 入口行族（U10-4 拆分：自 SettingsScreen 逐字迁移；F 批 2026-09-09 起行序：
- * 服务器 → 作者总览 → 收藏/浏览历史 → 数据管理 → 主题色彩（不可点）→ 推荐偏好；
+ * 服务器 → 作者总览 → 收藏/浏览历史 → 数据管理 → 外观模式/底栏材质（2026-10-03 悬浮
+ * 玻璃坞批：原「主题色彩」不可点占位行升级为外观模式三选 + 新增底栏材质四选）→ 推荐偏好；
  * 原「作者管理」行按用户拍板删除，作者管理页由作者总览行承担入口；
  * U10-6：原「上传文件」行原位升级为「数据管理」合并入口行）。
  */
@@ -206,6 +234,10 @@ private fun LazyListScope.settingsEntryRowItems(
     onOpenFavorite: () -> Unit,
     onOpenHistory: () -> Unit,
     onOpenDataManage: () -> Unit,
+    appearanceMode: AppearanceMode,
+    onAppearanceModeSelect: (AppearanceMode) -> Unit,
+    tabBarMaterial: TabBarMaterial,
+    onTabMaterialSelect: (TabBarMaterial) -> Unit,
     onOpenPrefs: () -> Unit,
 ) {
     // 服务器入口行（U10-4：原「服务器地址」只展示卡与「本机模式」快捷行合并为单入口，
@@ -261,12 +293,38 @@ private fun LazyListScope.settingsEntryRowItems(
         )
     }
 
-    // 主题色彩（I4，GUIDE_UI L253+L268：不可点击纯展示行，仅跟随系统明暗模式）
+    // 外观模式（2026-10-03 悬浮玻璃坞批：原「主题色彩」不可点占位行升级为三选手动开关
+    // ——跟随系统/浅色/深色，持久化经 [AppearancePrefsRepository]，与壳层 Theme 的暗色
+    // 解析同一数据源；选项文案进 strings.xml）
     item {
-        EntryRow(
-            label = ROW_THEME,
-            subtitle = SUBTITLE_THEME,
-            onClick = null,
+        SettingsSelectorCard(
+            title = stringResource(R.string.settings_appearance_title),
+            subtitle = stringResource(R.string.settings_appearance_subtitle),
+            options = listOf(
+                stringResource(R.string.settings_appearance_system),
+                stringResource(R.string.settings_appearance_light),
+                stringResource(R.string.settings_appearance_dark),
+            ),
+            selectedIndex = AppearanceMode.entries.indexOf(appearanceMode).coerceAtLeast(0),
+            onSelect = { index -> onAppearanceModeSelect(AppearanceMode.entries[index]) },
+            modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
+        )
+    }
+
+    // 底栏材质（2026-10-03 悬浮玻璃坞批新增）：液态玻璃/磨砂玻璃/纯色坞/经典四档，
+    // 经 [AppearancePrefsRepository] 持久化，壳层悬浮坞按档渲染
+    item {
+        SettingsSelectorCard(
+            title = stringResource(R.string.settings_tab_material_title),
+            subtitle = stringResource(R.string.settings_tab_material_subtitle),
+            options = listOf(
+                stringResource(R.string.settings_tab_material_liquid),
+                stringResource(R.string.settings_tab_material_frosted),
+                stringResource(R.string.settings_tab_material_solid),
+                stringResource(R.string.settings_tab_material_classic),
+            ),
+            selectedIndex = TabBarMaterial.entries.indexOf(tabBarMaterial).coerceAtLeast(0),
+            onSelect = { index -> onTabMaterialSelect(TabBarMaterial.entries[index]) },
             modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
         )
     }
@@ -317,7 +375,7 @@ private fun LazyListScope.settingsFooterItems(state: MineUiState, viewModel: Set
  * 垂直居中、背景=16dp 圆角纯白 surface 卡、无图标无分隔线；行文字=单块两行文本
  * 「标题\n副标题」15sp 主文字色——旧版副标题与标题同字号同色；subtitle=null 保持单行；
  * detail=右侧灰字（版本行等无副文案的旧形态行保留用）；
- * onClick=null 为纯展示行（主题色彩，GUIDE_UI L268）。
+ * onClick=null 为纯展示行（版本信息行等；原「主题色彩」占位行 2026-10-03 升级为选择卡）。
  * 高度用 min 而非定值：长副文案行（如服务器行）定值 72dp 会截断三行以上文本，
  * 其余短文案行渲染高度与旧版 72dp 完全一致。
  */
@@ -356,6 +414,54 @@ private fun EntryRow(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+        }
+    }
+}
+
+/**
+ * 选择器卡（2026-10-03 悬浮玻璃坞批）：标题/副标题（单块两行文本，对齐 [EntryRow] 语言）
+ * + 一行 [QimengSegPill] 分段选项。外观模式三选/底栏材质四选共用此形态。
+ * 视觉 token 只走 MaterialTheme 与 QimengDimens（红线：feature 层禁 import glass 包颜色）。
+ *
+ * @param options 选项文案（顺序 = 枚举 entries 序）
+ * @param selectedIndex 当前选中下标（越界钳到首项）
+ * @param onSelect 点选回调（传下标）
+ */
+@Composable
+private fun SettingsSelectorCard(
+    title: String,
+    subtitle: String,
+    options: List<String>,
+    selectedIndex: Int,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(QimengDimens.CardCornerRadius),
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(
+                horizontal = QimengDimens.ProfileRowHorizontalPadding,
+                vertical = SelectorCardVerticalPadding,
+            ),
+        ) {
+            Text(
+                text = if (subtitle.isNotEmpty()) "$title\n$subtitle" else title,
+                style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.sp),
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Spacer(modifier = Modifier.height(SelectorCardTextToOptionsSpacing))
+            Row(horizontalArrangement = Arrangement.spacedBy(SelectorCardOptionSpacing)) {
+                options.forEachIndexed { index, option ->
+                    QimengSegPill(
+                        text = option,
+                        selected = index == selectedIndex.coerceAtLeast(0),
+                        onClick = { onSelect(index) },
+                    )
+                }
             }
         }
     }
