@@ -10,7 +10,7 @@
 
 > **历史条目拆分说明（2026-10-01）**：为控制 AI 上下文体量，本文件只保留 **2026-09-22 及之后**的条目（第三百八十二笔起）；拆分线之前的全部条目已逐字迁入 `docs/history/CHANGELOG-ARCHIVE.md`（零改写，笔号与本文件连续可查）。引用早于拆分线的旧笔号请去历史档查阅。
 
-## feat(server): 关联/作者类记录溯源体系——migration 0016 补 created_at+origin 双列、备份载荷透传来历、导入补证+首写优先行级裁决（2026-10-02 第四百三十四笔）
+## feat(server): 关联/作者类记录溯源体系——migration 0016 补 created_at+origin 双列、备份载荷透传来历、导入补证+首写优先行级裁决（2026-10-02 第四百三十五笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理）
 
@@ -21,6 +21,8 @@
 - **合并裁决语义升级（先改 DOMAIN_RULES §10「关联溯源与行级合并裁决」再改代码，铁律 3）**：备份载荷 authors/authorMediaRefs/mediaTagRefs 三段增可空 `origin`（authorMediaRefs 另带 `createdAtMillis`）——**导出透传库内原始来历**（A 端手工创建的关联到 B 端仍是 client，来历不因搬运失真）；导入端词表校验（非法/缺省兜底 import；时间缺省回退导入时刻=「入账时刻」真实事件）+ **补证 heal**（既有行不可考〔legacy/NULL/epoch〕被透传值升级——不可考不等于永久不可知）+ **首写优先 keep**（可考行绝不覆盖，重复导入幂等）。标签组**集级**「谁新听谁」裁决维持 0012 tag_set_updated_at 口径不变，升级的是行级溯源。
 - **协议先行**：openapi.yaml 三 schema 增字段 → `make sdk` 三端再生成 + api/sdk.lock 同 commit 更新；详情/列表响应模型**不动**（溯源读取走 GET /export/qimeng-backup 已全覆盖，详情页 UI 展示留待独立提案）；web/app 对新字段零消费零改动。
 - **测试**：store/provenance_test.go 四组新测试（词表校验/业务盖章+作者行补证/存量行哨兵/导入三分支裁决）；store_test.go TestMigrateDownThenUp 链首插 0016 验证步（六列 down+0015 对象保留+既有列不动）；export_test.go 回环测试增溯源透传断言。**顺带修复一个测试脆弱性**：import_test.go authorRefAsset 裸 `LIMIT 1`（无 ORDER BY）依赖 planner 扫描选择——0016 加列使表行变大、planner 转向覆盖索引扫描、返回序翻转——补 `ORDER BY rowid` 锁定「首个插入」确定语义（ADR-0011 修订5「加列也重排计划」在测试面的微缩重演；全库生产查询均带 ORDER BY，grep 复核零同类暴露）。
+- **对抗审查返工（同笔记档，笔号自第四百三十四笔让位于治理批总记）**：① import.go nowOrMillis 补 ≤0 边界——备份携带 createdAtMillis=0/负值与缺省同义回退导入时刻，杜绝 1970 纪元字面量与 asset_tags.created_at epoch「不可考」哨兵混淆成「可考章+纪元时间」自相矛盾行（违反本笔写进 DOMAIN_RULES §10 / ADR-0032 的裁决①），新增 TestImport_nonPositiveMillisFallbacksToNow 锁定；② DOMAIN_RULES §10 补明「TXT 重建/tags PUT 等替换式路径先删后插，行章随重建通道刷新、不参与补证与 keep」，防「可考行绝不覆盖」被误读为适用于重建路径。
+- **边缘知悉项（审查确认，不改）**：备份含 TXT 片段时片段覆盖式重建会把该作者关联章盖为 import、压过 authorMediaRefs 段的透传来历——现状与 ADR-0032 自洽（重建=通道重挂语义），留待后续提案。
 - **验证**：`go vet ./...` + `go test ./... -count=1` 全绿（server 全包）；sqlc@v1.31.1 重新生成（4 查询文件）；`make sdk` 三端生成物+锁 241 条目；禁触项（gradle/npm 生产构建、模拟器、手机）未触碰，最终以本 draft PR 云端 CI 为准。
 - **涉及文档**：`docs/CHANGELOG.md`（本条）、`docs/adr/0032`（新）、`docs/adr/INDEX.md`、`docs/DOMAIN_RULES.md` §10、`docs/GUIDE_API.md`。
 

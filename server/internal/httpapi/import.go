@@ -166,9 +166,13 @@ func sliceOrEmpty[T any](p *[]T) []T {
 	return *p
 }
 
-// nowOrMillis 可选毫秒时间戳转存储格式；nil 回退 now。
+// nowOrMillis 可选毫秒时间戳转存储格式；nil 或 ≤0 一律回退 now。≤0 与缺省
+// 同义：旧备份"未携带"的哨兵形态（0/负值是坏值不是 1970 纪元）——回退导入
+// 时刻（真实入账事件）。否则会落 1970 字面量，与 asset_tags.created_at 的
+// epoch「不可考」哨兵（migration 0004）混淆成"可考章+纪元时间"的自相矛盾行，
+// 违反 DOMAIN_RULES §10 / ADR-0032 裁决①（时间缺省回退导入时刻）。
 func nowOrMillis(m *int64, now time.Time) string {
-	if m == nil {
+	if m == nil || *m <= 0 {
 		return store.FormatTimestamp(now)
 	}
 	return store.FormatTimestamp(time.UnixMilli(*m))
