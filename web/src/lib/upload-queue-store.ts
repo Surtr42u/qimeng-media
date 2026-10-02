@@ -11,9 +11,16 @@
  * 认证失败保持既有语义不变：401/403 条目按失败落终态（服务端 message 透传）、
  * 泵继续拾取下一条，不做整队 abort（挂靠请求走生成 SDK，其 401 经全局拦截器
  * 广播 onAuthFailed 由 AuthGate 接管——api-client 既有路径）。
- * 页面刷新仍会丢队列——浏览器语义（XHR 句柄不跨页面存活）；刷新存活需
- * IndexedDB 持久化，另立项（2026-10-01 记档；同会话内的弱网中断续传已随
- * ADR-0028 分片通道落地，见 upload-chunked.ts——跨页面存活是另一个问题）。
+ *
+ * 刷新持久化（HANDOVER §5 待办#2，2026-10-02 落地）：未终态条目（排队/在传）
+ * 同步持久化到 IndexedDB（lib/upload-queue-persist 纯核心 + persist-instance
+ * 装配，最佳努力——存储失败不阻断传输）；页面刷新后 restorePersisted 把记录
+ * 恢复为「需重新选择文件」（needs-file）态——File 句柄不跨页面存活是平台客观
+ * 限制，恢复条目不伪造可续传假象，用户重选同名文件（resumeWithFile，同名同
+ * 大小判定在纯函数 decideResume）后才恢复传输：分片条目按持久化会话 id 走既有
+ * GET 探测→PATCH 续传（服务端 offset 唯一真相源），直传条目与无会话分片从头
+ * 重传。终态（done/failed/attach-failed/canceled）/移除/清空完成时同步删除
+ * 持久化记录，不留孤儿。
  *
  * 订阅-通知（纯 TS 零新依赖）：状态写入口统一 notify，React 侧
  * useSyncExternalStore 订阅（api-client token store 同款模式）。
@@ -44,14 +51,25 @@ import { composeUploadName, extensionOf } from '@/lib/upload-naming'
 import { uploadTargetFromRelativePath } from '@/lib/folder-upload'
 import { buildUploadQuery } from '@/lib/upload-params'
 import { runChunkedUpload, useChunkedSession } from '@/lib/upload-chunked'
+import { decideResume, toRestoredEntry, type PersistedUploadItem } from '@/lib/upload-queue-persist'
+import { getUploadQueueStorage } from '@/lib/upload-queue-persist-instance'
 
 /** MB → 字节换算（与服务端 config 口径一致：1MB = 1<<20，见 upload.go kvMax）。
  *  组件层「开始上传」超限前置拦截与 store 内兜底拦截共用本常量，禁止散抄 */
 export const BYTES_PER_MB = 1 << 20
 
 /** 上传单条状态：queued（排队）→ uploading（传输/服务端处理中）→ 终态四选一。
- *  attach-failed = 文件已入库但自动挂靠失败（不回滚上传、不重试，专项态提示） */
-export type UploadStatus = 'queued' | 'uploading' | 'done' | 'failed' | 'canceled' | 'attach-failed'
+ *  attach-failed = 文件已入库但自动挂靠失败（不回滚上传、不重试，专项态提示）；
+ *  needs-file = 刷新恢复条目（持久化记录还原，文件句柄已随页面失效，待用户
+ *  重选同名文件——重选后转 queued 重新入泵，不满足即留在本态） */
+export type UploadStatus =
+  | 'queued'
+  | 'uploading'
+  | 'needs-file'
+  | 'done'
+  | 'failed'
+  | 'canceled'
+  | 'attach-failed'
 
 /** 201 后自动挂靠载荷（作者必填、来源可选；来源挂靠以作者块为前提，服务端口径） */
 export interface UploadAttach {
@@ -111,10 +129,23 @@ export interface UploadQueueOptions {
   onItemSettled?: (item: UploadItem) => void
 }
 
-/** 队列内部条目 = 渲染契约 UploadItem + 传输所需的 File 句柄（file 不进组件层）。
- *  目标快照直接落在 UploadItem.targetLibraryId/targetDir（渲染与发送同源，不双写） */
+/** 队列条目 id 前缀（生成与恢复解析共用单一来源——恢复侧按序号让位 uploadSeq
+ *  防 id 冲突；不进协议） */
+const UPLOAD_ID_PREFIX = 'upload-'
+
+/** 队列内部条目 = 渲染契约 UploadItem + 传输所需的 File 句柄（file 不进组件层；
+ *  刷新恢复条目无句柄 = null，重选文件后补上——needs-file 态永不被泵拾取）。
+ *  目标快照直接落在 UploadItem.targetLibraryId/targetDir（渲染与发送同源，不双写）。
+ *  chunkSessionId/chunkOffset/createdAt 为传输与持久化的内部字段（不在渲染契约）：
+ *  会话 id 由分片通道 onSession 回写并持久化、断点偏移由 onOffset 回写并持久化 */
 interface QueueEntry extends UploadItem {
-  file: File
+  file: File | null
+  /** 分片会话 id（null = 直传条目/会话未建立；恢复条目自持久化记录回填） */
+  chunkSessionId: string | null
+  /** 已传分片偏移（字节；服务端权威 offset 的最近快照，随片推进并持久化） */
+  chunkOffset: number
+  /** 入队/恢复时刻（epoch ms；持久化记录 createdAt 同源） */
+  createdAt: number
 }
 
 // ---- 模块级单例状态（唯一权威副本；React 侧只读镜像经 subscribe/getItems）----
@@ -143,6 +174,40 @@ function notify(): void {
   for (const listener of listeners) listener()
 }
 
+// ---- 刷新持久化（未终态条目 → IndexedDB；最佳努力不阻断传输）----
+
+/** 持久化写路径统一收口：存储失败静默（持久化是增强能力，传输主链路不受影响
+ *  ——同打点账本降级口径）；fire-and-forget，不进传输 await 链 */
+function persistPut(entry: QueueEntry): void {
+  const record: PersistedUploadItem = {
+    id: entry.id,
+    name: entry.name,
+    originalName: entry.originalName,
+    sizeBytes: entry.sizeBytes,
+    targetLibraryId: entry.targetLibraryId ?? '',
+    targetDir: entry.targetDir ?? '',
+    attach: entry.attach,
+    sessionId: entry.chunkSessionId,
+    chunkOffset: entry.chunkOffset,
+    createdAt: entry.createdAt,
+    updatedAt: Date.now(),
+  }
+  void getUploadQueueStorage()
+    .then((storage) => storage.put(record))
+    .catch(() => {
+      // 存储不可用（隐私模式等）：放弃本条持久化，刷新后该条按现状丢失
+    })
+}
+
+/** 持久化删路径（终态/移除/清空完成时调用，不留孤儿记录）；同样静默兜底 */
+function persistDelete(id: string): void {
+  void getUploadQueueStorage()
+    .then((storage) => storage.delete(id))
+    .catch(() => {
+      // 存储不可用：无可删（下次 restore 时记录本就不存在）
+    })
+}
+
 /** 权威副本变更的唯一写入口（替换数组引用——useSyncExternalStore 靠引用
  *  变化感知快照更新，原地 mutate 会漏通知） */
 function writeItems(updater: (prev: QueueEntry[]) => QueueEntry[]): void {
@@ -150,7 +215,8 @@ function writeItems(updater: (prev: QueueEntry[]) => QueueEntry[]): void {
   notify()
 }
 
-function patchItem(id: string, patch: Partial<UploadItem>): void {
+/** 条目补丁（含内部字段 chunkSessionId/chunkOffset；渲染字段变化经 notify 同步） */
+function patchEntry(id: string, patch: Partial<QueueEntry>): void {
   writeItems((prev) => prev.map((it) => (it.id === id ? { ...it, ...patch } : it)))
 }
 
@@ -227,13 +293,24 @@ function uploadOne(item: QueueEntry): Promise<void> {
     const settle = (patch: Partial<UploadItem>): void => {
       xhrs.delete(item.id)
       canceledIds.delete(item.id)
-      patchItem(item.id, patch)
+      // 终态即清理持久化记录（不留孤儿；needs-file 不进本函数——恢复条目由
+      // resumeWithFile 转 queued 后才入泵）
+      persistDelete(item.id)
+      patchEntry(item.id, patch)
       const final = entries.find((it) => it.id === item.id)
       // done/failed/attach-failed 通知（canceled 是用户主动行为，不再弹 toast打扰）
       if (final && final.status !== 'queued' && final.status !== 'uploading' && final.status !== 'canceled') {
         options.onItemSettled?.(final)
       }
       resolve()
+    }
+
+    // 防御守卫（类型上不可达：泵只拾取带句柄的 queued 条目）——缺句柄按失败
+    // 落终态而非崩溃，泵继续拾取后续条目
+    const file = item.file
+    if (file === null) {
+      settle({ status: 'failed', errorText: '内部状态异常：队列条目缺少文件句柄，已终止' })
+      return
     }
 
     /** 201 → 挂靠序列 → 终态（挂靠完成才 resolve，串行泵才拾取下一条） */
@@ -262,15 +339,28 @@ function uploadOne(item: QueueEntry): Promise<void> {
     // item.targetDir），成功后走与直传完全相同的后处理（入库失效 + 挂靠序列），
     // 取消/失败按终态收敛（重试上限后不自动重新入队）。分支在直传 XHR 构造
     // 之前——分片条目不建直传句柄，xhrs 登记由 onActiveXhr 接管。
+    // 刷新恢复条目带 chunkSessionId 传入续传（探测 404 时通道内自动重建新会话）；
+    // onSession/onOffset 把会话 id 与权威断点回写进条目并持久化（刷新再恢复的依据）。
     if (useChunkedSession(item.sizeBytes)) {
       void runChunkedUpload({
         libraryId: item.targetLibraryId ?? '',
         fileName: item.name,
         dir: item.targetDir ?? '',
         sizeBytes: item.sizeBytes,
-        file: item.file,
+        file,
+        sessionId: item.chunkSessionId ?? undefined,
         isCanceled: () => canceledIds.has(item.id),
-        onProgress: (percent) => patchItem(item.id, { percent }),
+        onProgress: (percent) => patchEntry(item.id, { percent }),
+        onSession: (sessionId) => {
+          patchEntry(item.id, { chunkSessionId: sessionId })
+          const current = entries.find((it) => it.id === item.id)
+          if (current) persistPut(current)
+        },
+        onOffset: (offset) => {
+          patchEntry(item.id, { chunkOffset: offset })
+          const current = entries.find((it) => it.id === item.id)
+          if (current) persistPut(current)
+        },
         onActiveXhr: (xhr) => {
           if (xhr === null) xhrs.delete(item.id)
           else xhrs.set(item.id, xhr)
@@ -304,7 +394,7 @@ function uploadOne(item: QueueEntry): Promise<void> {
 
     xhr.upload.onprogress = (e) => {
       if (!e.lengthComputable) return
-      patchItem(item.id, { percent: Math.round((e.loaded / e.total) * 100) })
+      patchEntry(item.id, { percent: Math.round((e.loaded / e.total) * 100) })
     }
 
     xhr.onload = () => {
@@ -335,7 +425,7 @@ async function pump(): Promise<void> {
     for (;;) {
       const next = entries.find((it) => it.status === 'queued')
       if (!next) break
-      patchItem(next.id, { status: 'uploading' })
+      patchEntry(next.id, { status: 'uploading' })
       await uploadOne(next)
     }
   } finally {
@@ -359,7 +449,7 @@ function enqueue(inputs: readonly StagedFileInput[], batch: UploadBatchTarget): 
         : ''
       const uploadName = edited !== '' ? edited : originalName
       return {
-        id: `upload-${++uploadSeq}`,
+        id: `${UPLOAD_ID_PREFIX}${++uploadSeq}`,
         name: uploadName,
         originalName: uploadName !== originalName ? originalName : undefined,
         sizeBytes: it.file.size,
@@ -370,6 +460,9 @@ function enqueue(inputs: readonly StagedFileInput[], batch: UploadBatchTarget): 
         attach: it.attach,
         errorText: target === null ? '拖入路径不安全（含 .. 或绝对路径），已拦截' : undefined,
         file: it.file,
+        chunkSessionId: null,
+        chunkOffset: 0,
+        createdAt: Date.now(),
       }
     })
   if (created.length === 0) return
@@ -394,6 +487,7 @@ function enqueue(inputs: readonly StagedFileInput[], batch: UploadBatchTarget): 
   writeItems((prev) => [...prev, ...checked])
   for (const it of checked) {
     if (it.status === 'failed') options.onItemSettled?.(it)
+    else persistPut(it) // 通过校验的条目（queued）入持久化——刷新可恢复
   }
   void pump()
 }
@@ -401,18 +495,128 @@ function enqueue(inputs: readonly StagedFileInput[], batch: UploadBatchTarget): 
 /** 取消整队（用户显式「全部取消」——本 store 唯一的 abort 触发点；切路由/
  *  组件卸载不调用任何取消，见文件头记档）：在传的 abort（直传 onabort 标
  *  canceled；分片条目 abort 之外再立取消旗标，供请求间隙消费，会话由
- *  runChunkedUpload best-effort DELETE 放弃），排队的直接标 canceled。 */
+ *  runChunkedUpload best-effort DELETE 放弃），排队的直接标 canceled。
+ *  canceled 是终态：排队条目的持久化记录就地删除（在传条目经 settle 删），
+ *  needs-file 恢复条目无传输可取消、原样保留（由用户重选或逐条移除）。 */
 function cancelAll(): void {
   for (const [id, xhr] of xhrs) {
     canceledIds.add(id)
     xhr.abort()
   }
+  const queuedIds = entries.filter((it) => it.status === 'queued').map((it) => it.id)
   writeItems((prev) => prev.map((it) => (it.status === 'queued' ? { ...it, status: 'canceled' } : it)))
+  for (const id of queuedIds) persistDelete(id)
 }
 
-/** 清除终态行（在传/排队的不动） */
+/** 清除终态行（在传/排队/待重选的不动——needs-file 不是完成态，清除已完成
+ *  不替用户丢弃待恢复条目），并同步删除其持久化记录（终态记录已在 settle
+ *  删除，此处兜底防存储短暂不可用期的漏删） */
 function clearFinished(): void {
-  writeItems((prev) => prev.filter((it) => it.status === 'queued' || it.status === 'uploading'))
+  const isTransient = (status: UploadStatus): boolean =>
+    status === 'queued' || status === 'uploading' || status === 'needs-file'
+  const removedIds = entries.filter((it) => !isTransient(it.status)).map((it) => it.id)
+  writeItems((prev) => prev.filter((it) => isTransient(it.status)))
+  for (const id of removedIds) persistDelete(id)
+}
+
+/** 移除单条（队列页对 needs-file 恢复条目的「移除」；通用能力，任意条目可删）
+ *  并同步删除持久化记录 */
+function removeItem(id: string): void {
+  writeItems((prev) => prev.filter((it) => it.id !== id))
+  persistDelete(id)
+}
+
+/** 单飞闸：并发 restore 合并同一轮（恢复幂等：已在队列的 id 跳过，可安全重复触发） */
+let restoring: Promise<void> | null = null
+
+/**
+ * 刷新恢复：读取持久化记录还原为 needs-file 条目（文件句柄已随页面失效——
+ * 平台客观限制，不伪造续传假象，等用户重选）。幂等可重触发：单飞闸合并并发，
+ * 已在队列的记录 id 跳过；新入队 id 序号让位恢复 id（防 `${PREFIX}${n}` 冲突）。
+ * 存储不可用 = 无恢复（按现状丢队列，与持久化写入同款降级口径）。
+ */
+function restorePersisted(): Promise<void> {
+  if (restoring) return restoring
+  restoring = (async () => {
+    let records: PersistedUploadItem[]
+    try {
+      records = await (await getUploadQueueStorage()).getAll()
+    } catch {
+      return
+    }
+    const existing = new Set(entries.map((it) => it.id))
+    const fresh: QueueEntry[] = []
+    for (const record of records) {
+      if (existing.has(record.id)) continue
+      const restored = toRestoredEntry(record)
+      fresh.push({
+        id: restored.id,
+        name: restored.name,
+        originalName: restored.originalName,
+        sizeBytes: restored.sizeBytes,
+        status: 'needs-file',
+        percent: restored.percent,
+        targetLibraryId: restored.targetLibraryId,
+        targetDir: restored.targetDir,
+        attach: restored.attach,
+        errorText: undefined,
+        file: null,
+        chunkSessionId: restored.sessionId,
+        chunkOffset: restored.chunkOffset,
+        createdAt: restored.createdAt,
+      })
+      const seq = Number.parseInt(record.id.slice(UPLOAD_ID_PREFIX.length), 10)
+      if (!Number.isNaN(seq) && seq >= uploadSeq) uploadSeq = seq + 1
+    }
+    if (fresh.length === 0) return
+    writeItems((prev) => [...prev, ...fresh])
+  })()
+    .catch(() => {
+      // 恢复尽力而为：还原失败不阻塞队列页其余功能
+    })
+    .finally(() => {
+      restoring = null
+    })
+  return restoring
+}
+
+/** 恢复条目重选文件（队列页「重选文件」入口）：同名同大小判定在纯函数
+ *  decideResume——mismatch 留在 needs-file 并给文案；命中则补句柄转 queued
+ *  重新入泵（有持久化会话 id 的分片条目按既有探测→PATCH 续传，其余从头）。 */
+function resumeWithFile(id: string, file: File): void {
+  const entry = entries.find((it) => it.id === id)
+  if (entry === undefined || entry.status !== 'needs-file') return
+  const decision = decideResume(
+    {
+      name: entry.name,
+      originalName: entry.originalName,
+      sizeBytes: entry.sizeBytes,
+      sessionId: entry.chunkSessionId,
+    },
+    { name: file.name, size: file.size },
+  )
+  if (decision.kind === 'mismatch') {
+    patchEntry(id, { errorText: '所选文件与原条目不一致（文件名或大小不符），未恢复上传' })
+    return
+  }
+  const resumed = decision.kind === 'resume-session'
+  writeItems((prev) =>
+    prev.map((it) =>
+      it.id === id
+        ? {
+            ...it,
+            file,
+            status: 'queued',
+            errorText: undefined,
+            chunkSessionId: resumed ? decision.sessionId : null,
+            // 从头重传（直传/无会话分片）进度与断点归零；会话续传保留展示进度
+            chunkOffset: resumed ? it.chunkOffset : 0,
+            percent: resumed ? it.percent : 0,
+          }
+        : it,
+    ),
+  )
+  void pump()
 }
 
 /** 订阅状态变化（useSyncExternalStore 用；返回解绑函数） */
@@ -445,6 +649,9 @@ export const uploadQueueStore = {
   enqueue,
   cancelAll,
   clearFinished,
+  removeItem,
+  restorePersisted,
+  resumeWithFile,
   setOptions,
   attachQueryClient,
 } as const
