@@ -21,33 +21,64 @@ import (
 // fetchAssetRefs 收敛详情页的"标签/作者/角色"三查询与 gen 模型装配。
 // 失败时 what 回传失败阶段名，调用方交给 internalErr 拼"<what>失败"的
 // 日志文案——保持拆分前逐查询独立文案的日志可定位性。
-func (s *Server) fetchAssetRefs(ctx context.Context, assetID string) (tags []gen.Tag, authors []gen.Author, charNames []string, what string, err error) {
+// 溯源两字段（origin/createdAtMillis）为关联行证据的纯透传（ADR-0032
+// 详情面读取，DOMAIN_RULES §10 裁决语义不涉读取面、口径零变化）。
+func (s *Server) fetchAssetRefs(ctx context.Context, assetID string) (tags []gen.AssetDetailTag, authors []gen.AssetDetailAuthor, charNames []string, what string, err error) {
 	// 标签 / 作者 / 角色
 	tagRows, err := s.q.ListAssetTagRefs(ctx, assetID)
 	if err != nil {
 		return nil, nil, nil, "查询资产标签", err
 	}
-	tags = make([]gen.Tag, 0, len(tagRows))
+	tags = make([]gen.AssetDetailTag, 0, len(tagRows))
 	for _, t := range tagRows {
 		fc := 0 // 关联文件数：标签池级统计属 /tags 端点职责，详情处无意义
 		id, name := t.ID, t.Name
-		tags = append(tags, gen.Tag{Id: &id, Name: &name, FileCount: &fc})
+		// Origin 恒透传（列 NOT NULL，含 legacy 哨兵=不可考，前端词表映射
+		// 决定是否展示）；时间经 provenanceMillis 归一不可考哨兵。
+		tags = append(tags, gen.AssetDetailTag{
+			Id: &id, Name: &name, FileCount: &fc,
+			Origin:          ptr(t.Origin),
+			CreatedAtMillis: provenanceMillis(sql.NullString{String: t.CreatedAt, Valid: true}),
+		})
 	}
 	authorRows, err := s.q.ListAssetAuthorRefs(ctx, assetID)
 	if err != nil {
 		return nil, nil, nil, "查询资产作者", err
 	}
-	authors = make([]gen.Author, 0, len(authorRows))
+	authors = make([]gen.AssetDetailAuthor, 0, len(authorRows))
 	for _, a := range authorRows {
 		fc := 0
 		id, name := a.ID, a.DisplayName
-		at := gen.AuthorType(a.Type)
-		authors = append(authors, gen.Author{Id: &id, DisplayName: &name, Type: &at, FileCount: &fc})
+		at := gen.AssetDetailAuthorType(a.Type)
+		authors = append(authors, gen.AssetDetailAuthor{
+			Id: &id, DisplayName: &name, Type: &at, FileCount: &fc,
+			Origin:          ptr(a.Origin),
+			CreatedAtMillis: provenanceMillis(a.CreatedAt),
+		})
 	}
 	if charNames, err = s.q.ListAssetCharacterNames(ctx, assetID); err != nil {
 		return nil, nil, nil, "查询资产角色", err
 	}
 	return tags, authors, charNames, "", nil
+}
+
+// provenanceMillis 关联行时间戳 → Unix 毫秒指针（ADR-0032 详情面读取）。
+// 不可考哨兵归一为 nil（协议 null/缺省=不可考）：asset_authors.created_at
+// 的 NULL（0016 存量行）、asset_tags.created_at 的 epoch（0004 既有哨兵，
+// UnixMilli=0）。口径对齐 DOMAIN_RULES §10「≤0 = 缺省/不可考」——解析失败
+// 同样不伪造，绝不落 1970 纪元字面量。
+func provenanceMillis(ts sql.NullString) *int64 {
+	if !ts.Valid {
+		return nil
+	}
+	t := parseStoreTime(ts.String)
+	if t.IsZero() {
+		return nil
+	}
+	if ms := t.UnixMilli(); ms > 0 {
+		return &ms
+	}
+	return nil
 }
 
 // assetStats 承载详情页的统计聚合值（fetchAssetStats 的返回体）。

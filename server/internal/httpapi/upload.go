@@ -311,8 +311,8 @@ func (s *Server) assembleUploadDetail(asset db.Asset) gen.AssetDetail {
 		ViewCount:  ptr(0),
 		PlayCount:  ptr(0),
 		Characters: ptr([]string{}),
-		Tags:       ptr([]gen.Tag{}),
-		Authors:    ptr([]gen.Author{}),
+		Tags:       ptr([]gen.AssetDetailTag{}),
+		Authors:    ptr([]gen.AssetDetailAuthor{}),
 	}
 	orig := s.signedMediaURL(mediaPathOrig + asset.AssetID)
 	detail.OrigUrl = &orig

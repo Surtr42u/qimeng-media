@@ -574,13 +574,22 @@ ORDER BY character_name;
 -- last deterministic tie-break. (rowid ordering is NOT usable: sqlc
 -- v1.31.1 validates ORDER BY columns against the schema and rowid is not
 -- a schema column, see _probe notes.)
-SELECT t.id, t.name
+SELECT t.id, t.name, at.origin, at.created_at
 FROM asset_tags at JOIN tags t ON t.id = at.tag_id
 WHERE at.asset_id = ?
 ORDER BY at.created_at DESC, t.created_at DESC, t.id;
 
 -- name: ListAssetAuthorRefs :many
-SELECT au.id, au.display_name, au.type
+-- origin/created_at are the association-row provenance columns (ADR-0032,
+-- migration 0016): the detail endpoint passes them through verbatim (read
+-- side only; DOMAIN_RULES section 10 adjudication semantics untouched). created_at
+-- is nullable (legacy rows NULL = untraceable); asset_tags.created_at keeps
+-- the 0004 epoch sentinel and is normalized to "untraceable" at assembly
+-- time (single point: httpapi provenanceMillis; vocabulary: store/provenance.go).
+-- NOTE: comments in this file must stay pure ASCII -- sqlc v1.31.1 mangles
+-- query boundaries on multibyte comments (observed: next query reported as
+-- ":one without RETURNING"), so Chinese rationale lives in the Go callers.
+SELECT au.id, au.display_name, au.type, aa.origin, aa.created_at
 FROM asset_authors aa JOIN authors au ON au.id = aa.author_id
 WHERE aa.asset_id = ?
 ORDER BY au.display_name;
