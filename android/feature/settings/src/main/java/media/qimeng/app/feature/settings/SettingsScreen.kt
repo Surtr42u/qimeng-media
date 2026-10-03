@@ -1,5 +1,6 @@
 package media.qimeng.app.feature.settings
 
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -16,14 +17,19 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -38,6 +44,7 @@ import kotlinx.coroutines.launch
 import media.qimeng.app.core.model.AppearanceMode
 import media.qimeng.app.core.model.TabBarMaterial
 import media.qimeng.app.core.ui.component.QimengSegPill
+import media.qimeng.app.core.ui.glass.GlassCard
 import media.qimeng.app.core.ui.glass.TabDockDefaults
 import media.qimeng.app.core.ui.theme.QimengDimens
 
@@ -53,6 +60,11 @@ private const val ROW_AUTHORS = "作者总览"
 private const val ROW_FAVORITE = "收藏"
 private const val ROW_HISTORY = "浏览历史"
 private const val ROW_DATA_MANAGE = "数据管理"
+
+/** 主体色彩入口行（2026-10-03 液态感强化批：外观模式+底栏材质两张选择卡合并为单入口，
+ *  点进子页承载——主列表减两卡、外观相关收敛一处） */
+private const val ROW_THEME = "主体色彩"
+private const val SUBTITLE_THEME = "外观模式与底栏材质"
 
 /** 推荐偏好行文案：入口行与 PrefsBottomSheet 标题同串单源（Sheet 在 SettingsCards.kt，
  *  Kotlin 文件级 private 跨文件不可见，故本条 internal——模块外不可见） */
@@ -135,6 +147,18 @@ fun SettingsScreen(
     // 2026-10-03 悬浮玻璃坞批：外观/材质状态（外观偏好端口直读，与壳层 Theme/坞同源）
     val appearanceMode by viewModel.appearanceMode.collectAsStateWithLifecycle()
     val tabBarMaterial by viewModel.tabBarMaterial.collectAsStateWithLifecycle()
+    // 主体色彩子页（2026-10-03 液态感强化批）：外观模式+底栏材质两张选择卡合并为单入口行，
+    // 点进行内子页承载；rememberSaveable 跨旋转/进程重建，BackHandler 承接系统返回
+    var showThemePage by rememberSaveable { mutableStateOf(false) }
+    if (showThemePage) {
+        BackHandler(onBack = { showThemePage = false })
+        ThemeColorPage(
+            appearanceMode = appearanceMode,
+            onAppearanceModeSelect = viewModel::setAppearanceMode,
+            tabBarMaterial = tabBarMaterial,
+            onTabMaterialSelect = viewModel::setTabBarMaterial,
+        )
+    } else {
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -153,13 +177,11 @@ fun SettingsScreen(
             onOpenFavorite = onOpenFavorite,
             onOpenHistory = onOpenHistory,
             onOpenDataManage = onOpenDataManage,
-            appearanceMode = appearanceMode,
-            onAppearanceModeSelect = viewModel::setAppearanceMode,
-            tabBarMaterial = tabBarMaterial,
-            onTabMaterialSelect = viewModel::setTabBarMaterial,
+            onOpenTheme = { showThemePage = true },
             onOpenPrefs = viewModel::openPrefsSheet,
         )
         settingsFooterItems(state = state, viewModel = viewModel)
+    }
     }
 
     // Sheet 开关只看 prefsSheetOpen——预设四行本身不依赖网络，prefsValues 加载失败
@@ -173,6 +195,60 @@ fun SettingsScreen(
             onRetryLoad = viewModel::retryLoadPrefs,
             onApply = viewModel::applyPreset,
             onDismiss = viewModel::closePrefsSheet,
+        )
+    }
+}
+
+/**
+ * 主体色彩子页（2026-10-03 液态感强化批）：原主列表的外观模式三选 + 底栏材质四选两张
+ * 选择卡迁入本页承载——主列表以单入口行「主体色彩」点进，系统返回/无障碍回退都回主列表。
+ * 布局与主列表同语言（20dp 横 padding/28sp Bold 标题/底部悬浮坞让位）。
+ */
+@Composable
+private fun ThemeColorPage(
+    appearanceMode: AppearanceMode,
+    onAppearanceModeSelect: (AppearanceMode) -> Unit,
+    tabBarMaterial: TabBarMaterial,
+    onTabMaterialSelect: (TabBarMaterial) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(horizontal = ScreenContentPadding)
+            .verticalScroll(rememberScrollState())
+            // 底部让位悬浮坞（内容从坞身后滚过）
+            .padding(bottom = TabDockDefaults.bottomClearance()),
+    ) {
+        Text(
+            text = ROW_THEME,
+            style = MaterialTheme.typography.headlineSmall.copy(fontSize = 28.sp, fontWeight = FontWeight.Bold),
+            modifier = Modifier.padding(top = TitleToCardsSpacing, bottom = FirstRowTopSpacing),
+        )
+        SettingsSelectorCard(
+            title = stringResource(R.string.settings_appearance_title),
+            subtitle = stringResource(R.string.settings_appearance_subtitle),
+            options = listOf(
+                stringResource(R.string.settings_appearance_system),
+                stringResource(R.string.settings_appearance_light),
+                stringResource(R.string.settings_appearance_dark),
+            ),
+            selectedIndex = AppearanceMode.entries.indexOf(appearanceMode).coerceAtLeast(0),
+            onSelect = { index -> onAppearanceModeSelect(AppearanceMode.entries[index]) },
+            modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
+        )
+        SettingsSelectorCard(
+            title = stringResource(R.string.settings_tab_material_title),
+            subtitle = stringResource(R.string.settings_tab_material_subtitle),
+            options = listOf(
+                stringResource(R.string.settings_tab_material_liquid),
+                stringResource(R.string.settings_tab_material_frosted),
+                stringResource(R.string.settings_tab_material_solid),
+                stringResource(R.string.settings_tab_material_classic),
+            ),
+            selectedIndex = TabBarMaterial.entries.indexOf(tabBarMaterial).coerceAtLeast(0),
+            onSelect = { index -> onTabMaterialSelect(TabBarMaterial.entries[index]) },
+            modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
         )
     }
 }
@@ -234,10 +310,7 @@ private fun LazyListScope.settingsEntryRowItems(
     onOpenFavorite: () -> Unit,
     onOpenHistory: () -> Unit,
     onOpenDataManage: () -> Unit,
-    appearanceMode: AppearanceMode,
-    onAppearanceModeSelect: (AppearanceMode) -> Unit,
-    tabBarMaterial: TabBarMaterial,
-    onTabMaterialSelect: (TabBarMaterial) -> Unit,
+    onOpenTheme: () -> Unit,
     onOpenPrefs: () -> Unit,
 ) {
     // 服务器入口行（U10-4：原「服务器地址」只展示卡与「本机模式」快捷行合并为单入口，
@@ -293,38 +366,13 @@ private fun LazyListScope.settingsEntryRowItems(
         )
     }
 
-    // 外观模式（2026-10-03 悬浮玻璃坞批：原「主题色彩」不可点占位行升级为三选手动开关
-    // ——跟随系统/浅色/深色，持久化经 [AppearancePrefsRepository]，与壳层 Theme 的暗色
-    // 解析同一数据源；选项文案进 strings.xml）
+    // 主体色彩（2026-10-03 液态感强化批：外观模式+底栏材质两张选择卡合并为单入口行，
+    // 点进 ThemeColorPage 子页承载——主列表减两卡、外观相关收敛一处）
     item {
-        SettingsSelectorCard(
-            title = stringResource(R.string.settings_appearance_title),
-            subtitle = stringResource(R.string.settings_appearance_subtitle),
-            options = listOf(
-                stringResource(R.string.settings_appearance_system),
-                stringResource(R.string.settings_appearance_light),
-                stringResource(R.string.settings_appearance_dark),
-            ),
-            selectedIndex = AppearanceMode.entries.indexOf(appearanceMode).coerceAtLeast(0),
-            onSelect = { index -> onAppearanceModeSelect(AppearanceMode.entries[index]) },
-            modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
-        )
-    }
-
-    // 底栏材质（2026-10-03 悬浮玻璃坞批新增）：液态玻璃/磨砂玻璃/纯色坞/经典四档，
-    // 经 [AppearancePrefsRepository] 持久化，壳层悬浮坞按档渲染
-    item {
-        SettingsSelectorCard(
-            title = stringResource(R.string.settings_tab_material_title),
-            subtitle = stringResource(R.string.settings_tab_material_subtitle),
-            options = listOf(
-                stringResource(R.string.settings_tab_material_liquid),
-                stringResource(R.string.settings_tab_material_frosted),
-                stringResource(R.string.settings_tab_material_solid),
-                stringResource(R.string.settings_tab_material_classic),
-            ),
-            selectedIndex = TabBarMaterial.entries.indexOf(tabBarMaterial).coerceAtLeast(0),
-            onSelect = { index -> onTabMaterialSelect(TabBarMaterial.entries[index]) },
+        EntryRow(
+            label = ROW_THEME,
+            subtitle = SUBTITLE_THEME,
+            onClick = onOpenTheme,
             modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
         )
     }
@@ -387,12 +435,13 @@ private fun EntryRow(
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)?,
 ) {
-    Surface(
-        color = MaterialTheme.colorScheme.surface,
+    // 2026-10-03 液态感强化批：纯白 surface 卡 → GlassCard 玻璃卡（用户反馈「选项卡与
+    // 背景对比不明显、无立体感」——纯白卡浮在 #FAFAFA 底上近乎不可辨）；几何逐项保留
+    // （16dp 圆角/72dp 高节奏），点击形态附 spring 按压缩放
+    GlassCard(
+        onClick = onClick,
         shape = RoundedCornerShape(QimengDimens.CardCornerRadius),
-        modifier = modifier
-            .fillMaxWidth()
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
+        modifier = modifier.fillMaxWidth(),
     ) {
         Row(
             modifier = Modifier
