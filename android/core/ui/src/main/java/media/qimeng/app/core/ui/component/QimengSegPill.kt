@@ -21,6 +21,10 @@ import media.qimeng.app.core.ui.glass.pressScale
 import media.qimeng.app.core.ui.glass.rememberPressScaleSource
 import media.qimeng.app.core.ui.theme.QimengShapes
 
+/** 选中态染色透明度（坞 PILL_TINT_ALPHA 同档 0.30：低透染玻璃，光从色里透出来——
+ *  0.9 级高透会糊成「实底贴膜」，用户反馈「太黑」即此因；全 App 玻璃选中语言单源） */
+const val QIMENG_GLASS_TINT_ALPHA = 0.30f
+
 /** 按下缩放档（GUIDE_UI §UI约束「按下反馈动画」；spring 语言与玻璃件族一致） */
 private const val SEG_PILL_PRESSED_SCALE = 0.92f
 
@@ -29,9 +33,6 @@ private val SEG_PILL_HEIGHT = 32.dp
 
 /** 胶囊文案横向内边距（旧版 14dp 胶囊横向内边距档） */
 private val SEG_PILL_LABEL_HORIZONTAL_PADDING = 14.dp
-
-/** 选中态染色透明度（主色染玻璃体：留 8% 透给光影笔，「有色玻璃」而非实底贴膜） */
-private const val SEG_PILL_SELECTED_TINT_ALPHA = 0.92f
 
 /**
  * 分段选择胶囊——全仓单枚胶囊渲染唯一来源（首页三胶囊/相册芯片/搜索词丸/详情值丸/
@@ -57,9 +58,9 @@ fun QimengSegPill(
     modifier: Modifier = Modifier,
 ) {
     val interaction = rememberPressScaleSource()
-    // 选中=onPrimary（染色彩充分）；未选=onSurface（主内容色，与坞未选档同口径防浅底发虚）
+    // 选中=低透主色染玻璃+primary 文字（坞选中胶囊同语言）；未选=素玻璃+onSurface
     val labelColor = if (selected) {
-        MaterialTheme.colorScheme.onPrimary
+        MaterialTheme.colorScheme.primary
     } else {
         MaterialTheme.colorScheme.onSurface
     }
@@ -67,7 +68,7 @@ fun QimengSegPill(
         shape = QimengShapes.pill,
         compact = true,
         tintOverlay = if (selected) {
-            MaterialTheme.colorScheme.primary.copy(alpha = SEG_PILL_SELECTED_TINT_ALPHA)
+            MaterialTheme.colorScheme.primary.copy(alpha = QIMENG_GLASS_TINT_ALPHA)
         } else {
             null
         },

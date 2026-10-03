@@ -1,6 +1,10 @@
 package media.qimeng.app.feature.detail
 
 import androidx.compose.foundation.clickable
+import media.qimeng.app.core.ui.component.QIMENG_GLASS_TINT_ALPHA
+import media.qimeng.app.core.ui.glass.GlassSurface
+
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -350,24 +354,26 @@ internal fun DetailAuthorSheet(
 /** 关注按钮（Web .follow-btn：已关注=灰底、「+ 关注」=主色底；原作者卡同名件随迁） */
 @Composable
 private fun FollowButton(followed: Boolean, enabled: Boolean, onClick: () -> Unit) {
-    Surface(
-        onClick = onClick,
-        enabled = enabled,
+    // 2026-10-03 玻璃语言统一批：关注钮 Surface → 玻璃胶囊（未关注=主色低透染玻璃+primary
+    // 字，坞选中语言；已关注=素玻璃+onSurface 字）
+    GlassSurface(
         shape = RoundedCornerShape(QimengDimens.PillCornerRadius),
-        color = if (followed) {
-            MaterialTheme.colorScheme.surfaceVariant
+        compact = true,
+        tintOverlay = if (!followed) {
+            MaterialTheme.colorScheme.primary.copy(alpha = QIMENG_GLASS_TINT_ALPHA)
         } else {
-            MaterialTheme.colorScheme.primary
+            null
         },
-        contentColor = if (followed) {
-            MaterialTheme.colorScheme.onSurfaceVariant
-        } else {
-            MaterialTheme.colorScheme.onPrimary
-        },
+        modifier = Modifier.clickable(enabled = enabled, onClick = onClick),
     ) {
         Text(
             text = stringResource(if (followed) R.string.detail_followed else R.string.detail_follow),
             style = MaterialTheme.typography.labelLarge,
+            color = if (followed) {
+                MaterialTheme.colorScheme.onSurface
+            } else {
+                MaterialTheme.colorScheme.primary
+            },
             modifier = Modifier.padding(
                 horizontal = QimengDimens.ChipHorizontalPadding,
                 vertical = QimengDimens.SpaceS,

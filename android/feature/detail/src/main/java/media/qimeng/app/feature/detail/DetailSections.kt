@@ -1,5 +1,10 @@
 package media.qimeng.app.feature.detail
 
+import androidx.compose.foundation.clickable
+import androidx.compose.material3.LocalContentColor
+import media.qimeng.app.core.ui.component.QIMENG_GLASS_TINT_ALPHA
+import media.qimeng.app.core.ui.glass.GlassSurface
+
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -131,35 +136,34 @@ internal fun DetailActionButton(
             )
         }
     }
-    Surface(
-        onClick = {
-            bounceTrigger++
-            onClick()
-        },
-        enabled = enabled,
+    // 2026-10-03 玻璃语言统一批：Surface 实底 → 玻璃胶囊（active=主色低透染玻璃+primary 字，
+    // 坞选中语言 QIMENG_GLASS_TINT_ALPHA 单源；danger=error 字；素玻璃=onSurface 字）
+    GlassSurface(
         shape = RoundedCornerShape(QimengDimens.PillCornerRadius),
-        color = if (active) {
-            // Web .detail-act.active：background var(--qm-primary) 主色实底
-            MaterialTheme.colorScheme.primary
+        compact = true,
+        tintOverlay = if (active) {
+            MaterialTheme.colorScheme.primary.copy(alpha = QIMENG_GLASS_TINT_ALPHA)
         } else {
-            MaterialTheme.colorScheme.surfaceVariant
-        },
-        contentColor = if (active) {
-            // Web .detail-act.active：color var(--invert) 反色字
-            MaterialTheme.colorScheme.onPrimary
-        } else if (danger) {
-            // danger 档（G1b 删除钮）：错误色文字提示破坏性语义
-            MaterialTheme.colorScheme.error
-        } else {
-            MaterialTheme.colorScheme.onSurfaceVariant
+            null
         },
         modifier = modifier
             .graphicsLayer {
                 scaleX = bounceScale.value
                 scaleY = bounceScale.value
             }
+            .clickable(enabled = enabled) {
+                bounceTrigger++
+                onClick()
+            }
             .semantics { this.contentDescription = contentDescription },
     ) {
+        CompositionLocalProvider(
+            LocalContentColor provides when {
+                active -> MaterialTheme.colorScheme.primary
+                danger -> MaterialTheme.colorScheme.error
+                else -> MaterialTheme.colorScheme.onSurface
+            },
+        ) {
         // 修复B：singleLine 发布给 content 内文案（CapsuleText 消费）；默认 false 时与
         // 直挂 Row 等价（compositionLocalOf 无静态默认开销，见 LocalCapsuleSingleLine 注）
         CompositionLocalProvider(LocalCapsuleSingleLine provides singleLine) {
@@ -176,6 +180,7 @@ internal fun DetailActionButton(
                 horizontalArrangement = Arrangement.spacedBy(QimengDimens.SpaceS, Alignment.CenterHorizontally),
                 content = content,
             )
+        }
         }
     }
 }

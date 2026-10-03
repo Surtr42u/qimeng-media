@@ -1,5 +1,8 @@
 package media.qimeng.app.feature.detail
 
+import androidx.compose.foundation.clickable
+import media.qimeng.app.core.ui.glass.GlassSurface
+
 import android.content.res.Configuration
 import android.util.Log
 import androidx.activity.compose.BackHandler
@@ -849,13 +852,14 @@ private fun TagSectionLabel(text: String) {
     )
 }
 
-/** 快捷标记胶囊（③：浅灰圆角胶囊 + 主题色文字；emoji 自带色不染色，对齐旧版） */
+/** 快捷标记胶囊（③：玻璃圆角胶囊 + 主题色文字；emoji 自带色不染色，对齐旧版；
+ *  2026-10-03 玻璃语言统一批：surfaceVariant 实底 → 素玻璃 compact 档） */
 @Composable
 private fun TagQuickCapsule(label: String, onClick: () -> Unit) {
-    Surface(
-        onClick = onClick,
+    GlassSurface(
         shape = RoundedCornerShape(TAG_QUICK_CAPSULE_CORNER_RADIUS),
-        color = MaterialTheme.colorScheme.surfaceVariant,
+        compact = true,
+        modifier = Modifier.clickable(onClick = onClick),
     ) {
         Text(
             text = label,

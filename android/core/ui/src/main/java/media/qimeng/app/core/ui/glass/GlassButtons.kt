@@ -22,9 +22,6 @@ private val GLASS_ICON_BUTTON_SIZE = 40.dp
 /** 玻璃图标钮按压缩放（小控件用深一档，触感更明确） */
 private const val GLASS_ICON_PRESSED_SCALE = 0.94f
 
-/** 玻璃图标钮投影（2026-10-03 质感对齐批：悬浮景深要素与坞同语言；顶栏钮位稀疏无叠印） */
-private val GLASS_ICON_BUTTON_ELEVATION = 2.dp
-
 /**
  * 玻璃胶囊图标钮（ADR-0031）：小尺寸玻璃面 + 图标 + spring 按压缩放。
  * 顶栏动作钮/入口钮的统一形态（单源，禁止 feature 再自绘 Surface 胶囊钮）。
@@ -45,7 +42,6 @@ fun GlassIconButton(
     val interactionSource = rememberPressScaleSource()
     GlassSurface(
         shape = QimengShapes.pill,
-        elevation = GLASS_ICON_BUTTON_ELEVATION,
         modifier = modifier
             .size(size)
             .pressScale(interactionSource, pressedScale = GLASS_ICON_PRESSED_SCALE)
