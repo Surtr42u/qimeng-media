@@ -38,6 +38,9 @@ type pageCursor struct {
 }
 
 func encodeCursor(k, id string) string {
+	// pageCursor 是两个 string 字段的定形结构体，Marshal 无失败路径
+	// （不存在不可序列化类型/循环引用），失败分支无法构造——同下方
+	// jsonValue 对 Marshal 的结论。
 	b, _ := json.Marshal(pageCursor{K: k, I: id})
 	return base64.RawURLEncoding.EncodeToString(b)
 }
@@ -180,6 +183,11 @@ type assetFilters struct {
 //   - directory 由 handler 预校验归一（filing.NormalizeRelPath）后传入：
 //     nil=缺省不过滤；非 nil 含空串=库根（目录语义允许空，与资产路径
 //     必须非空不同——同 filing.go move 的 targetDir 先例）。
+//
+// 超函数警戒线（>100 行）理由：20 余个协议参数到筛选字段的直线展开
+// （每参数一段独立 if + null*/json 封装），分支间零嵌套、无同构段落可
+// 抽；单一组装来源（文件头注释：三种查询共享同一份字段集）必须集中在
+// 一处，按参数维度拆小函数只会把字段集打散、重新引入「改一漏二」漂移。
 func newAssetFilters(params gen.GetApiV1AssetsParams, directory *string) assetFilters {
 	var f assetFilters
 	if params.LibraryId != nil {

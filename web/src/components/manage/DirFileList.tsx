@@ -96,7 +96,13 @@ export function DirFileList({ libraryId, directory }: { libraryId: string; direc
     setBatchDialog('none')
     void runner.run(targets, {
       action: '移入回收站',
-      runOne: (f) => deleteAsset.mutateAsync(f.id!),
+      // selectedFiles 已过滤 id 非空；回调内取常量守卫（TS 收窄不进回调参数），
+      // 防御兜底 reject = runner 记该条失败，不中断整批
+      runOne: (f) => {
+        const id = f.id
+        if (id === undefined) return Promise.reject(new Error('条目缺少 id'))
+        return deleteAsset.mutateAsync(id)
+      },
       id: (f) => f.id ?? '',
       label: (f) => f.fileName ?? '',
       onFinished: (outcome) => {
@@ -116,7 +122,11 @@ export function DirFileList({ libraryId, directory }: { libraryId: string; direc
     const targets = selectedFiles
     void runner.run(targets, {
       action: '批量移动',
-      runOne: (f) => moveAsset.mutateAsync({ assetId: f.id!, targetDir }),
+      runOne: (f) => {
+        const id = f.id
+        if (id === undefined) return Promise.reject(new Error('条目缺少 id'))
+        return moveAsset.mutateAsync({ assetId: id, targetDir })
+      },
       id: (f) => f.id ?? '',
       label: (f) => f.fileName ?? '',
       onFinished: (outcome) => {

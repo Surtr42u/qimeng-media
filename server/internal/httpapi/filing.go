@@ -35,6 +35,11 @@ var (
 // 顺序约束：先动文件后改库行。中途失败的最坏情形是"文件已挪、行还指
 // 旧路径"——扫描器的移动合并启发式（size+mtime 一致）会把行修正过来；
 // 反过来"行指新路径、文件在旧位置"则成为对账黑洞。
+//
+// 超函数警戒线（>100 行）理由：多步编排必须按上述顺序约束直线展开，
+// 各步的失败分支（409 双查 / 400 越界 / rename 失败回滚）就地挂在所属
+// 步骤之下；关键段已收拢进 WithLibraryGate 闭包，再拆函数会把顺序
+// 语义与失败补偿拆散到两处。
 func (s *Server) PostApiV1AssetsAssetIdMove(w http.ResponseWriter, r *http.Request, assetID gen.AssetId) {
 	row, err := s.q.GetAssetWithLibrary(r.Context(), assetID.String())
 	if errors.Is(err, sql.ErrNoRows) {

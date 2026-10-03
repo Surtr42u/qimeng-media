@@ -5,6 +5,8 @@
  * count 为空串不渲染计数徽标（作者总览行无计数，对照原型 renderAuthorOverview）。
  */
 
+import { EmptyNote } from './EmptyNote'
+
 export interface RankRow {
   name: string
   count: string
@@ -19,7 +21,7 @@ export function RankRowList({
   rows: RankRow[]
   onSelect?: (name: string) => void
 }) {
-  if (!rows.length) return <p className="rank-note">暂无数据</p>
+  if (!rows.length) return <EmptyNote />
   return (
     <ul>
       {rows.map((r) => (

@@ -47,8 +47,11 @@ import media.qimeng.app.core.ui.theme.QimengDimens
 // 页头组件共享文案在 :core:ui（nonTransitiveRClass 下跨模块取资源须引对方 R）
 import media.qimeng.app.core.ui.R as CoreUiR
 
-/** 相册 Tab 在壳导航里的路由（双击 Tab 回顶事件的过滤键） */
-private const val ALBUM_ROUTE = "all"
+/**
+ * 相册页路由（路由名单源，App 壳层 TopLevelDestination.ALL 同值引用此处；
+ * 双击 Tab 回顶事件的过滤键）。
+ */
+const val ALBUM_ROUTE = "all"
 
 // 值区块钳制规格三常量（G5 收起阈值/收起行数/展开限高除数）2026-09-15 批收编进 :core:ui
 // QimengValuePillBlock（三页单源），本页不再持有。

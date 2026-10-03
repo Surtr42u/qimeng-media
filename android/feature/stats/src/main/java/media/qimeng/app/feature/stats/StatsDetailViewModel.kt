@@ -13,10 +13,12 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import media.qimeng.app.core.data.repository.MediaBatchIndex
-import media.qimeng.app.core.data.repository.RankingEntry
 import media.qimeng.app.core.data.repository.StatsRepository
 import media.qimeng.app.core.model.DEFAULT_STATS_RANGE
+import media.qimeng.app.core.model.MediaTypeKeys
 import media.qimeng.app.core.model.MostViewedEntry
+import media.qimeng.app.core.model.RankingEntry
+import media.qimeng.app.core.model.SourceKeys
 import media.qimeng.app.core.model.StatsOverviewValues
 import media.qimeng.app.core.model.StatsRangeOption
 import media.qimeng.app.core.model.TopAuthorEntry
@@ -315,27 +317,27 @@ class StatsDetailViewModel @Inject constructor(
         }
     }
 
-    /** mediaType 协议值 → 中文系列名（GUIDE_UI：图片/视频/动图） */
+    /** mediaType 协议值 → 中文系列名（GUIDE_UI：图片/视频/动图；键单源 [MediaTypeKeys]） */
     internal fun mediaTypeDisplayName(mediaType: String): String = when (mediaType) {
-        "image" -> IMAGE_DISPLAY_NAME
-        "video" -> VIDEO_DISPLAY_NAME
-        "animated_image" -> ANIMATED_DISPLAY_NAME
+        MediaTypeKeys.IMAGE -> IMAGE_DISPLAY_NAME
+        MediaTypeKeys.VIDEO -> VIDEO_DISPLAY_NAME
+        MediaTypeKeys.ANIMATED_IMAGE -> ANIMATED_DISPLAY_NAME
         else -> mediaType
     }
 
-    /** source 协议值 → 中文系列名（来源浏览趋势：常规/COS；DOMAIN_RULES §6 分区口径） */
+    /** source 协议值 → 中文系列名（来源浏览趋势：常规/COS；DOMAIN_RULES §6 分区口径；键单源 [SourceKeys]） */
     internal fun sourceDisplayName(source: String): String = when (source) {
-        "normal" -> SOURCE_NORMAL_DISPLAY_NAME
-        "cos" -> SOURCE_COS_DISPLAY_NAME
+        SourceKeys.NORMAL -> SOURCE_NORMAL_DISPLAY_NAME
+        SourceKeys.COS -> SOURCE_COS_DISPLAY_NAME
         else -> source
     }
 
     private companion object {
-        /** 类型趋势卡系列类型集（GUIDE_UI「图片/视频/动图」；协议 mediaType 三值全集） */
-        val TYPE_TREND_MEDIA_TYPES = listOf("image", "video", "animated_image")
+        /** 类型趋势卡系列类型集（GUIDE_UI「图片/视频/动图」；协议 mediaType 三值全集，键单源 [MediaTypeKeys]） */
+        val TYPE_TREND_MEDIA_TYPES = listOf(MediaTypeKeys.IMAGE, MediaTypeKeys.VIDEO, MediaTypeKeys.ANIMATED_IMAGE)
 
-        /** 来源趋势卡系列集（协议 /stats/trends source 枚举 normal|cos） */
-        val SOURCE_TREND_KEYS = listOf("normal", "cos")
+        /** 来源趋势卡系列集（协议 /stats/trends source 枚举 normal|cos，键单源 [SourceKeys]） */
+        val SOURCE_TREND_KEYS = listOf(SourceKeys.NORMAL, SourceKeys.COS)
 
         /** metric=seconds（常看文件详情=停留时长榜） */
         const val METRIC_SECONDS = "seconds"

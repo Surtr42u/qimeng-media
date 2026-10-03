@@ -5,25 +5,12 @@ import media.qimeng.app.core.data.coil.CachePool
 import media.qimeng.app.core.model.ThumbnailCacheProgress
 import media.qimeng.app.core.model.DiskCacheQuota
 import media.qimeng.app.core.model.MostViewedEntry
+import media.qimeng.app.core.model.RankingEntry
 import media.qimeng.app.core.model.RecommendPrefsValues
 import media.qimeng.app.core.model.StatsOverviewValues
 import media.qimeng.app.core.model.TopAuthorEntry
 import media.qimeng.app.core.model.TopTagEntry
 import media.qimeng.app.core.model.TrendPoint
-
-/**
- * GET /rankings 单条（2026-09-18 内容榜批；映射自 AssetSummary）。
- * /rankings 按热度（view+play+like 累计）降序返回，但协议不直出热度值——展示角标取
- * [viewCount]（累计浏览次数）；标题口径与列表卡一致：cosWork 优先、回退 fileName
- * （SdkMappers.toMediaAsset 同款）。
- */
-data class RankingEntry(
-    val assetId: String,
-    /** 展示标题（AssetSummary.cosWork ?: fileName，客户端卡片标题统一口径） */
-    val title: String,
-    /** 累计浏览次数（kind='open' 事件计数；「N 次」角标数据源） */
-    val viewCount: Int,
-)
 
 /**
  * 统计页数据端口（M4-6；任务I I3 增补 mediaType 维度趋势取数口；N4 消费批 I3b 增补

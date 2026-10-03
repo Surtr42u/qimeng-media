@@ -59,7 +59,9 @@ function TagDialog({ assetId, tags, onClose }: { assetId: string; tags: Tag[]; o
     if (!name) return
     createTag.mutate(name, {
       onSuccess: (tag) => {
-        if (tag?.id) setSelected((prev) => (prev.includes(tag.id!) ? prev : [...prev, tag.id!]))
+        // 守卫内先取常量：TS 收窄不进 setState 闭包，避免闭包内非空断言
+        const id = tag?.id
+        if (id) setSelected((prev) => (prev.includes(id) ? prev : [...prev, id]))
         setDraft('')
       },
       onError: (err) =>

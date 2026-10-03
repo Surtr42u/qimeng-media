@@ -227,6 +227,11 @@ private const val FULLSCREEN_TOGGLE_DEBOUNCE_MS = 800L
  * @param onPositionChanged 播放位置 tick（秒；VM 侧节流，逐 tick 喂入安全）
  * @param onAddTimelineTag 添加时间轴标签（timeMillis=对话框打开时的播放位置毫秒）
  * @param onDeleteTimelineTag 删除时间轴标签（长按菜单入口，参数=服务端标签 id）
+ *
+ * 超文件警戒线理由：视频舞台是海报/播放两态强内聚的单组件——手势（横滑切件/单击/
+ * 播放器控制镜像）、时间轴标签、快捷标记、断点续播的回调面全部共用同一舞台盒与
+ * AndroidView 桥接生命周期，按子功能拆文件会切断共享状态（播放器句柄/姿态）的
+ * 同作用域内聚，收益为负；警戒线特此记档。
  */
 @UnstableApi
 @Composable

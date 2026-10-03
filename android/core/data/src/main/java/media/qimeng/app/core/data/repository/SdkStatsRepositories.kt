@@ -13,8 +13,11 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import media.qimeng.app.core.model.DiskCacheQuota
+import media.qimeng.app.core.model.MediaTypeKeys
+import media.qimeng.app.core.model.SourceKeys
 import media.qimeng.app.core.model.ThumbnailCacheProgress
 import media.qimeng.app.core.model.MostViewedEntry
+import media.qimeng.app.core.model.RankingEntry
 import media.qimeng.app.core.model.RecommendPrefsValues
 import media.qimeng.app.core.model.StatsOverviewValues
 import media.qimeng.app.core.model.TopAuthorEntry
@@ -86,14 +89,14 @@ class SdkStatsRepository @Inject constructor(
             else -> media.qimeng.sdk.apis.DefaultApi.RangeApiV1StatsTrendsGet.month
         }
         val sdkMediaType = when (mediaType) {
-            "image" -> media.qimeng.sdk.models.MediaType.image
-            "video" -> media.qimeng.sdk.models.MediaType.video
-            "animated_image" -> media.qimeng.sdk.models.MediaType.animated_image
+            MediaTypeKeys.IMAGE -> media.qimeng.sdk.models.MediaType.image
+            MediaTypeKeys.VIDEO -> media.qimeng.sdk.models.MediaType.video
+            MediaTypeKeys.ANIMATED_IMAGE -> media.qimeng.sdk.models.MediaType.animated_image
             else -> null
         }
         val sdkSource = when (source) {
-            "normal" -> media.qimeng.sdk.apis.DefaultApi.SourceApiV1StatsTrendsGet.normal
-            "cos" -> media.qimeng.sdk.apis.DefaultApi.SourceApiV1StatsTrendsGet.cos
+            SourceKeys.NORMAL -> media.qimeng.sdk.apis.DefaultApi.SourceApiV1StatsTrendsGet.normal
+            SourceKeys.COS -> media.qimeng.sdk.apis.DefaultApi.SourceApiV1StatsTrendsGet.cos
             else -> null
         }
         val buckets = withContext(Dispatchers.IO) {

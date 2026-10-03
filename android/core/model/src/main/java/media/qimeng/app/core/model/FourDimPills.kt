@@ -57,9 +57,9 @@ object FourDimPills {
 
     fun mediaKindToKey(kind: MediaKind?): String = when (kind) {
         null -> KEY_ALL
-        MediaKind.IMAGE -> "image"
-        MediaKind.ANIMATED_IMAGE -> "animated_image"
-        MediaKind.VIDEO -> "video"
+        MediaKind.IMAGE -> MediaTypeKeys.IMAGE
+        MediaKind.ANIMATED_IMAGE -> MediaTypeKeys.ANIMATED_IMAGE
+        MediaKind.VIDEO -> MediaTypeKeys.VIDEO
     }
 
     /**

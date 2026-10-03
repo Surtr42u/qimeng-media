@@ -76,8 +76,11 @@ private const val HOME_TITLE = "首页"
 /** 「已到底」尾标文案（推荐/COS 流穷尽告知，2026-09-29；两页共用故提常量，语义见 QimengMediaGrid.endFooterText） */
 private const val EXHAUSTED_FOOTER_TEXT = "已到底"
 
-/** 首页在壳导航里的路由（双击 Tab 回顶事件的过滤键） */
-private const val HOME_ROUTE = "home"
+/**
+ * 首页路由（路由名单源，App 壳层 TopLevelDestination.HOME 同值引用此处；
+ * 双击 Tab 回顶事件的过滤键）。
+ */
+const val HOME_ROUTE = "home"
 
 /** tab → 文案资源映射（文案在 strings.xml；枚举不再携带 UI 文案——2026-09-06 审查卫生项） */
 private fun HomeTab.tabLabelRes(): Int = when (this) {
@@ -86,7 +89,7 @@ private fun HomeTab.tabLabelRes(): Int = when (this) {
     HomeTab.RANK -> R.string.home_tab_rank
 }
 
-/** pager↔chip 同步对齐日志 tag（实机高频验收 grep 用，同 QimengM42 先例；L6 起改功能域名，原批次台账号 QimengL37 退役） */
+/** pager↔chip 同步对齐日志 tag（实机高频验收 grep 用；L6 起改功能域名，原批次台账号 QimengL37 退役） */
 private const val PAGER_SYNC_LOG_TAG = "QimengHomePagerSync"
 
 /**
@@ -156,7 +159,6 @@ fun HomeScreen(
     LaunchedEffect(Unit) {
         TabScrollController.events.collectLatest { route ->
             if (route == HOME_ROUTE) {
-                android.util.Log.d("QimengM42", "scroll-to-top route=$HOME_ROUTE")
                 when (state.currentTab) {
                     HomeTab.RECOMMEND -> recommendListState.scrollToItem(0)
                     HomeTab.COS -> cosListState.scrollToItem(0)

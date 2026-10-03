@@ -25,12 +25,14 @@ dependencies {
     // feature 只许依赖 core（单向依赖，ADR-0014）；core:ui 已 api 传递 :core:model
     implementation(project(":core:ui"))
     implementation(project(":core:data"))
+    // 缩略图缓存页「本地缓存」口径文案引用本机模式端口常量单源（ServerAddress.LOCAL_MODE_PORT；
+    // feature→core 单向，ADR-0014；feature:login/settings/home 同款依赖先例）
+    implementation(project(":core:network"))
 
-    // U10-6b 例外记档：备份/作者 TXT 端口签名直用生成传输模型（LegacyBackupFile/
-    // LegacyBackupImport/TxtImportResult，拍板接口），VM 与 BackupValidator 只做类型
-    // 搬运/JSON 解析，不发网络（网络仍收口 core:data Repository，铁律 7 不破）。
-    // feature→core 单向依赖于此处对 :sdk 的模型只读引用；后续若上提映射型应收回。
-    implementation(project(":sdk"))
+    // 2026-10-03 撤 :sdk 直依赖批（U10-6b 例外记档随之退役）：备份/作者 TXT 的
+    // SDK 模型引用与 Serializer 解析已下沉 core:data（BackupValidator 搬 backup 包、
+    // BackupRepository/AuthorRepository TXT 族签名域类型化、LegacyImportSummary/
+    // TxtImportSummary 消费投影在 core:model）——本模块零 :sdk 引用，铁律 7 不破。
 
     // U10-6b：作者 TXT/备份两子页的文件选择/落盘（ActivityResultContracts，
     // feature:settings 同款依赖；SAF 读写是屏幕层平台胶水，SettingsScreen 先例）

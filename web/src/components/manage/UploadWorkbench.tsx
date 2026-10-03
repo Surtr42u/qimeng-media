@@ -195,13 +195,15 @@ export function UploadWorkbench({ libraries }: { libraries: Library[] }) {
       {/* —— 选库（配置区常驻）：目标库（必选）→ 目标目录，未选库给引导 —— */}
       <div className="upload-subhead">目标库（必选）</div>
       <div className="source-chips">
-        {libraries.map((l) =>
-          l.id ? (
-            <Pill key={l.id} active={libId === l.id} onClick={() => onLibChange(l.id!)}>
+        {libraries.map((l) => {
+          // 守卫内先取常量：TS 收窄不进 onClick 闭包，避免闭包内非空断言
+          const id = l.id
+          return id ? (
+            <Pill key={id} active={libId === id} onClick={() => onLibChange(id)}>
               {l.name}
             </Pill>
-          ) : null,
-        )}
+          ) : null
+        })}
         {libraries.length === 0 && <span className="source-empty-hint">暂无可选库——先到「库管理」注册媒体库</span>}
       </div>
       <div className="upload-subhead">

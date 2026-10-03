@@ -1,4 +1,4 @@
-package media.qimeng.app.feature.manage
+package media.qimeng.app.core.data.backup
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -7,6 +7,8 @@ import org.junit.Test
 /**
  * 备份文件前置校验锁定（U10-6b）：超限/坏 JSON/格式不符/摘要计数。判定顺序与文案
  * 逐字对齐 web/src/lib/backup.ts parseLegacyBackupFile（含 64MB 双写常量）。
+ * 2026-10-03 随校验器自 feature:manage 整体搬入本包（撤 :sdk 直依赖批；逻辑零变化，
+ * 载荷 format 断言改经 internal sdkPayload——测试同模块可见）。
  */
 class BackupValidatorTest {
 
@@ -109,8 +111,8 @@ class BackupValidatorTest {
         val result = BackupValidator.validate("qimeng_backup.json", validEnvelopeJson.toByteArray())
         result is BackupValidator.Result.Ok || throw AssertionError("合法信封应通过校验：$result")
         val ok = result as BackupValidator.Result.Ok
-        // 载荷原样透传（供 POST /import/qimeng-backup）
-        assertEquals("qimeng_backup", ok.payload.format)
+        // 载荷原样透传（供 POST /import/qimeng-backup；SDK 模型字段经 internal 句柄取）
+        assertEquals("qimeng_backup", ok.payload.sdkPayload.format)
         // 摘要计数 = 备份内原始条数；统计条 = mediaStats + dailyBrowse（Web 同口径）
         val summary = ok.summary
         assertEquals("qimeng_backup.json", summary.fileName)

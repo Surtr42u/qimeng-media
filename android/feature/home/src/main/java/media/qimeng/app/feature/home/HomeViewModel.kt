@@ -112,6 +112,10 @@ data class HomeUiState(
 /**
  * 首页推荐流 ViewModel：后处理（混合/打散/惩罚）全在服务端，这里只管
  * 一次拉满→分批揭示→触底换 seed 的翻页机（[RecommendPaging] 纯函数，单测锁定）。
+ *
+ * 超文件警戒线理由：推荐/COS/排行榜三 tab 共用同一 ViewModel——三流共享点赞指纹回流、
+ * 下拉刷新、面板草稿与回顶状态机，拆按 tab 拆会把共享状态机复制三份；类体主体是
+ * 三 tab 各自的取数段与共享翻页机，警戒线特此记档。
  */
 @HiltViewModel
 class HomeViewModel @Inject constructor(

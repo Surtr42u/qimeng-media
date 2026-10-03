@@ -6,6 +6,7 @@
  */
 
 import type { AssetSummary } from '@/api/generated'
+import { EmptyNote } from './EmptyNote'
 import { useThumbSize } from '@/hooks/use-thumb-size'
 import { applyThumbSize } from '@/lib/thumb-size'
 
@@ -18,7 +19,7 @@ export function ContentRankGrid({
 }) {
   // 档位偏好接入选点（与 MediaCard 同口径；auto=服务端下发原样）
   const [thumbSize] = useThumbSize()
-  if (!items.length) return <p className="rank-note">暂无数据</p>
+  if (!items.length) return <EmptyNote />
   return (
     <div className="rank-cards">
       {items.map((a) => (

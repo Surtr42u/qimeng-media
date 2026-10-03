@@ -83,6 +83,10 @@ class EmbeddedServerService : Service() {
          *  正常毫秒级；上限只是防御性兜底） */
         private const val STALE_KILL_WAIT_MS = 2_000L
 
+        /** 孤儿回收的进程退出轮询粒度（ms）：SIGKILL 后每 100ms 探一次 /proc/<pid> 是否消失，
+         *  粒度过细空转、过粗拖慢启动（回收发生在 onStart 路径上） */
+        private const val STALE_KILL_POLL_INTERVAL_MS = 100L
+
         /** 看护轮询周期：进程存活检查不需要秒级响应 */
         const val WATCHDOG_INTERVAL_MS = 5_000L
 
@@ -251,7 +255,7 @@ class EmbeddedServerService : Service() {
         while (System.currentTimeMillis() < deadline) {
             val gone = runCatching { !File("/proc/$recorded").exists() }.getOrDefault(true)
             if (gone) return
-            Thread.sleep(100)
+            Thread.sleep(STALE_KILL_POLL_INTERVAL_MS)
         }
     }
 

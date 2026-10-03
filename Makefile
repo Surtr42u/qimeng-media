@@ -157,7 +157,16 @@ sdk-kotlin:
 # 同步即在此拦截，见 ci.yml sdk-chain）。
 # 同步责任（铁律 1）：协议侧改动（openapi.yaml）或 make sdk 重新生成后，
 # 必须同 commit 更新 api/sdk.lock。
+# 防残锁断言（2026-10-03 加）：sdk-kotlin 在无 Java 环境时静默 SKIPPED（见其
+# else 分支），若不拦，本 target 会照常写出缺 Kotlin 指纹的锁——本地"看似绿"，
+# CI 全新 checkout 三端重算必与残锁失配（sdk-chain 拦截语义在本地等价前置）。
+# 故写锁前断言 Kotlin 生成物确实存在，不存在即拒绝落盘。
 sdk-lock: ## recompute 3-end SDK fingerprint lock into api/sdk.lock
+	@if ! find android/sdk/src/main/kotlin -name '*.kt' 2>/dev/null | grep -q .; then \
+		echo "sdk-lock: Kotlin SDK not generated (sdk-kotlin SKIPPED: java not found on PATH or ../dev-tools/jdk17)." >&2; \
+		echo "sdk-lock: refusing to write an incomplete fingerprint lock - install JDK (see sdk-kotlin) or rely on CI." >&2; \
+		exit 1; \
+	fi
 	@{ \
 		find server/internal/httpapi/gen -maxdepth 1 -type f -name '*.gen.go'; \
 		find web/src/api/generated -type f \( -name '*.js' -o -name '*.ts' \); \

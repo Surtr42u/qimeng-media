@@ -89,9 +89,10 @@ fi
 
 echo "[信息] 启动服务端（监听 127.0.0.1:$PORT，日志 $LOG）..."
 # dev 免密（2026-09-14 加）：App 登录页无「首次设密码」对接（只实现 login/dev-login，
-# 见 android App 端登录流），且本服务端只监听 127.0.0.1=仅手机自己可达，暴露面与用户 PC
-# 的 8420（同样 dev 免密，用户约定「本地一律免密直到项目完成」）一致。生产化（NAS/外网）
-# 时必须去掉本行（SECURITY.md「开发模式」）。
+# 见 android App 端登录流）。监听 127.0.0.1 只挡住局域网访问，但 Android 的 loopback
+# 是全设备共享——同机其他 App 仍可到达本端口、POST /auth/dev-login 免密取得 token
+# （dev 模式风险与缓解路径见 SECURITY.md「已知安全边界」）。生产化（NAS/外网）时必须
+# 去掉本行（SECURITY.md「开发模式」）。
 # QIMENG_WEB_STATIC_DIR（2026-09-14 加）：指向随二进制投放的正式 Web 管理界面（SPA）；
 # 目录缺失时服务端自动回退内嵌 M1 验收页（原行为不变），目录存在即提供完整管理界面。
 QIMENG_LISTEN="127.0.0.1:$PORT" QIMENG_DATA_DIR="$DATA_DIR" QIMENG_AUTH_DEV_MODE="1" \
