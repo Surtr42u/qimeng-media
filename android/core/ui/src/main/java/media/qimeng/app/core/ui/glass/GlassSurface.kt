@@ -27,6 +27,9 @@ private val GLASS_EDGE_WIDTH = 1.dp
 /** 顶部高光纱的纵向渐隐比例（占面板高；0.4=高光集中在上 40% 渐隐至透明） */
 private const val SHEEN_FADE_FRACTION = 0.4f
 
+/** 底缘厚度内影的纵向渐隐比例（占面板高；自底缘向上渐隐——玻璃体的「厚度」暗示） */
+private const val GLASS_UNDER_FADE_FRACTION = 0.3f
+
 /**
  * 玻璃面板（ADR-0031「流光玻璃」核心容器，全 App 玻璃质感单源）：
  * 半透明体 + 受光渐变描边（上亮下暗）+ 顶部高光纱 + 可选投影，圆角由 [shape] 定。
@@ -72,7 +75,7 @@ fun GlassSurface(
     )
 }
 
-/** 玻璃面板三笔绘制：体 → 顶部高光纱 → 受光描边（顺序不可换：描边必须压在高光上） */
+/** 玻璃面板绘制：体 → 顶部高光纱 → 底缘厚度内影 → 受光描边（顺序不可换：描边必须压在最上） */
 private fun DrawScope.drawGlass(fill: Color, glass: GlassColors, shape: Shape) {
     // 圆角半径取自 shape 的 outline（圆角矩形/胶囊都落在 topLeft 半径上；非圆角形状=0）
     val radius = shape.createOutline(size, layoutDirection, this).cornerRadiusPx()
@@ -86,7 +89,16 @@ private fun DrawScope.drawGlass(fill: Color, glass: GlassColors, shape: Shape) {
             endY = size.height * SHEEN_FADE_FRACTION,
         ),
     )
-    // 3) 受光描边：上亮下暗渐变描边（玻璃边缘环境受光）
+    // 3) 底缘厚度内影：自底缘向上在 GLASS_UNDER_FADE_FRACTION 比例内渐隐的暗纱——
+    //    与顶部高光对偶（上受光下沉影），给面板「有厚度的玻璃体」而非「贴纸」的体积暗示
+    drawRect(
+        brush = Brush.verticalGradient(
+            colors = listOf(Color.Transparent, glass.shadow),
+            startY = size.height * (1f - GLASS_UNDER_FADE_FRACTION),
+            endY = size.height,
+        ),
+    )
+    // 4) 受光描边：上亮下暗渐变描边（玻璃边缘环境受光）
     drawRoundRect(
         brush = Brush.verticalGradient(
             colors = listOf(glass.edgeTop, glass.edgeBottom),

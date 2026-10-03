@@ -2,12 +2,14 @@ package media.qimeng.app.core.ui.glass
 
 import android.os.Build
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -43,8 +45,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
@@ -111,6 +115,19 @@ fun FloatingTabDock(
     backdrop: QimengBackdropState?,
     modifier: Modifier = Modifier,
 ) {
+    // 整坞按压进度（0=静止，1=全按；官方 Interactive Glass Bottom Bar 配方 spring(0.5,300)）：
+    // 真玻璃档经 layerBlock 让坞体随按压微膨大 + lens 折射随压增益——「液态受压」语感。
+    // 动画值只在 drawBackdrop 的 layerBlock/effects lambda 内读取（draw 阶段），不触发重组。
+    // 按压源用计数而非布尔：多指/同帧乱序下布尔会互相覆盖（后 false 覆盖先 true），
+    // 计数增量与顺序无关、净值守恒。
+    val pressProgress = remember { Animatable(0f) }
+    var pressCount by remember { mutableIntStateOf(0) }
+    LaunchedEffect(pressCount > 0) {
+        pressProgress.animateTo(
+            if (pressCount > 0) 1f else 0f,
+            spring(dampingRatio = DOCK_PRESS_DAMPING, stiffness = DOCK_PRESS_STIFFNESS),
+        )
+    }
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -125,12 +142,16 @@ fun FloatingTabDock(
             material = material,
             // 公共边界解包：库实例只在 glass 包内部流转，不出本文件私有渲染链
             backdrop = backdrop?.backdrop,
+            pressProgress = pressProgress,
             modifier = Modifier.fillMaxWidth(),
         ) {
             DockItemsRow(
                 items = items,
                 selectedIndex = selectedIndex.coerceIn(0, (items.size - 1).coerceAtLeast(0)),
                 onSelect = onSelect,
+                onPressChange = { pressed ->
+                    pressCount = if (pressed) pressCount + 1 else (pressCount - 1).coerceAtLeast(0)
+                },
             )
         }
     }
@@ -207,6 +228,7 @@ private const val ICON_SELECTED_SCALE = 1.12f
 private fun DockBody(
     material: TabBarMaterial,
     backdrop: Backdrop?,
+    pressProgress: Animatable<Float, AnimationVector1D>,
     modifier: Modifier = Modifier,
     content: @Composable BoxScope.() -> Unit,
 ) {
@@ -219,6 +241,7 @@ private fun DockBody(
             capability == DockGlassCapability.BlurOnly ->
                 GlassDockBody(
                     backdrop = backdrop,
+                    pressProgress = pressProgress,
                     modifier = modifier,
                     scrimAlpha = LIQUID_SCRIM_ALPHA,
                     effects = {
@@ -230,15 +253,18 @@ private fun DockBody(
             else ->
                 GlassDockBody(
                     backdrop = backdrop,
+                    pressProgress = pressProgress,
                     modifier = modifier,
                     scrimAlpha = LIQUID_SCRIM_ALPHA,
                     effects = {
                         // 官方效果顺序口径：color filter ⇒ blur ⇒ lens（vibrancy 属 color filter）
                         vibrancy()
                         blur(LIQUID_BLUR_RADIUS.toPx())
+                        // 折射量随按压增益（官方交互教程同型：lens 参数乘按压进度）——
+                        // 玻璃「压得越深、透得越多」；上限仍在 ≤短边 合法区间
                         lens(
                             refractionHeight = LENS_REFRACTION_HEIGHT.toPx(),
-                            refractionAmount = LENS_REFRACTION_AMOUNT.toPx(),
+                            refractionAmount = (LENS_REFRACTION_AMOUNT * (1f + LENS_PRESS_GAIN * pressProgress.value)).toPx(),
                         )
                     },
                     content = content,
@@ -252,6 +278,7 @@ private fun DockBody(
             else ->
                 GlassDockBody(
                     backdrop = backdrop,
+                    pressProgress = pressProgress,
                     modifier = modifier,
                     scrimAlpha = FROSTED_SCRIM_ALPHA,
                     effects = {
@@ -283,6 +310,7 @@ private fun DockBody(
 @Composable
 private fun GlassDockBody(
     backdrop: Backdrop,
+    pressProgress: Animatable<Float, AnimationVector1D>,
     scrimAlpha: Float,
     effects: BackdropEffectScope.() -> Unit,
     modifier: Modifier = Modifier,
@@ -299,6 +327,13 @@ private fun GlassDockBody(
                 effects = effects,
                 // 见本函数 KDoc：受光边唯一来源=自画发丝描边，关掉库默认高光环防双描边
                 highlight = { null },
+                // 按压微膨大走 layerBlock（官方交互教程口径：形变必须进 layerBlock 走硬件层
+                // 属性，外包 graphicsLayer 会连背景折射一起缩放——那是错的）
+                layerBlock = {
+                    val grow = DOCK_PRESS_GROW.toPx() / size.width
+                    scaleX = 1f + grow * pressProgress.value
+                    scaleY = 1f + grow * pressProgress.value
+                },
                 onDrawSurface = {
                     // 低透明 scrim：纯采样内容上压一层主题底色保文字可读
                     //（官方教程口径「balance between beauty and readability」）
@@ -370,6 +405,7 @@ private fun DockItemsRow(
     items: List<GlassNavItem>,
     selectedIndex: Int,
     onSelect: (Int) -> Unit,
+    onPressChange: (Boolean) -> Unit,
 ) {
     val density = LocalDensity.current
     // Row 实测宽（含自身首尾 padding）：胶囊几何全部由它派生，不写死任何屏宽假设
@@ -429,7 +465,16 @@ private fun DockItemsRow(
                             translationX = center - pillWidthPx / 2f
                         }
                     }
-                    .background(color = pillTint, shape = RoundedCornerShape(PILL_CORNER_PERCENT)),
+                    // 胶囊体纵向微渐变（顶亮底沉）：给指示胶囊一点圆柱体积感，替代纯平色
+                    .background(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                pillTint.copy(alpha = PILL_TINT_ALPHA + PILL_TOP_ALPHA_GAIN),
+                                pillTint,
+                            ),
+                        ),
+                        shape = RoundedCornerShape(PILL_CORNER_PERCENT),
+                    ),
             )
         }
         Row(
@@ -444,6 +489,7 @@ private fun DockItemsRow(
                     item = item,
                     selected = index == selectedIndex,
                     onClick = { onSelect(index) },
+                    onPressChange = onPressChange,
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight(),
@@ -453,15 +499,24 @@ private fun DockItemsRow(
     }
 }
 
-/** 单个坞条目：图标点亮 spring + 常显标签（选中 SemiBold），a11y = Role.Tab + selected */
+/**
+ * 单个坞条目：图标点亮 spring + 常显标签（选中 SemiBold），a11y = Role.Tab + selected。
+ * 触感（2026-10-03 玻璃坞迭代批）：按压缩放（pressScale 单源 0.94，之前条目无按压反馈）+
+ * 点击轻触觉（TextHandleMove 轻档——探索批 EXPLORE 4 同款 API，本批转正为常开）。
+ */
 @Composable
 private fun DockNavItem(
     item: GlassNavItem,
     selected: Boolean,
     onClick: () -> Unit,
+    onPressChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val haptic = LocalHapticFeedback.current
+    // 按压态上抛给坞层（整坞微膨大驱动）；per-item pressScale 自行渲染按压缩放
+    LaunchedEffect(pressed) { onPressChange(pressed) }
     val iconScale by animateFloatAsState(
         targetValue = if (selected) ICON_SELECTED_SCALE else 1f,
         animationSpec = spring(
@@ -477,10 +532,14 @@ private fun DockNavItem(
     }
     Column(
         modifier = modifier
+            .pressScale(interactionSource, pressedScale = DOCK_ITEM_PRESSED_SCALE)
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
-                onClick = onClick,
+                onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onClick()
+                },
             )
             // 可读名=标签文本（icon contentDescription 置空防重复朗读），补 Tab 角色与选中态
             .semantics {
@@ -548,6 +607,26 @@ private val SOLID_DOCK_ELEVATION = 6.dp
 
 /** 玻璃坞受光发丝描边宽度（与 GlassSurface 的 GLASS_EDGE_WIDTH 同档 1dp；坞层独立渲染再声明一次） */
 private val DOCK_EDGE_STROKE_WIDTH = 1.dp
+
+// ---------- 触感/立体感（2026-10-03 玻璃坞迭代批，官方 Interactive Glass Bottom Bar 配方） ----------
+
+/** 坞条目按压缩放档（GlassIconButton 同款 0.94 深档——小控件触感更明确） */
+private const val DOCK_ITEM_PRESSED_SCALE = 0.94f
+
+/** 整坞按压 spring 阻尼（官方交互教程同值 0.5——明显弹性） */
+private const val DOCK_PRESS_DAMPING = 0.5f
+
+/** 整坞按压 spring 刚度（官方同值 300） */
+private const val DOCK_PRESS_STIFFNESS = 300f
+
+/** 整坞按压膨大量（官方 LiquidBottomTabs 同型 16dp/坞宽；取半档 8dp≈2.5% 的克制 swell） */
+private val DOCK_PRESS_GROW = 8.dp
+
+/** lens 折射量按压增益（32dp×1.25=40dp @ 全按，仍在 ≤坞短边 62dp 合法区间内） */
+private const val LENS_PRESS_GAIN = 0.25f
+
+/** 指示胶囊顶部渐变提亮增益（顶缘 alpha 0.30+0.12=0.42，底缘回落 0.30——圆柱体积感） */
+private const val PILL_TOP_ALPHA_GAIN = 0.12f
 
 /**
  * 真模糊能力档（全坞唯一 SDK 分叉点，禁止散写 SDK_INT）：

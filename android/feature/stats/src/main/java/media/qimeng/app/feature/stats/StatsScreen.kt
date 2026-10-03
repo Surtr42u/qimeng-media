@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -34,6 +33,7 @@ import media.qimeng.app.core.model.TrendPoint
 import media.qimeng.app.core.ui.component.Dimens
 import media.qimeng.app.core.ui.component.QimengSegmentedControl
 import media.qimeng.app.core.ui.component.formatBytesHumanReadable
+import media.qimeng.app.core.ui.glass.GlassCard
 import media.qimeng.app.core.ui.glass.TabDockDefaults
 
 /**
@@ -189,11 +189,12 @@ private fun OverviewCards(state: StatsUiState) {
 private fun staticPlaceholder(loading: Boolean): String =
     if (loading) LOADING_TEXT else FROZEN_PLACEHOLDER_TEXT
 
-/** 单格指标卡（浅面底 + 数值 + 标题；圆角对齐旧版 bg_stat_card 20dp，见 [STAT_CARD_CORNER_RADIUS]） */
+/** 单格指标卡（玻璃面 + 数值 + 标题；圆角对齐旧版 bg_stat_card 20dp，见 [STAT_CARD_CORNER_RADIUS]） */
 @Composable
 private fun MetricCell(title: String, value: String, modifier: Modifier = Modifier) {
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceVariant,
+    // 2026-10-03 玻璃坞迭代批：surfaceVariant 实色卡面 → GlassCard 玻璃面（探索批 GLASS_STAT_CARDS
+    // 转正）；卡几何（20dp 圆角/内边距/字号）逐项保留，只换面材质
+    GlassCard(
         shape = RoundedCornerShape(STAT_CARD_CORNER_RADIUS),
         modifier = modifier,
     ) {
@@ -232,9 +233,10 @@ private fun TrendCard(
     marker: CartesianMarker,
     onOpenTypeTrend: () -> Unit,
 ) {
-    Surface(
+    // 玻璃坞迭代批：卡面玻璃化（几何保留）；Surface(onClick) 的 ripple 换 pressScale spring
+    // 按压缩放（GlassCard 既有语义，玻璃语言「按压即缩放」）
+    GlassCard(
         onClick = onOpenTypeTrend,
-        color = MaterialTheme.colorScheme.surfaceVariant,
         shape = RoundedCornerShape(STAT_CARD_CORNER_RADIUS),
         modifier = Modifier.fillMaxWidth(),
     ) {
@@ -284,9 +286,9 @@ private fun TrendCard(
  */
 @Composable
 private fun DistributionEntryCard(onOpen: () -> Unit) {
-    Surface(
+    // 玻璃坞迭代批：卡面玻璃化（几何保留）；ripple → pressScale（见 TrendCard 注）
+    GlassCard(
         onClick = onOpen,
-        color = MaterialTheme.colorScheme.surfaceVariant,
         shape = RoundedCornerShape(STAT_CARD_CORNER_RADIUS),
         modifier = Modifier.fillMaxWidth(),
     ) {
@@ -330,9 +332,9 @@ private fun ContentRankCard(
     onOpen: () -> Unit,
     onEntryClick: (RankingEntry) -> Unit,
 ) {
-    Surface(
+    // 玻璃坞迭代批：卡面玻璃化（几何保留）；ripple → pressScale（见 TrendCard 注）
+    GlassCard(
         onClick = onOpen,
-        color = MaterialTheme.colorScheme.surfaceVariant,
         shape = RoundedCornerShape(STAT_CARD_CORNER_RADIUS),
         modifier = Modifier.fillMaxWidth(),
     ) {
@@ -379,9 +381,9 @@ private fun TopAuthorsTagsCard(
     onOpen: () -> Unit,
     onEntryClick: (TopAuthorTagEntry) -> Unit,
 ) {
-    Surface(
+    // 玻璃坞迭代批：卡面玻璃化（几何保留）；ripple → pressScale（见 TrendCard 注）
+    GlassCard(
         onClick = onOpen,
-        color = MaterialTheme.colorScheme.surfaceVariant,
         shape = RoundedCornerShape(STAT_CARD_CORNER_RADIUS),
         modifier = Modifier.fillMaxWidth(),
     ) {
