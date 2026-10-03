@@ -65,6 +65,7 @@ fun QimengSegPill(
     }
     GlassSurface(
         shape = QimengShapes.pill,
+        compact = true,
         tintOverlay = if (selected) {
             MaterialTheme.colorScheme.primary.copy(alpha = SEG_PILL_SELECTED_TINT_ALPHA)
         } else {
