@@ -16,6 +16,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import media.qimeng.app.core.data.repository.AuthorRepository
+import media.qimeng.app.core.data.repository.AppearancePrefsRepository
+import media.qimeng.app.core.data.repository.DataStoreAppearancePrefsRepository
 import media.qimeng.app.core.data.repository.DataStoreGridPrefsRepository
 import media.qimeng.app.core.data.repository.DataStoreSearchHistoryRepository
 import media.qimeng.app.core.data.repository.DetailRepository
@@ -73,6 +75,13 @@ interface DataModule {
     @Binds
     @Singleton
     fun bindGridPrefsRepository(impl: DataStoreGridPrefsRepository): GridPrefsRepository
+
+    // 外观偏好（2026-10-03 悬浮玻璃坞批）：外观模式/底栏材质两项手动开关的持久化数据面
+    @Binds
+    @Singleton
+    fun bindAppearancePrefsRepository(
+        impl: DataStoreAppearancePrefsRepository,
+    ): AppearancePrefsRepository
 
     @Binds
     @Singleton
