@@ -4,6 +4,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.material3.LocalContentColor
 import media.qimeng.app.core.ui.component.QIMENG_GLASS_TINT_ALPHA
 import media.qimeng.app.core.ui.glass.GlassSurface
+import media.qimeng.app.core.ui.glass.pressScale
+import media.qimeng.app.core.ui.glass.rememberPressScaleSource
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
@@ -136,6 +138,7 @@ internal fun DetailActionButton(
             )
         }
     }
+    val interaction = rememberPressScaleSource()
     // 2026-10-03 玻璃语言统一批：Surface 实底 → 玻璃胶囊（active=主色低透染玻璃+primary 字，
     // 坞选中语言 QIMENG_GLASS_TINT_ALPHA 单源；danger=error 字；素玻璃=onSurface 字）
     GlassSurface(
@@ -151,7 +154,14 @@ internal fun DetailActionButton(
                 scaleX = bounceScale.value
                 scaleY = bounceScale.value
             }
-            .clickable(enabled = enabled) {
+            // 点击「框住胶囊的方框」= clickable 默认 indication（矩形 ripple 框）——换无
+            // indication + spring 缩放（玻璃族统一反馈语言），方框不再出现
+            .pressScale(interaction)
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                enabled = enabled,
+            ) {
                 bounceTrigger++
                 onClick()
             }

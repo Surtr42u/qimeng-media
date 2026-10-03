@@ -2,6 +2,8 @@ package media.qimeng.app.feature.detail
 
 import androidx.compose.foundation.clickable
 import media.qimeng.app.core.ui.glass.GlassSurface
+import media.qimeng.app.core.ui.glass.pressScale
+import media.qimeng.app.core.ui.glass.rememberPressScaleSource
 
 import android.content.res.Configuration
 import android.util.Log
@@ -856,10 +858,14 @@ private fun TagSectionLabel(text: String) {
  *  2026-10-03 玻璃语言统一批：surfaceVariant 实底 → 素玻璃 compact 档） */
 @Composable
 private fun TagQuickCapsule(label: String, onClick: () -> Unit) {
+    val interaction = rememberPressScaleSource()
     GlassSurface(
         shape = RoundedCornerShape(TAG_QUICK_CAPSULE_CORNER_RADIUS),
         compact = true,
-        modifier = Modifier.clickable(onClick = onClick),
+        // 无 indication（默认矩形 ripple 框出方框）+ spring 缩放反馈
+        modifier = Modifier
+            .pressScale(interaction)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick),
     ) {
         Text(
             text = label,
