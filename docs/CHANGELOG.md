@@ -10,6 +10,15 @@
 
 > **历史条目拆分说明（2026-10-01）**：为控制 AI 上下文体量，本文件只保留 **2026-09-22 及之后**的条目（第三百八十二笔起）；拆分线之前的全部条目已逐字迁入 `docs/history/CHANGELOG-ARCHIVE.md`（零改写，笔号与本文件连续可查）。引用早于拆分线的旧笔号请去历史档查阅。
 
+## fix(server): 缩略图单飞测试时序双解修复——detachedGroup「完成即回收」语义勘正锁定（2026-10-03 第四百四十八笔）
+
+执行 AI：GLM-5.3（主代理；445 批 CI -race 实撞触发）
+
+- **背景**：审查修复批（445）二次 rebase 后 CI 首红：`TestDetachedGroup等待者取消不杀生成` 报「fn 总执行次数应为 1，实得 2」。排查=实现固有行为而非回归：fn 完成后后台 goroutine `close(done) → delete(terms)`，测试第三阶段「后来者直接取已完成结果」只在 do 抢到 delete 之前的锁时成立，另一半时序后来者重跑 fn——而同 key 合并测试的注释早已写明正确契约（「单飞是进行中合并语义，完成即忘却，迟到者走重新执行，真链路由缓存快路径兜住」）。
+- **修复（测试与文档对齐真实契约，实现零改动）**：①取消测试第三阶段改为确定性断言——新增 waitTermsRecycled 白盒轮询等回收完成后，断言迟到者重新执行 fn（runs=2）且成功；②错误传播测试改名「错误传播与回收后迟到者重跑」——旧版第二断言在回收时序下空转通过（新 fn 返回 nil 恰好满足 err==nil 检查），一并勘正为真实重跑断言；③detached.go do() 文档补「去重只覆盖进行中，完成即回收（x/sync/singleflight 同款语义），真链路由 EnsureDetached 磁盘快路径兜底不重跑 ffmpeg」；测试头注同步。
+- **验证**：gofmt/vet 零输出；TestDetachedGroup 全组 -count=30 压测通过（Windows 本机无 gcc 不跑 -race，-race 语义由 CI 锁定）。
+- **涉及文档**：`docs/CHANGELOG.md`（本条）。
+
 ## feat(app): 悬浮玻璃坞移植批——回滚后 master（老 UI 基线）+ ui/app-dock-only 玻璃坞，顶部布局零改动（2026-10-03 第四百四十七笔）
 
 执行 AI：GLM-5.3（主代理）

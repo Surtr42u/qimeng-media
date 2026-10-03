@@ -10,8 +10,29 @@ import (
 )
 
 // detachedGroup 行为锁定（2026-09-15 批，懒生成「单飞+后台续生」）：等待者取消
-// 不杀生成/同 key 合并执行一次/不同 key 各自执行/完成后的后来者直接取结果。
+// 不杀生成/同 key 合并执行一次/不同 key 各自执行/完成条目回收（迟到者重新发起，
+// 生产链路由 EnsureDetached 的磁盘缓存快路径兜底不重跑 ffmpeg——2026-10-03 审查批
+// 勘正：单飞只覆盖「进行中」，与 x/sync/singleflight 同款语义）。
 // fn 用可控阻塞的手工函数，不碰 ffmpeg（真生成由 ffmpeg_integration_test 另测）。
+
+// waitTermsRecycled 等 key 的完成条目被后台回收（fn done → delete(terms) 两步间
+// 存在窗口，本函数收敛该窗口，让后续断言不依赖「完成通知 vs 回收清理」的时序）。
+func waitTermsRecycled(t *testing.T, dg *detachedGroup, key string) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for {
+		dg.mu.Lock()
+		gone := dg.terms[key] == nil
+		dg.mu.Unlock()
+		if gone {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("后台 goroutine 未在 1s 内回收完成条目")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
 
 func TestDetachedGroup等待者取消不杀生成(t *testing.T) {
 	dg := newDetachedGroup()
@@ -41,15 +62,19 @@ func TestDetachedGroup等待者取消不杀生成(t *testing.T) {
 	}
 	close(release)
 
-	// 生成继续后，后来者（全新 ctx）应取到已完成结果且 fn 不再重跑
+	// 生成完成后条目即被回收，同 key 再来 = 全新一次生成（进行中合并语义，
+	// 与同 key 合并测试口径一致）。先等回收完成再断言——旧断言「后来者直接
+	// 取结果」只在 do 抢到 delete 之前的锁时成立，另一半时序 fn 重跑被误判
+	// 失败（2026-10-03 CI -race 实撞，审查批修复）。
+	waitTermsRecycled(t, dg, key)
 	if err := dg.do(key, context.Background(), func() error {
 		runs.Add(1)
 		return nil
 	}); err != nil {
-		t.Fatalf("后来者应直接命中已完成结果: %v", err)
+		t.Fatalf("回收后来者重新发起应成功: %v", err)
 	}
-	if got := runs.Load(); got != 1 {
-		t.Fatalf("fn 总执行次数应为 1（单飞），实得 %d", got)
+	if got := runs.Load(); got != 2 {
+		t.Fatalf("回收后来者应重新执行 fn（runs=2），实得 %d", got)
 	}
 }
 
@@ -116,13 +141,21 @@ func TestDetachedGroup不同key各自执行(t *testing.T) {
 	}
 }
 
-func TestDetachedGroup错误随完成传播给后来者(t *testing.T) {
+func TestDetachedGroup错误传播与回收后迟到者重跑(t *testing.T) {
 	dg := newDetachedGroup()
 	boom := errors.New("boom")
 	if err := dg.do("e", context.Background(), func() error { return boom }); err == nil {
 		t.Fatal("首个调用方应拿到 fn 的错误")
 	}
-	if err := dg.do("e", context.Background(), func() error { return nil }); err != nil {
-		t.Fatalf("完成后的后来者应取到已存结果（错误缓存语义同单飞惯例）: %v", err)
+	// 完成条目回收后，迟到者是全新调用——拿到本次 fn 的结果而非旧错误缓存
+	// （旧断言「后来者取到已存结果」只在完成通知先于回收清理的时序成立，
+	// 另一半时序重跑新 fn 返回 nil 恰好也过检，属空转断言，一并勘正）。
+	waitTermsRecycled(t, dg, "e")
+	var runs atomic.Int32
+	if err := dg.do("e", context.Background(), func() error { runs.Add(1); return nil }); err != nil {
+		t.Fatalf("回收后迟到者应拿到本次 fn 的 nil 结果，实得 %v: %v", err, err)
+	}
+	if runs.Load() != 1 {
+		t.Fatal("回收后迟到者应真实执行 fn")
 	}
 }
