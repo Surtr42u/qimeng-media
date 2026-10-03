@@ -148,9 +148,9 @@ func overlapsAny(used []span, start, end int) bool {
 // 回归）；表零命中才在原串（保留大小写与空格——折叠域无法分词）上提取。
 
 const (
-	// extractTokenMaxRunes 兜底提取单词条的 rune 上限：真实角色名远短于此，
+	// extractWordMaxRunes 兜底提取单词条的 rune 上限：真实角色名远短于此，
 	// 超长词是描述句混入，拒绝成为角色桶。
-	extractTokenMaxRunes = 50
+	extractWordMaxRunes = 50
 	// tokenEdgeTrim 词元边缘清理字符集：连接符与括号序号（"(1)" 剥成 "1" 后
 	// 按纯数字终止）。x/&/+ 的分隔语义在 splitSeparators/isSeparatorWord 处理，
 	// 不进此集合（避免误伤词内字符）。
@@ -191,7 +191,7 @@ func (ix *index) extractTokens(rest, source string) []string {
 	var out []string
 	seen := make(map[string]bool)
 	add := func(tok string) {
-		if tok == "" || seen[tok] || utf8.RuneCountInString(tok) > extractTokenMaxRunes {
+		if tok == "" || seen[tok] || utf8.RuneCountInString(tok) > extractWordMaxRunes {
 			return
 		}
 		seen[tok] = true
