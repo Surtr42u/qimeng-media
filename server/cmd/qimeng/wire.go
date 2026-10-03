@@ -12,6 +12,7 @@ import (
 
 	"qimeng-media/server/internal/httpapi"
 	"qimeng-media/server/internal/scanner"
+	"qimeng-media/server/internal/sourcematcher"
 	"qimeng-media/server/internal/store/db"
 	"qimeng-media/server/internal/sysmon"
 )
@@ -77,6 +78,12 @@ func (a *scannerAdapter) EnrichAsset(ctx context.Context, libraryID, assetID str
 // UpdateCustomSources 运行期替换自定义出处（同步，纯内存操作）。
 func (a *scannerAdapter) UpdateCustomSources(ctx context.Context, names []string) error {
 	a.sc.UpdateCustomSources(ctx, names)
+	return nil
+}
+
+// UpdateCustomGroups 运行期替换自定义出处组（同步，纯内存操作，ADR-0033）。
+func (a *scannerAdapter) UpdateCustomGroups(ctx context.Context, groups []sourcematcher.SourceGroup) error {
+	a.sc.UpdateCustomGroups(ctx, groups)
 	return nil
 }
 

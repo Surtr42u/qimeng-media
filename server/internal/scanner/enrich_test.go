@@ -188,7 +188,9 @@ func TestRenameWithMtimeRecomputesEnrichment(t *testing.T) {
 }
 
 // TestCustomSourcesLoadedFromSettings：Scanner 构造时从 kv_settings 装载
-// 用户自定义出处，自定义分区名文件命中自定义出处（无角色表，角色为空）。
+// 用户自定义出处，自定义分区名文件命中自定义出处；无角色表的裸名组同样
+// 受命名规约兜底提取（DOMAIN_RULES §4 兜底层）——`我的分区_某角色.jpg`
+// 自动得到「某角色」胶囊，无需为自定义出处补角色词条。
 func TestCustomSourcesLoadedFromSettings(t *testing.T) {
 	probe := newProbeStub(nil, nil)
 	env := newTestEnv(t, probe.call)
@@ -211,8 +213,8 @@ func TestCustomSourcesLoadedFromSettings(t *testing.T) {
 	if !a.Source.Valid || a.Source.String != "我的分区" {
 		t.Errorf("自定义出处 source=%v, want 我的分区", a.Source)
 	}
-	if got := characterNames(t, env, a.AssetID); len(got) != 0 {
-		t.Errorf("自定义出处无角色表, 角色=%v, want 空", got)
+	if got := characterNames(t, env, a.AssetID); len(got) != 1 || got[0] != "某角色" {
+		t.Errorf("自定义出处兜底提取角色=%v, want [某角色]", got)
 	}
 }
 

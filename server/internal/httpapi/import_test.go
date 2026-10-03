@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"qimeng-media/server/internal/httpapi/gen"
+	"qimeng-media/server/internal/sourcematcher"
 	"qimeng-media/server/internal/store"
 	"qimeng-media/server/internal/store/db"
 )
@@ -512,6 +513,15 @@ func (f *fakeScanner) EnrichAsset(context.Context, string, string) error { retur
 
 // UpdateCustomSources 测试假扫描器的自定义出处空实现（真实逻辑在 scanner 包）。
 func (f *fakeScanner) UpdateCustomSources(context.Context, []string) error { return nil }
+
+// UpdateCustomGroups 记录词表端点下发的规范化组——source_groups_test 据此
+// 断言"引擎收到的 = 持久化的"（ADR-0033）；真实合并逻辑在 sourcematcher 包。
+func (f *fakeScanner) UpdateCustomGroups(_ context.Context, groups []sourcematcher.SourceGroup) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.updatedGroups = append([]sourcematcher.SourceGroup(nil), groups...)
+	return nil
+}
 
 // RecomputeEnrichment 测试假扫描器的存量重算空实现（真实逻辑在 scanner 包）。
 func (f *fakeScanner) RecomputeEnrichment(context.Context, string) error { return nil }
