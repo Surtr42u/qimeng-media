@@ -63,9 +63,10 @@ enum class TabBarMaterial {
 
     companion object {
         /** 默认档：液态玻璃（未持久化过或持久化值非法时回落） */
-        // 2026-10-03 默认档改 SOLID（真机帧实测：玻璃采样档掉帧率 9.6–11.4%/p99 40–69ms，
-        // 纯色档 7.4%/25ms 与零玻璃基线持平——坞外形保留，玻璃爱好者可在设置切回）
-        val DEFAULT: TabBarMaterial = SOLID
+        // 2026-10-03 帧实测终裁：液态档掉帧主因=debug 构建税而非采样管线（同脚本同页面：
+        // debug 液态 3.95% → release 液态 1.45%，120Hz 屏；详见 CHANGELOG 第四百五十六笔）。
+        // 默认档回 LIQUID；SOLID/CLASSIC 保留为低端机/省电场景的手动档
+        val DEFAULT: TabBarMaterial = LIQUID
 
         /** 持久化值（枚举名）→ 档位；未知值回落默认档 */
         fun fromStored(raw: String?): TabBarMaterial =
