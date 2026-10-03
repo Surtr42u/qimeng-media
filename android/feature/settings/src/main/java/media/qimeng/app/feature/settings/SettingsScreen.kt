@@ -5,6 +5,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -21,17 +23,21 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -44,8 +50,8 @@ import kotlinx.coroutines.launch
 import media.qimeng.app.core.model.AppearanceMode
 import media.qimeng.app.core.model.TabBarMaterial
 import media.qimeng.app.core.ui.component.QimengSegPill
-import media.qimeng.app.core.ui.glass.GlassCard
 import media.qimeng.app.core.ui.glass.TabDockDefaults
+import media.qimeng.app.core.ui.icon.ChevronRightIcon
 import media.qimeng.app.core.ui.theme.QimengDimens
 
 /** 我的页入口行文案（GUIDE_UI §我的页 + M4-2 既有入口 + M4-6 上传入口；
@@ -115,8 +121,8 @@ private val TitleToCardsSpacing = 24.dp
 /** 16dp：首个入口行上距（旧版运行时行区首行 marginTop 16dp；行下距用 QimengDimens.SpaceL 12dp） */
 private val FirstRowTopSpacing = 16.dp
 
-/** 入口行玻璃卡投影（2026-10-03 阴影克制返工：2dp→1dp 轻档，景深暗示即可不抢戏） */
-private val EntryRowGlassElevation = 1.dp
+/** 分组行按压高亮透明度（分组内嵌列表语言：轻高亮替代表面缩放/ripple，克制不抢戏） */
+private const val ENTRY_ROW_PRESSED_HIGHLIGHT = 0.05f
 
 /**
  * 「我的」Tab（M4-6 完整版，单页滚动列表，GUIDE_UI §我的页结构 + I4 复刻清偿；
@@ -316,80 +322,29 @@ private fun LazyListScope.settingsEntryRowItems(
     onOpenTheme: () -> Unit,
     onOpenPrefs: () -> Unit,
 ) {
-    // 服务器入口行（U10-4：原「服务器地址」只展示卡与「本机模式」快捷行合并为单入口，
-    // 点击 onOpenServerDetail → 壳层 Routes.SERVER 子页；副文案概括地址/本机模式/
-    // 换址需重新登录三件事，行上不再展示地址——地址只在子页内消费）
+    // 2026-10-03 我的页方案重做（用户拍板「选项卡不行，换方案」）：逐行浮卡退役 →
+    // 分组内嵌列表（iOS 设置/One UI 通用语言）：一个大圆角容器装全部入口行，行间发丝
+    // 分隔线，可点行尾部箭头，按压=轻高亮。内容面安静实色，玻璃语言留给 chrome
+    // （坞/顶行），材质各归其位
     item {
-        EntryRow(
-            label = ROW_SERVER,
-            subtitle = SUBTITLE_SERVER,
-            onClick = onOpenServerDetail,
-            // 行区首行上距 16dp（旧版运行时规格，原资料卡/本机模式行同位）
-            modifier = Modifier.padding(top = FirstRowTopSpacing, bottom = QimengDimens.SpaceL),
-        )
-    }
-
-    // 作者总览入口行（X5 批 2026-09-12：内嵌卡改收藏同款外部入口行，用户问题8；
-    // 点击=onOpenAuthors → 壳层 Routes.AUTHORS → AuthorScreen 全部作者页）
-    item {
-        EntryRow(
-            label = ROW_AUTHORS,
-            subtitle = SUBTITLE_AUTHORS,
-            onClick = onOpenAuthors,
-            modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
-        )
-    }
-    item {
-        EntryRow(
-            label = ROW_FAVORITE,
-            subtitle = SUBTITLE_FAVORITE,
-            onClick = onOpenFavorite,
-            modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
-        )
-    }
-    item {
-        EntryRow(
-            label = ROW_HISTORY,
-            subtitle = SUBTITLE_HISTORY,
-            onClick = onOpenHistory,
-            modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
-        )
-    }
-
-    // 数据管理入口（U10-6：原「上传文件」行原位升级为合并入口——上传/注册媒体目录/
-    // 库管理进 feature:manage hub 二级页；副文案概括 hub 三件事，保持其他入口行两行节奏。
-    // 2026-09-28 归档文件夹批：「上传收件箱与归档」入口行随用户拍板迁入本 hub
-    // （「下载箱移到数据管理中，不需要在外面单独一个显示」），本页不再单列收件箱行）
-    item {
-        EntryRow(
-            label = ROW_DATA_MANAGE,
-            subtitle = SUBTITLE_DATA_MANAGE,
-            onClick = onOpenDataManage,
-            modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
-        )
-    }
-
-    // 主体色彩（2026-10-03 液态感强化批：外观模式+底栏材质两张选择卡合并为单入口行，
-    // 点进 ThemeColorPage 子页承载——主列表减两卡、外观相关收敛一处）
-    item {
-        EntryRow(
-            label = ROW_THEME,
-            subtitle = SUBTITLE_THEME,
-            onClick = onOpenTheme,
-            modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
-        )
-    }
-
-    // 推荐偏好（C4 BottomSheet；I4 两行化：副文案实录逐字，当前预设高亮在 Sheet 内；
-    // 2026-09-13 修复「点击无反应」：Sheet 显式持有 sheetState + 预设四行恒渲染，
-    // 偏好状态加载失败进「加载失败/重试」态而非空壳）
-    item {
-        EntryRow(
-            label = ROW_PREFS,
-            subtitle = SUBTITLE_PREFS,
-            onClick = onOpenPrefs,
-            modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
-        )
+        Surface(
+            color = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(QimengDimens.CardCornerRadius),
+            modifier = Modifier
+                .fillMaxWidth()
+                // 行区上距 16dp（旧版运行时规格，原资料卡/本机模式行同位）
+                .padding(top = FirstRowTopSpacing),
+        ) {
+            Column {
+                EntryRow(ROW_SERVER, SUBTITLE_SERVER, onClick = onOpenServerDetail, showDivider = true)
+                EntryRow(ROW_AUTHORS, SUBTITLE_AUTHORS, onClick = onOpenAuthors, showDivider = true)
+                EntryRow(ROW_FAVORITE, SUBTITLE_FAVORITE, onClick = onOpenFavorite, showDivider = true)
+                EntryRow(ROW_HISTORY, SUBTITLE_HISTORY, onClick = onOpenHistory, showDivider = true)
+                EntryRow(ROW_DATA_MANAGE, SUBTITLE_DATA_MANAGE, onClick = onOpenDataManage, showDivider = true)
+                EntryRow(ROW_THEME, SUBTITLE_THEME, onClick = onOpenTheme, showDivider = true)
+                EntryRow(ROW_PREFS, SUBTITLE_PREFS, onClick = onOpenPrefs)
+            }
+        }
     }
 }
 
@@ -401,14 +356,23 @@ private fun LazyListScope.settingsEntryRowItems(
  * 与缩略图生成进度合并为单页，QuotaCard 随迁 feature:manage。）
  */
 private fun LazyListScope.settingsFooterItems(state: MineUiState, viewModel: SettingsViewModel) {
-    // 版本信息（C6：服务端版本）
+    // 版本信息（C6：服务端版本）——分组内嵌列表语言：单独一组容器
     item {
-        EntryRow(
-            label = "版本信息",
-            detail = "服务端 ${state.serverVersion ?: VERSION_UNKNOWN}",
-            onClick = null,
-            modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
-        )
+        Surface(
+            color = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(QimengDimens.CardCornerRadius),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = QimengDimens.SpaceL),
+        ) {
+            Column {
+                EntryRow(
+                    label = "版本信息",
+                    detail = "服务端 ${state.serverVersion ?: VERSION_UNKNOWN}",
+                    onClick = null,
+                )
+            }
+        }
     }
 
     item {
@@ -436,20 +400,31 @@ private fun EntryRow(
     subtitle: String? = null,
     detail: String? = null,
     modifier: Modifier = Modifier,
+    showDivider: Boolean = false,
     onClick: (() -> Unit)?,
 ) {
-    // 2026-10-03 液态感强化批：纯白 surface 卡 → GlassCard 玻璃卡（用户反馈「选项卡与
-    // 背景对比不明显、无立体感」——纯白卡浮在 #FAFAFA 底上近乎不可辨）；几何逐项保留
-    // （16dp 圆角/72dp 高节奏），点击形态附 spring 按压缩放
-    GlassCard(
-        onClick = onClick,
-        shape = RoundedCornerShape(QimengDimens.CardCornerRadius),
-        elevation = EntryRowGlassElevation,
-        modifier = modifier.fillMaxWidth(),
-    ) {
+    // 2026-10-03 分组内嵌列表行：无底无浮卡（底色由外层分组容器提供）；按压=轻高亮
+    // （onSurface 低透，无 ripple 方框）；可点行尾部 chevron 箭头；组内发丝分隔线可选
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    Column(modifier = modifier) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .then(
+                    if (onClick != null) {
+                        Modifier.clickable(interactionSource = interaction, indication = null, onClick = onClick)
+                    } else {
+                        Modifier
+                    },
+                )
+                .background(
+                    if (pressed) {
+                        MaterialTheme.colorScheme.onSurface.copy(alpha = ENTRY_ROW_PRESSED_HIGHLIGHT)
+                    } else {
+                        Color.Transparent
+                    },
+                )
                 .heightIn(min = QimengDimens.ProfileRowHeight)
                 .padding(horizontal = QimengDimens.ProfileRowHorizontalPadding),
             verticalAlignment = Alignment.CenterVertically,
@@ -468,6 +443,21 @@ private fun EntryRow(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            if (onClick != null) {
+                Icon(
+                    imageVector = ChevronRightIcon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        if (showDivider) {
+            HorizontalDivider(
+                thickness = QimengDimens.DividerThickness,
+                color = MaterialTheme.colorScheme.outlineVariant,
+                // 分隔线左端对齐行文字起点（与行内边距同档，iOS 分组列表口径）
+                modifier = Modifier.padding(start = QimengDimens.ProfileRowHorizontalPadding),
+            )
         }
     }
 }
