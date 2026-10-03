@@ -129,6 +129,9 @@ internal fun pagerPageForTabSync(isScrollInProgress: Boolean, currentPage: Int):
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
+    // 性能联动（2026-10-03 帧实测批）：true=玻璃材质档（顶行走真采样管线）；
+    // false=纯色/经典档（零捕获，顶行走静态玻璃面）——由壳层按底栏材质传入
+    glassEnabled: Boolean = true,
     onOpenSearch: () -> Unit,
     onOpenAsset: (assetId: String) -> Unit,
     viewModel: HomeViewModel = hiltViewModel(),
@@ -219,9 +222,14 @@ fun HomeScreen(
             }
     }
 
-    // 顶行真采样玻璃源（2026-10-03 质感对齐批）：捕获源=下方 pager（顶行的兄弟子树，
-    // 合法兄弟采样——与坞「内容层外采样」同构；自采样祖先/自身才是库的 SIGSEGV 反面教材）
-    val homeBackdrop = rememberQimengBackdropState(baseColor = MaterialTheme.colorScheme.background)
+    // 顶行真采样玻璃源（2026-10-03 质感对齐批；帧实测批加性能门控）：捕获源=下方 pager
+    // （顶行的兄弟子树，合法兄弟采样）。玻璃材质档才创建捕获——纯色/经典档 null=顶行
+    // 静态玻璃 + pager 不挂捕获层，零采样开销
+    val homeBackdrop = if (glassEnabled) {
+        rememberQimengBackdropState(baseColor = MaterialTheme.colorScheme.background)
+    } else {
+        null
+    }
     Column(modifier = Modifier.fillMaxSize()) {
         HomeTopRow(
             columns = columns,
@@ -264,10 +272,16 @@ fun HomeScreen(
         }
         HorizontalPager(
             state = pagerState,
-            // 顶行真采样捕获源：pager 子树记录进 homeBackdrop（消费方=顶行搜索胶囊/图标钮）
+            // 顶行真采样捕获源：pager 子树记录进 homeBackdrop（玻璃档才挂；消费方=顶行）
             modifier = Modifier
                 .weight(1f)
-                .qimengBackdropSource(homeBackdrop),
+                .then(
+                    if (homeBackdrop != null) {
+                        Modifier.qimengBackdropSource(homeBackdrop)
+                    } else {
+                        Modifier
+                    },
+                ),
         ) { page ->
             // 网格点击统一走：先写批次上下文（详情页 i/N 序号+3b 滑动切换数据链），再交壳层导航
             val onAssetClick: (MediaAsset) -> Unit = { asset ->
@@ -343,7 +357,7 @@ fun HomeScreen(
 @Composable
 private fun HomeTopRow(
     columns: Int,
-    backdrop: QimengBackdropState,
+    backdrop: QimengBackdropState?,
     onOpenSearch: () -> Unit,
     onOpenFilter: () -> Unit,
     onToggleColumns: () -> Unit,
@@ -367,53 +381,91 @@ private fun HomeTopRow(
             modifier = Modifier.padding(end = 10.dp),
         )
         // 搜索框不可聚焦（点击整块跳搜索页——规格书语义）；高度 40dp=旧版 fragment_home.xml L37
-        // 2026-10-03 质感对齐批：实色胶囊底 → 真采样玻璃面（与坞同 Backdrop 库同管线：
-        // vibrancy+blur 采样兄弟 pager 内容 + 主题 scrim + 受光描边；几何逐项保留），
-        // 按压 spring 缩放即反馈。此前 443 批「不用真采样」的顾虑（自采样 SIGSEGV）由
-        // 兄弟捕获源架构规避——采样源=pager 子树，本胶囊不在捕获层内
+        // 2026-10-03 质感对齐批：实色胶囊底 → 玻璃面。玻璃材质档走真采样管线（与坞同
+        // Backdrop 库：vibrancy+blur 采样兄弟 pager）；纯色/经典档 backdrop=null 走静态
+        // GlassSurface（零捕获零开销，帧实测批的性能门控）。按压 spring 缩放即反馈
         val searchInteraction = rememberPressScaleSource()
-        BackdropGlassPanel(
-            backdrop = backdrop,
-            modifier = Modifier
-                .weight(1f)
-                .height(QimengDimens.HomeSearchFieldHeight)
-                .pressScale(searchInteraction)
-                .clickable(
-                    interactionSource = searchInteraction,
-                    indication = null,
-                    onClick = onOpenSearch,
-                ),
-        ) {
-            Box(
-                modifier = Modifier.fillMaxHeight(),
-                contentAlignment = Alignment.Center,
+        if (backdrop != null) {
+            BackdropGlassPanel(
+                backdrop = backdrop,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(QimengDimens.HomeSearchFieldHeight)
+                    .pressScale(searchInteraction)
+                    .clickable(
+                        interactionSource = searchInteraction,
+                        indication = null,
+                        onClick = onOpenSearch,
+                    ),
             ) {
-                Text(
-                    text = "搜索",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 12.dp),
-                )
+                HomeSearchFieldContent()
+            }
+        } else {
+            GlassSurface(
+                shape = QimengShapes.pill,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(QimengDimens.HomeSearchFieldHeight)
+                    .pressScale(searchInteraction)
+                    .clickable(
+                        interactionSource = searchInteraction,
+                        indication = null,
+                        onClick = onOpenSearch,
+                    ),
+            ) {
+                HomeSearchFieldContent()
             }
         }
         // 筛选钮（左）与列数钮（右）：无障碍文案复用 core/ui 共享资源（QimengTitleRow 同款语义；
-        // 别名导入防与 feature R 撞名）。2026-10-03 迭代批：本地手写 Surface 胶囊钮退役，
-        // 换 core:ui 玻璃单源 GlassIconButton（40dp/24dp/primary tint 几何与色全同档）
-        BackdropGlassIconButton(
-            icon = HomeFilterIcon,
-            contentDescription = stringResource(UiR.string.ui_filter_icon_desc),
-            onClick = onOpenFilter,
-            backdrop = backdrop,
-            tint = MaterialTheme.colorScheme.primary,
-            // 旧版 L49-50 marginStart/End=10/6dp
-            modifier = Modifier.padding(start = 10.dp, end = 6.dp),
-        )
-        BackdropGlassIconButton(
-            icon = if (columns == 1) Grid1Icon else gridIconFor(columns),
-            contentDescription = stringResource(UiR.string.ui_columns_icon_desc),
-            onClick = onToggleColumns,
-            backdrop = backdrop,
-            tint = MaterialTheme.colorScheme.primary,
+        // 别名导入防与 feature R 撞名）。玻璃档=BackdropGlassIconButton 真采样，纯色档=GlassIconButton
+        if (backdrop != null) {
+            BackdropGlassIconButton(
+                icon = HomeFilterIcon,
+                contentDescription = stringResource(UiR.string.ui_filter_icon_desc),
+                onClick = onOpenFilter,
+                backdrop = backdrop,
+                tint = MaterialTheme.colorScheme.primary,
+                // 旧版 L49-50 marginStart/End=10/6dp
+                modifier = Modifier.padding(start = 10.dp, end = 6.dp),
+            )
+            BackdropGlassIconButton(
+                icon = if (columns == 1) Grid1Icon else gridIconFor(columns),
+                contentDescription = stringResource(UiR.string.ui_columns_icon_desc),
+                onClick = onToggleColumns,
+                backdrop = backdrop,
+                tint = MaterialTheme.colorScheme.primary,
+            )
+        } else {
+            GlassIconButton(
+                icon = HomeFilterIcon,
+                contentDescription = stringResource(UiR.string.ui_filter_icon_desc),
+                onClick = onOpenFilter,
+                tint = MaterialTheme.colorScheme.primary,
+                // 旧版 L49-50 marginStart/End=10/6dp
+                modifier = Modifier.padding(start = 10.dp, end = 6.dp),
+            )
+            GlassIconButton(
+                icon = if (columns == 1) Grid1Icon else gridIconFor(columns),
+                contentDescription = stringResource(UiR.string.ui_columns_icon_desc),
+                onClick = onToggleColumns,
+                tint = MaterialTheme.colorScheme.primary,
+            )
+        }
+    }
+}
+
+/** 搜索框文案内容（真采样/静态两个玻璃分支共用，避免内联重复） */
+@Composable
+private fun HomeSearchFieldContent() {
+    Box(
+        modifier = Modifier.fillMaxHeight(),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = "搜索",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 12.dp),
         )
     }
 }

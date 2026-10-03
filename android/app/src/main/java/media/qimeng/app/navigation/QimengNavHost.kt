@@ -750,7 +750,11 @@ fun QimengNavHost(
                             ) {
                                 stateHolder.SaveableStateProvider(tabRoute) {
                                     if (ownerAlive) {
-                                        ResidentTabScreen(route = tabRoute, navController = navController)
+                                        ResidentTabScreen(
+                                            route = tabRoute,
+                                            navController = navController,
+                                            glassEnabled = tabBarMaterial.usesBackdrop,
+                                        )
                                     }
                                 }
                                 // 触摸死层：Compose 命中测试中「无 pointer input 的节点」不拦截触摸——
@@ -934,9 +938,15 @@ private fun navigateTopLevel(navController: NavHostController, destination: TopL
  * 由常驻层调用。
  */
 @Composable
-private fun ResidentTabScreen(route: String, navController: NavHostController) {
+private fun ResidentTabScreen(
+    route: String,
+    navController: NavHostController,
+    // 性能联动（2026-10-03 帧实测批）：首页顶行真采样跟随坞材质档传入（玻璃档才捕获）
+    glassEnabled: Boolean,
+) {
     when (route) {
         TopLevelDestination.HOME.route -> HomeScreen(
+            glassEnabled = glassEnabled,
             onOpenSearch = { navController.navigate(Routes.SEARCH_NAV) },
             onOpenAsset = { assetId ->
                 navController.navigate(DetailRoutes.detailRoute(assetId))
