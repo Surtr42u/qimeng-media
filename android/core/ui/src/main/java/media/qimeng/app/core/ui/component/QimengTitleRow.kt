@@ -22,6 +22,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import media.qimeng.app.core.ui.R
+import media.qimeng.app.core.ui.glass.GlassIconButton
+import media.qimeng.app.core.ui.glass.pressScale
+import media.qimeng.app.core.ui.glass.rememberPressScaleSource
 import media.qimeng.app.core.ui.icon.BackIcon
 import media.qimeng.app.core.ui.icon.HomeFilterIcon
 import media.qimeng.app.core.ui.icon.gridIconFor
@@ -98,28 +101,45 @@ fun QimengTitleRow(
         )
         if (onFilterClick != null) {
             // U10-3：对齐旧版 allFilterButton（fragment_all_files.xml L48-57——40dp bg_capsule_soft
-            // 胶囊底 + ic_home_filter tint qmColorPrimary）：裸图标 IconButton 换软底胶囊容器 +
-            // 专用款 [HomeFilterIcon]（旧 ic_home_filter 三页通用，勿用 Material filter_list）。
-            // 不走 IconButton/可点击 Surface：二者内建 48dp 最小触达会把旧版 40dp 胶囊撑大
-            // （HomeTopIconButton 同成因）；内层 clickable 承担点击（ripple 被 Surface 形状裁剪）
-            Surface(
-                shape = RoundedCornerShape(QimengDimens.PillCornerRadius),
-                // U10-2b：无激活筛选=透明底（用户反馈「常亮」——旧版恒显软底系静态容器无状态
-                // 语义，见 KDoc @param filterActive 有意偏离记档）；true 恢复旧版软底
-                color = if (filterActive) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
-                modifier = Modifier.size(QimengDimens.IconButtonSize),
-            ) {
-                Box(
+            // 胶囊底 + ic_home_filter tint qmColorPrimary）：专用款 [HomeFilterIcon]（旧 ic_home_filter
+            // 三页通用，勿用 Material filter_list）。
+            // 2026-10-03 胶囊玻璃化批：激活态软底 → GlassIconButton 玻璃面（40dp/24dp/primary
+            // tint 同档，几何零改动，配方沿 443 批适配移植）；未激活态保持透明底裸钮
+            // （U10-2b「不常亮」语义逐字保留），按压 spring 缩放与玻璃钮同反馈语言。
+            if (filterActive) {
+                GlassIconButton(
+                    icon = HomeFilterIcon,
+                    contentDescription = stringResource(R.string.ui_filter_icon_desc),
+                    onClick = onFilterClick,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            } else {
+                val inactiveInteraction = rememberPressScaleSource()
+                Surface(
+                    shape = RoundedCornerShape(QimengDimens.PillCornerRadius),
+                    // U10-2b：无激活筛选=透明底（用户反馈「常亮」——旧版恒显软底系静态容器无状态
+                    // 语义，见 KDoc @param filterActive 有意偏离记档）
+                    color = Color.Transparent,
                     modifier = Modifier
-                        .fillMaxSize()
-                        .clickable(onClick = onFilterClick),
-                    contentAlignment = Alignment.Center,
+                        .size(QimengDimens.IconButtonSize)
+                        .pressScale(inactiveInteraction),
                 ) {
-                    Icon(
-                        imageVector = HomeFilterIcon,
-                        contentDescription = stringResource(R.string.ui_filter_icon_desc),
-                        tint = MaterialTheme.colorScheme.primary,
-                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clickable(
+                                interactionSource = inactiveInteraction,
+                                indication = null,
+                                onClick = onFilterClick,
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = HomeFilterIcon,
+                            contentDescription = stringResource(R.string.ui_filter_icon_desc),
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
                 }
             }
         }
