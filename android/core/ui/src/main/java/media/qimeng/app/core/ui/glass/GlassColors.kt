@@ -43,28 +43,30 @@ data class GlassColors(
     val innerShade: Color,
 )
 
-/** 暗色玻璃：靛夜体 + 白纱受光（走查 r1 校准：edge/sheen 提档让受光边在深底可辨） */
+/** 暗色玻璃：靛夜体 + 白纱受光（2026-10-03 质感对齐批：遮盖提至坞 FROSTED 磨砂档以上——
+ *  流内胶囊无 backdrop 采样（下方无滚过内容，采样无意义），观感对齐坞的材料要素靠
+ *  scrim 档位/受光边/镜面/投影四件套承担） */
 private val DarkGlass = GlassColors(
-    fill = Color(0xFF1B2033).copy(alpha = 0.72f),
-    fillStrong = Color(0xFF151A2C).copy(alpha = 0.94f),
-    edgeTop = Color(0xFFFFFFFF).copy(alpha = 0.30f),
+    fill = Color(0xFF1B2033).copy(alpha = 0.86f),
+    fillStrong = Color(0xFF151A2C).copy(alpha = 0.96f),
+    edgeTop = Color(0xFFFFFFFF).copy(alpha = 0.32f),
     edgeBottom = Color(0xFFFFFFFF).copy(alpha = 0.08f),
     sheen = Color(0xFFFFFFFF).copy(alpha = 0.14f),
     shadow = Color(0xFF04050A).copy(alpha = 0.45f),
-    specular = Color(0xFFFFFFFF).copy(alpha = 0.20f),
-    innerShade = Color(0xFF04050A).copy(alpha = 0.30f),
+    specular = Color(0xFFFFFFFF).copy(alpha = 0.22f),
+    innerShade = Color(0xFF04050A).copy(alpha = 0.32f),
 )
 
-/** 浅色玻璃：白瓷体 + 白高光受光（下缘转冷灰紫，保持面板轮廓可辨） */
+/** 浅色玻璃：白瓷体 + 白高光受光（下缘转冷灰紫，保持面板轮廓可辨；遮盖同批提档） */
 private val LightGlass = GlassColors(
-    fill = Color(0xFFFFFFFF).copy(alpha = 0.66f),
-    fillStrong = Color(0xFFFDFDFF).copy(alpha = 0.90f),
+    fill = Color(0xFFFFFFFF).copy(alpha = 0.85f),
+    fillStrong = Color(0xFFFDFDFF).copy(alpha = 0.95f),
     edgeTop = Color(0xFFFFFFFF).copy(alpha = 0.95f),
     edgeBottom = Color(0xFF8F96B8).copy(alpha = 0.30f),
     sheen = Color(0xFFFFFFFF).copy(alpha = 0.55f),
     shadow = Color(0xFF3A4160).copy(alpha = 0.16f),
-    specular = Color(0xFFFFFFFF).copy(alpha = 0.85f),
-    innerShade = Color(0xFF3A4160).copy(alpha = 0.10f),
+    specular = Color(0xFFFFFFFF).copy(alpha = 0.90f),
+    innerShade = Color(0xFF3A4160).copy(alpha = 0.12f),
 )
 
 /** 主题感知的玻璃配色入口（玻璃件唯一取色口，禁止 feature 直引 DarkGlass/LightGlass） */

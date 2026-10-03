@@ -18,7 +18,8 @@
 - **玻璃材料升级（单源）**：`GlassColors` 新增 `specular`（顶部镜面高光池色）/`innerShade`（底部内影色）双 token；`GlassSurface` 绘制从三笔升为六笔（体→染色→底部内影→镜面高光池→高光纱→受光描边），新增 `tintOverlay` 参数承载「有色玻璃」（染在体上、光影笔照常叠加）。所有 GlassSurface 消费方（顶行搜索胶囊/玻璃钮族）即刻受益。
 - **全仓胶囊玻璃单源化**：`QimengSegPill`（全仓单枚胶囊唯一渲染源——首页三胶囊/相册芯片/搜索词丸/详情值丸/收藏历史值区块/设置统计档位全部经它收敛）从 M3 FilterChip 换 GlassSurface 玻璃体：未选=素玻璃+onSurface 文案，选中=主色染色玻璃（tintOverlay 0.92）+onPrimary SemiBold；几何逐项保留（32dp 高/胶囊圆角/12sp）；按下 spring 缩放与玻璃族同语言；语义对齐 FilterChip（Role.Checkbox+selected）。详情页值胶囊经此自动玻璃化。
 - **我的页**：EntryRow 纯白 surface 卡 → GlassCard（用户反馈根因：纯白卡浮 #FAFAFA 近乎不可辨；几何 16dp 圆角/72dp 节奏不变，点击附按压缩放）；外观模式+底栏材质两张选择卡从主列表撤出，合并为单入口行「主体色彩」→ `ThemeColorPage` 行内子页（BackHandler 系统返回、rememberSaveable 跨重建），主列表减两卡。
-- **验证**：本地 `:app:assembleDebug` 全绿；装机时真机已物理断连（USB 掉线），APK 已就绪待设备回连后安装目验。
+- **质感对齐返工（同批内）**：用户目验「胶囊与坞质感差距大」——流内胶囊无 backdrop 采样（下方无滚过内容，采样无意义），观感对齐改走「坞级磨砂配方」材料要素：GlassColors 遮盖提至 0.85/0.86 档（对标坞 FROSTED scrim 0.62 以上再加静态补偿）+ specular 提档；GlassIconButton 与我的页 EntryRow 加 2dp 投影（悬浮景深与坞同语言；密集小胶囊不投影防叠印）；GlassCard 透传 elevation 参数。
+- **验证**：本地 `:app:assembleDebug` 全绿；真机覆盖安装启动，效果待用户目验。
 
 ## feat(app): 玻璃语言首批推广——坞未选中档对比度修复 + 首页顶行/页头胶囊玻璃化（2026-10-03 第四百四十八笔）
 

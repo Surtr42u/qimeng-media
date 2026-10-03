@@ -115,6 +115,9 @@ private val TitleToCardsSpacing = 24.dp
 /** 16dp：首个入口行上距（旧版运行时行区首行 marginTop 16dp；行下距用 QimengDimens.SpaceL 12dp） */
 private val FirstRowTopSpacing = 16.dp
 
+/** 入口行玻璃卡投影（2026-10-03 质感对齐批：悬浮景深与坞同语言；行卡位稀疏取 2dp 轻档） */
+private val EntryRowGlassElevation = 2.dp
+
 /**
  * 「我的」Tab（M4-6 完整版，单页滚动列表，GUIDE_UI §我的页结构 + I4 复刻清偿；
  * 2026-09-13 视觉复刻批：整页对齐旧版运行时——数量卡 96dp/20dp 圆角纯白 surface、
@@ -441,6 +444,7 @@ private fun EntryRow(
     GlassCard(
         onClick = onClick,
         shape = RoundedCornerShape(QimengDimens.CardCornerRadius),
+        elevation = EntryRowGlassElevation,
         modifier = modifier.fillMaxWidth(),
     ) {
         Row(

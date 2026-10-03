@@ -153,17 +153,21 @@ private const val GLASS_CARD_PRESSED_SCALE = 0.97f
  * （点击形态附 spring 按压缩放）。统计卡/入口卡/详情区块等「Surface(color=surfaceVariant)
  * 时代」卡片的替换单源，禁止 feature 再各写一套玻璃卡。
  * 无点击时不加交互修饰（与 Surface 无 onClick 同语义）。
+ * 2026-10-03 质感对齐批：[elevation] 透传投影（悬浮玻璃坞同款景深要素；列表行卡/入口卡
+ * 建议传 2dp 轻档，密集网格小面板保持 null 防投影叠印）。
  */
 @Composable
 fun GlassCard(
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
     shape: Shape = QimengShapes.panel,
+    elevation: Dp? = null,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     GlassSurface(
         shape = shape,
+        elevation = elevation,
         modifier = modifier.then(
             if (onClick != null) {
                 Modifier
