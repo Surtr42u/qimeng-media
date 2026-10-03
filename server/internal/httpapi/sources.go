@@ -76,7 +76,11 @@ func (s *Server) PutApiV1SourcesCustom(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &body) {
 		return
 	}
-	names := normalizeCustomSources(body.Names)
+	names, err := normalizeCustomSources(body.Names)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, codeInvalidParam, err.Error())
+		return
+	}
 	raw, err := json.Marshal(names)
 	if err != nil {
 		s.internalErr(w, "序列化自定义出处", err)
@@ -102,9 +106,11 @@ func (s *Server) PutApiV1SourcesCustom(w http.ResponseWriter, r *http.Request) {
 }
 
 // normalizeCustomSources 规范化自定义出处名单。比 matcher 内的去重多做
-// 一步 trim：手输 " 火影 " 这类夹空格的形态不该成为独立出处名。
+// 一步 trim：手输 " 火影 " 这类夹空格的形态不该成为独立出处名；乱码替换
+// 符（U+FFFD）直接 400——非 UTF-8 载荷静默落库会变成永不命中的死词条
+// （同 source_groups.go checkNotMojibake 的 2026-10-03 事故加固）。
 // 结果是持久化形态也是 matcher 输入形态，两处同一份切片，无二次加工。
-func normalizeCustomSources(names []string) []string {
+func normalizeCustomSources(names []string) ([]string, error) {
 	seen := make(map[string]bool, len(names))
 	out := make([]string, 0, len(names))
 	for _, n := range names {
@@ -112,11 +118,17 @@ func normalizeCustomSources(names []string) []string {
 		if n == "" || seen[n] {
 			continue
 		}
+		if err := checkWordLen(n, "自定义出处"); err != nil {
+			return nil, err
+		}
+		if err := checkNotMojibake(n, "自定义出处"); err != nil {
+			return nil, err
+		}
 		seen[n] = true
 		out = append(out, n)
 	}
 	sort.Strings(out)
-	return out
+	return out, nil
 }
 
 // customSourcesFromSettings 读 kv_settings 中的自定义出处（JSON 字符串数组）。

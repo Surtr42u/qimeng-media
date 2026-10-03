@@ -1570,7 +1570,7 @@ var builtinGroups = []SourceGroup{
 		{Canonical: "拉奥芬", Aliases: []string{"拉奥芬", "Lawine"}},
 		{Canonical: "克蕾芙", Aliases: []string{"克蕾芙", "Kraft"}},
 	}},
-	{Canonical: "第一后裔", Variants: []string{"第一后裔", "The First Descendant", "第一后裔 邦尼"}, Characters: []CharEntry{
+	{Canonical: "第一后裔", Variants: []string{"第一后裔", "The First Descendant"}, Characters: []CharEntry{
 		{Canonical: "邦妮", Aliases: []string{"邦妮", "Bunny", "邦尼"}},
 		{Canonical: "维艾莎", Aliases: []string{"维艾莎", "Viessa"}},
 		{Canonical: "雷普西", Aliases: []string{"雷普西", "Lepic"}},

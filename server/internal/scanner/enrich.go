@@ -14,6 +14,7 @@ import (
 
 	"qimeng-media/server/internal/authoring"
 	"qimeng-media/server/internal/events"
+	"qimeng-media/server/internal/sourcematcher"
 	"qimeng-media/server/internal/store"
 	"qimeng-media/server/internal/store/db"
 )
@@ -88,6 +89,27 @@ func loadCustomSources(ctx context.Context, q *db.Queries, logger *slog.Logger) 
 		return nil
 	}
 	return names
+}
+
+// loadCustomGroups 读取用户自定义出处组（JSON 数组，元素 = 引擎输入形态
+// sourcematcher.SourceGroup，ADR-0033）。任何失败（无记录/损坏 JSON）降级
+// 为空集——同 loadCustomSources：自定义层是增强能力，不允许它阻断扫描；
+// 损坏情况 warn 留痕便于排查。
+func loadCustomGroups(ctx context.Context, q *db.Queries, logger *slog.Logger) []sourcematcher.SourceGroup {
+	v, err := q.GetSetting(ctx, authoring.SettingKeyCustomSourceGroups)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		logger.Warn("scanner: 读取自定义出处组失败（按空集处理）", "err", err)
+		return nil
+	}
+	var groups []sourcematcher.SourceGroup
+	if err := json.Unmarshal([]byte(v), &groups); err != nil {
+		logger.Warn("scanner: 自定义出处组 JSON 损坏（按空集处理）", "err", err)
+		return nil
+	}
+	return groups
 }
 
 // ingestNormalFile normal 库入库：SourceMatcher 富化 + 资产落库 + 角色覆盖。
@@ -283,6 +305,13 @@ func (s *Scanner) recomputeCosAuthor(ctx context.Context, assetID, rel string) e
 // （含缓存清空），持久化由写入端点负责——此处保持无 IO。
 func (s *Scanner) UpdateCustomSources(_ context.Context, names []string) {
 	s.matcher.UpdateCustomSources(names)
+}
+
+// UpdateCustomGroups 运行期整体替换用户自定义出处组（ADR-0033 词表维护
+// 端点调用；构造期装载见 New/loadCustomGroups）。落 matcher 即对后续全部
+// 匹配生效（含缓存清空），持久化由写入端点负责——此处保持无 IO。
+func (s *Scanner) UpdateCustomGroups(_ context.Context, groups []sourcematcher.SourceGroup) {
+	s.matcher.UpdateCustomGroups(groups)
 }
 
 // relinkOrphanCosAssets 扫描收尾自愈：重挂零关联 COS 资产的作者。

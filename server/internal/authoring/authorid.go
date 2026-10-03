@@ -15,6 +15,14 @@ const (
 	// Matcher 时装载）；写入方：出处管理端点（后续任务接线）。
 	SettingKeyCustomSources = "custom_sources"
 
+	// SettingKeyCustomSourceGroups 存用户自定义出处组 JSON 数组（元素
+	// sourcematcher.SourceGroup 形态：canonical+variants+characters，ADR-0033
+	// 检索词表维护）。与 SettingKeyCustomSources（§4 裸名名单）语义隔离：
+	// 本键是带角色的出处组，与内置 130 组按 canonical 合并（同名并入扩
+	// 变体/角色，新名追加）。读取方：scanner（构造 Matcher 时装载）；
+	// 写入方：httpapi 词表维护端点（存储形态 = 匹配引擎输入形态）。
+	SettingKeyCustomSourceGroups = "custom_source_groups"
+
 	// SettingKeyImportedTxtSources 存全部已导入 TXT 片段 JSON 数组
 	//（元素 {filename, content}，统一重建素材，DOMAIN_RULES §6「TXT 导入
 	// 以全部已导入 TXT 统一重建为语义」）。读写方：httpapi TXT 导入端点。

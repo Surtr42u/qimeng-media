@@ -34,6 +34,7 @@ import (
 	"qimeng-media/server/internal/config"
 	"qimeng-media/server/internal/events"
 	"qimeng-media/server/internal/httpapi/gen"
+	"qimeng-media/server/internal/sourcematcher"
 	"qimeng-media/server/internal/store"
 	"qimeng-media/server/internal/store/db"
 	"qimeng-media/server/internal/thumbnail"
@@ -80,6 +81,10 @@ type fakeScanner struct {
 	libID string
 	mu    sync.Mutex
 	done  bool
+
+	// updatedGroups 记录最近一次词表端点下发的规范化组（source_groups_test
+	// 断言"引擎收到的 = 持久化的"用，ADR-0033）。
+	updatedGroups []sourcematcher.SourceGroup
 }
 
 func (f *fakeScanner) Scan(ctx context.Context, libraryID string) error {
@@ -121,6 +126,7 @@ type testEnv struct {
 	media   string // 库根目录
 	dataDir string
 	cfg     *config.Config // 暴露给测试按用例调整（如上传大小上限）
+	fscan   *fakeScanner   // 词表端点断言引擎收到的载荷用（source_groups_test）
 }
 
 // testFiles 是三个测试资产：两图一视频（视频用小 mp4 头字节占位——
@@ -245,7 +251,7 @@ func newTestEnvRaw(t *testing.T) *testEnv {
 	ts := httptest.NewServer(apisrv.Handler())
 	t.Cleanup(ts.Close)
 
-	env := &testEnv{s: apisrv, ts: ts, q: q, conn: conn, libID: lib.ID, clock: clock, media: media, dataDir: dataDir, cfg: cfg}
+	env := &testEnv{s: apisrv, ts: ts, q: q, conn: conn, libID: lib.ID, clock: clock, media: media, dataDir: dataDir, cfg: cfg, fscan: fscan}
 	return env
 }
 
@@ -253,7 +259,7 @@ func newTestEnvRaw(t *testing.T) *testEnv {
 // 需要自定义初始化时序（如 dev 模式免密登录）的用例用 newTestEnvRaw。
 func newTestEnv(t *testing.T) *testEnv {
 	e := newTestEnvRaw(t)
-	e.setupAndSeed(t, &fakeScanner{q: e.q, libID: e.libID})
+	e.setupAndSeed(t, e.fscan)
 	return e
 }
 

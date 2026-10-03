@@ -10,6 +10,33 @@
 
 > **历史条目拆分说明（2026-10-01）**：为控制 AI 上下文体量，本文件只保留 **2026-09-22 及之后**的条目（第三百八十二笔起）；拆分线之前的全部条目已逐字迁入 `docs/history/CHANGELOG-ARCHIVE.md`（零改写，笔号与本文件连续可查）。引用早于拆分线的旧笔号请去历史档查阅。
 
+## feat(server): 角色匹配第二层——命名规约兜底提取 + 词表入口乱码防线（2026-10-03 第四百五十八笔）
+
+执行 AI：GLM-5.3（主代理）
+
+- **背景**：ADR-0033 词表接口落地后复盘，用户提出真实诉求——「方便维护 + 准确，降低角色表依赖」：收录一半是热门角色、一半是新/冷门角色，但文件命名高度统一（`出处  角色名 序号.扩展名`）。逐角色补词条永远追不上收录速度。
+- **兜底提取层**（sourcematcher matcher.go，DOMAIN_RULES §4 新增「命名规约兜底提取」）：别名表命中非空时结果完全以表为准（既有资产零回归，含子串命中场景测试锁定）；表零命中时在原串（保留大小写与空格——折叠域无法分词）剥离开头出处后按规约提取——空格分词、词内 +/& 拆分、裸 x 作分隔词；自左向右收集到首个纯数字/括号序号词终止（序号后是「小长篇」「婚纱」类描述词）；普通词命中本出处别名表取 canonical（改名归一），否则按原词入库；数字开头后跟 ASCII 字母的词（"2B" 形）仅当表认识才保留（"8K"/"1080p" 画质词防线）。"+" 多出处文件按分段提取且只吃本出处段与无主段（`恶魔战士+铁拳8 莫妮卡` 不得产出「铁拳8」角色，既有测试锁定）。自定义裸名出处同样享受兜底（`我的分区_某角色.jpg` 自动得「某角色」胶囊）。
+- **事故加固①——词表入口乱码 400**：非 UTF-8 客户端载荷（如 GBK 终端里的 curl）经 JSON 解码器把坏字节静默替换成 U+FFFD 后落库 = 永不命中的死词条，且整体替换语义会覆盖掉此前的正确词表——这正是本日「PUT 后重算不生效」排查的实际根因（引擎与端点本身无 bug，干净 UTF-8 载荷全链路实测即通）。sources/custom 与 sources/custom-groups 两入口对含替换符词条显式 400 INVALID_PARAM。
+- **事故加固②——启动脚本跳编译陷阱**：_server-common.cmd nobrowser 模式原「exe 存在即跳过编译」改为两模式统一总是构建（秒级 go build 缓存换正确性）——排查曾因旧二进制持续服务、新加日志永不出现而原地打转。
+- **实测**（8420 重建重启 + 词表端点触发全库重算）：此前 27 个缺角色资产全部就位——D.Mon（词条改名）/杰玛/战斗修女/阿拉尼雅/风间飞鸟（词条命中）+ 触手 11/白丝 3/KDA 2/多角色/Lawa+Melody（兜底原名提取，大小写保留）；`守望先锋.jpg`、`生化危机 1.jpg` 等文件名里本无角色的正确留空；facets 角色桶 294 个。已知取舍记档：同文件表部分命中时其余未认识名不再兜底（零回归优先，如 `风间飞鸟+风间准` 的风间准需补一条词条）。
+- **测试**：sourcematcher fallback_test.go 新增 7 组用例（单名提取/序号终止/画质词防线/分隔符与无主段/部分命中即止/表零回归/未知出处不提取）；custom_test.go ③ 与 scanner enrich_test.go 自定义裸名断言随新语义更新。`go vet ./...` + `go test ./...` 全绿。
+- **App 内嵌后端**：`make app-embedded` 双 ABI（arm64 23.9MB / x86_64 25.2MB）重建入 jniLibs（含兜底层与乱码防线；jniLibs 按既有口径不入 git，8421 运行实例未动，下次 App 装机生效）。
+- **同批入库**：ADR-0033 词表接口本体的协议/引擎/存储/接线/文档（openapi + make sdk 三端 + sdk.lock、sourcematcher custom.go、httpapi source_groups.go、wire 适配器、GUIDE_API/adr 记档）——同会话前段完成，与本笔合并提交。
+
+## feat(server): 检索词表维护接口（ADR-0033）+ 本批角色修复——自定义出处组运行期增补词条，内置 130 组冻结为基线（2026-10-03 第四百五十七笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- **背景**：用户库持续收录「单一角色多文件」内容，新角色/冷门资源不断出现（守望先锋 Dmon、怪物猎人杰玛等），内置检索表冻结在代码里跟不上——文件入库后角色恒空白，App 四维筛选的角色胶囊行永远看不到。用户拍板做「检索词表 + 方便维护的接口（让 AI 补词条）」。性能前提澄清：匹配只发生在扫描/富化时（索引构造期建好 + 8192 缓存），检索表大小不进请求热路径，本决策动机是维护性。
+- **协议先行**：openapi 新增 `GET/PUT /api/v1/sources/custom-groups` + CustomSourceGroups/CustomSourceGroup/CustomSourceCharacter 三 schema（整体替换语义、maxItems/maxLength 上限、204、复用 /sources/custom 的「保存→引擎生效→后台全常规库重算存量」闭环描述）；`make sdk` 三端再生成 + api/sdk.lock 同 commit（245→251 条目）。
+- **引擎合并层**（sourcematcher 新文件 custom.go，纯函数 MergeGroups）：内置表 → 裸名层 → 出处组层按 canonical 深拷贝合并——同名=并入（变体追加、同名角色扩别名）、新名=追加组、canonical 自并入自身变体/别名兜底；顺带修复旧 rebuild 的 map 覆盖行为（裸名与内置组同名时角色表不再丢失）；Matcher 增出处组层字段 + updateMu 串行化两层自定义更新（防并发 PUT 交错重建）。MergeGroups 不写穿入参（base 是包级内置表）由测试锁定。
+- **内置表只修 bug 不扩表**：删除第一后裔组复合变体 `"第一后裔 邦尼"`——长度降序前缀命中即停的 strip 规则下它把 `第一后裔 邦尼 1.mp4` 的角色名整体吃掉（剩余串只剩 "1"），角色匹配落空；全表审计确认这是唯一吞角色的复合变体；回归测试锁定。
+- **存储与接线**：kv_settings 新键 `custom_source_groups`（常量单源 authoring 包，与裸名 `custom_sources` 语义隔离）；scanner 构造期 loadCustomGroups 装载（损坏降级空集同 loadCustomSources）+ Scanner.UpdateCustomGroups 同步方法；httpapi 新文件 source_groups.go（normalize：trim/去空/去重/重复 canonical 取首个/超限 400 INVALID_PARAM，上限与 openapi maxItems 双写同步）+ server.go Scanner 接口与 noScanner 占位 + cmd/qimeng/wire.go 适配器；测试环境 testEnv 暴露 fscan 断言「引擎收到的 = 持久化的」。
+- **测试**：sourcematcher custom_test.go（合并语义/不写穿基线/并入内置组+新组+清空/裸名同名保角色/邦尼回归）；httpapi source_groups_test.go（E2E：初始空→混合载荷规范化→GET 回读=persisted=fakeScanner 收到→清空→组数超限 400→单串超长 400）。`go vet ./...` + `go test ./... -count=1` 全绿；`make sdk` 三端生成+锁同 commit。
+- **落地种子词表**（重建重启后经新端点 PUT）：守望先锋+Dmon｜铁拳·风间飞鸟+别名风间明日香｜最终幻想+阿拉尼雅(Aranea)｜怪物猎人(新组)+杰玛(Gemma)｜战锤40k(新组)+战斗修女(Battle Sisters)｜初音未来(新组)+初音未来(miku)；邦尼靠内置修复+重算自动出现。
+- **记档**：云曦天泪/VAM 赵灵儿经用户拍板不加；原神 Melody x Lawa 为原创角色不动词表（想进「原创角色」行需改文件名前缀）。
+
+
 ## perf(app): 掉帧全链路定位与构建税根修——材质无罪，debug 构建税是主因；日常装机切换 release 通道（2026-10-03 第四百五十六笔）
 
 执行 AI：GLM-5.3（主代理）

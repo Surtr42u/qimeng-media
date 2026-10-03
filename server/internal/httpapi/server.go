@@ -20,6 +20,7 @@ import (
 	"qimeng-media/server/internal/events"
 	"qimeng-media/server/internal/httpapi/gen"
 	"qimeng-media/server/internal/libraryrevision"
+	"qimeng-media/server/internal/sourcematcher"
 	"qimeng-media/server/internal/store/db"
 	"qimeng-media/server/internal/sysmon"
 	"qimeng-media/server/internal/thumbnail"
@@ -45,6 +46,9 @@ type Scanner interface {
 	// UpdateCustomSources 运行期替换用户自定义出处（PUT /sources/custom
 	// 在持久化之后同步调用）：立即对后续匹配生效（含清匹配缓存）。
 	UpdateCustomSources(ctx context.Context, names []string) error
+	// UpdateCustomGroups 运行期替换用户自定义出处组（PUT /sources/custom-groups
+	// 在持久化之后同步调用，ADR-0033）：立即对后续匹配生效（含清匹配缓存）。
+	UpdateCustomGroups(ctx context.Context, groups []sourcematcher.SourceGroup) error
 	// RecomputeEnrichment 对单库全部资产重算富化（自定义出处变更后的
 	// 存量传导）：库内资产 size+mtime 未变时全量扫描只跳过，必须显式重算。
 	RecomputeEnrichment(ctx context.Context, libraryID string) error
@@ -67,6 +71,10 @@ func (noScanner) Scan(context.Context, string) error { return ErrScannerUnavaila
 func (noScanner) EnrichAsset(context.Context, string, string) error { return ErrScannerUnavailable }
 
 func (noScanner) UpdateCustomSources(context.Context, []string) error {
+	return ErrScannerUnavailable
+}
+
+func (noScanner) UpdateCustomGroups(context.Context, []sourcematcher.SourceGroup) error {
 	return ErrScannerUnavailable
 }
 

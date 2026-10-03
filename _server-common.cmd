@@ -67,14 +67,18 @@ rem ---------------- nobrowser mode (background) -----------------
 :nobrowser
 echo [start] qimeng-server.exe (minimized, log: server\console.log)
 
-rem ---------------- shared build (always in console mode, --------
-rem ---------------- skip-if-exists in nobrowser mode) ------------
+rem ---------------- shared build (ALWAYS, both modes) ------------
+rem 2026-10-03: nobrowser used to skip the build when the exe
+rem already existed (fast-start). That trap stalled a whole
+rem debugging session: source changed, the stale exe kept
+rem serving, newly added logs never appeared. Build is cheap
+rem (seconds, go build cache); correctness beats fast-start.
+rem Build goes to a FIXED path (not "go run") - go run creates
+rem a new random temp binary each start, which makes Windows
+rem Firewall treat it as an unknown app and pop the
+rem allow-dialog EVERY time. Fixed path + the port-level
+rem firewall rule (see docs/HANDOVER.md) = no more prompts.
 :build
-if /i "%~1"=="nobrowser" if exist qimeng-server.exe goto run_bg
-rem Build to a FIXED path (not "go run") - go run creates a new random
-rem temp binary each start, which makes Windows Firewall treat it as an
-rem unknown app and pop the allow-dialog EVERY time. Fixed path + the
-rem port-level firewall rule (see docs/HANDOVER.md) = no more prompts.
 "C:\Program Files\Go\bin\go.exe" build -o qimeng-server.exe ./cmd/qimeng
 if errorlevel 1 (
   echo.
