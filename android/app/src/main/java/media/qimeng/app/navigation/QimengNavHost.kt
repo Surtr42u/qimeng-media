@@ -86,6 +86,7 @@ import media.qimeng.app.feature.manage.BackupScreen
 import media.qimeng.app.feature.manage.DataManageScreen
 import media.qimeng.app.feature.manage.LibraryManageScreen
 import media.qimeng.app.feature.manage.ThumbnailCacheScreen
+import media.qimeng.app.feature.manage.VocabularySyncScreen
 import media.qimeng.app.feature.search.SearchScreen
 import media.qimeng.app.feature.settings.InboxSettingsScreen
 import media.qimeng.app.feature.settings.ServerSettingsScreen
@@ -160,6 +161,12 @@ object Routes {
     /** 覆盖页面：缩略图缓存（2026-09-16 用户反馈：缩略图生成进度 + 缓存上限合并页，
      *  自我的页「缓存区」退役迁入，经数据管理 hub 二级入口可达） */
     const val THUMBNAIL_CACHE = "thumbnail_cache"
+
+    /**
+     * 覆盖页面：词表同步（ADR-0034，2026-10-04：数据管理 hub → 远端词表单向下发覆盖
+     * 本机内嵌库的两段式子页；预览对照 + 确认执行，协议消费既有 GET/PUT custom-groups）
+     */
+    const val VOCABULARY_SYNC = "vocabularySync"
 }
 
 /**
@@ -563,6 +570,8 @@ fun QimengNavHost(
                     onOpenBackup = { navController.navigate(Routes.BACKUP) },
                     onOpenThumbCache = { navController.navigate(Routes.THUMBNAIL_CACHE) },
                     onOpenInbox = { navController.navigate(Routes.INBOX) },
+                    // 词表同步（ADR-0034）：数据管理 hub「词表同步」入口行
+                    onOpenVocabularySync = { navController.navigate(Routes.VOCABULARY_SYNC) },
                 )
             }
             // 库管理子页（U10-6）：库表 + 注册媒体目录表单（Web 文件管理页对齐物）
@@ -590,6 +599,13 @@ fun QimengNavHost(
             // 与幕帘由既有 currentRoute 机制自动生效）
             composable(Routes.THUMBNAIL_CACHE) {
                 ThumbnailCacheScreen(
+                    onBack = { navController.popBackStack() },
+                )
+            }
+            // 词表同步子页（ADR-0034）：远端词表单向下发覆盖本机内嵌库（预览 + 确认两段式；
+            // pushed 覆盖页，底栏隐藏与幕帘由既有 currentRoute 机制自动生效）
+            composable(Routes.VOCABULARY_SYNC) {
+                VocabularySyncScreen(
                     onBack = { navController.popBackStack() },
                 )
             }
