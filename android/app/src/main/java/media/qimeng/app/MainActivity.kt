@@ -12,15 +12,10 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.runtime.getValue
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dagger.hilt.android.AndroidEntryPoint
-import media.qimeng.app.core.model.AppearanceMode
 import media.qimeng.app.core.network.shouldRequestLocalNetworkPermission
 import media.qimeng.app.core.ui.theme.QimengTheme
 import media.qimeng.app.navigation.QimengNavRoot
-import media.qimeng.app.session.AppearanceViewModel
 import media.qimeng.app.session.MainViewModel
 
 /**
@@ -37,10 +32,6 @@ class MainActivity : ComponentActivity() {
 
     private val mainViewModel: MainViewModel by viewModels()
 
-    /** 外观偏好（2026-10-03 悬浮玻璃坞批）：外观模式/底栏材质的壳层单源（Activity 作用域，
-     *  QimengNavHost 与设置页经 hiltViewModel() 解析到同一实例） */
-    private val appearanceViewModel: AppearanceViewModel by viewModels()
-
     /** 局域网权限请求回调（任务P P4b）：拒绝不做动作——登录页提交门有定向引导，
      *  已登录老用户由既有失败态/下次冷启动兜底（系统对永久拒绝不再弹窗，无打扰循环）。 */
     private val localNetworkPermissionLauncher =
@@ -53,18 +44,7 @@ class MainActivity : ComponentActivity() {
         maybeRequestLocalNetworkPermission()
         handleShareIntent(intent)
         setContent {
-            // 外观模式三档（2026-10-03 悬浮玻璃坞批）：跟随系统/浅色/深色，持久化于
-            // DataStore（AppearanceViewModel，Activity 作用域单源——QimengNavHost 的坞材质
-            // 与设置页选择器同读一份流）。暗色布尔在此解析后传给 Theme，AuroraBackdrop/
-            // 玻璃件经 isQimengDarkTheme()（colorScheme 亮度判定）与本次解析同源，全 App
-            // 只此一处决定暗色分支。
-            val appearanceMode by appearanceViewModel.appearanceMode.collectAsStateWithLifecycle()
-            val darkTheme = when (appearanceMode) {
-                AppearanceMode.SYSTEM -> isSystemInDarkTheme()
-                AppearanceMode.LIGHT -> false
-                AppearanceMode.DARK -> true
-            }
-            QimengTheme(darkTheme = darkTheme) {
+            QimengTheme {
                 QimengNavRoot()
             }
         }

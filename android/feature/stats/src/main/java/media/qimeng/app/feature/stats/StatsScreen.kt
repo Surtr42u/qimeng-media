@@ -3,7 +3,6 @@ package media.qimeng.app.feature.stats
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -33,8 +33,6 @@ import media.qimeng.app.core.model.TrendPoint
 import media.qimeng.app.core.ui.component.Dimens
 import media.qimeng.app.core.ui.component.QimengSegmentedControl
 import media.qimeng.app.core.ui.component.formatBytesHumanReadable
-import media.qimeng.app.core.ui.glass.GlassCard
-import media.qimeng.app.core.ui.glass.TabDockDefaults
 
 /**
  * 数据统计页（任务I I3 复刻：GUIDE_UI §数据统计页 L203-224；N4 I3b 常看族解冻接线）：
@@ -70,9 +68,6 @@ fun StatsScreen(
             .fillMaxSize()
             .padding(horizontal = Dimens.ScreenPadding),
         verticalArrangement = Arrangement.spacedBy(Dimens.ScreenPadding),
-        // 2026-10-03 悬浮玻璃坞批：底栏改悬浮层后内容从坞身后滚过，滚动区底部让位到
-        // 坞体上方（core:ui 单源常量，含导航栏 inset）
-        contentPadding = PaddingValues(bottom = TabDockDefaults.bottomClearance()),
     ) {
         // Z4 批（2026-09-12 数据页字体对齐旧 stats.xml）：文案「数据」→「数据统计」+ Bold
         item { Text(text = "数据统计", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold)) }
@@ -189,12 +184,11 @@ private fun OverviewCards(state: StatsUiState) {
 private fun staticPlaceholder(loading: Boolean): String =
     if (loading) LOADING_TEXT else FROZEN_PLACEHOLDER_TEXT
 
-/** 单格指标卡（玻璃面 + 数值 + 标题；圆角对齐旧版 bg_stat_card 20dp，见 [STAT_CARD_CORNER_RADIUS]） */
+/** 单格指标卡（浅面底 + 数值 + 标题；圆角对齐旧版 bg_stat_card 20dp，见 [STAT_CARD_CORNER_RADIUS]） */
 @Composable
 private fun MetricCell(title: String, value: String, modifier: Modifier = Modifier) {
-    // 2026-10-03 玻璃坞迭代批：surfaceVariant 实色卡面 → GlassCard 玻璃面（探索批 GLASS_STAT_CARDS
-    // 转正）；卡几何（20dp 圆角/内边距/字号）逐项保留，只换面材质
-    GlassCard(
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant,
         shape = RoundedCornerShape(STAT_CARD_CORNER_RADIUS),
         modifier = modifier,
     ) {
@@ -233,10 +227,9 @@ private fun TrendCard(
     marker: CartesianMarker,
     onOpenTypeTrend: () -> Unit,
 ) {
-    // 玻璃坞迭代批：卡面玻璃化（几何保留）；Surface(onClick) 的 ripple 换 pressScale spring
-    // 按压缩放（GlassCard 既有语义，玻璃语言「按压即缩放」）
-    GlassCard(
+    Surface(
         onClick = onOpenTypeTrend,
+        color = MaterialTheme.colorScheme.surfaceVariant,
         shape = RoundedCornerShape(STAT_CARD_CORNER_RADIUS),
         modifier = Modifier.fillMaxWidth(),
     ) {
@@ -286,9 +279,9 @@ private fun TrendCard(
  */
 @Composable
 private fun DistributionEntryCard(onOpen: () -> Unit) {
-    // 玻璃坞迭代批：卡面玻璃化（几何保留）；ripple → pressScale（见 TrendCard 注）
-    GlassCard(
+    Surface(
         onClick = onOpen,
+        color = MaterialTheme.colorScheme.surfaceVariant,
         shape = RoundedCornerShape(STAT_CARD_CORNER_RADIUS),
         modifier = Modifier.fillMaxWidth(),
     ) {
@@ -332,9 +325,9 @@ private fun ContentRankCard(
     onOpen: () -> Unit,
     onEntryClick: (RankingEntry) -> Unit,
 ) {
-    // 玻璃坞迭代批：卡面玻璃化（几何保留）；ripple → pressScale（见 TrendCard 注）
-    GlassCard(
+    Surface(
         onClick = onOpen,
+        color = MaterialTheme.colorScheme.surfaceVariant,
         shape = RoundedCornerShape(STAT_CARD_CORNER_RADIUS),
         modifier = Modifier.fillMaxWidth(),
     ) {
@@ -381,9 +374,9 @@ private fun TopAuthorsTagsCard(
     onOpen: () -> Unit,
     onEntryClick: (TopAuthorTagEntry) -> Unit,
 ) {
-    // 玻璃坞迭代批：卡面玻璃化（几何保留）；ripple → pressScale（见 TrendCard 注）
-    GlassCard(
+    Surface(
         onClick = onOpen,
+        color = MaterialTheme.colorScheme.surfaceVariant,
         shape = RoundedCornerShape(STAT_CARD_CORNER_RADIUS),
         modifier = Modifier.fillMaxWidth(),
     ) {
