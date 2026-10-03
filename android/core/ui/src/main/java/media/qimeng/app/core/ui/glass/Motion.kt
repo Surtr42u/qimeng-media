@@ -42,31 +42,37 @@ object QimengMotion {
     /** 退场曲线：缓起步→加速离场（元素「果断让位」） */
     private val EmphasizedAccelerate: Easing = CubicBezierEasing(0.3f, 0f, 0.8f, 0.15f)
 
-    // ── 覆盖页（子页推入/返回，M3 共享轴 X 编排）──────────────────────
+    // ── 覆盖页（子页推入/返回，共享轴 X·纯位移编排）──────────────────
+    // 2026-10-03 叠层残影根修（用户反馈「返回有残留视觉导致叠层，我的页最明显」）：
+    // 共享轴的 fade 分量是给「各自独立成层」的页面准备的；本 App 架构=常驻层 + 半透明
+    // 玻璃卡（我的页行卡 0.76 透明度），进出页面若透明度渐变，下层玻璃卡透出叠在
+    // 渐隐页面上=叠层残影。iOS 返回干净的本质：**进出页面全程不透明**，下层由位移
+    // 逐步揭示。故 overlay 族去除全部 fade 分量，纯位移驱动（iOS push/pop 手感）。
 
-    /** 子页进场：30% 屏滑入 + 淡入（350ms 减速曲线） */
+    /** 子页进场：30% 屏滑入（350ms 减速曲线；全程不透明，覆盖揭示下层） */
     fun overlayEnter(): EnterTransition = slideInHorizontally(
         animationSpec = tween(ENTER_MS, easing = EmphasizedDecelerate),
         initialOffsetX = { (it * ENTER_TRAVEL).toInt() },
-    ) + fadeIn(animationSpec = tween(ENTER_MS, easing = EmphasizedDecelerate))
+    )
 
-    /** 子页覆盖下的原页退场：8% 反向让位 + 淡出（200ms 加速曲线，比进场快=让位） */
+    /** 子页覆盖下的原页退场：8% 反向让位视差（200ms 加速曲线；不透明度不变） */
     fun overlayExit(): ExitTransition = slideOutHorizontally(
         animationSpec = tween(EXIT_MS, easing = EmphasizedAccelerate),
         targetOffsetX = { -(it * EXIT_TRAVEL).toInt() },
-    ) + fadeOut(animationSpec = tween(EXIT_MS, easing = EmphasizedAccelerate))
+    )
 
-    /** 返回时原页回位：从 8% 让位处滑回 + 淡入（与进场同规格减速曲线） */
+    /** 返回时原页回位：从 8% 让位处滑回（350ms 减速曲线；不透明度不变） */
     fun overlayPopEnter(): EnterTransition = slideInHorizontally(
         animationSpec = tween(ENTER_MS, easing = EmphasizedDecelerate),
         initialOffsetX = { -(it * EXIT_TRAVEL).toInt() },
-    ) + fadeIn(animationSpec = tween(ENTER_MS, easing = EmphasizedDecelerate))
+    )
 
-    /** 子页返回退场：滑回右缘 30% + 淡出（与进场等时长加速曲线，全程无空窗） */
+    /** 子页返回退场：滑回右缘 30% 屏（350ms 加速曲线；全程不透明，位移揭示下层——
+     *  iOS pop 手感，玻璃卡不透出无残影） */
     fun overlayPopExit(): ExitTransition = slideOutHorizontally(
         animationSpec = tween(ENTER_MS, easing = EmphasizedAccelerate),
         targetOffsetX = { (it * ENTER_TRAVEL).toInt() },
-    ) + fadeOut(animationSpec = tween(ENTER_MS, easing = EmphasizedAccelerate))
+    )
 
     // ── 详情页（媒体消费沉浸面：缩放「走来」语感）─────────────────────
 
