@@ -36,6 +36,11 @@ data class GlassColors(
     val sheen: Color,
     /** 投影色（黑/深靛 @ 低 alpha） */
     val shadow: Color,
+    /** 顶部镜面高光池（2026-10-03 液态感强化批：上缘椭圆圆心径向光，曲面镜面反射的
+     *  「光聚」近似——液态玻璃识别特征的静态主力笔） */
+    val specular: Color,
+    /** 底部内影（液态感强化批：下缘向内的纵深渐暗，玻璃体「厚度」感） */
+    val innerShade: Color,
 )
 
 /** 暗色玻璃：靛夜体 + 白纱受光（走查 r1 校准：edge/sheen 提档让受光边在深底可辨） */
@@ -46,6 +51,8 @@ private val DarkGlass = GlassColors(
     edgeBottom = Color(0xFFFFFFFF).copy(alpha = 0.08f),
     sheen = Color(0xFFFFFFFF).copy(alpha = 0.14f),
     shadow = Color(0xFF04050A).copy(alpha = 0.45f),
+    specular = Color(0xFFFFFFFF).copy(alpha = 0.20f),
+    innerShade = Color(0xFF04050A).copy(alpha = 0.30f),
 )
 
 /** 浅色玻璃：白瓷体 + 白高光受光（下缘转冷灰紫，保持面板轮廓可辨） */
@@ -56,6 +63,8 @@ private val LightGlass = GlassColors(
     edgeBottom = Color(0xFF8F96B8).copy(alpha = 0.30f),
     sheen = Color(0xFFFFFFFF).copy(alpha = 0.55f),
     shadow = Color(0xFF3A4160).copy(alpha = 0.16f),
+    specular = Color(0xFFFFFFFF).copy(alpha = 0.85f),
+    innerShade = Color(0xFF3A4160).copy(alpha = 0.10f),
 )
 
 /** 主题感知的玻璃配色入口（玻璃件唯一取色口，禁止 feature 直引 DarkGlass/LightGlass） */

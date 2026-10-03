@@ -29,7 +29,8 @@ private const val SHEEN_FADE_FRACTION = 0.4f
 
 /**
  * 玻璃面板（ADR-0031「流光玻璃」核心容器，全 App 玻璃质感单源）：
- * 半透明体 + 受光渐变描边（上亮下暗）+ 顶部高光纱 + 可选投影，圆角由 [shape] 定。
+ * 半透明渐变体 + 底部内影 + 顶部镜面高光池 + 顶部高光纱 + 受光渐变描边（上亮下暗）
+ * + 可选染色层与投影，圆角由 [shape] 定。
  *
  * 纯渲染容器（铁律 7）：不碰 API/业务，视觉参数全部来自 [glassColors] 主题单源。
  * API 26–30 无需分支：本组件不含 blur 依赖，观感各 API 级别一致（ADR-0031 降级策略；
@@ -38,6 +39,8 @@ private const val SHEEN_FADE_FRACTION = 0.4f
  * @param shape 面板形状（默认面板 24dp 圆角；胶囊场合传 QimengShapes.pill）
  * @param strong true=加厚档（底栏/悬浮条等压住滚动内容的场合）
  * @param elevation 投影高度（null=无投影；网格中的小面板建议 null 防投影叠印）
+ * @param tintOverlay 染色层（2026-10-03 液态感强化批新增；选中态胶囊等「有色玻璃」场合，
+ *   画在体之上、光影之下——玻璃的光学特征不被染色盖掉。null=素玻璃）
  */
 @Composable
 fun GlassSurface(
@@ -45,6 +48,7 @@ fun GlassSurface(
     shape: Shape = QimengShapes.panel,
     strong: Boolean = false,
     elevation: Dp? = null,
+    tintOverlay: Color? = null,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val glass = glassColors()
@@ -66,19 +70,55 @@ fun GlassSurface(
             // 先 clip 后画：描边/高光不越出圆角（嵌套内容同被约束在玻璃形体内）
             .clip(shape)
             .drawBehind {
-                drawGlass(fill = fill, glass = glass, shape = shape)
+                drawGlass(fill = fill, glass = glass, shape = shape, tintOverlay = tintOverlay)
             },
         content = content,
     )
 }
 
-/** 玻璃面板三笔绘制：体 → 顶部高光纱 → 受光描边（顺序不可换：描边必须压在高光上） */
-private fun DrawScope.drawGlass(fill: Color, glass: GlassColors, shape: Shape) {
+/** 镜面高光池圆心横向位置（面板宽的比例；0.5=顶缘正中聚光） */
+private const val SPECULAR_CENTER_X_FRACTION = 0.5f
+
+/** 镜面高光池圆心纵向位置（面板高的比例；负值=圆心在面板上缘之外，光斑只落上缘弧面） */
+private const val SPECULAR_CENTER_Y_FRACTION = -0.25f
+
+/** 镜面高光池半径（面板宽的比例；光斑横向铺满大半个面板、纵向自然渐隐） */
+private const val SPECULAR_RADIUS_FRACTION = 0.85f
+
+/** 底部内影起始位置（面板高的比例；0.45=下 55% 向内渐暗） */
+private const val INNER_SHADE_START_FRACTION = 0.45f
+
+/** 玻璃面板六笔绘制：体 → 染色 → 底部内影 → 镜面高光池 → 顶部高光纱 → 受光描边
+ *  （顺序不可换：描边必须压在高光上，光影永远在染色之上——「有色玻璃」而非「有色贴膜」） */
+private fun DrawScope.drawGlass(fill: Color, glass: GlassColors, shape: Shape, tintOverlay: Color?) {
     // 圆角半径取自 shape 的 outline（圆角矩形/胶囊都落在 topLeft 半径上；非圆角形状=0）
     val radius = shape.createOutline(size, layoutDirection, this).cornerRadiusPx()
     // 1) 半透明体
     drawRoundRect(color = fill, cornerRadius = CornerRadius(radius))
-    // 2) 顶部高光纱：上缘向下在 SHEEN_FADE_FRACTION 比例内渐隐
+    // 1b) 染色层（选中态胶囊：主色低透染在体上，后续光影笔照常叠出玻璃光学特征）
+    if (tintOverlay != null) {
+        drawRoundRect(color = tintOverlay, cornerRadius = CornerRadius(radius))
+    }
+    // 2) 底部内影：下缘向内渐暗（玻璃体厚度/纵深）
+    drawRect(
+        brush = Brush.verticalGradient(
+            colors = listOf(Color.Transparent, glass.innerShade),
+            startY = size.height * INNER_SHADE_START_FRACTION,
+            endY = size.height,
+        ),
+    )
+    // 3) 镜面高光池：上缘弧面的聚光斑（液态玻璃「光在曲面上流动」的静态近似）
+    drawRect(
+        brush = Brush.radialGradient(
+            colors = listOf(glass.specular, Color.Transparent),
+            center = androidx.compose.ui.geometry.Offset(
+                x = size.width * SPECULAR_CENTER_X_FRACTION,
+                y = size.height * SPECULAR_CENTER_Y_FRACTION,
+            ),
+            radius = size.width * SPECULAR_RADIUS_FRACTION,
+        ),
+    )
+    // 4) 顶部高光纱：上缘向下在 SHEEN_FADE_FRACTION 比例内渐隐
     drawRect(
         brush = Brush.verticalGradient(
             colors = listOf(glass.sheen, Color.Transparent),
@@ -86,7 +126,7 @@ private fun DrawScope.drawGlass(fill: Color, glass: GlassColors, shape: Shape) {
             endY = size.height * SHEEN_FADE_FRACTION,
         ),
     )
-    // 3) 受光描边：上亮下暗渐变描边（玻璃边缘环境受光）
+    // 5) 受光描边：上亮下暗渐变描边（玻璃边缘环境受光）
     drawRoundRect(
         brush = Brush.verticalGradient(
             colors = listOf(glass.edgeTop, glass.edgeBottom),
