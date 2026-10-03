@@ -21,9 +21,9 @@ import media.qimeng.app.core.ui.glass.pressScale
 import media.qimeng.app.core.ui.glass.rememberPressScaleSource
 import media.qimeng.app.core.ui.theme.QimengShapes
 
-/** 选中态染色透明度（坞 PILL_TINT_ALPHA 同档 0.30：低透染玻璃，光从色里透出来——
- *  0.9 级高透会糊成「实底贴膜」，用户反馈「太黑」即此因；全 App 玻璃选中语言单源） */
-const val QIMENG_GLASS_TINT_ALPHA = 0.30f
+/** 选中态染色透明度（坞 PILL_TINT_ALPHA 同源语言；两轮用户反馈「太黑」0.92→0.30→0.20：
+ *  胶囊底材比坞体更不透，同值染出来更深，取更低档——光从色里透出来，全 App 单源） */
+const val QIMENG_GLASS_TINT_ALPHA = 0.20f
 
 /** 按下缩放档（GUIDE_UI §UI约束「按下反馈动画」；spring 语言与玻璃件族一致） */
 private const val SEG_PILL_PRESSED_SCALE = 0.92f

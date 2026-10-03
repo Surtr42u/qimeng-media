@@ -3,6 +3,8 @@ package media.qimeng.app.feature.detail
 import androidx.compose.foundation.clickable
 import media.qimeng.app.core.ui.component.QIMENG_GLASS_TINT_ALPHA
 import media.qimeng.app.core.ui.glass.GlassSurface
+import media.qimeng.app.core.ui.glass.pressScale
+import media.qimeng.app.core.ui.glass.rememberPressScaleSource
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
@@ -354,6 +356,7 @@ internal fun DetailAuthorSheet(
 /** 关注按钮（Web .follow-btn：已关注=灰底、「+ 关注」=主色底；原作者卡同名件随迁） */
 @Composable
 private fun FollowButton(followed: Boolean, enabled: Boolean, onClick: () -> Unit) {
+    val interaction = rememberPressScaleSource()
     // 2026-10-03 玻璃语言统一批：关注钮 Surface → 玻璃胶囊（未关注=主色低透染玻璃+primary
     // 字，坞选中语言；已关注=素玻璃+onSurface 字）
     GlassSurface(
@@ -364,7 +367,10 @@ private fun FollowButton(followed: Boolean, enabled: Boolean, onClick: () -> Uni
         } else {
             null
         },
-        modifier = Modifier.clickable(enabled = enabled, onClick = onClick),
+        // 无 indication（默认矩形 ripple 框是「点击出方框」元凶）+ spring 缩放反馈
+        modifier = Modifier
+            .pressScale(interaction)
+            .clickable(interactionSource = interaction, indication = null, enabled = enabled, onClick = onClick),
     ) {
         Text(
             text = stringResource(if (followed) R.string.detail_followed else R.string.detail_follow),
