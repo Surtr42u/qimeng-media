@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import media.qimeng.app.core.data.prefetch.PrefetchUiState
+import media.qimeng.app.core.network.ServerAddress
 import media.qimeng.app.core.ui.component.QimengTopBar
 import media.qimeng.app.core.ui.component.formatBytesHumanReadable
 import media.qimeng.app.core.ui.theme.QimengDimens
@@ -62,7 +63,7 @@ private const val SERVER_SECTION_SUBTITLE =
     "连接服务器（NAS）时缓存的缩略图。文件数为缓存落盘数据文件数" +
         "（同一资产多档尺寸各计一份）；与本地缓存分池存放、互不共享，防止两端库内容不同导致串图"
 private const val LOCAL_SECTION_SUBTITLE =
-    "连接本地端（手机内嵌服务端，端口 18430，与服务端常量同步）时缓存的缩略图。" +
+    "连接本地端（手机内嵌服务端，端口 ${ServerAddress.LOCAL_MODE_PORT}）时缓存的缩略图。" +
         "与服务器缓存分池存放、互不共享，防止两端库内容不同导致串图"
 
 /** 预取状态区（自动行为的状态展示；Running 进度条复用 LinearProgressIndicator） */

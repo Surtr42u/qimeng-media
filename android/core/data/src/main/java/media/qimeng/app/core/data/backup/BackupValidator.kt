@@ -1,13 +1,25 @@
-package media.qimeng.app.feature.manage
+package media.qimeng.app.core.data.backup
 
 import media.qimeng.sdk.infrastructure.Serializer
 import media.qimeng.sdk.models.LegacyBackupImport
 
 /**
+ * 校验通过的备份载荷（不透明句柄）：包住生成 SDK 的 LegacyBackupImport——SDK 类型不出
+ * core:data（feature:manage 无 :sdk 依赖，2026-10-03 撤依赖批），确认弹窗持有句柄、
+ * 确认导入时原样递回 [media.qimeng.app.core.data.repository.BackupRepository.importBackup]
+ * 发网。构造只经 [BackupValidator.validate] 真校验链（测试同链取得，不手工拼装）。
+ */
+class ValidatedBackupPayload internal constructor(
+    internal val sdkPayload: LegacyBackupImport,
+)
+
+/**
  * 旧版备份文件前置校验与摘要（U10-6b；对齐 web/src/lib/backup.ts parseLegacyBackupFile，
  * 逻辑层职责：字节 → 大小闸 → JSON 合法 → 格式信封校验 → 摘要计数。纯 Kotlin，
- * JVM 单测锁定（BackupValidatorTest）；页面组件不内嵌这些规则（铁律 7）。
+ * JVM 单测锁定（core:data test BackupValidatorTest）；页面组件不内嵌这些规则（铁律 7）。
  * 校验顺序与文案逐字对齐 Web——早失败省一次上传，服务端 BAD_REQUEST/413 同口径。
+ * 2026-10-03 自 feature:manage 整体搬入本包（Serializer 解析与 SDK 模型引用收口
+ * core:data，feature:manage 改持域类型句柄；逻辑零变化）。
  */
 object BackupValidator {
 
@@ -20,7 +32,7 @@ object BackupValidator {
 
     /** 校验/解析结果：Invalid.message 即横幅文案（Web throw Error(message) 同构） */
     sealed interface Result {
-        data class Ok(val payload: LegacyBackupImport, val summary: BackupSummary) : Result
+        data class Ok(val payload: ValidatedBackupPayload, val summary: BackupSummary) : Result
         data class Invalid(val message: String) : Result
     }
 
@@ -61,17 +73,21 @@ object BackupValidator {
             // 再吃服务端 400，App 侧前置拦下更省一次上传）
             return Result.Invalid(MESSAGE_FORMAT_MISMATCH)
         } ?: return Result.Invalid(MESSAGE_BAD_JSON)
-        return Result.Ok(payload = payload, summary = summarize(fileName, payload))
+        val handle = ValidatedBackupPayload(payload)
+        return Result.Ok(payload = handle, summary = summarize(fileName, handle))
     }
 
     /** 摘要计数（Web backup.ts summarize 同口径：数组缺项计 0） */
-    fun summarize(fileName: String, payload: LegacyBackupImport): BackupSummary = BackupSummary(
-        fileName = fileName,
-        mediaFiles = payload.data.mediaFiles?.size ?: 0,
-        authors = payload.data.authors?.size ?: 0,
-        tags = payload.data.tags?.size ?: 0,
-        statsRows = (payload.data.mediaStats?.size ?: 0) + (payload.data.dailyBrowse?.size ?: 0),
-    )
+    fun summarize(fileName: String, payload: ValidatedBackupPayload): BackupSummary {
+        val data = payload.sdkPayload.data
+        return BackupSummary(
+            fileName = fileName,
+            mediaFiles = data.mediaFiles?.size ?: 0,
+            authors = data.authors?.size ?: 0,
+            tags = data.tags?.size ?: 0,
+            statsRows = (data.mediaStats?.size ?: 0) + (data.dailyBrowse?.size ?: 0),
+        )
+    }
 
     /** 确认弹窗描述文案（Web backupSummaryText 逐字；toLocaleString → %,d 千分位同语义，
      *  String.format 默认 Locale 与 Web 浏览器侧同为环境地域） */

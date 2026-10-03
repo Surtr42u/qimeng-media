@@ -14,14 +14,15 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import media.qimeng.app.core.data.backup.AutoBackupRunner
 import media.qimeng.app.core.data.backup.BackupFileStatus
+import media.qimeng.app.core.data.backup.BackupValidator
+import media.qimeng.app.core.data.backup.ValidatedBackupPayload
 import media.qimeng.app.core.data.events.ViewEventQueue
 import media.qimeng.app.core.data.repository.BackupAutoPrefsRepository
 import media.qimeng.app.core.data.repository.BackupRepository
-import media.qimeng.sdk.models.LegacyBackupImport
 
 /** 待确认的导入载荷（非 null 即打开确认弹窗；Web BackupCard pending 同构） */
 data class PendingBackupImport(
-    val payload: LegacyBackupImport,
+    val payload: ValidatedBackupPayload,
     val summary: BackupValidator.BackupSummary,
 )
 
@@ -172,14 +173,15 @@ class BackupViewModel @Inject constructor(
     /**
      * 确认导入（幂等合并，网络层走 @BackupClient 长超时通道）。成功反馈 Web L233-234
      * 逐字；warnings>0 逐条进状态由屏幕层展示（Web toast.info「另有 N 条迁移提示」+
-     * description 的 App 同语义件）。
+     * description 的 App 同语义件）。载荷是不透明句柄（SDK 模型收口 core:data，
+     * 2026-10-03 撤 :sdk 直依赖批），确认时原样递回 Repository 发网。
      */
     fun confirmImport() {
         val pending = _uiState.value.pendingImport ?: return
         _uiState.update { it.copy(pendingImport = null, importing = true, errorMessage = null) }
         viewModelScope.launch {
             try {
-                val result = backupRepository.import(pending.payload)
+                val result = backupRepository.importBackup(pending.payload)
                 val warnings = result.warnings.orEmpty()
                 _uiState.update {
                     it.copy(

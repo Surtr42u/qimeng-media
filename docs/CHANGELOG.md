@@ -10,6 +10,15 @@
 
 > **历史条目拆分说明（2026-10-01）**：为控制 AI 上下文体量，本文件只保留 **2026-09-22 及之后**的条目（第三百八十二笔起）；拆分线之前的全部条目已逐字迁入 `docs/history/CHANGELOG-ARCHIVE.md`（零改写，笔号与本文件连续可查）。引用早于拆分线的旧笔号请去历史档查阅。
 
+## fix(server): 缩略图单飞测试时序双解修复——detachedGroup「完成即回收」语义勘正锁定（2026-10-03 第四百四十八笔）
+
+执行 AI：GLM-5.3（主代理；445 批 CI -race 实撞触发）
+
+- **背景**：审查修复批（445）二次 rebase 后 CI 首红：`TestDetachedGroup等待者取消不杀生成` 报「fn 总执行次数应为 1，实得 2」。排查=实现固有行为而非回归：fn 完成后后台 goroutine `close(done) → delete(terms)`，测试第三阶段「后来者直接取已完成结果」只在 do 抢到 delete 之前的锁时成立，另一半时序后来者重跑 fn——而同 key 合并测试的注释早已写明正确契约（「单飞是进行中合并语义，完成即忘却，迟到者走重新执行，真链路由缓存快路径兜住」）。
+- **修复（测试与文档对齐真实契约，实现零改动）**：①取消测试第三阶段改为确定性断言——新增 waitTermsRecycled 白盒轮询等回收完成后，断言迟到者重新执行 fn（runs=2）且成功；②错误传播测试改名「错误传播与回收后迟到者重跑」——旧版第二断言在回收时序下空转通过（新 fn 返回 nil 恰好满足 err==nil 检查），一并勘正为真实重跑断言；③detached.go do() 文档补「去重只覆盖进行中，完成即回收（x/sync/singleflight 同款语义），真链路由 EnsureDetached 磁盘快路径兜底不重跑 ffmpeg」；测试头注同步。
+- **验证**：gofmt/vet 零输出；TestDetachedGroup 全组 -count=30 压测通过（Windows 本机无 gcc 不跑 -race，-race 语义由 CI 锁定）。
+- **涉及文档**：`docs/CHANGELOG.md`（本条）。
+
 ## feat(app): 悬浮玻璃坞移植批——回滚后 master（老 UI 基线）+ ui/app-dock-only 玻璃坞，顶部布局零改动（2026-10-03 第四百四十七笔）
 
 执行 AI：GLM-5.3（主代理）
@@ -27,6 +36,21 @@
 - **背景**：第四百三十七笔（96ddcc1d）今晨定案「禁本地产物构建、验证与产物一律云端 CI」（动机=本机高负载 WHEA 史 + CI 已有云端 APK 装配链）。同日用户验证 master UI 回滚时嫌云端装配链等待慢，拍板废止：速度优先，本地产物构建（Gradle assemble、Go 交叉编译、docker、前端打包）恢复，云端 CI 降为可选通道不再强制。
 - **变更**：`AI_README_FIRST.md` 删除「夜间/无人值守执行纪律」整节（本地产物构建禁令、云端 CI 强制、轻量本地操作白名单、夜间设备操作禁令指针四条一并撤除），「最后更新」行同步。WHEA 史仍记档于 HANDOVER 不动；ADR-0031 设备纪律本体不动（仅撤本文件指针，其正文仍是有效决策）。
 - **笔号说明**：本笔取 446——跨线笔号已用至 445（ui/app-dock-only d6f22a4c），master 本文件当前止于 440，取 446 避免玻璃坞线条目日后回迁 master 时撞号。
+
+## fix(server/web/app/desktop): 全项目摸底审查修复批——安全面零 P0 通过记档 + 规范清偿 + CI 第六道门禁 + 仓库卫生脱敏（2026-10-03 第四百四十五笔）
+
+执行 AI：GLM-5.3（主代理统筹+5 研究子代理分域审查+4 执行子代理修复+对抗审查子代理复核）
+
+- **笔号说明**：第四百四十四笔已被未合并分支 ui/app-dock-only（311964ec）占用，为防撞号本批跳用 445。rebase 适配记档（本批产出期间 master 三次前进，两次人工合冲突）：①原基于玻璃坞时代 master（d10e096f）产出，revert 3af64c87 落地后重放（MediaRepository/QimengNavHost 按「revert 后基线+本批意图」手工合）；②447 玻璃坞移植批（4a66e533）落地后二次 rebase，FloatingTabDock 回归 master，其超线 KDoc 补回、超线注记恢复 7 文件口径。
+- **背景**：用户授权全项目大摸底排查与修复（代码规范+实现安全+必要重构）。本批开工时生效的「夜间/无人值守执行纪律」（禁本地产物构建）在批次进行中被第四百四十六笔废止（速度优先），Android 改动先静态收口、后按新口径本地补验。
+- **审查面与结论**：五路并行研究子代理分域（服务端安全/服务端规范/Web/Android/横切面基建）。**安全面零 P0**：路径穿越（NormalizeRelPath/PathWithinRoot 双闸全热点核查）、SQL 全参数化、上传四道校验三通道同函数、鉴权豁免清单与 openapi 一致、HMAC 签名消息定界、并发锁面、备份快照三道防线、migration 只加不改、sdk.lock 未过期、密钥零入库——各排除项已在审查报告逐条记档；问题集中在规范缺口与三处真隐患。
+- **server（纯注释零逻辑）**：4 个超 100 行函数补「超线理由」注释（newAssetFilters/PostApiV1EventsView/PostApiV1AssetsAssetIdMove/PostApiV1TrashTrashIdRestore——参数归一直线展开/事务骨架等真实理由）+ 5 处忽略返回值补论证注释（localsync_runner 复核错误已内记 Warn、json.Marshal 入参定形无失败路径、authorattach 显示名可重建 ×2；另有 3 处 `w.Write` 经核已有合规注释免改）。
+- **web**：非空断言 8 处收敛清零（守卫内取局部常量替代闭包 `x.id!`，全部可收敛点已收，仅剩 main.tsx React 入口惯例断言）；「暂无数据」空态 3 处逐字重复收敛为新组件 EmptyNote；upload-queue-store.ts（664 行）补超线注记；TopBar 窗口按钮 title 文案与桌面壳 titlebar.js 的隐式耦合补互指注释（titlebar.js 侧原有记档，本批补齐 Web 侧）。tsc + vitest 26 文件 248 测试全绿。
+- **android（重头）**：①feature:manage 撤 `:sdk` 直依赖——BackupValidator 连测试整体下沉 core:data/backup（逻辑逐字搬迁），SDK 模型经 `ValidatedBackupPayload` 不透明句柄（internal）与 `LegacyImportSummary`/`TxtImportSummary` 域投影隔离，BackupRepository.exportJson()/importBackup() 与 AuthorRepository txt 族签名域类型化，AutoBackupRunner 改调 exportJson（原 BackupViewModelTest 的 format 断言弱化为 size，覆盖转移至 core:data 侧测试锁定）；②协议枚举单源——core:model 新建 MediaTypeKeys/SourceKeys（KDoc 记与 openapi.yaml 双写同步责任），4 消费点（StatsDetailViewModel/StatsDetailScreen/FourDimPills/SdkStatsRepositories）收口；③路由常量单源——TopLevelDestination 改引 HOME_ROUTE/ALBUM_ROUTE，KEY_ASSET_ID 收口 DetailRoutes；④调试残留 Log.d("QimengM42") 清除；⑤18430 端口文案改引 ServerAddress.LOCAL_MODE_PORT（feature:manage 补 core:network 依赖，login/settings 先例同款）；⑥EmbeddedServerService 轮询粒度常量化；⑦RankingEntry 自 core:data 下沉 core:model（7 文件 import 收口）；⑧7 个超线文件补 KDoc 理由（QimengNavHost/StatsDetailScreen 1026/VideoStage 898/HomeViewModel 863/DetailScreen 855/DetailViewModel 793/FloatingTabDock 737）；⑨StatsDetailScreen 图表色板 5 个字面量命名化（值逐字节不变）；⑩备份排除面补 Room 事件库 qimeng_events.db 三文件（行为隐私外带面关闭，口径见 SECURITY.md）。
+- **desktop/CI（横切面清偿）**：ci.yml 新增第六道门禁 desktop job（windows-latest + rust stable + rust-cache + cargo test/build——图标已入库、frontendDist 为源内静态页故无前端构建前置）；全部 job 补 timeout-minutes（20~60）；web job 补 npm 缓存；Makefile sdk-lock 写锁前断言 Kotlin 生成物非空（消「无 Java 静默跳过→残锁本地绿 CI 红」）；ARCHITECTURE §10 门禁清单 5→6 同步。
+- **docs/仓库卫生**：CHANGELOG-ARCHIVE 中被明文记档为「真实局域网 IP」的 192.0.2.2/.8 共 8 处脱敏为 192.168.1.x（文件头加脱敏注记，铁律 14 优先于「逐字存档」声明）；裁决记档——全库其余 192.168.1.x 命中均为 RFC1918 合成测试/示例值（尾号混用，无「此为真实地址」记档语境），不构成拓扑指纹，维持现状不扩大清洗；SECURITY.md 补 Termux 形态 A dev-login 为共享密钥缓解漏网路径的边界记档（缓解需 App 跨沙箱取密钥的产品决策，暂记边界待立项）+ deploy/termux/qimeng-start.sh 误导注释修正（127.0.0.1 绑定不等于同机 App 不可达）+ App 备份排除口径更新。
+- **验证**：本地——go test 20 包全绿（含 httpapi 53s 全量集成）、gofmt/vet 零输出、web tsc+vitest 248 全绿（rebase 后复验）、Android 本地 Gradle 补验（纪律废止后按 446 笔新口径）testDebugUnitTest + :core:model:test 全绿（BUILD SUCCESSFUL，revert 重放后全模块编译+单测通过；首次运行遇 Windows 文件锁中断，停守护进程重跑即绿，非代码问题）、ci.yml js-yaml 校验、Makefile make -n 干跑、backup XML 良构校验；独立对抗审查子代理逐文件复核（含 Kotlin const 链/可见性/依赖方向/搬迁逐字等价比对）总评「可提交、零必修」。desktop job 首跑由 PR 云端 CI 实跑验证。
+- **涉及文档**：`docs/CHANGELOG.md`（本条）、`docs/SECURITY.md`（Termux 形态A 边界 + 备份排除口径）、`docs/ARCHITECTURE.md` §10（门禁清单）、`docs/history/CHANGELOG-ARCHIVE.md`（脱敏注记）。
 
 ## feat(api/web/server): 备份调度参数编辑热生效 + Web 缩略图档位偏好——HANDOVER §5 建议立项④两件能力窄缺口落地（2026-10-03 第四百四十笔）
 

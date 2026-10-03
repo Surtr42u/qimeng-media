@@ -393,6 +393,9 @@ func (s *Server) lsPlaceMediaInLibrary(lib db.Library, subRel, src string, expec
 		// 落位后 size 复核（stat 与 MoveFile 两条系统调用间隙的极小竞态）：
 		// 不符时绝不删除已落位文件——move 成功后源已不在，库位件是全项目
 		// 唯一副本；移回同步源或保留库位，处置见 lsReconcilePlacedSize。
+		// 忽略的第二返回值（不符原因 error）在该函数的非 proceed 分支内
+		// 已 s.logger.Warn 记录（携 reason/moveBackErr），此处只消费处置
+		// 枚举，原因在日志里不丢失。
 		rplace, _ := s.lsReconcilePlacedSize(src, targetAbs, expectSize)
 		switch rplace {
 		case lsPlaceMovedBack:

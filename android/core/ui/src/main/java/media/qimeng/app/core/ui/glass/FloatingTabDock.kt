@@ -111,6 +111,10 @@ import media.qimeng.app.core.ui.theme.isQimengDarkTheme
  * Role.Tab 角色 + selected 选中语义（副本坞 clearAndSetSemantics 不产生额外语义）。
  * CLASSIC 材质不经本组件（壳层直接渲染主线现行 M3 NavigationBar，逐字保底）。
  *
+ * 超文件警戒线理由：玻璃坞唯一承载件——四材质渲染器、单胶囊滑动状态机、透镜副本坞与
+ * 档位分派强内聚（共享几何实测与材质上下文），按材质拆多文件会把同一渲染链的同构段
+ * 切散并增加跨文件共享状态搬运；警戒线特此记档。
+ *
  * @param items 导航项（[GlassNavItem] 由壳层映射传入，:core:ui 不感知 :app 的
  *   TopLevelDestination，铁律「feature/壳层依赖 core 单向」）
  * @param selectedIndex 当前选中槽位（越界自动钳制）

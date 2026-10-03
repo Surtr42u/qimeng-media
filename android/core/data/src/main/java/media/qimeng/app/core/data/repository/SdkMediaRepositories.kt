@@ -18,6 +18,7 @@ import media.qimeng.app.core.model.PanelCountRange
 import media.qimeng.app.core.model.PanelSizeRange
 import media.qimeng.app.core.model.PanelTagMode
 import media.qimeng.app.core.model.TagSummary
+import media.qimeng.app.core.model.TxtImportSummary
 import media.qimeng.app.core.network.ServerConfigDataSource
 import media.qimeng.sdk.apis.DefaultApi
 import media.qimeng.sdk.infrastructure.ClientException
@@ -26,7 +27,6 @@ import media.qimeng.sdk.models.ApiV1AuthorsImportTxtPostRequest
 import media.qimeng.sdk.models.ApiV1TagsPostRequest
 import media.qimeng.sdk.models.AssetAuthorsReplaceRequest
 import media.qimeng.sdk.models.AuthorSourcesWriteRequest
-import media.qimeng.sdk.models.TxtImportedFile
 import media.qimeng.sdk.models.TxtImportResult
 import okhttp3.OkHttpClient
 import javax.inject.Inject
@@ -297,22 +297,23 @@ class SdkAuthorRepository @Inject constructor(
         }
     }
 
-    // ── TXT 导入族（U10-6b，Web 文件管理页 TxtAuthorImportCard 对等物）──
+    // ── TXT 导入族（U10-6b，Web 文件管理页 TxtAuthorImportCard 对等物；
+    //    2026-10-03 撤 :sdk 依赖批：SDK 模型 → 域类型映射收口在此）──
 
-    override suspend fun importedTxtFiles(): List<TxtImportedFile> {
+    override suspend fun importedTxtFileNames(): List<String> {
         Log.d(SdkMediaRepository.LOG_TAG, "GET /authors/import-txt")
         return withContext(Dispatchers.IO) {
-            apiFactory.create().apiV1AuthorsImportTxtGet()
+            apiFactory.create().apiV1AuthorsImportTxtGet().map { it.filename }
         }
     }
 
-    override suspend fun importTxt(filename: String, content: String): TxtImportResult {
+    override suspend fun importTxt(filename: String, content: String): TxtImportSummary {
         // 只记片段名与字符量，不打全文（内容可达 MB 级，logcat 单行溢出无意义）
         Log.d(SdkMediaRepository.LOG_TAG, "POST /authors/import-txt filename=$filename chars=${content.length}")
         return withContext(Dispatchers.IO) {
             apiFactory.create().apiV1AuthorsImportTxtPost(
                 ApiV1AuthorsImportTxtPostRequest(filename = filename, content = content),
-            )
+            ).toSummary()
         }
     }
 
@@ -323,10 +324,10 @@ class SdkAuthorRepository @Inject constructor(
         }
     }
 
-    override suspend fun rebuildTxt(): TxtImportResult {
+    override suspend fun rebuildTxt(): TxtImportSummary {
         Log.d(SdkMediaRepository.LOG_TAG, "POST /authors/import-txt/rebuild")
         return withContext(Dispatchers.IO) {
-            apiFactory.create().apiV1AuthorsImportTxtRebuildPost()
+            apiFactory.create().apiV1AuthorsImportTxtRebuildPost().toSummary()
         }
     }
 
@@ -428,3 +429,9 @@ private fun HistoryQuery.toLogString(): String = buildString {
     character?.let { append("character=$it ") }
     append("cursor=${cursor != null}")
 }
+
+/** TXT 导入/重放结果 → 域类型消费投影（2026-10-03 撤 :sdk 依赖批，映射单点） */
+private fun TxtImportResult.toSummary(): TxtImportSummary = TxtImportSummary(
+    authorsImported = authorsImported,
+    filesMatched = filesMatched,
+)

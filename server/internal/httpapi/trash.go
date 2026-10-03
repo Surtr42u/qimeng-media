@@ -346,6 +346,10 @@ var errRestoreEscaped = errors.New("restore target escapes library root")
 
 // PostApiV1TrashTrashIdRestore 恢复：文件搬回库内原路径（冲突自动重命名）
 // + UpsertAsset 重建库行（asset_id 不变）。
+// 超函数警戒线（>100 行）理由：恢复是文件搬回+库行重建的多步编排，
+// 各步就地消费上一步输出（targetRel 在锁内解析，库行重建直接沿用）；
+// 协议承诺冲突自动重命名（恢复永远成功）要求改名解析与搬移在
+// WithLibraryGate 内串行，直线顺序本身就是失败语义的说明。
 func (s *Server) PostApiV1TrashTrashIdRestore(w http.ResponseWriter, r *http.Request, trashID gen.TrashId) {
 	e, ok := s.findTrashEntry(trashID)
 	if !ok {

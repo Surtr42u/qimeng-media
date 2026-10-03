@@ -1,12 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- 云/系统备份排除规则（API 31+ 的 dataExtractionRules 通道；<31 走
      backup_rules.xml，两文件保持同集）。排除理由同彼处：server_config
-     .preferences_pb 内含明文 Bearer token，禁止随云备份/设备迁移外带。 -->
+     .preferences_pb 内含明文 Bearer token，禁止随云备份/设备迁移外带；
+     qimeng_events.db（含 WAL/SHM 副本三文件）是浏览事件离线队列
+     （逐资产 open/play/dwell 行为记录，用户行为隐私），同样禁止外带
+     （2026-10-03 备份排除面排查批；库文件名单源 QimengEventDatabase.NAME）。 -->
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="file" path="datastore/server_config.preferences_pb" />
+        <exclude domain="database" path="qimeng_events.db" />
+        <exclude domain="database" path="qimeng_events.db-wal" />
+        <exclude domain="database" path="qimeng_events.db-shm" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="file" path="datastore/server_config.preferences_pb" />
+        <exclude domain="database" path="qimeng_events.db" />
+        <exclude domain="database" path="qimeng_events.db-wal" />
+        <exclude domain="database" path="qimeng_events.db-shm" />
     </device-transfer>
 </data-extraction-rules>

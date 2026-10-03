@@ -1,6 +1,8 @@
 # CHANGELOG 历史档
 
 > 2026-10-01 拆分：为控制 AI 上下文体量，主文件只保留近期条目；本文件为拆分线之前全部条目的**逐字原文**（零改写，遵守「只增不改写正文」精神），编号与主文件连续可查。历史亦可溯 git。
+>
+> 2026-10-03 仓库卫生批：真实私网 IP 已脱敏（铁律 14，具体地址改 `192.168.1.x`），除此之外逐字保留。
 
 ## docs: 文档一致性清偿 14 处+审计任务书入库+工作区整理——例行维护批收官（2026-09-21 第三百八十一笔）
 
@@ -150,7 +152,7 @@
 
 - **背景（用户两点）**：①服务器界面两个选项旁加「正在使用」小标记；②App 缩略图缓存文件数 1 万多，问什么情况。
 - **①徽标**：服务器设置页「默认登录」卡两行行尾加主色小胶囊「正在使用」（数据源 = 当前生效地址端型，UiState 新增 activeEndpoint 随地址流实时刷新）——「默认/预选」与「正在用」两个概念视觉分开。
-- **②实证（run-as 真机盘点 + 服务端 stats 对照）**：NAS 池 23,949 文件/约 294MB，服务端总资产 6,341。构成 = 预取器自动全量（批S4 拍板：登录后自动一轮、无手动按钮）× 每资产双尺寸（列表 sm + 详情 md 分开缓存，设计如此）× **换地址整库重复**（缓存键含 host：`127.0.0.1:8420` 与 `192.0.2.8:8420` 同图不同键）≈ 6341×2×2。
+- **②实证（run-as 真机盘点 + 服务端 stats 对照）**：NAS 池 23,949 文件/约 294MB，服务端总资产 6,341。构成 = 预取器自动全量（批S4 拍板：登录后自动一轮、无手动按钮）× 每资产双尺寸（列表 sm + 详情 md 分开缓存，设计如此）× **换地址整库重复**（缓存键含 host：`127.0.0.1:8420` 与 `192.168.1.x:8420` 同图不同键）≈ 6341×2×2。
 - **修复**：`SignedMediaCacheKeys.stableKey` 键再剥 scheme/host，收敛为「path + 非 exp/sig query」——USB 反代/WiFi/域名换址均复用同一缓存条目（省重复下载与空间）。资产 id 为服务端生成的内容身份，跨实例碰撞可忽略；NAS/本地端分池在目录层完成，与本键互不影响。旧键遗留条目由既有 LRU 档位自然淘汰（或缩略图缓存页手动清一次立即回收）。
 - **测试**：SignedMediaCacheKeysTest 随键语义更新（换地址同键/纯 path 键/尺寸不碰撞/畸形兜底）；ServerSettingsViewModelTest 新增「正在使用标记跟随当前连接端型」用例；全量 testDebugUnitTest + assembleDebug 通过。
 
@@ -268,7 +270,7 @@
 
 执行 AI：GLM-5.3-Flash（执行子代理）
 
-- **用户实测现象（任务S 批S8，真机复现）**：手机 server_url=NAS（192.0.2.8:8420）、未登录停在登录页，点登录页「本机模式」按钮（fillLocalMode 填入 127.0.0.1:18430）→ 点登录 → 报「地址不通：无法连接服务器」——18430 无监听。「未登录态经登录页进入本机模式」（M6 形态 B 主入口）完全不可用，必修。
+- **用户实测现象（任务S 批S8，真机复现）**：手机 server_url=NAS（192.168.1.x:8420）、未登录停在登录页，点登录页「本机模式」按钮（fillLocalMode 填入 127.0.0.1:18430）→ 点登录 → 报「地址不通：无法连接服务器」——18430 无监听。「未登录态经登录页进入本机模式」（M6 形态 B 主入口）完全不可用，必修。
 - **死锁链（file:line 确认）**：旧链路登录成功才 updateServerUrl(18430)（AuthRepositoryImpl.kt login 持久化段）→ MainViewModel 的 serverUrl collector（MainViewModel.kt:79-87）才 ensureStartedIfLocalMode 拉起 EmbeddedServerService（MainViewModel.kt:82）——该自检链只对「serverUrl 主键变化」生效，登录页路径下主键仍是 NAS，永不触发；服务没起 → login 首步探活即 IOException → ServerUnreachable（AuthRepositoryImpl.kt:62）→ 登录必败 → updateServerUrl(18430) 永不发生 → 18430 永无监听。闭环死锁，壳层自检救不了登录页路径。
 - **修法（冻结口径）**：AuthRepositoryImpl.login() 构造 baseUrl 后、发登录请求前，若 ServerAddress.isLocalModePreset(baseUrl) → embeddedServerController.ensureStartedIfLocalMode(baseUrl)（幂等）+ LocalServerWarmup.awaitReady() 轮询等端口就绪——TCP connect 探测 127.0.0.1:18430，间隔 200ms 上限 5s（withTimeoutOrNull+delay 挂调度器实现，runTest 虚拟时钟可测）；SocketLocalPortProber 真探针经 @IoDispatcher 挪 IO 线程（login 链跑在主线程 viewModelScope，socket connect 不得上主线程）。**等待超时也继续发登录请求**，由既有探活/登录错误链报「地址不通」，不造新错误文案。新增 core:data embedded 包 LocalServerWarmup.kt（接口+Impl+LocalPortProber fun interface+SocketLocalPortProber 四件，探测端口经 ServerAddress.LOCAL_MODE_PORT 单值互指）；EmbeddedServerModule 增 LocalServerWarmup/LocalPortProber 两绑定；FakeAuthRepository（core:testing）实现的是 AuthRepository 接口、不持 Impl 构造器依赖，核验无需改动。LoginViewModel 不动（入口不重复触发）；MainViewModel 自检链不动——登录成功后主键切换、collector 再触发 ensure 为幂等 no-op，两链互补不冲突。
 - **测试**：AuthRepositoryImplTest 新增 3 用例（①本机模式登录→事件序铁证 ensure→warmup:await→transport:healthz→transport:dev-login，锁「先拉起→等就绪→才发请求」修复核心次序；②远程 NAS 地址→ensure/await 零触发且事件序仅两笔传输；③端口等待超时→仍走既有登录链成功=不造新错误），既有 14 例全数保留；LocalServerWarmupTest 新增 5 用例（首探即中零空转/轮询渐就绪/超时按虚拟时钟走完等待窗/超时上限与间隔可注入/真实 socket 探针有监听可连、无监听拒绝——临时端口不依赖 18430 被占与否）。**定向门禁原文**：`./gradlew :core:data:testDebugUnitTest` → BUILD SUCCESSFUL in 18s（模块合计 tests=137 skipped=0 failures=0 errors=0，AuthRepositoryImplTest 17 例含 3 新、LocalServerWarmupTest 5 例全新）+ `./gradlew :app:compileDebugKotlin`（Hilt 图聚合校验）→ BUILD SUCCESSFUL in 19s（180 actionable tasks: 38 executed, 142 up-to-date）。全量三连+R8 由主会话统一跑。
@@ -327,7 +329,7 @@
 
 执行 AI：GLM-5.3-Flash（执行子代理）
 
-- **用户口径（任务S §0 批S3 原话）**：「每次切换到本地端后服务器的地址也会变成本地，目前只使用这个局域网就是电脑网络的这个作为局域网」——NAS 地址恒定=电脑局域网地址（192.0.2.8:8420）；切到本机端（18430）后该地址不能丢，切回 NAS 时自动恢复，不许用户重输。
+- **用户口径（任务S §0 批S3 原话）**：「每次切换到本地端后服务器的地址也会变成本地，目前只使用这个局域网就是电脑网络的这个作为局域网」——NAS 地址恒定=电脑局域网地址（192.168.1.x:8420）；切到本机端（18430）后该地址不能丢，切回 NAS 时自动恢复，不许用户重输。
 - **覆盖路径调研结论（改动前实测代码路径）**：全 App 唯一地址键=DataStore `server_url`（DataStoreServerConfigDataSource KEY_SERVER_URL，ADR-0015 单点流转），两个既有写入点都会把它覆盖成本机地址——①设置页「一键切换本机模式」：ServerSettingsViewModel.switchToLocalMode → AuthRepositoryImpl.logoutWithStagedUrl → updateServerUrl(18430)（换址预置即覆写主键）；②本机模式登录成功：AuthRepositoryImpl.login → updateServerUrl(18430)。登录页预填（LoginViewModel.init 读 serverUrl 首值）与设置页地址卡回填（ServerSettingsViewModel.init 首个非空地址 seed 输入框）均读同一键——主键被覆盖=两处回填全变 18430，NAS 地址只能重输。
 - **实现（ADR-0015 单点流转不动；「当前连着谁」与「记得哪些地址」分离为两份状态）**：ServerConfigDataSource 新增两记忆槽 `rememberedNasUrl`/`rememberedLocalUrl`（DataStore 新键 remembered_nas_url / remembered_local_url，随 server_config.preferences_pb 持久）与分流写入口 `rememberLoginAddress(url)`——端型判定直用 core 纯函数 ServerAddress.isLocalModePreset（回环+18430 进本地槽，其余进 NAS 槽，无第二判定源）；AuthRepositoryImpl.login 成功路径（**dev-login 免密链路同为「成功登录」**）在写 token 前调用分流记忆——本机模式切换/登录永远只写本地槽，NAS 槽不被触碰；换址预置 logoutWithStagedUrl **不写记忆**（预置值未经登录确认，不算成功登录）。主地址键语义零变化。
 - **回填语义（两端地址各记各的、切换互换回填）**：①设置页地址卡输入框 seed 按当前端型取值——当前端=本机模式时回填 NAS 记忆（无记忆回退当前地址=既有行为），当前端=NAS 时维持回填当前地址；「保存并重新登录」→ 登录页预填 NAS 地址 → 用户直接点登录即切回，全程零重输。②本机模式卡预填与登录页「本机模式」快捷填入改为优先取记忆的本机模式地址（M6 单机形态口，自定义端口也能带出），无记忆回退 LOCAL_MODE_PRESET 常量（首次行为不变；登录页在 init 预取记忆缓存，快捷填入同步可取——异步版曾造出「点填入后立刻提交读到空地址」窗口期，单测抓出后改缓存制）。③登录页主字段预填语义不变（=预置/当前地址）——本机模式时若强行改填 NAS 记忆会打断「切本机→登录页确认 18430」既有切换流，故切回 NAS 的回填落点=设置页地址卡。UI 仅地址卡内加一行说明文案，零新增设置项（任务书 §3 UI 冻结口径）。
@@ -1197,7 +1199,7 @@
 - **deploy/termux/qimeng-start.sh 增强**：①`QIMENG_AUTH_DEV_MODE=1`——App 登录流无「首次设密码」对接（只实现 login/dev-login）、服务端仅监听 127.0.0.1（暴露面=手机自身）、与用户 PC 8420 同口径（用户约定「本地免密直到项目完成」）；②`QIMENG_WEB_STATIC_DIR=$HOME/.qimeng/web/dist`——目录缺失自动回退验收页（原行为不变）。
 - **#24/#26 勘误闭环**：seconds 序列化根修实为 2026-09-09 N2 协议批 P1 已落地（第一百六十三笔），此前 HANDOVER/台账「待协议批修」为过期信息。今日端到端实证：dwell 事件 202 入库（数字直传）、PUT progress 204 且 lastPositionSeconds 持久化读回一致。排查中曾见 500 系测试请求体误套 `events` 数组包装（协议实为单事件平铺 `ViewEventReport`），服务端无缺陷。
 - **任务U10 开卷**：用户真机 6 条反馈入卷《工作区\任务U10-体验对齐与缓存优化卷.md》——详情页标签管理胶囊对齐旧版（用户更正口径）/筛选面板对齐旧版/设置页「服务器+本机模式」合并单入口子页（本地端口 18430 写入子页）/缩略图磁盘缓存与带宽治理（嫌疑=签名 URL 变动致 Coil 缓存键漂移，6h TTL 每次响应重算）/手机自动旋转排查（App 与安装均无机制写该设置，已代关回）/遗留挂起清单汇总。
-- **环境**：8420 正式服务重启至 0.0.0.0（原实例被旧会话 QIMENG_LISTEN 绑死 127.0.0.1 致手机不可达）+二进制按 bat 流程重建（含 U7 统计新字段）；期间一次按进程名清理误杀 8420 已即时恢复（数据无损）——**教训记档：多实例共存时清理必须按 PID**。手机 App 已接真实库 `http://192.0.2.8:8420`；手机 Termux 服务端监听 `127.0.0.1:18430`。
+- **环境**：8420 正式服务重启至 0.0.0.0（原实例被旧会话 QIMENG_LISTEN 绑死 127.0.0.1 致手机不可达）+二进制按 bat 流程重建（含 U7 统计新字段）；期间一次按进程名清理误杀 8420 已即时恢复（数据无损）——**教训记档：多实例共存时清理必须按 PID**。手机 App 已接真实库 `http://192.168.1.x:8420`；手机 Termux 服务端监听 `127.0.0.1:18430`。
 - **待用户**：手机浏览器刷新 `127.0.0.1:18430`（正式界面已上机）→ 文件管理注册相册文件夹触发扫描；完成后 T2 真机节点收官。App 原生浏览：我的→本机模式。
 
 
@@ -3871,8 +3873,8 @@ UI 收尾三批第一笔（HANDOVER_UI §5.9 任务书，夜间集群模式首�
 
 用户反馈同一网络手机打不开 Web UI（电脑 127.0.0.1 正常）：
 
-- **网络层诊断（无代码改动）**：服务端监听 `:8420`（全网卡）、防火墙有 qimeng.exe 入站 Allow 规则（专用网络）、本机 curl `http://192.0.2.2:8420` 返回 200——网络层全通；启动横幅 `http://YOUR_IP:8420` 是占位符提示（启动服务端.bat），真实局域网 IP 为 192.0.2.2（另两个 IPv4 为 VirtualBox/WSL 虚拟网卡）。
-- **根因**：手机浏览器经 `http://192.0.2.2`（HTTP + 非 localhost = 非安全上下文）访问时 `crypto.randomUUID` API 不存在，`use-session.ts` 的 `ensureSessionId()` 在 React useState 初始化路径直接调用，整应用白屏崩溃（电脑 localhost 属安全上下文故无感）。
+- **网络层诊断（无代码改动）**：服务端监听 `:8420`（全网卡）、防火墙有 qimeng.exe 入站 Allow 规则（专用网络）、本机 curl `http://192.168.1.x:8420` 返回 200——网络层全通；启动横幅 `http://YOUR_IP:8420` 是占位符提示（启动服务端.bat），真实局域网 IP 为 192.168.1.x（另两个 IPv4 为 VirtualBox/WSL 虚拟网卡）。
+- **根因**：手机浏览器经 `http://192.168.1.x`（HTTP + 非 localhost = 非安全上下文）访问时 `crypto.randomUUID` API 不存在，`use-session.ts` 的 `ensureSessionId()` 在 React useState 初始化路径直接调用，整应用白屏崩溃（电脑 localhost 属安全上下文故无感）。
 - **修复**：`web/src/hooks/use-session.ts` 新增私有 `randomUUID()`——守卫 `typeof crypto.randomUUID === 'function'`，缺失时降级 `crypto.getRandomValues` 拼 UUID v4（该 API 非安全上下文同样可用）；`web/dist` 已重新构建，服务端 SPA 托管按请求读盘（curl 实证返回新 hash 产物），手机刷新页面即生效、无需重启服务端。
 - **质量**：oxlint 0 errors（15 warnings 均为存量，与本次改动无关）；tsc 构建通过。
 ## 交接文档进度对齐：阶段 B 全量口径 + 上传 UI 缺口记账（2026-09-04 第十四笔）

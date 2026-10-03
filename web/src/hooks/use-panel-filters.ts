@@ -62,14 +62,18 @@ export function usePanelFilters() {
       const v = cleanTagName(raw)
       if (!v) return
       const existing = tagPool.find((t) => t.name === v)
-      if (existing?.id) {
-        setState((s) => (s.tags.includes(existing.id!) ? s : { ...s, tags: [...s.tags, existing.id!] }))
+      // 守卫内先取常量：TS 收窄不进 setState 闭包，避免闭包内非空断言
+      const existingId = existing?.id
+      if (existingId) {
+        setState((s) => (s.tags.includes(existingId) ? s : { ...s, tags: [...s.tags, existingId] }))
         return
       }
       void createTag
         .mutateAsync(v)
         .then((tag) => {
-          if (tag.id) setState((s) => (s.tags.includes(tag.id!) ? s : { ...s, tags: [...s.tags, tag.id!] }))
+          // 同上：守卫内先取常量，闭包内用常量而非断言
+          const id = tag.id
+          if (id) setState((s) => (s.tags.includes(id) ? s : { ...s, tags: [...s.tags, id] }))
         })
         .catch(() => {
           // 创建失败（网络/409/500）不再静默：用户视角是「标签神秘没选上」，

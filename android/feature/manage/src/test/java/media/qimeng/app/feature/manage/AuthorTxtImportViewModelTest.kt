@@ -2,9 +2,8 @@ package media.qimeng.app.feature.manage
 
 import media.qimeng.app.core.data.repository.AuthorRepository
 import media.qimeng.app.core.model.AuthorSummary
+import media.qimeng.app.core.model.TxtImportSummary
 import media.qimeng.app.core.testing.MainDispatcherRule
-import media.qimeng.sdk.models.TxtImportedFile
-import media.qimeng.sdk.models.TxtImportResult
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -23,8 +22,8 @@ class AuthorTxtImportViewModelTest {
 
     private fun driveIdle() = mainDispatcherRule.testDispatcher.scheduler.advanceUntilIdle()
 
-    /** 服务端导入响应：作者 N / 匹配文件 M（测试内可编程） */
-    private val importResult = TxtImportResult(authorsImported = 3, filesMatched = 2)
+    /** 服务端导入响应：作者 N / 匹配文件 M（测试内可编程；2026-10-03 撤 :sdk 批起域类型） */
+    private val importResult = TxtImportSummary(authorsImported = 3, filesMatched = 2)
 
     private fun newViewModel(repository: FakeAuthorRepository = FakeAuthorRepository()) =
         Pair(AuthorTxtImportViewModel(repository).also { driveIdle() }, repository)
@@ -155,15 +154,15 @@ private class FakeAuthorRepository : AuthorRepository {
 
     override suspend fun setFollowed(authorId: String, followed: Boolean) = Unit
 
-    override suspend fun importedTxtFiles(): List<TxtImportedFile> = seed.map { TxtImportedFile(filename = it) }
+    override suspend fun importedTxtFileNames(): List<String> = seed.toList()
 
-    override suspend fun importTxt(filename: String, content: String): TxtImportResult {
+    override suspend fun importTxt(filename: String, content: String): TxtImportSummary {
         importError?.let { throw it }
         importTxtCalls += filename to content
         // 服务端语义：同名片段覆盖（列表保持一份）
         seed.removeAll { it == filename }
         seed.add(filename)
-        return TxtImportResult(authorsImported = 3, filesMatched = 2)
+        return TxtImportSummary(authorsImported = 3, filesMatched = 2)
     }
 
     override suspend fun removeImportedTxt(filename: String) {
@@ -172,8 +171,8 @@ private class FakeAuthorRepository : AuthorRepository {
         seed.removeAll { it == filename }
     }
 
-    override suspend fun rebuildTxt(): TxtImportResult {
+    override suspend fun rebuildTxt(): TxtImportSummary {
         rebuildCalls.add(Unit)
-        return TxtImportResult(authorsImported = 5, filesMatched = 7)
+        return TxtImportSummary(authorsImported = 5, filesMatched = 7)
     }
 }

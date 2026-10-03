@@ -51,6 +51,11 @@ import (
 //
 // 已删资产的迟到事件：事件入库、统计跳过、原样 202（与 rebuild 的 live
 // 过滤同口径，ADR-0005）——实现见下方 upsert 错误分支（2026-09-22）。
+//
+// 超函数警戒线（>100 行）理由：open/play/dwell 三类事件共用一个事务
+// 骨架（事件流+物化表原子性，见上），会话去重、幂等命中、已删资产迟到
+// 事件三条 202 短路径都内嵌在事务直线流里，拆子函数需把 tx/req/delta
+// 上下文传来传去；分支语义已由本头注释逐条承担。
 func (s *Server) PostApiV1EventsView(w http.ResponseWriter, r *http.Request) {
 	var req gen.PostApiV1EventsViewJSONRequestBody
 	if !decodeJSON(w, r, &req) {

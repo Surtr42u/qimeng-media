@@ -90,7 +90,13 @@ export default function TrashPage() {
     const targets = selectedItems
     void runner.run(targets, {
       action: '批量恢复',
-      runOne: (it) => restore.mutateAsync(it.id!),
+      // selectedItems 已过滤 id 非空；回调内取常量守卫（TS 收窄不进回调参数），
+      // 防御兜底 reject = runner 记该条失败，不中断整批
+      runOne: (it) => {
+        const id = it.id
+        if (id === undefined) return Promise.reject(new Error('条目缺少 id'))
+        return restore.mutateAsync(id)
+      },
       id: (it) => it.id ?? '',
       label: (it) => it.fileName ?? '',
       onFinished: (outcome) => {
@@ -111,7 +117,11 @@ export default function TrashPage() {
     setBatchPurgeOpen(false)
     void runner.run(targets, {
       action: '彻底删除',
-      runOne: (it) => removeOne.mutateAsync(it.id!),
+      runOne: (it) => {
+        const id = it.id
+        if (id === undefined) return Promise.reject(new Error('条目缺少 id'))
+        return removeOne.mutateAsync(id)
+      },
       id: (it) => it.id ?? '',
       label: (it) => it.fileName ?? '',
       onFinished: (outcome) => {
