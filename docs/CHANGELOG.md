@@ -10,6 +10,42 @@
 
 > **历史条目拆分说明（2026-10-01）**：为控制 AI 上下文体量，本文件只保留 **2026-09-22 及之后**的条目（第三百八十二笔起）；拆分线之前的全部条目已逐字迁入 `docs/history/CHANGELOG-ARCHIVE.md`（零改写，笔号与本文件连续可查）。引用早于拆分线的旧笔号请去历史档查阅。
 
+## feat(app): 玻璃坞迭代批——坞层触感/整坞液态受压/玻璃面立体感/首页胶囊与统计卡玻璃化（2026-10-03 第四百四十三笔）
+
+执行 AI：GLM-5.3-Flash（主代理实现+双研究子代理调研+独立审查子代理对抗审查）
+
+- **背景（用户拍板）**：迁移分支 ui/app-glass-dock 上继续探索——立体感、交互感、tab 液态玻璃语言向胶囊组件推广；约束=不大改布局，组件级改动。双研究子代理前置调研：Kyant0 Backdrop 2.0.1 官方教程与 2.0.1 sources jar 实读（确认 2.0.1 即最新 release、`layerBlock` 形变官方口径、一次 capture 多处消费天然支持、同节点自采样=官方 FAQ 唯一记载 SIGSEGV 崩溃）+ Apple Liquid Glass HIG/Haze/Cloudy/PrismalAGSL 通识（35% 调光层规则、按压形变与微弹参数、rim light/grain/视差技法清单）。
+- **坞层触感（FloatingTabDock）**：①条目按压反馈补齐——per-item `pressScale(0.94)` spring（此前条目无任何按压反馈）；②点击轻触觉 `TextHandleMove`（探索批 EXPLORE 4 同款 API 转正常开）；③整坞按压进度 Animatable（官方 spring(0.5,300)）驱动 `layerBlock` 坞体微膨大（8dp/坞宽≈2.5% 克制 swell，形变走 layerBlock 硬件层属性=官方口径，外包 graphicsLayer 会连折射一起缩）+ LIQUID Full 档 lens 折射量随按压增益（32→40dp，仍 ≤短边 62dp 合法区间）——「压得越深、透得越多」；④按压源=计数而非布尔（多指/同帧乱序布尔互相覆盖，计数增量与顺序无关；对抗审查指出后修正）。
+- **玻璃面立体感（GlassSurface）**：drawGlass 三笔→四笔，新增「底缘厚度内影」（自底缘向上 30% 渐隐的 shadow 色暗纱，与顶部高光对偶=上受光下沉影），全消费方（伪玻璃坞/玻璃卡/玻璃钮/搜索胶囊）同步获得体积暗示；描边仍压最上层。
+- **指示胶囊体积**：纯平 tint → 纵向微渐变（顶缘 alpha 0.30+0.12，底缘回落）——圆柱体积感。
+- **胶囊玻璃化（首页顶行，探索批 GLASS_TOP_ROW 同切口转正）**：搜索胶囊 surfaceVariant 实色 → GlassSurface 玻璃面（weight/40dp 高/胶囊形/文字规格逐项保留）；筛选/列数钮手写 Surface 胶囊钮退役 → GlassIconButton 单源（40dp/24dp/primary tint 同档，删本地重复实现与 4 个死 import）。**有意不用真 backdrop 采样**：胶囊下方无滚过内容（采了没内容），且内容层捕获子树内自采样=库官方 SIGSEGV 反面教材。QimengTitleRow 筛选钮激活态同换 GlassIconButton，未激活透明底逐字保留（U10-2b 不常亮语义），两态按压反馈语言对齐（审查项）。
+- **统计页玻璃卡（探索批 GLASS_STAT_CARDS 转正）**：五类卡（指标格/趋势/分布入口/内容榜/常看作者标签）surfaceVariant 实色 → GlassCard；卡几何（20dp 圆角/内边距/字号）逐项保留；Surface(onClick) ripple → pressScale spring（玻璃语言「按压即缩放」）；内层 CompactRow 点击链零改动。
+- **红线守护**：feature 层零 glass 颜色 import（仅组件/modifier）；SDK_INT 分叉仍仅 FloatingTabDock 一处；坞受光边单源/highlight null/库 Shadow 缺省唯一投影/tab 转场 snap 全部未触碰；新增 7 个具名常量带档位注释。**未动项（守纪律）**：媒体网格 AssetCard（任务L L1 冻结视觉，全 App 共用件需重新拍板）、全局极光画布/坞体形态/内容转场（探索分支专属实验）、极光视差与 grain 去色带（调研候选，留后续批次）。
+- **验证**：本机构建（用户在场授权，第四百四十二笔同口径）——compileDebugKotlin/compileKotlin 全模块 + testDebugUnitTest + :core:model:test + assembleDebug 全绿；独立审查子代理对抗审查（三次独立复现编译含强制重编、红线 grep、行为推演：按压状态机/材质档分派/lens 越界/嵌套点击）判定通过、零必修，可选改进 3 条（计数状态机/未激活钮反馈/KDoc 措辞）当场采纳；视觉浓度类结论（底缘内影深色档浓度/统计卡文字对比度）留 qimeng_api35 实机走查。
+- **涉及文档**：`docs/CHANGELOG.md`（本条）。
+
+## fix(app): 悬浮玻璃坞批主线迁移分支 ui/app-glass-dock（441 笔 cherry-pick）+ CI 首验编译返工（2026-10-03 第四百四十二笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- **背景（用户拍板）**：三个多余分支清理后（440 笔 feat/backup-schedule-edit-ui 与 ui/app-redesign 本地远端俱删、过时的 ui/app-mine-optimize 按用户选择径删），将 441 笔玻璃坞批自探索分支 ui/app-aurora-explore 迁入独立主线候选分支 `ui/app-glass-dock`（draft PR #16）。迁移口径=只迁组件/视觉层（布局机制零改动）：玻璃坞底栏+玻璃组件族+主题拓充+夜间极光板；探索实验（坞体形态三实验/全局极光画布/统计页与网格玻璃卡/内容转场）按用户「布局别动」明确留在探索分支。
+- **迁移方式**：cherry-pick 2f9b699+1fcd489（两批基线同为 440 笔树）零冲突落地；迁后树与原批终点 1fcd489 逐字节一致（git diff 空）核验；ADR-0033/INDEX/CHANGELOG 441 笔文档随原批提交同步迁入。
+- **CI 首验编译返工（本批实质改动；441 笔在探索分支从未触发过 CI、夜间纪律又禁本机构建，属带病提交首次被编译发现）**：①`UiAppearance.usesBackdrop` 误置 companion object 内——`this` 指 Companion 致 `==` 跨 Companion/枚举类型不合规，移枚举体实例属性（壳层消费 `tabBarMaterial.usesBackdrop` 本就是实例语法，调用面零改动）；②FloatingTabDock 幻觉 import `calculateBottomPadding`（PaddingValues 成员无需 import）移除+漏 import `navigationBars` 补齐；③坞外距 `padding(horizontal+bottom)` 两重载参数不可混用，改四参 `start/end/bottom` 重载；④SettingsViewModelTest 补 `FakeAppearancePrefsRepository`（441 笔新增构造入参未跟上测试替身，内存态默认档）。
+- **验证（用户在场时段临时解禁本机构建，2026-10-03 用户拍板）**：gradlew `compileDebugKotlin`/`compileKotlin`（全模块）+ `testDebugUnitTest` + `:core:model:test` + `assembleDebug` 本地全绿；云端 CI 复验为最终门禁。红线 grep 核验：feature 层零 glass 颜色 import（仅 `TabDockDefaults` 让位常量=ADR-0033 决策 1 设计内消费）、无预览变体脚手架混入、Backdrop 依赖仅 core:ui 声明。
+- **涉及文档**：`docs/CHANGELOG.md`（本条）。
+
+## feat(app): 悬浮玻璃坞底栏——液态/磨砂玻璃四材质+单颗滑动胶囊+主题拓充+夜间极光板（2026-10-03 第四百四十一笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理实现，主代理编排+独立评审+文档）
+
+- **背景（用户夜间批次拍板）**：把未合并分支 ui/app-redesign 验证过的玻璃坞底栏与日间玻璃配色提取到主线重新实现——底栏改为独立悬浮层、真液态玻璃+真磨砂玻璃双材质、拓充主题模式（官方/开源/主流多方案）、选项卡动效与阴影立体感做足、夜间模式按新 UI 重做（旧灰板用户差评退役）、修复旧实现「胶囊移动时左右空隙不一致」。分支 ui/app-redesign 本体不合并（其预览变体脚手架按其 ADR 自定退役）。
+- **旧胶囊缺陷根因与新解**：旧实现每颗导航项各持一颗胶囊做 scale+alpha spring 交叉淡化（两颗 spring 相位独立，过冲/欠冲叠加=「移动时空隙忽宽忽窄」的主因）+ 胶囊宽写死 46dp + 端部槽位与坞圆壁空隙只有中段一半。新解=坞层单颗胶囊按槽位中心偏移 spring 滑动（slot 实测），胶囊宽随槽位派生（槽宽−2×槽内边距），Row 首尾内边距=槽内边距使「端部空隙=中段相邻空隙」按构造成立；位移 spring 过冲安全（只改位置不改尺寸，即液态滑动语感），弹跳只留给图标点亮 1.12×。
+- **依赖决策（ADR-0033 四问记档）**：新增 Android 运行时依赖 `io.github.kyant0:backdrop:2.0.1`（代码包名 com.kyant.backdrop，Apache-2.0，Maven Central 2026-10-03 实查 release 位可解析，传递依赖 shapes；仅 core:ui 消费）。液态=官方 Glass Bottom Bar 配方（vibrancy+blur+lens 折射+表面高光），磨砂=blur 22dp（与 Web 端 Aurora Glass blur(22px) 同源）+高遮盖 scrim+发丝描边，两档共用一条背景捕获管线。不选 Haze 的可证伪理由：1.x 无折射（液态只能靠其 2.0 实验性 haze-glass，2.x 自述 beta 且 API 全换代），Backdrop 有官方底栏教程且一库覆盖双材质。API 降级链收敛单点：≥33 全量/31–32 去 lens/≤30 伪玻璃。
+- **实现面**：提取（git show 逐字节，不 checkout）glass 六件（GlassColors/GlassSurface/AuroraBackdrop/Motion/PressScale/GlassButtons）+ theme 五件（Color/Theme/Shape/Type/Dimens，Color.kt 补 PrimarySoftLight/Dark 兼容别名仅供 CLASSIC 指示器）；手写 FloatingTabDock（四材质渲染器+TabDockDefaults 几何/让位单源）、core:model UiAppearance 枚举（AppearanceMode/TabBarMaterial）、壳层 QimengNavHost 悬浮改造（Scaffold 去 bottomBar、内容 bottom 置 0 穿透、AuroraBackdrop 玻璃档铺底、内容层 layerBackdrop 捕获仅玻璃档挂）、DataStore 两键（appearance_mode/tab_bar_material，照 ClientPrefs 既有模式+Hilt 绑定）、AppearanceViewModel+MainActivity 单点暗色解析（全 App 唯一判定点，AuroraBackdrop 走 isQimengDarkTheme 与 Theme 同源）、设置页「主题色彩」占位行升级为外观三选+底栏材质四选、四个 tab 页滚动让位接单源常量。
+- **红线守护**：resolveTabTapAction 双击回顶/防抖、常驻层（visitedTabs/currentTabRoute/stateHolder）、tab 转场 fadeIn(snap())/fadeOut(snap()) 防叠影逐字保留，只换视觉容器；feature 层零 import glass 颜色（grep 核验）；SDK_INT 分叉仅 FloatingTabDock 一处；主题开关新增系用户本批明确拍板（推翻 App 流光玻璃 ADR 的「不加开关」约束，用户最新要求优先）；夜间配色=分支暗色极光板。
+- **验证**：夜间纪律合规（零本地产物构建、零模拟器操作，禁触项未触碰）；执行子代理静态自测（17 文件括号平衡、Theme 45 个 token 符号脚本核验齐全、魔法字面量与红线 grep、逐文件通读）；独立评审子代理对抗审查后修正；编译与视觉以 draft PR 云端 CI（android job assembleDebug+test+lint）为准，装机视觉走查（qimeng_api35，四材质×日夜）留用户在场时段按 ADR-0031 设备纪律执行。
+- **涉及文档**：`docs/adr/0033`（新）、`docs/adr/INDEX.md`、`docs/CHANGELOG.md`（本条）。
+
 ## feat(api/web/server): 备份调度参数编辑热生效 + Web 缩略图档位偏好——HANDOVER §5 建议立项④两件能力窄缺口落地（2026-10-03 第四百四十笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理）
