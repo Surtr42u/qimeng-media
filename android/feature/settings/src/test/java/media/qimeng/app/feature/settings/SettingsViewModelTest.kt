@@ -1,6 +1,5 @@
 package media.qimeng.app.feature.settings
 
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -11,16 +10,13 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
-import media.qimeng.app.core.data.repository.AppearancePrefsRepository
 import media.qimeng.app.core.data.repository.AuthRepository
 import media.qimeng.app.core.data.repository.RecommendPrefsRepository
 import media.qimeng.app.core.data.repository.StatsRepository
 import media.qimeng.app.core.data.repository.SystemInfoRepository
-import media.qimeng.app.core.model.AppearanceMode
 import media.qimeng.app.core.model.RecommendPrefsValues
 import media.qimeng.app.core.model.RecommendPreset
 import media.qimeng.app.core.model.StatsOverviewValues
-import media.qimeng.app.core.model.TabBarMaterial
 import media.qimeng.app.core.model.TrendPoint
 import media.qimeng.app.core.model.toPrefsValues
 import media.qimeng.app.core.testing.FakeAuthRepository
@@ -68,24 +64,6 @@ class SettingsViewModelTest {
         }
     }
 
-    /** 外观偏好替身：内存态外观三档/材质四选（2026-10-03 悬浮玻璃坞批随构造入参新增，默认档即主线出厂观感） */
-    private class FakeAppearancePrefsRepository : AppearancePrefsRepository {
-        override val appearanceMode = MutableStateFlow(AppearanceMode.SYSTEM)
-        override val tabBarMaterial = MutableStateFlow(TabBarMaterial.DEFAULT)
-        val setModeCalls = mutableListOf<AppearanceMode>()
-        val setMaterialCalls = mutableListOf<TabBarMaterial>()
-
-        override suspend fun setAppearanceMode(mode: AppearanceMode) {
-            setModeCalls += mode
-            appearanceMode.value = mode
-        }
-
-        override suspend fun setTabBarMaterial(material: TabBarMaterial) {
-            setMaterialCalls += material
-            tabBarMaterial.value = material
-        }
-    }
-
     private class FakeSystemInfoRepository(private val version: String?) : SystemInfoRepository {
         override suspend fun serverVersion(): String? = version
     }
@@ -109,13 +87,11 @@ class SettingsViewModelTest {
         stats: StatsRepository = FakeStatsRepository(
             StatsOverviewValues(totalFiles = 6135, imageCount = 5721, videoCount = 414, totalSizeBytes = 0L, todayViews = 0, totalViews = 0L),
         ),
-        appearance: AppearancePrefsRepository = FakeAppearancePrefsRepository(),
     ): SettingsViewModel = SettingsViewModel(
         authRepository = auth,
         statsRepository = stats,
         prefsRepository = prefs,
         systemInfoRepository = FakeSystemInfoRepository(version),
-        appearancePrefsRepository = appearance,
     )
 
     @Test

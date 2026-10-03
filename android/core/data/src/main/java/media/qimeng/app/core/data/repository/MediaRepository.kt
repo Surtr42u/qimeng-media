@@ -1,7 +1,6 @@
 package media.qimeng.app.core.data.repository
 
 import media.qimeng.app.core.model.AssetPageResult
-import media.qimeng.app.core.model.AppearanceMode
 import media.qimeng.app.core.model.AssetQuery
 import media.qimeng.app.core.model.AuthorSummary
 import media.qimeng.app.core.model.FacetsQuery
@@ -13,7 +12,6 @@ import media.qimeng.app.core.model.MediaKind
 import media.qimeng.app.core.model.NameSuggestion
 import media.qimeng.app.core.model.RankingPeriod
 import media.qimeng.app.core.model.TagSummary
-import media.qimeng.app.core.model.TabBarMaterial
 import media.qimeng.sdk.models.TxtImportedFile
 import media.qimeng.sdk.models.TxtImportResult
 
@@ -165,20 +163,4 @@ interface GridPrefsRepository {
     suspend fun setHomeColumns(columns: Int)
 
     suspend fun setAlbumColumns(columns: Int)
-}
-
-/**
- * 外观偏好端口（2026-10-03 悬浮玻璃坞批）：外观模式（跟随系统/浅色/深色）与底栏材质
- * （液态玻璃/磨砂玻璃/纯色坞/经典）两项手动开关的持久化，重启保留。
- * 枚举单源在 :core:model（[AppearanceMode]/[TabBarMaterial]）；壳层 Theme 解析与玻璃坞
- * 渲染、设置页选择器都从本端口读——DataStore 流是唯一事实源。
- */
-interface AppearancePrefsRepository {
-    val appearanceMode: kotlinx.coroutines.flow.Flow<AppearanceMode>
-
-    val tabBarMaterial: kotlinx.coroutines.flow.Flow<TabBarMaterial>
-
-    suspend fun setAppearanceMode(mode: AppearanceMode)
-
-    suspend fun setTabBarMaterial(material: TabBarMaterial)
 }
