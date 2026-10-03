@@ -169,3 +169,36 @@ jobs:
           name: app-debug-apk-embedded
           path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 7
+      # ── 云端预览 APK（2026-10-03 悬浮玻璃坞批次；端口/命名纪律同 ADR-0031 aurora 预览先例）──
+      # 「悬浮玻璃坞」UI 预览装机包：qmPreviewGlassDock 开关换包名 media.qimeng.app.glassdock
+      # 与正式包并存、内嵌端口错开 18432、版本名 -glassdock 后缀、应用名「绮梦影库·玻璃坞」
+      # （开关实现与同步责任见 android/app/build.gradle.kts）。在既有 debug artifact 上传完成后
+      # 覆盖构建同路径产物，正式 artifact 与上方全部门禁语义零变动。
+      # 签名稳定化：secrets 还原专用预览 debug keystore（仓库外 keytool 生成，绝不入库——铁律14），
+      # 固定签名=重复下载可直接覆盖安装；secrets 未配置时 gradle 侧探测不到 keystore 自动退回
+      # AGP 默认 debug 签名（每次下载需先卸载再装）。
+      - name: 构建预览变体 APK（qmPreviewGlassDock）
+        env:
+          QM_GLASSDOCK_PREVIEW_KEYSTORE_B64: ${{ secrets.QM_GLASSDOCK_PREVIEW_KEYSTORE_B64 }}
+          QM_GLASSDOCK_PREVIEW_KEYSTORE: ${{ runner.temp }}/qimeng-glassdock-preview-debug.keystore
+          # 口令为明显合成值，仅承担调试预览签名（需保管的凭据是 keystore 文件本体，经
+          # GitHub secret 注入；这不是发布签名凭据）
+          QM_GLASSDOCK_PREVIEW_STORE_PASS: qimeng-preview
+          QM_GLASSDOCK_PREVIEW_KEY_PASS: qimeng-preview
+          QM_GLASSDOCK_PREVIEW_KEY_ALIAS: qimeng-glassdock-preview
+        run: |
+          if [ -n "$QM_GLASSDOCK_PREVIEW_KEYSTORE_B64" ]; then
+            printf '%s' "$QM_GLASSDOCK_PREVIEW_KEYSTORE_B64" | base64 -d > "$QM_GLASSDOCK_PREVIEW_KEYSTORE"
+            echo "预览签名：已从 secrets 还原固定 keystore（重复下载可覆盖安装）"
+          else
+            echo "::warning::未配置 secrets.QM_GLASSDOCK_PREVIEW_KEYSTORE_B64——预览 APK 退回 AGP 随机 debug 签名，每次下载需先卸载再装"
+          fi
+          cd android
+          ./gradlew :app:assembleDebug -PqmPreviewGlassDock=true
+          cp app/build/outputs/apk/debug/app-debug.apk ../qimeng-glassdock-preview-debug.apk
+      - name: 上传预览 APK（qimeng-glassdock-preview-debug.apk）
+        uses: actions/upload-artifact@v4
+        with:
+          name: qimeng-glassdock-preview-apk
+          path: qimeng-glassdock-preview-debug.apk
+          if-no-files-found: error

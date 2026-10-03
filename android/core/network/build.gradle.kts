@@ -9,6 +9,26 @@ plugins {
 
 android {
     namespace = "media.qimeng.app.core.network"
+
+    defaultConfig {
+        // 本机模式端口的唯一注入点（消费方全部经 ServerAddress.LOCAL_MODE_PORT 派生，
+        // 禁止在代码里再写字面端口）。2026-10-03 悬浮玻璃坞预览变体工程化（端口纪律同
+        // ADR-0031 预览先例 18431 口径）：云端预览包与正式包并存装机，两个内嵌服务端
+        // 同抢回环端口时后装者「bind: address already in use」起不来——预览错开 18432。
+        // 同步责任：属性名与 android/app/build.gradle.kts 的 qmPreviewGlassDock 同名联动；
+        // 正式构建（不传属性）=18430 与历史一致。跑单测/本地开发一律不带该属性
+        // （单测锁定的是正式端口口径），属性仅供 CI 预览包构建。
+        buildConfigField(
+            "int",
+            "QM_LOCAL_MODE_PORT",
+            if (providers.gradleProperty("qmPreviewGlassDock").orNull?.toBoolean() == true) "18432" else "18430",
+        )
+    }
+
+    buildFeatures {
+        // 端口构建期注入所需（AGP 9 默认关闭库模块 BuildConfig 生成）
+        buildConfig = true
+    }
 }
 
 dependencies {
