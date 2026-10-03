@@ -14,10 +14,11 @@ import {
   YAxis,
 } from 'recharts'
 import type { TrendBucket } from '@/api/generated'
+import { EmptyNote } from './EmptyNote'
 import { TIP_STYLE, TrendLegend } from './chart-shared'
 
 export function TrendChart({ buckets }: { buckets: TrendBucket[] }) {
-  if (!buckets.length) return <p className="rank-note">暂无数据</p>
+  if (!buckets.length) return <EmptyNote />
   const data = buckets.map((b) => ({
     label: b.label ?? '',
     浏览: b.viewCount ?? 0,

@@ -39,6 +39,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.patrykandpatrick.vico.compose.cartesian.marker.rememberToggleOnTap
 import com.patrykandpatrick.vico.core.cartesian.marker.CartesianMarkerController
+import media.qimeng.app.core.model.MediaTypeKeys
+import media.qimeng.app.core.model.SourceKeys
 import media.qimeng.app.core.model.StatsRangeOption
 import media.qimeng.app.core.model.TopAuthorEntry
 import media.qimeng.app.core.model.TopTagEntry
@@ -62,6 +64,10 @@ import media.qimeng.app.core.ui.icon.BackIcon
  * - 排行行 = 独立白卡：名次列 28dp 前三名 primary 高亮 + 进度条 accent 灰（陷阱#7）；
  *   空态占位行名次「—」不可点（陷阱#12）。
  * 跳转链（任务J J1）不变：榜单条目回调上抛壳层导航，批次快照由 enterDetail 随排序档写入。
+ *
+ * 超文件警戒线理由：五模式（类型趋势/来源趋势/常看文件/作者标签/分布）详情页强内聚——
+ * 共用同一 LazyColumn 骨架、行组件与摘要格，模式差异只是 item 段装配；按模式拆文件会
+ * 把共享组件拖成跨文件 internal 面，拆分收益为负，警戒线特此记档。
  */
 @Composable
 fun StatsDetailScreen(
@@ -287,17 +293,27 @@ private fun InsightCard(lines: List<String>) {
 /** 趋势维度（key=协议值，色=旧版 trendColor 运行时值逐字：图片/视频/动图/常规/COS 五档） */
 private data class TrendDimension(val key: String, val label: String, val color: Color)
 
+/**
+ * 趋势图系列色（旧版 trendColor 运行时值逐字，值不变纯命名化）。
+ * 色值暂未双主题化，明暗双套另立批次。
+ */
+private val TREND_COLOR_IMAGE = Color(0xFF4FC3F7)
+private val TREND_COLOR_VIDEO = Color(0xFFFF8A65)
+private val TREND_COLOR_ANIMATED = Color(0xFFAED581)
+private val TREND_COLOR_SOURCE_NORMAL = Color(0xFF7986CB)
+private val TREND_COLOR_SOURCE_COS = Color(0xFFF06292)
+
 /** 类型趋势卡维度与系列顺序（图片→视频→动图，旧版 buildTypeSeries 逐字） */
 private val TYPE_TREND_DIMENSIONS = listOf(
-    TrendDimension(KEY_MEDIA_TYPE_IMAGE, IMAGE_DISPLAY_NAME, Color(0xFF4FC3F7)),
-    TrendDimension(KEY_MEDIA_TYPE_VIDEO, VIDEO_DISPLAY_NAME, Color(0xFFFF8A65)),
-    TrendDimension(KEY_MEDIA_TYPE_ANIMATED, ANIMATED_DISPLAY_NAME, Color(0xFFAED581)),
+    TrendDimension(KEY_MEDIA_TYPE_IMAGE, IMAGE_DISPLAY_NAME, TREND_COLOR_IMAGE),
+    TrendDimension(KEY_MEDIA_TYPE_VIDEO, VIDEO_DISPLAY_NAME, TREND_COLOR_VIDEO),
+    TrendDimension(KEY_MEDIA_TYPE_ANIMATED, ANIMATED_DISPLAY_NAME, TREND_COLOR_ANIMATED),
 )
 
 /** 来源趋势卡维度与系列顺序（常规→COS，旧版 buildSourceSeries 逐字） */
 private val SOURCE_TREND_DIMENSIONS = listOf(
-    TrendDimension(KEY_SOURCE_NORMAL, SOURCE_NORMAL_DISPLAY_NAME, Color(0xFF7986CB)),
-    TrendDimension(KEY_SOURCE_COS, SOURCE_COS_DISPLAY_NAME, Color(0xFFF06292)),
+    TrendDimension(KEY_SOURCE_NORMAL, SOURCE_NORMAL_DISPLAY_NAME, TREND_COLOR_SOURCE_NORMAL),
+    TrendDimension(KEY_SOURCE_COS, SOURCE_COS_DISPLAY_NAME, TREND_COLOR_SOURCE_COS),
 )
 
 /**
@@ -968,14 +984,14 @@ private const val DISTRIBUTION_METRIC_VALUE_SP = 12
 /** 排名前三名高亮阈值（旧版 RankListAdapter position < 3） */
 private const val TOP_RANK_HIGHLIGHT = 3
 
-/** 分布模式协议 mediaType key（openapi MediaType 枚举三值） */
-private const val KEY_MEDIA_TYPE_IMAGE = "image"
-private const val KEY_MEDIA_TYPE_VIDEO = "video"
-private const val KEY_MEDIA_TYPE_ANIMATED = "animated_image"
+/** 分布模式协议 mediaType key（openapi MediaType 枚举三值，键单源 MediaTypeKeys） */
+private const val KEY_MEDIA_TYPE_IMAGE = MediaTypeKeys.IMAGE
+private const val KEY_MEDIA_TYPE_VIDEO = MediaTypeKeys.VIDEO
+private const val KEY_MEDIA_TYPE_ANIMATED = MediaTypeKeys.ANIMATED_IMAGE
 
-/** 分布模式协议 source key（openapi /stats/trends source 枚举 normal|cos） */
-private const val KEY_SOURCE_NORMAL = "normal"
-private const val KEY_SOURCE_COS = "cos"
+/** 分布模式协议 source key（openapi /stats/trends source 枚举 normal|cos，键单源 SourceKeys） */
+private const val KEY_SOURCE_NORMAL = SourceKeys.NORMAL
+private const val KEY_SOURCE_COS = SourceKeys.COS
 
 /** 类型趋势卡标题（旧版顶栏与卡标题同字） */
 private const val TYPE_TREND_CARD_TITLE = "类型浏览趋势"

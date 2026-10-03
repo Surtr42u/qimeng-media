@@ -1,13 +1,9 @@
 package media.qimeng.app.core.data.backup
 
 import android.content.Intent
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.withContext
 import media.qimeng.app.core.data.repository.BackupAutoPrefsRepository
 import media.qimeng.app.core.data.repository.BackupRepository
-import media.qimeng.sdk.infrastructure.Serializer
-import media.qimeng.sdk.models.LegacyBackupFile
 import java.time.Duration
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -66,15 +62,13 @@ class AutoBackupRunner @Inject constructor(
     }
 
     /**
-     * 导出信封 → JSON 文本 → 目录写入。为什么序列化挂 Default 池：数十 MB 备份的 Moshi
-     * 序列化 + UTF-8 全量拷贝是纯 CPU 重活（任务R reviewer P2 纪律，原 BackupViewModel
-     * buildExportJson 同口径随写链路迁移至此）；磁盘段在 [BackupDirAccess] 实现的 IO 池。
+     * 导出信封 JSON → 目录写入。出网与 Moshi 序列化（数十 MB 备份的纯 CPU 重活）
+     * 已随 2026-10-03 撤 :sdk 依赖批收口进 [BackupRepository.exportJson] 实现内
+     * （任务R reviewer P2 纪律：序列化段离调用协程的主线程池；磁盘段在
+     * [BackupDirAccess] 实现的 IO 池）。
      */
     private suspend fun writeToDir(dirUri: String): Long? {
-        val json = withContext(Dispatchers.Default) {
-            val file = backupRepository.export()
-            Serializer.moshi.adapter(LegacyBackupFile::class.java).toJson(file)
-        }
+        val json = backupRepository.exportJson()
         return dirAccess.writeBytes(dirUri, json)
     }
 

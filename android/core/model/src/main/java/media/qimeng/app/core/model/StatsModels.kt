@@ -85,3 +85,18 @@ data class ThumbnailCacheProgress(
     val fraction: Float
         get() = if (totalAssets <= 0) 1f else (thumbsOnDisk.toFloat() / totalAssets).coerceIn(0f, 1f)
 }
+
+/**
+ * GET /rankings 单条（2026-09-18 内容榜批；映射自 AssetSummary）。
+ * /rankings 按热度（view+play+like 累计）降序返回，但协议不直出热度值——展示角标取
+ * [viewCount]（累计浏览次数）；标题口径与列表卡一致：cosWork 优先、回退 fileName
+ * （SdkMappers.toMediaAsset 同款）。2026-10-03 自 core:data repository 下沉本包
+ * （纯数据无 IO 依赖，特征与其余 stats 域模型同栖；类内容零变化）。
+ */
+data class RankingEntry(
+    val assetId: String,
+    /** 展示标题（AssetSummary.cosWork ?: fileName，客户端卡片标题统一口径） */
+    val title: String,
+    /** 累计浏览次数（kind='open' 事件计数；「N 次」角标数据源） */
+    val viewCount: Int,
+)

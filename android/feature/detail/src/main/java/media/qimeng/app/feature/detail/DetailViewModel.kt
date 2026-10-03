@@ -94,6 +94,12 @@ data class DetailPreloadTarget(
  * （DirectAnalyticsReporter：open/play/dwell），以及时间轴标签增删查。
  * 互动/标签失败只置 errorMessage，不动 asset——已加载内容不因单次请求失败回退成空页。
  * 任务W W3：原「接下来播放」推荐流数据链随推荐栏退役整段删除。
+ *
+ * 超文件警戒线理由：详情页全部数据链单 ViewModel——详情读取、互动行、标签读改写、
+ * 兄弟切换与预加载窗口、播放三件（续播/节流上报/打点）、时间轴标签共享同一
+ * asset 生命周期与批次清单状态，拆分会引入跨 VM 的资产态同步；类体主体为各自
+ * 取数段（已尽量拆纯函数策略出类：DetailPreloadPolicy/ProgressThrottlePolicy），
+ * 警戒线特此记档。
  */
 @HiltViewModel
 class DetailViewModel @Inject constructor(

@@ -1,11 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- 云/系统备份排除规则（API <31 的 fullBackupContent 通道；31+ 走
      data_extraction_rules.xml，两文件保持同集）。
-     排除项：DataStore 的 server_config.preferences_pb——内含明文 Bearer
+     排除项一：DataStore 的 server_config.preferences_pb——内含明文 Bearer
      token（明文存储是 2026-09-06 风险接受决策，见
      DataStoreServerConfigDataSource 注释），接受"本机落盘明文"不代表
      接受"随 adb 备份/云备份外带到任意恢复端"；token 多会话模型下
-     泄露即长期有效（ADR-0021 无 TTL），备份通道必须关闭。 -->
+     泄露即长期有效（ADR-0021 无 TTL），备份通道必须关闭。
+     排除项二：浏览事件离线队列 Room 库 qimeng_events.db（含 WAL/SHM 副本
+     三文件）——队列里是逐资产的 open/play/dwell 行为记录，属用户行为隐私，
+     不随备份通道外带（2026-10-03 备份排除面排查批；库文件名单源
+     QimengEventDatabase.NAME）。
+     client_prefs.preferences_pb（搜索历史/列数/外观/自动备份配置等 UI 偏好）
+     不排除。 -->
 <full-backup-content>
     <exclude domain="file" path="datastore/server_config.preferences_pb" />
+    <exclude domain="database" path="qimeng_events.db" />
+    <exclude domain="database" path="qimeng_events.db-wal" />
+    <exclude domain="database" path="qimeng_events.db-shm" />
 </full-backup-content>

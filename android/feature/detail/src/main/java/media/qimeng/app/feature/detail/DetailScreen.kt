@@ -123,6 +123,11 @@ import media.qimeng.app.core.ui.theme.QimengDimens
  * @param onOpenAuthor 跳作者集合页（作者 Sheet「进入作者主页」，壳层导航 push 叠栈）
  * @param onEditAsset 跳资产编辑页（作者 Sheet「编辑作者与来源」，2026-09-25 上传挂靠
  *   退役批：作者关联与来源维护收口编辑页；壳层导航 push 叠栈）
+ *
+ * 超文件警戒线理由：详情页是多面板强内聚的单屏——舞台（图片/视频/动图三分支）、
+ * 沉浸 chrome 状态机、系统栏明暗、作者 Sheet 与标签管理全部挂在同一 chromeEffective/
+ * zoomImmersive 单点口径上（U6 逐帧机制），按面板拆文件会切断该口径的同作用域装配；
+ * 警戒线特此记档。
  */
 @Composable
 fun DetailScreen(

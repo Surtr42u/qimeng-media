@@ -155,6 +155,9 @@ func (s *Service) ReplaceAuthorSources(ctx context.Context, qtx *db.Queries, now
 	} else {
 		fragment, content = fragments[ti].Filename, fragments[ti].Content
 	}
+	// 第二返回值（显示名）只写入上传条目元数据，编辑路径从不产生新
+	// 条目（见下方 persistSourcesAndPrune 注释）；且它恒等于 names 的
+	// " / " 连接（entryIdentity 三分支皆然），需要时可重建，丢弃无损失。
 	names, _ := entryIdentity(displayNameAliases(displayName), nil, displayName)
 	newContent := authoring.AppendAuthorBlock(content, names, sources, nil)
 	if ti < 0 {
@@ -270,6 +273,9 @@ func (s *Service) ReplaceAssetAuthors(ctx context.Context, qtx *db.Queries, now 
 		}
 		newContent, blockFound := authoring.AppendWorks(content, a.ID, works)
 		if !blockFound {
+			// 忽略第二返回值的论证同上 ReplaceAuthorSources 的新建块路径：
+			// 此处只消费别名列表编号新块，显示名仅用于上传条目元数据
+			// （编辑路径从不产生，见 persistSourcesAndPrune 注释）。
 			names, _ := entryIdentity(displayNameAliases(a.DisplayName), blockNames, a.DisplayName)
 			newContent = authoring.AppendAuthorBlock(content, names, nil, works)
 		}

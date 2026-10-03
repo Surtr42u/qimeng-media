@@ -251,6 +251,10 @@ fun QimengNavRoot(modifier: Modifier = Modifier) {
  *
  * 覆盖页面入栈隐藏底部导航、返回恢复（GUIDE_UI §导航结构）：按当前路由切换悬浮坞显隐
  * （条件与主线 bottomBar 时代逐字相同）。
+ *
+ * 超文件警戒线理由：全 App 的导航装配单文件——每个路由目的地（composable 声明、
+ * 实参与回调桥接）只在本文件出现一次且彼此同构，拆多文件只会按路由域切开同构装配段
+ * 并增加跨文件共享段的搬运，收益为负；警戒线特此记档。
  */
 @Composable
 fun QimengNavHost(

@@ -295,6 +295,8 @@ export function TopBar() {
         </Popover>
         <div className="header--right">
           <div className="win-controls">
+            {/* title 文案（"最小化"/"最大化"/"关闭"）被桌面壳 desktop/src-tauri/src/titlebar.js
+                按 title 属性定位按钮注入真实窗口行为，改文案须两侧同步 */}
             <button className="win-btn" title="最小化" type="button"><WinMinIcon /></button>
             <button className="win-btn" title="最大化" type="button"><WinMaxIcon /></button>
             <button className="win-btn" title="关闭" type="button"><WinCloseIcon /></button>

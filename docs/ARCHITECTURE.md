@@ -1,7 +1,7 @@
 # ARCHITECTURE - 架构总纲
 
 > 本文是 qimeng-media 的架构唯一权威文档。技术选型的"为什么"见 `docs/adr/`，业务规则见 `docs/DOMAIN_RULES.md`。
-> 最后更新：2026-10-01（§11 备份段更新：18 数据段，txtFragments 并入迁移，keep 合并见 DOMAIN_RULES §10）；此前同日（§5 模块边界表补 backup/libraryrevision/uploadsess/localsync 四包）。更早历史见 `docs/CHANGELOG.md`。
+> 最后更新：2026-10-03（§10 CI 门禁清单补 desktop job：第四端 Tauri 壳纳入 CI，六 job 口径）；2026-10-01（§11 备份段更新：18 数据段，txtFragments 并入迁移，keep 合并见 DOMAIN_RULES §10）；此前同日（§5 模块边界表补 backup/libraryrevision/uploadsess/localsync 四包）。更早历史见 `docs/CHANGELOG.md`。
 
 ## 1. 需求起源与产品定位
 
@@ -161,12 +161,13 @@
 
 ## 10. 工程基础设施
 
-- **CI（GitHub Actions，`.github/workflows/ci.yml`）五 job**，push/PR 全绿才许合并：
+- **CI（GitHub Actions，`.github/workflows/ci.yml`）六 job**，push/PR 全绿才许合并：
   1. `openapi`：redocly 协议校验（error 失败，warning 不阻塞）
   2. `server`：oapi-codegen 重建 Go 接口层 → golangci-lint（静态检查 + depguard 模块边界）→ go vet → go test（-race）→ go build
   3. `web`：npm ci → openapi-ts 重建 TS 客户端 → tsc --noEmit → npm run build → npm test（vitest，ADR-0017）
   4. `sdk-chain`：`make sdk` 三端生成链可重建（生成物防漂移的结构性门禁，ADR-0009）
   5. `android`：`make sdk` 重建 android/sdk → temurin 21 + gradle wrapper 缓存 → assembleDebug + testDebugUnitTest + lintDebug（M4-0 起）
+  6. `desktop`：Tauri 2 壳 cargo test + build（windows runner + rust-cache，debug 链不出安装包；第四端门禁，ADR-0020，2026-10-03 补）
 - **安全测试无独立 job**：401/路径穿越/签名防伪/超限上传等安全用例以单元测试形式随 server job 的 `go test` 运行
 - **镜像构建**：`make docker-build` 构建 amd64 镜像（debian-slim + ffmpeg + 静态二进制 + SPA，deploy/Dockerfile），2026-09-22 fnOS 虚拟机彩排 + 真机 NAS 测试通过（M5 收官）；CI 暂无镜像 job，arm64 双架构与「CI 构建镜像才允许部署 + digest 固定」为规划项
 - **依赖更新**：Dependabot 自动 PR（计划中，尚未配置）

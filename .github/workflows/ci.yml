@@ -1,6 +1,7 @@
 # CI：每个 PR / push 到 master 必须全绿才允许合并（ARCHITECTURE §10）
-# 五道门禁：协议校验（宪法不容破坏）→ 服务端 → Web（含 knip 孤儿依赖门禁）→
-# Android 客户端（含内嵌产物完整性门禁）；外加 make sdk 生成链可跑通
+# 六道门禁：协议校验（宪法不容破坏）→ 服务端 → Web（含 knip 孤儿依赖门禁）→
+# Android 客户端（含内嵌产物完整性门禁）→ 桌面壳（Tauri cargo test/build，
+# ADR-0020 第四端）；外加 make sdk 生成链可跑通
 name: ci
 
 on:
@@ -12,6 +13,8 @@ jobs:
   openapi:
     name: 协议宪法校验（redocly）
     runs-on: ubuntu-latest
+    # timeout 兜底卡死（npx 拉包 + lint 属轻任务，20 分钟足够）
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -22,6 +25,8 @@ jobs:
   server:
     name: 服务端（Go vet + test + build）
     runs-on: ubuntu-latest
+    # 最重 Go 链：apt 装 ffmpeg + 全量测试（-race 数倍耗时）+ golangci-lint，45 分钟
+    timeout-minutes: 45
     defaults: { run: { working-directory: server } }
     steps:
       - uses: actions/checkout@v5
@@ -53,11 +58,18 @@ jobs:
   web:
     name: Web（tsc + build）
     runs-on: ubuntu-latest
+    # tsc + vite build + vitest 属中等负载，20 分钟
+    timeout-minutes: 20
     defaults: { run: { working-directory: web } }
     steps:
       - uses: actions/checkout@v5
+      # npm 缓存：npm ci 每轮全量下载依赖是 web job 最耗时的一段，
+      # 按 lock 文件键控缓存 node_modules 供给后续轮次复用
       - uses: actions/setup-node@v5
-        with: { node-version: 24 }
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
       - run: npm ci
       # generated/ 不入库（.gitignore），类型检查前必须先从 openapi.yaml 重建——
       # 否则 SDK 缺失被 TS 解析为 {}，连锁出百余个假类型错误（2026-08-30 CI 实测）
@@ -75,6 +87,8 @@ jobs:
   sdk-chain:
     name: SDK 生成链（make sdk 三端可重建）
     runs-on: ubuntu-latest
+    # 三端"生成"链（sdk-go 含一次 go build，无重测试），轻任务 20 分钟
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -112,6 +126,8 @@ jobs:
     name: Android 客户端（assembleDebug + test + lint）
     needs: sdk-chain
     runs-on: ubuntu-latest
+    # 全链最重：Go 交叉编译 + ffmpeg 下载装配 + gradle assemble/test/lint 三连，60 分钟
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
       # android/sdk 消费 sdk-chain job 的 make sdk 产物（artifact 下发）——
@@ -169,3 +185,29 @@ jobs:
           name: app-debug-apk-embedded
           path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 7
+
+  # 桌面壳门禁（ADR-0020 第四端，此前无 CI）：只验 Rust 壳本身——
+  # 导航守卫/地址规范化纯函数单测 + 可编译。不出安装包（bundle 是
+  # release 长链，产物交付走本机，与夜间纪律"验证与产物一律云端"中的
+  # 验证职责对应，产物职责不在此 job）。
+  desktop:
+    name: 桌面壳（Tauri 2 cargo test + build）
+    runs-on: windows-latest
+    # 壳的目标平台就是 Windows；且 ubuntu 编 tauri 需 apt 装 webkit2gtk 系
+    # 依赖，windows runner 自带 WebView2 工具链免该步。Rust 冷启动全量编
+    # tauri 依赖树较慢，45 分钟；有 rust-cache 后正常轮次远快于此。
+    timeout-minutes: 45
+    defaults: { run: { working-directory: desktop/src-tauri } }
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      # cargo 缓存按 workspace 路径定位（Cargo.lock 已入库，缓存键稳定）
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: "desktop/src-tauri" }
+      # 前置事实（已核实入库）：icons/ 全套图标在 git（编译期
+      # tauri::generate_context! 嵌入依赖）；frontendDist "../ui" 是源内
+      # 静态页（ui/setup.html）且 beforeBuildCommand 为空——无前端构建、
+      # 无需 npm run icon，checkout 后可直接 cargo。
+      # debug 构建即可：门禁目标是"源码可编译 + 单测可跑"，不做 release 长链。
+      - run: cargo test
+      - run: cargo build

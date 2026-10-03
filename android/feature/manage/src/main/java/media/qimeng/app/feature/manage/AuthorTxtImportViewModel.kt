@@ -62,7 +62,7 @@ class AuthorTxtImportViewModel @Inject constructor(
                 it.copy(loading = !silent, errorMessage = if (clearError) null else it.errorMessage)
             }
             try {
-                val names = authorRepository.importedTxtFiles().map { it.filename }
+                val names = authorRepository.importedTxtFileNames()
                 _uiState.update { it.copy(loading = false, files = names) }
             } catch (e: Exception) {
                 _uiState.update { it.copy(loading = false, errorMessage = ERROR_LOAD) }

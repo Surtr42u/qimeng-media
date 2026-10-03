@@ -2,7 +2,7 @@
 
 > 威胁模型：纯内网单用户起步。防御目标 = 局域网内误访问与横向渗透（访客 WiFi、被入侵的智能设备）+ 未来远程访问的暴露面。不防御公网级 DDoS/爬虫。
 > 每条规则都配有 API 集成测试用例（进 CI），**安全靠机制和门禁，不靠自觉**。
-> 最后更新：2026-10-01（新增「本机同步通道」节；「上传安全」补分片续传四道校验分布与签名直链 exp 窗口对齐语义）。更早历史见 `docs/CHANGELOG.md`。
+> 最后更新：2026-10-03（「已知安全边界」补记 Termux 形态 A dev-login 是共享密钥缓解的漏网路径）。2026-10-01（新增「本机同步通道」节；「上传安全」补分片续传四道校验分布与签名直链 exp 窗口对齐语义）。更早历史见 `docs/CHANGELOG.md`。
 
 ## 红线清单（AI 改代码时逐条自查）
 
@@ -121,7 +121,8 @@
 
 - **App 全局明文 HTTP**（`usesCleartextTraffic`，无 network_security_config）：局域网 http 是既定部署形态（本机 18430 与 LAN 8420 都是 http），远程访问走隧道兜底（红线 8）。network_security_config 只能按域名放行明文、无法表达「任意私网 IP 放行、其余拒绝」，收窄会直接断掉核心场景，故维持现状；陌生 WiFi 下连局域网地址时 token/媒体明文过空口属用户责任边界。
 - **Android 内嵌形态 dev-login 跑在设备共享回环**（127.0.0.1:18430 + AUTH_DEV_MODE=1）：Android loopback 全设备共享，同机恶意 App 理论上可免密登录读库（App 持 MANAGE_EXTERNAL_STORAGE 放大后果）。~~缓解规划 = App 拉起内嵌进程时注入共享密钥、dev-login 校验该密钥，待单机形态真机验收（ADR-0015 T7）后立项~~ —— **已实现（2026-09-30 批A）**：App 拉起子进程随机生成 256bit 密钥注入 `QIMENG_AUTH_DEV_SHARED_SECRET`，dev-login 携带 `X-Qimeng-Dev-Secret` 头校验，不匹配 401（机制详见「开发模式」节）。
-- **App token 明文 DataStore**：2026-09-06 风险接受决策（代码注释记档）。2026-09-17 补备份排除规则（`dataExtractionRules`/`fullBackupContent` 排除 `server_config.preferences_pb`）——明文本机落盘在接受范围，随系统/云备份外带不在，已关闭。
+- **Termux 形态 A dev-login 是共享密钥缓解的漏网路径**（2026-10-03 记档）：`deploy/termux/qimeng-start.sh` 同样以 `QIMENG_AUTH_DEV_MODE=1` 绑 127.0.0.1:18430，与上条同一台设备共享回环，但**没有**共享密钥门禁——同机恶意 App 可直接 `POST /auth/dev-login` 免密取得 admin token（后果同上条）。内嵌形态 B 已用随机共享密钥缓解（`X-Qimeng-Dev-Secret`），Termux 形态 A 是该缓解未覆盖的路径。理论缓解 = 密钥落 `~/.qimeng/`（权限 0600）+ App 侧取用，但 App 跨沙箱读 Termux 私有目录无标准通道、如何把密钥交给 App 需产品决策——暂记边界待立项。
+- **App token 明文 DataStore**：2026-09-06 风险接受决策（代码注释记档）。2026-09-17 补备份排除规则（`dataExtractionRules`/`fullBackupContent` 排除 `server_config.preferences_pb`）——明文本机落盘在接受范围，随系统/云备份外带不在，已关闭。2026-10-03 审查批扩排除面：暂存浏览事件 Room 库（`databases/qimeng_events.db` 及 `-wal`/`-shm` 三文件，两规则文件同集排除）——行为数据随系统/云备份外带面一并关闭；`client_prefs`（UI 偏好 + 搜索历史）维持可备份（低敏感口径，风险接受）。
 - **web token 存 localStorage**：Bearer-SPA 常见取舍（XSS 可读面）；多会话模型下泄露后果收敛为单会话（可 logout 吊销），维持现状，有实测需求再动协议（cookie/刷新机制）。
 
 ## 远程访问姿势（将来启用）

@@ -44,6 +44,9 @@ func newDetachedGroup() *detachedGroup {
 // ctx 取消中断，但那不影响 fn 继续跑完）；否则立即注册并起独立 goroutine
 // 执行 fn（fn 内部自行管并发与超时，本层不限制）。返回值：fn 的结果，或
 // ctx 取消时的 ctx.Err()。
+// 去重只覆盖「进行中」——fn 完成即回收条目（close(done) 后 delete），迟到者
+// 重新发起，与 x/sync/singleflight 同款语义；真链路无重跑成本——EnsureDetached
+// 先查磁盘缓存，落盘后的请求走快路径根本不进 do。
 func (dg *detachedGroup) do(key string, ctx context.Context, fn func() error) error {
 	dg.mu.Lock()
 	if call, ok := dg.terms[key]; ok {

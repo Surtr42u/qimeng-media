@@ -3,6 +3,8 @@ package media.qimeng.app.feature.manage
 import media.qimeng.app.core.data.backup.AutoBackupRunner
 import media.qimeng.app.core.data.backup.BackupDirAccess
 import media.qimeng.app.core.data.backup.BackupFileStatus
+import media.qimeng.app.core.data.backup.BackupValidator
+import media.qimeng.app.core.data.backup.ValidatedBackupPayload
 import media.qimeng.app.core.data.events.EventClock
 import media.qimeng.app.core.data.events.PendingViewEventDao
 import media.qimeng.app.core.data.events.PendingViewEventEntity
@@ -12,11 +14,8 @@ import media.qimeng.app.core.data.events.ViewEventSendResult
 import media.qimeng.app.core.data.repository.BackupAutoPrefs
 import media.qimeng.app.core.data.repository.BackupAutoPrefsRepository
 import media.qimeng.app.core.data.repository.BackupRepository
+import media.qimeng.app.core.model.LegacyImportSummary
 import media.qimeng.app.core.testing.MainDispatcherRule
-import media.qimeng.sdk.models.LegacyBackupData
-import media.qimeng.sdk.models.LegacyBackupFile
-import media.qimeng.sdk.models.LegacyBackupImport
-import media.qimeng.sdk.models.LegacyImportResult
 import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -232,9 +231,9 @@ class BackupViewModelTest {
         viewModel.onFilePicked("qimeng_backup.json", validBytes)
         viewModel.confirmImport()
         driveIdle()
-        // Web confirmImport 逐字语义：确认后清 pending → POST 载荷
+        // Web confirmImport 逐字语义：确认后清 pending → POST 载荷（载荷为不透明句柄，
+        // 2026-10-03 撤 :sdk 依赖批起 format 字段收口 core:data，此处只锁调用事实）
         assertEquals(1, repository.importCalls.size)
-        assertEquals("qimeng_backup", repository.importCalls.single().format)
         val state = viewModel.uiState.value
         // Web L233-234 逐字：导入完成：匹配文件 M/N，作者 A，标签 T，事件回放 E 条
         assertEquals("「qimeng_backup.json」导入完成：匹配文件 4/9，作者 3，标签 2，事件回放 5 条", state.noticeMessage)
@@ -346,8 +345,9 @@ class BackupViewModelTest {
 }
 
 /**
- * [BackupRepository] 测试替身：export 恒回旧版信封、import 回可编程计数的迁移结果，
- * 各端点可编程抛错，调用记录供断言。
+ * [BackupRepository] 测试替身：exportJson 恒回旧版信封 JSON、importBackup 回可编程
+ * 计数的迁移结果，各端点可编程抛错，调用记录供断言（2026-10-03 撤 :sdk 依赖批随
+ * 接口签名域类型化重写；语义与原 Legacy* 生成物构造版一致）。
  */
 private class FakeBackupRepository : BackupRepository {
 
@@ -358,24 +358,23 @@ private class FakeBackupRepository : BackupRepository {
     var resultWarnings: List<String> = emptyList()
 
     val exportCalls = mutableListOf<Unit>()
-    val importCalls = mutableListOf<LegacyBackupImport>()
+    val importCalls = mutableListOf<ValidatedBackupPayload>()
 
-    override suspend fun export(): LegacyBackupFile {
+    /** GET /export 的信封（moshi 紧凑序列化同款无空格格式，写盘断言子串口径不变） */
+    private val exportEnvelopeJson =
+        """{"format":"qimeng_backup","schemaVersion":1,"appIdentifier":"com.qimeng.media","data":{}}"""
+
+    override suspend fun exportJson(): String {
         exportCalls.add(Unit)
         exportError?.let { throw it }
-        return LegacyBackupFile(
-            format = "qimeng_backup",
-            schemaVersion = 1,
-            appIdentifier = "com.qimeng.media",
-            data = LegacyBackupData(),
-        )
+        return exportEnvelopeJson
     }
 
-    override suspend fun import(payload: LegacyBackupImport): LegacyImportResult {
+    override suspend fun importBackup(payload: ValidatedBackupPayload): LegacyImportSummary {
         // 调用记录先于抛错：失败路径也要能断言「端点确实被调用过」
         importCalls.add(payload)
         importError?.let { throw it }
-        return LegacyImportResult(
+        return LegacyImportSummary(
             mediaFilesTotal = 9,
             assetsMatched = 4,
             authorsImported = 3,
