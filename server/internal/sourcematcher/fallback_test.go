@@ -17,7 +17,10 @@ func TestExtractFallbackSingleToken(t *testing.T) {
 		want []string
 	}{
 		{"守望先锋  新角色 1.mp4", []string{"新角色"}},
-		{"守望先锋  Dmon 1.mp4", []string{"Dmon"}}, // 大小写保留（无词条改名时按原名）
+		// 2026-10-04 Dmon→D.Mon 已固化进内置基线（ADR-0033 补记三），表层即命中、
+		// 不再走兜底（新语义锁定见 builtin_words_test.go）；兜底大小写保留改用仍未
+		// 收录的 Reinhardt 锁定。
+		{"守望先锋  Reinhardt 1.mp4", []string{"Reinhardt"}},
 		{"守望先锋  Melody.mp4", []string{"Melody"}},
 	}
 	for _, tt := range tests {
