@@ -1,63 +1,53 @@
 package media.qimeng.app.core.ui.component
 
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
-import androidx.compose.material3.LocalMinimumInteractiveComponentSize
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import media.qimeng.app.core.ui.theme.QimengDimens
+import media.qimeng.app.core.ui.glass.GlassSurface
+import media.qimeng.app.core.ui.glass.pressScale
+import media.qimeng.app.core.ui.glass.rememberPressScaleSource
+import media.qimeng.app.core.ui.theme.QimengShapes
 
-/** 按下缩放最小值（GUIDE_UI §UI约束「按下反馈动画」0.92→1.0，旧版 PressAnimation 同值） */
+/** 选中态染色透明度（坞 PILL_TINT_ALPHA 同源语言；两轮用户反馈「太黑」0.92→0.30→0.20：
+ *  胶囊底材比坞体更不透，同值染出来更深，取更低档——光从色里透出来，全 App 单源） */
+const val QIMENG_GLASS_TINT_ALPHA = 0.20f
+
+/** 按下缩放档（GUIDE_UI §UI约束「按下反馈动画」；spring 语言与玻璃件族一致） */
 private const val SEG_PILL_PRESSED_SCALE = 0.92f
 
-/** 按下缩放动画时长 ms（旧版 PressAnimation=100ms AccelerateDecelerateInterpolator 的 Compose 对应） */
-private const val SEG_PILL_PRESS_SCALE_DURATION_MS = 100
+/** 胶囊布局高（旧版 QimengCapsuleChip / FilterChip ContainerHeight 同档 32dp 紧凑语言） */
+private val SEG_PILL_HEIGHT = 32.dp
+
+/** 胶囊文案横向内边距（旧版 14dp 胶囊横向内边距档） */
+private val SEG_PILL_LABEL_HORIZONTAL_PADDING = 14.dp
 
 /**
- * 分段选择胶囊（任务 H1：内部实现从自绘 Text+clip+background 换 M3 [FilterChip] 标准件）。
+ * 分段选择胶囊——全仓单枚胶囊渲染唯一来源（首页三胶囊/相册芯片/搜索词丸/详情值丸/
+ * 收藏历史值区块/设置与统计档位等经 [QimengSegPill] 与 PillChip 委托全部收敛于此）。
  *
- * 为什么不换 SingleChoiceSegmentedButtonRow（任务书二选一）：SegmentedButton 是连体分段布局，
- * 消费方（feature/settings 缓存档位、feature/stats 时段档、feature/upload 目标库、QimengPills
- * 全部胶囊族）都在 spacedBy 的 Row/FlowRow 里逐枚独立排布，换连体分段要改全部调用点布局——
- * FilterChip 方案签名零变化、调用点零改动，按「改动面小者为准」选 FilterChip。
- *
- * 胶囊视觉 token 逐项保住（G6 已定语言，任务 H1 明确保留）：
- * - 圆角=[QimengDimens.PillCornerRadius]（Web .pill 999px）；
- * - 选中=主色实底 + onPrimary 字 + SemiBold；未选=surfaceVariant 软底 + onSurfaceVariant；
- * - border=null 去掉 FilterChip 默认描边（胶囊语言是实底填充，Web .seg 无描边）。
- * FilterChip 无勾选图标的前提是不传 leadingIcon（默认 null，勾选位不占位）。
- *
- * 紧凑化（F 批 2026-09-09）：CompositionLocal(LMinimumInteractiveComponentSize=0.dp)——
- * 旧版 QimengTagChip chipMinTouchTargetSize=0dp（styles.xml L26）的 Compose 等价。material3
- * 1.4.0 的可点 Surface（FilterChip 的容器）内部施 minimumInteractiveComponentSize，把 32dp
- * 视觉胶囊的布局节点撑到 48dp（实测搜索页词丸行节距 56dp 的元凶）；归零后布局高回到
- * FilterChipTokens.ContainerHeight=32dp=旧版 QimengCapsuleChip 高度。全仓胶囊单源在此一处
- * 收口：首页三胶囊/相册芯片/缓存档位等消费方一并紧凑化，即旧版 30-32dp 紧凑胶囊语言。
- * 字号同步压回 labelMedium 12sp=旧版 textSize 12sp（styles.xml L13，全仓胶囊统一字号）。
- *
- * 按下缩放反馈（GUIDE_UI §UI约束 L312，任务I I1 补齐）：pressed 0.92→1.0（[SEG_PILL_PRESSED_SCALE]/
- * [SEG_PILL_PRESS_SCALE_DURATION_MS]）；全仓胶囊单源在本组件，一处补齐全局生效（首页三胶囊等）。
- *
- * 本组件仍是全仓单枚胶囊渲染的唯一来源（PillChip 经此委托）。QimengFilterSheet 标签胶囊
- * 因 M3 芯片无长按能力（两轮标准件化实测破坏功能）保留手绘实现，属已记档例外，
- * 其 token 与本组件同谱；禁止再开其他平行实现。
+ * 2026-10-03 液态感强化批：容器从 M3 FilterChip 换 [GlassSurface] 玻璃体（用户反馈
+ * 「其他胶囊液态感不明显」）——素玻璃未选档 + 主色染色玻璃选中档（tintOverlay 染在
+ * 体上、光影笔照常叠出玻璃光学特征）；几何逐项保留：32dp 高/胶囊圆角/12sp 字号/
+ * 选中 SemiBold；按下 0.92 spring 缩放（pressScale 单源，与玻璃钮族同反馈语言）。
+ * 紧凑化前提不破坏：无 M3 芯片即无 48dp 最小触达，无需 LocalMinimumInteractiveComponentSize。
+ * 语义对齐 FilterChip：Role.Checkbox + selected 状态（无障碍读作可选中项）。
+ * QimengFilterSheet 标签胶囊因长按能力保留手绘实现（已记档例外），token 与本组件同谱。
  *
  * @param text 胶囊文案
- * @param selected 选中态（实底主色 vs 软底）
+ * @param selected 选中态（主色染色玻璃 vs 素玻璃）
  * @param onClick 点按回调（分段切换语义，由调用方驱动状态）
  */
 @Composable
@@ -67,46 +57,50 @@ fun QimengSegPill(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // 按下态经自持 interactionSource 观测（传入 FilterChip 覆盖其默认源），缩放在
-    // graphicsLayer 块内延迟读取 pressScale，缩放动画不触发重组
-    val interactionSource = remember { MutableInteractionSource() }
-    val pressed by interactionSource.collectIsPressedAsState()
-    val pressScale by animateFloatAsState(
-        targetValue = if (pressed) SEG_PILL_PRESSED_SCALE else 1f,
-        animationSpec = tween(
-            durationMillis = SEG_PILL_PRESS_SCALE_DURATION_MS,
-            easing = FastOutSlowInEasing,
-        ),
-        label = "qimengSegPillPressScale",
-    )
-    // F 批紧凑化：见头部 KDoc——消 FilterChip 可点 Surface 的 48dp 布局下限（旧版
-    // chipMinTouchTargetSize=0dp 等价），胶囊布局高回 32dp
-    CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
-        FilterChip(
-            selected = selected,
-            onClick = onClick,
-            // m3 1.4 FilterChip 内建 label 横向留白实测已接近旧版 14dp 胶囊横向内边距
-            // （目检 dump：不再额外补白，胶囊宽度与基线差 <2dp/侧，故 label 不加 padding）
-            label = {
-                Text(
-                    text = text,
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                )
-            },
-            shape = RoundedCornerShape(QimengDimens.PillCornerRadius),
-            colors = FilterChipDefaults.filterChipColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                selectedContainerColor = MaterialTheme.colorScheme.primary,
-                selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
-            ),
-            border = null,
-            interactionSource = interactionSource,
-            modifier = modifier.graphicsLayer {
-                scaleX = pressScale
-                scaleY = pressScale
-            },
-        )
+    val interaction = rememberPressScaleSource()
+    // 选中=低透主色染玻璃+primary 文字（坞选中胶囊同语言）；未选=素玻璃+onSurface
+    val labelColor = if (selected) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.onSurface
     }
+    GlassSurface(
+        shape = QimengShapes.pill,
+        compact = true,
+        tintOverlay = if (selected) {
+            MaterialTheme.colorScheme.primary.copy(alpha = QIMENG_GLASS_TINT_ALPHA)
+        } else {
+            null
+        },
+        modifier = modifier
+            .height(SEG_PILL_HEIGHT)
+            .pressScale(interaction, pressedScale = SEG_PILL_PRESSED_SCALE)
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                onClick = onClick,
+            )
+            .semanticsPillSelected(selected),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxHeight()
+                .padding(horizontal = SEG_PILL_LABEL_HORIZONTAL_PADDING),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = text,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                color = labelColor,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+/** FilterChip 语义等价物：可选项角色 + 选中态（无障碍朗读与换芯片前一致） */
+private fun Modifier.semanticsPillSelected(selected: Boolean): Modifier = semantics {
+    role = Role.Checkbox
+    this.selected = selected
 }

@@ -413,6 +413,10 @@ fun QimengNavHost(
             // 「退出后旧页内容叠层残留 1~2s 才消失」（release 包逐帧实证）。snap() 第一帧
             // 即把退出页 alpha 硬置 0/进入页置 1：无论转场滞留多久都无叠影，视觉仍是
             // 瞬时交换，L2 拍板口径不变。
+            // 2026-10-03 动效批撤回（用户拍板）：450/451 两批子页转场在常驻层架构下与
+            // 半透明玻璃页面叠印出残影叠层（上传页返回「我的」最明显），根因是转场期间
+            // 双页面同屏——常驻层+空壳路由的结构性冲突，调参无解；恢复全路由 snap 瞬切
+            // （叠影拍板原口径）。QimengMotion 规范文件保留作未来架构演进参考，暂无消费方
             enterTransition = { fadeIn(snap()) },
             exitTransition = { fadeOut(snap()) },
             popEnterTransition = { fadeIn(snap()) },
@@ -750,7 +754,11 @@ fun QimengNavHost(
                             ) {
                                 stateHolder.SaveableStateProvider(tabRoute) {
                                     if (ownerAlive) {
-                                        ResidentTabScreen(route = tabRoute, navController = navController)
+                                        ResidentTabScreen(
+                                            route = tabRoute,
+                                            navController = navController,
+                                            glassEnabled = tabBarMaterial.usesBackdrop,
+                                        )
                                     }
                                 }
                                 // 触摸死层：Compose 命中测试中「无 pointer input 的节点」不拦截触摸——
@@ -934,9 +942,15 @@ private fun navigateTopLevel(navController: NavHostController, destination: TopL
  * 由常驻层调用。
  */
 @Composable
-private fun ResidentTabScreen(route: String, navController: NavHostController) {
+private fun ResidentTabScreen(
+    route: String,
+    navController: NavHostController,
+    // 性能联动（2026-10-03 帧实测批）：首页顶行真采样跟随坞材质档传入（玻璃档才捕获）
+    glassEnabled: Boolean,
+) {
     when (route) {
         TopLevelDestination.HOME.route -> HomeScreen(
+            glassEnabled = glassEnabled,
             onOpenSearch = { navController.navigate(Routes.SEARCH_NAV) },
             onOpenAsset = { assetId ->
                 navController.navigate(DetailRoutes.detailRoute(assetId))
