@@ -53,6 +53,14 @@ enum class TabBarMaterial {
     CLASSIC,
     ;
 
+    /**
+     * 该材质是否需要 backdrop 捕获与玻璃坞渲染：CLASSIC 直接渲染 M3 NavigationBar、
+     * SOLID 是不透明纯色坞，两者零捕获零开销；LIQUID/FROSTED 才挂 layerBackdrop 捕获。
+     * 实例属性（非 companion）——判定主体是单个材质档，this 必须指枚举实例。
+     */
+    val usesBackdrop: Boolean
+        get() = this == LIQUID || this == FROSTED
+
     companion object {
         /** 默认档：液态玻璃（未持久化过或持久化值非法时回落） */
         val DEFAULT: TabBarMaterial = LIQUID
@@ -60,12 +68,5 @@ enum class TabBarMaterial {
         /** 持久化值（枚举名）→ 档位；未知值回落默认档 */
         fun fromStored(raw: String?): TabBarMaterial =
             entries.firstOrNull { it.name == raw } ?: DEFAULT
-
-        /**
-         * 该材质是否需要 backdrop 捕获与玻璃坞渲染：CLASSIC 直接渲染 M3 NavigationBar、
-         * SOLID 是不透明纯色坞，两者零捕获零开销；LIQUID/FROSTED 才挂 layerBackdrop 捕获。
-         */
-        val usesBackdrop: Boolean
-            get() = this == LIQUID || this == FROSTED
     }
 }

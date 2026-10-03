@@ -16,10 +16,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
-import androidx.compose.foundation.layout.calculateBottomPadding
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -116,7 +116,8 @@ fun FloatingTabDock(
             .fillMaxWidth()
             .navigationBarsPadding()
             .padding(
-                horizontal = TabDockDefaults.DockHorizontalMargin,
+                start = TabDockDefaults.DockHorizontalMargin,
+                end = TabDockDefaults.DockHorizontalMargin,
                 bottom = TabDockDefaults.DockBottomOffset,
             ),
     ) {
