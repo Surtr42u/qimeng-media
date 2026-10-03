@@ -24,6 +24,7 @@ import com.kyant.backdrop.BackdropEffectScope
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.vibrancy
+import com.kyant.backdrop.shadow.Shadow
 import media.qimeng.app.core.ui.theme.QimengDimens
 import media.qimeng.app.core.ui.theme.QimengShapes
 
@@ -70,6 +71,9 @@ fun BackdropGlassPanel(
             effects = capsuleEffects(),
             // 受光边唯一来源=自画发丝描边（与坞 GlassDockBody 同口径，关库默认环防双描边）
             highlight = { null },
+            // 落影克制（用户反馈「顶行阴影太狠」）：关库默认 Shadow——坞是大面板配得起默认
+            // 投影，40dp 级胶囊/小钮挂同档投影即脏重；顶行件零投影靠受光边自分层
+            shadow = { Shadow(alpha = 0f) },
             onDrawSurface = { capsuleSurface(scrim, glass) },
         ),
         content = content,

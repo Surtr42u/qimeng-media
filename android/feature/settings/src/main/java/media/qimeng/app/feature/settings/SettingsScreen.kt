@@ -115,8 +115,8 @@ private val TitleToCardsSpacing = 24.dp
 /** 16dp：首个入口行上距（旧版运行时行区首行 marginTop 16dp；行下距用 QimengDimens.SpaceL 12dp） */
 private val FirstRowTopSpacing = 16.dp
 
-/** 入口行玻璃卡投影（2026-10-03 质感对齐批：悬浮景深与坞同语言；行卡位稀疏取 2dp 轻档） */
-private val EntryRowGlassElevation = 2.dp
+/** 入口行玻璃卡投影（2026-10-03 阴影克制返工：2dp→1dp 轻档，景深暗示即可不抢戏） */
+private val EntryRowGlassElevation = 1.dp
 
 /**
  * 「我的」Tab（M4-6 完整版，单页滚动列表，GUIDE_UI §我的页结构 + I4 复刻清偿；

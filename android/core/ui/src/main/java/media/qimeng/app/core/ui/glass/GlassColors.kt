@@ -47,8 +47,8 @@ data class GlassColors(
  *  流内胶囊无 backdrop 采样（下方无滚过内容，采样无意义），观感对齐坞的材料要素靠
  *  scrim 档位/受光边/镜面/投影四件套承担） */
 private val DarkGlass = GlassColors(
-    fill = Color(0xFF1B2033).copy(alpha = 0.86f),
-    fillStrong = Color(0xFF151A2C).copy(alpha = 0.96f),
+    fill = Color(0xFF262C44).copy(alpha = 0.80f),
+    fillStrong = Color(0xFF1E2438).copy(alpha = 0.92f),
     edgeTop = Color(0xFFFFFFFF).copy(alpha = 0.32f),
     edgeBottom = Color(0xFFFFFFFF).copy(alpha = 0.08f),
     sheen = Color(0xFFFFFFFF).copy(alpha = 0.14f),
@@ -59,8 +59,8 @@ private val DarkGlass = GlassColors(
 
 /** 浅色玻璃：白瓷体 + 白高光受光（下缘转冷灰紫，保持面板轮廓可辨；遮盖同批提档） */
 private val LightGlass = GlassColors(
-    fill = Color(0xFFFFFFFF).copy(alpha = 0.85f),
-    fillStrong = Color(0xFFFDFDFF).copy(alpha = 0.95f),
+    fill = Color(0xFFFFFFFF).copy(alpha = 0.76f),
+    fillStrong = Color(0xFFFDFDFF).copy(alpha = 0.92f),
     edgeTop = Color(0xFFFFFFFF).copy(alpha = 0.95f),
     edgeBottom = Color(0xFF8F96B8).copy(alpha = 0.30f),
     sheen = Color(0xFFFFFFFF).copy(alpha = 0.55f),
