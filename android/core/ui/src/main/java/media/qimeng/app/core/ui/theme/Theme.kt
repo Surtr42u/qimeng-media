@@ -5,6 +5,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.luminance
 
 /**
  * 绮梦影库 Material 3 主题。
@@ -106,3 +107,7 @@ fun QimengTheme(
         content = content,
     )
 }
+
+/** 当前主题是否暗色（玻璃件按生效色板亮度判定，与 QimengTheme 实际渲染同源，禁直查 isSystemInDarkTheme） */
+@Composable
+fun isQimengDarkTheme(): Boolean = MaterialTheme.colorScheme.background.luminance() < 0.5f

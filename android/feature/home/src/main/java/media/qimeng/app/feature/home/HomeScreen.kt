@@ -55,6 +55,7 @@ import media.qimeng.app.core.ui.component.QimengChipRow
 import media.qimeng.app.core.ui.component.QimengEmptyState
 import media.qimeng.app.core.ui.component.QimengFilterSheet
 import media.qimeng.app.core.ui.component.QimengMediaGrid
+import media.qimeng.app.core.ui.glass.TabDockDefaults
 import media.qimeng.app.core.ui.component.QimengPill
 import media.qimeng.app.core.ui.component.QimengPullToRefresh
 import media.qimeng.app.core.ui.component.QimengSkeletonGrid
@@ -503,6 +504,9 @@ private fun RecommendPage(
             columns = columns,
             animatedUrlResolver = animatedUrlResolver,
             listState = listState,
+            // 2026-10-03 悬浮玻璃坞批：底栏改悬浮层后内容从坞身后滚过，网格最后一项
+            // 须让位到坞体上方（core:ui 单源常量，含导航栏 inset；三页流共用同一档）
+            bottomContentPadding = TabDockDefaults.bottomClearance(),
             onNearBottom = onNearBottom,
             // 问题A（2026-09-28）：加载结束重评估信号——换轮成功但 fresh==0（或空页追加）时
             // totalCount 不变，哨兵需靠 tick 重触发（含 fresh==0 续轮后的穷尽停手，由 VM 拦截兜底）
@@ -537,6 +541,9 @@ private fun CosPage(
             columns = columns,
             animatedUrlResolver = animatedUrlResolver,
             listState = listState,
+            // 2026-10-03 悬浮玻璃坞批：底栏改悬浮层后内容从坞身后滚过，网格最后一项
+            // 须让位到坞体上方（core:ui 单源常量，含导航栏 inset；三页流共用同一档）
+            bottomContentPadding = TabDockDefaults.bottomClearance(),
             onNearBottom = onNearBottom,
             // 问题A（2026-09-28）：加载结束重评估信号——翻页成功但新页为空时 totalCount 不变，
             // 哨兵需靠 tick 重触发（KDoc 见 QimengMediaGrid.reloadTick）
@@ -572,6 +579,9 @@ private fun RankPage(
             columns = columns,
             animatedUrlResolver = animatedUrlResolver,
             listState = listState,
+            // 2026-10-03 悬浮玻璃坞批：底栏改悬浮层后内容从坞身后滚过，网格最后一项
+            // 须让位到坞体上方（core:ui 单源常量，含导航栏 inset；三页流共用同一档）
+            bottomContentPadding = TabDockDefaults.bottomClearance(),
             onAssetClick = onAssetClick,
         )
     }

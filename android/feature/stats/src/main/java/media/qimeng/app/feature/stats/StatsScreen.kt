@@ -3,6 +3,7 @@ package media.qimeng.app.feature.stats
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -33,6 +34,7 @@ import media.qimeng.app.core.model.TrendPoint
 import media.qimeng.app.core.ui.component.Dimens
 import media.qimeng.app.core.ui.component.QimengSegmentedControl
 import media.qimeng.app.core.ui.component.formatBytesHumanReadable
+import media.qimeng.app.core.ui.glass.TabDockDefaults
 
 /**
  * 数据统计页（任务I I3 复刻：GUIDE_UI §数据统计页 L203-224；N4 I3b 常看族解冻接线）：
@@ -68,6 +70,9 @@ fun StatsScreen(
             .fillMaxSize()
             .padding(horizontal = Dimens.ScreenPadding),
         verticalArrangement = Arrangement.spacedBy(Dimens.ScreenPadding),
+        // 2026-10-03 悬浮玻璃坞批：底栏改悬浮层后内容从坞身后滚过，滚动区底部让位到
+        // 坞体上方（core:ui 单源常量，含导航栏 inset）
+        contentPadding = PaddingValues(bottom = TabDockDefaults.bottomClearance()),
     ) {
         // Z4 批（2026-09-12 数据页字体对齐旧 stats.xml）：文案「数据」→「数据统计」+ Bold
         item { Text(text = "数据统计", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold)) }

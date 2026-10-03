@@ -10,6 +10,16 @@
 
 > **历史条目拆分说明（2026-10-01）**：为控制 AI 上下文体量，本文件只保留 **2026-09-22 及之后**的条目（第三百八十二笔起）；拆分线之前的全部条目已逐字迁入 `docs/history/CHANGELOG-ARCHIVE.md`（零改写，笔号与本文件连续可查）。引用早于拆分线的旧笔号请去历史档查阅。
 
+## feat(app): 悬浮玻璃坞移植批——回滚后 master（老 UI 基线）+ ui/app-dock-only 玻璃坞，顶部布局零改动（2026-10-03 第四百四十七笔）
+
+执行 AI：GLM-5.3（主代理）
+
+- **背景**：PR #16 全量玻璃化合入后用户回滚 master 至老 UI（3af64c87），目验老 UI 形态正确后拍板执行移植。移植源=评估线 ui/app-dock-only（d6f22a4c，「老 UI+纯玻璃坞」减法形态）；d10e096f 携带的 QimengTitleRow/Color/Type/主题大改等「顶部空白挤压 UI」疑似元凶文件全部不带。
+- **移植方式**：`git diff 67e5db07 d6f22a4c -- android/` 全量补丁打到回滚后 master（其 android/ 树与 67e5db07 逐字节一致，补丁零冲突落地，19 文件）。内容=悬浮玻璃坞本体（FloatingTabDock）+ glass 件（GlassButtons/Colors/Surface/Motion/PressScale/QimengBackdrop）+ 坞材质偏好持久化链（UiAppearance/ClientPrefsRepositories/AppearanceViewModel/设置页材质切换档）+ 选中态透镜胶囊（Kyant0 LiquidBottomTabs 配方）+ 三页底部让位（Home/All/Stats 的 bottomContentPadding 走 TabDockDefaults 单源，内容从坞身后滚过）+ MainActivity 外观模式三档解析。NavHost 顶部 inset 范式逐像素对齐老语义（「双重留白清偿」注释链保留）——Home/All/Stats 三页 diff 逐行核查确认全部为底部让位，无任何顶部改动。
+- **真机内嵌服务端修复（顺带）**：本地 jniLibs 缓存的 libqimeng.so 停在 10-01，早于 0016 迁移（10-02 dc79b00d），真机内嵌服务端启动秒退（「no migration found for version 16」），死亡通知的「端口被占——Termux 形态 A 在跑请先停」静态常见原因文案造成「形态 A 复现」误判；此前叠加占用者为极光探索线装机 media.qimeng.app.aurora 的内嵌服务端（已 force-stop + pm disable-user 冻结，pm enable 可恢复）。修复=以当前源码重新交叉编译 arm64 服务端（GOOS=android CGO_ENABLED=0）刷新主仓与移植 worktree 两处 jniLibs 缓存。遗留建议：死亡通知文案按形态 A 退役后口径改写（列为后续待办，未随本笔）。
+- **下沉返工（同批内修复）**：移植首装真机复现「上方多一块空白、内容下沉」——根因=悬浮坞改造新增的内容层外 Box 自带 `padding+consume(topSidePadding)`，内层 NavHost 非 detail 分支与常驻层再各自消费同一份，Tab 屏顶部吃**双份状态栏留白**（d10e096f 与评估线同构同病，即主线时代「首页布局下坠」的真身，此前归嫌疑于 QimengTitleRow/Color/Type 属误判——本次移植不带这些文件仍复现，锁定嵌套双份 padding）。修复=外层 Box 摘除 padding/consume（backdrop 捕获保留，全屏采样不影响坞观感），让位范式回到老主线同构：仅 NavHost 非 detail 分支与常驻层消费，detail 沉浸式全屏不受影响。
+- **验证**：本地 `:app:assembleDebug` + `:feature:settings:testDebugUnitTest` 全绿；真机覆盖安装启动后内嵌服务端存活（libqimeng.so 进程在册、server.log 无迁移错误、推荐流冷算正常出数）；下沉修复后冷启动复装待用户目验（重点：顶部无新增空白、坞悬浮正常）。
+
 ## docs: 云端构建强制要求废止——「夜间/无人值守执行纪律」整节删除、本地产物构建恢复（2026-10-03 第四百四十六笔）
 
 执行 AI：GLM-5.3（主代理）
