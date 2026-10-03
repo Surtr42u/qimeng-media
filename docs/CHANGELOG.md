@@ -10,6 +10,16 @@
 
 > **历史条目拆分说明（2026-10-01）**：为控制 AI 上下文体量，本文件只保留 **2026-09-22 及之后**的条目（第三百八十二笔起）；拆分线之前的全部条目已逐字迁入 `docs/history/CHANGELOG-ARCHIVE.md`（零改写，笔号与本文件连续可查）。引用早于拆分线的旧笔号请去历史档查阅。
 
+## fix(app): 悬浮玻璃坞批主线迁移分支 ui/app-glass-dock（441 笔 cherry-pick）+ CI 首验编译返工（2026-10-03 第四百四十二笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- **背景（用户拍板）**：三个多余分支清理后（440 笔 feat/backup-schedule-edit-ui 与 ui/app-redesign 本地远端俱删、过时的 ui/app-mine-optimize 按用户选择径删），将 441 笔玻璃坞批自探索分支 ui/app-aurora-explore 迁入独立主线候选分支 `ui/app-glass-dock`（draft PR #16）。迁移口径=只迁组件/视觉层（布局机制零改动）：玻璃坞底栏+玻璃组件族+主题拓充+夜间极光板；探索实验（坞体形态三实验/全局极光画布/统计页与网格玻璃卡/内容转场）按用户「布局别动」明确留在探索分支。
+- **迁移方式**：cherry-pick 2f9b699+1fcd489（两批基线同为 440 笔树）零冲突落地；迁后树与原批终点 1fcd489 逐字节一致（git diff 空）核验；ADR-0033/INDEX/CHANGELOG 441 笔文档随原批提交同步迁入。
+- **CI 首验编译返工（本批实质改动；441 笔在探索分支从未触发过 CI、夜间纪律又禁本机构建，属带病提交首次被编译发现）**：①`UiAppearance.usesBackdrop` 误置 companion object 内——`this` 指 Companion 致 `==` 跨 Companion/枚举类型不合规，移枚举体实例属性（壳层消费 `tabBarMaterial.usesBackdrop` 本就是实例语法，调用面零改动）；②FloatingTabDock 幻觉 import `calculateBottomPadding`（PaddingValues 成员无需 import）移除+漏 import `navigationBars` 补齐；③坞外距 `padding(horizontal+bottom)` 两重载参数不可混用，改四参 `start/end/bottom` 重载；④SettingsViewModelTest 补 `FakeAppearancePrefsRepository`（441 笔新增构造入参未跟上测试替身，内存态默认档）。
+- **验证（用户在场时段临时解禁本机构建，2026-10-03 用户拍板）**：gradlew `compileDebugKotlin`/`compileKotlin`（全模块）+ `testDebugUnitTest` + `:core:model:test` + `assembleDebug` 本地全绿；云端 CI 复验为最终门禁。红线 grep 核验：feature 层零 glass 颜色 import（仅 `TabDockDefaults` 让位常量=ADR-0033 决策 1 设计内消费）、无预览变体脚手架混入、Backdrop 依赖仅 core:ui 声明。
+- **涉及文档**：`docs/CHANGELOG.md`（本条）。
+
 ## feat(app): 悬浮玻璃坞底栏——液态/磨砂玻璃四材质+单颗滑动胶囊+主题拓充+夜间极光板（2026-10-03 第四百四十一笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理实现，主代理编排+独立评审+文档）
