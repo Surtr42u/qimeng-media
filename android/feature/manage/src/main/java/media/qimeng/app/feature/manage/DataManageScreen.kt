@@ -29,7 +29,8 @@ import media.qimeng.app.core.ui.theme.QimengDimens
  *  2026-09-16 用户反馈：末行追加「缩略图缓存」入口，进生成进度与缓存上限合并子页。
  *  2026-09-28 归档文件夹批：追加「上传收件箱与归档」入口行——自我页迁入（用户拍板
  *  「下载箱移到数据管理中，不需要在外面单独一个显示」）。2026-09-29 直传化收窄：
- *  收件箱目标随上传页导入入口退役，卡文案改「上传归档文件夹」单设定） */
+ *  收件箱目标随上传页导入入口退役，卡文案改「上传归档文件夹」单设定。
+ *  2026-10-04 词表同步批（ADR-0034）：追加「词表同步」入口行，进远端词表下发覆盖子页） */
 private const val HUB_TITLE = "数据管理"
 private const val HUB_ROW_UPLOAD = "上传文件"
 private const val HUB_ROW_UPLOAD_SUBTITLE = "选择本地图片和视频上传到媒体库"
@@ -43,6 +44,9 @@ private const val HUB_ROW_THUMB_CACHE = "缩略图缓存"
 private const val HUB_ROW_THUMB_CACHE_SUBTITLE = "生成进度与缓存上限"
 private const val HUB_ROW_INBOX = "上传归档文件夹"
 private const val HUB_ROW_INBOX_SUBTITLE = "上传后源文件的归档文件夹"
+// 词表同步（ADR-0034 2026-10-04）：远端词表单向下发覆盖本机内嵌库
+private const val HUB_ROW_VOCAB_SYNC = "词表同步"
+private const val HUB_ROW_VOCAB_SYNC_SUBTITLE = "以 NAS/电脑端词表单向覆盖本机"
 
 /** 16dp：hub 内容水平内边距（对齐上传子页 16dp 档；区别于我的页 20dp 档） */
 private val HubContentPadding = 16.dp
@@ -66,6 +70,8 @@ fun DataManageScreen(
     onOpenThumbCache: () -> Unit,
     // 2026-09-28 归档文件夹批：上传收件箱与归档子页入口（自我页迁入；路由复用 Routes.INBOX）
     onOpenInbox: () -> Unit,
+    // 词表同步子页（ADR-0034）：远程登录态下把该端词表单向下发覆盖本机内嵌库
+    onOpenVocabularySync: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxSize()) {
@@ -110,6 +116,12 @@ fun DataManageScreen(
                 label = HUB_ROW_INBOX,
                 subtitle = HUB_ROW_INBOX_SUBTITLE,
                 onClick = onOpenInbox,
+            )
+            // 词表同步（ADR-0034）：门禁（本机模式不可同步）在 repository，入口行恒可进
+            HubEntryRow(
+                label = HUB_ROW_VOCAB_SYNC,
+                subtitle = HUB_ROW_VOCAB_SYNC_SUBTITLE,
+                onClick = onOpenVocabularySync,
             )
         }
     }

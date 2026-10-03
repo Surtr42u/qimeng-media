@@ -10,6 +10,18 @@
 
 > **历史条目拆分说明（2026-10-01）**：为控制 AI 上下文体量，本文件只保留 **2026-09-22 及之后**的条目（第三百八十二笔起）；拆分线之前的全部条目已逐字迁入 `docs/history/CHANGELOG-ARCHIVE.md`（零改写，笔号与本文件连续可查）。引用早于拆分线的旧笔号请去历史档查阅。
 
+## feat(app): App 词表同步——远程登录态一键把 NAS/电脑端词表单向下发覆盖本机内嵌库（2026-10-04 第四百六十二笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理）
+
+- **背景**：ADR-0033 补记三记档的结构缺口转正实施——词表数据层（kv）各部署各自一份，内嵌端点受一次性密钥保护外部不可写，手机本地库拿不到电脑端词条；固化基线（第四百六十一笔）是一次性止血，跨端一致的常态正解即本笔「词表同步」（用户拍板「为什么不和电脑一致」，ADR-0034）。**服务端/openapi/SDK 零改动**：只消费既有 GET/PUT /sources/custom-groups 两端点与既有 SDK 方法。
+- **交互**（两段式）：数据管理 hub 新增「词表同步」入口行 → 子页进页自动预览（远端 GET → 拉起内嵌服务端 ensureStartedIfLocalMode+warmup → 本地 dev-login → 本地 GET → 对照：远端 N 组/本机 M 组/本机独有 K 组〔canonical 不在远端，trim+忽略大小写〕，独有>0 警示色提示同步后丢失）→ 确认按钮执行本地 PUT，body **恒显式携带 groups+stopWords**（停用词远端无追加层传空数组=清空，不用协议缺省的「保持现值」语义，保证本机=远端）；PUT 成功即完成（服务端自动后台全库重算），结果提示下发组数/停用词数。本机模式进入即提示「单机模式无权威词表源，请先登录 NAS/电脑端」，门禁在 repository。
+- **401 登出陷阱防线（本笔核心）**：全局 OkHttp 挂 AuthInterceptor，401 会 clearToken+广播登出把用户 NAS 会话踢回登录页——对 127.0.0.1:18430 的 dev-login/GET/PUT 全部走新 `@LocalDirectClient` 独立客户端（NetworkModule 全新 builder 零拦截器，刻意不用 newBuilder 派生）；本地 Bearer 经 SDK 实例级 accessTokenProvider 注入，与全局 ServerConfig token 两套会话互不接触。内嵌服务端按需拉起、操作收尾停回（恢复壳层「主键非本机预设=停服」不变量，换端守卫防误停）。
+- **落点**：core:network NetworkModule（@LocalDirectClient 客户端/DefaultApi/AuthApi 三装配，SdkAuthApi 密钥内存槽现取同款姿势）；core:data VocabularySyncRepository 接口+Impl（编排单点，业务错误四分类 NoAuthoritativeSource/RemoteFetchFailed/LocalServerUnavailable/LocalApplyFailed）+ DataModule @Binds；feature:manage VocabularySyncViewModel（UiState 防重复提交+错误横幅+结果提示三件套，BackupViewModel 范式）/VocabularySyncScreen/DataManageScreen 入口行；app QimengNavHost 路由接线。UI 零业务规则零直调 API（铁律 7）；feature:manage 对 core:data/core:network 依赖既有，零 build.gradle 改动。
+- **验证**：按用户拍板本笔零本地构建/测试命令，全部静态核对（SDK 方法签名/生成物 ApiClient accessTokenProvider 实例级语义/import/DI/路由/文档笔数），编译与行为验证走 GitHub 云端 CI。
+- **已知限制记档（ADR-0034）**：覆盖式下发本机独有词条会丢（预览明示+确认防线，拍板语义）；dev-login 在本机 auth_sessions 留会话行（随过期策略消亡，无实害）；本机通道只认内嵌预设地址（自定义端口 Termux 形态 A 不在语义内）。
+- **文档**：ADR-0034 新建 + INDEX 登记；GUIDE_API custom-groups 段补 App 消费一句；HANDOVER §4 Android 与文头最后更新同步。
+
 ## feat(server): 停用词层——内容备注词（触手/白丝类）不进角色胶囊（2026-10-03 第四百五十九笔）
 
 执行 AI：GLM-5.3（主代理；引擎/接线/测试由执行子代理完成）
