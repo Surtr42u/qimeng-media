@@ -146,10 +146,17 @@ func New(q *db.Queries, bus *events.Bus, logger *slog.Logger, dataDir string, pr
 		dataDir:          dataDir,
 		matcher:          sourcematcher.New(0),
 	}
-	// 自定义出处装载（DOMAIN_RULES §4）：构造期一次性读取 kv_settings；
-	// 无记录/失败用空集（内置表完整可用），见 enrich.go loadCustomSources。
+	// 自定义出处装载（DOMAIN_RULES §4 + ADR-0033 出处组）：构造期一次性读取
+	// kv_settings；无记录/失败用空集（内置表完整可用），见 enrich.go
+	// loadCustomSources/loadCustomGroups。
 	if names := loadCustomSources(context.Background(), q, logger); len(names) > 0 {
 		s.matcher.UpdateCustomSources(names)
+	}
+	if groups := loadCustomGroups(context.Background(), q, logger); len(groups) > 0 {
+		s.matcher.UpdateCustomGroups(groups)
+	}
+	if words := loadStopWords(context.Background(), q, logger); len(words) > 0 {
+		s.matcher.UpdateStopWords(words)
 	}
 	return s
 }

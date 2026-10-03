@@ -114,6 +114,14 @@ interface DataModule {
     @Singleton
     fun bindBackupRepository(impl: media.qimeng.app.core.data.repository.SdkBackupRepository): media.qimeng.app.core.data.repository.BackupRepository
 
+    // 词表同步（ADR-0034 2026-10-04）：数据管理 hub「词表同步」子页的数据面——远端词表
+    // 单向下发覆盖本机内嵌库（@LocalDirectClient 本机通道装配见 core:network NetworkModule）
+    @Binds
+    @Singleton
+    fun bindVocabularySyncRepository(
+        impl: media.qimeng.app.core.data.repository.VocabularySyncRepositoryImpl,
+    ): media.qimeng.app.core.data.repository.VocabularySyncRepository
+
     @Binds
     @Singleton
     fun bindStatsRepository(impl: media.qimeng.app.core.data.repository.SdkStatsRepository): media.qimeng.app.core.data.repository.StatsRepository

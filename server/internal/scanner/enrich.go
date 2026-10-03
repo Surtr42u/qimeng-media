@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 	"sync/atomic"
 
@@ -14,6 +15,7 @@ import (
 
 	"qimeng-media/server/internal/authoring"
 	"qimeng-media/server/internal/events"
+	"qimeng-media/server/internal/sourcematcher"
 	"qimeng-media/server/internal/store"
 	"qimeng-media/server/internal/store/db"
 )
@@ -21,6 +23,18 @@ import (
 // enrichRecomputeConcurrency 存量富化重算的并发度（RecomputeEnrichment）。
 // SQLite 单写者，全靠并发只会放大争用；4 路已覆盖本地库的写耗时。
 const enrichRecomputeConcurrency = 4
+
+// EnrichmentEngineVersion 是出处/角色匹配引擎的语义版本（DOMAIN_RULES §4
+// 「引擎版本自愈重算」）：kv 标记 authoring.SettingKeyEnrichmentEngineVersion
+// 落后于它时，启动自愈对全部常规库重算富化。
+//
+// 何时 +1：引擎的匹配语义发生变化、导致同一文件名会得出不同出处/角色结果时
+// 手动 +1（如兜底提取规则、停用词基线、别名归一规则的变更）。第 1 代 = 命名
+// 规约兜底提取（extractTokens）+ 停用词层（builtinStopWords）。纯增补别名/
+// 词条不改既有结果的算不升版。bump 时在本注释追加一行「N：改了什么」。
+// 2：内置基线固化用户首批审定词条（跨部署一致，ADR-0033 补记三）——各部署
+// 自愈重算后新词条生效。
+const EnrichmentEngineVersion = 2
 
 // enrich.go：扫描入库时的作者体系富化挂接（M3，DOMAIN_RULES §4/§6）。
 //
@@ -88,6 +102,48 @@ func loadCustomSources(ctx context.Context, q *db.Queries, logger *slog.Logger) 
 		return nil
 	}
 	return names
+}
+
+// loadCustomGroups 读取用户自定义出处组（JSON 数组，元素 = 引擎输入形态
+// sourcematcher.SourceGroup，ADR-0033）。任何失败（无记录/损坏 JSON）降级
+// 为空集——同 loadCustomSources：自定义层是增强能力，不允许它阻断扫描；
+// 损坏情况 warn 留痕便于排查。
+func loadCustomGroups(ctx context.Context, q *db.Queries, logger *slog.Logger) []sourcematcher.SourceGroup {
+	v, err := q.GetSetting(ctx, authoring.SettingKeyCustomSourceGroups)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		logger.Warn("scanner: 读取自定义出处组失败（按空集处理）", "err", err)
+		return nil
+	}
+	var groups []sourcematcher.SourceGroup
+	if err := json.Unmarshal([]byte(v), &groups); err != nil {
+		logger.Warn("scanner: 自定义出处组 JSON 损坏（按空集处理）", "err", err)
+		return nil
+	}
+	return groups
+}
+
+// loadStopWords 读取停用词追加层（JSON 字符串数组，ADR-0033 端点 stopWords
+// 字段；内置冻结基线在 sourcematcher.builtinStopWords，不入库）。任何失败
+// （无记录/损坏 JSON）降级为空集——同 loadCustomSources：追加层是增强能力，
+// 不允许它阻断扫描；损坏情况 warn 留痕便于排查。
+func loadStopWords(ctx context.Context, q *db.Queries, logger *slog.Logger) []string {
+	v, err := q.GetSetting(ctx, authoring.SettingKeyCustomStopWords)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		logger.Warn("scanner: 读取停用词追加层失败（按空集处理）", "err", err)
+		return nil
+	}
+	var words []string
+	if err := json.Unmarshal([]byte(v), &words); err != nil {
+		logger.Warn("scanner: 停用词追加层 JSON 损坏（按空集处理）", "err", err)
+		return nil
+	}
+	return words
 }
 
 // ingestNormalFile normal 库入库：SourceMatcher 富化 + 资产落库 + 角色覆盖。
@@ -285,6 +341,20 @@ func (s *Scanner) UpdateCustomSources(_ context.Context, names []string) {
 	s.matcher.UpdateCustomSources(names)
 }
 
+// UpdateCustomGroups 运行期整体替换用户自定义出处组（ADR-0033 词表维护
+// 端点调用；构造期装载见 New/loadCustomGroups）。落 matcher 即对后续全部
+// 匹配生效（含缓存清空），持久化由写入端点负责——此处保持无 IO。
+func (s *Scanner) UpdateCustomGroups(_ context.Context, groups []sourcematcher.SourceGroup) {
+	s.matcher.UpdateCustomGroups(groups)
+}
+
+// UpdateStopWords 运行期整体替换停用词追加层（词表端点 stopWords 字段调用；
+// 构造期装载见 New/loadStopWords）。落 matcher 即生效（含缓存清空），持久化
+// 由写入端点负责——此处保持无 IO。
+func (s *Scanner) UpdateStopWords(_ context.Context, words []string) {
+	s.matcher.UpdateStopWords(words)
+}
+
 // relinkOrphanCosAssets 扫描收尾自愈：重挂零关联 COS 资产的作者。
 //
 // 为什么必须兜底：入库（UpsertAsset）与作者关联（AddAssetAuthor /
@@ -364,6 +434,65 @@ func (s *Scanner) RecomputeEnrichment(ctx context.Context, libraryID string) err
 	if n := updated.Load(); n > 0 {
 		s.publish(events.TopicLibraryChanged, ScanResult{LibraryID: libraryID, Updated: int(n)})
 	}
+	return nil
+}
+
+// SelfHealEnrichmentIfNeeded 引擎版本自愈重算（DOMAIN_RULES §4「引擎版本自愈
+// 重算」）：kv 标记落后于 EnrichmentEngineVersion（含无标记的存量部署）时，
+// 后台顺次对全部常规库重算富化并落新标记；持平则只做一次 kv 读直接返回。
+// 幂等：与词表端点触发的 RecomputeEnrichment 同源同覆盖语义，重复触发无害。
+// 由 cmd 启动接线调用（goroutine 内），错误只 warn 不阻断启动。
+//
+// 为什么必须自愈：存量资产的 size+mtime 未变，全量扫描只跳过不重 ingest，
+// 引擎升级（如新增兜底提取/停用词层）后旧富化结果不会自然刷新；内嵌形态的
+// 词表端点受一次性密钥保护、外部不可调，PUT 触发重算的通道对它不成立——
+// 只有启动期自动传导才能覆盖内嵌/桌面壳/NAS 各形态。
+func (s *Scanner) SelfHealEnrichmentIfNeeded(ctx context.Context) error {
+	raw, err := s.q.GetSetting(ctx, authoring.SettingKeyEnrichmentEngineVersion)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		// 无标记 = 存量部署（老版本从未写过）：按 0 处理，走全量重算。
+		raw = "0"
+	case err != nil:
+		return fmt.Errorf("scanner: 读取引擎版本标记: %w", err)
+	}
+	cur, perr := strconv.Atoi(raw)
+	if perr != nil {
+		// 标记损坏按 0 处理：重算幂等，多算一次无害，少算才留脏数据。
+		s.logger.Warn("scanner: 引擎版本标记损坏（按 0 处理，触发全量重算）",
+			"raw", raw, "err", perr)
+		cur = 0
+	}
+	if cur >= EnrichmentEngineVersion {
+		return nil // 标记持平或超前（超前不该发生，宽容跳过）：零额外开销
+	}
+	s.logger.Info("scanner: 富化引擎版本落后，启动自愈重算",
+		"stored", cur, "engine", EnrichmentEngineVersion)
+
+	libs, err := s.q.ListLibraries(ctx)
+	if err != nil {
+		return fmt.Errorf("scanner: 列举待自愈库: %w", err)
+	}
+	// 逐库顺次重算（RecomputeEnrichment 内部自跳过 cos 库）：单库失败 warn
+	// 继续——自愈是尽力而为的补偿动作，一个坏库不该挡住其余库与标记推进
+	//（标记仍落：重算幂等，下版启动对失败库再来一遍）。
+	for _, lib := range libs {
+		if err := ctx.Err(); err != nil {
+			return ctx.Err()
+		}
+		if err := s.RecomputeEnrichment(ctx, lib.ID); err != nil {
+			s.logger.Warn("scanner: 自愈重算单库失败（跳过继续）",
+				"libraryId", lib.ID, "err", err)
+		}
+	}
+	if err := s.q.UpsertSetting(ctx, db.UpsertSettingParams{
+		Key:       authoring.SettingKeyEnrichmentEngineVersion,
+		Value:     strconv.Itoa(EnrichmentEngineVersion),
+		UpdatedAt: store.FormatTimestamp(s.now()),
+	}); err != nil {
+		return fmt.Errorf("scanner: 落引擎版本标记: %w", err)
+	}
+	s.logger.Info("scanner: 富化引擎自愈重算完成", "engine", EnrichmentEngineVersion)
 	return nil
 }
 

@@ -395,6 +395,42 @@ paths:
       responses:
         "204": { description: 已保存并触发存量重算 }
 
+  /api/v1/sources/custom-groups:
+    get:
+      summary: 读取用户自定义出处组（检索词表维护，ADR-0033）
+      description: |
+        返回当前生效的用户自定义出处组（含角色别名检索表）与自定义停用词。
+        无记录 = 空数组（内置 130 组检索表完整可用，这与匹配引擎的"无自
+        定义出处组"等价，不是缺少配置）；stopWords 只含用户追加层（内置
+        停用词基线不在返回内、恒生效）。
+        与 /sources/custom（裸名名单，DOMAIN_RULES §4）语义隔离：本端点维护
+        「出处组」——canonical 与内置组同名 = 并入该组（扩变体/扩角色），
+        新名 = 追加新组；存储键 kv_settings.custom_source_groups /
+        custom_stop_words（停用词，DOMAIN_RULES §4 兜底提取层）。
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CustomSourceGroups" } } } }
+    put:
+      summary: 整体替换用户自定义出处组（停用词可选）
+      description: |
+        整体替换语义（与匹配引擎 UpdateCustomGroups 对齐）：提交的 groups 就是
+        生效名单，服务端统一 trim + 去空 + 去重 + canonical 并入自身变体/别名后
+        持久化（存储形态 = 生效形态，GET 回读同此语义）；空数组 = 清空全部
+        自定义出处组。
+        stopWords 为可选字段（语义与 groups 不同，防"忘带即清空"）：**缺省
+        （null/不传）= 保持当前停用词不变；显式空数组 = 清空回内置基线**。
+        停用词只作用于命名规约兜底提取层（描述词如「触手」「白丝」不进
+        角色胶囊），别名表层不受影响（DOMAIN_RULES §4）。
+        成功后两步（同 /sources/custom）：① 运行中匹配引擎同步替换（后续匹配
+        立即生效）；② 后台对全部常规库资产重算出处/角色——已入库资产
+        size+mtime 未变时全量扫描只会跳过，词表变更必须显式重算传导。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CustomSourceGroups" }
+      responses:
+        "204": { description: 已保存并触发存量重算 }
+
   # ---------- 媒体文件服务（签名直链） ----------
   /media/orig/{assetId}:
     get:
@@ -1462,6 +1498,54 @@ components:
       required: [names]
       properties:
         names: { type: array, items: { type: string }, description: 自定义出处名列表（整体替换；空数组 = 清空） }
+
+    CustomSourceGroups:
+      type: object
+      description: |
+        用户自定义出处组（GET/PUT /api/v1/sources/custom-groups 载荷；持久化键
+        kv_settings.custom_source_groups，ADR-0033）。与 CustomSources（§4 裸名
+        名单）语义隔离：本载荷是带角色检索表的出处组，与内置 130 组按 canonical
+        合并（同名并入、新名追加）；stopWords 是兜底提取层的停用词追加层
+        （持久化键 kv_settings.custom_stop_words，DOMAIN_RULES §4）。
+      required: [groups]
+      properties:
+        groups:
+          type: array
+          maxItems: 256
+          items: { $ref: "#/components/schemas/CustomSourceGroup" }
+          description: 自定义出处组列表（整体替换；空数组 = 清空；重复 canonical 取首个）
+        stopWords:
+          type: array
+          maxItems: 256
+          items: { type: string, maxLength: 100 }
+          description: 停用词追加层（兜底提取跳过的描述词，如「触手」「白丝」；GET 返回当前用户层，PUT 缺省 = 保持不变、显式空数组 = 清空回内置基线；内置冻结基线恒生效不在此层）
+
+    CustomSourceGroup:
+      type: object
+      required: [canonical]
+      properties:
+        canonical: { type: string, maxLength: 100, description: 出处规范名（与内置组同名 = 并入该组） }
+        variants:
+          type: array
+          maxItems: 64
+          items: { type: string, maxLength: 100 }
+          description: 额外出处变体（可省；规范名自身恒参与前缀匹配与剥离）
+        characters:
+          type: array
+          maxItems: 128
+          items: { $ref: "#/components/schemas/CustomSourceCharacter" }
+          description: 角色检索表（可省）
+
+    CustomSourceCharacter:
+      type: object
+      required: [canonical]
+      properties:
+        canonical: { type: string, maxLength: 100, description: 角色规范名（并入内置组时与既有角色同名 = 扩别名） }
+        aliases:
+          type: array
+          maxItems: 32
+          items: { type: string, maxLength: 100 }
+          description: 角色别名（可省；规范名自身恒参与子串匹配）
 
     AssetDetail:
       allOf:

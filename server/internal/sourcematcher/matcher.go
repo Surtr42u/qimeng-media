@@ -6,6 +6,8 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"unicode"
+	"unicode/utf8"
 )
 
 // DefaultCacheSize 匹配结果缓存的默认条目上限。
@@ -42,6 +44,14 @@ type index struct {
 	variants []variantEntry          // 全部出处变体（builtin + 自定义），长度降序
 	strip    map[string][]string     // canonical → collapsed 变体（长度降序，剥离开头出处用）
 	aliases  map[string][]aliasEntry // canonical → 角色别名索引（长度降序）
+	// stripRaw 是 canonical → 小写原样变体（未折叠空格，长度降序）。兜底提取层
+	// 在原串上剥离开头出处时用（折叠域会抹掉词边界，无法分词），见
+	// extractCharacters。
+	stripRaw map[string][]string
+	// stopWords 是兜底提取层的停用词集合（折叠域，builtinStopWords ∪
+	// 用户追加层）：extractTokens 命中即跳过（不终止收集），别名表层
+	// 不受影响（DOMAIN_RULES §4，2026-10-03）。
+	stopWords map[string]struct{}
 }
 
 // matchSource 出处前缀匹配（DOMAIN_RULES §4 匹配流程）：
@@ -131,6 +141,171 @@ func overlapsAny(used []span, start, end int) bool {
 	return false
 }
 
+// ---- 命名规约兜底提取层（DOMAIN_RULES §4「命名规约兜底提取」，2026-10-03）----
+//
+// 收藏命名高度统一（`出处  角色名 序号.扩展名`）：别名表没收录的新/冷门角色
+// 由本层兜住，词表只需维护出处与改名映射。表命中非空时本层完全不参与（零
+// 回归）；表零命中才在原串（保留大小写与空格——折叠域无法分词）上提取。
+
+const (
+	// extractWordMaxRunes 兜底提取单词条的 rune 上限：真实角色名远短于此，
+	// 超长词是描述句混入，拒绝成为角色桶。
+	extractWordMaxRunes = 50
+	// wordEdgeTrim 词元边缘清理字符集：连接符与括号序号（"(1)" 剥成 "1" 后
+	// 按纯数字终止）。x/&/+ 的分隔语义在 splitSeparators/isSeparatorWord 处理，
+	// 不进此集合（避免误伤词内字符）。
+	wordEdgeTrim = "+_-.()（）【】[]"
+)
+
+// matchAllCharacters 别名表优先 + 兜底提取（MatchAll 专用）：表命中非空直接
+// 返回（本层不参与，既有结果零回归）；表零命中走命名规约提取。
+func (ix *index) matchAllCharacters(base, source string) []string {
+	if out := ix.matchCharacters(base, source); len(out) > 0 {
+		return out
+	}
+	return ix.extractCharacters(base, source)
+}
+
+// extractCharacters 从单段文件名剥离开头出处后按命名规约提取角色名（单段
+// 路径用；"+" 多段路径见 MatchAll 对 extractTokens 的直接调用）。
+func (ix *index) extractCharacters(base, source string) []string {
+	if ix.groups[source] == nil {
+		return nil
+	}
+	rest, ok := trimSourcePrefixFold(base, ix.stripRaw[source])
+	if !ok {
+		// 防御：折叠域命中的出处变体在原样域剥不掉（带空格写法无原样变体）。
+		// 词边界不可得则放弃提取，表路径不受影响。
+		return nil
+	}
+	return ix.extractTokens(rest, source)
+}
+
+// extractTokens 在已剥离开头出处的剩余串上按命名规约提取：空格分词、词内
+// +/& 再拆、裸 x 作分隔词丢弃；自左向右收集到首个纯数字/纯括号序号词终止
+// （序号之后是描述词）。普通词命中本出处别名表取 canonical（改名/归一），
+// 否则按原词入库；命中停用词的词是内容备注（触手/白丝等），跳过不终止
+// 收集（index.stopWords）；数字开头后跟 ASCII 字母的词（"2B" 形）仅当表
+// 认识才保留（防 "8K"/"1080p" 混入）。
+func (ix *index) extractTokens(rest, source string) []string {
+	var out []string
+	seen := make(map[string]bool)
+	add := func(tok string) {
+		if tok == "" || seen[tok] || utf8.RuneCountInString(tok) > extractWordMaxRunes {
+			return
+		}
+		seen[tok] = true
+		out = append(out, tok)
+	}
+	for _, field := range strings.Fields(rest) {
+		if isSeparatorWord(field) {
+			continue
+		}
+		terminated := false
+		for _, tok := range splitSeparators(field) {
+			tok = strings.Trim(tok, wordEdgeTrim)
+			if tok == "" || isSeparatorWord(tok) {
+				continue
+			}
+			if isIndexNumber(tok) { // 纯数字（含全角）/纯序号：之后是描述词
+				terminated = true
+				break
+			}
+			if _, bad := ix.stopWords[collapse(tok)]; bad {
+				continue // 停用词：内容备注不进胶囊（跳过不终止）
+			}
+			if canon, ok := ix.exactAlias(source, tok); ok {
+				add(canon) // 表认识：改名/归一（含 "2B" 形保护词）
+				continue
+			}
+			if startsProtectedName(tok) { // "8K"/"1080p" 形且表不认识：丢弃不终止
+				continue
+			}
+			add(tok)
+		}
+		if terminated {
+			break
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// trimSourcePrefixFold 在原串上按小写变体（长度降序）剥离开头出处，保留
+// 剩余部分的原样大小写与空格。逐 rune 大小写折叠比较（unicode.ToLower），
+// 不整串 ToLower 后按字节切——个别 rune 折叠会变字节长，回切原串会错位。
+func trimSourcePrefixFold(s string, variants []string) (string, bool) {
+	for _, v := range variants {
+		if v == "" {
+			continue
+		}
+		consumed := 0
+		match := true
+		for _, want := range v {
+			r, size := utf8.DecodeRuneInString(s[consumed:])
+			if size == 0 || unicode.ToLower(r) != want {
+				match = false
+				break
+			}
+			consumed += size
+		}
+		if match {
+			return s[consumed:], true
+		}
+	}
+	return "", false
+}
+
+// splitSeparators 按词内角色分隔符 +/& 拆词（x 不拆——"Rex"/"Max" 类词内
+// 字母不能误伤；独立成词的 x 由 isSeparatorWord 处理）。
+func splitSeparators(tok string) []string {
+	return strings.FieldsFunc(tok, func(r rune) bool {
+		return r == '+' || r == '&' || r == '＋' || r == '＆'
+	})
+}
+
+// isSeparatorWord 报告词是否为纯分隔词（裸 x/X：`Melody x Lawa` 的连接写法）。
+func isSeparatorWord(tok string) bool {
+	return tok == "x" || tok == "X"
+}
+
+// isIndexNumber 报告词是否纯数字（含全角）——文件名里的集数/序号。
+func isIndexNumber(tok string) bool {
+	hasDigit := false
+	for _, r := range tok {
+		if !unicode.IsDigit(r) {
+			return false
+		}
+		hasDigit = true
+	}
+	return hasDigit
+}
+
+// startsProtectedName 报告词是否以数字开头且后跟 ASCII 字母（"2B"/"9S"/"8K"
+// 形）。表认识时按别名归一保留，不认识时丢弃（画质词混入防护）。
+func startsProtectedName(tok string) bool {
+	i := 0
+	for i < len(tok) && tok[i] >= '0' && tok[i] <= '9' {
+		i++
+	}
+	return i > 0 && i < len(tok) && isASCIILetter(tok[i])
+}
+
+// exactAlias 在本出处别名索引里做精确（折叠域）查找：命中返回 canonical。
+// 兜底提取的改名/归一与 "2B" 形保护共用本判据。
+func (ix *index) exactAlias(source, tok string) (string, bool) {
+	c := collapse(tok)
+	if c == "" {
+		return "", false
+	}
+	for _, a := range ix.aliases[source] {
+		if a.alias == c {
+			return a.canonical, true
+		}
+	}
+	return "", false
+}
+
 // stripLeadingDigits 剥离开头连续数字段，但数字段后紧跟 ASCII 字母时整段保护。
 // 等价 DOMAIN_RULES §4 的 ^\d+(?![a-zA-Z])（RE2 不支持负向先行断言，手工实现）。
 // 与 PCRE 回溯语义仅在 "12ab" 类场景有差异（PCRE 会剥 "1" 留 "2ab"）；真实
@@ -174,6 +349,15 @@ type matchResult struct {
 type Matcher struct {
 	snap atomic.Pointer[index]
 
+	// updateMu 串行化「替换自定义层 → 重建索引 → 清缓存」：两个词表端点
+	// （sources/custom 与 sources/custom-groups，ADR-0033）并发 PUT 时防止
+	// 层字段读改写交错——snap.Store 本身原子，但两层字段若不互斥，后写者
+	// 会以另一层的中间态重建索引。
+	updateMu        sync.Mutex
+	customNames     []string      // 旧版裸名层（§4，UpdateCustomSources）
+	customGroups    []SourceGroup // 出处组层（ADR-0033，UpdateCustomGroups）
+	customStopWords []string      // 停用词追加层（ADR-0033 stopWords 字段，UpdateStopWords）
+
 	cacheMu    sync.Mutex
 	cache      map[string]matchResult
 	cacheLimit int
@@ -186,13 +370,13 @@ func New(cacheSize int) *Matcher {
 		cacheSize = DefaultCacheSize
 	}
 	m := &Matcher{cache: make(map[string]matchResult), cacheLimit: cacheSize}
-	m.rebuild(nil)
+	m.rebuild()
 	return m
 }
 
 // UpdateCustomSources 运行时更新自定义出处（用户手动添加的分区名自动加入识别，
 // DOMAIN_RULES §4）：canonical = 自定义名本身，参与出处前缀匹配（无角色表）。
-// names 允许重复与乱序，内部去重；nil/空切片清空全部自定义出处。
+// names 允许重复与乱序，内部去重；nil/空切片清空裸名层（不影响出处组层）。
 // 更新后清空匹配缓存保证一致性（与旧项目 updateCustomSources 语义一致）。
 func (m *Matcher) UpdateCustomSources(names []string) {
 	seen := make(map[string]bool, len(names))
@@ -204,19 +388,76 @@ func (m *Matcher) UpdateCustomSources(names []string) {
 		}
 	}
 	sort.Strings(custom)
-	m.rebuild(custom)
+	m.updateMu.Lock()
+	defer m.updateMu.Unlock()
+	m.customNames = custom
+	m.rebuild()
+	m.clearCache()
+}
+
+// UpdateCustomGroups 运行期替换自定义出处组（ADR-0033 词表端点在持久化后
+// 同步调用）：groups 即生效名单（传入后所有权归 Matcher，调用方不得再修改），
+// 与内置表和裸名层按 canonical 合并——同名 = 扩变体/扩角色，新名 = 追加组；
+// nil/空 = 清空出处组层（不影响裸名层）。更新后清空匹配缓存保证一致性。
+func (m *Matcher) UpdateCustomGroups(groups []SourceGroup) {
+	m.updateMu.Lock()
+	defer m.updateMu.Unlock()
+	m.customGroups = groups
+	m.rebuild()
+	m.clearCache()
+}
+
+// UpdateStopWords 运行期替换停用词追加层（ADR-0033 词表端点 stopWords 字段
+// 调用；构造期装载见 scanner.New/loadStopWords）。与内置基线取并集，只作用
+// 于兜底提取层（别名表层不受影响）；nil/空 = 清空追加层（内置基线恒生效）。
+// 更新后清空匹配缓存保证一致性。
+func (m *Matcher) UpdateStopWords(words []string) {
+	seen := make(map[string]bool, len(words))
+	custom := make([]string, 0, len(words))
+	for _, w := range words {
+		if w != "" && !seen[w] {
+			seen[w] = true
+			custom = append(custom, w)
+		}
+	}
+	sort.Strings(custom)
+	m.updateMu.Lock()
+	defer m.updateMu.Unlock()
+	m.customStopWords = custom
+	m.rebuild()
+	m.clearCache()
+}
+
+// clearCache 整体重置匹配缓存（索引已换，旧键结果作废）。
+func (m *Matcher) clearCache() {
 	m.cacheMu.Lock()
 	m.cache = make(map[string]matchResult)
 	m.cacheMu.Unlock()
 }
 
-// rebuild 构建不可变索引快照（内置表 + 自定义出处）并原子替换。
-func (m *Matcher) rebuild(customNames []string) {
+// rebuild 构建不可变索引快照（内置表 + 两层自定义经 MergeGroups 合并）并
+// 原子替换。调用方须持 updateMu（New 构造期无并发的例外）。
+func (m *Matcher) rebuild() {
+	merged := MergeGroups(builtinGroups, m.customNames, m.customGroups)
 	ix := &index{
-		groups:   make(map[string]*SourceGroup, len(builtinGroups)+len(customNames)),
-		variants: make([]variantEntry, 0, len(builtinGroups)*4),
-		strip:    make(map[string][]string, len(builtinGroups)+len(customNames)),
-		aliases:  make(map[string][]aliasEntry, len(builtinGroups)+len(customNames)),
+		groups:   make(map[string]*SourceGroup, len(merged)),
+		variants: make([]variantEntry, 0, len(merged)*4),
+		strip:    make(map[string][]string, len(merged)),
+		aliases:  make(map[string][]aliasEntry, len(merged)),
+		stripRaw: make(map[string][]string, len(merged)),
+	}
+	// 停用词集合 = 内置冻结基线 ∪ 用户追加层，逐词折叠后入集合（空串跳过；
+	// 两层各自由 Update*/load 侧保证去重，这里再折叠去重一次防空串与重叠）。
+	ix.stopWords = make(map[string]struct{}, len(builtinStopWords)+len(m.customStopWords))
+	for _, w := range builtinStopWords {
+		if c := collapse(w); c != "" {
+			ix.stopWords[c] = struct{}{}
+		}
+	}
+	for _, w := range m.customStopWords {
+		if c := collapse(w); c != "" {
+			ix.stopWords[c] = struct{}{}
+		}
 	}
 	add := func(g *SourceGroup) {
 		ix.groups[g.Canonical] = g
@@ -248,6 +489,25 @@ func (m *Matcher) rebuild(customNames []string) {
 			return stripVars[i] < stripVars[j]
 		})
 		ix.strip[g.Canonical] = stripVars
+		// 原样剥离表（小写、保留空格，长度降序）：兜底提取层在原串上剥
+		// 离开头出处用（见 extractCharacters）。去重键 = 小写原样串。
+		rawSeen := make(map[string]bool, len(all))
+		rawVars := make([]string, 0, len(all))
+		for _, v := range all {
+			low := strings.ToLower(v)
+			if low == "" || rawSeen[low] {
+				continue
+			}
+			rawSeen[low] = true
+			rawVars = append(rawVars, low)
+		}
+		sort.Slice(rawVars, func(i, j int) bool {
+			if len(rawVars[i]) != len(rawVars[j]) {
+				return len(rawVars[i]) > len(rawVars[j])
+			}
+			return rawVars[i] < rawVars[j]
+		})
+		ix.stripRaw[g.Canonical] = rawVars
 		// 角色别名索引：长度降序（同长按别名与 canonical 字典序，保证确定性）
 		var as []aliasEntry
 		for _, ce := range g.Characters {
@@ -270,11 +530,8 @@ func (m *Matcher) rebuild(customNames []string) {
 		})
 		ix.aliases[g.Canonical] = as
 	}
-	for i := range builtinGroups {
-		add(&builtinGroups[i])
-	}
-	for _, name := range customNames {
-		add(&SourceGroup{Canonical: name, Variants: []string{name}})
+	for i := range merged {
+		add(&merged[i])
 	}
 	// 变体总表：collapsed 长度降序（最长优先）→ canonical → raw 字典序（跨组
 	// 同变体时命中顺序确定）
@@ -315,6 +572,9 @@ func (m *Matcher) MatchCharacter(fileName string, source string) string {
 // "+" 拼接（"恶魔战士+铁拳8 莫妮卡" → "恶魔战士+铁拳"）；角色 = 对每个命中
 // 出处用整名匹配后合并去重、按 canonical 字典序排序（跨出处同名 canonical
 // 视为同一药丸显示）。
+//
+// 角色匹配 = 别名表优先 + 命名规约兜底提取（matchAllCharacters）：表零命中
+// 时按 `出处  角色名 序号` 规约从原串提取（DOMAIN_RULES §4 兜底层，2026-10-03）。
 func (m *Matcher) MatchAll(fileName string) (string, []string) {
 	if r, ok := m.cacheGet(fileName); ok {
 		return r.source, r.chars
@@ -333,17 +593,45 @@ func (m *Matcher) MatchAll(fileName string) (string, []string) {
 		}
 		seenChar := make(map[string]bool)
 		for _, s := range sources {
-			for _, c := range ix.matchCharacters(base, s) {
-				if !seenChar[c] {
-					seenChar[c] = true
-					chars = append(chars, c)
+			// 表层用整名匹配（跨段子串命中是既有语义）；兜底层按分段提取——
+			// 只吃自己命中与无主的分段：别的出处段整名提取会把出处名当角色
+			// （TestMatchAllMultiSource 锁定：`恶魔战士+铁拳8 莫妮卡` 不得
+			// 产出「铁拳8」角色），而无主段（`守望先锋  AA+BB 1` 的 BB）
+			// 是同链上无出处前缀的角色名，归入本出处。
+			if cs := ix.matchCharacters(base, s); len(cs) > 0 {
+				for _, c := range cs {
+					if !seenChar[c] {
+						seenChar[c] = true
+						chars = append(chars, c)
+					}
+				}
+				continue
+			}
+			for _, seg := range strings.Split(base, "+") {
+				owner := ix.matchSource(seg)
+				if owner != "" && owner != s {
+					continue
+				}
+				rest := seg
+				if owner == s {
+					stripped, ok := trimSourcePrefixFold(seg, ix.stripRaw[s])
+					if !ok {
+						continue // 折叠域才命中的变体：词边界不可得，跳过该段
+					}
+					rest = stripped
+				}
+				for _, c := range ix.extractTokens(rest, s) {
+					if !seenChar[c] {
+						seenChar[c] = true
+						chars = append(chars, c)
+					}
 				}
 			}
 		}
 		sort.Strings(chars)
 	} else if s := ix.matchSource(base); s != "" {
 		sources = []string{s}
-		chars = ix.matchCharacters(base, s)
+		chars = ix.matchAllCharacters(base, s)
 	}
 	source := strings.Join(sources, "+")
 	m.cacheSet(fileName, matchResult{source: source, chars: chars})

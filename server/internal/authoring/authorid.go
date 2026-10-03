@@ -15,6 +15,20 @@ const (
 	// Matcher 时装载）；写入方：出处管理端点（后续任务接线）。
 	SettingKeyCustomSources = "custom_sources"
 
+	// SettingKeyCustomSourceGroups 存用户自定义出处组 JSON 数组（元素
+	// sourcematcher.SourceGroup 形态：canonical+variants+characters，ADR-0033
+	// 检索词表维护）。与 SettingKeyCustomSources（§4 裸名名单）语义隔离：
+	// 本键是带角色的出处组，与内置 130 组按 canonical 合并（同名并入扩
+	// 变体/角色，新名追加）。读取方：scanner（构造 Matcher 时装载）；
+	// 写入方：httpapi 词表维护端点（存储形态 = 匹配引擎输入形态）。
+	SettingKeyCustomSourceGroups = "custom_source_groups"
+
+	// SettingKeyCustomStopWords 存停用词追加层 JSON 字符串数组（DOMAIN_RULES
+	// §4 兜底提取层跳过的描述词，ADR-0033 端点 stopWords 字段；内置冻结基线
+	// 写死 sourcematcher.builtinStopWords 不入库）。读取方：scanner（构造
+	// Matcher 时装载）；写入方：httpapi 词表维护端点（PUT 缺省不写此键）。
+	SettingKeyCustomStopWords = "custom_stop_words"
+
 	// SettingKeyImportedTxtSources 存全部已导入 TXT 片段 JSON 数组
 	//（元素 {filename, content}，统一重建素材，DOMAIN_RULES §6「TXT 导入
 	// 以全部已导入 TXT 统一重建为语义」）。读写方：httpapi TXT 导入端点。
@@ -43,6 +57,13 @@ const (
 	// 获取渠道平台名，仅记录永不参与匹配；来源建议的唯一数据源，ADR-0024）。
 	// 与 §4 资产出处分区（custom_sources）互不相干。读写方 authorattach。
 	SettingKeyAuthorSourceVocabulary = "author_source_vocabulary"
+
+	// SettingKeyEnrichmentEngineVersion 存富化引擎的 kv 版本标记（十进制
+	// 整数字符串；DOMAIN_RULES §4「引擎版本自愈重算」）：服务端启动时与
+	// scanner.EnrichmentEngineVersion 比对，落后（含无标记的存量部署）则
+	// 后台重算全部常规库富化后落新值。读取方：scanner（SelfHealEnrichment
+	// IfNeeded）；写入方同处（重算完成后 Upsert）。
+	SettingKeyEnrichmentEngineVersion = "enrichment_engine_version"
 )
 
 // AutoFragmentFilename 服务端无任何片段时上传挂靠自动创建的片段名（此后它

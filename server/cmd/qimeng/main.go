@@ -218,6 +218,14 @@ func main() {
 	// 缓存，外部原地换文件后海报帧按新内容重建（生产装配单点，漏接线=
 	// 缩略图陈旧不自愈，见 scanner.invalidateThumbs）。
 	scan.SetThumbsInvalidator(thumbs.DeleteAssetThumbs)
+	// 富化引擎版本自愈重算（DOMAIN_RULES §4）：引擎升级后存量资产的富化结果
+	// 不会随扫描自然刷新（size+mtime 未变即跳过重 ingest），kv 版本标记落后
+	// 时在后台对全部常规库重算一次。goroutine 起它是因为大库重算可能数十秒，
+	// 不能阻塞监听启动；内嵌/桌面壳/NAS 各形态统一受益。方法内部失败只 warn
+	// 不返回致命错，返回值在此显式弃置（错误已在方法内留痕）。
+	go func() {
+		_ = scan.SelfHealEnrichmentIfNeeded(context.Background())
+	}()
 	apiSrv.SetScanner(newScannerAdapter(scan, queries, apiSrv, logger))
 	// 自动预生成缩略图（2026-09-15 批）：开机回填历史积压 + 周期兜底（daemon）
 	apiSrv.StartThumbnailWarmup()

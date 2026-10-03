@@ -26,6 +26,7 @@ import (
 	"qimeng-media/server/internal/filing"
 	"qimeng-media/server/internal/httpapi/gen"
 	"qimeng-media/server/internal/scanner"
+	"qimeng-media/server/internal/sourcematcher"
 	"qimeng-media/server/internal/store"
 	"qimeng-media/server/internal/store/db"
 	"qimeng-media/server/internal/thumbnail"
@@ -273,6 +274,16 @@ func (a realScannerAdapter) EnrichAsset(ctx context.Context, libraryID, assetID 
 
 func (a realScannerAdapter) UpdateCustomSources(ctx context.Context, names []string) error {
 	a.sc.UpdateCustomSources(ctx, names)
+	return nil
+}
+
+func (a realScannerAdapter) UpdateCustomGroups(ctx context.Context, groups []sourcematcher.SourceGroup) error {
+	a.sc.UpdateCustomGroups(ctx, groups)
+	return nil
+}
+
+func (a realScannerAdapter) UpdateStopWords(ctx context.Context, words []string) error {
+	a.sc.UpdateStopWords(ctx, words)
 	return nil
 }
 

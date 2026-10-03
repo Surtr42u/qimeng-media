@@ -2,7 +2,7 @@
 // 生成方式：一次性 Python 脚本解析旧仓库 Kotlin 数据表机械转换（脚本用完即删，未入库），
 // 字段与 Kotlin 一一对应（canonical/variants/characters[].canonical/aliases），中文原文保留。
 
-// builtinGroups 是内置出处/角色检索表，共 130 个 SourceGroup（游戏/动漫/影视，仅收录
+// builtinGroups 是内置出处/角色检索表，共 133 个 SourceGroup（游戏/动漫/影视，仅收录
 // 女性角色——本项目核心场景），源自旧项目（绮梦影库 App）：
 //
 //	app/src/main/java/com/qimeng/media/ui/album/SourceGroupsData.kt
@@ -12,6 +12,10 @@
 // 规模勘误：DOMAIN_RULES §4 / 旧 GUIDE_ALGORITHM.md 记"131 个 SourceGroup"，
 // 实测源文件数据组为 130（131 次出现含 1 行 data class SourceGroup 定义），
 // 本表以源数据保真为准（2026-08-30 转换时核实）。
+//
+// 2026-10-04 固化用户首批审定词条（守望先锋·D.Mon／铁拳·风间明日香+风间准／
+// 最终幻想·阿拉尼雅／新组：怪物猎人·杰玛、战锤40k·战斗修女、初音未来）——
+// 跨部署一致性的一次性并入，此后增补仍走词层（ADR-0033 补记三）。
 //
 // BUILTIN_GROUPS 更新规范（译自旧 Kotlin 文件头部注释，后续增补逐字遵守四原则：
 // 查重优先 / 规范命名 / 别名完整 / 长度降序）：
@@ -24,7 +28,7 @@
 //  7. 同一 SourceGroup 内禁止重复 CharEntry，发现重复必须合并 aliases
 //
 // 规模说明：本文件超出「Go 单文件 ≤600 行」警戒线。豁免理由（协议生成接口签名同级）：
-// 纯数据表完整性优先——130 组拆散成多个文件会破坏「查重优先」的增补维护性
+// 纯数据表完整性优先——133 组拆散成多个文件会破坏「查重优先」的增补维护性
 // （增补者必须能一眼看到全部既有 canonical/变体才能查重），拆散反而制造重复与漂移风险。
 package sourcematcher
 
@@ -63,6 +67,7 @@ var builtinGroups = []SourceGroup{
 		{Canonical: "探奇", Aliases: []string{"探奇", "Venture"}},
 		{Canonical: "温斯顿", Aliases: []string{"温斯顿", "Winston"}},
 		{Canonical: "安燃", Aliases: []string{"安燃", "安然", "Anran"}},
+		{Canonical: "D.Mon", Aliases: []string{"D.Mon", "Dmon"}}, // 2026-10-04 固化（ADR-0033 补记三）
 	}},
 	{Canonical: "英雄联盟", Variants: []string{"英雄联盟", "League of Legends", "LOL", "撸啊撸"}, Characters: []CharEntry{
 		{Canonical: "阿狸", Aliases: []string{"阿狸", "Ahri", "九尾妖狐", "狐狸"}},
@@ -270,6 +275,7 @@ var builtinGroups = []SourceGroup{
 		{Canonical: "克劳德", Aliases: []string{"克劳德", "Cloud"}},
 		{Canonical: "萨菲罗斯", Aliases: []string{"萨菲罗斯", "Sephiroth"}},
 		{Canonical: "甘蒂亚娜", Aliases: []string{"甘蒂亚娜", "吉恩提亚娜", "Gentiana"}},
+		{Canonical: "阿拉尼雅", Aliases: []string{"阿拉尼雅", "Aranea", "Aranea Highwind"}}, // 2026-10-04 固化（ADR-0033 补记三）
 	}},
 	{Canonical: "艾尔登法环", Variants: []string{"艾尔登法环", "Elden Ring", "老头环"}, Characters: []CharEntry{
 		{Canonical: "玛丽卡", Aliases: []string{"玛丽卡", "Marika", "永恒女王"}},
@@ -337,7 +343,7 @@ var builtinGroups = []SourceGroup{
 	}},
 	{Canonical: "铁拳", Variants: []string{"铁拳8", "铁拳7", "铁拳6", "铁拳5", "铁拳", "Tekken 8", "Tekken 7", "Tekken 6", "Tekken"}, Characters: []CharEntry{
 		{Canonical: "莉莉", Aliases: []string{"莉莉", "Lili", "艾米莉德罗什福尔"}},
-		{Canonical: "风间飞鸟", Aliases: []string{"风间飞鸟", "飞鸟", "Xiaoyu", "凌晓雨"}},
+		{Canonical: "风间飞鸟", Aliases: []string{"风间飞鸟", "飞鸟", "Xiaoyu", "凌晓雨", "风间明日香"}}, // 2026-10-04 追加别名·风间明日香（同一角色另一中文译名，ADR-0033 补记三）
 		{Canonical: "妮娜", Aliases: []string{"妮娜", "Nina", "妮娜威廉姆斯"}},
 		{Canonical: "安娜", Aliases: []string{"安娜", "Anna", "安娜威廉姆斯"}},
 		{Canonical: "克里斯蒂", Aliases: []string{"克里斯蒂", "Christie"}},
@@ -351,6 +357,7 @@ var builtinGroups = []SourceGroup{
 		{Canonical: "莫妮卡", Aliases: []string{"莫妮卡", "Monica"}},
 		{Canonical: "州光", Aliases: []string{"州光", "Kunimitsu"}},
 		{Canonical: "阿苏塞娜", Aliases: []string{"阿苏塞娜", "Azucena", "咖啡女王"}},
+		{Canonical: "风间准", Aliases: []string{"风间准", "Jun Kazama"}}, // 2026-10-04 固化（ADR-0033 补记三）
 	}},
 	{Canonical: "恶魔战士", Variants: []string{"恶魔战士", "Darkstalkers", "Vampire Savior"}, Characters: []CharEntry{
 		{Canonical: "莫莉卡", Aliases: []string{"莫莉卡", "Morrigan", "梦魔"}},
@@ -1570,7 +1577,7 @@ var builtinGroups = []SourceGroup{
 		{Canonical: "拉奥芬", Aliases: []string{"拉奥芬", "Lawine"}},
 		{Canonical: "克蕾芙", Aliases: []string{"克蕾芙", "Kraft"}},
 	}},
-	{Canonical: "第一后裔", Variants: []string{"第一后裔", "The First Descendant", "第一后裔 邦尼"}, Characters: []CharEntry{
+	{Canonical: "第一后裔", Variants: []string{"第一后裔", "The First Descendant"}, Characters: []CharEntry{
 		{Canonical: "邦妮", Aliases: []string{"邦妮", "Bunny", "邦尼"}},
 		{Canonical: "维艾莎", Aliases: []string{"维艾莎", "Viessa"}},
 		{Canonical: "雷普西", Aliases: []string{"雷普西", "Lepic"}},
@@ -1675,5 +1682,16 @@ var builtinGroups = []SourceGroup{
 	}},
 	{Canonical: "原创角色", Variants: []string{"原创角色", "OC", "Original Character"}, Characters: []CharEntry{
 		{Canonical: "Primrose", Aliases: []string{"Primrose", "普丽姆罗丝"}},
+	}},
+	// 以下三组为 2026-10-04 固化的用户首批审定新组（ADR-0033 补记三），
+	// 按增补规范追加到末尾（查重已做：canonical/变体与既有组无重叠）。
+	{Canonical: "怪物猎人", Variants: []string{"怪物猎人", "Monster Hunter", "MHWilds", "MHW"}, Characters: []CharEntry{
+		{Canonical: "杰玛", Aliases: []string{"杰玛", "Gemma"}},
+	}},
+	{Canonical: "战锤40k", Variants: []string{"战锤40k", "战锤40K", "战锤", "Warhammer 40K", "Warhammer"}, Characters: []CharEntry{
+		{Canonical: "战斗修女", Aliases: []string{"战斗修女", "Sisters of Battle", "Battle Sisters"}},
+	}},
+	{Canonical: "初音未来", Variants: []string{"初音未来", "Hatsune Miku", "Miku"}, Characters: []CharEntry{
+		{Canonical: "初音未来", Aliases: []string{"初音未来", "Miku", "miku"}},
 	}},
 }

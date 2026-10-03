@@ -10,6 +10,76 @@
 
 > **历史条目拆分说明（2026-10-01）**：为控制 AI 上下文体量，本文件只保留 **2026-09-22 及之后**的条目（第三百八十二笔起）；拆分线之前的全部条目已逐字迁入 `docs/history/CHANGELOG-ARCHIVE.md`（零改写，笔号与本文件连续可查）。引用早于拆分线的旧笔号请去历史档查阅。
 
+## feat(app): App 词表同步——远程登录态一键把 NAS/电脑端词表单向下发覆盖本机内嵌库（2026-10-04 第四百六十二笔）
+
+执行 AI：GLM-5.3-Flash（执行子代理）
+
+- **背景**：ADR-0033 补记三记档的结构缺口转正实施——词表数据层（kv）各部署各自一份，内嵌端点受一次性密钥保护外部不可写，手机本地库拿不到电脑端词条；固化基线（第四百六十一笔）是一次性止血，跨端一致的常态正解即本笔「词表同步」（用户拍板「为什么不和电脑一致」，ADR-0034）。**服务端/openapi/SDK 零改动**：只消费既有 GET/PUT /sources/custom-groups 两端点与既有 SDK 方法。
+- **交互**（两段式）：数据管理 hub 新增「词表同步」入口行 → 子页进页自动预览（远端 GET → 拉起内嵌服务端 ensureStartedIfLocalMode+warmup → 本地 dev-login → 本地 GET → 对照：远端 N 组/本机 M 组/本机独有 K 组〔canonical 不在远端，trim+忽略大小写〕，独有>0 警示色提示同步后丢失）→ 确认按钮执行本地 PUT，body **恒显式携带 groups+stopWords**（停用词远端无追加层传空数组=清空，不用协议缺省的「保持现值」语义，保证本机=远端）；PUT 成功即完成（服务端自动后台全库重算），结果提示下发组数/停用词数。本机模式进入即提示「单机模式无权威词表源，请先登录 NAS/电脑端」，门禁在 repository。
+- **401 登出陷阱防线（本笔核心）**：全局 OkHttp 挂 AuthInterceptor，401 会 clearToken+广播登出把用户 NAS 会话踢回登录页——对 127.0.0.1:18430 的 dev-login/GET/PUT 全部走新 `@LocalDirectClient` 独立客户端（NetworkModule 全新 builder 零拦截器，刻意不用 newBuilder 派生）；本地 Bearer 经 SDK 实例级 accessTokenProvider 注入，与全局 ServerConfig token 两套会话互不接触。内嵌服务端按需拉起、操作收尾停回（恢复壳层「主键非本机预设=停服」不变量，换端守卫防误停）。
+- **落点**：core:network NetworkModule（@LocalDirectClient 客户端/DefaultApi/AuthApi 三装配，SdkAuthApi 密钥内存槽现取同款姿势）；core:data VocabularySyncRepository 接口+Impl（编排单点，业务错误四分类 NoAuthoritativeSource/RemoteFetchFailed/LocalServerUnavailable/LocalApplyFailed）+ DataModule @Binds；feature:manage VocabularySyncViewModel（UiState 防重复提交+错误横幅+结果提示三件套，BackupViewModel 范式）/VocabularySyncScreen/DataManageScreen 入口行；app QimengNavHost 路由接线。UI 零业务规则零直调 API（铁律 7）；feature:manage 对 core:data/core:network 依赖既有，零 build.gradle 改动。
+- **验证**：按用户拍板本笔零本地构建/测试命令，全部静态核对（SDK 方法签名/生成物 ApiClient accessTokenProvider 实例级语义/import/DI/路由/文档笔数），编译与行为验证走 GitHub 云端 CI。
+- **已知限制记档（ADR-0034）**：覆盖式下发本机独有词条会丢（预览明示+确认防线，拍板语义）；dev-login 在本机 auth_sessions 留会话行（随过期策略消亡，无实害）；本机通道只认内嵌预设地址（自定义端口 Termux 形态 A 不在语义内）。
+- **文档**：ADR-0034 新建 + INDEX 登记；GUIDE_API custom-groups 段补 App 消费一句；HANDOVER §4 Android 与文头最后更新同步。
+
+## feat(server): 停用词层——内容备注词（触手/白丝类）不进角色胶囊（2026-10-03 第四百五十九笔）
+
+执行 AI：GLM-5.3（主代理；引擎/接线/测试由执行子代理完成）
+
+- **背景**：用户拍板备注口径（二次修正）：序号之后无论加什么都=纯备注（`安燃 2 婚纱` 的婚纱只留文件名显示）；角色位上的内容描述词（「原创角色 触手」「无限暖暖 白丝」）同备注对待——不是角色名，不进胶囊。此类词与真角色名同形，位置规则不可区分，需词表。用户同时评估并否决了「物理改名统一文件名」方案（两个特例本来就没有角色名可改，其余文件引擎已正确，改名纯风险零收益）与「单独停用词端点」方案（复用现有端点，见 ADR-0033 补记二）。
+- **协议**：CustomSourceGroups 新增可选 `stopWords` 字段（maxItems 256/单串 100，make sdk 三端再生成 + sdk.lock）；语义与 groups 不同——**PUT 缺省=保持现值、显式空数组=清空回内置基线**（防 AI 忘带字段误清空）；GET 恒返回用户层（空数组=无）。存储 kv_settings 新键 `custom_stop_words`。
+- **引擎**（sourcematcher 新文件 stop_words.go + matcher.go）：停用词集合 = 内置冻结基线（触手/白丝/婚纱/多角色/多角色酒吧）∪ 用户追加层（UpdateStopWords，updateMu 串行化、重建索引+清缓存，风格对齐两层既有自定义）；**只作用于兜底提取层**（extractTokens 命中即跳过、不终止收集），别名表层完全不受影响。scanner 构造期 loadStopWords 装载（降级容忍同 loadCustomSources）+ UpdateStopWords 包装；httpapi PUT/GET 接线 + wire 适配器 + 两处测试夹具补齐。
+- **测试**：sourcematcher stop_words_test.go 4 组（基线跳过+对照组/追加层与清空/跳过不终止/别名表层不受影响）；httpapi 端到端 4 组（trim+引擎记录+kv 一致/缺省保持/空数组清空/乱码 400）。`go vet ./...` + `go test ./... -count=1` 全绿，既有断言零改动。
+- **实测**（8420 重建重启 + PUT 触发重算）：触手/白丝/多角色/多角色酒吧桶全部消失（290 桶，-4），对应文件角色行为空、文件名原样显示可搜索；天使触手→天使（57）、司霆惊蛰 触手→司霆惊蛰（10）、艾什 1 婚纱→艾什、D.Mon/风间准/风间飞鸟/杰玛/战斗修女/阿拉尼雅 全部不变；KDA/Lawa/Melody 留桶（未拍板为备注词，随时可经 stopWords 追加）。App 内嵌后端双 ABI 已重建入 jniLibs（8421 运行实例未动）。
+- **排查记档**：验证时曾见「司霆惊蛰 触手」行短暂为空——系重算未完成时抢先查库，非回归（重算完成后 10/10 正确）；后台重算完成前查库要留时序余量。
+
+## feat(server): 首批审定词条固化进内置基线（130→133）——手机本地/桌面/NAS 与电脑端引擎级一致（2026-10-04 第四百六十一笔）
+
+执行 AI：GLM-5.3（主代理；数据固化与测试由执行子代理完成）
+
+- **背景**：用户切 App 单机模式实测后拍板「为什么不和电脑一致」——词表数据层（kv）各部署各自一份，内嵌形态端点受一次性密钥保护外部不可写，手机本地库拿不到电脑端词条（D.Mon 改名、怪物猎人/战锤40k 新组）。经评估：一次性固化进内置基线是当前最小正确解（改 App 加同步功能更大，留待提案；不构建的通道已被安全设计全部关闭）。
+- **固化内容**（source_groups_data.go）：守望先锋+D.Mon(Dmon)；铁拳·风间飞鸟 扩别名 风间明日香 + 新角色 风间准(Jun Kazama)；最终幻想+阿拉尼雅(Aranea/Aranea Highwind)；新组 怪物猎人(Monster Hunter/MHWilds/MHW)·杰玛(Gemma)、战锤40k(Warhammer 40K 等)·战斗修女(Battle Sisters)、初音未来(Hatsune Miku/Miku)。评估退回 MH 两字母变体（任何 mh 开头文件名误命中，如 MHA）。头注释计数与记档同步，custom.go 过时计数顺带修正。
+- **引擎版本 1→2**：自愈重算使各部署在启动时自动用新基线重算存量（手机本地库无鉴权自动生效——正是第四百六十笔机制的第一次实战收益）。PC 端 kv 同名组合并结果与基线一致（零行为变化）。
+- **测试**：新增 builtin_words_test.go（8 组纯内置匹配用例 + canonical 全表唯一性断言）；受固化影响的 3 处既有断言按新语义修正（custom_test/fallback_test 的 Dmon 兜底用例改用未收录名 Reinhardt/索杰恩 保留判别力，并新增清空词层后 Dmon→D.Mon 的基线锁定断言；表完整性断言 130→133）。vet + 全量 test 全绿。
+- **部署**：PC 8420 重建重启（自愈 v2 重算落标记）；App release 重装+拉起，内嵌服务端自愈 v2 使本地库与电脑一致。文档：DOMAIN_RULES §4 冻结口径修订、ADR-0033 补记三。
+
+## feat(server): 引擎版本自愈重算——引擎升级后存量富化开箱自愈，不依赖端点与鉴权（2026-10-04 第四百六十笔）
+
+执行 AI：GLM-5.3（主代理；实现与测试由执行子代理完成）
+
+- **背景**：用户切到 App 单机（本地）模式实测，暴露结构缺口——引擎升级（兜底提取/停用词）后存量资产的富化不会自然刷新，此前唯一触发重算的路径是词表端点 PUT，而内嵌形态的 dev 登录受一次性共享密钥保护（2026-09-30 批A 防同机越权，密钥只在 App 内存）、外部不可调；release 包不可调试，DB 亦不可直读，存量数据无法传导。
+- **方案**（DOMAIN_RULES §4 新增「引擎版本自愈重算」）：服务端启动时比对 kv 标记 `enrichment_engine_version` 与代码常量 `scanner.EnrichmentEngineVersion`（第 1 代=兜底提取+停用词层；匹配语义再变才 +1）；标记落后（含无标记存量部署）→ 后台对全部常规库 RecomputeEnrichment 一次并落新标记，持平则零开销跳过；幂等，单库失败 warn 继续（下版启动再补）。cmd 启动 goroutine 接线，不阻塞监听。
+- **测试**：scanner selfheal_test.go 三用例（无标记触发重算+落标记/持平跳过/cos 库不报错），`go vet` + `go test ./... -count=1` 全绿。
+- **部署验证**：PC 8420 重启即自愈（stored=0 → 两常规库重算 3.4s → 标记=1，日志留痕）；App release 重装+拉起，内嵌服务端（libqimeng.so 00:25 重建）启动自愈本地库，18430 监听、App 与服务端通信正常。
+- **记档（App 单机模式词表边界）**：自愈只传导**引擎规则**（兜底提取/停用词基线/数字终止）；词表数据层（D.Mon 改名、怪物猎人/战锤40k 新组）仍存于各部署自己的 kv——内嵌形态因一次性密钥外部不可写，如需同步属 App 端「词表同步」功能提案（未做，待用户拍板）。手机本地模式下冷门角色将以原名进胶囊（如 Dmon 而非 D.Mon），出处未收录组（怪物猎人等）无出处无角色——与设计一致。
+
+## feat(server): 角色匹配第二层——命名规约兜底提取 + 词表入口乱码防线（2026-10-03 第四百五十八笔）
+
+执行 AI：GLM-5.3（主代理）
+
+- **背景**：ADR-0033 词表接口落地后复盘，用户提出真实诉求——「方便维护 + 准确，降低角色表依赖」：收录一半是热门角色、一半是新/冷门角色，但文件命名高度统一（`出处  角色名 序号.扩展名`）。逐角色补词条永远追不上收录速度。
+- **兜底提取层**（sourcematcher matcher.go，DOMAIN_RULES §4 新增「命名规约兜底提取」）：别名表命中非空时结果完全以表为准（既有资产零回归，含子串命中场景测试锁定）；表零命中时在原串（保留大小写与空格——折叠域无法分词）剥离开头出处后按规约提取——空格分词、词内 +/& 拆分、裸 x 作分隔词；自左向右收集到首个纯数字/括号序号词终止（序号后是「小长篇」「婚纱」类描述词）；普通词命中本出处别名表取 canonical（改名归一），否则按原词入库；数字开头后跟 ASCII 字母的词（"2B" 形）仅当表认识才保留（"8K"/"1080p" 画质词防线）。"+" 多出处文件按分段提取且只吃本出处段与无主段（`恶魔战士+铁拳8 莫妮卡` 不得产出「铁拳8」角色，既有测试锁定）。自定义裸名出处同样享受兜底（`我的分区_某角色.jpg` 自动得「某角色」胶囊）。
+- **事故加固①——词表入口乱码 400**：非 UTF-8 客户端载荷（如 GBK 终端里的 curl）经 JSON 解码器把坏字节静默替换成 U+FFFD 后落库 = 永不命中的死词条，且整体替换语义会覆盖掉此前的正确词表——这正是本日「PUT 后重算不生效」排查的实际根因（引擎与端点本身无 bug，干净 UTF-8 载荷全链路实测即通）。sources/custom 与 sources/custom-groups 两入口对含替换符词条显式 400 INVALID_PARAM。
+- **事故加固②——启动脚本跳编译陷阱**：_server-common.cmd nobrowser 模式原「exe 存在即跳过编译」改为两模式统一总是构建（秒级 go build 缓存换正确性）——排查曾因旧二进制持续服务、新加日志永不出现而原地打转。
+- **实测**（8420 重建重启 + 词表端点触发全库重算）：此前 27 个缺角色资产全部就位——D.Mon（词条改名）/杰玛/战斗修女/阿拉尼雅/风间飞鸟（词条命中）+ 触手 11/白丝 3/KDA 2/多角色/Lawa+Melody（兜底原名提取，大小写保留）；`守望先锋.jpg`、`生化危机 1.jpg` 等文件名里本无角色的正确留空；facets 角色桶 294 个。已知取舍记档：同文件表部分命中时其余未认识名不再兜底（零回归优先，如 `风间飞鸟+风间准` 的风间准需补一条词条）。
+- **测试**：sourcematcher fallback_test.go 新增 7 组用例（单名提取/序号终止/画质词防线/分隔符与无主段/部分命中即止/表零回归/未知出处不提取）；custom_test.go ③ 与 scanner enrich_test.go 自定义裸名断言随新语义更新。`go vet ./...` + `go test ./...` 全绿。
+- **App 内嵌后端**：`make app-embedded` 双 ABI（arm64 23.9MB / x86_64 25.2MB）重建入 jniLibs（含兜底层与乱码防线；jniLibs 按既有口径不入 git，8421 运行实例未动，下次 App 装机生效）。
+- **同批入库**：ADR-0033 词表接口本体的协议/引擎/存储/接线/文档（openapi + make sdk 三端 + sdk.lock、sourcematcher custom.go、httpapi source_groups.go、wire 适配器、GUIDE_API/adr 记档）——同会话前段完成，与本笔合并提交。
+
+## feat(server): 检索词表维护接口（ADR-0033）+ 本批角色修复——自定义出处组运行期增补词条，内置 130 组冻结为基线（2026-10-03 第四百五十七笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- **背景**：用户库持续收录「单一角色多文件」内容，新角色/冷门资源不断出现（守望先锋 Dmon、怪物猎人杰玛等），内置检索表冻结在代码里跟不上——文件入库后角色恒空白，App 四维筛选的角色胶囊行永远看不到。用户拍板做「检索词表 + 方便维护的接口（让 AI 补词条）」。性能前提澄清：匹配只发生在扫描/富化时（索引构造期建好 + 8192 缓存），检索表大小不进请求热路径，本决策动机是维护性。
+- **协议先行**：openapi 新增 `GET/PUT /api/v1/sources/custom-groups` + CustomSourceGroups/CustomSourceGroup/CustomSourceCharacter 三 schema（整体替换语义、maxItems/maxLength 上限、204、复用 /sources/custom 的「保存→引擎生效→后台全常规库重算存量」闭环描述）；`make sdk` 三端再生成 + api/sdk.lock 同 commit（245→251 条目）。
+- **引擎合并层**（sourcematcher 新文件 custom.go，纯函数 MergeGroups）：内置表 → 裸名层 → 出处组层按 canonical 深拷贝合并——同名=并入（变体追加、同名角色扩别名）、新名=追加组、canonical 自并入自身变体/别名兜底；顺带修复旧 rebuild 的 map 覆盖行为（裸名与内置组同名时角色表不再丢失）；Matcher 增出处组层字段 + updateMu 串行化两层自定义更新（防并发 PUT 交错重建）。MergeGroups 不写穿入参（base 是包级内置表）由测试锁定。
+- **内置表只修 bug 不扩表**：删除第一后裔组复合变体 `"第一后裔 邦尼"`——长度降序前缀命中即停的 strip 规则下它把 `第一后裔 邦尼 1.mp4` 的角色名整体吃掉（剩余串只剩 "1"），角色匹配落空；全表审计确认这是唯一吞角色的复合变体；回归测试锁定。
+- **存储与接线**：kv_settings 新键 `custom_source_groups`（常量单源 authoring 包，与裸名 `custom_sources` 语义隔离）；scanner 构造期 loadCustomGroups 装载（损坏降级空集同 loadCustomSources）+ Scanner.UpdateCustomGroups 同步方法；httpapi 新文件 source_groups.go（normalize：trim/去空/去重/重复 canonical 取首个/超限 400 INVALID_PARAM，上限与 openapi maxItems 双写同步）+ server.go Scanner 接口与 noScanner 占位 + cmd/qimeng/wire.go 适配器；测试环境 testEnv 暴露 fscan 断言「引擎收到的 = 持久化的」。
+- **测试**：sourcematcher custom_test.go（合并语义/不写穿基线/并入内置组+新组+清空/裸名同名保角色/邦尼回归）；httpapi source_groups_test.go（E2E：初始空→混合载荷规范化→GET 回读=persisted=fakeScanner 收到→清空→组数超限 400→单串超长 400）。`go vet ./...` + `go test ./... -count=1` 全绿；`make sdk` 三端生成+锁同 commit。
+- **落地种子词表**（重建重启后经新端点 PUT）：守望先锋+Dmon｜铁拳·风间飞鸟+别名风间明日香｜最终幻想+阿拉尼雅(Aranea)｜怪物猎人(新组)+杰玛(Gemma)｜战锤40k(新组)+战斗修女(Battle Sisters)｜初音未来(新组)+初音未来(miku)；邦尼靠内置修复+重算自动出现。
+- **记档**：云曦天泪/VAM 赵灵儿经用户拍板不加；原神 Melody x Lawa 为原创角色不动词表（想进「原创角色」行需改文件名前缀）。
+
+
 ## perf(app): 掉帧全链路定位与构建税根修——材质无罪，debug 构建税是主因；日常装机切换 release 通道（2026-10-03 第四百五十六笔）
 
 执行 AI：GLM-5.3（主代理）

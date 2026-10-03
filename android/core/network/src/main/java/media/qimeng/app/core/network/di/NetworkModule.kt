@@ -14,11 +14,15 @@ import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import media.qimeng.app.core.network.AuthApi
 import media.qimeng.app.core.network.AuthApiFactory
 import media.qimeng.app.core.network.AuthInterceptor
 import media.qimeng.app.core.network.DataStoreServerConfigDataSource
+import media.qimeng.app.core.network.ServerAddress
 import media.qimeng.app.core.network.ServerConfigDataSource
+import media.qimeng.app.core.network.SdkAuthApi
 import media.qimeng.app.core.network.SdkAuthApiFactory
+import media.qimeng.sdk.apis.DefaultApi
 import okhttp3.OkHttpClient
 import okhttp3.sse.EventSource
 import okhttp3.sse.EventSources
@@ -45,6 +49,16 @@ annotation class BackupClient
 @Qualifier
 @Retention(AnnotationRetention.RUNTIME)
 annotation class SseClient
+
+/**
+ * 本机直连通道专用标记（ADR-0034 词表同步）：本标记下的 OkHttpClient / DefaultApi / AuthApi
+ * 全部只指向内嵌服务端预设地址（[ServerAddress.LOCAL_MODE_PRESET] = 127.0.0.1:18430），
+ * 供 core:data VocabularySyncRepository 注入。与全局客户端的本质区别见
+ * [NetworkModule.provideLocalDirectOkHttpClient]——**不挂 AuthInterceptor**。
+ */
+@Qualifier
+@Retention(AnnotationRetention.RUNTIME)
+annotation class LocalDirectClient
 
 /** 接口绑定（@Binds 必须在 abstract/interface 模块）。 */
 @Module
@@ -143,6 +157,56 @@ object NetworkModule {
     @Singleton
     fun provideEventSourceFactory(@SseClient okHttpClient: OkHttpClient): EventSource.Factory =
         EventSources.createFactory(okHttpClient)
+
+    /**
+     * 本机直连通道专用客户端（ADR-0034 词表同步，2026-10-04）：**全新 builder、零拦截器**，
+     * 只指向内嵌服务端预设地址。为什么不能像 UploadClient/BackupClient 那样 newBuilder 从
+     * 全局单例派生：派生会共享 AuthInterceptor，而词表同步要对 127.0.0.1:18430 发
+     * dev-login/GET/PUT 三类请求——本地 token 与全局 ServerConfig 里的远端 NAS token 是
+     * 两套会话，若本地请求收到 401 会触发 AuthInterceptor 的 clearToken+登出广播，把用户
+     * 正在用的 NAS 会话踢回登录页（任务书点名的最大陷阱）。独立无拦截器客户端从结构上
+     * 杜绝该通道触碰全局会话；本地 Bearer 经 SDK 生成物的实例级 accessTokenProvider 注入
+     * （ApiClient 每实例一个 provider，不共享全局静态字段），装配点在消费方
+     * core:data VocabularySyncRepository（dev-login 换得 token 后随即接线）。
+     * 超时与全局主客户端同档：回环毫秒级往返，10s 绰绰有余，不为专用通道另立档位。
+     */
+    @Provides
+    @Singleton
+    @LocalDirectClient
+    fun provideLocalDirectOkHttpClient(): OkHttpClient =
+        OkHttpClient.Builder()
+            .connectTimeout(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .readTimeout(READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .writeTimeout(WRITE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .build()
+
+    /**
+     * 本机直连 DefaultApi：固定 [ServerAddress.LOCAL_MODE_PRESET] 地址 + 无拦截器客户端。
+     * 地址写死预设是安全的：内嵌服务端只监听回环 18430（EmbeddedServerConfig.LISTEN_ADDRESS
+     * 端口单值互指），本 API 的唯一消费方（词表同步）也只对该端操作；自定义端口回环地址
+     * （自带 Termux 形态 A）不在此通道语义内。单例的 token 状态经实例级
+     * accessTokenProvider 承载（provider 函数捕获 dev-login 换得的本地 token），无并发写。
+     */
+    @Provides
+    @Singleton
+    @LocalDirectClient
+    fun provideLocalDirectDefaultApi(@LocalDirectClient okHttpClient: OkHttpClient): DefaultApi =
+        DefaultApi(ServerAddress.LOCAL_MODE_PRESET, okHttpClient)
+
+    /**
+     * 本机直连 dev-login 端口：SdkAuthApi（AuthApi 实现）包装本机 DefaultApi，密钥供给
+     * 闭包读内存槽（[ServerConfigDataSource.currentEmbeddedDevSecret]，EmbeddedServerService
+     * 每次拉起子进程时覆写）——与既有 SdkAuthApiFactory 同一装配姿势，密钥调用瞬间现取，
+     * 永不过期引用。注意这是独立于全局登录态的第二条认证链：换得的本地 token 只进
+     * 本机 DefaultApi 的 accessTokenProvider，绝不写 ServerConfigDataSource（NAS 会话无感）。
+     */
+    @Provides
+    @Singleton
+    @LocalDirectClient
+    fun provideLocalDirectAuthApi(
+        @LocalDirectClient api: DefaultApi,
+        serverConfigDataSource: ServerConfigDataSource,
+    ): AuthApi = SdkAuthApi(api) { serverConfigDataSource.currentEmbeddedDevSecret() }
 
     /** DataStore 单例：IO 专用作用域（DataStore 内部磁盘读写全挂它，NIA 同款装配）。 */
     @Provides
