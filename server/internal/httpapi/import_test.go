@@ -523,5 +523,14 @@ func (f *fakeScanner) UpdateCustomGroups(_ context.Context, groups []sourcematch
 	return nil
 }
 
+// UpdateStopWords 记录词表端点下发的规范化停用词——source_groups_test 据此
+// 断言"引擎收到的 = 持久化的"（ADR-0033）；真实匹配逻辑在 sourcematcher 包。
+func (f *fakeScanner) UpdateStopWords(_ context.Context, words []string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.updatedStopWords = append([]string(nil), words...)
+	return nil
+}
+
 // RecomputeEnrichment 测试假扫描器的存量重算空实现（真实逻辑在 scanner 包）。
 func (f *fakeScanner) RecomputeEnrichment(context.Context, string) error { return nil }

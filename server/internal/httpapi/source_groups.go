@@ -34,9 +34,11 @@ const (
 )
 
 // GetApiV1SourcesCustomGroups 读取生效中的用户自定义出处组（ADR-0033）。
-// 无记录 = 空数组：内置 130 组检索表完整可用，非配置缺失。
+// 无记录 = 空数组：内置 130 组检索表完整可用，非配置缺失。stopWords 恒
+// 返回（用户层，空数组 = 用户层为空；内置冻结基线在引擎侧恒生效不在此层）。
 func (s *Server) GetApiV1SourcesCustomGroups(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, gen.CustomSourceGroups{Groups: s.customGroupsFromSettings(r.Context())})
+	words := s.stopWordsFromSettings(r.Context())
+	writeJSON(w, http.StatusOK, gen.CustomSourceGroups{Groups: s.customGroupsFromSettings(r.Context()), StopWords: &words})
 }
 
 // PutApiV1SourcesCustomGroups 整体替换用户自定义出处组（ADR-0033）。
@@ -45,6 +47,10 @@ func (s *Server) GetApiV1SourcesCustomGroups(w http.ResponseWriter, r *http.Requ
 // 服务端 trim + 去空 + 去重 + 重复 canonical 取首个后持久化（存储形态 =
 // 生效形态，GET 回读同此语义）；空数组 = 清空。规范名自身恒参与匹配由
 // 引擎合并层兜底（MergeGroups），存储形态保持提交原序。
+//
+// stopWords 字段（*[]string）只在非 nil 时处理：缺省/null = 停用词保持
+// 现值（不读不写），显式空数组 = 清空追加层（内置冻结基线恒生效，见
+// sourcematcher.builtinStopWords）；规范化后持久化 + 引擎同步，同 groups。
 //
 // 成功后两步（同 PutApiV1SourcesCustom）：① 运行中匹配引擎同步替换；
 // ② 后台对全部常规库资产重算出处/角色——已入库资产 size+mtime 未变时
@@ -78,6 +84,35 @@ func (s *Server) PutApiV1SourcesCustomGroups(w http.ResponseWriter, r *http.Requ
 		// Scanner.New 的 loadCustomGroups），同 PutApiV1SourcesCustom 语义。
 		writeErr(w, http.StatusServiceUnavailable, codeScannerUnavailable, "自定义出处组已保存但扫描器未装配，暂未生效")
 		return
+	}
+	// stopWords 为 *[]string：非 nil 才处理（缺省/null = 保持现值，不读不写；
+	// 显式空数组 = 清空回内置基线）。规范化（复用 normalizeWords，自带 trim/
+	// 去重/超长/乱码 400）后持久化 + 引擎同步，语义对齐 groups 路径。
+	if body.StopWords != nil {
+		words, err := normalizeWords(*body.StopWords)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, codeInvalidParam, err.Error())
+			return
+		}
+		raw, err := json.Marshal(words)
+		if err != nil {
+			s.internalErr(w, "序列化停用词", err)
+			return
+		}
+		if err := s.q.UpsertSetting(r.Context(), db.UpsertSettingParams{
+			Key:       authoring.SettingKeyCustomStopWords,
+			Value:     string(raw),
+			UpdatedAt: store.FormatTimestamp(s.now()),
+		}); err != nil {
+			s.internalErr(w, "保存停用词", err)
+			return
+		}
+		if err := s.scanner.UpdateStopWords(r.Context(), words); err != nil {
+			// 扫描器未装配：停用词已持久化但引擎没换，同 groups 的 503 句式
+			//（装配后重启按存储值装载，见 Scanner.New 的 loadStopWords）。
+			writeErr(w, http.StatusServiceUnavailable, codeScannerUnavailable, "停用词已保存但扫描器未装配，暂未生效")
+			return
+		}
 	}
 	s.recomputeAfterCustomSources()
 	w.WriteHeader(http.StatusNoContent)
@@ -249,4 +284,22 @@ func (s *Server) customGroupsFromSettings(ctx context.Context) []gen.CustomSourc
 		out = append(out, gg)
 	}
 	return out
+}
+
+// stopWordsFromSettings 读 kv_settings 中的停用词追加层（JSON 字符串数组），
+// 无记录/损坏降级空数组——与 customGroupsFromSettings 同一容忍策略：两侧
+// 同态，改一次词表即自愈。返回的是用户层（内置冻结基线在引擎侧恒生效）。
+func (s *Server) stopWordsFromSettings(ctx context.Context) []string {
+	v, err := s.q.GetSetting(ctx, authoring.SettingKeyCustomStopWords)
+	if err != nil {
+		return []string{}
+	}
+	var words []string
+	if err := json.Unmarshal([]byte(v), &words); err != nil {
+		return []string{}
+	}
+	if words == nil {
+		return []string{}
+	}
+	return words
 }

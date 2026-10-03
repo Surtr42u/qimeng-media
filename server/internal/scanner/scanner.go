@@ -155,6 +155,9 @@ func New(q *db.Queries, bus *events.Bus, logger *slog.Logger, dataDir string, pr
 	if groups := loadCustomGroups(context.Background(), q, logger); len(groups) > 0 {
 		s.matcher.UpdateCustomGroups(groups)
 	}
+	if words := loadStopWords(context.Background(), q, logger); len(words) > 0 {
+		s.matcher.UpdateStopWords(words)
+	}
 	return s
 }
 

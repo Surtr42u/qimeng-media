@@ -49,6 +49,10 @@ type Scanner interface {
 	// UpdateCustomGroups 运行期替换用户自定义出处组（PUT /sources/custom-groups
 	// 在持久化之后同步调用，ADR-0033）：立即对后续匹配生效（含清匹配缓存）。
 	UpdateCustomGroups(ctx context.Context, groups []sourcematcher.SourceGroup) error
+	// UpdateStopWords 运行期替换停用词追加层（PUT /sources/custom-groups
+	// stopWords 字段非 nil 时在持久化之后同步调用，ADR-0033）：立即对兜底
+	// 提取层生效（内置基线恒生效，含清匹配缓存）。
+	UpdateStopWords(ctx context.Context, words []string) error
 	// RecomputeEnrichment 对单库全部资产重算富化（自定义出处变更后的
 	// 存量传导）：库内资产 size+mtime 未变时全量扫描只跳过，必须显式重算。
 	RecomputeEnrichment(ctx context.Context, libraryID string) error
@@ -75,6 +79,10 @@ func (noScanner) UpdateCustomSources(context.Context, []string) error {
 }
 
 func (noScanner) UpdateCustomGroups(context.Context, []sourcematcher.SourceGroup) error {
+	return ErrScannerUnavailable
+}
+
+func (noScanner) UpdateStopWords(context.Context, []string) error {
 	return ErrScannerUnavailable
 }
 

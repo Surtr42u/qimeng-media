@@ -23,6 +23,12 @@ const (
 	// 写入方：httpapi 词表维护端点（存储形态 = 匹配引擎输入形态）。
 	SettingKeyCustomSourceGroups = "custom_source_groups"
 
+	// SettingKeyCustomStopWords 存停用词追加层 JSON 字符串数组（DOMAIN_RULES
+	// §4 兜底提取层跳过的描述词，ADR-0033 端点 stopWords 字段；内置冻结基线
+	// 写死 sourcematcher.builtinStopWords 不入库）。读取方：scanner（构造
+	// Matcher 时装载）；写入方：httpapi 词表维护端点（PUT 缺省不写此键）。
+	SettingKeyCustomStopWords = "custom_stop_words"
+
 	// SettingKeyImportedTxtSources 存全部已导入 TXT 片段 JSON 数组
 	//（元素 {filename, content}，统一重建素材，DOMAIN_RULES §6「TXT 导入
 	// 以全部已导入 TXT 统一重建为语义」）。读写方：httpapi TXT 导入端点。
