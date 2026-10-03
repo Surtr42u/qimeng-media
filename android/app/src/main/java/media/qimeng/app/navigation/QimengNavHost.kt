@@ -64,6 +64,7 @@ import media.qimeng.app.core.model.TabBarMaterial
 import media.qimeng.app.core.ui.component.TabScrollController
 import media.qimeng.app.core.ui.glass.FloatingTabDock
 import media.qimeng.app.core.ui.glass.GlassNavItem
+import media.qimeng.app.core.ui.glass.QimengMotion
 import media.qimeng.app.core.ui.glass.qimengBackdropSource
 import media.qimeng.app.core.ui.glass.rememberQimengBackdropState
 import media.qimeng.app.core.ui.theme.QimengBrandColors
@@ -409,10 +410,40 @@ fun QimengNavHost(
             // 「退出后旧页内容叠层残留 1~2s 才消失」（release 包逐帧实证）。snap() 第一帧
             // 即把退出页 alpha 硬置 0/进入页置 1：无论转场滞留多久都无叠影，视觉仍是
             // 瞬时交换，L2 拍板口径不变。
-            enterTransition = { fadeIn(snap()) },
-            exitTransition = { fadeOut(snap()) },
-            popEnterTransition = { fadeIn(snap()) },
-            popExitTransition = { fadeOut(snap()) },
+            // 2026-10-03 动效统一批：全路由转场接入 QimengMotion 单源（ADR-0031 规范本体，
+            // 此前减法批把全路由压成 snap、规范空挂）。分派规则：Tab 间保持 snap（常驻层
+            // 防叠影拍板，规范明确排除项）；进详情=缩放「走来」；进其余子页=1/4 屏滑入推开
+            // 内容；返回反向。Tab 空壳路由的进出对视觉无感（真身在常驻层），snap 无副作用
+            enterTransition = {
+                val target = targetState.destination.route
+                when {
+                    target in topLevelRoutes -> fadeIn(snap())
+                    target == DetailRoutes.DETAIL_ROUTE -> QimengMotion.detailEnter()
+                    else -> QimengMotion.overlayEnter()
+                }
+            },
+            exitTransition = {
+                if (targetState.destination.route in topLevelRoutes) {
+                    // 回到 Tab（返回栈弹空）：常驻层接管，瞬时让位防叠影
+                    fadeOut(snap())
+                } else {
+                    QimengMotion.overlayExit()
+                }
+            },
+            popEnterTransition = {
+                if (initialState.destination.route in topLevelRoutes) {
+                    fadeIn(snap())
+                } else {
+                    QimengMotion.overlayPopEnter()
+                }
+            },
+            popExitTransition = {
+                when (initialState.destination.route) {
+                    DetailRoutes.DETAIL_ROUTE -> QimengMotion.detailPopExit()
+                    in topLevelRoutes -> fadeOut(snap())
+                    else -> QimengMotion.overlayPopExit()
+                }
+            },
             // X1 根修（2026-09-12 任务X，问题1/2/3/4 总根因）：detail 路由内容区不再被
             // 内容让位钉位。旧版详情页「始终 edge-to-edge 全屏布局，系统栏显隐不触发
             // 布局」（GUIDE_UI L162/L272-275）；钉位架构下沉浸切换会经内容 padding

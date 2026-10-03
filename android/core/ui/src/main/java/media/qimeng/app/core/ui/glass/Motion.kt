@@ -48,8 +48,23 @@ object QimengMotion {
         targetScale = DETAIL_EXIT_SCALE,
     ) + fadeOut(animationSpec = tween(POP_FADE_MS))
 
+    /** 覆盖页被推离（push 往更深层走时）：向左 1/8 屏 + 淡出（M3 共享轴 outgoing 侧） */
+    fun overlayExit(): ExitTransition = slideOutHorizontally(
+        animationSpec = spring(dampingRatio = OVERLAY_DAMPING, stiffness = Spring.StiffnessMediumLow),
+        targetOffsetX = { -it / OVERLAY_EXIT_SLIDE_FRACTION },
+    ) + fadeOut(animationSpec = tween(POP_FADE_MS))
+
+    /** 覆盖页返回后回位（pop 回它）：从左 1/8 屏滑回 + 淡入（M3 共享轴 incoming·pop 侧） */
+    fun overlayPopEnter(): EnterTransition = slideInHorizontally(
+        animationSpec = spring(dampingRatio = OVERLAY_DAMPING, stiffness = Spring.StiffnessMediumLow),
+        initialOffsetX = { -it / OVERLAY_EXIT_SLIDE_FRACTION },
+    ) + fadeIn(animationSpec = tween(OVERLAY_FADE_MS))
+
     /** 覆盖页滑入位移分母（1/4 屏——滑程短促，不与内容滚动混淆） */
     private const val OVERLAY_SLIDE_FRACTION = 4
+
+    /** 覆盖页推离/回位位移分母（1/8 屏——outgoing 侧位移减半，层级感不抢戏） */
+    private const val OVERLAY_EXIT_SLIDE_FRACTION = 8
 
     /** 覆盖页 spring 阻尼（0.9=轻微过冲一次，玻璃「落定」手感） */
     private const val OVERLAY_DAMPING = 0.9f
