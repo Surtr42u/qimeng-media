@@ -40,8 +40,8 @@ func TestExtractFallbackNumberTermination(t *testing.T) {
 	}{
 		{"守望先锋  新角色 2 小长篇 1.mp4", []string{"新角色"}},
 		{"守望先锋  新角色 5 (1).jpg", []string{"新角色"}},
-		{"守望先锋  1.jpg", nil},  // 纯序号无角色
-		{"守望先锋.jpg", nil},     // 剥离出处后无剩余
+		{"守望先锋  1.jpg", nil}, // 纯序号无角色
+		{"守望先锋.jpg", nil},    // 剥离出处后无剩余
 	}
 	for _, tt := range tests {
 		if _, chars := m.MatchAll(tt.file); !slices.Equal(chars, tt.want) {
@@ -100,8 +100,8 @@ func TestExtractFallbackTableWinsZeroRegression(t *testing.T) {
 		file string
 		want []string
 	}{
-		{"守望先锋  DVA 1.mp4", []string{"DVA"}},           // 表精确命中
-		{"守望先锋  天使黑猫 1.png", []string{"天使"}},       // 子串命中：不得再产「天使黑猫」
+		{"守望先锋  DVA 1.mp4", []string{"DVA"}},     // 表精确命中
+		{"守望先锋  天使黑猫 1.png", []string{"天使"}},     // 子串命中：不得再产「天使黑猫」
 		{"守望先锋  天使 9 小恶魔天使.mp4", []string{"天使"}}, // 序号后描述词同表同果
 	}
 	for _, tt := range tests {
