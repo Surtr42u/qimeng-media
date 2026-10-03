@@ -10,6 +10,15 @@
 
 > **历史条目拆分说明（2026-10-01）**：为控制 AI 上下文体量，本文件只保留 **2026-09-22 及之后**的条目（第三百八十二笔起）；拆分线之前的全部条目已逐字迁入 `docs/history/CHANGELOG-ARCHIVE.md`（零改写，笔号与本文件连续可查）。引用早于拆分线的旧笔号请去历史档查阅。
 
+## feat(app): 玻璃语言首批推广——坞未选中档对比度修复 + 首页顶行/页头胶囊玻璃化（2026-10-03 第四百四十八笔）
+
+执行 AI：GLM-5.3（主代理）
+
+- **背景**：用户目验移植批通过（下沉已修），随拍两件：①浅色主题下玻璃坞未选中 tab 图案/文字发虚（首页浅背景上尤甚）；②把玻璃胶囊风格推广到其他胶囊元素。
+- **坞对比度**：`DockNavItem` 未选中 tint `onSurfaceVariant`→`onSurface`（浅/深主题各自的最强文本色；选中态 primary + SemiBold + 点亮缩放维持层级区分）。
+- **胶囊玻璃化**（配方沿 443 批 ac4c994e 适配移植，几何逐项零改动只换面材质；不用真 backdrop 采样——胶囊下方无滚过内容，443 批同口径）：首页顶行搜索胶囊 `Surface(surfaceVariant)`→`GlassSurface(pill)` + pressScale 按压反馈；首页筛选/列数两颗 40dp 胶囊钮本地自绘 `HomeTopIconButton` 退役→`:core:ui` 单源 `GlassIconButton`；`QimengTitleRow` 筛选钮激活态→`GlassIconButton`、未激活态透明底 + pressScale（U10-2b「不常亮」语义逐字保留）。
+- **验证**：本地 `:app:assembleDebug` 全绿；真机覆盖安装冷启动，效果待用户目验（试验性推广，观感不合意可整批单 commit 回退）。
+
 ## feat(app): 悬浮玻璃坞移植批——回滚后 master（老 UI 基线）+ ui/app-dock-only 玻璃坞，顶部布局零改动（2026-10-03 第四百四十七笔）
 
 执行 AI：GLM-5.3（主代理）
