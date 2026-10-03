@@ -1,11 +1,6 @@
 package media.qimeng.app.feature.home
 
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,12 +10,9 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -32,8 +24,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -55,6 +45,12 @@ import media.qimeng.app.core.ui.component.QimengChipRow
 import media.qimeng.app.core.ui.component.QimengEmptyState
 import media.qimeng.app.core.ui.component.QimengFilterSheet
 import media.qimeng.app.core.ui.component.QimengMediaGrid
+import media.qimeng.app.core.ui.glass.GlassIconButton
+import media.qimeng.app.core.ui.glass.GlassSurface
+import media.qimeng.app.core.ui.glass.TabDockDefaults
+import media.qimeng.app.core.ui.glass.pressScale
+import media.qimeng.app.core.ui.glass.rememberPressScaleSource
+import media.qimeng.app.core.ui.theme.QimengShapes
 import media.qimeng.app.core.ui.component.QimengPill
 import media.qimeng.app.core.ui.component.QimengPullToRefresh
 import media.qimeng.app.core.ui.component.QimengSkeletonGrid
@@ -358,14 +354,22 @@ private fun HomeTopRow(
             modifier = Modifier.padding(end = 10.dp),
         )
         // 搜索框不可聚焦（点击整块跳搜索页——规格书语义）；高度 40dp=旧版 fragment_home.xml L37
-        // bg_capsule_soft 胶囊底（F 批 2026-09-09：压回旧版视觉，此前实测 48dp）
-        Surface(
-            shape = RoundedCornerShape(QimengDimens.PillCornerRadius),
-            color = MaterialTheme.colorScheme.surfaceVariant,
+        // 2026-10-03 玻璃坞迭代批：实色胶囊底 → GlassSurface 玻璃面（几何逐项保留：weight/
+        // 高度/胶囊形/文字规格零改动，只换面材质——极光从玻璃面透出），按压 spring 缩放即反馈
+        // （探索批 GLASS_TOP_ROW 同切口转正；不用真 backdrop 采样：胶囊下方无滚过内容，
+        // 且内容层自采样是库的 SIGSEGV 反面教材）
+        val searchInteraction = rememberPressScaleSource()
+        GlassSurface(
+            shape = QimengShapes.pill,
             modifier = Modifier
                 .weight(1f)
                 .height(QimengDimens.HomeSearchFieldHeight)
-                .clickable(onClick = onOpenSearch),
+                .pressScale(searchInteraction)
+                .clickable(
+                    interactionSource = searchInteraction,
+                    indication = null,
+                    onClick = onOpenSearch,
+                ),
         ) {
             Box(
                 modifier = Modifier.fillMaxHeight(),
@@ -380,84 +384,22 @@ private fun HomeTopRow(
             }
         }
         // 筛选钮（左）与列数钮（右）：无障碍文案复用 core/ui 共享资源（QimengTitleRow 同款语义；
-        // 别名导入防与 feature R 撞名）
-        HomeTopIconButton(
+        // 别名导入防与 feature R 撞名）。2026-10-03 迭代批：本地手写 Surface 胶囊钮退役，
+        // 换 core:ui 玻璃单源 GlassIconButton（40dp/24dp/primary tint 几何与色全同档）
+        GlassIconButton(
             icon = HomeFilterIcon,
             contentDescription = stringResource(UiR.string.ui_filter_icon_desc),
             onClick = onOpenFilter,
+            tint = MaterialTheme.colorScheme.primary,
             // 旧版 L49-50 marginStart/End=10/6dp
             modifier = Modifier.padding(start = 10.dp, end = 6.dp),
         )
-        HomeTopIconButton(
+        GlassIconButton(
             icon = if (columns == 1) Grid1Icon else gridIconFor(columns),
             contentDescription = stringResource(UiR.string.ui_columns_icon_desc),
             onClick = onToggleColumns,
+            tint = MaterialTheme.colorScheme.primary,
         )
-    }
-}
-
-/** 按下缩放最小值（QimengSegPill 同款 0.92，GUIDE_UI §UI约束「按下反馈动画」） */
-private const val HOME_TOP_ICON_PRESSED_SCALE = 0.92f
-
-/** 按下缩放动画时长 ms（QimengSegPill 同款 100ms，旧版 PressAnimation 对应值） */
-private const val HOME_TOP_ICON_PRESS_SCALE_DURATION_MS = 100
-
-/**
- * 首页顶栏 40dp 胶囊图标钮（Y4a）：Surface 胶囊底（[QimengDimens.PillCornerRadius]，对齐旧版
- * bg_capsule_soft；U10-3 底槽统一 surfaceVariant→secondaryContainer——旧 bg_capsule_soft 实色=
- * qmColorChipBg #F0F0F2，Theme.kt 映射 secondaryContainer，与相册页 QimengTitleRow 筛选钮同语言）
- * + 24dp 图标（[QimengDimens.IconDefaultSize]，tint 对齐旧版
- * qmColorPrimary→primary 槽）+ 按压缩放反馈（QimengSegPill 同款 0.92/100ms 机制；旧版 ImageView
- * 无按压反馈，取 GUIDE_UI §UI约束 标准款补齐）。
- * 不走 M3 Surface onClick 重载/IconButton：二者内建 48dp 最小触达会把 40dp 胶囊撑大
- * （同 QimengSegPill F 批 KDoc 实测成因），旧版钮恰为 40dp 必须保形；缩放即反馈，不叠 ripple。
- */
-@Composable
-private fun HomeTopIconButton(
-    icon: ImageVector,
-    contentDescription: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    // 按下态经自持 interactionSource 观测，缩放在 graphicsLayer 块内延迟读取 pressScale，
-    // 缩放动画不触发重组（QimengSegPill 同款机制）
-    val interactionSource = remember { MutableInteractionSource() }
-    val pressed by interactionSource.collectIsPressedAsState()
-    val pressScale by animateFloatAsState(
-        targetValue = if (pressed) HOME_TOP_ICON_PRESSED_SCALE else 1f,
-        animationSpec = tween(
-            durationMillis = HOME_TOP_ICON_PRESS_SCALE_DURATION_MS,
-            easing = FastOutSlowInEasing,
-        ),
-        label = "homeTopIconPressScale",
-    )
-    Surface(
-        shape = RoundedCornerShape(QimengDimens.PillCornerRadius),
-        // U10-3 统一规格：底槽对齐旧 bg_capsule_soft 实色源（secondaryContainer），见 KDoc
-        color = MaterialTheme.colorScheme.secondaryContainer,
-        modifier = modifier
-            .size(QimengDimens.IconButtonSize)
-            .graphicsLayer {
-                scaleX = pressScale
-                scaleY = pressScale
-            }
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick,
-            ),
-    ) {
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = contentDescription,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(QimengDimens.IconDefaultSize),
-            )
-        }
     }
 }
 
@@ -503,6 +445,9 @@ private fun RecommendPage(
             columns = columns,
             animatedUrlResolver = animatedUrlResolver,
             listState = listState,
+            // 2026-10-03 悬浮玻璃坞批：底栏改悬浮层后内容从坞身后滚过，网格最后一项
+            // 须让位到坞体上方（core:ui 单源常量，含导航栏 inset；三页流共用同一档）
+            bottomContentPadding = TabDockDefaults.bottomClearance(),
             onNearBottom = onNearBottom,
             // 问题A（2026-09-28）：加载结束重评估信号——换轮成功但 fresh==0（或空页追加）时
             // totalCount 不变，哨兵需靠 tick 重触发（含 fresh==0 续轮后的穷尽停手，由 VM 拦截兜底）
@@ -537,6 +482,9 @@ private fun CosPage(
             columns = columns,
             animatedUrlResolver = animatedUrlResolver,
             listState = listState,
+            // 2026-10-03 悬浮玻璃坞批：底栏改悬浮层后内容从坞身后滚过，网格最后一项
+            // 须让位到坞体上方（core:ui 单源常量，含导航栏 inset；三页流共用同一档）
+            bottomContentPadding = TabDockDefaults.bottomClearance(),
             onNearBottom = onNearBottom,
             // 问题A（2026-09-28）：加载结束重评估信号——翻页成功但新页为空时 totalCount 不变，
             // 哨兵需靠 tick 重触发（KDoc 见 QimengMediaGrid.reloadTick）
@@ -572,6 +520,9 @@ private fun RankPage(
             columns = columns,
             animatedUrlResolver = animatedUrlResolver,
             listState = listState,
+            // 2026-10-03 悬浮玻璃坞批：底栏改悬浮层后内容从坞身后滚过，网格最后一项
+            // 须让位到坞体上方（core:ui 单源常量，含导航栏 inset；三页流共用同一档）
+            bottomContentPadding = TabDockDefaults.bottomClearance(),
             onAssetClick = onAssetClick,
         )
     }

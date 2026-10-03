@@ -42,6 +42,7 @@ import media.qimeng.app.core.ui.component.QimengTitleRow
 import media.qimeng.app.core.ui.component.QimengValuePillBlock
 import media.qimeng.app.core.ui.component.TabScrollController
 import media.qimeng.app.core.ui.component.qimengPinchToColumns
+import media.qimeng.app.core.ui.glass.TabDockDefaults
 import media.qimeng.app.core.ui.theme.QimengDimens
 // 页头组件共享文案在 :core:ui（nonTransitiveRClass 下跨模块取资源须引对方 R）
 import media.qimeng.app.core.ui.R as CoreUiR
@@ -219,9 +220,10 @@ fun AllScreen(
                     columns = displayColumns,
                     animatedUrlResolver = animatedUrlResolver,
                     listState = listState,
-                    // 底部预留沿用旧版 fragment_all_files.xml L149 的 180dp 档：悬浮面板退役后
-                    // 已无遮挡末行之忧，保留作列表底部呼吸区（行为不变项零改动，任务G G5）
-                    bottomContentPadding = QimengDimens.ListBottomContentPadding,
+                    // 2026-10-03 悬浮玻璃坞批：底栏改悬浮层后内容从坞身后滚过，让位档从
+                    // 180dp 呼吸区改为坞体单源档（core:ui TabDockDefaults，含导航栏 inset）——
+                    // 最后一项停在坞体上方，滚入量由旧 180dp 收敛为坞实际占位
+                    bottomContentPadding = TabDockDefaults.bottomClearance(),
                     onNearBottom = viewModel::onNearBottom,
                     // 问题A（2026-09-28）：加载结束重评估信号——翻页成功但新页为空时 totalCount
                     // 不变，哨兵需靠 tick 重触发（KDoc 见 QimengMediaGrid.reloadTick）

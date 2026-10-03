@@ -8,6 +8,8 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import media.qimeng.app.core.model.AppearanceMode
+import media.qimeng.app.core.model.TabBarMaterial
 import org.json.JSONArray
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -93,5 +95,35 @@ class DataStoreGridPrefsRepository @Inject constructor(
 
         private val KEY_HOME_COLUMNS = intPreferencesKey("grid_columns_home")
         private val KEY_ALBUM_COLUMNS = intPreferencesKey("grid_columns_all")
+    }
+}
+
+/** 外观偏好持久化实现（与搜索历史/网格列数同一个 client_prefs 文件，不同键） */
+@Singleton
+class DataStoreAppearancePrefsRepository @Inject constructor(
+    @media.qimeng.app.core.data.di.ClientPrefsDataStore private val dataStore: DataStore<Preferences>,
+) : AppearancePrefsRepository {
+
+    override val appearanceMode: Flow<AppearanceMode> = dataStore.data.map { prefs ->
+        // 非法/缺失值在 fromStored 内回落默认档（枚举增删/旧版本回滚安全）
+        AppearanceMode.fromStored(prefs[KEY_APPEARANCE_MODE])
+    }
+
+    override val tabBarMaterial: Flow<TabBarMaterial> = dataStore.data.map { prefs ->
+        TabBarMaterial.fromStored(prefs[KEY_TAB_BAR_MATERIAL])
+    }
+
+    override suspend fun setAppearanceMode(mode: AppearanceMode) {
+        dataStore.edit { it[KEY_APPEARANCE_MODE] = mode.name }
+    }
+
+    override suspend fun setTabBarMaterial(material: TabBarMaterial) {
+        dataStore.edit { it[KEY_TAB_BAR_MATERIAL] = material.name }
+    }
+
+    companion object {
+        // 键值存枚举名（稳定 id）：显示名变化不影响已持久化数据（文案进 strings.xml）
+        private val KEY_APPEARANCE_MODE = stringPreferencesKey("appearance_mode")
+        private val KEY_TAB_BAR_MATERIAL = stringPreferencesKey("tab_bar_material")
     }
 }
