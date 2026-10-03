@@ -45,10 +45,15 @@ import media.qimeng.app.core.ui.component.QimengChipRow
 import media.qimeng.app.core.ui.component.QimengEmptyState
 import media.qimeng.app.core.ui.component.QimengFilterSheet
 import media.qimeng.app.core.ui.component.QimengMediaGrid
+import media.qimeng.app.core.ui.glass.BackdropGlassIconButton
+import media.qimeng.app.core.ui.glass.BackdropGlassPanel
 import media.qimeng.app.core.ui.glass.GlassIconButton
 import media.qimeng.app.core.ui.glass.GlassSurface
+import media.qimeng.app.core.ui.glass.QimengBackdropState
 import media.qimeng.app.core.ui.glass.TabDockDefaults
 import media.qimeng.app.core.ui.glass.pressScale
+import media.qimeng.app.core.ui.glass.qimengBackdropSource
+import media.qimeng.app.core.ui.glass.rememberQimengBackdropState
 import media.qimeng.app.core.ui.glass.rememberPressScaleSource
 import media.qimeng.app.core.ui.theme.QimengShapes
 import media.qimeng.app.core.ui.component.QimengPill
@@ -214,9 +219,13 @@ fun HomeScreen(
             }
     }
 
+    // 顶行真采样玻璃源（2026-10-03 质感对齐批）：捕获源=下方 pager（顶行的兄弟子树，
+    // 合法兄弟采样——与坞「内容层外采样」同构；自采样祖先/自身才是库的 SIGSEGV 反面教材）
+    val homeBackdrop = rememberQimengBackdropState(baseColor = MaterialTheme.colorScheme.background)
     Column(modifier = Modifier.fillMaxSize()) {
         HomeTopRow(
             columns = columns,
+            backdrop = homeBackdrop,
             onOpenSearch = onOpenSearch,
             // Y4b：面板唯一实现在 :core:ui（QimengFilterSheet），开关/草稿都在 VM 筛选态里
             onOpenFilter = viewModel::openFilterSheet,
@@ -255,7 +264,10 @@ fun HomeScreen(
         }
         HorizontalPager(
             state = pagerState,
-            modifier = Modifier.weight(1f),
+            // 顶行真采样捕获源：pager 子树记录进 homeBackdrop（消费方=顶行搜索胶囊/图标钮）
+            modifier = Modifier
+                .weight(1f)
+                .qimengBackdropSource(homeBackdrop),
         ) { page ->
             // 网格点击统一走：先写批次上下文（详情页 i/N 序号+3b 滑动切换数据链），再交壳层导航
             val onAssetClick: (MediaAsset) -> Unit = { asset ->
@@ -331,6 +343,7 @@ fun HomeScreen(
 @Composable
 private fun HomeTopRow(
     columns: Int,
+    backdrop: QimengBackdropState,
     onOpenSearch: () -> Unit,
     onOpenFilter: () -> Unit,
     onToggleColumns: () -> Unit,
@@ -354,13 +367,13 @@ private fun HomeTopRow(
             modifier = Modifier.padding(end = 10.dp),
         )
         // 搜索框不可聚焦（点击整块跳搜索页——规格书语义）；高度 40dp=旧版 fragment_home.xml L37
-        // 2026-10-03 玻璃坞迭代批：实色胶囊底 → GlassSurface 玻璃面（几何逐项保留：weight/
-        // 高度/胶囊形/文字规格零改动，只换面材质——极光从玻璃面透出），按压 spring 缩放即反馈
-        // （探索批 GLASS_TOP_ROW 同切口转正；不用真 backdrop 采样：胶囊下方无滚过内容，
-        // 且内容层自采样是库的 SIGSEGV 反面教材）
+        // 2026-10-03 质感对齐批：实色胶囊底 → 真采样玻璃面（与坞同 Backdrop 库同管线：
+        // vibrancy+blur 采样兄弟 pager 内容 + 主题 scrim + 受光描边；几何逐项保留），
+        // 按压 spring 缩放即反馈。此前 443 批「不用真采样」的顾虑（自采样 SIGSEGV）由
+        // 兄弟捕获源架构规避——采样源=pager 子树，本胶囊不在捕获层内
         val searchInteraction = rememberPressScaleSource()
-        GlassSurface(
-            shape = QimengShapes.pill,
+        BackdropGlassPanel(
+            backdrop = backdrop,
             modifier = Modifier
                 .weight(1f)
                 .height(QimengDimens.HomeSearchFieldHeight)
@@ -386,18 +399,20 @@ private fun HomeTopRow(
         // 筛选钮（左）与列数钮（右）：无障碍文案复用 core/ui 共享资源（QimengTitleRow 同款语义；
         // 别名导入防与 feature R 撞名）。2026-10-03 迭代批：本地手写 Surface 胶囊钮退役，
         // 换 core:ui 玻璃单源 GlassIconButton（40dp/24dp/primary tint 几何与色全同档）
-        GlassIconButton(
+        BackdropGlassIconButton(
             icon = HomeFilterIcon,
             contentDescription = stringResource(UiR.string.ui_filter_icon_desc),
             onClick = onOpenFilter,
+            backdrop = backdrop,
             tint = MaterialTheme.colorScheme.primary,
             // 旧版 L49-50 marginStart/End=10/6dp
             modifier = Modifier.padding(start = 10.dp, end = 6.dp),
         )
-        GlassIconButton(
+        BackdropGlassIconButton(
             icon = if (columns == 1) Grid1Icon else gridIconFor(columns),
             contentDescription = stringResource(UiR.string.ui_columns_icon_desc),
             onClick = onToggleColumns,
+            backdrop = backdrop,
             tint = MaterialTheme.colorScheme.primary,
         )
     }
