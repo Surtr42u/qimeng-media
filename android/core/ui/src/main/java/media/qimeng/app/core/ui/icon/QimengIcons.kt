@@ -190,3 +190,41 @@ val HomeFilterIcon: ImageVector = materialIcon(
 
 private const val MIN_GRID_ICON_COLUMNS = 2
 private const val MAX_GRID_ICON_COLUMNS = 5
+
+// ---------- 我的页入口行前导图标（2026-10-03 分组内嵌列表 v3 批；Material Icons 官方 path data 同源） ----------
+
+/** 服务器（Material "dns"）：通用组·服务器行 */
+val DnsIcon: ImageVector = materialIcon(
+    name = "QimengDns",
+    pathData = "M20 13H4c-.55 0-1 .45-1 1v6c0 .55.45 1 1 1h16c.55 0 1-.45 1-1v-6c0-.55-.45-1-1-1zM7 19c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zM20 3H4c-.55 0-1 .45-1 1v6c0 .55.45 1 1 1h16c.55 0 1-.45 1-1V4c0-.55-.45-1-1-1zM7 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z",
+)
+
+/** 作者总览（Material "group"）：内容组·作者行 */
+val GroupIcon: ImageVector = materialIcon(
+    name = "QimengGroup",
+    pathData = "M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z",
+)
+
+/** 浏览历史（Material "history"）：内容组·历史行 */
+val HistoryIcon: ImageVector = materialIcon(
+    name = "QimengHistory",
+    pathData = "M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z",
+)
+
+/** 数据管理（Material "folder"）：通用组·数据管理行 */
+val FolderIcon: ImageVector = materialIcon(
+    name = "QimengFolder",
+    pathData = "M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z",
+)
+
+/** 主体色彩（Material "palette"）：通用组·主体色彩行 */
+val PaletteIcon: ImageVector = materialIcon(
+    name = "QimengPalette",
+    pathData = "M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.01-.23-.26-.38-.61-.38-.99 0-.83.67-1.5 1.5-1.5H16c2.76 0 5-2.24 5-5 0-4.42-4.03-8-9-8zm-5.5 9c-.83 0-1.5-.67-1.5-1.5S5.67 9 6.5 9 8 9.67 8 10.5 7.33 12 6.5 12zm3-4C8.67 8 8 7.33 8 6.5S8.67 5 9.5 5s1.5.67 1.5 1.5S10.33 8 9.5 8zm5 0c-.83 0-1.5-.67-1.5-1.5S13.67 5 14.5 5s1.5.67 1.5 1.5S15.33 8 14.5 8zm3 4c-.83 0-1.5-.67-1.5-1.5S16.67 9 17.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z",
+)
+
+/** 推荐偏好（Material "tune"）：通用组·推荐偏好行 */
+val TuneIcon: ImageVector = materialIcon(
+    name = "QimengTune",
+    pathData = "M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z",
+)

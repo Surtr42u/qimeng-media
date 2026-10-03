@@ -3,11 +3,13 @@ package media.qimeng.app.feature.settings
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -17,6 +19,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.rememberScrollState
@@ -37,7 +41,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -52,6 +58,13 @@ import media.qimeng.app.core.model.TabBarMaterial
 import media.qimeng.app.core.ui.component.QimengSegPill
 import media.qimeng.app.core.ui.glass.TabDockDefaults
 import media.qimeng.app.core.ui.icon.ChevronRightIcon
+import media.qimeng.app.core.ui.icon.DnsIcon
+import media.qimeng.app.core.ui.icon.FavoriteBorderIcon
+import media.qimeng.app.core.ui.icon.FolderIcon
+import media.qimeng.app.core.ui.icon.GroupIcon
+import media.qimeng.app.core.ui.icon.HistoryIcon
+import media.qimeng.app.core.ui.icon.PaletteIcon
+import media.qimeng.app.core.ui.icon.TuneIcon
 import media.qimeng.app.core.ui.theme.QimengDimens
 
 /** 我的页入口行文案（GUIDE_UI §我的页 + M4-2 既有入口 + M4-6 上传入口；
@@ -71,6 +84,10 @@ private const val ROW_DATA_MANAGE = "数据管理"
  *  点进子页承载——主列表减两卡、外观相关收敛一处） */
 private const val ROW_THEME = "主体色彩"
 private const val SUBTITLE_THEME = "外观模式与底栏材质"
+
+/** 分组小节标题（2026-10-03 v3 批：iOS inset grouped 小节语言） */
+private const val SECTION_CONTENT = "内容"
+private const val SECTION_GENERAL = "通用"
 
 /** 推荐偏好行文案：入口行与 PrefsBottomSheet 标题同串单源（Sheet 在 SettingsCards.kt，
  *  Kotlin 文件级 private 跨文件不可见，故本条 internal——模块外不可见） */
@@ -123,6 +140,27 @@ private val FirstRowTopSpacing = 16.dp
 
 /** 分组行按压高亮透明度（分组内嵌列表语言：轻高亮替代表面缩放/ripple，克制不抢戏） */
 private const val ENTRY_ROW_PRESSED_HIGHLIGHT = 0.05f
+
+/** 入口行前导图标容器边长（iOS 设置语言：32dp 圆角软底图标位） */
+private val EntryRowIconBoxSize = 32.dp
+
+/** 入口行前导图标容器圆角 */
+private val EntryRowIconBoxCornerRadius = 8.dp
+
+/** 入口行前导图标绘制尺寸 */
+private val EntryRowIconSize = 18.dp
+
+/** 入口行前导图标软底透明度（primary 染 10%——图标位语言单色统一，不做 iOS 多彩） */
+private const val ENTRY_ROW_ICON_BG_ALPHA = 0.10f
+
+/** 前导图标与文字间距 */
+private val EntryRowIconToTextSpacing = 12.dp
+
+/** 分组标题上距（iOS inset grouped 的小节节奏） */
+private val SectionHeaderTopSpacing = 20.dp
+
+/** 分组标题下距 */
+private val SectionHeaderBottomSpacing = 8.dp
 
 /**
  * 「我的」Tab（M4-6 完整版，单页滚动列表，GUIDE_UI §我的页结构 + I4 复刻清偿；
@@ -322,27 +360,38 @@ private fun LazyListScope.settingsEntryRowItems(
     onOpenTheme: () -> Unit,
     onOpenPrefs: () -> Unit,
 ) {
-    // 2026-10-03 我的页方案重做（用户拍板「选项卡不行，换方案」）：逐行浮卡退役 →
-    // 分组内嵌列表（iOS 设置/One UI 通用语言）：一个大圆角容器装全部入口行，行间发丝
-    // 分隔线，可点行尾部箭头，按压=轻高亮。内容面安静实色，玻璃语言留给 chrome
-    // （坞/顶行），材质各归其位
+    // 2026-10-03 我的页 v3（用户拍板「搜优秀案例重做」）：研究归纳=个人中心三段式 +
+    // iOS 设置高级感三要素（前导图标/分组小节标题/卡片与背景明确边界）。
+    // 两分组：「内容」（收藏/历史/作者）+「通用」（服务器/数据管理/主体色彩/推荐偏好）；
+    // 卡片白底加发丝描边（白贴 #FAFAFA 近乎不可辨是 v2 病根）；图标位 primary 单色软底
     item {
-        Surface(
-            color = MaterialTheme.colorScheme.surface,
-            shape = RoundedCornerShape(QimengDimens.CardCornerRadius),
-            modifier = Modifier
-                .fillMaxWidth()
-                // 行区上距 16dp（旧版运行时规格，原资料卡/本机模式行同位）
-                .padding(top = FirstRowTopSpacing),
-        ) {
-            Column {
-                EntryRow(ROW_SERVER, SUBTITLE_SERVER, onClick = onOpenServerDetail, showDivider = true)
-                EntryRow(ROW_AUTHORS, SUBTITLE_AUTHORS, onClick = onOpenAuthors, showDivider = true)
-                EntryRow(ROW_FAVORITE, SUBTITLE_FAVORITE, onClick = onOpenFavorite, showDivider = true)
-                EntryRow(ROW_HISTORY, SUBTITLE_HISTORY, onClick = onOpenHistory, showDivider = true)
-                EntryRow(ROW_DATA_MANAGE, SUBTITLE_DATA_MANAGE, onClick = onOpenDataManage, showDivider = true)
-                EntryRow(ROW_THEME, SUBTITLE_THEME, onClick = onOpenTheme, showDivider = true)
-                EntryRow(ROW_PREFS, SUBTITLE_PREFS, onClick = onOpenPrefs)
+        Column(modifier = Modifier.padding(top = FirstRowTopSpacing)) {
+            SectionHeader(text = SECTION_CONTENT)
+            Surface(
+                color = MaterialTheme.colorScheme.surface,
+                shape = RoundedCornerShape(QimengDimens.CardCornerRadius),
+                border = BorderStroke(QimengDimens.DividerThickness, MaterialTheme.colorScheme.outlineVariant),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column {
+                    EntryRow(ROW_FAVORITE, SUBTITLE_FAVORITE, icon = FavoriteBorderIcon, onClick = onOpenFavorite, showDivider = true)
+                    EntryRow(ROW_HISTORY, SUBTITLE_HISTORY, icon = HistoryIcon, onClick = onOpenHistory, showDivider = true)
+                    EntryRow(ROW_AUTHORS, SUBTITLE_AUTHORS, icon = GroupIcon, onClick = onOpenAuthors)
+                }
+            }
+            SectionHeader(text = SECTION_GENERAL)
+            Surface(
+                color = MaterialTheme.colorScheme.surface,
+                shape = RoundedCornerShape(QimengDimens.CardCornerRadius),
+                border = BorderStroke(QimengDimens.DividerThickness, MaterialTheme.colorScheme.outlineVariant),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column {
+                    EntryRow(ROW_SERVER, SUBTITLE_SERVER, icon = DnsIcon, onClick = onOpenServerDetail, showDivider = true)
+                    EntryRow(ROW_DATA_MANAGE, SUBTITLE_DATA_MANAGE, icon = FolderIcon, onClick = onOpenDataManage, showDivider = true)
+                    EntryRow(ROW_THEME, SUBTITLE_THEME, icon = PaletteIcon, onClick = onOpenTheme, showDivider = true)
+                    EntryRow(ROW_PREFS, SUBTITLE_PREFS, icon = TuneIcon, onClick = onOpenPrefs)
+                }
             }
         }
     }
@@ -356,11 +405,12 @@ private fun LazyListScope.settingsEntryRowItems(
  * 与缩略图生成进度合并为单页，QuotaCard 随迁 feature:manage。）
  */
 private fun LazyListScope.settingsFooterItems(state: MineUiState, viewModel: SettingsViewModel) {
-    // 版本信息（C6：服务端版本）——分组内嵌列表语言：单独一组容器
+    // 版本信息（C6：服务端版本）——分组内嵌列表语言：单独一组容器（v3 同款描边）
     item {
         Surface(
             color = MaterialTheme.colorScheme.surface,
             shape = RoundedCornerShape(QimengDimens.CardCornerRadius),
+            border = BorderStroke(QimengDimens.DividerThickness, MaterialTheme.colorScheme.outlineVariant),
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = QimengDimens.SpaceL),
@@ -399,12 +449,13 @@ private fun EntryRow(
     label: String,
     subtitle: String? = null,
     detail: String? = null,
+    icon: ImageVector? = null,
     modifier: Modifier = Modifier,
     showDivider: Boolean = false,
     onClick: (() -> Unit)?,
 ) {
-    // 2026-10-03 分组内嵌列表行：无底无浮卡（底色由外层分组容器提供）；按压=轻高亮
-    // （onSurface 低透，无 ripple 方框）；可点行尾部 chevron 箭头；组内发丝分隔线可选
+    // 2026-10-03 v3：iOS 设置式前导图标位（primary 单色软底圆角块）+ 分组行语言
+    // （无底浮卡/按压轻高亮/尾部 chevron/组内发丝分隔线）
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     Column(modifier = modifier) {
@@ -429,6 +480,23 @@ private fun EntryRow(
                 .padding(horizontal = QimengDimens.ProfileRowHorizontalPadding),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            if (icon != null) {
+                Box(
+                    modifier = Modifier
+                        .size(EntryRowIconBoxSize)
+                        .clip(RoundedCornerShape(EntryRowIconBoxCornerRadius))
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = ENTRY_ROW_ICON_BG_ALPHA)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(EntryRowIconSize),
+                    )
+                }
+                Spacer(modifier = Modifier.width(EntryRowIconToTextSpacing))
+            }
             // 单块两行文本（旧版单个 TextView：标题+副标题同字号同色，非两块 Text）
             Text(
                 text = if (subtitle != null) "$label\n$subtitle" else label,
@@ -460,6 +528,22 @@ private fun EntryRow(
             )
         }
     }
+}
+
+/** 分组小节标题（iOS inset grouped 语言：小号次级色标签，上距>下距的小节节奏） */
+@Composable
+private fun SectionHeader(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = modifier.padding(
+            top = SectionHeaderTopSpacing,
+            bottom = SectionHeaderBottomSpacing,
+            // 左端对齐组内行文字起点（行内边距同档）
+            start = QimengDimens.ProfileRowHorizontalPadding,
+        ),
+    )
 }
 
 /**
