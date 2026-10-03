@@ -20,6 +20,16 @@
 - **验证（用户在场时段临时解禁本机构建，2026-10-03 用户拍板）**：gradlew `compileDebugKotlin`/`compileKotlin`（全模块）+ `testDebugUnitTest` + `:core:model:test` + `assembleDebug` 本地全绿；云端 CI 复验为最终门禁。红线 grep 核验：feature 层零 glass 颜色 import（仅 `TabDockDefaults` 让位常量=ADR-0033 决策 1 设计内消费）、无预览变体脚手架混入、Backdrop 依赖仅 core:ui 声明。
 - **涉及文档**：`docs/CHANGELOG.md`（本条）。
 
+## fix(app): 评估分支 ui/app-dock-only——「老UI+纯玻璃坞」减法批（2026-10-03 第四百四十四笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- **背景（用户拍板）**：玻璃坞全量批（441~443 笔，已随 PR #16 合入 master=第四百四十四笔前主线）装机后，用户明确评估口径=「只评 tab」——手机日常 App 被整身换装（极光/夜间新配色/玻璃卡/搜索胶囊）超出其预期，选定评估包范围=「老UI+纯玻璃坞」：以 440 笔树（67e5db0）为基，只保留玻璃坞底栏本体，其余全量玻璃语言退场；选中效果重做在本分支随后续批次落地。master 不动（全量版仍在主线上，用户评估后二选一：留全量/回落本分支口径）。
+- **基线与保留**：cherry-pick 441 笔两笔（1a08c54a 等价）+ 442 笔编译返工（d7ef9cb7 等价）到 67e5db0 之上——保留：FloatingTabDock 四材质坞+TabDockDefaults、QimengBackdrop 捕获封装、UiAppearance（外观三态/材质四选+DataStore）、设置页外观面板、MainActivity 单点暗色解析、四 tab 页让位接线、Shape.kt（QimengShapes 玻璃形 token）、Backdrop 依赖（libs.versions.toml+core:ui/build.gradle.kts）、442 笔全部编译修复。
+- **退场（本批减法）**：①AuroraBackdrop.kt 整件删除+GlassColors 辉光族（glowPalette/glowIntensity/GLOW_* 四常量/Color×系数运算符）——极光画布不做渲染层，坞的玻璃直接以主题 background 为采样基底（baseColor 同族口径不变）；②主题三件恢复 440 笔原版（Color/Theme/Type——旧中性灰板回归，MaterialExpressiveTheme/MotionScheme.expressive/qimengShapes 集成随恢复退场），Theme.kt 仅增补 `isQimengDarkTheme()`（colorScheme.background 亮度判定，玻璃件暗色判定与 QimengTheme 同源，旧深浅板均成立：#1A1A1A/#FAFAFA 跨 0.5 阈值两侧）；③Motion.kt KDoc「第一层=M3 Expressive」表述同步勘正（Expressive 随主题恢复退场）。PrimarySoft 指示器软色为旧板既有 token（旧 Color.kt 本就登记），无新增。
+- **验证**：gradlew 全模块 compileDebugKotlin/compileKotlin 本地绿（旧主题恢复后唯一编译冲突=PrimarySoft 重复声明，系旧板既有 token 与增补撞名，删增补即解）。预期观感：全 App=440 笔老观感，唯一可见变化=底栏为玻璃坞（LIQUID 档在纯色底上折射采样内容）。
+- **涉及文档**：`docs/CHANGELOG.md`（本条）。
+
 ## feat(app): 悬浮玻璃坞底栏——液态/磨砂玻璃四材质+单颗滑动胶囊+主题拓充+夜间极光板（2026-10-03 第四百四十一笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理实现，主代理编排+独立评审+文档）

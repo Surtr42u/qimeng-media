@@ -62,7 +62,6 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import media.qimeng.app.core.model.TabBarMaterial
 import media.qimeng.app.core.ui.component.TabScrollController
-import media.qimeng.app.core.ui.glass.AuroraBackdrop
 import media.qimeng.app.core.ui.glass.FloatingTabDock
 import media.qimeng.app.core.ui.glass.GlassNavItem
 import media.qimeng.app.core.ui.glass.qimengBackdropSource
@@ -282,7 +281,7 @@ fun QimengNavHost(
     // 玻璃坞的 backdrop 采样源：经 :core:ui glass 包封装 [rememberQimengBackdropState]
     // （评审必修 1：Backdrop 库是 :core:ui 的 implementation 依赖，壳层编译类路径不可见
     // ——此前壳层直引库的 rememberLayerBackdrop 属编译必炸的越界直引，现只见包装 API）。
-    // base 色取画布底色（主题 background，与 AuroraBackdrop 的日夜基底同族）；
+    // base 色取画布底色（主题 background，本分支无极光层，直接作玻璃采样基底）；
     // base 色 drawRect + drawContent()——内容稀疏的屏模糊仍有色彩基底，不透黑，官方
     // Glass Bottom Bar 教程配方；SOLID/CLASSIC 不挂捕获（零开销），backdrop 对象创建无害。
     val canvasBaseColor = MaterialTheme.colorScheme.background
@@ -375,13 +374,8 @@ fun QimengNavHost(
             end = innerPadding.calculateEndPadding(layoutDirection),
         )
         Box(modifier = Modifier.fillMaxSize()) {
-            // ── 极光氛围底（ADR-0031 玻璃语言的景深来源）：仅玻璃材质档渲染——它是玻璃
-            //  面板「磨砂观感」的垫底；SOLID/CLASSIC 保持主线纯色底（主 Scaffold 容器色）──
-            if (tabBarMaterial.usesBackdrop) {
-                Box(modifier = Modifier.fillMaxSize().zIndex(-2f)) {
-                    AuroraBackdrop(modifier = Modifier.fillMaxSize())
-                }
-            }
+            // ── 极光氛围底：本评估分支不渲染（用户拍板「老UI+纯玻璃坞」——极光/玻璃卡/
+            //  搜索胶囊等全量玻璃语言不在本包，坞的玻璃直接以主题 background 为采样基底）──
 
             // ── 内容层：NavHost + 常驻层。玻璃材质档挂 layerBackdrop 捕获（官方教程配方，
             // 坞的 drawBackdrop 采样此层）；SOLID/CLASSIC 零捕获零开销 ──

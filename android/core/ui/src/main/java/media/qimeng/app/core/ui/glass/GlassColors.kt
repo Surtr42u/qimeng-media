@@ -1,6 +1,5 @@
 package media.qimeng.app.core.ui.glass
 
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
@@ -62,28 +61,3 @@ private val LightGlass = GlassColors(
 /** 主题感知的玻璃配色入口（玻璃件唯一取色口，禁止 feature 直引 DarkGlass/LightGlass） */
 @Composable
 fun glassColors(): GlassColors = if (isQimengDarkTheme()) DarkGlass else LightGlass
-
-/** 辉光层透明度：暗色主题辉光更饱和、浅色收敛（避免昼间发腻） */
-@Composable
-fun glowIntensity(): Float = if (isQimengDarkTheme()) 1f else GLOW_LIGHT_SCALE
-
-/** 浅色主题辉光衰减系数（辉光色 alpha 统一乘子） */
-private const val GLOW_LIGHT_SCALE = 0.55f
-
-/** 辉光基础 alpha 档（走查 r1 校准：ambient 感可感知的最低饱和档） */
-private const val GLOW_IRIS_ALPHA = 0.38f
-private const val GLOW_TEAL_ALPHA = 0.30f
-private const val GLOW_BLOSSOM_ALPHA = 0.20f
-private const val GLOW_VIOLET_ALPHA = 0.26f
-
-/** 主题感知的辉光基础色组（AuroraBackdrop 消费；顺序=鸢尾/极光青/霞粉/霓紫） */
-@Composable
-internal fun glowPalette(): List<Color> = listOf(
-    MaterialTheme.colorScheme.primary.copy(alpha = GLOW_IRIS_ALPHA) * glowIntensity(),
-    MaterialTheme.colorScheme.tertiary.copy(alpha = GLOW_TEAL_ALPHA) * glowIntensity(),
-    Color(0xFFE85C9A).copy(alpha = GLOW_BLOSSOM_ALPHA) * glowIntensity(),
-    Color(0xFF7C4DE8).copy(alpha = GLOW_VIOLET_ALPHA) * glowIntensity(),
-)
-
-/** Color × 系数的轻量运算（仅用于辉光 alpha 衰减，不走完整色彩空间转换） */
-private operator fun Color.times(scale: Float): Color = copy(alpha = alpha * scale)
