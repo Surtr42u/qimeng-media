@@ -151,10 +151,10 @@ const (
 	// extractWordMaxRunes 兜底提取单词条的 rune 上限：真实角色名远短于此，
 	// 超长词是描述句混入，拒绝成为角色桶。
 	extractWordMaxRunes = 50
-	// tokenEdgeTrim 词元边缘清理字符集：连接符与括号序号（"(1)" 剥成 "1" 后
+	// wordEdgeTrim 词元边缘清理字符集：连接符与括号序号（"(1)" 剥成 "1" 后
 	// 按纯数字终止）。x/&/+ 的分隔语义在 splitSeparators/isSeparatorWord 处理，
 	// 不进此集合（避免误伤词内字符）。
-	tokenEdgeTrim = "+_-.()（）【】[]"
+	wordEdgeTrim = "+_-.()（）【】[]"
 )
 
 // matchAllCharacters 别名表优先 + 兜底提取（MatchAll 专用）：表命中非空直接
@@ -203,7 +203,7 @@ func (ix *index) extractTokens(rest, source string) []string {
 		}
 		terminated := false
 		for _, tok := range splitSeparators(field) {
-			tok = strings.Trim(tok, tokenEdgeTrim)
+			tok = strings.Trim(tok, wordEdgeTrim)
 			if tok == "" || isSeparatorWord(tok) {
 				continue
 			}
