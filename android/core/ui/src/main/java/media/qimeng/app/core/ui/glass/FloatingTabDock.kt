@@ -643,7 +643,10 @@ private fun DockNavItem(
     val tint = if (selected) {
         MaterialTheme.colorScheme.primary
     } else {
-        MaterialTheme.colorScheme.onSurfaceVariant
+        // 2026-10-03 用户真机反馈：浅色主题下玻璃坞半透明面 + 浅色首页背景，onSurfaceVariant
+        // 次级灰对比不足、图案与文字发虚——未选中档升为主内容色 onSurface（深/浅主题下均为
+        // 该主题最强文本色）；选中态 primary + SemiBold + 点亮缩放维持层级区分
+        MaterialTheme.colorScheme.onSurface
     }
     Column(
         modifier = modifier

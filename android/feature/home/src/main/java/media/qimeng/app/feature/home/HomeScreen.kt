@@ -1,11 +1,6 @@
 package media.qimeng.app.feature.home
 
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,12 +10,9 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -32,8 +24,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -55,7 +45,17 @@ import media.qimeng.app.core.ui.component.QimengChipRow
 import media.qimeng.app.core.ui.component.QimengEmptyState
 import media.qimeng.app.core.ui.component.QimengFilterSheet
 import media.qimeng.app.core.ui.component.QimengMediaGrid
+import media.qimeng.app.core.ui.glass.BackdropGlassIconButton
+import media.qimeng.app.core.ui.glass.BackdropGlassPanel
+import media.qimeng.app.core.ui.glass.GlassIconButton
+import media.qimeng.app.core.ui.glass.GlassSurface
+import media.qimeng.app.core.ui.glass.QimengBackdropState
 import media.qimeng.app.core.ui.glass.TabDockDefaults
+import media.qimeng.app.core.ui.glass.pressScale
+import media.qimeng.app.core.ui.glass.qimengBackdropSource
+import media.qimeng.app.core.ui.glass.rememberQimengBackdropState
+import media.qimeng.app.core.ui.glass.rememberPressScaleSource
+import media.qimeng.app.core.ui.theme.QimengShapes
 import media.qimeng.app.core.ui.component.QimengPill
 import media.qimeng.app.core.ui.component.QimengPullToRefresh
 import media.qimeng.app.core.ui.component.QimengSkeletonGrid
@@ -132,6 +132,9 @@ internal fun pagerPageForTabSync(isScrollInProgress: Boolean, currentPage: Int):
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
+    // 性能联动（2026-10-03 帧实测批）：true=玻璃材质档（顶行走真采样管线）；
+    // false=纯色/经典档（零捕获，顶行走静态玻璃面）——由壳层按底栏材质传入
+    glassEnabled: Boolean = true,
     onOpenSearch: () -> Unit,
     onOpenAsset: (assetId: String) -> Unit,
     viewModel: HomeViewModel = hiltViewModel(),
@@ -221,9 +224,18 @@ fun HomeScreen(
             }
     }
 
+    // 顶行真采样玻璃源（2026-10-03 质感对齐批；帧实测批加性能门控）：捕获源=下方 pager
+    // （顶行的兄弟子树，合法兄弟采样）。玻璃材质档才创建捕获——纯色/经典档 null=顶行
+    // 静态玻璃 + pager 不挂捕获层，零采样开销
+    val homeBackdrop = if (glassEnabled) {
+        rememberQimengBackdropState(baseColor = MaterialTheme.colorScheme.background)
+    } else {
+        null
+    }
     Column(modifier = Modifier.fillMaxSize()) {
         HomeTopRow(
             columns = columns,
+            backdrop = homeBackdrop,
             onOpenSearch = onOpenSearch,
             // Y4b：面板唯一实现在 :core:ui（QimengFilterSheet），开关/草稿都在 VM 筛选态里
             onOpenFilter = viewModel::openFilterSheet,
@@ -262,7 +274,16 @@ fun HomeScreen(
         }
         HorizontalPager(
             state = pagerState,
-            modifier = Modifier.weight(1f),
+            // 顶行真采样捕获源：pager 子树记录进 homeBackdrop（玻璃档才挂；消费方=顶行）
+            modifier = Modifier
+                .weight(1f)
+                .then(
+                    if (homeBackdrop != null) {
+                        Modifier.qimengBackdropSource(homeBackdrop)
+                    } else {
+                        Modifier
+                    },
+                ),
         ) { page ->
             // 网格点击统一走：先写批次上下文（详情页 i/N 序号+3b 滑动切换数据链），再交壳层导航
             val onAssetClick: (MediaAsset) -> Unit = { asset ->
@@ -338,6 +359,7 @@ fun HomeScreen(
 @Composable
 private fun HomeTopRow(
     columns: Int,
+    backdrop: QimengBackdropState?,
     onOpenSearch: () -> Unit,
     onOpenFilter: () -> Unit,
     onToggleColumns: () -> Unit,
@@ -361,106 +383,92 @@ private fun HomeTopRow(
             modifier = Modifier.padding(end = 10.dp),
         )
         // 搜索框不可聚焦（点击整块跳搜索页——规格书语义）；高度 40dp=旧版 fragment_home.xml L37
-        // bg_capsule_soft 胶囊底（F 批 2026-09-09：压回旧版视觉，此前实测 48dp）
-        Surface(
-            shape = RoundedCornerShape(QimengDimens.PillCornerRadius),
-            color = MaterialTheme.colorScheme.surfaceVariant,
-            modifier = Modifier
-                .weight(1f)
-                .height(QimengDimens.HomeSearchFieldHeight)
-                .clickable(onClick = onOpenSearch),
-        ) {
-            Box(
-                modifier = Modifier.fillMaxHeight(),
-                contentAlignment = Alignment.Center,
+        // 2026-10-03 质感对齐批：实色胶囊底 → 玻璃面。玻璃材质档走真采样管线（与坞同
+        // Backdrop 库：vibrancy+blur 采样兄弟 pager）；纯色/经典档 backdrop=null 走静态
+        // GlassSurface（零捕获零开销，帧实测批的性能门控）。按压 spring 缩放即反馈
+        val searchInteraction = rememberPressScaleSource()
+        if (backdrop != null) {
+            BackdropGlassPanel(
+                backdrop = backdrop,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(QimengDimens.HomeSearchFieldHeight)
+                    .pressScale(searchInteraction)
+                    .clickable(
+                        interactionSource = searchInteraction,
+                        indication = null,
+                        onClick = onOpenSearch,
+                    ),
             ) {
-                Text(
-                    text = "搜索",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 12.dp),
-                )
+                HomeSearchFieldContent()
+            }
+        } else {
+            GlassSurface(
+                shape = QimengShapes.pill,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(QimengDimens.HomeSearchFieldHeight)
+                    .pressScale(searchInteraction)
+                    .clickable(
+                        interactionSource = searchInteraction,
+                        indication = null,
+                        onClick = onOpenSearch,
+                    ),
+            ) {
+                HomeSearchFieldContent()
             }
         }
         // 筛选钮（左）与列数钮（右）：无障碍文案复用 core/ui 共享资源（QimengTitleRow 同款语义；
-        // 别名导入防与 feature R 撞名）
-        HomeTopIconButton(
-            icon = HomeFilterIcon,
-            contentDescription = stringResource(UiR.string.ui_filter_icon_desc),
-            onClick = onOpenFilter,
-            // 旧版 L49-50 marginStart/End=10/6dp
-            modifier = Modifier.padding(start = 10.dp, end = 6.dp),
-        )
-        HomeTopIconButton(
-            icon = if (columns == 1) Grid1Icon else gridIconFor(columns),
-            contentDescription = stringResource(UiR.string.ui_columns_icon_desc),
-            onClick = onToggleColumns,
-        )
+        // 别名导入防与 feature R 撞名）。玻璃档=BackdropGlassIconButton 真采样，纯色档=GlassIconButton
+        if (backdrop != null) {
+            BackdropGlassIconButton(
+                icon = HomeFilterIcon,
+                contentDescription = stringResource(UiR.string.ui_filter_icon_desc),
+                onClick = onOpenFilter,
+                backdrop = backdrop,
+                tint = MaterialTheme.colorScheme.primary,
+                // 旧版 L49-50 marginStart/End=10/6dp
+                modifier = Modifier.padding(start = 10.dp, end = 6.dp),
+            )
+            BackdropGlassIconButton(
+                icon = if (columns == 1) Grid1Icon else gridIconFor(columns),
+                contentDescription = stringResource(UiR.string.ui_columns_icon_desc),
+                onClick = onToggleColumns,
+                backdrop = backdrop,
+                tint = MaterialTheme.colorScheme.primary,
+            )
+        } else {
+            GlassIconButton(
+                icon = HomeFilterIcon,
+                contentDescription = stringResource(UiR.string.ui_filter_icon_desc),
+                onClick = onOpenFilter,
+                tint = MaterialTheme.colorScheme.primary,
+                // 旧版 L49-50 marginStart/End=10/6dp
+                modifier = Modifier.padding(start = 10.dp, end = 6.dp),
+            )
+            GlassIconButton(
+                icon = if (columns == 1) Grid1Icon else gridIconFor(columns),
+                contentDescription = stringResource(UiR.string.ui_columns_icon_desc),
+                onClick = onToggleColumns,
+                tint = MaterialTheme.colorScheme.primary,
+            )
+        }
     }
 }
 
-/** 按下缩放最小值（QimengSegPill 同款 0.92，GUIDE_UI §UI约束「按下反馈动画」） */
-private const val HOME_TOP_ICON_PRESSED_SCALE = 0.92f
-
-/** 按下缩放动画时长 ms（QimengSegPill 同款 100ms，旧版 PressAnimation 对应值） */
-private const val HOME_TOP_ICON_PRESS_SCALE_DURATION_MS = 100
-
-/**
- * 首页顶栏 40dp 胶囊图标钮（Y4a）：Surface 胶囊底（[QimengDimens.PillCornerRadius]，对齐旧版
- * bg_capsule_soft；U10-3 底槽统一 surfaceVariant→secondaryContainer——旧 bg_capsule_soft 实色=
- * qmColorChipBg #F0F0F2，Theme.kt 映射 secondaryContainer，与相册页 QimengTitleRow 筛选钮同语言）
- * + 24dp 图标（[QimengDimens.IconDefaultSize]，tint 对齐旧版
- * qmColorPrimary→primary 槽）+ 按压缩放反馈（QimengSegPill 同款 0.92/100ms 机制；旧版 ImageView
- * 无按压反馈，取 GUIDE_UI §UI约束 标准款补齐）。
- * 不走 M3 Surface onClick 重载/IconButton：二者内建 48dp 最小触达会把 40dp 胶囊撑大
- * （同 QimengSegPill F 批 KDoc 实测成因），旧版钮恰为 40dp 必须保形；缩放即反馈，不叠 ripple。
- */
+/** 搜索框文案内容（真采样/静态两个玻璃分支共用，避免内联重复） */
 @Composable
-private fun HomeTopIconButton(
-    icon: ImageVector,
-    contentDescription: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    // 按下态经自持 interactionSource 观测，缩放在 graphicsLayer 块内延迟读取 pressScale，
-    // 缩放动画不触发重组（QimengSegPill 同款机制）
-    val interactionSource = remember { MutableInteractionSource() }
-    val pressed by interactionSource.collectIsPressedAsState()
-    val pressScale by animateFloatAsState(
-        targetValue = if (pressed) HOME_TOP_ICON_PRESSED_SCALE else 1f,
-        animationSpec = tween(
-            durationMillis = HOME_TOP_ICON_PRESS_SCALE_DURATION_MS,
-            easing = FastOutSlowInEasing,
-        ),
-        label = "homeTopIconPressScale",
-    )
-    Surface(
-        shape = RoundedCornerShape(QimengDimens.PillCornerRadius),
-        // U10-3 统一规格：底槽对齐旧 bg_capsule_soft 实色源（secondaryContainer），见 KDoc
-        color = MaterialTheme.colorScheme.secondaryContainer,
-        modifier = modifier
-            .size(QimengDimens.IconButtonSize)
-            .graphicsLayer {
-                scaleX = pressScale
-                scaleY = pressScale
-            }
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick,
-            ),
+private fun HomeSearchFieldContent() {
+    Box(
+        modifier = Modifier.fillMaxHeight(),
+        contentAlignment = Alignment.Center,
     ) {
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = contentDescription,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(QimengDimens.IconDefaultSize),
-            )
-        }
+        Text(
+            text = "搜索",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 12.dp),
+        )
     }
 }
 

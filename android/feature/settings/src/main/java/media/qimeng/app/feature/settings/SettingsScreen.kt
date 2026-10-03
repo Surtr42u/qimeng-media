@@ -1,5 +1,6 @@
 package media.qimeng.app.feature.settings
 
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -16,14 +17,19 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -53,6 +59,11 @@ private const val ROW_AUTHORS = "作者总览"
 private const val ROW_FAVORITE = "收藏"
 private const val ROW_HISTORY = "浏览历史"
 private const val ROW_DATA_MANAGE = "数据管理"
+
+/** 主体色彩入口行（2026-10-03 液态感强化批：外观模式+底栏材质两张选择卡合并为单入口，
+ *  点进子页承载——主列表减两卡、外观相关收敛一处） */
+private const val ROW_THEME = "主体色彩"
+private const val SUBTITLE_THEME = "外观模式与底栏材质"
 
 /** 推荐偏好行文案：入口行与 PrefsBottomSheet 标题同串单源（Sheet 在 SettingsCards.kt，
  *  Kotlin 文件级 private 跨文件不可见，故本条 internal——模块外不可见） */
@@ -103,6 +114,10 @@ private val TitleToCardsSpacing = 24.dp
 /** 16dp：首个入口行上距（旧版运行时行区首行 marginTop 16dp；行下距用 QimengDimens.SpaceL 12dp） */
 private val FirstRowTopSpacing = 16.dp
 
+/** 入口行卡投影（2026-10-03 用户拍板「回到旧版布局、只做立体感」：旧版逐行白卡结构
+ *  原样保留，加 2dp 投影把卡从背景上抬起来） */
+private val EntryRowShadowElevation = 2.dp
+
 /**
  * 「我的」Tab（M4-6 完整版，单页滚动列表，GUIDE_UI §我的页结构 + I4 复刻清偿；
  * 2026-09-13 视觉复刻批：整页对齐旧版运行时——数量卡 96dp/20dp 圆角纯白 surface、
@@ -135,6 +150,18 @@ fun SettingsScreen(
     // 2026-10-03 悬浮玻璃坞批：外观/材质状态（外观偏好端口直读，与壳层 Theme/坞同源）
     val appearanceMode by viewModel.appearanceMode.collectAsStateWithLifecycle()
     val tabBarMaterial by viewModel.tabBarMaterial.collectAsStateWithLifecycle()
+    // 主体色彩子页（2026-10-03 液态感强化批）：外观模式+底栏材质两张选择卡合并为单入口行，
+    // 点进行内子页承载；rememberSaveable 跨旋转/进程重建，BackHandler 承接系统返回
+    var showThemePage by rememberSaveable { mutableStateOf(false) }
+    if (showThemePage) {
+        BackHandler(onBack = { showThemePage = false })
+        ThemeColorPage(
+            appearanceMode = appearanceMode,
+            onAppearanceModeSelect = viewModel::setAppearanceMode,
+            tabBarMaterial = tabBarMaterial,
+            onTabMaterialSelect = viewModel::setTabBarMaterial,
+        )
+    } else {
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -153,13 +180,11 @@ fun SettingsScreen(
             onOpenFavorite = onOpenFavorite,
             onOpenHistory = onOpenHistory,
             onOpenDataManage = onOpenDataManage,
-            appearanceMode = appearanceMode,
-            onAppearanceModeSelect = viewModel::setAppearanceMode,
-            tabBarMaterial = tabBarMaterial,
-            onTabMaterialSelect = viewModel::setTabBarMaterial,
+            onOpenTheme = { showThemePage = true },
             onOpenPrefs = viewModel::openPrefsSheet,
         )
         settingsFooterItems(state = state, viewModel = viewModel)
+    }
     }
 
     // Sheet 开关只看 prefsSheetOpen——预设四行本身不依赖网络，prefsValues 加载失败
@@ -173,6 +198,60 @@ fun SettingsScreen(
             onRetryLoad = viewModel::retryLoadPrefs,
             onApply = viewModel::applyPreset,
             onDismiss = viewModel::closePrefsSheet,
+        )
+    }
+}
+
+/**
+ * 主体色彩子页（2026-10-03 液态感强化批）：原主列表的外观模式三选 + 底栏材质四选两张
+ * 选择卡迁入本页承载——主列表以单入口行「主体色彩」点进，系统返回/无障碍回退都回主列表。
+ * 布局与主列表同语言（20dp 横 padding/28sp Bold 标题/底部悬浮坞让位）。
+ */
+@Composable
+private fun ThemeColorPage(
+    appearanceMode: AppearanceMode,
+    onAppearanceModeSelect: (AppearanceMode) -> Unit,
+    tabBarMaterial: TabBarMaterial,
+    onTabMaterialSelect: (TabBarMaterial) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(horizontal = ScreenContentPadding)
+            .verticalScroll(rememberScrollState())
+            // 底部让位悬浮坞（内容从坞身后滚过）
+            .padding(bottom = TabDockDefaults.bottomClearance()),
+    ) {
+        Text(
+            text = ROW_THEME,
+            style = MaterialTheme.typography.headlineSmall.copy(fontSize = 28.sp, fontWeight = FontWeight.Bold),
+            modifier = Modifier.padding(top = TitleToCardsSpacing, bottom = FirstRowTopSpacing),
+        )
+        SettingsSelectorCard(
+            title = stringResource(R.string.settings_appearance_title),
+            subtitle = stringResource(R.string.settings_appearance_subtitle),
+            options = listOf(
+                stringResource(R.string.settings_appearance_system),
+                stringResource(R.string.settings_appearance_light),
+                stringResource(R.string.settings_appearance_dark),
+            ),
+            selectedIndex = AppearanceMode.entries.indexOf(appearanceMode).coerceAtLeast(0),
+            onSelect = { index -> onAppearanceModeSelect(AppearanceMode.entries[index]) },
+            modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
+        )
+        SettingsSelectorCard(
+            title = stringResource(R.string.settings_tab_material_title),
+            subtitle = stringResource(R.string.settings_tab_material_subtitle),
+            options = listOf(
+                stringResource(R.string.settings_tab_material_liquid),
+                stringResource(R.string.settings_tab_material_frosted),
+                stringResource(R.string.settings_tab_material_solid),
+                stringResource(R.string.settings_tab_material_classic),
+            ),
+            selectedIndex = TabBarMaterial.entries.indexOf(tabBarMaterial).coerceAtLeast(0),
+            onSelect = { index -> onTabMaterialSelect(TabBarMaterial.entries[index]) },
+            modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
         )
     }
 }
@@ -234,15 +313,11 @@ private fun LazyListScope.settingsEntryRowItems(
     onOpenFavorite: () -> Unit,
     onOpenHistory: () -> Unit,
     onOpenDataManage: () -> Unit,
-    appearanceMode: AppearanceMode,
-    onAppearanceModeSelect: (AppearanceMode) -> Unit,
-    tabBarMaterial: TabBarMaterial,
-    onTabMaterialSelect: (TabBarMaterial) -> Unit,
+    onOpenTheme: () -> Unit,
     onOpenPrefs: () -> Unit,
 ) {
-    // 服务器入口行（U10-4：原「服务器地址」只展示卡与「本机模式」快捷行合并为单入口，
-    // 点击 onOpenServerDetail → 壳层 Routes.SERVER 子页；副文案概括地址/本机模式/
-    // 换址需重新登录三件事，行上不再展示地址——地址只在子页内消费）
+    // 2026-10-03 用户拍板：我的页回到旧版逐行白卡布局（v2 分组列表/v3 图标分组两方案
+    // 均撤回），仅做立体感——行卡加 2dp 投影（EntryRow 内统一处理）
     item {
         EntryRow(
             label = ROW_SERVER,
@@ -252,9 +327,6 @@ private fun LazyListScope.settingsEntryRowItems(
             modifier = Modifier.padding(top = FirstRowTopSpacing, bottom = QimengDimens.SpaceL),
         )
     }
-
-    // 作者总览入口行（X5 批 2026-09-12：内嵌卡改收藏同款外部入口行，用户问题8；
-    // 点击=onOpenAuthors → 壳层 Routes.AUTHORS → AuthorScreen 全部作者页）
     item {
         EntryRow(
             label = ROW_AUTHORS,
@@ -279,11 +351,6 @@ private fun LazyListScope.settingsEntryRowItems(
             modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
         )
     }
-
-    // 数据管理入口（U10-6：原「上传文件」行原位升级为合并入口——上传/注册媒体目录/
-    // 库管理进 feature:manage hub 二级页；副文案概括 hub 三件事，保持其他入口行两行节奏。
-    // 2026-09-28 归档文件夹批：「上传收件箱与归档」入口行随用户拍板迁入本 hub
-    // （「下载箱移到数据管理中，不需要在外面单独一个显示」），本页不再单列收件箱行）
     item {
         EntryRow(
             label = ROW_DATA_MANAGE,
@@ -292,46 +359,14 @@ private fun LazyListScope.settingsEntryRowItems(
             modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
         )
     }
-
-    // 外观模式（2026-10-03 悬浮玻璃坞批：原「主题色彩」不可点占位行升级为三选手动开关
-    // ——跟随系统/浅色/深色，持久化经 [AppearancePrefsRepository]，与壳层 Theme 的暗色
-    // 解析同一数据源；选项文案进 strings.xml）
     item {
-        SettingsSelectorCard(
-            title = stringResource(R.string.settings_appearance_title),
-            subtitle = stringResource(R.string.settings_appearance_subtitle),
-            options = listOf(
-                stringResource(R.string.settings_appearance_system),
-                stringResource(R.string.settings_appearance_light),
-                stringResource(R.string.settings_appearance_dark),
-            ),
-            selectedIndex = AppearanceMode.entries.indexOf(appearanceMode).coerceAtLeast(0),
-            onSelect = { index -> onAppearanceModeSelect(AppearanceMode.entries[index]) },
+        EntryRow(
+            label = ROW_THEME,
+            subtitle = SUBTITLE_THEME,
+            onClick = onOpenTheme,
             modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
         )
     }
-
-    // 底栏材质（2026-10-03 悬浮玻璃坞批新增）：液态玻璃/磨砂玻璃/纯色坞/经典四档，
-    // 经 [AppearancePrefsRepository] 持久化，壳层悬浮坞按档渲染
-    item {
-        SettingsSelectorCard(
-            title = stringResource(R.string.settings_tab_material_title),
-            subtitle = stringResource(R.string.settings_tab_material_subtitle),
-            options = listOf(
-                stringResource(R.string.settings_tab_material_liquid),
-                stringResource(R.string.settings_tab_material_frosted),
-                stringResource(R.string.settings_tab_material_solid),
-                stringResource(R.string.settings_tab_material_classic),
-            ),
-            selectedIndex = TabBarMaterial.entries.indexOf(tabBarMaterial).coerceAtLeast(0),
-            onSelect = { index -> onTabMaterialSelect(TabBarMaterial.entries[index]) },
-            modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
-        )
-    }
-
-    // 推荐偏好（C4 BottomSheet；I4 两行化：副文案实录逐字，当前预设高亮在 Sheet 内；
-    // 2026-09-13 修复「点击无反应」：Sheet 显式持有 sheetState + 预设四行恒渲染，
-    // 偏好状态加载失败进「加载失败/重试」态而非空壳）
     item {
         EntryRow(
             label = ROW_PREFS,
@@ -387,9 +422,12 @@ private fun EntryRow(
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)?,
 ) {
+    // 2026-10-03 用户拍板回旧版逐行白卡布局：结构/几何逐字保留（16dp 圆角/72dp 节奏/
+    // 单块两行文本），仅加 2dp 投影做立体感（卡与背景的分离由光影承担）
     Surface(
         color = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(QimengDimens.CardCornerRadius),
+        shadowElevation = EntryRowShadowElevation,
         modifier = modifier
             .fillMaxWidth()
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
