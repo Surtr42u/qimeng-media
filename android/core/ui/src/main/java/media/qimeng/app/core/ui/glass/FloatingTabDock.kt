@@ -36,16 +36,20 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -58,8 +62,13 @@ import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.kyant.backdrop.shadow.Shadow
 import media.qimeng.app.core.model.TabBarMaterial
 import media.qimeng.app.core.ui.theme.QimengShapes
+import media.qimeng.app.core.ui.theme.isQimengDarkTheme
 
 /**
  * 悬浮玻璃坞底栏（2026-10-03 悬浮玻璃坞批，ADR-0031 视觉语言的承载件）：
@@ -87,10 +96,20 @@ import media.qimeng.app.core.ui.theme.QimengShapes
  * 弹跳微交互留给图标（选中放大 [ICON_SELECTED_SCALE]，spring
  * [Spring.DampingRatioMediumBouncy]/[Spring.StiffnessMedium]，沿用分支手感）。
  *
+ * ## 选中态：透镜胶囊（2026-10-03 选中态重做批，官方 LiquidBottomTabs 配方移植）
+ *
+ * 真玻璃档（LIQUID/FROSTED × API 33+）的选中语言 = **透镜胶囊**：坞内加一层与真实条目行
+ * 同几何的隐形副本坞（`alpha(0f)+layerBackdrop` 捕获、`ColorFilter.tint(primary)` 整体
+ * 染色），选中胶囊以 `rememberCombinedBackdrop(坞外内容, 染色副本)` 作真玻璃渲染——胶囊
+ * 内呈现满饱和 primary 的图标+标签，材质差+色差+亮度差三通道叠加（旧「30% 单色垫片」
+ * 单通道低于辨识阈，用户实测差评后重做，调研结论见 PR）。静息 = 零特效清晰透出染色条目
+ * + 10% 表面 tint（官方静息口径）；胶囊几何全高同心内缩 4dp（Apple 同心圆角口径）。
+ * 非透镜档（Pseudo/BlurOnly/SOLID 与 CLASSIC 兜底）保留旧淡色胶囊垫底不变。
+ *
  * 行为契约与被替换的 M3 NavigationBar 同谱：选中态/回调由壳层驱动（本组件零内部导航
  * 状态，壳层的防抖/双击回顶逻辑不受影响）；a11y = 整项可点 + 标签文本作可读名 +
- * Role.Tab 角色 + selected 选中语义。CLASSIC 材质不经本组件（壳层直接渲染
- * 主线现行 M3 NavigationBar，逐字保底）。
+ * Role.Tab 角色 + selected 选中语义（副本坞 clearAndSetSemantics 不产生额外语义）。
+ * CLASSIC 材质不经本组件（壳层直接渲染主线现行 M3 NavigationBar，逐字保底）。
  *
  * @param items 导航项（[GlassNavItem] 由壳层映射传入，:core:ui 不感知 :app 的
  *   TopLevelDestination，铁律「feature/壳层依赖 core 单向」）
@@ -111,6 +130,19 @@ fun FloatingTabDock(
     backdrop: QimengBackdropState?,
     modifier: Modifier = Modifier,
 ) {
+    val capability = resolveBackdropCapabilities()
+    // 真玻璃档特效与 scrim 单源：坞体与「隐形 accent 副本坞」（透镜选中胶囊的采样源）
+    // 共用同一条管线，保证透镜内外的玻璃观感一致（官方 LiquidBottomTabs 同构）
+    val dockEffects = when (material) {
+        TabBarMaterial.LIQUID -> liquidEffects(capability == DockGlassCapability.Full)
+        else -> frostedEffects()
+    }
+    val scrimAlpha = if (material == TabBarMaterial.FROSTED) FROSTED_SCRIM_ALPHA else LIQUID_SCRIM_ALPHA
+    // 透镜选中胶囊只在「真玻璃材质 + API 33+（AGSL/lens 可用）」启用；其余档保留
+    // 原 30% 淡色滑动胶囊兜底（Pseudo/BlurOnly 档无 lens，官方配方降级口径）
+    val lensPill = (material == TabBarMaterial.LIQUID || material == TabBarMaterial.FROSTED) &&
+        capability == DockGlassCapability.Full &&
+        backdrop != null
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -125,12 +157,18 @@ fun FloatingTabDock(
             material = material,
             // 公共边界解包：库实例只在 glass 包内部流转，不出本文件私有渲染链
             backdrop = backdrop?.backdrop,
+            dockEffects = dockEffects,
+            scrimAlpha = scrimAlpha,
             modifier = Modifier.fillMaxWidth(),
         ) {
             DockItemsRow(
                 items = items,
                 selectedIndex = selectedIndex.coerceIn(0, (items.size - 1).coerceAtLeast(0)),
                 onSelect = onSelect,
+                lensPill = lensPill,
+                externalBackdrop = backdrop?.backdrop,
+                dockEffects = dockEffects,
+                scrimAlpha = scrimAlpha,
             )
         }
     }
@@ -193,73 +231,49 @@ data class GlassNavItem(
     val icon: ImageVector,
 )
 
-/** 选中指示胶囊的主色透明度（走查 r1 校准：0.20→0.30，选中胶囊在玻璃坞上可辨） */
+/** 选中指示胶囊的主色透明度（非透镜档兜底胶囊：走查 r1 校准 0.20→0.30） */
 private const val PILL_TINT_ALPHA = 0.30f
 
 /** 选中图标放大档（spring 弹一下的「点亮」语感，沿分支） */
 private const val ICON_SELECTED_SCALE = 1.12f
 
+/** 透镜选中胶囊上下内缩（同心原则：胶囊与坞壁同心留隙，Apple Liquid Glass 同心圆角口径） */
+private val LENS_PILL_INSET = 4.dp
+
+/** 透镜选中胶囊表面 tint·暗色（白 10% 提亮档，官方 LiquidBottomTabs 同值——亮一档的玻璃小板） */
+private val LENS_PILL_SURFACE_DARK = Color(0xFFFFFFFF).copy(alpha = 0.10f)
+
+/** 透镜选中胶囊表面 tint·浅色（黑 10% 压暗档，官方同值） */
+private val LENS_PILL_SURFACE_LIGHT = Color(0xFF000000).copy(alpha = 0.10f)
+
 /**
  * 坞体渲染分派（四材质中 CLASSIC 由壳层拦截，此处只接 LIQUID/FROSTED/SOLID）：
  * LIQUID/FROSTED 按设备能力走真 backdrop 特效或降级伪玻璃；SOLID 走不透明纯色坞。
+ * 特效配方/scrim 由 [FloatingTabDock] 单源计算传入（坞体与 accent 副本坞共用）。
  */
 @Composable
 private fun DockBody(
     material: TabBarMaterial,
     backdrop: Backdrop?,
+    dockEffects: BackdropEffectScope.() -> Unit,
+    scrimAlpha: Float,
     modifier: Modifier = Modifier,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val capability = resolveBackdropCapabilities()
     when (material) {
-        TabBarMaterial.LIQUID -> when {
-            capability == DockGlassCapability.Pseudo || backdrop == null ->
+        TabBarMaterial.LIQUID, TabBarMaterial.FROSTED ->
+            if (capability == DockGlassCapability.Pseudo || backdrop == null) {
                 PseudoGlassDockBody(modifier, content)
-            // API 31–32 无 AGSL（RuntimeShader）：lens 不可用，降级为 blur+vibrancy
-            capability == DockGlassCapability.BlurOnly ->
+            } else {
                 GlassDockBody(
                     backdrop = backdrop,
+                    scrimAlpha = scrimAlpha,
+                    effects = dockEffects,
                     modifier = modifier,
-                    scrimAlpha = LIQUID_SCRIM_ALPHA,
-                    effects = {
-                        vibrancy()
-                        blur(LIQUID_BLUR_RADIUS.toPx())
-                    },
                     content = content,
                 )
-            else ->
-                GlassDockBody(
-                    backdrop = backdrop,
-                    modifier = modifier,
-                    scrimAlpha = LIQUID_SCRIM_ALPHA,
-                    effects = {
-                        // 官方效果顺序口径：color filter ⇒ blur ⇒ lens（vibrancy 属 color filter）
-                        vibrancy()
-                        blur(LIQUID_BLUR_RADIUS.toPx())
-                        lens(
-                            refractionHeight = LENS_REFRACTION_HEIGHT.toPx(),
-                            refractionAmount = LENS_REFRACTION_AMOUNT.toPx(),
-                        )
-                    },
-                    content = content,
-                )
-        }
-
-        TabBarMaterial.FROSTED -> when {
-            capability == DockGlassCapability.Pseudo || backdrop == null ->
-                PseudoGlassDockBody(modifier, content)
-            // FROSTED 无 lens 无 vibrancy，BlurOnly 与 Full 同管线（真模糊即可成立）
-            else ->
-                GlassDockBody(
-                    backdrop = backdrop,
-                    modifier = modifier,
-                    scrimAlpha = FROSTED_SCRIM_ALPHA,
-                    effects = {
-                        blur(FROSTED_BLUR_RADIUS.toPx())
-                    },
-                    content = content,
-                )
-        }
+            }
 
         // SOLID：不透明 M3 坞——零捕获零模糊（性能/兼容档）
         TabBarMaterial.SOLID -> SolidDockBody(modifier, content)
@@ -267,6 +281,24 @@ private fun DockBody(
         // 不可达：壳层对 CLASSIC 直接渲染 M3 NavigationBar，不进本组件；兜底走伪玻璃防脏档
         TabBarMaterial.CLASSIC -> PseudoGlassDockBody(modifier, content)
     }
+}
+
+/** LIQUID 档坞体特效（BlurOnly=blur+vibrancy；Full 追加 lens）——坞体与 accent 副本坞共用 */
+private fun liquidEffects(full: Boolean): BackdropEffectScope.() -> Unit = {
+    vibrancy()
+    blur(LIQUID_BLUR_RADIUS.toPx())
+    if (full) {
+        // 官方效果顺序口径：color filter ⇒ blur ⇒ lens（vibrancy 属 color filter）
+        lens(
+            refractionHeight = LENS_REFRACTION_HEIGHT.toPx(),
+            refractionAmount = LENS_REFRACTION_AMOUNT.toPx(),
+        )
+    }
+}
+
+/** FROSTED 档坞体特效（真模糊即可成立，无 lens 无 vibrancy；BlurOnly 与 Full 同管线） */
+private fun frostedEffects(): BackdropEffectScope.() -> Unit = {
+    blur(FROSTED_BLUR_RADIUS.toPx())
 }
 
 /**
@@ -362,14 +394,28 @@ private fun SolidDockBody(
 }
 
 /**
- * 坞内条目行 + 单颗滑动指示胶囊（根因修复的落点，几何见 FloatingTabDock KDoc）。
- * 胶囊先声明（垫底）后声明条目行（图标压在胶囊上）。
+ * 坞内条目行 + 选中指示胶囊（根因修复的落点，几何见 FloatingTabDock KDoc）。
+ *
+ * 层序（自底向顶，2026-10-03 透镜选中批重排）：
+ * 1. **真实条目行**——点击/语义载体；
+ * 2. **隐形 accent 副本坞**（仅透镜档）——与真实行同几何的复制品，坞体玻璃 + 内容经
+ *    `ColorFilter.tint(primary)` 整体染色，`alpha(0f)` 挂在 layerBackdrop 之外（屏幕
+ *    不可见、捕获不受影响，官方 LiquidBottomTabs 逐字结构）；
+ * 3. **指示胶囊**（透镜档 = 真玻璃透镜）——`rememberCombinedBackdrop` 同时采样坞外内容
+ *    与染色副本，胶囊内呈现满饱和 primary 的图标+标签：材质差（透镜玻璃）+ 色差（染色
+ *    折射像）+ 亮度差（10% 表面 tint）三通道叠加的选中语言，替换旧「30% 淡色垫片」
+ *    （单通道低于辨识阈，用户实测差评「选中的效果没做好」）。
+ * 非透镜档（Pseudo/BlurOnly/SOLID）保留原淡色胶囊垫在条目行下（先胶囊后条目）。
  */
 @Composable
 private fun DockItemsRow(
     items: List<GlassNavItem>,
     selectedIndex: Int,
     onSelect: (Int) -> Unit,
+    lensPill: Boolean,
+    externalBackdrop: Backdrop?,
+    dockEffects: BackdropEffectScope.() -> Unit,
+    scrimAlpha: Float,
 ) {
     val density = LocalDensity.current
     // Row 实测宽（含自身首尾 padding）：胶囊几何全部由它派生，不写死任何屏宽假设
@@ -409,29 +455,23 @@ private fun DockItemsRow(
         }
     }
     val pillTint = MaterialTheme.colorScheme.primary.copy(alpha = PILL_TINT_ALPHA)
+    // 透镜档装配：副本坞捕获层 + combined 采样源（外部内容 + 染色副本）。remember 键为空
+    // （与官方 catalog 一致）；useLensPill 翻转时组合组重建，无跨档泄漏
+    val useLensPill = lensPill && externalBackdrop != null
+    val tabsBackdrop = rememberLayerBackdrop()
+    val lensBackdrop = if (useLensPill && pillWidthPx > 0) {
+        rememberCombinedBackdrop(externalBackdrop!!, tabsBackdrop)
+    } else {
+        null
+    }
+    val accentColor = MaterialTheme.colorScheme.primary
+    // scrim 色预解析（onDrawSurface 非 composable 上下文，GlassDockBody 同款手法）
+    val replicaScrim = MaterialTheme.colorScheme.surface.copy(alpha = scrimAlpha)
+    // 透镜胶囊表面 tint 同样预解析（isQimengDarkTheme 为 composable）
+    val lensPillSurface = if (isQimengDarkTheme()) LENS_PILL_SURFACE_DARK else LENS_PILL_SURFACE_LIGHT
 
     Box {
-        // 指示胶囊：未测量（pillWidthPx==0）不组合；已测量但未落位（NaN）在绘制层整颗
-        // 隐藏（graphicsLayer 内读 Animatable 状态，逐帧只重刷层不触发重组）——
-        // 双门控保证「不落位不画」，杜绝越缘位置闪现
-        if (pillWidthPx > 0) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .width(with(density) { pillWidthPx.toDp() })
-                    .height(TabDockDefaults.PillHeight)
-                    .graphicsLayer {
-                        val center = pillCenter.value
-                        if (center.isNaN()) {
-                            alpha = 0f
-                        } else {
-                            alpha = 1f
-                            translationX = center - pillWidthPx / 2f
-                        }
-                    }
-                    .background(color = pillTint, shape = RoundedCornerShape(PILL_CORNER_PERCENT)),
-            )
-        }
+        // ── 1) 真实条目行（最底层：点击/语义载体）──
         Row(
             modifier = Modifier
                 .height(TabDockDefaults.DockHeight)
@@ -450,6 +490,132 @@ private fun DockItemsRow(
                 )
             }
         }
+
+        // ── 2) 隐形 accent 副本坞（仅透镜档；屏幕不可见，专供胶囊采样）──
+        if (useLensPill) {
+            Row(
+                modifier = Modifier
+                    .clearAndSetSemantics {}
+                    .alpha(0f)
+                    .layerBackdrop(tabsBackdrop)
+                    .drawBackdrop(
+                        backdrop = externalBackdrop!!,
+                        shape = { QimengShapes.pill },
+                        // 与坞体同一条特效管线（FloatingTabDock 单源传入）：透镜内外的
+                        // 玻璃观感一致，胶囊才「长在坞上」而非「贴在坞上」
+                        effects = dockEffects,
+                        highlight = { null },
+                        onDrawSurface = {
+                            // 只画 scrim 不画描边：副本的受光边会被 tint 染色出彩色线圈
+                            drawRect(replicaScrim)
+                        },
+                    )
+                    .height(TabDockDefaults.DockHeight)
+                    .fillMaxWidth()
+                    .padding(horizontal = TabDockDefaults.SlotInnerPadding)
+                    // tint 挂最内层（官方同位）：玻璃复刻+条目整体染 primary，透镜折射像=满饱和 accent
+                    .graphicsLayer(colorFilter = ColorFilter.tint(accentColor)),
+            ) {
+                items.forEachIndexed { index, item ->
+                    DockNavReplicaItem(
+                        item = item,
+                        selected = index == selectedIndex,
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight(),
+                    )
+                }
+            }
+        }
+
+        // ── 3) 指示胶囊（最顶层）：未测量（pillWidthPx==0）不组合；已测量但未落位（NaN）
+        //  在绘制层整颗隐藏（graphicsLayer 内读 Animatable 状态，逐帧只重刷层不触发重组）
+        //  ——双门控保证「不落位不画」，杜绝越缘位置闪现
+        if (pillWidthPx > 0) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .width(with(density) { pillWidthPx.toDp() })
+                    .height(
+                        if (useLensPill) {
+                            TabDockDefaults.DockHeight - LENS_PILL_INSET * 2
+                        } else {
+                            TabDockDefaults.PillHeight
+                        },
+                    )
+                    .graphicsLayer {
+                        val center = pillCenter.value
+                        if (center.isNaN()) {
+                            alpha = 0f
+                        } else {
+                            alpha = 1f
+                            translationX = center - pillWidthPx / 2f
+                        }
+                    }
+                    .then(
+                        if (useLensPill && lensBackdrop != null) {
+                            Modifier.drawBackdrop(
+                                backdrop = lensBackdrop,
+                                shape = { QimengShapes.pill },
+                                // 静息零特效（官方静息口径）：清晰透出 primary 染色条目即可辨；
+                                // lens/高光/内影随按压渐入属官方交互批口径，本批无按压批不引入
+                                effects = { },
+                                highlight = { null },
+                                // 静息零落影（官方同口径）：胶囊靠染色条目 + 表面 tint 立形，
+                                // 不新增投影来源（坞受光边/落影单源纪律不破）
+                                shadow = { Shadow(alpha = 0f) },
+                                onDrawSurface = {
+                                    drawRect(lensPillSurface)
+                                },
+                            )
+                        } else {
+                            Modifier.background(
+                                color = pillTint,
+                                shape = RoundedCornerShape(PILL_CORNER_PERCENT),
+                            )
+                        },
+                    ),
+            )
+        }
+    }
+}
+
+/**
+ * 透镜胶囊采样用的条目纯渲染副本：几何与 [DockNavItem] 逐项一致（无点击/无语义/无 spring
+ * 动效），选中项图标按 [ICON_SELECTED_SCALE] 静态放大对齐真行的弹跳落点。颜色无需对齐——
+ * 副本整体被 `ColorFilter.tint` 覆盖为 accent。
+ */
+@Composable
+private fun DockNavReplicaItem(
+    item: GlassNavItem,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = item.icon,
+                contentDescription = null,
+                modifier = Modifier
+                    .size(TabDockDefaults.IconSize)
+                    .graphicsLayer {
+                        scaleX = if (selected) ICON_SELECTED_SCALE else 1f
+                        scaleY = if (selected) ICON_SELECTED_SCALE else 1f
+                    },
+            )
+        }
+        Spacer(Modifier.height(LABEL_TOP_SPACING))
+        Text(
+            text = item.label,
+            style = MaterialTheme.typography.labelMedium,
+            // 字重影响标签行高/字宽，必须随选中态与真行对齐（副本靠几何对齐折射像）
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            maxLines = 1,
+        )
     }
 }
 

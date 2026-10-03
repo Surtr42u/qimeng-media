@@ -20,6 +20,16 @@
 - **验证（用户在场时段临时解禁本机构建，2026-10-03 用户拍板）**：gradlew `compileDebugKotlin`/`compileKotlin`（全模块）+ `testDebugUnitTest` + `:core:model:test` + `assembleDebug` 本地全绿；云端 CI 复验为最终门禁。红线 grep 核验：feature 层零 glass 颜色 import（仅 `TabDockDefaults` 让位常量=ADR-0033 决策 1 设计内消费）、无预览变体脚手架混入、Backdrop 依赖仅 core:ui 声明。
 - **涉及文档**：`docs/CHANGELOG.md`（本条）。
 
+## feat(app): 坞选中态重做——官方 LiquidBottomTabs 透镜胶囊配方移植（2026-10-03 第四百四十五笔）
+
+执行 AI：GLM-5.3-Flash（主代理实现+研究子代理调研+独立审查子代理对抗审查）
+
+- **背景（用户差评驱动）**：真机实测「tab 的选中效果没做好」——旧指示=30% primary 淡色垫片垫在图标后，单通道低于辨识阈（调研量化锚点：WCAG 1.4.11 控件状态对比 ≥3:1，30% tint 在玻璃上接近隐形；Apple HIG/NN/g 均批「玻璃上靠亮度微差不可辨」）。研究子代理给出三案（实色胶囊/透镜胶囊/微增强），选定**方案 B=官方 Kyant0 LiquidBottomTabs 透镜胶囊配方移植**（最「液态玻璃原生」且显眼）。
+- **实现（FloatingTabDock 层序重排为三明治）**：①真实条目行（底，点击/语义载体）→ ②隐形 accent 副本坞（仅透镜档）：与真实行逐项同几何（62dp/18dp 槽距/weight/图标 24dp/2dp 间距/选中 SemiBold/图标 1.12 静态对齐），坞体玻璃复刻用与坞体同一条 effects 管线（DockBody 特效/scrim 上提单源传入），`alpha(0f)` 挂 `layerBackdrop` 之外（屏幕不可见捕获不受影响，官方逐字同位），`ColorFilter.tint(primary)` 挂最内层整体染色 → ③指示胶囊（顶）：`rememberCombinedBackdrop(坞外内容, 染色副本)` 真玻璃渲染，静息零特效清晰透出满饱和 primary 条目 + 表面 10% tint（暗=白 10%/浅=黑 10%，官方同值）+ `Shadow(alpha=0)` 不新增投影源——材质差+色差+亮度差三通道选中语言。胶囊全高同心内缩 4dp（Apple 同心圆角口径）。
+- **降级与纪律**：非透镜档（Pseudo/BlurOnly/SOLID/CLASSIC 兜底）保留旧淡色胶囊垫底逐字不变；lensPill 仅「真玻璃材质 × API 33+」成立；副本坞 clearAndSetSemantics 零语义；坞受光边单源/落影单源/feature 层零 glass 颜色 import/com.kyant 仅 glass 包内等红线全守（审查核验）；lensPill=false 时零副本零 combined（仅一次空 LayerBackdrop 对象分配）。性能记档：透镜档=坞体+副本各一遍玻璃特效（官方同构的双渲染固有成本）。
+- **验证**：全模块编译+448 项单测绿（审查子代理独立复跑含强制重编+测试 XML 时间戳复核）；官方源码 curl 直取逐位对照（链序/静息值/副本结构）；真机观感由用户直接目验（用户指令跳过模拟器自检）。
+- **涉及文档**：`docs/CHANGELOG.md`（本条）。
+
 ## fix(app): 评估分支 ui/app-dock-only——「老UI+纯玻璃坞」减法批（2026-10-03 第四百四十四笔）
 
 执行 AI：GLM-5.3-Flash（主代理）
