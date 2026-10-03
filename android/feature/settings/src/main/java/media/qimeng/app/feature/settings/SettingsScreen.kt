@@ -4,6 +4,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -30,6 +31,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.io.IOException
 import kotlinx.coroutines.launch
 import media.qimeng.app.core.ui.glass.GlassSurface
+import media.qimeng.app.core.ui.glass.TabDockDefaults
 import media.qimeng.app.core.ui.glass.pressScale
 import media.qimeng.app.core.ui.glass.rememberPressScaleSource
 import media.qimeng.app.core.ui.theme.QimengDimens
@@ -123,6 +125,7 @@ fun SettingsScreen(
             // ADR-0031：不再涂实底 background——透出壳层极光氛围底，入口行族换玻璃面板
             // （旧「显式声明防漏色」的问题随壳层全局氛围底一并消失）
             .padding(horizontal = ScreenContentPadding),
+        contentPadding = PaddingValues(bottom = TabDockDefaults.bottomClearance()),
     ) {
         settingsHeaderItems(state = state, viewModel = viewModel)
         settingsEntryRowItems(

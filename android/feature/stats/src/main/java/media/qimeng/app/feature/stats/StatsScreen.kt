@@ -2,6 +2,7 @@ package media.qimeng.app.feature.stats
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -30,6 +31,7 @@ import media.qimeng.app.core.data.repository.RankingEntry
 import media.qimeng.app.core.model.StatsRangeOption
 import media.qimeng.app.core.model.TrendPoint
 import media.qimeng.app.core.ui.component.Dimens
+import media.qimeng.app.core.ui.glass.TabDockDefaults
 import media.qimeng.app.core.ui.component.QimengSegmentedControl
 import media.qimeng.app.core.ui.component.formatBytesHumanReadable
 import media.qimeng.app.core.ui.glass.GlassCard
@@ -69,6 +71,7 @@ fun StatsScreen(
             .fillMaxSize()
             .padding(horizontal = Dimens.ScreenPadding),
         verticalArrangement = Arrangement.spacedBy(Dimens.ScreenPadding),
+        contentPadding = PaddingValues(bottom = TabDockDefaults.bottomClearance()),
     ) {
         // Z4 批（2026-09-12 数据页字体对齐旧 stats.xml）：文案「数据」→「数据统计」+ Bold
         item { Text(text = "数据统计", style = MaterialTheme.typography.headlineMedium) }

@@ -10,6 +10,17 @@
 
 > **历史条目拆分说明（2026-10-01）**：为控制 AI 上下文体量，本文件只保留 **2026-09-22 及之后**的条目（第三百八十二笔起）；拆分线之前的全部条目已逐字迁入 `docs/history/CHANGELOG-ARCHIVE.md`（零改写，笔号与本文件连续可查）。引用早于拆分线的旧笔号请去历史档查阅。
 
+## feat(app): 悬浮玻璃坞底栏移植——单颗滑动胶囊+液态玻璃 backdrop 管线取代双胶囊交叉淡化（2026-10-03 第四百三十一笔·分支笔号，合并时与 master 主线顺延）
+
+执行 AI：GLM-5.3-Flash（主代理移植）
+
+- **背景（用户走查拍板）**：主线评审分支 ui/app-floating-glass-tab 重实现的「悬浮玻璃坞底栏」按用户指示移植回本分支（该分支随之退役取消）。本底栏取代本分支 429 笔的 GlassNavBar（双胶囊 scale+alpha 交叉淡化），根治三缺陷：两颗胶囊 spring 相位独立致「移动时左右空隙不一致」、0.30 透明主色在浅色玻璃上洗白、胶囊与图标 ≈9dp 垂直错位。
+- **移植面**：FloatingTabDock（单颗胶囊按槽位中心 spring 滑动、胶囊宽随槽位实测派生、端部=中段空隙按构造相等、首帧 snapTo 落位无入场伪影、图标带固定偏移常量）+ QimengBackdrop（backdrop 库类型封装收口，消费方只见包装 API）+ TabBarMaterial 四档枚举（本分支壳层固定 LIQUID 液态档——设计主角；四档形态保留供后续合并主线「底栏材质四选」体系）+ 新依赖 io.github.kyant0:backdrop:2.0.1（Apache-2.0，toml/:core:ui 接线，仅 core:ui 消费）；GlassNavBar 退役删除。
+- **壳层改造**：Scaffold bottomBar 槽退役→底栏改为内容层之上的悬浮独立层（覆盖页显隐条件逐字保留）；内容穿透坞底（innerPadding 只吃 top+horizontal）；内容层 backdrop 捕获仅玻璃档挂载（零多余开销）；CLASSIC 保底档指示器改 M3 标准 secondaryContainer（本分支 Color.kt 无 PrimarySoft 别名，移植适配，与胶囊同色源）；四 Tab 页滚动让位接 TabDockDefaults.bottomClearance() 单源。
+- **依赖决策**：backdrop 依赖四问记档在主线分支 ADR-0033（本分支合并 master 时自然收编）；本 ADR「明确不做 backdrop 采样式模糊」一项随真实依赖落地撤销（见本文档修订记录）。
+- **验证**：本地构建装机走查（NX721J 真机 Android 16 液态档全量效果，自动登录内置测试实例通过）；云端 CI push 直触发（本分支在触发名单），aurora 预览 artifact 随批再生（固定签名）。
+- **涉及文档**：docs/CHANGELOG.md（本条）、docs/adr/0031（修订记录）。
+
 ## feat(app)+docs: 云端预览装机管道工程化——预览变体开关+内嵌端口错开+CI 预览 APK 与签名稳定化（2026-10-02 第四百三十笔·分支笔号，合并时与 master 主线顺延）
 
 执行 AI：GLM-5.3-Flash（执行子代理，分支 ui/app-redesign / draft PR #1，夜间任务）

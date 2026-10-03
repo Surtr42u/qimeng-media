@@ -34,6 +34,7 @@ import media.qimeng.app.core.ui.component.QimengChipRow
 import media.qimeng.app.core.ui.component.QimengEmptyState
 import media.qimeng.app.core.ui.component.QimengFilterSheet
 import media.qimeng.app.core.ui.component.QimengMediaGrid
+import media.qimeng.app.core.ui.glass.TabDockDefaults
 import media.qimeng.app.core.ui.component.QimengPill
 import media.qimeng.app.core.ui.component.QimengPullToRefresh
 import media.qimeng.app.core.ui.component.QimengTitleRow
@@ -213,7 +214,7 @@ fun AllScreen(
                     listState = listState,
                     // 底部预留沿用旧版 fragment_all_files.xml L149 的 180dp 档：悬浮面板退役后
                     // 已无遮挡末行之忧，保留作列表底部呼吸区（行为不变项零改动，任务G G5）
-                    bottomContentPadding = QimengDimens.ListBottomContentPadding,
+                    bottomContentPadding = TabDockDefaults.bottomClearance(),
                     onNearBottom = viewModel::onNearBottom,
                     // 问题A（2026-09-28）：加载结束重评估信号——翻页成功但新页为空时 totalCount
                     // 不变，哨兵需靠 tick 重触发（KDoc 见 QimengMediaGrid.reloadTick）

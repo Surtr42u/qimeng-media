@@ -45,6 +45,7 @@ import media.qimeng.app.core.model.MediaAsset
 import media.qimeng.app.core.model.PanelFeedback
 import media.qimeng.app.core.model.RankingPeriod
 import media.qimeng.app.core.ui.component.QimengChipRow
+import media.qimeng.app.core.ui.glass.TabDockDefaults
 import media.qimeng.app.core.ui.component.QimengEmptyState
 import media.qimeng.app.core.ui.component.QimengFilterSheet
 import media.qimeng.app.core.ui.component.QimengMediaGrid
@@ -435,6 +436,7 @@ private fun RecommendPage(
             return@QimengPullToRefresh
         }
         QimengMediaGrid(
+                    bottomContentPadding = TabDockDefaults.bottomClearance(),
             sections = listOf(
                 GridSection(label = "", items = state.pulled.take(state.revealed)),
             ),
@@ -471,6 +473,7 @@ private fun CosPage(
             return@QimengPullToRefresh
         }
         QimengMediaGrid(
+                    bottomContentPadding = TabDockDefaults.bottomClearance(),
             sections = listOf(GridSection(label = "", items = state.items)),
             columns = columns,
             animatedUrlResolver = animatedUrlResolver,
@@ -506,6 +509,7 @@ private fun RankPage(
             return@QimengPullToRefresh
         }
         QimengMediaGrid(
+                    bottomContentPadding = TabDockDefaults.bottomClearance(),
             sections = listOf(GridSection(label = "", items = state.items)),
             columns = columns,
             animatedUrlResolver = animatedUrlResolver,

@@ -132,6 +132,12 @@ vico = "2.5.2"
 #   version.ref——BOM 2026.08.00 管控的 material3 仍是 1.4.0，不覆盖 1.5.0-alpha 线，其余 BOM
 #   管控构件（ui/foundation/animation 等）随 BOM 不动。
 material3 = "1.5.0-alpha28"
+# Backdrop（2026-10-03 悬浮玻璃坞移植引入）：液态玻璃 backdrop 采样库（源仓库
+#   Kyant0/AndroidLiquidGlass，官方文档 https://kyant.gitbook.io/backdrop/）。锁版依据：
+#   Maven Central maven-metadata 实查 2.0.1 = 2.x stable 线末位（<lastUpdated>2026-08-26）。
+#   仅 :core:ui 消费（玻璃坞渲染单源），传递依赖 io.github.kyant0:shapes 自动带入。
+#   许可证 Apache-2.0。
+backdrop = "2.0.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -153,6 +159,9 @@ compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling
 hilt-android = { group = "com.google.dagger", name = "hilt-android", version.ref = "hilt" }
 hilt-compiler = { group = "com.google.dagger", name = "hilt-android-compiler", version.ref = "hilt" }
 androidx-hilt-navigation-compose = { group = "androidx.hilt", name = "hilt-navigation-compose", version.ref = "androidxHilt" }
+# Backdrop（悬浮玻璃坞移植）：drawBackdrop/layerBackdrop/rememberLayerBackdrop + vibrancy/blur/lens
+# 特效族，包名 com.kyant.backdrop（Maven group 是 io.github.kyant0，仅坐标前缀）；仅 :core:ui 引用
+backdrop = { group = "io.github.kyant0", name = "backdrop", version.ref = "backdrop" }
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 # okhttp-sse（ADR-0029 Android SSE 消费，2026-10-01）：OkHttp 官方 SSE 工件，与 okhttp 同 family
 # 同版本收口（单版本原则不新增版本号），非白名单外新技术——Maven Central 实存核查

@@ -15,6 +15,10 @@ dependencies {
     // 网格卡片/分组段需要领域模型（core→core 单向依赖，feature 经此传递可见 :core:model）
     api(project(":core:model"))
 
+    // Backdrop（悬浮玻璃坞移植，2026-10-03）：库类型封装收口本模块 glass 包
+    // （QimengBackdrop.kt/FloatingTabDock.kt），消费方只见包装 API 不见 com.kyant 类型
+    implementation(libs.backdrop)
+
     implementation(libs.compose.ui)
     implementation(libs.compose.ui.graphics)
     implementation(libs.compose.foundation)

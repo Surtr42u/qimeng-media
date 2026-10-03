@@ -3,13 +3,23 @@ package media.qimeng.app.navigation
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -27,9 +37,11 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.runtime.toMutableStateList
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.zIndex
@@ -48,11 +60,15 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import media.qimeng.app.core.model.TabBarMaterial
 import media.qimeng.app.core.ui.component.TabScrollController
 import media.qimeng.app.core.ui.glass.AuroraBackdrop
+import media.qimeng.app.core.ui.glass.FloatingTabDock
 import media.qimeng.app.core.ui.glass.GlassNavItem
-import media.qimeng.app.core.ui.glass.GlassNavBar
-import media.qimeng.app.core.ui.glass.QimengMotion
+import media.qimeng.app.core.ui.glass.qimengBackdropSource
+import media.qimeng.app.core.ui.glass.rememberQimengBackdropState
+import media.qimeng.app.core.ui.theme.QimengBrandColors
+import media.qimeng.app.core.ui.theme.isQimengDarkTheme
 import media.qimeng.app.feature.all.AllScreen
 import media.qimeng.app.feature.author.AuthorCollectionRoutes
 import media.qimeng.app.feature.author.AuthorCollectionScreen
@@ -194,7 +210,9 @@ fun QimengNavRoot(modifier: Modifier = Modifier) {
  *    （防抖、popUpTo、launchSingleTop、restoreState 全不动），仅同步登记常驻层——
  *    **切换 = 常驻层可见性翻转，零屏离树、零重组成本**。
  *
- * 底栏（NavigationBar）与其显隐逻辑零改动（仍按 NavHost currentRoute 判定）；X1 的
+ * 底栏（2026-10-03 悬浮坞改造）：M3 NavigationBar 槽退役，换悬浮玻璃坞（[FloatingTabDock]）
+ * /CLASSIC 档保底 M3 NavigationBar（[ClassicBottomBar]），均为内容层之上的悬浮独立层；
+ * 显隐逻辑零改动（仍按 NavHost currentRoute 判定）；X1 的
  * isDetailDestination 条件 modifier 在 NavHost 上原样生效（常驻层约束链与其无关，恒为
  * padding+consume 官方范式——Tab 屏原本就只在非 detail 约束下可见）。
  *
@@ -231,7 +249,8 @@ fun QimengNavRoot(modifier: Modifier = Modifier) {
  * 双击当前 Tab 回顶：400ms 内同一 Tab 二击 → TabScrollController 广播，列表页收集后
  * scrollToItem(0) 精确回顶（GUIDE_UI §导航结构）。
  *
- * 覆盖页面入栈隐藏底部导航、返回恢复（GUIDE_UI §导航结构）：按当前路由切换 bottomBar。
+ * 覆盖页面入栈隐藏底部导航、返回恢复（GUIDE_UI §导航结构）：按当前路由切换悬浮坞显隐
+ * （条件与主线 bottomBar 时代逐字相同）。
  */
 @Composable
 fun QimengNavHost(
@@ -253,6 +272,21 @@ fun QimengNavHost(
     // 上一次实际执行顶层导航的时间戳（任务L L2 防抖基准；双击回顶不重置此值，
     // 使「回顶后立刻切 Tab」仍受防抖保护）
     var lastNavigateTimeMs by remember { mutableLongStateOf(0L) }
+
+    // ── 外观状态（2026-10-03 悬浮玻璃坞批）：底栏材质档（Activity 作用域单源，与
+    //  MainActivity 的 Theme 解析同读一份 DataStore 流）──
+    // 流光玻璃分支固定液态档（2026-10-03 悬浮坞移植）：「底栏材质四选」体系留在主线
+    // ui/app-floating-glass-tab 批，本分支合并时直连（枚举四档形态已备于 core:model）
+    val tabBarMaterial = TabBarMaterial.DEFAULT
+
+    // 玻璃坞的 backdrop 采样源：经 :core:ui glass 包封装 [rememberQimengBackdropState]
+    // （评审必修 1：Backdrop 库是 :core:ui 的 implementation 依赖，壳层编译类路径不可见
+    // ——此前壳层直引库的 rememberLayerBackdrop 属编译必炸的越界直引，现只见包装 API）。
+    // base 色取画布底色（主题 background，与 AuroraBackdrop 的日夜基底同族）；
+    // base 色 drawRect + drawContent()——内容稀疏的屏模糊仍有色彩基底，不透黑，官方
+    // Glass Bottom Bar 教程配方；SOLID/CLASSIC 不挂捕获（零开销），backdrop 对象创建无害。
+    val canvasBaseColor = MaterialTheme.colorScheme.background
+    val backdrop = rememberQimengBackdropState(baseColor = canvasBaseColor)
 
     // ── 常驻层状态（机制见本函数 KDoc §Tab 常驻层；2026-09-13 根治 Tab 切换闪烁/残留）──
     // 已驻留 Tab，只增不减（对齐旧版 fragmentCache 首访才 add、此后常驻）。rememberSaveable：
@@ -281,6 +315,35 @@ fun QimengNavHost(
         currentTabRoute = route
     }
 
+    // Tab 点击统一入口（原 Scaffold bottomBar 的 NavigationBarItem onClick 逻辑逐字迁移；
+    // CLASSIC 与玻璃坞两个渲染分支共用，防抖/双击回顶行为不因材质档分叉）
+    fun onTabSelected(destination: TopLevelDestination) {
+        val now = System.currentTimeMillis()
+        // 任务L L2：决策抽纯函数 [resolveTabTapAction]——双击回顶优先（不受防抖限制），
+        // 防抖窗内忽略导航，窗后首击放行
+        when (
+            resolveTabTapAction(
+                isCurrentRoute = currentRoute == destination.route,
+                nowMs = now,
+                lastTapMs = lastTabTapTimeMs,
+                lastNavigateMs = lastNavigateTimeMs,
+            )
+        ) {
+            TabTapAction.ScrollToTop ->
+                TabScrollController.requestScrollToTop(destination.route)
+            TabTapAction.Navigate -> {
+                lastNavigateTimeMs = now
+                // 常驻层先行登记/翻转（与下方 navigate 同一重组帧原子生效；若等
+                // currentRoute 回流再翻则慢一帧=1 帧残留）。乐观值与 currentRoute
+                // 回流值恒等，LaunchedEffect 同步为 no-op
+                visitTab(destination.route)
+                navigateTopLevel(navController, destination)
+            }
+            TabTapAction.Ignore -> Unit
+        }
+        lastTabTapTimeMs = now
+    }
+
     // 状态单源同步（KDoc §状态单源）：NavHost currentRoute → 常驻层单向收敛。兜底系统返回
     // 回到某 Tab、进程恢复后栈顶为非 home Tab 等场景；点击路径经此为 no-op（乐观值=回流值）
     LaunchedEffect(currentRoute) {
@@ -300,95 +363,77 @@ fun QimengNavHost(
         }
     }
 
-    Scaffold(
-        modifier = modifier,
-        bottomBar = {
-            // 覆盖页面隐藏底栏（返回自动恢复）。ADR-0031：M3 NavigationBar 换玻璃导航坞
-            // （GlassNavBar）——视觉重做，点击/防抖/双击回顶逻辑逐字未动
-            if (currentRoute == null || currentRoute in topLevelRoutes) {
-                GlassNavBar(
-                    items = TopLevelDestination.entries.map { destination ->
-                        GlassNavItem(
-                            label = stringResource(destination.labelRes),
-                            icon = destination.icon,
-                        )
-                    },
-                    selectedIndex = TopLevelDestination.entries
-                        .indexOfFirst { it.route == currentRoute }
-                        .coerceAtLeast(0),
-                    onSelect = { index ->
-                        val destination = TopLevelDestination.entries[index]
-                        val now = System.currentTimeMillis()
-                        // 任务L L2：决策抽纯函数 [resolveTabTapAction]——双击回顶优先
-                        // （不受防抖限制），防抖窗内忽略导航，窗后首击放行
-                        when (
-                            resolveTabTapAction(
-                                isCurrentRoute = currentRoute == destination.route,
-                                nowMs = now,
-                                lastTapMs = lastTabTapTimeMs,
-                                lastNavigateMs = lastNavigateTimeMs,
-                            )
-                        ) {
-                            TabTapAction.ScrollToTop ->
-                                TabScrollController.requestScrollToTop(destination.route)
-                            TabTapAction.Navigate -> {
-                                lastNavigateTimeMs = now
-                                // 常驻层先行登记/翻转（与下方 navigate 同一重组帧原子生效；
-                                // 若等 currentRoute 回流再翻则慢一帧=1 帧残留）。乐观值与
-                                // currentRoute 回流值恒等，LaunchedEffect 同步为 no-op
-                                visitTab(destination.route)
-                                navigateTopLevel(navController, destination)
-                            }
-                            TabTapAction.Ignore -> Unit
-                        }
-                        lastTabTapTimeMs = now
-                    },
-                )
+    // 2026-10-03 悬浮坞改造：Scaffold 不再有 bottomBar 槽——底栏改为内容层之上的悬浮
+    // 独立层（zIndex=3），内容延伸到屏底、从坞身后滚过。innerPadding 只吃 top+horizontal
+    // （bottom 置 0），嵌套内容（NavHost/常驻层）按官方 padding+consume 范式消费同一份
+    // 让位（consume 防覆盖页内嵌 TopAppBar 双份状态栏留白，与主线口径一致）。
+    Scaffold(modifier = modifier) { innerPadding ->
+        val layoutDirection = LocalLayoutDirection.current
+        val topSidePadding = PaddingValues(
+            top = innerPadding.calculateTopPadding(),
+            start = innerPadding.calculateStartPadding(layoutDirection),
+            end = innerPadding.calculateEndPadding(layoutDirection),
+        )
+        Box(modifier = Modifier.fillMaxSize()) {
+            // ── 极光氛围底（ADR-0031 玻璃语言的景深来源）：仅玻璃材质档渲染——它是玻璃
+            //  面板「磨砂观感」的垫底；SOLID/CLASSIC 保持主线纯色底（主 Scaffold 容器色）──
+            if (tabBarMaterial.usesBackdrop) {
+                Box(modifier = Modifier.fillMaxSize().zIndex(-2f)) {
+                    AuroraBackdrop(modifier = Modifier.fillMaxSize())
+                }
             }
-        },
-    ) { innerPadding ->
-        // ── 极光氛围底（ADR-0031）：壳层全局唯一的景深来源，zIndex(-2) 压在常驻层之下；
-        //  玻璃面板/玻璃底栏覆于其上即成磨砂观感（全 Tab 屏透明根容器透出同一氛围）──
-        Box(modifier = Modifier.fillMaxSize().zIndex(-2f)) {
-            AuroraBackdrop(modifier = Modifier.fillMaxSize())
-        }
-        NavHost(
-            navController = navController,
-            startDestination = TopLevelDestination.HOME.route,
+
+            // ── 内容层：NavHost + 常驻层。玻璃材质档挂 layerBackdrop 捕获（官方教程配方，
+            // 坞的 drawBackdrop 采样此层）；SOLID/CLASSIC 零捕获零开销 ──
+            Box(
+                modifier = Modifier
+                    .zIndex(0f)
+                    .padding(topSidePadding)
+                    .consumeWindowInsets(topSidePadding)
+                    .then(
+                        if (tabBarMaterial.usesBackdrop) {
+                            Modifier.qimengBackdropSource(backdrop)
+                        } else {
+                            Modifier
+                        },
+                    ),
+            ) {
+                NavHost(
+                    navController = navController,
+                    startDestination = TopLevelDestination.HOME.route,
             // 任务L L2（拍板 #2「NavHost 顶层切换确保无 enter/exit 转场动画叠影」）：
             // Navigation Compose 2.7+ 默认转场为 crossfade（新页 fadeIn 220ms 延迟 90ms 叠着
             // 旧页 fadeOut）——快速切 Tab 时新旧两页同屏，正是用户「叠屏/延迟消失」观感的
-            // 动画根因。旧版 Fragment show/hide 无转场，故 Tab 路由转场为瞬时切换。
+            // 动画根因。旧版 Fragment show/hide 无转场，故四处转场为瞬时切换；覆盖页/详情页
+            // 进出同样瞬时（旧版同为无转场观感）。与防抖双保险，防叠加。
             // 任务U9（2026-09-14）：None → fade*（snap()）——「无动画属性」≠「零时长」：
             // None 下进出两页在整个转场存续期都以全不透明同屏，转场只要因任何原因滞留
             // >1 帧（navigation 2.10 转场内部状态、release 包慢帧），就呈现用户实测的
             // 「退出后旧页内容叠层残留 1~2s 才消失」（release 包逐帧实证）。snap() 第一帧
             // 即把退出页 alpha 硬置 0/进入页置 1：无论转场滞留多久都无叠影，视觉仍是
             // 瞬时交换，L2 拍板口径不变。
-            // ADR-0031（2026-10-02）：本默认 snap 只再管辖 Tab 路由（空壳跳板）——防闪烁
-            // 常驻层机制依赖 Tab 交换的瞬时性，spring 化会复活叠影，明确排除；pushed 路由
-            // （覆盖页/详情页）各自挂 QimengMotion 的 spring 转场（见各 composable 的
-            // enterTransition/popExitTransition），在 NavHost 内完整渲染无常驻层牵连。
             enterTransition = { fadeIn(snap()) },
             exitTransition = { fadeOut(snap()) },
             popEnterTransition = { fadeIn(snap()) },
             popExitTransition = { fadeOut(snap()) },
             // X1 根修（2026-09-12 任务X，问题1/2/3/4 总根因）：detail 路由内容区不再被
-            // innerPadding 钉位。旧版详情页「始终 edge-to-edge 全屏布局，系统栏显隐不触发
-            // 布局」（GUIDE_UI L162/L272-275）；钉位架构下沉浸切换会经 Scaffold innerPadding
+            // 内容让位钉位。旧版详情页「始终 edge-to-edge 全屏布局，系统栏显隐不触发
+            // 布局」（GUIDE_UI L162/L272-275）；钉位架构下沉浸切换会经内容 padding
             // 随 inset 收缩整页位移、舞台盒正下方内容露出（拖出文件名/退出跳动观感）。
             // 特化仅此一路由：NavHost 全屏铺开，insets 由详情页 chrome 自管
-            // （statusBars/navigationBarsPadding）；其余路由维持 padding+consume 官方范式，
-            // 逐像素不变。consumeWindowInsets（任务G3 双重留白清偿）：主壳 Scaffold 无
-            // topBar，innerPadding 的 top=状态栏高；不消费则覆盖页内嵌的 QimengTopBar（M3
-            // TopAppBar 默认 windowInsets=statusBars）会再自留一段状态栏高度——标题上方
-            // 两倍空白。padding 后消费=Scaffold 官方范式，嵌套组件读到已消耗的 insets 归零
+            // （statusBars/navigationBarsPadding）；其余路由维持 padding+consume 官方范式
+            // （2026-10-03 起吃 top+horizontal 让位，bottom=0——内容从悬浮坞身后滚过），
+            // 逐像素对齐主线非 detail 分支语义。consumeWindowInsets（任务G3 双重留白清偿）：
+            // 主壳 Scaffold 无 topBar，让位的 top=状态栏高；不消费则覆盖页内嵌的
+            // QimengTopBar（M3 TopAppBar 默认 windowInsets=statusBars）会再自留一段状态栏
+            // 高度——标题上方两倍空白。padding 后消费=Scaffold 官方范式，嵌套组件读到已
+            // 消耗的 insets 归零
             modifier = if (isDetailDestination) {
                 Modifier
             } else {
                 Modifier
-                    .padding(innerPadding)
-                    .consumeWindowInsets(innerPadding)
+                    .padding(topSidePadding)
+                    .consumeWindowInsets(topSidePadding)
             },
         ) {
             // ── 四 Tab 路由 = 空壳跳板（机制见本函数 KDoc §Tab 常驻层）──
@@ -415,11 +460,6 @@ fun QimengNavHost(
             }
             composable(
                 route = Routes.SEARCH,
-                // ADR-0031：pushed 路由 spring 滑入转场（Tab 路由保持 snap 瞬切，见 NavHost
-                // 转场注释——常驻层防闪烁机制只约束 Tab↔Tab 交换，覆盖页在 NavHost 内完整
-                // 渲染，spring 转场安全）。下同：全 pushed 路由挂 overlayEnter/overlayPopExit
-                enterTransition = { QimengMotion.overlayEnter() },
-                popExitTransition = { QimengMotion.overlayPopExit() },
                 arguments = listOf(
                     navArgument(Routes.KEY_SEARCH_QUERY) {
                         type = NavType.StringType
@@ -438,8 +478,6 @@ fun QimengNavHost(
             }
             composable(
                 route = Routes.FAVORITE,
-                enterTransition = { QimengMotion.overlayEnter() },
-                popExitTransition = { QimengMotion.overlayPopExit() },
             ) {
                 FavoriteScreen(
                     onBack = { navController.popBackStack() },
@@ -450,8 +488,6 @@ fun QimengNavHost(
             }
             composable(
                 route = Routes.HISTORY,
-                enterTransition = { QimengMotion.overlayEnter() },
-                popExitTransition = { QimengMotion.overlayPopExit() },
             ) {
                 HistoryScreen(
                     onBack = { navController.popBackStack() },
@@ -462,8 +498,6 @@ fun QimengNavHost(
             }
             composable(
                 route = Routes.AUTHORS,
-                enterTransition = { QimengMotion.overlayEnter() },
-                popExitTransition = { QimengMotion.overlayPopExit() },
             ) {
                 AuthorScreen(
                     onBack = { navController.popBackStack() },
@@ -481,8 +515,6 @@ fun QimengNavHost(
             // SavedStateHandle 读取，此处无需展开 arguments。
             composable(
                 route = AuthorCollectionRoutes.AUTHOR_COLLECTION_ROUTE,
-                enterTransition = { QimengMotion.overlayEnter() },
-                popExitTransition = { QimengMotion.overlayPopExit() },
             ) {
                 AuthorCollectionScreen(
                     onBack = { navController.popBackStack() },
@@ -491,11 +523,7 @@ fun QimengNavHost(
                     },
                 )
             }
-            composable(
-                route = Routes.UPLOAD,
-                enterTransition = { QimengMotion.overlayEnter() },
-                popExitTransition = { QimengMotion.overlayPopExit() },
-            ) {
+            composable(Routes.UPLOAD) {
                 UploadScreen(
                     sharedUris = sharedUris,
                     onSharedConsumed = onSharedConsumed,
@@ -504,22 +532,14 @@ fun QimengNavHost(
             }
             // 服务器设置子页（U10-4）：设置页「服务器」入口行进本页；pushed 覆盖页——
             // 底栏隐藏与幕帘由既有 currentRoute 机制自动生效，无需额外处理
-            composable(
-                route = Routes.SERVER,
-                enterTransition = { QimengMotion.overlayEnter() },
-                popExitTransition = { QimengMotion.overlayPopExit() },
-            ) {
+            composable(Routes.SERVER) {
                 ServerSettingsScreen(
                     onBack = { navController.popBackStack() },
                 )
             }
             // 下载收件箱设置子页（2026-09-25 暂存区重做）：设置页「下载收件箱」入口行进本页；
             // pushed 覆盖页——底栏隐藏与幕帘由既有 currentRoute 机制自动生效
-            composable(
-                route = Routes.INBOX,
-                enterTransition = { QimengMotion.overlayEnter() },
-                popExitTransition = { QimengMotion.overlayPopExit() },
-            ) {
+            composable(Routes.INBOX) {
                 InboxSettingsScreen(
                     onBack = { navController.popBackStack() },
                 )
@@ -529,11 +549,7 @@ fun QimengNavHost(
             // /缩略图缓存（2026-09-16 用户反馈）走各自新增子页；
             // 上传收件箱与归档（2026-09-28 归档文件夹批）：自我页入口行迁入本 hub，
             // 路由复用 Routes.INBOX 不搬家
-            composable(
-                route = Routes.DATA_MANAGE,
-                enterTransition = { QimengMotion.overlayEnter() },
-                popExitTransition = { QimengMotion.overlayPopExit() },
-            ) {
+            composable(Routes.DATA_MANAGE) {
                 DataManageScreen(
                     onBack = { navController.popBackStack() },
                     onOpenUpload = { navController.navigate(Routes.UPLOAD) },
@@ -545,33 +561,21 @@ fun QimengNavHost(
                 )
             }
             // 库管理子页（U10-6）：库表 + 注册媒体目录表单（Web 文件管理页对齐物）
-            composable(
-                route = Routes.LIBRARY_MANAGE,
-                enterTransition = { QimengMotion.overlayEnter() },
-                popExitTransition = { QimengMotion.overlayPopExit() },
-            ) {
+            composable(Routes.LIBRARY_MANAGE) {
                 LibraryManageScreen(
                     onBack = { navController.popBackStack() },
                 )
             }
             // 作者 TXT 导入子页（U10-6b）：片段列表 + 选 TXT 导入 + 移除/重放
             // （Web TxtAuthorImportCard 对齐物）
-            composable(
-                route = Routes.AUTHOR_TXT_IMPORT,
-                enterTransition = { QimengMotion.overlayEnter() },
-                popExitTransition = { QimengMotion.overlayPopExit() },
-            ) {
+            composable(Routes.AUTHOR_TXT_IMPORT) {
                 AuthorTxtImportScreen(
                     onBack = { navController.popBackStack() },
                 )
             }
             // 备份导入导出子页（U10-6b）：全量备份导出 + qimeng_backup.json 幂等导入恢复
             // （Web BackupCard 对齐物，DOMAIN_RULES §10）
-            composable(
-                route = Routes.BACKUP,
-                enterTransition = { QimengMotion.overlayEnter() },
-                popExitTransition = { QimengMotion.overlayPopExit() },
-            ) {
+            composable(Routes.BACKUP) {
                 BackupScreen(
                     onBack = { navController.popBackStack() },
                 )
@@ -579,22 +583,14 @@ fun QimengNavHost(
             // 缩略图缓存子页（2026-09-16 用户反馈）：缩略图生成进度 + 缓存上限档位合并页
             // （自我的页「缓存区」QuotaCard 迁入 feature:manage；pushed 覆盖页，底栏隐藏
             // 与幕帘由既有 currentRoute 机制自动生效）
-            composable(
-                route = Routes.THUMBNAIL_CACHE,
-                enterTransition = { QimengMotion.overlayEnter() },
-                popExitTransition = { QimengMotion.overlayPopExit() },
-            ) {
+            composable(Routes.THUMBNAIL_CACHE) {
                 ThumbnailCacheScreen(
                     onBack = { navController.popBackStack() },
                 )
             }
             // 统计详情页（任务I I3）：路由契约单源在 feature:stats（DetailRoutes/AuthorCollectionRoutes
             // 同范式），mode/range 参数由页面 ViewModel 经 SavedStateHandle 读取，此处无需展开 arguments
-            composable(
-                route = StatsDetailRoutes.STATS_DETAIL_ROUTE,
-                enterTransition = { QimengMotion.overlayEnter() },
-                popExitTransition = { QimengMotion.overlayPopExit() },
-            ) {
+            composable(StatsDetailRoutes.STATS_DETAIL_ROUTE) {
                 // 统计族跳转回调组单源（RES R1 去重，构造见 [statsNavLinks]）
                 val links = statsNavLinks(navController)
                 StatsDetailScreen(
@@ -614,9 +610,6 @@ fun QimengNavHost(
             // 「退出后旧页叠层残留」，L2 拍板「无内容转场」口径同样覆盖 pushed 路由）。
             composable(
                 route = DetailRoutes.DETAIL_ROUTE,
-                // 详情页 = 媒体沉浸面，缩放「走近」转场（ADR-0031 动效规范；非覆盖页横滑语感）
-                enterTransition = { QimengMotion.detailEnter() },
-                popExitTransition = { QimengMotion.detailPopExit() },
             ) { entry ->
                 DetailScreen(
                     assetId = entry.arguments?.getString(DetailRoutes.KEY_ASSET_ID).orEmpty(),
@@ -657,11 +650,7 @@ fun QimengNavHost(
             // 资产编辑页（2026-09-25）：路由契约单源在 feature:detail（DetailRoutes 同范式），
             // assetId 参数由 AssetEditViewModel 经 SavedStateHandle 读取，此处无需展开 arguments。
             // pushed 覆盖页——底栏隐藏与幕帘由既有 currentRoute 机制自动生效
-            composable(
-                route = AssetEditRoutes.ASSET_EDIT_ROUTE,
-                enterTransition = { QimengMotion.overlayEnter() },
-                popExitTransition = { QimengMotion.overlayPopExit() },
-            ) {
+            composable(AssetEditRoutes.ASSET_EDIT_ROUTE) {
                 AssetEditScreen(
                     onBack = { navController.popBackStack() },
                     // 保存成功返回与手动返回同一条 pop 路径（语义分开供页面注入）
@@ -697,13 +686,14 @@ fun QimengNavHost(
         }
         // 约束链 = 原 NavHost 非 detail 分支的 modifier 逐字迁移（padding → consume 同序）：
         // 常驻 Tab 屏的布局约束与改前在 NavHost 内容区时完全一致（同宽高、同 padding/insets
-        // 消耗链——本任务最大的坑，逐行对照迁移）；NavHost 自身的 isDetailDestination 条件
-        // modifier 原样保留，与常驻层互不影响（Tab 屏原本就只在非 detail 约束下可见过）
+        // 消耗链——本任务最大的坑，逐行对照迁移；2026-10-03 起与内容层同步改吃 top+horizontal
+        // 让位，bottom=0）；NavHost 自身的 isDetailDestination 条件 modifier 原样保留，
+        // 与常驻层互不影响（Tab 屏原本就只在非 detail 约束下可见过）
         Box(
             modifier = Modifier
                 .zIndex(-1f)
-                .padding(innerPadding)
-                .consumeWindowInsets(innerPadding)
+                .padding(topSidePadding)
+                .consumeWindowInsets(topSidePadding)
         ) {
             // graph 未就绪（residentEntry==null）的帧不组合 Tab 屏：见上方 owner 注释。
             // 正常路径（首个组合内 graph 已内置）恒非空，此门控不可见
@@ -775,18 +765,56 @@ fun QimengNavHost(
                 }
             }
             // 幕帘：pushed 路由（detail/search/...）在顶时垫在 NavHost 与常驻层之间。
-            // ① 视觉：ADR-0031 起改为极光氛围底（原 Scaffold background 实色幕布退役）——
-            //   pushed 屏多为透明根容器，透出的是与 Tab 屏同一片极光，页面切换无「底色跳变」；
-            // ② 输入：pushed 屏非交互区下压的触摸全量吞掉，防穿透到常驻层造成幽灵滚动
-            //   （zIndex=2 盖过当前 Tab 的 zIndex=1）
+            // ① 视觉：部分 pushed 屏根容器无背景（如 SearchScreen 的裸 Column），改前透出
+            //   的是 Scaffold 背景色；常驻层就位后透出的会变成当前 Tab 屏——幕帘以 Scaffold
+            //   同款 background 色补底，逐像素保真。② 输入：pushed 屏非交互区下压的触摸
+            //   全量吞掉，防穿透到常驻层造成幽灵滚动（zIndex=2 盖过当前 Tab 的 zIndex=1）
             if (overlayRouteShowing) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .zIndex(2f)
+                        .background(MaterialTheme.colorScheme.background)
                         .blockTouches(),
-                ) {
-                    AuroraBackdrop(modifier = Modifier.fillMaxSize())
+                )
+            }
+            }
+            }
+
+            // ── 悬浮底栏（2026-10-03 悬浮坞改造）：内容层之上的独立悬浮层（zIndex=3 压过
+            //  常驻层/幕帘所在内容层），bottom 对齐。显隐条件沿主线 bottomBar 逐字保留：
+            //  覆盖页入栈隐藏、返回恢复。CLASSIC 材质渲染主线现行 M3 NavigationBar（保底
+            //  回退档，行为逐字）；其余材质渲染玻璃坞（坞点击走共用 [onTabSelected]，
+            //  防抖/双击回顶行为与主线零差异）。坞必须挂在内容层之外（外层 Box 直接子级）：
+            //  内容层挂 layerBackdrop 捕获，坞若在其内会被采样进自己的 backdrop ──
+            if (currentRoute == null || currentRoute in topLevelRoutes) {
+                when (tabBarMaterial) {
+                    TabBarMaterial.CLASSIC -> ClassicBottomBar(
+                        currentRoute = currentRoute,
+                        onSelect = { destination -> onTabSelected(destination) },
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .zIndex(3f),
+                    )
+                    else -> FloatingTabDock(
+                        items = TopLevelDestination.entries.map { destination ->
+                            GlassNavItem(
+                                label = stringResource(destination.labelRes),
+                                icon = destination.icon,
+                            )
+                        },
+                        selectedIndex = TopLevelDestination.entries
+                            .indexOfFirst { it.route == currentRoute }
+                            .coerceAtLeast(0),
+                        onSelect = { index ->
+                            onTabSelected(TopLevelDestination.entries[index])
+                        },
+                        material = tabBarMaterial,
+                        backdrop = backdrop,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .zIndex(3f),
+                    )
                 }
             }
         }
@@ -967,6 +995,49 @@ private fun Modifier.blockTouches(): Modifier = pointerInput(Unit) {
             val event = awaitPointerEvent()
             event.changes.forEach { change -> change.consume() }
             if (event.changes.none { it.pressed }) break
+        }
+    }
+}
+
+/**
+ * CLASSIC 材质档的底栏：主线现行 M3 [NavigationBar] 逐字迁移（2026-10-03 悬浮坞改造，
+ * 视觉/行为零回归的保底回退档——选它即回到改前观感）。唯一变化 = 宿主从 Scaffold
+ * bottomBar 槽改为悬浮层（坞显隐条件与点击链路逐字共用）。
+ *
+ * 选中指示器色（F 批 2026-09-09 接线，逐字保留）：旧版 styles.xml BottomNavigationView
+ * ActiveIndicator = qm_primary_soft 浅色 #123A3A3A / 夜间 #1AC8C8C8（QimengBrandColors
+ * 兼容别名 token，新色板退役旧灰板后仅为本档保留）——此前默认 indicator=secondaryContainer
+ * (=ChipBg) 与底栏背景色差仅 2/255，选中胶囊肉眼不可见（用户反馈「没做的圆润边角」）；
+ * 选中 icon/label 同步取 onSurface（旧版选中图标=主色深灰，默认 onSecondaryContainer
+ * 次级灰观感偏淡）。
+ */
+@Composable
+private fun ClassicBottomBar(
+    currentRoute: String?,
+    onSelect: (TopLevelDestination) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    // 暗色判定走主题解析单源 isQimengDarkTheme()（colorScheme 背景亮度，评审必修 2）：
+    // 本批起有手动外观模式（MainActivity 解析 AppearanceMode 后定深浅），本组件若绕开
+    // 主题直查系统夜间档，手动浅色 × 系统深色组合下会用夜间指示器色画在浅色坞上
+    //（PrimarySoftDark 不可见）——isQimengDarkTheme 与 QimengTheme 实际生效的色板同源
+    // CLASSIC 保底档指示器（2026-10-03 移植适配）：流光玻璃分支的 Color.kt 无
+    // PrimarySoft 兼容别名，指示器改走 M3 标准 secondaryContainer——与滑动胶囊同色源，
+    // 日夜主题自动跟随（isQimengDarkTheme 判定随之不再需要）
+    val indicatorColor = MaterialTheme.colorScheme.secondaryContainer
+    NavigationBar(modifier = modifier) {
+        TopLevelDestination.entries.forEach { destination ->
+            NavigationBarItem(
+                selected = currentRoute == destination.route,
+                onClick = { onSelect(destination) },
+                icon = { Icon(imageVector = destination.icon, contentDescription = null) },
+                label = { Text(text = stringResource(destination.labelRes)) },
+                colors = NavigationBarItemDefaults.colors(
+                    indicatorColor = indicatorColor,
+                    selectedIconColor = MaterialTheme.colorScheme.onSurface,
+                    selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                ),
+            )
         }
     }
 }
