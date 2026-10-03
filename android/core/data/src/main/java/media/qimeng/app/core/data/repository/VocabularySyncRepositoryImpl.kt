@@ -58,7 +58,7 @@ class VocabularySyncRepositoryImpl @Inject constructor(
         }
         // 本机独有判定：canonical trim + 忽略大小写（对齐引擎大小写不敏感折叠口径；
         // 这是预览对照的 UX 数字，非引擎行为）
-        val remoteCanonicals = remote.groups.mapToCanonicalSet()
+        val remoteCanonicals = remote.mapToCanonicalSet()
         val localOnly = local.groups.count { it.canonical.toCanonicalKey() !in remoteCanonicals }
         Result.success(
             VocabularySyncPreview(
