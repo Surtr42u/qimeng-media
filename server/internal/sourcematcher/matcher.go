@@ -154,7 +154,7 @@ const (
 	// wordEdgeTrim 词元边缘清理字符集：连接符与括号序号（"(1)" 剥成 "1" 后
 	// 按纯数字终止）。x/&/+ 的分隔语义在 splitSeparators/isSeparatorWord 处理，
 	// 不进此集合（避免误伤词内字符）。
-	wordEdgeTrim        = "+_-.()（）【】[]"
+	wordEdgeTrim = "+_-.()（）【】[]"
 )
 
 // matchAllCharacters 别名表优先 + 兜底提取（MatchAll 专用）：表命中非空直接
