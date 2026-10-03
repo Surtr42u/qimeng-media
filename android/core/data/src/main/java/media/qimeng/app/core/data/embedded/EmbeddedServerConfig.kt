@@ -29,8 +29,10 @@ object EmbeddedServerConfig {
     /**
      * 监听地址：只绑回环（红线，ADR-0015——媒体服务不出局域网、不出本机）。
      * 端口单值互指清单见 [media.qimeng.app.core.network.ServerAddress.LOCAL_MODE_PRESET]。
+     * 非 const（2026-10-03 预览变体批）：端口改构建期注入后不再是编译期常量，
+     * 消费方均为值语义不受影响。
      */
-    const val LISTEN_ADDRESS = "127.0.0.1:${media.qimeng.app.core.network.ServerAddress.LOCAL_MODE_PORT}"
+    val LISTEN_ADDRESS = "127.0.0.1:${media.qimeng.app.core.network.ServerAddress.LOCAL_MODE_PORT}"
 
     /** 服务端数据目录名（挂 App filesDir 下；与 Termux 形态 A 的 ~/.qimeng 互不相干，
      *  内嵌形态是独立空库，首次使用需重新注册库——ADR-0015 语义） */
