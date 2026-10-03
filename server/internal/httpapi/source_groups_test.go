@@ -40,9 +40,12 @@ func TestCustomSourceGroupsEndpoints(t *testing.T) {
 		return resp.StatusCode
 	}
 
-	// ① 初始无记录 = 空数组（内置 130 组检索表完整可用，非配置缺失）。
+	// ① 初始无记录 = 空数组（内置 130 组检索表完整可用，非配置缺失）；
+	// stopWords 恒返回（用户层空数组 = 无，内置冻结基线在引擎侧）。
 	if got := get(t); len(got.Groups) != 0 {
 		t.Fatalf("初始自定义出处组应为空数组，得到 %+v", got.Groups)
+	} else if got.StopWords == nil || len(*got.StopWords) != 0 {
+		t.Fatalf("初始 stopWords 应为非 nil 空数组，得到 %v", got.StopWords)
 	}
 
 	// ② PUT 混合载荷：夹空白、组内重复变体/别名、重复 canonical（取首个）、
@@ -144,5 +147,49 @@ func TestCustomSourceGroupsEndpoints(t *testing.T) {
 	}
 	if code := put(t, `{"groups":[{"canonical":"\ufffd\ufffd\ufffd"}]}`); code != http.StatusBadRequest {
 		t.Fatalf("全乱码 canonical PUT 期望 400，得到 %d", code)
+	}
+
+	// ⑧ PUT 带 stopWords 载荷：trim 生效 + 引擎收到同一形态 + kv 持久化
+	// （存储形态 = 生效形态，ADR-0033 stopWords 字段）。
+	if code := put(t, `{"groups":[],"stopWords":[" 触手 ","黑丝"]}`); code != http.StatusNoContent {
+		t.Fatalf("带 stopWords PUT 期望 204，得到 %d", code)
+	}
+	if got := get(t); got.StopWords == nil || len(*got.StopWords) != 2 || (*got.StopWords)[0] != "触手" || (*got.StopWords)[1] != "黑丝" {
+		t.Fatalf("GET stopWords 应 trim 后保序 [触手 黑丝]，得到 %v", got.StopWords)
+	}
+	if recv := env.fscan.updatedStopWords; len(recv) != 2 || recv[0] != "触手" || recv[1] != "黑丝" {
+		t.Fatalf("引擎收到的停用词失配: %v", recv)
+	}
+	storedWords, err := env.q.GetSetting(context.Background(), authoring.SettingKeyCustomStopWords)
+	if err != nil {
+		t.Fatalf("读取持久化停用词失败: %v", err)
+	}
+	var persistedWords []string
+	if err := json.Unmarshal([]byte(storedWords), &persistedWords); err != nil {
+		t.Fatalf("持久化停用词非 JSON 字符串数组: %v", err)
+	}
+	if len(persistedWords) != 2 || persistedWords[0] != "触手" || persistedWords[1] != "黑丝" {
+		t.Fatalf("持久化停用词形态失配: %v", persistedWords)
+	}
+
+	// ⑨ 再 PUT 不带 stopWords 字段：缺省 = 保持现值（不读不写）。
+	if code := put(t, `{"groups":[]}`); code != http.StatusNoContent {
+		t.Fatalf("缺省 stopWords PUT 期望 204，得到 %d", code)
+	}
+	if got := get(t); got.StopWords == nil || len(*got.StopWords) != 2 || (*got.StopWords)[0] != "触手" || (*got.StopWords)[1] != "黑丝" {
+		t.Fatalf("缺省 PUT 后 stopWords 应保持现值 [触手 黑丝]，得到 %v", got.StopWords)
+	}
+
+	// ⑩ 显式空数组 = 清空追加层（GET 用户层空数组；内置基线在引擎侧恒生效）。
+	if code := put(t, `{"groups":[],"stopWords":[]}`); code != http.StatusNoContent {
+		t.Fatalf("清空 stopWords PUT 期望 204，得到 %d", code)
+	}
+	if got := get(t); got.StopWords == nil || len(*got.StopWords) != 0 {
+		t.Fatalf("清空后 stopWords 应为非 nil 空数组，得到 %v", got.StopWords)
+	}
+
+	// ⑪ 乱码停用词 400（同 canonical 的 U+FFFD 入口防护，复用 normalizeWords）。
+	if code := put(t, `{"groups":[],"stopWords":["乱\ufffd码"]}`); code != http.StatusBadRequest {
+		t.Fatalf("乱码 stopWords PUT 期望 400，得到 %d", code)
 	}
 }

@@ -112,6 +112,27 @@ func loadCustomGroups(ctx context.Context, q *db.Queries, logger *slog.Logger) [
 	return groups
 }
 
+// loadStopWords 读取停用词追加层（JSON 字符串数组，ADR-0033 端点 stopWords
+// 字段；内置冻结基线在 sourcematcher.builtinStopWords，不入库）。任何失败
+// （无记录/损坏 JSON）降级为空集——同 loadCustomSources：追加层是增强能力，
+// 不允许它阻断扫描；损坏情况 warn 留痕便于排查。
+func loadStopWords(ctx context.Context, q *db.Queries, logger *slog.Logger) []string {
+	v, err := q.GetSetting(ctx, authoring.SettingKeyCustomStopWords)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		logger.Warn("scanner: 读取停用词追加层失败（按空集处理）", "err", err)
+		return nil
+	}
+	var words []string
+	if err := json.Unmarshal([]byte(v), &words); err != nil {
+		logger.Warn("scanner: 停用词追加层 JSON 损坏（按空集处理）", "err", err)
+		return nil
+	}
+	return words
+}
+
 // ingestNormalFile normal 库入库：SourceMatcher 富化 + 资产落库 + 角色覆盖。
 func (s *Scanner) ingestNormalFile(ctx context.Context, params db.UpsertAssetParams, fileName string) (db.Asset, error) {
 	// MatchAll 输入形态 = 去扩展名前的原始文件名（Matcher 内部自行去扩展名，
@@ -312,6 +333,13 @@ func (s *Scanner) UpdateCustomSources(_ context.Context, names []string) {
 // 匹配生效（含缓存清空），持久化由写入端点负责——此处保持无 IO。
 func (s *Scanner) UpdateCustomGroups(_ context.Context, groups []sourcematcher.SourceGroup) {
 	s.matcher.UpdateCustomGroups(groups)
+}
+
+// UpdateStopWords 运行期整体替换停用词追加层（词表端点 stopWords 字段调用；
+// 构造期装载见 New/loadStopWords）。落 matcher 即生效（含缓存清空），持久化
+// 由写入端点负责——此处保持无 IO。
+func (s *Scanner) UpdateStopWords(_ context.Context, words []string) {
+	s.matcher.UpdateStopWords(words)
 }
 
 // relinkOrphanCosAssets 扫描收尾自愈：重挂零关联 COS 资产的作者。

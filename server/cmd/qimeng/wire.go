@@ -87,6 +87,12 @@ func (a *scannerAdapter) UpdateCustomGroups(ctx context.Context, groups []source
 	return nil
 }
 
+// UpdateStopWords 运行期替换停用词追加层（同步，纯内存操作，ADR-0033）。
+func (a *scannerAdapter) UpdateStopWords(ctx context.Context, words []string) error {
+	a.sc.UpdateStopWords(ctx, words)
+	return nil
+}
+
 // RecomputeEnrichment 单库存量富化重算（同步调用、扫描器内部并发跑）：
 // PUT /sources/custom 的伴随任务，由 httpapi 侧起 goroutine 逐库调用。
 func (a *scannerAdapter) RecomputeEnrichment(ctx context.Context, libraryID string) error {

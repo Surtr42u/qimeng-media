@@ -282,6 +282,11 @@ func (a realScannerAdapter) UpdateCustomGroups(ctx context.Context, groups []sou
 	return nil
 }
 
+func (a realScannerAdapter) UpdateStopWords(ctx context.Context, words []string) error {
+	a.sc.UpdateStopWords(ctx, words)
+	return nil
+}
+
 func (a realScannerAdapter) RecomputeEnrichment(ctx context.Context, libraryID string) error {
 	return a.sc.RecomputeEnrichment(ctx, libraryID)
 }

@@ -48,6 +48,10 @@ type index struct {
 	// 在原串上剥离开头出处时用（折叠域会抹掉词边界，无法分词），见
 	// extractCharacters。
 	stripRaw map[string][]string
+	// stopWords 是兜底提取层的停用词集合（折叠域，builtinStopWords ∪
+	// 用户追加层）：extractTokens 命中即跳过（不终止收集），别名表层
+	// 不受影响（DOMAIN_RULES §4，2026-10-03）。
+	stopWords map[string]struct{}
 }
 
 // matchSource 出处前缀匹配（DOMAIN_RULES §4 匹配流程）：
@@ -180,8 +184,9 @@ func (ix *index) extractCharacters(base, source string) []string {
 // extractTokens 在已剥离开头出处的剩余串上按命名规约提取：空格分词、词内
 // +/& 再拆、裸 x 作分隔词丢弃；自左向右收集到首个纯数字/纯括号序号词终止
 // （序号之后是描述词）。普通词命中本出处别名表取 canonical（改名/归一），
-// 否则按原词入库；数字开头后跟 ASCII 字母的词（"2B" 形）仅当表认识才保留
-// （防 "8K"/"1080p" 混入）。
+// 否则按原词入库；命中停用词的词是内容备注（触手/白丝等），跳过不终止
+// 收集（index.stopWords）；数字开头后跟 ASCII 字母的词（"2B" 形）仅当表
+// 认识才保留（防 "8K"/"1080p" 混入）。
 func (ix *index) extractTokens(rest, source string) []string {
 	var out []string
 	seen := make(map[string]bool)
@@ -205,6 +210,9 @@ func (ix *index) extractTokens(rest, source string) []string {
 			if isIndexNumber(tok) { // 纯数字（含全角）/纯序号：之后是描述词
 				terminated = true
 				break
+			}
+			if _, bad := ix.stopWords[collapse(tok)]; bad {
+				continue // 停用词：内容备注不进胶囊（跳过不终止）
 			}
 			if canon, ok := ix.exactAlias(source, tok); ok {
 				add(canon) // 表认识：改名/归一（含 "2B" 形保护词）
@@ -345,9 +353,10 @@ type Matcher struct {
 	// （sources/custom 与 sources/custom-groups，ADR-0033）并发 PUT 时防止
 	// 层字段读改写交错——snap.Store 本身原子，但两层字段若不互斥，后写者
 	// 会以另一层的中间态重建索引。
-	updateMu     sync.Mutex
-	customNames  []string      // 旧版裸名层（§4，UpdateCustomSources）
-	customGroups []SourceGroup // 出处组层（ADR-0033，UpdateCustomGroups）
+	updateMu        sync.Mutex
+	customNames     []string      // 旧版裸名层（§4，UpdateCustomSources）
+	customGroups    []SourceGroup // 出处组层（ADR-0033，UpdateCustomGroups）
+	customStopWords []string      // 停用词追加层（ADR-0033 stopWords 字段，UpdateStopWords）
 
 	cacheMu    sync.Mutex
 	cache      map[string]matchResult
@@ -398,6 +407,27 @@ func (m *Matcher) UpdateCustomGroups(groups []SourceGroup) {
 	m.clearCache()
 }
 
+// UpdateStopWords 运行期替换停用词追加层（ADR-0033 词表端点 stopWords 字段
+// 调用；构造期装载见 scanner.New/loadStopWords）。与内置基线取并集，只作用
+// 于兜底提取层（别名表层不受影响）；nil/空 = 清空追加层（内置基线恒生效）。
+// 更新后清空匹配缓存保证一致性。
+func (m *Matcher) UpdateStopWords(words []string) {
+	seen := make(map[string]bool, len(words))
+	custom := make([]string, 0, len(words))
+	for _, w := range words {
+		if w != "" && !seen[w] {
+			seen[w] = true
+			custom = append(custom, w)
+		}
+	}
+	sort.Strings(custom)
+	m.updateMu.Lock()
+	defer m.updateMu.Unlock()
+	m.customStopWords = custom
+	m.rebuild()
+	m.clearCache()
+}
+
 // clearCache 整体重置匹配缓存（索引已换，旧键结果作废）。
 func (m *Matcher) clearCache() {
 	m.cacheMu.Lock()
@@ -415,6 +445,19 @@ func (m *Matcher) rebuild() {
 		strip:    make(map[string][]string, len(merged)),
 		aliases:  make(map[string][]aliasEntry, len(merged)),
 		stripRaw: make(map[string][]string, len(merged)),
+	}
+	// 停用词集合 = 内置冻结基线 ∪ 用户追加层，逐词折叠后入集合（空串跳过；
+	// 两层各自由 Update*/load 侧保证去重，这里再折叠去重一次防空串与重叠）。
+	ix.stopWords = make(map[string]struct{}, len(builtinStopWords)+len(m.customStopWords))
+	for _, w := range builtinStopWords {
+		if c := collapse(w); c != "" {
+			ix.stopWords[c] = struct{}{}
+		}
+	}
+	for _, w := range m.customStopWords {
+		if c := collapse(w); c != "" {
+			ix.stopWords[c] = struct{}{}
+		}
 	}
 	add := func(g *SourceGroup) {
 		ix.groups[g.Canonical] = g

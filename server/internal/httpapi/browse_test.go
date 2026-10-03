@@ -85,6 +85,9 @@ type fakeScanner struct {
 	// updatedGroups 记录最近一次词表端点下发的规范化组（source_groups_test
 	// 断言"引擎收到的 = 持久化的"用，ADR-0033）。
 	updatedGroups []sourcematcher.SourceGroup
+	// updatedStopWords 记录最近一次词表端点下发的规范化停用词（source_groups_test
+	// 断言"引擎收到的 = 持久化的"用，ADR-0033 stopWords 字段）。
+	updatedStopWords []string
 }
 
 func (f *fakeScanner) Scan(ctx context.Context, libraryID string) error {
