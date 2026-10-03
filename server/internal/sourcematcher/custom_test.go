@@ -81,13 +81,14 @@ func TestMergeGroupsDoesNotMutateInputs(t *testing.T) {
 // 内置表始终未被污染。
 func TestMatcherUpdateCustomGroups(t *testing.T) {
 	m := newTestMatcher()
-	// ① 并入内置组：守望先锋 + D.Mon（别名 Dmon）→ 表层命中即改名归一，
-	// 既有角色不受影响。
+	// ① 并入内置组：守望先锋 + 索杰恩（自定义层词条）→ 表层命中即改名归一，
+	// 既有角色不受影响。（2026-10-04 起改用内置表未收录的索杰恩：D.Mon 已固化
+	// 进内置基线（ADR-0033 补记三），再用它断言合并将失去判别力——不并也命中。）
 	m.UpdateCustomGroups([]SourceGroup{{Canonical: "守望先锋", Characters: []CharEntry{
-		{Canonical: "D.Mon", Aliases: []string{"Dmon"}},
+		{Canonical: "索杰恩", Aliases: []string{"Sojourn", "索杰恩"}},
 	}}})
-	if src, chars := m.MatchAll("守望先锋  Dmon 1.mp4"); src != "守望先锋" || !slices.Equal(chars, []string{"D.Mon"}) {
-		t.Errorf("并入后 MatchAll = (%q, %v), want (守望先锋, [D.Mon])", src, chars)
+	if src, chars := m.MatchAll("守望先锋  Sojourn 1.mp4"); src != "守望先锋" || !slices.Equal(chars, []string{"索杰恩"}) {
+		t.Errorf("并入后 MatchAll = (%q, %v), want (守望先锋, [索杰恩])", src, chars)
 	}
 	if src, chars := m.MatchAll("守望先锋  DVA.mp4"); src != "守望先锋" || !slices.Equal(chars, []string{"DVA"}) {
 		t.Errorf("并入后既有角色失配: (%q, %v), want (守望先锋, [DVA])", src, chars)
@@ -105,12 +106,16 @@ func TestMatcherUpdateCustomGroups(t *testing.T) {
 	// ③ 清空出处组层：词条的改名归一消失，但命名规约兜底层仍按原名提取
 	// （DOMAIN_RULES §4 兜底层：表零命中 → `出处  角色名 序号` 位置提取）。
 	m.UpdateCustomGroups(nil)
-	if src, chars := m.MatchAll("守望先锋  Dmon 1.mp4"); src != "守望先锋" || !slices.Equal(chars, []string{"Dmon"}) {
-		t.Errorf("清空后 MatchAll = (%q, %v), want (守望先锋, [Dmon] 兜底原名)", src, chars)
+	if src, chars := m.MatchAll("守望先锋  Sojourn 1.mp4"); src != "守望先锋" || !slices.Equal(chars, []string{"Sojourn"}) {
+		t.Errorf("清空后 MatchAll = (%q, %v), want (守望先锋, [Sojourn] 兜底原名)", src, chars)
 	}
-	// ④ 内置表从未被污染：内置角色照常命中。
+	// ④ 内置表从未被污染：内置角色照常命中；D.Mon/Dmon 已固化内置基线
+	// （ADR-0033 补记三），清空自定义层后仍由内置表改名归一。
 	if src, chars := m.MatchAll("守望先锋  DVA.mp4"); src != "守望先锋" || !slices.Equal(chars, []string{"DVA"}) {
 		t.Errorf("清空后内置角色失配: (%q, %v), want (守望先锋, [DVA])", src, chars)
+	}
+	if src, chars := m.MatchAll("守望先锋  Dmon 1.mp4"); src != "守望先锋" || !slices.Equal(chars, []string{"D.Mon"}) {
+		t.Errorf("清空后内置固化词条失配: (%q, %v), want (守望先锋, [D.Mon])", src, chars)
 	}
 }
 

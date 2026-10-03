@@ -189,8 +189,10 @@ func TestCacheSemantics(t *testing.T) {
 func TestBuiltinGroupsDataIntegrity(t *testing.T) {
 	// DOMAIN_RULES §4 记"131 个"，实测旧源文件数据组为 130（131 次出现含
 	// 1 行 data class 定义），以源数据保真为准（见 source_groups_data.go 头注释勘误）。
-	if len(builtinGroups) != 130 {
-		t.Fatalf("len(builtinGroups) = %d, want 130", len(builtinGroups))
+	// 2026-10-04 固化用户首批审定词条：+3 新组（怪物猎人/战锤40k/初音未来，
+	// ADR-0033 补记三）→ 133。
+	if len(builtinGroups) != 133 {
+		t.Fatalf("len(builtinGroups) = %d, want 133", len(builtinGroups))
 	}
 	// 抽查 1：尼尔 机械纪元（长变体 + 数字开头角色）
 	g := findGroup(t, "尼尔 机械纪元")

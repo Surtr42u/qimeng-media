@@ -1,7 +1,7 @@
 package sourcematcher
 
 // custom.go：自定义出处组合并层（ADR-0033 检索词表维护接口的引擎侧）。
-// 内置 130 组（source_groups_data.go）是冻结基线，用户/AI 经词表端点维护的
+// 内置 133 组（source_groups_data.go，2026-10-04 固化用户首批词条后 130→133）是冻结基线，用户/AI 经词表端点维护的
 // 自定义层按 canonical 并入：同名 = 扩变体/扩角色（给内置组补词条），新名 =
 // 追加新组。旧版裸名名单（UpdateCustomSources）是合并层的退化输入——无角色
 // 表的裸组（同 canonical 时与内置组合并而非整体覆盖，角色表不因裸名丢失）。

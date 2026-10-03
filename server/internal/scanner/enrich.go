@@ -32,7 +32,9 @@ const enrichRecomputeConcurrency = 4
 // 手动 +1（如兜底提取规则、停用词基线、别名归一规则的变更）。第 1 代 = 命名
 // 规约兜底提取（extractTokens）+ 停用词层（builtinStopWords）。纯增补别名/
 // 词条不改既有结果的算不升版。bump 时在本注释追加一行「N：改了什么」。
-const EnrichmentEngineVersion = 1
+// 2：内置基线固化用户首批审定词条（跨部署一致，ADR-0033 补记三）——各部署
+// 自愈重算后新词条生效。
+const EnrichmentEngineVersion = 2
 
 // enrich.go：扫描入库时的作者体系富化挂接（M3，DOMAIN_RULES §4/§6）。
 //
