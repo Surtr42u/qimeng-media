@@ -57,6 +57,13 @@ const (
 	// 获取渠道平台名，仅记录永不参与匹配；来源建议的唯一数据源，ADR-0024）。
 	// 与 §4 资产出处分区（custom_sources）互不相干。读写方 authorattach。
 	SettingKeyAuthorSourceVocabulary = "author_source_vocabulary"
+
+	// SettingKeyEnrichmentEngineVersion 存富化引擎的 kv 版本标记（十进制
+	// 整数字符串；DOMAIN_RULES §4「引擎版本自愈重算」）：服务端启动时与
+	// scanner.EnrichmentEngineVersion 比对，落后（含无标记的存量部署）则
+	// 后台重算全部常规库富化后落新值。读取方：scanner（SelfHealEnrichment
+	// IfNeeded）；写入方同处（重算完成后 Upsert）。
+	SettingKeyEnrichmentEngineVersion = "enrichment_engine_version"
 )
 
 // AutoFragmentFilename 服务端无任何片段时上传挂靠自动创建的片段名（此后它
