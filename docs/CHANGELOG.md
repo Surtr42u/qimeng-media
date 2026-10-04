@@ -10,6 +10,15 @@
 
 > **历史条目拆分说明（2026-10-01）**：为控制 AI 上下文体量，本文件只保留 **2026-09-22 及之后**的条目（第三百八十二笔起）；拆分线之前的全部条目已逐字迁入 `docs/history/CHANGELOG-ARCHIVE.md`（零改写，笔号与本文件连续可查）。引用早于拆分线的旧笔号请去历史档查阅。
 
+## chore(server): 启动脚本拆三份——无头后端/浏览器/桌面端三入口（2026-10-04 第四百七十五笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- **背景**：用户要求把启动脚本按使用形态拆成三份。
+- **三入口**（均为薄壳，全部逻辑仍单点在 `_server-common.cmd`，env 变量与 dev-mode 行不抄第二处）：`启动-无头后端.bat`（nobrowser：最小化后台跑，启动横幅〔时间戳 + 本机/局域网 ready-to-copy 地址 + 虚拟网卡提醒〕追加进 `server\console.log`——无头形态的「输出局域网地址」落点）、`启动-浏览器.bat`（console：可见窗口横幅升级为 ready-to-copy 地址行 + 端口就绪自动开浏览器，原「启动服务端.bat」）、`启动-桌面端.bat`（desktop 新增：netstat 探测 8420，后端不在则无头拉起〔含编译〕并等端口就绪，再启动 Tauri 壳 `desktop/src-tauri/target/release/qimeng-media-desktop.exe`；壳未构建时给出 ASCII 构建指引）。旧「启动服务端.bat」「启动服务端-无浏览器.bat」删除。
+- **坑修记档**：重写后的 .cmd 一度以 LF 换行落盘，块内 `call :label` 报「找不到批处理标签」（cmd 对 LF 文件的 label 寻址在括号块内失效的经典坑；顶层 call 却能命中更迷惑）——四个脚本全量转 CRLF 修复。
+- **验证**（全部后台执行）：无头模式端口起 + 横幅含三条 LAN 地址落 console.log；桌面模式「已运行检测」与「死路拉起」两分支均通过（编译产物 mtime 更新证明块内 call :build 修复生效）；console 模式与无头共享 build/横幅/ watcher 全部代码路径未单独实测（避免前台弹浏览器）。
+
 ## feat(api): 备份 history 段放开 500 条上限——全量 open 事件随备份携带（2026-10-04 第四百七十四笔）
 
 执行 AI：GLM-5.3-Flash（主代理）
