@@ -19,7 +19,6 @@
 - [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md)：监控指标、健康检查（/api/v1/healthz /api/v1/readyz 免鉴权；根路径 /healthz /readyz 为运维探针别名）、日志
 - [docs/SECURITY.md](docs/SECURITY.md)：安全红线（鉴权/路径穿越/上传/回收站/远程访问）
 - [docs/CHANGELOG.md](docs/CHANGELOG.md)：历次变更 + AI 署名
-- [docs/LEGACY_REQUIREMENTS.md](docs/LEGACY_REQUIREMENTS.md)：旧项目需求级结论沉淀（M2-M4 实现前对照）
 
 ## 决策记录（docs/adr/）
 

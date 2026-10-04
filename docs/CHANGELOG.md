@@ -10,6 +10,16 @@
 
 > **历史条目拆分说明（2026-10-01）**：为控制 AI 上下文体量，本文件只保留 **2026-09-22 及之后**的条目（第三百八十二笔起）；拆分线之前的全部条目已逐字迁入 `docs/history/CHANGELOG-ARCHIVE.md`（零改写，笔号与本文件连续可查）。引用早于拆分线的旧笔号请去历史档查阅。
 
+## chore(docs): 仓库/workspace 大扫除——LEGACY_REQUIREMENTS 退役 + 本地旧产物清理（2026-10-04 第四百七十六笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- **背景**：用户要求「整理文件夹，把旧版实录这种去除，保持干爽」（含上级 QimengNAS 工作区）。
+- **文档退役**：`docs/LEGACY_REQUIREMENTS.md`（旧版沉淀需求清单，M2-M4 实现期对照材料）删除——A~H 各节规则已全部并入 DOMAIN_RULES（§5/§6/§11 等）与 GUIDE_API 并随 M2-M4 落地，M6 已收官，清单完成使命；正文可溯 git 历史。活引用同步清理：llms.txt 文档索引行删除、HANDOVER §8 文档地图行删除并列入「已删除勿再寻找」、GUIDE_API 标签排序行与 DOMAIN_RULES §6 标签排序行的「LEGACY_REQUIREMENTS §A」出处括注摘除（规则正文不动）。代码注释/migration 注释/openapi description 里的 LEGACY 出处标注保留（历史引用语义，且 migration 与生成物禁改）。
+- **本地旧产物清理**（均 gitignore 未跟踪）：根目录孤儿 `qimeng-server-new.exe`（启动脚本恒重建 server/qimeng-server.exe，不留陈旧二进制）；`build/` 下 10-04 CDP 调试脚本与日志×14、`data-page-now.png`、WebView2 ps1×2、旧构建 `qimeng-server-8421/uiaudit/stress.exe`×3、交叉编译产物 `build/android`（47M）与 `build/linux`（23M，make 可重建）；`build/app-release.apk`（10-03 终包）保留。
+- **qimeng-data 清理**（1.3G+）：8-31 手工备份 `qimeng.db.bak-20260831`×3 删除（已被 backups/ 内 9-21 起 migration 后自动备份取代）；`tmp-cover-work/` 内 10-04 封面管线调试临时产物（mituri-*.jpg×6、paused-frame*.jpg×2、sample*.mp4×2、phone-coil-journal.bak）删除。**保留**：`tmp-cover-work/鬼灭之刃 甘露寺蜜璃.mp4.bak-20261004`（1.38G 用户真实媒体，10-04 会话中被改名让位的原视频，去向待用户处理）。
+- **仓库外同步**：上级 QimengNAS 工作区删除 `旧版UI实录/`（42 个 2026-09-06 旧 App uiautomator 实采，M4-2A 对照材料完成使命）与 `qimeng-media-pre-rewrite-20260930.bundle`（开源重写前 git bundle，含含明文口令的旧历史——按铁律 14 仓库卫生清除，条目正文已逐字在 docs/history/CHANGELOG-ARCHIVE.md）；`00-总说明.md` 重写对齐现状。
+
 ## chore(server): 启动脚本拆三份——无头后端/浏览器/桌面端三入口（2026-10-04 第四百七十五笔）
 
 执行 AI：GLM-5.3-Flash（主代理）

@@ -44,7 +44,7 @@
 ## 关键机制
 
 - **排序**：`sort` 八键（default/fileDate/addedDate/viewCount/playCount/sizeBytes/name/favoriteAt——favoriteAt=收藏时间，仅 favorite 筛选时语义成立）+ `order`，语义见 DOMAIN_RULES §3
-- **标签排序**：`GET /tags` 按名称升序（筛选面板等）；资产详情 `tags` 按关联时间倒序（详情弹窗"最近添加置顶"——PUT 整体替换即刷新全部关联时间，LEGACY_REQUIREMENTS §A），两者口径不同不要混用
+- **标签排序**：`GET /tags` 按名称升序（筛选面板等）；资产详情 `tags` 按关联时间倒序（详情弹窗"最近添加置顶"——PUT 整体替换即刷新全部关联时间），两者口径不同不要混用
 - **COS 隔离（三态开关，2026-09-03 起）**：`includeCos=1`→全量（不限制）、`cosOnly=1`→只 COS、两者皆 0→常规（排除 COS 作者关联文件，历史默认）；`cosOnly` 与 `includeCos` 同真时 **cosOnly 优先**。`work`（COS 作品名，migration 0008 `assets.cos_work` 列）与 `cosOnly` 组合即 COS 分区按作品筛。DOMAIN_RULES §6 隔离口径的端点面。**缺省口径差异（2026-09-05 用户拍板）**：/assets 非收藏流与 GET /sources、GET /recommendations 维持缺省排除；**/history 与 /assets favorite=true 收藏流缺省改为全部**（常规∪COS 合并；/history 的 includeCos schema default=true，/assets 的 default 保持 false——收藏流特例在服务端分支实现）
 - **会话去重**：`ViewEventReport.sessionId` 由客户端生成（App 会话/浏览器标签页），服务端按 (assetId, kind, sessionId, 当日) 去重（DOMAIN_RULES §5）
 - **客户端幂等键**（任务L L5，2026-09-09）：`ViewEventReport.clientEventId`（必填 UUID）由客户端在事件产生时生成并随本地暂存持久（App Room 队列 / Web IndexedDB 账本），重试/补传/导出再 POST 携带同一 id；服务端 view_events.client_event_id 唯一索引（migration 0010）+ INSERT OR IGNORE 路线：同 id 重复提交 202 成功返回但不入库不计数——支撑客户端「发送成功（2xx）才删本地暂存」与断网重传不双计；历史数据/旧格式请求 id 为零值/缺失按 NULL 入库放行（唯一索引多 NULL 不冲突），幂等仅对携带 id 的事件生效

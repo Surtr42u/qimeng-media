@@ -127,7 +127,7 @@ activePool 冷启动装配竞态（读 miss 重下，无害）；桌面壳无自
 | `PROJECT_PLAN.md` | 里程碑勾选 |
 | `CHANGELOG.md` 与 `docs/history/` | 历史变更（只增不改写正文）+ 历史档/审查报告归档 |
 | `ARCHITECTURE.md` / `DOMAIN_RULES.md` / `SECURITY.md` / `OBSERVABILITY.md` / `GUIDE_API.md` | 架构/领域/安全/监控/协议导读 |
-| `CAPABILITY_MAP.md` / `LEGACY_REQUIREMENTS.md` | 能力三态与明确不做；旧版沉淀需求清单（openapi/DOMAIN_RULES 引用） |
+| `CAPABILITY_MAP.md` | 能力三态与明确不做 |
 | `docs/adr/` | 架构决策 |
 
-> 已删除勿再寻找：`HANDOVER_UI.md`、`HANDOVER_APP.md`、`REPLICATION_GAPS.md`、`AUDIT-20260920.md`、`任务书-*.md`、`P2-*`、仓库外 `_archive-20260917/` 与《任务*.md》《待拍板-*.md》。历史可溯 git 与 CHANGELOG。
+> 已删除勿再寻找：`HANDOVER_UI.md`、`HANDOVER_APP.md`、`REPLICATION_GAPS.md`、`AUDIT-20260920.md`、`任务书-*.md`、`P2-*`、`LEGACY_REQUIREMENTS.md`（2026-10-04 退役：旧版需求已全部并入 DOMAIN_RULES/GUIDE_API 并随 M2-M4 落地，正文与出处标注见 git 历史）、仓库外 `_archive-20260917/`、《任务*.md》《待拍板-*.md》与上级 `旧版UI实录/`。历史可溯 git 与 CHANGELOG。
