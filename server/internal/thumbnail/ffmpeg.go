@@ -15,9 +15,12 @@ import (
 )
 
 // webpQuality 是 libwebp 有损质量参数（0-100，ffmpeg 默认 75）。
-// 为什么定 80：缩略图体积与肉眼质量的常用折中——再低会出现块状伪影
-// （列表页密集展示时明显），再高对几十 KB 的缩略图收益递减。后续可提为配置项。
-const webpQuality = 80
+// 为什么定 90：2026-10-04 用户拍板从 80 提到 90——真机/网页实测 80 在详情
+// 大图档有可感知的压缩痕迹，90 的体积增幅（约五~七成，仍几十 KB 级）换
+// 主观清晰度值得；95+ 体积暴涨收益递减不取。旧口径「80=体积与质量的常用
+// 折中」随之作废。产物内容已变，缓存键版本段随本次改动升 v4（同批还有
+// mjpeg 降级档 jpegQuality 4→2，见 stillformat.go / cachekey.go 版本沿革）。
+const webpQuality = 90
 
 // stderrTailLen 是截进错误信息的 stderr 尾部长度上限（字节）。
 const stderrTailLen = 512

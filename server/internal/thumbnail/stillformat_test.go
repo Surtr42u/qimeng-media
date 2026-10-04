@@ -62,10 +62,10 @@ func TestParseEncodersHasLibwebp(t *testing.T) {
 // （libwebp 是 -quality 0-100、mjpeg 是 -q:v 2-31），拼错任一段缩略图管线
 // 即全量失败，必须逐字锁定。
 func TestStillFormatEncodeArgs(t *testing.T) {
-	if got := StillFormatWebP.encodeArgs(); !reflect.DeepEqual(got, []string{"-c:v", "libwebp", "-quality", "80"}) {
+	if got := StillFormatWebP.encodeArgs(); !reflect.DeepEqual(got, []string{"-c:v", "libwebp", "-quality", "90"}) {
 		t.Errorf("webp 编码参数 = %v", got)
 	}
-	if got := StillFormatJPEG.encodeArgs(); !reflect.DeepEqual(got, []string{"-c:v", "mjpeg", "-q:v", "4"}) {
+	if got := StillFormatJPEG.encodeArgs(); !reflect.DeepEqual(got, []string{"-c:v", "mjpeg", "-q:v", "2"}) {
 		t.Errorf("jpeg 编码参数 = %v", got)
 	}
 }

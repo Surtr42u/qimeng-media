@@ -42,18 +42,18 @@ func TestCacheKeyDiffers(t *testing.T) {
 // TestCacheKeyGolden 黄金向量回归锁定：键是磁盘缓存与 HTTP 缓存头的公共名字，
 // 算法（版本段/拼接格式/哈希）意外变更 = 全库缩略图一夜变孤儿，必须在这里
 // 当场失败。
-// 期望值由 sha256("v3:a:512") / sha256("v3:a:1024") / sha256("v3:b:512")
-// 独立计算得出（2026-10-01 随静图 EXIF 方向显式转正升 "v3" 版本段——升级即
-// 换键，v2 旧缓存全部自然失效重建，见 cachekey.go 版本段注释）。
+// 期望值由 sha256("v4:a:512") / sha256("v4:a:1024") / sha256("v4:b:512")
+// 独立计算得出（2026-10-04 随静图降级档 mjpeg 质量 4→2 升 "v4" 版本段——
+// 升级即换键，v3 旧缓存全部自然失效重建，见 cachekey.go 版本段注释）。
 func TestCacheKeyGolden(t *testing.T) {
 	cases := []struct {
 		assetID string
 		size    Size
 		want    string
 	}{
-		{"a", SizeGrid, "41b6addebaaa36b067be8aba1188ec9126d7f9606d1880d6945a1e38e0b75c20"},
-		{"a", SizePreview, "849d8dfe03f5fd1f21aa641a697c4ecdf2789fcaf82de19352ebfa06dfa3f893"},
-		{"b", SizeGrid, "4d2dac4d58fff4330d458800e24a0fe07c1a7e3eda4e4965824d753d706d2345"},
+		{"a", SizeGrid, "f17a7105eb5be5d05f73edc2c06b95a771c44e84a59d3ebc85874d1b33fcaea9"},
+		{"a", SizePreview, "01d0b4f779dde6b8472f51cec41493cdc2e3d757be3e31cf3cd54bd4f72c71fd"},
+		{"b", SizeGrid, "48c265e18d5713b1e12d86c48160e969f38c4abf8cccac3a40d4de247338b03c"},
 	}
 	for _, tc := range cases {
 		if got := CacheKey(tc.assetID, tc.size); got != tc.want {
@@ -64,17 +64,17 @@ func TestCacheKeyGolden(t *testing.T) {
 }
 
 // TestCacheKeyStrategyVersionDiffers 锁定版本段语义：同资产同尺寸在当前版本
-// 段（v3）与紧邻上一代（v2，静图方向转正前的策略）及最初的裸键（无版本段）
+// 段（v4）与紧邻上一代（v3，降级档质量提升前的策略）及最初的裸键（无版本段）
 // 下的键必须互不相同——策略升级 = 换键 = 旧缓存全部失效重建（DOMAIN_RULES
 // §11"抽帧位置策略变更后旧缩略图缓存必须失效重建"）。策略再升版时此处随
-// 实现同步滚动：把 "v3" 行换新值、上一行值改成旧当前值。
+// 实现同步滚动：把 "v4" 行换新值、上一行值改成旧当前值。
 func TestCacheKeyStrategyVersionDiffers(t *testing.T) {
-	if got := CacheKey("a", SizeGrid); got != cacheKeyGolden("v3:a:512") {
+	if got := CacheKey("a", SizeGrid); got != cacheKeyGolden("v4:a:512") {
 		t.Fatalf("版本段参与哈希失效：got %s", got)
 	}
-	previous := cacheKeyGolden("v2:a:512") // 上一代版本段（v2，方向转正前）
+	previous := cacheKeyGolden("v3:a:512") // 上一代版本段（v3，降级档质量提升前）
 	if CacheKey("a", SizeGrid) == previous {
-		t.Fatal("与上一代版本段键相同：策略升级后 v2 旧缓存不会失效")
+		t.Fatal("与上一代版本段键相同：策略升级后 v3 旧缓存不会失效")
 	}
 	legacy := cacheKeyGolden("a:512") // 最初的无版本段裸键
 	if CacheKey("a", SizeGrid) == legacy {

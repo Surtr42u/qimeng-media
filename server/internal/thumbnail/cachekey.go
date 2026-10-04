@@ -37,8 +37,10 @@ const thumbsDirName = "thumbs"
 // WebP 质量等）都必须再升版本段并同步 cachekey_test 的黄金向量。
 // 版本沿革：v2（2026-08-29 抽帧策略）→ v3（2026-10-01 静图 EXIF 方向显式
 // 转正，§11「静图方向」）——v2 键下的缩略图未按方向旋转（且方向是否正确
-// 取决于部署 ffmpeg 的隐式行为），必须全量失效重建。
-const cacheKeyStrategyVersion = "v3"
+// 取决于部署 ffmpeg 的隐式行为），必须全量失效重建；→ v4（2026-10-04 静图
+// 降级档 mjpeg 质量 jpegQuality 4→2，stillformat.go）——同键产物内容已变，
+// 旧键缓存必须失效重建（用户拍板接受全库重抽一次性代价）。
+const cacheKeyStrategyVersion = "v4"
 
 // CacheKey 计算缩略图缓存键：SHA-256(版本段 + ":" + assetID + ":" + size) 的
 // hex 编码【逐字遵守 DOMAIN_RULES §11：SHA-256(assetId+size) 前缀 hex，存

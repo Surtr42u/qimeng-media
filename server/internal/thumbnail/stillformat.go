@@ -36,13 +36,15 @@ func (f StillFormat) Ext() string {
 	}
 }
 
-// jpegQuality 是 mjpeg 降级档的 -q:v 值（2=最好 31=最差）。为什么定 4：
-// 与 webpQuality=80 的肉眼档位相当——再低块状伪影在网格密集展示时明显，
-// 再高对几十 KB 缩略图收益递减（对齐 webpQuality 常量的取舍注释）。
+// jpegQuality 是 mjpeg 降级档的 -q:v 值（2=最好 31=最差）。为什么定 2：
+// 2026-10-04 用户拍板从 4 提到 2（mjpeg 刻度的最好档）——真机实测 q4 在
+// 手机高分屏网格/详情上有可感知的压缩肉感，q2 体积增幅约两~六成（几十 KB
+// 级）仍在缩略图预算内；旧口径「与 webpQuality=80 肉眼相当」随之作废。
+// 产物内容已变，缓存键版本段随本次改动升 v4（见 cachekey.go 版本沿革）。
 // 已知取舍：JPEG 无透明通道，带 alpha 的 PNG 源缩略图透明度被丢弃
 // （swscale 直接弃通道，不合成底色）；用户真实库以 jpg 照片+视频为主，
 // 该形态占比极小，不为此引入 overlay 滤镜复杂度。
-const jpegQuality = 4
+const jpegQuality = 2
 
 // encodeArgs 缩放命令的编码段参数。两档的参数名不通用
 // （libwebp 用 -quality 0-100，mjpeg 用 -q:v 2-31），因此整体分支而非拼常量。
