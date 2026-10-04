@@ -86,7 +86,7 @@ import media.qimeng.app.feature.manage.BackupScreen
 import media.qimeng.app.feature.manage.DataManageScreen
 import media.qimeng.app.feature.manage.LibraryManageScreen
 import media.qimeng.app.feature.manage.ThumbnailCacheScreen
-import media.qimeng.app.feature.manage.VocabularySyncScreen
+import media.qimeng.app.feature.manage.VocabularyEditScreen
 import media.qimeng.app.feature.search.SearchScreen
 import media.qimeng.app.feature.settings.InboxSettingsScreen
 import media.qimeng.app.feature.settings.ServerSettingsScreen
@@ -163,10 +163,11 @@ object Routes {
     const val THUMBNAIL_CACHE = "thumbnail_cache"
 
     /**
-     * 覆盖页面：词表同步（ADR-0034，2026-10-04：数据管理 hub → 远端词表单向下发覆盖
-     * 本机内嵌库的两段式子页；预览对照 + 确认执行，协议消费既有 GET/PUT custom-groups）
+     * 覆盖页面：词表维护（ADR-0035，2026-10-04：数据管理 hub → 本机内嵌库词表直接编辑
+     * 子页——出处组/变体/角色/别名/停用词内存编辑 + 整体保存；协议零改动。词表合并同步
+     * 不设子页——用户拍板入口迁入备份页 VocabularyMergeSyncCard，随 ADR-0035 定稿）
      */
-    const val VOCABULARY_SYNC = "vocabularySync"
+    const val VOCABULARY_EDIT = "vocabularyEdit"
 }
 
 /**
@@ -570,8 +571,9 @@ fun QimengNavHost(
                     onOpenBackup = { navController.navigate(Routes.BACKUP) },
                     onOpenThumbCache = { navController.navigate(Routes.THUMBNAIL_CACHE) },
                     onOpenInbox = { navController.navigate(Routes.INBOX) },
-                    // 词表同步（ADR-0034）：数据管理 hub「词表同步」入口行
-                    onOpenVocabularySync = { navController.navigate(Routes.VOCABULARY_SYNC) },
+                    // 词表维护（ADR-0035）：数据管理 hub「词表维护」入口行；词表合并同步
+                    // 入口在备份页 VocabularyMergeSyncCard（同 ADR，无独立路由）
+                    onOpenVocabularyEdit = { navController.navigate(Routes.VOCABULARY_EDIT) },
                 )
             }
             // 库管理子页（U10-6）：库表 + 注册媒体目录表单（Web 文件管理页对齐物）
@@ -602,10 +604,10 @@ fun QimengNavHost(
                     onBack = { navController.popBackStack() },
                 )
             }
-            // 词表同步子页（ADR-0034）：远端词表单向下发覆盖本机内嵌库（预览 + 确认两段式；
+            // 词表维护子页（ADR-0035）：本机内嵌库词表直接编辑（内存编辑 + 整体保存；
             // pushed 覆盖页，底栏隐藏与幕帘由既有 currentRoute 机制自动生效）
-            composable(Routes.VOCABULARY_SYNC) {
-                VocabularySyncScreen(
+            composable(Routes.VOCABULARY_EDIT) {
+                VocabularyEditScreen(
                     onBack = { navController.popBackStack() },
                 )
             }

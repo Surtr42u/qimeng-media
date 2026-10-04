@@ -1,6 +1,6 @@
 # HANDOVER - 交接说明
 
-> 写给下一位接手的 AI。人类用户无编程基础，代码由 AI 生成。**最后更新：2026-10-04**：App 词表同步落地（ADR-0034：远程登录态下把 NAS/电脑端检索词表单向下发覆盖本机内嵌库，数据管理 hub「词表同步」子页，服务端/openapi/SDK 零改动）；前笔 2026-10-02 Web 全新设计语言「绮梦流光 · Aurora Glass」（ADR-0031）。历史批次见 `docs/CHANGELOG.md`。
+> 写给下一位接手的 AI。人类用户无编程基础，代码由 AI 生成。**最后更新：2026-10-04**：App 词表维护与词表合并同步落地（ADR-0035 定稿：数据管理 hub 新增「词表维护」子页=本机词表直接编辑；备份页新增「词表合并同步」卡=两端并集增量合并取代 0034 覆盖式下发〔用户拍板「词表只增不删，合并是增量不出怪问题」〕；本机通道抽 LocalVocabularyChannel 共享；服务端/openapi/SDK 零改动）；前笔 2026-10-02 Web 全新设计语言「绮梦流光 · Aurora Glass」（ADR-0031）。历史批次见 `docs/CHANGELOG.md`。
 
 ## 1. 项目一句话
 
@@ -45,7 +45,9 @@
 - 断点续传接入（ADR-0028）：≥16MB 分片会话流，WorkManager 重试先 GET 探测权威 offset、409 重同步、404 自动重建、取消 best-effort DELETE；complete 后挂靠/归档管线零改动复用；<16MB 直传。
 - 预取 revision 整轮跳过（ADR-0026）：轮首比对 GET /library/revision，未变置 Skipped；记录捆绑服务器标识防撞号，SKIP 前随机样本 50 条本地探测、缺失≥20% 降级全量，清空任一缓存池强制下轮补齐；缩略图预取磁盘探测短路+分池按当前连接 serverUrl 路由（命中免请求免解码，轮终 logcat QimengCache 记档）。
 - SSE 消费（ADR-0029）：okhttp-sse 长连 /api/v1/events，登录即连/断线指数退避（3s→30s 封顶）/登出即断/后台不断开；事件汇入 DataFreshnessSignal，收藏/点赞返回刷新跳过门收敛为「指纹+SSE 信号+TTL」三层，5min TTL 为断线/离线兜底。
-- 词表同步（ADR-0034）：数据管理 hub「词表同步」子页，远程登录态下把当前连接 NAS/电脑端的检索词表（自定义出处组+停用词）单向下发覆盖本机内嵌库——两段式（预览组数对照+本机独有丢失警示 → 确认执行 PUT 显式覆盖 groups+stopWords）；本机通道走 @LocalDirectClient 无拦截器 OkHttp + dev-login（密钥内存槽），与全局 NAS 会话隔离（401 登出陷阱结构性排除）；内嵌服务端按需拉起、操作收尾停回。
+- 词表合并同步（ADR-0035 定稿，取代 ADR-0034 覆盖式下发）：备份页「词表合并同步」卡一键触发（用户拍板入口迁入备份页与「同步浏览数据」并排）——远端 GET + 本机 GET → VocabularyMerger 并集合并（core:data 纯函数：折叠键=trim+忽略大小写、同键组并入〔规范名取先出现方、变体/角色/别名并集折叠去重〕、停用词并集、空表回 null）→ 合并结果显式 PUT 回两端收敛同一并集；词表只增不删故合并无损，无方向选择、无两段式确认防线；任一端 PUT 失败两端短暂不一致，合并幂等重跑即收敛。
+- 词表维护（ADR-0035）：数据管理 hub「词表维护」子页，本机内嵌库词表直接编辑——组（改名/移除、变体增删、角色增删/改名、别名增删）+ 停用词增删，内存编辑 + 整体保存（PUT 恒显式 groups+stopWords）+ 保存后静默回读抹平服务端规范化差异；无门禁（不涉远端）；输入按协议容量投影封顶（VocabularyLimits，与 openapi.yaml 双同步）；输入面统一 QimengCapsuleTextField（用户反馈「添加框太复古」定稿）；有未保存修改时返回走放弃确认。
+- 本机词表通道共享件（ADR-0035）：LocalVocabularyChannel（core:data/embedded）单源收口「拉起内嵌服务端→端口就绪→dev-login→接线→用完停回」，词表同步/维护两仓库共用；@LocalDirectClient 无拦截器 OkHttp + dev-login（密钥内存槽）与全局 NAS 会话隔离（401 登出陷阱结构性排除）不变。
 
 **服务端**：
 - 扫描（含库根自动重挂 ADR-0025：库根改名/移动后按资产 rel_path+字节指纹唯一命中自动改挂并广播 library.changed）、缩略图、推荐/统计、回收站、热备快照、迁移导入导出、SSE。

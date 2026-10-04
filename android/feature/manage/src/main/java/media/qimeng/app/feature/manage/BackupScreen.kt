@@ -57,6 +57,8 @@ private val ScreenBottomSpacing = 24.dp
  * 浏览数据同步是独立功能留页面原位。任务R 的跨端同步暂存机制（暂存卡/跨端同步卡）随本批
  * 退役——备份目录直读直写替代。业务全在 ViewModel（铁律 7）；SAF 目录授权是屏幕层唯一
  * 平台胶水（SettingsScreen 先例口径：选完 takePersistableUriPermission 持久化授权）。
+ * 2026-10-04 词表合并同步批（ADR-0035）：追加「词表合并同步」卡（用户拍板入口迁入备份页，
+ * 与浏览数据同步并排=数据流转集中一页；卡自带 VocabularySyncViewModel，零业务规则）。
  */
 @Composable
 fun BackupScreen(
@@ -66,6 +68,9 @@ fun BackupScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    // 词表合并同步卡（ADR-0035）：卡自带 VM，与页级 BackupViewModel 横幅互不干扰
+    val vocabularyViewModel: VocabularySyncViewModel = hiltViewModel()
+    val vocabularyState by vocabularyViewModel.uiState.collectAsStateWithLifecycle()
 
     // 自动备份目录（OpenDocumentTree；导入导出与自动备份共用同目录——选一次即两者就绪）。
     // 选完立即 takePersistableUriPermission 持久化授权（跨进程存活）；授权失败不落 prefs
@@ -136,6 +141,16 @@ fun BackupScreen(
                     Text(if (state.eventSyncing) ROW_SYNC_ACTION_BUSY else ROW_SYNC_ACTION)
                 }
             }
+
+            // 词表合并同步（ADR-0035）：两端词表只增不删增量合并，一键收敛到同一并集
+            VocabularyMergeSyncCard(
+                syncing = vocabularyState.syncing,
+                errorMessage = vocabularyState.errorMessage,
+                noticeMessage = vocabularyState.noticeMessage,
+                onSync = vocabularyViewModel::sync,
+                onDismissError = vocabularyViewModel::dismissError,
+                onDismissNotice = vocabularyViewModel::dismissNotice,
+            )
 
             BackupRuleNotes()
 

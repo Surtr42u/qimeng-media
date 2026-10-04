@@ -122,6 +122,14 @@ interface DataModule {
         impl: media.qimeng.app.core.data.repository.VocabularySyncRepositoryImpl,
     ): media.qimeng.app.core.data.repository.VocabularySyncRepository
 
+    // 词表维护（ADR-0035 2026-10-04）：数据管理 hub「词表维护」子页的数据面——本机内嵌库
+    // 词表直接编辑（同走 LocalVocabularyChannel 本机通道，无远端参与）
+    @Binds
+    @Singleton
+    fun bindVocabularyEditRepository(
+        impl: media.qimeng.app.core.data.repository.VocabularyEditRepositoryImpl,
+    ): media.qimeng.app.core.data.repository.VocabularyEditRepository
+
     @Binds
     @Singleton
     fun bindStatsRepository(impl: media.qimeng.app.core.data.repository.SdkStatsRepository): media.qimeng.app.core.data.repository.StatsRepository

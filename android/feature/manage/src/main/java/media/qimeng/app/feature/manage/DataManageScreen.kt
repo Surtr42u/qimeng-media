@@ -30,7 +30,9 @@ import media.qimeng.app.core.ui.theme.QimengDimens
  *  2026-09-28 归档文件夹批：追加「上传收件箱与归档」入口行——自我页迁入（用户拍板
  *  「下载箱移到数据管理中，不需要在外面单独一个显示」）。2026-09-29 直传化收窄：
  *  收件箱目标随上传页导入入口退役，卡文案改「上传归档文件夹」单设定。
- *  2026-10-04 词表同步批（ADR-0034）：追加「词表同步」入口行，进远端词表下发覆盖子页） */
+ *  2026-10-04 词表维护批（ADR-0035 定稿）：追加「词表维护」入口行进本机词表编辑子页；
+ *  词表合并同步不设独立行——用户拍板迁入「备份导入导出」页（备份行副文案改述），同步
+ *  语义由覆盖改定稿为两端增量合并（只增不删）） */
 private const val HUB_TITLE = "数据管理"
 private const val HUB_ROW_UPLOAD = "上传文件"
 private const val HUB_ROW_UPLOAD_SUBTITLE = "选择本地图片和视频上传到媒体库"
@@ -39,14 +41,15 @@ private const val HUB_ROW_LIBRARY_SUBTITLE = "注册媒体目录，重扫、启�
 private const val HUB_ROW_AUTHOR_TXT = "作者 TXT 导入"
 private const val HUB_ROW_AUTHOR_TXT_SUBTITLE = "导入旧项目作者清单并重建关联"
 private const val HUB_ROW_BACKUP = "备份导入导出"
-private const val HUB_ROW_BACKUP_SUBTITLE = "备份导入恢复与浏览数据同步"
+private const val HUB_ROW_BACKUP_SUBTITLE = "备份导入恢复与词表合并同步"
 private const val HUB_ROW_THUMB_CACHE = "缩略图缓存"
 private const val HUB_ROW_THUMB_CACHE_SUBTITLE = "生成进度与缓存上限"
 private const val HUB_ROW_INBOX = "上传归档文件夹"
 private const val HUB_ROW_INBOX_SUBTITLE = "上传后源文件的归档文件夹"
-// 词表同步（ADR-0034 2026-10-04）：远端词表单向下发覆盖本机内嵌库
-private const val HUB_ROW_VOCAB_SYNC = "词表同步"
-private const val HUB_ROW_VOCAB_SYNC_SUBTITLE = "以 NAS/电脑端词表单向覆盖本机"
+// 词表维护（ADR-0035 2026-10-04）：本机内嵌库词表直接编辑（出处组/变体/角色/别名/停用词）；
+// 词表合并同步不设独立入口行——用户拍板迁入「备份导入导出」页 VocabularyMergeSyncCard
+private const val HUB_ROW_VOCAB_EDIT = "词表维护"
+private const val HUB_ROW_VOCAB_EDIT_SUBTITLE = "编辑本机出处组与停用词"
 
 /** 16dp：hub 内容水平内边距（对齐上传子页 16dp 档；区别于我的页 20dp 档） */
 private val HubContentPadding = 16.dp
@@ -70,8 +73,9 @@ fun DataManageScreen(
     onOpenThumbCache: () -> Unit,
     // 2026-09-28 归档文件夹批：上传收件箱与归档子页入口（自我页迁入；路由复用 Routes.INBOX）
     onOpenInbox: () -> Unit,
-    // 词表同步子页（ADR-0034）：远程登录态下把该端词表单向下发覆盖本机内嵌库
-    onOpenVocabularySync: () -> Unit,
+    // 词表维护子页（ADR-0035）：本机内嵌库词表直接编辑；词表合并同步入口在备份页
+    // VocabularyMergeSyncCard（同 ADR，用户拍板集中到数据流转页）
+    onOpenVocabularyEdit: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxSize()) {
@@ -117,11 +121,12 @@ fun DataManageScreen(
                 subtitle = HUB_ROW_INBOX_SUBTITLE,
                 onClick = onOpenInbox,
             )
-            // 词表同步（ADR-0034）：门禁（本机模式不可同步）在 repository，入口行恒可进
+            // 词表维护（ADR-0035）：本机词表直接编辑，无门禁（不涉远端）；词表合并同步
+            // 入口在备份页（用户拍板「直接走备份那边一起」，数据流转集中一页）
             HubEntryRow(
-                label = HUB_ROW_VOCAB_SYNC,
-                subtitle = HUB_ROW_VOCAB_SYNC_SUBTITLE,
-                onClick = onOpenVocabularySync,
+                label = HUB_ROW_VOCAB_EDIT,
+                subtitle = HUB_ROW_VOCAB_EDIT_SUBTITLE,
+                onClick = onOpenVocabularyEdit,
             )
         }
     }
