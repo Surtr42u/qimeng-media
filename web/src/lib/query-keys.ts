@@ -65,6 +65,10 @@ export const RECOMMENDATIONS_QUERY_KEY = ['api/v1/recommendations'] as const
 /** 出处分组计数 */
 export const SOURCES_QUERY_KEY = ['api/v1/sources'] as const
 
+/** 自定义出处组检索词表（GET/PUT /sources/custom-groups，ADR-0033；词表维护页
+ *  读写。与 /authors/source-vocabulary（通用来源词表）是两张不同的表，键各自独立） */
+export const SOURCE_GROUPS_QUERY_KEY = ['api/v1/sources/custom-groups'] as const
+
 /** 统计族根键（overview/trends 子键由 use-stats 以 [...本键, 子族名] 构造） */
 export const STATS_QUERY_KEY = ['api/v1/stats'] as const
 

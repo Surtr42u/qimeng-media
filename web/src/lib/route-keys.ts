@@ -35,6 +35,10 @@ export const MAINTENANCE_FILES_PATH = '/app/maintenance/files'
  *  hub 入口卡共用此常量） */
 export const MAINTENANCE_FILES_VOCABULARY_PATH = '/app/maintenance/files/vocabulary'
 
+/** 词表维护子页路由（2026-10-04 App ADR-0035「词表维护」web 移植：出处组与
+ *  停用词的检索词层直接编辑；hub 入口卡与页内返回共用此常量） */
+export const MAINTENANCE_FILES_VOCAB_EDIT_PATH = '/app/maintenance/files/vocabulary-edit'
+
 /** 集合子页 kind（路由段 /app/collection/:kind/:name） */
 export const COLLECTION_TAG = 'tag'
 export const COLLECTION_AUTHOR = 'author'

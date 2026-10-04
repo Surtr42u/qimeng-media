@@ -2053,3 +2053,60 @@ li.dir-file-row.ms-row-selected { background: var(--qm-hover); }
   outline-offset: 2px;
   border-radius: var(--qm-radius-sm);
 }
+
+/* ============ §14 词表维护（VocabularyEditPage，App ADR-0035 web 移植） ============
+   行/小节头/缩进/字数回显族——App 端 Compose 布局的 token 化对位（App 用
+   TextButton/MaterialTheme，此处同语义走 --qm-* token；组/角色两级展开缩进
+   20px 对位 App ExpandedIndent 20dp） */
+.vocab-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.vocab-head h3 { margin: 0; }
+.vocab-text-btn {
+  border: none; background: none; cursor: pointer;
+  padding: 3px 8px; border-radius: var(--qm-radius-sm);
+  font-size: 13px; color: var(--qm-primary);
+}
+.vocab-text-btn:hover:not(:disabled) { background: var(--qm-hover); }
+.vocab-text-btn:disabled { opacity: 0.45; cursor: default; }
+.vocab-row {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 8px; padding: 5px 0; min-width: 0;
+}
+.vocab-row--clickable { cursor: pointer; border-radius: var(--qm-radius-sm); }
+.vocab-row--clickable:hover { background: var(--qm-hover); }
+.vocab-row-main { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.vocab-name { font-size: 15px; color: var(--qm-text); overflow-wrap: anywhere; }
+.vocab-sub { font-size: 12px; color: var(--qm-text-muted); }
+.vocab-item-text { flex: 1; min-width: 0; font-size: 14px; color: var(--qm-text); overflow-wrap: anywhere; }
+.vocab-note { font-size: 12px; color: var(--qm-text-muted); margin: 4px 0; }
+.vocab-note--indent { margin-left: 20px; }
+.vocab-divider { border-top: 1px solid var(--qm-border); padding-top: 6px; margin-top: 2px; }
+.vocab-section-head {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-top: 8px;
+}
+.vocab-section-title { font-size: 13px; font-weight: 600; color: var(--qm-text); }
+.vocab-indent { display: grid; gap: 4px; margin: 4px 0 8px 20px; }
+.vocab-counter { font-size: 12px; color: var(--qm-text-muted); text-align: right; }
+.vocab-save { width: 100%; }
+.vocab-banner {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  padding: 10px 14px; border-radius: var(--qm-radius);
+  font-size: 13px; margin-bottom: 12px;
+}
+.vocab-banner--error {
+  background: color-mix(in oklab, var(--qm-danger) 12%, transparent);
+  border: 1px solid color-mix(in oklab, var(--qm-danger) 40%, transparent);
+  color: var(--qm-text);
+}
+.vocab-banner--notice {
+  background: var(--qm-primary-soft);
+  border: 1px solid color-mix(in oklab, var(--qm-primary) 40%, transparent);
+  color: var(--qm-text);
+}
+.vocab-banner--error .vocab-text-btn, .vocab-banner--notice .vocab-text-btn { flex-shrink: 0; }
+.vocab-rules {
+  display: grid; gap: 4px; margin: 12px 0 0; padding: 0 0 0 4px;
+  list-style: none; font-size: 12px; color: var(--qm-text-muted);
+}
+.detail-dialog--vocab-prompt { width: min(400px, calc(100vw - 48px)); }
+

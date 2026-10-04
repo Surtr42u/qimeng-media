@@ -38,6 +38,7 @@
 - 上传传输层 XHR 直连不走生成 SDK：生成 client 无 abort 支持，全局 403 拦截器会误伤 UPLOAD_DISABLED 业务响应（记档见该文件头）。
 - 跨端收藏/点赞秒级感知（ADR-0029）：SseBridge 消费 favorite.changed/like.changed——favorite 失效 ASSETS 根键、like 失效 ASSETS+RANKINGS+RECOMMENDATIONS 三根；SSE 重连成功按 library.changed 同一失效映射失效根查询，补偿断线窗口。
 - 图片查看器、ArtPlayer、批次导航、confirm 弹窗、回收站、备份导入导出、库文件快照、库管理/作者 TXT 导入；维护页客户端日志卡默认折叠+指标网格+「本机同步」卡（ADR-0030）。
+- 词表维护子页（2026-10-04，App ADR-0035 的 web 移植，用户拍板「功能和 ui 布局和 app 的一致」）：数据管理 hub「词表维护」入口卡 → `/app/maintenance/files/vocabulary-edit`；停用词卡 + 自定义出处组卡（组行互斥展开 → 变体写法/角色检索表小节 → 角色展开别名小节）+ 单输入框弹窗（rune 字数回显封顶）+ 整体保存（PUT 恒显式 groups+stopWords）+ 规则说明；编辑对象=**当前连接服务器**（标准鉴权，非 App 本机通道）；「保存后静默回读」=mutation 同步写缓存+失效重拉；离开防线 useBlocker（SPA 内一切导航）+ beforeunload（关标签页），文案逐字对齐 App；编辑状态机=`lib/vocabulary-edit.ts` 纯函数（14 例单测）；限额常量 VOCABULARY_LIMITS 与 openapi.yaml 双同步。**与「来源词表」子页是两张不同的表**（本页=匹配引擎检索词层；来源词表=/authors/source-vocabulary 上传挂靠建议词）。
 - 性能与卫生（2026-10-04 第四百六十五笔）：上传进度 patchProgress 守卫（percent 不变跳过写，onprogress 风暴不再重渲染整个工作台）；MinePage 历史卡 memo 对齐 MediaCard 口径；批量执行胶水四处收敛 lib/batch-run.ts；LoadingHint 变体化收敛 9 处「加载中…」；package.json 六个构建期包归 devDependencies（lock 同步）。LoginGate 的 eslint-disable 注释**是必需的**（oxlint 已启用 exhaustive-deps，勿当死注释删）。
 
 **Android**：

@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router'
 import { BackupIcon, FolderMonitorIcon, TxtDocIcon, UploadIcon } from '@/components/shell/icons'
-import { MAINTENANCE_FILES_VOCABULARY_PATH } from '@/lib/route-keys'
+import { MAINTENANCE_FILES_VOCAB_EDIT_PATH, MAINTENANCE_FILES_VOCABULARY_PATH } from '@/lib/route-keys'
 
 /**
  * 数据管理 hub（维护页「文件管理」入口卡 → /app/maintenance/files；原单页
@@ -20,6 +20,7 @@ import { MAINTENANCE_FILES_VOCABULARY_PATH } from '@/lib/route-keys'
 const HUB_ENTRIES = [
   { title: '上传文件', sub: '选择本地图片和视频上传到媒体库', to: '/app/maintenance/files/upload', Icon: UploadIcon },
   { title: '来源词表', sub: '通用来源建议词与作者总表镜像维护', to: MAINTENANCE_FILES_VOCABULARY_PATH, Icon: TxtDocIcon },
+  { title: '词表维护', sub: '编辑出处组与停用词', to: MAINTENANCE_FILES_VOCAB_EDIT_PATH, Icon: TxtDocIcon },
   { title: '库管理', sub: '注册媒体目录，重扫、启停与删除媒体库', to: '/app/maintenance/files/libraries', Icon: FolderMonitorIcon },
   { title: '作者 TXT 导入', sub: '导入旧项目作者清单并重建关联', to: '/app/maintenance/files/authors-txt', Icon: TxtDocIcon },
   { title: '备份导入导出', sub: '备份导入恢复与浏览数据同步', to: '/app/maintenance/files/backup', Icon: BackupIcon },
@@ -32,7 +33,7 @@ export default function LibraryManagePage() {
     <div className="page" id="page-maintenance-files">
       <div className="page-head">
         <h2>数据管理</h2>
-        <p>上传文件、库管理、来源词表、作者 TXT 导入与备份导入导出（旧项目数据管理）</p>
+        <p>上传文件、库管理、来源词表、词表维护、作者 TXT 导入与备份导入导出</p>
       </div>
 
       <div className="entry-grid">

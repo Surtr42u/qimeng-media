@@ -31,6 +31,7 @@ const AssetEditPage = lazy(() => import('@/pages/AssetEditPage'))
 const LibraryManagePage = lazy(() => import('@/pages/LibraryManagePage'))
 const LibraryUploadPage = lazy(() => import('@/pages/LibraryUploadPage'))
 const LibraryVocabularyPage = lazy(() => import('@/pages/LibraryVocabularyPage'))
+const VocabularyEditPage = lazy(() => import('@/pages/VocabularyEditPage'))
 const LibraryRegistryPage = lazy(() => import('@/pages/LibraryRegistryPage'))
 const AuthorTxtImportPage = lazy(() => import('@/pages/AuthorTxtImportPage'))
 const BackupImportExportPage = lazy(() => import('@/pages/BackupImportExportPage'))
@@ -90,6 +91,7 @@ export const router = createBrowserRouter([
               { path: 'maintenance/files', element: <Suspense fallback={null}><LibraryManagePage /></Suspense> },
               { path: 'maintenance/files/upload', element: <Suspense fallback={null}><LibraryUploadPage /></Suspense> },
               { path: 'maintenance/files/vocabulary', element: <Suspense fallback={null}><LibraryVocabularyPage /></Suspense> },
+              { path: 'maintenance/files/vocabulary-edit', element: <Suspense fallback={null}><VocabularyEditPage /></Suspense> },
               { path: 'maintenance/files/libraries', element: <Suspense fallback={null}><LibraryRegistryPage /></Suspense> },
               { path: 'maintenance/files/authors-txt', element: <Suspense fallback={null}><AuthorTxtImportPage /></Suspense> },
               { path: 'maintenance/files/backup', element: <Suspense fallback={null}><BackupImportExportPage /></Suspense> },

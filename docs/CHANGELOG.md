@@ -10,6 +10,17 @@
 
 > **历史条目拆分说明（2026-10-01）**：为控制 AI 上下文体量，本文件只保留 **2026-09-22 及之后**的条目（第三百八十二笔起）；拆分线之前的全部条目已逐字迁入 `docs/history/CHANGELOG-ARCHIVE.md`（零改写，笔号与本文件连续可查）。引用早于拆分线的旧笔号请去历史档查阅。
 
+## feat(web): 词表维护子页——App「词表维护」的 web 移植，功能与 UI 布局对齐（2026-10-04 第四百六十六笔）
+
+执行 AI：GLM-5.3（主代理）
+
+- **背景**：用户三段拍板「库快照的这个太拥挤了，改成 app 的那种词表维护，使用 app 的那种功能和 ui」→ 澄清「库文件快照备份」→ 定稿「就是改为 app 前面的那个词表的啊，词表维护移植到文件管理中，功能和 ui 布局和 app 的一致」。App 端 ADR-0035 词表维护（2026-10-04 当日落地）移植 web，挂数据管理 hub（文件管理域）。协议零改动——GET/PUT /sources/custom-groups 早在 ADR-0033 落地，web SDK 已生成但此前无消费方。
+- **件**：hub「词表维护」入口卡（紧随「来源词表」；两张表各自独立：本页=匹配引擎检索词层出处组/停用词，来源词表=/authors/source-vocabulary 上传挂靠建议词）→ 子页 `/app/maintenance/files/vocabulary-edit`：停用词卡 + 自定义出处组卡（组行互斥展开 → 变体写法/角色检索表小节 → 角色展开别名小节，词条计数副行/空态注记/文案逐字对齐 App）+ 单输入框弹窗（rune 字数回显 100 封顶、空白禁确定）+ 整体保存（PUT 恒显式 groups+stopWords）+ 规则说明四条（内置组数取 133 权威口径——App 规则行的 130 系固化前陈旧文案，已记档待 App 顺手勘误）。
+- **架构（铁律 7/ADR-0008）**：编辑状态机 = `lib/vocabulary-edit.ts` 纯函数族（新增/改名 trim 拒空白、越界静默 no-op、可省列表空表归一 undefined、载荷恒带 stopWords；14 例单测=App VocabularyEditViewModelTest 对位）；数据 = `hooks/use-source-groups`（TanStack Query；保存成功同步写缓存+失效重拉=App「静默回读」web 等价，规避重拉间隙闪旧值）；组件零业务规则；限额常量 VOCABULARY_LIMITS 注释与 openapi.yaml 双同步责任（rune 计数口径，增补面字符按 1 计）。
+- **离开防线**：useBlocker 拦 SPA 内一切导航（返回钮/浏览器返回同口径，App BackHandler 对位；createBrowserRouter 数据路由下可用）+ beforeunload 拦标签页关闭；文案逐字取 App VocabularyDiscardDialog。
+- **验证**：tsc/vitest 262（+14）/oxlint 新文件 0 警告（基线 20 警告不变）/knip 零新孤儿（前后 findings 逐字一致）/build 成功（PWA 61→62 entries）；浏览器实测：真实词表 6 组回显、组/角色两级展开、别名小节、弹窗录入置脏（保存钮激活）、离开拦截「继续编辑/放弃离开」双通道、放弃后零 PUT（编辑不落库）；视觉截图核验布局（卡片/两端对齐行/两级缩进 20px/分隔线/无溢出重叠）。
+- **文档**：GUIDE_API.md（custom-groups 行补 Web 端消费）、adr/0035（Web 移植补记）、HANDOVER.md（§4 Web 条目）、CHANGELOG.md（本笔）。
+
 ## refactor(all): 全仓重构优化批——四端性能/代码卫生/手造轮子排查，零功能零 UI 变化（2026-10-04 第四百六十五笔）
 
 执行 AI：GLM-5.3（主代理；三执行代理+四审查代理多开协作）
