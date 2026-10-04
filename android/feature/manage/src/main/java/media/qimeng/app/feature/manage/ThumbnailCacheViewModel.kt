@@ -45,8 +45,15 @@ data class ThumbnailCacheUiState(
      * null = 非本地端模式/读失败，UI 整块不显示（NAS 模式下内嵌服务端不适用）。
      */
     val localGenCovered: Int? = null,
-    /** 生成进度分母 = 启用库资产总数（与 [localGenCovered] 成对非空） */
+    /** 本地端生成进度分母 = 启用库资产总数（与 [localGenCovered] 成对非空） */
     val localGenTotal: Int? = null,
+    /**
+     * 预取进度区的归属卡（2026-10-04 批）：预取写入侧跟随当前连接来源（CachePoolBinder
+     * 同款判定，第四百一十一笔），进度区也必须同源——本地端模式显示在本地卡、NAS 模式
+     * 显示在服务器卡。此前恒挂服务器卡是 NAS 时代遗产：本地端预取实际写本地池，进度区
+     * 却让用户误以为「没连 PC 怎么服务器缓存在动」（2026-10-04 用户反馈）。
+     */
+    val prefetchTargetsLocal: Boolean = false,
 )
 
 /**
@@ -88,8 +95,9 @@ class ThumbnailCacheViewModel @Inject constructor(
         viewModelScope.launch {
             while (true) {
                 val url = authRepository.serverUrl.first()
+                val isLocal = ServerAddress.isLocalModePreset(url)
                 val progress =
-                    if (ServerAddress.isLocalModePreset(url)) {
+                    if (isLocal) {
                         thumbnailProgressRepository.progress()
                     } else {
                         null
@@ -98,6 +106,7 @@ class ThumbnailCacheViewModel @Inject constructor(
                     it.copy(
                         localGenCovered = progress?.thumbsOnDisk,
                         localGenTotal = progress?.totalAssets,
+                        prefetchTargetsLocal = isLocal,
                     )
                 }
                 delay(PROGRESS_POLL_INTERVAL_MS)

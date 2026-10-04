@@ -214,6 +214,8 @@ class ThumbnailCacheViewModelTest {
         val state = viewModel.uiState.value
         assertEquals(6350, state.localGenTotal)
         assertEquals(2256, state.localGenCovered)
+        // 预取进度区归属本地卡（2026-10-04 批：归属跟随连接来源=实际写入池）
+        assertTrue(state.prefetchTargetsLocal)
     }
 
     @Test
@@ -227,6 +229,8 @@ class ThumbnailCacheViewModelTest {
         driveIdle()
         assertNull(viewModel.uiState.value.localGenCovered)
         assertNull(viewModel.uiState.value.localGenTotal)
+        // 预取进度区归属服务器卡（NAS 模式）
+        assertEquals(false, viewModel.uiState.value.prefetchTargetsLocal)
     }
 
     @Test

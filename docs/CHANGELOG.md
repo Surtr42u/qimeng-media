@@ -10,6 +10,14 @@
 
 > **历史条目拆分说明（2026-10-01）**：为控制 AI 上下文体量，本文件只保留 **2026-09-22 及之后**的条目（第三百八十二笔起）；拆分线之前的全部条目已逐字迁入 `docs/history/CHANGELOG-ARCHIVE.md`（零改写，笔号与本文件连续可查）。引用早于拆分线的旧笔号请去历史档查阅。
 
+## fix(app): 预取进度区归属跟随连接来源——本地端模式挂本地卡（2026-10-04 第四百七十三笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- **背景**：用户本地端模式（未连 PC）发现「服务器缓存」卡的预取进度条在动，误读为连上了服务器。根因：预取写入侧自第四百一十一笔起跟随当前连接来源路由（本地端写本地池），进度区却沿用 NAS 时代布局恒挂服务器卡——显示归属与实际写入池脱节。
+- **修复**：ThumbnailCacheUiState 增 `prefetchTargetsLocal`（ViewModel 轮询环内与进度同源判定 `ServerAddress.isLocalModePreset(serverUrl)`，与 CachePoolBinder 路由同一口径）；Screen 两卡签名改收可空 `prefetchState`，归属卡才渲染预取区——本地端模式进度条/状态文案显示在本地缓存卡（生成进度区之下），NAS 模式维持服务器卡，登出/未知态默认 NAS 卡（与 activePool 默认值同向）。
+- **测试**：`本地端模式生成进度透出` 补 `prefetchTargetsLocal=true` 断言、`NAS模式生成进度整块隐藏` 补 false 断言；`:feature:manage` 单测全绿。
+
 ## feat(app): 缩略图缓存页本地卡恢复「生成进度」条 + 服务端 progress 分子口径修正为覆盖资产数（2026-10-04 第四百七十二笔）
 
 执行 AI：GLM-5.3-Flash（主代理）

@@ -118,16 +118,19 @@ fun ThumbnailCacheScreen(
                 .padding(horizontal = ScreenContentPadding),
             verticalArrangement = Arrangement.spacedBy(QimengDimens.SpaceL),
         ) {
-            // 条目一：服务器缓存（NAS 池；预取进度条保留在本卡——预取热身的就是 NAS 池）
+            // 条目一：服务器缓存（NAS 池）；预取进度区跟随实际写入池——仅 NAS 模式挂本卡
+            // （2026-10-04 批：本地端预取实际写本地池〔第四百一十一笔路由〕，进度区却恒挂
+            //  本卡，用户误读为「没连 PC 服务器缓存在动」；归属与 CachePoolBinder 同源判定）
             ServerCacheCard(
                 state = state,
-                prefetchState = prefetchState,
+                prefetchState = if (state.prefetchTargetsLocal) null else prefetchState,
                 onClear = viewModel::clearNasCache,
             )
 
-            // 条目二：本地缓存（本地池）
+            // 条目二：本地缓存（本地池）；本地端模式下预取写入本池，进度区挂本卡
             LocalCacheCard(
                 state = state,
+                prefetchState = if (state.prefetchTargetsLocal) prefetchState else null,
                 onClear = viewModel::clearLocalCache,
             )
 
@@ -158,13 +161,13 @@ private fun occupiedValue(bytes: Long?): String =
     bytes?.let(::formatBytesHumanReadable) ?: VALUE_UNKNOWN
 
 /**
- * 服务器缓存条目卡（NAS 池，批S5）：文件数/实际占用两行 + 预取状态区（自动行为展示，
- * 无按钮——预取热身的正是 NAS 池，故保留在本卡）+ 清空按钮（只清本池）。
+ * 服务器缓存条目卡（NAS 池，批S5）：文件数/实际占用两行 + 预取状态区（仅 NAS 模式——
+ * [prefetchState] 非空时渲染，2026-10-04 批归属跟随实际写入池）+ 清空按钮（只清本池）。
  */
 @Composable
 private fun ServerCacheCard(
     state: ThumbnailCacheUiState,
-    prefetchState: PrefetchUiState,
+    prefetchState: PrefetchUiState?,
     onClear: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -181,23 +184,25 @@ private fun ServerCacheCard(
             cacheInfoRow(label = ROW_FILE_COUNT, value = countValue(state.nasFileCount))
             cacheInfoRow(label = ROW_OCCUPIED, value = occupiedValue(state.nasSizeBytes))
 
-            // —— 预取状态区（自动行为展示，无按钮；批S5 自原本地卡移入——热身对象是 NAS 池） ——
-            Text(text = PREFETCH_SECTION, style = MaterialTheme.typography.titleSmall)
-            Text(
-                text = prefetchStatusText(prefetchState),
-                style = MaterialTheme.typography.bodyMedium,
-                color = if (prefetchState is PrefetchUiState.Failed) {
-                    MaterialTheme.colorScheme.error
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-            )
-            val running = prefetchState as? PrefetchUiState.Running
-            if (running != null && running.total > 0) {
-                LinearProgressIndicator(
-                    progress = { running.done.toFloat() / running.total },
-                    modifier = Modifier.fillMaxWidth(),
+            // —— 预取状态区（自动行为展示，无按钮；仅 NAS 模式归属本卡，null = 隐藏） ——
+            if (prefetchState != null) {
+                Text(text = PREFETCH_SECTION, style = MaterialTheme.typography.titleSmall)
+                Text(
+                    text = prefetchStatusText(prefetchState),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (prefetchState is PrefetchUiState.Failed) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
                 )
+                val running = prefetchState as? PrefetchUiState.Running
+                if (running != null && running.total > 0) {
+                    LinearProgressIndicator(
+                        progress = { running.done.toFloat() / running.total },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
             }
 
             TextButton(onClick = {
@@ -215,10 +220,12 @@ private fun ServerCacheCard(
     }
 }
 
-/** 本地缓存条目卡（本地池，批S5）：文件数/实际占用两行 + 清空按钮（只清本池） */
+/** 本地缓存条目卡（本地池，批S5）：文件数/实际占用两行 + 本地端生成进度区 + 预取状态区
+ *  （仅本地端模式——[prefetchState] 非空时渲染，2026-10-04 批归属跟随实际写入池）+ 清空按钮 */
 @Composable
 private fun LocalCacheCard(
     state: ThumbnailCacheUiState,
+    prefetchState: PrefetchUiState?,
     onClear: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -250,6 +257,27 @@ private fun LocalCacheCard(
                     progress = { genCovered.toFloat() / genTotal },
                     modifier = Modifier.fillMaxWidth(),
                 )
+            }
+
+            // —— 预取状态区（仅本地端模式归属本卡，null = 隐藏） ——
+            if (prefetchState != null) {
+                Text(text = PREFETCH_SECTION, style = MaterialTheme.typography.titleSmall)
+                Text(
+                    text = prefetchStatusText(prefetchState),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (prefetchState is PrefetchUiState.Failed) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
+                val running = prefetchState as? PrefetchUiState.Running
+                if (running != null && running.total > 0) {
+                    LinearProgressIndicator(
+                        progress = { running.done.toFloat() / running.total },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
             }
 
             TextButton(onClick = {
