@@ -10,6 +10,15 @@
 
 > **历史条目拆分说明（2026-10-01）**：为控制 AI 上下文体量，本文件只保留 **2026-09-22 及之后**的条目（第三百八十二笔起）；拆分线之前的全部条目已逐字迁入 `docs/history/CHANGELOG-ARCHIVE.md`（零改写，笔号与本文件连续可查）。引用早于拆分线的旧笔号请去历史档查阅。
 
+## feat(api): 备份 history 段放开 500 条上限——全量 open 事件随备份携带（2026-10-04 第四百七十四笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- **背景**：用户要求「所有数据长期持久」。数据层 view_events 本就永久全量（无任何过期/清理），唯一明细断层在备份导出——history 段按旧库 view_history 兼容截取最近 500 条（SQL `LIMIT 500`），换机/丢机恢复时 500 条外的打开明细丢失（dailyBrowse 只有资产×日聚合，无逐条时刻）。
+- **改动**：ExportRecentOpenEvents 去掉 LIMIT（全量倒序）；openapi 导出端点 description、DOMAIN_RULES §10 导出口径、export.go 三处注释同步；sqlc（锁版本 v1.31.1）重新生成 store/db。事件行百字节级，全量导出仅 MB 级备份增量（6350 资产实测事件 6674 条 ≈ 库 20.5MB），导入侧本就全量回放零改动。
+- **坑记档**：legacy_export.sql 新增中文注释触发 sqlc v1.31.1 多字节注释解析 bug（illegal UTF-8，生成中止且产物缺文件）——本文件注释改回 ASCII（assets.sql 头注既有约定，本次再次验证）。
+- **测试**：TestExportHistoryCap500 → TestExportHistoryUnbounded（505 条全量导出断言）；`go test ./...` 全绿。
+
 ## fix(app): 预取进度区归属跟随连接来源——本地端模式挂本地卡（2026-10-04 第四百七十三笔）
 
 执行 AI：GLM-5.3-Flash（主代理）

@@ -10,7 +10,7 @@
 //   - dailyBrowse：取事件流物化表（asset x day，唯一真相源是 view_events，
 //     物化表是其派生缓存）；mediaStats：事件流按资产聚合（open/play 计数、
 //     dwell 秒数、最后打开时刻）；
-//   - history：最近 500 条 open 事件（对齐旧库 view_history 上限）；
+//   - history：全部 open 事件倒序（2026-10-04 起无上限，原 500 条兼容截取废止）；
 //   - likes：按点赞行聚合为 { 累计次数, 最后点赞日 }（新库行 = 资产 x 日，
 //     旧格式无逐日明细，COUNT(*) 即最接近的累计值）；
 //   - txtFragments：kv imported_txt_sources 全量逐字导出（DOMAIN_RULES
@@ -46,7 +46,10 @@ const (
 	legacyAppIdentifier = "com.qimeng.media"
 	legacySchemaVersion = 1
 
-	// history 段 500 条上限的单一来源在 store/queries/legacy_export.sql（ExportRecentOpenEvents，对齐旧库 view_history）——SQL 侧改动须同步彼处注释。
+	// history 段已无上限（2026-10-04 用户拍板：所有数据长期持久，完整 open 事件随
+	// 备份携带；原「最近 500 条对齐旧库 view_history」截取废止）——导出口径单一来源
+	// 在 store/queries/legacy_export.sql（ExportRecentOpenEvents，无 LIMIT 全量倒序），
+	// SQL 侧改动须同步彼处注释。
 
 	// recordKey 同名消歧分隔符（旧规则「文件名 @ 文件夹名」与「#路径哈希」）。
 	recordKeySep     = " @ "
@@ -422,8 +425,8 @@ func (exp *legacyExport) fillLikesFavorites(data *gen.LegacyBackupData, byID map
 }
 
 // fillStats mediaStats（事件流按资产聚合）+ dailyBrowse（物化表）+ history
-// （最近 500 条 open）三段。事件无外键，被删资产的事件仍在流里——JOIN 语义
-// 由 here 的 byID 缺失跳过承担。
+// （全部 open 事件倒序，2026-10-04 起无上限）三段。事件无外键，被删资产的事件仍在
+// 流里——JOIN 语义由 here 的 byID 缺失跳过承担。
 func (exp *legacyExport) fillStats(data *gen.LegacyBackupData, byID map[string]*exportAsset) error {
 	totalRows, err := exp.s.q.ExportEventTotals(exp.ctx)
 	if err != nil {

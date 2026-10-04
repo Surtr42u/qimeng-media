@@ -2,7 +2,7 @@
 // 主用例造数覆盖全部可导出段 → GET /export/qimeng-backup 断言信封与段级内容
 // （recordKey 同名消歧、last_opened_at NULL 分支、空段恒空数组）→ 导出 JSON
 // 原样回灌 POST /import/qimeng-backup 断言段级计数与事件总量守恒 → 同批次
-// 重复导入事件不翻倍。历史 500 条截取单独一用例。
+// 重复导入事件不翻倍。history 全量导出（无上限）单独一用例。
 package httpapi
 
 import (
@@ -301,12 +301,15 @@ func TestExportQimengBackupRoundTrip(t *testing.T) {
 	assertCount(t, "eventsReplayed-2nd", res2.EventsReplayed, 0)
 }
 
-// TestExportHistoryCap500 history 段按旧库 view_history 上限截取最近 500 条。
-func TestExportHistoryCap500(t *testing.T) {
+// TestExportHistoryUnbounded history 段导出全部 open 事件（2026-10-04 起
+// 无上限——原「最近 500 条对齐旧库 view_history」兼容截取废止，用户拍板
+// 所有数据长期持久；>500 条的事件必须全量出现在备份里）。
+func TestExportHistoryUnbounded(t *testing.T) {
 	e := newTestEnv(t)
 	aID := queryAssetID(t, e, "a.jpg")
 	base := time.Date(2026, 8, 20, 10, 0, 0, 0, time.UTC)
-	for i := 0; i < 505; i++ {
+	const seedEvents = 505
+	for i := 0; i < seedEvents; i++ {
 		if err := e.q.InsertViewEvent(t.Context(), db.InsertViewEventParams{
 			AssetID: aID, Kind: "open", SessionID: "seed",
 			StartedAt: store.FormatTimestamp(base.Add(time.Duration(i) * time.Minute)),
@@ -316,8 +319,8 @@ func TestExportHistoryCap500(t *testing.T) {
 		}
 	}
 	_, file := exportBackup(t, e)
-	if file.Data.History == nil || len(*file.Data.History) != 500 {
-		t.Fatalf("history 应截取 500 条: %d", len(derefSlice(file.Data.History)))
+	if file.Data.History == nil || len(*file.Data.History) != seedEvents {
+		t.Fatalf("history 应全量导出 %d 条: %d", seedEvents, len(derefSlice(file.Data.History)))
 	}
 }
 

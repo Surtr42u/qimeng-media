@@ -1147,7 +1147,9 @@ paths:
         段级口径（与 §10 导入映射互为镜像）：settings/scanSources/albumRules/cosWorks
         导出为空数组（SAF 目录为设备本机概念、COS 作品目录与出处均为派生信息）；
         dailyBrowse 由事件流物化表（asset x day）导出；mediaStats 由事件流按资产聚合；
-        history 截取最近 500 条 open 事件（对齐旧库 view_history 上限）；点赞按点赞行
+        history 导出全部 open 事件倒序（2026-10-04 起无上限，原「最近 500 条对齐旧库
+        view_history」兼容截取废止——用户拍板所有数据长期持久，事件行百字节级、全量
+        仅 MB 级备份增量）；点赞按点赞行
         聚合为 { 累计次数, 最后点赞日 }；recommendationPrefs 从 kv_settings 原样导出。
         recordKey 生成镜像导入消歧规则：文件名唯一 = 文件名；同名 = 「文件名 @ 文件夹名」；
         同名同文件夹（跨库）再追加 #路径哈希。响应带 Content-Disposition: attachment。

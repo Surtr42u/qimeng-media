@@ -427,7 +427,6 @@ SELECT v.asset_id   AS asset_id,
 FROM view_events AS v
 WHERE v.kind = 'open'
 ORDER BY v.id DESC
-LIMIT 500
 `
 
 type ExportRecentOpenEventsRow struct {
@@ -435,8 +434,12 @@ type ExportRecentOpenEventsRow struct {
 	StartedAt string
 }
 
-// ExportRecentOpenEvents: history section = newest 500 open events (aligned
-// with the legacy view_history cap). Order does not matter to the importer.
+// ExportRecentOpenEvents: history section = ALL open events, newest first.
+// 2026-10-04: user lifted the old 500-row cap (legacy view_history compat
+// truncation retired). Event rows are ~100B each; tens of thousands cost only
+// a few MB of backup payload. Full history now travels inside every backup.
+// Order does not matter to the importer. NOTE: ASCII-only comments in this
+// file (sqlc v1.31.1 multi-byte comment parser bug, see assets.sql header).
 func (q *Queries) ExportRecentOpenEvents(ctx context.Context) ([]ExportRecentOpenEventsRow, error) {
 	rows, err := q.db.QueryContext(ctx, exportRecentOpenEvents)
 	if err != nil {
