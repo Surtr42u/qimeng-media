@@ -10,6 +10,26 @@
 
 > **历史条目拆分说明（2026-10-01）**：为控制 AI 上下文体量，本文件只保留 **2026-09-22 及之后**的条目（第三百八十二笔起）；拆分线之前的全部条目已逐字迁入 `docs/history/CHANGELOG-ARCHIVE.md`（零改写，笔号与本文件连续可查）。引用早于拆分线的旧笔号请去历史档查阅。
 
+## fix(app): 夜间玻璃件液态感微调——按日间逻辑同构定稿（2026-10-04 第四百六十四笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- **背景**：用户连续三轮反馈夜间胶囊观感（「夜间ui的胶囊不太行」→「我说的是首页上方的胶囊，相册上方的胶囊，要和液态玻璃一样」→「底色能做到透明吗」→「还是不太行，不需要为选取的时候有阴影啥的，你看看日间的逻辑」）。三轮试错定位：夜间胶囊的问题不在单点参数，而在**夜间没有按日间的结构逻辑走**——日间选中态成立的前提是「胶囊先有一层实体玻璃体（白 76%），选中染色 0.20 只是染在体上的一层色」；批二的「compact 近全透体 0.18+夜间加重染色 0.32」让染色直接落在透明体上，视觉上就是一块灰色阴影（用户反馈「选取的时候有阴影啥的」的根因）。
+- **批三定稿（回归日间同构，撤回夜间特调）**：①撤回 fillCompact 小件透明档（GlassColors 数据类与 GlassSurface 分派还原两档结构，compact 与普通档共用玻璃体，与日间一致）；②撤回夜间选中染色 0.32 分档（QimengSegPill 回归统一 QIMENG_GLASS_TINT_ALPHA=0.20，深浅主题同一染色档染在玻璃体上）；③保留批一的夜间提档（体 0.80→0.66 稍透、高光纱 0.14→0.20、受光边 0.32→0.42、镜面池 0.22→0.26——夜间 compact 靠这几笔光立玻璃感）与 BackdropGlassPanel 夜间 scrim 0.62→0.30（真采样胶囊透出采样内容，浅色保持 0.62）。
+- **批四定稿（用户反馈「非选区为什么还有立体光影」）**：compact 小件档改**扁平玻璃**——drawGlass 只画 体+染色 两笔即返回，光效四笔（内影/镜面池/高光纱/受光边）全部不参与。依据=日间可见效果对齐：高光纱与受光边在日间白底上本就不可见（日间未选中胶囊实为平面），夜间白线落黑底才显出立体描边；至此小胶囊=「体+选中染色」的平面玻璃，与日间观感结构完全一致。大面板（搜索胶囊/卡片/坞）光效保留。
+- **落点**：core/ui/glass/GlassColors.kt、core/ui/glass/GlassSurface.kt、core/ui/glass/BackdropGlassPanel.kt、core/ui/component/QimengSegPill.kt。视觉参数微调零行为变化。
+
+## feat(app): App 词表维护（本机词表直接编辑）与词表合并同步（2026-10-04 第四百六十三笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- **背景**：ADR-0034 上线当天用户三段拍板定稿（ADR-0035）——①「没有手动维护功能啊，只允许走 NAS 同步过来？？双向的手机也可以同步到 NAS，以及输入出处的维护手机也可以，加上去」；②「添加框太复古了，统一设计元素」；③「直接走备份那边一起吧，这样明确一点。词表和其他的不一样，只会多加不会删除，所以两边合并是增量不会出奇怪的问题」。**服务端/openapi/SDK 零改动**：GET/PUT /sources/custom-groups 既有两端点已同时承载读写，合并同步纯客户端编排。
+- **词表合并同步（取代 0034 覆盖式下发，语义定稿）**：备份页新增「词表合并同步」卡（与「同步浏览数据」并排=数据流转集中一页，用户拍板「直接走备份那边一起」），一键触发、无方向选择、无两段式确认防线（合并无损即无需防线）——远端 GET + 本机 GET → VocabularyMerger 并集合并（core:data 纯函数+单测锁定：折叠键=trim+忽略大小写；出处组按折叠键并集〔远端在前、本机独有按原序追加；同键组并入=规范名取先出现方写法、变体并集、角色按折叠键并集+别名并集〕；变体/别名去重含「不与规范名自身重复」〔GET 回读的 canonical 自并入形态合并滤除、PUT 后服务端重新补上〕；停用词并集；空表回 null）→ 合并结果显式 PUT 回两端，两端收敛同一并集。结果提示带增量数字（合并后组数/停用词数+远端补入 N 组·本机补入 M 组）。词表只增不删故合并无损；任一端 PUT 失败两端短暂不一致，合并幂等重跑即收敛。 VocabularySyncScreen 子页/词表同步 hub 行/路由随入口迁移退役。
+- **词表维护子页**：数据管理 hub 新增「词表维护」入口行 → 编辑子页。无门禁（编辑对象恒为本机内嵌库，不涉远端；远程登录态内嵌服务端按需拉起、收尾停回）。进页 GET 全量 → 内存编辑（组改名/移除、变体增删、角色增删/改名、别名增删、停用词增删，全部纯内存列表操作 + dirty 置位，越界静默 no-op）→ 保存按钮整体 PUT（恒显式 groups+stopWords）→ 成功后静默回读抹平服务端规范化差异。输入按协议容量投影封顶（VocabularyLimits：组 256/变体 64/角色 128/别名 32/停用词 256/单串 100，标注与 openapi.yaml 双同步责任）；新增/改名 trim 拒空白；有未保存修改时返回走放弃确认（系统返回 BackHandler 同口径）。**输入面统一 QimengCapsuleTextField**（用户反馈「添加框太复古」定稿：不再用 M3 OutlinedTextField 描边框，胶囊软底+placeholder+字数回显，全仓输入面统一语言）；**弹窗容器显式落 surface（卡片面）**（用户反馈「夜间胶囊不太行」根因修复：M3 AlertDialog 默认容器 surfaceContainerHigh 与本主题夜间胶囊底 surfaceVariant 同档合并 #2E2E2E，胶囊在夜间弹窗里完全隐形——落 surface 恢复「页面底 1A<弹窗 24<胶囊 2E」抬升梯度，浅色同构弹窗纯白=卡片语言）。UI 文件拆分（Screen/GroupsCard/Dialogs）守住渲染逻辑警戒线。
+- **本机通道抽取共享（代码卫生约束：相似逻辑第 2 次出现即抽单源）**：0034 的「拉起内嵌服务端→端口就绪→dev-login→接线→用完停回」编排抽 LocalVocabularyChannel（core:data/embedded），词表同步/维护两仓库共用；401 陷阱防线整体继承（@LocalDirectClient 零拦截器客户端、实例级 accessTokenProvider、本地 token 与全局 NAS 会话互不接触）；错误分类不另立平行枚举（维护复用 VocabularySyncError 本地两支）。
+- **落点**：core:data（VocabularyMerger 纯函数新件、LocalVocabularyChannel 新件、VocabularyEditRepository 接口+Impl、VocabularySyncRepository 接口+Impl 合并化、DataModule @Binds）；feature:manage（VocabularyEditViewModel/Screen/GroupsCard/Dialogs、VocabularySyncCard 新件、VocabularySyncViewModel 一键化、VocabularySyncScreen 退役、DataManageScreen 词表维护行+备份行副文案改述）；app（QimengNavHost VOCABULARY_EDIT 路由新增、VOCABULARY_SYNC 退役）。测试：VocabularyMergerTest（并集保序/同键并入/角色别名并集/停用词折叠去重/canonical 自并入滤除/空表归一）、VocabularySyncViewModelTest（一键同步/忙态防重/五支错误映射/失败重试）、VocabularyEditViewModelTest（9 用例），全部绿；:app:assembleDebug 编译通过。UI 零业务规则零直调 API（铁律 7）。
+- **文档**：adr/0035（新，含被否决方案记档：0034 单向覆盖与本批一度实施的方向化双向覆盖均被用户「只增不删合并增量」拍板取代）、adr/INDEX.md、GUIDE_API.md（custom-groups 消费面改述）、HANDOVER.md、CHANGELOG.md（本条）。
+
 ## feat(app): App 词表同步——远程登录态一键把 NAS/电脑端词表单向下发覆盖本机内嵌库（2026-10-04 第四百六十二笔）
 
 执行 AI：GLM-5.3-Flash（执行子代理）

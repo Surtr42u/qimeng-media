@@ -27,12 +27,18 @@ import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.shadow.Shadow
 import media.qimeng.app.core.ui.theme.QimengDimens
 import media.qimeng.app.core.ui.theme.QimengShapes
+import media.qimeng.app.core.ui.theme.isQimengDarkTheme
 
 /** 真采样胶囊的磨砂模糊半径（与坞 FROSTED 档同值 22dp——同引擎同语言） */
 private val CAPSULE_BLUR_RADIUS = 22.dp
 
-/** 真采样胶囊的 scrim 透明度（与坞 FROSTED 档同值 0.62：磨砂档「读得清」优先） */
-private const val CAPSULE_SCRIM_ALPHA = 0.62f
+/** 真采样胶囊 scrim·浅色（FROSTED 磨砂档 0.62：浅色内容亮，重 scrim 换「读得清」） */
+private const val CAPSULE_SCRIM_ALPHA_LIGHT = 0.62f
+
+/** 真采样胶囊 scrim·暗色（2026-10-04 批二再降 0.40→0.30，用户拍板「胶囊底色做到透明」：
+ *  夜间采样内容本就是暗底，纱越重越读作实体色块；0.30 保模糊透出最大化。坞的 0.40 不动
+ *  ——坞大面配重纱立得住，顶行小件走更透档；浅色主题不受影响维持 0.62） */
+private const val CAPSULE_SCRIM_ALPHA_DARK = 0.30f
 
 /** 真采样胶囊受光发丝描边宽度（GlassSurface/坞 GLASS_EDGE_WIDTH 同档 1dp） */
 private val CAPSULE_EDGE_WIDTH = 1.dp
@@ -58,7 +64,8 @@ fun BackdropGlassPanel(
     content: @Composable BoxScope.() -> Unit,
 ) {
     val glass = glassColors()
-    val scrim = MaterialTheme.colorScheme.surface.copy(alpha = CAPSULE_SCRIM_ALPHA)
+    val scrimAlpha = if (isQimengDarkTheme()) CAPSULE_SCRIM_ALPHA_DARK else CAPSULE_SCRIM_ALPHA_LIGHT
+    val scrim = MaterialTheme.colorScheme.surface.copy(alpha = scrimAlpha)
     // API ≤30 无 RenderEffect：降级静态玻璃（与坞 Pseudo 档同策略），签名与用法不变
     if (!backdropRenderEffectAvailable) {
         GlassSurface(shape = shape, modifier = modifier, content = content)

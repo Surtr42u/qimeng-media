@@ -43,17 +43,20 @@ data class GlassColors(
     val innerShade: Color,
 )
 
-/** 暗色玻璃：靛夜体 + 白纱受光（2026-10-03 质感对齐批：遮盖提至坞 FROSTED 磨砂档以上——
- *  流内胶囊无 backdrop 采样（下方无滚过内容，采样无意义），观感对齐坞的材料要素靠
- *  scrim 档位/受光边/镜面/投影四件套承担） */
+/** 暗色玻璃：靛夜体 + 白纱受光（2026-10-04 批三定稿——按日间逻辑同构：compact 小胶囊
+ *  与普通档共用同一玻璃体（日间即如此，无小件专档），选中染色统一 0.20 染在体上；
+ *  批二的「compact 近全透 0.18」实验撤回——透明体上任何选中染色都读作阴影块（用户
+ *  反馈「选取的时候有阴影啥的」根因），日间成立的前提正是体先立住、染只是体上的
+ *  一层色。夜间相对日间只保留两处提档：体 0.80→0.66（纯黑底上稍透）、高光纱 0.14→0.20
+ *  /受光边 0.32→0.42/镜面池 0.22→0.26（compact 靠这几笔光立玻璃感）。加厚档不动） */
 private val DarkGlass = GlassColors(
-    fill = Color(0xFF262C44).copy(alpha = 0.80f),
+    fill = Color(0xFF262C44).copy(alpha = 0.66f),
     fillStrong = Color(0xFF1E2438).copy(alpha = 0.92f),
-    edgeTop = Color(0xFFFFFFFF).copy(alpha = 0.32f),
+    edgeTop = Color(0xFFFFFFFF).copy(alpha = 0.42f),
     edgeBottom = Color(0xFFFFFFFF).copy(alpha = 0.08f),
-    sheen = Color(0xFFFFFFFF).copy(alpha = 0.14f),
+    sheen = Color(0xFFFFFFFF).copy(alpha = 0.20f),
     shadow = Color(0xFF04050A).copy(alpha = 0.45f),
-    specular = Color(0xFFFFFFFF).copy(alpha = 0.22f),
+    specular = Color(0xFFFFFFFF).copy(alpha = 0.26f),
     innerShade = Color(0xFF04050A).copy(alpha = 0.32f),
 )
 

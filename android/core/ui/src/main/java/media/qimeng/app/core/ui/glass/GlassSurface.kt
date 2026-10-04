@@ -41,9 +41,10 @@ private const val SHEEN_FADE_FRACTION = 0.4f
  * @param elevation 投影高度（null=无投影；网格中的小面板建议 null 防投影叠印）
  * @param tintOverlay 染色层（2026-10-03 液态感强化批新增；选中态胶囊等「有色玻璃」场合，
  *   画在体之上、光影之下——玻璃的光学特征不被染色盖掉。null=素玻璃）
- * @param compact 小件档（2026-10-03 质感对齐批）：32dp 级小胶囊上，底部内影/镜面高光池
- *   两笔会糊成脏灰（渐变池需要面积才成立）——此档只保留 均匀霜体+高光纱+受光描边 三笔，
- *   利落不糊；大面板（搜索胶囊/卡片/坞降级）保持完整六笔
+ * @param compact 小件档（2026-10-03 质感对齐批引入；2026-10-04 批四改定：**扁平玻璃**——
+ *   只画 体+染色 两笔，光效四笔（内影/镜面池/高光纱/受光边）全部不参与。依据=按日间
+ *   可见效果对齐：高光纱与受光边在日间白底上本就不可见（未选中胶囊实为平面），夜间
+ *   白线落黑底才显出立体描边；大面板（搜索胶囊/卡片/坞降级）保持完整六笔
  */
 @Composable
 fun GlassSurface(
@@ -93,7 +94,11 @@ private const val SPECULAR_RADIUS_FRACTION = 0.85f
 private const val INNER_SHADE_START_FRACTION = 0.45f
 
 /** 玻璃面板六笔绘制：体 → 染色 → 底部内影 → 镜面高光池 → 顶部高光纱 → 受光描边
- *  （顺序不可换：描边必须压在高光上，光影永远在染色之上——「有色玻璃」而非「有色贴膜」） */
+ *  （顺序不可换：描边必须压在高光上，光影永远在染色之上——「有色玻璃」而非「有色贴膜」。
+ *  compact 小件档只画 体 → 染色 两笔即返回：日间观感本就如此——高光纱/受光边在浅色
+ *  主题的白底上不可见，未选中胶囊实为「平面玻璃」；夜间白线落在黑底上才显出描边
+ *  立体感（用户反馈「非选区为什么还有立体光影」根因）——小件按日间可见效果对齐，
+ *  光效笔跳过） */
 private fun DrawScope.drawGlass(
     fill: Color,
     glass: GlassColors,
@@ -109,27 +114,29 @@ private fun DrawScope.drawGlass(
     if (tintOverlay != null) {
         drawRoundRect(color = tintOverlay, cornerRadius = CornerRadius(radius))
     }
-    if (!compact) {
-        // 2) 底部内影：下缘向内渐暗（玻璃体厚度/纵深；小件档跳过——见 GlassSurface KDoc）
-        drawRect(
-            brush = Brush.verticalGradient(
-                colors = listOf(Color.Transparent, glass.innerShade),
-                startY = size.height * INNER_SHADE_START_FRACTION,
-                endY = size.height,
-            ),
-        )
-        // 3) 镜面高光池：上缘弧面的聚光斑（液态玻璃「光在曲面上流动」的静态近似；小件档跳过）
-        drawRect(
-            brush = Brush.radialGradient(
-                colors = listOf(glass.specular, Color.Transparent),
-                center = androidx.compose.ui.geometry.Offset(
-                    x = size.width * SPECULAR_CENTER_X_FRACTION,
-                    y = size.height * SPECULAR_CENTER_Y_FRACTION,
-                ),
-                radius = size.width * SPECULAR_RADIUS_FRACTION,
-            ),
-        )
+    // compact 小件扁平档：体+染色即全部（见本函数 KDoc），光效四笔不参与
+    if (compact) {
+        return
     }
+    // 2) 底部内影：下缘向内渐暗（玻璃体厚度/纵深）
+    drawRect(
+        brush = Brush.verticalGradient(
+            colors = listOf(Color.Transparent, glass.innerShade),
+            startY = size.height * INNER_SHADE_START_FRACTION,
+            endY = size.height,
+        ),
+    )
+    // 3) 镜面高光池：上缘弧面的聚光斑（液态玻璃「光在曲面上流动」的静态近似）
+    drawRect(
+        brush = Brush.radialGradient(
+            colors = listOf(glass.specular, Color.Transparent),
+            center = androidx.compose.ui.geometry.Offset(
+                x = size.width * SPECULAR_CENTER_X_FRACTION,
+                y = size.height * SPECULAR_CENTER_Y_FRACTION,
+            ),
+            radius = size.width * SPECULAR_RADIUS_FRACTION,
+        ),
+    )
     // 4) 顶部高光纱：上缘向下在 SHEEN_FADE_FRACTION 比例内渐隐
     drawRect(
         brush = Brush.verticalGradient(
