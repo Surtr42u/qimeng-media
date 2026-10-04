@@ -5,9 +5,11 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -16,7 +18,10 @@ import media.qimeng.app.core.data.di.IoDispatcher
 import media.qimeng.app.core.data.prefetch.PrefetchRevisionStore
 import media.qimeng.app.core.data.prefetch.PrefetchUiState
 import media.qimeng.app.core.data.prefetch.ThumbnailPrefetchMonitor
+import media.qimeng.app.core.data.repository.AuthRepository
 import media.qimeng.app.core.data.repository.CoilCacheManager
+import media.qimeng.app.core.data.repository.ThumbnailProgressRepository
+import media.qimeng.app.core.network.ServerAddress
 
 /**
  * 缩略图缓存页 UI 状态（2026-09-16 新建页；批S4 两口径重排；**批S5 2026-09-19 按端
@@ -34,6 +39,14 @@ data class ThumbnailCacheUiState(
     val localFileCount: Int? = null,
     /** 本地端池当前实际占用字节（null = 读失败/未就绪，UI 显「—」） */
     val localSizeBytes: Long? = null,
+    /**
+     * 本地端（内嵌服务端）缩略图生成进度：已覆盖资产数（分子，2026-10-04 批恢复
+     * 批S5 退场的「服务端生成进度」——v4 缓存键换代全库重抽无界面指示，用户要求补回）。
+     * null = 非本地端模式/读失败，UI 整块不显示（NAS 模式下内嵌服务端不适用）。
+     */
+    val localGenCovered: Int? = null,
+    /** 生成进度分母 = 启用库资产总数（与 [localGenCovered] 成对非空） */
+    val localGenTotal: Int? = null,
 )
 
 /**
@@ -50,6 +63,10 @@ class ThumbnailCacheViewModel @Inject constructor(
     prefetchMonitor: ThumbnailPrefetchMonitor,
     /** 预取修订号仓（清空缓存池后失效 last_prefetch_revision，防下轮误跳过——P1） */
     private val prefetchRevisionStore: PrefetchRevisionStore,
+    /** 缩略图覆盖进度端口（GET /thumbnails/progress；本地端生成进度轮询数据源） */
+    private val thumbnailProgressRepository: ThumbnailProgressRepository,
+    /** 服务端地址单点（ADR-0015）：serverUrl 驱动本地端模式判定（进度区仅内嵌形态显示） */
+    private val authRepository: AuthRepository,
     /** DiskCache.size/文件遍历触发磁盘扫描（IO 性质），调用点统一挂 IO 调度器 */
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) : ViewModel() {
@@ -62,6 +79,30 @@ class ThumbnailCacheViewModel @Inject constructor(
 
     init {
         refreshUsage()
+        // 本地端生成进度轮询（2026-10-04 批）：v4 缓存键换代的全库重抽在服务端
+        // 生成层进行、无既有界面指示（批S5 退场的「服务端生成进度」以精确口径
+        // 回归），借 /thumbnails/progress（分子已改覆盖资产数，与预热候选同源）
+        // 秒级轮询补上。仅本地端模式轮询——NAS 模式下内嵌服务端不适用，进度区
+        // 整块隐藏；服务端侧 30s TTL 缓存令秒级轮询的服务端成本趋零。进度数据
+        // 读失败降级 null（进度区隐藏），与两池统计口径的容错风格一致。
+        viewModelScope.launch {
+            while (true) {
+                val url = authRepository.serverUrl.first()
+                val progress =
+                    if (ServerAddress.isLocalModePreset(url)) {
+                        thumbnailProgressRepository.progress()
+                    } else {
+                        null
+                    }
+                _uiState.update {
+                    it.copy(
+                        localGenCovered = progress?.thumbsOnDisk,
+                        localGenTotal = progress?.totalAssets,
+                    )
+                }
+                delay(PROGRESS_POLL_INTERVAL_MS)
+            }
+        }
         // 数字跟着进度条走（第三百六十六笔，用户反馈「文件数/实际占用不跟着进度条动」）：
         // 预取进行中按步长重采样两池统计（每轮约 50 次，不做逐条磁盘扫描）；轮终/失败/复位
         // 各终采一次收口。磁盘遍历挂 IO 调度器，扫描成本与进页面时同源。
@@ -132,5 +173,11 @@ class ThumbnailCacheViewModel @Inject constructor(
          * 全程只扫 50 次是「数字跟手感」与 IO 成本的折中。
          */
         const val USAGE_RESAMPLE_STEPS = 50
+
+        /**
+         * 本地端生成进度轮询间隔。服务端侧 30s TTL 缓存下，1s 轮询的服务端成本
+         * 趋零（缓存命中即返回）；1s 是进度条「跟手感」与请求量的折中。
+         */
+        const val PROGRESS_POLL_INTERVAL_MS = 1000L
     }
 }

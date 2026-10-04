@@ -75,6 +75,12 @@ private const val PREFETCH_DONE_TEMPLATE = "本轮完成，已缓存 %d / %d"
 private const val PREFETCH_DONE_EMPTY = "本轮完成：暂无可预取的缩略图"
 private const val PREFETCH_SKIPPED_HINT = "缓存已是最新，本轮无需同步"
 
+/** 本地端生成进度区（2026-10-04 批：内嵌服务端缩略图回填/懒生成的覆盖进度；批S5
+ *  退场的「服务端生成进度」以精确口径回归，数据 = GET /thumbnails/progress） */
+private const val LOCAL_GEN_SECTION = "生成进度"
+private const val LOCAL_GEN_RUNNING_TEMPLATE = "已生成 %1\$d / %2\$d（%3\$d%%）"
+private const val LOCAL_GEN_DONE_TEMPLATE = "已全部生成 %d / %d"
+
 /** 16dp：内容水平内边距（上传子页同档） */
 private val ScreenContentPadding = 16.dp
 
@@ -229,6 +235,23 @@ private fun LocalCacheCard(
             cacheInfoRow(label = ROW_FILE_COUNT, value = countValue(state.localFileCount))
             cacheInfoRow(label = ROW_OCCUPIED, value = occupiedValue(state.localSizeBytes))
 
+            // —— 本地端生成进度区（2026-10-04 批）：内嵌服务端覆盖进度，秒级轮询；
+            //    非本地端模式/读失败时 covered/total 为 null，整块隐藏（与预取区同形态） ——
+            val genCovered = state.localGenCovered
+            val genTotal = state.localGenTotal
+            if (genCovered != null && genTotal != null && genTotal > 0) {
+                Text(text = LOCAL_GEN_SECTION, style = MaterialTheme.typography.titleSmall)
+                Text(
+                    text = localGenStatusText(covered = genCovered, total = genTotal),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                LinearProgressIndicator(
+                    progress = { genCovered.toFloat() / genTotal },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+
             TextButton(onClick = {
                 clearing = true
                 onClear()
@@ -256,4 +279,14 @@ private fun prefetchStatusText(state: PrefetchUiState): String = when (state) {
         if (state.total > 0) PREFETCH_DONE_TEMPLATE.format(state.done, state.total) else PREFETCH_DONE_EMPTY
     PrefetchUiState.Skipped -> PREFETCH_SKIPPED_HINT
     is PrefetchUiState.Failed -> state.reason
+}
+
+/** 本地端生成进度行文案（covered == total = 全部生成；带实时百分比，与预取区同形态） */
+private fun localGenStatusText(covered: Int, total: Int): String {
+    val percent = covered * 100 / total
+    return if (covered >= total) {
+        LOCAL_GEN_DONE_TEMPLATE.format(covered, total)
+    } else {
+        LOCAL_GEN_RUNNING_TEMPLATE.format(covered, total, percent)
+    }
 }

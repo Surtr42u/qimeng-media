@@ -10,6 +10,15 @@
 
 > **历史条目拆分说明（2026-10-01）**：为控制 AI 上下文体量，本文件只保留 **2026-09-22 及之后**的条目（第三百八十二笔起）；拆分线之前的全部条目已逐字迁入 `docs/history/CHANGELOG-ARCHIVE.md`（零改写，笔号与本文件连续可查）。引用早于拆分线的旧笔号请去历史档查阅。
 
+## feat(app): 缩略图缓存页本地卡恢复「生成进度」条 + 服务端 progress 分子口径修正为覆盖资产数（2026-10-04 第四百七十二笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- **背景**：上一笔 v4 缓存键换代触发全库缩略图重抽，用户发现缩略图缓存页无任何进度指示（批S5 2026-09-19 曾把「服务端生成进度」随两卡口径重写退场），要求在本地缓存卡补回进度条——「就像上面的服务端（预取）那个」。
+- **口径前置修正（server + openapi）**：GET /thumbnails/progress 原分子=thumbs 目录落盘文件数，v4 换代后旧键孤儿文件仍在目录（永不因数量上限删除，对账清理未上线），目录计数把孤儿计入导致进度虚高满格、失去意义。分子改为**已覆盖资产数**：逐资产 HasThumbnail(md) 判定，与 warmupOnce 候选同一出口（「进度条走完」与「预热不再投递」互为充要），孤儿天然不进分子；进程内 30s TTL 缓存（Server.thumbProgressMu 双检）让秒级轮询的稳态计算成本趋零。openapi summary/description/schema 注释同步，make sdk 重新生成三端生成物 + sdk.lock。
+- **App 端**（feature:manage）：ThumbnailCacheViewModel 注入 ThumbnailProgressRepository + AuthRepository（serverUrl→ServerAddress.isLocalModePreset 判内嵌形态），init 起 1s 轮询，UiState 增 localGenCovered/localGenTotal（非本地模式/读失败降级 null，整块隐藏）；ThumbnailCacheScreen 本地卡仿预取区形态加「生成进度」区（LinearProgressIndicator + 「已生成 x / y（z%）」/「已全部生成」文案）。测试：ThumbnailCacheViewModelTest 增三例（本地模式透出/NAS 模式隐藏/读失败降级），驱动改有界虚拟时间推进（while(true) 轮询下 advanceUntilIdle 永不返回，advanceTimeBy 窗口化）；gradlew :feature:manage 测试全绿，web vitest 262 例全绿。
+- **验证**：go test ./... 全绿；装机实测进度条随重抽推进。
+
 ## perf(server): 静图缩略图质量双提档——mjpeg 降级档 4→2、webp 80→90，缓存键版本段 v3→v4（2026-10-04 第四百七十一笔）
 
 执行 AI：GLM-5.3-Flash（主代理）

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"qimeng-media/server/internal/auth"
@@ -208,6 +209,12 @@ type Server struct {
 	// localSync 本机自动同步通道运行态（localsync.go，ADR-0030）：观测/失败
 	// 记录/状态端点共享的内存态，全部访问经其 mu 保护。
 	localSync *localSyncState
+	// thumbProgress 缩略图覆盖进度缓存（thumbnail_warmup.go，2026-10-04 批）：
+	// 进度页轮询的分子=覆盖资产数，需对全库逐资产 Stat（v4 换代期 thumbs 目录
+	// 混有旧键孤儿文件，目录计数口径失真）；30s TTL 缓存把秒级轮询的稳态成本
+	// 摊薄到可忽略。访问全部经 thumbProgressMu 双检保护。
+	thumbProgressMu    sync.Mutex
+	thumbProgressCache *thumbnailProgressSnapshot
 }
 
 // New 组装 HTTP 服务。返回 *Server；main 用 Handler() 拿到带完整

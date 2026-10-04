@@ -121,23 +121,79 @@ func (s *Server) warmupOnce(reason string) {
 		"submitted", submitted, "elapsed", time.Since(start).Round(time.Second).String())
 }
 
-// GetApiV1ThumbnailsProgress 缩略图覆盖进度（缓存上限/进度页轮询用，2026-09-15 批）。
-// 分子 = 缓存目录落盘文件数（多档并存按文件计——md 预生成档为主的现状下即覆盖数），
+// thumbnailProgressCacheTTL 覆盖进度的进程内缓存 TTL。分子=覆盖资产数，需对
+// 全库逐资产 Stat（与 warmupOnce 候选判定同一 HasThumbnail 出口，数千次 Stat
+// ≈百毫秒级），进度页轮询为秒级——30s 缓存让稳态计算成本趋零；缓存粒度对
+// 「回填全程 30 分钟量级」的进度条足够顺滑，预热/懒生成导致的覆盖变化最迟
+// 30s 透出（可感知性为零）。
+const thumbnailProgressCacheTTL = 30 * time.Second
+
+// thumbnailProgressSnapshot 覆盖进度的缓存快照（读侧经 Server.thumbProgressMu
+// 双检访问；at 是计算时刻 = TTL 基准）。
+type thumbnailProgressSnapshot struct {
+	covered int
+	total   int
+	at      time.Time
+}
+
+// GetApiV1ThumbnailsProgress 缩略图覆盖进度（缓存上限/进度页轮询用，2026-09-15 批；
+// 2026-10-04 口径修正：分子从「目录文件数」改为「已覆盖资产数」——v4 缓存键换代后
+// 旧键文件成为孤儿仍留在目录（永不因数量上限删除，对账清理未上线），目录计数把
+// 孤儿也计入导致进度虚高满格；逐资产判定与 warmupOnce 候选同源（同一 HasThumbnail
+// 出口，md 档），孤儿天然不进分子，进度回归真实覆盖。
 // 分母 = 启用库资产总数（与 ListThumbnailWarmup 候选同源同口径）。
+// 计算经 30s TTL 缓存（thumbnailProgressCacheTTL），并发轮询由 mutex 双检合并。
 func (s *Server) GetApiV1ThumbnailsProgress(w http.ResponseWriter, r *http.Request) {
+	if snap := s.loadFreshThumbProgress(); snap != nil {
+		writeJSON(w, http.StatusOK, gen.ThumbnailProgress{
+			TotalAssets:  snap.total,
+			ThumbsOnDisk: snap.covered,
+		})
+		return
+	}
+	s.thumbProgressMu.Lock()
+	defer s.thumbProgressMu.Unlock()
+	if snap := s.thumbProgressCache; snap != nil && time.Since(snap.at) < thumbnailProgressCacheTTL {
+		writeJSON(w, http.StatusOK, gen.ThumbnailProgress{
+			TotalAssets:  snap.total,
+			ThumbsOnDisk: snap.covered,
+		})
+		return
+	}
 	totalRow, err := s.q.CountEnabledLibraryAssets(context.Background())
 	if err != nil {
 		s.internalErr(w, "统计启用库资产", err)
 		return
 	}
 	total := int(totalRow)
-	onDisk, err := s.thumbs.CountOnDisk()
+	rows, err := s.q.ListThumbnailWarmup(context.Background())
 	if err != nil {
-		s.internalErr(w, "统计缩略图缓存目录", err)
+		s.internalErr(w, "列出缩略图预热候选", err)
 		return
 	}
+	covered := 0
+	for _, row := range rows {
+		// 与 warmupOnce 候选判定同出口（md 档，SizeGrid 经 thumbDst 换算生效像素），
+		// 保证「进度条走完」与「预热不再投递」互为充要，UI 口径与真实覆盖恒一致。
+		if s.thumbs.HasThumbnail(row.AssetID, thumbnail.SizeGrid) {
+			covered++
+		}
+	}
+	s.thumbProgressCache = &thumbnailProgressSnapshot{covered: covered, total: total, at: time.Now()}
 	writeJSON(w, http.StatusOK, gen.ThumbnailProgress{
 		TotalAssets:  total,
-		ThumbsOnDisk: int(onDisk),
+		ThumbsOnDisk: covered,
 	})
+}
+
+// loadFreshThumbProgress 读未过期缓存快照；无缓存/已过期返回 nil（加锁重算路径
+// 的无锁快路径：多数轮询命中缓存，不与重算互斥）。
+func (s *Server) loadFreshThumbProgress() *thumbnailProgressSnapshot {
+	s.thumbProgressMu.Lock()
+	defer s.thumbProgressMu.Unlock()
+	snap := s.thumbProgressCache
+	if snap == nil || time.Since(snap.at) >= thumbnailProgressCacheTTL {
+		return nil
+	}
+	return snap
 }

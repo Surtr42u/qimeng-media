@@ -1,5 +1,5 @@
 a6ed8f4e275eee926d27e0c52f30f2d1c4d8409465ac1fbc4511f7cc62de51db  android/sdk/.openapi-generator-ignore
-1476627c2e9824282b13fa85a8fddfaeaec01a6d39d5a80bc43a90181afd6d1e  android/sdk/README.md
+a7faad97c90ca67ad4b308afc8feb211727f7d619bed121efd50d89e56bc972c  android/sdk/README.md
 e1ae6b63efe3560b7c732868dd25f5ed3d035a6ccc135c73a36eede7cc122d9c  android/sdk/build.gradle
 eea4a2fbb55559a8bfd8a5814ffb33d9cfd9257f63b0b4c921636c9c9a5fed69  android/sdk/docs/ApiV1AssetsAssetIdFavoritePutRequest.md
 0e9420002b77d68069a191f4d95f97428738785bf9aee6ec721e27f1159f4db0  android/sdk/docs/ApiV1AssetsAssetIdTagsPutRequest.md
@@ -38,7 +38,7 @@ fa6aaac21613867116bc53df6e549338f83e8d79a284e300b8178655c13b1ca5  android/sdk/do
 d131e9619c6428e6186f65a7a6fef083484237570c122d16ad43e05823791a22  android/sdk/docs/CustomSourceGroup.md
 5ff7457e26e825bee81d813c14341e1a8bb123088f07969a02a20f3ccdca931d  android/sdk/docs/CustomSourceGroups.md
 8e14d1bf41d868a2a10323e9c841a8fd887bf01641e01127e62c10b795fcd1f0  android/sdk/docs/CustomSources.md
-d0ce81a98908da4e1cdc9b0ff7edb1a9a06160130ed324d480afa4b4989183f1  android/sdk/docs/DefaultApi.md
+01025d019956e4c889ea5cc8acc66782bb70ddaf1913a6dbd69afb90429602ec  android/sdk/docs/DefaultApi.md
 95a269db44976a5d094437cfbe51341cde2231a40224d1b38abc848256ebba1c  android/sdk/docs/DirTree.md
 331127b77188cfc84a49da9b491b4604d4384a91fe2741145b688d68ccca3a84  android/sdk/docs/Error.md
 e13f7d25da4386abdc82a5236f8e46d666c2b03e84a3880842392f53547b6eba  android/sdk/docs/FacetBucket.md
@@ -92,7 +92,7 @@ f9db60d765cc03cb29f94f85165f129d9139d0c14c4c83698202290e9e4c7ed4  android/sdk/do
 24a9f335e8d21dddcf836b33a9d519749751b3dd3625fb7fd4993ea22ffee02a  android/sdk/docs/SystemStatus.md
 778a33790785740866832452dfb9dff2ccefdc3492a7c720b7b3a5c3ab863a8d  android/sdk/docs/SystemStatusDisksInner.md
 5d6d846584bf399cac46a89a957f5189b5728cd425558e2b4e3e3d3f5498f98c  android/sdk/docs/Tag.md
-42f01cdc88f79198f9a79670881e8fa8dfd967795a8995b8436c2af13ea003fd  android/sdk/docs/ThumbnailProgress.md
+ba9735b84e7e8edc880209ead94458cb5693b2020ed173b84ed5ebd5095c88bf  android/sdk/docs/ThumbnailProgress.md
 9f09d18cffbe1df91a9bcc360d7a3102a976505fcc4491447d59e727f1a00be2  android/sdk/docs/TimelineTag.md
 e4ca21a36bd89511bb38b5f37fc2ec4367657a94fbea400f73a505505662d041  android/sdk/docs/TopAuthorItem.md
 272aa37541e37276ddbd5cc9d0341a18481ccfc8bc7fde0d1842a9d3112ac717  android/sdk/docs/TopTagItem.md
@@ -111,7 +111,7 @@ fecdc6c20679342c8623b72eeb8d7155ee9d9151bd2c0d5a4c7486e62ad8de72  android/sdk/gr
 2209f919a22528af59a2af2ad97e8d056cca18e39f7d87aa3fd549a73b180150  android/sdk/gradlew.bat
 b30ad969fcb6498e130da05624a77797593457e0c30ef5dc76aca2a17c17d623  android/sdk/sdk.gradle
 8aa8fdd6a92c41df3cd31295c1aa2be12d0ffa178790983ab815ae4d98b63741  android/sdk/settings.gradle
-85c5edf46ff308acd367f8b2f629c522236974e5a8132663e7a8487e790b3d5a  android/sdk/src/main/kotlin/media/qimeng/sdk/apis/DefaultApi.kt
+766b1ae211248762998bd01172709713301e92e9f18eb4c92da88a9a720caaea  android/sdk/src/main/kotlin/media/qimeng/sdk/apis/DefaultApi.kt
 27f34e346b13e09b9794d8400c23677418e1dabc5777e4dd205908e9a7e2056c  android/sdk/src/main/kotlin/media/qimeng/sdk/infrastructure/ApiAbstractions.kt
 6220ecd56413b3ddc9cb07a1e9272532d41f5ce330b393fa24fc0991864c3cf5  android/sdk/src/main/kotlin/media/qimeng/sdk/infrastructure/ApiClient.kt
 07fbd42f3d8ed46d32a594fbd35d31ec619224d479d96b2e4b5d61dec51abba7  android/sdk/src/main/kotlin/media/qimeng/sdk/infrastructure/ApiResponse.kt
@@ -219,7 +219,7 @@ b463818604db032723c0a83252bc2d358aafa1e422c59640cc89057979e7aebc  android/sdk/sr
 0498a6d4ffe0d4fa78cd20a27176a8fed0020c481d7e65396179629f11a30158  android/sdk/src/main/kotlin/media/qimeng/sdk/models/SystemStatus.kt
 cad88406be99157cd65004d6254bcc57c4774bf7ad9a864f3dd058ab78fc5a49  android/sdk/src/main/kotlin/media/qimeng/sdk/models/SystemStatusDisksInner.kt
 1965b2abd3f5c31d18851739d86af36bc8d8a332dfa7af49074a127732de658a  android/sdk/src/main/kotlin/media/qimeng/sdk/models/Tag.kt
-fe7702c95008e265debf88218b884c962a5129b29143b4f2d3e914d6e5f6d69b  android/sdk/src/main/kotlin/media/qimeng/sdk/models/ThumbnailProgress.kt
+73530ede04cb1c68db76ccfbf66f51b6e1f65008247f874dcbf6ccd83e34ccb8  android/sdk/src/main/kotlin/media/qimeng/sdk/models/ThumbnailProgress.kt
 375d2deab10f93d26e11c603786a6574fbb7e2213b5871cdb3c7261116b9b2a3  android/sdk/src/main/kotlin/media/qimeng/sdk/models/TimelineTag.kt
 fbb516f7077ddf2270c3c9bf087852e72d836d71f00997bcbc52c1a1415ef0dd  android/sdk/src/main/kotlin/media/qimeng/sdk/models/TopAuthorItem.kt
 f2c3f01910e0be158ae17e5605f33e6131fed06d8f0c74cca5c679bb31133e30  android/sdk/src/main/kotlin/media/qimeng/sdk/models/TopTagItem.kt
@@ -232,7 +232,7 @@ e01cf7aa9014f8f45a7aa6cd52e107946291b90b1238bfc3fbcf00466a5cf0d4  android/sdk/sr
 3267541c502ac93fc4acd7b7b20889807d3851ff4d1085a4dda783bef3777af9  android/sdk/src/main/kotlin/media/qimeng/sdk/models/UploadDoneEvent.kt
 48884f10e71f836e926bce912057f3b5ad49a071bd89c63ceeea58f628dff203  android/sdk/src/main/kotlin/media/qimeng/sdk/models/UploadSession.kt
 946d74093a5a44f46b9f6da73f21625e2b83cdb4aba11c1514e43ff5350563c2  android/sdk/src/main/kotlin/media/qimeng/sdk/models/ViewEventReport.kt
-69c8f88075f1aab7f1cf17ef29438586ef7f15b29a3dde40039acdc7df749ddf  server/internal/httpapi/gen/types.gen.go
+75ad93d76f474310934b982e65a30c11afe58a42d20022aa33bb3b45bc808a03  server/internal/httpapi/gen/types.gen.go
 b325822184abc7aed91c42bb1ea0697bb8ae178833c3fca97f6ec498398c1377  web/src/api/generated/client.gen.ts
 8a17b0bf1540258734a128f176f6cb915c849b97d8064a613dba5ef8390e58d9  web/src/api/generated/client/client.gen.ts
 949cc7333527c91928c32410c4a4a2dd2b90b99fe080eb8ce4505647852fbe1b  web/src/api/generated/client/index.ts
@@ -247,5 +247,5 @@ df993567abbe3e5b477d81517fb967cf63cf40b7866957d5dc6cc03238cb1426  web/src/api/ge
 0c33c5e096608fc1f859d89bc17ce428e306c7aa3c2c30acd8affa5a734370af  web/src/api/generated/core/types.gen.ts
 1b637c521d8136dfdbf8dfc4fcc8bb73e0c554466e4d2ca9c9086d4c712983c4  web/src/api/generated/core/utils.gen.ts
 e150c5e5dd3695ef253d36b452f573fe91093c59d2162cf77009a0e7c778ba8a  web/src/api/generated/index.ts
-3da68a9d1e8e06e6b6d1b13d99a068240b769f65ae9b23633c7e49ffc5d42d69  web/src/api/generated/sdk.gen.ts
-9ffb6f544f9febfe5a1d9650868a791e4cea1c02357f9d63d0113dec4e3f675e  web/src/api/generated/types.gen.ts
+2022765186bbbaeab42cceeaced08896f6508b59f66b93bf5d0db23fa6ecde6b  web/src/api/generated/sdk.gen.ts
+90bce596c993098cbb49b753f4d3632616b0663e0febe096bf63dbaf5cce6681  web/src/api/generated/types.gen.ts

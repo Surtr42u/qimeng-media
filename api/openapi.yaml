@@ -1104,11 +1104,13 @@ paths:
         "200": { description: text/plain 指标输出 }
   /api/v1/thumbnails/progress:
     get:
-      summary: 缩略图覆盖进度（已落盘缩略图数 / 启用库资产总数，2026-09-15 批）
+      summary: 缩略图覆盖进度（已覆盖资产数 / 启用库资产总数，2026-09-15 批；2026-10-04 分子口径修正）
       description: |
-        缓存进度页轮询用。分子 = 缩略图缓存目录落盘文件数（多档并存按文件计；
-        md 预生成档为主的现状下即覆盖数），分母 = 启用库资产总数（与预热回填
-        候选同源同口径）。纯统计无副作用。
+        缓存进度页轮询用。分子 = 已有 md 预生成档缩略图的资产数（逐资产判定，
+        与预热回填候选同一 HasThumbnail 出口同口径；缓存键换代期旧键孤儿文件
+        不进分子）。分母 = 启用库资产总数（与预热回填候选同源同口径）。服务端
+        进程内 30s TTL 缓存，轮询秒级成本趋零、覆盖变化最迟 30s 透出。纯统计
+        无副作用。
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ThumbnailProgress" } } } }
 
@@ -1932,8 +1934,8 @@ components:
       type: object
       required: [totalAssets, thumbsOnDisk]
       properties:
-        totalAssets:  { type: integer, description: 启用库资产总数（分母，与预热回填候选同口径） }
-        thumbsOnDisk: { type: integer, description: 缩略图缓存目录已落盘文件数（分子；多档并存按文件计） }
+        totalAssets: { type: integer, description: 启用库资产总数（分母，与预热回填候选同口径） }
+        thumbsOnDisk: { type: integer, description: 已有 md 预生成档缩略图的资产数（分子，2026-10-04 起；与预热候选同口径逐资产判定，孤儿文件不进分子） }
 
     SystemStatus:
       type: object

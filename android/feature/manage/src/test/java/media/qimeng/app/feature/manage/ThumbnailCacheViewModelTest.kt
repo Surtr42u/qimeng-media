@@ -8,6 +8,10 @@ import media.qimeng.app.core.data.prefetch.PrefetchRevisionRecord
 import media.qimeng.app.core.data.prefetch.PrefetchRevisionStore
 import media.qimeng.app.core.data.prefetch.ThumbnailPrefetchMonitor
 import media.qimeng.app.core.data.repository.CoilCacheManager
+import media.qimeng.app.core.data.repository.ThumbnailProgressRepository
+import media.qimeng.app.core.model.ThumbnailCacheProgress
+import media.qimeng.app.core.network.ServerAddress
+import media.qimeng.app.core.testing.FakeAuthRepository
 import media.qimeng.app.core.testing.MainDispatcherRule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -34,7 +38,25 @@ class ThumbnailCacheViewModelTest {
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     private val ioDispatcher = UnconfinedTestDispatcher(mainDispatcherRule.testDispatcher.scheduler)
 
-    private fun driveIdle() = mainDispatcherRule.testDispatcher.scheduler.advanceUntilIdle()
+    private fun driveIdle() = mainDispatcherRule.testDispatcher.scheduler.let {
+        // 有界虚拟时间推进（2026-10-04 批）：VM init 的本地端生成进度轮询是
+        // while(true)+delay(1s) 的无限循环，advanceUntilIdle 的「跑到无任务」语义
+        // 会永不返回；advanceTimeBy(有界) 让循环在虚拟时间窗内执行 N 轮后自然停。
+        // 页内既有断言（init 读取/清空核对）全部落在首秒内，语义不变。
+        it.advanceTimeBy(TEST_VIRTUAL_BUDGET_MS)
+        it.runCurrent()
+    }
+
+    /** 覆盖进度端口桩：progress() 返回值可编程；result=null 模拟「读失败降级 null」 */
+    private class FakeThumbnailProgressRepository(
+        var result: ThumbnailCacheProgress? = ThumbnailCacheProgress(totalAssets = 0, thumbsOnDisk = 0),
+    ) : ThumbnailProgressRepository {
+        var callCount = 0
+        override suspend fun progress(): ThumbnailCacheProgress? {
+            callCount++
+            return result
+        }
+    }
 
     private class FakeCoilCacheManager(
         var nasSize: Long = 1234L,
@@ -102,7 +124,9 @@ class ThumbnailCacheViewModelTest {
         coil: FakeCoilCacheManager = FakeCoilCacheManager(),
         prefetch: FakePrefetchMonitor = FakePrefetchMonitor(),
         revisionStore: FakePrefetchRevisionStore = FakePrefetchRevisionStore(),
-    ) = ThumbnailCacheViewModel(coil, prefetch, revisionStore, ioDispatcher)
+        auth: FakeAuthRepository = FakeAuthRepository(initialServerUrl = ServerAddress.LOCAL_MODE_PRESET),
+        progress: FakeThumbnailProgressRepository = FakeThumbnailProgressRepository(),
+    ) = ThumbnailCacheViewModel(coil, prefetch, revisionStore, progress, auth, ioDispatcher)
 
     @Test
     fun `init读取两池四口径`() {
@@ -179,6 +203,44 @@ class ThumbnailCacheViewModelTest {
     }
 
     @Test
+    fun `本地端模式生成进度透出`() {
+        val viewModel = newViewModel(
+            auth = FakeAuthRepository(initialServerUrl = ServerAddress.LOCAL_MODE_PRESET),
+            progress = FakeThumbnailProgressRepository(
+                ThumbnailCacheProgress(totalAssets = 6350, thumbsOnDisk = 2256),
+            ),
+        )
+        driveIdle()
+        val state = viewModel.uiState.value
+        assertEquals(6350, state.localGenTotal)
+        assertEquals(2256, state.localGenCovered)
+    }
+
+    @Test
+    fun `NAS模式生成进度整块隐藏`() {
+        val viewModel = newViewModel(
+            auth = FakeAuthRepository(initialServerUrl = "http://192.0.2.8:8420"),
+            progress = FakeThumbnailProgressRepository(
+                ThumbnailCacheProgress(totalAssets = 6350, thumbsOnDisk = 2256),
+            ),
+        )
+        driveIdle()
+        assertNull(viewModel.uiState.value.localGenCovered)
+        assertNull(viewModel.uiState.value.localGenTotal)
+    }
+
+    @Test
+    fun `生成进度读失败降级null不崩`() {
+        val viewModel = newViewModel(
+            auth = FakeAuthRepository(initialServerUrl = ServerAddress.LOCAL_MODE_PRESET),
+            progress = FakeThumbnailProgressRepository(result = null),
+        )
+        driveIdle()
+        assertNull(viewModel.uiState.value.localGenCovered)
+        assertNull(viewModel.uiState.value.localGenTotal)
+    }
+
+    @Test
     fun `预取状态只读透出`() {
         val viewModel = newViewModel(
             prefetch = FakePrefetchMonitor(PrefetchUiState.Running(done = 10, total = 20)),
@@ -225,3 +287,9 @@ class ThumbnailCacheViewModelTest {
         assertEquals(50, viewModel.uiState.value.nasFileCount)
     }
 }
+
+/**
+ * 测试虚拟时间预算（driveIdle 有界推进窗口）：60s = 60 轮进度轮询，既有断言
+ * 全部落在首秒内；有界推进是 while(true) 轮询循环下测试可终止的前提。
+ */
+private const val TEST_VIRTUAL_BUDGET_MS = 60_000L
