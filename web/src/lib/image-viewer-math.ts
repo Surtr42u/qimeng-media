@@ -34,6 +34,11 @@ export const DRAG_SLOP_PX = 6
 /** 未放大态横滑触发换件的最小位移（视觉 px） */
 export const SWIPE_SWITCH_PX = 60
 
+/** 滚轮缩放灵敏度（2026-10-04 桌面端新交互）：每视觉 px deltaY 的指数缩放率——
+ *  factor = exp(-deltaY × 本值)。0.0015 = 滚轮一格（~100px）约 1.16x、触控板
+ *  两指平滑连续小步；与捏合/双击共用 MIN/MAX_SCALE 边界 */
+export const WHEEL_ZOOM_SENSITIVITY = 0.0015
+
 /** 画布 transform（渲染态）：scale 倍率，x/y 平移（画布局部视觉 px） */
 export interface Transform {
   scale: number

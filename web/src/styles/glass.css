@@ -663,7 +663,11 @@ button.seg,
 .rank-head { display: flex; align-items: center; justify-content: space-between; }
 .rank-head a { font-size: 12px; color: var(--qm-text-muted); text-decoration: none; border-radius: var(--qm-radius-sm); }
 .rank-head a:hover { color: var(--qm-primary-strong); }
-.rank-card ul { list-style: none; margin-top: 8px; }
+/* 榜单卡副行紧贴标题（2026-10-04 用户反馈「这行字太靠下」）：共享副行距 4px
+   叠加 14px 标题/12px 副行各自的行高留白，视觉上离标题脱节——rank-card 内
+   收到 0 边距 + 16px 紧凑行高，副行上提约 7px */
+.rank-card .rank-note { margin-top: 0; line-height: 16px; }
+.rank-card ul { list-style: none; margin-top: 14px; } /* 2026-10-04 8→14：副标题与缩略图/榜单行之间留空（用户反馈「太靠近缩略图没有留空」） */
 .rank-card li {
   display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px;
   padding: 6px 6px; font-size: 13px;
@@ -675,7 +679,7 @@ button.seg,
 .rank-card li:last-child { border-bottom: none; }
 .rank-card li:hover { background: var(--qm-hover); }
 /* 内容榜：迷你封面卡（16:9 封面 + 右下数值徽标 + 两行标题） */
-.rank-cards { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; }
+.rank-cards { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; margin-top: 14px; } /* 2026-10-04 补留空：内容榜缩略图网格是 div（非 ul），副标题与它之间原本零间距（用户反馈「太靠近缩略图没有留空」的真正落点）；列数 2026-10-04 曾试改六列，同日随数据页内容榜改版 MediaCard 大卡后回滚——迷你卡仅完整榜单页消费，历史五列口径不动 */
 .rank-item { cursor: pointer; min-width: 0; }
 .rank-cover {
   position: relative;
@@ -1012,17 +1016,17 @@ button.save-btn {
 }
 
 .card--duration {
+  /* 2026-10-04 定稿（用户拍板「不要改时间的那个」）：对齐手机口径
+     QimengMediaGrid.DurationBadgeTextStyle——白字 + 柔和阴影无胶囊底；文字色
+     用恒白 --qm-on-cover（原 --qm-on-accent 暗色翻深字=夜间看不见的当日根因） */
   position: absolute;
   right: 8px;
   bottom: 6px;
   font-size: 12px;
-  color: var(--qm-on-accent);
+  color: var(--qm-on-cover);
+  text-shadow: 0 1px 4px oklch(0 0 0 / 0.6);
   z-index: 2;
-  padding: 1px 7px;
-  border-radius: var(--qm-radius-sm);
-  background: var(--qm-scrim-chip);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
+  padding: 1px 2px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1493,7 +1497,7 @@ button.pill.detail-tag-manage { cursor: pointer; }
 }
 .upnext-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .upnext-thumb::after { content: ""; position: absolute; inset: 0; background: var(--qm-cover-shade); }
-.upnext-dur { position: absolute; right: 6px; bottom: 4px; z-index: 2; font-style: normal; font-size: 11px; color: var(--qm-on-accent); font-variant-numeric: tabular-nums; }
+.upnext-dur { position: absolute; right: 6px; bottom: 4px; z-index: 2; font-style: normal; font-size: 11px; color: var(--qm-on-cover); text-shadow: 0 1px 4px oklch(0 0 0 / 0.6); font-variant-numeric: tabular-nums; }
 .upnext-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; justify-content: center; }
 .upnext-title {
   font-size: 13px; line-height: 18px; color: var(--qm-text);
@@ -1827,7 +1831,7 @@ button.settings-switch-track:focus-visible { outline: 2px solid var(--qm-primary
   background: var(--qm-scrim-chip);
   -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
-  color: var(--qm-on-accent);
+  color: var(--qm-on-cover); /* 封面浮字恒白（--qm-on-accent 暗色翻深的同款事故预防） */
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
@@ -1847,6 +1851,12 @@ button.settings-switch-track:focus-visible { outline: 2px solid var(--qm-primary
   transition: opacity var(--qm-duration-fast) var(--qm-ease-out), background var(--qm-duration-fast) var(--qm-ease-out);
 }
 .img-viewer__btn:hover { opacity: 0.85; background: color-mix(in oklab, var(--qm-primary) 55%, oklch(0 0 0 / 0.5)); }
+/* 2026-10-04 操控 bug 修复（用户反馈「单击有时候没反应、双击还最大化」+CDP 实测落点）：
+   34×34 视觉不变，命中区经 ::before 外扩 14px 至 ~62×62——偏出按钮的点击原本落进
+   画布被当成「切沉浸 chrome」手势（X 随即隐藏=「没反应」），双击则落在已被第一击
+   关掉的查看器之下的顶栏拖动死区（壳 titlebar.js 双击=最大化）。外扩两轮：10px 仍
+   「偶尔不灵敏」（用户复验），14px 定稿 */
+.img-viewer__btn::before { content: ''; position: absolute; inset: -14px; }
 .img-viewer__close { top: 12px; right: 14px; width: 34px; height: 34px; }
 .img-viewer__nav { top: 50%; transform: translateY(-50%); width: 42px; height: 42px; }
 .img-viewer__nav--prev { left: 12px; }

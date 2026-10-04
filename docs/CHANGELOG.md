@@ -10,6 +10,18 @@
 
 > **历史条目拆分说明（2026-10-01）**：为控制 AI 上下文体量，本文件只保留 **2026-09-22 及之后**的条目（第三百八十二笔起）；拆分线之前的全部条目已逐字迁入 `docs/history/CHANGELOG-ARCHIVE.md`（零改写，笔号与本文件连续可查）。引用早于拆分线的旧笔号请去历史档查阅。
 
+## feat(web): 图像查看器滚轮缩放 + 查看器按钮命中区修复 + 时长徽标恒白 + 榜单卡间距修缮，内容榜维持旧版（2026-10-04 第四百七十笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- **背景**：会话内未提交 WIP 批次先整体迁入本地分支 `web/image-viewer-wheel-zoom-wip`（自 master 工作区迁出），后经用户指示「内容榜缩略图尺寸/数量改动用旧版覆盖，再移植回主分支」 squash 入库；WIP 分支保留全历史（含被撤销的 Top6 大卡版，其前一笔可查）。
+- **图像查看器滚轮缩放**：桌面端新增鼠标滚轮缩放（焦点=光标点，与双指捏合同公式同边界 clamp 0.5~5x；`WHEEL_ZOOM_SENSITIVITY` 常量入 image-viewer-math）；measureBase/measureViewport/localPoint useCallback 空依赖稳定化，供 wheel 监听器以稳定身份引用。
+- **查看器按钮命中区修复**：34×34 视觉不变，`::before` 外扩 14px 至约 62×62——修复「单击有时没反应（偏出按钮的点击落进画布被当切沉浸手势）/双击反而最大化（落在壳 titlebar 拖动死区）」；外扩两轮（10px 用户复验仍偶尔不灵敏）14px 定稿。
+- **时长徽标恒白（夜间不可见事故终修）**：新增 token `--qm-on-cover`（恒白不随主题翻转，App DurationBadgeTextStyle 同口径=白字+柔和阴影、无胶囊底）；`.card--duration` 与 `.upnext-dur` 从 `--qm-on-accent`（暗色主题翻深色=夜间黑底深字根因）迁移，`.card--duration` 去半透明胶囊底。
+- **榜单卡间距修缮**：`.rank-card .rank-note` 副行紧贴标题（0 边距+16px 行高）、`.rank-card ul` 顶距 8→14px、`.rank-cards` 补 14px 顶距——用户反馈「副行太靠下」「太靠近缩略图没有留空」的落点；属排版间距非缩略图尺寸/数量，随批保留（迷你卡完整榜单页同受益）。
+- **内容榜维持旧版（用户拍板覆盖）**：WIP 曾将数据页内容榜改 Top6+首页同款 MediaCard 大卡（minmax(230px) auto-fill），用户看完 master 旧版后拍板撤销——DataPage.tsx 整文件回旧版（Top 5 + ContentRankGrid 迷你封面卡：五列 repeat(5,1fr) gap16 + 16:9 封面），与旧版 git diff 零差异；标签榜/作者榜 Top5 口径本就未动。
+- **验证**：oxlint 0 错误 / vitest 27 文件 262 例全绿 / build 成功。
+
 ## style(web): 来源胶囊质感回归基础 .pill + 主操作钮全局降调（2026-10-04 第四百六十九笔）
 
 执行 AI：GLM-5.3（主代理）

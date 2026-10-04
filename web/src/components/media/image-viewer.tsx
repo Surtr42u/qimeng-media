@@ -18,7 +18,8 @@
  * 查看器期 FAB 实际不可达，40>35 仅是剩余的理论层级位，无遮挡事实。
  *
  * 手势（触摸/鼠标统一 Pointer Events，不引 touch 库）：双指捏合缩放（两指
- * 距离比，clamp 0.5~5x）/ 双击放大 1.8x·再双击还原 / 放大态单指拖拽平移
+ * 距离比，clamp 0.5~5x）/ 鼠标滚轮缩放（桌面端 2026-10-04 新增，焦点=光标点，
+ * 与捏合同公式同边界）/ 双击放大 1.8x·再双击还原 / 放大态单指拖拽平移
  * （平移按图片边缘收敛）/ 未放大态横滑换上一件·下一件（回调存在才启用）/
  * 单击切沉浸 chrome（延迟判定与双击共存）/ Esc 退出。动效只用
  * opacity+transform+--qm-* token，不碰 zoom；prefers-reduced-motion 由
@@ -29,7 +30,7 @@
  * 设计语义与后果记录在 AssetDetailPage 挂载处注释，勿当 bug 修。
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { ChevronLeft, ChevronRight, X } from 'lucide-react'
 import {
@@ -42,6 +43,7 @@ import {
   MIN_SCALE,
   SINGLE_TAP_DELAY_MS,
   SWIPE_SWITCH_PX,
+  WHEEL_ZOOM_SENSITIVITY,
   clampOffset,
   focusPreservingTransform,
   type Gesture,
@@ -106,23 +108,48 @@ function ViewerCanvas({
     [],
   )
 
-  /** 当前 transform 下图片的 scale=1 基准视觉尺寸（rect ÷ 倍率，同参照系相除） */
-  const measureBase = (): { w: number; h: number } => {
+  /** 当前 transform 下图片的 scale=1 基准视觉尺寸（rect ÷ 倍率，同参照系相除）。
+   *  useCallback 空依赖稳定化：只读 ref，供下方滚轮监听器以稳定身份引用
+   *  （否则每次渲染换函数身份，exhaustive-deps 会迫使监听器重挂）。 */
+  const measureBase = useCallback((): { w: number; h: number } => {
     const rect = imgRef.current?.getBoundingClientRect()
     const scale = transformRef.current.scale || 1
     return { w: (rect?.width ?? 0) / scale, h: (rect?.height ?? 0) / scale }
-  }
+  }, [])
 
-  const measureViewport = (): { w: number; h: number } => {
+  const measureViewport = useCallback((): { w: number; h: number } => {
     const rect = canvasRef.current?.getBoundingClientRect()
     return { w: rect?.width ?? 0, h: rect?.height ?? 0 }
-  }
+  }, [])
 
   /** 画布局部坐标（clientX/Y − 画布 rect 左上，纯视觉坐标相减） */
-  const localPoint = (clientX: number, clientY: number): Point => {
+  const localPoint = useCallback((clientX: number, clientY: number): Point => {
     const rect = canvasRef.current?.getBoundingClientRect()
     return { x: clientX - (rect?.left ?? 0), y: clientY - (rect?.top ?? 0) }
-  }
+  }, [])
+
+  /** 鼠标滚轮缩放（2026-10-04 用户拍板新增，桌面端交互）：native 非被动监听——
+   *  React 合成 wheel 在根容器上是 passive，preventDefault 无效。逐事件按
+   *  deltaY 指数因子缩放（滚轮格点与触控板两指平滑同式），焦点=光标点，
+   *  公式与捏合/双击共用 focusPreservingTransform，clamp 0.5~5 同边界；
+   *  直接写 transform 不设过渡（触控板连续小步跟手，与捏合同口径）。 */
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const onWheel = (e: WheelEvent): void => {
+      e.preventDefault()
+      const factor = Math.exp(-e.deltaY * WHEEL_ZOOM_SENSITIVITY)
+      const start = transformRef.current
+      const scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, start.scale * factor))
+      if (scale === start.scale) return
+      setTransform(focusPreservingTransform(
+        start, scale, localPoint(e.clientX, e.clientY), { x: 0, y: 0 },
+        measureViewport(), measureBase(),
+      ))
+    }
+    canvas.addEventListener('wheel', onWheel, { passive: false })
+    return () => canvas.removeEventListener('wheel', onWheel)
+  }, [localPoint, measureViewport, measureBase])
 
   /** 双击缩放切换：>1x 还原，否则放大到 1.8x（绕点击点，保焦点公式=共享
    *  focusPreservingTransform，双击无中点漂移传 0） */
