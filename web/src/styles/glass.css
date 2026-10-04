@@ -958,15 +958,19 @@ button.follow-btn--idle:hover { filter: brightness(1.08); color: var(--qm-on-acc
 .settings-muted { display: flex; justify-content: space-between; margin-top: 12px; font-size: 13px; color: var(--qm-text-muted); }
 .settings-actions { display: flex; align-items: center; gap: 12px; }
 button.save-btn {
+  /* 2026-10-04 降调定稿（用户反馈「鲜艳突出，这种都降低」）：原实心主色 +
+     主色辉光改为「主色淡染玻璃 + 描边 + 主色文字」——安静但仍是唯一主操作钮 */
   padding: 8px 22px;
   border-radius: var(--qm-radius-full);
-  background: var(--qm-primary); color: var(--qm-on-accent);
+  border: 1px solid color-mix(in oklab, var(--qm-primary) 40%, transparent);
+  background: color-mix(in oklab, var(--qm-primary) 16%, transparent);
+  color: var(--qm-primary-strong);
   font-size: 14px; font-weight: 500;
-  box-shadow: 0 0 14px color-mix(in oklab, var(--qm-primary) 30%, transparent);
-  transition: filter var(--qm-duration-fast) var(--qm-ease-out), box-shadow var(--qm-duration-fast) var(--qm-ease-out), transform var(--qm-duration-fast) var(--qm-ease-spring);
+  transition: background var(--qm-duration-fast) var(--qm-ease-out), border-color var(--qm-duration-fast) var(--qm-ease-out), transform var(--qm-duration-fast) var(--qm-ease-spring);
 }
-.save-btn:hover { filter: brightness(1.08); box-shadow: 0 0 18px color-mix(in oklab, var(--qm-primary) 42%, transparent); }
+.save-btn:hover { background: color-mix(in oklab, var(--qm-primary) 26%, transparent); border-color: color-mix(in oklab, var(--qm-primary) 58%, transparent); }
 .save-btn:active { transform: scale(0.97); }
+.save-btn:disabled { opacity: .45; cursor: default; transform: none; }
 .save-tip { font-size: 12px; color: var(--qm-ok); }
 
 /* ============ §7 媒体卡（首页卡片流 / 相册 / 收藏 / 搜索结果共用） ============ */
@@ -1632,10 +1636,15 @@ button.pill.detail-tag-manage { cursor: pointer; }
 button.confirm-btn--cancel { background: var(--qm-hover-strong); color: var(--qm-text-soft); }
 button.confirm-btn--cancel:hover { color: var(--qm-text); }
 button.confirm-btn--primary {
-  background: var(--qm-primary); color: var(--qm-on-accent);
-  box-shadow: 0 0 12px color-mix(in oklab, var(--qm-primary) 30%, transparent);
+  /* 2026-10-04 降调定稿：与 save-btn 同口径（主色淡染玻璃 + 描边 + 主色文字） */
+  border: 1px solid color-mix(in oklab, var(--qm-primary) 40%, transparent);
+  background: color-mix(in oklab, var(--qm-primary) 16%, transparent);
+  color: var(--qm-primary-strong);
 }
-button.confirm-btn--primary:hover { filter: brightness(1.08); }
+button.confirm-btn--primary:hover {
+  background: color-mix(in oklab, var(--qm-primary) 26%, transparent);
+  border-color: color-mix(in oklab, var(--qm-primary) 58%, transparent);
+}
 /* danger（物理删除/清空类，冻结语义）：文本主色作底、页面底色作字（v1 口径沿用） */
 button.confirm-btn--danger { background: var(--qm-text); color: var(--qm-bg); }
 button.confirm-btn--danger:hover { filter: brightness(1.08); }
@@ -2110,109 +2119,11 @@ li.dir-file-row.ms-row-selected { background: var(--qm-hover); }
 }
 .detail-dialog--vocab-prompt { width: min(400px, calc(100vw - 48px)); }
 
-/* ---- 来源词表液态小胶囊（2026-10-04 用户拍板「胶囊色太差…液态小胶囊试试」）----
-   .source-chips 内的 pill 专用玻璃化：中性玻璃体（叠层渐变高光纱 + 半透明白体 +
-   背景 blur 饱和）+ 顶缘内高光 + 底部镜面池 + 染色选中态；hover 抬升 1px、
-   按压回弹。全局 .pill 基础类不动——筛选/榜单等消费处的口径冻结。白色高光
-   字面量与 §2 材质基元同款（玻璃系在此文件内联是惯例，token 化的例外区）。 */
-/* ---- 来源词表小胶囊：日间/夜间双轨（2026-10-04 定稿，对齐手机批三口径）----
-   翻译自 android core/ui/glass/GlassColors.kt（第四百六十四笔定稿）——日间 =
-   「体+染色」两笔（白瓷体 0.76，白底上光效不可见=未选中实为平面，下缘冷灰紫
-   描边保持轮廓可辨）；夜间 = DarkGlass 四笔光（体 #262C44@0.66 → oklch 约
-   0.29 0.045 275、高光纱 0.20、受光边上 0.42/下 0.08、镜面池 0.26，小胶囊靠
-   这几笔光立玻璃感）；两主题选中染色统一 0.20 染在体上（透明体上染色=阴影块，
-   批二教训）。色值与 GlassColors.kt 双源互指，改动须两侧同步；夜间 backdrop
-   blur 为 web 独有增益（App 无 backdrop API，磨砂感由极光底衬承担）。 */
-.source-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 2px 0;
-}
-.source-chips .pill,
-.source-chips button.pill {
-  position: relative;
-  padding: 6px 14px;
-  font-size: 12.5px;
-  border-radius: var(--qm-radius-full);
-  border: 1px solid var(--qm-border-strong);
-  transition:
-    color var(--qm-duration-fast) var(--qm-ease-out),
-    border-color var(--qm-duration-fast) var(--qm-ease-out),
-    background var(--qm-duration-fast) var(--qm-ease-out),
-    box-shadow var(--qm-duration-fast) var(--qm-ease-out),
-    transform var(--qm-duration-fast) var(--qm-ease-out);
-}
-/* —— 日间（缺省）：白瓷体平面，选中=体上 0.20 染色（App LightGlass） —— */
-.source-chips .pill {
-  color: var(--qm-text-soft);
-  background: oklch(1 0 0 / 0.76);
-  box-shadow: 0 1px 2px oklch(0.3 0.03 285 / 0.07);
-}
-.source-chips .pill:hover {
-  color: var(--qm-text);
-  background: oklch(1 0 0 / 0.9);
-}
-.source-chips .pill.active {
-  color: var(--qm-primary-strong);
-  border-color: color-mix(in oklab, var(--qm-primary) 30%, transparent);
-  background:
-    linear-gradient(color-mix(in oklab, var(--qm-primary) 20%, transparent)),
-    oklch(1 0 0 / 0.76);
-}
-.source-chips .pill.active:hover {
-  background:
-    linear-gradient(color-mix(in oklab, var(--qm-primary) 20%, transparent)),
-    oklch(1 0 0 / 0.9);
-}
-/* —— 夜间（html.dark）：DarkGlass 四笔光 + 选中染色 0.20（App 批三） ——
-   镜面池/受光线取值较 Compose 侧略强一档（0.26→0.34、0.42→0.5）：同一常量
-   在 CSS 无 blur 采样叠加下观感偏软，视觉对齐以 Compose 实机为准） */
-.dark .source-chips .pill {
-  color: var(--qm-text);
-  border-color: oklch(1 0 0 / 0.08); /* 受光边·下端 */
-  background:
-    linear-gradient(to bottom, oklch(1 0 0 / 0.2), transparent 55%),            /* 高光纱 */
-    radial-gradient(130% 70% at 30% 0%, oklch(1 0 0 / 0.34), transparent 58%),  /* 镜面池 */
-    oklch(0.29 0.045 275 / 0.66);                                              /* 靛夜体 */
-  -webkit-backdrop-filter: blur(10px) saturate(1.5);
-  backdrop-filter: blur(10px) saturate(1.5);
-  box-shadow:
-    inset 0 1px 0 oklch(1 0 0 / 0.5), /* 受光边·上端亮线 */
-    0 1px 4px oklch(0.04 0.01 280 / 0.4);
-}
-.dark .source-chips .pill:hover {
-  border-color: oklch(1 0 0 / 0.14);
-  background:
-    linear-gradient(to bottom, oklch(1 0 0 / 0.26), transparent 55%),
-    radial-gradient(130% 70% at 30% 0%, oklch(1 0 0 / 0.4), transparent 58%),
-    oklch(0.29 0.045 275 / 0.72);
-  transform: translateY(-1px);
-}
-.dark .source-chips .pill.active {
-  color: var(--qm-primary-strong);
-  background:
-    linear-gradient(to bottom, oklch(1 0 0 / 0.2), transparent 55%),
-    radial-gradient(130% 70% at 30% 0%, oklch(1 0 0 / 0.34), transparent 58%),
-    linear-gradient(color-mix(in oklab, var(--qm-primary) 20%, transparent)), /* 染色染在体上 */
-    oklch(0.29 0.045 275 / 0.66);
-  box-shadow:
-    inset 0 1px 0 oklch(1 0 0 / 0.5),
-    0 1px 4px oklch(0.04 0.01 280 / 0.4);
-}
-.dark .source-chips .pill.active:hover {
-  border-color: color-mix(in oklab, var(--qm-primary) 34%, transparent);
-  transform: translateY(-1px);
-}
-/* —— 通用：按压回弹与禁用（两主题同构） —— */
-.source-chips .pill:active { transform: scale(0.96); }
-.source-chips .pill:disabled,
-.source-chips button.pill:disabled {
-  opacity: 0.45;
-  cursor: default;
-  transform: none;
-}
-/* 排版：上传挂靠字段 chips 上距与空态提示行（词表卡同享） */
+/* ---- 来源词胶囊：质感回归全局 .pill（2026-10-04 用户拍板「改成返回钮这种质感」
+   ——第四百六十七/六十八笔的玻璃化与日/夜双轨皮肤整体撤回，选中/未选中即
+   基础 .pill / .pill.active（「← 返回数据管理」按钮同款基准），本块只留布局
+   间距与上传挂靠字段的呼吸留白） ---- */
+.source-chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 2px 0; }
 .upload-attach-field .source-chips { margin-top: 6px; }
 .source-empty-hint { padding: 4px 0; }
 
