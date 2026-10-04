@@ -93,11 +93,6 @@ interface DataModule {
     @Singleton
     fun bindStagingRepository(impl: media.qimeng.app.core.data.repository.DataStoreStagingRepository): media.qimeng.app.core.data.repository.StagingRepository
 
-    // 内置相册式选择器（2026-09-25 拍板）：本地 MediaStore 图片/视频查询数据面
-    @Binds
-    @Singleton
-    fun bindLocalMediaRepository(impl: media.qimeng.app.core.data.repository.MediaStoreLocalMediaRepository): media.qimeng.app.core.data.repository.LocalMediaRepository
-
     // U10-6：媒体库管理（库列表/注册/删除/重扫/启停），我的页「数据管理」合并入口的数据面
     @Binds
     @Singleton

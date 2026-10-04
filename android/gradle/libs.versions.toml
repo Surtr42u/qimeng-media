@@ -200,6 +200,10 @@ junit = { group = "junit", name = "junit", version.ref = "junit" }
 # 运行期版本由主工程根 build.gradle.kts 的 apply false 收口，convention 不携带运行时版本。
 android-gradlePlugin = { group = "com.android.tools.build", name = "gradle", version.ref = "agp" }
 kotlin-gradlePlugin = { group = "org.jetbrains.kotlin", name = "kotlin-gradle-plugin", version.ref = "kotlin" }
+# Kotlin Compose 编译器 Gradle 插件 artifact（2026-10-04 稳定性配置批）：build-logic 里
+# ComposeCompilerGradlePluginExtension（stabilityConfigurationFile 挂载点）在此 artifact，
+# 与 org.jetbrains.kotlin.plugin.compose 插件同版本发布（Now in Android 同款坐标）。
+compose-gradlePlugin = { module = "org.jetbrains.kotlin:compose-compiler-gradle-plugin", version.ref = "kotlin" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

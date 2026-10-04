@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -15,8 +14,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import media.qimeng.app.core.model.AlbumDim
 import media.qimeng.app.core.model.FacetOption
@@ -66,15 +64,10 @@ fun FavoriteScreen(
 
     // 详情页返回按收藏变更指纹门控刷新（任务V V1，2026-09-10）：返回/回前台（ON_RESUME）
     // 由 VM 对比 FavoriteMutationTracker 指纹，仅详情收藏变更过才重拉——纯浏览返回不刷新
-    // （用户拍板「返回时…应该是原来的不变」，无条件重拉曾致返回 morph 期间列表整体重显）
-    val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) viewModel.onResumed()
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
+    // （用户拍板「返回时…应该是原来的不变」，无条件重拉曾致返回 morph 期间列表整体重显）。
+    // LifecycleEventEffect（lifecycle-runtime-compose 官方件）：单事件观察的等价简化，
+    // observer 注册/注销由内部自管，替代手写 DisposableEffect+LifecycleEventObserver 样板
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.onResumed() }
 
     val pillModel = FourDimPillModel(
         filter = state.filter,
@@ -153,7 +146,11 @@ fun FavoriteScreen(
                     return@QimengPullToRefresh
                 }
                 QimengMediaGrid(
-                    sections = state.items.groupByDateLabel(nowMs) { it.modifiedAtMs },
+                    // 分组 O(n) 计算包 remember（镜像 AllScreen 修复D-1）：按参与变量
+                    // （items/nowMs）缓存，重组零重算、数据变化才重算——分组键=收藏时间
+                    sections = remember(state.items, nowMs) {
+                        state.items.groupByDateLabel(nowMs) { it.modifiedAtMs }
+                    },
                     columns = displayColumns,
                     animatedUrlResolver = animatedUrlResolver,
                     // 底部预留沿用旧版 fragment_all_files.xml L149 的 180dp 档：悬浮面板退役后

@@ -142,9 +142,6 @@ object QimengDimens {
     /** 48dp：空态纵向内边距（QimengScaffold QimengEmptyState 的 Box padding，按符号定位防行号漂移） */
     val EmptyStateVerticalPadding: Dp = 48.dp
 
-    /** 96dp：加载占位顶部内边距（QimengScaffold QimengLoadingState L105，避开顶部标题区） */
-    val LoadingTopPadding: Dp = 96.dp
-
     /** 20dp：按钮内 LoadingIndicator 直径（V8 #5：16dp 时 expressive 叶片强缩成「小齿轮」观感，
      * 与并排按钮文字失衡——对齐 M3 Button 默认文字样式 labelLarge 的 20sp 行高，加载中保持
      * 「文字不消失、指示器与文字行高协调」。页级/整页加载仍用组件默认 48dp，不共用本档；

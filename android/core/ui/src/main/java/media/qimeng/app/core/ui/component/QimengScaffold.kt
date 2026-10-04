@@ -1,10 +1,7 @@
 package media.qimeng.app.core.ui.component
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -98,24 +95,5 @@ fun QimengPullToRefresh(
         modifier = modifier,
     ) {
         content()
-    }
-}
-
-/** 统一加载中占位（首次进入/换筛选） */
-@Composable
-fun QimengLoadingState(
-    text: String = "加载中…",
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier = modifier.fillMaxSize().padding(top = QimengDimens.LoadingTopPadding),
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.fillMaxWidth(),
-        )
     }
 }

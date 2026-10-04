@@ -44,3 +44,10 @@ const val LIST_UP_TO_DATE_MESSAGE = "已是最新，内容没有变化"
  * 互相依赖，共享常量唯一合法层，见本文件头注）。
  */
 val APPEND_RETRY_DELAYS_MS = listOf(1_000L, 3_000L)
+
+/**
+ * 作者联想输入防抖（毫秒）：上传页批次作者联想与详情页资产作者编辑联想两处共用
+ * （2026-10-04 单源化——此前两模块各自复制 200L 双定义）。取值与 Web 端
+ * SUGGEST_DEBOUNCE_MS=200 两端一致口径，改动须两端同步。
+ */
+const val AUTHOR_SUGGEST_DEBOUNCE_MS = 200L

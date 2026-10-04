@@ -146,7 +146,11 @@ fun AuthorCollectionScreen(
                     return@QimengPullToRefresh
                 }
                 QimengMediaGrid(
-                    sections = state.items.groupByDateLabel(nowMs) { it.modifiedAtMs },
+                    // 分组 O(n) 计算包 remember（镜像 AllScreen 修复D-1）：按参与变量
+                    // （items/nowMs）缓存，重组零重算、数据变化才重算——分组键=文件时间
+                    sections = remember(state.items, nowMs) {
+                        state.items.groupByDateLabel(nowMs) { it.modifiedAtMs }
+                    },
                     columns = displayColumns,
                     animatedUrlResolver = animatedUrlResolver,
                     // 底部预留沿用旧版 fragment_all_files.xml L149 的 180dp 档：悬浮面板退役后

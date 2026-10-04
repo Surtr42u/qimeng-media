@@ -20,7 +20,6 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -46,8 +45,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import media.qimeng.app.core.network.DefaultEndpoint
 import media.qimeng.app.core.network.ServerAddress
@@ -422,16 +420,11 @@ private fun ChargeOnlyScanCard(
 @Composable
 private fun StoragePermissionCard(modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    // 授权页往返后系统开关变化不触发本应用重组：ON_RESUME 重读一次刷新卡片
+    // 授权页往返后系统开关变化不触发本应用重组：ON_RESUME 重读一次刷新卡片。
+    // LifecycleEventEffect（lifecycle-runtime-compose 官方件）：单事件观察的等价简化，
+    // observer 注册/注销由内部自管，替代手写 DisposableEffect+LifecycleEventObserver 样板
     var granted by remember { mutableStateOf(hasAllFilesAccess(context)) }
-    val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) granted = hasAllFilesAccess(context)
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { granted = hasAllFilesAccess(context) }
     CardContainer(modifier = modifier) {
         Text(text = SECTION_STORAGE_PERM, style = MaterialTheme.typography.titleSmall)
         Text(

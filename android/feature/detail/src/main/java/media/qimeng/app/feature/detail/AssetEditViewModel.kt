@@ -15,6 +15,7 @@ import kotlinx.coroutines.launch
 import media.qimeng.app.core.data.repository.AuthorRepository
 import media.qimeng.app.core.data.repository.DetailRepository
 import media.qimeng.app.core.data.repository.UploadRepository
+import media.qimeng.app.core.model.AUTHOR_SUGGEST_DEBOUNCE_MS
 import media.qimeng.app.core.model.AuthorSuggestion
 import media.qimeng.app.core.model.DetailAuthor
 import media.qimeng.app.core.model.individualSourceWords
@@ -287,8 +288,8 @@ class AssetEditViewModel @Inject constructor(
     fun dismissNotice() = _uiState.update { it.copy(noticeMessage = null) }
 
     private companion object {
-        /** 作者联想防抖（ms）：与 Web 端 SUGGEST_DEBOUNCE_MS=200 两端一致口径（原上传页同值迁此） */
-        const val AUTHOR_SUGGEST_DEBOUNCE_MS = 200L
+        // 作者联想防抖常量已单源化 core:model ListQueryDefaults（AUTHOR_SUGGEST_DEBOUNCE_MS，
+        // 与上传页/Web 端同值口径），经 import 引用
 
         const val LOAD_FAILED = "加载资产信息失败，请重试"
         const val SAVE_FAILED = "保存失败：请重试"

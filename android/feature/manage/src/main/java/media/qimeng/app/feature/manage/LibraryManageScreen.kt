@@ -23,7 +23,6 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -31,8 +30,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import media.qimeng.app.core.model.LibraryScanState
 import media.qimeng.app.core.model.LibrarySummary
@@ -79,8 +77,8 @@ private val KindBadgePaddingVertical = 2.dp
  * + 注册新库表单卡。信息架构基准 = Web 文件管理页（LibraryManagePage.tsx），视觉/交互
  * 基准 = App 上传子页。业务全在 ViewModel（铁律 7）。
  *
- * scanState 刷新策略（最小实现）：SSE 未接，页面 ON_START 重查（DisposableEffect 观察
- * 生命周期事件）+ 每个写操作成功后 refresh()；实时进度走 SSE 列入后续（U10-6 记档）。
+ * scanState 刷新策略（最小实现）：SSE 未接，页面 ON_START 重查（LifecycleEventEffect
+ * 观察生命周期事件）+ 每个写操作成功后 refresh()；实时进度走 SSE 列入后续（U10-6 记档）。
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -91,15 +89,10 @@ fun LibraryManageScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
-    // ON_START 重查（扫描中离开再回页时 scanState 拉平；机制见本函数 KDoc 刷新策略）
-    val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_START) viewModel.refresh()
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
+    // ON_START 重查（扫描中离开再回页时 scanState 拉平；机制见本函数 KDoc 刷新策略）。
+    // LifecycleEventEffect（lifecycle-runtime-compose 官方件）：单事件观察的等价简化，
+    // observer 注册/注销由内部自管，替代手写 DisposableEffect+LifecycleEventObserver 样板
+    LifecycleEventEffect(Lifecycle.Event.ON_START) { viewModel.refresh() }
 
     Column(modifier = modifier.fillMaxSize()) {
         QimengTopBar(title = SCREEN_TITLE, onBack = onBack)

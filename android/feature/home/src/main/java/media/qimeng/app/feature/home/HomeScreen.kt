@@ -17,7 +17,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -30,8 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
@@ -146,14 +144,9 @@ fun HomeScreen(
     // 点赞后返回自动重排（GUIDE_UI §下拉刷新 L89，likeVersion 指纹维度）：返回/回前台
     // （ON_RESUME，覆盖详情页 pop 返回与 App 回前台两路径）对比点赞变更指纹，变化则由 VM
     // 重拉当前 tab。上报点在详情页点赞成功处（I7 批接线，见 LikeMutationTracker KDoc）。
-    val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) viewModel.onHomeResumed()
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
+    // LifecycleEventEffect（lifecycle-runtime-compose 官方件）：单事件观察的等价简化，
+    // observer 注册/注销由内部自管，替代手写 DisposableEffect+LifecycleEventObserver 样板
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.onHomeResumed() }
 
     // 双击「首页」Tab 回顶：三个 tab 各自的滚动状态（pager 页销毁不丢数据，状态在 VM）
     val recommendListState = rememberLazyGridState()
@@ -508,9 +501,14 @@ private fun RecommendPage(
             return@QimengPullToRefresh
         }
         QimengMediaGrid(
-            sections = listOf(
-                GridSection(label = "", items = state.pulled.take(state.revealed)),
-            ),
+            // sections 包 remember（镜像 AllScreen 修复D-1）：QimengMediaGrid 内部按
+            // sections 实例缓存，裸 listOf 每次重组新建 List 使其恒失效——按数据源
+            // （pulled/revealed 批次揭示量）缓存，重组复用同一实例
+            sections = remember(state.pulled, state.revealed) {
+                listOf(
+                    GridSection(label = "", items = state.pulled.take(state.revealed)),
+                )
+            },
             columns = columns,
             animatedUrlResolver = animatedUrlResolver,
             listState = listState,
@@ -547,7 +545,11 @@ private fun CosPage(
             return@QimengPullToRefresh
         }
         QimengMediaGrid(
-            sections = listOf(GridSection(label = "", items = state.items)),
+            // sections 包 remember（口径同 RecommendPage）：按数据源（items）缓存，
+            // 重组复用同一 List 实例，QimengMediaGrid 内部 remember(sections) 不失效
+            sections = remember(state.items) {
+                listOf(GridSection(label = "", items = state.items))
+            },
             columns = columns,
             animatedUrlResolver = animatedUrlResolver,
             listState = listState,
@@ -585,7 +587,11 @@ private fun RankPage(
             return@QimengPullToRefresh
         }
         QimengMediaGrid(
-            sections = listOf(GridSection(label = "", items = state.items)),
+            // sections 包 remember（口径同 RecommendPage）：按数据源（items）缓存，
+            // 重组复用同一 List 实例，QimengMediaGrid 内部 remember(sections) 不失效
+            sections = remember(state.items) {
+                listOf(GridSection(label = "", items = state.items))
+            },
             columns = columns,
             animatedUrlResolver = animatedUrlResolver,
             listState = listState,

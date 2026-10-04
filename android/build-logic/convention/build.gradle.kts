@@ -22,6 +22,9 @@ kotlin {
 dependencies {
     compileOnly(libs.android.gradlePlugin)
     compileOnly(libs.kotlin.gradlePlugin)
+    // Compose 编译器 Gradle 插件 DSL（ComposeCompilerGradlePluginExtension 挂
+    // stabilityConfigurationFile 用，2026-10-04 稳定性配置批；artifact 见 toml 同名条目）
+    compileOnly(libs.compose.gradlePlugin)
 }
 
 gradlePlugin {

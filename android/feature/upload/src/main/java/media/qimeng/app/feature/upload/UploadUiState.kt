@@ -12,14 +12,12 @@ import media.qimeng.app.core.model.UploadStatus
 /** 目标库必选提示（2026-09-29 直传化：submitUris 门禁，横幅提示） */
 internal const val LIBRARY_REQUIRED_MESSAGE = "先选择目标库"
 
-// ---------- 上传页反馈文案与防抖常量（自 UploadViewModel companion 迁出，控制 600 行红线；
-// internal 供同模块 VM/测试可见） ----------
+// ---------- 上传页反馈文案常量（自 UploadViewModel companion 迁出，控制 600 行红线；
+// internal 供同模块 VM/测试可见。作者联想防抖常量已单源化 core:model
+// ListQueryDefaults（AUTHOR_SUGGEST_DEBOUNCE_MS），不再在此定义） ----------
 
 /** 配置不可达时的文案兜底值（正常不出现；仅展示层） */
 internal const val UNKNOWN_LIMIT_MB = 2048L
-
-/** 作者联想防抖（ms）：与编辑页/Web 端同值口径 */
-internal const val AUTHOR_SUGGEST_DEBOUNCE_MS = 200L
 
 internal const val LOAD_FAILED_MESSAGE = "加载库列表失败：请检查登录与服务端连接"
 internal const val DIR_LOAD_FAILED_MESSAGE = "目录树加载失败，请重试"
