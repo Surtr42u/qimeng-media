@@ -1,6 +1,6 @@
 # HANDOVER - 交接说明
 
-> 写给下一位接手的 AI。人类用户无编程基础，代码由 AI 生成。**最后更新：2026-10-04**：App 词表维护与词表合并同步落地（ADR-0035 定稿：数据管理 hub 新增「词表维护」子页=本机词表直接编辑；备份页新增「词表合并同步」卡=两端并集增量合并取代 0034 覆盖式下发〔用户拍板「词表只增不删，合并是增量不出怪问题」〕；本机通道抽 LocalVocabularyChannel 共享；服务端/openapi/SDK 零改动）；前笔 2026-10-02 Web 全新设计语言「绮梦流光 · Aurora Glass」（ADR-0031）。历史批次见 `docs/CHANGELOG.md`。
+> 写给下一位接手的 AI。人类用户无编程基础，代码由 AI 生成。**最后更新：2026-10-04**：全仓重构优化批（第四百六十五笔：四端性能/卫生/手造轮子排查——SQLite synchronous(NORMAL)+扫描/导入事务化+库列表 N+1 合并+facets 并行+matcher 别名查表；Web 上传进度防抖+列表卡 memo+批量胶水收敛；Android 分组 remember 补齐+Compose 稳定性配置+僵尸清除；文档对齐含 GUIDE_API 两端点补记与 ADR-0019 编排层现状补记——零功能零 UI 变化，四端全量构建验证+四路对抗审查）；同日更早 App 词表维护与词表合并同步落地（ADR-0035 定稿：数据管理 hub 新增「词表维护」子页=本机词表直接编辑；备份页新增「词表合并同步」卡=两端并集增量合并取代 0034 覆盖式下发〔用户拍板「词表只增不删，合并是增量不出怪问题」〕；本机通道抽 LocalVocabularyChannel 共享；服务端/openapi/SDK 零改动）；前笔 2026-10-02 Web 全新设计语言「绮梦流光 · Aurora Glass」（ADR-0031）。历史批次见 `docs/CHANGELOG.md`。
 
 ## 1. 项目一句话
 
@@ -38,6 +38,7 @@
 - 上传传输层 XHR 直连不走生成 SDK：生成 client 无 abort 支持，全局 403 拦截器会误伤 UPLOAD_DISABLED 业务响应（记档见该文件头）。
 - 跨端收藏/点赞秒级感知（ADR-0029）：SseBridge 消费 favorite.changed/like.changed——favorite 失效 ASSETS 根键、like 失效 ASSETS+RANKINGS+RECOMMENDATIONS 三根；SSE 重连成功按 library.changed 同一失效映射失效根查询，补偿断线窗口。
 - 图片查看器、ArtPlayer、批次导航、confirm 弹窗、回收站、备份导入导出、库文件快照、库管理/作者 TXT 导入；维护页客户端日志卡默认折叠+指标网格+「本机同步」卡（ADR-0030）。
+- 性能与卫生（2026-10-04 第四百六十五笔）：上传进度 patchProgress 守卫（percent 不变跳过写，onprogress 风暴不再重渲染整个工作台）；MinePage 历史卡 memo 对齐 MediaCard 口径；批量执行胶水四处收敛 lib/batch-run.ts；LoadingHint 变体化收敛 9 处「加载中…」；package.json 六个构建期包归 devDependencies（lock 同步）。LoginGate 的 eslint-disable 注释**是必需的**（oxlint 已启用 exhaustive-deps，勿当死注释删）。
 
 **Android**：
 - 浏览/播放/上传/离线队列/缓存/备份/数据管理/本机模式全功能；后台冻结自愈（回前台探测 /healthz 无响应自动重拉 + 残留子进程 pid 回收）。
@@ -48,9 +49,11 @@
 - 词表合并同步（ADR-0035 定稿，取代 ADR-0034 覆盖式下发）：备份页「词表合并同步」卡一键触发（用户拍板入口迁入备份页与「同步浏览数据」并排）——远端 GET + 本机 GET → VocabularyMerger 并集合并（core:data 纯函数：折叠键=trim+忽略大小写、同键组并入〔规范名取先出现方、变体/角色/别名并集折叠去重〕、停用词并集、空表回 null）→ 合并结果显式 PUT 回两端收敛同一并集；词表只增不删故合并无损，无方向选择、无两段式确认防线；任一端 PUT 失败两端短暂不一致，合并幂等重跑即收敛。
 - 词表维护（ADR-0035）：数据管理 hub「词表维护」子页，本机内嵌库词表直接编辑——组（改名/移除、变体增删、角色增删/改名、别名增删）+ 停用词增删，内存编辑 + 整体保存（PUT 恒显式 groups+stopWords）+ 保存后静默回读抹平服务端规范化差异；无门禁（不涉远端）；输入按协议容量投影封顶（VocabularyLimits，与 openapi.yaml 双同步）；输入面统一 QimengCapsuleTextField（用户反馈「添加框太复古」定稿）；有未保存修改时返回走放弃确认。
 - 本机词表通道共享件（ADR-0035）：LocalVocabularyChannel（core:data/embedded）单源收口「拉起内嵌服务端→端口就绪→dev-login→接线→用完停回」，词表同步/维护两仓库共用；@LocalDirectClient 无拦截器 OkHttp + dev-login（密钥内存槽）与全局 NAS 会话隔离（401 登出陷阱结构性排除）不变。
+- 性能与卫生（2026-10-04 第四百六十五笔）：五列表页分组 O(n) 计算 remember 全补齐（收藏/历史/作者合集/搜索对齐相册页修复D-1 口径）；HomeScreen 三页 sections remember；**Compose 稳定性配置**（android/compose_compiler_config.conf 33 类逐类核验 + build-logic stabilityConfigurationFiles——注意必须用复数属性，单数在 Kotlin 2.4.20 已废弃且按错误拦截；新增类入 conf 前必须核验全 val 深不可变，宁可少列不可错列）；2026-09-29 相册选择器退役漏删的 LocalMediaRepository 族与 QimengLoadingState 已清除；LifecycleEventEffect 替换 ×4（双事件+onDispose 必达的 DetailScreen/VideoPlayerState 两处**保留** DisposableEffect，语义优先）；AUTHOR_SUGGEST_DEBOUNCE_MS 单源 core:model。分页状态机六 VM 平行/pinch 列数/dispatchPill 重复=记档维持（复议过，收益为负）。
 
 **服务端**：
 - 扫描（含库根自动重挂 ADR-0025：库根改名/移动后按资产 rel_path+字节指纹唯一命中自动改挂并广播 library.changed）、缩略图、推荐/统计、回收站、热备快照、迁移导入导出、SSE。
+- 性能基建（2026-10-04 第四百六十五笔）：DSN `synchronous(NORMAL)`（WAL 官方推荐组合，写吞吐主升点；断电丢最近若干已提交事务不损库，取舍注释在 store.go）；扫描富化与备份导入段级事务化（单资产/单段原子，scanner_test 已接线覆盖事务分支）；GET /libraries 与指标刷新 N+1 已合并单查询（CountAllLibrariesMedia）；facets 六聚合 errgroup 并行；sourcematcher 别名精确匹配 O(1) 查表；UNIQUE/FK 判定走 sqlite 错误码（文本匹配已退役，主键 1555 边界注释记档）；缩略图 detachedGroup 手写单飞**保留**（其测试直接观测内部回收时序=CI -race flake 的观测手段，换 singleflight 需重写该观测，论证见 CHANGELOG 本笔）。
 - 库内容修订号（ADR-0026）：GET /library/revision 全局单计数器持久化，资产集合变更单调 +1；物删/清空/清扫/导入四条不发事件路径显式 bump。
 - 签名直链 exp 窗口对齐（ADR-0027）：exp=下一窗口上界+TTL，同窗 URL 逐字节恒定（HTTP 缓存/ETag 可命中）；/media/orig 补缓存头；有效期恒 (6h,12h]；吊销=窗口级+media-secret 轮换总闸；URL 格式未变三端零适配。
 - 断点续传上传（ADR-0028）：POST /uploads 五操作（创建/探测/追加分片/complete/放弃）tus 极简子集；会话服务端持有（uploadsess 包，无活动 24h 过期、重启即失效）；409 回权威 offset；单片 32MB；complete 复跑直传四道终检与同一 ingest 管线；同名自动重命名永不 409；直传保留，双端按 size 阈值分流。
@@ -81,7 +84,7 @@
 7. **本机同步 fsnotify 秒级响应 / sysmon 指标化 / importTxt 编排 ADR-0019 下沉随迁（runner 随迁 + `.synced` 跨包双常量收敛）**——触发：30s 轮询延迟或指标需求实际出现。
 
 **记档级（不立项，防重复怀疑）**：uploadsess 无独立单测（httpapi 集成已覆盖）；ListThumbnailWarmup 每轮 O(N) 全表空扫（十万级前无感）；HEIC 内嵌 EXIF 按方向 1 处理；Web 事件账本（IndexedDB）无行数上限；待扫标记可能指向已删库永不移除；
-activePool 冷启动装配竞态（读 miss 重下，无害）；桌面壳无自动更新器（单用户自用，接受）；字幕域无地图条目；/media/orig 的 If-Modified-Since 用库行 mtime（ADR-0004 已知面）。
+activePool 冷启动装配竞态（读 miss 重下，无害）；桌面壳无自动更新器（单用户自用，接受）；字幕域无地图条目；/media/orig 的 If-Modified-Since 用库行 mtime（ADR-0004 已知面）。**2026-10-04 重构批追加记档**：browse.sql 按 viewCount/playCount 排序仍是每行相关子查询+CASE 重复求值（预分组派生表改造需按 ADR-0011 纪律补 EXPLAIN 计划锁，收益=大库三排序键，另批）；Android 26 处硬编码中文文案维持现状（单语应用无 l10n 规划，「文案全 strings.xml」并非本项目口径）；旧备份导入端点无集成测试（段级事务路径随批经对抗审查人工核行，与旧版逐段错误语义一致）；windows 下 sqlc 生成物行尾为 LF（.gitattributes eol=lf 已锁，本地工作区 CRLF 伪 diff 勿惊慌）。
 **browse.sql/facets.sql 手抄同型面（2026-10-02 清点记档）**：sqlc v1.31.1 SQLite 解析器限制（browse.sql 文件头 4 条规则：宏裸形态/参数禁作 WHEN 主语/WHERE 禁引 CTE 别名/ORDER BY 禁宏）迫使同型谓词手抄——① browse.sql 的 ListAssetsFilteredDesc/Asc/CountAssetsFiltered 三联体（同 WHERE 收敛家族三份手抄，排序方向烘焙成两个变体）；② facets.sql 六聚合查询（Partition/Source/Author/Character/CosWork/MediaType）各持一份「排除自身维度+应用其余维度」谓词家族，favorite/history 子集 EXISTS 探测在文件内出现 12 处。退役条件：sqlc 升级修复解析限制或换查询形态（history.sql/recommend.sql 的 CTE 预聚合先例，见第四百三十三笔），届时按同款主流化改写收敛；改前必跑 EXPLAIN 计划锁（ADR-0011 修订第 5/6 条），子集探测已由 history_plan_test.go 锁定双等值前缀。
 
 **CI 教训**：`make sdk` 已加生成前清理 + Kotlin 生成器锁版本，锁校验失败 CI 会打印 diff；golangci-lint 不含 gofmt，新 Go 文件须 `gofmt -w`；跨模块签名变更须 grep 全部构造点（CI 首跑抓过 `feature:detail` 测试漏适配）。

@@ -15,6 +15,8 @@ ARCHITECTURE §5 写明 `httpapi` 职责是「请求校验、鉴权、调编排�
 
 Accepted
 
+**补记（2026-10-04，全仓重构批文档对齐）**：决策 1/2 的目标态与现状存在真实差距，如实记档以防误导：`server/internal/orchestration/` 编排包**至今未建**。已落地的等价形态只有 `authorattach`（ADR-0023 批按本 ADR 精神建的专职编排包，首个先例）；决策 2「新增多步流禁止进 httpapi」在 `localsync_runner.go`（ADR-0030，2026-10-01）上被违反——493 行周期编排直接落在 httpapi 包，属既成事实（当时未拦截，本批不迁移：其 17 个函数中 12 个为 `httpapi.Server` 方法〔编排主体，深耦合上传闸与查询面〕、余 5 个为包级纯函数，迁移=一次独立架构手术，与「不破坏功能」的本批硬约束冲突）。执行口径以 ARCHITECTURE §5.1 现状补记为准：新多步流一律按 authorattach 先例落业务包，httpapi 存量编排随触碰批次逐步下沉。
+
 ## 后果（Consequences）
 
 - **积极**：httpapi 回归薄壳，多步流可脱离 HTTP 单测；god package 增长止血。

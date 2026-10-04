@@ -33,6 +33,16 @@
 
 Accepted——已接受（2026-09-16）。
 
+**补记（2026-10-04，全仓重构批文档对齐）**：上文「壳的职责严格限定为」
+一句为立项时口径；实际交付形态还含三件超出该句的能力（托盘与导航守卫两件
+随批记档于 `desktop/README.md`「行为说明」与 ARCHITECTURE §8；无边框 +
+titlebar.js 注入一件当时仅记档于 CHANGELOG〔历史档第二百八十五笔〕，本 ADR
+补记对齐）：托盘（左键聚焦/右键菜单）、导航守卫（主窗口仅放行配置主机的
+http/https）、无边框窗口 + `titlebar.js` 注入（依赖 Web TopBar 的类名/
+title 文案契约，见 `desktop/README.md`「跨仓契约」节）。另：`web/` 零改动
+约束在 TopBar 处存在软性例外——TopBar 为桌面壳保留三枚窗口控件的 title
+文案（有注释互指），属消费契约而非行为改动。
+
 ## 后果（Consequences）
 
 - 新增独立 `desktop/` 目录（Tauri 2 工程），与 web/android/server 并列；

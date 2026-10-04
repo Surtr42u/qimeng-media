@@ -10,6 +10,19 @@
 
 > **历史条目拆分说明（2026-10-01）**：为控制 AI 上下文体量，本文件只保留 **2026-09-22 及之后**的条目（第三百八十二笔起）；拆分线之前的全部条目已逐字迁入 `docs/history/CHANGELOG-ARCHIVE.md`（零改写，笔号与本文件连续可查）。引用早于拆分线的旧笔号请去历史档查阅。
 
+## refactor(all): 全仓重构优化批——四端性能/代码卫生/手造轮子排查，零功能零 UI 变化（2026-10-04 第四百六十五笔）
+
+执行 AI：GLM-5.3（主代理；三执行代理+四审查代理多开协作）
+
+- **背景与方法**：用户令「对整个项目执行重构优化，不破坏功能和 UI；排查 AI 自研小方案走主流，判断维护债/升级风险后执行；最后多开代理全量审查+本地构建验证」。执行序=四路只读调研（server/web/android/desktop+文档一致性）→ 主代理逐项拍板（收益/风险/主流性）→ 三执行代理分端实施 → 四对抗审查代理复核 → P1 返工修复 → 四端全量本地构建。**DOMAIN_RULES 公式、协议面（api/ 零改动）、可见 UI 三冻结。**
+- **服务端性能五件**：①DSN 补 `synchronous(NORMAL)`（WAL+NORMAL 官方推荐组合，写吞吐主升点——每事务免 fsync，断电最多丢最近若干已提交事务不损库，注释记档取舍，busy_timeout 同款实证调参先例）；②扫描富化单资产事务化（ingestNormalFile/recomputeNormalEnrichment 原 2+N 条语句逐条 autocommit → runAssetTx 单事务，原子性只强不弱；scanner_test 接线 SetConn 覆盖事务分支——对抗审查抓出的测试缺口）；③备份导入五段段级事务化（对齐 import_replay 先例；importTxtFragments 不包=其内部自开事务嵌套即死锁）；④GET /libraries 与指标刷新 N+1 合并（新 sqlc 查询 CountAllLibrariesMedia 一次往返装配全部库，死查询 CountLibraryMedia 移除，sqlc v1.31.1 再生零漂移）；⑤facets 六聚合 errgroup 并行（装配后置纯函数化）。
+- **服务端卫生与轮子排查**：sourcematcher exactAlias 线性扫 → rebuild 预构建 O(1) 查表（取舍序=canonical 字典序最小，与旧首中语义逐字节等价）；UNIQUE/FK 错误文本匹配 → errors.As 判 sqlite.Error Code（官方常量表，1555 主键边界记档）；扫描态魔法串 → gen 常量；多值筛选解析三处复制 → 共享 helper（history↔assets_filters，facets 形状不同不并）；matcher.go/scanner.go 超线理由注释补档。**手造轮子裁定**：detachedGroup（缩略图单飞）**保留**——其测试直接观测内部回收时序（2026-10-03 CI -race 实撞 flake 的观测手段），换 singleflight 三条路（删字段破测试/留死字段/重建簿记）全部违背约束，收益不敌 CI flake 风险，论证记档；WorkerPool/SniffMagic/authLimiter 为已记档合理自研维持。
+- **Web 性能与卫生**：上传进度 patchProgress 守卫（percent 不变跳过写——XHR 每秒数十次 onprogress 不再触发整个工作台重渲染，终态路径不经守卫）；MinePage HistCardItem 补 memo+稳定回调（对齐 MediaCard 2026-09-20 既有口径）；批量执行胶水四处 → lib/batch-run.ts 单源；LoadingHint 加 className/children，9 处「加载中…」手抄收敛；package.json 卫生（shadcn CLI/tailwindcss/@tailwindcss/vite/vite-plugin-pwa/tw-animate-css/@fontsource 六构建期包归 devDependencies——index.css 四 @import 包同口径统一，lock 同步重生零版本漂移）；CollectionPage 过期注释修正、--danger 别名口径统一。**对抗审查纠错**：调研称 LoginGate eslint-disable 注释惰性——实测 oxlint 已启用 exhaustive-deps 且该注释是必需的，正确回退不改。
+- **Android 性能与卫生**：分组 O(n) 计算包 remember ×4 补齐（收藏/历史/作者合集/搜索四页漏修点——相册页修复D-1 的同型问题，四维胶囊点选不再全列表重算重扁平化）；HomeScreen 三页 sections remember（筛选草稿点选不再触发三网格全量重扁平化）；**Compose 稳定性配置**（stabilityConfigurationFiles + compose_compiler_config.conf 33 类逐类核验收录，core:model 值对象 List 字段不再判 unstable——UiState.copy 不再拖垮订阅子树 skippable；单数 DSL 在 Kotlin 2.4.20 已废弃按错误拦截，首次构建失败后换 NIA 同款复数形态）；僵尸代码清除（LocalMediaRepository 族 3 文件+DI 绑定=2026-09-29 相册选择器退役漏删孤儿，QimengLoadingState+专属 token=被骨架屏取代）；LifecycleEventEffect 官方件替换 ×4（双事件+onDispose 必达的 2 处有据保留）；AUTHOR_SUGGEST_DEBOUNCE_MS 单源化。**复议维持原判**：分页状态机六 VM 平行（362-367 记档裁决）、pinch 列数/dispatchPill 重复（横跨模块收益为负）、VideoStage 拆分（播放器回归风险）——均记档不动。
+- **文档对齐批（对抗审查核过的事实修正）**：GUIDE_API 补记漏收的 POST /auth/logout 与 GET /thumbnails/progress、端点计数 73→74（校正实数非新增）；ARCHITECTURE §5.1 编排层现状补记（orchestration 包未建、localsync_runner 落 httpapi 属 ADR-0019 决策 2 既成违背，增迁口径=新流程按 authorattach 先例落业务包）+ ADR-0019/0020 补记同口径；ARCHITECTURE §2 图补 7 包注记；desktop/README 目录树补全（titlebar.js/ui 图标）+「跨仓契约：Web TopBar ↔ titlebar.js」节（防 TopBar 重构静默打断桌面壳窗口操作）+ 已知限制三条记档；GUIDE_UI 三处引用标注「在旧项目仓库内」。
+- **验证**（全绿）：Go build/vet/test 全量+golangci-lint 0 issue+gofmt 干净；Web tsc/oxlint(基线同 warnings)/vitest 248/knip 零孤儿/build 成功；Android assembleDebug+testDebugUnitTest+:core:model:test；desktop cargo test 17+build。存量 CRLF 行尾伪 diff（custom.go 等）随 .gitattributes eol=lf 清偿。文档：HANDOVER.md（本笔+记档级更新）。
+- **记档级新增**（详见 HANDOVER §5）：browse.sql viewCount/playCount 排序相关子查询预分组化待办（需 EXPLAIN 计划锁另批）、Android strings.xml 硬编码中文维持现状（单语应用、无 l10n 规划，非项目口径违例）。
+
 ## fix(app): 夜间玻璃件液态感微调——按日间逻辑同构定稿（2026-10-04 第四百六十四笔）
 
 执行 AI：GLM-5.3-Flash（主代理）

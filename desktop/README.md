@@ -57,12 +57,37 @@ npm run build     # 出包（产物在 src-tauri/target/release/bundle/）
 ```
 desktop/
 ├── app-icon.png            # 1024×1024 图标源（`npm run icon` 的输入）
-├── ui/setup.html           # 设置窗静态页（frontendDist，无前端构建步骤）
+├── ui/
+│   ├── setup.html          # 设置窗静态页（frontendDist，无前端构建步骤）
+│   └── app-icon.png        # 设置窗引用的应用图标
 └── src-tauri/
     ├── tauri.conf.json     # Tauri 2 配置（窗口在 Rust 侧按配置有无动态创建）
     ├── capabilities/       # ACL：core:default 最小权限
     ├── icons/              # `npm run icon` 生成，勿手工编辑
     └── src/
         ├── main.rs         # 窗口/托盘/命令编排 + 导航守卫（守卫纯函数带单测）
-        └── server_config.rs# 地址规范化纯函数 + 配置读写（规范化带单测）
+        ├── server_config.rs# 地址规范化纯函数 + 配置读写（规范化带单测）
+        └── titlebar.js     # 无边框窗口的顶栏注入脚本（见下方跨仓契约）
 ```
+
+## 跨仓契约：Web TopBar ↔ titlebar.js
+
+主窗口无边框（decorations=false），顶栏三枚窗口控件（最小化/最大化/关闭）由
+Web UI 的 `web/src/components/shell/TopBar.tsx` 渲染，桌面壳经 `titlebar.js`
+注入后按 **`button.win-btn` 类名 + 中文 `title` 属性值**（最小化/最大化/关闭）
+分发窗口操作，拖动判定依赖 TopBar 的 `<header>` 元素。改动 TopBar 时**必须**
+保持这三个按钮的类名与 title 文案、以及 `<header>` 元素，否则桌面壳的窗口
+操作与拖动会静默失效（无边框窗口无系统边框兜底，只能靠托盘退出）。
+TopBar.tsx 内已有单向注释提示；本节为 desktop 侧的逆向记档。
+
+## 已知限制（记档，暂不处理）
+
+- 标题栏双击最大化的判定用 `mousedown` 的 `e.detail === 2`——Windows 下
+  第一次 mousedown 已进入系统拖动模态循环，第二次物理点击能否送达页面未
+  实测验证；若真机出现双击偶发失灵，改 click 计时判定（勿用
+  `data-tauri-drag-region`，那需要改 web 端，违反「web/ 零改动」约束）。
+- `capabilities/default.json` 的 remote 授权是 `http(s)://*` 通配——服务器
+  地址是用户运行时配置，静态 capability 无法收窄到具体主机（文件 description
+  注明的是「远程源须显式声明才生效」，通配的理由即本条）。威胁模型是用户
+  自己的 NAS，接受；若将来远程隧道暴露常态化，再评估收紧。
+- 无自动更新器（单用户自用，接受；HANDOVER 记档级同条）。

@@ -40,6 +40,10 @@
                       │  ├─ store      sqlc 数据访问 + migrations │
                       │  ├─ events     进程内事件总线 + SSE 推送   │
                       │  └─ sysmon     系统监控(gopsutil)        │
+                      │  （另有 7 包画不进图：auth 鉴权/备份快照 backup/
+                      │   配置 config/库修订号 libraryrevision/
+                      │   断点续传会话 uploadsess/本机同步 localsync/
+                      │   作者挂靠 authorattach——职责见 §5 边界表）│
                       │  SQLite(单文件) + 数据目录(缩略图/回收站)   │
                       │  /media 媒体库目录(可写,受控操作)          │
                       └──────────────────────────────────────┘
@@ -106,6 +110,7 @@
 ### 5.1 模块边界强制与防漂移（ADR-0010 / ADR-0009 / ADR-0011 / ADR-0019）
 
 **编排下沉（ADR-0019）**：多步业务编排（上传落盘入库、移动先文件后库行、统计事件重建等）必须放在专职编排包（`server/internal/orchestration/` 或等价 app 层），`httpapi` 禁止业务编排，只保留鉴权、参数校验、序列化与对编排入口的一次调用。既有厚 handler 增量迁移；新增多步流一律不得在 httpapi 落地。不引入编排框架，`cmd/qimeng` 仍为唯一组合根。
+**现状补记（2026-10-04 全仓重构批文档对齐）**：上述目标态尚未达成——`orchestration/` 编排包**未建**，多步编排现分散于各业务包（authorattach=ADR-0019 首个新流程落地先例）与 httpapi 内（upload.go/filing.go/localsync_runner.go 等，其中 localsync_runner〔ADR-0030，2026-10-01〕落地时违背了「新增多步流不得进 httpapi」本条，属既成事实）。增迁路径=新流程一律按 authorattach 先例落业务包；httpapi 内存量编排随触碰批次逐步下沉；完整迁移不设时限。
 
 边界不是口头约定，是**三层机器强制**（决策见 ADR-0010）：
 

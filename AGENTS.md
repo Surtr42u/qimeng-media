@@ -51,7 +51,7 @@
 ## 与旧项目（QimengMedia）的关系
 
 - 旧项目 = 领域知识库（推荐算法/筛选/统计/作者规则已提炼进 `docs/DOMAIN_RULES.md`，服务端 M3 实现完毕）
-- **M4 App 端走 Compose 重建（ADR-0014，2026-09-04 用户二次拍板「先进优先」）**：交互规格照搬其 `docs/GUIDE_UI.md`（唯一规格书），实现代码全部 Compose 新写，**禁止搬运旧 Kotlin 实现**；例外：复杂自绘控件（BiliPlayerView/ZoomImageView）允许 AndroidView 互操作桥接，桥接清单入交付报告
+- **M4 App 端走 Compose 重建（ADR-0014，2026-09-04 用户二次拍板「先进优先」）**：交互规格照搬其 `docs/GUIDE_UI.md`（唯一规格书，**该文件在旧项目 QimengMedia 仓库内、不在本仓**），实现代码全部 Compose 新写，**禁止搬运旧 Kotlin 实现**；例外：复杂自绘控件（BiliPlayerView/ZoomImageView）允许 AndroidView 互操作桥接，桥接清单入交付报告
 - **旧项目退役链已完成（2026-09-20 用户确认，M6 收官）**：退役拍板 → qimeng-backup 行为数据迁入 → 手机媒体原地注册三步全部完成；数据迁移走 `POST /import/qimeng-backup`（DOMAIN_RULES §10），媒体文件原地注册为库。物理归档动作由用户自行处理；本项目此后是唯一维护对象
 - 同日 ADR-0013（旧 UI 照搬路线）已废弃，其架构调研结论仍有效（见该 ADR 与 `docs/adr/INDEX.md` 记档）
 
