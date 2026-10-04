@@ -9,6 +9,47 @@ import (
 	"context"
 )
 
+const countAllLibrariesMedia = `-- name: CountAllLibrariesMedia :many
+
+SELECT library_id, media_type, COUNT(*) AS cnt FROM assets
+GROUP BY library_id, media_type
+`
+
+type CountAllLibrariesMediaRow struct {
+	LibraryID string
+	MediaType string
+	Cnt       int64
+}
+
+// CountAllLibrariesMedia: per-library media_type counters for ALL
+// libraries in one pass. Same shape/semantics as CountLibraryMedia
+// (browse.sql) but grouped by library too, so list/metrics paths can
+// replace their per-library CountLibraryMedia loop (N+1) with a single
+// query; libraries with no assets simply have no rows here and the Go
+// side treats absent rows as 0 (same as CountLibraryMedia's contract).
+func (q *Queries) CountAllLibrariesMedia(ctx context.Context) ([]CountAllLibrariesMediaRow, error) {
+	rows, err := q.db.QueryContext(ctx, countAllLibrariesMedia)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CountAllLibrariesMediaRow
+	for rows.Next() {
+		var i CountAllLibrariesMediaRow
+		if err := rows.Scan(&i.LibraryID, &i.MediaType, &i.Cnt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const createLibrary = `-- name: CreateLibrary :one
 
 INSERT INTO libraries (id, name, root_path, kind, created_at) VALUES (?, ?, ?, ?, ?)

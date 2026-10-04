@@ -27,7 +27,9 @@ import (
 // 可各自调整。
 const libraryMetricsRefreshTimeout = 3 * time.Second
 
-// scanStateMap 是库扫描态的内存跟踪。
+// scanStateMap 是库扫描态的内存跟踪。值类型直接用生成常量
+// gen.LibraryScanState（协议枚举单一来源，禁止手抄字符串——本表原存
+// string、读侧再转换的旧形态已于 2026-10 收紧为枚举类型本身）。
 //
 // 为什么在内存而不加列：scan_state 属于运行时瞬态（进程重启即失忆是
 // 合理语义——重启后没有扫描在跑），为它动 migration 得不偿失；真实
@@ -35,29 +37,31 @@ const libraryMetricsRefreshTimeout = 3 * time.Second
 // AI_README_FIRST「迁移唯一」）。
 type scanStateMap struct {
 	mu sync.RWMutex
-	m  map[string]string // libraryID -> "idle" | "scanning" | "error"
+	m  map[string]gen.LibraryScanState // libraryID → 扫描态枚举
 }
 
 func newScanStateMap() *scanStateMap {
-	return &scanStateMap{m: make(map[string]string)}
+	return &scanStateMap{m: make(map[string]gen.LibraryScanState)}
 }
 
-func (m *scanStateMap) get(id string) string {
+func (m *scanStateMap) get(id string) gen.LibraryScanState {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	if v, ok := m.m[id]; ok {
 		return v
 	}
-	return "idle"
+	return gen.LibraryScanStateIdle
 }
 
-func (m *scanStateMap) set(id, state string) {
+func (m *scanStateMap) set(id string, state gen.LibraryScanState) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.m[id] = state
 }
 
 // GetApiV1Libraries 库列表：每库附文件计数与扫描态。
+// 计数经 CountAllLibrariesMedia 一次分组取回全部库（消除逐库
+// CountLibraryMedia 的 N+1），无资产行 = 全零，语义与旧逐库查询一致。
 func (s *Server) GetApiV1Libraries(w http.ResponseWriter, r *http.Request) {
 	libs, err := s.q.ListLibraries(r.Context())
 	if err != nil {
@@ -65,27 +69,38 @@ func (s *Server) GetApiV1Libraries(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, codeInternal, "内部错误")
 		return
 	}
+	countRows, err := s.q.CountAllLibrariesMedia(r.Context())
+	if err != nil {
+		s.logger.Error("统计库文件数失败", "err", err)
+		writeErr(w, http.StatusInternalServerError, codeInternal, "内部错误")
+		return
+	}
+	// library_id → (image+动图计数, video 计数)：装配口径与
+	// refreshLibraryFileMetrics 同源（animated_image 计入 image 档），两侧改动须双同步。
+	type mediaCounts struct{ image, video int }
+	byLib := make(map[string]mediaCounts, len(libs))
+	fileCountByLib := make(map[string]int, len(libs))
+	for _, c := range countRows {
+		fileCountByLib[c.LibraryID] += int(c.Cnt)
+		// animated_image 计入 imageCount：动图在浏览/相册语义里是
+		// "图"（静帧封面），openapi 的 Library 只有图/视频两档。
+		switch c.MediaType {
+		case scanner.MediaTypeImage, scanner.MediaTypeAnimatedImage:
+			mc := byLib[c.LibraryID]
+			mc.image += int(c.Cnt)
+			byLib[c.LibraryID] = mc
+		case scanner.MediaTypeVideo:
+			mc := byLib[c.LibraryID]
+			mc.video += int(c.Cnt)
+			byLib[c.LibraryID] = mc
+		}
+	}
 	out := make([]gen.Library, 0, len(libs))
 	for _, l := range libs {
-		counts, err := s.q.CountLibraryMedia(r.Context(), l.ID)
-		if err != nil {
-			s.logger.Error("统计库文件数失败", "err", err, "libraryId", l.ID)
-			writeErr(w, http.StatusInternalServerError, codeInternal, "内部错误")
-			return
-		}
-		var fileCount, imageCount, videoCount int
-		for _, c := range counts {
-			fileCount += int(c.Cnt)
-			// animated_image 计入 imageCount：动图在浏览/相册语义里是
-			// "图"（静帧封面），openapi 的 Library 只有图/视频两档。
-			if c.MediaType == "image" || c.MediaType == "animated_image" {
-				imageCount += int(c.Cnt)
-			}
-			if c.MediaType == "video" {
-				videoCount += int(c.Cnt)
-			}
-		}
-		state := gen.LibraryScanState(s.scanStates.get(l.ID))
+		mc := byLib[l.ID]
+		fileCount := fileCountByLib[l.ID]
+		imageCount, videoCount := mc.image, mc.video
+		state := s.scanStates.get(l.ID)
 		kind := gen.LibraryKind(l.Kind)
 		enabled := l.Enabled == 1
 		// 能力声明（ADR-0012）：客户端 UI 的挂靠输入显隐一律读此字段，
@@ -170,7 +185,7 @@ func (s *Server) PostApiV1Libraries(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// UNIQUE(root_path)：同根目录注册第二个库 → 409；其余 DB 错误
 		// 是服务端故障 → 500（不能一律 409 掩盖真实故障）。
-		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
+		if isSQLiteConstraint(err, sqliteCodeConstraintUnique) {
 			writeErr(w, http.StatusConflict, codeConflict, "该目录已注册为库")
 			return
 		}
@@ -180,7 +195,7 @@ func (s *Server) PostApiV1Libraries(w http.ResponseWriter, r *http.Request) {
 	}
 	id, name, root := lib.ID, lib.Name, lib.RootPath
 	createdKind := gen.LibraryKind(lib.Kind)
-	state := gen.LibraryScanState("idle")
+	state := gen.LibraryScanStateIdle
 	// 能力声明与 GET 列表同源（scanner 单一来源，ADR-0012）——注册方
 	// （Web 管理页/App）拿到 201 即可读能力，无需再发一次列表。
 	authorAttach := scanner.SupportsAuthorAttach(lib.Kind)
@@ -273,7 +288,7 @@ func (s *Server) PostApiV1LibrariesLibraryIdScan(w http.ResponseWriter, r *http.
 		writeErr(w, http.StatusInternalServerError, codeInternal, "内部错误")
 		return
 	}
-	s.scanStates.set(lib.ID, "scanning")
+	s.scanStates.set(lib.ID, gen.LibraryScanStateScanning)
 	w.WriteHeader(http.StatusAccepted)
 }
 
@@ -322,7 +337,7 @@ func (s *Server) DeleteApiV1LibrariesLibraryId(w http.ResponseWriter, r *http.Re
 	// dirsCache 过期只 miss 不 delete，不失效会占内存到进程重启（2026-09-21
 	// 维护批补——R3 批只接了 POST /dirs 建目录这一失效端点）。
 	s.dirs.invalidate(libraryID)
-	s.scanStates.set(libraryID, "idle")
+	s.scanStates.set(libraryID, gen.LibraryScanStateIdle)
 	// 删库改变推荐候选集：推荐缓存失效经下方 library.changed 事件的装配期订阅统一触发
 	if err := s.bus.Publish(events.Event{Topic: events.TopicLibraryChanged}); err != nil {
 		s.logger.Warn("广播 library.changed 失败", "err", err)
@@ -373,9 +388,9 @@ func (s *Server) PutApiV1LibrariesLibraryIdEnabled(w http.ResponseWriter, r *htt
 // main 的适配器把真实扫描器的完成钩子接到这里（导出方法：适配器在
 // cmd 包，跨包调用必须是导出的）。
 func (s *Server) FinishScan(libraryID string, failed bool) {
-	state := "idle"
+	state := gen.LibraryScanStateIdle
 	if failed {
-		state = "error"
+		state = gen.LibraryScanStateError
 	}
 	s.scanStates.set(libraryID, state)
 	// 库内容可能已变化：广播 library.changed 让各端刷新（openapi
@@ -392,33 +407,28 @@ func (s *Server) FinishScan(libraryID string, failed bool) {
 }
 
 // refreshLibraryFileMetrics 把 library_files{type} gauge 刷新为库内现状：
-// ListLibraries + 逐库 CountLibraryMedia（现成查询），image/animated_image
-// 归 image 档——与 GetApiV1Libraries 的映射口径一致，两侧改动须双同步。
-// 变更点推送刷新（扫描完成/上传入库/删除进回收站/恢复四个时机各调一次），
-// 不做定时轮询：治理面板数据允许秒级陈旧，不值得为它加常驻扫描。
-// 失败只记日志：指标刷新失败不影响业务路径的成功响应。
+// CountAllLibrariesMedia 一次分组取回全部库的 media_type 计数（原先
+// ListLibraries + 逐库 CountLibraryMedia 的 N+1 已合并），image/
+// animated_image 归 image 档——与 GetApiV1Libraries 的映射口径一致，
+// 两侧改动须双同步。变更点推送刷新（扫描完成/上传入库/删除进回收站/
+// 恢复四个时机各调一次），不做定时轮询：治理面板数据允许秒级陈旧，
+// 不值得为它加常驻扫描。失败只记日志：指标刷新失败不影响业务路径的
+// 成功响应。
 func (s *Server) refreshLibraryFileMetrics() {
 	ctx, cancel := context.WithTimeout(context.Background(), libraryMetricsRefreshTimeout)
 	defer cancel()
 	var image, video int64
-	libs, err := s.q.ListLibraries(ctx)
+	rows, err := s.q.CountAllLibrariesMedia(ctx)
 	if err != nil {
 		s.logger.Warn("刷新 library_files 指标失败", "err", err)
 		return
 	}
-	for _, l := range libs {
-		counts, err := s.q.CountLibraryMedia(ctx, l.ID)
-		if err != nil {
-			s.logger.Warn("刷新 library_files 指标失败", "err", err, "libraryId", l.ID)
-			return
-		}
-		for _, c := range counts {
-			switch c.MediaType {
-			case scanner.MediaTypeImage, scanner.MediaTypeAnimatedImage:
-				image += c.Cnt
-			case scanner.MediaTypeVideo:
-				video += c.Cnt
-			}
+	for _, c := range rows {
+		switch c.MediaType {
+		case scanner.MediaTypeImage, scanner.MediaTypeAnimatedImage:
+			image += c.Cnt
+		case scanner.MediaTypeVideo:
+			video += c.Cnt
 		}
 	}
 	sysmon.Default.SetLibraryFiles(sysmon.FileImage, image)

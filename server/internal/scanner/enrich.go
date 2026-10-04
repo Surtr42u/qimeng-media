@@ -146,6 +146,30 @@ func loadStopWords(ctx context.Context, q *db.Queries, logger *slog.Logger) []st
 	return words
 }
 
+// runAssetTx 单事务执行 fn（qx = 事务绑定的 Queries；Commit/Rollback 由本
+// 函数统一管理）。为什么需要它：原先多语句各自 autocommit 存在中间态窗口
+// （资产已入库而角色行被清空/半写，注释自述靠自愈兜底），包事务后单资产
+// 原子，语义只强不弱——重算/重 ingest 幂等路径不变。
+// conn 未接线（nil，测试/裁剪形态）时退回逐语句 autocommit：事务化是
+// 原子性增强而非前置条件，缺连接保底旧行为，零行为破坏。
+func (s *Scanner) runAssetTx(ctx context.Context, fn func(qx *db.Queries) error) error {
+	if s.conn == nil {
+		return fn(s.q)
+	}
+	tx, err := s.conn.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("scanner: 开启单资产事务: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }() // 提交后 Rollback 是无害 no-op
+	if err := fn(s.q.WithTx(tx)); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("scanner: 提交单资产事务: %w", err)
+	}
+	return nil
+}
+
 // ingestNormalFile normal 库入库：SourceMatcher 富化 + 资产落库 + 角色覆盖。
 func (s *Scanner) ingestNormalFile(ctx context.Context, params db.UpsertAssetParams, fileName string) (db.Asset, error) {
 	// MatchAll 输入形态 = 去扩展名前的原始文件名（Matcher 内部自行去扩展名，
@@ -154,25 +178,35 @@ func (s *Scanner) ingestNormalFile(ctx context.Context, params db.UpsertAssetPar
 	// 未命中出处落 NULL（0001 注释：归「其他」由查询/展示层处理）。
 	params.Source = sql.NullString{String: source, Valid: source != ""}
 
-	asset, err := s.q.UpsertAsset(ctx, params)
-	if err != nil {
-		return db.Asset{}, fmt.Errorf("scanner: 资产入库 %s: %w", params.RelPath, err)
-	}
-	// 角色行覆盖（先删后插）：非单事务——中断窗口内角色缺失，下次该文件
-	// size/mtime 变化重 ingest 时自愈；换来的是 ingestFile 不必持有事务。
-	if err := s.q.DeleteAssetCharacters(ctx, asset.AssetID); err != nil {
-		return db.Asset{}, fmt.Errorf("scanner: 清理角色 %s: %w", params.RelPath, err)
-	}
-	for _, c := range chars {
-		if err := s.q.AddAssetCharacter(ctx, db.AddAssetCharacterParams{
-			AssetID: asset.AssetID, CharacterName: c,
-			// 溯源章（ADR-0032）：角色行是扫描器派生数据，created_at 语义
-			// = 本次重算时刻（先删后插，重算即刷新）。
-			CreatedAt: store.NullTimestamp(store.FormatTimestamp(s.now())),
-			Origin:    store.OriginScanner,
-		}); err != nil {
-			return db.Asset{}, fmt.Errorf("scanner: 写入角色 %s/%s: %w", params.RelPath, c, err)
+	var asset db.Asset
+	// 资产 + 角色行单事务（原先逐语句 autocommit 的中间态窗口见
+	// runAssetTx 注释）；保持单文件粒度，禁止整库一事务（扫描可取消，
+	// 大事务既不可中断回吐进度也会长时间持写锁）。
+	err := s.runAssetTx(ctx, func(qx *db.Queries) error {
+		var err error
+		asset, err = qx.UpsertAsset(ctx, params)
+		if err != nil {
+			return fmt.Errorf("scanner: 资产入库 %s: %w", params.RelPath, err)
 		}
+		// 角色行覆盖（先删后插）。
+		if err := qx.DeleteAssetCharacters(ctx, asset.AssetID); err != nil {
+			return fmt.Errorf("scanner: 清理角色 %s: %w", params.RelPath, err)
+		}
+		for _, c := range chars {
+			if err := qx.AddAssetCharacter(ctx, db.AddAssetCharacterParams{
+				AssetID: asset.AssetID, CharacterName: c,
+				// 溯源章（ADR-0032）：角色行是扫描器派生数据，created_at 语义
+				// = 本次重算时刻（先删后插，重算即刷新）。
+				CreatedAt: store.NullTimestamp(store.FormatTimestamp(s.now())),
+				Origin:    store.OriginScanner,
+			}); err != nil {
+				return fmt.Errorf("scanner: 写入角色 %s/%s: %w", params.RelPath, c, err)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return db.Asset{}, err
 	}
 	return asset, nil
 }
@@ -267,30 +301,34 @@ func (s *Scanner) EnrichAsset(ctx context.Context, libraryID, assetID string) er
 // recomputeNormalEnrichment 按文件名重算单资产的出处/角色（覆盖语义：
 // 先删后插角色 + UpdateAssetSource，与 ingestNormalFile 的结果形态一致）。
 // EnrichAsset（API 移动/改名）与 RecomputeEnrichment（自定义出处变更）
-// 共用；非单事务的中断窗口内角色缺失，下次重算自愈（同 ingestNormalFile
-// 的容错注释）。
+// 共用。单资产单事务（原先逐语句 autocommit 的中断窗口内角色缺失靠下次
+// 重算自愈，事务化后窗口消除，见 runAssetTx 注释）。
 func (s *Scanner) recomputeNormalEnrichment(ctx context.Context, assetID, fileName string) error {
 	source, chars := s.matcher.MatchAll(fileName)
-	if err := s.q.UpdateAssetSource(ctx, db.UpdateAssetSourceParams{
-		Source:    sql.NullString{String: source, Valid: source != ""},
-		UpdatedAt: store.FormatTimestamp(s.now()),
-		AssetID:   assetID,
-	}); err != nil {
-		return fmt.Errorf("scanner: 更新出处 %s: %w", fileName, err)
-	}
-	if err := s.q.DeleteAssetCharacters(ctx, assetID); err != nil {
-		return fmt.Errorf("scanner: 清理角色 %s: %w", fileName, err)
-	}
-	for _, c := range chars {
-		if err := s.q.AddAssetCharacter(ctx, db.AddAssetCharacterParams{
-			AssetID: assetID, CharacterName: c,
-			CreatedAt: store.NullTimestamp(store.FormatTimestamp(s.now())),
-			Origin:    store.OriginScanner,
+	// 保持单资产粒度事务：本函数被 RecomputeEnrichment/SelfHeal 的并发循环
+	// 调用，整库一事务既不可中断也会长时间持写锁（SQLite 单写者）。
+	return s.runAssetTx(ctx, func(qx *db.Queries) error {
+		if err := qx.UpdateAssetSource(ctx, db.UpdateAssetSourceParams{
+			Source:    sql.NullString{String: source, Valid: source != ""},
+			UpdatedAt: store.FormatTimestamp(s.now()),
+			AssetID:   assetID,
 		}); err != nil {
-			return fmt.Errorf("scanner: 写入角色 %s/%s: %w", fileName, c, err)
+			return fmt.Errorf("scanner: 更新出处 %s: %w", fileName, err)
 		}
-	}
-	return nil
+		if err := qx.DeleteAssetCharacters(ctx, assetID); err != nil {
+			return fmt.Errorf("scanner: 清理角色 %s: %w", fileName, err)
+		}
+		for _, c := range chars {
+			if err := qx.AddAssetCharacter(ctx, db.AddAssetCharacterParams{
+				AssetID: assetID, CharacterName: c,
+				CreatedAt: store.NullTimestamp(store.FormatTimestamp(s.now())),
+				Origin:    store.OriginScanner,
+			}); err != nil {
+				return fmt.Errorf("scanner: 写入角色 %s/%s: %w", fileName, c, err)
+			}
+		}
+		return nil
+	})
 }
 
 // recomputeCosAuthor 按当前 rel 首段目录重载单资产的 COS 作者关联

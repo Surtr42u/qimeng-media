@@ -228,47 +228,75 @@ func pickAssetByFolder(rows []db.ListAssetNameIndexRow, folderName *string) stri
 	return rows[0].AssetID
 }
 
-// importAuthors：作者 upsert（authorId 原样保留含 cos_ 前缀，type 由前缀
-// 推导，§6/§10）+ 关联写入（资产未匹配的计入 skipped）。
-func (imp *legacyImport) importAuthors(authors *[]gen.LegacyAuthor, refs *[]gen.LegacyAuthorMediaRef) {
+// importSegment 段级事务骨架（WithTx 模式照抄同包 import_replay.go 先例）：
+// fn 拿到事务绑定的 Queries 执行整段写入，段内任一语句失败经 imp.fail 记
+// 段名返回、整段回滚；全部成功才提交。**段级原子而非整个导入一个事务**：
+// 段间独立（作者段成功、标签段失败重跑只补标签段），配合各段幂等 upsert
+// 重跑不翻倍。fn 内失败沿用各段既有的 fail 段名（哪段失败报哪段不变），
+// 本函数只补开/提交两个新事务边界段名。importTxtFragments 不走本骨架：
+// importTxt 内部自开事务（authors.go），外层再包会同连接嵌套取写锁自死锁
+// （_txlock=immediate + busy_timeout 等自己），且单片段失败本就是跳过不中止。
+func (imp *legacyImport) importSegment(stage string, fn func(qx *db.Queries)) {
 	if imp.aborted {
 		return
 	}
-	for _, a := range sliceOrEmpty(authors) {
-		authorType := "regular"
-		if hasCosPrefix(a.AuthorId) {
-			authorType = "cos"
-		}
-		err := imp.s.q.ImportUpsertAuthor(imp.ctx, db.ImportUpsertAuthorParams{
-			ID: a.AuthorId, DisplayName: a.DisplayName, Type: authorType,
-			CreatedAt: nowOrMillis(a.CreatedAtMillis, imp.s.now()),
-			// 溯源（ADR-0032）：透传对端原始来历，缺省/非法兜底 import；
-			// 既有行仅在 legacy（不可考）时被补证（DOMAIN_RULES §10，查询内裁决）。
-			Origin: store.NormalizeOrigin(a.Origin),
-		})
-		if err != nil {
-			imp.fail("导入作者", err)
-			return
-		}
-		imp.bump(&imp.res.AuthorsImported)
+	tx, err := imp.s.conn.BeginTx(imp.ctx, nil)
+	if err != nil {
+		imp.fail("开启"+stage+"事务", err)
+		return
 	}
-	for _, ref := range sliceOrEmpty(refs) {
-		assetID, ok := imp.keyToAsset[ref.RecordKey]
-		if !ok {
-			imp.bump(&imp.res.AuthorRefsSkipped)
-			continue
-		}
-		err := imp.s.q.ImportAddAssetAuthor(imp.ctx, db.ImportAddAssetAuthorParams{
-			AssetID: assetID, AuthorID: ref.AuthorId,
-			CreatedAt: store.NullTimestamp(nowOrMillis(ref.CreatedAtMillis, imp.s.now())),
-			Origin:    store.NormalizeOrigin(ref.Origin),
-		})
-		if err != nil {
-			imp.fail("导入作者关联", err)
-			return
-		}
-		imp.bump(&imp.res.AuthorRefsImported)
+	defer func() { _ = tx.Rollback() }() // 提交成功后 Rollback 是无害 no-op
+	fn(imp.s.q.WithTx(tx))
+	if imp.aborted {
+		return
 	}
+	if err := tx.Commit(); err != nil {
+		imp.fail("提交"+stage+"事务", err)
+	}
+}
+
+// importAuthors：作者 upsert（authorId 原样保留含 cos_ 前缀，type 由前缀
+// 推导，§6/§10）+ 关联写入（资产未匹配的计入 skipped）。整段单事务（原先
+// 逐行 autocommit，中途失败会留下作者已建而关联缺失的半段状态，重跑虽可
+// 幂等补齐但中间窗口内读侧看到半成品；段级原子后窗口消除）。
+func (imp *legacyImport) importAuthors(authors *[]gen.LegacyAuthor, refs *[]gen.LegacyAuthorMediaRef) {
+	imp.importSegment("作者", func(qx *db.Queries) {
+		for _, a := range sliceOrEmpty(authors) {
+			authorType := "regular"
+			if hasCosPrefix(a.AuthorId) {
+				authorType = "cos"
+			}
+			err := qx.ImportUpsertAuthor(imp.ctx, db.ImportUpsertAuthorParams{
+				ID: a.AuthorId, DisplayName: a.DisplayName, Type: authorType,
+				CreatedAt: nowOrMillis(a.CreatedAtMillis, imp.s.now()),
+				// 溯源（ADR-0032）：透传对端原始来历，缺省/非法兜底 import；
+				// 既有行仅在 legacy（不可考）时被补证（DOMAIN_RULES §10，查询内裁决）。
+				Origin: store.NormalizeOrigin(a.Origin),
+			})
+			if err != nil {
+				imp.fail("导入作者", err)
+				return
+			}
+			imp.bump(&imp.res.AuthorsImported)
+		}
+		for _, ref := range sliceOrEmpty(refs) {
+			assetID, ok := imp.keyToAsset[ref.RecordKey]
+			if !ok {
+				imp.bump(&imp.res.AuthorRefsSkipped)
+				continue
+			}
+			err := qx.ImportAddAssetAuthor(imp.ctx, db.ImportAddAssetAuthorParams{
+				AssetID: assetID, AuthorID: ref.AuthorId,
+				CreatedAt: store.NullTimestamp(nowOrMillis(ref.CreatedAtMillis, imp.s.now())),
+				Origin:    store.NormalizeOrigin(ref.Origin),
+			})
+			if err != nil {
+				imp.fail("导入作者关联", err)
+				return
+			}
+			imp.bump(&imp.res.AuthorRefsImported)
+		}
+	})
 }
 
 // hasCosPrefix：COS 作者 id 约定前缀（0001 表注释 / DOMAIN_RULES §6）。
@@ -329,118 +357,119 @@ func (imp *legacyImport) bump(p **int) {
 // 语义）。关联按资产聚合后逐资产判定：备份侧时间与库内 tag_set_updated_at 都
 // 已知且备份较新 → 该资产标签组整体替换（清空重挂 + 库内时间改写为备份时间）；
 // 其余情况并集合并（只增不删）且不改库内时间——并集结果没有单一来源时刻，
-// 宁可保留「未知」也不造假版本。
+// 宁可保留「未知」也不造假版本。整段单事务（替换路径的清空+重挂+改时间是
+// 三步联动写，autocommit 下中途失败会留下清空未挂回的半段状态）。
 func (imp *legacyImport) importTags(tags *[]gen.LegacyTag, refs *[]gen.LegacyMediaTagRef) {
-	if imp.aborted {
-		return
-	}
-	tagIDs := make(map[string]string, len(sliceOrEmpty(tags)))
-	for _, t := range sliceOrEmpty(tags) {
-		id, err := imp.upsertTag(t)
-		if err != nil {
-			imp.fail("导入标签", err)
-			return
-		}
-		tagIDs[t.Name] = id
-	}
-	// 按资产聚合备份关联：同一资产的多个 ref 可能来自不同 recordKey（同名
-	// 消歧变体），备份时间取已知值中的最大者（新者生效，保守不丢新改动）。
-	type assetPlan struct {
-		refs     []gen.LegacyMediaTagRef
-		backupMs int64
-		hasTime  bool
-	}
-	plans := make(map[string]*assetPlan)
-	for _, ref := range sliceOrEmpty(refs) {
-		assetID, okAsset := imp.keyToAsset[ref.RecordKey]
-		_, okTag := tagIDs[ref.TagName]
-		if !okAsset || !okTag {
-			imp.bump(&imp.res.TagRefsSkipped)
-			continue
-		}
-		plan := plans[assetID]
-		if plan == nil {
-			plan = &assetPlan{}
-			plans[assetID] = plan
-		}
-		plan.refs = append(plan.refs, ref)
-		if ms := imp.keyToTagsTime[ref.RecordKey]; ms != nil && *ms > 0 {
-			if !plan.hasTime || *ms > plan.backupMs {
-				plan.backupMs = *ms
+	imp.importSegment("标签", func(qx *db.Queries) {
+		tagIDs := make(map[string]string, len(sliceOrEmpty(tags)))
+		for _, t := range sliceOrEmpty(tags) {
+			id, err := imp.upsertTag(qx, t)
+			if err != nil {
+				imp.fail("导入标签", err)
+				return
 			}
-			plan.hasTime = true
+			tagIDs[t.Name] = id
 		}
-	}
-	now := imp.s.now()
-	for assetID, plan := range plans {
-		server, err := imp.s.q.GetAsset(imp.ctx, assetID)
-		if err != nil {
-			imp.fail("查询资产标签组时间", err)
-			return
+		// 按资产聚合备份关联：同一资产的多个 ref 可能来自不同 recordKey（同名
+		// 消歧变体），备份时间取已知值中的最大者（新者生效，保守不丢新改动）。
+		type assetPlan struct {
+			refs     []gen.LegacyMediaTagRef
+			backupMs int64
+			hasTime  bool
 		}
-		// 库内时间已知性：'' 哨兵或解析失败一律视为未知（§10 回退并集）。
-		serverKnown := false
-		var serverMs int64
-		if server.TagSetUpdatedAt != "" {
-			if ms, err := millisOf(server.TagSetUpdatedAt); err == nil {
-				serverKnown, serverMs = true, ms
+		plans := make(map[string]*assetPlan)
+		for _, ref := range sliceOrEmpty(refs) {
+			assetID, okAsset := imp.keyToAsset[ref.RecordKey]
+			_, okTag := tagIDs[ref.TagName]
+			if !okAsset || !okTag {
+				imp.bump(&imp.res.TagRefsSkipped)
+				continue
+			}
+			plan := plans[assetID]
+			if plan == nil {
+				plan = &assetPlan{}
+				plans[assetID] = plan
+			}
+			plan.refs = append(plan.refs, ref)
+			if ms := imp.keyToTagsTime[ref.RecordKey]; ms != nil && *ms > 0 {
+				if !plan.hasTime || *ms > plan.backupMs {
+					plan.backupMs = *ms
+				}
+				plan.hasTime = true
 			}
 		}
-		if !plan.hasTime || !serverKnown || plan.backupMs <= serverMs {
-			// 并集合并（缺省路径）：只增不删，不改库内时间。
+		now := imp.s.now()
+		for assetID, plan := range plans {
+			server, err := qx.GetAsset(imp.ctx, assetID)
+			if err != nil {
+				imp.fail("查询资产标签组时间", err)
+				return
+			}
+			// 库内时间已知性：'' 哨兵或解析失败一律视为未知（§10 回退并集）。
+			serverKnown := false
+			var serverMs int64
+			if server.TagSetUpdatedAt != "" {
+				if ms, err := millisOf(server.TagSetUpdatedAt); err == nil {
+					serverKnown, serverMs = true, ms
+				}
+			}
+			if !plan.hasTime || !serverKnown || plan.backupMs <= serverMs {
+				// 并集合并（缺省路径）：只增不删，不改库内时间。
+				for _, ref := range plan.refs {
+					err := qx.ImportAddAssetTag(imp.ctx, db.ImportAddAssetTagParams{
+						AssetID: assetID, TagID: tagIDs[ref.TagName],
+						CreatedAt: nowOrMillis(ref.CreatedAtMillis, now),
+						Origin:    store.NormalizeOrigin(ref.Origin),
+					})
+					if err != nil {
+						imp.fail("导入标签关联", err)
+						return
+					}
+					imp.bump(&imp.res.TagRefsImported)
+				}
+				continue
+			}
+			// 备份较新：整体替换（清空重挂；时间改写为备份时刻——同备份重导时
+			// 备份时间 == 库内时间，落回并集路径，幂等性不破）。
+			if err := qx.DeleteAssetTags(imp.ctx, assetID); err != nil {
+				imp.fail("替换标签组清空", err)
+				return
+			}
 			for _, ref := range plan.refs {
-				err := imp.s.q.ImportAddAssetTag(imp.ctx, db.ImportAddAssetTagParams{
+				err := qx.ImportAddAssetTag(imp.ctx, db.ImportAddAssetTagParams{
 					AssetID: assetID, TagID: tagIDs[ref.TagName],
 					CreatedAt: nowOrMillis(ref.CreatedAtMillis, now),
 					Origin:    store.NormalizeOrigin(ref.Origin),
 				})
 				if err != nil {
-					imp.fail("导入标签关联", err)
+					imp.fail("替换标签组挂载", err)
 					return
 				}
 				imp.bump(&imp.res.TagRefsImported)
 			}
-			continue
-		}
-		// 备份较新：整体替换（清空重挂；时间改写为备份时刻——同备份重导时
-		// 备份时间 == 库内时间，落回并集路径，幂等性不破）。
-		if err := imp.s.q.DeleteAssetTags(imp.ctx, assetID); err != nil {
-			imp.fail("替换标签组清空", err)
-			return
-		}
-		for _, ref := range plan.refs {
-			err := imp.s.q.ImportAddAssetTag(imp.ctx, db.ImportAddAssetTagParams{
-				AssetID: assetID, TagID: tagIDs[ref.TagName],
-				CreatedAt: nowOrMillis(ref.CreatedAtMillis, now),
-				Origin:    store.NormalizeOrigin(ref.Origin),
-			})
-			if err != nil {
-				imp.fail("替换标签组挂载", err)
+			if err := qx.TouchAssetTagSet(imp.ctx, db.TouchAssetTagSetParams{
+				AssetID:         assetID,
+				TagSetUpdatedAt: store.FormatTimestamp(time.UnixMilli(plan.backupMs)),
+			}); err != nil {
+				imp.fail("改写标签组改动时间", err)
 				return
 			}
-			imp.bump(&imp.res.TagRefsImported)
+			imp.bump(&imp.res.AssetsTagsReplaced)
 		}
-		if err := imp.s.q.TouchAssetTagSet(imp.ctx, db.TouchAssetTagSetParams{
-			AssetID:         assetID,
-			TagSetUpdatedAt: store.FormatTimestamp(time.UnixMilli(plan.backupMs)),
-		}); err != nil {
-			imp.fail("改写标签组改动时间", err)
-			return
-		}
-		imp.bump(&imp.res.AssetsTagsReplaced)
-	}
+	})
 }
 
 // upsertTag 按 name 查重，缺则建（id 用新 UUID，旧 tagId 不迁移）。
-func (imp *legacyImport) upsertTag(t gen.LegacyTag) (string, error) {
-	existing, err := imp.s.q.GetTagByName(imp.ctx, t.Name)
+// qx 是段事务绑定的 Queries（importTags 整段单事务，见 importSegment）。
+func (imp *legacyImport) upsertTag(qx *db.Queries, t gen.LegacyTag) (string, error) {
+	existing, err := qx.GetTagByName(imp.ctx, t.Name)
 	if err == nil {
 		return existing.ID, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return "", err
 	}
-	created, err := imp.s.q.CreateTag(imp.ctx, db.CreateTagParams{
+	created, err := qx.CreateTag(imp.ctx, db.CreateTagParams{
 		ID: uuid.NewString(), Name: t.Name,
 		CreatedAt: nowOrMillis(t.CreatedAtMillis, imp.s.now()),
 	})
@@ -452,95 +481,94 @@ func (imp *legacyImport) upsertTag(t gen.LegacyTag) (string, error) {
 }
 
 // importLikesFavorites：likes 落最后点赞日一行（累计次数差额进 warnings，
-// 旧备份只有 lastLikeDate 无逐日记录）；favorites 幂等 upsert。
+// 旧备份只有 lastLikeDate 无逐日记录）；favorites 幂等 upsert。整段单事务。
 func (imp *legacyImport) importLikesFavorites(likes *[]gen.LegacyLike, favorites *[]string) {
-	if imp.aborted {
-		return
-	}
-	largeLike := 0
-	for _, l := range sliceOrEmpty(likes) {
-		assetID := imp.keyToAsset[l.RecordKey]
-		if assetID == "" {
-			continue
+	imp.importSegment("点赞收藏", func(qx *db.Queries) {
+		largeLike := 0
+		for _, l := range sliceOrEmpty(likes) {
+			assetID := imp.keyToAsset[l.RecordKey]
+			if assetID == "" {
+				continue
+			}
+			if l.LastLikeDate != nil && *l.LastLikeDate != "" {
+				err := qx.ImportAddLike(imp.ctx, db.ImportAddLikeParams{
+					AssetID: assetID, Day: *l.LastLikeDate,
+					CreatedAt: store.FormatTimestamp(imp.s.now()),
+				})
+				if err != nil {
+					imp.fail("导入点赞", err)
+					return
+				}
+				imp.bump(&imp.res.LikesImported)
+			}
+			if l.LikeCount != nil && *l.LikeCount > 1 {
+				largeLike++
+			}
 		}
-		if l.LastLikeDate != nil && *l.LastLikeDate != "" {
-			err := imp.s.q.ImportAddLike(imp.ctx, db.ImportAddLikeParams{
-				AssetID: assetID, Day: *l.LastLikeDate,
-				CreatedAt: store.FormatTimestamp(imp.s.now()),
-			})
-			if err != nil {
-				imp.fail("导入点赞", err)
+		if largeLike > 0 {
+			imp.warn("%d 个文件的累计点赞次数无法逐日还原（旧备份仅有最后点赞日），热度口径按回放后的点赞行数计", largeLike)
+		}
+		for _, key := range sliceOrEmpty(favorites) {
+			assetID := imp.keyToAsset[key]
+			if assetID == "" {
+				continue
+			}
+			if _, err := qx.AddFavorite(imp.ctx, db.AddFavoriteParams{
+				AssetID: assetID, CreatedAt: store.FormatTimestamp(imp.s.now()),
+			}); err != nil {
+				imp.fail("导入收藏", err)
 				return
 			}
-			imp.bump(&imp.res.LikesImported)
+			imp.bump(&imp.res.FavoritesImported)
 		}
-		if l.LikeCount != nil && *l.LikeCount > 1 {
-			largeLike++
-		}
-	}
-	if largeLike > 0 {
-		imp.warn("%d 个文件的累计点赞次数无法逐日还原（旧备份仅有最后点赞日），热度口径按回放后的点赞行数计", largeLike)
-	}
-	for _, key := range sliceOrEmpty(favorites) {
-		assetID := imp.keyToAsset[key]
-		if assetID == "" {
-			continue
-		}
-		if _, err := imp.s.q.AddFavorite(imp.ctx, db.AddFavoriteParams{
-			AssetID: assetID, CreatedAt: store.FormatTimestamp(imp.s.now()),
-		}); err != nil {
-			imp.fail("导入收藏", err)
-			return
-		}
-		imp.bump(&imp.res.FavoritesImported)
-	}
+	})
 }
 
 // importTimelineTags：时间轴标签（§10 timelineTags → timeline_tags）。
+// 整段单事务。
 func (imp *legacyImport) importTimelineTags(tags *[]gen.LegacyTimelineTag) {
-	if imp.aborted {
-		return
-	}
-	for _, t := range sliceOrEmpty(tags) {
-		assetID := imp.keyToAsset[t.RecordKey]
-		if assetID == "" {
-			continue
+	imp.importSegment("时间轴标签", func(qx *db.Queries) {
+		for _, t := range sliceOrEmpty(tags) {
+			assetID := imp.keyToAsset[t.RecordKey]
+			if assetID == "" {
+				continue
+			}
+			createdAt := nowOrMillis(t.CreatedAtMillis, imp.s.now())
+			if err := qx.ImportInsertTimelineTag(imp.ctx, db.ImportInsertTimelineTagParams{
+				ID: uuid.NewString(), AssetID: assetID, TimeMillis: t.TimeMillis,
+				Name: t.Name, CreatedAt: createdAt,
+				// sqlc 对 WHERE 重复列生成 _2 字段：内容去重键 = (asset, time, name)
+				AssetID_2: assetID, TimeMillis_2: t.TimeMillis, Name_2: t.Name,
+			}); err != nil {
+				imp.fail("导入时间轴标签", err)
+				return
+			}
+			imp.bump(&imp.res.TimelineTagsImported)
 		}
-		createdAt := nowOrMillis(t.CreatedAtMillis, imp.s.now())
-		if err := imp.s.q.ImportInsertTimelineTag(imp.ctx, db.ImportInsertTimelineTagParams{
-			ID: uuid.NewString(), AssetID: assetID, TimeMillis: t.TimeMillis,
-			Name: t.Name, CreatedAt: createdAt,
-			// sqlc 对 WHERE 重复列生成 _2 字段：内容去重键 = (asset, time, name)
-			AssetID_2: assetID, TimeMillis_2: t.TimeMillis, Name_2: t.Name,
-		}); err != nil {
-			imp.fail("导入时间轴标签", err)
-			return
-		}
-		imp.bump(&imp.res.TimelineTagsImported)
-	}
+	})
 }
 
 // markFollowed：关注标记（§6 布尔量；未知 authorId 计数进 warnings）。
+// 整段单事务。
 func (imp *legacyImport) markFollowed(ids *[]string) {
-	if imp.aborted {
-		return
-	}
-	unknown := 0
-	for _, id := range sliceOrEmpty(ids) {
-		affected, err := imp.s.q.ImportMarkAuthorFollowed(imp.ctx, id)
-		if err != nil {
-			imp.fail("标记关注作者", err)
-			return
+	imp.importSegment("关注标记", func(qx *db.Queries) {
+		unknown := 0
+		for _, id := range sliceOrEmpty(ids) {
+			affected, err := qx.ImportMarkAuthorFollowed(imp.ctx, id)
+			if err != nil {
+				imp.fail("标记关注作者", err)
+				return
+			}
+			if affected > 0 {
+				imp.bump(&imp.res.FollowedAuthorsMarked)
+			} else {
+				unknown++
+			}
 		}
-		if affected > 0 {
-			imp.bump(&imp.res.FollowedAuthorsMarked)
-		} else {
-			unknown++
+		if unknown > 0 {
+			imp.warn("%d 个关注 authorId 未匹配到作者（备份 authors 段缺失该 id），已忽略", unknown)
 		}
-	}
-	if unknown > 0 {
-		imp.warn("%d 个关注 authorId 未匹配到作者（备份 authors 段缺失该 id），已忽略", unknown)
-	}
+	})
 }
 
 // importPrefs：recommendationPrefs 写入 kv_settings（与 PUT /recommendations/

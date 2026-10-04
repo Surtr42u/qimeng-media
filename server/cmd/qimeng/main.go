@@ -218,6 +218,9 @@ func main() {
 	// 缓存，外部原地换文件后海报帧按新内容重建（生产装配单点，漏接线=
 	// 缩略图陈旧不自愈，见 scanner.invalidateThumbs）。
 	scan.SetThumbsInvalidator(thumbs.DeleteAssetThumbs)
+	// 事务宿主接线：富化写入（资产+角色行）单资产单事务的 BeginTx 宿主，
+	// 漏接线会退回逐语句 autocommit（中间态窗口回归，见 scanner.SetConn）。
+	scan.SetConn(conn)
 	// 富化引擎版本自愈重算（DOMAIN_RULES §4）：引擎升级后存量资产的富化结果
 	// 不会随扫描自然刷新（size+mtime 未变即跳过重 ingest），kv 版本标记落后
 	// 时在后台对全部常规库重算一次。goroutine 起它是因为大库重算可能数十秒，

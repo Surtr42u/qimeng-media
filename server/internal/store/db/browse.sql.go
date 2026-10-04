@@ -188,43 +188,6 @@ func (q *Queries) CountAssetsFiltered(ctx context.Context, arg CountAssetsFilter
 	return count, err
 }
 
-const countLibraryMedia = `-- name: CountLibraryMedia :many
-
-SELECT media_type, COUNT(*) AS cnt FROM assets
-WHERE library_id = ?
-GROUP BY media_type
-`
-
-type CountLibraryMediaRow struct {
-	MediaType string
-	Cnt       int64
-}
-
-// CountLibraryMedia: per-library media_type counters for the Library
-// response (fileCount = sum of the three rows; absent rows = 0).
-func (q *Queries) CountLibraryMedia(ctx context.Context, libraryID string) ([]CountLibraryMediaRow, error) {
-	rows, err := q.db.QueryContext(ctx, countLibraryMedia, libraryID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []CountLibraryMediaRow
-	for rows.Next() {
-		var i CountLibraryMediaRow
-		if err := rows.Scan(&i.MediaType, &i.Cnt); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const getAssetWithLibrary = `-- name: GetAssetWithLibrary :one
 
 SELECT

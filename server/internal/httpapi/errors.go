@@ -5,6 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+
+	sqlite "modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
 )
 
 // maxJSONBody 是 JSON 请求体上限（1MB，SECURITY 红线 6：请求体滥用防御）。
@@ -82,6 +85,31 @@ func (s *Server) internalErr(w http.ResponseWriter, what string, err error) {
 	s.logger.Error(what+"失败", "err", err)
 	writeErr(w, http.StatusInternalServerError, codeInternal, "内部错误")
 }
+
+// isSQLiteConstraint 报告 err 是否为 modernc SQLite 驱动返回的指定约束类
+// 错误：errors.As 到驱动官方错误类型 sqlite.Error 后按 Code()（SQLite
+// 结果码）判定，约束码直接引用驱动自带 C 常量表导出的 SQLITE_CONSTRAINT_*
+// （modernc.org/sqlite/lib），禁止手写魔数码。本 helper 是约束冲突判定的
+// 单一来源（libraries.go 的 UNIQUE / engagement.go 的 FOREIGN KEY 两处
+// 共用，2026-10 治理批把原 err.Error() 文本匹配收敛至此）——文本是驱动的
+// 展示层产物、随版本可变，错误码才是稳定契约。
+func isSQLiteConstraint(err error, code int) bool {
+	var serr *sqlite.Error
+	return errors.As(err, &serr) && serr.Code() == code
+}
+
+// 本包判定的约束码（SQLite 官方扩展结果码，值由 modernc.org/sqlite/lib
+// 常量表单一来源保证）。
+const (
+	// sqliteCodeConstraintUnique：UNIQUE 索引冲突（如 libraries.root_path）。
+	// 边界记档（2026-10-04 审查）：INTEGER PRIMARY KEY 冲突返回的是
+	// SQLITE_CONSTRAINT_PRIMARYKEY(1555) 而非本码 2067（错误文本同为
+	// "UNIQUE constraint failed"，旧文本匹配反而两者都兜得住）——未来对
+	// 主键表判 409 时须并判 1555；本仓现有判定点均为 TEXT UNIQUE 列，不受影响。
+	sqliteCodeConstraintUnique = sqlite3.SQLITE_CONSTRAINT_UNIQUE
+	// sqliteCodeConstraintForeignKey：外键约束失败（如事件累加撞已删资产）。
+	sqliteCodeConstraintForeignKey = sqlite3.SQLITE_CONSTRAINT_FOREIGNKEY
+)
 
 // notImplemented 机制（M1 未接线端点统一 501 + NOT_IMPLEMENTED）已随
 // openapi 全部端点接线完毕而移除；如未来新增未接线端点，从 git 历史恢复

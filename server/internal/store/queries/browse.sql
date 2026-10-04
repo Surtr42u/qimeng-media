@@ -608,11 +608,3 @@ WHERE asset_id = ? AND kind = 'dwell';
 
 -- name: RemoveLikeOnDay :execrows
 DELETE FROM likes WHERE asset_id = ? AND day = ?;
-
--- CountLibraryMedia: per-library media_type counters for the Library
--- response (fileCount = sum of the three rows; absent rows = 0).
-
--- name: CountLibraryMedia :many
-SELECT media_type, COUNT(*) AS cnt FROM assets
-WHERE library_id = ?
-GROUP BY media_type;

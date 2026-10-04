@@ -59,6 +59,12 @@ func FormatDay(t time.Time) string {
 //   - journal_mode(WAL)：读写不互斥（adr/0003 选 SQLite 的前提——单机
 //     数万 QPS 读的前提就是 WAL）；WAL 本身持久化在库文件里，但每个新连接
 //     重复声明无害且幂等。
+//   - synchronous(NORMAL)：WAL + NORMAL 是 SQLite 官方推荐组合——每事务
+//     免 fsync、写吞吐数倍提升，fsync 推迟到 checkpoint 才做。代价：断电
+//     最多丢最近若干已提交事务；本库高频写是扫描入库/浏览事件/计数，丢一
+//     笔 = 少计、可由重扫重建，且库文件不损不脏——WAL 的断电安全由
+//     journal_mode 保证，NORMAL 只推迟刷盘不破坏日志一致性。与
+//     busy_timeout 同属实证调参先例（2026-10 调参）。
 //   - busy_timeout(15000)：写锁被占时等待 15 秒再返回 SQLITE_BUSY，而不是
 //     立刻失败——单进程多协程（扫描器+API）写碰撞靠它吸收。15 秒口径：
 //     TXT 重建/备份事件回放是大事务，持锁可达秒级，旧值 5 秒在手机闪存+
@@ -90,7 +96,7 @@ const busyTimeoutMS = 15000
 const pageCacheKiB = 32000
 
 func Open(path string) (*sql.DB, error) {
-	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(%d)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=cache_size(-%d)&_txlock=immediate",
+	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(%d)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=foreign_keys(1)&_pragma=cache_size(-%d)&_txlock=immediate",
 		path, busyTimeoutMS, pageCacheKiB)
 	db, err := sql.Open(driverName, dsn)
 	if err != nil {

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"strings"
 
 	"github.com/google/uuid"
 
@@ -144,9 +143,10 @@ func (s *Server) PostApiV1EventsView(w http.ResponseWriter, r *http.Request) {
 		// 的 live 过滤同口径。返回 202 而非 500 是客户端「2xx 才删本地暂存」
 		// 约定的安全前提：500 会让离线队列对一条孤儿事件无限重试
 		//（2026-09-22 fnOS 虚拟机彩排实测：旧标签页重放 44 次）。
-		// 错误判定沿用 libraries.go 的约束错误字符串匹配惯例（sqlc 查询层
-		// 不区分约束种类，驱动错误文本在 modernc sqlite 稳定）。
-		if strings.Contains(err.Error(), "FOREIGN KEY constraint failed") {
+		// 错误判定走 isSQLiteConstraint 的错误码分类（errors.go 单一来源；
+		// 原字符串匹配惯例已于 2026-10 治理批收敛，sqlc 查询层不区分约束
+		// 种类、由驱动错误码承载）。
+		if isSQLiteConstraint(err, sqliteCodeConstraintForeignKey) {
 			if err := tx.Commit(); err != nil {
 				s.internalErr(w, "提交浏览事件", err)
 				return

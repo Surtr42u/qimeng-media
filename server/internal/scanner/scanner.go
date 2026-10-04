@@ -1,3 +1,12 @@
+// scanner.go：扫描主线编排（载入→遍历→差集→移动合并→删除→收尾）与
+// Scanner 实例/闸门；富化挂接在 enrich.go，重挂自愈在 relink.go，增量
+// 监听在 watch.go。
+//
+// 超过单文件 600 行警戒线理由：扫描编排流（闸门、变更检测、移动合并
+// 启发式与差集对账）是一条端到端的状态机主线，各阶段共享 existing/seen/
+// added/res 一组累积状态——拆文件会把同一组状态的读写摊到多处，编排
+// 内聚优先于文件行数代价（子职责已按 enrich/relink/watch 拆出）。
+
 package scanner
 
 import (
@@ -91,7 +100,12 @@ type libraryGate struct {
 // 零值不可用，经 New 构造。Scan/Watch/StartBackground 可对同一实例并发调用；
 // Scanner 按库隔离闸门，多库扫描互不阻塞。
 type Scanner struct {
-	q      *db.Queries
+	q *db.Queries
+	// conn 底层数据库连接（事务宿主）。q 只承载单语句，单资产多语句的
+	// 原子性（enrich.go 富化事务）需要从 conn.BeginTx 起事务——sqlc 生成的
+	// Queries 不导出底层 DBTX，拿不回来，只能显式注入。未接线（nil）时
+	// 富化退回逐语句 autocommit（旧行为），保证测试/裁剪形态零破坏。
+	conn   *sql.DB
 	bus    *events.Bus
 	logger *slog.Logger
 	// probe 视频元数据探测（默认 thumbnail.ProbeVideo）。仅 VIDEO 类型调用；
@@ -169,6 +183,14 @@ func New(q *db.Queries, bus *events.Bus, logger *slog.Logger, dataDir string, pr
 // 必须调用（漏调是 F1 缺陷复现，见 invalidateThumbs）。
 func (s *Scanner) SetThumbsInvalidator(deleteThumbs func(assetID string)) {
 	s.deleteThumbs = deleteThumbs
+}
+
+// SetConn 接线事务宿主连接（生产装配传 store.Open 的返回值）。后置 setter
+// 而非 New 参数的理由同 SetThumbsInvalidator：五参签名稳定，测试装配点不
+// 因新依赖变动。不接线（nil）的后果：富化写入退回逐语句 autocommit
+// （旧行为，见 conn 字段注释），生产装配必须调用。
+func (s *Scanner) SetConn(conn *sql.DB) {
+	s.conn = conn
 }
 
 // gate 取（或建）某库的闸门。sync.Map 而非锁+map：Scan 是热路径上的

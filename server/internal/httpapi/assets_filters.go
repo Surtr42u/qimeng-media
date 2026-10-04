@@ -198,16 +198,8 @@ func newAssetFilters(params gen.GetApiV1AssetsParams, directory *string) assetFi
 	}
 	if params.Source != nil {
 		// 多值 source（协议 2026-09-09）：数组内 OR。'其他' 桶翻译成
-		// source_is_other 旗（见上），其余出处名进 JSON 数组（IN json_each）。
-		var sources []string
-		for _, src := range *params.Source {
-			if src == sourceOtherLabel {
-				f.SourceIsOther = 1
-			} else if src != "" {
-				sources = append(sources, src)
-			}
-		}
-		f.SourcesJson = jsonString(sources)
+		// source_is_other 旗（见上），归一见 parseSourcesParam。
+		f.SourcesJson, f.SourceIsOther = parseSourcesParam(*params.Source)
 	}
 	if params.IncludeCos != nil && *params.IncludeCos {
 		f.IncludeCos = 1
@@ -234,22 +226,13 @@ func newAssetFilters(params gen.GetApiV1AssetsParams, directory *string) assetFi
 	if params.Work != nil {
 		// COS 作品名多值（协议 2026-09-09）：数组内 OR（migration 0008，
 		// `作者/作品/文件` 的第二段，COS 分区下的「角色」维度，DOMAIN_RULES §6）。
-		var works []string
-		for _, w := range *params.Work {
-			if w != "" {
-				works = append(works, w)
-			}
-		}
-		f.CosWorksJson = jsonString(works)
+		// 归一见 parseWorksParam。
+		f.CosWorksJson = parseWorksParam(*params.Work)
 	}
 	if params.Character != nil && len(*params.Character) > 0 {
 		// 角色多值（协议 2026-09-09）：每个元素是旧单值表达式（'a+b' 组合
-		// 出镜，组内 AND），数组内 OR——编成「组合的数组」（jsonValue）。
-		combos := make([][]string, 0, len(*params.Character))
-		for _, c := range *params.Character {
-			combos = append(combos, splitCharacters(c))
-		}
-		f.CharactersJson = jsonValue(combos)
+		// 出镜，组内 AND），数组内 OR——归一见 parseCharacterCombosParam。
+		f.CharactersJson = parseCharacterCombosParam(*params.Character)
 	}
 	if params.AuthorId != nil {
 		f.AuthorID = nullStr(*params.AuthorId)
@@ -314,6 +297,49 @@ func splitCharacters(s string) []string {
 		}
 	}
 	return out
+}
+
+// ---- 多值筛选参数的共享归一（GET /assets 与 GET /history 同名参数同语义，
+// 2026-10 收敛原先两处逐字复制的解析段；facets 的同名参数是单值形态、
+// 谓词形状不同，不适用）----
+//
+// parseSourcesParam 多值 source：'其他'（sourceOtherLabel）桶翻译成
+// source_is_other 旗（NULL 出处资产桶，避免 SQL 出现非 ASCII 字面量），
+// 其余非空出处名进 JSON 数组（IN json_each）；空串过滤。返回
+// (sourcesJson, sourceIsOther)，恒有效（空集 = NULL 筛选未启用 + 0）。
+func parseSourcesParam(in []string) (sourcesJson any, sourceIsOther int64) {
+	var sources []string
+	for _, src := range in {
+		if src == sourceOtherLabel {
+			sourceIsOther = 1
+		} else if src != "" {
+			sources = append(sources, src)
+		}
+	}
+	return jsonString(sources), sourceIsOther
+}
+
+// parseWorksParam 多值 work（COS 作品名）：非空元素进 JSON 数组（数组内
+// OR，migration 0008 cos_work 列），空集 = NULL（筛选未启用）。
+func parseWorksParam(in []string) any {
+	var works []string
+	for _, w := range in {
+		if w != "" {
+			works = append(works, w)
+		}
+	}
+	return jsonString(works)
+}
+
+// parseCharacterCombosParam 多值 character：每元素是旧单值表达式（'a+b'
+// 组合出镜，组内 AND），数组内 OR——编成「组合的数组」（jsonValue）。
+// 调用方负责 nil/空数组守卫（空数组时 jsonValue 产 NULL，语义同未启用）。
+func parseCharacterCombosParam(in []string) any {
+	combos := make([][]string, 0, len(in))
+	for _, c := range in {
+		combos = append(combos, splitCharacters(c))
+	}
+	return jsonValue(combos)
 }
 
 //

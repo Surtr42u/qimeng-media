@@ -30,3 +30,14 @@ DELETE FROM libraries WHERE id = ?;
 
 -- name: SetLibraryEnabled :exec
 UPDATE libraries SET enabled = ? WHERE id = ?;
+
+-- CountAllLibrariesMedia: per-library media_type counters for ALL
+-- libraries in one pass. Same shape/semantics as CountLibraryMedia
+-- (browse.sql) but grouped by library too, so list/metrics paths can
+-- replace their per-library CountLibraryMedia loop (N+1) with a single
+-- query; libraries with no assets simply have no rows here and the Go
+-- side treats absent rows as 0 (same as CountLibraryMedia's contract).
+
+-- name: CountAllLibrariesMedia :many
+SELECT library_id, media_type, COUNT(*) AS cnt FROM assets
+GROUP BY library_id, media_type;

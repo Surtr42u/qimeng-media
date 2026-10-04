@@ -1,3 +1,11 @@
+// matcher.go：匹配引擎核心——索引结构、匹配/剥离/提取流程与 Matcher 实例
+//（缓存与并发更新）。内置词表数据在 source_groups_data.go，自定义层合并
+// 在 custom.go，领域规则唯一权威 docs/DOMAIN_RULES.md §4。
+//
+// 超过单文件 600 行警戒线理由：匹配算法与词表索引构建（variants/strip/
+// aliases/exact 四套索引同源同序，见 rebuild）强内聚——拆文件会把「同一份
+// 排序不变式」的构建与消费分到两处，改动必双读，内聚收益大于文件行数代价。
+
 package sourcematcher
 
 import (
@@ -44,6 +52,12 @@ type index struct {
 	variants []variantEntry          // 全部出处变体（builtin + 自定义），长度降序
 	strip    map[string][]string     // canonical → collapsed 变体（长度降序，剥离开头出处用）
 	aliases  map[string][]aliasEntry // canonical → 角色别名索引（长度降序）
+	// exact 是 canonical → (collapsed 别名 → canonical) 的精确查表：兜底提取
+	// 层 exactAlias 的 O(1) 路径（原先对 aliases[source] 线性扫）。同别名多
+	// 目标（一个别名挂在多个角色下）的取舍与线性扫描逐字节等价——构建时按
+	// aliases 的同一排序（别名长度降序→别名→canonical 字典序）首插胜出，
+	// 即同别名时 canonical 字典序最小者胜，与线性扫描首个命中完全一致。
+	exact map[string]map[string]string
 	// stripRaw 是 canonical → 小写原样变体（未折叠空格，长度降序）。兜底提取层
 	// 在原串上剥离开头出处时用（折叠域会抹掉词边界，无法分词），见
 	// extractCharacters。
@@ -292,18 +306,15 @@ func startsProtectedName(tok string) bool {
 }
 
 // exactAlias 在本出处别名索引里做精确（折叠域）查找：命中返回 canonical。
-// 兜底提取的改名/归一与 "2B" 形保护共用本判据。
+// 兜底提取的改名/归一与 "2B" 形保护共用本判据。O(1) 查表（ix.exact，构建
+// 语义见该字段注释），未收录出处返回未命中（nil map 读安全）。
 func (ix *index) exactAlias(source, tok string) (string, bool) {
 	c := collapse(tok)
 	if c == "" {
 		return "", false
 	}
-	for _, a := range ix.aliases[source] {
-		if a.alias == c {
-			return a.canonical, true
-		}
-	}
-	return "", false
+	canon, ok := ix.exact[source][c]
+	return canon, ok
 }
 
 // stripLeadingDigits 剥离开头连续数字段，但数字段后紧跟 ASCII 字母时整段保护。
@@ -437,6 +448,11 @@ func (m *Matcher) clearCache() {
 
 // rebuild 构建不可变索引快照（内置表 + 两层自定义经 MergeGroups 合并）并
 // 原子替换。调用方须持 updateMu（New 构造期无并发的例外）。
+//
+// 超过单函数 100 行警戒线理由：本函数是词表数据 → 四套索引（variants/
+// strip/stripRaw/aliases+exact）的单点装配线，各索引的排序不变式（长度
+// 降序 + 字典序 tie-break）互为同源、共享中间变量；拆函数会把同一组不变
+// 式与中间态摊到多处，误改一处排序即静默改变匹配语义，内聚优先于行数。
 func (m *Matcher) rebuild() {
 	merged := MergeGroups(builtinGroups, m.customNames, m.customGroups)
 	ix := &index{
@@ -444,6 +460,7 @@ func (m *Matcher) rebuild() {
 		variants: make([]variantEntry, 0, len(merged)*4),
 		strip:    make(map[string][]string, len(merged)),
 		aliases:  make(map[string][]aliasEntry, len(merged)),
+		exact:    make(map[string]map[string]string, len(merged)),
 		stripRaw: make(map[string][]string, len(merged)),
 	}
 	// 停用词集合 = 内置冻结基线 ∪ 用户追加层，逐词折叠后入集合（空串跳过；
@@ -529,6 +546,16 @@ func (m *Matcher) rebuild() {
 			return as[i].canonical < as[j].canonical
 		})
 		ix.aliases[g.Canonical] = as
+		// 精确查表（exactAlias 的 O(1) 路径）：按上方同一排序顺序首插胜出——
+		// 同别名多目标时先入表者（canonical 字典序最小者）胜，与原先对
+		// aliases[source] 线性扫首个命中逐字节等价（语义见 index.exact 注释）。
+		am := make(map[string]string, len(as))
+		for _, a := range as {
+			if _, dup := am[a.alias]; !dup {
+				am[a.alias] = a.canonical
+			}
+		}
+		ix.exact[g.Canonical] = am
 	}
 	for i := range merged {
 		add(&merged[i])

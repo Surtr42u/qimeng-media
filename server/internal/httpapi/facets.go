@@ -20,9 +20,11 @@
 package httpapi
 
 import (
-	"context"
+	"fmt"
 	"net/http"
 	"sort"
+
+	"golang.org/x/sync/errgroup"
 
 	"qimeng-media/server/internal/httpapi/gen"
 	"qimeng-media/server/internal/search"
@@ -118,82 +120,188 @@ func newFacetFilters(params gen.GetApiV1AssetsFacetsParams) facetFilters {
 // 逐查询的维度表）。参数归一见 newFacetFilters，各维度装配见
 // facetPartitionBuckets / facetAuthorBuckets / facetCharacterBuckets /
 // facetMediaTypeBuckets。
+//
+// 六个聚合查询经 errgroup 并行发射（2026-10 前为四函数串行调用链、作者/
+// 角色行内部还各串两个查询，最坏六次往返叠乘）。查询相互独立已核实：
+// 全部只读、共享的筛选载体 f 只读、装配在全部完成后进行、任一查询的
+// 输入不依赖另一查询的结果；SQLite WAL 读并发天然支持。错误语义与原串行
+// 版一致：首个失败的 err 经 Wait 返回，阶段名随错误链传递（日志可定位），
+// 客户端拿到统一的 500（原先各函数自行写响应的文案本就同一模板）。
 func (s *Server) GetApiV1AssetsFacets(w http.ResponseWriter, r *http.Request, params gen.GetApiV1AssetsFacetsParams) {
 	f := newFacetFilters(params)
 	isCosPartition := params.Partition != nil && *params.Partition == gen.PartitionCos
 	isRegularPartition := params.Partition != nil && *params.Partition == gen.PartitionRegular
 	ctx := r.Context()
 
-	partitions, ok := s.facetPartitionBuckets(w, ctx, f)
-	if !ok {
-		return
+	var (
+		partRow    db.FacetPartitionCountsRow
+		srcRows    []db.FacetSourceCountsRow
+		authorRows []db.FacetAuthorCountsRow
+		charRows   []db.FacetCharacterCountsRow
+		workRows   []db.FacetCosWorkCountsRow
+		typeRows   []db.FacetMediaTypeCountsRow
+	)
+	g := errgroup.Group{}
+	g.Go(func() error {
+		row, err := s.q.FacetPartitionCounts(ctx, db.FacetPartitionCountsParams{
+			MediaType:      f.mediaType,
+			CharactersJson: f.charactersJson,
+			CosWork:        f.cosWork,
+			Source:         f.source,
+			SourceIsOther:  f.sourceIsOther,
+			AuthorID:       f.authorID,
+			QJson:          f.qJson,
+			FavoriteSubset: f.favoriteSubset,
+			HistorySubset:  f.historySubset,
+		})
+		if err != nil {
+			// 阶段名进错误链：internalErr 的日志仍可定位到具体维度（成功路径
+			// 绝不能包装——fmt.Errorf 对 nil err 会产出 %!w(<nil>) 假错误）。
+			return fmt.Errorf("聚合分区维度: %w", err)
+		}
+		partRow = row
+		return nil
+	})
+	// 作者行/角色行的两个查询按分区条件跳过（口径见各装配函数注释），
+	// 与原串行版取值完全一致。
+	if !isCosPartition {
+		g.Go(func() error {
+			rows, err := s.q.FacetSourceCounts(ctx, db.FacetSourceCountsParams{
+				MediaType:      f.mediaType,
+				CharactersJson: f.charactersJson,
+				CosWork:        f.cosWork,
+				Source:         f.source,
+				SourceIsOther:  f.sourceIsOther,
+				AuthorID:       f.authorID,
+				QJson:          f.qJson,
+				FavoriteSubset: f.favoriteSubset,
+				HistorySubset:  f.historySubset,
+			})
+			if err != nil {
+				return fmt.Errorf("聚合作者行出处分组: %w", err)
+			}
+			srcRows = rows
+			return nil
+		})
 	}
-	authors, ok := s.facetAuthorBuckets(w, ctx, f, isCosPartition, isRegularPartition)
-	if !ok {
-		return
+	if !isRegularPartition {
+		g.Go(func() error {
+			rows, err := s.q.FacetAuthorCounts(ctx, db.FacetAuthorCountsParams{
+				IncludeCos:     f.includeCos,
+				CosOnly:        f.cosOnly,
+				MediaType:      f.mediaType,
+				CharactersJson: f.charactersJson,
+				CosWork:        f.cosWork,
+				Source:         f.source,
+				SourceIsOther:  f.sourceIsOther,
+				AuthorID:       f.authorID,
+				QJson:          f.qJson,
+				FavoriteSubset: f.favoriteSubset,
+				HistorySubset:  f.historySubset,
+			})
+			if err != nil {
+				return fmt.Errorf("聚合作者行 COS 作者: %w", err)
+			}
+			authorRows = rows
+			return nil
+		})
 	}
-	characters, ok := s.facetCharacterBuckets(w, ctx, f, isCosPartition, isRegularPartition)
-	if !ok {
-		return
+	if !isCosPartition {
+		g.Go(func() error {
+			rows, err := s.q.FacetCharacterCounts(ctx, db.FacetCharacterCountsParams{
+				IncludeCos:     f.includeCos,
+				CosOnly:        f.cosOnly,
+				MediaType:      f.mediaType,
+				Source:         f.source,
+				SourceIsOther:  f.sourceIsOther,
+				AuthorID:       f.authorID,
+				QJson:          f.qJson,
+				FavoriteSubset: f.favoriteSubset,
+				HistorySubset:  f.historySubset,
+			})
+			if err != nil {
+				return fmt.Errorf("聚合角色维度: %w", err)
+			}
+			charRows = rows
+			return nil
+		})
 	}
-	types, ok := s.facetMediaTypeBuckets(w, ctx, f)
-	if !ok {
+	if !isRegularPartition {
+		g.Go(func() error {
+			rows, err := s.q.FacetCosWorkCounts(ctx, db.FacetCosWorkCountsParams{
+				IncludeCos:     f.includeCos,
+				CosOnly:        f.cosOnly,
+				MediaType:      f.mediaType,
+				Source:         f.source,
+				SourceIsOther:  f.sourceIsOther,
+				AuthorID:       f.authorID,
+				QJson:          f.qJson,
+				FavoriteSubset: f.favoriteSubset,
+				HistorySubset:  f.historySubset,
+			})
+			if err != nil {
+				return fmt.Errorf("聚合角色维度(COS 作品): %w", err)
+			}
+			workRows = rows
+			return nil
+		})
+	}
+	g.Go(func() error {
+		rows, err := s.q.FacetMediaTypeCounts(ctx, db.FacetMediaTypeCountsParams{
+			IncludeCos:     f.includeCos,
+			CosOnly:        f.cosOnly,
+			CharactersJson: f.charactersJson,
+			CosWork:        f.cosWork,
+			Source:         f.source,
+			SourceIsOther:  f.sourceIsOther,
+			AuthorID:       f.authorID,
+			QJson:          f.qJson,
+			FavoriteSubset: f.favoriteSubset,
+			HistorySubset:  f.historySubset,
+		})
+		if err != nil {
+			return fmt.Errorf("聚合类型维度: %w", err)
+		}
+		typeRows = rows
+		return nil
+	})
+	if err := g.Wait(); err != nil {
+		s.internalErr(w, "聚合相册候选", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, gen.AssetFacets{
-		Partitions: partitions,
-		Authors:    authors,
-		Characters: characters,
-		Types:      types,
+		Partitions: facetPartitionBuckets(partRow),
+		Authors:    facetAuthorBuckets(srcRows, authorRows, isCosPartition, isRegularPartition),
+		Characters: facetCharacterBuckets(charRows, workRows, isCosPartition, isRegularPartition),
+		Types:      facetMediaTypeBuckets(typeRows),
 	})
 }
 
 // facetPartitionBuckets 分区栏：固定 all/regular/cos 三项。分区维排自身=
 // 全量报告，一次查询同时给出全量与 COS 计数（常规 = 全量 - COS，facets.sql
 // 单趟合并）。子集约束传入时分区芯片 = 子集内的 all/regular/cos。
-func (s *Server) facetPartitionBuckets(w http.ResponseWriter, ctx context.Context, f facetFilters) ([]gen.FacetBucket, bool) {
-	part, err := s.q.FacetPartitionCounts(ctx, db.FacetPartitionCountsParams{
-		MediaType:      f.mediaType,
-		CharactersJson: f.charactersJson,
-		CosWork:        f.cosWork,
-		Source:         f.source,
-		SourceIsOther:  f.sourceIsOther,
-		AuthorID:       f.authorID,
-		QJson:          f.qJson,
-		FavoriteSubset: f.favoriteSubset,
-		HistorySubset:  f.historySubset,
-	})
-	if err != nil {
-		s.internalErr(w, "聚合分区维度", err)
-		return nil, false
-	}
+func facetPartitionBuckets(part db.FacetPartitionCountsRow) []gen.FacetBucket {
 	cosCount := toInt(part.CosCount)
 	return []gen.FacetBucket{
 		{Key: "all", Name: "全部", FileCount: int(part.AllCount)},
 		{Key: "regular", Name: "常规", FileCount: int(part.AllCount) - cosCount},
 		{Key: "cos", Name: "COS", FileCount: cosCount},
-	}, true
+	}
 }
 
 // facetAuthorBuckets 作者行（旧版「作品」行；2026-09-09 协议批起
 // source/authorId 对本行照常收窄——作者集合页固定传 authorId 即可让
 // 作品维候选按作者收窄；排自身由相册页调用方每维独立请求时省略自身
 // 参数实现）：常规分区=出处分组；COS 分区=COS 作者；全部分区=两者合并。
-func (s *Server) facetAuthorBuckets(w http.ResponseWriter, ctx context.Context, f facetFilters, isCosPartition, isRegularPartition bool) ([]gen.FacetBucket, bool) {
+// 纯装配：两路查询已在 GetApiV1AssetsFacets 并行完成（分区条件跳过口径
+// 与原串行版一致）。
+func facetAuthorBuckets(srcRows []db.FacetSourceCountsRow, authorRows []db.FacetAuthorCountsRow, isCosPartition, isRegularPartition bool) []gen.FacetBucket {
 	var authors []gen.FacetBucket
 	if !isCosPartition {
-		srcBuckets, ok := s.facetSourceBuckets(w, ctx, f)
-		if !ok {
-			return nil, false
-		}
-		authors = srcBuckets
+		authors = facetSourceBuckets(srcRows)
 	}
 	if !isRegularPartition {
-		cosBuckets, ok := s.facetCosAuthorBuckets(w, ctx, f)
-		if !ok {
-			return nil, false
-		}
-		authors = mergeFacetBuckets(authors, cosBuckets)
+		authors = mergeFacetBuckets(authors, facetCosAuthorBuckets(authorRows))
 	}
 	if !isCosPartition && !isRegularPartition {
 		// 全部分区合并后把「其他」重新挪到末尾（mergeFacetBuckets 按计数
@@ -208,32 +316,17 @@ func (s *Server) facetAuthorBuckets(w http.ResponseWriter, ctx context.Context, 
 			}
 		}
 	}
-	return authors, true
+	return authors
 }
 
 // facetCharacterBuckets 角色行（排自身：忽略 character 与 work——两参数
 // 同属「角色」行）。常规分区=匹配引擎角色名；COS 分区=COS 作品名（旧版
 // 「COS 角色=作品名」口径，DOMAIN_RULES §6）；全部分区=两者合并。
 // NULL 作品（无作品子目录）不列入，前端按需兜底（openapi characters
-// description）。
-func (s *Server) facetCharacterBuckets(w http.ResponseWriter, ctx context.Context, f facetFilters, isCosPartition, isRegularPartition bool) ([]gen.FacetBucket, bool) {
+// description）。纯装配：两路查询已并行完成。
+func facetCharacterBuckets(charRows []db.FacetCharacterCountsRow, workRows []db.FacetCosWorkCountsRow, isCosPartition, isRegularPartition bool) []gen.FacetBucket {
 	var characters []gen.FacetBucket
 	if !isCosPartition {
-		charRows, err := s.q.FacetCharacterCounts(ctx, db.FacetCharacterCountsParams{
-			IncludeCos:     f.includeCos,
-			CosOnly:        f.cosOnly,
-			MediaType:      f.mediaType,
-			Source:         f.source,
-			SourceIsOther:  f.sourceIsOther,
-			AuthorID:       f.authorID,
-			QJson:          f.qJson,
-			FavoriteSubset: f.favoriteSubset,
-			HistorySubset:  f.historySubset,
-		})
-		if err != nil {
-			s.internalErr(w, "聚合角色维度", err)
-			return nil, false
-		}
 		characters = make([]gen.FacetBucket, 0, len(charRows))
 		for _, row := range charRows {
 			characters = append(characters, gen.FacetBucket{
@@ -243,21 +336,6 @@ func (s *Server) facetCharacterBuckets(w http.ResponseWriter, ctx context.Contex
 		}
 	}
 	if !isRegularPartition {
-		workRows, err := s.q.FacetCosWorkCounts(ctx, db.FacetCosWorkCountsParams{
-			IncludeCos:     f.includeCos,
-			CosOnly:        f.cosOnly,
-			MediaType:      f.mediaType,
-			Source:         f.source,
-			SourceIsOther:  f.sourceIsOther,
-			AuthorID:       f.authorID,
-			QJson:          f.qJson,
-			FavoriteSubset: f.favoriteSubset,
-			HistorySubset:  f.historySubset,
-		})
-		if err != nil {
-			s.internalErr(w, "聚合角色维度", err)
-			return nil, false
-		}
 		works := make([]gen.FacetBucket, 0, len(workRows))
 		for _, row := range workRows {
 			works = append(works, gen.FacetBucket{
@@ -267,28 +345,13 @@ func (s *Server) facetCharacterBuckets(w http.ResponseWriter, ctx context.Contex
 		}
 		characters = mergeFacetBuckets(characters, works)
 	}
-	return characters, true
+	return characters
 }
 
 // facetMediaTypeBuckets 类型栏（排自身：忽略 mediaType）。固定四项、
 // 无数据的类型补 0；all = 三桶之和（单趟 GROUP BY 后求和，与 SQL 无二次往返）。
-func (s *Server) facetMediaTypeBuckets(w http.ResponseWriter, ctx context.Context, f facetFilters) ([]gen.FacetBucket, bool) {
-	typeRows, err := s.q.FacetMediaTypeCounts(ctx, db.FacetMediaTypeCountsParams{
-		IncludeCos:     f.includeCos,
-		CosOnly:        f.cosOnly,
-		CharactersJson: f.charactersJson,
-		CosWork:        f.cosWork,
-		Source:         f.source,
-		SourceIsOther:  f.sourceIsOther,
-		AuthorID:       f.authorID,
-		QJson:          f.qJson,
-		FavoriteSubset: f.favoriteSubset,
-		HistorySubset:  f.historySubset,
-	})
-	if err != nil {
-		s.internalErr(w, "聚合类型维度", err)
-		return nil, false
-	}
+// 纯装配：查询已并行完成。
+func facetMediaTypeBuckets(typeRows []db.FacetMediaTypeCountsRow) []gen.FacetBucket {
 	counts := make(map[gen.MediaType]int, len(facetMediaTypeLabels))
 	total := 0
 	for _, row := range typeRows {
@@ -301,7 +364,7 @@ func (s *Server) facetMediaTypeBuckets(w http.ResponseWriter, ctx context.Contex
 		{Key: string(gen.MediaTypeImage), Name: facetMediaTypeLabels[gen.MediaTypeImage], FileCount: counts[gen.MediaTypeImage]},
 		{Key: string(gen.MediaTypeAnimatedImage), Name: facetMediaTypeLabels[gen.MediaTypeAnimatedImage], FileCount: counts[gen.MediaTypeAnimatedImage]},
 		{Key: string(gen.MediaTypeVideo), Name: facetMediaTypeLabels[gen.MediaTypeVideo], FileCount: counts[gen.MediaTypeVideo]},
-	}, true
+	}
 }
 
 // facetSourceBuckets 作者行的出处分组候选（常规/全部分区调用）。
@@ -309,23 +372,8 @@ func (s *Server) facetMediaTypeBuckets(w http.ResponseWriter, ctx context.Contex
 // 永远排在列表最下面」），key=sourceOtherLabel 可直接回传 GET /assets。
 // source/sourceIsOther/authorID 是普通收窄键（2026-09-09 协议批：作者
 // 集合页固定传 authorId 让作品维候选按作者收窄；排自身由相册页调用方
-// 省略自身参数实现，见 openapi facets description）。
-func (s *Server) facetSourceBuckets(w http.ResponseWriter, ctx context.Context, f facetFilters) ([]gen.FacetBucket, bool) {
-	rows, err := s.q.FacetSourceCounts(ctx, db.FacetSourceCountsParams{
-		MediaType:      f.mediaType,
-		CharactersJson: f.charactersJson,
-		CosWork:        f.cosWork,
-		Source:         f.source,
-		SourceIsOther:  f.sourceIsOther,
-		AuthorID:       f.authorID,
-		QJson:          f.qJson,
-		FavoriteSubset: f.favoriteSubset,
-		HistorySubset:  f.historySubset,
-	})
-	if err != nil {
-		s.internalErr(w, "聚合作者行出处分组", err)
-		return nil, false
-	}
+// 省略自身参数实现，见 openapi facets description）。纯装配。
+func facetSourceBuckets(rows []db.FacetSourceCountsRow) []gen.FacetBucket {
 	buckets := make([]gen.FacetBucket, 0, len(rows)+1)
 	var otherCount int
 	otherSeen := false
@@ -347,29 +395,12 @@ func (s *Server) facetSourceBuckets(w http.ResponseWriter, ctx context.Context, 
 			Kind: ptr(gen.FacetBucketKindSource),
 		})
 	}
-	return buckets, true
+	return buckets
 }
 
 // facetCosAuthorBuckets 作者行的 COS 作者候选（COS/全部分区调用）。
-// source/sourceIsOther/authorID 同 facetSourceBuckets：普通收窄键。
-func (s *Server) facetCosAuthorBuckets(w http.ResponseWriter, ctx context.Context, f facetFilters) ([]gen.FacetBucket, bool) {
-	rows, err := s.q.FacetAuthorCounts(ctx, db.FacetAuthorCountsParams{
-		IncludeCos:     f.includeCos,
-		CosOnly:        f.cosOnly,
-		MediaType:      f.mediaType,
-		CharactersJson: f.charactersJson,
-		CosWork:        f.cosWork,
-		Source:         f.source,
-		SourceIsOther:  f.sourceIsOther,
-		AuthorID:       f.authorID,
-		QJson:          f.qJson,
-		FavoriteSubset: f.favoriteSubset,
-		HistorySubset:  f.historySubset,
-	})
-	if err != nil {
-		s.internalErr(w, "聚合作者行 COS 作者", err)
-		return nil, false
-	}
+// source/sourceIsOther/authorID 同 facetSourceBuckets：普通收窄键。纯装配。
+func facetCosAuthorBuckets(rows []db.FacetAuthorCountsRow) []gen.FacetBucket {
 	buckets := make([]gen.FacetBucket, 0, len(rows))
 	for _, row := range rows {
 		buckets = append(buckets, gen.FacetBucket{
@@ -377,7 +408,7 @@ func (s *Server) facetCosAuthorBuckets(w http.ResponseWriter, ctx context.Contex
 			Kind: ptr(gen.FacetBucketKindAuthor),
 		})
 	}
-	return buckets, true
+	return buckets
 }
 
 // mergeFacetBuckets 合并两组候选并按 fileCount 降序（同数按显示名稳定

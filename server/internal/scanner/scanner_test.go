@@ -86,6 +86,10 @@ func newTestEnv(t *testing.T, probe ProbeFunc) *testEnv {
 	bus := events.NewBus(nil, 128)
 	t.Cleanup(bus.Close)
 	s := New(q, bus, slog.New(slog.NewTextHandler(io.Discard, nil)), "", nil)
+	// 接线 *sql.DB 让富化/重算走 runAssetTx 事务分支（生产装配同款）——
+	// 不接则 SetConn 为 nil、回退 autocommit 旧路径，单资产原子性零测试覆盖
+	// （2026-10-04 重构批对抗审查抓出的测试缺口）。
+	s.SetConn(conn)
 	s.probe = probe
 	s.progressMinEvery = 0 // 每文件发进度，测试可稳定收到事件
 	return &testEnv{s: s, q: q, bus: bus, lib: lib, conn: conn}
