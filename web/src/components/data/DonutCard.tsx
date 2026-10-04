@@ -5,6 +5,8 @@
  * 原型是写死 dasharray，接真实数据后必须动态才与图例一致。
  */
 
+import { LoadingHint } from '@/components/ui/loading-hint'
+
 export interface DonutSlice {
   /** 图例圆点类（d1/d2/d4…，颜色见 prototype.css .legend .dN） */
   dot: string
@@ -35,7 +37,7 @@ export function DonutCard({
       <div className="donut-card">
         <h3>{title}</h3>
         <p>{sub}</p>
-        <p className="m-note">加载中…</p>
+        <LoadingHint className="m-note" />
       </div>
     )
   }

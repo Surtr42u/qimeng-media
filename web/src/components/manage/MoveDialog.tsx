@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Dialog } from 'radix-ui'
 import { toast } from 'sonner'
 import { DirTreeNodes } from '@/components/manage/DirTree'
+import { LoadingHint } from '@/components/ui/loading-hint'
 import { useDirTree } from '@/hooks/use-libraries'
 import { useMoveAsset } from '@/hooks/use-file-ops'
 import { dirLabel } from '@/lib/format'
@@ -93,7 +94,7 @@ export function MoveDialog({
           </Dialog.Description>
           <div className="move-dir-box">
             {isFetching || !tree ? (
-              <p className="grid-empty">目录加载中…</p>
+              <LoadingHint>目录加载中…</LoadingHint>
             ) : (
               <ul>
                 <DirTreeNodes

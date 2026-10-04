@@ -227,6 +227,17 @@ function patchEntry(id: string, patch: Partial<QueueEntry>): void {
   writeItems((prev) => prev.map((it) => (it.id === id ? { ...it, ...patch } : it)))
 }
 
+/** 进度补丁守卫（2026-10-04 性能批）：直传 xhr.upload.onprogress 与分片
+ *  onProgress 每秒触发数十次，round 后 percent 多数不变——照传 patchEntry
+ *  会走数组替换→notify→整个上传工作台重渲染（纯为不变的数字买单）。一处
+ *  守卫覆盖两路进度回调：percent 未变时跳过写。终态 100% 不经这里——settle
+ *  的 patchEntry 直落，语义不变。 */
+function patchProgress(id: string, percent: number): void {
+  const current = entries.find((it) => it.id === id)
+  if (current === undefined || current.percent === percent) return
+  patchEntry(id, { percent })
+}
+
 /**
  * 201 响应体 → 资产 id（挂靠目标）。协议 201 必回 AssetDetail；解析失败返回
  * null（挂靠缺目标，落 attach-failed 专项态——文件已入库，绝不因此重传）。
@@ -357,7 +368,7 @@ function uploadOne(item: QueueEntry): Promise<void> {
         file,
         sessionId: item.chunkSessionId ?? undefined,
         isCanceled: () => canceledIds.has(item.id),
-        onProgress: (percent) => patchEntry(item.id, { percent }),
+        onProgress: (percent) => patchProgress(item.id, percent),
         onSession: (sessionId) => {
           patchEntry(item.id, { chunkSessionId: sessionId })
           const current = entries.find((it) => it.id === item.id)
@@ -401,7 +412,7 @@ function uploadOne(item: QueueEntry): Promise<void> {
 
     xhr.upload.onprogress = (e) => {
       if (!e.lengthComputable) return
-      patchEntry(item.id, { percent: Math.round((e.loaded / e.total) * 100) })
+      patchProgress(item.id, Math.round((e.loaded / e.total) * 100))
     }
 
     xhr.onload = () => {

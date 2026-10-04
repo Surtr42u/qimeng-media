@@ -5,6 +5,7 @@ import { InfiniteTail } from '@/components/media/InfiniteTail'
 import { ChevronDownIcon } from '@/components/shell/icons'
 import { PanelFilters } from '@/components/filters/PanelFilters'
 import { Pill } from '@/components/ui/pill'
+import { LoadingHint } from '@/components/ui/loading-hint'
 import { useAutoMore } from '@/hooks/use-auto-more'
 import { panelAssetParams, usePanelFilters } from '@/hooks/use-panel-filters'
 import {
@@ -167,7 +168,7 @@ export default function SearchPage() {
             <MediaCard key={a.id} {...assetToCard(a)} onOpen={openCard} />
           ))
         ) : isLoading ? (
-          <p className="grid-empty">加载中…</p>
+          <LoadingHint />
         ) : (
           <p className="grid-empty">没有匹配的内容，放宽一点筛选条件试试。</p>
         )}

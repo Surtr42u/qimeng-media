@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
 import type { Author } from '@/api/generated'
 import { SearchIcon } from '@/components/shell/icons'
+import { LoadingHint } from '@/components/ui/loading-hint'
 import { useAuthors, useToggleFollow } from '@/hooks/use-authors'
 import { authorDisplayName } from '@/lib/format'
 import { collectionPath, COLLECTION_AUTHOR } from '@/lib/route-keys'
@@ -110,7 +111,7 @@ export default function AuthorsPage() {
       </div>
       <div className="rank-card a-list">
         {isLoading ? (
-          <p className="a-empty">加载中…</p>
+          <LoadingHint className="a-empty" />
         ) : rows.length ? (
           <ul>
             {rows.map((a) => (

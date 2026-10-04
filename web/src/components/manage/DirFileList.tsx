@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react'
-import { toast } from 'sonner'
 import { FolderInput, Trash2 } from 'lucide-react'
 import type { AssetSummary, MediaType } from '@/api/generated'
 import { MoveDialog } from '@/components/manage/MoveDialog'
@@ -16,7 +15,7 @@ import { useAssetsInDirectory } from '@/hooks/use-assets'
 import { useBatchRunner } from '@/hooks/use-batch-runner'
 import { useDeleteAsset, useMoveAsset } from '@/hooks/use-file-ops'
 import { useMultiSelect } from '@/hooks/use-multi-select'
-import { failureListText, formatBatchSummary } from '@/lib/batch'
+import { runBatchWithToast } from '@/lib/batch-run'
 import { dirLabel, formatBytes } from '@/lib/format'
 
 /**
@@ -91,54 +90,26 @@ export function DirFileList({ libraryId, directory }: { libraryId: string; direc
     })
   }
 
+  // 批量执行胶水收敛（lib/batch-run.ts）：id 守卫/toast/selectOnly 收口共享，
+  // 调用点只留差异部分（action 文案 + 单条 mutateAsync）；targets = 选集快照
   const runBatchDelete = (): void => {
     const targets = selectedFiles
     setBatchDialog('none')
-    void runner.run(targets, {
+    runBatchWithToast(runner, {
       action: '移入回收站',
-      // selectedFiles 已过滤 id 非空；回调内取常量守卫（TS 收窄不进回调参数），
-      // 防御兜底 reject = runner 记该条失败，不中断整批
-      runOne: (f) => {
-        const id = f.id
-        if (id === undefined) return Promise.reject(new Error('条目缺少 id'))
-        return deleteAsset.mutateAsync(id)
-      },
-      id: (f) => f.id ?? '',
-      label: (f) => f.fileName ?? '',
-      onFinished: (outcome) => {
-        if (outcome.failures.length > 0) {
-          toast.error(formatBatchSummary('移入回收站', outcome), {
-            description: failureListText(outcome.failures),
-          })
-        } else {
-          toast.success(formatBatchSummary('移入回收站', outcome))
-        }
-        select.selectOnly(outcome.failures.map((f) => f.id))
-      },
+      targets,
+      runOneById: (id) => deleteAsset.mutateAsync(id),
+      selectOnly: select.selectOnly,
     })
   }
 
   const runBatchMove = (targetDir: string): void => {
     const targets = selectedFiles
-    void runner.run(targets, {
+    runBatchWithToast(runner, {
       action: '批量移动',
-      runOne: (f) => {
-        const id = f.id
-        if (id === undefined) return Promise.reject(new Error('条目缺少 id'))
-        return moveAsset.mutateAsync({ assetId: id, targetDir })
-      },
-      id: (f) => f.id ?? '',
-      label: (f) => f.fileName ?? '',
-      onFinished: (outcome) => {
-        if (outcome.failures.length > 0) {
-          toast.error(formatBatchSummary('批量移动', outcome), {
-            description: failureListText(outcome.failures),
-          })
-        } else {
-          toast.success(formatBatchSummary('批量移动', outcome))
-        }
-        select.selectOnly(outcome.failures.map((f) => f.id))
-      },
+      targets,
+      runOneById: (id) => moveAsset.mutateAsync({ assetId: id, targetDir }),
+      selectOnly: select.selectOnly,
     })
   }
 

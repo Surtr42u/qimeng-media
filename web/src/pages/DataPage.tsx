@@ -5,6 +5,7 @@ import { ContentRankGrid } from '@/components/data/ContentRankGrid'
 import { DonutCard, type DonutSlice } from '@/components/data/DonutCard'
 import { RankRowList } from '@/components/data/RankRowList'
 import { TrendChart } from '@/components/data/TrendChart'
+import { LoadingHint } from '@/components/ui/loading-hint'
 import { useAuthors } from '@/hooks/use-authors'
 import { useRankings, useStatsOverview, useTrends, type RankingPeriod, type TrendsRange } from '@/hooks/use-stats'
 import { useTags } from '@/hooks/use-tags'
@@ -158,7 +159,7 @@ export default function DataPage() {
         <h3>浏览与播放趋势</h3>
         <p>{current.note} · 按浏览/播放数</p>
         {trendQuery.isPending ? (
-          <p className="m-note">加载中…</p>
+          <LoadingHint className="m-note" />
         ) : trendAllZero ? (
           <p className="m-note">暂无趋势数据</p>
         ) : (
@@ -182,7 +183,7 @@ export default function DataPage() {
           </div>
           <p className="rank-note">Top 5 · 按浏览量（{current.label}）</p>
           {contentRank.isPending ? (
-            <p className="rank-note">加载中…</p>
+            <LoadingHint className="rank-note" />
           ) : (
             <ContentRankGrid
               items={contentRank.data ?? []}

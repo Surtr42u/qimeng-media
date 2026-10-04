@@ -5,12 +5,13 @@ import { formatBytes } from '@/lib/format'
 import { BatchOpsPanel } from '@/components/ui/batch-ops-panel'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { MultiSelectBar } from '@/components/ui/multi-select-bar'
+import { LoadingHint } from '@/components/ui/loading-hint'
 import {
   useDeleteTrashItem, useEmptyTrash, useRestoreTrash, useTrash,
 } from '@/hooks/use-trash'
 import { useBatchRunner } from '@/hooks/use-batch-runner'
 import { useMultiSelect } from '@/hooks/use-multi-select'
-import { failureListText, formatBatchSummary } from '@/lib/batch'
+import { runBatchWithToast } from '@/lib/batch-run'
 import type { TrashItem } from '@/api/generated'
 
 /**
@@ -86,54 +87,26 @@ export default function TrashPage() {
     prune(ids)
   }, [ids, prune])
 
+  // 批量执行胶水收敛（lib/batch-run.ts）：id 守卫/toast/selectOnly 收口共享，
+  // 调用点只留差异部分（action 文案 + 单条 mutateAsync）；targets = 选集快照
   const runBatchRestore = (): void => {
     const targets = selectedItems
-    void runner.run(targets, {
+    runBatchWithToast(runner, {
       action: '批量恢复',
-      // selectedItems 已过滤 id 非空；回调内取常量守卫（TS 收窄不进回调参数），
-      // 防御兜底 reject = runner 记该条失败，不中断整批
-      runOne: (it) => {
-        const id = it.id
-        if (id === undefined) return Promise.reject(new Error('条目缺少 id'))
-        return restore.mutateAsync(id)
-      },
-      id: (it) => it.id ?? '',
-      label: (it) => it.fileName ?? '',
-      onFinished: (outcome) => {
-        if (outcome.failures.length > 0) {
-          toast.error(formatBatchSummary('批量恢复', outcome), {
-            description: failureListText(outcome.failures),
-          })
-        } else {
-          toast.success(formatBatchSummary('批量恢复', outcome))
-        }
-        select.selectOnly(outcome.failures.map((f) => f.id))
-      },
+      targets,
+      runOneById: (id) => restore.mutateAsync(id),
+      selectOnly: select.selectOnly,
     })
   }
 
   const runBatchPurge = (): void => {
     const targets = selectedItems
     setBatchPurgeOpen(false)
-    void runner.run(targets, {
+    runBatchWithToast(runner, {
       action: '彻底删除',
-      runOne: (it) => {
-        const id = it.id
-        if (id === undefined) return Promise.reject(new Error('条目缺少 id'))
-        return removeOne.mutateAsync(id)
-      },
-      id: (it) => it.id ?? '',
-      label: (it) => it.fileName ?? '',
-      onFinished: (outcome) => {
-        if (outcome.failures.length > 0) {
-          toast.error(formatBatchSummary('彻底删除', outcome), {
-            description: failureListText(outcome.failures),
-          })
-        } else {
-          toast.success(formatBatchSummary('彻底删除', outcome))
-        }
-        select.selectOnly(outcome.failures.map((f) => f.id))
-      },
+      targets,
+      runOneById: (id) => removeOne.mutateAsync(id),
+      selectOnly: select.selectOnly,
     })
   }
 
@@ -197,7 +170,7 @@ export default function TrashPage() {
 
       <div className="rank-card">
         {isLoading ? (
-          <p className="grid-empty">加载中…</p>
+          <LoadingHint />
         ) : items.length === 0 ? (
           <p className="grid-empty">回收站是空的——删除资产后会出现在这里。</p>
         ) : (

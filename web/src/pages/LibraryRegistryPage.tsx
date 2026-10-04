@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router'
 import { toast } from 'sonner'
 import { LOCALE_ZH } from '@/lib/constants'
 import { Pill } from '@/components/ui/pill'
+import { LoadingHint } from '@/components/ui/loading-hint'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
@@ -94,7 +95,7 @@ export default function LibraryRegistryPage() {
           <span className="rank-note">{libraries.length} 个库</span>
         </div>
         {isLoading ? (
-          <p className="grid-empty">加载中…</p>
+          <LoadingHint />
         ) : libraries.length === 0 ? (
           <p className="grid-empty">还没有库，先在下方注册一个媒体文件夹。</p>
         ) : (

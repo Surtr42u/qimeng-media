@@ -153,7 +153,8 @@ export default function CollectionPage() {
 
   // E3 无感加载哨兵：enabled 与原 pill 的 when 同口径（实体未定位不挂不拉）。
   // onHit 双守卫：isFetchingNextPage 防重复拉页；isPlaceholderData 前瞻防混拼
-  // （useAssetsInfinite 未配 placeholderData 恒 false，守卫零成本）。
+  // （useAssetsInfinite 已配 keepPreviousData——筛选胶囊/类型切换换键期间守卫
+  // 真实生效，防换键期 fetchNextPage 用旧游标打新键；同口径注释见 MinePage）。
   const sentinelRef = useAutoMore(!!found && hasNextPage, () => {
     if (!isFetchingNextPage && !isPlaceholderData) void fetchNextPage()
   })

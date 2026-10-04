@@ -275,7 +275,7 @@ export function UploadWorkbench({ libraries }: { libraries: Library[] }) {
 
       {/* —— 直传门禁拦截文案（未选库 / 超限横幅提示） —— */}
       {blockMsg && (
-        <p className="rank-note" style={{ color: 'var(--danger)' }}>
+        <p className="rank-note" style={{ color: 'var(--qm-danger)' }}>
           {blockMsg}{' '}
           <Pill onClick={() => setBlockMsg(null)}>知道了</Pill>
         </p>
