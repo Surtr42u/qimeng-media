@@ -2115,23 +2115,27 @@ li.dir-file-row.ms-row-selected { background: var(--qm-hover); }
    背景 blur 饱和）+ 顶缘内高光 + 底部镜面池 + 染色选中态；hover 抬升 1px、
    按压回弹。全局 .pill 基础类不动——筛选/榜单等消费处的口径冻结。白色高光
    字面量与 §2 材质基元同款（玻璃系在此文件内联是惯例，token 化的例外区）。 */
-.source-chips { gap: 8px; }
+/* ---- 来源词表小胶囊：日间/夜间双轨（2026-10-04 定稿，对齐手机批三口径）----
+   翻译自 android core/ui/glass/GlassColors.kt（第四百六十四笔定稿）——日间 =
+   「体+染色」两笔（白瓷体 0.76，白底上光效不可见=未选中实为平面，下缘冷灰紫
+   描边保持轮廓可辨）；夜间 = DarkGlass 四笔光（体 #262C44@0.66 → oklch 约
+   0.29 0.045 275、高光纱 0.20、受光边上 0.42/下 0.08、镜面池 0.26，小胶囊靠
+   这几笔光立玻璃感）；两主题选中染色统一 0.20 染在体上（透明体上染色=阴影块，
+   批二教训）。色值与 GlassColors.kt 双源互指，改动须两侧同步；夜间 backdrop
+   blur 为 web 独有增益（App 无 backdrop API，磨砂感由极光底衬承担）。 */
+.source-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 2px 0;
+}
 .source-chips .pill,
 .source-chips button.pill {
   position: relative;
   padding: 6px 14px;
   font-size: 12.5px;
-  color: var(--qm-text-soft);
-  border: 1px solid color-mix(in oklab, var(--qm-text) 15%, transparent);
-  background:
-    linear-gradient(to bottom, oklch(1 0 0 / 0.2), oklch(1 0 0 / 0.04) 52%, oklch(0 0 0 / 0.05)),
-    var(--qm-surface-soft);
-  -webkit-backdrop-filter: blur(10px) saturate(1.6);
-  backdrop-filter: blur(10px) saturate(1.6);
-  box-shadow:
-    inset 0 1px 0 oklch(1 0 0 / 0.5),
-    inset 0 -7px 14px oklch(1 0 0 / 0.1),
-    var(--qm-shadow-1);
+  border-radius: var(--qm-radius-full);
+  border: 1px solid var(--qm-border-strong);
   transition:
     color var(--qm-duration-fast) var(--qm-ease-out),
     border-color var(--qm-duration-fast) var(--qm-ease-out),
@@ -2139,42 +2143,76 @@ li.dir-file-row.ms-row-selected { background: var(--qm-hover); }
     box-shadow var(--qm-duration-fast) var(--qm-ease-out),
     transform var(--qm-duration-fast) var(--qm-ease-out);
 }
+/* —— 日间（缺省）：白瓷体平面，选中=体上 0.20 染色（App LightGlass） —— */
+.source-chips .pill {
+  color: var(--qm-text-soft);
+  background: oklch(1 0 0 / 0.76);
+  box-shadow: 0 1px 2px oklch(0.3 0.03 285 / 0.07);
+}
 .source-chips .pill:hover {
   color: var(--qm-text);
-  border-color: color-mix(in oklab, var(--qm-text) 26%, transparent);
-  transform: translateY(-1px);
-  box-shadow:
-    inset 0 1px 0 oklch(1 0 0 / 0.62),
-    inset 0 -7px 14px oklch(1 0 0 / 0.12),
-    var(--qm-shadow-2);
+  background: oklch(1 0 0 / 0.9);
 }
-.source-chips .pill:active { transform: scale(0.96); }
 .source-chips .pill.active {
   color: var(--qm-primary-strong);
-  border-color: color-mix(in oklab, var(--qm-primary) 38%, transparent);
+  border-color: color-mix(in oklab, var(--qm-primary) 30%, transparent);
   background:
-    linear-gradient(to bottom, oklch(1 0 0 / 0.24), oklch(1 0 0 / 0.05) 52%, oklch(0 0 0 / 0.06)),
-    var(--qm-primary-soft);
-  box-shadow:
-    inset 0 1px 0 oklch(1 0 0 / 0.55),
-    inset 0 -7px 14px oklch(1 0 0 / 0.12),
-    0 0 12px color-mix(in oklab, var(--qm-primary) 22%, transparent),
-    var(--qm-shadow-1);
+    linear-gradient(color-mix(in oklab, var(--qm-primary) 20%, transparent)),
+    oklch(1 0 0 / 0.76);
 }
 .source-chips .pill.active:hover {
-  color: var(--qm-primary-strong);
-  border-color: color-mix(in oklab, var(--qm-primary) 48%, transparent);
+  background:
+    linear-gradient(color-mix(in oklab, var(--qm-primary) 20%, transparent)),
+    oklch(1 0 0 / 0.9);
+}
+/* —— 夜间（html.dark）：DarkGlass 四笔光 + 选中染色 0.20（App 批三） ——
+   镜面池/受光线取值较 Compose 侧略强一档（0.26→0.34、0.42→0.5）：同一常量
+   在 CSS 无 blur 采样叠加下观感偏软，视觉对齐以 Compose 实机为准） */
+.dark .source-chips .pill {
+  color: var(--qm-text);
+  border-color: oklch(1 0 0 / 0.08); /* 受光边·下端 */
+  background:
+    linear-gradient(to bottom, oklch(1 0 0 / 0.2), transparent 55%),            /* 高光纱 */
+    radial-gradient(130% 70% at 30% 0%, oklch(1 0 0 / 0.34), transparent 58%),  /* 镜面池 */
+    oklch(0.29 0.045 275 / 0.66);                                              /* 靛夜体 */
+  -webkit-backdrop-filter: blur(10px) saturate(1.5);
+  backdrop-filter: blur(10px) saturate(1.5);
+  box-shadow:
+    inset 0 1px 0 oklch(1 0 0 / 0.5), /* 受光边·上端亮线 */
+    0 1px 4px oklch(0.04 0.01 280 / 0.4);
+}
+.dark .source-chips .pill:hover {
+  border-color: oklch(1 0 0 / 0.14);
+  background:
+    linear-gradient(to bottom, oklch(1 0 0 / 0.26), transparent 55%),
+    radial-gradient(130% 70% at 30% 0%, oklch(1 0 0 / 0.4), transparent 58%),
+    oklch(0.29 0.045 275 / 0.72);
   transform: translateY(-1px);
 }
+.dark .source-chips .pill.active {
+  color: var(--qm-primary-strong);
+  background:
+    linear-gradient(to bottom, oklch(1 0 0 / 0.2), transparent 55%),
+    radial-gradient(130% 70% at 30% 0%, oklch(1 0 0 / 0.34), transparent 58%),
+    linear-gradient(color-mix(in oklab, var(--qm-primary) 20%, transparent)), /* 染色染在体上 */
+    oklch(0.29 0.045 275 / 0.66);
+  box-shadow:
+    inset 0 1px 0 oklch(1 0 0 / 0.5),
+    0 1px 4px oklch(0.04 0.01 280 / 0.4);
+}
+.dark .source-chips .pill.active:hover {
+  border-color: color-mix(in oklab, var(--qm-primary) 34%, transparent);
+  transform: translateY(-1px);
+}
+/* —— 通用：按压回弹与禁用（两主题同构） —— */
+.source-chips .pill:active { transform: scale(0.96); }
 .source-chips .pill:disabled,
 .source-chips button.pill:disabled {
   opacity: 0.45;
   cursor: default;
   transform: none;
-  box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.2), var(--qm-shadow-1);
 }
-/* 排版：词表卡 chips 区与输入行/提示行的呼吸间距（上传挂靠字段同享） */
-.source-chips { padding: 2px 0; }
+/* 排版：上传挂靠字段 chips 上距与空态提示行（词表卡同享） */
 .upload-attach-field .source-chips { margin-top: 6px; }
 .source-empty-hint { padding: 4px 0; }
 
