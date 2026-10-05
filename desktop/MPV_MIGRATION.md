@@ -1,19 +1,29 @@
-# MPV_MIGRATION - 桌面播放内核 libmpv 迁移（任务文档 / 接手入口）
+# 任务书：桌面播放内核 libmpv 迁移（长期任务 · 跨会话接手入口）
 
-> **本文是本次迁移的唯一进度与接手文档**（决策依据见 `docs/adr/0036`，本文只记事实与进度）。
-> 接手 AI：先读完本文再动手；完成任何条目后**立刻更新本文对应 checkbox**再提交，保证任意时刻中断都可持续。
+> **本文是本迁移唯一的任务书与接手文档**。决策依据见 `docs/adr/0036`，本文只记目标、进度、风险与交接。
+> 接手 AI 规则：① 先通读本文；② 只做「当前批次」内的事；③ 完成任何条目**立刻更新本文 checkbox 与交接日志**再提交；
+> ④ 任何时刻中断，下一位凭本文即可无损续作。
+> 关联：`desktop/README.md`（用户视角）、`docs/CAPABILITY_MAP.md`「桌面原生播放内核」行、`docs/CHANGELOG.md`（每笔明细）。
 
-## 一、目标与拍板
+## 一、目标与验收标准
 
-- 桌面壳引入 **libmpv** 作为原生播放内核，最终形态 = 桌面端唯一内核（ArtPlayer 保留给浏览器模式）。
-- 用户拍板（2026-10-05）：一次性到位、不积累未来债/技术债/维护债；迁移工程量不设限。
-- 能力动机：VSR 主动控制 / RTX Video HDR / Anime4K / SVP 插帧 / 全格式 / 未来神经编码——全部依赖「自持内核」这一个前提。
+**目标**：桌面壳引入 libmpv 作为原生播放内核（最终形态=桌面端唯一内核；ArtPlayer 留浏览器模式），解锁 VSR 主动控制 / RTX Video HDR / Anime4K / SVP 插帧 / 全格式 / 未来神经编码继承。用户拍板（2026-10-05）：一次性到位，不积累未来债/技术债/维护债，工程量不设限。
+
+**总验收（C4 出口条件，全部满足才算迁移完成）**：
+
+1. 桌面壳内：详情页点「原生内核播放」→ 独立播放窗出画面，mpv OSC 可控（播放/暂停/进度/音量）；
+2. 关播放窗 / 关 web 页 → 会话回收干净（无残留 mpv 线程/窗口），不崩壳；
+3. web 进度上报链不断：原生播放期间 tick 照常、暂停 flush、离开补报——断点续播跨端一致；
+4. 浏览器模式回归零影响：无原生入口、ArtPlayer 行为与迁移前逐项一致；
+5. 降级路径：无 DLL 时 mpv_open 报错带指引，web 内核完全可用；
+6. `cargo check/test` + `npm test` + `npm run build` 全绿；
+7. ADR-0036/本文/CAPABILITY_MAP 状态行同步收口。
 
 ## 二、架构（目标态）
 
 ```
 Web UI (AssetDetailPage → VideoPlayer)          仅浏览器模式直接用 ArtPlayer
-   │  桌面壳内：『原生内核』按钮
+   │  桌面壳内：『原生内核』按钮（'__TAURI__' in window 闸门）
    │  window.__TAURI__.core.invoke('mpv_open', {url, title, startSecs})
    ▼
 Tauri 壳 (desktop/src-tauri)
@@ -26,77 +36,76 @@ Tauri 壳 (desktop/src-tauri)
    │  web 每 5s invoke('mpv_status') 轮询 → 喂 useProgress(tick/flush) + 起播上报
 ```
 
-关键取舍：wid 嵌入（非 render API）；JS 轮询（非事件推送）；运行时加载（非构建期链接）。理由全在 ADR-0036。
+关键取舍：wid 嵌入（非 render API）；JS 轮询（非事件推送）；运行时加载（非构建期链接）；user32 自建窗（非 tauri unstable）。理由全在 ADR-0036。
 
-## 三、里程碑与进度
+## 三、批次路线图
 
-### C1 决策与文档（本次已提交）
+### C1 决策与文档 ✅（f51da4e8）
 - [x] ADR-0036 + INDEX 行 + CAPABILITY_MAP 行
-- [x] 本文（任务文档）+ desktop/README 原生内核节
+- [x] 本文 + desktop/README 原生内核节
 - [x] `setup-mpv.ps1`（用户自取 libmpv-2.dll，不入库）+ .gitignore
 
-### C2 Rust 侧 mpv 子系统
-- [x] `src/mpv/ffi.rs`：kernel32 extern（LoadLibraryW/GetProcAddress）+ 函数指针表 + MPV_FORMAT_*/MPV_EVENT_* 常量（ABI 冻结值；**接手者须对 client.h 逐值终验**，见坑 1）
-- [x] `src/mpv/player.rs`：单线程会话（命令 mpsc + PROPERTY_CHANGE 状态缓存 + 优雅 quit/SHUTDOWN 收尾）；mpv 选项/属性名常量单源（observe 与状态匹配共用常量防漂移）；parse_action/format_start 纯函数带单测
-- [x] `src/mpv/win32.rs`：user32/gdi32 FFI 自建播放窗（避开 tauri unstable 窗口 API）——窗口类 QimengMpvHost、1280×720 可缩放、消息泵、WM_CLOSE→WM_QUIT 路径；类名编码单测
-- [x] `src/mpv/commands.rs`：mpv_open/mpv_status/mpv_control/mpv_close 四命令门面（会话槽 check-and-set 防并发双开；死会话自动重建；DLL 缺失错误带 setup 指引）
-- [x] `src/mpv/mod.rs` + `main.rs` 挂载（mod 声明 + manage(MpvState) + generate_handler 四命令；on_window_event 无需感知播放窗——它不经 Tauri 窗口系统）
-- [ ] 自测：`cargo check` / `cargo test` 全绿（**被构建环境事故卡住，见下节**；代码已写完，仅差环境修复后的编译验证）
+### C2 Rust 侧 mpv 子系统 ✅ 代码完成（f1c56360），编译验证被设备事故阻塞（见 §六）
+- [x] `src/mpv/ffi.rs`：kernel32 extern（LoadLibraryW/GetProcAddress）+ 函数指针表 + MPV_FORMAT_*/MPV_EVENT_* 常量（ABI 冻结值；**接手者须对 client.h 逐值终验**，见 §五坑 1）
+- [x] `src/mpv/player.rs`：单线程会话（命令 mpsc + PROPERTY_CHANGE 状态缓存 + 优雅 quit/SHUTDOWN 收尾）；mpv 选项/属性名常量单源；parse_action/format_start 纯函数带单测
+- [x] `src/mpv/win32.rs`：user32/gdi32 FFI 自建播放窗（避开 tauri unstable）——窗口类 QimengMpvHost、1280×720 可缩放、消息泵、WM_CLOSE→WM_QUIT；类名编码单测
+- [x] `src/mpv/commands.rs`：mpv_open/mpv_status/mpv_control/mpv_close 门面（会话槽 check-and-set 防并发双开；死会话自动重建；DLL 缺失错误带 setup 指引）
+- [x] `src/mpv/mod.rs` + `main.rs` 挂载（mod/manage/generate_handler；on_window_event 无需感知播放窗）
+- [ ] **自测：`cargo check` / `cargo test` 全绿** ← 设备恢复后第一件事，可能出 1~3 个普通编译错（代码未经编译器检验），按普通 bug 修
 
-### ⚠️ 构建环境事故（2026-10-05，接手者先读）——已定性为设备侧问题
-
-本机 `~/.cargo/registry` 解包源码与 `target/debug` 构建缓存出现**非确定性损坏**：rustc 报 E0432（源文件里"缺"明明存在的类型）/E0786（rmeta corrupt）。
-
-**已排除**（全部实测）：
-- ❌ 不是 .crate 缓存损坏：`tar -xzOf cache/xxx.crate path | grep` 与磁盘文件 grep 逐字一致；
-- ❌ 不是解包残缺：清空 `~/.cargo/registry/src/*` 全量重解包后仍复现；
-- ❌ 不是沙箱干扰：**关沙箱前台跑同样复现**；
-- ✅ 定性证据：本轮编译**刚写入**的 `libwindows_core-*.rmeta` 首次读取即 corrupt——**写入即损坏**；
-- ✅ 本机有 WHEA 硬件错误史（HANDOVER 记档、ADR-0031 设备纪律背景），症状吻合磁盘/内存级故障。
-
-**给用户/接手者的处置序**：
-1. 机器侧体检优先：`chkdsk C: /scan` + 内存诊断（mdsched）+ 杀软排除项（`%USERPROFILE%\.cargo`、项目 `target/`）——构建恢复前不要信任本机产物；
-2. 机器恢复后验证：`cd desktop/src-tauri && cargo check --offline && cargo test --offline`，绿 → 勾掉 C2 自测项 → Commit 2 已含全部代码无需重写；
-3. 若 check 报的是本仓 mpv 模块的真错误（而非 E0432/E0786 损坏类），按普通 bug 修——代码尚未经编译器检验，首编出 1~3 个错误属预期。
-
-### C3 Web 侧接入
-- [ ] `video-player.tsx`：壳内（`'__TAURI__' in window`）渲染「原生内核」按钮；invoke mpv_open（带当前进度起点）+ 暂停 web 播放器；5s 轮询 mpv_status 喂 onTimeUpdate/onPlay/onPause（复用 stepPlayGate 口径）；状态为 null（窗口已关）→ 停轮询复位
-- [ ] `AssetDetailPage.tsx`：传 `nativeTitle={d.title ?? d.fileName}`（仅新增一个 prop）
-- [ ] 降级：mpv_open 报错 → 按钮提示（含 setup-mpv 指引），web 内核不受影响
-- [ ] 自测：`npm run build`（tsc -b）+ `npm test` 全绿
+### C3 Web 侧接入（进行中）
+- [ ] `lib/engagement-reporting.ts` + 单测：`nativePollSignal`（轮询边沿→play/pause 信号纯函数，喂 stepPlayGate 同一口径 B 状态机）
+- [ ] `video-player.tsx`：壳内（`'__TAURI__' in window`）渲染「原生内核」chip；invoke mpv_open（当前 web 进度优先、断点起点兜底）+ 暂停 web 播放器；5s 轮询 mpv_status 喂 onTimeUpdate/onPlay/onPause；状态 null → 复位；原生接手中用户点 web 播放 → 收回（mpv_close + 复位）
+- [ ] `AssetDetailPage.tsx`：传 `nativeTitle={d.title ?? d.fileName}`
+- [ ] `glass.css`：chip 样式（token 取色，禁硬编码色值）
+- [ ] 自测：`npm test` + `npm run build` 全绿
 
 ### C4 复核与收尾
 - [ ] 对抗复核：FFI 签名/枚举逐个对 client.h；线程边界；panic 面；铁律 7（UI 不碰业务）/14（无二进制入库）过一遍
-- [ ] CHANGELOG 每笔同 commit；本文 checkbox 全勾
-- [ ] 运行验收（需真人）：桌面壳起 → 详情页点原生内核 → 播放窗出画面/OSC 可控 → 关窗回收 → web 进度续上
+- [ ] CHANGELOG 每笔同 commit；本文 checkbox 全勾；§七日志收口
+- [ ] 运行验收（需真人）：按 §一验收清单 1~6 走查
+- [ ] CAPABILITY_MAP 状态行改「已有」+ HANDOVER 收口
 
-### 后续批次（不在本次范围）
-- [ ] 播放窗交互对齐 web 控制条（倍速/打点/手势）
+### C5+ 后续批次（迁移完成后按需立项）
+- [ ] 播放窗交互对齐 web 控制条（倍速/打点联动/手势）
 - [ ] `on_load` 钩子刷新签名直链（ADR-0027 窗口过期防御）
-- [ ] mpv.conf 预置（VSR d3d11vpp / RTX HDR / Anime4K 挂载位）与设置页开关
+- [ ] mpv.conf 预置（VSR d3d11vpp / RTX Video HDR / Anime4K 挂载位）+ 设置页开关
 - [ ] SVP 插帧指引（用户侧安装文档）
-- [ ] render API 纹理合成（仅当需要把视频合成进 web 界面时再立项）
+- [ ] render API 纹理合成评估（仅当需要视频合成进 web 界面时）
+- [ ] Android 端不在本任务书范围（Media3 即终局内核，增强走 Media3 Effects 另立任务）
 
-## 四、环境准备（运行前提）
+## 四、当前状态与交接日志（倒序追加）
 
-```powershell
-# 一次性：拉取 libmpv-2.dll（GitHub shinchiro/zhongfly 构建源，bsdtar 解 7z）
-powershell -ExecutionPolicy Bypass -File desktop\src-tauri\setup-mpv.ps1
-# DLL 落位 desktop/src-tauri/mpv/lib/（gitignored），并尽力复制到 target/{debug,release}/
-```
-
-构建：`cd desktop/src-tauri && cargo build`（无需 mpv-dev 头文件，编译零依赖）。
+- **2026-10-05 · GLM-5.3-Flash（主代理）会话 1**：C1 提交（f51da4e8）；C2 代码全部写完并提交（f1c56360）——但 cargo check 被设备侧文件写入损坏阻塞（详见 §六），**编译验证欠账**；C3 web 侧代码尚未落盘（方案已定稿于本任务书）。下一步：① 设备体检后补跑 `cargo check/test`；② 落 C3；③ C4 复核收口。
 
 ## 五、坑与存疑（接手必读）
 
-1. **FFI 枚举值与签名必须对官方 client.h**（raw.githubusercontent.com/mpv-player/mpv/master/libmpv/client.h）——尤其 MPV_EVENT_* 数值与 mpv_event 字段序；调研代理产出在本会话记录，若缺失重新核对。
-2. **wid 行为**：wid 在 Windows 上由 mpv 创建子窗口渲染；父窗 resize 是否自动跟随、OSC 是否在 wid 模式可用，以官方 manual 为准；实测不符时兜底方案=监听窗口缩放手动 `set_property("current-window-size")`（先实测再写）。
-3. **远端页 invoke 自定义命令**：主窗口是远端 URL，`window.__TAURI__.core.invoke` 依赖 withGlobalTauri + capability remote 上下文（titlebar.js 用 window API 已验证可用）；自定义命令是否需要显式 capability 条目**未实测**——若 invoke 报权限错，在 capabilities/default.json 补条目或改走 events。
-4. **单线程访问 mpv**：除文档明确线程安全的函数外，全部 mpv_* 调用收敛在播放线程；跨线程只传 mpsc 命令与 Mutex 状态缓存，不做跨线程直接调用。
-5. **签名直链 6h 窗口**（ADR-0027）：超长播放会话中途 403 → mpv 停止；已知限制，`on_load` 刷新方案在后绕批次。
-6. **主窗关闭语义**：现「关主窗=退出应用」判定只看 main/setup 两 label，播放窗存在不阻止退出——行为正确，勿"修复"。
+1. **FFI 枚举值与签名必须对官方 client.h 终验**（raw.githubusercontent.com/mpv-player/mpv/master/libmpv/client.h）——MPV_EVENT_* 数值、mpv_event 字段序（event_id/reply_userdata/data/error）。本会话调研子代理因 GitHub 被墙未返回，当前值=ABI 冻结口径（mpv 承诺永不重编号），风险低但终验不可省。
+2. **wid 行为**：Windows 上 mpv 在给定 HWND 内自建子窗渲染；父窗 resize 是否自动跟随、OSC 是否可用，实测不符时兜底=监听尺寸变化手动同步（先实测再写）。
+3. **远端页 invoke 自定义命令**：主窗是远端 URL，`window.__TAURI__.core.invoke` 依赖 withGlobalTauri + capability remote 上下文（titlebar.js 已验证窗口 API 可用）；自定义命令是否需显式 capability 条目**未实测**——报权限错就在 capabilities/default.json 补。
+4. **单线程访问 mpv**：除文档明确线程安全者外，全部 mpv_* 调用收敛在播放线程；跨线程只走 mpsc + Mutex 缓存。
+5. **签名直链 6h 窗口**（ADR-0027）：超长会话中途 403 → mpv 停止；已知限制，C5 on_load 刷新解。
+6. **关主窗语义**：现「关主窗=退出应用」判定只看 main/setup 两 label，播放窗为 user32 自建、不经 Tauri 窗口系统，行为不受影响——勿"修复"。
 7. **GPL 分发线**：DLL 不入库不进产物分发（gitignore + setup 脚本），见 ADR-0036 决策 6。
 
-## 六、回滚
+## 六、构建环境事故（2026-10-05 定性：设备侧写入损坏）
+
+**症状**：rustc 报 E0432（源文件"缺"实际存在的类型）/E0786（rmeta corrupt），非确定性复现。
+
+**已排除**（全部实测）：
+- ❌ .crate 缓存损坏：`tar -xzOf cache/xxx.crate path | grep` 与磁盘文件 grep 逐字一致；
+- ❌ 解包残缺：清空 `~/.cargo/registry/src/*` 全量重解包后复现；
+- ❌ 沙箱干扰：关沙箱前台跑复现；
+- ❌ OneDrive 接管 Desktop：OneDrive 目录未覆盖项目路径；
+- ✅ 定性证据：本轮编译**刚写入**的 rmeta 首次读取即 corrupt = **写入即损坏**；
+- ✅ 本机有 WHEA 硬件错误史（HANDOVER 记档、设备纪律背景），症状吻合磁盘/内存级故障。
+
+**处置序**：
+1. 用户以完整构建（cargo build）做压测复现，观察死机/异响/蓝屏；
+2. 机器体检：`chkdsk C: /scan` + 内存诊断（mdsched）+ 杀软排除项（`%USERPROFILE%\.cargo`、项目 `target/`）——构建恢复前不信任本机产物；
+3. 恢复后：`cargo check --offline && cargo test --offline` → 绿则勾 C2 自测项；报本仓 mpv 模块普通错误按普通 bug 修（首编 1~3 个错属预期，代码未经编译器检验）；
+4. 同期可继续 C3（web 侧仅 node 工具链，受损面小；若 npm 工具链也现损坏 → 全线停，机器优先）。
+
+## 七、回滚
 
 分支 `feat/desktop-libmpv-kernel` 独立演进；合入前发现不可挽回问题直接弃分支。合入后回滚 = revert 迁移 commit 序列（web 侧改动独立于桌面侧，可分笔回退）。
