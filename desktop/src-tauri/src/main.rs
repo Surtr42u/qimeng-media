@@ -9,6 +9,7 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // release 版不弹控制台
 
+mod mpv;
 mod server_config;
 
 use server_config::{load_config, navigation_allowed, normalize_server_url, save_config, ServerConfig};
@@ -184,7 +185,17 @@ fn save_server_url(
 
 fn main() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![get_server_url, save_server_url])
+        .invoke_handler(tauri::generate_handler![
+            get_server_url,
+            save_server_url,
+            mpv::commands::mpv_open,
+            mpv::commands::mpv_status,
+            mpv::commands::mpv_control,
+            mpv::commands::mpv_close
+        ])
+        // 原生播放内核会话槽（ADR-0036）：播放窗是 user32 自建窗口，不经
+        // Tauri 窗口系统，故 on_window_event 无需感知 mpv-player
+        .manage(mpv::commands::MpvState::default())
         .on_window_event(|window, event| {
             // 产品需求：关闭主窗口 = 退出应用（无托盘常驻）。
             // 实现为"任一窗口销毁后若再无窗口则整体退出"，对用户关闭任意最后一个窗口都成立，

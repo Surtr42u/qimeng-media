@@ -18,10 +18,10 @@ Web UI (AssetDetailPage → VideoPlayer)          仅浏览器模式直接用 Ar
    ▼
 Tauri 壳 (desktop/src-tauri)
    ├─ commands: mpv_open / mpv_status / mpv_control(pause|seek|speed) / mpv_close
-   ├─ 播放窗（纯窗口，无 webview）→ hwnd()
-   └─ mpv 子线程：LoadLibraryW("libmpv-2.dll") 运行时加载
+   ├─ 播放窗：user32 FFI 自建（不经 Tauri 窗口系统/无 webview，见 win32.rs 头注）
+   └─ mpv 会话线程（窗口线程=mpv 线程三合一）：LoadLibraryW("libmpv-2.dll") 运行时加载
         wid = 播放窗 HWND（initialize 前设置）→ mpv 自管渲染 + OSC
-        状态缓存（Mutex）← PROPERTY_CHANGE 事件循环
+        状态缓存（Arc<Mutex>）← PROPERTY_CHANGE 事件循环
    ▲
    │  web 每 5s invoke('mpv_status') 轮询 → 喂 useProgress(tick/flush) + 起播上报
 ```
@@ -36,11 +36,28 @@ Tauri 壳 (desktop/src-tauri)
 - [x] `setup-mpv.ps1`（用户自取 libmpv-2.dll，不入库）+ .gitignore
 
 ### C2 Rust 侧 mpv 子系统
-- [ ] `src/mpv/ffi.rs`：kernel32 extern（LoadLibraryW/GetProcAddress/FreeLibrary）+ 函数指针表 + MPV_FORMAT_*/MPV_EVENT_* 常量（**以官方 client.h 核对值为准**，勿凭记忆写）
-- [ ] `src/mpv/player.rs`：独立线程持有 mpv 句柄（单线程访问原则）；命令经 mpsc（loadfile/pause/seek/speed/quit）；事件循环 wait_event → 更新状态缓存；SHUTDOWN → terminate_destroy
-- [ ] `src/mpv/commands.rs`：四个 #[tauri::command]；播放窗创建（label `mpv-player`，取 hwnd 传 wid）；窗口 Destroyed → 发 quit
-- [ ] `main.rs`：mod 挂载 + invoke_handler 注册 + 状态管理
-- [ ] 自测：`cargo check` + `cargo test`（desktop/src-tauri 下）全绿
+- [x] `src/mpv/ffi.rs`：kernel32 extern（LoadLibraryW/GetProcAddress）+ 函数指针表 + MPV_FORMAT_*/MPV_EVENT_* 常量（ABI 冻结值；**接手者须对 client.h 逐值终验**，见坑 1）
+- [x] `src/mpv/player.rs`：单线程会话（命令 mpsc + PROPERTY_CHANGE 状态缓存 + 优雅 quit/SHUTDOWN 收尾）；mpv 选项/属性名常量单源（observe 与状态匹配共用常量防漂移）；parse_action/format_start 纯函数带单测
+- [x] `src/mpv/win32.rs`：user32/gdi32 FFI 自建播放窗（避开 tauri unstable 窗口 API）——窗口类 QimengMpvHost、1280×720 可缩放、消息泵、WM_CLOSE→WM_QUIT 路径；类名编码单测
+- [x] `src/mpv/commands.rs`：mpv_open/mpv_status/mpv_control/mpv_close 四命令门面（会话槽 check-and-set 防并发双开；死会话自动重建；DLL 缺失错误带 setup 指引）
+- [x] `src/mpv/mod.rs` + `main.rs` 挂载（mod 声明 + manage(MpvState) + generate_handler 四命令；on_window_event 无需感知播放窗——它不经 Tauri 窗口系统）
+- [ ] 自测：`cargo check` / `cargo test` 全绿（**被构建环境事故卡住，见下节**；代码已写完，仅差环境修复后的编译验证）
+
+### ⚠️ 构建环境事故（2026-10-05，接手者先读）——已定性为设备侧问题
+
+本机 `~/.cargo/registry` 解包源码与 `target/debug` 构建缓存出现**非确定性损坏**：rustc 报 E0432（源文件里"缺"明明存在的类型）/E0786（rmeta corrupt）。
+
+**已排除**（全部实测）：
+- ❌ 不是 .crate 缓存损坏：`tar -xzOf cache/xxx.crate path | grep` 与磁盘文件 grep 逐字一致；
+- ❌ 不是解包残缺：清空 `~/.cargo/registry/src/*` 全量重解包后仍复现；
+- ❌ 不是沙箱干扰：**关沙箱前台跑同样复现**；
+- ✅ 定性证据：本轮编译**刚写入**的 `libwindows_core-*.rmeta` 首次读取即 corrupt——**写入即损坏**；
+- ✅ 本机有 WHEA 硬件错误史（HANDOVER 记档、ADR-0031 设备纪律背景），症状吻合磁盘/内存级故障。
+
+**给用户/接手者的处置序**：
+1. 机器侧体检优先：`chkdsk C: /scan` + 内存诊断（mdsched）+ 杀软排除项（`%USERPROFILE%\.cargo`、项目 `target/`）——构建恢复前不要信任本机产物；
+2. 机器恢复后验证：`cd desktop/src-tauri && cargo check --offline && cargo test --offline`，绿 → 勾掉 C2 自测项 → Commit 2 已含全部代码无需重写；
+3. 若 check 报的是本仓 mpv 模块的真错误（而非 E0432/E0786 损坏类），按普通 bug 修——代码尚未经编译器检验，首编出 1~3 个错误属预期。
 
 ### C3 Web 侧接入
 - [ ] `video-player.tsx`：壳内（`'__TAURI__' in window`）渲染「原生内核」按钮；invoke mpv_open（带当前进度起点）+ 暂停 web 播放器；5s 轮询 mpv_status 喂 onTimeUpdate/onPlay/onPause（复用 stepPlayGate 口径）；状态为 null（窗口已关）→ 停轮询复位

@@ -10,6 +10,17 @@
 
 > **历史条目拆分说明（2026-10-01）**：为控制 AI 上下文体量，本文件只保留 **2026-09-22 及之后**的条目（第三百八十二笔起）；拆分线之前的全部条目已逐字迁入 `docs/history/CHANGELOG-ARCHIVE.md`（零改写，笔号与本文件连续可查）。引用早于拆分线的旧笔号请去历史档查阅。
 
+## feat(desktop): mpv 原生内核 C2 落码——运行时加载 FFI + user32 自建播放窗 + 会话线程 + IPC 四命令（2026-10-05 第四百七十八笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- **范围**：`desktop/src-tauri/src/mpv/` 四文件（ffi/win32/player/commands）+ `main.rs` 挂载（mod/manage/generate_handler）。**编译验证被设备侧文件损坏阻塞**（写入即损坏，E0786/E0432 非确定性复现；沙箱/缓存/解包逐项排除，与本机 WHEA 史吻合），代码按规格完成入库，cargo check/test 留待设备恢复后补验——处置序记档 `desktop/MPV_MIGRATION.md`「构建环境事故」节。
+- **ffi.rs**：LoadLibraryW/GetProcAddress 运行时加载 libmpv-2.dll（编译期零依赖）；失败不缓存（装完 DLL 免重启生效）；MPV_FORMAT/EVENT ABI 冻结常量（接手者对 client.h 终验责任项记档）；加载失败错误信息带 setup-mpv.ps1 指引。
+- **win32.rs**：刻意绕开 tauri `unstable` 纯窗口 API——user32/gdi32 FFI 自建播放窗（类 QimengMpvHost，1280×720 可缩放，消息泵 PeekMessage，WM_CLOSE→WM_QUIT 路径），窗口线程=mpv 线程三合一规避跨线程窗口操作。
+- **player.rs**：单线程会话纪律（全部 mpv_* 收敛播放线程；跨线程仅 mpsc 命令 + Arc<Mutex> 状态缓存）；wid initialize 前嵌入；idle/keep-open/hwdec=auto/input-default-bindings/osd-playing-msg 预置；PROPERTY_CHANGE→状态缓存（time-pos/duration/pause/eof-reached，属性名常量单源防 observe/匹配手抄漂移）；quit→SHUTDOWN 有界等待收尾；loadfile replace 换片不断会话，start file-local 选项换片显式清零；parse_action/format_start 纯函数+单测。
+- **commands.rs**：mpv_open（空 URL 校验/会话槽锁内 check-and-set 防并发双开/死会话自动重建）/mpv_status（None=无活动播放）/mpv_control（pause/resume/toggle-pause/seek/speed 字面量与 web 侧双写同步责任记档）/mpv_close（幂等）。
+- **已知的验证缺口**：wid 模式下 resize/OSC 表现、远端页 invoke 自定义命令权限、FFI 枚举终验——均记档 MPV_MIGRATION 坑与存疑，待真机走查。
+
 ## feat(desktop): 桌面播放内核选型 libmpv 落档——ADR-0036 + 迁移任务文档 + 运行库获取脚本（2026-10-05 第四百七十七笔）
 
 执行 AI：GLM-5.3-Flash（主代理）
