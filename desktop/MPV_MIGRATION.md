@@ -61,6 +61,7 @@ Tauri 壳 (desktop/src-tauri)
 - [ ] 自测：`npm test` + `npm run build` 全绿
 
 ### C4 复核与收尾
+- [ ] `cargo build --offline --release` 出 release 产物（启动-桌面端.bat 的拉起目标；本次验收只覆盖 debug）
 - [ ] 对抗复核：FFI 签名/枚举逐个对 client.h；线程边界；panic 面；铁律 7（UI 不碰业务）/14（无二进制入库）过一遍
 - [ ] CHANGELOG 每笔同 commit；本文 checkbox 全勾；§七日志收口
 - [ ] 运行验收（需真人）：按 §一验收清单 1~6 走查
@@ -76,7 +77,13 @@ Tauri 壳 (desktop/src-tauri)
 
 ## 四、当前状态与交接日志（倒序追加）
 
-- **2026-10-05 · GLM-5.3-Flash（主代理）会话 1**：C1 提交（f51da4e8）；C2 代码全部写完并提交（f1c56360）——但 cargo check 被设备侧文件写入损坏阻塞（详见 §六），**编译验证欠账**；C3 web 侧代码尚未落盘（方案已定稿于本任务书）。下一步：① 设备体检后补跑 `cargo check/test`；② 落 C3；③ C4 复核收口。
+- **2026-10-05 · GLM-5.3-Flash（主代理）会话 1（收口）**：C1 提交（f51da4e8）；C2 代码+验证完成（f1c56360 落码 → f6..fix 笔：2 编译错+5 警告修复，BUILD/TEST 全绿 22 单测，环境事故定性=被杀进程残留见 §六）；任务书 charter 化（8c110f76）。C3 web 侧未落码。**明日接手第一步（按序）**：
+  1. `cd desktop/src-tauri && cargo build --offline --release`（启动-桌面端.bat 吃 release 产物，本次只验了 debug）；
+  2. 跑 `desktop/src-tauri/setup-mpv.ps1` 取 libmpv-2.dll；
+  3. 落 C3（本文件 C3 节 checklist，方案=定稿）；`npm test` + `npm run build`；
+  4. C4 复核收口 + 运行走查（§一验收清单）。
+  5. 网络可用时 `git push -u origin feat/desktop-libmpv-kernel`（分支目前只在本地）。
+- （历史）2026-10-05 会话 1 中段：cargo check 曾被设备文件损坏阻塞——已定性为被杀进程残留物（§六），非代码问题，硬件未持续损坏（依赖树全量重编零损坏实证）。
 
 ## 五、坑与存疑（接手必读）
 
