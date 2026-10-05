@@ -8,3 +8,6 @@ src-tauri/gen/
 
 # icons/ 下全套图标由 `npm run icon`（tauri icon）从 app-icon.png 生成，不手工维护；
 # README.md 留作目录占位说明
+
+# libmpv 运行库（GPLv2+，ADR-0036 许可线：用户经 setup-mpv.ps1 自取，绝不入库）
+src-tauri/mpv/

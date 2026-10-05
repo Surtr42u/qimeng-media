@@ -10,6 +10,16 @@
 
 > **历史条目拆分说明（2026-10-01）**：为控制 AI 上下文体量，本文件只保留 **2026-09-22 及之后**的条目（第三百八十二笔起）；拆分线之前的全部条目已逐字迁入 `docs/history/CHANGELOG-ARCHIVE.md`（零改写，笔号与本文件连续可查）。引用早于拆分线的旧笔号请去历史档查阅。
 
+## feat(desktop): 桌面播放内核选型 libmpv 落档——ADR-0036 + 迁移任务文档 + 运行库获取脚本（2026-10-05 第四百七十七笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- **背景**：用户拍板桌面端引入 libmpv 原生播放内核（对话决策链：VSR/插帧/超分可行性 → 一切能力的前提是自持内核 → 候选对比 libVLC/GStreamer 后 libmpv 唯一全条件满足），要求一次性到位、不积累未来债/技术债/维护债。本笔为迁移里程碑 C1（决策与文档），实现随后续笔提交，分支 `feat/desktop-libmpv-kernel`。
+- **ADR-0036**：选型对比记档（libmpv/libVLC/GStreamer/FFmpeg 裸用四候选）；wid HWND 嵌入形态（不走 render API，复查条件记档）；FFI 自写运行时加载（自研四问：libmpv-rs 构建期链接不可移植、libloading 破零传递依赖，≤15 函数手写面可控）；JS 5s 轮询上报（对齐既有心跳节拍）；DLL 缺失优雅降级；GPL 许可线（DLL 绝不入库，用户 setup 脚本自取，仓库分发面保持 MIT 干净）；退役计划（桌面端最终单内核，ArtPlayer 留浏览器模式，不做永久双内核）。
+- **desktop/MPV_MIGRATION.md**：迁移唯一进度/接手文档——目标态架构图、C1~C4 里程碑 checklist（含后续批次：交互对齐/on_load 签名刷新/VSR·HDR·Anime4K 预置/SVP 指引/render API）、环境准备命令、坑与存疑七条（FFI 枚举对 client.h、wid resize/OSC 行为、远端页 invoke 权限未实测、6h 签名窗口、关主窗语义勿"修复"、单线程访问原则、GPL 分发线）、回滚方案。接手 AI 从本文进入。
+- **setup-mpv.ps1**：libmpv-2.dll 获取脚本——zhongfly/shinchiro 双源 GitHub release 最新 mpv-dev-x86_64，Windows 内置 bsdtar 解 7z，落 `src-tauri/mpv/lib/`（gitignored）并尽力复制到 target 产物旁；手工兜底路径写明。
+- **同步**：adr/INDEX 行、CAPABILITY_MAP「桌面原生播放内核」行、desktop/README 新节（含浏览器模式零影响承诺：web 侧原生入口以 `'__TAURI__' in window` 为闸）。
+
 ## chore(docs): 仓库/workspace 大扫除——LEGACY_REQUIREMENTS 退役 + 本地旧产物清理（2026-10-04 第四百七十六笔）
 
 执行 AI：GLM-5.3-Flash（主代理）

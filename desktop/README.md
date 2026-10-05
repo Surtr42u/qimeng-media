@@ -80,6 +80,13 @@ Web UI 的 `web/src/components/shell/TopBar.tsx` 渲染，桌面壳经 `titlebar
 操作与拖动会静默失效（无边框窗口无系统边框兜底，只能靠托盘退出）。
 TopBar.tsx 内已有单向注释提示；本节为 desktop 侧的逆向记档。
 
+## 原生播放内核（libmpv，迁移中）
+
+- **决策与进度**：选型决策见 `docs/adr/0036`；迁移进度/接手指南见 `MPV_MIGRATION.md`（唯一任务文档）。
+- **形态**：Tauri 纯窗口（无 webview）+ `wid` HWND 嵌入 mpv，`libmpv-2.dll` 运行时加载——编译期零依赖，DLL 缺失时优雅降级回 web 内核。
+- **首次使用**：`powershell -ExecutionPolicy Bypass -File src-tauri\setup-mpv.ps1`（GitHub 双源自取 mpv-dev 包；DLL 不入库）。
+- **浏览器模式零影响**：web 侧原生内核入口以 `'__TAURI__' in window` 为闸，纯浏览器里不出现、ArtPlayer 行为不变；桌面壳内 web 内核保留为降级路径。
+
 ## 已知限制（记档，暂不处理）
 
 - 标题栏双击最大化的判定用 `mousedown` 的 `e.detail === 2`——Windows 下
@@ -91,3 +98,4 @@ TopBar.tsx 内已有单向注释提示；本节为 desktop 侧的逆向记档。
   注明的是「远程源须显式声明才生效」，通配的理由即本条）。威胁模型是用户
   自己的 NAS，接受；若将来远程隧道暴露常态化，再评估收紧。
 - 无自动更新器（单用户自用，接受；HANDOVER 记档级同条）。
+- 原生播放内核迁移期：播放窗交互为 mpv 内建 OSC，与 web 控制条的能力差逐批对齐（清单见 `MPV_MIGRATION.md` 后续批次）。
