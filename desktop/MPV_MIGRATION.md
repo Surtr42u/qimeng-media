@@ -18,7 +18,8 @@
 4. 浏览器模式回归零影响：无原生入口、ArtPlayer 行为与迁移前逐项一致；
 5. 降级路径：无 DLL 时 mpv_open 报错带指引，web 内核完全可用；
 6. `cargo check/test` + `npm test` + `npm run build` 全绿；
-7. ADR-0036/本文/CAPABILITY_MAP 状态行同步收口。
+7. **播放窗交互与现 web 播放器对齐（C4.5 出口）**：进度条点击/拖拽 seek、时间轴打点显示、倍速切换、播放/暂停/音量——以 video-player.tsx 现行为逐项对照；
+8. ADR-0036/本文/CAPABILITY_MAP 状态行同步收口。
 
 ## 二、架构（目标态）
 
@@ -53,6 +54,7 @@ Tauri 壳 (desktop/src-tauri)
 - [x] `src/mpv/commands.rs`：mpv_open/mpv_status/mpv_control/mpv_close 门面（会话槽 check-and-set 防并发双开；死会话自动重建；DLL 缺失错误带 setup 指引）
 - [x] `src/mpv/mod.rs` + `main.rs` 挂载（mod/manage/generate_handler；on_window_event 无需感知播放窗）
 - [x] **自测：`cargo check` / `cargo test` 全绿 ✅（2026-10-05 补验通过：BUILD_EXIT=0 / TEST_EXIT=0，22 单测全绿含 mpv 模块 5 个新单测；依赖树全量重编无一次损坏）**
+- [x] 内核面完整性自查（防未来债）：loadfile/换片/起点/seek/倍速/暂停/状态缓存/标题/OSC/hwdec/keep-open/idle 全接；字幕·音轨切换=纯加命令项（无架构债）；VSR/HDR=mpv.conf 配置级（C5+）
 
 ### C3 Web 侧接入（进行中）
 - [ ] `lib/engagement-reporting.ts` + 单测：`nativePollSignal`（轮询边沿→play/pause 信号纯函数，喂 stepPlayGate 同一口径 B 状态机）
@@ -68,7 +70,17 @@ Tauri 壳 (desktop/src-tauri)
 - [ ] 运行验收（需真人）：按 §一验收清单 1~6 走查
 - [ ] CAPABILITY_MAP 状态行改「已有」+ HANDOVER 收口
 
-### C5+ 后续批次（**用户 2026-10-05 拍板：主体交付即告一段落，以下全部按需再议、不排期**——插件/画质预置类想到再弄）
+### C4.5 播放窗交互对齐（2026-10-05 二次拍板：从 C5+ 移回主体——"手势交互这种"属于主体）
+
+**架构（定稿）**：专用播放窗双层结构——底层 mpv `wid` 出画面（C2 已建），顶层**透明 WebView2 控制层**（壳内新页 `desktop/ui/player-controls.html`，复用 `--qm-*` token 与 glass 材质），鼠标事件归控制层、画面归 mpv。**刻意不用 render API**（纹理合成是量级最重且最脆的路径，双层透明叠加即可达成"手势浮在 mpv 画面上"），交互规格照搬现 ArtPlayer 实际行为（进度打点/倍速菜单/手势映射以 video-player.tsx 现行为为对照源）。
+
+- [ ] 控制层页骨架（透明 webview 窗叠加 + 与 mpv 窗口同生命周期/同步 resize）
+- [ ] 进度条 + 时间轴打点渲染（数据源=时间轴标签接口，经壳中转或控制层直连服务端）
+- [ ] 手势层（对照 video-player.tsx 现行为：进度条点击/拖拽 seek 含 zoom 1.1 修正口径、双击行为、倍速入口）
+- [ ] 倍速菜单 + 播放/暂停/音量控件（mpv_control IPC 驱动）
+- [ ] 已知实测风险：WebView2 透明背景 + 叠放 z-order + 输入穿透——**首日实测点**，若透明叠加不可行，fallback = mpv `input.conf`/Lua 手势（体验降级但功能等价，记档后切）
+
+### C5+ 后续批次（**用户 2026-10-05 拍板：插件/画质预置类按需再议、不排期**；其中"交互对齐"已于同日二次拍板移回主体=C4.5）
 - [ ] 播放窗交互对齐 web 控制条（倍速/打点联动/手势）
 - [ ] `on_load` 钩子刷新签名直链（ADR-0027 窗口过期防御）
 - [ ] mpv.conf 预置（VSR d3d11vpp / RTX Video HDR / Anime4K 挂载位）+ 设置页开关
@@ -82,8 +94,9 @@ Tauri 壳 (desktop/src-tauri)
   1. `cd desktop/src-tauri && cargo build --offline --release`（启动-桌面端.bat 吃 release 产物，本次只验了 debug）；
   2. 跑 `desktop/src-tauri/setup-mpv.ps1` 取 libmpv-2.dll；
   3. 落 C3（本文件 C3 节 checklist，方案=定稿）；`npm test` + `npm run build`；
-  4. C4 复核收口 + 运行走查（§一验收清单）。
-  5. 网络可用时 `git push -u origin feat/desktop-libmpv-kernel`（分支目前只在本地）。
+  4. **C4.5 交互对齐（工作量最大块，双层播放窗架构见该节）**；
+  5. C4 复核收口 + 运行走查（§一验收清单 1~8）。
+  6. 网络可用时 `git push -u origin feat/desktop-libmpv-kernel`（分支目前只在本地）。
 - （历史）2026-10-05 会话 1 中段：cargo check 曾被设备文件损坏阻塞——已定性为被杀进程残留物（§六），非代码问题，硬件未持续损坏（依赖树全量重编零损坏实证）。
 
 ## 五、坑与存疑（接手必读）
