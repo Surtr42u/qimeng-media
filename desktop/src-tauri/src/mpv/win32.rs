@@ -6,7 +6,7 @@
 //! 与 mpv 生命周期天然同线程串行，规避跨线程窗口操作的全部时序问题。
 //! Win32 ABI 二十余年冻结面，与本仓手写 mpv FFI 同一策略（零新增依赖）。
 
-use std::ffi::{c_int, c_void};
+use std::ffi::c_void;
 
 pub(crate) type Hwnd = *mut c_void;
 pub(crate) type Lresult = isize;
@@ -15,7 +15,6 @@ pub(crate) type Lparam = isize;
 
 // Win32 消息（winuser.h，冻结值）
 const WM_DESTROY: u32 = 0x0002;
-const WM_CLOSE: u32 = 0x0010;
 const WM_QUIT: u32 = 0x0012;
 const PM_REMOVE: u32 = 1;
 // WS_OVERLAPPEDWINDOW = 常规可缩放窗口（含标题栏/最大最小化/粗边框）

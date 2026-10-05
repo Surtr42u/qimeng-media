@@ -17,8 +17,6 @@ pub(crate) const DLL_NAME_WIDE: &[u16] = &[
 ];
 
 // —— mpv_format（client.h：值即 ABI，永不重编号）——
-pub(crate) const MPV_FORMAT_NONE: c_int = 0;
-pub(crate) const MPV_FORMAT_STRING: c_int = 1;
 pub(crate) const MPV_FORMAT_FLAG: c_int = 3;
 pub(crate) const MPV_FORMAT_INT64: c_int = 4;
 pub(crate) const MPV_FORMAT_DOUBLE: c_int = 5;
@@ -26,7 +24,6 @@ pub(crate) const MPV_FORMAT_DOUBLE: c_int = 5;
 // —— mpv_event_id（同上）——
 pub(crate) const MPV_EVENT_NONE: c_int = 0;
 pub(crate) const MPV_EVENT_SHUTDOWN: c_int = 2;
-pub(crate) const MPV_EVENT_LOG_MESSAGE: c_int = 3;
 pub(crate) const MPV_EVENT_PROPERTY_CHANGE: c_int = 22;
 // 未知事件一律忽略（防御：将来 ABI 追加新事件不致误读）。
 
@@ -57,8 +54,6 @@ pub(crate) struct MpvLib {
     pub observe_property:
         unsafe extern "C" fn(MpvHandle, u64, *const c_char, c_int) -> c_int,
     pub wait_event: unsafe extern "C" fn(MpvHandle, f64) -> *mut MpvEvent,
-    pub wakeup: unsafe extern "C" fn(MpvHandle),
-    pub free: unsafe extern "C" fn(*mut c_void),
     pub error_string: unsafe extern "C" fn(c_int) -> *const c_char,
 }
 
@@ -84,17 +79,14 @@ impl MpvLib {
     /// 成功结果进程级缓存；失败不缓存（装完 DLL 立即可用）。
     pub(crate) fn load() -> Result<&'static MpvLib, String> {
         static LOADED: std::sync::OnceLock<Result<MpvLib, ()>> = std::sync::OnceLock::new();
-        // 拿到 &MpvLib 的借用：OnceLock 里存值，这里转长借用（值永不移动）
+        // OnceLock.get() 本就返回 'static 引用（静态项），无需任何指针搬运
         if let Some(Ok(lib)) = LOADED.get() {
-            // SAFETY: OnceLock 值永不移动，'static 借用安全
-            return Ok(unsafe { &*(lib as *const MpvLib) });
+            return Ok(lib);
         }
-        let loaded = Self::load_uncached();
-        match loaded {
+        match Self::load_uncached() {
             Ok(lib) => {
                 let _ = LOADED.set(Ok(lib));
-                // SAFETY: 同上，刚 set 的值永不移动
-                Ok(unsafe { &*LOADED.get().unwrap().as_ref().unwrap() as *const MpvLib })
+                Ok(LOADED.get().unwrap().as_ref().unwrap())
             }
             Err(msg) => Err(msg),
         }
@@ -119,12 +111,9 @@ impl MpvLib {
                 set_option_string: Self::sym(module, b"mpv_set_option_string\0")?,
                 set_property: Self::sym(module, b"mpv_set_property\0")?,
                 set_property_string: Self::sym(module, b"mpv_set_property_string\0")?,
-                set_property: Self::sym(module, b"mpv_set_property\0")?,
                 command: Self::sym(module, b"mpv_command\0")?,
                 observe_property: Self::sym(module, b"mpv_observe_property\0")?,
                 wait_event: Self::sym(module, b"mpv_wait_event\0")?,
-                wakeup: Self::sym(module, b"mpv_wakeup\0")?,
-                free: Self::sym(module, b"mpv_free\0")?,
                 error_string: Self::sym(module, b"mpv_error_string\0")?,
             })
         }

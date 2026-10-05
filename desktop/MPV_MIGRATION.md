@@ -51,7 +51,7 @@ Tauri 壳 (desktop/src-tauri)
 - [x] `src/mpv/win32.rs`：user32/gdi32 FFI 自建播放窗（避开 tauri unstable）——窗口类 QimengMpvHost、1280×720 可缩放、消息泵、WM_CLOSE→WM_QUIT；类名编码单测
 - [x] `src/mpv/commands.rs`：mpv_open/mpv_status/mpv_control/mpv_close 门面（会话槽 check-and-set 防并发双开；死会话自动重建；DLL 缺失错误带 setup 指引）
 - [x] `src/mpv/mod.rs` + `main.rs` 挂载（mod/manage/generate_handler；on_window_event 无需感知播放窗）
-- [ ] **自测：`cargo check` / `cargo test` 全绿** ← 设备恢复后第一件事，可能出 1~3 个普通编译错（代码未经编译器检验），按普通 bug 修
+- [x] **自测：`cargo check` / `cargo test` 全绿 ✅（2026-10-05 补验通过：BUILD_EXIT=0 / TEST_EXIT=0，22 单测全绿含 mpv 模块 5 个新单测；依赖树全量重编无一次损坏）**
 
 ### C3 Web 侧接入（进行中）
 - [ ] `lib/engagement-reporting.ts` + 单测：`nativePollSignal`（轮询边沿→play/pause 信号纯函数，喂 stepPlayGate 同一口径 B 状态机）
@@ -88,23 +88,17 @@ Tauri 壳 (desktop/src-tauri)
 6. **关主窗语义**：现「关主窗=退出应用」判定只看 main/setup 两 label，播放窗为 user32 自建、不经 Tauri 窗口系统，行为不受影响——勿"修复"。
 7. **GPL 分发线**：DLL 不入库不进产物分发（gitignore + setup 脚本），见 ADR-0036 决策 6。
 
-## 六、构建环境事故（2026-10-05 定性：设备侧写入损坏）
+## 六、构建环境事故（2026-10-05 已定性：被杀进程的残留物，非硬件持续损坏）
 
-**症状**：rustc 报 E0432（源文件"缺"实际存在的类型）/E0786（rmeta corrupt），非确定性复现。
+**症状**：rustc 报 E0432（源文件"缺"实际存在的类型）/E0786（rmeta·rlib corrupt）/源文件全零（zmij lib.rs 落盘 66043+ NUL）。
 
-**已排除**（全部实测）：
-- ❌ .crate 缓存损坏：`tar -xzOf cache/xxx.crate path | grep` 与磁盘文件 grep 逐字一致；
-- ❌ 解包残缺：清空 `~/.cargo/registry/src/*` 全量重解包后复现；
-- ❌ 沙箱干扰：关沙箱前台跑复现；
-- ❌ OneDrive 接管 Desktop：OneDrive 目录未覆盖项目路径；
-- ✅ 定性证据：本轮编译**刚写入**的 rmeta 首次读取即 corrupt = **写入即损坏**；
-- ✅ 本机有 WHEA 硬件错误史（HANDOVER 记档、设备纪律背景），症状吻合磁盘/内存级故障。
+**终局定性（T2 残留论成立）**：清空 `~/.cargo/registry/src/*` + `target/debug` 后**全量重编 100+ crate 一次通过、零损坏**（tokio/tao/tauri 全绿）。此前所有失败 = cargo 解包"先分配后写"语义下，进程被中途杀死（用户历史死机时正在构建 / 本会话被工具层掐断的 cargo）遗留的全零/半截文件；每次清一层、下一层浮出，形成"到处坏"假象。
 
-**处置序**：
-1. 用户以完整构建（cargo build）做压测复现，观察死机/异响/蓝屏；
-2. 机器体检：`chkdsk C: /scan` + 内存诊断（mdsched）+ 杀软排除项（`%USERPROFILE%\.cargo`、项目 `target/`）——构建恢复前不信任本机产物；
-3. 恢复后：`cargo check --offline && cargo test --offline` → 绿则勾 C2 自测项；报本仓 mpv 模块普通错误按普通 bug 修（首编 1~3 个错属预期，代码未经编译器检验）；
-4. 同期可继续 C3（web 侧仅 node 工具链，受损面小；若 npm 工具链也现损坏 → 全线停，机器优先）。
+**已实测排除**：.crate 缓存损坏（tar 抽取对照一致）、当前写路径损坏（同路径重解 3 次 + 3×256MB 写读校验全过）、沙箱（关沙箱同样现象）、OneDrive 接管 Desktop。
+
+**未闭合一例**：windows_core rmeta"同轮写读即坏"一次（残留论无法直接解释，未复现）——保持观察，若未来复现按 T1（RAM/SSD）处置：mdsched → CrystalDiskInfo → chkdsk → 杀软排除项。
+
+**给用户的独立事项**：构建高负载下死机仍复现过一次（用户实测确认），与本事故残留是两回事——死机原因排查（内存/供电/驱动）建议继续，不因本定性而搁置。
 
 ## 七、回滚
 
