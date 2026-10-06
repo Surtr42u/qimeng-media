@@ -11,6 +11,11 @@
     "core:window:allow-minimize",
     "core:window:allow-toggle-maximize",
     "core:window:allow-close",
-    "core:window:allow-start-dragging"
+    "core:window:allow-start-dragging",
+    "allow-mpv-open",
+    "allow-mpv-status",
+    "allow-mpv-overlay-info",
+    "allow-mpv-control",
+    "allow-mpv-close"
   ]
 }

@@ -1,0 +1,32 @@
+# mpv 原生内核自定义命令的 ACL 放行（Tauri v2 应用级内联权限，官方文档
+# v2.tauri.app/security/permissions/：应用权限放 src-tauri/permissions/，
+# capability 内裸引用 identifier）。
+#
+# 背景（坑 3 实测 2026-10-06）：主窗加载远端 URL（服务端 Web UI），远端上下文
+# invoke 自定义命令必须显式放行，否则报 "Command mpv_open not allowed by ACL"；
+# 本地窗（setup/控制层）不依赖本条。命令名与 mpv/commands.rs #[tauri::command]
+# 双写，增删命令须两处同步。
+[[permission]]
+identifier = "allow-mpv-open"
+description = "原生内核：打开/换片播放（web 详情页 chip）"
+commands.allow = ["mpv_open"]
+
+[[permission]]
+identifier = "allow-mpv-status"
+description = "原生内核：轮询播放状态快照"
+commands.allow = ["mpv_status"]
+
+[[permission]]
+identifier = "allow-mpv-overlay-info"
+description = "原生内核：控制层时间轴打点数据"
+commands.allow = ["mpv_overlay_info"]
+
+[[permission]]
+identifier = "allow-mpv-control"
+description = "原生内核：播放控制（pause/resume/toggle-pause/seek/speed/volume/mute/toggle-fullscreen）"
+commands.allow = ["mpv_control"]
+
+[[permission]]
+identifier = "allow-mpv-close"
+description = "原生内核：关闭会话回收"
+commands.allow = ["mpv_close"]

@@ -103,7 +103,7 @@ Tauri 壳 (desktop/src-tauri)
 
 1. **FFI 枚举值与签名必须对官方 client.h 终验**（raw.githubusercontent.com/mpv-player/mpv/master/libmpv/client.h）——MPV_EVENT_* 数值、mpv_event 字段序（event_id/reply_userdata/data/error）。本会话调研子代理因 GitHub 被墙未返回，当前值=ABI 冻结口径（mpv 承诺永不重编号），风险低但终验不可省。
 2. **wid 行为**：Windows 上 mpv 在给定 HWND 内自建子窗渲染；父窗 resize 是否自动跟随、OSC 是否可用，实测不符时兜底=监听尺寸变化手动同步（先实测再写）。
-3. **远端页 invoke 自定义命令**：主窗是远端 URL，`window.__TAURI__.core.invoke` 依赖 withGlobalTauri + capability remote 上下文（titlebar.js 已验证窗口 API 可用）；自定义命令是否需显式 capability 条目**未实测**——报权限错就在 capabilities/default.json 补。
+3. **远端页 invoke 自定义命令**：✅ 已实测并修复（2026-10-06 用户走查命中）——主窗是远端 URL，自定义命令须**应用级 ACL 显式放行**（报错 "Command mpv_open not allowed by ACL"；本地窗不受限，故 setup.html 一直正常）。修法=src-tauri/permissions/mpv-commands.toml（五个 allow-mpv-* 内联权限，官方 v2.tauri.app/security/permissions/ 口径）+ capabilities/default.json 裸引用；窗口 API 的 remote 上下文放行此前已就位（titlebar.js 先例）。
 4. **单线程访问 mpv**：除文档明确线程安全者外，全部 mpv_* 调用收敛在播放线程；跨线程只走 mpsc + Mutex 缓存。
 5. **签名直链 6h 窗口**（ADR-0027）：超长会话中途 403 → mpv 停止；已知限制，C5 on_load 刷新解。
 6. **关主窗语义**：现「关主窗=退出应用」判定只看 main/setup 两 label，播放窗为 user32 自建、不经 Tauri 窗口系统，行为不受影响——勿"修复"。

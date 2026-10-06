@@ -10,6 +10,15 @@
 
 > **历史条目拆分说明（2026-10-01）**：为控制 AI 上下文体量，本文件只保留 **2026-09-22 及之后**的条目（第三百八十二笔起）；拆分线之前的全部条目已逐字迁入 `docs/history/CHANGELOG-ARCHIVE.md`（零改写，笔号与本文件连续可查）。引用早于拆分线的旧笔号请去历史档查阅。
 
+## fix(desktop): 坑 3 实测修复——远端页自定义命令 ACL 放行（用户走查首验命中）（2026-10-06 第四百八十三笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- **实测命中**：用户走查首验即报 "Command mpv_open not allowed by ACL"——主窗加载服务端远端 URL，Tauri v2 对远端上下文的自定义命令要求应用级 ACL 显式放行（本地窗不受限，setup.html 从未暴露此问题；任务书坑 3 由存疑转实测定案）。
+- **修复**：新增 `desktop/src-tauri/permissions/mpv-commands.toml`——五个 `allow-mpv-*` 内联权限（mpv_open/mpv_status/mpv_overlay_info/mpv_control/mpv_close，官方 v2.tauri.app/security/permissions/ 口径：应用权限 TOML + capability 裸引用 identifier）；capabilities/default.json permissions 补五条。窗口 API 的 remote 上下文放行此前已就位（titlebar.js 先例），不受影响。
+- **验证**：重建 release 后 gen/schemas ACL 清单已含新权限；壳经标准入口重启（后端复用），用户续测原生内核 chip 全链路。
+- **许可注**：permissions 目录是 Tauri 构建期内联清单，非运行时依赖，无选型通道问题。
+
 ## feat(desktop): mpv 内核 C4.5 双层播放窗——透明控制层 + 全套手势对齐 web 播放器（2026-10-06 第四百八十二笔）
 
 执行 AI：GLM-5.3-Flash（主代理）
