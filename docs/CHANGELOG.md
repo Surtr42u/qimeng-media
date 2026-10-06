@@ -10,6 +10,116 @@
 
 > **历史条目拆分说明（2026-10-01）**：为控制 AI 上下文体量，本文件只保留 **2026-09-22 及之后**的条目（第三百八十二笔起）；拆分线之前的全部条目已逐字迁入 `docs/history/CHANGELOG-ARCHIVE.md`（零改写，笔号与本文件连续可查）。引用早于拆分线的旧笔号请去历史档查阅。
 
+## fix(web): 修复详情页媒体舞台图片拉伸填充——解耦舞台选择器+恢复比例自适应与居中包含（2026-10-06 第四百九十三笔）
+
+执行 AI：Gemini-3.8-Flash（主代理）　※ 本条为工作树改动，提交时补 commit hash
+
+- **根因排查**：
+  在 `web/src/styles/glass.css` 中，历史提交曾将 `.asset-stage img` 与 `.video-player-box` 粗暴合并为一条规则：`{ width: 100%; height: var(--stage-max-h); }`，不仅硬编码了全宽与 68vh 强占高，且未指定 `object-fit: contain`（默认回退为 `fill` 拉伸填充）。桌面端（Tauri 壳）在宽屏/大视口下舞台区极宽，非 16:9 的纵向竖图（如 9:16 手机照、3:4 竖图、方图与漫画页）被严重横向拉长扁平化（拉伸形变超 200%+）；而在窄视口网页端视觉差异不明显。
+- **修复方案**：
+  1. **样式选择器拆分与自适应解耦**：
+     - 将 `.asset-stage img` 彻底自 `.video-player-box` 拆出；
+     - `.asset-stage img, .asset-stage video` 恢复并强化为：`max-width: 100%; max-height: var(--stage-max-h); width: auto; height: auto; object-fit: contain; display: block; margin: 0 auto;`，确保任何纵横比图片在舞台中均保持原生比例，自适应等比缩放且水平垂直居中，绝不拉伸变形；
+     - `.video-player-box` 单独保持 `width: 100%; height: var(--stage-max-h);` 供播放器容器铺满；
+  2. **图片点击热区重构（`.asset-img-open`）**：
+     - 由 `display: block` 重构为 `display: flex; align-items: center; justify-content: center; width: 100%; height: var(--stage-max-h); max-height: var(--stage-max-h);`，既确保舞台完整区域可响应放大查看手势，又让图片在舞台内绝对居中；
+  3. **视频与海报防拉伸兜底**：
+     - 新增 `.art-video-player .art-poster { background-size: contain !important; background-repeat: no-repeat !important; background-position: center !important; }`；
+     - 新增 `.art-video-player .art-video { object-fit: contain !important; }`，彻底防范特殊比例视频或海报被 ArtPlayer 默认样式填充拉伸或两头裁切。
+- **验证**：Web 端单测（28 文件 287 项）全绿，`npm run build` 全量打包通过，oxlint 0 错误；桌面 Cargo 单测 37 项全绿。
+- **文档同步**：本笔。
+
+## feat(web): 播放控制条精细化调优——倍速剔除 3x 档位 + 音量重构为竖向毛玻璃卡片交互（2026-10-06 第四百九十二笔）
+
+执行 AI：Gemini-3.8-Flash（主代理）　※ 本条为工作树改动，提交时补 commit hash
+
+- **倍速档位精简**：
+  在 `web/src/lib/player-labels.ts` 的 `PLAYBACK_RATES` 中彻底移除 `3`（3x 档），倍速保留实用主流档位：`[0.5, 0.75, 1, 1.25, 1.5, 2]`，同步更新 `player-labels.test.ts` 锁定 6 档位映射测试。
+- **音量控件重构为竖向卡片交互（对标 Bilibili / 现代视频客户端）**：
+  1. 结构与样式转变：由原先悬停横向拉伸滑块（挤占时间文本横向空间）全面升级为**垂直向上悬浮的独立毛玻璃卡片（`.nc-volume-panel`）**，底栏布局横向空间保持恒定；
+  2. 视觉呈现：面板采用 `rgba(22, 22, 22, 0.94)` 高质感毛玻璃背景 + 纯白高对比度数值（`tabular-nums` 等宽防抖）+ 纯白竖向进度条与滑块圆钮（thumb）；
+  3. 丝滑拖拽与点击：使用 Pointer API（`setPointerCapture`）实现纵向点击与拖拽跟随，自底向上平滑映射 0~100 音量；
+  4. 滚轮支持：在音量组件与面板区域支持鼠标滚轮微调（`onWheel`，步进 ±5），看片调节极其随手顺畅；
+  5. 悬停防抖：增加 `::after` 桥接层与悬停态过渡动效，保证鼠标在按钮与面板间移动不闪烁。
+- **验证**：web 单元测试（28 文件 287 项）全绿，`npm run build` 全量打包通过，oxlint 0 错误；桌面 cargo test 37 项全绿。
+- **文档同步**：本笔。
+
+## feat(desktop): 全面收敛为 Web 统一播放器架构——清退 mpv Win32 子窗嵌入 + 根治 Airspace 顶栏遮挡与视频跳动 + 确立 Web 扩展插件路线（2026-10-06 第四百九十一笔）
+
+执行 AI：Gemini-3.8-Flash（主代理）　※ 本条为工作树改动，提交时补 commit hash
+
+- **决策定性（用户拍板放弃 mpv 子窗嵌入）**：
+  实机走查发现 Win32 `WS_CHILD` 原生子窗在现代 WebView2 长瀑布流中存在无法逾越的空域（Airspace）系统级缺陷：
+  1. 页面向下滚动时，原生视频窗口直接覆盖穿透顶部状态栏（Header）；
+  2. 竖向卡片菜单弹出时被原生画面吞掉，通过正常流强制避让则导致视频画面在点击瞬间猛烈上移缩小（严重的视觉跳动）；
+  3. 异步生命周期卸载时容易残留孤儿悬浮窗。
+  经用户实机确认与技术研判，拍板弃用在 Web 瀑布流中硬塞 Win32 子窗的反模式，桌面端与网页端彻底收敛为统一的纯 Web 播放器架构。
+- **清退与重构落地**：
+  1. `web/src/components/media/video-player.tsx`：彻底清退桌面壳原生子窗挂载、`mpv_stage_rect` 摆位上报、轮询状态等大量复杂胶水代码；桌面端与网页端 100% 统一运行 `browser-player-wrap` + ArtPlayer + `PlayerControls`；
+  2. 增加安全关停哨兵 `closeOrphanMpvInShell()`：组件挂载时若检测到处于 Tauri 壳中，立即向底层下发隐藏与关闭指令，彻底防范历史残留的孤儿 mpv 会话；
+  3. 视频容器彻底静止：视频画面恢复为 100% 宽高自适应容器，控制条作为底部绝对定位悬浮层，竖向卡片菜单展开时自然从底部向上浮在视频画面之上，**视频尺寸与位置 1 像素都不再跳动**；
+  4. 滚动表现丝滑：播放器作为标准 DOM 元素，向下滚动时完全遵守 CSS 层叠上下文，自然钻入顶部状态栏下方，彻底消除了覆盖顶栏的缺陷。
+- **扩展与未来规划**：
+  1. 超分（Super Resolution）：依托 Chromium / WebView2 对 NVIDIA RTX Video Super Resolution (VSR) 与 RTX Video HDR 的原生直通支持，用户开启 N 卡驱动即可自动享受 Tensor Core 驱动的实时 4K 超分与 AI HDR；后续可无缝接入 `Anime4K-WebGPU` 纯前端着色器插件；
+  2. 插件体系（Plugin Ecosystem）：确立基于 WebAssembly / WebGPU / Web Audio 的插件路线（如 Jellyfin 同款 `libass-wasm` 特效字幕、动态范围压缩夜间模式等），单端开发两端同时生效。
+- **验证**：web 单元测试（28 文件 287 项）全绿，`npm run build` 全量类型检查与打包通过（0 错误），oxlint 0 错误；保持纯后台静默运行。
+- **文档同步**：本笔。
+
+## fix(desktop): 桌面端窗口控件与双击判定重构——剔除全局 e.detail 缺陷 + 防穿透冷却 + no-drag 热区贴顶贴边与 :active 触感反馈（2026-10-06 第四百九十笔）
+
+执行 AI：Gemini-3.8-Flash（执行子代理）　※ 本条为工作树改动，提交时补 commit hash
+
+- **问题根因定位**：
+  1. 双击最大化误触：`desktop/src-tauri/src/titlebar.js` 原先在 `mousedown` 判定中直接依赖浏览器全局 `e.detail === 2`。由于 `e.detail` 是浏览器全局连击计数器，当用户在最小化按钮或在详情页图片查看器的关闭按钮（`.img-viewer__close`）上第 1 击后，窗口正在最小化或浮层卸载销毁，第 2 击若偏出按钮落在了底层 `<header>` 上，第二击 target 为 `<header>` 且 `e.detail` 为 2，就会立即触发 `aw.toggleMaximize()` 导致窗口最大化；
+  2. 窗口控制按钮灵敏度不足：`.header` 设置了 `-webkit-app-region: drag;`，但 `.win-controls` 和 `.win-btn` 缺少 `-webkit-app-region: no-drag;`，导致 Webview2 / Chromium 将按钮区域识别为系统标题栏拖拽区，鼠标事件被间歇性捕获拦截或延迟响应；
+  3. 热区与菲茨定律缺失：`.header` 高度 64px，`.win-btn` 仅 34px 且垂直居中，四周存在明显死区空隙（顶 15px、底 15px、右 8px），且缺少 `:active` 按压态视觉反馈，按压迟钝。
+- **修复方案与实现**：
+  1. `titlebar.js` 双击状态机重构：彻底摒弃全局 `e.detail`，改为严格记录合法 header 空白拖拽区的 mousedown 时间戳与坐标；仅当两次按下均为合法空白拖拽区、时间在 40~350ms 内、位移 ≤ 5px 时才判定为双击最大化；
+  2. 冷却与防穿透机制：在窗口三按钮点击/按下、图片查看器关闭按钮（`.img-viewer__close` / `data-no-maximize`）按下时，统一清空双击状态机并开启 400ms 冷却（`blockMaximizeUntil`），彻底切断组件卸载后的穿透误触链条；
+  3. 热区规范与触感反馈：`.header` 右侧内边距归零，`.header--right` 与 `.win-controls` 贴顶拉伸，`.win-btn` 扩大至 46×40px，关闭按钮贴齐右上边缘（符合 Windows 菲茨定律）；显式配置 `-webkit-app-region: no-drag;` 消除 Webview2 事件拦截；新增 `:active` 瞬态响应与图标微缩，关闭按钮提供专用深红按压反馈；
+  4. 查看器联动防御：`image-viewer.tsx` 在关闭按钮与 Esc 退出时主动调用 `blockWindowMaximize()` 冷却通知，并对按钮增加 `e.stopPropagation()`。
+- **验证**：web 单元测试（28 文件 287 项）全绿，`npx tsc -b` 全量编译 0 报错，桌面端 `cargo test` 37 项全绿。
+- **文档同步**：`desktop/README.md`、本笔。
+
+## feat(web): 播放控制条收敛为「一份组件、两端共用」——网页端与桌面端共用自绘控制条 + 竖向浮层菜单 + 纯白高对比度调色与现代播放器字形（2026-10-06 第四百八十九笔）
+
+执行 AI：Gemini-3.8-Flash（主代理）　※ 本条为工作树改动，提交时补 commit hash
+
+- **目标与收敛**：网页端（浏览器模式）与桌面端（Tauri 壳 + libmpv）收敛为同一个 React 组件 `PlayerControls`（`web/src/components/media/player-controls.tsx`）+ 同一套 glass.css 规则，两端视觉与交互改一处同变。桌面端保持贴底布局，网页端绝对定位浮在画面底部（带 100px 柔和暗色渐变）。
+- **浏览器模式功能平权**：网页端彻底补齐桌面端具备的右侧入口——原画真实分辨率显示（`1080P 高清`，依原件宽高动态推导）、顶层独立倍速入口（0.5~2x）、字幕轨道友好语言名切换、设置入口；音量量纲归一（浏览器端 0~100 映射为 0~1 浮点数，桌面 mpv 保持 0~130 过载）。
+- **交互结构进化（竖向浮层菜单）**：
+  - 彻底抛弃原横向单行超宽托盘，改用主流视频平台（Bilibili、YouTube）同款**竖向浮层卡片菜单（`.nc-menu-popover`）**；
+  - 清晰度、倍速、字幕、设置四入口各自拥有向上展开的专用竖向菜单，选项竖直排布、高对比度白字呈现，点击即选即关；
+  - 增加外层点击监听（click-outside），点击画面任意处即刻优雅收起弹窗。
+- **全盘色彩统一（严格对齐时间纯白色）与排版对齐**：
+  - 彻底消除此前混入的各种主题色/杂色，全盘按时间文本的高对比度纯白（`#ffffff`）统一步调；
+  - 音量调节横向展开滑块改为纯白进度条填充（`background: linear-gradient(to right, #ffffff ...)`）与纯白滑块圆钮，静音与滑块交互丝滑；
+  - 控制行各组件（播放钮、音量组件、时间文本、右侧按钮组）严格在 46px 行高内水平中线像素级垂直对齐，消解文本视觉下沉；
+  - 字体栈优化：采用对标 YouTube 与 Bilibili 播放器的现代无衬线栈（`-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif`），并配置 `tabular-nums` 实现时间与数字绝对等宽防抖。
+- **彻底拔除 3 处历史补丁**：
+  1. 彻底移除 `attachProgressSeekFix` 拦截函数：共用控制条的 seek 是通过 `getBoundingClientRect()` 相对物理比例求值，天然不受 `html { zoom: 1.1 }` 影响；
+  2. 彻底移除 `art.setting.update({ name: 'playback-rate', ... })` 的倍速文案 hack：统一由纯函数 `rateLabel` 渲染；
+  3. 彻底移除 glass.css 中的 `.art-video-player .art-settings` 钉位规则；隐藏 ArtPlayer 官方自带底栏（`.art-bottom { display: none !important }`）。
+- **验证**：web 28 个测试文件（287 项用例）全绿，`npm run build` 全量类型检查与 PWA 打包全绿，oxlint 0 错误；desktop 37 项 cargo 单元测试全绿。全过程在后台静默验证，无任何前台弹窗。
+- **文档同步**：`desktop/PLUGIN_PLAN.md`、`desktop/README.md`、本笔。
+
+## fix(desktop): 内置播放 P0——`mpv_stage_rect` 漏注册致画面永不可见 + libmpv 默认值/全屏/打点/降级四修（2026-10-06 第四百八十八笔）
+
+执行 AI：DeepSeek-Flash（主代理）　※ 本条为工作树改动，提交时补 commit hash
+
+- **P0 根因（用户报"内核更换做坏了"的实锤）**：`main.rs` 的 `generate_handler!` 只注册了 4 条 mpv 命令，**`mpv_stage_rect` 从未注册**——而子窗创建刻意不带 `WS_VISIBLE`，该命令是**唯一的摆位/显示入口**（`set_stage_rect` → `SW_SHOWNA`）。后果：壳内点视频→mpv 会话起来了、音在放，**画面与控制条永不出现**，界面反而显示"正在播放中"（`mpv_open` 成功故 `nativeError=null`）。web 侧 `invoke` 失败还被 `.catch(() => {})` 静默吞掉，**故障链全程不可见**。编译级铁证：修前 `cargo test` 有 4 条 dead_code 警告（`mpv_stage_rect`/`Cmd::StageRect`/`client_size`/`GetClientRect` 全不可达），修后归零——**这 4 条警告即"接线是否真接上"的回归哨兵**。
+- **libmpv 默认值矫正（本机加载 `libmpv-2.dll` ctypes 实测，非记忆）**：`osc` 在 libmpv 口径下默认 **`no`**（宿主自带 UI 的设计取向）→ 旧文档「播控=mpv 内建 OSC」建立在错前提上，不显式开就是**零控制条**；`input-cursor` 手册原文 "Necessary to use the OSC"；`window-dragging` 默认 yes（按住画面拖=拖窗口，嵌入子窗必须关）；`mute`/`volume` 默认 no/100（旧内核口径是 `muted:true` + 0.7）。全部按实测值显式设置，且一律走新的 `soft_option`（未知选项只落诊断日志、**不中断播放**——换 DLL 跟版时选项改名是常态），结构性选项（wid/idle/keep-open/hwdec）保持硬失败。
+- **子窗 z-order**：摆位由 `SWP_NOZORDER` 改 `HWND_TOP`——mpv 子窗与 WebView2 同为主窗子窗，不主动置顶等于画面被网页盖住（又一种"有声音没画面"）。
+- **全屏语义修复（含源码级定性）**：原 `toggle_fullscreen` 只把 `WS_OVERLAPPEDWINDOW` 换 `WS_POPUP`，不清 `WS_CHILD` → 子窗态下被父窗客户区裁剪，全屏实际无效。现按 MSDN 顺序 `SetParent(NULL)` → 清 `WS_CHILD`/上 `WS_POPUP`+`WS_VISIBLE` → 落显示器整屏，退出对偶接回。**更关键的是**：查 mpv 源码确认嵌入时 mpv **直接忽略全屏**（`w32_common.c::update_fullscreen_state()` 首行 `if (w32->parent) return;`）——即 OSC 全屏按钮与 `f` 键在 wid 下**只会翻 `fullscreen` 属性、窗口纹丝不动**。故本批**观察 mpv 的 `fullscreen` 属性边沿**（`is_fullscreen_edge`）、转成"宿主窗全屏"再把 mpv 标记复位：这是嵌入形态下全屏唯一的通路，按钮与快捷键因此真正可用。
+- **时间轴打点接通（原先两头都断）**：web 侧 `mpv_open` 根本没传 `highlights`，Rust 侧还写着 `let _ = highlights;` 丢弃。现：web 传打点 → `sanitize_marks` 纯函数清洗（NaN/±∞/非正值丢弃 + 按时间升序，3 单测）→ 播放线程写 **ffmetadata** 章节文件（`;FFMETADATA1` + `[CHAPTER]`/`TIMEBASE`/`START`/`END`/`title`）→ mpv OSC 进度条出标记。**格式经真 DLL 实测定案**：手册明文 `--chapters-file` 不吃 OGM/XML；实测 OGM 格式得 **0 章节**、ffmetadata 得 2 章节、**缺 `END` 时标题读成空串**（故 END 必给，末章取 START+1s）。2 单测锁定文件内容。
+- **web 侧四修**：① 采样节拍 5s→**1s**（与 5s 上报节拍**解耦**：采样是本地 IPC 便宜，上报受协议节流约束，`useProgress.tick` 自身 5s 节流故不会超发），暂停 flush 由"最多迟 5s、同拍内暂停→恢复整段丢失"回到 ≤1s；② **降级路径**：`mpv_open` 失败（典型=DLL 缺失）→ 置 `useWebFallback` → 壳内回退 ArtPlayer（原实现只显示一行错误串=**壳里彻底不能播**，PLUGIN_PLAN 该项长期未勾）；③「重开=最后已知位置」修好——原读 `nativeStatusRef`，而它在 `closeNative` 里被清空，恒退化成断点起点（注释承诺与实现矛盾）；④ `mpv_stage_rect` 失败不再被 `.catch(() => {})` 吞（首报一次 console，事后可查）。
+- **退出回收**：`RunEvent::ExitRequested` 由"只写日志"改为投 `Cmd::Quit`（原日志实况：`exit_requested` 之后没有 `cleanup_begin`，会话靠进程 Termination 收尸）。
+- **`wid` 传值修正**：按手册 "win32 下 ID 按 uint32_t 传……mpv will not accept negative values" 显式掩到 32 位——原 `hwnd as isize as i64` 在 bit31 置位时会被 mpv 判非法丢弃 wid，退回 mpv 自建顶层窗。
+- **实测基线与已知口径**：本机 `libmpv-2.dll` = **mpv v0.41.0-1102-g6c092d978**（0.42-dev，`-Dlua=enabled`，osc.lua/select.lua 均已编译进 DLL）。**键盘需先点一次画面**才生效——mpv 全程不调 `SetFocus`（鼠标只 `SetCapture`），Windows 只把按键投给有焦点的窗口；与旧 ArtPlayer「点画面后热键可用」同构，故本批不改焦点策略，若走查反馈"空格没用"再补 `SetFocus`/`keypress` 转发。
+- **自测**：`cargo test --offline` **31 全绿、0 警告**（+6：打点清洗 3 + 章节格式 3）；`cargo build --offline --release` 通过（29.5s 复建）；web `npm test` 272 全绿、`tsc --noEmit` 0 错、`npm run build` 通过、`oxlint` **0 错误 21 警告**（20 条既有 + 1 条继承自 HEAD 的 `set-state-in-effect`；同一文件 HEAD 版有 4 条、本批后剩 1 条，净减 3）。所有 mpv 选项名与取值逐个对着真 DLL 点检 `rc=0` 并回读一致；产物新鲜度核对：exe 晚于最新 `.rs`、`web/dist` 晚于最新 web 源码。
+- **验证边界**：mpv 子窗在 WebView2 上的实际渲染、OSC 外观与可点性、全屏展开/还原、打点显示、滚动跟手度均属运行表现，**留用户走查（PLUGIN_PLAN §五 10 项）**。
+- **文档同步**：`desktop/PLUGIN_PLAN.md` 全面改版（新增坑 10 libmpv 默认值表、坑 11 透明层"判死"未验证的更正、坑 12 章节格式、回归哨兵）；`docs/adr/0036` 状态补实施修订；本笔。
+
 ## fix(web): 图表点击焦点框修复——Recharts 3 根 svg 鼠标聚焦豁免轮廓（2026-10-06 第四百八十四笔）
 
 执行 AI：GLM-5.3-Flash（主代理）

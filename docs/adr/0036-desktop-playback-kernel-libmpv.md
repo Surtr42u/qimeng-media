@@ -48,6 +48,19 @@ Accepted（2026-10-05，用户拍板）；**实施修订（2026-10-06，用户�
 （WS_CHILD 铺在 web 舞台矩形，「内置播放」，仍 wid/零 render API，见 PLUGIN_PLAN）；触发方式定稿=壳内点视频即原生播放（无可见组件，非"自动播放"特性）；后续插件
 计划统一收口到 `desktop/PLUGIN_PLAN.md`（本 ADR 只记决策不记进度）。
 
+**实施修订 2（2026-10-06 晚，P0 修复批）**：决策 1/2 的"内置形态"接线存在致命实现缺口——
+`mpv_stage_rect` 未注册进 `generate_handler!`，播放窗（创建时不带 `WS_VISIBLE`）永不显示，
+实况为"有声音没画面"；已修（回归哨兵=该命令相关 dead_code 警告须为 0）。**决策 4 的
+「进度上报 = JS 轮询」口径细化为**：采样节拍 1s 与上报节拍 5s **解耦**（采样是本地 IPC，
+上报受协议节流约束，`useProgress.tick` 自身 5s 节流）。**决策 5 的降级策略落地**：
+`mpv_open` 失败时壳内回退 ArtPlayer（此前只显示错误串=壳内不可播）。**新增两条实测事实**：
+① libmpv 口径下 `osc` 默认 **no**——决策 2「mpv 自管 OSC 控制条」必须在代码里显式开
+（另有 `input-cursor`/`window-dragging`/`mute`/`volume` 四选项同属 libmpv 特异默认值，
+见 PLUGIN_PLAN 坑 10）；② `--chapters-file` 只吃 ffmetadata 格式（OGM 实测 0 章节），
+时间轴打点走该路径落到 OSC 进度条。**另更正 PLUGIN_PLAN 记档**：C4.5 透明控制层的
+"判死刑"是未做对照实验的推测（当时计划的"去掉 transparent 做二分"被误读指令打断），
+不得当既定事实引用——见 PLUGIN_PLAN 坑 11。
+
 ## 后果（Consequences）
 
 - **积极**：桌面端获得内核拥有权——VSR 主动控制、RTX Video HDR、Anime4K、SVP 插帧、mkv 等全格式、未来神经编码全部变为配置级接入；客户端 GPU 承担增强算力，NAS 后端零感知（拉原件直链，与现路径一致）；FFI 零依赖保证壳的可构建性不与 mpv 运行库耦合。

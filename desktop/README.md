@@ -83,19 +83,23 @@ TopBar.tsx 内已有单向注释提示；本节为 desktop 侧的逆向记档。
 ## 原生播放内核（libmpv）
 
 - **决策与进度**：选型决策见 `docs/adr/0036`（含 2026-10-06 实施修订）；**后续接线与插件计划见 `PLUGIN_PLAN.md`（唯一执行文档）**。
-- **现状（2026-10-06 已接线）**：桌面壳内点视频 = 直接打开 mpv 播放窗（mpv 为壳内唯一内核，无可见切换组件；透明控制层方案因闪退撤回，控制面暂为 mpv 内建 OSC）；浏览器模式 ArtPlayer 不变。控制条缺口对齐与插件（mpv.conf 画质基线/RTX Video HDR 配套）见 PLUGIN_PLAN §三。
-- **首次使用（内核接线后需要）**：`powershell -ExecutionPolicy Bypass -File src-tauri\setup-mpv.ps1`（GitHub 双源+镜像自取 mpv-dev 包；DLL 不入库）。
-- **浏览器模式零影响**：浏览器环境无壳 IPC，ArtPlayer 行为不变。
+- **现状（2026-10-06 已接线并修复 P0）**：壳内点视频 = mpv 播放窗**内置在页面舞台位**（主窗 WS_CHILD 子窗，随滚动/缩放跟随，滚出视口自动隐藏）；mpv 为壳内唯一内核，无可见切换组件；控制条已与网页端收敛为同一份自绘组件 `PlayerControls`（`web/src/components/media/player-controls.tsx`，含清晰度/倍速/字幕/设置四入口），桌面端贴底排布、网页端绝对定位浮在画面底部，改一处两端同变。mpv 内建默认键位（**先点一下画面**再按：空格暂停、←→ ±5s、↑↓ ±60s、`[`/`]` 倍速、`m` 静音、`f` 全屏）。
+- **播放口径对齐旧内核**：默认静音 + 音量 0.7（2026-09-17 用户拍板口径）；时间轴标签以 mpv 章节形式画在 OSC 进度条上；进度采样 1s（上报仍 5s 协议节拍），暂停即时 flush。
+- **首次使用（内核接线后需要）**：`powershell -ExecutionPolicy Bypass -File src-tauri\setup-mpv.ps1`（GitHub 双源+镜像自取 mpv-dev 包；DLL 不入库）。**DLL 缺失不再是不可播**：`mpv_open` 失败时壳内自动回退 ArtPlayer。
+- **浏览器模式零影响**：浏览器环境共用同一份控制条，补齐右侧四入口，拔除历史坐标与文案 hack 补丁。
+- **排障入口**：`src-tauri/target/release/qimeng-shell.log`（生命周期跟踪）/ `qimeng-panic.log`（panic 落盘）/ `%LOCALAPPDATA%\CrashDumps`（WER 转储）。排查"有声音没画面"先看 `cargo test` 是否有 `never used` 死代码警告（=命令漏注册，见 PLUGIN_PLAN 坑 1）。
 
 ## 已知限制（记档，暂不处理）
 
-- 标题栏双击最大化的判定用 `mousedown` 的 `e.detail === 2`——Windows 下
-  第一次 mousedown 已进入系统拖动模态循环，第二次物理点击能否送达页面未
-  实测验证；若真机出现双击偶发失灵，改 click 计时判定（勿用
-  `data-tauri-drag-region`，那需要改 web 端，违反「web/ 零改动」约束）。
+- 标题栏双击最大化机制（2026-10-06 修复）：废除脆弱的浏览器全局 `e.detail === 2`，
+  改为严格记录合法 header 空白拖拽区的 mousedown 时间戳与坐标（350ms 内且位移 ≤ 5px 判定为双击），
+  并对三枚窗口控件以及全屏浮层（如图片查看器关闭）卸载增加 400ms 冷却拦截，
+  彻底解决双击最小化或关闭图片查看器时的误触发最大化；窗口控件与浮层显式声明 `-webkit-app-region: no-drag`
+  并贴顶贴边扩大热区，满足菲茨定律并提供瞬时 `:active` 触感反馈。
 - `capabilities/default.json` 的 remote 授权是 `http(s)://*` 通配——服务器
   地址是用户运行时配置，静态 capability 无法收窄到具体主机（文件 description
   注明的是「远程源须显式声明才生效」，通配的理由即本条）。威胁模型是用户
   自己的 NAS，接受；若将来远程隧道暴露常态化，再评估收紧。
 - 无自动更新器（单用户自用，接受；HANDOVER 记档级同条）。
-- 原生内核接线前：壳内播放走 web 内核；接线后播放窗交互以 mpv 内建 OSC 为基线，缺口对齐清单见 `PLUGIN_PLAN.md` §三-2。
+- 原生内核的播放窗交互以 mpv 内建 OSC + 默认键位为基线（**wid 嵌入下 OSC 的实测表现属用户走查项**）；缺口对齐清单见 `PLUGIN_PLAN.md` §三-2。旧内核那套控制条的像素级复刻路线（透明控制层）**尚未定案**——"闪退判死刑"是未经对照实验的推测，见 PLUGIN_PLAN 坑 11。
+- **libmpv 与普通 mpv 的默认值不同**（`osc` 默认关、`input-cursor`/`window-dragging`/`mute`/`volume` 各异），改播放窗行为前先读 PLUGIN_PLAN 坑 10 的实测表，勿按普通 mpv 手册的默认值推断。

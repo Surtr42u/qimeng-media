@@ -215,7 +215,7 @@ body::before {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 var(--qm-space-2) 0 var(--qm-space-4);
+  padding: 0 0 0 var(--qm-space-4);
   border-top: none;
   border-left: none;
   border-right: none;
@@ -226,7 +226,7 @@ body::before {
 
 .header--left { display: flex; align-items: center; gap: var(--qm-space-4); }
 
-.tabs { display: flex; align-items: center; gap: var(--qm-space-1); height: 44px; }
+.tabs { display: flex; align-items: center; gap: var(--qm-space-1); height: 44px; -webkit-app-region: no-drag; }
 /* 推荐/cos/排行榜 只在首页显示，其余页面隐藏（display:flex 会覆盖 hidden 语义，须显式声明） */
 .tabs[hidden] { display: none; }
 .rank-panel[hidden] { display: none; }
@@ -257,7 +257,12 @@ body::before {
   box-shadow: 0 0 8px color-mix(in oklab, var(--qm-primary) 65%, transparent);
 }
 
-.header--right { display: flex; align-items: center; margin-left: auto; gap: var(--qm-space-2); }
+.header--right {
+  display: flex;
+  align-items: flex-start;
+  margin-left: auto;
+  height: 100%;
+}
 
 /* 搜索框：顶栏内水平居中（以 header 区域为参照） */
 .search {
@@ -389,21 +394,50 @@ body::before {
   text-align: center;
 }
 
-/* 窗口控件（浏览器环境纯装饰） */
-.win-controls { display: flex; }
+/* 窗口控件（Web 环境纯装饰，桌面端由 titlebar.js 注入窗口操作） */
+.win-controls {
+  display: flex;
+  -webkit-app-region: no-drag;
+}
 .win-btn {
-  width: 42px;
-  height: 34px;
+  width: 46px;
+  height: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--qm-text-muted);
-  border-radius: var(--qm-radius-sm);
+  border-radius: 0;
+  -webkit-app-region: no-drag;
+  cursor: pointer;
   transition: background var(--qm-duration-fast) var(--qm-ease-out), color var(--qm-duration-fast) var(--qm-ease-out);
 }
-.win-btn svg { width: 16px; height: 16px; }
-.win-btn:hover { background: var(--qm-hover); }
-.win-btn:last-child:hover { background: var(--qm-danger); color: var(--qm-on-accent); }
+.win-btn svg {
+  width: 16px;
+  height: 16px;
+  transition: transform var(--qm-duration-fast) var(--qm-ease-out);
+}
+.win-btn:hover {
+  background: var(--qm-hover);
+  color: var(--qm-text);
+}
+.win-btn:active {
+  background: var(--qm-hover-strong);
+  color: var(--qm-text);
+  transition: none;
+}
+.win-btn:active svg {
+  transform: scale(0.9);
+  transition: none;
+}
+.win-btn:last-child:hover {
+  background: var(--qm-danger);
+  color: var(--qm-on-accent);
+}
+.win-btn:last-child:active {
+  background: color-mix(in oklab, var(--qm-danger) 80%, black);
+  color: var(--qm-on-accent);
+  transition: none;
+}
 
 /* 榜单周期行（日/月/周/年榜）：顶栏下方胶囊行 */
 .rank-panel {
@@ -1542,9 +1576,14 @@ button.pill.detail-tag-manage { cursor: pointer; }
 .asset-pager__btn:disabled { opacity: 0.45; cursor: default; }
 .asset-pager__count { font-variant-numeric: tabular-nums; }
 
-/* 详情媒体区图片点击态（视觉同裸 img，cursor zoom-in） */
+/* 详情媒体区图片点击态（弹性居中占满舞台，cursor zoom-in） */
 .asset-img-open {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: var(--stage-max-h);
+  max-height: var(--stage-max-h);
   padding: 0;
   border: 0;
   background: none;
@@ -1572,18 +1611,98 @@ button.pill.detail-tag-manage { cursor: pointer; }
   box-shadow: var(--qm-shadow-2);
 }
 .asset-stage img,
-.asset-stage video { max-width: 100%; max-height: 68vh; object-fit: contain; display: block; }
+.asset-stage video {
+  max-width: 100%;
+  max-height: var(--stage-max-h);
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  display: block;
+  margin: 0 auto;
+}
 .video-player-box { width: 100%; height: var(--stage-max-h); }
-/* 原生内核舞台（桌面壳内）：页面 UI 形态不变，播放本体=mpv 独立播放窗；
-   舞台位显示海报 + 状态行，窗被关后点击重开（重开=播放行为，非内核切换件） */
+
+/* 浏览器模式播放器包装层：相对定位，画面与共用控制条在此叠合 */
+.browser-player-wrap {
+  position: relative;
+  width: 100%;
+  height: var(--stage-max-h);
+  background: var(--qm-stage);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.browser-player-wrap.fullscreen {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  max-height: none;
+  z-index: 80;
+  background: oklch(0 0 0);
+}
+.browser-player-wrap .video-player-box {
+  width: 100%;
+  height: 100%;
+}
+/* 浏览器模式下共用控制条绝对定位悬浮在画面底部 */
+.browser-player-wrap .player-controls {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 25;
+  pointer-events: auto;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+/* 浏览器模式自动隐藏：淡出并禁止交互 */
+.browser-player-wrap .player-controls.autohide {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(4px);
+}
+.browser-player-wrap.fullscreen .player-controls {
+  --nc-control-h: 60px;
+  --nc-icon-scale: 1.3;
+  --nc-progress-h: 8px;
+  --nc-indicator-size: 20px;
+}
+/* 彻底隐藏 ArtPlayer 官方自带的控制条与底栏，统一由 PlayerControls 渲染 */
+.art-video-player .art-bottom {
+  display: none !important;
+}
+.art-video-player .art-poster {
+  background-size: contain !important;
+  background-repeat: no-repeat !important;
+  background-position: center !important;
+}
+.art-video-player .art-video {
+  object-fit: contain !important;
+}
+/* 原生内核舞台（桌面壳内）：页面 UI 形态不变，播放本体=mpv；
+   纵向两段：上=视频面（原生窗铺在这块矩形上，ref 上报的就是它），
+   下=自绘控制条（DOM，外观按 ArtPlayer 实测度量复刻，见 native-controls.tsx） */
 .native-stage {
   width: 100%;
   height: var(--stage-max-h);
   display: flex;
+  flex-direction: column;
+  position: relative;
+  background: var(--qm-stage);
+}
+/* 视频面：mpv 播放窗的摆位基准。flex:1 让它随控制条高度变化自动缩放，
+   ResizeObserver 捕获后上报新矩形 → 原生窗同步（托盘展开就靠这条）。
+   min-height 是**2026-10-06 实机事故的兜底**：托盘/控制条一旦超预算高度，
+   flex 会把视频面压到 0，而原生窗不缩就变成"面板上叠着半截画面"。
+   有下限在，视频面任何情况下都不会消失（宁可让外层溢出，也不让画面成一条缝）。 */
+.native-stage-video {
+  flex: 1;
+  min-height: 160px;
+  display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
-  background: var(--qm-stage);
 }
 .native-stage-poster {
   max-width: 100%;
@@ -1602,10 +1721,526 @@ button.pill.detail-tag-manage { cursor: pointer; }
   text-shadow: 0 1px 4px oklch(0 0 0 / 0.5);
   pointer-events: none;
 }
-/* ArtPlayer 设置包装器防右缘裁切（v1 实证修复，!important 压内联 left，勿删） */
-.art-video-player .art-settings {
-  left: auto !important;
-  right: 24px !important;
+/* ============ 原生内核自绘控制条（逐项复刻 ArtPlayer 控制条）============
+   度量全部取自 artplayer 5.4.0 内置样式与运行时渲染产物（2026-10-06 用 CDP 在
+   浏览器模式实测，非目测）：控制行 46px / 图标按钮 46×46 / 图标盒 36px 且**常态**
+   scale(1.1)（`--art-control-icon-scale`，不是悬停才放大）/ svg 22×22 /
+   按钮 opacity .75 且悬停**只有 opacity→1**（无底色、无位移）/
+   进度区 padding 10px 0 5px（总 21px）/ 可见进度条静止 3px（内层 50%）悬停 6px /
+   指示点 16px 默认 scale(0) / 打点 8px 宽 rgba(255,255,255,.5) /
+   底部渐变 `linear-gradient(to top,#000,rgba(0,0,0,.4),transparent)` 且
+   `background-size: 100% 100px`（`--art-bottom-height`）/
+   时间 14px + opacity .75 / 网页全屏态：行高 60px、图标 scale 1.3、进度条 8px、
+   指示点 20px（ArtPlayer `.art-fullscreen-web` 的变量覆盖）。
+   下面四行变量就是这四个"全屏会变"的值，改一处即全条跟随。 */
+.player-controls,
+.native-controls {
+  --nc-control-h: 46px;
+  --nc-icon-scale: 1.1;
+  --nc-progress-h: 6px;
+  --nc-indicator-size: 16px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  padding: 0 10px;
+  /* ArtPlayer 实测：渐变不是铺满整个容器，而是 `background-size: 100% 100px` +
+     repeat-x + 底对齐（`--art-bottom-height: 100px`），色停 exactly 这三段 */
+  background-image: linear-gradient(
+    to top,
+    oklch(0 0 0 / 0.88) 0%,
+    oklch(0 0 0 / 0.42) 50%,
+    oklch(0 0 0 / 0) 100%
+  );
+  background-size: 100% 100px;
+  background-repeat: repeat-x;
+  background-position: center bottom;
+  color: #ffffff;
+  /* 现代视频播放器字体栈（对标 YouTube 与 Bilibili：高清无衬线 + 等宽数字防抖） */
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  user-select: none;
+}
+/* 浮层锚点：按钮宿主，为内部绝对定位的竖向菜单提供定位基准 */
+.nc-pop-anchor {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 100%;
+}
+/* 竖向菜单托盘行：在 DOM 正常流中，位于进度条上方 */
+.nc-vertical-tray-row {
+  flex: none;
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-end;
+  padding: 4px 0 6px;
+  user-select: none;
+  animation: nc-tray-in 0.12s ease-out;
+}
+
+/* 竖向浮层菜单（清晰度/倍速/字幕/设置四入口统一使用）：暗色超透毛玻璃 + 纯白高对比度文字排版 */
+.nc-menu-popover {
+  position: relative;
+  min-width: 120px;
+  max-height: 280px;
+  padding: 6px 0;
+  border-radius: 8px;
+  background: rgba(22, 22, 22, 0.94);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.65);
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  user-select: none;
+  animation: nc-menu-pop-in 0.15s cubic-bezier(0, 0, 0.2, 1);
+}
+/* 对齐各入口按钮的水平位置（防止重叠，严格垂直悬停在各自触发按钮正上方） */
+.nc-popover-quality { margin-right: min(204px, calc(100vw - 160px)); }
+.nc-popover-rate { margin-right: min(148px, calc(100vw - 160px)); }
+.nc-popover-subtitle { margin-right: min(92px, calc(100vw - 160px)); }
+.nc-popover-settings { margin-right: 46px; }
+@keyframes nc-menu-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.nc-menu-title {
+  padding: 6px 14px 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.6);
+  white-space: nowrap;
+}
+.nc-menu-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 220px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+.nc-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 34px;
+  padding: 0 14px;
+  border: none;
+  background: none;
+  color: #ffffff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.12s ease;
+  text-align: left;
+}
+.nc-menu-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+.nc-menu-item.active {
+  background: rgba(255, 255, 255, 0.14);
+  font-weight: 600;
+  color: #ffffff;
+}
+.nc-menu-label {
+  display: inline-flex;
+  align-items: center;
+  flex: 1;
+}
+.nc-menu-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 10px;
+  color: #ffffff;
+  flex-shrink: 0;
+}
+.nc-menu-check svg {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+}
+.nc-menu-note {
+  padding: 6px 14px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.65);
+  white-space: nowrap;
+}
+.nc-menu-tag {
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.15);
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+/* 进度条（ArtPlayer 实测结构）：外层 padding 10px 0 5px = 21px 高，
+   内层 6px 高的"轨道带"，**可见条静止时 3px（内层高度的 50%）、悬停涨到 6px**
+   （`--art-progress-height: 6px` + `.art-control-progress-inner{height:50%}`）；
+   指示点 16px 默认 scale(0)、悬停/拖拽出现；打点 8px 宽占满带宽。 */
+.nc-progress {
+  position: relative;
+  padding: 10px 0 5px;
+  cursor: pointer;
+  touch-action: none;
+}
+.nc-band {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: var(--nc-progress-h);
+}
+.nc-track,
+.nc-loaded,
+.nc-played {
+  position: absolute;
+  left: 0;
+  right: 0;
+  /* 静止 = 带宽的 50% 且居中（ArtPlayer `.art-control-progress-inner{height:50%}`） */
+  top: calc(var(--nc-progress-h) / 4);
+  height: calc(var(--nc-progress-h) / 2);
+  border-radius: calc(var(--nc-progress-h) / 4);
+  transition: top 0.2s ease, height 0.2s ease, border-radius 0.2s ease;
+}
+.nc-track { background: oklch(1 0 0 / 0.25); }
+.nc-loaded { background: oklch(1 0 0 / 0.25); }
+.nc-played { background: var(--qm-primary); }
+.nc-progress:hover .nc-track,
+.nc-progress:hover .nc-loaded,
+.nc-progress:hover .nc-played,
+.nc-progress.dragging .nc-track,
+.nc-progress.dragging .nc-loaded,
+.nc-progress.dragging .nc-played {
+  top: 0;
+  height: var(--nc-progress-h);
+  border-radius: calc(var(--nc-progress-h) / 2);
+}
+
+/* 打点：规格与旧版一致（8px 宽、rgba(255,255,255,.5)、占满当前带宽） */
+.nc-mark {
+  position: absolute;
+  top: calc(var(--nc-progress-h) / 4);
+  width: 8px;
+  height: calc(var(--nc-progress-h) / 2);
+  margin-left: -4px;
+  border-radius: 2px;
+  background: oklch(1 0 0 / 0.5);
+  transition: top 0.2s ease, height 0.2s ease;
+}
+.nc-progress:hover .nc-mark,
+.nc-progress.dragging .nc-mark { top: 0; height: var(--nc-progress-h); }
+
+/* 指示点：16px，默认 scale(0)，悬停/拖拽时出现（ArtPlayer --art-indicator-size=16 /
+   --art-indicator-scale=0→1；全屏态 20px） */
+.nc-thumb {
+  position: absolute;
+  top: 50%;
+  width: var(--nc-indicator-size);
+  height: var(--nc-indicator-size);
+  margin-top: calc(var(--nc-indicator-size) / -2);
+  margin-left: calc(var(--nc-indicator-size) / -2);
+  border-radius: var(--qm-radius-full);
+  background: var(--qm-primary);
+  box-shadow: 0 0 4px oklch(0 0 0 / 0.5);
+  transform: scale(0);
+  transition: transform 0.2s ease;
+  pointer-events: none;
+}
+.nc-progress:hover .nc-thumb,
+.nc-progress.dragging .nc-thumb { transform: scale(1); }
+
+/* 悬停时间预览（ArtPlayer `.art-progress-tip`：top -25px、padding 3px 5px、
+   12px 行高 1、3px 圆角、rgba(0,0,0,.7) 底、出现时 scale .5→1） */
+.nc-preview {
+  position: absolute;
+  top: -4px;
+  transform: translateX(-50%);
+  padding: 3px 5px;
+  border-radius: 3px;
+  background: oklch(0 0 0 / 0.7);
+  color: var(--qm-text);
+  font-size: 12px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+  animation: nc-preview-in 0.12s ease-out;
+}
+@keyframes nc-preview-in {
+  from { opacity: 0; transform: translateX(-50%) scale(0.5); }
+  to { opacity: 1; transform: translateX(-50%) scale(1); }
+}
+
+/* 控制行：46px（ArtPlayer --art-control-height）；`space-between` 分组结构照抄
+   （左组=播放/音量/时间，右组=右对齐按钮排），控件之间**无间距**——
+   旧版实测 左组 219px = 46(播放) + 46(音量) + 117(时间)，按钮彼此相邻 */
+.nc-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--nc-control-h);
+}
+.nc-group {
+  display: flex;
+  align-items: center;
+  height: 100%;
+}
+.nc-group-right {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  height: 100%;
+}
+.nc-btn {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--nc-control-h);
+  height: 100%;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: #ffffff;
+  opacity: 0.92;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: opacity 0.15s ease, background-color 0.15s ease, transform 0.12s ease;
+}
+/* 悬停与激活态：统一高亮白，与时间及全盘颜色对齐 */
+.nc-btn:hover:not(:disabled) {
+  opacity: 1;
+  background-color: rgba(255, 255, 255, 0.08);
+}
+.nc-btn:hover:not(:disabled) .nc-icon { transform: scale(calc(var(--nc-icon-scale) * 1.12)); }
+.nc-btn:disabled { opacity: 0.35; cursor: default; }
+/* 图标盒：36px 且常态 scale(1.1)；按下微缩 */
+.nc-icon {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 36px;
+  height: 36px;
+  line-height: 1;
+  transform: scale(var(--nc-icon-scale));
+  transition: transform 0.2s ease;
+}
+.nc-btn:active:not(:disabled) .nc-icon { transform: scale(calc(var(--nc-icon-scale) * 0.88)); }
+.nc-icon svg { fill: currentColor; }
+.nc-btn.active {
+  opacity: 1;
+  background-color: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+}
+
+/* 文字入口（清晰度/倍速/字幕）：现代视频播放器字形与纯白微拟态 */
+.nc-text-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 100%;
+  padding: 0 10px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: #ffffff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  opacity: 0.92;
+  cursor: pointer;
+  transition: background-color 0.15s ease, opacity 0.15s ease;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+.nc-text-btn:hover:not(:disabled) {
+  opacity: 1;
+  background-color: rgba(255, 255, 255, 0.08);
+}
+.nc-text-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.nc-text-btn:disabled { opacity: 0.35; cursor: default; }
+.nc-text-btn.active {
+  opacity: 1;
+  background-color: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+}
+.nc-text-btn.on {
+  color: #ffffff;
+  font-weight: 600;
+  opacity: 1;
+}
+.nc-text-main {
+  font-weight: 600;
+  color: #ffffff;
+}
+.nc-text-sub {
+  font-size: 11.5px;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+/* 应用内全屏（旧版 fullscreenWeb 口径）：播放器铺满整个应用窗口 */
+.native-stage.fullscreen {
+  position: fixed;
+  inset: 0;
+  height: 100vh;
+  z-index: 80;
+  background: oklch(0 0 0);
+}
+.native-stage.fullscreen .player-controls,
+.native-stage.fullscreen .native-controls {
+  --nc-control-h: 60px;
+  --nc-icon-scale: 1.3;
+  --nc-progress-h: 8px;
+  --nc-indicator-size: 20px;
+}
+
+/* 主流音量控件（竖向卡片交互）：悬停向上浮出精致毛玻璃竖向卡片，纯白高对比度数值与轨道 */
+.nc-volume-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
+.nc-volume-panel {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  width: 36px;
+  padding: 8px 0 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  border-radius: 8px;
+  background: rgba(22, 22, 22, 0.94);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.65);
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+  transition: opacity 0.15s ease, transform 0.15s cubic-bezier(0, 0, 0.2, 1), visibility 0.15s;
+  z-index: 50;
+  user-select: none;
+}
+/* 悬停防抖透明连接区：跨过按钮与浮层的间隙 */
+.nc-volume-panel::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  height: 10px;
+}
+.nc-volume-wrap:hover .nc-volume-panel,
+.nc-volume-wrap:focus-within .nc-volume-panel,
+.nc-volume-wrap.dragging .nc-volume-panel {
+  opacity: 1;
+  pointer-events: auto;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
+}
+.nc-volume-val {
+  font-size: 11px;
+  font-weight: 500;
+  color: #ffffff;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  user-select: none;
+}
+.nc-volume-track {
+  width: 24px;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  touch-action: none;
+}
+.nc-volume-bar {
+  position: relative;
+  width: 4px;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.25);
+  border-radius: 2px;
+}
+.nc-volume-fill {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: #ffffff;
+  border-radius: 2px;
+}
+.nc-volume-thumb {
+  position: absolute;
+  left: 50%;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.55);
+  transform: translate(-50%, 50%);
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+.nc-volume-track:hover .nc-volume-thumb,
+.nc-volume-track:active .nc-volume-thumb {
+  transform: translate(-50%, 50%) scale(1.2);
+}
+
+/* 时间：严格垂直居中，纯白高对比度，等宽数字防抖 */
+.nc-time {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  height: 100%;
+  padding: 0 8px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  font-variant-numeric: tabular-nums;
+  color: #ffffff;
+  line-height: 1;
+  white-space: nowrap;
+  user-select: none;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+.nc-spacer { flex: 1; }
+
+.nc-tray-plugin-empty {
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
 }
 .watched-badge {
   position: absolute;
@@ -1823,6 +2458,7 @@ button.settings-switch-track:focus-visible { outline: 2px solid var(--qm-primary
   background: color-mix(in oklab, var(--qm-stage) 88%, transparent);
   -webkit-backdrop-filter: blur(14px);
   backdrop-filter: blur(14px);
+  -webkit-app-region: no-drag;
 }
 .img-viewer__canvas {
   position: absolute;

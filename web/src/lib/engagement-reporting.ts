@@ -71,10 +71,43 @@ export function stepPlayGate(state: PlayGateState, event: PlayGateEvent): PlayGa
   return state === 'idle' ? { report: true, state: 'reported' } : { report: false, state: 'reported' }
 }
 
+/** 一条字幕轨（壳侧 MpvStatus.media.tracks[i] 同构；serde 默认键名=snake_case） */
+export interface NativeTrackInfo {
+  /** mpv 轨道 id（写回 sid 用它） */
+  id: number
+  title: string
+  lang: string
+  external: boolean
+}
+
 /**
- * 原生内核（libmpv，桌面壳内）轮询快照：每 5s invoke('mpv_status') 的返回形态。
- * 字段名与壳侧 MpvStatus 的 serde 序列化键一致（desktop/src-tauri mpv/commands.rs
+ * 媒体信息探测（壳侧半秒一拍，随 mpv_status 一起回来）。
+ * 字段名与壳侧 MediaProbe 的 serde 序列化键一致（双写须同步）。
+ */
+export interface NativeMediaProbe {
+  /** 视频宽（未知=0） */
+  video_width: number
+  /** 视频高（未知=0）——清晰度文案以**高度**分档 */
+  video_height: number
+  /** 视频编码（h264/hevc…） */
+  video_codec: string
+  /** 容器帧率（未知=0） */
+  fps: number
+  /** 画面比例覆盖值（"no"=默认） */
+  aspect: string
+  /** 单片循环 */
+  loop_file: boolean
+  /** 当前字幕轨 id（0=关闭） */
+  sid: number
+  tracks: NativeTrackInfo[]
+}
+
+/**
+ * 原生内核（libmpv，桌面壳内）轮询快照：每 250ms invoke('mpv_status') 的返回形态。
+ * 字段名与壳侧 MpvStatus 的 serde 序列化键一致（desktop/src-tauri mpv/player.rs
  * 双写，改名须两端同步）；null = 无活动播放（窗口已关/会话已死/尚未起播）。
+ * speed/volume/muted/media 为自绘控制条用（旧壳后端无这些字段 → undefined，
+ * 调用点已兜底）。
  */
 export interface NativePollStatus {
   /** 当前播放位置（秒） */
@@ -85,6 +118,14 @@ export interface NativePollStatus {
   paused: boolean
   /** 是否播完（keep-open 播完停帧不清屏） */
   eof: boolean
+  /** 倍速（mpv speed） */
+  speed?: number
+  /** 音量（mpv volume 0~130） */
+  volume?: number
+  /** 是否静音 */
+  muted?: boolean
+  /** 媒体信息（清晰度/字幕/设置三入口的数据源） */
+  media?: NativeMediaProbe
 }
 
 /** 轮询边沿产出的口径 B 状态机事件（与 ArtPlayer 双来源信号同一闸门） */

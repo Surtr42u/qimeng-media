@@ -24,7 +24,7 @@ commands.allow = ["mpv_stage_rect"]
 
 [[permission]]
 identifier = "allow-mpv-control"
-description = "原生内核：播放控制（pause/resume/toggle-pause/seek/speed/volume/mute/toggle-fullscreen）"
+description = "原生内核：播放控制（pause/resume/toggle-pause/seek/speed/volume/mute/subtitle/aspect/loop）"
 commands.allow = ["mpv_control"]
 
 [[permission]]

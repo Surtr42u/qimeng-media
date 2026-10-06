@@ -340,6 +340,18 @@ function ViewerCanvas({
 }
 
 /**
+ * 桌面壳（titlebar.js）防穿透与防误触通知：
+ * 当全屏查看器关闭时，通知桌面壳重置双击最大化状态机并开启短暂冷却，
+ * 彻底杜绝组件卸载后物理第二击穿透到底层顶栏造成误最大化。
+ */
+function blockWindowMaximize(): void {
+  if (typeof window !== 'undefined') {
+    const win = window as unknown as { __QIMENG_BLOCK_WINDOW_MAXIMIZE__?: (ms?: number) => void }
+    win.__QIMENG_BLOCK_WINDOW_MAXIMIZE__?.(400)
+  }
+}
+
+/**
  * 查看器整体：portal 挂 body（层级位见文件头注释）+ 沉浸 chrome（关闭钮/
  * n÷总数序号/换件箭头）。chrome 显隐状态放外层——换件（画布重挂）不重置
  * 沉浸态；隐藏态由 visibility 延迟过渡兜底（不可点、不进可达性树）。
@@ -377,6 +389,7 @@ export default function ImageViewer({
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') {
+        blockWindowMaximize()
         onClose()
         return
       }
@@ -453,7 +466,16 @@ export default function ImageViewer({
           ref={closeBtnRef}
           type="button"
           className="img-viewer__btn img-viewer__close"
-          onClick={onClose}
+          data-no-maximize="true"
+          onMouseDown={(e) => {
+            e.stopPropagation()
+            blockWindowMaximize()
+          }}
+          onClick={(e) => {
+            e.stopPropagation()
+            blockWindowMaximize()
+            onClose()
+          }}
           aria-label="关闭查看器"
         >
           <X size={18} />

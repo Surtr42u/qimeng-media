@@ -9,7 +9,6 @@
 //! 钩子）已随 C4.5 撤回删除，恢复时从 feat/desktop-libmpv-kernel 历史取回。
 
 use std::ffi::c_void;
-use std::sync::Mutex;
 
 pub(crate) type Hwnd = *mut c_void;
 pub(crate) type Lresult = isize;
@@ -24,20 +23,20 @@ const PM_REMOVE: u32 = 1;
 const WS_OVERLAPPEDWINDOW: u32 = 0x00CF_0000;
 const WS_VISIBLE: u32 = 0x1000_0000;
 const WS_CHILD: u32 = 0x4000_0000;
-const WS_POPUP: u32 = 0x8000_0000;
 const CW_USEDEFAULT: i32 = 0x8000_0000u32 as i32;
 const SW_SHOW: i32 = 5;
 const SW_HIDE: i32 = 0;
 const SW_SHOWNA: i32 = 8; // 显示但不抢焦点（内置播放窗不得夺走 Web UI 焦点）
 const IDC_ARROW: *const c_void = 32512 as *const c_void; // MAKEINTRESOURCE 标准箭头光标
 const BLACK_BRUSH_RGB: u32 = 0x0000_0000; // mpv 铺满前防花屏的黑底
-// SetWindowPos 标志（winuser.h 冻结值）：全屏切换只改几何与框架，不动 z-order
-const SWP_NOZORDER: u32 = 0x0004;
+// SetWindowPos 标志（winuser.h 冻结值）：摆位/全屏都自己定 z-order，不用 NOZORDER
 const SWP_NOACTIVATE: u32 = 0x0010;
-const SWP_FRAMECHANGED: u32 = 0x0020;
+/// HWND_TOP（winuser.h：`#define HWND_TOP ((HWND)0)`）——子窗置顶用
+const HWND_TOP: Hwnd = std::ptr::null_mut();
 // GetWindowLongPtrW 索引与 MonitorFromWindow 缺省值（winuser.h 冻结值）
-const GWL_STYLE: i32 = -16;
-const MONITOR_DEFAULTTONEAREST: u32 = 2;
+/// CombineRgn 模式与失败返回（wingdi.h 冻结值；成功返回 1/2/3，失败 ERROR=0）
+const RGN_OR: i32 = 2;
+const ERROR: i32 = 0;
 
 /// 播放窗类名（注册一次）；UTF-16 字面量含 NUL，单测锁定。
 pub(crate) const CLASS_NAME_WIDE: &[u16] = &[
@@ -46,11 +45,6 @@ pub(crate) const CLASS_NAME_WIDE: &[u16] = &[
 ];
 
 #[repr(C)]
-struct Point {
-    x: i32,
-    y: i32,
-}
-
 #[repr(C)]
 #[derive(Clone, Copy)]
 struct Rect {
@@ -60,15 +54,14 @@ struct Rect {
     bottom: i32,
 }
 
-/// MONITORINFOW（winuser.h；rcMonitor=整屏物理矩形，全屏切换落位用）
+/// POINT（windef.h）：Msg.pt 用。
 #[repr(C)]
-struct MonitorInfoW {
-    cb_size: u32,
-    rc_monitor: Rect,
-    rc_work: Rect,
-    dw_flags: u32,
+struct Point {
+    x: i32,
+    y: i32,
 }
 
+/// MSG（winuser.h）：消息泵抽干队列用。
 #[repr(C)]
 struct Msg {
     hwnd: Hwnd,
@@ -126,19 +119,18 @@ extern "system" {
     fn PostQuitMessage(code: i32);
     fn DefWindowProcW(hwnd: Hwnd, msg: u32, wparam: Wparam, lparam: Lparam) -> Lresult;
     fn LoadCursorW(instance: *mut c_void, cursor: *const c_void) -> *mut c_void;
-    fn GetWindowRect(hwnd: Hwnd, rect: *mut Rect) -> i32;
     fn GetClientRect(hwnd: Hwnd, rect: *mut Rect) -> i32;
-    // 64 位 Windows 用 *PtrW 变体（GWL_HWNDPARENT/GWL_STYLE 索引值不受位宽影响）
-    fn GetWindowLongPtrW(hwnd: Hwnd, index: i32) -> isize;
-    fn SetWindowLongPtrW(hwnd: Hwnd, index: i32, value: isize) -> isize;
     fn SetWindowPos(hwnd: Hwnd, after: Hwnd, x: i32, y: i32, cx: i32, cy: i32, flags: u32) -> i32;
-    fn MonitorFromWindow(hwnd: Hwnd, flags: u32) -> Hwnd;
-    fn GetMonitorInfoW(monitor: Hwnd, info: *mut MonitorInfoW) -> i32;
+    fn SetWindowRgn(hwnd: Hwnd, rgn: *mut c_void, redraw: i32) -> i32;
 }
 
 #[link(name = "gdi32")]
 extern "system" {
     fn CreateSolidBrush(color: u32) -> *mut c_void;
+    fn CreateRoundRectRgn(x1: i32, y1: i32, x2: i32, y2: i32, w: i32, h: i32) -> *mut c_void;
+    fn CreateRectRgn(x1: i32, y1: i32, x2: i32, y2: i32) -> *mut c_void;
+    fn CombineRgn(dst: *mut c_void, src1: *mut c_void, src2: *mut c_void, mode: i32) -> i32;
+    fn DeleteObject(obj: *mut c_void) -> i32;
 }
 
 /// 转 NUL 结尾 UTF-16（CreateWindowExW/SetWindowTextW 入参）。
@@ -251,11 +243,55 @@ pub(crate) fn create_player_window_child(parent: Hwnd, width: i32, height: i32) 
 }
 
 /// 内置播放窗摆位（物理像素，相对父窗客户区）+ 显隐。不抢焦点（SWP_NOACTIVATE）。
-pub(crate) fn set_stage_rect(hwnd: Hwnd, x: i32, y: i32, w: i32, h: i32, visible: bool) {
+///
+/// z-order：子窗必须压在 WebView2 兄弟窗**之上**——两者同为主窗子窗，mpv 画在
+/// 下面等于画面被网页盖住（表现为"有声音没画面"）。用 HWND_TOP 而非
+/// SWP_NOZORDER，每次摆位顺带把播放窗提到最前，网页重绘/交互改序也拉不回来。
+pub(crate) fn set_stage_rect(hwnd: Hwnd, x: i32, y: i32, w: i32, h: i32, radius: i32, visible: bool) {
     // SAFETY: hwnd 为本线程创建的子窗；位置尺寸来自换算纯函数（带单测）
     unsafe {
-        SetWindowPos(hwnd, std::ptr::null_mut(), x, y, w.max(1), h.max(1), SWP_NOZORDER | SWP_NOACTIVATE);
+        SetWindowPos(hwnd, HWND_TOP, x, y, w.max(1), h.max(1), SWP_NOACTIVATE);
+        // 底角留方：视频面下方紧贴自绘控制条（圆底角会露出背景缝）
+        set_rounded_region(hwnd, w, h, radius, true);
         ShowWindow(hwnd, if visible { SW_SHOWNA } else { SW_HIDE });
+    }
+}
+
+/// 圆角裁切（对齐网页 `.asset-stage` 的 border-radius）。给宿主窗设圆角区域后，
+/// 子窗（mpv 视频面）随父窗区域一起被裁，四角透出网页背景 = 旧版圆润观感；
+/// 不设区域就是直角（原生子窗默认形态）。
+///
+/// `square_bottom=true` 时只圆上面两角：视频面下方紧贴自绘控制条，底角圆了会在
+/// 视频与条之间露出背景缝。做法=圆角区域与"底部方角矩形"求并集。
+/// radius ≤ 0 或尺寸非法 = 不裁（回落直角，防误传把画面裁没）。
+/// 每次摆位重设：区域随尺寸变化，且 SetWindowRgn 会接管区域所有权。
+fn set_rounded_region(hwnd: Hwnd, w: i32, h: i32, radius: i32, square_bottom: bool) {
+    if radius <= 0 || w <= 0 || h <= 0 {
+        return;
+    }
+    // 半径不得超过半宽/半高（CreateRoundRectRgn 的椭圆宽高是直径）
+    let r = radius.min(w / 2).min(h / 2);
+    // SAFETY: 纯 GDI/USER 调用；区域创建失败（null）时不动窗口
+    unsafe {
+        // 右/下边界要 +1：CreateRoundRectRgn 的右下是开区间
+        let rgn = CreateRoundRectRgn(0, 0, w + 1, h + 1, r * 2, r * 2);
+        if rgn.is_null() {
+            return;
+        }
+        if square_bottom {
+            // 底部 r 高的一条方角矩形并入：底角被方形覆盖 → 只剩上方两角是圆的
+            let bottom = CreateRectRgn(0, h - r, w + 1, h + 1);
+            if !bottom.is_null() {
+                if CombineRgn(rgn, rgn, bottom, RGN_OR) == ERROR {
+                    // 合并失败就退回全圆角（宁可有缝，不可不裁）
+                }
+                DeleteObject(bottom);
+            }
+        }
+        // SetWindowRgn 成功后区域归系统所有（不可再 DeleteObject），失败才自己删
+        if SetWindowRgn(hwnd, rgn, 1) == 0 {
+            DeleteObject(rgn);
+        }
     }
 }
 
@@ -274,81 +310,6 @@ pub(crate) fn destroy_window(hwnd: Hwnd) {
     unsafe { DestroyWindow(hwnd) };
 }
 
-/// 全屏切换的还原存根（仅播放窗线程读写；Option=当前是否处于全屏态）
-static FULLSCREEN_RESTORE: Mutex<Option<(isize, Rect)>> = Mutex::new(None);
-
-/// 播放窗全屏/还原（控制层双击与全屏按钮共用）：
-/// 进=剥掉 OVERLAPPEDWINDOW 换 WS_POPUP 落到显示器整屏矩形；出=原样恢复
-/// 样式与窗口矩形。SWP_FRAMECHANGED 让框架重算（边框显隐生效）。
-pub(crate) fn toggle_fullscreen(hwnd: Hwnd) {
-    let mut restore = match FULLSCREEN_RESTORE.lock() {
-        Ok(g) => g,
-        Err(_) => return, // 锁中毒：静默跳过（状态可能已不一致，防 panic 扩散）
-    };
-    match *restore {
-        None => {
-            // SAFETY: hwnd 为本线程创建的有效窗口；各缓冲为合法结构
-            let style = unsafe { GetWindowLongPtrW(hwnd, GWL_STYLE) };
-            let mut rc = Rect { left: 0, top: 0, right: 0, bottom: 0 };
-            if unsafe { GetWindowRect(hwnd, &mut rc) } == 0 {
-                return;
-            }
-            let mut mi = MonitorInfoW {
-                cb_size: std::mem::size_of::<MonitorInfoW>() as u32,
-                rc_monitor: Rect { left: 0, top: 0, right: 0, bottom: 0 },
-                rc_work: Rect { left: 0, top: 0, right: 0, bottom: 0 },
-                dw_flags: 0,
-            };
-            // SAFETY: monitor 句柄来自 MonitorFromWindow；mi 为合法缓冲
-            let monitor = unsafe { MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) };
-            if unsafe { GetMonitorInfoW(monitor, &mut mi) } == 0 {
-                return;
-            }
-            unsafe {
-                SetWindowLongPtrW(
-                    hwnd,
-                    GWL_STYLE,
-                    (style & !(WS_OVERLAPPEDWINDOW as isize)) | WS_POPUP as isize,
-                );
-                SetWindowPos(
-                    hwnd,
-                    std::ptr::null_mut(),
-                    mi.rc_monitor.left,
-                    mi.rc_monitor.top,
-                    mi.rc_monitor.right - mi.rc_monitor.left,
-                    mi.rc_monitor.bottom - mi.rc_monitor.top,
-                    SWP_NOZORDER | SWP_FRAMECHANGED,
-                );
-            }
-            *restore = Some((style, rc));
-        }
-        Some((style, rc)) => {
-            // SAFETY: 还原路径，样式/矩形均为本函数此前保存的原值
-            unsafe {
-                SetWindowLongPtrW(hwnd, GWL_STYLE, style);
-                SetWindowPos(
-                    hwnd,
-                    std::ptr::null_mut(),
-                    rc.left,
-                    rc.top,
-                    rc.right - rc.left,
-                    rc.bottom - rc.top,
-                    SWP_NOZORDER | SWP_FRAMECHANGED,
-                );
-            }
-            *restore = None;
-        }
-    }
-}
-
-/// 全屏还原存根随会话清理（player.rs run 清理序调用）：存根是进程级 static，
-/// 不清会把本会话的窗口样式/矩形残留到下一会话——新会话首次全屏切换会被
-/// 错误地走「还原」分支瞬移到旧几何（对抗复核 2.2①）。
-pub(crate) fn reset_fullscreen_restore() {
-    if let Ok(mut restore) = FULLSCREEN_RESTORE.lock() {
-        *restore = None;
-    }
-}
 
 /// 消息泵抽干一次队列；返回 true 表示收到 WM_QUIT（窗口已关，应退出播放循环）。
 pub(crate) fn pump_messages() -> bool {
