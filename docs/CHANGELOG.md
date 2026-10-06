@@ -10,6 +10,14 @@
 
 > **历史条目拆分说明（2026-10-01）**：为控制 AI 上下文体量，本文件只保留 **2026-09-22 及之后**的条目（第三百八十二笔起）；拆分线之前的全部条目已逐字迁入 `docs/history/CHANGELOG-ARCHIVE.md`（零改写，笔号与本文件连续可查）。引用早于拆分线的旧笔号请去历史档查阅。
 
+## fix(web): 图表点击焦点框修复——Recharts 3 根 svg 鼠标聚焦豁免轮廓（2026-10-06 第四百八十四笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- **现象与根因**：数据页「浏览与播放趋势」折线点击时整图出现焦点框（用户走查反馈）——Recharts 3.x RootSurface 给根 svg（`.recharts-surface`）默认 `tabIndex=0`（键盘可达层），鼠标点击聚焦后浏览器画 UA 默认 outline；数据页双环图与历史页图表同库同命中。
+- **修复**：`glass.css` 全局规则 `.recharts-surface:focus { outline: none }` + `.recharts-surface:focus-visible` 主色焦点环——鼠标路径豁免、键盘 Tab 焦点环保留（a11y 不倒退），与图表组件解耦不进 TSX。
+- **验证**：`npm run build` + vitest 272 全绿 + oxlint 0 错误；服务端从磁盘吐 `web/dist`，壳内刷新页面即生效（后端无需重启）。
+
 ## fix(desktop): 坑 3 实测修复——远端页自定义命令 ACL 放行（用户走查首验命中）（2026-10-06 第四百八十三笔）
 
 执行 AI：GLM-5.3-Flash（主代理）

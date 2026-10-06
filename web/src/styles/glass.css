@@ -625,6 +625,11 @@ button.seg,
 .trend-svg .line-a { fill: none; stroke: var(--qm-chart-1); stroke-width: 2; }
 .trend-svg .line-b { fill: none; stroke: var(--qm-chart-sub); stroke-width: 2; stroke-dasharray: 4 4; }
 .dark .trend-svg .line-b { stroke: var(--qm-chart-sub); }
+/* Recharts 3.x 根 svg 自带 tabIndex=0 键盘可达层（RootSurface）：鼠标点击图表
+   会聚焦整图并画 UA 默认焦点框（数据页趋势线/双环图/历史图全命中）。鼠标路径
+   豁免轮廓，键盘 Tab 焦点环保留（a11y 不倒退）——全局规则，与图表组件解耦 */
+.recharts-surface:focus { outline: none; }
+.recharts-surface:focus-visible { outline: 2px solid var(--qm-primary); outline-offset: 2px; }
 /* 折线图图例（recharts 图表卡右上） */
 .trend-legend {
   display: flex;
