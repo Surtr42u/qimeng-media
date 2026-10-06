@@ -44,7 +44,8 @@
 Accepted（2026-10-05，用户拍板）；**实施修订（2026-10-06，用户拍板）**：内核随
 `feat/desktop-libmpv-kernel` 并入 master；「迁移期可见切换入口（chip）」取消——壳内最终
 直接以 mpv 为唯一内核（ArtPlayer 留浏览器模式不变）；C4.5 透明 WebView2 控制层撤回
-（运行闪退未解，判死该路径，见 `desktop/PLUGIN_PLAN.md` §四-8）；触发方式与后续插件
+（运行闪退未解，判死该路径，见 `desktop/PLUGIN_PLAN.md` §四-8）；嵌入形态修订=**主窗口子窗**
+（WS_CHILD 铺在 web 舞台矩形，「内置播放」，仍 wid/零 render API，见 PLUGIN_PLAN）；触发方式定稿=壳内点视频即原生播放（无可见组件，非"自动播放"特性）；后续插件
 计划统一收口到 `desktop/PLUGIN_PLAN.md`（本 ADR 只记决策不记进度）。
 
 ## 后果（Consequences）

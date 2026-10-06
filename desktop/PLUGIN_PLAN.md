@@ -4,11 +4,12 @@
 > 决策依据见 `docs/adr/0036`（含 2026-10-06 实施修订）。接手规则：① 先通读本文与 ADR-0036；
 > ② 只做当前批次；③ 完成条目立刻更新本文 checkbox 再提交；④ 中断时下一位凭本文续作。
 
-## 一、目标态（用户 2026-10-06 拍板口径）
+## 一、目标态（用户 2026-10-06 拍板口径，**已实现并合并 master**）
 
 桌面壳内 **mpv 为唯一播放内核，旧 web 内核（ArtPlayer）在壳内不再保留**（浏览器模式照旧用
-ArtPlayer——浏览器无法嵌原生内核，见 ADR-0036）；**无任何可见切换入口**（右上角胶囊已删除，
-不要复活）；**不做双内核并存/功能开关保留计划**。触发方式**未拍板**（候选见 §三-0）。
+ArtPlayer——浏览器无法嵌原生内核，见 ADR-0036）；**无任何可见切换入口**（壳内点视频=直接
+原生播放，这是播放本身而非"自动播放"特性；右上角胶囊不复活）；**不做双内核并存/功能开关
+保留计划**。
 
 ## 二、现状（2026-10-06 合并主分支时点）
 
@@ -29,25 +30,24 @@ ArtPlayer——浏览器无法嵌原生内核，见 ADR-0036）；**无任何可
 
 ## 三、批次路线图
 
-### 0. 触发方式拍板（动手前先问用户，候选）
-- **A 点播即原生**：详情页视频舞台点击 → 打开 mpv 播放窗（推荐：行为自然、无可见组件）；
-- **B 设置页开关**：设置页加「桌面端用原生内核播放」开关；
-- **C 自动播放**：进详情页自动开窗（用户已明确说"没必要"，默认排除）。
+### 0. 触发方式（已定稿，勿再议）
+**壳内点视频即原生播放**：详情页挂载即 `mpv_open`（断点起点直入）；用户否决"自动播放"提法
+——这不是特性，是壳内播放本身。设置开关/可见入口均不做。
 
-### 1. 内核接线批（先让内核真正跑起来）
-- [ ] **client.h 终验（最高优先，两个已知疑点）**：从 `setup-mpv.ps1` 下载的 mpv-dev 7z 内
-  `include/mpv/client.h` 核对（GitHub 被墙，走 gh-proxy.com 前缀；blob 页是 JS 壳取不到内容，
-  **必须解 7z**）：
-  - `MPV_EVENT_SHUTDOWN`：当前 ffi.rs 写 **2**，疑应为 **1**（LOG_MESSAGE=2）；
-  - `struct mpv_event` 字段序：当前 ffi.rs 写 `event_id/reply_userdata(u32)/data/error`，
-    疑应为 `event_id/error(i32)/reply_userdata(u64)/data`——**若后者为真，mpv_status 的
-    状态缓存永远读不到数据（data 指针错位读成 reply_userdata=0），进度上报链全瞎**，
-    自动/轮询类方案在终验前都是空中楼阁；
-  - 顺带全量核对 MPV_FORMAT_*/MPV_EVENT_* 与 mpv_event_property 字段序（name/format/data）。
-- [ ] 触发方式落地（按 §三-0 拍板结果），壳内触发 → `mpv_open(url, title, startSecs)`
-  （web 进度优先、断点起点兜底的口径沿旧 C3）；web 轮询 `mpv_status` 5s 喂
-  `useProgress`（tick/flush）+ 起播上报（口径 B 纯函数 `nativePollSignal` 可从
-  `f553f07c` 的 `web/src/lib/engagement-reporting.ts` 摘回）。
+### 1. 内核接线批（✅ 2026-10-06 已接线并改为**内置形态**，master；运行走查待用户）
+- [x] web 侧接线：video-player.tsx 壳内分支（挂载即 mpv_open + 5s 轮询 mpv_status 喂
+  useProgress/口径 B 闸门 + 播放窗关闭后舞台点击重开〔最后已知位置优先〕+ 卸载 mpv_close
+  回收）；壳内不挂 ArtPlayer；浏览器模式不变。
+- [x] **client.h 终验 ✅（2026-10-06 两疑点坐实为真 bug 已修）**：经 jsdelivr（mpv@v0.38.0）
+  + mpv-dev 包内同版本头文件双重核对——`MPV_EVENT_SHUTDOWN=1`（曾错写 2）、
+  `struct mpv_event` 字段序=`event_id/error(i32)/reply_userdata(u64)/data`（曾错写
+  reply_userdata 前置且 u32 → data 错位状态链全瞎）；已修 ffi.rs 并加 ABI 冻结单测
+  （含 mem::offset_of!(MpvEvent, data)==16 布局锁）。`mpv_event_property`={name,format,data} ✓。
+- [x] **内置形态（用户拍板"内置播放"后落地）**：mpv 播放窗=**主窗口子窗**（WS_CHILD，
+  铺在 web 舞台矩形上）——仍是 wid 嵌入（mpv 自管渲染+OSC），零 render API/透明层；
+  舞台矩形由 web 上报（`mpv_stage_rect`：CSS px + 视口宽 → Rust 按主窗客户区物理宽
+  折算，zoom 1.1/DPI 折进比例，scale_stage_rect 纯函数带单测）；滚出视口自动隐藏
+  （不遮页面）；创建不带 WS_VISIBLE、SW_SHOWNA 显示不抢焦点。播控=mpv 内建 OSC。
 - [ ] 降级路径：DLL 缺失 → `mpv_open` 错误串（自带 setup 指引）→ 壳内提示并回退 web 内核播放
   （此为降级 UX，不是双内核并存——正常态无任何可见切换件）。
 - [ ] 壳内 ArtPlayer 退役：触发方案验证通过后，壳内视频舞台不再挂 ArtPlayer（浏览器模式不动）。

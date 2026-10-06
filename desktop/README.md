@@ -83,7 +83,7 @@ TopBar.tsx 内已有单向注释提示；本节为 desktop 侧的逆向记档。
 ## 原生播放内核（libmpv）
 
 - **决策与进度**：选型决策见 `docs/adr/0036`（含 2026-10-06 实施修订）；**后续接线与插件计划见 `PLUGIN_PLAN.md`（唯一执行文档）**。
-- **现状（2026-10-06）**：mpv 内核已并入 master（`src-tauri/src/mpv/`：运行时加载 FFI + user32 播放窗 + 会话线程 + IPC 四命令），**暂无触发入口**——透明控制层方案因运行闪退撤回、可见胶囊入口已删除（壳内暂走 web 内核）；触发方式拍板与接线步骤见 PLUGIN_PLAN §三。
+- **现状（2026-10-06 已接线）**：桌面壳内点视频 = 直接打开 mpv 播放窗（mpv 为壳内唯一内核，无可见切换组件；透明控制层方案因闪退撤回，控制面暂为 mpv 内建 OSC）；浏览器模式 ArtPlayer 不变。控制条缺口对齐与插件（mpv.conf 画质基线/RTX Video HDR 配套）见 PLUGIN_PLAN §三。
 - **首次使用（内核接线后需要）**：`powershell -ExecutionPolicy Bypass -File src-tauri\setup-mpv.ps1`（GitHub 双源+镜像自取 mpv-dev 包；DLL 不入库）。
 - **浏览器模式零影响**：浏览器环境无壳 IPC，ArtPlayer 行为不变。
 

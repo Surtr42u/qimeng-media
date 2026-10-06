@@ -4,8 +4,13 @@
 //! 加载失败不缓存——用户跑完 setup-mpv.ps1 后无需重启即可生效。
 //!
 //! ABI 依据：libmpv/client.h（mpv 承诺 libmpv-2 ABI 冻结、枚举值永不重编号）。
-//! 值来源为本会话官方 manual/头文件核对；`MPV_MIGRATION.md` 坑 1 是最终逐值
-//! 核对责任项——发现不符只改本文件常量，不动调用面。
+//! ✅ 已终验（2026-10-06，mpv v0.38.0 client.h 逐值核对；libmpv-2 起冻结不变，
+//! 终验值由单测锁定）：MPV_FORMAT_*=NONE0/STRING1/OSD2/FLAG3/INT64 4/DOUBLE5；
+//! MPV_EVENT_*=NONE0/**SHUTDOWN1**/LOG_MESSAGE2/…/PLAYBACK_RESTART21/
+//! PROPERTY_CHANGE22/QUEUE_OVERFLOW24/HOOK25；`struct mpv_event` 字段序=
+//! **event_id(int)/error(int)/reply_userdata(uint64)/data(void\*)**（曾错写为
+//! reply_userdata 前置且 u32——data 指针错位读成 userdata=0，状态链全瞎，
+//! 终验修正）；`mpv_event_property`={name,format,data} ✓。
 
 use std::ffi::{c_char, c_int, c_void};
 
@@ -16,14 +21,14 @@ pub(crate) const DLL_NAME_WIDE: &[u16] = &[
     0x0000,
 ];
 
-// —— mpv_format（client.h：值即 ABI，永不重编号）——
+// —— mpv_format（client.h：值即 ABI，永不重编号；2026-10-06 v0.38.0 终验）——
 pub(crate) const MPV_FORMAT_FLAG: c_int = 3;
 pub(crate) const MPV_FORMAT_INT64: c_int = 4;
 pub(crate) const MPV_FORMAT_DOUBLE: c_int = 5;
 
 // —— mpv_event_id（同上）——
 pub(crate) const MPV_EVENT_NONE: c_int = 0;
-pub(crate) const MPV_EVENT_SHUTDOWN: c_int = 2;
+pub(crate) const MPV_EVENT_SHUTDOWN: c_int = 1;
 pub(crate) const MPV_EVENT_PROPERTY_CHANGE: c_int = 22;
 // 未知事件一律忽略（防御：将来 ABI 追加新事件不致误读）。
 
@@ -57,13 +62,14 @@ pub(crate) struct MpvLib {
     pub error_string: unsafe extern "C" fn(c_int) -> *const c_char,
 }
 
-/// client.h 的 mpv_event（x64 布局：enum/u32/指针/int，repr(C) 对齐）。
+/// client.h 的 mpv_event（2026-10-06 终验字段序：event_id/error/reply_userdata/
+/// data；曾错写为 reply_userdata 前置且 u32——data 错位致状态链全瞎，见头注）。
 #[repr(C)]
 pub(crate) struct MpvEvent {
     pub event_id: c_int,
-    pub reply_userdata: u32,
-    pub data: *mut c_void,
     pub error: c_int,
+    pub reply_userdata: u64,
+    pub data: *mut c_void,
 }
 
 /// client.h 的 mpv_event_property（PROPERTY_CHANGE 事件的 data 指向它）。
@@ -160,5 +166,26 @@ mod tests {
             .collect();
         assert_eq!(s, "libmpv-2.dll");
         assert_eq!(*DLL_NAME_WIDE.last().unwrap(), 0);
+    }
+
+    /// ABI 冻结值锁定（2026-10-06 对 mpv v0.38.0 client.h 逐值终验；libmpv-2 起
+    /// 永不重编号——mpv 手改这些值前本测试必须先改，防的是本地手抄漂移）。
+    #[test]
+    fn abi_frozen_values_match_client_h() {
+        assert_eq!(MPV_FORMAT_FLAG, 3);
+        assert_eq!(MPV_FORMAT_INT64, 4);
+        assert_eq!(MPV_FORMAT_DOUBLE, 5);
+        assert_eq!(MPV_EVENT_NONE, 0);
+        assert_eq!(MPV_EVENT_SHUTDOWN, 1);
+        assert_eq!(MPV_EVENT_PROPERTY_CHANGE, 22);
+        assert_eq!(MPV_ERROR_SUCCESS, 0);
+        // mpv_event 字段序（client.h：event_id/error/reply_userdata(u64)/data）：
+        // x64 布局 data 必须落在偏移 16（错位即状态链全瞎，见头注）
+        assert_eq!(
+            std::mem::offset_of!(MpvEvent, data),
+            16,
+            "mpv_event.data 偏移漂移——对 client.h 重新终验",
+        );
+        assert_eq!(std::mem::size_of::<MpvEvent>(), 24);
     }
 }

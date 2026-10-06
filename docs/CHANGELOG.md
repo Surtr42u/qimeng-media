@@ -18,6 +18,16 @@
 - **修复**：`glass.css` 全局规则 `.recharts-surface:focus { outline: none }` + `.recharts-surface:focus-visible` 主色焦点环——鼠标路径豁免、键盘 Tab 焦点环保留（a11y 不倒退），与图表组件解耦不进 TSX。
 - **验证**：`npm run build` + vitest 272 全绿 + oxlint 0 错误；服务端从磁盘吐 `web/dist`，壳内刷新页面即生效（后端无需重启）。
 
+## feat(desktop): mpv 内核接线为内置播放——主窗子窗铺舞台 + client.h 终验修两 ABI bug（2026-10-06 第四百八十七笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- **用户拍板收敛**：桌面壳内 mpv 为唯一内核且必须**内置**（视频长在页面舞台位，非独立弹窗）；旧 web 内核不进壳（ArtPlayer 留浏览器模式）；无可见切换组件；不做双内核保留计划。
+- **内置形态落地**：mpv 播放窗改为**主窗口 WS_CHILD 子窗**——铺在 web 舞台矩形上（仍是 wid 嵌入，mpv 自管渲染+OSC，零 render API/零透明层，与闪退路径无关）；web 挂载即 `mpv_open`（断点起点直入）+ 舞台矩形上报 `mpv_stage_rect`（getBoundingClientRect CSS px + window.innerWidth → Rust 按主窗客户区物理宽折算，html zoom 1.1/DPI 全部折进比例，`scale_stage_rect` 纯函数带单测）；滚出视口自动 SW_HIDE 不遮页面；创建无 WS_VISIBLE、SW_SHOWNA 显示不抢焦点；播放窗关闭 → 舞台显「点击重开」（最后已知位置优先）；离页 `mpv_close` 回收。播控=mpv 内建 OSC（wid 下表现属走查项）。
+- **client.h 终验闭合（坑 1，两疑点坐实为真 bug 已修）**：jsdelivr（mpv@v0.38.0）+ mpv-dev 包同版本头文件双重核对——`MPV_EVENT_SHUTDOWN=1`（曾错写 2=LOG_MESSAGE）；`struct mpv_event` 字段序=`event_id/error(i32)/reply_userdata(u64)/data`（曾错写 reply_userdata 前置且 u32 → data 指针错位读成 userdata=0，**状态链全瞎**——接线前夜抓出，进度上报链得救）；ffi.rs 已修 + ABI 冻结单测（含 `mem::offset_of!(MpvEvent, data)==16` 布局锁），cargo test 25 全绿 + release 零警告；web 272 测试/build/lint 全绿。
+- **ACL**：permissions 补 `allow-mpv-stage-rect`。
+- **验证边界**：mpv 子窗在 WebView2 上的渲染表现、OSC 可用性、滚动跟随平滑度属运行表现——留用户走查（诊断设施 qimeng-shell.log/panic.log/WER 转储就位）。
+
 ## feat(desktop): mpv 内核并入主分支——胶囊入口删除 + 透明控制层撤回 + 插件计划收口（2026-10-06 第四百八十六笔）
 
 执行 AI：GLM-5.3-Flash（主代理）

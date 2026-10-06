@@ -23,13 +23,17 @@ const PM_REMOVE: u32 = 1;
 // WS_OVERLAPPEDWINDOW = 常规可缩放窗口（含标题栏/最大最小化/粗边框）
 const WS_OVERLAPPEDWINDOW: u32 = 0x00CF_0000;
 const WS_VISIBLE: u32 = 0x1000_0000;
+const WS_CHILD: u32 = 0x4000_0000;
 const WS_POPUP: u32 = 0x8000_0000;
 const CW_USEDEFAULT: i32 = 0x8000_0000u32 as i32;
 const SW_SHOW: i32 = 5;
+const SW_HIDE: i32 = 0;
+const SW_SHOWNA: i32 = 8; // 显示但不抢焦点（内置播放窗不得夺走 Web UI 焦点）
 const IDC_ARROW: *const c_void = 32512 as *const c_void; // MAKEINTRESOURCE 标准箭头光标
 const BLACK_BRUSH_RGB: u32 = 0x0000_0000; // mpv 铺满前防花屏的黑底
 // SetWindowPos 标志（winuser.h 冻结值）：全屏切换只改几何与框架，不动 z-order
 const SWP_NOZORDER: u32 = 0x0004;
+const SWP_NOACTIVATE: u32 = 0x0010;
 const SWP_FRAMECHANGED: u32 = 0x0020;
 // GetWindowLongPtrW 索引与 MonitorFromWindow 缺省值（winuser.h 冻结值）
 const GWL_STYLE: i32 = -16;
@@ -123,6 +127,7 @@ extern "system" {
     fn DefWindowProcW(hwnd: Hwnd, msg: u32, wparam: Wparam, lparam: Lparam) -> Lresult;
     fn LoadCursorW(instance: *mut c_void, cursor: *const c_void) -> *mut c_void;
     fn GetWindowRect(hwnd: Hwnd, rect: *mut Rect) -> i32;
+    fn GetClientRect(hwnd: Hwnd, rect: *mut Rect) -> i32;
     // 64 位 Windows 用 *PtrW 变体（GWL_HWNDPARENT/GWL_STYLE 索引值不受位宽影响）
     fn GetWindowLongPtrW(hwnd: Hwnd, index: i32) -> isize;
     fn SetWindowLongPtrW(hwnd: Hwnd, index: i32, value: isize) -> isize;
@@ -213,6 +218,55 @@ pub(crate) fn set_window_title(hwnd: Hwnd, title: &str) {
     let wide = to_wide_nul(title);
     // SAFETY: hwnd 为本线程创建的窗口；wide 含 NUL
     unsafe { SetWindowTextW(hwnd, wide.as_ptr()) };
+}
+
+/// 创建内置播放窗（主窗口子窗，WS_CHILD 无边框）：铺在 Web 舞台矩形上实现
+/// 「内置播放」——仍是 wid 嵌入（mpv 自管渲染+OSC），不涉 render API/透明层。
+/// 创建时不带 WS_VISIBLE：首帧摆位由 mpv_stage_rect 驱动（SW_SHOWNA 不抢焦点），
+/// 避免在未摆位前闪现错位画面。父窗属主线程、本窗属会话线程——跨线程父子
+/// 仅是消息路由约定（双方都有消息泵），窗口操作各自收敛在创建线程。
+pub(crate) fn create_player_window_child(parent: Hwnd, width: i32, height: i32) -> Result<Hwnd, String> {
+    register_class()?;
+    // SAFETY: 类已注册；WS_CHILD 无标题栏无菜单；参数按 winuser.h 语义
+    let hwnd = unsafe {
+        CreateWindowExW(
+            0,
+            CLASS_NAME_WIDE.as_ptr(),
+            std::ptr::null(),
+            WS_CHILD,
+            0,
+            0,
+            width,
+            height,
+            parent,
+            std::ptr::null_mut(),
+            GetModuleHandleW(std::ptr::null()),
+            std::ptr::null_mut(),
+        )
+    };
+    if hwnd.is_null() {
+        return Err("创建内置播放窗失败（CreateWindowExW WS_CHILD）".into());
+    }
+    Ok(hwnd)
+}
+
+/// 内置播放窗摆位（物理像素，相对父窗客户区）+ 显隐。不抢焦点（SWP_NOACTIVATE）。
+pub(crate) fn set_stage_rect(hwnd: Hwnd, x: i32, y: i32, w: i32, h: i32, visible: bool) {
+    // SAFETY: hwnd 为本线程创建的子窗；位置尺寸来自换算纯函数（带单测）
+    unsafe {
+        SetWindowPos(hwnd, std::ptr::null_mut(), x, y, w.max(1), h.max(1), SWP_NOZORDER | SWP_NOACTIVATE);
+        ShowWindow(hwnd, if visible { SW_SHOWNA } else { SW_HIDE });
+    }
+}
+
+/// 父窗（主窗口）客户区物理尺寸（子窗坐标换算基准）；None=读取失败。
+pub(crate) fn client_size(hwnd: Hwnd) -> Option<(i32, i32)> {
+    let mut rc = Rect { left: 0, top: 0, right: 0, bottom: 0 };
+    // SAFETY: rect 为合法缓冲；hwnd 无效时返回 0
+    if unsafe { GetClientRect(hwnd, &mut rc) } == 0 {
+        return None;
+    }
+    Some((rc.right - rc.left, rc.bottom - rc.top))
 }
 
 pub(crate) fn destroy_window(hwnd: Hwnd) {

@@ -1574,6 +1574,34 @@ button.pill.detail-tag-manage { cursor: pointer; }
 .asset-stage img,
 .asset-stage video { max-width: 100%; max-height: 68vh; object-fit: contain; display: block; }
 .video-player-box { width: 100%; height: var(--stage-max-h); }
+/* 原生内核舞台（桌面壳内）：页面 UI 形态不变，播放本体=mpv 独立播放窗；
+   舞台位显示海报 + 状态行，窗被关后点击重开（重开=播放行为，非内核切换件） */
+.native-stage {
+  width: 100%;
+  height: var(--stage-max-h);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  background: var(--qm-stage);
+}
+.native-stage-poster {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  opacity: 0.55;
+}
+.native-stage-hint {
+  position: absolute;
+  bottom: 14px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 12px;
+  color: var(--qm-text-muted);
+  text-shadow: 0 1px 4px oklch(0 0 0 / 0.5);
+  pointer-events: none;
+}
 /* ArtPlayer 设置包装器防右缘裁切（v1 实证修复，!important 压内联 left，勿删） */
 .art-video-player .art-settings {
   left: auto !important;

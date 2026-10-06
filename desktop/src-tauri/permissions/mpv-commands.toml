@@ -16,6 +16,11 @@ identifier = "allow-mpv-status"
 description = "原生内核：轮询播放状态快照"
 commands.allow = ["mpv_status"]
 
+[[permission]]
+identifier = "allow-mpv-stage-rect"
+description = "原生内核：内置播放窗舞台矩形上报（内置形态摆位）"
+commands.allow = ["mpv_stage_rect"]
+
 
 [[permission]]
 identifier = "allow-mpv-control"

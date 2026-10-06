@@ -70,3 +70,47 @@ export function stepPlayGate(state: PlayGateState, event: PlayGateEvent): PlayGa
   if (event === 'pause') return { report: false, state: 'idle' }
   return state === 'idle' ? { report: true, state: 'reported' } : { report: false, state: 'reported' }
 }
+
+/**
+ * 原生内核（libmpv，桌面壳内）轮询快照：每 5s invoke('mpv_status') 的返回形态。
+ * 字段名与壳侧 MpvStatus 的 serde 序列化键一致（desktop/src-tauri mpv/commands.rs
+ * 双写，改名须两端同步）；null = 无活动播放（窗口已关/会话已死/尚未起播）。
+ */
+export interface NativePollStatus {
+  /** 当前播放位置（秒） */
+  position: number
+  /** 总时长（秒，未知=0） */
+  duration: number
+  /** 是否暂停 */
+  paused: boolean
+  /** 是否播完（keep-open 播完停帧不清屏） */
+  eof: boolean
+}
+
+/** 轮询边沿产出的口径 B 状态机事件（与 ArtPlayer 双来源信号同一闸门） */
+export type NativePollSignal = 'play' | 'pause'
+
+/**
+ * 轮询边沿 → play/pause 信号（喂 stepPlayGate 同一口径 B 状态机）：
+ * 相邻两次 mpv_status 快照对比，把状态变化翻译成与 ArtPlayer 同源的闸门事件。
+ * - 首个非空快照（prev=null）：未暂停且未播完 = 会话起播（'play'）；开局即
+ *   暂停/eof 则等恢复边沿再报（起播上报语义=真实起播，非会话建立）；
+ * - paused 边沿 false→true / true→false → 'pause' / 'play'（用户经 mpv OSC
+ *   或壳内快捷键暂停/恢复）；
+ * - eof false→true → 'pause'（keep-open 播完停帧；HTML5 video 自然播完同样
+ *   触发 pause 事件，两内核口径对齐：播完=最后位置补报 + 闸门复位）；
+ * - 会话关闭（next=null）不产出信号：闸门复位属接线层职责（直接归零，
+ *   新会话=新起播段），不借道 pause 事件；
+ * - 快照无变化 → null（同一状态内不重复派发）。
+ */
+export function nativePollSignal(
+  prev: NativePollStatus | null,
+  next: NativePollStatus | null,
+): NativePollSignal | null {
+  if (!next) return null
+  if (!prev) return next.paused || next.eof ? null : 'play'
+  if (next.eof && !prev.eof) return 'pause'
+  if (!prev.paused && next.paused) return 'pause'
+  if (prev.paused && !next.paused) return 'play'
+  return null
+}

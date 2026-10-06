@@ -96,6 +96,8 @@ pub(crate) enum Cmd {
     Mute(bool),
     /// 播放窗全屏/还原（win32 toggle_fullscreen；mpv wid 模式下全屏由嵌入方负责）
     ToggleFullscreen,
+    /// 内置播放窗摆位（物理像素，相对主窗客户区）+ 显隐
+    StageRect { x: i32, y: i32, w: i32, h: i32, visible: bool },
     /// 关闭会话（窗口+mpv 一并清干净）
     Quit,
 }
@@ -134,6 +136,28 @@ fn format_start(start: f64) -> Option<String> {
     }
 }
 
+/// 舞台矩形 CSS px → 父窗客户区物理 px：缩放比 = 主窗客户区物理宽 / 页面视口
+/// CSS 宽——html zoom 1.1 与 DPI 全部折进同一比例，两端无需各自感知换算口径。
+/// 返回 (x, y, w, h)；doc_w/phys_w 非法（≤0）返回 None（本轮不上报）。
+pub(crate) fn scale_stage_rect(
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+    doc_w: f64,
+    phys_w: i32,
+) -> Option<(i32, i32, i32, i32)> {
+    if !(doc_w.is_finite() && doc_w > 0.0) || phys_w <= 0 {
+        return None;
+    }
+    let k = phys_w as f64 / doc_w;
+    if !k.is_finite() || k <= 0.0 {
+        return None;
+    }
+    let r = |v: f64| -> i32 { if v.is_finite() { v.round() as i32 } else { 0 } };
+    Some((r(x * k), r(y * k), r(w * k), r(h * k)))
+}
+
 /// CString 构造（URL/标题/数字不含 NUL；防御性替换保证不 panic）。
 fn cstring(s: &str) -> CString {
     CString::new(s.replace('\0', "\u{FFFD}")).expect("NUL 已剔除")
@@ -146,7 +170,9 @@ pub(crate) struct MpvSession {
 }
 
 impl MpvSession {
-    pub(crate) fn spawn(initial: Cmd) -> Result<MpvSession, String> {
+    /// main_hwnd 以 isize 传值（裸指针非 Send；HWND 是进程级句柄值，跨线程
+    /// 传值安全，Win32 调用全在目标线程展开）。
+    pub(crate) fn spawn(initial: Cmd, main_hwnd: Option<isize>) -> Result<MpvSession, String> {
         let lib = MpvLib::load()?;
         let (tx, rx) = mpsc::channel::<Cmd>();
         let status = Arc::new(Mutex::new(None::<StatusInner>));
@@ -154,7 +180,7 @@ impl MpvSession {
         // 窗口/窗口类/消息泵都在本线程——窗与 mpv 同生命周期（见 win32.rs 头注）
         std::thread::Builder::new()
             .name("qimeng-mpv".into())
-            .spawn(move || run(lib, rx, status_for_thread, initial))
+            .spawn(move || run(lib, rx, status_for_thread, initial, main_hwnd))
             .map_err(|e| format!("播放线程启动失败：{e}"))?;
         Ok(MpvSession { tx, status })
     }
@@ -179,7 +205,13 @@ impl MpvSession {
 }
 
 /// 播放线程主体：建窗 → 初始化 mpv（wid 嵌入）→ 循环 → 统一清理。
-fn run(lib: &'static MpvLib, rx: mpsc::Receiver<Cmd>, status: Arc<Mutex<Option<StatusInner>>>, initial: Cmd) {
+fn run(
+    lib: &'static MpvLib,
+    rx: mpsc::Receiver<Cmd>,
+    status: Arc<Mutex<Option<StatusInner>>>,
+    initial: Cmd,
+    main_hwnd: Option<isize>,
+) {
     // 首命令必须是 Load（mpv_open 保证）；其余命令在窗口就绪前被线程排队消费
     let first_load = match initial {
         Cmd::Load { url, title, start } => Some((url, title, start)),
@@ -195,12 +227,28 @@ fn run(lib: &'static MpvLib, rx: mpsc::Receiver<Cmd>, status: Arc<Mutex<Option<S
     };
     diag::trace("session_thread: player_window_creating");
 
-    let hwnd = match win32::create_player_window(&title, PLAYER_WINDOW_WIDTH, PLAYER_WINDOW_HEIGHT) {
-        Ok(h) => h,
-        Err(e) => {
-            diag::trace(&format!("session_thread: create_player_window FAILED {e}"));
-            eprintln!("[qimeng-mpv] {e}");
-            return;
+    // 内置形态：有主窗句柄 → 主窗子窗（铺在舞台矩形，随 mpv_stage_rect 摆位显隐）；
+    // 无句柄（异常路径兜底）→ 退回独立窗口（C2 形态，可关可拖）
+    let hwnd = match main_hwnd.map(|v| v as *mut c_void) {
+        Some(parent) => {
+            match win32::create_player_window_child(parent, PLAYER_WINDOW_WIDTH, PLAYER_WINDOW_HEIGHT) {
+                Ok(h) => h,
+                Err(e) => {
+                    diag::trace(&format!("session_thread: create_player_window_child FAILED {e}"));
+                    eprintln!("[qimeng-mpv] {e}");
+                    return;
+                }
+            }
+        }
+        None => {
+            match win32::create_player_window(&title, PLAYER_WINDOW_WIDTH, PLAYER_WINDOW_HEIGHT) {
+                Ok(h) => h,
+                Err(e) => {
+                    diag::trace(&format!("session_thread: create_player_window FAILED {e}"));
+                    eprintln!("[qimeng-mpv] {e}");
+                    return;
+                }
+            }
         }
     };
 
@@ -303,6 +351,7 @@ fn play_loop(
             }
             Ok(Cmd::Mute(m)) => set_flag(lib, handle, PROP_MUTE, m)?,
             Ok(Cmd::ToggleFullscreen) => win32::toggle_fullscreen(hwnd),
+            Ok(Cmd::StageRect { x, y, w, h, visible }) => win32::set_stage_rect(hwnd, x, y, w, h, visible),
             Err(mpsc::RecvTimeoutError::Timeout) => {}
             Err(mpsc::RecvTimeoutError::Disconnected) => break, // 会话句柄被丢弃=退出
         }
@@ -470,6 +519,18 @@ mod tests {
         assert_eq!(format_start(-3.0), None);
         assert_eq!(format_start(f64::NAN), None);
         assert_eq!(format_start(12.5), Some("12.5".to_string()));
+    }
+
+    #[test]
+    fn scale_stage_rect_folds_zoom_and_dpi() {
+        // 视口 CSS 宽 1000 → 客户区物理 1100（zoom 1.1 × DPI 1.0 的合成比）：
+        // 任意矩形按同一比例折算，两端无需各自感知 zoom/DPI
+        assert_eq!(scale_stage_rect(10.0, 20.0, 800.0, 450.0, 1000.0, 1100), Some((11, 22, 880, 495)));
+        assert_eq!(scale_stage_rect(0.0, 0.0, 1000.0, 500.0, 1000.0, 2000), Some((0, 0, 2000, 1000)));
+        assert_eq!(scale_stage_rect(0.0, 0.0, 100.0, 50.0, 0.0, 1000), None);
+        assert_eq!(scale_stage_rect(0.0, 0.0, 100.0, 50.0, f64::NAN, 1000), None);
+        assert_eq!(scale_stage_rect(0.0, 0.0, 100.0, 50.0, 1000.0, 0), None);
+        assert_eq!(scale_stage_rect(f64::NAN, 0.0, 100.0, 50.0, 1000.0, 1000), Some((0, 0, 100, 50)));
     }
 
     #[test]

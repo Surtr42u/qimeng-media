@@ -1,18 +1,37 @@
 /**
- * ArtPlayer 视频播放器封装（W-3；官方文档 https://artplayer.org/document，v5.4.0）。
+ * 视频播放器封装（W-3；ArtPlayer 官方文档 https://artplayer.org/document，v5.4.0）。
  *
  * 职责边界：纯 UI 组件——不发任何网络请求（铁律 7）；断点续播起点与进度上报由
  * AssetDetailPage 经 hooks（use-progress.ts）以 props 注入。
  * 生命周期：实例在 effect 内创建、清理函数 destroy（官方卸载语义）；回调经 ref
  * 转发，props 刷新不重建播放器实例。
+ *
+ * 内核分派（ADR-0036 终态，2026-10-06 用户拍板）：桌面壳内（`__TAURI__` 存在）
+ * **mpv 为唯一内核**——挂载即打开原生播放窗（这就是壳内"播放"本身，非独立触发
+ * 特性），本组件不挂 ArtPlayer；浏览器模式走 ArtPlayer（浏览器无法嵌原生内核，
+ * 行为与迁移前一致）。壳内进度上报走 5s 轮询 mpv_status（与 web 心跳同拍），
+ * 边沿信号喂同一口径 B 闸门（lib/engagement-reporting nativePollSignal）。
+ * IPC 协议（命令名/参数名/控制动作字面量）与 desktop/src-tauri mpv/commands.rs
+ * 双写，改名须两端同步。Tauri v2 withGlobalTauri 官方文档：
+ * https://v2.tauri.app/develop/calling-rust/（invoke 走 window.__TAURI__.core.invoke，
+ * 参数键 camelCase：Rust start_secs ↔ JS startSecs）。
  */
 
 import Artplayer from 'artplayer'
-import { useEffect, useRef, useState } from 'react'
-import { stepPlayGate, type PlayGateState } from '@/lib/engagement-reporting'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  nativePollSignal,
+  stepPlayGate,
+  type NativePollStatus,
+  type PlayGateState,
+} from '@/lib/engagement-reporting'
+import { PROGRESS_REPORT_INTERVAL_MS } from '@/lib/progress-report'
 
 /** 倍速菜单档位 0.5~3x（W-3 冻结清单；官方默认最高 2x，构造前覆盖静态档位表生效） */
 const PLAYBACK_RATES = [0.5, 0.75, 1, 1.25, 1.5, 2, 3]
+
+/** mpv 播放窗标题兜底（页面未传 nativeTitle 时；仅壳内可见） */
+const NATIVE_WINDOW_TITLE_FALLBACK = '绮梦播放窗'
 
 /** 进度条打点（时间轴标签 timeMillis/1000 换算成秒后的播放器形态） */
 export interface PlayerHighlight {
@@ -28,22 +47,44 @@ export interface VideoPlayerProps {
   poster?: string
   /** 断点续播起点（秒；已看完场景由页面推导传 0） */
   startTime?: number
-  /** 时间轴标签打点（空数组=无标签，官方 highlight 层不渲染任何点） */
+  /** 时间轴标签打点（浏览器模式 ArtPlayer 打点用；原生内核暂不消费） */
   highlights?: PlayerHighlight[]
   /** 播放中心跳（页面侧经 useProgress 5s 节流上报） */
   onTimeUpdate?: (positionSeconds: number) => void
   /** 暂停（页面侧立即上报） */
   onPause?: (positionSeconds: number) => void
   /** 起播（页面侧上报 play 事件）。口径 B（2026-09-11，DOMAIN_RULES §5）：同一
-   * 连续播放段双来源（art 'play' 主路径 ∪ 'video:play' 原生兜底）只派发一条
-   * （组件内防重闸门），暂停后重新起播重新派发——「每次起播一条」语义不变，
-   * 同会话当日重复起播的去重仍是服务端职责。 */
+   * 连续播放段双来源只派发一条（组件内防重闸门），暂停后重新起播重新派发——
+   * 「每次起播一条」语义不变，同会话当日重复起播的去重仍是服务端职责。 */
   onPlay?: () => void
+  /** 原生内核播放窗标题（页面侧按 cosWork ?? fileName 口径注入；仅桌面壳内消费） */
+  nativeTitle?: string
 }
 
 /** 运行时读主题 token（§5.8 口径：色值禁止进 JS/配置，只认 --qm-primary） */
 function readPrimaryColor(): string {
   return getComputedStyle(document.documentElement).getPropertyValue('--qm-primary').trim()
+}
+
+/** Tauri v2 withGlobalTauri 注入的最小类型面（仅桌面壳内存在；浏览器无此全局） */
+interface TauriIpc {
+  core: {
+    invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>
+  }
+}
+
+/**
+ * 读壳 IPC 全局：titlebar.js 同款惰性防御——壳注入时机可能晚于页面脚本，
+ * 不在模块加载/渲染期取用，点击与轮询发生时再读（届时注入必已完成）。
+ */
+function tauriIpc(): TauriIpc | null {
+  const t = (window as unknown as { __TAURI__?: Partial<TauriIpc> }).__TAURI__
+  return t?.core?.invoke ? (t as TauriIpc) : null
+}
+
+/** 桌面壳判定（渲染期读：React 挂载晚于壳 IPC 注入；浏览器环境恒 false） */
+function inTauriShell(): boolean {
+  return typeof window !== 'undefined' && '__TAURI__' in window
 }
 
 /**
@@ -116,8 +157,10 @@ export default function VideoPlayer({
   onTimeUpdate,
   onPause,
   onPlay,
+  nativeTitle,
 }: VideoPlayerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const isTauriShell = inTauriShell()
 
   // 创建参数挂载时定格：断点续播起点/签名直链/时间轴打点只认首挂值——父级进度
   // 上报或查询失效触发的 refetch 改变 props 不重建播放器（换资产由页面侧 key
@@ -133,18 +176,187 @@ export default function VideoPlayer({
     handlersRef.current = { onTimeUpdate, onPause, onPlay }
   })
   // play 防重闸门状态（口径 B：同一起播双来源只派发一条，判定纯函数在
-  // lib/engagement-reporting；建实例 effect 内随新实例重置——新实例=新会话）
+  // lib/engagement-reporting；新实例/新原生会话 = 新播放会话，闸门归零）
   const playGateRef = useRef<PlayGateState>('idle')
 
+  // —— 原生内核状态（仅桌面壳内；mpv 为壳内唯一内核，ADR-0036 终态）——
+  const [nativeActive, setNativeActive] = useState(false)
+  const [nativeError, setNativeError] = useState<string | null>(null)
+  // 播放窗被用户关闭后置 true：舞台显示「点击重开」，重开起点=最后已知位置
+  const [nativeClosed, setNativeClosed] = useState(false)
+  // 舞台元素引用：内置形态下 mpv 子窗铺在舞台矩形上，矩形随滚动/缩放上报
+  const stageRef = useRef<HTMLDivElement | null>(null)
+  // 上一轮轮询快照（nativePollSignal 的 prev 输入；亦是重开起点的位置来源）
+  const nativeStatusRef = useRef<NativePollStatus | null>(null)
+  // 接管态同步镜像：卸载清理须即时读到最新值，不等下一次 render
+  const nativeActiveRef = useRef(false)
+  const closeNativeRef = useRef<() => void>(() => {})
+
   useEffect(() => {
+    nativeActiveRef.current = nativeActive
+  }, [nativeActive])
+
+  /**
+   * 关闭原生会话（mpv_close）：闸门归零（新会话=新起播段）。invoke 尽力而为：
+   * 壳退出中调用失败无需处理；会话已被用户关窗时 Rust 侧 mpv_close 幂等返回 Ok。
+   */
+  const closeNative = useCallback(() => {
+    nativeActiveRef.current = false
+    setNativeActive(false)
+    setNativeClosed(true)
+    nativeStatusRef.current = null
+    playGateRef.current = 'idle'
+    tauriIpc()
+      ?.core.invoke('mpv_close')
+      .catch(() => {})
+  }, [])
+  useEffect(() => {
+    closeNativeRef.current = closeNative
+  }, [closeNative])
+
+  /** 打开/重开原生播放窗。DLL 缺失等错误串自带 setup 指引（commands.rs），原样展示。 */
+  const openNative = useCallback(
+    async (startSeconds: number) => {
+      const t = tauriIpc()
+      if (!t || nativeActiveRef.current) return
+      try {
+        await t.core.invoke('mpv_open', {
+          url: initial.src,
+          title: nativeTitle ?? NATIVE_WINDOW_TITLE_FALLBACK,
+          startSecs: startSeconds,
+        })
+        setNativeError(null)
+        setNativeClosed(false)
+        nativeStatusRef.current = null // 新会话：轮询边沿从零起算（首拍非空快照=play）
+        playGateRef.current = 'idle'
+        nativeActiveRef.current = true
+        setNativeActive(true)
+      } catch (e) {
+        setNativeError(e instanceof Error ? e.message : String(e))
+        setNativeClosed(true)
+      }
+    },
+    [initial.src, nativeTitle],
+  )
+
+  // 壳内挂载即播：起点=断点续播起点（watched 场景页面已传 0）。换资产由页面侧
+  // key 重建组件（新挂载=新起点）。离开播放页回收会话（「关 web 页 → 会话回收
+  // 干净」）：最后 tick 位置已在 useProgress lastRef，其卸载补报 effect 照常
+  // 上报（原生/浏览器路径同构）。
+  useEffect(() => {
+    if (!isTauriShell) return
+    void openNative(initial.startTime)
+    return () => {
+      if (nativeActiveRef.current) closeNativeRef.current()
+    }
+    // initial.* 挂载时定格；openNative 依赖 initial.src/nativeTitle 同为挂载定格值
+  }, [isTauriShell, initial.startTime, openNative])
+
+  // 原生播放中的状态轮询：每 PROGRESS_REPORT_INTERVAL_MS invoke('mpv_status')
+  // （与 web 心跳节流同拍），边沿信号喂同一口径 B 闸门。播中每轮 tick 喂
+  // onTimeUpdate（hook 内 5s 节流同拍，不会超发）；暂停/eof 边沿带轮询快照位置
+  // 走 onPause（flush 补报）。next=null 且 prev 非空 = 播放窗被用户关闭 →
+  // 复位接管态并显示重开入口，不额外补报（最后 tick 位置已在 useProgress
+  // lastRef，离开页面时照常卸载补报）。
+  useEffect(() => {
+    if (!isTauriShell || !nativeActive) return
+    let stopped = false
+    const poll = async () => {
+      const t = tauriIpc()
+      if (!t || stopped) return
+      try {
+        // Rust MpvStatus serde 序列化键（position/duration/paused/eof）即此形态
+        const next = (await t.core.invoke('mpv_status')) as NativePollStatus | null
+        if (stopped) return
+        const prev = nativeStatusRef.current
+        nativeStatusRef.current = next
+        const signal = nativePollSignal(prev, next)
+        if (signal) {
+          const step = stepPlayGate(playGateRef.current, signal)
+          playGateRef.current = step.state
+          if (signal === 'play') {
+            if (step.report) handlersRef.current.onPlay?.()
+          } else if (next) {
+            handlersRef.current.onPause?.(next.position)
+          }
+        }
+        if (next && !next.paused && !next.eof) {
+          handlersRef.current.onTimeUpdate?.(next.position)
+        }
+        if (next === null && prev !== null) {
+          nativeActiveRef.current = false
+          playGateRef.current = 'idle'
+          setNativeActive(false)
+          setNativeClosed(true)
+        }
+      } catch {
+        // 壳 IPC 异常（壳退出中等）：忽略本轮；会话真死时下一轮 mpv_status
+        // 会正常返回 null 走复位路径，无需因单次异常拆会话
+      }
+    }
+    void poll() // 开轮即查一次：起播上报与首个 tick 不等第一个 5s 拍
+    const timer = window.setInterval(() => void poll(), PROGRESS_REPORT_INTERVAL_MS)
+    return () => {
+      stopped = true
+      window.clearInterval(timer)
+    }
+  }, [isTauriShell, nativeActive])
+
+  // 内置形态摆位上报：mpv 子窗铺在本舞台矩形上。getBoundingClientRect 是
+  // 视口 CSS px，连同 window.innerWidth 交给 Rust 按「主窗客户区物理宽 ÷ 视口
+  // CSS 宽」统一折算——html zoom 1.1 与 DPI 全部折进同一比例，两端无需各自
+  // 感知换算口径。滚动/尺寸变化/舞台自身变化（capture 滚动覆盖页内滚动容器）
+  // 触发，rAF 合并防抖；visible=矩形是否在视口内（滚出即隐藏子窗，不遮页面）。
+  useEffect(() => {
+    if (!isTauriShell) return
+    let raf = 0
+    let pending = false
+    const report = () => {
+      const t = tauriIpc()
+      const el = stageRef.current
+      if (!t || !el) return
+      const r = el.getBoundingClientRect()
+      void t.core
+        .invoke('mpv_stage_rect', {
+          x: r.left,
+          y: r.top,
+          w: r.width,
+          h: r.height,
+          docW: window.innerWidth || 1,
+          visible: r.bottom > 0 && r.top < window.innerHeight && r.width > 0 && r.height > 0,
+        })
+        .catch(() => {})
+    }
+    const schedule = () => {
+      if (pending) return
+      pending = true
+      raf = requestAnimationFrame(() => {
+        pending = false
+        report()
+      })
+    }
+    report() // 会话建立后首摆（nativeActive 翻真时本 effect 重跑即触发）
+    window.addEventListener('scroll', schedule, true)
+    window.addEventListener('resize', schedule)
+    const ro = new ResizeObserver(schedule)
+    if (stageRef.current) ro.observe(stageRef.current)
+    return () => {
+      cancelAnimationFrame(raf)
+      window.removeEventListener('scroll', schedule, true)
+      window.removeEventListener('resize', schedule)
+      ro.disconnect()
+    }
+  }, [isTauriShell, nativeActive])
+
+  // —— 浏览器模式：ArtPlayer（内核=Chromium 内建；桌面壳内不挂载，旧内核不进壳）——
+  useEffect(() => {
+    if (isTauriShell) return
     const container = containerRef.current
     if (!container) return
 
     // 倍速档位表是静态属性（构造时读取），必须先覆盖再实例化
     Artplayer.PLAYBACK_RATE = PLAYBACK_RATES
     playGateRef.current = 'idle' // 新播放器实例 = 新播放会话，闸门归零
-    // 桌面壳检测（Tauri v2 withGlobalTauri 注入 window.__TAURI__）：壳内禁用系统全屏
-    const isTauriShell = '__TAURI__' in window
     const art = new Artplayer({
       container,
       url: initial.src,
@@ -156,7 +368,7 @@ export default function VideoPlayer({
       // 系统全屏在桌面壳内禁用（2026-09-17 实测卡死+研究定案）：壳层「HTML5 全屏
       // 联动宿主窗口」在退出全屏过渡期同步回打 WebView2 互等死锁（tauri#11254 同型、
       // 未真修）；桌面内只留网页全屏（铺满窗口），根治（壳层窗口 API 接管）留跟进批
-      fullscreen: !isTauriShell,
+      fullscreen: false,
       // 网页全屏（铺满页面=桌面客户端里「占满窗口」，与系统全屏并存两种）：
       // 官方 option（artplayer.org/document option#fullscreenweb），控制栏独立按钮
       fullscreenWeb: true,
@@ -222,7 +434,30 @@ export default function VideoPlayer({
       art.destroy() // 官方实例销毁（默认连带移除挂载 DOM）
     }
     // initial.* 挂载时定格（useState 惰性初始化），属性值恒不变化，列入 deps 仅满足规则
-  }, [initial.src, initial.poster, initial.startTime, initial.highlights])
+  }, [isTauriShell, initial.src, initial.poster, initial.startTime, initial.highlights])
 
+  // —— 桌面壳内：原生内核舞台（页面 UI 形态不变；播放本体=mpv 独立播放窗）——
+  if (isTauriShell) {
+    // 重开起点：最后已知位置优先（≤5s 陈旧度，与 tick 节拍同宽），断点起点兜底
+    const lastPosition = nativeStatusRef.current?.position ?? 0
+    const reopenStart = lastPosition > 0 ? lastPosition : initial.startTime
+    return (
+      <div
+        ref={stageRef}
+        className="native-stage"
+        onClick={nativeClosed && initial.src ? () => void openNative(reopenStart) : undefined}
+        role={nativeClosed ? 'button' : undefined}
+        title={nativeClosed ? '重新打开播放窗' : undefined}
+      >
+        {initial.poster ? <img src={initial.poster} alt="" className="native-stage-poster" /> : null}
+        <p className="native-stage-hint">
+          {nativeError ??
+            (nativeClosed ? '播放窗已关闭 · 点击重新打开' : '正在播放中 · 关闭播放窗后此区域可重开')}
+        </p>
+      </div>
+    )
+  }
+
+  // —— 浏览器模式：ArtPlayer（形态与迁移前一致）——
   return <div className="video-player-box" ref={containerRef} />
 }
