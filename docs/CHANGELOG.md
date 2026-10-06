@@ -10,7 +10,29 @@
 
 > **历史条目拆分说明（2026-10-01）**：为控制 AI 上下文体量，本文件只保留 **2026-09-22 及之后**的条目（第三百八十二笔起）；拆分线之前的全部条目已逐字迁入 `docs/history/CHANGELOG-ARCHIVE.md`（零改写，笔号与本文件连续可查）。引用早于拆分线的旧笔号请去历史档查阅。
 
-## fix(web): 修复详情页媒体舞台图片拉伸填充——解耦舞台选择器+恢复比例自适应与居中包含（2026-10-06 第四百九十三笔）
+## feat(web): 极光骨架屏体系与通用空态升维——消除列表首屏跳闪（2026-10-06 第四百九十四笔）
+
+执行 AI：Gemini-3.8-Flash（主代理）
+
+- **背景与痛点**：
+  Web / 桌面端列表页（首页推荐/COS/热榜、相册页、合集页、搜索页、我的收藏等）在数据在途（pending/loading）期间，网格区域为空，仅在底部或容器内挂载单个居中文本 `<LoadingHint>`。数据返回后几十张卡片瞬间插入，引发剧烈的 Cumulative Layout Shift (CLS) 布局跳闪，且等待感枯燥。
+- **改动内容**：
+  1. **极光骨架屏组件 `SkeletonGrid`**（`web/src/components/ui/skeleton-grid.tsx`）：
+     - 几何尺寸、16:9 比例、圆角、标题行与元信息行完全对齐真实 `MediaCard`；
+     - 纯 CSS 实现 Shimmer 极光流光扫光（`--qm-primary` 14% + `--qm-surface-strong` 18%），相邻卡片 90ms 相位微延迟，产生微波流光质感；零额外 JS 依赖，`prefers-reduced-motion` 自动归零；
+  2. **多页面接入消除 CLS**：
+     - `HomePage.tsx`：`StreamCards` 当 `isLoading && items.length === 0` 时以 `SkeletonGrid` 垫底 12 卡，平滑过渡；
+     - `AlbumsPage.tsx`：首屏加载在途且数据为空时由 `SkeletonGrid` 支撑，消除大块空白；
+     - `CollectionPage.tsx`：`SkeletonGrid` 替代单行 `LoadingHint`；
+     - `SearchPage.tsx`：搜索在途中在网格区展示 `SkeletonGrid`；
+     - `MinePage.tsx`：收藏面板首拉接入 `SkeletonGrid`；
+  3. **通用极光空态组件 `EmptyState`**（`web/src/components/ui/empty-state.tsx`）：
+     - 提供大卡片（`empty-state-panel`，继承玻璃材质与顶缘高光）与紧凑内联（`empty-state--compact`）双模式，首页流加载失败优先接入统一的重试态；
+  4. **样式规范**：
+     - `styles/glass.css` 统一收纳 `.skeleton-grid`、`.skeleton-card`、`.skeleton-shimmer` 与 `.empty-state-panel`，严格消费 token。
+- **验证**：
+  - vitest 287 全绿、`npm run build` 全绿、oxlint 0 错误。
+
 
 执行 AI：Gemini-3.8-Flash（主代理）　※ 本条为工作树改动，提交时补 commit hash
 

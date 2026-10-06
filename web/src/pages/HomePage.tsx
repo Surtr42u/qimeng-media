@@ -4,6 +4,8 @@ import { useNavigate, useSearchParams } from 'react-router'
 import type { AssetSummary } from '@/api/generated'
 import { MediaCard } from '@/components/media/MediaCard'
 import { LoadingHint } from '@/components/ui/loading-hint'
+import { SkeletonGrid } from '@/components/ui/skeleton-grid'
+import { EmptyState } from '@/components/ui/empty-state'
 import { assetToCard, useRecommendations } from '@/hooks/use-assets'
 import { useRankingsInfinite } from '@/hooks/use-stats'
 import { useAutoMore } from '@/hooks/use-auto-more'
@@ -164,6 +166,11 @@ function StreamCards({ stream, onOpen, emptyHint, footer, endHint, gridClassName
     },
     [onOpen, navContext],
   )
+
+  if (isLoading && items.length === 0) {
+    return <SkeletonGrid className={gridClassName} count={12} />
+  }
+
   return (
     <>
       <div className={gridClassName}>
@@ -171,24 +178,18 @@ function StreamCards({ stream, onOpen, emptyHint, footer, endHint, gridClassName
           <MediaCard key={a.id} {...assetToCard(a)} onOpen={openCard} />
         ))}
       </div>
-      {/* 提示行区（网格之下全宽直挂）：加载中/错误/空态/页脚/到底了/哨兵。
-          F2：错误态优先于空态——换键重取失败（isError）时不再落进 emptyHint
-          （「暂无上榜内容」类文案把失败误报成没数据）；三个流（推荐/cos/热榜）
-          经同一 StreamCards 出口天然同口径。v5 实际语义（P2-1 注释修正）：
-          占位只在 pending 态生效——换键失败期占位被丢弃（status=error、
-          data=undefined）→ 网格清空，只剩「加载失败+重试」；fetchNextPage
-          同键失败才保留已载卡片，页脚/到底了让位错误行，恢复路径都是「重试」
-          一颗钮（错误期哨兵卸载，不再自动续拉）。样式复用 pill/grid-empty
-          既有 token，零新颜色字面量 */}
-      {isLoading && <LoadingHint />}
+      {/* 提示行区（网格之下全宽直挂）：翻页在途/错误/空态/页脚/到底了/哨兵 */}
       {!isError && isFetchingNextPage && <LoadingHint />}
       {isError ? (
-        <p className="grid-empty">
-          加载失败
-          <button className="pill" type="button" onClick={() => void refetch()}>
-            重试
-          </button>
-        </p>
+        <EmptyState
+          compact
+          title="加载失败"
+          action={
+            <button className="pill" type="button" onClick={() => void refetch()}>
+              重试
+            </button>
+          }
+        />
       ) : (
         <>
           {!isLoading && items.length === 0 && <p className="grid-empty">{emptyHint}</p>}

@@ -70,7 +70,7 @@ body::before {
 .sidebar, .header, .search-pop, .select-content,
 .filter-card, .chart-card, .profile-card, .settings-card,
 .metric-card, .rank-card, .donut-card, .gauge-card, .entry-card, .follow-card,
-.confirm-panel, .detail-dialog,
+.confirm-panel, .detail-dialog, .empty-state-panel,
 .layout .refresh-fab, .layout .backtop-fab {
   background: var(--qm-surface);
   -webkit-backdrop-filter: blur(var(--qm-glass-blur)) saturate(var(--qm-glass-saturate));
@@ -83,12 +83,13 @@ body::before {
 .sidebar, .header, .search-pop, .select-content,
 .confirm-panel, .detail-dialog,
 .chart-card, .profile-card, .settings-card, .rank-card, .donut-card,
-.gauge-card, .entry-card, .metric-card {
+.gauge-card, .entry-card, .metric-card, .empty-state-panel {
   position: relative;
 }
 .sidebar::before, .search-pop::before, .confirm-panel::before, .detail-dialog::before,
 .chart-card::before, .profile-card::before, .settings-card::before, .rank-card::before,
-.donut-card::before, .gauge-card::before, .entry-card::before, .metric-card::before {
+.donut-card::before, .gauge-card::before, .entry-card::before, .metric-card::before,
+.empty-state-panel::before {
   content: "";
   position: absolute;
   inset: 0;
@@ -1102,6 +1103,142 @@ button.save-btn {
   color: var(--qm-text-muted);
 }
 .card--date { color: var(--qm-text-faint); font-size: 11px; }
+
+/* ============ §7-1 骨架屏与极光空态 ============ */
+
+/* 骨架屏网格 */
+.skeleton-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 24px 20px;
+}
+.skeleton-grid.media-grid {
+  gap: 16px;
+}
+
+.skeleton-card {
+  min-width: 0;
+  pointer-events: none;
+}
+
+.skeleton-card--cover {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--qm-radius);
+  overflow: hidden;
+  background: var(--qm-surface-soft);
+  border: 1px solid var(--qm-border);
+  box-shadow: var(--qm-shadow-1);
+}
+
+.skeleton-card--title {
+  margin-top: 10px;
+  height: 16px;
+  width: 78%;
+  border-radius: var(--qm-radius-sm);
+  background: var(--qm-surface-soft);
+  border: 1px solid var(--qm-border);
+}
+
+.skeleton-card--meta {
+  margin-top: 8px;
+  height: 12px;
+  width: 45%;
+  border-radius: var(--qm-radius-sm);
+  background: var(--qm-surface-soft);
+  border: 1px solid var(--qm-border);
+}
+
+/* 极光微光扫光 (Shimmer) */
+.skeleton-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.skeleton-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in oklab, var(--qm-primary) 14%, var(--qm-surface-strong) 18%) 50%,
+    transparent 100%
+  );
+  animation: skeleton-shimmer 1.8s infinite cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes skeleton-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* 相位错开动画 */
+.skeleton-grid > .skeleton-card:nth-child(2) .skeleton-shimmer::after { animation-delay: 90ms; }
+.skeleton-grid > .skeleton-card:nth-child(3) .skeleton-shimmer::after { animation-delay: 180ms; }
+.skeleton-grid > .skeleton-card:nth-child(4) .skeleton-shimmer::after { animation-delay: 270ms; }
+.skeleton-grid > .skeleton-card:nth-child(5) .skeleton-shimmer::after { animation-delay: 360ms; }
+.skeleton-grid > .skeleton-card:nth-child(6) .skeleton-shimmer::after { animation-delay: 450ms; }
+.skeleton-grid > .skeleton-card:nth-child(7) .skeleton-shimmer::after { animation-delay: 540ms; }
+.skeleton-grid > .skeleton-card:nth-child(8) .skeleton-shimmer::after { animation-delay: 630ms; }
+.skeleton-grid > .skeleton-card:nth-child(n+9) .skeleton-shimmer::after { animation-delay: 720ms; }
+
+/* 极光空态与失败态 */
+.empty-state-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 44px 28px;
+  border-radius: var(--qm-radius-lg);
+  text-align: center;
+  margin: 36px auto;
+  max-width: 480px;
+}
+.empty-state-panel .empty-state--icon {
+  margin-bottom: 14px;
+  color: var(--qm-primary);
+  opacity: 0.88;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.empty-state-panel .empty-state--title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--qm-text);
+  line-height: 22px;
+}
+.empty-state-panel .empty-state--desc {
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--qm-text-muted);
+  line-height: 18px;
+}
+.empty-state-panel .empty-state--action {
+  margin-top: 18px;
+}
+
+.empty-state--compact {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 36px 16px;
+  text-align: center;
+}
+.empty-state--compact .empty-state--title {
+  font-size: 13px;
+  color: var(--qm-text-muted);
+}
+.empty-state--compact .empty-state--desc {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--qm-text-faint);
+}
+.empty-state--compact .empty-state--action {
+  margin-top: 12px;
+}
 
 /* 相册时间分区组 */
 .album-group { margin-bottom: 18px; }

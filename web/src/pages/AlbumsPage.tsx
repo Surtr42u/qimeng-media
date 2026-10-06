@@ -5,6 +5,7 @@ import { MediaCard } from '@/components/media/MediaCard'
 import { InfiniteTail } from '@/components/media/InfiniteTail'
 import { PanelFilters } from '@/components/filters/PanelFilters'
 import { Pill } from '@/components/ui/pill'
+import { SkeletonGrid } from '@/components/ui/skeleton-grid'
 import { ChevronDownIcon } from '@/components/shell/icons'
 import { DEFAULT_PAGE_SIZE, LOCALE_ZH } from '@/lib/constants'
 import { groupAlbumsByDate } from '@/lib/album-grouping'
@@ -350,17 +351,21 @@ export default function AlbumsPage() {
       </section>
 
       {/* 时间分区组：组头（今天/昨天/周X/yyyy-MM-dd + N 项）+ 组内网格（保持原序） */}
-      {groups.map((g) => (
-        <section className="album-group" key={g.label || '__no-date__'}>
-          {g.label ? (
-            <h3 className="album-group-title">
-              {g.label}
-              <span className="album-group-count">{g.assets.length} 项</span>
-            </h3>
-          ) : null}
-          <div className="media-grid">{g.assets.map(renderCard)}</div>
-        </section>
-      ))}
+      {items.length === 0 && isFetching ? (
+        <SkeletonGrid className="media-grid" count={12} />
+      ) : (
+        groups.map((g) => (
+          <section className="album-group" key={g.label || '__no-date__'}>
+            {g.label ? (
+              <h3 className="album-group-title">
+                {g.label}
+                <span className="album-group-count">{g.assets.length} 项</span>
+              </h3>
+            ) : null}
+            <div className="media-grid">{g.assets.map(renderCard)}</div>
+          </section>
+        ))
+      )}
       {items.length === 0 && !isFetching ? (
         <p className="grid-empty">该筛选组合下暂无内容，换个胶囊试试。</p>
       ) : null}

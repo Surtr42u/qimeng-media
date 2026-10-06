@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router'
 import { MediaCard } from '@/components/media/MediaCard'
 import { InfiniteTail } from '@/components/media/InfiniteTail'
 import { Pill } from '@/components/ui/pill'
-import { LoadingHint } from '@/components/ui/loading-hint'
+import { SkeletonGrid } from '@/components/ui/skeleton-grid'
 import { useAutoMore } from '@/hooks/use-auto-more'
 import {
   useAssetsInfinite,
@@ -241,7 +241,7 @@ export default function CollectionPage() {
         </section>
       ) : null}
       {loading ? (
-        <LoadingHint />
+        <SkeletonGrid className="media-grid" count={12} />
       ) : items.length ? (
         <div className="media-grid">
           {items.map((a) => (

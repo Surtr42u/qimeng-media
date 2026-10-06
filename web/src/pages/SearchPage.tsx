@@ -5,7 +5,7 @@ import { InfiniteTail } from '@/components/media/InfiniteTail'
 import { ChevronDownIcon } from '@/components/shell/icons'
 import { PanelFilters } from '@/components/filters/PanelFilters'
 import { Pill } from '@/components/ui/pill'
-import { LoadingHint } from '@/components/ui/loading-hint'
+import { SkeletonGrid } from '@/components/ui/skeleton-grid'
 import { useAutoMore } from '@/hooks/use-auto-more'
 import { panelAssetParams, usePanelFilters } from '@/hooks/use-panel-filters'
 import {
@@ -160,19 +160,19 @@ export default function SearchPage() {
         onCloseTagInput={panel.closeTagInput}
         onAddTag={panel.addTag}
       />
-      <div className="grid">
-        {q === '' ? (
-          <p className="grid-empty">在顶部搜索框输入关键词开始搜索</p>
-        ) : items.length ? (
-          items.map((a) => (
+      {q === '' ? (
+        <p className="grid-empty">在顶部搜索框输入关键词开始搜索</p>
+      ) : isLoading && items.length === 0 ? (
+        <SkeletonGrid count={12} />
+      ) : items.length ? (
+        <div className="grid">
+          {items.map((a) => (
             <MediaCard key={a.id} {...assetToCard(a)} onOpen={openCard} />
-          ))
-        ) : isLoading ? (
-          <LoadingHint />
-        ) : (
-          <p className="grid-empty">没有匹配的内容，放宽一点筛选条件试试。</p>
-        )}
-      </div>
+          ))}
+        </div>
+      ) : (
+        <p className="grid-empty">没有匹配的内容，放宽一点筛选条件试试。</p>
+      )}
       {/* E3 无感加载尾部（三件套见 components/media/InfiniteTail）；哨兵
           仅在有搜索词（列表可能非空）时挂载 */}
       <InfiniteTail

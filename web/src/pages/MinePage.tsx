@@ -5,6 +5,7 @@ import { MediaCard } from '@/components/media/MediaCard'
 import { InfiniteTail } from '@/components/media/InfiniteTail'
 import { SearchIcon } from '@/components/shell/icons'
 import { LoadingHint } from '@/components/ui/loading-hint'
+import { SkeletonGrid } from '@/components/ui/skeleton-grid'
 import { useAutoMore } from '@/hooks/use-auto-more'
 import { assetToCard, useAssetsInfinite } from '@/hooks/use-assets'
 import { useAuthors, useToggleFollow } from '@/hooks/use-authors'
@@ -197,19 +198,18 @@ export default function MinePage() {
         <div className="hist-toolbar">
           <p className="m-note">收藏 · {favQuery.data?.pages[0]?.totalMatched ?? 0}</p>
         </div>
-        <div className="media-grid" id="favGrid">
-          {favItems.map((f) => (
-            <MediaCard key={f.id} {...assetToCard(f)} onOpen={openCard} />
-          ))}
-          {/* 首拉中显示加载提示（isLoading = 无数据且在拉取）：此前首拉期间 pane
-              完全空白，服务端慢时用户读作「没有内容」（2026-10-02 浏览历史空白
-              排查同款观感）；有缓存数据后切回瞬时显示，isLoading 恒 false 不闪 */}
-          {favQuery.isLoading ? (
-            <LoadingHint />
-          ) : favItems.length === 0 ? (
-            <p className="grid-empty">暂无收藏内容</p>
-          ) : null}
-        </div>
+        {favQuery.isLoading && favItems.length === 0 ? (
+          <SkeletonGrid className="media-grid" count={8} />
+        ) : (
+          <div className="media-grid" id="favGrid">
+            {favItems.map((f) => (
+              <MediaCard key={f.id} {...assetToCard(f)} onOpen={openCard} />
+            ))}
+            {favItems.length === 0 ? (
+              <p className="grid-empty">暂无收藏内容</p>
+            ) : null}
+          </div>
+        )}
         {/* E3 无感加载尾部（三件套见 components/media/InfiniteTail） */}
         <InfiniteTail
           isFetchingNextPage={favQuery.isFetchingNextPage}
