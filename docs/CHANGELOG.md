@@ -18,6 +18,15 @@
 - **修复**：`glass.css` 全局规则 `.recharts-surface:focus { outline: none }` + `.recharts-surface:focus-visible` 主色焦点环——鼠标路径豁免、键盘 Tab 焦点环保留（a11y 不倒退），与图表组件解耦不进 TSX。
 - **验证**：`npm run build` + vitest 272 全绿 + oxlint 0 错误；服务端从磁盘吐 `web/dist`，壳内刷新页面即生效（后端无需重启）。
 
+## feat(desktop): mpv 内核并入主分支——胶囊入口删除 + 透明控制层撤回 + 插件计划收口（2026-10-06 第四百八十六笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- **用户拍板（2026-10-06 多轮收敛）**：mpv 内核随分支迁入主分支；壳内旧内核最终退役（终态=壳内 mpv 唯一内核、ArtPlayer 留浏览器模式）；**右上角胶囊入口彻底删除、无任何可见切换件**；**不做功能开关/双内核保留计划**；**不做自动播放**；触发方式（点播即原生/设置开关）待拍板；插件计划写成文档给下一位 AI 执行。
+- **本次落地**：① 撤回 C4.5 透明控制层整套（overlay.rs/player-controls.html/几何同步/代数化生命周期 + mpv_overlay_info 命令与 ACL 条目）——该路径 100% 闪退（干净退场无任何系统痕迹，死亡点=WebviewWindowBuilder::build() 内，头号嫌疑=tao legacy DWM blur-behind × WebView2 二次建环境，取证链见分支 57623ca1 笔与 git 历史）；② 撤回 C3 web 侧 chip/轮询 UI（git 精确还原四文件至迁移前，nativePollSignal 纯函数随撤）；③ mpv 子系统本体保留（ffi/win32/player/commands 四命令 IPC 面与 ACL 白名单，cargo test 23 全绿 + release 零警告；web 262 测试/build/lint 全绿）；④ 诊断设施常驻（diag.rs 生命周期跟踪/panic 落盘/ExitRequested 落盘/WER LocalDumps 注册表）。
+- **文档收口**：`desktop/MPV_MIGRATION.md` 退役删除；新增 **`desktop/PLUGIN_PLAN.md`**（下一位 AI 唯一执行入口：触发方式拍板项、client.h 终验两疑点〔MPV_EVENT_SHUTDOWN 疑应=1、mpv_event 字段序疑应含 error/reply_userdata(u64) 前置——终验前勿信状态链〕、交互对齐重设计〔透明窗判死，走 OSC/Lua 进程内〕、已立项插件 mpv.conf 画质基线 + RTX Video HDR 配套〔HDR 屏确认、库 0 HDR 片源〕、实测不立项项 Anime4K/SVP/字幕切换含数据依据、走查清单）；ADR-0036 状态增实施修订 + INDEX 行同步；CAPABILITY_MAP 行改「部分已有（内核并入，接线=插件计划）」；README/HANDOVER 同步。
+- **回滚线**：master 内核相关 commit 可独立 revert；分支 `feat/desktop-libmpv-kernel` 保留完整迁移史（f51da4e8..57623ca1）供摘樱桃（C3/C4.5 代码可整体取回）。
+
 ## fix(web): 原生内核胶囊入口暂删（用户拍板）+ 壳侧诊断设施常驻（2026-10-06 第四百八十五笔）
 
 执行 AI：GLM-5.3-Flash（主代理）

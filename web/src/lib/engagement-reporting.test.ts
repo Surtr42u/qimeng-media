@@ -6,12 +6,7 @@
  * 无假件依赖。
  */
 import { describe, expect, it } from 'vitest'
-import {
-  decideDwellSegment,
-  nativePollSignal,
-  stepPlayGate,
-  type NativePollStatus,
-} from './engagement-reporting'
+import { decideDwellSegment, stepPlayGate } from './engagement-reporting'
 
 describe('decideDwellSegment（dwell 段是否上报 + 秒数取整）', () => {
   it('<1s 过滤：不足 1s 的停留段不上报（W6 #45 回退口径——浏览 open 事件已计入访问，零值段冗余）', () => {
@@ -81,80 +76,5 @@ describe('stepPlayGate（play 双来源单发状态机）', () => {
       if (step.report) reports.push(event)
     }
     expect(reports).toHaveLength(2)
-  })
-})
-
-describe('nativePollSignal（原生内核轮询边沿 → 口径 B 状态机事件）', () => {
-  const status = (overrides: Partial<NativePollStatus>): NativePollStatus => ({
-    position: 10,
-    duration: 100,
-    paused: false,
-    eof: false,
-    ...overrides,
-  })
-
-  it('首个非空快照且未暂停未播完 = 会话起播（play）', () => {
-    expect(nativePollSignal(null, status({}))).toBe('play')
-  })
-
-  it('首个非空快照开局即暂停：不产出信号，等恢复边沿再报（起播上报=真实起播）', () => {
-    expect(nativePollSignal(null, status({ paused: true }))).toBeNull()
-  })
-
-  it('首个非空快照开局即 eof：不产出信号（起点即末尾的边界防御）', () => {
-    expect(nativePollSignal(null, status({ eof: true }))).toBeNull()
-  })
-
-  it('首个快照为 null（会话尚未起播）：无信号', () => {
-    expect(nativePollSignal(null, null)).toBeNull()
-  })
-
-  it('播放中快照无变化：无信号（同状态内不重复派发）', () => {
-    const prev = status({})
-    expect(nativePollSignal(prev, status({ position: 15 }))).toBeNull()
-  })
-
-  it('暂停边沿 false→true = pause；恢复边沿 true→false = play', () => {
-    const prev = status({})
-    expect(nativePollSignal(prev, status({ paused: true }))).toBe('pause')
-    const paused = status({ paused: true })
-    expect(nativePollSignal(paused, status({}))).toBe('play')
-  })
-
-  it('eof 边沿 false→true = pause（keep-open 播完停帧与 HTML5 自然播完的 pause 口径对齐）', () => {
-    const prev = status({})
-    expect(nativePollSignal(prev, status({ eof: true }))).toBe('pause')
-  })
-
-  it('eof 维持 true（播完停帧后的后续轮询）：不再重复派发', () => {
-    const eofed = status({ eof: true })
-    expect(nativePollSignal(eofed, eofed)).toBeNull()
-  })
-
-  it('会话关闭（next=null 且 prev 非空）：不产出信号（闸门复位属接线层职责）', () => {
-    const prev = status({})
-    expect(nativePollSignal(prev, null)).toBeNull()
-  })
-
-  it('接线时序：起播→暂停→恢复→播完，闸门恰好派发两条 play 上报', () => {
-    const sequence: Array<NativePollStatus | null> = [
-      status({ position: 1 }),
-      status({ position: 6, paused: true }),
-      status({ position: 7 }),
-      status({ position: 100, eof: true }),
-      null,
-    ]
-    const reports: string[] = []
-    let gate = 'idle' as 'idle' | 'reported'
-    let prev: NativePollStatus | null = null
-    for (const next of sequence) {
-      const signal = nativePollSignal(prev, next)
-      prev = next
-      if (!signal) continue
-      const step = stepPlayGate(gate, signal)
-      gate = step.state
-      if (step.report) reports.push(signal)
-    }
-    expect(reports).toEqual(['play', 'play'])
   })
 })

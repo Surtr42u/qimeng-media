@@ -1,6 +1,6 @@
 # HANDOVER - 交接说明
 
-> 写给下一位接手的 AI。人类用户无编程基础，代码由 AI 生成。**最后更新：2026-10-04**：全仓重构优化批（第四百六十五笔：四端性能/卫生/手造轮子排查——SQLite synchronous(NORMAL)+扫描/导入事务化+库列表 N+1 合并+facets 并行+matcher 别名查表；Web 上传进度防抖+列表卡 memo+批量胶水收敛；Android 分组 remember 补齐+Compose 稳定性配置+僵尸清除；文档对齐含 GUIDE_API 两端点补记与 ADR-0019 编排层现状补记——零功能零 UI 变化，四端全量构建验证+四路对抗审查）；同日更早 App 词表维护与词表合并同步落地（ADR-0035 定稿：数据管理 hub 新增「词表维护」子页=本机词表直接编辑；备份页新增「词表合并同步」卡=两端并集增量合并取代 0034 覆盖式下发〔用户拍板「词表只增不删，合并是增量不出怪问题」〕；本机通道抽 LocalVocabularyChannel 共享；服务端/openapi/SDK 零改动）；前笔 2026-10-02 Web 全新设计语言「绮梦流光 · Aurora Glass」（ADR-0031）。历史批次见 `docs/CHANGELOG.md`。
+> 写给下一位接手的 AI。人类用户无编程基础，代码由 AI 生成。**最后更新：2026-10-06**：桌面播放内核（libmpv，ADR-0036）随 feat/desktop-libmpv-kernel 并入 master——内核代码落地但触发入口未接（透明控制层闪退撤回、可见胶囊取消），**后续唯一执行入口=`desktop/PLUGIN_PLAN.md`**（含触发方式拍板、ffi.rs 两疑点 client.h 终验、交互对齐、已立项插件：mpv.conf 画质基线 + RTX Video HDR 配套）；同日坑 3 实测修复（远端页自定义命令须应用级 ACL 显式放行，permissions/mpv-commands.toml）+ 图表点击焦点框修复；2026-10-04：全仓重构优化批（第四百六十五笔：四端性能/卫生/手造轮子排查——SQLite synchronous(NORMAL)+扫描/导入事务化+库列表 N+1 合并+facets 并行+matcher 别名查表；Web 上传进度防抖+列表卡 memo+批量胶水收敛；Android 分组 remember 补齐+Compose 稳定性配置+僵尸清除；文档对齐含 GUIDE_API 两端点补记与 ADR-0019 编排层现状补记——零功能零 UI 变化，四端全量构建验证+四路对抗审查）；同日更早 App 词表维护与词表合并同步落地（ADR-0035 定稿：数据管理 hub 新增「词表维护」子页=本机词表直接编辑；备份页新增「词表合并同步」卡=两端并集增量合并取代 0034 覆盖式下发〔用户拍板「词表只增不删，合并是增量不出怪问题」〕；本机通道抽 LocalVocabularyChannel 共享；服务端/openapi/SDK 零改动）；前笔 2026-10-02 Web 全新设计语言「绮梦流光 · Aurora Glass」（ADR-0031）。历史批次见 `docs/CHANGELOG.md`。
 
 ## 1. 项目一句话
 

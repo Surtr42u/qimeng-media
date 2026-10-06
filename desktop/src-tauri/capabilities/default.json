@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "qimeng-desktop-capability",
-  "description": "绮梦影库桌面壳最小权限：setup.html/player-controls.html 通过 window.__TAURI__ 调用自定义命令，核心默认权限兜底；主窗口加载远程源（服务端 Web UI），窗口控制权限须显式声明 remote 上下文才生效",
-  "windows": ["main", "setup", "mpv-controls-*"],
+  "description": "绮梦影库桌面壳最小权限：setup.html 通过 window.__TAURI__ 调用自定义命令，核心默认权限兜底；主窗口加载远程源（服务端 Web UI），窗口控制权限须显式声明 remote 上下文才生效；mpv 命令放行供插件计划接线（desktop/PLUGIN_PLAN.md）",
+  "windows": ["main", "setup"],
   "remote": {
     "urls": ["http://*", "http://*:*", "https://*", "https://*:*"]
   },
@@ -14,7 +14,6 @@
     "core:window:allow-start-dragging",
     "allow-mpv-open",
     "allow-mpv-status",
-    "allow-mpv-overlay-info",
     "allow-mpv-control",
     "allow-mpv-close"
   ]

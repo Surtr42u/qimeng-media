@@ -16,10 +16,6 @@ identifier = "allow-mpv-status"
 description = "原生内核：轮询播放状态快照"
 commands.allow = ["mpv_status"]
 
-[[permission]]
-identifier = "allow-mpv-overlay-info"
-description = "原生内核：控制层时间轴打点数据"
-commands.allow = ["mpv_overlay_info"]
 
 [[permission]]
 identifier = "allow-mpv-control"

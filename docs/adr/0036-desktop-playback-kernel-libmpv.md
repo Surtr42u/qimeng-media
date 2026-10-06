@@ -41,7 +41,11 @@
 
 ## 状态（Status）
 
-Accepted（2026-10-05，用户拍板）
+Accepted（2026-10-05，用户拍板）；**实施修订（2026-10-06，用户拍板）**：内核随
+`feat/desktop-libmpv-kernel` 并入 master；「迁移期可见切换入口（chip）」取消——壳内最终
+直接以 mpv 为唯一内核（ArtPlayer 留浏览器模式不变）；C4.5 透明 WebView2 控制层撤回
+（运行闪退未解，判死该路径，见 `desktop/PLUGIN_PLAN.md` §四-8）；触发方式与后续插件
+计划统一收口到 `desktop/PLUGIN_PLAN.md`（本 ADR 只记决策不记进度）。
 
 ## 后果（Consequences）
 

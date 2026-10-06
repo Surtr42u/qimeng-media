@@ -8,14 +8,13 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 
 use serde::Serialize;
-use tauri::{AppHandle, Wry};
 
 use crate::diag;
 use super::ffi::{
     MpvEventProperty, MpvLib, MPV_ERROR_SUCCESS, MPV_EVENT_NONE, MPV_EVENT_PROPERTY_CHANGE,
     MPV_EVENT_SHUTDOWN, MPV_FORMAT_DOUBLE, MPV_FORMAT_FLAG, MPV_FORMAT_INT64,
 };
-use super::{overlay, win32};
+use super::win32;
 
 /// 播放窗初始尺寸（产品口径：1280×720，可缩放无下限）
 const PLAYER_WINDOW_WIDTH: i32 = 1280;
@@ -147,16 +146,15 @@ pub(crate) struct MpvSession {
 }
 
 impl MpvSession {
-    pub(crate) fn spawn(app: AppHandle<Wry>, initial: Cmd) -> Result<MpvSession, String> {
+    pub(crate) fn spawn(initial: Cmd) -> Result<MpvSession, String> {
         let lib = MpvLib::load()?;
         let (tx, rx) = mpsc::channel::<Cmd>();
         let status = Arc::new(Mutex::new(None::<StatusInner>));
         let status_for_thread = Arc::clone(&status);
-        // 窗口/窗口类/消息泵都在本线程——窗与 mpv 同生命周期（见 win32.rs 头注）；
-        // 控制层窗在主线程创建（Tauri 窗口纪律），经 overlay::attach 跨线程排程
+        // 窗口/窗口类/消息泵都在本线程——窗与 mpv 同生命周期（见 win32.rs 头注）
         std::thread::Builder::new()
             .name("qimeng-mpv".into())
-            .spawn(move || run(app, lib, rx, status_for_thread, initial))
+            .spawn(move || run(lib, rx, status_for_thread, initial))
             .map_err(|e| format!("播放线程启动失败：{e}"))?;
         Ok(MpvSession { tx, status })
     }
@@ -180,14 +178,8 @@ impl MpvSession {
     }
 }
 
-/// 播放线程主体：建窗 → 控制层挂接 → 初始化 mpv（wid 嵌入）→ 循环 → 统一清理。
-fn run(
-    app: AppHandle<Wry>,
-    lib: &'static MpvLib,
-    rx: mpsc::Receiver<Cmd>,
-    status: Arc<Mutex<Option<StatusInner>>>,
-    initial: Cmd,
-) {
+/// 播放线程主体：建窗 → 初始化 mpv（wid 嵌入）→ 循环 → 统一清理。
+fn run(lib: &'static MpvLib, rx: mpsc::Receiver<Cmd>, status: Arc<Mutex<Option<StatusInner>>>, initial: Cmd) {
     // 首命令必须是 Load（mpv_open 保证）；其余命令在窗口就绪前被线程排队消费
     let first_load = match initial {
         Cmd::Load { url, title, start } => Some((url, title, start)),
@@ -211,10 +203,6 @@ fn run(
             return;
         }
     };
-    diag::trace("session_thread: player_window_created");
-    // 控制层（C4.5）：挂接失败只降级（无控制层，mpv 键盘/OSC 兜底），不阻断播放；
-    // 代数供清理序 detach 精确回收本会话的控制层窗
-    let overlay_gen = overlay::attach(&app, hwnd);
 
     // SAFETY: create 返回新句柄；play_loop 与本函数全程持有，尾处 terminate_destroy
     let handle = unsafe { (lib.create)() };
@@ -222,7 +210,6 @@ fn run(
         diag::trace("session_thread: mpv_create FAILED");
         eprintln!("[qimeng-mpv] mpv_create 失败");
         win32::reset_fullscreen_restore();
-        overlay::detach(overlay_gen);
         win32::destroy_window(hwnd);
         return;
     }
@@ -234,10 +221,7 @@ fn run(
     }
     diag::trace("session_thread: cleanup_begin");
     // —— 清理顺序：先关窗（mpv 的 wid 子窗随父销毁，画面即刻消失），再释放 mpv ——
-    // 控制层与播放窗同生命周期：一并摘钩子关窗（用户 Alt-F4 关控制层路径经
-    // main.rs 窗口事件反向回收会话，此处是正向回收）；全屏还原存根随会话清零，
-    // 防跨会话残留把新会话首次全屏切换错走还原分支（对抗复核 2.2①）
-    overlay::detach(overlay_gen);
+    // 全屏还原存根随会话清零，防跨会话残留把新会话首次全屏切换错走还原分支
     win32::destroy_window(hwnd);
     win32::reset_fullscreen_restore();
     // SAFETY: 本线程是句柄创建者；此刻播放循环已退出，无并发 mpv 调用

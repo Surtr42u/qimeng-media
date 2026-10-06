@@ -5,6 +5,8 @@
 //! 「窗口线程 = mpv 线程」三合一（消息泵 + 事件循环 + 命令处理），窗口生命周期
 //! 与 mpv 生命周期天然同线程串行，规避跨线程窗口操作的全部时序问题。
 //! Win32 ABI 二十余年冻结面，与本仓手写 mpv FFI 同一策略（零新增依赖）。
+//! 控制层专用的几何/归属面（client_screen_rect/set_window_owner/WM_WINDOWPOSCHANGED
+//! 钩子）已随 C4.5 撤回删除，恢复时从 feat/desktop-libmpv-kernel 历史取回。
 
 use std::ffi::c_void;
 use std::sync::Mutex;
@@ -17,7 +19,6 @@ pub(crate) type Lparam = isize;
 // Win32 消息（winuser.h，冻结值）
 const WM_DESTROY: u32 = 0x0002;
 const WM_QUIT: u32 = 0x0012;
-const WM_WINDOWPOSCHANGED: u32 = 0x0047;
 const PM_REMOVE: u32 = 1;
 // WS_OVERLAPPEDWINDOW = 常规可缩放窗口（含标题栏/最大最小化/粗边框）
 const WS_OVERLAPPEDWINDOW: u32 = 0x00CF_0000;
@@ -32,7 +33,6 @@ const SWP_NOZORDER: u32 = 0x0004;
 const SWP_FRAMECHANGED: u32 = 0x0020;
 // GetWindowLongPtrW 索引与 MonitorFromWindow 缺省值（winuser.h 冻结值）
 const GWL_STYLE: i32 = -16;
-const GWL_HWNDPARENT: i32 = -8;
 const MONITOR_DEFAULTTONEAREST: u32 = 2;
 
 /// 播放窗类名（注册一次）；UTF-16 字面量含 NUL，单测锁定。
@@ -122,8 +122,6 @@ extern "system" {
     fn PostQuitMessage(code: i32);
     fn DefWindowProcW(hwnd: Hwnd, msg: u32, wparam: Wparam, lparam: Lparam) -> Lresult;
     fn LoadCursorW(instance: *mut c_void, cursor: *const c_void) -> *mut c_void;
-    fn GetClientRect(hwnd: Hwnd, rect: *mut Rect) -> i32;
-    fn ClientToScreen(hwnd: Hwnd, pt: *mut Point) -> i32;
     fn GetWindowRect(hwnd: Hwnd, rect: *mut Rect) -> i32;
     // 64 位 Windows 用 *PtrW 变体（GWL_HWNDPARENT/GWL_STYLE 索引值不受位宽影响）
     fn GetWindowLongPtrW(hwnd: Hwnd, index: i32) -> isize;
@@ -143,19 +141,13 @@ pub(crate) fn to_wide_nul(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
-/// WndProc：WM_DESTROY（默认行为=DestroyWindow→WM_DESTROY→WM_QUIT）+
-/// WM_WINDOWPOSCHANGED（几何变化→控制层同步钩子，overlay.rs），其余全交
-/// DefWindowProc（WM_WINDOWPOSCHANGED 必须放行，否则 WM_SIZE/WM_MOVE 不再生成）。
-/// 窗口不承载任何业务状态（mpv 状态在线程栈上）；钩子内禁 panic（FFI 边界禁 unwind）。
+/// WndProc：只认 WM_DESTROY（默认行为=DestroyWindow→WM_DESTROY→WM_QUIT），
+/// 其余全交 DefWindowProc。窗口不承载任何业务状态（mpv 状态在线程栈上）。
 unsafe extern "system" fn wnd_proc(hwnd: Hwnd, msg: u32, wparam: Wparam, lparam: Lparam) -> Lresult {
     match msg {
         WM_DESTROY => {
             unsafe { PostQuitMessage(0) };
             0
-        }
-        WM_WINDOWPOSCHANGED => {
-            super::overlay::sync_geometry();
-            unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
         }
         _ => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
     }
@@ -226,30 +218,6 @@ pub(crate) fn set_window_title(hwnd: Hwnd, title: &str) {
 pub(crate) fn destroy_window(hwnd: Hwnd) {
     // SAFETY: 仅窗口所属线程调用（player.rs 线程纪律）；已销毁时返回 0 忽略
     unsafe { DestroyWindow(hwnd) };
-}
-
-/// 客户区左上角屏幕坐标 + 客户区尺寸（物理像素）。控制层覆盖客户区（标题栏留给
-/// 系统），返回 None=读取失败（窗口已销毁等），调用方跳过本次同步。
-pub(crate) fn client_screen_rect(hwnd: Hwnd) -> Option<(i32, i32, i32, i32)> {
-    let mut rc = Rect { left: 0, top: 0, right: 0, bottom: 0 };
-    // SAFETY: rect 为合法缓冲；hwnd 为有效窗口或返回 0
-    if unsafe { GetClientRect(hwnd, &mut rc) } == 0 {
-        return None;
-    }
-    let mut pt = Point { x: rc.left, y: rc.top };
-    // SAFETY: pt 为合法缓冲；ClientToScreen 原地换算
-    if unsafe { ClientToScreen(hwnd, &mut pt) } == 0 {
-        return None;
-    }
-    Some((pt.x, pt.y, rc.right - rc.left, rc.bottom - rc.top))
-}
-
-/// 把窗口归属到 owner（GWL_HWNDPARENT，SetWindowLongPtrW 文档口径）：控制层获得
-/// owned 语义——永在播放窗之上、随播放窗最小化/销毁，z-order 无需再管理。
-/// 仅在主线程创建控制层后调用（两个窗口的 Win32 调用都在各自属主线程上）。
-pub(crate) fn set_window_owner(hwnd: Hwnd, owner: Hwnd) {
-    // SAFETY: hwnd 为刚创建的有效窗口；GWL_HWNDPARENT 是文档许可的 owner 修改途径
-    unsafe { SetWindowLongPtrW(hwnd, GWL_HWNDPARENT, owner as isize) };
 }
 
 /// 全屏切换的还原存根（仅播放窗线程读写；Option=当前是否处于全屏态）

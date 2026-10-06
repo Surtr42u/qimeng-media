@@ -227,7 +227,6 @@ fn main() {
             save_server_url,
             mpv::commands::mpv_open,
             mpv::commands::mpv_status,
-            mpv::commands::mpv_overlay_info,
             mpv::commands::mpv_control,
             mpv::commands::mpv_close
         ])
@@ -241,13 +240,6 @@ fn main() {
             if let WindowEvent::Destroyed = event {
                 let app = window.app_handle();
                 diag::trace(&format!("window_destroyed label={}", window.label()));
-                // 控制层窗销毁（用户 Alt-F4 关控制层）→ 会话一并回收（C4.5 双层
-                // 同生命周期的反向路径：正向回收在 player.rs run 清理序里）。
-                // label 带会话代数后缀（mpv-controls-N），按前缀识别。
-                // 注意此处不可动「关主窗=退出」判定语义（MPV_MIGRATION 坑 6 勿修复）
-                if window.label().starts_with(mpv::overlay::CONTROLS_WINDOW_PREFIX) {
-                    mpv::commands::close_session(app.state::<mpv::commands::MpvState>().inner());
-                }
                 // 产品需求：关闭主窗口 = 退出应用（无托盘常驻）。
                 // 实现为"任一窗口销毁后若再无窗口则整体退出"，对用户关闭任意最后一个窗口都成立，
                 // 也兼容 macOS 默认不随最后一窗退出行为的差异。
