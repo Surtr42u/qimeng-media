@@ -224,6 +224,9 @@ export default function VideoPlayer({
         url: initial.src,
         title: nativeTitle ?? '绮梦播放窗', // 页面未传标题时的窗标题兜底（仅壳内可见）
         startSecs: startSeconds,
+        // 时间轴打点经壳中转给播放窗控制层（mpv_overlay_info 消费）——控制层
+        // 零网络面，服务端数据一律由 web 侧转交
+        highlights: initial.highlights,
       })
       setNativeError(null)
       nativeStatusRef.current = null // 新会话：轮询边沿从零起算（首拍非空快照=play）

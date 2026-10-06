@@ -10,6 +10,18 @@
 
 > **历史条目拆分说明（2026-10-01）**：为控制 AI 上下文体量，本文件只保留 **2026-09-22 及之后**的条目（第三百八十二笔起）；拆分线之前的全部条目已逐字迁入 `docs/history/CHANGELOG-ARCHIVE.md`（零改写，笔号与本文件连续可查）。引用早于拆分线的旧笔号请去历史档查阅。
 
+## feat(desktop): mpv 内核 C4.5 双层播放窗——透明控制层 + 全套手势对齐 web 播放器（2026-10-06 第四百八十二笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- **双层架构落码（任务书 §C4.5 定稿，刻意不用 render API）**：新增 `desktop/src-tauri/src/mpv/overlay.rs`——控制层为 Tauri 透明无边框窗（transparent + shadow(false) 防 DWM 灰晕框 + skip_taskbar + 不抢焦点保留 mpv 键盘），创建后 `GWL_HWNDPARENT` 归属播放窗（Win32 owned 语义：永在播放窗之上、随播放窗最小化/销毁，z-order 免管理）；几何同步事件驱动：播放窗 `WM_WINDOWPOSCHANGED`（win32::wnd_proc 新分支，FFI 边界禁 panic）→ `run_on_main_thread` 物理像素 set_position/set_size——跨线程窗口操作只用 Tauri 官方通道，杜绝 Win32 跨线程 SetWindowPos 输入队列死锁，拖动模态循环内照常跟手。
+- **控制层页**：`desktop/ui/player-controls.html`（壳内静态页，零网络面）——透明背景+玻璃控制条（token 子集复制自 tokens.css 暗色段，双写同步责任记档）；进度条点击/拖拽 seek（纯视觉坐标，web 端 zoom 1.1 混算偏差在本页按构造成立）+悬停时间预览+打点点击回看/悬停提示；点画面切暂停（220ms 延时区分双击）/双击全屏；倍速菜单 0.5~3x（1x 文案「正常」=ArtPlayer zh-cn i18n 同款）；音量滑条（mpv volume 0~130）+静音+全屏钮；键盘空格/←→/↑↓/M/F（对照 ArtPlayer 默认热键）；控制条 3s 自动隐藏、暂停常显。
+- **数据流与命令面**：时间轴打点**经壳中转**（web mpv_open 携 highlights → `MpvState.overlay_data` → 控制层 `mpv_overlay_info` 5s 轮询捕捉换片），CSP 无需扩面；`mpv_control` 新增 volume/mute/toggle-fullscreen 动作（player.rs Cmd/parse_action/observe 同步：speed/volume/mute 三属性入状态缓存，MpvStatus 增三字段、web NativePollStatus 结构化子集向后兼容）；全屏=win32 toggle_fullscreen（WS_POPUP 落显示器整屏矩形，还原存根 static 暂存；mpv wid 模式全屏归嵌入方）；音量钳制 NaN→0/±∞ 收界有单测；`close_session` 助手+main.rs 控制层窗 Destroyed 反向回收会话（双层同生命周期闭环，关主窗语义未动——坑 6 勿修复）。
+- **capabilities**：windows 列表补 `mpv-controls`（remote.urls 不变，控制页为本地上下文）。
+- **自测**：cargo test 23 全绿（+2：parse_action 新动作、clamp_volume 界值）+ `cargo build --release` 通过；web `npm test` 272 全绿 + build + lint 0 错（video-player.tsx 增 highlights 中转传参）。**透明叠加三风险（WebView2 透明背景/z-order/输入穿透）属运行表现，留用户一次性走查首验**——不可行则 fallback=mpv input.conf/Lua 手势（overlay.rs 整体退役）。
+- **对抗复核（复核子代理）抓出 2 实锤已修**：① `FULLSCREEN_RESTORE` 进程级存根跨会话残留——全屏中关窗则新会话首次全屏切换错走还原分支瞬移到旧几何；修=run 清理序 `win32::reset_fullscreen_restore()`（mpv_create 失败快路径同覆盖）。② build_and_bind 无错误回滚 + 同 label「先 close 后 build」撞异步销毁必失败——修=**会话代数化唯一 label**（`mpv-controls-N`，capabilities `mpv-controls-*` glob 放行，main.rs 按前缀识别 Destroyed 反向回收）：根治 label 冲突竞态；建后任一步失败即 `overlay.close()` 回收防隐形孤儿窗占坑；attach 先关槽内上一代遗留窗、detach 按 gen 精确回收（复核 3.3 detach 误伤新会话隐患同路径闭环）。低危同修：renderMarks 负/NaN 时间过滤、控制页 130/5000ms 裸字面量提常量（MPV_VOLUME_MAX 与 player.rs 双写记档）。修后 cargo test 23 全绿 + release 重建零警告。
+- **坑 1 终验尝试未闭合**：client.h 经 gh-proxy blob 页（JS 壳无内容）/jsdelivr/fastly（404）/web-reader（无配额）多路均不可达，FFI 枚举终验仍待网络可用或用户协助（mpv ABI 永不重编号承诺兜底，风险低）。
+
 ## feat(desktop): mpv 内核 C3 web 侧接入 + release 构建通过 + DLL 获取脚本双修复（2026-10-06 第四百八十一笔）
 
 执行 AI：GLM-5.3-Flash（主代理）

@@ -65,6 +65,7 @@ Tauri 壳 (desktop/src-tauri)
 
 ### C4 复核与收尾
 - [x] `cargo build --offline --release` 出 release 产物（启动-桌面端.bat 的拉起目标）✅ 2026-10-06：47.6s BUILD_EXIT=0，qimeng-media-desktop.exe 11.9MB
+- [x] 对抗复核 ✅（2026-10-06 复核子代理）：线程边界/锁序/FFI 面/panic 面/四关闭路径闭环/协议双写/铁律 7、14 全过；**抓出并已修 2 实锤**——① FULLSCREEN_RESTORE 进程级存根跨会话残留（新会话首次全屏错走还原分支）→ run 清理序 reset_fullscreen_restore()；② build_and_bind 无回滚 + 同 label 异步 close 先摘后建必撞车 → 改会话代数唯一 label（mpv-controls-N，capabilities glob 放行）+ 建后任一步失败即回收 + attach 代关上一代遗留窗 + detach 按 gen 精确回收（顺带闭环复核 3.3 detach 误伤隐患）；低危项（renderMarks 负时间过滤、控制页 130/5000ms 提常量）同修。**残余：mpv client.h 枚举终验（坑 1）未闭**——gh-proxy blob 页 JS 壳取不到内容、jsdelivr 404、web-reader 无配额，仍待网络可用或用户协助（ABI 冻结口径兜底，风险低）
 - [ ] 对抗复核：FFI 签名/枚举逐个对 client.h；线程边界；panic 面；铁律 7（UI 不碰业务）/14（无二进制入库）过一遍
 - [ ] CHANGELOG 每笔同 commit；本文 checkbox 全勾；§七日志收口
 - [ ] 运行验收（需真人）：按 §一验收清单 1~6 走查
@@ -74,11 +75,11 @@ Tauri 壳 (desktop/src-tauri)
 
 **架构（定稿）**：专用播放窗双层结构——底层 mpv `wid` 出画面（C2 已建），顶层**透明 WebView2 控制层**（壳内新页 `desktop/ui/player-controls.html`，复用 `--qm-*` token 与 glass 材质），鼠标事件归控制层、画面归 mpv。**刻意不用 render API**（纹理合成是量级最重且最脆的路径，双层透明叠加即可达成"手势浮在 mpv 画面上"），交互规格照搬现 ArtPlayer 实际行为（进度打点/倍速菜单/手势映射以 video-player.tsx 现行为为对照源）。
 
-- [ ] 控制层页骨架（透明 webview 窗叠加 + 与 mpv 窗口同生命周期/同步 resize）
-- [ ] 进度条 + 时间轴打点渲染（数据源=时间轴标签接口，经壳中转或控制层直连服务端）
-- [ ] 手势层（对照 video-player.tsx 现行为：进度条点击/拖拽 seek 含 zoom 1.1 修正口径、双击行为、倍速入口）
-- [ ] 倍速菜单 + 播放/暂停/音量控件（mpv_control IPC 驱动）
-- [ ] 已知实测风险：WebView2 透明背景 + 叠放 z-order + 输入穿透——**首日实测点**，若透明叠加不可行，fallback = mpv `input.conf`/Lua 手势（体验降级但功能等价，记档后切）
+- [x] 控制层页骨架 ✅（2026-10-06 落码）：`mpv/overlay.rs`——控制层=Tauri 透明无边框窗（transparent+shadow(false)+skip_taskbar+不抢焦点），`GWL_HWNDPARENT` 归属播放窗（owned 语义：永在播放窗之上/随最小化/随销毁，z-order 免管理）；几何同步=播放窗 `WM_WINDOWPOSCHANGED`（win32::wnd_proc）→ `run_on_main_thread` 物理像素 set_position/set_size（跨线程只用 Tauri 官方通道，拖动模态循环内照常跟手）；页面 `desktop/ui/player-controls.html`（透明背景+玻璃控制条，token 子集复制自 tokens.css 暗色段）
+- [x] 进度条 + 时间轴打点渲染 ✅：数据源=**经壳中转**（web mpv_open 携 highlights → MpvState.overlay_data → 控制层 mpv_overlay_info 5s 轮询捕捉换片；控制层零网络面，CSP 无需扩面）；打点点击回看+悬停 title 提示；进度条悬停时间预览
+- [x] 手势层 ✅：进度条点击/拖拽 seek（纯视觉坐标，本页无全局 zoom、对照源的 zoom 1.1 修正在此按构造成立）；点画面切暂停（220ms 延时区分双击）/双击全屏（mpv wid 模式全屏归嵌入方——win32 toggle_fullscreen：WS_POPUP 落显示器整屏，还原存根 static 暂存）；键盘 空格/←→(±5s)/↑↓(音量±5)/M 静音/F 全屏（对照 ArtPlayer 默认热键）
+- [x] 倍速菜单 + 播放/暂停/音量控件 ✅：倍速 0.5~3x（1x 文案「正常」=ArtPlayer zh-cn i18n 同款）经 mpv_control('speed')；play/pause/mute/音量滑条（mpv volume 0~130=max-volume 默认）——mpv_control 新增 volume/mute/toggle-fullscreen 动作，mpv_status 新增 speed/volume/muted 观察项（web NativePollStatus 结构化子集向后兼容）；音量 NaN→0/±∞ 钳界有单测
+- [ ] 已知实测风险：WebView2 透明背景 + 叠放 z-order + 输入穿透——**留用户走查首验**（透明叠加不可行则 fallback = mpv `input.conf`/Lua 手势，记档后切，overlay.rs 整体退役）
 
 ### C5+ 后续批次（**用户 2026-10-05 拍板：插件/画质预置类按需再议、不排期**；其中"交互对齐"已于同日二次拍板移回主体=C4.5）
 - [ ] 播放窗交互对齐 web 控制条（倍速/打点联动/手势）
@@ -90,10 +91,11 @@ Tauri 壳 (desktop/src-tauri)
 
 ## 四、当前状态与交接日志（倒序追加）
 
-- **2026-10-06 · GLM-5.3-Flash（主代理）会话 2**：接手清单 ①②③ 完成——① release 构建 ✅（47.6s BUILD_EXIT=0，产物 11.9MB）；② DLL 已取 ✅（120.8MB x64 PE，落 mpv/lib + release/debug 产物旁；**过程修了 setup-mpv.ps1 两个实际问题**：PS 5.1 要求 UTF-8 带 BOM 否则中文串解析报错；GitHub 直连被墙，补 gh-proxy.com 镜像回退通道——ghproxy 系多数不透传 api.github.com，实测 gh-proxy.com 可，供应链口径=镜像仅传输代理、信任锚定源仓库）；③ C3 web 侧 ✅（本文件 C3 节 checklist 全勾：nativePollSignal 纯函数+10 单测、chip/mpv_open/5s 轮询/收回/卸载回收、nativeTitle 传参〔d.title→cosWork??fileName 口径修正〕、glass.css token 样式；npm test 272 全绿 + build + lint 0 错）。**用户约束（本会话起有效）：测试只许后台无头，运行走查一律用户本人一次性自测。下一步（按序）**：
-  1. **C4.5 双层播放窗交互对齐**（工作量最大块，架构见该节；首日实测点=WebView2 透明背景/叠放 z-order/输入穿透，不可行则 fallback=input.conf/Lua 手势）；
-  2. C4 剩余：对抗复核（FFI 签名/枚举对 client.h、线程边界、panic 面、铁律 7/14）+ CHANGELOG 同步 + §一验收清单交用户走查 + CAPABILITY_MAP「已有」+ HANDOVER 收口；
-  3. 网络可用时 `git push -u origin feat/desktop-libmpv-kernel`（分支目前只在本地）。
+- **2026-10-06 · GLM-5.3-Flash（主代理）会话 2**：接手清单 ①②③④ 完成——① release 构建 ✅（47.6s BUILD_EXIT=0）；② DLL 已取 ✅（120.8MB x64 PE；**顺修 setup-mpv.ps1 两个实际问题**：PS 5.1 要求 UTF-8 带 BOM 否则中文串解析报错；GitHub 直连被墙补 gh-proxy.com 镜像回退——ghproxy 系实测仅它透传 api.github.com，镜像仅传输代理、信任锚定源仓库）；③ C3 web 侧 ✅（f553f07c）；④ C4.5 双层播放窗 ✅ 落码（透明控制层窗+GWL_HWNDPARENT 归属+WM_WINDOWPOSCHANGED 几何同步+控制页全套手势，cargo test 23 全绿 + release 构建过 + web 272 测试/build/lint 全绿）。**自测边界（用户约束）：全部后台无头验证，透明叠加三风险（WebView2 透明背景/z-order/输入穿透）留用户运行走查首验**。**下一步（按序）**：
+  1. 用户一次性运行走查（§一验收清单 1~8；重点 C4.5 双层表现与坑 2 wid resize/OSC、坑 3 远端页 invoke 权限）；
+  2. 走查通过 → CAPABILITY_MAP「已有」+ HANDOVER 收口 + §七回滚线确认；
+  3. 透明叠加不可行 → 切 fallback（mpv input.conf/Lua 手势，overlay.rs 退役）；
+  4. 网络可用时 `git push -u origin feat/desktop-libmpv-kernel`。
 - （历史）**2026-10-05 · GLM-5.3-Flash（主代理）会话 1（收口）**：C1 提交（f51da4e8）；C2 代码+验证完成（f1c56360 落码 → f6..fix 笔：2 编译错+5 警告修复，BUILD/TEST 全绿 22 单测，环境事故定性=被杀进程残留见 §六）；任务书 charter 化（8c110f76）。C3 web 侧未落码。
 - （历史）2026-10-05 会话 1 中段：cargo check 曾被设备文件损坏阻塞——已定性为被杀进程残留物（§六），非代码问题，硬件未持续损坏（依赖树全量重编零损坏实证）。
 

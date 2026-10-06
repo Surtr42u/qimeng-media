@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>播放控制</title>
+  <!--
+    原生内核播放窗控制层（C4.5 双层播放窗）：本页由壳以透明无边框 Tauri 窗加载
+    （overlay.rs），浮在 mpv wid 画面之上，鼠标/键盘归本页、画面归 mpv。
+    交互规格对照源 = web/src/components/media/video-player.tsx（ArtPlayer 现行为）：
+    进度条点击/拖拽 seek（本页无全局 zoom，天然无 web 端 zoom 1.1 混算偏差）、
+    悬停时间预览、时间轴打点（点击回看/悬停提示）、倍速菜单 0.5~3x（1x 文案
+    "正常"=ArtPlayer zh-cn i18n）、点画面切暂停/双击全屏、键盘 空格/←→/↑↓/F。
+    网络：零——mpv 状态走 mpv_status 轮询、打点经壳中转（mpv_open 参数 →
+    mpv_overlay_info），无任何服务端直连（CSP 无需扩面）。
+  -->
+  <style>
+    /* token 子集复制自 web/src/tokens.css 暗色段（控制层恒浮于视频暗背景）；
+       与 tokens.css 双写，改色须两端同步 */
+    :root {
+      --qm-text: oklch(0.93 0.012 280);
+      --qm-text-muted: oklch(0.66 0.02 280);
+      --qm-text-faint: oklch(0.5 0.02 280);
+      --qm-primary: oklch(0.74 0.13 285);
+      --qm-primary-strong: oklch(0.8 0.12 288);
+      --qm-primary-soft: color-mix(in oklab, oklch(0.74 0.13 285) 18%, transparent);
+      --qm-border: oklch(1 0 0 / 0.09);
+      --qm-radius-sm: 0.625rem;
+      --qm-radius-full: 999px;
+      /* 控制条玻璃材质（深色 scrim，对齐视频控件惯例） */
+      --bar-scrim: oklch(0.17 0.02 280 / 0.62);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%; height: 100%;
+      background: transparent; /* 双层关键：页面背景透明，露出 mpv 画面 */
+      overflow: hidden;
+      font-family: system-ui, "Microsoft YaHei", sans-serif;
+      color: var(--qm-text);
+      user-select: none;
+      cursor: default;
+    }
+    /* 画面区：整面接收点击/双击（层内命中），控制条内部点击不冒泡触发 */
+    #surface { position: fixed; inset: 0; }
+
+    #bar {
+      position: fixed; left: 0; right: 0; bottom: 0;
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 14px 10px;
+      background: var(--bar-scrim);
+      -webkit-backdrop-filter: blur(14px);
+      backdrop-filter: blur(14px);
+      border-top: 1px solid var(--qm-border);
+      transition: opacity .25s ease, transform .25s ease;
+    }
+    #bar.hidden { opacity: 0; transform: translateY(6px); pointer-events: none; }
+
+    .btn {
+      display: flex; align-items: center; justify-content: center;
+      width: 30px; height: 30px; flex: none;
+      background: none; border: none; border-radius: var(--qm-radius-full);
+      color: var(--qm-text); cursor: pointer;
+    }
+    .btn:hover { background: var(--qm-primary-soft); color: var(--qm-primary-strong); }
+    .btn svg { width: 17px; height: 17px; fill: currentColor; }
+    #btn-rate { width: auto; min-width: 30px; padding: 0 8px; font-size: 12.5px; font-weight: 600; }
+
+    /* 进度条：命中区高 14px，内轨 4px（悬停放大到 6px），打点与预览浮在其上 */
+    #progress { position: relative; flex: 1; height: 14px; cursor: pointer; }
+    #progress .track {
+      position: absolute; left: 0; right: 0; top: 5px; height: 4px;
+      border-radius: var(--qm-radius-full);
+      background: oklch(1 0 0 / 0.22);
+      transition: height .12s ease, top .12s ease;
+    }
+    #progress:hover .track { top: 4px; height: 6px; }
+    #played {
+      position: absolute; left: 0; top: 0; height: 100%; width: 0;
+      border-radius: var(--qm-radius-full);
+      background: var(--qm-primary);
+    }
+    #progress .dot {
+      position: absolute; top: 50%; width: 11px; height: 11px;
+      border-radius: var(--qm-radius-full); background: var(--qm-primary);
+      transform: translate(-50%, -50%) scale(0);
+      transition: transform .12s ease;
+    }
+    #progress:hover .dot, #progress.dragging .dot { transform: translate(-50%, -50%) scale(1); }
+    .marker {
+      position: absolute; top: 50%; width: 6px; height: 6px;
+      border-radius: var(--qm-radius-full);
+      background: var(--qm-primary-strong);
+      box-shadow: 0 0 3px oklch(0 0 0 / 0.6);
+      transform: translate(-50%, -50%);
+      cursor: pointer;
+    }
+    #preview {
+      position: absolute; bottom: 18px; transform: translateX(-50%);
+      padding: 2px 7px; border-radius: var(--qm-radius-sm);
+      background: oklch(0 0 0 / 0.72); color: var(--qm-text);
+      font-size: 11.5px; white-space: nowrap; display: none; pointer-events: none;
+    }
+
+    .time { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--qm-text-muted); flex: none; }
+
+    /* 倍速菜单：控制条上方弹出，选中档主色高亮（对照 ArtPlayer 设置面板勾选态） */
+    #rate-menu {
+      position: fixed; right: 116px; bottom: 52px;
+      padding: 5px; border-radius: var(--qm-radius-sm);
+      background: oklch(0.17 0.02 280 / 0.86);
+      -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+      border: 1px solid var(--qm-border);
+      display: none; flex-direction: column; min-width: 72px;
+    }
+    #rate-menu.open { display: flex; }
+    #rate-menu button {
+      padding: 6px 12px; border: none; background: none; border-radius: var(--qm-radius-sm);
+      font-size: 12.5px; color: var(--qm-text-muted); text-align: center; cursor: pointer;
+    }
+    #rate-menu button:hover { background: var(--qm-primary-soft); color: var(--qm-text); }
+    #rate-menu button.active { color: var(--qm-primary-strong); font-weight: 600; }
+
+    /* 音量：静音钮 + 56px 横向滑条（命中区含两侧余量，拖拽与进度条同数学） */
+    #vol { position: relative; width: 56px; height: 14px; cursor: pointer; flex: none; }
+    #vol .track {
+      position: absolute; left: 0; right: 0; top: 5px; height: 4px;
+      border-radius: var(--qm-radius-full); background: oklch(1 0 0 / 0.22);
+    }
+    #vol .fill {
+      position: absolute; left: 0; top: 0; height: 100%;
+      border-radius: var(--qm-radius-full); background: var(--qm-text);
+    }
+    .vol-off #vol .fill { background: var(--qm-text-faint); }
+  </style>
+</head>
+<body>
+  <div id="surface"></div>
+
+  <div id="bar">
+    <button class="btn" id="btn-play" title="播放/暂停（空格）"></button>
+    <div id="progress" title="">
+      <div class="track"><div id="played"></div></div>
+      <div class="dot" id="dot"></div>
+      <div id="preview"></div>
+    </div>
+    <span class="time" id="time">0:00 / 0:00</span>
+    <button class="btn" id="btn-rate" title="倍速">1x</button>
+    <div id="rate-menu"></div>
+    <button class="btn" id="btn-mute" title="静音（M）"></button>
+    <div id="vol" title="音量"><div class="track"></div><div class="fill" id="vol-fill"></div></div>
+    <button class="btn" id="btn-fs" title="全屏（F）">
+      <svg viewBox="0 0 24 24"><path d="M4 4h6v2H6v4H4V4zm10 0h6v6h-2V6h-4V4zM4 14h2v4h4v2H4v-6zm14 0h2v6h-6v-2h4v-4z"/></svg>
+    </button>
+  </div>
+
+  <script>
+    (function () {
+      'use strict';
+      // 惰性 IPC（壳注入时序防御，titlebar.js/setup.html 同款）
+      var invoke = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke;
+
+      // —— mpv 状态（mpv_status 快照字段，commands.rs 序列化键双写）——
+      var st = { position: 0, duration: 0, paused: false, eof: false, speed: 1, volume: 100, muted: false };
+      // 倍速档位与 web PLAYBACK_RATES 冻结清单一致（video-player.tsx）
+      var RATES = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
+      // mpv 音量属性上限（player.rs MPV_VOLUME_MAX 双写；页内唯一出处）
+      var MPV_VOLUME_MAX = 130;
+      // 打点数据轮询周期（换片后打点最长延迟一个周期，产品可接受口径）
+      var TAGS_POLL_MS = 5000;
+      // 控制条自动隐藏延时（ArtPlayer 惯例 3s；暂停时常显）
+      var BAR_HIDE_MS = 3000;
+
+      var $ = function (id) { return document.getElementById(id); };
+      var surface = $('surface'), bar = $('bar'), played = $('played'), dot = $('dot');
+      var progress = $('progress'), preview = $('preview'), timeEl = $('time');
+      var btnPlay = $('btn-play'), btnRate = $('btn-rate'), rateMenu = $('rate-menu');
+      var btnMute = $('btn-mute'), vol = $('vol'), volFill = $('vol-fill');
+
+      var ICON_PLAY = '<svg viewBox="0 0 24 24"><path d="M8 5.5v13l11-6.5-11-6.5z"/></svg>';
+      var ICON_PAUSE = '<svg viewBox="0 0 24 24"><path d="M7 5h3.5v14H7V5zm6.5 0H17v14h-3.5V5z"/></svg>';
+      var ICON_VOL = '<svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4zm12.5 3a3.5 3.5 0 0 0-2-3.15v6.3a3.5 3.5 0 0 0 2-3.15zm-2-7v2.1a5 5 0 0 1 0 9.8V19a7 7 0 0 0 0-14z"/></svg>';
+      var ICON_MUTED = '<svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4zm12.3 3 2.6-2.6-1.4-1.4-2.6 2.6-2.6-2.6-1.4 1.4 2.6 2.6-2.6 2.6 1.4 1.4 2.6-2.6 2.6 2.6 1.4-1.4-2.6-2.6z"/></svg>';
+
+      function control(action, value) {
+        if (!invoke) return;
+        invoke('mpv_control', { action: action, value: value || 0 }).catch(function () {});
+      }
+
+      function fmt(t) {
+        if (!isFinite(t) || t < 0) t = 0;
+        var s = Math.round(t);
+        var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+        var mm = (h > 0 ? String(m).padStart(2, '0') : String(m));
+        var ss = String(sec).padStart(2, '0');
+        return (h > 0 ? h + ':' : '') + mm + ':' + ss;
+      }
+
+      function render() {
+        var dur = st.duration > 0 ? st.duration : 0;
+        var frac = dur > 0 ? Math.min(1, st.position / dur) : 0;
+        played.style.width = (frac * 100) + '%';
+        dot.style.left = (frac * 100) + '%';
+        timeEl.textContent = fmt(st.position) + ' / ' + fmt(dur);
+        btnPlay.innerHTML = st.paused ? ICON_PLAY : ICON_PAUSE;
+        btnMute.innerHTML = st.muted ? ICON_MUTED : ICON_VOL;
+        volFill.style.width = (st.muted ? 0 : Math.min(100, (st.volume / MPV_VOLUME_MAX) * 100)) + '%';
+        document.body.classList.toggle('vol-off', st.muted);
+        var rateLabel = Math.abs(st.speed - 1) < 0.01 ? '正常' : st.speed + 'x';
+        btnRate.textContent = rateLabel;
+        renderRateActive();
+      }
+
+      // —— 倍速菜单 ——
+      RATES.forEach(function (rate) {
+        var b = document.createElement('button');
+        b.type = 'button';
+        // 1x 文案 "正常" = ArtPlayer zh-cn i18n（对照源 video-player.tsx 同款）
+        b.textContent = rate === 1 ? '正常' : rate + 'x';
+        b.dataset.rate = String(rate);
+        b.addEventListener('click', function (e) {
+          e.stopPropagation();
+          control('speed', rate);
+          rateMenu.classList.remove('open');
+        });
+        rateMenu.appendChild(b);
+      });
+      function renderRateActive() {
+        rateMenu.querySelectorAll('button').forEach(function (b) {
+          b.classList.toggle('active', Math.abs(parseFloat(b.dataset.rate) - st.speed) < 0.01);
+        });
+      }
+      btnRate.addEventListener('click', function (e) {
+        e.stopPropagation();
+        rateMenu.classList.toggle('open');
+      });
+
+      // —— 进度条：点击/拖拽 seek + 悬停时间预览 + 打点回看 ——
+      // 纯视觉坐标换算（getBoundingClientRect 同参照系）；对照源 web 端的 zoom 1.1
+      // 修正在本页按构造成立（无全局 zoom，无混算偏差）
+      var dragging = false;
+      function fractionFromX(clientX, el) {
+        var r = el.getBoundingClientRect();
+        if (r.width <= 0) return 0;
+        return Math.min(1, Math.max(0, (clientX - r.left) / r.width));
+      }
+      function seekFraction(f) {
+        if (st.duration > 0) control('seek', f * st.duration);
+      }
+      progress.addEventListener('mousedown', function (e) {
+        dragging = true;
+        progress.classList.add('dragging');
+        seekFraction(fractionFromX(e.clientX, progress));
+        e.preventDefault();
+        e.stopPropagation();
+      });
+      document.addEventListener('mousemove', function (e) {
+        if (dragging) seekFraction(fractionFromX(e.clientX, progress));
+      });
+      document.addEventListener('mouseup', function () {
+        dragging = false;
+        progress.classList.remove('dragging');
+      });
+      progress.addEventListener('mousemove', function (e) {
+        if (!st.duration) return;
+        var f = fractionFromX(e.clientX, progress);
+        preview.style.display = 'block';
+        preview.style.left = (f * 100) + '%';
+        preview.textContent = fmt(f * st.duration);
+      });
+      progress.addEventListener('mouseleave', function () {
+        preview.style.display = 'none';
+      });
+
+      // —— 时间轴打点（mpv_overlay_info 轮询；换片随 5s 轮询自动刷新）——
+      var marks = [];
+      function renderMarks() {
+        progress.querySelectorAll('.marker').forEach(function (m) { m.remove(); });
+        if (!(st.duration > 0)) return;
+        marks.forEach(function (mk) {
+          if (!(mk.time >= 0) || mk.time > st.duration) return; // 负值/NaN/超界防御
+          var m = document.createElement('div');
+          m.className = 'marker';
+          m.style.left = (Math.min(1, mk.time / st.duration) * 100) + '%';
+          m.title = mk.text || '';
+          m.addEventListener('mousedown', function (e) {
+            e.stopPropagation(); // 打点点击=回看（对照 ArtPlayer highlight 点击 seek）
+            control('seek', mk.time);
+          });
+          progress.appendChild(m);
+        });
+      }
+      function pollInfo() {
+        if (!invoke) return;
+        invoke('mpv_overlay_info').then(function (list) {
+          var next = list || [];
+          if (JSON.stringify(next) !== JSON.stringify(marks)) {
+            marks = next;
+            renderMarks();
+          }
+        }).catch(function () {});
+      }
+      setInterval(pollInfo, TAGS_POLL_MS);
+      pollInfo();
+
+      // —— 画面区手势：单击切暂停 / 双击全屏（延时区分单击双击，YouTube 同款）——
+      var clickTimer = null;
+      surface.addEventListener('click', function () {
+        if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; return; }
+        clickTimer = setTimeout(function () {
+          clickTimer = null;
+          control('toggle-pause', 0);
+        }, 220);
+      });
+      surface.addEventListener('dblclick', function () {
+        if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
+        control('toggle-fullscreen', 0);
+      });
+
+      // —— 控制条按钮/音量 ——
+      btnPlay.addEventListener('click', function (e) { e.stopPropagation(); control('toggle-pause', 0); });
+      btnMute.addEventListener('click', function (e) { e.stopPropagation(); control('mute', st.muted ? 0 : 1); });
+      $('btn-fs').addEventListener('click', function (e) { e.stopPropagation(); control('toggle-fullscreen', 0); });
+      var volDragging = false;
+      vol.addEventListener('mousedown', function (e) {
+        volDragging = true;
+        control('volume', fractionFromX(e.clientX, vol) * MPV_VOLUME_MAX);
+        e.stopPropagation();
+      });
+      document.addEventListener('mousemove', function (e) {
+        if (volDragging) control('volume', fractionFromX(e.clientX, vol) * MPV_VOLUME_MAX);
+      });
+      document.addEventListener('mouseup', function () { volDragging = false; });
+      document.addEventListener('click', function () { rateMenu.classList.remove('open'); });
+
+      // —— 键盘（对照 ArtPlayer 默认热键）：空格暂停/←→ 5s/↑↓ 音量/F 全屏 ——
+      window.addEventListener('keydown', function (e) {
+        switch (e.code) {
+          case 'Space':
+            e.preventDefault();
+            control('toggle-pause', 0);
+            break;
+          case 'ArrowLeft':
+            control('seek', Math.max(0, st.position - 5));
+            break;
+          case 'ArrowRight':
+            control('seek', st.position + 5);
+            break;
+          case 'ArrowUp':
+            e.preventDefault();
+            control('volume', Math.min(MPV_VOLUME_MAX, st.volume + 5));
+            break;
+          case 'ArrowDown':
+            control('volume', Math.max(0, st.volume - 5));
+            break;
+          case 'KeyM':
+            control('mute', st.muted ? 0 : 1);
+            break;
+          case 'KeyF':
+            control('toggle-fullscreen', 0);
+            break;
+          default:
+            break;
+        }
+      });
+
+      // —— 控制条自动隐藏：播放中 3s 无鼠标动作收起，暂停/出菜单时常显 ——
+      var hideTimer = null;
+      function showBar() {
+        bar.classList.remove('hidden');
+        if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+        scheduleHide();
+      }
+      function scheduleHide() {
+        if (st.paused) return; // 暂停时常显（对照 ArtPlayer 行为）
+        hideTimer = setTimeout(function () {
+          if (!st.paused && !dragging && !volDragging && !rateMenu.classList.contains('open')) {
+            bar.classList.add('hidden');
+          }
+        }, BAR_HIDE_MS);
+      }
+      document.addEventListener('mousemove', showBar);
+
+      // —— 状态轮询（400ms：进度条平滑度与 IPC 负担折中；web 端 5s 心跳另有链路）——
+      var STATUS_POLL_MS = 400;
+      function pollStatus() {
+        if (!invoke) return;
+        invoke('mpv_status').then(function (s) {
+          if (!s) return; // None=会话已结束（壳侧收窗），控制层随窗销毁，无需处理
+          var durChanged = s.duration !== st.duration;
+          st = s;
+          render();
+          if (durChanged) renderMarks();
+        }).catch(function () {});
+      }
+      setInterval(pollStatus, STATUS_POLL_MS);
+      pollStatus();
+      render();
+      showBar();
+    })();
+  </script>
+</body>
+</html>

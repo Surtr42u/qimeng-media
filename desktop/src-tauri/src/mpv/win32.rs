@@ -7,6 +7,7 @@
 //! Win32 ABI 二十余年冻结面，与本仓手写 mpv FFI 同一策略（零新增依赖）。
 
 use std::ffi::c_void;
+use std::sync::Mutex;
 
 pub(crate) type Hwnd = *mut c_void;
 pub(crate) type Lresult = isize;
@@ -16,14 +17,23 @@ pub(crate) type Lparam = isize;
 // Win32 消息（winuser.h，冻结值）
 const WM_DESTROY: u32 = 0x0002;
 const WM_QUIT: u32 = 0x0012;
+const WM_WINDOWPOSCHANGED: u32 = 0x0047;
 const PM_REMOVE: u32 = 1;
 // WS_OVERLAPPEDWINDOW = 常规可缩放窗口（含标题栏/最大最小化/粗边框）
 const WS_OVERLAPPEDWINDOW: u32 = 0x00CF_0000;
 const WS_VISIBLE: u32 = 0x1000_0000;
+const WS_POPUP: u32 = 0x8000_0000;
 const CW_USEDEFAULT: i32 = 0x8000_0000u32 as i32;
 const SW_SHOW: i32 = 5;
 const IDC_ARROW: *const c_void = 32512 as *const c_void; // MAKEINTRESOURCE 标准箭头光标
 const BLACK_BRUSH_RGB: u32 = 0x0000_0000; // mpv 铺满前防花屏的黑底
+// SetWindowPos 标志（winuser.h 冻结值）：全屏切换只改几何与框架，不动 z-order
+const SWP_NOZORDER: u32 = 0x0004;
+const SWP_FRAMECHANGED: u32 = 0x0020;
+// GetWindowLongPtrW 索引与 MonitorFromWindow 缺省值（winuser.h 冻结值）
+const GWL_STYLE: i32 = -16;
+const GWL_HWNDPARENT: i32 = -8;
+const MONITOR_DEFAULTTONEAREST: u32 = 2;
 
 /// 播放窗类名（注册一次）；UTF-16 字面量含 NUL，单测锁定。
 pub(crate) const CLASS_NAME_WIDE: &[u16] = &[
@@ -35,6 +45,24 @@ pub(crate) const CLASS_NAME_WIDE: &[u16] = &[
 struct Point {
     x: i32,
     y: i32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct Rect {
+    left: i32,
+    top: i32,
+    right: i32,
+    bottom: i32,
+}
+
+/// MONITORINFOW（winuser.h；rcMonitor=整屏物理矩形，全屏切换落位用）
+#[repr(C)]
+struct MonitorInfoW {
+    cb_size: u32,
+    rc_monitor: Rect,
+    rc_work: Rect,
+    dw_flags: u32,
 }
 
 #[repr(C)]
@@ -94,6 +122,15 @@ extern "system" {
     fn PostQuitMessage(code: i32);
     fn DefWindowProcW(hwnd: Hwnd, msg: u32, wparam: Wparam, lparam: Lparam) -> Lresult;
     fn LoadCursorW(instance: *mut c_void, cursor: *const c_void) -> *mut c_void;
+    fn GetClientRect(hwnd: Hwnd, rect: *mut Rect) -> i32;
+    fn ClientToScreen(hwnd: Hwnd, pt: *mut Point) -> i32;
+    fn GetWindowRect(hwnd: Hwnd, rect: *mut Rect) -> i32;
+    // 64 位 Windows 用 *PtrW 变体（GWL_HWNDPARENT/GWL_STYLE 索引值不受位宽影响）
+    fn GetWindowLongPtrW(hwnd: Hwnd, index: i32) -> isize;
+    fn SetWindowLongPtrW(hwnd: Hwnd, index: i32, value: isize) -> isize;
+    fn SetWindowPos(hwnd: Hwnd, after: Hwnd, x: i32, y: i32, cx: i32, cy: i32, flags: u32) -> i32;
+    fn MonitorFromWindow(hwnd: Hwnd, flags: u32) -> Hwnd;
+    fn GetMonitorInfoW(monitor: Hwnd, info: *mut MonitorInfoW) -> i32;
 }
 
 #[link(name = "gdi32")]
@@ -106,13 +143,19 @@ pub(crate) fn to_wide_nul(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
-/// WndProc：只认 WM_CLOSE（默认行为=DestroyWindow→WM_DESTROY→WM_QUIT），
-/// 其余全交 DefWindowProc。窗口不承载任何业务状态（mpv 状态在线程栈上）。
+/// WndProc：WM_DESTROY（默认行为=DestroyWindow→WM_DESTROY→WM_QUIT）+
+/// WM_WINDOWPOSCHANGED（几何变化→控制层同步钩子，overlay.rs），其余全交
+/// DefWindowProc（WM_WINDOWPOSCHANGED 必须放行，否则 WM_SIZE/WM_MOVE 不再生成）。
+/// 窗口不承载任何业务状态（mpv 状态在线程栈上）；钩子内禁 panic（FFI 边界禁 unwind）。
 unsafe extern "system" fn wnd_proc(hwnd: Hwnd, msg: u32, wparam: Wparam, lparam: Lparam) -> Lresult {
     match msg {
         WM_DESTROY => {
             unsafe { PostQuitMessage(0) };
             0
+        }
+        WM_WINDOWPOSCHANGED => {
+            super::overlay::sync_geometry();
+            unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
         }
         _ => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
     }
@@ -183,6 +226,106 @@ pub(crate) fn set_window_title(hwnd: Hwnd, title: &str) {
 pub(crate) fn destroy_window(hwnd: Hwnd) {
     // SAFETY: 仅窗口所属线程调用（player.rs 线程纪律）；已销毁时返回 0 忽略
     unsafe { DestroyWindow(hwnd) };
+}
+
+/// 客户区左上角屏幕坐标 + 客户区尺寸（物理像素）。控制层覆盖客户区（标题栏留给
+/// 系统），返回 None=读取失败（窗口已销毁等），调用方跳过本次同步。
+pub(crate) fn client_screen_rect(hwnd: Hwnd) -> Option<(i32, i32, i32, i32)> {
+    let mut rc = Rect { left: 0, top: 0, right: 0, bottom: 0 };
+    // SAFETY: rect 为合法缓冲；hwnd 为有效窗口或返回 0
+    if unsafe { GetClientRect(hwnd, &mut rc) } == 0 {
+        return None;
+    }
+    let mut pt = Point { x: rc.left, y: rc.top };
+    // SAFETY: pt 为合法缓冲；ClientToScreen 原地换算
+    if unsafe { ClientToScreen(hwnd, &mut pt) } == 0 {
+        return None;
+    }
+    Some((pt.x, pt.y, rc.right - rc.left, rc.bottom - rc.top))
+}
+
+/// 把窗口归属到 owner（GWL_HWNDPARENT，SetWindowLongPtrW 文档口径）：控制层获得
+/// owned 语义——永在播放窗之上、随播放窗最小化/销毁，z-order 无需再管理。
+/// 仅在主线程创建控制层后调用（两个窗口的 Win32 调用都在各自属主线程上）。
+pub(crate) fn set_window_owner(hwnd: Hwnd, owner: Hwnd) {
+    // SAFETY: hwnd 为刚创建的有效窗口；GWL_HWNDPARENT 是文档许可的 owner 修改途径
+    unsafe { SetWindowLongPtrW(hwnd, GWL_HWNDPARENT, owner as isize) };
+}
+
+/// 全屏切换的还原存根（仅播放窗线程读写；Option=当前是否处于全屏态）
+static FULLSCREEN_RESTORE: Mutex<Option<(isize, Rect)>> = Mutex::new(None);
+
+/// 播放窗全屏/还原（控制层双击与全屏按钮共用）：
+/// 进=剥掉 OVERLAPPEDWINDOW 换 WS_POPUP 落到显示器整屏矩形；出=原样恢复
+/// 样式与窗口矩形。SWP_FRAMECHANGED 让框架重算（边框显隐生效）。
+pub(crate) fn toggle_fullscreen(hwnd: Hwnd) {
+    let mut restore = match FULLSCREEN_RESTORE.lock() {
+        Ok(g) => g,
+        Err(_) => return, // 锁中毒：静默跳过（状态可能已不一致，防 panic 扩散）
+    };
+    match *restore {
+        None => {
+            // SAFETY: hwnd 为本线程创建的有效窗口；各缓冲为合法结构
+            let style = unsafe { GetWindowLongPtrW(hwnd, GWL_STYLE) };
+            let mut rc = Rect { left: 0, top: 0, right: 0, bottom: 0 };
+            if unsafe { GetWindowRect(hwnd, &mut rc) } == 0 {
+                return;
+            }
+            let mut mi = MonitorInfoW {
+                cb_size: std::mem::size_of::<MonitorInfoW>() as u32,
+                rc_monitor: Rect { left: 0, top: 0, right: 0, bottom: 0 },
+                rc_work: Rect { left: 0, top: 0, right: 0, bottom: 0 },
+                dw_flags: 0,
+            };
+            // SAFETY: monitor 句柄来自 MonitorFromWindow；mi 为合法缓冲
+            let monitor = unsafe { MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) };
+            if unsafe { GetMonitorInfoW(monitor, &mut mi) } == 0 {
+                return;
+            }
+            unsafe {
+                SetWindowLongPtrW(
+                    hwnd,
+                    GWL_STYLE,
+                    (style & !(WS_OVERLAPPEDWINDOW as isize)) | WS_POPUP as isize,
+                );
+                SetWindowPos(
+                    hwnd,
+                    std::ptr::null_mut(),
+                    mi.rc_monitor.left,
+                    mi.rc_monitor.top,
+                    mi.rc_monitor.right - mi.rc_monitor.left,
+                    mi.rc_monitor.bottom - mi.rc_monitor.top,
+                    SWP_NOZORDER | SWP_FRAMECHANGED,
+                );
+            }
+            *restore = Some((style, rc));
+        }
+        Some((style, rc)) => {
+            // SAFETY: 还原路径，样式/矩形均为本函数此前保存的原值
+            unsafe {
+                SetWindowLongPtrW(hwnd, GWL_STYLE, style);
+                SetWindowPos(
+                    hwnd,
+                    std::ptr::null_mut(),
+                    rc.left,
+                    rc.top,
+                    rc.right - rc.left,
+                    rc.bottom - rc.top,
+                    SWP_NOZORDER | SWP_FRAMECHANGED,
+                );
+            }
+            *restore = None;
+        }
+    }
+}
+
+/// 全屏还原存根随会话清理（player.rs run 清理序调用）：存根是进程级 static，
+/// 不清会把本会话的窗口样式/矩形残留到下一会话——新会话首次全屏切换会被
+/// 错误地走「还原」分支瞬移到旧几何（对抗复核 2.2①）。
+pub(crate) fn reset_fullscreen_restore() {
+    if let Ok(mut restore) = FULLSCREEN_RESTORE.lock() {
+        *restore = None;
+    }
 }
 
 /// 消息泵抽干一次队列；返回 true 表示收到 WM_QUIT（窗口已关，应退出播放循环）。

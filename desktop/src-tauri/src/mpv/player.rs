@@ -8,12 +8,13 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 
 use serde::Serialize;
+use tauri::{AppHandle, Wry};
 
 use super::ffi::{
     MpvEventProperty, MpvLib, MPV_ERROR_SUCCESS, MPV_EVENT_NONE, MPV_EVENT_PROPERTY_CHANGE,
     MPV_EVENT_SHUTDOWN, MPV_FORMAT_DOUBLE, MPV_FORMAT_FLAG, MPV_FORMAT_INT64,
 };
-use super::win32;
+use super::{overlay, win32};
 
 /// 播放窗初始尺寸（产品口径：1280×720，可缩放无下限）
 const PLAYER_WINDOW_WIDTH: i32 = 1280;
@@ -38,8 +39,14 @@ const PROP_PAUSE: &CStr = c"pause";
 const PROP_EOF: &CStr = c"eof-reached";
 const PROP_START: &CStr = c"start";
 const PROP_SPEED: &CStr = c"speed";
+const PROP_VOLUME: &CStr = c"volume";
+const PROP_MUTE: &CStr = c"mute";
+/// mpv 音量属性上限（mpv max-volume 默认值，音量命令与钳制共用）
+pub(crate) const MPV_VOLUME_MAX: f64 = 130.0;
 
-/// 播放状态快照（web 轮询消费；序列化字段名即 invoke 返回的 JSON 键）。
+/// 播放状态快照（web/控制层轮询消费；序列化字段名即 invoke 返回的 JSON 键）。
+/// speed/volume/muted 为 C4.5 控制层新增观察项，web 侧 NativePollStatus 只声明
+/// 既有四字段、多余字段忽略（结构化子集，向后兼容）。
 #[derive(Clone, Debug, Serialize)]
 pub struct MpvStatus {
     /// 当前播放位置（秒；mpv time-pos）
@@ -50,6 +57,12 @@ pub struct MpvStatus {
     pub paused: bool,
     /// 是否播完（mpv eof-reached；keep-open 下停帧不清屏）
     pub eof: bool,
+    /// 倍速（mpv speed）
+    pub speed: f64,
+    /// 音量（mpv volume，0~130）
+    pub volume: f64,
+    /// 是否静音（mpv mute）
+    pub muted: bool,
 }
 
 /// 会话内状态缓存：仅播放线程写（PROPERTY_CHANGE 驱动），命令线程读。
@@ -59,6 +72,9 @@ struct StatusInner {
     duration: f64,
     paused: bool,
     eof: bool,
+    speed: f64,
+    volume: f64,
+    muted: bool,
 }
 
 /// 播放命令（commands.rs → 线程）。
@@ -74,11 +90,18 @@ pub(crate) enum Cmd {
     Seek(f64),
     /// 倍速
     Speed(f64),
+    /// 音量（0~MPV_VOLUME_MAX，外部超界值在线程侧钳制）
+    Volume(f64),
+    /// 静音开关
+    Mute(bool),
+    /// 播放窗全屏/还原（win32 toggle_fullscreen；mpv wid 模式下全屏由嵌入方负责）
+    ToggleFullscreen,
     /// 关闭会话（窗口+mpv 一并清干净）
     Quit,
 }
 
-/// web 轮询的控制动作字面量（与 video-player.tsx 侧调用对齐，双写须同步）。
+/// web/控制层轮询的控制动作字面量（与 video-player.tsx / player-controls.html
+/// 侧调用对齐，双写须同步）。
 pub(crate) fn parse_action(action: &str, value: f64) -> Option<Cmd> {
     match action {
         "pause" => Some(Cmd::Pause(true)),
@@ -86,8 +109,20 @@ pub(crate) fn parse_action(action: &str, value: f64) -> Option<Cmd> {
         "toggle-pause" => Some(Cmd::TogglePause),
         "seek" => Some(Cmd::Seek(value)),
         "speed" => Some(Cmd::Speed(value)),
+        "volume" => Some(Cmd::Volume(value)),
+        "mute" => Some(Cmd::Mute(value != 0.0)),
+        "toggle-fullscreen" => Some(Cmd::ToggleFullscreen),
         _ => None,
     }
+}
+
+/// 音量钳制：NaN 视为不可解释置 0；±∞/越界值收进 0..=MPV_VOLUME_MAX
+/// （+∞=拉满比静音更符合操作直觉，clamp 对 ±∞ 语义天然正确）。
+fn clamp_volume(v: f64) -> f64 {
+    if v.is_nan() {
+        return 0.0;
+    }
+    v.clamp(0.0, MPV_VOLUME_MAX)
 }
 
 /// 起点秒 → mpv start 选项串；非法值（≤0/NaN）返回 None=从头播。
@@ -111,15 +146,16 @@ pub(crate) struct MpvSession {
 }
 
 impl MpvSession {
-    pub(crate) fn spawn(initial: Cmd) -> Result<MpvSession, String> {
+    pub(crate) fn spawn(app: AppHandle<Wry>, initial: Cmd) -> Result<MpvSession, String> {
         let lib = MpvLib::load()?;
         let (tx, rx) = mpsc::channel::<Cmd>();
         let status = Arc::new(Mutex::new(None::<StatusInner>));
         let status_for_thread = Arc::clone(&status);
-        // 窗口/窗口类/消息泵都在本线程——窗与 mpv 同生命周期（见 win32.rs 头注）
+        // 窗口/窗口类/消息泵都在本线程——窗与 mpv 同生命周期（见 win32.rs 头注）；
+        // 控制层窗在主线程创建（Tauri 窗口纪律），经 overlay::attach 跨线程排程
         std::thread::Builder::new()
             .name("qimeng-mpv".into())
-            .spawn(move || run(lib, rx, status_for_thread, initial))
+            .spawn(move || run(app, lib, rx, status_for_thread, initial))
             .map_err(|e| format!("播放线程启动失败：{e}"))?;
         Ok(MpvSession { tx, status })
     }
@@ -136,12 +172,21 @@ impl MpvSession {
             duration: s.duration,
             paused: s.paused,
             eof: s.eof,
+            speed: s.speed,
+            volume: s.volume,
+            muted: s.muted,
         })
     }
 }
 
-/// 播放线程主体：建窗 → 初始化 mpv（wid 嵌入）→ 循环（命令/消息/事件）→ 统一清理。
-fn run(lib: &'static MpvLib, rx: mpsc::Receiver<Cmd>, status: Arc<Mutex<Option<StatusInner>>>, initial: Cmd) {
+/// 播放线程主体：建窗 → 控制层挂接 → 初始化 mpv（wid 嵌入）→ 循环 → 统一清理。
+fn run(
+    app: AppHandle<Wry>,
+    lib: &'static MpvLib,
+    rx: mpsc::Receiver<Cmd>,
+    status: Arc<Mutex<Option<StatusInner>>>,
+    initial: Cmd,
+) {
     // 首命令必须是 Load（mpv_open 保证）；其余命令在窗口就绪前被线程排队消费
     let first_load = match initial {
         Cmd::Load { url, title, start } => Some((url, title, start)),
@@ -163,11 +208,16 @@ fn run(lib: &'static MpvLib, rx: mpsc::Receiver<Cmd>, status: Arc<Mutex<Option<S
             return;
         }
     };
+    // 控制层（C4.5）：挂接失败只降级（无控制层，mpv 键盘/OSC 兜底），不阻断播放；
+    // 代数供清理序 detach 精确回收本会话的控制层窗
+    let overlay_gen = overlay::attach(&app, hwnd);
 
     // SAFETY: create 返回新句柄；play_loop 与本函数全程持有，尾处 terminate_destroy
     let handle = unsafe { (lib.create)() };
     if handle.is_null() {
         eprintln!("[qimeng-mpv] mpv_create 失败");
+        win32::reset_fullscreen_restore();
+        overlay::detach(overlay_gen);
         win32::destroy_window(hwnd);
         return;
     }
@@ -176,7 +226,12 @@ fn run(lib: &'static MpvLib, rx: mpsc::Receiver<Cmd>, status: Arc<Mutex<Option<S
         eprintln!("[qimeng-mpv] 播放循环异常退出：{e}");
     }
     // —— 清理顺序：先关窗（mpv 的 wid 子窗随父销毁，画面即刻消失），再释放 mpv ——
+    // 控制层与播放窗同生命周期：一并摘钩子关窗（用户 Alt-F4 关控制层路径经
+    // main.rs 窗口事件反向回收会话，此处是正向回收）；全屏还原存根随会话清零，
+    // 防跨会话残留把新会话首次全屏切换错走还原分支（对抗复核 2.2①）
+    overlay::detach(overlay_gen);
     win32::destroy_window(hwnd);
+    win32::reset_fullscreen_restore();
     // SAFETY: 本线程是句柄创建者；此刻播放循环已退出，无并发 mpv 调用
     unsafe { (lib.terminate_destroy)(handle) };
     *status.lock().expect("status 锁中毒") = None;
@@ -208,6 +263,9 @@ fn play_loop(
             (1u64, PROP_DURATION, MPV_FORMAT_DOUBLE),
             (2u64, PROP_PAUSE, MPV_FORMAT_FLAG),
             (3u64, PROP_EOF, MPV_FORMAT_FLAG),
+            (4u64, PROP_SPEED, MPV_FORMAT_DOUBLE),
+            (5u64, PROP_VOLUME, MPV_FORMAT_DOUBLE),
+            (6u64, PROP_MUTE, MPV_FORMAT_FLAG),
         ] {
             check(lib, (lib.observe_property)(handle, idx, name.as_ptr(), fmt))?;
         }
@@ -243,6 +301,15 @@ fn play_loop(
                     check(lib, (lib.set_property)(handle, PROP_SPEED.as_ptr(), MPV_FORMAT_DOUBLE, &v as *const f64 as *mut c_void))?;
                 }
             }
+            Ok(Cmd::Volume(v)) => {
+                let v = clamp_volume(v);
+                // SAFETY: DOUBLE 格式数据是 f64
+                unsafe {
+                    check(lib, (lib.set_property)(handle, PROP_VOLUME.as_ptr(), MPV_FORMAT_DOUBLE, &v as *const f64 as *mut c_void))?;
+                }
+            }
+            Ok(Cmd::Mute(m)) => set_flag(lib, handle, PROP_MUTE, m)?,
+            Ok(Cmd::ToggleFullscreen) => win32::toggle_fullscreen(hwnd),
             Err(mpsc::RecvTimeoutError::Timeout) => {}
             Err(mpsc::RecvTimeoutError::Disconnected) => break, // 会话句柄被丢弃=退出
         }
@@ -367,6 +434,21 @@ fn update_status(status: &Mutex<Option<StatusInner>>, prop: &MpvEventProperty) {
                 slot.eof = *v != 0;
             }
         },
+        ("speed", MPV_FORMAT_DOUBLE) => unsafe {
+            if let Some(v) = (prop.data as *const f64).as_ref() {
+                slot.speed = *v;
+            }
+        },
+        ("volume", MPV_FORMAT_DOUBLE) => unsafe {
+            if let Some(v) = (prop.data as *const f64).as_ref() {
+                slot.volume = *v;
+            }
+        },
+        ("mute", MPV_FORMAT_FLAG) => unsafe {
+            if let Some(v) = (prop.data as *const i32).as_ref() {
+                slot.muted = *v != 0;
+            }
+        },
         _ => {}
     }
 }
@@ -382,6 +464,10 @@ mod tests {
         assert!(matches!(parse_action("toggle-pause", 0.0), Some(Cmd::TogglePause)));
         assert!(matches!(parse_action("seek", 12.5), Some(Cmd::Seek(v)) if v == 12.5));
         assert!(matches!(parse_action("speed", 2.0), Some(Cmd::Speed(v)) if v == 2.0));
+        assert!(matches!(parse_action("volume", 80.0), Some(Cmd::Volume(v)) if v == 80.0));
+        assert!(matches!(parse_action("mute", 1.0), Some(Cmd::Mute(true))));
+        assert!(matches!(parse_action("mute", 0.0), Some(Cmd::Mute(false))));
+        assert!(matches!(parse_action("toggle-fullscreen", 0.0), Some(Cmd::ToggleFullscreen)));
         assert!(parse_action("unknown", 0.0).is_none());
     }
 
@@ -391,5 +477,15 @@ mod tests {
         assert_eq!(format_start(-3.0), None);
         assert_eq!(format_start(f64::NAN), None);
         assert_eq!(format_start(12.5), Some("12.5".to_string()));
+    }
+
+    #[test]
+    fn clamp_volume_bounds_and_defense() {
+        assert_eq!(clamp_volume(80.0), 80.0);
+        assert_eq!(clamp_volume(0.0), 0.0);
+        assert_eq!(clamp_volume(-1.0), 0.0);
+        assert_eq!(clamp_volume(f64::NAN), 0.0);
+        assert_eq!(clamp_volume(f64::INFINITY), MPV_VOLUME_MAX);
+        assert_eq!(clamp_volume(999.0), MPV_VOLUME_MAX);
     }
 }
