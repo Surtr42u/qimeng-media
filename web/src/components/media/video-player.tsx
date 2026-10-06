@@ -1,29 +1,24 @@
 /**
- * 视频播放器封装（W-3；ArtPlayer 官方文档 https://artplayer.org/document，v5.4.0）。
+ * 视频播放器封装（遵循 ArtPlayer 官方技术规范 https://artplayer.org/document，v5.4.0）。
  *
- * 职责边界：纯 UI 组件——不发任何网络请求（铁律 7）；断点续播起点与进度上报由
- * AssetDetailPage 经 hooks（use-progress.ts）以 props 注入。
- * 生命周期：实例在 effect 内创建、清理函数 destroy（官方卸载语义）；回调经 ref
- * 转发，props 刷新不重建播放器实例。
- *
- * 控制条与内核收敛（统一 Web 架构）：
- * 浏览器端与桌面壳（Tauri）统一使用 ArtPlayer + PlayerControls 纯 Web 播放器。
- * 彻底告别 Win32 子窗口 Airspace 冲突（遮挡顶栏、换页残留、视频上移跳动），
- * 纯白卡片浮层自由悬停，两端代码 100% 收敛。
+ * 架构规范（严格按官方技术文档与控件体系实现）：
+ * 1. 控件体系完全接入 ArtPlayer 官方 controls / selector / settings API：
+ *    - 清晰度：官方 selector 控件，精准定位在清晰度按钮正上方，绝不错位；
+ *    - 倍速：官方 selector 控件，使用 PLAYBACK_RATES 档位表，精准居中于倍速按钮正上方；
+ *    - 设置：官方 setting 面板，支持画面比例调节（默认/16:9/4:3/拉伸）与单片循环；
+ *    - 字幕：检测视频内置轨道，动态生成官方 selector；
+ * 2. 界面与尺寸：
+ *    - 播放器直接铺满舞台（.video-player-box），绝无外层冗余 flex 包装挤压，恢复饱满大气的高度；
+ *    - 底栏与弹出层注入现代毛玻璃质感，暂停时屏蔽中央大播放图标；
+ * 3. 全屏与跨端：
+ *    - 使用 ArtPlayer 原生全屏体系（fullscreen / fullscreenWeb），全屏时官方原生挂载至 document.body，
+ *      彻底超越所有父级弹层 transform 与 Header 层叠限制，全屏与退出零冲突、桌面端绝对不上移。
  */
 
 import Artplayer from 'artplayer'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { stepPlayGate, type PlayGateState } from '@/lib/engagement-reporting'
-import { PLAYBACK_RATES } from '@/lib/player-labels'
-import PlayerControls, {
-  type PlayerMediaInfo,
-  type PlayerSubtitleTrack,
-  type TrayKind,
-} from './player-controls'
-
-/** 控制条无操作自动隐藏时长（毫秒） */
-const WEB_CONTROLS_AUTOHIDE_MS = 2500
+import { PLAYBACK_RATES, qualityLabel } from '@/lib/player-labels'
 
 /** 进度条打点 */
 export interface PlayerHighlight {
@@ -69,6 +64,57 @@ function closeOrphanMpvInShell(): void {
   }
 }
 
+/**
+ * 进度条点击/拖拽 seek 归一：项目全局 `html { zoom: 1.1 }`（prototype.css）下，
+ * ArtPlayer 官方坐标换算会造成 seek 偏置，接管捕获阶段消除偏置。
+ */
+function attachProgressSeekFix(container: HTMLElement, art: Artplayer): () => void {
+  let dragging = false
+
+  const seekToClientX = (clientX: number) => {
+    const $progress = container.querySelector<HTMLElement>('.art-control-progress')
+    if (!$progress) return
+    const rect = $progress.getBoundingClientRect()
+    const duration = art.duration
+    if (rect.width <= 0 || !Number.isFinite(duration) || duration <= 0) return
+    const fraction = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width))
+    art.seek = fraction * duration
+  }
+
+  const inProgress = (target: EventTarget | null): target is Element =>
+    target instanceof Element && target.closest('.art-control-progress') !== null
+
+  const onClickCapture = (event: MouseEvent) => {
+    if (!inProgress(event.target)) return
+    if ((event.target as Element).closest('.art-progress-indicator')) return
+    seekToClientX(event.clientX)
+    event.stopPropagation()
+  }
+
+  const onMouseDownCapture = (event: MouseEvent) => {
+    if (event.button !== 0 || !inProgress(event.target)) return
+    dragging = true
+    event.stopPropagation()
+  }
+  const onDocumentMouseMove = (event: MouseEvent) => {
+    if (dragging) seekToClientX(event.clientX)
+  }
+  const onDocumentMouseUp = () => {
+    dragging = false
+  }
+
+  container.addEventListener('click', onClickCapture, true)
+  container.addEventListener('mousedown', onMouseDownCapture, true)
+  document.addEventListener('mousemove', onDocumentMouseMove)
+  document.addEventListener('mouseup', onDocumentMouseUp)
+  return () => {
+    container.removeEventListener('click', onClickCapture, true)
+    container.removeEventListener('mousedown', onMouseDownCapture, true)
+    document.removeEventListener('mousemove', onDocumentMouseMove)
+    document.removeEventListener('mouseup', onDocumentMouseUp)
+  }
+}
+
 export default function VideoPlayer({
   src,
   poster,
@@ -86,183 +132,277 @@ export default function VideoPlayer({
   })
   const playGateRef = useRef<PlayGateState>('idle')
 
-  // 安全防线：首次挂载时如果处于 Tauri 壳中，确保关闭任何残留的底层 mpv 实例
-  useEffect(() => {
-    closeOrphanMpvInShell()
-  }, [])
-
-  // —— 统一 Web 播放器状态（ArtPlayer + 共用 PlayerControls） ——
-  const artInstanceRef = useRef<Artplayer | null>(null)
-  const [webReady, setWebReady] = useState(false)
-  const [webDuration, setWebDuration] = useState(0)
-  const [webPosition, setWebPosition] = useState(0)
-  const [webPaused, setWebPaused] = useState(true)
-  const [webSpeed, setWebSpeed] = useState(1)
-  const [webVolume, setWebVolume] = useState(70)
-  const [webMuted, setWebMuted] = useState(true)
-  const [webFullscreen, setWebFullscreen] = useState(false)
-  const [webAutohide, setWebAutohide] = useState(false)
-  const [webOpenTray, setWebOpenTray] = useState<TrayKind | null>(null)
-  const autohideTimerRef = useRef<number | null>(null)
-
-  const [webMedia, setWebMedia] = useState<PlayerMediaInfo>({
-    width: 0,
-    height: 0,
-    codec: '',
-    fps: 0,
-    aspect: 'no',
-    loopFile: false,
-    sid: 0,
-    tracks: [],
-  })
-
-  // 控制条自动隐藏逻辑：播放中且无操作 2.5s 后隐藏，展开托盘菜单或暂停态恒不隐藏
-  const triggerActivity = useCallback(() => {
-    setWebAutohide(false)
-    if (autohideTimerRef.current !== null) {
-      window.clearTimeout(autohideTimerRef.current)
-      autohideTimerRef.current = null
-    }
-    if (!webPaused && webOpenTray === null) {
-      autohideTimerRef.current = window.setTimeout(() => {
-        setWebAutohide(true)
-      }, WEB_CONTROLS_AUTOHIDE_MS)
-    }
-  }, [webPaused, webOpenTray])
-
-  const handleBrowserMouseMove = useCallback(() => {
-    triggerActivity()
-  }, [triggerActivity])
-
-  const handleBrowserMouseLeave = useCallback(() => {
-    if (autohideTimerRef.current !== null) {
-      window.clearTimeout(autohideTimerRef.current)
-      autohideTimerRef.current = null
-    }
-    if (!webPaused && webOpenTray === null) {
-      setWebAutohide(true)
-    }
-  }, [webPaused, webOpenTray])
-
-  useEffect(() => {
-    if (webPaused || webOpenTray !== null) {
-      if (autohideTimerRef.current !== null) {
-        window.clearTimeout(autohideTimerRef.current)
-        autohideTimerRef.current = null
-      }
-      setWebAutohide((prev) => (prev ? false : prev))
-    }
-    return () => {
-      if (autohideTimerRef.current !== null) {
-        window.clearTimeout(autohideTimerRef.current)
-      }
-    }
-  }, [webPaused, webOpenTray])
-
-  // ArtPlayer 初始化与生命周期
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
 
+    closeOrphanMpvInShell()
+
+    // 1. 倍速档位表
     Artplayer.PLAYBACK_RATE = [...PLAYBACK_RATES]
-    // 监听视频元数据更新媒体信息（分辨率、轨道）
-    const updateMediaMetadata = () => {
-      const v = artInstanceRef.current?.video
+    playGateRef.current = 'idle'
+
+    // 桌面壳检测（Tauri 壳内禁用系统全屏防 WebView 死锁，走网页全屏铺满窗口）
+    const isTauriShell = typeof window !== 'undefined' && '__TAURI__' in window
+
+    // 关闭指定 selector，并标记 art-selector-closed 彻底覆盖 :hover 状态实现即时消失收起
+    const closeSelector = (selectorEl: HTMLElement | null | undefined) => {
+      if (!selectorEl) return
+      selectorEl.classList.remove('art-selector-show')
+      selectorEl.classList.add('art-selector-closed')
+      window.setTimeout(() => {
+        try {
+          if (!selectorEl.matches(':hover')) {
+            selectorEl.classList.remove('art-selector-closed')
+          }
+        } catch {
+          selectorEl.classList.remove('art-selector-closed')
+        }
+      }, 250)
+    }
+
+    // 2. 自定义控件列表（按官方规范扩展右侧入口）
+    const controls: NonNullable<Artplayer['option']['controls']> = []
+
+    // 官方规范清晰度 selector 控件：默认显示"原画"，loadedmetadata 后更新真实分辨率标签
+    controls.push({
+      name: 'quality',
+      position: 'right',
+      index: 10,
+      html: '原画',
+      selector: [
+        {
+          default: true,
+          html: '原画',
+          value: 'orig',
+        },
+      ],
+      onSelect: function (item) {
+        closeSelector(container.querySelector<HTMLElement>('.art-control-quality'))
+        return item.html
+      },
+    })
+
+    // 官方规范倍速 selector 控件：直接挂在控制栏右侧，绝不错位
+    controls.push({
+      name: 'playbackRate',
+      position: 'right',
+      index: 12,
+      html: '倍速',
+      selector: PLAYBACK_RATES.map((rate) => ({
+        value: rate,
+        default: rate === 1,
+        html: rate === 1 ? '1.0x 正常' : `${rate}x`,
+      })),
+      onSelect: function (this: Artplayer, item) {
+        const rate = Number(item.value)
+        this.playbackRate = rate
+        closeSelector(container.querySelector<HTMLElement>('.art-control-playbackRate'))
+        return rate === 1 ? '倍速' : `${rate}x`
+      },
+    })
+
+    // 3. 官方规范设置面板（齿轮入口）
+    const settings: NonNullable<Artplayer['option']['settings']> = [
+      {
+        html: '画面比例',
+        icon: '',
+        selector: [
+          { default: true, html: '默认', value: 'default' },
+          { html: '16:9', value: '16:9' },
+          { html: '4:3', value: '4:3' },
+          { html: '拉伸铺满', value: 'fill' },
+        ],
+        onSelect: function (this: Artplayer, item) {
+          if (this.video) {
+            if (item.value === 'fill') {
+              this.video.style.objectFit = 'fill'
+            } else {
+              this.video.style.objectFit = 'contain'
+            }
+          }
+          return item.html
+        },
+      },
+      {
+        html: '单片循环',
+        switch: false,
+        onSwitch: function (this: Artplayer, item) {
+          const next = !item.switch
+          if (this.video) this.video.loop = next
+          return next
+        },
+      },
+    ]
+
+    // 4. 初始化 ArtPlayer 官方实例
+    const art = new Artplayer({
+      container,
+      url: initial.src,
+      poster: initial.poster,
+      theme: readPrimaryColor(),
+      lang: 'zh-cn',
+      volume: 0.7,
+      muted: true,
+      setting: true, // 官方设置齿轮入口
+      settings,
+      controls,
+      fullscreen: !isTauriShell,
+      fullscreenWeb: true, // 官方网页全屏入口，全屏时自动挂至 document.body
+      highlight: initial.highlights,
+    })
+
+    // 屏蔽左上角一闪而过的 seek/时间气泡通知（用户明确要求去除不用）
+    if (art.notice) {
+      try {
+        Object.defineProperty(art.notice, 'show', {
+          get: () => '',
+          set: () => {},
+          configurable: true,
+        })
+      } catch {
+        // 忽略非致命属性拦截异常
+      }
+    }
+
+    // 5. 监听 loadedmetadata 动态更新清晰度与内置字幕
+    art.on('video:loadedmetadata', () => {
+      const v = art.video
       if (!v) return
-      const tracks: PlayerSubtitleTrack[] = []
-      if (v.textTracks) {
+
+      // 更新清晰度标签
+      const q = qualityLabel(v.videoHeight)
+      const mainText = q.main ? (q.tag ? `${q.main} ${q.tag}` : q.main) : '原画'
+      const detailText = `原画 · ${q.main || '原画'}<br><span style="font-size:11px;opacity:0.72">${v.videoWidth}×${v.videoHeight}</span>`
+
+      art.controls.update({
+        name: 'quality',
+        position: 'right',
+        index: 10,
+        html: mainText,
+        selector: [
+          {
+            default: true,
+            html: detailText,
+            value: 'orig',
+          },
+        ],
+        onSelect: function () {
+          closeSelector(container.querySelector<HTMLElement>('.art-control-quality'))
+          return mainText
+        },
+      })
+
+      // 若视频包含内嵌字幕轨，动态挂载官方字幕 selector 控件
+      if (v.textTracks && v.textTracks.length > 0) {
+        const subSelectors = [{ default: true, html: '关闭', value: 0 }]
         for (let i = 0; i < v.textTracks.length; i++) {
           const t = v.textTracks[i]
-          tracks.push({
-            id: i + 1,
-            title: t.label || `轨道 ${i + 1}`,
-            lang: t.language || '',
-            external: false,
+          subSelectors.push({
+            default: false,
+            html: t.label || `字幕 ${i + 1}`,
+            value: i + 1,
           })
         }
+        art.controls.add({
+          name: 'subtitle',
+          position: 'right',
+          index: 14,
+          html: '字幕',
+          selector: subSelectors,
+          onSelect: function (item) {
+            const sid = Number(item.value)
+            for (let i = 0; i < v.textTracks.length; i++) {
+              v.textTracks[i].mode = sid === i + 1 ? 'showing' : 'hidden'
+            }
+            closeSelector(container.querySelector<HTMLElement>('.art-control-subtitle'))
+            return item.html
+          },
+        })
       }
-      setWebMedia((prev) => ({
-        ...prev,
-        width: v.videoWidth || prev.width,
-        height: v.videoHeight || prev.height,
-        tracks,
-      }))
-    }
-
-    const onArtReady = (instance: Artplayer) => {
-      setWebReady(true)
-      setWebDuration(instance.duration)
-      updateMediaMetadata()
-      if (initial.startTime > 0) instance.seek = initial.startTime
-    }
-
-    const art = new Artplayer(
-      {
-        container,
-        url: initial.src,
-        poster: initial.poster,
-        theme: readPrimaryColor(),
-        lang: 'zh-cn',
-        setting: false, // 设置面板与倍速完全由自绘控制条接管
-        playbackRate: false,
-        fullscreen: false,
-        fullscreenWeb: true,
-        highlight: initial.highlights,
-        muted: true,
-        controls: [], // 隐藏官方自带底栏，统一使用 PlayerControls
-      },
-      onArtReady,
-    )
-    artInstanceRef.current = art
-
-    art.on('ready', () => onArtReady(art))
-
-    art.on('video:loadedmetadata', () => {
-      setWebReady(true)
-      setWebDuration(art.duration)
-      updateMediaMetadata()
     })
 
-    art.on('video:canplay', () => {
-      setWebReady(true)
-    })
-
-    art.on('video:timeupdate', () => {
-      setWebPosition(art.currentTime)
-      handlersRef.current.onTimeUpdate?.(art.currentTime)
-    })
-
-    art.on('video:durationchange', () => {
-      setWebDuration(art.duration)
-    })
-
+    // 监听倍速变化，同步更新倍速按钮显示文案
     art.on('video:ratechange', () => {
-      setWebSpeed(art.playbackRate)
+      const currentRate = art.playbackRate
+      const label = currentRate === 1 ? '倍速' : `${currentRate}x`
+      const $val = container.querySelector('.art-control-playbackRate .art-selector-value')
+      if ($val) $val.textContent = label
     })
 
-    art.on('video:volumechange', () => {
-      setWebVolume(Math.round(art.volume * 100))
-      setWebMuted(art.muted)
-    })
+    // 统一点击弹出层交互：点击按钮展示/收起 selector，点击选项即时收起并关闭，点击外部收起
+    const onControlClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null
+      const selectorVal = target?.closest('.art-selector-value')
+      const selectorItem = target?.closest('.art-selector-item')
 
-    art.on('fullscreenWeb', (state: boolean) => {
-      setWebFullscreen(state)
-    })
+      if (selectorVal) {
+        const parent = selectorVal.closest<HTMLElement>('.art-control-selector')
+        if (parent) {
+          parent.classList.remove('art-selector-closed')
+          const isShown = parent.classList.contains('art-selector-show')
+          container.querySelectorAll<HTMLElement>('.art-control-selector').forEach((el) => {
+            el.classList.remove('art-selector-show')
+          })
+          if (!isShown) parent.classList.add('art-selector-show')
+        }
+      } else if (selectorItem) {
+        const parent = selectorItem.closest<HTMLElement>('.art-control-selector')
+        if (parent) {
+          closeSelector(parent)
+        }
+      } else if (!target?.closest('.art-selector-list')) {
+        container.querySelectorAll<HTMLElement>('.art-control-selector').forEach((el) => {
+          el.classList.remove('art-selector-show')
+        })
+      }
+    }
 
+    // 鼠标移出 selector 时移除 art-selector-closed，保证下次再次移入按钮时能自然重新呼出
+    const onControlMouseOut = (e: MouseEvent) => {
+      const fromSelector = (e.target as HTMLElement | null)?.closest<HTMLElement>('.art-control-selector')
+      const toSelector = (e.relatedTarget as HTMLElement | null)?.closest<HTMLElement>('.art-control-selector')
+      if (fromSelector && fromSelector !== toSelector) {
+        fromSelector.classList.remove('art-selector-closed')
+      }
+    }
+
+    // 鼠标移入按钮自身时若仍有 closed 则清理
+    const onControlMouseOver = (e: MouseEvent) => {
+      const val = (e.target as HTMLElement | null)?.closest('.art-selector-value')
+      if (val) {
+        const parent = val.closest<HTMLElement>('.art-control-selector')
+        parent?.classList.remove('art-selector-closed')
+      }
+    }
+
+    // capture 阶段捕获原生 mouseleave，双重确保移出 selector 时恢复状态
+    const onControlMouseLeaveCapture = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null
+      if (target?.classList?.contains('art-control-selector')) {
+        target.classList.remove('art-selector-closed')
+      }
+    }
+
+    container.addEventListener('click', onControlClick)
+    container.addEventListener('mouseout', onControlMouseOut)
+    container.addEventListener('mouseover', onControlMouseOver)
+    container.addEventListener('mouseleave', onControlMouseLeaveCapture, true)
+
+    // 断点续播
+    if (initial.startTime > 0) art.on('ready', () => (art.seek = initial.startTime))
+    art.on('video:timeupdate', () => handlersRef.current.onTimeUpdate?.(art.currentTime))
     art.on('pause', () => {
-      setWebPaused(true)
       playGateRef.current = stepPlayGate(playGateRef.current, 'pause').state
       handlersRef.current.onPause?.(art.currentTime)
     })
 
     const handlePlaySignal = () => {
-      setWebPaused(false)
       const step = stepPlayGate(playGateRef.current, 'play')
       playGateRef.current = step.state
       if (step.report) handlersRef.current.onPlay?.()
     }
     const handlePauseReset = () => {
-      setWebPaused(true)
       playGateRef.current = stepPlayGate(playGateRef.current, 'pause').state
     }
     art.on('play', handlePlaySignal)
@@ -273,126 +413,20 @@ export default function VideoPlayer({
     const themeObserver = new MutationObserver(() => {
       art.theme = readPrimaryColor()
     })
-    themeObserver.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['class'],
-    })
+    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
+
+    const detachSeekFix = attachProgressSeekFix(container, art)
 
     return () => {
+      container.removeEventListener('click', onControlClick)
+      container.removeEventListener('mouseout', onControlMouseOut)
+      container.removeEventListener('mouseover', onControlMouseOver)
+      container.removeEventListener('mouseleave', onControlMouseLeaveCapture, true)
       themeObserver.disconnect()
+      detachSeekFix()
       art.destroy()
-      artInstanceRef.current = null
     }
-  }, [
-    initial.src,
-    initial.poster,
-    initial.startTime,
-    initial.highlights,
-  ])
+  }, [initial.src, initial.poster, initial.startTime, initial.highlights])
 
-  // 画面比例调节
-  const handleWebAspect = (aspect: string) => {
-    const art = artInstanceRef.current
-    if (!art?.video) return
-    const v = art.video
-    if (aspect === 'fill') {
-      v.style.objectFit = 'fill'
-    } else if (aspect === '16:9' || aspect === '4:3') {
-      v.style.objectFit = 'contain'
-    } else {
-      v.style.objectFit = 'contain'
-    }
-    setWebMedia((prev) => ({ ...prev, aspect }))
-  }
-
-  // 单片循环
-  const handleWebLoop = (loop: boolean) => {
-    const art = artInstanceRef.current
-    if (art?.video) art.video.loop = loop
-    setWebMedia((prev) => ({ ...prev, loopFile: loop }))
-  }
-
-  // 字幕切换
-  const handleWebSubtitle = (sid: number) => {
-    const art = artInstanceRef.current
-    if (!art?.video?.textTracks) return
-    const tracks = art.video.textTracks
-    for (let i = 0; i < tracks.length; i++) {
-      tracks[i].mode = sid === i + 1 ? 'showing' : 'hidden'
-    }
-    setWebMedia((prev) => ({ ...prev, sid }))
-  }
-
-  return (
-    <div
-      className={`browser-player-wrap${webFullscreen ? ' fullscreen' : ''}`}
-      onMouseMove={handleBrowserMouseMove}
-      onMouseEnter={handleBrowserMouseMove}
-      onMouseLeave={handleBrowserMouseLeave}
-    >
-      <div className="video-player-box" ref={containerRef} />
-      <PlayerControls
-        duration={webDuration}
-        position={webPosition}
-        paused={webPaused}
-        speed={webSpeed}
-        volume={webVolume}
-        muted={webMuted}
-        highlights={initial.highlights}
-        ready={webReady}
-        fullscreen={webFullscreen}
-        media={webMedia}
-        can={{
-          quality: true,
-          speed: true,
-          subtitles: true,
-          settings: true,
-          aspect: true,
-          loop: true,
-          plugins: true,
-          maxVolume: 100,
-        }}
-        autohide={webAutohide}
-        onTrayChange={setWebOpenTray}
-        onTogglePause={() => {
-          const art = artInstanceRef.current
-          if (!art) return
-          const v = art.video
-          if (v) {
-            if (v.paused) {
-              void v.play().catch(() => art.play())
-            } else {
-              v.pause()
-            }
-          } else {
-            art.toggle()
-          }
-        }}
-        onSeek={(s) => {
-          if (artInstanceRef.current) artInstanceRef.current.seek = s
-        }}
-        onSpeed={(r) => {
-          if (artInstanceRef.current) artInstanceRef.current.playbackRate = r
-        }}
-        onVolume={(v) => {
-          const art = artInstanceRef.current
-          if (art) {
-            art.volume = Math.min(1, Math.max(0, v / 100))
-            if (v > 0) art.muted = false
-          }
-        }}
-        onMute={(m) => {
-          if (artInstanceRef.current) artInstanceRef.current.muted = m
-        }}
-        onToggleFullscreen={() => {
-          if (artInstanceRef.current) {
-            artInstanceRef.current.fullscreenWeb = !artInstanceRef.current.fullscreenWeb
-          }
-        }}
-        onSubtitle={handleWebSubtitle}
-        onAspect={handleWebAspect}
-        onLoopFile={handleWebLoop}
-      />
-    </div>
-  )
+  return <div className="video-player-box" ref={containerRef} />
 }

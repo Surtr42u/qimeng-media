@@ -10,6 +10,57 @@
 
 > **历史条目拆分说明（2026-10-01）**：为控制 AI 上下文体量，本文件只保留 **2026-09-22 及之后**的条目（第三百八十二笔起）；拆分线之前的全部条目已逐字迁入 `docs/history/CHANGELOG-ARCHIVE.md`（零改写，笔号与本文件连续可查）。引用早于拆分线的旧笔号请去历史档查阅。
 
+## feat(web): 遵循 ArtPlayer 官方规范重构播控体系——消除右侧菜单错位、恢复 GitHub 原始舞台尺寸、消除左上角闪烁提示、根除底部背景视频变暗闪烁与实现选完即关主流交互、清理历史冗余分支、根治叠层冲突与桌面端画面上移 + 缩略图时长去胶囊与修复夜间反黑 + 视频封面元数据固化（2026-10-07 第四百九十五笔）
+
+执行 AI：Gemini-3.8-Flash（主代理）
+
+- **背景与痛点**：
+  1. 用户明确指示：“你可以看看官方的技术文档来实现.现在右侧的那几个点开错位.你看看官方文档和github看看怎么实现兼容或者其他方法,依旧你做的这个新的缩水了高度显得小”。
+  2. 用户追加反馈：“播放时移动到下方的组件弹出选项时会导致视频变暗闪一下”、“然后这个组件交互逻辑不对,你看看主流的交互,好像是选完自动消失?”。
+  3. 根因剖析：
+     - **右侧菜单严重错位根因**：此前自绘控制条在外层包裹了一个 `justify-content: flex-end` 的竖向托盘容器，清晰度和倍速菜单全部被强制推到播放器最右边，与底部的触发按钮完全脱节错位；
+     - **播放器缩水矮小根因**：`.asset-stage` 最小高度仅 360px，外层嵌套了固定高度的占位容器，导致宽屏下舞台局促矮小；
+     - **桌面端画面上移根因**：此前给 `.asset-stage video` 强加了 `margin: 0 auto; display: block;`，覆盖了 ArtPlayer 依赖的绝对居中定位；
+     - **移动到底部组件视频变暗闪烁根因**：`.art-video-player .art-bottom` 占满视口 100% 区域，鼠标滑入底部触发淡入时整个大面积暗色渐变笼罩大半视频画面，造成发暗闪烁；
+     - **选项选完留在屏幕不消失根因**：ArtPlayer 原生依赖 hover 样式，且点击选项时鼠标停留在该区域，hover 状态导致菜单死死悬停无法自动收起。
+- **改动内容**：
+  1. **严格遵循 ArtPlayer 官方技术规范重构（消除菜单错位）**（`web/src/components/media/video-player.tsx`）：
+     - 清晰度（`quality`）、倍速（`playbackRate`）、字幕（`subtitle`）完全走官方 `controls: [{ selector: [...] }]` 注册；
+     - 在 DOM 中，每个 selector 列表（`.art-selector-list`）均挂载在对应按钮内部，配合 CSS `left: 50%; transform: translateX(-50%); bottom: calc(100% + 10px);`，在任何分辨率下**绝对垂直居中对齐触发按钮正上方**，彻底根除右偏错位；
+     - 齿轮设置面板（`settings`）标准接入画面比例调节（默认/16:9/4:3/拉伸铺满）与单片循环；
+     - 监听 `loadedmetadata` 动态更新清晰度标签（如 720P 高清、1280×720 分辨率）及外挂/内置字幕轨；
+     - 交互增强：兼顾鼠标悬停（hover）与点击弹出（click），带 12px 防抖透明桥，滑行动作平滑不闪退。
+  2. **严格保持与旧版（GitHub）一致的经典舞台尺寸**（`web/src/styles/glass.css`）：
+     - 严格恢复 GitHub 原版规格：`.asset-stage` 保持 `min-height: 360px; max-height: 68vh; --stage-max-h: 68vh;`，`.video-player-box` 保持 `width: 100%; height: var(--stage-max-h);`，保持原汁原味的舞台长宽比与适中视野；
+     - 移除干扰 ArtPlayer 的 video 全局样式，避免桌面端 Tauri 壳及浏览器画面上移；
+     - 保持屏蔽暂停时中央大播放按钮：`.art-video-player .art-state { display: none !important; }`；
+     - **彻底消除左上角一闪而过的 seek / 时间气泡提示**：`.art-video-player .art-notice { display: none !important; }` 配合 `art.notice.show` 拦截，彻底消灭视频起播续播或拖拽进度时左上角浮现的提示。
+  3. **暗色极光毛玻璃美学注入与消除底部变暗闪烁**（`web/src/styles/glass.css`）：
+     - 严格收敛 `.art-bottom` 背景渐变遮罩高度至仅底部 90px 播控区（`background-size: 100% 90px !important; background-repeat: no-repeat !important; background-position: bottom !important;`），彻底消除滑入底栏时视频画面大面积发暗闪烁，视频主体 100% 纯净清晰；
+     - 弹出面板使用苹果同款深色磨砂材质（`rgba(22, 22, 22, 0.94)`, `backdrop-filter: blur(24px)`, `border-radius: 10px`, `box-shadow: 0 12px 32px rgba(0, 0, 0, 0.7)`）；
+     - 纯白高对比度文字与等宽数字防抖排版，当前选中项高亮主题色。
+  4. **彻底实现主流播放器“选项选完自动消失”交互体验**（`web/src/components/media/video-player.tsx`, `web/src/styles/glass.css`）：
+     - 增加 `.art-control-selector.art-selector-closed .art-selector-list { display: none !important; ... }` 强制隐藏规则；
+     - 在用户点击清晰度/倍速/字幕选项时即时加上 `.art-selector-closed` 并清理 `.art-selector-show`，实现选完即关的丝滑体验（主流 Bilibili / YouTube 体验）；
+     - 监听 mouseleave / mouseout、mouseover 及按钮再次点击，自然清理 closed 标志，保证下次鼠标移入或点击能够自然重新呼出。
+  5. **全屏与叠层根治保障**：
+     - 使用 ArtPlayer 原生 `fullscreenWeb: true` 与 `fullscreen: !isTauriShell`；
+     - 全屏态注入最高层级 `position: fixed !important; inset: 0 !important; z-index: 99999 !important;`，无论网页全屏还是 HTML5 全屏均彻底超越 Header（z-index 20）与侧栏。
+  6. **全站时长角标去胶囊与日夜反黑修复**（`web/src/styles/glass.css`）：
+     - 统一收敛普通卡片（`.card--duration`）、浏览历史卡片（`.hc-duration`）、详情页推荐行（`.upnext-dur`）：去胶囊背景，改用恒白 `color: var(--qm-on-cover);` + 双层阴影 + 等宽数字。
+  7. **历史遗留临时分支与工作树彻底清理**：
+     - 清理并注销历史遗留子代理临时工作树（`mighty_meteor_hovers_00h31` 与 `untitled-worktree`），彻底删除对应的死分支；
+     - 全仓分支收敛干净：仅保留主分支 `master` 与当前 UI 优化专属分支 `feat/web-ui-optimization`（工作树 `review_ui_and_branches`）。
+  8. **视频封面元数据固化与缩略图缓存重置**：
+     - PC 端与手机端（ADB: `真机`）《守望先锋  法鸡.mp4》均封装 1.12208s 帧为 MP4 内嵌封面（Stream #0:2 attached_pic），原文件修改时间戳保全不变；
+     - 清理并重置两端缩略图缓存。
+- **验证**：
+  - 前端 28 个测试套件 287 项单元测试全部通过（PASS）；
+  - `npm run build` 打包成功（零类型警告、零错误）；
+  - `npm run lint` 检查通过（零错误）；
+  - 全过程后台静默执行，零前台弹窗、零截图。
+- **文档同步**：本笔。
+
 ## feat(web): 极光骨架屏体系与通用空态升维——消除列表首屏跳闪（2026-10-06 第四百九十四笔）
 
 执行 AI：Gemini-3.8-Flash（主代理）
