@@ -56,15 +56,15 @@ Tauri 壳 (desktop/src-tauri)
 - [x] **自测：`cargo check` / `cargo test` 全绿 ✅（2026-10-05 补验通过：BUILD_EXIT=0 / TEST_EXIT=0，22 单测全绿含 mpv 模块 5 个新单测；依赖树全量重编无一次损坏）**
 - [x] 内核面完整性自查（防未来债）：loadfile/换片/起点/seek/倍速/暂停/状态缓存/标题/OSC/hwdec/keep-open/idle 全接；字幕·音轨切换=纯加命令项（无架构债）；VSR/HDR=mpv.conf 配置级（C5+）
 
-### C3 Web 侧接入（进行中）
-- [ ] `lib/engagement-reporting.ts` + 单测：`nativePollSignal`（轮询边沿→play/pause 信号纯函数，喂 stepPlayGate 同一口径 B 状态机）
-- [ ] `video-player.tsx`：壳内（`'__TAURI__' in window`）渲染「原生内核」chip；invoke mpv_open（当前 web 进度优先、断点起点兜底）+ 暂停 web 播放器；5s 轮询 mpv_status 喂 onTimeUpdate/onPlay/onPause；状态 null → 复位；原生接手中用户点 web 播放 → 收回（mpv_close + 复位）
-- [ ] `AssetDetailPage.tsx`：传 `nativeTitle={d.title ?? d.fileName}`
-- [ ] `glass.css`：chip 样式（token 取色，禁硬编码色值）
-- [ ] 自测：`npm test` + `npm run build` 全绿
+### C3 Web 侧接入 ✅（2026-10-06 落码，自测全绿）
+- [x] `lib/engagement-reporting.ts` + 单测：`nativePollSignal`（轮询边沿→play/pause 信号纯函数，喂 stepPlayGate 同一口径 B 状态机；首个快照开局即暂停/eof 不算起播、eof 边沿视同 pause、会话关闭不产出信号由接线层复位；10 个新单测）
+- [x] `video-player.tsx`：壳内（`'__TAURI__' in window`，浏览器模式渲染零改动）渲染「原生内核」chip；invoke mpv_open（当前 web 进度优先、断点起点兜底；camelCase 参数 startSecs 对 Tauri v2 官方口径已查证）+ 暂停 web 播放器；每 PROGRESS_REPORT_INTERVAL_MS（5s，与 web 心跳同拍常量复用）轮询 mpv_status，边沿喂 onPlay/onPause（onPause 带轮询快照位置=flush）、播中 tick 喂 onTimeUpdate；状态 null→复位接管态；原生接手中用户点 web 播放→收回（mpv_close+闸门归零）；chip 再点=返回 web 内核；组件卸载 mpv_close 回收（验收 2「关 web 页」）；DLL 缺失错误串展示在 chip 旁（err token）
+- [x] `AssetDetailPage.tsx`：传 `nativeTitle={d.cosWork ?? d.fileName ?? ''}`（任务书原文 `d.title`——AssetDetail 协议无 title 字段，按协议卡片标题口径 cosWork??fileName 修正）
+- [x] `glass.css`：`.video-player-wrap`/`.mpv-chip`/`.mpv-chip-error`（token 取色禁硬编码；chip 悬浮播放器右上 watched-badge 对角位，z=--qm-z-fab，行容器 pointer-events:none 命中收窄到按钮）
+- [x] 自测：`npm test` 272 全绿（含 10 新单测）+ `npm run build` 全绿 + `oxlint` 0 错误（20 警告均既有）✅
 
 ### C4 复核与收尾
-- [ ] `cargo build --offline --release` 出 release 产物（启动-桌面端.bat 的拉起目标；本次验收只覆盖 debug）
+- [x] `cargo build --offline --release` 出 release 产物（启动-桌面端.bat 的拉起目标）✅ 2026-10-06：47.6s BUILD_EXIT=0，qimeng-media-desktop.exe 11.9MB
 - [ ] 对抗复核：FFI 签名/枚举逐个对 client.h；线程边界；panic 面；铁律 7（UI 不碰业务）/14（无二进制入库）过一遍
 - [ ] CHANGELOG 每笔同 commit；本文 checkbox 全勾；§七日志收口
 - [ ] 运行验收（需真人）：按 §一验收清单 1~6 走查
@@ -90,13 +90,11 @@ Tauri 壳 (desktop/src-tauri)
 
 ## 四、当前状态与交接日志（倒序追加）
 
-- **2026-10-05 · GLM-5.3-Flash（主代理）会话 1（收口）**：C1 提交（f51da4e8）；C2 代码+验证完成（f1c56360 落码 → f6..fix 笔：2 编译错+5 警告修复，BUILD/TEST 全绿 22 单测，环境事故定性=被杀进程残留见 §六）；任务书 charter 化（8c110f76）。C3 web 侧未落码。**明日接手第一步（按序）**：
-  1. `cd desktop/src-tauri && cargo build --offline --release`（启动-桌面端.bat 吃 release 产物，本次只验了 debug）；
-  2. 跑 `desktop/src-tauri/setup-mpv.ps1` 取 libmpv-2.dll；
-  3. 落 C3（本文件 C3 节 checklist，方案=定稿）；`npm test` + `npm run build`；
-  4. **C4.5 交互对齐（工作量最大块，双层播放窗架构见该节）**；
-  5. C4 复核收口 + 运行走查（§一验收清单 1~8）。
-  6. 网络可用时 `git push -u origin feat/desktop-libmpv-kernel`（分支目前只在本地）。
+- **2026-10-06 · GLM-5.3-Flash（主代理）会话 2**：接手清单 ①②③ 完成——① release 构建 ✅（47.6s BUILD_EXIT=0，产物 11.9MB）；② DLL 已取 ✅（120.8MB x64 PE，落 mpv/lib + release/debug 产物旁；**过程修了 setup-mpv.ps1 两个实际问题**：PS 5.1 要求 UTF-8 带 BOM 否则中文串解析报错；GitHub 直连被墙，补 gh-proxy.com 镜像回退通道——ghproxy 系多数不透传 api.github.com，实测 gh-proxy.com 可，供应链口径=镜像仅传输代理、信任锚定源仓库）；③ C3 web 侧 ✅（本文件 C3 节 checklist 全勾：nativePollSignal 纯函数+10 单测、chip/mpv_open/5s 轮询/收回/卸载回收、nativeTitle 传参〔d.title→cosWork??fileName 口径修正〕、glass.css token 样式；npm test 272 全绿 + build + lint 0 错）。**用户约束（本会话起有效）：测试只许后台无头，运行走查一律用户本人一次性自测。下一步（按序）**：
+  1. **C4.5 双层播放窗交互对齐**（工作量最大块，架构见该节；首日实测点=WebView2 透明背景/叠放 z-order/输入穿透，不可行则 fallback=input.conf/Lua 手势）；
+  2. C4 剩余：对抗复核（FFI 签名/枚举对 client.h、线程边界、panic 面、铁律 7/14）+ CHANGELOG 同步 + §一验收清单交用户走查 + CAPABILITY_MAP「已有」+ HANDOVER 收口；
+  3. 网络可用时 `git push -u origin feat/desktop-libmpv-kernel`（分支目前只在本地）。
+- （历史）**2026-10-05 · GLM-5.3-Flash（主代理）会话 1（收口）**：C1 提交（f51da4e8）；C2 代码+验证完成（f1c56360 落码 → f6..fix 笔：2 编译错+5 警告修复，BUILD/TEST 全绿 22 单测，环境事故定性=被杀进程残留见 §六）；任务书 charter 化（8c110f76）。C3 web 侧未落码。
 - （历史）2026-10-05 会话 1 中段：cargo check 曾被设备文件损坏阻塞——已定性为被杀进程残留物（§六），非代码问题，硬件未持续损坏（依赖树全量重编零损坏实证）。
 
 ## 五、坑与存疑（接手必读）

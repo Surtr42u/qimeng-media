@@ -10,6 +10,16 @@
 
 > **历史条目拆分说明（2026-10-01）**：为控制 AI 上下文体量，本文件只保留 **2026-09-22 及之后**的条目（第三百八十二笔起）；拆分线之前的全部条目已逐字迁入 `docs/history/CHANGELOG-ARCHIVE.md`（零改写，笔号与本文件连续可查）。引用早于拆分线的旧笔号请去历史档查阅。
 
+## feat(desktop): mpv 内核 C3 web 侧接入 + release 构建通过 + DLL 获取脚本双修复（2026-10-06 第四百八十一笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- **C3 web 侧落码（任务书 C3 全勾）**：`web/src/lib/engagement-reporting.ts` 新增 `nativePollSignal` 纯函数（相邻 mpv_status 快照边沿→play/pause 信号，喂 stepPlayGate 同一口径 B 状态机；首个快照开局即暂停/eof 不算起播、eof 边沿视同 pause 与 HTML5 自然播完口径对齐、会话关闭不产出信号由接线层归零闸门）+10 个单测；`video-player.tsx` 壳内（`'__TAURI__' in window`，浏览器模式渲染零改动）渲染「原生内核」chip：invoke mpv_open（web 当前进度优先、断点起点兜底，camelCase 参数 `startSecs` 经 Tauri v2 官方文档查证）+ 暂停 web 播放器 + 每 PROGRESS_REPORT_INTERVAL_MS（5s，复用心跳常量同拍）轮询 mpv_status 喂同一上报链（onPlay/onPause 带快照位置 flush/onTimeUpdate tick），状态 null 复位、原生接手中点 web 播放收回（mpv_close+闸门归零）、chip 再点返回 web 内核、组件卸载 mpv_close 回收（验收 2「关 web 页会话回收」）；DLL 缺失错误串（自带 setup 指引）展示于 chip 旁 err token 提示。`AssetDetailPage.tsx` 传 `nativeTitle={d.cosWork ?? d.fileName ?? ''}`（任务书原文 `d.title`：AssetDetail 协议无 title 字段，按协议卡片标题口径修正）。`glass.css` 新增 `.video-player-wrap`/`.mpv-chip`/`.mpv-chip-error`（token 取色；chip 悬浮播放器右上 watched-badge 对角位，z=--qm-z-fab）。
+- **release 构建通过**：`cargo build --offline --release` 47.6s BUILD_EXIT=0，qimeng-media-desktop.exe 11.9MB（启动-桌面端.bat 拉起目标就位；C4 清单首项勾销）。
+- **setup-mpv.ps1 双修复**：① 补 UTF-8 BOM——PS 5.1 对无 BOM 脚本按 ANSI 解析，中文字符串直接语法报错（此前脚本从未在本机成功运行过）；② 补 gh-proxy.com 镜像回退——GitHub API/下载直连被墙，实测 gh-proxy 系仅 gh-proxy.com 透传 api.github.com（ghproxy.net 只放行 release/raw），镜像仅传输代理、信任锚定源仓库，直连优先。DLL 已获取（120.8MB x64 PE，mpv/lib + target/release/debug 产物旁三处；gitignore 生效零入库）。
+- **自测**：`npm test` 272 全绿（含 10 新单测）、`npm run build` 全绿、`oxlint` 0 错误（20 警告均既有非本次引入）。运行走查按用户约束留待用户本人一次性自测。
+- **接手指针**：下一步=C4.5 双层播放窗交互对齐（详见 `desktop/MPV_MIGRATION.md` §C4.5），收尾=C4 对抗复核+文档收口。
+
 ## fix(desktop): mpv 内核 C2 编译验证通过——环境事故定性为被杀进程残留（2026-10-05 第四百八十笔）
 
 执行 AI：GLM-5.3-Flash（主代理）

@@ -1569,6 +1569,53 @@ button.pill.detail-tag-manage { cursor: pointer; }
 .asset-stage img,
 .asset-stage video { max-width: 100%; max-height: 68vh; object-fit: contain; display: block; }
 .video-player-box { width: 100%; height: var(--stage-max-h); }
+/* 原生内核 chip（桌面壳内，浏览器模式不渲染）：外层 wrap 与 ArtPlayer 容器同尺寸，
+   chip 悬浮右上角（watched-badge 对角位），层位取 --qm-z-fab 高于 ArtPlayer 控制层 */
+.video-player-wrap { position: relative; width: 100%; height: var(--stage-max-h); }
+.mpv-chip-row {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: var(--qm-z-fab);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--qm-space-1);
+  pointer-events: none; /* 行容器不挡播放器点击，命中收窄到 chip 本体 */
+}
+.mpv-chip {
+  pointer-events: auto;
+  padding: 4px 12px;
+  border-radius: var(--qm-radius-full);
+  border: 1px solid var(--qm-border);
+  background: var(--qm-chip-bg);
+  color: var(--qm-text-soft);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+.mpv-chip:hover {
+  color: var(--qm-primary-strong);
+  border-color: color-mix(in oklab, var(--qm-primary) 45%, transparent);
+}
+.mpv-chip.active {
+  background: var(--qm-primary-soft);
+  border-color: color-mix(in oklab, var(--qm-primary) 42%, transparent);
+  color: var(--qm-primary);
+}
+.mpv-chip-error {
+  pointer-events: none;
+  max-width: 380px;
+  padding: 4px 10px;
+  border-radius: var(--qm-radius-sm);
+  background: var(--qm-err-bg);
+  color: var(--qm-err-text);
+  font-size: 12px;
+  text-align: right;
+  word-break: break-all;
+}
 /* ArtPlayer 设置包装器防右缘裁切（v1 实证修复，!important 压内联 left，勿删） */
 .art-video-player .art-settings {
   left: auto !important;
