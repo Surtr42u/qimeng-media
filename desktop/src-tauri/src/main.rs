@@ -9,6 +9,7 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // release 版不弹控制台
 
+mod diag;
 mod mpv;
 mod server_config;
 
@@ -183,7 +184,43 @@ fn save_server_url(
     Ok(())
 }
 
+/// panic 落盘（release 版 windows_subsystem=windows 无控制台，panic 默认进黑洞；
+/// 2026-10-06 走查闪退取证增设）：全局钩子把 panic 的时间/线程/位置/消息追加写
+/// exe 旁 qimeng-panic.log，再交回默认钩子（调试台行为不变）。钩子内禁止 panic：
+/// 全部可失败操作 let _ 吞掉。日志属本机诊断产物，不入库（.gitignore 已盖 target/）。
+fn install_panic_logger() {
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let location = info.location().map(|l| l.to_string()).unwrap_or_default();
+        let thread = std::thread::current();
+        let thread_name = thread.name().unwrap_or("<unnamed>").to_string();
+        let msg = info
+            .payload()
+            .downcast_ref::<&str>()
+            .map(|s| (*s).to_string())
+            .or_else(|| info.payload().downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "<非字符串载荷>".to_string());
+        let secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let line = format!("[{secs}] thread={thread_name} at {location} : {msg}\r\n");
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(dir) = exe.parent() {
+                let _ = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .write(true)
+                    .open(dir.join("qimeng-panic.log"))
+                    .and_then(|mut f| std::io::Write::write_all(&mut f, line.as_bytes()));
+            }
+        }
+        default_hook(info);
+    }));
+}
+
 fn main() {
+    install_panic_logger();
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             get_server_url,
@@ -203,6 +240,7 @@ fn main() {
             // 注意此处不可动「关主窗=退出」判定语义（MPV_MIGRATION 坑 6 勿修复）
             if let WindowEvent::Destroyed = event {
                 let app = window.app_handle();
+                diag::trace(&format!("window_destroyed label={}", window.label()));
                 // 控制层窗销毁（用户 Alt-F4 关控制层）→ 会话一并回收（C4.5 双层
                 // 同生命周期的反向路径：正向回收在 player.rs run 清理序里）。
                 // label 带会话代数后缀（mpv-controls-N），按前缀识别。
@@ -216,6 +254,7 @@ fn main() {
                 if app.get_webview_window(MAIN_WINDOW_LABEL).is_none()
                     && app.get_webview_window(SETUP_WINDOW_LABEL).is_none()
                 {
+                    diag::trace("exit_via_all_windows_closed");
                     app.exit(0);
                 }
             }
@@ -243,6 +282,15 @@ fn main() {
             }
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("绮梦影库桌面壳启动失败");
+        .build(tauri::generate_context!())
+        .expect("绮梦影库桌面壳启动失败")
+        .run(|_app, event| match event {
+            // 退出原因落盘（2026-10-06 闪退排查）：进程"干净退场"不留系统级
+            // 崩溃痕迹，这里能回答「tauri 为什么决定退出」
+            tauri::RunEvent::ExitRequested { code, .. } => {
+                diag::trace(&format!("exit_requested code={code:?}"));
+            }
+            tauri::RunEvent::Exit => diag::trace("event_loop_exit"),
+            _ => {}
+        });
 }

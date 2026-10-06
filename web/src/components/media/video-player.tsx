@@ -29,6 +29,13 @@ import { PROGRESS_REPORT_INTERVAL_MS } from '@/lib/progress-report'
 /** 倍速菜单档位 0.5~3x（W-3 冻结清单；官方默认最高 2x，构造前覆盖静态档位表生效） */
 const PLAYBACK_RATES = [0.5, 0.75, 1, 1.25, 1.5, 2, 3]
 
+/**
+ * 原生内核入口总开关（C3/C4.5 功能闸；2026-10-06 用户拍板：走查中点 chip 整壳
+ * 闪退，暂删视频右上角胶囊入口保稳定——代码全部保留，修复后置 true 即恢复，
+ * 排查与恢复路径见 desktop/MPV_MIGRATION.md §闪退排查）。
+ */
+const NATIVE_KERNEL_ENABLED = false
+
 /** 进度条打点（时间轴标签 timeMillis/1000 换算成秒后的播放器形态） */
 export interface PlayerHighlight {
   /** 时间点（秒） */
@@ -394,7 +401,9 @@ export default function VideoPlayer({
   // 壳内：外层 wrap 承载 chip（ArtPlayer 独占 .video-player-box 容器内容，chip
   // 严禁塞进挂载容器内部）；chip 绝对定位悬浮右上，不参与舞台布局、不遮控制条。
   // 浏览器模式：维持迁移前形态（单容器，零改动）。
-  if (!isTauriShell) return <div className="video-player-box" ref={containerRef} />
+  // NATIVE_KERNEL_ENABLED=false 时壳内也走浏览器形态（原生内核暂闭，见常量注释）。
+  if (!isTauriShell || !NATIVE_KERNEL_ENABLED)
+    return <div className="video-player-box" ref={containerRef} />
 
   return (
     <div className="video-player-wrap">

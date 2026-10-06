@@ -91,23 +91,37 @@ Tauri 壳 (desktop/src-tauri)
 
 ## 四、当前状态与交接日志（倒序追加）
 
-- **2026-10-06 · GLM-5.3-Flash（主代理）会话 2**：接手清单 ①②③④ 完成——① release 构建 ✅（47.6s BUILD_EXIT=0）；② DLL 已取 ✅（120.8MB x64 PE；**顺修 setup-mpv.ps1 两个实际问题**：PS 5.1 要求 UTF-8 带 BOM 否则中文串解析报错；GitHub 直连被墙补 gh-proxy.com 镜像回退——ghproxy 系实测仅它透传 api.github.com，镜像仅传输代理、信任锚定源仓库）；③ C3 web 侧 ✅（f553f07c）；④ C4.5 双层播放窗 ✅ 落码（透明控制层窗+GWL_HWNDPARENT 归属+WM_WINDOWPOSCHANGED 几何同步+控制页全套手势，cargo test 23 全绿 + release 构建过 + web 272 测试/build/lint 全绿）。**自测边界（用户约束）：全部后台无头验证，透明叠加三风险（WebView2 透明背景/z-order/输入穿透）留用户运行走查首验**。**下一步（按序）**：
-  1. 用户一次性运行走查（§一验收清单 1~8；重点 C4.5 双层表现与坑 2 wid resize/OSC、坑 3 远端页 invoke 权限）；
-  2. 走查通过 → CAPABILITY_MAP「已有」+ HANDOVER 收口 + §七回滚线确认；
-  3. 透明叠加不可行 → 切 fallback（mpv input.conf/Lua 手势，overlay.rs 退役）；
-  4. 网络可用时 `git push -u origin feat/desktop-libmpv-kernel`。
+- **2026-10-06 · GLM-5.3-Flash（主代理）会话 2（本日三段）**：①②③④ 见历史与各节；走查三连修（坑 3 ACL 实测修复 304fdf5d / 图表焦点框 6d8c4ebf / C5 立项调研）；**C4.5 走查撞上透明控制层闪退（100% 复现）→ 取证定位 build() 内干净退场（§八）→ 用户拍板删除胶囊入口保稳定**（web NATIVE_KERNEL_ENABLED=false，代码全保留；恢复形态=壳内自动原生内核、无可见入口）；C5 立项两项（mpv.conf 基线 + RTX HDR 配套）随入口暂闭冻结。**下一步（待用户定时机）**：按 §八恢复路径修透明窗 → 无 chip 形态接回 → C4 走查收口 → C5 落码。
 - （历史）**2026-10-05 · GLM-5.3-Flash（主代理）会话 1（收口）**：C1 提交（f51da4e8）；C2 代码+验证完成（f1c56360 落码 → f6..fix 笔：2 编译错+5 警告修复，BUILD/TEST 全绿 22 单测，环境事故定性=被杀进程残留见 §六）；任务书 charter 化（8c110f76）。C3 web 侧未落码。
 - （历史）2026-10-05 会话 1 中段：cargo check 曾被设备文件损坏阻塞——已定性为被杀进程残留物（§六），非代码问题，硬件未持续损坏（依赖树全量重编零损坏实证）。
 
 ## 五、坑与存疑（接手必读）
 
-1. **FFI 枚举值与签名必须对官方 client.h 终验**（raw.githubusercontent.com/mpv-player/mpv/master/libmpv/client.h）——MPV_EVENT_* 数值、mpv_event 字段序（event_id/reply_userdata/data/error）。本会话调研子代理因 GitHub 被墙未返回，当前值=ABI 冻结口径（mpv 承诺永不重编号），风险低但终验不可省。
+1. **FFI 枚举值与签名必须对官方 client.h 终验**（raw.githubusercontent.com/mpv-player/mpv/master/libmpv/client.h）——MPV_EVENT_* 数值、mpv_event 字段序（event_id/reply_userdata/data/error）。本会话调研子代理因 GitHub 被墙未返回，当前值=ABI 冻结口径（mpv 承诺永不重编号），风险低但终验不可省。**（2026-10-06 闪退排查中静态复读发现两处与记忆口径不符的高危点待终验：MPV_EVENT_SHUTDOWN 疑应为 1 非 2；mpv_event 字段序疑应为 event_id/error/reply_userdata(u64)/data。client.h 经 gh-proxy blob 页/jsdelivr/fastly/web-reader 多路取回均失败，mpv-dev 7z 内含头文件可作终极来源。）**
 2. **wid 行为**：Windows 上 mpv 在给定 HWND 内自建子窗渲染；父窗 resize 是否自动跟随、OSC 是否可用，实测不符时兜底=监听尺寸变化手动同步（先实测再写）。
 3. **远端页 invoke 自定义命令**：✅ 已实测并修复（2026-10-06 用户走查命中）——主窗是远端 URL，自定义命令须**应用级 ACL 显式放行**（报错 "Command mpv_open not allowed by ACL"；本地窗不受限，故 setup.html 一直正常）。修法=src-tauri/permissions/mpv-commands.toml（五个 allow-mpv-* 内联权限，官方 v2.tauri.app/security/permissions/ 口径）+ capabilities/default.json 裸引用；窗口 API 的 remote 上下文放行此前已就位（titlebar.js 先例）。
 4. **单线程访问 mpv**：除文档明确线程安全者外，全部 mpv_* 调用收敛在播放线程；跨线程只走 mpsc + Mutex 缓存。
 5. **签名直链 6h 窗口**（ADR-0027）：超长会话中途 403 → mpv 停止；已知限制，C5 on_load 刷新解。
 6. **关主窗语义**：现「关主窗=退出应用」判定只看 main/setup 两 label，播放窗为 user32 自建、不经 Tauri 窗口系统，行为不受影响——勿"修复"。
 7. **GPL 分发线**：DLL 不入库不进产物分发（gitignore + setup 脚本），见 ADR-0036 决策 6。
+8. **透明控制层闪退（未解，2026-10-06 用户拍板暂闭入口）**：见 §八。
+
+## 八、闪退排查（2026-10-06，未闭合——原生内核入口暂删）
+
+**现象**：壳内点视频右上角「原生内核播放」chip → 整壳闪退，复现率 100%（3 次复现）。
+
+**取证链（diag.rs 跟踪日志 + panic 落盘 + WER LocalDumps 三网齐下）**：
+- mpv 侧健康：DLL 加载→mpv_create→**mpv_initialized** 全部到达（FFI 加载/创建/初始化面无罪）。
+- 死亡点钉死：主线程 `WebviewWindowBuilder::build()` **内部**（"overlay: building gen=1" 之后零输出——无 attached/无 FAILED/无 window_destroyed/无 exit_requested/无 event_loop_exit）。
+- 死亡方式=**进程干净消失**：无 Rust panic（panic 钩子零输出，debug 版 stderr 空白）、无事件 1000/1001、无 WER 报告、无 dump——非崩溃，是 ExitProcess/TerminateProcess 级消失。**tauri 的 RunEvent::ExitRequested 都没触发**，排除壳自身退出逻辑。
+- 头号嫌疑：tao 透明窗实现=legacy DWM blur-behind 空区域技巧（window.rs:1284，Win7 时代 API），与 WebView2 二次建环境在同一 build() 内叠加；WebviewWindowBuilder 无 no_redirection_bitmap 方法（E0599 实证）无法换现代路径。次嫌：shadow(false)/skip_taskbar 与 DWM 的组合。
+- 已排除：杀软（Defender 日志无动作）、Nahimic 音频服务崩溃风暴（自身 32 位服务反复崩，与壳时间线不锁定）。
+
+**用户拍板（2026-10-06）**：删除视频右上角胶囊入口保稳定（web 侧 `NATIVE_KERNEL_ENABLED=false` 总开关，代码全保留）；不再保留可见入口。**恢复时的形态约束：壳内自动走原生内核、无任何可见 chip**（迁移期脚手架不复活）。
+
+**恢复路径（按序）**：① 置 `web/src/components/media/video-player.tsx` NATIVE_KERNEL_ENABLED=true；② 修透明窗——候选序：wry/tauri 升级（新版可能换掉 legacy DWM 路径）→ 拆 WindowBuilder+WebViewBuilder 用 no_redirection_bitmap → Windows Auto HDR/驱动维度复测 → fallback=mpv input.conf/Lua 手势（overlay.rs 整体退役）；③ 修 mpv_event 结构序/SHUTDOWN 值（坑 1 终验时一并）。诊断设施（diag.rs 跟踪、panic 落盘、WER LocalDumps 注册表 HKCU 配置）保留为常驻。
+
+**连带状态**：C5 已立项两项（mpv.conf 画质基线 + RTX Video HDR 配套，用户 2026-10-06 拍板、HDR 屏已确认）随内核入口暂闭一并冻结，恢复入口后再落码。
 
 ## 六、构建环境事故（2026-10-05 已定性：被杀进程的残留物，非硬件持续损坏）
 

@@ -18,6 +18,15 @@
 - **修复**：`glass.css` 全局规则 `.recharts-surface:focus { outline: none }` + `.recharts-surface:focus-visible` 主色焦点环——鼠标路径豁免、键盘 Tab 焦点环保留（a11y 不倒退），与图表组件解耦不进 TSX。
 - **验证**：`npm run build` + vitest 272 全绿 + oxlint 0 错误；服务端从磁盘吐 `web/dist`，壳内刷新页面即生效（后端无需重启）。
 
+## fix(web): 原生内核胶囊入口暂删（用户拍板）+ 壳侧诊断设施常驻（2026-10-06 第四百八十五笔）
+
+执行 AI：GLM-5.3-Flash（主代理）
+
+- **背景**：C4.5 走查中点「原生内核播放」chip 触发整壳闪退，100% 复现 3 次。取证链（详见 `desktop/MPV_MIGRATION.md` §八）：diag 跟踪日志把死亡点钉死在主线程 `WebviewWindowBuilder::build()` 内部（mpv 侧已健康跑到 mpv_initialized）；进程为"干净消失"——无 Rust panic（panic 落盘钩子零输出、debug 版 stderr 空白）、无事件 1000/1001、无 WER/dump，连 tauri 的 ExitRequested 回调都未触发；头号嫌疑=tao 透明窗 legacy DWM blur-behind 空区域路径与 WebView2 二次建环境在 build() 内叠加。
+- **用户拍板**：删除视频右上角胶囊入口保稳定——`web/src/components/media/video-player.tsx` 增 `NATIVE_KERNEL_ENABLED=false` 总开关（代码全部保留，C3/C4.5/C2 Rust 面不动），恢复形态约束记档=壳内自动走原生内核、无可见 chip（迁移期脚手架不复活）。C5 已立项两项（mpv.conf 画质基线 + RTX Video HDR 配套，HDR 屏已确认）随入口暂闭冻结。
+- **诊断设施常驻**：`desktop/src-tauri/src/diag.rs`（qimeng-shell.log 生命周期跟踪，exe 旁不入库）+ main.rs panic 落盘钩子（qimeng-panic.log）+ 退出原因捕获（RunEvent::ExitRequested/WindowEvent Destroyed 落盘）+ mpv 链路逐点 trace；用户机 WER LocalDumps 注册表（HKCU，DumpType=2）已配——本机复现闪退不再零痕迹。
+- **验证**：npm build + vitest 272 全绿 + oxlint 0 错；cargo release 重建通过；壳经标准入口重启后走 web 内核，无 mpv 调用路径即无闪退面。
+
 ## fix(desktop): 坑 3 实测修复——远端页自定义命令 ACL 放行（用户走查首验命中）（2026-10-06 第四百八十三笔）
 
 执行 AI：GLM-5.3-Flash（主代理）

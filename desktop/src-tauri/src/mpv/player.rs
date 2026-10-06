@@ -10,6 +10,7 @@ use std::time::Duration;
 use serde::Serialize;
 use tauri::{AppHandle, Wry};
 
+use crate::diag;
 use super::ffi::{
     MpvEventProperty, MpvLib, MPV_ERROR_SUCCESS, MPV_EVENT_NONE, MPV_EVENT_PROPERTY_CHANGE,
     MPV_EVENT_SHUTDOWN, MPV_FORMAT_DOUBLE, MPV_FORMAT_FLAG, MPV_FORMAT_INT64,
@@ -200,14 +201,17 @@ fn run(
         Some(v) => v,
         None => return, // 纯 Quit 开场：无窗口无句柄，直接结束
     };
+    diag::trace("session_thread: player_window_creating");
 
     let hwnd = match win32::create_player_window(&title, PLAYER_WINDOW_WIDTH, PLAYER_WINDOW_HEIGHT) {
         Ok(h) => h,
         Err(e) => {
+            diag::trace(&format!("session_thread: create_player_window FAILED {e}"));
             eprintln!("[qimeng-mpv] {e}");
             return;
         }
     };
+    diag::trace("session_thread: player_window_created");
     // 控制层（C4.5）：挂接失败只降级（无控制层，mpv 键盘/OSC 兜底），不阻断播放；
     // 代数供清理序 detach 精确回收本会话的控制层窗
     let overlay_gen = overlay::attach(&app, hwnd);
@@ -215,16 +219,20 @@ fn run(
     // SAFETY: create 返回新句柄；play_loop 与本函数全程持有，尾处 terminate_destroy
     let handle = unsafe { (lib.create)() };
     if handle.is_null() {
+        diag::trace("session_thread: mpv_create FAILED");
         eprintln!("[qimeng-mpv] mpv_create 失败");
         win32::reset_fullscreen_restore();
         overlay::detach(overlay_gen);
         win32::destroy_window(hwnd);
         return;
     }
+    diag::trace("session_thread: mpv_created_entering_play_loop");
 
     if let Err(e) = play_loop(lib, handle, hwnd, &rx, &status, (url, title, start)) {
+        diag::trace(&format!("session_thread: play_loop_err {e}"));
         eprintln!("[qimeng-mpv] 播放循环异常退出：{e}");
     }
+    diag::trace("session_thread: cleanup_begin");
     // —— 清理顺序：先关窗（mpv 的 wid 子窗随父销毁，画面即刻消失），再释放 mpv ——
     // 控制层与播放窗同生命周期：一并摘钩子关窗（用户 Alt-F4 关控制层路径经
     // main.rs 窗口事件反向回收会话，此处是正向回收）；全屏还原存根随会话清零，
@@ -272,6 +280,7 @@ fn play_loop(
 
         check(lib, (lib.initialize)(handle))?;
     }
+    diag::trace("session_thread: mpv_initialized");
 
     let (url, title, start) = first;
     apply(lib, handle, hwnd, &url, &title, start)?;

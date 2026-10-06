@@ -9,6 +9,7 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 
+use crate::diag;
 use super::player::{parse_action, Cmd, MpvSession, MpvStatus};
 
 /// 全局会话槽：Some=已有播放会话（复用窗口换片），None=需要新开会话。
@@ -42,16 +43,25 @@ pub fn mpv_open(
     if url.is_empty() {
         return Err("播放地址为空".into());
     }
+    diag::trace(&format!(
+        "mpv_open title_len={} url_len={} start={start_secs:.1} highlights={}",
+        title.len(),
+        url.len(),
+        highlights.as_ref().map_or(0, Vec::len),
+    ));
     let load = || Cmd::Load { url: url.clone(), title: title.clone(), start: start_secs };
     *state.overlay_data.lock().expect("overlay_data 锁中毒") = highlights.unwrap_or_default();
     let mut guard = state.session.lock().expect("MpvState 锁中毒");
     // 已有会话 → 原地换片；会话已死（用户关过窗）→ 重建
     if let Some(session) = guard.as_ref() {
         if session.send(load()).is_ok() {
+            diag::trace("mpv_open reused_session");
             return Ok(());
         }
     }
-    *guard = Some(MpvSession::spawn(app, load())?);
+    let spawned = MpvSession::spawn(app, load());
+    diag::trace(&format!("mpv_open spawn={:?}", spawned.is_ok()));
+    *guard = Some(spawned?);
     Ok(())
 }
 
@@ -82,6 +92,7 @@ pub fn mpv_control(state: State<'_, MpvState>, action: String, value: f64) -> Re
 
 /// 关闭会话与播放窗（控制层窗销毁路径复用；幂等：没有会话视作已关闭）。
 pub(crate) fn close_session(state: &MpvState) {
+    diag::trace("close_session");
     let mut guard = state.session.lock().expect("MpvState 锁中毒");
     if let Some(session) = guard.take() {
         let _ = session.send(Cmd::Quit);
