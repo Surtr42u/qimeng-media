@@ -43,7 +43,7 @@
 
 **Android**：
 - 浏览/播放/上传/离线队列/缓存/备份/数据管理/本机模式全功能；后台冻结自愈（回前台探测 /healthz 无响应自动重拉 + 残留子进程 pid 回收）。
-- 上传=唯一「系统文件」SAF 入口 + 系统分享共用 submitUris 单管道，选完即传；批次默认（库/作者/来源）持久化、入队快照继承；归档文件夹一键上传（扫描归档根按「文件夹名=库名」自动匹配〔sanitize 与 ADR-0030 同规范〕、递归子目录映射、条目级库目标入队、alreadyArchived 跳过、防重门禁+超限拦截）。
+- 上传=唯一「系统文件」SAF 入口（onFilesSelected 预览：逐项编辑落库基名+扩展名锁定〔UploadNaming 单源，对齐 Web upload-naming.ts〕+ 移除，「开始上传」入队成功清空）+ 系统分享 submitUris 选完即传（不编辑）；批次默认（库/作者/来源）持久化、入队快照继承；归档文件夹一键上传（扫描归档根按「文件夹名=库名」自动匹配〔sanitize 与 ADR-0030 同规范〕、递归子目录映射、条目级库目标入队、alreadyArchived 跳过、防重门禁+超限拦截）。
 - 断点续传接入（ADR-0028）：≥16MB 分片会话流，WorkManager 重试先 GET 探测权威 offset、409 重同步、404 自动重建、取消 best-effort DELETE；complete 后挂靠/归档管线零改动复用；<16MB 直传。
 - 预取 revision 整轮跳过（ADR-0026）：轮首比对 GET /library/revision，未变置 Skipped；记录捆绑服务器标识防撞号，SKIP 前随机样本 50 条本地探测、缺失≥20% 降级全量，清空任一缓存池强制下轮补齐；缩略图预取磁盘探测短路+分池按当前连接 serverUrl 路由（命中免请求免解码，轮终 logcat QimengCache 记档）。
 - SSE 消费（ADR-0029）：okhttp-sse 长连 /api/v1/events，登录即连/断线指数退避（3s→30s 封顶）/登出即断/后台不断开；事件汇入 DataFreshnessSignal，收藏/点赞返回刷新跳过门收敛为「指纹+SSE 信号+TTL」三层，5min TTL 为断线/离线兜底。

@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import media.qimeng.app.core.model.DirNode
+import media.qimeng.app.core.model.UploadItem
 import media.qimeng.app.core.model.UploadRules
 import media.qimeng.app.core.ui.component.QimengCapsuleTextField
 import media.qimeng.app.core.ui.component.QimengMessageCard
@@ -56,14 +57,16 @@ import media.qimeng.app.core.ui.component.QimengSegPill
 import media.qimeng.app.core.ui.component.QimengTopBar
 
 /**
- * 上传主通道页（M4-5；2026-09-29 直传化；2026-09-28 配置区固化常驻）：
+ * 上传主通道页（M4-5；2026-09-29 直传化；2026-10-07 加回文件名编辑）：
  * 页面自上而下按动线「选库 → 批次默认 → 添加文件」单列贯通——
  * 目标库（必选）→ 目标目录 → 批次默认（作者/来源，新进文件自动继承）→ 添加文件入口
- * （选完即传）→ 串行队列进度。无暂存列表、无逐项编辑、无「开始上传」按钮
- * （2026-09-29 用户拍板「暂存了好像没意义啊，去掉吧；只保上传完会在指定文件夹保留
- * （修改后）的文件」——归档链路在 worker 侧，本页零改动）。暂存条目已退役，批次默认
- * 仍持久化（杀进程重启不丢），页面只 collect 持久流渲染。
- * 未选库时选文件不传，横幅提示先选目标库（submitUris 门禁，见 [UploadViewModel.submitUris]）。
+ * → 选中文件预览卡（逐项编辑落库基名、扩展名锁定，见 [UploadNaming]）→「开始上传」
+ * 入队 → 串行队列进度。暂存区已退役（2026-09-29 用户拍板），文件名编辑以轻量形态加回：
+ * SAF 选完先进 selectedFiles 预览（逐项基名编辑 + 移除），点「开始上传」才入队；
+ * 系统分享接收仍直传不编辑（见 [UploadViewModel.submitUris]）。批次默认仍持久化
+ * （杀进程重启不丢），页面只 collect 持久流渲染。
+ * 未选库时「开始上传」不传，横幅提示先选目标库（uploadSelectedFiles 门禁；分享路径
+ * 仍为 submitUris 门禁，见 [UploadViewModel.submitUris]）。
  * 入口：①系统分享接收（壳层带分享 URI 导航至此）②App 内数据管理页入口。
  * 选文件：唯一入口「系统文件」（SAF 文档选择器多选，MIME 限 image 与 video 通配两类，
  * 天然能见点前缀隐藏目录且不需要任何存储权限——2026-09-29 用户拍板精简，一口覆盖
@@ -129,7 +132,7 @@ fun UploadScreen(
             }
         }
         requestNotificationPermissionIfNeeded(context, notificationPermission)
-        viewModel.submitUris(uris.map { it.toString() })
+        viewModel.onFilesSelected(uris.map { it.toString() })
     }
 
     Column(modifier = modifier.fillMaxSize()) {
@@ -176,10 +179,10 @@ fun UploadScreen(
 }
 
 /**
- * 表单滚动主体（2026-09-29 直传化）：横幅 → 选库（目标库/目标目录）→
- * 批次默认（作者/来源，新进文件自动继承）→ 添加文件入口（选完即传）→ 队列。
- * 配置区进入页面即显示（2026-09-28 固化布局延续）；暂存列表与「开始上传」按钮随
- * 暂存区退役删除，添加文件区下常驻直传说明。
+ * 表单滚动主体（2026-09-29 直传化；2026-10-07 加回文件名编辑）：横幅 → 选库（目标库/
+ * 目标目录）→ 批次默认（作者/来源，新进文件自动继承）→ 添加文件入口 → 选中文件预览卡
+ * （逐项基名编辑 + 移除 +「开始上传」）→ 队列。配置区进入页面即显示（2026-09-28 固化
+ * 布局延续）；暂存列表随暂存区退役，选中文件卡只在有选中文件时出现。
  * 选择行为以回调注入（launcher/权限留在本壳层），函数行数收敛到百行红线内。
  */
 @Composable
@@ -230,10 +233,24 @@ private fun UploadForm(
         BatchDefaultSection(state = state, viewModel = viewModel)
 
         // —— 放文件：唯一入口「系统文件」（SAF，2026-09-29 用户拍板精简：相册/收件箱
-        // 导入/浏览文件三入口退役——SAF 隐藏目录可见 + 免存储授权，一口全覆盖），选完即传 ——
+        // 导入/浏览文件三入口退役——SAF 隐藏目录可见 + 免存储授权，一口全覆盖），选完
+        // 先进预览编辑文件名（2026-10-07 加回）再上传 ——
         SectionTitle("添加文件")
         AddSourcesRow(onSystemFiles = onSystemFiles)
         DirectUploadGuide()
+
+        // —— 选中文件预览/编辑文件名（2026-10-07 加回文件名编辑）：选文件后展示待传列表，
+        // 用户可编辑落库基名（扩展名锁定），点击「开始上传」后入队 ——
+        if (state.describing) {
+            Text(
+                text = "正在读取文件信息…",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (state.selectedFiles.isNotEmpty()) {
+            SelectedFilesCard(state = state, viewModel = viewModel)
+        }
 
         // —— 归档一键上传（2026-10-01）：归档根已配置时展示扫描摘要与一键入口，确认弹窗
         // 在壳层（与新建目录弹层同位置）；扫描/匹配/入队规则全在 core 与 VM ——
@@ -283,6 +300,72 @@ private fun DirectUploadGuide() {
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
+}
+
+/**
+ * 选中文件列表卡（2026-10-07 加回文件名编辑）：展示用户通过 SAF 选中的待传文件，
+ * 每项可编辑落库基名（扩展名锁定后缀）+ 移除；底部「开始上传」按钮触发入队。
+ * UI 只做渲染与 VM 调用，业务规则全在 UploadViewModel（ADR-0008 铁律 7）。
+ */
+@Composable
+private fun SelectedFilesCard(state: UploadUiState, viewModel: UploadViewModel) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = "待上传文件（${state.selectedFiles.size} 项）",
+                style = MaterialTheme.typography.titleSmall,
+            )
+            state.selectedFiles.forEach { item ->
+                SelectedFileRow(item = item, viewModel = viewModel)
+            }
+            Button(
+                onClick = viewModel::uploadSelectedFiles,
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !state.submitting,
+            ) {
+                Text(if (state.submitting) "上传中…" else "开始上传（${state.selectedFiles.size} 项）")
+            }
+        }
+    }
+}
+
+/**
+ * 选中文件行：基名输入框（扩展名锁定后缀）+ 移除按钮。
+ * 基名编辑即时同步 UploadItem.uploadBaseName，落库名由 effectiveUploadName 单源拼装。
+ */
+@Composable
+private fun SelectedFileRow(item: UploadItem, viewModel: UploadViewModel) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        QimengCapsuleTextField(
+            value = item.currentBaseName,
+            onValueChange = { viewModel.updateSelectedFileName(item, it) },
+            placeholder = UPLOAD_NAME_PLACEHOLDER,
+            singleLine = true,
+            modifier = Modifier.weight(1f),
+        )
+        if (item.extension.isNotEmpty()) {
+            Text(
+                text = item.extension,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = LOCKED_BADGE_TEXT,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        TextButton(onClick = { viewModel.removeSelectedFile(item) }) {
+            Text("移除")
+        }
+    }
 }
 
 /** 目标库选择（页面配置区首行，必选、常驻；复用页面原库 pills 控件与 VM 数据源） */
@@ -511,9 +594,15 @@ private const val SYSTEM_FILES_BUTTON_TEXT = "系统文件"
 private const val SYSTEM_FILES_HINT =
     "「系统文件」用系统文档选择器：可直接选到点前缀隐藏目录里的媒体，无需「所有文件访问」授权"
 
-/** 直传说明（选完即传；批次默认继承口径在 VM/持久层） */
+/** 直传说明（2026-10-07 更新：选文件后可编辑文件名再上传） */
 private const val DIRECT_UPLOAD_GUIDE =
-    "选择文件后立即上传，自动继承批次作者与来源"
+    "选择文件后可修改落库文件名，点击「开始上传」后入队；自动继承批次作者与来源"
+
+/** 作品名输入占位符（SelectedFileRow 基名编辑输入框） */
+private const val UPLOAD_NAME_PLACEHOLDER = "作品名"
+
+/** 扩展名锁定角标 */
+private const val LOCKED_BADGE_TEXT = "锁定"
 
 /** 添加文件入口的格式说明（超限拦截口径在 VM/服务端） */
 private const val ADD_FILES_FORMAT_HINT = "支持图片/视频常见格式；类型与大小校验在服务端，超限项本地拦截"

@@ -90,6 +90,128 @@ class UploadModelsTest {
         assertEquals("upload", item.effectiveUploadName)
     }
 
+    // ---- UploadItem 基名编辑口径（2026-10-07 文件名编辑加回：基名可编辑、扩展名锁定） ----
+
+    @Test
+    fun `扩展名与基名按展示名拆分`() {
+        val item = UploadItem(uri = "u", displayName = "作品 01.jpg", sizeBytes = 1)
+        assertEquals(".jpg", item.extension)
+        assertEquals("作品 01", item.defaultBaseName)
+        assertEquals("作品 01", item.currentBaseName)
+    }
+
+    @Test
+    fun `点前缀隐藏文件整体为基名无扩展名`() {
+        val item = UploadItem(uri = "u", displayName = ".hidden", sizeBytes = 1)
+        assertEquals("", item.extension)
+        assertEquals(".hidden", item.defaultBaseName)
+    }
+
+    @Test
+    fun `多点文件名取最后一段为扩展名`() {
+        val item = UploadItem(uri = "u", displayName = "a.b.mp4", sizeBytes = 1)
+        assertEquals(".mp4", item.extension)
+        assertEquals("a.b", item.defaultBaseName)
+    }
+
+    @Test
+    fun `基名编辑拼装锁定扩展名为落库名`() {
+        val item = UploadItem(
+            uri = "u",
+            displayName = "IMG_1.jpg",
+            sizeBytes = 1,
+            uploadBaseName = "  新作品名 ",
+        )
+        // currentBaseName 回显输入原文（不 trim，编辑态所见即所输）；落库名才 trim
+        assertEquals("  新作品名 ", item.currentBaseName)
+        assertEquals("新作品名.jpg", item.effectiveUploadName)
+    }
+
+    @Test
+    fun `基名里输入的点视为基名一部分扩展名不可换`() {
+        val item = UploadItem(
+            uri = "u",
+            displayName = "IMG_1.jpg",
+            sizeBytes = 1,
+            uploadBaseName = "video.mp4",
+        )
+        // 扩展名锁定口径的核心防御：用户无法借基名编辑把 .jpg 换成 .mp4
+        assertEquals("video.mp4.jpg", item.effectiveUploadName)
+    }
+
+    @Test
+    fun `基名空白回退展示名`() {
+        val item = UploadItem(
+            uri = "u",
+            displayName = "IMG_1.jpg",
+            sizeBytes = 1,
+            uploadBaseName = "   ",
+        )
+        assertEquals("IMG_1.jpg", item.effectiveUploadName)
+    }
+
+    @Test
+    fun `无扩展名文件基名编辑只取基名`() {
+        val item = UploadItem(
+            uri = "u",
+            displayName = "无名",
+            sizeBytes = 1,
+            uploadBaseName = "新名",
+        )
+        assertEquals("", item.extension)
+        assertEquals("新名", item.effectiveUploadName)
+    }
+
+    @Test
+    fun `基名编辑优先于旧全名编辑字段`() {
+        val item = UploadItem(
+            uri = "u",
+            displayName = "IMG_1.jpg",
+            sizeBytes = 1,
+            uploadFileName = "legacy.jpg",
+            uploadBaseName = "新名",
+        )
+        assertEquals("新名.jpg", item.effectiveUploadName)
+    }
+
+    // ---- UploadNaming（扩展名锁定口径单一实现，用例对齐 Web upload-naming.test.ts） ----
+
+    @Test
+    fun `naming基名拆分常规文件名`() {
+        assertEquals(".jpg", UploadNaming.extensionOf("作品 01.jpg"))
+        assertEquals("作品 01", UploadNaming.baseNameOf("作品 01.jpg"))
+    }
+
+    @Test
+    fun `naming无扩展名整体为基名`() {
+        assertEquals("", UploadNaming.extensionOf("无名"))
+        assertEquals("无名", UploadNaming.baseNameOf("无名"))
+    }
+
+    @Test
+    fun `naming点前缀隐藏文件整体为基名`() {
+        assertEquals("", UploadNaming.extensionOf(".hidden"))
+        assertEquals(".hidden", UploadNaming.baseNameOf(".hidden"))
+    }
+
+    @Test
+    fun `naming多点文件名取最后一段`() {
+        assertEquals(".mp4", UploadNaming.extensionOf("a.b.mp4"))
+        assertEquals("a.b", UploadNaming.baseNameOf("a.b.mp4"))
+    }
+
+    @Test
+    fun `naming拼装基名与扩展名`() {
+        assertEquals("名 13.png", UploadNaming.composeUploadName("名 13", ".png"))
+        assertEquals("名 13", UploadNaming.composeUploadName("名 13", ""))
+    }
+
+    @Test
+    fun `naming基名trim后为空返回空串`() {
+        assertEquals("", UploadNaming.composeUploadName("   ", ".png"))
+        assertEquals("", UploadNaming.composeUploadName("", ".png"))
+    }
+
     // ---- UploadRules.sanitizeFileName ----
 
     @Test

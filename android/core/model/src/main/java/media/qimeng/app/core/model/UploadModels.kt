@@ -25,6 +25,11 @@ data class UploadItem(
      * [effectiveUploadName]（单一口径，UI/入队/worker 均不自行回退）。
      */
     val uploadFileName: String? = null,
+    /**
+     * 编辑后的落库基名（不含扩展名；null/blank = 未编辑，回退 [displayName] 的基名）。
+     * 扩展名锁定口径：编辑只改基名，扩展名锁定保持不变。
+     */
+    val uploadBaseName: String? = null,
     /** 上传成功后自动挂靠的作者 id（null = 该项不带挂靠；来源挂靠以其存在为前提） */
     val attachAuthorId: String? = null,
     /** 挂靠作者的展示名（纯 UI 展示；不进 WorkManager 载荷，服务端只认 id） */
@@ -45,12 +50,63 @@ data class UploadItem(
      */
     val alreadyArchived: Boolean = false,
 ) {
+    /** 展示名锁定的扩展名（含点；无扩展名/点前缀隐藏文件 = 空串） */
+    val extension: String
+        get() = UploadNaming.extensionOf(displayName)
+
+    /** 展示名去掉扩展名后的基名（输入框未编辑时的展示值） */
+    val defaultBaseName: String
+        get() = UploadNaming.baseNameOf(displayName)
+
+    /** 当前编辑落库名的基名（若未编辑则为 defaultBaseName） */
+    val currentBaseName: String
+        get() = uploadBaseName ?: uploadFileName?.let { UploadNaming.baseNameOf(it) } ?: defaultBaseName
+
     /** 上传 filename 参数实际取值（编辑优先、trim 后非空才生效，否则回退展示名；经 UploadRules.sanitizeFileName 规范化） */
     val effectiveUploadName: String
         get() {
-            val candidate = uploadFileName?.trim()?.takeIf { it.isNotEmpty() } ?: displayName
+            val candidate = when {
+                uploadBaseName != null -> {
+                    val base = uploadBaseName.trim()
+                    if (base.isEmpty()) displayName
+                    else UploadNaming.composeUploadName(base, extension).ifEmpty { displayName }
+                }
+                uploadFileName != null -> uploadFileName.trim().ifEmpty { displayName }
+                else -> displayName
+            }
             return UploadRules.sanitizeFileName(candidate)
         }
+}
+
+/**
+ * 上传文件名纯规则（无 IO，单测锁定）：基名/扩展名拆装。
+ * 扩展名锁定口径的单一实现——UI 只允许编辑基名，完整落库名一律经 [composeUploadName] 拼装，
+ * 禁止散拼（对齐 Web 端 upload-naming.ts，三端同一口径）。
+ */
+object UploadNaming {
+
+    /** 文件名去掉扩展名后的基名（".jpg" -> ""；".hidden" -> ".hidden" 整体为基名） */
+    fun baseNameOf(fileName: String): String {
+        val idx = fileName.lastIndexOf('.')
+        return if (idx <= 0) fileName else fileName.substring(0, idx)
+    }
+
+    /** 文件名的扩展名（含点；无扩展名/点前缀隐藏文件返回空串） */
+    fun extensionOf(fileName: String): String {
+        val idx = fileName.lastIndexOf('.')
+        return if (idx <= 0) "" else fileName.substring(idx)
+    }
+
+    /**
+     * 基名 + 锁定扩展名 -> 完整落库名。基名 trim 后为空返回空串（调用方回退展示名）；
+     * 扩展名为空则只取基名。
+     */
+    fun composeUploadName(base: String, extension: String): String {
+        val trimmed = base.trim()
+        if (trimmed.isEmpty()) return ""
+        val ext = extension.trim()
+        return if (ext.isEmpty()) trimmed else trimmed + ext
+    }
 }
 
 /** 上传目标库（GET /libraries 的展示子集） */

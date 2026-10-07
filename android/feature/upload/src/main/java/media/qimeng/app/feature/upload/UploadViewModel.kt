@@ -34,11 +34,14 @@ import media.qimeng.app.core.model.UploadRules
 import media.qimeng.app.core.model.individualSourceWords
 
 /**
- * 上传流 ViewModel（M4-5；2026-09-29 直传化）。
- * 暂存区退役（用户拍板「暂存了好像没意义啊，去掉吧」）：选完文件即传——系统文件 SAF
- * 多选与系统分享共用单管道 [submitUris]：describe 解元数据 → 未选库给提示不传 →
- * 逐项判超限（超限项本地拦截不出网，blockText 文案）→ 其余直接 enqueue（继承批次默认
- * 快照：库/目录/作者/来源）。无暂存条目、无逐项编辑、无「开始上传」按钮；
+ * 上传流 ViewModel（M4-5；2026-09-29 直传化；2026-10-07 加回文件名编辑）。
+ * 暂存区退役（用户拍板「暂存了好像没意义啊，去掉吧」），文件名编辑以轻量形态加回，
+ * 双管道门禁/超限/入队同口径：
+ * ① 系统文件 SAF 多选走 [onFilesSelected] 预览——describe 解元数据填充 selectedFiles，
+ *    UI 逐项编辑落库基名（扩展名锁定，UploadNaming 单源）并可移除；「开始上传」走
+ *    [uploadSelectedFiles]（未选库提示不传 → 逐项判超限 → 入队继承批次默认快照，成功清空）；
+ * ② 系统分享接收走 [submitUris] 选完即传（分享不带编辑场景）：describe → 未选库提示 →
+ *    逐项判超限（超限项本地拦截不出网，blockText 文案）→ 其余直接 enqueue。
  * 批次默认（作者联想 + 来源多选，新进文件自动继承）仍持久化（StagingRepository.batchConfig，
  * 跨进程重启/隔天不丢），页面只 collect 持久流渲染。
  * 拦截口径（冻结）：大小上限读 GET /config 的 upload 项（提交时现取现判——服务端实时生效）；
@@ -318,10 +321,96 @@ class UploadViewModel @Inject constructor(
     private fun toggleIn(sources: List<String>, name: String): List<String> =
         if (name in sources) sources - name else sources + name
 
-    // ---- 直传（系统文件 SAF 多选与系统分享共用 submitUris 单管道） ----
+    // ---- 选文件 → 预览/编辑文件名 → 开始上传（2026-10-07 加回文件名编辑） ----
 
     /**
-     * 选完即传（2026-09-29 直传化，暂存区退役后的唯一入队管道）：
+     * 用户选中文件后进入预览阶段（SAF 多选回调触发）：describe 解元数据 → 填充
+     * selectedFiles 列表供 UI 展示与编辑文件名 → 等用户点「开始上传」再入队。
+     * 系统分享接收仍走 [submitUris]（选完即传，分享不编辑）。
+     */
+    fun onFilesSelected(uris: List<String>) {
+        if (uris.isEmpty()) return
+        viewModelScope.launch {
+            form.update { it.copy(describing = true, errorMessage = null) }
+            try {
+                val described = uploadRepository.describe(uris)
+                form.update { it.copy(describing = false, selectedFiles = described) }
+            } catch (e: Exception) {
+                form.update { it.copy(describing = false, errorMessage = DESCRIBE_FAILED_MESSAGE) }
+            }
+        }
+    }
+
+    /**
+     * 编辑选中文件的落库基名（扩展名锁定不可改）：UI 输入框回调 → copy uploadBaseName。
+     * 空基名 = 回退展示名（effectiveUploadName 单源保证），UI 层不自行拼装。
+     */
+    fun updateSelectedFileName(item: UploadItem, newBaseName: String) {
+        form.update { state ->
+            state.copy(
+                selectedFiles = state.selectedFiles.map {
+                    if (it.uri == item.uri) it.copy(uploadBaseName = newBaseName.ifBlank { null }) else it
+                },
+            )
+        }
+    }
+
+    /** 从选中列表移除一项 */
+    fun removeSelectedFile(item: UploadItem) {
+        form.update { state ->
+            state.copy(selectedFiles = state.selectedFiles.filter { it.uri != item.uri })
+        }
+    }
+
+    /**
+     * 开始上传选中文件（用户点「开始上传」按钮触发）：门禁/超限/入队管道与 submitUris
+     * 同口径，区别仅在条目来源是已 describe 过的 selectedFiles（带用户编辑后的基名）。
+     * 入队成功后清空 selectedFiles（回到空列表状态）。
+     */
+    fun uploadSelectedFiles() {
+        val files = form.value.selectedFiles
+        if (files.isEmpty()) return
+        if (form.value.submitting) return
+        viewModelScope.launch {
+            form.update { it.copy(submitting = true, blockMessage = null, errorMessage = null) }
+            val batch = stagingRepository.batchConfig.first()
+            val batchLibraryId = batch.libraryId
+            if (batchLibraryId == null) {
+                form.update { it.copy(submitting = false, blockMessage = LIBRARY_REQUIRED_MESSAGE) }
+                return@launch
+            }
+            refreshLimits()
+            val limits = form.value.limits
+            val (blocked, allowed) = partitionOverLimit(files, limits) { it.sizeBytes }
+            if (allowed.isEmpty()) {
+                form.update {
+                    it.copy(submitting = false, blockMessage = blockText(limits, blocked) { it.effectiveUploadName })
+                }
+                return@launch
+            }
+            try {
+                uploadRepository.enqueue(
+                    allowed.map { it.withBatchDefaults(batch, libraryNameOf(batchLibraryId)) },
+                    batchLibraryId,
+                    form.value.selectedDirPath,
+                )
+                form.update {
+                    it.copy(
+                        submitting = false,
+                        selectedFiles = emptyList(),
+                        blockMessage = blockText(limits, blocked) { it.effectiveUploadName },
+                    )
+                }
+            } catch (e: Exception) {
+                form.update { it.copy(submitting = false, errorMessage = ENQUEUE_FAILED_MESSAGE) }
+            }
+        }
+    }
+
+    // ---- 直传（系统分享走 submitUris 选完即传，不经过文件名编辑） ----
+
+    /**
+     * 选完即传（系统分享接收的直传管道；SAF 选文件已改走 onFilesSelected 预览流程）：
      * 1) 门禁前置——批次库未选直接提示不传（避免无谓出网 describe）；
      * 2) describe 解元数据（失败给错误横幅，整批不传）；
      * 3) 现取服务端配置逐项判超限（实时生效口径），超限项本地拦截不出网、给 blockText

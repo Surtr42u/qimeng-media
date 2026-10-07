@@ -23,9 +23,11 @@ import media.qimeng.app.core.testing.MainDispatcherRule
 
 /**
  * 上传流表单状态机锁定（M4-5；2026-09-29 直传化）：
- * - 直传管道（暂存区退役，选完即传）：describe 解元数据 → 未选库门禁 → 逐项判超限
+ * - 直传管道（系统分享接收，选完即传）：describe 解元数据 → 未选库门禁 → 逐项判超限
  *   （超限项本地拦截不出网给 blockText 文案，未超限项照常入队）→ enqueue 继承批次默认
  *   快照（批次库 + 已选目录 + 作者/来源 + 库名）；
+ * - 选中文件预览/编辑文件名（2026-10-07 加回，SAF 多选走此管道）：onFilesSelected 预览
+ *   → 基名编辑（扩展名锁定）→ uploadSelectedFiles 门禁/超限/入队同直传口径，成功清空列表；
  * - 批次默认持久化：库/作者/来源走 StagingRepository.batchConfig（写路径断言
  *   batchConfigCalls），跨进程恢复语义由持久层单测锁定（StagingJson/DataStoreStagingRepository）；
  * - 批次作者联想：防抖 + 回车精确命中 + 未命中提示；
@@ -291,6 +293,198 @@ class UploadViewModelTest {
         viewModel.submitUris(listOf("content://media/img/1"))
         driveIdle()
         assertEquals(ENQUEUE_FAILED_MESSAGE, viewModel.uiState.value.errorMessage)
+    }
+
+    // ---- 选中文件预览/编辑文件名（2026-10-07 文件名编辑加回：SAF 走 onFilesSelected
+    //      预览 → 基名编辑 → 「开始上传」入队；系统分享仍走 submitUris 选完即传不变） ----
+
+    @Test
+    fun `onFilesSelected填充选中列表且预览阶段不入队`() {
+        val (viewModel, repository, _, _) = newViewModel()
+        viewModel.onFilesSelected(listOf("content://media/img/1", "content://media/img/2"))
+        driveIdle()
+        val state = viewModel.uiState.value
+        assertEquals(listOf("IMG_1.jpg", "IMG_2.jpg"), state.selectedFiles.map { it.displayName })
+        assertFalse(state.describing)
+        // 预览阶段只 describe 不入队：等「开始上传」
+        assertTrue(repository.enqueueCalls.isEmpty())
+        assertEquals(2, repository.describeCalls)
+    }
+
+    @Test
+    fun `onFilesSelected空列表忽略`() {
+        val (viewModel, repository, _, _) = newViewModel()
+        viewModel.onFilesSelected(emptyList())
+        driveIdle()
+        assertEquals(0, repository.describeCalls)
+        assertTrue(viewModel.uiState.value.selectedFiles.isEmpty())
+    }
+
+    @Test
+    fun `onFilesSelecteddescribe失败给错误横幅且列表为空`() {
+        val (viewModel, _, _, _) = newViewModel(
+            repository = FakeUploadRepository().apply {
+                librariesResult = listOf(libraryA)
+                describedItem = { throw IllegalStateException("describe boom") }
+            },
+        )
+        viewModel.onFilesSelected(listOf("content://media/img/1"))
+        driveIdle()
+        assertEquals(DESCRIBE_FAILED_MESSAGE, viewModel.uiState.value.errorMessage)
+        assertTrue(viewModel.uiState.value.selectedFiles.isEmpty())
+        assertFalse(viewModel.uiState.value.describing)
+    }
+
+    @Test
+    fun `基名编辑经开始上传生效于入队载荷且列表清空`() {
+        val (viewModel, repository, _, _) = newViewModel()
+        selectDefaultLibrary(viewModel)
+        viewModel.selectDir("photos")
+        viewModel.onFilesSelected(listOf("content://media/img/1"))
+        driveIdle()
+        val selected = viewModel.uiState.value.selectedFiles.single()
+        viewModel.updateSelectedFileName(selected, "新作品名")
+        driveIdle()
+        assertEquals("新作品名", viewModel.uiState.value.selectedFiles.single().currentBaseName)
+        viewModel.uploadSelectedFiles()
+        driveIdle()
+
+        val enqueued = repository.enqueueCalls.single()
+        assertEquals("lib-a", enqueued.libraryId)
+        assertEquals("photos", enqueued.dir)
+        val item = enqueued.items.single()
+        assertEquals("新作品名", item.uploadBaseName)
+        // 落库名经 effectiveUploadName 单源拼装：基名 + 锁定扩展名
+        assertEquals("新作品名.jpg", item.effectiveUploadName)
+        assertEquals("IMG_1.jpg", item.displayName)
+        // 入队成功后选中列表清空、提交态复位
+        assertTrue(viewModel.uiState.value.selectedFiles.isEmpty())
+        assertFalse(viewModel.uiState.value.submitting)
+    }
+
+    @Test
+    fun `基名编辑清空回退展示名入队`() {
+        val (viewModel, repository, _, _) = newViewModel()
+        selectDefaultLibrary(viewModel)
+        viewModel.onFilesSelected(listOf("content://media/img/1"))
+        driveIdle()
+        val selected = viewModel.uiState.value.selectedFiles.single()
+        viewModel.updateSelectedFileName(selected, "改名")
+        driveIdle()
+        viewModel.updateSelectedFileName(viewModel.uiState.value.selectedFiles.single(), "   ")
+        driveIdle()
+        // 空白编辑 = 未编辑口径：回退展示名
+        assertEquals("IMG_1.jpg", viewModel.uiState.value.selectedFiles.single().effectiveUploadName)
+        viewModel.uploadSelectedFiles()
+        driveIdle()
+        assertEquals(
+            listOf("IMG_1.jpg"),
+            repository.enqueueCalls.single().items.map { it.effectiveUploadName },
+        )
+    }
+
+    @Test
+    fun `移除选中项后开始上传只入队剩余`() {
+        val (viewModel, repository, _, _) = newViewModel()
+        selectDefaultLibrary(viewModel)
+        viewModel.onFilesSelected(listOf("content://media/img/1", "content://media/img/2"))
+        driveIdle()
+        viewModel.removeSelectedFile(viewModel.uiState.value.selectedFiles.first())
+        driveIdle()
+        viewModel.uploadSelectedFiles()
+        driveIdle()
+        assertEquals(
+            listOf("IMG_2.jpg"),
+            repository.enqueueCalls.single().items.map { it.displayName },
+        )
+    }
+
+    @Test
+    fun `未选库开始上传被拦并提示选库`() {
+        val (viewModel, repository, _, _) = newViewModel()
+        viewModel.onFilesSelected(listOf("content://media/img/1"))
+        driveIdle()
+        viewModel.uploadSelectedFiles()
+        driveIdle()
+        assertTrue(repository.enqueueCalls.isEmpty())
+        assertEquals("先选择目标库", viewModel.uiState.value.blockMessage)
+        assertFalse(viewModel.uiState.value.submitting)
+    }
+
+    @Test
+    fun `开始上传全部超限时拦截不出网`() {
+        val (viewModel, repository, _, _) = newViewModel(
+            repository = FakeUploadRepository().apply {
+                librariesResult = listOf(libraryA)
+                limitsResult = UploadLimits(maxBytesMb = 64, autoAccept = true)
+                describedItem = { uri ->
+                    UploadItem(uri = uri, displayName = "big.jpg", sizeBytes = 65L * 1024 * 1024)
+                }
+            },
+        )
+        selectDefaultLibrary(viewModel)
+        viewModel.onFilesSelected(listOf("content://x/big"))
+        driveIdle()
+        viewModel.uploadSelectedFiles()
+        driveIdle()
+        assertTrue(repository.enqueueCalls.isEmpty())
+        val state = viewModel.uiState.value
+        assertTrue(state.blockMessage?.contains("超过服务端上限 64 MB") == true)
+        // 预览列表保留（未清空）：用户可移除或改后重试
+        assertEquals(1, state.selectedFiles.size)
+    }
+
+    @Test
+    fun `开始上传部分超限时被拦项拦下其余照常入队`() {
+        val (viewModel, repository, _, _) = newViewModel(
+            repository = FakeUploadRepository().apply {
+                librariesResult = listOf(libraryA)
+                limitsResult = UploadLimits(maxBytesMb = 64, autoAccept = true)
+                describedItem = { uri ->
+                    if (uri.endsWith("big")) {
+                        UploadItem(uri = uri, displayName = "big.jpg", sizeBytes = 65L * 1024 * 1024)
+                    } else {
+                        UploadItem(uri = uri, displayName = "small.jpg", sizeBytes = 100L)
+                    }
+                }
+            },
+        )
+        selectDefaultLibrary(viewModel)
+        viewModel.onFilesSelected(listOf("content://x/big", "content://x/small"))
+        driveIdle()
+        viewModel.uploadSelectedFiles()
+        driveIdle()
+        assertEquals(
+            listOf("small.jpg"),
+            repository.enqueueCalls.single().items.map { it.displayName },
+        )
+        assertNotNull(viewModel.uiState.value.blockMessage)
+    }
+
+    @Test
+    fun `开始上传空列表与重复触发不产生入队`() {
+        val (viewModel, repository, _, _) = newViewModel()
+        selectDefaultLibrary(viewModel)
+        viewModel.uploadSelectedFiles()
+        driveIdle()
+        assertTrue(repository.enqueueCalls.isEmpty())
+    }
+
+    @Test
+    fun `入队失败时选中列表保留可重试`() {
+        val (viewModel, repository, _, _) = newViewModel(
+            repository = FakeUploadRepository().apply {
+                librariesResult = listOf(libraryA)
+                enqueueError = IllegalStateException("enqueue boom")
+            },
+        )
+        selectDefaultLibrary(viewModel)
+        viewModel.onFilesSelected(listOf("content://media/img/1"))
+        driveIdle()
+        viewModel.uploadSelectedFiles()
+        driveIdle()
+        assertEquals(ENQUEUE_FAILED_MESSAGE, viewModel.uiState.value.errorMessage)
+        assertEquals(1, viewModel.uiState.value.selectedFiles.size)
     }
 
     // ---- 新建子目录 ----

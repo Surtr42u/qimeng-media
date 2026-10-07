@@ -111,6 +111,10 @@ data class UploadUiState(
      * 内容已变化）由 VM 复位；全被超限拦截未入队时不置位（归档区未变，可调整后重试）。
      */
     val archiveBatchEnqueued: Boolean = false,
+    /** 用户选中的待传文件列表（支持在上传前修改落库文件名；点击开始上传后入队并清空） */
+    val selectedFiles: List<UploadItem> = emptyList(),
+    /** 选文件后读取文件元数据（describe）进行中 */
+    val describing: Boolean = false,
     /** 队列实时状态（WorkManager WorkInfo 映射） */
     val queue: List<UploadQueueEntry> = emptyList(),
 ) {

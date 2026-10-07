@@ -10,6 +10,31 @@
 
 > **历史条目拆分说明（2026-10-01）**：为控制 AI 上下文体量，本文件只保留 **2026-09-22 及之后**的条目（第三百八十二笔起）；拆分线之前的全部条目已逐字迁入 `docs/history/CHANGELOG-ARCHIVE.md`（零改写，笔号与本文件连续可查）。引用早于拆分线的旧笔号请去历史档查阅。
 
+## feat(app): 上传文件名编辑加回——SAF 选文件先进预览可改落库基名（扩展名锁定、UploadNaming 单源拼装），系统分享保持选完即传（2026-10-07 第四百九十七笔）
+
+执行 AI：GLM-5.3-Flash（主代理；接手前会话 Gemini-3.8-Flash 留在 review_ui_and_branches 工作树的未提交 WIP——模型/UI/VM 主体为其所写，本会话补齐单测、KDoc 同步、文档与全量验证）
+
+- **背景与痛点**：
+  1. 2026-09-29 直传化（暂存区整体退役，用户拍板「暂存了好像没意义啊，去掉吧」）后，App 端上传失去「上传前改文件名」能力，用户要求把文件名编辑加回；
+  2. 前会话在 review_ui_and_branches 工作树完成主体实现（`UploadModels`/`UploadScreen`/`UploadUiState`/`UploadViewModel` 四文件未提交改动），但未验证、未同步文档、页面与 VM 头注释仍残留「无逐项编辑、无开始上传按钮」旧表述；本会话接手收尾。
+- **改动内容**：
+  1. **基名/扩展名拆装单源**（`android/core/model/.../UploadModels.kt`，前会话）：
+     - `UploadItem` 新增 `uploadBaseName`（编辑后落库基名，null/blank=未编辑）与派生属性 `extension`/`defaultBaseName`/`currentBaseName`；
+     - `effectiveUploadName` 升级三段优先级：`uploadBaseName`（基名+锁定扩展名经 composeUploadName 拼装）→ 旧 `uploadFileName` 全名 → 展示名，末端仍经 `UploadRules.sanitizeFileName` 规范化；
+     - 新增 `UploadNaming` 纯规则对象（baseNameOf/extensionOf/composeUploadName）：扩展名锁定口径单一实现，UI 只许编辑基名、完整落库名一律经拼装禁止散拼，对齐 Web 端 `web/src/lib/upload-naming.ts`（三端同一口径）。
+  2. **VM 双管道拆分**（`android/feature/upload/.../UploadViewModel.kt`，前会话主体）：
+     - SAF 多选改走 `onFilesSelected`：describe 解元数据 → 填充 `selectedFiles` 预览列表（不入队）；新增 `updateSelectedFileName`（基名编辑即时同步，空白=未编辑回退展示名）、`removeSelectedFile`、`uploadSelectedFiles`（未选库门禁提示不传 → 现取 GET /config 超限拦截不出网 → 入队继承批次默认快照：库/目录/作者/来源 → 成功清空选中列表；入队失败列表保留可重试）；
+     - 系统分享接收仍走 `submitUris` 选完即传（分享不带编辑场景），门禁/超限/入队口径两管道完全同源。
+  3. **UI 预览卡**（`android/feature/upload/.../UploadScreen.kt`，前会话）：新增 `SelectedFilesCard`/`SelectedFileRow`——逐项 `QimengCapsuleTextField` 基名输入（回显输入原文）+ 锁定扩展名「锁定」角标 + 移除 + 「开始上传（N 项）」按钮；`UploadUiState` 新增 `selectedFiles`/`describing`；SAF launcher 回调从 submitUris 切到 onFilesSelected。
+  4. **单测补齐**（本会话）：
+     - `UploadModelsTest` 新增 14 例：基名口径 8 例（拆分/隐藏文件/多点文件/拼装锁定扩展名/基名含点不可换后缀/空白回退/无扩展名/对旧全名字段优先级）+ `UploadNaming` 6 例（用例对齐 Web `upload-naming.test.ts`）；
+     - `UploadViewModelTest` 新增 11 例：预览填充且不入队/空列表忽略/describe 失败横幅/基名编辑生效于入队载荷且列表清空/基名清空回退展示名/移除后只入剩余/未选库拦截/全部超限拦截且列表保留/部分超限照常入队/空列表与重复触发不产生入队/入队失败列表保留可重试。
+  5. **KDoc 与文档同步**（本会话）：`UploadScreen`/`UploadViewModel`/测试类头注释中直传化旧表述全部更新为双管道现状；`HANDOVER.md` Android 上传口径行同步。
+- **验证结论**：
+  - `:core:model:test` 174 例全部通过（基线 160 + 新增 14）；
+  - `:feature:upload:testDebugUnitTest` 47 例全部通过（基线 36 + 新增 11）。
+- **文档**：CHANGELOG.md（本条），HANDOVER.md。
+
 ## fix(app): 上传文件名安全规范化与自动补齐——消除 INVALID_FILENAME 400 失败（2026-10-07 第四百九十六笔）
 
 执行 AI：Gemini-3.8-Flash（主代理）
