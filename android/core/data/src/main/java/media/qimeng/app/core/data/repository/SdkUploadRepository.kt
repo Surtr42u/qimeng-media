@@ -4,6 +4,8 @@ import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.Log
+import android.webkit.MimeTypeMap
+import java.io.File
 import androidx.work.BackoffPolicy
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
@@ -224,27 +226,78 @@ class SdkUploadRepository @Inject constructor(
     }
 
     private suspend fun describeOne(uri: Uri): UploadItem {
-        var displayName = "未命名"
+        var rawName: String? = null
         var sizeBytes = -1L
-        try {
-            context.contentResolver.query(
-                uri,
-                arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE),
-                null,
-                null,
-                null,
-            )?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val nameIdx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                    val sizeIdx = cursor.getColumnIndex(OpenableColumns.SIZE)
-                    if (nameIdx >= 0) cursor.getString(nameIdx)?.let { displayName = it }
-                    if (sizeIdx >= 0 && !cursor.isNull(sizeIdx)) sizeBytes = cursor.getLong(sizeIdx)
+
+        val mimeType: String? = runCatching {
+            if (uri.scheme == "content") context.contentResolver.getType(uri) else null
+        }.getOrNull()
+
+        val fallbackExt: String? = mimeType?.let { mime ->
+            MimeTypeMap.getSingleton().getExtensionFromMimeType(mime)?.lowercase()
+                ?: when {
+                    mime.startsWith("image/") -> "jpg"
+                    mime.startsWith("video/") -> "mp4"
+                    else -> null
+                }
+        }
+
+        if (uri.scheme == "content") {
+            try {
+                context.contentResolver.query(
+                    uri,
+                    arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE),
+                    null,
+                    null,
+                    null,
+                )?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val nameIdx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                        val sizeIdx = cursor.getColumnIndex(OpenableColumns.SIZE)
+                        if (nameIdx >= 0) {
+                            rawName = cursor.getString(nameIdx)?.trim()?.takeIf { it.isNotEmpty() }
+                        }
+                        if (sizeIdx >= 0 && !cursor.isNull(sizeIdx)) {
+                            sizeBytes = cursor.getLong(sizeIdx)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                // 元数据读不到不拦入队：displayName 兜底、size -1 交服务端 413 兜底
+                Log.w(SdkMediaRepository.LOG_TAG, "describe query 失败 uri=$uri", e)
+            }
+
+            if (sizeBytes < 0) {
+                runCatching {
+                    context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { afd ->
+                        val len = afd.length
+                        if (len >= 0) sizeBytes = len
+                    }
                 }
             }
-        } catch (e: Exception) {
-            // 元数据读不到不拦入队：displayName 兜底、size -1 交服务端 413 兜底
-            Log.w(SdkMediaRepository.LOG_TAG, "describe 失败 uri=$uri", e)
+        } else if (uri.scheme == "file" || UploadRules.isAbsoluteFilePath(uri.toString())) {
+            val filePath = uri.path ?: uri.toString()
+            val file = File(filePath)
+            if (file.exists()) {
+                rawName = file.name
+                if (sizeBytes < 0) sizeBytes = file.length()
+            }
         }
+
+        // 若依然未取得有效名字，尝试从 uri.lastPathSegment 解析
+        if (rawName.isNullOrBlank()) {
+            rawName = uri.lastPathSegment?.let { segment ->
+                Uri.decode(segment).substringAfterLast('/').substringAfterLast('\\').trim().takeIf { it.isNotEmpty() }
+            }
+        }
+
+        // 安全规范化：剥离路径、过滤非法字符、自动补齐后缀、防 Windows 保留设备名
+        val displayName = UploadRules.sanitizeFileName(
+            rawName = rawName,
+            fallbackExtension = fallbackExt,
+            fallbackBaseName = "upload_${System.currentTimeMillis()}",
+        )
+
         return UploadItem(uri = uri.toString(), displayName = displayName, sizeBytes = sizeBytes)
     }
 }

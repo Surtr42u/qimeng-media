@@ -45,9 +45,12 @@ data class UploadItem(
      */
     val alreadyArchived: Boolean = false,
 ) {
-    /** 上传 filename 参数实际取值（编辑优先、trim 后非空才生效，否则回退展示名） */
+    /** 上传 filename 参数实际取值（编辑优先、trim 后非空才生效，否则回退展示名；经 UploadRules.sanitizeFileName 规范化） */
     val effectiveUploadName: String
-        get() = uploadFileName?.trim()?.takeIf { it.isNotEmpty() } ?: displayName
+        get() {
+            val candidate = uploadFileName?.trim()?.takeIf { it.isNotEmpty() } ?: displayName
+            return UploadRules.sanitizeFileName(candidate)
+        }
 }
 
 /** 上传目标库（GET /libraries 的展示子集） */
@@ -179,4 +182,80 @@ object UploadRules {
      * 可归档）。纯函数，worker/上传器共用单源。
      */
     fun isAbsoluteFilePath(source: String): Boolean = source.startsWith("/")
+
+    // ---- 文件名安全清洗与规范化（对齐 server/internal/filing/filename.go 与 reserved.go） ----
+
+    /** Windows 保留设备名全集（大小写不敏感，对齐 server/internal/filing/reserved.go） */
+    val WINDOWS_RESERVED_NAMES: Set<String> = buildSet {
+        addAll(listOf("CON", "PRN", "AUX", "NUL"))
+        for (i in 1..9) {
+            add("COM$i")
+            add("LPT$i")
+        }
+    }
+
+    /** 是否命中 Windows 保留设备名（以第一个点之前的部分判定，对齐 server/internal/filing/reserved.go） */
+    fun isWindowsReservedName(name: String): Boolean {
+        val base = name.substringBefore('.').uppercase()
+        return base in WINDOWS_RESERVED_NAMES
+    }
+
+    /**
+     * 清洗与规范化上传文件名（对齐服务端 docs/SECURITY.md 上传安全规范与 SanitizeFilename 规则）。
+     *
+     * 规则：
+     * 1. 剥离路径前缀（仅取最后文件名段，防 /storage/... 或 URL 越权）；
+     * 2. 剥离路径分隔符 / 与 \、控制字符 (<0x20, 0x7F) 以及 Windows 非法字符 : * ? " < > |；
+     * 3. 剥离首尾空格与首尾点；
+     * 4. 名字全空或全部由非法字符构成时，由 [fallbackBaseName] 兜底（默认 "upload"）；
+     * 5. 若无扩展名且提供了 [fallbackExtension] 时，自动追加 .扩展名；
+     * 6. 防御 Windows 保留设备名（CON, PRN, AUX, NUL, COM1-9, LPT1-9）：命中则加 "file_" 前缀，
+     *    避免服务端 400 INVALID_FILENAME 拒绝。
+     */
+    fun sanitizeFileName(
+        rawName: String?,
+        fallbackExtension: String? = null,
+        fallbackBaseName: String = "upload",
+    ): String {
+        // 1. 提取单段文件名（剥离路径前缀与反斜杠）
+        val candidate = rawName.orEmpty()
+            .substringAfterLast('/')
+            .substringAfterLast('\\')
+            .trim()
+
+        val cleanExtFallback = fallbackExtension?.trim()?.trimStart('.')?.lowercase()
+
+        // 2. 分离基名与扩展名（若有点）
+        val lastDotIndex = candidate.lastIndexOf('.')
+        val (rawBase, rawExt) = if (lastDotIndex >= 0) {
+            candidate.substring(0, lastDotIndex) to candidate.substring(lastDotIndex + 1)
+        } else {
+            candidate to ""
+        }
+
+        // 3. 过滤基名与扩展名中的非法字符（路径分隔符、控制字符、Windows非法字符）
+        val cleanBase = stripIllegalChars(rawBase).trim { it == ' ' || it == '.' }
+        val cleanExt = stripIllegalChars(rawExt).trim { it == ' ' || it == '.' }
+
+        // 4. 基名与扩展名兜底
+        val finalBase = cleanBase.ifEmpty { fallbackBaseName.ifBlank { "upload" } }
+        val finalExt = cleanExt.ifEmpty { cleanExtFallback.orEmpty() }
+
+        // 5. 组装
+        val assembled = if (finalExt.isNotEmpty()) "$finalBase.$finalExt" else finalBase
+
+        // 6. Windows 保留名加前缀保护
+        return if (isWindowsReservedName(assembled)) "file_$assembled" else assembled
+    }
+
+    private fun stripIllegalChars(str: String): String {
+        val sb = StringBuilder(str.length)
+        for (c in str) {
+            if (c == '/' || c == '\\') continue
+            if (c.code < 0x20 || c.code == 0x7F) continue
+            if (c in ":*?\"<>|") continue
+            sb.append(c)
+        }
+        return sb.toString()
+    }
 }

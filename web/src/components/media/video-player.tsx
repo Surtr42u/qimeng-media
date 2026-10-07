@@ -150,15 +150,6 @@ export default function VideoPlayer({
       if (!selectorEl) return
       selectorEl.classList.remove('art-selector-show')
       selectorEl.classList.add('art-selector-closed')
-      window.setTimeout(() => {
-        try {
-          if (!selectorEl.matches(':hover')) {
-            selectorEl.classList.remove('art-selector-closed')
-          }
-        } catch {
-          selectorEl.classList.remove('art-selector-closed')
-        }
-      }, 250)
     }
 
     // 2. 自定义控件列表（按官方规范扩展右侧入口）
@@ -220,6 +211,9 @@ export default function VideoPlayer({
             } else {
               this.video.style.objectFit = 'contain'
             }
+          }
+          if (this.setting) {
+            this.setting.show = false
           }
           return item.html
         },
@@ -330,7 +324,18 @@ export default function VideoPlayer({
       if ($val) $val.textContent = label
     })
 
-    // 统一点击弹出层交互：点击按钮展示/收起 selector，点击选项即时收起并关闭，点击外部收起
+    // 统一播控菜单交互控制器（完全对标 B站 Web 播控交互逻辑）：
+    // 1) 点击 selector 按钮（.art-selector-value）：
+    //    - 若当前处于打开状态（有 art-selector-show 且无 art-selector-closed，或处于 hover 展开中），再次点击则收起关闭（Toggle 逻辑）；
+    //    - 若当前处于关闭状态，则清除 closed、开启 show，并关闭其他已打开的 selector 与设置面板；
+    // 2) 点击菜单选项（.art-selector-item）：
+    //    - 选项生效后立即调用 closeSelector，菜单即刻收起消失；
+    // 3) 鼠标移出 selector 区域（mouseleave / mouseout）：
+    //    - 移出 selector 及其弹出列表时，同时清理 show 与 closed，菜单自然收起；再次移入时自然触发 hover 展现；
+    // 4) 点击空白处 / 外部区域：
+    //    - 视频画面、外部页面或非当前控件被点击时，全部菜单及设置面板立即收起；
+    // 5) 设置按钮（齿轮）：
+    //    - 点击齿轮按钮展示/收起设置面板，点击其他控件或选项或外部区域收起设置面板。
     const onControlClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement | null
       const selectorVal = target?.closest('.art-selector-value')
@@ -339,48 +344,101 @@ export default function VideoPlayer({
       if (selectorVal) {
         const parent = selectorVal.closest<HTMLElement>('.art-control-selector')
         if (parent) {
-          parent.classList.remove('art-selector-closed')
+          const isClosed = parent.classList.contains('art-selector-closed')
           const isShown = parent.classList.contains('art-selector-show')
-          container.querySelectorAll<HTMLElement>('.art-control-selector').forEach((el) => {
-            el.classList.remove('art-selector-show')
-          })
-          if (!isShown) parent.classList.add('art-selector-show')
+          const isHovered = parent.matches(':hover')
+          const isOpen = !isClosed && (isShown || isHovered)
+
+          if (isOpen) {
+            // 当前处于打开状态 -> 再次点击按钮执行收起关闭（Toggle 逻辑）
+            parent.classList.remove('art-selector-show')
+            parent.classList.add('art-selector-closed')
+          } else {
+            // 当前处于关闭状态 -> 打开当前 selector，同时关闭其他 selector 与设置面板
+            parent.classList.remove('art-selector-closed')
+            container.querySelectorAll<HTMLElement>('.art-control-selector').forEach((el) => {
+              if (el !== parent) {
+                el.classList.remove('art-selector-show')
+                el.classList.add('art-selector-closed')
+              }
+            })
+            if (art.setting && art.setting.show) {
+              art.setting.show = false
+            }
+            parent.classList.add('art-selector-show')
+          }
         }
       } else if (selectorItem) {
+        // 点击具体选项 -> 立即关闭当前 selector
         const parent = selectorItem.closest<HTMLElement>('.art-control-selector')
         if (parent) {
           closeSelector(parent)
         }
-      } else if (!target?.closest('.art-selector-list')) {
+      } else {
+        const inSelectorList = target?.closest('.art-selector-list')
+        if (!inSelectorList) {
+          // 点击外部区域（视频画面、空白处等）-> 清理所有 selector
+          container.querySelectorAll<HTMLElement>('.art-control-selector').forEach((el) => {
+            el.classList.remove('art-selector-show')
+          })
+          // 若点击既不是齿轮按钮也不是设置面板自身，收起设置面板
+          const inSetting = target?.closest('.art-settings')
+          const inSettingBtn = target?.closest('.art-control-setting')
+          if (!inSetting && !inSettingBtn && art.setting && art.setting.show) {
+            art.setting.show = false
+          }
+        }
+      }
+
+      // 若点击了设置齿轮按钮，关闭其他已打开的 selector
+      const settingBtn = target?.closest('.art-control-setting')
+      if (settingBtn) {
         container.querySelectorAll<HTMLElement>('.art-control-selector').forEach((el) => {
           el.classList.remove('art-selector-show')
+          el.classList.add('art-selector-closed')
         })
       }
     }
 
-    // 鼠标移出 selector 时移除 art-selector-closed，保证下次再次移入按钮时能自然重新呼出
+    // 鼠标移出 selector（包括按钮和弹出菜单整体）时，移除 art-selector-show 与 art-selector-closed，
+    // 菜单自然关闭，且保证下次鼠标再移入时能自然重新触发
     const onControlMouseOut = (e: MouseEvent) => {
       const fromSelector = (e.target as HTMLElement | null)?.closest<HTMLElement>('.art-control-selector')
       const toSelector = (e.relatedTarget as HTMLElement | null)?.closest<HTMLElement>('.art-control-selector')
       if (fromSelector && fromSelector !== toSelector) {
+        fromSelector.classList.remove('art-selector-show')
         fromSelector.classList.remove('art-selector-closed')
       }
     }
 
-    // 鼠标移入按钮自身时若仍有 closed 则清理
+    // 鼠标移入 selector 按钮或菜单时，若存在残留的 closed 状态则及时清除
     const onControlMouseOver = (e: MouseEvent) => {
-      const val = (e.target as HTMLElement | null)?.closest('.art-selector-value')
-      if (val) {
-        const parent = val.closest<HTMLElement>('.art-control-selector')
-        parent?.classList.remove('art-selector-closed')
+      const fromSelector = (e.relatedTarget as HTMLElement | null)?.closest<HTMLElement>('.art-control-selector')
+      const toSelector = (e.target as HTMLElement | null)?.closest<HTMLElement>('.art-control-selector')
+      if (toSelector && toSelector !== fromSelector) {
+        toSelector.classList.remove('art-selector-closed')
       }
     }
 
     // capture 阶段捕获原生 mouseleave，双重确保移出 selector 时恢复状态
     const onControlMouseLeaveCapture = (e: MouseEvent) => {
-      const target = e.target as HTMLElement | null
-      if (target?.classList?.contains('art-control-selector')) {
+      const target = (e.target as HTMLElement | null)?.closest<HTMLElement>('.art-control-selector')
+      if (target) {
+        target.classList.remove('art-selector-show')
         target.classList.remove('art-selector-closed')
+      }
+    }
+
+    // 页面全局点击：点击播放器外部空白处时，收起所有 selector 菜单与设置面板
+    const onDocumentClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null
+      if (!container.contains(target)) {
+        container.querySelectorAll<HTMLElement>('.art-control-selector').forEach((el) => {
+          el.classList.remove('art-selector-show')
+        })
+        if (art.setting && art.setting.show) {
+          art.setting.show = false
+        }
       }
     }
 
@@ -388,6 +446,7 @@ export default function VideoPlayer({
     container.addEventListener('mouseout', onControlMouseOut)
     container.addEventListener('mouseover', onControlMouseOver)
     container.addEventListener('mouseleave', onControlMouseLeaveCapture, true)
+    document.addEventListener('click', onDocumentClick)
 
     // 断点续播
     if (initial.startTime > 0) art.on('ready', () => (art.seek = initial.startTime))
@@ -422,6 +481,7 @@ export default function VideoPlayer({
       container.removeEventListener('mouseout', onControlMouseOut)
       container.removeEventListener('mouseover', onControlMouseOver)
       container.removeEventListener('mouseleave', onControlMouseLeaveCapture, true)
+      document.removeEventListener('click', onDocumentClick)
       themeObserver.disconnect()
       detachSeekFix()
       art.destroy()

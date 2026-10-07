@@ -60,6 +60,92 @@ class UploadModelsTest {
         assertEquals("IMG_1.jpg", item.effectiveUploadName)
     }
 
+    @Test
+    fun `effectiveUploadName清洗路径与非法字符`() {
+        val item = UploadItem(
+            uri = "u",
+            displayName = "/storage/emulated/0/DCIM/Camera/IMG:2026*1.jpg",
+            sizeBytes = 1,
+        )
+        assertEquals("IMG20261.jpg", item.effectiveUploadName)
+    }
+
+    @Test
+    fun `effectiveUploadName保护Windows保留设备名`() {
+        val item = UploadItem(
+            uri = "u",
+            displayName = "CON.jpg",
+            sizeBytes = 1,
+        )
+        assertEquals("file_CON.jpg", item.effectiveUploadName)
+    }
+
+    @Test
+    fun `effectiveUploadName空白与全非法名安全兜底`() {
+        val item = UploadItem(
+            uri = "u",
+            displayName = ":*?<>|",
+            sizeBytes = 1,
+        )
+        assertEquals("upload", item.effectiveUploadName)
+    }
+
+    // ---- UploadRules.sanitizeFileName ----
+
+    @Test
+    fun `文件名清洗正常保留`() {
+        assertEquals("photo_1.jpg", UploadRules.sanitizeFileName("photo_1.jpg"))
+        assertEquals("中文_2026.png", UploadRules.sanitizeFileName("中文_2026.png"))
+    }
+
+    @Test
+    fun `文件名清洗剥离路径与反斜杠`() {
+        assertEquals("IMG_1.jpg", UploadRules.sanitizeFileName("/sdcard/DCIM/IMG_1.jpg"))
+        assertEquals("video.mp4", UploadRules.sanitizeFileName("C:\\Users\\Camera\\video.mp4"))
+    }
+
+    @Test
+    fun `文件名清洗剥离控制字符与Windows非法字符`() {
+        assertEquals("testfile.jpg", UploadRules.sanitizeFileName("test:?<file>|\"\u0001.jpg"))
+    }
+
+    @Test
+    fun `文件名清洗首尾空格与点修剪`() {
+        assertEquals("test.jpg", UploadRules.sanitizeFileName("  test.jpg.  "))
+    }
+
+    @Test
+    fun `文件名清洗无扩展名时自动应用兜底扩展名`() {
+        assertEquals("video.mp4", UploadRules.sanitizeFileName("video", fallbackExtension = "mp4"))
+        assertEquals("photo.jpg", UploadRules.sanitizeFileName("photo", fallbackExtension = ".jpg"))
+    }
+
+    @Test
+    fun `文件名清洗点文件保留为合法名`() {
+        assertEquals("upload.jpg", UploadRules.sanitizeFileName(".jpg"))
+        assertEquals("upload.nomedia", UploadRules.sanitizeFileName(".nomedia"))
+    }
+
+    @Test
+    fun `文件名清洗Windows保留名加前缀保护`() {
+        assertEquals("file_CON.jpg", UploadRules.sanitizeFileName("CON.jpg"))
+        assertEquals("file_prn.png", UploadRules.sanitizeFileName("prn.png"))
+        assertEquals("file_AUX.mp4", UploadRules.sanitizeFileName("AUX.mp4"))
+        assertEquals("file_NUL", UploadRules.sanitizeFileName("NUL"))
+        assertEquals("file_COM1.jpg", UploadRules.sanitizeFileName("COM1.jpg"))
+        assertEquals("file_lpt9.extra.jpg", UploadRules.sanitizeFileName("lpt9.extra.jpg"))
+        // 非保留名前缀正常放行
+        assertEquals("conference.jpg", UploadRules.sanitizeFileName("conference.jpg"))
+    }
+
+    @Test
+    fun `文件名清洗全非法字符与空白走兜底基名与后缀`() {
+        assertEquals("upload.jpg", UploadRules.sanitizeFileName("", fallbackExtension = "jpg"))
+        assertEquals("upload.jpg", UploadRules.sanitizeFileName("   ", fallbackExtension = "jpg"))
+        assertEquals("upload.png", UploadRules.sanitizeFileName(":*?<>|", fallbackExtension = "png"))
+        assertEquals("custom_base.jpg", UploadRules.sanitizeFileName("   ", fallbackExtension = "jpg", fallbackBaseName = "custom_base"))
+    }
+
     // ---- UploadRules.isValidDirName ----
 
     @Test

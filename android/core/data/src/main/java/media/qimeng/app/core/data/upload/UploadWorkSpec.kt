@@ -3,6 +3,7 @@ package media.qimeng.app.core.data.upload
 import androidx.work.Data
 import androidx.work.ListenableWorker
 import androidx.work.workDataOf
+import media.qimeng.app.core.model.UploadRules
 
 /**
  * 上传队列的工作契约（M4-5）：唯一链名 / Data 键位 / 输入输出映射 / 终局状态机。
@@ -139,7 +140,7 @@ object UploadWorkSpec {
             dir = dir,
             displayName = displayName,
             sizeBytes = data.getLong(KEY_SIZE_BYTES, -1L),
-            uploadFileName = data.getString(KEY_UPLOAD_FILE_NAME)?.takeIf { it.isNotBlank() } ?: displayName,
+            uploadFileName = UploadRules.sanitizeFileName(data.getString(KEY_UPLOAD_FILE_NAME)?.takeIf { it.isNotBlank() } ?: displayName),
             attachAuthorId = data.getString(KEY_ATTACH_AUTHOR_ID),
             attachSources = data.getStringArray(KEY_ATTACH_SOURCES)?.toList(),
             // 缺键回退空串（挂靠键同款旧载荷兼容口径：归档分派侧按空串回退 uploaded/）

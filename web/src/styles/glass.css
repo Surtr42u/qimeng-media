@@ -1853,16 +1853,16 @@ button.pill.detail-tag-manage { cursor: pointer; }
   height: 12px;
 }
 
-.art-video-player .art-control-selector:hover .art-selector-list,
-.art-video-player .art-control-selector:focus-within .art-selector-list,
-.art-video-player .art-control-selector.art-selector-show .art-selector-list {
+.art-video-player .art-control-selector:hover:not(.art-selector-closed) .art-selector-list,
+.art-video-player .art-control-selector:focus-within:not(.art-selector-closed) .art-selector-list,
+.art-video-player .art-control-selector.art-selector-show:not(.art-selector-closed) .art-selector-list {
   opacity: 1 !important;
   transform: translateX(-50%) translateY(0) !important;
   pointer-events: auto !important;
   visibility: visible !important;
 }
 
-/* 选项选完立即强制隐藏菜单（对标 Bilibili / YouTube 主流交互，防止 hover 残留） */
+/* 选项选完或主动收起时立即强制隐藏菜单（对标 Bilibili Web 主流交互，防止 hover 残留） */
 .art-video-player .art-control-selector.art-selector-closed .art-selector-list {
   display: none !important;
   opacity: 0 !important;
@@ -1892,11 +1892,11 @@ button.pill.detail-tag-manage { cursor: pointer; }
   font-weight: 600 !important;
 }
 
-/* 官方设置面板（齿轮弹层） */
+/* 官方设置面板（齿轮弹层）：精准悬浮于右下角播控栏上方，消除顶部阴影 */
 .art-video-player .art-settings {
   left: auto !important;
   right: 16px !important;
-  bottom: calc(100% + 10px) !important;
+  bottom: calc(var(--art-control-height, 46px) + 12px) !important;
   background: rgba(22, 22, 22, 0.94) !important;
   -webkit-backdrop-filter: blur(24px) !important;
   backdrop-filter: blur(24px) !important;
@@ -1904,8 +1904,25 @@ button.pill.detail-tag-manage { cursor: pointer; }
   border-radius: 10px !important;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.7) !important;
   color: #ffffff !important;
-  min-width: 150px !important;
+  min-width: 160px !important;
+  padding: 6px 0 !important;
   z-index: 100 !important;
+}
+.art-video-player .art-settings .art-setting-item {
+  padding: 8px 16px !important;
+  color: rgba(255, 255, 255, 0.88) !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  cursor: pointer !important;
+  transition: background-color 0.12s ease, color 0.12s ease !important;
+}
+.art-video-player .art-settings .art-setting-item:hover {
+  background-color: rgba(255, 255, 255, 0.12) !important;
+  color: #ffffff !important;
+}
+.art-video-player .art-settings .art-setting-item.art-current {
+  color: var(--qm-primary) !important;
+  font-weight: 600 !important;
 }
 
 /* 屏蔽 ArtPlayer 暂停时正中央大播放图标遮挡画面（用户明确要求） */

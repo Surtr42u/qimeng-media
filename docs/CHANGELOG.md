@@ -10,9 +10,40 @@
 
 > **历史条目拆分说明（2026-10-01）**：为控制 AI 上下文体量，本文件只保留 **2026-09-22 及之后**的条目（第三百八十二笔起）；拆分线之前的全部条目已逐字迁入 `docs/history/CHANGELOG-ARCHIVE.md`（零改写，笔号与本文件连续可查）。引用早于拆分线的旧笔号请去历史档查阅。
 
-## feat(web): 遵循 ArtPlayer 官方规范重构播控体系——消除右侧菜单错位、恢复 GitHub 原始舞台尺寸、消除左上角闪烁提示、根除底部背景视频变暗闪烁与实现选完即关主流交互、清理历史冗余分支、根治叠层冲突与桌面端画面上移 + 缩略图时长去胶囊与修复夜间反黑 + 视频封面元数据固化（2026-10-07 第四百九十五笔）
+## fix(app): 上传文件名安全规范化与自动补齐——消除 INVALID_FILENAME 400 失败（2026-10-07 第四百九十六笔）
 
 执行 AI：Gemini-3.8-Flash（主代理）
+
+- **背景与痛点**：
+  1. 用户反馈：“看一下手机端的代码,现在手机端上传会出现失败:INVALID_FILENAME文件名不合法的问题,修复一下”。
+  2. 根因剖析：
+     - **服务端校验硬红线**（`server/internal/httpapi/upload.go` 与 `uploads.go`）：服务端在直传与分片建会话时均执行 `filing.SanitizeFilename(filename)`，剥离 `/`、`\`、控制字符、Windows 非法字符（`:*?"<>|`）并修剪首尾点号与空格；若结果为空串（`ErrFilenameEmpty`）或命中 Windows 保留设备名（`CON`, `PRN`, `AUX`, `NUL`, `COM1-9`, `LPT1-9`），服务端直接抛出 `HTTP 400 INVALID_FILENAME: 文件名不合法`。
+     - **手机端解析与清洗防线缺失**（`SdkUploadRepository.describeOne`）：
+       ① 空白/空文件名未过滤：特定 ContentProvider 或外部应用分享时返回空字符串或纯空格，原代码未做过滤直接采用，导致向服务端发送 `filename=""`；
+       ② 包含路径前缀或特殊符号：部分应用返回的 `DISPLAY_NAME` 是完整文件路径（如 `/storage/...`）或带冒号/特殊字符；
+       ③ 兜底无合法扩展名：原代码在元数据异常时简单回退 `"未命名"`（无扩展名），既无法匹配 MIME 也容易在过滤后变空；
+       ④ 出网与落库名（`UploadItem.effectiveUploadName` / `UploadWorkSpec.specFromInputData`）未做客户端安全清洗，保留设备名等非法名直传服务端。
+- **改动内容**：
+  1. **纯函数安全清洗机制**（`android/core/model/src/main/java/media/qimeng/app/core/model/UploadModels.kt`）：
+     - `UploadRules.sanitizeFileName`：剥离路径前缀与反斜杠，过滤控制字符与 Windows 非法字符，修剪两端点号与空格；全空或非法名自动以 `fallbackBaseName`（默认 `upload`）兜底；缺少扩展名时自动追加 `fallbackExtension`；
+     - `UploadRules.isWindowsReservedName`：识别 Windows 保留设备名（CON, PRN, AUX, NUL, COM1-9, LPT1-9），自动加 `file_` 前缀保护；
+     - `UploadItem.effectiveUploadName`：无论编辑文件名还是展示名，出网取值一律经 `UploadRules.sanitizeFileName` 规范化。
+  2. **完善手机端元数据提取与兜底**（`android/core/data/src/main/java/media/qimeng/app/core/data/repository/SdkUploadRepository.kt`）：
+     - `describeOne` 提取 `contentResolver.getType(uri)` 解析真实 MIME 类型与合法扩展名；
+     - `DISPLAY_NAME` 异常或为空时，依次尝试 `uri.lastPathSegment` 与本地文件属性；
+     - 最终经 `UploadRules.sanitizeFileName` 产出合规文件名，并在缺失大小时回退探测 `AssetFileDescriptor`。
+  3. **WorkManager 反解反向清洗保障**（`android/core/data/src/main/java/media/qimeng/app/core/data/upload/UploadWorkSpec.kt`）：
+     - `specFromInputData` 在读取落库文件名时同样经过 `UploadRules.sanitizeFileName`，保证历史在途任务与重试任务同样受到安全保护。
+  4. **单测全量锁定**（`android/core/model/src/test/java/media/qimeng/app/core/model/UploadModelsTest.kt`）：
+     - 覆盖普通文件名、路径前缀、特殊字符、点文件、无后缀补齐、保留设备名前缀保护、全非法/空白兜底等 12+ 种边界用例。
+- **验证结论**：
+  - `:core:model:test` 160 个测试全部通过；
+  - `:core:data:testDebugUnitTest` 全部通过；
+  - `:feature:upload:testDebugUnitTest` 全部通过。
+
+## feat(web): 遵循 ArtPlayer 官方规范重构播控体系——消除右侧菜单错位、恢复 GitHub 原始舞台尺寸、消除左上角闪烁提示、根除底部背景视频变暗闪烁与实现选完即关主流交互、清理历史冗余分支、根治叠层冲突与桌面端画面上移 + 缩略图时长去胶囊与修复夜间反黑 + 视频封面元数据固化 + 修复设置面板浮层定位与对标 B 站标准播控交互（2026-10-07 第四百九十五笔）
+
+执行 AI：Gemini-3.8-Flash（主代理）+ Antigravity（执行子代理：设置面板定位与顶部阴影消除、B 站标准播控交互对标）
 
 - **背景与痛点**：
   1. 用户明确指示：“你可以看看官方的技术文档来实现.现在右侧的那几个点开错位.你看看官方文档和github看看怎么实现兼容或者其他方法,依旧你做的这个新的缩水了高度显得小”。
@@ -23,6 +54,8 @@
      - **桌面端画面上移根因**：此前给 `.asset-stage video` 强加了 `margin: 0 auto; display: block;`，覆盖了 ArtPlayer 依赖的绝对居中定位；
      - **移动到底部组件视频变暗闪烁根因**：`.art-video-player .art-bottom` 占满视口 100% 区域，鼠标滑入底部触发淡入时整个大面积暗色渐变笼罩大半视频画面，造成发暗闪烁；
      - **选项选完留在屏幕不消失根因**：ArtPlayer 原生依赖 hover 样式，且点击选项时鼠标停留在该区域，hover 状态导致菜单死死悬停无法自动收起。
+  4. 用户追加反馈及截图 `media_1791360204314.png`：点击齿轮设置按钮后屏幕无设置 UI，视频最上方边缘出现细暗阴影；播控组件需全面对标 B 站 Web 端交互标准（Toggle 开关、移出离界收起、选完即关、空白处即关）。
+  5. **设置面板丢失与顶部阴影根因**：在 `web/src/styles/glass.css` 中，`.art-video-player .art-settings` 曾被写入 `bottom: calc(100% + 10px)`。在 ArtPlayer DOM 结构中，`.art-settings` 是整个播放器容器（高度 100%）的直接子元素，而非底栏按钮子元素。该定位导致整个设置面板被直接推至播放器外部上方，仅底部 32px 盒子阴影渗入视频顶部边缘，造成用户看不到设置 UI 却看到顶部黑影。
 - **改动内容**：
   1. **严格遵循 ArtPlayer 官方技术规范重构（消除菜单错位）**（`web/src/components/media/video-player.tsx`）：
      - 清晰度（`quality`）、倍速（`playbackRate`）、字幕（`subtitle`）完全走官方 `controls: [{ selector: [...] }]` 注册；
@@ -54,6 +87,15 @@
   8. **视频封面元数据固化与缩略图缓存重置**：
      - PC 端与手机端（ADB: `真机`）《守望先锋  法鸡.mp4》均封装 1.12208s 帧为 MP4 内嵌封面（Stream #0:2 attached_pic），原文件修改时间戳保全不变；
      - 清理并重置两端缩略图缓存。
+  9. **设置面板定位修复与顶部阴影彻底消除**（`web/src/styles/glass.css`）：
+     - 将 `.art-video-player .art-settings` 定位修正为底栏上方 `bottom: calc(var(--art-control-height, 46px) + 12px) !important; right: 16px !important;`；
+     - 设置面板精准悬浮于右下角齿轮按钮正上方，顶部阴影彻底消除；补充 `.art-setting-item` 磨砂交互高亮、字阶（13px/500）与主题色激活态（`var(--qm-primary)`）。
+  10. **完全对标 B 站 Web 播控组件交互标准**（`web/src/components/media/video-player.tsx`, `web/src/styles/glass.css`）：
+     - **Toggle 开关**：点击清晰度/倍速/字幕按钮自身，若已处于打开状态（包含 hover 展开态），再次点击立即收起；关闭态点击则展开当前项并收起其他项与设置面板；
+     - **移出自然收起**：鼠标离开 selector 按钮及弹出列表区域（`mouseleave`/`mouseout`）时，同时清理 `art-selector-show` 与 `art-selector-closed`，菜单平滑收起；再次移入自然通过 hover 展开；
+     - **选项选完即关**：点击选项后触发选择并立即收起菜单，杜绝 hover 残留；并在比例等设置项选定后自动收起设置面板；
+     - **空白与外部收起**：点击视频画面、播放器外部页面时，所有打开的 selector 浮层及设置面板即刻全部收起；
+     - **互斥联动**：点击设置齿轮按钮时自动关闭已展开的 selector 浮层。
 - **验证**：
   - 前端 28 个测试套件 287 项单元测试全部通过（PASS）；
   - `npm run build` 打包成功（零类型警告、零错误）；
