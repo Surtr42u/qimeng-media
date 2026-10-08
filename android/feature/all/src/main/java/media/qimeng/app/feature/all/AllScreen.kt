@@ -1,13 +1,42 @@
 package media.qimeng.app.feature.all
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -15,9 +44,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -32,17 +63,21 @@ import media.qimeng.app.core.model.PillSpec
 import media.qimeng.app.core.model.Zone
 import media.qimeng.app.core.model.groupByAlbumDim
 import media.qimeng.app.core.model.hasActiveFilters
+import media.qimeng.app.core.ui.component.QimengAuthorSuggestSection
 import media.qimeng.app.core.ui.component.QimengChipRow
 import media.qimeng.app.core.ui.component.QimengEmptyState
 import media.qimeng.app.core.ui.component.QimengFilterSheet
 import media.qimeng.app.core.ui.component.QimengMediaGrid
+import media.qimeng.app.core.ui.component.QimengMessageCard
 import media.qimeng.app.core.ui.component.QimengPill
 import media.qimeng.app.core.ui.component.QimengPullToRefresh
+import media.qimeng.app.core.ui.component.QimengSourceSection
 import media.qimeng.app.core.ui.component.QimengTitleRow
 import media.qimeng.app.core.ui.component.QimengValuePillBlock
 import media.qimeng.app.core.ui.component.TabScrollController
 import media.qimeng.app.core.ui.component.qimengPinchToColumns
 import media.qimeng.app.core.ui.glass.TabDockDefaults
+import media.qimeng.app.core.ui.icon.LabelTagIcon
 import media.qimeng.app.core.ui.theme.QimengDimens
 // 页头组件共享文案在 :core:ui（nonTransitiveRClass 下跨模块取资源须引对方 R）
 import media.qimeng.app.core.ui.R as CoreUiR
@@ -64,12 +99,14 @@ const val ALBUM_ROUTE = "all"
  * 排序不在页头（任务L L4 按用户拍板删除 G5 页头四档排序行——旧版无此行），
  * 排序唯一编辑入口回归万能筛选面板「排序方式/顺位」两段（QimengFilterSheet）。
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AllScreen(
     onOpenAsset: (assetId: String) -> Unit,
     viewModel: AlbumViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val batchAuthorState by viewModel.batchAuthorState.collectAsStateWithLifecycle()
     val columns by viewModel.albumColumns.collectAsStateWithLifecycle()
     // 万能筛选面板（M4-2A-B3）：面板开关/草稿/标签候选都在 VM 面板流里
     val panelState by viewModel.panelState.collectAsStateWithLifecycle()
@@ -135,55 +172,115 @@ fun AllScreen(
     val activePills = FourDimPills.pillsFor(pillModel)
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // 页头唯一实现于 :core:ui（任务A §5.2，B5 收藏/历史页复用）——本页只做文案/参数接线。
-        // 筛选入口只在相册页标题行（按实录判读：旧版实录仅全部页标题行有 allFilterButton 图标，
-        // favorite/history 实录无筛选图标；收藏/历史不传 onFilterClick 不显示，B5 接线时复核落档）
-        QimengTitleRow(
-            title = stringResource(R.string.all_title),
-            statLine = state.totalMatched?.let { stringResource(CoreUiR.string.ui_stat_files, it) } ?: "",
-            // Y3 批（2026-09-12 全局字体对齐旧版）：页标题对齐旧版 fragment_all_files.xml L31-37
-            // ——28sp Bold + qmColorTextPrimary（Theme.kt qmColorTextPrimary→onSurface 槽）；
-            // 行高 36sp 防 28sp 大标题行挤压（此前 titleLarge 22sp Regular 偏小即用户反馈项）
-            titleStyle = MaterialTheme.typography.titleLarge.copy(
-                fontSize = 28.sp,
-                lineHeight = 36.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-            ),
-            columns = displayColumns,
-            onToggleColumns = viewModel::toggleColumns,
-            onFilterClick = viewModel::openFilterSheet,
-            // U10-2b：面板字段偏离默认（排序/顺位/观看/点击/大小/时间/年份/标签）才点亮软底；
-            // 判定为 core:model 纯函数（hasActiveFilters），UI 不内嵌业务规则（铁律 7）
-            filterActive = state.filter.hasActiveFilters(),
-        )
-
-        // 维度芯片行常驻文档流（旧版在网格上方推挤布局）；「角色 | 类型」间竖分隔线=旧版
-        // fragment_all_files.xml L117-118；芯片点击语义（点已激活维=切展开/折叠）在 ViewModel
-        QimengChipRow(
-            pills = FourDimPills.dimChips(pillModel).map { QimengPill(text = it.text, selected = it.selected) },
-            onPillClick = { index ->
-                viewModel.onDimChipClicked(AlbumDim.entries[index])
-            },
-            dividerBeforeIndex = AlbumDim.TYPE.ordinal,
-            modifier = Modifier.padding(horizontal = QimengDimens.ScreenPaddingHorizontal),
-        )
-
-        // 值区块 in-flow（任务G G5：文档流推挤网格不遮挡；2026-09-15 批改用 :core:ui
-        // QimengValuePillBlock 三页单源——收藏/历史/作者集合页同款，钳制与展开钮规格随迁）
-        if (state.filter.expanded) {
-            QimengValuePillBlock(
-                pills = activePills.map { QimengPill(text = it.text, selected = it.selected) },
-                onPillClick = { index -> dispatchPill(viewModel, state.activeDim, activePills.getOrNull(index)) },
-                // 切维度归位「收起两行」（Web setDim 重置 expanded 同口径）
-                resetKey = state.activeDim,
+        if (state.isSelectionMode) {
+            // 多选模式工具栏（替代常规标题行）
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(
+                        horizontal = QimengDimens.ScreenPaddingHorizontal,
+                        vertical = QimengDimens.SpaceM,
+                    ),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                shape = RoundedCornerShape(16.dp),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        text = "已选 ${state.selectedAssetIds.size} 项",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        TextButton(onClick = viewModel::selectAll) {
+                            Text("全选", fontWeight = FontWeight.Bold)
+                        }
+                        TextButton(onClick = viewModel::exitSelectionMode) {
+                            Text("退出", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
+        } else {
+            // 页头唯一实现于 :core:ui（任务A §5.2，B5 收藏/历史页复用）——本页只做文案/参数接线。
+            // 筛选入口只在相册页标题行（按实录判读：旧版实录仅全部页标题行有 allFilterButton 图标，
+            // favorite/history 实录无筛选图标；收藏/历史不传 onFilterClick 不显示，B5 接线时复核落档）
+            QimengTitleRow(
+                title = stringResource(R.string.all_title),
+                statLine = state.totalMatched?.let { stringResource(CoreUiR.string.ui_stat_files, it) } ?: "",
+                // Y3 批（2026-09-12 全局字体对齐旧版）：页标题对齐旧版 fragment_all_files.xml L31-37
+                // ——28sp Bold + qmColorTextPrimary（Theme.kt qmColorTextPrimary→onSurface 槽）；
+                // 行高 36sp 防 28sp 大标题行挤压（此前 titleLarge 22sp Regular 偏小即用户反馈项）
+                titleStyle = MaterialTheme.typography.titleLarge.copy(
+                    fontSize = 28.sp,
+                    lineHeight = 36.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                ),
+                columns = displayColumns,
+                onToggleColumns = viewModel::toggleColumns,
+                onFilterClick = viewModel::openFilterSheet,
+                // U10-2b：面板字段偏离默认（排序/顺位/观看/点击/大小/时间/年份/标签）才点亮软底；
+                // 判定为 core:model 纯函数（hasActiveFilters），UI 不内嵌业务规则（铁律 7）
+                filterActive = state.filter.hasActiveFilters(),
             )
+
+            // 维度芯片行常驻文档流（旧版在网格上方推挤布局）；「角色 | 类型」间竖分隔线=旧版
+            // fragment_all_files.xml L117-118；芯片点击语义（点已激活维=切展开/折叠）在 ViewModel
+            QimengChipRow(
+                pills = FourDimPills.dimChips(pillModel).map { QimengPill(text = it.text, selected = it.selected) },
+                onPillClick = { index ->
+                    viewModel.onDimChipClicked(AlbumDim.entries[index])
+                },
+                dividerBeforeIndex = AlbumDim.TYPE.ordinal,
+                modifier = Modifier.padding(horizontal = QimengDimens.ScreenPaddingHorizontal),
+            )
+
+            // 值区块 in-flow（任务G G5：文档流推挤网格不遮挡；2026-09-15 批改用 :core:ui
+            // QimengValuePillBlock 三页单源——收藏/历史/作者集合页同款，钳制与展开钮规格随迁）
+            if (state.filter.expanded) {
+                QimengValuePillBlock(
+                    pills = activePills.map { QimengPill(text = it.text, selected = it.selected) },
+                    onPillClick = { index -> dispatchPill(viewModel, state.activeDim, activePills.getOrNull(index)) },
+                    // 切维度归位「收起两行」（Web setDim 重置 expanded 同口径）
+                    resetKey = state.activeDim,
+                )
+            }
         }
 
-        // 页头排序行已删除（任务L L4，用户原话 #19「那就删除 就是截图这个,分区下面地这个排序」）：
-        // 旧版相册页无页头排序行（排序在万能筛选面板三档+顺位，2026-09-17 拍板精简），G5 提到页头的四档行按拍板移除；
-        // 排序唯一编辑入口回归筛选面板（QimengFilterSheet 排序方式/顺位两段），列表默认排序
-        // 回归协议缺省 default/desc（2026-09-17 拍板：默认选中档=「默认」，取代 2026-09-15 FILE_DATE 缺省）。
+        // 操作通知横幅
+        state.userNoticeMessage?.let { notice ->
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = QimengDimens.ScreenPaddingHorizontal, vertical = 4.dp)
+                    .clickable { viewModel.clearUserNotice() },
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = notice,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        text = "✕",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer,
+                    )
+                }
+            }
+        }
 
         state.errorMessage?.let { message ->
             Text(
@@ -234,14 +331,144 @@ fun AllScreen(
                     // 修复D-3：滚动暂停缩略图加载（对齐收藏/历史页任务I I5 口径——拖拽/fling
                     // 期间暂缓新缩略图请求，停滚自动恢复），滚动时帧预算让位交互响应
                     pauseThumbnailsWhileScrolling = true,
-                    // 卡片点击进详情（D3 顺手修复：onAssetClick 有默认空实现漏传即静默无反应）：
-                    // 先写批次清单再交壳层导航——详情页 i/N 序号与左右滑沿相册当前筛选后的
-                    // 已加载清单取邻位，滑切才跟随相册筛选而非其他页面残留的旧清单
+                    // 卡片点击与长按：多选模式下点按切换勾选；常规模式下点击进详情、长按进多选
                     onAssetClick = { asset: MediaAsset ->
-                        viewModel.enterDetail(asset.id)
-                        onOpenAsset(asset.id)
+                        if (state.isSelectionMode) {
+                            viewModel.toggleAssetSelection(asset.id)
+                        } else {
+                            viewModel.enterDetail(asset.id)
+                            onOpenAsset(asset.id)
+                        }
                     },
+                    onAssetLongClick = { asset: MediaAsset ->
+                        if (!state.isSelectionMode) {
+                            viewModel.startSelection(asset.id)
+                        }
+                    },
+                    selectedAssetIds = state.selectedAssetIds,
+                    isSelectionMode = state.isSelectionMode,
                 )
+            }
+
+            // 多选操作浮动胶囊
+            androidx.compose.animation.AnimatedVisibility(
+                visible = state.isSelectionMode && state.selectedAssetIds.isNotEmpty(),
+                enter = fadeIn() + slideInVertically { it },
+                exit = fadeOut() + slideOutVertically { it },
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = TabDockDefaults.bottomClearance() + 16.dp),
+            ) {
+                Button(
+                    onClick = viewModel::openBatchAuthorSheet,
+                    shape = CircleShape,
+                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 6.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                    ),
+                    contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp),
+                ) {
+                    Icon(
+                        imageVector = LabelTagIcon,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "批量设置作者与来源 (${state.selectedAssetIds.size})",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
+        }
+    }
+
+    // 批量设置作者与来源抽屉
+    if (batchAuthorState.visible) {
+        ModalBottomSheet(
+            onDismissRequest = viewModel::dismissBatchAuthorSheet,
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 8.dp)
+                    .verticalScroll(rememberScrollState())
+                    .imePadding(),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Column {
+                    Text(
+                        text = "批量设置作者与来源",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "已选 ${state.selectedAssetIds.size} 项资产。保存后将自动挂靠所选作者，并自动写入 NAS 的 TXT 作品片段。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+                batchAuthorState.errorMessage?.let { err ->
+                    QimengMessageCard(
+                        text = err,
+                        container = MaterialTheme.colorScheme.errorContainer,
+                        onDismiss = { /* 忽略 */ },
+                    )
+                }
+
+                // —— 作者联想与选择 ——
+                QimengAuthorSuggestSection(
+                    title = "关联作者（必选）",
+                    query = batchAuthorState.authorQuery,
+                    committedName = batchAuthorState.committedAuthor?.displayName,
+                    committedIsExisting = true,
+                    suggestions = batchAuthorState.suggestions,
+                    seeds = batchAuthorState.seeds,
+                    onQueryChange = viewModel::onBatchAuthorQueryChange,
+                    onPickSuggestion = viewModel::onPickBatchAuthor,
+                    onCommitInput = {},
+                    onClear = viewModel::onClearBatchAuthor,
+                )
+
+                // —— 来源选择与添加 ——
+                QimengSourceSection(
+                    title = "来源渠道（可选，并入该作者来源列表）",
+                    selectedSources = batchAuthorState.selectedSources,
+                    options = batchAuthorState.sourceOptions,
+                    enabled = batchAuthorState.committedAuthor != null,
+                    disabledHint = "请先在上方确定作者后再配置来源",
+                    onToggle = viewModel::onToggleBatchSource,
+                    onAddCustom = viewModel::onAddBatchCustomSource,
+                )
+
+                // —— 确认与取消 ——
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    OutlinedButton(
+                        onClick = viewModel::dismissBatchAuthorSheet,
+                        modifier = Modifier.weight(1f),
+                        enabled = !batchAuthorState.isSaving,
+                    ) {
+                        Text("取消")
+                    }
+                    Button(
+                        onClick = viewModel::submitBatchAuthor,
+                        modifier = Modifier.weight(1f),
+                        enabled = batchAuthorState.committedAuthor != null && !batchAuthorState.isSaving,
+                    ) {
+                        Text(if (batchAuthorState.isSaving) "正在写入 TXT..." else "确认批量应用")
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
             }
         }
     }

@@ -10,6 +10,40 @@
 
 > **历史条目拆分说明（2026-10-01）**：为控制 AI 上下文体量，本文件只保留 **2026-09-22 及之后**的条目（第三百八十二笔起）；拆分线之前的全部条目已逐字迁入 `docs/history/CHANGELOG-ARCHIVE.md`（零改写，笔号与本文件连续可查）。引用早于拆分线的旧笔号请去历史档查阅。
 
+## feat(app): 相册长按多选与批量关联作者与来源——支持网格卡片长按多选、底部操作胶囊与联想抽屉，保存自动写入 NAS TXT 片段（2026-10-08 第四百九十九笔）
+
+执行 AI：Gemini-3.8-Flash（主代理）
+
+- **背景与需求**：
+  1. 用户在体验上传重构后反馈：“杂图这种等上传完再去相册的内置作者页编辑来源和作者是吗,这个编辑后会自动写入txt吗；你加一下把我看看效果”。
+  2. 方案确定：杂图/多作者图片直接轻装上传入库；在相册网格（全部媒体列表）中支持长按资产多选，一次性批量关联作者与来源；服务端由 `PUT /assets/{assetId}/authors` 在事务中自动原子写入 NAS 的对应作者 TXT 片段（写入真相源），既不改变底层一致性，又让批量管理顺手舒服。
+- **改动内容**：
+  1. **共享媒体网格组件支持多选模式与触觉震动反馈**（`android/core/ui/src/main/java/media/qimeng/app/core/ui/component/QimengMediaGrid.kt`）：
+     - `QimengMediaGrid` 增加 `onAssetLongClick`、`selectedAssetIds`、`isSelectionMode` 等参数；
+     - `AssetCard` 增加 `isSelected`、`isSelectionMode` 与 `onLongClick`；
+     - 交互升级：在非多选状态下长按资产卡片，触发 `LocalHapticFeedback` 震动并进入多选模式；多选模式下卡片右上角显示圆形复选标记（已选为 primary 底色对勾 `CheckMarkIcon`，未选为半透明黑底白边框圆圈），已选项外圈带 2.5dp 高亮边框与轻量遮罩；
+     - 多选模式下点击卡片直接 toggle 勾选/反选，避免误触发详情页。
+  2. **相册状态机支持多选与批量设置编排**（`android/feature/all/src/main/java/media/qimeng/app/feature/all/AlbumViewModel.kt`）：
+     - 注入 `AuthorRepository` 与 `UploadRepository`；
+     - 增加 `BatchAuthorUiState`、`selectedAssetIds`、`isSelectionMode` 及 `userNoticeMessage`；
+     - 暴露多选动作：`startSelection`、`toggleAssetSelection`、`selectAll`、`exitSelectionMode`；
+     - 暴露批量设置流程：`openBatchAuthorSheet`、`onBatchAuthorQueryChange`（带防抖联想）、`onPickBatchAuthor`、`onToggleBatchSource`、`onAddBatchCustomSource`、`submitBatchAuthor`；
+     - `submitBatchAuthor` 逐个调用 `authorRepository.replaceAssetAuthors`（服务端 DB 事务原子写 NAS TXT），并按需并入来源 `appendAuthorSources`；保存成功后退出多选模式、刷新相册数据并弹出成功通知横幅。
+  3. **相册页面接入与视觉动效**（`android/feature/all/src/main/java/media/qimeng/app/feature/all/AllScreen.kt`）：
+     - 多选模式顶部工具栏：显示“已选 X 项”以及“全选”、“退出”按钮；
+     - 底部悬浮操作按钮：当有选中项时通过 `AnimatedVisibility` 浮现胶囊按钮“🏷️ 批量设置作者与来源 (X)”；
+     - 弹出 `ModalBottomSheet` 抽屉：集成 `QimengAuthorSuggestSection`（作者联想与种子选择）与 `QimengSourceSection`（快捷词表与自定义来源），底部带取消与确认保存；
+     - 成功提示横幅：保存完成后展示绿色/Tertiary 消息卡片，告知具体作者与自动写入 TXT 状态。
+  4. **测试补齐与锁定**（`android/feature/all/src/test/java/media/qimeng/app/feature/all/AlbumViewModelTest.kt` 与 `AlbumFilterPanelTest.kt`）：
+     - 接入 `:core:testing` 的 `FakeAuthorRepository` 与 `FakeUploadRepository`；
+     - 新增多选状态机测试（长按进入、点击切换、全选、退出）；
+     - 新增批量设置作者测试（校验 `replaceAssetAuthorCalls` 遍历挂靠及 `appendSourceCalls` 来源并入，验证状态重置与提示反馈）。
+- **验证结论**：
+  - `:feature:all:testDebugUnitTest` 单元测试全绿通过；
+  - `:app:assembleDebug` 全包打包成功；
+  - 成功安装并运行于连接的 Android 真机设备。
+- **文档**：CHANGELOG.md（本条）。
+
 ## feat(app): 数据管理与上传体验重构——数据管理三级语义分组与图标体系，上传批次作者来源可选折叠卡化（2026-10-08 第四百九十八笔）
 
 执行 AI：Gemini-3.8-Flash（主代理）

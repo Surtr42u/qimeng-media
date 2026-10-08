@@ -1,20 +1,27 @@
 package media.qimeng.app.core.ui.component
 
 import android.content.Context
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -30,8 +37,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -45,6 +54,7 @@ import coil3.size.Size
 import media.qimeng.app.core.model.GridSection
 import media.qimeng.app.core.model.MediaAsset
 import media.qimeng.app.core.model.MediaKind
+import media.qimeng.app.core.ui.icon.CheckMarkIcon
 import media.qimeng.app.core.ui.theme.QimengDimens
 
 /** 距底预加载阈值（LEGACY §H：距底 ≤6 项提前加载；数值与 RecommendPaging.PRELOAD_DISTANCE 同语义，
@@ -205,6 +215,9 @@ fun QimengMediaGrid(
     // 无默认空实现（审查清偿）：默认 {} 让漏传接线静默无反应（D3 同族四页 bug 根因），
     // 必传参数把漏接变成编译错误
     onAssetClick: (MediaAsset) -> Unit,
+    onAssetLongClick: ((MediaAsset) -> Unit)? = null,
+    selectedAssetIds: Set<String> = emptySet(),
+    isSelectionMode: Boolean = false,
     onNearBottom: () -> Unit = {},
     // 问题A 哨兵哑火修复（2026-09-28）：加载结束重评估信号，语义见参数 KDoc
     reloadTick: Int = 0,
@@ -304,7 +317,10 @@ fun QimengMediaGrid(
                         asset = asset,
                         animatedUrlResolver = animatedUrlResolver,
                         paused = thumbnailsPaused,
+                        isSelected = asset.id in selectedAssetIds,
+                        isSelectionMode = isSelectionMode,
                         onClick = { onAssetClick(asset) },
+                        onLongClick = onAssetLongClick?.let { { it(asset) } },
                     )
                 }
             }
@@ -339,17 +355,23 @@ fun QimengMediaGrid(
  * - 圆角 [LEGACY_CARD_CORNER_RADIUS_PX] 为旧版**像素**值，经 [LocalDensity] 运行时换算 dp；
  * - 占位/错误底 = 旧版 qmColorChipBg 等价主题 token（在 [QimengThumbnail] 内，secondaryContainer）；
  * - 角标 [DurationBadgeTextStyle] 白字 12sp + 阴影、右下 8dp、无胶囊底；
- * - 无按下缩放动画（旧版无 scale/press 效果，保持 [clickable] 默认点击态即可，禁止再加缩放修饰）。
+ * - 无按下缩放动画（旧版无 scale/press 效果，保持默认点击态即可，禁止再加缩放修饰）。
+ * - 多选模式：高亮边框、半透明遮罩与右上角复选徽章（CheckMarkIcon）；
+ * - 长按支持：触发触觉反馈并进入多选模式。
  * 动图（animated_image）走原件直链动画（拍板条目 9）：解析经 [animatedUrlResolver]
  * （VM 侧带内存缓存的 AssetOrigUrlResolver），解析完成前显示服务端缩略图。
  * 详情跳转是 M4-3 交界：onClick 由壳层接线。
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun AssetCard(
     asset: MediaAsset,
     animatedUrlResolver: suspend (String) -> String?,
     paused: Boolean,
+    isSelected: Boolean,
+    isSelectionMode: Boolean,
     onClick: () -> Unit,
+    onLongClick: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     // 动图原件解析（拍板条目 9：动图卡必须动画）：解析完成前先渲服务端缩略图。
@@ -369,19 +391,40 @@ private fun AssetCard(
     val cornerRadius = with(LocalDensity.current) { LEGACY_CARD_CORNER_RADIUS_PX.toDp() }
     // exp#4 预载翼的入队上下文（单例 ImageLoader 经 context 取，与详情预载链同源）
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
+    val cardShape = RoundedCornerShape(cornerRadius)
+
     Box(
         modifier = modifier
             .padding(CARD_OUTER_PADDING)
             .fillMaxWidth()
             .thumbnailAspectRatio()
-            // 先 clip 后 clickable：ripple 限定在圆角内；仅默认点击态，无缩放/按压动画
-            .clip(RoundedCornerShape(cornerRadius))
-            .clickable(onClick = {
-                // exp#4 预载翼：导航前抢跑海报加载（为什么见 preloadDetailPoster KDoc）；
-                // 卡上持有的正是详情舞台将渲的同一 URL（视频/动图），预载→转场首帧命中
-                preloadDetailPoster(context, asset.mediaType, thumbModel)
-                onClick()
-            }),
+            .clip(cardShape)
+            .then(
+                if (isSelectionMode && isSelected) {
+                    Modifier.border(
+                        width = 2.5.dp,
+                        color = MaterialTheme.colorScheme.primary,
+                        shape = cardShape,
+                    )
+                } else {
+                    Modifier
+                },
+            )
+            .combinedClickable(
+                onClick = {
+                    if (!isSelectionMode) {
+                        preloadDetailPoster(context, asset.mediaType, thumbModel)
+                    }
+                    onClick()
+                },
+                onLongClick = onLongClick?.let { action ->
+                    {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        action()
+                    }
+                },
+            ),
     ) {
         QimengThumbnail(
             model = thumbModel,
@@ -390,6 +433,16 @@ private fun AssetCard(
             diskCacheEnabled = diskCacheEnabled,
             modifier = Modifier.fillMaxSize(),
         )
+
+        // 多选模式且已选中时加半透明主题色遮罩
+        if (isSelectionMode && isSelected) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)),
+            )
+        }
+
         if (asset.mediaType in DURATION_BADGE_TYPES) {
             formatDurationBadge(asset.durationMs)?.let { badge ->
                 Text(
@@ -399,6 +452,40 @@ private fun AssetCard(
                         .align(Alignment.BottomEnd)
                         .padding(QimengDimens.SpaceM), // 旧版角标距右下 8dp（SpaceM 同档）
                 )
+            }
+        }
+
+        // 多选模式指示器（右上角）
+        if (isSelectionMode) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(8.dp)
+                    .size(24.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (isSelected) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.primary, CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = CheckMarkIcon,
+                            contentDescription = "已选中",
+                            tint = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.size(16.dp),
+                        )
+                    }
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.35f), CircleShape)
+                            .border(1.5.dp, Color.White.copy(alpha = 0.85f), CircleShape),
+                    )
+                }
             }
         }
     }

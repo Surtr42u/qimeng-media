@@ -127,6 +127,8 @@ class AlbumFilterPanelTest {
         origUrlResolver = object : AssetOrigUrlResolver {
             override suspend fun origUrl(assetId: String): String? = null
         },
+        authorRepository = media.qimeng.app.core.testing.FakeAuthorRepository(),
+        uploadRepository = media.qimeng.app.core.testing.FakeUploadRepository(),
     )
 
     // ---------- 用例 ----------

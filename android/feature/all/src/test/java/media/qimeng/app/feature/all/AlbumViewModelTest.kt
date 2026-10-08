@@ -12,9 +12,11 @@ import org.junit.Rule
 import org.junit.Test
 import media.qimeng.app.core.data.prefetch.ThumbnailPrefetchThrottle
 import media.qimeng.app.core.data.repository.AssetOrigUrlResolver
+import media.qimeng.app.core.data.repository.AuthorRepository
 import media.qimeng.app.core.data.repository.GridPrefsRepository
 import media.qimeng.app.core.data.repository.MediaBatchIndex
 import media.qimeng.app.core.data.repository.MediaRepository
+import media.qimeng.app.core.data.repository.UploadRepository
 import media.qimeng.app.core.model.AlbumDim
 import media.qimeng.app.core.model.APPEND_RETRY_DELAYS_MS
 import media.qimeng.app.core.model.AssetPageResult
@@ -30,6 +32,8 @@ import media.qimeng.app.core.model.NameSuggestion
 import media.qimeng.app.core.model.RankingPeriod
 import media.qimeng.app.core.model.TagSummary
 import media.qimeng.app.core.model.Zone
+import media.qimeng.app.core.testing.FakeAuthorRepository
+import media.qimeng.app.core.testing.FakeUploadRepository
 import media.qimeng.app.core.testing.MainDispatcherRule
 
 /**
@@ -149,6 +153,8 @@ class AlbumViewModelTest {
         repo: FakeMediaRepository,
         prefs: FakeGridPrefs = FakeGridPrefs(),
         batchIndex: MediaBatchIndex = MediaBatchIndex(),
+        authorRepo: media.qimeng.app.core.testing.FakeAuthorRepository = media.qimeng.app.core.testing.FakeAuthorRepository(),
+        uploadRepo: media.qimeng.app.core.testing.FakeUploadRepository = media.qimeng.app.core.testing.FakeUploadRepository(),
     ): AlbumViewModel = AlbumViewModel(
         mediaRepository = repo,
         gridPrefs = prefs,
@@ -157,6 +163,8 @@ class AlbumViewModelTest {
         origUrlResolver = object : AssetOrigUrlResolver {
             override suspend fun origUrl(assetId: String): String? = null
         },
+        authorRepository = authorRepo,
+        uploadRepository = uploadRepo,
     )
 
     // ---------- 用例 ----------
@@ -385,4 +393,78 @@ class AlbumViewModelTest {
             assertFalse(viewModel.uiState.value.isLoading)
             assertEquals(listOf("a"), viewModel.uiState.value.items.map { it.id })
         }
+
+    @Test
+    fun `多选状态机 - startSelection进入多选、toggle切换、全选与退出多选`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val repo = FakeMediaRepository()
+            val viewModel = viewModel(repo)
+            advanceUntilIdle()
+            repo.assetsCalls[0].gate.complete(
+                AssetPageResult(items = listOf(asset("a1"), asset("a2"), asset("a3")), nextCursor = null, totalMatched = 3),
+            )
+            advanceUntilIdle()
+
+            // 1. 长按进入多选
+            viewModel.startSelection("a1")
+            assertTrue(viewModel.uiState.value.isSelectionMode)
+            assertEquals(setOf("a1"), viewModel.uiState.value.selectedAssetIds)
+
+            // 2. 点击切换选中
+            viewModel.toggleAssetSelection("a2")
+            assertEquals(setOf("a1", "a2"), viewModel.uiState.value.selectedAssetIds)
+            viewModel.toggleAssetSelection("a1")
+            assertEquals(setOf("a2"), viewModel.uiState.value.selectedAssetIds)
+
+            // 3. 全选
+            viewModel.selectAll()
+            assertEquals(setOf("a1", "a2", "a3"), viewModel.uiState.value.selectedAssetIds)
+
+            // 4. 退出多选
+            viewModel.exitSelectionMode()
+            assertFalse(viewModel.uiState.value.isSelectionMode)
+            assertTrue(viewModel.uiState.value.selectedAssetIds.isEmpty())
+        }
+
+    @Test
+    fun `批量设置作者 - 提交后调用replaceAssetAuthors并追加来源，成功后退出多选并刷新相册`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val repo = FakeMediaRepository()
+            val authorRepo = FakeAuthorRepository()
+            val viewModel = viewModel(repo, authorRepo = authorRepo)
+            advanceUntilIdle()
+            repo.assetsCalls[0].gate.complete(
+                AssetPageResult(items = listOf(asset("a1"), asset("a2")), nextCursor = null, totalMatched = 2),
+            )
+            advanceUntilIdle()
+
+            // 选中 a1, a2
+            viewModel.startSelection("a1")
+            viewModel.toggleAssetSelection("a2")
+
+            // 打开抽屉并配置作者和来源
+            viewModel.openBatchAuthorSheet()
+            assertTrue(viewModel.batchAuthorState.value.visible)
+
+            val chosenAuthor = media.qimeng.app.core.model.AuthorSuggestion(id = "auth-1", displayName = "TestAuthor", fileCount = 5)
+            viewModel.onPickBatchAuthor(chosenAuthor)
+            viewModel.onToggleBatchSource("Pixiv")
+
+            // 提交批量设置
+            viewModel.submitBatchAuthor()
+            advanceUntilIdle()
+
+            // 验证作者挂靠和来源并入调用
+            assertEquals(2, authorRepo.replaceAssetAuthorCalls.size)
+            assertTrue(authorRepo.replaceAssetAuthorCalls.contains("a1" to listOf("auth-1")))
+            assertTrue(authorRepo.replaceAssetAuthorCalls.contains("a2" to listOf("auth-1")))
+            assertEquals(listOf("auth-1" to listOf("Pixiv")), authorRepo.appendSourceCalls)
+
+            // 验证状态重置与提示
+            assertFalse(viewModel.batchAuthorState.value.visible)
+            assertFalse(viewModel.uiState.value.isSelectionMode)
+            assertTrue(viewModel.uiState.value.selectedAssetIds.isEmpty())
+            assertTrue(viewModel.uiState.value.userNoticeMessage?.contains("TestAuthor") == true)
+        }
 }
+

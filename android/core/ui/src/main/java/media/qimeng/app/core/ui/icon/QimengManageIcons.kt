@@ -78,3 +78,16 @@ val TxtImportFileIcon: ImageVector = materialIcon(
     name = "QimengTxtImportFile",
     pathData = "M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z",
 )
+
+/** 选中勾选（Material Icons "check"） */
+val CheckMarkIcon: ImageVector = materialIcon(
+    name = "QimengCheckMark",
+    pathData = "M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z",
+)
+
+/** 标签与作者（Material Icons "label"） */
+val LabelTagIcon: ImageVector = materialIcon(
+    name = "QimengLabelTag",
+    pathData = "M17.63 5.84C17.27 5.33 16.67 5 16 5L5 5.01C3.9 5.01 3 5.9 3 7v10c0 1.1.9 1.99 2 1.99L16 19c.67 0 1.27-.33 1.63-.84L22 12l-4.37-6.16z",
+)
+

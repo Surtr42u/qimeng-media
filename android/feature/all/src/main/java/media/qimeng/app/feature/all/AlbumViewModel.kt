@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -12,19 +13,24 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import media.qimeng.app.core.data.repository.AuthorRepository
 import media.qimeng.app.core.data.repository.DataStoreGridPrefsRepository
 import media.qimeng.app.core.data.repository.GridPrefsRepository
 import media.qimeng.app.core.data.repository.MediaBatchIndex
 import media.qimeng.app.core.data.repository.MediaRepository
+import media.qimeng.app.core.data.repository.UploadRepository
 import media.qimeng.app.core.data.repository.AssetOrigUrlResolver
 import media.qimeng.app.core.data.repository.TagNameConflictException
 import media.qimeng.app.core.data.prefetch.ThumbnailPrefetchThrottle
+import media.qimeng.app.core.model.AUTHOR_SUGGEST_DEBOUNCE_MS
 import media.qimeng.app.core.model.AlbumDim
 import media.qimeng.app.core.model.AlbumFilter
 import media.qimeng.app.core.model.AlbumFilterState
 import media.qimeng.app.core.model.AlbumPanelDraft
 import media.qimeng.app.core.model.APPEND_RETRY_DELAYS_MS
+import media.qimeng.app.core.model.AuthorSuggestion
 import media.qimeng.app.core.model.FacetOption
 import media.qimeng.app.core.model.FacetParamKind
 import media.qimeng.app.core.model.FacetsResult
@@ -38,6 +44,7 @@ import media.qimeng.app.core.model.PanelFeedback
 import media.qimeng.app.core.model.RankingPeriod
 import media.qimeng.app.core.model.Zone
 import media.qimeng.app.core.model.panelDraft
+import media.qimeng.app.core.model.toRegularAuthorSeeds
 import media.qimeng.app.core.model.withOtherBucketLast
 import media.qimeng.app.core.model.withPanelDraft
 
@@ -61,13 +68,32 @@ data class AlbumUiState(
      *  重评估 key——翻页成功但新页为空（totalCount 不变）时哨兵不再哑火。失败不 bump：
      *  会与翻页自动重试叠加成无限锤击循环（语义详见 HomeViewModel.RecommendState.reloadTick） */
     val reloadTick: Int = 0,
+    /** 多选模式状态 */
+    val selectedAssetIds: Set<String> = emptySet(),
+    val isSelectionMode: Boolean = false,
+    /** 操作反馈通知文案（横幅展示） */
+    val userNoticeMessage: String? = null,
+)
+
+/** 批量关联作者抽屉状态 */
+data class BatchAuthorUiState(
+    val visible: Boolean = false,
+    val authorQuery: String = "",
+    val committedAuthor: AuthorSuggestion? = null,
+    val suggestions: List<AuthorSuggestion> = emptyList(),
+    val seeds: List<AuthorSuggestion> = emptyList(),
+    val selectedSources: List<String> = emptyList(),
+    val sourceOptions: List<String> = emptyList(),
+    val isSaving: Boolean = false,
+    val errorMessage: String? = null,
 )
 
 /**
  * 相册页 ViewModel：四维胶囊状态机（[AlbumFilter]，纯逻辑单测锁定）+
  * 四请求排自身候选（partition 恒显式传）+ cursor 分页 + 下拉刷新 +
  * 万能筛选面板草稿流（M4-2A-B3：打开拷贝/应用走 [applyFilter] 刷新链/
- * 重置=回默认+立即应用+关面板（旧版三合一口径）/标签增删）。
+ * 重置=回默认+立即应用+关面板（旧版三合一口径）/标签增删）+
+ * 多选模式与批量设置作者来源（自动写回 NAS TXT 片段）。
  * 面板状态类型（FilterPanelUiState/PanelFeedback）与查询展开（withPanelDraft）
  * 已收敛至 core/model 单源（任务Y Y4b，HomeViewModel 同范式互指）。
  */
@@ -80,6 +106,8 @@ class AlbumViewModel @Inject constructor(
     // 暂停抢带宽（窄接口，语义见 ThumbnailPrefetchThrottle KDoc）
     private val prefetchThrottle: ThumbnailPrefetchThrottle,
     val origUrlResolver: AssetOrigUrlResolver,
+    private val authorRepository: AuthorRepository,
+    private val uploadRepository: UploadRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AlbumUiState())
@@ -87,6 +115,11 @@ class AlbumViewModel @Inject constructor(
 
     private val _panelState = MutableStateFlow(FilterPanelUiState())
     val panelState: StateFlow<FilterPanelUiState> = _panelState.asStateFlow()
+
+    private val _batchAuthorState = MutableStateFlow(BatchAuthorUiState())
+    val batchAuthorState: StateFlow<BatchAuthorUiState> = _batchAuthorState.asStateFlow()
+
+    private var authorSuggestJob: Job? = null
 
     /**
      * 筛选代际号：筛选变化即递增。弱网下仓库响应可能乱序归位（自审 P2-1），
@@ -320,6 +353,187 @@ class AlbumViewModel @Inject constructor(
 
     fun clearError() {
         _uiState.value = _uiState.value.copy(errorMessage = null)
+    }
+
+    fun clearUserNotice() {
+        _uiState.update { it.copy(userNoticeMessage = null) }
+    }
+
+    // ---------- 多选模式与批量编辑 ----------
+
+    /** 长按资产：进入多选模式并选中该资产 */
+    fun startSelection(assetId: String) {
+        _uiState.update { state ->
+            state.copy(
+                isSelectionMode = true,
+                selectedAssetIds = state.selectedAssetIds + assetId,
+            )
+        }
+    }
+
+    /** 多选模式下点击卡片：切换选中状态 */
+    fun toggleAssetSelection(assetId: String) {
+        _uiState.update { state ->
+            val newSelected = if (assetId in state.selectedAssetIds) {
+                state.selectedAssetIds - assetId
+            } else {
+                state.selectedAssetIds + assetId
+            }
+            state.copy(selectedAssetIds = newSelected)
+        }
+    }
+
+    /** 全选当前已加载的所有资产项 */
+    fun selectAll() {
+        _uiState.update { state ->
+            state.copy(
+                isSelectionMode = true,
+                selectedAssetIds = state.items.map { it.id }.toSet(),
+            )
+        }
+    }
+
+    /** 退出多选模式并清空选中 */
+    fun exitSelectionMode() {
+        _uiState.update { state ->
+            state.copy(
+                isSelectionMode = false,
+                selectedAssetIds = emptySet(),
+            )
+        }
+    }
+
+    /** 打开批量设置作者与来源抽屉 */
+    fun openBatchAuthorSheet() {
+        if (_uiState.value.selectedAssetIds.isEmpty()) return
+        _batchAuthorState.value = BatchAuthorUiState(visible = true)
+        loadBatchAuthorSeedsAndSources()
+    }
+
+    fun dismissBatchAuthorSheet() {
+        _batchAuthorState.update { it.copy(visible = false) }
+    }
+
+    fun onBatchAuthorQueryChange(query: String) {
+        _batchAuthorState.update { it.copy(authorQuery = query) }
+        authorSuggestJob?.cancel()
+        if (query.isBlank()) {
+            _batchAuthorState.update { it.copy(suggestions = emptyList()) }
+            return
+        }
+        authorSuggestJob = viewModelScope.launch {
+            delay(AUTHOR_SUGGEST_DEBOUNCE_MS)
+            runCatching { uploadRepository.suggestAuthors(query) }
+                .onSuccess { suggestions ->
+                    _batchAuthorState.update { it.copy(suggestions = suggestions) }
+                }
+                .onFailure {
+                    _batchAuthorState.update { it.copy(suggestions = emptyList()) }
+                }
+        }
+    }
+
+    fun onPickBatchAuthor(suggestion: AuthorSuggestion) {
+        _batchAuthorState.update {
+            it.copy(
+                committedAuthor = suggestion,
+                authorQuery = "",
+                suggestions = emptyList(),
+            )
+        }
+        viewModelScope.launch {
+            runCatching { authorRepository.authorSourcesById(suggestion.id) }
+                .onSuccess { sources ->
+                    _batchAuthorState.update { it.copy(selectedSources = sources) }
+                }
+        }
+    }
+
+    fun onClearBatchAuthor() {
+        _batchAuthorState.update {
+            it.copy(
+                committedAuthor = null,
+                selectedSources = emptyList(),
+            )
+        }
+    }
+
+    fun onToggleBatchSource(source: String) {
+        _batchAuthorState.update { state ->
+            val current = state.selectedSources
+            val next = if (source in current) current - source else current + source
+            state.copy(selectedSources = next)
+        }
+    }
+
+    fun onAddBatchCustomSource(raw: String) {
+        val trimmed = raw.trim()
+        if (trimmed.isEmpty()) return
+        _batchAuthorState.update { state ->
+            if (trimmed !in state.selectedSources) {
+                state.copy(selectedSources = state.selectedSources + trimmed)
+            } else {
+                state
+            }
+        }
+    }
+
+    /**
+     * 确认提交批量设置：
+     * 1. 遍历当前选中的所有资产 id，调用 authorRepository.replaceAssetAuthors(assetId, listOf(authorId))
+     *    服务端将在 DB 事务中挂靠并自动同步持久化写入 NAS 的对应 TXT 片段；
+     * 2. 若存在填写的来源，调用 authorRepository.appendAuthorSources 并入去重；
+     * 3. 成功后退出多选模式，刷新相册，并给用户展示完成横幅。
+     */
+    fun submitBatchAuthor() {
+        val batchState = _batchAuthorState.value
+        val targetAuthor = batchState.committedAuthor ?: return
+        val selectedIds = _uiState.value.selectedAssetIds
+        if (selectedIds.isEmpty()) return
+
+        _batchAuthorState.update { it.copy(isSaving = true, errorMessage = null) }
+        viewModelScope.launch {
+            runCatching {
+                selectedIds.forEach { assetId ->
+                    authorRepository.replaceAssetAuthors(assetId, listOf(targetAuthor.id))
+                }
+                if (batchState.selectedSources.isNotEmpty()) {
+                    authorRepository.appendAuthorSources(targetAuthor.id, batchState.selectedSources)
+                }
+            }.onSuccess {
+                _batchAuthorState.value = BatchAuthorUiState(visible = false)
+                _uiState.update { state ->
+                    state.copy(
+                        isSelectionMode = false,
+                        selectedAssetIds = emptySet(),
+                        userNoticeMessage = "已为 ${selectedIds.size} 项资产批量设置作者为「${targetAuthor.displayName}」，并同步写入 TXT",
+                    )
+                }
+                refresh()
+            }.onFailure { e ->
+                _batchAuthorState.update {
+                    it.copy(
+                        isSaving = false,
+                        errorMessage = "批量设置失败: ${e.message ?: "网络或服务异常"}",
+                    )
+                }
+            }
+        }
+    }
+
+    private fun loadBatchAuthorSeedsAndSources() {
+        viewModelScope.launch {
+            val vocabJob = async { runCatching { authorRepository.sourceVocabulary() }.getOrDefault(emptyList()) }
+            val authorsJob = async { runCatching { authorRepository.authors() }.getOrDefault(emptyList()) }
+            val vocab = vocabJob.await()
+            val authors = authorsJob.await()
+            _batchAuthorState.update {
+                it.copy(
+                    sourceOptions = vocab,
+                    seeds = authors.toRegularAuthorSeeds(),
+                )
+            }
+        }
     }
 
     /** 筛选变化统一入口：递增代际（作废在途旧响应）+ 重载第一页 + 重取四维候选（计数随其他维变化） */
