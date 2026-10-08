@@ -8,6 +8,34 @@
 - 子代理执行的工作标注"（执行子代理）"，主对话直接完成的标注"（主代理）"。
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
+## feat(app): 视频播放器播控控件全面对齐桌面端规范（画质/倍速/设置比例与循环）与相册数量分页跳变缺陷根治（2026-10-08 第五百零三笔）
+
+执行 AI：Gemini-3.8-Flash（主代理）
+
+- **背景与需求**：
+  1. 用户真机体验后提出进一步诉求：“我的意思是对齐桌面端的那些ui啊,画质倍速啥的懂吗一致的,然后相册好像太多了的时候会导致显示数量不对,往下滑动浏览后又话增加直到全浏览了才对,排查一下”。
+  2. 核心任务剖析：
+     - **播放器播控控件全面对齐桌面端/Web 端体系**：桌面端（Web/Tauri 壳）拥有成熟的播控体系（`controls` / `selector` / `settings`），包括清晰度 selector（原画/当前分辨率）、完整倍速档位表（0.5x~2.0x 六档）、设置齿轮弹窗（画面比例 4 档调节 + 单片循环开关）以及全屏切换；App 端此前仅有基础倍速，缺少画质选择、画面比例设置与单片循环功能；
+     - **相册数量“滑动浏览后才增加直到全浏览才对”Bug 根治**：
+       - 根因 1（服务端与客户端分页协议契约）：服务端为了全库性能，仅在首屏（`cursor == ""`）查询 COUNT 并返回 `totalMatched`，翻页时为 `null`；而客户端 `AlbumViewModel` 与 `AuthorCollectionViewModel` 在翻页时直接赋值 `totalMatched = page.totalMatched`，导致用户一旦向下滑动翻页，首屏计算好的全量总数立即被 `null` 覆盖冲掉，页头标题行统计（`N 个文件`）随之丢失；
+       - 根因 2（组头计算采用局部内存数量）：在相册页作品维（AUTHOR）与角色维（CHARACTER）下，组头使用了当前内存加载列表的局部数量 `assets.size`。当全库媒体很多时，首屏只拉取第一页数据，某个作品实际有 100 张但在第一页仅出现 15 张，组头即显示“15 项”；随着用户下滑翻页，该作品的项不断被追加进内存，组头数字就会在滑动中不断跳动变大（15 → 30 → 60 → 100），直到全浏览完才显示真实的 100 项。
+- **改动内容**：
+  1. **播放器播控控件全面对齐桌面端与 Web 规范**（`android/feature/detail/src/main/java/media/qimeng/app/feature/detail/video/BiliPlayerView.kt`、`PlayerMath.kt`、`PlayerMathTest.kt`、`ic_player_settings.xml`）：
+     - **画质微胶囊与清晰度弹窗**：右侧新增 `qualityBtn` 微胶囊药丸，默认显示“原画”，视频 metadata 加载后自动映射当前视频规格；点击向上弹出深色毛玻璃清晰度面板，展示原画与真实分辨率（例如 `1920×1080 · 1080P 高清 · 原始画质`），带高亮勾选状态；
+     - **倍速档位完整对齐 Web 端规范**：`PLAYER_SPEED_TIERS` 从 4 档升级为对齐 Web 端 `PLAYBACK_RATES` 的 6 档完整档位表（`2.0x`, `1.5x`, `1.25x`, `1.0x 正常`, `0.75x`, `0.5x`），菜单与按钮文案统一映射，长按 2x 手势平滑兼容；
+     - **播放设置齿轮图标与设置面板**：右侧新增设置齿轮按钮 `settingsBtn`，点击弹出深色毛玻璃“播放设置”面板：
+       - **画面比例 4 档调节**：默认（`RESIZE_MODE_FIT`）、`16:9`、`4:3`、拉伸铺满（`RESIZE_MODE_FILL`），胶囊切换即时生效并附顶端指示横幅；
+       - **单片循环开关**：Switch 药丸实时同步 `player.repeatMode`（`REPEAT_MODE_ONE` / `REPEAT_MODE_OFF`），带即时状态反馈；
+     - **多弹窗互斥与自动隐藏倒计时协同**：画质、倍速、设置弹窗统一纳入 `dismissAllPopups`，弹窗展开期间暂停 5s 自动隐藏，关闭后恢复，隐藏控制器或 Detached 时安全关闭。
+  2. **相册数量分页展示缺陷彻底根治**（`AlbumViewModel.kt`、`AuthorCollectionViewModel.kt`、`DateGrouping.kt`、`AllScreen.kt`、`DateGroupingTest.kt`、`AlbumViewModelTest.kt`）：
+     - **翻页总数保活继承**：`AlbumViewModel` 与 `AuthorCollectionViewModel` 在翻页时改用 `totalMatched = page.totalMatched ?: if (append) _uiState.value.totalMatched else null`，杜绝服务端分页返回 null 时将已计算的全量真实总数抹掉，相册顶栏统计全程稳定在线；
+     - **组头精准绑定服务端全量 facets 统计项**：`groupByAlbumDim` 引入 `facetCounts` 参数映射机制；`AllScreen` 在作品维和角色维下将服务端的真实全量统计字典（`authorOptions` / `characterOptions` 的 `fileCount`）注入分组函数，组头优先展示全局真实总数（如“碧蓝航线  88 项”），从首屏起保持 100% 准确，彻底消除“往下滑动数量不断增加跳变”的缺陷。
+- **验证结论**：
+  - 单元测试 `:core:model:test`、`:feature:all:testDebugUnitTest`、`:feature:detail:testDebugUnitTest`、`:feature:author:testDebugUnitTest` 100% 全绿通过；
+  - `:app:assembleDebug` 打包产出 Debug APK；
+  - 显式通过 ADB 安装推送至 Android 真机设备并成功拉起（遵循铁律 13、14，敏感参数脱敏）。
+- **文档**：CHANGELOG.md（本条）。
+
 ## feat(app): 视频播放器下方UI对齐Web规范与“我的”页面语义分组/全域M3美感统一（2026-10-08 第五百零二笔）
 
 执行 AI：Gemini-3.8-Flash（主代理）

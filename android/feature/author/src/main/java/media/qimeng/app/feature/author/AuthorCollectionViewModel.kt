@@ -241,7 +241,8 @@ class AuthorCollectionViewModel @Inject constructor(
                 _uiState.value = _uiState.value.copy(
                     items = if (append) _uiState.value.items + page.items else page.items,
                     nextCursor = page.nextCursor,
-                    totalMatched = page.totalMatched,
+                    // 服务端仅首屏查全量 COUNT，翻页继承已有非空总数防被冲成 0
+                    totalMatched = page.totalMatched ?: if (append) _uiState.value.totalMatched else null,
                     isLoading = false,
                     isRefreshing = false,
                     // 问题A：成功结束 bump 哨兵重评估信号（KDoc 见 AuthorCollectionUiState.reloadTick）

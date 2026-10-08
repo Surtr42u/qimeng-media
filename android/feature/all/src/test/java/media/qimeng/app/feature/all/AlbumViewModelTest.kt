@@ -270,6 +270,32 @@ class AlbumViewModelTest {
     }
 
     @Test
+    fun `翻页时服务端返回 null totalMatched 保持首屏统计总数不被覆盖冲掉`() = runTest(mainDispatcherRule.testDispatcher) {
+        val repo = FakeMediaRepository()
+        val viewModel = viewModel(repo)
+        advanceUntilIdle()
+
+        // 首屏返回 totalMatched = 50
+        repo.assetsCalls[0].gate.complete(
+            AssetPageResult(items = listOf(asset("a")), nextCursor = "c1", totalMatched = 50),
+        )
+        repo.completeFacetsBatch(batch = 0, result = facets(total = 50))
+        advanceUntilIdle()
+        assertEquals(50, viewModel.uiState.value.totalMatched)
+
+        // 翻页触发：服务端优化性能翻页 totalMatched 为 null
+        viewModel.onNearBottom()
+        advanceUntilIdle()
+        repo.assetsCalls[1].gate.complete(
+            AssetPageResult(items = listOf(asset("b")), nextCursor = null, totalMatched = null),
+        )
+        advanceUntilIdle()
+
+        // 翻页后 totalMatched 依然保留 50，不被冲为 null
+        assertEquals(50, viewModel.uiState.value.totalMatched)
+    }
+
+    @Test
     fun `双指缩放列数越界 clamp 2 到 5 手势结束持久化一次`() = runTest(mainDispatcherRule.testDispatcher) {
         val repo = FakeMediaRepository()
         val prefs = FakeGridPrefs() // 初始 3 列

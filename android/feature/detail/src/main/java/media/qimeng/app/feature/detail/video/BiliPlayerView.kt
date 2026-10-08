@@ -29,7 +29,9 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.media3.common.C
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.VideoSize
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import media.qimeng.app.feature.detail.R
 import media.qimeng.app.feature.detail.TimelineTagColors
@@ -112,13 +114,17 @@ import kotlin.math.min
  *      整组撤除）；状态栏瞬时隐藏由 Compose 侧承接（controlWindowInsetsAnimation 零时长，
  *      见 InstantSystemBars.kt，show 保持普通 show()——显出带系统动画是正常观感）。
  *      其余逐行原样。
+ *   ⑭ 2026-10-08 播控体系全面对齐 Web/桌面端规范：
+ *      - 增加画质微胶囊 [qualityBtn] 与清晰度面板（展示原画与真实分辨率标签）；
+ *      - 扩展倍速档位至 6 档（对齐 Web 端 PLAYBACK_RATES 0.5x~2.0x 规范）；
+ *      - 增加播放设置齿轮 [settingsBtn] 与设置面板（画面比例：默认/16:9/4:3/拉伸铺满 + 单片循环开关）。
  *
  * 手势冻结口径（G1~G9；G1/G2 已由 2026-09-19 拍板改版，沿革见适配点⑪）：
  * G1 单击（双向）显隐控制器；G2 双击（双向）播停；
  * G3 长按 2x 松开还原（竖屏下方锁速区拖入锁定/拖出退出，长按期间禁起拖）；
  * G4 水平拖进度（24dp 起拖阈值且 |dx|>|dy|，上限见 [gestureSeekCapMs]，无时长忽略）；
  * G5 亮度/音量手势=不做（旧版无此功能）；G6 全屏钮=仅横屏视频可点（K2 单级横屏全屏收口，
- * D2「全类型可点」已推翻；方向写入与进出由 Compose 侧状态机裁决，见适配点⑤）；G7 倍速菜单 0.5/1/1.5/2x（1x 按钮显示「倍速」）；
+ * D2「全类型可点」已推翻；方向写入与进出由 Compose 侧状态机裁决，见适配点⑤）；G7 倍速菜单 0.5/0.75/1/1.25/1.5/2x（1x 按钮显示「倍速」）；
  * G8 初始默认静音（volume=0，用户拍板）；G9 控制器 5s 自动隐藏（ENDED 强制显示，
  * 再点播放 seekTo(0)）。
  */
@@ -132,7 +138,9 @@ class BiliPlayerView @JvmOverloads constructor(
     private val playerView: PlayerView
     private val bottomBar: LinearLayout
     private val playPauseBtn: ImageView
+    private val qualityBtn: TextView
     private val speedBtn: TextView
+    private val settingsBtn: ImageView
     private val muteBtn: ImageView
     private val currentTimeText: TextView
     private val totalTimeText: TextView
@@ -174,6 +182,7 @@ class BiliPlayerView @JvmOverloads constructor(
 
     private var controllerVisible = false
     private var currentSpeed = 1f
+    private var currentAspectRatio = PlayerAspectRatio.DEFAULT
     // G8（用户拍板）：初始默认静音——setPlayer 时按本位压 volume=0
     private var isMuted = true
     private var isGestureDragging = false
@@ -203,10 +212,15 @@ class BiliPlayerView @JvmOverloads constructor(
             if (playbackState == Player.STATE_READY) {
                 // W5 #50：赋值判定收敛到 syncTotalTimeText（与 setPlayer 挂载补同步同源同口径）
                 syncTotalTimeText()
+                updateQualityButtonText()
             } else if (playbackState == Player.STATE_ENDED) {
                 // G9：播完强制显示控制器（再点播放由 togglePlayPause/startPlayback seekTo(0)）
                 showController(true)
             }
+        }
+
+        override fun onVideoSizeChanged(videoSize: VideoSize) {
+            updateQualityButtonText()
         }
 
         override fun onPlayerError(error: PlaybackException) {
@@ -528,6 +542,27 @@ class BiliPlayerView @JvmOverloads constructor(
             setOnClickListener { onBookmark?.invoke() }
         }
 
+        // 画质微胶囊药丸（Micro-capsule Pill，对标 Web 端 quality selector）
+        qualityBtn = TextView(context).apply {
+            text = "原画"
+            setTextColor(Color.WHITE)
+            textSize = 12f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            gravity = Gravity.CENTER
+            val pillBg = GradientDrawable().apply {
+                cornerRadius = 14.dp(context).toFloat()
+                setColor(0x2EFFFFFF.toInt())
+                setStroke((0.8f * context.resources.displayMetrics.density).toInt().coerceAtLeast(1), 0x4DFFFFFF.toInt())
+            }
+            background = pillBg
+            setPadding(10.dp(context), 4.dp(context), 10.dp(context), 4.dp(context))
+            layoutParams = LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
+                marginStart = 6.dp(context)
+                marginEnd = 2.dp(context)
+            }
+            setOnClickListener { showQualityPopup() }
+        }
+
         // 倍速微胶囊药丸（Micro-capsule Pill，三端一致设计语言）
         speedBtn = TextView(context).apply {
             text = "倍速"
@@ -543,11 +578,24 @@ class BiliPlayerView @JvmOverloads constructor(
             background = pillBg
             setPadding(10.dp(context), 4.dp(context), 10.dp(context), 4.dp(context))
             layoutParams = LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
-                marginStart = 6.dp(context)
-                marginEnd = 4.dp(context)
+                marginStart = 4.dp(context)
+                marginEnd = 2.dp(context)
             }
             setOnClickListener { showSpeedPopup() }
         }
+
+        // 设置齿轮按钮（对标 Web 端 setting 控件）
+        settingsBtn = ImageView(context).apply {
+            setImageResource(R.drawable.ic_player_settings)
+            setPadding(4.dp(context), 4.dp(context), 4.dp(context), 4.dp(context))
+            layoutParams = LinearLayout.LayoutParams(36.dp(context), 36.dp(context)).apply {
+                marginStart = 2.dp(context)
+                marginEnd = 2.dp(context)
+            }
+            setColorFilter(Color.WHITE)
+            setOnClickListener { showSettingsPopup() }
+        }
+
         fullscreenBtn = ImageView(context).apply {
             setImageResource(R.drawable.ic_player_fullscreen)
             setPadding(4.dp(context), 4.dp(context), 4.dp(context), 4.dp(context))
@@ -563,7 +611,9 @@ class BiliPlayerView @JvmOverloads constructor(
         buttonRow.addView(timeContainer)
         buttonRow.addView(spacer)
         buttonRow.addView(timelineTagBtn)
+        buttonRow.addView(qualityBtn)
         buttonRow.addView(speedBtn)
+        buttonRow.addView(settingsBtn)
         buttonRow.addView(fullscreenBtn)
         bottomBar.addView(buttonRow)
 
@@ -721,15 +771,125 @@ class BiliPlayerView @JvmOverloads constructor(
         showController(true)
     }
 
-    // G7 倍速档位表/按钮文案已抽为同包纯函数（PLAYER_SPEED_TIERS/speedButtonText，行为不变）
+    // 清晰度/倍速/设置弹窗管理（全面对齐 Web/桌面端播控规范）
     private var speedPopup: PopupWindow? = null
+    private var qualityPopup: PopupWindow? = null
+    private var settingsPopup: PopupWindow? = null
 
-    private fun showSpeedPopup() {
+    private fun dismissAllPopups() {
         speedPopup?.dismiss()
+        qualityPopup?.dismiss()
+        settingsPopup?.dismiss()
+        speedPopup = null
+        qualityPopup = null
+        settingsPopup = null
+    }
+
+    private fun updateQualityButtonText() {
+        val size = playerView.player?.videoSize
+        val h = size?.height ?: 0
+        qualityBtn.text = if (h > 0) qualityLabelText(h) else "原画"
+    }
+
+    private fun showQualityPopup() {
+        dismissAllPopups()
+        removeCallbacks(hideControllerRunnable)
+        val size = playerView.player?.videoSize
+        val w = size?.width ?: 0
+        val h = size?.height ?: 0
+        val qualityDesc = if (w > 0 && h > 0) {
+            "${w}×${h} · ${qualityLabelText(h)} · 原始画质"
+        } else {
+            "原始画质 · 纯净直出"
+        }
+
         val container = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             val bg = GradientDrawable().apply {
-                cornerRadius = 12.dp(context).toFloat()
+                cornerRadius = 14.dp(context).toFloat()
+                setColor(0xEE1E1E1E.toInt())
+                setStroke(1, 0x33FFFFFF.toInt())
+            }
+            background = bg
+            setPadding(12.dp(context), 10.dp(context), 12.dp(context), 10.dp(context))
+        }
+
+        val titleView = TextView(context).apply {
+            text = "清晰度"
+            setTextColor(0x99FFFFFF.toInt())
+            textSize = 12f
+            setPadding(6.dp(context), 2.dp(context), 6.dp(context), 8.dp(context))
+        }
+        container.addView(titleView)
+
+        val item = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            val itemBg = GradientDrawable().apply {
+                cornerRadius = 10.dp(context).toFloat()
+                setColor(0x2E4FC3F7.toInt())
+                setStroke(1, 0x804FC3F7.toInt())
+            }
+            background = itemBg
+            setPadding(12.dp(context), 10.dp(context), 14.dp(context), 10.dp(context))
+            setOnClickListener {
+                dismissAllPopups()
+                showController(true)
+            }
+        }
+
+        val textLayout = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        val mainText = TextView(context).apply {
+            text = "原画"
+            setTextColor(SPEED_SELECTED_COLOR)
+            textSize = 14f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+        val subText = TextView(context).apply {
+            text = qualityDesc
+            setTextColor(0xCCFFFFFF.toInt())
+            textSize = 11f
+        }
+        textLayout.addView(mainText)
+        textLayout.addView(subText)
+
+        val checkMark = TextView(context).apply {
+            text = "✓"
+            setTextColor(SPEED_SELECTED_COLOR)
+            textSize = 14f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            setPadding(8.dp(context), 0, 0, 0)
+        }
+        item.addView(textLayout)
+        item.addView(checkMark)
+        container.addView(item)
+
+        container.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
+        val popupHeight = container.measuredHeight
+        val popup = PopupWindow(container, LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+            isFocusable = true
+            isOutsideTouchable = true
+            setBackgroundDrawable(null)
+            elevation = 8.dp(context).toFloat()
+            setOnDismissListener {
+                qualityPopup = null
+                if (controllerVisible) postDelayed(hideControllerRunnable, HIDE_DELAY)
+            }
+        }
+        qualityPopup = popup
+        popup.showAsDropDown(qualityBtn, -(20.dp(context)), -(qualityBtn.height + popupHeight + 6.dp(context)))
+    }
+
+    private fun showSpeedPopup() {
+        dismissAllPopups()
+        removeCallbacks(hideControllerRunnable)
+        val container = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            val bg = GradientDrawable().apply {
+                cornerRadius = 14.dp(context).toFloat()
                 setColor(0xEE1E1E1E.toInt())
                 setStroke(1, 0x33FFFFFF.toInt())
             }
@@ -737,7 +897,7 @@ class BiliPlayerView @JvmOverloads constructor(
             setPadding(6.dp(context), 6.dp(context), 6.dp(context), 6.dp(context))
         }
         for (tier in PLAYER_SPEED_TIERS) {
-            val isSelected = currentSpeed == tier.speed
+            val isSelected = abs(currentSpeed - tier.speed) < 0.01f
             val item = TextView(context).apply {
                 text = tier.menuLabel
                 setTextColor(if (isSelected) SPEED_SELECTED_COLOR else Color.WHITE)
@@ -753,19 +913,18 @@ class BiliPlayerView @JvmOverloads constructor(
                     }
                 }
                 background = itemBg
-                setPadding(18.dp(context), 8.dp(context), 18.dp(context), 8.dp(context))
+                setPadding(20.dp(context), 8.dp(context), 20.dp(context), 8.dp(context))
                 setOnClickListener {
                     currentSpeed = tier.speed
                     isSpeedLocked = currentSpeed != 1f
                     playerView.player?.setPlaybackSpeed(currentSpeed)
                     updateSpeedButtonText()
-                    speedPopup?.dismiss()
+                    dismissAllPopups()
                     showController(true)
                 }
             }
             container.addView(item)
         }
-        // 先测量容器高度
         container.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
         val popupHeight = container.measuredHeight
         val popup = PopupWindow(container, LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
@@ -773,11 +932,184 @@ class BiliPlayerView @JvmOverloads constructor(
             isOutsideTouchable = true
             setBackgroundDrawable(null)
             elevation = 8.dp(context).toFloat()
-            setOnDismissListener { speedPopup = null }
+            setOnDismissListener {
+                speedPopup = null
+                if (controllerVisible) postDelayed(hideControllerRunnable, HIDE_DELAY)
+            }
         }
         speedPopup = popup
-        // 从倍速按钮位置往上弹出
-        popup.showAsDropDown(speedBtn, 0, -(speedBtn.height + popupHeight + 4.dp(context)))
+        popup.showAsDropDown(speedBtn, 0, -(speedBtn.height + popupHeight + 6.dp(context)))
+    }
+
+    private fun showSettingsPopup() {
+        dismissAllPopups()
+        removeCallbacks(hideControllerRunnable)
+        val container = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            val bg = GradientDrawable().apply {
+                cornerRadius = 14.dp(context).toFloat()
+                setColor(0xEE1E1E1E.toInt())
+                setStroke(1, 0x33FFFFFF.toInt())
+            }
+            background = bg
+            setPadding(16.dp(context), 14.dp(context), 16.dp(context), 14.dp(context))
+        }
+
+        // 标题
+        val titleView = TextView(context).apply {
+            text = "播放设置"
+            setTextColor(Color.WHITE)
+            textSize = 14f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            setPadding(0, 0, 0, 8.dp(context))
+        }
+        container.addView(titleView)
+
+        // 分割线
+        val divider1 = View(context).apply {
+            setBackgroundColor(0x26FFFFFF.toInt())
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1.dp(context)).apply {
+                bottomMargin = 10.dp(context)
+            }
+        }
+        container.addView(divider1)
+
+        // 1. 画面比例
+        val ratioLabel = TextView(context).apply {
+            text = "画面比例"
+            setTextColor(0x99FFFFFF.toInt())
+            textSize = 12f
+            setPadding(0, 0, 0, 6.dp(context))
+        }
+        container.addView(ratioLabel)
+
+        val ratioRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                bottomMargin = 12.dp(context)
+            }
+        }
+        for (ratio in PlayerAspectRatio.entries) {
+            val isSelected = currentAspectRatio == ratio
+            val pill = TextView(context).apply {
+                text = ratio.label
+                setTextColor(if (isSelected) SPEED_SELECTED_COLOR else Color.WHITE)
+                textSize = 12f
+                typeface = if (isSelected) Typeface.create(Typeface.DEFAULT, Typeface.BOLD) else Typeface.DEFAULT
+                gravity = Gravity.CENTER
+                val pillBg = GradientDrawable().apply {
+                    cornerRadius = 8.dp(context).toFloat()
+                    if (isSelected) {
+                        setColor(0x2E4FC3F7.toInt())
+                        setStroke(1, 0x804FC3F7.toInt())
+                    } else {
+                        setColor(0x22FFFFFF.toInt())
+                    }
+                }
+                background = pillBg
+                setPadding(10.dp(context), 6.dp(context), 10.dp(context), 6.dp(context))
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    marginEnd = if (ratio != PlayerAspectRatio.entries.last()) 6.dp(context) else 0
+                }
+                setOnClickListener {
+                    currentAspectRatio = ratio
+                    applyAspectRatio(ratio)
+                    showTopIndicator("画面比例：${ratio.label}")
+                    dismissAllPopups()
+                    showController(true)
+                }
+            }
+            ratioRow.addView(pill)
+        }
+        container.addView(ratioRow)
+
+        // 分割线
+        val divider2 = View(context).apply {
+            setBackgroundColor(0x26FFFFFF.toInt())
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1.dp(context)).apply {
+                bottomMargin = 10.dp(context)
+            }
+        }
+        container.addView(divider2)
+
+        // 2. 单片循环
+        val loopRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+        }
+        val loopText = TextView(context).apply {
+            text = "单片循环"
+            setTextColor(Color.WHITE)
+            textSize = 13f
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        val isLooping = playerView.player?.repeatMode == Player.REPEAT_MODE_ONE
+        val loopSwitch = TextView(context).apply {
+            text = if (isLooping) "已开启" else "已关闭"
+            setTextColor(if (isLooping) SPEED_SELECTED_COLOR else 0xAAFFFFFF.toInt())
+            textSize = 12f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            val pillBg = GradientDrawable().apply {
+                cornerRadius = 10.dp(context).toFloat()
+                if (isLooping) {
+                    setColor(0x2E4FC3F7.toInt())
+                    setStroke(1, 0x804FC3F7.toInt())
+                } else {
+                    setColor(0x22FFFFFF.toInt())
+                }
+            }
+            background = pillBg
+            setPadding(12.dp(context), 6.dp(context), 12.dp(context), 6.dp(context))
+            setOnClickListener {
+                val nextLoop = playerView.player?.repeatMode != Player.REPEAT_MODE_ONE
+                playerView.player?.repeatMode = if (nextLoop) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
+                showTopIndicator(if (nextLoop) "单片循环：开启" else "单片循环：关闭")
+                dismissAllPopups()
+                showController(true)
+            }
+        }
+        loopRow.addView(loopText)
+        loopRow.addView(loopSwitch)
+        container.addView(loopRow)
+
+        container.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
+        val popupHeight = container.measuredHeight
+        val popup = PopupWindow(container, 260.dp(context), LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+            isFocusable = true
+            isOutsideTouchable = true
+            setBackgroundDrawable(null)
+            elevation = 8.dp(context).toFloat()
+            setOnDismissListener {
+                settingsPopup = null
+                if (controllerVisible) postDelayed(hideControllerRunnable, HIDE_DELAY)
+            }
+        }
+        settingsPopup = popup
+        popup.showAsDropDown(settingsBtn, -(120.dp(context)), -(settingsBtn.height + popupHeight + 6.dp(context)))
+    }
+
+    private fun applyAspectRatio(ratio: PlayerAspectRatio) {
+        val contentFrame = playerView.findViewById<AspectRatioFrameLayout>(androidx.media3.ui.R.id.exo_content_frame)
+        when (ratio) {
+            PlayerAspectRatio.DEFAULT -> {
+                contentFrame?.setAspectRatio(0f)
+                playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+            }
+            PlayerAspectRatio.RATIO_16_9 -> {
+                contentFrame?.setAspectRatio(16f / 9f)
+                playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+            }
+            PlayerAspectRatio.RATIO_4_3 -> {
+                contentFrame?.setAspectRatio(4f / 3f)
+                playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+            }
+            PlayerAspectRatio.FILL -> {
+                contentFrame?.setAspectRatio(0f)
+                playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FILL
+            }
+        }
     }
 
     private fun updateSpeedButtonText() {
@@ -813,7 +1145,7 @@ class BiliPlayerView @JvmOverloads constructor(
             postDelayed(hideControllerRunnable, HIDE_DELAY)
         } else {
             removeCallbacks(hideControllerRunnable)
-            speedPopup?.dismiss()
+            dismissAllPopups()
         }
     }
 
@@ -956,7 +1288,7 @@ class BiliPlayerView @JvmOverloads constructor(
         removeCallbacks(updateProgressRunnable)
         removeCallbacks(hideControllerRunnable)
         removeCallbacks(hideTopIndicatorRunnable)
-        speedPopup?.dismiss()
+        dismissAllPopups()
         playerView.player?.removeListener(playerListener)
     }
 

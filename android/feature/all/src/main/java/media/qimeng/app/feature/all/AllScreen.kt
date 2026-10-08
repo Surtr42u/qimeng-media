@@ -347,11 +347,15 @@ fun AllScreen(
                 QimengMediaGrid(
                     // 分组按激活维分派（P9-5）：分区/类型=日期分组，作品=source∪COS 作者，
                     // 角色=characters∪cosWork，空组键归「其他」恒末位。
-                    // 修复D-1（2026-09-14 相册胶囊点击丢响应调研定案）：O(n) 分组原每次重组
-                    // 裸跑，胶囊点击引发的重组全量重算拖慢帧（丢响应根因之一）——包 remember
-                    // 按参与变量（items/activeDim/nowMs）缓存，重组零重算、数据或维度变化才重算
-                    sections = remember(state.items, state.activeDim, nowMs) {
-                        state.items.groupByAlbumDim(state.activeDim, nowMs)
+                    // 修复D-1：remember 缓存分组计算；传入服务端 facets 真实全量统计项，
+                    // 确保组头展示真实精确总数，避免分页局部内存数量在滚动中跳增
+                    sections = remember(state.items, state.activeDim, nowMs, state.authorOptions, state.characterOptions) {
+                        val facetCounts = when (state.activeDim) {
+                            AlbumDim.AUTHOR -> state.authorOptions.associate { it.name to it.fileCount }
+                            AlbumDim.CHARACTER -> state.characterOptions.associate { it.name to it.fileCount }
+                            else -> emptyMap()
+                        }
+                        state.items.groupByAlbumDim(state.activeDim, nowMs, facetCounts)
                     },
                     columns = displayColumns,
                     animatedUrlResolver = animatedUrlResolver,

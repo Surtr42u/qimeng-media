@@ -41,27 +41,33 @@ class PlayerMathTest {
         assertEquals(120_000L, gestureSeekCapMs(3_600_000L))
     }
 
-    // ---------- G7：倍速档位表 ----------
+    // ---------- G7：倍速档位表（全面对齐 Web 端 PLAYBACK_RATES 六档） ----------
 
     @Test
-    fun speedTiersAreExactlyTwoOneAndHalfOneHalf() {
-        assertEquals(listOf(2f, 1.5f, 1f, 0.5f), PLAYER_SPEED_TIERS.map { it.speed })
-        // 菜单行标签与旧控件逐字一致（1x 行显示「1x」；「倍速」是按钮文案，见下）
-        assertEquals(listOf("2x", "1.5x", "1x", "0.5x"), PLAYER_SPEED_TIERS.map { it.menuLabel })
+    fun speedTiersMatchWebPlaybackRates() {
+        assertEquals(listOf(2.0f, 1.5f, 1.25f, 1.0f, 0.75f, 0.5f), PLAYER_SPEED_TIERS.map { it.speed })
+        assertEquals(listOf("2.0x", "1.5x", "1.25x", "1.0x 正常", "0.75x", "0.5x"), PLAYER_SPEED_TIERS.map { it.menuLabel })
     }
 
     @Test
     fun speedButtonTextShowsBeiSuForOneX() {
-        // G7：1x 显示「倍速」；其余档「N倍」
-        assertEquals("倍速", speedButtonText(1f))
-        assertEquals("0.5倍", speedButtonText(0.5f))
-        assertEquals("1.5倍", speedButtonText(1.5f))
-        assertEquals("2倍", speedButtonText(2f))
+        assertEquals("倍速", speedButtonText(1.0f))
+        assertEquals("0.5x", speedButtonText(0.5f))
+        assertEquals("0.75x", speedButtonText(0.75f))
+        assertEquals("1.25x", speedButtonText(1.25f))
+        assertEquals("1.5x", speedButtonText(1.5f))
+        assertEquals("2.0x", speedButtonText(2.0f))
     }
 
     @Test
-    fun speedButtonTextFallsBackToNxForNonStandardTier() {
-        assertEquals("1.25x", speedButtonText(1.25f))
+    fun qualityLabelTextMapsVideoHeightCorrectly() {
+        assertEquals("4K 超清", qualityLabelText(2160))
+        assertEquals("2K 超清", qualityLabelText(1440))
+        assertEquals("1080P 高清", qualityLabelText(1080))
+        assertEquals("720P 高清", qualityLabelText(720))
+        assertEquals("480P 标清", qualityLabelText(480))
+        assertEquals("360P", qualityLabelText(360))
+        assertEquals("原画", qualityLabelText(0))
     }
 
     // ---------- W5 #50：总时长赋值判定 + 时长格式化（冻结件例外三件套） ----------

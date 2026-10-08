@@ -22,27 +22,53 @@ internal fun gestureSeekCapMs(durationMs: Long): Long = when {
     else -> 120_000L
 }
 
-/** G7 倍速菜单档位（menuLabel = 弹出菜单行文案；顺序自上而下 2x → 0.5x，与旧控件一致） */
+/** G7 倍速菜单档位（menuLabel = 弹出菜单行文案；对齐 Web 端 PLAYBACK_RATES 降序自上而下 2.0x → 0.5x） */
 internal data class PlayerSpeedTier(val speed: Float, val menuLabel: String)
 
 /**
- * 倍速档位表（0.5/1/1.5/2 四档）——旧控件 discreteSpeeds/speedLabels 逐字搬运为数据。
- * 注意口径：菜单行 1x 显示「1x」，倍速**按钮**才显示「倍速」（见 [speedButtonText]），与旧版一致。
+ * 倍速档位表（0.5/0.75/1/1.25/1.5/2 六档）——全面对齐 Web/桌面端 PLAYBACK_RATES 规范。
+ * 菜单行 1x 显示「1.0x 正常」，未调节时倍速按钮显示「倍速」，其余档位显示具体倍速。
  */
 internal val PLAYER_SPEED_TIERS: List<PlayerSpeedTier> = listOf(
-    PlayerSpeedTier(2f, "2x"),
+    PlayerSpeedTier(2.0f, "2.0x"),
     PlayerSpeedTier(1.5f, "1.5x"),
-    PlayerSpeedTier(1f, "1x"),
+    PlayerSpeedTier(1.25f, "1.25x"),
+    PlayerSpeedTier(1.0f, "1.0x 正常"),
+    PlayerSpeedTier(0.75f, "0.75x"),
     PlayerSpeedTier(0.5f, "0.5x"),
 )
 
-/** 倍速按钮文案（G7：1x 显示「倍速」，其余档「N倍」；非标档回退「Nx」） */
+/** 倍速按钮文案（1x 显示「倍速」，其余档位显示「Nx」） */
 internal fun speedButtonText(speed: Float): String = when (speed) {
-    0.5f -> "0.5倍"
-    1f -> "倍速"
-    1.5f -> "1.5倍"
-    2f -> "2倍"
+    1.0f -> "倍速"
+    2.0f -> "2.0x"
+    1.5f -> "1.5x"
+    1.25f -> "1.25x"
+    0.75f -> "0.75x"
+    0.5f -> "0.5x"
     else -> "${speed}x"
+}
+
+/**
+ * 视频真实高度 → 清晰度文本（与 Web 端 player-labels.ts qualityLabel 纯函数同口径）：
+ * ≥2160 -> 4K 超清；≥1440 -> 2K 超清；≥1080 -> 1080P 高清；≥720 -> 720P 高清；≥480 -> 480P 标清；其余 -> {height}P。
+ */
+internal fun qualityLabelText(height: Int): String = when {
+    height >= 2160 -> "4K 超清"
+    height >= 1440 -> "2K 超清"
+    height >= 1080 -> "1080P 高清"
+    height >= 720 -> "720P 高清"
+    height >= 480 -> "480P 标清"
+    height > 0 -> "${height}P"
+    else -> "原画"
+}
+
+/** 画面比例选项（对标 Web 端 ASPECT_OPTIONS 规范） */
+internal enum class PlayerAspectRatio(val label: String) {
+    DEFAULT("默认"),
+    RATIO_16_9("16:9"),
+    RATIO_4_3("4:3"),
+    FILL("拉伸铺满"),
 }
 
 /**

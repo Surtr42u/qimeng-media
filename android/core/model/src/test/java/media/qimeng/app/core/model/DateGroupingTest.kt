@@ -152,6 +152,19 @@ class DateGroupingTest {
     }
 
     @Test
+    fun `作品与角色模式优先使用 facetCounts 真实总数展示 避免分页局部数量跳变`() {
+        val assets = listOf(
+            asset("a", authorNames = listOf("碧蓝航线")),
+            asset("b", authorNames = listOf("碧蓝航线")),
+        )
+        // 第一页局部只加载了 2 个，但服务端 facet 统计实际共有 88 项
+        val facetCounts = mapOf("碧蓝航线" to 88)
+        val sections = assets.groupByAlbumDim(AlbumDim.AUTHOR, now, facetCounts)
+        assertEquals(listOf("碧蓝航线  88 项"), sections.map { it.label })
+        assertEquals(2, sections.first().items.size)
+    }
+
+    @Test
     fun `角色模式 source 为空但带角色的常规资产归角色组 不落其他`() {
         // P2-1 边界：组键只看 characters∪cosWork（P9-5），不以 source 有无判 COS——
         // source 缺失的常规资产（characters 非空）归其角色组；COS 资产无角色行，characters 优先安全

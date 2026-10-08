@@ -104,10 +104,14 @@ private fun formatYmd(startOfDayMs: Long): String {
  *   DOMAIN_RULES §4，故首个即完整组名），无角色按 `cosWork`，全空→「其他」（拍板条目 5）；
  * 组间按组首元素位置序（服务端 default 降序原序，LinkedHashMap 保序），「其他」组恒排末位。
  */
-fun List<MediaAsset>.groupByAlbumDim(dim: AlbumDim, nowMs: Long): List<GridSection> = when (dim) {
+fun List<MediaAsset>.groupByAlbumDim(
+    dim: AlbumDim,
+    nowMs: Long,
+    facetCounts: Map<String, Int> = emptyMap(),
+): List<GridSection> = when (dim) {
     AlbumDim.PARTITION, AlbumDim.TYPE -> groupByDateLabel(nowMs) { it.modifiedAtMs }
-    AlbumDim.AUTHOR -> groupByFirstOccurrence { authorGroupKey(it) }
-    AlbumDim.CHARACTER -> groupByFirstOccurrence { characterGroupKey(it) }
+    AlbumDim.AUTHOR -> groupByFirstOccurrence(facetCounts) { authorGroupKey(it) }
+    AlbumDim.CHARACTER -> groupByFirstOccurrence(facetCounts) { characterGroupKey(it) }
 }
 
 /**
@@ -139,13 +143,21 @@ private fun characterGroupKey(asset: MediaAsset): String =
 /**
  * 按组键分组：同键归并同组（组头只渲染一次），组内保持列表原序，
  * 组间按组首元素位置序，「其他」组恒排末位（旧版「其他」药丸/组头置底同源口径）。
+ * 优先使用 facetCounts（服务端排自身全量精确统计项）作为组头计数，避免分页加载中只显示
+ * 局部内存数量导致「滑动中跳增递变」；无对应统计项（或「其他」桶）回退至 assets.size。
  */
-private fun List<MediaAsset>.groupByFirstOccurrence(key: (MediaAsset) -> String): List<GridSection> {
+private fun List<MediaAsset>.groupByFirstOccurrence(
+    facetCounts: Map<String, Int> = emptyMap(),
+    key: (MediaAsset) -> String,
+): List<GridSection> {
     val byKey = LinkedHashMap<String, MutableList<MediaAsset>>()
     for (asset in this) {
         byKey.getOrPut(key(asset)) { mutableListOf() }.add(asset)
     }
     return byKey.entries
         .sortedWith(compareBy { it.key == OTHER_BUCKET_NAME })
-        .map { (label, assets) -> GridSection(groupHeaderLabel(label, assets.size), assets) }
+        .map { (label, assets) ->
+            val totalCount = facetCounts[label] ?: assets.size
+            GridSection(groupHeaderLabel(label, totalCount), assets)
+        }
 }
