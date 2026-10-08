@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -96,17 +97,30 @@ private fun presetDescription(preset: RecommendPreset): String = when (preset) {
 @Composable
 internal fun CountCard(title: String, count: Int?, modifier: Modifier = Modifier) {
     Surface(
-        color = MaterialTheme.colorScheme.surface,
-        shape = RoundedCornerShape(CountCardCornerRadius),
-        modifier = modifier.height(CountCardHeight),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        shape = RoundedCornerShape(16.dp),
+        shadowElevation = 1.dp,
+        modifier = modifier.height(88.dp),
     ) {
-        Box(contentAlignment = Alignment.Center) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.Center,
+        ) {
             Text(
-                // 旧版是单 TextView 两行文案「图片\nN」（非标题/数字两块），同 16sp Bold
-                text = "$title\n${count?.toString() ?: COUNT_UNKNOWN}",
-                style = MaterialTheme.typography.titleSmall.copy(fontSize = 16.sp, fontWeight = FontWeight.Bold),
+                text = title,
+                style = MaterialTheme.typography.labelMedium.copy(fontSize = 13.sp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            androidx.compose.foundation.layout.Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = count?.toString() ?: COUNT_UNKNOWN,
+                style = MaterialTheme.typography.headlineMedium.copy(
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                ),
                 color = MaterialTheme.colorScheme.onSurface,
-                textAlign = TextAlign.Center,
             )
         }
     }

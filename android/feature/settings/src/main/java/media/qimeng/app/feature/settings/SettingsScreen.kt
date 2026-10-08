@@ -6,6 +6,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -20,7 +21,11 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -32,9 +37,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -45,6 +52,16 @@ import media.qimeng.app.core.model.AppearanceMode
 import media.qimeng.app.core.model.TabBarMaterial
 import media.qimeng.app.core.ui.component.QimengSegPill
 import media.qimeng.app.core.ui.glass.TabDockDefaults
+import media.qimeng.app.core.ui.icon.AuthorPeopleIcon
+import media.qimeng.app.core.ui.icon.ChevronRightIcon
+import media.qimeng.app.core.ui.icon.CloudUploadIcon
+import media.qimeng.app.core.ui.icon.FavoriteBookmarkIcon
+import media.qimeng.app.core.ui.icon.HistoryRecentIcon
+import media.qimeng.app.core.ui.icon.InfoCircleIcon
+import media.qimeng.app.core.ui.icon.LogoutDoorIcon
+import media.qimeng.app.core.ui.icon.PaletteColorIcon
+import media.qimeng.app.core.ui.icon.ServerDnsIcon
+import media.qimeng.app.core.ui.icon.TuneSlidersIcon
 import media.qimeng.app.core.ui.theme.QimengDimens
 
 /** 我的页入口行文案（GUIDE_UI §我的页 + M4-2 既有入口 + M4-6 上传入口；
@@ -307,6 +324,16 @@ private fun LazyListScope.settingsHeaderItems(state: MineUiState, viewModel: Set
  * 原「作者管理」行按用户拍板删除，作者管理页由作者总览行承担入口；
  * U10-6：原「上传文件」行原位升级为「数据管理」合并入口行）。
  */
+private const val SECTION_MEDIA = "媒体足迹与收藏"
+private const val SECTION_SERVICES = "数据与连接"
+private const val SECTION_PREFS = "个性化偏好"
+private const val SECTION_SYSTEM = "系统与关于"
+
+/**
+ * 入口行族（三级语义分组，统一对齐数据管理 Hub 视觉语言：
+ * 媒体足迹与收藏 / 数据与连接 / 个性化偏好 / 系统与关于；
+ * 每个条目包含精致微图标底座、两级层级文本与自适应 M3 容器色）。
+ */
 private fun LazyListScope.settingsEntryRowItems(
     onOpenServerDetail: () -> Unit,
     onOpenAuthors: () -> Unit,
@@ -316,118 +343,158 @@ private fun LazyListScope.settingsEntryRowItems(
     onOpenTheme: () -> Unit,
     onOpenPrefs: () -> Unit,
 ) {
-    // 2026-10-03 用户拍板：我的页回到旧版逐行白卡布局（v2 分组列表/v3 图标分组两方案
-    // 均撤回），仅做立体感——行卡加 2dp 投影（EntryRow 内统一处理）
+    // —— 1. 媒体足迹与收藏 ——
+    item { SettingsSectionHeader(title = SECTION_MEDIA) }
     item {
         EntryRow(
-            label = ROW_SERVER,
-            subtitle = SUBTITLE_SERVER,
-            onClick = onOpenServerDetail,
-            // 行区首行上距 16dp（旧版运行时规格，原资料卡/本机模式行同位）
-            modifier = Modifier.padding(top = FirstRowTopSpacing, bottom = QimengDimens.SpaceL),
-        )
-    }
-    item {
-        EntryRow(
+            icon = AuthorPeopleIcon,
             label = ROW_AUTHORS,
             subtitle = SUBTITLE_AUTHORS,
             onClick = onOpenAuthors,
-            modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
+            modifier = Modifier.padding(bottom = QimengDimens.SpaceM),
         )
     }
     item {
         EntryRow(
+            icon = FavoriteBookmarkIcon,
             label = ROW_FAVORITE,
             subtitle = SUBTITLE_FAVORITE,
             onClick = onOpenFavorite,
-            modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
+            modifier = Modifier.padding(bottom = QimengDimens.SpaceM),
         )
     }
     item {
         EntryRow(
+            icon = HistoryRecentIcon,
             label = ROW_HISTORY,
             subtitle = SUBTITLE_HISTORY,
             onClick = onOpenHistory,
-            modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
+            modifier = Modifier.padding(bottom = QimengDimens.SpaceM),
         )
     }
+
+    // —— 2. 数据与连接 ——
+    item { SettingsSectionHeader(title = SECTION_SERVICES) }
     item {
         EntryRow(
+            icon = CloudUploadIcon,
             label = ROW_DATA_MANAGE,
             subtitle = SUBTITLE_DATA_MANAGE,
             onClick = onOpenDataManage,
-            modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
+            modifier = Modifier.padding(bottom = QimengDimens.SpaceM),
         )
     }
     item {
         EntryRow(
+            icon = ServerDnsIcon,
+            label = ROW_SERVER,
+            subtitle = SUBTITLE_SERVER,
+            onClick = onOpenServerDetail,
+            modifier = Modifier.padding(bottom = QimengDimens.SpaceM),
+        )
+    }
+
+    // —— 3. 个性化偏好 ——
+    item { SettingsSectionHeader(title = SECTION_PREFS) }
+    item {
+        EntryRow(
+            icon = PaletteColorIcon,
             label = ROW_THEME,
             subtitle = SUBTITLE_THEME,
             onClick = onOpenTheme,
-            modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
+            modifier = Modifier.padding(bottom = QimengDimens.SpaceM),
         )
     }
     item {
         EntryRow(
+            icon = TuneSlidersIcon,
             label = ROW_PREFS,
             subtitle = SUBTITLE_PREFS,
             onClick = onOpenPrefs,
-            modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
+            modifier = Modifier.padding(bottom = QimengDimens.SpaceM),
         )
     }
 }
 
 /**
- * 列表尾两组（U10-4 拆分：自 SettingsScreen 逐字迁移）：版本信息（C6）→ 退出登录。
- * （原首组「浏览数据同步」卡 2026-09-15 批迁往数据管理→备份导入导出页，用户拍板
- * 「外部的浏览数据移植到数据管理中合并到导入备份那个」；原「缓存区（C5）」组——
- * SectionTitle + 缩略图上限档位卡——2026-09-16 用户反馈迁往数据管理→缩略图缓存页，
- * 与缩略图生成进度合并为单页，QuotaCard 随迁 feature:manage。）
+ * 列表尾两组：系统版本信息 → 退出登录。
  */
 private fun LazyListScope.settingsFooterItems(state: MineUiState, viewModel: SettingsViewModel) {
-    // 版本信息（C6：服务端版本）
+    item { SettingsSectionHeader(title = SECTION_SYSTEM) }
     item {
         EntryRow(
+            icon = InfoCircleIcon,
             label = "版本信息",
             detail = "服务端 ${state.serverVersion ?: VERSION_UNKNOWN}",
             onClick = null,
-            modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
+            modifier = Modifier.padding(bottom = QimengDimens.SpaceM),
         )
     }
 
     item {
         Button(
             onClick = viewModel::logout,
-            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.filledTonalButtonColors(
+                containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.65f),
+                contentColor = MaterialTheme.colorScheme.onErrorContainer,
+            ),
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 4.dp, bottom = QimengDimens.SpaceL)
+                .height(48.dp),
         ) {
-            Text(text = stringResource(R.string.settings_logout))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                Icon(
+                    imageVector = LogoutDoorIcon,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = stringResource(R.string.settings_logout),
+                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp, fontWeight = FontWeight.SemiBold),
+                )
+            }
         }
     }
 }
 
+/** 分组小标题（对标 DataManageScreen 的 ManageSectionHeader） */
+@Composable
+private fun SettingsSectionHeader(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.labelLarge.copy(
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 13.sp,
+            letterSpacing = 0.5.sp,
+        ),
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(start = 4.dp, top = 16.dp, bottom = 6.dp),
+    )
+}
+
 /**
- * 入口行（视觉复刻批对齐旧版 QimengProfileRow 运行时规格：高 72dp、水平 padding 18dp
- * 垂直居中、背景=16dp 圆角纯白 surface 卡、无图标无分隔线；行文字=单块两行文本
- * 「标题\n副标题」15sp 主文字色——旧版副标题与标题同字号同色；subtitle=null 保持单行；
- * detail=右侧灰字（版本行等无副文案的旧形态行保留用）；
- * onClick=null 为纯展示行（版本信息行等；原「主题色彩」占位行 2026-10-03 升级为选择卡）。
- * 高度用 min 而非定值：长副文案行（如服务器行）定值 72dp 会截断三行以上文本，
- * 其余短文案行渲染高度与旧版 72dp 完全一致。
+ * 入口行（微图标底座 + M3 柔和容器色 + 呼吸感层级副标题 + 交互反馈）：
+ * 彻底消除生硬平铺与夜间模式刺眼问题，达到与数据管理 Hub 一致的精致质感。
  */
 @Composable
 private fun EntryRow(
+    icon: ImageVector,
     label: String,
     subtitle: String? = null,
     detail: String? = null,
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)?,
 ) {
-    // 2026-10-03 用户拍板回旧版逐行白卡布局：结构/几何逐字保留（16dp 圆角/72dp 节奏/
-    // 单块两行文本），仅加 2dp 投影做立体感（卡与背景的分离由光影承担）
     Surface(
-        color = MaterialTheme.colorScheme.surface,
-        shape = RoundedCornerShape(QimengDimens.CardCornerRadius),
-        shadowElevation = EntryRowShadowElevation,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        shape = RoundedCornerShape(16.dp),
+        shadowElevation = 1.dp,
         modifier = modifier
             .fillMaxWidth()
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
@@ -435,22 +502,61 @@ private fun EntryRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = QimengDimens.ProfileRowHeight)
-                .padding(horizontal = QimengDimens.ProfileRowHorizontalPadding),
+                .heightIn(min = 68.dp)
+                .padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // 单块两行文本（旧版单个 TextView：标题+副标题同字号同色，非两块 Text）
-            Text(
-                text = if (subtitle != null) "$label\n$subtitle" else label,
-                style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.sp),
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.weight(1f),
-            )
+            // 精致微图标底座（36dp 方块，10dp 圆角）
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                modifier = Modifier.size(36.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(14.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    ),
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                if (subtitle != null) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+
             if (detail != null) {
                 Text(
                     text = detail,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            } else if (onClick != null) {
+                Icon(
+                    imageVector = ChevronRightIcon,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                 )
             }
         }

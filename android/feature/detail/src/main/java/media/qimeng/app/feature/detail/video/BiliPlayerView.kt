@@ -5,6 +5,10 @@ import android.graphics.Color
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffColorFilter
 import android.graphics.Rect
+import android.graphics.Typeface
+import android.graphics.drawable.ClipDrawable
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.LayerDrawable
 import android.util.AttributeSet
 import android.view.GestureDetector
 import android.view.Gravity
@@ -365,8 +369,18 @@ class BiliPlayerView @JvmOverloads constructor(
 
         bottomBar = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(16.dp(context), 8.dp(context), 16.dp(context), 12.dp(context))
-            setBackgroundColor(0x88000000.toInt())
+            setPadding(14.dp(context), 12.dp(context), 14.dp(context), 12.dp(context))
+            // 现代毛玻璃渐变暗色背板（对标 Web 端 glass.css .art-video-player .art-bottom）
+            val bottomScrim = GradientDrawable(
+                GradientDrawable.Orientation.BOTTOM_TOP,
+                intArrayOf(
+                    0xC8000000.toInt(), // 78% 黑
+                    0x73000000.toInt(), // 45% 黑
+                    0x20000000.toInt(), // 12% 黑
+                    0x00000000          // 透明
+                ),
+            )
+            background = bottomScrim
             visibility = View.GONE
             layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
                 gravity = Gravity.BOTTOM
@@ -378,7 +392,7 @@ class BiliPlayerView @JvmOverloads constructor(
             isHorizontalScrollBarEnabled = false
             visibility = View.GONE
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-                bottomMargin = 4.dp(context)
+                bottomMargin = 6.dp(context)
             }
         }
         tagsContainer = LinearLayout(context).apply {
@@ -388,23 +402,38 @@ class BiliPlayerView @JvmOverloads constructor(
         tagsScroller.addView(tagsContainer)
         bottomBar.addView(tagsScroller)
 
-        val progressRow = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        currentTimeText = TextView(context).apply {
-            text = "00:00"
-            setTextColor(Color.WHITE)
-            textSize = 12f
-        }
+        // 1. 上层独立横贯纤细进度条（对标 Web 端 .art-control-progress）
         progressBar = SeekBar(context).apply {
-            layoutParams = LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f).apply {
-                marginStart = 8.dp(context)
-                marginEnd = 8.dp(context)
+            layoutParams = LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
+                setMargins(0, 0, 0, 4.dp(context))
             }
             max = 1000
-            progressDrawable?.colorFilter = PorterDuffColorFilter(Color.WHITE, PorterDuff.Mode.SRC_IN)
-            thumb?.colorFilter = PorterDuffColorFilter(Color.WHITE, PorterDuff.Mode.SRC_IN)
+            val bgTrack = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = 2.dp(context).toFloat()
+                setColor(0x38FFFFFF.toInt())
+                setSize(-1, 3.dp(context))
+            }
+            val progressTrack = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = 2.dp(context).toFloat()
+                setColor(Color.WHITE)
+                setSize(-1, 3.dp(context))
+            }
+            val clipProgress = ClipDrawable(progressTrack, Gravity.START, ClipDrawable.HORIZONTAL)
+            progressDrawable = LayerDrawable(arrayOf(bgTrack, clipProgress)).apply {
+                setId(0, android.R.id.background)
+                setId(1, android.R.id.progress)
+            }
+            val thumbDrawable = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setSize(12.dp(context), 12.dp(context))
+                setColor(Color.WHITE)
+            }
+            thumb = thumbDrawable
+            thumbOffset = 6.dp(context)
+            setPadding(6.dp(context), 4.dp(context), 6.dp(context), 4.dp(context))
+
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                     if (fromUser) {
@@ -433,21 +462,13 @@ class BiliPlayerView @JvmOverloads constructor(
                 }
             })
         }
-        totalTimeText = TextView(context).apply {
-            // 适配点⑨：初始即占位（旧版「初始 00:00」口径已废，见类 KDoc 与 TOTAL_TIME_PLACEHOLDER）
-            text = TOTAL_TIME_PLACEHOLDER
-            setTextColor(Color.WHITE)
-            textSize = 12f
-        }
-        progressRow.addView(currentTimeText)
-        progressRow.addView(progressBar)
-        progressRow.addView(totalTimeText)
-        bottomBar.addView(progressRow)
+        bottomBar.addView(progressBar)
 
+        // 2. 下层控制条行：左侧[播放/暂停 + 静音 + 时间码] | 弹性间隔 | 右侧[打点 + 倍速微胶囊 + 全屏]
         val buttonRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, 4.dp(context), 0, 0)
+            layoutParams = LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
         }
         playPauseBtn = ImageView(context).apply {
             setImageResource(R.drawable.ic_player_play)
@@ -463,6 +484,37 @@ class BiliPlayerView @JvmOverloads constructor(
             setColorFilter(Color.WHITE)
             setOnClickListener { toggleMute() }
         }
+
+        // 时间码组合显示（对标 Web 端 00:00 / 00:00）
+        val timeContainer = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
+                marginStart = 6.dp(context)
+            }
+        }
+        currentTimeText = TextView(context).apply {
+            text = "00:00"
+            setTextColor(Color.WHITE)
+            textSize = 12f
+            typeface = Typeface.MONOSPACE
+        }
+        val timeDivider = TextView(context).apply {
+            text = " / "
+            setTextColor(0x8AFFFFFF.toInt())
+            textSize = 12f
+            typeface = Typeface.MONOSPACE
+        }
+        totalTimeText = TextView(context).apply {
+            text = TOTAL_TIME_PLACEHOLDER
+            setTextColor(0xCCFFFFFF.toInt())
+            textSize = 12f
+            typeface = Typeface.MONOSPACE
+        }
+        timeContainer.addView(currentTimeText)
+        timeContainer.addView(timeDivider)
+        timeContainer.addView(totalTimeText)
+
         val spacer = View(context).apply {
             layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
         }
@@ -470,19 +522,29 @@ class BiliPlayerView @JvmOverloads constructor(
             setImageResource(R.drawable.ic_timeline_tag)
             setPadding(4.dp(context), 4.dp(context), 4.dp(context), 4.dp(context))
             layoutParams = LinearLayout.LayoutParams(36.dp(context), 36.dp(context)).apply {
-                marginStart = 8.dp(context)
+                marginStart = 6.dp(context)
             }
             setColorFilter(Color.WHITE)
             setOnClickListener { onBookmark?.invoke() }
         }
+
+        // 倍速微胶囊药丸（Micro-capsule Pill，三端一致设计语言）
         speedBtn = TextView(context).apply {
             text = "倍速"
             setTextColor(Color.WHITE)
             textSize = 12f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
             gravity = Gravity.CENTER
-            setPadding(8.dp(context), 4.dp(context), 8.dp(context), 4.dp(context))
+            val pillBg = GradientDrawable().apply {
+                cornerRadius = 14.dp(context).toFloat()
+                setColor(0x2EFFFFFF.toInt())
+                setStroke((0.8f * context.resources.displayMetrics.density).toInt().coerceAtLeast(1), 0x4DFFFFFF.toInt())
+            }
+            background = pillBg
+            setPadding(10.dp(context), 4.dp(context), 10.dp(context), 4.dp(context))
             layoutParams = LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
-                marginStart = 8.dp(context)
+                marginStart = 6.dp(context)
+                marginEnd = 4.dp(context)
             }
             setOnClickListener { showSpeedPopup() }
         }
@@ -492,13 +554,13 @@ class BiliPlayerView @JvmOverloads constructor(
             layoutParams = LinearLayout.LayoutParams(36.dp(context), 36.dp(context))
             setColorFilter(Color.WHITE)
             setOnClickListener {
-                // K2 单级横屏全屏：门控已删，是否放行由 Compose 侧状态机裁决（仅横屏视频
-                // 可进，竖屏视频无反应旧版同款），本控件只上报点击
                 onFullscreen?.invoke()
             }
         }
+
         buttonRow.addView(playPauseBtn)
         buttonRow.addView(muteBtn)
+        buttonRow.addView(timeContainer)
         buttonRow.addView(spacer)
         buttonRow.addView(timelineTagBtn)
         buttonRow.addView(speedBtn)
@@ -666,17 +728,32 @@ class BiliPlayerView @JvmOverloads constructor(
         speedPopup?.dismiss()
         val container = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(SPEED_POPUP_BG_COLOR)
-            setPadding(4.dp(context), 4.dp(context), 4.dp(context), 4.dp(context))
+            val bg = GradientDrawable().apply {
+                cornerRadius = 12.dp(context).toFloat()
+                setColor(0xEE1E1E1E.toInt())
+                setStroke(1, 0x33FFFFFF.toInt())
+            }
+            background = bg
+            setPadding(6.dp(context), 6.dp(context), 6.dp(context), 6.dp(context))
         }
         for (tier in PLAYER_SPEED_TIERS) {
             val isSelected = currentSpeed == tier.speed
             val item = TextView(context).apply {
                 text = tier.menuLabel
                 setTextColor(if (isSelected) SPEED_SELECTED_COLOR else Color.WHITE)
-                textSize = 14f
+                textSize = 13f
+                typeface = if (isSelected) Typeface.create(Typeface.DEFAULT, Typeface.BOLD) else Typeface.DEFAULT
                 gravity = Gravity.CENTER
-                setPadding(20.dp(context), 10.dp(context), 20.dp(context), 10.dp(context))
+                val itemBg = GradientDrawable().apply {
+                    cornerRadius = 8.dp(context).toFloat()
+                    if (isSelected) {
+                        setColor(0x2E4FC3F7.toInt())
+                    } else {
+                        setColor(Color.TRANSPARENT)
+                    }
+                }
+                background = itemBg
+                setPadding(18.dp(context), 8.dp(context), 18.dp(context), 8.dp(context))
                 setOnClickListener {
                     currentSpeed = tier.speed
                     isSpeedLocked = currentSpeed != 1f
@@ -695,11 +772,12 @@ class BiliPlayerView @JvmOverloads constructor(
             isFocusable = true
             isOutsideTouchable = true
             setBackgroundDrawable(null)
+            elevation = 8.dp(context).toFloat()
             setOnDismissListener { speedPopup = null }
         }
         speedPopup = popup
         // 从倍速按钮位置往上弹出
-        popup.showAsDropDown(speedBtn, 0, -(speedBtn.height + popupHeight))
+        popup.showAsDropDown(speedBtn, 0, -(speedBtn.height + popupHeight + 4.dp(context)))
     }
 
     private fun updateSpeedButtonText() {
