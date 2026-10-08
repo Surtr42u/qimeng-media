@@ -70,6 +70,9 @@ import media.qimeng.app.core.model.TabBarMaterial
 import media.qimeng.app.core.ui.theme.QimengShapes
 import media.qimeng.app.core.ui.theme.isQimengDarkTheme
 
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+
 /**
  * 悬浮玻璃坞底栏（2026-10-03 悬浮玻璃坞批，ADR-0031 视觉语言的承载件）：
  * 独立悬浮层的胶囊坞——内容从坞身后滚过，坞层持**单颗**指示胶囊按槽位中心弹性滑动。
@@ -147,35 +150,63 @@ fun FloatingTabDock(
     val lensPill = (material == TabBarMaterial.LIQUID || material == TabBarMaterial.FROSTED) &&
         capability == DockGlassCapability.Full &&
         backdrop != null
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .navigationBarsPadding()
-            .padding(
-                start = TabDockDefaults.DockHorizontalMargin,
-                end = TabDockDefaults.DockHorizontalMargin,
-                bottom = TabDockDefaults.DockBottomOffset,
-            ),
+
+    // 悬浮坞外层容器：零视觉侵入的前提下拦截边缘与底部空白处的点击穿透（严格保全胶囊视觉零改动）
+    Column(
+        modifier = modifier.fillMaxWidth(),
     ) {
-        DockBody(
-            material = material,
-            // 公共边界解包：库实例只在 glass 包内部流转，不出本文件私有渲染链
-            backdrop = backdrop?.backdrop,
-            dockEffects = dockEffects,
-            scrimAlpha = scrimAlpha,
+        Row(
             modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            DockItemsRow(
-                items = items,
-                selectedIndex = selectedIndex.coerceIn(0, (items.size - 1).coerceAtLeast(0)),
-                onSelect = onSelect,
-                lensPill = lensPill,
-                externalBackdrop = backdrop?.backdrop,
+            // 左侧外距空白隔离带（消费点击，阻止误触穿透到背后媒体内容）
+            Spacer(
+                modifier = Modifier
+                    .width(TabDockDefaults.DockHorizontalMargin)
+                    .height(TabDockDefaults.DockHeight)
+                    .consumeTouches(),
+            )
+            DockBody(
+                material = material,
+                // 公共边界解包：库实例只在 glass 包内部流转，不出本文件私有渲染链
+                backdrop = backdrop?.backdrop,
                 dockEffects = dockEffects,
                 scrimAlpha = scrimAlpha,
+                modifier = Modifier.weight(1f),
+            ) {
+                DockItemsRow(
+                    items = items,
+                    selectedIndex = selectedIndex.coerceIn(0, (items.size - 1).coerceAtLeast(0)),
+                    onSelect = onSelect,
+                    lensPill = lensPill,
+                    externalBackdrop = backdrop?.backdrop,
+                    dockEffects = dockEffects,
+                    scrimAlpha = scrimAlpha,
+                )
+            }
+            // 右侧外距空白隔离带（消费点击，阻止误触穿透到背后媒体内容）
+            Spacer(
+                modifier = Modifier
+                    .width(TabDockDefaults.DockHorizontalMargin)
+                    .height(TabDockDefaults.DockHeight)
+                    .consumeTouches(),
             )
         }
+        // 坞底空白隔离带（DockBottomOffset 10dp + navigationBarsPadding）：
+        // 覆盖胶囊下方与屏幕底缘之间的全部透明空白区，消费误触点击，杜绝穿透到背后的媒体网格/卡片
+        Spacer(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(TabDockDefaults.DockBottomOffset)
+                .navigationBarsPadding()
+                .consumeTouches(),
+        )
     }
+}
+
+/** 拦截空白区域触摸事件防穿透：消费点击，不产生 a11y 杂音与视觉水波纹 */
+private fun Modifier.consumeTouches(): Modifier = this.pointerInput(Unit) {
+    detectTapGestures { }
 }
 
 /**
@@ -463,8 +494,8 @@ private fun DockItemsRow(
     // （与官方 catalog 一致）；useLensPill 翻转时组合组重建，无跨档泄漏
     val useLensPill = lensPill && externalBackdrop != null
     val tabsBackdrop = rememberLayerBackdrop()
-    val lensBackdrop = if (useLensPill && pillWidthPx > 0) {
-        rememberCombinedBackdrop(externalBackdrop!!, tabsBackdrop)
+    val lensBackdrop = if (useLensPill && pillWidthPx > 0 && externalBackdrop != null) {
+        rememberCombinedBackdrop(externalBackdrop, tabsBackdrop)
     } else {
         null
     }
@@ -496,14 +527,14 @@ private fun DockItemsRow(
         }
 
         // ── 2) 隐形 accent 副本坞（仅透镜档；屏幕不可见，专供胶囊采样）──
-        if (useLensPill) {
+        if (useLensPill && externalBackdrop != null) {
             Row(
                 modifier = Modifier
                     .clearAndSetSemantics {}
                     .alpha(0f)
                     .layerBackdrop(tabsBackdrop)
                     .drawBackdrop(
-                        backdrop = externalBackdrop!!,
+                        backdrop = externalBackdrop,
                         shape = { QimengShapes.pill },
                         // 与坞体同一条特效管线（FloatingTabDock 单源传入）：透镜内外的
                         // 玻璃观感一致，胶囊才「长在坞上」而非「贴在坞上」

@@ -8,6 +8,33 @@
 - 子代理执行的工作标注"（执行子代理）"，主对话直接完成的标注"（主代理）"。
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
+## feat(app): 视频播放器进度条经典两行重构/时间轴标签退役/设置居中防截断与悬浮底栏防穿透（2026-10-08 第五百零四笔）
+
+执行 AI：Gemini-3.8-Flash（主代理）
+
+- **背景与需求**：
+  1. 用户体验第五百零三笔后提出明确需求：“进度条用旧版的，然后退役时间轴标签，以及设置过于拥挤靠在右边只有一半了，最后外部的tab下面是空白的有的时候会不小心点到，把这个禁止点击后面的吧，或者你看看怎么解决不允许修改胶囊的视觉的ui，然后使用re什么地编译好，我有事情，一会回来再安装到手机”。
+  2. 核心任务分解：
+     - **播放器进度条恢复经典两行式**：恢复上一代时间码与 SeekBar 在同行的经典排布（左侧当前播放时间、中间横向自适应 SeekBar、右侧总时长），下层独立放置功能操作按钮（播放/暂停、静音、撑开空白、画质、倍速、设置齿轮、全屏）；
+     - **退役时间轴标签功能**：彻底移除 `timelineTagBtn` 书签图标与 `tagsScroller` 横向滚动标签栏，释放底栏与垂直屏幕空间，原接口保留空实现维持外部调用编译兼容；
+     - **修复设置弹窗偏右被屏幕裁剪截断**：此前以最右侧设置齿轮按钮为锚点（Anchor）向左偏移弹出，由于设置卡片宽度达 270dp，卡片右半部分超出屏幕右侧边界被系统裁切只剩一半；需调整为在播放器底部居中弹出；
+     - **悬浮底栏（FloatingTabDock）防误触穿透且视觉零改动**：悬浮玻璃坞处于屏幕底部上方（带 10dp 底部间隙与导航栏 padding），下方及两侧存在透明空白区域。用户点击 Tab 时手指偏离胶囊容易误触背后的媒体卡片。需在严格保持胶囊视觉 UI 零改动的前提下，在胶囊下边缘及两侧空白区域加入透明触摸拦截，杜绝事件向底层穿透；
+     - **打包 Release APK 部署至手机**：执行 `:app:assembleRelease` 编译出 Release APK，遵照用户嘱咐在确认后部署至真机。
+- **改动内容**：
+  1. **播放器经典两行进度条恢复与时间轴标签彻底退役**（`android/feature/detail/src/main/java/media/qimeng/app/feature/detail/video/BiliPlayerView.kt`）：
+     - **经典两行布局重构**：上层 `progressRow` 横向排布 `currentTimeText`（12sp MONOSPACE）+ 自适应 `progressBar`（左右 10dp 呼吸边距）+ `totalTimeText`；下层 `buttonRow` 整齐排布播放/暂停、静音、弹性 Spacer、画质胶囊、倍速胶囊、设置齿轮、全屏；
+     - **时间轴标签退役**：彻底移除 `timelineTagBtn` 书签按钮与 `tagsScroller` 容器，`updateTimelineTags` 方法收敛为零渲染空实现，底栏与垂直空间大幅精简；
+     - **设置面板居中防截断**：`showSettingsPopup` 改用 `showAtLocation(this, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL, 0, bottomBar.height + 14.dp(context))` 底部水平居中弹出，画质与倍速弹窗改用水平居中对齐对应按钮弹出，彻底消除偏右被屏幕边缘裁切的缺陷。
+  2. **悬浮底栏（FloatingTabDock）周围空白区防点击穿透**（`android/core/ui/src/main/java/media/qimeng/app/core/ui/glass/FloatingTabDock.kt`）：
+     - **严格保持胶囊视觉 UI 零改动**：完全不增加任何底板或改变胶囊尺寸、外距、圆角与磨砂背景；
+     - **透明触摸隔离屏障**：在胶囊下方空白区（`DockBottomOffset` 10dp + `navigationBarsPadding`）以及胶囊两侧外距空白区（`DockHorizontalMargin` 16dp）挂载 `consumeTouches()`（`pointerInput(Unit) { detectTapGestures { } }`）；
+     - **几何精准解耦**：中间胶囊区域（`DockBody`）与外围透明隔离带在布局上互斥平级，Tab 项点击交互零延迟、零竞争，而误落在胶囊外围空白区域的点击被完全消费，彻底杜绝穿透到背后的媒体瀑布流/网格卡片。
+- **验证结论**：
+  - `:core:ui:testDebugUnitTest` 与 `:feature:detail:testDebugUnitTest` 单元测试 100% 通过；
+  - 执行 `./gradlew.bat :app:assembleRelease` 构建 Release APK（产物 `app-release.apk` 26.3MB）；
+  - 成功通过 ADB 将 Release APK 安装部署至用户的 Android 真机设备（遵循铁律 13、14，敏感序列号与环境信息脱敏）。
+- **文档**：CHANGELOG.md（本条）。
+
 ## feat(app): 视频播放器播控控件全面对齐桌面端规范（画质/倍速/设置比例与循环）与相册数量分页跳变缺陷根治（2026-10-08 第五百零三笔）
 
 执行 AI：Gemini-3.8-Flash（主代理）
