@@ -3,6 +3,7 @@ package media.qimeng.app.core.ui.component
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -23,6 +24,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalConfiguration
@@ -171,25 +173,29 @@ fun QimengValuePillBlock(
             // 收起=钳制两行（≈Web max-height 66px）；展开=全部值推挤网格
             maxLines = if (valuesExpanded) Int.MAX_VALUE else VALUE_BLOCK_COLLAPSED_LINES,
         )
-        // 展开钮只在候选超阈值时出现（含「全部」胶囊的计数口径与 Web 一致）
+        // 展开钮只在候选超阈值时出现（换到右下角对齐）
         if (pills.size > VALUE_BLOCK_COLLAPSE_THRESHOLD) {
-            Text(
-                text = stringResource(
-                    if (valuesExpanded) R.string.ui_values_collapse else R.string.ui_values_expand,
-                ),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            Box(
                 modifier = Modifier
-                    // Web .expand-btn margin-top 8px
-                    .padding(top = QimengDimens.SpaceM)
-                    .clip(RoundedCornerShape(QimengDimens.PillCornerRadius))
-                    .clickable { valuesExpanded = !valuesExpanded }
-                    // 触区补边：纯文字钮按下反馈区过窄（Web 有 hover 态、触屏无）
-                    .padding(
-                        horizontal = QimengDimens.SpaceXS,
-                        vertical = QimengDimens.SpaceXS,
+                    .fillMaxWidth()
+                    .padding(top = QimengDimens.SpaceS),
+                contentAlignment = Alignment.CenterEnd,
+            ) {
+                Text(
+                    text = stringResource(
+                        if (valuesExpanded) R.string.ui_values_collapse else R.string.ui_values_expand,
                     ),
-            )
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(QimengDimens.PillCornerRadius))
+                        .clickable { valuesExpanded = !valuesExpanded }
+                        .padding(
+                            horizontal = QimengDimens.SpaceXS,
+                            vertical = QimengDimens.SpaceXS,
+                        ),
+                )
+            }
         }
     }
 }

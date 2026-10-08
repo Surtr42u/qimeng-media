@@ -173,6 +173,7 @@ fun AllScreen(
 
     Column(modifier = Modifier.fillMaxSize()) {
         if (state.isSelectionMode) {
+            val allLoadedSelected = state.items.isNotEmpty() && state.selectedAssetIds.size == state.items.size
             // 多选模式工具栏（替代常规标题行）
             Surface(
                 modifier = Modifier
@@ -181,25 +182,60 @@ fun AllScreen(
                         horizontal = QimengDimens.ScreenPaddingHorizontal,
                         vertical = QimengDimens.SpaceM,
                     ),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 shape = RoundedCornerShape(16.dp),
+                shadowElevation = 2.dp,
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    Text(
-                        text = "已选 ${state.selectedAssetIds.size} 项",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        TextButton(onClick = viewModel::selectAll) {
-                            Text("全选", fontWeight = FontWeight.Bold)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            modifier = Modifier.size(28.dp),
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = "${state.selectedAssetIds.size}",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                )
+                            }
+                        }
+                        Text(
+                            text = "已选 ${state.selectedAssetIds.size} 项",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        TextButton(
+                            onClick = {
+                                if (allLoadedSelected) {
+                                    viewModel.clearSelection()
+                                } else {
+                                    viewModel.selectAll()
+                                }
+                            },
+                        ) {
+                            Text(
+                                text = if (allLoadedSelected) "清空" else "全选",
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
                         }
                         TextButton(onClick = viewModel::exitSelectionMode) {
                             Text("退出", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -390,27 +426,66 @@ fun AllScreen(
         ModalBottomSheet(
             onDismissRequest = viewModel::dismissBatchAuthorSheet,
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+            dragHandle = { androidx.compose.material3.BottomSheetDefaults.DragHandle() },
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 8.dp)
+                    .padding(horizontal = 20.dp, vertical = 4.dp)
                     .verticalScroll(rememberScrollState())
                     .imePadding(),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                Column {
+                // 顶部标题与数量徽章
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
                     Text(
                         text = "批量设置作者与来源",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "已选 ${state.selectedAssetIds.size} 项资产。保存后将自动挂靠所选作者，并自动写入 NAS 的 TXT 作品片段。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        shape = RoundedCornerShape(12.dp),
+                    ) {
+                        Text(
+                            text = "${state.selectedAssetIds.size} 项资产",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                        )
+                    }
+                }
+
+                // 提示卡片
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Icon(
+                            imageVector = LabelTagIcon,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Text(
+                            text = "将统一为所选资产配置目标作者，保存后自动向 NAS 上的 TXT 作品片段追加来源记录。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
 
                 batchAuthorState.errorMessage?.let { err ->
@@ -421,51 +496,83 @@ fun AllScreen(
                     )
                 }
 
-                // —— 作者联想与选择 ——
-                QimengAuthorSuggestSection(
-                    title = "关联作者（必选）",
-                    query = batchAuthorState.authorQuery,
-                    committedName = batchAuthorState.committedAuthor?.displayName,
-                    committedIsExisting = true,
-                    suggestions = batchAuthorState.suggestions,
-                    seeds = batchAuthorState.seeds,
-                    onQueryChange = viewModel::onBatchAuthorQueryChange,
-                    onPickSuggestion = viewModel::onPickBatchAuthor,
-                    onCommitInput = {},
-                    onClear = viewModel::onClearBatchAuthor,
-                )
+                // —— 作者联想与选择卡片 ——
+                Surface(
+                    color = MaterialTheme.colorScheme.surface,
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                    ) {
+                        QimengAuthorSuggestSection(
+                            title = "关联目标作者（必选）",
+                            query = batchAuthorState.authorQuery,
+                            committedName = batchAuthorState.committedAuthor?.displayName,
+                            committedIsExisting = true,
+                            suggestions = batchAuthorState.suggestions,
+                            seeds = batchAuthorState.seeds,
+                            onQueryChange = viewModel::onBatchAuthorQueryChange,
+                            onPickSuggestion = viewModel::onPickBatchAuthor,
+                            onCommitInput = {},
+                            onClear = viewModel::onClearBatchAuthor,
+                        )
+                    }
+                }
 
-                // —— 来源选择与添加 ——
-                QimengSourceSection(
-                    title = "来源渠道（可选，并入该作者来源列表）",
-                    selectedSources = batchAuthorState.selectedSources,
-                    options = batchAuthorState.sourceOptions,
-                    enabled = batchAuthorState.committedAuthor != null,
-                    disabledHint = "请先在上方确定作者后再配置来源",
-                    onToggle = viewModel::onToggleBatchSource,
-                    onAddCustom = viewModel::onAddBatchCustomSource,
-                )
+                // —— 来源选择与添加卡片 ——
+                Surface(
+                    color = MaterialTheme.colorScheme.surface,
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                    ) {
+                        QimengSourceSection(
+                            title = "来源渠道（可选，写入作者 TXT 来源列表）",
+                            selectedSources = batchAuthorState.selectedSources,
+                            options = batchAuthorState.sourceOptions,
+                            enabled = batchAuthorState.committedAuthor != null,
+                            disabledHint = "请先在上方确定作者后再配置来源",
+                            onToggle = viewModel::onToggleBatchSource,
+                            onAddCustom = viewModel::onAddBatchCustomSource,
+                        )
+                    }
+                }
 
                 // —— 确认与取消 ——
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 12.dp),
+                        .padding(vertical = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     OutlinedButton(
                         onClick = viewModel::dismissBatchAuthorSheet,
                         modifier = Modifier.weight(1f),
                         enabled = !batchAuthorState.isSaving,
+                        shape = RoundedCornerShape(12.dp),
                     ) {
                         Text("取消")
                     }
                     Button(
                         onClick = viewModel::submitBatchAuthor,
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1.4f),
                         enabled = batchAuthorState.committedAuthor != null && !batchAuthorState.isSaving,
+                        shape = RoundedCornerShape(12.dp),
                     ) {
-                        Text(if (batchAuthorState.isSaving) "正在写入 TXT..." else "确认批量应用")
+                        if (batchAuthorState.isSaving) {
+                            androidx.compose.material3.CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.onPrimary,
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("正在写入 TXT...")
+                        } else {
+                            Text("确认应用 (${state.selectedAssetIds.size})")
+                        }
                     }
                 }
                 Spacer(modifier = Modifier.height(16.dp))

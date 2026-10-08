@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -17,6 +18,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -25,6 +27,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -102,12 +105,18 @@ private fun AssetEditForm(
         }
 
         // —— 已关联作者 ——
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(QimengDimens.SpaceM)) {
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
                 Text(
                     text = stringResource(R.string.asset_edit_authors_section) +
                         "（${state.authors.size}）",
                     style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
                 if (state.authors.isEmpty()) {
                     Text(
@@ -137,30 +146,43 @@ private fun AssetEditForm(
         }
 
         // —— 添加作者（联想选择；仅能关联既有作者——服务端无按名新建端点） ——
-        QimengAuthorSuggestSection(
-            title = stringResource(R.string.asset_edit_add_author_section),
-            query = state.authorQuery,
-            committedName = null,
-            committedIsExisting = false,
-            suggestions = state.authorSuggestions,
-            seeds = state.authorSeeds,
-            onQueryChange = viewModel::onAddAuthorQueryChange,
-            onPickSuggestion = viewModel::addAuthor,
-            onCommitInput = viewModel::commitAddAuthor,
-            onClear = { },
-        )
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                QimengAuthorSuggestSection(
+                    title = stringResource(R.string.asset_edit_add_author_section),
+                    query = state.authorQuery,
+                    committedName = null,
+                    committedIsExisting = false,
+                    suggestions = state.authorSuggestions,
+                    seeds = state.authorSeeds,
+                    onQueryChange = viewModel::onAddAuthorQueryChange,
+                    onPickSuggestion = viewModel::addAuthor,
+                    onCommitInput = viewModel::commitAddAuthor,
+                    onClear = { },
+                )
+            }
+        }
 
         // —— 保存 ——
         Button(
             onClick = viewModel::save,
             enabled = state.canSave,
             colors = qimengFilledButtonColors(),
-            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp),
         ) {
             Text(
                 text = stringResource(
                     if (state.saving) R.string.asset_edit_saving else R.string.asset_edit_save,
                 ),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
             )
         }
 
@@ -178,30 +200,47 @@ private fun AuthorEditRow(
     onToggleSource: (String) -> Unit,
     onAddCustomSource: (String) -> Unit,
 ) {
-    Column(modifier = Modifier.fillMaxWidth().padding(top = QimengDimens.SpaceM)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = if (author.isCos) {
-                    author.displayName + stringResource(R.string.detail_author_cos_suffix)
-                } else {
-                    author.displayName
-                },
-                style = MaterialTheme.typography.bodyLarge,
-                modifier = Modifier.weight(1f),
-            )
-            TextButton(onClick = onRemove) {
-                Text(stringResource(R.string.asset_edit_remove_author))
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surface,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = QimengDimens.SpaceM),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = if (author.isCos) {
+                        author.displayName + stringResource(R.string.detail_author_cos_suffix)
+                    } else {
+                        author.displayName
+                    },
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = onRemove) {
+                    Text(
+                        text = stringResource(R.string.asset_edit_remove_author),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
             }
+            // 每作者来源区（编辑页作者恒「已存在」，无禁用态——disabledHint 传空串不渲染）
+            QimengSourceSection(
+                title = stringResource(R.string.asset_edit_sources_label),
+                selectedSources = sources,
+                options = sourceOptions,
+                enabled = true,
+                disabledHint = "",
+                onToggle = onToggleSource,
+                onAddCustom = onAddCustomSource,
+            )
         }
-        // 每作者来源区（编辑页作者恒「已存在」，无禁用态——disabledHint 传空串不渲染）
-        QimengSourceSection(
-            title = stringResource(R.string.asset_edit_sources_label),
-            selectedSources = sources,
-            options = sourceOptions,
-            enabled = true,
-            disabledHint = "",
-            onToggle = onToggleSource,
-            onAddCustom = onAddCustomSource,
-        )
     }
 }

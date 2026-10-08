@@ -319,8 +319,8 @@ fun QimengMediaGrid(
                         paused = thumbnailsPaused,
                         isSelected = asset.id in selectedAssetIds,
                         isSelectionMode = isSelectionMode,
-                        onClick = { onAssetClick(asset) },
-                        onLongClick = onAssetLongClick?.let { { it(asset) } },
+                        onAssetClick = onAssetClick,
+                        onAssetLongClick = onAssetLongClick,
                     )
                 }
             }
@@ -356,7 +356,7 @@ fun QimengMediaGrid(
  * - 占位/错误底 = 旧版 qmColorChipBg 等价主题 token（在 [QimengThumbnail] 内，secondaryContainer）；
  * - 角标 [DurationBadgeTextStyle] 白字 12sp + 阴影、右下 8dp、无胶囊底；
  * - 无按下缩放动画（旧版无 scale/press 效果，保持默认点击态即可，禁止再加缩放修饰）。
- * - 多选模式：高亮边框、半透明遮罩与右上角复选徽章（CheckMarkIcon）；
+ * - 多选模式：高亮边框、半透明遮罩与右上角复选徽章（CheckMarkIcon）；多选模式下使用零延迟极速点选并附带微触控反馈；
  * - 长按支持：触发触觉反馈并进入多选模式。
  * 动图（animated_image）走原件直链动画（拍板条目 9）：解析经 [animatedUrlResolver]
  * （VM 侧带内存缓存的 AssetOrigUrlResolver），解析完成前显示服务端缩略图。
@@ -370,8 +370,8 @@ private fun AssetCard(
     paused: Boolean,
     isSelected: Boolean,
     isSelectionMode: Boolean,
-    onClick: () -> Unit,
-    onLongClick: (() -> Unit)?,
+    onAssetClick: (MediaAsset) -> Unit,
+    onAssetLongClick: ((MediaAsset) -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     // 动图原件解析（拍板条目 9：动图卡必须动画）：解析完成前先渲服务端缩略图。
@@ -394,6 +394,26 @@ private fun AssetCard(
     val haptic = LocalHapticFeedback.current
     val cardShape = RoundedCornerShape(cornerRadius)
 
+    val clickModifier = if (isSelectionMode) {
+        Modifier.clickable {
+            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            onAssetClick(asset)
+        }
+    } else {
+        Modifier.combinedClickable(
+            onClick = {
+                preloadDetailPoster(context, asset.mediaType, thumbModel)
+                onAssetClick(asset)
+            },
+            onLongClick = onAssetLongClick?.let { action ->
+                {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    action(asset)
+                }
+            },
+        )
+    }
+
     Box(
         modifier = modifier
             .padding(CARD_OUTER_PADDING)
@@ -411,20 +431,7 @@ private fun AssetCard(
                     Modifier
                 },
             )
-            .combinedClickable(
-                onClick = {
-                    if (!isSelectionMode) {
-                        preloadDetailPoster(context, asset.mediaType, thumbModel)
-                    }
-                    onClick()
-                },
-                onLongClick = onLongClick?.let { action ->
-                    {
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        action()
-                    }
-                },
-            ),
+            .then(clickModifier),
     ) {
         QimengThumbnail(
             model = thumbModel,

@@ -1,21 +1,21 @@
 package media.qimeng.app.feature.detail
 
 import androidx.compose.foundation.clickable
-import media.qimeng.app.core.ui.component.QIMENG_GLASS_TINT_ALPHA
-import media.qimeng.app.core.ui.glass.GlassSurface
-import media.qimeng.app.core.ui.glass.pressScale
-import media.qimeng.app.core.ui.glass.rememberPressScaleSource
-
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -30,12 +30,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import media.qimeng.app.core.model.AssetDetail
 import media.qimeng.app.core.model.DetailAuthor
+import media.qimeng.app.core.ui.component.QIMENG_GLASS_TINT_ALPHA
 import media.qimeng.app.core.ui.component.detailDirectoryLabel
 import media.qimeng.app.core.ui.component.detailTypeLabel
 import media.qimeng.app.core.ui.component.formatBytesForDetail
 import media.qimeng.app.core.ui.component.formatDurationBadge
 import media.qimeng.app.core.ui.component.formatShortDate
+import media.qimeng.app.core.ui.glass.GlassSurface
+import media.qimeng.app.core.ui.glass.pressScale
+import media.qimeng.app.core.ui.glass.rememberPressScaleSource
 import media.qimeng.app.core.ui.icon.ChevronRightIcon
+import media.qimeng.app.core.ui.icon.EditPencilIcon
 import media.qimeng.app.core.ui.theme.QimengDimens
 
 /**
@@ -241,6 +246,7 @@ internal fun DetailAuthorSheet(
         onDismissRequest = onDismiss,
         // 三个缺省行为陷阱的处置沿革与现口径（S1b 点外关闭已恢复）见上 KDoc（alpha15 短内容 sheet P1 实证）
         dragHandle = null,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
         contentWindowInsets = { BottomSheetDefaults.standardWindowInsets },
         properties = ModalBottomSheetProperties(
             shouldDismissOnBackPress = true,
@@ -250,104 +256,220 @@ internal fun DetailAuthorSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                // 去 handle 后内容顶到圆角边，补屏幕顶距档间距（QimengDimens 单源）
-                // 2026-09-14 对齐旧版 sheetContainer padding 20/18/20/28：顶段改 18dp、
-                // 水平段改 20dp（原 12/16 收窄，来源注释见常量档）
                 .padding(top = AUTHOR_SHEET_PADDING_TOP)
                 .padding(horizontal = AUTHOR_SHEET_PADDING_HORIZONTAL)
-                // 底部保留 DETAIL_BOTTOM_SPACER=24dp（三 Sheet 共享单源，未对齐旧版下段
-                // 28dp）：4dp 差属手势导航区余量、无观感投诉，不为单 Sheet 破坏共享档
                 .padding(bottom = DETAIL_BOTTOM_SPACER),
         ) {
-            Text(
-                text = stringResource(R.string.detail_authors_title),
-                style = MaterialTheme.typography.titleLarge,
-            )
-            if (authors.isEmpty()) {
+            // 自定义小把手（防 alpha15 缺省 dragHandle 点击收起）
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Surface(
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
+                    shape = RoundedCornerShape(2.dp),
+                    modifier = Modifier.size(width = 36.dp, height = 4.dp),
+                ) {}
+            }
+
+            // 标题行与数量徽章
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
                 Text(
-                    text = stringResource(R.string.detail_jump_empty),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = QimengDimens.SpaceM),
+                    text = stringResource(R.string.detail_authors_title),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
-            } else {
-                val cosSuffix = stringResource(R.string.detail_author_cos_suffix)
-                val enterHomeLabel = stringResource(R.string.detail_author_open_collection)
-                authors.forEach { author ->
-                    // 名行（displayName·COS + 关注钮）=原卡行结构移植（名字不再是链接——
-                    // 跳转语义收敛到下方专用钮，单入口不重复）
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = QimengDimens.SpaceM),
-                        verticalAlignment = Alignment.CenterVertically,
+                if (authors.isNotEmpty()) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        shape = RoundedCornerShape(12.dp),
                     ) {
                         Text(
-                            text = if (author.isCos) author.displayName + cosSuffix else author.displayName,
-                            style = MaterialTheme.typography.bodyLarge,
-                            modifier = Modifier.weight(1f),
-                        )
-                        // 长名场景与关注钮原贴边相对（weight 推挤下 0 间距）：补 SpaceM=8dp
-                        // 最小水平间隔（2026-09-14 用户反馈同类拥挤清偿）
-                        Spacer(modifier = Modifier.width(QimengDimens.SpaceM))
-                        FollowButton(
-                            followed = author.followed,
-                            enabled = !followPending,
-                            onClick = { onToggleFollow(author.id) },
-                        )
-                    }
-                    // 进入作者主页（authorCollection 路由）：跳转即收 Sheet（避免返回栈中间
-                    // 残留打开态，返回时重弹）
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                onOpenAuthor(author.id, author.displayName)
-                                onDismiss()
-                            }
-                            .padding(vertical = QimengDimens.SpaceM),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = enterHomeLabel,
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.weight(1f),
-                        )
-                        Icon(
-                            imageVector = ChevronRightIcon,
-                            contentDescription = null, // 行整体可点，chevron 纯装饰
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            text = "${authors.size} 位创作者",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                         )
                     }
                 }
             }
-            // 编辑作者与来源（2026-09-25 上传挂靠退役批）：资产级入口恒显示（无作者资产的
-            // 添加作者主路径也在此），点击跳编辑页并收 Sheet（同上方跳转收口语义）
-            val editLabel = stringResource(R.string.asset_edit_title)
-            Row(
+
+            if (authors.isEmpty()) {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = QimengDimens.SpaceM),
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.detail_jump_empty),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            } else {
+                val cosSuffix = stringResource(R.string.detail_author_cos_suffix)
+                val enterHomeLabel = stringResource(R.string.detail_author_open_collection)
+                authors.forEach { author ->
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surface,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = QimengDimens.SpaceM),
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.secondaryContainer,
+                                    modifier = Modifier.size(36.dp),
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = DetailAuthorIcon,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                            modifier = Modifier.size(20.dp),
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = author.displayName,
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                        )
+                                        if (author.isCos) {
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Surface(
+                                                shape = RoundedCornerShape(6.dp),
+                                                color = MaterialTheme.colorScheme.tertiaryContainer,
+                                            ) {
+                                                Text(
+                                                    text = cosSuffix,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                                FollowButton(
+                                    followed = author.followed,
+                                    enabled = !followPending,
+                                    onClick = { onToggleFollow(author.id) },
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        onOpenAuthor(author.id, author.displayName)
+                                        onDismiss()
+                                    },
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Text(
+                                    text = enterHomeLabel,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                                Icon(
+                                    imageVector = ChevronRightIcon,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 编辑作者与来源操作卡片
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surface,
                 modifier = Modifier
                     .fillMaxWidth()
+                    .padding(top = QimengDimens.SpaceM)
                     .clickable {
                         onEdit()
                         onDismiss()
-                    }
-                    .padding(vertical = QimengDimens.SpaceM),
-                verticalAlignment = Alignment.CenterVertically,
+                    },
             ) {
-                Text(
-                    text = editLabel,
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.weight(1f),
-                )
-                Icon(
-                    imageVector = ChevronRightIcon,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier.size(36.dp),
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = EditPencilIcon,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.asset_edit_title),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "配置关联作者与来源，自动写回 NAS 作品 TXT",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Icon(
+                        imageVector = ChevronRightIcon,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
             }
         }
     }

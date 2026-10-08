@@ -403,6 +403,13 @@ class AlbumViewModel @Inject constructor(
         }
     }
 
+    /** 清空当前选中项（保持多选模式） */
+    fun clearSelection() {
+        _uiState.update { state ->
+            state.copy(selectedAssetIds = emptySet())
+        }
+    }
+
     /** 打开批量设置作者与来源抽屉 */
     fun openBatchAuthorSheet() {
         if (_uiState.value.selectedAssetIds.isEmpty()) return

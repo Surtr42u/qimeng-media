@@ -10,6 +10,34 @@
 
 > **历史条目拆分说明（2026-10-01）**：为控制 AI 上下文体量，本文件只保留 **2026-09-22 及之后**的条目（第三百八十二笔起）；拆分线之前的全部条目已逐字迁入 `docs/history/CHANGELOG-ARCHIVE.md`（零改写，笔号与本文件连续可查）。引用早于拆分线的旧笔号请去历史档查阅。
 
+## feat(app/web): 批量选取卡顿优化与全域UI/深色模式升级——零延迟点选触觉响应、胶囊展开收起换至右下角、批量抽屉与详情页作者/编辑弹层卡片化及夜间模式打磨（2026-10-08 第五百笔）
+
+执行 AI：Gemini-3.8-Flash（主代理）
+
+- **背景与需求**：
+  1. 用户体验第四百九十九笔后反馈：“可以可以,然后我觉得你ui做的不从,你先把这个批量的优化一下然后我记得详情页左下角的也可以点开类似的,一起优化一下,我对你的ui审美很满意,这些优化好再做一下整体优化,图标啥的,以及夜间模式,顺带把相册的胶囊展开的那个按钮从左边换到右下角(桌面的和web的好像也是左下角的展开,一起换到右下角),最后你在对整体做个优化,还有你这个批量的交互选取有点点卡顿不顺手一起优化了”。
+- **改动内容**：
+  1. **批量点选卡顿与交互手感根本性优化（零延迟响应与 Compose Smart Skipping）**（`android/core/ui/src/main/java/media/qimeng/app/core/ui/component/QimengMediaGrid.kt`）：
+     - **卡顿延迟根因**：原网格 `AssetCard` 无论是否在多选模式下均挂载 `combinedClickable`，Android Gesture Pointer 需等待 400~500ms 长按超时以判断单击还是长按，导致连续点选有明显粘滞延迟；且在遍历列表时为每个卡片分配了闭包 lambda `{ onAssetClick(asset) }`，导致每次勾选一个卡片都会强制使视口内所有卡片重新重组。
+     - **彻底消除延迟与重组**：多选模式（`isSelectionMode == true`）下**彻底移除 `combinedClickable`，切换为原生极速 `Modifier.clickable`**，并在点击时伴随轻快清脆的微触控反馈（`TextHandleMove`），指尖点按瞬时勾选；直接透传稳定函数引用 `onAssetClick` 与 `onAssetLongClick`，使得未改变选择状态的卡片能被 Compose 编译器直接跳过重组（Smart Skipping），多选连点丝滑不丢帧。
+  2. **相册胶囊展开/收起按钮挪至右下角（三端一致）**：
+     - **App 端**（`android/core/ui/src/main/java/media/qimeng/app/core/ui/component/QimengPills.kt`）：`QimengValuePillBlock` 的展开/收起按钮改用 `Box(contentAlignment = Alignment.CenterEnd)` 容器，靠右下角对齐；
+     - **Web 与桌面端**（`web/src/styles/glass.css`）：`.expand-btn` 样式增加 `display: block; margin-left: auto;`，统一停靠在右下角。
+  3. **多选工具栏与批量操作抽屉 UI 升级**（`android/feature/all/src/main/java/media/qimeng/app/feature/all/AlbumViewModel.kt`、`AllScreen.kt`）：
+     - `AlbumViewModel` 增加 `clearSelection()`；工具栏支持“全选/清空”自适应切换，已选数量以独立 Primary 圆形徽标呈现；
+     - `BatchAuthorSheet` 升级：引入 M3 容器色 `surfaceContainerLow` 与规范拖拽把手；增加操作说明提示卡片；作者选择与来源渠道分别使用独立圆角卡片（`surface`）包装，层次清晰；操作栏提供带有正在写入动画（`CircularProgressIndicator`）的确认按钮，夜间模式对比舒适。
+  4. **详情页作者/作品弹层与资产编辑页重构**（`android/feature/detail/src/main/java/media/qimeng/app/feature/detail/DetailSheets.kt`、`AssetEditScreen.kt`、`android/core/ui/src/main/java/media/qimeng/app/core/ui/icon/QimengDetailIcons.kt`）：
+     - `QimengDetailIcons` 补充 `EditPencilIcon` 官方矢量；
+     - `DetailAuthorSheet`：重构为现代卡片式结构。每位作者封装在独立 `surface` 卡片内，带头像图标、姓名、COS 徽章、关注/取关玻璃按钮与“进入作者主页”跳转行；底部提供独立的“编辑关联作者与来源”快捷操作卡片，明确告知用户支持修改作者和来源并自动写入 NAS 作品 TXT；无作者时展示优雅空态卡片；
+     - `AssetEditScreen`：已关联作者与添加作者全模块升级为深浅模式适配的容器卡片，保存按钮圆角与字重加强，排版大方呼吸。
+  5. **整体深色/夜间模式打磨**：
+     - 统一容器层级色（`surfaceContainer`、`surfaceContainerLow`、`surfaceContainerHigh`），彻底消除深色模式下死黑、刺眼发白或暗灰对比缺失的问题。
+- **验证结论**：
+  - 单元测试 `:feature:all:testDebugUnitTest`、`:feature:detail:testDebugUnitTest` 全绿通过；
+  - `:app:assembleDebug` 打包构建成功；
+  - 通过 ADB 成功推送到已连接的 Android 真机设备并成功启动验证。
+- **文档**：CHANGELOG.md（本条）。
+
 ## feat(app): 相册长按多选与批量关联作者与来源——支持网格卡片长按多选、底部操作胶囊与联想抽屉，保存自动写入 NAS TXT 片段（2026-10-08 第四百九十九笔）
 
 执行 AI：Gemini-3.8-Flash（主代理）

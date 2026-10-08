@@ -586,7 +586,7 @@ button.pill,
   transition: max-height var(--qm-duration-base) var(--qm-ease-out);
 }
 .value-row.expanded { max-height: none; }
-.expand-btn { margin-top: 8px; font-size: 12px; color: var(--qm-text-muted); border-radius: var(--qm-radius-sm); padding: 2px 6px; }
+.expand-btn { display: block; margin-top: 8px; margin-left: auto; font-size: 12px; color: var(--qm-text-muted); border-radius: var(--qm-radius-sm); padding: 2px 6px; }
 .expand-btn:hover { color: var(--qm-text-soft); background: var(--qm-hover); }
 .grid-empty { padding: 32px 0; text-align: center; font-size: 13px; color: var(--qm-text-muted); }
 .sort-row { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--qm-border); }
