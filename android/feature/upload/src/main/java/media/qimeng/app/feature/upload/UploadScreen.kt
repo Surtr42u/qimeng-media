@@ -594,9 +594,9 @@ private const val SYSTEM_FILES_BUTTON_TEXT = "系统文件"
 private const val SYSTEM_FILES_HINT =
     "「系统文件」用系统文档选择器：可直接选到点前缀隐藏目录里的媒体，无需「所有文件访问」授权"
 
-/** 直传说明（2026-10-07 更新：选文件后可编辑文件名再上传） */
+/** 直传说明（2026-10-08 体验优化：选文件后可修改文件名，消除多作者强绑定的心理负担） */
 private const val DIRECT_UPLOAD_GUIDE =
-    "选择文件后可修改落库文件名，点击「开始上传」后入队；自动继承批次作者与来源"
+    "选择文件后可修改落库文件名，点击「开始上传」入队传输；多作者或杂图无需预设，上传后可随时整理"
 
 /** 作品名输入占位符（SelectedFileRow 基名编辑输入框） */
 private const val UPLOAD_NAME_PLACEHOLDER = "作品名"

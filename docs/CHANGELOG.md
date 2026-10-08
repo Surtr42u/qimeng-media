@@ -10,6 +10,35 @@
 
 > **历史条目拆分说明（2026-10-01）**：为控制 AI 上下文体量，本文件只保留 **2026-09-22 及之后**的条目（第三百八十二笔起）；拆分线之前的全部条目已逐字迁入 `docs/history/CHANGELOG-ARCHIVE.md`（零改写，笔号与本文件连续可查）。引用早于拆分线的旧笔号请去历史档查阅。
 
+## feat(app): 数据管理与上传体验重构——数据管理三级语义分组与图标体系，上传批次作者来源可选折叠卡化（2026-10-08 第四百九十八笔）
+
+执行 AI：Gemini-3.8-Flash（主代理）
+
+- **背景与痛点**：
+  1. 用户反馈：“看一下app的数据管理内容,我认为随着项目逐渐完善,这个中有太多功能和实现了,交互逻辑我不知道好不好,怎么合理交互逻辑以及ui,你给点建议；然后我对这个上传和修改文件的比较迷茫怎么实现比较好,现在在一起的,就是上传完会写入txt的数据等等关联的这个功能,我觉得在一起太繁重了,但是也不知道怎么实现比较好,以及这个修改的比较简陋,再同时上传多个作者的时候,或者多批量的时候,较难管理和使用,但是我也没啥优秀的思路和设计方案,你看看怎么优化,其他的也是,怎么让功能顺手合理交互舒服等等；你开一个分支做把,我看看效果”。
+  2. 根因剖析：
+     - **数据管理 Hub 扁平堆叠**：历次功能演进向后追加（最初只有上传/库管理，随后加入作者 TXT、备份、缩略图缓存、归档文件夹、词表维护），7 个完全相同尺寸的白底文本卡片垂直平铺，日常高频操作被淹没在低频配置中，缺少语义分组、缺乏图标指示与视觉呼吸感。
+     - **上传与元数据强绑定**：上传页原先将“批次作者/来源联想”常驻在页面中央，强迫用户在上传前把作者信息配好。当用户上传多作者混合文件或日常杂图时，不得不反复分批操作或放弃配置，导致“上传”这一轻快行为变得极其繁重压抑。
+- **改动内容**：
+  1. **新建分支**：切至新特性分支 `feat/app-manage-upload-redesign`。
+  2. **矢量图标体系扩充**（`android/core/ui/src/main/java/media/qimeng/app/core/ui/icon/QimengManageIcons.kt`）：
+     - 按需引入 Material Icons 官方 24px 矢量（零依赖纯 ImageVector 构建，QimengIcons 先例）：`CloudUploadIcon`、`FolderManagedIcon`、`VocabularyBookIcon`、`BackupRestoreIcon`、`StorageCacheIcon`、`ArchiveBoxIcon`、`TxtImportFileIcon`。
+  3. **数据管理 Hub 结构与视觉重构**（`android/feature/manage/src/main/java/media/qimeng/app/feature/manage/DataManageScreen.kt`）：
+     - 重组为三大语义分组（Grouped Sections）：
+       ① **媒体与内容**：上传文件、库管理；
+       ② **规则与同步**：词表维护、备份导入导出；
+       ③ **本地存储与工具**：缩略图缓存、上传归档文件夹、作者 TXT 导入。
+     - 入口行升级：增加圆角轻色前缀图标容器（`primaryContainer` 底色 + `primary` 图标）+ 主标题（`FontWeight.Medium`）+ 副标题（12sp 弱色）+ 尾部导航细箭头（`ChevronRightIcon`），大幅提升界面可读性与信息层次感。
+  4. **上传页批次预设可选折叠卡化**（`android/feature/upload/src/main/java/media/qimeng/app/feature/upload/UploadPendingSection.kt` 与 `UploadScreen.kt`）：
+     - 将原本霸屏的 `BatchDefaultSection` 包装为可折叠卡片（默认收起为轻量入口，带“多张图属同一作者时可展开预设；杂图无需设置，直接上传即可”辅助说明）；
+     - 已设置作者时显示高亮摘要（作者名 + 来源列表）与一键清除/展开修改；
+     - 更新直传引导文案，明确多作者或杂图无需预设，消除用户心理负担。
+- **验证结论**：
+  - `:feature:manage:compileDebugKotlin`、`:feature:upload:compileDebugKotlin` 编译通过；
+  - `:app:assembleDebug` 全包构建成功；
+  - 全套单元测试（`testDebugUnitTest :core:model:test`，438 tasks）全部绿。
+- **文档**：CHANGELOG.md（本条）。
+
 ## feat(app): 上传文件名编辑加回——SAF 选文件先进预览可改落库基名（扩展名锁定、UploadNaming 单源拼装），系统分享保持选完即传（2026-10-07 第四百九十七笔）
 
 执行 AI：GLM-5.3-Flash（主代理；接手前会话 Gemini-3.8-Flash 留在 review_ui_and_branches 工作树的未提交 WIP——模型/UI/VM 主体为其所写，本会话补齐单测、KDoc 同步、文档与全量验证）
