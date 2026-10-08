@@ -233,9 +233,11 @@ export default function CollectionPage() {
                     </>
                   )}
               </div>
-              <button className="expand-btn" type="button" onClick={() => setExpanded(false)}>
-                收起 ▲
-              </button>
+              <div className="expand-row">
+                <button className="expand-btn" type="button" onClick={() => setExpanded(false)}>
+                  收起 ▲
+                </button>
+              </div>
             </>
           ) : null}
         </section>

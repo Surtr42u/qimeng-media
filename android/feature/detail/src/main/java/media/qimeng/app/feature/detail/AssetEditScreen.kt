@@ -158,7 +158,6 @@ private fun AssetEditForm(
                     committedName = null,
                     committedIsExisting = false,
                     suggestions = state.authorSuggestions,
-                    seeds = state.authorSeeds,
                     onQueryChange = viewModel::onAddAuthorQueryChange,
                     onPickSuggestion = viewModel::addAuthor,
                     onCommitInput = viewModel::commitAddAuthor,

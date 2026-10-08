@@ -511,7 +511,6 @@ fun AllScreen(
                             committedName = batchAuthorState.committedAuthor?.displayName,
                             committedIsExisting = true,
                             suggestions = batchAuthorState.suggestions,
-                            seeds = batchAuthorState.seeds,
                             onQueryChange = viewModel::onBatchAuthorQueryChange,
                             onPickSuggestion = viewModel::onPickBatchAuthor,
                             onCommitInput = {},

@@ -327,9 +327,11 @@ export default function AlbumsPage() {
           ))}
         </div>
         {dimValues.length > VALUE_COLLAPSE_THRESHOLD ? (
-          <button className="expand-btn" type="button" onClick={() => setExpanded((v) => !v)}>
-            {expanded ? '收起 ⌃' : '展开 ⌄'}
-          </button>
+          <div className="expand-row">
+            <button className="expand-btn" type="button" onClick={() => setExpanded((v) => !v)}>
+              {expanded ? '收起 ⌃' : '展开 ⌄'}
+            </button>
+          </div>
         ) : null}
         {/* 更多筛选面板（与搜索页同一共享组件 PanelFilters——2026-09-17 用户拍板
             两页面板内容对齐同构）：首行排序三档 + 顺位/播放次数/文件大小/时间范围/

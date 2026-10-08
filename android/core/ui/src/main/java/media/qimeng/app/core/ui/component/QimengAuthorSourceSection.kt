@@ -136,10 +136,6 @@ fun QimengAuthorSuggestSection(
                     )
                 }
             }
-            if (query.isBlank() && seeds.isNotEmpty()) {
-                // 空输入不输入也能看到可选作者（仅资产编辑页传入；suggest 空查询无结果）
-                QimengAuthorSeedList(seeds = seeds, onPick = onPickSuggestion)
-            }
         }
     }
 }

@@ -1,5 +1,6 @@
 package media.qimeng.app.core.ui.component
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -17,6 +18,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
@@ -29,7 +31,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import media.qimeng.app.core.ui.R
 import media.qimeng.app.core.ui.theme.QimengDimens
 
@@ -173,28 +177,40 @@ fun QimengValuePillBlock(
             // 收起=钳制两行（≈Web max-height 66px）；展开=全部值推挤网格
             maxLines = if (valuesExpanded) Int.MAX_VALUE else VALUE_BLOCK_COLLAPSED_LINES,
         )
-        // 展开钮只在候选超阈值时出现（换到右下角对齐）
+        // 展开钮只在候选超阈值时出现（换到右下角并升级为精致微胶囊）
         if (pills.size > VALUE_BLOCK_COLLAPSE_THRESHOLD) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = QimengDimens.SpaceS),
+                    .padding(top = 6.dp),
                 contentAlignment = Alignment.CenterEnd,
             ) {
-                Text(
-                    text = stringResource(
-                        if (valuesExpanded) R.string.ui_values_collapse else R.string.ui_values_expand,
+                Surface(
+                    shape = RoundedCornerShape(QimengDimens.PillCornerRadius),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    border = BorderStroke(
+                        width = 0.5.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
                     ),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier
                         .clip(RoundedCornerShape(QimengDimens.PillCornerRadius))
-                        .clickable { valuesExpanded = !valuesExpanded }
-                        .padding(
-                            horizontal = QimengDimens.SpaceXS,
-                            vertical = QimengDimens.SpaceXS,
-                        ),
-                )
+                        .clickable { valuesExpanded = !valuesExpanded },
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                    ) {
+                        Text(
+                            text = stringResource(
+                                if (valuesExpanded) R.string.ui_values_collapse else R.string.ui_values_expand,
+                            ),
+                            style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.sp),
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
             }
         }
     }

@@ -10,6 +10,28 @@
 
 > **历史条目拆分说明（2026-10-01）**：为控制 AI 上下文体量，本文件只保留 **2026-09-22 及之后**的条目（第三百八十二笔起）；拆分线之前的全部条目已逐字迁入 `docs/history/CHANGELOG-ARCHIVE.md`（零改写，笔号与本文件连续可查）。引用早于拆分线的旧笔号请去历史档查阅。
 
+## feat(app/web): 展开收起胶囊按钮UI精致化与作者联想修复——展开收起升级微胶囊药丸、移除常驻seed列表对齐上传批次交互彻底消除恒定弹窗（2026-10-08 第五百零一笔）
+
+执行 AI：Gemini-3.8-Flash（主代理）
+
+- **背景与需求**：
+  1. 用户真机走查第五百笔后反馈：“把这个2. 相册胶囊展开/收起按钮挪至右下角（三端一致对齐）优化一下ui然后编辑作者这个和上传的那个批次作者一直,联想啥的,并且现在的会恒定有弹窗,如图修复一下”，并附上真机截图。
+  2. 截图与根因剖析：
+     - **展开/收起按钮 UI 简陋**：此前仅用文字小串靠右，缺少胶囊组件感与点击层级；
+     - **编辑作者恒定弹窗问题**：`QimengAuthorSuggestSection` 在空白输入时判断 `if (query.isBlank() && seeds.isNotEmpty())` 强制渲染了 `QimengAuthorSeedList`（内联全量作者卡片列表），导致用户进入“编辑作者与来源”页时，哪怕未进行任何输入搜索，下方也会常驻平铺半屏作者列表，阻碍保存操作并严重遮挡界面；而上传页面的批次作者（`UploadPendingSection`）从未传入 `seeds`，仅在输入时弹出夸克浏览器式一体化联想浮层，选定后展示已选胶囊，轻快自然。
+- **改动内容**：
+  1. **相册胶囊展开/收起按钮升级为精致微胶囊药丸**：
+     - **App 端**（`android/core/ui/src/main/java/media/qimeng/app/core/ui/component/QimengPills.kt`）：展开/收起按钮重构为带 `surfaceContainerHigh` 底色与微描边的圆角药丸组件（`Surface` + `Row`），边距、字号（12sp Medium）与整体胶囊系统浑然一体，在深浅色模式下均轻盈优雅；
+     - **Web 与桌面端**（`web/src/styles/glass.css`、`AlbumsPage.tsx`、`CollectionPage.tsx`）：`.expand-btn` 升级为 9999px 全圆角胶囊药丸，带微透明底色与 hover 动效，父级外包 `.expand-row` 保证严格靠右下排列。
+  2. **彻底移除空白输入常驻列表，对齐上传页批次作者交互**（`android/core/ui/src/main/java/media/qimeng/app/core/ui/component/QimengAuthorSourceSection.kt`、`android/feature/detail/src/main/java/media/qimeng/app/feature/detail/AssetEditScreen.kt`、`android/feature/all/src/main/java/media/qimeng/app/feature/all/AllScreen.kt`）：
+     - `QimengAuthorSuggestSection` 彻底移除空白输入下的 `QimengAuthorSeedList` 平铺渲染，空查询时维持清爽干净的胶囊输入框，彻底消灭“恒定有弹窗”现象；
+     - 资产编辑页与相册批量抽屉均移除 `seeds` 参数，与上传页批次作者输入保持完全一致的交互规范：输入文字即时触发防抖联想搜索并弹出浮层菜单，选定后回填并收起，保存按钮清晰可见零遮挡。
+- **验证结论**：
+  - 单元测试 `:feature:all:testDebugUnitTest`、`:feature:detail:testDebugUnitTest` 全绿通过；
+  - `:app:assembleDebug` 打包构建成功；
+  - 重新安装推送到已连接的 Android 真机设备并自动拉起，真机验证确认常驻弹窗已彻底消除、展开收起微胶囊药丸视觉协调。
+- **文档**：CHANGELOG.md（本条）。
+
 ## feat(app/web): 批量选取卡顿优化与全域UI/深色模式升级——零延迟点选触觉响应、胶囊展开收起换至右下角、批量抽屉与详情页作者/编辑弹层卡片化及夜间模式打磨（2026-10-08 第五百笔）
 
 执行 AI：Gemini-3.8-Flash（主代理）
