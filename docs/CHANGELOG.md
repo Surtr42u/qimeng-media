@@ -10,6 +10,30 @@
 
 
 
+
+## feat(app): 批量选择模式返回手势优先退出多选取消拦截（2026-10-09 第五百零七笔）
+
+执行 AI：Gemini-3.8-Flash（主代理）
+
+- **背景与需求**：
+  1. 用户体验批量设置操作后指出严重的系统手势交互缺陷：“现在批量选择的时候手机返回手势不是取消而是回到首页,应该是取消的逻辑,改一下”。
+  2. 根因剖析：
+     - 在相册与全部媒体页（`AllScreen`）处于批量选择模式（`isSelectionMode == true` 或 `selectedAssetIds.isNotEmpty()`）时，页面未挂载 `BackHandler`；
+     - 此时用户在手机屏幕边缘执行系统返回手势（或按下物理返回键）时，事件未被多选流程消费，而是直接渗透至顶层 NavHost 触发 `popBackStack`，导致相册页直接被销毁并错误退回到首页（Home）；
+     - 预期规范：多选模式属于临时交互态，系统返回手势必须优先拦截并退出批量选择（对齐顶部工具栏“取消”按钮），只有在非选择状态下返回才执行页面退栈。
+- **改动内容**：
+  1. **模块依赖补齐**（`android/feature/all/build.gradle.kts`）：
+     - 声明 `implementation(libs.androidx.activity.compose)`，支持 `BackHandler`。
+  2. **返回手势精准拦截与取消多选**（`android/feature/all/src/main/java/media/qimeng/app/feature/all/AllScreen.kt`）：
+     - 引入 `BackHandler(enabled = state.isSelectionMode || state.selectedAssetIds.isNotEmpty())`；
+     - 拦截时执行 `viewModel.exitSelectionMode()`，清空选中集合并重置多选状态；
+     - 与批量抽屉协同：当批量设置 BottomSheet 展开时，由 BottomSheet 原生优先消费返回手势关闭弹窗；抽屉关闭后再次返回，由 `BackHandler` 消费退出多选模式。
+- **验证结论**：
+  - `:feature:all:testDebugUnitTest` 单元测试 100% 通过；
+  - `:app:assembleDebug` 构建成功；
+  - 成功通过 ADB 将最新 Debug APK 安装部署至用户的 Android 真机设备。
+- **文档**：CHANGELOG.md（本条）。
+
 ## feat(app): 资产编辑页全面融合文件名编辑与作品名序号联想（2026-10-09 第五百零六笔）
 
 执行 AI：Gemini-3.8-Flash（主代理）

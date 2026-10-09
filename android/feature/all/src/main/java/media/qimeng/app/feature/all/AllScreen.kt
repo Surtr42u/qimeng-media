@@ -1,5 +1,6 @@
 package media.qimeng.app.feature.all
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -170,6 +171,11 @@ fun AllScreen(
         totalForAllPill = state.totalForAllPill,
     )
     val activePills = FourDimPills.pillsFor(pillModel)
+
+    // 批量选择手势返回拦截：处于多选模式或有选中项时，手机返回手势（或返回键）优先退出多选取消批量选择，避免意外回退到首页
+    BackHandler(enabled = state.isSelectionMode || state.selectedAssetIds.isNotEmpty()) {
+        viewModel.exitSelectionMode()
+    }
 
     Column(modifier = Modifier.fillMaxSize()) {
         if (state.isSelectionMode) {
