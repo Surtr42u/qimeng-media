@@ -28,6 +28,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.LoadingIndicator
@@ -319,7 +320,11 @@ private fun SelectedFilesCard(state: UploadUiState, viewModel: UploadViewModel) 
                 style = MaterialTheme.typography.titleSmall,
             )
             state.selectedFiles.forEach { item ->
-                SelectedFileRow(item = item, viewModel = viewModel)
+                SelectedFileRow(
+                    item = item,
+                    suggestions = if (state.editingFileUri == item.uri) state.nameSuggestions else emptyList(),
+                    viewModel = viewModel,
+                )
             }
             Button(
                 onClick = viewModel::uploadSelectedFiles,
@@ -333,37 +338,75 @@ private fun SelectedFilesCard(state: UploadUiState, viewModel: UploadViewModel) 
 }
 
 /**
- * 选中文件行：基名输入框（扩展名锁定后缀）+ 移除按钮。
+ * 选中文件行：基名输入框（扩展名锁定后缀）+ 作品名序号联想推荐 + 移除按钮。
  * 基名编辑即时同步 UploadItem.uploadBaseName，落库名由 effectiveUploadName 单源拼装。
  */
 @Composable
-private fun SelectedFileRow(item: UploadItem, viewModel: UploadViewModel) {
-    Row(
+private fun SelectedFileRow(
+    item: UploadItem,
+    suggestions: List<String>,
+    viewModel: UploadViewModel,
+) {
+    Column(
         modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        QimengCapsuleTextField(
-            value = item.currentBaseName,
-            onValueChange = { viewModel.updateSelectedFileName(item, it) },
-            placeholder = UPLOAD_NAME_PLACEHOLDER,
-            singleLine = true,
-            modifier = Modifier.weight(1f),
-        )
-        if (item.extension.isNotEmpty()) {
-            Text(
-                text = item.extension,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            QimengCapsuleTextField(
+                value = item.currentBaseName,
+                onValueChange = { viewModel.updateSelectedFileName(item, it) },
+                placeholder = UPLOAD_NAME_PLACEHOLDER,
+                singleLine = true,
+                modifier = Modifier.weight(1f),
             )
-            Text(
-                text = LOCKED_BADGE_TEXT,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            if (item.extension.isNotEmpty()) {
+                Text(
+                    text = item.extension,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = LOCKED_BADGE_TEXT,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            TextButton(onClick = { viewModel.removeSelectedFile(item) }) {
+                Text("移除")
+            }
         }
-        TextButton(onClick = { viewModel.removeSelectedFile(item) }) {
-            Text("移除")
+        if (suggestions.isNotEmpty()) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+            ) {
+                Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                    suggestions.forEach { base ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { viewModel.pickFileNameSuggestion(item, base) }
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = base + item.extension,
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Text(
+                                text = "点击采用",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }

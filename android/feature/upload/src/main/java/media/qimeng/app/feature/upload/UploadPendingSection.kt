@@ -42,7 +42,7 @@ import media.qimeng.app.core.ui.theme.QimengDimens
 @Composable
 internal fun BatchDefaultSection(state: UploadUiState, viewModel: UploadViewModel) {
     val hasConfiguredAuthor = state.batchAuthorName != null
-    var expanded by rememberSaveable { mutableStateOf(hasConfiguredAuthor) }
+    var expanded by rememberSaveable { mutableStateOf(true) }
 
     Surface(
         color = MaterialTheme.colorScheme.surface,

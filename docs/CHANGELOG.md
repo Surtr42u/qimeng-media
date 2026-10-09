@@ -8,6 +8,41 @@
 - 子代理执行的工作标注"（执行子代理）"，主对话直接完成的标注"（主代理）"。
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
+
+## feat(app): 上传文件名清空防回弹/作品名序号联想接回/作者联想边界防超界与待测文件离线验证（2026-10-09 第五百零五笔）
+
+执行 AI：Gemini-3.8-Flash（主代理）
+
+- **背景与需求**：
+  1. 用户指出上传功能存在严重遗留体验与逻辑缺陷：“有些文件还是不行,我查手机了,你可以测试一下我的待上传文件是 1 hhh 新建文件夹的,测试一下情况以及不要真上传,然后批量和其他地方的作者输入都有联想怎么上传界面的没有,最后上传时的文件名字编辑完全和以前的不一样了,现在全删掉时还会重建文件名就是被删除前的,以及联想啥的都没有了,全部修复一下”。
+  2. 严格安全与测试红线约束：
+     - **严禁向服务端真上传**：不得调用任何会产生真实落盘/入库副作用的接口，避免在测试中往用户媒体库灌入脏数据；通过真机待测文件离线分析 + 纯函数单元测试闭环；
+     - **铁律 13/14 守护**：严禁误碰雷电模拟器；严格避免将任何硬件设备序列号/敏感凭据写入版本控制追踪文件。
+  3. 核心问题定位：
+     - **文件名全删清空后自动回弹/回滚原名**：`UploadViewModel.updateSelectedFileName` 中使用了 `.ifBlank { null }`，当用户全选删空时 `uploadBaseName` 变为 `null`；而 `UploadItem.currentBaseName` 属性为 `uploadBaseName ?: ... ?: defaultBaseName`，一旦为 `null` 就会立即回退到原文件名，导致在输入框内根本无法清空基名重新键入；
+     - **作品名/序号联想丢失**：在直传改造时移除了文件名输入防抖查询作品名接口与 Compose 端联想候选药丸展现；
+     - **上传界面作者输入联想“没有”**：① 上传表单中的默认作者面板此前默认折叠；② `QimengAuthorSourceSection` 联想弹层位置计算缺少屏幕上下界钳制，在软键盘顶起时算出的 Y 坐标为负值，导致弹窗被丢到屏幕上方可视区域之外；
+     - **待上传文件异常排查**：用户手机 `/sdcard/1/HHH/新建文件夹` 下的 18 个 mp4 文件包含带点（`D.Va  No.01.mp4`）、基名尾空格（`Idemi .mp4`）、全角符号与中点等复杂命名。
+- **改动内容**：
+  1. **文件名全删清空不回弹与安全回退保障**（`UploadViewModel.kt`、`UploadUiState.kt`、`UploadModelsTest.kt`）：
+     - `updateSelectedFileName` 保持用户的原始输入空串 `""`，允许用户完整删空自由重构；
+     - `UploadItem.effectiveUploadName` 在基名为空时安全回退到真实原始名 `displayName`，彻底杜绝生成空串或纯扩展名传给服务端而触发 `INVALID_FILENAME` 400 拦截；
+  2. **作品名/序号联想完整链路接回**（`UploadRepository.kt`、`SdkUploadRepository.kt`、`FakeUploadRepository.kt`、`UploadViewModel.kt`、`UploadScreen.kt`）：
+     - `UploadRepository` 与 `SdkUploadRepository` 接回 `suggestNames(libraryId, q)`，基于 openapi 生成物调用 `/api/v1/assets/name-suggestions`；
+     - `UploadViewModel` 接入 200ms 防抖作品名联想拉取与 `pickFileNameSuggestion` 采用回调；
+     - Compose UI 针对正在编辑的文件行挂载建议药丸列表，点击即快速应用；
+  3. **批次作者/来源联想弹窗修复**（`QimengAuthorSourceSection.kt`、`UploadPendingSection.kt`）：
+     - 批次信息表单默认展开，无需用户额外寻找展开按钮；
+     - `AuthorSuggestionPopupPositionProvider` 增加 `coerceIn(0, (windowSize.height - popupContentSize.height).coerceAtLeast(0))` 窗口物理边界钳制，彻底解决软键盘弹出时联想弹窗被顶飞至屏幕外的缺陷；
+  4. **手机真实待测目录 18 个文件离线清洗与纯函数覆盖验证**（`UploadModelsTest.kt`、`filename_test.go`）：
+     - 在完全不发起真实网络上传的前提下，离线核验 18 个待测文件的完整元数据（大小 16MB~1.7GB、格式、特殊符号）；
+     - 客户端 `UploadRules.sanitizeFileName` 与服务端 `filing.SanitizeFilename` 补充测试矩阵，100% 验证全部通过。
+- **验证结论**：
+  - `:core:model:test` 与 `:feature:upload:testDebugUnitTest` 单元测试通过；
+  - 服务端 `go test ./internal/filing/...` 测试通过；
+  - `:app:assembleDebug` 编译通过，并已成功安全安装至用户真机设备。
+- **文档**：CHANGELOG.md（本条）。
+
 ## feat(app): 视频播放器进度条经典两行重构/时间轴标签退役/设置居中防截断与悬浮底栏防穿透（2026-10-08 第五百零四笔）
 
 执行 AI：Gemini-3.8-Flash（主代理）

@@ -113,6 +113,10 @@ data class UploadUiState(
     val archiveBatchEnqueued: Boolean = false,
     /** 用户选中的待传文件列表（支持在上传前修改落库文件名；点击开始上传后入队并清空） */
     val selectedFiles: List<UploadItem> = emptyList(),
+    /** 当前正在编辑文件名的条目 URI（用于文件名/序号联想对齐） */
+    val editingFileUri: String? = null,
+    /** 作品名序号联想结果列表（建议基名，最多 3 条） */
+    val nameSuggestions: List<String> = emptyList(),
     /** 选文件后读取文件元数据（describe）进行中 */
     val describing: Boolean = false,
     /** 队列实时状态（WorkManager WorkInfo 映射） */

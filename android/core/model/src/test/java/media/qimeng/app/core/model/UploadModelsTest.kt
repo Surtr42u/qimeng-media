@@ -151,6 +151,53 @@ class UploadModelsTest {
     }
 
     @Test
+    fun `基名清空为空串时currentBaseName如实回显空串不回弹`() {
+        val item = UploadItem(
+            uri = "u",
+            displayName = "IMG_1.jpg",
+            sizeBytes = 1,
+            uploadBaseName = "",
+        )
+        // 用户清空输入框时，如实保持空串以供界面清空编辑，入队时回退 displayName
+        assertEquals("", item.currentBaseName)
+        assertEquals("IMG_1.jpg", item.effectiveUploadName)
+    }
+
+    @Test
+    fun `手机待上传真实目录18个视频文件名清洗与拆装测试`() {
+        val phoneFiles = listOf(
+            "Vam 三角洲行动 佐娅能天使 被伏.mp4" to ("Vam 三角洲行动 佐娅能天使 被伏" to ".mp4"),
+            "4k-beach-sex-with-jubilee-liepraag_2160p.mp4" to ("4k-beach-sex-with-jubilee-liepraag_2160p" to ".mp4"),
+            "VGErotica.mp4" to ("VGErotica" to ".mp4"),
+            "Aphy3d.mp4" to ("Aphy3d" to ".mp4"),
+            "13 Mercy Bathroom (2K) 54FPS_3840x2160_prob-3.mp4" to ("13 Mercy Bathroom (2K) 54FPS_3840x2160_prob-3" to ".mp4"),
+            "Ashley Church (1080) [NO WM].mp4" to ("Ashley Church (1080) [NO WM]" to ".mp4"),
+            "Ashley Sofa (1080) [NO WM].mp4" to ("Ashley Sofa (1080) [NO WM]" to ".mp4"),
+            "HydraFXX Tifa ALT+ CUT (2024).mp4" to ("HydraFXX Tifa ALT+ CUT (2024)" to ".mp4"),
+            "[HydraFXX] 2B Woods (4K) NO WM.mp4" to ("[HydraFXX] 2B Woods (4K) NO WM" to ".mp4"),
+            "·克莱尔警服诱惑（生.mp4" to ("·克莱尔警服诱惑（生" to ".mp4"),
+            "Shadowheart 4K HydraFXX.mp4" to ("Shadowheart 4K HydraFXX" to ".mp4"),
+            "malenia-defeated-m71z30_2160p.mp4" to ("malenia-defeated-m71z30_2160p" to ".mp4"),
+            "11.mp4" to ("11" to ".mp4"),
+            "最终幻想  露娜弗蕾亚 5.mp4" to ("最终幻想  露娜弗蕾亚 5" to ".mp4"),
+            "Idemi .mp4" to ("Idemi " to ".mp4"),
+            "Arhoangel.mp4" to ("Arhoangel" to ".mp4"),
+            "Horny Herring Studios.mp4" to ("Horny Herring Studios" to ".mp4"),
+            "D.Va Anal Riding Huge Dildo In Front of Campus [Xordel].mp4" to ("D.Va Anal Riding Huge Dildo In Front of Campus [Xordel]" to ".mp4"),
+        )
+        for ((name, pair) in phoneFiles) {
+            val (expectedBase, expectedExt) = pair
+            val item = UploadItem(uri = "content://media/$name", displayName = name, sizeBytes = 1000L)
+            assertEquals("defaultBaseName 校验: $name", expectedBase, item.defaultBaseName)
+            assertEquals("extension 校验: $name", expectedExt, item.extension)
+            val effective = item.effectiveUploadName
+            assertTrue("落库文件名不应为空: $name", effective.isNotEmpty())
+            assertTrue("落库扩展名应为 mp4: $name", effective.endsWith(".mp4"))
+            assertFalse("不应命中保留名: $effective", UploadRules.isWindowsReservedName(effective))
+        }
+    }
+
+    @Test
     fun `无扩展名文件基名编辑只取基名`() {
         val item = UploadItem(
             uri = "u",

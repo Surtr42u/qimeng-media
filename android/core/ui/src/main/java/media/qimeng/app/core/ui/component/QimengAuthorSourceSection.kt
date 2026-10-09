@@ -355,11 +355,20 @@ private class AuthorSuggestionPopupPositionProvider(
     ): IntOffset {
         val anchor = this.anchorBounds.value ?: return IntOffset.Zero
         val middleY = anchor.top + anchor.height / 2f
-        return if (expandUp) {
-            IntOffset(anchor.left.roundToInt(), (middleY - popupContentSize.height).roundToInt())
+        val rawY = if (expandUp) {
+            (middleY - popupContentSize.height).roundToInt()
         } else {
-            IntOffset(anchor.left.roundToInt(), middleY.roundToInt())
+            middleY.roundToInt()
         }
+        val clampedY = rawY.coerceIn(
+            0,
+            (windowSize.height - popupContentSize.height).coerceAtLeast(0),
+        )
+        val clampedX = anchor.left.roundToInt().coerceIn(
+            0,
+            (windowSize.width - popupContentSize.width).coerceAtLeast(0),
+        )
+        return IntOffset(clampedX, clampedY)
     }
 }
 

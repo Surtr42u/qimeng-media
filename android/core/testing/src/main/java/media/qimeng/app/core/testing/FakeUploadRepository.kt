@@ -31,6 +31,10 @@ class FakeUploadRepository : UploadRepository {
     /** GET /authors/suggest 返回值（按词条可编程；作者联想用例） */
     var suggestResult: (String) -> List<AuthorSuggestion> = { emptyList() }
 
+    /** GET /assets/name-suggestions 返回值（按词条可编程；作品名序号联想用例） */
+    var suggestNamesResult: (String) -> List<String> = { emptyList() }
+    val suggestNameCalls = mutableListOf<Pair<String, String>>()
+
     /** describe 阶段对每个 uri 字符串给出的元数据（可编程） */
     var describedItem: (String) -> UploadItem = { uri ->
         UploadItem(uri = uri, displayName = "file-${uri.hashCode()}", sizeBytes = 100L)
@@ -73,6 +77,11 @@ class FakeUploadRepository : UploadRepository {
     override suspend fun suggestAuthors(q: String, limit: Int): List<AuthorSuggestion> {
         suggestCalls.add(q)
         return suggestResult(q)
+    }
+
+    override suspend fun suggestNames(libraryId: String, q: String): List<String> {
+        suggestNameCalls.add(libraryId to q)
+        return suggestNamesResult(q)
     }
 
     override suspend fun dirTree(libraryId: String): DirNode = dirTreeResult

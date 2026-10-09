@@ -384,6 +384,52 @@ class UploadViewModelTest {
     }
 
     @Test
+    fun `基名输入全删空串时如实回显空串不回弹且入队回退原始展示名`() {
+        val (viewModel, repository, _, _) = newViewModel()
+        selectDefaultLibrary(viewModel)
+        viewModel.onFilesSelected(listOf("content://media/img/1"))
+        driveIdle()
+        val selected = viewModel.uiState.value.selectedFiles.single()
+        viewModel.updateSelectedFileName(selected, "自定义名称")
+        driveIdle()
+        assertEquals("自定义名称", viewModel.uiState.value.selectedFiles.single().currentBaseName)
+
+        // 用户全删清空：输入框如实保持空串供重新输入，不发生自动填回原名的恶性回弹
+        viewModel.updateSelectedFileName(viewModel.uiState.value.selectedFiles.single(), "")
+        driveIdle()
+        val emptyItem = viewModel.uiState.value.selectedFiles.single()
+        assertEquals("", emptyItem.currentBaseName)
+        assertEquals("", emptyItem.uploadBaseName)
+        // 提交落库时单源 fallback 回退展示名
+        assertEquals("IMG_1.jpg", emptyItem.effectiveUploadName)
+
+        viewModel.uploadSelectedFiles()
+        driveIdle()
+        assertEquals("IMG_1.jpg", repository.enqueueCalls.single().items.single().effectiveUploadName)
+    }
+
+    @Test
+    fun `基名编辑防抖拉取作品名序号联想并可点选回填`() {
+        val (viewModel, repository, _, _) = newViewModel()
+        selectDefaultLibrary(viewModel)
+        repository.suggestNamesResult = { q -> if (q == "守望先锋") listOf("守望先锋 02", "守望先锋 03") else emptyList() }
+        viewModel.onFilesSelected(listOf("content://media/img/1"))
+        driveIdle()
+        val selected = viewModel.uiState.value.selectedFiles.single()
+        viewModel.updateSelectedFileName(selected, "守望先锋")
+        driveIdle()
+        assertEquals(listOf("守望先锋 02", "守望先锋 03"), viewModel.uiState.value.nameSuggestions)
+        assertEquals("content://media/img/1", viewModel.uiState.value.editingFileUri)
+
+        viewModel.pickFileNameSuggestion(selected, "守望先锋 02")
+        driveIdle()
+        val updated = viewModel.uiState.value.selectedFiles.single()
+        assertEquals("守望先锋 02", updated.currentBaseName)
+        assertEquals("守望先锋 02.jpg", updated.effectiveUploadName)
+        assertTrue(viewModel.uiState.value.nameSuggestions.isEmpty())
+    }
+
+    @Test
     fun `移除选中项后开始上传只入队剩余`() {
         val (viewModel, repository, _, _) = newViewModel()
         selectDefaultLibrary(viewModel)

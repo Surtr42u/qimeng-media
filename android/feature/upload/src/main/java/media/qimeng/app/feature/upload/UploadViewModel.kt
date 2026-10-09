@@ -97,6 +97,9 @@ class UploadViewModel @Inject constructor(
     /** 批次作者联想防抖任务（与编辑页 AssetEditViewModel 同口径） */
     private var batchSuggestJob: Job? = null
 
+    /** 作品名序号联想防抖任务（与作者联想同口径 AUTHOR_SUGGEST_DEBOUNCE_MS） */
+    private var nameSuggestJob: Job? = null
+
     init {
         refreshLibraries()
         refreshSourceOptions()
@@ -253,6 +256,9 @@ class UploadViewModel @Inject constructor(
                         form.update { it.copy(batchAuthorSuggestions = list) }
                     }
                 }
+                .onFailure {
+                    form.update { it.copy(batchAuthorSuggestions = emptyList()) }
+                }
         }
     }
 
@@ -343,13 +349,47 @@ class UploadViewModel @Inject constructor(
 
     /**
      * 编辑选中文件的落库基名（扩展名锁定不可改）：UI 输入框回调 → copy uploadBaseName。
-     * 空基名 = 回退展示名（effectiveUploadName 单源保证），UI 层不自行拼装。
+     * 用户全删清空输入框时如实记录空串 ""（界面清空，不被回退覆盖；落库时 effectiveUploadName 单源回退展示名）。
+     * 同时触发作品名序号联想（防抖 200ms，需已选目标库）。
      */
     fun updateSelectedFileName(item: UploadItem, newBaseName: String) {
         form.update { state ->
             state.copy(
+                editingFileUri = item.uri,
                 selectedFiles = state.selectedFiles.map {
-                    if (it.uri == item.uri) it.copy(uploadBaseName = newBaseName.ifBlank { null }) else it
+                    if (it.uri == item.uri) it.copy(uploadBaseName = newBaseName) else it
+                },
+            )
+        }
+        nameSuggestJob?.cancel()
+        val trimmed = newBaseName.trim()
+        val libraryId = uiState.value.batchLibraryId
+        if (trimmed.isEmpty() || libraryId == null) {
+            form.update { it.copy(nameSuggestions = emptyList()) }
+            return
+        }
+        nameSuggestJob = viewModelScope.launch {
+            delay(AUTHOR_SUGGEST_DEBOUNCE_MS)
+            runCatching { uploadRepository.suggestNames(libraryId, trimmed) }
+                .onSuccess { list ->
+                    if (form.value.editingFileUri == item.uri) {
+                        form.update { it.copy(nameSuggestions = list) }
+                    }
+                }
+                .onFailure {
+                    form.update { it.copy(nameSuggestions = emptyList()) }
+                }
+        }
+    }
+
+    /** 点选作品名序号联想：回填基名并收起联想 */
+    fun pickFileNameSuggestion(item: UploadItem, suggestionBase: String) {
+        nameSuggestJob?.cancel()
+        form.update { state ->
+            state.copy(
+                nameSuggestions = emptyList(),
+                selectedFiles = state.selectedFiles.map {
+                    if (it.uri == item.uri) it.copy(uploadBaseName = suggestionBase) else it
                 },
             )
         }
@@ -357,8 +397,19 @@ class UploadViewModel @Inject constructor(
 
     /** 从选中列表移除一项 */
     fun removeSelectedFile(item: UploadItem) {
-        form.update { state ->
-            state.copy(selectedFiles = state.selectedFiles.filter { it.uri != item.uri })
+        if (form.value.editingFileUri == item.uri) {
+            nameSuggestJob?.cancel()
+            form.update { state ->
+                state.copy(
+                    editingFileUri = null,
+                    nameSuggestions = emptyList(),
+                    selectedFiles = state.selectedFiles.filter { it.uri != item.uri },
+                )
+            }
+        } else {
+            form.update { state ->
+                state.copy(selectedFiles = state.selectedFiles.filter { it.uri != item.uri })
+            }
         }
     }
 

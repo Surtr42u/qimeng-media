@@ -25,6 +25,10 @@ func TestSanitizeFilename(t *testing.T) {
 		{"emoji 保留", "🎬电影.mp4", "🎬电影.mp4"},
 		{"日文名保留", "なまえ.png", "なまえ.png"},
 		{"合法符号保留", "movie[2020] (1080p).mp4", "movie[2020] (1080p).mp4"},
+		{"手机待测文件名-带点与空格", "D.Va  No.01.mp4", "D.Va  No.01.mp4"},
+		{"手机待测文件名-全角括号与中文", "11（测试）.mp4", "11（测试）.mp4"},
+		{"手机待测文件名-基名尾部空格保留", "Idemi .mp4", "Idemi .mp4"},
+		{"手机待测文件名-中点符号保留", "10·测试·.mp4", "10·测试·.mp4"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
