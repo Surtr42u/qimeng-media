@@ -10,6 +10,7 @@ import {
   formatDuration,
   formatShortDate,
   localDateKey,
+  localDayKey,
 } from './format'
 
 // 固定时钟：本地 2026-09-07（周一）12:00——日期串无时区后缀按本地时区解析，
@@ -51,6 +52,26 @@ describe('dateLabel', () => {
     expect(dateLabel(null)).toBe('')
     expect(dateLabel('')).toBe('')
     expect(dateLabel('not-a-date')).toBe('')
+  })
+
+  // 固定偏移口径（2026-10-10 审计返工）：日界用请求里那一个固定偏移算，
+  // 不查该日期当时的历史时区规则——否则夏令时区域会与服务端分桶键劈叉。
+  it('固定偏移：同一时刻在两个偏移下落在不同本地日', () => {
+    const iso = '2026-07-01T04:30:00.000Z'
+    expect(localDayKey(iso, -300)).toBe('2026-06-30') // EST（请求时刻的偏移）
+    expect(localDayKey(iso, -240)).toBe('2026-07-01') // EDT（该日期当时的历史规则）
+    expect(localDayKey(iso, 480)).toBe('2026-07-01')
+    expect(localDayKey(iso, 0)).toBe('2026-07-01')
+    // 非法/空值恒空串
+    expect(localDayKey('', -300)).toBe('')
+    expect(localDayKey(null, -300)).toBe('')
+  })
+
+  it('固定偏移：标签与日键同源（同一天同一偏移下不会一个说今天一个算昨天）', () => {
+    const iso = '2026-07-01T04:30:00.000Z'
+    // 以该时刻为「现在」不可注入，故只锁日键的确定性；标签档位由 album-grouping 用例覆盖
+    expect(localDayKey(iso, -300)).toBe('2026-06-30')
+    expect(dateLabel('2026-06-30T12:00:00.000Z', 480)).toBe('2026-06-30')
   })
 })
 

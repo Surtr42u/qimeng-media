@@ -26,7 +26,7 @@ import { getEventLedger } from '@/lib/ledger-instance'
 import type { MediaCardProps } from '@/components/media/MediaCard'
 import { unwrapSdkResult } from '@/lib/api-client'
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants'
-import { formatCardUp, formatDuration, formatShortDate } from '@/lib/format'
+import { deviceTzOffsetMinutes, formatCardUp, formatDuration, formatShortDate } from '@/lib/format'
 import { lengthCursorNext } from '@/lib/pagination'
 import {
   ASSETS_LIST_QUERY_KEY,
@@ -71,6 +71,9 @@ export interface AssetListParams {
   /** 请求服务端按本地日聚合的精确计数（协议 GET /assets dateCounts，
    *  2026-10-10 加）：日期分组页（相册）组头「今天 N 项」的数据源。 */
   dateCounts?: boolean
+  /** 本地日界的固定偏移（协议 tzOffsetMinutes）。缺省由 SDK 边界按设备现算；
+   *  日期分组页显式传入，保证「请求分桶键」与「客户端分组日键」同值。 */
+  tzOffsetMinutes?: number
 }
 
 /** 推荐流无限分页（M3 十维算法，协议 GET /recommendations；首页推荐/cos
@@ -127,12 +130,12 @@ function toSdkAssetListQuery(params: AssetListParams) {
     source: source ? [source] : undefined,
     character: character ? [character] : undefined,
     work: work ? [work] : undefined,
-    // 时区偏移恒补（协议 GET /assets tzOffsetMinutes，2026-10-10 加）：
-    // 它不是页面参数而是设备属性——两个消费点同源，① dateCounts 的日界分桶
-    // 必须与浏览器本地日一致（否则组头计数与分组劈叉）；② dateFrom/dateTo 的
-    // 「本地日历日」解释（缺省 0=UTC 与本地日界差一个时区）。放在 SDK 边界
-    // 而不是各页面：调用点无处可漏，Web 与 App 两端协议面语义一致。
-    tzOffsetMinutes: -new Date().getTimezoneOffset(),
+    // 时区偏移恒补（协议 GET /assets tzOffsetMinutes，2026-10-10 加）：它不是
+    // 页面参数而是设备属性——两个消费点同源，① dateCounts 的日界分桶必须与
+    // 客户端日键一致（否则组头计数与分组劈叉，夏令时区域尤甚）；② dateFrom/
+    // dateTo 的「本地日历日」解释（缺省 0=UTC 与本地日界差一个时区）。
+    // 页面显式传入时以页面为准（相册页把同一个值同时喂给分组，保证同源）。
+    tzOffsetMinutes: params.tzOffsetMinutes ?? deviceTzOffsetMinutes(),
   }
 }
 
@@ -155,7 +158,9 @@ export function useAssetsInDirectory(libraryId: string, directory: string, enabl
     queryKey: [...ASSETS_QUERY_KEY, 'dir-files', libraryId, directory],
     queryFn: () =>
       unwrapSdkResult(
-        getApiV1Assets({ query: { libraryId, directory, limit: DIR_FILES_LIMIT } }),
+        getApiV1Assets({
+          query: { libraryId, directory, limit: DIR_FILES_LIMIT, tzOffsetMinutes: deviceTzOffsetMinutes() },
+        }),
       ),
     enabled,
     // B-8（reviewer P3 清偿）：query key 含 directory——切目录换键、失效重取期间
@@ -176,6 +181,8 @@ export function useAssetsTotal(mediaType?: MediaType, partition?: 'regular' | 'c
           query: {
             limit: 1,
             mediaType,
+            // 同 SDK 边界恒补口径（其余两处 getApiV1Assets 调用点均带，禁漏）
+            tzOffsetMinutes: deviceTzOffsetMinutes(),
             ...(partition === 'all'
               ? { includeCos: true }
               : partition === 'cos'

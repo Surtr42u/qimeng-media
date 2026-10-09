@@ -4,19 +4,32 @@ package media.qimeng.app.core.model
  * 日期分组（DOMAIN_RULES §8 逐字口径；Web lib/format.ts dateLabel 同源复刻）：
  * 今天 / 昨天 / 距今 2~6 天→周X（周一~周日）/ 更早→yyyy-MM-dd / 无时间→未知日期。
  *
+ * **固定偏移口径**（2026-10-10 审计返工）：日界一律用请求里那个**单一固定偏移**
+ * [tzOffsetMinutes] 算，不用设备时区的历史规则（`Calendar`/`java.time` 的时区库会
+ * 按该日期当时的规则换算，夏令时区域夏冬偏移差 1 小时）。为什么必须同源：组头计数
+ * 由服务端按同一个固定偏移分桶（browse.sql `CountAssetsByLocalDay`），客户端若按
+ * 历史规则算日键，同一日期会算出两个不同的日 → 查不到计数、回退已加载条数，
+ * 「数字随滚动跳增」的原缺陷在夏令时区复现。固定偏移下标签与日键恒同源。
+ * 对 Asia/Shanghai（无夏令时）行为零变化；纯数学无时区库依赖，测试也恒确定。
+ *
  * @param epochMs 时间戳（毫秒）；null/负值视为「未知日期」
  * @param nowMs 当前时间（由调用方注入，纯函数可测——不偷读系统时钟）
+ * @param tzOffsetMinutes 本地时区相对 UTC 的偏移分钟数（东八区=480）；缺省取设备当前值
  */
-fun dateLabel(epochMs: Long?, nowMs: Long): String {
+fun dateLabel(
+    epochMs: Long?,
+    nowMs: Long,
+    tzOffsetMinutes: Int = deviceTzOffsetMinutes(nowMs),
+): String {
     if (epochMs == null || epochMs < 0) return UNKNOWN_DATE_LABEL
-    val today = startOfDay(nowMs)
-    val day = startOfDay(epochMs)
-    val diffDays = Math.round((today - day) / MS_PER_DAY.toDouble())
+    val day = localEpochDay(epochMs, tzOffsetMinutes)
+    val diffDays = localEpochDay(nowMs, tzOffsetMinutes) - day
+    val date = java.time.LocalDate.ofEpochDay(day)
     return when {
         diffDays == 0L -> "今天"
         diffDays == 1L -> "昨天"
-        diffDays in 2..6 -> WEEKDAY_LABELS[dayOfWeekIndex(day)]
-        else -> formatYmd(day)
+        diffDays in 2..6 -> WEEKDAY_LABELS[date.dayOfWeek.value - 1]
+        else -> date.toString()
     }
 }
 
@@ -51,6 +64,7 @@ data class GridSection(
 fun List<MediaAsset>.groupByDateLabel(
     nowMs: Long,
     dateCounts: Map<String, Int> = emptyMap(),
+    tzOffsetMinutes: Int = deviceTzOffsetMinutes(nowMs),
     timestamp: (MediaAsset) -> Long?,
 ): List<GridSection> {
     val byLabel = LinkedHashMap<String, MutableList<MediaAsset>>()
@@ -58,10 +72,10 @@ fun List<MediaAsset>.groupByDateLabel(
     val dayKeyByLabel = HashMap<String, String>()
     for (asset in this) {
         val ts = timestamp(asset)
-        val label = dateLabel(ts, nowMs)
+        val label = dateLabel(ts, nowMs, tzOffsetMinutes)
         byLabel.getOrPut(label) { mutableListOf() }.add(asset)
         if (ts != null && ts >= 0) {
-            dayKeyByLabel.getOrPut(label) { localDayKey(ts) }
+            dayKeyByLabel.getOrPut(label) { localDayKey(ts, tzOffsetMinutes) }
         }
     }
     return byLabel.entries
@@ -79,52 +93,37 @@ fun List<MediaAsset>.groupByDateLabel(
 }
 
 /**
- * 本地日历日键（yyyy-MM-dd，设备时区）——服务端 dateCounts 分桶键的客户端
- * 镜像：服务端按请求 tzOffsetMinutes 把 UTC 的 mtime 折算成本地日，客户端
- * 按同一设备时区折算，两侧同键才能对齐（:core:data 的 SDK 边界用同一个
- * 偏移量构造 tzOffsetMinutes，见 SdkMediaRepository.assets）。
+ * 本地日历日键（yyyy-MM-dd）——服务端 dateCounts 分桶键的客户端镜像：
+ * 服务端按请求 tzOffsetMinutes 把 UTC 的 mtime 折算成本地日（SQLite
+ * `date(mtime, '+480 minutes')`），客户端用**同一个固定偏移**折算，两侧同键
+ * 才能对齐（:core:data 的 SDK 边界用同一个值构造 tzOffsetMinutes，见
+ * SdkMediaRepository.assets）。固定偏移而非设备时区历史规则的理由见 [dateLabel]。
  */
-fun localDayKey(epochMs: Long): String = formatYmd(startOfDay(epochMs))
+fun localDayKey(epochMs: Long, tzOffsetMinutes: Int = deviceTzOffsetMinutes()): String =
+    java.time.LocalDate.ofEpochDay(localEpochDay(epochMs, tzOffsetMinutes)).toString()
 
 /**
  * 设备当前时区相对 UTC 的偏移分钟数（东八区=480）——协议 GET /assets 的
- * tzOffsetMinutes 取值来源。dateCounts 分桶与 dateFrom/dateTo 的本地日
- * 解释共用同一个值（服务端只认偏移量，不猜客户端时区）。
- * 每请求现算而不是缓存：DST 切换后立刻生效。
+ * tzOffsetMinutes 取值来源，也是客户端日界（[dateLabel]/[localDayKey] 缺省）
+ * 的同一来源：服务端只认偏移量、不猜客户端时区，两侧必须同值。
+ * 注意取的是 [nowMs] **那一刻**的偏移：调用方一律用「现在」（协议侧即请求时刻），
+ * 不要拿条目的历史时间戳来问——那会退回「按历史时区规则算」的劈叉老路。
+ * 每请求现算而不是缓存：夏令时切换后立刻生效。
  */
 fun deviceTzOffsetMinutes(nowMs: Long = System.currentTimeMillis()): Int =
     java.util.TimeZone.getDefault().getOffset(nowMs) / 60_000
 
-
-/** 一天的起点（本地时区；与 Web new Date(y,m,d) 同义） */
-private fun startOfDay(epochMs: Long): Long {
-    val calendar = java.util.Calendar.getInstance()
-    calendar.timeInMillis = epochMs
-    calendar.set(java.util.Calendar.HOUR_OF_DAY, 0)
-    calendar.set(java.util.Calendar.MINUTE, 0)
-    calendar.set(java.util.Calendar.SECOND, 0)
-    calendar.set(java.util.Calendar.MILLISECOND, 0)
-    return calendar.timeInMillis
-}
-
-/** Calendar.DAY_OF_WEEK（周日=1）→ WEEKDAY_LABELS 下标（周一开头） */
-private fun dayOfWeekIndex(startOfDayMs: Long): Int {
-    val calendar = java.util.Calendar.getInstance()
-    calendar.timeInMillis = startOfDayMs
-    return (calendar.get(java.util.Calendar.DAY_OF_WEEK) + 5) % 7
-}
+/**
+ * 固定偏移下的「日序号」（自 1970-01-01 起的天数，向负无穷取整）：
+ * 先把时间戳平移到「本地日 = UTC 日」的坐标，再按整天切分。
+ * 纯整数运算，无时区库参与——这是标签与分桶键恒同源的关键。
+ */
+private fun localEpochDay(epochMs: Long, tzOffsetMinutes: Int): Long =
+    Math.floorDiv(epochMs + tzOffsetMinutes * 60_000L, MS_PER_DAY)
 
 private val WEEKDAY_LABELS = listOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")
 
 private const val MS_PER_DAY = 86_400_000L
-
-private fun formatYmd(startOfDayMs: Long): String {
-    val calendar = java.util.Calendar.getInstance()
-    calendar.timeInMillis = startOfDayMs
-    val month = (calendar.get(java.util.Calendar.MONTH) + 1).toString().padStart(2, '0')
-    val day = calendar.get(java.util.Calendar.DAY_OF_MONTH).toString().padStart(2, '0')
-    return "${calendar.get(java.util.Calendar.YEAR)}-$month-$day"
-}
 
 /**
  * 相册页四模式分组（M4-2A-B2 拍板口径，纯函数单测锁定；旧版「全部」页 MediaGroupHelper 语义）：
@@ -151,8 +150,9 @@ fun List<MediaAsset>.groupByAlbumDim(
     nowMs: Long,
     facetCounts: Map<String, Int> = emptyMap(),
     dateCounts: Map<String, Int> = emptyMap(),
+    tzOffsetMinutes: Int = deviceTzOffsetMinutes(nowMs),
 ): List<GridSection> = when (dim) {
-    AlbumDim.PARTITION, AlbumDim.TYPE -> groupByDateLabel(nowMs, dateCounts) { it.modifiedAtMs }
+    AlbumDim.PARTITION, AlbumDim.TYPE -> groupByDateLabel(nowMs, dateCounts, tzOffsetMinutes) { it.modifiedAtMs }
     AlbumDim.AUTHOR -> groupByFirstOccurrence(facetCounts) { authorGroupKey(it) }
     AlbumDim.CHARACTER -> groupByFirstOccurrence(facetCounts) { characterGroupKey(it) }
 }

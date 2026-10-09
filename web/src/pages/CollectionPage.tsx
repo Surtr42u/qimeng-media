@@ -159,8 +159,11 @@ export default function CollectionPage() {
     if (!isFetchingNextPage && !isPlaceholderData) void fetchNextPage()
   })
 
-  // 标题计数：实体 fileCount（标签/作者均有）优先，缺省回退列表 totalMatched
-  const count = (isAuthor ? author?.fileCount : tag?.fileCount) ?? pages?.pages[0]?.totalMatched ?? 0
+  // 标题计数：**当前筛选下的列表总数**优先（首响 totalMatched，与尾部「共 N 项」
+  // 同口径，App 端 AuthorCollectionScreen 同款）——实体 fileCount 是实体全量、
+  // 不含胶囊/类型收窄，先取会在筛选后多报且与尾部自相矛盾（2026-10-10 审计）；
+  // 列表未回来时仍由 fileCount 兜底。无筛选时两者同值（列表恒 includeCos=true）。
+  const count = pages?.pages[0]?.totalMatched ?? (isAuthor ? author?.fileCount : tag?.fileCount) ?? 0
 
   // 加载中文案（实体列表仍在拉取）
   const loading = (isAuthor ? authorsLoading : tagsLoading)

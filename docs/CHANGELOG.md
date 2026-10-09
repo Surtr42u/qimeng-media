@@ -11,6 +11,30 @@
 
 
 
+## fix(app+web): 三路子代理审计 Web 端同族缺陷——修掉计数日界夏令时劈叉、视频底栏沉浸态死区、集合页页头多报（2026-10-10 第五百一十四笔）
+
+执行 AI：DeepSeek-V4.1-Flash（主代理；三路只读审计由子代理执行）
+
+- **背景**（用户拍板）：「看看这段时间安卓修复的问题在 web 和浏览器可能也有吗？有的话修复一下，走云端编译」。开三路**只读**子代理并行审计 `web/`（交互穿透/手势、计数与分页、文件名与作者联想），逐条给 `文件:行号` 证据，主代理落地修复。
+- **审计结论矩阵**（近期 App 修复 → Web 侧是否存在同族缺陷）：
+  | App 侧修复 | Web 结论 |
+  |---|---|
+  | 第五百一十笔 详情页底部胶囊空隙穿透进播放 | **不存在**：Web 详情是文档流双栏（`AssetDetailPage.tsx:204-321`，`.detail-main` 全链无 absolute/sticky），操作条与舞台不重叠，空隙下方是文档流而非舞台；且图片查看器沉浸态已是「容器 `pointer-events:none` + 单击画布唤回」（`glass.css:2216-2224`）的正确实现 |
+  | 第五百一十三笔 相册日期组头计数 | Web 已接且接线复核通过（首屏取值/翻页不覆盖/未命中回退/无日期桶安全）；**但发现日界实现有夏令时劈叉漏洞（本笔修）** |
+  | 第五百零四笔 悬浮底栏防穿透 | **存在（已修）**：ArtPlayer 底栏退场只改 opacity + 下移 20px，`.art-progress`/`.art-controls` 恒 `pointer-events:auto` → 隐形后仍吃点击 |
+  | 第五百零七笔 返回手势先退多选 | **不适用**：Web 相册无多选态（`useMultiSelect` 只在回收站/目录树两页）；两页返回即离开页面属浏览器显式导航意图，非同一缺陷（记档附修法） |
+  | 第五百零一笔 作者联想常驻 seed 列表 / 第五百零五笔 弹层防超界 | 常驻列表**不存在**（Web 恒「输入才弹」）；超界风险影响轻（记档） |
+  | 第五百零五/零六/零八/零九笔 文件名·作品名序号联想与别名反查 | 别名反查经服务端自动共享（Web 搜索框同样出候选）；**Web 缺「改文件名时的序号联想」能力**（重命名对话框裸输入；生成函数 `getApiV1AssetsNameSuggestions` 全仓零消费）——记档待产品拍板 |
+  | 第五百一十二笔 作者联想改胶囊流 | Web 无文件名联想面（不存在「两套视觉割裂」前提），纯视觉统一记档 |
+- **修复一：计数日界改「固定偏移」口径（App + Web 两端，审计发现的自有漏洞）**。原实现客户端按**该日期当时的历史时区规则**算日键（`Calendar` / `new Date` 本地规则），而服务端按请求里的**单一固定偏移**分桶（`date(mtime,'+480 minutes')`）——夏令时区域同一日期会算出两个不同的日 → 查不到分桶、回退已加载条数，**「数字随滚动跳增」的原缺陷在夏令时区复现**。改为：日界一律用请求里那个偏移算（纯整数 `floorDiv(ms + offset*60000, 86400000)`），标签与日键恒同源。
+  - App：`DateGrouping.kt` 的 `dateLabel`/`localDayKey`/`groupByDateLabel`/`groupByAlbumDim` 增 `tzOffsetMinutes`（缺省设备当前值，与 `SdkMediaRepository` 恒补的请求参数同源）；删掉 `Calendar`/`startOfDay`/`formatYmd`/`dayOfWeekIndex` 四个时区库依赖件（`java.time.LocalDate.ofEpochDay` 取而代之，纯函数、测试恒确定）。
+  - Web：`format.ts` 的 `dateLabel`/`localDayKey` 增偏移参数 + 新增 `deviceTzOffsetMinutes()`（`getTimezoneOffset()` 取负，唯一取值来源）；`album-grouping.ts` 透传；`AlbumsPage` 显式把同一个值同时喂给请求与分组；`use-assets.ts` 的 SDK 边界改为「页面传了以页面为准，否则按设备现算」，并补齐此前**绕过该边界**的两处调用（`useAssetsInDirectory`/`useAssetsTotal`）——审计点出的口径漏点。
+- **修复二：Web 视频底栏沉浸态让位**（对位 App 第五百一十笔「沉浸态不挂吞点击守卫」）。`glass.css` 新增一条退场态规则：`.art-video-player:not(.art-control-show):not(.art-hover) .art-bottom .art-progress/.art-controls { pointer-events: none }`——退场即让位给 `<video>`，点击走上游原生语义，不再被隐形条带吞掉（手机浏览器「点底部唤不出控件」、落在隐形进度行还会按上游偏置换算误 seek）。类名直接取自上游同款可见性选择器（`.art-video-player.art-control-show .art-bottom{opacity:1}`），可见态一字不动——这是本规则唯一的误伤风险面。
+- **修复三：Web 集合页页头计数改「当前筛选下的列表总数」优先**。`CollectionPage.tsx` 原为「实体 `fileCount`（实体全量、不含胶囊/类型收窄）优先，缺省回退 `totalMatched`」→ 筛选后页头多报且与尾部「共 N 项」自相矛盾；改为 `totalMatched` 优先、`fileCount` 兜底，与 **App 端 `AuthorCollectionScreen` 同口径**（列表恒 `includeCos=true`，无筛选时两者同值）。
+- **记档不修（附理由与修法，供后续批次）**：① Web 视频底栏**可见态** 16px/8px padding 带仍穿透到 `<video>`——判定非缺陷（Web 舞台即播放器本体，点任意处=上游原生单击切换；App 场景是覆盖层空隙，性质不同）；② 回收站/目录树两页浏览器返回不先退多选（修法：照 `VocabularyEditPage.tsx:124` 的 `useBlocker` 范式，拦截后 `select.exit()` + `reset()`；相册无多选，故非 App 那条路的对等缺陷）；③ Web 作者联想空候选仍渲染提示面板、面板 `avoidCollisions={false}` 且 `.search-pop--popper` 无 max-height（影响轻，且该类为顶栏搜索面板共用，改动需连带回归）；④ **Web 重命名对话框无文件名序号联想**（能力缺口，非缺陷；修法：新增 `use-name-suggestions` + 在 `MoveDialog` 用 `baseNameOf` 作 q、`composeUploadName(sug, extensionOf(currentName))` 回填，**禁止在 Web 重抄序号推进算法**；点文件扩展名口径须按服务端 `path.Ext` 兜底）；⑤ 搜索补全点选后走裸 `q=` 全文检索而非类型化收窄（产品语义待拍板）；⑥ 历史组头「N」= 已加载条数（**两端同缺口**，App 侧已记档——`/history` 无按日聚合位）；⑦ 首页 COS「共 N 项」实为已加载数、榜单页 `limit=200` 单页标称「全量排行」、若干计数「加载期 0 闪现」。
+- **验证结论**：Web `tsc --noEmit` 干净、`vitest run` **294 用例全绿**（新增 3 例：固定偏移日键两例 + 夏令时分组同源一例）、`oxlint` 0 error；App 侧 `:core:model:test` 与四个消费模块单测全绿（新增夏令时用例：同一时刻 `-300`→`2026-06-30`、`-240`→`2026-07-01`，并锁定「同源命中分桶 5 项 / 劈叉回退已加载 2 项」）。本机不跑重型构建（用户指定**走云端编译**）：推送后由 CI 的 `Web（tsc + build）` 与 `Android 客户端（assembleDebug + test + lint）` 作业出结论。
+- **文档**：CHANGELOG.md（本条）、DOMAIN_RULES §8（日界口径补「固定偏移」要求）。
+
 ## fix(app+web+server): 相册日期组头计数改为服务端按本地日精确聚合——不再拿已加载条数冒充总数（2026-10-10 第五百一十三笔）
 
 执行 AI：DeepSeek-V4.1-Flash（主代理）

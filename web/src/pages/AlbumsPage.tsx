@@ -9,6 +9,7 @@ import { SkeletonGrid } from '@/components/ui/skeleton-grid'
 import { ChevronDownIcon } from '@/components/shell/icons'
 import { DEFAULT_PAGE_SIZE, LOCALE_ZH } from '@/lib/constants'
 import { groupAlbumsByDate } from '@/lib/album-grouping'
+import { deviceTzOffsetMinutes } from '@/lib/format'
 import { isPanelActive } from '@/lib/panel-filters'
 import { ALBUMS_PATH, assetDetailWithSearch, type OverlayDetailState } from '@/lib/route-keys'
 import { useAutoMore } from '@/hooks/use-auto-more'
@@ -116,6 +117,10 @@ export default function AlbumsPage() {
     [characterSel],
   )
 
+  // 本地日界的固定偏移（协议 tzOffsetMinutes）：请求参数、分组标签、日键三者同值——
+  // 服务端按它分桶，客户端按它算键，夏令时区域才不会劈叉（详见 format.dateLabel）
+  const tzOffsetMinutes = useMemo(() => deviceTzOffsetMinutes(), [])
+
   // 内容网格：页面维 + 面板七行选择 → GET /assets 参数（分区三态开关映射见
   // hooks 注释；排序/顺位/区间/标签映射单源 panelAssetParams，与搜索页同口径）
   const listParams = useMemo<AssetListParams>(
@@ -128,10 +133,11 @@ export default function AlbumsPage() {
       limit: DEFAULT_PAGE_SIZE,
       // 日期组头精确计数（协议 2026-10-10 加）：分页只加载前若干条时，组头
       // 「N 项」用服务端按本地日聚合的真实总数，不再拿已加载条数冒充（服务端
-      // 仅首屏计算，翻页请求带了也忽略）。tzOffsetMinutes 在 hooks 的 SDK 边界恒补。
+      // 仅首屏计算，翻页请求带了也忽略）。
       dateCounts: true,
+      tzOffsetMinutes,
     }),
-    [partition, authorParams, characterParams, mediaType, panel.state],
+    [partition, authorParams, characterParams, mediaType, panel.state, tzOffsetMinutes],
   )
 
   const {
@@ -155,8 +161,12 @@ export default function AlbumsPage() {
 
   // 时间分区（原型 renderAlbumGrid）：口径单源在 lib/album-grouping.ts（ADR-0008
   // 规则抽离）；胶囊/排序切换只改变 items，分组是其上的纯函数。
-  // dateCounts：服务端按本地日精确计数（组头数字不再随分页滚动跳增）。
-  const groups = useMemo(() => groupAlbumsByDate(items, dateCounts), [items, dateCounts])
+  // dateCounts：服务端按本地日精确计数（组头数字不再随分页滚动跳增）；
+  // tzOffsetMinutes 与请求同值（服务端分桶键与客户端日键必须同源）。
+  const groups = useMemo(
+    () => groupAlbumsByDate(items, dateCounts, tzOffsetMinutes),
+    [items, dateCounts, tzOffsetMinutes],
+  )
 
   // F5 批次导航快照 + 叠加打开：照 HomePage StreamCards 的 navContext 组装。
   // 快照序 = 用户看到的平铺序（分组序拼接——组间按组首时间降序、组内保原序），

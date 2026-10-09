@@ -297,6 +297,34 @@ class DateGroupingTest {
     }
 
     @Test
+    fun `固定偏移口径 - 夏令时区域历史日期不再与分桶键劈叉`() {
+        // 纽约 2026-07-01T04:30:00Z：该日期实际本地是 07-01（EDT，−240），但请求里
+        // 带的是请求时刻的偏移（EST，−300）→ 服务端按 −300 分桶得 06-30。客户端必须
+        // 用**同一个固定偏移**算日键，否则查不到计数、回退已加载条数（「数字随滚动
+        // 跳增」的原缺陷在夏令时区复现）。纯整数运算，与跑测机器时区无关。
+        val ts = 1_782_880_200_000L
+        assertEquals("2026-06-30", localDayKey(ts, -300))
+        assertEquals("2026-07-01", localDayKey(ts, -240))
+
+        // 标签与日键同源：以该时刻为「现在」、偏移 −300 计，当天即 06-30 → 今天
+        assertEquals("今天", dateLabel(ts, ts, -300))
+        assertEquals("昨天", dateLabel(ts, ts + 86_400_000L, -300))
+
+        // 同源时命中服务端分桶（−300 桶 5 条）
+        val assets = listOf(asset("a", ts), asset("b", ts))
+        assertEquals(
+            listOf("今天  5 项"),
+            assets.groupByDateLabel(ts, mapOf("2026-06-30" to 5), -300) { it.modifiedAtMs }.map { it.label },
+        )
+        // 偏移劈叉时（客户端按 −240 算键、服务端按 −300 分桶）命中不到 → 回退已加载条数：
+        // 这就是修复前夏令时区的复现面，用例把它钉死
+        assertEquals(
+            listOf("今天  2 项"),
+            assets.groupByDateLabel(ts, mapOf("2026-06-30" to 5), -240) { it.modifiedAtMs }.map { it.label },
+        )
+    }
+
+    @Test
     fun `空列表分组返回空`() {
         for (dim in AlbumDim.entries) {
             assertEquals(emptyList<GridSection>(), emptyList<MediaAsset>().groupByAlbumDim(dim, now))

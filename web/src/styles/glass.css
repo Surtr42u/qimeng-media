@@ -1813,6 +1813,17 @@ button.pill.detail-tag-manage { cursor: pointer; }
   padding: 0 16px 8px !important;
 }
 
+/* 控件退场即让位（2026-10-10，对位 App 第五百一十笔「沉浸态不挂吞点击守卫」）：
+   上游 .art-progress/.art-controls 恒 pointer-events:auto，退场只改 opacity + 下移
+   20px——隐形后仍吃点击，底部约 55px 变死区（手机浏览器「点底部唤不出控件」，
+   落在隐形进度行还会按上游偏置换算误 seek）。退场态一律让位给 <video>，点击走
+   上游原生语义；可见态（art-control-show / art-hover）不动——那是条的正常交互面，
+   也是本规则唯一的误伤风险面，故两个类名直接取自上游同款可见性选择器。 */
+.art-video-player:not(.art-control-show):not(.art-hover) .art-bottom .art-progress,
+.art-video-player:not(.art-control-show):not(.art-hover) .art-bottom .art-controls {
+  pointer-events: none !important;
+}
+
 /* 官方进度条平滑悬停微动 */
 .art-video-player .art-control-progress .art-control-progress-inner {
   height: 3.5px !important;

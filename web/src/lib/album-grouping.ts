@@ -27,14 +27,17 @@ export interface AlbumGroup {
 
 /** 按 modifiedAt 的 dateLabel 归并同组；组间按组首 modifiedAt 降序（新→旧），无日期组殿后。
  *  @param dateCounts 服务端按本地日精确计数（key = yyyy-MM-dd 本地日，见
- *    format.localDayKey；口径与 App 侧 core:model localDayKey 同源）。 */
+ *    format.localDayKey；口径与 App 侧 core:model localDayKey 同源）。
+ *  @param tzOffsetMinutes 本地日界的固定偏移（协议 tzOffsetMinutes）——分组标签、
+ *    日键、服务端分桶三者必须同值，否则夏令时区域会劈叉（详见 format.dateLabel）。 */
 export function groupAlbumsByDate(
   items: AssetSummary[],
   dateCounts: Map<string, number> = new Map(),
+  tzOffsetMinutes?: number,
 ): AlbumGroup[] {
   const byLabel = new Map<string, AssetSummary[]>()
   for (const a of items) {
-    const label = dateLabel(a.modifiedAt)
+    const label = dateLabel(a.modifiedAt, tzOffsetMinutes)
     const bucket = byLabel.get(label)
     if (bucket) bucket.push(a)
     else byLabel.set(label, [a])
@@ -44,7 +47,7 @@ export function groupAlbumsByDate(
       label,
       assets,
       // 同标签必同日（标签由日界唯一确定）：取组首项的本地日键查精确总数
-      total: dateCounts.get(localDayKey(assets[0]?.modifiedAt)) ?? assets.length,
+      total: dateCounts.get(localDayKey(assets[0]?.modifiedAt, tzOffsetMinutes)) ?? assets.length,
     }))
     .sort((x, y) => {
       if (!x.label) return 1

@@ -98,4 +98,18 @@ describe('groupAlbumsByDate', () => {
     ])
     expect(groups[0].assets.map((a) => a.id)).toEqual(['x1', 'x2'])
   })
+
+  it('固定偏移口径：夏令时区域的历史日期必须与分桶键同源', () => {
+    // 2026-07-01T04:30:00Z：请求时带的是请求时刻的偏移（EST，−300）→ 服务端按
+    // −300 分桶得 2026-06-30。客户端若按该日期当时的历史规则（EDT，−240）算键，
+    // 会算成 2026-07-01 → 查不到分桶、回退已加载条数 = 原缺陷在夏令时区复现。
+    const iso = '2026-07-01T04:30:00.000Z'
+    const items = [asset('a', iso), asset('b', iso)]
+    const counts = new Map([['2026-06-30', 5]])
+
+    // 同源（−300）：命中服务端分桶 → 组头用真实总数
+    expect(groupAlbumsByDate(items, counts, -300)[0].total).toBe(5)
+    // 劈叉（−240）：键变 2026-07-01，查不到 → 回退已加载条数（复现面钉死）
+    expect(groupAlbumsByDate(items, counts, -240)[0].total).toBe(2)
+  })
 })

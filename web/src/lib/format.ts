@@ -72,22 +72,50 @@ export function formatDateTime(ts?: number | null): string {
   return `${d.getMonth() + 1}-${d.getDate()} ${hh}:${mm}`
 }
 
+/** 设备当前时区相对 UTC 的偏移分钟数（东八区=480）——协议 GET /assets 的
+ *  tzOffsetMinutes 唯一取值来源（`getTimezoneOffset()` 符号相反，取负）。
+ *  请求参数与客户端日界（dateLabel/localDayKey 缺省）同源，服务端只认偏移量。 */
+export function deviceTzOffsetMinutes(d: Date = new Date()): number {
+  return -d.getTimezoneOffset()
+}
+
+const MS_PER_DAY = 86_400_000
+
+/** 固定偏移下的「日序号」（自 1970-01-01 起的天数，向负无穷取整）：先把时间戳
+ *  平移到「本地日 = UTC 日」的坐标再按整天切分。纯整数运算、不查时区库——
+ *  这是标签与分桶键恒同源的关键（理由见 dateLabel）。 */
+function localEpochDay(ms: number, tzOffsetMinutes: number): number {
+  return Math.floor((ms + tzOffsetMinutes * 60_000) / MS_PER_DAY)
+}
+
+function parseIsoMs(iso?: string | null): number | null {
+  if (!iso) return null
+  const t = Date.parse(iso)
+  return Number.isNaN(t) ? null : t
+}
+
 /** ISO 日期 → 相册时间分区标签（原型 app.js dateLabel，复刻旧版 MediaBrowserLogic）：
  *  今天 / 昨天 / 2~6 天前→周X（周一~周日）/ 更早→yyyy-MM-dd；
- *  空值或非法日期返回空串（调用方不分组、不渲染组头）。 */
-export function dateLabel(iso?: string | null): string {
-  if (!iso) return ''
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ''
-  const now = new Date()
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const day = new Date(d.getFullYear(), d.getMonth(), d.getDate())
-  const diff = Math.round((today.getTime() - day.getTime()) / 86400000)
+ *  空值或非法日期返回空串（调用方不分组、不渲染组头）。
+ *
+ *  **固定偏移口径**（2026-10-10 审计返工）：日界一律用 [tzOffsetMinutes] 这一个
+ *  偏移算，不查该日期当时的历史时区规则（夏令时区域夏冬偏移差 1 小时）。组头
+ *  计数由服务端按同一个偏移分桶（browse.sql CountAssetsByLocalDay），客户端按历史
+ *  规则算日键会与分桶键劈叉 → 查不到计数、回退已加载条数，「数字随滚动跳增」的
+ *  原缺陷在夏令时区复现。对 Asia/Shanghai（无夏令时）行为零变化。 */
+export function dateLabel(iso?: string | null, tzOffsetMinutes?: number): string {
+  const t = parseIsoMs(iso)
+  if (t === null) return ''
+  const off = tzOffsetMinutes ?? deviceTzOffsetMinutes()
+  const day = localEpochDay(t, off)
+  const diff = localEpochDay(Date.now(), off) - day
   if (diff === 0) return '今天'
   if (diff === 1) return '昨天'
-  if (diff >= 2 && diff <= 6) return ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][day.getDay()]
+  // 平移坐标下按 UTC 取星期/年月日（不引入本地时区规则）
+  const d = new Date(day * MS_PER_DAY)
+  if (diff >= 2 && diff <= 6) return ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][d.getUTCDay()]
   const p = (n: number) => String(n).padStart(2, '0')
-  return `${day.getFullYear()}-${p(day.getMonth() + 1)}-${p(day.getDate())}`
+  return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}`
 }
 
 /** 本地日期键（y-m-d 数值串）：历史「今天/昨天/更早」按天分组用 */
@@ -100,12 +128,14 @@ export function localDateKey(ts?: number | null): string {
 
 /** ISO 时间 → 本地日历日键（yyyy-MM-dd，补零）：服务端 dateCounts 分桶键
  *  的客户端镜像（协议 GET /assets dateCounts，2026-10-10 加）。服务端按请求
- *  tzOffsetMinutes 把 UTC 的 mtime 折算成本地日，浏览器按同一时区折算——
- *  两侧同键，组头精确计数才能与分组对齐。空值/非法日期返回空串。 */
-export function localDayKey(iso?: string | null): string {
-  if (!iso) return ''
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ''
+ *  tzOffsetMinutes 把 UTC 的 mtime 折算成本地日（`date(mtime,'+480 minutes')`），
+ *  浏览器必须用**同一个固定偏移**折算——两侧同键，组头精确计数才能与分组对齐
+ *  （固定偏移而非历史时区规则的理由见 dateLabel）。空值/非法日期返回空串。 */
+export function localDayKey(iso?: string | null, tzOffsetMinutes?: number): string {
+  const t = parseIsoMs(iso)
+  if (t === null) return ''
+  const off = tzOffsetMinutes ?? deviceTzOffsetMinutes()
+  const d = new Date(localEpochDay(t, off) * MS_PER_DAY)
   const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+  return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}`
 }
