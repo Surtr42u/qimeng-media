@@ -33,6 +33,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import media.qimeng.app.core.model.AssetDetail
+import media.qimeng.app.core.ui.component.consumeTaps
 import media.qimeng.app.core.ui.component.formatCount
 import media.qimeng.app.core.ui.icon.BackIcon
 import media.qimeng.app.core.ui.icon.FavoriteBorderIcon
@@ -227,6 +228,14 @@ internal fun DetailBottomChrome(
     Row(
         modifier = modifier
             .fillMaxWidth()
+            // 空隙隔离（2026-10-09 用户反馈）：四胶囊之间（spacedBy 8dp）、两侧（24dp 内边距）
+            // 与上下内边距都是不接手势的透明空白——误触这些空隙会直接穿透到背后舞台的
+            // 「点击起播」（DetailMediaStage 海报态 .clickable { beginPlayback() }），观感是
+            // 「没点到胶囊却进了播放」。解法与外部悬浮 tab 坞同源（[consumeTaps] 单源收口）：
+            // 条容器自身消费落在空隙的点击；胶囊是本条子节点、命中测试在上，手势零影响。
+            // 仅在条内容可见时挂载：沉浸态 chrome 退场后，该条必须让「点画面唤出控制条」
+            // 的原生交互照常穿透（否则底部一条会变成吞点击的死区）。
+            .then(if (contentVisible) Modifier.consumeTaps() else Modifier)
             // 任务U6 底色瞬时切换（同 DetailTopChrome，旧版 setBackgroundColor 同帧语义直译）
             .background(if (contentVisible) chromeBarTint() else Color.Transparent)
             // X1 恢复自管避让（2026-09-12 任务X）：壳层不再钉位，舞台盒底=屏幕底，胶囊

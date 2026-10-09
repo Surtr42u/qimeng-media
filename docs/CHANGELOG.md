@@ -11,6 +11,17 @@
 
 
 
+## fix(app): 详情页底部胶囊空隙屏蔽——误触空隙不再穿透进视频播放（空白隔离修饰符单源化）（2026-10-09 第五百一十笔）
+
+执行 AI：DeepSeek-V4.1-Flash（主代理）
+
+- **背景与痛点**（用户反馈）：详情页底部四胶囊（点赞N/收藏/标签/作者）之间存在 `spacedBy(SpaceM=8dp)` 空隙，两侧还有 24dp 内边距、上下内边距——这些区域此前不接任何手势，误触时触摸直接穿透到背后舞台的「点击起播」（`DetailMediaStage` 海报态 `.clickable { beginPlayback() }`），观感就是「没点到胶囊却进了视频播放」。
+- **改动内容**：
+  1. **空白隔离修饰符单源**（新增 `android/core/ui/.../component/QimengTouchGuards.kt` 的 `Modifier.consumeTaps()`）：`detectTapGestures {}` 空实现＝只消费点击（Main pass），不拦拖动/长按，也不产生水波纹与无障碍杂音。此前悬浮 tab 坞（`glass/FloatingTabDock.kt`）内有一份私有同实现 `consumeTouches()`，本批收口为唯一实现（坞的左右/底部三处隔离带改用共享件，私有件删除）——同类逻辑第 2 次出现即抽共享，避免第三处再抄一份。
+  2. **详情页底栏接入**（`feature/detail/DetailChromeBars.kt` 的 `DetailBottomChrome`）：条容器在 `contentVisible` 时挂 `consumeTaps()`——落在空隙的点击由条容器吞掉；胶囊是本条的子节点、命中测试在上（上层先消费），胶囊手势零影响。**沉浸态（chrome 退场）不挂**：那时该条必须让「点画面唤出控制条」的原生交互照常穿透，否则底部一条会变成吞点击的死区。
+- **验证结论**：`:core:ui:compileDebugKotlin` 与 `:feature:detail:testDebugUnitTest` 全绿；release APK 重建后装机真机验证（详情页点胶囊间隙不再起播，点胶囊功能照常）。
+- **文档**：CHANGELOG.md（本条）。
+
 ## feat(api/server): 文件名推荐别名/出处反查打通——只输角色名·别名·出处昵称即可命中「出处 角色 序号」族（2026-10-09 第五百零九笔）
 
 执行 AI：DeepSeek-V4.1-Flash（主代理）

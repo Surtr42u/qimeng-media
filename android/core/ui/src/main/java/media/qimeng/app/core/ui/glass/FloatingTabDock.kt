@@ -67,11 +67,9 @@ import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.shadow.Shadow
 import media.qimeng.app.core.model.TabBarMaterial
+import media.qimeng.app.core.ui.component.consumeTaps
 import media.qimeng.app.core.ui.theme.QimengShapes
 import media.qimeng.app.core.ui.theme.isQimengDarkTheme
-
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.ui.input.pointer.pointerInput
 
 /**
  * 悬浮玻璃坞底栏（2026-10-03 悬浮玻璃坞批，ADR-0031 视觉语言的承载件）：
@@ -164,7 +162,7 @@ fun FloatingTabDock(
                 modifier = Modifier
                     .width(TabDockDefaults.DockHorizontalMargin)
                     .height(TabDockDefaults.DockHeight)
-                    .consumeTouches(),
+                    .consumeTaps(),
             )
             DockBody(
                 material = material,
@@ -189,7 +187,7 @@ fun FloatingTabDock(
                 modifier = Modifier
                     .width(TabDockDefaults.DockHorizontalMargin)
                     .height(TabDockDefaults.DockHeight)
-                    .consumeTouches(),
+                    .consumeTaps(),
             )
         }
         // 坞底空白隔离带（DockBottomOffset 10dp + navigationBarsPadding）：
@@ -199,14 +197,9 @@ fun FloatingTabDock(
                 .fillMaxWidth()
                 .height(TabDockDefaults.DockBottomOffset)
                 .navigationBarsPadding()
-                .consumeTouches(),
+                .consumeTaps(),
         )
     }
-}
-
-/** 拦截空白区域触摸事件防穿透：消费点击，不产生 a11y 杂音与视觉水波纹 */
-private fun Modifier.consumeTouches(): Modifier = this.pointerInput(Unit) {
-    detectTapGestures { }
 }
 
 /**
