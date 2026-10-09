@@ -2,8 +2,9 @@ package filing
 
 // namesuggest_test.go：作品名序号联想纯函数的表驱动回归（铁律 3：纯函数
 // 行为由单元测试锁定）。覆盖端点描述的口径：规范化匹配（去扩展名/空白折叠/
-// ASCII 大小写不敏感/少空格吸附）、两种序号风格、混合风格同族、序号跨扩展
-// 名共用、多族排序与 cap 3、无序号族跳过、空 q、无命中。
+// ASCII 大小写不敏感/少空格吸附/包含与分词匹配）、多种序号风格（裸/括号/全角
+// 括号/方括号/前缀标记）、多角色多样性轮转防独占、无序号族智能推荐、cap 8、
+// 前导零位宽保留等。
 
 import (
 	"reflect"
@@ -11,7 +12,6 @@ import (
 )
 
 func TestSuggestSeriesNames(t *testing.T) {
-	// openapi.yaml 端点描述的逐字示例：裸序号跨扩展名共用 + 全角括号族跳过。
 	exampleNames := []string{"守望先锋 DVA 11.png", "守望先锋 DVA 12.mp4", "守望先锋 DVA（特写）.png"}
 
 	cases := []struct {
@@ -20,8 +20,12 @@ func TestSuggestSeriesNames(t *testing.T) {
 		q     string
 		want  []string
 	}{
-		{"协议示例：裸序号推进+跨扩展名+全角括号族跳过", exampleNames, "守望先锋dva", []string{"守望先锋 DVA 13"}},
+		{"协议示例：裸序号推进+跨扩展名+全角括号修饰同族跳过", exampleNames, "守望先锋dva", []string{"守望先锋 DVA 13"}},
 		{"括号序号推进", []string{"旅行 (1).jpg", "旅行 (2).jpg"}, "旅行", []string{"旅行 (3)"}},
+		{"全角括号序号推进", []string{"名（2）.png"}, "名", []string{"名（3）"}},
+		{"全角方括号与前导零保留", []string{"名【01】.png", "名【02】.png"}, "名", []string{"名【03】"}},
+		{"前导零跨进位保留位宽", []string{"名 09.jpg"}, "名", []string{"名 10"}},
+		{"常见标记前缀序号", []string{"作品 No.01.mp4"}, "作品", []string{"作品 No.02"}},
 		{"混合风格同族：最大序号成员的风格胜出", []string{"名 12.png", "名 (2).jpg"}, "名", []string{"名 13"}},
 		{"序号平局取裸风格", []string{"x (5).png", "x 5.jpg"}, "x", []string{"x 6"}},
 		{"大写输入吸附库内小写写法", []string{"守望先锋 dva 11.png"}, "守望先锋DVA", []string{"守望先锋 dva 12"}},
@@ -31,17 +35,34 @@ func TestSuggestSeriesNames(t *testing.T) {
 		{"建议保留库内多空格原样", []string{"组图  (2).jpg"}, "组图", []string{"组图  (3)"}},
 		{"扩展名去重前缀命中", []string{"海景 1.png", "海景.backup.jpg"}, "海景", []string{"海景 2"}},
 		{"q 带扩展名同命中", exampleNames, "守望先锋dva.png", []string{"守望先锋 DVA 13"}},
-		{"多族排序：命中数降序、族键字典序、cap 3", []string{
-			"aa 1.png", "aa 2.png", "aa 3.png",
-			"ab 1.png", "ab 2.png", "ab 3.png",
-			"ac 1.png",
-			"ad 1.png", "ad 2.png",
-		}, "a", []string{"aa 4", "ab 4", "ad 3"}},
-		{"无序号族不产生建议", []string{"夕阳（特写）.png", "夕阳风景.jpg"}, "夕阳", []string{}},
-		{"序号族与无序号命中并存：只出序号族", []string{"名 3.png", "名单.jpg"}, "名", []string{"名 4"}},
+		{"法环多角色共存：各角色主体优先曝光，玛丽卡不霸占全部槽位", []string{
+			"法环 玛丽卡 01.mp4", "法环 玛丽卡 02.mp4",
+			"法环 玛丽卡 特写 01.mp4", "法环 玛丽卡 礼服 01.mp4",
+			"法环 菈妮 01.mp4",
+			"法环 梅琳娜.mp4", // 无序号单文件
+			"法环 瑟濂 01.mp4",
+		}, "法环", []string{
+			"法环 玛丽卡 03",
+			"法环 梅琳娜 2",
+			"法环 瑟濂 02",
+			"法环 菈妮 02",
+			"法环 玛丽卡 特写 02",
+			"法环 玛丽卡 礼服 02",
+		}},
+		{"中段角色名匹配：搜菈妮命中法环系列", []string{"法环 菈妮 01.mp4", "法环 玛丽卡 01.mp4"}, "菈妮", []string{"法环 菈妮 02"}},
+		{"中段作品名匹配：搜法环命中艾尔登法环全称", []string{"艾尔登法环 菈妮 01.mp4"}, "法环", []string{"艾尔登法环 菈妮 02"}},
+		{"多族排序与 cap 8 上限截断", []string{
+			"p a 1.png", "p b 1.png", "p c 1.png", "p d 1.png",
+			"p e 1.png", "p f 1.png", "p g 1.png", "p h 1.png",
+			"p i 1.png", "p j 1.png",
+		}, "p", []string{
+			"p a 2", "p b 2", "p c 2", "p d 2",
+			"p e 2", "p f 2", "p g 2", "p h 2",
+		}},
+		{"无边界词不产生伪系列", []string{"夕阳（特写）.png", "夕阳风景.jpg"}, "夕阳", []string{}},
+		{"序号族与无独立子实体单词命中并存：只出序号族", []string{"名 3.png", "名单.jpg"}, "名", []string{"名 4"}},
 		{"整名纯数字无名字部分不构成系列", []string{"12.png"}, "1", []string{}},
 		{"无空白紧贴数字不算序号", []string{"v2.png"}, "v", []string{}},
-		{"全角括号紧贴不算序号风格", []string{"名（2）.png"}, "名", []string{}},
 		{"括号内容非数字不算序号", []string{"名 (特写).png"}, "名", []string{}},
 		{"空 q → 空列表", exampleNames, "", []string{}},
 		{"纯空白 q → 空列表", exampleNames, "   ", []string{}},

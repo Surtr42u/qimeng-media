@@ -222,15 +222,14 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/AssetPage" } } } }
   /api/v1/assets/name-suggestions:
     get:
-      summary: 作品名序号联想（上传暂存作品名输入框；规范化命名 + 下一序号，ADR-0024 修订）
+      summary: 作品名序号联想（规范化命名 + 下一序号 / 多角色多样性轮转，ADR-0024 修订）
       description: |
-        对 q 做规范化前缀匹配（去扩展名、空白折叠、ASCII 大小写不敏感）检索
-        库内现存文件名；命中系列按既有编号风格取最大序号 +1（裸序号「名 12」
-        →「名 13」、括号序号「名 (2)」→「名 (3)」），返回「既有命名风格 + 下一
-        序号」的建议基名（不含扩展名，客户端拼接锁定扩展名）——用户输入不规
-        范（少空格/小写）时建议自动吸附库里既有的规范写法。序号跨扩展名共用
-        （同名 png/mp4 算同一系列）。最多 3 条（不同命名族各一）；q 规范化后
-        为空或无命中 → 空列表。
+        对 q 做规范化匹配（去扩展名、空白折叠、ASCII 大小写不敏感；前缀优先，支持中段
+        分词包含与子串检索）检索库内现存文件名；命中系列按既有编号风格取最大序号 +1
+        （裸序号「名 12」→「名 13」、半角/全角括号序号「名 (2)」/「名（2）」→ 下一序号、
+        方括号「名【01】」保留位宽推进），无序号族智能推荐基名下一序号。多角色多样性
+        轮转调度杜绝单角色独占槽位，返回建议基名（不含扩展名，客户端拼接锁定扩展名）。
+        最多 8 条；q 规范化后为空或无命中 → 空列表。
       parameters:
         - { name: libraryId, in: query, required: true, schema: { type: string }, description: 目标库（建议只检索该库文件名） }
         - { name: q, in: query, required: true, schema: { type: string }, description: 输入中的作品名（不带扩展名） }
@@ -1750,7 +1749,7 @@ components:
       description: 作品名序号联想（GET /assets/name-suggestions）
       required: [suggestions]
       properties:
-        suggestions: { type: array, items: { type: string }, maxItems: 3, description: 建议基名（不含扩展名；既有命名风格 + 下一序号，不同命名族各一，最多 3 条） }
+        suggestions: { type: array, items: { type: string }, maxItems: 8, description: 建议基名（不含扩展名；既有命名风格 + 下一序号，多角色多样性轮转，最多 8 条） }
 
     StatsOverview:
       type: object

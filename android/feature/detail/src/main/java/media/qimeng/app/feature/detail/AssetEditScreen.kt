@@ -3,6 +3,7 @@ package media.qimeng.app.feature.detail
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -37,6 +38,7 @@ import media.qimeng.app.core.model.DetailAuthor
 import media.qimeng.app.core.ui.component.QimengAuthorSuggestSection
 import media.qimeng.app.core.ui.component.QimengCapsuleTextField
 import media.qimeng.app.core.ui.component.QimengMessageCard
+import media.qimeng.app.core.ui.component.QimengSegPill
 import media.qimeng.app.core.ui.component.QimengSourceSection
 import media.qimeng.app.core.ui.component.QimengTopBar
 import media.qimeng.app.core.ui.theme.QimengDimens
@@ -300,30 +302,29 @@ private fun FileNameEditSection(
                 }
             }
             if (state.nameSuggestions.isNotEmpty()) {
-                Card(
+                Surface(
+                    shape = RoundedCornerShape(QimengDimens.CardCornerRadius),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    ),
                 ) {
-                    Column(modifier = Modifier.padding(vertical = 4.dp)) {
-                        state.nameSuggestions.forEach { base ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { viewModel.pickFileNameSuggestion(base) }
-                                    .padding(horizontal = 12.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text(
+                    Column(
+                        modifier = Modifier.padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Text(
+                            text = "推荐文件名（点击采用）：",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            state.nameSuggestions.forEach { base ->
+                                QimengSegPill(
                                     text = base + state.extension,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    modifier = Modifier.weight(1f),
-                                )
-                                Text(
-                                    text = "点击采用",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    selected = false,
+                                    onClick = { viewModel.pickFileNameSuggestion(base) },
                                 )
                             }
                         }
