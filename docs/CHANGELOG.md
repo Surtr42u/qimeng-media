@@ -11,6 +11,19 @@
 
 
 
+## refactor(app): 作者联想改胶囊流——与文件名联想统一视觉，自锚浮层大面板整体退役（2026-10-09 第五百一十二笔）
+
+执行 AI：DeepSeek-V4.1-Flash（主代理）
+
+- **背景与需求**（用户拍板）：「把添加作者这种的对齐文件名那种」——文件名联想是输入框下方一排自适应换行的小胶囊（`FlowRow` + `QimengSegPill`，第五百零八笔重构后的形态），作者联想却仍是自锚浮层大面板（夸克式中线覆盖 + 弧形补块 + 自定义定位器），两处输入联想视觉两套、观感割裂。
+- **改动内容**（`android/core/ui/.../component/QimengAuthorSourceSection.kt`，组件单源→三处调用点同时生效）：
+  1. **联想候选改胶囊流**：输入非空时在输入框正下方渲染 `FlowRow` + `QimengSegPill`（点选即确定），与文件名联想同组件、同间距（6dp）、同「点击采用」语义；「已选作者 / 将新建作者」确定态胶囊与回车新建链路一字未动。
+  2. **浮层载体整体退役**（净删 231 行）：`AuthorSuggestionMenu`、`AuthorSuggestionListPanel`、`AuthorSuggestionYieldZone`（弧形补块 Canvas）、`AuthorSuggestionPopupPositionProvider` 与 `MENU_*` 常量全部删除；随之清理 26 条失效 import。**保留 `getValue`/`setValue`**——`var ... by rememberSaveable` 委托的隐式引用，源码里不出现字面量，静态扫「未引用 import」会误判并导致编译失败（本次实测踩过一次，已加注释防复发）。
+  3. **副文案取舍**：胶囊只承载作者名（与文件名胶囊同口径：胶囊不带副文案）；文件数仍在空输入种子列表（`QimengAuthorSeedList`）按原「displayName + N 个文件」双行口径可见。
+  4. 影响面＝三处调用点：上传页批次作者、资产编辑页添加作者、相册筛选面板作者联想。
+- **验证结论**：`:core:ui:compileDebugKotlin` + 三个消费模块（`:feature:upload`/`:feature:detail`/`:feature:all`）`testDebugUnitTest` 全绿；`:app:assembleRelease` 重建（26.3MB）后覆盖装机真机 真机——签名一致、App 数据不动，进程与内嵌服务端在册、logcat 无崩溃。
+- **文档**：CHANGELOG.md（本条）。
+
 ## chore(ci): 云端出包流水线——手动触发一次出「内嵌 arm64 release 装机包」（本机设备不稳期间的一次性通道）（2026-10-09 第五百一十一笔）
 
 执行 AI：DeepSeek-V4.1-Flash（主代理）
