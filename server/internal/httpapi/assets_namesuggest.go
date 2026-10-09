@@ -12,6 +12,7 @@ import (
 
 	"qimeng-media/server/internal/filing"
 	"qimeng-media/server/internal/httpapi/gen"
+	"qimeng-media/server/internal/sourcematcher"
 )
 
 // GetApiV1AssetsNameSuggestions 作品名序号联想（上传暂存作品名输入框）：
@@ -50,7 +51,12 @@ func (s *Server) GetApiV1AssetsNameSuggestions(w http.ResponseWriter, r *http.Re
 	for _, row := range rows {
 		names = append(names, row.FileName)
 	}
+
+	related := sourcematcher.FindBuiltinRelatedTerms(params.Q)
+	extraTerms := append([]string{}, related.CharacterAliases...)
+	extraTerms = append(extraTerms, related.SourceVariants...)
+
 	writeJSON(w, http.StatusOK, gen.NameSuggestions{
-		Suggestions: filing.SuggestSeriesNames(names, params.Q),
+		Suggestions: filing.SuggestSeriesNames(names, params.Q, extraTerms...),
 	})
 }

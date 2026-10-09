@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"qimeng-media/server/internal/httpapi/gen"
+	"qimeng-media/server/internal/sourcematcher"
 	"qimeng-media/server/internal/store/db"
 )
 
@@ -64,14 +65,58 @@ func (s *Server) GetApiV1SearchSuggestions(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	items := make([]gen.SearchSuggestion, 0, len(rows))
+	seenItems := make(map[string]bool)
 	for _, row := range rows {
-		// Name 各分支源列均 NOT NULL（IS NOT NULL 守卫/表约束），Valid 恒真；
-		// NullString 是 sqlc 对 UNION 非首分支字面量的保守定型。
-		items = append(items, gen.SearchSuggestion{
+		item := gen.SearchSuggestion{
 			Type: gen.SearchSuggestionType(row.SuggestionType),
 			Name: row.Name.String,
-		})
+		}
+		key := string(item.Type) + ":" + item.Name
+		seenItems[key] = true
+		items = append(items, item)
 	}
+
+	if len(items) < limit {
+		related := sourcematcher.FindBuiltinRelatedTerms(q)
+		for _, char := range related.CanonicalCharacters {
+			if len(items) >= limit {
+				break
+			}
+			key := string(gen.SearchSuggestionTypeCharacter) + ":" + char
+			if seenItems[key] {
+				continue
+			}
+			var exists int
+			err := s.conn.QueryRowContext(r.Context(), "SELECT 1 FROM asset_characters WHERE character_name = ? LIMIT 1", char).Scan(&exists)
+			if err == nil && exists == 1 {
+				seenItems[key] = true
+				items = append(items, gen.SearchSuggestion{
+					Type: gen.SearchSuggestionTypeCharacter,
+					Name: char,
+				})
+			}
+		}
+
+		for _, src := range related.CanonicalSources {
+			if len(items) >= limit {
+				break
+			}
+			key := string(gen.SearchSuggestionTypeSource) + ":" + src
+			if seenItems[key] {
+				continue
+			}
+			var exists int
+			err := s.conn.QueryRowContext(r.Context(), "SELECT 1 FROM assets WHERE source = ? LIMIT 1", src).Scan(&exists)
+			if err == nil && exists == 1 {
+				seenItems[key] = true
+				items = append(items, gen.SearchSuggestion{
+					Type: gen.SearchSuggestionTypeSource,
+					Name: src,
+				})
+			}
+		}
+	}
+
 	writeJSON(w, http.StatusOK, gen.SearchSuggestions{Items: items})
 }
 

@@ -67,7 +67,8 @@ func TestSuggestSeriesNames(t *testing.T) {
 		{"空 q → 空列表", exampleNames, "", []string{}},
 		{"纯空白 q → 空列表", exampleNames, "   ", []string{}},
 		{"无命中 → 空列表", exampleNames, "不存在", []string{}},
-		{"空库 → 空列表", nil, "守望先锋", []string{}},
+		{"dva 模糊匹配包含点的 D.Va No.01", []string{"守望先锋 D.Va No.01.mp4"}, "dva", []string{"守望先锋 D.Va No.02"}},
+		{"玛莲妮亚真名直接检索下一序号", []string{"艾尔登法环 玛莲妮亚 01.mp4"}, "玛莲妮亚", []string{"艾尔登法环 玛莲妮亚 02"}},
 		{"点文件按无扩展名处理", []string{".gitignore"}, ".gitigno", []string{}},
 	}
 	for _, c := range cases {
@@ -78,6 +79,15 @@ func TestSuggestSeriesNames(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("女武神别名扩展检索命中玛莲妮亚文件", func(t *testing.T) {
+		names := []string{"艾尔登法环 玛莲妮亚 01.mp4", "艾尔登法环 玛丽卡 01.mp4"}
+		got := SuggestSeriesNames(names, "女武神", "玛莲妮亚", "Malenia")
+		want := []string{"艾尔登法环 玛莲妮亚 02"}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("期望 %#v，实际 %#v", want, got)
+		}
+	})
 }
 
 // TestSuggestSeriesNamesDeterministic：相同输入不同顺序 → 相同建议

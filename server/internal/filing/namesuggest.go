@@ -29,16 +29,27 @@ import (
 const maxNameSuggestions = 8
 
 // SuggestSeriesNames 作品名序号联想：names 是库内现存文件名（含扩展名），
-// q 是用户输入（不带扩展名，防御去扩展名）。
+// q 是用户输入（不带扩展名，防御去扩展名），extraQueries 可选关联别名/变体检索词。
 // 返回建议基名（不含扩展名），最多 maxNameSuggestions 条。
-func SuggestSeriesNames(names []string, q string) []string {
+func SuggestSeriesNames(names []string, q string, extraQueries ...string) []string {
 	qBase := stripExt(strings.TrimSpace(q))
 	qNorm := asciiLower(normNameBase(qBase))
 	qKey := strings.ReplaceAll(qNorm, " ", "")
-	if qKey == "" {
+	qFuzzy := cleanFuzzy(qBase)
+	if qKey == "" && qFuzzy == "" {
 		return []string{}
 	}
 	qTokens := strings.Fields(qNorm)
+
+	extraFuzzies := make([]string, 0, len(extraQueries))
+	seenExtra := make(map[string]bool)
+	for _, eq := range extraQueries {
+		ef := cleanFuzzy(eq)
+		if ef != "" && ef != qFuzzy && !seenExtra[ef] {
+			seenExtra[ef] = true
+			extraFuzzies = append(extraFuzzies, ef)
+		}
+	}
 
 	type matchedFile struct {
 		base      string
@@ -64,8 +75,9 @@ func SuggestSeriesNames(names []string, q string) []string {
 
 		norm := asciiLower(normNameBase(base))
 		normNoSpace := strings.ReplaceAll(norm, " ", "")
+		baseFuzzy := cleanFuzzy(base)
 
-		tier := calcMatchTier(norm, normNoSpace, qKey, qTokens)
+		tier := calcMatchTier(norm, normNoSpace, baseFuzzy, qKey, qFuzzy, qTokens, extraFuzzies)
 		if tier == 0 {
 			continue
 		}
@@ -83,16 +95,14 @@ func SuggestSeriesNames(names []string, q string) []string {
 				cleanNorm := asciiLower(normNameBase(cleanBase))
 				cleanNoSpace := strings.ReplaceAll(cleanNorm, " ", "")
 				// 若去除修饰后与 q 完全相同，不构成独立子实体
-				if cleanNoSpace == qKey {
+				if cleanNoSpace == qKey || cleanFuzzy(cleanBase) == qFuzzy {
 					continue
 				}
 				famKey = cleanNorm
 				rawPrefix = normNameBase(cleanBase)
-			} else {
-				// 若既无序号也无独立子实体词（如单词 "名单" 搜 "名"、"夕阳风景" 搜 "夕阳"）
-				if !isDistinctEntityAfterQuery(norm, qTokens, qNorm) {
-					continue
-				}
+			} else if tier <= 3 && !isDistinctEntityAfterQuery(norm, qTokens, qNorm) {
+				// 别名/出处关联命中的无序号条目允许入池；直接命中项按词边界过滤避免单词碎片
+				continue
 			}
 		}
 
@@ -309,14 +319,15 @@ func stripBracketQualifier(s string) (cleanPrefix string, qualifier string, hasQ
 	return s, "", false
 }
 
-func calcMatchTier(norm, normNoSpace, qKey string, qTokens []string) int {
-	if strings.HasPrefix(normNoSpace, qKey) {
+func calcMatchTier(norm, normNoSpace, normFuzzy, qKey, qFuzzy string, qTokens []string, extraFuzzies []string) int {
+	if (qKey != "" && strings.HasPrefix(normNoSpace, qKey)) || (qFuzzy != "" && strings.HasPrefix(normFuzzy, qFuzzy)) {
 		return 1
 	}
 	if len(qTokens) > 1 {
 		allMatch := true
 		for _, tok := range qTokens {
-			if !strings.Contains(norm, tok) {
+			tokFuzzy := cleanFuzzy(tok)
+			if !strings.Contains(norm, tok) && (tokFuzzy == "" || !strings.Contains(normFuzzy, tokFuzzy)) {
 				allMatch = false
 				break
 			}
@@ -325,10 +336,31 @@ func calcMatchTier(norm, normNoSpace, qKey string, qTokens []string) int {
 			return 2
 		}
 	}
-	if strings.Contains(normNoSpace, qKey) {
+	if (qKey != "" && strings.Contains(normNoSpace, qKey)) || (qFuzzy != "" && strings.Contains(normFuzzy, qFuzzy)) {
 		return 3
 	}
+	for idx, ef := range extraFuzzies {
+		if ef == "" {
+			continue
+		}
+		if strings.HasPrefix(normFuzzy, ef) {
+			return 10 + idx
+		}
+		if strings.Contains(normFuzzy, ef) {
+			return 20 + idx
+		}
+	}
 	return 0
+}
+
+func cleanFuzzy(s string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(s) {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || unicode.Is(unicode.Han, r) {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 type nameFamily struct {

@@ -11,6 +11,24 @@
 
 
 
+## feat(api/server): 文件名推荐别名/出处反查打通——只输角色名·别名·出处昵称即可命中「出处 角色 序号」族（2026-10-09 第五百零九笔）
+
+执行 AI：DeepSeek-V4.1-Flash（主代理）
+
+- **背景与需求**：
+  1. 第五百零八笔把推荐从 cap 3 扩到 cap 8 并做了角色多样性轮转，但**匹配入口仍是字面比对**：库内文件按 `出处  角色 序号` 命名（`守望先锋  DVA 11.mp4`、`艾尔登法环  玛莲妮亚 1.mp4`），用户却按「记得角色记不住出处」的习惯只输角色名/别名（`dva`/`女武神`）或出处昵称（`老头环`）——**真实库实测（`qimeng-data/qimeng.db`，7056 个现存文件名）这些输入的整名前缀命中数全为 0**，推荐完全不出，用户截图反馈的「没生效」即此；
+  2. 词表里本就存着等价写法（`DVA` 的别名含 `D.Va`/`Dva`/`宋哈娜`/`Hana`，`玛莲妮亚` 的别名含 `女武神`/`Malenia`，`艾尔登法环` 的变体含 `老头环`/`Elden Ring`），缺的是**从用户输入反查这些等价写法的引擎**——词表层与联想层此前没有任何通路。
+- **改动内容**：
+  1. **别名/出处反查引擎**（`server/internal/sourcematcher/related.go` 新增，纯函数、无 IO）：`CleanFuzzyKey`（去标点/分隔符/空白后小写——`D.Va`/`d.va`/`dva` 同键）；`FindBuiltinRelatedTerms`（在冻结内置 133 组上反查）；`(m *Matcher) FindRelatedTerms`（走运行期索引快照，**含自定义词表层**，与扫描/富化同一份词表）；返回结构化 `RelatedTerms`（角色规范名/角色别名/出处规范名/出处变体/汇总词）供调用方按需取档。
+  2. **联想算法接入关联词**（`server/internal/filing/namesuggest.go`）：`SuggestSeriesNames(names, q, extraQueries ...string)`；匹配梯队补 cleanFuzzy 形态（整名去标点前缀、多词 token 全包含、去标点子串），且**关联词命中（梯队 >3）不受「无序号词边界过滤」限制**——库内单文件角色因此也能形成推荐（直接命中项仍按词边界过滤，避免「名单」搜「名」这类碎片）。
+  3. **双端点接线**：`GET /assets/name-suggestions`（handler 取角色别名 + 出处变体交给纯函数）；`GET /search/suggestions`（补全条数不足 limit 时用反查出的规范角色/规范出处补位，**且逐条做库内存在性校验**——别名不是库里的列值，不校验会补出点了没结果的死候选）。
+- **验证结论**：
+  - `go test ./...`（server 全包）全绿（`internal/httpapi` 22.6s、`internal/filing`/`internal/sourcematcher` 全绿）；
+  - **真实库端到端复核**（复制 `qimeng-data/qimeng.db` 到 `build/verify-data` 起服务端实测，不碰线上库）：库「1  3D」输 `dva` 首条 `守望先锋  DVA 18`、输 `女武神`/`Malenia` 出 `艾尔登法环  玛莲妮亚 2`、输 `玛莲妮亚` 首条即 `艾尔登法环  玛莲妮亚 2`、输 `老头环` 出 `艾尔登法环  玛丽卡 14`；库「1 图集」输 `dva` 出 `守望先锋  DVA 8`、输 `雾子` 出 `守望先锋  雾子 13`；
+  - 搜索框补全实测：`女武神` → `character:玛莲妮亚 + source:艾尔登法环`；`老头环` → `source:艾尔登法环`；`dva` → `character:DVA + source:守望先锋`；
+  - **内嵌服务端重出并指纹核对**：`make server-android-arm64` 交叉编译刷新 `jniLibs/arm64-v8a/libqimeng.so`（旧文件停在 2026-10-04 23:16——上轮「APK 里塞的仍是旧服务端」的根因），`:app:assembleRelease` 重建 APK（26.3MB）；解包核对内嵌服务端含本轮新符号（`FindBuiltinRelatedTerms`/`CleanFuzzyKey`/`RelatedTerms`/`calcMatchTier`）且**不含**上一轮误落在 master 的符号——指纹与符号双向证明本次装机包确为分支代码。
+- **文档**：DOMAIN_RULES.md §9（别名/出处反查联想规则入册）、GUIDE_API.md（name-suggestions 行补反查口径）、CHANGELOG.md（本条）。
+
 ## feat(api/app/server): 文件名推荐多角色多样性轮转与增强序号识别（2026-10-09 第五百零八笔）
 
 执行 AI：Gemini-3.8-Flash（主代理）
