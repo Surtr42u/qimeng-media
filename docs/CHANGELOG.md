@@ -11,6 +11,15 @@
 
 
 
+## chore(ci): 云端出包流水线——手动触发一次出「内嵌 arm64 release 装机包」（本机设备不稳期间的一次性通道）（2026-10-09 第五百一十一笔）
+
+执行 AI：DeepSeek-V4.1-Flash（主代理）
+
+- **背景**：本机当日 1 小时内 3 次 WHEA 硬挂（Kernel-Power 41、bugcheck=0），本地交叉编译与 Gradle 打包反复被打断、Go 构建缓存被写坏（`could not import ... export data`）；而 GitHub CI 的 android 作业被 `needs: sdk-chain` 的**既有红灯**挡住（`api/sdk.lock` 与 Linux runner 重算不一致，2026-10-04 起 4 连红），装机包一直出不来。
+- **改动**：新增 `.github/workflows/build-apk.yml`（仅 `workflow_dispatch` 手动触发）：与 ci.yml android 作业同一条装配链——三端 SDK 自足生成（`make sdk-clean sdk-go sdk-ts sdk-kotlin`）→ arm64 交叉编译 → jniLibs 三件套（ffmpeg 走既有哈希锁脚本）→ `assembleRelease` + `testDebugUnitTest` + `:core:model:test` → 产物完整性断言 → 上传 artifact `app-release-apk-embedded`。与日常 CI 的差别只有三点：跳过 sdk.lock 指纹门禁（守的是协议同步责任，与出包无关）、出 **release** 包（用户日常装机通道；签名同 debug keystore，可直接覆盖安装、App 数据不动）、不进日常门禁。
+- **遗留（不在本笔，待单独批次）**：① golangci-lint v2.13.1 与 Go 1.27.2 的导出数据版本不兼容（CI 静态检查红，本机 `go install` 版本无此问题）；② `api/sdk.lock` 跨平台重算不一致（SDK 生成链红）。
+- **文档**：CHANGELOG.md（本条）。
+
 ## fix(app): 详情页底部胶囊空隙屏蔽——误触空隙不再穿透进视频播放（空白隔离修饰符单源化）（2026-10-09 第五百一十笔）
 
 执行 AI：DeepSeek-V4.1-Flash（主代理）

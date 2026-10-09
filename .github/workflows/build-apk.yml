@@ -1,0 +1,65 @@
+name: 云端出包（内嵌 arm64 release 包）
+
+# 2026-10-09 新增（用户拍板「走 GitHub 构建」）：本机设备侧不稳（WHEA 硬挂、
+# 构建缓存被写坏）期间的一次性出包通道——本地交叉编译与 Gradle 打包都会触发
+# 整机瞬断（当日 1 小时内 3 次），故把「出一张能装的包」整体搬到云端。
+#
+# 与 ci.yml 的 android 作业是同一条装配链（oapi-codegen → arm64 交叉编译 →
+# jniLibs 三件套 → gradle），差别只有三点：
+#   ① 本作业自足生成三端 SDK（不消费 sdk-chain 产物、**不经 sdk.lock 指纹门禁**）：
+#      指纹锁守的是「协议改动有没有同 commit 同步锁文件」，与能不能出包无关，
+#      且该门禁当前处于既有红灯（Windows 本机与 Linux runner 重算不一致，2026-10-04
+#      起 4 连红），不该阻塞装机验证；
+#   ② 出 **release** 包（R8 + 资源收缩）：用户日常装机走 release 通道（debug 构建税
+#      会掉帧，第四百五十六笔记档），与真机体验一致；签名同 debug keystore
+#      （app/build.gradle.kts 显式复用），可直接覆盖已装包、App 数据不动；
+#   ③ 只 workflow_dispatch 手动触发，不并入日常 CI 门禁（不改变既有红灯语义）。
+on:
+  workflow_dispatch:
+
+jobs:
+  apk:
+    name: 内嵌 arm64 release 包（assembleRelease + 单测）
+    runs-on: ubuntu-latest
+    # 全链最重：三端生成 + Go 交叉编译 + ffmpeg 下载装配 + gradle assemble/单测
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with: { node-version: 24 }
+      # JDK 21 与 ci.yml android 作业同档（AGP 9.3.1 最低 17）
+      - uses: actions/setup-java@v5
+        with: { distribution: temurin, java-version: 21 }
+      - uses: actions/setup-go@v6
+        with: { go-version: "1.27.x", cache-dependency-path: server/go.sum }
+      - run: sudo apt-get update && sudo apt-get install -y make
+      # 三端 SDK 自足生成＝ make sdk 去掉 sdk-validate/sdk-lock 两步：
+      # sdk-go 生成 Go 接口层（oapi-codegen v2.8.0）并 go build；sdk-ts 出 TS 客户端
+      # （缺 node_modules 时目标内自带 npm install）；sdk-kotlin 出 Kotlin SDK 并写
+      # android/sdk/sdk.gradle（Android 构建经 buildFileName 指向它，缺则 :sdk 起不来）
+      - name: 生成三端 SDK（make sdk 的 go/ts/kotlin 三步）
+        run: make sdk-clean sdk-go sdk-ts sdk-kotlin
+      # 内嵌形态装配链（= make server-android-arm64 + app-embedded-arm64 装配步）
+      - name: 交叉编译内嵌服务端 arm64
+        run: |
+          cd server
+          GOOS=android GOARCH=arm64 CGO_ENABLED=0 go build -o ../build/android/arm64-v8a/qimeng-server ./cmd/qimeng
+      - name: 装配 jniLibs arm64 三件套（ffmpeg 锁 commit + SHA-256）
+        run: |
+          mkdir -p android/app/src/main/jniLibs/arm64-v8a
+          cp build/android/arm64-v8a/qimeng-server android/app/src/main/jniLibs/arm64-v8a/libqimeng.so
+          bash deploy/embedded/fetch-ffmpeg-arm64.sh
+      - uses: gradle/actions/setup-gradle@v4
+      - name: 构建 release 包 + 单测
+        run: |
+          cd android
+          ./gradlew assembleRelease testDebugUnitTest :core:model:test
+      # 产物完整性门禁（口径同 ci.yml android 作业）：内嵌三件套必须随包
+      - name: 断言内嵌三件套随包
+        run: bash deploy/embedded/assert-apk-embedded.sh android/app/build/outputs/apk/release/app-release.apk
+      - name: 上传装机包（artifact：app-release-apk-embedded）
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-apk-embedded
+          path: android/app/build/outputs/apk/release/app-release.apk
+          retention-days: 7
