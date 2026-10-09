@@ -42,6 +42,8 @@ data class AssetDetail(
     val height: Int?,
     val tags: List<DetailTag>,
     val authors: List<DetailAuthor>,
+    /** 所属库 ID（协议 AssetDetail.libraryId；多库定位与联想接口使用） */
+    val libraryId: String = "",
     /** 当前所在目录（库内相对路径，null/空串 = 库根；协议 AssetDetail.directory） */
     val directory: String? = null,
     /**

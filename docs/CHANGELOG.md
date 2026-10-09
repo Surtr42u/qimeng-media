@@ -9,6 +9,37 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 
+
+## feat(app): 资产编辑页全面融合文件名编辑与作品名序号联想（2026-10-09 第五百零六笔）
+
+执行 AI：Gemini-3.8-Flash（主代理）
+
+- **背景与需求**：
+  1. 用户体验第五百零五笔后提出进一步优化诉求：“最后再优化一下,给编辑作者与来源这个把文件名编辑啥的也加入把”。
+  2. 交互与架构诉求分析：
+     - **资产编辑页（AssetEditScreen）原仅支持作者与来源维护**：详情页进入的“编辑作者与来源”页之前仅能维护作者全集与逐作者来源，资产文件名仅在模型内部作为标题读取展示，用户无法在此快速重命名；
+     - **文件名编辑与作品名/序号联想一体化体验**：对齐上传界面的最新体验，支持基名自由编辑（清空不回弹）、扩展名锁定徽标、输入基名防抖查询服务端 `/api/v1/assets/name-suggestions` 药丸建议、一键点选采用；
+     - **重命名与关联保存安全闭环**：保存时若文件名发生改变且有效，调用 `detailRepository.moveAsset(POST /assets/{id}/move)` 并在原目录执行重命名；对目标重名冲突（`MoveConflictException` 409）提供明确友好的提示反馈。
+- **改动内容**：
+  1. **资产领域模型扩展**（`AssetDetailModels.kt`、`SdkDetailMappers.kt`）：
+     - `AssetDetail` 增加 `libraryId: String = ""` 字段，`SdkDetailMappers` 将 OpenAPI 响应中的 `detail.libraryId` 正确映射透传，为作品名联想提供精准的目标库上下文。
+  2. **资产编辑状态与业务编排**（`AssetEditViewModel.kt`）：
+     - `AssetEditUiState` 增加 `libraryId`、`originalFileName`、`currentBaseName`、`extension`、`currentDirectory`、`nameSuggestions`、`fileNameChanged` 字段；
+     - 派生 `effectiveFileName`：删空时安全回退 `originalFileName`；`canSave` 门控整合文件名改动；
+     - 实现 `onFileNameChange`（200ms 防抖拉取作品名建议）与 `pickFileNameSuggestion`；
+     - `save()` 编排在保存时先执行 `moveAsset`（若文件名改动），再整集替换作者与逐作者更新来源，捕获 `MoveConflictException` 提示“目标目录已存在同名文件”。
+  3. **资产编辑界面呈现**（`AssetEditScreen.kt`）：
+     - 新增 `FileNameEditSection` 卡片，排布在“已关联作者”上方；
+     - 输入面采用 `QimengCapsuleTextField`，右侧展示扩展名与“锁定”徽标；
+     - 联想建议展示为优雅候选药丸卡片，点击即采用回填。
+  4. **单元测试锁定**（`AssetEditViewModelTest.kt`）：
+     - 增加装配回显文件名与扩展名、删空不回弹、防抖拉取建议并点选采用、仅修改文件名触发 `moveAsset`、重名冲突友好报错等完整测试矩阵。
+- **验证结论**：
+  - `:core:model:test` 与 `:feature:detail:testDebugUnitTest` 单元测试 100% 通过；
+  - `:app:assembleDebug` 构建成功；
+  - 成功通过 ADB 将最新 Debug APK 安装部署至用户的 Android 真机设备。
+- **文档**：CHANGELOG.md（本条）。
+
 ## feat(app): 上传文件名清空防回弹/作品名序号联想接回/作者联想边界防超界与待测文件离线验证（2026-10-09 第五百零五笔）
 
 执行 AI：Gemini-3.8-Flash（主代理）

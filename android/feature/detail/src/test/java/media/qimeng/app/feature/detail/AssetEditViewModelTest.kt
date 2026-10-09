@@ -62,10 +62,15 @@ class AssetEditViewModelTest {
         return Triple(viewModel, detailRepo, authorRepo)
     }
 
-    private fun detail(authors: List<DetailAuthor>) = AssetDetail(
+    private fun detail(
+        authors: List<DetailAuthor>,
+        fileName: String = "asset-1.jpg",
+        libraryId: String = "lib-1",
+        directory: String? = "sub",
+    ) = AssetDetail(
         id = "asset-1",
-        fileName = "asset-1.jpg",
-        title = "asset-1.jpg",
+        fileName = fileName,
+        title = fileName,
         mediaType = MediaKind.IMAGE,
         sizeBytes = null,
         modifiedAtMs = null,
@@ -84,6 +89,8 @@ class AssetEditViewModelTest {
         height = null,
         tags = emptyList(),
         authors = authors,
+        libraryId = libraryId,
+        directory = directory,
     )
 
     // ---- 装配回显 ----
@@ -103,6 +110,107 @@ class AssetEditViewModelTest {
         assertNull(state.errorMessage)
         // 词表取自 GET /authors/source-vocabulary
         assertTrue(authorRepo.vocabularyCalled)
+    }
+
+    @Test
+    fun `装配回显文件名基名与扩展名`() {
+        val (viewModel, _, _) = newViewModel(
+            detailRepo = FakeEditDetailRepository().apply {
+                detailResult = detail(authors = emptyList(), fileName = "测试视频.mp4", libraryId = "lib-test")
+            },
+        )
+        val state = viewModel.uiState.value
+        assertEquals("测试视频.mp4", state.assetTitle)
+        assertEquals("测试视频", state.currentBaseName)
+        assertEquals(".mp4", state.extension)
+        assertEquals("lib-test", state.libraryId)
+        assertFalse(state.fileNameChanged)
+        assertFalse(state.canSave)
+    }
+
+    @Test
+    fun `文件名输入变化支持清空且不自动回弹原名`() {
+        val (viewModel, _, _) = newViewModel(
+            detailRepo = FakeEditDetailRepository().apply {
+                detailResult = detail(authors = emptyList(), fileName = "原名.mp4")
+            },
+        )
+        viewModel.onFileNameChange("")
+        val state = viewModel.uiState.value
+        assertEquals("", state.currentBaseName)
+        // 基名清空时 effectiveFileName 安全回退原完整名，且空基名不解锁保存
+        assertEquals("原名.mp4", state.effectiveFileName)
+        assertFalse(state.canSave)
+
+        viewModel.onFileNameChange("新名字")
+        val state2 = viewModel.uiState.value
+        assertEquals("新名字", state2.currentBaseName)
+        assertEquals("新名字.mp4", state2.effectiveFileName)
+        assertTrue(state2.fileNameChanged)
+        assertTrue(state2.canSave)
+    }
+
+    @Test
+    fun `文件名输入防抖拉取作品名序号联想并点选采用`() {
+        val suggestRepo = FakeUploadRepository().apply {
+            suggestNamesResult = { q -> if (q == "碧蓝航线") listOf("碧蓝航线 02", "碧蓝航线 (3)") else emptyList() }
+        }
+        val (viewModel, _, _) = newViewModel(
+            detailRepo = FakeEditDetailRepository().apply {
+                detailResult = detail(authors = emptyList(), fileName = "01.mp4", libraryId = "lib-azur")
+            },
+            suggestRepo = suggestRepo,
+        )
+
+        viewModel.onFileNameChange("碧蓝航线")
+        driveIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(listOf("碧蓝航线 02", "碧蓝航线 (3)"), state.nameSuggestions)
+
+        viewModel.pickFileNameSuggestion("碧蓝航线 02")
+        val pickedState = viewModel.uiState.value
+        assertEquals("碧蓝航线 02", pickedState.currentBaseName)
+        assertEquals("碧蓝航线 02.mp4", pickedState.effectiveFileName)
+        assertTrue(pickedState.nameSuggestions.isEmpty())
+        assertTrue(pickedState.canSave)
+    }
+
+    @Test
+    fun `仅修改文件名时触发 moveAsset 保存且成功返回`() {
+        val (viewModel, detailRepo, _) = newViewModel(
+            detailRepo = FakeEditDetailRepository().apply {
+                detailResult = detail(authors = emptyList(), fileName = "旧名.mp4", directory = "movies")
+            },
+        )
+        viewModel.onFileNameChange("新名")
+        assertTrue(viewModel.uiState.value.canSave)
+
+        viewModel.save()
+        driveIdle()
+
+        val state = viewModel.uiState.value
+        assertTrue(state.saved)
+        assertFalse(state.saving)
+        assertEquals(1, detailRepo.moveCalls.size)
+        assertEquals(Triple("asset-1", "movies", "新名.mp4"), detailRepo.moveCalls.single())
+    }
+
+    @Test
+    fun `修改文件名同名冲突抛出 MoveConflictException 时呈现针对性错误提示`() {
+        val (viewModel, _, _) = newViewModel(
+            detailRepo = FakeEditDetailRepository().apply {
+                detailResult = detail(authors = emptyList(), fileName = "旧名.mp4")
+                moveError = media.qimeng.app.core.data.repository.MoveConflictException()
+            },
+        )
+        viewModel.onFileNameChange("冲突名")
+        viewModel.save()
+        driveIdle()
+
+        val state = viewModel.uiState.value
+        assertFalse(state.saved)
+        assertEquals("目标目录已存在同名文件", state.errorMessage)
     }
 
     @Test
@@ -300,6 +408,13 @@ private class FakeEditDetailRepository : DetailRepository {
         TimelineTag(id = "t", timeMillis = timeMillis, name = name, color = null)
 
     override suspend fun deleteTimelineTag(assetId: String, tagId: String) = Unit
-    override suspend fun moveAsset(assetId: String, targetDir: String, newName: String?) = Unit
+    val moveCalls = mutableListOf<Triple<String, String, String?>>()
+    var moveError: Exception? = null
+
+    override suspend fun moveAsset(assetId: String, targetDir: String, newName: String?) {
+        moveError?.let { throw it }
+        moveCalls += Triple(assetId, targetDir, newName)
+    }
+
     override suspend fun deleteAsset(assetId: String) = Unit
 }

@@ -1,5 +1,6 @@
 package media.qimeng.app.feature.detail
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -14,6 +15,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.LoadingIndicator
@@ -33,6 +35,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import media.qimeng.app.core.model.DetailAuthor
 import media.qimeng.app.core.ui.component.QimengAuthorSuggestSection
+import media.qimeng.app.core.ui.component.QimengCapsuleTextField
 import media.qimeng.app.core.ui.component.QimengMessageCard
 import media.qimeng.app.core.ui.component.QimengSourceSection
 import media.qimeng.app.core.ui.component.QimengTopBar
@@ -103,6 +106,9 @@ private fun AssetEditForm(
                 container = MaterialTheme.colorScheme.tertiaryContainer,
             ) { viewModel.dismissNotice() }
         }
+
+        // —— 文件名编辑（基名输入 + 扩展名锁定 + 作品名/序号联想） ——
+        FileNameEditSection(state = state, viewModel = viewModel)
 
         // —— 已关联作者 ——
         Surface(
@@ -243,3 +249,88 @@ private fun AuthorEditRow(
         }
     }
 }
+
+/**
+ * 文件名编辑区：基名输入框（可清空自由键入，不回弹原名）+ 扩展名锁定后缀 + 作品名/序号联想候选药丸。
+ * 业务与防抖全在 [AssetEditViewModel]（ADR-0008 铁律 7）。
+ */
+@Composable
+private fun FileNameEditSection(
+    state: AssetEditUiState,
+    viewModel: AssetEditViewModel,
+) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(QimengDimens.SpaceM),
+        ) {
+            Text(
+                text = "文件名",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                QimengCapsuleTextField(
+                    value = state.currentBaseName,
+                    onValueChange = viewModel::onFileNameChange,
+                    placeholder = "输入文件名",
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                )
+                if (state.extension.isNotEmpty()) {
+                    Text(
+                        text = state.extension,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        text = "锁定",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            if (state.nameSuggestions.isNotEmpty()) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    ),
+                ) {
+                    Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                        state.nameSuggestions.forEach { base ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { viewModel.pickFileNameSuggestion(base) }
+                                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = base + state.extension,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                Text(
+                                    text = "点击采用",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
