@@ -68,6 +68,9 @@ export interface AssetListParams {
   dateTo?: string
   yearFrom?: number
   yearTo?: number
+  /** 请求服务端按本地日聚合的精确计数（协议 GET /assets dateCounts，
+   *  2026-10-10 加）：日期分组页（相册）组头「今天 N 项」的数据源。 */
+  dateCounts?: boolean
 }
 
 /** 推荐流无限分页（M3 十维算法，协议 GET /recommendations；首页推荐/cos
@@ -124,6 +127,12 @@ function toSdkAssetListQuery(params: AssetListParams) {
     source: source ? [source] : undefined,
     character: character ? [character] : undefined,
     work: work ? [work] : undefined,
+    // 时区偏移恒补（协议 GET /assets tzOffsetMinutes，2026-10-10 加）：
+    // 它不是页面参数而是设备属性——两个消费点同源，① dateCounts 的日界分桶
+    // 必须与浏览器本地日一致（否则组头计数与分组劈叉）；② dateFrom/dateTo 的
+    // 「本地日历日」解释（缺省 0=UTC 与本地日界差一个时区）。放在 SDK 边界
+    // 而不是各页面：调用点无处可漏，Web 与 App 两端协议面语义一致。
+    tzOffsetMinutes: -new Date().getTimezoneOffset(),
   }
 }
 

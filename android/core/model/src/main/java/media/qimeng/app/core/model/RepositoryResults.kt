@@ -5,6 +5,13 @@ data class AssetPageResult(
     val items: List<MediaAsset>,
     val nextCursor: String?,
     val totalMatched: Int?,
+    /**
+     * 按设备本地日历日聚合的文件计数（协议 dateCounts；key=yyyy-MM-dd，
+     * 与 [localDayKey] 同口径）。仅首屏请求 dateCounts=true 时非空——
+     * 日期分组页组头的精确总数数据源；翻页/未请求为空 Map（组头回退
+     * 已加载条数，见 groupByDateLabel）。
+     */
+    val dateCounts: Map<String, Int> = emptyMap(),
 )
 
 /** GET /history 响应（cursor 分页） */

@@ -126,6 +126,10 @@ export default function AlbumsPage() {
       ...(mediaType ? { mediaType } : {}),
       ...panelAssetParams(panel.state),
       limit: DEFAULT_PAGE_SIZE,
+      // 日期组头精确计数（协议 2026-10-10 加）：分页只加载前若干条时，组头
+      // 「N 项」用服务端按本地日聚合的真实总数，不再拿已加载条数冒充（服务端
+      // 仅首屏计算，翻页请求带了也忽略）。tzOffsetMinutes 在 hooks 的 SDK 边界恒补。
+      dateCounts: true,
     }),
     [partition, authorParams, characterParams, mediaType, panel.state],
   )
@@ -134,6 +138,13 @@ export default function AlbumsPage() {
     data: pages, isFetching, isFetchingNextPage, isPlaceholderData, fetchNextPage, hasNextPage,
   } = useAssetsInfinite(listParams)
   const items = useMemo(() => pages?.pages.flatMap((p) => p.items ?? []) ?? [], [pages])
+
+  // 服务端按本地日精确计数（仅首页返回）→ Map<yyyy-MM-dd, 条数>；换筛选/换页
+  // 期间 pages 保留旧值（keepPreviousData），与 items 同源同寿命，不会错配。
+  const dateCounts = useMemo(() => {
+    const buckets = pages?.pages[0]?.dateCounts ?? []
+    return new Map(buckets.map((b) => [b.date, b.fileCount]))
+  }, [pages])
 
   // E3 无感加载哨兵（对齐首页 use-auto-more 语义：触底提前 6 项拉下一页）。
   // onHit 双守卫：isFetchingNextPage 防重复拉页；isPlaceholderData 前瞻防混拼
@@ -144,7 +155,8 @@ export default function AlbumsPage() {
 
   // 时间分区（原型 renderAlbumGrid）：口径单源在 lib/album-grouping.ts（ADR-0008
   // 规则抽离）；胶囊/排序切换只改变 items，分组是其上的纯函数。
-  const groups = useMemo(() => groupAlbumsByDate(items), [items])
+  // dateCounts：服务端按本地日精确计数（组头数字不再随分页滚动跳增）。
+  const groups = useMemo(() => groupAlbumsByDate(items, dateCounts), [items, dateCounts])
 
   // F5 批次导航快照 + 叠加打开：照 HomePage StreamCards 的 navContext 组装。
   // 快照序 = 用户看到的平铺序（分组序拼接——组间按组首时间降序、组内保原序），
@@ -361,7 +373,7 @@ export default function AlbumsPage() {
             {g.label ? (
               <h3 className="album-group-title">
                 {g.label}
-                <span className="album-group-count">{g.assets.length} 项</span>
+                <span className="album-group-count">{g.total} 项</span>
               </h3>
             ) : null}
             <div className="media-grid">{g.assets.map(renderCard)}</div>

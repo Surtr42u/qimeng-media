@@ -5,6 +5,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import media.qimeng.app.core.model.AssetPageResult
 import media.qimeng.app.core.model.AssetQuery
+import media.qimeng.app.core.model.deviceTzOffsetMinutes
 import media.qimeng.app.core.model.AuthorSummary
 import media.qimeng.app.core.model.FacetsQuery
 import media.qimeng.app.core.model.FacetsResult
@@ -95,6 +96,14 @@ class SdkMediaRepository @Inject constructor(
                 dateTo = query.dateTo,
                 yearFrom = query.yearFrom,
                 yearTo = query.yearTo,
+                // 时区偏移恒补（协议 2026-10-10 加，不是页面参数而是设备属性）：
+                // 服务端只认偏移量、不猜客户端时区，两个消费点同源——① dateCounts
+                // 的日界分桶必须与客户端 localDayKey 的本地日一致（否则组头计数
+                // 与分组劈叉）；② dateFrom/dateTo 的「本地日历日」解释（缺省 0=UTC
+                // 的旧口径与本地日界差一个时区，东八区偏 8 小时）。放在 SDK 边界
+                // 而不是各 ViewModel：调用点无处可漏，协议面语义两端一致。
+                tzOffsetMinutes = deviceTzOffsetMinutes(),
+                dateCounts = query.dateCounts,
             )
         }
         val baseUrl = apiFactory.currentBaseUrl()
@@ -102,6 +111,8 @@ class SdkMediaRepository @Inject constructor(
             items = page.items.orEmpty().map { SdkMappers.toMediaAsset(it, baseUrl) },
             nextCursor = page.nextCursor,
             totalMatched = page.totalMatched,
+            // 服务端按本地日分桶（key=yyyy-MM-dd）→ 领域侧 Map，供日期组头取精确总数
+            dateCounts = page.dateCounts.orEmpty().associate { it.date to it.fileCount },
         )
     }
 

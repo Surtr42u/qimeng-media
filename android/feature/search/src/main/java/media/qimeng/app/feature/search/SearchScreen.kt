@@ -324,9 +324,10 @@ private fun ResultPhase(
         } else {
             QimengMediaGrid(
                 // 分组 O(n) 计算包 remember（镜像 AllScreen 修复D-1）：按参与变量
-                // （items/nowMs）缓存，重组零重算、数据变化才重算——分组键=文件时间
-                sections = remember(state.items, nowMs) {
-                    state.items.groupByDateLabel(nowMs) { it.modifiedAtMs }
+                // （items/nowMs/dateCounts）缓存，重组零重算、数据变化才重算——分组键=文件时间；
+                // dateCounts=服务端按本地日精确计数（组头不再随分页跳增）
+                sections = remember(state.items, nowMs, state.dateCounts) {
+                    state.items.groupByDateLabel(nowMs, state.dateCounts) { it.modifiedAtMs }
                 },
                 columns = displayColumns,
                 animatedUrlResolver = animatedUrlResolver,

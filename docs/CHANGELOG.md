@@ -11,6 +11,27 @@
 
 
 
+## fix(app+web+server): 相册日期组头计数改为服务端按本地日精确聚合——不再拿已加载条数冒充总数（2026-10-10 第五百一十三笔）
+
+执行 AI：DeepSeek-V4.1-Flash（主代理）
+
+- **背景与痛点**（用户反馈 + 真机爬取实证）：「相册的计数，当前时间超级多时……往下滑动时才会更新文件数，导致第一眼的时候文件数错误」。真机（真机 / Asia/Shanghai）uiautomator 读控件文本实测：页头「7139 文件」（服务端 COUNT）恒正确，但日期组头「今天 120 项」在滚动几页后变 125、另一组「周三 66 项」同会话变 282——**组头数字就是「当前已加载条数」**。根因：`core/model/DateGrouping.kt` 的日期分组直接用 `assets.size`；作品/角色维在「修复D-1」已改走 `/assets/facets` 排自身精确计数，日期维当时**没有任何服务端聚合数据源**，就漏下了（Web `AlbumsPage.tsx` 同款 `g.assets.length`）。
+- **协议（铁律 1，协议先行）**：`GET /api/v1/assets` 增两个查询参数——`dateCounts`（bool，缺省 false：请求按本地日聚合计数，仅首屏计算，翻页请求忽略）与 `tzOffsetMinutes`（int，缺省 0=UTC：既是 `dateCounts` 的分桶日界，也是 `dateFrom`/`dateTo` 的本地日历日解释）；响应 `AssetPage` 增可选字段 `dateCounts: DateCountBucket[]`（`{date: yyyy-MM-dd, fileCount}`，日期降序），新增 `DateCountBucket` schema。**向后兼容**：两个参数缺省时行为逐字节不变（老客户端零感知）——加参数而非改参数。
+- **服务端**：
+  1. `browse.sql` 新增 `CountAssetsByLocalDay`：与 `CountAssetsFiltered` 同一筛选矩阵（同 WHERE 家族第 4 份，sqlc 解析器限制下的既有手抄约定），把 `COUNT(*)` 换成 `date(mtime, tz_modifier)` 分桶；mtime 存 UTC RFC3339，加偏移后 `date()` 取到的即**客户端本地日**——与客户端 `localDayKey` 同键。无 mtime/不可解析行不进任何桶（客户端「未知日期」组继续回退已加载条数）。
+  2. **新踩到的 sqlc v1.31.1 解析器限制（第 5 条，已写进 `browse.sql` 文件头）**：`GROUP BY` 里的 `sqlc.arg()` 宏**静默不展开**，生成物里留下字面 `sqlc.arg(tz_modifier)` → 运行期 `near "(": syntax error`（与 `history.sql` 记档的 HAVING 宏泄漏同族；本机锁定版本实证）。绕法＝`GROUP BY local_day` 引用 SELECT 别名（sqlc 原样透传）。另：该文件注释必须纯 ASCII——中文注释会触发 sqlc 多字节解析 bug，把**下一个**查询的边界吃错（本次实测：`SumBrowseSeconds specifies parameter ":one" without containing a RETURNING clause`），中文理由按既有约定写在 Go 装配层。
+  3. `assets_filters.go`：`parseTzOffsetMinutes`（越界 ±840 即 400 INVALID_PARAM——openapi 的 minimum/maximum 生成器不做运行期校验）、`tzModifier`/`tzDuration`（两处口径同源，都从同一个已校验整数出发）、`newAssetFilters` 增 `tzOffsetMinutes` 参数（`dateFrom`/`dateTo` 由 `.UTC()` 改为按客户端偏移换算本地日）；`assets.go` 的 `fillDateCounts`（与 `fillTotalMatched` 同形：筛选矩阵同源 `applyFilters`，失败 500 并中止）。
+  4. **顺带修复**：既有「时间」筛选（`dateFrom`/`dateTo`）此前按 **UTC 日**解释、与客户端本地日分组差一个时区（东八区偏 8 小时），本笔起由 `tzOffsetMinutes` 对齐（缺省仍 UTC，故老客户端无回归）。
+- **Android**：`AssetQuery` 增 `dateCounts`；`AssetPageResult` 增 `dateCounts: Map<String,Int>`；`DateGrouping` 增 `localDayKey`（本地日键，服务端 date 字段的客户端镜像）、`deviceTzOffsetMinutes`，`groupByDateLabel`/`groupByAlbumDim` 增 `dateCounts` 参数（命中即用真实总数，未命中回退已加载条数）；`SdkMediaRepository.assets` 在 SDK 边界**恒补** `tzOffsetMinutes`（设备属性而非页面参数——调用点无处可漏，且 dateCounts 日界与分组必须同源）。接入四页：相册（`AlbumViewModel`/`AllScreen`，分区/类型维）、收藏、搜索、作者合集（各页 `groupByDateLabel` 透传，`remember` key 补 `dateCounts`）。历史页不接：其分组键是 `lastViewedAt`（浏览时间），协议无对应聚合位——**记档为已知缺口**。
+- **Web**：`format.ts` 增 `localDayKey`；`album-grouping.ts` 的 `AlbumGroup` 增 `total`（命中服务端精确计数即用，否则回退 `assets.length`）；`AlbumsPage` 取首页 `dateCounts` 折 Map 传入并渲染 `g.total`；`use-assets.ts` 的 `toSdkAssetListQuery` 恒补 `tzOffsetMinutes`（与 App 同口径）。
+- **验证结论**：
+  1. 服务端 `go test ./... -count=1` 全包绿（新增 5 个用例：本地日分桶/UTC 缺省口径/西五区负偏移/筛选收窄/首屏限定/越界 400，并断言分桶之和 == `totalMatched`）。
+  2. **本地真库端到端**（`qimeng-data/qimeng.db` 拷贝 + 本机起服务 + dev-login，7056 资产、常规分区 782 条）：`dateCounts` 与**独立 Python/SQLite 计算**逐桶比对——tz=+480 得 129 桶、UTC 得 132 桶，**0 差异**，且分桶之和恒等于 `totalMatched`（782）；`mediaType=video` 档 405 条 / 117 桶一致；`dateFrom=dateTo=2026-09-25` 判别性用例 UTC 5 条、tz=+480 **0 条**（那 5 个文件本地已跨到 09-26，09-26 档 +480 恰为 5 条）——时区口径修复实证；`tzOffsetMinutes=900` → 400 INVALID_PARAM；翻页请求 `dateCounts`/`totalMatched` 均为 null；未请求时字段省略。
+  3. `make sdk` 三端重生成 + `api/sdk.lock` 253 条目（重算哈希稳定）。
+  4. Android `:core:model:test`、`:core:data`、`:feature:all`/`:feature:favorite`/`:feature:search`/`:feature:author` 单测全绿（新增 DateGrouping 6 例 + AlbumViewModel 首屏落地/翻页不覆盖/刷新重落地）；Web `tsc --noEmit` + `vitest run` 28 文件 291 用例全绿；`gofmt`/`oxlint` 干净。
+  5. release APK 重建成功（26,317,679 字节，内嵌服务端 `libqimeng.so` sha256 `EFA0DEBAF0902F0C…`，二进制内含新协议参数名）；**真机 真机 装机复验待手机重新连接 USB**（本次构建期间手机从 adb 掉线，装机与真机读数留待补验）。
+- **文档**：DOMAIN_RULES §8（组头计数口径 + 日界时区口径两条）、CHANGELOG.md（本条）、`browse.sql` 文件头第 5 条解析器限制。
+
 ## refactor(app): 作者联想改胶囊流——与文件名联想统一视觉，自锚浮层大面板整体退役（2026-10-09 第五百一十二笔）
 
 执行 AI：DeepSeek-V4.1-Flash（主代理）

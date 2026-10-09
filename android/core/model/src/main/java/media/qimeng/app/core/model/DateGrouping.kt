@@ -40,11 +40,29 @@ data class GridSection(
  * 组间按组首时间降序，「未知日期」组恒排最后（Web 相册页 groups 同款语义，
  * 组键用什么时间由调用方决定：相册/收藏/搜索=modifiedAt，历史页=lastViewedAt）。
  * 组头带「N 项」后缀（[groupHeaderLabel]，旧版实录逐字口径）。
+ *
+ * @param dateCounts 服务端按**本地日历日**聚合的精确计数（协议 GET /assets
+ *   dateCounts=true；key=[localDayKey] 口径）。命中即用真实总数——分页只加载
+ *   前若干条时，组头数字不再随滚动跳增（2026-10-09 真机实测：今天 120→125、
+ *   周三 66→282，都是「已加载条数」冒充总数）。未命中（未请求/翻页未带/
+ *   「未知日期」组/服务端未覆盖的日）回退组内已加载条数——绝不显示比实际
+ *   已加载更小的数字。
  */
-fun List<MediaAsset>.groupByDateLabel(nowMs: Long, timestamp: (MediaAsset) -> Long?): List<GridSection> {
+fun List<MediaAsset>.groupByDateLabel(
+    nowMs: Long,
+    dateCounts: Map<String, Int> = emptyMap(),
+    timestamp: (MediaAsset) -> Long?,
+): List<GridSection> {
     val byLabel = LinkedHashMap<String, MutableList<MediaAsset>>()
+    // 标签 → 本地日键（同标签必同日：标签由日界唯一确定；「未知日期」无键）
+    val dayKeyByLabel = HashMap<String, String>()
     for (asset in this) {
-        byLabel.getOrPut(dateLabel(timestamp(asset), nowMs)) { mutableListOf() }.add(asset)
+        val ts = timestamp(asset)
+        val label = dateLabel(ts, nowMs)
+        byLabel.getOrPut(label) { mutableListOf() }.add(asset)
+        if (ts != null && ts >= 0) {
+            dayKeyByLabel.getOrPut(label) { localDayKey(ts) }
+        }
     }
     return byLabel.entries
         .map { (label, assets) -> label to assets }
@@ -54,8 +72,29 @@ fun List<MediaAsset>.groupByDateLabel(nowMs: Long, timestamp: (MediaAsset) -> Lo
                     pair.second.maxOfOrNull { timestamp(it) ?: Long.MIN_VALUE } ?: Long.MIN_VALUE
                 },
         )
-        .map { (label, assets) -> GridSection(groupHeaderLabel(label, assets.size), assets) }
+        .map { (label, assets) ->
+            val total = dayKeyByLabel[label]?.let { dateCounts[it] } ?: assets.size
+            GridSection(groupHeaderLabel(label, total), assets)
+        }
 }
+
+/**
+ * 本地日历日键（yyyy-MM-dd，设备时区）——服务端 dateCounts 分桶键的客户端
+ * 镜像：服务端按请求 tzOffsetMinutes 把 UTC 的 mtime 折算成本地日，客户端
+ * 按同一设备时区折算，两侧同键才能对齐（:core:data 的 SDK 边界用同一个
+ * 偏移量构造 tzOffsetMinutes，见 SdkMediaRepository.assets）。
+ */
+fun localDayKey(epochMs: Long): String = formatYmd(startOfDay(epochMs))
+
+/**
+ * 设备当前时区相对 UTC 的偏移分钟数（东八区=480）——协议 GET /assets 的
+ * tzOffsetMinutes 取值来源。dateCounts 分桶与 dateFrom/dateTo 的本地日
+ * 解释共用同一个值（服务端只认偏移量，不猜客户端时区）。
+ * 每请求现算而不是缓存：DST 切换后立刻生效。
+ */
+fun deviceTzOffsetMinutes(nowMs: Long = System.currentTimeMillis()): Int =
+    java.util.TimeZone.getDefault().getOffset(nowMs) / 60_000
+
 
 /** 一天的起点（本地时区；与 Web new Date(y,m,d) 同义） */
 private fun startOfDay(epochMs: Long): Long {
@@ -103,13 +142,17 @@ private fun formatYmd(startOfDayMs: Long): String {
  *   characters 首个优先（服务端 asset_characters 一行=该资产全部角色 "+" 拼接的规范名，
  *   DOMAIN_RULES §4，故首个即完整组名），无角色按 `cosWork`，全空→「其他」（拍板条目 5）；
  * 组间按组首元素位置序（服务端 default 降序原序，LinkedHashMap 保序），「其他」组恒排末位。
+ *
+ * @param dateCounts 仅日期分组（分区/类型模式）消费：服务端按本地日聚合的
+ *   精确计数，透传给 [groupByDateLabel]（口径见其 KDoc）。
  */
 fun List<MediaAsset>.groupByAlbumDim(
     dim: AlbumDim,
     nowMs: Long,
     facetCounts: Map<String, Int> = emptyMap(),
+    dateCounts: Map<String, Int> = emptyMap(),
 ): List<GridSection> = when (dim) {
-    AlbumDim.PARTITION, AlbumDim.TYPE -> groupByDateLabel(nowMs) { it.modifiedAtMs }
+    AlbumDim.PARTITION, AlbumDim.TYPE -> groupByDateLabel(nowMs, dateCounts) { it.modifiedAtMs }
     AlbumDim.AUTHOR -> groupByFirstOccurrence(facetCounts) { authorGroupKey(it) }
     AlbumDim.CHARACTER -> groupByFirstOccurrence(facetCounts) { characterGroupKey(it) }
 }

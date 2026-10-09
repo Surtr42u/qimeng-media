@@ -296,6 +296,45 @@ class AlbumViewModelTest {
     }
 
     @Test
+    fun `首屏请求带 dateCounts 分桶落地 翻页不覆盖`() = runTest(mainDispatcherRule.testDispatcher) {
+        val repo = FakeMediaRepository()
+        val viewModel = viewModel(repo)
+        advanceUntilIdle()
+
+        // 首屏请求必须显式带 dateCounts=true（日期组头精确计数，协议 2026-10-10 加）
+        assertEquals(true, repo.assetsCalls[0].query.dateCounts)
+
+        // 服务端按本地日分桶：今天真实 125 条，分页只加载了 1 条
+        val counts = mapOf("2026-10-09" to 125, "2026-10-08" to 40)
+        repo.assetsCalls[0].gate.complete(
+            AssetPageResult(items = listOf(asset("a")), nextCursor = "c1", totalMatched = 165, dateCounts = counts),
+        )
+        repo.completeFacetsBatch(batch = 0, result = facets(total = 165))
+        advanceUntilIdle()
+        assertEquals(counts, viewModel.uiState.value.dateCounts)
+
+        // 翻页：服务端不回填 dateCounts（空 Map），首屏分桶不被冲掉
+        viewModel.onNearBottom()
+        advanceUntilIdle()
+        repo.assetsCalls[1].gate.complete(
+            AssetPageResult(items = listOf(asset("b")), nextCursor = null, totalMatched = null),
+        )
+        advanceUntilIdle()
+        assertEquals(counts, viewModel.uiState.value.dateCounts)
+
+        // 下拉刷新重拉首屏：分桶随新首屏重新落地（刷新语义=整态覆盖）
+        viewModel.refresh()
+        advanceUntilIdle()
+        val refreshed = mapOf("2026-10-09" to 130)
+        repo.assetsCalls[2].gate.complete(
+            AssetPageResult(items = listOf(asset("c")), nextCursor = null, totalMatched = 130, dateCounts = refreshed),
+        )
+        repo.completeFacetsBatch(batch = 1, result = facets(total = 130))
+        advanceUntilIdle()
+        assertEquals(refreshed, viewModel.uiState.value.dateCounts)
+    }
+
+    @Test
     fun `双指缩放列数越界 clamp 2 到 5 手势结束持久化一次`() = runTest(mainDispatcherRule.testDispatcher) {
         val repo = FakeMediaRepository()
         val prefs = FakeGridPrefs() // 初始 3 列

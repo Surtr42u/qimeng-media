@@ -22,6 +22,12 @@
 --      sort DIRECTION is baked into two query variants (Asc/Desc)
 --      instead of being a runtime parameter. ORDER BY may reference
 --      SELECT-projection aliases, which the sort_key column uses.
+--   5. Same leak inside GROUP BY (verified 2026-10-10 while adding
+--      CountAssetsByLocalDay): the macro survives verbatim into the
+--      generated SQL -> `near "(": syntax error` at runtime. GROUP BY
+--      must reference the SELECT-projection alias instead. Same family
+--      as the HAVING leak recorded in history.sql (macro kept verbatim
+--      AND the parameter dropped from the generated struct).
 --
 -- ============ Sorting design ============
 -- 7 sort keys (openapi sort enum) collapse into ONE TEXT "sort_key"
@@ -540,6 +546,129 @@ WHERE
              WHEN sqlc.narg(directory) = '' THEN a.file_name
              ELSE sqlc.narg(directory) || '/' || a.file_name
          END);
+
+-- name: CountAssetsByLocalDay :many
+-- Album date-group header counts (protocol GET /assets dateCounts=true): the
+-- same filter matrix as CountAssetsFiltered above (WHERE family kept in sync
+-- -- fourth copy in this file, same known sqlc-parser constraint recorded in
+-- the file header), with COUNT(*) replaced by per-local-day buckets.
+-- tz_modifier is a SQLite date modifier built by the caller from the client's
+-- tzOffsetMinutes ('+480 minutes'); mtime is stored as UTC RFC3339 text, so
+-- date(mtime, modifier) yields the CLIENT's local calendar day -- exactly the
+-- day the client folds its dateLabel from, so header counts and grouping agree
+-- even when client and server timezones differ. Rows whose mtime cannot be
+-- parsed into a day (NULL day) are dropped: the client's "unknown date" bucket
+-- keeps its loaded-count fallback. Comments here must stay pure ASCII (sqlc
+-- v1.31.1 multi-byte comment bug, see file header).
+SELECT date(a.mtime, sqlc.arg(tz_modifier)) AS local_day, COUNT(*) AS file_count
+FROM assets a
+WHERE
+    EXISTS (SELECT 1 FROM libraries le
+                WHERE le.id = a.library_id AND le.enabled = 1)
+    AND (sqlc.narg(library_id) IS NULL OR a.library_id = sqlc.narg(library_id))
+    AND (sqlc.narg(media_type) IS NULL OR a.media_type = sqlc.narg(media_type))
+    AND ((sqlc.narg(sources_json) IS NULL AND sqlc.arg(source_is_other) = 0)
+         OR (sqlc.arg(source_is_other) = 1 AND a.source IS NULL
+             AND NOT EXISTS (
+                 SELECT 1 FROM asset_authors aaoth
+                 JOIN authors auoth ON auoth.id = aaoth.author_id
+                 WHERE aaoth.asset_id = a.asset_id AND auoth.type = 'cos'))
+         OR a.source IN (SELECT value FROM json_each(sqlc.narg(sources_json))))
+    AND (sqlc.arg(include_cos) = 1
+         OR (sqlc.arg(cos_only) = 1 AND EXISTS (
+             SELECT 1 FROM asset_authors aacos
+             JOIN authors aucos ON aucos.id = aacos.author_id
+             WHERE aacos.asset_id = a.asset_id AND aucos.type = 'cos'))
+         OR (sqlc.arg(cos_only) = 0 AND NOT EXISTS (
+             SELECT 1 FROM asset_authors aa
+             JOIN authors au ON au.id = aa.author_id
+             WHERE aa.asset_id = a.asset_id AND au.type = 'cos')))
+    AND (sqlc.narg(cos_works_json) IS NULL OR a.cos_work IN (SELECT value FROM json_each(sqlc.narg(cos_works_json))))
+    AND (sqlc.narg(characters_json) IS NULL OR EXISTS (
+        SELECT 1 FROM json_each(sqlc.narg(characters_json)) combo
+        WHERE NOT EXISTS (
+            SELECT 1 FROM json_each(combo.value) c
+            WHERE NOT EXISTS (
+                SELECT 1 FROM asset_characters ac
+                WHERE ac.asset_id = a.asset_id AND ac.character_name = c.value))))
+    AND (sqlc.narg(author_id) IS NULL OR EXISTS (
+        SELECT 1 FROM asset_authors aa2
+        WHERE aa2.asset_id = a.asset_id AND aa2.author_id = sqlc.narg(author_id)))
+    AND (sqlc.narg(tag_ids_json) IS NULL OR (
+        CASE WHEN sqlc.arg(tag_mode) = 'exact' THEN
+            NOT EXISTS (
+                SELECT 1 FROM json_each(sqlc.narg(tag_ids_json)) jt
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM asset_tags at2
+                    WHERE at2.asset_id = a.asset_id AND at2.tag_id = jt.value))
+        ELSE
+            EXISTS (
+                SELECT 1 FROM json_each(sqlc.narg(tag_ids_json)) jt
+                WHERE EXISTS (
+                    SELECT 1 FROM asset_tags at2
+                    WHERE at2.asset_id = a.asset_id AND at2.tag_id = jt.value))
+        END))
+    AND (sqlc.narg(favorite) IS NULL OR (
+        CASE WHEN sqlc.narg(favorite) = 1 THEN
+            EXISTS(SELECT 1 FROM favorites fv2 WHERE fv2.asset_id = a.asset_id)
+        ELSE
+            NOT EXISTS(SELECT 1 FROM favorites fv2 WHERE fv2.asset_id = a.asset_id)
+        END))
+    AND (sqlc.narg(liked) IS NULL OR (
+        CASE WHEN sqlc.narg(liked) = 1 THEN
+            EXISTS(SELECT 1 FROM likes lk WHERE lk.asset_id = a.asset_id)
+        ELSE
+            NOT EXISTS(SELECT 1 FROM likes lk WHERE lk.asset_id = a.asset_id)
+        END))
+    AND (sqlc.narg(mtime_from) IS NULL OR a.mtime >= sqlc.narg(mtime_from))
+    AND (sqlc.narg(mtime_to) IS NULL OR a.mtime <= sqlc.narg(mtime_to))
+    AND (sqlc.narg(year_from) IS NULL OR CAST(substr(a.mtime, 1, 4) AS INTEGER) >= sqlc.narg(year_from))
+    AND (sqlc.narg(year_to) IS NULL OR CAST(substr(a.mtime, 1, 4) AS INTEGER) <= sqlc.narg(year_to))
+    AND (sqlc.narg(view_range) IS NULL OR (
+        CASE sqlc.narg(view_range)
+            WHEN 'none' THEN (SELECT COUNT(*) FROM view_events v4 WHERE v4.asset_id = a.asset_id AND v4.kind = 'open') = 0
+            WHEN 'low'  THEN (SELECT COUNT(*) FROM view_events v4 WHERE v4.asset_id = a.asset_id AND v4.kind = 'open') BETWEEN 1 AND 5
+            WHEN 'mid'  THEN (SELECT COUNT(*) FROM view_events v4 WHERE v4.asset_id = a.asset_id AND v4.kind = 'open') BETWEEN 5 AND 20
+            WHEN 'high' THEN (SELECT COUNT(*) FROM view_events v4 WHERE v4.asset_id = a.asset_id AND v4.kind = 'open') > 20
+            ELSE 1
+        END))
+    AND (sqlc.narg(play_range) IS NULL OR (
+        CASE sqlc.narg(play_range)
+            WHEN 'none' THEN (SELECT COUNT(*) FROM view_events v5 WHERE v5.asset_id = a.asset_id AND v5.kind = 'play') = 0
+            WHEN 'low'  THEN (SELECT COUNT(*) FROM view_events v5 WHERE v5.asset_id = a.asset_id AND v5.kind = 'play') BETWEEN 1 AND 5
+            WHEN 'mid'  THEN (SELECT COUNT(*) FROM view_events v5 WHERE v5.asset_id = a.asset_id AND v5.kind = 'play') BETWEEN 5 AND 20
+            WHEN 'high' THEN (SELECT COUNT(*) FROM view_events v5 WHERE v5.asset_id = a.asset_id AND v5.kind = 'play') > 20
+            ELSE 1
+        END))
+    AND (sqlc.narg(size_range) IS NULL OR (
+        CASE sqlc.narg(size_range)
+            WHEN 'lt1m'    THEN a.size_bytes < 1048576
+            WHEN 'm1to10'  THEN a.size_bytes >= 1048576 AND a.size_bytes < 10485760
+            WHEN 'm10to50' THEN a.size_bytes >= 10485760 AND a.size_bytes < 52428800
+            WHEN 'gt50m'   THEN a.size_bytes >= 52428800
+            ELSE 1
+        END))
+    AND (sqlc.narg(q_json) IS NULL OR NOT EXISTS (
+        SELECT 1 FROM json_each(sqlc.narg(q_json)) qk
+        WHERE NOT EXISTS (
+            SELECT 1 FROM assets_fts f
+            WHERE f.rowid = a.rowid
+              AND instr(lower(f.all_text), lower(qk.value)) > 0)))
+    AND (sqlc.narg(directory) IS NULL
+         OR a.rel_path = CASE
+             WHEN sqlc.narg(directory) = '' THEN a.file_name
+             ELSE sqlc.narg(directory) || '/' || a.file_name
+         END)
+    AND date(a.mtime, sqlc.arg(tz_modifier)) IS NOT NULL
+-- GROUP BY must reference the SELECT alias, never re-spell the date(...)
+-- expression: sqlc v1.31.1 only rewrites sqlc.arg macros in WHERE/SELECT/ON --
+-- inside GROUP BY the macro is SILENTLY passed through verbatim, leaving the
+-- literal text `sqlc.arg(tz_modifier)` in the generated SQL and failing at
+-- runtime with `near "(": syntax error`. Same family as the HAVING macro leak
+-- recorded in history.sql (both verified 2026-10-10 on the pinned version).
+-- Alias reference is legal SQLite and is passed through untouched.
+GROUP BY local_day
+ORDER BY local_day DESC;
 
 -- GetAssetWithLibrary: detail/media-serving join -- serving /media/**
 -- needs the library root to rebuild the absolute path. Explicit column

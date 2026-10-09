@@ -97,3 +97,15 @@ export function localDateKey(ts?: number | null): string {
   if (Number.isNaN(d.getTime())) return ''
   return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
 }
+
+/** ISO 时间 → 本地日历日键（yyyy-MM-dd，补零）：服务端 dateCounts 分桶键
+ *  的客户端镜像（协议 GET /assets dateCounts，2026-10-10 加）。服务端按请求
+ *  tzOffsetMinutes 把 UTC 的 mtime 折算成本地日，浏览器按同一时区折算——
+ *  两侧同键，组头精确计数才能与分组对齐。空值/非法日期返回空串。 */
+export function localDayKey(iso?: string | null): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}

@@ -54,6 +54,15 @@ data class AssetQuery(
     val tagIds: List<String>? = null,
     /** 标签匹配模式（协议 tagMode；仅随 tagIds 一起传） */
     val tagMode: PanelTagMode? = null,
+    /**
+     * 请求服务端按本地日历日聚合的文件计数（协议 GET /assets dateCounts，
+     * 2026-10-10 加）。日期分组页（相册/收藏/搜索/作者合集）传 true——
+     * 分页只加载前若干条时，组头「今天 N 项」据此显示真实总数，不再拿
+     * 已加载条数冒充（服务端仅首屏计算，翻页传了也忽略）。
+     * 日界由设备时区决定，偏移量在 :core:data 的 SDK 边界统一补（见
+     * SdkMediaRepository.assets 注释）——领域层不重复持有时区状态。
+     */
+    val dateCounts: Boolean? = null,
 )
 
 /** GET /assets/facets 请求参数包（partition 恒显式传——不依赖服务端缺省的隐式行为） */

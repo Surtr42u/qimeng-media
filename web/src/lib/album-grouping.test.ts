@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AssetSummary } from '@/api/generated'
 import { groupAlbumsByDate } from './album-grouping'
+import { localDayKey } from './format'
 
 // 固定时钟（本地 2026-09-07 周一）：分组键 dateLabel 依赖当前时间；
 // 断言用相对天数构造，用例后恢复真实时钟（自清理）。
@@ -51,5 +52,50 @@ describe('groupAlbumsByDate', () => {
     ])
     expect(groups.map((g) => g.label)).toEqual(['今天', ''])
     expect(groups[1].assets.map((a) => a.id)).toEqual(['nodate', 'bad'])
+  })
+
+  // dateCounts（服务端按本地日精确计数，协议 2026-10-10 加）：分页只加载前
+  // 若干条时组头数字不得用已加载条数冒充（真机实测缺陷：今天 120→125、
+  // 周三 66→282 随滚动跳增）。
+  it('未给 dateCounts 时 total 回退已加载条数', () => {
+    const groups = groupAlbumsByDate([asset('a', isoFromToday(0)), asset('b', isoFromToday(0))])
+    expect(groups[0].total).toBe(2)
+  })
+
+  it('dateCounts 命中时 total 用服务端真实总数（组内仍只含已加载条数）', () => {
+    const today = isoFromToday(0)
+    const counts = new Map([[localDayKey(today), 125]])
+    const groups = groupAlbumsByDate([asset('a', today), asset('b', today)], counts)
+    expect(groups[0].label).toBe('今天')
+    expect(groups[0].total).toBe(125)
+    expect(groups[0].assets).toHaveLength(2)
+  })
+
+  it('dateCounts 未命中的日与无日期桶回退已加载条数', () => {
+    const counts = new Map([[localDayKey(isoFromToday(0)), 999]])
+    const groups = groupAlbumsByDate(
+      [asset('a', isoFromToday(-30)), asset('b', isoFromToday(-30)), asset('nodate')],
+      counts,
+    )
+    expect(groups.map((g) => [g.label, g.total])).toEqual([
+      ['2026-08-08', 2],
+      ['', 1],
+    ])
+  })
+
+  it('dateCounts 只改 total 不改分组归属与组内原序', () => {
+    const counts = new Map([
+      [localDayKey(isoFromToday(0)), 40],
+      [localDayKey(isoFromToday(-1)), 7],
+    ])
+    const groups = groupAlbumsByDate(
+      [asset('x1', isoFromToday(0)), asset('y1', isoFromToday(-1)), asset('x2', isoFromToday(0))],
+      counts,
+    )
+    expect(groups.map((g) => [g.label, g.total])).toEqual([
+      ['今天', 40],
+      ['昨天', 7],
+    ])
+    expect(groups[0].assets.map((a) => a.id)).toEqual(['x1', 'x2'])
   })
 })

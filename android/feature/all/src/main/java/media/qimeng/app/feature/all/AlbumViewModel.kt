@@ -61,6 +61,14 @@ data class AlbumUiState(
     val items: List<MediaAsset> = emptyList(),
     val nextCursor: String? = null,
     val totalMatched: Int? = null,
+    /**
+     * 服务端按设备本地日历日聚合的精确计数（协议 GET /assets dateCounts=true；
+     * key=yyyy-MM-dd，口径见 core:model localDayKey）。日期分组（分区/类型维）
+     * 的组头「今天 N 项」据此显示真实总数——分页只加载前若干条时不再拿已加载
+     * 条数冒充（2026-10-09 真机实测的「数字随滚动跳增」缺陷，修复D-1 只覆盖了
+     * 作品/角色维，日期维当时无服务端数据源）。翻页不刷新（服务端仅首屏计算）。
+     */
+    val dateCounts: Map<String, Int> = emptyMap(),
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
     val errorMessage: String? = null,
@@ -570,7 +578,11 @@ class AlbumViewModel @Inject constructor(
             while (true) {
                 val page = runCatching {
                     mediaRepository.assets(
-                        AlbumFilter.toAssetQuery(state.filter, limit = LIST_PAGE_SIZE, cursor = cursor),
+                        // dateCounts：日期维组头精确计数（协议 2026-10-10 加）。
+                        // 首屏计算、翻页忽略（服务端按 cursor 判定），恒传即可——
+                        // 让首屏/刷新/筛选重载三条路径自动都带上，不需要各自记。
+                        AlbumFilter.toAssetQuery(state.filter, limit = LIST_PAGE_SIZE, cursor = cursor)
+                            .copy(dateCounts = true),
                     )
                 }.getOrElse {
                     if (gen != filterGeneration) return@launch // 旧代失败不污染新筛选态
@@ -597,6 +609,8 @@ class AlbumViewModel @Inject constructor(
                     nextCursor = page.nextCursor,
                     // 服务端仅首屏查全量 COUNT（翻页 page.totalMatched 为 null），翻页继承已有非空总数防被冲掉
                     totalMatched = page.totalMatched ?: if (append) _uiState.value.totalMatched else null,
+                    // 同理：dateCounts 仅首屏返回，翻页继承首屏分桶（服务端忽略翻页请求的同名参数）
+                    dateCounts = if (append) _uiState.value.dateCounts else page.dateCounts,
                     isLoading = false,
                     isRefreshing = false,
                     // 问题A：成功结束 bump 哨兵重评估信号（KDoc 见 AlbumUiState.reloadTick）

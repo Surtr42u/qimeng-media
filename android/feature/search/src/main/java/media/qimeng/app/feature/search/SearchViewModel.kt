@@ -38,6 +38,12 @@ data class SearchUiState(
     val submittedQuery: String = "",
     val items: List<MediaAsset> = emptyList(),
     val nextCursor: String? = null,
+    /**
+     * 服务端按设备本地日历日聚合的精确计数（协议 GET /assets dateCounts=true，
+     * 2026-10-10 加；key=yyyy-MM-dd）。搜索结果日期组头「今天 N 项」据此显示
+     * 真实总数，不再随分页滚动跳增（口径与 AlbumUiState.dateCounts 同源）。
+     */
+    val dateCounts: Map<String, Int> = emptyMap(),
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
     /** 列表加载成功结束信号（问题A 哨兵哑火修复，2026-09-28；语义见 AlbumViewModel.AlbumUiState.reloadTick） */
@@ -255,6 +261,8 @@ class SearchViewModel @Inject constructor(
                             // 旧版搜索=合并常规+COS（GUIDE_UI §首页搜索范围），固定 includeCos=1
                             includeCos = true,
                             q = state.submittedQuery,
+                            // 日期组头精确计数（服务端仅首屏计算，翻页传了也忽略）
+                            dateCounts = true,
                         ),
                     )
                 }.getOrElse {
@@ -277,6 +285,8 @@ class SearchViewModel @Inject constructor(
                 _uiState.value = _uiState.value.copy(
                     items = if (append) _uiState.value.items + page.items else page.items,
                     nextCursor = page.nextCursor,
+                    // dateCounts 仅首屏返回，翻页继承首屏分桶（服务端忽略翻页请求的同名参数）
+                    dateCounts = if (append) _uiState.value.dateCounts else page.dateCounts,
                     isLoading = false,
                     // 问题A：成功结束 bump 哨兵重评估信号（KDoc 见 SearchUiState.reloadTick）
                     reloadTick = _uiState.value.reloadTick + 1,

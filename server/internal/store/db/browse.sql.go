@@ -10,6 +10,208 @@ import (
 	"database/sql"
 )
 
+const countAssetsByLocalDay = `-- name: CountAssetsByLocalDay :many
+SELECT date(a.mtime, ?1) AS local_day, COUNT(*) AS file_count
+FROM assets a
+WHERE
+    EXISTS (SELECT 1 FROM libraries le
+                WHERE le.id = a.library_id AND le.enabled = 1)
+    AND (?2 IS NULL OR a.library_id = ?2)
+    AND (?3 IS NULL OR a.media_type = ?3)
+    AND ((?4 IS NULL AND ?5 = 0)
+         OR (?5 = 1 AND a.source IS NULL
+             AND NOT EXISTS (
+                 SELECT 1 FROM asset_authors aaoth
+                 JOIN authors auoth ON auoth.id = aaoth.author_id
+                 WHERE aaoth.asset_id = a.asset_id AND auoth.type = 'cos'))
+         OR a.source IN (SELECT value FROM json_each(?4)))
+    AND (?6 = 1
+         OR (?7 = 1 AND EXISTS (
+             SELECT 1 FROM asset_authors aacos
+             JOIN authors aucos ON aucos.id = aacos.author_id
+             WHERE aacos.asset_id = a.asset_id AND aucos.type = 'cos'))
+         OR (?7 = 0 AND NOT EXISTS (
+             SELECT 1 FROM asset_authors aa
+             JOIN authors au ON au.id = aa.author_id
+             WHERE aa.asset_id = a.asset_id AND au.type = 'cos')))
+    AND (?8 IS NULL OR a.cos_work IN (SELECT value FROM json_each(?8)))
+    AND (?9 IS NULL OR EXISTS (
+        SELECT 1 FROM json_each(?9) combo
+        WHERE NOT EXISTS (
+            SELECT 1 FROM json_each(combo.value) c
+            WHERE NOT EXISTS (
+                SELECT 1 FROM asset_characters ac
+                WHERE ac.asset_id = a.asset_id AND ac.character_name = c.value))))
+    AND (?10 IS NULL OR EXISTS (
+        SELECT 1 FROM asset_authors aa2
+        WHERE aa2.asset_id = a.asset_id AND aa2.author_id = ?10))
+    AND (?11 IS NULL OR (
+        CASE WHEN ?12 = 'exact' THEN
+            NOT EXISTS (
+                SELECT 1 FROM json_each(?11) jt
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM asset_tags at2
+                    WHERE at2.asset_id = a.asset_id AND at2.tag_id = jt.value))
+        ELSE
+            EXISTS (
+                SELECT 1 FROM json_each(?11) jt
+                WHERE EXISTS (
+                    SELECT 1 FROM asset_tags at2
+                    WHERE at2.asset_id = a.asset_id AND at2.tag_id = jt.value))
+        END))
+    AND (?13 IS NULL OR (
+        CASE WHEN ?13 = 1 THEN
+            EXISTS(SELECT 1 FROM favorites fv2 WHERE fv2.asset_id = a.asset_id)
+        ELSE
+            NOT EXISTS(SELECT 1 FROM favorites fv2 WHERE fv2.asset_id = a.asset_id)
+        END))
+    AND (?14 IS NULL OR (
+        CASE WHEN ?14 = 1 THEN
+            EXISTS(SELECT 1 FROM likes lk WHERE lk.asset_id = a.asset_id)
+        ELSE
+            NOT EXISTS(SELECT 1 FROM likes lk WHERE lk.asset_id = a.asset_id)
+        END))
+    AND (?15 IS NULL OR a.mtime >= ?15)
+    AND (?16 IS NULL OR a.mtime <= ?16)
+    AND (?17 IS NULL OR CAST(substr(a.mtime, 1, 4) AS INTEGER) >= ?17)
+    AND (?18 IS NULL OR CAST(substr(a.mtime, 1, 4) AS INTEGER) <= ?18)
+    AND (?19 IS NULL OR (
+        CASE ?19
+            WHEN 'none' THEN (SELECT COUNT(*) FROM view_events v4 WHERE v4.asset_id = a.asset_id AND v4.kind = 'open') = 0
+            WHEN 'low'  THEN (SELECT COUNT(*) FROM view_events v4 WHERE v4.asset_id = a.asset_id AND v4.kind = 'open') BETWEEN 1 AND 5
+            WHEN 'mid'  THEN (SELECT COUNT(*) FROM view_events v4 WHERE v4.asset_id = a.asset_id AND v4.kind = 'open') BETWEEN 5 AND 20
+            WHEN 'high' THEN (SELECT COUNT(*) FROM view_events v4 WHERE v4.asset_id = a.asset_id AND v4.kind = 'open') > 20
+            ELSE 1
+        END))
+    AND (?20 IS NULL OR (
+        CASE ?20
+            WHEN 'none' THEN (SELECT COUNT(*) FROM view_events v5 WHERE v5.asset_id = a.asset_id AND v5.kind = 'play') = 0
+            WHEN 'low'  THEN (SELECT COUNT(*) FROM view_events v5 WHERE v5.asset_id = a.asset_id AND v5.kind = 'play') BETWEEN 1 AND 5
+            WHEN 'mid'  THEN (SELECT COUNT(*) FROM view_events v5 WHERE v5.asset_id = a.asset_id AND v5.kind = 'play') BETWEEN 5 AND 20
+            WHEN 'high' THEN (SELECT COUNT(*) FROM view_events v5 WHERE v5.asset_id = a.asset_id AND v5.kind = 'play') > 20
+            ELSE 1
+        END))
+    AND (?21 IS NULL OR (
+        CASE ?21
+            WHEN 'lt1m'    THEN a.size_bytes < 1048576
+            WHEN 'm1to10'  THEN a.size_bytes >= 1048576 AND a.size_bytes < 10485760
+            WHEN 'm10to50' THEN a.size_bytes >= 10485760 AND a.size_bytes < 52428800
+            WHEN 'gt50m'   THEN a.size_bytes >= 52428800
+            ELSE 1
+        END))
+    AND (?22 IS NULL OR NOT EXISTS (
+        SELECT 1 FROM json_each(?22) qk
+        WHERE NOT EXISTS (
+            SELECT 1 FROM assets_fts f
+            WHERE f.rowid = a.rowid
+              AND instr(lower(f.all_text), lower(qk.value)) > 0)))
+    AND (?23 IS NULL
+         OR a.rel_path = CASE
+             WHEN ?23 = '' THEN a.file_name
+             ELSE ?23 || '/' || a.file_name
+         END)
+    AND date(a.mtime, ?1) IS NOT NULL
+GROUP BY local_day
+ORDER BY local_day DESC
+`
+
+type CountAssetsByLocalDayParams struct {
+	TzModifier     interface{}
+	LibraryID      interface{}
+	MediaType      interface{}
+	SourcesJson    interface{}
+	SourceIsOther  interface{}
+	IncludeCos     interface{}
+	CosOnly        interface{}
+	CosWorksJson   interface{}
+	CharactersJson interface{}
+	AuthorID       interface{}
+	TagIdsJson     interface{}
+	TagMode        interface{}
+	Favorite       interface{}
+	Liked          interface{}
+	MtimeFrom      interface{}
+	MtimeTo        interface{}
+	YearFrom       interface{}
+	YearTo         interface{}
+	ViewRange      interface{}
+	PlayRange      interface{}
+	SizeRange      interface{}
+	QJson          interface{}
+	Directory      interface{}
+}
+
+type CountAssetsByLocalDayRow struct {
+	LocalDay  interface{}
+	FileCount int64
+}
+
+// Album date-group header counts (protocol GET /assets dateCounts=true): the
+// same filter matrix as CountAssetsFiltered above (WHERE family kept in sync
+// -- fourth copy in this file, same known sqlc-parser constraint recorded in
+// the file header), with COUNT(*) replaced by per-local-day buckets.
+// tz_modifier is a SQLite date modifier built by the caller from the client's
+// tzOffsetMinutes ('+480 minutes'); mtime is stored as UTC RFC3339 text, so
+// date(mtime, modifier) yields the CLIENT's local calendar day -- exactly the
+// day the client folds its dateLabel from, so header counts and grouping agree
+// even when client and server timezones differ. Rows whose mtime cannot be
+// parsed into a day (NULL day) are dropped: the client's "unknown date" bucket
+// keeps its loaded-count fallback. Comments here must stay pure ASCII (sqlc
+// v1.31.1 multi-byte comment bug, see file header).
+// GROUP BY must reference the SELECT alias, never re-spell the date(...)
+// expression: sqlc v1.31.1 only rewrites sqlc.arg macros in WHERE/SELECT/ON --
+// inside GROUP BY the macro is SILENTLY passed through verbatim, leaving the
+// literal text `sqlc.arg(tz_modifier)` in the generated SQL and failing at
+// runtime with `near "(": syntax error`. Same family as the HAVING macro leak
+// recorded in history.sql (both verified 2026-10-10 on the pinned version).
+// Alias reference is legal SQLite and is passed through untouched.
+func (q *Queries) CountAssetsByLocalDay(ctx context.Context, arg CountAssetsByLocalDayParams) ([]CountAssetsByLocalDayRow, error) {
+	rows, err := q.db.QueryContext(ctx, countAssetsByLocalDay,
+		arg.TzModifier,
+		arg.LibraryID,
+		arg.MediaType,
+		arg.SourcesJson,
+		arg.SourceIsOther,
+		arg.IncludeCos,
+		arg.CosOnly,
+		arg.CosWorksJson,
+		arg.CharactersJson,
+		arg.AuthorID,
+		arg.TagIdsJson,
+		arg.TagMode,
+		arg.Favorite,
+		arg.Liked,
+		arg.MtimeFrom,
+		arg.MtimeTo,
+		arg.YearFrom,
+		arg.YearTo,
+		arg.ViewRange,
+		arg.PlayRange,
+		arg.SizeRange,
+		arg.QJson,
+		arg.Directory,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CountAssetsByLocalDayRow
+	for rows.Next() {
+		var i CountAssetsByLocalDayRow
+		if err := rows.Scan(&i.LocalDay, &i.FileCount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const countAssetsFiltered = `-- name: CountAssetsFiltered :one
 SELECT COUNT(*) FROM assets a
 WHERE
@@ -954,6 +1156,12 @@ type ListAssetsFilteredDescRow struct {
 //     sort DIRECTION is baked into two query variants (Asc/Desc)
 //     instead of being a runtime parameter. ORDER BY may reference
 //     SELECT-projection aliases, which the sort_key column uses.
+//  5. Same leak inside GROUP BY (verified 2026-10-10 while adding
+//     CountAssetsByLocalDay): the macro survives verbatim into the
+//     generated SQL -> `near "(": syntax error` at runtime. GROUP BY
+//     must reference the SELECT-projection alias instead. Same family
+//     as the HAVING leak recorded in history.sql (macro kept verbatim
+//     AND the parameter dropped from the generated struct).
 //
 // ============ Sorting design ============
 // 7 sort keys (openapi sort enum) collapse into ONE TEXT "sort_key"

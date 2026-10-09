@@ -2,6 +2,7 @@ package media.qimeng.app.core.model
 
 import java.util.Calendar
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** dateLabel（DOMAIN_RULES §8 逐字口径：今天/昨天/周X/yyyy-MM-dd/未知日期）与分组纯函数 */
@@ -201,6 +202,97 @@ class DateGroupingTest {
         assertEquals(
             listOf("今天  1 项", "2026-08-01  1 项", "未知日期  1 项"),
             assets.groupByAlbumDim(AlbumDim.TYPE, now).map { it.label },
+        )
+    }
+
+    // ---------- dateCounts（服务端按本地日精确计数，协议 2026-10-10 加） ----------
+
+    @Test
+    fun `本地日键与服务端 dateCounts 的 date 字段同口径`() {
+        // 服务端按 tzOffsetMinutes 把 UTC 的 mtime 折算成本地日，客户端按设备时区
+        // 折算——两侧同键（yyyy-MM-dd，补零）才能对上
+        assertEquals("2026-09-09", localDayKey(at(2026, 9, 9, 0)))
+        assertEquals("2026-09-09", localDayKey(at(2026, 9, 9, 23)))
+        assertEquals("2026-01-05", localDayKey(at(2026, 1, 5, 12)))
+    }
+
+    @Test
+    fun `设备时区偏移按分钟返回 东八区为 480`() {
+        val ts = at(2026, 9, 9)
+        assertEquals(
+            java.util.TimeZone.getDefault().getOffset(ts) / 60_000,
+            deviceTzOffsetMinutes(ts),
+        )
+        // 分钟量级（不是毫秒），且在协议允许域内（UTC−14~+14）
+        val v = deviceTzOffsetMinutes(ts)
+        assertTrue(v >= -840 && v <= 840)
+    }
+
+    @Test
+    fun `dateCounts 命中时组头用服务端精确总数 不再显示已加载条数`() {
+        // 复刻真机缺陷场景：今天实际 125 条，分页只加载了 2 条——
+        // 修复前组头显示「今天  2 项」并随滚动跳增，修复后恒为真实总数
+        val assets = listOf(
+            asset("a", at(2026, 9, 9, 9)),
+            asset("b", at(2026, 9, 9, 8)),
+        )
+        val counts = mapOf(localDayKey(at(2026, 9, 9)) to 125)
+        val sections = assets.groupByDateLabel(now, counts) { it.modifiedAtMs }
+        assertEquals(listOf("今天  125 项"), sections.map { it.label })
+        assertEquals(2, sections.first().items.size)
+    }
+
+    @Test
+    fun `dateCounts 未命中的日与未知日期组回退已加载条数`() {
+        val assets = listOf(
+            asset("a", at(2026, 8, 1)),
+            asset("b", at(2026, 8, 1)),
+            asset("c-unknown"), // 无时间 → 未知日期组无日键，恒回退
+        )
+        // 只给了「今天」的精确数：8-01 与未知日期两组都回退已加载条数
+        val counts = mapOf(localDayKey(at(2026, 9, 9)) to 999)
+        val sections = assets.groupByDateLabel(now, counts) { it.modifiedAtMs }
+        assertEquals(listOf("2026-08-01  2 项", "未知日期  1 项"), sections.map { it.label })
+    }
+
+    @Test
+    fun `dateCounts 不改变分组归属与组内原序 只改组头数字`() {
+        val assets = listOf(
+            asset("x1", at(2026, 9, 9, 9)),
+            asset("y1", at(2026, 9, 8)),
+            asset("x2", at(2026, 9, 9, 7)),
+        )
+        val counts = mapOf(
+            localDayKey(at(2026, 9, 9)) to 40,
+            localDayKey(at(2026, 9, 8)) to 7,
+        )
+        val sections = assets.groupByDateLabel(now, counts) { it.modifiedAtMs }
+        assertEquals(listOf("今天  40 项", "昨天  7 项"), sections.map { it.label })
+        assertEquals(listOf("x1", "x2"), sections[0].items.map { it.id })
+        assertEquals(listOf("y1"), sections[1].items.map { it.id })
+    }
+
+    @Test
+    fun `日期维透传 dateCounts 而作品与角色维仍走 facetCounts`() {
+        val assets = listOf(
+            asset("a", at(2026, 9, 9, 9), source = "碧蓝航线"),
+            asset("b", at(2026, 9, 9, 8), source = "碧蓝航线"),
+        )
+        val dateCounts = mapOf(localDayKey(at(2026, 9, 9)) to 125)
+        val facetCounts = mapOf("碧蓝航线" to 88)
+        // 分区/类型维（日期分组）用服务端按日精确数
+        assertEquals(
+            listOf("今天  125 项"),
+            assets.groupByAlbumDim(AlbumDim.PARTITION, now, facetCounts, dateCounts).map { it.label },
+        )
+        assertEquals(
+            listOf("今天  125 项"),
+            assets.groupByAlbumDim(AlbumDim.TYPE, now, facetCounts, dateCounts).map { it.label },
+        )
+        // 作品/角色维不受 dateCounts 影响（各自 facetCounts 口径不变）
+        assertEquals(
+            listOf("碧蓝航线  88 项"),
+            assets.groupByAlbumDim(AlbumDim.AUTHOR, now, facetCounts, dateCounts).map { it.label },
         )
     }
 

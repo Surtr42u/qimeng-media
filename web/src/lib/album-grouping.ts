@@ -1,5 +1,5 @@
 import type { AssetSummary } from '@/api/generated'
-import { dateLabel } from '@/lib/format'
+import { dateLabel, localDayKey } from '@/lib/format'
 
 /**
  * 相册页网格时间分区（原型 #5 renderAlbumGrid，2026-09-07 自 AlbumsPage 抽离——
@@ -14,10 +14,24 @@ export interface AlbumGroup {
   label: string
   /** 组内资产：保持列表原序（服务端排序即组内序，不再二次排序） */
   assets: AssetSummary[]
+  /**
+   * 组头「N 项」的数字：服务端按本地日聚合的精确总数（协议 GET /assets
+   * dateCounts=true，2026-10-10 加）命中时用真实总数；未命中（未请求/翻页
+   * 未带/无日期桶）回退组内已加载条数。
+   * 为什么必须区分：分页一次只加载 60 条，同一天文件多时 `assets.length`
+   * 只是「已加载条数」——组头数字会随滚动一路跳增，第一眼看到的就是错的
+   * （2026-10-09 真机实测：今天 120→125、周三 66→282）。
+   */
+  total: number
 }
 
-/** 按 modifiedAt 的 dateLabel 归并同组；组间按组首 modifiedAt 降序（新→旧），无日期组殿后 */
-export function groupAlbumsByDate(items: AssetSummary[]): AlbumGroup[] {
+/** 按 modifiedAt 的 dateLabel 归并同组；组间按组首 modifiedAt 降序（新→旧），无日期组殿后。
+ *  @param dateCounts 服务端按本地日精确计数（key = yyyy-MM-dd 本地日，见
+ *    format.localDayKey；口径与 App 侧 core:model localDayKey 同源）。 */
+export function groupAlbumsByDate(
+  items: AssetSummary[],
+  dateCounts: Map<string, number> = new Map(),
+): AlbumGroup[] {
   const byLabel = new Map<string, AssetSummary[]>()
   for (const a of items) {
     const label = dateLabel(a.modifiedAt)
@@ -26,7 +40,12 @@ export function groupAlbumsByDate(items: AssetSummary[]): AlbumGroup[] {
     else byLabel.set(label, [a])
   }
   return [...byLabel.entries()]
-    .map(([label, assets]) => ({ label, assets }))
+    .map(([label, assets]) => ({
+      label,
+      assets,
+      // 同标签必同日（标签由日界唯一确定）：取组首项的本地日键查精确总数
+      total: dateCounts.get(localDayKey(assets[0]?.modifiedAt)) ?? assets.length,
+    }))
     .sort((x, y) => {
       if (!x.label) return 1
       if (!y.label) return -1

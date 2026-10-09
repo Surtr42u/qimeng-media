@@ -190,7 +190,7 @@ paths:
   /api/v1/assets:
     get:
       summary: 资产列表（分页/筛选/排序/搜索，语义见 DOMAIN_RULES §3）
-      description: 唯一列表口径。默认排除 COS 作者关联文件（DOMAIN_RULES §6，COS 有独立入口）。
+      description: 唯一列表口径。默认排除 COS 作者关联文件（DOMAIN_RULES §6，COS 有独立入口）。日期分组标签（DOMAIN_RULES §8）仍由客户端按 modifiedAt 折叠，服务端只额外给出**按本地日的精确计数**（`dateCounts=true`，见该参数与 DateCountBucket）——分页列表里同一天只加载了前若干条时，客户端据此展示真实总数而非已加载条数。
       parameters:
         - { name: cursor,      in: query, schema: { type: string }, description: 分页游标 }
         - { name: limit,       in: query, schema: { type: integer, default: 60, maximum: 200 } }
@@ -218,6 +218,8 @@ paths:
         - { name: q,           in: query, schema: { type: string }, description: 全文搜索（空格分词；多词 AND；子串匹配文件名/文件夹路径/标签/作者/角色/出处任一维度；与全部筛选叠加） }
         - { name: directory,   in: query, schema: { type: string }, description: '库内相对目录精确匹配（路径规范化后等值比较），只返回该目录的直接子文件、不含递归子目录；空串=库根（与 GET /dirs 的 DirTree 根节点 path="" 语义对齐）；缺省=不过滤。文件管理页目录树「文件行」数据源；非法路径（绝对路径/盘符/../逃逸/保留设备名等）返回 400 INVALID_PARAM；`a/..` 这类规范化后收敛为库根的相对路径同样拒绝（400）' }
         - { name: groupByDate, in: query, schema: { type: boolean, default: true }, description: 按日期分组返回（DOMAIN_RULES §8 标签规则） }
+        - { name: tzOffsetMinutes, in: query, schema: { type: integer, minimum: -840, maximum: 840 }, description: '客户端本地时区相对 UTC 的偏移分钟数（东八区=480、西五区=-300；取值域 UTC−14~+14，超范围 400 INVALID_PARAM）。作用两处：① `dateFrom`/`dateTo` 按**客户端本地日历日**解释（缺省 0 = 既有 UTC 日口径，向后兼容）；② `dateCounts` 的日界分桶' }
+        - { name: dateCounts, in: query, schema: { type: boolean, default: false }, description: '请求按本地日历日（mtime）聚合的文件计数，填充响应 `dateCounts`——相册页日期组头「今天 N 项」的精确总数数据源（分页只加载前若干条时，客户端不得再拿已加载条数冒充总数）。仅首屏（无 cursor）计算，翻页请求忽略本参数；计数与列表同筛选矩阵（不含游标/排序），日界由 `tzOffsetMinutes` 决定' }
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/AssetPage" } } } }
   /api/v1/assets/name-suggestions:
@@ -1454,6 +1456,15 @@ components:
         items:        { type: array, items: { $ref: "#/components/schemas/AssetSummary" } }
         nextCursor:   { type: [string, "null"] }
         totalMatched: { type: integer }
+        dateCounts:   { type: array, items: { $ref: "#/components/schemas/DateCountBucket" }, description: '按本地日历日聚合的文件计数（`dateCounts=true` 且首屏时返回，日期降序）。相册页日期组头精确计数数据源；未请求时省略' }
+
+    DateCountBucket:
+      type: object
+      description: 相册日期组头计数的一条分桶：客户端本地日历日 + 该日文件数
+      required: [date, fileCount]
+      properties:
+        date:      { type: string, description: '本地日历日 yyyy-MM-dd（按请求 tzOffsetMinutes 换算：服务端 mtime 存 UTC，客户端本地日界由该参数对齐）' }
+        fileCount: { type: integer, description: '该日文件数（当前筛选矩阵下的精确总数，不含游标/排序）' }
 
     HistoryPage:
       type: object

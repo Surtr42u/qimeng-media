@@ -354,14 +354,20 @@ fun AllScreen(
                     // 分组按激活维分派（P9-5）：分区/类型=日期分组，作品=source∪COS 作者，
                     // 角色=characters∪cosWork，空组键归「其他」恒末位。
                     // 修复D-1：remember 缓存分组计算；传入服务端 facets 真实全量统计项，
-                    // 确保组头展示真实精确总数，避免分页局部内存数量在滚动中跳增
-                    sections = remember(state.items, state.activeDim, nowMs, state.authorOptions, state.characterOptions) {
+                    // 确保组头展示真实精确总数，避免分页局部内存数量在滚动中跳增。
+                    // 日期维（分区/类型）的精确总数来自服务端 dateCounts 分桶（协议
+                    // 2026-10-10 加，见 AlbumUiState.dateCounts）：作品/角色维走 facets，
+                    // 日期维走按本地日聚合——两者同口径（都是服务端全量精确计数）。
+                    sections = remember(
+                        state.items, state.activeDim, nowMs,
+                        state.authorOptions, state.characterOptions, state.dateCounts,
+                    ) {
                         val facetCounts = when (state.activeDim) {
                             AlbumDim.AUTHOR -> state.authorOptions.associate { it.name to it.fileCount }
                             AlbumDim.CHARACTER -> state.characterOptions.associate { it.name to it.fileCount }
                             else -> emptyMap()
                         }
-                        state.items.groupByAlbumDim(state.activeDim, nowMs, facetCounts)
+                        state.items.groupByAlbumDim(state.activeDim, nowMs, facetCounts, state.dateCounts)
                     },
                     columns = displayColumns,
                     animatedUrlResolver = animatedUrlResolver,

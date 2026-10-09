@@ -46,6 +46,12 @@ data class AuthorCollectionUiState(
     val nextCursor: String? = null,
     /** 列表首响的服务端总计数（页头「作者 · N 个文件」的 N 缺省源；兼作「全部 (N)」药丸计数） */
     val totalMatched: Int? = null,
+    /**
+     * 服务端按设备本地日历日聚合的精确计数（协议 GET /assets dateCounts=true，
+     * 2026-10-10 加；key=yyyy-MM-dd）。日期分组组头「今天 N 项」据此显示真实
+     * 总数，不再随分页滚动跳增（口径与 AlbumUiState.dateCounts 同源）。
+     */
+    val dateCounts: Map<String, Int> = emptyMap(),
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
     val errorMessage: String? = null,
@@ -218,7 +224,9 @@ class AuthorCollectionViewModel @Inject constructor(
             while (true) {
                 val page = runCatching {
                     mediaRepository.assets(
-                        collectionAssetQuery(authorId = id, filter = state.filter, limit = LIST_PAGE_SIZE, cursor = cursor),
+                        // dateCounts=日期组头精确计数（服务端仅首屏计算，翻页传了也忽略）
+                        collectionAssetQuery(authorId = id, filter = state.filter, limit = LIST_PAGE_SIZE, cursor = cursor)
+                            .copy(dateCounts = true),
                     )
                 }.getOrElse {
                     if (gen != filterGeneration) return@launch // 旧代失败不污染新筛选态
@@ -243,6 +251,8 @@ class AuthorCollectionViewModel @Inject constructor(
                     nextCursor = page.nextCursor,
                     // 服务端仅首屏查全量 COUNT，翻页继承已有非空总数防被冲成 0
                     totalMatched = page.totalMatched ?: if (append) _uiState.value.totalMatched else null,
+                    // 同理：dateCounts 仅首屏返回，翻页继承首屏分桶
+                    dateCounts = if (append) _uiState.value.dateCounts else page.dateCounts,
                     isLoading = false,
                     isRefreshing = false,
                     // 问题A：成功结束 bump 哨兵重评估信号（KDoc 见 AuthorCollectionUiState.reloadTick）

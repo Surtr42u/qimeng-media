@@ -53,6 +53,13 @@ data class FavoriteUiState(
     val totalForAllPill: Int? = null,
     val items: List<MediaAsset> = emptyList(),
     val nextCursor: String? = null,
+    /**
+     * 服务端按设备本地日历日聚合的精确计数（协议 GET /assets dateCounts=true，
+     * 2026-10-10 加；key=yyyy-MM-dd）。日期分组组头「今天 N 项」据此显示真实
+     * 总数，不再随分页滚动跳增（口径与 AlbumUiState.dateCounts 同源，见
+     * core:model groupByDateLabel KDoc）。
+     */
+    val dateCounts: Map<String, Int> = emptyMap(),
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
     val errorMessage: String? = null,
@@ -272,9 +279,15 @@ class FavoriteViewModel @Inject constructor(
             while (true) {
                 val page = runCatching {
                     val base = AlbumFilter.toAssetQuery(state.filter, limit = LIST_PAGE_SIZE, cursor = cursor)
-                    // 收藏固定口径：favorite=true + 收藏时间倒序（sort=favoriteAt 仅在收藏语义成立）
+                    // 收藏固定口径：favorite=true + 收藏时间倒序（sort=favoriteAt 仅在收藏语义成立）；
+                    // dateCounts=日期组头精确计数（服务端仅首屏计算，翻页传了也忽略）
                     mediaRepository.assets(
-                        base.copy(favorite = true, sort = AssetSort.FAVORITE_AT, order = SortOrder.DESC),
+                        base.copy(
+                            favorite = true,
+                            sort = AssetSort.FAVORITE_AT,
+                            order = SortOrder.DESC,
+                            dateCounts = true,
+                        ),
                     )
                 }.getOrElse {
                     if (gen != filterGeneration) return@launch // 旧代失败不污染新筛选态
@@ -297,6 +310,8 @@ class FavoriteViewModel @Inject constructor(
                 _uiState.value = _uiState.value.copy(
                     items = if (append) _uiState.value.items + page.items else page.items,
                     nextCursor = page.nextCursor,
+                    // dateCounts 仅首屏返回，翻页继承首屏分桶（服务端忽略翻页请求的同名参数）
+                    dateCounts = if (append) _uiState.value.dateCounts else page.dateCounts,
                     isLoading = false,
                     isRefreshing = false,
                     // 问题A：成功结束 bump 哨兵重评估信号（KDoc 见 FavoriteUiState.reloadTick）

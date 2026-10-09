@@ -91,6 +91,59 @@ func normalizeDirectoryParam(w http.ResponseWriter, directory *string) (*string,
 	return &dir, true
 }
 
+// tzOffsetMinMinutes / tzOffsetMaxMinutes 是客户端时区偏移的合法域
+// （UTC−14:00 ~ +14:00，IANA 时区库的极端值；openapi schema 的
+// minimum/maximum 生成器不做运行期校验，服务端兜底 400）。
+const (
+	tzOffsetMinMinutes = -14 * 60
+	tzOffsetMaxMinutes = 14 * 60
+)
+
+// parseTzOffsetMinutes 归一 tzOffsetMinutes（协议 GET /assets，2026-10-10 加）。
+// 缺省 0 = UTC：dateFrom/dateTo 的既有「按 UTC 日解释」口径原样保留，老客户端
+// 不带本参数时行为逐字节不变（向后兼容是加参数而非改参数的前提）；显式传入时
+// 按**客户端本地日历日**解释 dateFrom/dateTo，并决定 dateCounts 的日界分桶。
+// 越界 400 INVALID_PARAM。
+func parseTzOffsetMinutes(w http.ResponseWriter, params gen.GetApiV1AssetsParams) (int, bool) {
+	if params.TzOffsetMinutes == nil {
+		return 0, true
+	}
+	v := *params.TzOffsetMinutes
+	if v < tzOffsetMinMinutes || v > tzOffsetMaxMinutes {
+		writeErr(w, http.StatusBadRequest, codeInvalidParam, "时区偏移不合法")
+		return 0, false
+	}
+	return v, true
+}
+
+// tzModifier 把已校验的时区偏移编成 SQLite 日期修饰符文本（browse.sql
+// CountAssetsByLocalDay 的 tz_modifier 参数，形如 '+480 minutes'）。
+// 为什么传修饰符文本而不是分钟数：SQLite 的 date() 第二参就是字符串修饰符，
+// 传数字还得在 SQL 里拼 printf；文本由 Go 侧从整数构造，无注入面。
+func tzModifier(offsetMinutes int) string {
+	return fmt.Sprintf("%+d minutes", offsetMinutes)
+}
+
+// tzDuration 把时区偏移分钟数转成 time.Duration（dateFrom/dateTo 的本地日
+// 换算与 tzModifier 同源，两处口径必须同值——故都从同一个已校验整数出发）。
+func tzDuration(offsetMinutes int) time.Duration {
+	return time.Duration(offsetMinutes) * time.Minute
+}
+
+// localDayString 抹平 sqlc 为 date() 表达式生成的 interface{} 列（SQLite
+// TEXT → Go string；modernc 驱动对 BLOB 返回 []byte，防御性一并接住）。
+// 空串 = 该行日界不可解析（date() 返回 NULL，SQL 侧已过滤，此处兜底跳过）。
+func localDayString(v any) string {
+	switch t := v.(type) {
+	case string:
+		return t
+	case []byte:
+		return string(t)
+	default:
+		return ""
+	}
+}
+
 // ---- 可空参数封装 ----
 // sqlc 对混合类型筛选参数生成 interface{} 字段；统一在这里把三种可空
 // 形态（字符串/整数/布尔）装进 sql.Null*，零值 Valid=false = 筛选未启用。
@@ -179,7 +232,9 @@ type assetFilters struct {
 //   - includeCos 默认 false = 排除 COS 作者关联文件（DOMAIN_RULES §6）；
 //     收藏流特例见下方 favorite 分支（2026-09-05 用户拍板）；
 //   - dateFrom/dateTo 是本地日历日，换算成与 mtime 存储格式同构的
-//     UTC 毫秒时间戳文本再做字典序比较（dateTo 含当日全天）；
+//     UTC 毫秒时间戳文本再做字典序比较（dateTo 含当日全天）。「本地」由
+//     tzOffsetMinutes 参数决定：缺省 0 = UTC（既有口径），显式传入时按
+//     客户端本地日界——服务端只认偏移量，不猜客户端时区；
 //   - directory 由 handler 预校验归一（filing.NormalizeRelPath）后传入：
 //     nil=缺省不过滤；非 nil 含空串=库根（目录语义允许空，与资产路径
 //     必须非空不同——同 filing.go move 的 targetDir 先例）。
@@ -188,7 +243,7 @@ type assetFilters struct {
 // （每参数一段独立 if + null*/json 封装），分支间零嵌套、无同构段落可
 // 抽；单一组装来源（文件头注释：三种查询共享同一份字段集）必须集中在
 // 一处，按参数维度拆小函数只会把字段集打散、重新引入「改一漏二」漂移。
-func newAssetFilters(params gen.GetApiV1AssetsParams, directory *string) assetFilters {
+func newAssetFilters(params gen.GetApiV1AssetsParams, directory *string, tzOffsetMinutes int) assetFilters {
 	var f assetFilters
 	if params.LibraryId != nil {
 		f.LibraryID = nullStr(*params.LibraryId)
@@ -251,10 +306,14 @@ func newAssetFilters(params gen.GetApiV1AssetsParams, directory *string) assetFi
 		f.Liked = nullBool(params.Liked)
 	}
 	if params.DateFrom != nil {
-		f.MtimeFrom = nullStr(store.FormatTimestamp(params.DateFrom.Time.UTC()))
+		// 协议日期是「客户端本地日历日」的裸日期，openapi_types.Date 解析为
+		// 当日 UTC 零点——减去客户端偏移即该本地日零点的真实 UTC 时刻。
+		f.MtimeFrom = nullStr(store.FormatTimestamp(params.DateFrom.Time.UTC().Add(-tzDuration(tzOffsetMinutes))))
 	}
 	if params.DateTo != nil {
-		f.MtimeTo = nullStr(store.FormatTimestamp(params.DateTo.Time.UTC().Add(dateToBoundSkew)))
+		// dateTo 含当日全天：本地零点 + 24h − 1ms（dateToBoundSkew 同口径）。
+		f.MtimeTo = nullStr(store.FormatTimestamp(
+			params.DateTo.Time.UTC().Add(-tzDuration(tzOffsetMinutes)).Add(dateToBoundSkew)))
 	}
 	if params.YearFrom != nil {
 		f.YearFrom = nullInt(params.YearFrom)

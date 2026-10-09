@@ -63,7 +63,13 @@ func (s *Server) GetApiV1Assets(w http.ResponseWriter, r *http.Request, params g
 	if !ok {
 		return
 	}
-	filters := newAssetFilters(params, directory)
+	// 时区偏移（协议 2026-10-10 加）：dateFrom/dateTo 的本地日解释与
+	// dateCounts 的日界分桶共用同一个已校验值（缺省 0 = UTC 向后兼容）。
+	tzOffset, ok := parseTzOffsetMinutes(w, params)
+	if !ok {
+		return
+	}
+	filters := newAssetFilters(params, directory, tzOffset)
 
 	// Asc/Desc 只差查询本身；行搬运与后处理见 queryListRows / buildListPage。
 	rows, ok := s.queryListRows(r.Context(), w, asc, sortKey, limit, cur, filters)
@@ -97,6 +103,13 @@ func (s *Server) GetApiV1Assets(w http.ResponseWriter, r *http.Request, params g
 		if !s.fillTotalMatched(r.Context(), w, &page, filters) {
 			return
 		}
+		// dateCounts：相册页日期组头精确计数（协议 dateCounts=true）。同为首屏
+		// 才查——分桶是筛选态的函数，翻页不改变它；客户端拿它替换「已加载条数」。
+		if params.DateCounts != nil && *params.DateCounts {
+			if !s.fillDateCounts(r.Context(), w, &page, filters, tzModifier(tzOffset)) {
+				return
+			}
+		}
 	}
 	writeJSON(w, http.StatusOK, page)
 }
@@ -115,5 +128,40 @@ func (s *Server) fillTotalMatched(ctx context.Context, w http.ResponseWriter, pa
 	}
 	t := int(total)
 	page.TotalMatched = &t
+	return true
+}
+
+// fillDateCounts 首屏按本地日聚合的文件计数（协议 dateCounts=true）写入
+// page.DateCounts（日期降序）；失败写 500 INTERNAL 并返回 false，调用方
+// 必须 return。与 fillTotalMatched 同形：筛选矩阵同源（applyFilters），
+// 差别只在 SQL 侧把 COUNT(*) 换成按 date(mtime, tz_modifier) 分桶——
+// 客户端据此展示「今天 N 项」的真实总数，不再拿已加载条数冒充。
+// modifier 由 tzModifier(tzOffset) 构造，与 dateFrom/dateTo 的日界同源。
+func (s *Server) fillDateCounts(
+	ctx context.Context,
+	w http.ResponseWriter,
+	page *gen.AssetPage,
+	filters assetFilters,
+	modifier string,
+) bool {
+	var cp db.CountAssetsByLocalDayParams
+	applyFilters(&cp, filters)
+	cp.TzModifier = modifier
+	rows, err := s.q.CountAssetsByLocalDay(ctx, cp)
+	if err != nil {
+		s.internalErr(w, "统计日期分组计数", err)
+		return false
+	}
+	buckets := make([]gen.DateCountBucket, 0, len(rows))
+	for _, row := range rows {
+		day := localDayString(row.LocalDay)
+		if day == "" {
+			// date() 解析不出日界的行（NULL/非法 mtime）：不进任何桶，客户端
+			// 「未知日期」组继续用已加载条数兜底（该组量级极小且恒末位）。
+			continue
+		}
+		buckets = append(buckets, gen.DateCountBucket{Date: day, FileCount: int(row.FileCount)})
+	}
+	page.DateCounts = &buckets
 	return true
 }
