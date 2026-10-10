@@ -11,6 +11,24 @@
 
 
 
+## chore(app+desktop+server+docs): 隐私脱敏——清除真机序列号/机型与内网 IP 字面量，统一改 TEST-NET 文档地址（2026-10-10 第五百二十笔）
+
+执行 AI：DeepSeek-V4.1-Flash（主代理）
+
+- **背景与痛点**：
+  - 对仓库做了一次**全历史敏感串扫描**（遍历全部可达 blob，而非只看当前文件），发现现行文件里仍有 AGENTS.md 铁律 14 明令禁止的三类内容（本仓库为 PUBLIC，任何一条都等同全球可见）：
+    1. **真机序列号**：`docs/CHANGELOG.md` 一条 ADB 双端校验记录里明文写了手机序列号；
+    2. **真机机型**：`docs/CHANGELOG.md`（7 处）、`docs/HANDOVER.md`、`docs/history/CHANGELOG-ARCHIVE.md`（2 处）与**应用源码注释** `android/app/src/main/java/media/qimeng/app/MainActivity.kt` 写了机主真机的具体型号；
+    3. **本机内网地址**：`192.168.1.x` 共 80 余处（Android/Rust/Go 测试夹具、`desktop` 示例与 README、`docs/SECURITY.md` 用例、`docs/CHANGELOG.md` 与历史档），其中两条尾号与机主实际局域网地址一致，可作拓扑指纹。
+- **改动内容**（22 个文件）：
+  1. 真机序列号 → 统一表述为「ADB 真机」；
+  2. 真机机型 → `某品牌真机`/`真机`（含源码注释）；
+  3. 内网地址 → 全库 `192.168.1.x` 改 `192.0.2.x`（RFC 5737 TEST-NET-1，专供文档与示例；语义同为「非回环地址」——`ServerAddress.isLocalModePreset` 只认 127.0.0.1/localhost，测试断言不受影响）；
+  4. 连带润色脱敏后读不通的 4 处旧记述（`真机（真机）`、`真机 装机`、历史「真实局域网 IP 脱敏为 192.168.1.x」表述等）。
+- **验证**：扫描器复扫确认**现行树零命中**（序列号/机型/`192.168.1.x` 全部清零）；`go test ./internal/httpapi/ -run Host` 绿（Host 校验用例组）；Android/desktop 侧为纯字面量替换，交云端 CI 单测复核。
+- **未决（需用户拍板）**：上述串在**历史提交**里依然存在（公开仓库 `git log -p` 可检索）。彻底清除需 `git filter-repo --replace-text` 重写历史 + force push——代价=全部 commit hash 变更、既有 PR/引用失效、GitHub 侧旧对象需联系客服才能真清。本笔只做现行树脱敏，历史重写待用户确认后单独执行。
+- **文档**：CHANGELOG.md（本条）。
+
 ## chore(ci): 云端出包还原本机 debug keystore——云端 APK 与真机同签名，可直接覆盖安装（2026-10-10 第五百一十九笔）
 
 执行 AI：DeepSeek-V4.1-Flash（主代理）
@@ -156,7 +174,7 @@
 
 执行 AI：DeepSeek-V4.1-Flash（主代理）
 
-- **背景与痛点**（用户反馈 + 真机爬取实证）：「相册的计数，当前时间超级多时……往下滑动时才会更新文件数，导致第一眼的时候文件数错误」。真机（真机 / Asia/Shanghai）uiautomator 读控件文本实测：页头「7139 文件」（服务端 COUNT）恒正确，但日期组头「今天 120 项」在滚动几页后变 125、另一组「周三 66 项」同会话变 282——**组头数字就是「当前已加载条数」**。根因：`core/model/DateGrouping.kt` 的日期分组直接用 `assets.size`；作品/角色维在「修复D-1」已改走 `/assets/facets` 排自身精确计数，日期维当时**没有任何服务端聚合数据源**，就漏下了（Web `AlbumsPage.tsx` 同款 `g.assets.length`）。
+- **背景与痛点**（用户反馈 + 真机爬取实证）：「相册的计数，当前时间超级多时……往下滑动时才会更新文件数，导致第一眼的时候文件数错误」。真机（Asia/Shanghai）uiautomator 读控件文本实测：页头「7139 文件」（服务端 COUNT）恒正确，但日期组头「今天 120 项」在滚动几页后变 125、另一组「周三 66 项」同会话变 282——**组头数字就是「当前已加载条数」**。根因：`core/model/DateGrouping.kt` 的日期分组直接用 `assets.size`；作品/角色维在「修复D-1」已改走 `/assets/facets` 排自身精确计数，日期维当时**没有任何服务端聚合数据源**，就漏下了（Web `AlbumsPage.tsx` 同款 `g.assets.length`）。
 - **协议（铁律 1，协议先行）**：`GET /api/v1/assets` 增两个查询参数——`dateCounts`（bool，缺省 false：请求按本地日聚合计数，仅首屏计算，翻页请求忽略）与 `tzOffsetMinutes`（int，缺省 0=UTC：既是 `dateCounts` 的分桶日界，也是 `dateFrom`/`dateTo` 的本地日历日解释）；响应 `AssetPage` 增可选字段 `dateCounts: DateCountBucket[]`（`{date: yyyy-MM-dd, fileCount}`，日期降序），新增 `DateCountBucket` schema。**向后兼容**：两个参数缺省时行为逐字节不变（老客户端零感知）——加参数而非改参数。
 - **服务端**：
   1. `browse.sql` 新增 `CountAssetsByLocalDay`：与 `CountAssetsFiltered` 同一筛选矩阵（同 WHERE 家族第 4 份，sqlc 解析器限制下的既有手抄约定），把 `COUNT(*)` 换成 `date(mtime, tz_modifier)` 分桶；mtime 存 UTC RFC3339，加偏移后 `date()` 取到的即**客户端本地日**——与客户端 `localDayKey` 同键。无 mtime/不可解析行不进任何桶（客户端「未知日期」组继续回退已加载条数）。
@@ -170,7 +188,7 @@
   2. **本地真库端到端**（`qimeng-data/qimeng.db` 拷贝 + 本机起服务 + dev-login，7056 资产、常规分区 782 条）：`dateCounts` 与**独立 Python/SQLite 计算**逐桶比对——tz=+480 得 129 桶、UTC 得 132 桶，**0 差异**，且分桶之和恒等于 `totalMatched`（782）；`mediaType=video` 档 405 条 / 117 桶一致；`dateFrom=dateTo=2026-09-25` 判别性用例 UTC 5 条、tz=+480 **0 条**（那 5 个文件本地已跨到 09-26，09-26 档 +480 恰为 5 条）——时区口径修复实证；`tzOffsetMinutes=900` → 400 INVALID_PARAM；翻页请求 `dateCounts`/`totalMatched` 均为 null；未请求时字段省略。
   3. `make sdk` 三端重生成 + `api/sdk.lock` 253 条目（重算哈希稳定）。
   4. Android `:core:model:test`、`:core:data`、`:feature:all`/`:feature:favorite`/`:feature:search`/`:feature:author` 单测全绿（新增 DateGrouping 6 例 + AlbumViewModel 首屏落地/翻页不覆盖/刷新重落地）；Web `tsc --noEmit` + `vitest run` 28 文件 291 用例全绿；`gofmt`/`oxlint` 干净。
-  5. release APK 重建成功（26,317,679 字节，内嵌服务端 `libqimeng.so` sha256 `EFA0DEBAF0902F0C…`，二进制内含新协议参数名）；**真机 真机 装机复验待手机重新连接 USB**（本次构建期间手机从 adb 掉线，装机与真机读数留待补验）。
+  5. release APK 重建成功（26,317,679 字节，内嵌服务端 `libqimeng.so` sha256 `EFA0DEBAF0902F0C…`，二进制内含新协议参数名）；**真机装机复验待手机重新连接 USB**（本次构建期间手机从 adb 掉线，装机与真机读数留待补验）。
 - **文档**：DOMAIN_RULES §8（组头计数口径 + 日界时区口径两条）、CHANGELOG.md（本条）、`browse.sql` 文件头第 5 条解析器限制。
 
 ## refactor(app): 作者联想改胶囊流——与文件名联想统一视觉，自锚浮层大面板整体退役（2026-10-09 第五百一十二笔）
@@ -183,7 +201,7 @@
   2. **浮层载体整体退役**（净删 231 行）：`AuthorSuggestionMenu`、`AuthorSuggestionListPanel`、`AuthorSuggestionYieldZone`（弧形补块 Canvas）、`AuthorSuggestionPopupPositionProvider` 与 `MENU_*` 常量全部删除；随之清理 26 条失效 import。**保留 `getValue`/`setValue`**——`var ... by rememberSaveable` 委托的隐式引用，源码里不出现字面量，静态扫「未引用 import」会误判并导致编译失败（本次实测踩过一次，已加注释防复发）。
   3. **副文案取舍**：胶囊只承载作者名（与文件名胶囊同口径：胶囊不带副文案）；文件数仍在空输入种子列表（`QimengAuthorSeedList`）按原「displayName + N 个文件」双行口径可见。
   4. 影响面＝三处调用点：上传页批次作者、资产编辑页添加作者、相册筛选面板作者联想。
-- **验证结论**：`:core:ui:compileDebugKotlin` + 三个消费模块（`:feature:upload`/`:feature:detail`/`:feature:all`）`testDebugUnitTest` 全绿；`:app:assembleRelease` 重建（26.3MB）后覆盖装机真机 真机——签名一致、App 数据不动，进程与内嵌服务端在册、logcat 无崩溃。
+- **验证结论**：`:core:ui:compileDebugKotlin` + 三个消费模块（`:feature:upload`/`:feature:detail`/`:feature:all`）`testDebugUnitTest` 全绿；`:app:assembleRelease` 重建（26.3MB）后覆盖装机真机——签名一致、App 数据不动，进程与内嵌服务端在册、logcat 无崩溃。
 - **文档**：CHANGELOG.md（本条）。
 
 ## chore(ci): 云端出包流水线——手动触发一次出「内嵌 arm64 release 装机包」（本机设备不稳期间的一次性通道）（2026-10-09 第五百一十一笔）
@@ -649,7 +667,7 @@
      - 清理并注销历史遗留子代理临时工作树（`mighty_meteor_hovers_00h31` 与 `untitled-worktree`），彻底删除对应的死分支；
      - 全仓分支收敛干净：仅保留主分支 `master` 与当前 UI 优化专属分支 `feat/web-ui-optimization`（工作树 `review_ui_and_branches`）。
   8. **视频封面元数据固化与缩略图缓存重置**：
-     - PC 端与手机端（ADB: `真机`）《守望先锋  法鸡.mp4》均封装 1.12208s 帧为 MP4 内嵌封面（Stream #0:2 attached_pic），原文件修改时间戳保全不变；
+     - PC 端与手机端（ADB 真机）《守望先锋  法鸡.mp4》均封装 1.12208s 帧为 MP4 内嵌封面（Stream #0:2 attached_pic），原文件修改时间戳保全不变；
      - 清理并重置两端缩略图缓存。
   9. **设置面板定位修复与顶部阴影彻底消除**（`web/src/styles/glass.css`）：
      - 将 `.art-video-player .art-settings` 定位修正为底栏上方 `bottom: calc(var(--art-control-height, 46px) + 12px) !important; right: 16px !important;`；
@@ -1202,7 +1220,7 @@
 - **web**：非空断言 8 处收敛清零（守卫内取局部常量替代闭包 `x.id!`，全部可收敛点已收，仅剩 main.tsx React 入口惯例断言）；「暂无数据」空态 3 处逐字重复收敛为新组件 EmptyNote；upload-queue-store.ts（664 行）补超线注记；TopBar 窗口按钮 title 文案与桌面壳 titlebar.js 的隐式耦合补互指注释（titlebar.js 侧原有记档，本批补齐 Web 侧）。tsc + vitest 26 文件 248 测试全绿。
 - **android（重头）**：①feature:manage 撤 `:sdk` 直依赖——BackupValidator 连测试整体下沉 core:data/backup（逻辑逐字搬迁），SDK 模型经 `ValidatedBackupPayload` 不透明句柄（internal）与 `LegacyImportSummary`/`TxtImportSummary` 域投影隔离，BackupRepository.exportJson()/importBackup() 与 AuthorRepository txt 族签名域类型化，AutoBackupRunner 改调 exportJson（原 BackupViewModelTest 的 format 断言弱化为 size，覆盖转移至 core:data 侧测试锁定）；②协议枚举单源——core:model 新建 MediaTypeKeys/SourceKeys（KDoc 记与 openapi.yaml 双写同步责任），4 消费点（StatsDetailViewModel/StatsDetailScreen/FourDimPills/SdkStatsRepositories）收口；③路由常量单源——TopLevelDestination 改引 HOME_ROUTE/ALBUM_ROUTE，KEY_ASSET_ID 收口 DetailRoutes；④调试残留 Log.d("QimengM42") 清除；⑤18430 端口文案改引 ServerAddress.LOCAL_MODE_PORT（feature:manage 补 core:network 依赖，login/settings 先例同款）；⑥EmbeddedServerService 轮询粒度常量化；⑦RankingEntry 自 core:data 下沉 core:model（7 文件 import 收口）；⑧7 个超线文件补 KDoc 理由（QimengNavHost/StatsDetailScreen 1026/VideoStage 898/HomeViewModel 863/DetailScreen 855/DetailViewModel 793/FloatingTabDock 737）；⑨StatsDetailScreen 图表色板 5 个字面量命名化（值逐字节不变）；⑩备份排除面补 Room 事件库 qimeng_events.db 三文件（行为隐私外带面关闭，口径见 SECURITY.md）。
 - **desktop/CI（横切面清偿）**：ci.yml 新增第六道门禁 desktop job（windows-latest + rust stable + rust-cache + cargo test/build——图标已入库、frontendDist 为源内静态页故无前端构建前置）；全部 job 补 timeout-minutes（20~60）；web job 补 npm 缓存；Makefile sdk-lock 写锁前断言 Kotlin 生成物非空（消「无 Java 静默跳过→残锁本地绿 CI 红」）；ARCHITECTURE §10 门禁清单 5→6 同步。
-- **docs/仓库卫生**：CHANGELOG-ARCHIVE 中被明文记档为「真实局域网 IP」的 192.0.2.2/.8 共 8 处脱敏为 192.168.1.x（文件头加脱敏注记，铁律 14 优先于「逐字存档」声明）；裁决记档——全库其余 192.168.1.x 命中均为 RFC1918 合成测试/示例值（尾号混用，无「此为真实地址」记档语境），不构成拓扑指纹，维持现状不扩大清洗；SECURITY.md 补 Termux 形态 A dev-login 为共享密钥缓解漏网路径的边界记档（缓解需 App 跨沙箱取密钥的产品决策，暂记边界待立项）+ deploy/termux/qimeng-start.sh 误导注释修正（127.0.0.1 绑定不等于同机 App 不可达）+ App 备份排除口径更新。
+- **docs/仓库卫生**：CHANGELOG-ARCHIVE 中被明文记档为「真实局域网 IP」的 8 处已脱敏（文件头加脱敏注记，铁律 14 优先于「逐字存档」声明；2026-10-10 第五百二十笔进一步统一为 TEST-NET 文档地址）；裁决记档——全库其余 RFC1918 命中均为合成测试/示例值（尾号混用，无「此为真实地址」记档语境），不构成拓扑指纹，维持现状不扩大清洗；SECURITY.md 补 Termux 形态 A dev-login 为共享密钥缓解漏网路径的边界记档（缓解需 App 跨沙箱取密钥的产品决策，暂记边界待立项）+ deploy/termux/qimeng-start.sh 误导注释修正（127.0.0.1 绑定不等于同机 App 不可达）+ App 备份排除口径更新。
 - **验证**：本地——go test 20 包全绿（含 httpapi 53s 全量集成）、gofmt/vet 零输出、web tsc+vitest 248 全绿（rebase 后复验）、Android 本地 Gradle 补验（纪律废止后按 446 笔新口径）testDebugUnitTest + :core:model:test 全绿（BUILD SUCCESSFUL，revert 重放后全模块编译+单测通过；首次运行遇 Windows 文件锁中断，停守护进程重跑即绿，非代码问题）、ci.yml js-yaml 校验、Makefile make -n 干跑、backup XML 良构校验；独立对抗审查子代理逐文件复核（含 Kotlin const 链/可见性/依赖方向/搬迁逐字等价比对）总评「可提交、零必修」。desktop job 首跑由 PR 云端 CI 实跑验证。
 - **涉及文档**：`docs/CHANGELOG.md`（本条）、`docs/SECURITY.md`（Termux 形态A 边界 + 备份排除口径）、`docs/ARCHITECTURE.md` §10（门禁清单）、`docs/history/CHANGELOG-ARCHIVE.md`（脱敏注记）。
 
@@ -1527,11 +1545,11 @@
 
 执行 AI：GLM-5.3-Flash（主代理）
 
-- **根因（真机取证）**：用户报「App 反复缓存」。真机（真机）数据实锤：缓存主池 6371 条全部当日写入（凌晨 04 时 1534 条 + 傍晚 18 时 4827 条 + 白天零星），journal 累计 CLEAN 18353 ≈ 现存条目 2.9 倍、REMOVE=0（无 LRU 驱逐，远未满 1GB 档位），当前进程启动后 journal 尾部全是 READ（预取轮再次触发）。结论：`ThumbnailPrefetcher` 登录后自动全库预取**无断点游标**（KDoc 有意简化口径），每次冷启动/重新登录都从头全库重扫，且单轮频繁中断（进程被杀后重开 App 即重触发）——已缓存条目虽不重复下载（键稳定，历史两轮修复有效），但每轮仍做全量列表拉取 + 全库逐条磁盘打开与位图解码，缩略图缓存页进度条反复从头跑全库，观感即「反复缓存」。**后续 datastore 取证补正**：用户日常连接为本地端模式（`server_url=http://127.0.0.1:18430`），该池条目实为本地端来源经分池 bug 错放（见第三条），连本地端时回环下载速度快（18 时轮 4827 条约 3 分钟），全程真实重复下载发生过多轮。
+- **根因（真机取证）**：用户报「App 反复缓存」。真机数据实锤：缓存主池 6371 条全部当日写入（凌晨 04 时 1534 条 + 傍晚 18 时 4827 条 + 白天零星），journal 累计 CLEAN 18353 ≈ 现存条目 2.9 倍、REMOVE=0（无 LRU 驱逐，远未满 1GB 档位），当前进程启动后 journal 尾部全是 READ（预取轮再次触发）。结论：`ThumbnailPrefetcher` 登录后自动全库预取**无断点游标**（KDoc 有意简化口径），每次冷启动/重新登录都从头全库重扫，且单轮频繁中断（进程被杀后重开 App 即重触发）——已缓存条目虽不重复下载（键稳定，历史两轮修复有效），但每轮仍做全量列表拉取 + 全库逐条磁盘打开与位图解码，缩略图缓存页进度条反复从头跑全库，观感即「反复缓存」。**后续 datastore 取证补正**：用户日常连接为本地端模式（`server_url=http://127.0.0.1:18430`），该池条目实为本地端来源经分池 bug 错放（见第三条），连本地端时回环下载速度快（18 时轮 4827 条约 3 分钟），全程真实重复下载发生过多轮。
 - **主修：预取磁盘探测短路**（新增 `prefetch/PrefetchDiskProbe`）：单条预取前按 `SignedMediaCacheKeys.stableKey` 直查 `SplitDiskCache.openSnapshot`（键与写入侧同源，即取即闭；Coil DiskLruCache `Entry.snapshot()` 源码核实——物理文件缺失的幽灵条目会正确返回 null 并 REMOVE，探测语义安全），命中即跳过 execute（不发请求、不解码、只计入进度）；探测失败按未缓存退化为原路径，正确性不受影响。中断重跑/缓存齐全轮次从「全库重扫」退化为「只补缺口」，齐全轮次秒级收口；轮终在 logcat `QimengCache` 记档 `total/磁盘命中/网络下载` 汇总。`ThumbnailPrefetcher` 注入 `dagger.Lazy<SplitDiskCache>`（保持惰性装配拍板）。
 - **顺手发现并修复：分池路由被剥 host 键架空（本单最关键一笔）**：U10-5（第三百六十五笔）剥 host 后签名直链稳定键形如 `/media/thumb/<uuid>?size=md` 不含来源信息，`resolveCachePool` 原「非 http 键兜底 NAS」口径把**本地端来源**的稳定键全部错路由进 NAS 池（分池机制自剥 host 起形同虚设：真机实证 `image_cache_local` 仅 1 文件而主池 6371 条；若两端资产 id 重叠即触发批S5 拍板要防的串图）。修复：非 http 键跟随「当前连接来源」路由——`SplitDiskCache.updateActivePool`（AtomicReference，默认 NAS）+ 新增 `coil/CachePoolBinder`（EventSyncBootstrapper 同款接线：QimengApplication.onCreate 观察 `AuthRepository.serverUrl`，本地端预设→LOCAL 其余→NAS，实时跟随切换）；http 键（含 host 的完整 URL 键族）仍按键内 host 判定。
 - **测试**：`SplitDiskCacheTest` 新增 3 组（剥 host 稳定键跟随来源/http 键优先按键判/族外非 http 键跟随来源，16 全绿）；新增 `PrefetchDiskProbeTest` 4 组（真实 RealDiskCache + TemporaryFolder：命中/未命中/非签名家族恒 false/探测跟随当前来源池切换）。`:core:data:testDebugUnitTest` 与 `:app:assembleDebug` 全绿。
-- **真机部署验证（真机，debug 覆盖装）**：① 分池来源化生效——重启后本轮预取 6350 条全部正确落入本地池（`image_cache_local` 0→6350 条/230MB，回环下载约 4 分钟），UI 缩略图缓存页报「本轮完成 6350/6350」；② 探测短路「只补缺口」实锤——本地池删 1 条重启后 CLEAN 6350→6351、文件数复原、新条目 mtime 即重启时刻，其余 6349 条零动作零下载；③ 全命中轮次零下载（NAS 池 journal 全程无新写入）。（设备 logcat 被厂商 ROM 限制，验证证据全部取自 run-as 文件系统 + UI dump）
+- **真机部署验证（debug 覆盖装）**：① 分池来源化生效——重启后本轮预取 6350 条全部正确落入本地池（`image_cache_local` 0→6350 条/230MB，回环下载约 4 分钟），UI 缩略图缓存页报「本轮完成 6350/6350」；② 探测短路「只补缺口」实锤——本地池删 1 条重启后 CLEAN 6350→6351、文件数复原、新条目 mtime 即重启时刻，其余 6349 条零动作零下载；③ 全命中轮次零下载（NAS 池 journal 全程无新写入）。（设备 logcat 被厂商 ROM 限制，验证证据全部取自 run-as 文件系统 + UI dump）
 - **遗留（待用户拍板）**：NAS 池 6370 条/474MB 为历史混合数据（本地端来源错放为主，可能混少量真 NAS 来源缓存），磁盘条目无法事后区分来源——建议用户连 NAS 前在缩略图缓存页手动「清空服务器缓存」一次（消除两端资产 id 重叠时的低概率串图风险 + 释放空间），重连后预取自动补齐；每轮开头 ~32 页（200/页）全量列表拉取仍在（`allThumbUrls` 口径不变）；若日后全库缩略图总量超过缓存档位，LRU 驱逐与全库预取会互相追赶，届时再议「上轮完成时刻门槛」或协议层库 revision。（GLM-5.3-Flash 主代理）
 
 ## chore(repo): 任务书总纲出库——docs 工作文档清空（2026-09-30 第四百一十笔）
@@ -1751,7 +1769,7 @@
 
 执行 AI：GLM-5.3-Flash（主代理）
 
-- **事故与根因**（真机某品牌真机 / Android 16 排查）：用户报「本机模式详情页加载失败」。经 adb forward 直打 API 复现，详情 JSON/标签/时间轴/签名缩略图/签名原图全链 200 毫秒级——接口与数据无恙；真机本机 curl `/healthz` 30s 无响应 + SIGQUIT goroutine dump 定位为**内嵌服务端子进程调度整体停摆**（accept 停在 netpoll、连接协程/scanner 定时器/warmup sleep 全部「计时器已到期、goroutine 已就绪、无线程调度」）。触发规律：两次冻结均在 App 退后台后、插电/回前台后解冻——Android 16 + OEM 省电对后台进程组的冻结/压制连坐裸子进程（与壳进程同 cgroup），FGS 管不到。诊断动作：对已冻死子进程 SIGQUIT 抓堆栈（服务本就无响应，非额外损害）。
+- **事故与根因**（某品牌真机 / Android 16 排查）：用户报「本机模式详情页加载失败」。经 adb forward 直打 API 复现，详情 JSON/标签/时间轴/签名缩略图/签名原图全链 200 毫秒级——接口与数据无恙；真机本机 curl `/healthz` 30s 无响应 + SIGQUIT goroutine dump 定位为**内嵌服务端子进程调度整体停摆**（accept 停在 netpoll、连接协程/scanner 定时器/warmup sleep 全部「计时器已到期、goroutine 已就绪、无线程调度」）。触发规律：两次冻结均在 App 退后台后、插电/回前台后解冻——Android 16 + OEM 省电对后台进程组的冻结/压制连坐裸子进程（与壳进程同 cgroup），FGS 管不到。诊断动作：对已冻死子进程 SIGQUIT 抓堆栈（服务本就无响应，非额外损害）。
 - **冻结自愈**（`EmbeddedServerService`）：新增 `ACTION_HEALTH_CHECK`——探测 `/healthz`（回环、免鉴权、不碰数据库；3s 超时），两次探测（间隔 2s）均无响应即 `destroyForcibly`（冻结进程不执行 SIGTERM 处理器）并原位重拉，发「已自动恢复」一次性通知。触发链：`MainActivity.onStart` → `MainViewModel.onAppForeground()`（记录最近服务端地址，空串=未配置不触发）→ `EmbeddedServerController.ensureHealthyIfLocalMode`。刻意不在看护协程做后台探测：冻结时 Service 与子进程一起被冻，探测跑不动也救不了；前台回归时刻壳进程必已解冻、动作必可执行。配套：`startMutex`（启动序列异步化后防重复 START 并发拉起双子进程）、健康检查单飞闸（AtomicBoolean）、自愈前先摘看护（防 watchdog 把自愈误判为进程死亡而 stopSelf）、身份守卫对齐 `onServerDied`。
 - **残留子进程回收（「后端占用」形态）**：Service 销毁重建后子进程句柄丢失，孤儿仍占 18430 → 新子进程 bind 失败秒退、反复「已退出」。新增 pid 落盘（`files/server/server.pid`，每次启动覆写）+ 启动前回收（`parseRecordedPid` 纯逻辑 + /proc cmdline 须仍含 `libqimeng.so` 防误杀 + SIGKILL 后轮询等端口释放）。子进程 pid 定位用扫 /proc（cmdline 匹配二进制 + stat 的 ppid==壳进程）：compileSdk 37 平台桩的 `java/lang/Process.class` 缺 `pid()`（API 24+ 官方方法编译期不可见，实测）。
 - **内嵌服务端二进制重出**：jniLibs 里的 `libqimeng.so`（arm64 09-18 / x86_64 09-17 旧货）落后于 09-22 服务端批（FK 降级修复/Host 校验/回收站清扫等）——旧二进制下「浏览事件指向已删资产」走 ERROR+500 路径，客户端离线队列对孤儿事件反复重放（真机日志实测三条 FK ERROR）。本次双 ABI 重出随包，FK 场景回归 Warn+202 语义。

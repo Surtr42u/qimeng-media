@@ -1119,7 +1119,7 @@
 
 执行 AI：GLM-5.3-Flash（主代理）
 
-- **当日会话全景**（两批缺陷修复详见第二百六十五/二百六十六笔，本笔记调度与立卷）：①U10 追加批终包 `qimeng-任务U10追加批-终包-20260915.apk` 编译（assembleDebug/assembleRelease/lintDebug 绿，限核档）并装真机 真机 拉起；②**U10-1 旋转三步实验**——装机前后对照+隔离实验（仅启动不安装 10s 内翻转）+静置对照（仅启动瞬间一次）：「安装导致」不成立、触发点=App 启动；主嫌疑=nubia ROM 对 VideoStage requestedOrientation 启动兜底写点的反应；U10 卷 §2 旧结论「grep 零处 requestedOrientation」「安装导致」双推翻，追记 U10 卷 §10；③用户三拍板：任务T 剩余范围=T6+T7、**T4 真备份迁移删除**（手机已有库，旧项目行为数据放弃，媒体不受影响；T5 真机首扫节点并入验收顺带观察）、未解 bug 与 T6 同期修；拍板已同步任务T 卷（总表 T4 行划除+范围注）。
+- **当日会话全景**（两批缺陷修复详见第二百六十五/二百六十六笔，本笔记调度与立卷）：①U10 追加批终包 `qimeng-任务U10追加批-终包-20260915.apk` 编译（assembleDebug/assembleRelease/lintDebug 绿，限核档）并装真机 拉起；②**U10-1 旋转三步实验**——装机前后对照+隔离实验（仅启动不安装 10s 内翻转）+静置对照（仅启动瞬间一次）：「安装导致」不成立、触发点=App 启动；主嫌疑=nubia ROM 对 VideoStage requestedOrientation 启动兜底写点的反应；U10 卷 §2 旧结论「grep 零处 requestedOrientation」「安装导致」双推翻，追记 U10 卷 §10；③用户三拍板：任务T 剩余范围=T6+T7、**T4 真备份迁移删除**（手机已有库，旧项目行为数据放弃，媒体不受影响；T5 真机首扫节点并入验收顺带观察）、未解 bug 与 T6 同期修；拍板已同步任务T 卷（总表 T4 行划除+范围注）。
 - **立卷**：仓库外《工作区\任务U11-内嵌形态与缺陷清偿卷.md》——吸收任务T 剩余（T6 内嵌批次D/E+T7 收官）与 U10/U8 遗留缺陷批次（A=FolderScanPolicyTest 预存红裁定修复（f0ee67f 引入）/B=沉浸静置自动退/U10 卷 §10 三步实验续/C=U10-1 写点条件化），含已完成勿重做区（20d5aec/b6b6b37 关键结论+证据位置）、小债台账（http 字面量两处提常量/metrics 未接线/Keyer 适配器无单测等）、用户验收清单与恢复惯例（**新会话说「执行任务U11」**）。任务T 卷 T6/T7 勾选行加执行迁入指针。
 - **git**：本地领先 origin/master 2 笔（20d5aec/b6b6b37）待网络恢复补推；工作树干净。
 - 待用户：真机 U10 追加批验收照旧（三处 UI 拍板/TXT/备份/文件夹上传/数据管理砍三项），或等 U11 终包一并验收。
@@ -1650,7 +1650,7 @@
 
 - **帧率同步（问题5「提交帧率同步显示器或者手机实际帧率」）**：MainActivity 新增 requestHighestRefreshRate()——preferredDisplayModeId（API 23，minSdk 26 免 guard）请求与当前模式同分辨率的最高刷新率（禁止硬编码 modeId，官方口径注释落档；API30+ display / 26-29 defaultDisplay 分档）；modeId 相同 no-op，判空不阻断启动。背景=高刷屏设备系统可能为省电锁 60Hz，App 显式请求最高刷。
 - **release 构建**：app build.gradle.kts 补 buildTypes.release——signingConfig 复用 debug 签名（本地实测口径注释）、minify/shrinkResources 显式 false（R8/Hilt/Room keep 规则风险留后续批）。出包 app-release.apk 验签通过+模拟器试装走查（首页/详情零崩溃）+装回 debug。
-- 实测：门禁三连绿；模拟器单模式 60Hz 实证 no-op 路径；**真机高刷收益待用户 真机 装 release 包实测**（本批出包目的）；R8 优化/baseline profile 记档后续批。
+- 实测：门禁三连绿；模拟器单模式 60Hz 实证 no-op 路径；**真机高刷收益待用户真机 装 release 包实测**（本批出包目的）；R8 优化/baseline profile 记档后续批。
 
 ## feat(app): 任务Y Y4b 批——首页筛选面板接线（2026-09-12 第二百二十三笔）
 

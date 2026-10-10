@@ -103,7 +103,7 @@ class MainActivity : ComponentActivity() {
     /**
      * 请求设备最高刷新率（任务Y-Y5，用户问题5「帧率同步手机实际帧率」）。
      *
-     * 为什么需要：高刷屏设备（如用户真机某品牌真机）系统可能为省电把 App 默认锁在
+     * 为什么需要：高刷屏设备（如用户的高刷真机）系统可能为省电把 App 默认锁在
      * 60Hz，不显式声明就永远跑不到面板峰值；App 侧「帧率同步显示器/手机实际帧率」的
      * 官方口径即 [android.view.WindowManager.LayoutParams.preferredDisplayModeId] +
      * [Display.getSupportedModes]（API 23+，minSdk 26 无需 guard；modeId 随设备变化，
