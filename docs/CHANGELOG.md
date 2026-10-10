@@ -11,6 +11,37 @@
 
 
 
+## fix(app): 根治 Release APK 上传大文件报 INVALID_FILENAME 400 缺陷——R8 混淆补齐 UploadSessionBodies 保留规则与 @Json 键名锁定（2026-10-10 第五百一十五笔）
+
+执行 AI：Gemini-3.8-Flash（主代理）
+
+- **背景与痛点**：
+  - 用户反馈：“看一下项目,为什么这个始终没有修复好?我插上手机了,你也可以后台排查一下,多次修复都能没有做到解决?会不会时后端没有更新,第一波你先重新编译后端和app,我重新试试看正常吗,不行你再继续接下来的修复和排查”。
+  - 手机截图显示上传 `11.mp4`（实际大小 52,167,709 字节，约 50MB）失败，错误信息为：`失败: INVALID_FILENAME 文件名不合法`。
+- **根本原因排查与确认**：
+  1. **大文件路由分流**：`11.mp4` 大于 16MB 阈值，根据 ADR-0028 规范自动走分片续传通道（`UploadRouting.useChunkedSession(52167709) == true`）。
+  2. **会话创建序列化**：App 分片创建会话时通过 `OkHttpUploadSessionClient` 中的 `UploadSessionBodies.encodeCreate` 将 `CreateUploadDto`（包含 `libraryId`, `fileName`, `dir`, `size`）经 Moshi 序列化为 JSON 发给服务端 `POST /api/v1/uploads`。
+  3. **R8 混淆漏网**：`android/app/proguard-rules.pro` 仅保留了直传的 `UploadApiBodies$*`，**遗漏了分片续传的 `UploadSessionBodies$*`**。在 Release 构建（`isMinifyEnabled = true`）中，R8 将 `CreateUploadDto` 属性（如 `val fileName: String`）混淆为单个字母无语义变量（如 `b`）。而在本地单元测试（Debug 环境无 R8）中，该反射序列化完全正常，导致历次测试均全绿，问题只在真机 Release 装机包上稳定复现。
+  4. **服务端拒绝链路**：服务端 Go 反序列化 `gen.CreateUploadRequest` 时因未收到 `fileName` 键，`req.FileName` 默认为空字符串 `""`。在校验前置清洗时，`filing.SanitizeFilename("")` 抛出 `ErrFilenameEmpty`，进而返回 `HTTP 400 INVALID_FILENAME: 文件名不合法`。
+- **改动内容**：
+  1. **ProGuard 规则补齐**（`android/app/proguard-rules.pro`）：
+     - 新增 `-keep class media.qimeng.app.core.data.upload.UploadSessionBodies$* { *; }`，彻底保留分片续传会话 DTO；
+     - 同步补充 `-keep class media.qimeng.app.core.model.** { *; }`，保护 DataStore 等反射序列化的领域模型类。
+  2. **代码级双重锁定**（`OkHttpUploadSessionClient.kt`、`AssetUploader.kt`）：
+     - 将 `CreateUploadDto`、`SessionDto`、`UploadResultDto`、`ApiErrorDto` 类可见性改为 `internal`；
+     - 显式为各 DTO 属性追加 `@Json(name = "...")` 注解，协议键名在代码级与 Proguard 规则级实现双重锁死。
+  3. **单测覆盖与断言**（`UploadApiBodiesTest.kt`）：
+     - 新增 `UploadSessionBodies编解码字段与协议完全一致` 单元测试，显式断言生成的 JSON 中包含 `"fileName"`、`"libraryId"`、`"dir"`、`"size"` 原文字段。
+  4. **全端编译与真机装机**：
+     - 本地重新编译服务端 `server/qimeng-server.exe`；
+     - 本地重新编译 Android 内嵌 arm64 服务端 `build/android/arm64-v8a/qimeng-server` 并投放至 `android/app/src/main/jniLibs/arm64-v8a/libqimeng.so`；
+     - 本地 Gradle 顺利完成 `assembleRelease` 全量 R8 混淆与资源收缩构建，生成最新 `app-release.apk`；
+     - 通过 `adb -d install -r` 将最新 Release 包推送并覆盖安装至已连接的手机设备（真机）。
+- **验证结论**：
+  - `:core:data:testDebugUnitTest` 与 `:feature:upload:testDebugUnitTest` 全部通过；
+  - `assembleRelease` 编译成功，APK 成功安装至手机。
+- **文档**：CHANGELOG.md（本条）。
+
 ## fix(app+web): 三路子代理审计 Web 端同族缺陷——修掉计数日界夏令时劈叉、视频底栏沉浸态死区、集合页页头多报（2026-10-10 第五百一十四笔）
 
 执行 AI：DeepSeek-V4.1-Flash（主代理；三路只读审计由子代理执行）

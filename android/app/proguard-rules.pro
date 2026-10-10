@@ -3,10 +3,14 @@
 # 本工程 SDK 数据类不挂 @JsonClass（仅部分嵌套 enum 挂），不能按注解收敛，按包 keep。
 -keep class media.qimeng.sdk.models.** { *; }
 
-# SDK 包外唯一走 KotlinJsonAdapterFactory 的模型：DTO 嵌套于同文件顶层 object
-# UploadApiBodies（AssetUploader.kt L158；L183 UploadResultDto / L186 ApiErrorDto），
-# 编译类名 UploadApiBodies$UploadResultDto / $ApiErrorDto。
+# 领域模型类（含 DataStore 序列化的 StagingBatchConfig 等）
+-keep class media.qimeng.app.core.model.** { *; }
+
+# SDK 包外走 KotlinJsonAdapterFactory 的模型：
+# ① 直传 DTO 嵌套于同文件顶层 object UploadApiBodies（AssetUploader.kt）
 -keep class media.qimeng.app.core.data.upload.UploadApiBodies$* { *; }
+# ② 分片续传 DTO 嵌套于同文件顶层 object UploadSessionBodies（OkHttpUploadSessionClient.kt）
+-keep class media.qimeng.app.core.data.upload.UploadSessionBodies$* { *; }
 
 # ===== 以下由依赖制品内嵌 consumer 规则自动覆盖（本机缓存制品核实，勿重复手写）=====
 # moshi-1.15.2.jar META-INF/proguard/moshi.pro / kotlin-reflect-2.3.21.jar r8-from-1.6.0/kotlin-reflect.pro

@@ -51,4 +51,25 @@ class UploadApiBodiesTest {
         assertNull(UploadApiBodies.parseUploadResult("<html>bad</html>"))
         assertNull(UploadApiBodies.parseUploadResult(""))
     }
+
+    @Test
+    fun `UploadSessionBodies编解码字段与协议完全一致`() {
+        val json = UploadSessionBodies.encodeCreate(
+            libraryId = "lib-123",
+            fileName = "11.mp4",
+            dir = "sub/dir",
+            sizeBytes = 52167709L,
+        )
+        // 关键断言：字段名绝对不能被混淆或漏掉 fileName
+        org.junit.Assert.assertTrue(json.contains(""""fileName":"11.mp4""""))
+        org.junit.Assert.assertTrue(json.contains(""""libraryId":"lib-123""""))
+        org.junit.Assert.assertTrue(json.contains(""""dir":"sub/dir""""))
+        org.junit.Assert.assertTrue(json.contains(""""size":52167709"""))
+
+        val session = UploadSessionBodies.parseSession("""{"id":"sess-1","offset":1024,"size":52167709}""")
+        org.junit.Assert.assertNotNull(session)
+        assertEquals("sess-1", session?.id)
+        assertEquals(1024L, session?.offset)
+        assertEquals(52167709L, session?.size)
+    }
 }

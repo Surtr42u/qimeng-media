@@ -1,6 +1,7 @@
 package media.qimeng.app.core.data.upload
 
 import android.util.Log
+import com.squareup.moshi.Json
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import java.io.IOException
@@ -50,14 +51,18 @@ internal object UploadSessionBodies {
     }
 
     /** 字段名与协议一致（size 为 JSON 键，非 Kotlin 保留字；dir 可选但恒发空串=库根） */
-    private class CreateUploadDto(
-        val libraryId: String,
-        val fileName: String,
-        val dir: String,
-        val size: Long,
+    internal class CreateUploadDto(
+        @Json(name = "libraryId") val libraryId: String,
+        @Json(name = "fileName") val fileName: String,
+        @Json(name = "dir") val dir: String,
+        @Json(name = "size") val size: Long,
     )
 
-    private class SessionDto(val id: String?, val offset: Long?, val size: Long?)
+    internal class SessionDto(
+        @Json(name = "id") val id: String?,
+        @Json(name = "offset") val offset: Long?,
+        @Json(name = "size") val size: Long?,
+    )
 }
 
 /**

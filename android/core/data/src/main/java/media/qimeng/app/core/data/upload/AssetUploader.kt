@@ -8,6 +8,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.squareup.moshi.Json
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -222,10 +223,16 @@ internal object UploadApiBodies {
     private fun defaultClientError(httpCode: Int): String = "服务端拒绝（HTTP $httpCode）"
 
     /** 2xx 响应只关心的字段（AssetDetail 子集；字段名与协议一致） */
-    private class UploadResultDto(val id: String? = null, val fileName: String? = null)
+    internal class UploadResultDto(
+        @Json(name = "id") val id: String? = null,
+        @Json(name = "fileName") val fileName: String? = null,
+    )
 
     /** 4xx 响应体（协议 components.schemas.Error） */
-    private class ApiErrorDto(val code: String? = null, val message: String? = null)
+    internal class ApiErrorDto(
+        @Json(name = "code") val code: String? = null,
+        @Json(name = "message") val message: String? = null,
+    )
 }
 
 /** 请求体媒体类型（协议 requestBody 声明 application/octet-stream） */
