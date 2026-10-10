@@ -11,6 +11,20 @@
 
 
 
+## chore(ci): 云端出包还原本机 debug keystore——云端 APK 与真机同签名，可直接覆盖安装（2026-10-10 第五百一十九笔）
+
+执行 AI：DeepSeek-V4.1-Flash（主代理）
+
+- **背景与痛点**：
+  - release 包签名复用 AGP 的 debug 签名档（`android/app/build.gradle.kts` 的 `signingConfig = signingConfigs.getByName("debug")`）；而 GitHub 托管 runner 是临时环境，`~/.android/debug.keystore` 不存在时由 AGP **随机新生成**——于是**每次云端出包的签名都不同**。
+  - 后果（2026-10-10 实测撞到）：真机已装包证书 `8F:62:BA:55…`、云端包证书 `52:A7:37:11…`，`adb install -r` 覆盖安装必然 `INSTALL_FAILED_UPDATE_INCOMPATIBLE`；要装上只能先卸载（清空 App 数据），与「覆盖安装不丢数据」的装机纪律直接冲突。当日只能临时在本地用本机 keystore 重签云端包后才覆盖安装成功。
+- **改动内容**（`.github/workflows/build-apk.yml`）：
+  1. 新增「还原本机 debug keystore」步骤，位置在 JDK 之后、**任何 Gradle 任务之前**（AGP 解析 signingConfigs 时就会读该文件，晚于构建还原则本次签名已漂移）：从仓库 Secret `QIMENG_DEBUG_KEYSTORE_B64` 还原 `~/.android/debug.keystore`（base64 解码，`tr -d '\r\n'` 容错、`chmod 600`），并用 `keytool` 自检可读**并打印证书 SHA-256 指纹留痕**（与真机已装包指纹对照即可确认本次包能覆盖安装）。
+  2. **Secret 缺失时整步跳过并打 warning**：回落到「AGP 自行生成 debug keystore」的旧行为，出包不因此中断（代价=该次包仅能卸载后安装）。
+  3. 文头补记签名口径与失败形态，避免后续维护者再踩。
+- **验证**：手动触发云端出包，产物 APK 证书 SHA-256 = 本机 debug keystore 指纹；直接 `adb install -r` 覆盖已装 App 成功，`firstInstallTime` 不变（App 数据保留）。
+- **文档**：CHANGELOG.md（本条）。
+
 ## fix(server): 自动新建作者块与上一块之间统一空三行——块分隔收为单一写点，App/Web 两条通道同享（2026-10-10 第五百一十八笔）
 
 执行 AI：DeepSeek-V4.1-Flash（主代理）
