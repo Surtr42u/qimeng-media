@@ -246,6 +246,11 @@ const (
 	numberedFormat    = "%d" + numberedTwoSpaces + "%s"
 )
 
+// blockSeparator 是新块与上一块之间的分隔：4 个换行符 = 中间空三行
+// （2026-10-10 用户定规范：作者总表块与块之间统一空三行，App/Web 两条通道
+// 共用本写点；存量文本由 scripts 之外的运维脚本一次性对齐）。
+const blockSeparator = "\n\n\n\n"
+
 // AppendAuthorBlock 在 content 末尾追加新作者块：编号=现有最大编号+1（无块
 // 则 1）；编号行写 `编号  别名1  别名2`（两空格分隔）+ 来源行 + 「作品」
 // 标记 + 作品行，与手工导入片段同构（REQ §3.3 第 9 条：写出的内容必须能被
@@ -254,6 +259,10 @@ const (
 // 直接写原始输入/DisplayName（含双空格或括号备注）会让回读 id 与
 // GenerateAuthorID 分裂（阻断审查判定的身份分歧缺陷）。sources/works 为空
 // 时对应区整段省略。
+//
+// 块分隔：新块与上一块之间空三行（blockSeparator，2026-10-10 用户定规范）——
+// 手工维护的作者总表块间统一空三行，自动新建块贴死在上一块末行会让两块视觉
+// 上挤在一起。空行对解析零影响（ParseAuthorBlocks 遇空行 continue），纯排版。
 func AppendAuthorBlock(content string, names []string, sources, works []string) string {
 	maxNumber := 0
 	for _, s := range scanBlockSpans(content) {
@@ -266,7 +275,7 @@ func AppendAuthorBlock(content string, names []string, sources, works []string) 
 	base := strings.TrimRight(content, "\n")
 	if base != "" {
 		b.WriteString(base)
-		b.WriteByte('\n')
+		b.WriteString(blockSeparator) // 空行分隔：上一块末行 与 新块编号行 之间
 	}
 	fmt.Fprintf(&b, numberedFormat, maxNumber+1, strings.Join(names, numberedTwoSpaces))
 	for _, s := range dedupLines(sources) {

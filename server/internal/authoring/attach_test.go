@@ -296,27 +296,27 @@ func TestAppendAuthorBlock(t *testing.T) {
 			content: "1  aaa\n作品\na.png\n\n5  bbb\n作品\nb.png\n",
 			names:   []string{"ccc"},
 			works:   []string{"c.png"},
-			want:    "1  aaa\n作品\na.png\n\n5  bbb\n作品\nb.png\n6  ccc\n作品\nc.png\n",
+			want:    "1  aaa\n作品\na.png\n\n5  bbb\n作品\nb.png\n\n\n\n6  ccc\n作品\nc.png\n",
 		},
 		{
 			name:    "只作品",
 			content: "1  aaa\n",
 			names:   []string{"bbb"},
 			works:   []string{"b.png"},
-			want:    "1  aaa\n2  bbb\n作品\nb.png\n",
+			want:    "1  aaa\n\n\n\n2  bbb\n作品\nb.png\n",
 		},
 		{
 			name:    "只来源",
 			content: "1  aaa\n",
 			names:   []string{"bbb"},
 			sources: []string{"site-a"},
-			want:    "1  aaa\n2  bbb\n来源  site-a\n",
+			want:    "1  aaa\n\n\n\n2  bbb\n来源  site-a\n",
 		},
 		{
 			name:    "来源作品都无_整段省略",
 			content: "1  aaa\n",
 			names:   []string{"bbb"},
-			want:    "1  aaa\n2  bbb\n",
+			want:    "1  aaa\n\n\n\n2  bbb\n",
 		},
 		{
 			name:    "显示名数字开头不误伤",
@@ -331,7 +331,7 @@ func TestAppendAuthorBlock(t *testing.T) {
 			content: "1  aaa\n作品\na.png",
 			names:   []string{"bbb"},
 			works:   []string{"b.png"},
-			want:    "1  aaa\n作品\na.png\n2  bbb\n作品\nb.png\n",
+			want:    "1  aaa\n作品\na.png\n\n\n\n2  bbb\n作品\nb.png\n",
 		},
 		{
 			name:    "多别名两空格分隔_回读恒等",
@@ -509,9 +509,9 @@ func TestMissingAndMergeUploadEntries(t *testing.T) {
 		t.Errorf("全覆盖 missing=%+v, want 空", got)
 	}
 
-	// 并回：既有块补缺行，缺失块开新块保 displayName。
+	// 并回：既有块补缺行，缺失块开新块保 displayName（新块前空三行，见 blockSeparator）。
 	merged := MergeUploadEntries(content, missing)
-	wantMerged := "1  aaa\n来源\nsite-a\n作品\na.png\nb.png\nc.png\n2  bbb\n作品\nx.png\n"
+	wantMerged := "1  aaa\n来源\nsite-a\n作品\na.png\nb.png\nc.png\n\n\n\n2  bbb\n作品\nx.png\n"
 	if merged != wantMerged {
 		t.Errorf("merged=\n%q\nwant:\n%q", merged, wantMerged)
 	}

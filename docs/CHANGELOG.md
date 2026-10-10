@@ -11,6 +11,21 @@
 
 
 
+## fix(server): 自动新建作者块与上一块之间统一空三行——块分隔收为单一写点，App/Web 两条通道同享（2026-10-10 第五百一十八笔）
+
+执行 AI：DeepSeek-V4.1-Flash（主代理）
+
+- **背景与痛点**：
+  - 用户手工维护的《作者总表.txt》各作者块之间靠空行分隔，可读性依赖人工排版；而 App/Web 经接口**程序化新建**作者块时，编号行紧贴上一块最后一个作品行（`AppendAuthorBlock` 只补一个换行），真机核对时两块视觉上挤在一起，误以为同属一个作者。
+- **改动内容**：
+  1. **块分隔单一写点**（`server/internal/authoring/attach.go`）：新增包级常量 `blockSeparator = "\n\n\n\n"`（4 个换行符 = 中间空三行），`AppendAuthorBlock` 由 `b.WriteByte('\n')` 改为 `b.WriteString(blockSeparator)`。该函数是**新建作者块的唯一实现**，上传挂靠（`authorattach.Apply`）、资产编辑页挂作者（`ReplaceAssetAuthors`）、作者来源写入（`ReplaceAuthorSources`）、重导入保护重建缺失块（`MergeUploadEntries`）四条路径共用——App/Web 两端自动同享，客户端零改动、协议面零变化。
+  2. **测试锁定**（`server/internal/authoring/attach_test.go`）：`TestAppendAuthorBlock` 六例与 `TestMissingAndMergeUploadEntries` 的期望输出同步为三空行形态，行为回退即红。
+- **验证**：
+  - `go test ./...` 全绿（17 个包）；
+  - 隔离端到端（临时数据目录 + 独立端口 + 临时媒体目录起新构建）：建库→扫描→导入首块→`PUT /assets/{id}/authors` 新建作者，读回片段原文，新块编号行之前恰好 3 个空行；跑完实例与临时目录已清理；
+  - 存量对齐：服务端片段与 PC/手机两端《作者总表.txt》一次性规范为块间三空行，逐块编号行+作品行比对一致（作者 126 位、作品 771/772 条），双端 MD5 相同、体检报告「双端 TXT 100% 逐字节一致」。
+- **文档**：CHANGELOG.md（本条）、DOMAIN_RULES.md（§6 增「新作者块排版」+ 文头记档）、GUIDE_API.md（作者挂靠编辑段补记 + 文头记档）。
+
 ## fix(app): 修复归档库名空白规范化匹配与详情改名归档物理文件联动同步（2026-10-10 第五百一十七笔）
 
 执行 AI：Gemini-3.8-Flash（主代理）
