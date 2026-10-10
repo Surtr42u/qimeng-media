@@ -21,6 +21,7 @@
 - **流程**：删除仓库 → 同名重建（public + 原 description）→ 推入干净历史（`a17140cd`…）→ 重配 Secret → 恢复 issues/wiki。
 - **结果**：远端引用只剩 `HEAD` + `refs/heads/master`，**`refs/pull/*` 归零**；远端 master 上「序列号 / 机型 / 数字形态内网 IP / 邮箱串」四项 `-S` 全为 0；**无需再提交 Support 工单**。
 - **代价与留存**：19 个 PR 页面不再存在于 GitHub（标题/正文/评论已导出为本地归档）；两个未被任何 workflow 引用的历史 Secret 未恢复。
+- **重建后收尾**：`ci.yml` 注册正常（push 触发即跑），但 `build-apk.yml` 未被索引（API 报 `not found on the default branch`；文件内容与本地逐字节一致、js-yaml 校验合法、Actions 权限 `enabled:true/allowed_actions:all`）——属重建后首次 push 的**扫描竞态**，且后续 push 未触碰该文件故不会重扫。处置：在该文件写入一段「触痕」注释（无行为变化）以触发重新扫描，注册后跑一次云端出包验证通道。
 - **文档**：CHANGELOG.md（本条）。
 
 ## chore(repo): 全历史隐私重写——序列号/机型/内网 IP/真实身份从 642 个提交中清除并强推 master（2026-10-10 第五百二十一笔）
