@@ -1,7 +1,10 @@
 package media.qimeng.app.core.data.repository
 
+import android.content.Context
+import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.provider.DocumentsContract
 import java.io.File
 import java.io.InputStream
 import java.util.Locale
@@ -87,6 +90,56 @@ class InboxFileStore @Inject constructor() {
     }
 
     /**
+     * 把 content:// URI 流归档到上传归档文件夹（供相册与系统文件来源在设置归档文件夹后落位）：
+     * 将文件流写入 <archiveRoot>/<sanitize(库名)>/<目标文件名>。
+     * - 优先比对目标存在性与内容：同内容直接跳过或删旧放新；不同内容加序号；
+     * - 写入流经 .part 临时文件改名到位；
+     * - 写入成功后尝试 DocumentsContract.deleteDocument 删除源文档（若 SAF provider
+     *   支持删除则达成移动语义；若不支持删除/无删除权限则安全留存原位，达成安全备份归档语义）；
+     * - 绝不抛异常，失败返回 false。
+     */
+    fun archiveUriToLibraryRoot(
+        context: Context,
+        archiveRoot: String,
+        libraryName: String,
+        uri: Uri,
+        displayName: String,
+    ): Boolean {
+        val dirName = sanitizeLibraryDirName(libraryName) ?: return false
+        val targetDir = File(archiveRoot, dirName)
+        if (!targetDir.isDirectory && !targetDir.mkdirs()) return false
+        var target = File(targetDir, displayName)
+        if (target.exists() && !sameContent(context, uri, target)) {
+            target = resolveConflictName(targetDir, displayName) ?: return false
+        }
+        val part = File(targetDir, target.name + ARCHIVE_PART_SUFFIX)
+        return try {
+            val input = context.contentResolver.openInputStream(uri) ?: return false
+            input.use { inStream ->
+                part.outputStream().use { outStream ->
+                    inStream.copyTo(outStream)
+                }
+            }
+            if (target.exists() && !target.delete()) {
+                part.delete()
+                return false
+            }
+            if (!part.renameTo(target)) {
+                part.delete()
+                return false
+            }
+            // 尽力而为尝试删除源文档（若 SAF 提供方支持删除）
+            runCatching {
+                DocumentsContract.deleteDocument(context.contentResolver, uri)
+            }
+            true
+        } catch (e: Exception) {
+            part.delete()
+            false
+        }
+    }
+
+    /**
      * copy 兜底（renameTo 跨挂载点失败时）：先 copyTo 到同目录 .part 临时名，成功后
      * renameTo 改名到位。为什么不能直接 copyTo 目标名：copyTo 半途失败（磁盘满/进程
      * 被杀）会在归档目录留下半截同名目标文件，下次同名归档因内容不等走序号位、垃圾
@@ -165,6 +218,32 @@ class InboxFileStore @Inject constructor() {
                     true
                 }
             }
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    private fun sameContent(context: Context, uri: Uri, b: File): Boolean {
+        return try {
+            context.contentResolver.openInputStream(uri)?.use { left ->
+                b.inputStream().use { right ->
+                    val bufA = ByteArray(FILE_COMPARE_BUFFER_BYTES)
+                    val bufB = ByteArray(FILE_COMPARE_BUFFER_BYTES)
+                    while (true) {
+                        val nA = readFully(left, bufA)
+                        val nB = readFully(right, bufB)
+                        if (nA != nB) return@use false
+                        val chunkEqual = if (nA == bufA.size) {
+                            bufA.contentEquals(bufB)
+                        } else {
+                            bufA.copyOf(nA).contentEquals(bufB.copyOf(nB))
+                        }
+                        if (!chunkEqual) return@use false
+                        if (nA < bufA.size) break
+                    }
+                    true
+                }
+            } ?: false
         } catch (e: Exception) {
             false
         }

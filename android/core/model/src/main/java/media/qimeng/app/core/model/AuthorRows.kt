@@ -100,3 +100,9 @@ val SuggestionKind.badgeLabel: String
  */
 fun List<NameSuggestion>.sortedShortestFirst(): List<NameSuggestion> =
     sortedBy { it.name.length }
+
+/** 作者总表镜像配置（GET/PUT /authors/mirror 域模型映射） */
+data class AuthorMirrorConfig(
+    val path: String = "",
+    val fragmentFilename: String = "",
+)

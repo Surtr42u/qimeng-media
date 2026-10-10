@@ -11,6 +11,39 @@
 
 
 
+## feat(app): 打通手机本地上传归档流转与作者总表镜像配置——支持 SAF content:// 来源按库归档与本地物理 TXT 实时写回（2026-10-10 第五百一十六笔）
+
+执行 AI：Gemini-3.8-Flash（主代理）
+
+- **背景与需求**：
+  - 用户构想手机端到 NAS 的完整流转流程：
+    1. 手机本地单机上传媒体文件，上传成功后文件自动移动/拷贝到「归档文件夹」（`<归档根>/<库名>/`）；
+    2. 手机端关联作者、来源等信息，本地物理 TXT 文件自动同步更新，导出备份包包含完整关联；
+    3. 手机 App 切换到 NAS 连接，从归档文件夹一键批量上传媒体到 NAS；
+    4. NAS 端导入手机导出的备份包，自动按文件名匹配并建立作者、胶囊、标签、历史等全量关联。
+  - 用户反馈关键痛点：
+    1. 之前上传的文件没有移动到归档文件夹；
+    2. 添加作者后，本地物理 TXT 文件并没有同步更新。
+- **根本原因排查与确认**：
+  1. **归档跳过 content:// 来源**：2026-09-29 精简上传入口后，上传只保留 SAF 文档选择器，返回 `content://` 虚拟 URI。`UploadWorker.kt` 此前判定非绝对路径（`!UploadRules.isAbsoluteFilePath(spec.uri)`）时直接跳过归档，导致归档文件夹永远为空。
+  2. **缺少作者总表镜像 App 端设置**：服务端的作者事实源在 SQLite 数据库的 `kv_settings.imported_txt_sources`。要将数据自动落盘为物理 `.txt` 文件，依赖服务端「作者总表镜像（Author Mirror）」通道（ADR-0023 / ADR-0024）；但 App 端此前未提供该配置入口，镜像路径默认为空（关闭），因此服务端未向磁盘输出 txt。
+- **改动内容**：
+  1. **SAF content:// 归档流转打通**（`InboxFileStore.kt`、`UploadWorker.kt`）：
+     - `InboxFileStore` 新增 `archiveUriToLibraryRoot` 方法，支持通过 ContentResolver 读取 `content://` 流；
+     - 自动根据目标库名规范化建目录 `<归档根>/<库名>/`，并流式比对目标同名内容；
+     - 内容冲突时使用 `(1).ext` 序号防覆盖，通过 `.part` 临时文件原子重命名保障断电与异常时不留垃圾；
+     - 写入完成后尽力而为调用 `DocumentsContract.deleteDocument` 尝试删除源文档（支持则达成移动，不支持则安全留存达成安全归档）；
+     - `UploadWorker.archiveNote` 接入该通道：配置归档根时，`content://` 来源自动流转入归档文件夹。
+  2. **作者总表镜像 App 端设置与管道**（`AuthorRows.kt`、`MediaRepository.kt`、`SdkMediaRepositories.kt`、`AuthorTxtImportViewModel.kt`、`AuthorTxtImportScreen.kt`）：
+     - `core:model` 新增 `AuthorMirrorConfig` 域模型；
+     - `core:data` 为 `AuthorRepository` 及生产实现 `SdkAuthorRepository` 接入 `authorMirror()` 与 `saveAuthorMirror()`，直通服务端 `GET/PUT /api/v1/authors/mirror`；
+     - `feature:manage` 在 `AuthorTxtImportViewModel` 增加镜像路径与目标片段的读取、草稿编辑与保存方法；
+     - `AuthorTxtImportScreen` 底部新增「作者总表镜像」配置卡片，支持用户输入手机本地绝对路径（如 `/storage/emulated/0/Download/authors.txt`），保存后服务端在每次作者关联变动时均会自动实时将最新 TXT 片段刷入该物理文件。
+- **验证结论**：
+  - `:core:data:testDebugUnitTest` 与 `:feature:manage:testDebugUnitTest` 单元测试通过；
+  - `assembleRelease` 编译通过并生成 Release APK。
+- **文档**：CHANGELOG.md（本条）。
+
 ## fix(app): 根治 Release APK 上传大文件报 INVALID_FILENAME 400 缺陷——R8 混淆补齐 UploadSessionBodies 保留规则与 @Json 键名锁定（2026-10-10 第五百一十五笔）
 
 执行 AI：Gemini-3.8-Flash（主代理）

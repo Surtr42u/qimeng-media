@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import media.qimeng.app.core.data.repository.AuthorRepository
+import media.qimeng.app.core.model.AuthorMirrorConfig
 
 /** 作者 TXT 导入页 UI 状态（信息架构基准 = Web 文件管理页 TxtAuthorImportCard） */
 data class AuthorTxtImportUiState(
@@ -27,13 +28,19 @@ data class AuthorTxtImportUiState(
     val errorMessage: String? = null,
     /** 操作结果提示（点击关闭；Web 同位用 toast） */
     val noticeMessage: String? = null,
+    /** 镜像文件绝对路径（留空=关闭） */
+    val mirrorPath: String = "",
+    /** 镜像目标片段（留空=最近导入的片段） */
+    val mirrorFragmentFilename: String = "",
+    /** 镜像保存进行中 */
+    val mirrorSaving: Boolean = false,
 ) {
     /** 重新匹配可用性（Web L145：disabled = rebuildTxt.isPending || files.length === 0） */
     val canRebuild: Boolean get() = !rebuilding && files.isNotEmpty()
 }
 
 /**
- * 作者 TXT 导入 ViewModel（U10-6b）：片段列表 + 选 TXT 导入 + 移除片段重建 + 幂等重放。
+ * 作者 TXT 导入 ViewModel（U10-6b）：片段列表 + 选 TXT 导入 + 移除片段重建 + 幂等重放 + 作者总表镜像。
  * 全走 [AuthorRepository]，UI 零直调（铁律 7）；成功反馈文案逐字对齐 Web
  * LibraryManagePage.tsx TxtAuthorImportCard 各 mutate onSuccess toast。
  */
@@ -50,7 +57,7 @@ class AuthorTxtImportViewModel @Inject constructor(
     }
 
     /**
-     * 重查片段列表。已有数据时静默刷新（不置 loading）；[clearError]=false 供
+     * 重查片段列表与镜像配置。已有数据时静默刷新（不置 loading）；[clearError]=false 供
      * 「写操作失败后的还原刷新」用——失败横幅先于刷新协程入队，默认清错误会吞掉
      * 刚设置的横幅（LibraryManageViewModel.refresh 同款时序口径）。
      */
@@ -63,7 +70,15 @@ class AuthorTxtImportViewModel @Inject constructor(
             }
             try {
                 val names = authorRepository.importedTxtFileNames()
-                _uiState.update { it.copy(loading = false, files = names) }
+                val mirror = runCatching { authorRepository.authorMirror() }.getOrDefault(AuthorMirrorConfig())
+                _uiState.update {
+                    it.copy(
+                        loading = false,
+                        files = names,
+                        mirrorPath = mirror.path,
+                        mirrorFragmentFilename = mirror.fragmentFilename,
+                    )
+                }
             } catch (e: Exception) {
                 _uiState.update { it.copy(loading = false, errorMessage = ERROR_LOAD) }
             }
@@ -138,6 +153,47 @@ class AuthorTxtImportViewModel @Inject constructor(
         }
     }
 
+    /** 镜像文件路径输入变更 */
+    fun onMirrorPathChange(path: String) {
+        _uiState.update { it.copy(mirrorPath = path) }
+    }
+
+    /** 镜像目标片段输入变更 */
+    fun onMirrorFragmentChange(fragment: String) {
+        _uiState.update { it.copy(mirrorFragmentFilename = fragment) }
+    }
+
+    /** 保存作者总表镜像配置（PUT /authors/mirror） */
+    fun saveMirror() {
+        if (_uiState.value.mirrorSaving) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(mirrorSaving = true, errorMessage = null, noticeMessage = null) }
+            try {
+                val saved = authorRepository.saveAuthorMirror(
+                    AuthorMirrorConfig(
+                        path = _uiState.value.mirrorPath.trim(),
+                        fragmentFilename = _uiState.value.mirrorFragmentFilename.trim(),
+                    )
+                )
+                _uiState.update {
+                    it.copy(
+                        mirrorSaving = false,
+                        mirrorPath = saved.path,
+                        mirrorFragmentFilename = saved.fragmentFilename,
+                        noticeMessage = NOTICE_MIRROR_SAVED,
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        mirrorSaving = false,
+                        errorMessage = "${ERROR_MIRROR_SAVE}：${e.message ?: e.javaClass.simpleName}",
+                    )
+                }
+            }
+        }
+    }
+
     /** 屏幕层 SAF 读文件失败的入口（Web reader.onerror 文案逐字；无出网） */
     fun onReadFailed() {
         _uiState.update { it.copy(errorMessage = ERROR_READ_FILE) }
@@ -152,6 +208,9 @@ class AuthorTxtImportViewModel @Inject constructor(
     }
 
     private companion object {
+        /** 作者镜像操作结果文案 */
+        const val NOTICE_MIRROR_SAVED = "作者总表镜像配置已保存"
+        const val ERROR_MIRROR_SAVE = "保存作者总表镜像失败"
         /** .txt 扩展名（大小写不敏感，Web L49 /\.txt$/i 同口径；containsMatchIn=子串尾锚测试，
          *  不能用 Regex.matches——那是全串匹配，中文名永远不命中） */
         val TXT_EXTENSION = Regex("""\.txt$""", RegexOption.IGNORE_CASE)

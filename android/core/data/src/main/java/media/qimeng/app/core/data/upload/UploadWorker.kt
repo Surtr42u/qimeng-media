@@ -3,6 +3,7 @@ package media.qimeng.app.core.data.upload
 import android.app.NotificationManager
 import android.content.Context
 import android.content.pm.ServiceInfo
+import android.net.Uri
 import android.os.Build
 import android.util.Log
 import androidx.hilt.work.HiltWorker
@@ -225,18 +226,31 @@ class UploadWorker @AssistedInject constructor(
         // 「源 == 目标同一路径」判成同名同内容走「删旧放新」（先删目标位再落新），删除的
         // 就是源文件本身，改名/copy 再失败即丢文件；跳过后上传/挂靠/清理行为全不变。
         if (spec.alreadyArchived) return ""
-        if (!UploadRules.isAbsoluteFilePath(spec.uri)) return ""
         val archiveRoot = stagingRepository.archivePath.first()
         val useArchiveRoot = archiveRoot != null && spec.libraryName.isNotBlank()
-        val sourceFile = File(spec.uri)
+
+        val isAbsolute = UploadRules.isAbsoluteFilePath(spec.uri)
+        val isContentUri = spec.uri.startsWith("content://")
+
+        // 既非绝对路径又非 content://，或未配置归档根时对于 content:// 来源跳过归档
+        if (!isAbsolute && !isContentUri) return ""
+        if (!useArchiveRoot && !isAbsolute) return ""
+
         val archived = withContext(Dispatchers.IO) {
             when {
-                useArchiveRoot -> inboxFileStore.archiveToLibraryRoot(
+                useArchiveRoot && isAbsolute -> inboxFileStore.archiveToLibraryRoot(
                     requireNotNull(archiveRoot),
                     spec.libraryName,
-                    sourceFile,
+                    File(spec.uri),
                 )
-                isInboxSource(sourceFile) -> inboxFileStore.archiveToUploaded(spec.uri)
+                useArchiveRoot && isContentUri -> inboxFileStore.archiveUriToLibraryRoot(
+                    applicationContext,
+                    requireNotNull(archiveRoot),
+                    spec.libraryName,
+                    Uri.parse(spec.uri),
+                    spec.displayName,
+                )
+                isAbsolute && isInboxSource(File(spec.uri)) -> inboxFileStore.archiveToUploaded(spec.uri)
                 // 非收件箱来源：不动源文件、返回空注记（语义见 KDoc b 分支）
                 else -> null
             }

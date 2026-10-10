@@ -5,6 +5,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import media.qimeng.app.core.model.AssetPageResult
 import media.qimeng.app.core.model.AssetQuery
+import media.qimeng.app.core.model.AuthorMirrorConfig
 import media.qimeng.app.core.model.deviceTzOffsetMinutes
 import media.qimeng.app.core.model.AuthorSummary
 import media.qimeng.app.core.model.FacetsQuery
@@ -391,6 +392,33 @@ class SdkAuthorRepository @Inject constructor(
             apiFactory.create().apiV1AssetsAssetIdAuthorsPut(
                 assetId = java.util.UUID.fromString(assetId),
                 assetAuthorsReplaceRequest = AssetAuthorsReplaceRequest(authorIds = authorIds),
+            )
+        }
+    }
+
+    override suspend fun authorMirror(): AuthorMirrorConfig {
+        Log.d(SdkMediaRepository.LOG_TAG, "GET /authors/mirror")
+        return withContext(Dispatchers.IO) {
+            val res = apiFactory.create().apiV1AuthorsMirrorGet()
+            AuthorMirrorConfig(
+                path = res.path.orEmpty(),
+                fragmentFilename = res.fragmentFilename.orEmpty(),
+            )
+        }
+    }
+
+    override suspend fun saveAuthorMirror(config: AuthorMirrorConfig): AuthorMirrorConfig {
+        Log.d(SdkMediaRepository.LOG_TAG, "PUT /authors/mirror path=${config.path} fragment=${config.fragmentFilename}")
+        return withContext(Dispatchers.IO) {
+            val res = apiFactory.create().apiV1AuthorsMirrorPut(
+                media.qimeng.sdk.models.AuthorMirrorConfig(
+                    path = config.path,
+                    fragmentFilename = config.fragmentFilename.ifBlank { null },
+                ),
+            )
+            AuthorMirrorConfig(
+                path = res.path.orEmpty(),
+                fragmentFilename = res.fragmentFilename.orEmpty(),
             )
         }
     }

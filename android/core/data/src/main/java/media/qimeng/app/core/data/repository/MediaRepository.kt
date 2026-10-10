@@ -3,6 +3,7 @@ package media.qimeng.app.core.data.repository
 import media.qimeng.app.core.model.AssetPageResult
 import media.qimeng.app.core.model.AppearanceMode
 import media.qimeng.app.core.model.AssetQuery
+import media.qimeng.app.core.model.AuthorMirrorConfig
 import media.qimeng.app.core.model.AuthorSummary
 import media.qimeng.app.core.model.FacetsQuery
 import media.qimeng.app.core.model.FacetsResult
@@ -136,6 +137,12 @@ interface AuthorRepository {
      * 200 回 AssetDetail（关联即落库，调用方按需重查详情）。
      */
     suspend fun replaceAssetAuthors(assetId: String, authorIds: List<String>) = Unit
+
+    /** 作者总表镜像配置（GET /authors/mirror） */
+    suspend fun authorMirror(): AuthorMirrorConfig = AuthorMirrorConfig()
+
+    /** 保存作者总表镜像配置（PUT /authors/mirror） */
+    suspend fun saveAuthorMirror(config: AuthorMirrorConfig): AuthorMirrorConfig = config
 }
 
 /**

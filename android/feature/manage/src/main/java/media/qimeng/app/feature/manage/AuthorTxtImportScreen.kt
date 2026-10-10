@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
@@ -37,6 +38,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import media.qimeng.app.core.ui.component.QimengCapsuleTextField
 import media.qimeng.app.core.ui.component.QimengTopBar
 import media.qimeng.app.core.ui.theme.QimengDimens
 
@@ -160,6 +162,15 @@ fun AuthorTxtImportScreen(
                     )
                 }
             }
+
+            AuthorMirrorCard(
+                mirrorPath = state.mirrorPath,
+                mirrorFragment = state.mirrorFragmentFilename,
+                saving = state.mirrorSaving,
+                onPathChange = viewModel::onMirrorPathChange,
+                onFragmentChange = viewModel::onMirrorFragmentChange,
+                onSave = viewModel::saveMirror,
+            )
 
             Spacer(modifier = Modifier.height(ScreenBottomSpacing))
         }
@@ -309,3 +320,61 @@ private suspend fun readUtf8(context: android.content.Context, uri: Uri): String
         context.contentResolver.openInputStream(uri)?.use { stream -> stream.readBytes().toString(Charsets.UTF_8) }
     }.getOrNull()
 }
+
+/**
+ * 作者总表镜像配置卡（对齐 Web AuthorMirrorCard.tsx）：
+ * path = 镜像文件绝对路径（留空=关闭）；fragmentFilename = 镜像目标片段（留空=最近导入片段）。
+ * 保存成功即生效并尽力而为尝试一次落盘刷新。
+ */
+@Composable
+private fun AuthorMirrorCard(
+    mirrorPath: String,
+    mirrorFragment: String,
+    saving: Boolean,
+    onPathChange: (String) -> Unit,
+    onFragmentChange: (String) -> Unit,
+    onSave: () -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(ScreenContentPadding),
+            verticalArrangement = Arrangement.spacedBy(QimengDimens.SpaceM),
+        ) {
+            Text("作者总表镜像", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "服务端把作者总表自动实时镜像到该本地 txt 文件（保存即生效）。每次为媒体添加或修改作者，该文件都会自动更新。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text("镜像文件路径（绝对路径）", style = MaterialTheme.typography.labelMedium)
+            QimengCapsuleTextField(
+                value = mirrorPath,
+                onValueChange = onPathChange,
+                placeholder = "例如 /storage/emulated/0/Download/authors.txt",
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Text(
+                "须为本地文件系统绝对路径；留空 = 关闭自动镜像",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text("镜像目标片段（可选）", style = MaterialTheme.typography.labelMedium)
+            QimengCapsuleTextField(
+                value = mirrorFragment,
+                onValueChange = onFragmentChange,
+                placeholder = "留空 = 最近导入的片段",
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Button(
+                onClick = onSave,
+                enabled = !saving,
+                modifier = Modifier.align(Alignment.End),
+            ) {
+                Text(if (saving) "保存中…" else "保存镜像配置")
+            }
+        }
+    }
+}
+
