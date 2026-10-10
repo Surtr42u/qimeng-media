@@ -176,6 +176,44 @@ class InboxFileStoreTest {
         }
     }
 
+    @Test
+    fun `renameArchivedFile成功重命名归档目录内文件`() {
+        val root = tmp.newFolder("archive-rename")
+        val libDir = tmp.newFolder("archive-rename/1 3D")
+        val file = write(libDir, "11.mp4", content = "video-data")
+
+        val renamed = store.renameArchivedFile(
+            archiveRoot = root.absolutePath,
+            libraryName = "1 3D",
+            oldFileName = "11.mp4",
+            newFileName = "守望先锋  天使 13.mp4",
+        )
+
+        assertTrue(renamed)
+        assertFalse(file.exists())
+        val newFile = File(libDir, "守望先锋  天使 13.mp4")
+        assertTrue(newFile.exists())
+        assertEquals("video-data", newFile.readText())
+    }
+
+    @Test
+    fun `renameArchivedFile在无精确库名时兜底子目录查找并重命名`() {
+        val root = tmp.newFolder("archive-rename-fallback")
+        val libDir = tmp.newFolder("archive-rename-fallback/sub_lib")
+        val file = write(libDir, "old.mp4", content = "fallback-data")
+
+        val renamed = store.renameArchivedFile(
+            archiveRoot = root.absolutePath,
+            libraryName = null,
+            oldFileName = "old.mp4",
+            newFileName = "new.mp4",
+        )
+
+        assertTrue(renamed)
+        assertFalse(file.exists())
+        assertTrue(File(libDir, "new.mp4").exists())
+    }
+
     /** 写入测试文件（内容默认一行，返回文件引用） */
     private fun write(dir: File, name: String, content: String = "x"): File =
         File(dir, name).apply { writeText(content) }

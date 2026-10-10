@@ -10,11 +10,14 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import media.qimeng.app.core.data.repository.AuthorRepository
 import media.qimeng.app.core.data.repository.DetailRepository
+import media.qimeng.app.core.data.repository.InboxFileStore
 import media.qimeng.app.core.data.repository.MoveConflictException
+import media.qimeng.app.core.data.repository.StagingRepository
 import media.qimeng.app.core.data.repository.UploadRepository
 import media.qimeng.app.core.model.AUTHOR_SUGGEST_DEBOUNCE_MS
 import media.qimeng.app.core.model.AuthorSuggestion
@@ -110,6 +113,8 @@ class AssetEditViewModel @Inject constructor(
     private val detailRepository: DetailRepository,
     private val authorRepository: AuthorRepository,
     private val uploadRepository: UploadRepository,
+    private val stagingRepository: StagingRepository,
+    private val inboxFileStore: InboxFileStore = InboxFileStore(),
 ) : ViewModel() {
 
     private val assetId: String = savedStateHandle.get<String>(AssetEditRoutes.KEY_ASSET_ID).orEmpty()
@@ -376,6 +381,21 @@ class AssetEditViewModel @Inject constructor(
                         targetDir = current.currentDirectory,
                         newName = current.effectiveFileName,
                     )
+                    // 联动重命名手机本地归档目录中的物理文件（尽力而为，不阻断主流程）
+                    runCatching {
+                        val archiveRoot = stagingRepository.archivePath.first()
+                        if (!archiveRoot.isNullOrBlank()) {
+                            val libName = runCatching {
+                                uploadRepository.libraries().firstOrNull { it.id == current.libraryId }?.name
+                            }.getOrNull()
+                            inboxFileStore.renameArchivedFile(
+                                archiveRoot = archiveRoot,
+                                libraryName = libName,
+                                oldFileName = current.originalFileName,
+                                newFileName = current.effectiveFileName,
+                            )
+                        }
+                    }
                 }
                 // 2. 作者全集整体 PUT 替换
                 authorRepository.replaceAssetAuthors(assetId, current.authors.map { it.id })

@@ -73,10 +73,21 @@ fun scanArchiveForUpload(root: File, libraries: List<LibraryChoice>): ArchiveBat
         .filter { !it.name.startsWith(DOT_PREFIX) }
         .sortedBy { it.name.lowercase(Locale.ROOT) }
     for (dir in subDirs) {
-        // 匹配候选：精确命中 ∪ sanitize 命中，按库 id 去重（同一库两种口径同时命中只算一次）
-        val candidates = (libraries.filter { it.name == dir.name } +
+        // 匹配候选：
+        // 1. 优先精确命中 ∪ sanitize 命中，按库 id 去重
+        var candidates = (libraries.filter { it.name == dir.name } +
             libraries.filter { sanitizer.sanitizeLibraryDirName(it.name) == dir.name })
             .distinctBy { it.id }
+
+        // 2. 若精确未命中，回落到空白折叠规范化比对（多个连续空格折叠为单空格、忽略大小写）
+        if (candidates.isEmpty()) {
+            val normalizedDir = normalizeForMatching(dir.name)
+            candidates = libraries.filter { lib ->
+                normalizeForMatching(lib.name) == normalizedDir ||
+                    sanitizer.sanitizeLibraryDirName(lib.name)?.let { normalizeForMatching(it) } == normalizedDir
+            }.distinctBy { it.id }
+        }
+
         when {
             candidates.isEmpty() -> unmatchedFolders += dir.name to ARCHIVE_BATCH_REASON_NO_LIBRARY
             candidates.size > 1 -> unmatchedFolders += dir.name to ARCHIVE_BATCH_REASON_AMBIGUOUS
@@ -149,3 +160,10 @@ private val MEDIA_EXTENSIONS = setOf(
 
 /** 点前缀隐藏名判定前缀（与归档链路「隐藏目录不进相册」口径一致） */
 private const val DOT_PREFIX = "."
+
+/**
+ * 规范化字符串用于宽松比对：连续空白（含半角空格、全角空格 \u3000、制表符等）折叠为单个半角空格，并转小写 trim。
+ * 用于解决如 NAS 库名 "1  3D"（双空格）与本地归档目录 "1 3D"（单空格）等无害格式差异导致的匹配脱节。
+ */
+internal fun normalizeForMatching(name: String): String =
+    name.trim().replace(Regex("[\\s\\u3000]+"), " ").lowercase(Locale.ROOT)

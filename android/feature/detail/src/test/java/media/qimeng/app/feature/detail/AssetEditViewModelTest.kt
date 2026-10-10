@@ -17,6 +17,7 @@ import media.qimeng.app.core.model.MediaKind
 import media.qimeng.app.core.model.TagChip
 import media.qimeng.app.core.model.TimelineTag
 import media.qimeng.app.core.model.ViewEventKind
+import media.qimeng.app.core.testing.FakeStagingRepository
 import media.qimeng.app.core.testing.FakeUploadRepository
 import media.qimeng.app.core.testing.MainDispatcherRule
 
@@ -57,6 +58,7 @@ class AssetEditViewModelTest {
             detailRepository = detailRepo,
             authorRepository = authorRepo,
             uploadRepository = suggestRepo,
+            stagingRepository = FakeStagingRepository(),
         )
         driveIdle()
         return Triple(viewModel, detailRepo, authorRepo)

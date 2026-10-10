@@ -93,6 +93,21 @@ class ArchiveBatchScanTest {
     }
 
     @Test
+    fun `库名多空格与文件夹单空格时通过规范化折叠命中`() {
+        val root = tmp.newFolder("归档")
+        val libDir = tmp.newFolder("归档/1 3D")
+        write(libDir, "v.mp4")
+
+        // 库名带有两个空格 "1  3D"，文件夹名为单空格 "1 3D"
+        val result = scan(root, library("lib-3d", "1  3D"))
+
+        val item = result.items.single()
+        assertEquals("lib-3d", item.libraryId)
+        assertEquals("1  3D", item.libraryName)
+        assertTrue(result.unmatchedFolders.isEmpty())
+    }
+
+    @Test
     fun `未命中文件夹记未找到同名库`() {
         val root = tmp.newFolder("归档")
         tmp.newFolder("归档/未知库")

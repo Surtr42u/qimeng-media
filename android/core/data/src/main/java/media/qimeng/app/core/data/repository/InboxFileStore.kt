@@ -140,6 +140,48 @@ class InboxFileStore @Inject constructor() {
     }
 
     /**
+     * 重命名归档目录内的物理文件（2026-10-10 资产重命名联动归档）：在资产详情编辑页改名成功后，
+     * 自动将本地归档目录中的物理文件同步重命名（例如 11.mp4 -> 守望先锋  天使 13.mp4）。
+     * 规则：
+     * - 归档根不存在或非目录时返回 false；
+     * - 优先在 <archiveRoot>/<libraryName>/ 或 <archiveRoot>/<sanitize(libraryName)>/ 查找 oldFileName；
+     * - 若未指定 libraryName 或对应目录不存在，回落遍历 archiveRoot 的各一级子目录查找；
+     * - 找到目标文件后执行 renameTo(newFileName)，目标同名已存在则不覆盖返回 false；
+     * - 文件成功重命名返回 true，未找到或重命名失败返回 false。
+     */
+    fun renameArchivedFile(
+        archiveRoot: String,
+        libraryName: String?,
+        oldFileName: String,
+        newFileName: String,
+    ): Boolean {
+        if (oldFileName.isBlank() || newFileName.isBlank() || oldFileName == newFileName) return false
+        val root = File(archiveRoot)
+        if (!root.isDirectory) return false
+
+        val candidateDirs = mutableListOf<File>()
+        if (!libraryName.isNullOrBlank()) {
+            candidateDirs += File(root, libraryName)
+            val sanitized = sanitizeLibraryDirName(libraryName)
+            if (sanitized != null && sanitized != libraryName) {
+                candidateDirs += File(root, sanitized)
+            }
+        }
+        root.listFiles(File::isDirectory)?.let { candidateDirs.addAll(it) }
+
+        for (dir in candidateDirs.distinct()) {
+            val source = File(dir, oldFileName)
+            if (source.isFile) {
+                val target = File(dir, newFileName)
+                if (!target.exists()) {
+                    return source.renameTo(target)
+                }
+            }
+        }
+        return false
+    }
+
+    /**
      * copy 兜底（renameTo 跨挂载点失败时）：先 copyTo 到同目录 .part 临时名，成功后
      * renameTo 改名到位。为什么不能直接 copyTo 目标名：copyTo 半途失败（磁盘满/进程
      * 被杀）会在归档目录留下半截同名目标文件，下次同名归档因内容不等走序号位、垃圾
