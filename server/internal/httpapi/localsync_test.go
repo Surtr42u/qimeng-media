@@ -226,6 +226,41 @@ func TestLocalSyncTxtSuccess(t *testing.T) {
 	}
 }
 
+// TestLocalSyncTxtArchiveKeepsLatest 同名 TXT 重导：归档区只留最新一份（覆盖
+// 旧副本，不再「同名加序号」堆积；2026-10-11 用户定规，ADR-0030 修订1）。
+func TestLocalSyncTxtArchiveKeepsLatest(t *testing.T) {
+	e := newTestEnvRaw(t)
+	root := lsSetupSyncRoot(t, e)
+	src := filepath.Join(root, "作者清单.txt")
+	if err := os.WriteFile(src, []byte("1  作者甲\n"), 0o644); err != nil {
+		t.Fatalf("写 TXT 失败: %v", err)
+	}
+	lsChtimesOld(t, src)
+	lsRunCycles(t, e, 2)
+	lsRequireFile(t, filepath.Join(root, ".synced", "作者清单.txt"), true)
+
+	if err := os.WriteFile(src, []byte("1  作者乙\n"), 0o644); err != nil {
+		t.Fatalf("写 TXT 失败: %v", err)
+	}
+	lsChtimesOld(t, src)
+	lsRunCycles(t, e, 2)
+
+	ents, err := os.ReadDir(filepath.Join(root, ".synced"))
+	if err != nil {
+		t.Fatalf("读归档目录失败: %v", err)
+	}
+	if len(ents) != 1 {
+		t.Fatalf("归档文件数 = %d，期望 1（同名只留最新，无 (2) 副本）", len(ents))
+	}
+	data, err := os.ReadFile(filepath.Join(root, ".synced", "作者清单.txt"))
+	if err != nil {
+		t.Fatalf("读归档内容失败: %v", err)
+	}
+	if !strings.Contains(string(data), "作者乙") {
+		t.Fatalf("归档内容应为最新一次导入：%q", string(data))
+	}
+}
+
 // TestLocalSyncLibraryNotFound 未命中库：文件原地、failed 含「未找到」、
 // attempts>=1。
 func TestLocalSyncLibraryNotFound(t *testing.T) {

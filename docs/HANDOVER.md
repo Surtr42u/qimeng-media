@@ -62,7 +62,7 @@
 - 跨库浏览记录兜底重映射（ADR-0037，2026-10-11，第五百二十六笔）：`POST /events/view` 增可选 `fileName`/`relPath` 文件身份；assetId 未命中本库时按文件名匹配（唯一命中，或经 relPath 精确等值消歧后唯一）→ 事件记入该资产、正常物化计统计（跨库合并），202 响应 `EventsViewAccepted outcome=remapped`；零命中/仍歧义/未携带 → 维持「已删资产迟到事件」口径（事件入库、统计跳过、`outcome=unmatched`）；歧义不猜、宁少勿错（与 DOMAIN_RULES §10 导入通道「同名多命中取最早」刻意不同）；会话去重/幂等键口径不变（去重键=重映射后目标资产）；不加索引、不加 migration。
 - 扫描变更失效缩略图（重探测 size/mtime 变化重入库即删全部档位缩略图，全量与 watch 增量两路径同联动）+ EXIF 方向显式处理（手写解析 JPEG Orientation tag〔零新依赖〕+ ffmpeg transpose 映射表缩放前应用，恒带 -noautorotate；缓存键 v2→v3）+ 跨卷移动失败当场清理半截文件（回收站三调用点兜底，疑似完整宁留勿删）。
 - 三项硬化：备份快照 VACUUM INTO 写完即 quick_check 校验（坏快照删除并报错）；compose 容器日志 json-file 10MB×3 轮转；分片上传 Seal 后落位前 size 复核。
-- 本机文件夹自动同步通道（ADR-0030）：QIMENG_LOCAL_SYNC_ROOT 轮询监测，子文件夹名=库名自动匹配入库（四道校验+直传同款管线），成功移走/失败保留重试；根级 TXT 恒 keep 导入后移 .synced；/local-sync/status+trigger 两端点；根重叠/隐藏/符号链接安全规则。
+- 本机文件夹自动同步通道（ADR-0030）：QIMENG_LOCAL_SYNC_ROOT 轮询监测，子文件夹名=库名自动匹配入库（四道校验+直传同款管线），成功移走/失败保留重试；根级 TXT 恒 keep 导入后移 `.synced/`（**同名只留最新**，2026-10-11 用户定规、ADR-0030 修订1）；/local-sync/status+trigger 两端点；根重叠/隐藏/符号链接安全规则。
 - 备份导出/导入含 TXT 作者片段（keep 合并，2026-10-01）：txtFragments 段导出逐字全量，导入无同名导入/相同跳过/不同并回上传条目替换，旧备份兼容；**App 端须升级 APK 才携带该段（App 备份经 SDK 模型往返，旧版静默丢段；Web 裸字节透传无碍）**。
 
 **资产编辑与作者体系（ADR-0023/0024，跨端+服务端）**：
@@ -85,6 +85,7 @@
 5. Android SSE 静默黑洞 idle 看门狗（无 TCP 错误的网络切换检测）——触发：实际观察到断网后长时间不自愈；当前 5min TTL 兜底。
 6. **GBK/GB18030 TXT 支持**（本机同步通道现仅 UTF-8〔剥 BOM〕，解码需新依赖 x/text 再决策）——触发：用户实际遇到非 UTF-8 TXT。
 7. **本机同步 fsnotify 秒级响应 / sysmon 指标化 / importTxt 编排 ADR-0019 下沉随迁（runner 随迁 + `.synced` 跨包双常量收敛）**——触发：30s 轮询延迟或指标需求实际出现。
+8. **来源/词表写入端 UTF-8 有效性门禁**（非法字节经 json 解码转 U+FFFD 照单入库，乱码词只能事后人工清理；正常 Web/App 客户端不受影响）——触发：实际出现乱码词条。
 
 **记档级（不立项，防重复怀疑）**：uploadsess 无独立单测（httpapi 集成已覆盖）；ListThumbnailWarmup 每轮 O(N) 全表空扫（十万级前无感）；HEIC 内嵌 EXIF 按方向 1 处理；Web 事件账本（IndexedDB）无行数上限；待扫标记可能指向已删库永不移除；
 activePool 冷启动装配竞态（读 miss 重下，无害）；桌面壳无自动更新器（单用户自用，接受）；字幕域无地图条目；/media/orig 的 If-Modified-Since 用库行 mtime（ADR-0004 已知面）。**2026-10-04 重构批追加记档**：browse.sql 按 viewCount/playCount 排序仍是每行相关子查询+CASE 重复求值（预分组派生表改造需按 ADR-0011 纪律补 EXPLAIN 计划锁，收益=大库三排序键，另批）；Android 26 处硬编码中文文案维持现状（单语应用无 l10n 规划，「文案全 strings.xml」并非本项目口径）；旧备份导入端点无集成测试（段级事务路径随批经对抗审查人工核行，与旧版逐段错误语义一致）；windows 下 sqlc 生成物行尾为 LF（.gitattributes eol=lf 已锁，本地工作区 CRLF 伪 diff 勿惊慌）。
@@ -112,7 +113,7 @@ activePool 冷启动装配竞态（读 miss 重下，无害）；桌面壳无自
 | 手机连 NAS | `http://<PC局域网IP>:8420` |
 | 手机本机（M6） | `127.0.0.1:18430`（Termux 形态 A 或 App 内嵌形态 B） |
 | 桌面壳 | `%APPDATA%\media.qimeng.desktop\server.json` |
-| 本机同步（PC，ADR-0030） | 启动脚本已启用：把文件放进仓库根 `local-sync/` 下的 `<库名>/` 子文件夹，30s 内自动入库（源文件移走、失败原地重试）；根级 `.txt`=作者片段导入后移入 `.synced/`；状态/手动触发在 Web 维护页「本机同步」卡 |
+| 本机同步（PC，ADR-0030） | 启动脚本已启用：把文件放进仓库根 `local-sync/` 下的 `<库名>/` 子文件夹，30s 内自动入库（源文件移走、失败原地重试）；根级 `.txt`=作者片段导入后移入 `.synced/`（同名只留最新）；状态/手动触发在 Web 维护页「本机同步」卡 |
 
 ## 7. 用户约定（长期有效）
 

@@ -473,12 +473,18 @@ func (s *Server) processLocalSyncTxt(ctx context.Context, entry localsync.Entry)
 		s.lsMarkFailed(entry.RelPath, kind, "", "导入成功但创建归档目录失败（内容已导入，下轮将重试归档）", entry.Size)
 		return
 	}
-	exists := func(n string) bool {
-		_, serr := os.Stat(filepath.Join(syncedDir, n))
-		return serr == nil
+	// 同名归档只留最新（2026-10-11 用户定规，ADR-0030 修订1）：重导同名 TXT 时
+	// 覆盖旧归档副本，不再按「同名加序号」堆积 (2)/(3)… 副本——旧副本按设计让位
+	// （内容已入库，最新版即真相）；清理失败与移动失败同走 failed 备注，源文件
+	// 留在同步根，下轮幂等重导 + 重归档自愈。
+	archived := filepath.Join(syncedDir, filename)
+	if _, serr := os.Stat(archived); serr == nil {
+		if rerr := os.Remove(archived); rerr != nil {
+			s.lsMarkFailed(entry.RelPath, kind, "", "导入成功但清理旧归档失败（内容已导入，下轮将重试归档）", entry.Size)
+			return
+		}
 	}
-	archived := filing.ResolveConflict(filename, exists)
-	if err := filing.MoveFile(src, filepath.Join(syncedDir, archived)); err != nil {
+	if err := filing.MoveFile(src, archived); err != nil {
 		s.lsMarkFailed(entry.RelPath, kind, "", "导入成功但归档移动失败（内容已导入，下轮将重试移动）", entry.Size)
 		return
 	}
