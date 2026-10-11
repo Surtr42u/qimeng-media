@@ -33,6 +33,7 @@ import {
   type SourceVocabulary,
 } from '@/api/generated'
 import { unwrapSdkResult } from '@/lib/api-client'
+import { authorsReplaceBody } from '@/lib/asset-authors'
 import { downloadBlob } from '@/lib/download'
 import {
   ASSETS_QUERY_KEY,
@@ -216,18 +217,22 @@ export function useSaveAuthorSources() {
   })
 }
 
-/** 资产作者关联整体替换（PUT /assets/{assetId}/authors，ADR-0024）：body=
- *  常规作者 ID 全集（空数组=解除全部常规关联；作者须已存在且 type=regular）。
+/** 资产作者关联整体替换（PUT /assets/{assetId}/authors，ADR-0024）：body =
+ *  常规作者 ID 全集（空数组=解除全部常规关联；作者须已存在且 type=regular）
+ *  ∪ newAuthorNames（2026-10-11 协议修订：编辑页「新建：xxx」通道——未命中
+ *  已有常规作者的名字由服务端就地新建，规范身份命中的复用不重复建行；载荷
+ *  组装走 lib/asset-authors.authorsReplaceBody，口径单测锁定）。
  *  失效资产族（详情 authors/列表作者列/推荐流）与作者族（fileCount 随关联
- *  变化）；200 回 AssetDetail，由调用方按需消费。 */
+ *  变化、新建作者须出现在作者列表）；200 回 AssetDetail，由调用方按需消费
+ *  （编辑页据它把待新建名切回真实作者行）。 */
 export function useReplaceAssetAuthors() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (args: { assetId: string; authorIds: string[] }) =>
+    mutationFn: (args: { assetId: string; authorIds: string[]; newAuthorNames?: string[] }) =>
       unwrapSdkResult(
         putApiV1AssetsByAssetIdAuthors({
           path: { assetId: args.assetId },
-          body: { authorIds: args.authorIds },
+          body: authorsReplaceBody(args.authorIds, args.newAuthorNames ?? []),
         }),
       ),
     onSuccess: () => {

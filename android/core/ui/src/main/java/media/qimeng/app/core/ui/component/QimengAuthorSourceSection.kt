@@ -49,6 +49,8 @@ import media.qimeng.app.core.model.AuthorSuggestion
  * @param committedIsExisting true = 点选既有作者（副文案「已选作者」）；false = 待新建
  * @param seeds 空输入种子列表（调用方从全量常规作者拉取；2026-09-29 起上传页不传，
  *   资产编辑页保留空输入全显）：输入为空且非空时默认全显
+ * @param placeholder 输入框占位文案（默认「回车新建」——资产编辑页待新建通道；上传页/
+ *   相册批量关联页只允许既有作者，显式传「输入作者名（联想选择）」以免误导）
  */
 @Composable
 fun QimengAuthorSuggestSection(
@@ -62,6 +64,7 @@ fun QimengAuthorSuggestSection(
     onPickSuggestion: (AuthorSuggestion) -> Unit,
     onCommitInput: () -> Unit,
     onClear: () -> Unit,
+    placeholder: String = "输入作者名（联想选择，回车新建）",
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier) {
@@ -88,7 +91,7 @@ fun QimengAuthorSuggestSection(
             QimengCapsuleTextField(
                 value = query,
                 onValueChange = onQueryChange,
-                placeholder = "输入作者名（联想选择，回车新建）",
+                placeholder = placeholder,
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { onCommitInput() }),

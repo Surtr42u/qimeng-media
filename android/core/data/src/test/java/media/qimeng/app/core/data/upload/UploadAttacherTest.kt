@@ -36,7 +36,12 @@ class UploadAttacherTest {
             callLog.add("sources-append:$authorId=$sources")
         }
 
-        override suspend fun replaceAssetAuthors(assetId: String, authorIds: List<String>) {
+        override suspend fun replaceAssetAuthors(
+            assetId: String,
+            authorIds: List<String>,
+            newAuthorNames: List<String>,
+        ) {
+            // 自动挂靠恒走既有作者 id 通道（newAuthorNames 恒空不记，见 MediaRepository 接口注释）
             replaceAssetAuthorsError?.let { throw it }
             callLog.add("asset-authors:$assetId=$authorIds")
         }

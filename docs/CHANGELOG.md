@@ -11,6 +11,19 @@
 
 
 
+## feat(api+server+app+web): 编辑页按名新建作者——关联端点扩展 newAuthorNames + 保存自愈补行 + 编辑写入登记（2026-10-11 第五百二十三笔）
+
+执行 AI：DeepSeek-V4.1-Flash（主代理；服务端/App/Web 三路执行子代理，同模型）
+
+- **背景（用户事故）**：编辑页给资产挂一位**尚不存在**的作者（`hornyherring`）只能报错「未找到该作者：编辑页仅能关联已有作者，请从联想中选择」——原口径「新建唯一通道=TXT 导入」与「新建作者的自然时点=挂人的当下」相悖；用户拍板：**不新开接口**，扩展现有 `PUT /assets/{assetId}/authors`；不做简单止血（不做"只改文案"），全链路修。
+- **协议（ADR-0024 修订 4）**：`AssetAuthorsReplaceRequest` 增可选 `newAuthorNames: []string`（items maxLength 200、maxItems 20）；语义 = 作者全集 authorIds ∪ 按名解析（规范身份命中复用、未命中新建）；`make sdk` 三端重生成 + `api/sdk.lock` 同批更新（253 项）。
+- **服务端**：`authorattach.ResolveOrCreateAuthors`（规范身份归一复用/新建，同批重名短路、COS 撞名防御）+ `MergeAuthorRefs`（两来源去重合并）；`ReplaceAssetAuthors` 去「已关联跳过」——对作者全集**逐位幂等补写作品行**（自愈：关联在而文本缺行保存即愈，行已存在零写入），并把本次实际新追加的作品行**登记进 kv `imported_txt_upload_entries`**（覆盖式导入不得静默冲掉：手动通道 409 二选一 keep 并回、本机同步恒 keep 并回）——被 lint 行数警戒线拆分出两个 helper；`httpapi/author_edit.go` 前置校验（逐名 400 带具体原因、超 20 项 400 带协议双写同步注释）；`authoring.NewAuthorNameRejectReason` 校验原因单一实现（`ValidNewAuthorName` 改其布尔投影）。
+- **App**：`MediaRepository.replaceAssetAuthors` 增可选 `newAuthorNames`（批量关联/自动挂靠调用点零改动）；编辑页 `commitAddAuthor` 未命中→待新建（含 200 字投影封顶/忽略大小写去重），待新建以「新建：\<name\> ✕」胶囊可移除，`save` 随请求带上、成功清空失败保留；共享组件 `QimengAuthorSuggestSection` 加 `placeholder` 参数（编辑页「回车新建」为真；上传页/相册页显式传「输入作者名（联想选择）」，批次规则不变）；**保存返回详情页即时刷新**——导航返回结果信号（savedStateHandle）触发既有 `retry()`，不整页重建（避免 open 打点重复/滚动位置丢失）；删除失效文案 `asset_edit_only_existing_authors`、新增 `asset_edit_author_name_too_long`。
+- **Web**：新增 `lib/asset-authors.ts` 纯逻辑（身份键/码点长度/去重/20 项上限/载荷组装，26 例单测）；`AuthorSuggestField` 增 `allowCreate`（未命中给「新建：\<name\>」可点行，回车同款）、`useReplaceAssetAuthors` 载荷经 lib 组装、编辑页待新建清单 + 保存带名 + 响应回填草稿；删「本页只能关联已有作者」toast（TXT 导入降为次要说明）。
+- **自测**：server `go build ./...`/`go test ./...`（19 包全绿，新 4 单测 + 6 集成测试）+ `golangci-lint` 0 issues；App `:feature:detail`/`:core:data` 单测全绿（227/270）+ `:app:assembleDebug` 通过（新文案与 newAuthorNames 已核在包内）；Web `build`+`lint`（零新增警告）+ `vitest` 320 通过（新增 26）。
+- **对抗审查与返工（2026-10-11，reviewer 子代理 + 返工）**：总评「不通过」两项已返工——① App 待新建补 20 项上限拦截（对齐协议 maxItems）、服务端 400 原因经既有错误体解析透出（原先全归「保存失败：请重试」，输入非法名时无法自助）；② 第五百二十四笔的授权确认为用户拍板（保留）。P3 已并入本笔：身份口径三处文档校正（「忽略大小写/空白差异」→ 实际口径=大写转小写/半角空格转下划线/仅首别名定身份，空格差异不折叠、第二别名按新身份处理）、非法名枚举补「规范化后无有效别名（如 `[3D]`）」、`ReplaceAssetAuthors` 登记/修剪注释论证修正（顺序颠倒不会误剪，仅流程对齐约定）。**P3 遗留（下一笔）**：恰 20 项/恰 200 rune 边界测试、`MergeAuthorRefs` 同 id 去重测试、自愈幂等不变量（`authors.id == GenerateAuthorID(displayNameAliases(display_name)[0])`，审查实测 132/132 常规作者满足）入测与记档、COS 撞名返回 500 的错误码记档（防御性不可达路径）。
+- **文档**：openapi.yaml、sdk.lock、ADR-0024（修订 4）、DOMAIN_RULES §6、GUIDE_API.md、CHANGELOG（本笔）。
+
 ## chore(repo): 删库同名重建——彻底清除 19 条 refs/pull/* 指向的重写前历史（2026-10-10 第五百二十二笔）
 
 执行 AI：DeepSeek-V4.1-Flash（主代理）

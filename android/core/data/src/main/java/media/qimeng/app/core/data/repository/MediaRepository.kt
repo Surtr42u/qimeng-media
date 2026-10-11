@@ -133,10 +133,18 @@ interface AuthorRepository {
     suspend fun appendAuthorSources(authorId: String, sources: List<String>) = Unit
 
     /**
-     * 整体替换资产作者关联（PUT /assets/{assetId}/authors，body {authorIds} 全集）；
+     * 整体替换资产作者关联（PUT /assets/{assetId}/authors，body {authorIds, newAuthorNames}）；
      * 200 回 AssetDetail（关联即落库，调用方按需重查详情）。
+     *
+     * [newAuthorNames]（协议 2026-10-11 修订，「按名新建作者」通道）：随请求一并交服务端
+     * 按规范身份复用或新建的作者显示名；默认空 = 只写既有作者 id 全集——相册批量关联与
+     * 上传自动挂靠两处既有调用点语义不变（传空同协议修订前报文等价）。
      */
-    suspend fun replaceAssetAuthors(assetId: String, authorIds: List<String>) = Unit
+    suspend fun replaceAssetAuthors(
+        assetId: String,
+        authorIds: List<String>,
+        newAuthorNames: List<String> = emptyList(),
+    ) = Unit
 
     /** 作者总表镜像配置（GET /authors/mirror） */
     suspend fun authorMirror(): AuthorMirrorConfig = AuthorMirrorConfig()
@@ -144,6 +152,19 @@ interface AuthorRepository {
     /** 保存作者总表镜像配置（PUT /authors/mirror） */
     suspend fun saveAuthorMirror(config: AuthorMirrorConfig): AuthorMirrorConfig = config
 }
+
+/**
+ * 资产作者替换被服务端语义化拒绝（PUT /assets/{id}/authors 返回 4xx）的领域化异常
+ * （TagNameConflictException/MoveConflictException 同范式）：
+ * [serverMessage] = 服务端 Error{code,message} 原因文案（如「INVALID_PARAM newAuthorNames
+ * 第 1 项 "…" 非法：…」）——供编辑页直接把原因透给用户自助修正，不再落笼统「保存失败」。
+ * 生成 SDK 的 ClientException 对 4xx 丢 HTTP 状态行也带响应体原串（ClientError.body），
+ * 解析复用上传路径单一实现 [media.qimeng.app.core.data.upload.UploadApiBodies.serverErrorMessage]。
+ */
+class AssetAuthorsRejectedException(
+    val serverMessage: String,
+    val statusCode: Int,
+) : Exception("authors rejected ($statusCode): $serverMessage")
 
 /**
  * 动图原件直链解析端口（拍板条目 9：animated_image 网格项用原件签名直链走动画解码）。

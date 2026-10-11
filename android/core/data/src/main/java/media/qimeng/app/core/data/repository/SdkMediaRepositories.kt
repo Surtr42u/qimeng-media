@@ -3,6 +3,7 @@ package media.qimeng.app.core.data.repository
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import media.qimeng.app.core.data.upload.UploadApiBodies
 import media.qimeng.app.core.model.AssetPageResult
 import media.qimeng.app.core.model.AssetQuery
 import media.qimeng.app.core.model.AuthorMirrorConfig
@@ -23,6 +24,7 @@ import media.qimeng.app.core.model.TagSummary
 import media.qimeng.app.core.model.TxtImportSummary
 import media.qimeng.app.core.network.ServerConfigDataSource
 import media.qimeng.sdk.apis.DefaultApi
+import media.qimeng.sdk.infrastructure.ClientError
 import media.qimeng.sdk.infrastructure.ClientException
 import media.qimeng.sdk.models.ApiV1AuthorsAuthorIdFollowPutRequest
 import media.qimeng.sdk.models.ApiV1AuthorsImportTxtPostRequest
@@ -385,14 +387,40 @@ class SdkAuthorRepository @Inject constructor(
         }
     }
 
-    override suspend fun replaceAssetAuthors(assetId: String, authorIds: List<String>) {
-        Log.d(SdkMediaRepository.LOG_TAG, "PUT /assets/$assetId/authors count=${authorIds.size}")
+    override suspend fun replaceAssetAuthors(
+        assetId: String,
+        authorIds: List<String>,
+        newAuthorNames: List<String>,
+    ) {
+        // 待新建名只记数量（名字属用户输入内容，不入 logcat；同 TXT 导入只记字符量口径）
+        Log.d(
+            SdkMediaRepository.LOG_TAG,
+            "PUT /assets/$assetId/authors count=${authorIds.size} newNames=${newAuthorNames.size}",
+        )
         withContext(Dispatchers.IO) {
             // 协议路径参数为 UUID（GET /assets/{id} 同口径：列表 DTO 的 id 字符串在此回解析）
-            apiFactory.create().apiV1AssetsAssetIdAuthorsPut(
-                assetId = java.util.UUID.fromString(assetId),
-                assetAuthorsReplaceRequest = AssetAuthorsReplaceRequest(authorIds = authorIds),
-            )
+            try {
+                apiFactory.create().apiV1AssetsAssetIdAuthorsPut(
+                    assetId = java.util.UUID.fromString(assetId),
+                    assetAuthorsReplaceRequest = AssetAuthorsReplaceRequest(
+                        authorIds = authorIds,
+                        // 无待新建名时回 null（协议可选字段缺省=不传）：空数组与缺省服务端语义等价，
+                        // 但 null 让「未用按名新建通道」的请求保持协议修订前的旧报文形态
+                        newAuthorNames = newAuthorNames.takeIf { it.isNotEmpty() },
+                    ),
+                )
+            } catch (e: ClientException) {
+                // 4xx 语义化拒绝（400=名字非法/超项/COS 作者等，见 openapi）：生成 SDK 的异常
+                // 把响应体原串留在 ClientError.body——复用上传路径同款 Error{code,message}
+                // 解析（UploadApiBodies.serverErrorMessage，单一实现）取原因文案；拿不到 body 时
+                // 该函数回落「服务端拒绝（HTTP xxx）」，与网络失败（IOException 不进本分支）可区分。
+                // 领域化上抛：调用方（编辑页）把原因直接显示，用户可自助修正后重试
+                val body = (e.response as? ClientError<*>)?.body as? String
+                throw AssetAuthorsRejectedException(
+                    serverMessage = UploadApiBodies.serverErrorMessage(body.orEmpty(), e.statusCode),
+                    statusCode = e.statusCode,
+                )
+            }
         }
     }
 

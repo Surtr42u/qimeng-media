@@ -56,7 +56,13 @@ class FakeAuthorRepository : AuthorRepository {
         appendSourceCalls.add(authorId to sources)
     }
 
-    override suspend fun replaceAssetAuthors(assetId: String, authorIds: List<String>) {
+    override suspend fun replaceAssetAuthors(
+        assetId: String,
+        authorIds: List<String>,
+        newAuthorNames: List<String>,
+    ) {
+        // newAuthorNames 不记：本替身消费方（相册批量关联/挂靠批）恒走既有作者通道传空，
+        // 按名新建只走编辑页（feature:detail 自带 FakeEditAuthorRepository 全量记账）
         replaceAssetAuthorsError?.let { throw it }
         callLog.add("asset-authors:$assetId=$authorIds")
         replaceAssetAuthorCalls.add(assetId to authorIds)

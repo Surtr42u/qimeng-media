@@ -6,9 +6,12 @@ package authorattach
 // targetFragmentIndex（作者块命中→数组序第一个片段；未命中→最近导入片段；
 // 无片段→自动创建承载片段），与上传挂靠共享同一份口径，禁止复制粘贴。
 //
-// 编辑不新增上传条目元数据（编辑是有意变更而非上传痕迹），只按
-// authoring.PruneUploadEntries 剔除片段内容已不存在的旧条目——否则重导入
-// 保护会对被编辑移除的行误报 409（REQ §4.2 反向缺口）。
+// 编辑路径的上传条目元数据（2026-10-11 修订）：实际新追加的作品行按 Apply
+// 的 recordAddedLines/entryIdentity 同款口径登记——否则覆盖式重导入（同
+// 文件名整体替换片段）会静默冲掉编辑写入的作品行，而保护只认上传条目；
+// 来源行仍不登记（来源区编辑走 ReplaceAuthorSources，口径不变）。编辑仍是
+// 有意变更：只登记实际追加的行，并按 authoring.PruneUploadEntries 剔除片段
+// 内容已不存在的旧条目（REQ §4.2 反向缺口）。
 
 import (
 	"context"
@@ -75,6 +78,83 @@ func resolveRegularAuthors(ctx context.Context, q *db.Queries, authorIDs []strin
 		names[id] = row.DisplayName
 	}
 	return names, nil
+}
+
+// ResolveOrCreateAuthors 把编辑端点的 newAuthorNames 解析成作者引用（调用方
+// 事务内执行；PUT /assets/{assetId}/authors 的按名新建通道）：
+//   - 逐名按规范身份匹配已有作者——CanonicalAuthorNames 归一别名后取首别名
+//     GenerateAuthorID 为身份（与块解析回读同口径，大小写/空白差异/括号备注
+//     不裂分身）：命中常规作者 → 复用（沿用其 DisplayName，不重复建行）；
+//   - 未命中 → 新建作者行（type=regular、origin=client、created_at=now，
+//     displayName = canonical 别名以 " / " 连接——displayNameAliases 拆分
+//     重建编号行的往返安全形态）。
+//
+// 同一次调用内两名解析到同一身份时后一名复用前一名（seen 短路）：UpsertAuthor
+// 冲突分支会覆盖 display_name，不短路会让先写的显示名被后写的变体冲掉。
+// COS 作者行撞名（cos_ 前缀恰是 GenerateAuthorID 的合法产物）返回错误：静默
+// 复用会把 COS 作者错当常规作者、静默新建会覆盖 COS 行，两者都是事故。
+func (s *Service) ResolveOrCreateAuthors(ctx context.Context, qtx *db.Queries, names []string, now time.Time) ([]AuthorRef, error) {
+	rows, err := qtx.ListAuthors(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("authorattach: 查询作者表: %w", err)
+	}
+	byID := make(map[string]db.ListAuthorsRow, len(rows))
+	for _, row := range rows {
+		byID[row.ID] = row
+	}
+	refs := make([]AuthorRef, 0, len(names))
+	seen := make(map[string]bool, len(names))
+	for _, name := range names {
+		canonical := authoring.CanonicalAuthorNames(name)
+		if len(canonical) == 0 {
+			// handler 前置 NewAuthorNameRejectReason 已拦，防御兜底。
+			return nil, ErrInvalidAuthorName
+		}
+		id := authoring.GenerateAuthorID(canonical[0])
+		if seen[id] {
+			continue // 同批重名：身份相同即同一人，复用首次解析结果
+		}
+		seen[id] = true
+		if row, ok := byID[id]; ok {
+			if row.Type != authoring.AuthorTypeRegular {
+				return nil, fmt.Errorf("authorattach: 名字 %q 的规范身份 %s 与 %s 类型作者行撞名", name, id, row.Type)
+			}
+			refs = append(refs, AuthorRef{ID: id, DisplayName: row.DisplayName})
+			continue
+		}
+		displayName := strings.Join(canonical, " / ")
+		if err := qtx.UpsertAuthor(ctx, db.UpsertAuthorParams{
+			ID: id, DisplayName: displayName, Type: authoring.AuthorTypeRegular,
+			CreatedAt: store.FormatTimestamp(now),
+			// 溯源章（ADR-0032）：编辑端点按名新建作者，与同端点的关联写入
+			// 同通道（web/app 共用统一盖 client）。
+			Origin: store.OriginClient,
+		}); err != nil {
+			return nil, fmt.Errorf("authorattach: upsert 作者 %s: %w", id, err)
+		}
+		// 新建行登记进 byID：后续同名（同批或后续调用）按复用处理。
+		byID[id] = db.ListAuthorsRow{ID: id, DisplayName: displayName, Type: authoring.AuthorTypeRegular}
+		refs = append(refs, AuthorRef{ID: id, DisplayName: displayName})
+	}
+	return refs, nil
+}
+
+// MergeAuthorRefs 合并 authorIds 与按名解析两个来源的作者引用为全集（同 id
+// 去重，先遇者胜）：身份是 id，显示名两个来源同值（authorIds 路径取作者行、
+// 按名路径复用作者行），先遇者胜只影响交集元素的显示名来源，不改变身份。
+func MergeAuthorRefs(base, extra []AuthorRef) []AuthorRef {
+	seen := make(map[string]bool, len(base)+len(extra))
+	out := make([]AuthorRef, 0, len(base)+len(extra))
+	for _, list := range [][]AuthorRef{base, extra} {
+		for _, ref := range list {
+			if seen[ref.ID] {
+				continue
+			}
+			seen[ref.ID] = true
+			out = append(out, ref)
+		}
+	}
+	return out
 }
 
 // AuthorSources 读取作者所在片段（数组序第一个命中块）的来源区；无块 = 空
@@ -155,7 +235,7 @@ func (s *Service) ReplaceAuthorSources(ctx context.Context, qtx *db.Queries, now
 	} else {
 		fragment, content = fragments[ti].Filename, fragments[ti].Content
 	}
-	// 第二返回值（显示名）只写入上传条目元数据，编辑路径从不产生新
+	// 第二返回值（显示名）只写入上传条目元数据，来源区写入路径从不产生新
 	// 条目（见下方 persistSourcesAndPrune 注释）；且它恒等于 names 的
 	// " / " 连接（entryIdentity 三分支皆然），需要时可重建，丢弃无损失。
 	names, _ := entryIdentity(displayNameAliases(displayName), nil, displayName)
@@ -196,9 +276,10 @@ func writeAuthorBlockSources(content, authorID string, sources []string, mode So
 // persistSourcesAndPrune 落库片段数组并修剪 fragment 片段的上传条目元数据
 // （块命中/新建块 × replace/append 四条路径统一收口）。append 不移除行，
 // PruneUploadEntries 对它恒为 no-op——仍统一走修剪而不是按模式分支，是因为
-// imported_txt_upload_entries 的口径「只修剪不新增」必须只有一份实现：本端点
-// 是编辑语义、从不产生新条目（新增只属于上传挂靠 recordAddedLines），分叉
-// 修剪流程必然在未来某次改动中漏掉一条路径，导致重导入 409 误报。
+// imported_txt_upload_entries 的口径「只修剪不新增」必须只有一份实现：本
+// 函数服务的来源区写入路径是纯编辑语义、从不产生新条目（作品行的新增登记
+// 只属于 ReplaceAssetAuthors 与 Apply 的 recordAddedLines），分叉修剪流程
+// 必然在未来某次改动中漏掉一条路径，导致重导入 409 误报。
 func (s *Service) persistSourcesAndPrune(ctx context.Context, qtx *db.Queries, now time.Time, fragment string, fragments []Source, newContent string) error {
 	if err := PersistSources(ctx, qtx, now, fragments); err != nil {
 		return err
@@ -210,10 +291,15 @@ func (s *Service) persistSourcesAndPrune(ctx context.Context, qtx *db.Queries, n
 // ADR-0024）：
 //   - 移除关联：遍历全部片段 authoring.RemoveWorks 删该资产的作品行
 //     （按资产当前 file_name 匹配——与 Apply 写入的作品行同口径）；
-//   - 新增关联：资产当前 file_name 作为作品行并入作者块，落点与 Apply
-//     同款（块命中→数组序第一个片段；未命中→最近导入片段新建块；无片段
-//     →自动创建承载片段）；
-//   - 片段内容有变化时同步修剪对应片段的上传条目元数据；
+//   - 新增关联（对作者全集逐位执行，含已关联者——2026-10-11 自愈修订）：
+//     资产当前 file_name 作为作品行并入作者块，落点与 Apply 同款（块命中→
+//     数组序第一个片段；未命中→最近导入片段新建块；无片段→自动创建承载
+//     片段）。已关联但片段缺作品行是用户真实事故（关联在 DB、TXT 片段缺
+//     行）：对全集幂等追加使任何一次编辑保存都补写缺失行；行已存在时
+//     AppendWorks 返回原内容，靠 newContent == content 短路实现零写入；
+//   - 片段内容有变化时登记本次实际新追加的作品行（recordAddedLines 同款
+//     口径，防覆盖式重导入静默冲掉编辑写入的行），并同步修剪对应片段的
+//     上传条目元数据；
 //   - 关联表 swap（DeleteAssetAuthorsByAssetID + 逐个 AddAssetAuthor，
 //     终态=新列表）与本函数的片段更新同事务，保证「片段真相 + 关联表」
 //     原子。
@@ -230,70 +316,30 @@ func (s *Service) ReplaceAssetAuthors(ctx context.Context, qtx *db.Queries, now 
 	if err != nil {
 		return fmt.Errorf("authorattach: 查询资产现有作者: %w", err)
 	}
-	curSet := make(map[string]bool, len(current))
-	for _, row := range current {
-		curSet[row.ID] = true
-	}
 	newSet := make(map[string]bool, len(authors))
 	for _, a := range authors {
 		newSet[a.ID] = true
 	}
 	// changed 收集内容实际变化的片段（片段名 → 变更后内容）：PersistSources
-	// 与条目修剪都只对它们执行。
-	changed := map[string]string{}
-	// 移除关联：遍历全部片段删作品行（片段内容未命中行时 RemoveWorks
-	// 原样返回，不记变化——资产改名后的残留行按协议缺口由统一重建收敛）。
-	for _, row := range current {
-		if newSet[row.ID] {
-			continue
-		}
-		for i := range fragments {
-			newContent, removed := authoring.RemoveWorks(fragments[i].Content, row.ID, []string{fileName})
-			if len(removed) == 0 {
-				continue
-			}
-			fragments[i].Content = newContent
-			changed[fragments[i].Filename] = newContent
-		}
-	}
-	// 新增关联：作品行并入作者块（AppendWorks 已命中块时自带逐行去重，
-	// 幂等）。
-	works := []string{fileName}
-	for _, a := range authors {
-		if curSet[a.ID] {
-			continue
-		}
-		idx, blockNames := targetFragmentIndex(fragments, a.ID)
-		var content, fragment string
-		autoCreated := idx < 0
-		if autoCreated {
-			fragment = authoring.AutoFragmentFilename
-		} else {
-			fragment, content = fragments[idx].Filename, fragments[idx].Content
-		}
-		newContent, blockFound := authoring.AppendWorks(content, a.ID, works)
-		if !blockFound {
-			// 忽略第二返回值的论证同上 ReplaceAuthorSources 的新建块路径：
-			// 此处只消费别名列表编号新块，显示名仅用于上传条目元数据
-			// （编辑路径从不产生，见 persistSourcesAndPrune 注释）。
-			names, _ := entryIdentity(displayNameAliases(a.DisplayName), blockNames, a.DisplayName)
-			newContent = authoring.AppendAuthorBlock(content, names, nil, works)
-		}
-		if newContent == content {
-			continue // 幂等：行已在块中且无块新建发生（防御，正常不可达）
-		}
-		if autoCreated {
-			fragments = append(fragments, Source{
-				Filename: fragment, Content: newContent, ImportedAt: store.FormatTimestamp(now),
-			})
-		} else {
-			fragments[idx].Content = newContent
-		}
-		changed[fragment] = newContent
-	}
+	// 与条目修剪都只对它们执行；added 收集本次实际新追加的作品行（按片段
+	// 分组，与 Apply 的 recordAddedLines 同一口径）。
+	changed := removeAssetWorkLines(fragments, current, newSet, fileName)
+	var added map[string][]authoring.UploadEntry
+	fragments, added = appendAssetWorkLines(fragments, authors, fileName, now, changed)
 	if len(changed) > 0 {
 		if err := PersistSources(ctx, qtx, now, fragments); err != nil {
 			return err
+		}
+	}
+	// 登记先于修剪：新追加的行此刻已在片段中，修剪对它恒为 no-op。顺序本身
+	// 不影响正确性（修剪以「追加后内容」判存在，颠倒也不会误剪刚登记的行），
+	// 保持先登记后修剪只为与 Apply 的流程顺序对齐、少一处阅读负担。
+	// （2026-10-11 对抗审查：修正原注释「颠倒会误剪」的不准确论证。）
+	for fragment, entries := range added {
+		for _, e := range entries {
+			if err := recordAddedLines(ctx, qtx, now, fragment, e); err != nil {
+				return err
+			}
 		}
 	}
 	for fragment, content := range changed {
@@ -316,6 +362,75 @@ func (s *Service) ReplaceAssetAuthors(ctx context.Context, qtx *db.Queries, now 
 		}
 	}
 	return nil
+}
+
+// removeAssetWorkLines 是 ReplaceAssetAuthors 的移除半场：遍历全部片段删
+// 「不再在作者全集里」的作者的作品行（按资产当前 file_name 匹配——与 Apply
+// 写入的作品行同口径），返回内容实际变化的片段（片段名 → 变更后内容）。
+// RemoveWorks 未命中行时原样返回，不记变化——资产改名后的残留行按协议缺口
+// 由统一重建收敛。
+func removeAssetWorkLines(fragments []Source, current []db.ListAssetAuthorRefsRow, keep map[string]bool, fileName string) map[string]string {
+	changed := map[string]string{}
+	for _, row := range current {
+		if keep[row.ID] {
+			continue
+		}
+		for i := range fragments {
+			newContent, removed := authoring.RemoveWorks(fragments[i].Content, row.ID, []string{fileName})
+			if len(removed) == 0 {
+				continue
+			}
+			fragments[i].Content = newContent
+			changed[fragments[i].Filename] = newContent
+		}
+	}
+	return changed
+}
+
+// appendAssetWorkLines 是 ReplaceAssetAuthors 的追加半场：对作者全集逐位
+// 幂等追加作品行（含已关联者的自愈补行，见 ReplaceAssetAuthors 注释），
+// 返回更新后的片段数组与本次实际新追加的条目（按片段分组，登记口径同
+// Apply）；changed 就地并入内容变化的片段。落点与 Apply 同款（块命中→数组
+// 序第一个片段；未命中→最近导入片段新建块；无片段→自动创建承载片段）。
+func appendAssetWorkLines(fragments []Source, authors []AuthorRef, fileName string, now time.Time, changed map[string]string) ([]Source, map[string][]authoring.UploadEntry) {
+	added := map[string][]authoring.UploadEntry{}
+	works := []string{fileName}
+	for _, a := range authors {
+		idx, blockNames := targetFragmentIndex(fragments, a.ID)
+		var content, fragment string
+		autoCreated := idx < 0
+		if autoCreated {
+			fragment = authoring.AutoFragmentFilename
+		} else {
+			fragment, content = fragments[idx].Filename, fragments[idx].Content
+		}
+		// entryIdentity 决定条目别名与新块编号行：块命中 → 该块解析出的
+		// AuthorNames（往返恒等）；无块 → 显示名按 " / " 拆分重建的规范别名。
+		aliases, entryDisplay := entryIdentity(displayNameAliases(a.DisplayName), blockNames, a.DisplayName)
+		newContent, blockFound := authoring.AppendWorks(content, a.ID, works)
+		if !blockFound {
+			newContent = authoring.AppendAuthorBlock(content, aliases, nil, works)
+		}
+		if newContent == content {
+			continue // 幂等：行已在块中且无块新建发生，零写入
+		}
+		// 本次实际新追加的行 = 旧内容缺少的条目部分（MissingUploadEntries
+		// 语义，块缺失时整条带 DisplayName/Names 供重建缺失块）。
+		if e := authoring.MissingUploadEntries(content, []authoring.UploadEntry{{
+			AuthorID: a.ID, DisplayName: entryDisplay, Names: aliases, Works: works,
+		}}); len(e) > 0 {
+			added[fragment] = append(added[fragment], e[0])
+		}
+		if autoCreated {
+			fragments = append(fragments, Source{
+				Filename: fragment, Content: newContent, ImportedAt: store.FormatTimestamp(now),
+			})
+		} else {
+			fragments[idx].Content = newContent
+		}
+		changed[fragment] = newContent
+	}
+	return fragments, added
 }
 
 // pruneFragmentEntries 剔除 fragment 片段上传条目中内容已不存在的部分

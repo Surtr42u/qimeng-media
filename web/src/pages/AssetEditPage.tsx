@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { toast } from 'sonner'
-import type { Author } from '@/api/generated'
+import type { AssetDetail } from '@/api/generated'
 import { AuthorSuggestField, type AuthorAttachValue } from '@/components/manage/AuthorSuggestField'
 import { SourceSelectField } from '@/components/manage/SourceSelectField'
 import { LoadingHint } from '@/components/ui/loading-hint'
@@ -14,6 +14,13 @@ import {
   useReplaceAssetAuthors,
   useSaveAuthorSources,
 } from '@/hooks/use-authors'
+import {
+  addPendingAuthorName,
+  authorDraftsFromDetail,
+  pendingAuthorRejectionText,
+  removePendingAuthorName,
+  type AuthorDraft,
+} from '@/lib/asset-authors'
 import { batchFailureReason } from '@/lib/batch'
 import { assetDetail } from '@/lib/route-keys'
 
@@ -22,20 +29,19 @@ import { assetDetail } from '@/lib/route-keys'
  * 子路由，不在叠加组内——返回详情走 assetDetail 重开叠加，无底衬上下文）。
  *
  * 编辑面（2026-09-25 协议批，ADR-0024）：
- * - 作者关联 = PUT /assets/{assetId}/authors 整体替换（body=常规作者 ID 全集；
- *   COS 作者关联来自 COS 目录语义、协议拒绝 cos 作者 ID，编辑面直接不收）；
+ * - 作者关联 = PUT /assets/{assetId}/authors 整体替换（body=常规作者 ID 全集
+ *   ∪ 待新建名 newAuthorNames；COS 作者关联来自 COS 目录语义、协议拒绝 cos
+ *   作者 ID，编辑面直接不收）；
+ * - 2026-10-11 修订「编辑页支持新建作者」：联想未命中的输入名进「待新建」清单
+ *   （去重/长度/项数拦截走 lib/asset-authors，单测锁定），随保存交服务端按规范
+ *   身份复用或新建——不再要求先经 TXT 导入；保存成功后以响应里的作者全集刷新
+ *   草稿（新作者成为正常条目，可继续编辑来源区）；
  * - 每作者来源区 = PUT /authors/{authorId}/sources 整体替换，只对有改动的
  *   作者逐个提交；服务端值经 useAuthorSourcesById 回显（草稿态）。
  * 上传三参数挂靠已退役：作者/来源的指定与调整全部收敛到本页。
  * 所有错误文案经 batchFailureReason 提取（unwrapSdkResult 抛 {code,message}
  * 错误体而非 Error 实例，instanceof Error 模式会落 "[object Object]"）。
  */
-
-/** 草稿作者行（id 提交协议；displayName 仅前端展示，缺省回退 id） */
-interface AuthorDraft {
-  id: string
-  displayName: string
-}
 
 /** 头图预览边长（编辑页信息卡小缩略图） */
 const THUMB_SIZE_PX = 96
@@ -69,20 +75,13 @@ export default function AssetEditPage() {
   // 存量常规作者（编辑基线）：detail.authors 过滤 COS 作者（协议 404 口径）后
   // 映射为草稿行。detail 未到货时空数组——只有用户新增会进草稿，不影响保存
   // 按钮（detail 未到货时整卡不渲染）。
-  const serverAuthors = useMemo<AuthorDraft[]>(
-    () =>
-      (detail?.authors ?? [])
-        .filter(
-          (a: Author): a is Author & { id: string } =>
-            a.id != null && a.id !== '' && a.type !== 'cos' && !a.id.startsWith('cos_'),
-        )
-        .map((a) => ({ id: a.id, displayName: a.displayName ?? a.id })),
-    [detail],
-  )
+  const serverAuthors = useMemo(() => authorDraftsFromDetail(detail?.authors), [detail])
 
   // 草稿作者全集（null=未动，跟随服务端值）；保存提交的是最终 ID 全集
   const [draftAuthors, setDraftAuthors] = useState<AuthorDraft[] | null>(null)
   const authors = draftAuthors ?? serverAuthors
+  // 待新建作者名（保存随 newAuthorNames 交服务端建/复用；成功清空、失败保留可重试）
+  const [pendingAuthors, setPendingAuthors] = useState<string[]>([])
   // 来源草稿与脏标记（authorId → 词表/是否改过）：保存只对脏作者发 PUT
   const [sourceDrafts, setSourceDrafts] = useState<Record<string, string[]>>({})
   const [dirtySources, setDirtySources] = useState<Record<string, true>>({})
@@ -93,9 +92,9 @@ export default function AssetEditPage() {
   const replaceAuthors = useReplaceAssetAuthors()
   const saveSources = useSaveAuthorSources()
 
-  /** 联想字段回传：authorId=已有作者（进草稿，重复不加）；authorName=新建
-   *  意图——本页无法落 ID（协议只收已存在的常规作者 ID），明确告知而非静默
-   *  吞掉；null=字段清空动作，不动草稿。 */
+  /** 联想字段回传：authorId=已有作者（进草稿，重复不加）；authorName=待新建
+   *  （进待新建清单——重名/超长/超项按 lib 口径出提示不入列）；null=字段清空
+   *  动作，不动草稿。 */
   const onPickAuthor = (v: AuthorAttachValue | null): void => {
     setPickValue(null)
     if (!v) return
@@ -107,7 +106,17 @@ export default function AssetEditPage() {
       setDraftAuthors([...authors, { id: v.authorId, displayName: v.displayName ?? v.authorId }])
       return
     }
-    if (v.authorName) toast.info('本页只能关联已有作者；新建作者请先经 TXT 导入创建')
+    if (v.authorName) {
+      const added = addPendingAuthorName(
+        { attached: authors.map((a) => a.displayName), pending: pendingAuthors },
+        v.authorName,
+      )
+      if (!added.ok) {
+        toast.info(pendingAuthorRejectionText(added.reason, v.authorName))
+        return
+      }
+      setPendingAuthors(added.names)
+    }
   }
 
   /** 移出草稿并清掉该作者的来源草稿/脏标记（重加同作者不残留旧脏态） */
@@ -127,20 +136,32 @@ export default function AssetEditPage() {
     setDirtySources((prev) => ({ ...prev, [authorId]: true }))
   }
 
-  /** 保存：先整体替换作者关联，再对脏作者逐个提交来源区。来源区单作者失败
-   *  不阻断其余作者，最后汇总报错并留在本页（草稿保留，可直接重试）。 */
+  /** 保存：先整体替换作者关联（含待新建名），再对脏作者逐个提交来源区。来源区
+   *  单作者失败不阻断其余作者，最后汇总报错并留在本页（草稿保留，可直接重试）。 */
   const doSave = async (): Promise<void> => {
     if (!assetId || saving) return
     setSaving(true)
     try {
+      let saved: AssetDetail | null = null
       try {
-        await replaceAuthors.mutateAsync({ assetId, authorIds: authors.map((a) => a.id) })
+        saved = await replaceAuthors.mutateAsync({
+          assetId,
+          authorIds: authors.map((a) => a.id),
+          newAuthorNames: pendingAuthors,
+        })
       } catch (err) {
+        // 失败保留草稿与待新建清单，用户可直接重试（不落 toast 之外的副作用）
         toast.error(`作者关联保存失败：${batchFailureReason(err)}`)
         return
       }
+      if (saved === null) return
+      // 关联已落库：以响应作者全集刷新草稿（待新建名已成真作者，作为正常条目
+      // 出现、可继续编辑来源），待新建清单清空
+      const nextAuthors = authorDraftsFromDetail(saved.authors)
+      setDraftAuthors(nextAuthors)
+      setPendingAuthors([])
       const failures: string[] = []
-      for (const a of authors) {
+      for (const a of nextAuthors) {
         if (!dirtySources[a.id]) continue
         try {
           await saveSources.mutateAsync({ authorId: a.id, sources: sourceDrafts[a.id] ?? [] })
@@ -190,9 +211,12 @@ export default function AssetEditPage() {
           </div>
           <div className="settings-card">
             <h3>关联作者</h3>
-            <p>在下方输入框联想选择已有作者逐个添加；COS 作者不在此列（由 COS 目录语义决定）</p>
-            <AuthorSuggestField value={pickValue} onChange={onPickAuthor} />
-            {authors.length === 0 ? (
+            <p>
+              在下方输入框联想选择已有作者，或对没有的作者点「新建：xxx」直接创建；
+              COS 作者不在此列（由 COS 目录语义决定）
+            </p>
+            <AuthorSuggestField value={pickValue} onChange={onPickAuthor} allowCreate />
+            {authors.length === 0 && pendingAuthors.length === 0 ? (
               <p className="grid-empty">暂无关联作者——联想选择添加，或保存空集解除全部常规作者</p>
             ) : (
               <div>
@@ -209,6 +233,25 @@ export default function AssetEditPage() {
                       draft={sourceDrafts[a.id]}
                       onChange={onSourceChange}
                     />
+                  </div>
+                ))}
+              </div>
+            )}
+            {pendingAuthors.length > 0 && (
+              <div style={{ marginTop: 12 }}>
+                <p className="rank-note">待新建作者（保存后自动创建并关联）</p>
+                {pendingAuthors.map((name) => (
+                  <div
+                    key={name}
+                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                  >
+                    <b>{name}</b>
+                    <Pill
+                      onClick={() => setPendingAuthors(removePendingAuthorName(pendingAuthors, name))}
+                      title="取消新建该作者"
+                    >
+                      移除
+                    </Pill>
                   </div>
                 ))}
               </div>

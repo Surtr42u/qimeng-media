@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import media.qimeng.app.core.data.repository.AssetAuthorsRejectedException
 import media.qimeng.app.core.data.repository.AuthorRepository
 import media.qimeng.app.core.data.repository.DetailRepository
 import media.qimeng.app.core.data.repository.InboxFileStore
@@ -55,6 +56,9 @@ data class AssetEditUiState(
     val authorQuery: String = "",
     /** 联想结果（防抖回填） */
     val authorSuggestions: List<AuthorSuggestion> = emptyList(),
+    /** 待新建作者名（回车未命中联想的名字；保存时随 PUT 交服务端按规范身份复用或新建，
+     *  保存前不占「已关联作者」计数、也无来源编辑——服务端建行后才是正常作者） */
+    val pendingNewAuthorNames: List<String> = emptyList(),
     /** 空输入作者种子（GET /authors 全量过滤常规作者；suggest 空 q 必返空，
      *  空输入的默认全显走全量接口；失败静默为空，不阻断编辑页） */
     val authorSeeds: List<AuthorSuggestion> = emptyList(),
@@ -89,10 +93,11 @@ data class AssetEditUiState(
             }
         }
 
-    /** 保存按钮可用：有改动（文件名/作者全集/任一来源）且不在保存中 */
+    /** 保存按钮可用：有改动（文件名/作者全集/待新建名/任一来源）且不在保存中 */
     val canSave: Boolean
         get() = !saving && (
             authorsChanged ||
+            pendingNewAuthorNames.isNotEmpty() ||
             dirtySourceAuthorIds.isNotEmpty() ||
             (fileNameChanged && currentBaseName.isNotBlank() && effectiveFileName != originalFileName)
         )
@@ -104,8 +109,9 @@ data class AssetEditUiState(
  * 添加作者联想（GET /authors/suggest，经 [UploadRepository]——上传挂靠退役后联想
  * 端点的唯一消费场景迁至此）。表单编排在本层，UI 零业务规则（ADR-0008 铁律 7）。
  *
- * 仅能关联**已有**作者：服务端无按名新建作者端点（新建唯一通道是 TXT 导入），
- * 联想无命中时给提示、不发保存请求。
+ * 作者添加两条通道：联想命中 = 关联已有作者；未命中 = 进「待新建」名单，保存时随
+ * PUT 交服务端按规范身份复用或新建（协议 2026-10-11 修订，服务端是新建的执行者，
+ * 客户端不做按名建行）。待新建名此刻还没有作者 id，故保存前不提供来源编辑。
  */
 @HiltViewModel
 class AssetEditViewModel @Inject constructor(
@@ -209,7 +215,7 @@ class AssetEditViewModel @Inject constructor(
         _uiState.update { it.copy(authorSeeds = seeds) }
     }
 
-    // ---- 添加作者（联想选择；规则与旧上传页一致，去掉新建通道） ----
+    // ---- 添加作者（联想命中=关联已有；未命中=进待新建名单，保存时交服务端） ----
 
     /** 输入变化：防抖拉联想（空串清列表；竞态以词条比对回填） */
     fun onAddAuthorQueryChange(query: String) {
@@ -231,7 +237,12 @@ class AssetEditViewModel @Inject constructor(
         }
     }
 
-    /** 回车提交：大小写不敏感精确命中 → 添加该作者；未命中 → 提示仅能关联已有作者 */
+    /**
+     * 回车提交：联想列表忽略大小写精确命中 → 关联该作者（既有通道，行为不变）；
+     * 未命中 → 进「待新建」名单（保存时随 PUT 交服务端复用或新建），不再报
+     * 「仅能关联已有作者」。超协议 maxLength 的名字给明确提示、不入列；
+     * 与已关联作者显示名及名单内部忽略大小写去重（名字此刻无 id，靠显示名归一挡重）。
+     */
     fun commitAddAuthor() {
         val current = _uiState.value
         val trimmed = current.authorQuery.trim()
@@ -241,8 +252,45 @@ class AssetEditViewModel @Inject constructor(
         }
         if (exact != null) {
             addAuthor(exact)
-        } else {
-            _uiState.update { it.copy(noticeMessage = ONLY_EXISTING_AUTHORS) }
+            return
+        }
+        if (trimmed.length > NEW_AUTHOR_NAME_MAX) {
+            _uiState.update { it.copy(noticeMessage = AUTHOR_NAME_TOO_LONG) }
+            return
+        }
+        if (current.authors.any { it.displayName.equals(trimmed, ignoreCase = true) }) {
+            // 与已关联作者显示名同名（联想未载入时的兜底去重）：给既有「已关联」提示，不入列
+            _uiState.update { it.copy(noticeMessage = AUTHOR_EXISTS) }
+            return
+        }
+        if (current.pendingNewAuthorNames.any { it.equals(trimmed, ignoreCase = true) }) {
+            // 名单内部忽略大小写去重：静默 no-op（同名胶囊已可见，报错反而误导）
+            return
+        }
+        if (current.pendingNewAuthorNames.size >= NEW_AUTHOR_NAMES_MAX) {
+            // 项数上限（协议 maxItems 客户端投影，超限服务端 400）：第 21 个不入列。
+            // 提示引导先保存本页——保存后待新建成真作者、名单清空即可继续加（口径对齐
+            // Web asset-authors.ts 的 too-many 文案）
+            _uiState.update {
+                it.copy(noticeMessage = PENDING_AUTHORS_FULL.format(NEW_AUTHOR_NAMES_MAX))
+            }
+            return
+        }
+        suggestJob?.cancel()
+        _uiState.update {
+            it.copy(
+                pendingNewAuthorNames = it.pendingNewAuthorNames + trimmed,
+                authorQuery = "",
+                authorSuggestions = emptyList(),
+                noticeMessage = null,
+            )
+        }
+    }
+
+    /** 点按待新建胶囊移除（保存前来去自由；无作者 id，无来源等连带状态需要清理） */
+    fun removePendingNewAuthor(name: String) {
+        _uiState.update { current ->
+            current.copy(pendingNewAuthorNames = current.pendingNewAuthorNames.filterNot { it == name })
         }
     }
 
@@ -397,15 +445,32 @@ class AssetEditViewModel @Inject constructor(
                         }
                     }
                 }
-                // 2. 作者全集整体 PUT 替换
-                authorRepository.replaceAssetAuthors(assetId, current.authors.map { it.id })
+                // 2. 作者全集整体 PUT 替换（待新建名随请求一并交服务端：规范身份命中已有
+                //    作者则复用，未命中新建——客户端只传名，不预建 id）
+                authorRepository.replaceAssetAuthors(
+                    assetId,
+                    current.authors.map { it.id },
+                    current.pendingNewAuthorNames,
+                )
                 // 3. 逐个更新脏来源
                 current.dirtySourceAuthorIds.forEach { authorId ->
                     authorRepository.replaceAuthorSources(authorId, current.sourcesByAuthor[authorId].orEmpty())
                 }
-                _uiState.update { it.copy(saving = false, saved = true) }
+                // 4. 成功：待新建名已被服务端实体化（复用或新建），清空名单——本页返回后
+                //    详情/编辑页回读即见新作者为正常作者（有 id，来源可编辑）；
+                //    失败路径（下方 catch）不清空名单，可重按重试
+                _uiState.update {
+                    it.copy(saving = false, saved = true, pendingNewAuthorNames = emptyList())
+                }
             } catch (e: MoveConflictException) {
                 _uiState.update { it.copy(saving = false, errorMessage = NAME_CONFLICT) }
+            } catch (e: AssetAuthorsRejectedException) {
+                // 4xx 语义化拒绝（如 newAuthorNames 某项非法）：服务端原因直接透出，
+                // 用户可自助修正名字后重按（待新建名单不清空，改完即可重试）；
+                // 兜底文案已含状态码（拿不到服务端 body 时），与网络失败区分
+                _uiState.update {
+                    it.copy(saving = false, errorMessage = "$SAVE_FAILED_PREFIX${e.serverMessage}")
+                }
             } catch (e: Exception) {
                 _uiState.update { it.copy(saving = false, errorMessage = SAVE_FAILED) }
             }
@@ -421,9 +486,31 @@ class AssetEditViewModel @Inject constructor(
         // 与上传页/Web 端同值口径），经 import 引用
 
         const val LOAD_FAILED = "加载资产信息失败，请重试"
-        const val SAVE_FAILED = "保存失败：请重试"
+
+        /** 保存失败前缀（服务端原因透出时拼在其后，如「保存失败：INVALID_PARAM …」；[SAVE_FAILED] 同前缀） */
+        const val SAVE_FAILED_PREFIX = "保存失败："
+        const val SAVE_FAILED = SAVE_FAILED_PREFIX + "请重试"
         const val NAME_CONFLICT = "目标目录已存在同名文件"
-        const val ONLY_EXISTING_AUTHORS = "未找到该作者：编辑页仅能关联已有作者，请从联想中选择"
         const val AUTHOR_EXISTS = "该作者已关联"
+
+        /**
+         * 作者名单名上限（协议 AssetAuthorsReplaceRequest.newAuthorNames maxLength=200 rune
+         * 的客户端投影，超限服务端 400——VocabularyLimits 同款「协议容量投影」先例，
+         * 本地提前拦截给明确提示。按 UTF-16 长度计，非基本平面字符比 rune 口径更严，
+         * 取保守方向）。
+         */
+        const val NEW_AUTHOR_NAME_MAX = 200
+
+        /**
+         * 待新建作者项数上限（协议 AssetAuthorsReplaceRequest.newAuthorNames maxItems=20
+         * 的客户端投影，超限服务端 400——协议侧改动须同步此处，反之亦然；Web
+         * lib/asset-authors.ts 的 NEW_AUTHOR_NAMES_MAX_ITEMS 同值双写）。
+         */
+        const val NEW_AUTHOR_NAMES_MAX = 20
+        const val AUTHOR_NAME_TOO_LONG = "作者名过长（最多 200 字）"
+
+        /** 待新建满额提示（%d 取 [NEW_AUTHOR_NAMES_MAX]；文案与 Web pendingAuthorRejectionText 的
+         *  too-many 分支逐字对齐——「先保存本页」后待新建成真作者、名单清空即可继续加） */
+        const val PENDING_AUTHORS_FULL = "待新建作者最多 %d 个，请先保存本页再继续添加"
     }
 }

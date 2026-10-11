@@ -48,8 +48,9 @@ import media.qimeng.app.core.ui.theme.qimengFilledButtonColors
  * 资产编辑页（2026-09-25 上传挂靠退役批）：作者关联 + 逐作者来源维护。
  * 入口 = 详情作者 Sheet「编辑作者与来源」（壳层 pushed 路由，入栈隐藏底栏）。
  * 结构（Card 分节 + MessageCard 双槽提示）：错误/提示横幅 → 已关联作者（行内移除 +
- * 每作者来源区）→ 添加作者（联想选择，仅既有作者）→ 保存（PUT 全集 + 脏来源逐 PUT，
- * 成功返回）。加载与保存编排全在 [AssetEditViewModel]（ADR-0008 铁律 7）。
+ * 每作者来源区）→ 添加作者（联想选择；回车未命中进「待新建」胶囊）→ 保存（PUT 全集
+ * 含待新建名 + 脏来源逐 PUT，成功返回）。加载与保存编排全在 [AssetEditViewModel]
+ * （ADR-0008 铁律 7）。
  *
  * @param onBack 返回（未保存退出，无改动确认——本页改动粒度小且可重进）
  * @param onSaved 保存成功后的返回（与 onBack 同为 popBackStack，语义分开供测试/预览注入）
@@ -153,7 +154,7 @@ private fun AssetEditForm(
             }
         }
 
-        // —— 添加作者（联想选择；仅能关联既有作者——服务端无按名新建端点） ——
+        // —— 添加作者（联想选择；回车未命中进「待新建」，保存时随 PUT 交服务端复用/新建） ——
         Surface(
             shape = RoundedCornerShape(16.dp),
             color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -171,6 +172,27 @@ private fun AssetEditForm(
                     onCommitInput = viewModel::commitAddAuthor,
                     onClear = { },
                 )
+                // 待新建作者胶囊流（「新建：」前缀与共享组件待新建态同口径）：点按移除。
+                // 保存前不提供来源编辑——来源写接口（PUT /authors/{id}/sources）需要作者
+                // id，待新建名此刻还没有 id；保存后服务端建行，再进本页即为正常作者行、
+                // 来源区可编辑（列表渲染走 state.authors 的 AuthorEditRow，恒带 id）。
+                if (state.pendingNewAuthorNames.isNotEmpty()) {
+                    FlowRow(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        state.pendingNewAuthorNames.forEach { name ->
+                            QimengSegPill(
+                                text = "新建：$name ✕",
+                                selected = true,
+                                onClick = { viewModel.removePendingNewAuthor(name) },
+                            )
+                        }
+                    }
+                }
             }
         }
 

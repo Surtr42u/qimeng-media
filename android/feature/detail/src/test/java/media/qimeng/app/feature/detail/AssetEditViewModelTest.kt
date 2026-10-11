@@ -8,6 +8,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+import media.qimeng.app.core.data.repository.AssetAuthorsRejectedException
 import media.qimeng.app.core.data.repository.DetailRepository
 import media.qimeng.app.core.model.AssetDetail
 import media.qimeng.app.core.model.AuthorSuggestion
@@ -23,7 +24,8 @@ import media.qimeng.app.core.testing.MainDispatcherRule
 
 /**
  * 资产编辑页 ViewModel 锁定（2026-09-25 上传挂靠退役批）：装配回显（作者全集 + 逐作者
- * 来源）/ 添加作者（仅既有作者）/ 移除与记脏 / 保存调用仓（全集 PUT + 脏来源逐 PUT）/
+ * 来源）/ 添加作者（联想命中=关联既有；未命中=进待新建名单，2026-10-11 按名新建修订）/
+ * 移除与记脏 / 保存调用仓（全集 PUT 含 newAuthorNames 透传 + 脏来源逐 PUT）/
  * 错误与提示呈现 / canSave 门控。生产实现 = SdkAuthorRepository/SdkDetailRepository
  * （core:data），此处只锁 VM 编排。
  */
@@ -250,17 +252,121 @@ class AssetEditViewModelTest {
     }
 
     @Test
-    fun `联想未命中回车提示仅能关联既有作者`() {
+    fun `联想精确命中回车直接关联既有作者`() {
+        val suggestRepo = FakeUploadRepository().apply {
+            suggestResult = { q ->
+                if (q.equals("作者c", ignoreCase = true)) listOf(AuthorSuggestion("a-3", "作者C", 1)) else emptyList()
+            }
+        }
+        val (viewModel, _, _) = newViewModel(suggestRepo = suggestRepo)
+        viewModel.onAddAuthorQueryChange("作者c") // 大小写不同仍命中（忽略大小写精确匹配）
+        driveIdle()
+        viewModel.commitAddAuthor()
+        val state = viewModel.uiState.value
+        // 命中通道行为不变：直接进全集，不走待新建
+        assertEquals(listOf("a-1", "a-2", "a-3"), state.authors.map { it.id })
+        assertTrue(state.pendingNewAuthorNames.isEmpty())
+        assertTrue(state.canSave)
+        assertEquals("", state.authorQuery)
+    }
+
+    @Test
+    fun `联想未命中回车进入待新建不报错并解锁保存`() {
         val (viewModel, _, _) = newViewModel()
         viewModel.onAddAuthorQueryChange("全新作者")
         driveIdle() // 防抖后联想返回空（默认 suggestResult 空）
         viewModel.commitAddAuthor()
+        val state = viewModel.uiState.value
+        assertEquals(listOf("全新作者"), state.pendingNewAuthorNames)
+        assertNull(state.noticeMessage) // 旧「仅能关联已有作者」提示退役
+        assertEquals("", state.authorQuery) // 入列后输入态复位
+        assertTrue(state.pendingNewAuthorNames.isNotEmpty() && state.canSave)
+        assertEquals(2, state.authors.size) // 待新建不进「已关联作者」全集
+    }
+
+    @Test
+    fun `待新建忽略大小写去重且与已关联显示名去重`() {
+        val (viewModel, _, _) = newViewModel()
+        viewModel.onAddAuthorQueryChange("NewName")
         driveIdle()
+        viewModel.commitAddAuthor()
+        assertEquals(listOf("NewName"), viewModel.uiState.value.pendingNewAuthorNames)
+
+        // 名单内部去重：大小写变体不重复入列（静默 no-op，不报错）
+        viewModel.onAddAuthorQueryChange("newname")
+        driveIdle()
+        viewModel.commitAddAuthor()
+        assertEquals(listOf("NewName"), viewModel.uiState.value.pendingNewAuthorNames)
+        assertNull(viewModel.uiState.value.noticeMessage)
+
+        // 与已关联作者显示名同名：给既有「已关联」提示，不入待新建
+        viewModel.onAddAuthorQueryChange("作者A")
+        driveIdle()
+        viewModel.commitAddAuthor()
+        assertEquals(listOf("NewName"), viewModel.uiState.value.pendingNewAuthorNames)
+        assertEquals("该作者已关联", viewModel.uiState.value.noticeMessage)
+    }
+
+    @Test
+    fun `待新建胶囊点按移除`() {
+        val (viewModel, _, _) = newViewModel()
+        viewModel.onAddAuthorQueryChange("甲作者")
+        driveIdle()
+        viewModel.commitAddAuthor()
+        viewModel.onAddAuthorQueryChange("乙作者")
+        driveIdle()
+        viewModel.commitAddAuthor()
+        assertEquals(listOf("甲作者", "乙作者"), viewModel.uiState.value.pendingNewAuthorNames)
+
+        viewModel.removePendingNewAuthor("甲作者")
+        assertEquals(listOf("乙作者"), viewModel.uiState.value.pendingNewAuthorNames)
+
+        viewModel.removePendingNewAuthor("乙作者")
+        // 名单清空且无其它改动：保存门控收回到不可保存
+        assertTrue(viewModel.uiState.value.pendingNewAuthorNames.isEmpty())
+        assertFalse(viewModel.uiState.value.canSave)
+    }
+
+    @Test
+    fun `作者名超长提示且不入列恰200仍可入列`() {
+        val (viewModel, _, _) = newViewModel()
+        val overLong = "长".repeat(201)
+        viewModel.onAddAuthorQueryChange(overLong)
+        driveIdle()
+        viewModel.commitAddAuthor()
+        assertEquals("作者名过长（最多 200 字）", viewModel.uiState.value.noticeMessage)
+        assertTrue(viewModel.uiState.value.pendingNewAuthorNames.isEmpty())
+        assertEquals(overLong, viewModel.uiState.value.authorQuery) // 输入保留供修改
+
+        // 边界恰 200（协议 maxLength 上限）可入列
+        val atLimit = "长".repeat(200)
+        viewModel.onAddAuthorQueryChange(atLimit)
+        driveIdle()
+        viewModel.commitAddAuthor()
+        assertEquals(listOf(atLimit), viewModel.uiState.value.pendingNewAuthorNames)
+    }
+
+    @Test
+    fun `待新建最多20个第21个被拦并提示`() {
+        val (viewModel, _, _) = newViewModel()
+        repeat(20) { i ->
+            viewModel.onAddAuthorQueryChange("新作者$i")
+            driveIdle()
+            viewModel.commitAddAuthor()
+        }
+        // 恰 20（协议 maxItems 上限）全部入列且解锁保存
+        assertEquals(20, viewModel.uiState.value.pendingNewAuthorNames.size)
+        assertTrue(viewModel.uiState.value.canSave)
+
+        viewModel.onAddAuthorQueryChange("新作者20")
+        driveIdle()
+        viewModel.commitAddAuthor()
+        // 第 21 个不入列并给明确提示（本地拦截，不把必 400 的载荷发出去）
+        assertEquals(20, viewModel.uiState.value.pendingNewAuthorNames.size)
         assertEquals(
-            "未找到该作者：编辑页仅能关联已有作者，请从联想中选择",
+            "待新建作者最多 20 个，请先保存本页再继续添加",
             viewModel.uiState.value.noticeMessage,
         )
-        assertFalse(viewModel.uiState.value.authorsChanged)
     }
 
     @Test
@@ -300,6 +406,86 @@ class AssetEditViewModelTest {
         )
         assertTrue(viewModel.uiState.value.saved)
         assertNull(viewModel.uiState.value.errorMessage)
+    }
+
+    @Test
+    fun `保存透传待新建名并成功后清空`() {
+        val (viewModel, _, authorRepo) = newViewModel()
+        viewModel.onAddAuthorQueryChange("全新作者")
+        driveIdle()
+        viewModel.commitAddAuthor()
+        assertTrue(viewModel.uiState.value.canSave) // 仅待新建名也解锁保存
+
+        viewModel.save()
+        driveIdle()
+
+        val call = authorRepo.assetAuthorsCalls.single()
+        assertEquals("asset-1", call.first)
+        assertEquals(listOf("a-1", "a-2"), call.second) // 既有作者 id 全集
+        assertEquals(listOf("全新作者"), call.third) // 待新建名随请求交服务端复用/新建
+        assertTrue(viewModel.uiState.value.saved)
+        // 成功后清空待新建：名字已实体化，回读即为正常作者
+        assertTrue(viewModel.uiState.value.pendingNewAuthorNames.isEmpty())
+    }
+
+    @Test
+    fun `保存失败不清空待新建可重试`() {
+        val (viewModel, _, authorRepo) = newViewModel()
+        viewModel.onAddAuthorQueryChange("全新作者")
+        driveIdle()
+        viewModel.commitAddAuthor()
+        authorRepo.replaceError = IllegalStateException("500")
+
+        viewModel.save()
+        driveIdle()
+
+        assertEquals("保存失败：请重试", viewModel.uiState.value.errorMessage)
+        assertFalse(viewModel.uiState.value.saved)
+        assertEquals(listOf("全新作者"), viewModel.uiState.value.pendingNewAuthorNames)
+        assertTrue(viewModel.uiState.value.canSave) // 可重按重试
+    }
+
+    @Test
+    fun `保存被服务端400拒绝时透出原因且待新建保留`() {
+        val (viewModel, _, authorRepo) = newViewModel()
+        viewModel.onAddAuthorQueryChange("[3D]")
+        driveIdle()
+        viewModel.commitAddAuthor()
+        // 服务端 400 原因（core:data 解析 Error{code,message} 后的领域化文案）
+        authorRepo.replaceError = AssetAuthorsRejectedException(
+            serverMessage = "INVALID_PARAM newAuthorNames 第 1 项 \"[3D]\" 非法：规范化后无有效别名",
+            statusCode = 400,
+        )
+
+        viewModel.save()
+        driveIdle()
+
+        val message = viewModel.uiState.value.errorMessage
+        // 原因随文案透出（不再落笼统「保存失败：请重试」），用户可自助改名后重按
+        assertEquals(
+            "保存失败：INVALID_PARAM newAuthorNames 第 1 项 \"[3D]\" 非法：规范化后无有效别名",
+            message,
+        )
+        assertFalse(viewModel.uiState.value.saved)
+        assertEquals(listOf("[3D]"), viewModel.uiState.value.pendingNewAuthorNames)
+        assertTrue(viewModel.uiState.value.canSave)
+    }
+
+    @Test
+    fun `保存网络失败仍落通用文案`() {
+        val (viewModel, _, authorRepo) = newViewModel()
+        viewModel.onAddAuthorQueryChange("全新作者")
+        driveIdle()
+        viewModel.commitAddAuthor()
+        authorRepo.replaceError = java.io.IOException("connection reset")
+
+        viewModel.save()
+        driveIdle()
+
+        // 网络类失败（非 4xx 语义化拒绝）保持通用文案与可重试语义
+        assertEquals("保存失败：请重试", viewModel.uiState.value.errorMessage)
+        assertFalse(viewModel.uiState.value.saved)
+        assertEquals(listOf("全新作者"), viewModel.uiState.value.pendingNewAuthorNames)
     }
 
     @Test
@@ -353,7 +539,9 @@ private class FakeEditAuthorRepository : media.qimeng.app.core.data.repository.A
     var vocabularyCalled = false
     val sourcesByAuthor = mutableMapOf<String, List<String>>()
     val sourceReplaceCalls = mutableListOf<Pair<String, List<String>>>()
-    val assetAuthorsCalls = mutableListOf<Pair<String, List<String>>>()
+
+    /** 全集 PUT 记账（assetId、作者 id 全集、待新建名列表——协议 2026-10-11 新增字段透传断言） */
+    val assetAuthorsCalls = mutableListOf<Triple<String, List<String>, List<String>>>()
     var replaceError: Exception? = null
     /** 置非空则 replaceAssetAuthors 挂起直至放行（保存中状态断言） */
     var replaceAssetAuthorsGate: CompletableDeferred<Unit>? = null
@@ -371,10 +559,14 @@ private class FakeEditAuthorRepository : media.qimeng.app.core.data.repository.A
         sourceReplaceCalls += authorId to sources
     }
 
-    override suspend fun replaceAssetAuthors(assetId: String, authorIds: List<String>) {
+    override suspend fun replaceAssetAuthors(
+        assetId: String,
+        authorIds: List<String>,
+        newAuthorNames: List<String>,
+    ) {
         replaceAssetAuthorsGate?.await()
         replaceError?.let { throw it }
-        assetAuthorsCalls += assetId to authorIds
+        assetAuthorsCalls += Triple(assetId, authorIds, newAuthorNames)
     }
 }
 

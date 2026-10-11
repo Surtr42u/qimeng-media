@@ -342,29 +342,46 @@ func hasControlChars(s string) bool {
 	return false
 }
 
+// NewAuthorNameRejectReason 返回新建作者显示名的拒绝原因（空串=合法）：
+// 给编辑端点 newAuthorNames 逐名校验用具体原因文案（协议要求 400 消息含
+// 明确原因）。ValidNewAuthorName 是本函数的布尔投影，校验规则只有这一份
+// 实现——两处各自维护必然漂移。
+func NewAuthorNameRejectReason(name string) string {
+	if hasControlChars(name) {
+		return "含控制字符"
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "为空"
+	}
+	if hasMediaExt(name) {
+		return "带媒体扩展名"
+	}
+	if isAllDigits(name) {
+		return "纯数字"
+	}
+	if utf8.RuneCountInString(name) > MaxNewAuthorNameRunes {
+		return fmt.Sprintf("超过 %d 字符上限", MaxNewAuthorNameRunes)
+	}
+	if numberedLineRe.MatchString(name) {
+		return "编号行形态"
+	}
+	if isSourcesMarker(name) || name == markerWorks {
+		return "标记行形态"
+	}
+	if len(CanonicalAuthorNames(name)) == 0 {
+		return "规范化后无有效别名"
+	}
+	return ""
+}
+
 // ValidNewAuthorName 校验新建作者显示名：trim 非空、原始串不含控制字符
 // （防行注入）、长度不超 MaxNewAuthorNameRunes、无媒体扩展名（复用
 // hasMediaExt）、非纯数字、非编号行形态（numberedLineRe）、非「来源/出处/
 // 作品」标记行、canonical 化后仍有有效别名。全部通过才允许作为 authorName
 // 落块（防把文件名/序号/标记行写成作者名的输入事故）。
 func ValidNewAuthorName(name string) bool {
-	if hasControlChars(name) {
-		return false
-	}
-	name = strings.TrimSpace(name)
-	if name == "" || hasMediaExt(name) || isAllDigits(name) {
-		return false
-	}
-	if utf8.RuneCountInString(name) > MaxNewAuthorNameRunes {
-		return false
-	}
-	if numberedLineRe.MatchString(name) {
-		return false
-	}
-	if isSourcesMarker(name) || name == markerWorks {
-		return false
-	}
-	return len(CanonicalAuthorNames(name)) > 0
+	return NewAuthorNameRejectReason(name) == ""
 }
 
 // MaxSourceWordRunes 是单个来源词的 rune 数上限。与 api/openapi.yaml

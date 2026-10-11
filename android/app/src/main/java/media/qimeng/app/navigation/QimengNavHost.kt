@@ -668,6 +668,16 @@ fun QimengNavHost(
                     onEditAsset = { assetId ->
                         navController.navigate(AssetEditRoutes.assetEditRoute(assetId))
                     },
+                    // 作者编辑返回结果信号（2026-10-11，Navigation 标准「返回结果」模式）：
+                    // 置位侧在下方编辑路由的 onSaved。getStateFlow 绑本详情 entry 的
+                    // savedStateHandle（勿挂 start entry——常驻层 home entry 与本页无关，
+                    // 见本函数 KDoc §常驻层 owner）；消费回执写回同一 handle 复位
+                    authorsEdited = entry.savedStateHandle
+                        .getStateFlow(DetailRoutes.KEY_AUTHORS_EDITED, false)
+                        .collectAsStateWithLifecycle(),
+                    onAuthorsEditedConsumed = {
+                        entry.savedStateHandle[DetailRoutes.KEY_AUTHORS_EDITED] = false
+                    },
                 )
             }
             // 资产编辑页（2026-09-25）：路由契约单源在 feature:detail（DetailRoutes 同范式），
@@ -676,8 +686,16 @@ fun QimengNavHost(
             composable(AssetEditRoutes.ASSET_EDIT_ROUTE) {
                 AssetEditScreen(
                     onBack = { navController.popBackStack() },
-                    // 保存成功返回与手动返回同一条 pop 路径（语义分开供页面注入）
-                    onSaved = { navController.popBackStack() },
+                    // 保存成功返回与手动返回同一条 pop 路径（语义分开供页面注入）。
+                    // 保存成功先把「作者已编辑」结果位写到上一 entry（详情页，push 链必然
+                    // 是它）再 pop——详情页据此回读，加新作者返回即可见（缺此位用户返回
+                    // 会看到旧作者列表）；手动返回不置位（无改动不需要回读）
+                    onSaved = {
+                        navController.previousBackStackEntry
+                            ?.savedStateHandle
+                            ?.set(DetailRoutes.KEY_AUTHORS_EDITED, true)
+                        navController.popBackStack()
+                    },
                 )
             }
         }

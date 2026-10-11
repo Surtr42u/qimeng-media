@@ -129,17 +129,55 @@ func stringJSONArray(items []string) string {
 }
 
 // seedUploadEntry 直写 kv 的上传条目（上传挂靠已退役，条目只剩存量；测试
-// 用它模拟存量数据以驱动重导入保护路径）。
+// 用它模拟存量数据以驱动重导入保护路径）。按 AuthorID 并入既有条目（与
+// recordAddedLines 同款合并口径）：编辑路径的登记可能已先建条目，同一片段
+// 的同一位作者在生产中只有一条条目——盲目 append 会造出生产不可能出现的
+// 重复条目，把 409 载荷的条目数搅乱。
 func seedUploadEntry(t *testing.T, e *testEnv, fragment string, entry authoring.UploadEntry) {
 	t.Helper()
 	entries, err := authorattach.LoadUploadEntries(context.Background(), e.q)
 	if err != nil {
 		t.Fatalf("读取上传条目失败: %v", err)
 	}
-	entries[fragment] = append(entries[fragment], entry)
+	list := entries[fragment]
+	merged := false
+	for i := range list {
+		if list[i].AuthorID != entry.AuthorID {
+			continue
+		}
+		list[i].Works = mergeUnique(list[i].Works, entry.Works)
+		list[i].Sources = mergeUnique(list[i].Sources, entry.Sources)
+		if len(list[i].Names) == 0 {
+			list[i].Names = append([]string(nil), entry.Names...)
+		}
+		merged = true
+		break
+	}
+	if !merged {
+		list = append(list, entry)
+	}
+	entries[fragment] = list
 	if err := authorattach.SaveUploadEntries(context.Background(), e.q, time.Now(), entries); err != nil {
 		t.Fatalf("写上传条目失败: %v", err)
 	}
+}
+
+// mergeUnique 把 add 并入 base（保序去重，首遇保留）——seedUploadEntry 的
+// 合并口径，与 recordAddedLines 的生产合并同构。
+func mergeUnique(base, add []string) []string {
+	seen := make(map[string]bool, len(base)+len(add))
+	for _, l := range base {
+		seen[l] = true
+	}
+	out := base
+	for _, l := range add {
+		if seen[l] {
+			continue
+		}
+		seen[l] = true
+		out = append(out, l)
+	}
+	return out
 }
 
 // fragmentOf 读取指定片段原文（库中无该片段 → found=false）。

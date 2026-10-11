@@ -25,6 +25,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -123,6 +124,12 @@ import media.qimeng.app.core.ui.theme.QimengDimens
  * @param onOpenAuthor 跳作者集合页（作者 Sheet「进入作者主页」，壳层导航 push 叠栈）
  * @param onEditAsset 跳资产编辑页（作者 Sheet「编辑作者与来源」，2026-09-25 上传挂靠
  *   退役批：作者关联与来源维护收口编辑页；壳层导航 push 叠栈）
+ * @param authorsEdited 作者编辑返回结果信号（2026-10-11，Navigation 标准「返回结果」模式）：
+ *   编辑页保存成功时壳层给本 entry 的 savedStateHandle 置位，本页消费——走既有 retry()
+ *   回读详情，保存返回后作者列表即时可见（不整页重建：不重复 open 打点、不丢滚动位置）。
+ *   类型 [State] 以便 LaunchedEffect 按键取值触发
+ * @param onAuthorsEditedConsumed 结果信号消费回执（壳层写回 savedStateHandle 复位；
+ *   连续两次编辑保存各自重新置位都能再触发）
  *
  * 超文件警戒线理由：详情页是多面板强内聚的单屏——舞台（图片/视频/动图三分支）、
  * 沉浸 chrome 状态机、系统栏明暗、作者 Sheet 与标签管理全部挂在同一 chromeEffective/
@@ -136,9 +143,23 @@ fun DetailScreen(
     onOpenAsset: (assetId: String) -> Unit,
     onOpenAuthor: (authorId: String, displayName: String) -> Unit = { _, _ -> },
     onEditAsset: (assetId: String) -> Unit = { _ -> },
+    authorsEdited: State<Boolean> = remember { mutableStateOf(false) },
+    onAuthorsEditedConsumed: () -> Unit = {},
     viewModel: DetailViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+    // 作者编辑返回结果消费：信号 true → 既有公开刷新入口 retry() 回读详情（新作者/
+    // 已移除作者即时反映到作者 Sheet；信号设计见 QimengNavHost 置位侧）。随后复位信号，
+    // 避免同一结果被下次返回重复消费；初值/复位后的 false 不动作。retry() 自带
+    // 「loading 中不重入」守门（本处不绕过——正加载时的并发返回靠该守卫收敛）。
+    LaunchedEffect(authorsEdited.value) {
+        if (authorsEdited.value) {
+            viewModel.retry()
+            onAuthorsEditedConsumed()
+        }
+    }
+
     val context = LocalContext.current
     // 沉浸模式 chrome 显隐（媒体单击切换；默认可见=排版态，网格入口基线不变）。
     // 任务W W7（#20 对标旧版「媒体层恒全屏」）：沉浸态滑切是 push 叠栈（新路由实例），

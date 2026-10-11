@@ -341,17 +341,24 @@ paths:
     put:
       summary: 整体替换资产作者关联（编辑页保存；TXT 片段真相原地更新，ADR-0024）
       description: |
-        语义（DOMAIN_RULES §6）：提交的 authorIds 就是该资产的作者全集（空数
-        组=解除全部常规作者关联）。新增关联=把资产当前文件名作为作品行追加进
-        对应作者块（落点规则与原上传挂靠一致：作者块所在数组序第一个片段，未
-        命中任何块并入最近导入片段，库中无片段自动建「上传自动挂靠.txt」）；
+        语义（DOMAIN_RULES §6）：提交的 authorIds ∪ newAuthorNames 解析后的作者
+        就是该资产的作者全集（两字段都空/缺省=解除全部常规作者关联）。
+        **按名新建（2026-10-11 修订）**：newAuthorNames 里未命中已有常规作者的名字
+        就地新建（作者行 + 作者块 + 作品行，块排版同口径）——编辑页不再限于关联已
+        有作者；规范身份（大小写/空白/别名归一）命中的名字复用既有作者，不重复建。
+        新增关联=把资产当前文件名作为作品行追加进对应作者块（落点规则与原上传挂靠
+        一致：作者块所在数组序第一个片段，未命中任何块并入最近导入片段，库中无片段
+        自动建「上传自动挂靠.txt」；**已关联作者也幂等补写作品行**——文本缺行的漂移
+        在保存时自愈，行已存在则零写入）。
         移除关联=遍历全部片段删除该资产的作品行（行文本精确匹配优先、trim+
         小写+去空格归一匹配回退——归一保留扩展名，png/mp4 同名互不误伤）。
-        同事务更新 asset_authors；上传机器写入条目元数据同步修
-        剪（编辑是有意变更，不触发重导入 409 误报）。仅 capabilities.authorAtt
-        ach=true 的库可用（否则 400）。已知缺口：资产改名/移动不回写片段作品行
-        （既有行为），按当前文件名匹配不到的残留行会被统一重建重新关联——
-        ADR-0024 记档为后续项。
+        同事务更新 asset_authors；本次实际写入的作品行**登记进机器写入条目**
+        （imported_txt_upload_entries）——覆盖式导入（手动重导/本机同步 TXT 通道）
+        不得静默冲掉编辑写入的行：手动通道缺行触发 409 二选一（keep 并回/remove 明
+        示），本机同步通道恒 keep 并回；登记条目按既有口径同步修剪（内容中已不存在
+        的行才剪）。仅 capabilities.authorAttach=true 的库可用（否则 400）。
+        已知缺口：资产改名/移动不自动回写片段作品行，旧行残留由统一重建收敛；对
+        该资产再保存一次编辑页会以当前文件名补写新行（自愈路径）。
       parameters: [ { $ref: "#/components/parameters/AssetId" } ]
       requestBody:
         required: true
@@ -1742,10 +1749,25 @@ components:
 
     AssetAuthorsReplaceRequest:
       type: object
-      description: 资产作者关联整体替换请求（PUT /assets/{assetId}/authors，ADR-0024）
+      description: 资产作者关联整体替换请求（PUT /assets/{assetId}/authors，ADR-0024；2026-10-11 修订：支持按名新建作者）
       required: [authorIds]
       properties:
         authorIds: { type: array, items: { type: string }, description: 替换后的常规作者 ID 全集（空数组=解除全部常规作者关联）；作者须已存在且 type=regular（否则 404） }
+        newAuthorNames:
+          type: array
+          items: { type: string, maxLength: 200 }
+          maxItems: 20
+          description: |
+            本次一并新建/复用的作者显示名（可选；2026-10-11 修订，编辑页「新建：
+            xxx」通道）：最终作者全集 = authorIds ∪ 按名解析的作者（同 id 去重）。
+            单名先做别名拆分（取首个规范别名）并按身份规则归一（大写转小写、半角
+            空格转下划线、去特殊符号）：归一后与既有常规作者同 id 则直接复用（沿
+            用其显示名，不重复建行），未命中才新建（作者行 + 作者块 + 作品行，新
+            块与上一块之间空三行）。注意仅大小写差异视为同一人；空格差异不是
+            （`Ryan Reos` 与 `RyanReos` 是两个身份），输入某人的第二别名会按新身
+            份处理（系统无独立别名表）。非法名（控制字符/空/纯数字/带媒体扩展名/
+            超 200 rune/编号行或标记行形态/规范化后无有效别名如 `[3D]`）400；超
+            20 项 400。
 
     AuthorSourcesWriteRequest:
       type: object

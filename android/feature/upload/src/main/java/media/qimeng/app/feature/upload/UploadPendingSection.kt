@@ -122,6 +122,9 @@ internal fun BatchDefaultSection(state: UploadUiState, viewModel: UploadViewMode
                         committedName = state.batchAuthorName,
                         committedIsExisting = true,
                         suggestions = state.batchAuthorSuggestions,
+                        // 批次选作者只允许已有作者（上传自动挂靠需作者 id；按名新建留二期），
+                        // 占位文案去掉默认的「回车新建」免误导
+                        placeholder = "输入作者名（联想选择）",
                         onQueryChange = viewModel::onBatchAuthorQueryChange,
                         onPickSuggestion = viewModel::pickBatchAuthor,
                         onCommitInput = viewModel::commitBatchAuthor,

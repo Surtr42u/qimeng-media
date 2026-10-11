@@ -119,7 +119,10 @@
     <string name="detail_jump_empty">该文件暂无关联作者</string>
 
     <!-- 资产编辑页（2026-09-25：上传挂靠退役批——作者关联与来源维护从上传页迁入编辑页；
-        入口 = 作者 Sheet「编辑作者与来源」行） -->
+        入口 = 作者 Sheet「编辑作者与来源」行）。
+        2026-10-11 按名新建修订：回车未命中联想不再报「仅能关联已有作者」，改入「待新建」
+        名单随 PUT /assets/{id}/authors 的 newAuthorNames 交服务端复用/新建；
+        原 asset_edit_only_existing_authors 文案随旧行为退役删除 -->
     <string name="asset_edit_title">编辑作者与来源</string>
     <string name="asset_edit_authors_section">已关联作者</string>
     <string name="asset_edit_no_authors">尚未关联作者，可在下方添加</string>
@@ -132,5 +135,8 @@
     <string name="asset_edit_load_failed">加载资产信息失败，请重试</string>
     <string name="asset_edit_save_failed">保存失败：请重试</string>
     <string name="asset_edit_author_exists">该作者已关联</string>
-    <string name="asset_edit_only_existing_authors">未找到该作者：编辑页仅能关联已有作者，请从联想中选择</string>
+    <string name="asset_edit_author_name_too_long">作者名过长（最多 200 字）</string>
+    <!-- 待新建名单满额提示（Web pendingAuthorRejectionText too-many 分支逐字对齐；
+         数字 = VM 的 NEW_AUTHOR_NAMES_MAX，与协议 maxItems:20 双写） -->
+    <string name="asset_edit_pending_authors_full">待新建作者最多 20 个，请先保存本页再继续添加</string>
 </resources>

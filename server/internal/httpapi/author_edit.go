@@ -24,6 +24,12 @@ import (
 // 同步这里，反之亦然（同步责任注释风格见 pagination.go）。
 const maxSourceVocabularyItems = 32
 
+// maxNewAuthorNames 是资产作者替换端点 newAuthorNames 的项数上限。与
+// api/openapi.yaml AssetAuthorsReplaceRequest.newAuthorNames 的
+// maxItems: 20 双写同步：协议侧改动须同步这里，反之亦然（同步责任注释
+// 风格见 pagination.go）。
+const maxNewAuthorNames = 20
+
 // msgAuthorNotFound 是作者编辑端点「作者不存在」的用户可读文案（与关注端
 // 点同文案属巧合对齐，非机器同步值）。
 const msgAuthorNotFound = "作者不存在"
@@ -53,6 +59,27 @@ func normalizeSourceWords(w http.ResponseWriter, raw []string) ([]string, bool) 
 		out = append(out, item)
 	}
 	return out, true
+}
+
+// validateNewAuthorNames 校验 newAuthorNames：项数上限（maxItems 双写）与
+// 逐名合法性（authoring.NewAuthorNameRejectReason，与上传挂靠同一份规则，
+// 消息带具体原因）。不合法时 400 已写完，返回 false。项数按原始数组判
+// （maxItems 约束数组本身，空项不豁免——沿用 normalizeSourceWords 同款
+// 口径，且名字为空本身也是非法名）。
+func validateNewAuthorNames(w http.ResponseWriter, names []string) bool {
+	if len(names) > maxNewAuthorNames {
+		writeErr(w, http.StatusBadRequest, codeInvalidParam,
+			fmt.Sprintf("newAuthorNames 超过 %d 项上限", maxNewAuthorNames))
+		return false
+	}
+	for i, name := range names {
+		if reason := authoring.NewAuthorNameRejectReason(name); reason != "" {
+			writeErr(w, http.StatusBadRequest, codeInvalidParam,
+				fmt.Sprintf("newAuthorNames 第 %d 项 %q 非法：%s", i+1, name, reason))
+			return false
+		}
+	}
+	return true
 }
 
 // writeAuthorEditErr 作者编辑端点的哨兵错误映射：不存在 404、COS 作者 400、
@@ -192,17 +219,29 @@ func parseSourcesWriteMode(w http.ResponseWriter, raw *gen.AuthorSourcesWriteReq
 	}
 }
 
-// PutApiV1AssetsAssetIdAuthors 整体替换资产作者关联（编辑页保存）：
-// 提交的 authorIds 就是该资产的作者全集（空数组=解除全部常规作者关联）。
-// 片段真相原地更新（新增=作品行并入作者块、移除=遍历全部片段删作品行）与
-// 关联表 swap 同事务（ADR-0024）。响应复用详情端点的完整装配路径
-// （authors=替换后全集）。
+// PutApiV1AssetsAssetIdAuthors 整体替换资产作者关联（编辑页保存）：最终作者
+// 全集 = 提交的 authorIds ∪ newAuthorNames 按名解析出的作者（同 id 去重；
+// 空 authorIds + 无新名 = 解除全部常规作者关联）。newAuthorNames 是编辑页
+// 「新建：xxx」通道：规范身份命中已有常规作者复用、未命中才新建（解析口径
+// 见 authorattach.ResolveOrCreateAuthors）；nil/空时行为与旧协议完全一致
+// （老客户端零感知）。片段真相原地更新（新增=作品行并入作者块、移除=遍历
+// 全部片段删作品行）与关联表 swap 同事务（ADR-0024）。响应复用详情端点的
+// 完整装配路径（authors=替换后全集）。
 func (s *Server) PutApiV1AssetsAssetIdAuthors(w http.ResponseWriter, r *http.Request, assetId gen.AssetId) {
 	var body gen.PutApiV1AssetsAssetIdAuthorsJSONRequestBody
 	if !decodeJSON(w, r, &body) {
 		return
 	}
 	ids := dedupeAuthorIDs(body.AuthorIds)
+	var newNames []string
+	if body.NewAuthorNames != nil {
+		newNames = *body.NewAuthorNames
+	}
+	// 名字校验是纯函数（不触库），先于事务与资产查询执行：非法输入不产生
+	// 任何副作用（也避免为必败请求开事务）。
+	if !validateNewAuthorNames(w, newNames) {
+		return
+	}
 	ctx := r.Context()
 	row, err := s.q.GetAssetWithLibrary(ctx, assetId.String())
 	if errors.Is(err, sql.ErrNoRows) {
@@ -234,9 +273,17 @@ func (s *Server) PutApiV1AssetsAssetIdAuthors(w http.ResponseWriter, r *http.Req
 		s.writeAuthorEditErr(w, "替换资产作者关联", err)
 		return
 	}
-	refs := make([]authorattach.AuthorRef, 0, len(ids))
+	refs := make([]authorattach.AuthorRef, 0, len(ids)+len(newNames))
 	for _, id := range ids {
 		refs = append(refs, authorattach.AuthorRef{ID: id, DisplayName: names[id]})
+	}
+	if len(newNames) > 0 {
+		created, err := s.attach.ResolveOrCreateAuthors(ctx, qtx, newNames, s.now())
+		if err != nil {
+			s.writeAuthorEditErr(w, "替换资产作者关联", err)
+			return
+		}
+		refs = authorattach.MergeAuthorRefs(refs, created)
 	}
 	if err := s.attach.ReplaceAssetAuthors(ctx, qtx, s.now(), row.AssetID, row.FileName, refs); err != nil {
 		s.internalErr(w, "替换资产作者关联", err)

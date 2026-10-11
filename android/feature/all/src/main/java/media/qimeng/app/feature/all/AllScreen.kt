@@ -527,6 +527,9 @@ fun AllScreen(
                             committedName = batchAuthorState.committedAuthor?.displayName,
                             committedIsExisting = true,
                             suggestions = batchAuthorState.suggestions,
+                            // 批量关联只允许已有作者（来源追写需作者 id；按名新建留二期），
+                            // 占位文案去掉默认的「回车新建」免误导
+                            placeholder = "输入作者名（联想选择）",
                             onQueryChange = viewModel::onBatchAuthorQueryChange,
                             onPickSuggestion = viewModel::onPickBatchAuthor,
                             onCommitInput = {},
