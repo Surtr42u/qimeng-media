@@ -33,8 +33,15 @@ jobs:
       # 端到端测试需要真实 ffmpeg 生成视频缩略图（生产镜像同样内置 ffmpeg）
       - name: 安装 ffmpeg（缩略图端到端测试依赖）
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      # Go 锁补丁版本（2026-10-11 第五百二十八笔）：runner 的 1.27.x 会随新补丁
+      # 漂移（实测已到 1.27.2），而 CI 锁的 golangci-lint v2.13.1 是 go1.27.0
+      # 构建的——其 type-checker 读不了 1.27.2 的导出数据格式，标准库导入即报
+      # `could not import embed` + typecheck；lint 步失败还会连带跳过下方
+      # go vet / gofmt / go test -race / go build（远端等于没跑 Go 测试）。
+      # 与 Makefile 顶部 GOLANGCI_LINT「版本与本机一致」口径对齐；升级 Go 补丁
+      # 须与 golangci-lint 三处同步（Makefile / 本 workflow / 开发者本机）。
       - uses: actions/setup-go@v6
-        with: { go-version: "1.27.x", cache-dependency-path: server/go.sum }
+        with: { go-version: "1.27.0", cache-dependency-path: server/go.sum }
       # 协议生成物不入库（.gitignore），编译前先重建 Go 接口层；
       # oapi-codegen 版本与 Makefile 的 OAPI_CODEGEN_VERSION 保持一致
       - name: 生成 Go 接口层（oapi-codegen）
@@ -94,7 +101,7 @@ jobs:
       - uses: actions/setup-node@v5
         with: { node-version: 24 }
       - uses: actions/setup-go@v6
-        with: { go-version: "1.27.x", cache-dependency-path: server/go.sum }
+        with: { go-version: "1.27.0", cache-dependency-path: server/go.sum }
       # Kotlin 生成需要 JDK；runner 自带 Temurin 17 即可，无需免安装 JDK（那是 Windows 本机方案）
       - uses: actions/setup-java@v5
         with: { distribution: temurin, java-version: 17 }
@@ -146,7 +153,7 @@ jobs:
       # deploy/embedded/README.md）。jniLibs 目录不入 git（~57MB）——缺此步
       # assembleDebug 出的是"非内嵌"包，下方产物完整性断言会拦。
       - uses: actions/setup-go@v6
-        with: { go-version: "1.27.x", cache-dependency-path: server/go.sum }
+        with: { go-version: "1.27.0", cache-dependency-path: server/go.sum }
       # gen/ 生成物不入库（.gitignore），Go 构建前必须从 openapi.yaml 重建——
       # oapi-codegen 版本与 server job / Makefile 保持一致（v2.8.0）。
       - name: 生成 Go 接口层（oapi-codegen）
