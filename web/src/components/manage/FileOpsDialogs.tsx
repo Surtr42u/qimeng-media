@@ -1,4 +1,5 @@
 import { toast } from 'sonner'
+import { batchFailureReason } from '@/lib/batch'
 import { MoveDialog } from '@/components/manage/MoveDialog'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { useDeleteAsset } from '@/hooks/use-file-ops'
@@ -53,7 +54,7 @@ export function FileOpsDialogs({ mode, target, onClose, onDeleted }: FileOpsDial
         onDeleted?.()
       },
       onError: (err) =>
-        toast.error(`移入回收站失败：${err instanceof Error ? err.message : String(err)}`),
+        toast.error(`移入回收站失败：${batchFailureReason(err)}`),
     })
   }
 

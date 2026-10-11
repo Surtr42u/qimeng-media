@@ -465,6 +465,9 @@ func (s *Server) processLocalSyncTxt(ctx context.Context, entry localsync.Entry)
 		s.lsMarkFailed(entry.RelPath, kind, "", "导入失败: "+err.Error(), entry.Size)
 		return
 	}
+	// 镜像刷新（尽力而为，与手动导入同口径；2026-10-11 补——此前本通道导入
+	// 不刷镜像，无人值守路径下桌面镜像会长期落后于片段真相）。
+	s.mirror.Refresh(ctx, s.q)
 	syncedDir := filepath.Join(s.cfg.LocalSync.Root, localsync.ReservedInternalDirName)
 	if err := os.MkdirAll(syncedDir, dirPerm); err != nil {
 		s.lsMarkFailed(entry.RelPath, kind, "", "导入成功但创建归档目录失败（内容已导入，下轮将重试归档）", entry.Size)

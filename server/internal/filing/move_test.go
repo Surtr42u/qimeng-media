@@ -9,6 +9,7 @@ package filing
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -162,4 +163,31 @@ func TestRemovePartialCopy(t *testing.T) {
 			t.Fatalf("RemovePartialCopy: %v", err)
 		}
 	})
+}
+
+// TestIsCrossDeviceErr：跨挂载点判定（errno 主判分平台实现，真实 EXDEV 无法在
+// 单卷单测稳定复现）——文本兜底直接锁定 2026-10-11 事故回归：Windows 双盘布局
+// 下 os.Rename 的文本 "different disk drive" 原口径漏判，导致删除（移入回收站）
+// 与本机同步搬移全部失败且不走复制回落。Linux 文本、大小写、包装层同锁；
+// 无关错误不得误判（误判会把普通 rename 失败卷入复制回落）。
+func TestIsCrossDeviceErr(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"nil", nil, false},
+		{"linux 文本（原始口径）", errors.New("rename /a /b: invalid cross-device link"), true},
+		{"windows 文本（2026-10-11 事故原样）", errors.New(`rename C:\a\x.mp4 D:\b\x.mp4: The system cannot move the file to a different disk drive.`), true},
+		{"windows 文本小写", errors.New("the system cannot move the file to a different disk drive"), true},
+		{"包装错误穿透", fmt.Errorf("移入回收站: %w", errors.New("invalid cross-device link")), true},
+		{"无关错误不误判", errors.New("permission denied"), false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := isCrossDeviceErr(c.err); got != c.want {
+				t.Fatalf("isCrossDeviceErr(%v) = %v, want %v", c.err, got, c.want)
+			}
+		})
+	}
 }

@@ -11,6 +11,23 @@
 
 
 
+## fix(server+web): 跨盘回收站/本机同步搬移在 Windows 双盘布局下全失败——跨挂载点判定改 errno 主判（含 Windows 文本）；镜像挂点补齐；Web 错误提示不再落 [object Object]（2026-10-11 第五百二十五笔）
+
+执行 AI：DeepSeek-V4.1-Flash（主代理）
+
+- **背景（用户实测事故）**：桌面端删除报「移入回收站失败：[object Object]」。服务端日志实锤根因：`rename C:\...\1  3D\x.mp4 D:\...\qimeng-data\trash\...: The system cannot move the file to a different disk drive.`——`filing.MoveFile` 的跨挂载点回落只认 Linux 错误文本 `invalid cross-device link`（2026-09-22 初版理由：双平台 syscall 包对 EXDEV 暴露不一致），Windows 双盘布局（媒体库 C:、DataDir/回收站 D:）下漏判 → **删除（移入回收站）与本机同步通道的搬移全部 rename 失败且不走复制回落**；本机日常形态必现，直击铁律 4 与 ADR-0030。
+- **修复**：跨挂载点判定改 **errno 主判 + 文本兜底**——新增 `filing/move_windows.go`（自备 `ERROR_NOT_SAME_DEVICE`=17，stdlib syscall 未导出）与 `filing/move_unix.go`（`syscall.EXDEV`）分平台 errno，文本兜底兼容两种 OS 文本（大小写不敏感）；`move_test.go` 新增 `TestIsCrossDeviceErr` 锁定事故原样文本。真机验证：两次删除（天使 13 (2)、玛莲妮娅 3 (2)）HTTP 200，文件+meta.json 落 D 盘回收站、库行清除、回收站列表含到期时间正常。
+- **镜像挂点补齐**：备份导入的 TXT 片段段（`import.go`）与本机同步通道 TXT 导入（`localsync_runner.go`）此前写入片段后不刷镜像 → 桌面镜像长期落后于片段真相（用户此前多次反馈「桌面文件没改动」的根因之一）；两处补 `mirror.Refresh`（尽力而为同口径），挂点清单三处文档同步（GUIDE_API / DOMAIN_RULES §6 / SECURITY「作者总表镜像」）。
+- **Web 错误提示**：8 处 `err instanceof Error ? err.message : String(err)` 在生成 SDK 抛错误体对象（非 Error 实例）时落成「[object Object]」——统一改走既有 `batchFailureReason` 提取器（`lib/batch.ts`，多卡片先例）；涉及 FileOpsDialogs / MoveDialog / AssetTagRow / CreateDirDialog / BackupCard。桌面壳复用 Web 界面自动生效。自测：vitest 320 全绿、oxlint 0 errors、vite build 通过、`go test ./...` 全绿。
+- **文档**：CHANGELOG（本笔）、GUIDE_API.md、DOMAIN_RULES.md §6、SECURITY.md。
+
+## chore(repo): 接通本机同步通道启动脚本（local-sync 启用）+ 修历史 gofmt 违例（2026-10-11 第五百二十四笔）
+
+执行 AI：DeepSeek-V4.1-Flash（主代理）
+
+- **`_server-common.cmd` 增 `QIMENG_LOCAL_SYNC_ROOT=%~dp0local-sync`**：用户拍板启用本机文件夹自动同步通道（ADR-0030）——同步根=仓库内 `local-sync/`（用户名无关、机器中立，铁律 14），子文件夹名=库名自动入库、根级 TXT=作者片段导入；`.gitignore` 增 `local-sync/`（放入即入库、源文件会被移走，严禁入库）。隔离实例合成数据全链路实测通过（媒体入库+移走、TXT 导入+归档 .synced、重导收敛），真后端 8420 通道状态 enabled=true 无错误。
+- **`server/internal/httpapi/host_check_test.go` gofmt 对齐**：历史提交 8a9a76f1 带入的注释对齐违例（`gofmt -l .` 非空 → `make lint` 的 gofmt 门禁必失败），本次一并格式修（纯空白，零行为变化）。
+
 ## feat(api+server+app+web): 编辑页按名新建作者——关联端点扩展 newAuthorNames + 保存自愈补行 + 编辑写入登记（2026-10-11 第五百二十三笔）
 
 执行 AI：DeepSeek-V4.1-Flash（主代理；服务端/App/Web 三路执行子代理，同模型）
@@ -23,13 +40,6 @@
 - **自测**：server `go build ./...`/`go test ./...`（19 包全绿，新 4 单测 + 6 集成测试）+ `golangci-lint` 0 issues；App `:feature:detail`/`:core:data` 单测全绿（227/270）+ `:app:assembleDebug` 通过（新文案与 newAuthorNames 已核在包内）；Web `build`+`lint`（零新增警告）+ `vitest` 320 通过（新增 26）。
 - **对抗审查与返工（2026-10-11，reviewer 子代理 + 返工）**：总评「不通过」两项已返工——① App 待新建补 20 项上限拦截（对齐协议 maxItems）、服务端 400 原因经既有错误体解析透出（原先全归「保存失败：请重试」，输入非法名时无法自助）；② 第五百二十四笔的授权确认为用户拍板（保留）。P3 已并入本笔：身份口径三处文档校正（「忽略大小写/空白差异」→ 实际口径=大写转小写/半角空格转下划线/仅首别名定身份，空格差异不折叠、第二别名按新身份处理）、非法名枚举补「规范化后无有效别名（如 `[3D]`）」、`ReplaceAssetAuthors` 登记/修剪注释论证修正（顺序颠倒不会误剪，仅流程对齐约定）。**P3 遗留（下一笔）**：恰 20 项/恰 200 rune 边界测试、`MergeAuthorRefs` 同 id 去重测试、自愈幂等不变量（`authors.id == GenerateAuthorID(displayNameAliases(display_name)[0])`，审查实测 132/132 常规作者满足）入测与记档、COS 撞名返回 500 的错误码记档（防御性不可达路径）。
 - **文档**：openapi.yaml、sdk.lock、ADR-0024（修订 4）、DOMAIN_RULES §6、GUIDE_API.md、CHANGELOG（本笔）。
-
-## chore(repo): 接通本机同步通道启动脚本（local-sync 启用）+ 修历史 gofmt 违例（2026-10-11 第五百二十四笔）
-
-执行 AI：DeepSeek-V4.1-Flash（主代理）
-
-- **`_server-common.cmd` 增 `QIMENG_LOCAL_SYNC_ROOT=%~dp0local-sync`**：用户拍板启用本机文件夹自动同步通道（ADR-0030）——同步根=仓库内 `local-sync/`（用户名无关、机器中立，铁律 14），子文件夹名=库名自动入库、根级 TXT=作者片段导入；`.gitignore` 增 `local-sync/`（放入即入库、源文件会被移走，严禁入库）。隔离实例合成数据全链路实测通过（媒体入库+移走、TXT 导入+归档 .synced、重导收敛），真后端 8420 通道状态 enabled=true 无错误。
-- **`server/internal/httpapi/host_check_test.go` gofmt 对齐**：历史提交 8a9a76f1 带入的注释对齐违例（`gofmt -l .` 非空 → `make lint` 的 gofmt 门禁必失败），本次一并格式修（纯空白，零行为变化）。
 
 ## chore(repo): 删库同名重建——彻底清除 19 条 refs/pull/* 指向的重写前历史（2026-10-10 第五百二十二笔）
 

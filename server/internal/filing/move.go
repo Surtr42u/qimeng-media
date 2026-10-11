@@ -5,6 +5,8 @@
 // 移进 DataDir/trash（如容器 /data）——Docker 卷分离与 NAS 上"媒体一个卷、
 // 应用数据一个卷"的生产布局都让两者必然处于不同挂载点，不做回落则
 // 回收站在这些形态下完全不可用（铁律 4：删除=移入回收站）。
+// **2026-10-11 补充**：Windows 双盘布局（媒体库 C:、数据 D:）是本机日常形态，
+// 其错误文本与 Linux 不同——判定口径见 MoveFile 注释（errno 主判 + 文本兜底）。
 package filing
 
 import (
@@ -22,27 +24,46 @@ import (
 // 副本，锁定"失败即清理目标端"的行为。生产代码禁止替换。
 var copyBody = io.Copy
 
-// MoveFile 把 src 移动到 dst：优先 rename（同挂载点原子零拷贝）；EXDEV
+// MoveFile 把 src 移动到 dst：优先 rename（同挂载点原子零拷贝）；跨挂载点
 // 回落为「复制成功后删源」的同语义实现——复制中途失败时源文件保持原状，
 // 目标端半截副本当场清理（见 copyFile），不留幽灵残缺文件。dst 的父目录
 // 必须已存在（与 os.Rename 契约一致，调用方负责 MkdirAll）。
 //
-// EXDEV 判定用错误文本匹配而非 syscall 常量：本项目在 Windows（开发/测试）
-// 与 Linux（NAS/容器）双平台编译，两端 syscall 包对 EXDEV 的暴露不一致；
-// Linux 内核与 modernc 驱动对该错误文本稳定，且与项目内约束错误的字符串
-// 匹配惯例一致（httpapi/libraries.go 的 UNIQUE、engagement.go 的 FOREIGN KEY）。
+// 跨挂载点判定（isCrossDeviceErr）：**errno 主判**（move_windows.go /
+// move_unix.go 分平台取 ERROR_NOT_SAME_DEVICE / EXDEV）+ 错误文本兜底。
+// 沿革：2026-09-22 初版只认 Linux 文本 "invalid cross-device link"，理由是
+// 双平台 syscall 包对 EXDEV 的暴露不一致；2026-10-11 事故暴露该口径在
+// **Windows 双盘布局**（媒体库 C:、DataDir/回收站 D:）下必然漏判——Windows
+// 文本是 "The system cannot move the file to a different disk drive."，
+// 于是删除（移入回收站）与本机同步通道搬移全部 rename 失败且不走回落。
+// 现口径：errno 为主（不受系统消息本地化影响），文本兜底保留以兼容包装形态
+// （含 Linux 与 Windows 两种文本；大小写不敏感）。
 func MoveFile(src, dst string) error {
 	err := os.Rename(src, dst)
 	if err == nil {
 		return nil
 	}
-	if !strings.Contains(err.Error(), "invalid cross-device link") {
+	if !isCrossDeviceErr(err) {
 		return err
 	}
 	if err := copyFile(src, dst); err != nil {
 		return err
 	}
 	return os.Remove(src)
+}
+
+// isCrossDeviceErr 跨挂载点错误判定：errno 主判（分平台文件实现）+ 文本兜底。
+// 文本兜底按小写比对，兼容两种 OS 的错误文本与常见包装层。
+func isCrossDeviceErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	if crossDeviceErrno(err) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "invalid cross-device link") ||
+		strings.Contains(msg, "different disk drive")
 }
 
 // RemovePartialCopy MoveFile 失败后的目标端残留清理（回收站三调用点共用，

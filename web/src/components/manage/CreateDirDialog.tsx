@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { batchFailureReason } from '@/lib/batch'
 import { Dialog } from 'radix-ui'
 import { toast } from 'sonner'
 import { FolderPlus } from 'lucide-react'
@@ -36,7 +37,7 @@ export function CreateDirDialog({ open, libraryId, parentPath, onClose }: Create
           onClose()
         },
         onError: (err) =>
-          toast.error(`创建目录失败：${err instanceof Error ? err.message : String(err)}`),
+          toast.error(`创建目录失败：${batchFailureReason(err)}`),
       },
     )
   }

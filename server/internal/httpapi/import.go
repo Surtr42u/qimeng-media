@@ -343,6 +343,11 @@ func (imp *legacyImport) importTxtFragments(frags *[]gen.LegacyTxtFragment) {
 	}
 	imp.res.TxtFragmentsImported = &imported
 	imp.res.TxtFragmentsSkipped = &skipped
+	// 镜像刷新（尽力而为；2026-10-11 补——此前备份导入写入片段后不刷镜像，
+	// 导完备份桌面镜像仍停在旧内容，与「TXT 导入落库后」的挂点口径不符）。
+	if imported > 0 {
+		imp.s.mirror.Refresh(imp.ctx, imp.s.q)
+	}
 }
 
 // bump 计数指针安全自增（生成物字段全部 *int 可选）。

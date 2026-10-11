@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { batchFailureReason } from '@/lib/batch'
 import { Dialog } from 'radix-ui'
 import { toast } from 'sonner'
 import type { AssetDetailTag, Tag } from '@/api/generated'
@@ -65,7 +66,7 @@ function TagDialog({ assetId, tags, onClose }: { assetId: string; tags: Tag[]; o
         setDraft('')
       },
       onError: (err) =>
-        toast.error(`新建标签失败：${err instanceof Error ? err.message : String(err)}`),
+        toast.error(`新建标签失败：${batchFailureReason(err)}`),
     })
   }
 
@@ -78,7 +79,7 @@ function TagDialog({ assetId, tags, onClose }: { assetId: string; tags: Tag[]; o
           onClose()
         },
         onError: (err) =>
-          toast.error(`标签保存失败：${err instanceof Error ? err.message : String(err)}`),
+          toast.error(`标签保存失败：${batchFailureReason(err)}`),
       },
     )
   }

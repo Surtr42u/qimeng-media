@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { batchFailureReason } from '@/lib/batch'
 import { Dialog } from 'radix-ui'
 import { toast } from 'sonner'
 import { DirTreeNodes } from '@/components/manage/DirTree'
@@ -72,7 +73,7 @@ export function MoveDialog({
         },
         onError: (err) =>
           // 服务端文案透传（如 409「目标位置已有同名文件」）
-          toast.error(`整理失败：${err instanceof Error ? err.message : String(err)}`),
+          toast.error(`整理失败：${batchFailureReason(err)}`),
       },
     )
   }

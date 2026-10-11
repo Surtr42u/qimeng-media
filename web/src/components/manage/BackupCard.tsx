@@ -1,4 +1,5 @@
 import { useRef, useState, type ChangeEvent } from 'react'
+import { batchFailureReason } from '@/lib/batch'
 import { toast } from 'sonner'
 import { backupSummaryText, parseLegacyBackupFile, type LegacyBackupSummary } from '@/lib/backup'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -26,7 +27,7 @@ export function BackupCard() {
     exportBackup.mutate(undefined, {
       onSuccess: ({ sizeBytes }) =>
         toast.success(`已导出 qimeng_backup.json（${(sizeBytes / 1024).toFixed(0)} KB）`),
-      onError: (err) => toast.error(`导出失败：${err instanceof Error ? err.message : String(err)}`),
+      onError: (err) => toast.error(`导出失败：${batchFailureReason(err)}`),
     })
   }
 
@@ -37,7 +38,7 @@ export function BackupCard() {
     try {
       setPending(await parseLegacyBackupFile(f))
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err))
+      toast.error(batchFailureReason(err))
     }
   }
 
@@ -56,7 +57,7 @@ export function BackupCard() {
           toast.info(`另有 ${warnings.length} 条迁移提示`, { description: warnings.join('\n') })
         }
       },
-      onError: (err) => toast.error(`导入失败：${err instanceof Error ? err.message : String(err)}`),
+      onError: (err) => toast.error(`导入失败：${batchFailureReason(err)}`),
     })
   }
 
