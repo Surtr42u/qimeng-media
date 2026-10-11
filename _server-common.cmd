@@ -28,6 +28,13 @@ rem Dev-mode passwordless login (user agreement: local daily use
 rem stays passwordless; see docs/HANDOVER.md user agreements).
 rem MUST be off for production/remote deployment (docs/SECURITY.md "Dev mode").
 set QIMENG_AUTH_DEV_MODE=1
+rem Local-folder auto-sync channel (ADR-0030, enabled 2026-10-11 at user
+rem request): server polls <root>\<library-name>\ and imports media into
+rem that library (source file MOVES away on success; failed files stay and
+rem retry); root-level *.txt is imported as an author fragment (keep) and
+rem moved to .synced\. Empty root = idle. Keep repo-relative (no username
+rem in this tracked file - AGENTS.md rule 14).
+set QIMENG_LOCAL_SYNC_ROOT=%~dp0local-sync
 set DESKTOP_EXE=%~dp0desktop\src-tauri\target\release\qimeng-media-desktop.exe
 
 if /i "%~1"=="nobrowser" goto nobrowser

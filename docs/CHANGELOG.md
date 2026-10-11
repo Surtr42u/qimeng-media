@@ -24,6 +24,13 @@
 - **对抗审查与返工（2026-10-11，reviewer 子代理 + 返工）**：总评「不通过」两项已返工——① App 待新建补 20 项上限拦截（对齐协议 maxItems）、服务端 400 原因经既有错误体解析透出（原先全归「保存失败：请重试」，输入非法名时无法自助）；② 第五百二十四笔的授权确认为用户拍板（保留）。P3 已并入本笔：身份口径三处文档校正（「忽略大小写/空白差异」→ 实际口径=大写转小写/半角空格转下划线/仅首别名定身份，空格差异不折叠、第二别名按新身份处理）、非法名枚举补「规范化后无有效别名（如 `[3D]`）」、`ReplaceAssetAuthors` 登记/修剪注释论证修正（顺序颠倒不会误剪，仅流程对齐约定）。**P3 遗留（下一笔）**：恰 20 项/恰 200 rune 边界测试、`MergeAuthorRefs` 同 id 去重测试、自愈幂等不变量（`authors.id == GenerateAuthorID(displayNameAliases(display_name)[0])`，审查实测 132/132 常规作者满足）入测与记档、COS 撞名返回 500 的错误码记档（防御性不可达路径）。
 - **文档**：openapi.yaml、sdk.lock、ADR-0024（修订 4）、DOMAIN_RULES §6、GUIDE_API.md、CHANGELOG（本笔）。
 
+## chore(repo): 接通本机同步通道启动脚本（local-sync 启用）+ 修历史 gofmt 违例（2026-10-11 第五百二十四笔）
+
+执行 AI：DeepSeek-V4.1-Flash（主代理）
+
+- **`_server-common.cmd` 增 `QIMENG_LOCAL_SYNC_ROOT=%~dp0local-sync`**：用户拍板启用本机文件夹自动同步通道（ADR-0030）——同步根=仓库内 `local-sync/`（用户名无关、机器中立，铁律 14），子文件夹名=库名自动入库、根级 TXT=作者片段导入；`.gitignore` 增 `local-sync/`（放入即入库、源文件会被移走，严禁入库）。隔离实例合成数据全链路实测通过（媒体入库+移走、TXT 导入+归档 .synced、重导收敛），真后端 8420 通道状态 enabled=true 无错误。
+- **`server/internal/httpapi/host_check_test.go` gofmt 对齐**：历史提交 8a9a76f1 带入的注释对齐违例（`gofmt -l .` 非空 → `make lint` 的 gofmt 门禁必失败），本次一并格式修（纯空白，零行为变化）。
+
 ## chore(repo): 删库同名重建——彻底清除 19 条 refs/pull/* 指向的重写前历史（2026-10-10 第五百二十二笔）
 
 执行 AI：DeepSeek-V4.1-Flash（主代理）

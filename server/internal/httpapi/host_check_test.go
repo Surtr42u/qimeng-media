@@ -31,8 +31,8 @@ func TestHostAllowed(t *testing.T) {
 		{"evil.example.com", false},
 		{"evil.example.com:8420", false},
 		{"192.0.2.5.evil.com", false}, // 伪 IP 域名（攻击者把 IP 段做子域）
-		{"localhost.evil.com", false},   // localhost 前缀伪装
-		{"", false},                     // 空串本身不走本函数（中间件层放行空 Host）
+		{"localhost.evil.com", false}, // localhost 前缀伪装
+		{"", false},                   // 空串本身不走本函数（中间件层放行空 Host）
 	}
 	for _, c := range cases {
 		if got := s.hostAllowed(c.host); got != c.want {

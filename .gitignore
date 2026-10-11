@@ -29,6 +29,9 @@ coverage.out
 # 本地运行数据目录（数据库+缩略图+直链签名密钥，严禁入库）
 qimeng-data/
 
+# 本机同步通道的同步根（ADR-0030；放入即入库、源文件会被移走，严禁入库）
+local-sync/
+
 # Mimosa 钩子产物
 .mimosa/
 
