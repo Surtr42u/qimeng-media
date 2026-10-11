@@ -38,6 +38,11 @@ dependencies {
     // feature:settings 同款依赖；SAF 读写是屏幕层平台胶水，SettingsScreen 先例）
     implementation(libs.androidx.activity.compose)
 
+    // 2026-10-11（第五百三十笔）：BackupScreen 起始位置需 String.toUri（androidx.core.net），
+    // 显式声明 core-ktx——此前只有 :app 声明，本模块走传递依赖拿到的是 1.18.0，与目录版本
+    // （1.19.0）不一致；本库本就在全工程运行时图内，非新增依赖（ADR-0014 白名单判断不适用）
+    implementation(libs.androidx.core.ktx)
+
     implementation(libs.compose.material3)
     implementation(libs.compose.foundation)
     implementation(libs.compose.ui.tooling.preview)

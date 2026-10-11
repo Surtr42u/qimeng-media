@@ -11,6 +11,24 @@
 
 
 
+## fix(app): 备份目录选择器显式指定起始位置——避开系统受限目录死路 + 授权失败不再静默（2026-10-11 第五百三十笔）
+
+执行 AI：DeepSeek-V4.1-Flash（主代理）
+
+- **背景（用户实测报障）**：备份页点「选择目录」后卡死在系统选择器里——界面显示「无法使用此文件夹 / 为保护您的隐私，请选择其他文件夹」，底部「使用此文件夹」置灰、列表显示「无任何文件」（该目录磁盘上实有 30+ 条目），用户在界面里无路可走；去系统设置查权限也查不出原因（照片/视频权限被拒属上传页相册选择器，与备份目录无关）。
+- **根因（平台限制 × 我们没给起始位置；※20:2x 修正见文末「结论修正」条，此处保留首轮叙述以存真）**：Android 11+ 起 `ACTION_OPEN_DOCUMENT_TREE` **不允许**授权受限目录（内部存储根目录 / Download / Android/data / Android/obb），且这是**选择器层面**的判定，与调用方持有什么权限无关——App 的「所有文件访问」（MANAGE_EXTERNAL_STORAGE，ADR-0015 用）已开也不放行。而 `BackupScreen` 一直以 `launch(null)` 拉起选择器，起始位置完全交给系统选择器自己的记忆：它一旦记在受限目录上就复现该死路（此前几周的授权都落在子目录，所以从没撞上）。
+- **只读取证（真机 adb，未动前台）**：① `dumpsys activity activities`——`com.android.documentsui/.picker.PickActivity` 在 App 任务 t57388 内，`Intent{act=android.intent.action.OPEN_DOCUMENT_TREE}`（**无起始 URI**）、`resultTo=MainActivity`、`state=STOPPED finishing=false`＝结果从未回传；② `dumpsys activity permissions`——`media.qimeng.app` 的持久化 tree 授权共 4 条，最新一条 `primary:1/HHH/6  备份` 时间 10-11 02:05:38，19:37 那次**零新增**；③ 既有目录当天 18:41 仍成功写入 5.1 MB 备份（授权链本身没坏）；④ 该提示语在本仓库 `grep` 0 命中＝系统 priv-app DocumentsUI 所发（`/system/priv-app/DocumentsUI/DocumentsUI.apk`）；⑤ 该 ROM 封了 shell 读日志（`logcat -g` 四个缓冲全 `0 B readable`，`ro.debuggable=0`），故取证走 dumpsys 而非 logcat。
+- **修复 1（根因）**：新增私有 `backupDirPickerDocumentUri(storedDirUri)`——起始位置取当前备份目录（树 URI → 该树根文档 URI），未设/不可解析时退回内部存储 `/Documents`（标准公共目录且非受限）；`onPickDir` 由 `launch(null)` 改 `launch(pickerStartUri)`。依据＝androidx activity-1.13.0 **字节码实证**：`ActivityResultContracts$OpenDocumentTree.createIntent` 把入参 Uri 写进 `android.provider.extra.INITIAL_URI`（＝`DocumentsContract.EXTRA_INITIAL_URI`），即契约入参本身就是起始位置（本项目从前只传 null＝等于没给）。
+- **修复 2（连带清偿，前次诊断发现）**：`takePersistableUriPermission` 的 `runCatching` 从前只有 `onSuccess`——失败静默吞，目录不落盘却零反馈，与「没权限」无从区分；新增 `BackupViewModel.onAutoBackupDirGrantFailed(cause)`（文案带异常类名，AuthorTxtImportViewModel 同款）+ 屏幕层补 `onFailure` 分支。
+- **修复 3（可见性）**：`AutoBackupCard` 目录行下加一行小字「受系统隐私限制：只能选子目录，不能选内部存储根目录 / Download」——该平台约束此前在 App 内无处可见，用户只能撞在选择器里。
+- **顺带（依赖口径）**：`feature:manage` 显式声明 `libs.androidx.core.ktx`——`String.toUri` 来自 androidx.core.net，此前本模块只有 :app 声明该库、自己走传递依赖拿到 1.18.0，与版本目录的 1.19.0 不一致（本库本就在全工程运行时图内，非新增依赖）。
+- **自测**：`./gradlew assembleDebug assembleRelease testDebugUnitTest :core:model:test lintDebug`（CI 同款门禁，JAVA_HOME=Android Studio JBR）BUILD SUCCESSFUL；110 个测试类 1106 例 0 失败 0 错误（含 BackupViewModelTest 17 例）；`lintDebug` 全模块 0 error，本次新引入的 `UseKtx` warning（`Uri.parse` → `String.toUri`）已按 KTX 口径清偿，manage 模块仅余既有 `ComposableNaming` 1 条（ThumbnailCacheScreen:144，非本批引入）。产物核验：release APK 与手机在装版**同一签名**（SHA-256 `8f62ba55…`）、同 versionCode=1，可原地覆盖；APK 的 classes.dex 内已确认含本批新增文案。
+- **装机（用户拍板后执行）**：`adb install -r app-release.apk` → `Success`（2026-10-11 20:11:38，同签名原地覆盖，versionCode 1 不变、登录与已授权备份目录均保留）；真机行为确认（选择器起始落点）由用户在备份页点一次「选择目录」目视核对，本次不驱动真机前台。回滚包留存于仓库外：`D:\build-cache\apk-backup\app-release-before-fix-20261011-1803.apk`（即用户 18:10 所装那版）。
+- **结论修正（2026-10-11 20:2x 用户重启后回填，诚实记档）**：本笔首轮把用户报障整体归因于「平台受限目录规则」，**该归因不完整、对最关键的一次是错的**。装机后用户再试（20:13 截图）连**子目录** `NX721J/1/HHH/6  备份`（非受限目录，且当天 02:05 刚授权成功过）也被判「无法使用此文件夹」且列表空白；**用户重启手机后自愈**。重启后只读复核（uptime 263s）：①「所有文件访问」**仍为 allow**，② 用户在 **20:21:34 成功重新授权同一目录**（授权表新增 `primary:1/HHH/6  备份` 记录）——即 19:37~20:13 的失败是**系统侧选择器/存储提供者状态损坏**，与 App 代码、与「所有文件访问」均无关（该权限开着时选择器工作正常，我此前"All-files access 导致选择器拒绝"的猜测被此条直接证伪）。受限目录规则本身依然真实（内部存储根目录 / Download 确实不可选），故修复 1/2/3 三项照旧保留、继续装机；`backupDirPickerDocumentUri` 的注释也同步改为按事实叙述（**注释-only 改动，行为零变化，故未重装**）。
+- **端到端确认（重启后）**：授权表新增 `2026-10-11 20:21:34 → primary:1/HHH/6  备份` 一条持久化 tree 授权＝「选择器拉起 → 确认 → takePersistableUriPermission → 落盘」全链路成功；装机版（20:11:38）即含本笔改动，用户在真机上完成确认。
+- **待观察（损坏触发点未定位）**：该 ROM 封了 shell 读日志（`logcat -g` 全 `0 B readable`，`ro.debuggable=0`），重启后进程/崩溃证据随之消失；`dumpsys activity processes` 未显示 provider 异常。若再现：**先别重启**，立刻抓 `dumpsys activity providers`、`dumpsys activity processes`、`dumpsys dropbox --print` 留证，再定位。
+- **文档**：CHANGELOG.md（本笔）。
+
 ## fix(server+docs): 本机同步归档区同名只留最新（用户定规，ADR-0030 修订1）+ 作者 126 来源区存量收敛收口（2026-10-11 第五百二十九笔）
 
 执行 AI：DeepSeek-V4.1-Flash（主代理）

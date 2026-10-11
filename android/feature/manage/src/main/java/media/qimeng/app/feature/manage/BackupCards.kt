@@ -55,6 +55,10 @@ private const val AUTO_DIR_PICK = "选择目录"
 private const val AUTO_LAST_LABEL = "上次备份"
 private const val AUTO_LAST_NEVER = "未运行"
 
+/** 目录提示（2026-10-11 用户报障）：系统选择器禁止选受限目录，且停在那里连列表都不展开——
+ *  这条约束在 App 里无处可见，只能写在这（选择器本身只给「为保护您的隐私」一句） */
+private const val AUTO_DIR_HINT = "受系统隐私限制：只能选子目录，不能选内部存储根目录 / Download"
+
 /** 规则说明四条（Web L297-299 逐字；2026-09-16 置主卡下方；任务S：暂存措辞改导出口径） */
 private val RULE_LINES = listOf(
     "· 导入幂等：同一备份重复导入不翻倍（作者/标签/关联按唯一键合并）",
@@ -208,6 +212,11 @@ internal fun AutoBackupCard(
                 )
                 TextButton(onClick = onPickDir) { Text(AUTO_DIR_PICK) }
             }
+            Text(
+                text = AUTO_DIR_HINT,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Text(
                 text = "$AUTO_LAST_LABEL：${formatTimestamp(lastRunMillis, AUTO_LAST_NEVER)}",
                 style = MaterialTheme.typography.bodyMedium,

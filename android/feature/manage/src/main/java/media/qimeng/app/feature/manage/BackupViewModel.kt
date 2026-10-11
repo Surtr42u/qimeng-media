@@ -313,6 +313,17 @@ class BackupViewModel @Inject constructor(
         }
     }
 
+    /**
+     * SAF 授权持久化失败（屏幕层 takePersistableUriPermission 抛异常时回调，2026-10-11 报障连带清偿）：
+     * 从前该异常被静默吞掉——目录不落盘却零反馈，用户看到的现象与「App 没权限」完全一样、无从排查；
+     * 异常类名拼进文案（AuthorTxtImportViewModel 同款）便于日后定位是 SecurityException 还是别因。
+     */
+    fun onAutoBackupDirGrantFailed(cause: Throwable) {
+        _uiState.update {
+            it.copy(errorMessage = "$ERROR_DIR_GRANT（${cause.javaClass.simpleName}）")
+        }
+    }
+
     private companion object {
         /** KB 换算分母（Web (sizeBytes/1024).toFixed(0) 同口径；四舍五入由 roundToInt 承担） */
         const val BYTES_PER_KB = 1024.0
@@ -328,6 +339,9 @@ class BackupViewModel @Inject constructor(
 
         /** 任务S 2026-09-19 冻结文案：目录里没有备份文件（导入方向，提示先在源端导出） */
         const val ERROR_NO_BACKUP_FILE = "备份目录还没有备份文件，请先在源端导出"
+
+        /** 2026-10-11 新增：SAF 目录授权没能持久化（选择器已放行但 take 失败＝写不了该目录） */
+        const val ERROR_DIR_GRANT = "该目录的访问授权没能保存，请改选子目录后重试"
 
         /** 操作结果文案（Web BackupCard 各 mutate onSuccess toast 逐字对齐） */
         const val NOTICE_EXPORT = "已导出 qimeng_backup.json（%d KB）"

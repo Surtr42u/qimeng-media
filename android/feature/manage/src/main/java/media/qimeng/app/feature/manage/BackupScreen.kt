@@ -1,6 +1,8 @@
 package media.qimeng.app.feature.manage
 
 import android.annotation.SuppressLint
+import android.net.Uri
+import android.provider.DocumentsContract
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -17,9 +19,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import media.qimeng.app.core.data.backup.AutoBackupRunner
@@ -74,7 +78,12 @@ fun BackupScreen(
 
     // 自动备份目录（OpenDocumentTree；导入导出与自动备份共用同目录——选一次即两者就绪）。
     // 选完立即 takePersistableUriPermission 持久化授权（跨进程存活）；授权失败不落 prefs
-    // （存一个写不了的目录只会让备份必败）
+    // （存一个写不了的目录只会让备份必败），并出横幅（从前静默吞掉＝"没权限"无从区分，见下方注释）。
+    // 起始位置必须由 App 给：平台禁止选受限目录（内部存储根/Download），选择器停在那里会成死路
+    // ——「使用此文件夹」置灰且列表不展开（2026-10-11 用户报障），故顶到当前备份目录开局。
+    val pickerStartUri = remember(state.autoBackupDirUri) {
+        backupDirPickerDocumentUri(state.autoBackupDirUri)
+    }
     val dirPickerLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocumentTree(),
     ) { uri ->
@@ -84,7 +93,11 @@ fun BackupScreen(
             // 双 flag 合法组合，AGP 9.3 lint 无法跨模块内联 Kotlin or 表达式常量（任务P P1 记档）
             @SuppressLint("WrongConstant")
             context.contentResolver.takePersistableUriPermission(uri, AutoBackupRunner.TREE_PERMISSION_FLAGS)
-        }.onSuccess { viewModel.onAutoBackupDirPicked(uri.toString()) }
+        }.onSuccess {
+            viewModel.onAutoBackupDirPicked(uri.toString())
+        }.onFailure { cause ->
+            viewModel.onAutoBackupDirGrantFailed(cause)
+        }
     }
 
     Column(modifier = modifier.fillMaxSize()) {
@@ -160,7 +173,7 @@ fun BackupScreen(
                 dirUri = state.autoBackupDirUri,
                 lastRunMillis = state.autoBackupLastRunMillis,
                 onToggle = viewModel::setAutoBackupEnabled,
-                onPickDir = { dirPickerLauncher.launch(null) },
+                onPickDir = { dirPickerLauncher.launch(pickerStartUri) },
             )
 
             Spacer(modifier = Modifier.height(ScreenBottomSpacing))
@@ -192,4 +205,39 @@ private fun WarningsCard(warnings: List<String>, onDismiss: () -> Unit) {
         container = MaterialTheme.colorScheme.secondaryContainer,
         onDismiss = onDismiss,
     )
+}
+
+// ---------- SAF 目录选择起始位置（2026-10-11 用户报障修复：选择器停在平台受限目录＝死路） ----------
+
+/** 内部存储 DocumentsProvider 授权名（AOSP 固定值；未设备份目录时的兜底目录挂在它下面） */
+private const val EXTERNAL_STORAGE_AUTHORITY = "com.android.externalstorage.documents"
+
+/** 兜底起始文档 ID＝内部存储 /Documents（标准公共目录，且不属平台受限目录） */
+private const val DEFAULT_PICKER_DOC_ID = "primary:Documents"
+
+/**
+ * 目录选择器起始位置的「文档 URI」：优先当前备份目录（树 URI → 该树根文档 URI），不可用时退回
+ * 内部存储的 Documents。
+ *
+ * 为什么显式给起始位置（2026-10-11 用户报障）：Android 11+ 起平台禁止 ACTION_OPEN_DOCUMENT_TREE
+ * 授权受限目录（内部存储根目录 / Download / Android/data / Android/obb），选择器停在那里时
+ * 「使用此文件夹」置灰、用户点不动；而此前 launch(null) 把起始位置完全交给系统选择器自己的记忆，
+ * 很容易开局就落在那里。顶到当前备份目录开局即可避开（androidx OpenDocumentTree 契约把入参 Uri
+ * 写进 EXTRA_INITIAL_URI，见 activity-1.13.0 字节码实证）。
+ *
+ * 附记（诚实记档，CHANGELOG 第五百三十笔修正条）：当日同一批报障中还有一次「子目录也被判无法使用、
+ * 列表空白」，用户重启后自愈——那是系统侧选择器/存储提供者状态损坏，与本处的受限目录规则是两件事，
+ * 本函数的起始位置修复对两种情况都成立（不落在受限目录、也不依赖选择器记忆）。
+ */
+private fun backupDirPickerDocumentUri(storedDirUri: String?): Uri? {
+    val documentUri = storedDirUri?.let {
+        runCatching {
+            val tree = it.toUri()
+            DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
+        }.getOrNull()
+    }
+    if (documentUri != null) return documentUri
+    return runCatching {
+        DocumentsContract.buildDocumentUri(EXTERNAL_STORAGE_AUTHORITY, DEFAULT_PICKER_DOC_ID)
+    }.getOrNull()
 }
