@@ -58,9 +58,9 @@ var (
 //     媒体扩展名时按作品行处理——处于作品区归入当前块作品，块外忽略。
 //     扩展名判定在括号备注去除之前进行（备注去除是作者名语义，若先去除
 //     `帕南(1).png` 会丢扩展名而误判为别名）。
-//   - `来源`/`出处` 标记行进入来源区（同行剩余部分是平台名）；`作品`
-//     标记行（单独一行）进入作品区；两个区域各行分别归入当前块的
-//     Sources / Works，无当前块时忽略。
+//   - `来源`/`出处` 标记行进入来源区（同行剩余部分是出处词列表，两空格
+//     分隔、可多个并排）；`作品` 标记行（单独一行）进入作品区；两个区域
+//     各行分别归入当前块的 Sources / Works，无当前块时忽略。
 func ParseAuthorBlocks(text string) []AuthorBlock {
 	var blocks []AuthorBlock
 	var cur *AuthorBlock
@@ -105,9 +105,7 @@ func ParseAuthorBlocks(text string) []AuthorBlock {
 		case isSourcesMarker(line):
 			inSources, inWorks = true, false
 			if cur != nil {
-				if platform := platformName(line); platform != "" {
-					cur.Sources = append(cur.Sources, platform)
-				}
+				cur.Sources = append(cur.Sources, sourceWords(line)...)
 			}
 		case line == markerWorks:
 			if cur != nil {
@@ -198,14 +196,19 @@ func isSourcesMarker(line string) bool {
 // markerOutsource 是 `出处`（与 `来源` 同义，GUIDE_AUTHOR：两者均识别）。
 const markerOutsource = "出处"
 
-// platformName 提取来源标记行同行携带的平台名（`出处  site-a` → `site-a`）。
-func platformName(line string) string {
+// sourceWords 提取来源标记行同行携带的出处词列表（`出处  site-a` →
+// `site-a`）。分隔规范与编号行别名一致（两个以上空白，aliasSeparatorRe）：
+// 来源区的规范形态是单个标记行 + 出处并排（`来源  kemono  小红车`，2026-10-11
+// 用户拍板——手写清单一直如此，且「一词一标记行」会造出多个「来源」行），
+// 拆分让「写出 → 读回」在词级恒等（REQ §3.3 第 9 条）。标记行独占一行时
+// 返回空；后续裸行由区域状态机逐行收词（每个整行 = 一个词）。
+func sourceWords(line string) []string {
 	for _, m := range []string{markerSources, markerOutsource} {
 		if rest, ok := strings.CutPrefix(line, m); ok {
-			return strings.TrimSpace(rest)
+			return splitAliases(rest)
 		}
 	}
-	return ""
+	return nil
 }
 
 // isAllDigits 报告非空且全为 ASCII 数字（纯数字行判定）。

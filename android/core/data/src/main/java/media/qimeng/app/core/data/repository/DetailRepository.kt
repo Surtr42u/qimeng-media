@@ -60,9 +60,15 @@ interface DetailRepository {
      * @param startedAtMs 事件开始时刻（客户端时钟 epochMilli；出网时转 UTC OffsetDateTime 存储）
      * @param sessionId 客户端会话标识（每详情停留会话一个 UUID；服务端按 assetId+kind+sessionId+当日去重）
      * @param dwellSeconds 仅 dwell 携带：本次停留秒数（长整型截断；open/play 传 null）
+     * @param fileName 文件身份（ADR-0037 跨库兜底重映射）：事件产生时详情的展示文件名
+     *   （含扩展名）；'' = 未知/未携带（详情未就绪即超时），出网时不上报、不参与重映射
+     * @param relPath 文件身份：详情的库内相对路径（"/" 分隔；服务端 fileName 多命中时消歧）；
+     *   '' = 未知/未携带，同上
      */
     suspend fun reportViewEvent(
         assetId: String,
+        fileName: String,
+        relPath: String,
         kind: ViewEventKind,
         startedAtMs: Long,
         sessionId: String,

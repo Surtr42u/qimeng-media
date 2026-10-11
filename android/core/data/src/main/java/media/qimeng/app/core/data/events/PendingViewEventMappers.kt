@@ -16,6 +16,9 @@ import media.qimeng.sdk.models.ViewEventReport
  * 任务L L5：clientEventId 幂等键透传——调用方（drain）已保证非空（迁移存量行
  * 懒回填），SDK 类型为必填 UUID，空值会在此抛 IllegalArgumentException 并被
  * 发送层折进 IoError 保守重试，不会炸 drain。
+ * ADR-0037：fileName/relPath 文件身份透传（服务端 assetId 未命中时兜底重映射的
+ * 唯一依据）；'' = 未知/未携带 → 协议可选字段缺省（不参与重映射，维持既有「已删
+ * 资产迟到事件」口径）——与导出映射（[toPendingExportJson]）同一 ''→缺省口径。
  */
 internal fun PendingViewEventEntity.toSdkReport(): ViewEventReport {
     val base = SdkDetailMappers.toViewEventReport(
@@ -26,6 +29,10 @@ internal fun PendingViewEventEntity.toSdkReport(): ViewEventReport {
         clientEventId = clientEventId,
         dwellSeconds = null,
     )
-    if (kind != ViewEventKind.DWELL.name) return base
-    return base.copy(seconds = durationMs / 1000.0)
+    val withIdentity = base.copy(
+        fileName = fileName.takeIf { it.isNotBlank() },
+        relPath = relPath.takeIf { it.isNotBlank() },
+    )
+    if (kind != ViewEventKind.DWELL.name) return withIdentity
+    return withIdentity.copy(seconds = durationMs / 1000.0)
 }

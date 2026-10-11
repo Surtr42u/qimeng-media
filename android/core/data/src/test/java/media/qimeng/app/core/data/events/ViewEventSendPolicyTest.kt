@@ -1,6 +1,7 @@
 package media.qimeng.app.core.data.events
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
@@ -30,6 +31,11 @@ class ViewEventSendPolicyTest {
         Row("599=退避重试（5xx 段上界）", ViewEventSendResult.Http(599), ViewEventSendVerdict.RETRY),
         Row("409=未声明 4xx → 保守重试（不轻信终局）", ViewEventSendResult.Http(409), ViewEventSendVerdict.RETRY),
         Row("IO 无状态码 → 保守重试", ViewEventSendResult.IoError, ViewEventSendVerdict.RETRY),
+        // ADR-0037 跨库合并处置（outcome）只用于同步提示计数，不进裁决——以下行锁定
+        Row("202+remapped（按文件名并入统计）→ 确认（outcome 不进裁决）", ViewEventSendResult.Http(202, ViewEventOutcome.REMAPPED), ViewEventSendVerdict.CONFIRMED),
+        Row("202+unmatched（未匹配未计入统计）→ 确认（同上）", ViewEventSendResult.Http(202, ViewEventOutcome.UNMATCHED), ViewEventSendVerdict.CONFIRMED),
+        Row("202+ok（直收/幂等命中）→ 确认", ViewEventSendResult.Http(202, ViewEventOutcome.OK), ViewEventSendVerdict.CONFIRMED),
+        Row("401+畸形带 outcome → 终局（裁决只认状态码）", ViewEventSendResult.Http(401, ViewEventOutcome.REMAPPED), ViewEventSendVerdict.DISCARD),
     )
 
     @Test
@@ -42,6 +48,11 @@ class ViewEventSendPolicyTest {
     @Test
     fun `协议成功码常量 - 与 openapi 声明同步（协议侧改动须同步此处）`() {
         assertEquals(202, ViewEventSendPolicy.HTTP_ACCEPTED)
+    }
+
+    @Test
+    fun `outcome 缺省 - Http 不带处置时归 null（旧服务端 202 空体口径，不得据此判失败）`() {
+        assertNull(ViewEventSendResult.Http(202).outcome)
     }
 
     @Test

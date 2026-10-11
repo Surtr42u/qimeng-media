@@ -11,7 +11,8 @@ import androidx.room.PrimaryKey
  *   id AUTOINCREMENT PK / assetId TEXT / kind TEXT / startedAt INTEGER epochMs /
  *   durationMs INTEGER / sessionId TEXT / createdAt INTEGER /
  *   clientEventId TEXT NOT NULL DEFAULT '' / terminal INTEGER NOT NULL DEFAULT 0 /
- *   nextAttemptAt INTEGER NOT NULL DEFAULT 0
+ *   nextAttemptAt INTEGER NOT NULL DEFAULT 0 / fileName TEXT NOT NULL DEFAULT '' /
+ *   relPath TEXT NOT NULL DEFAULT ''
  * )
  * ```
  *
@@ -31,6 +32,13 @@ import androidx.room.PrimaryKey
  *   持久化到行上（而非进程内存）：进程死亡重启后退避依然生效，不会对故障端点立刻
  *   狂打；1→2 迁移存量行 DEFAULT 0 = 立即可发；
  * - [durationMs]：dwell 停留毫秒（出网时 ms→秒无损换算）；open/play **恒 0**；
+ * - [fileName]/[relPath]：**跨库兜底重映射的文件身份**（ADR-0037）。本地优先队列的事件
+ *   可能被投递到与产生时不同的服务器（App 本机模式→NAS 等），此时 assetId 属于源库、
+ *   目标库不存在；事件产生时详情已加载，天然可知文件身份，入队即随行持久，出网时随
+ *   ViewEventReport 上报——服务端 assetId 未命中时按文件名（唯一命中，relPath 消歧）
+ *   重映射到本库资产并计入统计。'' = 未知/未携带（2→3 迁移存量行与详情未就绪即超时
+ *   的 open 事件），缺省不参与重映射（维持既有「已删资产迟到事件」口径）；不引入
+ *   可空列——'' 即「无身份」，与协议可选字段的缺省语义在映射层同一处归口；
  * - [startedAt]/[createdAt]：epochMilli（出网时 startedAt 转 UTC OffsetDateTime——
  *   客户端本地时区只用于展示，打点存绝对时刻）；
  * - 无「重试次数」列：连败计数只驱动退避指数，存活在 [ViewEventQueue] 进程内存，
@@ -51,6 +59,10 @@ data class PendingViewEventEntity(
     val terminal: Boolean = false,
     /** 退避重试的最早允许时刻（epochMs）；0 = 立即可发 */
     val nextAttemptAt: Long = 0,
+    /** 跨库兜底重映射的文件身份（ADR-0037）：资产展示文件名（含扩展名）；'' = 未知/未携带 */
+    val fileName: String = "",
+    /** 跨库兜底重映射的文件身份（ADR-0037）：库内相对路径（"/" 分隔，消歧用）；'' = 未知 */
+    val relPath: String = "",
 ) {
     companion object {
         /** 表名（冻结口径单一来源：DAO @Query 与本实体共用） */

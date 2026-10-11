@@ -1,7 +1,11 @@
 package media.qimeng.app.feature.detail
 
 import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -54,6 +58,9 @@ class DetailViewModelTest {
         var detailError: Exception? = null
         var detailCallCount = 0
 
+        /** 置非空则 assetDetail 挂起直至放行（ADR-0037：文件身份等待/超时路径断言用） */
+        var detailGate: CompletableDeferred<Unit>? = null
+
         var likeResult: LikeToggleResult? = null
         var likeError: Exception? = null
 
@@ -80,6 +87,9 @@ class DetailViewModelTest {
             val kind: ViewEventKind,
             val sessionId: String,
             val dwellSeconds: Long?,
+            /** ADR-0037 文件身份（详情就绪时带上；未就绪超时 = ''） */
+            val fileName: String,
+            val relPath: String,
         )
 
         val viewEventCalls = mutableListOf<ViewEventCall>()
@@ -98,12 +108,14 @@ class DetailViewModelTest {
 
         override suspend fun reportViewEvent(
             assetId: String,
+            fileName: String,
+            relPath: String,
             kind: ViewEventKind,
             startedAtMs: Long,
             sessionId: String,
             dwellSeconds: Long?,
         ) {
-            viewEventCalls += ViewEventCall(assetId, kind, sessionId, dwellSeconds)
+            viewEventCalls += ViewEventCall(assetId, kind, sessionId, dwellSeconds, fileName, relPath)
         }
 
         override suspend fun timelineTags(assetId: String): List<TimelineTag> {
@@ -128,6 +140,7 @@ class DetailViewModelTest {
         override suspend fun assetDetail(assetId: String): AssetDetail {
             detailCallCount += 1
             detailCallsById.merge(assetId, 1, Int::plus)
+            detailGate?.await()
             detailError?.let { throw it }
             return detailById[assetId] ?: requireNotNull(detailResult)
         }
@@ -737,6 +750,69 @@ class DetailViewModelTest {
         assertNotNull(repo.viewEventCalls.last().dwellSeconds)
         // 全部事件同一 sessionId + 同一 assetId（open/play 去重键；dwell 同会话归组）
         assertTrue(repo.viewEventCalls.all { it.sessionId == open.sessionId && it.assetId == "b" })
+    }
+
+    @Test
+    fun `打点 - 详情已加载时上报携带文件身份（ADR-0037 跨库兜底重映射前提）`() = runTest(mainDispatcherRule.testDispatcher) {
+        val repo = FakeDetailRepository().apply {
+            detailResult = detail("b").copy(fileName = "封面.png", relPath = "相册/封面.png")
+        }
+        val vm = viewModel(repo)
+        advanceUntilIdle()
+
+        // open 在 init 产生、详情加载完成后入队：身份随上报携带
+        val open = repo.viewEventCalls.single()
+        assertEquals(ViewEventKind.OPEN, open.kind)
+        assertEquals("封面.png", open.fileName)
+        assertEquals("相册/封面.png", open.relPath)
+
+        // dwell/play 产生时详情已就绪：first() 立即命中，同样携带身份（不实际等待）
+        vm.onPlaybackStarted()
+        advanceUntilIdle()
+        assertEquals("封面.png", repo.viewEventCalls.last().fileName)
+    }
+
+    @Test
+    fun `打点 - 详情未就绪等身份超时后以无身份上报（有界等待不阻塞打点）`() = runTest(mainDispatcherRule.testDispatcher) {
+        val repo = FakeDetailRepository().apply {
+            detailResult = detail("b")
+            detailGate = CompletableDeferred() // 详情挂起：open 事件的等待窗口内拿不到身份
+        }
+        val vm = viewModel(repo)
+        // advanceUntilIdle 推进虚拟时间越过 EVENT_IDENTITY_WAIT_MS：身份等待超时 → 无身份入队
+        advanceUntilIdle()
+
+        val open = repo.viewEventCalls.single()
+        assertEquals(ViewEventKind.OPEN, open.kind)
+        assertEquals("", open.fileName) // '' = 未知/未携带（超时=旧行为；「不丢事件」面见下方 VM 销毁用例）
+        assertEquals("", open.relPath)
+
+        // 详情随后就绪：后续事件恢复携带身份（等待只影响 open 的入队时机）
+        repo.detailGate!!.complete(Unit)
+        advanceUntilIdle()
+        vm.onPlaybackStarted()
+        advanceUntilIdle()
+        assertEquals("b.jpg", repo.viewEventCalls.last().fileName)
+    }
+
+    @Test
+    fun `打点 - 等身份期间 VM 销毁仍按无身份补入队（取消不丢事件）`() = runTest(mainDispatcherRule.testDispatcher) {
+        val repo = FakeDetailRepository().apply {
+            detailResult = detail("b")
+            detailGate = CompletableDeferred() // 详情挂起：open 卡在身份等待窗口内
+        }
+        val vm = viewModel(repo)
+        runCurrent() // 只跑当前任务：等待进入挂起、10s 窗口未到（与超时用例区分——此处不等超时）
+        assertTrue(repo.viewEventCalls.isEmpty()) // 等待中：尚未入队
+
+        // 模拟 VM 销毁（导航离开触发 viewModelScope 取消）：非取消补入队路径生效
+        vm.viewModelScope.cancel()
+        advanceUntilIdle()
+
+        val open = repo.viewEventCalls.single()
+        assertEquals(ViewEventKind.OPEN, open.kind)
+        assertEquals("", open.fileName) // 无身份补入队=旧行为等价，事件不丢
+        assertEquals("", open.relPath)
     }
 
     // ---------- 进度上报接线（3d）：节流放行 + force 立即补报 ----------

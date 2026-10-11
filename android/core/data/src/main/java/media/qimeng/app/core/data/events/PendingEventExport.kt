@@ -13,7 +13,8 @@ import java.time.ZoneOffset
  * 同一 clientEventId，服务端唯一索引幂等，两条路径结果完全一致（不双计）。
  *
  * 字段与 [toSdkReport] 同口径单源复用：kind 大写枚举名转协议小写、dwell 才带
- * seconds（ms→秒无损换算）、startedAt 存绝对时刻（UTC RFC3339）。
+ * seconds（ms→秒无损换算）、startedAt 存绝对时刻（UTC RFC3339）。ADR-0037 文件身份
+ * （fileName/relPath）同 toSdkReport 口径：非空才带、'' 即缺省（不参与重映射）。
  */
 internal fun List<PendingViewEventEntity>.toPendingExportJson(): String {
     val exports: List<Map<String, Any>> = map { event ->
@@ -32,6 +33,9 @@ internal fun List<PendingViewEventEntity>.toPendingExportJson(): String {
         if (event.kind == ViewEventKind.DWELL.name) {
             report["seconds"] = event.durationMs / 1000.0
         }
+        // 文件身份（ADR-0037）：'' = 未知/未携带，不带字段（与 toSdkReport 的缺省同口径）
+        if (event.fileName.isNotBlank()) report["fileName"] = event.fileName
+        if (event.relPath.isNotBlank()) report["relPath"] = event.relPath
         report
     }
     val type = com.squareup.moshi.Types.newParameterizedType(

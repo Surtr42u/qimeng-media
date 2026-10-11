@@ -19,8 +19,8 @@ abstract class QimengEventDatabase : RoomDatabase() {
     abstract fun pendingViewEventDao(): PendingViewEventDao
 
     companion object {
-        /** schema 版本（2 = 任务L L5 本地优先三列；演进只加迁移，见 EventDbMigrations） */
-        const val VERSION = 2
+        /** schema 版本（3 = ADR-0037 文件身份两列；演进只加迁移，见 EventDbMigrations） */
+        const val VERSION = 3
 
         /** 库文件名（与上传链/偏好 DataStore 物理隔离） */
         const val NAME = "qimeng_events.db"

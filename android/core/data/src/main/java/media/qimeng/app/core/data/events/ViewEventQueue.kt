@@ -27,6 +27,9 @@ import media.qimeng.app.core.model.ViewEventKind
  *   无限堆积则伤存储；淘汰=少计可接受（与打点尽力而为的定位一致）。
  * - **dwell 单条语义原样保留**：写入侧（SdkDetailRepository/DetailViewModel）保证
  *   一次停留恰好入队一条 dwell，本队列不加不减。
+ * - **跨库合并计数**（ADR-0037）：[drain] 对 2xx 确认行按服务端 outcome 记
+ *   merged/unmatched（[DrainSummary]），供「同步浏览数据」完成提示如实展示
+ *   「N 条已按文件名并入本服务器统计 / M 条未匹配未计入统计」；outcome 不进裁决。
  *
  * 终止性：drain 每轮要么删行/终局（不可逆进度），要么给 RETRY 行写入未来的
  * nextAttemptAt（selectDue 不再取到），循环必然终止；补传途中新入队的事件由下一轮
@@ -67,9 +70,15 @@ class ViewEventQueue @Inject constructor(
      * 生成点：调用方（仓库/VM）不感知幂等键，重试/导出天然复用同一 id。
      * durationMs 口径见 [PendingViewEventEntity]：open/play 传 0，dwell 传停留毫秒。
      * DB 写失败抛原异常（静默语义收敛在调用方）。
+     *
+     * @param fileName/relPath 跨库兜底重映射的文件身份（ADR-0037）：事件产生时详情
+     *   已知的展示文件名（含扩展名）与库内相对路径；'' = 未知/未携带（详情未就绪
+     *   即超时的 open 事件、旧调用方），出网时不上报该字段（不参与重映射）。
      */
     suspend fun enqueue(
         assetId: String,
+        fileName: String,
+        relPath: String,
         kind: ViewEventKind,
         startedAtMs: Long,
         durationMs: Long,
@@ -84,6 +93,8 @@ class ViewEventQueue @Inject constructor(
                 sessionId = sessionId,
                 createdAt = clock.now(),
                 clientEventId = UUID.randomUUID().toString(),
+                fileName = fileName,
+                relPath = relPath,
             ),
             limit = MAX_QUEUE_SIZE,
         )
@@ -107,18 +118,30 @@ class ViewEventQueue @Inject constructor(
 
     /**
      * 补传一轮：2xx 删行 / RETRY 退避留行 / 4xx 终局留行。返回摘要供 worker 打证据日志。
+     * ADR-0037：2xx 确认行按 outcome 记 merged（按文件名并入本服务器统计）/unmatched
+     * （未匹配未计入统计）——只做计数，不进裁决（分类表仍只看状态码）。
      */
     suspend fun drain(): DrainSummary = drainMutex.withLock {
         var sent = 0
         var droppedTerminal = 0
         var keptForRetry = 0
+        var merged = 0
+        var unmatched = 0
         while (true) {
             val batch = dao.selectDue(clock.now(), DRAIN_BATCH_SIZE) // 只读取件，删除在确认之后
             if (batch.isEmpty()) break
             for (event in batch) {
-                val verdict = ViewEventSendPolicy.classify(sender.send(event.ensureClientEventId()))
+                val result = sender.send(event.ensureClientEventId())
+                val verdict = ViewEventSendPolicy.classify(result)
                 when (verdict) {
                     ViewEventSendVerdict.CONFIRMED -> {
+                        // CONFIRMED 恒来自 Http 分支，此处读 outcome 做跨库合并计数
+                        // （null/OK 不计：ok=直收或幂等命中，未新增计数）
+                        when ((result as? ViewEventSendResult.Http)?.outcome) {
+                            ViewEventOutcome.REMAPPED -> merged++
+                            ViewEventOutcome.UNMATCHED -> unmatched++
+                            ViewEventOutcome.OK, null -> Unit
+                        }
                         dao.deleteByIds(listOf(event.id))  // 发送成功（2xx）才删
                         consecutiveFailures.remove(event.id)
                         sent++
@@ -154,12 +177,15 @@ class ViewEventQueue @Inject constructor(
             sent = sent,
             dropped = droppedTerminal,
             keptForRetry = keptForRetry,
+            merged = merged,
+            unmatched = unmatched,
         )
         if (summary != DRAIN_SUMMARY_NOTHING) {
             Log.i(
                 EventSyncWorkSpec.LOG_TAG,
                 "drain sent=${summary.sent} terminal=${summary.dropped} " +
-                    "kept=${summary.keptForRetry} pending=${dao.countPending()}",
+                    "kept=${summary.keptForRetry} merged=${summary.merged} " +
+                    "unmatched=${summary.unmatched} pending=${dao.countPending()}",
             )
         }
         summary
@@ -176,8 +202,19 @@ class ViewEventQueue @Inject constructor(
         return copy(clientEventId = generated)
     }
 
-    /** 一轮补传摘要（worker 日志/单测断言用）。dropped=本轮新终局标记的行数（不删行） */
-    data class DrainSummary(val sent: Int, val dropped: Int, val keptForRetry: Int)
+    /**
+     * 一轮补传摘要（worker 日志/单测断言用）。dropped=本轮新终局标记的行数（不删行）。
+     * merged/unmatched=本轮 2xx 确认行中服务端 outcome 为 remapped/unmatched 的条数
+     * （ADR-0037 跨库合并计数；outcome 缺失/ok 不计）。语义只报「本轮」——
+     * 「同步浏览数据」手动同步提示按此展示，历史累计不在本层。
+     */
+    data class DrainSummary(
+        val sent: Int,
+        val dropped: Int,
+        val keptForRetry: Int,
+        val merged: Int = 0,
+        val unmatched: Int = 0,
+    )
 
     companion object {
         /**
@@ -192,7 +229,8 @@ class ViewEventQueue @Inject constructor(
          */
         const val DRAIN_BATCH_SIZE = 50
 
-        /** 全空队列的 drain 结果（日志降噪：空轮不打日志） */
-        private val DRAIN_SUMMARY_NOTHING = DrainSummary(sent = 0, dropped = 0, keptForRetry = 0)
+        /** 全空队列的 drain 结果（日志降噪：空轮不打日志；含跨库合并计数零值） */
+        private val DRAIN_SUMMARY_NOTHING =
+            DrainSummary(sent = 0, dropped = 0, keptForRetry = 0, merged = 0, unmatched = 0)
     }
 }

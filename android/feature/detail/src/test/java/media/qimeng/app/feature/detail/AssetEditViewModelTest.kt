@@ -591,6 +591,8 @@ private class FakeEditDetailRepository : DetailRepository {
     override suspend fun reportProgress(assetId: String, positionSeconds: Double) = Unit
     override suspend fun reportViewEvent(
         assetId: String,
+        fileName: String,
+        relPath: String,
         kind: ViewEventKind,
         startedAtMs: Long,
         sessionId: String,

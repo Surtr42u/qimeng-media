@@ -9,6 +9,7 @@ import media.qimeng.app.core.data.events.EventClock
 import media.qimeng.app.core.data.events.PendingViewEventDao
 import media.qimeng.app.core.data.events.PendingViewEventEntity
 import media.qimeng.app.core.data.events.ViewEventQueue
+import media.qimeng.app.core.data.events.ViewEventOutcome
 import media.qimeng.app.core.data.events.ViewEventSender
 import media.qimeng.app.core.data.events.ViewEventSendResult
 import media.qimeng.app.core.data.repository.BackupAutoPrefs
@@ -314,6 +315,114 @@ class BackupViewModelTest {
         assertEquals(1, dao.rows.size) // 本地优先：失败不丢行
     }
 
+    @Test
+    fun `浏览数据同步 - 跨库合并与未匹配计数如实提示（ADR-0037 outcome 透出）`() = runTest(mainDispatcherRule.testDispatcher) {
+        val dao = FakeEventDao()
+        dao.seed("00000000-0000-0000-0000-0000000000c1", fileName = "封面.png", relPath = "相册/封面.png")
+        dao.seed("00000000-0000-0000-0000-0000000000c2", fileName = "封面.png", relPath = "相册/封面.png")
+        dao.seed("00000000-0000-0000-0000-0000000000c3", fileName = "孤儿.png", relPath = "相册/孤儿.png")
+        val queue = ViewEventQueue(
+            dao,
+            FakeEventSender(
+                fail = false,
+                outcomes = ArrayDeque(
+                    listOf(ViewEventOutcome.REMAPPED, ViewEventOutcome.REMAPPED, ViewEventOutcome.UNMATCHED),
+                ),
+            ),
+            clock = FixedEventClock,
+        )
+        val (vm, _) = newViewModel(queue = queue)
+        advanceUntilIdle()
+        assertEquals(3, vm.uiState.value.pendingEvents)
+
+        vm.syncEventsNow()
+        advanceUntilIdle()
+
+        // 两类都非零：合并与未匹配同提示（逐字锁定文案）
+        assertEquals(
+            "同步完成：2 条已按文件名并入本服务器统计；1 条未匹配到本服务器文件（未计入统计）",
+            vm.uiState.value.eventSyncNote,
+        )
+        assertEquals(0, vm.uiState.value.pendingEvents)
+    }
+
+    @Test
+    fun `浏览数据同步 - 仅合并或仅未匹配各走单类文案，ok与空处置仍是同步完成`() = runTest(mainDispatcherRule.testDispatcher) {
+        // 仅 merged
+        val mergedDao = FakeEventDao()
+        mergedDao.seed("00000000-0000-0000-0000-0000000000d1", fileName = "封面.png")
+        val mergedQueue = ViewEventQueue(
+            mergedDao,
+            FakeEventSender(fail = false, outcomes = ArrayDeque(listOf(ViewEventOutcome.REMAPPED))),
+            clock = FixedEventClock,
+        )
+        val (mergedVm, _) = newViewModel(queue = mergedQueue)
+        advanceUntilIdle()
+        mergedVm.syncEventsNow()
+        advanceUntilIdle()
+        assertEquals("同步完成：1 条已按文件名并入本服务器统计", mergedVm.uiState.value.eventSyncNote)
+
+        // 仅 unmatched
+        val unmatchedDao = FakeEventDao()
+        unmatchedDao.seed("00000000-0000-0000-0000-0000000000d2", fileName = "孤儿.png")
+        val unmatchedQueue = ViewEventQueue(
+            unmatchedDao,
+            FakeEventSender(fail = false, outcomes = ArrayDeque(listOf(ViewEventOutcome.UNMATCHED))),
+            clock = FixedEventClock,
+        )
+        val (unmatchedVm, _) = newViewModel(queue = unmatchedQueue)
+        advanceUntilIdle()
+        unmatchedVm.syncEventsNow()
+        advanceUntilIdle()
+        assertEquals(
+            "同步完成：1 条未匹配到本服务器文件（未计入统计）",
+            unmatchedVm.uiState.value.eventSyncNote,
+        )
+
+        // ok（直收/幂等命中）：维持既有「同步完成」（不得虚报合并）；
+        // 旧服务端 202 空处置（null）同口径由「成功后提示同步完成且待上传数清零」用例锁定
+        val okDao = FakeEventDao()
+        okDao.seed("00000000-0000-0000-0000-0000000000d3")
+        val okQueue = ViewEventQueue(
+            okDao,
+            FakeEventSender(fail = false, outcomes = ArrayDeque(listOf(ViewEventOutcome.OK))),
+            clock = FixedEventClock,
+        )
+        val (okVm, _) = newViewModel(queue = okQueue)
+        advanceUntilIdle()
+        okVm.syncEventsNow()
+        advanceUntilIdle()
+        assertEquals("同步完成", okVm.uiState.value.eventSyncNote)
+    }
+
+    @Test
+    fun `浏览数据同步 - 重试与终局提示优先于跨库合并计数（未完成事项在前）`() = runTest(mainDispatcherRule.testDispatcher) {
+        // 第一行 202+remapped，第二行 IO 失败 → 摘要两计数并存，提示展示「稍后重试」（优先）
+        val dao = FakeEventDao()
+        dao.seed("00000000-0000-0000-0000-0000000000e1", fileName = "封面.png")
+        dao.seed("00000000-0000-0000-0000-0000000000e2", fileName = "正片.mp4")
+        var calls = 0
+        val sender = object : ViewEventSender {
+            override suspend fun send(event: PendingViewEventEntity): ViewEventSendResult {
+                calls += 1
+                return if (calls == 1) {
+                    ViewEventSendResult.Http(202, ViewEventOutcome.REMAPPED)
+                } else {
+                    ViewEventSendResult.IoError
+                }
+            }
+        }
+        val queue = ViewEventQueue(dao, sender, clock = FixedEventClock)
+        val (vm, _) = newViewModel(queue = queue)
+        advanceUntilIdle()
+
+        vm.syncEventsNow()
+        advanceUntilIdle()
+
+        assertEquals("网络不通，1 条稍后自动重试", vm.uiState.value.eventSyncNote)
+        assertEquals(1, vm.uiState.value.pendingEvents) // 退避行留队，合并计数不进提示
+    }
+
     // ---------- 自动备份（2026-09-16 用户反馈：prefs 回流；任务S：手动触发并入卡1「导出」） ----------
 
     @Test
@@ -334,11 +443,16 @@ class BackupViewModelTest {
         assertEquals("content://tree/primary%3Abackup", vm.uiState.value.autoBackupDirUri)
     }
 
-    /** 预置一条未上传事件（幂等键合规，避免触发懒回填路径干扰断言） */
-    private suspend fun FakeEventDao.seed(rowId: String) = insert(
+    /** 预置一条未上传事件（幂等键合规，避免触发懒回填路径干扰断言）；文件身份可选手填 */
+    private suspend fun FakeEventDao.seed(
+        rowId: String,
+        fileName: String = "",
+        relPath: String = "",
+    ) = insert(
         PendingViewEventEntity(
             assetId = "00000000-0000-0000-0000-000000000001", kind = "OPEN",
             startedAt = 1L, durationMs = 0L, sessionId = "s", createdAt = 1L, clientEventId = rowId,
+            fileName = fileName, relPath = relPath,
         ),
     )
 
@@ -436,10 +550,16 @@ private object FixedEventClock : EventClock {
     override fun now(): Long = 0L
 }
 
-/** 可编程发送器：恒 202 或恒 IO 失败（立即同步摘要语义断言用） */
-private class FakeEventSender(private val fail: Boolean) : ViewEventSender {
-    override suspend fun send(event: PendingViewEventEntity): ViewEventSendResult =
-        if (fail) ViewEventSendResult.IoError else ViewEventSendResult.Http(202)
+/** 可编程发送器：恒 202 / 恒 IO 失败 / 按序回放 outcome（ADR-0037 跨库合并提示断言用） */
+private class FakeEventSender(
+    private val fail: Boolean,
+    private val outcomes: ArrayDeque<ViewEventOutcome?> = ArrayDeque(),
+) : ViewEventSender {
+    override suspend fun send(event: PendingViewEventEntity): ViewEventSendResult = when {
+        fail -> ViewEventSendResult.IoError
+        outcomes.isNotEmpty() -> ViewEventSendResult.Http(202, outcomes.removeFirst())
+        else -> ViewEventSendResult.Http(202)
+    }
 }
 
 /** 自动备份持久化替身（2026-09-16 用户反馈）：内存态 DataStore，写回即发射（UI 跟随流语义） */

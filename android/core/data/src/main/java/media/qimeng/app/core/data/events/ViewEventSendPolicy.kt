@@ -5,11 +5,32 @@ package media.qimeng.app.core.data.events
  * 2xx 全部经此透传（协议只声明 202，非 202 的 2xx 按「未声明确认」处理，见分类表）。
  */
 sealed interface ViewEventSendResult {
-    /** 服务端已给出 HTTP 状态码 */
-    data class Http(val statusCode: Int) : ViewEventSendResult
+    /**
+     * 服务端已给出 HTTP 状态码。
+     *
+     * @param outcome 服务端受理处置（ADR-0037；仅 2xx 且响应体可解析时有值）：
+     *   null = 旧服务端 202 空体 / 字段缺省 / 无法解析——**不得据此判失败**，
+     *   删行与计数的既有语义一字不变（null 与 [ViewEventOutcome.OK] 同口径不计）。
+     */
+    data class Http(val statusCode: Int, val outcome: ViewEventOutcome? = null) : ViewEventSendResult
 
     /** 没拿到状态码：IOException / 客户端构造失败等（含 SDK 对 1xx/3xx 抛的 UnsupportedOperationException） */
     data object IoError : ViewEventSendResult
+}
+
+/**
+ * 服务端受理处置（ADR-0037，EventsViewAccepted.outcome 的领域化）：
+ * 只用于 App 同步完成提示的计数展示，**不进发送裁决**（分类表只看状态码）。
+ */
+enum class ViewEventOutcome {
+    /** 本库直收 / 幂等命中 / 会话去重命中（未新增计数） */
+    OK,
+
+    /** assetId 未命中、按文件名兜底重映射到本库资产并计入统计（跨库合并） */
+    REMAPPED,
+
+    /** 未计入统计（assetId 不存在且无唯一文件名匹配——「已删资产迟到事件」既有口径） */
+    UNMATCHED,
 }
 
 /**

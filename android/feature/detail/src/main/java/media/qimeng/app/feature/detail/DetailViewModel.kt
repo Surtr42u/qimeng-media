@@ -7,10 +7,16 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.util.UUID
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import media.qimeng.app.core.data.repository.AuthorRepository
 import media.qimeng.app.core.data.repository.DetailRepository
 import media.qimeng.app.core.data.repository.FavoriteMutationTracker
@@ -139,6 +145,8 @@ class DetailViewModel @Inject constructor(
      * 出网补传由队列三通道异步完成）；失败静默 = 仅队列写失败时静默（打点尽力而为，
      * 不影响浏览主链路）。assetId 缺参（错误态）为 null：无资产可打点，reporter 不创建、
      * 一切入口无害跳过。
+     * ADR-0037：入队前先等详情就绪取文件身份（fileName/relPath）一并携带——open 事件在
+     * 详情加载完成前产生，跨库兜底重映射需要文件身份才有据可依（详见 report lambda）。
      */
     private val analyticsReporter: DirectAnalyticsReporter? = assetId?.let { id ->
         DirectAnalyticsReporter(
@@ -146,18 +154,50 @@ class DetailViewModel @Inject constructor(
             sessionIdProvider = { sessionId },
             report = { emission ->
                 viewModelScope.launch {
-                    runCatching {
-                        detailRepository.reportViewEvent(
-                            assetId = emission.assetId,
-                            kind = emission.kind,
-                            startedAtMs = emission.startedAtMs,
-                            sessionId = emission.sessionId,
-                            dwellSeconds = emission.dwellSeconds,
-                        )
-                    }.onFailure { /* 写队列失败才静默（打点尽力而为）；出网补传由队列负责 */ }
+                    // 文件身份等待（ADR-0037）：open 在详情加载完成前产生，等详情就绪再取
+                    // fileName/relPath 入队；等待有界（EVENT_IDENTITY_WAIT_MS）——超时按无身份
+                    // （''）入队=旧行为，绝不阻塞/拖死打点。startedAt 语义不变（事件产生时刻
+                    // 已定，等待只影响入队时机）；dwell/play 产生时详情已就绪，first() 立即
+                    // 命中当前状态、不会实际等待。
+                    val identity = try {
+                        withTimeoutOrNull(EVENT_IDENTITY_WAIT_MS) {
+                            uiState.mapNotNull { it.asset }.first()
+                        }
+                    } catch (e: CancellationException) {
+                        // 等待期间 VM 被销毁（用户详情未加载完即退出）：视图作用域取消不能连
+                        // 入队一起掐断——否则新路径比旧实现更早丢事件（打点尽力而为的「不丢」
+                        // 面回退）。非取消块内按无身份（''）补一次入队=旧行为等价，随后原样
+                        // 上抛取消，结构化取消语义不变（NonCancellable 只护这一小段）。
+                        withContext(NonCancellable) { enqueueViewEvent(emission, null) }
+                        throw e
+                    }
+                    enqueueViewEvent(emission, identity)
                 }
             },
         )
+    }
+
+    /**
+     * 上报一次浏览事件（ADR-0037 身份随行的单一出网调用点）：identity 为 null
+     * （等待超时/等待被取消的补入队）按无身份 '' 上报（旧行为等价）。抽成一处是因为
+     * 「超时」「取消补报」两条路径共用同一调用（相似逻辑禁止第二处手抄）。写队列失败
+     * 静默——打点尽力而为，出网补传由队列负责。
+     */
+    private suspend fun enqueueViewEvent(
+        emission: DirectAnalyticsReporter.ViewEventEmission,
+        identity: AssetDetail?,
+    ) {
+        runCatching {
+            detailRepository.reportViewEvent(
+                assetId = emission.assetId,
+                fileName = identity?.fileName.orEmpty(),
+                relPath = identity?.relPath.orEmpty(),
+                kind = emission.kind,
+                startedAtMs = emission.startedAtMs,
+                sessionId = emission.sessionId,
+                dwellSeconds = emission.dwellSeconds,
+            )
+        }.onFailure { /* 写队列失败才静默（打点尽力而为）；出网补传由队列负责 */ }
     }
 
     /**
@@ -795,5 +835,13 @@ class DetailViewModel @Inject constructor(
         private const val ERROR_MOVE_CONFLICT = "目标位置已有同名文件，请换个名字或目录"
         private const val ERROR_MOVE_FAILED = "整理失败："
         private const val ERROR_DELETE_ASSET = "移入回收站失败，请重试"
+
+        /**
+         * 文件身份等待上限（毫秒，ADR-0037）。为什么等：open 事件在详情加载完成前产生，
+         * 跨库兜底重映射需要事件产生时的文件身份（fileName/relPath），只有详情就绪才可得。
+         * 为什么有界：打点尽力而为——详情加载失败/超时（无身份）时按 '' 入队=旧行为，
+         * 绝不因等身份而阻塞或拖死打点（10s = 详情加载的宽裕上界；超时即放弃身份）。
+         */
+        internal const val EVENT_IDENTITY_WAIT_MS = 10_000L
     }
 }

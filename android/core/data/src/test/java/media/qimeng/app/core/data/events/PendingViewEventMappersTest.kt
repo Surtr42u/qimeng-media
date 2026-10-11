@@ -18,6 +18,8 @@ class PendingViewEventMappersTest {
         kind: String,
         durationMs: Long,
         startedAt: Long = STARTED_AT_MS,
+        fileName: String = "",
+        relPath: String = "",
     ) = PendingViewEventEntity(
         id = 7,
         assetId = ASSET_ID,
@@ -27,6 +29,8 @@ class PendingViewEventMappersTest {
         sessionId = SESSION_ID,
         createdAt = 1L,
         clientEventId = CLIENT_EVENT_ID,
+        fileName = fileName,
+        relPath = relPath,
     )
 
     @Test
@@ -75,6 +79,37 @@ class PendingViewEventMappersTest {
     fun `幂等键 - clientEventId 透传为协议 UUID（任务L L5）`() {
         val report = entity(kind = ViewEventKind.OPEN.name, durationMs = 0L).toSdkReport()
         assertEquals(UUID.fromString(CLIENT_EVENT_ID), report.clientEventId)
+    }
+
+    @Test
+    fun `文件身份 - 非空 fileName与relPath 透传（ADR-0037 跨库兜底重映射）`() {
+        val report = entity(
+            kind = ViewEventKind.OPEN.name,
+            durationMs = 0L,
+            fileName = "封面.png",
+            relPath = "相册/封面.png",
+        ).toSdkReport()
+        assertEquals("封面.png", report.fileName)
+        assertEquals("相册/封面.png", report.relPath)
+    }
+
+    @Test
+    fun `文件身份 - 空串归缺省null（未知或未携带不参与重映射，旧行为口径）`() {
+        val report = entity(kind = ViewEventKind.OPEN.name, durationMs = 0L).toSdkReport()
+        assertNull(report.fileName)
+        assertNull(report.relPath)
+    }
+
+    @Test
+    fun `文件身份 - relPath可独立缺省（仅文件名也参与无消歧的重映射）`() {
+        val report = entity(
+            kind = ViewEventKind.DWELL.name,
+            durationMs = 5000L,
+            fileName = "正片.mp4",
+        ).toSdkReport()
+        assertEquals("正片.mp4", report.fileName)
+        assertNull(report.relPath)
+        assertEquals(5.0, report.seconds!!, 1e-9)
     }
 
     private companion object {

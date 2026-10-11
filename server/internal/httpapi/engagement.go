@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"log/slog"
@@ -48,13 +49,29 @@ import (
 // 事件插入与 asset_daily_stats 累加在同一事务：物化表是事件流的缓存
 // （migrations/0005 表注释），半写状态会让统计口径漂移。
 //
-// 已删资产的迟到事件：事件入库、统计跳过、原样 202（与 rebuild 的 live
-// 过滤同口径，ADR-0005）——实现见下方 upsert 错误分支（2026-09-22）。
+// 已删资产的迟到事件：事件入库、统计跳过、202 outcome=unmatched（与 rebuild
+// 的 live 过滤同口径，ADR-0005）——实现见下方 upsert 错误分支（2026-09-22）。
+//
+// 跨库兜底重映射（ADR-0037，2026-10-11）：本地优先队列的事件可能被投递到
+// 与产生时不同的服务器（App「本机模式」→「NAS/PC」切换后同步），事件
+// assetId 属于源库、目标库不存在——旧行为事件入库但物化被外键拒绝，所有
+// JOIN assets 的口径（趋势/榜单/作者标签/App 统计页）都不显示，只有
+// overview.totalViews（直接数事件流）计入。修复：assetId 未命中且请求携带
+// fileName 时按文件名匹配本库资产（唯一命中，或经 relPath 精确等值消歧后
+// 唯一）→ 事件记入该资产并正常物化计统计（跨库合并，202 outcome=remapped）；
+// 零命中/仍歧义/未携带 → 维持「已删资产迟到事件」口径。歧义绝不猜测，
+// 宁少勿错——与 §10 备份导入的「同名多命中取最早」宽松兜底刻意不同：那是
+// legacy 批量通道的历史约束，实时通道从严。会话去重与幂等键口径不因重映射
+// 改变（去重键=重映射后的目标资产）。全部 202 出口都带响应体
+// EventsViewAccepted.outcome（旧客户端忽略响应体，行为不变）。
 //
 // 超函数警戒线（>100 行）理由：open/play/dwell 三类事件共用一个事务
 // 骨架（事件流+物化表原子性，见上），会话去重、幂等命中、已删资产迟到
 // 事件三条 202 短路径都内嵌在事务直线流里，拆子函数需把 tx/req/delta
-// 上下文传来传去；分支语义已由本头注释逐条承担。
+// 上下文传来传去；分支语义已由本头注释逐条承担。ADR-0037 的兜底重映射
+// 解析已拆出 resolveViewEventTarget（只读），但解析结果贯穿去重/插入/物化
+// 三个写出口、四个 202 出口各带 outcome，仍留在事务直线流内（再拆需把
+// targetID/outcome 上下文继续外传，收益为负）。
 func (s *Server) PostApiV1EventsView(w http.ResponseWriter, r *http.Request) {
 	var req gen.PostApiV1EventsViewJSONRequestBody
 	if !decodeJSON(w, r, &req) {
@@ -68,11 +85,21 @@ func (s *Server) PostApiV1EventsView(w http.ResponseWriter, r *http.Request) {
 	// 幂等键：uuid.Nil（未携带/旧格式）→ NULL 放行（见函数头注释），其余原样入库
 	clientEventID := sql.NullString{String: req.ClientEventId.String(), Valid: req.ClientEventId != uuid.Nil}
 
-	// open/play 会话去重：当日同会话已有同类事件 → 原样 202（幂等语义）
+	// 跨库兜底重映射（ADR-0037）：assetId 未命中本库时按 fileName 解析目标
+	// 资产（只读三步，见 resolveViewEventTarget）。解析出的目标 id 贯穿下方
+	// 全部写路径（会话去重/幂等插入/物化累加同用），去重键 = 目标资产。
+	assetID, remapped, err := s.resolveViewEventTarget(r.Context(), &req)
+	if err != nil {
+		s.internalErr(w, "解析浏览事件目标资产", err)
+		return
+	}
+
+	// open/play 会话去重：当日同会话已有同类事件 → 202 outcome=ok（幂等语义；
+	// 未新增计数，不虚报 remapped）
 	if req.Kind == gen.Open || req.Kind == gen.Play {
 		dayStart, dayEnd := localDayBoundsUTC(req.StartedAt)
 		exists, err := s.q.ExistsViewEventOnDay(r.Context(), db.ExistsViewEventOnDayParams{
-			AssetID:     req.AssetId.String(),
+			AssetID:     assetID,
 			Kind:        string(req.Kind),
 			SessionID:   req.SessionId,
 			StartedAt:   dayStart,
@@ -83,7 +110,7 @@ func (s *Server) PostApiV1EventsView(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if exists > 0 {
-			w.WriteHeader(http.StatusAccepted)
+			writeViewAccepted(w, gen.Ok)
 			return
 		}
 	}
@@ -97,7 +124,7 @@ func (s *Server) PostApiV1EventsView(w http.ResponseWriter, r *http.Request) {
 	defer func() { _ = tx.Rollback() }()
 	qtx := s.q.WithTx(tx)
 	inserted, err := qtx.InsertViewEventIdempotent(r.Context(), db.InsertViewEventIdempotentParams{
-		AssetID:       req.AssetId.String(),
+		AssetID:       assetID,
 		Kind:          string(req.Kind),
 		SessionID:     req.SessionId,
 		StartedAt:     startedAt,
@@ -116,16 +143,16 @@ func (s *Server) PostApiV1EventsView(w http.ResponseWriter, r *http.Request) {
 		// 0 行写入 = 幂等/去重命中，原样 202 但不重复计数——事务内零写入，
 		// 提交即空转；跳过物化累加（dwell 不重加秒、open/play 不重计）。
 		// 两条命中路径（migration 0010 client_event_id / 0014 会话日索引
-		// TOCTOU 兜底）响应语义一致：重发与竞态输家都拿到 202。
+		// TOCTOU 兜底）响应语义一致：重发与竞态输家都拿到 202 outcome=ok。
 		if err := tx.Commit(); err != nil {
 			s.internalErr(w, "提交浏览事件", err)
 			return
 		}
-		w.WriteHeader(http.StatusAccepted)
+		writeViewAccepted(w, gen.Ok)
 		return
 	}
 	var delta db.UpsertAssetDailyStatsParams
-	delta.AssetID = req.AssetId.String()
+	delta.AssetID = assetID
 	// 与插入侧 day 同一取值（0014 去重键与物化日同源，一个口径两处使用）
 	delta.Day = store.FormatDay(req.StartedAt)
 	switch req.Kind {
@@ -137,23 +164,24 @@ func (s *Server) PostApiV1EventsView(w http.ResponseWriter, r *http.Request) {
 		delta.BrowseSeconds = seconds.Int64
 	}
 	if err := qtx.UpsertAssetDailyStats(r.Context(), delta); err != nil {
-		// 已删资产的迟到事件（换库/重建后旧客户端补传的典型场景）：事件流
-		// 是真相源，孤儿事件照常入库（ADR-0005：view_events 无外键）；物化表
-		// 只收存活资产，跳过累加并原样 202——与 RebuildAssetDailyStatsFromEvents
-		// 的 live 过滤同口径。返回 202 而非 500 是客户端「2xx 才删本地暂存」
-		// 约定的安全前提：500 会让离线队列对一条孤儿事件无限重试
-		//（2026-09-22 fnOS 虚拟机彩排实测：旧标签页重放 44 次）。
-		// 错误判定走 isSQLiteConstraint 的错误码分类（errors.go 单一来源；
-		// 原字符串匹配惯例已于 2026-10 治理批收敛，sqlc 查询层不区分约束
-		// 种类、由驱动错误码承载）。
+		// 资产不存在（已删资产的迟到事件，或 ADR-0037 重映射未命中的孤儿）：
+		// 事件流是真相源，孤儿事件照常入库（ADR-0005：view_events 无外键）；
+		// 物化表只收存活资产，跳过累加并 202 outcome=unmatched——与
+		// RebuildAssetDailyStatsFromEvents 的 live 过滤同口径。返回 202 而非
+		// 500 是客户端「2xx 才删本地暂存」约定的安全前提：500 会让离线队列
+		// 对一条孤儿事件无限重试（2026-09-22 fnOS 虚拟机彩排实测：旧标签页
+		// 重放 44 次）。错误判定走 isSQLiteConstraint 的错误码分类
+		//（errors.go 单一来源；原字符串匹配惯例已于 2026-10 治理批收敛，
+		// sqlc 查询层不区分约束种类、由驱动错误码承载）。
 		if isSQLiteConstraint(err, sqliteCodeConstraintForeignKey) {
 			if err := tx.Commit(); err != nil {
 				s.internalErr(w, "提交浏览事件", err)
 				return
 			}
-			slog.Warn("浏览事件资产已删除：事件入库、统计跳过",
-				"assetId", req.AssetId.String(), "kind", string(req.Kind))
-			w.WriteHeader(http.StatusAccepted)
+			slog.Warn("浏览事件未计入统计：资产不存在或未匹配到本库（事件入库、统计跳过）",
+				"assetId", req.AssetId.String(), "fileName", stringValue(req.FileName),
+				"kind", string(req.Kind))
+			writeViewAccepted(w, gen.Unmatched)
 			return
 		}
 		s.internalErr(w, "累加按天统计", err)
@@ -163,7 +191,71 @@ func (s *Server) PostApiV1EventsView(w http.ResponseWriter, r *http.Request) {
 		s.internalErr(w, "提交浏览事件", err)
 		return
 	}
-	w.WriteHeader(http.StatusAccepted)
+	// 计入了就报计入类：重映射成功报 remapped（跨库合并发生），其余成功报
+	// ok；只在未计入（上方 FK 失败分支）时报 unmatched。幂等/去重命中在
+	// 插入前就已返回，不会走到这里虚报 remapped。
+	outcome := gen.Ok
+	if remapped {
+		outcome = gen.Remapped
+		slog.Info("浏览事件兜底重映射", "assetId", req.AssetId.String(),
+			"fileName", stringValue(req.FileName), "localAssetId", assetID)
+	}
+	writeViewAccepted(w, outcome)
+}
+
+// resolveViewEventTarget 解析浏览事件应记入的目标资产 id（ADR-0037 跨库兜底
+// 重映射的只读第一步）。返回 (targetID, remapped, err)：
+//   - assetId 命中本库 → (原 id, false)——带 fileName 也不重映射；
+//   - 未命中且携带非空 fileName → 按文件名精确匹配：
+//     唯一命中，或（多命中时）经 relPath 精确等值消歧后唯一 → (命中的本库 id, true)；
+//     零命中/仍歧义 → (原 id, false)（走上层「已删资产迟到事件」口径）；
+//   - 未命中且无 fileName → (原 id, false)。
+//
+// 歧义绝不猜测、宁少勿错：与 §10 备份导入的「同名多命中取最早入库行」宽松
+// 兜底刻意不同（那是 legacy 批量通道的历史约束，实时通道从严）。file_name
+// 无索引——ListAssetIDsByFileName 的全表扫描只在「assetId 未命中」的罕见
+// 路径发生（跨库切换后的首轮补传），属可接受成本，不为它单独加索引。
+func (s *Server) resolveViewEventTarget(ctx context.Context, req *gen.PostApiV1EventsViewJSONRequestBody) (string, bool, error) {
+	assetID := req.AssetId.String()
+	exists, err := s.q.AssetExists(ctx, assetID)
+	if err != nil {
+		return assetID, false, err
+	}
+	if exists > 0 || req.FileName == nil || *req.FileName == "" {
+		return assetID, false, nil
+	}
+	rows, err := s.q.ListAssetIDsByFileName(ctx, *req.FileName)
+	if err != nil {
+		return assetID, false, err
+	}
+	matched := rows
+	if len(matched) > 1 && req.RelPath != nil && *req.RelPath != "" {
+		filtered := make([]db.ListAssetIDsByFileNameRow, 0, len(matched))
+		for _, row := range matched {
+			if row.RelPath == *req.RelPath {
+				filtered = append(filtered, row)
+			}
+		}
+		matched = filtered
+	}
+	if len(matched) == 1 {
+		return matched[0].AssetID, true, nil
+	}
+	return assetID, false, nil
+}
+
+// writeViewAccepted 写浏览事件受理响应（202 + EventsViewAccepted body，
+// ADR-0037）：所有 202 出口统一带 outcome，旧客户端忽略响应体、行为不变。
+func writeViewAccepted(w http.ResponseWriter, outcome gen.EventsViewAcceptedOutcome) {
+	writeJSON(w, http.StatusAccepted, gen.EventsViewAccepted{Outcome: &outcome})
+}
+
+// stringValue 解引用可空字符串（slog 字段用；nil → 空串，避免 nil 解引用）。
+func stringValue(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 // PutApiV1AssetsAssetIdLike 点赞（toggle）。

@@ -48,6 +48,29 @@ class ViewEventReportWireTest {
     }
 
     @Test
+    fun `文件身份随 wire 透传 - 非空上报，空值不进 JSON（ADR-0037）`() {
+        val base = SdkDetailMappers.toViewEventReport(
+            "11111111-1111-1111-1111-111111111111",
+            ViewEventKind.OPEN,
+            startedAtMs = 1_000L,
+            sessionId = "wire-1",
+            clientEventId = "00000000-0000-0000-0000-00000000cba1",
+            dwellSeconds = null,
+        )
+        val adapter = Serializer.moshi.adapter(ViewEventReport::class.java)
+
+        // 携带身份：字段进请求体（服务端 assetId 未命中时兜底重映射的唯一依据）
+        val json = adapter.toJson(base.copy(fileName = "封面.png", relPath = "相册/封面.png"))
+        assertTrue("fileName 应在请求体: $json", json.contains("\"fileName\":\"封面.png\""))
+        assertTrue("relPath 应在请求体: $json", json.contains("\"relPath\":\"相册/封面.png\""))
+
+        // 无身份：null 缺省不进 JSON（moshi 默认不序列化 null；'' → null 的换算在映射层）
+        val bare = adapter.toJson(base)
+        assertFalse("空身份不得出现字段: $bare", bare.contains("fileName"))
+        assertFalse("空身份不得出现字段: $bare", bare.contains("relPath"))
+    }
+
+    @Test
     fun `progress positionSeconds 序列化为 JSON 数字不带引号`() {
         val update = SdkDetailMappers.toProgressUpdate(125.75)
         val json = Serializer.moshi.adapter(ProgressUpdate::class.java).toJson(update)

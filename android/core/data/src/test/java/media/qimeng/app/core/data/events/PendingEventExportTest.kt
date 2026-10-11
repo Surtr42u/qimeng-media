@@ -54,6 +54,25 @@ class PendingEventExportTest {
     }
 
     @Test
+    fun `文件身份导出 - 非空带 fileName与relPath，空串不带（与 toSdkReport 同口径）`() {
+        val withIdentity = PendingViewEventEntity(
+            id = 1, assetId = "00000000-0000-0000-0000-000000000003",
+            kind = ViewEventKind.OPEN.name, startedAt = 1_700_000_000_000L, durationMs = 0L,
+            sessionId = "sess-3", createdAt = 1L, clientEventId = "00000000-0000-0000-0000-00000000cba3",
+            fileName = "封面.png", relPath = "相册/封面.png",
+        )
+        val json = listOf(withIdentity).toPendingExportJson()
+        assertTrue("身份应随导出（ADR-0037 手补传同源）: $json", json.contains("\"fileName\":\"封面.png\""))
+        assertTrue(json.contains("\"relPath\":\"相册/封面.png\""))
+
+        // '' = 未知/未携带（2→3 迁移存量行同款）：字段不带，导出物仍为可直接 POST 的请求体
+        val withoutIdentity = withIdentity.copy(id = 2, fileName = "", relPath = "")
+        val bareJson = listOf(withoutIdentity).toPendingExportJson()
+        assertTrue("未知身份不得带空串字段: $bareJson", !bareJson.contains("fileName"))
+        assertTrue(!bareJson.contains("relPath"))
+    }
+
+    @Test
     fun `多行导出 - 数组形且保序，空队列为空数组`() {
         val rows = listOf(
             PendingViewEventEntity(

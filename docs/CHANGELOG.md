@@ -11,6 +11,35 @@
 
 
 
+## fix(server): 作者来源区形态归一——单个「来源」标记行 + 出处并排（作者 126「两个来源」事故）（2026-10-11 第五百二十七笔）
+
+执行 AI：DeepSeek-V4.1-Flash（主代理）
+
+- **背景（用户实测事故）**：用户核对桌面镜像《作者总表.txt》发现作者 126 `hornyherring` 的来源区写成两行标记（`来源  hanime1` / `来源  小红车`），而全库其余块都是手写形态「一个「来源」标记行 + 多个出处词两空格并排」（如 `来源  kemono  小红车  老王论坛`）。实查证据：线上片段 127 个作者块中，来源标记行 >1 的**仅此 1 块**（adb 真机侧同名 TXT 亦同）。
+- **根因（写入端按词补标记行）**：`authoring.ReplaceSources`（PUT /authors/{id}/sources 的 `mode=replace`，编辑页语义）对每个来源词各写一行 `来源  <词>`；`AppendAuthorBlock`（程序化新建块）同款逐词循环。两条路径都会造出多个「来源」标记行，与手写清单形态不一致；解析端 `platformName` 又把标记行同行内容整体当一个词，使「并排多出处」在词级读不回（来源词预填统计对并排形态失效）。
+- **修复（写入端归一 + 解析端词级拆分）**：
+  - 新增 `authoring.replaceSourceRegion`（**唯一实现**，三条写入路径共用）：来源区整段重排为单标记行 + 出处两空格并排；`words` 空则来源区整段移除（标记行不残留）；落点=既有来源区原位（首个被删区域行）/无来源区则「作品」标记行前/裸块则编号行后。
+  - `ReplaceSources` 复用该实现；`AppendSources` 改**词级**并入后整段重排（既有词在前、新词并排在后，无新词零写入幂等——ADR-0023「并入去重、永不覆盖既有来源」的词集语义不变）；`AppendAuthorBlock` 新建块只写一行标记。
+  - `ParseAuthorBlocks` 的来源标记行改按两空格拆分（与编号行别名同分隔规范）→ `来源  a  b` 读回 `["a","b"]`，保证「写出 → 读回」**词级恒等**，并让词表预填的「每个词被多少不同作者引用」统计对并排形态生效；标记行独占一行时后续裸行仍逐行收词（旧形态兼容读入）。
+  - 顺带收敛：来源区夹在两个「作品」标记之间的病态布局，append 旧行为会在首个「作品」标记前**另开第二个来源区**，现改为整段重排为单区。
+- **自测**：`go build ./...` 通过；`internal/authoring` 全绿——新增 `TestSourceRegionCanonicalForm`（4 子例：126 事故原文替换后收敛为单标记行、并入新词单行且词级去重、新建块多词仅一行标记、既有并排形态无新词零写入）与 `TestParseAuthorBlocksSourcesWords`（6 例：并排拆词/裸行收词/`出处` 同义/历史双标记行兼容读入/含单空格出处词不拆/无来源区）；6 个锁定旧形态的既有用例同步更新（`TestAppendSources` 5 例 + `TestAppendSourcesSandwichedSourcesRegion` 1 例，后者加「来源标记行数 == 1」断言）。`go test ./...` 仅 `TestLibraryRevisionBumpOnScanFinish` 失败一次 = `t.TempDir` 清理与缩略图后台任务竞态（该单测复跑 3 次全过，与本次改动无关）。
+- **文档**：DOMAIN_RULES §6（新增「来源区形态」规范 + 文头记档）、CHANGELOG（本笔）。
+- **存量数据待办（用户拍板后执行）**：线上片段作者 126 仍是两行标记——需待服务端以本次改动重启后，经 `PUT /authors/{id}/sources`（`mode=replace`，词表原样回传）走正规端点收敛，并触发作者总表镜像刷新把桌面文件对齐（**不改运行中的库、不手改 kv_settings**）。
+
+## feat(api+server+app): 跨库浏览记录兜底重映射——浏览事件增可选文件身份（fileName/relPath），同步通道按文件名并入本库统计（2026-10-11 第五百二十六笔）
+
+执行 AI：DeepSeek-V4.1-Flash（主代理；协议/服务端/App 执行子代理，同模型）
+
+- **背景（用户实测事故）**：App「同步浏览数据」把本地优先队列的浏览事件按**原 assetId** 直发当前连接的服务器；用户「本机模式→NAS/PC」切换后同步时，事件的 assetId 属于源库、目标库不存在 → 服务端旧行为=事件入库 `view_events`（真相源无外键）、物化表 `asset_daily_stats` 因外键拒绝跳过、202 返回（engagement.go「已删资产迟到事件」分支）→ 所有 JOIN assets 的口径（趋势/榜单/作者标签/App 统计页）都不显示，只有 overview.totalViews（直接数事件流）计入——表现为「同步记录不显示」+ 桌面端计数虚高（同一批数据两个口径劈叉）。
+- **实查证据**：PC 库实查 273 条此类孤儿事件（`view_events` 有行、`assets` 无对应 assetId）。
+- **协议（ADR-0037）**：`ViewEventReport` 增可选 `fileName`/`relPath` 文件身份；新增 `EventsViewAccepted`（`outcome`: ok/remapped/unmatched）作为 `/events/view` 202 响应体（字段缺省/无法解析按 ok 处理，客户端不得据此判定失败）；端点 description 补兜底重映射语义。`make sdk` 三端重生成 + `api/sdk.lock` 同批更新（255 项）。
+- **服务端**：`PostApiV1EventsView` 增只读解析（`resolveViewEventTarget`）——assetId 命中本库 → 原路径（ok，带 fileName 也不重映射）；未命中且带 fileName → 按文件名匹配本库（**唯一命中**，或经 relPath **精确等值**消歧后唯一）→ 事件/物化/会话去重全走重映射后目标 id（`outcome=remapped`，跨库合并）；零命中/仍歧义/未携带 → 维持「已删资产迟到事件」口径（事件入库、统计跳过、`outcome=unmatched`）。**歧义不猜、宁少勿错**——与 §10 导入通道「同名多命中取最早」刻意不同（实时通道从严）。查询侧新增 `AssetExists`/`ListAssetIDsByFileName`（sqlc 生成物入库）；不加索引、不加 migration（全表扫描只在 assetId 未命中的罕见路径发生，函数注释说明）。所有 202 出口统一带响应体。
+- **App**：事件队列加 `fileName`/`relPath` 列（Room 2→3 迁移）、浏览时携带文件身份、同步完成如实提示「N 条已按文件名并入 / M 条未匹配未计入统计」。（App 端实现由执行子代理完成，主代理与对抗审查复核后返工收口，见下。）
+- **兼容性与部署顺序**：旧客户端+新服务端——旧格式请求 fileName/relPath 缺省即不参与重映射，行为同旧（响应体被忽略）；新 App+旧服务端——服务端 JSON 解码不拒未知字段，fileName/relPath 被忽略、行为同旧。**部署顺序建议：先重部署 NAS 服务端，再装新 APK**（否则跨库并入不生效，App 端提示按旧口径）。
+- **自测**：server `gofmt -l .` 空、`go build ./...` 通过、`go test ./...` 全绿（新增 `engagement_remap_test.go` 6 用例：唯一命中重映射+幂等重发不双计、同名歧义 unmatched、relPath 消歧、assetId 命中不重映射、无 fileName unmatched、重映射后会话去重按目标生效；既有 engagement 用例全数保持通过）；`make sdk` 成功且 `api/sdk.lock` 更新（255 项）；Android `:core:data`/`:feature:detail`/`:feature:manage` 单测全绿 + `:app:assembleDebug` 通过；Web `tsc -b` 通过（生成物变更无手写消费面）。
+- **对抗审查与返工**：reviewer 子代理独立复跑（go 三连 + Android `--rerun-tasks` 重跑 + sdk.lock 逐条 sha256 验真）总评「可交付」；P2 返工收口——等身份期间 VM 销毁（详情未加载完即退出）改 `NonCancellable` 补入队：取消语义原样穿透、open 事件不因等待窗口比旧实现更早丢（新增单测「等身份期间 VM 销毁仍按无身份补入队」）；P3 并入：`postViewEvent`/`postDwellEvent` 收口复用 `postViewReport`（同一 POST 骨架禁第二处手抄）、一处行折叠格式清偿。审查登记两条固有盲区：Room 2→3 无 MigrationTestHelper 真机升级实测（3.json 与生成物 identityHash 逐字一致 + 1→2 同款先例，风险低）、`SdkViewEventSender` outcome 解析无 JVM 单测（旧服务端空体→null 由生成 SDK `ApiClient.responseBody` 空体分支代码级成立）。
+- **文档**：openapi.yaml、sdk.lock、ADR-0037（新）、ADR INDEX、DOMAIN_RULES §5（含与 §10 差异）、GUIDE_API、CHANGELOG（本笔）、HANDOVER。
+
 ## fix(server+web): 跨盘回收站/本机同步搬移在 Windows 双盘布局下全失败——跨挂载点判定改 errno 主判（含 Windows 文本）；镜像挂点补齐；Web 错误提示不再落 [object Object]（2026-10-11 第五百二十五笔）
 
 执行 AI：DeepSeek-V4.1-Flash（主代理）

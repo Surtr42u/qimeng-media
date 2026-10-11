@@ -121,16 +121,21 @@ class SdkDetailRepository @Inject constructor(
      * dwell 毫秒 = 停留秒×1000（队列口径存 ms，出网时 movePointLeft(3) 无损换算回秒）；
      * open/play 恒 0 不带 seconds。写失败原样抛异常：调用方（DetailViewModel）据此收窄
      * 静默口径为「写队列失败才静默」。
+     * ADR-0037：fileName/relPath 随行入队（文件身份来源 = 调用方所在详情页的
+     * AssetDetail——事件产生时详情的展示文件名与库内相对路径），出网时随 ViewEventReport
+     * 上报，服务端 assetId 未命中时按文件名兜底重映射（跨库合并：本机模式→NAS 等）。
      */
     override suspend fun reportViewEvent(
         assetId: String,
+        fileName: String,
+        relPath: String,
         kind: ViewEventKind,
         startedAtMs: Long,
         sessionId: String,
         dwellSeconds: Long?,
     ) {
         val durationMs = (dwellSeconds?.coerceAtLeast(MIN_DWELL_SECONDS) ?: MIN_DWELL_SECONDS) * MS_PER_SECOND
-        viewEventQueue.enqueue(assetId, kind, startedAtMs, durationMs, sessionId)
+        viewEventQueue.enqueue(assetId, fileName, relPath, kind, startedAtMs, durationMs, sessionId)
         logRequest("enqueue /events/view", "kind=$kind seconds=$dwellSeconds session=$sessionId")
         // 通道①：写入即入队补传（KEEP 合并瞬时多次触发；断网时任务照样跑、发送失败留在队列）
         syncScheduler.requestSyncNow()

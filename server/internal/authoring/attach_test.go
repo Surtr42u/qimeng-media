@@ -22,6 +22,85 @@ func blockOf(t *testing.T, content, authorID string) AuthorBlock {
 	return AuthorBlock{}
 }
 
+// countSourceMarkers 数内容里「来源/出处」标记行的行数（来源区规范形态恒
+// 为 1：单个标记行 + 全部出处词两空格并排；126 号事故即多标记行）。
+func countSourceMarkers(content string) int {
+	n := 0
+	for _, raw := range strings.Split(content, "\n") {
+		if isSourcesMarker(strings.TrimSpace(raw)) {
+			n++
+		}
+	}
+	return n
+}
+
+// ---------- 来源区规范形态（126 号事故回归） ----------
+//
+// 事故现场：作者 126 的来源区被写成两个「来源」标记行
+// （`来源  hanime1` + `来源  小红车`），而作者总表全库其余块都是
+// 「一个标记行 + 出处并排」。根因是来源区写入端按词逐个补标记行。
+// 以下用例把规范形态钉死：任何写入路径的产物都只有一行标记。
+
+func TestSourceRegionCanonicalForm(t *testing.T) {
+	t.Run("整体替换_多词并排为单标记行", func(t *testing.T) {
+		// 事故内容原样喂回替换（词集合不变）也必须收敛成规范形态。
+		content := "126  hornyherring\n来源  hanime1\n来源  小红车\n作品\n天使 15.mp4\n"
+		got, found := ReplaceSources(content, "hornyherring", []string{"hanime1", "小红车"})
+		if !found {
+			t.Fatal("found=false, want true")
+		}
+		want := "126  hornyherring\n来源  hanime1  小红车\n作品\n天使 15.mp4\n"
+		if got != want {
+			t.Errorf("内容不符:\ngot:\n%q\nwant:\n%q", got, want)
+		}
+		if n := countSourceMarkers(got); n != 1 {
+			t.Errorf("来源标记行数=%d, want 1", n)
+		}
+		if b := blockOf(t, got, "hornyherring"); !reflect.DeepEqual(b.Sources, []string{"hanime1", "小红车"}) {
+			t.Errorf("Sources=%v, want [hanime1 小红车]（往返恒等）", b.Sources)
+		}
+	})
+
+	t.Run("并入新词_收敛为单标记行且词级去重", func(t *testing.T) {
+		content := "126  hornyherring\n来源  hanime1\n来源  小红车\n作品\n天使 15.mp4\n"
+		got, found := AppendSources(content, "hornyherring", []string{"小红车", "老王论坛"})
+		if !found {
+			t.Fatal("found=false, want true")
+		}
+		want := "126  hornyherring\n来源  hanime1  小红车  老王论坛\n作品\n天使 15.mp4\n"
+		if got != want {
+			t.Errorf("内容不符:\ngot:\n%q\nwant:\n%q", got, want)
+		}
+		if n := countSourceMarkers(got); n != 1 {
+			t.Errorf("来源标记行数=%d, want 1", n)
+		}
+		if b := blockOf(t, got, "hornyherring"); !reflect.DeepEqual(b.Sources, []string{"hanime1", "小红车", "老王论坛"}) {
+			t.Errorf("Sources=%v, want [hanime1 小红车 老王论坛]（既有词不丢、新词不重）", b.Sources)
+		}
+	})
+
+	t.Run("新建块_多词只写一行标记", func(t *testing.T) {
+		got := AppendAuthorBlock("", []string{"新作者"}, []string{"site-a", "site-b"}, []string{"a.png"})
+		want := "1  新作者\n来源  site-a  site-b\n作品\na.png\n"
+		if got != want {
+			t.Errorf("内容不符:\ngot:\n%q\nwant:\n%q", got, want)
+		}
+		if n := countSourceMarkers(got); n != 1 {
+			t.Errorf("来源标记行数=%d, want 1", n)
+		}
+		if b := blockOf(t, got, "新作者"); !reflect.DeepEqual(b.Sources, []string{"site-a", "site-b"}) {
+			t.Errorf("Sources=%v, want [site-a site-b]", b.Sources)
+		}
+	})
+
+	t.Run("既有并排形态_并入已存在词零写入", func(t *testing.T) {
+		content := "1  aaa\n来源  site-a  site-b\n作品\na.png\n"
+		if got, _ := AppendSources(content, "aaa", []string{"site-b"}); got != content {
+			t.Errorf("无新词应零写入:\ngot:\n%q\nwant:\n%q", got, content)
+		}
+	})
+}
+
 // ---------- AppendWorks ----------
 
 func TestAppendWorks(t *testing.T) {
@@ -160,19 +239,19 @@ func TestAppendSources(t *testing.T) {
 		wantOK  bool
 	}{
 		{
-			name:    "出处带平台名形态_新行并入来源区",
+			name:    "出处标记行并入_归一为规范来源行",
 			content: "1  that_maskey\n出处  site-a\n作品\na.png\n",
 			author:  "that_maskey",
 			sources: []string{"pixiv"},
-			want:    "1  that_maskey\n出处  site-a\npixiv\n作品\na.png\n",
+			want:    "1  that_maskey\n来源  site-a  pixiv\n作品\na.png\n",
 			wantOK:  true,
 		},
 		{
-			name:    "裸来源标记_既有行去重只补新行",
+			name:    "裸来源标记_既有词去重只补新词",
 			content: "1  aaa\n来源\nsite-a\n作品\na.png\n",
 			author:  "aaa",
 			sources: []string{"site-a", "site-f"},
-			want:    "1  aaa\n来源\nsite-a\nsite-f\n作品\na.png\n",
+			want:    "1  aaa\n来源  site-a  site-f\n作品\na.png\n",
 			wantOK:  true,
 		},
 		{
@@ -180,23 +259,23 @@ func TestAppendSources(t *testing.T) {
 			content: "1  aaa\n来源\nsite-a\n",
 			author:  "aaa",
 			sources: []string{"pixiv"},
-			want:    "1  aaa\n来源\nsite-a\npixiv\n",
+			want:    "1  aaa\n来源  site-a  pixiv\n",
 			wantOK:  true,
 		},
 		{
-			name:    "裸块_编号行后补来源标记",
+			name:    "裸块_编号行后开规范来源区",
 			content: "1  aaa\n",
 			author:  "aaa",
 			sources: []string{"site-a"},
-			want:    "1  aaa\n来源\nsite-a\n",
+			want:    "1  aaa\n来源  site-a\n",
 			wantOK:  true,
 		},
 		{
-			name:    "有作品区无来源区_标记加行插在作品前",
+			name:    "有作品区无来源区_规范行插在作品前",
 			content: "1  aaa\n作品\na.png\n",
 			author:  "aaa",
 			sources: []string{"site-a"},
-			want:    "1  aaa\n来源\nsite-a\n作品\na.png\n",
+			want:    "1  aaa\n来源  site-a\n作品\na.png\n",
 			wantOK:  true,
 		},
 		{
@@ -246,9 +325,9 @@ func TestAppendSources(t *testing.T) {
 	}
 }
 
-// 来源区夹在两个作品标记之间的病态布局：插裸行会被区域状态吞掉，必须
-// 自带「来源」标记行（在首个「作品」标记前新开来源区，来源是集合语义，
-// 行序无所谓）。
+// 来源区夹在两个作品标记之间的病态布局：区域行整体重排为规范来源行
+// （整段删除 + 原位写回，不再新开第二个来源区），既有词与新增词并排且
+// 只有一个「来源」标记行（126 号事故的回归面：多标记行是不允许的形态）。
 func TestAppendSourcesSandwichedSourcesRegion(t *testing.T) {
 	content := "1  aaa\n作品\nx.png\n来源\nsite-a\n作品\ny.png\n"
 	got, found := AppendSources(content, "aaa", []string{"site-f"})
@@ -256,8 +335,11 @@ func TestAppendSourcesSandwichedSourcesRegion(t *testing.T) {
 		t.Fatal("found=false, want true")
 	}
 	block := blockOf(t, got, "aaa")
-	if !reflect.DeepEqual(block.Sources, []string{"site-f", "site-a"}) {
-		t.Errorf("Sources=%v, want [site-f site-a]\n内容:\n%s", block.Sources, got)
+	if !reflect.DeepEqual(block.Sources, []string{"site-a", "site-f"}) {
+		t.Errorf("Sources=%v, want [site-a site-f]（既有词在前、新增词并排在后）\n内容:\n%s", block.Sources, got)
+	}
+	if n := countSourceMarkers(got); n != 1 {
+		t.Errorf("来源标记行数=%d, want 1（来源区规范形态只有一行标记）\n内容:\n%s", n, got)
 	}
 	if !reflect.DeepEqual(block.Works, []string{"x.png", "y.png"}) {
 		t.Errorf("Works=%v, want [x.png y.png]（既有作品行不得被破坏）", block.Works)

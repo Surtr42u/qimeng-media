@@ -10,6 +10,22 @@ import (
 	"database/sql"
 )
 
+const assetExists = `-- name: AssetExists :one
+SELECT CAST(COUNT(*) AS INTEGER) FROM assets WHERE asset_id = ?
+`
+
+// Cross-library view-event remap fallback (ADR-0037): does the reported
+// asset_id exist in this library? Only the rare miss path (locally queued
+// events delivered to a different server) reaches the file-name fallback
+// below. CAST keeps the sqlc type INTEGER-consistent (no COUNT(*) i64
+// special case at the call site).
+func (q *Queries) AssetExists(ctx context.Context, assetID string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, assetExists, assetID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const countEnabledLibraryAssets = `-- name: CountEnabledLibraryAssets :one
 SELECT COUNT(*) AS total FROM assets a
 JOIN libraries l ON l.id = a.library_id
@@ -92,6 +108,47 @@ func (q *Queries) GetAssetByPath(ctx context.Context, arg GetAssetByPathParams) 
 		&i.TagSetUpdatedAt,
 	)
 	return i, err
+}
+
+const listAssetIDsByFileName = `-- name: ListAssetIDsByFileName :many
+SELECT asset_id, rel_path FROM assets WHERE file_name = ?
+`
+
+type ListAssetIDsByFileNameRow struct {
+	AssetID string
+	RelPath string
+}
+
+// Remap fallback candidates by exact display file name (ADR-0037). The
+// caller (engagement.go) uses the result strictly: exactly one hit ->
+// remap; several hits + a rel_path -> exact-equality disambiguation;
+// zero hits or remaining ambiguity -> no remap (the old "late event for a
+// deleted asset" lane). Deliberately unindexed: a full scan only ever
+// happens when the asset_id missed, which is rare, and adding an index
+// for this fallback alone is not worth it. Unlike the legacy import
+// channel (ListAssetsByFileName, earliest-first bail), the realtime path
+// never guesses.
+func (q *Queries) ListAssetIDsByFileName(ctx context.Context, fileName string) ([]ListAssetIDsByFileNameRow, error) {
+	rows, err := q.db.QueryContext(ctx, listAssetIDsByFileName, fileName)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAssetIDsByFileNameRow
+	for rows.Next() {
+		var i ListAssetIDsByFileNameRow
+		if err := rows.Scan(&i.AssetID, &i.RelPath); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listAssetsAfterCursor = `-- name: ListAssetsAfterCursor :many

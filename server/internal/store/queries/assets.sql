@@ -114,3 +114,23 @@ FROM assets a
 JOIN libraries l ON l.id = a.library_id
 WHERE l.enabled = 1
 ORDER BY a.created_at ASC, a.asset_id ASC;
+
+-- name: AssetExists :one
+-- Cross-library view-event remap fallback (ADR-0037): does the reported
+-- asset_id exist in this library? Only the rare miss path (locally queued
+-- events delivered to a different server) reaches the file-name fallback
+-- below. CAST keeps the sqlc type INTEGER-consistent (no COUNT(*) i64
+-- special case at the call site).
+SELECT CAST(COUNT(*) AS INTEGER) FROM assets WHERE asset_id = ?;
+
+-- name: ListAssetIDsByFileName :many
+-- Remap fallback candidates by exact display file name (ADR-0037). The
+-- caller (engagement.go) uses the result strictly: exactly one hit ->
+-- remap; several hits + a rel_path -> exact-equality disambiguation;
+-- zero hits or remaining ambiguity -> no remap (the old "late event for a
+-- deleted asset" lane). Deliberately unindexed: a full scan only ever
+-- happens when the asset_id missed, which is rare, and adding an index
+-- for this fallback alone is not worth it. Unlike the legacy import
+-- channel (ListAssetsByFileName, earliest-first bail), the realtime path
+-- never guesses.
+SELECT asset_id, rel_path FROM assets WHERE file_name = ?;

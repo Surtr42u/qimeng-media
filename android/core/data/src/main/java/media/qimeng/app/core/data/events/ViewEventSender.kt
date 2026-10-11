@@ -8,7 +8,10 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import media.qimeng.app.core.data.repository.BusinessApiFactory
+import media.qimeng.sdk.infrastructure.ApiResponse
 import media.qimeng.sdk.infrastructure.ResponseType
+import media.qimeng.sdk.infrastructure.Success
+import media.qimeng.sdk.models.EventsViewAccepted
 
 /**
  * 队列出网端口（M4-4 立接口；任务L L5 起语义随「本地优先」口径）：drain 逐条发送一枚队列行。
@@ -25,6 +28,8 @@ interface ViewEventSender {
  * 生成 SDK 实现（drain 的内部出网路径——M4-3 直连上报的 apiV1EventsViewPost 调用收编至此，
  * 冻结口径「直连实现改为 drain 内部出网路径」）。用 WithHttpInfo 变体拿真实状态码喂分类表
  * （协议只认 202，不能把「没抛异常」笼统当成功）。每个出网请求打一行 logcat（文本证据协议）。
+ * ADR-0037：2xx 时顺带解析响应体 outcome（跨库兜底重映射的处置透出，仅供同步完成提示计数）
+ * ——旧服务端 202 空体 → SDK 容错给出 data=null → outcome=null，照常确认删行（2xx 语义不变）。
  */
 @Singleton
 class SdkViewEventSender @Inject constructor(
@@ -42,9 +47,14 @@ class SdkViewEventSender @Inject constructor(
                 val response = apiFactory.create()
                     .apiV1EventsViewPostWithHttpInfo(event.toSdkReport())
                 when (response.responseType) {
-                    // Success/ClientError/ServerError 都带真实 statusCode 进分类表；
-                    // Informational/Redirection 客户端不支持（SDK 契约），折进 IO 口径保守重试
-                    ResponseType.Success,
+                    // Success 顺带解析 2xx 响应体 outcome（ADR-0037；旧服务端/空体/解析
+                    // 失败 → null，仅新服务端可解析出值）；ClientError/ServerError 无受理
+                    // 语义（不是 2xx，不解析）；三类都带真实 statusCode 进分类表
+                    ResponseType.Success -> ViewEventSendResult.Http(
+                        response.statusCode,
+                        response.acceptedOutcome(),
+                    )
+
                     ResponseType.ClientError,
                     ResponseType.ServerError,
                     -> ViewEventSendResult.Http(response.statusCode)
@@ -67,5 +77,23 @@ class SdkViewEventSender @Inject constructor(
                 ViewEventSendResult.IoError
             }
         }
+    }
+
+    /**
+     * 2xx 响应体 → 受理处置。Success.data 是 EventsViewAccepted?（SDK 对空响应体容错：
+     * 空体→data=null），缺省字段同样给 null——**旧服务端 202 空体 → outcome=null，
+     * 照常确认删行**（202 语义零变化）。runCatching 兜住解析层任何意外（如 SDK 返回体
+     * 类型不符）：解析失败只丢展示计数，绝不影响发送裁决。
+     */
+    private fun ApiResponse<EventsViewAccepted?>.acceptedOutcome(): ViewEventOutcome? = runCatching {
+        ((this as? Success<*>)?.data as? EventsViewAccepted)?.outcome
+    }.getOrNull()?.toInternal()
+
+    /** SDK outcome（协议字符串值）→ 领域枚举；未知值回 null（协议演进兜底，不得据此判失败） */
+    private fun EventsViewAccepted.Outcome.toInternal(): ViewEventOutcome? = when (value) {
+        "ok" -> ViewEventOutcome.OK
+        "remapped" -> ViewEventOutcome.REMAPPED
+        "unmatched" -> ViewEventOutcome.UNMATCHED
+        else -> null
     }
 }

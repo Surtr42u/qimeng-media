@@ -37,12 +37,7 @@ type blockSpan struct {
 	start       int    // 编号行下标
 	end         int    // 下一块编号行下标或 len(lines)，不含
 	worksMarker int    // 首个「作品」标记行下标，无则 -1（来源插入点锚）
-	hasSources  bool   // 块内出现过来源/出处标记行
 	endsInWorks bool   // 块尾行处于作品区（作品行可直接续写，否则须补标记）
-	// sourcesAtWorksMarker 是首个「作品」标记行之前的来源区状态：决定来源行
-	// 插到该标记前时要不要自带「来源」标记（「来源」区夹在两个「作品」标记
-	// 之间的病态布局里，直接插裸行会落在区域外被解析器忽略）。
-	sourcesAtWorksMarker bool
 }
 
 // scanBlockSpans 逐行扫描定位全部作者块。块开始判定与区域状态迁移和
@@ -52,9 +47,8 @@ type blockSpan struct {
 func scanBlockSpans(content string) []blockSpan {
 	lines := strings.Split(content, "\n")
 	var spans []blockSpan
-	cur := -1          // 当前块在 spans 中的下标；-1 = 首个编号行之前（块外）
-	inSources := false // 与解析器同构的区域状态（块开始时复位）
-	inWorks := false
+	cur := -1        // 当前块在 spans 中的下标；-1 = 首个编号行之前（块外）
+	inWorks := false // 与解析器同构的作品区状态（块开始时复位）
 	for i, raw := range lines {
 		line := strings.TrimSpace(raw)
 		if line == "" {
@@ -84,7 +78,7 @@ func scanBlockSpans(content string) []blockSpan {
 				id: id, number: number, start: i, end: len(lines), worksMarker: -1,
 			})
 			cur = len(spans) - 1
-			inSources, inWorks = false, false // 解析器：新块复位区域状态
+			inWorks = false // 解析器：新块复位区域状态
 			continue
 		}
 		if isAllDigits(line) {
@@ -93,18 +87,15 @@ func scanBlockSpans(content string) []blockSpan {
 		switch {
 		case isSourcesMarker(line):
 			// 解析器里此分支不受 cur 约束（块外也切状态）；但块开始会复位，
-			// 块外效果不外溢进任何 span。
-			inSources, inWorks = true, false
-			if cur >= 0 {
-				spans[cur].hasSources = true
-			}
+			// 块外效果不外溢进任何 span。来源区不参与本扫描的落点计算——
+			// 来源区写入走 replaceSourceRegion 整体重排，这里只需终结作品区。
+			inWorks = false
 		case line == markerWorks:
 			if cur >= 0 {
 				if spans[cur].worksMarker < 0 {
 					spans[cur].worksMarker = i
-					spans[cur].sourcesAtWorksMarker = inSources
 				}
-				inSources, inWorks = false, true
+				inWorks = true
 			}
 		}
 	}
@@ -148,41 +139,24 @@ func walkBackOverBlanks(lines []string, pos, min int) int {
 	return pos
 }
 
-// appendLines 把 newLines 并入 authorID 对应块的目标区域（works=true 作品区
-// 否则来源区）：对块内既有行与输入内部逐行去重后插入。found=false=作者不在
-// 任何块中（content 原样返回，调用方走新建块路径）。
-func appendLines(content, authorID string, newLines []string, works bool) (string, bool) {
+// appendWorksLines 把作品行并入 authorID 对应块的作品区：对块内既有作品行
+// 与输入内部逐行去重后插入。found=false=作者不在任何块中（content 原样返回，
+// 调用方走新建块路径）。来源区不走此路径（见 AppendSources/replaceSourceRegion）。
+func appendWorksLines(content, authorID string, works []string) (string, bool) {
 	lines := strings.Split(content, "\n")
 	span := findBlock(scanBlockSpans(content), authorID)
 	if span == nil {
 		return content, false
 	}
 
-	// 去重：比对基准 = 该块经正式解析器读出的既有 Works/Sources（字符串
-	// 全等才跳过——REQ §3.3 第 4 条幂等）。
-	parsed := parseSpan(lines, span)
-	existing := parsed.Works
-	if !works {
-		existing = parsed.Sources
-	}
-	seen := make(map[string]bool, len(existing)+len(newLines))
-	for _, l := range existing {
-		seen[l] = true
-	}
-	var fresh []string
-	for _, l := range newLines {
-		l = strings.TrimSpace(l)
-		if l == "" || seen[l] {
-			continue
-		}
-		seen[l] = true
-		fresh = append(fresh, l)
-	}
+	// 去重：比对基准 = 该块经正式解析器读出的既有 Works（字符串全等才
+	// 跳过——REQ §3.3 第 4 条幂等）。
+	fresh := missingWords(parseSpan(lines, span).Works, works)
 	if len(fresh) == 0 {
 		return content, true // 全部已存在：不动原文（幂等）
 	}
 
-	insert, pos := buildInsert(lines, span, fresh, works)
+	insert, pos := buildWorksInsert(lines, span, fresh)
 	out := make([]string, 0, len(lines)+len(insert))
 	out = append(out, lines[:pos]...)
 	out = append(out, insert...)
@@ -190,59 +164,153 @@ func appendLines(content, authorID string, newLines []string, works bool) (strin
 	return strings.Join(out, "\n"), true
 }
 
-// buildInsert 计算待插入行（含必要的区域标记行）与插入下标。
+// buildWorksInsert 计算作品行待插入行（含必要的「作品」标记行）与插入下标。
 // 作品行插在块内容末尾，仅当块尾已处于作品区才直接续写，否则先补「作品」
 // 标记（没有标记时块尾的裸行不会被解析进 Works——包括「来源」标记行把
-// 块尾切成来源区的形态，必须补标记重开作品区）；来源行插在「作品」标记行
-// 之前（保持来源区在作品区前的既有形态），无作品标记时插在块末尾，块连
-// 来源区都没有时插在编号行之后并补「来源」标记行（REQ §3.3 第 9 条）。
-func buildInsert(lines []string, span *blockSpan, fresh []string, works bool) ([]string, int) {
+// 块尾切成来源区的形态，必须补标记重开作品区）。
+func buildWorksInsert(lines []string, span *blockSpan, fresh []string) ([]string, int) {
 	contentEnd := walkBackOverBlanks(lines, span.end, span.start+1)
-	if works {
-		if span.endsInWorks {
-			return fresh, contentEnd
-		}
-		return append([]string{markerWorks}, fresh...), contentEnd
+	if span.endsInWorks {
+		return fresh, contentEnd
 	}
-	if span.worksMarker >= 0 {
-		pos := walkBackOverBlanks(lines, span.worksMarker, span.start+1)
-		return withSourcesMarker(span.sourcesAtWorksMarker, fresh), pos
-	}
-	if span.hasSources {
-		return fresh, contentEnd // 来源区延伸到块尾（无作品标记截断）
-	}
-	// 裸块：编号行之后补「来源」标记行再插来源行。
-	return append([]string{markerSources}, fresh...), span.start + 1
+	return append([]string{markerWorks}, fresh...), contentEnd
 }
 
-// withSourcesMarker 在块没有来源区时补「来源」标记行（新来源行本身是普通
-// 行，不写成「来源  x」形态——与既有来源区的行形态保持一致）。
-func withSourcesMarker(hasSources bool, fresh []string) []string {
-	if hasSources {
-		return fresh
+// missingWords 返回 wanted 中尚未出现在 existing 里的词（保序、输入内部
+// 去重、trim 后为空丢弃）。比对基准是该块经正式解析器读出的既有行——字符串
+// 全等才跳过（REQ §3.3 第 4 条幂等）。
+func missingWords(existing, wanted []string) []string {
+	seen := make(map[string]bool, len(existing)+len(wanted))
+	for _, l := range existing {
+		seen[l] = true
 	}
-	return append([]string{markerSources}, fresh...)
+	var fresh []string
+	for _, l := range wanted {
+		l = strings.TrimSpace(l)
+		if l == "" || seen[l] {
+			continue
+		}
+		seen[l] = true
+		fresh = append(fresh, l)
+	}
+	return fresh
 }
 
 // AppendWorks 把作品行并入 content 中 authorID 对应作者块的作品区（逐行
 // 去重；块无作品区时补「作品」标记行）。返回新 content；found=false=该
 // 作者不在任何块中（调用方走新建块路径）。
 func AppendWorks(content, authorID string, works []string) (string, bool) {
-	return appendLines(content, authorID, works, true)
+	return appendWorksLines(content, authorID, works)
 }
 
-// AppendSources 把来源行并入来源区（逐行去重；块无来源区时在编号行后补
-// 「来源」标记行 + 来源行）。found 语义同上。
+// AppendSources 把来源词并入 content 中 authorID 对应作者块的来源区
+// （词级去重；块无来源区时新建规范来源区）。found 语义同上。
+//
+// 写入形态恒为来源区规范形态：单个「来源」标记行 + 全部出处词两空格并排
+// （见 replaceSourceRegion）——既有来源区整体重排，词集合只增不减（ADR-0023
+// 上传语义「并入去重、永不覆盖既有来源」在词级成立），无新增词时零写入。
 func AppendSources(content, authorID string, sources []string) (string, bool) {
-	return appendLines(content, authorID, sources, false)
+	lines := strings.Split(content, "\n")
+	span := findBlock(scanBlockSpans(content), authorID)
+	if span == nil {
+		return content, false
+	}
+	existing := parseSpan(lines, span).Sources
+	fresh := missingWords(existing, sources)
+	if len(fresh) == 0 {
+		return content, true // 全部已存在：不动原文（幂等）
+	}
+	return replaceSourceRegion(lines, span, append(append([]string{}, existing...), fresh...)), true
+}
+
+// formatSourceLine 组来源区规范行：`来源` + 两空格 + 全部出处词两空格并排
+// （`来源  kemono  小红车`，与编号行别名分隔同为两空格）。规范形态的来源区
+// 恒为这一行——「一词一个「来源」标记行」会造出多个来源行（126 号事故）。
+func formatSourceLine(words []string) string {
+	return markerSources + numberedTwoSpaces + strings.Join(words, numberedTwoSpaces)
+}
+
+// replaceSourceRegion 把 span 对应作者块的整个来源区重写为规范形态：单个
+// 「来源」标记行 + words 两空格并排；words 空 = 来源区整段移除（来源/出处
+// 标记行不得残留，空区不落标记）。作品区行零改动。
+//
+// 落点：既有来源区原位重建（首个被删区域行的位置，保持既有位置形态）；
+// 无来源区有作品区 → 插在「作品」标记行前（保持来源区在作品区前的既有
+// 形态）；裸块（两区皆无）→ 编号行之后。
+func replaceSourceRegion(lines []string, span *blockSpan, words []string) string {
+	// 逐行扫描块区域：删除全部来源区行（含来源/出处标记行——空区不得
+	// 残留标记），首个被删行的位置即新来源区的写回点（保持既有位置形态）。
+	// 作品区行不做任何改动，只需跟踪「是否处于来源区」一个状态位。
+	del := map[int]bool{}
+	inSources := false
+	firstDeleted := -1
+	for i := span.start + 1; i < span.end; i++ {
+		line := strings.TrimSpace(lines[i])
+		if line == "" {
+			continue
+		}
+		if m := numberedLineRe.FindStringSubmatch(line); m != nil {
+			if allHaveMediaExt(splitAliases(strings.TrimSpace(m[1]))) {
+				continue // 数字开头作品行：不是块开始
+			}
+			break // 下一块编号行（防御性终止）
+		}
+		if isAllDigits(line) {
+			continue // 纯数字分隔行
+		}
+		switch {
+		case isSourcesMarker(line):
+			// 标记行也是来源区的一部分：标记行可同行携带出处词（`出处  x`），
+			// 解析器把出处词计进 Sources，删行时一并移除。
+			inSources = true
+			del[i] = true
+			if firstDeleted < 0 {
+				firstDeleted = i
+			}
+		case line == markerWorks:
+			inSources = false
+		case inSources:
+			del[i] = true
+			if firstDeleted < 0 {
+				firstDeleted = i
+			}
+		}
+	}
+	pos := span.start + 1
+	switch {
+	case firstDeleted >= 0:
+		pos = firstDeleted
+	case span.worksMarker >= 0:
+		// 跳过「作品」标记行前的空行，贴近手工清单形态。
+		pos = walkBackOverBlanks(lines, span.worksMarker, span.start+1)
+	}
+	var insert []string
+	if ws := dedupLines(words); len(ws) > 0 {
+		insert = []string{formatSourceLine(ws)}
+	}
+	if len(del) == 0 && len(insert) == 0 {
+		return strings.Join(lines, "\n") // 无既有来源区且无新来源：原文不动
+	}
+	out := make([]string, 0, len(lines)-len(del)+len(insert))
+	for i, l := range lines {
+		if i == pos {
+			out = append(out, insert...)
+		}
+		if !del[i] {
+			out = append(out, l)
+		}
+	}
+	if pos >= len(lines) { // 插入点在内容末尾（裸块顶到结尾且无删除行）
+		out = append(out, insert...)
+	}
+	return strings.Join(out, "\n")
 }
 
 // blockLineFormat 是新块行格式：编号行 `数字+两空格+别名列表（两空格
-// 分隔）`、来源行 `来源+两空格+平台名`（与别名分隔规范同为两空格，B2
-// 格式同构）。
+// 分隔）`、来源行 `来源+两空格+全部出处词（两空格并排）`（与别名分隔规范
+// 同为两空格，B2 格式同构）。
 const (
 	numberedTwoSpaces = "  "
-	sourceLineFormat  = markerSources + numberedTwoSpaces + "%s"
 	numberedFormat    = "%d" + numberedTwoSpaces + "%s"
 )
 
@@ -252,7 +320,7 @@ const (
 const blockSeparator = "\n\n\n\n"
 
 // AppendAuthorBlock 在 content 末尾追加新作者块：编号=现有最大编号+1（无块
-// 则 1）；编号行写 `编号  别名1  别名2`（两空格分隔）+ 来源行 + 「作品」
+// 则 1）；编号行写 `编号  别名1  别名2`（两空格分隔）+ 来源区规范行 + 「作品」
 // 标记 + 作品行，与手工导入片段同构（REQ §3.3 第 9 条：写出的内容必须能被
 // ParseAuthorBlocks 原样读回）。names 须是 CanonicalAuthorNames 产物（单个
 // 别名内无双空格序列、无括号备注），以两空格 join 写入后解析回读恒等——
@@ -278,8 +346,8 @@ func AppendAuthorBlock(content string, names []string, sources, works []string) 
 		b.WriteString(blockSeparator) // 空行分隔：上一块末行 与 新块编号行 之间
 	}
 	fmt.Fprintf(&b, numberedFormat, maxNumber+1, strings.Join(names, numberedTwoSpaces))
-	for _, s := range dedupLines(sources) {
-		fmt.Fprintf(&b, "\n"+sourceLineFormat, s)
+	if ss := dedupLines(sources); len(ss) > 0 {
+		b.WriteString("\n" + formatSourceLine(ss))
 	}
 	if works := dedupLines(works); len(works) > 0 {
 		b.WriteString("\n" + markerWorks)

@@ -6,7 +6,6 @@ package authoring
 // ParseAuthorBlocks 完全一致（复用同包私有函数与正则），全部无 IO。
 
 import (
-	"fmt"
 	"strings"
 	"unicode"
 )
@@ -94,85 +93,18 @@ func normalizeWorkName(s string) string {
 }
 
 // ReplaceSources 整体替换 content 中 authorID 对应作者块（首遇块）的来源区：
-// 新来源逐行以 sourceLineFormat（`来源  平台名`）写入；sources 空=来源区
-// 整段移除（来源/出处标记行不得残留）。落点（buildInsert 同款口径）：既有
-// 来源区原位重建；无来源区有作品区 → 插在「作品」标记行前（保持来源区在
-// 作品区前的既有形态）；裸块（两区皆无）→ 编号行之后。found=false=作者不
-// 在任何块中（content 原样返回，调用方走新建块路径）。写出内容可被
-// ParseAuthorBlocks 原样读回（sources/works 往返恒等）。
+// 新来源写成单个「来源」标记行 + 出处词两空格并排（来源区规范形态，
+// replaceSourceRegion 是唯一实现）；sources 空=来源区整段移除（来源/出处
+// 标记行不得残留）。落点见 replaceSourceRegion。found=false=作者不在任何块中
+// （content 原样返回，调用方走新建块路径）。写出内容可被 ParseAuthorBlocks
+// 原样读回（sources/works 往返恒等）。
 func ReplaceSources(content, authorID string, sources []string) (string, bool) {
 	lines := strings.Split(content, "\n")
 	span := findBlock(scanBlockSpans(content), authorID)
 	if span == nil {
 		return content, false
 	}
-	// 逐行扫描块区域：删除全部来源区行（含来源/出处标记行——空区不得
-	// 残留标记），首个被删行的位置即新来源区的写回点（保持既有位置形态）。
-	// 作品区行不做任何改动，只需跟踪「是否处于来源区」一个状态位。
-	del := map[int]bool{}
-	inSources := false
-	firstDeleted := -1
-	for i := span.start + 1; i < span.end; i++ {
-		line := strings.TrimSpace(lines[i])
-		if line == "" {
-			continue
-		}
-		if m := numberedLineRe.FindStringSubmatch(line); m != nil {
-			if allHaveMediaExt(splitAliases(strings.TrimSpace(m[1]))) {
-				continue // 数字开头作品行：不是块开始
-			}
-			break // 下一块编号行（防御性终止）
-		}
-		if isAllDigits(line) {
-			continue // 纯数字分隔行
-		}
-		switch {
-		case isSourcesMarker(line):
-			// 标记行也是来源区的一部分：标记行可同行携带平台名（`出处  x`），
-			// 解析器把平台名计进 Sources，删行时一并移除。
-			inSources = true
-			del[i] = true
-			if firstDeleted < 0 {
-				firstDeleted = i
-			}
-		case line == markerWorks:
-			inSources = false
-		case inSources:
-			del[i] = true
-			if firstDeleted < 0 {
-				firstDeleted = i
-			}
-		}
-	}
-	pos := span.start + 1
-	switch {
-	case firstDeleted >= 0:
-		pos = firstDeleted
-	case span.worksMarker >= 0:
-		// 与 buildInsert 的来源分支同口径：跳过「作品」标记行前的空行，
-		// 贴近手工清单形态。
-		pos = walkBackOverBlanks(lines, span.worksMarker, span.start+1)
-	}
-	insert := make([]string, 0, len(sources))
-	for _, s := range dedupLines(sources) {
-		insert = append(insert, fmt.Sprintf(sourceLineFormat, s))
-	}
-	if len(del) == 0 && len(insert) == 0 {
-		return content, true // 无既有来源区且无新来源：原文不动
-	}
-	out := make([]string, 0, len(lines)-len(del)+len(insert))
-	for i, l := range lines {
-		if i == pos {
-			out = append(out, insert...)
-		}
-		if !del[i] {
-			out = append(out, l)
-		}
-	}
-	if pos >= len(lines) { // 插入点在内容末尾（裸块顶到结尾且无删除行）
-		out = append(out, insert...)
-	}
-	return strings.Join(out, "\n"), true
+	return replaceSourceRegion(lines, span, sources), true
 }
 
 // PruneUploadEntries 从上传写入条目中剔除 content 已不存在的部分（编辑是

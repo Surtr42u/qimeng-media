@@ -98,8 +98,8 @@ class ViewEventQueueTest {
     fun `入队即生成幂等键 - 每行 UUID 且互不相同`() = runTest {
         val dao = FakeDao()
         val queue = ViewEventQueue(dao, FakeSender())
-        queue.enqueue("a", ViewEventKind.OPEN, startedAtMs = 1L, durationMs = 0L, sessionId = "s")
-        queue.enqueue("a", ViewEventKind.DWELL, startedAtMs = 2L, durationMs = 5_000L, sessionId = "s")
+        queue.enqueue("a", "", "", ViewEventKind.OPEN, startedAtMs = 1L, durationMs = 0L, sessionId = "s")
+        queue.enqueue("a", "", "", ViewEventKind.DWELL, startedAtMs = 2L, durationMs = 5_000L, sessionId = "s")
 
         val ids = dao.rows.map { it.clientEventId }
         assertEquals(2, ids.size)
@@ -108,11 +108,34 @@ class ViewEventQueueTest {
     }
 
     @Test
+    fun `入队携带文件身份 - 行上持久且出网体随行（ADR-0037 跨库兜底重映射前提）`() = runTest {
+        val dao = FakeDao()
+        val sender = FakeSender()
+        val queue = ViewEventQueue(dao, sender)
+        // assetId 用合法 UUID：出网体映射（toSdkReport）会把它回解析为协议 UUID
+        queue.enqueue(
+            "00000000-0000-0000-0000-000000000001", "封面.png", "相册/封面.png", ViewEventKind.OPEN,
+            startedAtMs = 1L, durationMs = 0L, sessionId = "s",
+        )
+
+        // 行上持久：身份随行入队（消费端 = drain 出网体映射）
+        val row = dao.rows.single()
+        assertEquals("封面.png", row.fileName)
+        assertEquals("相册/封面.png", row.relPath)
+
+        // 出网体透传：服务端 assetId 未命中时按此重映射
+        queue.drain()
+        val report = sender.sent.single().toSdkReport()
+        assertEquals("封面.png", report.fileName)
+        assertEquals("相册/封面.png", report.relPath)
+    }
+
+    @Test
     fun `入队FIFO淘汰 - 超上限5000丢最旧且幂等键随行存活`() = runTest {
         val dao = FakeDao()
         val queue = ViewEventQueue(dao, FakeSender())
         repeat(ViewEventQueue.MAX_QUEUE_SIZE + 1) {
-            queue.enqueue("a", ViewEventKind.OPEN, startedAtMs = 1L, durationMs = 0L, sessionId = "s")
+            queue.enqueue("a", "", "", ViewEventKind.OPEN, startedAtMs = 1L, durationMs = 0L, sessionId = "s")
         }
 
         // 冻结口径直接实测：上限=5000（非缩小的仿真值），恰好淘汰最旧 1 行
@@ -128,7 +151,7 @@ class ViewEventQueueTest {
         val queue = ViewEventQueue(dao, FakeSender())
         var thrown = false
         try {
-            queue.enqueue("a", ViewEventKind.OPEN, startedAtMs = 1L, durationMs = 0L, sessionId = "s")
+            queue.enqueue("a", "", "", ViewEventKind.OPEN, startedAtMs = 1L, durationMs = 0L, sessionId = "s")
         } catch (expected: IllegalStateException) {
             thrown = true
         }
@@ -142,24 +165,50 @@ class ViewEventQueueTest {
         val dao = FakeDao()
         val sender = FakeSender()
         val queue = ViewEventQueue(dao, sender)
-        queue.enqueue("a", ViewEventKind.OPEN, 1L, 0L, "s")
-        queue.enqueue("a", ViewEventKind.DWELL, 1L, 5000L, "s")
+        queue.enqueue("a", "", "", ViewEventKind.OPEN, 1L, 0L, "s")
+        queue.enqueue("a", "", "", ViewEventKind.DWELL, 1L, 5000L, "s")
 
         val summary = queue.drain()
 
         assertEquals(2, summary.sent)
         assertEquals(0, summary.dropped)
         assertEquals(0, summary.keptForRetry)
+        assertEquals(0, summary.merged)
+        assertEquals(0, summary.unmatched)
         assertEquals(0, queue.pendingCount())
         assertEquals(0, dao.rows.size)                       // 2xx 之后才删
         assertEquals(2, sender.sent.count { it.clientEventId.matches(UUID_REGEX) }) // 出网体带幂等键
     }
 
     @Test
+    fun `drain跨库合并计数 - remapped记merged unmatched记unmatched ok与null不计（ADR-0037）`() = runTest {
+        val dao = FakeDao()
+        // 逐行裁决：前三条 202 各带一种 outcome，第四条 202 空体（旧服务端/无处置）
+        val outcomes = ArrayDeque(
+            listOf(
+                ViewEventSendResult.Http(202, ViewEventOutcome.REMAPPED),
+                ViewEventSendResult.Http(202, ViewEventOutcome.UNMATCHED),
+                ViewEventSendResult.Http(202, ViewEventOutcome.OK),
+                ViewEventSendResult.Http(202, outcome = null),
+            ),
+        )
+        val sender = FakeSender(decide = { outcomes.removeFirst() })
+        val queue = ViewEventQueue(dao, sender)
+        repeat(4) { queue.enqueue("a", "封面.png", "相册/封面.png", ViewEventKind.OPEN, 1L, 0L, "s") }
+
+        val summary = queue.drain()
+
+        assertEquals(4, summary.sent)                        // outcome 不进裁决：四种都算发送成功
+        assertEquals(1, summary.merged)                       // 仅 remapped 计入
+        assertEquals(1, summary.unmatched)                    // 仅 unmatched 计入
+        assertEquals(0, queue.pendingCount())
+    }
+
+    @Test
     fun `发送失败 - 行保留在队列且内容原样（失败也有本地的）`() = runTest {
         val dao = FakeDao()
         val queue = ViewEventQueue(dao, FakeSender(decide = { ViewEventSendResult.IoError }))
-        queue.enqueue("a", ViewEventKind.DWELL, startedAtMs = 42L, durationMs = 1234L, sessionId = "s")
+        queue.enqueue("a", "", "", ViewEventKind.DWELL, startedAtMs = 42L, durationMs = 1234L, sessionId = "s")
 
         val summary = queue.drain()
 
@@ -181,7 +230,7 @@ class ViewEventQueueTest {
         var fail = true
         val sender = FakeSender(decide = { if (fail) ViewEventSendResult.IoError else ViewEventSendResult.Http(202) })
         val queue = ViewEventQueue(dao, sender, clock = clock)
-        queue.enqueue("a", ViewEventKind.DWELL, 1L, 1234L, "s")
+        queue.enqueue("a", "", "", ViewEventKind.DWELL, 1L, 1234L, "s")
         val originalId = dao.rows.single().clientEventId
 
         val first = queue.drain()
@@ -234,8 +283,8 @@ class ViewEventQueueTest {
             }
         })
         val queue = ViewEventQueue(dao, sender, clock = clock)
-        repeat(10) { queue.enqueue("a", ViewEventKind.DWELL, 1L, 5000L, "s") } // id 1..10
-        repeat(110) { queue.enqueue("a", ViewEventKind.OPEN, 1L, 0L, "s") }    // id 11..120
+        repeat(10) { queue.enqueue("a", "", "", ViewEventKind.DWELL, 1L, 5000L, "s") } // id 1..10
+        repeat(110) { queue.enqueue("a", "", "", ViewEventKind.OPEN, 1L, 0L, "s") }    // id 11..120
 
         val first = queue.drain()
         assertEquals(110, first.sent)          // OPEN 全收敛；DWELL 首轮全退避
@@ -258,8 +307,8 @@ class ViewEventQueueTest {
         val dao = FakeDao()
         val sender = FakeSender(decide = { ViewEventSendResult.Http(401) })
         val queue = ViewEventQueue(dao, sender, clock = clock)
-        queue.enqueue("a", ViewEventKind.OPEN, 1L, 0L, "s")
-        queue.enqueue("a", ViewEventKind.OPEN, 2L, 0L, "s")
+        queue.enqueue("a", "", "", ViewEventKind.OPEN, 1L, 0L, "s")
+        queue.enqueue("a", "", "", ViewEventKind.OPEN, 2L, 0L, "s")
 
         val summary = queue.drain()
 
@@ -313,7 +362,7 @@ class ViewEventQueueTest {
         val dao = FakeDao()
         val sender = FakeSender()
         val queue = ViewEventQueue(dao, sender)
-        repeat(4) { queue.enqueue("a", ViewEventKind.OPEN, 1L, 0L, "s") }
+        repeat(4) { queue.enqueue("a", "", "", ViewEventKind.OPEN, 1L, 0L, "s") }
 
         val first = launch { queue.drain() }
         val second = launch { queue.drain() }
@@ -332,11 +381,11 @@ class ViewEventQueueTest {
         val dao = FakeDao()
         val queue = ViewEventQueue(dao, FakeSender())
         queue.enqueue(
-            "00000000-0000-0000-0000-000000000001", ViewEventKind.OPEN,
+            "00000000-0000-0000-0000-000000000001", "封面.png", "相册/封面.png", ViewEventKind.OPEN,
             startedAtMs = 1_700_000_000_123L, durationMs = 0L, sessionId = "sess-1",
         )
         queue.enqueue(
-            "00000000-0000-0000-0000-000000000002", ViewEventKind.DWELL,
+            "00000000-0000-0000-0000-000000000002", "正片.mp4", "视频/正片.mp4", ViewEventKind.DWELL,
             startedAtMs = 1_700_000_000_456L, durationMs = 7_350L, sessionId = "sess-1",
         )
 
@@ -351,6 +400,8 @@ class ViewEventQueueTest {
         assertTrue(export.json.contains("\"kind\":\"open\""))          // 协议小写
         assertTrue(export.json.contains("\"kind\":\"dwell\""))
         assertTrue(export.json.contains("\"seconds\":7.35"))           // ms→秒无损
+        assertTrue(export.json.contains("\"fileName\":\"封面.png\""))  // ADR-0037 文件身份随导出
+        assertTrue(export.json.contains("\"relPath\":\"相册/封面.png\""))
         assertFalse(export.json.contains("OPEN"))                      // 不得漏大写枚举名
     }
 

@@ -30,23 +30,16 @@ func todayLocal(env *testEnv) time.Time {
 	return env.clock.Now().Local()
 }
 
-// postViewEvent 上报一条浏览事件。
+// postViewEvent 上报一条浏览事件（202 断言与响应体解析统一走 postViewReport ——
+// 同一 POST /events/view 骨架禁止第二处手抄，ADR-0037 批收口）。
 func postViewEvent(t *testing.T, env *testEnv, assetID string, kind gen.ViewEventReportKind, session string, at time.Time) {
 	t.Helper()
-	body, err := json.Marshal(gen.ViewEventReport{
+	postViewReport(t, env, gen.ViewEventReport{
 		AssetId:   uuid.MustParse(assetID),
 		Kind:      kind,
 		SessionId: session,
 		StartedAt: at,
 	})
-	if err != nil {
-		t.Fatalf("构造事件请求失败: %v", err)
-	}
-	resp := env.do(t, http.MethodPost, "/api/v1/events/view", string(body))
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusAccepted {
-		t.Fatalf("事件上报期望 202，得到 %d", resp.StatusCode)
-	}
 }
 
 // seedDailyRow 直接种一行物化聚合（趋势端点的数据源）。

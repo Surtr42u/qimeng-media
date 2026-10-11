@@ -228,7 +228,9 @@ class BackupViewModel @Inject constructor(
     /**
      * 立即同步：手动触发一轮 drain（与三通道自动补传同一执行体、同一 Mutex 串行）。
      * 退避中的行不到期不会被本次 drain 取走（防「连点立即同步狂打故障端点」），
-     * 结果提示按摘要语义给出。
+     * 结果提示按摘要语义给出。ADR-0037：跨库场景（本机模式→NAS）服务端按文件名兜底
+     * 重映射的条数（merged）/未匹配未计入统计的条数（unmatched）如实提示——提示只信
+     * 服务端 outcome 透出，不按本地计数虚报。
      */
     fun syncEventsNow() {
         if (_uiState.value.eventSyncing) return
@@ -240,10 +242,17 @@ class BackupViewModel @Inject constructor(
                 it.copy(
                     eventSyncing = false,
                     pendingEvents = pending,
+                    // 展示优先级：失败/保留（有未完事项）在前，跨库合并/未匹配（完成态细节）在后——
+                    // 重试优先展示取舍：keptForRetry/dropped 提示用户「还有后续」，合并计数只报本轮完成量
                     eventSyncNote = when {
                         summary == null -> EVENT_SYNC_FAILED_MESSAGE
                         summary.keptForRetry > 0 -> "网络不通，${summary.keptForRetry} 条稍后自动重试"
                         summary.dropped > 0 -> "同步完成；${summary.dropped} 条发送失败已保留"
+                        summary.merged > 0 && summary.unmatched > 0 ->
+                            "同步完成：${summary.merged} 条已按文件名并入本服务器统计；" +
+                                "${summary.unmatched} 条未匹配到本服务器文件（未计入统计）"
+                        summary.merged > 0 -> "同步完成：${summary.merged} 条已按文件名并入本服务器统计"
+                        summary.unmatched > 0 -> "同步完成：${summary.unmatched} 条未匹配到本服务器文件（未计入统计）"
                         else -> "同步完成"
                     },
                 )

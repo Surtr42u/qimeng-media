@@ -640,13 +640,19 @@ paths:
   /api/v1/events/view:
     post:
       summary: 上报浏览事件（ViewEvent 只追加；服务端负责会话级去重判断所需信息）
+      description: |
+        跨库浏览事件兜底重映射（ADR-0037）：本地优先队列的事件可能被投递到与产生时不同的服务器（App「本机模式」→「NAS/PC」等），当 assetId 在目标库不存在且请求携带 fileName 时，服务端按文件名匹配本库资产（唯一命中，或经 relPath 精确等值消歧后唯一）——命中的事件记入该资产并正常物化计入统计，202 响应 outcome=remapped；零命中或仍歧义时维持既有「已删资产迟到事件」口径（事件入库、统计跳过、outcome=unmatched）——歧义绝不猜测，宁少勿错。
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: "#/components/schemas/ViewEventReport" }
       responses:
-        "202": { description: 已接受 }
+        "202":
+          description: 已接受（响应体附处理结果 outcome；旧客户端忽略响应体，行为不变）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EventsViewAccepted" }
   /api/v1/assets/{assetId}/like:
     put:
       summary: 点赞（toggle：当日已赞则本请求为取消今日赞；每资产每日一次，服务端判定）
@@ -1639,6 +1645,8 @@ components:
         kind:      { type: string, enum: [open, play, dwell] }
         startedAt: { type: string, format: date-time }
         seconds:   { type: number, format: double, description: dwell 时的停留秒数（format double：客户端 SDK 走原生小数类型直接序列化为 JSON 数字——无 format 时 Kotlin 生成 BigDecimal 被序列化为带引号字符串导致服务端 400，协议批 2026-09-09 根修）；入库口径：服务端按事件逐条向零截断为整数秒（int64 转换、列 INTEGER），聚合链路（每日物化/榜单 value/TrendBucket.seconds/详情 totalBrowseSeconds）全为整数——事件级截断，非累加后取整（2026-09-20 审计清偿批闭环） }
+        fileName:  { type: string, description: '资产展示文件名（含扩展名，同 AssetSummary.fileName）。跨库兜底重映射（ADR-0037）用的文件身份：本地优先队列的事件可能被投递到与产生时不同的服务器（App 本机模式→NAS 等），当 assetId 在目标库不存在时服务端按本字段匹配本库资产（配 relPath 消歧）。缺省=不参与重映射（按既有「已删资产迟到事件」口径处理）' }
+        relPath:   { type: string, description: '库内相对路径（同 AssetDetail.relPath，"/" 分隔）。仅用于 fileName 多命中时的消歧（精确等值）；缺省=跳过消歧' }
         sessionId: { type: string, description: "客户端会话标识（App 启动/Web 标签页生成，UUID 即可）；open/play 按当日会话级去重（同 assetId+kind+sessionId+事件发生日已有同类事件则不重复计数），dwell 不去重——停留秒逐条累加、不减不重（DOMAIN_RULES §5）" }
         clientEventId:
           type: string
@@ -1651,6 +1659,15 @@ components:
             累加、open/play 不重复计数），客户端据此可安全「发送成功（2xx）才删本地暂存」。
             服务端列可空：历史数据与不带此字段的旧格式请求按 NULL 放行照常入库（SQLite
             唯一索引允许多 NULL 互不冲突），幂等语义仅对携带 id 的事件生效。
+
+    EventsViewAccepted:
+      description: 浏览事件受理结果（ADR-0037 跨库兜底重映射的处置透出；字段缺省/无法解析按 ok 处理，客户端不得据此判定失败）
+      type: object
+      properties:
+        outcome:
+          type: string
+          enum: [ok, remapped, unmatched]
+          description: 'ok=本库直收/幂等命中/会话去重命中（未新增计数）；remapped=assetId 未命中、按 fileName 兜底重映射到本库资产并计入统计（跨库合并）；unmatched=未计入统计（assetId 不存在且无唯一文件名匹配——既有「已删资产迟到事件」口径：事件入库、统计跳过）'
 
     ProgressUpdate:
       type: object

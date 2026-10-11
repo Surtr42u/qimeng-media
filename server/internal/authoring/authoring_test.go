@@ -68,6 +68,59 @@ func TestParseAuthorBlocksFormatBMultiBlockParsed(t *testing.T) {
 	}
 }
 
+// 来源区词级解析：标记行同行携带的多个出处按两空格并排拆词（规范形态
+// `来源  kemono  小红车` → 两个词）；标记行独占一行时后续裸行逐行收词；
+// 历史遗留的「一词一标记行」形态兼容读入（两个词仍然解析出来）。
+func TestParseAuthorBlocksSourcesWords(t *testing.T) {
+	cases := []struct {
+		name string
+		text string
+		want []string
+	}{
+		{
+			name: "标记行同行多出处并排",
+			text: "1  甲\n来源  kemono  小红车\n作品\na.mp4\n",
+			want: []string{"kemono", "小红车"},
+		},
+		{
+			name: "标记行独占一行_裸行逐行收词",
+			text: "1  甲\n来源\nkemono\n小红车\n作品\na.mp4\n",
+			want: []string{"kemono", "小红车"},
+		},
+		{
+			name: "出处标记同义",
+			text: "1  甲\n出处  site-a  site-b\n作品\na.mp4\n",
+			want: []string{"site-a", "site-b"},
+		},
+		{
+			name: "历史双标记行形态兼容读入",
+			text: "1  甲\n来源  hanime1\n来源  小红车\n作品\na.mp4\n",
+			want: []string{"hanime1", "小红车"},
+		},
+		{
+			name: "含单空格的出处词不拆",
+			text: "1  甲\n来源  Night Cry  kemono\n作品\na.mp4\n",
+			want: []string{"Night Cry", "kemono"},
+		},
+		{
+			name: "无来源区",
+			text: "1  甲\n作品\na.mp4\n",
+			want: nil,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			blocks := mustBlocks(t, c.text)
+			if len(blocks) != 1 {
+				t.Fatalf("blocks=%d, want 1", len(blocks))
+			}
+			if !reflect.DeepEqual(blocks[0].Sources, c.want) {
+				t.Errorf("Sources=%v, want %v", blocks[0].Sources, c.want)
+			}
+		})
+	}
+}
+
 // 照译 parseAuthorBlocks_parenthesizedAlias_stripsSuffix：括号备注自动去除。
 func TestParseAuthorBlocksParenthesizedAliasStripsSuffix(t *testing.T) {
 	text := "1  kamihikoki_mmd  紙飛行機(site-b资源出处)\n" +
