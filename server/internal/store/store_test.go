@@ -233,7 +233,9 @@ func idForIndex(i int) string {
 
 // TestMigrateDownThenUp：down migration 必须可执行（生产禁用，测试与灾备依赖），
 // 且 down 后能再次 up（幂等重建）。migration 演进后回退步数随之变化：
-// 新增迁移在链首插入对应验证步——首步验证 0016 down（关联溯源双列删除、
+// 新增迁移在链首插入对应验证步——首步验证 0017 down（旧项目别名空壳清理，
+// 纯数据删除无结构回退、0016 对象保留），
+// 次步验证 0016 down（关联溯源双列删除、
 // 0015 对象保留），
 // 次步验证 0015 down（观看历史覆盖索引
 // 删除、0014 对象保留），
@@ -255,7 +257,20 @@ func idForIndex(i int) string {
 // 第八步验证 0001 down（业务表全删）。
 func TestMigrateDownThenUp(t *testing.T) {
 	conn, _ := openTestDB(t) // 已 up
-	// 首步：0016 down（关联/作者溯源双列删除；0015 对象保留）
+	// 首步：0017 down（旧项目别名空壳清理——纯数据删除，无结构产物可断言；
+	// 0016 对象保留即证只回退了一个版本）
+	if err := MigrateDown(conn, 1); err != nil {
+		t.Fatalf("MigrateDown 失败: %v", err)
+	}
+	for _, col := range []struct{ table, col string }{
+		{"asset_authors", "created_at"}, {"asset_authors", "origin"},
+		{"authors", "origin"},
+	} {
+		if !columnExists(t, conn, col.table, col.col) {
+			t.Errorf("0017 down 后 %s.%s 应保留（0017 是数据清理迁移，无结构回退）", col.table, col.col)
+		}
+	}
+	// 次步：0016 down（关联/作者溯源双列删除；0015 对象保留）
 	if err := MigrateDown(conn, 1); err != nil {
 		t.Fatalf("MigrateDown 失败: %v", err)
 	}
@@ -498,6 +513,97 @@ func assertUniqueViolation(t *testing.T, table, label string, err error) {
 	if !strings.Contains(err.Error(), "UNIQUE constraint failed") {
 		t.Errorf("%s: %s 期望 UNIQUE 约束错误, 实际: %v", table, label, err)
 	}
+}
+
+// TestLegacyAliasAuthorPrune：0017 清理旧项目迁移遗留的重复别名空壳作者行。
+// 三重守卫口径（白名单 + origin='import' + 零关联）——两个子用例各自独立建库：
+// 全空壳场景（6 行全删）与守卫场景（有关联/来源非 import/白名单外的行一律不动）。
+func TestLegacyAliasAuthorPrune(t *testing.T) {
+	legacyIDs := []string{"dude017", "fgnilin", "kassioppiava", "ryan_reos", "skrevenant", "therealzoh"}
+	insertAuthor := func(t *testing.T, conn *sql.DB, id, origin, now string) {
+		t.Helper()
+		if _, err := conn.Exec(
+			"INSERT INTO authors (id, display_name, type, created_at, origin) VALUES (?,?, 'regular', ?, ?)",
+			id, id, now, origin,
+		); err != nil {
+			t.Fatalf("插入作者 %s 失败: %v", id, err)
+		}
+	}
+	authorExists := func(t *testing.T, conn *sql.DB, id string) bool {
+		t.Helper()
+		var n int
+		if err := conn.QueryRow("SELECT COUNT(*) FROM authors WHERE id = ?", id).Scan(&n); err != nil {
+			t.Fatalf("查询作者 %s 失败: %v", id, err)
+		}
+		return n > 0
+	}
+
+	t.Run("空壳行全删", func(t *testing.T) {
+		conn, _ := openTestDB(t)
+		// 回退 0017 复现升级前形态，再种入 6 个历史空壳（无关联 + origin=import）。
+		if err := MigrateDown(conn, 1); err != nil {
+			t.Fatalf("MigrateDown(0017) 失败: %v", err)
+		}
+		now := FormatTimestamp(time.Now())
+		for _, id := range legacyIDs {
+			insertAuthor(t, conn, id, "import", now)
+		}
+		if err := Migrate(conn); err != nil {
+			t.Fatalf("重新 up（执行 0017）失败: %v", err)
+		}
+		for _, id := range legacyIDs {
+			if authorExists(t, conn, id) {
+				t.Errorf("0017 后 %s 仍存在（该 id 是零关联的历史空壳，应被删除）", id)
+			}
+		}
+	})
+
+	t.Run("三重守卫不误伤", func(t *testing.T) {
+		conn, q := openTestDB(t)
+		ctx := context.Background()
+		libID := newLibrary(t, q)
+		now := FormatTimestamp(time.Now())
+		if _, err := q.UpsertAsset(ctx, db.UpsertAssetParams{
+			AssetID: "asset-prune-guard", LibraryID: libID, RelPath: "g/one.jpg",
+			FileName: "one.jpg", MediaType: "image", SizeBytes: 1,
+			Mtime: now, CreatedAt: now, UpdatedAt: now,
+		}); err != nil {
+			t.Fatalf("UpsertAsset 失败: %v", err)
+		}
+		if err := MigrateDown(conn, 1); err != nil {
+			t.Fatalf("MigrateDown(0017) 失败: %v", err)
+		}
+		// 白名单 id 但仍有文件关联 → 保留（重建后零关联作者行的既有形态，
+		// 与 DELETE /authors/import-txt 的「作者行保留」语义一致）。
+		insertAuthor(t, conn, "therealzoh", "import", now)
+		if _, err := conn.Exec(
+			"INSERT INTO asset_authors (asset_id, author_id, created_at, origin) VALUES ('asset-prune-guard', 'therealzoh', ?, 'txt')",
+			now,
+		); err != nil {
+			t.Fatalf("插入关联失败: %v", err)
+		}
+		// 白名单 id 但来源是用户手建（client）→ 保留（按名新建的合法身份）。
+		insertAuthor(t, conn, "dude017", "client", now)
+		// 白名单外的零关联行 → 保留（TXT 格式 C / 按名新建的既有形态，非清理对象）。
+		insertAuthor(t, conn, "some_other_author", "import", now)
+		// 其余 4 个历史空壳 → 删除。
+		for _, id := range []string{"fgnilin", "kassioppiava", "ryan_reos", "skrevenant"} {
+			insertAuthor(t, conn, id, "import", now)
+		}
+		if err := Migrate(conn); err != nil {
+			t.Fatalf("重新 up（执行 0017）失败: %v", err)
+		}
+		for _, id := range []string{"therealzoh", "dude017", "some_other_author"} {
+			if !authorExists(t, conn, id) {
+				t.Errorf("0017 误删 %s（三重守卫应保留：有关联 / origin=client / 白名单外）", id)
+			}
+		}
+		for _, id := range []string{"fgnilin", "kassioppiava", "ryan_reos", "skrevenant"} {
+			if authorExists(t, conn, id) {
+				t.Errorf("0017 后 %s 仍存在（零关联历史空壳应被删除）", id)
+			}
+		}
+	})
 }
 
 // TestUniqueConstraints：关键唯一约束存在性——用「故意违反」的行为验证
