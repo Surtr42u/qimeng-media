@@ -39,6 +39,39 @@ class AuthorRowsTest {
     }
 
     @Test
+    fun `名字搜索大小写不敏感`() {
+        val mixed = listOf(
+            author("1", "BubbleB"),
+            author("2", "Regina3D"),
+            author("3", "skrev / SKRevenant"),
+        )
+        // 小写输入命中大写名（2026-10-12 用户实测：作者名大写、输小写搜不出来）
+        assertEquals(
+            listOf("BubbleB"),
+            mixed.applyAuthorRows(Zone.ALL, "bubbleb", AuthorSortOption.DEFAULT).map { it.displayName },
+        )
+        assertEquals(
+            listOf("Regina3D"),
+            mixed.applyAuthorRows(Zone.ALL, "regina3d", AuthorSortOption.DEFAULT).map { it.displayName },
+        )
+        // 大写输入命中（原名子串大小写各异）
+        assertEquals(
+            listOf("skrev / SKRevenant"),
+            mixed.applyAuthorRows(Zone.ALL, "SKREV", AuthorSortOption.DEFAULT).map { it.displayName },
+        )
+        // 混排输入
+        assertEquals(
+            listOf("BubbleB"),
+            mixed.applyAuthorRows(Zone.ALL, "bUbBlEb", AuthorSortOption.DEFAULT).map { it.displayName },
+        )
+        // 别名段整体小写输入命中（「 / 」连接的显示名按段子串匹配，大小写不敏感）
+        assertEquals(
+            listOf("skrev / SKRevenant"),
+            mixed.applyAuthorRows(Zone.ALL, "skrevenant", AuthorSortOption.DEFAULT).map { it.displayName },
+        )
+    }
+
+    @Test
     fun `排序三项 默认原序 浏览数降序 文件数降序`() {
         assertEquals(listOf("1", "2", "3", "4"), authors.applyAuthorRows(Zone.ALL, "", AuthorSortOption.DEFAULT).map { it.id })
         assertEquals(listOf("2", "3", "4", "1"), authors.applyAuthorRows(Zone.ALL, "", AuthorSortOption.BROWSE).map { it.id })

@@ -32,16 +32,21 @@ private fun Zone.toAuthorType(): AuthorType? = when (this) {
     Zone.COS -> AuthorType.COS
 }
 
-/** 作者页排序（纯函数；先 filter 后 sort，slice 语义用 toList 保证不污染原序基准） */
+/**
+ * 作者页排序（纯函数；先 filter 后 sort，slice 语义用 toList 保证不污染原序基准）。
+ * 关键词匹配**大小写不敏感**（2026-10-12 用户实测要求：作者名多含大写——`BubbleB`/
+ * `Regina3D`/`SKRevenant` 等，输小写搜不出来；中文不受影响）。
+ */
 fun List<AuthorSummary>.applyAuthorRows(
     zone: Zone,
     keyword: String,
     sort: AuthorSortOption,
 ): List<AuthorSummary> {
     val type = zone.toAuthorType()
+    val kw = keyword.trim()
     return filter { author ->
         (type == null || author.type == type) &&
-            (keyword.isBlank() || author.displayName.contains(keyword.trim()))
+            (kw.isEmpty() || author.displayName.contains(kw, ignoreCase = true))
     }
         .toList()
         .sortedWith(

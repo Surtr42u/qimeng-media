@@ -52,15 +52,16 @@ export default function AuthorsPage() {
   const [keyword, setKeyword] = useState('')
   const [sort, setSort] = useState<AuthorSort>('default')
 
-  // 先 filter 后 sort，slice 避免原地排序污染 filter 结果顺序基准（照 app.js renderAuthors）
+  // 先 filter 后 sort，slice 避免原地排序污染 filter 结果顺序基准（照 app.js renderAuthors）；
+  // 关键词大小写不敏感（2026-10-12 用户要求，App applyAuthorRows 同口径）
   const rows = useMemo(() => {
-    const kw = keyword.trim()
+    const kw = keyword.trim().toLowerCase()
     const type = ZONE_TO_TYPE[zone]
     return authors
       .filter(
         (a) =>
           (type === undefined || a.type === type) &&
-          (!kw || (a.displayName ?? '').includes(kw)),
+          (!kw || (a.displayName ?? '').toLowerCase().includes(kw)),
       )
       .slice()
       .sort(A_SORTERS[sort])
