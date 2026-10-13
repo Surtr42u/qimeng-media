@@ -73,6 +73,30 @@ func (q *Queries) AddAssetCharacter(ctx context.Context, arg AddAssetCharacterPa
 	return err
 }
 
+const copyAuthorWithNewID = `-- name: CopyAuthorWithNewID :execrows
+INSERT INTO authors (id, display_name, type, followed, created_at, origin)
+SELECT ?, ?, au.type, au.followed, au.created_at, au.origin FROM authors au WHERE au.id = ?
+`
+
+type CopyAuthorWithNewIDParams struct {
+	ID          string
+	DisplayName string
+	ID_2        string
+}
+
+// Author management rename, identity-migration step 1: insert the new
+// identity row carrying over every attribute of the old row (followed /
+// created_at / origin; type stays as-is, callers only rename regular
+// authors). Parameter order follows the INSERT column list then the
+// selector: (new id, new display name, old id).
+func (q *Queries) CopyAuthorWithNewID(ctx context.Context, arg CopyAuthorWithNewIDParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, copyAuthorWithNewID, arg.ID, arg.DisplayName, arg.ID_2)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const deleteAssetAuthorsByAssetID = `-- name: DeleteAssetAuthorsByAssetID :exec
 DELETE FROM asset_authors WHERE asset_id = ?
 `
@@ -122,6 +146,23 @@ DELETE FROM asset_characters WHERE asset_id = ?
 func (q *Queries) DeleteAssetCharacters(ctx context.Context, assetID string) error {
 	_, err := q.db.ExecContext(ctx, deleteAssetCharacters, assetID)
 	return err
+}
+
+const deleteAuthor = `-- name: DeleteAuthor :execrows
+DELETE FROM authors WHERE id = ?
+`
+
+// Author management delete (DELETE /authors/{authorId}, ADR-0024 rev5):
+// removes the row itself. The caller (authorattach.DeleteAuthor) already
+// removed the fragment blocks (TXT truth), the upload entries and every
+// asset_authors link in the same transaction -- media files and assets
+// stay untouched (DOMAIN_RULES 6 "deleting an author keeps the files").
+func (q *Queries) DeleteAuthor(ctx context.Context, id string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteAuthor, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const deleteOrphanCosAuthors = `-- name: DeleteOrphanCosAuthors :execrows
@@ -330,6 +371,26 @@ func (q *Queries) ListNormalAssetsForAuthorMatch(ctx context.Context) ([]ListNor
 	return items, nil
 }
 
+const renameAssetAuthors = `-- name: RenameAssetAuthors :execrows
+UPDATE asset_authors SET author_id = ? WHERE author_id = ?
+`
+
+type RenameAssetAuthorsParams struct {
+	AuthorID   string
+	AuthorID_2 string
+}
+
+// Author management rename, identity-migration step 2: every link moves
+// to the new identity. FK direction requires the new parent row to exist
+// first (CopyAuthorWithNewID) and the old row to be deleted last.
+func (q *Queries) RenameAssetAuthors(ctx context.Context, arg RenameAssetAuthorsParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, renameAssetAuthors, arg.AuthorID, arg.AuthorID_2)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const setAuthorFollow = `-- name: SetAuthorFollow :execrows
 UPDATE authors SET followed = ? WHERE id = ?
 `
@@ -389,6 +450,27 @@ type UpdateAssetSourceParams struct {
 func (q *Queries) UpdateAssetSource(ctx context.Context, arg UpdateAssetSourceParams) error {
 	_, err := q.db.ExecContext(ctx, updateAssetSource, arg.Source, arg.UpdatedAt, arg.AssetID)
 	return err
+}
+
+const updateAuthorDisplayName = `-- name: UpdateAuthorDisplayName :execrows
+UPDATE authors SET display_name = ? WHERE id = ?
+`
+
+type UpdateAuthorDisplayNameParams struct {
+	DisplayName string
+	ID          string
+}
+
+// Author management rename, same-identity half (display name only, the
+// generated id of the canonical alias list is unchanged). Identity
+// migration (id change) goes through CopyAuthorWithNewID +
+// RenameAssetAuthors + DeleteAuthor instead.
+func (q *Queries) UpdateAuthorDisplayName(ctx context.Context, arg UpdateAuthorDisplayNameParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, updateAuthorDisplayName, arg.DisplayName, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const upsertAuthor = `-- name: UpsertAuthor :exec

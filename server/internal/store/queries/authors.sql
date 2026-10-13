@@ -154,3 +154,33 @@ SELECT aa.asset_id, au.display_name
 FROM asset_authors aa JOIN authors au ON au.id = aa.author_id
 WHERE aa.asset_id IN (SELECT value FROM json_each(sqlc.narg(asset_ids_json)))
 ORDER BY aa.asset_id, au.display_name;
+
+-- name: DeleteAuthor :execrows
+-- Author management delete (DELETE /authors/{authorId}, ADR-0024 rev5):
+-- removes the row itself. The caller (authorattach.DeleteAuthor) already
+-- removed the fragment blocks (TXT truth), the upload entries and every
+-- asset_authors link in the same transaction -- media files and assets
+-- stay untouched (DOMAIN_RULES 6 "deleting an author keeps the files").
+DELETE FROM authors WHERE id = ?;
+
+-- name: UpdateAuthorDisplayName :execrows
+-- Author management rename, same-identity half (display name only, the
+-- generated id of the canonical alias list is unchanged). Identity
+-- migration (id change) goes through CopyAuthorWithNewID +
+-- RenameAssetAuthors + DeleteAuthor instead.
+UPDATE authors SET display_name = ? WHERE id = ?;
+
+-- name: RenameAssetAuthors :execrows
+-- Author management rename, identity-migration step 2: every link moves
+-- to the new identity. FK direction requires the new parent row to exist
+-- first (CopyAuthorWithNewID) and the old row to be deleted last.
+UPDATE asset_authors SET author_id = ? WHERE author_id = ?;
+
+-- name: CopyAuthorWithNewID :execrows
+-- Author management rename, identity-migration step 1: insert the new
+-- identity row carrying over every attribute of the old row (followed /
+-- created_at / origin; type stays as-is, callers only rename regular
+-- authors). Parameter order follows the INSERT column list then the
+-- selector: (new id, new display name, old id).
+INSERT INTO authors (id, display_name, type, followed, created_at, origin)
+SELECT ?, ?, au.type, au.followed, au.created_at, au.origin FROM authors au WHERE au.id = ?;

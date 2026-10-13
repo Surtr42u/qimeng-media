@@ -107,6 +107,81 @@ func ReplaceSources(content, authorID string, sources []string) (string, bool) {
 	return replaceSourceRegion(lines, span, sources), true
 }
 
+// RemoveAuthorBlocks 从 content 中整块移除 authorID 的全部作者块（跨块同名
+// 全清，与解析器身份口径一致——身份 = 编号行首别名派生 id）：块编号行至下一
+// 块编号行前（末块至内容尾）整段删除；末块连同其之前的空行段一并清理（尾部
+// 不留孤立空段）。中段块删除后，其原「前分隔空行」自然成为前后块的间隔
+// （解析器跳空行，纯排版）。返回新 content；removed=false = 该作者不在任何块
+// 中（content 原样返回）。写出结果满足「重新解析后该作者无块」，统一重建
+// 不会复活该作者行。
+func RemoveAuthorBlocks(content, authorID string) (string, bool) {
+	lines := strings.Split(content, "\n")
+	spans := scanBlockSpans(content)
+	del := map[int]bool{}
+	found := false
+	for i := range spans {
+		if spans[i].id != authorID {
+			continue
+		}
+		found = true
+		if spans[i].end >= len(lines) {
+			// 末块：连其之前空行段一并清理（尾部不留空段）。
+			for s := spans[i].start; s > 0 && strings.TrimSpace(lines[s-1]) == ""; s-- {
+				del[s-1] = true
+			}
+		}
+		for j := spans[i].start; j < spans[i].end; j++ {
+			del[j] = true
+		}
+	}
+	if !found {
+		return content, false
+	}
+	out := make([]string, 0, len(lines)-len(del))
+	for i, l := range lines {
+		if !del[i] {
+			out = append(out, l)
+		}
+	}
+	return strings.TrimRight(strings.Join(out, "\n"), "\n") + "\n", true
+}
+
+// RewriteAuthorBlockNames 把 authorID 全部作者块的编号行别名列表整体重写为
+// names（两空格 join，编号数字与整行前导空白保留，其余行原样）：作品行与
+// 来源区只字不动。names 须是 CanonicalAuthorNames 产物（别名内无 2+ 空白），
+// 且调用方保证 GenerateAuthorID(names[0]) 是本次重写的目标身份（迁移后 id 或
+// 原 id，见 AliasesForAuthorID）——本函数只管文本手术，不做身份校验。
+// 返回新 content；found=false = 该作者不在任何块中（content 原样返回）。
+func RewriteAuthorBlockNames(content, authorID string, names []string) (string, bool) {
+	if len(names) == 0 {
+		return content, false
+	}
+	lines := strings.Split(content, "\n")
+	spans := scanBlockSpans(content)
+	found := false
+	for i := range spans {
+		if spans[i].id != authorID {
+			continue
+		}
+		found = true
+		start := spans[i].start
+		l := lines[start]
+		pos := 0
+		for pos < len(l) && (l[pos] == ' ' || l[pos] == '\t') {
+			pos++
+		}
+		digits := pos
+		for digits < len(l) && l[digits] >= '0' && l[digits] <= '9' {
+			digits++
+		}
+		lines[start] = l[:digits] + numberedTwoSpaces + strings.Join(names, numberedTwoSpaces)
+	}
+	if !found {
+		return content, false
+	}
+	return strings.Join(lines, "\n"), true
+}
+
 // PruneUploadEntries 从上传写入条目中剔除 content 已不存在的部分（编辑是
 // 有意变更，ADR-0024：不同步修剪会让重导入保护对已被编辑移除的行误报
 // 409）。条目按作者对齐 MissingUploadEntries 的缺失明细，只保留仍存在于

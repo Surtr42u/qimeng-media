@@ -28,6 +28,7 @@ import media.qimeng.sdk.infrastructure.ClientError
 import media.qimeng.sdk.infrastructure.ClientException
 import media.qimeng.sdk.models.ApiV1AuthorsAuthorIdFollowPutRequest
 import media.qimeng.sdk.models.ApiV1AuthorsImportTxtPostRequest
+import media.qimeng.sdk.models.ApiV1AuthorsPostRequest
 import media.qimeng.sdk.models.ApiV1TagsPostRequest
 import media.qimeng.sdk.models.AssetAuthorsReplaceRequest
 import media.qimeng.sdk.models.AuthorSourcesWriteRequest
@@ -384,6 +385,59 @@ class SdkAuthorRepository @Inject constructor(
                     mode = AuthorSourcesWriteRequest.Mode.append,
                 ),
             )
+        }
+    }
+
+    // ── 作者管理族（2026-10-13：作者管理页新建/改名/删除，ADR-0024 修订 5）──
+
+    /**
+     * 作者管理三端点的 4xx 语义化拒绝映射（单一实现；[AssetAuthorsRejectedException]
+     * 同范式）：生成 SDK 把响应体原串留在 ClientError.body，经上传路径同款
+     * [UploadApiBodies.serverErrorMessage] 取原因文案，调用方（作者管理页）直接透出。
+     */
+    private suspend fun <T> mapManageRejection(block: suspend () -> T): T = try {
+        block()
+    } catch (e: ClientException) {
+        val body = (e.response as? ClientError<*>)?.body as? String
+        throw AuthorManageRejectedException(
+            serverMessage = UploadApiBodies.serverErrorMessage(body.orEmpty(), e.statusCode),
+            statusCode = e.statusCode,
+        )
+    }
+
+    override suspend fun createAuthor(displayName: String): AuthorSummary {
+        Log.d(SdkMediaRepository.LOG_TAG, "POST /authors")
+        return withContext(Dispatchers.IO) {
+            mapManageRejection {
+                SdkMappers.toAuthorSummary(
+                    apiFactory.create().apiV1AuthorsPost(
+                        ApiV1AuthorsPostRequest(displayName = displayName),
+                    ),
+                )
+            }
+        }
+    }
+
+    override suspend fun renameAuthor(authorId: String, displayName: String): AuthorSummary {
+        Log.d(SdkMediaRepository.LOG_TAG, "PUT /authors/$authorId")
+        return withContext(Dispatchers.IO) {
+            mapManageRejection {
+                SdkMappers.toAuthorSummary(
+                    apiFactory.create().apiV1AuthorsAuthorIdPut(
+                        authorId = authorId,
+                        apiV1AuthorsPostRequest = ApiV1AuthorsPostRequest(displayName = displayName),
+                    ),
+                )
+            }
+        }
+    }
+
+    override suspend fun deleteAuthor(authorId: String) {
+        Log.d(SdkMediaRepository.LOG_TAG, "DELETE /authors/$authorId")
+        withContext(Dispatchers.IO) {
+            mapManageRejection {
+                apiFactory.create().apiV1AuthorsAuthorIdDelete(authorId)
+            }
         }
     }
 

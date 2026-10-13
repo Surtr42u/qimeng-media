@@ -1,6 +1,7 @@
 package media.qimeng.app.feature.author
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,13 +11,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -34,11 +38,13 @@ import media.qimeng.app.core.model.Zone
 import media.qimeng.app.core.model.displayLabel
 import media.qimeng.app.core.ui.component.QimengCapsuleTextField
 import media.qimeng.app.core.ui.component.QimengChipRow
+import media.qimeng.app.core.ui.component.QimengMessageCard
 import media.qimeng.app.core.ui.component.QimengPill
 import media.qimeng.app.core.ui.component.QimengPullToRefresh
 import media.qimeng.app.core.ui.component.QimengRankCard
 import media.qimeng.app.core.ui.component.QimengSegPill
 import media.qimeng.app.core.ui.component.QimengTopBar
+import media.qimeng.app.core.ui.icon.MoreVertIcon
 import media.qimeng.app.core.ui.icon.SearchIcon
 import media.qimeng.app.core.ui.theme.QimengDimens
 
@@ -53,6 +59,41 @@ private const val COUNT_ROW_PREFIX = "全部作者"
 
 /** 空态文案（Web .a-empty：列表无匹配行时卡内小字） */
 private const val EMPTY_AUTHORS = "暂无作者"
+
+// —— 作者管理族文案（2026-10-13，ADR-0024 修订 5）——
+
+/** 新建作者入口胶囊 */
+private const val CREATE_AUTHOR_LABEL = "新建作者"
+
+/** 行操作菜单入口无障碍描述 */
+private const val AUTHOR_MENU_DESC = "作者操作"
+
+/** 行操作菜单项：改名 */
+private const val RENAME_MENU_LABEL = "改名"
+
+/** 行操作菜单项/删除确认钮：删除 */
+private const val DELETE_MENU_LABEL = "删除"
+
+/** 新建对话框标题 */
+private const val CREATE_DIALOG_TITLE = "新建作者"
+
+/** 改名对话框标题 */
+private const val RENAME_DIALOG_TITLE = "修改作者名"
+
+/** 删除确认对话框标题 */
+private const val DELETE_DIALOG_TITLE = "删除作者"
+
+/** 输入框占位 */
+private const val AUTHOR_NAME_PLACEHOLDER = "作者名"
+
+/** 别名分隔说明（与服务端规范化口径一致：显示名以「 / 」连接别名） */
+private const val AUTHOR_ALIAS_HINT = "多个别名用「 / 」分隔（如：hornyherring / Horny Herring Studios）"
+
+/** 对话框确定/取消/进行中文案 */
+private const val CONFIRM_LABEL = "确定"
+private const val CANCEL_LABEL = "取消"
+private const val SUBMITTING_LABEL = "处理中…"
+private const val DELETING_LABEL = "删除中…"
 
 /**
  * 作者管理页（M4-2 覆盖页，G2 对齐 Web AuthorsPage 形态重排）：计数行 + 体系胶囊 +
@@ -106,6 +147,13 @@ fun AuthorScreen(
                 singleLine = true,
                 modifier = Modifier.weight(1f),
             )
+            // 新建作者入口（2026-10-13 作者管理族，ADR-0024 修订 5）：胶囊语言与排序钮同源
+            QimengSegPill(
+                text = CREATE_AUTHOR_LABEL,
+                selected = false,
+                onClick = viewModel::openCreateDialog,
+                modifier = Modifier.padding(start = QimengDimens.SpaceS),
+            )
         }
         // 体系胶囊行 + 排序单钮同行（GUIDE_UI §芯片栏配置对比 L73 作者管理行：左侧
         // 全部/常规/COS、右侧「排序 ▾」——排序对所有分类生效）。任务I I6 回改：G2 的
@@ -139,6 +187,18 @@ fun AuthorScreen(
                 color = MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(horizontal = QimengDimens.ScreenPaddingHorizontal),
+            )
+        }
+        // 管理操作成功提示（一次性横幅，点击消除；新建/改名/删除共用）
+        state.noticeMessage?.let { message ->
+            QimengMessageCard(
+                text = message,
+                container = MaterialTheme.colorScheme.tertiaryContainer,
+                onDismiss = viewModel::clearNotice,
+                modifier = Modifier.padding(
+                    horizontal = QimengDimens.ScreenPaddingHorizontal,
+                    vertical = QimengDimens.SpaceS,
+                ),
             )
         }
 
@@ -183,12 +243,36 @@ fun AuthorScreen(
                                 author = author,
                                 onToggleFollow = { viewModel.toggleFollow(author) },
                                 onAuthorClick = onAuthorClick,
+                                onRename = { viewModel.openRenameDialog(author) },
+                                onDelete = { viewModel.openDeleteDialog(author) },
                             )
                         }
                     }
                 }
             }
         }
+    }
+
+    // 作者管理对话框（新建/改名共用输入框；删除走确认框）——状态机与提交在 ViewModel
+    when (val dialog = state.manageDialog) {
+        null -> Unit
+
+        is AuthorManageDialog.Delete -> AuthorDeleteDialog(
+            displayName = dialog.displayName,
+            fileCount = dialog.fileCount,
+            submitting = state.manageSubmitting,
+            onConfirm = viewModel::submitManageDialog,
+            onDismiss = viewModel::dismissManageDialog,
+        )
+
+        else -> AuthorNameDialog(
+            title = if (dialog is AuthorManageDialog.Rename) RENAME_DIALOG_TITLE else CREATE_DIALOG_TITLE,
+            value = state.manageInput,
+            submitting = state.manageSubmitting,
+            onValueChange = viewModel::onManageInputChange,
+            onConfirm = viewModel::submitManageDialog,
+            onDismiss = viewModel::dismissManageDialog,
+        )
     }
 }
 
@@ -238,13 +322,19 @@ private fun AuthorSortMenuButton(
  * 浏览次数 2026-09-05 反馈⑤拍板不展示、F7 批统一「N 个文件」文案；null 计 0 同 Web `?? 0`）。
  * 整行可点进作者集合页（回调占位待 G1b）；关注胶囊在行内为子 clickable，
  * 点胶囊不触发行点击（Compose 子组件优先消费点击，等价 Web stopPropagation）。
+ *
+ * 行尾「⋮」操作菜单（2026-10-13 作者管理族，ADR-0024 修订 5）：改名/删除两操作；
+ * 删除文案红色（破坏性操作视觉预警），确认对话框再给「关联文件保留」的领域口径。
  */
 @Composable
 private fun AuthorRow(
     author: AuthorSummary,
     onToggleFollow: () -> Unit,
     onAuthorClick: (authorId: String, displayName: String) -> Unit,
+    onRename: () -> Unit,
+    onDelete: () -> Unit,
 ) {
+    var menuOpen by remember { mutableStateOf(false) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -293,5 +383,116 @@ private fun AuthorRow(
                 modifier = Modifier.padding(horizontal = QimengDimens.ChipHorizontalPadding, vertical = QimengDimens.SpaceS),
             )
         }
+        Box {
+            IconButton(onClick = { menuOpen = true }) {
+                Icon(
+                    imageVector = MoreVertIcon,
+                    contentDescription = AUTHOR_MENU_DESC,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            DropdownMenu(
+                expanded = menuOpen,
+                onDismissRequest = { menuOpen = false },
+            ) {
+                DropdownMenuItem(
+                    text = { Text(text = RENAME_MENU_LABEL) },
+                    onClick = {
+                        menuOpen = false
+                        onRename()
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text(text = DELETE_MENU_LABEL, color = MaterialTheme.colorScheme.error) },
+                    onClick = {
+                        menuOpen = false
+                        onDelete()
+                    },
+                )
+            }
+        }
     }
+}
+
+/**
+ * 作者名对话框（新建/改名共用；2026-10-13 作者管理族）：单输入框 + 「 / 」别名
+ * 分隔说明；确定钮空白禁用、提交中禁用；提交失败保持打开（错误横幅在页面层，
+ * 用户可改名字直接重按，对齐编辑页自助修正口径）。容器色显式 surface（同
+ * VocabularyPromptDialog 的夜间胶囊同色根因修复）。
+ */
+@Composable
+private fun AuthorNameDialog(
+    title: String,
+    value: String,
+    submitting: Boolean,
+    onValueChange: (String) -> Unit,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface,
+        title = { Text(text = title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(QimengDimens.SpaceS)) {
+                QimengCapsuleTextField(
+                    value = value,
+                    onValueChange = onValueChange,
+                    placeholder = AUTHOR_NAME_PLACEHOLDER,
+                    singleLine = true,
+                    enabled = !submitting,
+                )
+                Text(
+                    text = AUTHOR_ALIAS_HINT,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm, enabled = value.isNotBlank() && !submitting) {
+                Text(text = if (submitting) SUBMITTING_LABEL else CONFIRM_LABEL)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !submitting) {
+                Text(text = CANCEL_LABEL)
+            }
+        },
+    )
+}
+
+/**
+ * 删除作者确认对话框（2026-10-13 作者管理族）：明示领域口径——关联文件保留、
+ * 仅解除关联（DOMAIN_RULES §6「删除作者保留文件」）；删除钮红色。
+ */
+@Composable
+private fun AuthorDeleteDialog(
+    displayName: String,
+    fileCount: Int,
+    submitting: Boolean,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface,
+        title = { Text(text = DELETE_DIALOG_TITLE) },
+        text = {
+            Text(text = "确定删除「$displayName」吗？\n关联的 $fileCount 个文件会保留，仅解除关联。")
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm, enabled = !submitting) {
+                Text(
+                    text = if (submitting) DELETING_LABEL else DELETE_MENU_LABEL,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !submitting) {
+                Text(text = CANCEL_LABEL)
+            }
+        },
+    )
 }

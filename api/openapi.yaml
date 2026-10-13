@@ -742,6 +742,86 @@ paths:
       summary: 作者列表（常规与 COS 统一返回，type 区分；排序与筛选见 DOMAIN_RULES §6）
       responses:
         "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Author" } } } } }
+    post:
+      summary: 按名新建作者（仅作者行不关联文件；作者管理页「添加作者」，ADR-0024 修订 5）
+      description: |
+        作者管理页「添加作者」通道（2026-10-13 用户拍板）。身份规则与编辑页按名
+        新建完全同源（`newAuthorNames`）：名字先按别名分隔归一（「 / 」连接形态与
+        两个以上空白均视为别名分隔、括号备注去除——2026-10-13 修订，对齐显示名
+        往返），取首别名 GenerateAuthorID 为规范身份：
+        - 规范身份命中已有**常规**作者 → 复用（返回既有行，不重复建行，响应
+          携带该行真实 fileCount/followed/viewCount）；
+        - 未命中 → 新建常规作者行（origin=client）；**不写 TXT 片段、不关联文件**
+          （与 TXT 格式 C 同形态：零关联常规行属设计内形态，统一重建不删）；
+        - 名字非法（控制字符/空/纯数字/带媒体扩展名/超 200 rune/编号行或标记行
+          形态/规范化后无有效别名）→ 400 INVALID_PARAM（message 含具体原因）；
+        - 规范身份与 COS 作者行撞名（cos_ 前缀恰是合法产物）→ 409 CONFLICT，
+          不静默复用也不覆盖。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [displayName]
+              properties:
+                displayName: { type: string, maxLength: 200 }
+      responses:
+        "200": { description: 已新建或复用（复用返回既有行）, content: { application/json: { schema: { $ref: "#/components/schemas/Author" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { description: 与 COS 作者行撞名, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /api/v1/authors/{authorId}:
+    put:
+      summary: 修改作者显示名（改名；身份随之迁移，ADR-0024 修订 5）
+      description: |
+        作者管理页「改名」通道（2026-10-13 用户拍板）。仅常规作者（COS 作者由
+        目录扫描派生 → 400 INVALID_PARAM）。语义：
+        - 新显示名归一规则同「按名新建」（控制字符/空/纯数字/带媒体扩展名/超
+          200 rune/编号行或标记行形态/规范化后无有效别名 → 400）；
+        - **TXT 真相原地重写**：该作者全部片段块的编号行别名列表改为新名
+          （作品行/来源区原样保留，排版不变）；写出结果必须回读为同一作者身份
+          （回读 id == 迁移后 id，往返恒等）；
+        - **身份迁移**：新身份（首别名 GenerateAuthorID）变化时，作者行连同
+          关注标记随迁、`asset_authors` 关联改挂新身份、上传写入条目
+          （`imported_txt_upload_entries`）同步改指；新旧身份相同时仅更新显示名；
+        - 同身份（归一后与现状一致）→ 幂等 200，零写入；
+        - 新身份命中**其他**既有作者（含 COS）→ 409 CONFLICT（本端点不做作者合并；
+          如需合并请删除其一并把作品行手工并入另一块）；
+        - 作者行存在但无任何片段块（格式 C / 按名新建产物）→ 仅迁移/更新行与关联，
+          不写片段。
+      parameters: [ { name: authorId, in: path, required: true, schema: { type: string } } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [displayName]
+              properties:
+                displayName: { type: string, maxLength: 200 }
+      responses:
+        "200": { description: 已更新（id=迁移后身份）, content: { application/json: { schema: { $ref: "#/components/schemas/Author" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: 新身份与既有作者冲突（不做合并）, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    delete:
+      summary: 删除作者（TXT 块 + 关联 + 作者行三清；文件保留，DOMAIN_RULES §6）
+      description: |
+        作者管理页「删除」通道（2026-10-13 用户拍板）。仅常规作者（COS 作者由
+        扫描自动清理孤立行 → 400 INVALID_PARAM）。语义（DOMAIN_RULES §6
+        「删除作者保留文件」）：
+        - 该作者在**全部**片段中的块整块移除（编号行及其作品/来源区，直排排版
+          空行一并清理）——TXT 真相同步，后续统一重建不会复活该作者；
+        - `asset_authors` 全部关联删除（**媒体文件与资产本体保留**，仅解除关联）；
+        - 上传写入条目（`imported_txt_upload_entries`）中该作者条目同步清除；
+        - 作者行删除（关注标记随行消亡）；
+        - 不触发统一重建（关联显式删除、其余作者不受影响，重建等价）；幂等性：
+          作者不存在 → 404（不静默成功）。
+      parameters: [ { name: authorId, in: path, required: true, schema: { type: string } } ]
+      responses:
+        "204": { description: 已删除（关联文件保留，仅解除关联） }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /api/v1/authors/suggest:
     get:
       summary: 作者联想（作者输入框联想：编辑页挂靠等；常规作者，含零关联文件者）

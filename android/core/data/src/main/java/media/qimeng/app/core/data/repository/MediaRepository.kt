@@ -124,6 +124,23 @@ interface AuthorRepository {
     /** 整体替换某作者来源集（PUT /authors/{authorId}/sources，body {sources, mode=replace}） */
     suspend fun replaceAuthorSources(authorId: String, sources: List<String>) = Unit
 
+    // ------------------------------------------------------------------
+    // 作者管理族（2026-10-13：作者管理页「新建/改名/删除」三操作，ADR-0024
+    // 修订 5）。带默认实现的原因同上：既有测试替身不实现新方法也能编译；
+    // 默认值=「无作者管理能力」，唯一生产实现 SdkAuthorRepository 全覆盖。
+    // ------------------------------------------------------------------
+
+    /** 按名新建作者（POST /authors；规范身份命中已有常规作者则复用；仅作者行不关联文件） */
+    suspend fun createAuthor(displayName: String): AuthorSummary =
+        throw UnsupportedOperationException("createAuthor 未实现")
+
+    /** 修改作者显示名（PUT /authors/{authorId}；身份随之迁移，返回迁移后作者） */
+    suspend fun renameAuthor(authorId: String, displayName: String): AuthorSummary =
+        throw UnsupportedOperationException("renameAuthor 未实现")
+
+    /** 删除作者（DELETE /authors/{authorId}；TXT 块 + 关联 + 行三清，文件保留） */
+    suspend fun deleteAuthor(authorId: String) = Unit
+
     /**
      * 并入来源（PUT /authors/{authorId}/sources，body {sources, mode=append}；挂靠批）：
      * append = 服务端并入去重、永不覆盖该作者既有来源（上传自动挂靠专用语义，
@@ -165,6 +182,18 @@ class AssetAuthorsRejectedException(
     val serverMessage: String,
     val statusCode: Int,
 ) : Exception("authors rejected ($statusCode): $serverMessage")
+
+/**
+ * 作者管理操作（POST /authors、PUT/DELETE /authors/{id}）被服务端语义化拒绝
+ * （4xx）的领域化异常（[AssetAuthorsRejectedException] 同范式，2026-10-13）：
+ * [serverMessage] = 服务端 Error{code,message} 原因文案（如「作者名非法：带媒体
+ * 扩展名」「目标名字已存在作者（本端点不做合并……）」「COS 作者由目录扫描自动
+ * 管理」）——作者管理页直接把原因透给用户自助修正。
+ */
+class AuthorManageRejectedException(
+    val serverMessage: String,
+    val statusCode: Int,
+) : Exception("author manage rejected ($statusCode): $serverMessage")
 
 /**
  * 动图原件直链解析端口（拍板条目 9：animated_image 网格项用原件签名直链走动画解码）。

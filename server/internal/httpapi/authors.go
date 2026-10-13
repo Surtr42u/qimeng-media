@@ -71,6 +71,7 @@ func (e *txtImportConflictError) Error() string {
 
 // GetApiV1Authors 作者列表：全部作者 + 关联文件数 + 关注标记，
 // 按 display_name 升序（查询注释写明口径，与 GET /tags 同风格）。
+// 行装配走 authorFromListRow 单源（authors_manage.go，作者管理端点共用）。
 func (s *Server) GetApiV1Authors(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.q.ListAuthors(r.Context())
 	if err != nil {
@@ -79,18 +80,7 @@ func (s *Server) GetApiV1Authors(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]gen.Author, 0, len(rows))
 	for _, row := range rows {
-		t := gen.AuthorType(row.Type)
-		fileCount := int(row.FileCount)
-		viewCount := toInt(row.ViewCount) // 全部作品累计 open 事件（SQL 聚合；toInt 抹平 sqlc interface{}）
-		followed := row.Followed == 1
-		out = append(out, gen.Author{
-			Id:          &row.ID,
-			DisplayName: &row.DisplayName,
-			Type:        &t,
-			FileCount:   &fileCount,
-			Followed:    &followed,
-			ViewCount:   ptr(viewCount),
-		})
+		out = append(out, authorFromListRow(row))
 	}
 	writeJSON(w, http.StatusOK, out)
 }

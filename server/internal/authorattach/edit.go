@@ -30,6 +30,15 @@ import (
 // 同为哨兵错误，供 errors.Is 判别。
 var ErrAuthorNotRegular = errors.New("authorattach: author is not regular")
 
+// ErrDisplayNameIdentityMismatch：作者行显示名无法推出自身 id（病态存量：
+// 显示名被手工改过/哈希兜底 id），写块必然身份漂移——调用方转 400 提示先
+// 改名（改名端点能把此类行迁回自洽形态）。2026-10-13 修订新增。
+var ErrDisplayNameIdentityMismatch = errors.New("authorattach: display name does not derive the author id")
+
+// ErrAuthorIDConflict：改名目标身份与既有作者（常规或 COS 行）冲突——
+// 本端点不做作者合并，handler 映射 409。
+var ErrAuthorIDConflict = errors.New("authorattach: target author id already exists")
+
 // AuthorRef 是编辑端点传入的已校验作者（id + authors 行显示名）。
 type AuthorRef struct {
 	ID          string
@@ -117,12 +126,15 @@ func (s *Service) ResolveOrCreateAuthors(ctx context.Context, qtx *db.Queries, n
 		seen[id] = true
 		if row, ok := byID[id]; ok {
 			if row.Type != authoring.AuthorTypeRegular {
-				return nil, fmt.Errorf("authorattach: 名字 %q 的规范身份 %s 与 %s 类型作者行撞名", name, id, row.Type)
+				// 哨兵包装（ErrAuthorIDConflict）：作者管理端点据此映射 409，
+				// 编辑端点按既有 4xx 路径透出原因（文案不变）。
+				return nil, fmt.Errorf("authorattach: 名字 %q 的规范身份 %s 与 %s 类型作者行撞名: %w",
+					name, id, row.Type, ErrAuthorIDConflict)
 			}
 			refs = append(refs, AuthorRef{ID: id, DisplayName: row.DisplayName})
 			continue
 		}
-		displayName := strings.Join(canonical, " / ")
+		displayName := strings.Join(canonical, authoring.DisplayNameSeparator)
 		if err := qtx.UpsertAuthor(ctx, db.UpsertAuthorParams{
 			ID: id, DisplayName: displayName, Type: authoring.AuthorTypeRegular,
 			CreatedAt: store.FormatTimestamp(now),
@@ -170,20 +182,15 @@ func (s *Service) AuthorSources(ctx context.Context, q *db.Queries, authorID str
 	return []string{}, nil
 }
 
-// displayNameAliases 从作者行显示名重建编号行的规范别名列表：authors 表的
-// displayName 是 CanonicalAuthorNames 产物按 " / " 的连接串（Apply/统一重建
-// 同口径），新建块必须按空格分隔写回各别名——整串当单别名会让解析回读的
-// GenerateAuthorID(首别名) 与真实 id 分裂（幻影作者、统一重建丢关联）。
-// 拆分归一后全空（病态数据）回落整串 canonical 兜底。
-func displayNameAliases(displayName string) []string {
-	var names []string
-	for _, part := range strings.Split(displayName, " / ") {
-		names = append(names, authoring.CanonicalAuthorNames(part)...)
-	}
-	if len(names) == 0 {
-		return authoring.CanonicalAuthorNames(displayName)
-	}
-	return names
+// displayNameAliases 从作者行显示名重建编号行的规范别名列表（回写身份自洽
+// 口径，实现唯一来源 = authoring.AliasesForAuthorID）：返回列表以两空格 join
+// 写入编号行后，解析回读的 GenerateAuthorID(首别名) 必须等于 authorID ——
+// 否则写出的块归到别的作者行（2026-10-13 事故：显示名单别名含「 / 」字面被
+// 盲目拆成两别名，来源/作品写进错误 id 的块，编辑页回读永远为空、保存看着
+// 「无效」）。推不出目标 id 的病态存量（显示名被手工改过/哈希兜底 id）返回
+// ok=false，调用方转失败提示先改名，绝不写身份漂移的块。
+func displayNameAliases(displayName, authorID string) ([]string, bool) {
+	return authoring.AliasesForAuthorID(displayName, authorID)
 }
 
 // SourcesWriteMode 决定作者块来源区的写入语义（PUT /authors/{authorId}/sources
@@ -228,6 +235,13 @@ func (s *Service) ReplaceAuthorSources(ctx context.Context, qtx *db.Queries, now
 		return echo, nil
 	}
 	// 无块：最近导入片段新建作者块；库中无片段则自动创建承载片段。
+	// 别名列表必须往返恒等（回读 id == authorID）；推不出目标身份的病态
+	// 存量直接失败，绝不写漂移块（见 displayNameAliases）。
+	names, ok := displayNameAliases(displayName, authorID)
+	if !ok {
+		return nil, fmt.Errorf("authorattach: 作者 %s 显示名 %q 与身份不自洽（请先改名）: %w",
+			authorID, displayName, ErrDisplayNameIdentityMismatch)
+	}
 	ti := mostRecentIndex(fragments)
 	var fragment, content string
 	if ti < 0 {
@@ -237,8 +251,8 @@ func (s *Service) ReplaceAuthorSources(ctx context.Context, qtx *db.Queries, now
 	}
 	// 第二返回值（显示名）只写入上传条目元数据，来源区写入路径从不产生新
 	// 条目（见下方 persistSourcesAndPrune 注释）；且它恒等于 names 的
-	// " / " 连接（entryIdentity 三分支皆然），需要时可重建，丢弃无损失。
-	names, _ := entryIdentity(displayNameAliases(displayName), nil, displayName)
+	// DisplayNameSeparator 连接（entryIdentity 三分支皆然），需要时可重建，
+	// 丢弃无损失。
 	newContent := authoring.AppendAuthorBlock(content, names, sources, nil)
 	if ti < 0 {
 		fragments = append(fragments, Source{
@@ -324,8 +338,10 @@ func (s *Service) ReplaceAssetAuthors(ctx context.Context, qtx *db.Queries, now 
 	// 与条目修剪都只对它们执行；added 收集本次实际新追加的作品行（按片段
 	// 分组，与 Apply 的 recordAddedLines 同一口径）。
 	changed := removeAssetWorkLines(fragments, current, newSet, fileName)
-	var added map[string][]authoring.UploadEntry
-	fragments, added = appendAssetWorkLines(fragments, authors, fileName, now, changed)
+	fragments, added, err := appendAssetWorkLines(fragments, authors, fileName, now, changed)
+	if err != nil {
+		return err
+	}
 	if len(changed) > 0 {
 		if err := PersistSources(ctx, qtx, now, fragments); err != nil {
 			return err
@@ -392,7 +408,7 @@ func removeAssetWorkLines(fragments []Source, current []db.ListAssetAuthorRefsRo
 // 返回更新后的片段数组与本次实际新追加的条目（按片段分组，登记口径同
 // Apply）；changed 就地并入内容变化的片段。落点与 Apply 同款（块命中→数组
 // 序第一个片段；未命中→最近导入片段新建块；无片段→自动创建承载片段）。
-func appendAssetWorkLines(fragments []Source, authors []AuthorRef, fileName string, now time.Time, changed map[string]string) ([]Source, map[string][]authoring.UploadEntry) {
+func appendAssetWorkLines(fragments []Source, authors []AuthorRef, fileName string, now time.Time, changed map[string]string) ([]Source, map[string][]authoring.UploadEntry, error) {
 	added := map[string][]authoring.UploadEntry{}
 	works := []string{fileName}
 	for _, a := range authors {
@@ -405,8 +421,22 @@ func appendAssetWorkLines(fragments []Source, authors []AuthorRef, fileName stri
 			fragment, content = fragments[idx].Filename, fragments[idx].Content
 		}
 		// entryIdentity 决定条目别名与新块编号行：块命中 → 该块解析出的
-		// AuthorNames（往返恒等）；无块 → 显示名按 " / " 拆分重建的规范别名。
-		aliases, entryDisplay := entryIdentity(displayNameAliases(a.DisplayName), blockNames, a.DisplayName)
+		// AuthorNames（往返恒等）；无块 → 显示名按身份自洽口径重建的规范
+		// 别名（AliasesForAuthorID；推不出目标身份的病态存量直接失败，
+		// 绝不写漂移块——2026-10-13 事故防线）。
+		var aliases []string
+		var entryDisplay string
+		if len(blockNames) > 0 {
+			aliases, entryDisplay = entryIdentity(nil, blockNames, a.DisplayName)
+		} else {
+			var ok bool
+			aliases, ok = displayNameAliases(a.DisplayName, a.ID)
+			if !ok {
+				return nil, nil, fmt.Errorf("authorattach: 作者 %s 显示名 %q 与身份不自洽（请先改名）: %w",
+					a.ID, a.DisplayName, ErrDisplayNameIdentityMismatch)
+			}
+			entryDisplay = strings.Join(aliases, authoring.DisplayNameSeparator)
+		}
 		newContent, blockFound := authoring.AppendWorks(content, a.ID, works)
 		if !blockFound {
 			newContent = authoring.AppendAuthorBlock(content, aliases, nil, works)
@@ -430,7 +460,7 @@ func appendAssetWorkLines(fragments []Source, authors []AuthorRef, fileName stri
 		}
 		changed[fragment] = newContent
 	}
-	return fragments, added
+	return fragments, added, nil
 }
 
 // pruneFragmentEntries 剔除 fragment 片段上传条目中内容已不存在的部分

@@ -385,8 +385,16 @@ const MaxNewAuthorNameRunes = 200
 // 直接生成 id 会与块解析回读的 id 分裂（"Night  Cry"/"bamhor[3D]"），
 // REQ §3.1① 空格/符号差异不得裂分身。别名内保证无双空格序列与括号备注，
 // 以两空格 join 写回编号行可被解析器恒等读回（往返安全）。
+//
+// 2026-10-13 修订：别名分隔除两个以上空白外，**「 / 」也视为分隔**——
+// 显示名以 DisplayNameSeparator 连接别名（列表/编辑页所见即所得），输入侧
+// 同视分隔使「显示名 → 输入 → 回读」在别名结构上恒等：用户按看到的
+// `hornyherring / Horny Herring Studios` 填写即得双别名作者，而不是
+// 单别名含斜杠字面（当日事故根因：单别名斜杠字面在下游按「 / 」盲目拆分，
+// 写块的派生 id 与作者行分裂）。名字内部无空格的斜杠（`a/b`）不拆。
 func CanonicalAuthorNames(input string) []string {
-	aliases := splitAliases(strings.TrimSpace(input))
+	normalized := strings.ReplaceAll(strings.TrimSpace(input), DisplayNameSeparator, numberedTwoSpaces)
+	aliases := splitAliases(normalized)
 	var out []string
 	for _, a := range aliases {
 		// 括号备注整体截掉后为空的别名（如 "[3D]"）丢弃：保留会让编号行
@@ -396,6 +404,41 @@ func CanonicalAuthorNames(input string) []string {
 		}
 	}
 	return out
+}
+
+// DisplayNameSeparator 是多别名作者显示名的连接符（authors.display_name =
+// 规范别名以本分隔符连接；列表/编辑页所见即所得）。单源：ResolveOrCreateAuthors
+// 的连接、AliasesForAuthorID/CanonicalAuthorNames 的拆分都必须引用本常量，
+// 禁止手抄字面量（代码卫生约束 2）。
+const DisplayNameSeparator = " / "
+
+// AliasesForAuthorID 由作者行显示名重建编号行别名列表，**保证往返恒等**：
+// 返回列表以两空格 join 写入编号行后，解析回读的 GenerateAuthorID(首别名)
+// 必须等于 authorID —— 否则写出的块归属别的作者行（2026-10-13 事故：显示名
+// 单别名含「 / 」字面被盲目按「 / 」拆成两别名，来源/作品写进错 id 的块，
+// 编辑页回读永远为空「选了后保存无效」）。
+// 两种形态依序尝试：
+//   - 形态①：CanonicalAuthorNames 归一回多别名（" / " 连接形态与 2+ 空白
+//     同口径），首别名能推出 authorID 即采用；
+//   - 形态②：整串作单别名（历史单别名含斜杠形态——2026-10-13 修订前创建，
+//     如 `hornyherring / Horny Herring Studios` 的建成行 id
+//     hornyherring__horny_herring_studios）：不拆、原样保留斜杠与单空格，
+//     别名内无两个以上空白即可被解析器原样读回；首别名（=整串）能推出
+//     authorID 即采用。
+//
+// 两者都推不出（病态存量：显示名被手工改过 / 哈希兜底 id / 含控制形态）→
+// ok=false：调用方必须转失败（400 提示先改名），**绝不写身份漂移的块**。
+func AliasesForAuthorID(displayName, authorID string) ([]string, bool) {
+	if names := CanonicalAuthorNames(displayName); len(names) > 0 &&
+		GenerateAuthorID(names[0]) == authorID {
+		return names, true
+	}
+	whole := strings.TrimSpace(displayName)
+	if whole != "" && !aliasSeparatorRe.MatchString(whole) &&
+		GenerateAuthorID(whole) == authorID {
+		return []string{whole}, true
+	}
+	return nil, false
 }
 
 // hasControlChars 报告是否含控制字符（rune < 0x20 或 0x7F）——authorName

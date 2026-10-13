@@ -102,11 +102,17 @@ func (s *Service) Apply(ctx context.Context, qtx *db.Queries, now time.Time, req
 	}
 
 	// 纯函数文本手术（块缺失走新建块路径）。AuthorID 路径无别名来源（names
-	// 为空）时从 displayName 重建别名列表——整串当单别名写编号行会让解析
-	// 回读的 GenerateAuthorID(首别名) 与真实 id 分裂（幻影作者，同
-	// edit.go displayNameAliases 口径）。
-	if len(names) == 0 {
-		names = displayNameAliases(displayName)
+	// 为空）且块缺失时，从 displayName 按身份自洽口径重建别名列表
+	// （AliasesForAuthorID：回读 id 必须 == 真实 id，否则写出的块归错作者
+	// ——幻影作者，2026-10-13 事故防线；推不出目标身份的病态存量直接失败，
+	// 绝不写漂移块）。块命中时 entryIdentity 用块解析别名，无需重建。
+	if len(names) == 0 && len(blockNames) == 0 {
+		var ok bool
+		names, ok = displayNameAliases(displayName, id)
+		if !ok {
+			return AttachResult{}, fmt.Errorf("authorattach: 作者 %s 显示名 %q 与身份不自洽（请先改名）: %w",
+				id, displayName, ErrDisplayNameIdentityMismatch)
+		}
 	}
 	entryNames, entryDisplay := entryIdentity(names, blockNames, displayName)
 	works := []string{req.FinalName}
@@ -189,7 +195,7 @@ func (s *Service) resolveAuthor(ctx context.Context, qtx *db.Queries, req Attach
 	if idSet {
 		return "", "", ErrAuthorNotFound
 	}
-	return id, strings.Join(names, " / "), nil
+	return id, strings.Join(names, authoring.DisplayNameSeparator), nil
 }
 
 // entryIdentity 决定条目元数据（及块缺失时新块编号行）的别名与显示名：
@@ -199,10 +205,10 @@ func (s *Service) resolveAuthor(ctx context.Context, qtx *db.Queries, req Attach
 // 单别名兜底。
 func entryIdentity(names, blockNames []string, displayName string) ([]string, string) {
 	if len(blockNames) > 0 {
-		return blockNames, strings.Join(blockNames, " / ")
+		return blockNames, strings.Join(blockNames, authoring.DisplayNameSeparator)
 	}
 	if len(names) > 0 {
-		return names, strings.Join(names, " / ")
+		return names, strings.Join(names, authoring.DisplayNameSeparator)
 	}
 	return []string{displayName}, displayName
 }

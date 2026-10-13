@@ -14,6 +14,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  deleteApiV1AuthorsByAuthorId,
   deleteApiV1AuthorsImportTxt,
   getApiV1Authors,
   getApiV1AuthorsByAuthorIdSources,
@@ -22,9 +23,11 @@ import {
   getApiV1AuthorsMirror,
   getApiV1AuthorsSourceVocabulary,
   getApiV1AuthorsSuggest,
+  postApiV1Authors,
   postApiV1AuthorsImportTxt,
   postApiV1AuthorsImportTxtRebuild,
   putApiV1AssetsByAssetIdAuthors,
+  putApiV1AuthorsByAuthorId,
   putApiV1AuthorsByAuthorIdFollow,
   putApiV1AuthorsByAuthorIdSources,
   putApiV1AuthorsMirror,
@@ -65,6 +68,54 @@ export function useToggleFollow() {
         }),
       ),
     onSuccess: () => qc.invalidateQueries({ queryKey: AUTHORS_QUERY_KEY }),
+  })
+}
+
+/**
+ * 作者管理族（2026-10-13，ADR-0024 修订 5）：新建/改名/删除三操作。
+ * 新建（POST /authors）：规范身份命中已有常规作者则复用、未命中新建仅作者行；
+ * 成功后失效作者列表。改名（PUT）：TXT 块原地重写 + 身份迁移（id 变化）——
+ * 显示名出现在资产列表 authorNames 与作者集合页，故连带失效资产族；
+ * 删除（DELETE）：TXT 块 + 关联 + 行三清、文件保留——关联消失同样连带失效
+ * 资产族。4xx 原因文案由页面层透出（unwrapSdkResult 统一抛服务端 message）。
+ */
+export function useCreateAuthor() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (displayName: string) =>
+      unwrapSdkResult(postApiV1Authors({ body: { displayName } })),
+    onSuccess: () => qc.invalidateQueries({ queryKey: AUTHORS_QUERY_KEY }),
+  })
+}
+
+/** 修改作者显示名（PUT /authors/{authorId}；返回迁移后的作者对象） */
+export function useRenameAuthor() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (args: { authorId: string; displayName: string }) =>
+      unwrapSdkResult(
+        putApiV1AuthorsByAuthorId({
+          path: { authorId: args.authorId },
+          body: { displayName: args.displayName },
+        }),
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: AUTHORS_QUERY_KEY })
+      qc.invalidateQueries({ queryKey: ASSETS_QUERY_KEY })
+    },
+  })
+}
+
+/** 删除作者（DELETE /authors/{authorId}；关联文件保留，仅解除关联） */
+export function useDeleteAuthor() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (authorId: string) =>
+      unwrapSdkResult(deleteApiV1AuthorsByAuthorId({ path: { authorId } })),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: AUTHORS_QUERY_KEY })
+      qc.invalidateQueries({ queryKey: ASSETS_QUERY_KEY })
+    },
   })
 }
 
