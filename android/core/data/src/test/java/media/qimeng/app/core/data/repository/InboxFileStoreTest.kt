@@ -139,6 +139,7 @@ class InboxFileStoreTest {
         // 路径语义名不得逸出归档根目录。
         assertFalse(store.archiveToLibraryRoot(tmp.root.absolutePath, ".", source))
         assertFalse(store.archiveToLibraryRoot(tmp.root.absolutePath, "..", source))
+        assertFalse(store.archiveToLibraryRoot(tmp.root.absolutePath, "...", source))
         // 归档失败不吞源文件（调用方回退 uploaded/ 归档的兜底前提）
         assertTrue(source.isFile)
     }
@@ -233,6 +234,24 @@ class InboxFileStoreTest {
         listOf("video.mp4", "天使 01.mp4", ".hidden.jpg").forEach { name ->
             assertTrue("应接受文件名: $name", store.isSafeArchiveFileName(name))
         }
+    }
+
+    @Test
+    fun `归档根外的库名路径不能触发镜像文件重命名`() {
+        val root = tmp.newFolder("archive-root-rename")
+        val outside = tmp.newFolder("outside-library")
+        val source = write(outside, "old.mp4", content = "video")
+
+        assertFalse(
+            store.renameArchivedFile(
+                archiveRoot = root.absolutePath,
+                libraryName = "../outside-library",
+                oldFileName = "old.mp4",
+                newFileName = "escaped.mp4",
+            ),
+        )
+        assertTrue("根外源文件必须保留", source.isFile)
+        assertFalse(File(outside, "escaped.mp4").exists())
     }
 
     @Test
