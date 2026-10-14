@@ -81,9 +81,10 @@ data class AssetEditUiState(
     val noticeMessage: String? = null,
     /** 保存成功（一次性信号：页面据此返回，返回后路由销毁无需复位） */
     val saved: Boolean = false,
-    /** 作者全集相对初始装配是否变化（VM 在增删/装配时回填；data class copy 不携带
-     *  body var 属性，故本字段必须是构造参数而非派生属性——变基准放 VM 私有域） */
+    /** 作者全集相对初始装配是否变化。 */
     val authorsChanged: Boolean = false,
+    /** 多步保存中作者关联 PUT 已成功；后续来源写入失败重试时跳过已提交步骤。 */
+    val authorAssociationCommitted: Boolean = false,
 ) {
     /** 实际生效的完整文件名：基名为空时安全回退 originalFileName，否则拼接扩展名 */
     val effectiveFileName: String
@@ -333,6 +334,7 @@ class AssetEditViewModel @Inject constructor(
         _uiState.update {
             it.copy(
                 pendingNewAuthorNames = it.pendingNewAuthorNames + trimmed,
+                authorAssociationCommitted = false,
                 authorQuery = "",
                 authorSuggestions = emptyList(),
                 noticeMessage = null,
@@ -344,7 +346,10 @@ class AssetEditViewModel @Inject constructor(
     fun removePendingNewAuthor(name: String) {
         if (_uiState.value.saving) return
         _uiState.update { current ->
-            current.copy(pendingNewAuthorNames = current.pendingNewAuthorNames.filterNot { it == name })
+            current.copy(
+                pendingNewAuthorNames = current.pendingNewAuthorNames.filterNot { it == name },
+                authorAssociationCommitted = false,
+            )
         }
     }
 
@@ -366,6 +371,7 @@ class AssetEditViewModel @Inject constructor(
                         followed = false,
                     ),
                     authorsChanged = true,
+                    authorAssociationCommitted = false,
                     authorQuery = "",
                     authorSuggestions = emptyList(),
                     noticeMessage = null,
@@ -383,6 +389,7 @@ class AssetEditViewModel @Inject constructor(
             current.copy(
                 authors = remaining,
                 authorsChanged = remaining.map { it.id } != initialAuthorIds,
+                authorAssociationCommitted = false,
                 sourcesByAuthor = current.sourcesByAuthor - authorId,
                 sourceLoadingAuthorIds = current.sourceLoadingAuthorIds - authorId,
                 sourceLoadFailedAuthorIds = current.sourceLoadFailedAuthorIds - authorId,
@@ -526,22 +533,34 @@ class AssetEditViewModel @Inject constructor(
                 }
                 // 2. 仅当作者全集或待新建名单确实变化时才整体 PUT。文件名单独改动、或只改来源时
                 //    不写无关作者关联，避免无谓数据库/TXT 写入及失败后把已成功的文件操作报成失败。
-                if (current.authorsChanged || current.pendingNewAuthorNames.isNotEmpty()) {
+                if (
+                    (current.authorsChanged || current.pendingNewAuthorNames.isNotEmpty()) &&
+                    !current.authorAssociationCommitted
+                ) {
                     authorRepository.replaceAssetAuthors(
                         assetId,
                         current.authors.map { it.id },
                         current.pendingNewAuthorNames,
                     )
+                    // 作者关联已提交：若后续某个来源 PUT 失败，重试时跳过此步骤，避免重复写。
+                    _uiState.update { it.copy(authorAssociationCommitted = true) }
                 }
-                // 3. 逐个更新脏来源
+                // 3. 逐个更新脏来源；单项成功立即清脏，部分失败重试时只重试失败项。
                 current.dirtySourceAuthorIds.forEach { authorId ->
                     authorRepository.replaceAuthorSources(authorId, current.sourcesByAuthor[authorId].orEmpty())
+                    _uiState.update { state ->
+                        state.copy(dirtySourceAuthorIds = state.dirtySourceAuthorIds - authorId)
+                    }
                 }
-                // 4. 成功：待新建名已被服务端实体化（复用或新建），清空名单——本页返回后
-                //    详情/编辑页回读即见新作者为正常作者（有 id，来源可编辑）；
-                //    失败路径（下方 catch）不清空名单，可重按重试
+                // 4. 成功：待新建名已被服务端实体化（复用或新建），清空名单。
                 _uiState.update {
-                    it.copy(saving = false, saved = true, pendingNewAuthorNames = emptyList())
+                    it.copy(
+                        saving = false,
+                        saved = true,
+                        pendingNewAuthorNames = emptyList(),
+                        authorsChanged = false,
+                        authorAssociationCommitted = false,
+                    )
                 }
             } catch (e: MoveConflictException) {
                 _uiState.update { it.copy(saving = false, errorMessage = NAME_CONFLICT) }
