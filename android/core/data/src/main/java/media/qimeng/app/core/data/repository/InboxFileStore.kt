@@ -98,9 +98,9 @@ class InboxFileStore @Inject constructor() {
     /**
      * 把 content:// URI 流归档到上传归档文件夹（供相册与系统文件来源在设置归档文件夹后落位）：
      * 将文件流写入 <archiveRoot>/<sanitize(库名)>/<目标文件名>。
-     * - 优先比对目标存在性与内容：同内容直接跳过或删旧放新；不同内容加序号；
+     * - 优先比对目标存在性与内容：同内容保留已有目标并安全返回（不删除源 URI，因为无法证明它与目标不是同一物理文件）；不同内容加序号；
      * - 写入流经 .part 临时文件改名到位；
-     * - 写入成功后尝试 DocumentsContract.deleteDocument 删除源文档（若 SAF provider
+     * - 新目标写入成功后尽力调用 DocumentsContract.deleteDocument 删除源文档（若 SAF provider
      *   支持删除则达成移动语义；若不支持删除/无删除权限则安全留存原位，达成安全备份归档语义）；
      * - 绝不抛异常，失败返回 false。
      */
