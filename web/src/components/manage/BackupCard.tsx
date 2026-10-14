@@ -124,7 +124,8 @@ export function BackupCard() {
         keepOpenOnConfirm
         onConfirm={confirmImport}
         onOpenChange={(next) => {
-          if (!next) setPending(null)
+          // 导入请求不可取消：忽略请求期间的 ESC/关闭意图，避免结果回调失去确认上下文。
+          if (!next && !importBackup.isPending) setPending(null)
         }}
       />
     </div>
