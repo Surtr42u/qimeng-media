@@ -11,6 +11,17 @@
 
 
 
+## fix(android/web/ci/docs): 归档边界加固、备份导入反馈与跨平台门禁（2026-10-15 第五百二十九笔；Draft PR #1，未合并）
+
+执行 AI：GPT-6（主代理）
+
+- **全库审查范围**：以 ARCHITECTURE / DOMAIN_RULES / SECURITY / PROJECT_PLAN 为索引，复核 Go 文件移动与回收站、Android 上传归档与 Room 离线队列、Web 文件操作/备份导入/作者编辑，以及协议生成和 CI 门禁。
+- **Android 归档**：修复流比较函数的缓冲区剩余长度计算并覆盖短读；SAF URI 命中同内容归档时保留既有目标而非删除重写；拒绝 ContentProvider 文件名中的路径分隔符/控制字符及路径语义段；库目录名拒绝 `.` / `..`，归档镜像重命名校验源与目标名称。
+- **测试**：增加流比较（短读、非整块长度、内容/长度不一致）、归档路径边界和 Room 1→2 / 2→3 迁移 SQL 合约测试。迁移测试锁定生成 SQL 与版本连续性，**不等同于 emulator + MigrationTestHelper 的真实 SQLite 数据保留测试**，该项仍是已知验证缺口。
+- **Web 交互**：备份导入确认弹窗增加 busy 状态，异步导入期间保留确认上下文，失败可重试且成功后才关闭；统一未知错误提示，避免 SDK 错误对象退化为 `[object Object]`，并更新纯函数测试。
+- **CI / 文档**：新增 Windows 原生 runner 的 Go filing 测试，补上 Linux job 不会编译的 `move_windows.go` 覆盖；README、ARCHITECTURE、PROJECT_PLAN 同步七个 CI job 的职责与本地 lint 的边界。
+- **验证状态**：最新 GitHub Actions run 已排队；此条记录不预先宣称 CI 通过。所有改动保留在 `codex/reliability-hardening-ui-2026-10` 和 Draft PR #1，未合并到 master，未访问或修改运行中的 NAS 数据。
+
 ## fix(ci): Go 锁补丁版本 1.27.0——runner 漂到 1.27.2 使 golangci-lint v2.13.1 类型检查崩（标准库导入即报 typecheck），lint 失败连带跳过远端 Go 测试（2026-10-11 第五百二十八笔）
 
 执行 AI：DeepSeek-V4.1-Flash（主代理）
