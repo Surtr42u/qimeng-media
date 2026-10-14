@@ -168,7 +168,10 @@ class AssetEditViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val detail = detailRepository.assetDetail(assetId)
-                val authorIds = detail.authors.map { it.id }
+                // COS 作者由目录结构派生，作者替换端点只接受 regular；与 Web authorDraftsFromDetail 同口径，
+                // 不把只读 COS 行放进可编辑全集，否则改一个普通作者也会因为携带 COS id 被服务端 400 拒绝。
+                val editableAuthors = detail.authors.filterNot { it.isCos || it.id.startsWith("cos_") }
+                val authorIds = editableAuthors.map { it.id }
                 initialAuthorIds = authorIds
                 val fileName = detail.fileName
                 val ext = if (fileName.contains('.')) ".${fileName.substringAfterLast('.')}" else ""
@@ -183,7 +186,7 @@ class AssetEditViewModel @Inject constructor(
                         currentBaseName = base,
                         extension = ext,
                         currentDirectory = detail.directory.orEmpty(),
-                        authors = detail.authors,
+                        authors = editableAuthors,
                         authorsChanged = false,
                         fileNameChanged = false,
                     )
