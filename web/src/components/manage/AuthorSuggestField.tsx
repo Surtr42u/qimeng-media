@@ -167,6 +167,7 @@ export function AuthorSuggestField({
                     <button
                       className="pop-suggest-item"
                       type="button"
+                      disabled={disabled}
                       onClick={() => {
                         onChange({ authorName: createName })
                         setPopOpen(false)
