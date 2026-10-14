@@ -51,7 +51,7 @@ func MoveFile(src, dst string) error {
 	if _, err := os.Lstat(dst); err == nil {
 		return fmt.Errorf("%w: %s", ErrMoveTargetExists, dst)
 	} else if !errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("%w: inspect destination %s: %v", ErrMoveDidNotCreateTarget, dst, err)
+		return fmt.Errorf("%w: inspect destination %s: %w", ErrMoveDidNotCreateTarget, dst, err)
 	}
 
 	err := os.Rename(src, dst)
@@ -59,7 +59,7 @@ func MoveFile(src, dst string) error {
 		return nil
 	}
 	if !isCrossDeviceErr(err) {
-		return fmt.Errorf("%w: rename %s to %s: %v", ErrMoveDidNotCreateTarget, src, dst, err)
+		return fmt.Errorf("%w: rename %s to %s: %w", ErrMoveDidNotCreateTarget, src, dst, err)
 	}
 	if err := copyFile(src, dst); err != nil {
 		return err
