@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react'
-import { useNavigate, useParams } from 'react-router'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useBlocker, useNavigate, useParams } from 'react-router'
 import { toast } from 'sonner'
 import type { AssetDetail } from '@/api/generated'
 import { AuthorSuggestField, type AuthorAttachValue } from '@/components/manage/AuthorSuggestField'
 import { SourceSelectField } from '@/components/manage/SourceSelectField'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { LoadingHint } from '@/components/ui/loading-hint'
 import { Pill } from '@/components/ui/pill'
 import { useAssetDetail } from '@/hooks/use-assets'
@@ -88,6 +89,29 @@ export default function AssetEditPage() {
   // 联想字段受控值：加进草稿即复位为自由输入态，便于连续添加
   const [pickValue, setPickValue] = useState<AuthorAttachValue | null>(null)
   const [saving, setSaving] = useState(false)
+
+  // 编辑页含作者全集、待新建名单与逐作者来源草稿；任一有改动时离开都需确认。
+  const hasUnsavedChanges =
+    draftAuthors !== null || pendingAuthors.length > 0 || Object.keys(dirtySources).length > 0
+  // 正常保存成功后由页面主动导航，绕过放弃确认；用户手动导航仍走 blocker。
+  const allowExitAfterSave = useRef(false)
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      !allowExitAfterSave.current &&
+      hasUnsavedChanges &&
+      currentLocation.pathname !== nextLocation.pathname,
+  )
+
+  useEffect(() => {
+    if (!hasUnsavedChanges) return
+    const handler = (event: BeforeUnloadEvent): void => {
+      if (allowExitAfterSave.current) return
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [hasUnsavedChanges])
 
   const replaceAuthors = useReplaceAssetAuthors()
   const saveSources = useSaveAuthorSources()
@@ -174,6 +198,7 @@ export default function AssetEditPage() {
         return
       }
       toast.success('资产作者已保存')
+      allowExitAfterSave.current = true
       navigate(assetDetail(assetId))
     } finally {
       setSaving(false)
@@ -264,6 +289,19 @@ export default function AssetEditPage() {
           </div>
         </>
       )}
+      <ConfirmDialog
+        open={blocker.state === 'blocked'}
+        title="有未保存的修改"
+        description="离开将丢失本次作者与来源编辑，确定离开吗？"
+        confirmText="放弃修改离开"
+        cancelText="继续编辑"
+        danger
+        keepOpenOnConfirm
+        onConfirm={() => blocker.proceed?.()}
+        onOpenChange={(next) => {
+          if (!next) blocker.reset?.()
+        }}
+      />
     </div>
   )
 }
