@@ -203,10 +203,10 @@ class InboxFileStoreTest {
         val libDir = tmp.newFolder("archive-copy")
         val source = write(tmp.newFolder("inbox-copy"), "big.mp4", content = "payload")
 
-        // 强制走 copy 兜底：renameTo 需要对源文件的删除访问权，Windows JVM 上源被打开的
-        // 流持有时（句柄不带 FILE_SHARE_DELETE）rename/delete 均失败——锁住源即锁死直改
-        // 路径。POSIX 上 rename 不受打开句柄影响会直改成功，此时本测试退化为对
-        // 「无 .part 残留」不变式的验证（copy 路径在 Windows 开发/CI 机被覆盖）。
+        // 尝试强制走 copy 兜底：Files.move 需要对源文件完成移动，Windows JVM 上源被打开的
+        // 流持有时（句柄不带 FILE_SHARE_DELETE）移动/删除可能失败。POSIX 上打开句柄通常
+        // 不阻止移动，此时本测试退化为对「无 .part 残留」不变式的验证（copy 路径在 Windows
+        // 开发/CI 机被覆盖）。
         FileInputStream(source).use { locked ->
             locked.read() // 建立真实句柄，防惰性打开差异
 

@@ -141,7 +141,8 @@ class InboxFileStore @Inject constructor() {
                     inStream.copyTo(outStream)
                 }
             }
-            // 不能为了 rename 成功而删掉首检后被其他进程创建的目标；竞争时保留双方文件。
+            // 不能为了发布成功而删掉首检后被其他进程创建的目标；检测到冲突时保留源与目标。
+            // 注意：标准 Files.move 的存在性检查与底层移动不是跨进程原子操作，仍有窄 TOCTOU 窗口。
             if (!moveFileNoReplace(part, target)) return false
             // 尽力而为尝试删除源文档（若 SAF 提供方支持删除）
             runCatching {
@@ -208,8 +209,9 @@ class InboxFileStore @Inject constructor() {
     /**
      * copy 兜底：先复制到目标目录下唯一 .part 临时文件，再以无覆盖方式发布到目标位，
      * 最后删除源。不能直接 copyTo 目标名：复制中途失败会留下半截同名文件。
-     * 发布时若目标被其他操作占用，安全失败并保留竞争者目标与源文件；finally 只清理本次
-     * 创建的临时文件。删源失败时目标是完整副本、源仍在，返回 false 提醒用户人工核对。
+     * 发布时若目标已存在且被标准库检测到，操作失败并保留目标与源文件；finally 只清理本次
+     * 创建的临时文件。注意标准 Files.move 的检查与移动不是跨进程原子操作，仍有窄 TOCTOU
+     * 窗口。删源失败时目标是完整副本、源仍在，返回 false 提醒用户人工核对。
      */
     private fun copyFallback(sourceFile: File, target: File): Boolean {
         var part: File? = null
@@ -243,8 +245,12 @@ class InboxFileStore @Inject constructor() {
     }
 
     /**
-     * 发布同目录临时文件时拒绝替换任何已经存在的目标。
-     * Android minSdk=26，java.nio.file.Files 可用；未指定 REPLACE_EXISTING，冲突安全失败。
+     * 发布文件时不指定 REPLACE_EXISTING；目标在 Files.move 检查时已存在会安全失败。
+     * Android minSdk=26，可用 java.nio.file.Files。
+     *
+     * 已知边界：标准 Files.move 的目标存在性检查与底层移动不保证相对其他进程原子；
+     * 不可把此 helper 当作跨进程 no-replace 原语。外部写入者仍可能在检查与 move 之间竞争，
+     * 后续如需消除该窗口，需按目标文件系统提供原子 no-replace 原语或引入所有写入方共用的协调。
      */
     internal fun moveFileNoReplace(source: File, target: File): Boolean = try {
         Files.move(source.toPath(), target.toPath())
