@@ -592,7 +592,7 @@ class AssetEditViewModelTest {
         val (viewModel, _, authorRepo) = newViewModel()
         viewModel.toggleSource("a-1", "site-f")
         driveIdle()
-        authorRepo.replaceError = IllegalStateException("500")
+        authorRepo.sourceReplaceErrorsById["a-1"] = IllegalStateException("500")
         viewModel.save()
         driveIdle()
         assertEquals("保存失败：请重试", viewModel.uiState.value.errorMessage)
