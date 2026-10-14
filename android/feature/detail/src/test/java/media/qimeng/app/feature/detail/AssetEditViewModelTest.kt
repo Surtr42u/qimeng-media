@@ -111,6 +111,7 @@ class AssetEditViewModelTest {
         assertEquals(emptyList<String>(), state.sourcesByAuthor["a-2"].orEmpty())
         assertTrue(state.sourceOptions.contains("pixiv"))
         assertFalse(state.canSave)
+        assertFalse(state.hasUnsavedChanges)
         assertNull(state.errorMessage)
         // 词表取自 GET /authors/source-vocabulary
         assertTrue(authorRepo.vocabularyCalled)
@@ -145,6 +146,7 @@ class AssetEditViewModelTest {
         // 基名清空时 effectiveFileName 安全回退原完整名，且空基名不解锁保存
         assertEquals("原名.mp4", state.effectiveFileName)
         assertFalse(state.canSave)
+        assertFalse(state.hasUnsavedChanges)
 
         viewModel.onFileNameChange("新名字")
         val state2 = viewModel.uiState.value
@@ -152,6 +154,7 @@ class AssetEditViewModelTest {
         assertEquals("新名字.mp4", state2.effectiveFileName)
         assertTrue(state2.fileNameChanged)
         assertTrue(state2.canSave)
+        assertTrue(state2.hasUnsavedChanges)
     }
 
     @Test
