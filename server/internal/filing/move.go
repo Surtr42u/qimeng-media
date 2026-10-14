@@ -22,6 +22,10 @@ import (
 // ErrMoveTargetExists 表示目标路径已被占用。搬移语义从不覆盖既有用户文件。
 var ErrMoveTargetExists = errors.New("move destination already exists")
 
+// ErrMoveDidNotCreateTarget 表示本次尝试在目标端没有创建文件；调用方不能把目标
+// 当作本次产生的半截副本清理，否则可能删除并发的外部写入。
+var ErrMoveDidNotCreateTarget = errors.New("move did not create destination")
+
 // copyBody 是复制主体的包内可注入替身（生产恒为 io.Copy）：磁盘满/写失败
 // 等"复制中途失败"无法用真实文件系统在单测稳定注入，测试替换它制造半截
 // 副本，锁定"失败即清理目标端"的行为。生产代码禁止替换。
@@ -47,7 +51,7 @@ func MoveFile(src, dst string) error {
 	if _, err := os.Lstat(dst); err == nil {
 		return fmt.Errorf("%w: %s", ErrMoveTargetExists, dst)
 	} else if !errors.Is(err, fs.ErrNotExist) {
-		return err
+		return fmt.Errorf("%w: inspect destination %s: %v", ErrMoveDidNotCreateTarget, dst, err)
 	}
 
 	err := os.Rename(src, dst)
@@ -55,7 +59,7 @@ func MoveFile(src, dst string) error {
 		return nil
 	}
 	if !isCrossDeviceErr(err) {
-		return err
+		return fmt.Errorf("%w: rename %s to %s: %v", ErrMoveDidNotCreateTarget, src, dst, err)
 	}
 	if err := copyFile(src, dst); err != nil {
 		return err
