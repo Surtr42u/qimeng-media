@@ -2,6 +2,8 @@ package media.qimeng.app.core.data.repository
 
 import java.io.File
 import java.io.FileInputStream
+import java.io.ByteArrayInputStream
+import java.io.InputStream
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -212,6 +214,63 @@ class InboxFileStoreTest {
         assertTrue(renamed)
         assertFalse(file.exists())
         assertTrue(File(libDir, "new.mp4").exists())
+    }
+
+
+    // ---- SAF 文件名与流式内容比较（URI 归档安全边界） ----
+
+    @Test
+    fun `归档文件名拒绝路径分隔符和控制字符`() {
+        listOf("", " ", ".", "..", "../escape.mp4", "sub/file.mp4", "sub\\\\file.mp4", "bad\\u0000.mp4", "trailing.").forEach { name ->
+            assertFalse("应拒绝文件名: $name", store.isSafeArchiveFileName(name))
+        }
+        listOf("video.mp4", "天使 01.mp4", ".hidden.jpg").forEach { name ->
+            assertTrue("应接受文件名: $name", store.isSafeArchiveFileName(name))
+        }
+    }
+
+    @Test
+    fun `流式内容比较正确处理短读和非整块长度`() {
+        val bytes = ByteArray(64 * 1024 + 17) { (it % 251).toByte() }
+        val left = ShortReadInputStream(bytes, 7)
+        val right = ShortReadInputStream(bytes.copyOf(), 13)
+
+        assertTrue(InboxFileStore.streamsEqual(left, right))
+    }
+
+    @Test
+    fun `流式内容比较发现长度或内容不同`() {
+        assertFalse(
+            InboxFileStore.streamsEqual(
+                ByteArrayInputStream(byteArrayOf(1, 2, 3)),
+                ByteArrayInputStream(byteArrayOf(1, 2)),
+            ),
+        )
+        assertFalse(
+            InboxFileStore.streamsEqual(
+                ByteArrayInputStream(byteArrayOf(1, 2, 3)),
+                ByteArrayInputStream(byteArrayOf(1, 9, 3)),
+            ),
+        )
+    }
+
+    /** 模拟合法但不填满请求缓冲区的 InputStream。 */
+    private class ShortReadInputStream(
+        private val bytes: ByteArray,
+        private val maxChunk: Int,
+    ) : InputStream() {
+        private var offset = 0
+
+        override fun read(): Int =
+            if (offset >= bytes.size) -1 else bytes[offset++].toInt() and 0xff
+
+        override fun read(buffer: ByteArray, off: Int, len: Int): Int {
+            if (offset >= bytes.size) return -1
+            val count = minOf(len, maxChunk, bytes.size - offset)
+            bytes.copyInto(buffer, off, offset, offset + count)
+            offset += count
+            return count
+        }
     }
 
     /** 写入测试文件（内容默认一行，返回文件引用） */
