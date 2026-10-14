@@ -235,19 +235,19 @@ class InboxFileStoreTest {
         val left = ShortReadInputStream(bytes, 7)
         val right = ShortReadInputStream(bytes.copyOf(), 13)
 
-        assertTrue(InboxFileStore.streamsEqual(left, right))
+        assertTrue(store.streamsEqual(left, right))
     }
 
     @Test
     fun `流式内容比较发现长度或内容不同`() {
         assertFalse(
-            InboxFileStore.streamsEqual(
+            store.streamsEqual(
                 ByteArrayInputStream(byteArrayOf(1, 2, 3)),
                 ByteArrayInputStream(byteArrayOf(1, 2)),
             ),
         )
         assertFalse(
-            InboxFileStore.streamsEqual(
+            store.streamsEqual(
                 ByteArrayInputStream(byteArrayOf(1, 2, 3)),
                 ByteArrayInputStream(byteArrayOf(1, 9, 3)),
             ),
