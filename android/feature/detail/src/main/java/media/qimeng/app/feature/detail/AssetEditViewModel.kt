@@ -487,6 +487,19 @@ class AssetEditViewModel @Inject constructor(
                         targetDir = current.currentDirectory,
                         newName = current.effectiveFileName,
                     )
+                    // 文件名这一步已经在服务端提交成功：立即落成本地基线，后续作者/来源失败重试时
+                    // 不要再次对已完成的移动发请求（可能已落库的多步保存不能整体回滚）。
+                    val renamedFileName = current.effectiveFileName
+                    val renamedBaseName = current.currentBaseName.trim()
+                    initialBaseName = renamedBaseName
+                    _uiState.update {
+                        it.copy(
+                            assetTitle = renamedFileName,
+                            originalFileName = renamedFileName,
+                            currentBaseName = renamedBaseName,
+                            fileNameChanged = false,
+                        )
+                    }
                     // 联动重命名手机本地归档目录中的物理文件（尽力而为，不阻断主流程）
                     runCatching {
                         val archiveRoot = stagingRepository.archivePath.first()
@@ -503,13 +516,15 @@ class AssetEditViewModel @Inject constructor(
                         }
                     }
                 }
-                // 2. 作者全集整体 PUT 替换（待新建名随请求一并交服务端：规范身份命中已有
-                //    作者则复用，未命中新建——客户端只传名，不预建 id）
-                authorRepository.replaceAssetAuthors(
-                    assetId,
-                    current.authors.map { it.id },
-                    current.pendingNewAuthorNames,
-                )
+                // 2. 仅当作者全集或待新建名单确实变化时才整体 PUT。文件名单独改动、或只改来源时
+                //    不写无关作者关联，避免无谓数据库/TXT 写入及失败后把已成功的文件操作报成失败。
+                if (current.authorsChanged || current.pendingNewAuthorNames.isNotEmpty()) {
+                    authorRepository.replaceAssetAuthors(
+                        assetId,
+                        current.authors.map { it.id },
+                        current.pendingNewAuthorNames,
+                    )
+                }
                 // 3. 逐个更新脏来源
                 current.dirtySourceAuthorIds.forEach { authorId ->
                     authorRepository.replaceAuthorSources(authorId, current.sourcesByAuthor[authorId].orEmpty())
