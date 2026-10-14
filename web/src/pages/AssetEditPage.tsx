@@ -104,6 +104,8 @@ export default function AssetEditPage() {
 
   // 草稿作者全集（null=未动，跟随服务端值）；保存提交的是最终 ID 全集
   const [draftAuthors, setDraftAuthors] = useState<AuthorDraft[] | null>(null)
+  // 单独记账：关联 PUT 成功后即使来源保存失败，重试也不应重复提交已成功的关联事务。
+  const [authorLinksNeedSave, setAuthorLinksNeedSave] = useState(false)
   const authors = draftAuthors ?? serverAuthors
   // 待新建作者名（保存随 newAuthorNames 交服务端建/复用；成功清空、失败保留可重试）
   const [pendingAuthors, setPendingAuthors] = useState<string[]>([])
@@ -116,7 +118,7 @@ export default function AssetEditPage() {
 
   // 编辑页含作者全集、待新建名单与逐作者来源草稿；任一有改动时离开都需确认。
   const hasUnsavedChanges =
-    draftAuthors !== null || pendingAuthors.length > 0 || Object.keys(dirtySources).length > 0
+    authorLinksNeedSave || pendingAuthors.length > 0 || Object.keys(dirtySources).length > 0
   // 正常保存成功后由页面主动导航，绕过放弃确认；用户手动导航仍走 blocker。
   const allowExitAfterSave = useRef(false)
   const blocker = useBlocker(
@@ -155,6 +157,7 @@ export default function AssetEditPage() {
         return
       }
       setDraftAuthors([...authors, { id: v.authorId, displayName: v.displayName ?? v.authorId }])
+      setAuthorLinksNeedSave(true)
       return
     }
     if (v.authorName) {
@@ -167,12 +170,14 @@ export default function AssetEditPage() {
         return
       }
       setPendingAuthors(added.names)
+      setAuthorLinksNeedSave(true)
     }
   }
 
   /** 移出草稿并清掉该作者的来源草稿/脏标记（重加同作者不残留旧脏态） */
   const removeAuthor = (id: string): void => {
     setDraftAuthors(authors.filter((a) => a.id !== id))
+    setAuthorLinksNeedSave(true)
     const nextDrafts = { ...sourceDrafts }
     delete nextDrafts[id]
     setSourceDrafts(nextDrafts)
@@ -195,7 +200,7 @@ export default function AssetEditPage() {
     try {
       let nextAuthors = authors
       // 只改来源时不重复 PUT 作者全集；只有关联草稿/待新建作者发生变更才写整体关联。
-      if (draftAuthors !== null || pendingAuthors.length > 0) {
+      if (authorLinksNeedSave || pendingAuthors.length > 0) {
         let saved: AssetDetail | null = null
         try {
           saved = await replaceAuthors.mutateAsync({
@@ -212,14 +217,20 @@ export default function AssetEditPage() {
         // 关联已落库：以响应作者全集刷新草稿（待新建名已成真作者，作为正常条目
         // 出现、可继续编辑来源），待新建清单清空
         nextAuthors = authorDraftsFromDetail(saved.authors)
-        setDraftAuthors(nextAuthors)
+          setDraftAuthors(nextAuthors)
         setPendingAuthors([])
+        setAuthorLinksNeedSave(false)
       }
       const failures: string[] = []
       for (const a of nextAuthors) {
         if (!dirtySources[a.id]) continue
         try {
           await saveSources.mutateAsync({ authorId: a.id, sources: sourceDrafts[a.id] ?? [] })
+          setDirtySources((prev) => {
+            const next = { ...prev }
+            delete next[a.id]
+            return next
+          })
         } catch (err) {
           failures.push(`${a.displayName}：${batchFailureReason(err)}`)
         }
@@ -307,7 +318,10 @@ export default function AssetEditPage() {
                     <b>{name}</b>
                     <Pill
                       disabled={saving}
-                      onClick={() => setPendingAuthors(removePendingAuthorName(pendingAuthors, name))}
+                      onClick={() => {
+                        setPendingAuthors(removePendingAuthorName(pendingAuthors, name))
+                        setAuthorLinksNeedSave(true)
+                      }}
                       title="取消新建该作者"
                     >
                       移除
