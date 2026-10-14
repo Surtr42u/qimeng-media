@@ -72,7 +72,7 @@ jobs:
       - uses: actions/setup-go@v6
         with: { go-version: "1.27.0", cache-dependency-path: server/go.sum }
       # move_windows.go 使用 windows build tag，Linux server job 不会编译它；
-      # 在 Windows 原生 runner 上运行文件操作包测试，验证跨盘错误识别与回退分支。
+      # 在 Windows 原生 runner 上验证专属 errno 实现可编译、错误分类与复制主体单测可运行（真实跨盘布局仍需部署环境端到端验证）。
       - run: go test ./internal/filing -count=1
 
   web:
