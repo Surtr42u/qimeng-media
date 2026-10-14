@@ -227,6 +227,7 @@ class AssetEditViewModelTest {
             replaceError = IllegalStateException("temporary network error")
         }
         val (viewModel, detailRepo, _) = newViewModel(authorRepo = authorRepo)
+        driveIdle() // 等待初始详情/来源回显完成，再开始编辑
         viewModel.onFileNameChange("新名")
         viewModel.addAuthor(AuthorSuggestion("a-3", "作者C", 1))
         driveIdle()
@@ -253,6 +254,7 @@ class AssetEditViewModelTest {
             sourceReplaceErrorsById["a-1"] = IllegalStateException("temporary source failure")
         }
         val (viewModel, _, repo) = newViewModel(authorRepo = authorRepo)
+        driveIdle() // 避免初始装配覆盖下面的编辑草稿
         viewModel.addAuthor(AuthorSuggestion("a-3", "作者C", 1))
         viewModel.toggleSource("a-1", "site-f")
         driveIdle()
@@ -631,6 +633,8 @@ class AssetEditViewModelTest {
         val gate = CompletableDeferred<Unit>()
         val authorRepo = FakeEditAuthorRepository().apply { replaceAssetAuthorsGate = gate }
         val (viewModel, _, _) = newViewModel(authorRepo = authorRepo)
+        driveIdle() // 先完成初始化；下面同时改作者关联，才能命中关联 PUT 的挂起门
+        viewModel.addAuthor(AuthorSuggestion("a-3", "作者C", 1))
         viewModel.toggleSource("a-1", "site-f")
         driveIdle()
         viewModel.save()
