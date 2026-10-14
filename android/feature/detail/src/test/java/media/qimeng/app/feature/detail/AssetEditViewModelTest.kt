@@ -420,8 +420,10 @@ class AssetEditViewModelTest {
         val (viewModel, _, authorRepo) = newViewModel()
         viewModel.toggleSource("a-1", "site-f") // 回显 [site-a] + site-f
         viewModel.toggleSource("a-2", "自定义站")
+        authorRepo.sourcesByAuthor["a-3"] = listOf("site-c")
         viewModel.addAuthor(AuthorSuggestion("a-3", "作者C", 1))
         driveIdle()
+        assertEquals(listOf("site-c"), viewModel.uiState.value.sourcesByAuthor["a-3"])
         viewModel.save()
         driveIdle()
         // 全集 PUT：作者全集整体替换（含新增 a-3）
