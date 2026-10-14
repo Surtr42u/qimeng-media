@@ -19,6 +19,8 @@ export interface ConfirmDialogProps {
   danger?: boolean
   /** 异步操作进行中：禁用重复提交与取消，避免 UI 提前关闭 */
   busy?: boolean
+  /** 异步确认需保留弹窗直到调用方明确关闭；默认同步操作仍在确认后关闭 */
+  keepOpenOnConfirm?: boolean
   onConfirm: () => void
   /** 关闭请求通道（ESC / 取消按钮）：受控 open 必须由父组件响应它才能真正关闭 */
   onOpenChange?: (open: boolean) => void
@@ -32,6 +34,7 @@ export function ConfirmDialog({
   cancelText,
   danger = false,
   busy = false,
+  keepOpenOnConfirm = false,
   onConfirm,
   onOpenChange,
 }: ConfirmDialogProps) {
@@ -44,13 +47,17 @@ export function ConfirmDialog({
           <AlertDialog.Description className="confirm-desc">{description}</AlertDialog.Description>
           <div className="confirm-actions">
             <AlertDialog.Cancel className="confirm-btn confirm-btn--cancel" disabled={busy}>{cancelText}</AlertDialog.Cancel>
-            <AlertDialog.Action
+            <button
+              type="button"
               className={cn('confirm-btn', danger ? 'confirm-btn--danger' : 'confirm-btn--primary')}
               disabled={busy}
-              onClick={onConfirm}
+              onClick={() => {
+                onConfirm()
+                if (!keepOpenOnConfirm) onOpenChange?.(false)
+              }}
             >
               {confirmText}
-            </AlertDialog.Action>
+            </button>
           </div>
         </AlertDialog.Content>
       </AlertDialog.Portal>
