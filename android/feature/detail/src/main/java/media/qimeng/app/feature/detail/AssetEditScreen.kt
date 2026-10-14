@@ -181,6 +181,9 @@ private fun AssetEditForm(
                         author = author,
                         sources = state.sourcesByAuthor[author.id].orEmpty(),
                         sourceOptions = state.sourceOptions,
+                        sourceLoading = author.id in state.sourceLoadingAuthorIds,
+                        sourceLoadFailed = author.id in state.sourceLoadFailedAuthorIds,
+                        onRetrySources = { viewModel.retryAuthorSources(author.id) },
                         onRemove = { viewModel.removeAuthor(author.id) },
                         onToggleSource = { name -> viewModel.toggleSource(author.id, name) },
                         onAddCustomSource = { raw -> viewModel.addCustomSource(author.id, raw) },
@@ -266,6 +269,9 @@ private fun AuthorEditRow(
     author: DetailAuthor,
     sources: List<String>,
     sourceOptions: List<String>,
+    sourceLoading: Boolean,
+    sourceLoadFailed: Boolean,
+    onRetrySources: () -> Unit,
     onRemove: () -> Unit,
     onToggleSource: (String) -> Unit,
     onAddCustomSource: (String) -> Unit,
@@ -301,16 +307,46 @@ private fun AuthorEditRow(
                     )
                 }
             }
-            // 每作者来源区（编辑页作者恒「已存在」，无禁用态——disabledHint 传空串不渲染）
-            QimengSourceSection(
-                title = stringResource(R.string.asset_edit_sources_label),
-                selectedSources = sources,
-                options = sourceOptions,
-                enabled = true,
-                disabledHint = "",
-                onToggle = onToggleSource,
-                onAddCustom = onAddCustomSource,
-            )
+            // 来源端点采用整体替换：必须先读到完整旧值再开放编辑；失败时保留该行并提供重试。
+            when {
+                sourceLoading -> {
+                    Text(
+                        text = stringResource(R.string.asset_edit_sources_loading),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = QimengDimens.SpaceS),
+                    )
+                }
+
+                sourceLoadFailed -> {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = QimengDimens.SpaceS),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.asset_edit_sources_load_failed),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.weight(1f),
+                        )
+                        TextButton(onClick = onRetrySources) {
+                            Text(stringResource(R.string.detail_retry))
+                        }
+                    }
+                }
+
+                else -> QimengSourceSection(
+                    title = stringResource(R.string.asset_edit_sources_label),
+                    selectedSources = sources,
+                    options = sourceOptions,
+                    enabled = true,
+                    disabledHint = "",
+                    onToggle = onToggleSource,
+                    onAddCustom = onAddCustomSource,
+                )
+            }
         }
     }
 }
