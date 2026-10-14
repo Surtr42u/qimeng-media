@@ -35,9 +35,10 @@
   - 备份导入对话框有 pending/busy 状态；执行期间不重复提交，失败保留确认上下文可重试，成功后才关闭。
   - 未知 API 错误统一显示人类可读兜底，不再显示 `[object Object]`。
   - 资产编辑页有 SPA 路由与标签页离开提示；来源数据未完成回读/回读失败时禁止编辑；多步骤保存记录关联/来源已成功步骤，重试不无谓重复已成功写入；保存中禁用表单操作。
+  - 单文件「移入回收站」失败时保留确认对话框和文件名上下文，用户可直接重试；回收站单项彻底删除/清空同样在成功后才关闭确认，失败保留重试入口；执行期间禁用重复提交和其他冲突操作，错误提示复用人类可读错误提取。
 - **CI / 文档**：新增 Windows 原生 runner 上 Go filing 包测试（覆盖 `move_windows.go` build-tag 路径），README / ARCHITECTURE / PROJECT_PLAN 同步七个 CI job；补充本条 changelog。
 - **测试与验证边界**：新增 Room 1→2 / 2→3 migration SQL 合约测试，但它不等价于 emulator + MigrationTestHelper 对旧 SQLite 文件实际迁移与数据保留测试，该工作仍待补齐。真实双挂载点跨卷行为仍需部署环境端到端验收。
-- **云端验证状态**：当前最新分支 head 为 `2df6a915f404dd2250c08b9aa1ff80698cf7ed65`，对应 GitHub Actions run `38617870345`（run #69）查询时为 `queued`，所以此条不宣称最新代码全绿。更早 run #10 的七个 job 曾全部成功，但不覆盖本条后来提交的改动。
+- **云端验证状态**：新增上述回收站交互后，分支继续产生新提交；GitHub Actions 为 push 自动触发，但必须以 Draft PR #1 当前 head 对应的 run 为准。此前 run #10 的七个 job 曾全部成功，但不覆盖本条后来提交的改动；此处不宣称最新代码全绿。
 - **隔离声明**：全部变更只在 `codex/reliability-hardening-ui-2026-10` 与 Draft PR #1；未合并到 master，未对运行中的 NAS 数据库、媒体文件或部署实例进行操作。
 
 ## fix(ci): Go 锁补丁版本 1.27.0——runner 漂到 1.27.2 使 golangci-lint v2.13.1 类型检查崩（标准库导入即报 typecheck），lint 失败连带跳过远端 Go 测试（2026-10-11 第五百二十八笔）
