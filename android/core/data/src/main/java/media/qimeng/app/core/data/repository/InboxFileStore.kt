@@ -170,9 +170,14 @@ class InboxFileStore @Inject constructor() {
         val root = File(archiveRoot)
         if (!root.isDirectory) return false
 
+        val canonicalRoot = root.canonicalFile
         val candidateDirs = mutableListOf<File>()
         if (!libraryName.isNullOrBlank()) {
-            candidateDirs += File(root, libraryName)
+            // 原始库名只有在单个安全路径段时才可直接拼接；否则仅尝试 sanitize 后的目录名。
+            // 不能先 File(root, "../...") 再依赖后续过滤——候选目录本身可能指向归档根之外。
+            if (isSafeArchiveFileName(libraryName)) {
+                candidateDirs += File(root, libraryName)
+            }
             val sanitized = sanitizeLibraryDirName(libraryName)
             if (sanitized != null && sanitized != libraryName) {
                 candidateDirs += File(root, sanitized)
@@ -181,6 +186,9 @@ class InboxFileStore @Inject constructor() {
         root.listFiles(File::isDirectory)?.let { candidateDirs.addAll(it) }
 
         for (dir in candidateDirs.distinct()) {
+            // 除了拦截 ..，也拒绝归档根内指向根外的目录符号链接。
+            val safeDir = runCatching { dir.canonicalFile.parentFile == canonicalRoot }.getOrDefault(false)
+            if (!safeDir) continue
             val source = File(dir, oldFileName)
             if (source.isFile) {
                 val target = File(dir, newFileName)
@@ -227,8 +235,10 @@ class InboxFileStore @Inject constructor() {
                 append(if (c in LIBRARY_DIR_ILLEGAL_CHARS) LIBRARY_DIR_SANITIZE_CHAR else c)
             }
         }
-        // "." / ".." 是路径语义而不是普通目录名；禁止它们跳出归档根目录。
-        return sanitized.takeIf { it.isNotEmpty() && it != "." && it != ".." }
+        // 路径语义段与 Windows 不允许的尾随点统一拒绝，避免跨平台复制后路径被归一成别的目录。
+        return sanitized.takeIf {
+            it.isNotEmpty() && it != "." && it != ".." && !it.endsWith(".")
+        }
     }
 
     /**
