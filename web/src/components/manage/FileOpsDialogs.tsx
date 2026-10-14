@@ -77,6 +77,7 @@ export function FileOpsDialogs({ mode, target, onClose, onDeleted }: FileOpsDial
         confirmText="移入回收站"
         cancelText="取消"
         danger
+        keepOpenOnConfirm
         onConfirm={confirmDelete}
         onOpenChange={(next) => {
           if (!next) onClose()
