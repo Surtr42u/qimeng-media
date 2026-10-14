@@ -37,7 +37,8 @@ class AssetEditViewModelTest {
     private fun driveIdle() = mainDispatcherRule.testDispatcher.scheduler.advanceUntilIdle()
 
     private val authorA = DetailAuthor(id = "a-1", displayName = "作者A", isCos = false, followed = false)
-    private val authorB = DetailAuthor(id = "a-2", displayName = "作者B", isCos = true, followed = true)
+    private val authorB = DetailAuthor(id = "a-2", displayName = "作者B", isCos = false, followed = false)
+    private val cosAuthor = DetailAuthor(id = "cos_external", displayName = "COS作者", isCos = true, followed = false)
 
     private fun savedHandle(assetId: String? = "asset-1"): SavedStateHandle =
         if (assetId == null) {
@@ -98,6 +99,22 @@ class AssetEditViewModelTest {
     )
 
     // ---- 装配回显 ----
+
+    @Test
+    fun `编辑页不把COS派生作者提交到关联替换端点`() {
+        val detailRepo = FakeEditDetailRepository().apply {
+            detailResult = detail(authors = listOf(authorA, authorB, cosAuthor))
+        }
+        val (viewModel, _, authorRepo) = newViewModel(detailRepo = detailRepo)
+
+        assertEquals(listOf("a-1", "a-2"), viewModel.uiState.value.authors.map { it.id })
+        viewModel.removeAuthor("a-1")
+        viewModel.save()
+        driveIdle()
+
+        assertEquals(listOf("a-2"), authorRepo.assetAuthorsCalls.single().second)
+        assertFalse(authorRepo.assetAuthorsCalls.single().second.any { it.startsWith("cos_") })
+    }
 
     @Test
     fun `装配回显作者全集与逐作者来源`() {
