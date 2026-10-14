@@ -7,6 +7,7 @@ import android.os.Environment
 import android.provider.DocumentsContract
 import java.io.File
 import java.io.InputStream
+import java.nio.file.Files
 import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -89,7 +90,14 @@ class InboxFileStore @Inject constructor() {
                 }
                 target = resolveConflictName(targetDir, sourceFile.name) ?: return false
             }
-            sourceFile.renameTo(target) || copyFallback(sourceFile, target)
+            if (sourceFile.renameTo(target)) {
+                true
+            } else if (target.exists()) {
+                // renameTo 的快速路径失败后若目标已被其他操作创建，不能把竞争者当作回退目标。
+                false
+            } else {
+                copyFallback(sourceFile, target)
+            }
         } catch (e: Exception) {
             false
         }
@@ -129,7 +137,13 @@ class InboxFileStore @Inject constructor() {
             }
             target = resolveConflictName(targetDir, displayName) ?: return false
         }
-        val part = File(targetDir, target.name + ARCHIVE_PART_SUFFIX)
+        // 固定的 "<目标名>.part" 会和用户已有同名文件或另一归档任务冲突。
+        // 创建唯一临时文件，并在发布时使用不带 REPLACE_EXISTING 的 Files.move。
+        val part = try {
+            Files.createTempFile(targetDir.toPath(), "qimeng-archive-", ARCHIVE_PART_SUFFIX).toFile()
+        } catch (e: Exception) {
+            return false
+        }
         return try {
             val input = context.contentResolver.openInputStream(uri) ?: return false
             input.use { inStream ->
@@ -137,22 +151,17 @@ class InboxFileStore @Inject constructor() {
                     inStream.copyTo(outStream)
                 }
             }
-            if (target.exists() && !target.delete()) {
-                part.delete()
-                return false
-            }
-            if (!part.renameTo(target)) {
-                part.delete()
-                return false
-            }
+            // 不能为了 rename 成功而删掉首检后被其他进程创建的目标；竞争时保留双方文件。
+            if (!moveFileNoReplace(part, target)) return false
             // 尽力而为尝试删除源文档（若 SAF 提供方支持删除）
             runCatching {
                 DocumentsContract.deleteDocument(context.contentResolver, uri)
             }
             true
         } catch (e: Exception) {
-            part.delete()
             false
+        } finally {
+            part.delete()
         }
     }
 
@@ -215,19 +224,30 @@ class InboxFileStore @Inject constructor() {
      * 删源失败同样按失败上报（false 提醒用户手动处理源文件，有意语义，非疏漏）。
      */
     private fun copyFallback(sourceFile: File, target: File): Boolean {
-        val part = File(target.parentFile, sourceFile.name + ARCHIVE_PART_SUFFIX)
+        var part: File? = null
         try {
+            val parent = target.parentFile ?: return false
+            // 唯一临时名避免覆盖同目录中由其他操作创建的 .part 文件。
+            part = Files.createTempFile(parent.toPath(), "qimeng-archive-", ARCHIVE_PART_SUFFIX).toFile()
             sourceFile.copyTo(part, overwrite = true)
-            if (!part.renameTo(target)) {
-                // 目标位若在冲突探测后被其他进程创建，必须保留它；绝不以「重试」为由删除竞争者文件。
-                if (target.exists()) return false
-                if (!part.renameTo(target)) return false
-            }
+            // Files.move 不指定 REPLACE_EXISTING：目标竞争时失败，而不是覆盖竞争者文件。
+            if (!moveFileNoReplace(part, target)) return false
             return sourceFile.delete()
         } finally {
-            // 成功路径 part 已改名移走、delete 是 no-op；异常/失败路径清 .part 残留
-            part.delete()
+            // 成功路径 part 已改名移走、delete 是 no-op；异常/失败路径只清理本次创建的临时文件。
+            part?.delete()
         }
+    }
+
+    /**
+     * 发布同目录临时文件时拒绝替换任何已经存在的目标。
+     * Android minSdk=26，java.nio.file.Files 可用；未指定 REPLACE_EXISTING，冲突安全失败。
+     */
+    internal fun moveFileNoReplace(source: File, target: File): Boolean = try {
+        Files.move(source.toPath(), target.toPath())
+        true
+    } catch (_: Exception) {
+        false
     }
 
     /**

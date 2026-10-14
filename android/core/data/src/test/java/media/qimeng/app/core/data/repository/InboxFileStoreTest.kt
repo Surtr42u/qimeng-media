@@ -285,6 +285,30 @@ class InboxFileStoreTest {
     }
 
     @Test
+    fun `临时文件发布遇到既有目标时不覆盖目标且保留源`() {
+        val dir = tmp.newFolder("no-replace-publish")
+        val source = write(dir, "source.part", content = "new payload")
+        val target = write(dir, "target.mp4", content = "pre-existing user file")
+
+        assertFalse(store.moveFileNoReplace(source, target))
+
+        assertEquals("new payload", source.readText())
+        assertEquals("pre-existing user file", target.readText())
+    }
+
+    @Test
+    fun `临时文件发布目标为空时正常落位`() {
+        val dir = tmp.newFolder("no-replace-publish-success")
+        val source = write(dir, "source.part", content = "payload")
+        val target = File(dir, "target.mp4")
+
+        assertTrue(store.moveFileNoReplace(source, target))
+
+        assertFalse(source.exists())
+        assertEquals("payload", target.readText())
+    }
+
+    @Test
     fun `流式内容比较正确处理短读和非整块长度`() {
         val bytes = ByteArray(64 * 1024 + 17) { (it % 251).toByte() }
         val left = ShortReadInputStream(bytes, 7)
