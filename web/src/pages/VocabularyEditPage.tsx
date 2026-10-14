@@ -272,6 +272,7 @@ export default function VocabularyEditPage() {
         confirmText={DISCARD_CONFIRM}
         cancelText={DISCARD_CANCEL}
         danger
+        keepOpenOnConfirm
         onConfirm={() => blocker.proceed?.()}
         onOpenChange={(next) => {
           if (!next) blocker.reset?.()
