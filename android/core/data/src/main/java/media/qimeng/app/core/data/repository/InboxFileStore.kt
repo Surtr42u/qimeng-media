@@ -164,7 +164,9 @@ class InboxFileStore @Inject constructor() {
         oldFileName: String,
         newFileName: String,
     ): Boolean {
-        if (oldFileName.isBlank() || newFileName.isBlank() || oldFileName == newFileName) return false
+        if (!isSafeArchiveFileName(oldFileName) || !isSafeArchiveFileName(newFileName) || oldFileName == newFileName) {
+            return false
+        }
         val root = File(archiveRoot)
         if (!root.isDirectory) return false
 
@@ -225,7 +227,8 @@ class InboxFileStore @Inject constructor() {
                 append(if (c in LIBRARY_DIR_ILLEGAL_CHARS) LIBRARY_DIR_SANITIZE_CHAR else c)
             }
         }
-        return sanitized.takeIf { it.isNotEmpty() }
+        // "." / ".." 是路径语义而不是普通目录名；禁止它们跳出归档根目录。
+        return sanitized.takeIf { it.isNotEmpty() && it != "." && it != ".." }
     }
 
     /**
@@ -244,8 +247,6 @@ class InboxFileStore @Inject constructor() {
         return null
     }
 
-    /** 字节级内容比对：长度先短路；流式比对不整载内存（归档对象可能是大视频）。
-     *  读取异常按「不同内容」处理（走加序号路径，宁可多留一份也不误判相同去覆盖）。 */
     /** 纯文件名校验：ContentProvider 提供的展示名不可包含路径/控制字符。 */
     internal fun isSafeArchiveFileName(name: String): Boolean {
         if (name.isBlank() || name == "." || name == "..") return false
