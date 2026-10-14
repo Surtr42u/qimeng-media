@@ -49,6 +49,7 @@ class InboxFileStore @Inject constructor() {
         val parent = file.parentFile ?: return false
         val uploadedDir = File(parent, StagingRepository.UPLOADED_DIR_NAME)
         if (!uploadedDir.isDirectory && !uploadedDir.mkdirs()) return false
+        if (!isDirectChildDirectory(parent, uploadedDir)) return false
         return try {
             file.renameTo(File(uploadedDir, file.name))
         } catch (e: Exception) {
@@ -73,8 +74,10 @@ class InboxFileStore @Inject constructor() {
     fun archiveToLibraryRoot(archiveRoot: String, libraryName: String, sourceFile: File): Boolean {
         if (!sourceFile.isFile) return false
         val dirName = sanitizeLibraryDirName(libraryName) ?: return false
-        val targetDir = File(archiveRoot, dirName)
+        val root = File(archiveRoot)
+        val targetDir = File(root, dirName)
         if (!targetDir.isDirectory && !targetDir.mkdirs()) return false
+        if (!isDirectChildDirectory(root, targetDir)) return false
         var target = File(targetDir, sourceFile.name)
         return try {
             if (target.exists()) {
@@ -112,8 +115,10 @@ class InboxFileStore @Inject constructor() {
         // 避免目标路径逸出库归档目录。文件名保持原样，不做静默改名。
         if (!isSafeArchiveFileName(displayName)) return false
         val dirName = sanitizeLibraryDirName(libraryName) ?: return false
-        val targetDir = File(archiveRoot, dirName)
+        val root = File(archiveRoot)
+        val targetDir = File(root, dirName)
         if (!targetDir.isDirectory && !targetDir.mkdirs()) return false
+        if (!isDirectChildDirectory(root, targetDir)) return false
         var target = File(targetDir, displayName)
         if (target.exists()) {
             if (sameContent(context, uri, target)) {
@@ -173,7 +178,6 @@ class InboxFileStore @Inject constructor() {
         val root = File(archiveRoot)
         if (!root.isDirectory) return false
 
-        val canonicalRoot = root.canonicalFile
         val candidateDirs = mutableListOf<File>()
         if (!libraryName.isNullOrBlank()) {
             // 原始库名只有在单个安全路径段时才可直接拼接；否则仅尝试 sanitize 后的目录名。
@@ -189,9 +193,8 @@ class InboxFileStore @Inject constructor() {
         root.listFiles(File::isDirectory)?.let { candidateDirs.addAll(it) }
 
         for (dir in candidateDirs.distinct()) {
-            // 除了拦截 ..，也拒绝归档根内指向根外的目录符号链接。
-            val safeDir = runCatching { dir.canonicalFile.parentFile == canonicalRoot }.getOrDefault(false)
-            if (!safeDir) continue
+            // 除了拦截 ..，也拒绝指向根外或指向另一归档库的目录符号链接。
+            if (!isDirectChildDirectory(root, dir)) continue
             val source = File(dir, oldFileName)
             if (source.isFile) {
                 val target = File(dir, newFileName)
@@ -260,6 +263,16 @@ class InboxFileStore @Inject constructor() {
         }
         return null
     }
+
+    /**
+     * 确保 child 是 root 下真实的直接子目录，而不是指向归档根外/另一库的符号链接。
+     * 归档和重命名均涉及搬动/删除源文件；仅校验名称还不足以约束文件系统的链接别名。
+     */
+    private fun isDirectChildDirectory(root: File, child: File): Boolean = runCatching {
+        val canonicalRoot = root.canonicalFile
+        val canonicalChild = child.canonicalFile
+        canonicalChild.parentFile == canonicalRoot && canonicalChild.name == child.name
+    }.getOrDefault(false)
 
     /** 纯文件名校验：ContentProvider 提供的展示名不可包含路径/控制字符。 */
     internal fun isSafeArchiveFileName(name: String): Boolean {
