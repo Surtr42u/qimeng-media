@@ -131,6 +131,36 @@ class InboxFileStoreTest {
     }
 
     @Test
+    fun `源文件已位于目标归档路径时幂等成功且不能删除自身`() {
+        val archiveRoot = tmp.newFolder("archive-same-path")
+        val libraryDir = tmp.newFolder("archive-same-path/测试库")
+        val source = write(libraryDir, "already.mp4", content = "video")
+
+        assertTrue(store.archiveToLibraryRoot(archiveRoot.absolutePath, "测试库", source))
+
+        assertTrue(source.isFile)
+        assertEquals("video", source.readText())
+        assertTrue(libraryDir.listFiles().orEmpty().none { it.name.endsWith(".part") })
+    }
+
+    @Test
+    fun `同内容归档保留目标文件本体只删除重复源`() {
+        val archiveRoot = tmp.newFolder("archive-same-content")
+        val libraryDir = tmp.newFolder("archive-same-content/lib")
+        val target = write(libraryDir, "duplicate.mp4", content = "same-video")
+        val originalTimestamp = 1_600_000_000_000L
+        assertTrue(target.setLastModified(originalTimestamp))
+        val source = write(tmp.newFolder("incoming-duplicate"), "duplicate.mp4", content = "same-video")
+
+        assertTrue(store.archiveToLibraryRoot(archiveRoot.absolutePath, "lib", source))
+
+        assertFalse(source.exists())
+        assertTrue(target.isFile)
+        assertEquals("same-video", target.readText())
+        assertEquals("不应删除重建已有归档文件", originalTimestamp, target.lastModified())
+    }
+
+    @Test
     fun `库名空白返回false且源文件不动`() {
         val source = write(tmp.newFolder("inbox6"), "keep.jpg")
 
