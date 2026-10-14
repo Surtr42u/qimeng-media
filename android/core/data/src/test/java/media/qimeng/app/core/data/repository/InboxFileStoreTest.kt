@@ -223,8 +223,11 @@ class InboxFileStoreTest {
     // ---- SAF 文件名与流式内容比较（URI 归档安全边界） ----
 
     @Test
-    fun `归档文件名拒绝路径分隔符和控制字符`() {
-        listOf("", " ", ".", "..", "../escape.mp4", "sub/file.mp4", "sub\\\\file.mp4", "bad\u0000.mp4", "trailing.").forEach { name ->
+    fun `归档文件名拒绝路径分隔符、控制字符和 Windows 非法字符`() {
+        listOf(
+            "", " ", ".", "..", "../escape.mp4", "sub/file.mp4", "sub\\\\file.mp4",
+            "bad\u0000.mp4", "trailing.", "bad:name.mp4", "bad*name.mp4", "bad|name.mp4",
+        ).forEach { name ->
             assertFalse("应拒绝文件名: $name", store.isSafeArchiveFileName(name))
         }
         listOf("video.mp4", "天使 01.mp4", ".hidden.jpg").forEach { name ->
