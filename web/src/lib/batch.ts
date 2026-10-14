@@ -29,12 +29,28 @@ export function batchPercent(done: number, total: number): number {
  * 其他值按序兜底。失败清单要求逐条可读，不能落成 "[object Object]"。
  */
 export function batchFailureReason(err: unknown): string {
-  if (err !== null && typeof err === 'object' && 'message' in err) {
-    const m = (err as { message?: unknown }).message
-    if (typeof m === 'string' && m !== '') return m
+  if (err instanceof Error) {
+    const message = err.message.trim()
+    return message !== '' ? message : '操作失败，请重试'
   }
-  if (err instanceof Error) return err.message
-  return String(err)
+  if (typeof err === 'string') {
+    const message = err.trim()
+    return message !== '' ? message : '操作失败，请重试'
+  }
+  if (err !== null && typeof err === 'object') {
+    const value = err as { message?: unknown; status?: unknown; code?: unknown }
+    if (typeof value.message === 'string' && value.message.trim() !== '') {
+      return value.message.trim()
+    }
+    if (typeof value.status === 'number' && Number.isFinite(value.status)) {
+      const code = typeof value.code === 'string' && value.code.trim() !== '' ? '，' + value.code.trim() : ''
+      return '请求失败（HTTP ' + value.status + code + '）'
+    }
+    if (typeof value.code === 'string' && value.code.trim() !== '') {
+      return '请求失败（' + value.code.trim() + '）'
+    }
+  }
+  return '发生未知错误，请稍后重试'
 }
 
 /** 批量完成 toast 主文案：全部成功与部分失败两种口径 */
