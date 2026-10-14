@@ -28,7 +28,7 @@
   - 编辑表单保存期间禁用继续修改/返回；脏表单顶栏和系统返回均显示确认。
   - Android 编辑页过滤 COS 派生作者，避免 PUT 常规作者全集时携带只读 COS id 导致整个保存被服务端拒绝。新增相关 ViewModel 测试。
 - **Go 文件移动/回收站**：
-  - `MoveFile` / 跨卷复制现在先拒绝已存在目标，并用 `O_EXCL` 防止复制回落截断目标文件；用 `ErrMoveTargetExists` 区分已存在目标。
+  - `MoveFile` / 跨卷复制现在先拒绝已存在目标，并用 `O_EXCL` 防止复制回落截断目标文件；`ErrMoveTargetExists` 区分既有目标，`ErrMoveDidNotCreateTarget` 标记本次没有创建目标并保留底层错误，回收站不会清理非本次创建的目标。
   - 回收站失败清理在明确目标冲突时跳过，避免把原先就存在的目标当成半截副本删除；新增测试保证源文件和既有目标都原样保留。
   - 仍需说明的竞态边界：跨平台标准 `os.Rename` 路径的预检查与 rename 之间仍存在极小的跨进程 TOCTOU 窗口；业务层应继续做目录/库级协调。当前修复是保护已存在目标并加强跨卷 copy 的独占创建，不宣称完全消除所有平台竞争窗口。
 - **Web 交互**：
@@ -36,9 +36,10 @@
   - 未知 API 错误统一显示人类可读兜底，不再显示 `[object Object]`。
   - 资产编辑页有 SPA 路由与标签页离开提示；来源数据未完成回读/回读失败时禁止编辑；多步骤保存记录关联/来源已成功步骤，重试不无谓重复已成功写入；保存中禁用表单操作。
   - 单文件「移入回收站」失败时保留确认对话框和文件名上下文，用户可直接重试；回收站单项彻底删除/清空同样在成功后才关闭确认，失败保留重试入口；执行期间禁用重复提交和其他冲突操作，错误提示复用人类可读错误提取。
+  - CI 的同一 PR 增加 concurrency group，新 head 自动取消同 PR 的旧运行/排队任务，避免过时检查堵塞 runner；master push 使用独立 group。
 - **CI / 文档**：新增 Windows 原生 runner 上 Go filing 包测试（覆盖 `move_windows.go` build-tag 路径），README / ARCHITECTURE / PROJECT_PLAN 同步七个 CI job；补充本条 changelog。
 - **测试与验证边界**：新增 Room 1→2 / 2→3 migration SQL 合约测试，但它不等价于 emulator + MigrationTestHelper 对旧 SQLite 文件实际迁移与数据保留测试，该工作仍待补齐。真实双挂载点跨卷行为仍需部署环境端到端验收。
-- **云端验证状态**：新增上述回收站交互后，分支继续产生新提交；GitHub Actions 为 push 自动触发，但必须以 Draft PR #1 当前 head 对应的 run 为准。此前 run #10 的七个 job 曾全部成功，但不覆盖本条后来提交的改动；此处不宣称最新代码全绿。
+- **云端验证状态**：较早 head 的 CI 曾因 Android `rememberSaveable` 导入路径错误而失败；已修正为 `androidx.compose.runtime.saveable.rememberSaveable`。随后增加同 PR concurrency 以取消过时运行，最新 head 仍需等待对应 GitHub Actions 完成后核验。此前 run #10 的七个 job 曾全部成功，但不覆盖本条后来提交的改动；此处不宣称最新代码全绿。
 - **隔离声明**：全部变更只在 `codex/reliability-hardening-ui-2026-10` 与 Draft PR #1；未合并到 master，未对运行中的 NAS 数据库、媒体文件或部署实例进行操作。
 
 ## fix(ci): Go 锁补丁版本 1.27.0——runner 漂到 1.27.2 使 golangci-lint v2.13.1 类型检查崩（标准库导入即报 typecheck），lint 失败连带跳过远端 Go 测试（2026-10-11 第五百二十八笔）
