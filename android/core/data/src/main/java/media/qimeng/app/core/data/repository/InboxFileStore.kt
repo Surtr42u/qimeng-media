@@ -105,11 +105,20 @@ class InboxFileStore @Inject constructor() {
         uri: Uri,
         displayName: String,
     ): Boolean {
+        // displayName 来自外部 ContentProvider，必须先拒绝路径分隔符/控制字符，
+        // 避免目标路径逸出库归档目录。文件名保持原样，不做静默改名。
+        if (!isSafeArchiveFileName(displayName)) return false
         val dirName = sanitizeLibraryDirName(libraryName) ?: return false
         val targetDir = File(archiveRoot, dirName)
         if (!targetDir.isDirectory && !targetDir.mkdirs()) return false
         var target = File(targetDir, displayName)
-        if (target.exists() && !sameContent(context, uri, target)) {
+        if (target.exists()) {
+            if (sameContent(context, uri, target)) {
+                // 已存在同内容归档：不重写/不删除目标文件，避免无意义大文件 I/O。
+                // 与既有移动语义一致，尽力删除 SAF 源；不支持删除时保留源文件。
+                runCatching { DocumentsContract.deleteDocument(context.contentResolver, uri) }
+                return true
+            }
             target = resolveConflictName(targetDir, displayName) ?: return false
         }
         val part = File(targetDir, target.name + ARCHIVE_PART_SUFFIX)
@@ -237,28 +246,19 @@ class InboxFileStore @Inject constructor() {
 
     /** 字节级内容比对：长度先短路；流式比对不整载内存（归档对象可能是大视频）。
      *  读取异常按「不同内容」处理（走加序号路径，宁可多留一份也不误判相同去覆盖）。 */
+    /** 纯文件名校验：ContentProvider 提供的展示名不可包含路径/控制字符。 */
+    internal fun isSafeArchiveFileName(name: String): Boolean {
+        if (name.isBlank() || name == "." || name == "..") return false
+        if (name.endsWith(" ") || name.endsWith(".")) return false
+        return name.none { it == '/' || it == '\\' || it.code < 0x20 || it.code == 0x7f }
+    }
+
+    /** 字节级内容比对：长度先短路；流式比对不整载内存（归档对象可能是大视频）。 */
     private fun sameContent(a: File, b: File): Boolean {
         if (a.length() != b.length()) return false
         return try {
             a.inputStream().use { left ->
-                b.inputStream().use { right ->
-                    val bufA = ByteArray(FILE_COMPARE_BUFFER_BYTES)
-                    val bufB = ByteArray(FILE_COMPARE_BUFFER_BYTES)
-                    while (true) {
-                        val nA = readFully(left, bufA)
-                        val nB = readFully(right, bufB)
-                        if (nA != nB) return@use false
-                        // 末段短读块也要比对（只比有效前缀）；满块整块比对
-                        val chunkEqual = if (nA == bufA.size) {
-                            bufA.contentEquals(bufB)
-                        } else {
-                            bufA.copyOf(nA).contentEquals(bufB.copyOf(nB))
-                        }
-                        if (!chunkEqual) return@use false
-                        if (nA < bufA.size) break // 双流同步到 EOF（起手长度相等，短读即共同结尾）
-                    }
-                    true
-                }
+                b.inputStream().use { right -> streamsEqual(left, right) }
             }
         } catch (e: Exception) {
             false
@@ -267,38 +267,45 @@ class InboxFileStore @Inject constructor() {
 
     private fun sameContent(context: Context, uri: Uri, b: File): Boolean {
         return try {
-            context.contentResolver.openInputStream(uri)?.use { left ->
-                b.inputStream().use { right ->
-                    val bufA = ByteArray(FILE_COMPARE_BUFFER_BYTES)
-                    val bufB = ByteArray(FILE_COMPARE_BUFFER_BYTES)
-                    while (true) {
-                        val nA = readFully(left, bufA)
-                        val nB = readFully(right, bufB)
-                        if (nA != nB) return@use false
-                        val chunkEqual = if (nA == bufA.size) {
-                            bufA.contentEquals(bufB)
-                        } else {
-                            bufA.copyOf(nA).contentEquals(bufB.copyOf(nB))
-                        }
-                        if (!chunkEqual) return@use false
-                        if (nA < bufA.size) break
-                    }
-                    true
-                }
-            } ?: false
+            val input = context.contentResolver.openInputStream(uri) ?: return false
+            input.use { left ->
+                b.inputStream().use { right -> streamsEqual(left, right) }
+            }
         } catch (e: Exception) {
             false
         }
     }
 
-    /** 读满整个缓冲（不足继续读，EOF 停止）；返回实读字节数。InputStream.read 单次
-     *  可能短读，比对必须按「读满」口径对齐两侧进度，否则随机短读会误判不同内容 */
+    /** 流式逐字节比较，正确处理 InputStream 短读，不为大视频分配整文件内存。 */
+    internal fun streamsEqual(left: InputStream, right: InputStream): Boolean {
+        val bufA = ByteArray(FILE_COMPARE_BUFFER_BYTES)
+        val bufB = ByteArray(FILE_COMPARE_BUFFER_BYTES)
+        while (true) {
+            val nA = readFully(left, bufA)
+            val nB = readFully(right, bufB)
+            if (nA != nB) return false
+            for (i in 0 until nA) {
+                if (bufA[i] != bufB[i]) return false
+            }
+            if (nA < bufA.size) return true // 双流均到 EOF
+        }
+    }
+
+    /** 读满缓冲区或直到 EOF；read 的 length 必须是剩余空间，且处理罕见的零长度短读。 */
     private fun readFully(stream: InputStream, buf: ByteArray): Int {
         var offset = 0
         while (offset < buf.size) {
-            val n = stream.read(buf, offset, buf.size)
-            if (n < 0) break
-            offset += n
+            val n = stream.read(buf, offset, buf.size - offset)
+            when {
+                n < 0 -> break
+                n == 0 -> {
+                    // 防御非标准 InputStream 的零长度返回，避免死循环。
+                    val one = stream.read()
+                    if (one < 0) break
+                    buf[offset++] = one.toByte()
+                }
+                else -> offset += n
+            }
         }
         return offset
     }
