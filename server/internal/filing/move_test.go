@@ -71,6 +71,54 @@ func TestCopyFilePreservesContentAndMode(t *testing.T) {
 	}
 }
 
+// MoveFile/copyFile 都必须拒绝覆盖已存在目标；这也是回收站搬运失败时
+// cleanupMoveResidue 可以安全跳过的明确错误信号。
+func TestMoveFileRefusesExistingDestination(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src.mp4")
+	dst := filepath.Join(dir, "dst.mp4")
+	if err := os.WriteFile(src, []byte("new-source"), 0o644); err != nil {
+		t.Fatalf("写源失败: %v", err)
+	}
+	if err := os.WriteFile(dst, []byte("user-file"), 0o644); err != nil {
+		t.Fatalf("写既有目标失败: %v", err)
+	}
+
+	err := MoveFile(src, dst)
+	if !errors.Is(err, ErrMoveTargetExists) {
+		t.Fatalf("MoveFile 应以 ErrMoveTargetExists 拒绝目标冲突，得到 %v", err)
+	}
+	if b, err := os.ReadFile(src); err != nil || string(b) != "new-source" {
+		t.Fatalf("冲突时源文件必须保留: err=%v content=%q", err, b)
+	}
+	if b, err := os.ReadFile(dst); err != nil || string(b) != "user-file" {
+		t.Fatalf("冲突时既有目标不得变化: err=%v content=%q", err, b)
+	}
+}
+
+func TestCopyFileRefusesExistingDestination(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src.mp4")
+	dst := filepath.Join(dir, "dst.mp4")
+	if err := os.WriteFile(src, []byte("new-source"), 0o644); err != nil {
+		t.Fatalf("写源失败: %v", err)
+	}
+	if err := os.WriteFile(dst, []byte("user-file"), 0o644); err != nil {
+		t.Fatalf("写既有目标失败: %v", err)
+	}
+
+	err := copyFile(src, dst)
+	if !errors.Is(err, ErrMoveTargetExists) {
+		t.Fatalf("copyFile 应以 ErrMoveTargetExists 拒绝目标冲突，得到 %v", err)
+	}
+	if b, err := os.ReadFile(src); err != nil || string(b) != "new-source" {
+		t.Fatalf("冲突时源文件必须保留: err=%v content=%q", err, b)
+	}
+	if b, err := os.ReadFile(dst); err != nil || string(b) != "user-file" {
+		t.Fatalf("冲突时既有目标不得变化: err=%v content=%q", err, b)
+	}
+}
+
 // TestCopyFileFailureCleansDst：复制中途失败 → 报错、源文件原状、目标端
 // 半截副本被清理（F2 根修：不留幽灵残缺件）。直接测 copyFile 本体——
 // EXDEV 回落的完整 MoveFile 路径需真实双挂载点（见文件头注），目标端
