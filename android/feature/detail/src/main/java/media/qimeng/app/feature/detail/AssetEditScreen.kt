@@ -33,6 +33,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -133,6 +134,7 @@ private fun AssetEditForm(
 ) {
     Column(
         modifier = modifier
+            .alpha(if (state.saving) 0.68f else 1f)
             .verticalScroll(rememberScrollState())
             .padding(horizontal = QimengDimens.ScreenPaddingHorizontal)
             .imePadding(),
@@ -149,6 +151,12 @@ private fun AssetEditForm(
                 text = message,
                 container = MaterialTheme.colorScheme.tertiaryContainer,
             ) { viewModel.dismissNotice() }
+        }
+        if (state.saving) {
+            QimengMessageCard(
+                text = stringResource(R.string.asset_edit_saving_notice),
+                container = MaterialTheme.colorScheme.tertiaryContainer,
+            ) { }
         }
 
         // —— 文件名编辑（基名输入 + 扩展名锁定 + 作品名/序号联想） ——
