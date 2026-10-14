@@ -46,11 +46,12 @@ export function FileOpsDialogs({ mode, target, onClose, onDeleted }: FileOpsDial
 
   const confirmDelete = (): void => {
     const { assetId, fileName } = target
-    onClose()
-    if (!assetId) return
+    if (!assetId || deleteAsset.isPending) return
+    // 保留确认上下文直到服务器明确成功：失败时用户可读错误后直接重试，不必重新打开弹窗。
     deleteAsset.mutate(assetId, {
       onSuccess: () => {
         toast.success(`「${fileName}」已移入回收站（可在维护页恢复）`)
+        onClose()
         onDeleted?.()
       },
       onError: (err) =>
@@ -74,13 +75,14 @@ export function FileOpsDialogs({ mode, target, onClose, onDeleted }: FileOpsDial
         open={mode === 'delete'}
         title={`移入回收站「${target.fileName}」？`}
         description={'文件将移入回收站并从媒体库移除（浏览/点赞等记录保留）。\n可在维护页「回收站」恢复。'}
-        confirmText="移入回收站"
+        confirmText={deleteAsset.isPending ? '正在移入回收站…' : '移入回收站'}
         cancelText="取消"
         danger
+        busy={deleteAsset.isPending}
         keepOpenOnConfirm
         onConfirm={confirmDelete}
         onOpenChange={(next) => {
-          if (!next) onClose()
+          if (!next && !deleteAsset.isPending) onClose()
         }}
       />
     </>
