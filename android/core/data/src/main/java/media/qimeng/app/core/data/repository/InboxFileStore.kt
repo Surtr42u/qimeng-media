@@ -122,9 +122,9 @@ class InboxFileStore @Inject constructor() {
         var target = File(targetDir, displayName)
         if (target.exists()) {
             if (sameContent(context, uri, target)) {
-                // 已存在同内容归档：不重写/不删除目标文件，避免无意义大文件 I/O。
-                // 与既有移动语义一致，尽力删除 SAF 源；不支持删除时保留源文件。
-                runCatching { DocumentsContract.deleteDocument(context.contentResolver, uri) }
+                // 已存在同内容归档：不重写/不删除目标文件，也不删除源 URI。
+                // 通用 SAF URI 无法证明与 target 是不同物理文件；删源可能把归档本体一起删掉。
+                // 此分支按安全备份语义成功，宁保留一份重复源，也不冒误删唯一归档的风险。
                 return true
             }
             target = resolveConflictName(targetDir, displayName) ?: return false
