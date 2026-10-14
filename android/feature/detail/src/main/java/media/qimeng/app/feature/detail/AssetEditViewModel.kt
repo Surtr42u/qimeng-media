@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -64,6 +65,10 @@ data class AssetEditUiState(
     val authorSeeds: List<AuthorSuggestion> = emptyList(),
     /** 每作者来源编辑副本（authorId → 来源集；保存前不落服务端） */
     val sourcesByAuthor: Map<String, List<String>> = emptyMap(),
+    /** 读服务端既有来源期间先禁用编辑，避免把「尚未加载」误当成空来源集整体覆盖。 */
+    val sourceLoadingAuthorIds: Set<String> = emptySet(),
+    /** 无法读取既有来源的作者；该行保持禁用并提供重试，不能以空数组为基线写回。 */
+    val sourceLoadFailedAuthorIds: Set<String> = emptySet(),
     /** 来源被改动过的作者 id 集（保存时逐个 PUT；未改动的作者不发请求） */
     val dirtySourceAuthorIds: Set<String> = emptySet(),
     /** 全站来源建议词表（GET /authors/source-vocabulary；失败静默=纯自由输入） */
@@ -148,9 +153,9 @@ class AssetEditViewModel @Inject constructor(
     }
 
     /**
-     * 首屏/重试装配：详情作者全集 → 逐作者来源回显 → 词表。
-     * 回显与词表失败均静默降级（来源置空=可自由编辑、词表退化纯自由输入），
-     * 只有详情本体失败才进错误横幅（整页无数据）。
+     * 首屏/重试装配：详情作者全集 → 启动逐作者来源回显 → 词表。
+     * 词表失败可降级为自由输入；但逐作者来源是整体替换写入，读失败时必须禁用该行，
+     * 不能把「未知的旧值」误当空数组后覆盖服务端记录。详情本体失败仍走页面错误横幅。
      */
     fun refresh() {
         if (_uiState.value.loading) return
@@ -191,17 +196,60 @@ class AssetEditViewModel @Inject constructor(
         }
     }
 
-    /**
-     * 逐作者来源回显：单作者失败不影响其余（该作者来源置空=可自由编辑）。
-     * 只对尚无本地编辑副本的作者回填（refresh 重试不覆盖未保存的编辑）。
-     */
-    private suspend fun loadSourceEcho() {
-        val echo = _uiState.value.authors.associate { author ->
-            author.id to runCatching { authorRepository.authorSourcesById(author.id) }.getOrDefault(emptyList())
-        }
+    /** 启动当前已关联作者的来源读取；每行独立加载，失败只禁用该行并允许重试。 */
+    private fun loadSourceEcho() {
+        val authorIds = _uiState.value.authors.map { it.id }.toSet()
         _uiState.update { current ->
-            current.copy(sourcesByAuthor = current.sourcesByAuthor + echo.filterKeys { it !in current.sourcesByAuthor })
+            current.copy(
+                sourceLoadingAuthorIds = current.sourceLoadingAuthorIds intersect authorIds,
+                sourceLoadFailedAuthorIds = current.sourceLoadFailedAuthorIds intersect authorIds,
+            )
         }
+        authorIds.forEach(::loadSourcesForAuthor)
+    }
+
+    /**
+     * 加载一个作者的当前来源。来源 PUT 是整体替换，因此读取失败不能静默回退为空集；
+     * 若用户已在本地改过该作者的来源，重试/刷新成功也不得覆盖草稿。
+     */
+    private fun loadSourcesForAuthor(authorId: String) {
+        if (authorId.isBlank()) return
+        _uiState.update { current ->
+            current.copy(
+                sourceLoadingAuthorIds = current.sourceLoadingAuthorIds + authorId,
+                sourceLoadFailedAuthorIds = current.sourceLoadFailedAuthorIds - authorId,
+            )
+        }
+        viewModelScope.launch {
+            try {
+                val sources = authorRepository.authorSourcesById(authorId)
+                _uiState.update { current ->
+                    current.copy(
+                        sourcesByAuthor = if (authorId in current.dirtySourceAuthorIds) {
+                            current.sourcesByAuthor
+                        } else {
+                            current.sourcesByAuthor + (authorId to sources)
+                        },
+                        sourceLoadingAuthorIds = current.sourceLoadingAuthorIds - authorId,
+                        sourceLoadFailedAuthorIds = current.sourceLoadFailedAuthorIds - authorId,
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _uiState.update { current ->
+                    current.copy(
+                        sourceLoadingAuthorIds = current.sourceLoadingAuthorIds - authorId,
+                        sourceLoadFailedAuthorIds = current.sourceLoadFailedAuthorIds + authorId,
+                    )
+                }
+            }
+        }
+    }
+
+    /** 行内「重试」入口；失败期间行内容不可编辑，成功取到完整旧值后再恢复操作。 */
+    fun retryAuthorSources(authorId: String) {
+        loadSourcesForAuthor(authorId)
     }
 
     /** 全站来源词表（快捷选项，仅单独词；失败静默=纯自由输入，同旧上传页词表降级口径） */
@@ -296,9 +344,10 @@ class AssetEditViewModel @Inject constructor(
         }
     }
 
-    /** 点选联想项：加入编辑中全集（已关联则提示；输入态复位） */
+    /** 点选联想项：加入编辑中全集（已关联则提示；输入态复位）。新增作者先读取其现有来源。 */
     fun addAuthor(author: AuthorSuggestion) {
         suggestJob?.cancel()
+        val isNewAssociation = _uiState.value.authors.none { it.id == author.id }
         _uiState.update { current ->
             when {
                 current.authors.any { it.id == author.id } ->
@@ -318,6 +367,7 @@ class AssetEditViewModel @Inject constructor(
                 )
             }
         }
+        if (isNewAssociation) loadSourcesForAuthor(author.id)
     }
 
     /** 行内移除：全集删除 + 来源编辑副本与脏标记连带清理 */
@@ -328,6 +378,8 @@ class AssetEditViewModel @Inject constructor(
                 authors = remaining,
                 authorsChanged = remaining.map { it.id } != initialAuthorIds,
                 sourcesByAuthor = current.sourcesByAuthor - authorId,
+                sourceLoadingAuthorIds = current.sourceLoadingAuthorIds - authorId,
+                sourceLoadFailedAuthorIds = current.sourceLoadFailedAuthorIds - authorId,
                 dirtySourceAuthorIds = current.dirtySourceAuthorIds - authorId,
             )
         }
@@ -337,6 +389,8 @@ class AssetEditViewModel @Inject constructor(
 
     /** 来源 toggle（trim 后空串忽略） */
     fun toggleSource(authorId: String, name: String) {
+        val current = _uiState.value
+        if (authorId in current.sourceLoadingAuthorIds || authorId in current.sourceLoadFailedAuthorIds) return
         val normalized = name.trim()
         if (normalized.isEmpty()) return
         _uiState.update { current ->
@@ -355,6 +409,8 @@ class AssetEditViewModel @Inject constructor(
 
     /** 自由输入加入来源：trim、去重；空串忽略 */
     fun addCustomSource(authorId: String, raw: String) {
+        val current = _uiState.value
+        if (authorId in current.sourceLoadingAuthorIds || authorId in current.sourceLoadFailedAuthorIds) return
         val normalized = raw.trim()
         if (normalized.isEmpty()) return
         _uiState.update { current ->
