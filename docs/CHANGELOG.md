@@ -11,18 +11,34 @@
 
 
 
-## fix(android/web/ci/docs): 归档边界加固、备份导入反馈与跨平台门禁（2026-10-15 第五百二十九笔；Draft PR #1，未合并）
+## fix(android/web/server/ci/docs): 多端文件/编辑链路可靠性加固（2026-10-15 第五百二十九笔；Draft PR #1，未合并）
 
 执行 AI：GPT-6（主代理）
 
-- **全库审查范围**：以 ARCHITECTURE / DOMAIN_RULES / SECURITY / PROJECT_PLAN 为索引，复核 Go 文件移动与回收站、Android 上传归档与 Room 离线队列、Web 文件操作/备份导入/作者编辑，以及协议生成和 CI 门禁。
-- **Android 归档**：修复流比较函数的缓冲区剩余长度计算并覆盖短读；SAF URI 命中同内容归档时保留既有目标而非删除重写；拒绝 ContentProvider 文件名中的路径分隔符/控制字符及路径语义段；库目录名拒绝 `.` / `..`，归档镜像重命名校验源与目标名称。
-- **测试**：增加流比较（短读、非整块长度、内容/长度不一致）、归档路径边界和 Room 1→2 / 2→3 迁移 SQL 合约测试。迁移测试锁定生成 SQL 与版本连续性，**不等同于 emulator + MigrationTestHelper 的真实 SQLite 数据保留测试**，该项仍是已知验证缺口。
-- **Web 交互**：备份导入确认弹窗增加 busy 状态，异步导入期间保留确认上下文，失败可重试且成功后才关闭；统一未知错误提示，避免 SDK 错误对象退化为 `[object Object]`，并更新纯函数测试。
-- **编辑页交互**：Web 资产编辑页增加 SPA 路由离开拦截与标签页关闭提示；Android 资产编辑页把文件名/作者/来源共用的 `hasUnsavedChanges` 状态接到顶栏返回与系统返回，脏表单需确认，保存过程中禁止误退出；ViewModel 单测锁定脏状态门控。正常保存成功导航不触发放弃确认。
-- **跨平台文件名**：归档 SAF 文件名现在也拒绝 Windows 保留非法字符（与跨平台归档目录名规则共享同一常量），避免手机端创建了桌面端无法正常使用的归档文件名。
-- **CI / 文档**：新增 Windows 原生 runner 的 Go filing 测试，补上 Linux job 不会编译的 `move_windows.go` 覆盖；README、ARCHITECTURE、PROJECT_PLAN 同步七个 CI job 的职责与本地 lint 的边界。
-- **验证状态**：最近一次提交对应的 GitHub Actions run 已排队；此前较早一轮的 Web/OpenAPI/SDK/桌面/Go/Windows 子任务出现成功，但未覆盖本笔后来新增的迁移测试与编辑页离开确认，Android 任务当时仍在运行。须以最新 head 的 CI 完成结果为准，不预先宣称全绿。所有改动保留在 `codex/reliability-hardening-ui-2026-10` 和 Draft PR #1，未合并到 master，未访问或修改运行中的 NAS 数据。
+- **审查范围**：以 ARCHITECTURE / DOMAIN_RULES / SECURITY / PROJECT_PLAN / ADR 索引为导航，复核 Go 文件移动与回收站、Android 上传归档与 Room 离线事件队列、Web 文件整理/备份导入/作者编辑、API 与持续集成。
+- **Android 归档与文件安全**：
+  - 修复 `readFully` 对输入流短读时传入错误剩余长度的问题，增加短读、非 64 KiB 整倍数、长度/内容不一致测试。
+  - 上传归档对同路径幂等成功；目标存在且内容相同时保留现有目标文件，删除不同路径上的重复源，而不先删目标再重建；加入文件时间戳保持断言。
+  - SAF `content://` 路径的展示名拒绝路径分隔符、控制字符、Windows 非法字符、点段/尾随点空格；归档目录拒绝 `.` / `..` 等路径语义段。
+  - 归档、uploaded 目录与归档镜像重命名增加真实直接子目录/规范路径检查，拒绝符号链接别名和归档根外路径；对未知身份的同内容 SAF URI 不再尝试删除源——通用 URI 无法证明不是同一物理文件，宁留重复源，不冒误删唯一归档的风险。
+  - copy 兜底在目标竞争时不再删除竞争者目标。新增同路径归档、同内容目标保全、非法名称、根外重命名等测试。
+- **Android 作者/来源编辑**：
+  - 来源读取失败现在是 fail-closed：该作者来源行显示重试，并在读到完整现值之前禁用整体替换编辑，避免把未知旧值当作空集合覆盖已有 TXT。
+  - 多步骤保存逐步记录成功状态：文件重命名成功后立即更新本地基线；作者关联 PUT 已成功但来源 PUT 失败时，重试跳过已提交的步骤；每个来源 PUT 成功后立即清脏，重试只重做失败项。
+  - 编辑表单保存期间禁用继续修改/返回；脏表单顶栏和系统返回均显示确认。
+  - Android 编辑页过滤 COS 派生作者，避免 PUT 常规作者全集时携带只读 COS id 导致整个保存被服务端拒绝。新增相关 ViewModel 测试。
+- **Go 文件移动/回收站**：
+  - `MoveFile` / 跨卷复制现在先拒绝已存在目标，并用 `O_EXCL` 防止复制回落截断目标文件；用 `ErrMoveTargetExists` 区分已存在目标。
+  - 回收站失败清理在明确目标冲突时跳过，避免把原先就存在的目标当成半截副本删除；新增测试保证源文件和既有目标都原样保留。
+  - 仍需说明的竞态边界：跨平台标准 `os.Rename` 路径的预检查与 rename 之间仍存在极小的跨进程 TOCTOU 窗口；业务层应继续做目录/库级协调。当前修复是保护已存在目标并加强跨卷 copy 的独占创建，不宣称完全消除所有平台竞争窗口。
+- **Web 交互**：
+  - 备份导入对话框有 pending/busy 状态；执行期间不重复提交，失败保留确认上下文可重试，成功后才关闭。
+  - 未知 API 错误统一显示人类可读兜底，不再显示 `[object Object]`。
+  - 资产编辑页有 SPA 路由与标签页离开提示；来源数据未完成回读/回读失败时禁止编辑；多步骤保存记录关联/来源已成功步骤，重试不无谓重复已成功写入；保存中禁用表单操作。
+- **CI / 文档**：新增 Windows 原生 runner 上 Go filing 包测试（覆盖 `move_windows.go` build-tag 路径），README / ARCHITECTURE / PROJECT_PLAN 同步七个 CI job；补充本条 changelog。
+- **测试与验证边界**：新增 Room 1→2 / 2→3 migration SQL 合约测试，但它不等价于 emulator + MigrationTestHelper 对旧 SQLite 文件实际迁移与数据保留测试，该工作仍待补齐。真实双挂载点跨卷行为仍需部署环境端到端验收。
+- **云端验证状态**：当前最新分支 head 为 `2df6a915f404dd2250c08b9aa1ff80698cf7ed65`，对应 GitHub Actions run `38617870345`（run #69）查询时为 `queued`，所以此条不宣称最新代码全绿。更早 run #10 的七个 job 曾全部成功，但不覆盖本条后来提交的改动。
+- **隔离声明**：全部变更只在 `codex/reliability-hardening-ui-2026-10` 与 Draft PR #1；未合并到 master，未对运行中的 NAS 数据库、媒体文件或部署实例进行操作。
 
 ## fix(ci): Go 锁补丁版本 1.27.0——runner 漂到 1.27.2 使 golangci-lint v2.13.1 类型检查崩（标准库导入即报 typecheck），lint 失败连带跳过远端 Go 测试（2026-10-11 第五百二十八笔）
 
