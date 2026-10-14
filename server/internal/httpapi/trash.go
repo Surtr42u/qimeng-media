@@ -160,7 +160,7 @@ func (s *Server) DeleteApiV1AssetsAssetId(w http.ResponseWriter, r *http.Request
 	if err := moveFile(src, trashFile); err != nil {
 		// 入站半截副本发生在 meta 写入之前——列表/清扫/指标全按 *.meta.json
 		// 遍历，留着就是永久不可见的幽灵文件，失败即清（best-effort）。
-		if !errors.Is(err, filing.ErrMoveTargetExists) {
+		if !errors.Is(err, filing.ErrMoveTargetExists) && !errors.Is(err, filing.ErrMoveDidNotCreateTarget) {
 			s.cleanupMoveResidue(src, trashFile)
 		}
 		s.internalErr(w, "移入回收站", err)
@@ -180,7 +180,7 @@ func (s *Server) DeleteApiV1AssetsAssetId(w http.ResponseWriter, r *http.Request
 			// 回滚目标的半截副本清掉（best-effort）：它落在库内原路径上，
 			// 残留会被扫描器注册成坏资产。trashFile 本体（完整副本、无 meta）
 			// 故意保留——回滚失败时它是唯一完好副本，宁留勿删。
-			if !errors.Is(rbErr, filing.ErrMoveTargetExists) {
+			if !errors.Is(rbErr, filing.ErrMoveTargetExists) && !errors.Is(rbErr, filing.ErrMoveDidNotCreateTarget) {
 				s.cleanupMoveResidue(trashFile, src)
 			}
 			s.logger.Error("回收站 meta 写入失败且回滚移动失败（需人工介入）",
