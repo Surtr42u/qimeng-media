@@ -159,7 +159,7 @@ class AssetEditViewModel @Inject constructor(
      * 不能把「未知的旧值」误当空数组后覆盖服务端记录。详情本体失败仍走页面错误横幅。
      */
     fun refresh() {
-        if (_uiState.value.loading) return
+        if (_uiState.value.loading || _uiState.value.saving) return
         _uiState.update { it.copy(loading = true, errorMessage = null) }
         load()
     }
