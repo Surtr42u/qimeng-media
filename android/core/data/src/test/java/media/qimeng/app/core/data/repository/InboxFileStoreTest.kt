@@ -70,6 +70,19 @@ class InboxFileStoreTest {
     }
 
     @Test
+    fun `uploaded目标存在时归档不覆盖且保留源与目标`() {
+        val inbox = tmp.newFolder("inbox-uploaded-conflict")
+        val uploaded = File(inbox, StagingRepository.UPLOADED_DIR_NAME).apply { mkdirs() }
+        val source = write(inbox, "done.mp4", content = "new upload")
+        val target = write(uploaded, "done.mp4", content = "previous archive")
+
+        assertFalse(store.archiveToUploaded(source.absolutePath))
+
+        assertEquals("new upload", source.readText())
+        assertEquals("previous archive", target.readText())
+    }
+
+    @Test
     fun `归档源文件不存在返回false不抛错`() {
         assertFalse(store.archiveToUploaded(tmp.root.resolve("不存在.jpg").absolutePath))
     }
@@ -230,6 +243,26 @@ class InboxFileStoreTest {
         val newFile = File(libDir, "守望先锋  天使 13.mp4")
         assertTrue(newFile.exists())
         assertEquals("video-data", newFile.readText())
+    }
+
+    @Test
+    fun `renameArchivedFile遇到已有目标时不覆盖且保留源`() {
+        val root = tmp.newFolder("archive-rename-conflict")
+        val libDir = tmp.newFolder("archive-rename-conflict/lib")
+        val source = write(libDir, "old.mp4", content = "source video")
+        val target = write(libDir, "new.mp4", content = "existing video")
+
+        assertFalse(
+            store.renameArchivedFile(
+                archiveRoot = root.absolutePath,
+                libraryName = "lib",
+                oldFileName = "old.mp4",
+                newFileName = "new.mp4",
+            ),
+        )
+
+        assertEquals("source video", source.readText())
+        assertEquals("existing video", target.readText())
     }
 
     @Test

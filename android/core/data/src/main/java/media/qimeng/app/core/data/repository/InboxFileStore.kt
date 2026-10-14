@@ -41,7 +41,8 @@ class InboxFileStore @Inject constructor() {
     }
 
     /**
-     * 归档：源文件 renameTo 到同目录 uploaded/ 子目录（失败不抛，返回 false）。
+     * 归档：源文件无覆盖地移动到同目录 uploaded/ 子目录（失败不抛，返回 false）。
+     * 同名目标已存在时保留源与目标，避免覆盖用户之前归档的文件。
      * 消费方为 worker 的收件箱来源回退归档分支（UploadWorker.archiveNote，红线链路）。
      */
     fun archiveToUploaded(sourcePath: String): Boolean {
@@ -51,11 +52,7 @@ class InboxFileStore @Inject constructor() {
         val uploadedDir = File(parent, StagingRepository.UPLOADED_DIR_NAME)
         if (!uploadedDir.isDirectory && !uploadedDir.mkdirs()) return false
         if (!isDirectChildDirectory(parent, uploadedDir)) return false
-        return try {
-            file.renameTo(File(uploadedDir, file.name))
-        } catch (e: Exception) {
-            false
-        }
+        return moveFileNoReplace(file, File(uploadedDir, file.name))
     }
 
     /**
@@ -68,8 +65,8 @@ class InboxFileStore @Inject constructor() {
      * - 同名冲突：内容不同则源文件名加序号 (1)(2)… 找首个空位（绝不覆盖——归档区文件
      *   可能已被用户整理过，静默覆盖等于丢文件）；内容相同则保留已有归档目标、删除重复源；
      *   源路径本来就是目标路径时幂等成功，不做删除/重命名；
-     * - 优先 renameTo（同卷快），失败 fallback「copy 到 .part 临时名 + 改名到位 +
-     *   删源」（跨挂载点兜底；[copyFallback]）。
+     * - 同卷优先无覆盖移动；不同挂载点或移动失败时 fallback「复制到唯一 .part 临时名 +
+     *   无覆盖发布 + 删源」（跨挂载点兜底；[copyFallback]）。
      * 失败不抛、返回 false（调用方只记提示不阻断上传完成，与 [archiveToUploaded] 同口径）。
      */
     fun archiveToLibraryRoot(archiveRoot: String, libraryName: String, sourceFile: File): Boolean {
@@ -90,14 +87,7 @@ class InboxFileStore @Inject constructor() {
                 }
                 target = resolveConflictName(targetDir, sourceFile.name) ?: return false
             }
-            if (sourceFile.renameTo(target)) {
-                true
-            } else if (target.exists()) {
-                // renameTo 的快速路径失败后若目标已被其他操作创建，不能把竞争者当作回退目标。
-                false
-            } else {
-                copyFallback(sourceFile, target)
-            }
+            moveOrCopyNoReplace(sourceFile, target)
         } catch (e: Exception) {
             false
         }
@@ -172,7 +162,7 @@ class InboxFileStore @Inject constructor() {
      * - 归档根不存在或非目录时返回 false；
      * - 优先在 <archiveRoot>/<libraryName>/ 或 <archiveRoot>/<sanitize(libraryName)>/ 查找 oldFileName；
      * - 若未指定 libraryName 或对应目录不存在，回落遍历 archiveRoot 的各一级子目录查找；
-     * - 找到目标文件后执行 renameTo(newFileName)，目标同名已存在则不覆盖返回 false；
+     * - 找到目标文件后使用无覆盖移动重命名；目标同名已存在（包括检查后并发创建）则不覆盖返回 false；
      * - 文件成功重命名返回 true，未找到或重命名失败返回 false。
      */
     fun renameArchivedFile(
@@ -208,7 +198,7 @@ class InboxFileStore @Inject constructor() {
             if (source.isFile) {
                 val target = File(dir, newFileName)
                 if (!target.exists()) {
-                    return source.renameTo(target)
+                    return moveFileNoReplace(source, target)
                 }
             }
         }
@@ -216,12 +206,10 @@ class InboxFileStore @Inject constructor() {
     }
 
     /**
-     * copy 兜底（renameTo 跨挂载点失败时）：先 copyTo 到同目录 .part 临时名，成功后
-     * renameTo 改名到位。为什么不能直接 copyTo 目标名：copyTo 半途失败（磁盘满/进程
-     * 被杀）会在归档目录留下半截同名目标文件，下次同名归档因内容不等走序号位、垃圾
-     * 永留；.part 临时名则把残留收敛到可识别可清理的形态（finally 兜底删除）。
-     * .part 改名失败再试「删目标位 + 二次改名」（防御并发占位），仍失败返回 false；
-     * 删源失败同样按失败上报（false 提醒用户手动处理源文件，有意语义，非疏漏）。
+     * copy 兜底：先复制到目标目录下唯一 .part 临时文件，再以无覆盖方式发布到目标位，
+     * 最后删除源。不能直接 copyTo 目标名：复制中途失败会留下半截同名文件。
+     * 发布时若目标被其他操作占用，安全失败并保留竞争者目标与源文件；finally 只清理本次
+     * 创建的临时文件。删源失败时目标是完整副本、源仍在，返回 false 提醒用户人工核对。
      */
     private fun copyFallback(sourceFile: File, target: File): Boolean {
         var part: File? = null
@@ -237,6 +225,21 @@ class InboxFileStore @Inject constructor() {
             // 成功路径 part 已改名移走、delete 是 no-op；异常/失败路径只清理本次创建的临时文件。
             part?.delete()
         }
+    }
+
+    /**
+     * 同卷时直接无覆盖移动；不同 FileStore 或快速移动失败时走受控复制。
+     * 先比较 FileStore，避免把跨卷复制交给 Files.move 的内部回退路径。
+     */
+    private fun moveOrCopyNoReplace(source: File, target: File): Boolean {
+        val parent = target.parentFile ?: return false
+        val sameStore = runCatching {
+            Files.getFileStore(source.toPath()) == Files.getFileStore(parent.toPath())
+        }.getOrDefault(false)
+        if (sameStore && moveFileNoReplace(source, target)) return true
+        // 目标在检查后已被创建时，不再继续复制/尝试替换它。
+        if (target.exists()) return false
+        return copyFallback(source, target)
     }
 
     /**
