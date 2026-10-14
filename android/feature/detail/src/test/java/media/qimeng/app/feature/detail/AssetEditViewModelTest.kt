@@ -231,6 +231,33 @@ class AssetEditViewModelTest {
     }
 
     @Test
+    fun `作者关联已提交但来源失败后重试只执行未完成步骤`() {
+        val authorRepo = FakeEditAuthorRepository().apply {
+            sourceReplaceErrorsById["a-1"] = IllegalStateException("temporary source failure")
+        }
+        val (viewModel, _, repo) = newViewModel(authorRepo = authorRepo)
+        viewModel.addAuthor(AuthorSuggestion("a-3", "作者C", 1))
+        viewModel.toggleSource("a-1", "site-f")
+        driveIdle()
+
+        viewModel.save()
+        driveIdle()
+        assertEquals(1, repo.assetAuthorsCalls.size)
+        assertTrue(viewModel.uiState.value.authorAssociationCommitted)
+        assertTrue("a-1" in viewModel.uiState.value.dirtySourceAuthorIds)
+        assertFalse(viewModel.uiState.value.saved)
+
+        authorRepo.sourceReplaceErrorsById.remove("a-1")
+        viewModel.save()
+        driveIdle()
+
+        assertEquals("作者关联已经提交，不应在重试时重复 PUT", 1, repo.assetAuthorsCalls.size)
+        assertEquals(listOf("a-1" to listOf("site-a", "site-f")), repo.sourceReplaceCalls)
+        assertTrue(viewModel.uiState.value.saved)
+        assertFalse(viewModel.uiState.value.hasUnsavedChanges)
+    }
+
+    @Test
     fun `仅修改来源时不重复提交作者全集`() {
         val (viewModel, _, authorRepo) = newViewModel()
         viewModel.toggleSource("a-1", "site-f")
@@ -612,6 +639,7 @@ private class FakeEditAuthorRepository : media.qimeng.app.core.data.repository.A
     val sourcesByAuthor = mutableMapOf<String, List<String>>()
     val sourceErrorsById = mutableMapOf<String, Exception>()
     val sourceReplaceCalls = mutableListOf<Pair<String, List<String>>>()
+    val sourceReplaceErrorsById = mutableMapOf<String, Exception>()
 
     /** 全集 PUT 记账（assetId、作者 id 全集、待新建名列表——协议 2026-10-11 新增字段透传断言） */
     val assetAuthorsCalls = mutableListOf<Triple<String, List<String>, List<String>>>()
@@ -630,7 +658,7 @@ private class FakeEditAuthorRepository : media.qimeng.app.core.data.repository.A
     }
 
     override suspend fun replaceAuthorSources(authorId: String, sources: List<String>) {
-        replaceError?.let { throw it }
+        sourceReplaceErrorsById[authorId]?.let { throw it }
         sourceReplaceCalls += authorId to sources
     }
 
