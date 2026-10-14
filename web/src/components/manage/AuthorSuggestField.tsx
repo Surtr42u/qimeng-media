@@ -106,7 +106,7 @@ export function AuthorSuggestField({
   return (
     <label className="settings-field upload-attach-field">
       <span>{label}</span>
-      <Popover open={open} onOpenChange={setPopOpen}>
+      <Popover open={open} onOpenChange={(next) => { if (!disabled) setPopOpen(next) }}>
         <div className="attach-input-box" ref={boxRef}>
           <PopoverAnchor asChild>
             <input
@@ -117,7 +117,7 @@ export function AuthorSuggestField({
               value={display}
               disabled={disabled}
               onChange={(e) => onInputChange(e.target.value)}
-              onFocus={() => setPopOpen(true)}
+              onFocus={() => { if (!disabled) setPopOpen(true) }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') onEnter()
               }}
@@ -153,6 +153,7 @@ export function AuthorSuggestField({
                       key={s.id}
                       className="pop-suggest-item"
                       type="button"
+                      disabled={disabled}
                       onClick={() => {
                         onChange({ authorId: s.id, displayName: s.displayName })
                         setPopOpen(false)
