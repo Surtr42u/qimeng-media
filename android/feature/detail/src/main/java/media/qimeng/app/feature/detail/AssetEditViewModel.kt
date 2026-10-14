@@ -396,7 +396,7 @@ class AssetEditViewModel @Inject constructor(
     /** 来源 toggle（trim 后空串忽略） */
     fun toggleSource(authorId: String, name: String) {
         val current = _uiState.value
-        if (authorId in current.sourceLoadingAuthorIds || authorId in current.sourceLoadFailedAuthorIds) return
+        if (current.saving || authorId in current.sourceLoadingAuthorIds || authorId in current.sourceLoadFailedAuthorIds) return
         val normalized = name.trim()
         if (normalized.isEmpty()) return
         _uiState.update { current ->
@@ -416,7 +416,7 @@ class AssetEditViewModel @Inject constructor(
     /** 自由输入加入来源：trim、去重；空串忽略 */
     fun addCustomSource(authorId: String, raw: String) {
         val current = _uiState.value
-        if (authorId in current.sourceLoadingAuthorIds || authorId in current.sourceLoadFailedAuthorIds) return
+        if (current.saving || authorId in current.sourceLoadingAuthorIds || authorId in current.sourceLoadFailedAuthorIds) return
         val normalized = raw.trim()
         if (normalized.isEmpty()) return
         _uiState.update { current ->
