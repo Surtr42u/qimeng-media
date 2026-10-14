@@ -43,7 +43,7 @@ var copyBody = io.Copy
 // （含 Linux 与 Windows 两种文本；大小写不敏感）。
 func MoveFile(src, dst string) error {
 	// 先拒绝已存在的目标，避免 Unix os.Rename 或跨卷 copy 回落覆盖用户文件。
-	// 同一服务进程的竞争由调用方库门闩收敛；此检查也保护预先存在的目标。
+	// 预检查缩小冲突窗口；跨卷复制由 O_EXCL 再防一道。调用方仍应在业务层做冲突解析/并发协调。
 	if _, err := os.Lstat(dst); err == nil {
 		return fmt.Errorf("%w: %s", ErrMoveTargetExists, dst)
 	} else if !errors.Is(err, fs.ErrNotExist) {
