@@ -1,7 +1,7 @@
 # CI：每个 PR / push 到 master 必须全绿才允许合并（ARCHITECTURE §10）
-# 六道门禁：协议校验（宪法不容破坏）→ 服务端 → Web（含 knip 孤儿依赖门禁）→
-# Android 客户端（含内嵌产物完整性门禁）→ 桌面壳（Tauri cargo test/build，
-# ADR-0020 第四端）；外加 make sdk 生成链可跑通
+# 七个 job：协议校验（宪法不容破坏）→ Linux 服务端 → Windows 文件操作 → Web（含 knip 孤儿依赖门禁）→
+# SDK 生成链 → Android 客户端（含内嵌产物完整性门禁）→ 桌面壳（Tauri cargo test/build，
+# ADR-0020 第四端）；同一 PR 仅保留最新 head 的 CI 运行，避免过期检查堆积
 name: ci
 
 # 同一 PR 连续推送时只验证最新 head：自动取消同组旧的运行/排队任务，避免过期提交
