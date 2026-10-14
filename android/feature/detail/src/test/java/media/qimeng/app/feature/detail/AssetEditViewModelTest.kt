@@ -388,6 +388,34 @@ class AssetEditViewModelTest {
     // ---- 来源编辑与保存 ----
 
     @Test
+    fun `读取作者来源失败时禁止编辑并可重试回显完整旧值`() {
+        val authorRepo = FakeEditAuthorRepository().apply {
+            sourcesByAuthor["a-1"] = listOf("site-a")
+            sourceErrorsById["a-1"] = IllegalStateException("source endpoint unavailable")
+        }
+        val (viewModel, _, repo) = newViewModel(authorRepo = authorRepo)
+        val failedState = viewModel.uiState.value
+        assertTrue("a-1" in failedState.sourceLoadFailedAuthorIds)
+        assertFalse("a-1" in failedState.sourcesByAuthor)
+
+        // 失败状态下即使有过期 UI 事件也必须 fail-closed，不得以空集合做整体替换。
+        viewModel.toggleSource("a-1", "site-f")
+        viewModel.addCustomSource("a-1", "new-site")
+        assertFalse("a-1" in viewModel.uiState.value.dirtySourceAuthorIds)
+
+        repo.sourceErrorsById.remove("a-1")
+        viewModel.retryAuthorSources("a-1")
+        driveIdle()
+
+        val recovered = viewModel.uiState.value
+        assertFalse("a-1" in recovered.sourceLoadFailedAuthorIds)
+        assertFalse("a-1" in recovered.sourceLoadingAuthorIds)
+        assertEquals(listOf("site-a"), recovered.sourcesByAuthor["a-1"])
+        viewModel.toggleSource("a-1", "site-f")
+        assertEquals(listOf("site-a", "site-f"), viewModel.uiState.value.sourcesByAuthor["a-1"])
+    }
+
+    @Test
     fun `toggleSource记脏且保存逐作者PUT与全集PUT`() {
         val (viewModel, _, authorRepo) = newViewModel()
         viewModel.toggleSource("a-1", "site-f") // 回显 [site-a] + site-f
@@ -541,6 +569,7 @@ private class FakeEditAuthorRepository : media.qimeng.app.core.data.repository.A
 
     var vocabularyCalled = false
     val sourcesByAuthor = mutableMapOf<String, List<String>>()
+    val sourceErrorsById = mutableMapOf<String, Exception>()
     val sourceReplaceCalls = mutableListOf<Pair<String, List<String>>>()
 
     /** 全集 PUT 记账（assetId、作者 id 全集、待新建名列表——协议 2026-10-11 新增字段透传断言） */
@@ -554,8 +583,10 @@ private class FakeEditAuthorRepository : media.qimeng.app.core.data.repository.A
         return listOf("site-a", "pixiv", "site-f")
     }
 
-    override suspend fun authorSourcesById(authorId: String): List<String> =
-        sourcesByAuthor[authorId].orEmpty()
+    override suspend fun authorSourcesById(authorId: String): List<String> {
+        sourceErrorsById[authorId]?.let { throw it }
+        return sourcesByAuthor[authorId].orEmpty()
+    }
 
     override suspend fun replaceAuthorSources(authorId: String, sources: List<String>) {
         replaceError?.let { throw it }
