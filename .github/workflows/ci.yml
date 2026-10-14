@@ -62,6 +62,19 @@ jobs:
       - run: go test ./... -race -count=1
       - run: go build ./...
 
+  server-windows-filing:
+    name: Go 文件操作（Windows 原生测试）
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults: { run: { working-directory: server } }
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with: { go-version: "1.27.0", cache-dependency-path: server/go.sum }
+      # move_windows.go 使用 windows build tag，Linux server job 不会编译它；
+      # 在 Windows 原生 runner 上运行文件操作包测试，验证跨盘错误识别与回退分支。
+      - run: go test ./internal/filing -count=1
+
   web:
     name: Web（tsc + build）
     runs-on: ubuntu-latest
