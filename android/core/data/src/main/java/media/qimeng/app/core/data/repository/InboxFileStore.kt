@@ -76,13 +76,16 @@ class InboxFileStore @Inject constructor() {
         val targetDir = File(archiveRoot, dirName)
         if (!targetDir.isDirectory && !targetDir.mkdirs()) return false
         var target = File(targetDir, sourceFile.name)
-        if (target.exists() && !sameContent(sourceFile, target)) {
-            target = resolveConflictName(targetDir, sourceFile.name) ?: return false
-        }
         return try {
-            if (target.exists() && !target.delete()) return false
-            // 删旧放新（同名同内容）与 renameTo 的覆盖语义在 Windows JVM 上均不可依赖，
-            // 上面显式 delete 后这里 renameTo/copy 落到的是空位路径
+            if (target.exists()) {
+                // 上传源本来就在目标归档位置时是幂等成功；绝不能先删目标再把同一文件当源搬一次。
+                if (sourceFile.canonicalFile == target.canonicalFile) return true
+                if (sameContent(sourceFile, target)) {
+                    // 同内容已有归档就是完整副本：保留用户可能整理过的目标文件，仅移除重复源。
+                    return sourceFile.delete()
+                }
+                target = resolveConflictName(targetDir, sourceFile.name) ?: return false
+            }
             sourceFile.renameTo(target) || copyFallback(sourceFile, target)
         } catch (e: Exception) {
             false
@@ -213,7 +216,8 @@ class InboxFileStore @Inject constructor() {
         try {
             sourceFile.copyTo(part, overwrite = true)
             if (!part.renameTo(target)) {
-                if (target.exists() && !target.delete()) return false
+                // 目标位若在冲突探测后被其他进程创建，必须保留它；绝不以「重试」为由删除竞争者文件。
+                if (target.exists()) return false
                 if (!part.renameTo(target)) return false
             }
             return sourceFile.delete()
