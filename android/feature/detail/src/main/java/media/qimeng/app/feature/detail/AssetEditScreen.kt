@@ -1,5 +1,6 @@
 package media.qimeng.app.feature.detail
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -27,6 +29,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -52,7 +57,7 @@ import media.qimeng.app.core.ui.theme.qimengFilledButtonColors
  * 含待新建名 + 脏来源逐 PUT，成功返回）。加载与保存编排全在 [AssetEditViewModel]
  * （ADR-0008 铁律 7）。
  *
- * @param onBack 返回（未保存退出，无改动确认——本页改动粒度小且可重进）
+ * @param onBack 返回（存在文件名/作者/来源未保存改动时，顶栏与系统返回统一要求确认）
  * @param onSaved 保存成功后的返回（与 onBack 同为 popBackStack，语义分开供测试/预览注入）
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -63,6 +68,19 @@ fun AssetEditScreen(
     viewModel: AssetEditViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    var showDiscardDialog by rememberSaveable { mutableStateOf(false) }
+
+    val requestBack: () -> Unit = {
+        when {
+            state.saving -> Unit // 保存期间不允许退出，避免多步提交中途离场
+            state.hasUnsavedChanges -> showDiscardDialog = true
+            else -> onBack()
+        }
+    }
+    // 系统返回与顶栏返回同口径；保存期间吞掉返回事件，脏表单则要求明确确认。
+    BackHandler(enabled = state.saving || state.hasUnsavedChanges) {
+        if (!state.saving) showDiscardDialog = true
+    }
 
     // 保存成功一次性出口（popBackStack；saved 无复位必要——路由销毁即状态消亡）
     LaunchedEffect(state.saved) {
@@ -70,7 +88,7 @@ fun AssetEditScreen(
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        QimengTopBar(title = stringResource(R.string.asset_edit_title), onBack = onBack)
+        QimengTopBar(title = stringResource(R.string.asset_edit_title), onBack = requestBack)
         if (state.loading) {
             LoadingIndicator(modifier = Modifier.padding(24.dp))
             return@Column
@@ -79,6 +97,29 @@ fun AssetEditScreen(
             state = state,
             viewModel = viewModel,
             modifier = Modifier.fillMaxSize(),
+        )
+    }
+
+    if (showDiscardDialog) {
+        AlertDialog(
+            onDismissRequest = { showDiscardDialog = false },
+            title = { Text(stringResource(R.string.asset_edit_discard_title)) },
+            text = { Text(stringResource(R.string.asset_edit_discard_desc)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDiscardDialog = false
+                        onBack()
+                    },
+                ) {
+                    Text(stringResource(R.string.asset_edit_discard_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDiscardDialog = false }) {
+                    Text(stringResource(R.string.asset_edit_discard_cancel))
+                }
+            },
         )
     }
 }
