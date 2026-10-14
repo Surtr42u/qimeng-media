@@ -258,7 +258,7 @@ class InboxFileStoreTest {
     }
 
     @Test
-    fun \`归档镜像重命名拒绝路径穿越名称\`() {
+    fun `归档镜像重命名拒绝路径穿越名称`() {
         val root = tmp.newFolder("archive-rename-safe")
         val libDir = tmp.newFolder("archive-rename-safe/lib")
         val source = write(libDir, "old.mp4", content = "video")
