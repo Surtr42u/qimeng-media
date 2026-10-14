@@ -251,7 +251,9 @@ class InboxFileStore @Inject constructor() {
     internal fun isSafeArchiveFileName(name: String): Boolean {
         if (name.isBlank() || name == "." || name == "..") return false
         if (name.endsWith(" ") || name.endsWith(".")) return false
-        return name.none { it == '/' || it == '\\' || it.code < 0x20 || it.code == 0x7f }
+        return name.none {
+            it in LIBRARY_DIR_ILLEGAL_CHARS || it.code < 0x20 || it.code == 0x7f
+        }
     }
 
     /** 字节级内容比对：长度先短路；流式比对不整载内存（归档对象可能是大视频）。 */
