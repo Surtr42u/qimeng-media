@@ -61,10 +61,10 @@ function AuthorSourcesRow({
   draft: string[] | undefined
   onChange: (authorId: string, next: string[]) => void
 }) {
-  const { data, isError, refetch } = useAuthorSourcesById(authorId)
+  const { data, isError, isFetching, refetch } = useAuthorSourcesById(authorId)
   // 来源端点是整体替换语义：尚未读到服务端原值前不能把空数组当基线开放编辑，
   // 否则用户只点一个新词保存就可能覆盖此前已有的来源区。
-  if (data === undefined) {
+  if (data === undefined || isFetching || isError) {
     return (
       <div
         className="rank-note"
