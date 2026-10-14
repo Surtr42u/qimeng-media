@@ -224,9 +224,15 @@ class AssetEditViewModelTest {
     @Test
     fun `文件名已提交但后续作者保存失败后重试不重复移动`() {
         val authorRepo = FakeEditAuthorRepository().apply {
+            sourcesByAuthor["a-1"] = listOf("site-a")
             replaceError = IllegalStateException("temporary network error")
         }
-        val (viewModel, detailRepo, _) = newViewModel(authorRepo = authorRepo)
+        val (viewModel, detailRepo, _) = newViewModel(
+            detailRepo = FakeEditDetailRepository().apply {
+                detailResult = detail(authors = listOf(authorA, authorB), fileName = "asset-1.mp4")
+            },
+            authorRepo = authorRepo,
+        )
         driveIdle() // 等待初始详情/来源回显完成，再开始编辑
         viewModel.onFileNameChange("新名")
         viewModel.addAuthor(AuthorSuggestion("a-3", "作者C", 1))
@@ -251,6 +257,7 @@ class AssetEditViewModelTest {
     @Test
     fun `作者关联已提交但来源失败后重试只执行未完成步骤`() {
         val authorRepo = FakeEditAuthorRepository().apply {
+            sourcesByAuthor["a-1"] = listOf("site-a")
             sourceReplaceErrorsById["a-1"] = IllegalStateException("temporary source failure")
         }
         val (viewModel, _, repo) = newViewModel(authorRepo = authorRepo)
