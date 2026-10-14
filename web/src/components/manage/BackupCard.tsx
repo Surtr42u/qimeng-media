@@ -45,9 +45,9 @@ export function BackupCard() {
   const confirmImport = (): void => {
     if (!pending) return
     const { payload, summary } = pending
-    setPending(null)
     importBackup.mutate(payload, {
       onSuccess: (res) => {
+        setPending(null)
         toast.success(
           `「${summary.fileName}」导入完成：匹配文件 ${res.assetsMatched ?? 0}/${res.mediaFilesTotal ?? 0}，` +
             `作者 ${res.authorsImported ?? 0}，标签 ${res.tagsImported ?? 0}，事件回放 ${res.eventsReplayed ?? 0} 条`,
@@ -118,8 +118,9 @@ export function BackupCard() {
         open={pending !== null}
         title={`导入备份「${pending?.summary.fileName ?? ''}」？`}
         description={pending ? backupSummaryText(pending.summary) : ''}
-        confirmText="导入恢复"
+        confirmText={importBackup.isPending ? "正在导入…" : "导入恢复"}
         cancelText="取消"
+        busy={importBackup.isPending}
         onConfirm={confirmImport}
         onOpenChange={(next) => {
           if (!next) setPending(null)
