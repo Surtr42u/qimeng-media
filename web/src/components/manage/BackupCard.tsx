@@ -121,6 +121,7 @@ export function BackupCard() {
         confirmText={importBackup.isPending ? "正在导入…" : "导入恢复"}
         cancelText="取消"
         busy={importBackup.isPending}
+        keepOpenOnConfirm
         onConfirm={confirmImport}
         onOpenChange={(next) => {
           if (!next) setPending(null)
