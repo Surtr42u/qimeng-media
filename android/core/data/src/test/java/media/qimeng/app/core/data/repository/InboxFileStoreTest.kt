@@ -136,6 +136,9 @@ class InboxFileStoreTest {
 
         assertFalse(store.archiveToLibraryRoot(tmp.root.absolutePath, "   ", source))
         assertFalse(store.archiveToLibraryRoot(tmp.root.absolutePath, "", source))
+        // 路径语义名不得逸出归档根目录。
+        assertFalse(store.archiveToLibraryRoot(tmp.root.absolutePath, ".", source))
+        assertFalse(store.archiveToLibraryRoot(tmp.root.absolutePath, "..", source))
         // 归档失败不吞源文件（调用方回退 uploaded/ 归档的兜底前提）
         assertTrue(source.isFile)
     }
@@ -252,6 +255,26 @@ class InboxFileStoreTest {
                 ByteArrayInputStream(byteArrayOf(1, 9, 3)),
             ),
         )
+    }
+
+    @Test
+    fun \`归档镜像重命名拒绝路径穿越名称\`() {
+        val root = tmp.newFolder("archive-rename-safe")
+        val libDir = tmp.newFolder("archive-rename-safe/lib")
+        val source = write(libDir, "old.mp4", content = "video")
+
+        assertFalse(
+            store.renameArchivedFile(
+                root.absolutePath, "lib", "old.mp4", "../escape.mp4",
+            ),
+        )
+        assertFalse(
+            store.renameArchivedFile(
+                root.absolutePath, "lib", "../old.mp4", "new.mp4",
+            ),
+        )
+        assertTrue(source.isFile)
+        assertFalse(tmp.root.resolve("escape.mp4").exists())
     }
 
     /** 模拟合法但不填满请求缓冲区的 InputStream。 */
