@@ -71,6 +71,25 @@ func TestCopyFilePreservesContentAndMode(t *testing.T) {
 	}
 }
 
+// 目标不存在但源无法移动（例如源已消失）时，调用方不得把目标当成
+// 本次产生的残留副本去清理；底层 os.Rename 错误仍可通过 errors.Is 识别。
+func TestMoveFileMarksNoDestinationCreatedOnRenameFailure(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "missing.mp4")
+	dst := filepath.Join(dir, "dst.mp4")
+
+	err := MoveFile(src, dst)
+	if !errors.Is(err, ErrMoveDidNotCreateTarget) {
+		t.Fatalf("应标记本次没有创建目标，得到 %v", err)
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("应保留底层源不存在错误，得到 %v", err)
+	}
+	if _, statErr := os.Lstat(dst); !os.IsNotExist(statErr) {
+		t.Fatalf("失败后不应产生目标，stat err=%v", statErr)
+	}
+}
+
 // MoveFile/copyFile 都必须拒绝覆盖已存在目标；这也是回收站搬运失败时
 // cleanupMoveResidue 可以安全跳过的明确错误信号。
 func TestMoveFileRefusesExistingDestination(t *testing.T) {
