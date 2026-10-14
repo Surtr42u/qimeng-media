@@ -47,17 +47,18 @@ export function ConfirmDialog({
           <AlertDialog.Description className="confirm-desc">{description}</AlertDialog.Description>
           <div className="confirm-actions">
             <AlertDialog.Cancel className="confirm-btn confirm-btn--cancel" disabled={busy}>{cancelText}</AlertDialog.Cancel>
-            <button
-              type="button"
+            <AlertDialog.Action
               className={cn('confirm-btn', danger ? 'confirm-btn--danger' : 'confirm-btn--primary')}
               disabled={busy}
-              onClick={() => {
+              onClick={(event) => {
+                // Radix AlertDialog.Action 默认会关闭弹窗。异步提交/路由守卫由调用方决定关闭时，
+                // preventDefault 阻止 Close 原语抢先关闭，且保留 Radix 的无障碍确认动作语义。
+                if (keepOpenOnConfirm) event.preventDefault()
                 onConfirm()
-                if (!keepOpenOnConfirm) onOpenChange?.(false)
               }}
             >
               {confirmText}
-            </button>
+            </AlertDialog.Action>
           </div>
         </AlertDialog.Content>
       </AlertDialog.Portal>
