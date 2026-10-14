@@ -1,8 +1,8 @@
 package media.qimeng.app.core.data.repository
 
+import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.FileInputStream
-import java.io.ByteArrayInputStream
 import java.io.InputStream
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -221,7 +221,7 @@ class InboxFileStoreTest {
 
     @Test
     fun `归档文件名拒绝路径分隔符和控制字符`() {
-        listOf("", " ", ".", "..", "../escape.mp4", "sub/file.mp4", "sub\\\\file.mp4", "bad\\u0000.mp4", "trailing.").forEach { name ->
+        listOf("", " ", ".", "..", "../escape.mp4", "sub/file.mp4", "sub\\\\file.mp4", "bad\u0000.mp4", "trailing.").forEach { name ->
             assertFalse("应拒绝文件名: $name", store.isSafeArchiveFileName(name))
         }
         listOf("video.mp4", "天使 01.mp4", ".hidden.jpg").forEach { name ->
