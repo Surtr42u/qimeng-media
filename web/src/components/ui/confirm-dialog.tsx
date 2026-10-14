@@ -17,6 +17,8 @@ export interface ConfirmDialogProps {
   cancelText: string
   /** 物理删除/清空类操作：主按钮深色强调（非红色） */
   danger?: boolean
+  /** 异步操作进行中：禁用重复提交与取消，避免 UI 提前关闭 */
+  busy?: boolean
   onConfirm: () => void
   /** 关闭请求通道（ESC / 取消按钮）：受控 open 必须由父组件响应它才能真正关闭 */
   onOpenChange?: (open: boolean) => void
@@ -29,6 +31,7 @@ export function ConfirmDialog({
   confirmText,
   cancelText,
   danger = false,
+  busy = false,
   onConfirm,
   onOpenChange,
 }: ConfirmDialogProps) {
@@ -40,9 +43,10 @@ export function ConfirmDialog({
           <AlertDialog.Title className="confirm-title">{title}</AlertDialog.Title>
           <AlertDialog.Description className="confirm-desc">{description}</AlertDialog.Description>
           <div className="confirm-actions">
-            <AlertDialog.Cancel className="confirm-btn confirm-btn--cancel">{cancelText}</AlertDialog.Cancel>
+            <AlertDialog.Cancel className="confirm-btn confirm-btn--cancel" disabled={busy}>{cancelText}</AlertDialog.Cancel>
             <AlertDialog.Action
               className={cn('confirm-btn', danger ? 'confirm-btn--danger' : 'confirm-btn--primary')}
+              disabled={busy}
               onClick={onConfirm}
             >
               {confirmText}
