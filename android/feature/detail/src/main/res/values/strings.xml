@@ -130,6 +130,8 @@
     <string name="asset_edit_add_author_section">添加作者</string>
     <string name="asset_edit_sources_label">来源</string>
     <string name="asset_edit_sources_hint">每个作者可单独维护来源区</string>
+    <string name="asset_edit_sources_loading">正在读取该作者的既有来源…</string>
+    <string name="asset_edit_sources_load_failed">无法读取既有来源，为避免覆盖旧数据，请重试。</string>
     <string name="asset_edit_save">保存</string>
     <string name="asset_edit_saving">保存中…</string>
     <string name="asset_edit_load_failed">加载资产信息失败，请重试</string>
