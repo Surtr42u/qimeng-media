@@ -145,7 +145,7 @@ func copyFile(src, dst string) error {
 // 不会清理在复制前已经存在的用户文件；filing 包无 logger 管道，此处用默认 logger）。
 func cleanupFailedCopy(dst string) {
 	if err := os.Remove(dst); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		slog.Warn("filing: 清理复制失败的半截副本失败（残留，重试移动会被 O_TRUNC 覆盖）",
+		slog.Warn("filing: 清理复制失败的半截副本失败（残留需由调用方按保守规则清理）",
 			"path", dst, "err", err)
 	}
 }
