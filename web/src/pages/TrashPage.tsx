@@ -132,7 +132,12 @@ export default function TrashPage() {
       </div>
 
       <div className="settings-actions">
-        <button className="save-btn" type="button" onClick={() => setEmptyConfirmOpen(true)} disabled={emptyAll.isPending || items.length === 0}>
+        <button
+          className="save-btn"
+          type="button"
+          onClick={() => setEmptyConfirmOpen(true)}
+          disabled={restore.isPending || removeOne.isPending || emptyAll.isPending || runner.state.running || items.length === 0}
+        >
           清空回收站
         </button>
         <span className="save-tip" hidden={emptyAll.isPending}>物理删除不可恢复</span>
