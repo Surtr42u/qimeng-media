@@ -149,6 +149,7 @@ export default function AssetEditPage() {
    *  （进待新建清单——重名/超长/超项按 lib 口径出提示不入列）；null=字段清空
    *  动作，不动草稿。 */
   const onPickAuthor = (v: AuthorAttachValue | null): void => {
+    if (saving) return
     setPickValue(null)
     if (!v) return
     if (v.authorId) {
@@ -176,6 +177,7 @@ export default function AssetEditPage() {
 
   /** 移出草稿并清掉该作者的来源草稿/脏标记（重加同作者不残留旧脏态） */
   const removeAuthor = (id: string): void => {
+    if (saving) return
     setDraftAuthors(authors.filter((a) => a.id !== id))
     setAuthorLinksNeedSave(true)
     const nextDrafts = { ...sourceDrafts }
@@ -188,6 +190,7 @@ export default function AssetEditPage() {
 
   /** 来源草稿上浮 + 标脏（保存时只对脏作者发整体替换） */
   const onSourceChange = (authorId: string, next: string[]): void => {
+    if (saving) return
     setSourceDrafts((prev) => ({ ...prev, [authorId]: next }))
     setDirtySources((prev) => ({ ...prev, [authorId]: true }))
   }
@@ -217,7 +220,7 @@ export default function AssetEditPage() {
         // 关联已落库：以响应作者全集刷新草稿（待新建名已成真作者，作为正常条目
         // 出现、可继续编辑来源），待新建清单清空
         nextAuthors = authorDraftsFromDetail(saved.authors)
-          setDraftAuthors(nextAuthors)
+        setDraftAuthors(nextAuthors)
         setPendingAuthors([])
         setAuthorLinksNeedSave(false)
       }
