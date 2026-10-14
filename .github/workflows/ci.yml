@@ -4,6 +4,12 @@
 # ADR-0020 第四端）；外加 make sdk 生成链可跑通
 name: ci
 
+# 同一 PR 连续推送时只验证最新 head：自动取消同组旧的运行/排队任务，避免过期提交
+# 堵住 runner 队列；master 的 push 使用独立 group，不会取消 PR 验证。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: [master]
