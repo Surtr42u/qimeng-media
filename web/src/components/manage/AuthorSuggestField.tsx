@@ -42,6 +42,7 @@ export function AuthorSuggestField({
   label = '添加作者（联想选择）',
   attachedHint = '已选作者——保存后关联到本作品',
   allowCreate = false,
+  disabled = false,
 }: {
   value: AuthorAttachValue | null
   onChange: (next: AuthorAttachValue | null) => void
@@ -51,6 +52,8 @@ export function AuthorSuggestField({
   attachedHint?: string
   /** 提供「新建：<name>」入口（编辑页开；上传工作台挂靠只认已有作者 ID，缺省关） */
   allowCreate?: boolean
+  /** 保存等不可变更阶段禁用输入、清空与联想选项 */
+  disabled?: boolean
 }) {
   const [text, setText] = useState('')
   const [popOpen, setPopOpen] = useState(false)
@@ -62,19 +65,21 @@ export function AuthorSuggestField({
   const display = attached ? (value?.displayName ?? value?.authorName ?? '') : text
 
   const debounced = useDebouncedValue(display, SUGGEST_DEBOUNCE_MS)
-  const { data: suggestions = [], isPending } = useAuthorSuggest(debounced, popOpen && !attached)
+  const { data: suggestions = [], isPending } = useAuthorSuggest(debounced, !disabled && popOpen && !attached)
   const rows = suggestions.filter((s): s is NamedSuggest => s.id != null && s.displayName != null)
 
-  const open = popOpen && !attached && display.trim() !== ''
+  const open = !disabled && popOpen && !attached && display.trim() !== ''
   // 未命中任何联想项时的「新建」名（null=空输入或已命中，不给新建入口）
   const createName = allowCreate ? unmatchedCreateName(rows.map((s) => s.displayName), display) : null
 
   const onInputChange = (raw: string): void => {
+    if (disabled) return
     setText(raw)
     if (attached) onChange(null) // 再编辑 = 放弃已确定身份，退回自由输入态
   }
 
   const onEnter = (): void => {
+    if (disabled) return
     const name = display.trim()
     if (name === '') return
     // 回车语义与 Android 端一致（REQ §3.1「交互要求对两端一致」）：
@@ -92,6 +97,7 @@ export function AuthorSuggestField({
   }
 
   const clear = (): void => {
+    if (disabled) return
     onChange(null)
     setText('')
     inputRef.current?.focus()
@@ -109,6 +115,7 @@ export function AuthorSuggestField({
               placeholder="输入作者名联想选择"
               autoComplete="off"
               value={display}
+              disabled={disabled}
               onChange={(e) => onInputChange(e.target.value)}
               onFocus={() => setPopOpen(true)}
               onKeyDown={(e) => {
@@ -117,7 +124,7 @@ export function AuthorSuggestField({
             />
           </PopoverAnchor>
           {display !== '' && (
-            <button className="attach-clear" type="button" aria-label="清除已选作者" onClick={clear}>
+            <button className="attach-clear" type="button" aria-label="清除已选作者" disabled={disabled} onClick={clear}>
               <ClearIcon />
             </button>
           )}
