@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { LOCALE_ZH } from '@/lib/constants'
 import { formatBytes } from '@/lib/format'
+import { batchFailureReason } from '@/lib/batch'
 import { BatchOpsPanel } from '@/components/ui/batch-ops-panel'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { MultiSelectBar } from '@/components/ui/multi-select-bar'
@@ -38,23 +39,33 @@ export default function TrashPage() {
   const runner = useBatchRunner()
 
   const doRestore = (it: TrashItem): void => {
+    if (restore.isPending || removeOne.isPending || emptyAll.isPending) return
     restore.mutate(it.id ?? '', {
       onSuccess: () => toast.success(`「${it.fileName}」已恢复（冲突时自动重命名）`),
-      onError: (err) => toast.error(`恢复失败：${err instanceof Error ? err.message : String(err)}`),
+      onError: (err) => toast.error(`恢复失败：${batchFailureReason(err)}`),
     })
   }
 
   const doRemoveOne = (it: TrashItem): void => {
+    if (removeOne.isPending || restore.isPending || emptyAll.isPending) return
     removeOne.mutate(it.id ?? '', {
-      onSuccess: () => toast.success('已彻底删除'),
-      onError: (err) => toast.error(`删除失败：${err instanceof Error ? err.message : String(err)}`),
+      onSuccess: () => {
+        toast.success('已彻底删除')
+        setRemoveTarget(null)
+      },
+      // 保留确认弹窗与目标文件，用户可以修正问题后直接重试。
+      onError: (err) => toast.error(`删除失败：${batchFailureReason(err)}`),
     })
   }
 
   const doEmpty = (): void => {
+    if (emptyAll.isPending || restore.isPending || removeOne.isPending) return
     emptyAll.mutate(undefined, {
-      onSuccess: () => toast.success('回收站已清空'),
-      onError: (err) => toast.error(`清空失败：${err instanceof Error ? err.message : String(err)}`),
+      onSuccess: () => {
+        toast.success('回收站已清空')
+        setEmptyConfirmOpen(false)
+      },
+      onError: (err) => toast.error(`清空失败：${batchFailureReason(err)}`),
     })
   }
 
@@ -204,8 +215,22 @@ export default function TrashPage() {
                     <td>{formatBytes(it.sizeBytes ?? 0)}</td>
                     <td>{it.deletedAt ? new Date(it.deletedAt).toLocaleString(LOCALE_ZH) : '-'}</td>
                     <td>
-                      <button className="pill" type="button" onClick={() => doRestore(it)}>恢复</button>
-                      <button className="pill" type="button" onClick={() => setRemoveTarget(it)}>彻底删除</button>
+                      <button
+                        className="pill"
+                        type="button"
+                        disabled={restore.isPending || removeOne.isPending || emptyAll.isPending || runner.state.running}
+                        onClick={() => doRestore(it)}
+                      >
+                        {restore.isPending ? '恢复中…' : '恢复'}
+                      </button>
+                      <button
+                        className="pill"
+                        type="button"
+                        disabled={restore.isPending || removeOne.isPending || emptyAll.isPending || runner.state.running}
+                        onClick={() => setRemoveTarget(it)}
+                      >
+                        {removeOne.isPending && removeTarget?.id === it.id ? '删除中…' : '彻底删除'}
+                      </button>
                     </td>
                   </tr>
                 )
@@ -220,15 +245,18 @@ export default function TrashPage() {
         open={removeTarget !== null}
         title={`彻底删除「${removeTarget?.fileName ?? ''}」？`}
         description="物理删除不可恢复。"
-        confirmText="彻底删除"
+        confirmText={removeOne.isPending ? '正在彻底删除…' : '彻底删除'}
         cancelText="取消"
         danger
+        busy={removeOne.isPending}
+        keepOpenOnConfirm
         onConfirm={() => {
           const it = removeTarget
-          setRemoveTarget(null)
           if (it) doRemoveOne(it)
         }}
-        onOpenChange={(next) => { if (!next) setRemoveTarget(null) }}
+        onOpenChange={(next) => {
+          if (!next && !removeOne.isPending) setRemoveTarget(null)
+        }}
       />
 
       {/* F6 批量彻底删除（danger 二次确认；文案明示数量与「彻底删除不可恢复」） */}
@@ -248,14 +276,15 @@ export default function TrashPage() {
         open={emptyConfirmOpen}
         title="清空回收站？"
         description={`${items.length} 个文件将被物理删除，不可恢复。`}
-        confirmText="清空"
+        confirmText={emptyAll.isPending ? '正在清空…' : '清空'}
         cancelText="取消"
         danger
-        onConfirm={() => {
-          setEmptyConfirmOpen(false)
-          doEmpty()
+        busy={emptyAll.isPending}
+        keepOpenOnConfirm
+        onConfirm={doEmpty}
+        onOpenChange={(next) => {
+          if (!next && !emptyAll.isPending) setEmptyConfirmOpen(false)
         }}
-        onOpenChange={setEmptyConfirmOpen}
       />
     </div>
   )
