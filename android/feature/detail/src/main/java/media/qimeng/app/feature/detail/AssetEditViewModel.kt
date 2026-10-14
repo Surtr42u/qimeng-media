@@ -93,14 +93,16 @@ data class AssetEditUiState(
             }
         }
 
-    /** 保存按钮可用：有改动（文件名/作者全集/待新建名/任一来源）且不在保存中 */
-    val canSave: Boolean
-        get() = !saving && (
-            authorsChanged ||
+    /** 是否存在尚未保存的有效改动（用于保存按钮与离开确认共享同一真相）。 */
+    val hasUnsavedChanges: Boolean
+        get() = authorsChanged ||
             pendingNewAuthorNames.isNotEmpty() ||
             dirtySourceAuthorIds.isNotEmpty() ||
             (fileNameChanged && currentBaseName.isNotBlank() && effectiveFileName != originalFileName)
-        )
+
+    /** 保存按钮可用：有有效改动且不在保存中。 */
+    val canSave: Boolean
+        get() = !saving && hasUnsavedChanges
 }
 
 /**
