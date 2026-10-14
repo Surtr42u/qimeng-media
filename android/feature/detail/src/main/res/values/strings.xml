@@ -139,4 +139,8 @@
     <!-- 待新建名单满额提示（Web pendingAuthorRejectionText too-many 分支逐字对齐；
          数字 = VM 的 NEW_AUTHOR_NAMES_MAX，与协议 maxItems:20 双写） -->
     <string name="asset_edit_pending_authors_full">待新建作者最多 20 个，请先保存本页再继续添加</string>
+    <string name="asset_edit_discard_title">有未保存的修改</string>
+    <string name="asset_edit_discard_desc">离开将丢失本次文件名、作者与来源编辑，确定离开吗？</string>
+    <string name="asset_edit_discard_confirm">放弃修改离开</string>
+    <string name="asset_edit_discard_cancel">继续编辑</string>
 </resources>
