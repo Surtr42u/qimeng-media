@@ -249,6 +249,7 @@ class AssetEditViewModel @Inject constructor(
 
     /** 行内「重试」入口；失败期间行内容不可编辑，成功取到完整旧值后再恢复操作。 */
     fun retryAuthorSources(authorId: String) {
+        if (_uiState.value.saving) return
         loadSourcesForAuthor(authorId)
     }
 
@@ -269,6 +270,7 @@ class AssetEditViewModel @Inject constructor(
 
     /** 输入变化：防抖拉联想（空串清列表；竞态以词条比对回填） */
     fun onAddAuthorQueryChange(query: String) {
+        if (_uiState.value.saving) return
         _uiState.update { it.copy(authorQuery = query) }
         suggestJob?.cancel()
         val trimmed = query.trim()
@@ -294,6 +296,7 @@ class AssetEditViewModel @Inject constructor(
      * 与已关联作者显示名及名单内部忽略大小写去重（名字此刻无 id，靠显示名归一挡重）。
      */
     fun commitAddAuthor() {
+        if (_uiState.value.saving) return
         val current = _uiState.value
         val trimmed = current.authorQuery.trim()
         if (trimmed.isEmpty()) return
@@ -339,6 +342,7 @@ class AssetEditViewModel @Inject constructor(
 
     /** 点按待新建胶囊移除（保存前来去自由；无作者 id，无来源等连带状态需要清理） */
     fun removePendingNewAuthor(name: String) {
+        if (_uiState.value.saving) return
         _uiState.update { current ->
             current.copy(pendingNewAuthorNames = current.pendingNewAuthorNames.filterNot { it == name })
         }
@@ -346,6 +350,7 @@ class AssetEditViewModel @Inject constructor(
 
     /** 点选联想项：加入编辑中全集（已关联则提示；输入态复位）。新增作者先读取其现有来源。 */
     fun addAuthor(author: AuthorSuggestion) {
+        if (_uiState.value.saving) return
         suggestJob?.cancel()
         val isNewAssociation = _uiState.value.authors.none { it.id == author.id }
         _uiState.update { current ->
@@ -372,6 +377,7 @@ class AssetEditViewModel @Inject constructor(
 
     /** 行内移除：全集删除 + 来源编辑副本与脏标记连带清理 */
     fun removeAuthor(authorId: String) {
+        if (_uiState.value.saving) return
         _uiState.update { current ->
             val remaining = current.authors.filterNot { it.id == authorId }
             current.copy(
@@ -430,6 +436,7 @@ class AssetEditViewModel @Inject constructor(
      * 保持用户空串输入不回弹原名（对齐上传页修复口径）。
      */
     fun onFileNameChange(newBaseName: String) {
+        if (_uiState.value.saving) return
         val changed = newBaseName.trim() != initialBaseName
         _uiState.update {
             it.copy(
@@ -460,6 +467,7 @@ class AssetEditViewModel @Inject constructor(
 
     /** 点选作品名/序号联想建议：回填基名并清空联想浮层 */
     fun pickFileNameSuggestion(suggestionBase: String) {
+        if (_uiState.value.saving) return
         nameSuggestJob?.cancel()
         val changed = suggestionBase.trim() != initialBaseName
         _uiState.update {
