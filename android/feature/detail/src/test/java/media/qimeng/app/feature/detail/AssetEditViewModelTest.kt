@@ -185,7 +185,7 @@ class AssetEditViewModelTest {
 
     @Test
     fun `仅修改文件名时触发 moveAsset 保存且成功返回`() {
-        val (viewModel, detailRepo, _) = newViewModel(
+        val (viewModel, detailRepo, authorRepo) = newViewModel(
             detailRepo = FakeEditDetailRepository().apply {
                 detailResult = detail(authors = emptyList(), fileName = "旧名.mp4", directory = "movies")
             },
@@ -201,6 +201,45 @@ class AssetEditViewModelTest {
         assertFalse(state.saving)
         assertEquals(1, detailRepo.moveCalls.size)
         assertEquals(Triple("asset-1", "movies", "新名.mp4"), detailRepo.moveCalls.single())
+        assertTrue("仅修改文件名不应触发无关作者全集 PUT", authorRepo.assetAuthorsCalls.isEmpty())
+    }
+
+    @Test
+    fun `文件名已提交但后续作者保存失败后重试不重复移动`() {
+        val authorRepo = FakeEditAuthorRepository().apply {
+            replaceError = IllegalStateException("temporary network error")
+        }
+        val (viewModel, detailRepo, _) = newViewModel(authorRepo = authorRepo)
+        viewModel.onFileNameChange("新名")
+        viewModel.addAuthor(AuthorSuggestion("a-3", "作者C", 1))
+        driveIdle()
+
+        viewModel.save()
+        driveIdle()
+        assertEquals("新名.mp4", viewModel.uiState.value.originalFileName)
+        assertFalse(viewModel.uiState.value.fileNameChanged)
+        assertEquals(1, detailRepo.moveCalls.size)
+        assertFalse(viewModel.uiState.value.saved)
+
+        authorRepo.replaceError = null
+        viewModel.save()
+        driveIdle()
+
+        assertTrue(viewModel.uiState.value.saved)
+        assertEquals("重试不得再次执行已成功的文件移动", 1, detailRepo.moveCalls.size)
+        assertEquals(1, authorRepo.assetAuthorsCalls.size)
+    }
+
+    @Test
+    fun `仅修改来源时不重复提交作者全集`() {
+        val (viewModel, _, authorRepo) = newViewModel()
+        viewModel.toggleSource("a-1", "site-f")
+        viewModel.save()
+        driveIdle()
+
+        assertTrue(authorRepo.assetAuthorsCalls.isEmpty())
+        assertEquals(listOf("site-a", "site-f"), authorRepo.sourceReplaceCalls.single().second)
+        assertTrue(viewModel.uiState.value.saved)
     }
 
     @Test
