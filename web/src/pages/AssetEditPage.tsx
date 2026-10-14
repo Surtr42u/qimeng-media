@@ -61,8 +61,30 @@ function AuthorSourcesRow({
   draft: string[] | undefined
   onChange: (authorId: string, next: string[]) => void
 }) {
-  const { data } = useAuthorSourcesById(authorId)
-  const selected = draft ?? data?.sources ?? []
+  const { data, isError, refetch } = useAuthorSourcesById(authorId)
+  // 来源端点是整体替换语义：尚未读到服务端原值前不能把空数组当基线开放编辑，
+  // 否则用户只点一个新词保存就可能覆盖此前已有的来源区。
+  if (data === undefined) {
+    return (
+      <div
+        className="rank-note"
+        role={isError ? 'alert' : 'status'}
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 8 }}
+      >
+        <span>
+          {isError
+            ? '无法读取该作者的既有来源，已暂时禁用编辑以免覆盖旧数据。'
+            : '正在读取该作者的既有来源…'}
+        </span>
+        {isError ? (
+          <button type="button" className="pill" onClick={() => void refetch()}>
+            重试
+          </button>
+        ) : null}
+      </div>
+    )
+  }
+  const selected = draft ?? data.sources ?? []
   return <SourceSelectField selected={selected} onChange={(next) => onChange(authorId, next)} />
 }
 
