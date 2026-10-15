@@ -37,7 +37,8 @@ class AssetEditViewModelTest {
     private fun driveIdle() = mainDispatcherRule.testDispatcher.scheduler.advanceUntilIdle()
 
     private val authorA = DetailAuthor(id = "a-1", displayName = "作者A", isCos = false, followed = false)
-    private val authorB = DetailAuthor(id = "a-2", displayName = "作者B", isCos = true, followed = true)
+    private val authorB = DetailAuthor(id = "a-2", displayName = "作者B", isCos = false, followed = false)
+    private val cosAuthor = DetailAuthor(id = "cos_external", displayName = "COS作者", isCos = true, followed = false)
 
     private fun savedHandle(assetId: String? = "asset-1"): SavedStateHandle =
         if (assetId == null) {
@@ -100,6 +101,22 @@ class AssetEditViewModelTest {
     // ---- 装配回显 ----
 
     @Test
+    fun `编辑页不把COS派生作者提交到关联替换端点`() {
+        val detailRepo = FakeEditDetailRepository().apply {
+            detailResult = detail(authors = listOf(authorA, authorB, cosAuthor))
+        }
+        val (viewModel, _, authorRepo) = newViewModel(detailRepo = detailRepo)
+
+        assertEquals(listOf("a-1", "a-2"), viewModel.uiState.value.authors.map { it.id })
+        viewModel.removeAuthor("a-1")
+        viewModel.save()
+        driveIdle()
+
+        assertEquals(listOf("a-2"), authorRepo.assetAuthorsCalls.single().second)
+        assertFalse(authorRepo.assetAuthorsCalls.single().second.any { it.startsWith("cos_") })
+    }
+
+    @Test
     fun `装配回显作者全集与逐作者来源`() {
         val (viewModel, _, authorRepo) = newViewModel()
         val state = viewModel.uiState.value
@@ -111,6 +128,7 @@ class AssetEditViewModelTest {
         assertEquals(emptyList<String>(), state.sourcesByAuthor["a-2"].orEmpty())
         assertTrue(state.sourceOptions.contains("pixiv"))
         assertFalse(state.canSave)
+        assertFalse(state.hasUnsavedChanges)
         assertNull(state.errorMessage)
         // 词表取自 GET /authors/source-vocabulary
         assertTrue(authorRepo.vocabularyCalled)
@@ -145,6 +163,7 @@ class AssetEditViewModelTest {
         // 基名清空时 effectiveFileName 安全回退原完整名，且空基名不解锁保存
         assertEquals("原名.mp4", state.effectiveFileName)
         assertFalse(state.canSave)
+        assertFalse(state.hasUnsavedChanges)
 
         viewModel.onFileNameChange("新名字")
         val state2 = viewModel.uiState.value
@@ -152,6 +171,7 @@ class AssetEditViewModelTest {
         assertEquals("新名字.mp4", state2.effectiveFileName)
         assertTrue(state2.fileNameChanged)
         assertTrue(state2.canSave)
+        assertTrue(state2.hasUnsavedChanges)
     }
 
     @Test
@@ -182,7 +202,7 @@ class AssetEditViewModelTest {
 
     @Test
     fun `仅修改文件名时触发 moveAsset 保存且成功返回`() {
-        val (viewModel, detailRepo, _) = newViewModel(
+        val (viewModel, detailRepo, authorRepo) = newViewModel(
             detailRepo = FakeEditDetailRepository().apply {
                 detailResult = detail(authors = emptyList(), fileName = "旧名.mp4", directory = "movies")
             },
@@ -198,6 +218,81 @@ class AssetEditViewModelTest {
         assertFalse(state.saving)
         assertEquals(1, detailRepo.moveCalls.size)
         assertEquals(Triple("asset-1", "movies", "新名.mp4"), detailRepo.moveCalls.single())
+        assertTrue("仅修改文件名不应触发无关作者全集 PUT", authorRepo.assetAuthorsCalls.isEmpty())
+    }
+
+    @Test
+    fun `文件名已提交但后续作者保存失败后重试不重复移动`() {
+        val authorRepo = FakeEditAuthorRepository().apply {
+            sourcesByAuthor["a-1"] = listOf("site-a")
+            replaceError = IllegalStateException("temporary network error")
+        }
+        val (viewModel, detailRepo, _) = newViewModel(
+            detailRepo = FakeEditDetailRepository().apply {
+                detailResult = detail(authors = listOf(authorA, authorB), fileName = "asset-1.mp4")
+            },
+            authorRepo = authorRepo,
+        )
+        driveIdle() // 等待初始详情/来源回显完成，再开始编辑
+        viewModel.onFileNameChange("新名")
+        viewModel.addAuthor(AuthorSuggestion("a-3", "作者C", 1))
+        driveIdle()
+
+        viewModel.save()
+        driveIdle()
+        assertEquals("新名.mp4", viewModel.uiState.value.originalFileName)
+        assertFalse(viewModel.uiState.value.fileNameChanged)
+        assertEquals(1, detailRepo.moveCalls.size)
+        assertFalse(viewModel.uiState.value.saved)
+
+        authorRepo.replaceError = null
+        viewModel.save()
+        driveIdle()
+
+        assertTrue(viewModel.uiState.value.saved)
+        assertEquals("重试不得再次执行已成功的文件移动", 1, detailRepo.moveCalls.size)
+        assertEquals(1, authorRepo.assetAuthorsCalls.size)
+    }
+
+    @Test
+    fun `作者关联已提交但来源失败后重试只执行未完成步骤`() {
+        val authorRepo = FakeEditAuthorRepository().apply {
+            sourcesByAuthor["a-1"] = listOf("site-a")
+            sourceReplaceErrorsById["a-1"] = IllegalStateException("temporary source failure")
+        }
+        val (viewModel, _, repo) = newViewModel(authorRepo = authorRepo)
+        driveIdle() // 避免初始装配覆盖下面的编辑草稿
+        viewModel.addAuthor(AuthorSuggestion("a-3", "作者C", 1))
+        viewModel.toggleSource("a-1", "site-f")
+        driveIdle()
+
+        viewModel.save()
+        driveIdle()
+        assertEquals(1, repo.assetAuthorsCalls.size)
+        assertTrue(viewModel.uiState.value.authorAssociationCommitted)
+        assertTrue("a-1" in viewModel.uiState.value.dirtySourceAuthorIds)
+        assertFalse(viewModel.uiState.value.saved)
+
+        authorRepo.sourceReplaceErrorsById.remove("a-1")
+        viewModel.save()
+        driveIdle()
+
+        assertEquals("作者关联已经提交，不应在重试时重复 PUT", 1, repo.assetAuthorsCalls.size)
+        assertEquals(listOf("a-1" to listOf("site-a", "site-f")), repo.sourceReplaceCalls)
+        assertTrue(viewModel.uiState.value.saved)
+        assertFalse(viewModel.uiState.value.hasUnsavedChanges)
+    }
+
+    @Test
+    fun `仅修改来源时不重复提交作者全集`() {
+        val (viewModel, _, authorRepo) = newViewModel()
+        viewModel.toggleSource("a-1", "site-f")
+        viewModel.save()
+        driveIdle()
+
+        assertTrue(authorRepo.assetAuthorsCalls.isEmpty())
+        assertEquals(listOf("site-a", "site-f"), authorRepo.sourceReplaceCalls.single().second)
+        assertTrue(viewModel.uiState.value.saved)
     }
 
     @Test
@@ -385,12 +480,42 @@ class AssetEditViewModelTest {
     // ---- 来源编辑与保存 ----
 
     @Test
+    fun `读取作者来源失败时禁止编辑并可重试回显完整旧值`() {
+        val authorRepo = FakeEditAuthorRepository().apply {
+            sourcesByAuthor["a-1"] = listOf("site-a")
+            sourceErrorsById["a-1"] = IllegalStateException("source endpoint unavailable")
+        }
+        val (viewModel, _, repo) = newViewModel(authorRepo = authorRepo)
+        val failedState = viewModel.uiState.value
+        assertTrue("a-1" in failedState.sourceLoadFailedAuthorIds)
+        assertFalse("a-1" in failedState.sourcesByAuthor)
+
+        // 失败状态下即使有过期 UI 事件也必须 fail-closed，不得以空集合做整体替换。
+        viewModel.toggleSource("a-1", "site-f")
+        viewModel.addCustomSource("a-1", "new-site")
+        assertFalse("a-1" in viewModel.uiState.value.dirtySourceAuthorIds)
+
+        repo.sourceErrorsById.remove("a-1")
+        viewModel.retryAuthorSources("a-1")
+        driveIdle()
+
+        val recovered = viewModel.uiState.value
+        assertFalse("a-1" in recovered.sourceLoadFailedAuthorIds)
+        assertFalse("a-1" in recovered.sourceLoadingAuthorIds)
+        assertEquals(listOf("site-a"), recovered.sourcesByAuthor["a-1"])
+        viewModel.toggleSource("a-1", "site-f")
+        assertEquals(listOf("site-a", "site-f"), viewModel.uiState.value.sourcesByAuthor["a-1"])
+    }
+
+    @Test
     fun `toggleSource记脏且保存逐作者PUT与全集PUT`() {
         val (viewModel, _, authorRepo) = newViewModel()
         viewModel.toggleSource("a-1", "site-f") // 回显 [site-a] + site-f
         viewModel.toggleSource("a-2", "自定义站")
+        authorRepo.sourcesByAuthor["a-3"] = listOf("site-c")
         viewModel.addAuthor(AuthorSuggestion("a-3", "作者C", 1))
         driveIdle()
+        assertEquals(listOf("site-c"), viewModel.uiState.value.sourcesByAuthor["a-3"])
         viewModel.save()
         driveIdle()
         // 全集 PUT：作者全集整体替换（含新增 a-3）
@@ -493,7 +618,7 @@ class AssetEditViewModelTest {
         val (viewModel, _, authorRepo) = newViewModel()
         viewModel.toggleSource("a-1", "site-f")
         driveIdle()
-        authorRepo.replaceError = IllegalStateException("500")
+        authorRepo.sourceReplaceErrorsById["a-1"] = IllegalStateException("500")
         viewModel.save()
         driveIdle()
         assertEquals("保存失败：请重试", viewModel.uiState.value.errorMessage)
@@ -515,6 +640,8 @@ class AssetEditViewModelTest {
         val gate = CompletableDeferred<Unit>()
         val authorRepo = FakeEditAuthorRepository().apply { replaceAssetAuthorsGate = gate }
         val (viewModel, _, _) = newViewModel(authorRepo = authorRepo)
+        driveIdle() // 先完成初始化；下面同时改作者关联，才能命中关联 PUT 的挂起门
+        viewModel.addAuthor(AuthorSuggestion("a-3", "作者C", 1))
         viewModel.toggleSource("a-1", "site-f")
         driveIdle()
         viewModel.save()
@@ -538,7 +665,9 @@ private class FakeEditAuthorRepository : media.qimeng.app.core.data.repository.A
 
     var vocabularyCalled = false
     val sourcesByAuthor = mutableMapOf<String, List<String>>()
+    val sourceErrorsById = mutableMapOf<String, Exception>()
     val sourceReplaceCalls = mutableListOf<Pair<String, List<String>>>()
+    val sourceReplaceErrorsById = mutableMapOf<String, Exception>()
 
     /** 全集 PUT 记账（assetId、作者 id 全集、待新建名列表——协议 2026-10-11 新增字段透传断言） */
     val assetAuthorsCalls = mutableListOf<Triple<String, List<String>, List<String>>>()
@@ -551,11 +680,13 @@ private class FakeEditAuthorRepository : media.qimeng.app.core.data.repository.A
         return listOf("site-a", "pixiv", "site-f")
     }
 
-    override suspend fun authorSourcesById(authorId: String): List<String> =
-        sourcesByAuthor[authorId].orEmpty()
+    override suspend fun authorSourcesById(authorId: String): List<String> {
+        sourceErrorsById[authorId]?.let { throw it }
+        return sourcesByAuthor[authorId].orEmpty()
+    }
 
     override suspend fun replaceAuthorSources(authorId: String, sources: List<String>) {
-        replaceError?.let { throw it }
+        sourceReplaceErrorsById[authorId]?.let { throw it }
         sourceReplaceCalls += authorId to sources
     }
 

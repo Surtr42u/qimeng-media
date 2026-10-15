@@ -14,6 +14,7 @@ import {
   useToggleFollow,
 } from '@/hooks/use-authors'
 import { authorDisplayName } from '@/lib/format'
+import { batchFailureReason } from '@/lib/batch'
 import { collectionPath, COLLECTION_AUTHOR } from '@/lib/route-keys'
 
 type AuthorZone = '全部' | '常规' | 'cos'
@@ -52,9 +53,10 @@ const AUTHOR_NAME_MAX_RUNES = 200
 /** 对话框状态：新建 | 改名（预填当前显示名）；null=关闭（按条件挂载，打开即复位） */
 type AuthorPromptState = { mode: 'create' } | { mode: 'rename'; author: Author }
 
-/** 管理操作失败文案：unwrapSdkResult 已把服务端 Error.message 透进 Error.message（自助修正） */
+/** 管理操作失败文案：统一走 batchFailureReason（Error 实例取 message；生成 client 错误体
+ * 形状对象取 message/status/code——unwrapSdkResult 在异常路径会抛非 Error 形状，不能 String()） */
 function manageFailureText(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
+  return batchFailureReason(err)
 }
 
 /**

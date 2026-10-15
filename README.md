@@ -75,7 +75,7 @@ make lint          # 全部静态检查（redocly + golangci-lint + TS）
 make docker-build  # amd64 镜像（deploy/Dockerfile；构建全流程见 deploy/README.md，arm64 为按需储备）
 ```
 
-CI（GitHub Actions 五 job：openapi 协议校验 / server vet+test+build+golangci-lint / web tsc+build / sdk-chain 生成链重建 / android make sdk+assembleDebug+test+lint）与 `make lint` 同源同配置，本地全绿 ≈ CI 全绿。
+CI（GitHub Actions 七 job：OpenAPI 协议校验 / Linux Go 静态检查与测试 / Windows Go 文件操作测试 / Web 类型检查、构建与测试 / 三端 SDK 可重建校验 / Android 构建与测试 / Tauri 桌面壳测试）覆盖多平台与生成链；`make lint` 是本地静态检查入口，不能替代完整 CI。
 
 ## 文档导航
 

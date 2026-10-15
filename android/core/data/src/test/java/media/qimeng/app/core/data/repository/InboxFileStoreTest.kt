@@ -1,7 +1,9 @@
 package media.qimeng.app.core.data.repository
 
+import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.FileInputStream
+import java.io.InputStream
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -68,6 +70,19 @@ class InboxFileStoreTest {
     }
 
     @Test
+    fun `uploaded目标存在时归档不覆盖且保留源与目标`() {
+        val inbox = tmp.newFolder("inbox-uploaded-conflict")
+        val uploaded = File(inbox, StagingRepository.UPLOADED_DIR_NAME).apply { mkdirs() }
+        val source = write(inbox, "done.mp4", content = "new upload")
+        val target = write(uploaded, "done.mp4", content = "previous archive")
+
+        assertFalse(store.archiveToUploaded(source.absolutePath))
+
+        assertEquals("new upload", source.readText())
+        assertEquals("previous archive", target.readText())
+    }
+
+    @Test
     fun `归档源文件不存在返回false不抛错`() {
         assertFalse(store.archiveToUploaded(tmp.root.resolve("不存在.jpg").absolutePath))
     }
@@ -86,6 +101,30 @@ class InboxFileStoreTest {
         assertTrue(archived.isFile)
         assertEquals("payload", archived.readText())
         assertFalse(source.exists())
+    }
+
+    @Test
+    fun `首次归档走改名快路径不退化为整文件复制`() {
+        // 2026-10-15 审查锁定：Android 上 Files.getFileStore 恒抛 SecurityException（AOSP SELinux
+        // 策略），曾用它判定同卷的实现会静默把每次归档退化成整文件复制，且 JVM 测试不可见。
+        // 现实现（renameTo 优先、无平台探针）与真机同一路径：改名保留 mtime，任何 copy 都会把
+        // mtime 改写为"现在"——本断言即是真机同卷快路径的回归门禁。
+        val archiveRoot = tmp.newFolder("archive-fastpath")
+        val source = write(tmp.newFolder("inbox-fastpath"), "video.mp4", content = "payload")
+        val originalTimestamp = 1_600_000_000_000L
+        assertTrue(source.setLastModified(originalTimestamp))
+
+        assertTrue(store.archiveToLibraryRoot(archiveRoot.absolutePath, "测试库F", source))
+
+        val archived = File(File(archiveRoot, "测试库F"), "video.mp4")
+        assertTrue(archived.isFile)
+        assertEquals("payload", archived.readText())
+        assertFalse(source.exists())
+        assertEquals(
+            "同卷归档应改名落位（保留 mtime），不得退化为整文件复制",
+            originalTimestamp,
+            archived.lastModified(),
+        )
     }
 
     @Test
@@ -116,16 +155,46 @@ class InboxFileStoreTest {
     }
 
     @Test
-    fun `目标同名且内容相同时删旧放新结果与源一致`() {
+    fun `目标同名且内容相同时源被清理且目标内容一致`() {
         val libDir = tmp.newFolder("archive-lib2")
         write(libDir, "dup.jpg", content = "same")
         val source = write(tmp.newFolder("inbox5"), "dup.jpg", content = "same")
 
         assertTrue(store.archiveToLibraryRoot(tmp.root.absolutePath, "archive-lib2", source))
 
-        // 同内容重复上传：目标内容一致（源文件本体落位），原位置清空
+        // 同内容重复上传：既有目标保留（本体不重建，本体重建断言见下一用例），重复源清空
         assertEquals("same", File(libDir, "dup.jpg").readText())
         assertFalse(source.exists())
+    }
+
+    @Test
+    fun `源文件已位于目标归档路径时幂等成功且不能删除自身`() {
+        val archiveRoot = tmp.newFolder("archive-same-path")
+        val libraryDir = tmp.newFolder("archive-same-path/测试库")
+        val source = write(libraryDir, "already.mp4", content = "video")
+
+        assertTrue(store.archiveToLibraryRoot(archiveRoot.absolutePath, "测试库", source))
+
+        assertTrue(source.isFile)
+        assertEquals("video", source.readText())
+        assertTrue(libraryDir.listFiles().orEmpty().none { it.name.endsWith(".part") })
+    }
+
+    @Test
+    fun `同内容归档保留目标文件本体只删除重复源`() {
+        val archiveRoot = tmp.newFolder("archive-same-content")
+        val libraryDir = tmp.newFolder("archive-same-content/lib")
+        val target = write(libraryDir, "duplicate.mp4", content = "same-video")
+        val originalTimestamp = 1_600_000_000_000L
+        assertTrue(target.setLastModified(originalTimestamp))
+        val source = write(tmp.newFolder("incoming-duplicate"), "duplicate.mp4", content = "same-video")
+
+        assertTrue(store.archiveToLibraryRoot(archiveRoot.absolutePath, "lib", source))
+
+        assertFalse(source.exists())
+        assertTrue(target.isFile)
+        assertEquals("same-video", target.readText())
+        assertEquals("不应删除重建已有归档文件", originalTimestamp, target.lastModified())
     }
 
     @Test
@@ -134,6 +203,10 @@ class InboxFileStoreTest {
 
         assertFalse(store.archiveToLibraryRoot(tmp.root.absolutePath, "   ", source))
         assertFalse(store.archiveToLibraryRoot(tmp.root.absolutePath, "", source))
+        // 路径语义名不得逸出归档根目录。
+        assertFalse(store.archiveToLibraryRoot(tmp.root.absolutePath, ".", source))
+        assertFalse(store.archiveToLibraryRoot(tmp.root.absolutePath, "..", source))
+        assertFalse(store.archiveToLibraryRoot(tmp.root.absolutePath, "...", source))
         // 归档失败不吞源文件（调用方回退 uploaded/ 归档的兜底前提）
         assertTrue(source.isFile)
     }
@@ -154,10 +227,10 @@ class InboxFileStoreTest {
         val libDir = tmp.newFolder("archive-copy")
         val source = write(tmp.newFolder("inbox-copy"), "big.mp4", content = "payload")
 
-        // 强制走 copy 兜底：renameTo 需要对源文件的删除访问权，Windows JVM 上源被打开的
-        // 流持有时（句柄不带 FILE_SHARE_DELETE）rename/delete 均失败——锁住源即锁死直改
-        // 路径。POSIX 上 rename 不受打开句柄影响会直改成功，此时本测试退化为对
-        // 「无 .part 残留」不变式的验证（copy 路径在 Windows 开发/CI 机被覆盖）。
+        // 尝试强制走 copy 兜底：改名需要对源文件完成移动，Windows JVM 上源被打开的
+        // 流持有时（句柄不带 FILE_SHARE_DELETE）改名/删除可能失败。POSIX 上打开句柄通常
+        // 不阻止改名，此时本测试退化为对「无 .part 残留」不变式的验证（copy 路径在 Windows
+        // 开发/CI 机被覆盖）。
         FileInputStream(source).use { locked ->
             locked.read() // 建立真实句柄，防惰性打开差异
 
@@ -197,6 +270,26 @@ class InboxFileStoreTest {
     }
 
     @Test
+    fun `renameArchivedFile遇到已有目标时不覆盖且保留源`() {
+        val root = tmp.newFolder("archive-rename-conflict")
+        val libDir = tmp.newFolder("archive-rename-conflict/lib")
+        val source = write(libDir, "old.mp4", content = "source video")
+        val target = write(libDir, "new.mp4", content = "existing video")
+
+        assertFalse(
+            store.renameArchivedFile(
+                archiveRoot = root.absolutePath,
+                libraryName = "lib",
+                oldFileName = "old.mp4",
+                newFileName = "new.mp4",
+            ),
+        )
+
+        assertEquals("source video", source.readText())
+        assertEquals("existing video", target.readText())
+    }
+
+    @Test
     fun `renameArchivedFile在无精确库名时兜底子目录查找并重命名`() {
         val root = tmp.newFolder("archive-rename-fallback")
         val libDir = tmp.newFolder("archive-rename-fallback/sub_lib")
@@ -212,6 +305,128 @@ class InboxFileStoreTest {
         assertTrue(renamed)
         assertFalse(file.exists())
         assertTrue(File(libDir, "new.mp4").exists())
+    }
+
+
+    // ---- SAF 文件名与流式内容比较（URI 归档安全边界） ----
+
+    @Test
+    fun `归档文件名拒绝路径分隔符、控制字符和 Windows 非法字符`() {
+        listOf(
+            "", " ", ".", "..", "../escape.mp4", "sub/file.mp4", "sub\\\\file.mp4",
+            "bad\u0000.mp4", "trailing.", "bad:name.mp4", "bad*name.mp4", "bad|name.mp4",
+        ).forEach { name ->
+            assertFalse("应拒绝文件名: $name", store.isSafeArchiveFileName(name))
+        }
+        listOf("video.mp4", "天使 01.mp4", ".hidden.jpg").forEach { name ->
+            assertTrue("应接受文件名: $name", store.isSafeArchiveFileName(name))
+        }
+    }
+
+    @Test
+    fun `归档根外的库名路径不能触发镜像文件重命名`() {
+        val root = tmp.newFolder("archive-root-rename")
+        val outside = tmp.newFolder("outside-library")
+        val source = write(outside, "old.mp4", content = "video")
+
+        assertFalse(
+            store.renameArchivedFile(
+                archiveRoot = root.absolutePath,
+                libraryName = "../outside-library",
+                oldFileName = "old.mp4",
+                newFileName = "escaped.mp4",
+            ),
+        )
+        assertTrue("根外源文件必须保留", source.isFile)
+        assertFalse(File(outside, "escaped.mp4").exists())
+    }
+
+    @Test
+    fun `临时文件发布遇到既有目标时不覆盖目标且保留源`() {
+        val dir = tmp.newFolder("no-replace-publish")
+        val source = write(dir, "source.part", content = "new payload")
+        val target = write(dir, "target.mp4", content = "pre-existing user file")
+
+        assertFalse(store.moveFileNoReplace(source, target))
+
+        assertEquals("new payload", source.readText())
+        assertEquals("pre-existing user file", target.readText())
+    }
+
+    @Test
+    fun `临时文件发布目标为空时正常落位`() {
+        val dir = tmp.newFolder("no-replace-publish-success")
+        val source = write(dir, "source.part", content = "payload")
+        val target = File(dir, "target.mp4")
+
+        assertTrue(store.moveFileNoReplace(source, target))
+
+        assertFalse(source.exists())
+        assertEquals("payload", target.readText())
+    }
+
+    @Test
+    fun `流式内容比较正确处理短读和非整块长度`() {
+        val bytes = ByteArray(64 * 1024 + 17) { (it % 251).toByte() }
+        val left = ShortReadInputStream(bytes, 7)
+        val right = ShortReadInputStream(bytes.copyOf(), 13)
+
+        assertTrue(store.streamsEqual(left, right))
+    }
+
+    @Test
+    fun `流式内容比较发现长度或内容不同`() {
+        assertFalse(
+            store.streamsEqual(
+                ByteArrayInputStream(byteArrayOf(1, 2, 3)),
+                ByteArrayInputStream(byteArrayOf(1, 2)),
+            ),
+        )
+        assertFalse(
+            store.streamsEqual(
+                ByteArrayInputStream(byteArrayOf(1, 2, 3)),
+                ByteArrayInputStream(byteArrayOf(1, 9, 3)),
+            ),
+        )
+    }
+
+    @Test
+    fun `归档镜像重命名拒绝路径穿越名称`() {
+        val root = tmp.newFolder("archive-rename-safe")
+        val libDir = tmp.newFolder("archive-rename-safe/lib")
+        val source = write(libDir, "old.mp4", content = "video")
+
+        assertFalse(
+            store.renameArchivedFile(
+                root.absolutePath, "lib", "old.mp4", "../escape.mp4",
+            ),
+        )
+        assertFalse(
+            store.renameArchivedFile(
+                root.absolutePath, "lib", "../old.mp4", "new.mp4",
+            ),
+        )
+        assertTrue(source.isFile)
+        assertFalse(tmp.root.resolve("escape.mp4").exists())
+    }
+
+    /** 模拟合法但不填满请求缓冲区的 InputStream。 */
+    private class ShortReadInputStream(
+        private val bytes: ByteArray,
+        private val maxChunk: Int,
+    ) : InputStream() {
+        private var offset = 0
+
+        override fun read(): Int =
+            if (offset >= bytes.size) -1 else bytes[offset++].toInt() and 0xff
+
+        override fun read(buffer: ByteArray, off: Int, len: Int): Int {
+            if (offset >= bytes.size) return -1
+            val count = minOf(len, maxChunk, bytes.size - offset)
+            bytes.copyInto(buffer, off, offset, offset + count)
+            offset += count
+            return count
+        }
     }
 
     /** 写入测试文件（内容默认一行，返回文件引用） */

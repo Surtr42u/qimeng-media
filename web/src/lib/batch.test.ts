@@ -31,11 +31,21 @@ describe('batchFailureReason', () => {
     )
   })
 
-  it('message 为空串/缺失时兜底', () => {
-    expect(batchFailureReason({ message: '' })).toBe('[object Object]')
-    expect(batchFailureReason({})).toBe('[object Object]')
+  it('message 为空串/缺失时给出可读兜底，不暴露 [object Object]', () => {
+    expect(batchFailureReason({ message: '' })).toBe('发生未知错误，请稍后重试')
+    expect(batchFailureReason({})).toBe('发生未知错误，请稍后重试')
+    expect(batchFailureReason({ status: 409, code: 'CONFLICT' })).toBe('请求失败（HTTP 409，CONFLICT）')
+    expect(batchFailureReason({ code: 'NETWORK_ERROR' })).toBe('请求失败（NETWORK_ERROR）')
     expect(batchFailureReason(new Error('网络错误'))).toBe('网络错误')
     expect(batchFailureReason('直接字符串')).toBe('直接字符串')
+    expect(batchFailureReason('   ')).toBe('操作失败，请重试')
+    expect(batchFailureReason(null)).toBe('发生未知错误，请稍后重试')
+  })
+
+  it('非错误语义的 status（<400）不打 HTTP 标签，不输出「请求失败（HTTP 200）」', () => {
+    expect(batchFailureReason({ status: 200 })).toBe('发生未知错误，请稍后重试')
+    expect(batchFailureReason({ status: 0 })).toBe('发生未知错误，请稍后重试')
+    expect(batchFailureReason({ status: 200, code: 'OK' })).toBe('请求失败（OK）')
   })
 })
 

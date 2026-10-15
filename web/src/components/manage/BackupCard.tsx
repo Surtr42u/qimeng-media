@@ -44,10 +44,13 @@ export function BackupCard() {
 
   const confirmImport = (): void => {
     if (!pending) return
+    // 重入守卫（与同批确认弹窗同口径）：busy 已挡住按钮，但提交瞬间的重复触发
+    //（如键盘回车连击）仍需在此再挡一道，避免同一载荷重复 POST。
+    if (importBackup.isPending) return
     const { payload, summary } = pending
-    setPending(null)
     importBackup.mutate(payload, {
       onSuccess: (res) => {
+        setPending(null)
         toast.success(
           `「${summary.fileName}」导入完成：匹配文件 ${res.assetsMatched ?? 0}/${res.mediaFilesTotal ?? 0}，` +
             `作者 ${res.authorsImported ?? 0}，标签 ${res.tagsImported ?? 0}，事件回放 ${res.eventsReplayed ?? 0} 条`,
@@ -118,11 +121,14 @@ export function BackupCard() {
         open={pending !== null}
         title={`导入备份「${pending?.summary.fileName ?? ''}」？`}
         description={pending ? backupSummaryText(pending.summary) : ''}
-        confirmText="导入恢复"
+        confirmText={importBackup.isPending ? "正在导入…" : "导入恢复"}
         cancelText="取消"
+        busy={importBackup.isPending}
+        keepOpenOnConfirm
         onConfirm={confirmImport}
         onOpenChange={(next) => {
-          if (!next) setPending(null)
+          // 导入请求不可取消：忽略请求期间的 ESC/关闭意图，避免结果回调失去确认上下文。
+          if (!next && !importBackup.isPending) setPending(null)
         }}
       />
     </div>

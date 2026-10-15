@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
+import { batchFailureReason } from '@/lib/batch'
 import type { ClientConfig, RecommendPrefs } from '@/api/generated'
 import { Pill } from '@/components/ui/pill'
 import { Switch } from '@/components/ui/switch'
@@ -105,7 +106,7 @@ export default function SettingsPage() {
         toast.success(scanChanged ? '设置已保存（扫描参数为预留字段，暂不生效）' : '设置已保存')
       },
       onError: (err) =>
-        toast.error(`设置保存失败：${err instanceof Error ? err.message : String(err)}`),
+        toast.error(`设置保存失败：${batchFailureReason(err)}`),
     })
   }
 
@@ -121,7 +122,7 @@ export default function SettingsPage() {
     savePrefs.mutate(p, {
       onSuccess: () => toast.success('推荐偏好已保存'),
       onError: (err) =>
-        toast.error(`推荐偏好保存失败：${err instanceof Error ? err.message : String(err)}`),
+        toast.error(`推荐偏好保存失败：${batchFailureReason(err)}`),
     })
   }
 

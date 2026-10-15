@@ -11,6 +11,20 @@
 
 
 
+## fix(server+web+app+ci): 可靠性加固批次择优并入——跨端文件移动不覆盖既有目标（ADR-0038）+ 回收站净化 + Android 归档/编辑页一致性 + Web 确认与离开保护 + Windows 原生 filing CI（2026-10-15 第五百三十四笔）
+
+执行 AI：DeepSeek-V4.1-Flash（主代理；文件级对抗审查由三个审查子代理并行完成）
+
+- **来源与并入口径**：内容取自 `codex/reliability-hardening-ui-2026-10`（Draft PR #1）——按「择优并入」落地：不并入其 91 提交历史（英文提交与房规格式不符），`git merge --squash` 落地、唯一冲突是 CHANGELOG 笔号撞车（分支 529-532 vs 本地 529-533），按本笔重写解决；剔除 `docs/AI_HANDOVER.md`（仓库唯一交接文档是 `docs/HANDOVER.md`；分支新增的平行交接文档含入库即过期的快照与面向 AI 的合并禁令，属长期漂移源）。分支四笔 CHANGELOG 的内容并入本笔。
+- **审查发现并修复的真缺陷（Android 归档快路径退化，本笔修复）**：分支以 `Files.getFileStore` 比较源/目标判定同卷，但 AOSP `UnixFileSystemProvider`/`LinuxFileSystemProvider.getFileStore` 是 Android-changed 的**无条件 `SecurityException`**（SELinux 策略，本机 android-36.1 源码实证）——`runCatching` 吞掉后 sameStore 恒 false，**真机上每次归档都退化为整文件复制**（大文件慢一倍 + 瞬时双倍空间 + 空间紧张时归档失败），且 JVM 单测结构上不可见（桌面 getFileStore 正常，分支 CI 全绿照不出来）。修复：`moveOrCopyNoReplace` 改「`exists()` 前置检查 + `File.renameTo` 优先（同卷瞬时、跨卷无害失败）→ 失败且目标仍空位才走受控复制」，去掉平台探针使真机与 JVM 同路径；同时不采用「跨卷直接交给 `Files.move`」（libcore 内部 copy+删源，绕开唯一临时文件+无覆盖发布的受控路径）。新增「首次归档走改名快路径不退化为整文件复制」mtime 断言测试，并经变异验证（临时强制复制路径时该用例确实翻红）。
+- **服务端（ADR-0038，filing/httpapi）**：`MoveFile` 覆盖语义退役——`Lstat` 预检拒绝既有目标（哨兵 `ErrMoveTargetExists`，Unix rename / Windows MoveFileEx 的静默替换口子关闭）；跨卷 copy 回落 `O_CREATE|O_EXCL` 独占创建作第二道；非跨卷 rename 失败包装 `ErrMoveDidNotCreateTarget` 并保留底层错误（`errors.Is` 可判）；回收站三调用点的失败残留清理在两种哨兵命中时跳过（不误删非本次创建的目标）。filing 新增 3 例测试（冲突拒绝/无目标创建标记/copy 独占）。调用方语义变化均失败安全——本机同步「落位后移回」在源被重投放时改为保留库位件+告警、下轮重新观测；归档链路（ADR-0030 修订1「同名只留最新」先删后搬）与之相容，已用合并树全量 Go 测试实证。
+- **Android 其余（归档与编辑页）**：归档（归档根/uploaded/镜像重命名）统一无覆盖语义——同名异容加序号、同内容保留既有目标只删重复源、源=目标路径幂等成功；跨卷受控复制=唯一 `.part` 临时名 + 无覆盖发布 + 失败只清本次临时文件；对外部 ContentProvider displayName 做文件名安全校验（分隔符/控制字符/Windows 非法字符/点段尾随点），归档目录拒绝符号链接别名与根外路径；`readFully` 短读修复（原实现在 offset>0 时越界抛异常被吞成「内容不同」）。编辑页：来源基线未就绪/读取失败 fail-closed（禁用整体替换防空数据误覆盖 TXT）、多步保存按成功步骤记账（重试只补失败项：重命名/关联/逐来源清脏）、保存中锁表单 + 顶栏与系统返回确认、COS 派生作者过滤（`isCos`/`cos_` 不进常规作者 PUT）。测试：InboxFileStoreTest 26 例、AssetEditViewModelTest 29 例、EventDbMigrationsTest 新增 3 例。
+- **Web**：ConfirmDialog busy（成功才关闭、失败保留上下文可重试、执行中禁重复提交）；备份导入补重入守卫（与同批其余三处对齐）；资产编辑页多步保存只重试失败步骤 + 保存中禁用表单 + SPA 路由拦截与 beforeunload 未保存提示 + 来源基线未加载/失败禁止编辑；回收站恢复/彻底删除/清空的确认失败可重试，单条在途时批量入口一并禁用（`singleOpPending` 单源收口）；错误提取统一 `batchFailureReason`（Error/string/{message,status,code} 形态；仅 ≥400 打 HTTP 标签，杜绝「请求失败（HTTP 200）」），残余 `String(err)`（作者页/库注册页/设置页）清零；`AssetEditPage` 的 blocker ref 同步移入 effect（不在 render 期写 ref）。测试：vitest 321 例全绿（新增 status<400 边界 1 例）。
+- **CI**：新增 `server-windows-filing` job（Windows 原生 runner 跑 `go test ./internal/filing`，覆盖 Linux job 不编译的 `move_windows.go` build-tag 路径——Windows 双盘为本机日常形态，2026-10-11 已有该路径漏判事故）；同 PR 连续推送自动取消旧运行（`cancel-in-progress` 收窄为仅 PR，master 运行不取消）；README/ARCHITECTURE/PROJECT_PLAN 同步七 job 口径（并注明本地 `make lint` 不替代完整 CI）；Go 补丁版本锁 1.27.0 未动。
+- **测试与验证边界（诚实记档）**：① `EventDbMigrationsTest` 是 SQL 合约测试（锁定 1→2/2→3 迁移链与 ALTER 语句、复用生产迁移对象），**不等于**真实 SQLite 迁移验证——旧库文件真实迁移与历史数据保留仍待补齐（HANDOVER §5 待办）；② 真实双挂载点跨卷行为仍待部署环境端到端验收（SECURITY 矩阵）；③ TOCTOU 未消除——存在性检查与改名之间无跨进程原子保证，SECURITY 按事实记档、不宣称已解决。
+- **自测**：server build/vet/gofmt + `go test ./... -count=1` 19 包全绿；Android `:core:data`/`:feature:detail` testDebugUnitTest 全绿（含快路径门禁的变异验证与还原）；Web tsc -b + vite build + vitest 321 例全绿；未跑 Android assembleDebug/lintDebug 与桌面壳（本批未涉桌面壳，Android 全量门禁留 CI 复核）。
+- **文档**：ADR-0038（新增）+ `adr/INDEX.md`；`SECURITY.md`（「文件移动/回收站的跨卷安全边界」矩阵 + 「客户端归档与服务端文件移动」节）；`HANDOVER.md`（头部 + §4 三端条目 + §5 待办两条 + 记档）；`README.md`/`PROJECT_PLAN.md`/`ARCHITECTURE.md`（七 job 口径）。
+
 ## fix(server+api+app+web): 作者管理族三端点（新建/改名/删除）+ 回写身份自洽修复（「选了来源后保存无效」事故）+ 手机端作者数据收敛（2026-10-13 第五百三十三笔）
 
 执行 AI：DeepSeek-V4.1-Flash（主代理）

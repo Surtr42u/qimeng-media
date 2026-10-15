@@ -7,6 +7,7 @@ import android.os.Environment
 import android.provider.DocumentsContract
 import java.io.File
 import java.io.InputStream
+import java.nio.file.Files
 import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -40,7 +41,8 @@ class InboxFileStore @Inject constructor() {
     }
 
     /**
-     * 归档：源文件 renameTo 到同目录 uploaded/ 子目录（失败不抛，返回 false）。
+     * 归档：源文件无覆盖地移动到同目录 uploaded/ 子目录（失败不抛，返回 false）。
+     * 同名目标已存在时保留源与目标，避免覆盖用户之前归档的文件。
      * 消费方为 worker 的收件箱来源回退归档分支（UploadWorker.archiveNote，红线链路）。
      */
     fun archiveToUploaded(sourcePath: String): Boolean {
@@ -49,11 +51,8 @@ class InboxFileStore @Inject constructor() {
         val parent = file.parentFile ?: return false
         val uploadedDir = File(parent, StagingRepository.UPLOADED_DIR_NAME)
         if (!uploadedDir.isDirectory && !uploadedDir.mkdirs()) return false
-        return try {
-            file.renameTo(File(uploadedDir, file.name))
-        } catch (e: Exception) {
-            false
-        }
+        if (!isDirectChildDirectory(parent, uploadedDir)) return false
+        return moveFileNoReplace(file, File(uploadedDir, file.name))
     }
 
     /**
@@ -64,26 +63,31 @@ class InboxFileStore @Inject constructor() {
      *   空/空白库名返回 false（无目录名可建）；
      * - 目标目录不存在时连归档根一并创建（mkdirs）；
      * - 同名冲突：内容不同则源文件名加序号 (1)(2)… 找首个空位（绝不覆盖——归档区文件
-     *   可能已被用户整理过，静默覆盖等于丢文件）；内容相同（重复上传同一文件）则删旧
-     *   放新（结果与源一致，任何一侧不静默丢）；
-     * - 优先 renameTo（同卷快），失败 fallback「copy 到 .part 临时名 + 改名到位 +
-     *   删源」（跨挂载点兜底；[copyFallback]）。
+     *   可能已被用户整理过，静默覆盖等于丢文件）；内容相同则保留已有归档目标、删除重复源；
+     *   源路径本来就是目标路径时幂等成功，不做删除/重命名；
+     * - 同卷优先无覆盖移动；不同挂载点或移动失败时 fallback「复制到唯一 .part 临时名 +
+     *   无覆盖发布 + 删源」（跨挂载点兜底；[copyFallback]）。
      * 失败不抛、返回 false（调用方只记提示不阻断上传完成，与 [archiveToUploaded] 同口径）。
      */
     fun archiveToLibraryRoot(archiveRoot: String, libraryName: String, sourceFile: File): Boolean {
         if (!sourceFile.isFile) return false
         val dirName = sanitizeLibraryDirName(libraryName) ?: return false
-        val targetDir = File(archiveRoot, dirName)
+        val root = File(archiveRoot)
+        val targetDir = File(root, dirName)
         if (!targetDir.isDirectory && !targetDir.mkdirs()) return false
+        if (!isDirectChildDirectory(root, targetDir)) return false
         var target = File(targetDir, sourceFile.name)
-        if (target.exists() && !sameContent(sourceFile, target)) {
-            target = resolveConflictName(targetDir, sourceFile.name) ?: return false
-        }
         return try {
-            if (target.exists() && !target.delete()) return false
-            // 删旧放新（同名同内容）与 renameTo 的覆盖语义在 Windows JVM 上均不可依赖，
-            // 上面显式 delete 后这里 renameTo/copy 落到的是空位路径
-            sourceFile.renameTo(target) || copyFallback(sourceFile, target)
+            if (target.exists()) {
+                // 上传源本来就在目标归档位置时是幂等成功；绝不能先删目标再把同一文件当源搬一次。
+                if (sourceFile.canonicalFile == target.canonicalFile) return true
+                if (sameContent(sourceFile, target)) {
+                    // 同内容已有归档就是完整副本：保留用户可能整理过的目标文件，仅移除重复源。
+                    return sourceFile.delete()
+                }
+                target = resolveConflictName(targetDir, sourceFile.name) ?: return false
+            }
+            moveOrCopyNoReplace(sourceFile, target)
         } catch (e: Exception) {
             false
         }
@@ -92,9 +96,9 @@ class InboxFileStore @Inject constructor() {
     /**
      * 把 content:// URI 流归档到上传归档文件夹（供相册与系统文件来源在设置归档文件夹后落位）：
      * 将文件流写入 <archiveRoot>/<sanitize(库名)>/<目标文件名>。
-     * - 优先比对目标存在性与内容：同内容直接跳过或删旧放新；不同内容加序号；
+     * - 优先比对目标存在性与内容：同内容保留已有目标并安全返回（不删除源 URI，因为无法证明它与目标不是同一物理文件）；不同内容加序号；
      * - 写入流经 .part 临时文件改名到位；
-     * - 写入成功后尝试 DocumentsContract.deleteDocument 删除源文档（若 SAF provider
+     * - 新目标写入成功后尽力调用 DocumentsContract.deleteDocument 删除源文档（若 SAF provider
      *   支持删除则达成移动语义；若不支持删除/无删除权限则安全留存原位，达成安全备份归档语义）；
      * - 绝不抛异常，失败返回 false。
      */
@@ -105,14 +109,31 @@ class InboxFileStore @Inject constructor() {
         uri: Uri,
         displayName: String,
     ): Boolean {
+        // displayName 来自外部 ContentProvider，必须先拒绝路径分隔符/控制字符，
+        // 避免目标路径逸出库归档目录。文件名保持原样，不做静默改名。
+        if (!isSafeArchiveFileName(displayName)) return false
         val dirName = sanitizeLibraryDirName(libraryName) ?: return false
-        val targetDir = File(archiveRoot, dirName)
+        val root = File(archiveRoot)
+        val targetDir = File(root, dirName)
         if (!targetDir.isDirectory && !targetDir.mkdirs()) return false
+        if (!isDirectChildDirectory(root, targetDir)) return false
         var target = File(targetDir, displayName)
-        if (target.exists() && !sameContent(context, uri, target)) {
+        if (target.exists()) {
+            if (sameContent(context, uri, target)) {
+                // 已存在同内容归档：不重写/不删除目标文件，也不删除源 URI。
+                // 通用 SAF URI 无法证明与 target 是不同物理文件；删源可能把归档本体一起删掉。
+                // 此分支按安全备份语义成功，宁保留一份重复源，也不冒误删唯一归档的风险。
+                return true
+            }
             target = resolveConflictName(targetDir, displayName) ?: return false
         }
-        val part = File(targetDir, target.name + ARCHIVE_PART_SUFFIX)
+        // 固定的 "<目标名>.part" 会和用户已有同名文件或另一归档任务冲突。
+        // 创建唯一临时文件，并在发布时使用不带 REPLACE_EXISTING 的 Files.move。
+        val part = try {
+            Files.createTempFile(targetDir.toPath(), "qimeng-archive-", ARCHIVE_PART_SUFFIX).toFile()
+        } catch (e: Exception) {
+            return false
+        }
         return try {
             val input = context.contentResolver.openInputStream(uri) ?: return false
             input.use { inStream ->
@@ -120,22 +141,18 @@ class InboxFileStore @Inject constructor() {
                     inStream.copyTo(outStream)
                 }
             }
-            if (target.exists() && !target.delete()) {
-                part.delete()
-                return false
-            }
-            if (!part.renameTo(target)) {
-                part.delete()
-                return false
-            }
+            // 不能为了发布成功而删掉首检后被其他进程创建的目标；检测到冲突时保留源与目标。
+            // 注意：标准 Files.move 的存在性检查与底层移动不是跨进程原子操作，仍有窄 TOCTOU 窗口。
+            if (!moveFileNoReplace(part, target)) return false
             // 尽力而为尝试删除源文档（若 SAF 提供方支持删除）
             runCatching {
                 DocumentsContract.deleteDocument(context.contentResolver, uri)
             }
             true
         } catch (e: Exception) {
-            part.delete()
             false
+        } finally {
+            part.delete()
         }
     }
 
@@ -146,7 +163,7 @@ class InboxFileStore @Inject constructor() {
      * - 归档根不存在或非目录时返回 false；
      * - 优先在 <archiveRoot>/<libraryName>/ 或 <archiveRoot>/<sanitize(libraryName)>/ 查找 oldFileName；
      * - 若未指定 libraryName 或对应目录不存在，回落遍历 archiveRoot 的各一级子目录查找；
-     * - 找到目标文件后执行 renameTo(newFileName)，目标同名已存在则不覆盖返回 false；
+     * - 找到目标文件后使用无覆盖移动重命名；目标同名已存在（包括检查后并发创建）则不覆盖返回 false；
      * - 文件成功重命名返回 true，未找到或重命名失败返回 false。
      */
     fun renameArchivedFile(
@@ -155,13 +172,19 @@ class InboxFileStore @Inject constructor() {
         oldFileName: String,
         newFileName: String,
     ): Boolean {
-        if (oldFileName.isBlank() || newFileName.isBlank() || oldFileName == newFileName) return false
+        if (!isSafeArchiveFileName(oldFileName) || !isSafeArchiveFileName(newFileName) || oldFileName == newFileName) {
+            return false
+        }
         val root = File(archiveRoot)
         if (!root.isDirectory) return false
 
         val candidateDirs = mutableListOf<File>()
         if (!libraryName.isNullOrBlank()) {
-            candidateDirs += File(root, libraryName)
+            // 原始库名只有在单个安全路径段时才可直接拼接；否则仅尝试 sanitize 后的目录名。
+            // 不能先 File(root, "../...") 再依赖后续过滤——候选目录本身可能指向归档根之外。
+            if (isSafeArchiveFileName(libraryName)) {
+                candidateDirs += File(root, libraryName)
+            }
             val sanitized = sanitizeLibraryDirName(libraryName)
             if (sanitized != null && sanitized != libraryName) {
                 candidateDirs += File(root, sanitized)
@@ -170,11 +193,13 @@ class InboxFileStore @Inject constructor() {
         root.listFiles(File::isDirectory)?.let { candidateDirs.addAll(it) }
 
         for (dir in candidateDirs.distinct()) {
+            // 除了拦截 ..，也拒绝指向根外或指向另一归档库的目录符号链接。
+            if (!isDirectChildDirectory(root, dir)) continue
             val source = File(dir, oldFileName)
             if (source.isFile) {
                 val target = File(dir, newFileName)
                 if (!target.exists()) {
-                    return source.renameTo(target)
+                    return moveFileNoReplace(source, target)
                 }
             }
         }
@@ -182,26 +207,60 @@ class InboxFileStore @Inject constructor() {
     }
 
     /**
-     * copy 兜底（renameTo 跨挂载点失败时）：先 copyTo 到同目录 .part 临时名，成功后
-     * renameTo 改名到位。为什么不能直接 copyTo 目标名：copyTo 半途失败（磁盘满/进程
-     * 被杀）会在归档目录留下半截同名目标文件，下次同名归档因内容不等走序号位、垃圾
-     * 永留；.part 临时名则把残留收敛到可识别可清理的形态（finally 兜底删除）。
-     * .part 改名失败再试「删目标位 + 二次改名」（防御并发占位），仍失败返回 false；
-     * 删源失败同样按失败上报（false 提醒用户手动处理源文件，有意语义，非疏漏）。
+     * copy 兜底：先复制到目标目录下唯一 .part 临时文件，再以无覆盖方式发布到目标位，
+     * 最后删除源。不能直接 copyTo 目标名：复制中途失败会留下半截同名文件。
+     * 发布时若目标已存在且被标准库检测到，操作失败并保留目标与源文件；finally 只清理本次
+     * 创建的临时文件。注意标准 Files.move 的检查与移动不是跨进程原子操作，仍有窄 TOCTOU
+     * 窗口。删源失败时目标是完整副本、源仍在，返回 false 提醒用户人工核对。
      */
     private fun copyFallback(sourceFile: File, target: File): Boolean {
-        val part = File(target.parentFile, sourceFile.name + ARCHIVE_PART_SUFFIX)
+        var part: File? = null
         try {
+            val parent = target.parentFile ?: return false
+            // 唯一临时名避免覆盖同目录中由其他操作创建的 .part 文件。
+            part = Files.createTempFile(parent.toPath(), "qimeng-archive-", ARCHIVE_PART_SUFFIX).toFile()
             sourceFile.copyTo(part, overwrite = true)
-            if (!part.renameTo(target)) {
-                if (target.exists() && !target.delete()) return false
-                if (!part.renameTo(target)) return false
-            }
+            // Files.move 不指定 REPLACE_EXISTING：目标竞争时失败，而不是覆盖竞争者文件。
+            if (!moveFileNoReplace(part, target)) return false
             return sourceFile.delete()
         } finally {
-            // 成功路径 part 已改名移走、delete 是 no-op；异常/失败路径清 .part 残留
-            part.delete()
+            // 成功路径 part 已改名移走、delete 是 no-op；异常/失败路径只清理本次创建的临时文件。
+            part?.delete()
         }
+    }
+
+    /**
+     * 同卷优先无覆盖移动：先试平台改名（同卷瞬时；跨卷以无害失败退出、绝不复制），
+     * 失败且目标仍是空位时再走受控复制（[copyFallback]）。
+     * 为什么不用 Files.getFileStore 判定卷：Android 上它恒抛 SecurityException（AOSP
+     * UnixFileSystemProvider/LinuxFileSystemProvider 的 Android-changed 覆写，SELinux 策略），
+     * runCatching 吞掉后会让每次归档都静默退化成本地整文件复制（2026-10-15 审查发现）。
+     * 为什么不直接交给 Files.move：libcore UnixCopyFile.move 在跨卷时会自行 copy+删源，
+     * 绕开本模块「唯一临时文件 + 无覆盖发布 + 失败即清理」的受控路径。
+     * 已知边界：存在性检查与改名之间不保证跨进程原子（与 [moveFileNoReplace] 同一窗口）；
+     * 检查后被并发创建的目标不被替换，靠的是改名前的 exists() 前置检查必须保留——
+     * POSIX rename 自身会替换既有目标。
+     */
+    private fun moveOrCopyNoReplace(source: File, target: File): Boolean {
+        if (!target.exists() && source.renameTo(target)) return true
+        // 目标已存在（含首检后并发创建）时不再复制/尝试替换它。
+        if (target.exists()) return false
+        return copyFallback(source, target)
+    }
+
+    /**
+     * 发布文件时不指定 REPLACE_EXISTING；目标在 Files.move 检查时已存在会安全失败。
+     * Android minSdk=26，可用 java.nio.file.Files。
+     *
+     * 已知边界：标准 Files.move 的目标存在性检查与底层移动不保证相对其他进程原子；
+     * 不可把此 helper 当作跨进程 no-replace 原语。外部写入者仍可能在检查与 move 之间竞争，
+     * 后续如需消除该窗口，需按目标文件系统提供原子 no-replace 原语或引入所有写入方共用的协调。
+     */
+    internal fun moveFileNoReplace(source: File, target: File): Boolean = try {
+        Files.move(source.toPath(), target.toPath())
+        true
+    } catch (_: Exception) {
+        false
     }
 
     /**
@@ -216,7 +275,10 @@ class InboxFileStore @Inject constructor() {
                 append(if (c in LIBRARY_DIR_ILLEGAL_CHARS) LIBRARY_DIR_SANITIZE_CHAR else c)
             }
         }
-        return sanitized.takeIf { it.isNotEmpty() }
+        // 路径语义段与 Windows 不允许的尾随点统一拒绝，避免跨平台复制后路径被归一成别的目录。
+        return sanitized.takeIf {
+            it.isNotEmpty() && it != "." && it != ".." && !it.endsWith(".")
+        }
     }
 
     /**
@@ -235,30 +297,31 @@ class InboxFileStore @Inject constructor() {
         return null
     }
 
-    /** 字节级内容比对：长度先短路；流式比对不整载内存（归档对象可能是大视频）。
-     *  读取异常按「不同内容」处理（走加序号路径，宁可多留一份也不误判相同去覆盖）。 */
+    /**
+     * 确保 child 是 root 下真实的直接子目录，而不是指向归档根外/另一库的符号链接。
+     * 归档和重命名均涉及搬动/删除源文件；仅校验名称还不足以约束文件系统的链接别名。
+     */
+    private fun isDirectChildDirectory(root: File, child: File): Boolean = runCatching {
+        val canonicalRoot = root.canonicalFile
+        val canonicalChild = child.canonicalFile
+        canonicalChild.parentFile == canonicalRoot && canonicalChild.name == child.name
+    }.getOrDefault(false)
+
+    /** 纯文件名校验：ContentProvider 提供的展示名不可包含路径/控制字符。 */
+    internal fun isSafeArchiveFileName(name: String): Boolean {
+        if (name.isBlank() || name == "." || name == "..") return false
+        if (name.endsWith(" ") || name.endsWith(".")) return false
+        return name.none {
+            it in LIBRARY_DIR_ILLEGAL_CHARS || it.code < 0x20 || it.code == 0x7f
+        }
+    }
+
+    /** 字节级内容比对：长度先短路；流式比对不整载内存（归档对象可能是大视频）。 */
     private fun sameContent(a: File, b: File): Boolean {
         if (a.length() != b.length()) return false
         return try {
             a.inputStream().use { left ->
-                b.inputStream().use { right ->
-                    val bufA = ByteArray(FILE_COMPARE_BUFFER_BYTES)
-                    val bufB = ByteArray(FILE_COMPARE_BUFFER_BYTES)
-                    while (true) {
-                        val nA = readFully(left, bufA)
-                        val nB = readFully(right, bufB)
-                        if (nA != nB) return@use false
-                        // 末段短读块也要比对（只比有效前缀）；满块整块比对
-                        val chunkEqual = if (nA == bufA.size) {
-                            bufA.contentEquals(bufB)
-                        } else {
-                            bufA.copyOf(nA).contentEquals(bufB.copyOf(nB))
-                        }
-                        if (!chunkEqual) return@use false
-                        if (nA < bufA.size) break // 双流同步到 EOF（起手长度相等，短读即共同结尾）
-                    }
-                    true
-                }
+                b.inputStream().use { right -> streamsEqual(left, right) }
             }
         } catch (e: Exception) {
             false
@@ -267,38 +330,45 @@ class InboxFileStore @Inject constructor() {
 
     private fun sameContent(context: Context, uri: Uri, b: File): Boolean {
         return try {
-            context.contentResolver.openInputStream(uri)?.use { left ->
-                b.inputStream().use { right ->
-                    val bufA = ByteArray(FILE_COMPARE_BUFFER_BYTES)
-                    val bufB = ByteArray(FILE_COMPARE_BUFFER_BYTES)
-                    while (true) {
-                        val nA = readFully(left, bufA)
-                        val nB = readFully(right, bufB)
-                        if (nA != nB) return@use false
-                        val chunkEqual = if (nA == bufA.size) {
-                            bufA.contentEquals(bufB)
-                        } else {
-                            bufA.copyOf(nA).contentEquals(bufB.copyOf(nB))
-                        }
-                        if (!chunkEqual) return@use false
-                        if (nA < bufA.size) break
-                    }
-                    true
-                }
-            } ?: false
+            val input = context.contentResolver.openInputStream(uri) ?: return false
+            input.use { left ->
+                b.inputStream().use { right -> streamsEqual(left, right) }
+            }
         } catch (e: Exception) {
             false
         }
     }
 
-    /** 读满整个缓冲（不足继续读，EOF 停止）；返回实读字节数。InputStream.read 单次
-     *  可能短读，比对必须按「读满」口径对齐两侧进度，否则随机短读会误判不同内容 */
+    /** 流式逐字节比较，正确处理 InputStream 短读，不为大视频分配整文件内存。 */
+    internal fun streamsEqual(left: InputStream, right: InputStream): Boolean {
+        val bufA = ByteArray(FILE_COMPARE_BUFFER_BYTES)
+        val bufB = ByteArray(FILE_COMPARE_BUFFER_BYTES)
+        while (true) {
+            val nA = readFully(left, bufA)
+            val nB = readFully(right, bufB)
+            if (nA != nB) return false
+            for (i in 0 until nA) {
+                if (bufA[i] != bufB[i]) return false
+            }
+            if (nA < bufA.size) return true // 双流均到 EOF
+        }
+    }
+
+    /** 读满缓冲区或直到 EOF；read 的 length 必须是剩余空间，且处理罕见的零长度短读。 */
     private fun readFully(stream: InputStream, buf: ByteArray): Int {
         var offset = 0
         while (offset < buf.size) {
-            val n = stream.read(buf, offset, buf.size)
-            if (n < 0) break
-            offset += n
+            val n = stream.read(buf, offset, buf.size - offset)
+            when {
+                n < 0 -> break
+                n == 0 -> {
+                    // 防御非标准 InputStream 的零长度返回，避免死循环。
+                    val one = stream.read()
+                    if (one < 0) break
+                    buf[offset++] = one.toByte()
+                }
+                else -> offset += n
+            }
         }
         return offset
     }

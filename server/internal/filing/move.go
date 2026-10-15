@@ -19,6 +19,13 @@ import (
 	"strings"
 )
 
+// ErrMoveTargetExists 表示目标路径已被占用。搬移语义从不覆盖既有用户文件。
+var ErrMoveTargetExists = errors.New("move destination already exists")
+
+// ErrMoveDidNotCreateTarget 表示本次尝试在目标端没有创建文件；调用方不能把目标
+// 当作本次产生的半截副本清理，否则可能删除并发的外部写入。
+var ErrMoveDidNotCreateTarget = errors.New("move did not create destination")
+
 // copyBody 是复制主体的包内可注入替身（生产恒为 io.Copy）：磁盘满/写失败
 // 等"复制中途失败"无法用真实文件系统在单测稳定注入，测试替换它制造半截
 // 副本，锁定"失败即清理目标端"的行为。生产代码禁止替换。
@@ -39,12 +46,20 @@ var copyBody = io.Copy
 // 现口径：errno 为主（不受系统消息本地化影响），文本兜底保留以兼容包装形态
 // （含 Linux 与 Windows 两种文本；大小写不敏感）。
 func MoveFile(src, dst string) error {
+	// 先拒绝已存在的目标，避免 Unix os.Rename 或跨卷 copy 回落覆盖用户文件。
+	// 预检查缩小冲突窗口；跨卷复制由 O_EXCL 再防一道。调用方仍应在业务层做冲突解析/并发协调。
+	if _, err := os.Lstat(dst); err == nil {
+		return fmt.Errorf("%w: %s", ErrMoveTargetExists, dst)
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("%w: inspect destination %s: %w", ErrMoveDidNotCreateTarget, dst, err)
+	}
+
 	err := os.Rename(src, dst)
 	if err == nil {
 		return nil
 	}
 	if !isCrossDeviceErr(err) {
-		return err
+		return fmt.Errorf("%w: rename %s to %s: %w", ErrMoveDidNotCreateTarget, src, dst, err)
 	}
 	if err := copyFile(src, dst); err != nil {
 		return err
@@ -106,8 +121,13 @@ func copyFile(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, info.Mode().Perm())
+	// O_EXCL 是目标端的第二道保护：若目标在 Lstat 与跨卷复制之间被创建，
+	// 直接失败而不是截断/覆盖竞争者文件。
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, info.Mode().Perm())
 	if err != nil {
+		if errors.Is(err, fs.ErrExist) {
+			return fmt.Errorf("%w: %s", ErrMoveTargetExists, dst)
+		}
 		return err
 	}
 	if _, err := copyBody(out, in); err != nil {
@@ -124,12 +144,12 @@ func copyFile(src, dst string) error {
 	return nil
 }
 
-// cleanupFailedCopy 删除复制失败的半截副本（best-effort：删除失败只记
-// 警告不上抛——主错误（复制失败）才是调用方该看到的，清理失败掩盖它只会
-// 让排障方向错位；filing 包无 logger 管道，此处用默认 logger）。
+// cleanupFailedCopy 删除本次复制创建的半截副本（best-effort：删除失败只记
+// 警告不上抛——主错误（复制失败）才是调用方该看到的。目标以 O_EXCL 创建，
+// 不会清理在复制前已经存在的用户文件；filing 包无 logger 管道，此处用默认 logger）。
 func cleanupFailedCopy(dst string) {
 	if err := os.Remove(dst); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		slog.Warn("filing: 清理复制失败的半截副本失败（残留，重试移动会被 O_TRUNC 覆盖）",
+		slog.Warn("filing: 清理复制失败的半截副本失败（残留需由调用方按保守规则清理）",
 			"path", dst, "err", err)
 	}
 }

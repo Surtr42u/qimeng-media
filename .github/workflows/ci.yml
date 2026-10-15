@@ -1,8 +1,14 @@
 # CI：每个 PR / push 到 master 必须全绿才允许合并（ARCHITECTURE §10）
-# 六道门禁：协议校验（宪法不容破坏）→ 服务端 → Web（含 knip 孤儿依赖门禁）→
-# Android 客户端（含内嵌产物完整性门禁）→ 桌面壳（Tauri cargo test/build，
-# ADR-0020 第四端）；外加 make sdk 生成链可跑通
+# 七个 job：协议校验（宪法不容破坏）→ Linux 服务端 → Windows 文件操作 → Web（含 knip 孤儿依赖门禁）→
+# SDK 生成链 → Android 客户端（含内嵌产物完整性门禁）→ 桌面壳（Tauri cargo test/build，
+# ADR-0020 第四端）；同一 PR 仅保留最新 head 的 CI 运行，避免过期检查堆积
 name: ci
+
+# 同一 PR 连续推送时只验证最新 head：自动取消同组旧的运行/排队任务，避免过期提交
+# 堵住 runner 队列；master 的 push 使用独立 group 且不取消（连推 master 时旧 run 照常跑完）。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 on:
   push:
@@ -61,6 +67,19 @@ jobs:
         run: test -z "$(gofmt -l .)"
       - run: go test ./... -race -count=1
       - run: go build ./...
+
+  server-windows-filing:
+    name: Go 文件操作（Windows 原生测试）
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults: { run: { working-directory: server } }
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with: { go-version: "1.27.0", cache-dependency-path: server/go.sum }
+      # move_windows.go 使用 windows build tag，Linux server job 不会编译它；
+      # 在 Windows 原生 runner 上验证专属 errno 实现可编译、错误分类与复制主体单测可运行（真实跨盘布局仍需部署环境端到端验证）。
+      - run: go test ./internal/filing -count=1
 
   web:
     name: Web（tsc + build）

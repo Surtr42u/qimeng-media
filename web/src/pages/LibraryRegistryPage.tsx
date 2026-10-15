@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router'
 import { toast } from 'sonner'
 import { LOCALE_ZH } from '@/lib/constants'
+import { batchFailureReason } from '@/lib/batch'
 import { Pill } from '@/components/ui/pill'
 import { LoadingHint } from '@/components/ui/loading-hint'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -50,7 +51,7 @@ export default function LibraryRegistryPage() {
           setRootPath('')
           setKind('normal')
         },
-        onError: (err) => toast.error(`注册失败：${err instanceof Error ? err.message : String(err)}`),
+        onError: (err) => toast.error(`注册失败：${batchFailureReason(err)}`),
       },
     )
   }
@@ -58,7 +59,7 @@ export default function LibraryRegistryPage() {
   const rescan = (lib: Library): void => {
     scanLib.mutate(lib.id ?? '', {
       onSuccess: () => toast.success(`「${lib.name}」扫描已触发`),
-      onError: (err) => toast.error(`触发失败：${err instanceof Error ? err.message : String(err)}`),
+      onError: (err) => toast.error(`触发失败：${batchFailureReason(err)}`),
     })
   }
 
@@ -73,7 +74,7 @@ export default function LibraryRegistryPage() {
     if (!lib) return
     deleteLib.mutate(lib.id ?? '', {
       onSuccess: () => toast.success(`「${lib.name}」已删除`),
-      onError: (err) => toast.error(`删除失败：${err instanceof Error ? err.message : String(err)}`),
+      onError: (err) => toast.error(`删除失败：${batchFailureReason(err)}`),
     })
   }
 
@@ -124,7 +125,7 @@ export default function LibraryRegistryPage() {
                             {
                               onSuccess: () =>
                                 toast.success(lib.enabled === false ? `「${lib.name}」已启用` : `「${lib.name}」已停用（浏览面隐藏，记录保留）`),
-                              onError: (err) => toast.error(`操作失败：${err instanceof Error ? err.message : String(err)}`),
+                              onError: (err) => toast.error(`操作失败：${batchFailureReason(err)}`),
                             },
                           )
                         }

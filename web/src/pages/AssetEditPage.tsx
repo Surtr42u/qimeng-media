@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react'
-import { useNavigate, useParams } from 'react-router'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useBlocker, useNavigate, useParams } from 'react-router'
 import { toast } from 'sonner'
 import type { AssetDetail } from '@/api/generated'
 import { AuthorSuggestField, type AuthorAttachValue } from '@/components/manage/AuthorSuggestField'
 import { SourceSelectField } from '@/components/manage/SourceSelectField'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { LoadingHint } from '@/components/ui/loading-hint'
 import { Pill } from '@/components/ui/pill'
 import { useAssetDetail } from '@/hooks/use-assets'
@@ -55,14 +56,38 @@ function AuthorSourcesRow({
   authorId,
   draft,
   onChange,
+  disabled,
 }: {
   authorId: string
   draft: string[] | undefined
   onChange: (authorId: string, next: string[]) => void
+  disabled: boolean
 }) {
-  const { data } = useAuthorSourcesById(authorId)
-  const selected = draft ?? data?.sources ?? []
-  return <SourceSelectField selected={selected} onChange={(next) => onChange(authorId, next)} />
+  const { data, isError, isFetching, refetch } = useAuthorSourcesById(authorId)
+  // 来源端点是整体替换语义：尚未读到服务端原值前不能把空数组当基线开放编辑，
+  // 否则用户只点一个新词保存就可能覆盖此前已有的来源区。
+  if (data === undefined || isFetching || isError) {
+    return (
+      <div
+        className="rank-note"
+        role={isError ? 'alert' : 'status'}
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 8 }}
+      >
+        <span>
+          {isError
+            ? '无法读取该作者的既有来源，已暂时禁用编辑以免覆盖旧数据。'
+            : '正在读取该作者的既有来源…'}
+        </span>
+        {isError ? (
+          <button type="button" className="pill" disabled={disabled} onClick={() => void refetch()}>
+            重试
+          </button>
+        ) : null}
+      </div>
+    )
+  }
+  const selected = draft ?? data.sources ?? []
+  return <SourceSelectField selected={selected} disabled={disabled} onChange={(next) => onChange(authorId, next)} />
 }
 
 export default function AssetEditPage() {
@@ -79,6 +104,8 @@ export default function AssetEditPage() {
 
   // 草稿作者全集（null=未动，跟随服务端值）；保存提交的是最终 ID 全集
   const [draftAuthors, setDraftAuthors] = useState<AuthorDraft[] | null>(null)
+  // 单独记账：关联 PUT 成功后即使来源保存失败，重试也不应重复提交已成功的关联事务。
+  const [authorLinksNeedSave, setAuthorLinksNeedSave] = useState(false)
   const authors = draftAuthors ?? serverAuthors
   // 待新建作者名（保存随 newAuthorNames 交服务端建/复用；成功清空、失败保留可重试）
   const [pendingAuthors, setPendingAuthors] = useState<string[]>([])
@@ -89,6 +116,36 @@ export default function AssetEditPage() {
   const [pickValue, setPickValue] = useState<AuthorAttachValue | null>(null)
   const [saving, setSaving] = useState(false)
 
+  // 编辑页含作者全集、待新建名单与逐作者来源草稿；任一有改动时离开都需确认。
+  const hasUnsavedChanges =
+    authorLinksNeedSave || pendingAuthors.length > 0 || Object.keys(dirtySources).length > 0
+  // 正常保存成功后由页面主动导航，绕过放弃确认；用户手动导航仍走 blocker。
+  const allowExitAfterSave = useRef(false)
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      !allowExitAfterSave.current &&
+      hasUnsavedChanges &&
+      currentLocation.pathname !== nextLocation.pathname,
+  )
+  // 异步保存期间可能又发生一次路由拦截；成功回调读取最新 blocker，而不是保存启动时的旧快照。
+  // 同步放 effect（不在 render 期写 ref——并行渲染下会读到被丢弃渲染的值）；保存回调是异步的，
+  // commit 后 effect 必已先跑，读取时序安全。
+  const blockerRef = useRef(blocker)
+  useEffect(() => {
+    blockerRef.current = blocker
+  })
+
+  useEffect(() => {
+    if (!hasUnsavedChanges) return
+    const handler = (event: BeforeUnloadEvent): void => {
+      if (allowExitAfterSave.current) return
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [hasUnsavedChanges])
+
   const replaceAuthors = useReplaceAssetAuthors()
   const saveSources = useSaveAuthorSources()
 
@@ -96,6 +153,7 @@ export default function AssetEditPage() {
    *  （进待新建清单——重名/超长/超项按 lib 口径出提示不入列）；null=字段清空
    *  动作，不动草稿。 */
   const onPickAuthor = (v: AuthorAttachValue | null): void => {
+    if (saving) return
     setPickValue(null)
     if (!v) return
     if (v.authorId) {
@@ -104,6 +162,7 @@ export default function AssetEditPage() {
         return
       }
       setDraftAuthors([...authors, { id: v.authorId, displayName: v.displayName ?? v.authorId }])
+      setAuthorLinksNeedSave(true)
       return
     }
     if (v.authorName) {
@@ -116,12 +175,15 @@ export default function AssetEditPage() {
         return
       }
       setPendingAuthors(added.names)
+      setAuthorLinksNeedSave(true)
     }
   }
 
   /** 移出草稿并清掉该作者的来源草稿/脏标记（重加同作者不残留旧脏态） */
   const removeAuthor = (id: string): void => {
+    if (saving) return
     setDraftAuthors(authors.filter((a) => a.id !== id))
+    setAuthorLinksNeedSave(true)
     const nextDrafts = { ...sourceDrafts }
     delete nextDrafts[id]
     setSourceDrafts(nextDrafts)
@@ -132,6 +194,7 @@ export default function AssetEditPage() {
 
   /** 来源草稿上浮 + 标脏（保存时只对脏作者发整体替换） */
   const onSourceChange = (authorId: string, next: string[]): void => {
+    if (saving) return
     setSourceDrafts((prev) => ({ ...prev, [authorId]: next }))
     setDirtySources((prev) => ({ ...prev, [authorId]: true }))
   }
@@ -142,29 +205,39 @@ export default function AssetEditPage() {
     if (!assetId || saving) return
     setSaving(true)
     try {
-      let saved: AssetDetail | null = null
-      try {
-        saved = await replaceAuthors.mutateAsync({
-          assetId,
-          authorIds: authors.map((a) => a.id),
-          newAuthorNames: pendingAuthors,
-        })
-      } catch (err) {
-        // 失败保留草稿与待新建清单，用户可直接重试（不落 toast 之外的副作用）
-        toast.error(`作者关联保存失败：${batchFailureReason(err)}`)
-        return
+      let nextAuthors = authors
+      // 只改来源时不重复 PUT 作者全集；只有关联草稿/待新建作者发生变更才写整体关联。
+      if (authorLinksNeedSave || pendingAuthors.length > 0) {
+        let saved: AssetDetail | null = null
+        try {
+          saved = await replaceAuthors.mutateAsync({
+            assetId,
+            authorIds: authors.map((a) => a.id),
+            newAuthorNames: pendingAuthors,
+          })
+        } catch (err) {
+          // 失败保留草稿与待新建清单，用户可直接重试（不落 toast 之外的副作用）
+          toast.error(`作者关联保存失败：${batchFailureReason(err)}`)
+          return
+        }
+        if (saved === null) return
+        // 关联已落库：以响应作者全集刷新草稿（待新建名已成真作者，作为正常条目
+        // 出现、可继续编辑来源），待新建清单清空
+        nextAuthors = authorDraftsFromDetail(saved.authors)
+        setDraftAuthors(nextAuthors)
+        setPendingAuthors([])
+        setAuthorLinksNeedSave(false)
       }
-      if (saved === null) return
-      // 关联已落库：以响应作者全集刷新草稿（待新建名已成真作者，作为正常条目
-      // 出现、可继续编辑来源），待新建清单清空
-      const nextAuthors = authorDraftsFromDetail(saved.authors)
-      setDraftAuthors(nextAuthors)
-      setPendingAuthors([])
       const failures: string[] = []
       for (const a of nextAuthors) {
         if (!dirtySources[a.id]) continue
         try {
           await saveSources.mutateAsync({ authorId: a.id, sources: sourceDrafts[a.id] ?? [] })
+          setDirtySources((prev) => {
+            const next = { ...prev }
+            delete next[a.id]
+            return next
+          })
         } catch (err) {
           failures.push(`${a.displayName}：${batchFailureReason(err)}`)
         }
@@ -174,6 +247,9 @@ export default function AssetEditPage() {
         return
       }
       toast.success('资产作者已保存')
+      allowExitAfterSave.current = true
+      const latestBlocker = blockerRef.current
+      if (latestBlocker.state === 'blocked') latestBlocker.reset()
       navigate(assetDetail(assetId))
     } finally {
       setSaving(false)
@@ -183,7 +259,7 @@ export default function AssetEditPage() {
   return (
     <div className="page" id="page-asset-edit">
       <div className="settings-actions">
-        <Pill onClick={() => (assetId ? navigate(assetDetail(assetId)) : navigate(-1))}>
+        <Pill disabled={saving} onClick={() => (assetId ? navigate(assetDetail(assetId)) : navigate(-1))}>
           ← 返回详情
         </Pill>
       </div>
@@ -215,7 +291,7 @@ export default function AssetEditPage() {
               在下方输入框联想选择已有作者，或对没有的作者点「新建：xxx」直接创建；
               COS 作者不在此列（由 COS 目录语义决定）
             </p>
-            <AuthorSuggestField value={pickValue} onChange={onPickAuthor} allowCreate />
+            <AuthorSuggestField value={pickValue} onChange={onPickAuthor} allowCreate disabled={saving} />
             {authors.length === 0 && pendingAuthors.length === 0 ? (
               <p className="grid-empty">暂无关联作者——联想选择添加，或保存空集解除全部常规作者</p>
             ) : (
@@ -224,13 +300,14 @@ export default function AssetEditPage() {
                   <div key={a.id} style={{ marginTop: 12 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <b>{a.displayName}</b>
-                      <Pill onClick={() => removeAuthor(a.id)} title="从本资产移除该作者">
+                      <Pill disabled={saving} onClick={() => removeAuthor(a.id)} title="从本资产移除该作者">
                         移除
                       </Pill>
                     </div>
                     <AuthorSourcesRow
                       authorId={a.id}
                       draft={sourceDrafts[a.id]}
+                      disabled={saving}
                       onChange={onSourceChange}
                     />
                   </div>
@@ -247,7 +324,11 @@ export default function AssetEditPage() {
                   >
                     <b>{name}</b>
                     <Pill
-                      onClick={() => setPendingAuthors(removePendingAuthorName(pendingAuthors, name))}
+                      disabled={saving}
+                      onClick={() => {
+                        setPendingAuthors(removePendingAuthorName(pendingAuthors, name))
+                        setAuthorLinksNeedSave(true)
+                      }}
                       title="取消新建该作者"
                     >
                       移除
@@ -264,6 +345,20 @@ export default function AssetEditPage() {
           </div>
         </>
       )}
+      <ConfirmDialog
+        open={blocker.state === 'blocked'}
+        title="有未保存的修改"
+        description={saving ? '正在保存，请稍候。为避免丢失部分已提交的修改，请等待保存结束。' : '离开将丢失本次作者与来源编辑，确定离开吗？'}
+        confirmText={saving ? '保存中…' : '放弃修改离开'}
+        cancelText="继续编辑"
+        danger
+        busy={saving}
+        keepOpenOnConfirm
+        onConfirm={() => blocker.proceed?.()}
+        onOpenChange={(next) => {
+          if (!next && !saving) blocker.reset?.()
+        }}
+      />
     </div>
   )
 }

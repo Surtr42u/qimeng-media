@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -64,6 +65,10 @@ data class AssetEditUiState(
     val authorSeeds: List<AuthorSuggestion> = emptyList(),
     /** 每作者来源编辑副本（authorId → 来源集；保存前不落服务端） */
     val sourcesByAuthor: Map<String, List<String>> = emptyMap(),
+    /** 读服务端既有来源期间先禁用编辑，避免把「尚未加载」误当成空来源集整体覆盖。 */
+    val sourceLoadingAuthorIds: Set<String> = emptySet(),
+    /** 无法读取既有来源的作者；该行保持禁用并提供重试，不能以空数组为基线写回。 */
+    val sourceLoadFailedAuthorIds: Set<String> = emptySet(),
     /** 来源被改动过的作者 id 集（保存时逐个 PUT；未改动的作者不发请求） */
     val dirtySourceAuthorIds: Set<String> = emptySet(),
     /** 全站来源建议词表（GET /authors/source-vocabulary；失败静默=纯自由输入） */
@@ -76,9 +81,10 @@ data class AssetEditUiState(
     val noticeMessage: String? = null,
     /** 保存成功（一次性信号：页面据此返回，返回后路由销毁无需复位） */
     val saved: Boolean = false,
-    /** 作者全集相对初始装配是否变化（VM 在增删/装配时回填；data class copy 不携带
-     *  body var 属性，故本字段必须是构造参数而非派生属性——变基准放 VM 私有域） */
+    /** 作者全集相对初始装配是否变化。 */
     val authorsChanged: Boolean = false,
+    /** 多步保存中作者关联 PUT 已成功；后续来源写入失败重试时跳过已提交步骤。 */
+    val authorAssociationCommitted: Boolean = false,
 ) {
     /** 实际生效的完整文件名：基名为空时安全回退 originalFileName，否则拼接扩展名 */
     val effectiveFileName: String
@@ -93,14 +99,16 @@ data class AssetEditUiState(
             }
         }
 
-    /** 保存按钮可用：有改动（文件名/作者全集/待新建名/任一来源）且不在保存中 */
-    val canSave: Boolean
-        get() = !saving && (
-            authorsChanged ||
+    /** 是否存在尚未保存的有效改动（用于保存按钮与离开确认共享同一真相）。 */
+    val hasUnsavedChanges: Boolean
+        get() = authorsChanged ||
             pendingNewAuthorNames.isNotEmpty() ||
             dirtySourceAuthorIds.isNotEmpty() ||
             (fileNameChanged && currentBaseName.isNotBlank() && effectiveFileName != originalFileName)
-        )
+
+    /** 保存按钮可用：有有效改动且不在保存中。 */
+    val canSave: Boolean
+        get() = !saving && hasUnsavedChanges
 }
 
 /**
@@ -146,12 +154,12 @@ class AssetEditViewModel @Inject constructor(
     }
 
     /**
-     * 首屏/重试装配：详情作者全集 → 逐作者来源回显 → 词表。
-     * 回显与词表失败均静默降级（来源置空=可自由编辑、词表退化纯自由输入），
-     * 只有详情本体失败才进错误横幅（整页无数据）。
+     * 首屏/重试装配：详情作者全集 → 启动逐作者来源回显 → 词表。
+     * 词表失败可降级为自由输入；但逐作者来源是整体替换写入，读失败时必须禁用该行，
+     * 不能把「未知的旧值」误当空数组后覆盖服务端记录。详情本体失败仍走页面错误横幅。
      */
     fun refresh() {
-        if (_uiState.value.loading) return
+        if (_uiState.value.loading || _uiState.value.saving) return
         _uiState.update { it.copy(loading = true, errorMessage = null) }
         load()
     }
@@ -160,7 +168,10 @@ class AssetEditViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val detail = detailRepository.assetDetail(assetId)
-                val authorIds = detail.authors.map { it.id }
+                // COS 作者由目录结构派生，作者替换端点只接受 regular；与 Web authorDraftsFromDetail 同口径，
+                // 不把只读 COS 行放进可编辑全集，否则改一个普通作者也会因为携带 COS id 被服务端 400 拒绝。
+                val editableAuthors = detail.authors.filterNot { it.isCos || it.id.startsWith("cos_") }
+                val authorIds = editableAuthors.map { it.id }
                 initialAuthorIds = authorIds
                 val fileName = detail.fileName
                 val ext = if (fileName.contains('.')) ".${fileName.substringAfterLast('.')}" else ""
@@ -175,7 +186,7 @@ class AssetEditViewModel @Inject constructor(
                         currentBaseName = base,
                         extension = ext,
                         currentDirectory = detail.directory.orEmpty(),
-                        authors = detail.authors,
+                        authors = editableAuthors,
                         authorsChanged = false,
                         fileNameChanged = false,
                     )
@@ -189,17 +200,61 @@ class AssetEditViewModel @Inject constructor(
         }
     }
 
-    /**
-     * 逐作者来源回显：单作者失败不影响其余（该作者来源置空=可自由编辑）。
-     * 只对尚无本地编辑副本的作者回填（refresh 重试不覆盖未保存的编辑）。
-     */
-    private suspend fun loadSourceEcho() {
-        val echo = _uiState.value.authors.associate { author ->
-            author.id to runCatching { authorRepository.authorSourcesById(author.id) }.getOrDefault(emptyList())
-        }
+    /** 启动当前已关联作者的来源读取；每行独立加载，失败只禁用该行并允许重试。 */
+    private fun loadSourceEcho() {
+        val authorIds = _uiState.value.authors.map { it.id }.toSet()
         _uiState.update { current ->
-            current.copy(sourcesByAuthor = current.sourcesByAuthor + echo.filterKeys { it !in current.sourcesByAuthor })
+            current.copy(
+                sourceLoadingAuthorIds = current.sourceLoadingAuthorIds intersect authorIds,
+                sourceLoadFailedAuthorIds = current.sourceLoadFailedAuthorIds intersect authorIds,
+            )
         }
+        authorIds.forEach(::loadSourcesForAuthor)
+    }
+
+    /**
+     * 加载一个作者的当前来源。来源 PUT 是整体替换，因此读取失败不能静默回退为空集；
+     * 若用户已在本地改过该作者的来源，重试/刷新成功也不得覆盖草稿。
+     */
+    private fun loadSourcesForAuthor(authorId: String) {
+        if (authorId.isBlank()) return
+        _uiState.update { current ->
+            current.copy(
+                sourceLoadingAuthorIds = current.sourceLoadingAuthorIds + authorId,
+                sourceLoadFailedAuthorIds = current.sourceLoadFailedAuthorIds - authorId,
+            )
+        }
+        viewModelScope.launch {
+            try {
+                val sources = authorRepository.authorSourcesById(authorId)
+                _uiState.update { current ->
+                    current.copy(
+                        sourcesByAuthor = if (authorId in current.dirtySourceAuthorIds) {
+                            current.sourcesByAuthor
+                        } else {
+                            current.sourcesByAuthor + (authorId to sources)
+                        },
+                        sourceLoadingAuthorIds = current.sourceLoadingAuthorIds - authorId,
+                        sourceLoadFailedAuthorIds = current.sourceLoadFailedAuthorIds - authorId,
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _uiState.update { current ->
+                    current.copy(
+                        sourceLoadingAuthorIds = current.sourceLoadingAuthorIds - authorId,
+                        sourceLoadFailedAuthorIds = current.sourceLoadFailedAuthorIds + authorId,
+                    )
+                }
+            }
+        }
+    }
+
+    /** 行内「重试」入口；失败期间行内容不可编辑，成功取到完整旧值后再恢复操作。 */
+    fun retryAuthorSources(authorId: String) {
+        if (_uiState.value.saving) return
+        loadSourcesForAuthor(authorId)
     }
 
     /** 全站来源词表（快捷选项，仅单独词；失败静默=纯自由输入，同旧上传页词表降级口径） */
@@ -219,6 +274,7 @@ class AssetEditViewModel @Inject constructor(
 
     /** 输入变化：防抖拉联想（空串清列表；竞态以词条比对回填） */
     fun onAddAuthorQueryChange(query: String) {
+        if (_uiState.value.saving) return
         _uiState.update { it.copy(authorQuery = query) }
         suggestJob?.cancel()
         val trimmed = query.trim()
@@ -244,6 +300,7 @@ class AssetEditViewModel @Inject constructor(
      * 与已关联作者显示名及名单内部忽略大小写去重（名字此刻无 id，靠显示名归一挡重）。
      */
     fun commitAddAuthor() {
+        if (_uiState.value.saving) return
         val current = _uiState.value
         val trimmed = current.authorQuery.trim()
         if (trimmed.isEmpty()) return
@@ -280,6 +337,7 @@ class AssetEditViewModel @Inject constructor(
         _uiState.update {
             it.copy(
                 pendingNewAuthorNames = it.pendingNewAuthorNames + trimmed,
+                authorAssociationCommitted = false,
                 authorQuery = "",
                 authorSuggestions = emptyList(),
                 noticeMessage = null,
@@ -289,14 +347,20 @@ class AssetEditViewModel @Inject constructor(
 
     /** 点按待新建胶囊移除（保存前来去自由；无作者 id，无来源等连带状态需要清理） */
     fun removePendingNewAuthor(name: String) {
+        if (_uiState.value.saving) return
         _uiState.update { current ->
-            current.copy(pendingNewAuthorNames = current.pendingNewAuthorNames.filterNot { it == name })
+            current.copy(
+                pendingNewAuthorNames = current.pendingNewAuthorNames.filterNot { it == name },
+                authorAssociationCommitted = false,
+            )
         }
     }
 
-    /** 点选联想项：加入编辑中全集（已关联则提示；输入态复位） */
+    /** 点选联想项：加入编辑中全集（已关联则提示；输入态复位）。新增作者先读取其现有来源。 */
     fun addAuthor(author: AuthorSuggestion) {
+        if (_uiState.value.saving) return
         suggestJob?.cancel()
+        val isNewAssociation = _uiState.value.authors.none { it.id == author.id }
         _uiState.update { current ->
             when {
                 current.authors.any { it.id == author.id } ->
@@ -310,22 +374,28 @@ class AssetEditViewModel @Inject constructor(
                         followed = false,
                     ),
                     authorsChanged = true,
+                    authorAssociationCommitted = false,
                     authorQuery = "",
                     authorSuggestions = emptyList(),
                     noticeMessage = null,
                 )
             }
         }
+        if (isNewAssociation) loadSourcesForAuthor(author.id)
     }
 
     /** 行内移除：全集删除 + 来源编辑副本与脏标记连带清理 */
     fun removeAuthor(authorId: String) {
+        if (_uiState.value.saving) return
         _uiState.update { current ->
             val remaining = current.authors.filterNot { it.id == authorId }
             current.copy(
                 authors = remaining,
                 authorsChanged = remaining.map { it.id } != initialAuthorIds,
+                authorAssociationCommitted = false,
                 sourcesByAuthor = current.sourcesByAuthor - authorId,
+                sourceLoadingAuthorIds = current.sourceLoadingAuthorIds - authorId,
+                sourceLoadFailedAuthorIds = current.sourceLoadFailedAuthorIds - authorId,
                 dirtySourceAuthorIds = current.dirtySourceAuthorIds - authorId,
             )
         }
@@ -335,6 +405,8 @@ class AssetEditViewModel @Inject constructor(
 
     /** 来源 toggle（trim 后空串忽略） */
     fun toggleSource(authorId: String, name: String) {
+        val current = _uiState.value
+        if (current.saving || authorId in current.sourceLoadingAuthorIds || authorId in current.sourceLoadFailedAuthorIds) return
         val normalized = name.trim()
         if (normalized.isEmpty()) return
         _uiState.update { current ->
@@ -353,6 +425,8 @@ class AssetEditViewModel @Inject constructor(
 
     /** 自由输入加入来源：trim、去重；空串忽略 */
     fun addCustomSource(authorId: String, raw: String) {
+        val current = _uiState.value
+        if (current.saving || authorId in current.sourceLoadingAuthorIds || authorId in current.sourceLoadFailedAuthorIds) return
         val normalized = raw.trim()
         if (normalized.isEmpty()) return
         _uiState.update { current ->
@@ -372,6 +446,7 @@ class AssetEditViewModel @Inject constructor(
      * 保持用户空串输入不回弹原名（对齐上传页修复口径）。
      */
     fun onFileNameChange(newBaseName: String) {
+        if (_uiState.value.saving) return
         val changed = newBaseName.trim() != initialBaseName
         _uiState.update {
             it.copy(
@@ -402,6 +477,7 @@ class AssetEditViewModel @Inject constructor(
 
     /** 点选作品名/序号联想建议：回填基名并清空联想浮层 */
     fun pickFileNameSuggestion(suggestionBase: String) {
+        if (_uiState.value.saving) return
         nameSuggestJob?.cancel()
         val changed = suggestionBase.trim() != initialBaseName
         _uiState.update {
@@ -429,6 +505,19 @@ class AssetEditViewModel @Inject constructor(
                         targetDir = current.currentDirectory,
                         newName = current.effectiveFileName,
                     )
+                    // 文件名这一步已经在服务端提交成功：立即落成本地基线，后续作者/来源失败重试时
+                    // 不要再次对已完成的移动发请求（可能已落库的多步保存不能整体回滚）。
+                    val renamedFileName = current.effectiveFileName
+                    val renamedBaseName = current.currentBaseName.trim()
+                    initialBaseName = renamedBaseName
+                    _uiState.update {
+                        it.copy(
+                            assetTitle = renamedFileName,
+                            originalFileName = renamedFileName,
+                            currentBaseName = renamedBaseName,
+                            fileNameChanged = false,
+                        )
+                    }
                     // 联动重命名手机本地归档目录中的物理文件（尽力而为，不阻断主流程）
                     runCatching {
                         val archiveRoot = stagingRepository.archivePath.first()
@@ -445,22 +534,36 @@ class AssetEditViewModel @Inject constructor(
                         }
                     }
                 }
-                // 2. 作者全集整体 PUT 替换（待新建名随请求一并交服务端：规范身份命中已有
-                //    作者则复用，未命中新建——客户端只传名，不预建 id）
-                authorRepository.replaceAssetAuthors(
-                    assetId,
-                    current.authors.map { it.id },
-                    current.pendingNewAuthorNames,
-                )
-                // 3. 逐个更新脏来源
+                // 2. 仅当作者全集或待新建名单确实变化时才整体 PUT。文件名单独改动、或只改来源时
+                //    不写无关作者关联，避免无谓数据库/TXT 写入及失败后把已成功的文件操作报成失败。
+                if (
+                    (current.authorsChanged || current.pendingNewAuthorNames.isNotEmpty()) &&
+                    !current.authorAssociationCommitted
+                ) {
+                    authorRepository.replaceAssetAuthors(
+                        assetId,
+                        current.authors.map { it.id },
+                        current.pendingNewAuthorNames,
+                    )
+                    // 作者关联已提交：若后续某个来源 PUT 失败，重试时跳过此步骤，避免重复写。
+                    _uiState.update { it.copy(authorAssociationCommitted = true) }
+                }
+                // 3. 逐个更新脏来源；单项成功立即清脏，部分失败重试时只重试失败项。
                 current.dirtySourceAuthorIds.forEach { authorId ->
                     authorRepository.replaceAuthorSources(authorId, current.sourcesByAuthor[authorId].orEmpty())
+                    _uiState.update { state ->
+                        state.copy(dirtySourceAuthorIds = state.dirtySourceAuthorIds - authorId)
+                    }
                 }
-                // 4. 成功：待新建名已被服务端实体化（复用或新建），清空名单——本页返回后
-                //    详情/编辑页回读即见新作者为正常作者（有 id，来源可编辑）；
-                //    失败路径（下方 catch）不清空名单，可重按重试
+                // 4. 成功：待新建名已被服务端实体化（复用或新建），清空名单。
                 _uiState.update {
-                    it.copy(saving = false, saved = true, pendingNewAuthorNames = emptyList())
+                    it.copy(
+                        saving = false,
+                        saved = true,
+                        pendingNewAuthorNames = emptyList(),
+                        authorsChanged = false,
+                        authorAssociationCommitted = false,
+                    )
                 }
             } catch (e: MoveConflictException) {
                 _uiState.update { it.copy(saving = false, errorMessage = NAME_CONFLICT) }
