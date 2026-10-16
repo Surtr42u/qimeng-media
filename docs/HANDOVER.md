@@ -1,6 +1,6 @@
 # HANDOVER - 交接说明
 
-> 写给下一位接手的 AI。人类用户无编程基础，代码由 AI 生成。**最后更新：2026-10-15**：可靠性加固批次择优并入（来源 `codex/reliability-hardening-ui-2026-10` 分支审查，ADR-0038「跨端文件移动不覆盖既有目标」）——服务端 `filing.MoveFile` 拒绝既有目标（哨兵 `ErrMoveTargetExists`/`ErrMoveDidNotCreateTarget`）+ 回收站清理识别冲突不误删残留 + 跨卷复制 `O_EXCL` 独占；Android 归档同口径（同卷无覆盖改名优先、跨卷受控复制，文件名校验/短读比较/路径边界加固）＋编辑页多步保存一致性（来源基线 fail-closed、只重试失败步骤、保存中锁表单与离开确认、COS 作者过滤）；**审查发现并修复 `Files.getFileStore` 判卷在真机恒不可用（AOSP 恒抛 SecurityException）致每次归档静默退化为整文件复制的缺陷**；Web 确认弹窗成功才关失败可重试/离页保护/防重复提交/错误信息人类可读；**CI 新增 Windows 原生 filing 测试 job（七 job 口径）** + 同 PR 旧运行自动取消（master 运行不取消）。待办新增两条：真实双挂载点跨卷验收（见 SECURITY 矩阵）与 Room 真实 SQLite 迁移测试（§5）。此前 2026-10-13：作者管理族落地（ADR-0024 修订 5）——新增 `POST /authors`（按名新建，仅作者行）/ `PUT /authors/{authorId}`（改名，TXT 块原地重写 + 身份迁移〔关注/关联/上传条目随迁〕）/ `DELETE /authors/{authorId}`（删除，TXT 块 + 关联 + 行三清、文件保留）三端点，App 作者管理页行尾「⋮」菜单（改名/删除）+ 「新建作者」入口与 Web 行内 pill + 二次确认双端接线；**同批修复「选了来源后保存无效」事故**（`authoring.AliasesForAuthorID` 回写身份自洽不变量——显示名单别名含「 / 」被盲目拆分致块 id 漂移、来源写错块回读恒空；`CanonicalAuthorNames` 别名分隔扩为两个空白 +「 / 」）；用户手机端作者数据收敛（三空壳删除 + 双别名 hornyherring 收敛 + PC 对齐，详见 CHANGELOG 第五百三十三笔）。此前 2026-10-12：作者管理搜索大小写不敏感（App `applyAuthorRows` ignoreCase + Web AuthorsPage 双侧 lowercase，纯函数单测锁定；release APK 同签名原地装机）+ 旧项目别名空壳作者清理（migration 0017 入库——三重守卫〔白名单 6 id+origin='import'+零关联〕幂等可重跑，PC 库 2026-10-11 已应用）+ 作者 skrev 剔除 KassioppiaVA（PC 显示名/桌面镜像/片段三方收敛 + 手机端 txt 已同步修正；**手机内嵌库（本机模式）需经 App「作者 TXT 导入」重导收敛**，步骤已交付用户）；此前 2026-10-11：跨库浏览记录兜底重映射（ADR-0037：`POST /events/view` 增可选 `fileName`/`relPath` 文件身份，assetId 未命中本库时按文件名兜底重映射〔唯一命中，或经 relPath 精确等值消歧后唯一〕并入本库统计、202 响应 `outcome=remapped`；零命中/仍歧义维持「已删资产迟到事件」口径 `outcome=unmatched`；App 事件队列加身份列〔Room 2→3〕、同步完成如实提示「并入/未匹配」条数；**服务端需重部署才生效**）＋编辑页按名新建作者全链路落地（ADR-0024 修订 4：`PUT /assets/{id}/authors` 增可选 `newAuthorNames`——规范身份命中复用/未命中新建；保存自愈补行：关联在而 TXT 片段缺行保存即愈；编辑写入的作品行登记进上传条目，覆盖式导入 409/keep 不得静默冲掉；App 待新建胶囊+保存返回刷新详情、Web allowCreate、共享组件「回车新建」文案成真，批次作者新建留二期）＋本机同步通道接通 PC 启动脚本（`_server-common.cmd` 设 `QIMENG_LOCAL_SYNC_ROOT=%~dp0local-sync`，ADR-0030 通道启用、隔离实例实测通过）；此前 2026-10-06：桌面播放内核（libmpv，ADR-0036）随 feat/desktop-libmpv-kernel 并入 master——内核代码落地但触发入口未接（透明控制层闪退撤回、可见胶囊取消），**后续唯一执行入口=`desktop/PLUGIN_PLAN.md`**（含触发方式拍板、ffi.rs 两疑点 client.h 终验、交互对齐、已立项插件：mpv.conf 画质基线 + RTX Video HDR 配套）；同日坑 3 实测修复（远端页自定义命令须应用级 ACL 显式放行，permissions/mpv-commands.toml）+ 图表点击焦点框修复；2026-10-04：全仓重构优化批（第四百六十五笔：四端性能/卫生/手造轮子排查——SQLite synchronous(NORMAL)+扫描/导入事务化+库列表 N+1 合并+facets 并行+matcher 别名查表；Web 上传进度防抖+列表卡 memo+批量胶水收敛；Android 分组 remember 补齐+Compose 稳定性配置+僵尸清除；文档对齐含 GUIDE_API 两端点补记与 ADR-0019 编排层现状补记——零功能零 UI 变化，四端全量构建验证+四路对抗审查）；同日更早 App 词表维护与词表合并同步落地（ADR-0035 定稿：数据管理 hub 新增「词表维护」子页=本机词表直接编辑；备份页新增「词表合并同步」卡=两端并集增量合并取代 0034 覆盖式下发〔用户拍板「词表只增不删，合并是增量不出怪问题」〕；本机通道抽 LocalVocabularyChannel 共享；服务端/openapi/SDK 零改动）；前笔 2026-10-02 Web 全新设计语言「绮梦流光 · Aurora Glass」（ADR-0031）。历史批次见 `docs/CHANGELOG.md`。
+> 写给下一位接手的 AI。人类用户无编程基础，代码由 AI 生成。本文件维护项目的当前状态、技术架构、各端已交付能力与待办事项。历史变更与事故复盘细节请直接查阅 `docs/CHANGELOG.md`。
 
 ## 1. 项目一句话
 
@@ -9,9 +9,9 @@
 ## 2. 接手第一步
 
 1. `AI_README_FIRST.md`（协作强制规则）
-2. 本文件（现状与待办）
+2. 本文件（现状、技术架构与待办）
 3. `docs/PROJECT_PLAN.md`（里程碑勾选 = 进度唯一真相）；按任务查 `AGENTS.md` 路由表
-4. 需要历史细节时再翻 `docs/CHANGELOG.md`（更早见 `docs/history/CHANGELOG-ARCHIVE.md`；勿把历史笔当现状）
+4. 需要历史细节与变更记录时翻 `docs/CHANGELOG.md`（更早见 `docs/history/CHANGELOG-ARCHIVE.md`；勿把历史笔当现状）
 
 ## 3. 里程碑现状（截至 2026-09-22）
 
@@ -24,118 +24,90 @@
 | M2 Web 完整体验 | ✅ | 九页真数据 + PWA + 上传/整理 |
 | M3 算法与领域 | ✅ | 推荐/统计/SourceMatcher/作者/迁移 |
 | M4 Android 客户端 | ✅ | Compose 多模块全功能 |
-| M5 NAS 部署验收 | ✅ | **2026-09-22 用户确认真机 NAS 测试完成**；arm64 镜像移 M7+ 按需储备（实测部署形态 amd64），大库压测以日常使用覆盖不设专项 |
+| M5 NAS 部署验收 | ✅ | 真机 NAS 测试完成；arm64 镜像移 M7+ 按需储备，大库压测以日常使用覆盖 |
 | M6 单机形态 | ✅ | Termux 形态 A + App 内嵌形态 B + 旧项目退役 |
 
-## 4. 已交付能力（对照代码，勿再当缺口）
+## 4. 已交付能力与技术架构（对照代码，勿再当缺口）
 
-**Web**：
-- **设计语言「绮梦流光 · Aurora Glass」（ADR-0031，2026-10-02）**：暗色优先（无手动选择默认深色，不再跟随系统）液态玻璃——画布极光渐变 + backdrop-filter 材质 + 发丝描边顶缘高光；token 体系 v2（`web/src/tokens.css` 唯一色彩事实源，shadcn 变量反向桥接，`@immich/ui` 主题包退役）；样式层 `styles/glass.css` 按类名契约全量重写（组件 DOM/逻辑零改动）；backdrop-filter 不支持时 `@supports` 退化为不透明面板；明暗切换走 `document.startViewTransition` 交叉溶解（不支持的浏览器直切）；动效零 JS 库（CSS/原生 API）。
-- 上传工作台：选完文件即传 + 超限入队前拦截 + 201 后自动挂靠；批次库/作者/来源默认；通用来源词表与作者总表镜像两卡在本页（设置页留指引）。
-- 上传队列单例化（`lib/upload-queue-store.ts`）：切路由/组件卸载不取消整队，abort 仅显式「全部取消」（401 逐条失败既有语义不变）；页面刷新仍丢（IndexedDB 持久化待立项）。
-- 断点续传分片（ADR-0028，`lib/upload-chunked.ts`）：≥16MB 走 8MB 分片会话流——GET 探测权威 offset 续传、409 重同步、404 重建〔≤2 次〕、网络/5xx 指数退避〔≤3 次，超限终态失败带文案〕；<16MB 直传不变。
-- 分片取消 abort 在途请求+best-effort DELETE 会话；create 透传 dir 拖拽目录同享续传；complete 后与直传同一后处理。
-- 上传传输层 XHR 直连不走生成 SDK：生成 client 无 abort 支持，全局 403 拦截器会误伤 UPLOAD_DISABLED 业务响应（记档见该文件头）。
-- 跨端收藏/点赞秒级感知（ADR-0029）：SseBridge 消费 favorite.changed/like.changed——favorite 失效 ASSETS 根键、like 失效 ASSETS+RANKINGS+RECOMMENDATIONS 三根；SSE 重连成功按 library.changed 同一失效映射失效根查询，补偿断线窗口。
-- 图片查看器、ArtPlayer、批次导航、confirm 弹窗、回收站、备份导入导出、库管理/作者 TXT 导入；维护页客户端日志卡默认折叠+指标网格+「本机同步」卡（ADR-0030）。**「库文件快照备份」卡已移除**（2026-10-04 用户拍板「用不到」）——服务端 /backups 端点与自动备份调度原样运行，仅 Web 管理面撤下（详见 GUIDE_API /backups 行注记）。
-- 词表维护子页（2026-10-04，App ADR-0035 的 web 移植，用户拍板「功能和 ui 布局和 app 的一致」）：数据管理 hub「词表维护」入口卡 → `/app/maintenance/files/vocabulary-edit`；停用词卡 + 自定义出处组卡（组行互斥展开 → 变体写法/角色检索表小节 → 角色展开别名小节）+ 单输入框弹窗（rune 字数回显封顶）+ 整体保存（PUT 恒显式 groups+stopWords）+ 规则说明；编辑对象=**当前连接服务器**（标准鉴权，非 App 本机通道）；「保存后静默回读」=mutation 同步写缓存+失效重拉；离开防线 useBlocker（SPA 内一切导航）+ beforeunload（关标签页），文案逐字对齐 App；编辑状态机=`lib/vocabulary-edit.ts` 纯函数（14 例单测）；限额常量 VOCABULARY_LIMITS 与 openapi.yaml 双同步。**与「来源词表」子页是两张不同的表**（本页=匹配引擎检索词层；来源词表=/authors/source-vocabulary 上传挂靠建议词）。
-- 性能与卫生（2026-10-04 第四百六十五笔）：上传进度 patchProgress 守卫（percent 不变跳过写，onprogress 风暴不再重渲染整个工作台）；MinePage 历史卡 memo 对齐 MediaCard 口径；批量执行胶水四处收敛 lib/batch-run.ts；LoadingHint 变体化收敛 9 处「加载中…」；package.json 六个构建期包归 devDependencies（lock 同步）。LoginGate 的 eslint-disable 注释**是必需的**（oxlint 已启用 exhaustive-deps，勿当死注释删）。
-- **交互可靠性加固（2026-10-15）**：ConfirmDialog 支持 busy（成功才关闭、失败保留上下文可重试、执行中禁重复提交）；备份导入期间保持确认状态；资产编辑页多步骤保存只重试失败步骤+保存中禁用表单+SPA 路由拦截与 beforeunload 未保存提示+来源基线未加载/失败禁止编辑；回收站恢复/彻底删除/清空的确认失败可重试、执行期禁冲突操作；未知 API 错误统一人类可读兜底（不再 `[object Object]`）。新增交互目前无自动化测试（仓库无 DOM 测试基建，正确性靠源码核对；已知残留：LibraryRegistryPage/SettingsPage 6 处旧式 `String(err)` 仍可能显示 `[object Object]`，见 §5 记档）。
+### Web 端（React 19 + TypeScript + Vite + Tailwind CSS + PWA）
+- **设计语言「绮梦流光 · Aurora Glass」（ADR-0031）**：暗色优先液态玻璃风格（极光渐变画布 + backdrop-filter 材质 + 发丝描边高光）。`tokens.css` 为色彩单源，`styles/glass.css` 承接类名契约；明暗切换走 View Transitions API 原生过渡。
+- **上传工作台与断点续传（ADR-0028）**：
+  - 直传与分片自动分流（≥16MB 走 8MB 分片 tus 会话流，支持 offset 探测续传；<16MB 直传）。
+  - 支持拖拽目录递归上传（保持库内相对路径映射），选完即传与超限入队前拦截。
+  - 上传队列单例化管理（`lib/upload-queue-store.ts`），未终态条目持久化至 IndexedDB，刷新页面可恢复条目信息。
+- **媒体浏览与播放**：图片查看器、ArtPlayer 播放器（直链 Range 流式播放）、相册与网格布局（按日分组）。
+- **实时事件感知（ADR-0029）**：`SseBridge` 长连监听 `favorite.changed` / `like.changed`，秒级失效 TanStack Query 根缓存，SSE 重连自动对齐数据状态。
+- **数据管理与维护**：通用来源词表建议、作者 TXT 总表镜像与导入/导出、回收站管理（还原/彻底删除）、数据管理 Hub 词表维护（停用词与出处检索组直接编辑）。
+- **交互防线与可靠性**：`ConfirmDialog` 支持 busy 状态（防重复提交、失败可重试）、SPA 路由拦截与 `beforeunload` 未保存离开保护、未知 API 错误统一人类可读兜底。
 
-**Android**：
-- 浏览/播放/上传/离线队列/缓存/备份/数据管理/本机模式全功能；后台冻结自愈（回前台探测 /healthz 无响应自动重拉 + 残留子进程 pid 回收）。
-- 上传=唯一「系统文件」SAF 入口（onFilesSelected 预览：逐项编辑落库基名+扩展名锁定〔UploadNaming 单源，对齐 Web upload-naming.ts〕+ 移除，「开始上传」入队成功清空）+ 系统分享 submitUris 选完即传（不编辑）；批次默认（库/作者/来源）持久化、入队快照继承；归档文件夹一键上传（扫描归档根按「文件夹名=库名」自动匹配〔sanitize 与 ADR-0030 同规范〕、递归子目录映射、条目级库目标入队、alreadyArchived 跳过、防重门禁+超限拦截）。
-- 断点续传接入（ADR-0028）：≥16MB 分片会话流，WorkManager 重试先 GET 探测权威 offset、409 重同步、404 自动重建、取消 best-effort DELETE；complete 后挂靠/归档管线零改动复用；<16MB 直传。
-- 预取 revision 整轮跳过（ADR-0026）：轮首比对 GET /library/revision，未变置 Skipped；记录捆绑服务器标识防撞号，SKIP 前随机样本 50 条本地探测、缺失≥20% 降级全量，清空任一缓存池强制下轮补齐；缩略图预取磁盘探测短路+分池按当前连接 serverUrl 路由（命中免请求免解码，轮终 logcat QimengCache 记档）。
-- SSE 消费（ADR-0029）：okhttp-sse 长连 /api/v1/events，登录即连/断线指数退避（3s→30s 封顶）/登出即断/后台不断开；事件汇入 DataFreshnessSignal，收藏/点赞返回刷新跳过门收敛为「指纹+SSE 信号+TTL」三层，5min TTL 为断线/离线兜底。
-- 词表合并同步（ADR-0035 定稿，取代 ADR-0034 覆盖式下发）：备份页「词表合并同步」卡一键触发（用户拍板入口迁入备份页与「同步浏览数据」并排）——远端 GET + 本机 GET → VocabularyMerger 并集合并（core:data 纯函数：折叠键=trim+忽略大小写、同键组并入〔规范名取先出现方、变体/角色/别名并集折叠去重〕、停用词并集、空表回 null）→ 合并结果显式 PUT 回两端收敛同一并集；词表只增不删故合并无损，无方向选择、无两段式确认防线；任一端 PUT 失败两端短暂不一致，合并幂等重跑即收敛。
-- 词表维护（ADR-0035）：数据管理 hub「词表维护」子页，本机内嵌库词表直接编辑——组（改名/移除、变体增删、角色增删/改名、别名增删）+ 停用词增删，内存编辑 + 整体保存（PUT 恒显式 groups+stopWords）+ 保存后静默回读抹平服务端规范化差异；无门禁（不涉远端）；输入按协议容量投影封顶（VocabularyLimits，与 openapi.yaml 双同步）；输入面统一 QimengCapsuleTextField（用户反馈「添加框太复古」定稿）；有未保存修改时返回走放弃确认。
-- 本机词表通道共享件（ADR-0035）：LocalVocabularyChannel（core:data/embedded）单源收口「拉起内嵌服务端→端口就绪→dev-login→接线→用完停回」，词表同步/维护两仓库共用；@LocalDirectClient 无拦截器 OkHttp + dev-login（密钥内存槽）与全局 NAS 会话隔离（401 登出陷阱结构性排除）不变。
-- 性能与卫生（2026-10-04 第四百六十五笔）：五列表页分组 O(n) 计算 remember 全补齐（收藏/历史/作者合集/搜索对齐相册页修复D-1 口径）；HomeScreen 三页 sections remember；**Compose 稳定性配置**（android/compose_compiler_config.conf 33 类逐类核验 + build-logic stabilityConfigurationFiles——注意必须用复数属性，单数在 Kotlin 2.4.20 已废弃且按错误拦截；新增类入 conf 前必须核验全 val 深不可变，宁可少列不可错列）；2026-09-29 相册选择器退役漏删的 LocalMediaRepository 族与 QimengLoadingState 已清除；LifecycleEventEffect 替换 ×4（双事件+onDispose 必达的 DetailScreen/VideoPlayerState 两处**保留** DisposableEffect，语义优先）；AUTHOR_SUGGEST_DEBOUNCE_MS 单源 core:model。分页状态机六 VM 平行/pinch 列数/dispatchPill 重复=记档维持（复议过，收益为负）。
-- **归档与编辑页可靠性加固（2026-10-15，ADR-0038 客户端侧）**：归档（归档根/uploaded/镜像重命名）统一无覆盖语义——目标同名异容加序号、同内容保留既有目标只删重复源、源路径=目标路径幂等成功；同卷优先无覆盖改名（`renameTo` 前置 exists 检查），跨卷走唯一 `.part` 临时名+无覆盖发布的受控复制；**禁用 `Files.getFileStore` 判卷**（真机恒抛 SecurityException 会静默退化为整文件复制，JVM 不可见）且不把跨卷交给 `Files.move`（libcore 内部 copy+删源绕开受控路径）；对外部 displayName 做文件名安全校验、归档目录拒绝符号链接别名/根外路径；短读/零读流比较修复。编辑页：来源基线未就绪/读取失败 fail-closed（禁用整体替换防空数据误覆盖）、多步保存按成功步骤记账重试只补失败项、保存中锁表单+顶栏/系统返回确认、COS 派生作者过滤。测试：InboxFileStoreTest 26 例（含「首次归档走改名快路径不退化为整文件复制」mtime 断言）、AssetEditViewModelTest 29 例。
+### Android 端（Kotlin + Jetpack Compose + Hilt + Media3 + Room）
+- **架构与导航体系（ADR-0014）**：纯 Compose 重建，遵循单向数据流与 UI 解耦（ADR-0008）；`QimengNavHost` 采用「常驻层（懒驻留 + alpha/semantics 隔离）+ 跳板路由」双载体架构，消除 Tab 切换白屏与闪烁。
+- **悬浮玻璃坞底栏（FloatingTabDock）**：独立悬浮胶囊底栏，支持单颗指示胶囊弹性滑动与透镜折射材质；容器层（`Column` / `Row` / `DockBody`）全链路挂载 `consumeTaps()` 空白隔离，杜绝胶囊四周及两端槽内 18dp 呼吸空隙误触穿透至底层媒体卡片。
+- **搜索与筛选系统**：
+  - 完整三态（入口/建议/结果），支持补全防抖、历史记录与深链直达。
+  - 搜索结果态顶部固定呈现两级选项卡（媒体类型：`综合/视频/动图/图片`；分区：`全部/常规/COS`），遵循 `DOMAIN_RULES.md` §6 协议参数映射；选项切换即时回顶网格，换词重置为默认档位。
+- **上传与后台传输**：SAF 系统文件与系统分享入口，支持批量默认属性持久化；接线 WorkManager 队列，≥16MB 自动走断点续传分片管线；支持归档文件夹一键匹配库名上传。
+- **缓存与预取机制**：`GET /library/revision` 变更探测跳过（ADR-0026），双池本地缩略图磁盘缓存短路；Room 本地浏览事件离线队列（跨库兜底重映射 ADR-0037）与定时同步。
+- **单机模式（M6，ADR-0015）**：支持内嵌 Go 服务端自愈拉起（`EmbeddedServerService`），本地直连 `127.0.0.1:18430`，支持本地词表直接维护与两端词表增量合并（ADR-0035）。
+- **文件归档与编辑安全（ADR-0038）**：归档统一无覆盖语义（同卷优先 `renameTo` 改名快路径，跨卷受控复制至唯一 `.part` 临时文件）；禁用 AOSP 抛异常的 `getFileStore` 平台探针；编辑页来源基线未就绪 fail-closed，多步保存按成功步骤记账重试。
 
-**服务端**：
-- 扫描（含库根自动重挂 ADR-0025：库根改名/移动后按资产 rel_path+字节指纹唯一命中自动改挂并广播 library.changed）、缩略图、推荐/统计、回收站、热备快照、迁移导入导出、SSE。
-- 性能基建（2026-10-04 第四百六十五笔）：DSN `synchronous(NORMAL)`（WAL 官方推荐组合，写吞吐主升点；断电丢最近若干已提交事务不损库，取舍注释在 store.go）；扫描富化与备份导入段级事务化（单资产/单段原子，scanner_test 已接线覆盖事务分支）；GET /libraries 与指标刷新 N+1 已合并单查询（CountAllLibrariesMedia）；facets 六聚合 errgroup 并行；sourcematcher 别名精确匹配 O(1) 查表；UNIQUE/FK 判定走 sqlite 错误码（文本匹配已退役，主键 1555 边界注释记档）；缩略图 detachedGroup 手写单飞**保留**（其测试直接观测内部回收时序=CI -race flake 的观测手段，换 singleflight 需重写该观测，论证见 CHANGELOG 本笔）。
-- 库内容修订号（ADR-0026）：GET /library/revision 全局单计数器持久化，资产集合变更单调 +1；物删/清空/清扫/导入四条不发事件路径显式 bump。
-- 签名直链 exp 窗口对齐（ADR-0027）：exp=下一窗口上界+TTL，同窗 URL 逐字节恒定（HTTP 缓存/ETag 可命中）；/media/orig 补缓存头；有效期恒 (6h,12h]；吊销=窗口级+media-secret 轮换总闸；URL 格式未变三端零适配。
-- 断点续传上传（ADR-0028）：POST /uploads 五操作（创建/探测/追加分片/complete/放弃）tus 极简子集；会话服务端持有（uploadsess 包，无活动 24h 过期、重启即失效）；409 回权威 offset；单片 32MB；complete 复跑直传四道终检与同一 ingest 管线；同名自动重命名永不 409；直传保留，双端按 size 阈值分流。
-- SSE 补 favorite.changed/like.changed（ADR-0029）：载荷 `{"assetId"}`，失败零发布、幂等 no-op 照发，**不 bump 修订号**；运行时事件面不入 openapi。
-- 跨库浏览记录兜底重映射（ADR-0037，2026-10-11，第五百二十六笔）：`POST /events/view` 增可选 `fileName`/`relPath` 文件身份；assetId 未命中本库时按文件名匹配（唯一命中，或经 relPath 精确等值消歧后唯一）→ 事件记入该资产、正常物化计统计（跨库合并），202 响应 `EventsViewAccepted outcome=remapped`；零命中/仍歧义/未携带 → 维持「已删资产迟到事件」口径（事件入库、统计跳过、`outcome=unmatched`）；歧义不猜、宁少勿错（与 DOMAIN_RULES §10 导入通道「同名多命中取最早」刻意不同）；会话去重/幂等键口径不变（去重键=重映射后目标资产）；不加索引、不加 migration。
-- 扫描变更失效缩略图（重探测 size/mtime 变化重入库即删全部档位缩略图，全量与 watch 增量两路径同联动）+ EXIF 方向显式处理（手写解析 JPEG Orientation tag〔零新依赖〕+ ffmpeg transpose 映射表缩放前应用，恒带 -noautorotate；缓存键 v2→v3）+ 跨卷移动失败当场清理半截文件（回收站三调用点兜底，疑似完整宁留勿删）。
-- 三项硬化：备份快照 VACUUM INTO 写完即 quick_check 校验（坏快照删除并报错）；compose 容器日志 json-file 10MB×3 轮转；分片上传 Seal 后落位前 size 复核。
-- 本机文件夹自动同步通道（ADR-0030）：QIMENG_LOCAL_SYNC_ROOT 轮询监测，子文件夹名=库名自动匹配入库（四道校验+直传同款管线），成功移走/失败保留重试；根级 TXT 恒 keep 导入后移 `.synced/`（**同名只留最新**，2026-10-11 用户定规、ADR-0030 修订1）；/local-sync/status+trigger 两端点；根重叠/隐藏/符号链接安全规则。
-- **跨端文件移动不覆盖既有目标（ADR-0038，2026-10-15）**：`filing.MoveFile` 预检拒绝既有目标（绝不静默替换用户文件）+ 跨卷复制 `O_EXCL` 独占创建 + 非跨卷 rename 失败保留底层错误（`errors.Is` 可判）；回收站三个调用点的失败残留清理在冲突哨兵命中时跳过（不误删并发外部写入的完整文件）；配合 Windows 原生 filing 测试 job。调用方行为变化均失败安全：本机同步「落位后移回」在源被重投放时改为保留库位件+告警、下轮重新观测；归档链路（ADR-0030 修订1 先删后搬）经合并树全量测试验证不受影响。
-- 备份导出/导入含 TXT 作者片段（keep 合并，2026-10-01）：txtFragments 段导出逐字全量，导入无同名导入/相同跳过/不同并回上传条目替换，旧备份兼容；**App 端须升级 APK 才携带该段（App 备份经 SDK 模型往返，旧版静默丢段；Web 裸字节透传无碍）**。
+### 服务端（Go 单体 + Chi + SQLite + sqlc）
+- **媒体核心服务**：库注册与并发扫描（全量/fsnotify 增量/轮询），库根变动自动重挂（ADR-0025）；三档缩略图懒生成（支持 EXIF Orientation 矫正与失效联动）；带签名媒体直链（Range 分片与窗口对齐缓存 ADR-0027）；回收站安全隔离与定期清扫。
+- **领域与算法引擎（`DOMAIN_RULES.md` 唯一权威）**：
+  - 推荐算法（十维协同打分，纯函数无 IO，单元测试锁定行为）。
+  - 统计与热度聚合（事件物化表与趋势分桶）。
+  - 出处匹配引擎（`SourceMatcher` 别名快速查表与角色反查）。
+- **传输与同步通道**：
+  - 流式直传 + tus 极简子集断点续传（POST /uploads，分片 Seal 校验，24h 无活动清扫）。
+  - 本机文件夹自动同步通道（ADR-0030）：`QIMENG_LOCAL_SYNC_ROOT` 轮询监测，子文件夹名自动匹配入库，根级 TXT 片段导入归档（同名只留最新）。
+- **文件操作安全（ADR-0038）**：`filing.MoveFile` 预检全面拒绝既有目标，跨卷复制以 `O_EXCL` 独占创建，回收站清理识别冲突不误删非本次目标文件。
+- **事件面与多端联动**：SSE 广播 `favorite.changed` / `like.changed`（ADR-0029）；跨库浏览事件通过文件名与相对路径兜底重映射（ADR-0037）。
+- **数据库与性能**：SQLite WAL 模式 + `synchronous=NORMAL`；扫描入库段级事务化；多维度聚合并行计算；DSN 连接池与查询计划锁保护。
 
-**资产编辑与作者体系（ADR-0023/0024，跨端+服务端）**：
-- 上传回归纯上传（不携带作者/来源参数）；挂靠入口=资产编辑页（Web/Android 均有，桌面壳零改动覆盖）；编辑直接写进 TXT 片段本体（唯一真相、统一重建不丢不重、同事务失败安全）。
-- 通用来源词表 /authors/source-vocabulary：来源建议唯一数据源，服务端手动维护（Web 维护卡）；出厂自动预填（≥2 作者共用平台名，排除个人地址/链接形态）；来源=获取渠道，仅记录永不参与匹配。
-- 作者联想 /authors/suggest；作者空输入显示全部常规作者（GET /authors 过滤 COS）；片段导出下载 /authors/import-txt/export；本地总表镜像 /authors/mirror（显式配置唯一例外写点、单向尽力而为）；同文件名重导入缺省 409 二选一（keep 并回/remove 明示）。
-- Web 拖拽目录递归上传（相对路径映射库内子目录）；作品名序号联想 GET /assets/name-suggestions（多角色主体聚类轮转+多风格序号识别+无序号角色智能推荐+cap 8，Android 上传页与资产编辑页已全量接线防抖调用）；上传归档文件夹（ADR-0024 修订3）：源文件移 `<归档根>/<库名>/`（sanitize、同名异容加序号绝不覆盖；相册来源永不移动；未设归档根仅收件箱维持 uploaded/）；「上传收件箱与归档」页=归档单目标页（入口在数据管理页）。
-- 列表加载与刷新：触底哨兵加载结束重评估、推荐流 fresh==0 换 seed 续拉≤3 轮、翻页失败 1s/3s 退避重试、下拉刷新代际作废旧响应+预取避让（15s 自愈）；Web 端机制不同经核无同类问题。
-- **按名新建作者（2026-10-11，ADR-0024 修订 4）**：编辑页/关联端点可直接新建作者（`newAuthorNames`：规范身份命中已有作者则复用、未命中才新建，新建块排版同空三行规范；非法名/超 20 项 400）；保存对作者全集**逐位幂等补写作品行**（「关联在、文本缺行」漂移保存即愈）；编辑写入的作品行**登记进上传条目**（手动重导缺行 409 二选一、本机同步恒 keep 并回，不得静默冲掉）。两端接线：App 待新建「新建：\<name\> ✕」胶囊+保存返回详情页即时刷新；Web `AuthorSuggestField.allowCreate` + 待新建清单；共享组件占位「回车新建」为真（批次作者字段显式传旧文案、行为不变）。**批次作者新建留二期**（上传自动挂靠 sources append 依赖作者 id，方案待设计）。
-- **作者管理（2026-10-13，ADR-0024 修订 5）**：作者管理页（App/Web）行级三操作——新建（POST /authors：仅作者行不关联文件，规范身份命中复用/未命中新建；不写片段）、改名（PUT /authors/{id}：全部片段块编号行原地重写 + 身份迁移〔新 id 时 followed/created_at/origin 随迁、asset_authors 改挂、上传条目改指〕；同身份幂等；撞既有身份 409 不合并）、删除（DELETE /authors/{id}：TXT 块+关联+行三清、上传条目同清、**文件保留**；不触发统一重建）。仅常规作者（COS 400 由目录扫描管理）。**回写身份自洽不变量**：程序化写块别名列表由 `authoring.AliasesForAuthorID` 唯一重建，块回读 id 必须 == 目标作者行 id（`ReplaceAuthorSources`/`appendAssetWorkLines`/`Apply` 全走；推不出转 400 提示先改名）——修复「选了来源后保存无效」事故。App 入口：搜索行「新建作者」胶囊 + 行尾「⋮」菜单；Web：排序行「新建作者」+ 行内 pill + ConfirmDialog danger。
-- 已退役（防再提案）：暂存区/收件箱导入/相册选择器/浏览文件入口已随 2026-09-29 直传化退役，上传挂靠参数已随 ADR-0024 退役；现行=选完即传+批次默认快照+成功后自动挂靠（挂靠失败由资产编辑页补挂）。
+### 资产编辑与作者体系（跨端 + 服务端，ADR-0023 / 0024）
+- **唯一真相源**：TXT 片段本体为作者数据唯一权威，编辑直接更新片段，统一重建不丢不重；保存作品行登记进上传条目，自愈补齐缺失行。
+- **作者管理族（ADR-0024 修订 5）**：`POST /authors` 新建、`PUT /authors/{id}` 原地改名与关联随迁、`DELETE /authors/{id}` 级联清理（保留媒体文件）；回写身份自洽保障（`AliasesForAuthorID` 单源重建编号行），消除别名解析漂移。
+- **通用来源词表**：`/authors/source-vocabulary` 服务端维护，仅作为获取渠道建议，不参与出处匹配。
+- **智能联想与建议**：出处建议（`/authors/suggest`）、作品名序号联想（`/assets/name-suggestions`）。
 
 ## 5. 当前待办（只列真缺口）
 
-**待办（按优先级，触发条件型）**——已落地注记：2026-10-01 批（CHANGELOG 四百一十三~四百二十三笔，CI 历史首次全绿）与本机同步通道（ADR-0030，口述立项五条需求逐条兑现，验收对照见 ADR-0030 背景节）能力均已入 §4：
-
-1. **NAS 服务端重新构建部署（用户节点）**：2026-10-01 服务端新功能（断点续传端点/SSE 事件/URL 窗口对齐/EXIF/quick_check/日志轮转）需重部署才生效；连旧服务端时 App 仅一处不降级——≥16MB 上传走分片通道会失败（旧端无 /uploads）。手机 App 与内嵌服务端已是新版（2026-10-01 真机装机，真机）。**续（2026-10-11 第五百二十六笔）**：跨库浏览记录兜底重映射（ADR-0037）同样**需重部署才生效**——部署前新 App 同步的跨库事件仍按旧口径入库（事件入库、统计不并入）；部署后存量 273 条孤儿事件不会自动回溯并入统计（无 backfill，如需回填另立项）。建议顺序=先重部署服务端再装新 APK。
-2. ~~Web 上传队列刷新持久化（IndexedDB）~~**已落地（2026-10-03，第四百三十八笔）**：未终态条目（排队/在传）持久化 IndexedDB（原生 API 零新依赖，`qimeng_upload_queue` 库），刷新后队列页恢复为「需重新选择文件」态（File 句柄不跨页面存活=平台限制，不伪造续传假象）；重选同名同大小文件后——分片条目按持久化会话 id 走既有探测→PATCH 续传（服务端 offset 唯一真相源，会话已失效自动重建从 0），直传条目从头重传；终态/移除/清空完成同步删记录不留孤儿。已知限制（对抗审查记档）：同名同大小异内容无法识别（无内容指纹，分片续传可能拼接异源字节，属选错文件既有风险面）；多标签页口径同既有单例队列（他页在传条目会在本页恢复为待重选）；IndexedDB 未来升版本时旧标签页需关闭/刷新后升级才能进行。
-3. 会话远程吊销端点 + 401 专用错误码（SECURITY 规划项）——触发：设备退役或远程隧道暴露常态化。
-4. 缩略图两管道分派（列表首帧快显/代表帧预生成）与孤儿全量对账（DOMAIN_RULES §11 规划项）——触发：十万级库或新批次入库首访明显变慢。
-5. Android SSE 静默黑洞 idle 看门狗（无 TCP 错误的网络切换检测）——触发：实际观察到断网后长时间不自愈；当前 5min TTL 兜底。
-6. **GBK/GB18030 TXT 支持**（本机同步通道现仅 UTF-8〔剥 BOM〕，解码需新依赖 x/text 再决策）——触发：用户实际遇到非 UTF-8 TXT。
-7. **本机同步 fsnotify 秒级响应 / sysmon 指标化 / importTxt 编排 ADR-0019 下沉随迁（runner 随迁 + `.synced` 跨包双常量收敛）**——触发：30s 轮询延迟或指标需求实际出现。
-8. **来源/词表写入端 UTF-8 有效性门禁**（非法字节经 json 解码转 U+FFFD 照单入库，乱码词只能事后人工清理；正常 Web/App 客户端不受影响）——触发：实际出现乱码词条。
-
-**记档级（不立项，防重复怀疑）**：uploadsess 无独立单测（httpapi 集成已覆盖）；ListThumbnailWarmup 每轮 O(N) 全表空扫（十万级前无感）；HEIC 内嵌 EXIF 按方向 1 处理；Web 事件账本（IndexedDB）无行数上限；待扫标记可能指向已删库永不移除；旧备份包重导入会重新落 migration 0017 清理的 6 行别名空壳作者（重跑 0017 即清，幂等）；
-activePool 冷启动装配竞态（读 miss 重下，无害）；桌面壳无自动更新器（单用户自用，接受）；字幕域无地图条目；/media/orig 的 If-Modified-Since 用库行 mtime（ADR-0004 已知面）。**2026-10-04 重构批追加记档**：browse.sql 按 viewCount/playCount 排序仍是每行相关子查询+CASE 重复求值（预分组派生表改造需按 ADR-0011 纪律补 EXPLAIN 计划锁，收益=大库三排序键，另批）；Android 26 处硬编码中文文案维持现状（单语应用无 l10n 规划，「文案全 strings.xml」并非本项目口径）；旧备份导入端点无集成测试（段级事务路径随批经对抗审查人工核行，与旧版逐段错误语义一致）；windows 下 sqlc 生成物行尾为 LF（.gitattributes eol=lf 已锁，本地工作区 CRLF 伪 diff 勿惊慌）。
-**browse.sql/facets.sql 手抄同型面（2026-10-02 清点记档）**：sqlc v1.31.1 SQLite 解析器限制（browse.sql 文件头 4 条规则：宏裸形态/参数禁作 WHEN 主语/WHERE 禁引 CTE 别名/ORDER BY 禁宏）迫使同型谓词手抄——① browse.sql 的 ListAssetsFilteredDesc/Asc/CountAssetsFiltered 三联体（同 WHERE 收敛家族三份手抄，排序方向烘焙成两个变体）；② facets.sql 六聚合查询（Partition/Source/Author/Character/CosWork/MediaType）各持一份「排除自身维度+应用其余维度」谓词家族，favorite/history 子集 EXISTS 探测在文件内出现 12 处。退役条件：sqlc 升级修复解析限制或换查询形态（history.sql/recommend.sql 的 CTE 预聚合先例，见第四百三十三笔），届时按同款主流化改写收敛；改前必跑 EXPLAIN 计划锁（ADR-0011 修订第 5/6 条），子集探测已由 history_plan_test.go 锁定双等值前缀。
-
-**CI 教训**：`make sdk` 已加生成前清理 + Kotlin 生成器锁版本，锁校验失败 CI 会打印 diff；golangci-lint 不含 gofmt，新 Go 文件须 `gofmt -w`；跨模块签名变更须 grep 全部构造点（CI 首跑抓过 `feature:detail` 测试漏适配）。
-
-**用户节点（非 AI）**：① 真机 NAS buildx arm64+压测已随 2026-09-22 收官（arm64 移 M7+、压测不设专项）；② 本机硬件不稳（WHEA 断电，2026-09-16 记档）——构建/压测前建议排 BIOS/电源；③ 建议换管理密码（真实密码曾明文入历史文档，唯一止血=轮换；见 `docs/history/REVIEW-20260922.md` §2.1）。
-
-**建议立项（按优先级）**：① 安全默认值——日常/生产关闭 `QIMENG_AUTH_DEV_MODE`、换管理密码并勿写入文档（内嵌共享密钥校验已实现=dev-login 门禁三端，见 SECURITY「开发模式」节）；② 磁盘生命周期已实现（trash.retention_days/sweep_interval+到期清扫+缩略图四入口联动），全量对账（扫描器外部删除产生的孤儿）仍为规划项。
-③ 工程卫生已完成（bat 共用逻辑收敛根 `_server-common.cmd`；生产样例唯一权威 = `deploy/docker-compose.yml`）；④ ~~能力窄缺口——备份调度参数编辑 UI、Web 缓存档位选择 UI~~**已落地（2026-10-03，第四百四十笔）**：备份调度三键走 PUT /api/v1/backups/schedule 热生效+持久化（kv_settings 键 backup_schedule，优先级 kv > env > yaml > 默认；interval 变更重置周期、enabled=false 只停定时面），维护页快照卡直接编辑；Web 缩略图档位偏好（auto/sm/lg）=设置页选择项，localStorage 持久化，接到既有 size 查询参数单点（size 不参与签名、是缓存键组成部分，切换无混存，零协议改动）。
-
-**明确不做（禁止再提案）**：见 `docs/CAPABILITY_MAP.md`「明确不做」：公网裸端口、实时转码、AI 识别、iOS、跨端 UI 框架、多租户 SaaS、协议缺口 #21/#29~#34。
-
-**已知问题（用户拍板暂不修）**：
-
-- sourcematcher 别名 `"SC"` 使 `Screenshot_*.jpg` 误归「星际争霸」——真机部署后若误伤明显再议（候选：删该别名 + 连动测试/`DOMAIN_RULES §4`）
-- `:core:data` `DataStoreStagingRepositoryTest` 8 用例 Windows 偶发失败（DataStore `.tmp` 改名竞态，环境性，经基线比对证实为既有失败）——需修测试写法或统一 CI 跑 Linux
+1. **NAS 服务端重新构建部署（用户节点）**：2026-10 批次服务端新特性（断点续传端点、SSE 事件、跨库重映射 ADR-0037、移动安全 ADR-0038）需重新部署 NAS 容器方可生效。
+2. **会话远程吊销端点 + 401 专用错误码**：SECURITY 规划项，待设备退役或公网隧道暴露常态化时触发。
+3. **缩略图双管道分派与孤儿全量对账**：DOMAIN_RULES §11 规划项，待十万级大库性能需求触发。
+4. **Android SSE 静默黑洞看门狗**：网络无感断连自愈检测，当前依赖 5min TTL 兜底。
+5. **GBK/GB18030 TXT 编码支持**：本机同步通道当前仅支持 UTF-8（剥 BOM），待用户实际遇到非 UTF-8 TXT 时触发。
+6. **本机同步秒级响应与指标化**：当前为 30s 轮询，待延迟敏感需求出现时引入 fsnotify。
+7. **来源与词表写入 UTF-8 有效性门禁**：防非法字节入库，待实际出现乱码词条时强化。
 
 ## 6. 线上/本地使用入口
 
 | 形态 | 入口 |
 |---|---|
-| PC 日常 | 双击 `启动服务端.bat`（8420，数据 `qimeng-data/`，**含 DEV 免密——生产禁用**） |
+| PC 日常服务端 | 双击 `启动服务端.bat`（8420 端口，数据位于 `qimeng-data/`） |
 | 手机连 NAS | `http://<PC局域网IP>:8420` |
-| 手机本机（M6） | `127.0.0.1:18430`（Termux 形态 A 或 App 内嵌形态 B） |
+| 手机单机模式（M6） | `127.0.0.1:18430`（App 内嵌服务端或 Termux） |
 | 桌面壳 | `%APPDATA%\media.qimeng.desktop\server.json` |
-| 本机同步（PC，ADR-0030） | 启动脚本已启用：把文件放进仓库根 `local-sync/` 下的 `<库名>/` 子文件夹，30s 内自动入库（源文件移走、失败原地重试）；根级 `.txt`=作者片段导入后移入 `.synced/`（同名只留最新）；状态/手动触发在 Web 维护页「本机同步」卡 |
+| 本机同步（ADR-0030） | 把文件放进仓库根 `local-sync/<库名>/` 自动入库；根级 `.txt` 自动导入后归档至 `.synced/` |
 
 ## 7. 用户约定（长期有效）
 
-1. 项目日常阶段本地可用 dev 免密；**实机/生产禁止** `auth_dev_mode`（见 `SECURITY.md`）
-2. 不要单独拉前端：统一访问 8420（后端托管 `web/dist`）；改前端先 `npm --prefix web run build`
-3. UI 调试测试库：样例相册目录（见历史 CHANGELOG）；换库/删库前先问
-4. **Android 构建必须显式 AVD `qimeng_api35`**——禁止碰 `emulator-5554`（雷电游戏模拟器）
-5. 8420 真库永不写截图；证据用隔离实例虚构数据
+1. 日常本地开发可用 dev 免密；**生产与真机环境禁止** `auth_dev_mode`。
+2. 前端统一由后端 8420 端口托管 `web/dist`，修改前端需先执行 `npm --prefix web run build`。
+3. **Android 构建部署必须显式指定 AVD（qimeng_api35）或真机 USB 目标**——严禁碰 `emulator-5554`（雷电游戏模拟器）。
+4. 8420 真库严禁写入测试脏数据；测试验证使用隔离实例或虚构数据。
+5. 明文密钥与真机设备标识严禁入库。
 
 ## 8. 文档地图（现行）
 
 | 文档 | 职责 |
 |---|---|
-| `AGENTS.md` / `AI_README_FIRST.md` | 协作规则与铁律 |
-| `PROJECT_PLAN.md` | 里程碑勾选 |
-| `CHANGELOG.md` 与 `docs/history/` | 历史变更（只增不改写正文）+ 历史档/审查报告归档 |
-| `ARCHITECTURE.md` / `DOMAIN_RULES.md` / `SECURITY.md` / `OBSERVABILITY.md` / `GUIDE_API.md` | 架构/领域/安全/监控/协议导读 |
-| `CAPABILITY_MAP.md` | 能力三态与明确不做 |
-| `docs/adr/` | 架构决策 |
-
-> 已删除勿再寻找：`HANDOVER_UI.md`、`HANDOVER_APP.md`、`REPLICATION_GAPS.md`、`AUDIT-20260920.md`、`任务书-*.md`、`P2-*`、`LEGACY_REQUIREMENTS.md`（2026-10-04 退役：旧版需求已全部并入 DOMAIN_RULES/GUIDE_API 并随 M2-M4 落地，正文与出处标注见 git 历史）、仓库外 `_archive-20260917/`、《任务*.md》《待拍板-*.md》与上级 `旧版UI实录/`。历史可溯 git 与 CHANGELOG。
+| `AGENTS.md` / `AI_README_FIRST.md` | AI 协作准则与红线铁律 |
+| `PROJECT_PLAN.md` | 里程碑与进度唯一真相 |
+| `CHANGELOG.md` 与 `docs/history/` | 历史变更、提交记录与问题复盘（只增不删改） |
+| `ARCHITECTURE.md` | 系统架构设计与模块分层边界 |
+| `DOMAIN_RULES.md` | 领域业务规则与推荐/统计算法权威公式 |
+| `SECURITY.md` | 安全基线、鉴权与文件操作红线 |
+| `GUIDE_API.md` | API 协议导读与端点清单 |
+| `CAPABILITY_MAP.md` | 对标成熟媒体库的能力地图与缺口全景 |
+| `docs/adr/` | 架构决策记录（ADR） |

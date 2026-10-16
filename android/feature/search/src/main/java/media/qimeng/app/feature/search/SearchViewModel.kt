@@ -20,11 +20,24 @@ import media.qimeng.app.core.model.APPEND_RETRY_DELAYS_MS
 import media.qimeng.app.core.model.AssetQuery
 import media.qimeng.app.core.model.LIST_PAGE_SIZE
 import media.qimeng.app.core.model.MediaAsset
+import media.qimeng.app.core.model.MediaKind
 import media.qimeng.app.core.model.NameSuggestion
+import media.qimeng.app.core.model.Zone
 import media.qimeng.app.core.model.sortedShortestFirst
 
 /** 搜索页三态（旧版实录 search_entry/suggest/results：入口 / 建议 / 结果） */
 enum class SearchPhase { EMPTY, SUGGEST, RESULT }
+
+/**
+ * 搜索结果媒体类型筛选档位（对齐 Web SearchPage 的 TYPE_TO_MEDIA 及 B 站类型选项）：
+ * 综合（全部类型，mediaType=null）/ 视频 / 动图 / 图片
+ */
+enum class SearchMediaType(val kind: MediaKind?) {
+    ALL(null),
+    VIDEO(MediaKind.VIDEO),
+    ANIMATED_IMAGE(MediaKind.ANIMATED_IMAGE),
+    IMAGE(MediaKind.IMAGE),
+}
 
 data class SearchUiState(
     val phase: SearchPhase = SearchPhase.EMPTY,
@@ -55,13 +68,17 @@ data class SearchUiState(
      * 清词时一并清除（深链会话随返回终止；之后的手动搜索回归旧语义）。
      */
     val fromDeepLink: Boolean = false,
+    /** 搜索结果媒体类型筛选（综合/视频/动图/图片，缺省综合=null，对齐 Web 与 B 站选项卡） */
+    val selectedMediaType: SearchMediaType = SearchMediaType.ALL,
+    /** 搜索结果内容分区（全部/常规/COS，缺省全部，对齐 Web SearchPage 与 DOMAIN_RULES §6） */
+    val selectedZone: Zone = Zone.ALL,
 )
 
 /**
  * 搜索页 ViewModel（M4-2A-B4 对齐旧版三态，实录 search_entry/suggest/results 逐字口径）：
- * 补全防抖 + 历史记录 + 结果分页。
- * 查询=纯 q 检索固定 includeCos=true（旧版搜索范围=合并常规+COS，GUIDE_UI §首页「搜索范围」）；
- * 分区/类型筛选已删——标签等筛选由 B3 万能面板承接，搜索按旧版不做筛选。
+ * 补全防抖 + 历史记录 + 结果分页 + 类型与分区选项（对齐 Web SearchPage 与 B 站选项栏）。
+ * 分区三态（DOMAIN_RULES §6）：常规=不传（默认排除 COS）、COS=cosOnly、全部=includeCos。
+ * 媒体类型四档：综合（不传）/视频/动图/图片。
  * 返回链镜像旧版 [handleBack]（系统返回与左上箭头同链）；「点搜索栏」是另一条路径
  * （词保留回建议态），由 [backToSuggest] 承接。
  */
@@ -130,7 +147,7 @@ class SearchViewModel @Inject constructor(
         }
     }
 
-    /** 提交搜索（按钮/IME/词丸/建议行共用）：记历史 + 切结果态 + 拉第一页；空词不生效 */
+    /** 提交搜索（按钮/IME/词丸/建议行共用）：记历史 + 切结果态 + 重置筛选为全部/综合 + 拉第一页；空词不生效 */
     fun submit(rawQuery: String) {
         val query = rawQuery.trim()
         if (query.isEmpty()) return
@@ -141,8 +158,36 @@ class SearchViewModel @Inject constructor(
             submittedQuery = query,
             phase = SearchPhase.RESULT,
             suggestions = emptyList(), // 结果态只展示网格；回建议态时按词重拉
+            selectedZone = Zone.ALL,
+            selectedMediaType = SearchMediaType.ALL,
         )
         viewModelScope.launch { searchHistoryRepository.record(query) }
+        loadItems(cursor = null, append = false)
+    }
+
+    /** 切换内容分区（全部/常规/COS；对齐 Web 分区逻辑与 DOMAIN_RULES §6） */
+    fun selectZone(zone: Zone) {
+        val current = _uiState.value
+        if (current.selectedZone == zone || current.phase != SearchPhase.RESULT) return
+        queryGeneration += 1
+        _uiState.value = current.copy(
+            selectedZone = zone,
+            items = emptyList(),
+            nextCursor = null,
+        )
+        loadItems(cursor = null, append = false)
+    }
+
+    /** 切换媒体类型（综合/视频/动图/图片；对齐 Web SearchPage 与 B 站选项卡） */
+    fun selectMediaType(mediaType: SearchMediaType) {
+        val current = _uiState.value
+        if (current.selectedMediaType == mediaType || current.phase != SearchPhase.RESULT) return
+        queryGeneration += 1
+        _uiState.value = current.copy(
+            selectedMediaType = mediaType,
+            items = emptyList(),
+            nextCursor = null,
+        )
         loadItems(cursor = null, append = false)
     }
 
@@ -161,7 +206,7 @@ class SearchViewModel @Inject constructor(
     /**
      * 返回（系统返回 + 左上箭头共用，镜像旧版 handleBack，SearchFragment L253-270）：
      * 结果/建议态一律清词回入口态（旧版 showState(STATE_EMPTY) 前无条件 setText("")）
-     * 并重拉推荐词；结果残留（submittedQuery/items/nextCursor）一并清空，回 pristine 入口；
+     * 并重拉推荐词；结果残留（submittedQuery/items/nextCursor/筛选）一并清空，回 pristine 入口；
      * 入口态不动作——退页由 UI 层调 onBack（壳层 popBackStack）承接。
      * 修复E：深链标记在此一并清除——清词回入口=深链会话终止（UI 三分支在深链结果态已
      * 直接退页、不会走到本方法的深链场景，能走到即用户已改词/手动操作），之后的手动搜索
@@ -179,6 +224,8 @@ class SearchViewModel @Inject constructor(
             items = emptyList(),
             nextCursor = null,
             fromDeepLink = false,
+            selectedZone = Zone.ALL,
+            selectedMediaType = SearchMediaType.ALL,
         )
         loadRecommendWords()
     }
@@ -253,13 +300,21 @@ class SearchViewModel @Inject constructor(
         viewModelScope.launch {
             var retryAttempt = 0
             while (true) {
+                // 分区三态（DOMAIN_RULES §6）：常规=不传（服务端默认排除 COS）、
+                // COS=cosOnly、全部=includeCos；服务端 cosOnly 优先于 includeCos
+                val (includeCos, cosOnly) = when (state.selectedZone) {
+                    Zone.ALL -> true to null
+                    Zone.REGULAR -> null to null
+                    Zone.COS -> null to true
+                }
                 val page = runCatching {
                     mediaRepository.assets(
                         AssetQuery(
                             cursor = cursor,
                             limit = LIST_PAGE_SIZE,
-                            // 旧版搜索=合并常规+COS（GUIDE_UI §首页搜索范围），固定 includeCos=1
-                            includeCos = true,
+                            includeCos = includeCos,
+                            cosOnly = cosOnly,
+                            mediaType = state.selectedMediaType.kind,
                             q = state.submittedQuery,
                             // 日期组头精确计数（服务端仅首屏计算，翻页传了也忽略）
                             dateCounts = true,

@@ -151,10 +151,14 @@ fun FloatingTabDock(
 
     // 悬浮坞外层容器：零视觉侵入的前提下拦截边缘与底部空白处的点击穿透（严格保全胶囊视觉零改动）
     Column(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .consumeTaps(),
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .consumeTaps(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             // 左侧外距空白隔离带（消费点击，阻止误触穿透到背后媒体内容）
@@ -170,7 +174,9 @@ fun FloatingTabDock(
                 backdrop = backdrop?.backdrop,
                 dockEffects = dockEffects,
                 scrimAlpha = scrimAlpha,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .consumeTaps(),
             ) {
                 DockItemsRow(
                     items = items,
@@ -498,7 +504,7 @@ private fun DockItemsRow(
     // 透镜胶囊表面 tint 同样预解析（isQimengDarkTheme 为 composable）
     val lensPillSurface = if (isQimengDarkTheme()) LENS_PILL_SURFACE_DARK else LENS_PILL_SURFACE_LIGHT
 
-    Box {
+    Box(modifier = Modifier.consumeTaps()) {
         // ── 1) 真实条目行（最底层：点击/语义载体）──
         Row(
             modifier = Modifier

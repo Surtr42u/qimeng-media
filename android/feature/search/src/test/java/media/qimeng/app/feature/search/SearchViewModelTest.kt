@@ -25,6 +25,7 @@ import media.qimeng.app.core.model.MediaKind
 import media.qimeng.app.core.model.NameSuggestion
 import media.qimeng.app.core.model.RankingPeriod
 import media.qimeng.app.core.model.SuggestionKind
+import media.qimeng.app.core.model.Zone
 import media.qimeng.app.core.testing.MainDispatcherRule
 
 /**
@@ -587,5 +588,151 @@ class SearchViewModelTest {
             viewModel.enterDetail("b1")
             assertEquals(listOf("b1"), batchIndex.ids)
             assertEquals(-1, batchIndex.indexOf("a1"))
+        }
+
+    // ---------- 选项卡（对齐 Web SearchPage 与 B 站选项栏：类型 + 分区） ----------
+
+    @Test
+    fun `分区切换 - 结果态切换全部常规COS，发送正确参数并清空游标`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val repo = FakeMediaRepository()
+            val historyRepo = FakeSearchHistoryRepository()
+            val viewModel = viewModel(repo, historyRepo)
+            advanceUntilIdle()
+
+            // 提交搜索：初始全部分区（includeCos=true, cosOnly=null）
+            viewModel.submit("q")
+            advanceUntilIdle()
+            assertEquals(1, repo.assetsCalls.size)
+            assertEquals(true, repo.assetsCalls[0].query.includeCos)
+            assertNull(repo.assetsCalls[0].query.cosOnly)
+
+            // 切 COS 分区：cosOnly=true, includeCos=null
+            viewModel.selectZone(Zone.COS)
+            advanceUntilIdle()
+            assertEquals(2, repo.assetsCalls.size)
+            val callCos = repo.assetsCalls[1]
+            assertNull(callCos.query.includeCos)
+            assertEquals(true, callCos.query.cosOnly)
+            assertNull(callCos.query.cursor)
+            assertEquals(Zone.COS, viewModel.uiState.value.selectedZone)
+
+            // 切常规分区：两者皆 null（DOMAIN_RULES §6：常规不传参）
+            viewModel.selectZone(Zone.REGULAR)
+            advanceUntilIdle()
+            assertEquals(3, repo.assetsCalls.size)
+            val callRegular = repo.assetsCalls[2]
+            assertNull(callRegular.query.includeCos)
+            assertNull(callRegular.query.cosOnly)
+            assertEquals(Zone.REGULAR, viewModel.uiState.value.selectedZone)
+
+            // 切回全部分区：includeCos=true, cosOnly=null
+            viewModel.selectZone(Zone.ALL)
+            advanceUntilIdle()
+            assertEquals(4, repo.assetsCalls.size)
+            val callAll = repo.assetsCalls[3]
+            assertEquals(true, callAll.query.includeCos)
+            assertNull(callAll.query.cosOnly)
+            assertEquals(Zone.ALL, viewModel.uiState.value.selectedZone)
+        }
+
+    @Test
+    fun `类型切换 - 结果态切换综合视频动图图片，发送对应mediaType`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val repo = FakeMediaRepository()
+            val historyRepo = FakeSearchHistoryRepository()
+            val viewModel = viewModel(repo, historyRepo)
+            advanceUntilIdle()
+
+            viewModel.submit("q")
+            advanceUntilIdle()
+            assertEquals(1, repo.assetsCalls.size)
+            assertNull(repo.assetsCalls[0].query.mediaType)
+            assertEquals(SearchMediaType.ALL, viewModel.uiState.value.selectedMediaType)
+
+            // 切视频
+            viewModel.selectMediaType(SearchMediaType.VIDEO)
+            advanceUntilIdle()
+            assertEquals(2, repo.assetsCalls.size)
+            assertEquals(MediaKind.VIDEO, repo.assetsCalls[1].query.mediaType)
+            assertEquals(SearchMediaType.VIDEO, viewModel.uiState.value.selectedMediaType)
+
+            // 切动图
+            viewModel.selectMediaType(SearchMediaType.ANIMATED_IMAGE)
+            advanceUntilIdle()
+            assertEquals(3, repo.assetsCalls.size)
+            assertEquals(MediaKind.ANIMATED_IMAGE, repo.assetsCalls[2].query.mediaType)
+            assertEquals(SearchMediaType.ANIMATED_IMAGE, viewModel.uiState.value.selectedMediaType)
+
+            // 切图片
+            viewModel.selectMediaType(SearchMediaType.IMAGE)
+            advanceUntilIdle()
+            assertEquals(4, repo.assetsCalls.size)
+            assertEquals(MediaKind.IMAGE, repo.assetsCalls[3].query.mediaType)
+            assertEquals(SearchMediaType.IMAGE, viewModel.uiState.value.selectedMediaType)
+
+            // 切回综合
+            viewModel.selectMediaType(SearchMediaType.ALL)
+            advanceUntilIdle()
+            assertEquals(5, repo.assetsCalls.size)
+            assertNull(repo.assetsCalls[4].query.mediaType)
+            assertEquals(SearchMediaType.ALL, viewModel.uiState.value.selectedMediaType)
+        }
+
+    @Test
+    fun `选项重置 - 重新提交搜索或清词返回重置分区与类型为默认档`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val repo = FakeMediaRepository()
+            val historyRepo = FakeSearchHistoryRepository()
+            val viewModel = viewModel(repo, historyRepo)
+            advanceUntilIdle()
+
+            viewModel.submit("word1")
+            advanceUntilIdle()
+            viewModel.selectZone(Zone.COS)
+            viewModel.selectMediaType(SearchMediaType.VIDEO)
+            advanceUntilIdle()
+            assertEquals(Zone.COS, viewModel.uiState.value.selectedZone)
+            assertEquals(SearchMediaType.VIDEO, viewModel.uiState.value.selectedMediaType)
+
+            // 换词提交：重置为全部 + 综合
+            viewModel.submit("word2")
+            advanceUntilIdle()
+            assertEquals(Zone.ALL, viewModel.uiState.value.selectedZone)
+            assertEquals(SearchMediaType.ALL, viewModel.uiState.value.selectedMediaType)
+
+            // 再次改选项后清词返回：同样重置
+            viewModel.selectZone(Zone.REGULAR)
+            viewModel.selectMediaType(SearchMediaType.IMAGE)
+            advanceUntilIdle()
+            viewModel.handleBack()
+            advanceUntilIdle()
+            assertEquals(Zone.ALL, viewModel.uiState.value.selectedZone)
+            assertEquals(SearchMediaType.ALL, viewModel.uiState.value.selectedMediaType)
+        }
+
+    @Test
+    fun `同选项点击与非结果态操作幂等 - 不重复发送请求`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val repo = FakeMediaRepository()
+            val historyRepo = FakeSearchHistoryRepository()
+            val viewModel = viewModel(repo, historyRepo)
+            advanceUntilIdle()
+
+            // 入口态调用 selectZone / selectMediaType：静默忽略
+            viewModel.selectZone(Zone.COS)
+            viewModel.selectMediaType(SearchMediaType.VIDEO)
+            advanceUntilIdle()
+            assertTrue(repo.assetsCalls.isEmpty())
+
+            viewModel.submit("q")
+            advanceUntilIdle()
+            assertEquals(1, repo.assetsCalls.size)
+
+            // 重复点击当前已选中的 Zone.ALL 和 SearchMediaType.ALL：无新请求
+            viewModel.selectZone(Zone.ALL)
+            viewModel.selectMediaType(SearchMediaType.ALL)
+            advanceUntilIdle()
+            assertEquals(1, repo.assetsCalls.size)
         }
 }

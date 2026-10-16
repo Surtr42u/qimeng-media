@@ -18,4 +18,14 @@
 
     <!-- 结果态空态（旧布局 XML 口径「未找到相关内容」，替换旧文案「没有找到相关内容」） -->
     <string name="search_empty_result">未找到相关内容</string>
+
+    <!-- 搜索结果选项（对齐 Web SearchPage 与 B 站选项卡：类型 + 分区） -->
+    <string name="search_type_all">综合</string>
+    <string name="search_type_video">视频</string>
+    <string name="search_type_animated">动图</string>
+    <string name="search_type_image">图片</string>
+
+    <string name="search_zone_all">全部</string>
+    <string name="search_zone_regular">常规</string>
+    <string name="search_zone_cos">COS</string>
 </resources>

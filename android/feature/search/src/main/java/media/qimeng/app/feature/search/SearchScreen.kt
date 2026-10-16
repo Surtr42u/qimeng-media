@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -32,13 +33,16 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import media.qimeng.app.core.model.NameSuggestion
 import media.qimeng.app.core.model.badgeLabel
 import media.qimeng.app.core.model.MediaAsset
+import media.qimeng.app.core.model.Zone
 import media.qimeng.app.core.model.groupByDateLabel
 import media.qimeng.app.core.ui.component.QimengCapsuleTextField
+import media.qimeng.app.core.ui.component.QimengChipRow
 import media.qimeng.app.core.ui.component.QimengEmptyState
 import media.qimeng.app.core.ui.component.QimengMediaGrid
 import media.qimeng.app.core.ui.component.QimengPill
@@ -52,7 +56,7 @@ import media.qimeng.app.core.ui.theme.QimengDimens
 /**
  * 搜索页（M4-2A-B4 对齐旧版三态，实录 search_entry/suggest/results 逐字口径）：
  * 入口态（顶栏三件 + 推荐搜索/搜索历史两区词丸流）/ 建议态（行=icon+候选名+右侧类型标签）/
- * 结果态（仅日期分组 3 列起步网格，双指缩放 2~5 列本页生效；无任何筛选芯片）。
+ * 结果态（选项栏=类型选项+分区选项，对齐 Web SearchPage 与 B 站选项卡；日期分组 3 列起步网格，双指缩放 2~5 列本页生效）。
  * 返回族同链（镜像旧版 handleBack，SearchFragment L253-270）：系统返回与左上箭头共用同一
  * 三态分发——结果/建议态一律清词回入口态，仅入口态退页（onBack→壳层 popBackStack）；
  * 「点搜索栏回建议态（词保留）」是点击路径（interceptResultFieldTap→backToSuggest），不走返回链。
@@ -131,6 +135,8 @@ fun SearchScreen(
                 displayColumns = displayColumns,
                 nowMs = nowMs,
                 animatedUrlResolver = animatedUrlResolver,
+                onSelectMediaType = viewModel::selectMediaType,
+                onSelectZone = viewModel::selectZone,
                 onNearBottom = viewModel::onNearBottom,
                 onPinchStep = viewModel::adjustColumnsLive,
                 onPinchEnd = viewModel::commitPinchColumns,
@@ -298,8 +304,9 @@ private fun SuggestPhase(
 }
 
 /**
- * 结果态：仅日期分组网格（组头「周四  N 项」/「2026-09-05  N 项」，groupByDateLabel 同口径），
- * 无任何芯片行/下拉刷新（实录 search_results）；双指缩放调列挂网格容器。
+ * 结果态：顶层选项卡（类型行 + 分区行，对齐 Web SearchPage 与 B 站选项栏） + 日期分组网格
+ * （组头「周四  N 项」/「2026-09-05  N 项」，groupByDateLabel 同口径），
+ * 双指缩放调列挂网格容器。
  */
 @Composable
 private fun ResultPhase(
@@ -307,39 +314,116 @@ private fun ResultPhase(
     displayColumns: Int,
     nowMs: Long,
     animatedUrlResolver: suspend (String) -> String?,
+    onSelectMediaType: (SearchMediaType) -> Unit,
+    onSelectZone: (Zone) -> Unit,
     onNearBottom: () -> Unit,
     onPinchStep: (Int) -> Unit,
     onPinchEnd: () -> Unit,
     onAssetClick: (MediaAsset) -> Unit,
 ) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .qimengPinchToColumns(onStep = onPinchStep, onGestureEnd = onPinchEnd),
-    ) {
-        if (state.items.isEmpty()) {
-            if (!state.isLoading) {
-                QimengEmptyState(text = stringResource(R.string.search_empty_result))
+    val gridState = rememberLazyGridState()
+
+    // 切换类型或分区时回顶网格
+    LaunchedEffect(state.selectedMediaType, state.selectedZone) {
+        gridState.scrollToItem(0)
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        SearchFilterOptions(
+            selectedMediaType = state.selectedMediaType,
+            selectedZone = state.selectedZone,
+            onSelectMediaType = onSelectMediaType,
+            onSelectZone = onSelectZone,
+        )
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .qimengPinchToColumns(onStep = onPinchStep, onGestureEnd = onPinchEnd),
+        ) {
+            if (state.items.isEmpty()) {
+                if (!state.isLoading) {
+                    QimengEmptyState(text = stringResource(R.string.search_empty_result))
+                }
+            } else {
+                QimengMediaGrid(
+                    // 分组 O(n) 计算包 remember（镜像 AllScreen 修复D-1）：按参与变量
+                    // （items/nowMs/dateCounts）缓存，重组零重算、数据变化才重算——分组键=文件时间；
+                    // dateCounts=服务端按本地日精确计数（组头不再随分页跳增）
+                    sections = remember(state.items, nowMs, state.dateCounts) {
+                        state.items.groupByDateLabel(nowMs, state.dateCounts) { it.modifiedAtMs }
+                    },
+                    columns = displayColumns,
+                    animatedUrlResolver = animatedUrlResolver,
+                    listState = gridState,
+                    onNearBottom = onNearBottom,
+                    // 问题A（2026-09-28）：加载结束重评估信号（KDoc 见 QimengMediaGrid.reloadTick）
+                    reloadTick = state.reloadTick,
+                    // 卡片点击进详情（D3 同族顺手修复：onAssetClick 默认空实现漏传即静默无反应，
+                    // 镜像相册/收藏/历史三页接线；批次上下文写入已由 RES R3 补齐——见调用方注释）
+                    onAssetClick = onAssetClick,
+                )
             }
-        } else {
-            QimengMediaGrid(
-                // 分组 O(n) 计算包 remember（镜像 AllScreen 修复D-1）：按参与变量
-                // （items/nowMs/dateCounts）缓存，重组零重算、数据变化才重算——分组键=文件时间；
-                // dateCounts=服务端按本地日精确计数（组头不再随分页跳增）
-                sections = remember(state.items, nowMs, state.dateCounts) {
-                    state.items.groupByDateLabel(nowMs, state.dateCounts) { it.modifiedAtMs }
-                },
-                columns = displayColumns,
-                animatedUrlResolver = animatedUrlResolver,
-                onNearBottom = onNearBottom,
-                // 问题A（2026-09-28）：加载结束重评估信号（KDoc 见 QimengMediaGrid.reloadTick）
-                reloadTick = state.reloadTick,
-                // 卡片点击进详情（D3 同族顺手修复：onAssetClick 默认空实现漏传即静默无反应，
-                // 镜像相册/收藏/历史三页接线；批次上下文写入已由 RES R3 补齐——见调用方注释）
-                onAssetClick = onAssetClick,
-            )
         }
     }
+}
+
+/**
+ * 搜索结果选项栏（对齐 Web SearchPage 与 B 站选项卡形态，M4-2A 视觉）：
+ * 行 1：类型选项（综合 / 视频 / 动图 / 图片）
+ * 行 2：内容分区（全部 / 常规 / COS）
+ */
+@Composable
+private fun SearchFilterOptions(
+    selectedMediaType: SearchMediaType,
+    selectedZone: Zone,
+    onSelectMediaType: (SearchMediaType) -> Unit,
+    onSelectZone: (Zone) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val zones = remember { listOf(Zone.ALL, Zone.REGULAR, Zone.COS) }
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = QimengDimens.SpaceXS),
+    ) {
+        // 类型选项行（综合 / 视频 / 动图 / 图片）
+        QimengChipRow(
+            pills = SearchMediaType.entries.map { type ->
+                QimengPill(
+                    text = stringResource(type.labelRes()),
+                    selected = type == selectedMediaType,
+                )
+            },
+            onPillClick = { index -> onSelectMediaType(SearchMediaType.entries[index]) },
+            modifier = Modifier.padding(horizontal = QimengDimens.ScreenPaddingHorizontal),
+        )
+        Spacer(modifier = Modifier.height(QimengDimens.SpaceXS))
+        // 分区选项行（全部 / 常规 / COS）
+        QimengChipRow(
+            pills = zones.map { zone ->
+                QimengPill(
+                    text = stringResource(zone.labelRes()),
+                    selected = zone == selectedZone,
+                )
+            },
+            onPillClick = { index -> onSelectZone(zones[index]) },
+            modifier = Modifier.padding(horizontal = QimengDimens.ScreenPaddingHorizontal),
+        )
+    }
+}
+
+private fun SearchMediaType.labelRes(): Int = when (this) {
+    SearchMediaType.ALL -> R.string.search_type_all
+    SearchMediaType.VIDEO -> R.string.search_type_video
+    SearchMediaType.ANIMATED_IMAGE -> R.string.search_type_animated
+    SearchMediaType.IMAGE -> R.string.search_type_image
+}
+
+private fun Zone.labelRes(): Int = when (this) {
+    Zone.ALL -> R.string.search_zone_all
+    Zone.REGULAR -> R.string.search_zone_regular
+    Zone.COS -> R.string.search_zone_cos
 }
 
 @Composable
