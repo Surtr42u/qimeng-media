@@ -3,16 +3,36 @@
 package safego
 
 import (
-	"bytes"
 	"log/slog"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
 
+// syncBuffer 是并发安全的日志缓冲：safego 的 recover 日志写在 goroutine 内，
+// 测试主 goroutine 同时轮询读取内容——裸 bytes.Buffer 跨 goroutine 读写会被
+// race detector 判数据竞争（2026-10-17 CI 实测）。这里用互斥锁包一层。
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf strings.Builder
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
 // TestGoRecoversPanic 验证 panic 被恢复并记录结构化日志。
 func TestGoRecoversPanic(t *testing.T) {
-	var buf bytes.Buffer
+	var buf syncBuffer
 	logger := slog.New(slog.NewJSONHandler(&buf, nil))
 	done := make(chan struct{})
 
@@ -26,7 +46,7 @@ func TestGoRecoversPanic(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("panic goroutine 未结束（超时）")
 	}
-	// 日志写入在 goroutine 内完成，done 关闭后可能有极小延迟；轮询等待。
+	// done 在 panic 展开期关闭（早于 safego 的 recover 日志），故轮询等待日志落齐。
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
 		if strings.Contains(buf.String(), "boom") {

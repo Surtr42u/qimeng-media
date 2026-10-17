@@ -376,7 +376,12 @@ func (m *Manager) applyScheduleLocked(enabled bool, interval time.Duration, rete
 	}
 	loopCtx, cancel := context.WithCancel(m.schedCtx)
 	m.schedCancel = cancel
-	safego.Go(m.logger, "备份调度", func() { m.scheduleLoop(loopCtx, m.schedInterval) })
+	// interval 必须在锁内取快照后再交给 goroutine（2026-10-17 CI race 修复）：
+	// 闭包若直接引用 m.schedInterval，实际读取发生在 goroutine 调度后，与后续
+	// ApplySchedule 在锁内写该字段构成数据竞争（原先 `go m.scheduleLoop(...,
+	// m.schedInterval)` 是同步求值、把值传进新 goroutine，无此窗口）。
+	intervalSnapshot := m.schedInterval
+	safego.Go(m.logger, "备份调度", func() { m.scheduleLoop(loopCtx, intervalSnapshot) })
 	m.logger.Info("备份调度已应用", "enabled", m.schedEnabled, "interval", m.schedInterval, "retention", m.retention)
 }
 

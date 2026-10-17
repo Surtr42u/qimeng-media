@@ -32,6 +32,7 @@
 - **用户拍板保留项**：日常启动链 `_server-common.cmd` 的 `QIMENG_AUTH_DEV_MODE=1` 与 `:8420` 全接口监听**不改**（用户明确"免密是我自己再用"）；SECURITY 将其记为风险接受项并保留生产部署必须关闭 dev 模式的既有约束。
 - **本次未做（审计报告已列，留待后续批次）**：httpapi 编排下沉（ADR-0019，L）、`GET /authors` view_count 预聚合、Web/Android 大文件拆分、Docker 非 root/digest 固定、CI Actions pin SHA + permissions、Dependabot/govulncheck 门禁、scanner 软链跳过、uploadsess 总量上限、DB 文件 0600、访问日志。均为 M/L 成本或需部署侧验证，避免本批动到用户日常形态。
 - **自测**：`go build ./...`、`go vet ./...`、`gofmt -l .` 全清；`go test ./... -count=1` **20 包全绿**（新增 safego 包与 4 组加固回归测试：Content-Type 拒绝/放行、dev 404 不消耗限速、token no-store、回收站恢复 `ErrMoveDidNotCreateTarget` 清理跳过、0018 索引与 down/up 链）。
+- **CI 回修（同日）**：首次推送后 server job 的 `go test ./... -race` 暴露两处数据竞争——① 备份调度接入 `safego` 时闭包延迟读取 `m.schedInterval`（锁内写 vs goroutine 读），改为锁内快照 `intervalSnapshot` 后传参；② 新增 `safego` 单测用共享 `bytes.Buffer` 写读，改为互斥 `syncBuffer`。本地全量测试通过，race 结论以 CI 复核为准。
 - **文档**：`docs/SECURITY.md`（新增「2026-10-17 安全加固」节 + 红线 6/7、auth 限速、dev 校验顺序、上传 ffmpeg 白名单、作者镜像能力口径、镜像构建现状勘正）、`docs/CHANGELOG.md`（本笔）、`docs/HANDOVER.md`（服务端现状与遗留缺口）、`docs/GUIDE_API.md`（端点计数口径勘正 74→75/94→97）、`.github/workflows/build-apk.yml`（过时的 sdk.lock 红灯注释更新）。
 
 
