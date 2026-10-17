@@ -2,7 +2,7 @@
 
 > 威胁模型：纯内网单用户起步。防御目标 = 局域网内误访问与横向渗透（访客 WiFi、被入侵的智能设备）+ 未来远程访问的暴露面。不防御公网级 DDoS/爬虫。
 > 每条规则都配有 API 集成测试用例（进 CI），**安全靠机制和门禁，不靠自觉**。
-> 最后更新：2026-10-15（补归档路径/符号链接检查与跨卷移动目标保全边界，见 CHANGELOG 第五百三十四笔）。2026-10-11（「作者总表镜像」挂点清单补备份导入 TXT 片段段与本机同步通道 TXT 导入两处）。2026-10-03（「已知安全边界」补记 Termux 形态 A dev-login 是共享密钥缓解的漏网路径）。更早历史见 `docs/CHANGELOG.md`。
+> 最后更新：2026-10-17（安全审计清偿批：JSON Content-Type 强制、auth 限速计数顺序、token 响应 no-store、ffmpeg 输入协议白名单、作者镜像能力口径、local-sync 409 脱敏；见「2026-10-17 安全加固」节）。2026-10-15（补归档路径/符号链接检查与跨卷移动目标保全边界，见 CHANGELOG 第五百三十四笔）。2026-10-11（「作者总表镜像」挂点清单补备份导入 TXT 片段段与本机同步通道 TXT 导入两处）。2026-10-03（「已知安全边界」补记 Termux 形态 A dev-login 是共享密钥缓解的漏网路径）。更早历史见 `docs/CHANGELOG.md`。
 
 ## 红线清单（AI 改代码时逐条自查）
 
@@ -13,8 +13,8 @@
 | 3 | 媒体误删 | DELETE 一律进回收站；物理删除仅在回收站内显式操作；Docker 中媒体目录挂载可写但回收站兜底 |
 | 4 | 上传滥用 | 四道校验：扩展名白名单 + MIME 嗅探（读文件头）+ 单文件大小上限 + 目标路径穿越检查。写入用临时文件 + 原子 rename |
 | 5 | 无鉴权访问 | 除健康检查与认证端点（setup/login/dev-login）外全部 API 要求 Bearer token；媒体直链用短期 HMAC 签名 URL（默认 6h 有效），禁止裸直链 |
-| 6 | 请求体滥用 | JSON body 上限 1MB（例外：旧版备份导入 64MB，errors.go decodeJSONWithLimit / legacyImportMaxBody，单文件全量备份随库规模增长）；分页 size 上限；SSE 连接数上限 |
-| 7 | 信息泄露 | 错误响应不含内部路径/堆栈（已实现）；访问日志脱敏（token 只记前 4 位）为规划项——访问日志本身尚未实现，见 OBSERVABILITY；/metrics 随全局 Bearer 门禁 |
+| 6 | 请求体滥用 | JSON body 上限 1MB（例外：旧版备份导入 64MB，errors.go decodeJSONWithLimit / legacyImportMaxBody，单文件全量备份随库规模增长）；分页 size 上限；SSE 连接数上限。**2026-10-17 起全部 JSON 端点强制 `Content-Type: application/json`**：跨站"简单请求"（no-cors + text/plain 等 safelisted 类型）无需 preflight 即可打内网地址，不校验则任意网页可向免鉴权 setup 投递 JSON 抢注密码；强制后跨域请求触发 preflight 被无 CORS 的服务端拒绝（合法 SDK 本就声明 JSON，零行为变化） |
+| 7 | 信息泄露 | 错误响应不含内部路径/堆栈（已实现）；访问日志脱敏（token 只记前 4 位）为规划项——访问日志本身尚未实现，见 OBSERVABILITY；/metrics 随全局 Bearer 门禁。**2026-10-17 修复一处例外**：`POST /local-sync/trigger` 的 409 不再透传含绝对路径的通道级 lastErr，固定文案 + 详情只进服务端日志 |
 | 8 | 公网暴露 | 永不开公网端口；远程访问只走 Tailscale/WireGuard 隧道（服务端零改动） |
 
 ## 文件移动 / 回收站的跨卷安全边界（2026-10-15）
@@ -37,7 +37,7 @@
 - **单用户起步**：首次启动 `POST /api/v1/auth/setup` 设置管理密码 → 服务端用 `crypto/rand` 生成 token 返回（只显示一次）；后续请求 `Authorization: Bearer <token>`。
 - **多设备并发会话（ADR-0021，2026-09-17 起）**：有效 token 哈希存 `auth_sessions` 表（migration 0011）——每次登录/setup/dev-login 签发一条独立会话，多端并存互不挤兑（旧「单 token 签发即重铸」模型废弃，它是手机反复掉线的根因）；`POST /auth/logout` 按请求 token 吊销单条会话，其他设备不受影响；每用户会话上限 16，超限自动裁最旧。升级兼容：旧模型唯一哈希由迁移回填成一条 legacy 会话，已登录设备不掉线。`users.token_hash` 列弃用不删（NOT NULL 兼容占位）。
 - 用户表结构第一天就按多用户设计（id/名称/密码哈希/角色/token），实现先只放一行。密码哈希用 argon2id（标准库外选型写 ADR）。
-- **auth 端点限速（2026-09-17 起）**：setup/login/dev-login 共享进程内固定窗口限速（默认 10 次/分钟，超限 429 `RATE_LIMITED`）——缓冲暴力猜解与 argon2id（m=64MB/次）的内存 DoS；Bearer 业务端点与 /auth/verify 不受限速影响。
+- **auth 端点限速（2026-09-17 起；2026-10-17 计数口径修正）**：setup/login/dev-login 共享进程内固定窗口限速（默认 10 次/分钟，超限 429 `RATE_LIMITED`）——缓冲暴力猜解与 argon2id（m=64MB/次）的内存 DoS；Bearer 业务端点与 /auth/verify 不受限速影响。**计数只发生在真正进入凭据校验路径之前**：dev 模式关闭时的 404（及格式非法的廉价请求）不消耗共享配额——否则未鉴权方可把窗口打满、让管理员 setup/login 永久 429（2026-10-17 审计修复）。窗口仍是进程级共享（不区分客户端 IP），属已知可用性边界：单用户内网下接受，若未来多客户端形态出现再按 IP 分桶。
 - **安全响应头基线（2026-09-17 起；2026-09-22 补 frame 头）**：全部响应带 `X-Content-Type-Options: nosniff`（MIME 嗅探防护）+ `X-Frame-Options: DENY`（点击劫持防护——SPA/验收页/管理页禁止被第三方 iframe 嵌套；`<img>`/`<video>` 标签消费媒体直链不受 framing 头影响）。
 - **签名直链**：`/media/orig/...?exp=...&sig=HMAC(路径+过期时间, 服务端密钥)`——浏览器/播放器无需带 header 即可加载，但链接有时效。**exp 窗口对齐（ADR-0027，2026-10-01 起）**：exp = 下一窗口上界 + TTL（窗长=TTL=`token_ttl` 缺省 6h，对齐 Unix 纪元整点），同一窗口内所有响应签出**逐字节相同**的 URL（浏览器 HTTP 缓存/ETag 得以命中，URL 格式与参数未变、三端零适配）；有效期恒 ∈ (6h, 12h]，**吊销粒度=窗口级**——泄露直链最长存活约 2×TTL（粗于旧「请求级 6h」，风险接受换缓存命中），总闸不变 = 删除 media-secret 文件换密钥立即吊销全部存量直链。
 - token 泄露应急（多会话模型口径）：受控设备直接 `POST /auth/logout` 吊销对应会话；**注意「自己再登录一次」不再吊销旧 token**（旧模型的挤兑行为已废除）。全部会话吊销 = 停服清空 `auth_sessions` 表（或删除数据目录重建）；直链吊销仍走删除 `media-secret` 文件。「管理端一键重置全部 token」为规划项。
@@ -47,7 +47,7 @@
 - **默认关闭**：`config.auth_dev_mode`（env `QIMENG_AUTH_DEV_MODE`）默认 false；关闭时 `POST /api/v1/auth/dev-login` 恒 404，所有 API 依旧要求 Bearer token——生产/默认部署零行为变化。
 - **开启时语义**：`/auth/dev-login` 免密码直接签发 token（未初始化自动创建 admin 占位用户；多会话语义与 /auth/login 相同，ADR-0021——签发独立会话，既有会话不失效）。
 - **App 端免密通道（2026-09-06 起）**：Android 客户端登录时**密码留空即走 dev-login**（`AuthRepositoryImpl` 空密码分支）；服务端未开启 dev 模式时 404 → App 提示「该服务器未开启免密模式，请输入密码登录」并要求密码，生产部署零影响。纯客户端行为，协议面无改动（dev-login 端点 2026-09-03 即有）。
-- **内嵌形态共享密钥门禁（2026-09-30 批A）**：服务端配置 `auth_dev_shared_secret`（env `QIMENG_AUTH_DEV_SHARED_SECRET`）时，`/auth/dev-login` 须携带 `X-Qimeng-Dev-Secret` 请求头且匹配（`subtle.ConstantTimeCompare` 恒时比对）否则 401。校验顺序=限流 → dev 模式 404 → 密钥 401（404 语义优先，不泄露密钥配置状态；401 在自动建户之前，越权者触发不了占位用户创建）。**未配置密钥时零校验零影响**（Web 端 bat 免密/日常开发完全不变）。Android 内嵌形态由 `EmbeddedServerConfig.generateDevSharedSecret()` 每次拉起子进程随机生成（SecureRandom 32 字节 URL-safe，256bit 熵下限），经 ServerConfigDataSource **内存槽**（不落盘不进日志，生命周期=子进程）供 devLogin 同源带出。
+- **内嵌形态共享密钥门禁（2026-09-30 批A）**：服务端配置 `auth_dev_shared_secret`（env `QIMENG_AUTH_DEV_SHARED_SECRET`）时，`/auth/dev-login` 须携带 `X-Qimeng-Dev-Secret` 请求头且匹配（`subtle.ConstantTimeCompare` 恒时比对）否则 401。**校验顺序（2026-10-17 起）= dev 模式 404 → 限速 → 共享密钥 401**：404 语义优先、不泄露密钥配置状态；404 在限速之前，使生产形态下未鉴权请求无法靠打恒 404 端点耗尽共享限速配额；401 在自动建户之前，越权者触发不了占位用户创建。**未配置密钥时零校验零影响**（Web 端 bat 免密/日常开发完全不变）。Android 内嵌形态由 `EmbeddedServerConfig.generateDevSharedSecret()` 每次拉起子进程随机生成（SecureRandom 32 字节 URL-safe，256bit 熵下限），经 ServerConfigDataSource **内存槽**（不落盘不进日志，生命周期=子进程）供 devLogin 同源带出。
 - **边界**：仅限开发阶段本机调试（用户约定：项目未完成前免密码直奔 UI）；**禁止**与 `listen: ":0.0.0.0"`、公网、Tailscale 等任何远程访问组合使用——它等价于"无凭据登录通道"，必须保持在内网受信主机之内。服务端启动时对该组合打 Warn 日志（dev 模式开启且监听地址非回环，2026-09-07 起；只提醒不阻止，本机开发脚本的既定用法）。
 - **本机开发脚本**：仓库根 `_server-common.cmd`（两份 `启动服务端*.bat` 共用的启动链单点）已默认带 `QIMENG_AUTH_DEV_MODE=1`（2026-09-03 起）——生产/远程部署**必须移除该行**（或改回 `0`）。
 - 部署清单检查项：docker-compose / 生产 yaml **不得**出现 `auth_dev_mode: true`（CI 不做强制 gate，靠部署者自查 + 文档双签）。
@@ -63,6 +63,7 @@
 
 - 白名单：图片 jpg/jpeg/png/gif/webp/avif；视频 mp4/mkv/webm/mov/m4v/avi。
 - MIME 嗅探按文件头魔数判断（不信 Content-Type 声明）。
+- **ffmpeg/ffprobe 输入协议白名单（2026-10-17 起）**：缩略图/抽帧/探测调用统一带 `-protocol_whitelist file`（输入只允许本机文件协议）。库内媒体属不可信输入（互联网下载/手机直传），ffmpeg 按内容选 demuxer，HLS/concat 等可引用外部 URL 或本地路径——不加限制时恶意媒体可让 ffmpeg 抓取内网 URL（SSRF）或读取服务端本地文件，并经"缩略图成功/404"形成侧信道，同时扩大解码器 CVE 暴露面。新增输入形态（如管道）须在此扩展并同步测试。
 - 文件名清洗：去路径分隔符、控制字符、Windows 非法字符 `:*?"<>|`；冲突自动追加序号。
 - 流式落盘（禁止整个读进内存），临时目录写入完成后原子 rename 到目标。
 - 挂靠参数退役注记（2026-09-25，ADR-0024）：上传曾有的可选作者/来源 query（`authorId`/`authorName`/`source`，ADR-0023 曾设收流前 fail-fast 校验：互斥/依附/上限/能力限定/控制字符拒绝）已**整体删除**——上传回归纯四道校验路径，参数面仅 libraryId/dir/filename，原「控制字符可向 TXT 片段注入任意行」的注入面随参数一并消失。程序化写 TXT 的新入口是作者编辑端点（PUT /assets/{id}/authors、PUT /authors/{id}/sources、PUT /authors/source-vocabulary，ADR-0024）：资产作者关联只接受既有作者 ID（不接受自由文本新建），来源词仍逐项拒绝控制字符（单项超 500 rune/原始数组超 32 项 400）——行文本一律由服务端构造，不存在用户自由文本拼行面；既有四道校验与上传行为不变。
@@ -115,13 +116,13 @@
 
 ## 作者总表镜像（唯一例外写点，2026-09-25 起，ADR-0023）
 
-- **路径由用户显式配置**：`GET/PUT /api/v1/authors/mirror` 配置镜像目标（持久化 kv_settings `author_mirror`）；path 空=关闭（默认），非空必须是**绝对路径**（相对路径 400 INVALID_PARAM），PUT 走既有 Bearer 门禁——服务端不因此获得写任意路径的能力（无配置即无写点，配置动作本身有鉴权；这是本项目服务端写「数据目录/媒体库之外」路径的唯一例外）。
+- **路径由用户显式配置**：`GET/PUT /api/v1/authors/mirror` 配置镜像目标（持久化 kv_settings `author_mirror`）；path 空=关闭（默认），非空必须是**绝对路径**（相对路径 400 INVALID_PARAM），PUT 走既有 Bearer 门禁。**能力口径（2026-10-17 审计修正）**：配置生效后，服务端确实获得「向该绝对路径原子覆写 UTF-8 文本」的能力——这是本项目服务端写「数据目录/媒体库之外」路径的唯一例外，属**认证后的高权限原语**（等价于可覆盖任意文本文件），不是"仅在数据目录内"的受限功能；因此镜像路径必须只指向本机 TXT 数据文件，**禁止指向可执行文件/启动脚本/配置文件/`authorized_keys` 等敏感目标**。无配置即无写点，配置动作本身有鉴权；token 保护等级按最高档执行（见「token 泄露应急」）。
 - **写法与故障语义**：镜像单向（服务端→本地），本地 txt 手改会被下一次服务端变更覆盖；写入=临时文件+rename 原子落盘，**尽力而为**——失败仅 slog Warn，绝不阻塞/回滚资产作者/来源编辑、TXT 导入等核心操作；未配置或目标片段不存在时跳过，路径恢复后下一次变更自动补写。刷新挂点=资产作者/来源编辑保存后（ADR-0024，上传挂靠入口已退役）/TXT 导入落库后（含 keep/remove 结果）/片段删除后/镜像配置保存后/**备份导入的 TXT 片段段后/本机同步通道 TXT 导入后**（后两处 2026-10-11 补齐，见 CHANGELOG 第五百二十五笔——此前这两条写入路径不刷镜像，桌面镜像会长期落后于片段真相）/（rebuild 不改片段不挂）。
 
 ## 依赖与供应链
 
-- Dependabot 尚未配置（计划中，与 ARCHITECTURE §10 口径一致）；当前依赖更新靠 AI 会话按「新技术先读官方文档」纪律人工核对。
-- 镜像构建（官方基础镜像 + 固定 digest；CI 构建的镜像才允许部署）：`make docker-build` **amd64 已实构建**（2026-09-22 fnOS 彩排过）；**arm64 半边挂真机 NAS**。
+- Dependabot 尚未配置（计划中，与 ARCHITECTURE §10 口径一致）；当前依赖更新靠 AI 会话按「新技术先读官方文档」纪律人工核对。**2026-10-17 审计建议**：接入 govulncheck / npm audit / cargo audit + Dependabot（见审计报告 ops.md P1-02，尚未落地）。
+- 镜像构建（官方基础镜像 + 固定 digest；CI 构建的镜像才允许部署）：`make docker-build` **amd64 已实构建**（2026-09-22 fnOS 彩排过）；**arm64 半边挂真机 NAS**。现状说明（2026-10-17 审计核实）：`deploy/Dockerfile` 当前用 `debian:bookworm-slim` **tag 而非 digest**，且容器以 root 运行、compose 未加 cap_drop/no-new-privileges——"固定 digest + 非 root"仍是规划项（实施前需在 NAS 卷权限上实测）。
 - 引入任何新依赖必须：官方文档确认维护状态 + 无已知 CVE + 写 ADR。
 
 ## 仓库卫生（密钥与隐私不入库，2026-09-30 开源前审计建立）
@@ -130,6 +131,18 @@
 - **正确姿势**：密钥只经 `QIMENG_*` 环境变量注入或运行时生成并持久化到数据目录（如 media-secret、`QIMENG_AUTH_DEV_SHARED_SECRET`）；部署差异走 gitignore 的 `*.local`；测试口令必须是明显合成值（如 `test-password-001`）。
 - **提交前自查**：`git grep` 扫敏感模式（`password|secret|token` 的字面量赋值、`C:\Users\<user>`、私网 IP 与真机序列号、`eyJ` 开头长串）；发现自己或 AI 写入立即脱敏，**已提交/已推送的必须 `git filter-repo --replace-text` 全历史重写后强制推送**，再考虑公开。
 - 2026-09-30 开源前审计实录：CHANGELOG 曾明文记录真实管理口令与真机序列号（连同全部历史版本），已 filter-repo 全历史重写清除；测试口令换合成值。
+
+## 2026-10-17 安全加固（后端审计清偿批）
+
+本批按 `build/audit/security.md` 审计结论落地（CHANGELOG 第五百三十六笔）：
+
+- **JSON Content-Type 强制**（红线 6 已同步）：全部 JSON 端点拒绝非 `application/json` 请求体，关闭跨站简单请求打未鉴权 setup/登录的伪造面。
+- **auth 限速计数顺序修正**：dev 模式 404 与格式非法请求不再消耗共享配额；窗口仍为进程级共享（不区分 IP）的已知可用性边界已记档。
+- **明文 token 响应加 `Cache-Control: no-store`**（setup/login/dev-login 三处统一 `writeAuthToken`）。
+- **ffmpeg/ffprobe 输入加 `-protocol_whitelist file`**：阻断不可信媒体的外部 URL/本地路径引用面。
+- **local-sync trigger 409 脱敏**：通道级 lastErr（可能含绝对路径）只进服务端日志，响应固定文案。
+- **可靠性同批**（非攻击面，但影响可用性与数据安全兜底）：后台任务统一 `safego` panic 兜底、优雅关闭超时不再 `os.Exit(1)` 跳过清理、HTTP Server 增 IdleTimeout/MaxHeaderBytes、SQLite 连接池显式上限（每连接 32MiB 页缓存 × 不限连接的内存放大）、facets 并发限 4、缩略图预热单飞、回收站恢复残留清理补 `ErrMoveDidNotCreateTarget` 哨兵（ADR-0038 三调用点一致）。
+- **用户拍板保留项**：日常本机启动链的 `QIMENG_AUTH_DEV_MODE=1`（`_server-common.cmd`）与 `:8420` 局域网监听**保持现状**（用户本人使用）。这仍是「免密登录通道暴露给整个局域网」的风险接受项：仅限受信家庭内网，生产/远程部署必须关闭 dev 模式（见「开发模式」节）；同 LAN 的不可信设备（访客 WiFi）可免密取得 admin 的风险由用户承担。
 
 ## 安全测试（进 CI，全绿才许合并）
 

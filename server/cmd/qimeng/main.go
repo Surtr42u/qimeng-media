@@ -28,6 +28,7 @@ import (
 	"qimeng-media/server/internal/config"
 	"qimeng-media/server/internal/events"
 	"qimeng-media/server/internal/httpapi"
+	"qimeng-media/server/internal/safego"
 	"qimeng-media/server/internal/scanner"
 	"qimeng-media/server/internal/store"
 	"qimeng-media/server/internal/store/db"
@@ -51,6 +52,17 @@ const shutdownTimeout = 10 * time.Second
 // 与 shutdownTimeout 同值是两个独立决策（攻击防御上限 vs 优雅退出等待），
 // 不是共享值，可各自调整。
 const readHeaderTimeout = 10 * time.Second
+
+// idleTimeout 是 keep-alive 空闲连接的最长保留时间（2026-10-17 加固）：
+// 不设时 Go 对空闲连接几乎永久保活，局域网内可被大量静默连接占用 fd/内存。
+// 只约束"两次请求之间"的空闲态，不切正在传输的大文件直链（那是活跃连接，
+// 不进入 idle 计时）。
+const idleTimeout = 120 * time.Second
+
+// maxHeaderBytes 是请求 header 的字节上限（默认 1MB 过宽，2026-10-17 加固）：
+// 本服务客户端只带 Authorization/UA 等少量 header，64KB 足够；
+// 更小的上限降低恶意超长 header 的内存放大面（配合 readHeaderTimeout）。
+const maxHeaderBytes = 64 << 10
 
 // mediaSecretFile 是直链 HMAC 密钥的持久化文件名（DataDir 下）。
 // 为什么落盘：密钥每次随机会让重启后全部存量直链立即失效（浏览器
@@ -226,9 +238,11 @@ func main() {
 	// 时在后台对全部常规库重算一次。goroutine 起它是因为大库重算可能数十秒，
 	// 不能阻塞监听启动；内嵌/桌面壳/NAS 各形态统一受益。方法内部失败只 warn
 	// 不返回致命错，返回值在此显式弃置（错误已在方法内留痕）。
-	go func() {
+	// 后台任务统一走 safego（panic 兜底）：单个任务崩溃只留错误日志，
+	// 不终止整个服务进程（2026-10-17 可靠性加固）。
+	safego.Go(logger, "富化自愈重算", func() {
 		_ = scan.SelfHealEnrichmentIfNeeded(context.Background())
-	}()
+	})
 	apiSrv.SetScanner(newScannerAdapter(scan, queries, apiSrv, logger))
 	// 自动预生成缩略图（2026-09-15 批）：开机回填历史积压 + 周期兜底（daemon）
 	apiSrv.StartThumbnailWarmup()
@@ -243,7 +257,10 @@ func main() {
 		Handler: handler,
 		// 读超时只限 header：媒体直链依赖长连接与大响应体，
 		// 不能设全局 ReadTimeout/WriteTimeout 一刀切掐掉大文件传输。
+		// idleTimeout/maxHeaderBytes 见常量注释（2026-10-17 加固）。
 		ReadHeaderTimeout: readHeaderTimeout,
+		IdleTimeout:       idleTimeout,
+		MaxHeaderBytes:    maxHeaderBytes,
 	}
 
 	// signal.NotifyContext：Ctrl+C / SIGTERM 时 ctx 取消，主流程进入优雅关闭。
@@ -253,11 +270,11 @@ func main() {
 	// 轮询兜底：定时全量扫描全部注册库（fsnotify 的 Windows 行为差异与
 	// "建目录+立即写入"事件缺口由它补齐，见 scanner/watch.go 注释）。
 	// M1 只挂轮询；按库 Watch 在 M2 文件管理接线时挂（新注册库动态加入）。
-	go func() {
+	safego.Go(logger, "轮询扫描", func() {
 		if err := scan.StartBackground(ctx, scanner.DefaultPollInterval); err != nil && ctx.Err() == nil {
 			logger.Error("轮询扫描退出", "err", err)
 		}
-	}()
+	})
 
 	// 定时快照调度（任务Q 批B 起；热生效参数 2026-10-03）：挂生命周期根并
 	// 应用裁决后的三键（首个快照在一个间隔后触发；退出随 ctx 取消）。
@@ -302,8 +319,16 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		logger.Error("优雅关闭超时或失败", "error", err)
-		os.Exit(1)
+		// 出现 SSE 长连接（或其它未返回的 handler）时 Shutdown 会等满
+		// shutdownTimeout 后返回 context.DeadlineExceeded（2026-10-17 修复）：
+		// 旧实现在这里 os.Exit(1)，会跳过下方全部清理（工作池/上传分片/总线/
+		// 数据库），并让常态化的"有客户端在线时退出"变成异常退出码。改为
+		// Warn + 强制 Close 断开剩余连接后继续清理——数据安全由 SQLite 事务
+		// 与 WAL 保证，清理失败只是一次性遗留（下轮清扫兜底），不应阻断退出。
+		logger.Warn("优雅关闭超时，强制断开剩余连接后继续清理", "error", err)
+		if cerr := srv.Close(); cerr != nil {
+			logger.Warn("强制关闭 HTTP 服务失败", "error", cerr)
+		}
 	}
 	// 工作池先收：等在途缩略图任务排空；再关总线让 SSE 订阅者收流结束，
 	// 最后关库连接——顺序反了会出现"关库后任务/总线还在投递"的竞态窗口。

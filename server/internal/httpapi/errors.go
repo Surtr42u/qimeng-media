@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"mime"
 	"net/http"
 
 	sqlite "modernc.org/sqlite"
@@ -120,10 +121,36 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
 	return decodeJSONWithLimit(w, r, v, maxJSONBody)
 }
 
+// requireJSONContentType 校验请求体 Content-Type 必须为 application/json
+// （charset 等参数由 mime.ParseMediaType 允许并忽略）。
+//
+// 为什么必须显式校验（2026-10-17 加固，SECURITY「请求体滥用/鉴权」）：
+// 浏览器跨站的"简单请求"（fetch mode:'no-cors' + text/plain 等 safelisted
+// Content-Type）不需要 CORS preflight 即可打到内网地址；本服务无 CORS 输出、
+// 但这是"读响应"的门禁，不拦"发请求"。若解码不校验 Content-Type，任意网页
+// 就能向免鉴权的 POST /auth/setup 投递 JSON 抢注管理员密码（未初始化窗口内
+// 的锁定 DoS），也能持续消耗 auth 限速配额。强制 application/json 后，跨域
+// 请求会触发 preflight 并被无 CORS 的服务端拒绝，非浏览器客户端（SDK）本就
+// 声明 application/json，零行为变化。
+func requireJSONContentType(w http.ResponseWriter, r *http.Request) bool {
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/json" {
+		writeErr(w, http.StatusBadRequest, codeInvalidBody,
+			"请求体必须为 application/json")
+		return false
+	}
+	return true
+}
+
 // decodeJSONWithLimit per-route 上限版本：大载荷端点（旧版备份导入，
 // legacyImportMaxBody）按自身限额放行，其余端点仍走 maxJSONBody 红线。
-// 超限返回 413 TOO_LARGE（区别于格式错误的 400）。
+// 超限返回 413 TOO_LARGE（区别于格式错误的 400）；Content-Type 非
+// application/json → 400 INVALID_BODY（跨站简单请求防线，见
+// requireJSONContentType 注释）。
 func decodeJSONWithLimit(w http.ResponseWriter, r *http.Request, v any, maxBytes int64) bool {
+	if !requireJSONContentType(w, r) {
+		return false
+	}
 	err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBytes)).Decode(v)
 	if err == nil {
 		return true

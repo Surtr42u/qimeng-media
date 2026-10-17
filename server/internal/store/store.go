@@ -95,6 +95,18 @@ const busyTimeoutMS = 15000
 // 页缓存淘汰策略。
 const pageCacheKiB = 32000
 
+// 连接池上限（2026-10-17 加固）。为什么需要：DSN 的 cache_size(-32000) 是
+// **每连接** 32MiB 页缓存，而 database/sql 默认 MaxOpenConns 不限——facets
+// 六路并行聚合、推荐冷算、扫描富化等并发路径可能同时撑开多条连接，手机
+// 单机形态（ADR-0015）内存最紧时会与 App 争内存。上限 6 覆盖单用户并发读
+// + 写路径（超出时 database/sql 排队；SQLite 本身单写多读，排队不改变
+// 正确性，只增加等待）；MaxIdleConns=2 与 Open 注释里既有的「≤2×32MiB」
+// 稳态估算对齐。
+const (
+	maxOpenConns = 6
+	maxIdleConns = 2
+)
+
 func Open(path string) (*sql.DB, error) {
 	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(%d)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=foreign_keys(1)&_pragma=cache_size(-%d)&_txlock=immediate",
 		path, busyTimeoutMS, pageCacheKiB)
@@ -102,6 +114,9 @@ func Open(path string) (*sql.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("store: 打开数据库 %s: %w", path, err)
 	}
+	// 连接池上限（见上方常量注释，2026-10-17 加固）。
+	db.SetMaxOpenConns(maxOpenConns)
+	db.SetMaxIdleConns(maxIdleConns)
 	// sql.Open 是惰性的：立即 Ping 触发真实连接，把 DSN/路径错误暴露在此处
 	// 而不是推迟到第一次查询（那时定位困难）。
 	if err := db.Ping(); err != nil {

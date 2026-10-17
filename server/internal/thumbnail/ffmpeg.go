@@ -25,6 +25,21 @@ const webpQuality = 90
 // stderrTailLen 是截进错误信息的 stderr 尾部长度上限（字节）。
 const stderrTailLen = 512
 
+// inputProtocolWhitelist 是 ffmpeg/ffprobe 输入侧唯一允许的协议（2026-10-17
+// 安全加固）：库内媒体来自互联网下载/手机直传，属不可信输入；ffmpeg 按内容
+// 探测 demuxer，HLS/concat 等格式可引用外部 URL 或本地路径。不做限制时，
+// 一个伪装成媒体文件的 playlist 即可让 ffmpeg 抓取内网 URL（SSRF）或读取
+// 服务端可访问的本地文件，再经缩略图/探测结果形成侧信道；也扩大了 ffmpeg
+// 解码器 CVE 的暴露面。输入全部是本机库内文件，白名单只留 file 即够用；
+// 需要新增输入形态（如管道路径）时在此扩展并同步测试。
+const inputProtocolWhitelist = "file"
+
+// inputProtocolArgs 返回输入侧协议白名单参数（调用方须把返回值放在 "-i"
+// 之前；ffmpeg/ffprobe 的输入侧选项对紧随其后的输入生效）。
+func inputProtocolArgs() []string {
+	return []string{"-protocol_whitelist", inputProtocolWhitelist}
+}
+
 // DefaultFFmpegBin / DefaultFFprobeBin 是未配置二进制路径时 exec 查找的裸命令名：
 // os/exec 按当前进程 PATH 解析——路径配置化之前唯一可用的语义，缺省配置下
 // 行为零变化。为什么需要可配置（M6 单机形态，ADR-0015）：服务端进手机后
@@ -135,13 +150,10 @@ func formatSeconds(d time.Duration) string {
 func (g *Generator) extractFrame(ctx context.Context, video string, at time.Duration, dst string) error {
 	return writeAtomically(dst, func(tmp string) error {
 		var out bytes.Buffer
-		return run(ctx, g.ffmpegBin, &out,
-			"-y",
-			"-ss", formatSeconds(at),
-			"-i", video,
-			"-frames:v", "1",
-			tmp,
-		)
+		args := []string{"-y", "-ss", formatSeconds(at)}
+		args = append(args, inputProtocolArgs()...) // 输入侧协议白名单，须在 -i 前
+		args = append(args, "-i", video, "-frames:v", "1", tmp)
+		return run(ctx, g.ffmpegBin, &out, args...)
 	})
 }
 
@@ -151,12 +163,10 @@ func (g *Generator) extractFrame(ctx context.Context, video string, at time.Dura
 func (g *Generator) firstFrame(ctx context.Context, src string, dst string) error {
 	return writeAtomically(dst, func(tmp string) error {
 		var out bytes.Buffer
-		return run(ctx, g.ffmpegBin, &out,
-			"-y",
-			"-i", src,
-			"-frames:v", "1",
-			tmp,
-		)
+		args := []string{"-y"}
+		args = append(args, inputProtocolArgs()...) // 输入侧协议白名单，须在 -i 前
+		args = append(args, "-i", src, "-frames:v", "1", tmp)
+		return run(ctx, g.ffmpegBin, &out, args...)
 	})
 }
 
@@ -171,13 +181,11 @@ func (g *Generator) extractAttachedPic(ctx context.Context, src string, streamIn
 	}
 	return writeAtomically(dst, func(tmp string) error {
 		var out bytes.Buffer
-		return run(ctx, g.ffmpegBin, &out,
-			"-y",
-			"-i", src,
-			"-map", "0:"+strconv.Itoa(streamIndex),
-			"-frames:v", "1",
-			tmp,
-		)
+		args := []string{"-y"}
+		args = append(args, inputProtocolArgs()...) // 输入侧协议白名单，须在 -i 前
+		args = append(args, "-i", src, "-map", "0:"+strconv.Itoa(streamIndex),
+			"-frames:v", "1", tmp)
+		return run(ctx, g.ffmpegBin, &out, args...)
 	})
 }
 
@@ -214,10 +222,13 @@ func (g *Generator) scaleStill(ctx context.Context, src string, orientation exif
 			"-y",
 			// 输入侧选项（须在 -i 之前）：关闭解码期隐式 EXIF 转向，见函数注释。
 			"-noautorotate",
+		}
+		args = append(args, inputProtocolArgs()...) // 输入侧协议白名单，须在 -i 前
+		args = append(args,
 			"-i", src,
 			"-vf", vf,
 			"-frames:v", "1",
-		}
+		)
 		args = append(args, g.stillFormat.encodeArgs()...)
 		args = append(args, tmp)
 		return run(ctx, g.ffmpegBin, &out, args...)
@@ -311,13 +322,15 @@ func (g *Generator) ProbeVideo(ctx context.Context, path string) (*ProbeResult, 
 // 排在视频流之后），因此先收集后构造，不再循环内提前 return。
 func probeVideo(ctx context.Context, ffprobeBin, path string) (*ProbeResult, error) {
 	var out bytes.Buffer
-	if err := run(ctx, ffprobeBin, &out,
+	args := []string{
 		"-v", "error",
 		"-print_format", "json",
 		"-show_format",
 		"-show_streams",
-		path,
-	); err != nil {
+	}
+	args = append(args, inputProtocolArgs()...) // 输入侧协议白名单，须在输入路径前
+	args = append(args, path)
+	if err := run(ctx, ffprobeBin, &out, args...); err != nil {
 		return nil, err
 	}
 	var probe ffprobeJSON

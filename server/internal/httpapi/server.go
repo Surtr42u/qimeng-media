@@ -21,6 +21,7 @@ import (
 	"qimeng-media/server/internal/events"
 	"qimeng-media/server/internal/httpapi/gen"
 	"qimeng-media/server/internal/libraryrevision"
+	"qimeng-media/server/internal/safego"
 	"qimeng-media/server/internal/sourcematcher"
 	"qimeng-media/server/internal/store/db"
 	"qimeng-media/server/internal/sysmon"
@@ -215,6 +216,10 @@ type Server struct {
 	// 摊薄到可忽略。访问全部经 thumbProgressMu 双检保护。
 	thumbProgressMu    sync.Mutex
 	thumbProgressCache *thumbnailProgressSnapshot
+	// warmupMu 是缩略图预热的单飞闸（thumbnail_warmup.go runWarmupOnce，
+	// 2026-10-17 加固）：周期兜底与扫描后触发互斥，避免并发整库 os.Stat
+	// 与重复 Submit（工作池不按 assetID 去重）。
+	warmupMu sync.Mutex
 }
 
 // New 组装 HTTP 服务。返回 *Server；main 用 Handler() 拿到带完整
@@ -313,12 +318,12 @@ func New(deps Deps) (*Server, error) {
 	if sub, err := s.bus.Subscribe(events.TopicLibraryChanged); err != nil {
 		logger.Warn("推荐缓存失效订阅失败（仅影响缓存新鲜度，TTL 兜底）", "err", err)
 	} else {
-		go func() {
+		safego.Go(logger, "库变更订阅", func() {
 			for range sub.C {
 				s.invalidateRecommendCache()
 				s.bumpLibraryRevision()
 			}
-		}()
+		})
 	}
 	// SSE 连接数 gauge（OBSERVABILITY sse_connections）经 Option 回调注入：
 	// events 包不感知 sysmon，装配期单点接线（绝对值 Set 语义在回调侧）。

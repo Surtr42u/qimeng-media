@@ -3,7 +3,9 @@ package thumbnail
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
+	"runtime/debug"
 	"sync"
 )
 
@@ -63,12 +65,21 @@ func (dg *detachedGroup) do(key string, ctx context.Context, fn func() error) er
 	dg.mu.Unlock()
 
 	go func() {
-		// 后台续生核心：不用调用方的 ctx——客户端断开≠生成作废
+		// 后台续生核心：不用调用方的 ctx——客户端断开≠生成作废。
+		// panic 兜底（2026-10-17）：恢复后写 call.err 并正常 close(done)，
+		// 等待者拿到明确错误而不是永久挂起；单文件致崩不终止服务进程。
+		defer func() {
+			if p := recover(); p != nil {
+				call.err = fmt.Errorf("缩略图后台续生 panic: %v\n%s", p, debug.Stack())
+				slog.Error("缩略图后台续生 panic 已恢复",
+					"panic", p, "stack", string(debug.Stack()))
+			}
+			close(call.done)
+			dg.mu.Lock()
+			delete(dg.terms, key)
+			dg.mu.Unlock()
+		}()
 		call.err = fn()
-		close(call.done)
-		dg.mu.Lock()
-		delete(dg.terms, key)
-		dg.mu.Unlock()
 	}()
 
 	select {

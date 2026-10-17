@@ -61,6 +61,7 @@
   - 流式直传 + tus 极简子集断点续传（POST /uploads，分片 Seal 校验，24h 无活动清扫）。
   - 本机文件夹自动同步通道（ADR-0030）：`QIMENG_LOCAL_SYNC_ROOT` 轮询监测，子文件夹名自动匹配入库，根级 TXT 片段导入归档（同名只留最新）。
 - **文件操作安全（ADR-0038）**：`filing.MoveFile` 预检全面拒绝既有目标，跨卷复制以 `O_EXCL` 独占创建，回收站清理识别冲突不误删非本次目标文件。
+- **安全与可靠性加固（2026-10-17 第五百三十六笔）**：JSON 端点强制 `Content-Type: application/json`；auth 限速只在实际凭据校验前计数（dev 404/坏格式不耗配额）；token 响应 `no-store`；ffmpeg/ffprobe 输入 `-protocol_whitelist file`；local-sync 409 不透传绝对路径；后台任务统一 `safego` panic 兜底；优雅关闭超时不再 `os.Exit(1)`（SSE 在线时也能完成清理）；HTTP `IdleTimeout`/`MaxHeaderBytes`；SQLite 连接池上限 + facets 并发限 4；缩略图预热单飞；回收站恢复清理补 `ErrMoveDidNotCreateTarget` 哨兵；migration 0018 补四个性能索引（作者/标签反查、likes(day)、assets(mtime)）。
 - **事件面与多端联动**：SSE 广播 `favorite.changed` / `like.changed`（ADR-0029）；跨库浏览事件通过文件名与相对路径兜底重映射（ADR-0037）。
 - **数据库与性能**：SQLite WAL 模式 + `synchronous=NORMAL`；扫描入库段级事务化；多维度聚合并行计算；DSN 连接池与查询计划锁保护。
 
@@ -72,13 +73,17 @@
 
 ## 5. 当前待办（只列真缺口）
 
-1. **NAS 服务端重新构建部署（用户节点）**：2026-10 批次服务端新特性（断点续传端点、SSE 事件、跨库重映射 ADR-0037、移动安全 ADR-0038）需重新部署 NAS 容器方可生效。
+1. **NAS 服务端重新构建部署（用户节点）**：2026-10 批次服务端新特性（断点续传端点、SSE 事件、跨库重映射 ADR-0037、移动安全 ADR-0038、2026-10-17 安全/可靠性加固与 migration 0018）需重新部署 NAS 容器方可生效。
 2. **会话远程吊销端点 + 401 专用错误码**：SECURITY 规划项，待设备退役或公网隧道暴露常态化时触发。
 3. **缩略图双管道分派与孤儿全量对账**：DOMAIN_RULES §11 规划项，待十万级大库性能需求触发。
 4. **Android SSE 静默黑洞看门狗**：网络无感断连自愈检测，当前依赖 5min TTL 兜底。
 5. **GBK/GB18030 TXT 编码支持**：本机同步通道当前仅支持 UTF-8（剥 BOM），待用户实际遇到非 UTF-8 TXT 时触发。
 6. **本机同步秒级响应与指标化**：当前为 30s 轮询，待延迟敏感需求出现时引入 fsnotify。
 7. **来源与词表写入 UTF-8 有效性门禁**：防非法字节入库，待实际出现乱码词条时强化。
+8. **容器与 CI 供应链加固（审计 P2/P3，未落地）**：Docker 基础镜像 digest 固定 + 非 root + cap_drop/no-new-privileges（需 NAS 卷权限实测）；GitHub Actions 全部 pin SHA + 顶层 `permissions: contents: read`；出包 workflow 的 Go 补丁位与 ci 对齐（`1.27.x`→`1.27.0`）；sdk.lock 门禁的 Windows/Linux 重算差异（2026-10-11 起 master CI 已转绿，但注释与出包绕行口径待清理）。
+9. **依赖漏洞门禁（审计 P1，未落地）**：Dependabot（gomod/npm/cargo/actions 四生态）+ govulncheck / npm audit / cargo audit / dependency-review；Go 直接依赖 6 项 patch 可升（prometheus client_golang/common、gopsutil、x/crypto、x/sync、modernc/sqlite）。
+10. **审计遗留的 M/L 项**：httpapi 编排下沉（ADR-0019，L）；`GET /authors` 的 view_count 逐关联行 COUNT 预聚合（作者页随库增长变慢）；scanner 符号链接跳过（纵深防御）；断点续传会话总量上限；DB/WAL/快照文件强制 0600；访问日志（含脱敏）；`/readyz` 补媒体目录/磁盘检查；大库 EXPLAIN QUERY PLAN 实测验证 0018 索引命中（尤其 mtime 排序 CASE 表达式）。
+
 
 ## 6. 线上/本地使用入口
 
@@ -92,7 +97,7 @@
 
 ## 7. 用户约定（长期有效）
 
-1. 日常本地开发可用 dev 免密；**生产与真机环境禁止** `auth_dev_mode`。
+1. 日常本地开发可用 dev 免密；**生产与真机环境禁止** `auth_dev_mode`。2026-10-17 审计风险接受：日常启动链保留 dev 免密 + 全接口监听（用户明确本人使用），代价是**同 LAN 不可信设备（访客 WiFi）可免密取得 admin token**——仅限受信家庭内网使用，接客网/远程必须关闭 dev 模式或改回环监听。
 2. 前端统一由后端 8420 端口托管 `web/dist`，修改前端需先执行 `npm --prefix web run build`。
 3. **Android 构建部署必须显式指定 AVD（qimeng_api35）或真机 USB 目标**——严禁碰 `emulator-5554`（雷电游戏模拟器）。
 4. 8420 真库严禁写入测试脏数据；测试验证使用隔离实例或虚构数据。

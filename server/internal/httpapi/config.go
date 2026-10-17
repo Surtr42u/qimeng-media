@@ -105,6 +105,9 @@ func (s *Server) GetApiV1Config(w http.ResponseWriter, r *http.Request) {
 // 键齐全与类型，成功后直接取值），限额语义（maxJSONBody）与 decodeJSON
 // 一致。
 func (s *Server) PutApiV1Config(w http.ResponseWriter, r *http.Request) {
+	if !requireJSONContentType(w, r) {
+		return // 统一 JSON Content-Type 门禁（跨站简单请求防线，见 errors.go）
+	}
 	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxJSONBody))
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, codeInvalidBody, "请求体不是合法 JSON")

@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"qimeng-media/server/internal/httpapi/gen"
+	"qimeng-media/server/internal/safego"
 	"qimeng-media/server/internal/store"
 )
 
@@ -35,7 +36,7 @@ const (
 // 默认推荐流。与缩略图回填的开机静默窗不同——本预热是单次 SQLite 聚合+纯
 // 函数打分（非 ffmpeg 批量转码），且直接服务首条请求，不延后。
 func (s *Server) StartRecommendPrewarm() {
-	go s.prewarmRecommend()
+	safego.Go(s.logger, "推荐流预热", s.prewarmRecommend)
 }
 
 // prewarmRecommend 预热一轮：构造与 App 首屏请求同键的缓存键并走单飞计算。

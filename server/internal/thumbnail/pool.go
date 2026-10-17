@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"runtime"
+	"runtime/debug"
 	"sync"
 
 	"qimeng-media/server/internal/sysmon"
@@ -85,10 +86,24 @@ func (p *WorkerPool) work() {
 		// 取走一个任务后刷新队列深度 gauge（len 对 channel 是并发安全的
 		// 近似读，gauge 语义允许）。M3 预热接入前无生产者，恒 0 属预期。
 		sysmon.Default.SetThumbQueueDepth(int64(len(p.tasks)))
-		if err := p.handle(p.ctx, task); err != nil {
-			p.logger.Error("缩略图任务失败",
-				"assetId", task.AssetID, "source", task.SourcePath, "err", err)
+		p.handleTask(task)
+	}
+}
+
+// handleTask 单任务 panic 兜底（2026-10-17 加固）：worker 不因单个坏文件
+// 崩溃退出（否则池逐步失去 worker、队列永远不消化），进程也不因后台
+// 任务 panic 退出。任务级 recover 后继续处理后续任务。
+func (p *WorkerPool) handleTask(task Task) {
+	defer func() {
+		if r := recover(); r != nil {
+			p.logger.Error("缩略图任务 panic 已恢复",
+				"assetId", task.AssetID, "source", task.SourcePath,
+				"panic", r, "stack", string(debug.Stack()))
 		}
+	}()
+	if err := p.handle(p.ctx, task); err != nil {
+		p.logger.Error("缩略图任务失败",
+			"assetId", task.AssetID, "source", task.SourcePath, "err", err)
 	}
 }
 

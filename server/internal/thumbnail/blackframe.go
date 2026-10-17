@@ -177,14 +177,16 @@ func (g *Generator) pickFrameTime(ctx context.Context, videoPath string) (*Frame
 func (g *Generator) lumaSamplesAt(ctx context.Context, videoPath string, at time.Duration) ([]byte, error) {
 	grid := fmt.Sprintf("%d:%d", lumaSampleGrid, lumaSampleGrid)
 	var out bytes.Buffer
-	if err := run(ctx, g.ffmpegBin, &out,
-		"-ss", formatSeconds(at),
+	args := []string{"-ss", formatSeconds(at)}
+	args = append(args, inputProtocolArgs()...) // 输入侧协议白名单，须在 -i 前
+	args = append(args,
 		"-i", videoPath,
 		"-vf", "scale="+grid+":out_range=full,format=gray",
 		"-frames:v", "1",
 		"-f", "rawvideo",
 		"-",
-	); err != nil {
+	)
+	if err := run(ctx, g.ffmpegBin, &out, args...); err != nil {
 		return nil, err
 	}
 	return out.Bytes(), nil

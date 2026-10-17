@@ -9,6 +9,7 @@ package httpapi
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -117,6 +118,61 @@ func TestRestoreMoveFailureCleansLibraryHalfFile(t *testing.T) {
 	}
 	if _, err := os.Stat(e.file); err != nil {
 		t.Fatalf("回收站文件本体必须保留（失败时源未动）: %v", err)
+	}
+}
+
+// TestRestoreMoveDidNotCreateTargetKeepsExternalTarget：恢复出站 moveFile 返回
+// ErrMoveDidNotCreateTarget（本次尝试没有创建目标）时，目标路径上由外部进程
+// 并发创建的同名完整文件不得被当成本次残留清掉。
+//
+// 回归背景（2026-10-17 审计）：恢复路径的残留清理曾只跳过 ErrMoveTargetExists，
+// 漏了 ErrMoveDidNotCreateTarget；同文件删除入站/回滚两处已双哨兵跳过，
+// ADR-0038 决策 2 要求三处一致。注入替身模拟"外部进程在预检查与提交之间
+// 创建了目标、本次搬移失败"的竞态——且外部文件比回收站源文件小，若清理
+// 误跑（RemovePartialCopy 只删严格小于源的副本）就会被删除。
+func TestRestoreMoveDidNotCreateTargetKeepsExternalTarget(t *testing.T) {
+	env := newTestEnv(t)
+	// 先真实删除一次，制造一条带 meta 的回收站条目。
+	resp := env.do(t, "DELETE", "/api/v1/assets/"+testFiles[0].id, "")
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != 200 {
+		t.Fatalf("前置删除应 200，得到 %d", resp.StatusCode)
+	}
+	entries, err := env.s.listTrash()
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("前置删除后应有且仅有 1 条回收站条目: n=%d err=%v", len(entries), err)
+	}
+	e := entries[0]
+	target := filepath.Join(env.media, testFiles[0].relPath)
+	external := []byte("external-writer")
+
+	orig := moveFile
+	moveFile = func(_, dst string) error {
+		// 模拟外部进程并发写入完整目标文件；本次 MoveFile 没有创建它。
+		if werr := os.WriteFile(dst, external, 0o644); werr != nil {
+			return werr
+		}
+		return fmt.Errorf("%w: %s", filing.ErrMoveDidNotCreateTarget, dst)
+	}
+	t.Cleanup(func() { moveFile = orig })
+
+	resp2 := env.do(t, "POST", "/api/v1/trash/"+e.id+"/restore", "")
+	defer func() { _ = resp2.Body.Close() }()
+	if resp2.StatusCode != 500 {
+		t.Fatalf("恢复失败应 500，得到 %d", resp2.StatusCode)
+	}
+	got, rerr := os.ReadFile(target)
+	if rerr != nil {
+		t.Fatalf("外部并发创建的目标文件不得被清理掉: %v", rerr)
+	}
+	if string(got) != string(external) {
+		t.Fatalf("外部目标文件内容被改: %q", got)
+	}
+	if _, serr := os.Stat(e.metaFile); serr != nil {
+		t.Fatalf("meta 必须保留（重试恢复的真相源）: %v", serr)
+	}
+	if _, serr := os.Stat(e.file); serr != nil {
+		t.Fatalf("回收站文件本体必须保留（失败时源未动）: %v", serr)
 	}
 }
 

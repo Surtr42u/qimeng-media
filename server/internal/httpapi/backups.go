@@ -104,6 +104,9 @@ func (s *Server) PutApiV1BackupsSchedule(w http.ResponseWriter, r *http.Request)
 		writeErr(w, http.StatusServiceUnavailable, codeBackupUnavailable, "备份功能未装配")
 		return
 	}
+	if !requireJSONContentType(w, r) {
+		return // 统一 JSON Content-Type 门禁（与 decodeJSON 同口径，见 errors.go）
+	}
 	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxJSONBody))
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, codeInvalidBody, "请求体不是合法 JSON")

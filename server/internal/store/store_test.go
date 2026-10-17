@@ -99,6 +99,24 @@ func TestOpenAndMigrateCreatesAllTables(t *testing.T) {
 	}
 }
 
+// perfIndexes 是 0018 migration 建立的性能索引（2026-10-17 索引补齐批）。
+var perfIndexes = []string{
+	"idx_asset_authors_author", "idx_asset_tags_tag",
+	"idx_likes_day", "idx_assets_mtime",
+}
+
+// TestMigration0018CreatesPerfIndexes：0018 必须建出四个索引——作者/标签
+// 反查、周期榜单窗口聚合与默认浏览排序（mtime）的性能基础；漏建不会报错、
+// 只会静默退化为全表扫描，所以用 sqlite_master 显式锁定。
+func TestMigration0018CreatesPerfIndexes(t *testing.T) {
+	conn, _ := openTestDB(t)
+	for _, idx := range perfIndexes {
+		if !objExists(t, conn, "index", idx) {
+			t.Errorf("0018 迁移后缺少索引 %s", idx)
+		}
+	}
+}
+
 // TestUpsertKeepsIdentity：adr/0004 核心语义——同路径再入库时身份（asset_id）
 // 与首次入库时间保持不变，只有元数据属性被刷新。
 func TestUpsertKeepsIdentity(t *testing.T) {
@@ -233,8 +251,9 @@ func idForIndex(i int) string {
 
 // TestMigrateDownThenUp：down migration 必须可执行（生产禁用，测试与灾备依赖），
 // 且 down 后能再次 up（幂等重建）。migration 演进后回退步数随之变化：
-// 新增迁移在链首插入对应验证步——首步验证 0017 down（旧项目别名空壳清理，
-// 纯数据删除无结构回退、0016 对象保留），
+// 新增迁移在链首插入对应验证步——首步验证 0018 down（四个性能索引删除、
+// 0017 数据清理无结构产物、0016 对象保留），
+// 次步验证 0017 down（旧项目别名空壳清理，纯数据删除无结构回退、0016 对象保留），
 // 次步验证 0016 down（关联溯源双列删除、
 // 0015 对象保留），
 // 次步验证 0015 down（观看历史覆盖索引
@@ -257,7 +276,19 @@ func idForIndex(i int) string {
 // 第八步验证 0001 down（业务表全删）。
 func TestMigrateDownThenUp(t *testing.T) {
 	conn, _ := openTestDB(t) // 已 up
-	// 首步：0017 down（旧项目别名空壳清理——纯数据删除，无结构产物可断言；
+	// 首步：0018 down（性能索引删除；0016 对象保留即证只回退了一个版本）
+	if err := MigrateDown(conn, 1); err != nil {
+		t.Fatalf("MigrateDown(0018) 失败: %v", err)
+	}
+	for _, idx := range perfIndexes {
+		if objExists(t, conn, "index", idx) {
+			t.Errorf("0018 down 后索引 %s 仍存在（0018 down 缺 DROP INDEX）", idx)
+		}
+	}
+	if !columnExists(t, conn, "asset_authors", "origin") {
+		t.Error("0018 down 后 asset_authors.origin 应保留（0016 对象不随 0018 回退）")
+	}
+	// 次步：0017 down（旧项目别名空壳清理——纯数据删除，无结构产物可断言；
 	// 0016 对象保留即证只回退了一个版本）
 	if err := MigrateDown(conn, 1); err != nil {
 		t.Fatalf("MigrateDown 失败: %v", err)
@@ -540,9 +571,11 @@ func TestLegacyAliasAuthorPrune(t *testing.T) {
 
 	t.Run("空壳行全删", func(t *testing.T) {
 		conn, _ := openTestDB(t)
-		// 回退 0017 复现升级前形态，再种入 6 个历史空壳（无关联 + origin=import）。
-		if err := MigrateDown(conn, 1); err != nil {
-			t.Fatalf("MigrateDown(0017) 失败: %v", err)
+		// 回退 0018+0017 复现升级前形态（0018 是纯索引迁移，回退只删索引；
+		// 再 up 会把 0017 的 DELETE 重新执行一遍），再种入 6 个历史空壳
+		// （无关联 + origin=import）。
+		if err := MigrateDown(conn, 2); err != nil {
+			t.Fatalf("MigrateDown(0018+0017) 失败: %v", err)
 		}
 		now := FormatTimestamp(time.Now())
 		for _, id := range legacyIDs {
@@ -570,8 +603,8 @@ func TestLegacyAliasAuthorPrune(t *testing.T) {
 		}); err != nil {
 			t.Fatalf("UpsertAsset 失败: %v", err)
 		}
-		if err := MigrateDown(conn, 1); err != nil {
-			t.Fatalf("MigrateDown(0017) 失败: %v", err)
+		if err := MigrateDown(conn, 2); err != nil {
+			t.Fatalf("MigrateDown(0018+0017) 失败: %v", err)
 		}
 		// 白名单 id 但仍有文件关联 → 保留（重建后零关联作者行的既有形态，
 		// 与 DELETE /authors/import-txt 的「作者行保留」语义一致）。

@@ -17,6 +17,8 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"qimeng-media/server/internal/safego"
 )
 
 // DirName 是备份目录在 DataDir 下的子目录名（main 组装备份目录路径的
@@ -374,7 +376,7 @@ func (m *Manager) applyScheduleLocked(enabled bool, interval time.Duration, rete
 	}
 	loopCtx, cancel := context.WithCancel(m.schedCtx)
 	m.schedCancel = cancel
-	go m.scheduleLoop(loopCtx, m.schedInterval)
+	safego.Go(m.logger, "备份调度", func() { m.scheduleLoop(loopCtx, m.schedInterval) })
 	m.logger.Info("备份调度已应用", "enabled", m.schedEnabled, "interval", m.schedInterval, "retention", m.retention)
 }
 

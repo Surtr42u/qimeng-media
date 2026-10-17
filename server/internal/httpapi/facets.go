@@ -127,6 +127,11 @@ func newFacetFilters(params gen.GetApiV1AssetsFacetsParams) facetFilters {
 // 输入不依赖另一查询的结果；SQLite WAL 读并发天然支持。错误语义与原串行
 // 版一致：首个失败的 err 经 Wait 返回，阶段名随错误链传递（日志可定位），
 // 客户端拿到统一的 500（原先各函数自行写响应的文案本就同一模板）。
+// facetQueryConcurrency 是 facets 六个聚合查询的并发上限（2026-10-17 加固）：
+// SQLite 的 cache_size 是每连接 32MiB，六路全并发会在手机单机形态抬高内存
+// 峰值；限 4 保留并行收益（相对原串行版仍是数倍加速），超出部分排队。
+const facetQueryConcurrency = 4
+
 func (s *Server) GetApiV1AssetsFacets(w http.ResponseWriter, r *http.Request, params gen.GetApiV1AssetsFacetsParams) {
 	f := newFacetFilters(params)
 	isCosPartition := params.Partition != nil && *params.Partition == gen.PartitionCos
@@ -141,7 +146,10 @@ func (s *Server) GetApiV1AssetsFacets(w http.ResponseWriter, r *http.Request, pa
 		workRows   []db.FacetCosWorkCountsRow
 		typeRows   []db.FacetMediaTypeCountsRow
 	)
-	g := errgroup.Group{}
+	// WithContext + SetLimit：任一维失败即取消其余在途查询（不再白跑），
+	// 同时限制并发连接数（见 facetQueryConcurrency 注释）。
+	g, ctx := errgroup.WithContext(ctx)
+	g.SetLimit(facetQueryConcurrency)
 	g.Go(func() error {
 		row, err := s.q.FacetPartitionCounts(ctx, db.FacetPartitionCountsParams{
 			MediaType:      f.mediaType,

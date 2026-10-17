@@ -24,6 +24,7 @@ import (
 	"qimeng-media/server/internal/config"
 	"qimeng-media/server/internal/filing"
 	"qimeng-media/server/internal/localsync"
+	"qimeng-media/server/internal/safego"
 	"qimeng-media/server/internal/scanner"
 	"qimeng-media/server/internal/store"
 	"qimeng-media/server/internal/store/db"
@@ -44,7 +45,7 @@ func (s *Server) StartLocalSyncRunner(ctx context.Context) {
 	interval := s.localSyncInterval()
 	s.logger.Info("本机自动同步通道已启动", "root", s.cfg.LocalSync.Root,
 		"interval", interval.String(), "stableAge", s.localSyncStableAge().String())
-	go func() {
+	safego.Go(s.logger, "本机同步轮询", func() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
@@ -57,7 +58,7 @@ func (s *Server) StartLocalSyncRunner(ctx context.Context) {
 				s.runLocalSyncCycleOnce(ctx)
 			}
 		}
-	}()
+	})
 }
 
 // localSyncInterval 生效轮询周期：<=0 回落 DefaultLocalSyncInterval

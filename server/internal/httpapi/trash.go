@@ -26,6 +26,7 @@ import (
 	"qimeng-media/server/internal/events"
 	"qimeng-media/server/internal/filing"
 	"qimeng-media/server/internal/httpapi/gen"
+	"qimeng-media/server/internal/safego"
 	"qimeng-media/server/internal/store"
 	"qimeng-media/server/internal/store/db"
 	"qimeng-media/server/internal/sysmon"
@@ -83,10 +84,10 @@ const trashMetricsRefreshTimeout = 3 * time.Second
 // 失败不影响业务路径的成功响应。
 func (s *Server) refreshTrashMetrics() {
 	done := make(chan struct{})
-	go func() {
-		defer close(done)
+	safego.Go(s.logger, "回收站指标刷新", func() {
+		defer close(done) // panic 恢复路径也关闭 done，避免请求侧白等满超时
 		s.refreshTrashMetricsOnce()
-	}()
+	})
 	select {
 	case <-done:
 	case <-time.After(trashMetricsRefreshTimeout):
@@ -401,7 +402,12 @@ func (s *Server) PostApiV1TrashTrashIdRestore(w http.ResponseWriter, r *http.Req
 			// 出站半截落在库内目标路径：不清则 meta 未删、重试恢复因目标名
 			// 被占自动改名，残缺件与完整件并存且扫描器会把残缺件注册成坏
 			// 资产——失败即清（best-effort），错误原样上抛走既有 500 语义。
-			if !errors.Is(err, filing.ErrMoveTargetExists) {
+			// 双哨兵必须与下方两处（本文件 :163/:183 附近）一致跳过
+			// （ADR-0038 决策 2）：ErrMoveDidNotCreateTarget = 本次尝试没有
+			// 在目标端创建文件，此时同名目标可能是外部进程并发创建的完整
+			// 文件，不能当本次残留清掉（2026-10-17 审计修复：此处曾漏判）。
+			if !errors.Is(err, filing.ErrMoveTargetExists) &&
+				!errors.Is(err, filing.ErrMoveDidNotCreateTarget) {
 				s.cleanupMoveResidue(e.file, target)
 			}
 			return err

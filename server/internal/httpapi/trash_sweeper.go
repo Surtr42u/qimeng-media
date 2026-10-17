@@ -11,6 +11,7 @@ import (
 
 	"qimeng-media/server/internal/config"
 	"qimeng-media/server/internal/filing"
+	"qimeng-media/server/internal/safego"
 )
 
 // trashRetentionDays 返回生效的回收站保留天数：配置 >=1 用配置值，否则
@@ -38,7 +39,7 @@ func (s *Server) trashSweepInterval() time.Duration {
 // 把 retention_days 配成极大值即可。
 func (s *Server) StartTrashSweeper(ctx context.Context) {
 	interval := s.trashSweepInterval()
-	go func() {
+	safego.Go(s.logger, "回收站到期清扫", func() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
@@ -49,7 +50,7 @@ func (s *Server) StartTrashSweeper(ctx context.Context) {
 				s.sweepTrashOnce()
 			}
 		}
-	}()
+	})
 }
 
 // sweepTrashOnce 一轮到期清扫：遍历回收站 meta → filing.TrashExpired 判定

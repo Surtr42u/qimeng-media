@@ -13,9 +13,10 @@ name: 云端出包（内嵌 arm64 release 包）
 # 与 ci.yml 的 android 作业是同一条装配链（oapi-codegen → arm64 交叉编译 →
 # jniLibs 三件套 → gradle），差别只有三点：
 #   ① 本作业自足生成三端 SDK（不消费 sdk-chain 产物、**不经 sdk.lock 指纹门禁**）：
-#      指纹锁守的是「协议改动有没有同 commit 同步锁文件」，与能不能出包无关，
-#      且该门禁当前处于既有红灯（Windows 本机与 Linux runner 重算不一致，2026-10-04
-#      起 4 连红），不该阻塞装机验证；
+#      指纹锁守的是「协议改动有没有同 commit 同步锁文件」，与能不能出包无关；
+#      该门禁曾因 Windows/Linux 重算差异自 2026-10-04 起连红，2026-10-11 随
+#      Go 补丁锁（ad9f1c79）修复后 master ci 已全绿（run #5）。本通道仍不跑
+#      指纹校验——出包语义独立，跳过校验的风险由「出包前先看 ci」兜底；
 #   ② 出 **release** 包（R8 + 资源收缩）：用户日常装机走 release 通道（debug 构建税
 #      会掉帧，第四百五十六笔记档），与真机体验一致；签名复用 debug keystore
 #      （app/build.gradle.kts 显式 `signingConfigs.getByName("debug")`）——但
@@ -23,7 +24,7 @@ name: 云端出包（内嵌 arm64 release 包）
 #      云端包签名随之漂移、`adb install -r` 覆盖安装必失败（只能卸载=丢 App 数据）。
 #      故构建前必须从 Secret `QIMENG_DEBUG_KEYSTORE_B64` 还原本机 keystore
 #      （2026-10-10 第五百一十九笔），使云端包与真机已装包同签名、可直接覆盖；
-#   ③ 只 workflow_dispatch 手动触发，不并入日常 CI 门禁（不改变既有红灯语义）。
+#   ③ 只 workflow_dispatch 手动触发，不并入日常 CI 门禁（不改变 ci 门禁语义）。
 on:
   workflow_dispatch:
 

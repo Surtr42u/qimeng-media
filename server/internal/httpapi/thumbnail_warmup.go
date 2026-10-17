@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"qimeng-media/server/internal/httpapi/gen"
+	"qimeng-media/server/internal/safego"
 	"qimeng-media/server/internal/thumbnail"
 )
 
@@ -35,20 +36,35 @@ const (
 )
 
 // StartThumbnailWarmup 组合根（main）调用一次：daemon goroutine，随进程退出。
-// 开机先回填一轮，再进周期兜底循环。
+// 开机先回填一轮，再进周期兜底循环。safego 兜底 panic（2026-10-17）：
+// 预热是纯后台优化任务，崩溃不应终止整个服务进程。
 func (s *Server) StartThumbnailWarmup() {
-	go func() {
-		s.warmupOnce("启动回填")
+	safego.Go(s.logger, "缩略图预热", func() {
+		s.runWarmupOnce("启动回填")
 		for {
 			time.Sleep(thumbnailWarmupInterval)
-			s.warmupOnce("周期兜底")
+			s.runWarmupOnce("周期兜底")
 		}
-	}()
+	})
 }
 
 // WarmupAfterScan 扫描结束后的预热入口（FinishScan 钩子异步调用，不阻塞终态回写）。
 func (s *Server) WarmupAfterScan() {
-	go s.warmupOnce("扫描后预热")
+	safego.Go(s.logger, "扫描后缩略图预热", func() { s.runWarmupOnce("扫描后预热") })
+}
+
+// runWarmupOnce 是 warmupOnce 的并发闸（2026-10-17 加固）：周期 daemon 与
+// 每次扫描后的触发各自起 goroutine，此前无互斥——扫描完成恰逢周期兜底时会
+// 并发跑两轮整库 os.Stat + 重复 Submit（工作池不按 assetID 去重，重复任务
+// 会重复 ffmpeg 生成/覆盖写）。单飞语义：已有预热在跑就跳过本轮，下一轮或
+// 下次扫描仍会补齐（预热是幂等的最终一致任务，跳过无数据风险）。
+func (s *Server) runWarmupOnce(reason string) {
+	if !s.warmupMu.TryLock() {
+		s.logger.Debug("缩略图预热已在运行，跳过本轮", "reason", reason)
+		return
+	}
+	defer s.warmupMu.Unlock()
+	s.warmupOnce(reason)
 }
 
 // waitForBootQuietWindow 开机静默窗：等到「进程启动 + 配置延迟」之后才返回，

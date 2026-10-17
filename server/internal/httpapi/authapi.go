@@ -148,10 +148,6 @@ func (s *Server) registerSessionLocked(r *http.Request, userID, tokenHash string
 // 幂等保护：users 表已有行（CountUsers>0）一律 409——即使攻击者在
 // 局域网内抢先访问，也只能拿到 409，抢不走已设置的账户。
 func (s *Server) PostApiV1AuthSetup(w http.ResponseWriter, r *http.Request) {
-	if !s.authLimit.allow(s.now()) {
-		writeErr(w, http.StatusTooManyRequests, codeRateLimited, "尝试过于频繁，请稍后再试")
-		return
-	}
 	var req gen.PostApiV1AuthSetupJSONRequestBody
 	if !decodeJSON(w, r, &req) {
 		return
@@ -160,6 +156,13 @@ func (s *Server) PostApiV1AuthSetup(w http.ResponseWriter, r *http.Request) {
 	// schema，这里手动兜底）。
 	if len(req.Password) < 8 {
 		writeErr(w, http.StatusBadRequest, codeWeakPassword, "密码至少 8 位")
+		return
+	}
+	// 限速计数放在真正进入凭据校验路径之前（2026-10-17 加固，见 SECURITY
+	// 「auth 端点限速」）：格式非法的廉价请求不消耗全局配额——否则未鉴权方
+	// 可用垃圾请求把共享窗口打满，把管理员的 setup/login 锁成永久 429。
+	if !s.authLimit.allow(s.now()) {
+		writeErr(w, http.StatusTooManyRequests, codeRateLimited, "尝试过于频繁，请稍后再试")
 		return
 	}
 
@@ -223,7 +226,7 @@ func (s *Server) PostApiV1AuthSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// token 仅此一次明文返回（openapi AuthToken 语义）。
-	writeJSON(w, http.StatusCreated, gen.AuthToken{Token: &token})
+	writeAuthToken(w, http.StatusCreated, token)
 }
 
 // PostApiV1AuthVerify 校验 token 有效性。
@@ -241,16 +244,18 @@ func (s *Server) PostApiV1AuthVerify(w http.ResponseWriter, r *http.Request) {
 // 401），已废弃。未初始化（无用户行）返回 401：与 verify 的未初始化
 // 行为一致，不泄露"系统是否已初始化"之外的信息。
 func (s *Server) PostApiV1AuthLogin(w http.ResponseWriter, r *http.Request) { //nolint:revive // 生成接口要求的方法名
-	if !s.authLimit.allow(s.now()) {
-		writeErr(w, http.StatusTooManyRequests, codeRateLimited, "尝试过于频繁，请稍后再试")
-		return
-	}
 	var req gen.PostApiV1AuthLoginJSONRequestBody
 	if !decodeJSON(w, r, &req) {
 		return
 	}
 	if req.Password == "" {
 		writeErr(w, http.StatusUnauthorized, codeUnauthorized, "密码错误")
+		return
+	}
+	// 限速计数在进入凭据校验之前（2026-10-17 加固）：空密码/坏 body 等
+	// 格式错误请求不消耗配额；dev-login 的 404 同理不消耗（见该 handler）。
+	if !s.authLimit.allow(s.now()) {
+		writeErr(w, http.StatusTooManyRequests, codeRateLimited, "尝试过于频繁，请稍后再试")
 		return
 	}
 	u, err := s.q.GetFirstUser(r.Context())
@@ -283,7 +288,16 @@ func (s *Server) PostApiV1AuthLogin(w http.ResponseWriter, r *http.Request) { //
 		s.internalErr(w, "auth login: 登记会话", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, gen.AuthToken{Token: &token})
+	writeAuthToken(w, http.StatusOK, token)
+}
+
+// writeAuthToken 输出明文 token 响应（setup/login/dev-login 三处共用）：
+// 统一 `Cache-Control: no-store`（2026-10-17 加固）——明文 token 只在响应体
+// 出现一次，不允许被浏览器/代理缓存留存；POST 默认不缓存是不依赖客户端
+// 与中间层默认行为的纵深防御（SECURITY「token 泄露应急」）。
+func writeAuthToken(w http.ResponseWriter, status int, token string) {
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, status, gen.AuthToken{Token: &token})
 }
 
 // PostApiV1AuthDevLogin 开发模式免密登录：免密码直接签发会话 token。
@@ -295,13 +309,23 @@ func (s *Server) PostApiV1AuthLogin(w http.ResponseWriter, r *http.Request) { //
 // /auth/login 同语义：每次调用签发一条新会话（dev 冷启动频繁，会话上限
 // 裁剪兜底防涨行）；未初始化时自动创建 admin 占位用户，保证"免密码直奔
 // UI"的开发体验（用户约定：项目未完成前不要密码流程）。
+//
+// 校验顺序（2026-10-17 起）：dev 模式 404 → 限速 → 共享密钥 401。
+// 404 置于限速之前，使生产形态下未鉴权请求无法靠打恒 404 端点耗尽
+// 共享限速窗口（SECURITY「auth 端点限速」同步记档）。
 func (s *Server) PostApiV1AuthDevLogin(w http.ResponseWriter, r *http.Request, params gen.PostApiV1AuthDevLoginParams) { //nolint:revive // 生成接口要求的方法名
-	if !s.authLimit.allow(s.now()) {
-		writeErr(w, http.StatusTooManyRequests, codeRateLimited, "尝试过于频繁，请稍后再试")
+	if !s.cfg.AuthDevMode {
+		// dev 模式关闭 → 404（"端点不存在"语义），且**不消耗** auth 限速配额
+		// （2026-10-17 加固）：生产形态下未鉴权请求无法靠打这个恒 404 端点
+		// 把共享窗口打满、进而锁死管理员的 setup/login。
+		writeErr(w, http.StatusNotFound, codeDevDisabled, "开发模式未开启")
 		return
 	}
-	if !s.cfg.AuthDevMode {
-		writeErr(w, http.StatusNotFound, codeDevDisabled, "开发模式未开启")
+	// 限速计数在 dev 模式判定之后、共享密钥校验之前：既不允许垃圾请求吃配额，
+	// 又保留对"密钥猜解/建会话"慢路径的限流缓冲。顺序=404 → 限流 → 401
+	// （SECURITY「开发模式」节同步口径）。
+	if !s.authLimit.allow(s.now()) {
+		writeErr(w, http.StatusTooManyRequests, codeRateLimited, "尝试过于频繁，请稍后再试")
 		return
 	}
 	// 共享密钥门禁（内嵌形态防同机越权）：仅服务端配置了
@@ -346,7 +370,7 @@ func (s *Server) PostApiV1AuthDevLogin(w http.ResponseWriter, r *http.Request, p
 		s.internalErr(w, "dev login: 登记会话", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, gen.AuthToken{Token: &token})
+	writeAuthToken(w, http.StatusOK, token)
 }
 
 // PostApiV1AuthLogout 登出：吊销当前请求所用的那条会话（204）。

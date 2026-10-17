@@ -301,7 +301,11 @@ func (s *Server) GetApiV1LocalSyncStatus(w http.ResponseWriter, r *http.Request)
 // 非阻塞 kick（容量 1，进行中/已排队时丢弃——重复触发无意义），不等待
 // 完成（202，与扫描触发端点同款语义）。通道未配置同步根、或通道级 lastErr
 // 非空（根不存在/安全校验未通过——与 openapi 409 描述「未配置或安全校验
-// 未通过」对齐）时 409，lastErr 原文透传。
+// 未通过」对齐）时 409。
+//
+// 错误文案口径（2026-10-17 修复，SECURITY 红线 7）：lastErr 可能含库根/
+// 数据目录的**绝对路径**（如"同步根与库根重叠: D:\..."），只进服务端日志，
+// 响应体用固定文案，不向客户端泄露部署路径与拓扑（此前直接透传原文）。
 func (s *Server) PostApiV1LocalSyncTrigger(w http.ResponseWriter, r *http.Request) {
 	if s.cfg.LocalSync.Root == "" {
 		writeErr(w, http.StatusConflict, codeLocalSyncDisabled,
@@ -309,7 +313,9 @@ func (s *Server) PostApiV1LocalSyncTrigger(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if lastErr := s.lsLastErr(); lastErr != "" {
-		writeErr(w, http.StatusConflict, codeLocalSyncDisabled, lastErr)
+		s.logger.Warn("本机同步通道安全校验未通过，拒绝触发", "reason", lastErr)
+		writeErr(w, http.StatusConflict, codeLocalSyncDisabled,
+			"本机同步通道不可用（安全校验未通过或同步根不可达），详情见服务端日志")
 		return
 	}
 	select {

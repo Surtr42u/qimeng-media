@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"qimeng-media/server/internal/httpapi"
+	"qimeng-media/server/internal/safego"
 	"qimeng-media/server/internal/scanner"
 	"qimeng-media/server/internal/sourcematcher"
 	"qimeng-media/server/internal/store/db"
@@ -52,14 +53,15 @@ func (a *scannerAdapter) Scan(_ context.Context, libraryID string) error {
 	}
 
 	// 独立 context：请求 ctx 在 202 返回后即取消，扫描必须比请求活得久。
-	go func() {
+	// safego 兜底 panic：扫描中的意外崩溃不能终止整个服务进程（2026-10-17）。
+	safego.Go(a.log, "全量扫描", func() {
 		_, err := a.sc.Scan(context.Background(), lib)
 		a.release(libraryID)
 		if err != nil {
 			a.log.Error("全量扫描失败", "libraryId", libraryID, "err", err)
 		}
 		a.srv.FinishScan(libraryID, err != nil)
-	}()
+	})
 	return nil
 }
 

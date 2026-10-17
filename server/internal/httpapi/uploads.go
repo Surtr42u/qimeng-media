@@ -24,6 +24,7 @@ import (
 
 	"qimeng-media/server/internal/filing"
 	"qimeng-media/server/internal/httpapi/gen"
+	"qimeng-media/server/internal/safego"
 	"qimeng-media/server/internal/scanner"
 	"qimeng-media/server/internal/store/db"
 	"qimeng-media/server/internal/sysmon"
@@ -419,7 +420,7 @@ func (s *Server) stagingCleaner(path string) func() {
 // ctx 取消即退出（与 StartTrashSweeper 同款生命周期模式）。清扫不 bump
 // 修订号——未产生任何资产（ADR-0028）。
 func (s *Server) StartUploadSweeper(ctx context.Context) {
-	go func() {
+	safego.Go(s.logger, "上传会话清扫", func() {
 		ticker := time.NewTicker(uploadsess.SweepInterval)
 		defer ticker.Stop()
 		for {
@@ -430,7 +431,7 @@ func (s *Server) StartUploadSweeper(ctx context.Context) {
 				s.sweepUploadSessionsOnce()
 			}
 		}
-	}()
+	})
 }
 
 // sweepUploadSessionsOnce 一轮会话过期清扫（测试直接调用注入时钟验证）。

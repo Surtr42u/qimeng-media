@@ -623,8 +623,9 @@ func TestLsReconcilePlacedSize(t *testing.T) {
 }
 
 // TestLocalSyncTriggerSecurityCheckFailed 安全校验未通过（同步根与库根重叠
-// → 通道级 lastErr 非空）：trigger 409 LOCAL_SYNC_DISABLED 且透传 lastErr
-// （与 openapi 409 描述「未配置或安全校验未通过」对齐）。
+// → 通道级 lastErr 非空）：trigger 409 LOCAL_SYNC_DISABLED，响应体用固定
+// 文案且**不得回显内部绝对路径**（SECURITY 红线 7；2026-10-17 起 lastErr
+// 原文只进服务端日志）。
 func TestLocalSyncTriggerSecurityCheckFailed(t *testing.T) {
 	e := newTestEnv(t)                                      // 走 setup 拿 token
 	e.cfg.LocalSync = config.LocalSyncConfig{Root: e.media} // 指到库根（相等即重叠）
@@ -643,7 +644,15 @@ func TestLocalSyncTriggerSecurityCheckFailed(t *testing.T) {
 	if errBody["code"] != "LOCAL_SYNC_DISABLED" {
 		t.Fatalf("错误码应为 LOCAL_SYNC_DISABLED：%v", errBody)
 	}
-	if msg := errBody["message"]; !strings.Contains(msg, "重叠") {
-		t.Fatalf("409 应透传通道级 lastErr（含「重叠」）：%q", msg)
+	msg := errBody["message"]
+	if !strings.Contains(msg, "详情见服务端日志") {
+		t.Fatalf("409 应使用固定文案（详情进日志）：%q", msg)
+	}
+	// 红线 7：错误响应不得含内部绝对路径（库根/数据目录）。
+	if strings.Contains(msg, e.media) || strings.Contains(msg, e.dataDir) {
+		t.Fatalf("409 响应泄露内部绝对路径：%q", msg)
+	}
+	if strings.Contains(msg, "重叠") {
+		t.Fatalf("409 不应透传 lastErr 原文（含「重叠」与路径）：%q", msg)
 	}
 }

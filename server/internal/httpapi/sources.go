@@ -18,6 +18,7 @@ import (
 
 	"qimeng-media/server/internal/authoring"
 	"qimeng-media/server/internal/httpapi/gen"
+	"qimeng-media/server/internal/safego"
 	"qimeng-media/server/internal/store"
 	"qimeng-media/server/internal/store/db"
 )
@@ -151,7 +152,7 @@ func (s *Server) customSourcesFromSettings(ctx context.Context) []string {
 // PUT 即重试，不阻塞请求。后台 ctx：请求返回后 r.Context() 即取消，
 // 重算必须比请求活得久（同 scannerAdapter.Scan 的取舍）。
 func (s *Server) recomputeAfterCustomSources() {
-	go func() {
+	safego.Go(s.logger, "自定义出处重算", func() {
 		libs, err := s.q.ListLibraries(context.Background())
 		if err != nil {
 			s.logger.Error("自定义出处重算：读取库列表失败", "err", err)
@@ -164,5 +165,5 @@ func (s *Server) recomputeAfterCustomSources() {
 				}
 			}
 		}
-	}()
+	})
 }
