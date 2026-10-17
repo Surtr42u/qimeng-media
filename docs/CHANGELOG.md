@@ -9,6 +9,37 @@
 - 署名自查（2026-09-05 补）：每条变更由执行会话先确认自身实际运行模型的真实名称再署名（GLM-5.3 与 GLM-5.3-Flash 是两个不同模型名），禁止沿用上一会话或上一条目的署名行；历史条目真实署名不动。
 
 
+## chore(desktop+web): 清理桌面端 mpv 内核死代码与脚手架残留——全端统一收敛 ArtPlayer 播控（2026-10-17 第五百三十七笔）
+
+执行 AI：Gemini-3.8-Flash（主代理）
+
+- **背景与根因剖析**：
+  - 用户询问 Web 与 App 画质增强及桌面端媒体内核现状，指出桌面壳早已在第四百九十五笔（`ee3d86d3`）用户拍板回归与 Web 端完全一致的标准播控，为何代码库中仍残留 mpv 遗留痕迹。
+  - 实查确认：
+    1. 前端在 495 笔全面遵循 ArtPlayer 官方规范重构后，不论是纯浏览器/PWA 还是 Tauri 桌面壳，实际渲染与交互已 100% 运行标准 HTML5 `<video>`（ArtPlayer）；
+    2. 但桌面壳 Rust 后端 `desktop/src-tauri` 仍保留 `mod mpv;`、`src/mpv/` 模块、`permissions/mpv-commands.toml` 及 `setup-mpv.ps1`；前端 `video-player.tsx` 中保留防守性 `closeOrphanMpvInShell()`，文档 ADR-0036 与 `PLUGIN_PLAN.md` 处于未归档/滞后状态，给后续协作造成认知混淆与死代码包袱；
+  - 用户明确指令：“清理掉吧”。
+- **改动内容**：
+  1. **桌面壳 Rust 后端彻底清理**：
+     - 彻底删除 `desktop/src-tauri/src/mpv/` 目录（`player.rs`, `commands.rs`, `ffi.rs`, `win32.rs`, `mod.rs`）；
+     - `desktop/src-tauri/src/main.rs` 移除 `mod mpv;`、`tauri::generate_handler!` 中的 5 条 mpv 命令、`.manage(mpv::commands::MpvState::default())` 状态挂载与退出时的 `close_session` 回收调用；
+     - 彻底删除 `desktop/src-tauri/permissions/mpv-commands.toml`、`desktop/src-tauri/setup-mpv.ps1` 与 `desktop/PLUGIN_PLAN.md`；
+     - `desktop/src-tauri/capabilities/default.json` 移除 5 项 `allow-mpv-*` 权限声明；
+     - `desktop/.gitignore` 移除 `src-tauri/mpv/` 路径；
+     - `desktop/README.md` 移除 `原生播放内核（libmpv）` 章节，更新为全端统一使用标准 ArtPlayer 的说明。
+  2. **Web 前端防御性死代码与未引用模型清理**：
+     - `web/src/components/media/video-player.tsx`：移除 `closeOrphanMpvInShell()` 定义与 `useEffect` 中的调用，移除遗留未引用的 `nativeTitle?: string` 属性；
+     - `web/src/pages/AssetDetailPage.tsx`：移除向 `VideoPlayer` 传递的 `nativeTitle` 属性；
+     - `web/src/lib/engagement-reporting.ts` 与 `engagement-reporting.test.ts`：移除仅由早期 mpv 轮询使用的未引用类型定义（`NativeTrackInfo`、`NativeMediaProbe`、`NativePollStatus`、`NativePollSignal`）与 `nativePollSignal` 纯函数及相关测试用例；
+     - `web/src/lib/player-labels.ts`：更新注释描述，彻底去除历史 mpv 术语。
+  3. **文档与架构决策同步**：
+     - `docs/adr/0036-desktop-playback-kernel-libmpv.md` 状态正式标记为**已废弃（Superseded / Retired）**，详细记档回归 ArtPlayer 的决策历程与本笔清理范围；
+     - `docs/adr/INDEX.md` 同步更新 ADR-0036 状态为已废弃；
+     - `docs/CAPABILITY_MAP.md` 桌面播放内核行同步更新为“全端统一收敛标准 ArtPlayer（已有）”。
+- **自测验证**：
+  - Web 端：`npm test` 29 个测试套件 311 项单元测试全绿通过；`npm run build` 打包成功（零类型错误、零警告）；
+  - 桌面壳：`cargo test` 17 项单元测试全绿通过（零错误、零 dead_code 警告）。
+- **文档**：`docs/adr/0036-desktop-playback-kernel-libmpv.md`、`docs/adr/INDEX.md`、`docs/CAPABILITY_MAP.md`、`desktop/README.md`、`docs/CHANGELOG.md`（本笔）。
 
 ## fix(server): 后端安全与可靠性加固批次（2026-10-17 第五百三十六笔）
 

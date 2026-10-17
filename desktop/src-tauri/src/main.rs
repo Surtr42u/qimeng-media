@@ -10,7 +10,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // release 版不弹控制台
 
 mod diag;
-mod mpv;
 mod server_config;
 
 use server_config::{load_config, navigation_allowed, normalize_server_url, save_config, ServerConfig};
@@ -225,23 +224,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             get_server_url,
             save_server_url,
-            mpv::commands::mpv_open,
-            mpv::commands::mpv_status,
-            mpv::commands::mpv_control,
-            mpv::commands::mpv_close,
-            // 内置形态关键路径：子窗创建时不带 WS_VISIBLE，唯一摆位/显示入口就是
-            // 这条命令——漏注册 = 播放窗永不显示（web 侧 invoke 失败还会被
-            // .catch 静默吞掉，表现为"有声音没画面"）。新增 mpv_* 命令须同步
-            // 三处：generate_handler! / permissions 清单 / capabilities 引用。
-            mpv::commands::mpv_stage_rect
         ])
-        // 原生播放内核会话槽（ADR-0036）：播放窗是 user32 自建窗口，不经
-        // Tauri 窗口系统，故 on_window_event 无需感知 mpv-player
-        .manage(mpv::commands::MpvState::default())
         .on_window_event(|window, event| {
-            // 控制层窗销毁（用户 Alt-F4 关控制层）→ 会话一并回收（C4.5 双层
-            // 同生命周期的反向路径：正向回收在 player.rs run 清理序里）。
-            // 注意此处不可动「关主窗=退出」判定语义（MPV_MIGRATION 坑 6 勿修复）
             if let WindowEvent::Destroyed = event {
                 let app = window.app_handle();
                 diag::trace(&format!("window_destroyed label={}", window.label()));
@@ -281,15 +265,11 @@ fn main() {
         })
         .build(tauri::generate_context!())
         .expect("绮梦影库桌面壳启动失败")
-        .run(|app, event| match event {
+        .run(|_app, event| match event {
             // 退出原因落盘（2026-10-06 闪退排查）：进程"干净退场"不留系统级
             // 崩溃痕迹，这里能回答「tauri 为什么决定退出」
             tauri::RunEvent::ExitRequested { code, .. } => {
                 diag::trace(&format!("exit_requested code={code:?}"));
-                // 退出前尽力回收播放会话（幂等，不阻塞等待线程收尾）：把 Quit 投出去
-                // 让播放窗先销毁。旧实现此处只写日志，会话靠进程 Termination 收尸——
-                // 表现为日志里 exit_requested 之后没有 cleanup_begin（窗口残留到进程终结）。
-                mpv::commands::close_session(&app.state::<mpv::commands::MpvState>());
             }
             tauri::RunEvent::Exit => diag::trace("event_loop_exit"),
             _ => {}

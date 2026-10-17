@@ -41,25 +41,16 @@
 
 ## 状态（Status）
 
-Accepted（2026-10-05，用户拍板）；**实施修订（2026-10-06，用户拍板）**：内核随
-`feat/desktop-libmpv-kernel` 并入 master；「迁移期可见切换入口（chip）」取消——壳内最终
-直接以 mpv 为唯一内核（ArtPlayer 留浏览器模式不变）；C4.5 透明 WebView2 控制层撤回
-（运行闪退未解，判死该路径，见 `desktop/PLUGIN_PLAN.md` §四-8）；嵌入形态修订=**主窗口子窗**
-（WS_CHILD 铺在 web 舞台矩形，「内置播放」，仍 wid/零 render API，见 PLUGIN_PLAN）；触发方式定稿=壳内点视频即原生播放（无可见组件，非"自动播放"特性）；后续插件
-计划统一收口到 `desktop/PLUGIN_PLAN.md`（本 ADR 只记决策不记进度）。
+**已废弃（Superseded / Retired，2026-10-07 用户拍板；2026-10-17 彻底清理代码与配置残留）**。
 
-**实施修订 2（2026-10-06 晚，P0 修复批）**：决策 1/2 的"内置形态"接线存在致命实现缺口——
-`mpv_stage_rect` 未注册进 `generate_handler!`，播放窗（创建时不带 `WS_VISIBLE`）永不显示，
-实况为"有声音没画面"；已修（回归哨兵=该命令相关 dead_code 警告须为 0）。**决策 4 的
-「进度上报 = JS 轮询」口径细化为**：采样节拍 1s 与上报节拍 5s **解耦**（采样是本地 IPC，
-上报受协议节流约束，`useProgress.tick` 自身 5s 节流）。**决策 5 的降级策略落地**：
-`mpv_open` 失败时壳内回退 ArtPlayer（此前只显示错误串=壳内不可播）。**新增两条实测事实**：
-① libmpv 口径下 `osc` 默认 **no**——决策 2「mpv 自管 OSC 控制条」必须在代码里显式开
-（另有 `input-cursor`/`window-dragging`/`mute`/`volume` 四选项同属 libmpv 特异默认值，
-见 PLUGIN_PLAN 坑 10）；② `--chapters-file` 只吃 ffmetadata 格式（OGM 实测 0 章节），
-时间轴打点走该路径落到 OSC 进度条。**另更正 PLUGIN_PLAN 记档**：C4.5 透明控制层的
-"判死刑"是未做对照实验的推测（当时计划的"去掉 transparent 做二分"被误读指令打断），
-不得当既定事实引用——见 PLUGIN_PLAN 坑 11。
+- **废弃原因与架构回归（第四百九十五笔，2026-10-07）**：
+  桌面嵌入原生 mpv 子窗（`wid`）带来了复杂的跨进程/跨 HWND 窗口层叠、鼠标焦点抢夺、菜单错位、全屏同步与 WebView2 渲染死锁等一系列维护负担；用户拍板要求与 Web 官方规范统一。在第 495 笔（`ee3d86d3`）遵循 ArtPlayer 官方技术规范重构播控后，桌面壳全线回归与 Web/PWA 完全一致的 **ArtPlayer（HTML5 `<video>`）**。
+- **死代码与脚手架清理（2026-10-17，用户指令「清理掉吧」）**：
+  - 彻底删除桌面壳 Rust 侧的 `desktop/src-tauri/src/mpv/` 目录（`player.rs`, `commands.rs`, `ffi.rs`, `win32.rs`）；
+  - 从 `main.rs` 移除 `mod mpv;`、`generate_handler!` 中的 mpv 命令注册、`MpvState` 受管状态及退出清理调用；
+  - 彻底删除 `permissions/mpv-commands.toml`、`setup-mpv.ps1`、`PLUGIN_PLAN.md`，并在 `capabilities/default.json` 与 `.gitignore` 清理相关权限与路径；
+  - 清除 Web 端 `video-player.tsx` 中的 `closeOrphanMpvInShell()` 防守调用与 `AssetDetailPage.tsx` 的遗留 `nativeTitle` 传参，清理 `engagement-reporting.ts` 中的未引用轮询类型与测试。
+- **最终形态**：桌面壳保持纯粹的连接模式薄壳定位，媒体播放 100% 由 Web 端 ArtPlayer 驱动，两端交互体验与代码单一来源完全对齐。
 
 ## 后果（Consequences）
 

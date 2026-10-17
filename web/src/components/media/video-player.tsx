@@ -40,28 +40,11 @@ export interface VideoPlayerProps {
   onPause?: (positionSeconds: number) => void
   /** 起播（页面侧上报 play 事件，口径 B 防重闸门） */
   onPlay?: () => void
-  /** 原生内核播放窗标题（兼容保留） */
-  nativeTitle?: string
 }
 
 /** 运行时读主题 token */
 function readPrimaryColor(): string {
   return getComputedStyle(document.documentElement).getPropertyValue('--qm-primary').trim()
-}
-
-/** 若处于 Tauri 壳中且曾经开启过 mpv，做一次性安全关停，防孤儿窗残留 */
-function closeOrphanMpvInShell(): void {
-  if (typeof window !== 'undefined' && '__TAURI__' in window) {
-    const t = (window as unknown as {
-      __TAURI__?: {
-        core?: {
-          invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>
-        }
-      }
-    }).__TAURI__
-    void t?.core?.invoke?.('mpv_stage_rect', { x: 0, y: 0, w: 0, h: 0, docW: 1, visible: false }).catch(() => {})
-    void t?.core?.invoke?.('mpv_close').catch(() => {})
-  }
 }
 
 /**
@@ -135,8 +118,6 @@ export default function VideoPlayer({
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
-
-    closeOrphanMpvInShell()
 
     // 1. 倍速档位表
     Artplayer.PLAYBACK_RATE = [...PLAYBACK_RATES]

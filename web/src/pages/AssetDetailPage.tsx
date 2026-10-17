@@ -223,7 +223,6 @@ export default function AssetDetailPage() {
                   onTimeUpdate={progress.tick}
                   onPause={progress.flush}
                   onPlay={reportPlay}
-                  nativeTitle={d.cosWork ?? d.fileName ?? ''}
                 />
               )
             ) : d.origUrl ? (

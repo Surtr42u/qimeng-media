@@ -80,14 +80,11 @@ Web UI 的 `web/src/components/shell/TopBar.tsx` 渲染，桌面壳经 `titlebar
 操作与拖动会静默失效（无边框窗口无系统边框兜底，只能靠托盘退出）。
 TopBar.tsx 内已有单向注释提示；本节为 desktop 侧的逆向记档。
 
-## 原生播放内核（libmpv）
+## 媒体播放
 
-- **决策与进度**：选型决策见 `docs/adr/0036`（含 2026-10-06 实施修订）；**后续接线与插件计划见 `PLUGIN_PLAN.md`（唯一执行文档）**。
-- **现状（2026-10-06 已接线并修复 P0）**：壳内点视频 = mpv 播放窗**内置在页面舞台位**（主窗 WS_CHILD 子窗，随滚动/缩放跟随，滚出视口自动隐藏）；mpv 为壳内唯一内核，无可见切换组件；控制条已与网页端收敛为同一份自绘组件 `PlayerControls`（`web/src/components/media/player-controls.tsx`，含清晰度/倍速/字幕/设置四入口），桌面端贴底排布、网页端绝对定位浮在画面底部，改一处两端同变。mpv 内建默认键位（**先点一下画面**再按：空格暂停、←→ ±5s、↑↓ ±60s、`[`/`]` 倍速、`m` 静音、`f` 全屏）。
-- **播放口径对齐旧内核**：默认静音 + 音量 0.7（2026-09-17 用户拍板口径）；时间轴标签以 mpv 章节形式画在 OSC 进度条上；进度采样 1s（上报仍 5s 协议节拍），暂停即时 flush。
-- **首次使用（内核接线后需要）**：`powershell -ExecutionPolicy Bypass -File src-tauri\setup-mpv.ps1`（GitHub 双源+镜像自取 mpv-dev 包；DLL 不入库）。**DLL 缺失不再是不可播**：`mpv_open` 失败时壳内自动回退 ArtPlayer。
-- **浏览器模式零影响**：浏览器环境共用同一份控制条，补齐右侧四入口，拔除历史坐标与文案 hack 补丁。
-- **排障入口**：`src-tauri/target/release/qimeng-shell.log`（生命周期跟踪）/ `qimeng-panic.log`（panic 落盘）/ `%LOCALAPPDATA%\CrashDumps`（WER 转储）。排查"有声音没画面"先看 `cargo test` 是否有 `never used` 死代码警告（=命令漏注册，见 PLUGIN_PLAN 坑 1）。
+桌面壳（Tauri 2 连接模式）通过 WebView2 呈现服务端 Web UI，媒体播放全端统一使用标准 **ArtPlayer（HTML5 `<video>`）**：
+- 与浏览器模式/PWA 端共享完全一致的播控逻辑、交互体验与设计语言；
+- 进度、断点续播、倍速、时间轴打点、全屏展示均由 Web 前端同一套组件驱动，无额外的原生内核桥接与多头维护负担。
 
 ## 已知限制（记档，暂不处理）
 
@@ -101,5 +98,3 @@ TopBar.tsx 内已有单向注释提示；本节为 desktop 侧的逆向记档。
   注明的是「远程源须显式声明才生效」，通配的理由即本条）。威胁模型是用户
   自己的 NAS，接受；若将来远程隧道暴露常态化，再评估收紧。
 - 无自动更新器（单用户自用，接受；HANDOVER 记档级同条）。
-- 原生内核的播放窗交互以 mpv 内建 OSC + 默认键位为基线（**wid 嵌入下 OSC 的实测表现属用户走查项**）；缺口对齐清单见 `PLUGIN_PLAN.md` §三-2。旧内核那套控制条的像素级复刻路线（透明控制层）**尚未定案**——"闪退判死刑"是未经对照实验的推测，见 PLUGIN_PLAN 坑 11。
-- **libmpv 与普通 mpv 的默认值不同**（`osc` 默认关、`input-cursor`/`window-dragging`/`mute`/`volume` 各异），改播放窗行为前先读 PLUGIN_PLAN 坑 10 的实测表，勿按普通 mpv 手册的默认值推断。
