@@ -430,8 +430,11 @@ func TestEnsureConcurrentLazyRequestsIntegration(t *testing.T) {
 	}
 	// 产物齐备：每个资产的缩略图都应落盘且非空（布局断言与 Ensure 集成用例同源）。
 	for i := 0; i < n; i++ {
-		key := CacheKey(fmt.Sprintf("asset-%d", i), SizeGrid)
-		path := filepath.Join(dataDir, "thumbs", key[:2], key+".webp")
+		version, err := gen.sourceVersion(assets[i])
+		if err != nil {
+			t.Fatal(err)
+		}
+		path := gen.VersionedPath(fmt.Sprintf("asset-%d", i), SizeGrid, version)
 		info, err := os.Stat(path)
 		if err != nil || info.Size() == 0 {
 			t.Errorf("并发闸下资产 #%d 的缩略图应存在且非空: %v", i, err)
@@ -468,7 +471,11 @@ func TestGeneratorEnsureIntegration(t *testing.T) {
 			if err := gen.Ensure(context.Background(), assetID, tc.src, tc.kind, []Size{SizeGrid}); err != nil {
 				t.Fatalf("Ensure: %v", err)
 			}
-			path := ThumbPath(dataDir, CacheKey(assetID, SizeGrid), gen.StillFormat().Ext())
+			version, err := gen.sourceVersion(tc.src)
+			if err != nil {
+				t.Fatal(err)
+			}
+			path := gen.VersionedPath(assetID, SizeGrid, version)
 			info, err := os.Stat(path)
 			if err != nil {
 				t.Fatalf("缩略图应存在于 %s: %v", path, err)
@@ -491,8 +498,8 @@ func TestGeneratorEnsureIntegration(t *testing.T) {
 			}
 
 			// 布局：路径必须形如 dataDir/thumbs/{key[:2]}/{key}.webp。
-			key := CacheKey(assetID, SizeGrid)
-			want := filepath.Join(dataDir, "thumbs", key[:2], key+".webp")
+			key := CacheKey(assetID, SizeGrid, version)
+			want := filepath.Join(dataDir, "thumbs", CacheKey(assetID, 0), key+gen.StillFormat().Ext())
 			if path != want {
 				t.Errorf("目录布局 = %s，期望 %s", path, want)
 			}

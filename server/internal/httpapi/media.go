@@ -2,7 +2,9 @@ package httpapi
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"io"
 	"io/fs"
@@ -15,6 +17,7 @@ import (
 	"qimeng-media/server/internal/filing"
 	"qimeng-media/server/internal/httpapi/gen"
 	"qimeng-media/server/internal/scanner"
+	"qimeng-media/server/internal/store"
 	"qimeng-media/server/internal/sysmon"
 	"qimeng-media/server/internal/thumbnail"
 )
@@ -24,6 +27,9 @@ import (
 // DOMAIN_RULES §11）与 vite hash 构建产物（spa.go）两类消费方共用此单源
 // ——键/文件名即内容身份，不存在"同键变内容"，激进缓存语义才成立。
 const contentAddressedCacheControl = "public, max-age=31536000, immutable"
+
+// noStoreCacheControl 禁止失效表示/鉴权响应被复用。
+const noStoreCacheControl = "no-store"
 
 // signedOrigCacheControl 原图/原视频直链（/media/orig/**）的缓存策略
 // （ADR-0027）：exp 窗口对齐后同一窗口内 URL 逐字节恒定，显式 max-age 才
@@ -106,7 +112,7 @@ func (s *Server) GetMediaOrigAssetId(w http.ResponseWriter, r *http.Request, ass
 		writeErr(w, http.StatusBadRequest, codePathEscape, "路径不合法")
 		return
 	}
-	f, err := os.Open(abs)
+	f, err := os.OpenInRoot(row.RootPath, filepath.FromSlash(row.RelPath))
 	if errors.Is(err, fs.ErrNotExist) {
 		// 库里有记录但文件已不在（外部删改）：404 引导重扫。
 		writeErr(w, http.StatusNotFound, codeFileMissing, "文件不存在")
@@ -157,6 +163,12 @@ func (s *Server) GetMediaThumbAssetId(w http.ResponseWriter, r *http.Request, as
 		writeErr(w, http.StatusInternalServerError, codeInternal, "内部错误")
 		return
 	}
+	version := s.thumbs.RepresentationVersion(row.SizeBytes, row.Mtime)
+	if params.V != nil && *params.V != version {
+		w.Header().Set("Cache-Control", noStoreCacheControl)
+		writeErr(w, http.StatusGone, codeNotFound, "缩略图版本已过期，请刷新列表")
+		return
+	}
 	size := s.thumbSize(gen.Md) // openapi 默认 md
 	if params.Size != nil {
 		size = s.thumbSize(*params.Size)
@@ -165,6 +177,12 @@ func (s *Server) GetMediaThumbAssetId(w http.ResponseWriter, r *http.Request, as
 	if !filing.PathWithinRoot(row.RootPath, abs) {
 		s.logger.Error("资产相对路径越界，已拦截", "assetId", row.AssetID)
 		writeErr(w, http.StatusBadRequest, codePathEscape, "路径不合法")
+		return
+	}
+	fi, err := os.Stat(abs)
+	if err != nil || s.thumbs.RepresentationVersion(fi.Size(), store.FormatTimestamp(fi.ModTime())) != version {
+		w.Header().Set("Cache-Control", noStoreCacheControl)
+		writeErr(w, http.StatusConflict, codeInvalidParam, "原件已变化，等待扫描后刷新")
 		return
 	}
 	if err := s.thumbs.EnsureDetached(r.Context(), row.AssetID, abs, thumbnail.Kind(row.MediaType), []thumbnail.Size{size}); err != nil {
@@ -179,10 +197,10 @@ func (s *Server) GetMediaThumbAssetId(w http.ResponseWriter, r *http.Request, as
 		writeErr(w, http.StatusNotFound, codeThumbnailFailed, "缩略图不可用")
 		return
 	}
-	key := thumbnail.CacheKey(row.AssetID, size)
+	key := thumbnail.CacheKey(row.AssetID, size, version)
 	// 扩展名与生成侧同源（StillFormat 单点）：磁盘扩展名 = 输出封装 = Content-Type。
 	ext := s.thumbs.StillFormat().Ext()
-	path := thumbnail.ThumbPath(s.cfg.DataDir, key, ext)
+	path := s.thumbs.VersionedPath(row.AssetID, size, version)
 	f, err := os.Open(path)
 	if err != nil {
 		s.logger.Error("打开缩略图缓存失败", "err", err)
@@ -194,18 +212,33 @@ func (s *Server) GetMediaThumbAssetId(w http.ResponseWriter, r *http.Request, as
 			s.logger.Warn("关闭缩略图文件失败", "err", cerr)
 		}
 	}()
-	w.Header().Set("Cache-Control", contentAddressedCacheControl)
-	etag := `"` + key + `"`
-	w.Header().Set("ETag", etag)
-	// ServeContent 不处理 ETag 条件请求，If-None-Match 命中手动回 304
-	//（省一次文件读取与传输；键即内容身份，命中即未变）。
-	if r.Header.Get("If-None-Match") == etag {
-		w.WriteHeader(http.StatusNotModified)
+	// 以实际表示字节计算强验证器，重生字节变化绝不误判 304。
+	hash := sha256.New()
+	if _, err := io.Copy(hash, f); err != nil {
+		s.internalErr(w, "校验缩略图", err)
 		return
 	}
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		s.internalErr(w, "读取缩略图", err)
+		return
+	}
+	fi, err = os.Stat(abs)
+	if err != nil || s.thumbs.RepresentationVersion(fi.Size(), store.FormatTimestamp(fi.ModTime())) != version {
+		w.Header().Set("Cache-Control", noStoreCacheControl)
+		writeErr(w, http.StatusConflict, codeInvalidParam, "生成期间原件已变化，请刷新")
+		return
+	}
+	if params.V != nil {
+		w.Header().Set("Cache-Control", contentAddressedCacheControl)
+	} else {
+		w.Header().Set("Cache-Control", "private, no-cache")
+	}
+	etag := `"` + key + ":" + hex.EncodeToString(hash.Sum(nil)) + `"`
+	w.Header().Set("ETag", etag)
+	// ServeContent 同时处理弱验证器、通配符及条件请求列表。
 	// 文件名带生效格式扩展名让 ServeContent 推断 Content-Type（webp/jpg 与
 	// 磁盘扩展名、实际字节格式三者同源，见 thumbnail.StillFormat）。
-	// 缩略图恒计 thumb（304 手动返回路径在上方已 return，不进这里）。
+	// 304 空体计 0，实际传出的缩略图字节恒计 thumb。
 	cw := &countingResponseWriter{ResponseWriter: w}
 	http.ServeContent(cw, r, "t"+ext, time.Time{}, f)
 	sysmon.Default.AddMediaBytes(sysmon.MediaThumb, float64(cw.n))

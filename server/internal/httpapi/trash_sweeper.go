@@ -58,6 +58,9 @@ func (s *Server) StartTrashSweeper(ctx context.Context) {
 // 清理 → 有清除才刷指标。单条失败记日志下轮重试；本轮零清除不刷指标
 // （省一次全量遍历，gauge 维持上次值即可）。
 func (s *Server) sweepTrashOnce() {
+	unlockTrash := filing.LockLibrary(trashOperationGate)
+	defer unlockTrash()
+
 	entries, err := s.listTrash()
 	if err != nil {
 		s.logger.Warn("回收站到期清扫遍历失败（下轮重试）", "err", err)
@@ -69,10 +72,13 @@ func (s *Server) sweepTrashOnce() {
 		if !filing.TrashExpired(e.meta, s.now(), retention) {
 			continue
 		}
+		filing.InvalidateRestoreIntents(s.cfg.DataDir, e.meta.LibraryID)
 		if err := os.RemoveAll(filepath.Dir(e.metaFile)); err != nil {
+			filing.InvalidateRestoreIntents(s.cfg.DataDir, e.meta.LibraryID)
 			s.logger.Warn("回收站到期条目清除失败（下轮重试）", "id", e.id, "err", err)
 			continue
 		}
+		filing.InvalidateRestoreIntents(s.cfg.DataDir, e.meta.LibraryID)
 		removed++
 		s.logger.Info("回收站条目到期物理清除", "id", e.id,
 			"originalPath", e.meta.OriginalPath,

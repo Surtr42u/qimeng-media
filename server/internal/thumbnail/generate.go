@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"qimeng-media/server/internal/store"
 	"time"
 )
 
@@ -125,9 +126,20 @@ func (g *Generator) GridLongSide() int { return g.longSide }
 // M3 预留——本批保持懒生成统一管线（首请求同步生成），届时首帧走快速档、
 // 代表帧走工作池预热，本函数的分派点不变。
 func (g *Generator) Ensure(ctx context.Context, assetID, srcPath string, kind Kind, sizes []Size) error {
+	version, err := g.sourceVersion(srcPath)
+	if err != nil {
+		return err
+	}
 	for _, size := range sizes {
-		if err := g.ensureOne(ctx, assetID, srcPath, kind, size); err != nil {
+		if err := g.ensureOne(ctx, assetID, srcPath, kind, size, version); err != nil {
 			return fmt.Errorf("生成 %s 的 %d 缩略图: %w", assetID, int(size), err)
+		}
+		current, err := g.sourceVersion(srcPath)
+		if err != nil || current != version {
+			if rmErr := os.Remove(g.thumbDst(assetID, size, version)); rmErr != nil && !errors.Is(rmErr, fs.ErrNotExist) {
+				g.logger.Warn("清理生成期间失效的缩略图失败", "err", rmErr)
+			}
+			return errors.New("生成期间原件发生变化，请重试")
 		}
 	}
 	return nil
@@ -138,14 +150,17 @@ func (g *Generator) Ensure(ctx context.Context, assetID, srcPath string, kind Ki
 // LongSide 配置决定（<=0 已在构造时回落 SizeGrid）：size 常量只是档位占位，
 // 生成与缓存键都用换算后的像素，保证"调整配置像素 = 新键 = 新文件"的缓存
 // 语义成立（cachekey.go 注释）。
-func (g *Generator) thumbDst(assetID string, size Size) string {
+func (g *Generator) thumbDst(assetID string, size Size, versions ...string) string {
 	if size == SizeGrid {
 		size = Size(g.longSide)
+	}
+	if len(versions) > 0 {
+		return g.VersionedPath(assetID, size, versions[0])
 	}
 	return ThumbPath(g.dataDir, CacheKey(assetID, size), g.stillFormat.Ext())
 }
 
-func (g *Generator) ensureOne(ctx context.Context, assetID, srcPath string, kind Kind, size Size) error {
+func (g *Generator) ensureOne(ctx context.Context, assetID, srcPath string, kind Kind, size Size, version string) error {
 	// 档位归一化必须在取 dst 与缩放前完成：md 档（SizeGrid）的像素由
 	// LongSide 配置决定（构造时 <=0 已回落 SizeGrid）。此前只有 thumbDst
 	// 的缓存键做了换算、scaleStill 仍用 512 占位值——long_side≠512 时
@@ -155,7 +170,7 @@ func (g *Generator) ensureOne(ctx context.Context, assetID, srcPath string, kind
 	if size == SizeGrid {
 		size = Size(g.longSide)
 	}
-	dst := g.thumbDst(assetID, size)
+	dst := g.thumbDst(assetID, size, version)
 	if _, err := os.Stat(dst); err == nil {
 		return nil // 缓存命中
 	} else if !errors.Is(err, fs.ErrNotExist) {
@@ -241,8 +256,16 @@ func tempFramePath() (string, error) {
 
 // HasThumbnail 缩略图是否已落盘（预热回填/进度统计的存在性判定出口；
 // md 档走 LongSide 映射，与生成侧 thumbDst 同一换算，保证判定与落盘同键）。
-func (g *Generator) HasThumbnail(assetID string, size Size) bool {
-	_, err := os.Stat(g.thumbDst(assetID, size))
+func (g *Generator) HasThumbnail(assetID string, size Size, srcPaths ...string) bool {
+	var versions []string
+	if len(srcPaths) > 0 {
+		version, err := g.sourceVersion(srcPaths[0])
+		if err != nil {
+			return false
+		}
+		versions = []string{version}
+	}
+	_, err := os.Stat(g.thumbDst(assetID, size, versions...))
 	return err == nil
 }
 
@@ -264,4 +287,13 @@ func (g *Generator) CountOnDisk() (int64, error) {
 		return 0, err
 	}
 	return n, nil
+}
+
+// sourceVersion 生产路径统一取扫描器同款毫秒精度版本。
+func (g *Generator) sourceVersion(srcPath string) (string, error) {
+	fi, err := os.Stat(srcPath)
+	if err != nil {
+		return "", err
+	}
+	return g.RepresentationVersion(fi.Size(), store.FormatTimestamp(fi.ModTime())), nil
 }

@@ -42,16 +42,35 @@ const thumbsDirName = "thumbs"
 // 旧键缓存必须失效重建（用户拍板接受全库重抽一次性代价）。
 const cacheKeyStrategyVersion = "v4"
 
-// CacheKey 计算缩略图缓存键：SHA-256(版本段 + ":" + assetID + ":" + size) 的
-// hex 编码【逐字遵守 DOMAIN_RULES §11：SHA-256(assetId+size) 前缀 hex，存
-// 数据目录——版本段仅仅是哈希输入的前缀，键形态不变】。
+// CacheKey 计算缩略图缓存键：SHA-256(策略 + ":" + assetID + ":" + size [+ ":" + 表示版本]) 的
+// hex 编码（DOMAIN_RULES §11，ADR-0040）。生产路径恒传表示版本，缺省仅用于旧布局清理。
+// 缓存存数据目录；版本段是哈希输入的前缀，键形态仍为 hex。
 // 为什么插 ":" 分隔符：防止纯拼接的边界歧义——理论上 assetID="a"+size 串 "bc"
 // 与 assetID="ab"+size 串 "c" 会撞键；固定分隔符彻底排除（版本段同理）。
 // 键的稳定性由单测黄金向量锁定：键是磁盘缓存与 HTTP 缓存头的公共名字，
 // 算法意外变更会让全库缩略图一夜之间变成孤儿——升级版本段是唯一的有意变更。
-func CacheKey(assetID string, size Size) string {
-	sum := sha256.Sum256([]byte(cacheKeyStrategyVersion + ":" + assetID + ":" + strconv.Itoa(int(size))))
+func CacheKey(assetID string, size Size, version ...string) string {
+	input := cacheKeyStrategyVersion + ":" + assetID + ":" + strconv.Itoa(int(size))
+	if len(version) > 0 {
+		input += ":" + version[0]
+	}
+	sum := sha256.Sum256([]byte(input))
 	return hex.EncodeToString(sum[:])
+}
+
+// RepresentationVersion 与扫描器 size+mtime 变更检测同口径，包含策略、
+// 输出格式和配置像素；不是原件字节哈希，相同 size/mtime 的外部篡改不在检测范围。
+func (g *Generator) RepresentationVersion(sizeBytes int64, mtime string) string {
+	return CacheKey(strconv.FormatInt(sizeBytes, 10)+":"+mtime+":"+g.stillFormat.Ext(), Size(g.longSide))
+}
+
+// PolicyVersion 供预取变更检测；策略/格式/配置升级即改变。
+func (g *Generator) PolicyVersion() string { return g.RepresentationVersion(0, "") }
+
+// VersionedPath 按资产分目录，删除资产能清理所有内容版本而无需全站遍历。
+func (g *Generator) VersionedPath(assetID string, size Size, version string) string {
+	key := CacheKey(assetID, size, version)
+	return filepath.Join(g.dataDir, thumbsDirName, CacheKey(assetID, 0), key+g.stillFormat.Ext())
 }
 
 // ThumbPath 返回缓存键对应的文件路径：dataDir/thumbs/{key[:2]}/{key}{ext}。

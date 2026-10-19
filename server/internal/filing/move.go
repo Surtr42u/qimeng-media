@@ -141,6 +141,11 @@ func copyFile(src, dst string) error {
 		cleanupFailedCopy(dst)
 		return err
 	}
+	// 恢复意图用 size+mtime 复核落点，跨卷复制也必须保持源时间。
+	if err := os.Chtimes(dst, info.ModTime(), info.ModTime()); err != nil {
+		cleanupFailedCopy(dst)
+		return err
+	}
 	return nil
 }
 

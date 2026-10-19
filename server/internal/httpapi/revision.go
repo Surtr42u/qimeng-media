@@ -26,7 +26,7 @@ func (s *Server) GetApiV1LibraryRevision(w http.ResponseWriter, r *http.Request)
 		s.internalErr(w, "读取库内容修订号", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, gen.LibraryRevision{Revision: rev})
+	writeJSON(w, http.StatusOK, gen.LibraryRevision{Revision: rev, ThumbnailVersion: ptr(s.thumbs.PolicyVersion())})
 }
 
 // bumpLibraryRevision 尽力而为推进修订号（事件订阅协程与显式 bump 调用点

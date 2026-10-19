@@ -21,7 +21,7 @@ import coil3.request.Options
  *
  * 键稳定性依据：直链 path 含资产 id（`/media/thumb/<uuid>`、`/media/orig/<uuid>`），
  * 资产内容不变则 path 不变——剥掉随时间轮换的 `exp`/`sig` 后即为稳定键。
- * **`size` 参数必须保留在键里**：服务端缩略图 size 档（sm/md/lg）是普通
+ * **`size` 与内容版本 `v` 必须保留在键里**：服务端缩略图 size 档（sm/md/lg）是普通
  * query 参数（`assets_media_url.go thumbURL`），不在 path 里——全部剥光会让
  * 同资产不同尺寸缩略图键碰撞（命中错尺寸的缓存条目）。
  */

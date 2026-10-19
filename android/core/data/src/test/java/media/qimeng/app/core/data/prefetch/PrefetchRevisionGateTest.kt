@@ -9,6 +9,13 @@ import org.junit.Test
  * 撞号缺陷的回归锁——两端修订号独立计数器且播种基线相同，revision 相等也不得 SKIP。
  */
 class PrefetchRevisionGateTest {
+    @Test
+    fun `策略变化即使库修订号未变也重新预取`() {
+        val record = PrefetchRevisionRecord("server", 7L, "old-policy")
+        assertEquals(PrefetchRoundDecision.FULL, PrefetchRevisionGate.decide(7L, record, "server", "new-policy"))
+        assertEquals(PrefetchRoundDecision.SKIP, PrefetchRevisionGate.decide(7L, record, "server", "old-policy"))
+        assertEquals(PrefetchRoundDecision.FULL, PrefetchRevisionGate.decide(7L, PrefetchRevisionRecord("server",7L), "server", "new-policy"))
+    }
 
     /** 两个不同的服务器标识（测试合成值：NAS 地址与本地端回环预设形态） */
     private val nasKey = "http://nas.local:8080"

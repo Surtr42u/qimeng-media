@@ -161,6 +161,13 @@ func (s *Server) PatchApiV1UploadsId(w http.ResponseWriter, r *http.Request, id 
 // 临时文件保留（可修正后重试），过期时钟已在入口 Touch。
 func (s *Server) PostApiV1UploadsIdComplete(w http.ResponseWriter, r *http.Request, id gen.UploadId) {
 	sid := id.String()
+	unlock, err := s.uploads.LockCompletion(sid)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, codeNotFound, "上传会话不存在或已过期")
+		return
+	}
+	defer unlock()
+
 	// complete 尝试即计入过期时钟：可重试的失败会话保留到 SessionTTL 兜底。
 	if err := s.uploads.Touch(sid); err != nil {
 		if errors.Is(err, uploadsess.ErrSessionNotFound) {
@@ -222,6 +229,7 @@ func (s *Server) PostApiV1UploadsIdComplete(w http.ResponseWriter, r *http.Reque
 	// 搬运 + 冲突解析 + 入库（放置段拆出见 placeSealedInLibrary：重活锁外、
 	// rename 锁内，与直传 #9 关键段同构）。dir 为 create 时校验规范化并存入
 	// 会话的目标子目录（空 = 库根），落位语义与直传逐字一致。
+	var detail gen.AssetDetail
 	finalName, targetRel, targetAbs, gerr := s.placeSealedInLibrary(lib, seal)
 	if gerr != nil {
 		if errors.Is(gerr, errUploadTargetEscape) {
@@ -240,13 +248,13 @@ func (s *Server) PostApiV1UploadsIdComplete(w http.ResponseWriter, r *http.Reque
 		s.internalErr(w, "落盘分片成品文件", gerr)
 		return
 	}
-	detail, err := s.ingestPlacedUpload(r.Context(), lib.ID, targetAbs, targetRel, finalName, mediaType)
+	detail, err = s.ingestPlacedUpload(r.Context(), lib.ID, targetAbs, targetRel, finalName, mediaType)
 	if err != nil {
 		s.internalErr(w, "入库上传资产", err)
 		return
 	}
-	// 临时文件已 rename 进库：Drop 只剩删会话（文件 NotExist 被容忍）。
-	if derr := s.uploads.Drop(sid); derr != nil && !errors.Is(derr, uploadsess.ErrSessionNotFound) {
+	// 入库成功才释放会话及分片源；硬链接成品的内容不会随源链接删除而消失。
+	if derr := s.uploads.Finish(sid); derr != nil && !errors.Is(derr, uploadsess.ErrSessionNotFound) {
 		s.logger.Warn("清理已完成上传会话失败", "id", sid, "err", derr)
 	}
 	writeJSON(w, http.StatusCreated, detail)
@@ -261,6 +269,14 @@ func (s *Server) PostApiV1UploadsIdComplete(w http.ResponseWriter, r *http.Reque
 // 放置失败清理临时副本；rename 成功后副本已不在（cleanup 报 NotExist 属正常）。
 // 返回最终落盘名、库内相对路径与绝对路径（rel = dir/最终名，供入库管线）。
 func (s *Server) placeSealedInLibrary(lib db.Library, seal uploadsess.SealedSession) (string, string, string, error) {
+	if seal.PlacedRel != "" {
+		target := filepath.Join(lib.RootPath, filepath.FromSlash(seal.PlacedRel))
+		if !filing.PathWithinRoot(lib.RootPath, target) {
+			return "", "", "", errUploadTargetEscape
+		}
+		return path.Base(seal.PlacedRel), seal.PlacedRel, target, nil
+	}
+
 	// 目标子目录（含校验兜底）：预置与最终落点同目录才能原子 rename——
 	// 与直传「先建目录、临时文件与最终文件同目录」同一顺序（MkdirAll 幂等
 	// 且并发安全，在 stageSealedFile 内完成）。
@@ -268,7 +284,15 @@ func (s *Server) placeSealedInLibrary(lib db.Library, seal uploadsess.SealedSess
 	if !filing.PathWithinRoot(lib.RootPath, baseDirAbs) {
 		return "", "", "", errUploadTargetEscape
 	}
-	staging, cleanup, err := s.stageSealedFile(baseDirAbs, seal.Path)
+	root, err := os.OpenRoot(lib.RootPath)
+	if err != nil {
+		return "", "", "", err
+	}
+	defer filing.CloseRoot(root)
+	if err := root.MkdirAll(filepath.FromSlash(path.Join(".", seal.Dir)), dirPerm); err != nil {
+		return "", "", "", err
+	}
+	staging, cleanup, err := s.stageSealedFile(root, seal.Dir, seal.Path)
 	if err != nil {
 		return "", "", "", err
 	}
@@ -288,15 +312,7 @@ func (s *Server) placeSealedInLibrary(lib db.Library, seal uploadsess.SealedSess
 		if !filing.PathWithinRoot(lib.RootPath, targetAbs) {
 			return errUploadTargetEscape
 		}
-		// Seal→落位间隙 size 复核（第四百一十九笔，上批审查 P2-4 收口）：
-		// complete 的 staging/rename 段不持会话锁，违规客户端可在 Seal 之后
-		// 并发 PATCH（offset==size 恰好过 Append 的首道比对）在 rename 间隙
-		// 往分片文件塞字节——落库文件就会与声明 size 不符（Append 自身的
-		// 回滚截断可能落在 rename 之后，截的是已被移走的旧路径，拦不住）。
-		// 锁内 os.Stat 复核 staging 实际字节数，不等 seal.Size 按会话已损坏
-		// 处理（errSealedSizeMismatch → complete 400）。stat 与 rename 相邻
-		// 执行把竞态窗压缩到两条系统调用之间，工程上不可利用；绝对串行须把
-		// 整个落位搬进 session.mu（会话锁横跨库锁与跨卷拷贝），不值得。
+		// Seal已禁止后续PATCH；落位前再拒绝外部篡改的大小不一致成品。
 		st, serr := os.Stat(staging)
 		if serr != nil {
 			return fmt.Errorf("复核分片成品大小失败: %w", serr)
@@ -306,7 +322,14 @@ func (s *Server) placeSealedInLibrary(lib db.Library, seal uploadsess.SealedSess
 				"declared", seal.Size, "actual", st.Size())
 			return errSealedSizeMismatch
 		}
-		return os.Rename(staging, targetAbs)
+		stagingRel, err := filepath.Rel(lib.RootPath, staging)
+		if err != nil {
+			return err
+		}
+		if err := root.Rename(stagingRel, filepath.FromSlash(targetRel)); err != nil {
+			return err
+		}
+		return s.uploads.SetPlacement(seal.ID, targetRel)
 	})
 	if gerr != nil {
 		cleanup()
@@ -364,21 +387,18 @@ func readUploadHead(path string) ([]byte, error) {
 	return head[:n], nil
 }
 
-// stageSealedFile 把拼装完成的分片文件预置进库根目录（与最终落点同卷，
-// 后续锁内 rename 才是原子操作）：优先 rename（同卷零拷贝），跨卷（DataDir
-// 与库根不同盘/挂载点）回退全量拷贝。返回预置路径与失败清理函数——预置
-// 成功后所有权移交调用方（rename 成功后文件已不在，cleanup 报 NotExist
-// 属正常）。
-func (s *Server) stageSealedFile(libraryRoot, sealedPath string) (string, func(), error) {
-	if err := os.MkdirAll(libraryRoot, dirPerm); err != nil {
-		return "", nil, err
+// stageSealedFile 保留会话源，以同卷硬链接或跨卷流式复制预置隐藏临时件。
+// 会话成功提交前不移交源所有权，失败后能重试；外部路径换链边界见SECURITY。
+func (s *Server) stageSealedFile(root *os.Root, dir, sealedPath string) (string, func(), error) {
+	stagingRel := filepath.FromSlash(path.Join(dir, uploadTmpPrefix+uuid.NewString()+uploadTmpSuffix))
+	staging := filepath.Join(root.Name(), stagingRel)
+	// 同卷硬链接不转移源所有权；封存后PATCH已禁止。无硬链接/跨卷走受控复制。
+	if filing.PathWithinRoot(root.Name(), staging) {
+		if err := os.Link(sealedPath, staging); err == nil {
+			return staging, s.stagingCleaner(root, stagingRel), nil
+		}
 	}
-	staging := filepath.Join(libraryRoot, uploadTmpPrefix+uuid.NewString()+uploadTmpSuffix)
-	if err := os.Rename(sealedPath, staging); err == nil {
-		return staging, s.stagingCleaner(staging), nil
-	}
-	// 跨卷回退：拷贝到库根隐藏临时名（.qm-upload-*.tmp 在媒体白名单外，
-	// 扫描器不收），失败即清理半成品。
+
 	src, err := os.Open(sealedPath)
 	if err != nil {
 		return "", nil, err
@@ -388,7 +408,7 @@ func (s *Server) stageSealedFile(libraryRoot, sealedPath string) (string, func()
 			s.logger.Warn("关闭分片源文件失败", "path", sealedPath, "err", cerr)
 		}
 	}()
-	dst, err := os.Create(staging)
+	dst, err := root.OpenFile(stagingRel, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return "", nil, err
 	}
@@ -396,22 +416,22 @@ func (s *Server) stageSealedFile(libraryRoot, sealedPath string) (string, func()
 		if cerr := dst.Close(); cerr != nil {
 			s.logger.Warn("关闭分片预置文件失败", "path", staging, "err", cerr)
 		}
-		s.stagingCleaner(staging)()
+		s.stagingCleaner(root, stagingRel)()
 		return "", nil, err
 	}
 	if err := dst.Close(); err != nil {
-		s.stagingCleaner(staging)()
+		s.stagingCleaner(root, stagingRel)()
 		return "", nil, err
 	}
-	return staging, s.stagingCleaner(staging), nil
+	return staging, s.stagingCleaner(root, stagingRel), nil
 }
 
 // stagingCleaner 返回预置文件的清理函数（放弃/失败路径调用；rename 成功后
 // 文件已不在，NotExist 静默忽略）。
-func (s *Server) stagingCleaner(path string) func() {
+func (s *Server) stagingCleaner(root *os.Root, rel string) func() {
 	return func() {
-		if rmErr := os.Remove(path); rmErr != nil && !os.IsNotExist(rmErr) {
-			s.logger.Warn("清理分片预置文件失败", "path", path, "err", rmErr)
+		if rmErr := root.Remove(rel); rmErr != nil && !os.IsNotExist(rmErr) {
+			s.logger.Warn("清理分片预置文件失败", "path", rel, "err", rmErr)
 		}
 	}
 }

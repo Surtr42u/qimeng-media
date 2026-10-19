@@ -128,6 +128,7 @@ ORDER BY id;
 SELECT v.asset_id AS asset_id,
        a.file_name AS file_name,
        a.media_type AS media_type,
+       a.size_bytes, a.mtime,
        CAST(COUNT(*) AS INTEGER) AS value
 FROM view_events v
 JOIN assets a ON a.asset_id = v.asset_id
@@ -144,6 +145,7 @@ LIMIT sqlc.arg(lim);
 SELECT v.asset_id AS asset_id,
        a.file_name AS file_name,
        a.media_type AS media_type,
+       a.size_bytes, a.mtime,
        CAST(COALESCE(SUM(v.seconds), 0) AS INTEGER) AS value
 FROM view_events v
 JOIN assets a ON a.asset_id = v.asset_id

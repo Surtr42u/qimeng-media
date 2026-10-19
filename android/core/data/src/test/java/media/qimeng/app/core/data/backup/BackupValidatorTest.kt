@@ -11,6 +11,17 @@ import org.junit.Test
  * 载荷 format 断言改经 internal sdkPayload——测试同模块可见）。
  */
 class BackupValidatorTest {
+    @Test
+    fun portableEventsSurviveSdkSerialization() {
+        val text = """{"format":"qimeng_backup","schemaVersion":2,"appIdentifier":"com.qimeng.media","data":{"viewEvents":[{"eventId":"synthetic-event","recordKey":"r","kind":"open","sessionId":"source-session","startedAt":"2026-10-19T00:00:00.000Z","seconds":null}],"mediaFiles":[{"recordKey":"r","assetId":"synthetic-asset","relPath":"folder/a.jpg","libraryName":"source","fileName":"a.jpg","mediaType":"image","sizeBytes":1,"modifiedAtMillis":1}]}}"""
+        val result = BackupValidator.validate("backup.json", text.toByteArray()) as BackupValidator.Result.Ok
+        val adapter = media.qimeng.sdk.infrastructure.Serializer.moshi.adapter(media.qimeng.sdk.models.LegacyBackupImport::class.java)
+        val again = adapter.fromJson(adapter.toJson(result.payload.sdkPayload))!!
+        assertEquals("synthetic-event", again.data.viewEvents!!.single().eventId)
+        assertEquals("source-session", again.data.viewEvents!!.single().sessionId)
+        assertEquals("folder/a.jpg", again.data.mediaFiles!!.single().relPath)
+        assertEquals(null, again.data.viewEvents!!.single().seconds)
+    }
 
     /** 最小合法信封：各数组元素只带其强类型模型的必填字段（ Legacy* 生成物口径） */
     private val validEnvelopeJson = """

@@ -118,13 +118,19 @@ func (s *Server) PostApiV1AssetsUpload(w http.ResponseWriter, r *http.Request, p
 		writeErr(w, http.StatusBadRequest, codePathEscape, "目标路径不合法")
 		return
 	}
-	if err := os.MkdirAll(baseDirAbs, dirPerm); err != nil {
+	root, err := os.OpenRoot(lib.RootPath)
+	if err != nil {
+		s.internalErr(w, "打开媒体库根", err)
+		return
+	}
+	defer filing.CloseRoot(root)
+	if err := root.MkdirAll(filepath.FromSlash(path.Join(".", dir)), dirPerm); err != nil {
 		s.internalErr(w, "创建目标目录", err)
 		return
 	}
 
 	// 流式接收 + 写临时文件（含第②道魔数校验；不触碰最终路径）。
-	tmpAbs, ok := s.receiveUploadToTmp(w, r, params, baseDirAbs, maxBytes)
+	tmpAbs, ok := s.receiveUploadToRoot(w, r, params, root, dir, maxBytes)
 	if !ok {
 		return
 	}
@@ -132,7 +138,7 @@ func (s *Server) PostApiV1AssetsUpload(w http.ResponseWriter, r *http.Request, p
 	// 是移动语义，Remove 报 NotExist 被静默忽略），失败/异常路径由这里兜底
 	// 清理——成功/失败统一走这一处，语义与原 receiveAndStore 的 defer 等价。
 	defer func() {
-		if rmErr := os.Remove(tmpAbs); rmErr != nil && !os.IsNotExist(rmErr) {
+		if rmErr := root.Remove(filepath.FromSlash(path.Join(dir, filepath.Base(tmpAbs)))); rmErr != nil && !os.IsNotExist(rmErr) {
 			s.logger.Warn("清理上传临时文件失败", "path", tmpAbs, "err", rmErr)
 		}
 	}()
@@ -155,7 +161,7 @@ func (s *Server) PostApiV1AssetsUpload(w http.ResponseWriter, r *http.Request, p
 			s.logger.Error("上传目标路径越界，已拦截", "libraryId", lib.ID, "rel", targetRel)
 			return errUploadTargetEscape
 		}
-		return os.Rename(tmpAbs, targetAbs)
+		return root.Rename(filepath.FromSlash(path.Join(dir, filepath.Base(tmpAbs))), filepath.FromSlash(targetRel))
 	})
 	if gerr != nil {
 		if errors.Is(gerr, errUploadTargetEscape) {
@@ -262,7 +268,18 @@ func (s *Server) ingestPlacedUpload(ctx context.Context, libraryID, finalPath, r
 		}
 	}
 	// 入库（独立单写事务），细节见 persistUploadedAsset。
-	asset, err := s.persistUploadedAsset(ctx, params_)
+	var asset db.Asset
+	err = filing.WithLibraryGate(libraryID, func() error {
+		latest, err := os.Stat(finalPath)
+		if err != nil {
+			return err
+		}
+		if latest.Size() != fi.Size() || !latest.ModTime().Equal(fi.ModTime()) {
+			return errors.New("上传落点在探测期间变化")
+		}
+		asset, err = s.persistUploadedAsset(ctx, params_)
+		return err
+	})
 	if err != nil {
 		return gen.AssetDetail{}, fmt.Errorf("入库上传资产: %w", err)
 	}
@@ -360,6 +377,16 @@ const (
 // 持锁时长与文件大小解耦）。失败时响应已写完、半成品临时文件已清理，
 // 返回 ok=false；成功时临时文件所有权移交调用方（rename 或清理）。
 func (s *Server) receiveUploadToTmp(w http.ResponseWriter, r *http.Request, params gen.PostApiV1AssetsUploadParams, dirAbs string, maxBytes int64) (string, bool) {
+	root, err := os.OpenRoot(dirAbs)
+	if err != nil {
+		s.internalErr(w, "打开上传目录", err)
+		return "", false
+	}
+	defer filing.CloseRoot(root)
+	return s.receiveUploadToRoot(w, r, params, root, "", maxBytes)
+}
+
+func (s *Server) receiveUploadToRoot(w http.ResponseWriter, r *http.Request, params gen.PostApiV1AssetsUploadParams, root *os.Root, dir string, maxBytes int64) (string, bool) {
 	body := http.MaxBytesReader(w, r.Body, maxBytes)
 	head := make([]byte, filing.RecommendedHeadBytes)
 	n, err := io.ReadFull(body, head)
@@ -373,8 +400,9 @@ func (s *Server) receiveUploadToTmp(w http.ResponseWriter, r *http.Request, para
 		writeUploadValidationError(w, err)
 		return "", false
 	}
-	tmpAbs := filepath.Join(dirAbs, uploadTmpPrefix+uuid.NewString()+uploadTmpSuffix)
-	f, err := os.Create(tmpAbs)
+	tmpRel := filepath.FromSlash(path.Join(dir, uploadTmpPrefix+uuid.NewString()+uploadTmpSuffix))
+	tmpAbs := filepath.Join(root.Name(), tmpRel)
+	f, err := root.OpenFile(tmpRel, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		s.internalErr(w, "创建上传临时文件", err)
 		return "", false
@@ -392,7 +420,7 @@ func (s *Server) receiveUploadToTmp(w http.ResponseWriter, r *http.Request, para
 		sysmon.Default.IncUpload(sysmon.UploadFail)
 		// 写失败即清理半成品（原 receiveAndStore 的 defer 清理语义收拢到
 		// 本函数的失败分支；成功路径的清理职责移交调用方，见 handler）。
-		if rmErr := os.Remove(tmpAbs); rmErr != nil && !os.IsNotExist(rmErr) {
+		if rmErr := root.Remove(tmpRel); rmErr != nil && !os.IsNotExist(rmErr) {
 			s.logger.Warn("清理上传临时文件失败", "path", tmpAbs, "err", rmErr)
 		}
 		writeUploadErr(w, err)

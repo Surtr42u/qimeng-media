@@ -12,6 +12,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"path/filepath"
 )
 
 // cleanupExts 是删除联动要清理的扩展名全集。为什么两种都删：静图格式由
@@ -30,6 +31,9 @@ var cleanupExts = [...]string{".webp", ".jpg"}
 // 同属该资产的孤儿。误删面为零：键含 assetID（SHA-256），不同资产不可能
 // 同键；多删的只是不存在路径上的 os.Remove（ErrNotExist 忽略）。
 func (g *Generator) DeleteAssetThumbs(assetID string) {
+	if err := os.RemoveAll(filepath.Join(g.dataDir, thumbsDirName, CacheKey(assetID, 0))); err != nil {
+		g.logger.Warn("清理版本缩略图失败", "assetId", assetID, "err", err)
+	}
 	sizes := []Size{SizeSmall, SizePreview, Size(g.GridLongSide())}
 	if Size(g.GridLongSide()) != SizeGrid {
 		sizes = append(sizes, SizeGrid) // long_side 改配前/后的两个 md 键都清

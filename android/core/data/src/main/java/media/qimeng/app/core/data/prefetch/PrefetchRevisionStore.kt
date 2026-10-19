@@ -21,6 +21,7 @@ import javax.inject.Singleton
 data class PrefetchRevisionRecord(
     val serverKey: String,
     val revision: Long,
+    val thumbnailVersion: String = "",
 )
 
 /**
@@ -87,11 +88,12 @@ class DataStorePrefetchRevisionStore @Inject constructor(
         // 旧版存量只有修订号键：视同无记录（下轮 FULL 后写入完整三元组），不得只凭
         // 修订号返回——缺服务器键的记录在换端撞号判定里没有可比对象，语义上必须作废
         val serverKey = prefs[KEY_LAST_PREFETCH_SERVER] ?: return null
-        return PrefetchRevisionRecord(serverKey = serverKey, revision = revision)
+        return PrefetchRevisionRecord(serverKey = serverKey, revision = revision, thumbnailVersion = prefs[KEY_THUMBNAIL_VERSION].orEmpty())
     }
 
     override suspend fun setLastDone(record: PrefetchRevisionRecord, sampleUrls: Set<String>) {
         dataStore.edit { prefs ->
+            prefs[KEY_THUMBNAIL_VERSION] = record.thumbnailVersion
             prefs[KEY_LAST_PREFETCH_REVISION] = record.revision
             prefs[KEY_LAST_PREFETCH_SERVER] = record.serverKey
             prefs[KEY_LAST_PREFETCH_SAMPLE] = sampleUrls
@@ -103,6 +105,7 @@ class DataStorePrefetchRevisionStore @Inject constructor(
 
     override suspend fun clear() {
         dataStore.edit { prefs ->
+            prefs.remove(KEY_THUMBNAIL_VERSION)
             prefs.remove(KEY_LAST_PREFETCH_REVISION)
             prefs.remove(KEY_LAST_PREFETCH_SERVER)
             prefs.remove(KEY_LAST_PREFETCH_SAMPLE)
@@ -110,6 +113,7 @@ class DataStorePrefetchRevisionStore @Inject constructor(
     }
 
     private companion object {
+        val KEY_THUMBNAIL_VERSION = stringPreferencesKey("last_prefetch_thumbnail_version")
         /** DataStore 键：上一轮完成时的库修订号（Long；缺键 = 无记录 = null） */
         val KEY_LAST_PREFETCH_REVISION = longPreferencesKey("last_prefetch_revision")
 

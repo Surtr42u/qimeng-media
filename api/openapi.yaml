@@ -459,10 +459,14 @@ paths:
       parameters:
         - { $ref: "#/components/parameters/AssetId" }
         - { name: size, in: query, schema: { type: string, enum: [sm, md, lg], default: md }, description: 网格/列表/大图三档（缓存键组成部分）；像素档位单一来源 server/internal/thumbnail/cachekey.go 的 SizeSmall/SizeGrid/SizePreview 常量（md 档像素由 Thumbnail 配置 LongSide 决定，未配置回落 SizeGrid），改动双同步 }
+        - { name: v, in: query, schema: { type: string }, description: 缩略图表示版本（原件 size/mtime、策略、格式及配置）；新 URL 恒带此值。过期版本返回 410 no-store；缺省兼容旧客户端但须重新验证缓存 }
         - { name: exp, in: query, required: true, schema: { type: integer } }
         - { name: sig, in: query, required: true, schema: { type: string } }
       responses:
-        "200": { description: 缩略图字节（Content-Type 按实际格式：webp，ffmpeg 无 libwebp 编码器的部署降级 jpeg——内嵌形态；格式裁决单一来源 server/internal/thumbnail/stillformat.go，U11 批次D） }
+        "200": { description: 缩略图字节（webp 或 jpeg）；带当前 v 可 immutable，缺省 v 则 private/no-cache；ETag 按实际字节验证 }
+        "304": { description: 当前表示的条件请求验证器命中 }
+        "409": { description: 原件与扫描版本不一致或生成期间变化，no-store，等待扫描后刷新 }
+        "410": { description: v 已过期，no-store，请刷新资产 URL }
         "403": { description: 签名无效或过期 }
         "404": { description: 资产不存在或缩略图不可用（生成失败给 404 占位语义） }
 
@@ -1519,6 +1523,7 @@ components:
       description: GET /api/v1/library/revision 响应：全局库内容修订号（持久化于 kv_settings 键 library_revision，语义见该端点 description）
       required: [revision]
       properties:
+        thumbnailVersion: { type: string, description: 缩略图策略/格式/配置指纹；客户端预取必须与 revision 一起比较，策略变化也须重拉列表 }
         revision: { type: integer, format: int64, description: 单调递增的库内容版本号；与上次取值相同即可跳过全量列表拉取 }
 
     AssetSummary:
@@ -2097,6 +2102,7 @@ components:
     LegacyBackupData:
       type: object
       properties:
+        viewEvents: { type: array, items: { $ref: "#/components/schemas/PortableViewEvent" }, description: schemaVersion=2 必须携带（可为空）；事件身份为唯一合并依据，忽略 mediaStats/dailyBrowse/history 的聚合回放；旧 v1 缺省沿用原兼容回放 }
         mediaFiles:        { type: array, items: { $ref: "#/components/schemas/LegacyMediaFile" } }
         txtFragments:      { type: array, items: { $ref: "#/components/schemas/LegacyTxtFragment" }, description: TXT 作者片段逐字载荷（2026-10-01 起；旧备份无此段向后兼容，导入端零处理）。导入按 DOMAIN_RULES §10「TXT 片段」口径合并，处理顺序在 authors/authorMediaRefs 段之前（片段导入触发统一重建，后处理会冲掉备份携带的关联数据） }
         settings:          { type: array, items: { $ref: "#/components/schemas/LegacySetting" } }
@@ -2122,6 +2128,9 @@ components:
       properties:
         recordKey:        { type: string, description: "旧库关联键（文件名 / 文件名 @ 文件夹 / 追加 #路径哈希）" }
         fileName:         { type: string }
+        assetId: { type: string, description: v2 源资产身份；本库命中优先，跨库仅在文件名/相对路径/库名消歧唯一时匹配，歧义跳过告警 }
+        libraryName: { type: string, description: v2 源库显示名（不携带绝对路径） }
+        relPath: { type: string, description: v2 库内相对路径 }
         displayName:      { type: string }
         extension:        { type: string }
         mediaType:        { type: string, enum: [image, video, animated_image] }
@@ -2138,6 +2147,18 @@ components:
         indexedAtMillis:  { type: integer, format: int64 }
         tagsUpdatedAtMillis: { type: [integer, "null"], format: int64, description: 资产标签组最后改动毫秒（DOMAIN_RULES §10 标签组同步语义；缺省/≤0 = 未知，旧版备份恒缺省——导入端按未知回退并集合并） }
         sourceUri:        { type: [string, "null"] }
+
+    PortableViewEvent:
+      type: object
+      required: [eventId, recordKey, kind, sessionId, startedAt, seconds]
+      properties:
+        eventId: { type: string, minLength: 1, description: 原 clientEventId/legacy 内容键原样保留；无键旧事件由旁表分配持久 portable 身份，往返不重建身份 }
+        recordKey: { type: string }
+        kind: { type: string, description: 事件类型，仅接受 open/play/dwell（与 ViewEventReport.kind 同口径） }
+        sessionId: { type: string, description: 原始会话/来源原样保留 }
+        startedAt: { type: string, description: 原 UTC 固定毫秒时间戳 }
+        seconds: { type: [integer, "null"], format: int64 }
+        day: { type: string, description: 原会话去重日键；缺省保留 NULL（旧回放不受会话日索引合并） }
 
     LegacySetting:
       type: object
@@ -2305,7 +2326,7 @@ components:
       required: [format, schemaVersion, appIdentifier, data]
       properties:
         format:           { type: string, description: 恒为 qimeng_backup }
-        schemaVersion:    { type: integer, description: 恒为 1（当前格式版本） }
+        schemaVersion:    { type: integer, description: 当前导出恒为 2（原生事件身份）；导入继续接受旧 v1 聚合格式，v2 必须含 data.viewEvents }
         appIdentifier:    { type: string, description: 恒为 com.qimeng.media（旧版格式标识） }
         exportedAtMillis: { type: integer, format: int64, description: 导出时刻毫秒（导入端幂等批次键） }
         data:             { $ref: "#/components/schemas/LegacyBackupData" }

@@ -1,0 +1,2 @@
+DROP TRIGGER portable_event_identity_insert;
+DROP TABLE portable_event_identity;

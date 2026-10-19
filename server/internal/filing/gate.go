@@ -8,7 +8,7 @@
 //
 // 为什么按库粒度：单用户 NAS 形态下全部写入方同进程（上传 handler、
 // 移动 handler、恢复 handler），库与库之间的文件操作互不相干，按库加锁
-// 让多库并发互不阻塞；多实例部署不在现状（进程内锁即足够，跨进程需
+// 让多库并发互不阻塞（回收站还有独立的全局操作锁）；多实例部署不在现状（进程内锁即足够，跨进程需
 // 文件锁，届时另立方案）。粒度取"库"而非"目录"：冲突解析只看目标路径，
 // 但库行的唯一索引（GetAssetByPath）也是冲突判定的一半，目录级锁锁不住
 // 库行占位竞争，库级是能同时覆盖两半的最小现成单位。
@@ -18,7 +18,7 @@
 // 落盘"关键段的互斥。二者都按 libraryID 隔离，但相互独立、不可互相
 // 替代——scanner 闸门不可重入，把本关键段塞进扫描闸内会自锁。
 //
-// 本文件是并发设施而非纯函数，是包"纯函数"边界的唯一例外（见 doc.go）。
+// 本文件是并发设施而非纯函数；文件IO与纯规则边界见 doc.go。
 package filing
 
 import "sync"
@@ -51,8 +51,15 @@ func libraryGateMutex(libraryID string) *sync.Mutex {
 // panic 安全：解锁走 defer，fn panic 时锁不外泄（进程通常随 panic 退出，
 // 但测试框架经 defer 传播失败的场景下不吊死后续用例）。
 func WithLibraryGate(libraryID string, fn func() error) error {
+	unlock := LockLibrary(libraryID)
+	defer unlock()
+	return fn()
+}
+
+// LockLibrary 用于必须跨越多步失败补偿的既有流程；调用方必须 defer 解锁。
+// 扫描只在单文件提交/单条差集提交持锁，探测和遍历不得在锁内。
+func LockLibrary(libraryID string) func() {
 	mu := libraryGateMutex(libraryID)
 	mu.Lock()
-	defer mu.Unlock()
-	return fn()
+	return mu.Unlock
 }

@@ -30,6 +30,7 @@ import media.qimeng.app.core.data.coil.LOG_TAG
 import media.qimeng.app.core.data.coil.SplitDiskCache
 import media.qimeng.app.core.data.repository.AuthRepository
 import media.qimeng.app.core.data.repository.LibraryRevisionRepository
+import media.qimeng.app.core.data.repository.LibraryRevisionSnapshot
 import media.qimeng.app.core.data.repository.MediaRepository
 import media.qimeng.app.core.network.ServerAddress
 import media.qimeng.app.core.network.ServerReadinessProbe
@@ -213,11 +214,12 @@ class ThumbnailPrefetcher @Inject constructor(
             // 「先拉 revision 再拉列表」的次序是安全方向：记录值 ≤ 本轮列表实际新鲜度，
             // 拉取中途若有变更只会让记录值偏旧、下轮多拉一轮（修订号单调递增，反向
             // 「少拉」不可能发生）。端点失败降级 null → 门判 FULL 照旧全量。
-            val serverRevision = revisionRepository.revision()
+            val revisionSnapshot = revisionRepository.revision()
+            val serverRevision = revisionSnapshot?.revision
             // 记录时连接的服务器标识（原串精确比较）：与修订号成对记入，换服务器必走全量
             val serverKey = authRepository.serverUrl.first()
             val lastDoneRecord = readLastDoneRecord()
-            if (PrefetchRevisionGate.decide(serverRevision, lastDoneRecord, serverKey) == PrefetchRoundDecision.SKIP) {
+            if (PrefetchRevisionGate.decide(serverRevision, lastDoneRecord, serverKey, revisionSnapshot?.thumbnailVersion.orEmpty()) == PrefetchRoundDecision.SKIP) {
                 // SKIP 前抽样核对（2026-09-30 缓存漂移修复）：修订号比对对本机磁盘缓存
                 // 实况是盲的（池 LRU 驱逐/系统清缓存目录/备份恢复回滚服务端修订号，都会
                 // 造成「记录说全量、实际缺片」且永不自愈），用记录端同事务落盘的随机
@@ -255,7 +257,7 @@ class ThumbnailPrefetcher @Inject constructor(
             if (total == 0) {
                 // 空库轮也是一次完成的「全量」：同样记录修订号+服务器标识（空库下轮才能
                 // 被跳过；样本为空集合，与「空样本维持 SKIP」语义自洽）
-                recordRound(serverRevision, serverKey, urls)
+                recordRound(revisionSnapshot, serverKey, urls)
                 _state.value = PrefetchUiState.Done(done = 0, total = 0)
                 return
             }
@@ -301,7 +303,7 @@ class ThumbnailPrefetcher @Inject constructor(
                 "预取轮完成 total=$total 磁盘命中=${diskHits.get()} 网络下载=${total - diskHits.get()}",
             )
             // 轮末（置 Done 前）记「上一轮完成值」：下轮 revision 未变即可整轮跳过
-            recordRound(serverRevision, serverKey, urls)
+            recordRound(revisionSnapshot, serverKey, urls)
             _state.value = PrefetchUiState.Done(done = total, total = total)
         } catch (e: CancellationException) {
             // 登出取消：复位空闲（下轮由下次登录重新触发）
@@ -347,11 +349,11 @@ class ThumbnailPrefetcher @Inject constructor(
      * （下轮降级全量重拉），不构成本轮失败——预取已真正完成，不能因偏好写失败把
      * 整轮报成错误。取消照常上抛。
      */
-    private suspend fun recordRound(serverRevision: Long?, serverKey: String, urls: List<String>) {
-        if (serverRevision == null) return
+    private suspend fun recordRound(snapshot: LibraryRevisionSnapshot?, serverKey: String, urls: List<String>) {
+        if (snapshot == null) return
         try {
             revisionStore.setLastDone(
-                PrefetchRevisionRecord(serverKey = serverKey, revision = serverRevision),
+                PrefetchRevisionRecord(serverKey = serverKey, revision = snapshot.revision, thumbnailVersion = snapshot.thumbnailVersion),
                 PrefetchSampleGate.pickSample(urls),
             )
         } catch (e: CancellationException) {

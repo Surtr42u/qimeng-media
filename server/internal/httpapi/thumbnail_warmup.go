@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"qimeng-media/server/internal/filing"
 	"qimeng-media/server/internal/httpapi/gen"
 	"qimeng-media/server/internal/safego"
 	"qimeng-media/server/internal/thumbnail"
@@ -100,7 +101,10 @@ func (s *Server) warmupOnce(reason string) {
 	}
 	var missing []thumbnail.Task
 	for _, r := range rows {
-		if s.thumbs.HasThumbnail(r.AssetID, thumbnail.SizeGrid) {
+		if !filing.PathWithinRoot(r.RootPath, filepath.Join(r.RootPath, filepath.FromSlash(r.RelPath))) {
+			continue
+		}
+		if s.thumbs.HasThumbnail(r.AssetID, thumbnail.SizeGrid, filepath.Join(r.RootPath, filepath.FromSlash(r.RelPath))) {
 			continue
 		}
 		missing = append(missing, thumbnail.Task{
@@ -191,7 +195,7 @@ func (s *Server) GetApiV1ThumbnailsProgress(w http.ResponseWriter, r *http.Reque
 	for _, row := range rows {
 		// 与 warmupOnce 候选判定同出口（md 档，SizeGrid 经 thumbDst 换算生效像素），
 		// 保证「进度条走完」与「预热不再投递」互为充要，UI 口径与真实覆盖恒一致。
-		if s.thumbs.HasThumbnail(row.AssetID, thumbnail.SizeGrid) {
+		if s.thumbs.HasThumbnail(row.AssetID, thumbnail.SizeGrid, filepath.Join(row.RootPath, filepath.FromSlash(row.RelPath))) {
 			covered++
 		}
 	}

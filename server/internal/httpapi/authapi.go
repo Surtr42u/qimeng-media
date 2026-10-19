@@ -296,7 +296,7 @@ func (s *Server) PostApiV1AuthLogin(w http.ResponseWriter, r *http.Request) { //
 // 出现一次，不允许被浏览器/代理缓存留存；POST 默认不缓存是不依赖客户端
 // 与中间层默认行为的纵深防御（SECURITY「token 泄露应急」）。
 func writeAuthToken(w http.ResponseWriter, status int, token string) {
-	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Cache-Control", noStoreCacheControl)
 	writeJSON(w, status, gen.AuthToken{Token: &token})
 }
 

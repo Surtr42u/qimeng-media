@@ -15,6 +15,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 
 	"qimeng-media/server/internal/events"
+	"qimeng-media/server/internal/filing"
 	"qimeng-media/server/internal/store"
 	"qimeng-media/server/internal/store/db"
 )
@@ -205,6 +206,9 @@ func (w *watcher) processFile(ctx context.Context, absPath string) {
 		return // 理论不可达（watch 只注册库内路径），防御性红线兜底
 	}
 
+	if !filing.PathWithinRoot(w.lib.RootPath, absPath) {
+		return
+	}
 	info, err := os.Stat(absPath)
 	if err != nil {
 		if !errors.Is(err, fs.ErrNotExist) {
@@ -240,7 +244,7 @@ func (w *watcher) processFile(ctx context.Context, absPath string) {
 		return
 	}
 
-	asset, ingestErr := w.s.ingestFile(ctx, w.lib, absPath, rel, mediaType, info)
+	asset, inserted, ingestErr := w.s.ingestFile(ctx, w.lib, absPath, rel, mediaType, info)
 	if ingestErr != nil {
 		w.logger.Error("scanner: 增量入库失败", "path", rel, "err", ingestErr)
 		return
@@ -253,7 +257,7 @@ func (w *watcher) processFile(ctx context.Context, absPath string) {
 	}
 	// err==sql.ErrNoRows 即此前无记录 → 新增；否则是更新。
 	changed := ScanResult{LibraryID: w.lib.ID, Updated: 1}
-	if errors.Is(err, sql.ErrNoRows) {
+	if inserted {
 		changed = ScanResult{LibraryID: w.lib.ID, Added: 1}
 	}
 	w.s.publish(events.TopicLibraryChanged, changed)
@@ -262,6 +266,22 @@ func (w *watcher) processFile(ctx context.Context, absPath string) {
 // removeIfPresent 删除已消失路径的入库记录（若存在）。
 // 增量删除不做移动合并——理由见 Watch 注释。
 func (w *watcher) removeIfPresent(ctx context.Context, rel string) {
+	unlock := filing.LockLibrary(w.lib.ID)
+	defer unlock()
+	reserved, err := filing.PendingRestorePaths(w.s.dataDir, w.lib.ID)
+	if err != nil {
+		w.logger.Warn("读取恢复意图失败，保留记录", "err", err)
+		return
+	}
+	if _, ok := reserved[rel]; ok {
+		return
+	}
+	// 删除前锁内再次核实文件确实不存在，避免排队期间上传/移动/恢复后的误删。
+	_, statErr := os.Stat(filepath.Join(w.lib.RootPath, filepath.FromSlash(rel)))
+	if !errors.Is(statErr, fs.ErrNotExist) {
+		return
+	}
+
 	cur, err := w.s.q.GetAssetByPath(ctx, db.GetAssetByPathParams{
 		LibraryID: w.lib.ID, RelPath: rel,
 	})

@@ -117,6 +117,11 @@ type Like struct {
 	CreatedAt string
 }
 
+type PortableEventIdentity struct {
+	EventID  int64
+	StableID string
+}
+
 type Tag struct {
 	ID        string
 	Name      string

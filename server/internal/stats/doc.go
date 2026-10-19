@@ -9,6 +9,6 @@
 //
 // 边界（见 docs/ARCHITECTURE.md §5）：
 //   - 职责：趋势分桶、按天聚合口径（ViewEvent 事件流→按天物化表的
-//     重建编排在 httpapi.RebuildAssetDailyStatsFromEvents，不在本包）
+//     重建编排在 eventstats，MaterializeDaily 只做纯函数聚合）
 //   - 禁止：任何 IO（也不依赖其他业务模块）
 package stats

@@ -36,11 +36,12 @@ object PrefetchRevisionGate {
         serverRevision: Long?,
         record: PrefetchRevisionRecord?,
         serverKey: String,
+        thumbnailVersion: String = "",
     ): PrefetchRoundDecision = when {
         serverRevision == null -> PrefetchRoundDecision.FULL
         record == null -> PrefetchRoundDecision.FULL
         record.serverKey != serverKey -> PrefetchRoundDecision.FULL
-        record.revision == serverRevision -> PrefetchRoundDecision.SKIP
+        record.revision == serverRevision && record.thumbnailVersion == thumbnailVersion -> PrefetchRoundDecision.SKIP
         else -> PrefetchRoundDecision.FULL
     }
 }

@@ -34,6 +34,10 @@ func (imp *legacyImport) replayEvents(req *gen.LegacyBackupImport) {
 	if imp.aborted {
 		return
 	}
+	if req.SchemaVersion == portableSchemaVersion {
+		imp.replayPortableEvents(req)
+		return
+	}
 	batch := "0"
 	if req.ExportedAtMillis != nil {
 		batch = strconv.FormatInt(*req.ExportedAtMillis, 10)

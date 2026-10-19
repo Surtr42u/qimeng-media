@@ -3,7 +3,7 @@
 // 监听在 watch.go。
 //
 // 超过单文件 600 行警戒线理由：扫描编排流（闸门、变更检测、移动合并
-// 启发式与差集对账）是一条端到端的状态机主线，各阶段共享 existing/seen/
+// 启发式对账已拆至 reconcile.go；扫描遍历各阶段共享 existing/seen/
 // added/res 一组累积状态——拆文件会把同一组状态的读写摊到多处，编排
 // 内聚优先于文件行数代价（子职责已按 enrich/relink/watch 拆出）。
 
@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -25,6 +26,7 @@ import (
 	"github.com/google/uuid"
 
 	"qimeng-media/server/internal/events"
+	"qimeng-media/server/internal/filing"
 	"qimeng-media/server/internal/sourcematcher"
 	"qimeng-media/server/internal/store"
 	"qimeng-media/server/internal/store/db"
@@ -240,6 +242,12 @@ func (s *Scanner) Scan(ctx context.Context, lib db.Library) (ScanResult, error) 
 	defer g.endScan()
 
 	res := ScanResult{LibraryID: lib.ID}
+	// 部分失败也可能已有成功提交，必须通知修订号与在线客户端。
+	defer func() {
+		if res.Added+res.Updated+res.Moved+res.Removed > 0 {
+			s.publish(events.TopicLibraryChanged, res)
+		}
+	}()
 
 	// 库根自动重挂（ADR-0025，relink.go）：根被改名/移动后先按资产样本找回；
 	// 失败则保持既有失败行为——返回遍历错误（轮询下一周期再试，API 触发向
@@ -248,14 +256,20 @@ func (s *Scanner) Scan(ctx context.Context, lib db.Library) (ScanResult, error) 
 		return res, fmt.Errorf("scanner: 遍历库 %s: %w", lib.RootPath, err)
 	}
 
+	if !filing.PathWithinRoot(lib.RootPath, lib.RootPath) {
+		return res, filing.ErrPathEscape
+	}
+
 	// 库内现存记录快照：变更检测查内存（每文件 0 次 SQL），差集也算它。
 	existing, err := s.q.ListAssetsByLibrary(ctx, lib.ID)
 	if err != nil {
 		return res, fmt.Errorf("scanner: 载入库 %s 现存资产: %w", lib.ID, err)
 	}
 	known := make(map[string]db.Asset, len(existing))
+	knownIDs := make(map[string]struct{}, len(existing))
 	for _, a := range existing {
 		known[a.RelPath] = a
+		knownIDs[a.AssetID] = struct{}{}
 	}
 
 	// progress total 的估算基数：复扫时库内记录数就是文件数的下界估计；
@@ -264,6 +278,7 @@ func (s *Scanner) Scan(ctx context.Context, lib db.Library) (ScanResult, error) 
 	seen := make(map[string]struct{}, len(existing))
 	added := make([]db.Asset, 0, 16) // 本周期新插入（移动合并候选池）
 	lastProgress := time.Time{}      // 零值：首个文件必发一次
+	var partialErr error             // 视野不完整时禁止差集删除，保留已有身份与关联。
 
 	err = filepath.WalkDir(lib.RootPath, func(p string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -274,6 +289,7 @@ func (s *Scanner) Scan(ctx context.Context, lib db.Library) (ScanResult, error) 
 				return walkErr
 			}
 			s.logger.Warn("scanner: 遍历失败，跳过", "path", p, "err", walkErr)
+			partialErr = errors.Join(partialErr, walkErr)
 			if d != nil && d.IsDir() {
 				return filepath.SkipDir
 			}
@@ -281,6 +297,12 @@ func (s *Scanner) Scan(ctx context.Context, lib db.Library) (ScanResult, error) 
 		}
 		if err := ctx.Err(); err != nil {
 			return err // WalkDir 不感知 ctx，在此主动检查（大库可取消）
+		}
+		if !filing.PathWithinRoot(lib.RootPath, p) {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
 		}
 		if d.IsDir() {
 			if p != lib.RootPath && SkipDir(d.Name()) {
@@ -296,6 +318,9 @@ func (s *Scanner) Scan(ctx context.Context, lib db.Library) (ScanResult, error) 
 		if IsHiddenName(d.Name()) {
 			return nil
 		}
+		if d.Type()&fs.ModeSymlink != 0 {
+			return nil // 不把链接目标当媒体，也不跟随库外链接。
+		}
 		mediaType, ok := ClassifyMedia(d.Name())
 		if !ok {
 			return nil
@@ -303,6 +328,7 @@ func (s *Scanner) Scan(ctx context.Context, lib db.Library) (ScanResult, error) 
 		info, err := d.Info()
 		if err != nil {
 			s.logger.Warn("scanner: stat 失败，跳过", "path", p, "err", err)
+			partialErr = errors.Join(partialErr, err)
 			return nil
 		}
 
@@ -313,6 +339,7 @@ func (s *Scanner) Scan(ctx context.Context, lib db.Library) (ScanResult, error) 
 		}
 
 		res.Scanned++
+		seen[rel] = struct{}{} // 看到路径与成功刷新元数据是两件事。
 		// 变更检测（adr/0004）：size+mtime 都一致 → 完全跳过（连 ffprobe
 		// 都不跑）。mtime 用同一函数格式化后比较，杜绝精度/时区差异误判。
 		if cur, hit := known[rel]; hit &&
@@ -322,14 +349,15 @@ func (s *Scanner) Scan(ctx context.Context, lib db.Library) (ScanResult, error) 
 			return nil
 		}
 
-		asset, err := s.ingestFile(ctx, lib, p, rel, mediaType, info)
+		asset, inserted, err := s.ingestFile(ctx, lib, p, rel, mediaType, info)
 		if err != nil {
 			// 单文件入库失败（探测除外）不应中止整库扫描：记录后继续。
 			s.logger.Error("scanner: 入库失败，跳过", "path", p, "err", err)
+			partialErr = errors.Join(partialErr, err)
 			return nil
 		}
 		seen[rel] = struct{}{}
-		if _, wasKnown := known[rel]; !wasKnown {
+		if _, wasKnown := knownIDs[asset.AssetID]; inserted && !wasKnown {
 			added = append(added, asset)
 			res.Added++
 		} else {
@@ -348,6 +376,9 @@ func (s *Scanner) Scan(ctx context.Context, lib db.Library) (ScanResult, error) 
 	if err != nil {
 		return res, fmt.Errorf("scanner: 遍历库 %s: %w", lib.RootPath, err)
 	}
+	if partialErr != nil {
+		return res, fmt.Errorf("scanner: 扫描不完整，保留全部差集记录: %w", partialErr)
+	}
 
 	// 差集阶段进度（任务规格 phase 字段；此阶段无计数器可报，沿用累计值）。
 	s.publishProgress(lib.ID, res, max(totalHint, res.Scanned), phaseReconciling)
@@ -364,11 +395,6 @@ func (s *Scanner) Scan(ctx context.Context, lib db.Library) (ScanResult, error) 
 		s.relinkOrphanCosAssets(ctx, lib)
 	}
 
-	// 只在有实际变更时发 library.changed：轮询兜底每 5 分钟一次全量扫描，
-	// 无条件广播会驱动所有在线端做无意义刷新。
-	if res.Added+res.Updated+res.Moved+res.Removed > 0 {
-		s.publish(events.TopicLibraryChanged, res)
-	}
 	// 扫描成功返回才更新 scan_duration_seconds（help「上次全量扫描耗时」；
 	// 失败路径保留上次成功值，不污染语义）。API 触发与 watch 轮询两条入口
 	// 都汇聚在本函数，此处单点覆盖。Set 而非 Observe：它是 Gauge。
@@ -405,7 +431,7 @@ func (s *Scanner) invalidateThumbs(assetID, rel string) {
 //     且缩略图管线（thumbnail 包）生成本就依赖解码、事后对账回填即可；
 //   - 探测失败（损坏/半下载文件）不入错误：资产照常入库、元数据留空，
 //     下次 size/mtime 变化时自然重探——下载中的文件频繁触发这种瞬态。
-func (s *Scanner) ingestFile(ctx context.Context, lib db.Library, absPath, rel, mediaType string, info fs.FileInfo) (db.Asset, error) {
+func (s *Scanner) ingestFile(ctx context.Context, lib db.Library, absPath, rel, mediaType string, info fs.FileInfo) (db.Asset, bool, error) {
 	nowStr := store.FormatTimestamp(s.now())
 	params := db.UpsertAssetParams{
 		AssetID:   newAssetID(),
@@ -439,129 +465,34 @@ func (s *Scanner) ingestFile(ctx context.Context, lib db.Library, absPath, rel, 
 	}
 	// 作者体系富化分派（enrich.go；kind 由 0005 CHECK 约束只可能为
 	// normal/cos，default 按 normal 兜底）。
-	if lib.Kind == LibraryKindCos {
-		return s.ingestCosFile(ctx, params, rel)
-	}
-	return s.ingestNormalFile(ctx, params, info.Name())
-}
-
-// reconcile 扫描收尾对账：对"库内有记录但文件树没看到"的消失集执行
-// 移动合并或删除，计数直接累计进 res（合并会把 walk 阶段预记的 Added
-// 回退——被合并的新路径不是"新增"，是老身份换了住址）。
-func (s *Scanner) reconcile(ctx context.Context, lib db.Library, existing []db.Asset, seen map[string]struct{}, added []db.Asset, res *ScanResult) error {
-	// 无新增 → 不存在合并候选，全部消失走删除（常见稳态的快路径）。
-	if len(added) == 0 {
-		for _, a := range existing {
-			if _, ok := seen[a.RelPath]; !ok {
-				if err := s.deleteGone(ctx, lib, a); err != nil {
-					return err
-				}
-				res.Removed++
-			}
-		}
-		return nil
-	}
-
-	// 候选池用 slice 拷贝：被合并消费的候选要移除（一个新资产只能承接一个
-	// 消失身份；两份相同文件消失+一份新文件出现的反向歧义按先到先得，
-	// 多余的消失记录走删除）。
-	candidates := make([]db.Asset, len(added))
-	copy(candidates, added)
-
-	for _, gone := range existing {
-		if _, ok := seen[gone.RelPath]; ok {
-			continue
-		}
-		idx, nMatch := pickMergeCandidate(candidates, gone)
-		if idx < 0 {
-			if err := s.deleteGone(ctx, lib, gone); err != nil {
-				return err
-			}
-			res.Removed++
-			continue
-		}
-		// 歧义审计（任务规格 + adr/0004 误判兜底）：多个候选与消失记录
-		// size+mtime 一致（如批量拷贝同一文件后原件消失），无法确证承接者，
-		// 取 created_at 最新者并 warn 留痕，事后可追溯/人工修正。
-		if nMatch > 1 {
-			s.logger.Warn("scanner: 移动合并候选歧义，取 created_at 最新者",
-				"oldPath", gone.RelPath, "chosenNewPath", candidates[idx].RelPath,
-				"candidates", nMatch)
-		}
-		cand := candidates[idx]
-		candidates = append(candidates[:idx], candidates[idx+1:]...)
-		if err := s.applyMoveMerge(ctx, lib, gone, cand); err != nil {
+	// 视频探测在锁外；提交前重新核对磁盘，避免探测期间移动/删除后写回旧路径。
+	var asset db.Asset
+	err := filing.WithLibraryGate(lib.ID, func() error {
+		reserved, err := filing.PendingRestorePaths(s.dataDir, lib.ID)
+		if err != nil {
 			return err
 		}
-		res.Moved++
-		res.Added--
-	}
-	return nil
-}
-
-// deleteGone 删除一条消失记录（view_events 无外键，事件流天然保留）。
-func (s *Scanner) deleteGone(ctx context.Context, lib db.Library, gone db.Asset) error {
-	if err := s.q.DeleteAsset(ctx, gone.AssetID); err != nil {
-		return fmt.Errorf("scanner: 删除消失资产 %s: %w", gone.RelPath, err)
-	}
-	s.logger.Info("scanner: 文件消失，删除记录（view_events 事件流保留）",
-		"libraryId", lib.ID, "relPath", gone.RelPath, "assetId", gone.AssetID)
-	return nil
-}
-
-// applyMoveMerge 把消失记录的身份搬到新路径（ARCHITECTURE §6 启发式）。
-// 顺序严格：先删新插入的记录释放 (library_id, rel_path) 唯一索引，
-// 再 UPDATE 旧身份的路径属性；颠倒会撞唯一约束。
-// cos 库在改路径后按新 rel 重算作者关联（作者目录整体改名是移动合并的
-// 典型场景：旧目录文件消失+新目录文件出现且 size+mtime 一致）；normal
-// 库不重算——文件名不变，出处/角色匹配结果不变（文件头注释）。
-func (s *Scanner) applyMoveMerge(ctx context.Context, lib db.Library, gone, cand db.Asset) error {
-	if err := s.q.DeleteAsset(ctx, cand.AssetID); err != nil {
-		return fmt.Errorf("scanner: 移动合并-删除新记录 %s: %w", cand.RelPath, err)
-	}
-	_, err := s.q.MoveAssetPath(ctx, db.MoveAssetPathParams{
-		RelPath:   cand.RelPath,
-		FileName:  cand.FileName,
-		UpdatedAt: store.FormatTimestamp(s.now()),
-		AssetID:   gone.AssetID,
+		if _, pending := reserved[rel]; pending {
+			return errors.New("scanner: 恢复尚未提交，保留原身份")
+		}
+		if !filing.PathWithinRoot(lib.RootPath, absPath) {
+			return filing.ErrPathEscape
+		}
+		current, err := os.Stat(absPath)
+		if err != nil {
+			return err
+		}
+		if current.Size() != info.Size() || !current.ModTime().Equal(info.ModTime()) {
+			return fmt.Errorf("scanner: 文件在探测期间变化，等待下次扫描")
+		}
+		if lib.Kind == LibraryKindCos {
+			asset, err = s.ingestCosFile(ctx, params, rel)
+		} else {
+			asset, err = s.ingestNormalFile(ctx, params, info.Name())
+		}
+		return err
 	})
-	if err != nil {
-		return fmt.Errorf("scanner: 移动合并-改路径 %s→%s: %w", gone.RelPath, cand.RelPath, err)
-	}
-	if lib.Kind == LibraryKindCos {
-		// 新路径的作者目录可能不同于旧目录：重算保证映射正确；失败只
-		// 警告——重扫自愈（重扫按目录重建关联，见 ingestCosFile）。
-		if err := s.recomputeCosAuthor(ctx, gone.AssetID, cand.RelPath); err != nil {
-			s.logger.Warn("scanner: 移动合并后重算 COS 作者失败（重扫自愈）",
-				"assetId", gone.AssetID, "err", err)
-		}
-	}
-	// 审计日志（adr/0004「合并操作记录审计日志（可追溯）」）。
-	s.logger.Info("scanner: 移动合并（身份保留，路径属性更新）",
-		"assetId", gone.AssetID, "oldPath", gone.RelPath, "newPath", cand.RelPath)
-	return nil
-}
-
-// pickMergeCandidate 在候选池中为消失记录找移动合并候选。
-// 纯函数（领域规则，便于单测）：匹配条件 = size 与 mtime 字符串完全一致
-// （rename/move 不改文件内容与 mtime；任何一项变了都视为"删旧+增新"）。
-// 返回 (选中下标, 匹配数)；无候选时下标为 -1。
-// 多候选歧义（同名同尺寸批量拷贝后原件消失）：取 (created_at, asset_id)
-// 字典序最新者——created_at 同毫秒时 UUIDv7 的时间前缀保证 asset_id
-// 字典序仍是时间序，排序确定性可复现。匹配数>1 由调用方 warn 留痕。
-func pickMergeCandidate(candidates []db.Asset, gone db.Asset) (best, matches int) {
-	best = -1
-	for i, c := range candidates {
-		if c.SizeBytes != gone.SizeBytes || c.Mtime != gone.Mtime {
-			continue
-		}
-		matches++
-		if best < 0 || c.CreatedAt > candidates[best].CreatedAt ||
-			(c.CreatedAt == candidates[best].CreatedAt && c.AssetID > candidates[best].AssetID) {
-			best = i
-		}
-	}
-	return best, matches
+	return asset, err == nil && asset.AssetID == params.AssetID, err
 }
 
 // publishProgress 发一次进度事件（尽力而为：bus 关闭只 warn 不影响扫描）。

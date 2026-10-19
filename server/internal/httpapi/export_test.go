@@ -155,7 +155,7 @@ func TestExportQimengBackupRoundTrip(t *testing.T) {
 	if cd := header.Get("Content-Disposition"); !strings.Contains(cd, "qimeng_backup.json") {
 		t.Fatalf("Content-Disposition 缺失: %q", cd)
 	}
-	if file.Format != "qimeng_backup" || file.SchemaVersion != 1 || file.AppIdentifier != "com.qimeng.media" {
+	if file.Format != "qimeng_backup" || file.SchemaVersion != portableSchemaVersion || file.AppIdentifier != "com.qimeng.media" {
 		t.Fatalf("信封字段异常: %+v", file)
 	}
 	if file.ExportedAtMillis == nil || *file.ExportedAtMillis <= 0 {

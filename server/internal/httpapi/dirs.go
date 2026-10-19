@@ -6,8 +6,10 @@ package httpapi
 import (
 	"database/sql"
 	"errors"
+	"io/fs"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 
 	"qimeng-media/server/internal/filing"
@@ -50,8 +52,19 @@ func (s *Server) GetApiV1Dirs(w http.ResponseWriter, r *http.Request, params gen
 // 单个子目录读失败跳过（权限/并发删除）：树是浏览辅助，不因一处
 // 抖动整体 500。
 func buildDirTree(root, rel string) gen.DirTree {
-	abs := filepath.Join(root, filepath.FromSlash(rel))
-	entries, err := os.ReadDir(abs)
+	if !filing.PathWithinRoot(root, root) {
+		return gen.DirTree{Path: &rel}
+	}
+	dirRoot, err := os.OpenRoot(root)
+	if err != nil {
+		return gen.DirTree{Path: &rel}
+	}
+	defer filing.CloseRoot(dirRoot)
+	return buildDirTreeInRoot(dirRoot, rel)
+}
+
+func buildDirTreeInRoot(root *os.Root, rel string) gen.DirTree {
+	entries, err := fs.ReadDir(root.FS(), path.Join(".", rel))
 	if err != nil {
 		p := rel
 		fc := 0
@@ -60,12 +73,15 @@ func buildDirTree(root, rel string) gen.DirTree {
 	dirs := make([]gen.DirTree, 0, len(entries))
 	fileCount := 0
 	for _, e := range entries {
+		if e.Type()&os.ModeSymlink != 0 || !filing.PathWithinRoot(root.Name(), filepath.Join(root.Name(), filepath.FromSlash(rel), e.Name())) {
+			continue
+		}
 		if e.IsDir() {
 			child := e.Name()
 			if rel != "" {
 				child = rel + "/" + e.Name()
 			}
-			dirs = append(dirs, buildDirTree(root, child))
+			dirs = append(dirs, buildDirTreeInRoot(root, child))
 			continue
 		}
 		fileCount++
@@ -111,7 +127,13 @@ func (s *Server) PostApiV1Dirs(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, codePathEscape, "目录路径不合法")
 		return
 	}
-	if err := os.MkdirAll(target, dirPerm); err != nil {
+	root, err := os.OpenRoot(lib.RootPath)
+	if err != nil {
+		s.internalErr(w, "打开媒体库根", err)
+		return
+	}
+	defer filing.CloseRoot(root)
+	if err := root.MkdirAll(filepath.FromSlash(rel), dirPerm); err != nil {
 		s.internalErr(w, "创建目录", err)
 		return
 	}

@@ -27,3 +27,7 @@
 EmbeddedServerController 注入点）+ 设置页本机模式切换与壳层冷启动自拉起；三件套装配
 `make app-embedded-*`（供应链哈希锁见 deploy/embedded/README.md，jniLibs 不入 git）。
 真机 arm64 全链验收 = 任务T T7 用户节点。
+
+## 2026-10-19 缩略图表示版本
+
+稳定键继续只剥 exp/sig，保留 size/v。预取 revision 快照携带 thumbnailVersion，DataStore 与上次完成 revision 同次写入；策略指纹变化或旧记录无指纹时重拉，避免策略升级后错误跳过。v2 备份新字段经生成 SDK 透传；勿用旧版 App 转存 v2。

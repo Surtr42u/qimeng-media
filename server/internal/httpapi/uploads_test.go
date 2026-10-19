@@ -488,7 +488,14 @@ func TestUploadSessionTamperedAfterSeal(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(env.media, "tampered.jpg")); !os.IsNotExist(err) {
 		t.Error("被篡改的分片不得落进库")
 	}
-	// 损坏成品（已被预置为 staging）已随失败路径清理，临时目录无残留。
+	// 预置副本被清理，但源仍属于会话，失败不能提前搬走它。
+	fi, err := os.Stat(partPath)
+	if err != nil || fi.Size() != int64(len(jpg)+1) {
+		t.Fatalf("失败后应保留未修改的分片源: %v", err)
+	}
+	if err := env.s.uploads.Drop(sess.Id.String()); err != nil {
+		t.Fatal(err)
+	}
 	assertNoSessionTemp(t, env.dataDir)
 }
 

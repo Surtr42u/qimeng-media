@@ -194,6 +194,12 @@ func newTestEnvRaw(t *testing.T) *testEnv {
 		{id: uuid.NewString(), relPath: "c.mp4", name: "c.mp4", mediaType: "video", size: sc.Size(), mtime: mt(base.Add(48 * time.Hour))},
 	}
 
+	for _, f := range testFiles {
+		at := parseStoreTime(f.mtime)
+		if err := os.Chtimes(filepath.Join(media, f.relPath), at, at); err != nil {
+			t.Fatal(err)
+		}
+	}
 	conn, err := store.Open(filepath.Join(dataDir, "test.db"))
 	if err != nil {
 		t.Fatalf("打开测试库失败: %v", err)

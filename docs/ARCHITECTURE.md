@@ -96,6 +96,7 @@
 | `authorattach` | 作者挂靠编辑与本地镜像编排（上传挂靠参数已随 ADR-0024 退役；ADR-0023/0024，ADR-0019 首个新流程落地）：TXT 片段存取单一来源 + 挂靠写入与资产作者/来源编辑编排（编辑走 edit.go，在调用方事务内）+ 重导入保护元数据 + 本地总表镜像（尽力而为原子写）；依赖 store/authoring，被 httpapi 调用 | 绕过调用方事务自行提交；片段本体之外的第二真相存储 |
 | `filing` | 上传、移动、重命名、回收站 | 绕过路径安全校验 |
 | `store` | sqlc 生成代码 + migrations | SQL 字符串拼接 |
+| `eventstats` | 事件日统计持写锁事务重建，单资产恢复与全量管理重建共用；调用 stats 纯函数与 store | HTTP 依赖、事务外读真相再替换 |
 | `events` | 进程内事件总线、SSE | 模块间直接函数调用（跨模块通知走事件） |
 | `auth` | token 签发/校验、签名直链 | — |
 | `sysmon` | 系统指标采集 | — |
@@ -124,6 +125,8 @@
 
 - **SDK 生成物不入库**（ADR-0009）：`server/internal/httpapi/gen/*.gen.go`、`web/src/api/generated/`、`android/sdk/**` 全部 .gitignore；CI `sdk-chain` job 从 `api/openapi.yaml` 重建验证可生成。**AI 禁止手改任何生成物**——协议改动只改 openapi.yaml 后 `make sdk`。
 - **迁移纪律**（ADR-0011）：schema 演进只经 golang-migrate **新增**文件（只加不改不删）；改/删既有结构走 expand-migrate-contract 两步迁移，禁止手改历史迁移文件与运行中的库。
+
+**文件一致性实现（2026-10-19，ADR-0039）**：`scanner/reconcile.go` 单独承载差集实时复核与事务合并；`filing/restore_intent.go` 负责从既有回收站meta读取未完成恢复路径索引及显式失效，供scanner在库锁内避让。filing路径层含文件系统链接检查，不再是纯词法函数；库内实际文件操作优先os.Root。上传会话记录已发布路径并封存源，跨根搬移的边界见SECURITY。原有httpapi上传/回收站编排仍为存量，未引入新框架。
 
 ## 6. 数据身份机制（adr/0004，本项目最重要的设计）
 
@@ -183,3 +186,5 @@
 ## 11. 与旧项目的数据迁移
 
 备份导入端点（幂等合并语义，2026-10-01 澄清）：上传旧版 `qimeng_backup.json`（18 数据段，2026-10-01 起含 txtFragments）→ 服务端按 `DOMAIN_RULES.md` §10 的映射表合并入库（recordKey → 通过文件名匹配**既有**资产建立 asset_id 关联，不创建资产、不删既有数据，同源跨批次内容键去重）。旧 App 用户数据零损失升级；亦适用于本机模式导出→登 NAS 导入的跨端迁移（文件本体不在备份内，先行走上传/本机同步通道；TXT 片段已并入备份迁移〔2026-10-01，keep 合并〕）。
+
+**2026-10-19 第二轮（ADR-0040）**：新增 eventstats 专职编排包接走统计重建，stats/materialize 保持纯函数；回收站存量流程在原资产写事务内调用单资产重建。portable_backup.go 为既有导出/导入流程的事件身份适配组成部分；migration 0019 仅加无键事件身份旁表及触发器。缩略图版本布局与协议见 DOMAIN_RULES §11。

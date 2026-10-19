@@ -82,9 +82,13 @@ func (s *Server) PostApiV1ImportQimengBackup(w http.ResponseWriter, r *http.Requ
 		writeErr(w, http.StatusBadRequest, codeBadRequest, "format 必须为 qimeng_backup")
 		return
 	}
+	if err := validatePortableBackup(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, codeBadRequest, err.Error())
+		return
+	}
 
 	imp := &legacyImport{s: s, ctx: r.Context(), w: w}
-	imp.matchFiles(req.Data.MediaFiles)
+	imp.matchBackupFiles(req.Data.MediaFiles, req.SchemaVersion == portableSchemaVersion)
 	imp.importTxtFragments(req.Data.TxtFragments)
 	imp.importAuthors(req.Data.Authors, req.Data.AuthorMediaRefs)
 	imp.importTags(req.Data.Tags, req.Data.MediaTagRefs)
@@ -183,7 +187,7 @@ func nowOrMillis(m *int64, now time.Time) string {
 // R1（审计 2026-09-20）：旧实现按备份文件逐条 ListAssetsByFileName 查库
 // （N+1，数千文件=数千次 SQL）；改一次全表建 fileName→行集 内存索引，
 // 消歧与 tie-break 语义不变（ORDER BY created_at 保持最早入库行优先）。
-func (imp *legacyImport) matchFiles(files *[]gen.LegacyMediaFile) {
+func (imp *legacyImport) matchBackupFiles(files *[]gen.LegacyMediaFile, portable bool) {
 	if imp.aborted {
 		return
 	}
@@ -197,14 +201,34 @@ func (imp *legacyImport) matchFiles(files *[]gen.LegacyMediaFile) {
 		return
 	}
 	byName := make(map[string][]db.ListAssetNameIndexRow, len(rows))
+	byID := make(map[string]string, len(rows))
 	for _, row := range rows {
+		byID[row.AssetID] = row.AssetID
 		byName[row.FileName] = append(byName[row.FileName], row)
 	}
 	for _, f := range list {
-		if assetID := pickAssetByFolder(byName[f.FileName], f.FolderName); assetID != "" {
+		assetID := pickAssetByFolder(byName[f.FileName], f.FolderName)
+		if portable {
+			assetID = pickPortableAsset(f, byName[f.FileName], byID)
+		}
+		if assetID != "" {
 			imp.keyToAsset[f.RecordKey] = assetID
+		} else if portable {
+			imp.warn("文件 %s 未唯一匹配，关联与事件已跳过", f.RecordKey)
 		}
 		imp.keyToTagsTime[f.RecordKey] = f.TagsUpdatedAtMillis
+	}
+	if portable {
+		counts := make(map[string]int)
+		for _, id := range imp.keyToAsset {
+			counts[id]++
+		}
+		for key, id := range imp.keyToAsset {
+			if counts[id] > 1 {
+				delete(imp.keyToAsset, key)
+				imp.warn("文件 %s 与其他备份条目指向同一目标，已跳过以免串文件", key)
+			}
+		}
 	}
 	imp.res.AssetsMatched = ptr(len(imp.keyToAsset))
 }

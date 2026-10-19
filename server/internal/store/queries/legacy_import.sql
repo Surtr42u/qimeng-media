@@ -88,6 +88,6 @@ ON CONFLICT (asset_id, tag_id) DO UPDATE SET
 -- query per backup file (the old N+1). ORDER BY created_at keeps
 -- ListAssetsByFileName's earliest-first tie-break (folder disambiguation
 -- falls back to rows[0] -- behavior must stay identical).
-SELECT asset_id, rel_path, file_name
-FROM assets
-ORDER BY created_at;
+SELECT a.asset_id, a.rel_path, a.file_name, l.name AS library_name
+FROM assets a JOIN libraries l ON l.id = a.library_id
+ORDER BY a.created_at;

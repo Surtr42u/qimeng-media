@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"qimeng-media/server/internal/events"
+	"qimeng-media/server/internal/eventstats"
 	"qimeng-media/server/internal/filing"
 	"qimeng-media/server/internal/httpapi/gen"
 	"qimeng-media/server/internal/safego"
@@ -36,6 +37,9 @@ import (
 // stamp 定宽 19 位零填充（filing.TrashPathFor），UUID 不含下划线，
 // SplitN(_, 2) 拆分无歧义。
 const trashIDSep = "_"
+
+// 回收站清空/清扫与恢复必须串行，避免元数据在身份提交前被另一请求移除。
+const trashOperationGate = "qimeng:trash-operations"
 
 // moveFile 是 filing.MoveFile 的包内可注入替身（生产恒为真实现）：跨卷复制
 // 中途失败无法用真实文件系统在单测稳定注入（EXDEV 需要真实双挂载点、
@@ -122,6 +126,9 @@ func (s *Server) refreshTrashMetricsOnce() {
 // 而反过来"行没了、文件还在库目录"会让文件成为无主孤儿且扫描会
 // 重新入库（删除静默失效）。两类漂移里前者可自愈，后者是数据事故。
 func (s *Server) DeleteApiV1AssetsAssetId(w http.ResponseWriter, r *http.Request, assetID gen.AssetId) {
+	unlockTrash := filing.LockLibrary(trashOperationGate)
+	defer unlockTrash()
+
 	row, err := s.q.GetAssetWithLibrary(r.Context(), assetID.String())
 	if errors.Is(err, sql.ErrNoRows) {
 		writeErr(w, http.StatusNotFound, codeNotFound, "资产不存在")
@@ -129,6 +136,13 @@ func (s *Server) DeleteApiV1AssetsAssetId(w http.ResponseWriter, r *http.Request
 	}
 	if err != nil {
 		s.internalErr(w, "查询资产", err)
+		return
+	}
+	unlock := filing.LockLibrary(row.LibraryID)
+	defer unlock()
+	row, err = s.q.GetAssetWithLibrary(r.Context(), assetID.String())
+	if err != nil {
+		s.internalErr(w, "重新查询待删除资产", err)
 		return
 	}
 	src := filepath.Join(row.RootPath, filepath.FromSlash(row.RelPath))
@@ -210,7 +224,14 @@ func writeTrashMeta(metaFile string, meta filing.TrashMeta) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(metaFile, b, 0o600)
+	tmp := metaFile + ".tmp"
+	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, metaFile); err != nil {
+		return err
+	}
+	return nil
 }
 
 // trashEntry 是一次遍历得到的回收站条目（meta 路径与文件路径成对）。
@@ -356,6 +377,9 @@ var errRestoreEscaped = errors.New("restore target escapes library root")
 // 协议承诺冲突自动重命名（恢复永远成功）要求改名解析与搬移在
 // WithLibraryGate 内串行，直线顺序本身就是失败语义的说明。
 func (s *Server) PostApiV1TrashTrashIdRestore(w http.ResponseWriter, r *http.Request, trashID gen.TrashId) {
+	unlockTrash := filing.LockLibrary(trashOperationGate)
+	defer unlockTrash()
+
 	e, ok := s.findTrashEntry(trashID)
 	if !ok {
 		writeErr(w, http.StatusNotFound, codeNotFound, "回收站条目不存在")
@@ -377,8 +401,22 @@ func (s *Server) PostApiV1TrashTrashIdRestore(w http.ResponseWriter, r *http.Req
 	// 同一冲突名、rename 静默覆盖。targetRel 在锁内确定后用于库行。
 	var targetRel string
 	gerr := filing.WithLibraryGate(lib.ID, func() error {
+		// 前一个请求可能已经完成或写入了恢复意图，锁内重读。
+		current, exists := s.findTrashEntry(trashID)
+		if !exists {
+			return os.ErrNotExist
+		}
+		e = current
 		targetRel = origRel
-		if _, err := os.Stat(filepath.Join(lib.RootPath, filepath.FromSlash(origRel))); err == nil {
+		pending := e.meta.RestorePath != ""
+		if pending {
+			rel, err := filing.NormalizeRelPath(e.meta.RestorePath)
+			if err != nil {
+				return errRestoreEscaped
+			}
+			targetRel = rel
+		}
+		if _, err := os.Stat(filepath.Join(lib.RootPath, filepath.FromSlash(origRel))); !pending && err == nil {
 			dir, name := path.Split(origRel)
 			exists := func(n string) bool {
 				_, err := os.Stat(filepath.Join(lib.RootPath, filepath.FromSlash(dir+n)))
@@ -395,23 +433,78 @@ func (s *Server) PostApiV1TrashTrashIdRestore(w http.ResponseWriter, r *http.Req
 			s.logger.Error("恢复目标越出库根，已拦截", "assetId", e.meta.AssetID)
 			return errRestoreEscaped
 		}
-		if err := os.MkdirAll(filepath.Dir(target), dirPerm); err != nil {
-			return fmt.Errorf("创建恢复目录: %w", err)
-		}
-		if err := moveFile(e.file, target); err != nil {
-			// 出站半截落在库内目标路径：不清则 meta 未删、重试恢复因目标名
-			// 被占自动改名，残缺件与完整件并存且扫描器会把残缺件注册成坏
-			// 资产——失败即清（best-effort），错误原样上抛走既有 500 语义。
-			// 双哨兵必须与下方两处（本文件 :163/:183 附近）一致跳过
-			// （ADR-0038 决策 2）：ErrMoveDidNotCreateTarget = 本次尝试没有
-			// 在目标端创建文件，此时同名目标可能是外部进程并发创建的完整
-			// 文件，不能当本次残留清掉（2026-10-17 审计修复：此处曾漏判）。
-			if !errors.Is(err, filing.ErrMoveTargetExists) &&
-				!errors.Is(err, filing.ErrMoveDidNotCreateTarget) {
-				s.cleanupMoveResidue(e.file, target)
-			}
+		root, err := os.OpenRoot(lib.RootPath)
+		if err != nil {
 			return err
 		}
+		defer filing.CloseRoot(root)
+		if err := root.MkdirAll(filepath.FromSlash(path.Dir(targetRel)), dirPerm); err != nil {
+			return fmt.Errorf("创建恢复目录: %w", err)
+		}
+		// 意图必须先落盘。源缺失的重试只接受与意图指纹一致的目标，绝不重新改名。
+		if _, err := os.Stat(e.file); err == nil {
+			fi, err := os.Stat(e.file)
+			if err != nil {
+				return err
+			}
+			e.meta.RestorePath = targetRel
+			e.meta.RestoreSize = fi.Size()
+			e.meta.RestoreMtime = fi.ModTime()
+			filing.InvalidateRestoreIntents(s.cfg.DataDir, lib.ID)
+			if err := writeTrashMeta(e.metaFile, e.meta); err != nil {
+				return err
+			}
+			if err := moveFile(e.file, target); err != nil {
+				if !errors.Is(err, filing.ErrMoveTargetExists) && !errors.Is(err, filing.ErrMoveDidNotCreateTarget) {
+					s.cleanupMoveResidue(e.file, target)
+				}
+				return err
+			}
+		} else if !pending || !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		fi, err := os.Stat(target)
+		if err != nil {
+			return err
+		}
+		if fi.Size() != e.meta.RestoreSize || !fi.ModTime().Equal(e.meta.RestoreMtime) {
+			return errors.New("恢复落点与意图不一致，保留元数据等待处理")
+		}
+		occupied, err := s.q.GetAssetByPath(r.Context(), db.GetAssetByPathParams{LibraryID: lib.ID, RelPath: targetRel})
+		if err == nil && occupied.AssetID != e.meta.AssetID {
+			return errors.New("恢复落点被其他身份占用，保留意图")
+		}
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		tx, err := s.conn.BeginTx(r.Context(), nil)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = tx.Rollback() }()
+		qx := s.q.WithTx(tx)
+		now := store.FormatTimestamp(s.now())
+		asset, err := qx.UpsertAsset(r.Context(), db.UpsertAssetParams{
+			AssetID: e.meta.AssetID, LibraryID: lib.ID, RelPath: targetRel, FileName: path.Base(targetRel),
+			MediaType: e.meta.MediaType, SizeBytes: fi.Size(), Mtime: store.FormatTimestamp(fi.ModTime()), CreatedAt: now, UpdatedAt: now,
+		})
+		if err != nil {
+			return fmt.Errorf("重建资产记录（恢复意图保留，可重试）: %w", err)
+		}
+		if asset.AssetID != e.meta.AssetID {
+			return errors.New("恢复路径被其他资产身份占用，保留意图")
+		}
+		if err := eventstats.RebuildInTx(r.Context(), qx, e.meta.AssetID); err != nil {
+			return err
+		}
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+		filing.InvalidateRestoreIntents(s.cfg.DataDir, lib.ID)
+		if err := os.Remove(e.metaFile); err != nil {
+			return fmt.Errorf("清除已提交恢复意图: %w", err)
+		}
+
 		return nil
 	})
 	switch {
@@ -421,33 +514,6 @@ func (s *Server) PostApiV1TrashTrashIdRestore(w http.ResponseWriter, r *http.Req
 		return
 	default:
 		s.internalErr(w, "恢复文件", gerr)
-		return
-	}
-	target := filepath.Join(lib.RootPath, filepath.FromSlash(targetRel))
-	if err := os.Remove(e.metaFile); err != nil {
-		s.logger.Warn("删除回收站 meta 失败（文件已恢复，残留 meta 不影响功能）",
-			"err", err, "meta", e.metaFile)
-	}
-	// 重建库行：size/mtime 以恢复后的真实文件为准（Rename 不改 mtime）。
-	fi, err := os.Stat(target)
-	if err != nil {
-		s.internalErr(w, "读取恢复后文件信息", err)
-		return
-	}
-	now := store.FormatTimestamp(s.now())
-	mtime := store.FormatTimestamp(fi.ModTime())
-	if _, err := s.q.UpsertAsset(r.Context(), db.UpsertAssetParams{
-		AssetID:   e.meta.AssetID,
-		LibraryID: lib.ID,
-		RelPath:   targetRel,
-		FileName:  path.Base(targetRel),
-		MediaType: e.meta.MediaType,
-		SizeBytes: fi.Size(),
-		Mtime:     mtime,
-		CreatedAt: now, // 恢复即重新入库：created_at 取恢复时刻（meta 不存原值，接受语义偏移）
-		UpdatedAt: now,
-	}); err != nil {
-		s.internalErr(w, "重建资产记录", err)
 		return
 	}
 	// 重建库行只写基础列；富化列（normal=出处/角色，cos=作者关联+cos_work）
@@ -467,6 +533,9 @@ func (s *Server) PostApiV1TrashTrashIdRestore(w http.ResponseWriter, r *http.Req
 
 // DeleteApiV1TrashTrashId 物理删除回收站内单个条目（文件+meta 成对删除）。
 func (s *Server) DeleteApiV1TrashTrashId(w http.ResponseWriter, r *http.Request, trashID gen.TrashId) {
+	unlockTrash := filing.LockLibrary(trashOperationGate)
+	defer unlockTrash()
+
 	e, ok := s.findTrashEntry(trashID)
 	if !ok {
 		writeErr(w, http.StatusNotFound, codeNotFound, "回收站条目不存在")
@@ -474,12 +543,15 @@ func (s *Server) DeleteApiV1TrashTrashId(w http.ResponseWriter, r *http.Request,
 	}
 	// stamp/<assetID>/ 子树里只有这一对文件+meta（一次删除一个文件），
 	// 整树删除顺带清掉空目录壳。
+	filing.InvalidateRestoreIntents(s.cfg.DataDir, e.meta.LibraryID)
+	defer filing.InvalidateRestoreIntents(s.cfg.DataDir, e.meta.LibraryID)
 	if err := os.RemoveAll(filepath.Dir(e.metaFile)); err != nil {
 		s.internalErr(w, "物理删除回收站条目", err)
 		return
 	}
 	// 条目永久消失：该资产缩略图缓存不再可达，联动清理（软删除→恢复
 	// 路径不清——asset_id 不变恢复后继续命中缓存，见 thumbnail/cleanup.go）。
+	filing.InvalidateRestoreIntents(s.cfg.DataDir, e.meta.LibraryID)
 	s.thumbs.DeleteAssetThumbs(e.meta.AssetID)
 	// 物理删除不走 publishLibraryChanged（条目早已出库，不发布库变更），
 	// 修订号在此显式推进（revision.go 的 bump 链清单）。
@@ -492,12 +564,17 @@ func (s *Server) DeleteApiV1TrashTrashId(w http.ResponseWriter, r *http.Request,
 
 // DeleteApiV1Trash 清空回收站（物理删除全部条目）。
 func (s *Server) DeleteApiV1Trash(w http.ResponseWriter, r *http.Request) {
+	unlockTrash := filing.LockLibrary(trashOperationGate)
+	defer unlockTrash()
+
 	// meta 是回收站真相源：RemoveAll 之后无法再反查 assetID，缩略图联动
 	// 清理必须先收集（遍历失败只降级——缓存残留待对账兜底，不拦清空）。
 	entries, err := s.listTrash()
 	if err != nil {
 		s.logger.Warn("清空前遍历回收站失败（缩略图联动清理跳过）", "err", err)
 	}
+	filing.InvalidateAllRestoreIntents(s.cfg.DataDir)
+	defer filing.InvalidateAllRestoreIntents(s.cfg.DataDir)
 	root := filepath.Join(s.cfg.DataDir, filing.TrashRootName)
 	if err := os.RemoveAll(root); err != nil {
 		s.internalErr(w, "清空回收站", err)
@@ -507,6 +584,7 @@ func (s *Server) DeleteApiV1Trash(w http.ResponseWriter, r *http.Request) {
 		s.internalErr(w, "重建回收站目录", err)
 		return
 	}
+	filing.InvalidateAllRestoreIntents(s.cfg.DataDir)
 	for _, e := range entries {
 		s.thumbs.DeleteAssetThumbs(e.meta.AssetID)
 	}

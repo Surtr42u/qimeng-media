@@ -10,6 +10,7 @@ import (
 
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
+	"qimeng-media/server/internal/eventstats"
 	"qimeng-media/server/internal/httpapi/gen"
 	"qimeng-media/server/internal/stats"
 	"qimeng-media/server/internal/store"
@@ -232,69 +233,5 @@ func dayPtr(day string) *openapi_types.Date {
 // 的 FK 会拒绝孤儿行——重建先取现存资产集合，丢弃已删资产的事件聚合
 // （其历史计数继续由事件流本身承载）。
 func (s *Server) RebuildAssetDailyStatsFromEvents(ctx context.Context) error {
-	events, err := s.q.ListAllViewEvents(ctx)
-	if err != nil {
-		return err
-	}
-	liveAssets, err := s.q.ListAllAssetIDs(ctx)
-	if err != nil {
-		return err
-	}
-	live := make(map[string]bool, len(liveAssets))
-	for _, id := range liveAssets {
-		live[id] = true
-	}
-
-	// 按（资产 × 本地日）聚合事件：open→view、play→play、dwell→seconds
-	type assetDay struct {
-		assetID, day string
-	}
-	totals := make(map[assetDay]*bucketAcc, len(events))
-	for _, ev := range events {
-		if !live[ev.AssetID] {
-			continue // 已删资产：物化表不收，事件流保留（ADR-0005）
-		}
-		at, err := time.Parse(store.TimestampLayout, ev.StartedAt)
-		if err != nil {
-			continue // 格式契约破坏（0001 文件头约定），跳过脏行防重建失败
-		}
-		key := assetDay{assetID: ev.AssetID, day: store.FormatDay(at)}
-		acc := totals[key]
-		if acc == nil {
-			acc = &bucketAcc{}
-			totals[key] = acc
-		}
-		switch ev.Kind {
-		case string(gen.Open):
-			acc.view++
-		case string(gen.Play):
-			acc.play++
-		case string(gen.Dwell):
-			acc.secs += ev.Seconds.Int64 // NULL 视为 0
-		}
-	}
-
-	tx, err := s.conn.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-	qtx := s.q.WithTx(tx)
-	if err := qtx.DeleteAllAssetDailyStats(ctx); err != nil {
-		return err
-	}
-	for key, acc := range totals {
-		if err := qtx.UpsertAssetDailyStats(ctx, db.UpsertAssetDailyStatsParams{
-			AssetID: key.assetID, Day: key.day,
-			ViewCount: acc.view, PlayCount: acc.play, BrowseSeconds: acc.secs,
-		}); err != nil {
-			return err
-		}
-	}
-	return tx.Commit()
-}
-
-// bucketAcc 是重建聚合的单（资产×日）累加器。
-type bucketAcc struct {
-	view, play, secs int64
+	return eventstats.Rebuild(ctx, s.conn)
 }

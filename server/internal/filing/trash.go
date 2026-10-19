@@ -26,6 +26,10 @@ type TrashMeta struct {
 	OriginalPath string    `json:"original_path"` // 库内相对路径（Clean 后、/ 分隔）
 	MediaType    string    `json:"media_type"`    // image/video（恢复重建库行快照，避免按扩展名重猜）
 	DeletedAt    time.Time `json:"deleted_at"`
+	// 恢复意图先于搬移落盘；数据库失败/进程中断后可按同一落点重试。
+	RestorePath  string    `json:"restore_path,omitempty"`
+	RestoreSize  int64     `json:"restore_size,omitempty"`
+	RestoreMtime time.Time `json:"restore_mtime,omitempty"`
 }
 
 // TrashPathFor 计算文件删除后进回收站的落点（纯路径计算，不落盘）。
@@ -78,6 +82,9 @@ func RestorePaths(meta TrashMeta) (origRel string, err error) {
 // 是物理删除，配置事故（误配 0）绝不能触发"清空回收站"这个危险方向，宁可堆积
 // 等待修正配置。
 func TrashExpired(meta TrashMeta, now time.Time, retentionDays int) bool {
+	if meta.RestorePath != "" {
+		return false // 未完成的身份恢复不得被后台到期清扫抹去重试依据。
+	}
 	if retentionDays < 1 {
 		return false
 	}

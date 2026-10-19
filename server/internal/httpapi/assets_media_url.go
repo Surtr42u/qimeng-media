@@ -57,8 +57,12 @@ func (s *Server) signedMediaURL(path string) string {
 // size 档位（openapi sm/md/lg）到像素的换算见 thumbSize；档位像素的
 // 单一来源是 thumbnail 包的 Size 常量（cachekey.go），md 档像素由
 // Thumbnail 配置 LongSide 决定（未配置回落 SizeGrid）。
-func (s *Server) thumbURL(assetID, size string) string {
-	return s.signedMediaURL(mediaPathThumb+assetID) + "&size=" + size
+func (s *Server) thumbURL(assetID, size string, content ...string) string {
+	url := s.signedMediaURL(mediaPathThumb+assetID) + "&size=" + size
+	if len(content) > 0 {
+		url += "&v=" + content[0]
+	}
+	return url
 }
 
 // thumbSize 把 openapi size 枚举映射到 thumbnail.Size：

@@ -1,12 +1,12 @@
-// export.go：旧版格式备份导出端点（新库 → qimeng_backup.json，DOMAIN_RULES §10
+// export.go：便携 v2 备份导出（新库 → qimeng_backup.json，DOMAIN_RULES §10
 // 逆向映射，格式权威 = 旧仓库 DATA_MIGRATION_SPEC v1）。
 //
 // 段级口径（与 import.go 的导入映射互为镜像，回环经 POST /import/qimeng-backup
-// 幂等导入）：
-//   - mediaFiles：全量资产；recordKey 生成镜像导入侧 matchFiles 消歧规则
+// 身份合并；v1 聚合回放仅用于兼容）：
+//   - mediaFiles：全量资产；recordKey 全份唯一，v2 结合资产ID/相对路径/库名安全匹配
 //     （文件名唯一 = 文件名；同名 = 「文件名 @ 文件夹名」；同名同文件夹
-//     （跨库）再追加 #路径哈希）——folderName 恒取 rel_path 父目录段，保证
-//     导入侧 pickAssetByFolder 能按同规则消歧；
+//     （跨库）再追加 #资产ID#序号）——folderName 恒取 rel_path 父目录段，保证
+//     v1 旧工具仍可读取 folderName，v2 歧义跳过；
 //   - dailyBrowse：取事件流物化表（asset x day，唯一真相源是 view_events，
 //     物化表是其派生缓存）；mediaStats：事件流按资产聚合（open/play 计数、
 //     dwell 秒数、最后打开时刻）；
@@ -23,13 +23,12 @@ package httpapi
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"path"
+	"sort"
 	"strings"
 	"time"
 
@@ -45,18 +44,17 @@ const (
 	legacyBackupFormat  = "qimeng_backup"
 	legacyAppIdentifier = "com.qimeng.media"
 	legacySchemaVersion = 1
+	// v2 保留事件身份；协议侧 LegacyBackupData.viewEvents 改动须同步此处。
+	portableSchemaVersion = 2
 
 	// history 段已无上限（2026-10-04 用户拍板：所有数据长期持久，完整 open 事件随
 	// 备份携带；原「最近 500 条对齐旧库 view_history」截取废止）——导出口径单一来源
 	// 在 store/queries/legacy_export.sql（ExportRecentOpenEvents，无 LIMIT 全量倒序），
 	// SQL 侧改动须同步彼处注释。
 
-	// recordKey 同名消歧分隔符（旧规则「文件名 @ 文件夹名」与「#路径哈希」）。
+	// recordKey 同名消歧分隔符（旧规则「文件名 @ 文件夹名」与「#资产ID#序号」）。
 	recordKeySep     = " @ "
 	recordKeyHashSep = "#"
-
-	// 同名同文件夹时追加的路径哈希长度（sha256 前 8 hex，仅消歧无需抗碰撞）。
-	recordKeyHashLen = 8
 )
 
 // GetApiV1ExportQimengBackup 导出旧版格式全量备份（附件下载）。
@@ -75,6 +73,7 @@ func (s *Server) GetApiV1ExportQimengBackup(w http.ResponseWriter, r *http.Reque
 type legacyExport struct {
 	s   *Server
 	ctx context.Context
+	q   *db.Queries
 }
 
 // exportAsset 是资产行 + 派生 recordKey 的绑定（各段都经它取关联键）。
@@ -83,8 +82,22 @@ type exportAsset struct {
 	recordKey string
 }
 
-// build 汇齐 17 段数据并组装信封；任一查询错误即中止（500，无副作用可重试）。
+// build 从同一事务快照组装备份，任一查询错误即中止（500，可重试）。
 func (exp *legacyExport) build() (*gen.LegacyBackupFile, error) {
+	tx, err := exp.s.conn.BeginTx(exp.ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	exp.q = exp.s.q.WithTx(tx)
+	file, err := exp.buildSnapshot()
+	if err != nil {
+		return nil, err
+	}
+	return file, tx.Commit()
+}
+
+func (exp *legacyExport) buildSnapshot() (*gen.LegacyBackupFile, error) {
 	assets, err := exp.loadAssets()
 	if err != nil {
 		return nil, err
@@ -125,16 +138,17 @@ func (exp *legacyExport) build() (*gen.LegacyBackupFile, error) {
 
 	return &gen.LegacyBackupFile{
 		Format:           legacyBackupFormat,
-		SchemaVersion:    legacySchemaVersion,
+		SchemaVersion:    portableSchemaVersion,
 		AppIdentifier:    legacyAppIdentifier,
 		ExportedAtMillis: ptr(exp.s.now().UnixMilli()),
 		Data:             data,
 	}, nil
 }
 
-// assignRecordKeys 按旧规则派生 recordKey（见包注释）；rows 已按
-// (file_name, rel_path) 有序，同名分组与碰撞判定确定性成立。
+// assignRecordKeys 以资产 ID 排序，输入行顺序变化不影响结果；每次追加后复查全局唯一性。
 func assignRecordKeys(rows []db.ExportListAssetsRow) []*exportAsset {
+	rows = append([]db.ExportListAssetsRow(nil), rows...)
+	sort.Slice(rows, func(i, j int) bool { return rows[i].AssetID < rows[j].AssetID })
 	counts := make(map[string]int, len(rows))
 	for _, r := range rows {
 		counts[r.FileName]++
@@ -145,10 +159,11 @@ func assignRecordKeys(rows []db.ExportListAssetsRow) []*exportAsset {
 		key := r.FileName
 		if counts[r.FileName] > 1 {
 			key = r.FileName + recordKeySep + path.Base(path.Dir(r.RelPath))
-			if seen[key] { // 跨库同名同文件夹：追加路径哈希（旧规则第三类 key）
-				sum := sha256.Sum256([]byte(r.RelPath))
-				key += recordKeyHashSep + hex.EncodeToString(sum[:])[:recordKeyHashLen]
-			}
+		}
+		base := key
+		// 每次追加都复查全局碰撞（文件名本身也可能包含分隔符）。
+		for n := 1; seen[key]; n++ {
+			key = base + recordKeyHashSep + r.AssetID + recordKeyHashSep + fmt.Sprint(n)
 		}
 		seen[key] = true
 		assets = append(assets, &exportAsset{row: r, recordKey: key})
@@ -158,7 +173,7 @@ func assignRecordKeys(rows []db.ExportListAssetsRow) []*exportAsset {
 
 // loadAssets 拉全量资产行并派生 recordKey。
 func (exp *legacyExport) loadAssets() ([]*exportAsset, error) {
-	rows, err := exp.s.q.ExportListAssets(exp.ctx)
+	rows, err := exp.q.ExportListAssets(exp.ctx)
 	if err != nil {
 		return nil, fmt.Errorf("查询资产全量: %w", err)
 	}
@@ -221,6 +236,7 @@ func (exp *legacyExport) fillFiles(data *gen.LegacyBackupData, assets []*exportA
 			tagsAt = &ms
 		}
 		files = append(files, gen.LegacyMediaFile{
+			AssetId: &a.row.AssetID, LibraryName: &a.row.LibraryName, RelPath: &a.row.RelPath,
 			RecordKey:           a.recordKey,
 			FileName:            a.row.FileName,
 			DisplayName:         ptr(strings.TrimSuffix(a.row.FileName, path.Ext(a.row.FileName))),
@@ -245,7 +261,7 @@ func (exp *legacyExport) fillFiles(data *gen.LegacyBackupData, assets []*exportA
 // fillAuthors 作者 + 关联 + 关注段（关联按 asset_authors 全量导出；新架构
 // 无 isMatched 来源标记，缺省即旧版可选语义）。
 func (exp *legacyExport) fillAuthors(data *gen.LegacyBackupData, byID map[string]*exportAsset) error {
-	authorRows, err := exp.s.q.ExportAuthors(exp.ctx)
+	authorRows, err := exp.q.ExportAuthors(exp.ctx)
 	if err != nil {
 		return fmt.Errorf("查询作者: %w", err)
 	}
@@ -264,13 +280,13 @@ func (exp *legacyExport) fillAuthors(data *gen.LegacyBackupData, byID map[string
 	}
 	data.Authors = &authors
 
-	followed, err := exp.s.q.ExportFollowedAuthorIDs(exp.ctx)
+	followed, err := exp.q.ExportFollowedAuthorIDs(exp.ctx)
 	if err != nil {
 		return fmt.Errorf("查询关注作者: %w", err)
 	}
 	data.FollowedAuthorIds = &followed
 
-	refRows, err := exp.s.q.ExportAssetAuthors(exp.ctx)
+	refRows, err := exp.q.ExportAssetAuthors(exp.ctx)
 	if err != nil {
 		return fmt.Errorf("查询作者关联: %w", err)
 	}
@@ -304,7 +320,7 @@ func (exp *legacyExport) fillAuthors(data *gen.LegacyBackupData, byID map[string
 // （旧片段）或解析失败按 0 落载荷——片段正文才是迁移的承重数据，导出不因
 // 元数据坏值整体 500。
 func (exp *legacyExport) fillTxtFragments(data *gen.LegacyBackupData) error {
-	sources, err := authorattach.LoadSources(exp.ctx, exp.s.q)
+	sources, err := authorattach.LoadSources(exp.ctx, exp.q)
 	if err != nil {
 		return fmt.Errorf("查询已导入 TXT 片段: %w", err)
 	}
@@ -328,7 +344,7 @@ func (exp *legacyExport) fillTxtFragments(data *gen.LegacyBackupData) error {
 
 // fillTags 标签 + 文件标签关联段（关联带 createdAt，对齐 v1.19 冗余字段）。
 func (exp *legacyExport) fillTags(data *gen.LegacyBackupData, byID map[string]*exportAsset) error {
-	tagRows, err := exp.s.q.ExportTags(exp.ctx)
+	tagRows, err := exp.q.ExportTags(exp.ctx)
 	if err != nil {
 		return fmt.Errorf("查询标签: %w", err)
 	}
@@ -342,7 +358,7 @@ func (exp *legacyExport) fillTags(data *gen.LegacyBackupData, byID map[string]*e
 	}
 	data.Tags = &tags
 
-	refRows, err := exp.s.q.ExportAssetTags(exp.ctx)
+	refRows, err := exp.q.ExportAssetTags(exp.ctx)
 	if err != nil {
 		return fmt.Errorf("查询标签关联: %w", err)
 	}
@@ -364,7 +380,7 @@ func (exp *legacyExport) fillTags(data *gen.LegacyBackupData, byID map[string]*e
 
 // fillTimelineTags 时间轴标签段（资产被删的孤儿行 JOIN 不出，跳过即可）。
 func (exp *legacyExport) fillTimelineTags(data *gen.LegacyBackupData, byID map[string]*exportAsset) error {
-	rows, err := exp.s.q.ExportTimelineTags(exp.ctx)
+	rows, err := exp.q.ExportTimelineTags(exp.ctx)
 	if err != nil {
 		return fmt.Errorf("查询时间轴标签: %w", err)
 	}
@@ -392,7 +408,7 @@ func (exp *legacyExport) fillTimelineTags(data *gen.LegacyBackupData, byID map[s
 
 // fillLikesFavorites 点赞（按资产行数聚合）+ 收藏（recordKey 列表）。
 func (exp *legacyExport) fillLikesFavorites(data *gen.LegacyBackupData, byID map[string]*exportAsset) error {
-	likeRows, err := exp.s.q.ExportLikeAggregates(exp.ctx)
+	likeRows, err := exp.q.ExportLikeAggregates(exp.ctx)
 	if err != nil {
 		return fmt.Errorf("查询点赞: %w", err)
 	}
@@ -410,7 +426,7 @@ func (exp *legacyExport) fillLikesFavorites(data *gen.LegacyBackupData, byID map
 	}
 	data.Likes = &likes
 
-	favRows, err := exp.s.q.ExportFavorites(exp.ctx)
+	favRows, err := exp.q.ExportFavorites(exp.ctx)
 	if err != nil {
 		return fmt.Errorf("查询收藏: %w", err)
 	}
@@ -428,7 +444,10 @@ func (exp *legacyExport) fillLikesFavorites(data *gen.LegacyBackupData, byID map
 // （全部 open 事件倒序，2026-10-04 起无上限）三段。事件无外键，被删资产的事件仍在
 // 流里——JOIN 语义由 here 的 byID 缺失跳过承担。
 func (exp *legacyExport) fillStats(data *gen.LegacyBackupData, byID map[string]*exportAsset) error {
-	totalRows, err := exp.s.q.ExportEventTotals(exp.ctx)
+	if err := exp.fillPortableEvents(data, byID); err != nil {
+		return err
+	}
+	totalRows, err := exp.q.ExportEventTotals(exp.ctx)
 	if err != nil {
 		return fmt.Errorf("聚合事件统计: %w", err)
 	}
@@ -459,7 +478,7 @@ func (exp *legacyExport) fillStats(data *gen.LegacyBackupData, byID map[string]*
 	}
 	data.MediaStats = &stats
 
-	dayRows, err := exp.s.q.ExportDailyBrowse(exp.ctx)
+	dayRows, err := exp.q.ExportDailyBrowse(exp.ctx)
 	if err != nil {
 		return fmt.Errorf("查询按天统计: %w", err)
 	}
@@ -485,7 +504,7 @@ func (exp *legacyExport) fillStats(data *gen.LegacyBackupData, byID map[string]*
 	}
 	data.DailyBrowse = &daily
 
-	openRows, err := exp.s.q.ExportRecentOpenEvents(exp.ctx)
+	openRows, err := exp.q.ExportRecentOpenEvents(exp.ctx)
 	if err != nil {
 		return fmt.Errorf("查询浏览历史: %w", err)
 	}
@@ -513,7 +532,7 @@ func (exp *legacyExport) fillStats(data *gen.LegacyBackupData, byID map[string]*
 // fillPrefs recommendationPrefs（kv_settings 原样 JSON）——解析失败降级为
 // 缺省该段（导出是只读 dump，不因单段坏值整体 500），记日志供排查。
 func (exp *legacyExport) fillPrefs(data *gen.LegacyBackupData) {
-	raw, err := exp.s.q.GetSetting(exp.ctx, settingKeyRecommendPrefs)
+	raw, err := exp.q.GetSetting(exp.ctx, settingKeyRecommendPrefs)
 	if err != nil {
 		return // ErrNoRows（从未设置过）同路径：appPrefs 段缺省
 	}

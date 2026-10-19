@@ -24,6 +24,15 @@ import org.junit.rules.TemporaryFolder
  * → lastDone 为 null）；跨进程持久化属 DataStore 自身保证，不在此测。
  */
 class PrefetchRevisionStoreTest {
+    @Test
+    fun policyVersionIsPersistedWithRevision() = runBlocking {
+        val store = newStore()
+        val record = PrefetchRevisionRecord("http://example.test", 7L, "policy-version")
+        store.setLastDone(record, sampleA)
+        assertEquals(record, store.lastDone())
+        assertEquals(sampleA, store.storedSample())
+        Unit
+    }
 
     @get:Rule
     val tmp = TemporaryFolder()

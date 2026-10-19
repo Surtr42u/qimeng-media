@@ -105,7 +105,7 @@ func (s *Server) GetApiV1StatsMostViewed(w http.ResponseWriter, r *http.Request,
 	ctx := r.Context()
 
 	var items []gen.MostViewedItem
-	appendRow := func(assetID, fileName, mediaType string, value int64) {
+	appendRow := func(assetID, fileName, mediaType string, value, sizeBytes int64, mtime string) {
 		// asset_id 在库里恒为 UUID（ADR-0004 永不引用路径）；解析失败视为
 		// 脏行跳过，不让单行坏数据炸掉整条榜单。
 		id, err := uuid.Parse(assetID)
@@ -113,7 +113,7 @@ func (s *Server) GetApiV1StatsMostViewed(w http.ResponseWriter, r *http.Request,
 			return
 		}
 		mt := gen.MediaType(mediaType)
-		thumb := s.thumbURL(assetID, "md")
+		thumb := s.thumbURL(assetID, "md", s.thumbs.RepresentationVersion(sizeBytes, mtime))
 		items = append(items, gen.MostViewedItem{
 			AssetId: id, FileName: fileName,
 			MediaType: mt, ThumbUrl: &thumb, Value: int(value),
@@ -128,7 +128,7 @@ func (s *Server) GetApiV1StatsMostViewed(w http.ResponseWriter, r *http.Request,
 		}
 		items = make([]gen.MostViewedItem, 0, len(rows))
 		for _, row := range rows {
-			appendRow(row.AssetID, row.FileName, row.MediaType, row.Value)
+			appendRow(row.AssetID, row.FileName, row.MediaType, row.Value, row.SizeBytes, row.Mtime)
 		}
 	case gen.Views:
 		rows, err := s.q.TopOpenAssets(ctx, db.TopOpenAssetsParams{FromTs: from, Lim: int64(limit)})
@@ -138,7 +138,7 @@ func (s *Server) GetApiV1StatsMostViewed(w http.ResponseWriter, r *http.Request,
 		}
 		items = make([]gen.MostViewedItem, 0, len(rows))
 		for _, row := range rows {
-			appendRow(row.AssetID, row.FileName, row.MediaType, row.Value)
+			appendRow(row.AssetID, row.FileName, row.MediaType, row.Value, row.SizeBytes, row.Mtime)
 		}
 	}
 	writeJSON(w, http.StatusOK, items)

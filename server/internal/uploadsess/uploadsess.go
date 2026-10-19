@@ -78,6 +78,7 @@ type SealedSession struct {
 	Dir       string
 	Size      int64
 	Path      string
+	PlacedRel string // 已发布的库内落点，入库失败时 complete 继续此处，避免重复文件。
 }
 
 // session 是单条上传会话。mu 串行化该会话的全部字节追加与终结（tus 的
@@ -85,6 +86,9 @@ type SealedSession struct {
 // 之外的长时间持锁。
 type session struct {
 	mu           sync.Mutex
+	completeMu   sync.Mutex // 仅串行化同会话 complete，不阻塞其他会话。
+	sealed       bool
+	placedRel    string
 	id           string
 	libraryID    string
 	fileName     string // 已清洗（调用方经 filing.SanitizeFilename 后传入）
@@ -177,6 +181,9 @@ func (m *Manager) Append(id string, offset int64, r io.Reader) (Snapshot, error)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.sealed {
+		return Snapshot{}, ErrSizeOverflow
+	}
 	if offset != s.offset {
 		return Snapshot{}, ErrOffsetMismatch
 	}
@@ -250,6 +257,17 @@ func (m *Manager) Seal(id string) (SealedSession, error) {
 	if s.offset != s.size {
 		return SealedSession{}, ErrNotComplete
 	}
+	if s.sealed {
+		fi, err := os.Stat(s.tempPath)
+		if err != nil {
+			return SealedSession{}, err
+		}
+		if fi.Size() != s.size {
+			return SealedSession{}, ErrSizeOverflow
+		}
+		return sealedSnapshot(s), nil
+	}
+
 	f, err := os.OpenFile(s.tempPath, os.O_WRONLY, 0o600)
 	if err != nil {
 		return SealedSession{}, fmt.Errorf("打开分片临时文件失败: %w", err)
@@ -263,12 +281,23 @@ func (m *Manager) Seal(id string) (SealedSession, error) {
 	if err := f.Close(); err != nil {
 		return SealedSession{}, fmt.Errorf("关闭分片临时文件失败: %w", err)
 	}
-	return SealedSession{ID: s.id, LibraryID: s.libraryID, FileName: s.fileName, Dir: s.dir, Size: s.size, Path: s.tempPath}, nil
+	s.sealed = true
+	return sealedSnapshot(s), nil
 }
 
-// Drop 放弃会话：删临时文件（不存在不算错——complete 成功后文件已被移走）
+// Drop 放弃会话：等待在途complete后删分片源（不删除已发布库内文件）
 // 并从注册表移除。会话不存在返回 ErrSessionNotFound（协议 404）。
 func (m *Manager) Drop(id string) error {
+	unlock, err := m.LockCompletion(id)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	return m.Finish(id)
+}
+
+// Finish 供持有 LockCompletion 的提交方调用，避免完成清理再次取得同一锁。
+func (m *Manager) Finish(id string) error {
 	m.mu.Lock()
 	s, ok := m.sessions[id]
 	if ok {
@@ -293,9 +322,17 @@ func (m *Manager) SweepOnce() (expired, orphans int) {
 	m.mu.Lock()
 	victims := make([]*session, 0, len(m.sessions))
 	for id, s := range m.sessions {
-		if s.lastActivity.Before(cutoff) {
+		if !s.completeMu.TryLock() {
+			continue
+		}
+		s.mu.Lock()
+		stale := s.lastActivity.Before(cutoff)
+		s.mu.Unlock()
+		if stale {
 			delete(m.sessions, id)
 			victims = append(victims, s)
+		} else {
+			s.completeMu.Unlock()
 		}
 	}
 	m.mu.Unlock()
@@ -306,6 +343,7 @@ func (m *Manager) SweepOnce() (expired, orphans int) {
 			// 由后续轮次的孤儿清理再试。
 			m.logger.Warn("过期上传会话临时文件删除失败", "id", s.id, "err", err)
 		}
+		s.completeMu.Unlock()
 	}
 	// 孤儿清理：在途会话的文件受 live 表保护，其余按 mtime 判定。
 	live := map[string]bool{}
@@ -351,13 +389,15 @@ func (m *Manager) SweepOnce() (expired, orphans int) {
 // 汇总返回，由调用方记日志——遗留文件由下轮孤儿清理兜底。
 func (m *Manager) Close() error {
 	m.mu.Lock()
-	remaining := m.sessions
-	m.sessions = map[string]*session{}
+	ids := make([]string, 0, len(m.sessions))
+	for id := range m.sessions {
+		ids = append(ids, id)
+	}
 	m.mu.Unlock()
 	var errs []error
-	for id, s := range remaining {
-		if err := os.Remove(s.tempPath); err != nil && !os.IsNotExist(err) {
-			errs = append(errs, fmt.Errorf("会话 %s: %w", id, err))
+	for _, id := range ids {
+		if err := m.Drop(id); err != nil && !errors.Is(err, ErrSessionNotFound) {
+			errs = append(errs, err)
 		}
 	}
 	return errors.Join(errs...)
@@ -374,4 +414,34 @@ func (m *Manager) lookup(id string) (*session, bool) {
 // tempRoot 返回分片临时根目录（DataDir/TempDirName）。
 func (m *Manager) tempRoot() string {
 	return filepath.Join(m.dataDir, TempDirName)
+}
+
+// LockCompletion 使同一会话的发布/入库/清理串行，避免两个 complete 产生重复文件。
+func (m *Manager) LockCompletion(id string) (func(), error) {
+	s, ok := m.lookup(id)
+	if !ok {
+		return nil, ErrSessionNotFound
+	}
+	s.completeMu.Lock()
+	if _, ok := m.lookup(id); !ok {
+		s.completeMu.Unlock()
+		return nil, ErrSessionNotFound
+	}
+	return s.completeMu.Unlock, nil
+}
+
+// SetPlacement 在库锁内记录已发布落点；失败重试只能继续这个落点。
+func (m *Manager) SetPlacement(id, rel string) error {
+	s, ok := m.lookup(id)
+	if !ok {
+		return ErrSessionNotFound
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.placedRel = rel
+	return nil
+}
+
+func sealedSnapshot(s *session) SealedSession {
+	return SealedSession{ID: s.id, LibraryID: s.libraryID, FileName: s.fileName, Dir: s.dir, Size: s.size, Path: s.tempPath, PlacedRel: s.placedRel}
 }

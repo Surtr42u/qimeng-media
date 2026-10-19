@@ -63,6 +63,7 @@
 - **文件操作安全（ADR-0038）**：`filing.MoveFile` 预检全面拒绝既有目标，跨卷复制以 `O_EXCL` 独占创建，回收站清理识别冲突不误删非本次目标文件。
 - **安全与可靠性加固（2026-10-17 第五百三十六笔）**：JSON 端点强制 `Content-Type: application/json`；auth 限速只在实际凭据校验前计数（dev 404/坏格式不耗配额）；token 响应 `no-store`；ffmpeg/ffprobe 输入 `-protocol_whitelist file`；local-sync 409 不透传绝对路径；后台任务统一 `safego` panic 兜底；优雅关闭超时不再 `os.Exit(1)`（SSE 在线时也能完成清理）；HTTP `IdleTimeout`/`MaxHeaderBytes`；SQLite 连接池上限 + facets 并发限 4；缩略图预热单飞；回收站恢复清理补 `ErrMoveDidNotCreateTarget` 哨兵；migration 0018 补四个性能索引（作者/标签反查、likes(day)、assets(mtime)）。
 - **事件面与多端联动**：SSE 广播 `favorite.changed` / `like.changed`（ADR-0029）；跨库浏览事件通过文件名与相对路径兜底重映射（ADR-0037）。
+- **扫描与文件恢复一致性（2026-10-19，ADR-0039）**：扫描部分失败保留破坏性差集；扫描提交与文件整理共用短库锁、移动合并事务化；静态符号链接/junction 拒绝与可行路径的 os.Root 锚定；恢复持久化原身份/落点意图后提交，失败可重试且扫描避让；续传 complete 保留封存源和已发布落点，失败重试不生成重复文件。同卷快路径保留，外部进程并发换链、真实掉电/跨卷硬件验证的边界见 SECURITY。
 - **数据库与性能**：SQLite WAL 模式 + `synchronous=NORMAL`；扫描入库段级事务化；多维度聚合并行计算；DSN 连接池与查询计划锁保护。
 
 ### 资产编辑与作者体系（跨端 + 服务端，ADR-0023 / 0024）
@@ -73,7 +74,7 @@
 
 ## 5. 当前待办（只列真缺口）
 
-1. **NAS 服务端重新构建部署（用户节点）**：2026-10 批次服务端新特性（断点续传端点、SSE 事件、跨库重映射 ADR-0037、移动安全 ADR-0038、2026-10-17 安全/可靠性加固与 migration 0018）需重新部署 NAS 容器方可生效。
+1. **未来 NAS 构建部署与设备验收（用户节点）**：用户 2026-10-19 明确当前尚无 NAS，现阶段以手机单机/PC 过渡形态为准。硬件就绪后，2026-10 批次服务端能力与 migration 0018、ADR-0039 修复需构建到目标容器，并针对真实卷权限、库失联、跨卷移动及备份恢复验收；保留既有 M5 历史记录，不将其当成本轮真实设备已验收的证据。
 2. **会话远程吊销端点 + 401 专用错误码**：SECURITY 规划项，待设备退役或公网隧道暴露常态化时触发。
 3. **缩略图双管道分派与孤儿全量对账**：DOMAIN_RULES §11 规划项，待十万级大库性能需求触发。
 4. **Android SSE 静默黑洞看门狗**：网络无感断连自愈检测，当前依赖 5min TTL 兜底。
@@ -82,7 +83,9 @@
 7. **来源与词表写入 UTF-8 有效性门禁**：防非法字节入库，待实际出现乱码词条时强化。
 8. **容器与 CI 供应链加固（审计 P2/P3，未落地）**：Docker 基础镜像 digest 固定 + 非 root + cap_drop/no-new-privileges（需 NAS 卷权限实测）；GitHub Actions 全部 pin SHA + 顶层 `permissions: contents: read`；出包 workflow 的 Go 补丁位与 ci 对齐（`1.27.x`→`1.27.0`）；sdk.lock 门禁的 Windows/Linux 重算差异（2026-10-11 起 master CI 已转绿，但注释与出包绕行口径待清理）。
 9. **依赖漏洞门禁（审计 P1，未落地）**：Dependabot（gomod/npm/cargo/actions 四生态）+ govulncheck / npm audit / cargo audit / dependency-review；Go 直接依赖 6 项 patch 可升（prometheus client_golang/common、gopsutil、x/crypto、x/sync、modernc/sqlite）。
-10. **审计遗留的 M/L 项**：httpapi 编排下沉（ADR-0019，L）；`GET /authors` 的 view_count 逐关联行 COUNT 预聚合（作者页随库增长变慢）；scanner 符号链接跳过（纵深防御）；断点续传会话总量上限；DB/WAL/快照文件强制 0600；访问日志（含脱敏）；`/readyz` 补媒体目录/磁盘检查；大库 EXPLAIN QUERY PLAN 实测验证 0018 索引命中（尤其 mtime 排序 CASE 表达式）。
+10. **审计遗留的 M/L 项**：httpapi 编排下沉（ADR-0019，L）；`GET /authors` 的 view_count 逐关联行 COUNT 预聚合（作者页随库增长变慢）；断点续传会话总量上限；DB/WAL/快照文件强制 0600；访问日志（含脱敏）；`/readyz` 补媒体目录/磁盘检查；大库 EXPLAIN QUERY PLAN 实测验证 0018 索引命中（尤其 mtime 排序 CASE 表达式）。scanner 静态链接跳过已随 ADR-0039 落地。
+11. **2026-10-19 第二轮 R1–R5 已修（ADR-0040）**：v2 便携备份保留事件身份，0019 旁表给无键旧事件分配持久身份；多库 recordKey 全局唯一且 v2 歧义/多对一跳过。恢复原身份与单资产日统计同事务，eventstats 全量重建持写锁后读真相，避免覆盖新增量。缩略图 URL/磁盘/ETag/Android 稳定键与预取策略指纹贯通。守恒、并发及恢复失败重试在临时数据库验证；旧 v1 聚合与既有重复数据不擅自清洗。必须同步升级服务端与客户端，勿用旧客户端转存 v2。Go 全量测试/vet/lint、三端 SDK 生成及 Web 构建通过；Android App 编译与本轮 32 项定向单测通过，core:data 全套仍有 Windows DataStore 文件替换失败（包括未改动的暂存仓测试），未作实机/NAS 验收。详情见 build/audit/backend-2026-10-19/需求理解与第二轮审查.md 收口记录。
+12. **迁移能力与验证缺口（非上述已确认 bug）**：直传/分片协议未传源 mtime，上传后默认文件日期可能变为落盘时间；需明确原文件时间与入库时间并保留可得的源时间。数据库快照不含原件，且默认与 DataDir 同盘，释放手机原件前需有完整恢复清单和独立副本。Android 排队上传在切换本机/PC/NAS时的目标归属需专项验收，目前只定位到任务无服务器身份快照、执行时读取当前地址，尚未作实机结论。能力状态见 CAPABILITY_MAP「可靠性复查」。
 
 
 ## 6. 线上/本地使用入口

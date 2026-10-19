@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // TestMoveFileRename：同挂载点走 rename 快路径——目标有内容、源不存在。
@@ -256,5 +257,26 @@ func TestIsCrossDeviceErr(t *testing.T) {
 				t.Fatalf("isCrossDeviceErr(%v) = %v, want %v", c.err, got, c.want)
 			}
 		})
+	}
+}
+
+// 跨卷回退复制同样保持mtime，保证恢复意图可在重试时核对同一个落点。
+func TestCopyFilePreservesModificationTime(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "source.jpg")
+	dst := filepath.Join(root, "target.jpg")
+	if err := os.WriteFile(src, []byte("synthetic media"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stamp := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	if err := os.Chtimes(src, stamp, stamp); err != nil {
+		t.Fatal(err)
+	}
+	if err := copyFile(src, dst); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(dst)
+	if err != nil || !info.ModTime().Equal(stamp) {
+		t.Fatalf("mtime not preserved: %v %v", info, err)
 	}
 }

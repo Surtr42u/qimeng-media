@@ -14,6 +14,12 @@ import org.junit.Test
  * `<base>/media/orig/<uuid>?exp=..&sig=..`。
  */
 class SignedMediaCacheKeysTest {
+    @Test
+    fun `内容版本变化更换稳定键而签名轮换仍复用`() {
+        val base = "http://example.test/media/thumb/a?size=md&v=one"
+        assertEquals(SignedMediaCacheKeys.stableKey("$base&exp=1&sig=x"), SignedMediaCacheKeys.stableKey("$base&exp=2&sig=y"))
+        assertNotEquals(SignedMediaCacheKeys.stableKey(base), SignedMediaCacheKeys.stableKey(base.replace("v=one", "v=two")))
+    }
 
     // ---- 核心口径：同 path 不同 sig/exp → 同键（漂移免疫） ----
 

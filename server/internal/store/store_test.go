@@ -276,6 +276,16 @@ func idForIndex(i int) string {
 // 第八步验证 0001 down（业务表全删）。
 func TestMigrateDownThenUp(t *testing.T) {
 	conn, _ := openTestDB(t) // 已 up
+	// 0019 仅添加无键事件身份旁表和触发器；回退不得影响事件原文及既有索引。
+	if err := MigrateDown(conn, 1); err != nil {
+		t.Fatal(err)
+	}
+	if objExists(t, conn, "table", "portable_event_identity") || objExists(t, conn, "trigger", "portable_event_identity_insert") {
+		t.Fatal("0019 对象未回退")
+	}
+	if !objExists(t, conn, "index", "idx_assets_mtime") {
+		t.Fatal("0019 回退影响既有索引")
+	}
 	// 首步：0018 down（性能索引删除；0016 对象保留即证只回退了一个版本）
 	if err := MigrateDown(conn, 1); err != nil {
 		t.Fatalf("MigrateDown(0018) 失败: %v", err)
@@ -571,11 +581,11 @@ func TestLegacyAliasAuthorPrune(t *testing.T) {
 
 	t.Run("空壳行全删", func(t *testing.T) {
 		conn, _ := openTestDB(t)
-		// 回退 0018+0017 复现升级前形态（0018 是纯索引迁移，回退只删索引；
+		// 回退 0019+0018+0017 复现升级前形态（0018 是纯索引迁移，回退只删索引；
 		// 再 up 会把 0017 的 DELETE 重新执行一遍），再种入 6 个历史空壳
 		// （无关联 + origin=import）。
-		if err := MigrateDown(conn, 2); err != nil {
-			t.Fatalf("MigrateDown(0018+0017) 失败: %v", err)
+		if err := MigrateDown(conn, 3); err != nil {
+			t.Fatalf("MigrateDown(0019+0018+0017) 失败: %v", err)
 		}
 		now := FormatTimestamp(time.Now())
 		for _, id := range legacyIDs {
@@ -603,8 +613,8 @@ func TestLegacyAliasAuthorPrune(t *testing.T) {
 		}); err != nil {
 			t.Fatalf("UpsertAsset 失败: %v", err)
 		}
-		if err := MigrateDown(conn, 2); err != nil {
-			t.Fatalf("MigrateDown(0018+0017) 失败: %v", err)
+		if err := MigrateDown(conn, 3); err != nil {
+			t.Fatalf("MigrateDown(0019+0018+0017) 失败: %v", err)
 		}
 		// 白名单 id 但仍有文件关联 → 保留（重建后零关联作者行的既有形态，
 		// 与 DELETE /authors/import-txt 的「作者行保留」语义一致）。

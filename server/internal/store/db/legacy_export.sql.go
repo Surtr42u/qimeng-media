@@ -341,6 +341,7 @@ func (q *Queries) ExportLikeAggregates(ctx context.Context) ([]ExportLikeAggrega
 const exportListAssets = `-- name: ExportListAssets :many
 
 SELECT a.asset_id         AS asset_id,
+       l.name            AS library_name,
        a.file_name        AS file_name,
        a.rel_path         AS rel_path,
        a.media_type       AS media_type,
@@ -356,11 +357,12 @@ SELECT a.asset_id         AS asset_id,
        l.kind             AS library_kind
 FROM assets AS a
 JOIN libraries AS l ON l.id = a.library_id
-ORDER BY a.file_name, a.rel_path
+ORDER BY a.file_name, a.rel_path, a.asset_id
 `
 
 type ExportListAssetsRow struct {
 	AssetID         string
+	LibraryName     string
 	FileName        string
 	RelPath         string
 	MediaType       string
@@ -396,6 +398,7 @@ func (q *Queries) ExportListAssets(ctx context.Context) ([]ExportListAssetsRow, 
 		var i ExportListAssetsRow
 		if err := rows.Scan(
 			&i.AssetID,
+			&i.LibraryName,
 			&i.FileName,
 			&i.RelPath,
 			&i.MediaType,

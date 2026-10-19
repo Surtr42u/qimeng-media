@@ -343,6 +343,7 @@ const topDwellAssets = `-- name: TopDwellAssets :many
 SELECT v.asset_id AS asset_id,
        a.file_name AS file_name,
        a.media_type AS media_type,
+       a.size_bytes, a.mtime,
        CAST(COALESCE(SUM(v.seconds), 0) AS INTEGER) AS value
 FROM view_events v
 JOIN assets a ON a.asset_id = v.asset_id
@@ -362,6 +363,8 @@ type TopDwellAssetsRow struct {
 	AssetID   string
 	FileName  string
 	MediaType string
+	SizeBytes int64
+	Mtime     string
 	Value     int64
 }
 
@@ -380,6 +383,8 @@ func (q *Queries) TopDwellAssets(ctx context.Context, arg TopDwellAssetsParams) 
 			&i.AssetID,
 			&i.FileName,
 			&i.MediaType,
+			&i.SizeBytes,
+			&i.Mtime,
 			&i.Value,
 		); err != nil {
 			return nil, err
@@ -401,6 +406,7 @@ const topOpenAssets = `-- name: TopOpenAssets :many
 SELECT v.asset_id AS asset_id,
        a.file_name AS file_name,
        a.media_type AS media_type,
+       a.size_bytes, a.mtime,
        CAST(COUNT(*) AS INTEGER) AS value
 FROM view_events v
 JOIN assets a ON a.asset_id = v.asset_id
@@ -420,6 +426,8 @@ type TopOpenAssetsRow struct {
 	AssetID   string
 	FileName  string
 	MediaType string
+	SizeBytes int64
+	Mtime     string
 	Value     int64
 }
 
@@ -446,6 +454,8 @@ func (q *Queries) TopOpenAssets(ctx context.Context, arg TopOpenAssetsParams) ([
 			&i.AssetID,
 			&i.FileName,
 			&i.MediaType,
+			&i.SizeBytes,
+			&i.Mtime,
 			&i.Value,
 		); err != nil {
 			return nil, err

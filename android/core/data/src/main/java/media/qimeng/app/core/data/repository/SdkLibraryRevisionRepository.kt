@@ -17,11 +17,11 @@ class SdkLibraryRevisionRepository @Inject constructor(
     private val apiFactory: BusinessApiFactory,
 ) : LibraryRevisionRepository {
 
-    override suspend fun revision(): Long? {
+    override suspend fun revision(): LibraryRevisionSnapshot? {
         Log.d(SdkMediaRepository.LOG_TAG, "GET /library/revision")
         return try {
             withContext(Dispatchers.IO) {
-                apiFactory.create().apiV1LibraryRevisionGet().revision
+                apiFactory.create().apiV1LibraryRevisionGet().let { LibraryRevisionSnapshot(it.revision, it.thumbnailVersion.orEmpty()) }
             }
         } catch (e: CancellationException) {
             // 协程取消不是「端点失败」：照常上抛交预取轮的取消收口（登出复位空闲），

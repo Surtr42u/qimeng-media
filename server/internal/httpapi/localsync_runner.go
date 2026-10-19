@@ -349,11 +349,19 @@ const (
 // err 非空 = 硬失败（路径逃逸/搬移失败），此时文件未被搬动或搬移失败未落位。
 func (s *Server) lsPlaceMediaInLibrary(lib db.Library, subRel, src string, expectSize int64) (string, string, lsPlaceResult, error) {
 	dirRel := path.Dir(subRel) // "." = 库根
-	if dirRel != "." {
-		if err := os.MkdirAll(filepath.Join(lib.RootPath, filepath.FromSlash(dirRel)), dirPerm); err != nil {
-			return "", "", lsPlaceProceed, err
-		}
+	targetDir := filepath.Join(lib.RootPath, filepath.FromSlash(dirRel))
+	if !filing.PathWithinRoot(lib.RootPath, targetDir) {
+		return "", "", lsPlaceProceed, errUploadTargetEscape
 	}
+	root, err := os.OpenRoot(lib.RootPath)
+	if err != nil {
+		return "", "", lsPlaceProceed, err
+	}
+	defer filing.CloseRoot(root)
+	if err := root.MkdirAll(filepath.FromSlash(dirRel), dirPerm); err != nil {
+		return "", "", lsPlaceProceed, err
+	}
+
 	var targetRel, targetAbs string
 	place := lsPlaceProceed
 	gerr := filing.WithLibraryGate(lib.ID, func() error {

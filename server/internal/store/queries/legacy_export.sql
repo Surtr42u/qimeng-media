@@ -13,6 +13,7 @@
 --
 -- name: ExportListAssets :many
 SELECT a.asset_id         AS asset_id,
+       l.name            AS library_name,
        a.file_name        AS file_name,
        a.rel_path         AS rel_path,
        a.media_type       AS media_type,
@@ -28,7 +29,7 @@ SELECT a.asset_id         AS asset_id,
        l.kind             AS library_kind
 FROM assets AS a
 JOIN libraries AS l ON l.id = a.library_id
-ORDER BY a.file_name, a.rel_path;
+ORDER BY a.file_name, a.rel_path, a.asset_id;
 
 -- name: ExportAuthors :many
 -- origin (ADR-0032): provenance passthrough -- the backup carries each

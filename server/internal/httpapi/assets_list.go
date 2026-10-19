@@ -131,7 +131,7 @@ func buildSummary(s *Server, assetID, fileName, mediaType string, sizeBytes int6
 	src := displaySource(source)
 	fav := isFavorite
 	like := int(likeCount)
-	thumb := s.thumbURL(assetID, "md")
+	thumb := s.thumbURL(assetID, "md", s.thumbs.RepresentationVersion(sizeBytes, mtime))
 	return gen.AssetSummary{
 		Id:         &id,
 		FileName:   &fileName,

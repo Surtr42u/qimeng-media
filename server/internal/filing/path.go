@@ -2,6 +2,7 @@ package filing
 
 import (
 	"errors"
+	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -95,13 +96,31 @@ func PathWithinRoot(root, p string) bool {
 	if rc == "" {
 		return false // 空 root 无从界定边界
 	}
-	if pc == rc {
-		return true
-	}
 	// 为什么不能裸用 strings.HasPrefix(pc, rc)："/media" 是 "/mediax" 的前缀，
 	// 裸前缀比较会把 /mediax/evil.png 误判在 /media 库内（目录名边界被绕过）。
 	// 必须补一个分隔符再比较，保证命中的一定是完整路径段边界。
-	return strings.HasPrefix(pc, rc+string(filepath.Separator))
+	if pc != rc && !strings.HasPrefix(pc, rc+string(filepath.Separator)) {
+		return false
+	}
+	// 库根和所有现存父段均拒绝链接（Windows junction 的 Lstat 也带 ModeSymlink）。
+	// 这里只做路径策略；实际读写仍应使用 os.Root，不能声称消除了外部换链竞态。
+	for current := pc; ; current = filepath.Dir(current) {
+		fi, err := os.Lstat(current)
+		if err != nil && !os.IsNotExist(err) {
+			return false
+		}
+		if _, linkErr := os.Readlink(current); linkErr == nil {
+			return false
+		}
+		if err == nil && fi.Mode()&os.ModeSymlink != 0 {
+			return false
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			break
+		}
+	}
+	return true
 }
 
 // isASCIILetter 判断字节是否 ASCII 字母（盘符不区分大小写）。

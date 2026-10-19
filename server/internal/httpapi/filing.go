@@ -102,10 +102,23 @@ func (s *Server) PostApiV1AssetsAssetIdMove(w http.ResponseWriter, r *http.Reque
 				"src", row.RelPath, "dst", newRel)
 			return errMoveEscaped
 		}
-		if err := os.MkdirAll(filepath.Dir(targetAbs), dirPerm); err != nil {
+		root, err := os.OpenRoot(row.RootPath)
+		if err != nil {
+			return err
+		}
+		defer filing.CloseRoot(root)
+		if err := root.MkdirAll(filepath.FromSlash(path.Dir(newRel)), dirPerm); err != nil {
 			return fmt.Errorf("创建目标目录: %w", err)
 		}
-		if err := os.Rename(srcAbs, targetAbs); err != nil {
+
+		current, err := s.q.GetAsset(r.Context(), row.AssetID)
+		if err != nil {
+			return err
+		}
+		if current.RelPath != row.RelPath {
+			return errMoveDbConflict
+		}
+		if err := root.Rename(filepath.FromSlash(row.RelPath), filepath.FromSlash(newRel)); err != nil {
 			return fmt.Errorf("移动文件: %w", err)
 		}
 		if _, err := s.q.MoveAssetPath(r.Context(), db.MoveAssetPathParams{
@@ -115,7 +128,7 @@ func (s *Server) PostApiV1AssetsAssetIdMove(w http.ResponseWriter, r *http.Reque
 		}); err != nil {
 			// 库行没动、文件已挪：回滚文件移动恢复原状，两边一致好过
 			// 靠扫描器自愈的中间态（自愈是兜底不是常态路径）。
-			if rbErr := os.Rename(targetAbs, srcAbs); rbErr != nil {
+			if rbErr := root.Rename(filepath.FromSlash(newRel), filepath.FromSlash(row.RelPath)); rbErr != nil {
 				s.logger.Error("移动库行失败且回滚文件失败（待扫描器合并修正）",
 					"err", err, "rollbackErr", rbErr, "assetId", row.AssetID)
 			}

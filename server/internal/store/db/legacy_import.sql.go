@@ -182,15 +182,16 @@ func (q *Queries) ImportUpsertAuthor(ctx context.Context, arg ImportUpsertAuthor
 }
 
 const listAssetNameIndex = `-- name: ListAssetNameIndex :many
-SELECT asset_id, rel_path, file_name
-FROM assets
-ORDER BY created_at
+SELECT a.asset_id, a.rel_path, a.file_name, l.name AS library_name
+FROM assets a JOIN libraries l ON l.id = a.library_id
+ORDER BY a.created_at
 `
 
 type ListAssetNameIndexRow struct {
-	AssetID  string
-	RelPath  string
-	FileName string
+	AssetID     string
+	RelPath     string
+	FileName    string
+	LibraryName string
 }
 
 // Full name->path projection for legacy-import file matching (audit R1,
@@ -207,7 +208,12 @@ func (q *Queries) ListAssetNameIndex(ctx context.Context) ([]ListAssetNameIndexR
 	var items []ListAssetNameIndexRow
 	for rows.Next() {
 		var i ListAssetNameIndexRow
-		if err := rows.Scan(&i.AssetID, &i.RelPath, &i.FileName); err != nil {
+		if err := rows.Scan(
+			&i.AssetID,
+			&i.RelPath,
+			&i.FileName,
+			&i.LibraryName,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

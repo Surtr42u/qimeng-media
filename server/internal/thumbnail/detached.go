@@ -97,10 +97,14 @@ func (dg *detachedGroup) do(key string, ctx context.Context, fn func() error) er
 // ctx.Err()，httpapi 按「缩略图不可用」404 占位语义处理（连接已断，
 // 写不写都无观感差异），生成继续。
 func (g *Generator) EnsureDetached(ctx context.Context, assetID, srcPath string, kind Kind, sizes []Size) error {
+	version, err := g.sourceVersion(srcPath)
+	if err != nil {
+		return err
+	}
 	for _, size := range sizes {
-		if _, err := os.Stat(g.thumbDst(assetID, size)); err != nil {
+		if _, err := os.Stat(g.thumbDst(assetID, size, version)); err != nil {
 			// 任一尺寸缺失才需要生成；全存在走快路径零 ffmpeg
-			return g.detached.do(fmt.Sprintf("%s|%v", assetID, sizes), ctx, func() error {
+			return g.detached.do(fmt.Sprintf("%s|%s|%v", assetID, version, sizes), ctx, func() error {
 				return g.Ensure(context.Background(), assetID, srcPath, kind, sizes)
 			})
 		}
