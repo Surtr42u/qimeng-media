@@ -136,7 +136,7 @@ Android 持久上传任务在入队固化服务器 base URL；直传、分片会
 
 ## 依赖与供应链
 
-- 按用户 2026-10-20 最新要求恢复 Dependabot 每周版本升级候选及自动安全升级 PR；覆盖 Docker、Go、Web/desktop npm、桌面 Cargo 和 GitHub Actions，每生态最多 1 个常规待处理 PR（安全更新使用 GitHub 独立额度）。只自动提出 PR，仓库不启用自动合并；合并须审阅兼容性并通过当前 head 的完整门禁。保留 Dependency Graph、漏洞告警及人工安全修复。security.yml 扫描 Go、Web/desktop npm、桌面/补丁测试 Cargo 锁文件与 PR 依赖变化，并对 glib 回移植补丁做来源校验和 Linux release 回归。npm/Cargo 按锁文件，扫描工具固定版本，high 起阻断，不自动忽略既有漏洞；实际扫描发现/网络受限状态见 HANDOVER，不能声称已全绿。Actions 固定完整 SHA，顶层 contents: read，checkout 不保留凭据；规则由文档门禁检查。
+- 按用户 2026-10-20 最新要求恢复 Dependabot 每周版本升级候选及自动安全升级 PR；覆盖 Docker、Go、Web/desktop npm、桌面 Cargo 和 GitHub Actions，每个更新配置（生态 + 目录）最多 1 个常规待处理 PR（安全更新使用 GitHub 独立额度）。只自动提出 PR，仓库不启用自动合并；合并须审阅兼容性并通过当前 head 的完整门禁；GitHub 自动生成的 PR 正文不豁免文档影响说明，必要时由维护者补齐后重新检查。保留 Dependency Graph、漏洞告警及人工安全修复。security.yml 扫描 Go、Web/desktop npm、桌面/补丁测试 Cargo 锁文件与 PR 依赖变化，并对 glib 回移植补丁做来源校验和 Linux release 回归。npm/Cargo 按锁文件，扫描工具固定版本，high 起阻断，不自动忽略既有漏洞；实际扫描结果及受限状态见 HANDOVER；不能仅凭配置存在声称检查通过，告警清零也不表示没有未知漏洞。Actions 固定完整 SHA，顶层 contents: read，checkout 不保留凭据；规则由文档门禁检查。
 - Debian bookworm-slim 基础镜像已固定官方 registry 清单 SHA-256 digest，并核对响应内容哈希；apt 包仍随仓库更新，完整镜像复现与 CI 镜像构建为待办；旧 fnOS 记录仅虚拟机彩排。基础 compose 维持原权限，新增显式 hardened 叠加配置要求部署者指定 UID/GID，并 cap_drop ALL/no-new-privileges；先核对挂载卷权限，见 deploy/README。配置不等于目标 NAS 已验收。
 - GTK3 链的 glib 0.18 使用官方归档加上游 #1343 两行回移植（[ADR-0047](adr/0047-glib安全补丁回移植.md)）；不伪造版本、不配置告警忽略或手工 dismiss。CI 验证快照及 Cargo 实际来源，原版运行时失败和修复版优化测试通过共同构成修复证据；不能仅凭注册表来源消失或扫描不再提示宣称修复。来源、许可及退役条件见 [补丁说明](../desktop/vendor/README.md)。
 - 引入任何新依赖必须：官方文档确认维护状态 + 无已知 CVE + 写 ADR。

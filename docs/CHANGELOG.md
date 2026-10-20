@@ -10,6 +10,15 @@
 - 署名更正（2026-10-20，用户明确确认）：2026-10-19～20 的第五百三十八至第五百四十五笔原误署 GPT-6 或仅署 Codex，统一更正为 GPT-6.1 Sol；保留各条主代理/执行子代理及复核分工。
 
 
+## docs(docs): 核实最新修复与交接状态，纠正过时安全结论（2026-10-20 第五百六十二笔）
+
+执行 AI：未知（会话未提供可核实的完整模型名称与变体；主代理）
+
+- 核对 GitHub：#2～#15 已合并，70764391 的主分支 CI/安全/文档成功；glib 告警自动 fixed，未手工 dismiss，未解决漏洞告警为 0。把交接中早期 Web 7 项 high、glib 仍待修复、CI 尚未通过等结论改为有阶段边界的历史记录，并补充实际证据链接。
+- 明确源码、门禁、PC/手机运行包的交付范围；新生成的 #16～#18 尚未合并，本轮不处理。同步能力地图及桌面入口，Linux glib 漏洞回归不等于新桌面平台适配。
+- 统一机器人限制为每个更新配置（生态 + 目录）1 个常规 PR，五类生态共六个配置；安全更新有独立额度，人工审阅与文档门禁保留。仅更正配置注释，运行设置不变。
+- 本轮仅维护已交付改动的文档与指引，不新增功能需求或实施计划，不改代码/依赖/部署，不操作 PC 日常包、手机或 8420 真库。验证：文档静态检查 102 个文件/0 错误，git diff --check 通过；提交后另查改动影响。应用测试沿用对应提交的已核实结果，未重复构建应用。最旧完整条目原样归档。
+
 ## chore(docs): 按用户最新要求恢复依赖升级机器人（2026-10-20 第五百六十一笔）
 
 执行 AI：未知（会话未提供可核实的完整模型名称与变体；主代理）
@@ -348,14 +357,3 @@
 - **手机端作者数据收敛（用户库，run-as 直读内嵌库 + 离线手术，改动前全库备档）**：三空壳（Horny Herring Studios / hornyherring / hornyherring_Horny Herring Studios 变体）按「以手机端为准」口径收敛——片段 126 号块原地改双别名 `hornyherring  Horny Herring Studios` + 补作品行「守望先锋  天使 15.mp4」+ 来源区保留并补入用户反复试加未果的 `r34`；块 128~140 十一个乱块全清；DB 三行删除 + 关联改挂（作者总数 150→147、片段 1625→1554 行）；隔离实例真重建验证终态稳定（唯一 hornyherring、1 文件、来源读写恢复）；**PC 端随后对齐同名**（同文件经 PC 服务端 import-txt 通道把块 126 改双别名，id/关联不动——两端显示名一致、id 一致）。手机端镜像文件（作者总表.txt）同步推送为修复后内容。
 - **验证**：server 全量测试 19 包全绿；authorattach/authoring/httpapi 新测全绿；App `:feature:author` 单测 + 编译过；Web build/lint（0 error）/vitest 过；gofmt/go vet 干净。
 - **联带**：手机端 debug 包覆盖安装（同 applicationId 同 debug 签名保数据，换取 run-as 直读内嵌库；最终以 release 包回归装机）。
-
-## fix(app+web): 作者管理搜索大小写不敏感——大写作者名小写搜不到（2026-10-12 第五百三十二笔）
-
-执行 AI：DeepSeek-V4.1-Flash（主代理）
-
-- **背景（用户实测反馈）**：作者管理页搜作者时大小写敏感——作者名多含大写（`BubbleB`/`Regina3D`/`SKRevenant` 等），输全小写（如 `bubbleb`）零命中；中文不受影响。
-- **修复（两端同口径；纯子串语义不变、仅折叠大小写）**：App `applyAuthorRows`（core:model 纯函数，关键词 `trim()` 后 `contains(kw, ignoreCase=true)`）；Web `AuthorsPage` 关键词双侧 `toLowerCase()`。扫描面：App 客户端关键词过滤仅此一处；Web 历史页 `groupHistory` 早已双侧 lowercase（无改动）。**不改分隔符语义**——「 / 」连接的显示名仍按段子串匹配。
-- **测试**：`AuthorRowsTest` 新增「名字搜索大小写不敏感」（小写命中大写名/大写命中/混排/别名段整体小写，6 例全绿）；Android 门禁 `assembleRelease + testDebugUnitTest + lintDebug` BUILD SUCCESSFUL；Web `tsc --noEmit` 零错 + vitest 320 例全绿 + `web/dist` 重建（服务端按磁盘托管 web/dist，无需重启）。
-- **装机（用户拍板「用昨天的方法」后执行）**：release APK 同签名（SHA-256 `8f62ba55…`）原地覆盖装机真机（`adb install -r` Success，2026-10-12 21:0x）。内置修复走 release 包即可，无需 debug 包（debug 仅调试用途，装机口径不变）。
-- **手机端数据同步（KassioppiaVA 收尾）**：手机侧《作者总表.txt》（`1/HHH/4 作者/`）已推送修正版（与电脑端逐字节同哈希，第 1046 行 `78  skrev  SKRevenant`）；**手机内嵌库（本机模式）仍是旧显示名**——内嵌服务端 dev 共享密钥每次拉起随机生成、不落盘不进日志（adb 侧无法走 API），收敛通道 = App「我的→数据管理→作者 TXT 导入」重导同一份 txt（用户执行，步骤已交付；App 内置库路径 `/data/data` 私有、adb 不可达，只读诊断亦不可行）。
-- **文档**：CHANGELOG.md（本笔）、HANDOVER.md（头部更新）。

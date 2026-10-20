@@ -189,7 +189,7 @@
   7. `desktop`：Tauri 2 壳 cargo test + build（windows runner + rust-cache，debug 链不出安装包；第四端门禁，ADR-0020，2026-10-03 补）
 - **安全与文档流水线**：安全行为用例仍随 server 的 go test 运行；`security.yml` 另做 govulncheck、Web/desktop npm audit、桌面/补丁测试 Cargo audit、glib 上游源码核验及 Linux release 原版/修复版迭代器回归，以及 PR dependency-review（high 起阻断），`docs.yml` 检查链接/ADR/归档/入口/Actions 固定与权限、PR 专题同步。配置已落地不等于本地/远端扫描全绿；当前结果见 HANDOVER。所有外部 Actions 固定完整 SHA，顶层 contents: read，checkout 不保留写凭据。
 - **镜像构建**：`make docker-build` 构建 amd64 镜像（debian-slim + ffmpeg + 静态二进制 + SPA，deploy/Dockerfile），2026-09-22 fnOS 虚拟机彩排记录保留；当前无 NAS 硬件，未来设备另行验收；CI 暂无镜像 job，基础镜像已固定清单 digest，arm64/当前镜像实际构建和 CI 镜像产出仍待验收
-- **依赖更新**：按用户最新要求恢复 Dependabot 每周版本升级及自动安全升级 PR；每生态最多 1 个常规待处理 PR，只自动提出候选，人工审阅且当前 head 完整门禁通过后才合并，不启用自动合并。漏洞告警和安全 CI 保留，规则见 SECURITY。glib 最小上游补丁及退役边界见 ADR-0047；扫描配置与未修复漏洞不混记为验收通过。
+- **依赖更新**：按用户最新要求恢复 Dependabot 每周版本升级及自动安全升级 PR；每个更新配置（生态 + 目录）最多 1 个常规待处理 PR，只自动提出候选，人工审阅且当前 head 完整门禁通过后才合并，不启用自动合并。漏洞告警和安全 CI 保留，规则见 SECURITY。glib 最小上游补丁及退役边界见 ADR-0047；扫描配置与未修复漏洞不混记为验收通过。
 - **Makefile 一键命令**：`make docs-check / sdk / lint / server-run / server-test / web-dev / web-test / docker-build`（lint = redocly + golangci-lint + TS 三连）
 - **版本策略**：API `/api/v1` 前缀；镜像 tag 当前手动（qimeng-media:1.0），semver 规则随 CI 镜像 job 一并落定
 

@@ -32,7 +32,7 @@ B 站桌面客户端同款形态的薄壳：本体 UI 由 Go 服务端（默认 
 
 ## 开发
 
-Linux GTK 链的 glib 0.18 使用经官方归档哈希核验的上游安全补丁，Cargo 自动从 `vendor/glib` 解析；不要删除 path patch 或恢复注册表来源。来源、许可、两行修复及退役条件见 [补丁说明](vendor/README.md)，验证用 `python tools/check_glib_patch.py`；Linux release 迭代器回归由安全 CI 执行，Windows 桌面门禁继续执行。
+Linux GTK 链的 glib 0.18 使用经官方归档哈希核验的上游安全补丁，Cargo 自动从 `vendor/glib` 解析；不要删除 path patch 或恢复注册表来源。来源、许可、两行修复及退役条件见 [补丁说明](vendor/README.md)，验证用 `python tools/check_glib_patch.py`；Linux release 迭代器回归由安全 CI 执行，Windows 桌面门禁继续执行。该 Linux job 验证既有 GTK 依赖漏洞修复，不代表新增 Linux 桌面适配、安装包或完成其设备验收。
 
 前置：Rust（含 Windows 的 MSVC 工具链 + WebView2）、Node.js。
 
