@@ -22,6 +22,7 @@ import media.qimeng.app.core.data.repository.BusinessApiFactory
 import media.qimeng.app.core.model.UploadItem
 import media.qimeng.app.core.model.UploadRules
 import media.qimeng.app.core.network.di.UploadClient
+import media.qimeng.app.core.network.boundToServer
 import java.io.FileInputStream
 import java.io.IOException
 import java.io.InputStream
@@ -70,9 +71,10 @@ class AssetUploader @Inject constructor(
         dir: String,
         isCancelled: () -> Boolean = { false },
         onProgress: ProgressListener,
+        targetServerUrl: String? = null,
     ): UploadOutcome = withContext(Dispatchers.IO) {
         if (isCancelled()) return@withContext UploadOutcome.Cancelled
-        val base = apiFactory.currentBaseUrl().toHttpUrlOrNull()
+        val base = (targetServerUrl ?: apiFactory.currentBaseUrl()).toHttpUrlOrNull()
             ?: return@withContext UploadOutcome.Retryable("服务端地址不合法")
         val url = base.newBuilder()
             .addPathSegments(UPLOAD_PATH)
@@ -98,7 +100,8 @@ class AssetUploader @Inject constructor(
                 }
             }
             val outcome = try {
-                execute(Request.Builder().url(url).post(body).build())
+                execute(Request.Builder().url(url).post(body).build(),
+                    targetServerUrl?.let { okHttpClient.boundToServer(it) } ?: okHttpClient)
             } finally {
                 updates.close()
                 source.closeQuietly()
@@ -108,9 +111,9 @@ class AssetUploader @Inject constructor(
         }
     }
 
-    private suspend fun execute(request: Request): UploadOutcome = withContext(Dispatchers.IO) {
+    private suspend fun execute(request: Request, client: OkHttpClient): UploadOutcome = withContext(Dispatchers.IO) {
         try {
-            okHttpClient.newCall(request).execute().use { response ->
+            client.newCall(request).execute().use { response ->
                 val bodyText = response.body?.string().orEmpty()
                 when {
                     response.isSuccessful -> {

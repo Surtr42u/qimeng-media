@@ -5,7 +5,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) [![Go](https://img.shields.io/badge/Go-1.27-00ADD8.svg)](https://go.dev) [![Node](https://img.shields.io/badge/Node-24%20LTS-339933.svg)](https://nodejs.org)
 
 > 本项目 100% 由 AI 生成：以协议先行（`openapi.yaml`）+ 文档驱动的工程体系组织 AI 协作开发，每个重大决策都有 ADR 可追溯（`docs/adr/`）。
-> 前身：绮梦影库（Android 单机版，已退役；领域规则提炼进本项目 `docs/DOMAIN_RULES.md`）。
+> 前身：绮梦影库（Android 单机版，已退役）；现行领域规则见专题目录。
+> 当前以手机单机与 PC 过渡使用，未来 NAS 硬件须重新部署验收。AI 工作先读 [AGENTS.md](AGENTS.md)，再按任务补读，不默认通读文档。
 
 ## 这是什么
 
@@ -75,20 +76,25 @@ make lint          # 全部静态检查（redocly + golangci-lint + TS）
 make docker-build  # amd64 镜像（deploy/Dockerfile；构建全流程见 deploy/README.md，arm64 为按需储备）
 ```
 
-CI（GitHub Actions 七 job：OpenAPI 协议校验 / Linux Go 静态检查与测试 / Windows Go 文件操作测试 / Web 类型检查、构建与测试 / 三端 SDK 可重建校验 / Android 构建与测试 / Tauri 桌面壳测试）覆盖多平台与生成链；`make lint` 是本地静态检查入口，不能替代完整 CI。
+CI 覆盖协议、多平台服务端、Web、SDK 生成链、Android 与桌面壳；实际作业与门禁只维护在 [架构 §10](docs/ARCHITECTURE.md#10-工程基础设施)。`make lint` 是本地静态检查入口，不能替代完整 CI。
 
 ## 文档导航
 
 | 文档 | 内容 |
 |---|---|
-| `AI_README_FIRST.md` | AI 协作强制规则（先读这个） |
-| `llms.txt` | 文档导航总索引（LLM 抓取入口，llms.txt v2 格式） |
+| [AGENTS.md](AGENTS.md) | 唯一强制入口：任务路由与短红线 |
+| [AI_README_FIRST.md](AI_README_FIRST.md) | 按需协作细则、验证与文档维护 |
+| `llms.txt` | 文档导航总索引（只导航，不增加必读项） |
 | `docs/ARCHITECTURE.md` | 架构总纲与技术选型 |
-| `docs/DOMAIN_RULES.md` | 领域规则（推荐算法/筛选/统计/作者——从旧项目继承的完整规格） |
+| `docs/DOMAIN_RULES.md` | 领域专题目录（保留旧 §编号，按任务读取） |
 | `docs/CAPABILITY_MAP.md` | 能力地图（对标 Jellyfin/Immich/Plex 的现状与缺口） |
 | `docs/SECURITY.md` | 安全设计（鉴权/路径穿越/上传防护/回收站/远程访问） |
 | `docs/OBSERVABILITY.md` | 监控与仪表盘 |
-| `docs/PROJECT_PLAN.md` | 里程碑 M0-M6+ 与验收标准 |
+| `docs/PROJECT_PLAN.md` | 已收官里程碑与未来储备，按需追溯 |
+| [GUIDE_UI](docs/GUIDE_UI.md) | 本仓现行交互约束与各端入口 |
+| [HANDOVER](docs/HANDOVER.md) | 当前事项与验证边界 |
+| [RESTORE](docs/RESTORE.md) | 备份类型、停服恢复与隔离演练 |
+| [历史索引](docs/history/INDEX.md) | 近期/分期 CHANGELOG，按编号关键词查 |
 | `docs/adr/` | 架构决策记录（每个重大决策的"为什么"，索引见 `docs/adr/INDEX.md`） |
 
 ## License

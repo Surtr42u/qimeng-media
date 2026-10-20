@@ -159,34 +159,46 @@ LIMIT sqlc.arg(lim);
 -- asset x author: one open counts once for EVERY linked author. COS
 -- authors are counted via their COS-linked assets only (asset_authors
 -- holds no regular links for them -- prefix isolation, DOMAIN_RULES 6).
+-- Count opens per linked asset before expanding many-to-many links, so
+-- repeated events do not multiply the author aggregation's input rows.
 
 -- name: TopOpenAuthors :many
-SELECT au.id AS author_id,
-       au.display_name AS display_name,
-       CAST(COUNT(*) AS INTEGER) AS views
-FROM view_events v
-JOIN assets a ON a.asset_id = v.asset_id
+WITH asset_opens AS (
+    SELECT v.asset_id, COUNT(*) AS opens
+    FROM view_events v
+    WHERE v.kind = 'open'
+      AND (CAST(sqlc.arg(from_ts) AS TEXT) = '' OR v.started_at >= sqlc.arg(from_ts))
+      AND v.asset_id IN (SELECT asset_id FROM asset_authors)
+    GROUP BY v.asset_id
+)
+SELECT au.id AS author_id, au.display_name AS display_name, CAST(SUM(ao.opens) AS INTEGER) AS views
+FROM asset_opens ao
+JOIN assets a ON a.asset_id = ao.asset_id
 JOIN asset_authors aa ON aa.asset_id = a.asset_id
 JOIN authors au ON au.id = aa.author_id
-WHERE v.kind = 'open'
-  AND (CAST(sqlc.arg(from_ts) AS TEXT) = '' OR v.started_at >= sqlc.arg(from_ts))
 GROUP BY au.id, au.display_name
 ORDER BY views DESC, au.id
 LIMIT sqlc.arg(lim);
 
 -- TopOpenTags: per-tag open count within the window (tagged assets).
+-- Apply the same per-asset aggregation before expanding tag links.
 
 -- name: TopOpenTags :many
-SELECT t.name AS tag,
-       CAST(COUNT(*) AS INTEGER) AS views
-FROM view_events v
-JOIN assets a ON a.asset_id = v.asset_id
-JOIN asset_tags atg ON atg.asset_id = a.asset_id
-JOIN tags t ON t.id = atg.tag_id
-WHERE v.kind = 'open'
-  AND (CAST(sqlc.arg(from_ts) AS TEXT) = '' OR v.started_at >= sqlc.arg(from_ts))
-GROUP BY t.id, t.name
-ORDER BY views DESC, t.name
+WITH asset_opens AS (
+    SELECT v.asset_id, COUNT(*) AS opens
+    FROM view_events v
+    WHERE v.kind = 'open'
+      AND (CAST(sqlc.arg(from_ts) AS TEXT) = '' OR v.started_at >= sqlc.arg(from_ts))
+      AND v.asset_id IN (SELECT asset_id FROM asset_tags)
+    GROUP BY v.asset_id
+)
+SELECT au.name AS tag, CAST(SUM(ao.opens) AS INTEGER) AS views
+FROM asset_opens ao
+JOIN assets a ON a.asset_id = ao.asset_id
+JOIN asset_tags aa ON aa.asset_id = a.asset_id
+JOIN tags au ON au.id = aa.tag_id
+GROUP BY au.id, au.name
+ORDER BY views DESC, au.name
 LIMIT sqlc.arg(lim);
 
 -- SummarizeOpenWindow: numerator/denominator pair for the overview

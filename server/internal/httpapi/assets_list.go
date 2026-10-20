@@ -33,28 +33,15 @@ type listRowView struct {
 	SortKey    any
 }
 
-// listRowViewFromAsc 两胞胎 Row 的字段搬运，sqlc 固有成本：Asc/Desc 两
-// 结构体字段同名同型却无法用泛型收敛（接口无法约束结构体字段），只能
-// 各写一份逐字段复制。
-func listRowViewFromAsc(r db.ListAssetsFilteredAscRow) listRowView {
-	return listRowView{AssetID: r.AssetID, FileName: r.FileName, MediaType: r.MediaType,
-		SizeBytes: r.SizeBytes, Mtime: r.Mtime, CreatedAt: r.CreatedAt, Source: r.Source,
-		IsFavorite: r.IsFavorite, LikeCount: r.LikeCount, DurationMs: r.DurationMs, SortKey: r.SortKey}
-}
-
-// listRowViewFromDesc 同 listRowViewFromAsc，Desc 侧。
-func listRowViewFromDesc(r db.ListAssetsFilteredDescRow) listRowView {
-	return listRowView{AssetID: r.AssetID, FileName: r.FileName, MediaType: r.MediaType,
-		SizeBytes: r.SizeBytes, Mtime: r.Mtime, CreatedAt: r.CreatedAt, Source: r.Source,
-		IsFavorite: r.IsFavorite, LikeCount: r.LikeCount, DurationMs: r.DurationMs, SortKey: r.SortKey}
-}
-
 // queryListRows 收敛 Asc/Desc 两分支的「组参数 + 查询 + 行搬运」——两分支
 // 的语义差异全在 SQL 侧，截断探测与 AssetSummary 装配在 buildListPage。
 // 查询失败写 500 INTERNAL 并返回 ok=false，调用方必须立即 return。
 // RowLimit 多取 1 行：用来证明还有下一页，不进本页。
 func (s *Server) queryListRows(ctx context.Context, w http.ResponseWriter, asc bool,
 	sortKey string, limit int, cur pageCursor, filters assetFilters) ([]listRowView, bool) {
+	if sortKey == sortKeyFileDate && canUseFileDatePage(filters) {
+		return s.queryFileDatePage(ctx, w, asc, limit, cur, filters)
+	}
 	if asc {
 		p := db.ListAssetsFilteredAscParams{
 			Sort: sortKey, RowLimit: int64(limit) + 1, // 多取 1 行探测下一页
@@ -70,7 +57,7 @@ func (s *Server) queryListRows(ctx context.Context, w http.ResponseWriter, asc b
 		}
 		rows := make([]listRowView, len(raw))
 		for i := range raw {
-			rows[i] = listRowViewFromAsc(raw[i])
+			rows[i] = listRowView(raw[i]) // 投影字段同构；漂移时编译失败，不靠两份手工搬运。
 		}
 		return rows, true
 	}
@@ -88,7 +75,7 @@ func (s *Server) queryListRows(ctx context.Context, w http.ResponseWriter, asc b
 	}
 	rows := make([]listRowView, len(raw))
 	for i := range raw {
-		rows[i] = listRowViewFromDesc(raw[i])
+		rows[i] = listRowView(raw[i])
 	}
 	return rows, true
 }
@@ -119,7 +106,7 @@ func buildListPage(s *Server, rows []listRowView, limit int) (items []gen.AssetS
 // buildSummary 组装 AssetSummary（含签名缩略图直链，网格 md 档）。
 // viewCount/playCount 是 AssetSummary 的新增可选字段（openapi）：
 // 仅排行榜等需要展示计数的端点传实测值，浏览列表传 nil（字段省略，
-// 保持列表查询轻量——计数聚合不在列表 SQL 里）；detail 端点有自己的
+// 不展示时不额外计算输出计数；排序/筛选所需计数仍由 SQL 负责）；detail 端点有自己的
 // 统计聚合路径，也传 nil。
 func buildSummary(s *Server, assetID, fileName, mediaType string, sizeBytes int64,
 	mtime, createdAt string, source sql.NullString, isFavorite bool, likeCount int64,

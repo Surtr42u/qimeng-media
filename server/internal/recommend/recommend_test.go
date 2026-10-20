@@ -348,8 +348,8 @@ func ptrTime(t time.Time) *time.Time { return &t }
 
 // ---------- 同分桶打散（DOMAIN_RULES §1.4 机制 2） ----------
 //
-// 机制确认（mixing.go/shuffleBuckets）：seed>0 时按「score < 桶内最小分 −
-// 0.05 开新桶」分组，桶内种子 RNG 洗牌；±0.05 分差内视为同桶逐字遵守。
+// 机制确认（mixing.go/shuffleBuckets）：seed>0 时按「score < 桶首最高分 −
+// 0.05 开新桶」分组，桶内种子 RNG 洗牌；桶宽边界见 ADR-0045。
 // 测试锁定：同桶打散生效（顺序偏离纯分数序）、桶间不交叉、同 seed 可复现。
 
 // TestRecommend_bucketShuffle_spreadsTiedScores：零权重偏好下全部条目同分

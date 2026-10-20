@@ -8,6 +8,7 @@ package httpapi
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"testing"
 
 	"qimeng-media/server/internal/httpapi/gen"
@@ -150,6 +151,10 @@ func TestRankingsOffsetPaging(t *testing.T) {
 	}
 	if got := rankList(t, env, "?period=all&limit=1&offset=50"); len(got) != 0 {
 		t.Errorf("offset=50（深越界）期望空数组，得到 %d 条", len(got))
+	}
+	maxOffset := strconv.Itoa(int(^uint(0) >> 1))
+	if got := rankList(t, env, "?period=all&limit=200&offset="+maxOffset); len(got) != 0 {
+		t.Errorf("最大 offset 应返回空数组，不能在 offset+limit 溢出时重排整库或越界")
 	}
 }
 

@@ -75,14 +75,14 @@ func tagsFor(item Item) []string {
 // tagRelevanceMap 是"标签→归一化相关度"：仅统计 viewCount>0 的文件
 // （浏览行为被视作兴趣信号，从未浏览的不参与），频次 / 最大频次归一化，
 // 规则照旧项目 buildTagRelevanceMap。
-func buildTagRelevanceMap(items []Item) map[string]float64 {
+func buildTagRelevanceMap(items []Item, tagsByItem [][]string) map[string]float64 {
 	counts := make(map[string]int)
 	for i := range items {
 		it := &items[i]
 		if it.Stats.ViewCount <= 0 {
 			continue
 		}
-		for _, tag := range tagsFor(*it) {
+		for _, tag := range tagsByItem[i] {
 			counts[tag]++
 		}
 	}

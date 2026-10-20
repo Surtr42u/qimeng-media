@@ -113,6 +113,7 @@ class SdkUploadRepository @Inject constructor(
         libraryName: String,
     ): List<QueuedUpload> {
         val workManager = WorkManager.getInstance(context)
+        val targetServerUrl = apiFactory.currentBaseUrl()
         return items.map { item ->
             val localId = UUID.randomUUID().toString()
             knownNames[localId] = item.displayName
@@ -122,6 +123,7 @@ class SdkUploadRepository @Inject constructor(
             val itemDir = UploadRules.joinUploadDirPath(dir, item.relativeDir)
             val spec = UploadWorkSpec.UploadRequestSpec(
                 localId = localId,
+                targetServerUrl = targetServerUrl,
                 uri = item.uri,
                 libraryId = libraryId,
                 dir = itemDir,
@@ -205,6 +207,7 @@ class SdkUploadRepository @Inject constructor(
             WorkInfo.State.RUNNING -> UploadStatus.UPLOADING
             WorkInfo.State.SUCCEEDED ->
                 when {
+                    output.getBoolean(UploadWorkSpec.KEY_TARGET_REJECTED, false) -> UploadStatus.FAILED
                     cancelledByUser -> UploadStatus.CANCELLED
                     attachFailed -> UploadStatus.ATTACH_FAILED
                     else -> UploadStatus.SUCCEEDED

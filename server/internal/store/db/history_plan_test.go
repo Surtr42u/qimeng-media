@@ -35,7 +35,7 @@ import (
 // openMigratedDB 建临时库并按文件名序应用全部 up 迁移。生产装配在
 // store.newMigrator（golang-migrate）；此处平铺执行 up 文件得到相同
 // schema——查询计划只取决于 schema 对象，与迁移器装配方式无关。
-func openMigratedDB(t *testing.T) *sql.DB {
+func openMigratedDB(t testing.TB) *sql.DB {
 	t.Helper()
 	conn, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "plan.db"))
 	if err != nil {
@@ -66,7 +66,7 @@ func openMigratedDB(t *testing.T) *sql.DB {
 }
 
 // explainPlan 返回 EXPLAIN QUERY PLAN 的每行 detail 文本。
-func explainPlan(t *testing.T, conn *sql.DB, query string, args ...any) []string {
+func explainPlan(t testing.TB, conn *sql.DB, query string, args ...any) []string {
 	t.Helper()
 	rows, err := conn.Query("EXPLAIN QUERY PLAN "+query, args...)
 	if err != nil {

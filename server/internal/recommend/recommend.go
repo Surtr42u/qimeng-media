@@ -2,7 +2,7 @@ package recommend
 
 import (
 	"math"
-	"sort"
+	"slices"
 )
 
 // randomMask 与 randomDivisor 是 randomFactor 的确定性哈希换算参数
@@ -16,10 +16,10 @@ const (
 // 已展示次数；DOMAIN_RULES §1.1 逐字遵守）。
 const dailyPenaltyStep = 0.8
 
-// scoredItem 是评分后的中间行：item + 总分。排序只搬评分的绑定，
-// item 字段（值拷贝）保证排序稳定后仍能取回原始条目，不依赖输入 slice。
+// scoredItem 只携带输入下标和总分；排序/打散不反复搬运完整 Item，
+// 最终输出时才复制命中的条目。输入及其标签在算法内始终只读。
 type scoredItem struct {
-	item  Item
+	index int
 	score float64
 }
 
@@ -54,30 +54,34 @@ func Recommend(items []Item, p Params) []Item {
 	}
 
 	weights := resolveWeights(p.Prefs, hasTags, hasLikes, hasHistory)
-	relevance := buildTagRelevanceMap(items)
+	// 每项完整标签只构建一次，供偏好统计和评分复用；不改写输入的手动标签。
+	tagsByItem := make([][]string, len(items))
+	for i := range items {
+		tagsByItem[i] = tagsFor(items[i])
+	}
+	relevance := buildTagRelevanceMap(items, tagsByItem)
 	topTags := topTagsOf(relevance)
 	norms := computeNormDenominators(items)
 
 	scored := make([]scoredItem, len(items))
 	for i := range items {
-		scored[i] = scoredItem{item: items[i], score: scoreItem(&items[i], weights, relevance, topTags, norms, p)}
+		scored[i] = scoredItem{index: i, score: scoreItem(&items[i], tagsByItem[i], weights, relevance, topTags, norms, p)}
 	}
-	sort.SliceStable(scored, func(i, j int) bool { return scored[i].score > scored[j].score })
-
-	var ordered []Item
-	if p.Seed > 0 {
-		ordered = shuffleBuckets(scored, p.Seed)
-	} else {
-		ordered = make([]Item, len(scored))
-		for i := range scored {
-			ordered[i] = scored[i].item
+	slices.SortStableFunc(scored, func(a, b scoredItem) int {
+		switch {
+		case a.score > b.score:
+			return -1
+		case a.score < b.score:
+			return 1
+		default:
+			return 0
 		}
+	})
+
+	if p.Seed > 0 {
+		shuffleBuckets(scored, p.Seed)
 	}
-	mixed := balanceVideoImage(ordered, p.Seed)
-	if p.Limit > 0 && len(mixed) > p.Limit {
-		mixed = mixed[:p.Limit]
-	}
-	return mixed
+	return balanceVideoImage(items, scored, p.Seed, p.Limit)
 }
 
 // scoreItem 是单个条目的十维打分（公式与常量逐字遵守 DOMAIN_RULES §1.1）：
@@ -85,9 +89,8 @@ func Recommend(items []Item, p Params) []Item {
 //	score = Σ(维度分×权重) + randomFactor − dailyPenalty
 //
 // 维度分与随机扰动均与库内最大值作归一化（norms），幂等且边界安全。
-func scoreItem(it *Item, w weightedScore, relevance map[string]float64,
+func scoreItem(it *Item, tags []string, w weightedScore, relevance map[string]float64,
 	topTags map[string]bool, norms normDenominators, p Params) float64 {
-	tags := tagsFor(*it)
 	viewCount := it.Stats.ViewCount
 	playCount := it.Stats.PlayCount
 
@@ -114,7 +117,7 @@ func scoreItem(it *Item, w weightedScore, relevance map[string]float64,
 }
 
 // randomFactorOf 确定性随机扰动：FNV-1a32(AssetID) xor seed 取低 16 位
-// 归一化到 [0,1) 再乘 maxRandom。禁止真随机（同 seed 必须可复现）。
+// 归一化到 [0,1] 再乘 maxRandom。禁止真随机（同 seed 必须可复现）。
 func randomFactorOf(assetID string, seed int) float64 {
 	h := fnv1a32(assetID) ^ uint32(seed)
 	return float64(h&randomMask) / randomDivisor

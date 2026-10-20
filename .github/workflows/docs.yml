@@ -1,0 +1,27 @@
+name: 文档与同步责任
+on:
+  push:
+    branches: [master]
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+permissions:
+  contents: read
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with: { fetch-depth: 0, persist-credentials: false }
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with: { python-version: '3.13' }
+      - run: python -m unittest discover -s tools -p 'test_*.py'
+      - name: 文档链接、索引与改动影响
+        env:
+          DOCS_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            python tools/check_docs.py --base "$DOCS_BASE" --event-path "$GITHUB_EVENT_PATH"
+          else
+            python tools/check_docs.py
+          fi

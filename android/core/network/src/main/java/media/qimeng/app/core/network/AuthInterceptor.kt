@@ -28,12 +28,23 @@ class AuthInterceptor @Inject constructor(
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val original = chain.request()
-        val request = serverConfig.currentToken()
+        val binding = original.tag(ServerRequestBinding::class.java)
+        binding?.requireCurrent(serverConfig.currentServerUrl(), original.url)
+        val token = serverConfig.currentToken()
+        // token 读取后再核对，避免换址与凭据更新交错；已发出的请求始终持原 URL/token。
+        binding?.requireCurrent(serverConfig.currentServerUrl(), original.url)
+        val request = token
             ?.let { original.newBuilder().header(HEADER_AUTHORIZATION, "$BEARER_PREFIX$it").build() }
             ?: original
         val response = chain.proceed(request)
         if (response.code == HTTP_UNAUTHORIZED) {
-            onTokenRejected()
+            if (binding == null) onTokenRejected() else appScope.launch {
+                // 旧端迟到的 401 不得登出已经切换的新端/新会话。
+                if (binding.matches(serverConfig.currentServerUrl()) && serverConfig.currentToken() == token) {
+                    serverConfig.clearToken()
+                    sessionEvents.notifyUnauthorized()
+                }
+            }
         }
         return response
     }

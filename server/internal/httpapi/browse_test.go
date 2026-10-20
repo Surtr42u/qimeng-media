@@ -912,7 +912,9 @@ func TestMediaOrigRangeAndSignature(t *testing.T) {
 	if cl := resp.ContentLength; cl != 10 {
 		t.Fatalf("分片长度应 10，得到 %d", cl)
 	}
-	closeBody(resp)
+	if got := readAll(t, resp); !bytes.Equal(got, want[:10]) {
+		t.Fatal("Range 必须逐字节来自原文件，不得改编码或缩放")
+	}
 
 	// 签名篡改 → 403
 	bad := strings.Replace(*detail.OrigUrl, "sig=", "sig=0", 1)

@@ -13,6 +13,7 @@ import kotlinx.coroutines.withContext
 import media.qimeng.app.core.data.repository.BusinessApiFactory
 import media.qimeng.app.core.model.UploadRules
 import media.qimeng.app.core.network.di.UploadClient
+import media.qimeng.app.core.network.boundToServer
 import okhttp3.OkHttpClient
 
 /**
@@ -47,12 +48,14 @@ class ChunkedUploader @Inject constructor(
         dir: String,
         isCancelled: () -> Boolean = { false },
         onProgress: AssetUploader.ProgressListener,
+        targetServerUrl: String? = null,
     ): UploadOutcome = withContext(Dispatchers.IO) {
+        val fixedBaseUrl = targetServerUrl ?: runCatching { apiFactory.currentBaseUrl() }.getOrNull()
         val outcome = ChunkedUploadSession(
             client = OkHttpUploadSessionClient(
                 // 地址未就绪/不合法收敛为 Transient（直传同口径：非终局，重试窗口内可恢复）
-                baseUrl = { runCatching { apiFactory.currentBaseUrl() }.getOrNull() },
-                okHttpClient = okHttpClient,
+                baseUrl = { fixedBaseUrl },
+                okHttpClient = targetServerUrl?.let { okHttpClient.boundToServer(it) } ?: okHttpClient,
             ),
             readChunk = { offset -> openChunk(uri, offset) },
             totalBytes = sizeBytes,

@@ -1,49 +1,71 @@
 # ADR 决策索引
 
-> 每行 = 一个决策 + 它的全部影响点。改动任何决策前，先查本表定位全部受影响文件/文档。
-> 新增 ADR 后必须同步追加本表（模板见 `docs/templates/adr-template.md`）。
+> 先按主题/编号定位，再确认状态，仅阅读相关决策。索引只维护短结论与影响范围；完整理由、文件定位和兼容边界见各 ADR。Accepted 不等于所有实施/设备均已验收。
 
-| 编号 | 一句话决策 | 受影响文件/文档 | 状态 |
+## 主题定位
+
+- 协议/工程：0001、0009、0010、0011、0017。
+- 身份/事件/备份/缓存：0004、0005、0026、0027、0032、0037、0039、0040。
+- 安全/文件/上传/同步：0006、0007、0021、0023、0024、0025、0028、0029、0030、0038、0039。
+- UI/客户端：0008、0014、0015、0016、0018、0020、0022、0031、0035。
+- 查询性能：0011、0042、0043、0044。
+- 推荐评分/后处理：0045（桶宽修正；评分公式不变）。
+- 产品/模块/扩展：0002、0003、0012、0019；词表 0033–0035；文档治理 0041。
+
+## 决策与状态
+
+| 编号（正文） | 决策 | 影响范围 | 状态 |
 |---|---|---|---|
-| ADR-0001 | 技术栈与 monorepo：Go 单体 + React PWA + Compose + OpenAPI 协议宪法，三端 SDK 自动生成 | `api/openapi.yaml`、根 `Makefile`、`ARCHITECTURE.md` §2/§3 | 已接受 |
-| ADR-0002 | 服务端模块化单体 + 明确不做清单（AI 识别/人脸聚类/实时转码/多租户等） | `ARCHITECTURE.md` §1/§5、`DOMAIN_RULES.md` | 已接受 |
-| ADR-0003 | SQLite（modernc 纯 Go 驱动）+ sqlc + golang-migrate，含 Postgres 演进路径 | `server/internal/store/`、`server/migrations/`、`ARCHITECTURE.md` §3 | 已接受 |
-| ADR-0004 | 数据身份机制：asset_id（UUIDv7）主键，路径是属性，size+mtime 变更检测，移动合并 | `server/internal/scanner/`、`server/migrations/`、`ARCHITECTURE.md` §6 | 已接受 |
-| ADR-0005 | ViewEvent 事件流只追加，统计从事件聚合重建（替代计数器累计） | `server/internal/events/`、`server/migrations/`、`ARCHITECTURE.md` §7、`DOMAIN_RULES.md` §5 | 已接受 |
-| ADR-0006 | 远程访问只走 Tailscale/WireGuard 隧道，禁止公网端口映射 | `SECURITY.md`、`ARCHITECTURE.md` §9 | 已接受 |
-| ADR-0007 | 媒体目录可写（受控）+ 删除=回收站 + 上传白名单四道校验 | `server/internal/filing/`、`DOMAIN_RULES.md` §9、`SECURITY.md` | 已接受 |
-| ADR-0008 | UI 策略：逻辑协议共享、UI 各端原生，设计 token 统一视觉 | `web/src/`、`android/`、`ARCHITECTURE.md` §4 | 已接受 |
-| ADR-0009 | SDK 生成物不入库，CI 从 openapi.yaml 重建防漂移；AI 禁止手改生成物 | `.gitignore`、`.github/workflows/ci.yml`（sdk-chain）、根 `Makefile`、`ARCHITECTURE.md` §5.1/§10、`AGENTS.md` 铁律 1 | 已接受 |
-| ADR-0010 | 模块边界三层强制：Go internal 编译器边界 + depguard 两条红线 + golangci-lint 门禁（不引 arch-go） | `server/.golangci.yml`、`.github/workflows/ci.yml`（server job）、根 `Makefile`、`ARCHITECTURE.md` §5.1 | 已接受 |
-| ADR-0011 | 数据库演进式迁移纪律：只加不改不删，改/删走 expand-migrate-contract，SQLite 删列默认不做 | `server/migrations/`、`ARCHITECTURE.md` §5.1、`AI_README_FIRST.md` 开发流程第 4 条 | 已接受（2026-08-26；2026-10-02 修订：索引类迁移必须附同表全部查询族 EXPLAIN 前后横向复查、关键查询族计划文本断言入 CI 锁——动机 0013→history 事故，见该文修订记录） |
-| ADR-0012 | 库类型（kind）可扩展体系：识别器分派 + 配套展示，新 kind 接入清单；与 enabled 开关（0007）正交 | `docs/DOMAIN_RULES.md` §6、`server/internal/scanner/`、`api/openapi.yaml` | 已接受（2026-09-03） |
-| ADR-0013 | （废弃）M4 走「旧 UI 照搬 + 数据层网络化」——同日被用户二次拍板推翻，调研结论仍有效（内部批次引用已随 0014 重写过期） | 历史记录；调研结论见本文（原被 `HANDOVER_APP.md` 引用，该文件 2026-09-11 删除） | **已废弃（2026-09-04，被 0014 取代）** |
-| ADR-0014 | M4 Android 走 Compose 重建（先进优先，Now in Android 多模块范式），交互规格照搬 GUIDE_UI，复杂自绘控件允许 AndroidView 桥接；minSdk 26 | `android/`（README）、`docs/CHANGELOG.md`（批次记录）、`AGENTS.md`、`AI_README_FIRST.md`、`docs/PROJECT_PLAN.md` M4 | 已接受（2026-09-04） |
-| ADR-0015 | Android 单机形态：Go 服务端交叉编译进手机（modernc 纯 Go 红利），App 连 localhost，替代旧项目；Termux/App 内嵌两候选形态 | `docs/PROJECT_PLAN.md` M6、`server/`（构建目标）、`android/`（服务器地址配置）、旧项目退役安排 | 已接受（2026-09-04，实施排 M4 后先于 M5） |
-| ADR-0016 | Web 图表库选型 recharts 3.x：折线图悬停提示/参考线/高亮点库内置，主题色走 CSS 变量 token | `web/package.json`、`web/src/components/data/TrendChart.tsx`、`web/src/pages/MaintenancePage.tsx` | 已接受（2026-09-05） |
-| ADR-0017 | Web 测试基建 vitest（仅 devDependency）：lib 纯函数层单测 + npm test 脚本；CI web job 已接入 npm test（2026-09-08 任务F F4 批闭环，run 34173261179 验证） | `web/package.json`、`web/package-lock.json`、`web/src/lib/*.test.ts`、`.github/workflows/ci.yml` | 已接受（2026-09-07，实施=任务E E6 批；CI 接入=任务F F4 批 ebcd6a6） |
-| ADR-0018 | Android 图表库选型 Vico 2.5.1（compose-m3）：统计页折线图退役 Canvas 自绘（用户 2026-09-08「不要自绘」拍板，推翻 C3；3.x/2.5.2 因 kotlin-stdlib 2.4.0 撞 Hilt 2.58 上限不取），QimengTrendLineChart 封装供 I3 多系列复用 | `android/gradle/libs.versions.toml`、`android/feature/stats/build.gradle.kts`、`android/feature/stats/`（QimengTrendLineChart.kt、StatsScreen.kt） | 已接受（2026-09-09） |
-| ADR-0019 | 编排层从 httpapi 下沉：多步业务编排必须进专职包（orchestration/app 层），httpapi 只做鉴权/校验/序列化/调用；既有厚 handler 增量迁移，新增多步流禁止再堆 httpapi；不引编排框架，cmd/qimeng 仍为组合根 | `server/internal/httpapi/`（upload.go、filing.go、stats.go 含 RebuildAssetDailyStatsFromEvents）、未来 `server/internal/orchestration/`、`server/internal/stats/doc.go`、`docs/ARCHITECTURE.md` §5/§5.1、`AI_README_FIRST.md` | 已接受（2026-09-09） |
-| ADR-0020 | PC 桌面客户端采用 Tauri 2 连接模式壳：全新 `desktop/` 目录，壳只做首次启动填服务器地址 + 主窗口加载该地址的服务端 Web UI；web/android/server/api 零改动，不做内嵌服务端单机版（另立 ADR）；commit scope 新增 `desktop`；构建不设任何 CPU 限核（2026-09-16 用户拍板全项目限核约束解除） | `desktop/`（新增）、`docs/adr/INDEX.md`、`docs/CHANGELOG.md` | 已接受（2026-09-16） |
-| ADR-0021 | 多设备并发会话 token 模型：auth_sessions 表（migration 0011）每次登录一条会话互不挤兑，/auth/logout 单条吊销，会话上限 16 裁最旧；users.token_hash 弃用不删；附带 auth 端点固定窗口限速 10 次/分钟（标准库） | `server/migrations/0011_*.sql`、`server/internal/store/queries/sessions.sql`、`server/internal/httpapi/authapi.go`、`authlimit.go`、`api/openapi.yaml`（/auth/logout、429）、`docs/SECURITY.md` 鉴权设计节 | 已接受（2026-09-17） |
-| ADR-0022 | targetSdk 升 37 + 局域网权限适配（ACCESS_LOCAL_NETWORK）：manifest 声明 + 运行时两入口（登录提交门 feature:login LoginScreen、冷启动补请求 :app MainActivity），判定口径单源 core:network LocalNetworkAccessPolicy（纯函数+单测）；后台音频 FGS 与 NSC 迁移刻意不做记档；行为面其余条目经对照无涉 | `android/app/build.gradle.kts`（targetSdk 行）、`android/app/src/main/AndroidManifest.xml`、`android/app/.../MainActivity.kt`、`android/feature/login/`（LoginScreen.kt、strings.xml）、`android/core/network/`（LocalNetworkAccessPolicy.kt+test）、`docs/CHANGELOG.md` | 已接受（2026-09-19，用户拍板升） |
-| ADR-0023 | 上传挂靠作者与来源：TXT 片段本体为唯一真相原地变更（挂靠与入库同事务、重导入 409+conflictResolution 保护、capabilities.authorAttach 能力声明、本地镜像=用户显式配置的唯一例外写点、编排落 internal/authorattach）；来源仅记录不参与匹配 | `server/internal/authoring/attach.go`、`server/internal/authorattach/`、`server/internal/httpapi/upload.go`、`server/internal/scanner/`（SupportsAuthorAttach）、`api/openapi.yaml`（upload 挂靠参数 + /authors/suggest\|sources\|import-txt/export\|mirror + 409 TxtImportConflict）、`docs/DOMAIN_RULES.md` §6、`docs/SECURITY.md`、`docs/GUIDE_API.md`、`docs/adr/0012`、`docs/ARCHITECTURE.md` §5 | 已接受（2026-09-25；同日修订：决策 3 上传挂靠 query 参数随 ADR-0024 退役，真相/同事务/重导入保护语义不变，见该文修订记录） |
-| ADR-0024 | 上传拆分：上传挂靠参数退役（0023 决策 3）+ 挂靠入口迁资产编辑页三端点（PUT /assets/{assetId}/authors 整体替换关联 + GET/PUT /authors/{authorId}/sources 来源区 + GET/PUT /authors/source-vocabulary 通用来源词表=来源建议唯一数据源）；编辑同步修剪 kv 上传条目（2026-10-11 修订 4 起编辑写入的作品行也登记，保护范围=上传+编辑写入）；来源=获取渠道非 §4 作品出处；Web 拖拽目录上传 + Android 相册式选择器 | `server/internal/httpapi/upload.go`、`server/internal/authoring/edit.go`、`server/internal/authorattach/edit.go`、`server/internal/httpapi/author_edit.go`、`web/src/pages/AssetEditPage.tsx`、`android/feature/upload/`（MediaPicker）、`android/feature/detail/`（AssetEditScreen）、`api/openapi.yaml`、`docs/DOMAIN_RULES.md` §6、`docs/GUIDE_API.md`、`docs/SECURITY.md`、`docs/ARCHITECTURE.md` §5、`docs/CAPABILITY_MAP.md`、`docs/HANDOVER.md`、`docs/adr/0023`（修订记录） | 已接受（2026-09-25；2026-10-11 修订 4：编辑端点增可选 newAuthorNames 按名新建/复用、保存自愈补行、编辑写入登记；2026-10-13 修订 5：作者管理端点组 POST /authors + PUT/DELETE /authors/{id} 新建/改名/删除、回写身份自洽不变量〔AliasesForAuthorID〕与「 / 」别名分隔修订，见该文修订记录） |
-| ADR-0025 | 库根自动重挂：扫描器发现库根不存在时按库内最小 5 条资产样本（rel_path+字节数全等、纯函数判定）在旧父目录唯一命中才改挂 root_path+显示名并广播 library.changed，0/≥2 候选保持原失败行为绝不猜测 | `server/internal/scanner/relink.go`、`relink_test.go`、`scanner.go`、`watch.go`、`server/internal/store/queries/scanner.sql`、`docs/adr/0025` | 已接受（2026-09-28） |
-| ADR-0026 | 库内容修订号（library revision）与预取整轮跳过：全局单计数器持久化 kv_settings、bump 收口=library.changed 订阅一处+4 条不发事件路径显式 bump、GET /api/v1/library/revision（bearer 保护）；客户端 PrefetchRevisionGate 五分支（null 降级 FULL/服务器键不等 FULL/相等 SKIP 置 Skipped 终态），清任一缓存池必须失效本地 revision 记录；修订（2026-09-30）：记录捆绑服务器标识防换端撞号 + SKIP 前抽样核对（50 条/缺失≥20% 降级全量）防缓存驱逐漂移；刻意不做 since 增量清单/SSE 推送预取/分库 revision | `api/openapi.yaml`、`server/internal/libraryrevision/`、`server/internal/httpapi/`（revision.go/server.go/trash.go/trash_sweeper.go/import.go）、`server/internal/store/queries/revision.sql`、`android/core/data/.../prefetch/`（Gate/Store/Prefetcher）、`android/feature/manage/`、`docs/GUIDE_API.md`、`docs/adr/0026` | 已接受（2026-09-30） |
-| ADR-0027 | 签名直链 exp 窗口对齐：exp=下一窗口上界+TTL（窗长=token_ttl=6h 一个旋钮），同一窗口内所有响应签出逐字节相同的 URL——浏览器 HTTP 缓存与 ETag/304 得以命中，根治逐响应轮换击穿；有效期恒 (TTL, 2×TTL]；验签侧零改动，/media/orig 补 private max-age=窗口长缓存头；Android 剥签名键栈保留不退役，三端零适配；否决纯窗口上界（窗口尾近过期）与长寿命/免签（安全否决） | `server/internal/httpapi/`（assets_media_url.go、media.go、assets_media_url_window_test.go、browse_test.go）、`docs/SECURITY.md`、`docs/GUIDE_API.md`、`docs/HANDOVER.md`、`docs/CHANGELOG.md`、`docs/adr/0027` | 已接受（2026-10-01） |
-| ADR-0028 | 断点续传上传（tus 1.0 核心语义极简子集）：POST/GET/PATCH/DELETE /uploads(+/{id}/complete) 五操作，会话服务端持有（内存注册表 + DataDir/uploads-tmp 分片文件，重启即失效）、断点以服务端 offset 为准（不等 409 回权威值）、单片上限 32MB、无活动 24h 过期清扫；complete 对拼装整文件复跑直传四道终检与共享入库管线（事件/修订号/富化照旧），同名自动重命名永不 409（DOMAIN_RULES §9 口径不变）；直传通道保留；刻意不做并行乱序分片/校验和去重/会话持久化（目标目录初版不做、同日补齐，见决策 7） | `api/openapi.yaml`、`server/internal/uploadsess/`（新包）、`server/internal/httpapi/`（uploads.go 新 + upload.go 抽共享管线 + server.go + uploads_test.go）、`server/cmd/qimeng/main.go`、`docs/GUIDE_API.md`、`docs/SECURITY.md`、`docs/CAPABILITY_MAP.md`、`docs/HANDOVER.md`、`docs/CHANGELOG.md`、`docs/adr/0028` | 已接受（2026-10-01；2026-10-02 修订：增补分片通道三端绕行点清单——web upload-chunked XHR 直连 / Android @UploadClient OkHttp 直连 / hey-api 生成器面缺口背景，见该文修订记录） |
-| ADR-0029 | SSE 数据新鲜度收敛：服务端补 favorite.changed / like.changed 轻事件（载荷=变更资产 id，写路径成功后发布、失败零发布、幂等 no-op 照发），**不 bump 修订号**（ADR-0026 语义边界不变）；运行时事件面不入 openapi；第二半=Android okhttp-sse 消费 + 多套自制门收敛到统一信号、Web SseBridge 补失效映射；5min TTL 保留为离线兜底（事件丢失窗口=回到 TTL，弱失败方向） | `server/internal/events/`（bus.go/events.go/sse.go/sse_test.go）、`server/internal/httpapi/`（engagement.go、engagement_events_test.go 新）、`docs/GUIDE_API.md`、`docs/HANDOVER.md`、`docs/CHANGELOG.md`、`docs/adr/0029`、第二半已同日落地（Android ServerEventConsumer 消费+三层门、Web SseBridge 失效映射） | 已接受（2026-10-01） |
-| ADR-0030 | 本机文件夹自动同步通道：服务端侧轮询监测，子文件夹名=库名自动匹配（sanitize 与 App 归档逐字对齐），入库走直传同款四道校验+管线，成功移走/失败保留可见，TXT 恒 keep | api/openapi.yaml, server/internal/localsync/, server/internal/httpapi/localsync*.go, server/internal/config/config.go, web/src/components/manage/LocalSyncCard.tsx, docs/GUIDE_API.md, docs/SECURITY.md | 已接受（2026-10-01） |
-| ADR-0031 | Web 全新设计语言「绮梦流光 · Aurora Glass」：暗色优先液态玻璃（画布极光渐变+backdrop-filter 材质+发丝描边）+ token 体系 v2（--qm-* 唯一色彩事实源、shadcn 桥接反向、旧名兼容别名块、@immich/ui 主题包退役）；类名契约与组件 DOM 不动、样式层 prototype.css→glass.css 全量重写；backdrop-filter @supports 不透明降级；主题默认改暗色（不再跟随系统）+ startViewTransition 切换动效；zoom 1.1 与配套补偿沿用、v1 负 margin 像素锚位退役 | web/src/tokens.css、web/src/index.css、web/src/styles/glass.css（新，删 prototype.css）、web/src/lib/theme.ts、web/src/pages/SettingsPage.tsx、web/index.html、web/vite.config.ts、web/package.json、web/README.md、docs/HANDOVER.md | 已接受（2026-10-02） |
-| ADR-0032 | 关联/作者类记录溯源体系：migration 0016 给 asset_authors/asset_tags/asset_characters/authors 加 created_at+origin 双列（origin 受控词表 client/txt/import/local-sync/scanner/legacy=不可考回填，常量单源 store/provenance.go；存量行 origin='legacy'、时间哨兵 NULL/epoch 禁止伪造）；备份载荷三 schema 增可空字段透传来历，导入按补证规则（不可考被透传值 heal、可考首写优先绝不覆盖）确定性裁决；集级标签裁决维持 tag_set_updated_at 不变；view_events 边界记档（已有 session_id/client_event_id，三代键空间问题另立项） | server/migrations/0016_*、server/internal/store/provenance.go、queries/{authors,tags,legacy_import,legacy_export}.sql、httpapi/{tags,authors,import,export,localsync_runner}.go、authorattach/{attach,edit}.go、scanner/enrich.go、api/openapi.yaml、docs/DOMAIN_RULES.md §10、docs/adr/0032 | 已接受（2026-10-02） |
-| ADR-0033 | 检索词表维护接口：新增 GET/PUT /sources/custom-groups（整体替换的自定义出处组 canonical+variants+characters），与内置 130 组按 canonical 合并（同名并入扩变体/角色、新名追加），持久化 kv_settings.custom_source_groups（存储形态=引擎输入形态）；PUT 后引擎同步替换+后台全常规库重算存量（复用 RecomputeEnrichment 闭环）；内置表冻结为基线只修 bug（删吞角色的复合变体「第一后裔 邦尼」）+ 修复裸名同名覆盖内置角色表问题；合并层纯函数 MergeGroups + 两层自定义更新互斥 | api/openapi.yaml、server/internal/sourcematcher/{custom.go,matcher.go,source_groups_data.go}、server/internal/scanner/{enrich.go,scanner.go}、server/internal/httpapi/{server.go,source_groups.go}、server/internal/authoring/authorid.go、server/cmd/qimeng/wire.go、api/sdk.lock、docs/DOMAIN_RULES.md §4、docs/GUIDE_API.md、docs/adr/0033 | 已接受（2026-10-03） |
-| ADR-0034 | App 词表同步：远程登录态下以服务端为权威源单向下发（远端 GET /sources/custom-groups → 本机内嵌库 PUT 覆盖），纯客户端编排复用既有两端点、服务端/openapi/SDK 零改动；本地通道走 @LocalDirectClient 无拦截器 OkHttp + dev-login（密钥内存槽）绕开全局 401 登出陷阱；stopWords 恒显式数组覆盖（远端无追加层=空数组清空）；两段式预览（组数对照+本机独有 K 组丢失警示）+确认防线 | android/core/network/（NetworkModule @LocalDirectClient 三装配）、android/core/data/（VocabularySyncRepository 接口+Impl、DataModule）、android/feature/manage/（VocabularySyncViewModel/Screen、DataManageScreen 入口行）、android/app/（QimengNavHost 路由）、docs/GUIDE_API.md、docs/HANDOVER.md、docs/CHANGELOG.md、docs/adr/0034 | 已接受（2026-10-04） |
-| ADR-0035 | App 词表维护与词表合并同步：①数据管理 hub 新增「词表维护」子页——本机内嵌库词表直接编辑（组改名/移除、变体/角色/别名/停用词增删），内存编辑 + 整体保存（PUT 恒显式 groups+stopWords）+ 保存后静默回读抹平服务端规范化差异，无门禁，输入面统一 QimengCapsuleTextField；②词表合并同步（取代 0034 覆盖式下发，用户拍板「词表只增不删，合并是增量不出怪问题」）——备份页「词表合并同步」卡一键触发：远端 GET + 本机 GET → VocabularyMerger 并集合并（纯函数：折叠键 union、同键组并入、变体/角色/别名/停用词并集去重）→ 显式 PUT 回两端收敛同一并集，无方向选择、无确认防线；③本机通道抽 LocalVocabularyChannel 共享（拉起→dev-login→接线→用完停回单源收口，401 陷阱防线继承）；服务端/openapi/SDK 零改动 | android/core/data/（VocabularyMerger、LocalVocabularyChannel、VocabularyEditRepository 接口+Impl、VocabularySyncRepository 合并化、DataModule）、android/feature/manage/（VocabularyEditViewModel/Screen/GroupsCard/Dialogs、VocabularySyncCard、VocabularySyncViewModel 一键化、DataManageScreen）、android/app/（QimengNavHost）、docs/GUIDE_API.md、docs/HANDOVER.md、docs/CHANGELOG.md、docs/adr/0035 | 已接受（2026-10-04） |
-| ADR-0036 | 桌面播放内核引入 libmpv（wid HWND 嵌入 + 运行时加载 FFI 零新依赖 + JS 轮询上报 + DLL 缺失降级）。**实施修订 2026-10-06**：内核并入 master；**已废弃（2026-10-07 用户拍板全端统一为 ArtPlayer 标准播控；2026-10-17 彻底清理桌面 Rust mpv 死代码与脚手架残留）** | `docs/adr/0036`、`desktop/README.md`、`docs/CAPABILITY_MAP.md` | 已废弃（2026-10-07 拍板回退；2026-10-17 清理代码与配置残留） |
-| ADR-0037 | 跨库浏览事件兜底重映射：ViewEventReport 增可选 fileName/relPath 文件身份；assetId 未命中且带 fileName 时按文件名匹配本库资产（唯一命中，或经 relPath 精确等值消歧后唯一）→ 事件记入该资产并正常物化计统计（202 EventsViewAccepted outcome=remapped）；零命中/仍歧义/未携带 → 维持「已删资产迟到事件」口径（事件入库、统计跳过、outcome=unmatched）；歧义不猜、宁少勿错（与 §10 导入通道「同名多命中取最早」刻意不同）；会话去重/幂等键口径不变（去重键=重映射后目标资产）；不加索引/不加 migration | `api/openapi.yaml`、`server/internal/store/queries/assets.sql`、`server/internal/httpapi/engagement.go`、`server/internal/httpapi/engagement_remap_test.go`、`api/sdk.lock`、`docs/DOMAIN_RULES.md` §5、`docs/GUIDE_API.md`、`docs/CHANGELOG.md`、`docs/HANDOVER.md` | 已接受（2026-10-11） |
-| ADR-0038 | 跨端文件移动不覆盖既有目标：`filing.MoveFile` 预检拒绝既有目标（哨兵 ErrMoveTargetExists）+ 跨卷复制 O_EXCL 独占 + 未创建目标哨兵（ErrMoveDidNotCreateTarget，保留底层错误）；回收站清理在哨兵命中时跳过（不误删外部文件）；Android 归档同口径（改名前置 exists 检查、跨卷受控复制）并立两处红线——禁用 Files.getFileStore 判卷（Android 恒抛 SecurityException 静默退化为全量复制）、不直接 Files.move 走跨卷（libcore 内部 copy+删源绕开受控路径）；Windows 原生 CI job 覆盖 move_windows.go build-tag；不宣称消除跨进程 TOCTOU（边界记档 SECURITY）；业务层冲突处置（ResolveConflict 加序号、TXT 归档同名只留最新先删后搬）语义不变 | `server/internal/filing/move.go`、`server/internal/httpapi/trash.go`、`server/internal/httpapi/localsync_runner.go`、`android/core/data/.../InboxFileStore.kt`（+Test）、`.github/workflows/ci.yml`、`docs/SECURITY.md`、`docs/adr/0030`、`docs/adr/0024` | 已接受（2026-10-15） |
+| [ADR-0001](0001-技术栈与monorepo.md) | 技术栈、monorepo 与协议生成 | 全仓/协议 | 已接受；当前栈见 ARCHITECTURE |
+| [ADR-0002](0002-模块化单体与不做清单.md) | 模块化单体与不做清单 | 服务端/产品边界 | 已接受 |
+| [ADR-0003](0003-SQLite起步.md) | SQLite、sqlc 与迁移工具 | store/migrations | 已接受 |
+| [ADR-0004](0004-身份机制asset_id.md) | asset_id 身份与路径属性 | scanner/store/filing | 已接受 |
+| [ADR-0005](0005-ViewEvent事件流.md) | ViewEvent 只追加、统计可重建 | events/stats/store | 已接受 |
+| [ADR-0006](0006-远程访问隧道.md) | 远程只走隧道 | 安全/部署 | 已接受 |
+| [ADR-0007](0007-可写媒体目录与回收站.md) | 媒体可写、回收站与上传校验 | filing/安全 | 已接受 |
+| [ADR-0008](0008-UI解耦策略.md) | UI 原生分端、逻辑与协议共享 | Web/Android/协议 | 已接受 |
+| [ADR-0009](0009-SDK生成物不入库.md) | SDK 不入库、禁止手改、CI 可重建 | 生成链/CI | 已接受 |
+| [ADR-0010](0010-模块边界三层强制.md) | internal/depguard 强制模块边界 | 服务端/lint | 已接受 |
+| [ADR-0011](0011-数据库演进式迁移纪律.md) | 迁移只新增、结构分步演进、索引计划复查 | migrations/查询 | 已接受；含索引复查修订 |
+| [ADR-0012](0012-库类型可扩展体系.md) | 库类型 kind 可扩展与接入清单 | scanner/领域/协议 | 已接受 |
+| [ADR-0013](0013-M4旧UI照搬路线.md) | 旧 UI 照搬路线（原方案） | Android 历史 | 已废弃，被 0014 取代 |
+| [ADR-0014](0014-M4走Compose重建路线.md) | Android Compose 重建与桥接例外 | Android/UI | 已接受；现行交互入口见 GUIDE_UI |
+| [ADR-0015](0015-Android单机形态服务端内嵌.md) | Android 内嵌同一 Go 服务端 | 单机/打包/地址配置 | 已接受；基座已交付 |
+| [ADR-0016](0016-web-chart-library-recharts.md) | Web 图表库 Recharts | Web 统计图表 | 已接受 |
+| [ADR-0017](0017-web测试基建vitest.md) | Web Vitest 测试基建 | Web/CI | 已接受 |
+| [ADR-0018](0018-vico-chart-library.md) | Android 图表库 Vico | Android 统计图表 | 已接受 |
+| [ADR-0019](0019-编排层从httpapi下沉.md) | 多步业务编排从 httpapi 下沉 | 服务端/组合根 | 已接受；存量增迁，见架构 §5.1 |
+| [ADR-0020](0020-tauri-desktop-shell.md) | Tauri 连接模式薄壳 | desktop/Web | 已接受 |
+| [ADR-0021](0021-多设备并发会话token模型.md) | 多设备独立 token 会话与单会话登出 | 鉴权/store/协议 | 已接受 |
+| [ADR-0022](0022-targetSdk37与局域网权限适配.md) | targetSdk 与局域网运行时权限 | Android 登录/壳层 | 已接受 |
+| [ADR-0023](0023-上传挂靠作者来源与TXT真相原地更新.md) | TXT 作者片段真相、挂靠事务与镜像 | authorattach/作者/安全 | 部分修订：上传挂靠被 0024 取代 |
+| [ADR-0024](0024-上传拆分资产编辑页与通用来源词表.md) | 上传拆分、资产编辑、作者管理与来源词表 | 跨端/作者/协议 | 已接受；含修订 1–5，旧选择器已退役 |
+| [ADR-0025](0025-库根自动重挂.md) | 库根丢失后唯一样本自动重挂 | scanner/库管理 | 已接受 |
+| [ADR-0026](0026-库内容修订号与预取整轮跳过.md) | 库修订号与预取整轮跳过 | 协议/Android 预取 | 已接受；策略指纹扩展见 0040 |
+| [ADR-0027](0027-签名直链exp窗口对齐.md) | 媒体签名 exp 窗口对齐 | auth/媒体缓存 | 已接受 |
+| [ADR-0028](0028-断点续传上传.md) | 分片续传与 SDK 传输绕行边界 | uploadsess/跨端上传 | 已接受；失败重试扩展见 0039 |
+| [ADR-0029](0029-SSE数据新鲜度收敛.md) | SSE 收藏/点赞变更信号与 TTL 兜底 | events/客户端缓存 | 已接受 |
+| [ADR-0030](0030-local-folder-sync.md) | 本机文件夹轮询同步与 TXT keep | localsync/上传/归档 | 已接受 |
+| [ADR-0031](0031-web设计语言AuroraGlass.md) | Aurora Glass 与 token/原生动效 | Web 视觉 | 已接受 |
+| [ADR-0032](0032-关联记录溯源体系.md) | 关联记录溯源与行级 keep/heal | store/备份/详情 | 已接受 |
+| [ADR-0033](0033-检索词表维护接口.md) | 检索词表维护、规范化与富化重算 | sourcematcher/协议 | 已接受 |
+| [ADR-0034](0034-App词表同步.md) | 词表单向覆盖同步（原方案） | Android 词表同步 | 部分被 0035 取代；隔离通道继承 |
+| [ADR-0035](0035-App词表维护与词表合并同步.md) | 本机词表维护与双端并集合并 | Android/词表 | 已接受，取代 0034 同步语义 |
+| [ADR-0036](0036-desktop-playback-kernel-libmpv.md) | libmpv 桌面播放内核（原方案） | 桌面播放历史 | 已废弃；当前 ArtPlayer |
+| [ADR-0037](0037-跨库浏览事件兜底重映射.md) | 浏览事件跨库唯一兜底重映射 | 行为上报/store/统计 | 已接受 |
+| [ADR-0038](0038-跨端文件移动不覆盖既有目标.md) | 跨端文件移动不覆盖目标 | filing/Android 归档/CI | 已接受；保留并发边界 |
+| [ADR-0039](0039-扫描提交与文件恢复一致性.md) | 扫描短提交、恢复意图与续传保源重试 | scanner/filing/uploadsess | 已接受；真实卷/故障验收待执行 |
+| [ADR-0040](0040-便携事件身份与统计缓存一致性.md) | v2 事件身份、事务统计、缩略图表示版本 | 协议/eventstats/缓存/Android | 已接受；实机/NAS 未据此验收 |
+| [ADR-0041](0041-文档单一入口与按需专题规范.md) | 文档单一入口、按需专题与归档规范 | 入口/文档治理 | 已接受；纯文档调整 |
 
-| ADR-0039 | 扫描短提交与文件恢复一致性：不完整扫描保留差集、同库短锁实时复核/事务合并；恢复meta意图与续传保源/固定落点重试；Root锚定与链接拒绝边界 | `server/internal/scanner/reconcile.go`、`server/internal/filing/restore_intent.go`、`server/internal/httpapi/trash.go`、`server/internal/uploadsess/`、`docs/SECURITY.md`、`docs/DOMAIN_RULES.md` | 已接受（2026-10-19） |
+| [ADR-0042](0042-上传目标绑定与可靠性维护闭环.md) | 上传目标绑定、恢复演练、查询预聚合与维护门禁 | Android/localsync/store/CI/文档 | 已接受；设备/NAS 与部分扫描待验收 |
 
-| ADR-0040 | v2 便携事件身份、安全多库映射、事务日统计重建与跨端缩略图表示版本 | `api/openapi.yaml`、`server/internal/eventstats/`、`server/internal/stats/materialize.go`、`server/internal/thumbnail/`、`server/migrations/0019_*`、`android/core/data/` | 已接受（2026-10-19） |
+| [ADR-0043](0043-列表先分页与索引日期路径.md) | 先定页再装配、限定日期索引路径、合并计数 | browse 查询/列表/性能验证 | 已接受；目标硬件与复杂分布另测 |
+
+| [ADR-0044](0044-热榜预聚合与推荐输入按规模选路.md) | 热榜按资产预聚合、推荐宽窄输入计划与代价 | store/推荐装载/统计性能 | 已接受；合成验证，目标硬件另测 |
+
+| [ADR-0045](0045-推荐打散限制桶内分差.md) | 桶首限制分差，标签复用与混合缓冲优化 | recommend/推荐行为 | 已接受；评分不变，刷新顺序修正 |
+
+## 维护
+
+新增决策按现存最大编号 + 1，使用 [模板](../templates/adr-template.md)；同批更新本表与受影响的现行规范。部分取代只标明被替换范围，保留仍有效约束；废弃原文可作历史参考，禁止按旧方案恢复功能。

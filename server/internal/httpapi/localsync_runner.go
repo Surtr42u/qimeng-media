@@ -101,32 +101,20 @@ func (s *Server) runLocalSyncCycleOnce(ctx context.Context) {
 	for _, lib := range libs {
 		libRoots = append(libRoots, lib.RootPath)
 	}
-	if overlap := localsync.RootOverlapError(root, s.cfg.DataDir, libRoots); overlap != "" {
-		// 安全红线：重叠即整轮拒绝（不建目录、不动条目），人工修正配置后自愈。
-		s.lsSetLastErr("同步根与库根或数据目录重叠（" + overlap + "）")
-		return
-	}
-	entries, ignored, err := localsync.ScanTree(root)
+	plan, err := localsync.PlanScan(root, s.cfg.DataDir, libRoots)
 	if err != nil {
-		s.lsSetLastErr("扫描同步根失败: " + err.Error())
+		s.lsSetLastErr(err.Error())
 		return
 	}
 	// 到这里通道健康：安全校验与扫描全部通过，条目级失败不改变通道状态。
 	s.lsSetLastErr("")
-	alive := make(map[string]bool, len(entries)+len(ignored))
-	for _, e := range entries {
-		alive[e.RelPath] = true
-	}
-	for _, e := range ignored {
-		alive[e.RelPath] = true
-	}
-	s.lsPrune(alive)
-	for _, e := range ignored {
+	s.lsPrune(plan.Alive)
+	for _, e := range plan.Ignored {
 		s.lsMarkIgnored(e.RelPath, string(localsync.KindOther), lsScanIgnoredReason(e))
 	}
 	policy, paused := s.lsResolveUploadGate(ctx)
 	s.lsSetPaused(paused)
-	for _, entry := range entries {
+	for _, entry := range plan.Entries {
 		s.lsHandleEntry(ctx, entry, libs, policy, paused)
 	}
 	s.localSync.mu.Lock()

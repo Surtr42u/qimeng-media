@@ -22,12 +22,10 @@ import (
 // 同样可用：文件名联想服务的是上传通道，与作者挂靠的 normal-only 能力边界
 // 无关。
 //
-// 取数口径：ListAssetsByLibrary 全量载入该库资产行、只取 file_name 列。
+// 取数口径：只投影该库全部 file_name，不装载扫描对账所需的整行资产。
 // 不做 SQL 粗过滤的理由：联想匹配是「去扩展名 + 空白折叠 + 移除空白前缀 +
 // ASCII 大小写不敏感」，LIKE 无法表达（空白折叠与「少空格吸附」让任何
-// LIKE 模式既不可靠也无收益，粗滤后仍须在 Go 全量判定）；而单用户家庭库
-// 的规模（万级行 × ~200B，ListAssetsByLibrary 的 scanner 对账同款论证）
-// 全量载入毫秒级完成，不为联想新增 sqlc 查询。
+// LIKE 模式既不可靠也无收益，粗滤后仍须在 Go 全量判定）。
 func (s *Server) GetApiV1AssetsNameSuggestions(w http.ResponseWriter, r *http.Request, params gen.GetApiV1AssetsNameSuggestionsParams) {
 	if strings.TrimSpace(params.LibraryId) == "" {
 		writeErr(w, http.StatusBadRequest, codeInvalidParam, "libraryId 必填")
@@ -42,16 +40,11 @@ func (s *Server) GetApiV1AssetsNameSuggestions(w http.ResponseWriter, r *http.Re
 		s.internalErr(w, "查询库", err)
 		return
 	}
-	rows, err := s.q.ListAssetsByLibrary(r.Context(), lib.ID)
+	names, err := s.q.ListFileNamesForSuggestions(r.Context(), lib.ID)
 	if err != nil {
 		s.internalErr(w, "载入库文件名", err)
 		return
 	}
-	names := make([]string, 0, len(rows))
-	for _, row := range rows {
-		names = append(names, row.FileName)
-	}
-
 	related := sourcematcher.FindBuiltinRelatedTerms(params.Q)
 	extraTerms := append([]string{}, related.CharacterAliases...)
 	extraTerms = append(extraTerms, related.SourceVariants...)

@@ -4,7 +4,7 @@ import "time"
 
 // Item 是推荐/排行算法的单个资产输入。
 //
-// 字段全部来自 ListAssetsRecommendInput 一行：Stats 是行为聚合，
+// 推荐字段来自推荐输入装载；排行仅填必要热度键和 mtime。Stats 是行为聚合，
 // Tags 是库内手动标签（文件名推断标签由算法内部 tagsFor 叠加，
 // 与旧项目语义一致：推断只作用于评分，不改输入结构）。
 type Item struct {

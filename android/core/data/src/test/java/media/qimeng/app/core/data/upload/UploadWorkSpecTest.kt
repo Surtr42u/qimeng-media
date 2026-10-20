@@ -11,6 +11,23 @@ import org.junit.Test
 /** 上传队列契约与失败重试状态机锁定（M4-5）。串行性本身由 WorkManager unique 链官方语义保证。 */
 class UploadWorkSpecTest {
 
+    @Test
+    fun `目标拒绝保留业务失败标记且不级联取消队列`() {
+        val result = UploadWorkSpec.targetRejectedResult("synthetic target rejection")
+        assertTrue(result is ListenableWorker.Result.Success)
+        val output = (result as ListenableWorker.Result.Success).outputData
+        assertTrue(output.getBoolean(UploadWorkSpec.KEY_TARGET_REJECTED, false))
+        assertEquals("synthetic target rejection", output.getString(UploadWorkSpec.KEY_ERROR_MESSAGE))
+    }
+
+    @Test
+    fun `入队服务器身份跨序列化保留且旧载荷不猜目标`() {
+        val current = spec().copy(targetServerUrl = "https://synthetic.invalid/")
+        assertEquals(current.targetServerUrl,
+            UploadWorkSpec.specFromInputData(UploadWorkSpec.itemToInputData(current))!!.targetServerUrl)
+        assertNull(UploadWorkSpec.specFromInputData(UploadWorkSpec.itemToInputData(spec()))!!.targetServerUrl)
+    }
+
     private fun spec(
         uri: String = "content://media/external/images/1",
         displayName: String = "IMG_2026.jpg",

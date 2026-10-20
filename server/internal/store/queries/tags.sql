@@ -40,11 +40,20 @@ DELETE FROM asset_tags WHERE asset_id = ?;
 INSERT INTO asset_tags (asset_id, tag_id, created_at, origin) VALUES (?, ?, ?, ?);
 
 -- name: ListAllAssetTags :many
--- Full-library tag map (asset_id -> tag names) consumed by the
--- recommendation algorithm's tag relevance/collection scoring.
+-- Broad recommendation scopes retain the sequential full tag read.
 SELECT at.asset_id, t.name
 FROM asset_tags at
 JOIN tags t ON t.id = at.tag_id
+ORDER BY at.asset_id, t.name;
+
+-- name: ListTagsForAssets :many
+-- Exact candidate IDs from the input query; empty/NULL JSON yields no rows.
+-- Keep name order identical to the former full-library tag map: scoring must
+-- receive the same tag sequence without unrelated assets crossing into Go.
+SELECT at.asset_id, t.name
+FROM asset_tags at
+JOIN tags t ON t.id = at.tag_id
+WHERE at.asset_id IN (SELECT value FROM json_each(sqlc.arg(asset_ids_json)))
 ORDER BY at.asset_id, t.name;
 
 -- name: ListTimelineTags :many

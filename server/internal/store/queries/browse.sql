@@ -14,9 +14,12 @@
 --      Exception: CASE sqlc.narg(x) WHEN 'lit' (parameter as subject)
 --      parses when every branch is a literal test.
 --   3. WHERE cannot reference derived-table/CTE aliases ("table alias
---      does not exist") -> the queries stay SINGLE-LEVEL and repeat
---      scalar subqueries / CASE expressions inline instead of joining
---      a projection subquery.
+--      does not exist"). Candidate filters/cursors therefore still
+--      reference base table a and repeat scalar subqueries / CASE.
+--      A plain page CTE with ORDER BY/LIMIT plus an OUTER JOIN is
+--      supported: enrich only selected rows in the same SQL snapshot.
+--      AS MATERIALIZED is NOT parsed by the pinned sqlc version;
+--      LIMIT + outer join supplies the flattening boundary instead.
 --   4. sqlc.arg() inside ORDER BY is NOT macro-expanded (left verbatim
 --      in the generated SQL, which would crash SQLite at runtime) ->
 --      sort DIRECTION is baked into two query variants (Asc/Desc)
@@ -59,20 +62,15 @@
 -- THE PROJECTION COPY.
 --
 -- ============ Performance note ============
--- The view/play count scalar subqueries repeat several times per query
--- (projection + cursor + range buckets). Each hit is an indexed lookup
--- on idx_view_events_asset, and M1 libraries are tens of thousands of
--- rows; re-visit only if profiling says so.
+-- Sort/filter counts must run on candidates; page display enrichment
+-- runs AFTER LIMIT. Only fields consumed by listRowView are projected
+-- (keep their order/types aligned so Go conversions detect drift).
+-- Plain file-date library/COS pages use browse_date.sql's indexed path;
+-- every other filter falls back to this complete filter matrix.
 
 -- name: ListAssetsFilteredDesc :many
-SELECT
-    a.asset_id, a.library_id, a.rel_path, a.file_name, a.media_type,
-    a.size_bytes, a.mtime, a.duration_ms, a.width, a.height, a.source,
-    a.created_at, a.updated_at,
-    EXISTS(SELECT 1 FROM favorites fv WHERE fv.asset_id = a.asset_id) AS is_favorite,
-    (SELECT COUNT(*) FROM likes l WHERE l.asset_id = a.asset_id) AS like_count,
-    (SELECT COUNT(*) FROM view_events v WHERE v.asset_id = a.asset_id AND v.kind = 'open') AS view_count,
-    (SELECT COUNT(*) FROM view_events v WHERE v.asset_id = a.asset_id AND v.kind = 'play') AS play_count,
+WITH page AS (
+SELECT a.asset_id,
     CASE
         WHEN sqlc.arg(sort) = 'fileDate'  THEN a.mtime
         WHEN sqlc.arg(sort) = 'name'      THEN a.file_name
@@ -262,17 +260,20 @@ WHERE
             END) = sqlc.narg(cursor_key)
             AND a.asset_id < sqlc.narg(cursor_id)))
 ORDER BY sort_key DESC, a.asset_id DESC
-LIMIT sqlc.arg(row_limit);
-
--- name: ListAssetsFilteredAsc :many
+LIMIT sqlc.arg(row_limit)
+)
 SELECT
-    a.asset_id, a.library_id, a.rel_path, a.file_name, a.media_type,
-    a.size_bytes, a.mtime, a.duration_ms, a.width, a.height, a.source,
-    a.created_at, a.updated_at,
+    a.asset_id, a.file_name, a.media_type, a.size_bytes, a.mtime,
+    a.created_at, a.source,
     EXISTS(SELECT 1 FROM favorites fv WHERE fv.asset_id = a.asset_id) AS is_favorite,
     (SELECT COUNT(*) FROM likes l WHERE l.asset_id = a.asset_id) AS like_count,
-    (SELECT COUNT(*) FROM view_events v WHERE v.asset_id = a.asset_id AND v.kind = 'open') AS view_count,
-    (SELECT COUNT(*) FROM view_events v WHERE v.asset_id = a.asset_id AND v.kind = 'play') AS play_count,
+    a.duration_ms, page.sort_key AS sort_key
+FROM page JOIN assets a ON a.asset_id = page.asset_id
+ORDER BY page.sort_key DESC, a.asset_id DESC;
+
+-- name: ListAssetsFilteredAsc :many
+WITH page AS (
+SELECT a.asset_id,
     CASE
         WHEN sqlc.arg(sort) = 'fileDate'  THEN a.mtime
         WHEN sqlc.arg(sort) = 'name'      THEN a.file_name
@@ -423,7 +424,16 @@ WHERE
             END) = sqlc.narg(cursor_key)
             AND a.asset_id > sqlc.narg(cursor_id)))
 ORDER BY sort_key ASC, a.asset_id ASC
-LIMIT sqlc.arg(row_limit);
+LIMIT sqlc.arg(row_limit)
+)
+SELECT
+    a.asset_id, a.file_name, a.media_type, a.size_bytes, a.mtime,
+    a.created_at, a.source,
+    EXISTS(SELECT 1 FROM favorites fv WHERE fv.asset_id = a.asset_id) AS is_favorite,
+    (SELECT COUNT(*) FROM likes l WHERE l.asset_id = a.asset_id) AS like_count,
+    a.duration_ms, page.sort_key AS sort_key
+FROM page JOIN assets a ON a.asset_id = page.asset_id
+ORDER BY page.sort_key ASC, a.asset_id ASC;
 
 -- name: CountAssetsFiltered :one
 -- Same filter matrix minus cursor/order/limit (totalMatched field of
@@ -557,8 +567,10 @@ WHERE
 -- date(mtime, modifier) yields the CLIENT's local calendar day -- exactly the
 -- day the client folds its dateLabel from, so header counts and grouping agree
 -- even when client and server timezones differ. Rows whose mtime cannot be
--- parsed into a day (NULL day) are dropped: the client's "unknown date" bucket
--- keeps its loaded-count fallback. Comments here must stay pure ASCII (sqlc
+-- parsed into a day stay in an internal NULL bucket so the caller can sum
+-- ALL matched assets without a second COUNT. The caller omits that bucket
+-- from dateCounts; the client's unknown-date fallback is unchanged.
+-- Comments here must stay pure ASCII (sqlc
 -- v1.31.1 multi-byte comment bug, see file header).
 SELECT date(a.mtime, sqlc.arg(tz_modifier)) AS local_day, COUNT(*) AS file_count
 FROM assets a
@@ -659,7 +671,6 @@ WHERE
              WHEN sqlc.narg(directory) = '' THEN a.file_name
              ELSE sqlc.narg(directory) || '/' || a.file_name
          END)
-    AND date(a.mtime, sqlc.arg(tz_modifier)) IS NOT NULL
 -- GROUP BY must reference the SELECT alias, never re-spell the date(...)
 -- expression: sqlc v1.31.1 only rewrites sqlc.arg macros in WHERE/SELECT/ON --
 -- inside GROUP BY the macro is SILENTLY passed through verbatim, leaving the

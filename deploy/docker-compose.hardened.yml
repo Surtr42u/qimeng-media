@@ -1,0 +1,8 @@
+# 显式覆盖文件；先确认 /media 和 /data 对指定 uid/gid 可写，不能自动推断 NAS 权限。
+# docker compose -f docker-compose.yml -f docker-compose.hardened.yml config
+# 验证后才 up；配置说明见 README「可选权限加固」。
+services:
+  qimeng-media:
+    user: "${QIMENG_CONTAINER_UID:?set QIMENG_CONTAINER_UID}:${QIMENG_CONTAINER_GID:?set QIMENG_CONTAINER_GID}"
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]

@@ -145,15 +145,9 @@ func SuggestSeriesNames(names []string, q string, extraQueries ...string) []stri
 	}
 
 	// 计算 clusterKey：若某族键包含更短族键的前缀（如「法环 玛丽卡 特写」属于「法环 玛丽卡」），
-	// 聚类至更短的主体键，保证主体角色级别多样性轮转
+	// 聚类至最短的已有主体键，保证主体角色级别多样性轮转。
 	for _, fam := range fams {
-		cluster := fam.famKey
-		for otherKey := range fams {
-			if len(otherKey) < len(cluster) && strings.HasPrefix(cluster, otherKey+" ") {
-				cluster = otherKey
-			}
-		}
-		fam.clusterKey = cluster
+		fam.clusterKey = shortestFamilyPrefix(fam.famKey, fams)
 	}
 
 	// 按 cluster 分组

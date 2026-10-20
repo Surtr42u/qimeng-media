@@ -270,3 +270,8 @@ lint: ## all static checks (openapi spec + gofmt/golangci-lint + TS)
 	@echo "==> TS check (web)"
 	npm --prefix web run build
 	npm --prefix web run lint
+
+.PHONY: docs-check
+docs-check: ## check documentation, workflow policy and maintenance gate tests
+	python -m unittest discover -s tools -p 'test_*.py'
+	python -X utf8 tools/check_docs.py

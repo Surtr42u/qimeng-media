@@ -28,6 +28,7 @@ object UploadWorkSpec {
     const val KEY_LOCAL_ID = "localId"
     const val KEY_URI = "uri"
     const val KEY_LIBRARY_ID = "libraryId"
+    const val KEY_TARGET_SERVER_URL = "targetServerUrl"
     const val KEY_DIR = "dir"
     const val KEY_DISPLAY_NAME = "displayName"
     const val KEY_SIZE_BYTES = "sizeBytes"
@@ -57,6 +58,12 @@ object UploadWorkSpec {
     const val KEY_PROGRESS_PERCENT = "progressPercent"
     const val KEY_FINAL_FILE_NAME = "finalFileName"
     const val KEY_ERROR_MESSAGE = "errorMessage"
+    /** 目标拒绝是业务失败；底层成功结束以保留队列后续任务。 */
+    const val KEY_TARGET_REJECTED = "targetRejected"
+
+    fun targetRejectedResult(message: String): ListenableWorker.Result = ListenableWorker.Result.success(
+        workDataOf(KEY_TARGET_REJECTED to true, KEY_ERROR_MESSAGE to message),
+    )
 
     /**
      * 挂靠失败标志（挂靠批）：outputData 键。挂靠失败 = 文件已入库——终态必须走
@@ -101,11 +108,14 @@ object UploadWorkSpec {
         val libraryName: String = "",
         /** 源文件已在归档根（一键上传条目）：true 时 worker 上传成功后跳过归档移动 */
         val alreadyArchived: Boolean = false,
+        /** 入队地址身份；旧载荷缺省须拒绝发送，不猜当前目标。 */
+        val targetServerUrl: String? = null,
     )
 
     fun itemToInputData(spec: UploadRequestSpec): Data = Data.Builder()
         .putString(KEY_LOCAL_ID, spec.localId)
         .putString(KEY_URI, spec.uri)
+        .putString(KEY_TARGET_SERVER_URL, spec.targetServerUrl)
         .putString(KEY_LIBRARY_ID, spec.libraryId)
         .putString(KEY_DIR, spec.dir)
         .putString(KEY_DISPLAY_NAME, spec.displayName)
@@ -135,6 +145,7 @@ object UploadWorkSpec {
         val displayName = data.getString(KEY_DISPLAY_NAME) ?: return null
         return UploadRequestSpec(
             localId = localId,
+            targetServerUrl = data.getString(KEY_TARGET_SERVER_URL),
             uri = uri,
             libraryId = libraryId,
             dir = dir,

@@ -15,7 +15,7 @@ import (
 
 // openTestDB 在临时目录建库并完成迁移，返回带清理钩子的连接与查询对象。
 // 每个测试独享一个库文件（t.TempDir 互不污染）。
-func openTestDB(t *testing.T) (*sql.DB, *db.Queries) {
+func openTestDB(t testing.TB) (*sql.DB, *db.Queries) {
 	t.Helper()
 	conn, err := Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {

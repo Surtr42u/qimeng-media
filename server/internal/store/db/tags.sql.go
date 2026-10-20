@@ -163,8 +163,7 @@ type ListAllAssetTagsRow struct {
 	Name    string
 }
 
-// Full-library tag map (asset_id -> tag names) consumed by the
-// recommendation algorithm's tag relevance/collection scoring.
+// Broad recommendation scopes retain the sequential full tag read.
 func (q *Queries) ListAllAssetTags(ctx context.Context) ([]ListAllAssetTagsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listAllAssetTags)
 	if err != nil {
@@ -251,6 +250,45 @@ func (q *Queries) ListTags(ctx context.Context) ([]ListTagsRow, error) {
 	for rows.Next() {
 		var i ListTagsRow
 		if err := rows.Scan(&i.ID, &i.Name, &i.FileCount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTagsForAssets = `-- name: ListTagsForAssets :many
+SELECT at.asset_id, t.name
+FROM asset_tags at
+JOIN tags t ON t.id = at.tag_id
+WHERE at.asset_id IN (SELECT value FROM json_each(?1))
+ORDER BY at.asset_id, t.name
+`
+
+type ListTagsForAssetsRow struct {
+	AssetID string
+	Name    string
+}
+
+// Exact candidate IDs from the input query; empty/NULL JSON yields no rows.
+// Keep name order identical to the former full-library tag map: scoring must
+// receive the same tag sequence without unrelated assets crossing into Go.
+func (q *Queries) ListTagsForAssets(ctx context.Context, assetIdsJson interface{}) ([]ListTagsForAssetsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listTagsForAssets, assetIdsJson)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListTagsForAssetsRow
+	for rows.Next() {
+		var i ListTagsForAssetsRow
+		if err := rows.Scan(&i.AssetID, &i.Name); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

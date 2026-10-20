@@ -150,8 +150,8 @@ func (s *Server) GetMediaOrigAssetId(w http.ResponseWriter, r *http.Request, ass
 // 全部白干、6341 资产仅 256 张落盘，客户端每次回看都重新生成（慢一拍+卡顿）。
 // 新语义：客户端活着且生成完成 → 本次直接回图；已取消 → 404 占位（连接已断
 // 无观感差异），生成落盘后下次请求命中缓存。缓存响应 immutable：缓存键 =
-// SHA-256(assetId+size)，键即内容身份，不存在"同键变内容"，强 ETag + immutable
-// 语义成立（DOMAIN_RULES §11：永不因数量上限删除有效缓存）。
+// SHA-256(策略:assetId:尺寸:表示版本)，表示版本包含原件 size/mtime、格式和配置；
+// 强 ETag 另校验实际输出字节。旧版本 410，缺版本 URL 须重验证（ADR-0040）。
 func (s *Server) GetMediaThumbAssetId(w http.ResponseWriter, r *http.Request, assetID gen.AssetId, params gen.GetMediaThumbAssetIdParams) {
 	row, err := s.q.GetAssetWithLibrary(r.Context(), assetID.String())
 	if errors.Is(err, sql.ErrNoRows) {

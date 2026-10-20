@@ -1,26 +1,11 @@
--- recommend queries: one row per asset with the aggregates the
--- recommendation algorithm (DOMAIN_RULES 1) consumes.
--- ASCII-only comments here; see assets.sql header note (sqlc v1.31.1
--- multi-byte comment parser bug). Chinese explanations live in
--- migrations/0001_init.up.sql and docs/DOMAIN_RULES.md.
---
--- Row-count invariant (single-level pattern, browse.sql header rule 3):
--- one output row per candidate asset. The view_events aggregates used to
--- be per-row correlated scalar subqueries (5 B-tree descents per row);
--- on the embedded phone host (ADR-0015) a cold seed paid ~4s for that
--- (page-cache misses per descent). They now aggregate ONCE per asset in
--- a pre-grouped derived table joined LEFT: no fan-out (GROUP BY keeps
--- one row per asset_id), one sequential index-ordered pass over
--- view_events instead of 5*N descents. WHERE still touches no derived
--- alias (sqlc v1.31.1 parser rule 3), so the library/media/COS filters
--- keep their correlated EXISTS shapes.
---
--- last_viewed_at is MAX(started_at) among kind='open' events -> NULL
--- when the asset was never opened; the algorithm maps NULL to the
--- recency default 0.3 (DOMAIN_RULES 1.1). MAX over TEXT keeps
--- lexicographic == chronological order (store-wide RFC3339-ms format,
--- see browse.sql sorting design) -- same value as the old correlated
--- MAX(subquery).
+-- Recommendation input plans, selected by store.LoadRecommendationInputs.
+-- Keep the original sequential aggregation for broad candidate sets; only
+-- sparse scopes use candidate-first event probes. Both produce identical
+-- fields/order and keep ALL eligible candidates for scoring. Scope COUNT is
+-- advisory, never a semantic gate. No formula/cache/schema changes.
+-- sqlc has no query macro: the three eligibility predicates are kept static
+-- and their media/library/COS equivalence is locked by baseline tests.
+-- ASCII comments required by the pinned sqlc SQLite parser.
 
 -- name: ListAssetsRecommendInput :many
 SELECT
@@ -73,17 +58,91 @@ WHERE
               WHERE aa.asset_id = a.asset_id AND au.type = 'cos')))
 ORDER BY a.asset_id;
 
+-- name: ListAssetsRecommendCandidateInput :many
+WITH candidates AS (
+    SELECT a.asset_id, a.library_id, a.rel_path, a.file_name, a.media_type,
+           a.size_bytes, a.mtime, a.duration_ms, a.source, a.created_at
+    FROM assets a
+WHERE
+    -- library kill-switch: disabled libraries vanish from browse/search/
+    -- recommend lists; all records are kept (migration 0007, adr/0012)
+    EXISTS (SELECT 1 FROM libraries le
+                WHERE le.id = a.library_id AND le.enabled = 1)
+    AND (sqlc.narg(media_type) IS NULL OR a.media_type = sqlc.narg(media_type))
+    -- COS isolation vs COS-only mode (DOMAIN_RULES 6): cos_only = 0 keeps
+    -- the historical regular-stream exclusion (COS never enters regular
+    -- streams); cos_only = 1 restricts candidates to COS-linked assets
+    -- (home cos tab = legacy "COS recommend mode": same scoring, same
+    -- daily-shown penalty). Two explicit branches keep the param strictly
+    -- 0/1 two-valued (no NULL three-valued-logic rows) -- same shape as
+    -- the browse partition predicate in browse.sql. Handler must always
+    -- pass 0 or 1 (never NULL).
+    AND ((sqlc.arg(cos_only) = 1 AND EXISTS (
+              SELECT 1 FROM asset_authors aacos
+              JOIN authors aucos ON aucos.id = aacos.author_id
+              WHERE aacos.asset_id = a.asset_id AND aucos.type = 'cos'))
+         OR (sqlc.arg(cos_only) = 0 AND NOT EXISTS (
+              SELECT 1 FROM asset_authors aa
+              JOIN authors au ON au.id = aa.author_id
+              WHERE aa.asset_id = a.asset_id AND au.type = 'cos')))
+)
+SELECT
+    a.asset_id, a.library_id, a.rel_path, a.file_name, a.media_type,
+    a.size_bytes, a.mtime, a.duration_ms, a.source, a.created_at,
+    EXISTS(SELECT 1 FROM favorites fv WHERE fv.asset_id = a.asset_id) AS is_favorite,
+    (SELECT COUNT(*) FROM likes l WHERE l.asset_id = a.asset_id) AS like_count,
+    COALESCE(ve.view_count, 0) AS view_count,
+    COALESCE(ve.play_count, 0) AS play_count,
+    COALESCE(ve.browse_seconds, 0) AS browse_seconds,
+    ve.last_viewed_at AS last_viewed_at,
+    -- Column refs (ds.count) with a zero-row FROM return an EMPTY result
+    -- set -> NULL in expression context; COALESCE outside the zero-row
+    -- select is not executed. Nest the row pick inside COALESCE:
+    -- zero rows -> inner select yields NULL -> 0. (SUM works without the
+    -- nesting because aggregates always produce one row.)
+    (SELECT COALESCE((SELECT ds.count FROM daily_shown ds
+        WHERE ds.asset_id = a.asset_id AND ds.day = sqlc.arg(day)), 0)) AS shown_today
+FROM candidates a
+LEFT JOIN (
+    SELECT v.asset_id AS asset_id,
+           CAST(SUM(CASE WHEN v.kind = 'open' THEN 1 ELSE 0 END) AS INTEGER) AS view_count,
+           CAST(SUM(CASE WHEN v.kind = 'play' THEN 1 ELSE 0 END) AS INTEGER) AS play_count,
+           CAST(COALESCE(SUM(CASE WHEN v.kind = 'dwell' THEN v.seconds ELSE 0 END), 0) AS INTEGER) AS browse_seconds,
+           MAX(CASE WHEN v.kind = 'open' THEN v.started_at END) AS last_viewed_at
+    FROM view_events v
+    WHERE v.asset_id IN (SELECT asset_id FROM candidates)
+    GROUP BY v.asset_id
+) ve ON ve.asset_id = a.asset_id
+ORDER BY a.asset_id;
+
+-- name: CountRecommendScope :one
+-- This observation selects an execution plan only. The subsequent input
+-- query MUST re-evaluate eligibility: scope must never truncate results.
+SELECT COUNT(*) AS total_assets,
+       CAST(COALESCE(SUM(CASE WHEN EXISTS (SELECT 1 FROM libraries le
+                WHERE le.id = a.library_id AND le.enabled = 1)
+    AND (sqlc.narg(media_type) IS NULL OR a.media_type = sqlc.narg(media_type))
+    AND ((sqlc.arg(cos_only) = 1 AND EXISTS (
+              SELECT 1 FROM asset_authors aacos
+              JOIN authors aucos ON aucos.id = aacos.author_id
+              WHERE aacos.asset_id = a.asset_id AND aucos.type = 'cos'))
+         OR (sqlc.arg(cos_only) = 0 AND NOT EXISTS (
+              SELECT 1 FROM asset_authors aa
+              JOIN authors au ON au.id = aa.author_id
+              WHERE aa.asset_id = a.asset_id AND au.type = 'cos'))) THEN 1 ELSE 0 END), 0) AS INTEGER) AS candidate_assets
+FROM assets a;
+
 -- Windowed ranking heat inputs (DOMAIN_RULES 2, 2026-09-18): period
 -- rankings aggregate per-day data inside the window instead of lifetime
 -- totals. Both queries take fromDay = local calendar day (YYYY-MM-DD) of
 -- now - window; day >= fromDay includes the whole cutoff day (day-level
 -- bucketing is the finest granularity the two tables have).
 --
--- Rows are keyed by asset_id only; the rankings handler joins them to the
--- already library/COS-filtered ListAssetsRecommendInput rows in Go, so
--- extra rows (COS-linked or disabled-library assets) are simply never
--- looked up. Assets without any window activity simply have no row
--- (zero heat -> excluded from period boards by the admission rule).
+-- Shared window aggregates are also retained as the independent legacy
+-- IO oracle in ranking tests. Production ranking.LoadPage uses the
+-- specialized ranking.sql projection and page-only lifetime counters.
+-- Rows are asset-keyed and do not enforce library/COS eligibility here;
+-- consumers must intersect with the complete eligible candidate scope.
 
 -- SumWindowedDailyStats: per-asset window sums from the "asset x day"
 -- materialized table (cache of the view_events stream; DOMAIN_RULES 5).

@@ -47,6 +47,7 @@ import media.qimeng.app.core.model.TopTagEntry
 import media.qimeng.app.core.model.detailTitleSuffix
 import media.qimeng.app.core.ui.component.Dimens
 import media.qimeng.app.core.ui.component.QimengEmptyState
+import media.qimeng.app.core.ui.theme.softDaylightShadow
 import media.qimeng.app.core.ui.icon.BackIcon
 
 /**
@@ -218,13 +219,13 @@ private fun detailTitle(mode: StatsDetailMode, range: StatsRangeOption): String 
 
 // ==================== 通用卡容器与摘要/洞察（旧版 bg_stat_card + renderSummary/renderInsights） ====================
 
-/** 统计卡容器：纯白 surface 槽位（=旧 qmColorSurface #FFFFFF，Theme.kt 映射）+ 20dp 圆角 + 12dp 内边距 */
+/** 详情卡沿用纯白表面与原尺寸，通过共享柔影区分白底上的摘要/洞察/分布/排行区块。 */
 @Composable
 private fun StatCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
     Surface(
         color = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(STAT_CARD_CORNER_RADIUS_DP),
-        modifier = modifier,
+        modifier = modifier.softDaylightShadow(RoundedCornerShape(STAT_CARD_CORNER_RADIUS_DP)),
     ) {
         Column(modifier = Modifier.padding(12.dp), content = content)
     }
@@ -491,6 +492,7 @@ private fun RankRow(row: RankRowUi) {
         shape = RoundedCornerShape(STAT_CARD_CORNER_RADIUS_DP),
         modifier = Modifier
             .fillMaxWidth()
+            .softDaylightShadow(RoundedCornerShape(STAT_CARD_CORNER_RADIUS_DP))
             .then(if (row.onClick != null) Modifier.clickable(onClick = row.onClick) else Modifier),
     ) {
         Row(

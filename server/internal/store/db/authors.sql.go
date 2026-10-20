@@ -264,13 +264,19 @@ func (q *Queries) ListAuthorNamesForAssets(ctx context.Context, assetIdsJson int
 
 const listAuthors = `-- name: ListAuthors :many
 
+WITH asset_views AS (
+    SELECT ve.asset_id, COUNT(*) AS opens
+    FROM view_events ve
+    WHERE ve.kind = 'open'
+      AND ve.asset_id IN (SELECT asset_id FROM asset_authors)
+    GROUP BY ve.asset_id
+)
 SELECT au.id, au.display_name, au.type, au.followed,
        COUNT(aa.asset_id) AS file_count,
-       COALESCE(SUM(CASE WHEN aa.asset_id IS NULL THEN 0 ELSE
-           (SELECT COUNT(*) FROM view_events ve
-            WHERE ve.asset_id = aa.asset_id AND ve.kind = 'open') END), 0) AS view_count
+       COALESCE(SUM(av.opens), 0) AS view_count
 FROM authors au
 LEFT JOIN asset_authors aa ON aa.author_id = au.id
+LEFT JOIN asset_views av ON av.asset_id = aa.asset_id
 GROUP BY au.id
 ORDER BY au.display_name
 `
@@ -300,9 +306,8 @@ type ListAuthorsRow struct {
 // with its linked-asset count, cumulative view count and follow flag.
 // Sort = display_name ascending, same convention as GET /tags
 // (ListTags ORDER BY t.name, DOMAIN_RULES 7 name ordering).
-// view_count = author's works' total kind='open' events (one scalar
-// subquery per linked row; aa.asset_id NULL rows contribute 0, so the
-// SUM never yields NULL; COALESCE keeps the aggregate defensive).
+// Aggregate opens once per linked asset before joining authors. Shared
+// works still contribute to every linked author; zero-link authors stay.
 func (q *Queries) ListAuthors(ctx context.Context) ([]ListAuthorsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listAuthors)
 	if err != nil {

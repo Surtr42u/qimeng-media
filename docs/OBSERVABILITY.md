@@ -2,7 +2,7 @@
 
 > 对应用户需求 #9：「NAS 后端要有统计，比如负载、流量那种」。
 > 方案定论：**服务端内置轻量监控**（零外部依赖），Prometheus/Grafana 全家桶作为后置可选增强。
-> 最后更新：2026-10-01（Docker 日志轮转落地：compose json-file 10MB×3，§日志首条同步）。更早历史见 `docs/CHANGELOG.md`。
+> 维护日期：2026-10-19。变更经过见 CHANGELOG 与 git 历史。
 
 ## 内置监控（M2 交付）
 
@@ -69,7 +69,7 @@
 
 - `slog` 结构化 JSON 日志：时间/级别/模块/事件/关键字段（直写 stdout；容器部署的落盘轮转已实现——`deploy/docker-compose.yml` 对服务配置 json-file 驱动，max-size 10MB × max-file 3 封顶，2026-10-01 第四百一十九笔；非 Docker 形态的应用层自行落盘仍为规划项）。
 - 访问日志（方法/路径/状态/耗时/token 前 4 位）为规划项未实现：当前请求级可观测性由 http_requests_total / http_request_duration_seconds 指标覆盖（计数与延迟，不含逐请求日志）。实现时须遵守 SECURITY 红线 7 脱敏口径。
-- `推荐流冷算分段耗时`（2026-09-29）：/recommendations 缓存未命中路径的分段观测——query（候选聚合 SQL）/algorithm（打分+打散纯函数）/assemble（摘要装配）三段与 total，附 seed/candidates/limit。手机单机形态冷算秒级时用它区分「查询贵/算法贵/装配贵」，免拉库取证（2026-09-29「刷新半天才加载」排查落地）。
+- `推荐流冷算分段耗时`：/recommendations 缓存未命中路径的三段与 total，附 seed/candidates/limit。当前 query 包含 store 输入装载（需要时的规模 COUNT、事件/标签查询、行解码及标签映射）；algorithm 包含行→Item 转换、评分及后处理；assemble 包含摘要和作者/COS 字段装配。标签映射自 ADR-0044 起计入 query，旧日志将其计入 algorithm，跨版本对比须考虑归属变化。total 仅为计算核，不包含偏好装载、缓存等待、展示计数回写、HTTP 编码或网络，不能当作完整请求延迟。
 - 等级：默认 info；`QIMENG_LOG_LEVEL=debug` 排障；循环内禁止逐条日志（旧项目"50 次记 1 条采样"经验保留）。
 
 ## 健康检查

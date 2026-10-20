@@ -1,8 +1,8 @@
 // recommendations.go：推荐流端点（M3 十维算法，DOMAIN_RULES §1）。
 //
 // 数据流：响应缓存查找（recommend_cache.go，键=日界/seed/类型/COS/权重/翻页
-// 窗+修订号；命中即回写计数后返回）→ ListAssetsRecommendInput（单行一聚合，
-// 含当日展示计数）+ ListAllAssetTags → 组装 []recommend.Item → Recommend
+// 窗+修订号；命中即回写计数后返回）→ store.LoadRecommendationInputs
+// （宽集合顺序聚合；窄集合按候选读事件/标签，含当日展示计数）→ 组装 []recommend.Item → Recommend
 // （纯函数）→ offset 翻页切片 [offset, offset+limit) → 装配响应并登记缓存 →
 // 对返回项单事务批量写每日展示计数（先读后写：惩罚基于展示前计数，展示后
 // +1）。Assembly 层职责：行→Item 翻译、偏好装载、计数回写；
@@ -99,21 +99,13 @@ func (s *Server) computeRecommendPage(ctx context.Context, day string, seed int,
 	// 免去每次拉库取证的往返。Info 级合理：冷算只在换 seed/TTL 过期/结构
 	// 失效后发生（用户动作粒度），不刷屏。
 	pageStart := time.Now()
-	rows, err := s.q.ListAssetsRecommendInput(ctx, db.ListAssetsRecommendInputParams{
-		Day: day, MediaType: mediaType, CosOnly: cosOnly,
-	})
+	// query 计入整个输入装载（含规模观察/标签映射）；历史映射归属变化见 OBSERVABILITY。
+	input, err := store.LoadRecommendationInputs(ctx, s.q, day, mediaType, cosOnly)
 	if err != nil {
 		return nil, nil, err
 	}
-	tagRows, err := s.q.ListAllAssetTags(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
+	rows, tagsByAsset := input.Rows, input.TagsByAsset
 	queryElapsed := time.Since(pageStart)
-	tagsByAsset := make(map[string][]string, len(tagRows))
-	for _, tr := range tagRows {
-		tagsByAsset[tr.AssetID] = append(tagsByAsset[tr.AssetID], tr.Name)
-	}
 
 	// 行→Item 翻译（按 asset_id 留原文，输出阶段 buildSummary 用）。
 	items := make([]recommend.Item, 0, len(rows))

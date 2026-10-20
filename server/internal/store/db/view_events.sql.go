@@ -473,23 +473,27 @@ func (q *Queries) TopOpenAssets(ctx context.Context, arg TopOpenAssetsParams) ([
 
 const topOpenAuthors = `-- name: TopOpenAuthors :many
 
-SELECT au.id AS author_id,
-       au.display_name AS display_name,
-       CAST(COUNT(*) AS INTEGER) AS views
-FROM view_events v
-JOIN assets a ON a.asset_id = v.asset_id
+WITH asset_opens AS (
+    SELECT v.asset_id, COUNT(*) AS opens
+    FROM view_events v
+    WHERE v.kind = 'open'
+      AND (CAST(?2 AS TEXT) = '' OR v.started_at >= ?2)
+      AND v.asset_id IN (SELECT asset_id FROM asset_authors)
+    GROUP BY v.asset_id
+)
+SELECT au.id AS author_id, au.display_name AS display_name, CAST(SUM(ao.opens) AS INTEGER) AS views
+FROM asset_opens ao
+JOIN assets a ON a.asset_id = ao.asset_id
 JOIN asset_authors aa ON aa.asset_id = a.asset_id
 JOIN authors au ON au.id = aa.author_id
-WHERE v.kind = 'open'
-  AND (CAST(?1 AS TEXT) = '' OR v.started_at >= ?1)
 GROUP BY au.id, au.display_name
 ORDER BY views DESC, au.id
-LIMIT ?2
+LIMIT ?1
 `
 
 type TopOpenAuthorsParams struct {
-	FromTs string
 	Lim    int64
+	FromTs string
 }
 
 type TopOpenAuthorsRow struct {
@@ -502,8 +506,10 @@ type TopOpenAuthorsRow struct {
 // asset x author: one open counts once for EVERY linked author. COS
 // authors are counted via their COS-linked assets only (asset_authors
 // holds no regular links for them -- prefix isolation, DOMAIN_RULES 6).
+// Count opens per linked asset before expanding many-to-many links, so
+// repeated events do not multiply the author aggregation's input rows.
 func (q *Queries) TopOpenAuthors(ctx context.Context, arg TopOpenAuthorsParams) ([]TopOpenAuthorsRow, error) {
-	rows, err := q.db.QueryContext(ctx, topOpenAuthors, arg.FromTs, arg.Lim)
+	rows, err := q.db.QueryContext(ctx, topOpenAuthors, arg.Lim, arg.FromTs)
 	if err != nil {
 		return nil, err
 	}
@@ -527,22 +533,27 @@ func (q *Queries) TopOpenAuthors(ctx context.Context, arg TopOpenAuthorsParams) 
 
 const topOpenTags = `-- name: TopOpenTags :many
 
-SELECT t.name AS tag,
-       CAST(COUNT(*) AS INTEGER) AS views
-FROM view_events v
-JOIN assets a ON a.asset_id = v.asset_id
-JOIN asset_tags atg ON atg.asset_id = a.asset_id
-JOIN tags t ON t.id = atg.tag_id
-WHERE v.kind = 'open'
-  AND (CAST(?1 AS TEXT) = '' OR v.started_at >= ?1)
-GROUP BY t.id, t.name
-ORDER BY views DESC, t.name
-LIMIT ?2
+WITH asset_opens AS (
+    SELECT v.asset_id, COUNT(*) AS opens
+    FROM view_events v
+    WHERE v.kind = 'open'
+      AND (CAST(?2 AS TEXT) = '' OR v.started_at >= ?2)
+      AND v.asset_id IN (SELECT asset_id FROM asset_tags)
+    GROUP BY v.asset_id
+)
+SELECT au.name AS tag, CAST(SUM(ao.opens) AS INTEGER) AS views
+FROM asset_opens ao
+JOIN assets a ON a.asset_id = ao.asset_id
+JOIN asset_tags aa ON aa.asset_id = a.asset_id
+JOIN tags au ON au.id = aa.tag_id
+GROUP BY au.id, au.name
+ORDER BY views DESC, au.name
+LIMIT ?1
 `
 
 type TopOpenTagsParams struct {
-	FromTs string
 	Lim    int64
+	FromTs string
 }
 
 type TopOpenTagsRow struct {
@@ -551,8 +562,9 @@ type TopOpenTagsRow struct {
 }
 
 // TopOpenTags: per-tag open count within the window (tagged assets).
+// Apply the same per-asset aggregation before expanding tag links.
 func (q *Queries) TopOpenTags(ctx context.Context, arg TopOpenTagsParams) ([]TopOpenTagsRow, error) {
-	rows, err := q.db.QueryContext(ctx, topOpenTags, arg.FromTs, arg.Lim)
+	rows, err := q.db.QueryContext(ctx, topOpenTags, arg.Lim, arg.FromTs)
 	if err != nil {
 		return nil, err
 	}

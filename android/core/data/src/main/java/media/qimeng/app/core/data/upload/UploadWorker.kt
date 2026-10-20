@@ -18,6 +18,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import media.qimeng.app.core.data.repository.InboxFileStore
+import media.qimeng.app.core.data.repository.BusinessApiFactory
+import media.qimeng.app.core.data.repository.SdkAuthorRepository
+import media.qimeng.app.core.network.ServerRequestBinding
 import media.qimeng.app.core.data.repository.StagingRepository
 import media.qimeng.app.core.model.UploadItem
 import media.qimeng.app.core.model.UploadRules
@@ -45,6 +48,7 @@ class UploadWorker @AssistedInject constructor(
     private val cancelRegistry: UploadCancelRegistry,
     private val inboxFileStore: InboxFileStore,
     private val stagingRepository: StagingRepository,
+    private val apiFactory: BusinessApiFactory,
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result {
@@ -60,6 +64,13 @@ class UploadWorker @AssistedInject constructor(
             Log.i(LOG_TAG, "cancelled-before-start file=${spec.displayName}")
             cancelRegistry.consume(spec.localId)
             return UploadWorkSpec.outcomeToResult(UploadOutcome.Cancelled, runAttemptCount)
+        }
+
+        val target = spec.targetServerUrl
+        if (target == null || !ServerRequestBinding(target).matches(
+                runCatching { apiFactory.currentBaseUrl() }.getOrNull(),
+            )) {
+            return rejectedTarget()
         }
 
         Log.i(
@@ -100,8 +111,9 @@ class UploadWorker @AssistedInject constructor(
                     sizeBytes = spec.sizeBytes,
                     libraryId = spec.libraryId,
                     dir = spec.dir,
+                    targetServerUrl = target,
                     isCancelled = { cancelRegistry.isCancelled(spec.localId) },
-                    onProgress,
+                    onProgress = onProgress,
                 )
             } else {
                 uploader.upload(
@@ -113,14 +125,18 @@ class UploadWorker @AssistedInject constructor(
                     ),
                     spec.libraryId,
                     spec.dir,
+                    targetServerUrl = target,
                     isCancelled = { cancelRegistry.isCancelled(spec.localId) },
-                    onProgress,
+                    onProgress = onProgress,
                 )
             },
             spec = spec,
         )
         cancelRegistry.consume(spec.localId)
 
+        if (outcome !is UploadOutcome.Success && outcome !is UploadOutcome.AttachFailed &&
+            !ServerRequestBinding(target).matches(runCatching { apiFactory.currentBaseUrl() }.getOrNull())
+        ) return rejectedTarget()
         val result = UploadWorkSpec.outcomeToResult(outcome, runAttemptCount)
         when (outcome) {
             is UploadOutcome.Success -> {
@@ -195,11 +211,16 @@ class UploadWorker @AssistedInject constructor(
         if (uploadOutcome !is UploadOutcome.Success || !needsAttach) return uploadOutcome
         val assetId = uploadOutcome.assetId
             ?: return UploadOutcome.AttachFailed(uploadOutcome.finalFileName, ATTACH_NO_ASSET_ID)
-        return when (val attach = attacher.attach(assetId, spec.attachAuthorId, spec.attachSources)) {
+        return when (val attach = attacher.attach(assetId, spec.attachAuthorId, spec.attachSources,
+            SdkAuthorRepository(apiFactory.forServer(requireNotNull(spec.targetServerUrl))))) {
             is AttachOutcome.Done -> uploadOutcome
             is AttachOutcome.Failed -> UploadOutcome.AttachFailed(uploadOutcome.finalFileName, attach.message)
         }
     }
+
+    /** 拒绝任务不级联取消串行队列中的其他目标任务；UI 显示 FAILED 并解释重新入队。 */
+    private fun rejectedTarget(): Result =
+        UploadWorkSpec.targetRejectedResult(ServerRequestBinding.TARGET_CHANGED_MESSAGE)
 
     /**
      * 源文件归档分派（2026-09-25 暂存区重做上传成功归档；2026-09-28 上传归档文件夹

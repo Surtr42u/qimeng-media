@@ -56,6 +56,10 @@ make app-embedded         # 全 ABI（本地验壳+出包一步到位）
 装配后正常走 `gradlew assembleRelease` / `assembleDebug`（ABI 分层见
 `android/app/build.gradle.kts` buildTypes 注释）。
 
+## 当前设备边界（2026-10-20）
+
+arm64 内嵌 Release 已验证同签名覆盖安装、冷启动与健康/就绪；现场范围见 [HANDOVER](../../docs/HANDOVER.md)。qimeng_api35 的 x86_64 App 域启动当前构建时，SQLite 初始化触发 SIGSYS（syscall 6），尚未修复；构建成功或 shell 域历史记录不代表本版本 App 域已验收。模拟器已恢复隔离评审连接并关闭，未改变 Android 安全策略；不把该失败套用为 arm64 手机结论。
+
 ## 红线索引
 
 - **W^X**：只 exec `nativeLibraryDir` 成品；严禁解压/落盘 `filesDir` 后 exec

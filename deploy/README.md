@@ -30,8 +30,8 @@ cp deploy/config-docker.yaml ctx/config-docker.yaml
 docker build -f deploy/Dockerfile -t qimeng-media:1.0 ctx
 ```
 
-**网络备注**（国内环境实测）：Docker Hub 直连常超时。可先从镜像源拉基础镜像，再把
-Dockerfile 的 `FROM` 换成完整引用（虚拟机实测用的是 `docker.m.daocloud.io`；fnOS 自带
+**网络备注**（国内环境实测）：Docker Hub 直连常超时。可先从镜像源拉基础镜像，按同一 digest 从受信镜像源拉取；替换
+Dockerfile 的 `FROM` 时保留 digest，不能回退为裸 tag（虚拟机实测用的是 `docker.m.daocloud.io`；fnOS 自带
 `docker.fnnas.com` 加速源）：
 
 ```bash
@@ -72,10 +72,21 @@ docker pull docker.m.daocloud.io/library/debian:bookworm-slim
 - 媒体库与数据目录分离，数据目录有自动备份（默认 24h 快照 × 7 份，见维护页）；
 - 删除语义 = 回收站；物理删除是维护页里的独立显式操作。
 
+## 可选权限加固
+
+设置部署环境的 `QIMENG_CONTAINER_UID`、`QIMENG_CONTAINER_GID`（不可为 0），核对 /data 与媒体/回收站卷对其可读写，再叠加：
+
+```bash
+docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.hardened.yml config
+docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.hardened.yml up -d
+```
+
+配置要求显式 UID/GID，丢弃全部 capability 并设置 no-new-privileges；不自动 chown 真实媒体。先在合成库验证健康、上传、回收站/恢复、快照及 ffmpeg，再在目标设备验收。当前环境无 Docker/NAS，未运行此部署。备份类型、独立原件副本和恢复清单见 [恢复指南](../docs/RESTORE.md)。
+
 ## 遗留项
 
-- **buildx 双架构（arm64）**：2026-09-22 用户完成真机 NAS 部署测试（M5 收官，见 PROJECT_PLAN）；实测部署形态为 amd64，arm64 镜像移为按需储备（未来部署 arm64 NAS 时按本文档同法构建，产物换 `GOARCH=arm64` + `docker buildx`）。
-- 非 root 运行（compose `user: "1000:1000"`）：可选加固项，未在实测路径验证过，启用前需确认两个挂载卷对 uid 1000 可写。
+- **buildx 双架构（arm64）**：2026-09-22 记录为 fnOS 虚拟机 amd64 彩排；当前无 NAS 硬件。arm64 镜像按未来设备需求构建并验收，不能把旧里程碑当目标硬件证明。
+- 非 root/降权配置已提供，目标卷权限未验收，按下节显式选择并验证；基础镜像 digest 已固定并核对官方清单，当前镜像构建与 CI 镜像产出仍待落实。
 - 端口改动属协议改动：`api/openapi.yaml`、`config-docker.yaml`、compose 三处同步。
 
 ## 实测记录（2026-09-22，fnOS 虚拟机彩排）

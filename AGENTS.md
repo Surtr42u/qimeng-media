@@ -1,66 +1,48 @@
-# AGENTS - qimeng-media AI 代理入口
+# AGENTS - AI 工作入口
 
-本文件是 AI 代理的快速入口。**完整协作规则见 `AI_README_FIRST.md`**，动手前必须先读。
+## 项目与当前形态
 
-## 项目一句话
+绮梦影库：面向 NAS 的自托管多端媒体库。Go 模块化单体服务端、React Web/PWA、Kotlin/Compose Android、Tauri 桌面连接壳；Android 可内嵌同一服务端离线单机运行。当前使用手机单机与 PC 过渡形态，未来 NAS 硬件须另行部署验收。协议以 `api/openapi.yaml` 为准。
 
-媒体全存 NAS 的多端媒体库：Go 单体服务端 + React Web(PWA) + Kotlin/Compose Android 客户端 + Tauri 桌面壳（ADR-0014 先进优先路线；单机形态已随 M6 收官落地=ADR-0015；桌面壳=ADR-0020），协议先行（openapi.yaml 是三端唯一事实源）。
+## 按需读取
 
-## 读取顺序
+**本文件是唯一全量必读入口。** 不默认通读其他文档、ADR、历史或全仓源码。
 
-1. `AI_README_FIRST.md`（强制，含签名规则）
-2. 与任务相关的文档（见下表）
-3. 对应代码
+1. 按下表定位任务，只读相关章节；跨域任务取并集。
+2. 所有修改任务先读 `AI_README_FIRST.md`「文档维护」同步矩阵；代码任务另读「开发流程」「代码规范」「代码卫生约束」「验证与交付」，引依赖/自研另读「选型约束」。纯咨询只读所需资料。
+3. 用文档、目录和 `rg` 定位实现；先读必要片段，完整理解需要时可读完整文件与调用链。生成目录仅在排查生成问题时读取。
+4. 明确有效规则、影响范围、验证方式即可开始；跨域影响、信息缺口或冲突再扩读。历史按关键词/编号查；ADR 先查索引和状态，再读相关条目。
 
-## 任务 → 文档路由表
-
-| 任务类型 | 必读文档 |
+| 任务 | 读取入口与范围 |
 |---|---|
-| 任何 API 改动 | `api/openapi.yaml` + `docs/GUIDE_API.md` + `docs/adr/0001` |
-| 推荐算法/筛选/统计 | `docs/DOMAIN_RULES.md`（唯一权威，逐字遵守公式与口径） |
-| 数据库改动 | `docs/adr/0003`、`docs/adr/0004`（身份机制）、`docs/adr/0011`（迁移纪律）+ migrations 规则 |
-| 安全相关（鉴权/上传/文件操作） | `docs/SECURITY.md`（红线清单） |
-| 监控/指标 | `docs/OBSERVABILITY.md` |
-| UI 开发（web/android/desktop） | `docs/adr/0008`（UI 解耦）+ Android 另读 `docs/adr/0014` + 桌面壳另读 `docs/adr/0020` 与 `desktop/README.md`；现状/待办见 `docs/HANDOVER.md`（HANDOVER_UI/HANDOVER_APP 已删，历史见 CHANGELOG） |
-| 新增 Go 包 / 模块边界 | `docs/adr/0010` + `docs/ARCHITECTURE.md` §5.1 |
-| 能力缺口评估 / 新功能提案 | `docs/CAPABILITY_MAP.md`（能力地图）+ `docs/adr/INDEX.md` |
-| 部署/Docker/NAS | `docs/PROJECT_PLAN.md` M5 + 仓库外 `..\dev-tools\TOOLCHAIN_GUIDE.md` |
-| 了解"为什么这么选" | `docs/adr/` 全部 |
+| 当前形态、进行中事项、接手未完任务 | `docs/HANDOVER.md`，无需先读里程碑 |
+| API/SDK | `api/openapi.yaml` 对应 path/schema + `docs/GUIDE_API.md` 对应专题 |
+| 算法、筛选、统计、作者、迁移、缩略图等业务 | `docs/DOMAIN_RULES.md` 目录 → 命中专题，禁止整本默认必读 |
+| Go 服务端/模块边界 | `server/README.md`；边界变化另读 `docs/ARCHITECTURE.md` §5/§5.1 |
+| Web / Android / desktop UI | 对应 `web/README.md` / `android/README.md` / `desktop/README.md` + `docs/GUIDE_UI.md` 对应部分 |
+| 数据库/身份 | ADR 索引定位 0003/0004/0011；相关 migration/查询规则 |
+| 鉴权、上传、路径、文件操作、密钥/隐私 | `docs/SECURITY.md` 红线清单 + 对应机制及已知边界 |
+| 文件并发/恢复、备份/缓存一致性 | 领域专题 + SECURITY 对应节；恢复演练读 `docs/RESTORE.md`；背景按需查 ADR-0038～0042 |
+| 监控、健康检查、指标 | `docs/OBSERVABILITY.md` 对应节 |
+| 部署、内嵌打包、模拟器验收 | `deploy/README.md` / `deploy/embedded/README.md` / `deploy/emulator-verify/README.md`；Termux 读其子目录说明 |
+| 新功能/能力评估 | `docs/CAPABILITY_MAP.md` 对应域 + ADR 索引相关决策 |
+| 架构缘由/历史/里程碑 | `docs/adr/INDEX.md` / `docs/history/INDEX.md` / `docs/PROJECT_PLAN.md`，仅命中时读 |
+| 文档组织/维护 | `AI_README_FIRST.md`「文档维护」；完整导航见 `llms.txt` |
 
-## 铁律（违反任何一条都是事故）
+## 不可遗漏的红线
 
-1. **先改 openapi.yaml，再生成代码**——禁止手写客户端 SDK，禁止手改生成物（`*.gen.go`/`*.gen.ts`/`android/sdk/**`，ADR-0009）；生成后须同 commit 更新生成物指纹锁 `api/sdk.lock`（指纹入库≠产物入库）。
-2. **数据库结构只能通过 migration 文件改**——只加不改不删（ADR-0011）；改/删既有结构走 expand-migrate-contract 两步迁移；禁止手改历史迁移文件、禁止手改运行中的库。
-3. **推荐算法/统计聚合是纯函数**——不碰 IO，行为由单元测试锁定，改动必须先看 `docs/DOMAIN_RULES.md` 的公式。
-4. **媒体文件操作必须走回收站**——`DELETE` 语义 = 移入回收站，物理删除是独立的管理操作。
-5. **上传必须白名单校验**——扩展名 + MIME + 大小上限 + 目标路径穿越检查，四道缺一不可。
-6. **路径参数必须规范化并限制在 Library 根内**——任何 handler 禁止直接拼接用户输入的路径。
-7. **UI 组件禁止直接调 API、禁止内嵌业务规则**——逻辑在服务端或客户端逻辑层。
-8. **新技术先读官方文档再写代码**——不确定的 API 用法必须搜索确认，禁止凭记忆写。
-9. **每个重大决策写 ADR**——`docs/adr/` 新增编号文件（编号顺延，格式见 `docs/templates/adr-template.md`），并同步 `docs/adr/INDEX.md`。
-10. **改代码必同步文档，同一 commit 提交**——commit 格式 `类型(scope): 简述 | 文档: 已更新XXX`，scope 区分端：api/web/app/server/desktop/docs（如 `feat(api)`、`feat(web)`、`feat(app)`、`feat(desktop)`）。
-11. **模块边界不可违反**——depguard 两条红线（`httpapi/gen` 只许 httpapi 用；业务包与 sysmon 禁反向依赖 httpapi，cmd 组合根例外）+ Go internal 编译器边界（ADR-0010）。被 lint 拦截只能按依赖方向重构，禁止开豁免。
-12. **新功能先对照能力地图找缺口**——主动提案的依据是 `docs/CAPABILITY_MAP.md`（对标 Jellyfin/Immich/Plex 的现状与缺口），不是等用户撞到问题。
-13. **Android 构建部署必须显式指定项目 AVD（qimeng_api35）**——`adb devices` 里的 `emulator-5554` 是用户的雷电游戏模拟器（伪装 MI 9），是"第一个在线设备"的常客，严禁对它安装/拉起本项目任何包、执行 wm/settings 类调试命令；插件与 IDE 的默认设备选择不可信赖，必须显式传 `avd: qimeng_api35`（必要时先冷启动该 AVD）。（2026-09-09 事故：雷电被误当调试机，启梦 App 被装入并顶掉用户游戏）
-14. **明文密钥与隐私不入库**——口令/令牌/密钥/设备序列号/内网拓扑/含用户名的本机绝对路径，一律不得进任何被跟踪文件（代码、配置、测试、文档，含 CHANGELOG/HANDOVER 等记录性文档）；配置只走 `QIMENG_*` 环境变量或 gitignore 的 `*.local`，测试口令必须是明显合成值。提交前自查敏感串；发现已入库立即脱敏，已提交的用 `git filter-repo --replace-text` 重写历史（细则见 `docs/SECURITY.md`「仓库卫生」）。（2026-09-30 开源前审计：CHANGELOG 曾明文记录真实管理口令与真机序列号，已全历史重写清除）
+- 接口先改 OpenAPI，再 `make sdk`，同批更新 `api/sdk.lock`；禁止手写 SDK 或手改生成物（ADR-0009）。
+- schema 只能新增 migration，禁止改历史迁移或运行中的库；改/删结构按 expand-migrate-contract（ADR-0011）。
+- 领域公式与口径以领域专题为准；「逐字遵守」的公式常量须用户明确要求才能改变。算法纯函数，客户端不重复计算。
+- UI 不直接请求 API 或嵌业务规则；Go 守住 internal/depguard 边界，禁止豁免；新增多步编排下沉业务/编排包（ADR-0019）。
+- 删除媒体先移回收站，永久删除仅走独立管理操作。上传同时校验扩展名、MIME、大小、路径；路径规范化且限制在库根内。
+- **8420 真库禁止测试写入**；验证用隔离实例、临时数据和合成媒体。
+- **Android 必须显式指定 `qimeng_api35` AVD 或用户指定真机**。严禁向 `emulator-5554`（雷电游戏模拟器）安装、启动本项目或执行 wm/settings 调试；不可信赖默认设备选择。
+- 口令、令牌、密钥、设备序列号、内网拓扑、含用户名的本机绝对路径不得入库；配置走 `QIMENG_*` 或忽略的 `*.local`。远程只走隧道；开发免密例外与边界见 SECURITY。
+- 旧项目只提供历史交互/领域依据，禁止搬旧 Kotlin；复杂自绘 View 的 AndroidView 桥接例外须记交付清单（ADR-0014）。
 
-## 警戒线（软约束）
+## 权威与交付
 
-代码规模警戒线与代码卫生约束、技术选型约束（决策序/自研四问/依赖分级通道）见 `AI_README_FIRST.md`「警戒线」「代码卫生约束」「选型约束」三节，此处只留索引不重复。
+用户当前明确要求优先；协作规则见本文件与 `AI_README_FIRST.md`。协议、领域、安全、架构由各自权威文档负责，旧历史不能覆盖现状；冲突处理见协作规范。
 
-## 与旧项目（QimengMedia）的关系
-
-- 旧项目 = 领域知识库（推荐算法/筛选/统计/作者规则已提炼进 `docs/DOMAIN_RULES.md`，服务端 M3 实现完毕）
-- **M4 App 端走 Compose 重建（ADR-0014，2026-09-04 用户二次拍板「先进优先」）**：交互规格照搬其 `docs/GUIDE_UI.md`（唯一规格书，**该文件在旧项目 QimengMedia 仓库内、不在本仓**），实现代码全部 Compose 新写，**禁止搬运旧 Kotlin 实现**；例外：复杂自绘控件（BiliPlayerView/ZoomImageView）允许 AndroidView 互操作桥接，桥接清单入交付报告
-- **旧项目退役链已完成（2026-09-20 用户确认，M6 收官）**：退役拍板 → qimeng-backup 行为数据迁入 → 手机媒体原地注册三步全部完成；数据迁移走 `POST /import/qimeng-backup`（DOMAIN_RULES §10），媒体文件原地注册为库。物理归档动作由用户自行处理；本项目此后是唯一维护对象
-- 同日 ADR-0013（旧 UI 照搬路线）已废弃，其架构调研结论仍有效（见该 ADR 与 `docs/adr/INDEX.md` 记档）
-
-## 回复签名
-
-完成代码修改后，回复末尾必须附：
-
-```
-📋 已读取文档：DOMAIN_RULES.md, SECURITY.md, adr/0004
-```
-
-只列实际读过的。纯咨询对话不需要签名。
+代码与受影响文档同批交付、同 commit；重大决策补 ADR 与索引。交付说明列出更新的专题与原因，确无语义影响须说明依据；CHANGELOG 不能代替专题同步。提交前执行 `python tools/check_docs.py`，PR 另检查改动影响。末尾列实际读取文档：`📋 已读取文档：…`；纯咨询免签。

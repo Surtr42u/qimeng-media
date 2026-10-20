@@ -35,7 +35,10 @@ class UploadAttacher @Inject constructor(
      * 执行挂靠序列。[assetId] 为上传 201 响应体解析出的资产 id（UUID 字符串，非法形态
      * 在 SDK 侧回解析时抛出，同样归类 Failed）；[authorId]/[sources] 来自入队载荷。
      */
-    suspend fun attach(assetId: String, authorId: String?, sources: List<String>?): AttachOutcome {
+    suspend fun attach(
+        assetId: String, authorId: String?, sources: List<String>?,
+        repository: AuthorRepository = authorRepository,
+    ): AttachOutcome {
         val trimmedSources = sources.orEmpty().map { it.trim() }.filter { it.isNotEmpty() }
         if (authorId.isNullOrBlank() && trimmedSources.isEmpty()) return AttachOutcome.Done
         if (authorId.isNullOrBlank()) {
@@ -44,10 +47,10 @@ class UploadAttacher @Inject constructor(
         }
         return try {
             Log.i(UploadWorker.LOG_TAG, "attach authors asset=$assetId authorId=$authorId")
-            authorRepository.replaceAssetAuthors(assetId, listOf(authorId))
+            repository.replaceAssetAuthors(assetId, listOf(authorId))
             if (trimmedSources.isNotEmpty()) {
                 Log.i(UploadWorker.LOG_TAG, "attach sources authorId=$authorId count=${trimmedSources.size}")
-                authorRepository.appendAuthorSources(authorId, trimmedSources)
+                repository.appendAuthorSources(authorId, trimmedSources)
             }
             AttachOutcome.Done
         } catch (t: Throwable) {

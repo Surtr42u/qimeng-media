@@ -48,10 +48,11 @@ type span struct{ start, end int }
 // index 是不可变匹配索引快照：UpdateCustomSources 时整体重建并原子替换，
 // 读路径无锁（并发语义与旧项目"重建检索表后整体替换"等价）。
 type index struct {
-	groups   map[string]*SourceGroup // canonical → 组（含自定义出处）
-	variants []variantEntry          // 全部出处变体（builtin + 自定义），长度降序
-	strip    map[string][]string     // canonical → collapsed 变体（长度降序，剥离开头出处用）
-	aliases  map[string][]aliasEntry // canonical → 角色别名索引（长度降序）
+	groups      map[string]*SourceGroup // canonical → 组（含自定义出处）
+	relatedKeys map[string]string       // 原词 → 预归一化模糊键，与 groups 同快照
+	variants    []variantEntry          // 全部出处变体（builtin + 自定义），长度降序
+	strip       map[string][]string     // canonical → collapsed 变体（长度降序，剥离开头出处用）
+	aliases     map[string][]aliasEntry // canonical → 角色别名索引（长度降序）
 	// exact 是 canonical → (collapsed 别名 → canonical) 的精确查表：兜底提取
 	// 层 exactAlias 的 O(1) 路径（原先对 aliases[source] 线性扫）。同别名多
 	// 目标（一个别名挂在多个角色下）的取舍与线性扫描逐字节等价——构建时按
@@ -456,12 +457,13 @@ func (m *Matcher) clearCache() {
 func (m *Matcher) rebuild() {
 	merged := MergeGroups(builtinGroups, m.customNames, m.customGroups)
 	ix := &index{
-		groups:   make(map[string]*SourceGroup, len(merged)),
-		variants: make([]variantEntry, 0, len(merged)*4),
-		strip:    make(map[string][]string, len(merged)),
-		aliases:  make(map[string][]aliasEntry, len(merged)),
-		exact:    make(map[string]map[string]string, len(merged)),
-		stripRaw: make(map[string][]string, len(merged)),
+		groups:      make(map[string]*SourceGroup, len(merged)),
+		relatedKeys: buildRelatedKeys(merged),
+		variants:    make([]variantEntry, 0, len(merged)*4),
+		strip:       make(map[string][]string, len(merged)),
+		aliases:     make(map[string][]aliasEntry, len(merged)),
+		exact:       make(map[string]map[string]string, len(merged)),
+		stripRaw:    make(map[string][]string, len(merged)),
 	}
 	// 停用词集合 = 内置冻结基线 ∪ 用户追加层，逐词折叠后入集合（空串跳过；
 	// 两层各自由 Update*/load 侧保证去重，这里再折叠去重一次防空串与重叠）。

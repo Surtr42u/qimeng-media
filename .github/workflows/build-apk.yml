@@ -1,30 +1,11 @@
 name: 云端出包（内嵌 arm64 release 包）
 
-# 2026-10-10 触痕（第五百二十二笔）：本仓库当日为清除 refs/pull/* 遗留旧历史而
-# 删库同名重建；重建后首次 push 的 workflow 扫描存在竞态——ci.yml 被索引，本文件
-# 未被索引（API 报 "not found on the default branch"，而文件内容与本地逐字节一致、
-# YAML 合法），且后续 push 未触碰本文件故不会重扫。此注释即为「触碰该文件以触发
-# 重新扫描」的留痕，除本注释外无任何行为变化。
-#
-# 2026-10-09 新增（用户拍板「走 GitHub 构建」）：本机设备侧不稳（WHEA 硬挂、
-# 构建缓存被写坏）期间的一次性出包通道——本地交叉编译与 Gradle 打包都会触发
-# 整机瞬断（当日 1 小时内 3 次），故把「出一张能装的包」整体搬到云端。
-#
-# 与 ci.yml 的 android 作业是同一条装配链（oapi-codegen → arm64 交叉编译 →
-# jniLibs 三件套 → gradle），差别只有三点：
-#   ① 本作业自足生成三端 SDK（不消费 sdk-chain 产物、**不经 sdk.lock 指纹门禁**）：
-#      指纹锁守的是「协议改动有没有同 commit 同步锁文件」，与能不能出包无关；
-#      该门禁曾因 Windows/Linux 重算差异自 2026-10-04 起连红，2026-10-11 随
-#      Go 补丁锁（ad9f1c79）修复后 master ci 已全绿（run #5）。本通道仍不跑
-#      指纹校验——出包语义独立，跳过校验的风险由「出包前先看 ci」兜底；
-#   ② 出 **release** 包（R8 + 资源收缩）：用户日常装机走 release 通道（debug 构建税
-#      会掉帧，第四百五十六笔记档），与真机体验一致；签名复用 debug keystore
-#      （app/build.gradle.kts 显式 `signingConfigs.getByName("debug")`）——但
-#      **托管 runner 是临时环境，不还原本机 keystore 的话每次都会新生成一把**，
-#      云端包签名随之漂移、`adb install -r` 覆盖安装必失败（只能卸载=丢 App 数据）。
-#      故构建前必须从 Secret `QIMENG_DEBUG_KEYSTORE_B64` 还原本机 keystore
-#      （2026-10-10 第五百一十九笔），使云端包与真机已装包同签名、可直接覆盖；
-#   ③ 只 workflow_dispatch 手动触发，不并入日常 CI 门禁（不改变 ci 门禁语义）。
+# 手动 release 出包；与常规 CI 共用 make sdk 的校验/生成/指纹纪律。
+# Go 补丁版本与 CI、lint 保持一致。签名 Secret 缺失时无法保证覆盖安装。
+# 本通道单测失败仍单独可见；正式合入必须查看常规 CI，不以 APK artifact 替代。
+permissions:
+  contents: read
+
 on:
   workflow_dispatch:
 
@@ -35,11 +16,12 @@ jobs:
     # 全链最重：三端生成 + Go 交叉编译 + ffmpeg 下载装配 + gradle assemble/单测
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with: { node-version: 24 }
       # JDK 21 与 ci.yml android 作业同档（AGP 9.3.1 最低 17）
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
         with: { distribution: temurin, java-version: 21 }
       # 签名 keystore 还原（第五百一十九笔）：必须在任何 Gradle 任务之前——AGP 在
       # release 构建解析 signingConfigs 时就会读 ~/.android/debug.keystore，晚于
@@ -60,15 +42,13 @@ jobs:
           # 自检 + 留痕：指纹对得上真机已装包，才能直接 adb install -r
           keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey \
             | grep -E "SHA256:|Alias name"
-      - uses: actions/setup-go@v6
-        with: { go-version: "1.27.x", cache-dependency-path: server/go.sum }
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with: { go-version: "1.27.0", cache-dependency-path: server/go.sum }
       - run: sudo apt-get update && sudo apt-get install -y make
-      # 三端 SDK 自足生成＝ make sdk 去掉 sdk-validate/sdk-lock 两步：
-      # sdk-go 生成 Go 接口层（oapi-codegen v2.8.0）并 go build；sdk-ts 出 TS 客户端
-      # （缺 node_modules 时目标内自带 npm install）；sdk-kotlin 出 Kotlin SDK 并写
-      # android/sdk/sdk.gradle（Android 构建经 buildFileName 指向它，缺则 :sdk 起不来）
-      - name: 生成三端 SDK（make sdk 的 go/ts/kotlin 三步）
-        run: make sdk-clean sdk-go sdk-ts sdk-kotlin
+      - name: 校验并生成三端 SDK 与指纹
+        run: |
+          make sdk
+          git diff --exit-code -- api/sdk.lock
       # 内嵌形态装配链（= make server-android-arm64 + app-embedded-arm64 装配步）
       - name: 交叉编译内嵌服务端 arm64
         run: |
@@ -79,7 +59,7 @@ jobs:
           mkdir -p android/app/src/main/jniLibs/arm64-v8a
           cp build/android/arm64-v8a/qimeng-server android/app/src/main/jniLibs/arm64-v8a/libqimeng.so
           bash deploy/embedded/fetch-ffmpeg-arm64.sh
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
       - name: 构建 release 包
         run: |
           cd android
@@ -88,7 +68,7 @@ jobs:
       - name: 断言内嵌三件套随包
         run: bash deploy/embedded/assert-apk-embedded.sh android/app/build/outputs/apk/release/app-release.apk
       - name: 上传装机包（artifact：app-release-apk-embedded）
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: app-release-apk-embedded
           path: android/app/build/outputs/apk/release/app-release.apk

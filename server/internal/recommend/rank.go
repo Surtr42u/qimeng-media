@@ -73,12 +73,19 @@ func Rank(items []Item, period string, now time.Time) []Item {
 // 在前，DOMAIN_RULES §2 同分口径）。
 func sortByHeat(items []Item, heat func(*Item) int) {
 	sort.SliceStable(items, func(i, j int) bool {
-		hi, hj := heat(&items[i]), heat(&items[j])
-		if hi != hj {
-			return hi > hj
-		}
-		return items[i].ModifiedAt.After(items[j].ModifiedAt)
+		return compareRankItems(&items[i], &items[j], heat(&items[i]), heat(&items[j])) < 0
 	})
+}
+
+// compareRankItems 统一全量排序和限量选择的热度/mtime 口径，0 表示业务键同分。
+func compareRankItems(a, b *Item, heatA, heatB int) int {
+	if heatA > heatB {
+		return -1
+	}
+	if heatA < heatB {
+		return 1
+	}
+	return b.ModifiedAt.Compare(a.ModifiedAt)
 }
 
 // heatOf 总榜热度分（全量累计 view + play + like）。

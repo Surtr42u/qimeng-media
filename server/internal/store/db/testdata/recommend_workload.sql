@@ -1,0 +1,5 @@
+INSERT INTO libraries(id,name,root_path,created_at) VALUES('recommend','synthetic','/synthetic-recommend','2026-01-01');
+WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<20000) INSERT INTO assets(asset_id,library_id,rel_path,file_name,media_type,size_bytes,mtime,created_at,updated_at) SELECT printf('x%06d',x),'recommend',x||'.jpg',x||'.jpg',CASE WHEN x%100=0 THEN 'video' ELSE 'image' END,1024,'2026-01-01','2026-01-01','2026-01-01' FROM n;
+WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<400000) INSERT INTO view_events(asset_id,kind,seconds,session_id,started_at) SELECT printf('x%06d',x%20000+1),CASE x%3 WHEN 0 THEN 'open' WHEN 1 THEN 'play' ELSE 'dwell' END,CASE WHEN x%3=2 THEN 5 ELSE NULL END,'s'||x,'2026-01-01T00:00:00.000Z' FROM n;
+INSERT INTO tags(id,name,created_at) VALUES('a','Alpha','2026-01-01'),('z','Zulu','2026-01-01');
+INSERT INTO asset_tags(asset_id,tag_id,created_at) SELECT a.asset_id,t.id,'2026-01-01' FROM assets a CROSS JOIN tags t;

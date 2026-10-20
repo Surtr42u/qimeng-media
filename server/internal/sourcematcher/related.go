@@ -27,7 +27,7 @@ func CleanFuzzyKey(s string) string {
 
 // FindBuiltinRelatedTerms 纯函数：在内置 133 组出处与角色表中检索与 q 关联的出处与角色别名。
 func FindBuiltinRelatedTerms(q string) RelatedTerms {
-	return findInGroups(builtinGroups, q)
+	return findInGroups(builtinGroups, q, builtinRelatedKeys)
 }
 
 // FindRelatedTerms 在当前 Matcher（含自定义词表层）中检索与 q 关联的出处与角色别名。
@@ -45,10 +45,10 @@ func (m *Matcher) FindRelatedTerms(q string) RelatedTerms {
 			groups = append(groups, *g)
 		}
 	}
-	return findInGroups(groups, q)
+	return findInGroups(groups, q, ix.relatedKeys)
 }
 
-func findInGroups(groups []SourceGroup, q string) RelatedTerms {
+func findInGroups(groups []SourceGroup, q string, fuzzyKeys map[string]string) RelatedTerms {
 	qFuzzy := CleanFuzzyKey(q)
 	if qFuzzy == "" {
 		return RelatedTerms{}
@@ -80,11 +80,11 @@ func findInGroups(groups []SourceGroup, q string) RelatedTerms {
 		}
 
 		sourceMatched := false
-		if CleanFuzzyKey(g.Canonical) == qFuzzy || strings.Contains(CleanFuzzyKey(g.Canonical), qFuzzy) {
+		if strings.Contains(fuzzyKeys[g.Canonical], qFuzzy) {
 			sourceMatched = true
 		} else {
 			for _, v := range g.Variants {
-				if CleanFuzzyKey(v) == qFuzzy || strings.Contains(CleanFuzzyKey(v), qFuzzy) {
+				if strings.Contains(fuzzyKeys[v], qFuzzy) {
 					sourceMatched = true
 					break
 				}
@@ -112,11 +112,11 @@ func findInGroups(groups []SourceGroup, q string) RelatedTerms {
 			}
 
 			charMatched := false
-			if CleanFuzzyKey(ce.Canonical) == qFuzzy || strings.Contains(CleanFuzzyKey(ce.Canonical), qFuzzy) {
+			if strings.Contains(fuzzyKeys[ce.Canonical], qFuzzy) {
 				charMatched = true
 			} else {
 				for _, a := range ce.Aliases {
-					if CleanFuzzyKey(a) == qFuzzy || strings.Contains(CleanFuzzyKey(a), qFuzzy) {
+					if strings.Contains(fuzzyKeys[a], qFuzzy) {
 						charMatched = true
 						break
 					}

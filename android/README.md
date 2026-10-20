@@ -1,6 +1,6 @@
 # android/ — Android 客户端（M4 · Compose 重建路线，ADR-0014）
 
-> M4 里程碑在此开发。动手前必读：`../AI_README_FIRST.md`、`../docs/HANDOVER.md`（现状）、`../docs/adr/0008`、`../docs/adr/0014`（技术路线）、`../docs/adr/0015`（单机形态预留）；历史决策见 `../docs/CHANGELOG.md`。
+> 本端开发入口；全局规则按 [AGENTS](../AGENTS.md) 读取，现行交互查 [GUIDE_UI](../docs/GUIDE_UI.md)。日常任务不要求通读交接或全部 ADR；架构变化再查 ADR-0008/0014/0015。
 
 ## 技术栈（2026-09-04 二次定论，ADR-0014：先进优先，Compose 全新实现）
 
@@ -16,8 +16,8 @@
 - 图片/视频：签名直链交给 Coil / ExoPlayer，客户端不做解码管线
 - 行为上报：事件本地排队，联网补传（离线不丢）
 - 上传（核心功能）：系统分享接收 + 系统文件（SAF）唯一入口（2026-09-29 直传化）+ 直传/分片双通道 + 归档文件夹一键上传（2026-10-01）+ 队列进度——"手机采集端"主通道
-- 本地持久化三类：登录配置、可设上限的媒体缓存（LRU）、事件队列
-- 交互规格唯一来源：旧项目（本地仓库外）的 `docs/GUIDE_UI.md`——只继承交互语义，实现代码全部 Compose 新写（禁搬旧 Kotlin；复杂自绘控件允许 AndroidView 桥接，清单入交付报告）
+- 本地持久化：登录/偏好配置、可设上限的媒体缓存（LRU）、离线事件队列和传输任务元数据；权威业务数据由连接的服务端维护
+- 当前交互约束见本仓 [GUIDE_UI](../docs/GUIDE_UI.md)，旧仓规格仅历史参考；实现全部 Compose 新写（禁搬旧 Kotlin，AndroidView 桥接例外记交付清单）
 
 ## 单机形态（ADR-0015；形态 B 已落地——任务U11 批次D，2026-09-15）
 
@@ -26,14 +26,20 @@
 薄前台 Service（specialUse，W^X 只 exec nativeLibraryDir 成品、回环 18430 单值互指）/
 EmbeddedServerController 注入点）+ 设置页本机模式切换与壳层冷启动自拉起；三件套装配
 `make app-embedded-*`（供应链哈希锁见 deploy/embedded/README.md，jniLibs 不入 git）。
-真机 arm64 全链验收 = 任务T T7 用户节点。
+M6 基座历史验收已完成；近期变更未因此自动取得新版本实机验收，当前范围见 HANDOVER。
 
-## 2026-10-19 缩略图表示版本
+## 缩略图表示版本与备份兼容
 
 稳定键继续只剥 exp/sig，保留 size/v。预取 revision 快照携带 thumbnailVersion，DataStore 与上次完成 revision 同次写入；策略指纹变化或旧记录无指纹时重拉，避免策略升级后错误跳过。v2 备份新字段经生成 SDK 透传；勿用旧版 App 转存 v2。
 
-## 外观与设备验证
+## 构建与设备验证
 
-外观优化见 [Android 背景对比度记录](../docs/ANDROID_UI_TASKBOOK.md)：日间页面与卡面均为均匀 #FFFFFF，移除冷灰渐变和双向高光，SoftDaylight 只保留低强度中性灰影（Compose 原生 API，无新依赖），辅助面使用中性灰；两档次级文字提高可读性，系统栏跟随 App 主题。首页顶行三处入口、推荐/COS/排行榜三胶囊及相册维度/值胶囊仅复用日间卡片轻影，恢复原白色玻璃，撤去灰色染色与硬描边；真采样/静态分支共用修饰符，其他玻璃件不变。仅保留“外观”改名，布局/比例/动效改造已取消；不改原件或服务端缩略图。
+外观优化见 [Android 背景对比度记录](../docs/ANDROID_UI_TASKBOOK.md)：日间页面与卡面均为均匀 #FFFFFF，移除冷灰渐变和双向高光，SoftDaylight 只保留低强度中性灰影（Compose 原生 API，无新依赖），辅助面使用中性灰；两档次级文字提高可读性，系统栏跟随 App 主题。首页顶行三处入口、推荐/COS/排行榜三胶囊及相册维度/值胶囊仅复用日间卡片轻影，恢复原白色玻璃，撤去灰色染色与硬描边；真采样/静态分支共用修饰符，其他玻璃件不变。统计详情的摘要、洞察、分布/榜单外卡及内部排行行同样复用轻影，避免白卡融入白底。仅保留“外观”改名，布局/比例/动效改造已取消；不改原件或服务端缩略图。
 
-验证仅使用指定 `qimeng_api35` Debug 与隔离合成媒体，手机 Release 不替换，8420 真库无测试写入。
+本批最终 arm64 内嵌 Release 已同签名保留数据覆盖装机，并核对 APK 字节、非 Debug 标志、三件套/哈希与冷启动健康/就绪；qimeng_api35 已关闭。该模拟器 x86_64 的 SQLite 初始化 SIGSYS 未修复，不等同于 arm64 手机失败；证据与验证限制见 [HANDOVER](../docs/HANDOVER.md)。
+
+内嵌装配见 [deploy/embedded](../deploy/embedded/README.md)，模拟器见 [emulator-verify](../deploy/emulator-verify/README.md)。必须显式指定 `qimeng_api35` 或用户指定真机；严禁向雷电 `emulator-5554` 安装/启动本项目或执行 wm/settings。编译、单测、实机/NAS 验收分别记录，平台测试限制见 HANDOVER。
+
+## 持久上传的目标归属
+
+入队保存目标 base URL，不保存 token；直传、分片和挂靠使用同址的请求工厂并关闭重定向。切服后尚未发送的请求拒绝；旧记录无目标时显示失败，用户确认目标后重新入队。业务目标拒绝不取消后续队列，已发请求可能在原端完成。URL 不能识别同址更换实例；定向单测与 Kotlin 编译已验证，设备重启/切服场景仍待验收（ADR-0042）。

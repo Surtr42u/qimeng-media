@@ -1,6 +1,6 @@
 # web/ — React Web/PWA
 
-> M2 里程碑在此开发。动手前必读：`../AI_README_FIRST.md`、`../docs/adr/0008`（UI 解耦纪律）、`../docs/adr/0031`（设计语言 Aurora Glass）。
+> 本端开发入口；全局规则按 [AGENTS](../AGENTS.md) 读取。交互查 [GUIDE_UI](../docs/GUIDE_UI.md)，视觉改动读本文设计语言/分层；背景按需查 ADR-0008/0031。
 
 ## 技术栈（定论，禁止擅改）
 
@@ -37,3 +37,11 @@ src/
 - 出现硬编码颜色 = 违规（一律 `var(--qm-*)`）
 - 数据转换/业务判断放 hooks 或服务端，不进组件
 - 开发代理目标默认 8420；隔离调试实例可用 `QIMENG_DEV_PROXY_TARGET=http://127.0.0.1:<port>` 覆盖
+
+## 开发与验证
+
+仓库根 `make web-dev`、`make web-test`，测试/构建脚本以 package.json 与 Makefile 为准。日常由后端托管 web/dist，交付本地可见改动前 `npm --prefix web run build`。只验证受影响页面和行为；API/领域变化另补相关专题。修改 TopBar 时读 [desktop README](../desktop/README.md) 的 titlebar.js 类名/title/header 契约。
+
+## 开发依赖安全
+
+锁文件已做兼容范围内修复，运行时依赖版本未改。生成器链固定的旧 js-yaml 用 overrides 提升到 4.3.2，依据 [上游安全补丁](https://github.com/nodeca/js-yaml/releases/tag/4.3.2)；父包解除旧版本固定后复查并移除覆盖。生成协议仍用既定 openapi-ts 版本，不能按 npm 的 force 建议回退生成器或 shadcn 主版本。剩余 braces 链的告警与实际扫描结果见 HANDOVER；安全门禁继续报告，不做全局忽略。

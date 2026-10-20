@@ -97,18 +97,15 @@ func (s *Server) GetApiV1Assets(w http.ResponseWriter, r *http.Request, params g
 		next := encodeCursor(lastKey, lastID)
 		page.NextCursor = &next
 	}
-	// totalMatched：独立 COUNT（同筛选矩阵，不含游标/排序）。首屏才查
-	//——翻页时总数不变，省一次全量计数。
+	// 首屏请求日期桶时，由同一分组扫描求桶和总数（含 NULL 日期桶的计数），
+	// 避免重复执行全量筛选；未请求日期桶才用独立 COUNT。翻页不再计数。
 	if cur.K == "" {
-		if !s.fillTotalMatched(r.Context(), w, &page, filters) {
-			return
-		}
-		// dateCounts：相册页日期组头精确计数（协议 dateCounts=true）。同为首屏
-		// 才查——分桶是筛选态的函数，翻页不改变它；客户端拿它替换「已加载条数」。
 		if params.DateCounts != nil && *params.DateCounts {
 			if !s.fillDateCounts(r.Context(), w, &page, filters, tzModifier(tzOffset)) {
 				return
 			}
+		} else if !s.fillTotalMatched(r.Context(), w, &page, filters) {
+			return
 		}
 	}
 	writeJSON(w, http.StatusOK, page)
@@ -131,11 +128,9 @@ func (s *Server) fillTotalMatched(ctx context.Context, w http.ResponseWriter, pa
 	return true
 }
 
-// fillDateCounts 首屏按本地日聚合的文件计数（协议 dateCounts=true）写入
-// page.DateCounts（日期降序）；失败写 500 INTERNAL 并返回 false，调用方
-// 必须 return。与 fillTotalMatched 同形：筛选矩阵同源（applyFilters），
-// 差别只在 SQL 侧把 COUNT(*) 换成按 date(mtime, tz_modifier) 分桶——
-// 客户端据此展示「今天 N 项」的真实总数，不再拿已加载条数冒充。
+// fillDateCounts 单次分组扫描同时装配 page.DateCounts 与 TotalMatched。
+// NULL 日期桶参与总数，响应仍只发送有效日期桶；未知日期的客户端回退
+// 口径不变。失败写 500 INTERNAL；筛选与普通 COUNT 共用 applyFilters。
 // modifier 由 tzModifier(tzOffset) 构造，与 dateFrom/dateTo 的日界同源。
 func (s *Server) fillDateCounts(
 	ctx context.Context,
@@ -153,15 +148,17 @@ func (s *Server) fillDateCounts(
 		return false
 	}
 	buckets := make([]gen.DateCountBucket, 0, len(rows))
+	var total int64
 	for _, row := range rows {
+		total += row.FileCount
 		day := localDayString(row.LocalDay)
 		if day == "" {
-			// date() 解析不出日界的行（NULL/非法 mtime）：不进任何桶，客户端
-			// 「未知日期」组继续用已加载条数兜底（该组量级极小且恒末位）。
+			// 不把内部 NULL 桶暴露给协议，但不能漏掉它的资产总数。
 			continue
 		}
 		buckets = append(buckets, gen.DateCountBucket{Date: day, FileCount: int(row.FileCount)})
 	}
 	page.DateCounts = &buckets
+	page.TotalMatched = ptr(int(total))
 	return true
 }

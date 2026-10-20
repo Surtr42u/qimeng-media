@@ -34,6 +34,7 @@ import media.qimeng.sdk.models.AssetAuthorsReplaceRequest
 import media.qimeng.sdk.models.AuthorSourcesWriteRequest
 import media.qimeng.sdk.models.TxtImportResult
 import okhttp3.OkHttpClient
+import media.qimeng.app.core.network.boundToServer
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -42,10 +43,15 @@ import javax.inject.Singleton
  * 地址唯一来源 = ServerConfigDataSource（ADR-0015 单机形态预留：全 App 只此一处定位点）。
  */
 @Singleton
-class BusinessApiFactory @Inject constructor(
+class BusinessApiFactory private constructor(
     private val serverConfig: ServerConfigDataSource,
     private val okHttpClient: OkHttpClient,
+    private val expectedServerUrl: String?,
 ) {
+    @Inject constructor(serverConfig: ServerConfigDataSource, okHttpClient: OkHttpClient) :
+        this(serverConfig, okHttpClient, null)
+
+    fun forServer(url: String): BusinessApiFactory = BusinessApiFactory(serverConfig, okHttpClient, url)
     fun create(): DefaultApi = createWith(okHttpClient)
 
     /**
@@ -53,10 +59,12 @@ class BusinessApiFactory @Inject constructor(
      * 地址来源与 [create] 同一单点（ServerConfigDataSource），鉴权随客户端自带
      * （派生 client 经 newBuilder 共享 AuthInterceptor，备份请求不会丢 token）。
      */
-    fun createWith(client: OkHttpClient): DefaultApi = DefaultApi(currentBaseUrl(), client)
+    fun createWith(client: OkHttpClient): DefaultApi = DefaultApi(
+        currentBaseUrl(), expectedServerUrl?.let { client.boundToServer(it) } ?: client,
+    )
 
     /** 当前服务端根地址（缩略图相对路径拼绝对直链用） */
-    fun currentBaseUrl(): String = requireNotNull(serverConfig.currentServerUrl()) {
+    fun currentBaseUrl(): String = expectedServerUrl ?: requireNotNull(serverConfig.currentServerUrl()) {
         "业务请求必须发生在登录之后（currentServerUrl 未就绪）"
     }
 }
