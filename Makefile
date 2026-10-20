@@ -73,9 +73,9 @@ endef
 export SDK_GRADLE_FILE
 
 # golangci-lint（配置在 server/.golangci.yml，模块边界 depguard 强制见 ARCHITECTURE §5）。
-# 版本锁定 v2.13.1，与 .github/workflows/ci.yml 的 golangci-lint-action 一致。首次安装：
-#   go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.1
-GOLANGCI_LINT ?= $(GOBIN_DIR)/golangci-lint
+# 版本锁定 v2.15.0，与 CI 一致；默认使用 server/go.mod 指定的 Go 从源码构建。手工安装：
+#   go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
+GOLANGCI_LINT ?= go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
 
 .PHONY: help sdk sdk-clean sdk-validate sdk-go sdk-ts sdk-kotlin sdk-lock app-build app-test app-lint server-run server-test server-android-arm64 server-android-amd64 server-linux-amd64 app-embedded-arm64 app-embedded-x86_64 app-embedded web-build web-dev web-test docker-build lint
 
@@ -266,7 +266,7 @@ lint: ## all static checks (openapi spec + gofmt/golangci-lint + TS)
 	@echo "==> Go gofmt（格式不一致即失败）"
 	@cd server && test -z "$$(gofmt -l .)" || (echo "gofmt required:" && gofmt -l . && exit 1)
 	@echo "==> Go golangci-lint (server; config server/.golangci.yml)"
-	cd server && "$(GOLANGCI_LINT)" run
+	cd server && $(GOLANGCI_LINT) run
 	@echo "==> TS check (web)"
 	npm --prefix web run build
 	npm --prefix web run lint

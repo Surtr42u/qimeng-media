@@ -16,7 +16,7 @@
 定位：[web/README](../web/README.md)。React 页面经 hooks 获取数据；Aurora Glass 的 token/主题/降级、zoom 补偿只在该 README 维护。
 
 - 上传工作台支持目录拖拽和队列，直传/分片分流及刷新恢复按 API files；作者编辑在资产编辑页。
-- 详情展示、播放、时间轴、相册与管理页共享现行业务口径；SSE 失效及重连对齐查 API browse。
+- 详情展示、播放、时间轴、相册与管理页共享现行业务口径；库变更、成功备份导入及 SSE 重连会刷新统计/排行/历史等缓存，持续挂载页面不依赖重进刷新。SSE 机制查 API browse。
 - ConfirmDialog 的 busy/失败重试、路由拦截与 beforeunload 的未保存保护是现行交互防线。
 - 当前不展示快照调度卡；快照 API 能力仍在，不据旧截图/历史重建该 UI。
 
