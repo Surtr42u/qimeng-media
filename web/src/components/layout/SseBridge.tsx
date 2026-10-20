@@ -1,16 +1,13 @@
 import { useQueryClient } from '@tanstack/react-query'
 import type { QueryClient } from '@tanstack/react-query'
+import { invalidateLibraryContent } from '@/lib/query-invalidation'
 import { useSSEEvents } from '@/hooks/use-sse-events'
 import {
   ASSETS_QUERY_KEY,
-  AUTHORS_QUERY_KEY,
   DIRS_QUERY_KEY,
   LIBRARIES_QUERY_KEY,
   RANKINGS_QUERY_KEY,
   RECOMMENDATIONS_QUERY_KEY,
-  SOURCES_QUERY_KEY,
-  TAGS_QUERY_KEY,
-  TRASH_QUERY_KEY,
 } from '@/lib/query-keys'
 
 /**
@@ -35,28 +32,6 @@ import {
  * 注意 scan.progress 不在此订阅：它是管理页专属的进度展示，由管理页
  * 自己使用 useSSEEvents 订阅（单连接由 hooks 层引用计数保证）。
  */
-
-/**
- * library.changed 的失效映射（事件处理与重连补偿共用同一份，禁止两处手抄
- * ——AI_README 代码卫生约束 2）：资产族根键一次覆盖 list/total/detail/
- * facets/timeline-tags；sources/authors 聚合随扫描变化；删除类操作进回收站。
- * 推荐流一并失效：删除/移动后推荐流卡片集合变化（P2-3 审查清偿，缺失时
- * 其他标签页在 staleTime 窗口内继续显示已删资产）。
- */
-function invalidateLibraryContent(queryClient: QueryClient): void {
-  for (const key of [
-    ASSETS_QUERY_KEY,
-    LIBRARIES_QUERY_KEY,
-    DIRS_QUERY_KEY,
-    TAGS_QUERY_KEY,
-    AUTHORS_QUERY_KEY,
-    SOURCES_QUERY_KEY,
-    TRASH_QUERY_KEY,
-    RECOMMENDATIONS_QUERY_KEY,
-  ]) {
-    void queryClient.invalidateQueries({ queryKey: key })
-  }
-}
 
 /**
  * favorite.changed 的失效映射（ADR-0029；事件处理与重连补偿共用，禁止两处手抄）。

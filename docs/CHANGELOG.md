@@ -10,6 +10,17 @@
 - 署名更正（2026-10-20，用户明确确认）：2026-10-19～20 的第五百三十八至第五百四十五笔原误署 GPT-6 或仅署 Codex，统一更正为 GPT-6.1 Sol；保留各条主代理/执行子代理及复核分工。
 
 
+## perf(web): 跨端刷新与推荐跨页快照，并修复 GitHub 检查（2026-10-20 第五百五十八笔）
+
+执行 AI：未知（会话没有可核实的完整模型名称与变体；主代理）
+
+- Web 库变更/重连刷新统计、排行与历史；成功便携导入广播变更。推荐输入/评分/分页下沉 recommendfeed，共享 60 秒限容量 ID 顺序，预热 Web seed=0 与 App seed=1；页摘要现取且重新校验资格，实际返回页才累计展示。评分公式与权重不变，协议描述先更新、三端 SDK 与 sdk.lock 再生。
+- Go 构建/扫描统一 go.mod 的 1.27.2 安全补丁，lint 升级 v2.15.0 并同工具链源码构建；四处 G703 跨函数根校验误报有逐行依据，未关闭规则或豁免 depguard。shadcn CSS 按原版字节及 MIT 许可保留，移除 CLI 的漏洞链，现有组件/视觉不变。
+- 核对 13 个 Dependabot PR 的改动范围并补文档无影响依据，文档检查全部转绿；启用仓库 Dependency Graph/漏洞告警，依赖审查重跑成功。没有合并依赖升级或放宽安全阈值。
+- Go 全量测试/vet/lint（0 issues）、Web 312 项测试/生产构建/knip、文档工具 5 项自测与文档检查通过；Go 可达漏洞扫描通过，Web npm audit=0。实现提交 726bba35 的远端 ci/文档/依赖安全全部通过，含 Linux race 与 Android/桌面构建；GitHub 仍有桌面 Linux glib 中危提示，未关闭或忽略。
+- 隔离实例实看统计页：其他客户端扫描后总文件 0→65，v2 导入后浏览 0→1 且内容榜出现条目，均未重进/刷新页面；推荐分页 60+5 项无重复。合成 2 万候选/40 万事件三轮，冷首屏约 303.16ms、命中后续页约 0.196ms（中位数，仅编排/SQL，不含 HTTP/媒体/展示回写，不当作旧版或真实设备加速倍数）。未写 8420 测试数据，未操作 Android；本机 CGO=0，race 由远端 CI 验证。
+- 同步推荐/API/架构/UI/安全/观测、Web/服务端入口、能力地图、交接与 ADR-0046。PC 旧后端正常退出后已无头更新，运行文件哈希与验证包一致、healthz/readyz=200，旧包本地备份；Android 未安装。范围见 HANDOVER。
+
 ## chore(app+repo): 汇总待提交改动，完成新版内嵌 Release 装机与收尾（2026-10-20 第五百五十七笔）
 
 执行 AI：未知（本会话未提供可核实的完整模型名称与变体；Codex，主代理）
@@ -360,14 +371,3 @@
 - **顺带清理**：删除 2026-10-06 遗留的空测试库「AI测试素材（可删）」（根目录已不存在、0 资产，此前每轮扫描/系统快照刷告警）。
 - **自测**：`go build ./...` 通过；新增 `TestLocalSyncTxtArchiveKeepsLatest`（同名 TXT 重导两次 → 归档区恰 1 份、内容为最新一次导入；锁定新语义防「(2)」回归）；`internal/httpapi` 本机同步用例全绿。
 - **文档**：ADR-0030（决策 4 修订指针 + 文末修订记录）、HANDOVER.md（§4/§6 口径 + 待办一条）、CHANGELOG.md（本笔）。
-
-## fix(ci): Go 锁补丁版本 1.27.0——runner 漂到 1.27.2 使 golangci-lint v2.13.1 类型检查崩（标准库导入即报 typecheck），lint 失败连带跳过远端 Go 测试（2026-10-11 第五百二十八笔）
-
-执行 AI：DeepSeek-V4.1-Flash（主代理）
-
-- **背景（CI 连续红，非代码问题）**：10-10 起 master 的 ci 一直红，失败点固定在「服务端」job 的 golangci-lint 步——报 `server/migrations/embed.go:8:8: could not import embed`（**标准库导入**）+ `typecheck: 1`；因该步先失败，后续 `go vet ./...` / gofmt 门禁 / `go test ./... -race` / `go build ./...` **全部被跳过**——远端等于从未跑过 Go 测试，只有本机绿。
-- **根因（工具链版本错配）**：`actions/setup-go` 写 `go-version: "1.27.x"` 会随 runner 上的新补丁漂移（本次实测 runner 已是 **1.27.2**），而 CI 锁的 **golangci-lint v2.13.1**（2026-08-20 发布）是 **go1.27.0** 构建的——其内置 type-checker 读不了 1.27.2 的导出数据格式（10-10 那次报的是 `internal/goarch`，同一病根）。**反证**：本地同版本 golangci-lint（v2.13.1，`built with go1.27.0`）+ Go 1.27.0 对同一份代码实测 **0 issues**，`go vet ./...` 0、`gofmt -l .` 空、`go test ./... -count=1` 19 包全绿。
-- **修复**：`.github/workflows/ci.yml` 三处 `go-version: "1.27.x"` → **`"1.27.0"`**（服务端 / SDK 生成链 / 桌面壳三个 job 一并锁补丁版本），并在服务端 job 的 setup-go 上方加注说明锁定理由与升级纪律（升 Go 补丁须与 golangci-lint 三处同步：Makefile 顶部 GOLANGCI_LINT 注释 / 本 workflow / 开发者本机——对齐既有「版本与本机一致」口径）。
-- **备选未采纳**：升 golangci-lint 到 v2.14.0（2026-09-24 最新）——其 go.mod 仍声明 `go 1.26.0`，无法从版本元数据证明其发布二进制用 Go ≥1.27.2 构建；且升级会引入新 lint 规则面、并要求 Makefile/ci.yml/本机三处同步。锁 Go 补丁版本是零风险最小改动，故选 A 方案（用户拍板）。
-- **自测**：本地 golangci-lint（v2.13.1 + Go 1.27.0）0 issues、`go vet` 0、`gofmt -l .` 空、`go test ./... -count=1` 19 包全绿；推送后以 ci 运行结果复核（要求 lint 步转绿且后续 vet/gofmt/-race/build 真正执行）。
-- **文档**：CHANGELOG（本笔）。

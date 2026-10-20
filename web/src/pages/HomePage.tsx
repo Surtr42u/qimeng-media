@@ -73,8 +73,8 @@ export default function HomePage() {
  */
 
 /**
- * 渲染前按 assetId 去重：推荐流每次请求按当下打分重排切片（协议 offset
- * 描述），同流第二页可能混入第一页已见项——旧版本地列表一次拉全量天然
+ * 渲染前按 assetId 去重：推荐流在短期顺序快照内分页（协议 offset
+ * 描述）；快照过期/容量淘汰/结构变更后仍可能混入第一页已见项——旧版本地列表一次拉全量天然
  * 无重复，web 用过滤近似。排行榜热度序跨请求稳定，但两次取页之间计数
  * 也可能变化，统一走同一过滤（重复项消失而非重排，语义安全）。
  * 注意：去重只发生在渲染层，hasNextPage 判断必须用服务端原始页长度。
@@ -207,6 +207,7 @@ function StreamCards({ stream, onOpen, emptyHint, footer, endHint, gridClassName
 /** 推荐 tab（recommend）：卡片流触底增量加载；刷新信号 → seed=Date.now()
  *  （旧版 refreshSeed++：全量重排并回第一页）。 */
 function RecommendTab({ onOpen }: { onOpen: (id?: string, nav?: AssetNavState) => void }) {
+  // 初始 seed=0 与服务端 recommendWebPrewarmSeed 双向同步。
   const [seed, setSeed] = useState(0)
   useShellRefresh(() => setSeed(Date.now()))
   const stream = useRecommendationStream(seed, false)
@@ -224,6 +225,7 @@ function RecommendTab({ onOpen }: { onOpen: (id?: string, nav?: AssetNavState) =
  *  触底增量加载；换一批 = seed 换键重排（与服务端每日展示惩罚自然衔接），
  *  刷新信号同语义。 */
 function CosRecommendTab({ onOpen }: { onOpen: (id?: string, nav?: AssetNavState) => void }) {
+  // 初始 seed=0 与服务端 recommendWebPrewarmSeed 双向同步。
   const [seed, setSeed] = useState(0)
   useShellRefresh(() => setSeed(Date.now()))
   const stream = useRecommendationStream(seed, true)
