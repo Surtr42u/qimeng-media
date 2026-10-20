@@ -44,4 +44,8 @@ src/
 
 ## 开发依赖安全
 
-锁文件已做兼容范围内修复，运行时依赖版本未改。生成器链固定的旧 js-yaml 用 overrides 提升到 4.3.2，依据 [上游安全补丁](https://github.com/nodeca/js-yaml/releases/tag/4.3.2)；父包解除旧版本固定后复查并移除覆盖。生成协议仍用既定 openapi-ts 版本，不能按 npm 的 force 建议回退生成器或 shadcn 主版本。剩余 braces 链的告警与实际扫描结果见 HANDOVER；安全门禁继续报告，不做全局忽略。
+运行时依赖版本未改。shadcn/ui 组件及 components.json 保留；将唯一被构建消费的 dist/tailwind.css 按 shadcn@4.22.1 原样保存在 src/styles/shadcn-base.css（带原 SHA-256 与上游 MIT 许可），移除其 CLI 开发依赖，消除其 fast-glob/ts-morph/braces 漏洞链，避免无补丁传递依赖长期阻断安全门禁。现有组件和样式保持原实现，不自研替代；上游提供独立且可审计的样式包时复查并退役此快照。需要重新生成组件时先评估并固定已通过审计的 CLI，不执行未锁版本的在线命令。生成器链固定的旧 js-yaml 用 overrides 提升到 4.3.2，依据 [上游安全补丁](https://github.com/nodeca/js-yaml/releases/tag/4.3.2)；父包解除固定后复查并移除覆盖。协议仍用既定 openapi-ts 版本，不按 npm force 建议回退主版本。扫描结果及边界见 HANDOVER。
+
+## 数据新鲜度
+
+库变更、成功备份导入及 SSE 重连共用 query-invalidation 的失效映射，统计/排行/历史与推荐、资产同时校验。staleTime 只标陈旧，不是定时轮询。推荐初始 seed=0 与服务端 Web 预热互指；60 条分页共享最多 60 秒的顺序快照，跨失效边界仍按 ID 去重。

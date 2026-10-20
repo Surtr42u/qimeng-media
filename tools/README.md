@@ -15,3 +15,5 @@ PR CI 额外运行 `python tools/check_docs.py --base <base-sha> --event-path <e
 ## 其他可靠性门禁
 
 security.yml 固定 govulncheck v1.9.0/cargo-audit 0.22.2；后者 MSRV 1.88，扫描 job 使用 Rust 1.90。npm audit high 起阻断，不用 force 或统一忽略压下失败。可本地按 workflow 同命令执行；网络失败不是扫描通过。恢复和真实跨卷命令见 [RESTORE](../docs/RESTORE.md)。
+
+Go 安全扫描及各构建工作流的 Go 版本来自 server/go.mod；lint 固定版本源码在该工具链下执行。Dependabot PR 缺少专题更新时仍需逐项审查并填写具体文档无影响依据，不按作者身份绕过门禁。
