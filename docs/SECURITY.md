@@ -2,7 +2,7 @@
 
 > 威胁模型：纯内网单用户起步。防御目标 = 局域网内误访问与横向渗透（访客 WiFi、被入侵的智能设备）+ 未来远程访问的暴露面。不防御公网级 DDoS/爬虫。
 > 安全要求通过机制与门禁验证，测试要求见本文「安全测试」；实际覆盖及未验收边界如实记录，不将文档声明当测试证据。
-> 维护日期：2026-10-19。变更经过见 CHANGELOG 与 git 历史。
+> 维护日期：2026-10-20。变更经过见 CHANGELOG 与 git 历史。
 
 ## 按任务读取
 
@@ -136,8 +136,9 @@ Android 持久上传任务在入队固化服务器 base URL；直传、分片会
 
 ## 依赖与供应链
 
-- Dependabot 已配置每周检查 Go/npm/Cargo/Actions/Docker 五生态；security.yml 扫描 Go、Web/desktop npm、Cargo 与 PR 依赖变化。npm/Cargo 按锁文件，扫描工具固定版本，high 起阻断，不自动忽略既有漏洞；实际扫描发现/网络受限状态见 HANDOVER，不能声称已全绿。Actions 固定完整 SHA，顶层 contents: read，checkout 不保留凭据；规则由文档门禁检查。
+- 按用户 2026-10-20 要求移除 Dependabot 定期升级配置并关闭自动安全升级 PR；未经用户明确要求不得恢复。保留 Dependency Graph、漏洞告警及人工发起的安全修复。security.yml 扫描 Go、Web/desktop npm、桌面/补丁测试 Cargo 锁文件与 PR 依赖变化，并对 glib 回移植补丁做来源校验和 Linux release 回归。npm/Cargo 按锁文件，扫描工具固定版本，high 起阻断，不自动忽略既有漏洞；实际扫描发现/网络受限状态见 HANDOVER，不能声称已全绿。Actions 固定完整 SHA，顶层 contents: read，checkout 不保留凭据；规则由文档门禁检查。
 - Debian bookworm-slim 基础镜像已固定官方 registry 清单 SHA-256 digest，并核对响应内容哈希；apt 包仍随仓库更新，完整镜像复现与 CI 镜像构建为待办；旧 fnOS 记录仅虚拟机彩排。基础 compose 维持原权限，新增显式 hardened 叠加配置要求部署者指定 UID/GID，并 cap_drop ALL/no-new-privileges；先核对挂载卷权限，见 deploy/README。配置不等于目标 NAS 已验收。
+- GTK3 链的 glib 0.18 使用官方归档加上游 #1343 两行回移植（[ADR-0047](adr/0047-glib安全补丁回移植.md)）；不伪造版本、不配置告警忽略或手工 dismiss。CI 验证快照及 Cargo 实际来源，原版运行时失败和修复版优化测试通过共同构成修复证据；不能仅凭注册表来源消失或扫描不再提示宣称修复。来源、许可及退役条件见 [补丁说明](../desktop/vendor/README.md)。
 - 引入任何新依赖必须：官方文档确认维护状态 + 无已知 CVE + 写 ADR。
 
 ## 仓库卫生（密钥与隐私不入库，2026-09-30 开源前审计建立）

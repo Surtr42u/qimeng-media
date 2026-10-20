@@ -235,5 +235,5 @@ jobs:
       # 静态页（ui/setup.html）且 beforeBuildCommand 为空——无前端构建、
       # 无需 npm run icon，checkout 后可直接 cargo。
       # debug 构建即可：门禁目标是"源码可编译 + 单测可跑"，不做 release 长链。
-      - run: cargo test
-      - run: cargo build
+      - run: cargo test --locked
+      - run: cargo build --locked
