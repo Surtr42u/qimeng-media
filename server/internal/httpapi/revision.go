@@ -7,8 +7,8 @@
 //     relink/enrich、上传、回收站移入/恢复、整理移动、库删除与开关——
 //     凡发布该事件的写入路径一次订阅全覆盖，scanner 零新增依赖；
 //   - 不发事件的写入路径显式调用 bumpLibraryRevision：回收站物理删除
-//     （单条/清空/到期清扫）、qimeng-backup 导入（import.go 只失效推荐
-//     缓存不广播事件）。
+//     （单条/清空/到期清扫）。导入成功同步推进修订号以保证响应后可见，
+//     另发 library.changed 通知跨端；异步订阅可再次递增，修订号只保证单调。
 package httpapi
 
 import (

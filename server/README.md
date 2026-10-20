@@ -12,6 +12,7 @@
 | 持久化 | internal/store/、migrations/；ADR-0011 迁移纪律 |
 | 扫描/身份合并 | internal/scanner/；ADR-0004、0039 |
 | 文件操作/恢复意图 | internal/filing/；SECURITY 文件边界、领域 files |
+| 推荐流装载 | internal/recommendfeed/；限容量 ID 顺序快照跨页共享、取页重新校验资格，见推荐专题与 ADR-0046 |
 | 排行页装载 | internal/ranking/；专用热度键 → recommend 纯函数选页 → 当前页元数据/累计计数，见推荐专题 |
 | 事件统计编排 | internal/eventstats/；事务内读真相/重建，stats 保持纯函数（ADR-0040） |
 | 上传/本机同步 | uploadsess、localsync 与现有 httpapi 适配；新增编排下沉规则见 §5.1 |

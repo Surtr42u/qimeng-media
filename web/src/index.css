@@ -1,6 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "shadcn/tailwind.css";
+@import "./styles/shadcn-base.css";
 @import "@fontsource-variable/geist";
 /* 设计 token（--qm-*「绮梦流光 · Aurora Glass」ADR-0031）：组件颜色的唯一合法来源，
    详见 tokens.css 注释。v2 起色彩单源在本文件下方桥接层之前定义完毕；

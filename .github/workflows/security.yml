@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with: { persist-credentials: false }
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
-        with: { go-version: '1.27.0', cache-dependency-path: server/go.sum }
+        with: { go-version-file: server/go.mod, cache-dependency-path: server/go.sum }
       - name: 重建未入库的 Go 接口层
         run: |
           go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.8.0
