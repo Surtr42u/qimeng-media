@@ -25,6 +25,8 @@
 
 测试只用临时数据库、合成媒体、临时目录及隔离端口，禁止写入 8420 真库。扫描差集/恢复/续传失败重试边界见 [文件规则](../docs/domain/files.md) 与 [SECURITY](../docs/SECURITY.md)，便携 v1/v2 兼容见 [迁移](../docs/domain/migration.md)。
 
+`internal/httpapi/gen/dependencies.go` 只声明生成代码使用的 runtime 根包依赖，不实现协议。生成文件不入库，Dependabot/干净检出中的 `go mod tidy` 也必须保留该依赖及其间接校验和；升级依赖后重新生成接口层，再执行 tidy 与服务端门禁。
+
 列表查询策略、核心 SQL/HTTP 基准和隔离复跑命令见 [筛选专题](../docs/domain/filtering.md#查询执行策略与性能边界)。同构投影、窄查询白名单与计划锁防止加速引入漏筛选；协议/schema 不变（ADR-0043）。
 
 统计热榜先按资产聚合再汇总关联；`store.LoadRecommendationInputs` 负责推荐输入的只读装载与规模选路，`recommend` 仍只做纯函数评分。默认宽流保留两次读取，显式媒体/COS 流的额外规模判断与窄候选收益见 [推荐专题](../docs/domain/recommendation.md#16-输入装载策略与性能边界)，热榜基准见 [统计专题](../docs/domain/statistics.md#热榜查询策略与性能边界)（ADR-0044）。
