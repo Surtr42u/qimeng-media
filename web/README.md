@@ -44,6 +44,8 @@ src/
 
 ## 开发依赖安全
 
+PWA 图标生成器 2.x 与 vite-plugin-pwa 2.x 配套升级；后者的 peer 范围才接受生成器 2.x（[上游发布说明](https://github.com/vite-pwa/vite-plugin-pwa/releases/tag/v2.0.0)）。保留现有 ESM 配置、图标预设、manifest 与自动更新规则，升级后验证干净安装、SDK 生成、构建和隔离目录图标生成；不使用 force/legacy-peer-deps 绕过不兼容的 peer 约束。
+
 运行时依赖版本未改。shadcn/ui 组件及 components.json 保留；将唯一被构建消费的 dist/tailwind.css 按 shadcn@4.22.1 原样保存在 src/styles/shadcn-base.css（带原 SHA-256 与上游 MIT 许可），移除其 CLI 开发依赖，消除其 fast-glob/ts-morph/braces 漏洞链，避免无补丁传递依赖长期阻断安全门禁。现有组件和样式保持原实现，不自研替代；上游提供独立且可审计的样式包时复查并退役此快照。需要重新生成组件时先评估并固定已通过审计的 CLI，不执行未锁版本的在线命令。生成器链固定的旧 js-yaml 用 overrides 提升到 4.3.2，依据 [上游安全补丁](https://github.com/nodeca/js-yaml/releases/tag/4.3.2)；父包解除固定后复查并移除覆盖。协议仍用既定 openapi-ts 版本，不按 npm force 建议回退主版本。扫描结果及边界见 HANDOVER。
 
 ## 数据新鲜度
