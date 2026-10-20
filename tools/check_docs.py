@@ -66,6 +66,11 @@ def check_links(root: Path, names: list[str]) -> list[str]:
         text = visible_markdown(path.read_text(encoding='utf-8-sig'))
         for link in re.finditer(r'(?<!!)\[[^\]\n]+\]\(([^)\n]+)\)', text):
             target = link[1].strip().strip('<>')
+            # 第三方 Rust 文档使用 rustdoc 的符号链接，不是仓内文件路径。
+            if name.startswith('desktop/vendor/glib/') and re.match(
+                r'^(?:struct|enum|trait|type|mod|macro|fn|const|static|derive|prim|union)@', target
+            ):
+                continue
             if re.match(r'^[a-zA-Z][a-zA-Z\d+.-]*:', target):
                 continue
             dest, _, fragment = unquote(target).partition('#')

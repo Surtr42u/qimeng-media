@@ -187,9 +187,9 @@
   5. `sdk-chain`：`make sdk` 三端生成链可重建（生成物防漂移的结构性门禁，ADR-0009）
   6. `android`：复用 sdk-chain 生成的 android/sdk → temurin 21 + gradle wrapper 缓存 → assembleDebug + testDebugUnitTest + lintDebug（M4-0 起）
   7. `desktop`：Tauri 2 壳 cargo test + build（windows runner + rust-cache，debug 链不出安装包；第四端门禁，ADR-0020，2026-10-03 补）
-- **安全与文档流水线**：安全行为用例仍随 server 的 go test 运行；`security.yml` 另做 govulncheck、Web/desktop npm audit、Cargo audit 和 PR dependency-review（high 起阻断），`docs.yml` 检查链接/ADR/归档/入口/Actions 固定与权限、PR 专题同步。配置已落地不等于本地/远端扫描全绿；当前结果见 HANDOVER。所有外部 Actions 固定完整 SHA，顶层 contents: read，checkout 不保留写凭据。
+- **安全与文档流水线**：安全行为用例仍随 server 的 go test 运行；`security.yml` 另做 govulncheck、Web/desktop npm audit、桌面/补丁测试 Cargo audit、glib 上游源码核验及 Linux release 原版/修复版迭代器回归，以及 PR dependency-review（high 起阻断），`docs.yml` 检查链接/ADR/归档/入口/Actions 固定与权限、PR 专题同步。配置已落地不等于本地/远端扫描全绿；当前结果见 HANDOVER。所有外部 Actions 固定完整 SHA，顶层 contents: read，checkout 不保留写凭据。
 - **镜像构建**：`make docker-build` 构建 amd64 镜像（debian-slim + ffmpeg + 静态二进制 + SPA，deploy/Dockerfile），2026-09-22 fnOS 虚拟机彩排记录保留；当前无 NAS 硬件，未来设备另行验收；CI 暂无镜像 job，基础镜像已固定清单 digest，arm64/当前镜像实际构建和 CI 镜像产出仍待验收
-- **依赖更新**：Dependabot 每周检查 gomod/npm/cargo/github-actions/docker，更新 PR 仍须通过本仓门禁；扫描配置与未修复漏洞不混记为验收通过。
+- **依赖更新**：按用户要求关闭 Dependabot 定期升级与自动安全升级 PR；保留漏洞告警和安全 CI，依赖变更由用户发起后人工处理，未经明确要求不得恢复机器人。glib 最小上游补丁及退役边界见 ADR-0047；扫描配置与未修复漏洞不混记为验收通过。
 - **Makefile 一键命令**：`make docs-check / sdk / lint / server-run / server-test / web-dev / web-test / docker-build`（lint = redocly + golangci-lint + TS 三连）
 - **版本策略**：API `/api/v1` 前缀；镜像 tag 当前手动（qimeng-media:1.0），semver 规则随 CI 镜像 job 一并落定
 

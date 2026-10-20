@@ -9,3 +9,6 @@
 * text=auto eol=lf
 *.bat text eol=crlf
 *.cmd text eol=crlf
+
+# 安全补丁的第三方快照按官方归档逐字节校验，不能自动转换行尾。
+desktop/vendor/glib/** -text

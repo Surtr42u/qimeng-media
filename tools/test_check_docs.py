@@ -6,6 +6,16 @@ from check_docs import check_impact, check_links, check_workflows
 
 
 class DocumentationGateTest(unittest.TestCase):
+    def test_vendored_rustdoc_symbols_do_not_hide_missing_local_links(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            readme = root / 'desktop/vendor/glib/README.md'
+            readme.parent.mkdir(parents=True)
+            readme.write_text('[type](struct@Variant)\n[missing](missing.md)', encoding='utf-8')
+            errors = check_links(root, ['desktop/vendor/glib/README.md'])
+            self.assertEqual(len(errors), 1)
+            self.assertIn('missing.md', errors[0])
+
     def test_workflow_requires_sha_and_readonly_baseline(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

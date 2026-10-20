@@ -48,6 +48,46 @@ jobs:
         with: { toolchain: '1.90.0' }
       - run: cargo install cargo-audit --locked --version 0.22.2
       - run: cargo audit --file desktop/src-tauri/Cargo.lock
+      - run: cargo audit --file desktop/vendor/glib/Cargo.lock
+  glib-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with: { persist-credentials: false }
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with: { python-version: '3.13' }
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with: { toolchain: '1.98.1' }
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with: { workspaces: "desktop/vendor/glib" }
+      - name: 安装 GLib 测试依赖
+        run: sudo apt-get update && sudo apt-get install -y libglib2.0-dev pkg-config
+      - name: 核对上游源码快照及 Cargo 补丁来源
+        run: python tools/check_glib_patch.py
+      - name: 在优化构建中复现原版缺陷
+        run: |
+          python - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          p = Path('desktop/vendor/glib/src/variant_iter.rs')
+          source = p.read_bytes().replace(b'let mut p: *mut libc::c_char', b'let p: *mut libc::c_char').replace(b'&mut p,', b'&p,')
+          expected = json.loads(Path('desktop/vendor/glib-source.json').read_text())['original_variant_sha256']
+          assert hashlib.sha256(source).hexdigest() == expected
+          p.write_bytes(source)
+          PY
+          set +e
+          cargo test --manifest-path desktop/vendor/glib/Cargo.toml --locked --release --lib variant_iter::tests > "$RUNNER_TEMP/glib-unpatched.log" 2>&1
+          result=$?
+          set -e
+          git restore -- desktop/vendor/glib/src/variant_iter.rs
+          if [ "$result" -eq 0 ] || ! grep -Eq 'signal: (6|11)|SIG(SEGV|ABRT)|test result: FAILED' "$RUNNER_TEMP/glib-unpatched.log"; then
+            cat "$RUNNER_TEMP/glib-unpatched.log"
+            echo '未能确认原版的运行时失败；不得把编译或网络失败当成缺陷复现。'
+            exit 1
+          fi
+      - name: 修复版上游迭代器测试（release 优化）
+        run: cargo test --manifest-path desktop/vendor/glib/Cargo.toml --locked --release --lib variant_iter::tests
   dependency-review:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
