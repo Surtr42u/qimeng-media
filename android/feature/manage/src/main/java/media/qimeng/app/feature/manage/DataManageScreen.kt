@@ -38,6 +38,7 @@ import media.qimeng.app.core.ui.icon.StorageCacheIcon
 import media.qimeng.app.core.ui.icon.TxtImportFileIcon
 import media.qimeng.app.core.ui.icon.VocabularyBookIcon
 import media.qimeng.app.core.ui.theme.QimengDimens
+import media.qimeng.app.core.ui.theme.softDaylightShadow
 
 /** 页面文案（信息架构重组：三级语义分组，告别扁平堆积） */
 private const val HUB_TITLE = "数据管理"
@@ -181,10 +182,11 @@ private fun HubEntryRow(
     modifier: Modifier = Modifier,
 ) {
     Surface(
-        color = MaterialTheme.colorScheme.surface,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
         shape = RoundedCornerShape(QimengDimens.CardCornerRadius),
         modifier = modifier
             .fillMaxWidth()
+            .softDaylightShadow()
             .clickable(onClick = onClick),
     ) {
         Row(

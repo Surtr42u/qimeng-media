@@ -19,6 +19,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import media.qimeng.app.core.ui.theme.isQimengDarkTheme
+import media.qimeng.app.core.ui.theme.softDaylightBackground
+import media.qimeng.app.core.ui.theme.softDaylightShadow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -68,6 +71,7 @@ fun StatsScreen(
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
+            .softDaylightBackground()
             .padding(horizontal = Dimens.ScreenPadding),
         verticalArrangement = Arrangement.spacedBy(Dimens.ScreenPadding),
         // 2026-10-03 悬浮玻璃坞批：底栏改悬浮层后内容从坞身后滚过，滚动区底部让位到
@@ -193,9 +197,9 @@ private fun staticPlaceholder(loading: Boolean): String =
 @Composable
 private fun MetricCell(title: String, value: String, modifier: Modifier = Modifier) {
     Surface(
-        color = MaterialTheme.colorScheme.surfaceVariant,
+        color = statsCardColor(),
         shape = RoundedCornerShape(STAT_CARD_CORNER_RADIUS),
-        modifier = modifier,
+        modifier = modifier.softDaylightShadow(RoundedCornerShape(STAT_CARD_CORNER_RADIUS)),
     ) {
         Column(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
@@ -234,9 +238,9 @@ private fun TrendCard(
 ) {
     Surface(
         onClick = onOpenTypeTrend,
-        color = MaterialTheme.colorScheme.surfaceVariant,
+        color = statsCardColor(),
         shape = RoundedCornerShape(STAT_CARD_CORNER_RADIUS),
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().softDaylightShadow(RoundedCornerShape(STAT_CARD_CORNER_RADIUS)),
     ) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(
@@ -286,9 +290,9 @@ private fun TrendCard(
 private fun DistributionEntryCard(onOpen: () -> Unit) {
     Surface(
         onClick = onOpen,
-        color = MaterialTheme.colorScheme.surfaceVariant,
+        color = statsCardColor(),
         shape = RoundedCornerShape(STAT_CARD_CORNER_RADIUS),
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().softDaylightShadow(RoundedCornerShape(STAT_CARD_CORNER_RADIUS)),
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 14.dp),
@@ -332,9 +336,9 @@ private fun ContentRankCard(
 ) {
     Surface(
         onClick = onOpen,
-        color = MaterialTheme.colorScheme.surfaceVariant,
+        color = statsCardColor(),
         shape = RoundedCornerShape(STAT_CARD_CORNER_RADIUS),
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().softDaylightShadow(RoundedCornerShape(STAT_CARD_CORNER_RADIUS)),
     ) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(
@@ -381,9 +385,9 @@ private fun TopAuthorsTagsCard(
 ) {
     Surface(
         onClick = onOpen,
-        color = MaterialTheme.colorScheme.surfaceVariant,
+        color = statsCardColor(),
         shape = RoundedCornerShape(STAT_CARD_CORNER_RADIUS),
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().softDaylightShadow(RoundedCornerShape(STAT_CARD_CORNER_RADIUS)),
     ) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(
@@ -485,3 +489,11 @@ private const val VIEW_SUFFIX = " 次"
 
 /** 常看卡空态文案（与详情页「暂无数据」同口径） */
 private const val TOP_EMPTY_TEXT = "暂无数据"
+
+/** 日间统计与柔白背景保持同色材质；深色保留原软表面。 */
+@Composable
+private fun statsCardColor() = if (isQimengDarkTheme()) {
+    MaterialTheme.colorScheme.surfaceVariant
+} else {
+    MaterialTheme.colorScheme.surfaceContainerLow
+}

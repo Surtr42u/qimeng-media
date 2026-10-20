@@ -29,6 +29,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import media.qimeng.app.core.model.RecommendPreset
 import media.qimeng.app.core.ui.theme.QimengDimens
+import media.qimeng.app.core.ui.theme.isQimengDarkTheme
+import media.qimeng.app.core.ui.theme.softDaylightShadow
 
 /**
  * 设置页大卡区块（U10-4 减重批从 SettingsScreen.kt 原样迁出，行为零变化——SettingsScreen
@@ -99,8 +101,8 @@ internal fun CountCard(title: String, count: Int?, modifier: Modifier = Modifier
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         shape = RoundedCornerShape(16.dp),
-        shadowElevation = 1.dp,
-        modifier = modifier.height(88.dp),
+        shadowElevation = if (isQimengDarkTheme()) 1.dp else 0.dp,
+        modifier = modifier.height(88.dp).softDaylightShadow(),
     ) {
         Column(
             modifier = Modifier

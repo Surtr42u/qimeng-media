@@ -67,6 +67,7 @@ import media.qimeng.app.core.ui.glass.GlassNavItem
 import media.qimeng.app.core.ui.glass.qimengBackdropSource
 import media.qimeng.app.core.ui.glass.rememberQimengBackdropState
 import media.qimeng.app.core.ui.theme.QimengBrandColors
+import media.qimeng.app.core.ui.theme.softDaylightBackground
 import media.qimeng.app.core.ui.theme.isQimengDarkTheme
 import media.qimeng.app.feature.all.AllScreen
 import media.qimeng.app.session.AppearanceViewModel
@@ -378,7 +379,12 @@ fun QimengNavHost(
     // 独立层（zIndex=3），内容延伸到屏底、从坞身后滚过。innerPadding 只吃 top+horizontal
     // （bottom 置 0），嵌套内容（NavHost/常驻层）按官方 padding+consume 范式消费同一份
     // 让位（consume 防覆盖页内嵌 TopAppBar 双份状态栏留白，与主线口径一致）。
-    Scaffold(modifier = modifier) { innerPadding ->
+    Scaffold(
+        modifier = modifier.softDaylightBackground(),
+        containerColor = androidx.compose.ui.graphics.Color.Transparent,
+        // 透明容器不能依赖 contentColorFor 推导；显式保持原主题文字色，避免深色标题变黑。
+        contentColor = MaterialTheme.colorScheme.onBackground,
+    ) { innerPadding ->
         val layoutDirection = LocalLayoutDirection.current
         val topSidePadding = PaddingValues(
             top = innerPadding.calculateTopPadding(),

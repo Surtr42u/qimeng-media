@@ -45,11 +45,11 @@ private val LightColorScheme = lightColorScheme(
     // tonalElevation 视觉无效，保住旧版纯白卡片观感（无旧版 token，近似值）
     surfaceTint = QimengBrandColors.SurfaceLight,
     surfaceBright = QimengBrandColors.SurfaceLight,
-    // 浅色灰阶从亮到暗只有 白/FAFAFA/F2F2F4/F0F0F2/ECECEE 五档，以下槽位按亮度依次落档，
-    // surfaceDim 与 surfaceContainerHighest 同档合并（旧版灰阶档位有限，无更暗 token）
+    // 日间整页与卡片纯白；辅助容器只用中性灰，不引入蓝紫底色。
     surfaceDim = QimengBrandColors.DividerLight,
     surfaceContainerLowest = QimengBrandColors.SurfaceLight,
-    surfaceContainerLow = QimengBrandColors.BgLight,
+    // 内容卡保持纯白，轻微中性阴影仅用于区分卡片边界。
+    surfaceContainerLow = QimengBrandColors.SurfaceLight,
     surfaceContainer = QimengBrandColors.SurfaceSoftLight,
     surfaceContainerHigh = QimengBrandColors.ChipBgLight,
     surfaceContainerHighest = QimengBrandColors.DividerLight,

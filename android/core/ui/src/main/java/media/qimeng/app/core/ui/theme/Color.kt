@@ -3,11 +3,11 @@ package media.qimeng.app.core.ui.theme
 import androidx.compose.ui.graphics.Color
 
 /**
- * 主题色板（唯一来源：旧仓库 QimengMedia `app/src/main/res/values/colors.xml`（浅色）+
+ * 主题色板（基础沿用旧仓库 QimengMedia `app/src/main/res/values/colors.xml`（浅色）+
  * `values-night/colors.xml`（深色），2026-09-06 用户拍板（M4-2A-B1）——
  * 从 Web 品牌蓝系换装为旧版 App 的中性极简灰系，深浅两套同源）。
  *
- * 每个颜色注释标注旧版 colors.xml 来源行（如「= values/colors.xml L4 qm_bg」）；
+ * 基础色沿用旧版；日间背景/表面和次级文字按现行可读性调整。其余颜色注释标注旧版 colors.xml 来源行（如「= values/colors.xml L4 qm_bg」）；
  * 旧版 values 与 values-night 两文件 token 名与行号逐行对应，浅色/深色成对出现。
  * M3 语义角色里旧版没有直接对应的（如 primaryContainer），用旧版透明 token 的实际
  * 合成色近似，注释标明「无旧版不透明 token，近似值」及推导依据。
@@ -19,8 +19,8 @@ import androidx.compose.ui.graphics.Color
 object QimengBrandColors {
     // ---------- 页面背景 / 表面（colors.xml「中性极简：微灰白背景 + 纯白卡片」组） ----------
 
-    /** 浅色页面底色 = values/colors.xml L4 qm_bg（windowBackground/statusBar/启动屏背景，微灰白） */
-    val BgLight: Color = Color(0xFFFAFAFA)
+    /** 日间整页纯白：不叠加冷灰渐变；同步 app values/colors.xml 的 qm_bg。 */
+    val BgLight: Color = Color.White
 
     /** 深色页面底色 = values-night/colors.xml L4 qm_bg（夜：深灰而非纯黑） */
     val BgDark: Color = Color(0xFF1A1A1A)
@@ -31,8 +31,8 @@ object QimengBrandColors {
     /** 深色卡片面 = values-night/colors.xml L5 qm_surface（略抬起避免压迫感） */
     val SurfaceDark: Color = Color(0xFF242424)
 
-    /** 浅色软表面（统计卡） = values/colors.xml L6 qm_surface_soft */
-    val SurfaceSoftLight: Color = Color(0xFFF2F2F4)
+    /** 日间软表面：输入/辅助区使用的中性灰，与白色内容卡分开。 */
+    val SurfaceSoftLight: Color = Color(0xFFF4F4F4)
 
     /** 深色软表面 = values-night/colors.xml L6 qm_surface_soft */
     val SurfaceSoftDark: Color = Color(0xFF2E2E2E)
@@ -81,22 +81,22 @@ object QimengBrandColors {
     /** 深色文字主色 = values-night/colors.xml L14 qm_text_primary */
     val TextPrimaryDark: Color = Color(0xFFC8C8C8)
 
-    /** 浅色文字次级 = values/colors.xml L15 qm_text_secondary */
-    val TextSecondaryLight: Color = Color(0xFF9A9A9A)
+    /** 浅色次级文字：可读性档，白底对比约 5.7:1（2026-10-20 UI 第一批）。 */
+    val TextSecondaryLight: Color = Color(0xFF666666)
 
-    /** 深色文字次级 = values-night/colors.xml L15 qm_text_secondary */
-    val TextSecondaryDark: Color = Color(0xFF808080)
+    /** 深色次级文字：可读性档，#242424 卡面上对比约 6.1:1。 */
+    val TextSecondaryDark: Color = Color(0xFFA3A3A3)
 
     // ---------- 胶囊 / 分割线（colors.xml「胶囊和分割线浅灰」组） ----------
 
-    /** 浅色胶囊底 = values/colors.xml L17 qm_chip_bg（bg_capsule_soft 填充色） */
-    val ChipBgLight: Color = Color(0xFFF0F0F2)
+    /** 日间胶囊软底：中性浅灰，保持选项与白色卡面的对比。 */
+    val ChipBgLight: Color = Color(0xFFF0F0F0)
 
     /** 深色胶囊底 = values-night/colors.xml L17 qm_chip_bg */
     val ChipBgDark: Color = Color(0xFF2E2E2E)
 
-    /** 浅色分割线 = values/colors.xml L18 qm_divider */
-    val DividerLight: Color = Color(0xFFECECEE)
+    /** 日间分割线：弱边界，不使用偏紫色投影代替层级。 */
+    val DividerLight: Color = Color(0xFFE6E6E6)
 
     /** 深色分割线 = values-night/colors.xml L18 qm_divider */
     val DividerDark: Color = Color(0xFF383838)

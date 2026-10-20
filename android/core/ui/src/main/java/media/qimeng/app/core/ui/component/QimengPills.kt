@@ -51,6 +51,7 @@ data class QimengPill(
 /**
  * 单行横滑胶囊栏（首页三 tab / 分区胶囊 / 排行榜周期 / 排序组等一行放得下的场景）。
  *
+ * @param pillModifier 可选单枚胶囊外观修饰符，默认不改变现有页面。
  * @param dividerBeforeIndex 在第 index 个胶囊前插入竖分隔线（null=不插入；
  *   相册页芯片栏「角色 | 类型」间分隔线——旧版 fragment_all_files.xml L117-118，M4-2A-B2）
  */
@@ -60,6 +61,7 @@ fun QimengChipRow(
     onPillClick: (index: Int) -> Unit,
     modifier: Modifier = Modifier,
     dividerBeforeIndex: Int? = null,
+    pillModifier: Modifier = Modifier,
 ) {
     Row(
         modifier = modifier
@@ -69,7 +71,7 @@ fun QimengChipRow(
     ) {
         pills.forEachIndexed { index, pill ->
             if (index == dividerBeforeIndex) ChipDivider()
-            PillChip(pill = pill, onClick = { onPillClick(index) })
+            PillChip(pill = pill, onClick = { onPillClick(index) }, modifier = pillModifier)
         }
     }
 }
@@ -150,6 +152,7 @@ fun QimengValuePillBlock(
     onPillClick: (index: Int) -> Unit,
     modifier: Modifier = Modifier,
     resetKey: Any? = null,
+    pillModifier: Modifier = Modifier,
 ) {
     // 区块内「两行/全部」与调用方的 filter.expanded（整块显隐）是两层不同的展开
     var valuesExpanded by rememberSaveable(resetKey) { mutableStateOf(false) }
@@ -176,6 +179,7 @@ fun QimengValuePillBlock(
             onPillClick = onPillClick,
             // 收起=钳制两行（≈Web max-height 66px）；展开=全部值推挤网格
             maxLines = if (valuesExpanded) Int.MAX_VALUE else VALUE_BLOCK_COLLAPSED_LINES,
+            pillModifier = pillModifier,
         )
         // 展开钮只在候选超阈值时出现（换到右下角并升级为精致微胶囊）
         if (pills.size > VALUE_BLOCK_COLLAPSE_THRESHOLD) {
@@ -253,6 +257,7 @@ fun QimengValuePillFlow(
     onPillClick: (index: Int) -> Unit,
     modifier: Modifier = Modifier,
     maxLines: Int = Int.MAX_VALUE,
+    pillModifier: Modifier = Modifier,
 ) {
     FlowRow(
         modifier = modifier.fillMaxWidth(),
@@ -261,7 +266,7 @@ fun QimengValuePillFlow(
         maxLines = maxLines,
         overflow = FlowRowOverflow.Clip,
     ) {
-        pills.forEachIndexed { index, pill -> PillChip(pill = pill, onClick = { onPillClick(index) }) }
+        pills.forEachIndexed { index, pill -> PillChip(pill = pill, onClick = { onPillClick(index) }, modifier = pillModifier) }
     }
 }
 
@@ -275,10 +280,11 @@ private val VALUE_PILL_SPACING_VERTICAL = 4.dp
  *  渲染委托 [QimengSegPill]（G6 查重收敛：FilterChip 替身与本组件视觉语义完全同谱，
  *  单枚胶囊渲染单源，视觉与行为零变化）。 */
 @Composable
-private fun PillChip(pill: QimengPill, onClick: () -> Unit) {
+private fun PillChip(pill: QimengPill, onClick: () -> Unit, modifier: Modifier = Modifier) {
     QimengSegPill(
         text = pill.text,
         selected = pill.selected,
         onClick = onClick,
+        modifier = modifier,
     )
 }

@@ -14,6 +14,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dagger.hilt.android.AndroidEntryPoint
 import media.qimeng.app.core.model.AppearanceMode
@@ -63,6 +65,12 @@ class MainActivity : ComponentActivity() {
                 AppearanceMode.SYSTEM -> isSystemInDarkTheme()
                 AppearanceMode.LIGHT -> false
                 AppearanceMode.DARK -> true
+            }
+            LaunchedEffect(darkTheme) {
+                WindowCompat.getInsetsController(window, window.decorView).apply {
+                    isAppearanceLightStatusBars = !darkTheme
+                    isAppearanceLightNavigationBars = !darkTheme
+                }
             }
             QimengTheme(darkTheme = darkTheme) {
                 QimengNavRoot()

@@ -79,6 +79,8 @@ import media.qimeng.app.core.ui.component.TabScrollController
 import media.qimeng.app.core.ui.component.qimengPinchToColumns
 import media.qimeng.app.core.ui.glass.TabDockDefaults
 import media.qimeng.app.core.ui.icon.LabelTagIcon
+import media.qimeng.app.core.ui.theme.QimengShapes
+import media.qimeng.app.core.ui.theme.softDaylightShadow
 import media.qimeng.app.core.ui.theme.QimengDimens
 // 页头组件共享文案在 :core:ui（nonTransitiveRClass 下跨模块取资源须引对方 R）
 import media.qimeng.app.core.ui.R as CoreUiR
@@ -281,6 +283,7 @@ fun AllScreen(
                     viewModel.onDimChipClicked(AlbumDim.entries[index])
                 },
                 dividerBeforeIndex = AlbumDim.TYPE.ordinal,
+                pillModifier = Modifier.softDaylightShadow(QimengShapes.pill),
                 modifier = Modifier.padding(horizontal = QimengDimens.ScreenPaddingHorizontal),
             )
 
@@ -292,6 +295,7 @@ fun AllScreen(
                     onPillClick = { index -> dispatchPill(viewModel, state.activeDim, activePills.getOrNull(index)) },
                     // 切维度归位「收起两行」（Web setDim 重置 expanded 同口径）
                     resetKey = state.activeDim,
+                    pillModifier = Modifier.softDaylightShadow(QimengShapes.pill),
                 )
             }
         }

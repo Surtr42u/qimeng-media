@@ -63,6 +63,9 @@ import media.qimeng.app.core.ui.icon.PaletteColorIcon
 import media.qimeng.app.core.ui.icon.ServerDnsIcon
 import media.qimeng.app.core.ui.icon.TuneSlidersIcon
 import media.qimeng.app.core.ui.theme.QimengDimens
+import media.qimeng.app.core.ui.theme.isQimengDarkTheme
+import media.qimeng.app.core.ui.theme.softDaylightBackground
+import media.qimeng.app.core.ui.theme.softDaylightShadow
 
 /** 我的页入口行文案（GUIDE_UI §我的页 + M4-2 既有入口 + M4-6 上传入口；
  *  F 批 2026-09-09：删除「作者管理」行；X5 批 2026-09-12：作者总览由内嵌卡改回
@@ -79,7 +82,7 @@ private const val ROW_DATA_MANAGE = "数据管理"
 
 /** 主体色彩入口行（2026-10-03 液态感强化批：外观模式+底栏材质两张选择卡合并为单入口，
  *  点进子页承载——主列表减两卡、外观相关收敛一处） */
-private const val ROW_THEME = "主体色彩"
+private const val ROW_THEME = "外观"
 private const val SUBTITLE_THEME = "外观模式与底栏材质"
 
 /** 推荐偏好行文案：入口行与 PrefsBottomSheet 标题同串单源（Sheet 在 SettingsCards.kt，
@@ -182,9 +185,9 @@ fun SettingsScreen(
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            // 旧版页面底色 = qm_bg（background 槽，浅 #FAFAFA / 夜 #1A1A1A）；壳层已涂底，
+            // 页面底色与 qm_bg 同源（浅 #FFFFFF / 夜 #1A1A1A）；壳层已涂底，
             // 显式声明防宿主容器换底后页面漏色
-            .background(MaterialTheme.colorScheme.background)
+            .softDaylightBackground()
             .padding(horizontal = ScreenContentPadding),
         // 2026-10-03 悬浮玻璃坞批：底栏改悬浮层后内容从坞身后滚过，滚动区底部让位到
         // 坞体上方（core:ui 单源常量，含导航栏 inset）
@@ -234,7 +237,7 @@ private fun ThemeColorPage(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .softDaylightBackground()
             .padding(horizontal = ScreenContentPadding)
             .verticalScroll(rememberScrollState())
             // 底部让位悬浮坞（内容从坞身后滚过）
@@ -494,9 +497,10 @@ private fun EntryRow(
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         shape = RoundedCornerShape(16.dp),
-        shadowElevation = 1.dp,
+        shadowElevation = if (isQimengDarkTheme()) 1.dp else 0.dp,
         modifier = modifier
             .fillMaxWidth()
+            .softDaylightShadow()
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
     ) {
         Row(
@@ -582,9 +586,9 @@ private fun SettingsSelectorCard(
     modifier: Modifier = Modifier,
 ) {
     Surface(
-        color = MaterialTheme.colorScheme.surface,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
         shape = RoundedCornerShape(QimengDimens.CardCornerRadius),
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth().softDaylightShadow(),
     ) {
         Column(
             modifier = Modifier.padding(

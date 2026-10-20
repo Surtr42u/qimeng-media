@@ -53,6 +53,7 @@ import media.qimeng.app.core.ui.glass.pressScale
 import media.qimeng.app.core.ui.glass.qimengBackdropSource
 import media.qimeng.app.core.ui.glass.rememberQimengBackdropState
 import media.qimeng.app.core.ui.glass.rememberPressScaleSource
+import media.qimeng.app.core.ui.theme.softDaylightShadow
 import media.qimeng.app.core.ui.theme.QimengShapes
 import media.qimeng.app.core.ui.component.QimengPill
 import media.qimeng.app.core.ui.component.QimengPullToRefresh
@@ -237,6 +238,7 @@ fun HomeScreen(
         QimengChipRow(
             pills = HomeTab.entries.map { QimengPill(text = stringResource(it.tabLabelRes()), selected = it == state.currentTab) },
             onPillClick = { index -> viewModel.switchTab(HomeTab.entries[index]) },
+            pillModifier = Modifier.softDaylightShadow(QimengShapes.pill),
             modifier = Modifier.padding(horizontal = 16.dp),
         )
         // 台账 #37 修法③评估结论（拍板要求评估、能落地则落地——评估后维持现状）：
@@ -357,6 +359,7 @@ private fun HomeTopRow(
     onOpenFilter: () -> Unit,
     onToggleColumns: () -> Unit,
 ) {
+    // 沿用白卡的共享轻影，只补轻微浮起感；不染灰、不加硬描边，深色自动保持原样。
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -386,6 +389,7 @@ private fun HomeTopRow(
                 modifier = Modifier
                     .weight(1f)
                     .height(QimengDimens.HomeSearchFieldHeight)
+                    .softDaylightShadow(QimengShapes.pill)
                     .pressScale(searchInteraction)
                     .clickable(
                         interactionSource = searchInteraction,
@@ -401,6 +405,7 @@ private fun HomeTopRow(
                 modifier = Modifier
                     .weight(1f)
                     .height(QimengDimens.HomeSearchFieldHeight)
+                    .softDaylightShadow(QimengShapes.pill)
                     .pressScale(searchInteraction)
                     .clickable(
                         interactionSource = searchInteraction,
@@ -421,12 +426,13 @@ private fun HomeTopRow(
                 backdrop = backdrop,
                 tint = MaterialTheme.colorScheme.primary,
                 // 旧版 L49-50 marginStart/End=10/6dp
-                modifier = Modifier.padding(start = 10.dp, end = 6.dp),
+                modifier = Modifier.padding(start = 10.dp, end = 6.dp).softDaylightShadow(QimengShapes.pill),
             )
             BackdropGlassIconButton(
                 icon = if (columns == 1) Grid1Icon else gridIconFor(columns),
                 contentDescription = stringResource(UiR.string.ui_columns_icon_desc),
                 onClick = onToggleColumns,
+                modifier = Modifier.softDaylightShadow(QimengShapes.pill),
                 backdrop = backdrop,
                 tint = MaterialTheme.colorScheme.primary,
             )
@@ -437,12 +443,13 @@ private fun HomeTopRow(
                 onClick = onOpenFilter,
                 tint = MaterialTheme.colorScheme.primary,
                 // 旧版 L49-50 marginStart/End=10/6dp
-                modifier = Modifier.padding(start = 10.dp, end = 6.dp),
+                modifier = Modifier.padding(start = 10.dp, end = 6.dp).softDaylightShadow(QimengShapes.pill),
             )
             GlassIconButton(
                 icon = if (columns == 1) Grid1Icon else gridIconFor(columns),
                 contentDescription = stringResource(UiR.string.ui_columns_icon_desc),
                 onClick = onToggleColumns,
+                modifier = Modifier.softDaylightShadow(QimengShapes.pill),
                 tint = MaterialTheme.colorScheme.primary,
             )
         }
