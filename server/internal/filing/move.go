@@ -48,13 +48,13 @@ var copyBody = io.Copy
 func MoveFile(src, dst string) error {
 	// 先拒绝已存在的目标，避免 Unix os.Rename 或跨卷 copy 回落覆盖用户文件。
 	// 预检查缩小冲突窗口；跨卷复制由 O_EXCL 再防一道。调用方仍应在业务层做冲突解析/并发协调。
-	if _, err := os.Lstat(dst); err == nil {
+	if _, err := os.Lstat(dst); err == nil { // #nosec G703 -- trash/localsync 调用方已用 NormalizeRelPath/PathWithinRoot 校验落点；此层仅执行跨根移动，不能把两个根折为一个。
 		return fmt.Errorf("%w: %s", ErrMoveTargetExists, dst)
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("%w: inspect destination %s: %w", ErrMoveDidNotCreateTarget, dst, err)
 	}
 
-	err := os.Rename(src, dst)
+	err := os.Rename(src, dst) // #nosec G703 -- 同 MoveFile 入口的调用方根边界校验；跨卷/回收站必须允许已授权的不同根。
 	if err == nil {
 		return nil
 	}
@@ -123,7 +123,7 @@ func copyFile(src, dst string) error {
 	}
 	// O_EXCL 是目标端的第二道保护：若目标在 Lstat 与跨卷复制之间被创建，
 	// 直接失败而不是截断/覆盖竞争者文件。
-	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, info.Mode().Perm())
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, info.Mode().Perm()) // #nosec G703 -- 只接受 MoveFile 已校验调用链的目标，O_EXCL 防止覆盖既有文件；外部换链边界见 SECURITY。
 	if err != nil {
 		if errors.Is(err, fs.ErrExist) {
 			return fmt.Errorf("%w: %s", ErrMoveTargetExists, dst)
@@ -153,7 +153,7 @@ func copyFile(src, dst string) error {
 // 警告不上抛——主错误（复制失败）才是调用方该看到的。目标以 O_EXCL 创建，
 // 不会清理在复制前已经存在的用户文件；filing 包无 logger 管道，此处用默认 logger）。
 func cleanupFailedCopy(dst string) {
-	if err := os.Remove(dst); err != nil && !errors.Is(err, fs.ErrNotExist) {
+	if err := os.Remove(dst); err != nil && !errors.Is(err, fs.ErrNotExist) { // #nosec G703 -- dst 为 copyFile 在已授权根内以 O_EXCL 创建的本次失败副本，外部换链属于 SECURITY 既有边界。
 		slog.Warn("filing: 清理复制失败的半截副本失败（残留需由调用方按保守规则清理）",
 			"path", dst, "err", err)
 	}
