@@ -94,6 +94,7 @@
 | `thumbnail` | 缩略图生成队列（工作池、懒生成、缓存键、静图输出格式自适应：libwebp 缺失时 mjpeg 降级——内嵌形态，U11 批次D） | 阻塞 API 请求 |
 | `search` | FTS5 索引维护与查询 | — |
 | `recommend` | 推荐/排行算法 | **任何 IO**（纯函数，输入输出领域结构体） |
+| `recommendfeed` | 推荐输入装载、调用纯函数评分、限容量短期 ID 顺序快照及当前页资格/元数据装载 | HTTP/协议对象、写入业务数据、修改评分公式 |
 | `ranking` | 只读排行榜热度键装载、调用 recommend 选页、按页装配元数据/累计计数；httpapi 仅适配协议 | 写入业务数据、HTTP 依赖、复制热度公式 |
 | `stats` | 统计聚合、趋势分桶 | **任何 IO** |
 | `sourcematcher` | 出处/角色匹配引擎（130 组内置检索表 + 前缀匹配） | **任何 IO**（纯函数；内置表数据文件除外） |
@@ -121,7 +122,7 @@
 边界不是口头约定，是**三层机器强制**（决策见 ADR-0010）：
 
 1. **Go `internal/` 编译器边界**：所有业务包都在 `server/internal/` 下，Go 编译器保证仓库外任何模块无法 import——物理隔离第一层。
-2. **depguard 两条红线**（`server/.golangci.yml`，golangci-lint v2.13.1 强制执行）：
+2. **depguard 两条红线**（`server/.golangci.yml`，golangci-lint v2.15.0 强制执行）：
    - `httpapi/gen`（oapi-codegen 生成接口层）只允许 `httpapi` 包引用；
    - 业务包与 sysmon **禁止反向依赖 `httpapi`**，唯一例外 `cmd/qimeng`（main 组合根，依赖注入只在 main 发生）。
 3. **golangci-lint 门禁**：11 个 linter 进 CI server job 与本机 `make lint`，违规即失败（见 §10）。
@@ -150,7 +151,7 @@
 旧项目单进程零拷贝（直查库、直读文件，优化靠本地 IO）；本项目跨网络，**优化靠缓存设计与减少往返**：
 
 - 列表永远服务端分页（cursor 式），客户端永不持有全库。查询先定页再装配，只投影实际消费字段；无额外筛选的日期页复用 mtime 索引，白名单之外回退完整筛选。首屏日期桶与总数合并扫描，未知日期不漏总数（ADR-0043；[性能范围](domain/filtering.md#查询执行策略与性能边界)）。不为本次提速新增缓存/失效链或索引。
-- 统计热榜先按资产汇总事件再展开作者/标签关联；推荐默认宽流保留顺序聚合，显式媒体/COS 流按规模选择候选事件/标签读取或宽查询，全部合格候选仍送纯函数评分。计划选择在 store，缓存/展示计数仍由 httpapi 管理；代价与基准见 [统计](domain/statistics.md#热榜查询策略与性能边界)、[推荐](domain/recommendation.md#16-输入装载策略与性能边界)（ADR-0044）。
+- 统计热榜先按资产汇总事件再展开作者/标签关联；推荐默认宽流保留顺序聚合，显式媒体/COS 流按规模选择候选事件/标签读取或宽查询，全部合格候选仍送纯函数评分。计划选择在 store，推荐顺序缓存及分页装载在 recommendfeed，展示计数仍由 httpapi 收尾；代价与基准见 [统计](domain/statistics.md#热榜查询策略与性能边界)、[推荐](domain/recommendation.md#16-输入装载策略与性能边界)（ADR-0044）。
 - 排行由 ranking 编排：总榜装载累计热度键，周期榜装载窗口日统计/点赞键，完整合格候选送 recommend.RankTop；仅读返回页的元数据和累计卡片计数，摘要再校验存在/启用库/非 COS。并发变更允许短页，无跨查询快照承诺。见 [排行执行策略](domain/recommendation.md#排行执行策略与性能边界)。
 - 缩略图：服务端预生成 + 标准 HTTP 缓存头（ETag/Cache-Control immutable），客户端 URL 直取
 - 原图：直链 + HTTP Range（视频拖动无缝）。**查看永远发原件，不做任何按需缩放**（用户明确要求：点开就是原汁原味，超大图也全量传原图——2026-08-22 确认）
@@ -173,6 +174,8 @@
 - **验收期**：fnOS 虚拟机（VirtualBox 桥接）+ Docker Compose 部署，手机真机访问虚拟机 IP
 - **生产期**：真 NAS 上 Docker 部署，compose 卷：`/media`（媒体库，可写但受控）、`/data`（数据库+缩略图+回收站，服务端私有）
 - **远程**：Tailscale 隧道，服务端零改动（adr/0006）
+
+构建/扫描的 Go 补丁版本统一读取 server/go.mod（当前 1.27.2）；golangci-lint 固定 v2.15.0，使用同一 Go 从源码构建，避免旧预编译工具无法读取新补丁导出格式。依赖 PR 仍须通过文档影响检查、构建和安全扫描，不按机器人身份豁免。
 
 ## 10. 工程基础设施
 
