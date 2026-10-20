@@ -19,6 +19,7 @@ POST 重复根路径 409 CONFLICT（UNIQUE(root_path)，服务端已实现，202
 SSE：scan.progress / library.changed / thumbnail.progress / upload.done / **favorite.changed / like.changed**（2026-10-01 ADR-0029：收藏/点赞变更通知，载荷同构 `{"assetId": string}`——写路径成功后发布、失败路径零发布、重复收藏幂等 no-op 照发；
 **不 bump 修订号**，ADR-0026 语义边界不变；
 事件是变更信号不是状态面，消费方收到后重拉权威状态；
+成功备份导入也广播 library.changed；Web 在库变更与重连时失效统计/排行榜/历史等缓存，持续挂载的页面即时重取。
 运行时事件面不入 openapi，客户端按事件名解析——未知事件名按 SSE 规范忽略，零害）
 
 ## 资产浏览

@@ -38,6 +38,7 @@ import (
 	"github.com/google/uuid"
 
 	"qimeng-media/server/internal/authorattach"
+	"qimeng-media/server/internal/events"
 	"qimeng-media/server/internal/httpapi/gen"
 	"qimeng-media/server/internal/store"
 	"qimeng-media/server/internal/store/db"
@@ -106,9 +107,11 @@ func (s *Server) PostApiV1ImportQimengBackup(w http.ResponseWriter, r *http.Requ
 		imp.res.Warnings = &imp.warnings // 始终非 nil，空时序列化为 []
 		// 全量导入改变了资产/行为/标签等推荐输入，推荐缓存失效
 		s.invalidateRecommendCache()
-		// 导入不发布 library.changed（与推荐缓存同款直调口径），修订号在
-		// 此显式推进（revision.go 的 bump 链清单）。
+		// 导入改变多个数据面；推进持久修订号并通知所有已连接客户端。
 		s.bumpLibraryRevision()
+		if err := s.bus.Publish(events.Event{Topic: events.TopicLibraryChanged}); err != nil {
+			s.logger.Warn("导入成功后的库变更通知失败", "err", err)
+		}
 		writeJSON(w, http.StatusOK, imp.res)
 	}
 }
