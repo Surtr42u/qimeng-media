@@ -17,7 +17,8 @@
 - 接手 13 个 Dependabot PR，核对当前 head、逐项文档影响和失败日志；兼容升级在完整门禁通过后合并，最终合并与验证结果见 HANDOVER。
 - 生成接口层的 runtime 根包以手写依赖声明保留，使干净检出/Dependabot 的 tidy 不再删除生成代码所需的 go-jsonmerge 间接依赖；不手改生成物、协议或 SDK。
 - PWA 图标生成器 2.x 配套 vite-plugin-pwa 2.0，遵守上游 peer 范围和现有 ESM 配置；不使用 force/legacy-peer-deps 跳过依赖约束。
-- 同步服务端/Web 开发入口和交接边界；不操作手机或 PC 正式服务，不向 8420 写测试数据；glib 中危告警继续保留，不忽略、不关闭。
+- 本地验证：共同 Go 修复全量测试/vet，移开生成文件后 tidy 保持 go.mod/go.sum 不变；Web 干净安装/audit=0、312 测试、生产构建和 CI 范围 knip 通过；TS SDK 16 文件指纹一致，隔离目录六个图标生成成功。其他 Go 升级本地大包下载受限，远端完整门禁负责兼容性验证。
+- 同步服务端/Web 开发入口和交接边界；更正依赖审查 Action 的版本注释，不改门禁。历史最旧完整条目原样归档。不操作手机或 PC 正式服务，不向 8420 写测试数据；glib 中危告警继续保留，不忽略、不关闭。
 
 ## perf(web): 跨端刷新与推荐跨页快照，并修复 GitHub 检查（2026-10-20 第五百五十八笔）
 
@@ -368,4 +369,3 @@
 - **端到端确认（重启后）**：授权表新增 `2026-10-11 20:21:34 → primary:1/HHH/6  备份` 一条持久化 tree 授权＝「选择器拉起 → 确认 → takePersistableUriPermission → 落盘」全链路成功；装机版（20:11:38）即含本笔改动，用户在真机上完成确认。
 - **待观察（损坏触发点未定位）**：该 ROM 封了 shell 读日志（`logcat -g` 全 `0 B readable`，`ro.debuggable=0`），重启后进程/崩溃证据随之消失；`dumpsys activity processes` 未显示 provider 异常。若再现：**先别重启**，立刻抓 `dumpsys activity providers`、`dumpsys activity processes`、`dumpsys dropbox --print` 留证，再定位。
 - **文档**：CHANGELOG.md（本笔）。
-
