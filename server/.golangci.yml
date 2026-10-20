@@ -1,7 +1,7 @@
 # golangci-lint v2 配置：server 模块静态检查 + 模块边界强制（ARCHITECTURE §5）
 #
-# 安装（版本锁定 v2.13.1，与 .github/workflows/ci.yml 保持一致）：
-#   go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.1
+# 安装（版本锁定 v2.15.0，与 .github/workflows/ci.yml 保持一致）：
+#   go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
 #
 # 模块边界两条红线（depguard 强制执行，依赖方向 httpapi → 业务模块 → store）：
 #   1. httpapi/gen 是 oapi-codegen 从 api/openapi.yaml 生成的协议接口层，只允许 httpapi 包引用；

@@ -53,7 +53,7 @@ assetId 命中 → `outcome=ok`（带 fileName 也不重映射）；
 10 维算法（seed 控制打散；
 **2026-09-05 增 `cosOnly` 参数**（true=COS 推荐模式）；
 **同日增 `offset` 参数**（/recommendations 与 /rankings 各一，default 0/min 0，与 limit 组合翻页切片——首页三 tab 触底加载的数据面；
-推荐流每次请求按当下打分排序切片，同流连续翻页由客户端按 assetId 去重兜底）：true=COS 推荐模式——候选集限定 COS 关联资产，同套打分/权重回收/每日惩罚照跑，首页 cos tab 数据源；
+推荐流在短期 ID 顺序快照内切片；过期/淘汰/结构变更后可能重排，客户端仍按 assetId 去重兜底）：true=COS 推荐模式——候选集限定 COS 关联资产，同套打分/权重回收/每日惩罚照跑，首页 cos tab 数据源；
 false=常规流缺省排除 COS）；
 纯热度排行（日/周/月/年/季（近 90 天）/总，period=quarter 为 2026-09-03 新增；
 limit 缺省 50、协议已声明 minimum 1/maximum 200 越界 400（2026-09-20 审计清偿批 R5 补声明，协议债关闭——与 server pagination.go maxRankingLimit 双写同步）；
@@ -62,7 +62,7 @@ limit 缺省 50、协议已声明 minimum 1/maximum 200 越界 400（2026-09-20 
 
 排行榜使用 ranking 专用装载与选页，周期榜热度取日物化统计/窗口点赞，响应 viewCount/playCount 仍为累计值；仅返回页装配元数据及累计计数，并发失去资格可不足一页。范围见 [排行策略](../domain/recommendation.md#排行执行策略与性能边界)。
 
-推荐输入装载由 store 按候选规模选择计划，完整候选与评分、60s 缓存/展示计数语义不变；策略、额外 COUNT 代价和测量范围见 [推荐专题](../domain/recommendation.md#16-输入装载策略与性能边界)。
+推荐输入装载由 store 按候选规模选择计划，完整候选与评分不变；60s 顺序快照跨分页复用，展示计数仍只对实际返回项回写；策略、额外 COUNT 代价和测量范围见 [推荐专题](../domain/recommendation.md#16-输入装载策略与性能边界)。
 
 seed>0 的同分打散按桶首最高分限制 0.05 跨度，避免相邻小分差链式吞并；刷新顺序因此可能改变。固定评分公式与参数不变，评估和剩余边界见 [算法评估](../domain/recommendation.md#17-算法评估与本轮调整)。
 
