@@ -1909,6 +1909,14 @@ components:
         totalViews:  { type: integer, format: int64 }
         sourceNormalCount: { type: integer, description: '常规来源库存：不关联 COS 作者的现存资产数（谓词同 §6 分区判定）' }
         sourceCosCount: { type: integer, description: 'COS 来源库存：关联 COS 作者的现存资产数' }
+        stillImageCount: { type: integer, description: 静态图片数量（不含动图） }
+        animatedImageCount: { type: integer, description: 动图数量；与 stillImageCount/videoCount 构成互斥分类 }
+        viewedFilesCount: { type: integer, description: 窗口内至少一次 open 的不同现存文件数，未截断 }
+        viewedAuthorsCount: { type: integer, description: 窗口内有 open 的现存资产关联作者总数，未截断 }
+        viewedTagsCount: { type: integer, description: 窗口内有 open 的现存资产关联标签总数，未截断 }
+        windowTotals: { $ref: "#/components/schemas/StatsTotals" }
+        mediaTypeWindowTotals: { type: object, additionalProperties: { $ref: "#/components/schemas/StatsTotals" }, description: '当前窗口各类型汇总，恒带 image/video/animated_image 三键' }
+        sourceWindowTotals: { type: object, additionalProperties: { $ref: "#/components/schemas/StatsTotals" }, description: '当前窗口各来源汇总，恒带 normal/cos 两键' }
         avgViewsPerFile: { type: [number, "null"], format: double, description: '平均浏览次数 = 窗口内现存资产 open 事件总数 ÷ 窗口内至少一次 open 的不同现存文件数；窗口由本端点 range 参数决定（缺省 all=全时段）；分母 0 → null' }
         per_type_size_bytes: { $ref: "#/components/schemas/StatsSizeByType" }
         per_source_size_bytes: { $ref: "#/components/schemas/StatsSizeBySource" }
@@ -1953,9 +1961,19 @@ components:
         tag:   { type: string, description: 标签名（tags.name，全局唯一） }
         views: { type: integer, description: 窗口内带该标签资产的 open 事件次数 }
 
+    StatsTotals:
+      type: object
+      required: [viewCount, playCount, seconds]
+      properties:
+        viewCount: { type: integer }
+        playCount: { type: integer }
+        seconds: { type: integer, description: 整数停留秒数 }
+
     TrendBucket:
       type: object
       properties:
+        mediaTypes: { type: object, additionalProperties: { $ref: "#/components/schemas/StatsTotals" }, description: '本桶各类型计数，恒带 image/video/animated_image；所有系列与本桶 start/end 对齐，缺失活动为 0' }
+        sources: { type: object, additionalProperties: { $ref: "#/components/schemas/StatsTotals" }, description: '本桶各来源计数，恒带 normal/cos；与本桶 start/end 同粒度同日期轴' }
         label:     { type: string, description: 周/月/季标签（口径见 DOMAIN_RULES §5） }
         start:     { type: string, format: date }
         end:       { type: string, format: date }
