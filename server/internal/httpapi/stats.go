@@ -16,9 +16,6 @@ import (
 )
 
 func localDayBoundsUTC(now time.Time) (string, string) { return statsread.DayBounds(now) }
-func trendWindowStart(rng stats.Range, now time.Time) time.Time {
-	return statsread.WindowStart(rng, now)
-}
 
 func protocolStatsTotal(value stats.Totals) gen.StatsTotals {
 	return gen.StatsTotals{ViewCount: int(value.ViewCount), PlayCount: int(value.PlayCount), Seconds: int(value.Seconds)}
