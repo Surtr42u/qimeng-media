@@ -14,16 +14,17 @@ import (
 )
 
 // LoadPage 共享完整顺序，分页只读当前页；WithoutCancel 仅覆盖无副作用的共享计算。
-func (c *Cache) LoadPage(ctx context.Context, q *db.Queries, key Key, prefs *recommend.Weights, now time.Time, offset, limit int) ([]db.ListRecommendationPageSummariesRow, error) {
+// 第二返回值是原始顺序的下一 offset，nil 表示到底；不依赖资格复核后的条数。
+func (c *Cache) LoadPage(ctx context.Context, q *db.Queries, key Key, prefs *recommend.Weights, now time.Time, offset, limit int) ([]db.ListRecommendationPageSummariesRow, *int, error) {
 	if offset < 0 || limit <= 0 {
-		return nil, errors.New("invalid recommendation page")
+		return nil, nil, errors.New("invalid recommendation page")
 	}
 	ids, err := c.ordered(ctx, q, key, prefs, now)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if offset >= len(ids) {
-		return []db.ListRecommendationPageSummariesRow{}, nil
+		return []db.ListRecommendationPageSummariesRow{}, nil, nil
 	}
 	end := len(ids)
 	if limit < len(ids)-offset {
@@ -31,11 +32,16 @@ func (c *Cache) LoadPage(ctx context.Context, q *db.Queries, key Key, prefs *rec
 	}
 	payload, err := json.Marshal(ids[offset:end])
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return q.ListRecommendationPageSummaries(ctx, db.ListRecommendationPageSummariesParams{
+	var next *int
+	if end < len(ids) {
+		next = &end
+	}
+	rows, err := q.ListRecommendationPageSummaries(ctx, db.ListRecommendationPageSummariesParams{
 		AssetIdsJson: string(payload), MediaType: mediaType(key), CosOnly: cosOnly(key),
 	})
+	return rows, next, err
 }
 
 // Warm 仅生成顺序，不读取页摘要或写展示计数。

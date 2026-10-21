@@ -296,7 +296,16 @@ fun HomeScreen(
                     onNearBottom = viewModel::onNearBottom,
                     onAssetClick = onAssetClick,
                 )
-                HomeTab.COS -> CosPage(
+                HomeTab.COS -> if (state.usesCosRecommendation) RecommendPage(
+                    state = state.cosRecommendation,
+                    hasError = state.errorMessage != null,
+                    columns = columns,
+                    listState = cosListState,
+                    animatedUrlResolver = animatedUrlResolver,
+                    onRefresh = viewModel::refresh,
+                    onNearBottom = viewModel::onNearBottom,
+                    onAssetClick = onAssetClick,
+                ) else CosPage(
                     state = state.cos,
                     hasError = state.errorMessage != null,
                     columns = columns,

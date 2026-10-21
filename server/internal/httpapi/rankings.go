@@ -24,7 +24,7 @@ func (s *Server) GetApiV1Rankings(w http.ResponseWriter, r *http.Request, params
 		period = string(*params.Period)
 	}
 
-	rows, err := ranking.LoadPage(r.Context(), s.q, period, s.now(), offset, limit)
+	rows, next, err := ranking.LoadPage(r.Context(), s.q, period, s.now(), offset, limit)
 	if err != nil {
 		s.internalErr(w, "查询排行页", err)
 		return
@@ -38,5 +38,6 @@ func (s *Server) GetApiV1Rankings(w http.ResponseWriter, r *http.Request, params
 			row.SizeBytes, row.Mtime, row.CreatedAt, row.Source, row.IsFavorite, row.LikeCount,
 			ptr(int(row.ViewCount)), ptr(int(row.PlayCount))))
 	}
+	writeNextOffset(w, next)
 	writeJSON(w, http.StatusOK, out)
 }

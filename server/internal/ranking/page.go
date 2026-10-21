@@ -14,16 +14,16 @@ import (
 // LoadPage 完整读取热度键后选页，仅为返回页读取元数据与全量累计卡片计数。
 // 两次读取之间的删除/库开关/COS 归属变更由摘要 SQL 再校验；可能不足一页，
 // 不会返回已失去资格的资产。与原多次聚合读取一样，不承诺跨查询事务快照。
-func LoadPage(ctx context.Context, q *db.Queries, period string, now time.Time, offset, limit int) ([]db.ListRankingPageSummariesRow, error) {
+func LoadPage(ctx context.Context, q *db.Queries, period string, now time.Time, offset, limit int) ([]db.ListRankingPageSummariesRow, *int, error) {
 	if offset < 0 || limit <= 0 {
-		return nil, errors.New("invalid ranking page")
+		return nil, nil, errors.New("invalid ranking page")
 	}
 	rows, windowed, err := loadKeys(ctx, q, period, now)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if offset >= len(rows) {
-		return []db.ListRankingPageSummariesRow{}, nil
+		return []db.ListRankingPageSummariesRow{}, nil, nil
 	}
 	items := make([]recommend.Item, len(rows))
 	for i, row := range rows {
@@ -40,23 +40,31 @@ func LoadPage(ctx context.Context, q *db.Queries, period string, now time.Time, 
 		}
 	}
 	ask := len(items)
+	// 多选一个业务合格项判断续页；资格复核后的短页不能冒充末页。
 	if limit < len(items)-offset {
-		ask = offset + limit
+		ask = offset + limit + 1
 	}
 	ordered := recommend.RankTop(items, period, now, ask)
 	if offset >= len(ordered) {
-		return []db.ListRankingPageSummariesRow{}, nil
+		return []db.ListRankingPageSummariesRow{}, nil, nil
 	}
 	ordered = ordered[offset:]
+	var next *int
+	if len(ordered) > limit {
+		nextOffset := offset + limit
+		next = &nextOffset
+		ordered = ordered[:limit]
+	}
 	ids := make([]string, len(ordered))
 	for i := range ordered {
 		ids[i] = ordered[i].AssetID
 	}
 	payload, err := json.Marshal(ids)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return q.ListRankingPageSummaries(ctx, string(payload))
+	page, err := q.ListRankingPageSummaries(ctx, string(payload))
+	return page, next, err
 }
 
 func loadKeys(ctx context.Context, q *db.Queries, period string, now time.Time) ([]db.ListRankingAllInputRow, bool, error) {

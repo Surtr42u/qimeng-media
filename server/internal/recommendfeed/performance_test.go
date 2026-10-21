@@ -52,7 +52,7 @@ func BenchmarkRecommendationSnapshot(b *testing.B) {
 				if !warm {
 					cache.Clear()
 				}
-				page, err := cache.LoadPage(context.Background(), q, key, nil, now, offset, 60)
+				page, _, err := cache.LoadPage(context.Background(), q, key, nil, now, offset, 60)
 				if err != nil {
 					b.Fatal(err)
 				}

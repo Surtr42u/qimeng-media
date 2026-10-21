@@ -10,6 +10,7 @@
 
 import { client } from '@/api/generated/client.gen'
 import { TOKEN_STORAGE_KEY } from './constants'
+import { offsetPage, type OffsetPage } from './pagination'
 
 /**
  * 认证失败监听器集合：AuthGate / 长连接订阅方注册。
@@ -115,4 +116,13 @@ export async function unwrapSdkResult<T>(
       : result.error)
   }
   return result.data as T
+}
+
+/** 保留原生响应头；推荐/排行的短页也能按权威 offset 继续。 */
+export async function unwrapOffsetPage<T>(
+  res: Promise<{ data?: T[]; error?: unknown; response?: Response }>, offset: number, limit: number,
+): Promise<OffsetPage<T>> {
+  const result = await res
+  const items = await unwrapSdkResult(Promise.resolve(result))
+  return offsetPage(items, result.response?.headers, offset, limit)
 }

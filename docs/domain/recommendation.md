@@ -134,6 +134,12 @@ go test ./internal/recommendfeed -run '^$' -bench '^BenchmarkRecommendationSnaps
 ```
 
 
+### 短页与续页
+
+推荐和排行响应恒带 `X-Qimeng-Next-Offset`：非负值是下一段原始顺序的 offset，`-1` 表示该轮顺序到底。资格复核可能移除本页全部条目，短页/空页仍可有下一段，不能据返回条数判到底。分页继续按原始顺序窗口推进，不为补齐当前页重扫全库或重复取尾部；展示计数仍只计实际返回项。旧服务端无该头时客户端才兼容页长判据。
+
+Android 首页默认 COS 流与常规推荐共用服务端算法，传 `cosOnly=true`；下拉换 seed、本地分批揭示、触底换轮去重。应用非默认筛选/排序时使用 COS 资产游标列表，保留用户指定的条件与顺序；重置面板恢复 COS 推荐。客户端不打散或计算评分。
+
 ## 2. 排行榜
 
 - 热度 = **窗口内** open+play 事件计数 + 窗口内点赞计数，降序（2026-09-18 用户拍板：原「viewCount+playCount+likeCount 全量累计」口径废止——累计值不随周期变化，切换 7天/30天 榜单不变；窗口化后周期榜随窗口滚动，Web/App 共用的 GET /rankings 单点生效）。窗口内 open+play 计数取自「资产×日」物化表 asset_daily_stats（day ≥ cutoffDay 的 view_count/play_count 求和；事件流仍是唯一真相源，物化表可随时重建，见 §5/§10）；窗口内点赞计数取自 likes 表的「资产×日」行（likes 主键 (asset_id, day)，day ≥ cutoffDay 计数——表自带日粒度，无需降级口径）。cutoffDay = 服务器当前时间减去周期窗口所得时刻的本地日历日（YYYY-MM-DD，按日取界：cutoff 当日全天活动计入窗口）。
@@ -145,7 +151,7 @@ go test ./internal/recommendfeed -run '^$' -bench '^BenchmarkRecommendationSnaps
 
 ### 排行执行策略与性能边界
 
-`ranking.LoadPage` 编排只读取数、选页与摘要装载，HTTP 仅校验参数/签名摘要/序列化。小页通过纯函数 `RankTop` 选择完整排行的前 K 项，K 为当前页所需的 offset+limit，并先按输入规模限上界以避免整数溢出。K 小于输入规模时，标准库堆仅保留 K 个输入下标与预计算热度，堆顶为当前最差项；最后仅排序/复制这 K 项，再切页。热度、mtime 比较共用原全量排行口径，完全同分以输入下标保持稳定序。K 覆盖输入时沿用全量 Rank；offset 超过输入规模直接返回空页。窗口准入、常规/COS/启用库过滤、响应累计 viewCount/playCount 与不回写展示计数的语义不变。
+`ranking.LoadPage` 编排只读取数、选页与摘要装载，HTTP 仅校验参数/签名摘要/序列化。小页通过纯函数 `RankTop` 选择完整排行的前 K 项，K 为 offset+limit+1（多选一项判断续页），并先按输入规模限上界以避免整数溢出；额外项不装载摘要、不计入返回页。K 小于输入规模时，标准库堆仅保留 K 个输入下标与预计算热度，堆顶为当前最差项；最后仅排序/复制这 K 项，再切页。热度、mtime 比较共用原全量排行口径，完全同分以输入下标保持稳定序。K 覆盖输入时沿用全量 Rank；offset 超过输入规模直接返回空页。窗口准入、常规/COS/启用库过滤、响应累计 viewCount/playCount 与不回写展示计数的语义不变。
 
 小页排序辅助空间为 O(K)，时间上界 O(N log K + K log K)。整个请求仍要装载完整合格候选的热度键，不能先截候选再排序。总榜专用查询只投影 asset_id/mtime 与累计 open/play/点赞，不计算排行无关的 dwell/最近浏览/今日展示；周期榜仅聚合日物化统计及窗口点赞，不先装载全量原始事件。输入仍按 asset_id 排序以保持同分稳定序。选页后通过参数化 JSON ID 顺序仅读该页元数据、收藏、累计点赞及累计 open/play；周期排序使用窗口计数，卡片响应仍使用全量累计计数。返回页事件计数用既有 asset_id/kind 索引，无 schema/索引/协议变化。
 

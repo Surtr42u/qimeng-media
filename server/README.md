@@ -14,7 +14,7 @@
 | 文件操作/恢复意图 | internal/filing/；SECURITY 文件边界、领域 files |
 | 移动/改名 | internal/mediawrite/move.go；先文件后库行、冲突拒绝、失败无覆盖回滚，根内改名保护在 filing/move_root.go |
 | 回收站/恢复/清扫 | internal/mediawrite/trash_*；HTTP 只协议适配，filing 保留低层路径/意图机制 |
-| 推荐流装载 | internal/recommendfeed/；限容量 ID 顺序快照跨页共享、取页重新校验资格，见推荐专题与 ADR-0046 |
+| 推荐流装载 | internal/recommendfeed/；限容量 ID 顺序快照跨页共享、取页重新校验资格；返回原始下一 offset（-1 到底），短页不截断续页，见推荐专题与 ADR-0046 |
 | 排行页装载 | internal/ranking/；专用热度键 → recommend 纯函数选页 → 当前页元数据/累计计数，见推荐专题 |
 | 作者 TXT 导入/保护/重建 | internal/authorimport/；跨手动/备份/同步入口复用事务，片段存取在 authorattach |
 | 事件统计编排 | internal/eventstats/；事务内读真相/重建，stats 保持纯函数（ADR-0040） |

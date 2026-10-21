@@ -130,7 +130,7 @@ func TestPageMatchesLegacy(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				got, err := LoadPage(context.Background(), q, period, rankingNow, offset, limit)
+				got, _, err := LoadPage(context.Background(), q, period, rankingNow, offset, limit)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -163,7 +163,7 @@ func TestPageRechecksEligibilityBetweenReads(t *testing.T) {
 					t.Fatal(err)
 				}
 			}})
-			got, err := LoadPage(context.Background(), q, "all", rankingNow, 0, 200)
+			got, _, err := LoadPage(context.Background(), q, "all", rankingNow, 0, 200)
 			if err != nil || len(got) != 0 {
 				t.Fatalf("ineligible page: %+v %v", got, err)
 			}
@@ -171,26 +171,43 @@ func TestPageRechecksEligibilityBetweenReads(t *testing.T) {
 	}
 }
 
+func TestShortRankingPagePreservesRawNextOffset(t *testing.T) {
+	conn := seedRanking(t, 20, 60)
+	rows, _, err := LoadPage(context.Background(), db.New(conn), "all", rankingNow, 0, 2)
+	if err != nil || len(rows) != 2 {
+		t.Fatalf("fixture page: %v %v", rows, err)
+	}
+	q := db.New(beforeSummaryDB{conn, func() {
+		if _, err := conn.Exec("DELETE FROM assets WHERE asset_id IN (?,?)", rows[0].AssetID, rows[1].AssetID); err != nil {
+			t.Fatal(err)
+		}
+	}})
+	page, next, err := LoadPage(context.Background(), q, "all", rankingNow, 0, 2)
+	if err != nil || len(page) != 0 || next == nil || *next != 2 {
+		t.Fatalf("short intermediate page must continue: rows=%d next=%v err=%v", len(page), next, err)
+	}
+}
+
 func TestPageErrorsAndEmpty(t *testing.T) {
 	conn := seedRanking(t, 20, 60)
 	q := db.New(conn)
 	for _, p := range [][2]int{{-1, 1}, {0, 0}, {0, -1}} {
-		if _, err := LoadPage(context.Background(), q, "all", rankingNow, p[0], p[1]); err == nil {
+		if _, _, err := LoadPage(context.Background(), q, "all", rankingNow, p[0], p[1]); err == nil {
 			t.Fatal("invalid page accepted")
 		}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := LoadPage(ctx, q, "all", rankingNow, 0, 10); err == nil {
+	if _, _, err := LoadPage(ctx, q, "all", rankingNow, 0, 10); err == nil {
 		t.Fatal("cancel ignored")
 	}
-	got, err := LoadPage(context.Background(), q, "day", rankingNow.AddDate(10, 0, 0), 0, 10)
+	got, _, err := LoadPage(context.Background(), q, "day", rankingNow.AddDate(10, 0, 0), 0, 10)
 	if err != nil || len(got) != 0 {
 		t.Fatalf("empty window: %v %v", got, err)
 	}
 	for _, test := range []struct{ period, query string }{{"all", "ListRankingAllInput"}, {"week", "ListRankingWindowInput"}, {"week", "ListRankingPageSummaries"}} {
 		failed := db.New(failingDB{conn, test.query})
-		if _, err := LoadPage(context.Background(), failed, test.period, rankingNow, 0, 10); err == nil {
+		if _, _, err := LoadPage(context.Background(), failed, test.period, rankingNow, 0, 10); err == nil {
 			t.Fatal("query error swallowed", test.query)
 		}
 	}
@@ -220,7 +237,7 @@ func BenchmarkPage(b *testing.B) {
 					if baseline {
 						rows, err = legacyPage(context.Background(), q, period, 0, 200, true)
 					} else {
-						rows, err = LoadPage(context.Background(), q, period, rankingNow, 0, 200)
+						rows, _, err = LoadPage(context.Background(), q, period, rankingNow, 0, 200)
 					}
 					if err != nil || len(rows) != 200 {
 						b.Fatalf("rows=%d err=%v", len(rows), err)

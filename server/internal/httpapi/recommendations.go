@@ -50,24 +50,25 @@ func (s *Server) GetApiV1Recommendations(w http.ResponseWriter, r *http.Request,
 	prefs := s.recommendPrefsFromSettings(r.Context())
 
 	// 共用顺序快照，页摘要现读；只有返回给客户端的资产写展示计数。
-	body, ids, err := s.computeRecommendPage(r.Context(), day, seed, mediaType, cosOnly, offset, limit, prefs)
+	body, ids, next, err := s.computeRecommendPage(r.Context(), day, seed, mediaType, cosOnly, offset, limit, prefs)
 	if err != nil {
 		s.internalErr(w, "推荐流计算失败", err)
 		return
 	}
 	s.recordDailyShownBatch(r.Context(), ids, day)
+	writeNextOffset(w, next)
 	writeJSON(w, http.StatusOK, body)
 }
 
 // computeRecommendPage 仅调用推荐编排并适配协议；当前页元数据不缓存。
 // 顺序快照不含分页窗口，连续页共享输入装载和评分，展示计数仍由请求收尾写入。
-func (s *Server) computeRecommendPage(ctx context.Context, day string, seed int, mediaType sql.NullString, cosOnly int64, offset, limit int, prefs *recommend.Weights) ([]gen.AssetSummary, []string, error) {
-	rows, err := s.recommendCache.order.LoadPage(ctx, s.q, recommendfeed.Key{
+func (s *Server) computeRecommendPage(ctx context.Context, day string, seed int, mediaType sql.NullString, cosOnly int64, offset, limit int, prefs *recommend.Weights) ([]gen.AssetSummary, []string, *int, error) {
+	rows, next, err := s.recommendCache.order.LoadPage(ctx, s.q, recommendfeed.Key{
 		Revision: s.recommendCache.revision(), Day: day, Seed: seed,
 		MediaType: mediaType.String, CosOnly: cosOnly == 1, Prefs: recommendPrefsFingerprint(prefs),
 	}, prefs, s.now(), offset, limit)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	out := make([]gen.AssetSummary, 0, len(rows))
 	ids := make([]string, 0, len(rows))
@@ -82,7 +83,7 @@ func (s *Server) computeRecommendPage(ctx context.Context, day string, seed int,
 	}
 	s.fillListAuthorNames(ctx, out)
 	s.fillListCosWork(ctx, out)
-	return out, ids, nil
+	return out, ids, next, nil
 }
 
 // recommendPrefsFromSettings 从 KV 设置装载用户推荐偏好；无记录或解析

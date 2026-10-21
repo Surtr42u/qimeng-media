@@ -54,6 +54,8 @@ M6 基座历史验收已完成；近期变更未因此自动取得新版本实�
 
 ## 维护定位
 
+首页默认 COS 与常规推荐共用同一取数/分批/换轮状态机，分别保留 seed 和清单，COS 请求显式 `cosOnly=true`。下拉换批不报“已是最新”；推荐公式未变，小库/评分约束下仍可能同序。非默认筛选/排序继续使用 COS 资产游标列表，重置面板恢复推荐；切模式、刷新及缓存标脏都会作废旧代响应，保留常规/COS 隔离。
+
 - 导航：QimengNavHost 保留会话分支、路由装配与常驻层 owner/saveable 状态；Routes 管路由/编码，TabNavigationPolicy 管点击防抖/回顶/顶层跳转，ResidentTabScreen 与 ClassicBottomBar 只渲染各自部分。恢复/隐藏屏生命周期与触摸隔离顺序保持。
 - 详情：DetailUiState 独立声明；DetailTagEditor 接受 VM 的同一 StateFlow、scope 和详情重拉回调，集中标签草稿/乐观解绑/失败回滚，不增第二份资产态。生命周期、批次与播放打点仍归 DetailViewModel。
 - 播放：VideoStage 持有播放器/状态机/方向与 surface 交接，TimelineTagDialogs 仅接位置快照与动作，不读取播放器、不建第二实例。

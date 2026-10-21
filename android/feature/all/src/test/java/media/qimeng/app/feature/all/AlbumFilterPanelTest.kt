@@ -59,7 +59,7 @@ class AlbumFilterPanelTest {
 
         override suspend fun facets(query: FacetsQuery): FacetsResult = emptyFacets
 
-        override suspend fun recommendations(seed: Long, limit: Int, mediaType: MediaKind?): List<MediaAsset> = emptyList()
+        override suspend fun recommendations(seed: Long, limit: Int, mediaType: MediaKind?, cosOnly: Boolean): List<MediaAsset> = emptyList()
 
         override suspend fun rankings(period: RankingPeriod, limit: Int, offset: Int): List<MediaAsset> = emptyList()
 
