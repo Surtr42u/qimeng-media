@@ -25,71 +25,9 @@ import media.qimeng.app.core.data.repository.MediaBatchIndex
 import media.qimeng.app.core.data.repository.MoveConflictException
 import media.qimeng.app.core.model.AssetDetail
 import media.qimeng.app.core.model.MediaKind
-import media.qimeng.app.core.model.TagChip
-import media.qimeng.app.core.model.TimelineTag
 import media.qimeng.app.feature.detail.playback.DirectAnalyticsReporter
 import media.qimeng.app.feature.detail.playback.ProgressThrottlePolicy
 import media.qimeng.app.feature.detail.playback.WatchState
-
-/**
- * 详情页 UI 状态（3a 骨架）。错误反馈照 home 的 errorMessage 横幅模式；
- * asset 为 null 且 isLoading=false 即「无内容可恢复」态（加载失败/路由缺参）。
- */
-data class DetailUiState(
-    val isLoading: Boolean = true,
-    val asset: AssetDetail? = null,
-    val errorMessage: String? = null,
-    /** 当前资产在批次清单中的序号（0 基；-1 = 无批次上下文，序号区不显示） */
-    val batchIndex: Int = -1,
-    /** 批次清单大小（「i / N」的 N） */
-    val batchSize: Int = 0,
-    /** 标签管理弹窗：全量标签池（服务端名字序）与勾选集合 */
-    val tagPool: List<TagChip> = emptyList(),
-    val selectedTagIds: List<String> = emptyList(),
-    val tagSheetOpen: Boolean = false,
-    val savingTags: Boolean = false,
-    /** 解绑在途的标签 id 集（N4 I7b：chip 关闭图标=立即 DELETE；同 id 在途防重） */
-    val unbindingTagIds: List<String> = emptyList(),
-    /** 互动行请求进行中（按钮 disabled 态） */
-    val likePending: Boolean = false,
-    val favoritePending: Boolean = false,
-    /** 关注 toggle 进行中的作者 id（该行按钮 disabled；null = 无在途关注请求） */
-    val followPendingAuthorId: String? = null,
-    /**
-     * 预加载目标（3b 拍板③窗口：前 1 后 2，距当前最近序）。url 取窗口内邻位详情——
-     * 图片=origUrl 原图、视频=thumbUrl 海报帧；url 缺失的邻位不出现在列表里。
-     * Coil 入队/取消在 UI 层（DetailScreen DisposableEffect），VM 只发目标清单。
-     */
-    val preloadTargets: List<DetailPreloadTarget> = emptyList(),
-    /**
-     * 视频续播起点毫秒（3d，[WatchState] 冻结口径）：未看完 = 断点秒×1000；
-     * 已看完 = 0（重播语义）。图片资产恒 0（不被消费）。
-     */
-    val videoStartPositionMs: Long = 0L,
-    /** 已看完徽标（3d，[WatchState] 冻结口径：lastPositionSeconds 与 durationMs 齐备且 ≥ 才真） */
-    val videoWatched: Boolean = false,
-    /** 时间轴标签（3d，仅视频资产加载；GET 按 timeMillis 升序，服务端排序） */
-    val timelineTags: List<TimelineTag> = emptyList(),
-    // ---------- 文件操作（任务G G1b：整理/删除） ----------
-    /** 整理弹窗开关（条件挂载——打开即从当前 directory/fileName 惰性复位预填值） */
-    val moveSheetOpen: Boolean = false,
-    /** 删除确认弹窗开关 */
-    val deleteConfirmOpen: Boolean = false,
-    /** 文件操作请求进行中（两弹窗确认钮与互动行两钮 disabled 同源） */
-    val fileOpsPending: Boolean = false,
-    /** 整理弹窗内失败文案（null=无失败；弹窗内独立展示——错误横幅在弹窗遮罩后不可见） */
-    val moveError: String? = null,
-)
-
-/**
- * 单个预加载目标（3b）。isVideo 决定 UI 侧请求形态：图片按原图尺寸（口径②不降采样），
- * 视频海报帧是小缩略图按默认档即可。
- */
-data class DetailPreloadTarget(
-    val assetId: String,
-    val url: String,
-    val isVideo: Boolean,
-)
 
 /**
  * 详情页 ViewModel（M4-3）：3a 详情读取、互动行（点赞/收藏/关注）、标签管理
@@ -101,11 +39,8 @@ data class DetailPreloadTarget(
  * 互动/标签失败只置 errorMessage，不动 asset——已加载内容不因单次请求失败回退成空页。
  * 任务W W3：原「接下来播放」推荐流数据链随推荐栏退役整段删除。
  *
- * 超文件警戒线理由：详情页全部数据链单 ViewModel——详情读取、互动行、标签读改写、
- * 兄弟切换与预加载窗口、播放三件（续播/节流上报/打点）、时间轴标签共享同一
- * asset 生命周期与批次清单状态，拆分会引入跨 VM 的资产态同步；类体主体为各自
- * 取数段（已尽量拆纯函数策略出类：DetailPreloadPolicy/ProgressThrottlePolicy），
- * 警戒线特此记档。
+ * 标签编辑委托 DetailTagEditor，状态定义在 DetailUiState；生命周期、批次与播放打点
+ * 仍由本 VM 持有，不引入跨 VM 同步或第二份资产状态。
  */
 @HiltViewModel
 class DetailViewModel @Inject constructor(
@@ -129,6 +64,8 @@ class DetailViewModel @Inject constructor(
 
     /** 路由参数（键单源在 [DetailRoutes.KEY_ASSET_ID]）；缺参 = 错误态而非崩溃（深链容错） */
     private val assetId: String? = savedStateHandle[DetailRoutes.KEY_ASSET_ID]
+
+    private val tagEditor = DetailTagEditor(detailRepository, _uiState, assetId, viewModelScope, ::reloadAssetOnly)
 
     /**
      * 打点会话标识（3d）：**每 VM 实例一次 UUID**（实例生命周期 ≈ 一次详情停留）。
@@ -469,157 +406,13 @@ class DetailViewModel @Inject constructor(
 
     // ---------- 标签管理 ----------
 
-    /** 打开弹窗：先拉全量池（失败→报错且不开弹窗）；勾选态以详情当前标签复位（Web 同款打开即复位） */
-    fun openTagSheet() {
-        val asset = _uiState.value.asset ?: return
-        viewModelScope.launch {
-            runCatching { detailRepository.allTags() }
-                .onSuccess { pool ->
-                    _uiState.value = _uiState.value.copy(
-                        tagSheetOpen = true,
-                        tagPool = pool,
-                        selectedTagIds = asset.tags.map { it.id },
-                    )
-                }
-                .onFailure {
-                    _uiState.value = _uiState.value.copy(errorMessage = ERROR_LOAD_TAGS)
-                }
-        }
-    }
-
-    fun dismissTagSheet() {
-        _uiState.value = _uiState.value.copy(tagSheetOpen = false)
-    }
-
-    /** 勾选即时本地增删（增删后立即体现——LEGACY §A:15；保存前不落库） */
-    fun toggleTagSelection(tagId: String) {
-        val current = _uiState.value
-        val next = if (tagId in current.selectedTagIds) {
-            current.selectedTagIds - tagId
-        } else {
-            current.selectedTagIds + tagId
-        }
-        _uiState.value = current.copy(selectedTagIds = next)
-    }
-
-    /**
-     * 「当前标签」chip 关闭图标 = **立即** DELETE 单条解绑（N4 I7b；N3 #32 逐条删端点），
-     * 不再只是草稿勾选：乐观移除 UI → 服务端成功后重拉详情（服务端按关联时间倒序回「最终序」）；
-     * 失败回滚乐观态 + 错误提示。草稿新增流（其他标签点选 + 新建 + 保存=整体替换）保留不动。
-     */
-    fun unbindTag(tagId: String) {
-        val current = _uiState.value
-        val asset = current.asset ?: return
-        val id = assetId ?: return
-        if (tagId in current.unbindingTagIds) return // 同标签在途防重
-        val chip = current.tagPool.firstOrNull { it.id == tagId } ?: return
-        val removedTagIndex = asset.tags.indexOfFirst { it.id == tagId }
-        if (removedTagIndex < 0) return // 不在当前标签列表：无可解绑（防御）
-        val removedTag = asset.tags[removedTagIndex]
-        // 乐观态快照（StateFlow 值可被并发替换，不能依赖链式引用）
-        val snapshotSelected = current.selectedTagIds
-        _uiState.value = current.copy(
-            unbindingTagIds = current.unbindingTagIds + tagId,
-            asset = asset.copy(tags = asset.tags.filterNot { it.id == tagId }),
-            selectedTagIds = current.selectedTagIds - tagId,
-        )
-        viewModelScope.launch {
-            runCatching { detailRepository.unbindTag(id, chip.name) }
-                .onSuccess {
-                    _uiState.value = _uiState.value.copy(
-                        unbindingTagIds = _uiState.value.unbindingTagIds - tagId,
-                        errorMessage = null,
-                    )
-                    // 重拉详情对齐服务端最终序（保存同款收尾；失败不影响已解绑事实）
-                    reloadAssetOnly()
-                }
-                .onFailure { error ->
-                    // R13（审计 2026-09-20）：失败只回滚「本 tagId 的乐观改动」，
-                    // 不再整覆盖乐观态快照——乐观态与失败回调之间可能有更新的
-                    // 状态落入 _uiState（窗口邻位重拉完成/用户其他操作），整覆盖
-                    // 会把它们一并回退到旧时刻。
-                    val rollback = _uiState.value
-                    val restoredAsset = rollback.asset?.let { cur ->
-                        if (cur.tags.any { it.id == tagId }) {
-                            cur // 已被后续重拉恢复：不重复插回
-                        } else {
-                            val idx = removedTagIndex.coerceAtMost(cur.tags.size)
-                            cur.copy(tags = cur.tags.toMutableList().apply { add(idx, removedTag) })
-                        }
-                    }
-                    _uiState.value = rollback.copy(
-                        unbindingTagIds = rollback.unbindingTagIds - tagId,
-                        asset = restoredAsset,
-                        // distinct 防重复：窗口期用户可能在弹窗重新勾回同一标签
-                        // （List + element 追加不去重，重复 id 会随 saveTags 整体
-                        // 替换 PUT 上行）——createAndSelectTag 同款口径（2026-09-21 维护批）。
-                        selectedTagIds = (
-                            if (tagId in snapshotSelected) rollback.selectedTagIds + tagId else rollback.selectedTagIds
-                            ).distinct(),
-                        errorMessage = "$ERROR_UNBIND_TAG${error.message ?: ""}",
-                    )
-                }
-        }
-    }
-
-    /**
-     * 新建并勾选：trim 非空才发；重名失败透传服务端错误文案；成功入池且选中。
-     * [onCreated] 仅创建成功后回调（弹窗据此清空输入框；失败保留输入供重试，对齐 Web 成功回调清空）。
-     */
-    fun createAndSelectTag(rawName: String, onCreated: () -> Unit = {}) {
-        val name = rawName.trim()
-        if (name.isEmpty()) return
-        viewModelScope.launch {
-            runCatching { detailRepository.createTag(name) }
-                .onSuccess { chip ->
-                    val current = _uiState.value
-                    _uiState.value = current.copy(
-                        tagPool = if (current.tagPool.any { it.id == chip.id }) {
-                            current.tagPool
-                        } else {
-                            current.tagPool + chip
-                        },
-                        selectedTagIds = (current.selectedTagIds + chip.id).distinct(),
-                        errorMessage = null,
-                    )
-                    onCreated()
-                }
-                .onFailure { error ->
-                    _uiState.value = _uiState.value.copy(
-                        errorMessage = "$ERROR_CREATE_TAG${error.message ?: ""}",
-                    )
-                }
-        }
-    }
-
-    /**
-     * 保存 = PUT tags 整体替换（读-改-写一次提交；PUT 返回 void 故无回填），
-     * 成功后重新 GET assetDetail：服务端按关联时间倒序返回「最近添加置顶」最终序（LEGACY §A）。
-     * 注：整体替换会刷新全部关联时间=协议已知限制（唯一标签端点，DOMAIN_RULES §7）。
-     */
-    fun saveTags() {
-        val id = assetId ?: return
-        val current = _uiState.value
-        if (current.savingTags) return
-        _uiState.value = current.copy(savingTags = true)
-        viewModelScope.launch {
-            runCatching { detailRepository.replaceAssetTags(id, current.selectedTagIds) }
-                .onSuccess {
-                    _uiState.value = _uiState.value.copy(
-                        savingTags = false,
-                        tagSheetOpen = false,
-                        errorMessage = null,
-                    )
-                    reloadAssetOnly()
-                }
-                .onFailure { error ->
-                    _uiState.value = _uiState.value.copy(
-                        savingTags = false,
-                        errorMessage = "$ERROR_SAVE_TAGS${error.message ?: ""}",
-                    )
-                }
-        }
-    }
+    // 保留原 VM 接口，标签动作与本 VM 共用单一 StateFlow。
+    fun openTagSheet() = tagEditor.openTagSheet()
+    fun dismissTagSheet() = tagEditor.dismissTagSheet()
+    fun toggleTagSelection(tagId: String) = tagEditor.toggleTagSelection(tagId)
+    fun unbindTag(tagId: String) = tagEditor.unbindTag(tagId)
+    fun createAndSelectTag(rawName: String, onCreated: () -> Unit = {}) = tagEditor.createAndSelectTag(rawName, onCreated)
+    fun saveTags() = tagEditor.saveTags()
 
     // ---------- 播放进度上报（3d） ----------
 
@@ -823,10 +616,6 @@ class DetailViewModel @Inject constructor(
         private const val ERROR_LIKE = "点赞操作失败，请重试"
         private const val ERROR_FAVORITE = "收藏操作失败，请重试"
         private const val ERROR_FOLLOW = "关注操作失败，请重试"
-        private const val ERROR_LOAD_TAGS = "标签列表加载失败"
-        private const val ERROR_CREATE_TAG = "新建标签失败："
-        private const val ERROR_SAVE_TAGS = "标签保存失败："
-        private const val ERROR_UNBIND_TAG = "解除标签失败："
         private const val ERROR_ADD_TIMELINE_TAG = "时间轴标签添加失败"
         private const val ERROR_DELETE_TIMELINE_TAG = "时间轴标签删除失败"
 

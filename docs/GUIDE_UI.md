@@ -22,6 +22,8 @@
 
 ## Android
 
+导航/详情/播放器/上传的职责定位见 [Android 维护入口](../android/README.md#维护定位)；状态与生命周期仍各自单源，内部拆分不改变下列现行交互。
+
 定位：[android/README](../android/README.md)。Compose → ViewModel → Repository，feature → core。地址经 ServerConfigDataSource，在线/本机模式共用 UI 与协议。
 
 - 常驻层与跳板路由隔离 Tab 状态；悬浮胶囊底栏的空白区域消费触摸，避免穿透媒体卡片。

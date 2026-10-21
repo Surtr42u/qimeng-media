@@ -7,6 +7,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class ChildHealthRecoveryTest {
     @Test fun `missing or dead child is started by foreground check`() = runTest {
         for (child in listOf(null, Any())) {

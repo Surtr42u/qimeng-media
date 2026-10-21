@@ -24,6 +24,13 @@ object UploadWorkSpec {
     /** 单任务 tag 前缀 + localId（WorkInfo 反查客户端任务标识） */
     const val TAG_ITEM_PREFIX = "qm-upload-item:"
 
+    // 展示名在 WorkManager tag 持久化，进程重建后尚未执行的任务也能显示原名。
+    // 只放文件名，不放源 URI、路径或 token；旧任务无 tag 沿用通用名回退。
+    private const val TAG_DISPLAY_NAME_PREFIX = "qm-upload-name:"
+    fun displayNameTag(name: String): String = TAG_DISPLAY_NAME_PREFIX + name
+    fun displayNameFromTags(tags: Set<String>): String? =
+        tags.firstOrNull { it.startsWith(TAG_DISPLAY_NAME_PREFIX) }?.removePrefix(TAG_DISPLAY_NAME_PREFIX)
+
     // ---- 输入 Data 键位（enqueue 写入，worker 读取） ----
     const val KEY_LOCAL_ID = "localId"
     const val KEY_URI = "uri"

@@ -51,3 +51,12 @@ M6 基座历史验收已完成；近期变更未因此自动取得新版本实�
 前台健康恢复由 ChildHealthRecovery 编排：无句柄/已退出时补启动，单次超时先等候再复核，两次失败才重启；检查期间换代不动旧快照，Service 在启动锁内再次核对身份后才摘看护。探测在 IO 线程，取消可释放单飞门；不承诺后台永久在线或长期冻结来源已定位。
 
 分片把手与目标地址保存在既有客户端 DataStore，App 进程重建后 GET 权威 offset 续传；新建会话先提交把手再发字节。成功后的清理失败不能转上传重试。服务端重启/会话过期仍按 404 重建；已提交但客户端未获成功响应/未提交 WorkManager 终态仍可能重复，未新增服务端幂等协议。取消标记仍为进程内，进程死亡窗口可能恢复已点取消的任务。这些限制与真实重启/切服/长期后台验收分开记录，不能据单测声称全链路无重复。
+
+## 维护定位
+
+- 导航：QimengNavHost 保留会话分支、路由装配与常驻层 owner/saveable 状态；Routes 管路由/编码，TabNavigationPolicy 管点击防抖/回顶/顶层跳转，ResidentTabScreen 与 ClassicBottomBar 只渲染各自部分。恢复/隐藏屏生命周期与触摸隔离顺序保持。
+- 详情：DetailUiState 独立声明；DetailTagEditor 接受 VM 的同一 StateFlow、scope 和详情重拉回调，集中标签草稿/乐观解绑/失败回滚，不增第二份资产态。生命周期、批次与播放打点仍归 DetailViewModel。
+- 播放：VideoStage 持有播放器/状态机/方向与 surface 交接，TimelineTagDialogs 仅接位置快照与动作，不读取播放器、不建第二实例。
+- 上传：SdkUploadRepository 负责 SDK 与 WorkManager 入队，UploadQueuePresenter 只做 WorkInfo→显示状态和顺序/名称映射；业务失败、取消、挂靠失败保持原终态。新任务的纯文件名 tag 随 WorkManager 保存，重建后未执行条目也可显示原名；旧任务继续原回退，不放源 URI/路径或凭据。
+
+这些是职责提取，不引入新框架或跨 ViewModel 状态同步。导航装配与播放器控制仍有规模，需要按实际改动继续收敛；不按行数机械切分，也不宣称技术债归零。无视觉/手势/协议规则改变；可见设备回归仍须单独执行。
