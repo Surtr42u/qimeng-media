@@ -8,6 +8,12 @@ plugins {
     alias(libs.plugins.qimeng.android.hilt)
 }
 
+// 与 Go buildinfo 共用发布版本；Android 安装序号独立递增，发布时一并维护。
+val releaseIdentityDir = rootProject.file("../server/internal/buildinfo")
+val releaseVersion = releaseIdentityDir.resolve("version.txt").readText().trim()
+val releaseVersionCode = releaseIdentityDir.resolve("android-version-code.txt").readText().trim().toInt()
+require(releaseVersion.isNotBlank() && releaseVersionCode > 0) { "Invalid release identity" }
+
 android {
     namespace = "media.qimeng.app"
 
@@ -17,8 +23,8 @@ android {
         // 唯一硬适配点 ACCESS_LOCAL_NETWORK 已随本批落地（manifest+运行时两入口）；其余 37 行为
         // 变更经逐条对照无涉（ADR-0022）。
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.2.0" // M4-2 列表族批次
+        versionCode = releaseVersionCode
+        versionName = releaseVersion
     }
 
     // U11 批次D（ADR-0015 形态 B）：内嵌服务端三件套（libqimeng.so/libffmpeg_cli.so/

@@ -76,13 +76,9 @@ desktop/
 
 ## 跨仓契约：Web TopBar ↔ titlebar.js
 
-主窗口无边框（decorations=false），顶栏三枚窗口控件（最小化/最大化/关闭）由
-Web UI 的 `web/src/components/shell/TopBar.tsx` 渲染，桌面壳经 `titlebar.js`
-注入后按 **`button.win-btn` 类名 + 中文 `title` 属性值**（最小化/最大化/关闭）
-分发窗口操作，拖动判定依赖 TopBar 的 `<header>` 元素。改动 TopBar 时**必须**
-保持这三个按钮的类名与 title 文案、以及 `<header>` 元素，否则桌面壳的窗口
-操作与拖动会静默失效（无边框窗口无系统边框兜底，只能靠托盘退出）。
-TopBar.tsx 内已有单向注释提示；本节为 desktop 侧的逆向记档。
+主窗口无边框（decorations=false），窗口按钮由 `web/src/components/shell/TopBar.tsx` 渲染，`titlebar.js` 以 `data-qimeng-window-action` 的 minimize/maximize/close 值分派动作，拖动区标记 `data-qimeng-titlebar`。未知新动作不回退文案，避免误触发。样式类和中文 title 不再是新壳的主分派协议。
+
+兼容期：新壳继续识别旧 Web 的 `button.win-btn` + 中文 title + header；新 Web 保留这些旧属性，兼容未更新的旧壳。两端尚未全部部署前仍不得修改旧 title/header。双向注释互指；`web/tests/desktop-titlebar.test.ts` 执行实际注入脚本，验证文案独立、新壳读旧 Web、未知动作拒绝和旧壳所需属性保留。自动化不替代原生窗口验收。
 
 ## 媒体播放
 

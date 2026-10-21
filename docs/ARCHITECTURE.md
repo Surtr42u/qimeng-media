@@ -1,7 +1,7 @@
 # ARCHITECTURE - 架构总纲
 
 > 本文维护当前系统结构与模块边界。协议、安全、领域分别由各自规范负责；不以本文覆盖其语义。技术选型的"为什么"见 `docs/adr/`，业务规则见 `docs/DOMAIN_RULES.md`。
-> 维护日期：2026-10-19。变更经过见 CHANGELOG 与 git 历史。
+> 维护日期：2026-10-21。变更经过见 CHANGELOG 与 git 历史。
 
 ## 阅读范围
 
@@ -75,15 +75,15 @@
 | Web | React + Vite + TypeScript + shadcn/ui + Tailwind + TanStack Query；CSS/原生 View Transition 动效（ADR-0031） | AI 语料最大；组件生态解决 UI 美观；动效生态成熟 |
 | Android | Kotlin + Jetpack Compose + Coil 3 + Media3 | 用户 Kotlin 经验延续；Coil/ExoPlayer 原生支持 HTTP 直链 |
 | 客户端 SDK | openapi-generator（TS: @hey-api；Kotlin: 生成器） | 协议改动三端自动同步（adr/0001） |
-| 部署 | Docker 镜像（linux/amd64 已交付；arm64 按需储备）+ deploy/ 三件套 | 开发 PC → fnOS → 真 NAS 零改动迁移（M5 已收官，`make docker-build` / `deploy/README.md`） |
+| 部署 | Docker 镜像（linux/amd64 已交付；arm64 按需储备）+ deploy/ 三件套 | 复用服务端实现；迁移需核对库根、权限与配置，目标硬件另行验收（`deploy/README.md`） |
 
 ## 4. 三层 UI 解耦（需求 #2 的落地）
 
-1. **服务端与 UI 完全解耦**：API 只返回领域数据（排好序的列表、算好分的推荐），永不返回 UI 结构；禁止为某端开专属接口（BFF）。换 UI/加 TV 端，服务端零改动。
+1. **服务端与 UI 分层**：API 返回领域数据（排好序的列表、算好分的推荐），不返回 UI 结构；禁止为某端开专属接口（BFF）。换 UI/加 TV 端优先复用现有协议；新数据需求仍需按 OpenAPI 流程扩展，不能承诺服务端零改动。
 2. **协议生成层共享**：openapi.yaml 生成的 SDK 是三端共享的数据接入层，天然一致。
 3. **客户端内部逻辑/UI 分层**：Web 端数据获取全部走 TanStack Query hooks（组件零请求代码）；Android 端 ViewModel 管状态、Compose 只渲染。UI 组件禁止直接调 API、禁止内嵌业务规则。
 
-推论：**换皮成本极低**——AI 可并行生成多套 UI 风格供用户挑选，选中即换，逻辑与测试不动。
+换皮可以复用领域逻辑和数据获取层，但布局、交互、无障碍及桌面契约仍需验证，相关 UI 测试随行为调整。分层减少改动面，不代表切换视觉无需验证。
 
 ## 5. 服务端模块边界（server/internal/）
 
@@ -127,10 +127,12 @@
    - 业务包与 sysmon **禁止反向依赖 `httpapi`**，唯一例外 `cmd/qimeng`（main 组合根，依赖注入只在 main 发生）。
 3. **golangci-lint 门禁**：11 个 linter 进 CI server job 与本机 `make lint`，违规即失败（见 §10）。
 
+额外边界回归：`internal/architecture` 用 Go AST 检查四个纯算法包的全部非测试源码（包括其他平台文件），只允许明确列出的内存算法/文本/时间标准包，禁止经第三方或其他业务包绕入 IO；Web 的 `tests/architecture.test.ts` 使用 TypeScript AST 检查 pages/components，禁止运行时 SDK 导入与直接请求，允许 SDK 纯类型及组件懒加载。两者分别随 Go/Web 测试进 CI；只证明列出的直接依赖约束，不是完整形式化纯度证明。
+
 防漂移配套纪律：
 
 - **SDK 生成物不入库**（ADR-0009）：`server/internal/httpapi/gen/*.gen.go`、`web/src/api/generated/`、`android/sdk/**` 全部 .gitignore；CI `sdk-chain` job 从 `api/openapi.yaml` 重建验证可生成。**AI 禁止手改任何生成物**——协议改动只改 openapi.yaml 后 `make sdk`。
-- **迁移纪律**（ADR-0011）：schema 演进只经 golang-migrate **新增**文件（只加不改不删）；改/删既有结构走 expand-migrate-contract 两步迁移，禁止手改历史迁移文件与运行中的库。
+- **迁移纪律**（ADR-0011）：schema 演进只经 golang-migrate **新增**文件（只加不改不删）；改/删既有结构走 expand-migrate-contract 两步迁移，禁止手改历史迁移文件与运行中的库。`tools/check_migrations.py` 对 PR base/push before 检查既有 SQL 文件不被修改、删除或改名，本机默认对 HEAD 检查暂存/工作区。
 
 **文件一致性实现（2026-10-19，ADR-0039）**：`scanner/reconcile.go` 单独承载差集实时复核与事务合并；`filing/restore_intent.go` 负责从既有回收站meta读取未完成恢复路径索引及显式失效，供scanner在库锁内避让。filing路径层含文件系统链接检查，不再是纯词法函数；库内实际文件操作优先os.Root。上传会话记录已发布路径并封存源，跨根搬移的边界见SECURITY。原有httpapi上传/回收站编排仍为存量，未引入新框架。
 

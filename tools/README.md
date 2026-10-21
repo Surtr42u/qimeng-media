@@ -14,6 +14,12 @@ PR CI 额外运行 `python tools/check_docs.py --base <base-sha> --event-path <e
 
 ## 其他可靠性门禁
 
+`release_manifest.py` 校验本机服务端 `-version` 与当前 Git/发布版本身份，生成 schema/协议/SDK 锁及产物哈希清单，默认拒绝 dirty 正式交付；`--development` 仅记录工作区验证。`cold_backup.py create/verify/restore` 复用标准库复制/哈希，停写确认后创建副本并只恢复到不存在的目录。执行顺序、安全边界与命令见 [恢复与升级](../docs/RESTORE.md#ai-升级与回退执行清单)，均不自动部署或操作运行库。自测只使用合成临时目录。
+
+`python tools/check_migrations.py` 对 HEAD 检查暂存/工作区的历史 SQL；`--base <sha>` 同时覆盖基线之后提交的改动。PR CI 用 base SHA，master push 用 before SHA，新增 migration 允许，既有 SQL 修改/删除/改名失败；缺失基线报错而非静默跳过。测试仅建立临时合成 Git 仓库。
+
+Go `go test ./internal/architecture` 和 Web `npm test` 的 architecture 测试负责直接依赖边界，口径见 ARCHITECTURE §5.1。执行模型无可靠完整名称/变体时，交付记录如实标记未知，不沿用旧署名。维护改进的分批进度见 [实施清单](../docs/AI_MAINTENANCE_PLAN.md)。
+
 security.yml 固定 govulncheck v1.9.0/cargo-audit 0.22.2；后者 MSRV 1.88，扫描 job 使用 Rust 1.90。npm audit high 起阻断，不用 force 或统一忽略压下失败。可本地按 workflow 同命令执行；网络失败不是扫描通过。恢复和真实跨卷命令见 [RESTORE](../docs/RESTORE.md)。
 
 Go 安全扫描及各构建工作流的 Go 版本来自 server/go.mod；lint 固定版本源码在该工具链下执行。Dependabot 已按用户最新要求恢复每周升级候选与自动安全升级 PR；每个更新配置（生态 + 目录）最多 1 个常规待处理 PR，不自动合并。机器人或人工发起的依赖更新均需逐项审查并提供具体文档影响说明，不绕过门禁。

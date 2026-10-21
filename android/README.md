@@ -34,6 +34,8 @@ M6 基座历史验收已完成；近期变更未因此自动取得新版本实�
 
 ## 构建与设备验证
 
+应用 versionName 读取 `server/internal/buildinfo/version.txt`，versionCode 读取相邻 `android-version-code.txt`；发布时 AI 同步递增安装序号，签名和 applicationId 保持。源码版本不能代替已安装 APK 的包信息/字节核对，内嵌 Go 的提交身份也须单独确认。主要持续支持路径为 arm64 手机内嵌与连接服务端；qimeng_api35 主要验证连接模式，x86_64 内嵌仍为未验收路径，不因本轮维护移除或假称已修复。
+
 外观优化见 [Android 背景对比度记录](../docs/ANDROID_UI_TASKBOOK.md)：日间页面与卡面均为均匀 #FFFFFF，移除冷灰渐变和双向高光，SoftDaylight 只保留低强度中性灰影（Compose 原生 API，无新依赖），辅助面使用中性灰；两档次级文字提高可读性，系统栏跟随 App 主题。首页顶行三处入口、推荐/COS/排行榜三胶囊及相册维度/值胶囊仅复用日间卡片轻影，恢复原白色玻璃，撤去灰色染色与硬描边；真采样/静态分支共用修饰符，其他玻璃件不变。统计详情的摘要、洞察、分布/榜单外卡及内部排行行同样复用轻影，避免白卡融入白底。仅保留“外观”改名，布局/比例/动效改造已取消；不改原件或服务端缩略图。
 
 本批最终 arm64 内嵌 Release 已同签名保留数据覆盖装机，并核对 APK 字节、非 Debug 标志、三件套/哈希与冷启动健康/就绪；qimeng_api35 已关闭。该模拟器 x86_64 的 SQLite 初始化 SIGSYS 未修复，不等同于 arm64 手机失败；证据与验证限制见 [HANDOVER](../docs/HANDOVER.md)。

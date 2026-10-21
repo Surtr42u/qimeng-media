@@ -23,6 +23,26 @@
 
 ## 可重复自动化
 
+以下维护操作由 AI 执行，不要求用户手写命令。`tools/cold_backup.py` 只复制和核对显式传入的目录，不会停服或猜测真库位置；执行 AI 必须先正常停服并确认所有写入/同步已暂停，再使用 `--offline`。首个 source 放完整 DataDir，后续按本地记录顺序放全部媒体根与仓外配置目录；root-1/root-2 等顺序及实际挂载映射保存在忽略的本地记录，不提交真实路径。
+
+```bash
+python tools/cold_backup.py create --offline --source <停服DataDir> --source <媒体根> --destination <不存在的副本目录>
+python tools/cold_backup.py verify --backup <副本目录>
+python tools/cold_backup.py restore --backup <副本目录> --destination <不存在的隔离恢复目录>
+```
+
+工具复用 shutil.copytree/copy2，保留层级/mtime，逐文件 SHA-256 核对源与目标；拒绝静态链接/特殊文件、源目标重叠、已有恢复目标、缺失/多余/损坏文件和非法清单路径。复制失败保留无完成清单的半成品供 AI 排查，不自动递归删除。清单最后生成，包含相对路径、字节数、mtime 和 SHA-256，不保存源绝对路径。`--offline` 是执行者确认，不是自动检测停写；逐文件核对不能证明跨文件同一事务快照，也不消除外部进程恶意换链竞争。工具不证明副本介质独立，AI 仍须选择独立存储并按上文核对恢复业务内容。当前仅隔离合成目录自动化验证，不据此声称已备份真实媒体或完成 NAS/掉电验收。
+
+## AI 升级与回退执行清单
+
+1. AI 先在干净检出完成当前 head 必需门禁，正常 `go build` 保留 VCS 信息；`qimeng-server -version` 核对版本/提交/dirty。版本单源及 Android 安装序号见 [服务端入口](../server/README.md#构建身份)。
+2. 使用 `python tools/release_manifest.py --server <本机服务端产物> --web <Web构建目录> --output <忽略的交付目录/新清单.json>` 生成产物 SHA-256、schema 版本、协议/SDK 锁摘要。缺/旧提交和 dirty 正式产物拒绝；`--development` 仅供工作区验证，不能算正式发布。该工具只直接验证本机服务端身份，Web/APK 哈希只标识所给文件，不能替代其构建来源、APK 签名/内嵌 Go 检查。
+3. 停写后建立上述完整副本，保存匹配的旧二进制、Web/APK、配置与本地根映射；升级前完成副本核对。新版本先在隔离恢复目录验证迁移和样本业务；通过后再替换日常包并记录实际运行身份。
+4. 升级后失败时正常停服，使用**新的空目录**恢复升级前完整副本并使用匹配的旧程序；不让旧程序打开已升级库、不对真实库执行 down、不覆盖运行库、不删除真实 WAL。恢复窗口之后新增的媒体/事件需独立核对，不能承诺换回旧程序即可无损回退。
+5. 源码、检查通过、已准备产物、已部署分别记入 HANDOVER；不把交付清单的 deployment=not-performed 改写为装机证明。NAS 验收按本轮用户要求暂不做。
+
+### 数据库与跨卷回归
+
 在 `server/` 执行：
 
 ```bash

@@ -16,6 +16,10 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with: { python-version: '3.13' }
       - run: python -m unittest discover -s tools -p 'test_*.py'
+      - name: 历史 migration 只加不改不删
+        env:
+          MIGRATIONS_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: python tools/check_migrations.py --base "$MIGRATIONS_BASE"
       - name: 文档链接、索引与改动影响
         env:
           DOCS_BASE: ${{ github.event.pull_request.base.sha }}

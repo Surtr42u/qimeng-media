@@ -55,3 +55,5 @@ Android 预取同时比较 revision、thumbnailVersion 与服务器身份；策�
 ## 库修订号与预取策略指纹
 
 thumbnailVersion 表示策略/格式/配置指纹，预取判断见上文系统端点；原件变更经 library.changed 推进 revision。
+
+系统 status 的既有 version 字符串与 SSE hello 共用 `发布版本+提交短号[.dirty]`，缺 VCS 数据显式显示 unknown；只供识别运行包，不作为跨版本兼容判定。离线二进制身份检查见 [服务端入口](../../server/README.md#构建身份)。本轮不新增字段或改变 SDK。

@@ -157,7 +157,7 @@ export function TopBar() {
 
   return (
     <>
-      <header className="header">
+      <header className="header" data-qimeng-titlebar>
         <div className="header--left">
           <nav className="tabs" hidden={!isHome}>
             {HOME_TABS.map((t) => (
@@ -295,11 +295,11 @@ export function TopBar() {
         </Popover>
         <div className="header--right">
           <div className="win-controls">
-            {/* title 文案（"最小化"/"最大化"/"关闭"）被桌面壳 desktop/src-tauri/src/titlebar.js
-                按 title 属性定位按钮注入真实窗口行为，改文案须两侧同步 */}
-            <button className="win-btn" title="最小化" type="button"><WinMinIcon /></button>
-            <button className="win-btn" title="最大化" type="button"><WinMaxIcon /></button>
-            <button className="win-btn" title="关闭" type="button"><WinCloseIcon /></button>
+            {/* 动作属性是 desktop/src-tauri/src/titlebar.js 的稳定契约；保留旧 title/class
+                兼容尚未更新的桌面壳。兼容期内不改旧文案，样式不参与新壳动作分派。 */}
+            <button className="win-btn" data-qimeng-window-action="minimize" title="最小化" type="button"><WinMinIcon /></button>
+            <button className="win-btn" data-qimeng-window-action="maximize" title="最大化" type="button"><WinMaxIcon /></button>
+            <button className="win-btn" data-qimeng-window-action="close" title="关闭" type="button"><WinCloseIcon /></button>
           </div>
         </div>
       </header>

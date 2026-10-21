@@ -10,6 +10,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -25,6 +26,7 @@ import (
 
 	"qimeng-media/server/internal/authorattach"
 	"qimeng-media/server/internal/backup"
+	"qimeng-media/server/internal/buildinfo"
 	"qimeng-media/server/internal/config"
 	"qimeng-media/server/internal/events"
 	"qimeng-media/server/internal/httpapi"
@@ -36,9 +38,8 @@ import (
 	"qimeng-media/server/internal/thumbnail"
 )
 
-// version 是服务版本号的唯一来源：SSE hello 帧回显、系统面板 version
-// 字段共用它（M5 镜像交付时改为 -ldflags 注入点，消费方零改动）。
-const version = "0.1.0"
+// system/status 与 SSE hello 共用发布版本和编译期提交身份。
+var version = buildinfo.Current().Display()
 
 // shutdownTimeout 是优雅退出的最长等待时间。
 // 为什么定 10s：覆盖慢客户端把响应读完 + 在途缩略图任务让出，
@@ -82,7 +83,15 @@ func main() {
 	bootLogger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 
 	configPath := flag.String("config", "config.yaml", "配置文件路径（yaml，可不存在；环境变量始终优先于文件）")
+	showVersion := flag.Bool("version", false, "输出构建身份 JSON 后退出；不加载配置、不创建数据目录")
 	flag.Parse()
+	if *showVersion {
+		if err := json.NewEncoder(os.Stdout).Encode(buildinfo.Current()); err != nil {
+			bootLogger.Error("输出构建身份失败", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	cfg, err := config.Load(*configPath)
 	if err != nil {
