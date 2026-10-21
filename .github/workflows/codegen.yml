@@ -1,5 +1,7 @@
 name: 云端协议与查询生成
 on:
+  push:
+    branches: ["codex/codegen/**"]
   workflow_dispatch:
 permissions:
   contents: read
