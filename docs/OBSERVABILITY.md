@@ -46,9 +46,9 @@
 | sse_connections | events/sse.go `WithConnectionGauge` 回调（server.go 装配期注入） | 连接建立/断开时 Set 绝对值 |
 | scan_duration_seconds | scanner/scanner.go `Scan` 成功返回前 | 每次全量扫描成功 |
 | upload_total / upload_bytes_total | mediawrite 上传/入库（HTTP 只适配，2026-10-21 下沉） | 保留既有计量时机；未把全部失败分类重新定义 |
-| library_files{type} | httpapi/libraries.go `refreshLibraryFileMetrics` | 变更点推送刷新（见下） |
+| library_files{type} | mediawrite `RefreshLibraryFileMetrics`，HTTP/扫描适配共用 | 变更点推送刷新（见下） |
 | thumb_queue_depth | thumbnail/pool.go Submit 入队/work 取任务 | 队列每变化一次 |
-| trash_items / trash_bytes | httpapi/trash.go `refreshTrashMetrics` | 变更点推送刷新（见下） |
+| trash_items / trash_bytes | mediawrite `RefreshTrashMetrics` | 变更点推送刷新（见下） |
 | backup_last_success_timestamp | backup 包 `OnSuccess` 回调（main 装配期接 `sysmon.Default.SetBackupLastSuccess`，backup 包自身不感知 sysmon） | 每次快照成功后 |
 
 **口径注记（改动埋点或解读指标前必读）**：

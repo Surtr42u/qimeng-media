@@ -44,6 +44,8 @@ libraryId 空 400/库不存在 404）**
 
 ## 回收站
 
+当前文件/meta/恢复事务、缩略图联动、指标及到期清扫统一由 mediawrite 编排，HTTP 仅映射列表和业务失败；物理删除仍显式推进共享修订号，不另发库变更事件。结构调整不扩大删除权限或改变恢复关联数据的既有边界。
+
 端点：GET /trash、POST /trash/{id}/restore、DELETE /trash/{id}、DELETE /trash
 
 恢复（冲突自动重命名）/单个物理删除/清空（均二次确认场景）

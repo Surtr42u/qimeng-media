@@ -90,7 +90,7 @@
 | 包 | 职责 | 禁止 |
 |---|---|---|
 | `httpapi` | 请求校验、鉴权、调编排服务、序列化 | 业务规则 |
-| `mediawrite` | 直传、续传创建/完成、共用入库、实时上传策略和库变更指标/事件；生产在 main 显式装配 | HTTP/SDK 类型、领域公式、第二份业务数据 |
+| `mediawrite` | 上传与回收站/恢复/到期清扫、共用入库、实时上传策略、库变更指标/事件；生产在 main 显式装配并与 HTTP 共用修订号服务 | HTTP/SDK 类型、领域公式、第二份业务数据 |
 | `scanner` | 全量/增量扫描、变更检测、移动合并 | 直接写库（经 store） |
 | `thumbnail` | 缩略图生成队列（工作池、懒生成、缓存键、静图输出格式自适应：libwebp 缺失时 mjpeg 降级——内嵌形态，U11 批次D） | 阻塞 API 请求 |
 | `search` | FTS5 索引维护与查询 | — |
@@ -118,7 +118,7 @@
 ### 5.1 模块边界强制与防漂移（ADR-0010 / ADR-0009 / ADR-0011 / ADR-0019）
 
 **编排下沉（ADR-0019）**：多步业务编排（上传落盘入库、移动先文件后库行、统计事件重建等）必须放在专职编排包（`server/internal/orchestration/` 或等价 app 层），`httpapi` 禁止业务编排，只保留鉴权、参数校验、序列化与对编排入口的一次调用。既有厚 handler 增量迁移；新增多步流一律不得在 httpapi 落地。不引入编排框架，`cmd/qimeng` 仍为唯一组合根。
-**当前迁移状态（2026-10-21）**：以等价业务包落实编排层，不要求固定 orchestration 目录。authorattach/eventstats 已承载相应业务；mediawrite 已迁入直传收流/发布、续传创建/完成与共用资产入库，httpapi/upload(s).go 仅保留适配与会话单步/生命周期接线。存量 filing/trash、localsync_runner 的调度/状态/TXT/搬移仍在 httpapi，按实施清单继续下沉。ADR-0042 的 localsync.PlanScan 仍负责安全扫描计划；不能把上传下沉等同全部写入完成迁移。
+**当前迁移状态（2026-10-21）**：以等价业务包落实编排层，不要求固定 orchestration 目录。authorattach/eventstats 已承载相应业务；mediawrite 已迁入上传、回收站删除/恢复/物理清理及到期清扫，httpapi/upload(s)/trash(_sweeper).go 只保留协议与生命周期适配。恢复分为文件落点/意图复核、原身份/日统计同事务提交、提交后通知；修订号与 HTTP 共享唯一服务。存量 filing 与 localsync_runner 的调度/状态/TXT/搬移仍在 httpapi，按实施清单继续下沉。ADR-0042 的 localsync.PlanScan 仍负责安全扫描计划，不据局部完成宣称全层迁移完毕。
 
 边界不是口头约定，是**三层机器强制**（决策见 ADR-0010）：
 

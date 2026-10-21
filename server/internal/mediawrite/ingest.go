@@ -102,11 +102,7 @@ func (s *Service) persistUploadedAsset(ctx context.Context, row db.UpsertAssetPa
 	if err != nil {
 		return db.Asset{}, err
 	}
-	defer func() {
-		if rollbackErr := tx.Rollback(); rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
-			s.logger.Warn("回滚上传事务失败", "err", rollbackErr)
-		}
-	}()
+	defer s.rollback(tx, "上传")
 	qtx := s.q.WithTx(tx)
 	asset, err := qtx.UpsertAsset(ctx, row)
 	if err != nil {

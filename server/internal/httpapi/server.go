@@ -302,6 +302,7 @@ func New(deps Deps) (*Server, error) {
 	if s.writes == nil {
 		s.writes = mediawrite.New(mediawrite.Options{Conn: deps.Conn, Queries: deps.Queries,
 			Bus: deps.Bus, Config: deps.Cfg, Thumbs: deps.Thumbs, Logger: logger, Now: now,
+			Revision: rev, MoveFile: func(src, dst string) error { return moveFile(src, dst) },
 			Enrich: func(ctx context.Context, libraryID, assetID string) error {
 				err := s.scanner.EnrichAsset(ctx, libraryID, assetID)
 				if errors.Is(err, ErrScannerUnavailable) {

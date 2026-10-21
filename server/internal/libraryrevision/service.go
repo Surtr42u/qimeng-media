@@ -22,7 +22,7 @@ import (
 const SettingKey = "library_revision"
 
 // Service 是修订号的唯一读写通道：Get 读（带进程内缓存），Increment 原子
-// 自增。并发模型：进程内单服务实例（httpapi.New 组装一份）+ mu 串行化全部
+// 自增。并发模型：进程内单服务实例（main 显式装配，HTTP/mediawrite 共用）+ mu 串行化全部
 // 读写——Increment 的"自增+回读"两步在锁内完成，读到的永远是本进程视角的
 // 最新值；跨进程写竞争不存在（单进程服务端），SQL 侧的单条 UPDATE 自增
 // （CAST 数学在库内完成）再兜一层底，两层合起来不可能丢增量。
@@ -104,6 +104,13 @@ func (s *Service) Increment(ctx context.Context) (int64, error) {
 	}
 	s.cache, s.ready = v, true
 	return v, nil
+}
+
+// Advance 统一处理尽力而为的修订号推进；失败只告警，不改业务成功语义。
+func (s *Service) Advance() {
+	if _, err := s.Increment(context.Background()); err != nil {
+		s.log.Warn("推进库内容修订号失败（客户端可能多拉一轮列表，下次变更自愈）", "err", err)
+	}
 }
 
 // readValue 从库读出并解析修订号（调用方必须已持 mu）。

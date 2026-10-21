@@ -17,6 +17,13 @@ const (
 	LibraryGone
 	UploadDisabled
 	ReadStreamFailure
+	AssetMissing
+	MediaFileMissing
+	InvalidAssetPath
+	InvalidTrashPath
+	TrashMissing
+	OriginalLibraryGone
+	InvalidTrashMeta
 )
 
 // Failure 的 Op 用于服务端诊断，Kind 由接口层映射；底层错误不直接外发。
@@ -26,7 +33,12 @@ type Failure struct {
 	Err  error
 }
 
-func (e *Failure) Error() string { return fmt.Sprintf("%s: %v", e.Op, e.Err) }
+func (e *Failure) Error() string {
+	if e.Err == nil {
+		return e.Op
+	}
+	return fmt.Sprintf("%s: %v", e.Op, e.Err)
+}
 func (e *Failure) Unwrap() error { return e.Err }
 func fail(kind FailureKind, op string, err error) error {
 	return &Failure{Kind: kind, Op: op, Err: err}

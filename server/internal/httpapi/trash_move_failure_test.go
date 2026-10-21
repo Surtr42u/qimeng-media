@@ -97,14 +97,14 @@ func TestRestoreMoveFailureCleansLibraryHalfFile(t *testing.T) {
 	if resp.StatusCode != 200 {
 		t.Fatalf("前置删除应 200，得到 %d", resp.StatusCode)
 	}
-	entries, err := env.s.listTrash()
+	entries, err := env.s.writes.ListTrash()
 	if err != nil || len(entries) != 1 {
 		t.Fatalf("前置删除后应有且仅有 1 条回收站条目: n=%d err=%v", len(entries), err)
 	}
 	e := entries[0]
 
 	stubMoveFileFailAt(t, 1)
-	resp2 := env.do(t, "POST", "/api/v1/trash/"+e.id+"/restore", "")
+	resp2 := env.do(t, "POST", "/api/v1/trash/"+e.ID+"/restore", "")
 	defer func() { _ = resp2.Body.Close() }()
 	if resp2.StatusCode != 500 {
 		t.Fatalf("恢复出站失败应 500，得到 %d", resp2.StatusCode)
@@ -113,10 +113,10 @@ func TestRestoreMoveFailureCleansLibraryHalfFile(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(env.media, testFiles[0].relPath)); !os.IsNotExist(err) {
 		t.Fatalf("库内目标路径不得残留半截文件, stat err=%v", err)
 	}
-	if _, err := os.Stat(e.metaFile); err != nil {
+	if _, err := os.Stat(e.MetaFile); err != nil {
 		t.Fatalf("meta 必须保留（重试恢复的真相源）: %v", err)
 	}
-	if _, err := os.Stat(e.file); err != nil {
+	if _, err := os.Stat(e.File); err != nil {
 		t.Fatalf("回收站文件本体必须保留（失败时源未动）: %v", err)
 	}
 }
@@ -138,7 +138,7 @@ func TestRestoreMoveDidNotCreateTargetKeepsExternalTarget(t *testing.T) {
 	if resp.StatusCode != 200 {
 		t.Fatalf("前置删除应 200，得到 %d", resp.StatusCode)
 	}
-	entries, err := env.s.listTrash()
+	entries, err := env.s.writes.ListTrash()
 	if err != nil || len(entries) != 1 {
 		t.Fatalf("前置删除后应有且仅有 1 条回收站条目: n=%d err=%v", len(entries), err)
 	}
@@ -156,7 +156,7 @@ func TestRestoreMoveDidNotCreateTargetKeepsExternalTarget(t *testing.T) {
 	}
 	t.Cleanup(func() { moveFile = orig })
 
-	resp2 := env.do(t, "POST", "/api/v1/trash/"+e.id+"/restore", "")
+	resp2 := env.do(t, "POST", "/api/v1/trash/"+e.ID+"/restore", "")
 	defer func() { _ = resp2.Body.Close() }()
 	if resp2.StatusCode != 500 {
 		t.Fatalf("恢复失败应 500，得到 %d", resp2.StatusCode)
@@ -168,10 +168,10 @@ func TestRestoreMoveDidNotCreateTargetKeepsExternalTarget(t *testing.T) {
 	if string(got) != string(external) {
 		t.Fatalf("外部目标文件内容被改: %q", got)
 	}
-	if _, serr := os.Stat(e.metaFile); serr != nil {
+	if _, serr := os.Stat(e.MetaFile); serr != nil {
 		t.Fatalf("meta 必须保留（重试恢复的真相源）: %v", serr)
 	}
-	if _, serr := os.Stat(e.file); serr != nil {
+	if _, serr := os.Stat(e.File); serr != nil {
 		t.Fatalf("回收站文件本体必须保留（失败时源未动）: %v", serr)
 	}
 }

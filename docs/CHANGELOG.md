@@ -10,6 +10,15 @@
 - 署名更正（2026-10-20，用户明确确认）：2026-10-19～20 的第五百三十八至第五百四十五笔原误署 GPT-6 或仅署 Codex，统一更正为 GPT-6.1 Sol；保留各条主代理/执行子代理及复核分工。
 
 
+## refactor(server): 回收站与恢复编排下沉（2026-10-21 第五百六十五笔）
+
+执行 AI：未知（会话未提供可核实的完整模型名称与变体；主代理）
+
+- mediawrite 承接软删除、恢复、永久删除、清空、列表/指标和到期清扫；main 共享库修订服务，HTTP 仅协议映射。原锁顺序、meta 恢复意图、资产/日统计同事务、失败保源与固定落点重试保持；无 API/schema/SDK 或算法变化。
+- 脱离 HTTP 的恢复测试覆盖统计写入故障、事务回滚、保留唯一原件/意图及重试恢复原身份、不重复文件；既有 HTTP 故障注入/回收站/清扫回归通过。
+- 验证：Go 全量测试、vet、仓库锁定 lint 0 issues、Android arm64 Go 交叉构建、文档/历史 migration 检查；未执行 race/远端 CI/设备/NAS/部署，无真库测试写入。
+- 文档影响：架构及 ADR-0019、服务端入口、文件领域/API、安全/监控专题及实施清单同步职责和边界；最旧完整条目归档保持 30 笔。本机同步和 Android 后续项继续保留。
+
 ## refactor(server): WAL/FULL 持久性优先与上传编排下沉（2026-10-21 第五百六十四笔）
 
 执行 AI：未知（会话未提供可核实的完整模型名称与变体；主代理）
@@ -323,32 +332,3 @@
 - **自测**：`go build ./...`、`go vet ./...`、`gofmt -l .` 全清；`go test ./... -count=1` **20 包全绿**（新增 safego 包与 4 组加固回归测试：Content-Type 拒绝/放行、dev 404 不消耗限速、token no-store、回收站恢复 `ErrMoveDidNotCreateTarget` 清理跳过、0018 索引与 down/up 链）。
 - **CI 回修（同日）**：首次推送后 server job 的 `go test ./... -race` 暴露两处数据竞争——① 备份调度接入 `safego` 时闭包延迟读取 `m.schedInterval`（锁内写 vs goroutine 读），改为锁内快照 `intervalSnapshot` 后传参；② 新增 `safego` 单测用共享 `bytes.Buffer` 写读，改为互斥 `syncBuffer`。本地全量测试通过，race 结论以 CI 复核为准。
 - **文档**：`docs/SECURITY.md`（新增「2026-10-17 安全加固」节 + 红线 6/7、auth 限速、dev 校验顺序、上传 ffmpeg 白名单、作者镜像能力口径、镜像构建现状勘正）、`docs/CHANGELOG.md`（本笔）、`docs/HANDOVER.md`（服务端现状与遗留缺口）、`docs/GUIDE_API.md`（端点计数口径勘正 74→75/94→97）、`.github/workflows/build-apk.yml`（过时的 sdk.lock 红灯注释更新）。
-
-
-
-## feat(app): 搜索结果增加类型与分区选项卡 + 悬浮底栏左右空白防穿透强化（2026-10-16 第五百三十五笔）
-
-执行 AI：Gemini-3.8-Flash（主代理）
-
-- **背景与需求**：
-  1. 用户体验 App 搜索功能时反馈搜索结果无选项页，提出参考 B 站及本项目 Web 端（`SearchPage.tsx`）的选项页逻辑，在搜索完成后为 App 加上符合当前 Aurora Glass 视觉的选项卡（支持看具体内容分区与媒体类型）。
-  2. 用户真机实测反馈悬浮底栏（FloatingTabDock）虽然底部间隙已不误触，但左右边缘与胶囊端部仍存在微小漏点误触到背后媒体卡片，要求沿用此前 `consumeTaps()` 隔离方案对左右两侧做完整防穿透优化。
-- **设计与实现**：
-  - **搜索选项卡（对齐 Web 与 B 站）**：
-    - **视觉组件**：复用既有通用组件 `QimengChipRow` 与 `QimengPill`（ADR-0008 / ADR-0031）；结果态 `ResultPhase` 顶部固定展示双排胶囊栏（行 1：媒体类型；行 2：内容分区），与下方支持双指缩放的媒体网格分离。
-    - **媒体类型四档**：综合（`mediaType=null`，缺省）、视频（`VIDEO`）、动图（`ANIMATED_IMAGE`）、图片（`IMAGE`），对齐 Web `TYPE_TO_MEDIA` 映射。
-    - **内容分区三档**：全部（`includeCos=true, cosOnly=null`，缺省）、常规（`includeCos=null, cosOnly=null`，服务端默认排除 COS）、COS（`cosOnly=true, includeCos=null`），遵循 `DOMAIN_RULES.md` §6 映射口径。
-    - **交互与重置**：切换选项即时滚动回顶（`gridState.scrollToItem(0)`）并重拉首屏；新词搜索或返回清词重置为默认档位；重复点击当前项操作幂等。
-  - **悬浮底栏左右空白防穿透强化**：
-    - **根因定位**：悬浮底栏在胶囊两端内部保留了 18dp（`SlotInnerPadding`）槽内呼吸间距，且 `DockBody` 本身及外层 `Row`、`Column` 容器此前未挂载触摸隔离，手指按压偏向胶囊两端或左右外距交界处时，点击穿透至底层的媒体瀑布流。
-    - **全链路隔离**：在 `FloatingTabDock` 的外层 `Column`、`Row`、`DockBody` 及内层 `DockItemsRow` 容器上全链路挂载 `consumeTaps()`（`detectTapGestures {}` 空实现只消费点击，不拦滑动/拖动手势）；各 Tab 项 `Modifier.clickable` 按 Compose 规则优先消费自身点击，外围与端部呼吸空隙的误触被彻底拦截。
-- **修改文件**：
-  - `android/feature/search/src/main/res/values/strings.xml`：新增类型与分区选项文案。
-  - `android/feature/search/src/main/java/media/qimeng/app/feature/search/SearchViewModel.kt`：新增 `SearchMediaType` 枚举、UiState 筛选字段及 `selectZone`/`selectMediaType` 动作。
-  - `android/feature/search/src/main/java/media/qimeng/app/feature/search/SearchScreen.kt`：新增 `SearchFilterOptions` 组件并置顶挂入 `ResultPhase`，监听筛选切换回顶。
-  - `android/core/ui/src/main/java/media/qimeng/app/core/ui/glass/FloatingTabDock.kt`：外层容器及 DockBody 补齐 `consumeTaps()` 隔离。
-  - `android/feature/search/src/test/java/media/qimeng/app/feature/search/SearchViewModelTest.kt`：新增 4 组单元测试锁定分区/类型/重置/幂等逻辑。
-- **自测与装机**：
-  - 单元测试：`:feature:search:testDebugUnitTest` 25 例全绿，`:core:ui:compileDebugKotlin` 与 `:core:ui:testDebugUnitTest` 编译与测试全绿；
-  - 打包与装机：`:app:assembleRelease` 构建通过（Release APK 26.4MB），通过 ADB 原地覆盖安装至真机（NX721J），保留全部应用数据与登录状态。
-- **文档**：`docs/HANDOVER.md`、`docs/CHANGELOG.md`。

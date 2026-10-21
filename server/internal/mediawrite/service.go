@@ -5,11 +5,14 @@ package mediawrite
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"log/slog"
 	"time"
 
 	"qimeng-media/server/internal/config"
 	"qimeng-media/server/internal/events"
+	"qimeng-media/server/internal/filing"
+	"qimeng-media/server/internal/libraryrevision"
 	"qimeng-media/server/internal/scanner"
 	"qimeng-media/server/internal/store/db"
 	"qimeng-media/server/internal/sysmon"
@@ -19,27 +22,31 @@ import (
 
 // Options 是生产组合根的显式依赖；测试可注入时钟和富化函数。
 type Options struct {
-	Conn    *sql.DB
-	Queries *db.Queries
-	Bus     *events.Bus
-	Config  *config.Config
-	Thumbs  *thumbnail.Generator
-	Logger  *slog.Logger
-	Now     func() time.Time
-	Enrich  func(context.Context, string, string) error
+	Conn     *sql.DB
+	Queries  *db.Queries
+	Bus      *events.Bus
+	Config   *config.Config
+	Thumbs   *thumbnail.Generator
+	Logger   *slog.Logger
+	Now      func() time.Time
+	Enrich   func(context.Context, string, string) error
+	Revision *libraryrevision.Service
+	MoveFile func(string, string) error
 }
 
 // Service 持有写入流程依赖，不持有请求/协议对象或第二份业务数据。
 type Service struct {
-	conn    *sql.DB
-	q       *db.Queries
-	bus     *events.Bus
-	cfg     *config.Config
-	thumbs  *thumbnail.Generator
-	logger  *slog.Logger
-	now     func() time.Time
-	enrich  func(context.Context, string, string) error
-	uploads *uploadsess.Manager
+	conn     *sql.DB
+	q        *db.Queries
+	bus      *events.Bus
+	cfg      *config.Config
+	thumbs   *thumbnail.Generator
+	logger   *slog.Logger
+	now      func() time.Time
+	enrich   func(context.Context, string, string) error
+	uploads  *uploadsess.Manager
+	revision *libraryrevision.Service
+	moveFile func(string, string) error
 }
 
 func New(opts Options) *Service {
@@ -49,9 +56,23 @@ func New(opts Options) *Service {
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
+	if opts.Revision == nil {
+		opts.Revision = libraryrevision.NewService(opts.Queries, opts.Logger, opts.Now)
+	}
+	if opts.MoveFile == nil {
+		opts.MoveFile = filing.MoveFile
+	}
 	return &Service{conn: opts.Conn, q: opts.Queries, bus: opts.Bus, cfg: opts.Config,
 		thumbs: opts.Thumbs, logger: opts.Logger, now: opts.Now, enrich: opts.Enrich,
-		uploads: uploadsess.New(opts.Config.DataDir, opts.Now, opts.Logger)}
+		uploads: uploadsess.New(opts.Config.DataDir, opts.Now, opts.Logger), revision: opts.Revision, moveFile: opts.MoveFile}
+}
+
+func (s *Service) bumpLibraryRevision() { s.revision.Advance() }
+
+func (s *Service) rollback(tx *sql.Tx, operation string) {
+	if err := tx.Rollback(); err != nil && !errors.Is(err, sql.ErrTxDone) {
+		s.logger.Warn("回滚媒体事务失败", "operation", operation, "err", err)
+	}
 }
 
 // UploadSessions 供单步会话读写适配和生命周期管理共享同一个注册表。
@@ -94,4 +115,11 @@ func (s *Service) RefreshLibraryFileMetrics() {
 	}
 	sysmon.Default.SetLibraryFiles(sysmon.FileImage, image)
 	sysmon.Default.SetLibraryFiles(sysmon.FileVideo, video)
+}
+
+// CleanupMoveResidue 只清理由失败移动创建的半截副本，完整副本宁留勿删。
+func (s *Service) CleanupMoveResidue(src, dst string) {
+	if err := filing.RemovePartialCopy(src, dst); err != nil {
+		s.logger.Warn("MoveFile 失败后清理目标端半截文件失败（可能残留）", "src", src, "dst", dst, "err", err)
+	}
 }

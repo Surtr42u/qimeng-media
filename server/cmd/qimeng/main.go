@@ -30,6 +30,7 @@ import (
 	"qimeng-media/server/internal/config"
 	"qimeng-media/server/internal/events"
 	"qimeng-media/server/internal/httpapi"
+	"qimeng-media/server/internal/libraryrevision"
 	"qimeng-media/server/internal/mediawrite"
 	"qimeng-media/server/internal/safego"
 	"qimeng-media/server/internal/scanner"
@@ -220,9 +221,11 @@ func main() {
 	// 漏接线会退回逐语句 autocommit（中间态窗口回归，见 scanner.SetConn）。
 	scan.SetConn(conn)
 
+	revisionService := libraryrevision.NewService(queries, logger, time.Now)
 	apiSrv, err := httpapi.New(httpapi.Deps{
+		Revision: revisionService,
 		Writes: mediawrite.New(mediawrite.Options{Conn: conn, Queries: queries, Bus: bus,
-			Config: cfg, Thumbs: thumbs, Logger: logger, Now: time.Now, Enrich: scan.EnrichAsset}),
+			Config: cfg, Thumbs: thumbs, Logger: logger, Now: time.Now, Enrich: scan.EnrichAsset, Revision: revisionService}),
 		Conn:        conn,
 		Queries:     queries,
 		Bus:         bus,
