@@ -54,6 +54,8 @@ M6 基座历史验收已完成；近期变更未因此自动取得新版本实�
 
 ## 维护定位
 
+统计主页、分类型及来源趋势共用 QimengTrendLineChart：显示折线、面积、数据点与日期标签，不绘制背景水平网格线；此次仅改变 Android 图表渲染，不改变事件、窗口或统计公式。
+
 首页默认 COS 与常规推荐共用同一取数/分批/换轮状态机，分别保留 seed 和清单，COS 请求显式 `cosOnly=true`。下拉换批不报“已是最新”；推荐公式未变，小库/评分约束下仍可能同序。非默认筛选/排序继续使用 COS 资产游标列表，重置面板恢复推荐；切模式、刷新及缓存标脏都会作废旧代响应，保留常规/COS 隔离。
 
 - 导航：QimengNavHost 保留会话分支、路由装配与常驻层 owner/saveable 状态；Routes 管路由/编码，TabNavigationPolicy 管点击防抖/回顶/顶层跳转，ResidentTabScreen 与 ClassicBottomBar 只渲染各自部分。恢复/隐藏屏生命周期与触摸隔离顺序保持。
