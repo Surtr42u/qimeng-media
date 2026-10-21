@@ -21,7 +21,7 @@
 | 便携备份/迁移 | v2 原事件身份合并、TXT 片段 keep、兼容 v1；[迁移](domain/migration.md) | 旧 v1 丢失身份无法逆推；同步升级客户端，实迁移验收 | 已有；验收待执行 |
 | 库文件快照 | 在线快照、定时轮转、API 调度参数热生效；[备份 API](api/backup.md) | Web 调度卡按用户要求撤下，不列接口缺口；冷拷贝/恢复指南已补（RESTORE）；远端/异地备份与目标设备恢复待验收 | 已有 |
 | 统计/推荐 | 事件流、物化趋势、排行榜、可调推荐；[统计](domain/statistics.md)、[推荐](domain/recommendation.md) | 真实大库性能与故障验收 | 已有 |
-| Android | 浏览/播放/上传/整理、离线事件队列、缓存、内嵌/Termux 单机；[Android 入口](../android/README.md) | SSE 静默黑洞看门狗（现用 5min TTL）；本轮已覆盖安装/启动/内嵌健康检查，迁移/切服等专项另验收；x86_64 模拟器内嵌 SQLite 初始化 SIGSYS 待修，arm64 手机已独立通过（HANDOVER） | 已有 |
+| Android | 浏览/播放/上传/整理、离线事件队列、缓存、内嵌/Termux 单机；[Android 入口](../android/README.md) | SSE 静默黑洞看门狗（现用 5min TTL）；0.2.1 已覆盖安装并核对实际 APK，启动/后台/切服等新版专项待验收；此前 arm64 健康结果不外推本次；x86_64 SQLite SIGSYS 待修（HANDOVER） | 已有 |
 | 上传/同步/整理 | 直传、双端分片续传、目录拖拽、SAF/分享、归档一键上传、本机同步；[API files](api/files.md) | HTTP 源 mtime 保留未实现；Android 目标 URL 与分片把手持久化/单测通过，设备切服与重启待验收；续传会话总量上限 | 已有；增强/验收待办 |
 | 本机同步 | 库名映射、30s 轮询、根 TXT keep 导入与归档 | GBK/GB18030 待实际非 UTF-8 输入；fsnotify/指标化待延迟需求；词表 UTF-8 门禁待异常输入 | 已有 |
 | 标签/收藏/点赞/时间轴 | 各端管理和事件联动；[行为规则](domain/engagement.md) | — | 已有 |
