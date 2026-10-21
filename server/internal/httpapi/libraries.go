@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"context"
 	"database/sql"
 	"errors"
 	"net/http"
@@ -9,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/google/uuid"
 
@@ -18,14 +16,7 @@ import (
 	"qimeng-media/server/internal/scanner"
 	"qimeng-media/server/internal/store"
 	"qimeng-media/server/internal/store/db"
-	"qimeng-media/server/internal/sysmon"
 )
-
-// libraryMetricsRefreshTimeout 是 library_files 指标刷新的后台查询上限：
-// 刷新跑在业务请求路径上（变更点推送），必须限时，绝不能拖住删除/上传
-// 的响应。与 readyzTimeout 同值是两个独立决策（探针上限 vs 后台刷新上限），
-// 可各自调整。
-const libraryMetricsRefreshTimeout = 3 * time.Second
 
 // scanStateMap 是库扫描态的内存跟踪。值类型直接用生成常量
 // gen.LibraryScanState（协议枚举单一来源，禁止手抄字符串——本表原存
@@ -414,23 +405,4 @@ func (s *Server) FinishScan(libraryID string, failed bool) {
 // 恢复四个时机各调一次），不做定时轮询：治理面板数据允许秒级陈旧，
 // 不值得为它加常驻扫描。失败只记日志：指标刷新失败不影响业务路径的
 // 成功响应。
-func (s *Server) refreshLibraryFileMetrics() {
-	ctx, cancel := context.WithTimeout(context.Background(), libraryMetricsRefreshTimeout)
-	defer cancel()
-	var image, video int64
-	rows, err := s.q.CountAllLibrariesMedia(ctx)
-	if err != nil {
-		s.logger.Warn("刷新 library_files 指标失败", "err", err)
-		return
-	}
-	for _, c := range rows {
-		switch c.MediaType {
-		case scanner.MediaTypeImage, scanner.MediaTypeAnimatedImage:
-			image += c.Cnt
-		case scanner.MediaTypeVideo:
-			video += c.Cnt
-		}
-	}
-	sysmon.Default.SetLibraryFiles(sysmon.FileImage, image)
-	sysmon.Default.SetLibraryFiles(sysmon.FileVideo, video)
-}
+func (s *Server) refreshLibraryFileMetrics() { s.writes.RefreshLibraryFileMetrics() }

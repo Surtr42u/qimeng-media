@@ -1,112 +1,36 @@
-// uploads.go：断点续传上传端点（tus 1.0 核心语义极简子集，ADR-0028）。
-// 会话状态（注册表/分片文件/过期清扫）在 internal/uploadsess 包，本文件只做
-// 参数校验与编排：create 前置校验（清洗/dir 规范化/白名单/上限），complete 对
-// 拼装完成的整文件复跑直传同一套终检与入库管线（ingestPlacedUpload，upload.go）
-// ——library.changed 照发（修订号照 bump）、upload.done 照发、富化照跑。
-// dir 目标子目录与直传逐字同语义（空 = 库根）：create 校验规范化后存入会话，
-// complete 按其落位（placeSealedInLibrary 与直传 #9 关键段同构）。
-// 同名冲突语义与直传通道逐字一致：自动重命名 "基名 (2).ext"，永不 409。
+// uploads.go 适配会话协议与生命周期；创建/完成的多步业务归 mediawrite。
 package httpapi
 
 import (
 	"context"
-	"database/sql"
 	"errors"
-	"fmt"
-	"io"
 	"net/http"
-	"os"
-	"path"
-	"path/filepath"
 	"time"
 
 	"github.com/google/uuid"
 
-	"qimeng-media/server/internal/filing"
 	"qimeng-media/server/internal/httpapi/gen"
+	"qimeng-media/server/internal/mediawrite"
 	"qimeng-media/server/internal/safego"
-	"qimeng-media/server/internal/scanner"
-	"qimeng-media/server/internal/store/db"
-	"qimeng-media/server/internal/sysmon"
 	"qimeng-media/server/internal/uploadsess"
 )
 
-// PostApiV1Uploads 创建断点续传上传会话：创建即做可前置校验（文件名清洗、
-// 扩展名白名单、size 上限、库存在且启用、autoAccept 开关），把弱网大文件的
-// 校验失败挡在收第一个字节之前。会话与分片文件由 uploadsess.Manager 持有。
+// PostApiV1Uploads 仅解码请求并调用会话创建编排。
 func (s *Server) PostApiV1Uploads(w http.ResponseWriter, r *http.Request) {
 	var req gen.CreateUploadRequest
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	// 第④道前置：文件名清洗（落盘名的唯一来源，与直传同一入口）；同名
-	// 冲突在 complete 时按直传语义自动重命名，这里清洗结果即"目标名"。
-	name, err := filing.SanitizeFilename(req.FileName)
-	if err != nil {
-		sysmon.Default.IncUpload(sysmon.UploadFail)
-		writeErr(w, http.StatusBadRequest, codeInvalidFilename, "文件名不合法")
-		return
-	}
-	// 第①道前置：扩展名白名单（魔数终检在 complete——创建时还没有字节）。
-	if _, ok := scanner.ClassifyMedia(name); !ok {
-		sysmon.Default.IncUpload(sysmon.UploadFail)
-		writeErr(w, http.StatusBadRequest, codeInvalidExtension, "扩展名不在白名单")
-		return
-	}
-	// 目标目录前置校验（与直传同一入口 resolveUploadDir：空 = 库根，非空过
-	// NormalizeRelPath）：create 即挡住穿越形态，规范化结果存入会话——
-	// complete 落位只认服务端持有的 dir，不再收客户端路径（SECURITY 红线 1）。
-	// 协议 dir 可选（生成物 *string）：nil 与空串同语义 = 库根（openapi 缺省口径）。
-	reqDir := ""
+	dir := ""
 	if req.Dir != nil {
-		reqDir = *req.Dir
+		dir = *req.Dir
 	}
-	dir, ok := resolveUploadDir(w, reqDir)
-	if !ok {
-		sysmon.Default.IncUpload(sysmon.UploadFail)
-		return
-	}
-	if req.LibraryId == "" || req.Size < 1 {
-		sysmon.Default.IncUpload(sysmon.UploadFail)
-		writeErr(w, http.StatusBadRequest, codeInvalidParam, "libraryId 与 size 必填（size ≥ 1）")
-		return
-	}
-	// 库存在且启用（直传通道未查启用位是历史口径，分片通道按 ADR-0028
-	// 协议声明收紧；停用库的浏览面已隐藏，不应再是新文件的落点）。
-	lib, err := s.q.GetLibrary(r.Context(), req.LibraryId)
-	if errors.Is(err, sql.ErrNoRows) {
-		sysmon.Default.IncUpload(sysmon.UploadFail)
-		writeErr(w, http.StatusBadRequest, codeLibraryNotFound, "libraryId 须指向已注册且启用的库")
-		return
-	}
+	snapshot, err := s.writes.CreateUploadSession(r.Context(), mediawrite.SessionUpload{LibraryID: req.LibraryId, Filename: req.FileName, Directory: dir, Size: req.Size})
 	if err != nil {
-		s.internalErr(w, "查询库", err)
+		s.writeUploadServiceError(w, err)
 		return
 	}
-	if lib.Enabled != 1 {
-		sysmon.Default.IncUpload(sysmon.UploadFail)
-		writeErr(w, http.StatusBadRequest, codeLibraryNotFound, "libraryId 须指向已注册且启用的库")
-		return
-	}
-	// 与直传同一道闸：autoAccept 关闭时两条上传通道一起关（防分片通道成为
-	// 直传被关后的旁路）；上限与直传同源（配置文件与 kv 取小者）。
-	policy := s.resolveUploadPolicy(r.Context())
-	if policy.disabled {
-		sysmon.Default.IncUpload(sysmon.UploadFail)
-		writeErr(w, http.StatusForbidden, codeUploadDisabled, "上传已被关闭（设置页自动接收上传开关）")
-		return
-	}
-	if req.Size > policy.maxBytes {
-		sysmon.Default.IncUpload(sysmon.UploadFail)
-		writeErr(w, http.StatusRequestEntityTooLarge, codeUploadTooLarge, "文件超过大小上限")
-		return
-	}
-	snap, err := s.uploads.Create(lib.ID, name, dir, req.Size)
-	if err != nil {
-		s.internalErr(w, "创建上传会话", err)
-		return
-	}
-	writeJSON(w, http.StatusCreated, uploadSessionToGen(snap))
+	writeJSON(w, http.StatusCreated, uploadSessionToGen(snapshot))
 }
 
 // GetApiV1UploadsId 断点探测：客户端重试/续传前先问服务端"传到哪了"。
@@ -156,191 +80,15 @@ func (s *Server) PatchApiV1UploadsId(w http.ResponseWriter, r *http.Request, id 
 	}
 }
 
-// PostApiV1UploadsIdComplete 终结会话：对拼装完成的整文件复跑直传的终检
-// 与入库管线。成功后临时文件已搬进库、会话删除；校验失败/库已删时会话与
-// 临时文件保留（可修正后重试），过期时钟已在入口 Touch。
+// PostApiV1UploadsIdComplete 仅调用编排并装配签名响应。
 func (s *Server) PostApiV1UploadsIdComplete(w http.ResponseWriter, r *http.Request, id gen.UploadId) {
-	sid := id.String()
-	unlock, err := s.uploads.LockCompletion(sid)
+	asset, err := s.writes.CompleteUploadSession(r.Context(), id.String())
 	if err != nil {
-		writeErr(w, http.StatusNotFound, codeNotFound, "上传会话不存在或已过期")
+		s.writeUploadServiceError(w, err)
 		return
 	}
-	defer unlock()
-
-	// complete 尝试即计入过期时钟：可重试的失败会话保留到 SessionTTL 兜底。
-	if err := s.uploads.Touch(sid); err != nil {
-		if errors.Is(err, uploadsess.ErrSessionNotFound) {
-			writeErr(w, http.StatusNotFound, codeNotFound, "上传会话不存在或已过期")
-			return
-		}
-		s.internalErr(w, "查询上传会话", err)
-		return
-	}
-	seal, err := s.uploads.Seal(sid)
-	if errors.Is(err, uploadsess.ErrSessionNotFound) {
-		writeErr(w, http.StatusNotFound, codeNotFound, "上传会话不存在或已过期")
-		return
-	}
-	if errors.Is(err, uploadsess.ErrNotComplete) {
-		writeErr(w, http.StatusBadRequest, codeInvalidParam, "分片未传完（offset 未达 size）")
-		return
-	}
-	if err != nil {
-		s.internalErr(w, "终结上传会话", err)
-		return
-	}
-	// 与直传同一道闸（会话创建后设置页开关可能翻转）与同一上限来源。
-	policy := s.resolveUploadPolicy(r.Context())
-	if policy.disabled {
-		sysmon.Default.IncUpload(sysmon.UploadFail)
-		writeErr(w, http.StatusForbidden, codeUploadDisabled, "上传已被关闭（设置页自动接收上传开关）")
-		return
-	}
-	// 四道终检对拼装后的整文件全部到位：②魔数（读拼装文件头部）→①扩展名/
-	// ③最终大小/④文件名（ValidateUpload 内部同序短路）。终检失败会话保留。
-	head, err := readUploadHead(seal.Path)
-	if err != nil {
-		s.internalErr(w, "读取分片文件头", err)
-		return
-	}
-	if verr := filing.ValidateUpload(seal.FileName, seal.Size, policy.maxBytes, head); verr != nil {
-		sysmon.Default.IncUpload(sysmon.UploadFail)
-		writeUploadValidationError(w, verr)
-		return
-	}
-	// 会话创建后库可能已被删除：终检过了也无法入库，404 引导客户端放弃。
-	lib, err := s.q.GetLibrary(r.Context(), seal.LibraryID)
-	if errors.Is(err, sql.ErrNoRows) {
-		writeErr(w, http.StatusNotFound, codeNotFound, "上传会话所属库不存在")
-		return
-	}
-	if err != nil {
-		s.internalErr(w, "查询库", err)
-		return
-	}
-	mediaType, ok := scanner.ClassifyMedia(seal.FileName)
-	if !ok {
-		// 防御分支：创建时已过白名单，文件名不可变（会话内固定），理论不可达。
-		sysmon.Default.IncUpload(sysmon.UploadFail)
-		writeErr(w, http.StatusBadRequest, codeInvalidExtension, "扩展名不在白名单")
-		return
-	}
-	// 搬运 + 冲突解析 + 入库（放置段拆出见 placeSealedInLibrary：重活锁外、
-	// rename 锁内，与直传 #9 关键段同构）。dir 为 create 时校验规范化并存入
-	// 会话的目标子目录（空 = 库根），落位语义与直传逐字一致。
-	var detail gen.AssetDetail
-	finalName, targetRel, targetAbs, gerr := s.placeSealedInLibrary(lib, seal)
-	if gerr != nil {
-		if errors.Is(gerr, errUploadTargetEscape) {
-			writeErr(w, http.StatusBadRequest, codePathEscape, "目标路径不合法")
-			return
-		}
-		if errors.Is(gerr, errSealedSizeMismatch) {
-			// 400：与「未传完 400」同属 complete 的「校验失败且会话保留」
-			// 语义（协议侧 complete 明文「永不 409」，冲突语义已被同名自动
-			// 重命名占位）——size 复核是四道终检里「最终大小」的加固延伸，
-			// 客户端无从修复（成品字节已不可信），只能放弃重建会话。
-			sysmon.Default.IncUpload(sysmon.UploadFail)
-			writeErr(w, http.StatusBadRequest, codeInvalidParam, "分片成品与会话声明大小不符，请放弃本会话重新上传")
-			return
-		}
-		s.internalErr(w, "落盘分片成品文件", gerr)
-		return
-	}
-	detail, err = s.ingestPlacedUpload(r.Context(), lib.ID, targetAbs, targetRel, finalName, mediaType)
-	if err != nil {
-		s.internalErr(w, "入库上传资产", err)
-		return
-	}
-	// 入库成功才释放会话及分片源；硬链接成品的内容不会随源链接删除而消失。
-	if derr := s.uploads.Finish(sid); derr != nil && !errors.Is(derr, uploadsess.ErrSessionNotFound) {
-		s.logger.Warn("清理已完成上传会话失败", "id", sid, "err", derr)
-	}
-	writeJSON(w, http.StatusCreated, detail)
+	writeJSON(w, http.StatusCreated, s.assembleUploadDetail(asset))
 }
-
-// placeSealedInLibrary 把终结就绪的分片文件搬进库内目标目录（dir 空 = 库根，
-// 与直传 dir 参数同语义）并解析冲突名：重活（跨卷拷贝预置）在库锁外、锁内
-// 只做只读探测、size 复核与一次 rename——与直传 #9 关键段同构（持库锁时长
-// 与文件大小无关）。dir 在 create 时已过 resolveUploadDir 规范化并存入会话
-// （服务端持有，complete 不再收客户端路径）；baseDirAbs 的 PathWithinRoot 仍
-// 保留为 handler 侧兜底（SECURITY 红线 1 纵深防御，与直传同一道闸）。预置/
-// 放置失败清理临时副本；rename 成功后副本已不在（cleanup 报 NotExist 属正常）。
-// 返回最终落盘名、库内相对路径与绝对路径（rel = dir/最终名，供入库管线）。
-func (s *Server) placeSealedInLibrary(lib db.Library, seal uploadsess.SealedSession) (string, string, string, error) {
-	if seal.PlacedRel != "" {
-		target := filepath.Join(lib.RootPath, filepath.FromSlash(seal.PlacedRel))
-		if !filing.PathWithinRoot(lib.RootPath, target) {
-			return "", "", "", errUploadTargetEscape
-		}
-		return path.Base(seal.PlacedRel), seal.PlacedRel, target, nil
-	}
-
-	// 目标子目录（含校验兜底）：预置与最终落点同目录才能原子 rename——
-	// 与直传「先建目录、临时文件与最终文件同目录」同一顺序（MkdirAll 幂等
-	// 且并发安全，在 stageSealedFile 内完成）。
-	baseDirAbs := filepath.Join(lib.RootPath, filepath.FromSlash(seal.Dir))
-	if !filing.PathWithinRoot(lib.RootPath, baseDirAbs) {
-		return "", "", "", errUploadTargetEscape
-	}
-	root, err := os.OpenRoot(lib.RootPath)
-	if err != nil {
-		return "", "", "", err
-	}
-	defer filing.CloseRoot(root)
-	if err := root.MkdirAll(filepath.FromSlash(path.Join(".", seal.Dir)), dirPerm); err != nil {
-		return "", "", "", err
-	}
-	staging, cleanup, err := s.stageSealedFile(root, seal.Dir, seal.Path)
-	if err != nil {
-		return "", "", "", err
-	}
-	var (
-		finalName string
-		targetRel string
-		targetAbs string
-	)
-	gerr := filing.WithLibraryGate(lib.ID, func() error {
-		exists := func(n string) bool {
-			_, serr := os.Stat(filepath.Join(baseDirAbs, n))
-			return serr == nil
-		}
-		finalName = filing.ResolveConflict(seal.FileName, exists)
-		targetRel = path.Join(seal.Dir, finalName)
-		targetAbs = filepath.Join(lib.RootPath, filepath.FromSlash(targetRel))
-		if !filing.PathWithinRoot(lib.RootPath, targetAbs) {
-			return errUploadTargetEscape
-		}
-		// Seal已禁止后续PATCH；落位前再拒绝外部篡改的大小不一致成品。
-		st, serr := os.Stat(staging)
-		if serr != nil {
-			return fmt.Errorf("复核分片成品大小失败: %w", serr)
-		}
-		if st.Size() != seal.Size {
-			s.logger.Warn("分片成品与会话声明大小不符，拒绝落位", "session", seal.ID,
-				"declared", seal.Size, "actual", st.Size())
-			return errSealedSizeMismatch
-		}
-		stagingRel, err := filepath.Rel(lib.RootPath, staging)
-		if err != nil {
-			return err
-		}
-		if err := root.Rename(stagingRel, filepath.FromSlash(targetRel)); err != nil {
-			return err
-		}
-		return s.uploads.SetPlacement(seal.ID, targetRel)
-	})
-	if gerr != nil {
-		cleanup()
-		return "", "", "", gerr
-	}
-	return finalName, targetRel, targetAbs, nil
-}
-
-// errSealedSizeMismatch 落位前复核发现分片成品实际字节数与会话声明 size
-// 不符（Seal 后成品被篡改的信号）：按会话已损坏处理，complete 映射 400。
-var errSealedSizeMismatch = errors.New("uploads: 分片成品与会话声明大小不符")
 
 // DeleteApiV1UploadsId 放弃会话：删临时文件与会话，不入库、不产生任何资产。
 func (s *Server) DeleteApiV1UploadsId(w http.ResponseWriter, r *http.Request, id gen.UploadId) {
@@ -363,76 +111,6 @@ func uploadSessionToGen(snap uploadsess.Snapshot) gen.UploadSession {
 		Id:     uuid.MustParse(snap.ID),
 		Offset: snap.Offset,
 		Size:   snap.Size,
-	}
-}
-
-// readUploadHead 读取文件头部 RecommendedHeadBytes 字节（complete 的魔数
-// 终检输入；短文件整体返回，与直传收流的 head 读取同语义）。
-func readUploadHead(path string) ([]byte, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	head := make([]byte, filing.RecommendedHeadBytes)
-	n, err := io.ReadFull(f, head)
-	if err != nil && err != io.ErrUnexpectedEOF && err != io.EOF {
-		if cerr := f.Close(); cerr != nil {
-			return nil, errors.Join(err, cerr)
-		}
-		return nil, err
-	}
-	if cerr := f.Close(); cerr != nil {
-		return nil, cerr
-	}
-	return head[:n], nil
-}
-
-// stageSealedFile 保留会话源，以同卷硬链接或跨卷流式复制预置隐藏临时件。
-// 会话成功提交前不移交源所有权，失败后能重试；外部路径换链边界见SECURITY。
-func (s *Server) stageSealedFile(root *os.Root, dir, sealedPath string) (string, func(), error) {
-	stagingRel := filepath.FromSlash(path.Join(dir, uploadTmpPrefix+uuid.NewString()+uploadTmpSuffix))
-	staging := filepath.Join(root.Name(), stagingRel)
-	// 同卷硬链接不转移源所有权；封存后PATCH已禁止。无硬链接/跨卷走受控复制。
-	if filing.PathWithinRoot(root.Name(), staging) {
-		if err := os.Link(sealedPath, staging); err == nil {
-			return staging, s.stagingCleaner(root, stagingRel), nil
-		}
-	}
-
-	src, err := os.Open(sealedPath)
-	if err != nil {
-		return "", nil, err
-	}
-	defer func() {
-		if cerr := src.Close(); cerr != nil {
-			s.logger.Warn("关闭分片源文件失败", "path", sealedPath, "err", cerr)
-		}
-	}()
-	dst, err := root.OpenFile(stagingRel, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		return "", nil, err
-	}
-	if _, err := io.Copy(dst, src); err != nil {
-		if cerr := dst.Close(); cerr != nil {
-			s.logger.Warn("关闭分片预置文件失败", "path", staging, "err", cerr)
-		}
-		s.stagingCleaner(root, stagingRel)()
-		return "", nil, err
-	}
-	if err := dst.Close(); err != nil {
-		s.stagingCleaner(root, stagingRel)()
-		return "", nil, err
-	}
-	return staging, s.stagingCleaner(root, stagingRel), nil
-}
-
-// stagingCleaner 返回预置文件的清理函数（放弃/失败路径调用；rename 成功后
-// 文件已不在，NotExist 静默忽略）。
-func (s *Server) stagingCleaner(root *os.Root, rel string) func() {
-	return func() {
-		if rmErr := root.Remove(rel); rmErr != nil && !os.IsNotExist(rmErr) {
-			s.logger.Warn("清理分片预置文件失败", "path", rel, "err", rmErr)
-		}
 	}
 }
 

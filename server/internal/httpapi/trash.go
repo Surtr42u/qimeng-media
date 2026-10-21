@@ -23,7 +23,6 @@ import (
 	"strings"
 	"time"
 
-	"qimeng-media/server/internal/events"
 	"qimeng-media/server/internal/eventstats"
 	"qimeng-media/server/internal/filing"
 	"qimeng-media/server/internal/httpapi/gen"
@@ -63,11 +62,7 @@ func (s *Server) cleanupMoveResidue(src, dst string) {
 // 广播型触发帧不带 payload（LibraryChangedEvent.data 可为 null）。
 // 推荐流缓存失效不再在此直调：library.changed 事件的失效已收口到 Server
 // 装配期的总线订阅（server.go New，一处覆盖所有发布点，2026-09-18 性能批二段）。
-func (s *Server) publishLibraryChanged() {
-	if err := s.bus.Publish(events.Event{Topic: events.TopicLibraryChanged}); err != nil {
-		s.logger.Warn("发布库变更事件失败", "err", err)
-	}
-}
+func (s *Server) publishLibraryChanged() { s.writes.PublishLibraryChanged() }
 
 // trashMetricsRefreshTimeout 是 trash 指标刷新的耗时上限：刷新（WalkDir
 // 遍历 + 逐条 Stat）跑在删除/恢复请求路径上（变更点推送），回收站极大时

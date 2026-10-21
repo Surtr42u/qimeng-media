@@ -4,6 +4,8 @@
 
 ## 上传整理
 
+当前实现：`mediawrite` 负责直传/会话创建/完成的文件、事务、富化和通知，httpapi 负责请求/响应/错误映射；会话注册表仍为 uploadsess，协议与重启失效边界不变。此处不将结构调整描述为新增 API 能力。
+
 端点：POST /assets/upload、**POST /uploads、GET/PATCH/DELETE /uploads/{id}、POST /uploads/{id}/complete**、POST /assets/{id}/move、GET/POST /dirs
 
 直传 NAS（流式；
@@ -18,7 +20,7 @@ POST /uploads/{id}/complete（对拼装完成的整文件复跑直传四道终�
 未传完 400、终检失败会话保留可重试）；
 DELETE /uploads/{id}（放弃 204）。会话服务端持有（内存注册表 + DataDir/uploads-tmp 分片文件，服务端重启即全部失效、客户端重建会话），无活动 24h 过期清扫连临时文件回收（清扫不 bump 修订号）；
 全部操作 Bearer 鉴权；
-**直传通道一字未动，双端按 size 阈值分流——Android/Web 双端已接入（create 透传 dir，≥16MB 分片）**；
+**直传业务语义保持，双端按 size 阈值分流——Android/Web 双端已接入（create 透传 dir，≥16MB 分片）**；
 **2026-09-25 资产编辑批（ADR-0024）：原上传挂靠批（ADR-0023）增的可选 query `authorId`/`authorName`/`source` 三参数退役删除——上传回归纯上传（参数面仅 libraryId/dir/filename），挂靠入口迁资产编辑页（PUT /assets/{id}/authors，见「资产浏览」行与「关键机制」作者挂靠编辑）**；
 移动/重命名保关联（目标冲突 409）；
 目录树与新建（幂等）；
@@ -50,7 +52,7 @@ libraryId 空 400/库不存在 404）**
 
 （2026-10-01，ADR-0030）：服务端轮询监测本地同步根目录（`QIMENG_LOCAL_SYNC_ROOT`，空=关），结构 = `<同步根>/<库名>/媒体…`（直接子文件夹名=库名，媒体**递归**入库、子目录相对路径映射库内子目录，成功后源文件 move 入库根=从同步源消失）+ `<同步根>/*.txt`（根级 TXT 走 importTxt 统一重建，成功后移 `<同步根>/.synced/` 内部归档目录——点前缀，扫描与同步均不处理，同名加序号）。**语义要点**：库名匹配 = sanitize（trim + `\/:*?"<>|` 九字符→`_`，锚点 App 归档 `InboxFileStore.sanitizeLibraryDirName`）后与库 name 精确比对（大小写敏感），0 命中/多命中/库停用/COS 库=失败原地保留绝不猜；
 稳定门槛 = 文件 mtime 年龄≥stable_age 且跨轮 size/mtime 不变才处理（防半截拷贝）；
-媒体走直传同款四道校验 + autoAccept 闸（false 时媒体暂停、TXT 不受影响）+ maxBytes，同名自动改名 "名 (2).ext" 永不 409（DOMAIN_RULES §9 同款复用），成功 ingestPlacedUpload（sysmon/upload.done/library.changed/修订号/富化全同款）；
+媒体走直传同款四道校验 + autoAccept 闸（false 时媒体暂停、TXT 不受影响）+ maxBytes，同名自动改名 "名 (2).ext" 永不 409（DOMAIN_RULES §9 同款复用），成功调用 mediawrite.IngestPlacedUpload（sysmon/upload.done/library.changed/修订号/富化全同款）；
 失败 = 文件原地保留每轮重试、status items 可见；
 TXT 恒 keep（无人值守绝不 remove）、仅 UTF-8（剥 BOM）、10MB 护栏；
 安全 = 同步根与库根/DataDir 双向重叠禁令、隐藏条目与符号链接不处理、根不存在不建目录（详见 SECURITY.md「本机同步通道」）。**配置三键**：`QIMENG_LOCAL_SYNC_ROOT`（空=关）/ `QIMENG_LOCAL_SYNC_INTERVAL`（默认 30s）/ `QIMENG_LOCAL_SYNC_STABLE_AGE`（默认 60s），yaml `local_sync.root/interval/stable_age` 同名。**错误码**：`LOCAL_SYNC_DISABLED`（trigger 在未启用时 409）。**维护页入口**：Web 维护页「本机同步」卡（DbBackupCard 之后：状态徽标/信息行/lastError 警示/失败·忽略·最近成功三段列表/立即同步按钮）

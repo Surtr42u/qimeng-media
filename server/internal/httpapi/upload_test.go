@@ -25,6 +25,7 @@ import (
 	"qimeng-media/server/internal/events"
 	"qimeng-media/server/internal/filing"
 	"qimeng-media/server/internal/httpapi/gen"
+	"qimeng-media/server/internal/mediawrite"
 	"qimeng-media/server/internal/scanner"
 	"qimeng-media/server/internal/sourcematcher"
 	"qimeng-media/server/internal/store"
@@ -153,13 +154,8 @@ func TestUploadAtomicNoTempResidue(t *testing.T) {
 	head := append(append([]byte{}, jpg...), make([]byte, filing.RecommendedHeadBytes)...)[:filing.RecommendedHeadBytes]
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/assets/upload", &flakyReader{head: head})
 	w := httptest.NewRecorder()
-	// #9 清欠后收流与改名拆分：这里直调收流半程（receiveUploadToTmp），
-	// 断连发生在写 tmp 阶段——半成品 tmp 应被清理、最终名不出现（改名段
-	// 的原子性由 handler 的 WithLibraryGate 关键段保证，端到端用例另测）。
-	if _, ok := env.s.receiveUploadToTmp(w, req, gen.PostApiV1AssetsUploadParams{Filename: "boom.jpg"},
-		env.media, 1<<20); ok {
-		t.Fatal("中断上传 receiveUploadToTmp 应返回 false")
-	}
+	// 使用完整适配入口，断连发生在服务收流阶段，协议仍返回 400。
+	env.s.PostApiV1AssetsUpload(w, req, gen.PostApiV1AssetsUploadParams{Filename: "boom.jpg", LibraryId: env.libID})
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("断连上传期望 400，得到 %d", w.Code)
 	}
@@ -177,7 +173,7 @@ func assertNoUploadTemp(t *testing.T, dir string) {
 		t.Fatalf("读目录 %s 失败: %v", dir, err)
 	}
 	for _, e := range entries {
-		if strings.HasPrefix(e.Name(), uploadTmpPrefix) {
+		if strings.HasPrefix(e.Name(), mediawrite.UploadTmpPrefix) {
 			t.Errorf("目录 %s 存在上传临时残留 %s", dir, e.Name())
 		}
 	}

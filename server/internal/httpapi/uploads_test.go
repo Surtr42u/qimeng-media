@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"qimeng-media/server/internal/httpapi/gen"
+	"qimeng-media/server/internal/mediawrite"
 	"qimeng-media/server/internal/uploadsess"
 )
 
@@ -434,7 +435,7 @@ func TestUploadSessionDirRejects(t *testing.T) {
 
 // TestUploadSessionTamperedAfterSeal：Seal 之后、落位之前分片成品被塞入
 // 1 字节（违规客户端并发 PATCH 在 rename 间隙写入的确定性等价），落位必须
-// 拒绝（size 复核 → errSealedSizeMismatch → complete 400）且库内无坏文件、
+// 拒绝（size 复核 → mediawrite.ErrSealedSizeMismatch → complete 400）且库内无坏文件、
 // 损坏成品随失败路径清理（第四百一十九笔 P2-4 收口）。
 //
 // 走 placeSealedInLibrary 而非 HTTP complete 的原因：complete 入口的 Seal
@@ -480,9 +481,9 @@ func TestUploadSessionTamperedAfterSeal(t *testing.T) {
 		FileName: "tampered.jpg", Dir: "",
 		Size: int64(len(jpg)), Path: partPath,
 	}
-	_, _, _, perr := env.s.placeSealedInLibrary(lib, seal)
-	if !errors.Is(perr, errSealedSizeMismatch) {
-		t.Fatalf("篡改成品的落位期望 errSealedSizeMismatch，得到 %v", perr)
+	_, _, _, perr := env.s.writes.PlaceSealed(lib, seal)
+	if !errors.Is(perr, mediawrite.ErrSealedSizeMismatch) {
+		t.Fatalf("篡改成品的落位期望 mediawrite.ErrSealedSizeMismatch，得到 %v", perr)
 	}
 	// 库内无坏文件：落位从未发生。
 	if _, err := os.Stat(filepath.Join(env.media, "tampered.jpg")); !os.IsNotExist(err) {

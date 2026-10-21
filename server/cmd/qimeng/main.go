@@ -30,6 +30,7 @@ import (
 	"qimeng-media/server/internal/config"
 	"qimeng-media/server/internal/events"
 	"qimeng-media/server/internal/httpapi"
+	"qimeng-media/server/internal/mediawrite"
 	"qimeng-media/server/internal/safego"
 	"qimeng-media/server/internal/scanner"
 	"qimeng-media/server/internal/store"
@@ -206,7 +207,22 @@ func main() {
 		os.Exit(1)
 	}
 
+	// 真扫描器：同步实现 + 异步适配器（触发即返回，终态回写 Server）。
+	// dataDir 传入做自噬防御（缩略图缓存是 webp 白名单格式，数据目录若被
+	// 配置进库内绝不能扫进库）。探测函数注入 thumbs.ProbeVideo：扫描探测的
+	// ffprobe 路径与缩略图管线同源（thumbnail.ffprobe_path 单点解析）。
+	scan := scanner.New(queries, bus, logger, cfg.DataDir, thumbs.ProbeVideo)
+	// 缩略图失效钩子接线：扫描重探测发现内容变更（size/mtime 变化）时删旧
+	// 缓存，外部原地换文件后海报帧按新内容重建（生产装配单点，漏接线=
+	// 缩略图陈旧不自愈，见 scanner.invalidateThumbs）。
+	scan.SetThumbsInvalidator(thumbs.DeleteAssetThumbs)
+	// 事务宿主接线：富化写入（资产+角色行）单资产单事务的 BeginTx 宿主，
+	// 漏接线会退回逐语句 autocommit（中间态窗口回归，见 scanner.SetConn）。
+	scan.SetConn(conn)
+
 	apiSrv, err := httpapi.New(httpapi.Deps{
+		Writes: mediawrite.New(mediawrite.Options{Conn: conn, Queries: queries, Bus: bus,
+			Config: cfg, Thumbs: thumbs, Logger: logger, Now: time.Now, Enrich: scan.EnrichAsset}),
 		Conn:        conn,
 		Queries:     queries,
 		Bus:         bus,
@@ -230,18 +246,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 真扫描器：同步实现 + 异步适配器（触发即返回，终态回写 Server）。
-	// dataDir 传入做自噬防御（缩略图缓存是 webp 白名单格式，数据目录若被
-	// 配置进库内绝不能扫进库）。探测函数注入 thumbs.ProbeVideo：扫描探测的
-	// ffprobe 路径与缩略图管线同源（thumbnail.ffprobe_path 单点解析）。
-	scan := scanner.New(queries, bus, logger, cfg.DataDir, thumbs.ProbeVideo)
-	// 缩略图失效钩子接线：扫描重探测发现内容变更（size/mtime 变化）时删旧
-	// 缓存，外部原地换文件后海报帧按新内容重建（生产装配单点，漏接线=
-	// 缩略图陈旧不自愈，见 scanner.invalidateThumbs）。
-	scan.SetThumbsInvalidator(thumbs.DeleteAssetThumbs)
-	// 事务宿主接线：富化写入（资产+角色行）单资产单事务的 BeginTx 宿主，
-	// 漏接线会退回逐语句 autocommit（中间态窗口回归，见 scanner.SetConn）。
-	scan.SetConn(conn)
 	// 富化引擎版本自愈重算（DOMAIN_RULES §4）：引擎升级后存量资产的富化结果
 	// 不会随扫描自然刷新（size+mtime 未变即跳过重 ingest），kv 版本标记落后
 	// 时在后台对全部常规库重算一次。goroutine 起它是因为大库重算可能数十秒，

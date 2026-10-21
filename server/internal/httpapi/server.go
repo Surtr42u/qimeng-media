@@ -21,6 +21,7 @@ import (
 	"qimeng-media/server/internal/events"
 	"qimeng-media/server/internal/httpapi/gen"
 	"qimeng-media/server/internal/libraryrevision"
+	"qimeng-media/server/internal/mediawrite"
 	"qimeng-media/server/internal/safego"
 	"qimeng-media/server/internal/sourcematcher"
 	"qimeng-media/server/internal/store/db"
@@ -120,6 +121,8 @@ const dirPerm = 0o755
 // Deps 是组装 httpapi.Server 的全部外部依赖（依赖注入只在 main 发生，
 // 业务包之间禁止互相 new——ARCHITECTURE §5）。
 type Deps struct {
+	// Writes 是媒体写入编排服务；生产组合根显式提供，缺省仅兼容隔离测试装配。
+	Writes *mediawrite.Service
 	// Conn 原始数据库连接（readyz 的 PingContext、事务兜底用）。
 	Conn *sql.DB
 	// Queries 是 sqlc 生成的类型安全查询集。
@@ -169,6 +172,7 @@ type Deps struct {
 
 // Server 实现 gen.ServerInterface，并持有跨 handler 共享的状态。
 type Server struct {
+	writes    *mediawrite.Service
 	conn      *sql.DB
 	q         *db.Queries
 	bus       *events.Bus
@@ -286,7 +290,6 @@ func New(deps Deps) (*Server, error) {
 		attach:         attach,
 		mirror:         mirror,
 		rev:            rev,
-		uploads:        uploadsess.New(deps.Cfg.DataDir, now, logger),
 		localSync:      newLocalSyncState(),
 		authState:      newAuthState(),
 		authLimit:      newAuthLimiter(authRateLimitMax, authRateLimitWindow),
@@ -295,6 +298,19 @@ func New(deps Deps) (*Server, error) {
 		dirs:           newDirsCache(now),
 		startedAt:      now(),
 	}
+	s.writes = deps.Writes
+	if s.writes == nil {
+		s.writes = mediawrite.New(mediawrite.Options{Conn: deps.Conn, Queries: deps.Queries,
+			Bus: deps.Bus, Config: deps.Cfg, Thumbs: deps.Thumbs, Logger: logger, Now: now,
+			Enrich: func(ctx context.Context, libraryID, assetID string) error {
+				err := s.scanner.EnrichAsset(ctx, libraryID, assetID)
+				if errors.Is(err, ErrScannerUnavailable) {
+					return nil
+				}
+				return err
+			}})
+	}
+	s.uploads = s.writes.UploadSessions()
 	// 服务重启后 Bearer token 仍有效：从库加载首行 token 哈希到内存
 	//（SECURITY「鉴权设计」：库中只存哈希，明文 token 永不落库）。
 	if err := s.authState.load(context.Background(), s.q); err != nil {

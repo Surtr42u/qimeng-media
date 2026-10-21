@@ -24,6 +24,7 @@ import (
 	"qimeng-media/server/internal/config"
 	"qimeng-media/server/internal/filing"
 	"qimeng-media/server/internal/localsync"
+	"qimeng-media/server/internal/mediawrite"
 	"qimeng-media/server/internal/safego"
 	"qimeng-media/server/internal/scanner"
 	"qimeng-media/server/internal/store"
@@ -256,7 +257,7 @@ func (s *Server) processLocalSyncMedia(ctx context.Context, entry localsync.Entr
 	kind := string(localsync.KindMedia)
 	src := filepath.Join(s.cfg.LocalSync.Root, filepath.FromSlash(entry.RelPath))
 	baseName := path.Base(entry.RelPath)
-	head, err := readUploadHead(src)
+	head, err := mediawrite.ReadUploadHead(src)
 	if err != nil {
 		s.lsMarkFailed(entry.RelPath, kind, lib.Name, "读取文件头失败: "+err.Error(), entry.Size)
 		return
@@ -280,7 +281,7 @@ func (s *Server) processLocalSyncMedia(ctx context.Context, entry localsync.Entr
 	targetRel, targetAbs, place, perr := s.lsPlaceMediaInLibrary(lib, subRel, src, entry.Size)
 	if perr != nil {
 		switch {
-		case errors.Is(perr, errUploadTargetEscape):
+		case errors.Is(perr, mediawrite.ErrTargetEscape):
 			s.lsMarkFailed(entry.RelPath, kind, lib.Name, "目标路径不合法", entry.Size)
 		default:
 			s.lsMarkFailed(entry.RelPath, kind, lib.Name, "移动文件入库失败: "+perr.Error(), entry.Size)
@@ -302,7 +303,7 @@ func (s *Server) processLocalSyncMedia(ctx context.Context, entry localsync.Entr
 		s.lsMarkSynced(entry.RelPath, kind, lib.Name, "落位后大小不一致且移回失败，保留库位待扫描器注册", entry.Size)
 		return
 	}
-	if _, ierr := s.ingestPlacedUpload(ctx, lib.ID, targetAbs, targetRel, path.Base(targetRel), mediaType); ierr != nil {
+	if _, ierr := s.writes.IngestPlacedUpload(ctx, lib.ID, targetAbs, targetRel, path.Base(targetRel), mediaType); ierr != nil {
 		// 文件已在库位：注册失败不回滚 move（回滚丢库归属），交扫描器兜底
 		//（与上传通道「DB 失败但文件已落盘」同语义，重试 move 会产生重复件）。
 		s.logger.Warn("同步文件已落库位但注册失败，等待扫描器兜底注册",
@@ -339,7 +340,7 @@ func (s *Server) lsPlaceMediaInLibrary(lib db.Library, subRel, src string, expec
 	dirRel := path.Dir(subRel) // "." = 库根
 	targetDir := filepath.Join(lib.RootPath, filepath.FromSlash(dirRel))
 	if !filing.PathWithinRoot(lib.RootPath, targetDir) {
-		return "", "", lsPlaceProceed, errUploadTargetEscape
+		return "", "", lsPlaceProceed, mediawrite.ErrTargetEscape
 	}
 	root, err := os.OpenRoot(lib.RootPath)
 	if err != nil {
@@ -358,7 +359,7 @@ func (s *Server) lsPlaceMediaInLibrary(lib db.Library, subRel, src string, expec
 			targetDir = filepath.Join(lib.RootPath, filepath.FromSlash(dirRel))
 		}
 		if !filing.PathWithinRoot(lib.RootPath, targetDir) {
-			return errUploadTargetEscape
+			return mediawrite.ErrTargetEscape
 		}
 		exists := func(n string) bool {
 			_, serr := os.Stat(filepath.Join(targetDir, n))
@@ -368,7 +369,7 @@ func (s *Server) lsPlaceMediaInLibrary(lib db.Library, subRel, src string, expec
 		targetRel = path.Join(dirRel, finalName)
 		targetAbs = filepath.Join(lib.RootPath, filepath.FromSlash(targetRel))
 		if !filing.PathWithinRoot(lib.RootPath, targetAbs) {
-			return errUploadTargetEscape
+			return mediawrite.ErrTargetEscape
 		}
 		// 落位前预复核（对齐分片通道 placeSealedInLibrary 的 Seal 后落位前
 		// 复核语义）：扫描观测/读头/校验与搬移之间源文件可能被改，size 不符
