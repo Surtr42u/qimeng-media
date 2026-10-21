@@ -73,7 +73,7 @@ seed>0 的同分打散按桶首最高分限制 0.05 跨度，避免相邻小分�
 端点：GET /stats/overview、GET /stats/trends、**GET /stats/most-viewed、GET /stats/top-authors、GET /stats/top-tags**
 
 总览面板（animated_image 计入 imageCount；
-计数直接数事件流，含已删资产历史——事件流无 FK 设计；
+旧字段 todayViews/totalViews 直接数 open 事件流，含已删资产历史——事件流无 FK 设计；新窗口汇总只计现存资产，与趋势日统计同源，具体口径见 [统计消费约束](../domain/statistics.md#统计数据消费约束)；
 **2026-09-09 协议批 P2 扩展**（#31）：响应增 `sourceNormalCount`/`sourceCosCount`（来源库存，normal+cos=totalFiles）与可空 `avgViewsPerFile`（窗口内 open 总数÷有 open 的不同现存文件数，range 参数定窗口缺省 all、分母 0→null）；
 **2026-09-14 响应再增分类型/分来源大小**：`per_type_size_bytes`（image/video/animated_image 各自 size_bytes 求和，image 不含动图——物理占用口径与 imageCount 计数不同）与 `per_source_size_bytes`（normal/cos，谓词同来源库存），两组各键之和 = totalSizeBytes，无资产的键=0（DOMAIN_RULES §5））；
 趋势按 asset_daily_stats 物化表（仅现存资产，随资产删除级联清理、可由事件流全量重建），**P2 增可选 `source=normal|cos` 来源桶过滤**（口径同 §6 分区判定）；
