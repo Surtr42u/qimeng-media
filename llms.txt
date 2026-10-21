@@ -8,7 +8,6 @@
 - [AI_README_FIRST.md](AI_README_FIRST.md)：按任务读取的协作、验证和文档维护规范
 - [README.md](README.md)：产品总览与常用命令
 - [HANDOVER](docs/HANDOVER.md)：当前形态、工作事项与验证边界
-- [AI 维护改进清单](docs/AI_MAINTENANCE_PLAN.md)：用户授权的分批实施进度和接手顺序
 
 ## 当前规范
 

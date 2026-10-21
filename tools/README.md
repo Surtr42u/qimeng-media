@@ -18,7 +18,7 @@ PR CI 额外运行 `python tools/check_docs.py --base <base-sha> --event-path <e
 
 `python tools/check_migrations.py` 对 HEAD 检查暂存/工作区的历史 SQL；`--base <sha>` 同时覆盖基线之后提交的改动。PR CI 用 base SHA，master push 用 before SHA，新增 migration 允许，既有 SQL 修改/删除/改名失败；缺失基线报错而非静默跳过。测试仅建立临时合成 Git 仓库。
 
-Go `go test ./internal/architecture` 和 Web `npm test` 的 architecture 测试负责直接依赖边界，口径见 ARCHITECTURE §5.1。执行模型无可靠完整名称/变体时，交付记录如实标记未知，不沿用旧署名。维护改进的分批进度见 [实施清单](../docs/AI_MAINTENANCE_PLAN.md)。
+Go `go test ./internal/architecture` 和 Web `npm test` 的 architecture 测试负责直接依赖边界，口径见 ARCHITECTURE §5.1。执行模型无可靠完整名称/变体时，交付记录如实标记未知，不沿用旧署名。当前维护状态见 [HANDOVER](../docs/HANDOVER.md)。
 
 security.yml 固定 govulncheck v1.9.0/cargo-audit 0.22.2；后者 MSRV 1.88，扫描 job 使用 Rust 1.90。npm audit high 起阻断，不用 force 或统一忽略压下失败。可本地按 workflow 同命令执行；网络失败不是扫描通过。恢复和真实跨卷命令见 [RESTORE](../docs/RESTORE.md)。
 
