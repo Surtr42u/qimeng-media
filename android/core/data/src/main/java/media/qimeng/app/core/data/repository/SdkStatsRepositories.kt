@@ -20,6 +20,8 @@ import media.qimeng.app.core.model.MostViewedEntry
 import media.qimeng.app.core.model.RankingEntry
 import media.qimeng.app.core.model.RecommendPrefsValues
 import media.qimeng.app.core.model.StatsOverviewValues
+import media.qimeng.app.core.model.StatsTotals
+import media.qimeng.app.core.model.STATS_PROTOCOL_UPDATE_MESSAGE
 import media.qimeng.app.core.model.TopAuthorEntry
 import media.qimeng.app.core.model.TopTagEntry
 import media.qimeng.app.core.model.TrendPoint
@@ -27,6 +29,14 @@ import media.qimeng.sdk.apis.DefaultApi
 import media.qimeng.sdk.models.RecommendPrefs
 import javax.inject.Inject
 import javax.inject.Singleton
+
+private val mediaKeys = listOf(MediaTypeKeys.IMAGE, MediaTypeKeys.VIDEO, MediaTypeKeys.ANIMATED_IMAGE)
+private val sourceKeys = listOf(SourceKeys.NORMAL, SourceKeys.COS)
+private fun media.qimeng.sdk.models.StatsTotals.statsTotals() = StatsTotals(viewCount, playCount, seconds)
+private fun statsTotalsMap(values: Map<String, media.qimeng.sdk.models.StatsTotals>?, keys: List<String>): Map<String, StatsTotals> {
+    require(values != null && values.keys.containsAll(keys)) { STATS_PROTOCOL_UPDATE_MESSAGE }
+    return values.mapValues { it.value.statsTotals() }
+}
 
 /**
  * 统计/偏好/系统信息三端口的生成 SDK 实现（M4-6）。
@@ -52,6 +62,14 @@ class SdkStatsRepository @Inject constructor(
         }
         val overview = withContext(Dispatchers.IO) { api.apiV1StatsOverviewGet(range = sdkRange) }
         return StatsOverviewValues(
+            stillImageCount = requireNotNull(overview.stillImageCount) { STATS_PROTOCOL_UPDATE_MESSAGE },
+            animatedImageCount = requireNotNull(overview.animatedImageCount) { STATS_PROTOCOL_UPDATE_MESSAGE },
+            viewedFilesCount = requireNotNull(overview.viewedFilesCount) { STATS_PROTOCOL_UPDATE_MESSAGE },
+            viewedAuthorsCount = requireNotNull(overview.viewedAuthorsCount) { STATS_PROTOCOL_UPDATE_MESSAGE },
+            viewedTagsCount = requireNotNull(overview.viewedTagsCount) { STATS_PROTOCOL_UPDATE_MESSAGE },
+            windowTotals = requireNotNull(overview.windowTotals) { STATS_PROTOCOL_UPDATE_MESSAGE }.statsTotals(),
+            mediaTypeWindowTotals = statsTotalsMap(overview.mediaTypeWindowTotals, mediaKeys),
+            sourceWindowTotals = statsTotalsMap(overview.sourceWindowTotals, sourceKeys),
             totalFiles = overview.totalFiles ?: 0,
             imageCount = overview.imageCount ?: 0,
             videoCount = overview.videoCount ?: 0,
@@ -104,6 +122,10 @@ class SdkStatsRepository @Inject constructor(
         }
         return buckets.map { bucket ->
             TrendPoint(
+                start = bucket.start?.toString().orEmpty(),
+                end = bucket.end?.toString().orEmpty(),
+                mediaTypes = statsTotalsMap(bucket.mediaTypes, mediaKeys),
+                sources = statsTotalsMap(bucket.sources, sourceKeys),
                 label = bucket.label.orEmpty(),
                 viewCount = bucket.viewCount ?: 0,
                 playCount = bucket.playCount ?: 0,

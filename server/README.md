@@ -17,6 +17,7 @@
 | 推荐流装载 | internal/recommendfeed/；限容量 ID 顺序快照跨页共享、取页重新校验资格；返回原始下一 offset（-1 到底），短页不截断续页，见推荐专题与 ADR-0046 |
 | 排行页装载 | internal/ranking/；专用热度键 → recommend 纯函数选页 → 当前页元数据/累计计数，见推荐专题 |
 | 作者 TXT 导入/保护/重建 | internal/authorimport/；跨手动/备份/同步入口复用事务，片段存取在 authorattach |
+| 统计只读装载 | internal/statsread/；总览/趋势/榜单共用窗口；日/类型/来源聚合及精确全量数，stats 仍为纯函数 |
 | 事件统计编排 | internal/eventstats/；事务内读真相/重建，stats 保持纯函数（ADR-0040） |
 | 上传/本机同步 | mediawrite 负责编排直传、会话创建/完成与共用入库；uploadsess 管会话；syncchannel 编排同步，localsync 只读扫描计划，见 §5.1 |
 
@@ -45,3 +46,5 @@
 恢复/真实跨卷演练见 [RESTORE](../docs/RESTORE.md)。localsync.PlanScan 负责安全校验后的只读扫描计划，错误不返回可清理状态的半成品；同步编排在 syncchannel，TXT 事务在 authorimport。作者列表预聚合与原计数口径一致，合成基准不能替代真实大库验收（ADR-0042）。
 
 `mediawrite` 是媒体写入的业务编排入口，生产在 main 注入数据库、配置、视频探测、扫描富化及与 HTTP 共享的 libraryrevision 服务；不依赖 HTTP 或 SDK 对象。上传/移动/改名/回收站/恢复/清扫在此编排；直传/会话完成/本机同步共用其 IngestPlacedUpload 和实时 UploadPolicy。HTTP 层仅解码、调用和协议错误/签名响应映射；syncchannel 持有同步运行态/调度/搬移/归档，复用 authorimport TXT 事务；HTTP 只读快照/触发，main 显式共享依赖。移动/改名也由该服务编排，库锁内实时复核后执行，前向/回滚都拒绝已有目标；SQL 失败不发成功通知，回滚受阻保留原件供核对。其他存量 handler 仍按实际任务迁移，不据此宣称所有写入已下沉。
+
+云端生成：向 `codex/codegen/**` 专用分支推送协议/SQL 后，codegen workflow 固定版本执行 sqlc 和 make sdk，下载 generated-sources artifact 取回生成物与 sdk.lock，禁止手改生成文件。随后把锁和受版本控制的 sqlc 输出与实现同批交付，现有完整 CI 仍重算校验；未绕过生成锁门禁。

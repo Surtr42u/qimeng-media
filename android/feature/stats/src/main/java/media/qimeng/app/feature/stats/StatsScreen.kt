@@ -42,7 +42,7 @@ import media.qimeng.app.core.ui.glass.TabDockDefaults
 /**
  * 数据统计页（任务I I3 复刻：GUIDE_UI §数据统计页 L203-224；N4 I3b 常看族解冻接线）：
  * - 时间范围三档胶囊 7天/30天/全部（R10 裁决回改，四档 90 天档废止），**全局联动**：
- *   数字卡窗口三指标/趋势图/常看族两卡/平均浏览次数随档位重拉（窗口指标=趋势桶求和，同源同请求）；
+ *   数字卡窗口三指标/趋势图/常看族两卡/平均浏览次数随档位重拉（窗口指标直接读服务端 overview 汇总）；
  * - 总览数字卡两行 6 指标（L209-211）：第一行窗口值（总浏览次数/总播放次数/总浏览时长），
  *   第二行库存静态值（总文件数/总占用空间）+ 平均浏览次数（**N3 #31a 解冻**：overview(range)
  *   的 avgViewsPerFile 随档位联动；分母 0 → null →「—」占位语义保留）；
@@ -66,6 +66,10 @@ fun StatsScreen(
     viewModel: StatsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    if (state.loadFailed) {
+        StatsLoadError(state.errorMessage, viewModel::retry)
+        return
+    }
     // 数值气泡 marker：跨档位复用一个实例即可（值格式器只依赖后缀，与档位无关）
     val trendMarker = rememberTrendValueMarker(valueSuffix = MARKER_VALUE_SUFFIX_VIEWS)
     LazyColumn(

@@ -314,17 +314,25 @@ func (q *Queries) ListAllViewEvents(ctx context.Context) ([]ListAllViewEventsRow
 
 const summarizeOpenWindow = `-- name: SummarizeOpenWindow :one
 
-SELECT CAST(COUNT(*) AS INTEGER) AS opens,
-       CAST(COUNT(DISTINCT v.asset_id) AS INTEGER) AS files
-FROM view_events v
-JOIN assets a ON a.asset_id = v.asset_id
-WHERE v.kind = 'open'
-  AND (CAST(?1 AS TEXT) = '' OR v.started_at >= ?1)
+WITH opened AS (
+    SELECT v.asset_id, COUNT(*) AS opens
+    FROM view_events v JOIN assets a ON a.asset_id = v.asset_id
+    WHERE v.kind = 'open'
+      AND (CAST(?1 AS TEXT) = '' OR v.started_at >= ?1)
+    GROUP BY v.asset_id
+)
+SELECT CAST(COALESCE(SUM(opens), 0) AS INTEGER) AS opens,
+       CAST(COUNT(*) AS INTEGER) AS files,
+       CAST((SELECT COUNT(DISTINCT aa.author_id) FROM opened o JOIN asset_authors aa ON aa.asset_id = o.asset_id) AS INTEGER) AS authors,
+       CAST((SELECT COUNT(DISTINCT at.tag_id) FROM opened o JOIN asset_tags at ON at.asset_id = o.asset_id) AS INTEGER) AS tags
+FROM opened
 `
 
 type SummarizeOpenWindowRow struct {
-	Opens int64
-	Files int64
+	Opens   int64
+	Files   int64
+	Authors int64
+	Tags    int64
 }
 
 // SummarizeOpenWindow: numerator/denominator pair for the overview
@@ -334,7 +342,12 @@ type SummarizeOpenWindowRow struct {
 func (q *Queries) SummarizeOpenWindow(ctx context.Context, fromTs string) (SummarizeOpenWindowRow, error) {
 	row := q.db.QueryRowContext(ctx, summarizeOpenWindow, fromTs)
 	var i SummarizeOpenWindowRow
-	err := row.Scan(&i.Opens, &i.Files)
+	err := row.Scan(
+		&i.Opens,
+		&i.Files,
+		&i.Authors,
+		&i.Tags,
+	)
 	return i, err
 }
 

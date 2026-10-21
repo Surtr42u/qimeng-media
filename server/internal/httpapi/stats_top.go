@@ -13,7 +13,7 @@ import (
 
 	"qimeng-media/server/internal/httpapi/gen"
 	"qimeng-media/server/internal/stats"
-	"qimeng-media/server/internal/store"
+	"qimeng-media/server/internal/statsread"
 	"qimeng-media/server/internal/store/db"
 )
 
@@ -59,13 +59,7 @@ func resolveStatsRange[T ~string](w http.ResponseWriter, raw *T, def stats.Range
 // localDayBoundsUTC 构造法），与 /stats/trends 的 FormatDay(start) 同一
 // 日历日语义——含窗口首日全天。RangeAll → 空串 = 查询不设窗口。
 func statsWindowStartTS(rng stats.Range, now time.Time) string {
-	start := trendWindowStart(rng, now)
-	if start.IsZero() {
-		return ""
-	}
-	local := start.Local()
-	dayStart := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, local.Location())
-	return store.FormatTimestamp(dayStart)
+	return statsread.OpenWindowStart(rng, now)
 }
 
 // clampTopLimit 榜单 limit 钳制（语义见常量注释）。

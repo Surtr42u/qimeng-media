@@ -88,7 +88,8 @@ fun StatsDetailScreen(
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.padding(horizontal = Dimens.ScreenPadding, vertical = 16.dp),
             )
-            state.loadFailed || state.isEmpty -> QimengEmptyState(text = EMPTY_TEXT)
+            state.loadFailed -> StatsLoadError(state.errorMessage, viewModel::retry)
+            state.isEmpty -> QimengEmptyState(text = EMPTY_TEXT)
             else -> LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(Dimens.ScreenPadding),
@@ -665,7 +666,7 @@ private fun rangeLabel(range: StatsRangeOption): String = when (range) {
 
 /** 常看文件摘要格（旧版 renderFavorites renderSummary 四格：总浏览/浏览时长/常看文件/平均浏览次数） */
 private fun mostViewedSummaryCells(state: StatsDetailUiState): List<SummaryCellUi> = listOf(
-    SummaryCellUi("总浏览", formatCountDetail(state.windowViewCount + state.windowPlayCount)),
+    SummaryCellUi("总浏览", formatCountDetail(state.windowViewCount)),
     SummaryCellUi("浏览时长", formatDurationDetail(state.windowSeconds)),
     SummaryCellUi("常看文件", formatCountDetail(state.filesWithViewRecords)),
     SummaryCellUi(
@@ -677,7 +678,7 @@ private fun mostViewedSummaryCells(state: StatsDetailUiState): List<SummaryCellU
 
 /** 常看文件洞察行（旧版逐字：「近X共浏览 N 次，停留 D」） */
 private fun mostViewedInsightLines(state: StatsDetailUiState, range: StatsRangeOption): List<String> = listOf(
-    "近${rangeLabel(range)}共浏览 ${state.windowViewCount + state.windowPlayCount} 次，" +
+    "近${rangeLabel(range)}共浏览 ${state.windowViewCount} 次，" +
         "停留 ${formatDurationDetail(state.windowSeconds)}",
 )
 
@@ -729,10 +730,10 @@ private fun mostViewedRankRows(
 
 /** 常看作者与标签摘要格（旧版 renderAuthorsTags 四格：作者/标签/浏览总次数/Top 作者） */
 private fun authorsTagsSummaryCells(state: StatsDetailUiState): List<SummaryCellUi> = listOf(
-    // 作者/标签计数=榜条数（协议只回 Top N，窗口内全量计数无直出字段——不足记档交付报告）
-    SummaryCellUi("作者", formatCountDetail(state.topAuthors.size)),
-    SummaryCellUi("标签", formatCountDetail(state.topTags.size)),
-    SummaryCellUi("浏览总次数", formatCountDetail(state.windowViewCount + state.windowPlayCount)),
+    // 全量窗口计数由服务端给出，与展示的 Top N 条数分开。
+    SummaryCellUi("作者", formatCountDetail(state.overviewValues?.viewedAuthorsCount ?: 0)),
+    SummaryCellUi("标签", formatCountDetail(state.overviewValues?.viewedTagsCount ?: 0)),
+    SummaryCellUi("浏览总次数", formatCountDetail(state.windowViewCount)),
     SummaryCellUi("Top 作者", state.topAuthors.firstOrNull()?.displayName ?: DETAIL_UNAVAILABLE_TEXT),
 )
 
@@ -785,10 +786,10 @@ private fun tagRankRows(
 private fun distributionSummaryCells(state: StatsDetailUiState): List<SummaryCellUi> {
     val overview = state.overviewValues ?: return emptyList()
     val total = overview.totalFiles.coerceAtLeast(1)
-    val animatedCount = (overview.totalFiles - overview.imageCount - overview.videoCount).coerceAtLeast(0)
-    val windowViews = state.typeWindowViews.values.sum()
+    val animatedCount = overview.animatedImageCount
+    val windowViews = overview.windowTotals.viewCount
     return listOf(
-        SummaryCellUi(IMAGE_DISPLAY_NAME, "${overview.imageCount} (${overview.imageCount * 100 / total}%)"),
+        SummaryCellUi(IMAGE_DISPLAY_NAME, "${overview.stillImageCount} (${overview.stillImageCount * 100 / total}%)"),
         SummaryCellUi(VIDEO_DISPLAY_NAME, "${overview.videoCount} (${overview.videoCount * 100 / total}%)"),
         SummaryCellUi(ANIMATED_DISPLAY_NAME, "$animatedCount (${animatedCount * 100 / total}%)"),
         SummaryCellUi(
@@ -824,10 +825,10 @@ private fun distributionInsightLines(state: StatsDetailUiState, range: StatsRang
 /** 类型分布行（图片/视频/动图 × 数量/大小/浏览；最大值=行内三档各自取最大，旧版 maxCount/maxViews 同口径） */
 private fun typeDistributionRows(state: StatsDetailUiState): List<DistributionRowUi> {
     val overview = state.overviewValues ?: return emptyList()
-    val animatedCount = (overview.totalFiles - overview.imageCount - overview.videoCount).coerceAtLeast(0)
+    val animatedCount = overview.animatedImageCount
     return buildDistributionRows(
         listOf(
-            DistRowInput(IMAGE_DISPLAY_NAME, overview.imageCount, overview.imageSizeBytes, state.typeWindowViews[KEY_MEDIA_TYPE_IMAGE] ?: 0),
+            DistRowInput(IMAGE_DISPLAY_NAME, overview.stillImageCount, overview.imageSizeBytes, state.typeWindowViews[KEY_MEDIA_TYPE_IMAGE] ?: 0),
             DistRowInput(VIDEO_DISPLAY_NAME, overview.videoCount, overview.videoSizeBytes, state.typeWindowViews[KEY_MEDIA_TYPE_VIDEO] ?: 0),
             DistRowInput(ANIMATED_DISPLAY_NAME, animatedCount, overview.animatedImageSizeBytes, state.typeWindowViews[KEY_MEDIA_TYPE_ANIMATED] ?: 0),
         ),

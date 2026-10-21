@@ -4,14 +4,21 @@
 
 import { LOCALE_ZH } from './constants'
 
+const MILLISECONDS_PER_SECOND = 1000
+
 /** 毫秒时长 → mm:ss（超一小时 h:mm:ss）；与卡片时长角标/详情信息共用 */
 export function formatDuration(ms: number): string {
-  const total = Math.floor(ms / 1000)
+  const total = Math.floor(ms / MILLISECONDS_PER_SECOND)
   const h = Math.floor(total / 3600)
   const m = Math.floor((total % 3600) / 60)
   const s = total % 60
   const ss = String(s).padStart(2, '0')
   return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`
+}
+
+/** 服务端统计用秒，媒体元数据用毫秒；单位转换留在共享展示工具。 */
+export function formatDurationSeconds(seconds: number): string {
+  return formatDuration(seconds * MILLISECONDS_PER_SECOND)
 }
 
 /** ISO 日期 → 卡片短日期「M-D」（与原型卡片 meta 口径一致） */

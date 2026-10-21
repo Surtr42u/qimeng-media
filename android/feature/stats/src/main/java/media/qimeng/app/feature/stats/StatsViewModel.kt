@@ -9,6 +9,12 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
+import media.qimeng.app.core.model.STATS_LOAD_FAILED_MESSAGE
+import media.qimeng.app.core.model.STATS_PROTOCOL_UPDATE_MESSAGE
 import media.qimeng.app.core.data.repository.MediaBatchIndex
 import media.qimeng.app.core.model.RankingEntry
 import media.qimeng.app.core.data.repository.StatsRepository
@@ -38,20 +44,11 @@ data class TopAuthorTagEntry(
     enum class Kind { AUTHOR, TAG }
 }
 
-/**
- * 统计页 UI 状态（任务I I3 复刻回改 + N4 I3b 常看族解冻接线）：
- * - 第一行三窗口指标（总浏览次数/总播放次数/总浏览时长）= [trends] 各桶求和（DOMAIN_RULES §5
- *   「各桶之和=窗口总量」口径），随档位联动——与趋势同一次 /stats/trends 响应派生，天然同源；
- * - 第二行总文件数/总占用空间 = /stats/overview 静态库存值；「平均浏览次数」N3 #31a 解冻：
- *   overview(range).avgViewsPerFile 随档位联动（分母 0 → null → 「—」占位，降级语义保留）；
- * - 内容榜卡 Top3（GET /rankings，2026-09-18 批换源：原 /stats/most-viewed metric=views——
- *   Web 数据页同款口径，热度=浏览+播放+点赞累计、period 准入、排除 COS）、常看作者/标签卡混合 Top3
- *   （/stats/top-authors + /stats/top-tags）——全部随档位联动；失败/空数据 → 空表 → 卡内空态；
- * - 序号防重（GUIDE_UI L212）：窗口指标/趋势/常看族/均值同请求通道共用 [StatsViewModel.windowRequestId]，
- *   桶求和是响应落地后的纯派生（无独立异步通道）。
- */
+/** 统计页面状态：所有窗口值取服务端 overview，趋势同轴；失败单独展示并可重试。 */
 data class StatsUiState(
     val overview: StatsOverviewValues? = null,
+    val loadFailed: Boolean = false,
+    val errorMessage: String? = null,
     val overviewLoading: Boolean = true,
     val selectedRange: StatsRangeOption = DEFAULT_STATS_RANGE,
     val trends: List<TrendPoint> = emptyList(),
@@ -67,22 +64,22 @@ data class StatsUiState(
     val avgViewsLoading: Boolean = true,
 ) {
     /** 趋势空态（规格 §数据统计页：空态文案「暂无趋势数据」） */
-    val trendsEmpty: Boolean get() = !trendsLoading && trends.isEmpty()
+    val trendsEmpty: Boolean get() = !loadFailed && !trendsLoading && trends.isEmpty()
 
     /** 内容榜卡空态（加载完且无数据——空态保留口径） */
-    val rankingsEmpty: Boolean get() = !trendsLoading && rankings.isEmpty()
+    val rankingsEmpty: Boolean get() = !loadFailed && !trendsLoading && rankings.isEmpty()
 
     /** 常看作者与标签卡空态 */
-    val topAuthorsTagsEmpty: Boolean get() = !trendsLoading && topAuthors.isEmpty() && topTags.isEmpty()
+    val topAuthorsTagsEmpty: Boolean get() = !loadFailed && !trendsLoading && topAuthors.isEmpty() && topTags.isEmpty()
 
-    /** 窗口总浏览次数（Σ 桶 viewCount；纯派生，随档位联动） */
-    val windowViews: Long get() = sumWindow(trends) { it.viewCount }
+    /** 窗口总浏览次数（服务端窗口汇总，随档位联动） */
+    val windowViews: Long get() = overview?.windowTotals?.viewCount?.toLong() ?: 0L
 
-    /** 窗口总播放次数（Σ 桶 playCount） */
-    val windowPlays: Long get() = sumWindow(trends) { it.playCount }
+    /** 窗口总播放次数（服务端窗口汇总） */
+    val windowPlays: Long get() = overview?.windowTotals?.playCount?.toLong() ?: 0L
 
-    /** 窗口总浏览时长秒数（Σ 桶 seconds） */
-    val windowSeconds: Long get() = sumWindow(trends) { it.seconds }
+    /** 窗口总浏览时长秒数（服务端窗口汇总） */
+    val windowSeconds: Long get() = overview?.windowTotals?.seconds?.toLong() ?: 0L
 
     /**
      * 常看作者与标签混合 Top3（GUIDE_UI §数据统计页「作者/标签按窗口浏览聚合混合 Top 3」）：
@@ -99,22 +96,10 @@ data class StatsUiState(
             ).sortedByDescending { it.views }
             .take(TOP_CARD_LIMIT)
 
-    private inline fun sumWindow(points: List<TrendPoint>, selector: (TrendPoint) -> Int): Long =
-        points.fold(0L) { acc, point -> acc + selector(point) }
+
 }
 
-/**
- * 统计页 ViewModel：
- * - 数字卡窗口指标 = /stats/trends 桶求和（协议内联动方案，口径见 docs/DOMAIN_RULES.md §5；裁定历史见 CHANGELOG），
- *   overview 供库存两格（进页拉一次不随档位重拉）+ 窗口均值 avgViewsPerFile（随档位经
- *   overview(range) 联动，N3 #31a 解冻）；
- * - 趋势来自 /stats/trends，档位切换重拉；range 参数只经 StatsRangeOption.apiRange 产出；
- * - 常看族三口（/rankings 内容榜 + top-authors + top-tags）随档位联动（N4 I3b；内容榜
- *   2026-09-18 批换源：原 most-viewed metric=views）；
- * - 快速切换防覆盖（GUIDE_UI §数据统计页「序号防重」）：响应带发起时的档位快照，
- *   回写时当前选中档已变则丢弃——晚完成的旧协程不得覆盖新结果（含窗口指标派生源）；
- *   常看族/均值单口失败降级为空表/null，不拖垮同通道其余数据（getOrDefault 隔离）。
- */
+/** 并发读取同档统计；取消/序号校验防迟到覆盖，不把接口失败伪装成零值。 */
 @HiltViewModel
 class StatsViewModel @Inject constructor(
     private val statsRepository: StatsRepository,
@@ -127,51 +112,45 @@ class StatsViewModel @Inject constructor(
     /** 窗口请求序号（防覆盖判定：只接受最新序号的响应；趋势/常看族/均值共用一通道） */
     private var windowRequestId: Long = 0L
 
-    init {
-        loadOverview()
-        selectRange(DEFAULT_STATS_RANGE)
-    }
+    private var requestJob: Job? = null
 
-    /** 档位切换（三档）：立即翻选中态并发起该档请求（窗口指标随 trends 落地一并刷新） */
+    init { loadRange(DEFAULT_STATS_RANGE) }
+
     fun selectRange(option: StatsRangeOption) {
-        if (_uiState.value.selectedRange == option && !_uiState.value.trendsLoading) return
-        _uiState.update { it.copy(selectedRange = option, trendsLoading = true, avgViewsLoading = true) }
-        val requestId = ++windowRequestId
-        val rangeParam = option.apiRange
-        viewModelScope.launch {
-            // 单口失败各自降级（空表/null），不互相拖垮——常看卡空态保留、均值「—」占位
-            val points = runCatching { statsRepository.trends(rangeParam) }.getOrDefault(emptyList())
-            // 内容榜走 /rankings：period 与 trends 的 range 是两套枚举轴（7d→week 陷阱档），
-            // 只经 rankingsPeriod 产出，禁止复用 rangeParam（2026-09-18 批换源）
-            val rankings = runCatching {
-                statsRepository.rankings(option.rankingsPeriod, TOP_CARD_LIMIT)
-            }.getOrDefault(emptyList())
-            val topAuthors = runCatching { statsRepository.topAuthors(rangeParam, TOP_CARD_LIMIT) }
-                .getOrDefault(emptyList())
-            val topTags = runCatching { statsRepository.topTags(rangeParam, TOP_CARD_LIMIT) }
-                .getOrDefault(emptyList())
-            val avgViews = runCatching { statsRepository.overview(rangeParam) }
-                .getOrNull()?.avgViewsPerFile
-            // 防覆盖：仅当本响应仍是最新请求且选中档未再变化时回写
-            _uiState.update { current ->
-                val isStale = requestId != windowRequestId || current.selectedRange != option
-                if (isStale) current else current.copy(
-                    trends = points,
-                    trendsLoading = false,
-                    rankings = rankings,
-                    topAuthors = topAuthors,
-                    topTags = topTags,
-                    avgViewsPerFile = avgViews,
-                    avgViewsLoading = false,
-                )
-            }
-        }
+        if (_uiState.value.selectedRange == option && !_uiState.value.loadFailed && !_uiState.value.trendsLoading) return
+        loadRange(option)
     }
 
-    private fun loadOverview() {
-        viewModelScope.launch {
-            val overview = runCatching { statsRepository.overview() }.getOrNull()
-            _uiState.update { it.copy(overview = overview, overviewLoading = false) }
+    fun retry() = loadRange(_uiState.value.selectedRange)
+
+    private fun loadRange(option: StatsRangeOption) {
+        requestJob?.cancel()
+        val requestId = ++windowRequestId
+        _uiState.update { it.copy(selectedRange = option, overviewLoading = true, trendsLoading = true,
+            avgViewsLoading = true, loadFailed = false, errorMessage = null) }
+        requestJob = viewModelScope.launch {
+            try {
+                val result = coroutineScope {
+                val overview = async { statsRepository.overview(option.apiRange) }
+                val trends = async { statsRepository.trends(option.apiRange) }
+                val rankings = async { statsRepository.rankings(option.rankingsPeriod, TOP_CARD_LIMIT) }
+                val authors = async { statsRepository.topAuthors(option.apiRange, TOP_CARD_LIMIT) }
+                val tags = async { statsRepository.topTags(option.apiRange, TOP_CARD_LIMIT) }
+                StatsUiState(
+                    selectedRange = option, overview = overview.await(), trends = trends.await(),
+                    rankings = rankings.await(), topAuthors = authors.await(), topTags = tags.await(),
+                    overviewLoading = false, trendsLoading = false, avgViewsLoading = false,
+                    avgViewsPerFile = overview.await().avgViewsPerFile,
+                )
+                }
+                if (requestId == windowRequestId) _uiState.value = result
+            } catch (error: CancellationException) { throw error
+            } catch (error: Exception) {
+                if (requestId == windowRequestId) _uiState.update { it.copy(
+                    overviewLoading = false, trendsLoading = false, avgViewsLoading = false,
+                    loadFailed = true, errorMessage = statsFailureMessage(error),
+                ) }
+            }
         }
     }
 
@@ -185,3 +164,6 @@ class StatsViewModel @Inject constructor(
         batchIndex.ids = _uiState.value.rankings.map { it.assetId }
     }
 }
+
+internal fun statsFailureMessage(error: Exception): String =
+    if (error.message == STATS_PROTOCOL_UPDATE_MESSAGE) STATS_PROTOCOL_UPDATE_MESSAGE else STATS_LOAD_FAILED_MESSAGE

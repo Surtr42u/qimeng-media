@@ -15,6 +15,14 @@ data class StatsOverviewValues(
     val totalSizeBytes: Long,
     val todayViews: Int,
     val totalViews: Long,
+    val stillImageCount: Int = 0,
+    val animatedImageCount: Int = 0,
+    val viewedFilesCount: Int = 0,
+    val viewedAuthorsCount: Int = 0,
+    val viewedTagsCount: Int = 0,
+    val windowTotals: StatsTotals = StatsTotals(),
+    val mediaTypeWindowTotals: Map<String, StatsTotals> = emptyMap(),
+    val sourceWindowTotals: Map<String, StatsTotals> = emptyMap(),
     /** 常规来源库存（不关联 COS 作者的现存资产数；协议批 #31b） */
     val sourceNormalCount: Int = 0,
     /** COS 来源库存（关联 COS 作者的现存资产数） */
@@ -42,6 +50,10 @@ data class TrendPoint(
     val viewCount: Int,
     val playCount: Int,
     val seconds: Int,
+    val start: String = "",
+    val end: String = "",
+    val mediaTypes: Map<String, StatsTotals> = emptyMap(),
+    val sources: Map<String, StatsTotals> = emptyMap(),
 )
 
 /**
@@ -100,3 +112,9 @@ data class RankingEntry(
     /** 累计浏览次数（kind='open' 事件计数；「N 次」角标数据源） */
     val viewCount: Int,
 )
+
+/** 同一服务端口径的窗口/分桶统计；客户端仅取字段用于展示。 */
+data class StatsTotals(val viewCount: Int = 0, val playCount: Int = 0, val seconds: Int = 0)
+
+const val STATS_PROTOCOL_UPDATE_MESSAGE = "服务端统计协议较旧，请同步更新服务端"
+const val STATS_LOAD_FAILED_MESSAGE = "统计加载失败，请检查连接后重试"

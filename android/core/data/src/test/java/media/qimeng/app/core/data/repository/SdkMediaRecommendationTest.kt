@@ -1,9 +1,6 @@
 package media.qimeng.app.core.data.repository
 
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
-import media.qimeng.app.core.network.DefaultEndpoint
-import media.qimeng.app.core.network.ServerConfigDataSource
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
@@ -22,7 +19,7 @@ class SdkMediaRecommendationTest {
             Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1)
                 .code(200).message("OK").body("[]".toResponseBody()).build()
         }.build()
-        val repository = SdkMediaRepository(BusinessApiFactory(TestConfig(), client))
+        val repository = SdkMediaRepository(BusinessApiFactory(ReadOnlyTestServerConfig(), client))
         repository.recommendations(1, 200, null)
         repository.recommendations(2, 200, null, cosOnly = true)
         assertEquals(listOf("false", "true"), urls.map { it.queryParameter("cosOnly") })
@@ -30,20 +27,4 @@ class SdkMediaRecommendationTest {
         assertEquals(listOf("/api/v1/recommendations", "/api/v1/recommendations"), urls.map { it.encodedPath })
     }
 
-    private class TestConfig : ServerConfigDataSource {
-        override val serverUrl = MutableStateFlow("http://qimeng.test")
-        override val rememberedNasUrl = MutableStateFlow("")
-        override val rememberedLocalUrl = MutableStateFlow("")
-        override val token = MutableStateFlow<String?>(null)
-        override val defaultEndpoint = MutableStateFlow<DefaultEndpoint?>(null)
-        override fun currentServerUrl(): String = serverUrl.value
-        override fun currentToken(): String? = token.value
-        override fun currentEmbeddedDevSecret(): String? = null
-        override fun updateEmbeddedDevSecret(value: String?) = Unit
-        override suspend fun setDefaultEndpoint(endpoint: DefaultEndpoint?) = Unit
-        override suspend fun updateServerUrl(url: String) = Unit
-        override suspend fun rememberLoginAddress(url: String) = Unit
-        override suspend fun updateToken(token: String) = Unit
-        override suspend fun clearToken() = Unit
-    }
 }

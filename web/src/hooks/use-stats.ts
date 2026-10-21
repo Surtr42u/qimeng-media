@@ -5,9 +5,10 @@
  */
 
 import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query'
-import { getApiV1Rankings, getApiV1StatsOverview, getApiV1StatsTrends } from '@/api/generated'
+import { getApiV1Rankings, getApiV1StatsOverview, getApiV1StatsTrends, getApiV1StatsTopAuthors, getApiV1StatsTopTags } from '@/api/generated'
 import { unwrapOffsetPage, unwrapSdkResult } from '@/lib/api-client'
 import { MAX_PAGE_SIZE } from '@/lib/constants'
+import { requireStatsOverview, requireStatsTrends } from '@/lib/stats-contract'
 import { offsetPageItems } from '@/lib/pagination'
 import { RANKINGS_QUERY_KEY, STATS_QUERY_KEY } from '@/lib/query-keys'
 import type { MediaType } from './use-assets'
@@ -19,10 +20,10 @@ export type TrendsRange = '7d' | 'day' | 'week' | 'month' | 'quarter' | 'year' |
 export type RankingPeriod = 'day' | 'week' | 'month' | 'quarter' | 'year' | 'all'
 
 /** 总览（文件数/类型分布/容量/今日与累计浏览；animated_image 计入 imageCount） */
-export function useStatsOverview() {
+export function useStatsOverview(range: TrendsRange = 'all') {
   return useQuery({
-    queryKey: [...STATS_QUERY_KEY, 'overview'],
-    queryFn: () => unwrapSdkResult(getApiV1StatsOverview()),
+    queryKey: [...STATS_QUERY_KEY, 'overview', range],
+    queryFn: async () => requireStatsOverview(await unwrapSdkResult(getApiV1StatsOverview({ query: { range } }))),
   })
 }
 
@@ -33,7 +34,7 @@ export function useStatsOverview() {
 export function useTrends(range: TrendsRange, mediaType?: MediaType) {
   return useQuery({
     queryKey: [...STATS_QUERY_KEY, 'trends', range, mediaType ?? 'all'],
-    queryFn: () => unwrapSdkResult(getApiV1StatsTrends({ query: { range, mediaType } })),
+    queryFn: async () => requireStatsTrends(await unwrapSdkResult(getApiV1StatsTrends({ query: { range, mediaType } }))),
   })
 }
 
@@ -78,5 +79,17 @@ export function useRankingsInfinite(
     getNextPageParam: (last) => last.nextOffset,
     select: offsetPageItems,
     placeholderData: keepPreviousData,
+  })
+}
+
+/** 作者/标签统计榜复用服务端窗口排序，不再在页面从管理数据另算一套。 */
+export function useStatsTopAuthors(range: TrendsRange, limit: number) {
+  return useQuery({ queryKey: [...STATS_QUERY_KEY, 'top-authors', range, limit],
+    queryFn: () => unwrapSdkResult(getApiV1StatsTopAuthors({ query: { range, limit } })),
+  })
+}
+export function useStatsTopTags(range: TrendsRange, limit: number) {
+  return useQuery({ queryKey: [...STATS_QUERY_KEY, 'top-tags', range, limit],
+    queryFn: () => unwrapSdkResult(getApiV1StatsTopTags({ query: { range, limit } })),
   })
 }

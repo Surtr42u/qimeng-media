@@ -1,6 +1,4 @@
-// stats.go：M3 统计端点（总览 + 趋势）与「文件×天」物化聚合表重建。
-// 分桶口径在 internal/stats 纯函数包（DOMAIN_RULES §5），本文件只做
-// 取数窗口计算、类型转换与 IO 编排。
+// stats.go：统计协议适配；窗口装载由 statsread 编排，分桶由 stats 纯函数统一计算。
 package httpapi
 
 import (
@@ -13,199 +11,91 @@ import (
 	"qimeng-media/server/internal/eventstats"
 	"qimeng-media/server/internal/httpapi/gen"
 	"qimeng-media/server/internal/stats"
+	"qimeng-media/server/internal/statsread"
 	"qimeng-media/server/internal/store"
-	"qimeng-media/server/internal/store/db"
 )
 
-// 趋势取数窗口：api/openapi.yaml /stats/trends 的 range 枚举各自回看的
-// 数据宽度（协议侧窗口语义改动须同步此处，反之亦然）。窗口与 stats 固定
-// 分桶粒度一一对应（DOMAIN_RULES §5：day 按天 / week 按周 / month 按月 /
-// quarter 按季 / year 按年；all = 全跨度不设窗口，由动态粒度选择覆盖）。
-const (
-	trendDayWindowDays      = 30 // range=day：近 30 天
-	trendWeekWindowDays     = 84 // range=week：近 12 周（12×7 天）
-	trendMonthWindowMonths  = 24 // range=month：近 24 个月
-	trendQuarterWindowMonth = 24 // range=quarter：近 8 个季度（8×3 = 24 个月）
-	trendYearWindowYears    = 5  // range=year：近 5 年
-	trend7dWindowDays       = 7  // range=7d：近 7 天逐日桶
-	trend90dWindowDays      = 90 // range=90d：近 90 天逐日桶
-)
-
-// localDayBoundsUTC 返回 t 所在本地日历日 [00:00, 次日 00:00) 的 UTC 时间戳
-// 串（store.TimestampLayout 格式；同格式 TEXT 字典序 == 时间序，见
-// migrations/0001_init.up.sql 文件头），用于 view_events.started_at 的
-// 「当日」区间比较。次日用日期构造而非 +24h，避免 DST 日的窗口漂移。
-// 事件去重（engagement.go）与总览今日浏览（本文件）共用这一口径。
-func localDayBoundsUTC(t time.Time) (start, end string) {
-	local := t.Local()
-	dayStart := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, local.Location())
-	nextDay := time.Date(local.Year(), local.Month(), local.Day()+1, 0, 0, 0, 0, local.Location())
-	return store.FormatTimestamp(dayStart), store.FormatTimestamp(nextDay)
+func localDayBoundsUTC(now time.Time) (string, string) { return statsread.DayBounds(now) }
+func trendWindowStart(rng stats.Range, now time.Time) time.Time {
+	return statsread.WindowStart(rng, now)
 }
 
-// GetApiV1StatsOverview 统计总览：库形态（文件数/类型分布/总大小）取自
-// assets 全表聚合，浏览计数（todayViews/totalViews）直接数 view_events
-// 事件流——唯一真相源口径（DOMAIN_RULES §5），且事件表无 FK、可能引用
-// 已删资产（ADR-0005），删除历史仍是真实浏览，照数不排除。
-// 来源库存（sourceNormalCount/sourceCosCount）与平均浏览（avgViewsPerFile，
-// 窗口由 range 参数决定、缺省 all=全时段）为协议批 P2 新增字段（§5）。
-// 分类型/分来源大小（per_type_size_bytes/per_source_size_bytes，2026-09-14
-// 协议批）同为 assets 全表聚合：口径见 DOMAIN_RULES §5——分类型 image 键不含
-// animated_image（物理占用各键可对账 totalSizeBytes）；分来源谓词同 §6 分区
-// 判定（与 sourceNormalCount/sourceCosCount 同一条 EXISTS）。
+func protocolStatsTotal(value stats.Totals) gen.StatsTotals {
+	return gen.StatsTotals{ViewCount: int(value.ViewCount), PlayCount: int(value.PlayCount), Seconds: int(value.Seconds)}
+}
+func protocolStatsMap(values map[string]stats.Totals) *map[string]gen.StatsTotals {
+	out := make(map[string]gen.StatsTotals, len(values))
+	for key, value := range values {
+		out[key] = protocolStatsTotal(value)
+	}
+	return &out
+}
+
 func (s *Server) GetApiV1StatsOverview(w http.ResponseWriter, r *http.Request, params gen.GetApiV1StatsOverviewParams) {
-	summary, err := s.q.SummarizeAssets(r.Context())
-	if err != nil {
-		s.internalErr(w, "统计资产总览", err)
-		return
-	}
-	sourceSizes, err := s.q.SummarizeSourceSizes(r.Context())
-	if err != nil {
-		s.internalErr(w, "统计分来源大小", err)
-		return
-	}
-	dayStart, dayEnd := localDayBoundsUTC(s.now())
-	todayViews, err := s.q.CountOpenEventsOnDay(r.Context(), db.CountOpenEventsOnDayParams{
-		StartedAt: dayStart, StartedAt_2: dayEnd,
-	})
-	if err != nil {
-		s.internalErr(w, "统计今日浏览", err)
-		return
-	}
-	totalViews, err := s.q.CountOpenEventsAll(r.Context())
-	if err != nil {
-		s.internalErr(w, "统计累计浏览", err)
-		return
-	}
-	// 来源库存：§6 分区判定两条独立计数（normal + cos == totalFiles）。
-	cosCount, err := s.q.CountCosLinkedAssets(r.Context())
-	if err != nil {
-		s.internalErr(w, "统计 COS 来源库存", err)
-		return
-	}
-	regCount, err := s.q.CountRegularAssets(r.Context())
-	if err != nil {
-		s.internalErr(w, "统计常规来源库存", err)
-		return
-	}
-	// 平均浏览：窗口内现存资产 open 总数 ÷ 有 open 的不同文件数；
-	// 分母 0 → nil（协议 null，空态语义），分子分母同窗口同限定。
 	rng, ok := resolveStatsRange(w, params.Range, stats.RangeAll)
 	if !ok {
 		return
 	}
-	agg, err := s.q.SummarizeOpenWindow(r.Context(), statsWindowStartTS(rng, s.now()))
+	data, err := statsread.LoadOverview(r.Context(), s.q, rng, s.now())
 	if err != nil {
-		s.internalErr(w, "统计平均浏览", err)
+		s.internalErr(w, "统计资产总览", err)
 		return
 	}
-	var avg *float64
-	if agg.Files > 0 {
-		v := float64(agg.Opens) / float64(agg.Files)
-		avg = &v
-	}
 	writeJSON(w, http.StatusOK, gen.StatsOverview{
-		TotalFiles:        ptr(int(summary.TotalFiles)),
-		ImageCount:        ptr(int(summary.ImageCount)), // 含 animated_image（DOMAIN_RULES §11）
-		VideoCount:        ptr(int(summary.VideoCount)),
-		TotalSizeBytes:    ptr(summary.TotalSizeBytes),
-		TodayViews:        ptr(int(todayViews)),
-		TotalViews:        ptr(totalViews),
-		SourceNormalCount: ptr(int(regCount)),
-		SourceCosCount:    ptr(int(cosCount)),
-		AvgViewsPerFile:   avg,
-		PerTypeSizeBytes: &gen.StatsSizeByType{
-			Image:         ptr(summary.ImageSizeBytes),
-			Video:         ptr(summary.VideoSizeBytes),
-			AnimatedImage: ptr(summary.AnimatedImageSizeBytes),
-		},
-		PerSourceSizeBytes: &gen.StatsSizeBySource{
-			Normal: ptr(sourceSizes.NormalSizeBytes),
-			Cos:    ptr(sourceSizes.CosSizeBytes),
-		},
+		TotalFiles:         ptr(int(data.Assets.TotalFiles)),
+		ImageCount:         ptr(int(data.Assets.ImageCount)), // 旧字段保留动图并入图片的兼容语义。
+		StillImageCount:    ptr(int(data.Assets.StillImageCount)),
+		AnimatedImageCount: ptr(int(data.Assets.AnimatedImageCount)),
+		VideoCount:         ptr(int(data.Assets.VideoCount)),
+		TotalSizeBytes:     ptr(data.Assets.TotalSizeBytes),
+		TodayViews:         ptr(int(data.TodayViews)), TotalViews: ptr(data.TotalViews),
+		SourceNormalCount: ptr(int(data.NormalCount)), SourceCosCount: ptr(int(data.CosCount)),
+		AvgViewsPerFile:       data.Average,
+		ViewedFilesCount:      ptr(int(data.Opens.Files)),
+		ViewedAuthorsCount:    ptr(int(data.Opens.Authors)),
+		ViewedTagsCount:       ptr(int(data.Opens.Tags)),
+		WindowTotals:          ptr(protocolStatsTotal(data.Window)),
+		MediaTypeWindowTotals: protocolStatsMap(data.MediaTypes),
+		SourceWindowTotals:    protocolStatsMap(data.Sources),
+		PerTypeSizeBytes:      &gen.StatsSizeByType{Image: ptr(data.Assets.ImageSizeBytes), Video: ptr(data.Assets.VideoSizeBytes), AnimatedImage: ptr(data.Assets.AnimatedImageSizeBytes)},
+		PerSourceSizeBytes:    &gen.StatsSizeBySource{Normal: ptr(data.Sizes.NormalSizeBytes), Cos: ptr(data.Sizes.CosSizeBytes)},
 	})
 }
 
-// GetApiV1StatsTrends 趋势折线：按 range 决定取数窗口 → SumDailyStatsBetween
-// 拉按天聚合 → stats.BuildTrendBuckets 纯函数分桶 → []gen.TrendBucket。
-// source 参数（协议批 P2）按 §6 来源桶过滤物化行（”/缺省 = 不过滤）。
 func (s *Server) GetApiV1StatsTrends(w http.ResponseWriter, r *http.Request, params gen.GetApiV1StatsTrendsParams) {
 	rng, ok := resolveStatsRange(w, params.Range, stats.RangeMonth)
 	if !ok {
 		return
 	}
-	mediaType := "" // 空串 = 不过滤（store 查询的空串哨兵约定）
+	mediaType, source := "", ""
 	if params.MediaType != nil {
 		mediaType = string(*params.MediaType)
 	}
-	sourceBucket := "" // 空串 = 不过滤（常规∪COS）
 	if params.Source != nil {
 		switch *params.Source {
 		case gen.GetApiV1StatsTrendsParamsSourceNormal, gen.GetApiV1StatsTrendsParamsSourceCos:
-			sourceBucket = string(*params.Source)
+			source = string(*params.Source)
 		default:
 			writeErr(w, http.StatusBadRequest, codeInvalidParam, "source 取值不合法")
 			return
 		}
 	}
-
-	today := s.now()
-	fromDay := ""
-	if start := trendWindowStart(rng, today); !start.IsZero() {
-		fromDay = store.FormatDay(start)
-	}
-	rows, err := s.q.SumDailyStatsBetween(r.Context(), db.SumDailyStatsBetweenParams{
-		FromDay: fromDay, ToDay: store.FormatDay(today), MediaType: mediaType,
-		SourceBucket: sourceBucket,
-	})
+	now := s.now()
+	rows, err := statsread.LoadDimensions(r.Context(), s.q, rng, now, mediaType, source)
 	if err != nil {
 		s.internalErr(w, "统计趋势数据", err)
 		return
 	}
-	daily := make([]stats.DailyRow, len(rows))
-	for i, row := range rows {
-		daily[i] = stats.DailyRow{
-			Day: row.Day, ViewCount: row.ViewCount, PlayCount: row.PlayCount, Seconds: row.BrowseSeconds,
-		}
-	}
-	buckets := stats.BuildTrendBuckets(daily, rng, today)
-	out := make([]gen.TrendBucket, 0, len(buckets)) // 空数据也输出 []（前端空态）
-	for _, b := range buckets {
+	buckets := stats.BuildDimensionBuckets(rows, rng, now)
+	out := make([]gen.TrendBucket, 0, len(buckets))
+	for _, bucket := range buckets {
 		out = append(out, gen.TrendBucket{
-			Label:     ptr(b.Label),
-			Start:     dayPtr(b.Start),
-			End:       dayPtr(b.End),
-			ViewCount: ptr(int(b.ViewCount)),
-			PlayCount: ptr(int(b.PlayCount)),
-			Seconds:   ptr(int(b.Seconds)),
+			Label: ptr(bucket.Label), Start: dayPtr(bucket.Start), End: dayPtr(bucket.End),
+			ViewCount: ptr(int(bucket.ViewCount)), PlayCount: ptr(int(bucket.PlayCount)), Seconds: ptr(int(bucket.Seconds)),
+			MediaTypes: protocolStatsMap(bucket.MediaTypes), Sources: protocolStatsMap(bucket.Sources),
 		})
 	}
 	writeJSON(w, http.StatusOK, out)
-}
-
-// trendWindowStart 返回 range 对应取数窗口的起点（本地日历日）；RangeAll
-// 返回零值（调用方翻译为不过滤的 fromDay 空串）。窗口含今天（起点回退
-// 窗口宽 - 1 天，与旧项目 naturalDayCutoff 的「含今天 N 个完整自然日」口径一致）。
-func trendWindowStart(rng stats.Range, today time.Time) time.Time {
-	local := today.Local()
-	switch rng {
-	case stats.RangeDay:
-		return local.AddDate(0, 0, -(trendDayWindowDays - 1))
-	case stats.Range7d:
-		return local.AddDate(0, 0, -(trend7dWindowDays - 1))
-	case stats.Range90d:
-		return local.AddDate(0, 0, -(trend90dWindowDays - 1))
-	case stats.RangeWeek:
-		return local.AddDate(0, 0, -(trendWeekWindowDays - 1))
-	case stats.RangeMonth:
-		return local.AddDate(0, -trendMonthWindowMonths, 0)
-	case stats.RangeQuarter:
-		return local.AddDate(0, -trendQuarterWindowMonth, 0)
-	case stats.RangeYear:
-		return local.AddDate(-trendYearWindowYears, 0, 0)
-	default:
-		return time.Time{}
-	}
 }
 
 // dayPtr 把 yyyy-MM-dd 串转为协议 Date（格式 = store.DayLayout「日」字段
