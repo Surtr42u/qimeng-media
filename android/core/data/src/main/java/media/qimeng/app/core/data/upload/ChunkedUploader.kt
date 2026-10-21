@@ -2,6 +2,7 @@ package media.qimeng.app.core.data.upload
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.FileInputStream
 import java.io.IOException
@@ -51,7 +52,12 @@ class ChunkedUploader @Inject constructor(
         targetServerUrl: String? = null,
     ): UploadOutcome = withContext(Dispatchers.IO) {
         val fixedBaseUrl = targetServerUrl ?: runCatching { apiFactory.currentBaseUrl() }.getOrNull()
-        val outcome = ChunkedUploadSession(
+        val previousSession = try {
+            fixedBaseUrl?.let { sessionRegistry.lookup(localId, it) }
+        } catch (failure: IOException) {
+            return@withContext UploadOutcome.Retryable("读取续传记录失败，稍后自动重试")
+        }
+        val outcome = try { ChunkedUploadSession(
             client = OkHttpUploadSessionClient(
                 // 地址未就绪/不合法收敛为 Transient（直传同口径：非终局，重试窗口内可恢复）
                 baseUrl = { fixedBaseUrl },
@@ -63,13 +69,20 @@ class ChunkedUploader @Inject constructor(
             fileName = fileName,
             dir = dir,
             isCancelled = isCancelled,
-            previousSessionId = sessionRegistry.lookup(localId),
-            onSessionCreated = { sessionRegistry.remember(localId, it) },
+            previousSessionId = previousSession,
+            onSessionCreated = { sessionRegistry.remember(localId, requireNotNull(fixedBaseUrl), it) },
             onProgress = { done ->
                 onProgress.onProgress(done, sizeBytes, UploadWorkSpec.progressPercent(done, sizeBytes))
             },
-        ).run()
-        if (outcome !is UploadOutcome.Retryable) sessionRegistry.forget(localId)
+        ).run() } catch (failure: IOException) {
+            return@withContext UploadOutcome.Retryable("保存续传记录失败，稍后自动重试")
+        }
+        if (outcome !is UploadOutcome.Retryable) {
+            // 完成后的清理失败绝不能转 retry，否则会把已完成原件重复上传。
+            try { sessionRegistry.forget(localId) } catch (failure: IOException) {
+                Log.w(UploadWorker.LOG_TAG, "清理续传把手失败（不重传已完成文件）", failure)
+            }
+        }
         outcome
     }
 

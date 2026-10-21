@@ -16,7 +16,6 @@ import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -28,6 +27,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import media.qimeng.app.core.network.ServerAddress
 import media.qimeng.app.core.network.ServerConfigDataSource
 
@@ -131,7 +131,14 @@ class EmbeddedServerService : Service() {
 
     /** 健康检查单飞闸：连续 onNewIntent/前台回归可能连发 HEALTH_CHECK，探测+复核最长
      *  ~8s，放行并发检查会重复探测甚至重复重拉 */
-    private val healthCheckInFlight = AtomicBoolean(false)
+    private val healthRecovery = ChildHealthRecovery(
+        current = { serverProcess },
+        alive = { it.isAlive },
+        ensureStarted = { ensureServerRunning() },
+        probe = { withContext(Dispatchers.IO) { probeHealthOnce() } },
+        pauseBeforeRecheck = { delay(HEALTH_RECHECK_DELAY_MS) },
+        restart = { restartUnhealthyChild(it) },
+    )
 
     /** dev 共享密钥写入槽（2026-09-30 批A）：devLogin 带头 X-Qimeng-Dev-Secret 的同源值 */
     @Inject
@@ -189,6 +196,10 @@ class EmbeddedServerService : Service() {
      */
     private suspend fun ensureServerRunning(): Unit = startMutex.withLock {
         if (serverProcess?.isAlive == true) return
+        // 死句柄先摘掉，旧看护随后醒来不能在新启动期间 stopSelf。
+        watchdogJob?.cancel()
+        serverProcess = null
+        serverPid = null
 
         val binary = EmbeddedServerConfig.serverBinary(applicationInfo.nativeLibraryDir)
         if (!binary.canExecute()) {
@@ -306,20 +317,7 @@ class EmbeddedServerService : Service() {
      * 但能换来「详情页加载失败需要手动重启 App」降级为「回到 App 数秒自愈」。
      */
     private fun verifyChildHealthAndHeal() {
-        if (!healthCheckInFlight.compareAndSet(false, true)) return
-        scope.launch {
-            try {
-                val child = serverProcess
-                // 无子进程/已死亡：死亡归看护收尾、启动归 ensure，健康检查不越界
-                if (child == null || !child.isAlive) return@launch
-                if (probeHealthOnce()) return@launch
-                delay(HEALTH_RECHECK_DELAY_MS)
-                if (probeHealthOnce()) return@launch
-                restartUnhealthyChild(child)
-            } finally {
-                healthCheckInFlight.set(false)
-            }
-        }
+        scope.launch { healthRecovery.runOnce() }
     }
 
     /** 单次 /healthz 探测（免鉴权、不碰数据库，响应即代表调度在转）。任何异常都算不健康 */
@@ -342,17 +340,26 @@ class EmbeddedServerService : Service() {
      * [onServerDied] 同源，防检查期间子进程已被新一轮拉起取代的双杀。
      * 用 SIGKILL（destroyForcibly）：调度停摆的进程不会执行 SIGTERM 处理器。
      */
-    private fun restartUnhealthyChild(child: Process) {
-        watchdogJob?.cancel()
-        if (serverProcess !== child) return
-        serverProcess = null
-        serverPid = null
-        runCatching {
-            child.destroyForcibly()
-            child.waitFor(DESTROY_GRACE_MS, TimeUnit.MILLISECONDS)
+    private suspend fun restartUnhealthyChild(child: Process) {
+        val restarted = startMutex.withLock {
+            // 先核对身份再摘看护，不能取消新一代子进程的 watchdog。
+            if (serverProcess !== child) return@withLock false
+            watchdogJob?.cancel()
+            serverProcess = null
+            serverPid = null
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    child.destroyForcibly()
+                    child.waitFor(DESTROY_GRACE_MS, TimeUnit.MILLISECONDS)
+                }
+            }
+            true
         }
-        scope.launch { ensureServerRunning() }
-        postInfoNotification("本机服务端已自动恢复", "服务无响应已重拉（冻结自愈）；数据无影响")
+        if (!restarted) return
+        ensureServerRunning()
+        if (serverProcess?.isAlive == true) {
+            postInfoNotification("本机服务端正在恢复", "请稍候重试加载")
+        }
     }
 
     /** 看护：子进程退出即收尾（首个检查点在 [WATCHDOG_INTERVAL_MS] 后，秒退的子进程

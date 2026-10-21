@@ -51,3 +51,5 @@ go test ./internal/store/db -run '^$' -bench '^BenchmarkSuggestionFileNames$' -b
 直传、续传创建/完成的多步流程归 `mediawrite`，HTTP 仅协议适配；四道校验、同名自动改名、分片失败保源和已发布落点重试保持原语义。本机同步由 syncchannel 编排，复用其入库/策略；TXT 事务复用 authorimport，稳定门、失败保源/库位和同名归档最新语义保持。未知长度直传采用有界流式读取（上限加一字节探测超限），不整读原件；超限拒绝发布并清理本次临时件。
 
 Android 入队记录服务器 URL，直传/分片及挂靠固定同端，切服或旧任务缺目标时拒绝并提示重新入队；不自动重定向。已发请求可在原端完成，URL 不能识别同址更换实例。当前上传不传源文件系统 mtime，落盘使用接收时间；本机跨卷移动保留 mtime 不能证明 HTTP 上传保时。恢复与验证见 [RESTORE](../RESTORE.md)。
+
+Android 分片会话把手（localId/目标 URL/sessionId）在客户端 DataStore 持久化，进程重建后先探测服务端权威 offset；本地不存断点或 token。服务端会话失效仍按既有限额重建。把手持久化不提供提交回执幂等性：服务端已入库但客户端未获响应/WorkManager 终态未提交仍可能重复；取消标记进程内窗口亦未消除。设备验收独立记录（ADR-0028/0042）。

@@ -10,6 +10,15 @@
 - 署名更正（2026-10-20，用户明确确认）：2026-10-19～20 的第五百三十八至第五百四十五笔原误署 GPT-6 或仅署 Codex，统一更正为 GPT-6.1 Sol；保留各条主代理/执行子代理及复核分工。
 
 
+## fix(app): 前台恢复补启动与分片把手持久化（2026-10-21 第五百六十七笔）
+
+执行 AI：未知（会话未提供可核实的完整模型名称与变体；主代理）
+
+- 健康检查遇无子进程/死亡不再空返，补启动；ChildHealthRecovery 统一单飞/两次探测/换代保护，Service 启动锁内先核身份再摘看护，探测转 IO；去除“数据无影响”的绝对提示。
+- 分片会话把手在既有 DataStore 与目标 URL 同次保存，重建后探测服务端权威 offset；先提交把手再发字节，清理失败不重传已完成文件。无新依赖/API/schema/SDK 变化。
+- 定向恢复、把手关闭重开/目标隔离、分片、任务状态与分流测试、MainViewModel 测试及 App Kotlin/Hilt 编译通过。未装机/测试真库；真实长期后台/重启/切服、NAS、Windows 其他 DataStore 全套问题仍未销项。
+- 文档影响：Android 入口、ADR-0028、文件领域、安全与实施清单同步；保留成功回执丢失/WorkManager 终态窗口的重复风险、服务端会话不持久和取消标记进程内限制；旧 CHANGELOG 完整归档。
+
 ## refactor(server): 本机同步与 TXT 共用事务编排下沉（2026-10-21 第五百六十六笔）
 
 执行 AI：未知（会话未提供可核实的完整模型名称与变体；主代理）
@@ -284,35 +293,3 @@
 - 文档：新增ADR-0039，更新SECURITY、DOMAIN_RULES §9、ARCHITECTURE、GUIDE_API及server说明。真实NAS/双卷/断电/磁盘满验收尚未执行。
 - 主代理补充需求复查并更新HANDOVER/CAPABILITY_MAP：当前用户尚无NAS，近期按手机单机/PC过渡验收；新增确认但未修的原生备份回导重复计数、多库导出键冲突、恢复后日统计缺失、重建统计覆盖并发增量、缩略图内容版本与缓存不自洽五项分别入待办。另记录源mtime保留、完整灾备和切服务器时上传任务归属的设计/验收缺口，不擅改既定领域口径。
 - 验证：主代理独立复跑后端全量测试、go vet、lint（0 issues）及Linux amd64交叉构建通过；本机CGO关闭，race未运行，不替代跨平台CI或实际NAS验收。代码未提交/推送。
-
-## chore(desktop+web): 清理桌面端 mpv 内核死代码与脚手架残留——全端统一收敛 ArtPlayer 播控（2026-10-17 第五百三十七笔）
-
-执行 AI：Gemini-3.8-Flash（主代理）
-
-- **背景与根因剖析**：
-  - 用户询问 Web 与 App 画质增强及桌面端媒体内核现状，指出桌面壳早已在第四百九十五笔（`ee3d86d3`）用户拍板回归与 Web 端完全一致的标准播控，为何代码库中仍残留 mpv 遗留痕迹。
-  - 实查确认：
-    1. 前端在 495 笔全面遵循 ArtPlayer 官方规范重构后，不论是纯浏览器/PWA 还是 Tauri 桌面壳，实际渲染与交互已 100% 运行标准 HTML5 `<video>`（ArtPlayer）；
-    2. 但桌面壳 Rust 后端 `desktop/src-tauri` 仍保留 `mod mpv;`、`src/mpv/` 模块、`permissions/mpv-commands.toml` 及 `setup-mpv.ps1`；前端 `video-player.tsx` 中保留防守性 `closeOrphanMpvInShell()`，文档 ADR-0036 与 `PLUGIN_PLAN.md` 处于未归档/滞后状态，给后续协作造成认知混淆与死代码包袱；
-  - 用户明确指令：“清理掉吧”。
-- **改动内容**：
-  1. **桌面壳 Rust 后端彻底清理**：
-     - 彻底删除 `desktop/src-tauri/src/mpv/` 目录（`player.rs`, `commands.rs`, `ffi.rs`, `win32.rs`, `mod.rs`）；
-     - `desktop/src-tauri/src/main.rs` 移除 `mod mpv;`、`tauri::generate_handler!` 中的 5 条 mpv 命令、`.manage(mpv::commands::MpvState::default())` 状态挂载与退出时的 `close_session` 回收调用；
-     - 彻底删除 `desktop/src-tauri/permissions/mpv-commands.toml`、`desktop/src-tauri/setup-mpv.ps1` 与 `desktop/PLUGIN_PLAN.md`；
-     - `desktop/src-tauri/capabilities/default.json` 移除 5 项 `allow-mpv-*` 权限声明；
-     - `desktop/.gitignore` 移除 `src-tauri/mpv/` 路径；
-     - `desktop/README.md` 移除 `原生播放内核（libmpv）` 章节，更新为全端统一使用标准 ArtPlayer 的说明。
-  2. **Web 前端防御性死代码与未引用模型清理**：
-     - `web/src/components/media/video-player.tsx`：移除 `closeOrphanMpvInShell()` 定义与 `useEffect` 中的调用，移除遗留未引用的 `nativeTitle?: string` 属性；
-     - `web/src/pages/AssetDetailPage.tsx`：移除向 `VideoPlayer` 传递的 `nativeTitle` 属性；
-     - `web/src/lib/engagement-reporting.ts` 与 `engagement-reporting.test.ts`：移除仅由早期 mpv 轮询使用的未引用类型定义（`NativeTrackInfo`、`NativeMediaProbe`、`NativePollStatus`、`NativePollSignal`）与 `nativePollSignal` 纯函数及相关测试用例；
-     - `web/src/lib/player-labels.ts`：更新注释描述，彻底去除历史 mpv 术语。
-  3. **文档与架构决策同步**：
-     - `docs/adr/0036-desktop-playback-kernel-libmpv.md` 状态正式标记为**已废弃（Superseded / Retired）**，详细记档回归 ArtPlayer 的决策历程与本笔清理范围；
-     - `docs/adr/INDEX.md` 同步更新 ADR-0036 状态为已废弃；
-     - `docs/CAPABILITY_MAP.md` 桌面播放内核行同步更新为“全端统一收敛标准 ArtPlayer（已有）”。
-- **自测验证**：
-  - Web 端：`npm test` 29 个测试套件 311 项单元测试全绿通过；`npm run build` 打包成功（零类型错误、零警告）；
-  - 桌面壳：`cargo test` 17 项单元测试全绿通过（零错误、零 dead_code 警告）。
-- **文档**：`docs/adr/0036-desktop-playback-kernel-libmpv.md`、`docs/adr/INDEX.md`、`docs/CAPABILITY_MAP.md`、`desktop/README.md`、`docs/CHANGELOG.md`（本笔）。
