@@ -38,6 +38,7 @@ import (
 	"github.com/google/uuid"
 
 	"qimeng-media/server/internal/authorattach"
+	"qimeng-media/server/internal/authorimport"
 	"qimeng-media/server/internal/events"
 	"qimeng-media/server/internal/httpapi/gen"
 	"qimeng-media/server/internal/store"
@@ -361,7 +362,7 @@ func (imp *legacyImport) importTxtFragments(frags *[]gen.LegacyTxtFragment) {
 		// 溯源章（ADR-0032）：备份 TXT 片段段触发的重建盖 import——关联
 		// 在本端的确立通道是备份导入（对端原始来历随 authorMediaRefs 段
 		// 透传，见 importAuthors）。
-		if _, err := imp.s.importTxt(imp.ctx, &filename, f.Content, resolutionKeep, store.OriginImport); err != nil {
+		if _, err := imp.s.importTxt(imp.ctx, &filename, f.Content, authorimport.Keep, store.OriginImport); err != nil {
 			imp.s.logger.Warn("备份 TXT 片段导入失败，跳过", "filename", f.Filename, "error", err)
 			skipped++
 			continue

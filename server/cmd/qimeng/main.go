@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"qimeng-media/server/internal/authorattach"
+	"qimeng-media/server/internal/authorimport"
 	"qimeng-media/server/internal/backup"
 	"qimeng-media/server/internal/buildinfo"
 	"qimeng-media/server/internal/config"
@@ -36,6 +37,7 @@ import (
 	"qimeng-media/server/internal/scanner"
 	"qimeng-media/server/internal/store"
 	"qimeng-media/server/internal/store/db"
+	"qimeng-media/server/internal/syncchannel"
 	"qimeng-media/server/internal/sysmon"
 	"qimeng-media/server/internal/thumbnail"
 )
@@ -222,10 +224,14 @@ func main() {
 	scan.SetConn(conn)
 
 	revisionService := libraryrevision.NewService(queries, logger, time.Now)
+	writeService := mediawrite.New(mediawrite.Options{Conn: conn, Queries: queries, Bus: bus,
+		Config: cfg, Thumbs: thumbs, Logger: logger, Now: time.Now, Enrich: scan.EnrichAsset, Revision: revisionService})
+	txtService := authorimport.New(conn, queries, time.Now, logger)
+	mirrorWriter := &authorattach.MirrorWriter{Logger: logger}
+	syncService := syncchannel.New(syncchannel.Options{Config: cfg, Queries: queries, Writes: writeService,
+		TXT: txtService, Mirror: mirrorWriter, Logger: logger, Now: time.Now})
 	apiSrv, err := httpapi.New(httpapi.Deps{
-		Revision: revisionService,
-		Writes: mediawrite.New(mediawrite.Options{Conn: conn, Queries: queries, Bus: bus,
-			Config: cfg, Thumbs: thumbs, Logger: logger, Now: time.Now, Enrich: scan.EnrichAsset, Revision: revisionService}),
+		Revision: revisionService, Writes: writeService, TXT: txtService, Sync: syncService,
 		Conn:        conn,
 		Queries:     queries,
 		Bus:         bus,
@@ -242,7 +248,7 @@ func main() {
 		// 上传挂靠编排 + 作者总表镜像（ADR-0019：DI 在 main；两服务无
 		// 外部依赖，缺省实例即生产实现，这里显式装配是规范形态）。
 		Attach: &authorattach.Service{Logger: logger},
-		Mirror: &authorattach.MirrorWriter{Logger: logger},
+		Mirror: mirrorWriter,
 	})
 	if err != nil {
 		logger.Error("组装 HTTP 服务失败", "error", err)

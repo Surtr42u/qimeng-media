@@ -9,7 +9,7 @@ import (
 	"qimeng-media/server/internal/mediawrite"
 )
 
-// 存量本机同步及隔离测试的移动故障注入；生产 main 的 mediawrite 使用真实 MoveFile。
+// 隔离 HTTP 测试的移动故障注入；生产 main 的 mediawrite 使用真实 MoveFile。
 var moveFile = filing.MoveFile
 
 func (s *Server) publishLibraryChanged() { s.writes.PublishLibraryChanged() }

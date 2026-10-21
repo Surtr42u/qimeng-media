@@ -2,7 +2,6 @@
 package httpapi
 
 import (
-	"context"
 	"database/sql"
 	"errors"
 	"net/http"
@@ -22,17 +21,6 @@ func (s *Server) PostApiV1AssetsUpload(w http.ResponseWriter, r *http.Request, p
 		return
 	}
 	writeJSON(w, http.StatusCreated, s.assembleUploadDetail(asset))
-}
-
-// 本机同步暂复用该适配器；配置读取与上限语义单一来源在 mediawrite。
-type uploadPolicy struct {
-	maxBytes int64
-	disabled bool
-}
-
-func (s *Server) resolveUploadPolicy(ctx context.Context) uploadPolicy {
-	p := s.writes.UploadPolicy(ctx)
-	return uploadPolicy{maxBytes: p.MaxBytes, disabled: p.Disabled}
 }
 
 // assembleUploadDetail 装配两条上传通道 201 响应的 AssetDetail：新上传资产

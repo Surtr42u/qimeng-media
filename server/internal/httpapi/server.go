@@ -16,6 +16,7 @@ import (
 
 	"qimeng-media/server/internal/auth"
 	"qimeng-media/server/internal/authorattach"
+	"qimeng-media/server/internal/authorimport"
 	"qimeng-media/server/internal/backup"
 	"qimeng-media/server/internal/config"
 	"qimeng-media/server/internal/events"
@@ -25,6 +26,7 @@ import (
 	"qimeng-media/server/internal/safego"
 	"qimeng-media/server/internal/sourcematcher"
 	"qimeng-media/server/internal/store/db"
+	"qimeng-media/server/internal/syncchannel"
 	"qimeng-media/server/internal/sysmon"
 	"qimeng-media/server/internal/thumbnail"
 	"qimeng-media/server/internal/uploadsess"
@@ -121,6 +123,8 @@ const dirPerm = 0o755
 // Deps 是组装 httpapi.Server 的全部外部依赖（依赖注入只在 main 发生，
 // 业务包之间禁止互相 new——ARCHITECTURE §5）。
 type Deps struct {
+	TXT  *authorimport.Service
+	Sync *syncchannel.Service
 	// Writes 是媒体写入编排服务；生产组合根显式提供，缺省仅兼容隔离测试装配。
 	Writes *mediawrite.Service
 	// Conn 原始数据库连接（readyz 的 PingContext、事务兜底用）。
@@ -211,9 +215,9 @@ type Server struct {
 	// uploads 断点续传上传会话管理器（uploadsess 包，ADR-0028；New 内按
 	// Cfg.DataDir 构造，时钟/日志与 Server 同源注入）。
 	uploads *uploadsess.Manager
-	// localSync 本机自动同步通道运行态（localsync.go，ADR-0030）：观测/失败
-	// 记录/状态端点共享的内存态，全部访问经其 mu 保护。
-	localSync *localSyncState
+	// sync 持有本机同步业务，HTTP 只读快照和触发；txt 为跨入口共用作者导入服务。
+	sync *syncchannel.Service
+	txt  *authorimport.Service
 	// thumbProgress 缩略图覆盖进度缓存（thumbnail_warmup.go，2026-10-04 批）：
 	// 进度页轮询的分子=覆盖资产数，需对全库逐资产 Stat（v4 换代期 thumbs 目录
 	// 混有旧键孤儿文件，目录计数口径失真）；30s TTL 缓存把秒级轮询的稳态成本
@@ -290,7 +294,6 @@ func New(deps Deps) (*Server, error) {
 		attach:         attach,
 		mirror:         mirror,
 		rev:            rev,
-		localSync:      newLocalSyncState(),
 		authState:      newAuthState(),
 		authLimit:      newAuthLimiter(authRateLimitMax, authRateLimitWindow),
 		scanStates:     newScanStateMap(),
@@ -311,6 +314,15 @@ func New(deps Deps) (*Server, error) {
 				return err
 			}})
 	}
+	s.txt = deps.TXT
+	if s.txt == nil {
+		s.txt = authorimport.New(deps.Conn, deps.Queries, now, logger)
+	}
+	s.sync = deps.Sync
+	if s.sync == nil {
+		s.sync = syncchannel.New(syncchannel.Options{Config: deps.Cfg, Queries: deps.Queries, Writes: s.writes, TXT: s.txt, Mirror: mirror, Logger: logger, Now: now})
+	}
+
 	s.uploads = s.writes.UploadSessions()
 	// 服务重启后 Bearer token 仍有效：从库加载首行 token 哈希到内存
 	//（SECURITY「鉴权设计」：库中只存哈希，明文 token 永不落库）。
