@@ -4,6 +4,7 @@ package httpapi
 // 重命名、冲突 409（文件系统占用）、路径穿越拒绝、404。
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -110,5 +111,70 @@ func TestMoveNotFound(t *testing.T) {
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("移动不存在资产期望 404，得到 %d", resp.StatusCode)
+	}
+}
+
+// 错误响应只映射协议错误，不向客户端透传底层路径或 SQLite 诊断。
+func TestMoveDatabaseFailureResponseKeepsOriginal(t *testing.T) {
+	env := newTestEnv(t)
+	id, ok := env.assetIDByName(t, "a.jpg")
+	if !ok {
+		t.Fatal("缺少合成资产")
+	}
+	original, err := os.ReadFile(filepath.Join(env.media, "a.jpg"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := env.conn.Exec(`CREATE TRIGGER synthetic_move_fail BEFORE UPDATE OF rel_path ON assets BEGIN SELECT RAISE(ABORT,'synthetic private database diagnostic'); END`); err != nil {
+		t.Fatal(err)
+	}
+	resp := env.do(t, http.MethodPost, "/api/v1/assets/"+id+"/move", `{"targetDir":"next"}`)
+	var failure map[string]string
+	if err := json.NewDecoder(resp.Body).Decode(&failure); err != nil {
+		t.Fatal(err)
+	}
+	if err := resp.Body.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusInternalServerError || failure["code"] != codeInternal || failure["message"] != "内部错误" {
+		t.Fatalf("移动失败协议: %d %+v", resp.StatusCode, failure)
+	}
+	if got, err := os.ReadFile(filepath.Join(env.media, "a.jpg")); err != nil || !bytes.Equal(got, original) {
+		t.Fatal("DB 失败后未回滚原件", err)
+	}
+	if _, err := os.Stat(filepath.Join(env.media, "next", "a.jpg")); !os.IsNotExist(err) {
+		t.Fatal("回滚不应残留重复件", err)
+	}
+	if _, err := env.conn.Exec(`DROP TRIGGER synthetic_move_fail`); err != nil {
+		t.Fatal(err)
+	}
+	resp = env.do(t, http.MethodPost, "/api/v1/assets/"+id+"/move", `{"targetDir":"next"}`)
+	if err := resp.Body.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatal("故障解除后可重试", resp.StatusCode)
+	}
+}
+
+func TestMoveKeepsExistenceBeforeBodyValidation(t *testing.T) {
+	env := newTestEnv(t)
+	resp := env.do(t, http.MethodPost, "/api/v1/assets/00000000-0000-0000-0000-000000000000/move", "malformed JSON")
+	if err := resp.Body.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatal("不存在资产保持先 404", resp.StatusCode)
+	}
+	id, ok := env.assetIDByName(t, "a.jpg")
+	if !ok {
+		t.Fatal("缺少合成资产")
+	}
+	resp = env.do(t, http.MethodPost, "/api/v1/assets/"+id+"/move", "malformed JSON")
+	if err := resp.Body.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatal("存在资产仍校验请求体", resp.StatusCode)
 	}
 }

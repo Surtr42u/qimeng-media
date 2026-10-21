@@ -24,6 +24,10 @@ const (
 	TrashMissing
 	OriginalLibraryGone
 	InvalidTrashMeta
+	InvalidFilename
+	MoveFileConflict
+	MoveRecordConflict
+	MovePathEscape
 )
 
 // Failure 的 Op 用于服务端诊断，Kind 由接口层映射；底层错误不直接外发。

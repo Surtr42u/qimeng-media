@@ -90,7 +90,7 @@
 | 包 | 职责 | 禁止 |
 |---|---|---|
 | `httpapi` | 请求校验、鉴权、调编排服务、序列化 | 业务规则 |
-| `mediawrite` | 上传与回收站/恢复/到期清扫、共用入库、实时上传策略、库变更指标/事件；生产在 main 显式装配并与 HTTP 共用修订号服务 | HTTP/SDK 类型、领域公式、第二份业务数据 |
+| `mediawrite` | 上传、移动/改名与回收站/恢复/到期清扫、共用入库、实时上传策略、库变更指标/事件；生产在 main 显式装配并与 HTTP 共用修订号服务 | HTTP/SDK 类型、领域公式、第二份业务数据 |
 | `syncchannel` | 本机同步轮询/触发、稳定观测/状态快照、媒体落位与 TXT 归档；复用 mediawrite/authorimport，main 显式装配 | HTTP/SDK 类型、复制入库或 TXT 规则 |
 | `authorimport` | 作者 TXT 导入/重导保护/移除/统一重建事务；手动、备份和同步共用，片段存取复用 authorattach | HTTP/SDK 类型、修改解析与匹配算法 |
 | `scanner` | 全量/增量扫描、变更检测、移动合并 | 直接写库（经 store） |
@@ -120,7 +120,7 @@
 ### 5.1 模块边界强制与防漂移（ADR-0010 / ADR-0009 / ADR-0011 / ADR-0019）
 
 **编排下沉（ADR-0019）**：多步业务编排（上传落盘入库、移动先文件后库行、统计事件重建等）必须放在专职编排包（`server/internal/orchestration/` 或等价 app 层），`httpapi` 禁止业务编排，只保留鉴权、参数校验、序列化与对编排入口的一次调用。既有厚 handler 增量迁移；新增多步流一律不得在 httpapi 落地。不引入编排框架，`cmd/qimeng` 仍为唯一组合根。
-**当前迁移状态（2026-10-21）**：以等价业务包落实编排层，不要求固定 orchestration 目录。authorattach/eventstats 已承载相应业务；mediawrite 已迁入上传、回收站删除/恢复/物理清理及到期清扫，httpapi/upload(s)/trash(_sweeper).go 只保留协议与生命周期适配。恢复分为文件落点/意图复核、原身份/日统计同事务提交、提交后通知；修订号与 HTTP 共享唯一服务。syncchannel 已承接本机同步调度/运行态/搬移与归档，authorimport 承接跨入口 TXT 导入/保护/移除/重建事务，HTTP 只触发和映射值快照。存量 filing 的移动/改名等尚在 HTTP，仍须按触碰逐步下沉。ADR-0042 的 localsync.PlanScan 仍负责安全扫描计划，不据局部完成宣称全层迁移完毕。
+**当前迁移状态（2026-10-21）**：以等价业务包落实编排层，不要求固定 orchestration 目录。authorattach/eventstats 已承载相应业务；mediawrite 已迁入上传、回收站删除/恢复/物理清理及到期清扫，httpapi/upload(s)/trash(_sweeper).go 只保留协议与生命周期适配。恢复分为文件落点/意图复核、原身份/日统计同事务提交、提交后通知；修订号与 HTTP 共享唯一服务。syncchannel 已承接本机同步调度/运行态/搬移与归档，authorimport 承接跨入口 TXT 导入/保护/移除/重建事务，HTTP 只触发和映射值快照。移动/改名已迁入 mediawrite，HTTP filing.go 只作存在性/JSON 校验及错误映射；业务在库锁内复核身份/路径/根，文件先行、库行失败无覆盖回滚，提交后才富化与通知。其他存量 handler 按触碰继续收敛，不据此宣称全部 HTTP 编排已清空。ADR-0042 的 localsync.PlanScan 仍负责安全扫描计划，不据局部完成宣称全层迁移完毕。
 
 边界不是口头约定，是**三层机器强制**（决策见 ADR-0010）：
 
