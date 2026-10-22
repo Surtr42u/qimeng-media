@@ -38,7 +38,7 @@ M6 基座历史验收已完成；近期变更未因此自动取得新版本实�
 
 外观优化见 [Android 背景对比度记录](../docs/ANDROID_UI_TASKBOOK.md)：日间页面与卡面均为均匀 #FFFFFF，移除冷灰渐变和双向高光，SoftDaylight 只保留低强度中性灰影（Compose 原生 API，无新依赖），辅助面使用中性灰；两档次级文字提高可读性，系统栏跟随 App 主题。首页顶行三处入口、推荐/COS/排行榜三胶囊及相册维度/值胶囊仅复用日间卡片轻影，恢复原白色玻璃，撤去灰色染色与硬描边；真采样/静态分支共用修饰符，其他玻璃件不变。统计详情的摘要、洞察、分布/榜单外卡及内部排行行同样复用轻影，避免白卡融入白底。仅保留“外观”改名，布局/比例/动效改造已取消；不改原件或服务端缩略图。
 
-此前（2026-10-20）arm64 内嵌 Release 已同签名保留数据覆盖装机，并核对 APK 字节、非 Debug 标志、三件套/哈希与冷启动健康/就绪；qimeng_api35 已关闭。该模拟器 x86_64 的 SQLite 初始化 SIGSYS 未修复，不等同于 arm64 手机失败；证据与验证限制见 [HANDOVER](../docs/HANDOVER.md)。
+最新（2026-10-22）arm64 内嵌 Release 0.2.1 / code 3（内嵌 e475a05f）已通过云端完整 CI、安全、文档及 Release 出包/单测，并同签名保留数据覆盖装机；安装后 APK 字节与候选一致，非 Debug 标志、三件套/哈希、内嵌提交与冷启动健康/就绪均已核对。qimeng_api35 保持关闭，该模拟器 x86_64 的 SQLite 初始化 SIGSYS 未修复，不等同于 arm64 手机失败；新版业务全回归、后台长期运行和 NAS 未验收，证据见 [HANDOVER](../docs/HANDOVER.md)。
 
 内嵌装配见 [deploy/embedded](../deploy/embedded/README.md)，模拟器见 [emulator-verify](../deploy/emulator-verify/README.md)。必须显式指定 `qimeng_api35` 或用户指定真机；严禁向雷电 `emulator-5554` 安装/启动本项目或执行 wm/settings。编译、单测、实机/NAS 验收分别记录，平台测试限制见 HANDOVER。
 
