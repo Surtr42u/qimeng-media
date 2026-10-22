@@ -42,7 +42,7 @@ jobs:
           # 自检 + 留痕：指纹对得上真机已装包，才能直接 adb install -r
           keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey \
             | grep -E "SHA256:|Alias name"
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with: { go-version-file: server/go.mod, cache-dependency-path: server/go.sum }
       - run: sudo apt-get update && sudo apt-get install -y make
       - name: 校验并生成三端 SDK 与指纹
