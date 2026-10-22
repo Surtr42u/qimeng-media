@@ -4,16 +4,17 @@ import subprocess
 import tempfile
 import unittest
 
-from check_privacy import content_codes, private_path, scan
+from check_privacy import content_codes, inspect_blob, private_path, scan
 
 
 class PrivacyTests(unittest.TestCase):
     def test_private_payload_paths_are_blocked_even_if_force_added(self):
         for name in ('nested/qimeng_backup.json', 'temporary/library.db', 'notes-private.json',
-                     'key.pem', '.env', '.env.production', 'qimeng-data/source', 'settings.local.json'):
+                     'key.pem', '.env', '.env.production', 'qimeng-data/source', 'settings.local.json',
+                     'debug.keystore', 'library.sqlite3-wal', 'session.log', 'personal-photo.jpg'):
             with self.subTest(name=name):
                 self.assertTrue(private_path(name))
-        for name in ('.env.example', 'api/openapi.yaml', 'config/dev.example.yaml', 'debug.keystore'):
+        for name in ('.env.example', 'api/openapi.yaml', 'config/dev.example.yaml', 'web/public/pwa-192x192.png'):
             with self.subTest(name=name):
                 self.assertFalse(private_path(name))
 
@@ -29,6 +30,7 @@ class PrivacyTests(unittest.TestCase):
         self.assertIn('private-backup-or-audit-payload', content_codes('renamed.txt', payload))
         self.assertIn('local-private-identifier', content_codes('notes.md', b'value synthetic-local-id', ['synthetic-local-id']))
         self.assertFalse(content_codes('notes.md', b'synthetic-owner@example.com'))
+        self.assertIn('private-database-payload', inspect_blob('renamed.bin', b'SQLite format 3\0synthetic', []))
 
     def test_staged_bytes_not_changed_worktree_are_scanned(self):
         with tempfile.TemporaryDirectory() as folder:

@@ -24,6 +24,9 @@ coverage.out
 *.sqlite3
 *.db
 *.db-journal
+*.sqlite*-wal
+*.sqlite*-shm
+*.sqlite*-journal
 *.db-wal
 *.db-shm
 /data/
@@ -52,7 +55,6 @@ android/local.properties
 *.apk
 *.aab
 *.keystore
-!debug.keystore
 
 # IDE 与系统
 .idea/

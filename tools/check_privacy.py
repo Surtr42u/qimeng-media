@@ -18,7 +18,12 @@ GITLEAKS_VERSION = '8.30.1'
 TEXT_LIMIT_BYTES = 16 * 1024 * 1024
 MEDIA_SUFFIXES = {'.png', '.jpg', '.jpeg', '.webp', '.gif', '.ico', '.icns', '.mp4',
                   '.mov', '.webm', '.mp3', '.wav', '.woff', '.woff2', '.ttf', '.pdf'}
-PRIVATE_SUFFIXES = {'.db', '.sqlite', '.sqlite3', '.jks', '.p12', '.pfx', '.key', '.pem'}
+PRIVATE_SUFFIXES = {'.db', '.sqlite', '.sqlite3', '.jks', '.p12', '.pfx', '.key', '.pem', '.keystore', '.log'}
+PUBLIC_MEDIA_PREFIXES = ('android/app/src/main/res/', 'desktop/src-tauri/icons/', 'web/public/covers/')
+PUBLIC_MEDIA_NAMES = {'desktop/app-icon.png', 'desktop/ui/app-icon.png', 'web/public/favicon.ico',
+                      'web/public/apple-touch-icon-180x180.png',
+                      'web/public/maskable-icon-512x512.png', 'web/public/pwa-192x192.png',
+                      'web/public/pwa-512x512.png', 'web/public/pwa-64x64.png'}
 PERSONAL_EMAIL = re.compile(rb'(?i)\b[\w.+%-]+@(?:qq|163|126|gmail|outlook|hotmail)\.com\b')
 PROFILE = re.compile(rb'(?i)[a-z]:[\\/]+Users[\\/]+([^\\/\s\x00\"\'<>]+)')
 # 这些是项目/上游代码中明确的模板或合成路径，不是通配忽略真实用户名。
@@ -45,7 +50,11 @@ def private_path(name):
         return True
     if path.suffix.lower() in PRIVATE_SUFFIXES:
         return True
-    return base.endswith('.keystore') and base != 'debug.keystore'
+    if re.search(r'\.(?:db|sqlite3?)-(?:wal|shm|journal)$', base):
+        return True
+    if path.suffix.lower() in MEDIA_SUFFIXES:
+        return name not in PUBLIC_MEDIA_NAMES and not name.startswith(PUBLIC_MEDIA_PREFIXES)
+    return False
 
 
 def content_codes(name, content, local_values=()):
@@ -91,6 +100,8 @@ def inspect_blob(name, content, values):
         return set()  # 媒体只查路径/清单，不读取/解码媒体字节。
     if len(content) > TEXT_LIMIT_BYTES:
         return {'oversized-unreviewed-file'}
+    if content.startswith(b'SQLite format 3\0'):
+        return {'private-database-payload'}
     if b'\x00' in content:
         return set()
     return content_codes(name, content, values)
@@ -155,6 +166,9 @@ def scan(root, mode):
                 if not path.exists():
                     continue
                 if path.is_symlink() or path.is_junction():
+                    continue
+                if path.stat().st_size > TEXT_LIMIT_BYTES:
+                    counts['oversized-unreviewed-file'] += 1
                     continue
                 content = path.read_bytes()
             counts.update(inspect_blob(name, content, values))
