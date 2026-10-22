@@ -62,8 +62,12 @@ class AuditLibraryTests(unittest.TestCase):
             'mediaTagRefs': [{'recordKey': 'r', 'tagName': 'synthetic-tag'}]}}
 
     def change(self, sql):
-        with sqlite3.connect(self.db) as conn:
+        conn = sqlite3.connect(self.db)
+        try:
             conn.executescript(sql)
+            conn.commit()
+        finally:
+            conn.close()
 
     def with_backup(self):
         path = self.root / 'backup.json'
@@ -82,7 +86,6 @@ class AuditLibraryTests(unittest.TestCase):
             self.assertNotIn(private, text)
 
     def test_differences_are_reported_without_repair(self):
-        (self.media / 'synthetic.bin').write_bytes(b'truncated')
         self.change("UPDATE asset_daily_stats SET view_count=5; DELETE FROM asset_tags; INSERT INTO favorites VALUES('missing');")
         # 大小真的不同；同大小字节变化故意不归快速 stat 校验范围。
         (self.media / 'synthetic.bin').write_bytes(b'short')
