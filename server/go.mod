@@ -11,7 +11,7 @@ require (
 	github.com/prometheus/common v0.72.0
 	github.com/shirou/gopsutil/v4 v4.26.9
 	golang.org/x/crypto v0.57.0
-	golang.org/x/sync v0.23.0
+	golang.org/x/sync v0.24.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.60.1
 )
