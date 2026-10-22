@@ -8,7 +8,7 @@ rem
 rem Usage:   _server-common.cmd [console^|nobrowser^|desktop]
 rem   console   = visible window, banner + ready-to-copy LAN URLs,
 rem               auto-open browser once port 8420 answers.
-rem   nobrowser = HEADLESS backend: hidden, no browser; a start
+rem   nobrowser = visible backend console, no browser; a start
 rem               banner (timestamp + LAN URLs) is appended to
 rem               server\console.log, then server output appends
 rem               there too (background use).
@@ -85,20 +85,34 @@ exit /b 0
 
 rem ---------------- nobrowser mode (headless backend) -----------------
 :nobrowser
+title Qimeng Backend
+set "QIMENG_BACKEND_READY_URL=http://127.0.0.1:8420/readyz"
 call :ensure_binary
 if errorlevel 1 exit /b 1
 rem Repeated shortcut clicks must reuse the healthy backend, not start a
 rem second process against the same data directory and listening port.
 rem /readyz is the root probe alias documented in api/openapi.yaml.
-powershell -NoProfile -Command "try { $r=Invoke-WebRequest -UseBasicParsing 'http://127.0.0.1:8420/readyz' -TimeoutSec 2; if($r.StatusCode -eq 200){exit 0} } catch {}; exit 1"
+powershell -NoProfile -Command "try { $r=Invoke-WebRequest -UseBasicParsing $env:QIMENG_BACKEND_READY_URL -TimeoutSec 2; if($r.StatusCode -eq 200){exit 0} } catch {}; exit 1"
 if not errorlevel 1 (
     echo [headless] backend already running; no second process started.
-    exit /b 0
+    goto backend_monitor
 )
-echo [start] qimeng-server.exe (headless, log: server\console.log)
+echo [start] qimeng-server.exe - keep this console open for backend output.
 call :log_banner
-powershell -NoProfile -Command "$ErrorActionPreference='Stop'; Start-Process -FilePath $env:ComSpec -ArgumentList '/d /c qimeng-server.exe >> console.log 2>&1' -WorkingDirectory (Get-Location).Path -WindowStyle Hidden"
-if errorlevel 1 exit /b 1
+qimeng-server.exe
+set "BACKEND_EXIT_CODE=%errorlevel%"
+title Qimeng Backend - STOPPED
+echo.
+echo [stopped] Backend exited. Exit code: %BACKEND_EXIT_CODE%
+pause
+exit /b %BACKEND_EXIT_CODE%
+
+:backend_monitor
+rem An already-running backend may have no console of its own. Keep this
+rem plain console visible and show readiness without restarting the server.
+echo [status] This console monitors the existing backend.
+echo [status] Closing this monitor does not stop the existing backend.
+powershell -NoProfile -Command "$pollSeconds=3; $previous=''; while($true){ $state='NOT READY'; try { if((Invoke-WebRequest -UseBasicParsing $env:QIMENG_BACKEND_READY_URL -TimeoutSec 2).StatusCode -eq 200){$state='RUNNING'} } catch {}; if($state -ne $previous){Write-Host ('[backend] '+$state); $previous=$state}; Start-Sleep -Seconds $pollSeconds }"
 exit /b 0
 
 rem ---------------- desktop mode (Tauri shell) ----------------
