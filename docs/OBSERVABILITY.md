@@ -77,6 +77,8 @@
 
 `GET /api/v1/healthz`（免鉴权，`api/openapi.yaml` 标 `security: []`）：进程存活；`GET /api/v1/readyz`（免鉴权，同样 `security: []`）：**当前实现只检查数据库可达**（PingContext，httpapi/server.go GetApiV1Readyz；媒体库目录可达/磁盘余量告警为规划扩展，接入时需同步更新本节与协议描述）。服务端同时保留根路径 `/healthz`、`/readyz` 作为运维探针别名（docker/k8s 惯例，行为一致，不属于 API 协议面）——根路径别名可用；deploy 样例实际用 /api/v1/healthz。
 
+历史资产/事件/统计一致性可由 AI 在用户授权后运行[只读对账工具](../tools/README.md#历史数据只读对账)：数据库同一只读快照核对关联和事件→日统计，文件仅 stat，可选便携 v2 备份逐条比对。结果须保留检查范围与目标增量，不能从 readyz 200 或一次对账外推全部同步异常场景、全部媒体字节或手机待传队列通过；在线文件变化与时区差异须先排除。报告与备份只放忽略目录，不展示私人媒体。
+
 ## 后置可选：Grafana 增强包（不进默认部署）
 
 想看长期历史曲线（7 天/30 天）时：docker-compose 追加 Prometheus + Grafana 两个容器，抓取 /metrics，导入预置 Dashboard JSON（接入本增强包时随包交付，当前仓库未内置）。默认不装——单用户内网场景内置面板覆盖 95% 需求，全家桶只服务"想折腾"的场景。
