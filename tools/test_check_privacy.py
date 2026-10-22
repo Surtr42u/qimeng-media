@@ -26,6 +26,7 @@ class PrivacyTests(unittest.TestCase):
         self.assertIn('device-serial-literal', content_codes('script.ps1', serial))
         payload = b'{"format":"qimeng_backup","schemaVersion":2,"data":{}}'
         self.assertIn('private-backup-or-audit-payload', content_codes('renamed.json', payload))
+        self.assertIn('private-backup-or-audit-payload', content_codes('renamed.txt', payload))
         self.assertIn('local-private-identifier', content_codes('notes.md', b'value synthetic-local-id', ['synthetic-local-id']))
         self.assertFalse(content_codes('notes.md', b'synthetic-owner@example.com'))
 

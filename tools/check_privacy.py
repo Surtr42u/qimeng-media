@@ -62,7 +62,8 @@ def content_codes(name, content, local_values=()):
             found.add('local-private-identifier')
     if name.endswith('.md') and LOCAL_RESULT.search(content.decode('utf-8', 'replace')):
         found.add('private-usage-summary')
-    if name.endswith('.json'):
+    # 私人 JSON 改了扩展名也不能绕过；只解析看起来是对象的文本。
+    if content.lstrip().startswith(b'{'):
         try:
             data = json.loads(content)
             if isinstance(data, dict) and (data.get('format') == 'qimeng_backup'
