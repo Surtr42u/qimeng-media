@@ -17,6 +17,18 @@ python -X utf8 tools/audit_library.py --db <数据目录>/qimeng.db --backup <�
 
 `test_audit_library.py` 仅在云端用临时合成库/文件验证不写库、WAL 可见、统计/外键/缺失关联/身份冲突检测和路径拒绝；文档 workflow 在 Linux 和 Windows 执行相关测试，随后执行文档门禁。真实数据只读运行是运维对账，不代替合成测试。
 
+## 隐私与密钥门禁
+
+`check_privacy.py` 用标准库补充私人文件路径/个人邮箱/设备标识/实际库汇总和 Git 作者元数据检查；密钥规则复用 [Gitleaks](https://github.com/gitleaks/gitleaks) **8.30.1** 默认规则，`.gitleaks.toml` 只对 auth 测试的一条明确合成 token 作精确放行，不豁免测试目录。扫描器云端下载经过固定 SHA-256 核对，不引入应用运行时依赖。
+
+AI 负责本机安装预编译扫描器，配置 `git config privacy.gitleaksPath <扫描器路径>`（或 `QIMENG_GITLEAKS`），再设置 `git config core.hooksPath .githooks`。本机额外标识放忽略的 `.privacy-policy.local.json` 的 `privateIdentifiers` 字符串数组，只在本机读取，不写规则源码/测试/文档。重新检出后须重新启用 Git 本地 hooks 配置；CI 同时兜底，但云端检查发生在推送之后，不能代替本地拦截。
+
+- `--mode staged --gitleaks`：提交前读取 index 中将被提交的真实内容，防止工作区改回安全文本掩盖 staged 泄露；即使强制加入忽略文件，也按路径/载荷拒绝。
+- `--mode worktree`：核对 tracked + 未忽略的新文件和当前 Git 身份，只读，不遍历被忽略的数据目录；媒体按路径清单处理，不打开/解码。
+- `--mode history --gitleaks`：推送前核对全部本地可达文本历史和作者/提交者邮箱；Gitleaks 输出全量遮罩，程序不转发匹配原文，临时报告只在本机临时目录并自动清理。
+
+退出码 0=所检规则通过，1=拦截，2=未完成；缺少固定版本扫描器或读取失败不能通过。`.githooks` 是可绕过的本地预防，不能保证所有可能的敏感文本都被识别；用户原件和运行配置继续依赖不入库纪律。`test_check_privacy.py` 只在云端用合成 Git 仓库验证强制加入拦截、staged/工作区差异与历史作者信息，不运行本机回归。
+
 ## 文档门禁
 
 仓库根执行 `python -X utf8 tools/check_docs.py`；自测执行 `python -m unittest discover -s tools -p 'test_*.py'`。无需安装 Python 运行时依赖。

@@ -9,6 +9,26 @@ on:
 permissions:
   contents: read
 jobs:
+  privacy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with: { fetch-depth: 0, persist-credentials: false }
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with: { python-version: '3.13' }
+      - name: 安装固定版本密钥扫描器并核对摘要
+        env:
+          GITLEAKS_HOME: ${{ runner.temp }}/gitleaks
+        run: |
+          mkdir -p "$GITLEAKS_HOME"
+          curl --fail --silent --show-error --location --output "$GITLEAKS_HOME/scanner.tar.gz" https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          echo '551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  '"$GITLEAKS_HOME/scanner.tar.gz" | sha256sum --check
+          tar -xzf "$GITLEAKS_HOME/scanner.tar.gz" -C "$GITLEAKS_HOME" gitleaks
+          echo "QIMENG_GITLEAKS=$GITLEAKS_HOME/gitleaks" >> "$GITHUB_ENV"
+      - run: python -m unittest discover -s tools -p 'test_check_privacy.py'
+      - run: python tools/check_privacy.py --mode worktree
+      - run: python tools/check_privacy.py --mode history --gitleaks
   go-vulnerabilities:
     runs-on: ubuntu-latest
     timeout-minutes: 20

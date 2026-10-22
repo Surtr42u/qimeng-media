@@ -1,0 +1,4 @@
+#!/bin/sh
+# 历史和本地待提交文件都复核，拒绝带旧私人元数据的提交链。
+python -X utf8 tools/check_privacy.py --mode worktree || exit 1
+exec python -X utf8 tools/check_privacy.py --mode history --gitleaks
