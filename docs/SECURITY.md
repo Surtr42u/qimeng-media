@@ -160,6 +160,7 @@ Android 持久上传任务在入队固化服务器 base URL；分片会话把手
 
 - **个人使用数据同等保护**：原始媒体、数据库、便携备份、文件/作者明细、现场审计报告以及实际库规模/行为数量等汇总只保存在忽略的本地目录。公开交付记录只写检查范围和定性结论，不复制用户数据或精确使用统计；Git 作者/提交者使用 GitHub noreply 身份，个人邮箱也属于历史审计范围。
 - **防止再次入库**：`.gitignore` 补充数据库/旁文件、私人备份/报告、环境配置变体和私钥容器；已跟踪文件及 `git add -f` 仍需门禁。AI 在本机设置 `core.hooksPath=.githooks`：pre-commit 检查真正的 staged 内容并调用 Gitleaks，pre-push 检查工作区候选文件、全部可达历史和作者元数据。扫描器固定版本和摘要，安装路径/本机额外敏感标识只存 Git 本地配置及忽略的 `.privacy-policy.local.json`，不复制入库；方法见 [工具入口](../tools/README.md#隐私与密钥门禁)。缺少扫描器或扫描不完整时拒绝提交/推送，命中只输出类别与数量。
+- **GitHub 身份与仓库保护**：账号同时开启“Keep my email addresses private”和“Block command line pushes that expose my email”，本机作者使用该账号 noreply；创建 PR 后仍须扫描 GitHub 自动生成的合并检查提交，不能只检查本地作者。master 要求 privacy/docs 通过且禁止强推/删除；同名公开仓库启用 GitHub 密钥扫描与推送保护。当前防护代码在维护草稿中，分支保护与本机 hook 已启用；未安装 hook 的其他克隆仍须自行接线，不能用一次扫描代替长期门禁。
 - **云端兜底与边界**：security workflow 的 privacy job 只读检出源码，执行合成回归及 Gitleaks/隐私检查，不上传命中报告或私人材料；扫描结果不能保证未知格式或人为绕过 hook 绝不泄露。本地隐私运维扫描按用户本轮明确授权执行，合成测试/文档门禁仍仅在云端。公开后移除敏感数据须审计分支、标签、PR 引用、作者信息、讨论及产物；force push 不能清理 GitHub 的只读旧 PR/缓存，未确认隔离或移除前不恢复公开，也不能声称抹掉他人既有副本。
 
 ## 通用响应与后台可靠性
