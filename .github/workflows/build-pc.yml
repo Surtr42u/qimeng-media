@@ -1,0 +1,57 @@
+name: 云端出包（Windows 服务端与 Web）
+
+# 日常 PC 更新通道：只从干净检出生成产物，不包含本机配置或数据。
+# 正式部署还须核对同一 head 的完整 CI/安全/文档门禁；此包不替代这些检查。
+on:
+  push:
+    branches: ["codex/build-pc/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pc:
+    name: Windows amd64 服务端与 Web
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      CGO_ENABLED: "0"
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with: { go-version-file: server/go.mod, cache-dependency-path: server/go.sum }
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with: { python-version: '3.13' }
+      # 与 ci.yml/Makefile 同版本生成器；生成物不入库，SDK 锁由完整 CI 重算。
+      - name: 生成 Go 接口层
+        working-directory: server
+        run: go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.8.0 -config internal/httpapi/gen/oapi-codegen.yaml ../api/openapi.yaml
+      - name: 编译 Windows 服务端（保留原生 VCS 身份）
+        working-directory: server
+        run: go build -o ../build/pc/qimeng-server.exe ./cmd/qimeng
+      - name: 安装 Web 锁定依赖
+        working-directory: web
+        run: npm ci
+      - name: 生成 Web SDK
+        working-directory: web
+        run: npx openapi-ts -f src/api/openapi-ts.config.ts
+      - name: 构建 Web
+        working-directory: web
+        run: npm run build
+      - name: 装配并核对发布清单
+        run: |
+          Copy-Item -LiteralPath web/dist -Destination build/pc/web-dist -Recurse
+          python tools/release_manifest.py --server build/pc/qimeng-server.exe --web build/pc/web-dist --output build/pc/release-manifest.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: pc-windows-amd64
+          path: build/pc/
+          retention-days: 7

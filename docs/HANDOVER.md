@@ -8,7 +8,7 @@
 
 | 使用方式 | 入口 |
 |---|---|
-| PC 日常服务端 | 根目录 `启动服务端.bat`；8420，数据在 `qimeng-data/` |
+| PC 日常服务端 | 根目录 `启动-浏览器.bat` / `启动-无头后端.bat`；8420，数据在 `qimeng-data/` |
 | Android 连接 PC/未来 NAS | 登录页填写目标服务器地址 |
 | Android 单机 | App 本机模式；回环 `127.0.0.1:18430`，详见 android/README |
 | 桌面连接壳 | 设置窗填写服务器地址，配置见 desktop/README |
@@ -16,6 +16,7 @@
 
 ## 2. 当前源码、运行包与验证边界
 
+- **PC 新版更新进行中（2026-10-22）**：用户要求在手机更新后同步更新 PC。现场 8420 无监听，现有程序 `-version` 为 0.2.1 / 632f9c55；与当前源码相比无新增 migration。补云端 Windows 服务端/Web 产物通道及发布清单，日常启动链改为直接使用已安装程序，不触发本地编译；计划核对当前提交完整门禁、来源与哈希后整体部署并启动，当前尚未替换。按普通兼容更新保留旧包/配置，不重建此前用户删除的全量媒体备份。
 - **PHP 风险核对与手机新版安装（2026-10-22）**：用户提供的短链指向 openai/php2shell-checker。源码、依赖、Docker/Android 内嵌链及上传白名单核对确认当前无 PHP 执行链，不适用该 PHP 风险；边界见 SECURITY。基线 **e475a05f** 的[完整 CI](https://github.com/Surtr42u/qimeng-media/actions/runs/39724765284)、[依赖安全](https://github.com/Surtr42u/qimeng-media/actions/runs/39724765279)、[文档门禁](https://github.com/Surtr42u/qimeng-media/actions/runs/39724765300)及[云端 Release 构建/单测](https://github.com/Surtr42u/qimeng-media/actions/runs/39724765112)全部通过。arm64 内嵌非 Debug Release **0.2.1 / code 3** 已同签名保留数据覆盖到用户真机；安装前核对内嵌 Go 提交与非 dirty、三件套/FFmpeg 锁定哈希，安装后回拉 APK 与候选逐字节一致（SHA-256 `56bc6f27ffb5d7074bad736238eee9d80c209913ada825e4cb5390014aac8b93`），原首次安装记录保留，冷启动及 healthz/readyz 200 通过，临时端口转发已移除。未执行手机备份恢复、业务场景全回归或 NAS 验收；PC 包未更新。
 - **双端统计统一（2026-10-22）**：按用户要求修复上一轮审查缺口：服务端新增精确互斥分类、全量有浏览实体计数、窗口/类型/来源汇总及同轴趋势维度，双端删反推/逐维拼轴；Web 窗口联动与统计榜换服务端口径，失败独立重试。statsread 专职只读编排，stats 保留纯函数；无 schema/历史事件/评分公式变化。OpenAPI/SQL 先行，云端 codegen 39661882650 成功后取回生成物和 sdk.lock，未本地构建测试。源码验证基线 **ca4c069c** 的 14 项云端检查全部通过：[完整 CI](https://github.com/Surtr42u/qimeng-media/actions/runs/39664993386)、[依赖安全](https://github.com/Surtr42u/qimeng-media/actions/runs/39664993557)、[文档](https://github.com/Surtr42u/qimeng-media/actions/runs/39666493640)；含 Go 全量 race/vet/lint/build、Web、SDK 锁、Windows 文件操作、桌面壳及 Android 内嵌 arm64 构建/单测/Lint/产物完整性，云端已上传内嵌调试 APK，当时未更新 PC/手机包；手机后续 Release 安装与启动证据见本节首条，调试包构建本身不等于装机验收。
 - **视频增强暂缓（2026-10-22）**：用户明确 PC 和手机均有使用意向，评估后决定暂时不做超分/插帧。能力地图保留未实现边界，不列入当前实施计划；未接入 GPU SDK、离线增强副本或更换播放内核，后续仅在用户重提时评估。

@@ -35,6 +35,8 @@
 
 ## 构建身份
 
+日常 PC 出包走 [.github/workflows/build-pc.yml](../.github/workflows/build-pc.yml)：手动触发或推送 `codex/build-pc/**` 专用分支，在 Windows runner 生成 Windows amd64 服务端、Web 和发布清单，下载后由 AI 核对同一提交的完整门禁并整体部署。根目录三份启动 bat 共用 `_server-common.cmd`，只检查并运行已安装程序，不再启动时本地编译；产物缺失时由 AI 补交云端包。部署保留原数据、配置与旧程序，实际包身份见 HANDOVER。
+
 发布版本唯一源为 `internal/buildinfo/version.txt`；Android 同读该文件，安装序号独立维护在相邻 `android-version-code.txt`（必须递增）。API info.version 是协议版本，不随应用内部维护强制改动。服务端系统状态与 SSE hello 回显 `发布版本+提交短号[.dirty]`。`qimeng-server -version` 输出 JSON 后退出，不加载配置、不打开数据库、不监听端口；适合 AI 核对待部署/备份二进制。Go 原生 VCS 元数据缺失时显示 unknown，提交时间叫 sourceTime，不冒称构建时间；正式交付应从干净检出 `go build` 并核对身份及产物哈希，不能据源码版本推定设备已安装。
 
 `internal/httpapi/gen/dependencies.go` 只声明生成代码使用的 runtime 根包依赖，不实现协议。生成文件不入库，Dependabot/干净检出中的 `go mod tidy` 也必须保留该依赖及其间接校验和；升级依赖后重新生成接口层，再执行 tidy 与服务端门禁。
