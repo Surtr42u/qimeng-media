@@ -1,3 +1,5 @@
 #!/bin/sh
 # 只读泄露预防；不构建程序、不运行测试，不输出命中正文。
+python_home=$(git config --get privacy.pythonHome || true)
+if [ -n "$python_home" ]; then export PYTHONHOME="$python_home"; fi
 exec python -X utf8 tools/check_privacy.py --mode staged --gitleaks

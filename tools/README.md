@@ -23,6 +23,8 @@ python -X utf8 tools/audit_library.py --db <数据目录>/qimeng.db --backup <�
 
 AI 负责本机安装预编译扫描器，配置 `git config privacy.gitleaksPath <扫描器路径>`（或 `QIMENG_GITLEAKS`），再设置 `git config core.hooksPath .githooks`。本机额外标识放忽略的 `.privacy-policy.local.json` 的 `privateIdentifiers` 字符串数组，只在本机读取，不写规则源码/测试/文档。重新检出后须重新启用 Git 本地 hooks 配置；CI 同时兜底，但云端检查发生在推送之后，不能代替本地拦截。
 
+Windows 的 Git hook 子进程若不能正确定位 Python 标准库，AI 在 Git 本地配置设置 `privacy.pythonHome` 为已安装 Python 根目录；hook 只在自身子进程导出 `PYTHONHOME`，不修改系统环境。该个人路径不进入被跟踪文件。
+
 - `--mode staged --gitleaks`：提交前读取 index 中将被提交的真实内容，防止工作区改回安全文本掩盖 staged 泄露；即使强制加入忽略文件，也按路径/载荷拒绝。
 - `--mode worktree`：核对 tracked + 未忽略的新文件和当前 Git 身份，只读，不遍历被忽略的数据目录；媒体按路径清单处理，不打开/解码。
 - `--mode history --gitleaks`：推送前核对全部本地可达文本历史和作者/提交者邮箱；Gitleaks 输出全量遮罩，程序不转发匹配原文，临时报告只在本机临时目录并自动清理。
