@@ -8,7 +8,7 @@ rem
 rem Usage:   _server-common.cmd [console^|nobrowser^|desktop]
 rem   console   = visible window, banner + ready-to-copy LAN URLs,
 rem               auto-open browser once port 8420 answers.
-rem   nobrowser = HEADLESS backend: minimized, no browser; a start
+rem   nobrowser = HEADLESS backend: hidden, no browser; a start
 rem               banner (timestamp + LAN URLs) is appended to
 rem               server\console.log, then server output appends
 rem               there too (background use).
@@ -85,11 +85,20 @@ exit /b 0
 
 rem ---------------- nobrowser mode (headless backend) -----------------
 :nobrowser
-echo [start] qimeng-server.exe (headless, log: server\console.log)
 call :ensure_binary
 if errorlevel 1 exit /b 1
+rem Repeated shortcut clicks must reuse the healthy backend, not start a
+rem second process against the same data directory and listening port.
+rem /readyz is the root probe alias documented in api/openapi.yaml.
+powershell -NoProfile -Command "try { $r=Invoke-WebRequest -UseBasicParsing 'http://127.0.0.1:8420/readyz' -TimeoutSec 2; if($r.StatusCode -eq 200){exit 0} } catch {}; exit 1"
+if not errorlevel 1 (
+    echo [headless] backend already running; no second process started.
+    exit /b 0
+)
+echo [start] qimeng-server.exe (headless, log: server\console.log)
 call :log_banner
-start "qimeng-server" /min cmd /c "qimeng-server.exe >> console.log 2>&1"
+powershell -NoProfile -Command "$ErrorActionPreference='Stop'; Start-Process -FilePath $env:ComSpec -ArgumentList '/d /c qimeng-server.exe >> console.log 2>&1' -WorkingDirectory (Get-Location).Path -WindowStyle Hidden"
+if errorlevel 1 exit /b 1
 exit /b 0
 
 rem ---------------- desktop mode (Tauri shell) ----------------
