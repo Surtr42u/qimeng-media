@@ -23,12 +23,16 @@ jobs:
         run: go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 generate
       - name: 三端 SDK 与摘要锁
         run: make sdk
+      - name: 更新开发依赖锁（不执行生命周期脚本）
+        working-directory: web
+        run: npm install --package-lock-only --ignore-scripts
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: generated-sources
           retention-days: 7
           path: |
             api/sdk.lock
+            web/package-lock.json
             server/internal/store/db/*.sql.go
             server/internal/store/db/models.go
             server/internal/httpapi/gen/

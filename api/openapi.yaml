@@ -478,6 +478,8 @@ paths:
         - { name: libraryId, in: query, required: true, schema: { type: string }, description: 目标库 ID（多库场景必须显式指定） }
         - { name: dir, in: query, required: true, schema: { type: string }, description: 目标目录（库内相对路径；空 = 库根） }
         - { name: filename, in: query, required: true, schema: { type: string } }
+        - { name: uploadId, in: query, schema: { type: string, format: uuid }, description: '客户端持久任务 ID；相同参数重试在完成后 7 天内返回同一资产，参数不一致 409，原资产已删除 410。缺省兼容旧客户端，不保证直传重试去重' }
+        - { name: sourceMtime, in: query, schema: { type: integer, format: int64, minimum: 0, maximum: 253402300799999 }, description: '源文件修改时间（Unix 毫秒）；可选，缺省使用接收时间；不作为拍摄时间，资产 addedAt 仍是入库时间' }
       requestBody:
         required: true
         content:
@@ -523,7 +525,7 @@ paths:
   /api/v1/uploads/{id}:
     get:
       summary: 断点探测（客户端重试/续传前先问服务端"传到哪了"）
-      description: 返回服务端持有的权威 offset；未知或已过期（无活动超时被清扫）的会话一律 404。
+      description: 返回服务端持有的权威 offset；已完成的会话在完成后 7 天内返回 offset=size，可再次 complete 取得原资产；未知或已过期的会话 404。
       parameters: [ { $ref: "#/components/parameters/UploadId" } ]
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/UploadSession" } } } }
@@ -569,7 +571,7 @@ paths:
         自动重命名 "基名 (2).ext"、永不 409。成功走与直传完全相同的入库
         管线（library.changed 事件照发、库内容修订号照 bump、upload.done
         照发、富化照跑），201 返回与 POST /assets/upload 同构的资产详情；
-        临时文件与会话随即删除。
+        临时文件与内存会话随即删除，完成凭据与资产行同事务保存 7 天；重复 complete 返回原资产，不重复入库或发送事件，原资产已删除返回 410。
         校验失败/库已删除时：400/404 返回且临时文件与会话保留（可修正后
         重试 complete），但计入过期时钟（24h 兜底回收）。
       parameters: [ { $ref: "#/components/parameters/UploadId" } ]
@@ -1199,6 +1201,7 @@ paths:
       description: |
         免鉴权探活。根路径 /healthz /readyz 是运维探针别名（docker/k8s 惯例），
         不属于 API 协议面；两边行为一致。
+        readyz 检查数据库、数据目录与启用媒体根可读，以及各卷最小剩余空间；异常返回 503，响应不暴露路径。healthz 只检查进程存活，不因存储故障触发重启。
       security: []
       responses:
         "200": { description: ready }
@@ -1410,6 +1413,8 @@ components:
       description: 断点续传上传会话创建请求（POST /api/v1/uploads，ADR-0028）
       required: [libraryId, fileName, size]
       properties:
+        uploadId: { type: string, format: uuid, description: '客户端持久任务 ID；可选。相同目标/名称/大小/源时间复用活动会话或 7 天内的完成凭据；参数冲突 409。缺省由服务端分配会话 ID' }
+        sourceMtime: { type: integer, format: int64, minimum: 0, maximum: 253402300799999, description: '源文件修改时间（Unix 毫秒）；可选，缺省使用接收时间，addedAt 仍记录入库时间' }
         libraryId: { type: string, description: 目标库 ID（必填；须为已注册且启用的库，否则 400） }
         fileName:  { type: string, description: 文件名（创建时按直传同规则清洗并做扩展名白名单校验；路径分隔符/控制字符/Windows 非法字符剥除，保留设备名拒绝） }
         size:      { type: integer, format: int64, minimum: 1, description: 文件总字节数（必填正整数；超上传上限 413；complete 终检以拼装落盘事实为准） }
