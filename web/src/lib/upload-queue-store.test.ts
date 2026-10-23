@@ -255,7 +255,7 @@ describe('uploadQueueStore 同名续传（恢复条目重选文件）', () => {
     uploadQueueStore.resumeWithFile('upload-910', fakeFile('another.mp4', MB16))
     let entry = uploadQueueStore.getItems().find((it) => it.id === 'upload-910')
     expect(entry?.status).toBe('needs-file')
-    expect(entry?.errorText).toBe('所选文件与原条目不一致（文件名或大小不符），未恢复上传')
+    expect(entry?.errorText).toBe('所选文件与原条目不一致（文件名、大小或修改时间不符），未恢复上传')
     expect(FakeXHR.created).toBe(xhrBefore) // 拒绝恢复不出网
 
     uploadQueueStore.resumeWithFile('upload-910', fakeFile('big.mp4', 12345))

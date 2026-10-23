@@ -12,6 +12,16 @@ import org.junit.Test
 class UploadWorkSpecTest {
 
     @Test
+    fun `归档清理失败仍持久成功并保留提示而不重传`() {
+        val result = UploadWorkSpec.outcomeToResult(UploadOutcome.Success("done.jpg", "asset"), 0,
+            ArchiveUploadCleanup.FAILED_NOTE)
+        assertTrue(result is ListenableWorker.Result.Success)
+        val output = (result as ListenableWorker.Result.Success).outputData
+        assertEquals("done.jpg", output.getString(UploadWorkSpec.KEY_FINAL_FILE_NAME))
+        assertEquals(ArchiveUploadCleanup.FAILED_NOTE, output.getString(UploadWorkSpec.KEY_ERROR_MESSAGE))
+    }
+
+    @Test
     fun `目标拒绝保留业务失败标记且不级联取消队列`() {
         val result = UploadWorkSpec.targetRejectedResult("synthetic target rejection")
         assertTrue(result is ListenableWorker.Result.Success)

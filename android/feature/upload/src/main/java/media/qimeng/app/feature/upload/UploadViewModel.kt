@@ -51,8 +51,8 @@ import media.qimeng.app.core.model.individualSourceWords
  * 来源挂靠以作者为前提（服务端来源区挂在作者块下），清作者连带清来源。
  * 归档一键上传（2026-10-01）：归档根已配置时在库列表就绪后 IO 扫描（scanArchiveForUpload
  * 纯函数 + 内存库列表），确认后按逐条匹配库分组走既有入队管道（alreadyArchived=true，
- * worker 侧跳过二次归档）；不受「未选库」门禁约束——条目自带逐条目标库。入队成功后
- * 源文件仍留在归档根，重扫由防重入队门禁（archiveBatchEnqueued）挡住整批重复入队，
+ * worker 侧外部上传成功后清理，本机上传保留）；不受「未选库」门禁约束——条目自带逐条目标库。入队成功后
+ * 源文件在上传成功前仍留在归档根，重扫由防重入队门禁（archiveBatchEnqueued）挡住整批重复入队，
  * 重扫文件数变化自动复位；超限条目本地拦截（与手动直传同一单源）。
  */
 @HiltViewModel
@@ -537,9 +537,9 @@ class UploadViewModel @Inject constructor(
      * ——每条 libraryId/libraryName 用该条文件夹匹配到的库（不用批次默认库，也不继承批次
      * 作者/来源：归档区是用户整理过的存量，整批挂同一个默认作者等于错误挂靠）；dir 用
      * 条目 relDir（经 UploadItem.relativeDir 拼接，沿用「库内子目录」dir 语义）；条目一律
-     * alreadyArchived=true（源已在归档根，worker 上传成功后跳过归档移动，见 UploadWorker）。
+     * alreadyArchived=true（源已在归档根，worker 外部上传成功后清理归档副本，见 UploadWorker）。
      * 门禁口径：不受「未选库」门禁约束（条目自带逐条目标库）；items 为空（无匹配条目）
-     * 不允许触发；防重入队门禁（archiveBatchEnqueued）置位时拦截——入队成功后源文件仍在
+     * 不允许触发；防重入队门禁（archiveBatchEnqueued）置位时拦截——上传成功前源文件仍在
      * 归档根，重扫文件数变化前不允许整批再入队（重复确认 = 服务端同名副本）。
      * 超限口径：现取服务端配置逐项判超限（与手动直传同一单源 partitionOverLimit），超限
      * 条目本地拦截不入队、给 blockText 文案；全部超限整批不入队且不置门禁（归档区未变，

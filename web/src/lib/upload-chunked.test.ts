@@ -158,7 +158,8 @@ describe('分片全链与断点语义', () => {
     const create = await next()
     expect(create.url).toBe('/api/v1/uploads')
     // dir 透传 create（批次目录快照；与直传 dir 参数逐字同语义，空串=库根）
-    expect(JSON.parse(create.sent as string)).toEqual({ libraryId: 'lib-1', fileName: 'big.mp4', dir: 'media/movies', size: FILE })
+    expect(JSON.parse(create.sent as string)).toEqual({ libraryId: 'lib-1', fileName: 'big.mp4', dir: 'media/movies', size: FILE,
+      uploadId: expect.stringMatching(/^[0-9a-f-]{36}$/) })
     create.respond(201, sess(0))
 
     const probe = await next()

@@ -49,6 +49,7 @@ class UploadWorker @AssistedInject constructor(
     private val inboxFileStore: InboxFileStore,
     private val stagingRepository: StagingRepository,
     private val apiFactory: BusinessApiFactory,
+    private val archiveCleanup: ArchiveUploadCleanup,
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result {
@@ -143,14 +144,19 @@ class UploadWorker @AssistedInject constructor(
         if (outcome !is UploadOutcome.Success && outcome !is UploadOutcome.AttachFailed &&
             !ServerRequestBinding(target).matches(runCatching { apiFactory.currentBaseUrl() }.getOrNull())
         ) return rejectedTarget()
-        val result = UploadWorkSpec.outcomeToResult(outcome, runAttemptCount)
+        val completionNote = when (outcome) {
+            is UploadOutcome.Success -> archiveNote(spec, !outcome.assetId.isNullOrBlank())
+            is UploadOutcome.AttachFailed -> archiveNote(spec)
+            else -> ""
+        }
+        val result = UploadWorkSpec.outcomeToResult(outcome, runAttemptCount, completionNote)
         when (outcome) {
             is UploadOutcome.Success -> {
                 Log.i(LOG_TAG, "success file=${spec.displayName} final=${outcome.finalFileName}")
                 notifyDone(
                     spec.localId,
                     spec.displayName,
-                    "上传完成：${outcome.finalFileName}" + archiveNote(spec),
+                    "上传完成：${outcome.finalFileName}" + completionNote,
                 )
             }
 
@@ -161,7 +167,7 @@ class UploadWorker @AssistedInject constructor(
                     spec.localId,
                     spec.displayName,
                     "上传完成：${outcome.finalFileName}，" +
-                        UploadWorkSpec.attachFailedMessage(outcome.attachMessage) + archiveNote(spec),
+                        UploadWorkSpec.attachFailedMessage(outcome.attachMessage) + completionNote,
                 )
             }
 
@@ -239,21 +245,19 @@ class UploadWorker @AssistedInject constructor(
      *   私人文件夹等不属于收件箱，擅自在其内建 uploaded/ 子目录移走文件超出旧行为）；
      * - c) 已设置但载荷库名为空（旧在途载荷缺键/入队时解析不到库名）→ 回退 b 语义：
      *   收件箱来源仍归 uploaded/（缺名不丢文件），其它路径来源同样不动；
-     * - 0) 载荷 alreadyArchived=true（2026-10-01 归档一键上传条目）→ 整体跳过归档：
-     *   源文件本就在归档根的库文件夹内（风险说明见方法体注释）。
+     * - 0) alreadyArchived=true：由 ArchiveUploadCleanup 在外部服务器确认入库后清理
+     *   手机归档副本；本机目标保留，未确认或文件变化保留并提示，绝不重复归档。
      * 归档路径读取：doWork 本身即 suspend 协程，直接 archivePath/inboxPath.first() 取
      * 首快照，无需 runBlocking（Worker 无 DataStore 常驻 Flow 场景，单值即所需）。
      * 文件操作段（copy/内容比对可达 GB 级视频）切 [Dispatchers.IO]：CoroutineWorker
      * 默认跑 Default 调度器，在其上阻塞既拖住完成通知也占满 CPU 线程池。
      * 移动失败不阻断上传完成，只记日志与完成通知提示（与原 uploaded/ 归档同口径）。
      */
-    private suspend fun archiveNote(spec: UploadWorkSpec.UploadRequestSpec): String {
-        // 一键重传条目（2026-10-01 归档一键上传，载荷 alreadyArchived=true）：源文件本就在
-        // 归档根的库文件夹内，整体跳过归档移动——若照常归档，archiveToLibraryRoot 会把
-        // 「源 == 目标同一路径」判成同名同内容走「删旧放新」（先删目标位再落新），删除的
-        // 就是源文件本身，改名/copy 再失败即丢文件；跳过后上传/挂靠/清理行为全不变。
-        if (spec.alreadyArchived) return ""
+    private suspend fun archiveNote(spec: UploadWorkSpec.UploadRequestSpec, confirmed: Boolean = false): String {
         val archiveRoot = stagingRepository.archivePath.first()
+        if (spec.alreadyArchived) {
+            return withContext(Dispatchers.IO) { archiveCleanup.finish(spec, archiveRoot, confirmed) }
+        }
         val useArchiveRoot = archiveRoot != null && spec.libraryName.isNotBlank()
 
         val isAbsolute = UploadRules.isAbsoluteFilePath(spec.uri)

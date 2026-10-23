@@ -8,6 +8,8 @@ import android.provider.DocumentsContract
 import java.io.File
 import java.io.InputStream
 import java.nio.file.Files
+import java.nio.file.LinkOption
+import java.nio.file.attribute.BasicFileAttributes
 import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -54,6 +56,38 @@ class InboxFileStore @Inject constructor() {
         if (!isDirectChildDirectory(parent, uploadedDir)) return false
         return moveFileNoReplace(file, File(uploadedDir, file.name))
     }
+
+    /**
+     * 外部服务器确认入库后释放手机归档副本。只删归档根下库目录内、与入队 size/mtime
+     * 一致的普通文件；拒绝所有子路径链接、根下散文件和旧载荷缺失时间。不存在视为已清理。
+     * 元数据核对不能识别同 size/mtime 的内容替换，也不提供相对外部写入者的原子 compare-delete。
+     */
+    fun deleteUploadedArchive(archiveRoot: String, source: File, sizeBytes: Long, sourceMtime: Long?): Boolean =
+        runCatching {
+            if (!source.isAbsolute || sourceMtime == null || sourceMtime <= 0 || sizeBytes < 0) return@runCatching false
+            val configuredRoot = File(archiveRoot).absoluteFile.toPath().normalize()
+            val sourcePath = source.toPath().toAbsolutePath()
+            if (sourcePath != sourcePath.normalize() || !sourcePath.startsWith(configuredRoot)) return@runCatching false
+            val relative = configuredRoot.relativize(sourcePath)
+            if (relative.nameCount < MIN_ARCHIVE_FILE_SEGMENTS) return@runCatching false
+            // /sdcard 等归档根自身可为 Android 提供的别名；根下的任何链接仍一律拒绝。
+            val root = File(archiveRoot).canonicalFile.toPath()
+            if (!Files.isDirectory(root)) return@runCatching false
+            val path = root.resolve(relative)
+            var cursor = root
+            for (segment in relative) {
+                cursor = cursor.resolve(segment)
+                if (Files.isSymbolicLink(cursor)) return@runCatching false
+                if (cursor != path && !Files.isDirectory(cursor, LinkOption.NOFOLLOW_LINKS)) return@runCatching false
+            }
+            if (Files.notExists(path, LinkOption.NOFOLLOW_LINKS)) return@runCatching true
+            val attributes = Files.readAttributes(path, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+            if (!attributes.isRegularFile || attributes.size() != sizeBytes ||
+                attributes.lastModifiedTime().toMillis() != sourceMtime
+            ) return@runCatching false
+            Files.delete(path)
+            true
+        }.getOrDefault(false)
 
     /**
      * 归档到上传归档文件夹（2026-09-28 上传归档文件夹功能）：源文件移入
@@ -374,6 +408,8 @@ class InboxFileStore @Inject constructor() {
     }
 
     private companion object {
+        /** 归档源至少含「库目录/文件名」，禁止清理根下散文件。 */
+        const val MIN_ARCHIVE_FILE_SEGMENTS = 2
         /** 库名→目录名的非法字符集（Windows 保留字符全集 \ / : * ? " < > |，覆盖 Linux 的 / 与 \） */
         const val LIBRARY_DIR_ILLEGAL_CHARS = "\\/:*?\"<>|"
 

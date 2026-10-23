@@ -26,6 +26,13 @@ function sampleRecord(overrides: Partial<PersistedUploadItem> = {}): PersistedUp
 }
 
 describe('decideResume 同名续传决策', () => {
+  it('持久源时间不同拒绝重选；旧记录缺时间保持兼容', () => {
+    const record = sampleRecord({ sourceMtime: 1700000000000 })
+    const picked = { name: record.name, size: record.sizeBytes, lastModified: 1700000000001 }
+    expect(decideResume(record, picked)).toEqual({ kind: 'mismatch' })
+    expect(decideResume(sampleRecord(), picked)).toEqual({ kind: 'resume-session', sessionId: 'sess-1' })
+    expect(decideResume(record, { ...picked, lastModified: record.sourceMtime })).toEqual({ kind: 'resume-session', sessionId: 'sess-1' })
+  })
   it('同名同大小且有会话 id → resume-session（带会话 id）', () => {
     const decision = decideResume(sampleRecord(), { name: 'video.mp4', size: 16 * 1024 * 1024 })
     expect(decision).toEqual({ kind: 'resume-session', sessionId: 'sess-1' })

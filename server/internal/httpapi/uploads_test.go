@@ -159,9 +159,9 @@ func TestUploadSessionFullFlow(t *testing.T) {
 		t.Error("落盘文件与分片拼装结果不一致")
 	}
 	assertNoSessionTemp(t, env.dataDir)
-	// 会话已终结：GET 404。
-	if _, code := env.uploadSessionByID(t, sess.Id.String()); code != http.StatusNotFound {
-		t.Errorf("complete 后 GET 期望 404，得到 %d", code)
+	// 活动会话已清理，但七天完成凭据继续返回完整 offset，供客户端重放 complete。
+	if completed, code := env.uploadSessionByID(t, sess.Id.String()); code != http.StatusOK || completed.Offset != int64(len(jpg)) {
+		t.Errorf("complete 后 GET 未返回已完成状态：%+v, %d", completed, code)
 	}
 }
 
