@@ -582,13 +582,17 @@ func (s *Server) mediaSignature(next http.Handler) http.Handler {
 }
 
 // GetApiV1Readyz 就绪探针（协议面 GET /api/v1/readyz；根路径 /readyz 为
-// 运维别名，共用本 handler）：检查数据库可达（SECURITY：探针不放行无鉴权
+// 运维别名，共用本 handler）：检查数据库与存储可达/余量（SECURITY：探针不放行无鉴权
 // 业务流量，只回答"依赖是否健康"）。
 func (s *Server) GetApiV1Readyz(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), readyzTimeout)
 	defer cancel()
 	if err := s.conn.PingContext(ctx); err != nil {
 		writeErr(w, http.StatusServiceUnavailable, codeDbUnreachable, "数据库不可达")
+		return
+	}
+	if err := s.writes.CheckStorage(ctx); err != nil {
+		writeErr(w, http.StatusServiceUnavailable, codeStorageUnavailable, "存储目录不可用或剩余空间不足")
 		return
 	}
 	w.Header().Set("Content-Type", contentTypeJSON)

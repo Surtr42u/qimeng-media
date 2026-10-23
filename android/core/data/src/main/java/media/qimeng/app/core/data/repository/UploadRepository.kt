@@ -76,7 +76,7 @@ interface UploadRepository {
      * 终态经 success+取消标志落盘（failure 同样级联杀链，342 笔返工修正），
      * 取消任务的下游排队任务正常解锁执行。
      */
-    fun cancel(localId: String)
+    suspend fun cancel(localId: String)
 
     /** 队列状态流（WorkManager WorkInfo 映射；UI 直接渲染 UploadQueueEntry） */
     fun queueUpdates(): Flow<List<UploadQueueEntry>>

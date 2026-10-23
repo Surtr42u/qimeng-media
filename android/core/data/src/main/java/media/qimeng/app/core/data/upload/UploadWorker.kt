@@ -58,11 +58,15 @@ class UploadWorker @AssistedInject constructor(
             return Result.failure(workDataOf(UploadWorkSpec.KEY_ERROR_MESSAGE to "任务数据异常（载荷缺失）"))
         }
 
+        try {
+            cancelRegistry.load()
+        } catch (failure: java.io.IOException) {
+            return Result.retry() // 读不到取消状态时不发送，等待持久存储恢复。
+        }
         // C-2 用户取消：排队中任务被标记取消时，轮到执行即直接落取消终态（不发起上传）。
         // 不调 WorkManager cancelWorkById 的原因见 [UploadCancelRegistry]（链级联取消违单任务语义）。
         if (cancelRegistry.isCancelled(spec.localId)) {
             Log.i(LOG_TAG, "cancelled-before-start file=${spec.displayName}")
-            cancelRegistry.consume(spec.localId)
             return UploadWorkSpec.outcomeToResult(UploadOutcome.Cancelled, runAttemptCount)
         }
 
@@ -106,6 +110,7 @@ class UploadWorker @AssistedInject constructor(
             uploadOutcome = if (chunked) {
                 chunkedUploader.upload(
                     localId = spec.localId,
+                    sourceMtime = spec.sourceMtime,
                     uri = spec.uri,
                     fileName = spec.uploadFileName,
                     sizeBytes = spec.sizeBytes,
@@ -122,9 +127,11 @@ class UploadWorker @AssistedInject constructor(
                         displayName = spec.displayName,
                         sizeBytes = spec.sizeBytes,
                         uploadFileName = spec.uploadFileName,
+                        sourceMtime = spec.sourceMtime,
                     ),
                     spec.libraryId,
                     spec.dir,
+                    uploadId = spec.localId,
                     targetServerUrl = target,
                     isCancelled = { cancelRegistry.isCancelled(spec.localId) },
                     onProgress = onProgress,
@@ -132,7 +139,6 @@ class UploadWorker @AssistedInject constructor(
             },
             spec = spec,
         )
-        cancelRegistry.consume(spec.localId)
 
         if (outcome !is UploadOutcome.Success && outcome !is UploadOutcome.AttachFailed &&
             !ServerRequestBinding(target).matches(runCatching { apiFactory.currentBaseUrl() }.getOrNull())

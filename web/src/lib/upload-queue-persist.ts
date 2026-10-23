@@ -28,6 +28,8 @@ interface PersistedAttach {
 /** 持久化队列条目（可序列化纯数据；不含 File 句柄与运行态 status——恢复条目
  *  一律按 needs-file 落位，percent 由 chunkOffset 推导不双写） */
 export interface PersistedUploadItem {
+  uploadId?: string
+  sourceMtime?: number
   /** 队列条目 id（= IndexedDB 主键；恢复后沿用原 id，持久化更新可原位覆盖） */
   id: string
   /** 落库名（编辑基名 + 锁定扩展名，与 UploadItem.name 同口径） */
@@ -71,11 +73,14 @@ export type ResumeDecision =
  *（既有 GET 探测→PATCH 续传路径，服务端 offset 为唯一真相源）；无会话（直传
  *  条目 / 会话未建立）= restart（同一队列条目从头重传，直传通道本无断点） */
 export function decideResume(
-  record: Pick<PersistedUploadItem, 'name' | 'originalName' | 'sizeBytes' | 'sessionId'>,
-  picked: { name: string; size: number },
+  record: Pick<PersistedUploadItem, 'name' | 'originalName' | 'sizeBytes' | 'sessionId' | 'sourceMtime'>,
+  picked: { name: string; size: number; lastModified?: number },
 ): ResumeDecision {
   const expectedName = record.originalName ?? record.name
   if (picked.name !== expectedName || picked.size !== record.sizeBytes) return { kind: 'mismatch' }
+  if (record.sourceMtime !== undefined && picked.lastModified !== undefined && record.sourceMtime !== picked.lastModified) {
+    return { kind: 'mismatch' }
+  }
   if (record.sessionId !== null) return { kind: 'resume-session', sessionId: record.sessionId }
   return { kind: 'restart' }
 }

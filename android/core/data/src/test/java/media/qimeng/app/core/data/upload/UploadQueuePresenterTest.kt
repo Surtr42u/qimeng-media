@@ -16,13 +16,13 @@ class UploadQueuePresenterTest {
     )
 
     @Test fun `new presenter restores queued filename without process memory`() {
-        val row = UploadQueuePresenter(UploadCancelRegistry()).entries(listOf(info("old", WorkInfo.State.ENQUEUED))).single()
+        val row = UploadQueuePresenter(UploadCancelRegistry(MemoryUploadPreferences())).entries(listOf(info("old", WorkInfo.State.ENQUEUED))).single()
         assertEquals("原件 中文.png", row.displayName)
         assertEquals(UploadStatus.QUEUED, row.status)
     }
 
     @Test fun `successful engine result preserves business rejection cancellation and attach failure`() {
-        val presenter = UploadQueuePresenter(UploadCancelRegistry())
+        val presenter = UploadQueuePresenter(UploadCancelRegistry(MemoryUploadPreferences()))
         for ((flag, status) in listOf(
             UploadWorkSpec.KEY_TARGET_REJECTED to UploadStatus.FAILED,
             UploadWorkSpec.KEY_CANCELLED to UploadStatus.CANCELLED,
@@ -33,8 +33,8 @@ class UploadQueuePresenterTest {
         }
     }
 
-    @Test fun `cancel pending item does not change completed neighbour or queue order`() {
-        val cancels = UploadCancelRegistry()
+    @Test fun `cancel pending item does not change completed neighbour or queue order`() = kotlinx.coroutines.runBlocking {
+        val cancels = UploadCancelRegistry(MemoryUploadPreferences())
         val presenter = UploadQueuePresenter(cancels)
         presenter.remember("first", "first.png"); presenter.remember("second", "second.png")
         cancels.cancel("second")

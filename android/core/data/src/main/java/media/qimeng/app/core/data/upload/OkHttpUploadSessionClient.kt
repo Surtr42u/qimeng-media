@@ -34,9 +34,9 @@ internal object UploadSessionBodies {
      * 声明（魔数嗅探为准），客户端不发（省去 MIME 推断链）；dir 与直传同语义
      * （库内相对路径，空 = 库根），恒发送（空串 = 库根，服务端 create 时校验）。
      */
-    fun encodeCreate(libraryId: String, fileName: String, dir: String, sizeBytes: Long): String =
+    fun encodeCreate(libraryId: String, fileName: String, dir: String, sizeBytes: Long, uploadId: String? = null, sourceMtime: Long? = null): String =
         moshi.adapter(CreateUploadDto::class.java).toJson(
-            CreateUploadDto(libraryId = libraryId, fileName = fileName, dir = dir, size = sizeBytes),
+            CreateUploadDto(libraryId = libraryId, fileName = fileName, dir = dir, size = sizeBytes, uploadId = uploadId, sourceMtime = sourceMtime),
         )
 
     /** UploadSession 关心字段（POST/GET 2xx 与 PATCH 409 响应体同构） */
@@ -56,6 +56,8 @@ internal object UploadSessionBodies {
         @Json(name = "fileName") val fileName: String,
         @Json(name = "dir") val dir: String,
         @Json(name = "size") val size: Long,
+        @Json(name = "uploadId") val uploadId: String?,
+        @Json(name = "sourceMtime") val sourceMtime: Long?,
     )
 
     internal class SessionDto(
@@ -81,13 +83,15 @@ internal class OkHttpUploadSessionClient(
     /** 当前服务端根地址供给源（null = 未登录/地址未就绪 → Transient）；唯一来源 BusinessApiFactory */
     private val baseUrl: () -> String?,
     private val okHttpClient: OkHttpClient,
+    private val uploadId: String? = null,
+    private val sourceMtime: Long? = null,
 ) : UploadSessionClient {
 
     override suspend fun create(libraryId: String, fileName: String, dir: String, sizeBytes: Long): SessionCall<String> {
         val base = resolveBaseUrl() ?: return SessionCall.Transient(ADDRESS_UNREADY_MESSAGE)
         val request = Request.Builder()
             .url(sessionUrl(base))
-            .post(UploadSessionBodies.encodeCreate(libraryId, fileName, dir, sizeBytes).toRequestBody(JSON))
+            .post(UploadSessionBodies.encodeCreate(libraryId, fileName, dir, sizeBytes, uploadId, sourceMtime).toRequestBody(JSON))
             .build()
         return send(request) { response, bodyText ->
             when {
@@ -215,7 +219,7 @@ internal class OkHttpUploadSessionClient(
         if (code in CLIENT_ERROR_MIN..CLIENT_ERROR_MAX) {
             SessionCall.ClientError(code, UploadApiBodies.serverErrorMessage(bodyText, code))
         } else {
-            SessionCall.Transient("服务端错误 HTTP $code")
+            SessionCall.Transient(UploadApiBodies.serverErrorMessage(bodyText, code))
         }
 
     private companion object {

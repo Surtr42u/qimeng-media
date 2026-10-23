@@ -147,6 +147,14 @@ type TrashItem struct {
 	MetadataJson string
 }
 
+type UploadReceipt struct {
+	UploadID    string
+	RequestHash string
+	AssetID     string
+	SizeBytes   int64
+	CompletedAt int64
+}
+
 type User struct {
 	ID           string
 	Name         string

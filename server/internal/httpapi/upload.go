@@ -14,8 +14,12 @@ import (
 )
 
 func (s *Server) PostApiV1AssetsUpload(w http.ResponseWriter, r *http.Request, params gen.PostApiV1AssetsUploadParams) {
+	id := ""
+	if params.UploadId != nil {
+		id = params.UploadId.String()
+	}
 	asset, err := s.writes.Direct(r.Context(), mediawrite.DirectUpload{LibraryID: params.LibraryId,
-		Directory: params.Dir, Filename: params.Filename, ContentLength: r.ContentLength, Body: r.Body})
+		Directory: params.Dir, Filename: params.Filename, ContentLength: r.ContentLength, Body: r.Body, UploadID: id, SourceMtime: params.SourceMtime})
 	if err != nil {
 		s.writeUploadServiceError(w, err)
 		return
@@ -90,6 +94,18 @@ func writeUploadErr(w http.ResponseWriter, err error) {
 // 业务失败在这里一次映射为 HTTP；诊断 Op/底层路径只进入 internalErr 日志。
 func (s *Server) writeUploadServiceError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, mediawrite.ErrUploadMetadata):
+		writeErr(w, http.StatusBadRequest, codeInvalidParam, "上传任务 ID 或源修改时间不合法")
+		return
+	case errors.Is(err, mediawrite.ErrUploadConflict), errors.Is(err, uploadsess.ErrSessionConflict):
+		writeErr(w, http.StatusConflict, codeUploadIDConflict, "上传任务 ID 已用于不同参数，请重新入队")
+		return
+	case errors.Is(err, mediawrite.ErrUploadedAssetGone):
+		writeErr(w, http.StatusGone, codeUploadAssetGone, "上传已完成，但原资产已删除；不会自动重新上传")
+		return
+	case errors.Is(err, uploadsess.ErrCapacity):
+		writeErr(w, http.StatusTooManyRequests, codeUploadCapacity, "在途上传数量或暂存总容量已达上限，请完成或取消已有上传后重试")
+		return
 	case errors.Is(err, mediawrite.ErrTargetEscape):
 		writeErr(w, http.StatusBadRequest, codePathEscape, "目标路径不合法")
 		return
@@ -112,6 +128,8 @@ func (s *Server) writeUploadServiceError(w http.ResponseWriter, err error) {
 		return
 	}
 	switch failure.Kind {
+	case mediawrite.StorageUnavailable:
+		writeErr(w, http.StatusInsufficientStorage, codeStorageUnavailable, "存储目录不可用或剩余空间不足，请检查存储后重试")
 	case mediawrite.InvalidDirectory:
 		writeErr(w, http.StatusBadRequest, codeInvalidParam, "目标目录不合法")
 	case mediawrite.InvalidLibrary:

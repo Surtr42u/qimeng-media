@@ -25,7 +25,11 @@ func (s *Server) PostApiV1Uploads(w http.ResponseWriter, r *http.Request) {
 	if req.Dir != nil {
 		dir = *req.Dir
 	}
-	snapshot, err := s.writes.CreateUploadSession(r.Context(), mediawrite.SessionUpload{LibraryID: req.LibraryId, Filename: req.FileName, Directory: dir, Size: req.Size})
+	id := ""
+	if req.UploadId != nil {
+		id = req.UploadId.String()
+	}
+	snapshot, err := s.writes.CreateUploadSession(r.Context(), mediawrite.SessionUpload{LibraryID: req.LibraryId, Filename: req.FileName, Directory: dir, Size: req.Size, UploadID: id, SourceMtime: req.SourceMtime})
 	if err != nil {
 		s.writeUploadServiceError(w, err)
 		return
@@ -36,7 +40,7 @@ func (s *Server) PostApiV1Uploads(w http.ResponseWriter, r *http.Request) {
 // GetApiV1UploadsId 断点探测：客户端重试/续传前先问服务端"传到哪了"。
 // 只读不续命——空轮询不能让弃传会话逃过过期清扫。
 func (s *Server) GetApiV1UploadsId(w http.ResponseWriter, r *http.Request, id gen.UploadId) {
-	snap, err := s.uploads.Snapshot(id.String())
+	snap, err := s.writes.UploadSnapshot(r.Context(), id.String())
 	if errors.Is(err, uploadsess.ErrSessionNotFound) {
 		writeErr(w, http.StatusNotFound, codeNotFound, "上传会话不存在或已过期")
 		return
@@ -134,6 +138,11 @@ func (s *Server) StartUploadSweeper(ctx context.Context) {
 
 // sweepUploadSessionsOnce 一轮会话过期清扫（测试直接调用注入时钟验证）。
 func (s *Server) sweepUploadSessionsOnce() {
+	ctx, cancel := context.WithTimeout(context.Background(), readyzTimeout)
+	defer cancel()
+	if err := s.writes.PruneUploadReceipts(ctx); err != nil {
+		s.logger.Warn("清理过期上传完成凭据失败", "err", err)
+	}
 	expired, orphans := s.uploads.SweepOnce()
 	if expired > 0 {
 		s.logger.Info("过期上传会话已回收", "sessions", expired, "orphanFiles", orphans)

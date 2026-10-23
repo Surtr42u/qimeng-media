@@ -52,6 +52,10 @@ const (
 	codeDbUnreachable      = "DB_UNREACHABLE"
 	codeDataDirConflict    = "DATA_DIR_CONFLICT"
 	codeConflict           = "CONFLICT"
+	codeUploadIDConflict   = "UPLOAD_ID_CONFLICT" // OpenAPI 上传任务 ID 冲突，与协议同批维护。
+	codeUploadAssetGone    = "UPLOAD_ASSET_GONE"
+	codeUploadCapacity     = "UPLOAD_CAPACITY"
+	codeStorageUnavailable = "STORAGE_UNAVAILABLE"
 	codeBadRequest         = "BAD_REQUEST"
 	codeRateLimited        = "RATE_LIMITED"
 	codeBackupInProgress   = "BACKUP_IN_PROGRESS"

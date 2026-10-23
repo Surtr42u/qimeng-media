@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -80,6 +81,12 @@ func (s *Service) PlaceSealed(lib db.Library, seal uploadsess.SealedSession) (st
 		stagingRel, err := filepath.Rel(lib.RootPath, staging)
 		if err != nil {
 			return err
+		}
+		if seal.SourceMtime != nil {
+			when := time.UnixMilli(*seal.SourceMtime)
+			if err := root.Chtimes(stagingRel, when, when); err != nil {
+				return err
+			}
 		}
 		if err := root.Rename(stagingRel, filepath.FromSlash(targetRel)); err != nil {
 			return err

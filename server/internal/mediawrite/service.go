@@ -8,6 +8,7 @@ import (
 	"errors"
 	"log/slog"
 	"os"
+	"sync"
 	"time"
 
 	"qimeng-media/server/internal/config"
@@ -39,18 +40,19 @@ type Options struct {
 
 // Service 持有写入流程依赖，不持有请求/协议对象或第二份业务数据。
 type Service struct {
-	conn       *sql.DB
-	q          *db.Queries
-	bus        *events.Bus
-	cfg        *config.Config
-	thumbs     *thumbnail.Generator
-	logger     *slog.Logger
-	now        func() time.Time
-	enrich     func(context.Context, string, string) error
-	uploads    *uploadsess.Manager
-	revision   *libraryrevision.Service
-	moveFile   func(string, string) error
-	renameFile func(*os.Root, string, string) error
+	uploadGates [uploadGateCount]sync.Mutex // 不持库锁等待网络收流。
+	conn        *sql.DB
+	q           *db.Queries
+	bus         *events.Bus
+	cfg         *config.Config
+	thumbs      *thumbnail.Generator
+	logger      *slog.Logger
+	now         func() time.Time
+	enrich      func(context.Context, string, string) error
+	uploads     *uploadsess.Manager
+	revision    *libraryrevision.Service
+	moveFile    func(string, string) error
+	renameFile  func(*os.Root, string, string) error
 }
 
 func New(opts Options) *Service {
@@ -69,9 +71,11 @@ func New(opts Options) *Service {
 	if opts.RenameFile == nil {
 		opts.RenameFile = filing.RenameInRoot
 	}
+	manager := uploadsess.New(opts.Config.DataDir, opts.Now, opts.Logger)
+	manager.SetLimits(uploadsess.Limits{MaxSessions: opts.Config.Upload.MaxSessions, MaxReservedBytes: opts.Config.Upload.MaxTempBytes})
 	return &Service{conn: opts.Conn, q: opts.Queries, bus: opts.Bus, cfg: opts.Config,
 		thumbs: opts.Thumbs, logger: opts.Logger, now: opts.Now, enrich: opts.Enrich,
-		uploads: uploadsess.New(opts.Config.DataDir, opts.Now, opts.Logger), revision: opts.Revision,
+		uploads: manager, revision: opts.Revision,
 		moveFile: opts.MoveFile, renameFile: opts.RenameFile}
 }
 

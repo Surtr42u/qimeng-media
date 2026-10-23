@@ -72,6 +72,7 @@ class AssetUploader @Inject constructor(
         isCancelled: () -> Boolean = { false },
         onProgress: ProgressListener,
         targetServerUrl: String? = null,
+        uploadId: String? = null,
     ): UploadOutcome = withContext(Dispatchers.IO) {
         if (isCancelled()) return@withContext UploadOutcome.Cancelled
         val base = (targetServerUrl ?: apiFactory.currentBaseUrl()).toHttpUrlOrNull()
@@ -83,6 +84,10 @@ class AssetUploader @Inject constructor(
             // filename = 暂存列表编辑后的落库名（未编辑回退展示名，单一口径 effectiveUploadName）；
             // OkHttp addQueryParameter 自带 URL 编码（查询串口径）
             .addQueryParameter("filename", item.effectiveUploadName)
+            .apply {
+                uploadId?.let { addQueryParameter("uploadId", it) }
+                item.sourceMtime?.let { addQueryParameter("sourceMtime", it.toString()) }
+            }
             .build()
 
         val source = openSource(item.uri)
@@ -134,7 +139,7 @@ class AssetUploader @Inject constructor(
                             UploadApiBodies.serverErrorMessage(bodyText, response.code),
                         )
 
-                    else -> UploadOutcome.Retryable("服务端错误 HTTP ${response.code}")
+                    else -> UploadOutcome.Retryable(UploadApiBodies.serverErrorMessage(bodyText, response.code))
                 }
             }
         } catch (e: UploadCancelledException) {

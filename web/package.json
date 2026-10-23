@@ -7,7 +7,6 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "test:e2e": "playwright test",
     "test": "vitest run",
     "preview": "vite preview",
     "generate-pwa-assets": "pwa-assets-generator"
@@ -27,7 +26,6 @@
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
-    "@playwright/test": "1.64.1",
     "@fontsource-variable/geist": "^5.3.0",
     "@hey-api/openapi-ts": "0.99.0",
     "@tailwindcss/vite": "^4.3.3",

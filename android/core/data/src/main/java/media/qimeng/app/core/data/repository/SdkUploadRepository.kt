@@ -117,6 +117,7 @@ class SdkUploadRepository @Inject constructor(
             val spec = UploadWorkSpec.UploadRequestSpec(
                 localId = localId,
                 targetServerUrl = targetServerUrl,
+                sourceMtime = item.sourceMtime,
                 uri = item.uri,
                 libraryId = libraryId,
                 dir = itemDir,
@@ -165,7 +166,7 @@ class SdkUploadRepository @Inject constructor(
 
     /** 单任务取消（C-2）：协作式置标记；worker 自行终止并以 success+取消标志落终态
      *  （failure 会级联杀链，342 笔返工修正）——链上其余任务不受影响。 */
-    override fun cancel(localId: String) {
+    override suspend fun cancel(localId: String) {
         Log.i(SdkMediaRepository.LOG_TAG, "cancel upload localId=$localId")
         cancelRegistry.cancel(localId)
     }
@@ -177,6 +178,9 @@ class SdkUploadRepository @Inject constructor(
             // 取消标记版本流：标记置位即刻重算（不等 WorkManager 状态轮转），UI 立即翻「已取消」
             cancelRegistry.updates,
         ) { infos, _ ->
+            cancelRegistry.load()
+            cancelRegistry.forgetCompleted(infos.filter { it.state.isFinished }
+                .mapNotNull { UploadWorkSpec.localIdFromTag(it.tags) }.toSet())
             queuePresenter.entries(infos)
         }
 
@@ -253,7 +257,8 @@ class SdkUploadRepository @Inject constructor(
             fallbackBaseName = "upload_${System.currentTimeMillis()}",
         )
 
-        return UploadItem(uri = uri.toString(), displayName = displayName, sizeBytes = sizeBytes)
+        return UploadItem(uri = uri.toString(), displayName = displayName, sizeBytes = sizeBytes,
+            sourceMtime = media.qimeng.app.core.data.upload.UploadSourceMetadata.modifiedAt(context, uri))
     }
 }
 

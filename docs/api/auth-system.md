@@ -41,6 +41,7 @@ GET 新→旧（维护页排查表数据源，Web 上报器 lib/client-logs.ts�
 
 探针协议面为 `/api/v1/healthz`、`/api/v1/readyz`（免鉴权，openapi.yaml `security: []`；
 根路径 `/healthz` `/readyz` 是运维探针别名——docker/k8s 惯例，行为一致，不入协议面）；
+readyz 检查数据库、数据目录与启用媒体根可读性/余量，失败 503；healthz 仅存活检查，不能用 readyz 失败直接推断进程崩溃。配置与边界见 [监控](../OBSERVABILITY.md#健康检查)。
 /metrics 与 /system/status 要求管理 token；
 负载/流量面板；
 status 含 `devMode`（auth_dev_mode 透出，2026-09-30 批A——Web 维护页「开发模式未关」提醒条数据源）；

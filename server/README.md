@@ -33,6 +33,18 @@
 
 业务库通过 `store.Open` 使用 WAL/FULL，每条池连接和重连均带同步设置。收藏/事件不能由媒体重扫恢复，默认优先持久性；代价、基准和硬件边界见 [ADR-0048](../docs/adr/0048-SQLite提交持久性优先.md)。
 
+## 上传与存储预算
+
+mediawrite 把完成凭据与资产行同事务提交（migration 0020），七天内重放结果；uploadsess 只管理未完成会话、预留预算和分片生命周期，不持有业务资产真相。源修改时间在库内预置文件发布前应用。协议/兼容边界见 [上传 API](../docs/api/files.md#上传任务重放源时间与容量adr-0049)。
+
+| YAML upload 字段 | 环境变量 | 非正值/缺省回落 |
+|---|---|---|
+| max_sessions | QIMENG_UPLOAD_MAX_SESSIONS | 32 个活动分片会话 |
+| max_temp_bytes | QIMENG_UPLOAD_MAX_TEMP_BYTES | 8 GiB；活动声明总量加孤儿分片实际大小 |
+| min_free_bytes | QIMENG_UPLOAD_MIN_FREE_BYTES | 256 MiB；上传前和 readyz 的卷余量下限 |
+
+环境变量必须为正整数；配置启动生效，不加入客户端设置页。单文件 max_bytes 与设置页限制取小者的原行为不变。预算不包含目标卷临时复制、直传临时件或其他进程占用，空间预检不等同于磁盘预留。readyz 只读检查，healthz 不受存储状态影响。
+
 ## 构建身份
 
 日常 PC 出包走 [.github/workflows/build-pc.yml](../.github/workflows/build-pc.yml)：手动触发或推送 `codex/build-pc/**` 专用分支，在 Windows runner 生成 Windows amd64 服务端、Web 和发布清单，下载后由 AI 核对同一提交的完整门禁并整体部署。根目录三份启动 bat 共用 `_server-common.cmd`，只检查并运行已安装程序，不再启动时本地编译；产物缺失时由 AI 补交云端包。部署保留原数据、配置与旧程序，实际包身份见 HANDOVER。

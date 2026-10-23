@@ -602,6 +602,7 @@ class UploadViewModel @Inject constructor(
         relativeDir = relDir,
         libraryName = libraryName,
         alreadyArchived = true,
+        sourceMtime = file.lastModified().takeIf { it > 0 },
     )
 
     // ---- 拦截/错误/提示 ----
@@ -619,6 +620,12 @@ class UploadViewModel @Inject constructor(
      * 队列行状态由 queueUpdates 流即时翻「已取消」，UI 无本地回滚状态。
      */
     fun cancel(entry: UploadQueueEntry) {
-        uploadRepository.cancel(entry.localId)
+        viewModelScope.launch {
+            try {
+                uploadRepository.cancel(entry.localId)
+            } catch (failure: java.io.IOException) {
+                form.update { it.copy(noticeMessage = "取消未保存，请重试") }
+            }
+        }
     }
 }

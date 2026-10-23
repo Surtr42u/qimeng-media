@@ -72,19 +72,22 @@ type Snapshot struct {
 // 字节数。Path 供 httpapi 读文件头（魔数终检）并把文件搬进库；Dir 是创建时
 // 校验规范化后的目标子目录（空 = 库根，语义与直传 dir 参数逐字一致）。
 type SealedSession struct {
-	ID        string
-	LibraryID string
-	FileName  string
-	Dir       string
-	Size      int64
-	Path      string
-	PlacedRel string // 已发布的库内落点，入库失败时 complete 继续此处，避免重复文件。
+	RequestHash string
+	SourceMtime *int64
+	ID          string
+	LibraryID   string
+	FileName    string
+	Dir         string
+	Size        int64
+	Path        string
+	PlacedRel   string // 已发布的库内落点，入库失败时 complete 继续此处，避免重复文件。
 }
 
 // session 是单条上传会话。mu 串行化该会话的全部字节追加与终结（tus 的
 // 单会话串行语义）；Manager.mu 只护注册表 map 本身，绝不嵌套 session.mu
 // 之外的长时间持锁。
 type session struct {
+	metadata     Metadata
 	mu           sync.Mutex
 	completeMu   sync.Mutex // 仅串行化同会话 complete，不阻塞其他会话。
 	sealed       bool
@@ -102,6 +105,7 @@ type session struct {
 // Manager 是全部在途上传会话的持有者。now 注入时钟（测试拨动验证过期清扫，
 // 与 httpapi 的 Now 注入同惯例）。
 type Manager struct {
+	limits   Limits
 	mu       sync.Mutex
 	sessions map[string]*session
 	dataDir  string // 服务端私有数据根（分片临时根 = dataDir/tempDirName）
@@ -118,7 +122,7 @@ func New(dataDir string, now func() time.Time, logger *slog.Logger) *Manager {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Manager{sessions: map[string]*session{}, dataDir: dataDir, now: now, logger: logger}
+	return &Manager{sessions: map[string]*session{}, dataDir: dataDir, now: now, logger: logger, limits: DefaultLimits()}
 }
 
 // Create 新建会话并落一个空的临时分片文件，返回创建时快照（offset=0）。
@@ -126,6 +130,25 @@ func New(dataDir string, now func() time.Time, logger *slog.Logger) *Manager {
 // 完成后才走到这里——dir 进会话后 complete 落位只认服务端持有的值，
 // 不再收客户端路径（SECURITY 红线 1：会话内固定，无重放篡改面）。
 func (m *Manager) Create(libraryID, fileName, dir string, size int64) (Snapshot, error) {
+	return m.CreateWithMetadata(libraryID, fileName, dir, size, Metadata{ID: uuid.NewString()})
+}
+
+func (m *Manager) CreateWithMetadata(libraryID, fileName, dir string, size int64, metadata Metadata) (Snapshot, error) {
+	// 创建/配额检查在同一注册表锁内，避免并发请求越过总预算。
+	m.mu.Lock()
+	if prior, ok := m.sessions[metadata.ID]; ok {
+		m.mu.Unlock()
+		if prior.metadata.RequestHash != metadata.RequestHash {
+			return Snapshot{}, ErrSessionConflict
+		}
+		prior.mu.Lock()
+		defer prior.mu.Unlock()
+		return Snapshot{ID: prior.id, Offset: prior.offset, Size: prior.size}, nil
+	}
+	defer m.mu.Unlock()
+	if err := m.checkCapacityLocked(size); err != nil {
+		return Snapshot{}, err
+	}
 	root := m.tempRoot()
 	// MkdirAll 幂等且并发安全：目录不可写/创建失败在此显性失败（ErrTempRoot）。
 	if err := os.MkdirAll(root, 0o755); err != nil {
@@ -143,8 +166,13 @@ func (m *Manager) Create(libraryID, fileName, dir string, size int64) (Snapshot,
 		}
 		return Snapshot{}, fmt.Errorf("%w: %s: %v", ErrTempRoot, path, err)
 	}
+	if metadata.SourceMtime != nil {
+		copied := *metadata.SourceMtime
+		metadata.SourceMtime = &copied
+	}
 	s := &session{
-		id:           uuid.NewString(),
+		id:           metadata.ID,
+		metadata:     metadata,
 		libraryID:    libraryID,
 		fileName:     fileName,
 		dir:          dir,
@@ -152,9 +180,7 @@ func (m *Manager) Create(libraryID, fileName, dir string, size int64) (Snapshot,
 		tempPath:     path,
 		lastActivity: m.now(),
 	}
-	m.mu.Lock()
 	m.sessions[s.id] = s
-	m.mu.Unlock()
 	return Snapshot{ID: s.id, Offset: 0, Size: s.size}, nil
 }
 
@@ -298,15 +324,18 @@ func (m *Manager) Drop(id string) error {
 
 // Finish 供持有 LockCompletion 的提交方调用，避免完成清理再次取得同一锁。
 func (m *Manager) Finish(id string) error {
-	m.mu.Lock()
-	s, ok := m.sessions[id]
-	if ok {
-		delete(m.sessions, id)
-	}
-	m.mu.Unlock()
+	s, ok := m.lookup(id)
 	if !ok {
 		return ErrSessionNotFound
 	}
+	// 调用方持 completeMu；先等在途分片落定并封存，再释放预算。
+	// SweepOnce 无法取得本会话 completeMu，会跳过它，不会形成反向锁等待。
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sealed = true
+	m.mu.Lock()
+	delete(m.sessions, id)
+	m.mu.Unlock()
 	if err := os.Remove(s.tempPath); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("删除分片临时文件失败: %w", err)
 	}
@@ -327,6 +356,9 @@ func (m *Manager) SweepOnce() (expired, orphans int) {
 		}
 		s.mu.Lock()
 		stale := s.lastActivity.Before(cutoff)
+		if stale {
+			s.sealed = true // 已拿到旧指针、排队等锁的 PATCH 也不得再写孤儿文件。
+		}
 		s.mu.Unlock()
 		if stale {
 			delete(m.sessions, id)
@@ -443,5 +475,5 @@ func (m *Manager) SetPlacement(id, rel string) error {
 }
 
 func sealedSnapshot(s *session) SealedSession {
-	return SealedSession{ID: s.id, LibraryID: s.libraryID, FileName: s.fileName, Dir: s.dir, Size: s.size, Path: s.tempPath, PlacedRel: s.placedRel}
+	return SealedSession{ID: s.id, LibraryID: s.libraryID, FileName: s.fileName, Dir: s.dir, Size: s.size, Path: s.tempPath, PlacedRel: s.placedRel, RequestHash: s.metadata.RequestHash, SourceMtime: s.metadata.SourceMtime}
 }

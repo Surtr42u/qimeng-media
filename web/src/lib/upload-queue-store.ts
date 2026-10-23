@@ -57,6 +57,7 @@ import { batchFailureReason } from '@/lib/batch'
 import { composeUploadName, extensionOf } from '@/lib/upload-naming'
 import { uploadTargetFromRelativePath } from '@/lib/folder-upload'
 import { buildUploadQuery } from '@/lib/upload-params'
+import { randomUUID } from '@/lib/uuid'
 import { runChunkedUpload, useChunkedSession } from '@/lib/upload-chunked'
 import { decideResume, toRestoredEntry, type PersistedUploadItem } from '@/lib/upload-queue-persist'
 import { getUploadQueueStorage } from '@/lib/upload-queue-persist-instance'
@@ -146,6 +147,8 @@ const UPLOAD_ID_PREFIX = 'upload-'
  *  chunkSessionId/chunkOffset/createdAt 为传输与持久化的内部字段（不在渲染契约）：
  *  会话 id 由分片通道 onSession 回写并持久化、断点偏移由 onOffset 回写并持久化 */
 interface QueueEntry extends UploadItem {
+  uploadId: string
+  sourceMtime?: number
   file: File | null
   /** 分片会话 id（null = 直传条目/会话未建立；恢复条目自持久化记录回填） */
   chunkSessionId: string | null
@@ -188,6 +191,8 @@ function notify(): void {
 function persistPut(entry: QueueEntry): void {
   const record: PersistedUploadItem = {
     id: entry.id,
+    uploadId: entry.uploadId,
+    sourceMtime: entry.sourceMtime,
     name: entry.name,
     originalName: entry.originalName,
     sizeBytes: entry.sizeBytes,
@@ -361,6 +366,8 @@ function uploadOne(item: QueueEntry): Promise<void> {
     // onSession/onOffset 把会话 id 与权威断点回写进条目并持久化（刷新再恢复的依据）。
     if (useChunkedSession(item.sizeBytes)) {
       void runChunkedUpload({
+        uploadId: item.uploadId,
+        sourceMtime: item.sourceMtime,
         libraryId: item.targetLibraryId ?? '',
         fileName: item.name,
         dir: item.targetDir ?? '',
@@ -400,6 +407,8 @@ function uploadOne(item: QueueEntry): Promise<void> {
       item.targetLibraryId ?? '',
       item.targetDir ?? '',
       item.name,
+      item.uploadId,
+      item.sourceMtime,
     )
     const xhr = new XMLHttpRequest()
     xhrs.set(item.id, xhr)
@@ -468,6 +477,8 @@ function enqueue(inputs: readonly StagedFileInput[], batch: UploadBatchTarget): 
       const uploadName = edited !== '' ? edited : originalName
       return {
         id: `${UPLOAD_ID_PREFIX}${++uploadSeq}`,
+        uploadId: randomUUID(),
+        sourceMtime: it.file.lastModified >= 0 ? it.file.lastModified : undefined,
         name: uploadName,
         originalName: uploadName !== originalName ? originalName : undefined,
         sizeBytes: it.file.size,
@@ -569,6 +580,8 @@ function restorePersisted(): Promise<void> {
       const restored = toRestoredEntry(record)
       fresh.push({
         id: restored.id,
+        uploadId: record.uploadId ?? randomUUID(),
+        sourceMtime: record.sourceMtime,
         name: restored.name,
         originalName: restored.originalName,
         sizeBytes: restored.sizeBytes,
@@ -588,6 +601,7 @@ function restorePersisted(): Promise<void> {
     }
     if (fresh.length === 0) return
     writeItems((prev) => [...prev, ...fresh])
+    for (const entry of fresh) persistPut(entry) // 旧记录补任务 ID 后立即保存，重选前再刷新也沿用。
   })()
     .catch(() => {
       // 恢复尽力而为：还原失败不阻塞队列页其余功能
@@ -610,11 +624,12 @@ function resumeWithFile(id: string, file: File): void {
       originalName: entry.originalName,
       sizeBytes: entry.sizeBytes,
       sessionId: entry.chunkSessionId,
+      sourceMtime: entry.sourceMtime,
     },
-    { name: file.name, size: file.size },
+    { name: file.name, size: file.size, lastModified: file.lastModified },
   )
   if (decision.kind === 'mismatch') {
-    patchEntry(id, { errorText: '所选文件与原条目不一致（文件名或大小不符），未恢复上传' })
+    patchEntry(id, { errorText: '所选文件与原条目不一致（文件名、大小或修改时间不符），未恢复上传' })
     return
   }
   const resumed = decision.kind === 'resume-session'

@@ -90,7 +90,7 @@
 | 包 | 职责 | 禁止 |
 |---|---|---|
 | `httpapi` | 请求校验、鉴权、调编排服务、序列化 | 业务规则 |
-| `mediawrite` | 上传、移动/改名与回收站/恢复/到期清扫、共用入库、实时上传策略、库变更指标/事件；生产在 main 显式装配并与 HTTP 共用修订号服务 | HTTP/SDK 类型、领域公式、第二份业务数据 |
+| `mediawrite` | 上传、移动/改名与回收站/恢复/到期清扫、共用入库、实时上传策略、完成凭据同事务提交、存储诊断、库变更指标/事件；生产在 main 显式装配并与 HTTP 共用修订号服务 | HTTP/SDK 类型、领域公式、第二份业务数据 |
 | `syncchannel` | 本机同步轮询/触发、稳定观测/状态快照、媒体落位与 TXT 归档；复用 mediawrite/authorimport，main 显式装配 | HTTP/SDK 类型、复制入库或 TXT 规则 |
 | `authorimport` | 作者 TXT 导入/重导保护/移除/统一重建事务；手动、备份和同步共用，片段存取复用 authorattach | HTTP/SDK 类型、修改解析与匹配算法 |
 | `scanner` | 全量/增量扫描、变更检测、移动合并 | 直接写库（经 store） |
@@ -112,7 +112,7 @@
 | `sysmon` | 系统指标采集 | — |
 | `backup` | 库文件热备快照调度：VACUUM INTO 在线快照 + 定时调度 + 轮转保留 + 快照目录管理 | 碰媒体库文件与业务表（只管 DataDir/backups 快照） |
 | `libraryrevision` | 库内容修订号单调计数（kv_settings 持久化唯一真相源，ADR-0026） | 语义扩展到资产集合之外的变更面 |
-| `uploadsess` | 断点续传上传会话：内存注册表 + DataDir/uploads-tmp 分片暂存与过期清扫（ADR-0028） | HTTP/协议语义与入库编排（在 mediawrite） |
+| `uploadsess` | 断点续传上传会话：内存注册表、会话数/字节预算（含孤儿）+ DataDir/uploads-tmp 分片暂存与过期清扫（ADR-0028/0049） | HTTP/协议语义与入库编排（在 mediawrite） |
 | `localsync` | 本机同步通道：库名匹配/目录扫描分类/根重叠检查；PlanScan 只读扫描编排与存活集合（ADR-0030/0042） | 导入编排与数据库访问（无自有 IO 状态） |
 | `config` | 配置加载（env + yaml） | 任何硬编码路径 |
 

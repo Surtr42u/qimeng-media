@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"time"
 
 	"qimeng-media/server/internal/filing"
 	"qimeng-media/server/internal/store/db"
@@ -15,6 +16,8 @@ import (
 )
 
 type DirectUpload struct {
+	UploadID                       string
+	SourceMtime                    *int64
 	LibraryID, Directory, Filename string
 	ContentLength                  int64
 	Body                           io.Reader
@@ -23,6 +26,26 @@ type DirectUpload struct {
 // Direct 校验、收流、冲突解析、发布、入库和通知；长时间收流在库锁外。
 // 文件发布成功后入库失败不擅自删原件，保留既有重扫/重试恢复边界。
 func (s *Service) Direct(ctx context.Context, input DirectUpload) (db.Asset, error) {
+	if err := validateUploadMetadata(input.UploadID, input.SourceMtime); err != nil {
+		return db.Asset{}, err
+	}
+	var receipt *db.SaveUploadReceiptParams
+	if input.UploadID != "" {
+		unlock := s.lockUpload(input.UploadID)
+		defer unlock()
+		hash := uploadRequestHash("direct", input.LibraryID, input.Filename, input.Directory, input.ContentLength, input.SourceMtime)
+		if asset, found, err := s.replayUpload(ctx, input.UploadID, hash); found || err != nil {
+			return asset, err
+		}
+		if _, found, err := s.uploads.Reuse(input.UploadID, hash); found || err != nil {
+			return db.Asset{}, ErrUploadConflict
+		}
+		receipt = &db.SaveUploadReceiptParams{UploadID: input.UploadID, RequestHash: hash}
+	}
+	return s.direct(ctx, input, receipt)
+}
+
+func (s *Service) direct(ctx context.Context, input DirectUpload, receipt *db.SaveUploadReceiptParams) (db.Asset, error) {
 	name, mediaType, err := uploadFilename(input.Filename)
 	if err != nil {
 		return db.Asset{}, err
@@ -47,6 +70,9 @@ func (s *Service) Direct(ctx context.Context, input DirectUpload) (db.Asset, err
 		sysmon.Default.IncUpload(sysmon.UploadFail)
 		return db.Asset{}, filing.ErrUploadTooLarge
 	}
+	if err := s.checkUploadStorage(ctx, lib.RootPath, input.ContentLength); err != nil {
+		return db.Asset{}, err
+	}
 	base := filepath.Join(lib.RootPath, filepath.FromSlash(dir))
 	if !filing.PathWithinRoot(lib.RootPath, base) {
 		return db.Asset{}, ErrTargetEscape
@@ -65,6 +91,12 @@ func (s *Service) Direct(ctx context.Context, input DirectUpload) (db.Asset, err
 	}
 	tmpRel := filepath.FromSlash(path.Join(dir, filepath.Base(tmp)))
 	defer s.cleanStaging(root, tmpRel)()
+	if input.SourceMtime != nil {
+		when := time.UnixMilli(*input.SourceMtime)
+		if err := root.Chtimes(tmpRel, when, when); err != nil {
+			return db.Asset{}, fail(InternalFailure, "保留源修改时间", err)
+		}
+	}
 	var finalName, targetRel string
 	err = filing.WithLibraryGate(lib.ID, func() error {
 		finalName = filing.ResolveConflict(name, func(n string) bool { _, err := os.Stat(filepath.Join(base, n)); return err == nil })
@@ -78,7 +110,7 @@ func (s *Service) Direct(ctx context.Context, input DirectUpload) (db.Asset, err
 		sysmon.Default.IncUpload(sysmon.UploadFail)
 		return db.Asset{}, fail(InternalFailure, "落盘上传文件", err)
 	}
-	asset, err := s.IngestPlacedUpload(ctx, lib.ID, filepath.Join(lib.RootPath, filepath.FromSlash(targetRel)), targetRel, finalName, mediaType)
+	asset, err := s.ingestPlacedUpload(ctx, lib.ID, filepath.Join(lib.RootPath, filepath.FromSlash(targetRel)), targetRel, finalName, mediaType, receipt)
 	if err != nil {
 		return db.Asset{}, fail(InternalFailure, "入库上传资产", err)
 	}

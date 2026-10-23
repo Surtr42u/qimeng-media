@@ -4,6 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"os"
+
+	"github.com/google/uuid"
 
 	"qimeng-media/server/internal/filing"
 	"qimeng-media/server/internal/scanner"
@@ -13,6 +16,8 @@ import (
 )
 
 type SessionUpload struct {
+	UploadID                       string
+	SourceMtime                    *int64
 	LibraryID, Filename, Directory string
 	Size                           int64
 }
@@ -20,6 +25,23 @@ type SessionUpload struct {
 // CreateUploadSession 的前置校验在创建暂存文件之前完成，避免坏请求占用会话。
 func (s *Service) CreateUploadSession(ctx context.Context, input SessionUpload) (uploadsess.Snapshot, error) {
 	empty := uploadsess.Snapshot{}
+	if err := validateUploadMetadata(input.UploadID, input.SourceMtime); err != nil {
+		return empty, err
+	}
+	if input.UploadID == "" {
+		input.UploadID = uuid.NewString()
+	}
+	unlock := s.lockUpload(input.UploadID)
+	defer unlock()
+	hash := uploadRequestHash("chunked", input.LibraryID, input.Filename, input.Directory, input.Size, input.SourceMtime)
+	if r, err := s.uploadReceipt(ctx, input.UploadID); err == nil {
+		if r.RequestHash != hash {
+			return empty, ErrUploadConflict
+		}
+		return uploadsess.Snapshot{ID: input.UploadID, Offset: r.SizeBytes, Size: r.SizeBytes}, nil
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return empty, err
+	}
 	name, _, err := uploadFilename(input.Filename)
 	if err != nil {
 		sysmon.Default.IncUpload(sysmon.UploadFail)
@@ -51,7 +73,20 @@ func (s *Service) CreateUploadSession(ctx context.Context, input SessionUpload) 
 		sysmon.Default.IncUpload(sysmon.UploadFail)
 		return empty, filing.ErrUploadTooLarge
 	}
-	snapshot, err := s.uploads.Create(lib.ID, name, dir, input.Size)
+	// 复用不新增空间预留；不能因已传入的字节占盘而阻挡创建响应丢失后的重试。
+	if snapshot, found, err := s.uploads.Reuse(input.UploadID, hash); found || err != nil {
+		return snapshot, err
+	}
+	if err := os.MkdirAll(s.cfg.DataDir, 0o700); err != nil {
+		return empty, fail(StorageUnavailable, "创建上传数据目录", err)
+	}
+	if err := s.checkUploadStorage(ctx, s.cfg.DataDir, input.Size); err != nil {
+		return empty, err
+	}
+	if err := s.checkUploadStorage(ctx, lib.RootPath, input.Size); err != nil {
+		return empty, err
+	}
+	snapshot, err := s.uploads.CreateWithMetadata(lib.ID, name, dir, input.Size, uploadsess.Metadata{ID: input.UploadID, RequestHash: hash, SourceMtime: input.SourceMtime})
 	if err != nil {
 		return empty, fail(InternalFailure, "创建上传会话", err)
 	}
@@ -60,6 +95,11 @@ func (s *Service) CreateUploadSession(ctx context.Context, input SessionUpload) 
 
 // CompleteUploadSession 独占完成流程，失败保留已封存源和已发布落点，成功才释放会话。
 func (s *Service) CompleteUploadSession(ctx context.Context, id string) (db.Asset, error) {
+	requestUnlock := s.lockUpload(id)
+	defer requestUnlock()
+	if asset, found, err := s.replayUpload(ctx, id, ""); found || err != nil {
+		return asset, err
+	}
 	unlock, err := s.uploads.LockCompletion(id)
 	if err != nil {
 		return db.Asset{}, err
@@ -97,6 +137,12 @@ func (s *Service) CompleteUploadSession(ctx context.Context, id string) (db.Asse
 		sysmon.Default.IncUpload(sysmon.UploadFail)
 		return db.Asset{}, filing.ErrUploadExtension
 	}
+	if err := s.checkUploadStorage(ctx, s.cfg.DataDir, 0); err != nil {
+		return db.Asset{}, err
+	}
+	if err := s.checkUploadStorage(ctx, lib.RootPath, 0); err != nil {
+		return db.Asset{}, err
+	}
 	name, rel, absolute, err := s.PlaceSealed(lib, seal)
 	if err != nil {
 		if errors.Is(err, ErrSealedSizeMismatch) {
@@ -104,7 +150,8 @@ func (s *Service) CompleteUploadSession(ctx context.Context, id string) (db.Asse
 		}
 		return db.Asset{}, fail(InternalFailure, "落盘分片成品文件", err)
 	}
-	asset, err := s.IngestPlacedUpload(ctx, lib.ID, absolute, rel, name, mediaType)
+	receipt := &db.SaveUploadReceiptParams{UploadID: id, RequestHash: seal.RequestHash}
+	asset, err := s.ingestPlacedUpload(ctx, lib.ID, absolute, rel, name, mediaType, receipt)
 	if err != nil {
 		return db.Asset{}, fail(InternalFailure, "入库上传资产", err)
 	}

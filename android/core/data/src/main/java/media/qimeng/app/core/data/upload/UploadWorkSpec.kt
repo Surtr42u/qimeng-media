@@ -87,6 +87,7 @@ object UploadWorkSpec {
      * UploadStatus.CANCELLED。
      */
     const val KEY_CANCELLED = "cancelled"
+    const val KEY_SOURCE_MTIME = "source_mtime"
 
     /**
      * 重试上限（次）。第 1 次执行 + 最多 3 次重试 = 4 次尝试；超过即终局失败
@@ -117,6 +118,7 @@ object UploadWorkSpec {
         val alreadyArchived: Boolean = false,
         /** 入队地址身份；旧载荷缺省须拒绝发送，不猜当前目标。 */
         val targetServerUrl: String? = null,
+        val sourceMtime: Long? = null,
     )
 
     fun itemToInputData(spec: UploadRequestSpec): Data = Data.Builder()
@@ -129,6 +131,7 @@ object UploadWorkSpec {
         .putLong(KEY_SIZE_BYTES, spec.sizeBytes)
         .putString(KEY_UPLOAD_FILE_NAME, spec.uploadFileName)
         .apply {
+            spec.sourceMtime?.let { putLong(KEY_SOURCE_MTIME, it) }
             // 可空键不写（缺键 = 不带挂靠/无库名；写 null 值会被 Data 拒绝）
             spec.attachAuthorId?.let { putString(KEY_ATTACH_AUTHOR_ID, it) }
             spec.attachSources?.takeIf { it.isNotEmpty() }?.let { putStringArray(KEY_ATTACH_SOURCES, it.toTypedArray()) }
@@ -153,6 +156,7 @@ object UploadWorkSpec {
         return UploadRequestSpec(
             localId = localId,
             targetServerUrl = data.getString(KEY_TARGET_SERVER_URL),
+            sourceMtime = data.getLong(KEY_SOURCE_MTIME, -1L).takeIf { it >= 0 },
             uri = uri,
             libraryId = libraryId,
             dir = dir,

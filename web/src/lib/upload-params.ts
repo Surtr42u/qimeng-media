@@ -16,6 +16,11 @@ export function buildUploadQuery(
   libraryId: string,
   dir: string,
   filename: string,
+  uploadId?: string,
+  sourceMtime?: number,
 ): URLSearchParams {
-  return new URLSearchParams({ libraryId, dir, filename })
+  const params = new URLSearchParams({ libraryId, dir, filename })
+  if (uploadId) params.set('uploadId', uploadId)
+  if (sourceMtime !== undefined) params.set('sourceMtime', String(sourceMtime))
+  return params
 }

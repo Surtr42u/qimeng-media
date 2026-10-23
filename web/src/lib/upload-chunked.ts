@@ -153,7 +153,7 @@ function sessionUrl(sessionId: string): string {
 /** HTTP 非 2xx 统一分类（404/5xx/4xx；1xx/3xx 在 XHR 同源请求下不可达，防御归可重试） */
 function classifyReply(reply: XhrReply): SimpleStep<never> {
   if (reply.status === 404) return { tag: 'notFound' }
-  if (reply.status >= 500) return { tag: 'transient', message: `服务端错误（HTTP ${reply.status}）` }
+  if (reply.status >= 500) return { tag: 'transient', message: errorTextOf(reply.status, reply.body) }
   if (reply.status >= 400) return { tag: 'clientError', message: errorTextOf(reply.status, reply.body) }
   return { tag: 'transient', message: `上传响应异常（HTTP ${reply.status}）` }
 }
@@ -216,6 +216,8 @@ async function createSession(
         fileName: args.fileName,
         dir: args.dir,
         size: args.sizeBytes,
+        uploadId: args.uploadId,
+        sourceMtime: args.sourceMtime,
       }),
       contentType: 'application/json',
       onActive: args.onActiveXhr,
@@ -296,6 +298,8 @@ function abandonSession(sessionId: string): void {
 
 /** runChunkedUpload 入参（store 的单条分片上传；file 只在本模块内 slice 消费） */
 export interface ChunkedUploadArgs {
+  uploadId?: string
+  sourceMtime?: number
   libraryId: string
   fileName: string
   /** 目标子目录（库内相对路径；'' = 库根——与直传 dir 参数逐字同语义，入队快照） */

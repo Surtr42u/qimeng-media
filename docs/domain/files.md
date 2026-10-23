@@ -47,10 +47,10 @@ go test ./internal/store/db -run TestSuggestionFileNameProjection -count=1
 go test ./internal/store/db -run '^$' -bench '^BenchmarkSuggestionFileNames$' -benchtime=500ms -count=3
 ```
 
-## 上传目标与时间边界（ADR-0042）
+## 上传目标、时间与重试边界（ADR-0042/0049）
 
 直传、续传创建/完成的多步流程归 `mediawrite`，HTTP 仅协议适配；四道校验、同名自动改名、分片失败保源和已发布落点重试保持原语义。本机同步由 syncchannel 编排，复用其入库/策略；TXT 事务复用 authorimport，稳定门、失败保源/库位和同名归档最新语义保持。未知长度直传采用有界流式读取（上限加一字节探测超限），不整读原件；超限拒绝发布并清理本次临时件。
 
-Android 入队记录服务器 URL，直传/分片及挂靠固定同端，切服或旧任务缺目标时拒绝并提示重新入队；不自动重定向。已发请求可在原端完成，URL 不能识别同址更换实例。当前上传不传源文件系统 mtime，落盘使用接收时间；本机跨卷移动保留 mtime 不能证明 HTTP 上传保时。恢复与验证见 [RESTORE](../RESTORE.md)。
+Android 入队记录服务器 URL，直传/分片及挂靠固定同端，切服或旧任务缺目标时拒绝并提示重新入队；不自动重定向。已发请求可在原端完成，URL 不能识别同址更换实例。上传可传 sourceMtime（源文件系统修改时间，Unix 毫秒），发布前应用并按落盘事实入库；缺失沿用接收时间，addedAt 仍为入库时间，不推定拍摄时间。恢复与验证见 [RESTORE](../RESTORE.md)。
 
-Android 分片会话把手（localId/目标 URL/sessionId）在客户端 DataStore 持久化，进程重建后先探测服务端权威 offset；本地不存断点或 token。服务端会话失效仍按既有限额重建。把手持久化不提供提交回执幂等性：服务端已入库但客户端未获响应/WorkManager 终态未提交仍可能重复；取消标记进程内窗口亦未消除。设备验收独立记录（ADR-0028/0042）。
+Android 分片会话把手（localId/目标 URL/sessionId）在客户端 DataStore 持久化，进程重建后先探测服务端权威 offset；本地不存断点或 token。服务端会话失效仍按既有限额重建。客户端任务 uploadId 在重试期间保持不变；完成凭据与资产行同事务保存七天，期间相同参数重放原结果，参数变化拒绝，原资产删除后也不重新上传。旧客户端无 uploadId 的直传、凭据过期、文件发布后而事务提交前的崩溃仍不承诺去重；作者挂靠/客户端归档等后处理不属于该事务。取消标记在 DataStore 提交后才展示成功，Worker 恢复后先读标记，仅观察到 WorkManager 持久终态才清理（避免结果提交窗口复活）。本轮源码未测试、未部署，设备验收另计。

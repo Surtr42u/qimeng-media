@@ -24,6 +24,10 @@ import (
 // 调用方保证 finalPath 处的文件已过四道校验与冲突解析（finalName 即落盘名）；
 // 返回资产领域对象；签名直链和响应字段由接口层装配。
 func (s *Service) IngestPlacedUpload(ctx context.Context, libraryID, finalPath, relPath, finalName, mediaType string) (db.Asset, error) {
+	return s.ingestPlacedUpload(ctx, libraryID, finalPath, relPath, finalName, mediaType, nil)
+}
+
+func (s *Service) ingestPlacedUpload(ctx context.Context, libraryID, finalPath, relPath, finalName, mediaType string, receipt *db.SaveUploadReceiptParams) (db.Asset, error) {
 	sysmon.Default.IncUpload(sysmon.UploadOK)
 	// 元数据：size/mtime 以落盘事实为准；视频探测失败留空（scanner 同语义）。
 	fi, err := os.Stat(finalPath)
@@ -65,7 +69,7 @@ func (s *Service) IngestPlacedUpload(ctx context.Context, libraryID, finalPath, 
 		if latest.Size() != fi.Size() || !latest.ModTime().Equal(fi.ModTime()) {
 			return errors.New("上传落点在探测期间变化")
 		}
-		asset, err = s.persistUploadedAsset(ctx, params_)
+		asset, err = s.persistUploadedAsset(ctx, params_, receipt)
 		return err
 	})
 	if err != nil {
@@ -97,7 +101,7 @@ func (s *Service) IngestPlacedUpload(ctx context.Context, libraryID, finalPath, 
 // persistUploadedAsset 把资产行写入独立单写事务（SQLite 单写者，单条
 // UpsertAsset + Commit）：文件已落盘后入库；失败时资产行不落库（文件已
 // 落盘但无 DB 行 = 既有语义不变，重传自愈，不得半更新）。
-func (s *Service) persistUploadedAsset(ctx context.Context, row db.UpsertAssetParams) (db.Asset, error) {
+func (s *Service) persistUploadedAsset(ctx context.Context, row db.UpsertAssetParams, receipt *db.SaveUploadReceiptParams) (db.Asset, error) {
 	tx, err := s.conn.BeginTx(ctx, nil)
 	if err != nil {
 		return db.Asset{}, err
@@ -107,6 +111,15 @@ func (s *Service) persistUploadedAsset(ctx context.Context, row db.UpsertAssetPa
 	asset, err := qtx.UpsertAsset(ctx, row)
 	if err != nil {
 		return db.Asset{}, err
+	}
+	if receipt != nil {
+		value := *receipt
+		value.AssetID = asset.AssetID
+		value.SizeBytes = asset.SizeBytes
+		value.CompletedAt = s.now().UnixMilli()
+		if err := qtx.SaveUploadReceipt(ctx, value); err != nil {
+			return db.Asset{}, err
+		}
 	}
 	return asset, tx.Commit()
 }

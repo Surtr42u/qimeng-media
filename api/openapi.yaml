@@ -490,12 +490,15 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "403": { description: 上传已关闭（PUT /config 的 upload.autoAccept=false）, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
         "413": { description: 超过大小上限 }
+        "409": { $ref: "#/components/responses/UploadConflict" }
+        "410": { $ref: "#/components/responses/UploadedAssetGone" }
+        "507": { $ref: "#/components/responses/StorageUnavailable" }
 
   # ---------- 断点续传上传（tus 1.0 核心语义极简子集，ADR-0028） ----------
   # 会话由服务端持有（内存注册表 + DataDir/uploads-tmp 临时文件），客户端无状态：
   # 中断后凭会话 id 先 GET 探测权威 offset，再从断点 PATCH 续传。
   # 同名冲突语义与直传通道（POST /assets/upload）一致：complete 时自动重命名
-  # "基名 (2).ext"，永不 409（DOMAIN_RULES §9）；小文件直传通道保留（双端
+  # "基名 (2).ext"，同名本身不报 409；任务 ID 参数冲突另报 409。小文件直传保留（双端
   # 按 size 阈值分流，Android/Web 双端已接入）。
   /api/v1/uploads:
     post:
@@ -511,7 +514,8 @@ paths:
         未过四道校验的半成品不进库目录。contentType 仅作客户端提示，服务端
         不信任该声明（MIME 以 complete 终检的魔数嗅探为准）。
         同名冲突语义与直传通道逐字一致：complete 时自动重命名 "基名 (2).ext"、
-        永不 409（DOMAIN_RULES §9）。
+        同名本身不报 409（DOMAIN_RULES §9）。可选 uploadId 复用活动会话或完成凭据，参数不一致 409。
+        在途会话数量和声明总字节有界，孤儿分片按实际大小计入同一暂存预算；超额 429，目录不可用或剩余空间不足 507。
       requestBody:
         required: true
         content:
@@ -522,6 +526,9 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "403": { description: 上传已关闭（PUT /config 的 upload.autoAccept=false，与直传通道同闸）, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
         "413": { description: 声明的 size 超过单文件大小上限, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { $ref: "#/components/responses/UploadConflict" }
+        "429": { $ref: "#/components/responses/UploadCapacity" }
+        "507": { $ref: "#/components/responses/StorageUnavailable" }
   /api/v1/uploads/{id}:
     get:
       summary: 断点探测（客户端重试/续传前先问服务端"传到哪了"）
@@ -580,6 +587,8 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "403": { description: 上传已关闭（PUT /config 的 upload.autoAccept=false）, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
         "404": { description: 会话不存在/已过期，或会话所属库已被删除, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "410": { $ref: "#/components/responses/UploadedAssetGone" }
+        "507": { $ref: "#/components/responses/StorageUnavailable" }
 
   # ---------- 本机文件夹自动同步通道（ADR-0030） ----------
   /api/v1/local-sync/status:
@@ -1359,6 +1368,10 @@ components:
     NotFound:    { description: 不存在,   content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
     Conflict:    { description: 冲突,     content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
     RateLimited: { description: 尝试过于频繁（auth 端点进程内限速）, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    UploadConflict: { description: 'UPLOAD_ID_CONFLICT：上传任务 ID 已用于不同目标、名称、大小、源时间或传输通道', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    UploadedAssetGone: { description: 'UPLOAD_ASSET_GONE：任务已经完成但资产已删除，拒绝自动重新上传', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    UploadCapacity: { description: 'UPLOAD_CAPACITY：在途会话数量或暂存总预算达到上限', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    StorageUnavailable: { description: 'STORAGE_UNAVAILABLE：目录不可访问或剩余空间不足，不暴露内部路径', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
 
   schemas:
     Error:
@@ -1423,7 +1436,7 @@ components:
 
     UploadSession:
       type: object
-      description: 断点续传上传会话状态（POST/GET /api/v1/uploads* 的 2xx 载荷，也是 PATCH offset 不符时 409 的响应体）。会话由服务端持有（内存注册表 + 临时文件），服务端重启即全部失效（未完成分片作废，客户端重新创建会话）；断点以服务端 offset 为准，客户端无状态
+      description: 断点续传上传会话状态（POST/GET /api/v1/uploads* 的 2xx 载荷，也是 PATCH offset 不符时 409 的响应体）。未完成会话由服务端持有（内存注册表 + 临时文件），重启失效后重新创建；完成凭据持久保存 7 天且跨重启有效，返回 offset=size 后调用 complete 取得原资产。断点以服务端 offset 为准。
       required: [id, offset, size]
       properties:
         id:     { type: string, format: uuid, description: 会话 ID（PATCH/complete/DELETE 携带） }

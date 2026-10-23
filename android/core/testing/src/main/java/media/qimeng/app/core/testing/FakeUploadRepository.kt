@@ -116,7 +116,7 @@ class FakeUploadRepository : UploadRepository {
     /** 取消调用记录（断言取消透传，批C 任务Q C-2） */
     val cancelCalls = mutableListOf<String>()
 
-    override fun cancel(localId: String) {
+    override suspend fun cancel(localId: String) {
         cancelCalls.add(localId)
     }
 

@@ -346,15 +346,15 @@ class UploadWorkSpecTest {
     }
 
     @Test
-    fun `取消标记注册表置位与消费`() {
-        val registry = UploadCancelRegistry()
+    fun `取消标记注册表置位与消费`() = kotlinx.coroutines.runBlocking {
+        val registry = UploadCancelRegistry(MemoryUploadPreferences())
         assertFalse(registry.isCancelled("local-1"))
         registry.cancel("local-1")
         assertTrue(registry.isCancelled("local-1"))
         // 幂等置位 + consume 清除
         registry.cancel("local-1")
         assertTrue(registry.isCancelled("local-1"))
-        registry.consume("local-1")
+        registry.forgetCompleted(setOf("local-1"))
         assertFalse(registry.isCancelled("local-1"))
     }
 

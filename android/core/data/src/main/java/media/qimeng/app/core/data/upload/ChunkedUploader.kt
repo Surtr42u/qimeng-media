@@ -50,6 +50,7 @@ class ChunkedUploader @Inject constructor(
         isCancelled: () -> Boolean = { false },
         onProgress: AssetUploader.ProgressListener,
         targetServerUrl: String? = null,
+        sourceMtime: Long? = null,
     ): UploadOutcome = withContext(Dispatchers.IO) {
         val fixedBaseUrl = targetServerUrl ?: runCatching { apiFactory.currentBaseUrl() }.getOrNull()
         val previousSession = try {
@@ -59,6 +60,8 @@ class ChunkedUploader @Inject constructor(
         }
         val outcome = try { ChunkedUploadSession(
             client = OkHttpUploadSessionClient(
+                uploadId = localId,
+                sourceMtime = sourceMtime,
                 // 地址未就绪/不合法收敛为 Transient（直传同口径：非终局，重试窗口内可恢复）
                 baseUrl = { fixedBaseUrl },
                 okHttpClient = targetServerUrl?.let { okHttpClient.boundToServer(it) } ?: okHttpClient,

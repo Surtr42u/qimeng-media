@@ -49,6 +49,8 @@ data class UploadItem(
      * 默认 false = 既有归档行为不变。
      */
     val alreadyArchived: Boolean = false,
+    /** 可选源文件修改时间（Unix 毫秒）；未知时由服务端使用接收时间。 */
+    val sourceMtime: Long? = null,
 ) {
     /** 展示名锁定的扩展名（含点；无扩展名/点前缀隐藏文件 = 空串） */
     val extension: String
