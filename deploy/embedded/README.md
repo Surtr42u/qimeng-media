@@ -56,9 +56,9 @@ make app-embedded         # 全 ABI（本地验壳+出包一步到位）
 装配后正常走 `gradlew assembleRelease` / `assembleDebug`（ABI 分层见
 `android/app/build.gradle.kts` buildTypes 注释）。
 
-## 当前设备边界（2026-10-23）
+## 当前设备边界（2026-10-24）
 
-arm64 内嵌 Release 0.2.1 / code 4（内嵌 b5b8962b）经云端出包后，已验证三件套/锁定哈希、提交身份、同签名保留数据覆盖安装、安装 APK 字节一致、冷启动与健康/就绪；现场范围及云端门禁证据见 [HANDOVER](../../docs/HANDOVER.md)。qimeng_api35 此前的 x86_64 App 域启动在 SQLite 初始化触发 SIGSYS（syscall 6），尚未修复；本次未重验 x86_64，arm64 出包成功或 shell 域历史记录不代表该 App 域已验收。模拟器保持关闭，未改变 Android 安全策略；不把该失败套用为 arm64 手机结论。
+arm64 内嵌 Release 经云端出包后，已验证三件套/锁定哈希、提交身份、同签名保留数据覆盖安装、安装 APK 字节一致、首次安装记录保留、冷启动与健康/就绪；最新版本、现场范围及云端门禁证据统一见 [HANDOVER](../../docs/HANDOVER.md)。qimeng_api35 此前的 x86_64 App 域启动在 SQLite 初始化触发 SIGSYS（syscall 6），尚未修复；本次未重验 x86_64，arm64 出包成功或 shell 域历史记录不代表该 App 域已验收。模拟器保持关闭，未改变 Android 安全策略；不把该失败套用为 arm64 手机结论。
 
 ## 红线索引
 
