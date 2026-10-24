@@ -3,12 +3,29 @@
 package safego
 
 import (
+	"errors"
 	"log/slog"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 )
+
+func TestRunPreservesErrorAndReportsPanic(t *testing.T) {
+	var buf syncBuffer
+	logger := slog.New(slog.NewJSONHandler(&buf, nil))
+	want := errors.New("ordinary failure")
+	if err := Run(logger, "普通错误", func() error { return want }); !errors.Is(err, want) {
+		t.Fatalf("普通错误须原样返回: %v", err)
+	}
+	err := Run(logger, "监听处理", func() error { panic("synthetic panic") })
+	if err == nil || !strings.Contains(err.Error(), "synthetic panic") {
+		t.Fatalf("panic 必须成为可处理错误: %v", err)
+	}
+	if out := buf.String(); !strings.Contains(out, `"task":"监听处理"`) || !strings.Contains(out, `"stack"`) {
+		t.Fatalf("panic 日志缺任务/堆栈: %s", out)
+	}
+}
 
 // syncBuffer 是并发安全的日志缓冲：safego 的 recover 日志写在 goroutine 内，
 // 测试主 goroutine 同时轮询读取内容——裸 bytes.Buffer 跨 goroutine 读写会被

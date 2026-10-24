@@ -56,6 +56,8 @@ docker pull docker.m.daocloud.io/library/debian:bookworm-slim
 
 ## 配置调整
 
+扫描调度支持 `QIMENG_SCANNER_POLL_INTERVAL`（默认 `5m`，非正回默认）与 `QIMENG_SCANNER_WATCH_ENABLED`（默认 `true`），启动生效。网络挂载可能静默漏通知，仍需轮询；确认本地监听和可接受延迟后才能显式调长周期。配置格式、事件处理与成本边界统一见 [服务端扫描说明](../server/README.md#媒体库后台扫描)。本次不代表未来 NAS 硬件已验收。
+
 镜像内 yaml 只是兜底基线；所有部署差异用 `QIMENG_*` 环境变量覆盖（compose `environment:`），
 可覆盖项清单见 `server/internal/config/config.go` 的 `applyEnv`。常用：
 

@@ -68,7 +68,7 @@
 | 数据库 | SQLite（modernc.org/sqlite 纯 Go 驱动） | 零运维单文件；无 CGO 交叉编译无痛（adr/0003） |
 | 数据访问 | sqlc | SQL 先写，类型安全 Go 代码生成 |
 | 数据库演进 | golang-migrate | 版本化迁移，schema 只能这样改 |
-| 目录监听 | fsnotify + 定时轮询兜底 | 双保险，Windows/Linux 行为差异由轮询补齐 |
+| 目录监听 | fsnotify + 定时轮询兜底 | scanner 后台主管管理动态库/重挂/重试；结构事件合并整库对账，内容写入单路径更新；网络盘漏事件由轮询补齐 |
 | 媒体处理 | ffmpeg（镜像内置）+ Go 图像库 | 缩略图/抽帧离线管线 |
 | 实时推送 | SSE（进程内事件总线） | 扫描进度/库变更实时到端 |
 | 系统监控 | gopsutil + prometheus client | 内置仪表盘 + 标准 /metrics（OBSERVABILITY.md） |
@@ -93,7 +93,7 @@
 | `mediawrite` | 上传、移动/改名与回收站/恢复/到期清扫、共用入库、实时上传策略、完成凭据同事务提交、存储诊断、库变更指标/事件；生产在 main 显式装配并与 HTTP 共用修订号服务 | HTTP/SDK 类型、领域公式、第二份业务数据 |
 | `syncchannel` | 本机同步轮询/触发、稳定观测/状态快照、媒体落位与 TXT 归档；复用 mediawrite/authorimport，main 显式装配 | HTTP/SDK 类型、复制入库或 TXT 规则 |
 | `authorimport` | 作者 TXT 导入/重导保护/移除/统一重建事务；手动、备份和同步共用，片段存取复用 authorattach | HTTP/SDK 类型、修改解析与匹配算法 |
-| `scanner` | 全量/增量扫描、变更检测、移动合并 | 直接写库（经 store） |
+| `scanner` | 全量/增量扫描、变更检测、移动合并、动态监听生命周期及后台全扫跨库限并发；配置/成本边界见 server README | 直接写库（经 store） |
 | `thumbnail` | 缩略图生成队列（工作池、懒生成、缓存键、静图输出格式自适应：libwebp 缺失时 mjpeg 降级——内嵌形态，U11 批次D） | 阻塞 API 请求 |
 | `search` | FTS5 索引维护与查询 | — |
 | `recommend` | 推荐/排行算法 | **任何 IO**（纯函数，输入输出领域结构体） |
@@ -188,8 +188,8 @@
 
 - **CI（GitHub Actions，`.github/workflows/ci.yml`）七 job**，push/PR 全绿才许合并：
   1. `openapi`：redocly 协议校验（error 失败，warning 不阻塞）
-  2. `server`：Linux runner 上重建 Go 接口层 → golangci-lint（静态检查 + depguard 模块边界）→ go vet → go test（-race）→ go build
-  3. `server-windows-filing`：Windows 原生 runner 上运行 `go test ./internal/filing -count=1`，覆盖 Linux job 不会编译的 `move_windows.go` build-tag 路径
+  2. `server`：Linux runner 上重建 Go 接口层 → golangci-lint（静态检查 + depguard 模块边界）→ go vet → go test（-race）→ 两万合成记录的扫描路径索引基准（仅索引构建）→ go build
+  3. `server-windows-filing`：Windows 原生 runner 上运行 filing/scanner/config 包测试，覆盖 Windows 文件操作、fsnotify 生命周期/身份保护及配置；不代表真实网络盘验收
   4. `web`：npm ci → openapi-ts 重建 TS 客户端 → knip → tsc --noEmit → oxlint → npm run build → npm test（vitest，ADR-0017）
   5. `sdk-chain`：`make sdk` 三端生成链可重建（生成物防漂移的结构性门禁，ADR-0009）
   6. `android`：复用 sdk-chain 生成的 android/sdk → temurin 21 + gradle wrapper 缓存 → assembleDebug + testDebugUnitTest + lintDebug（M4-0 起）

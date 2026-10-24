@@ -135,7 +135,8 @@ type Scanner struct {
 	// 用户自定义出处；并发安全，按库/路径复用同一实例（匹配结果带缓存）。
 	matcher *sourcematcher.Matcher
 
-	gates sync.Map // libraryID -> *libraryGate
+	gates          sync.Map      // libraryID -> *libraryGate
+	backgroundScan chan struct{} // 后台跨库全扫限并发，见 scanBackground。
 }
 
 // New 构造扫描器。q/bus 必填（nil 会 panic 于首次使用，构造期不校验以保持
@@ -161,6 +162,7 @@ func New(q *db.Queries, bus *events.Bus, logger *slog.Logger, dataDir string, pr
 		watchDebounce:    DefaultDebounce,
 		dataDir:          dataDir,
 		matcher:          sourcematcher.New(0),
+		backgroundScan:   make(chan struct{}, 1),
 	}
 	// 自定义出处装载（DOMAIN_RULES §4 + ADR-0033 出处组）：构造期一次性读取
 	// kv_settings；无记录/失败用空集（内置表完整可用），见 enrich.go
@@ -265,10 +267,11 @@ func (s *Scanner) Scan(ctx context.Context, lib db.Library) (ScanResult, error) 
 	if err != nil {
 		return res, fmt.Errorf("scanner: 载入库 %s 现存资产: %w", lib.ID, err)
 	}
-	known := make(map[string]db.Asset, len(existing))
+	// 仅索引快照下标：Asset 含大量字符串/可空元数据，逐行复制到 map
+	// 会再分配一整套大对象；保留同一份快照供变更检测与差集共用。
+	known := indexScanAssets(existing)
 	knownIDs := make(map[string]struct{}, len(existing))
 	for _, a := range existing {
-		known[a.RelPath] = a
 		knownIDs[a.AssetID] = struct{}{}
 	}
 
@@ -342,9 +345,9 @@ func (s *Scanner) Scan(ctx context.Context, lib db.Library) (ScanResult, error) 
 		seen[rel] = struct{}{} // 看到路径与成功刷新元数据是两件事。
 		// 变更检测（adr/0004）：size+mtime 都一致 → 完全跳过（连 ffprobe
 		// 都不跑）。mtime 用同一函数格式化后比较，杜绝精度/时区差异误判。
-		if cur, hit := known[rel]; hit &&
-			cur.SizeBytes == info.Size() &&
-			cur.Mtime == store.FormatTimestamp(info.ModTime()) {
+		if index, hit := known[rel]; hit &&
+			existing[index].SizeBytes == info.Size() &&
+			existing[index].Mtime == store.FormatTimestamp(info.ModTime()) {
 			seen[rel] = struct{}{}
 			return nil
 		}
@@ -400,6 +403,14 @@ func (s *Scanner) Scan(ctx context.Context, lib db.Library) (ScanResult, error) 
 	// 都汇聚在本函数，此处单点覆盖。Set 而非 Observe：它是 Gauge。
 	sysmon.Default.SetScanDuration(time.Since(start).Seconds())
 	return res, nil
+}
+
+func indexScanAssets(assets []db.Asset) map[string]int {
+	index := make(map[string]int, len(assets))
+	for i := range assets {
+		index[assets[i].RelPath] = i
+	}
+	return index
 }
 
 // invalidateThumbs 资产内容变更后的缩略图失效联动（DOMAIN_RULES §11 删除

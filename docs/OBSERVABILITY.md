@@ -72,6 +72,7 @@
 - `推荐顺序冷算分段耗时`：仅顺序快照未命中时记录 seed/candidates/query/algorithm。query 包含规模观察、事件/标签查询、行解码与标签映射；algorithm 包含行到 Item 转换、完整评分/混合及提取 ID。命中取页仍查询元数据、装配作者/COS 字段并回写展示计数，这些及单飞等待/HTTP 编码/网络不计入该日志。完整请求延迟使用 HTTP 指标，旧限量页算法日志不可直接与完整顺序计算比较。
 
 - 等级：默认 info；`QIMENG_LOG_LEVEL=debug` 排障；循环内禁止逐条日志（旧项目"50 次记 1 条采样"经验保留）。
+- 后台轮询和事件触发的整库扫描完成日志包含 `libraryId/scanned/elapsedMs/added/updated/moved/removed`；耗时不含等待跨库后台扫描名额的时间。四个变更计数全零时为 debug，有变化时为 info；错误仍为 warn/error，不能从控制台不再刷空扫推断扫描已停止。`scan_duration_seconds` 的“上次成功全量扫描”口径保持，新增日志提供分库证据，不新增带库 ID 标签的指标序列。
 
 ## 健康检查
 

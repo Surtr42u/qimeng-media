@@ -2,344 +2,236 @@ package scanner
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
-	"sync"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+	"golang.org/x/sync/errgroup"
 
-	"qimeng-media/server/internal/events"
+	"qimeng-media/server/internal/config"
 	"qimeng-media/server/internal/filing"
-	"qimeng-media/server/internal/store"
+	"qimeng-media/server/internal/safego"
 	"qimeng-media/server/internal/store/db"
 )
 
-// DefaultDebounce 增量事件防抖窗口（任务基线 300ms）。
-// 为什么必须有防抖：往库里写入一个 1GB 视频时，写入器持续 append，
-// fsnotify 会把每次写都报成独立事件——create + write×N +（拷贝工具的）
-// rename/chmod，一个文件轻松产生上千事件。逐事件处理意味着上千次
-// ffprobe 轰炸和一个可能还在写入的半成品文件被反复探测。
-const DefaultDebounce = 300 * time.Millisecond
+const (
+	// DefaultDebounce 合并同库的事件风暴，避免每个文件独立启动定时器。
+	DefaultDebounce = 300 * time.Millisecond
+	// DefaultPollInterval 保留 5min 兜底：网络挂载可能静默漏事件，
+	// 不能仅凭监听注册成功就自动拉长扫描周期。配置可显式覆盖。
+	DefaultPollInterval = config.DefaultScannerPollInterval
+	// maxPendingPaths 大批复制时退回一次全量对账，限制事件队列内存。
+	maxPendingPaths = 256
+)
 
-// DefaultPollInterval 轮询兜底周期（任务基线 5min）。
-// 为什么轮询不可省：fsnotify 在 Windows 上对 SMB/NFS 网络卷、在 Linux 上
-// 对不支持的文件系统静默失效（事件干脆不来，不是延迟）；定时全量扫描
-// 是变更检测的最后防线（ARCHITECTURE §3「fsnotify + 定时轮询兜底」）。
-const DefaultPollInterval = 5 * time.Minute
-
-// watcher 单个库的增量监听器。生命周期由 Watch 管理（阻塞至 ctx 取消）。
-type watcher struct {
-	s   *Scanner
-	lib db.Library
-	fw  *fsnotify.Watcher
-	// debounce 防抖窗口（测试可缩短；语义见 schedule）。
-	debounce time.Duration
-	logger   *slog.Logger
-
-	mu      sync.Mutex
-	pending map[string]struct{} // 已排定定时器的路径（去重第二道闸）
+type watchBatch struct {
+	full  bool
+	paths map[string]struct{}
 }
 
-// Watch 对单个库启动递归 fsnotify 监听，阻塞至 ctx 取消（调用方自行
-// go 起）。返回 nil 表示正常收尾。
-//
-// 设计要点：
-//   - 递归注册：fsnotify 只监听已 Add 的目录，启动时 WalkDir 全子树注册，
-//     运行期新建目录（Create 事件）动态补注册；
-//   - 跳过的目录（SkipDir：隐藏/系统）不注册——省 watch 句柄且免过滤；
-//   - 变更处理走 Scanner 的库闸门（mu 等待语义），与全量扫描/轮询互斥；
-//   - 单文件删除不做移动合并：合并启发式需要"扫描周期差集"的完整视野
-//     （哪些路径整体消失、哪些整体出现），单事件视角无法可靠判定，
-//     强行判定会把"删一个+巧合的新文件"误合并。合并是全量扫描的职责。
+func (b *watchBatch) add(path string, full bool) {
+	if b.full {
+		return
+	}
+	if full {
+		b.full, b.paths = true, nil
+		return
+	}
+	if _, exists := b.paths[path]; exists {
+		return
+	}
+	if len(b.paths) >= maxPendingPaths {
+		b.full, b.paths = true, nil
+		return
+	}
+	if b.paths == nil {
+		b.paths = make(map[string]struct{})
+	}
+	b.paths[path] = struct{}{}
+}
+
+func (b watchBatch) empty() bool { return !b.full && len(b.paths) == 0 }
+
+type watcher struct {
+	s      *Scanner
+	lib    db.Library
+	fw     *fsnotify.Watcher
+	logger *slog.Logger
+}
+
+// Watch 递归监听一个库，直到取消或监听失效。接收事件与串行处理分离，
+// 慢扫描期间继续收集事件；队列至多一批，路径超限则合并为一次全量扫描。
+// 已有文件 Write 走单文件更新；新增/删除/改名必须整库对账，不能逐事件
+// 先删旧身份或先入新身份，否则移动合并会丢失收藏/标签等关联。
 func (s *Scanner) Watch(ctx context.Context, lib db.Library) error {
 	fw, err := fsnotify.NewWatcher()
 	if err != nil {
 		return fmt.Errorf("scanner: 创建 fsnotify watcher: %w", err)
 	}
-	defer fw.Close() // 幂等；重复 Close 返回 nil 被忽略
-
-	// 库根自动重挂（ADR-0025，relink.go）：与 Scan 同一保障——监听注册前
-	// 根不在则先按资产样本找回；失败走下方 addTree 的原有失败路径。
+	defer func() {
+		if err := fw.Close(); err != nil {
+			s.logger.Warn("scanner: 关闭监听失败", "libraryId", lib.ID, "err", err)
+		}
+	}()
 	if err := s.ensureLibraryRoot(ctx, &lib); err != nil {
-		return fmt.Errorf("scanner: 注册库 %s 监听: %w", lib.RootPath, err)
+		return fmt.Errorf("scanner: 注册库监听: %w", err)
 	}
-
-	debounce := s.watchDebounce
-	if debounce <= 0 { // 直接构造 Scanner 未走 New 时的兜底
-		debounce = DefaultDebounce
+	w := &watcher{s: s, lib: lib, fw: fw, logger: s.logger.With("libraryId", lib.ID)}
+	if err := w.addTree(ctx, lib.RootPath); err != nil {
+		return fmt.Errorf("scanner: 注册库监听: %w", err)
 	}
-	w := &watcher{
-		s:        s,
-		lib:      lib,
-		fw:       fw,
-		debounce: debounce,
-		logger:   s.logger.With("libraryId", lib.ID),
-		pending:  make(map[string]struct{}),
-	}
-	if err := w.addTree(lib.RootPath); err != nil {
-		return fmt.Errorf("scanner: 注册库 %s 监听: %w", lib.RootPath, err)
-	}
-	w.logger.Info("scanner: 增量监听已启动", "root", lib.RootPath)
-
-	for {
-		select {
-		case <-ctx.Done():
-			w.logger.Info("scanner: 增量监听停止")
-			return nil
-		case err, ok := <-fw.Errors:
-			if !ok {
-				return nil
-			}
-			// fsnotify 错误多为 OS 层（句柄耗尽/目录消失）：记日志继续跑，
-			// 缺口由轮询兜底；退出循环会让该库从此失去增量能力且无人重启。
-			w.logger.Warn("scanner: fsnotify 错误（轮询兜底）", "err", err)
-		case ev, ok := <-fw.Events:
-			if !ok {
-				return nil
-			}
-			w.handleEvent(ctx, ev)
-		}
-	}
-}
-
-// handleEvent 分派单条 fsnotify 事件。
-func (w *watcher) handleEvent(ctx context.Context, ev fsnotify.Event) {
-	// 数据目录内的事件全部忽略（缩略图/回收站/DB 自己的写入不属于库内容，
-	// 自噬防御，见 Scanner.dataDir 注释）。
-	if w.s.dataDir != "" && w.s.pathInsideDataDir(ev.Name) {
-		return
-	}
-	// 新目录：立即递归注册（目录创建没有防抖必要——注册动作幂等且便宜；
-	// 里面的文件事件依赖注册完成后才能收到，拖延反而漏事件）。
-	if ev.Has(fsnotify.Create) {
-		if info, err := os.Stat(ev.Name); err == nil && info.IsDir() {
-			if err := w.addTree(ev.Name); err != nil {
-				w.logger.Warn("scanner: 注册新目录监听失败", "dir", ev.Name, "err", err)
-			}
-			return
-		}
-	}
-	w.schedule(ctx, ev.Name)
-}
-
-// addTree 递归注册目录树（含根）。已注册目录重复 Add 返回 nil（fsnotify
-// 幂等语义），因此新建目录的子树补注册天然安全。
-func (w *watcher) addTree(root string) error {
-	var firstErr error
-	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			if firstErr == nil && p == root {
-				firstErr = err // 根打不开是调用方错误，向上传
-			}
-			w.logger.Warn("scanner: 监听注册遍历失败", "path", p, "err", err)
-			if d != nil && d.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !d.IsDir() {
-			return nil
-		}
-		if p != root && SkipDir(d.Name()) {
-			return filepath.SkipDir
-		}
-		if err := w.fw.Add(p); err != nil {
-			w.logger.Warn("scanner: 目录监听注册失败", "path", p, "err", err)
-		}
-		return nil
+	w.logger.Info("scanner: 增量监听已启动")
+	group, workCtx := errgroup.WithContext(ctx)
+	batches := make(chan watchBatch)
+	group.Go(func() error {
+		return safego.Run(w.logger, "监听事件接收", func() error { return w.receive(workCtx, batches) })
 	})
-	if firstErr != nil {
-		return firstErr
+	group.Go(func() error {
+		return safego.Run(w.logger, "监听批次处理", func() error { return w.process(workCtx, batches) })
+	})
+	err = group.Wait()
+	if ctx.Err() != nil {
+		return nil
 	}
 	return err
 }
 
-// schedule 把路径排入防抖处理。
-//
-// 窗口合并语义（不是"静默期"语义）：首条事件启动 debounce 定时器，
-// 窗口内的后续事件什么都不做，定时器到点统一处理一次。
-// 为什么不用"每次事件重置定时器"的静默期方案：写入大文件时 write 事件
-// 持续到达，静默期会被无限推迟——文件写多久扫描器就等多久，慢写入的
-// 网络盘上一个文件可能拖延几分钟；固定窗口保证最迟 debounce 后必处理
-// （届时若仍在写入，下次变更检测会因 size/mtime 变化再触发一次，不丢）。
-func (w *watcher) schedule(ctx context.Context, path string) {
-	w.mu.Lock()
-	if _, exists := w.pending[path]; exists {
-		w.mu.Unlock()
-		return // 窗口内重复事件：合并（见函数注释）
+// receive 只在此 goroutine 管理防抖状态。固定窗口保证连续写入也不会
+// 永远推迟处理；worker 忙时待处理批次留在本地合并，不增加 goroutine。
+func (w *watcher) receive(ctx context.Context, batches chan<- watchBatch) error {
+	debounce := w.s.watchDebounce
+	if debounce <= 0 {
+		debounce = DefaultDebounce
 	}
-	w.pending[path] = struct{}{}
-	w.mu.Unlock()
-
-	time.AfterFunc(w.debounce, func() {
-		// ctx 已取消（服务关停/库移除）时不再进 processFile：否则用已取消
-		// ctx 打库只会产出 ctx.Canceled 的 warn 噪音（2026-09-20 全库审查 F5，
-		// 关停窗口内 pending 定时器到点的路径）。
-		if ctx.Err() != nil {
-			w.mu.Lock()
-			delete(w.pending, path)
-			w.mu.Unlock()
-			return
-		}
-		w.mu.Lock()
-		delete(w.pending, path)
-		w.mu.Unlock()
-		w.processFile(ctx, path)
-	})
-}
-
-// processFile 防抖到期后的单文件处理：存在 → 变更检测后 upsert；
-// 消失 → 删除记录。走库闸门（阻塞等待正在进行的全量扫描）。
-func (w *watcher) processFile(ctx context.Context, absPath string) {
-	g := w.s.gate(w.lib.ID)
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
-	rel, ok := relWithin(w.lib.RootPath, absPath)
-	if !ok {
-		return // 理论不可达（watch 只注册库内路径），防御性红线兜底
-	}
-
-	if !filing.PathWithinRoot(w.lib.RootPath, absPath) {
-		return
-	}
-	info, err := os.Stat(absPath)
-	if err != nil {
-		if !errors.Is(err, fs.ErrNotExist) {
-			w.logger.Warn("scanner: 增量 stat 失败", "path", rel, "err", err)
-			return
-		}
-		w.removeIfPresent(ctx, rel)
-		return
-	}
-	if info.IsDir() || IsHiddenName(info.Name()) {
-		return
-	}
-	mediaType, ok := ClassifyMedia(info.Name())
-	if !ok {
-		// 非媒体文件出现在已入库媒体路径上（如 xxx.mp4 被覆盖成 xxx.mp4.txt
-		// 之外的常规改名不会同路径换类型；此分支最常见于隐藏文件被取消
-		// 隐藏属性等边角），交给下一轮全量扫描的差集清理。
-		return
-	}
-
-	// 变更检测：与全量扫描同一套 size+mtime 判定（防抖窗口尾部的"写完了"
-	// 事件与窗口头部事件指向同一版本时，这里直接短路，省一次探测）。
-	cur, err := w.s.q.GetAssetByPath(ctx, db.GetAssetByPathParams{
-		LibraryID: w.lib.ID, RelPath: rel,
-	})
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		w.logger.Warn("scanner: 增量查询失败", "path", rel, "err", err)
-		return
-	}
-	if err == nil &&
-		cur.SizeBytes == info.Size() &&
-		cur.Mtime == store.FormatTimestamp(info.ModTime()) {
-		return
-	}
-
-	asset, inserted, ingestErr := w.s.ingestFile(ctx, w.lib, absPath, rel, mediaType, info)
-	if ingestErr != nil {
-		w.logger.Error("scanner: 增量入库失败", "path", rel, "err", ingestErr)
-		return
-	}
-	// 此前有记录（cur 命中）而进了入库＝size/mtime 变化的更新：失效旧内容
-	// 缩略图（与全量扫描重探测同一联动，见 invalidateThumbs）；新增无需
-	// 失效——新 asset_id 名下不可能有历史缓存。
-	if err == nil {
-		w.s.invalidateThumbs(asset.AssetID, rel)
-	}
-	// err==sql.ErrNoRows 即此前无记录 → 新增；否则是更新。
-	changed := ScanResult{LibraryID: w.lib.ID, Updated: 1}
-	if inserted {
-		changed = ScanResult{LibraryID: w.lib.ID, Added: 1}
-	}
-	w.s.publish(events.TopicLibraryChanged, changed)
-}
-
-// removeIfPresent 删除已消失路径的入库记录（若存在）。
-// 增量删除不做移动合并——理由见 Watch 注释。
-func (w *watcher) removeIfPresent(ctx context.Context, rel string) {
-	unlock := filing.LockLibrary(w.lib.ID)
-	defer unlock()
-	reserved, err := filing.PendingRestorePaths(w.s.dataDir, w.lib.ID)
-	if err != nil {
-		w.logger.Warn("读取恢复意图失败，保留记录", "err", err)
-		return
-	}
-	if _, ok := reserved[rel]; ok {
-		return
-	}
-	// 删除前锁内再次核实文件确实不存在，避免排队期间上传/移动/恢复后的误删。
-	_, statErr := os.Stat(filepath.Join(w.lib.RootPath, filepath.FromSlash(rel)))
-	if !errors.Is(statErr, fs.ErrNotExist) {
-		return
-	}
-
-	cur, err := w.s.q.GetAssetByPath(ctx, db.GetAssetByPathParams{
-		LibraryID: w.lib.ID, RelPath: rel,
-	})
-	if err != nil {
-		return // 无记录：删除事件对未入库路径是常态（如 .tmp 临时文件清走）
-	}
-	if err := w.s.q.DeleteAsset(ctx, cur.AssetID); err != nil {
-		w.logger.Error("scanner: 增量删除失败", "path", rel, "err", err)
-		return
-	}
-	w.logger.Info("scanner: 文件消失（增量），删除记录",
-		"relPath", rel, "assetId", cur.AssetID)
-	w.s.publish(events.TopicLibraryChanged, ScanResult{
-		LibraryID: w.lib.ID, Removed: 1,
-	})
-	// 增量删除同样可能让 COS 作者变孤立（作者目录最后一个文件被删），
-	// 顺手清理，不等下一次轮询扫描（与 Scan 收尾的清理同一语义）。
-	w.s.cleanupOrphanCosAuthors(ctx)
-}
-
-// StartBackground 轮询兜底：每 interval 对全部注册库做一次全量扫描。
-// 阻塞至 ctx 取消（调用方 go 起）；interval<=0 用默认 5min。
-// 是否启用由配置决定（调用方不启动即关闭，本函数自身无开关）。
-//
-// 防重入：Scan 自带闸门——Watch 触发的增量处理持闸门期间撞上轮询，
-// 轮询对该库拿不到 CAS 直接跳过本轮（ErrAlreadyScanning 吞掉），
-// 下一周期自然补上，不排队不积压。
-func (s *Scanner) StartBackground(ctx context.Context, interval time.Duration) error {
-	if interval <= 0 {
-		interval = DefaultPollInterval
-	}
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	s.logger.Info("scanner: 轮询兜底已启动", "interval", interval.String())
-
+	timer := time.NewTimer(debounce)
+	defer timer.Stop()
+	// 注册后对账一次，补进程停机期间及目录注册窗口内的变化。
+	pending := watchBatch{full: true}
+	var send chan<- watchBatch
 	for {
 		select {
 		case <-ctx.Done():
-			return nil
-		case <-ticker.C:
-			libs, err := s.q.ListLibraries(ctx)
+			return ctx.Err()
+		case <-timer.C:
+			send = batches
+		case send <- pending:
+			pending = watchBatch{}
+			send = nil
+		case err, ok := <-w.fw.Errors:
+			if !ok {
+				return errors.New("scanner: 监听错误通道关闭")
+			}
+			// 溢出或后端故障：退出交主管重建整个目录监听树；轮询仍独立运行。
+			return fmt.Errorf("scanner: 文件监听失效: %w", err)
+		case ev, ok := <-w.fw.Events:
+			if !ok {
+				return errors.New("scanner: 监听事件通道关闭")
+			}
+			full, relevant, err := w.classify(ctx, ev)
 			if err != nil {
-				s.logger.Warn("scanner: 轮询列举库失败", "err", err)
+				return err
+			}
+			if !relevant {
 				continue
 			}
-			for _, lib := range libs {
-				res, err := s.Scan(ctx, lib)
-				switch {
-				case errors.Is(err, ErrAlreadyScanning):
-					// 上一轮还没跑完（超大库+短间隔）：跳过，不报错不积压
-				case err != nil:
-					s.logger.Warn("scanner: 轮询扫描库失败", "libraryId", lib.ID, "err", err)
-				default:
-					s.logger.Info("scanner: 轮询扫描完成",
-						"libraryId", lib.ID, "added", res.Added, "updated", res.Updated,
-						"moved", res.Moved, "removed", res.Removed)
+			if pending.empty() {
+				timer.Reset(debounce)
+			}
+			pending.add(ev.Name, full)
+		}
+	}
+}
+
+// classify 对目录新增先补注册再整库对账，覆盖“目录带着文件一起移入”。
+// 不跟随链接或数据目录；忽略无关文件的写入与 Chmod 噪音。
+func (w *watcher) classify(ctx context.Context, ev fsnotify.Event) (full, relevant bool, err error) {
+	if w.s.dataDir != "" && w.s.pathInsideDataDir(ev.Name) {
+		return false, false, nil
+	}
+	if !filing.PathWithinRoot(w.lib.RootPath, ev.Name) {
+		return false, false, nil
+	}
+	if ev.Has(fsnotify.Create) {
+		if info, statErr := os.Lstat(ev.Name); statErr == nil && info.IsDir() {
+			if SkipDir(info.Name()) {
+				return false, false, nil
+			}
+			return true, true, w.addTree(ctx, ev.Name)
+		}
+	}
+	if ev.Has(fsnotify.Remove) || ev.Has(fsnotify.Rename) {
+		// 已消失的目录不能 Stat；即使无媒体扩展名也要整库对账。
+		return true, true, nil
+	}
+	if IsHiddenName(filepath.Base(ev.Name)) {
+		return false, false, nil
+	}
+	if _, ok := ClassifyMedia(ev.Name); !ok {
+		return false, false, nil
+	}
+	return ev.Has(fsnotify.Create), ev.Has(fsnotify.Create) || ev.Has(fsnotify.Write), nil
+}
+
+func (w *watcher) addTree(ctx context.Context, root string) error {
+	return filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if walkErr != nil {
+			return walkErr // 部分注册也视为失败，由主管重试，不能假装监听完整。
+		}
+		if !d.IsDir() {
+			return nil
+		}
+		if (path != w.lib.RootPath && SkipDir(d.Name())) ||
+			(w.s.dataDir != "" && w.s.pathInsideDataDir(path)) ||
+			!filing.PathWithinRoot(w.lib.RootPath, path) {
+			return filepath.SkipDir
+		}
+		return w.fw.Add(path)
+	})
+}
+
+func (w *watcher) process(ctx context.Context, batches <-chan watchBatch) error {
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case batch := <-batches:
+			full := batch.full
+			for path := range batch.paths {
+				if w.updateKnownFile(ctx, path) {
+					full = true
+					break
 				}
 			}
+			if full {
+				if err := w.scan(ctx); err != nil && ctx.Err() == nil {
+					w.logger.Warn("scanner: 增量对账失败（轮询兜底）", "err", err)
+				}
+			}
+		}
+	}
+}
+
+// scan 遇手动/轮询扫描正在运行时等待后重试，不能吞掉扫描中途到达的事件。
+func (w *watcher) scan(ctx context.Context) error {
+	for {
+		err := w.s.scanBackground(ctx, w.lib, "增量对账")
+		if !errors.Is(err, ErrAlreadyScanning) {
+			return err
+		}
+		timer := time.NewTimer(DefaultDebounce)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
 		}
 	}
 }

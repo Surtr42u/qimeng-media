@@ -16,6 +16,8 @@
 
 ## 2. 当前源码、运行包与验证边界
 
+- **媒体扫描优化（2026-10-24，进行中）**：按用户授权补齐动态库监听/失败重试，已有文件写入单路径更新，结构事件合并整库对账以保留移动身份；事件批次有界，后台全扫跨库串行，路径索引改用快照下标。新增启动配置（默认监听开启、轮询仍 5m）和分库工作量/耗时日志，零变更完成日志降 debug。无协议/schema/依赖变化；文档同步 server README、文件规则、安全、架构、监控、部署、能力地图及 ADR-0025 的现行监听边界。验证按用户现行约定只走云端；Linux race/Windows 原生回归与两万合成记录索引基准待执行，本地仅编辑/格式化/静态审查。现用 PC/手机仍为下条已交付包，未更换程序、未接触真实媒体/8420 测试写入，未做 NAS 验收。
+
 - **PC 与手机云端更新完成（2026-10-24）**：用户授权先更新电脑，手机连接后保留数据安装。共同产物来源为 **25e65e12**；其[完整 CI](https://github.com/Surtr42u/qimeng-media/actions/runs/40090455688)、[安全](https://github.com/Surtr42u/qimeng-media/actions/runs/40090455722)和[文档](https://github.com/Surtr42u/qimeng-media/actions/runs/40090455744)全部通过，[PC 出包](https://github.com/Surtr42u/qimeng-media/actions/runs/40090459681)及[Android Release/单测](https://github.com/Surtr42u/qimeng-media/actions/runs/40090471274)均成功（Release 与单测日志分别 BUILD SUCCESSFUL）。
   - PC：GitHub artifact ZIP 摘要、发布清单、0.2.1 / 25e65e12 / 非 dirty 身份、schema 20 与 87 个 Web 文件逐项核对后整体更新。安装程序 SHA-256 `81c69821103fdb2e76226e35094b6ee24c2022099c9b710c54d0f7848da77509`；8420 监听程序匹配，healthz/readyz 200，HTTP 首页与全部 87 个静态文件字节匹配。沿用原配置、DataDir、媒体根和日常 dev/本机同步环境，保留普通后端控制台、旧程序/Web/配置；本次无 schema/持久化格式变化，未重建全量媒体备份或向真库写测试数据。
   - 手机：Android 安装序号递增到 **0.2.1 / code 5**；已下载候选并核对 artifact 摘要、原安装包同签名、非 Debug、仅 arm64、三件套/FFmpeg 锁定哈希和内嵌 Go 的干净 25e65e12 身份。候选 APK SHA-256 `d32d2ae7bd7b2a721eeaaf918cac3b2473498e14074ab63c3a92198fbc5e83f4`。用户手机接入后，已显式锁定原物理设备，拉取当前 code 4 APK 并重新核对签名，再保留数据覆盖安装到 code 5；安装后 APK 与候选逐字节一致，首次安装记录保留，冷启动成功、内嵌 healthz/readyz 200，临时端口转发已移除。未卸载/清数据，未做手机备份恢复、真实媒体删除测试、业务全回归或 NAS 验收。

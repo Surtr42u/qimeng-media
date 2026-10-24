@@ -7,8 +7,9 @@
 //   - media.go    媒体类型识别（扩展名白名单，DOMAIN_RULES §11）与目录过滤
 //   - scanner.go  全量扫描 Scan：遍历→变更检测入库→差集→移动合并/清理；
 //     单库防重入闸门（ErrAlreadyScanning）
-//   - watch.go    增量监听 Watch（fsnotify 递归+防抖）与轮询兜底
-//     StartBackground（Windows/网络盘行为差异由轮询补齐）
+//   - watch.go / watch_update.go 增量监听、同库批次合并与已有文件更新；
+//     结构变化交全量扫描，保留移动合并身份。
+//   - background.go 动态监听管理、失败重试及轮询兜底；后台全扫跨库串行。
 //
 // 边界（见 docs/ARCHITECTURE.md §5）：
 //   - 职责：全量/增量扫描、变更检测、移动合并
