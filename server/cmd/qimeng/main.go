@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"qimeng-media/server/internal/authorattach"
+	"qimeng-media/server/internal/authoredit"
 	"qimeng-media/server/internal/authorimport"
 	"qimeng-media/server/internal/backup"
 	"qimeng-media/server/internal/buildinfo"
@@ -227,7 +228,15 @@ func main() {
 	writeService := mediawrite.New(mediawrite.Options{Conn: conn, Queries: queries, Bus: bus,
 		Config: cfg, Thumbs: thumbs, Logger: logger, Now: time.Now, Enrich: scan.EnrichAsset, Revision: revisionService})
 	txtService := authorimport.New(conn, queries, time.Now, logger)
+	// 作者编辑三服务显式装配（ADR-0019：DI 在 main）：attach/mirror 是无外部
+	// 依赖的低层原语宿主，authorEdit 在单事务内组合它们承接作者编辑类用例
+	//（Q1 事务下沉），三者与 HTTP/syncchannel 共享同一实例，不建第二套状态。
+	attachService := &authorattach.Service{Logger: logger}
 	mirrorWriter := &authorattach.MirrorWriter{Logger: logger}
+	authorEditService := authoredit.New(authoredit.Options{
+		Conn: conn, Queries: queries, Attach: attachService, Mirror: mirrorWriter,
+		Now: time.Now, Logger: logger,
+	})
 	syncService := syncchannel.New(syncchannel.Options{Config: cfg, Queries: queries, Writes: writeService,
 		TXT: txtService, Mirror: mirrorWriter, Logger: logger, Now: time.Now})
 	apiSrv, err := httpapi.New(httpapi.Deps{
@@ -245,10 +254,12 @@ func main() {
 		TokenTTL:    cfg.TokenTTL,
 		Logger:      logger,
 		Version:     version,
-		// 上传挂靠编排 + 作者总表镜像（ADR-0019：DI 在 main；两服务无
-		// 外部依赖，缺省实例即生产实现，这里显式装配是规范形态）。
-		Attach: &authorattach.Service{Logger: logger},
-		Mirror: mirrorWriter,
+		// 上传挂靠编排 + 作者总表镜像 + 作者编辑用例（ADR-0019：DI 在
+		// main；三服务无额外外部依赖，缺省实例即生产实现，这里显式装配是
+		// 规范形态）。
+		Attach:     attachService,
+		Mirror:     mirrorWriter,
+		AuthorEdit: authorEditService,
 	})
 	if err != nil {
 		logger.Error("组装 HTTP 服务失败", "error", err)
@@ -258,12 +269,17 @@ func main() {
 	// 富化引擎版本自愈重算（DOMAIN_RULES §4）：引擎升级后存量资产的富化结果
 	// 不会随扫描自然刷新（size+mtime 未变即跳过重 ingest），kv 版本标记落后
 	// 时在后台对全部常规库重算一次。goroutine 起它是因为大库重算可能数十秒，
-	// 不能阻塞监听启动；内嵌/桌面壳/NAS 各形态统一受益。方法内部失败只 warn
-	// 不返回致命错，返回值在此显式弃置（错误已在方法内留痕）。
+	// 不能阻塞监听启动；内嵌/桌面壳/NAS 各形态统一受益。返回错误在下方
+	// goroutine 内单点记录。
 	// 后台任务统一走 safego（panic 兜底）：单个任务崩溃只留错误日志，
 	// 不终止整个服务进程（2026-10-17 可靠性加固）。
 	safego.Go(logger, "富化自愈重算", func() {
-		_ = scan.SelfHealEnrichmentIfNeeded(context.Background())
+		// 返回错误是这里唯一的失败信号（方法内部只记进度日志，个别错误
+		// 路径不落日志），因此在此单点记录（Q6：后台任务错误明确单点，
+		// 不依赖被调方留痕假设）。重算幂等，失败下个启动周期自然重试。
+		if err := scan.SelfHealEnrichmentIfNeeded(context.Background()); err != nil {
+			logger.Warn("富化自愈重算失败（不影响启动，幂等可重试）", "error", err)
+		}
 	})
 	apiSrv.SetScanner(newScannerAdapter(scan, queries, apiSrv, logger))
 	// 自动预生成缩略图（2026-09-15 批）：开机回填历史积压 + 周期兜底（daemon）

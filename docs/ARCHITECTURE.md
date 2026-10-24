@@ -104,6 +104,7 @@
 | `sourcematcher` | 出处/角色匹配引擎（130 组内置检索表 + 前缀匹配） | **任何 IO**（纯函数；内置表数据文件除外） |
 | `authoring` | 作者 TXT 三格式解析、作者-文件匹配规则、authorId 生成 | **任何 IO**（纯函数） |
 | `authorattach` | 作者挂靠编辑与本地镜像编排（上传挂靠参数已随 ADR-0024 退役；ADR-0023/0024，ADR-0019 首个新流程落地）：TXT 片段存取单一来源 + 挂靠写入与资产作者/来源编辑编排（编辑走 edit.go，在调用方事务内）+ 重导入保护元数据 + 本地总表镜像（尽力而为原子写）；依赖 store/authoring，被 httpapi 调用 | 绕过调用方事务自行提交；片段本体之外的第二真相存储 |
+| `authoredit` | 作者编辑类用例的事务宿主（2026-10-24 Q1 事务下沉）：词表预填、作者来源区替换/并入、作者建/改名/删除、资产作者整体替换六个用例，单事务内组合 authorattach 原语并在 Commit 成功后刷新镜像；哨兵仅新增资产不存在/不支持库类型两个，其余原样透传 authorattach 身份 | HTTP/SDK 依赖、协议校验（留 httpapi）、重复刷新镜像或新增库事件/修订号变化 |
 | `filing` | 上传、移动、重命名、回收站 | 绕过路径安全校验 |
 | `store` | sqlc 生成代码、migrations 与只读装载策略（推荐输入的计划选择/标签装载） | SQL 字符串拼接、领域评分、HTTP 依赖 |
 | `eventstats` | 事件日统计持写锁事务重建，单资产恢复与全量管理重建共用；调用 stats 纯函数与 store | HTTP 依赖、事务外读真相再替换 |
@@ -121,7 +122,7 @@
 ### 5.1 模块边界强制与防漂移（ADR-0010 / ADR-0009 / ADR-0011 / ADR-0019）
 
 **编排下沉（ADR-0019）**：多步业务编排（上传落盘入库、移动先文件后库行、统计事件重建等）必须放在专职编排包（`server/internal/orchestration/` 或等价 app 层），`httpapi` 禁止业务编排，只保留鉴权、参数校验、序列化与对编排入口的一次调用。既有厚 handler 增量迁移；新增多步流一律不得在 httpapi 落地。不引入编排框架，`cmd/qimeng` 仍为唯一组合根。
-**当前迁移状态（2026-10-21）**：以等价业务包落实编排层，不要求固定 orchestration 目录。authorattach/eventstats 已承载相应业务；mediawrite 已迁入上传、回收站删除/恢复/物理清理及到期清扫，httpapi/upload(s)/trash(_sweeper).go 只保留协议与生命周期适配。恢复分为文件落点/意图复核、原身份/日统计同事务提交、提交后通知；修订号与 HTTP 共享唯一服务。syncchannel 已承接本机同步调度/运行态/搬移与归档，authorimport 承接跨入口 TXT 导入/保护/移除/重建事务，HTTP 只触发和映射值快照。移动/改名已迁入 mediawrite，HTTP filing.go 只作存在性/JSON 校验及错误映射；业务在库锁内复核身份/路径/根，文件先行、库行失败无覆盖回滚，提交后才富化与通知。其他存量 handler 按触碰继续收敛，不据此宣称全部 HTTP 编排已清空。ADR-0042 的 localsync.PlanScan 仍负责安全扫描计划，不据局部完成宣称全层迁移完毕。
+**当前迁移状态（2026-10-24）**：以等价业务包落实编排层，不要求固定 orchestration 目录。authorattach/eventstats 已承载相应业务；authoredit 已承接作者编辑类六用例的事务宿主（词表预填/来源区/作者建改删/资产作者替换，2026-10-24 Q1 批，author_edit.go/authors_manage.go 不再持事务，AST 门禁防回流）；mediawrite 已迁入上传、回收站删除/恢复/物理清理及到期清扫，httpapi/upload(s)/trash(_sweeper).go 只保留协议与生命周期适配。恢复分为文件落点/意图复核、原身份/日统计同事务提交、提交后通知；修订号与 HTTP 共享唯一服务。syncchannel 已承接本机同步调度/运行态/搬移与归档，authorimport 承接跨入口 TXT 导入/保护/移除/重建事务，HTTP 只触发和映射值快照。移动/改名已迁入 mediawrite，HTTP filing.go 只作存在性/JSON 校验及错误映射；业务在库锁内复核身份/路径/根，文件先行、库行失败无覆盖回滚，提交后才富化与通知。其他存量 handler（engagement/tags 单对读写、portable import/export 多步流）按触碰继续收敛，不据此宣称全部 HTTP 编排已清空。ADR-0042 的 localsync.PlanScan 仍负责安全扫描计划，不据局部完成宣称全层迁移完毕。
 
 边界不是口头约定，是**三层机器强制**（决策见 ADR-0010）：
 

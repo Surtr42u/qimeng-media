@@ -121,7 +121,7 @@ func (s *Server) PostApiV1EventsView(w http.ResponseWriter, r *http.Request) {
 		s.internalErr(w, "开启事件事务", err)
 		return
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer func() { s.rollbackTx(r.Context(), "记录浏览事件", tx) }()
 	qtx := s.q.WithTx(tx)
 	inserted, err := qtx.InsertViewEventIdempotent(r.Context(), db.InsertViewEventIdempotentParams{
 		AssetID:       assetID,

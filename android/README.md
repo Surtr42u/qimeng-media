@@ -17,6 +17,7 @@
 - 行为上报：事件本地排队，联网补传（离线不丢）
 - 上传（核心功能）：系统分享接收 + 系统文件（SAF）唯一入口（2026-09-29 直传化）+ 直传/分片双通道 + 归档文件夹一键上传（2026-10-01）+ 队列进度——"手机采集端"主通道
 - 本地持久化：登录/偏好配置、可设上限的媒体缓存（LRU）、离线事件队列和传输任务元数据；权威业务数据由连接的服务端维护
+- SDK 隔离（2026-10-24 词表批）：feature 生产源码零 `media.qimeng.sdk` 引用（`:app` 单测 FeatureSdkIsolationTest 扫描强制）；编辑域模型（词表 `core:model` 的 EditableVocabulary 族）在 `:core:data` 边缘与生成 SDK 双向映射（VocabularyEditMappers），页面/VM 只见端内非 null 模型
 - 当前交互约束见本仓 [GUIDE_UI](../docs/GUIDE_UI.md)，旧仓规格仅历史参考；实现全部 Compose 新写（禁搬旧 Kotlin，AndroidView 桥接例外记交付清单）
 
 ## 单机形态（ADR-0015；形态 B 已落地——任务U11 批次D，2026-09-15）

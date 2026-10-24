@@ -6,6 +6,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import java.io.File
 import javax.inject.Inject
 import kotlin.coroutines.coroutineContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -250,15 +251,18 @@ class UploadViewModel @Inject constructor(
         }
         batchSuggestJob = viewModelScope.launch {
             delay(AUTHOR_SUGGEST_DEBOUNCE_MS)
-            runCatching { uploadRepository.suggestAuthors(trimmed) }
-                .onSuccess { list ->
-                    if (form.value.batchAuthorQuery.trim() == trimmed) {
-                        form.update { it.copy(batchAuthorSuggestions = list) }
-                    }
+            try {
+                val list = uploadRepository.suggestAuthors(trimmed)
+                if (form.value.batchAuthorQuery.trim() == trimmed) {
+                    form.update { it.copy(batchAuthorSuggestions = list) }
                 }
-                .onFailure {
-                    form.update { it.copy(batchAuthorSuggestions = emptyList()) }
-                }
+            } catch (cancel: CancellationException) {
+                // 输入变化时旧防抖任务被 cancel：取消不是业务失败，必须重新抛出——
+                // 否则旧任务的取消会在新任务联想已回填后把 batchAuthorSuggestions 误清空
+                throw cancel
+            } catch (error: Exception) {
+                form.update { it.copy(batchAuthorSuggestions = emptyList()) }
+            }
         }
     }
 
@@ -370,15 +374,18 @@ class UploadViewModel @Inject constructor(
         }
         nameSuggestJob = viewModelScope.launch {
             delay(AUTHOR_SUGGEST_DEBOUNCE_MS)
-            runCatching { uploadRepository.suggestNames(libraryId, trimmed) }
-                .onSuccess { list ->
-                    if (form.value.editingFileUri == item.uri) {
-                        form.update { it.copy(nameSuggestions = list) }
-                    }
+            try {
+                val list = uploadRepository.suggestNames(libraryId, trimmed)
+                if (form.value.editingFileUri == item.uri) {
+                    form.update { it.copy(nameSuggestions = list) }
                 }
-                .onFailure {
-                    form.update { it.copy(nameSuggestions = emptyList()) }
-                }
+            } catch (cancel: CancellationException) {
+                // 输入变化/移除文件时旧防抖任务被 cancel：取消不是业务失败，必须重新抛出——
+                // 否则旧任务的取消会在新任务联想已回填后把 nameSuggestions 误清空
+                throw cancel
+            } catch (error: Exception) {
+                form.update { it.copy(nameSuggestions = emptyList()) }
+            }
         }
     }
 

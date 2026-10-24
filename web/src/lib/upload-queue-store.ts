@@ -24,8 +24,9 @@
  *
  * 订阅-通知（纯 TS 零新依赖）：状态写入口统一 notify，React 侧
  * useSyncExternalStore 订阅（api-client token store 同款模式）。
- * 严格串行口径（全队列一次一路、跨批不并发）与挂靠序列（同 App
- * UploadAttacher）不变，注释随实现就地保留。
+ * 严格串行口径（全队列一次一路、跨批不并发）不变；成功后挂靠序列已提取到
+ * lib/upload-attach.ts（不持队列状态的服务，2026-10-24 Q7 职责提取批——
+ * 本文件只保留「把服务产出的终态补丁落回队列」的 settle 适配）。
  *
  * 传输通道（ADR-0028 Web 接入批）：按 size 阈值分流——<16MB 走本文件直传
  *（现状 XHR 一字未动），≥16MB 走 lib/upload-chunked.ts 分片会话流（断点续传
@@ -33,17 +34,13 @@
  * + 挂靠序列）与终态语义完全共用。
  *
  * 本文件超 500 行警戒线（web 单文件 ≤500 软约束）的理由：队列编排与传输
- * 状态机强内聚——入队/探测/续传决策/挂靠序列/取消/恢复全链共享同一份队列
+ * 状态机强内聚——入队/探测/续传决策/取消/恢复全链共享同一份队列
  * 状态与 notify 单一写入口，按职责切开会造成跨文件状态双写与同步缝；可拆
  * 的部分已经拆出（持久化=lib/upload-queue-persist 纯核心+persist-instance
- * 装配，分片传输=lib/upload-chunked.ts），本文件只保留状态机本体与直传通道，
- * 行数即该本体的自然规模。
+ * 装配，分片传输=lib/upload-chunked.ts，成功后挂靠=lib/upload-attach.ts），
+ * 本文件只保留状态机本体与直传通道，行数即该本体的自然规模。
  */
 
-import {
-  putApiV1AssetsByAssetIdAuthors,
-  putApiV1AuthorsByAuthorIdSources,
-} from '@/api/generated'
 import type { QueryClient } from '@tanstack/react-query'
 import {
   ASSETS_QUERY_KEY,
@@ -51,16 +48,20 @@ import {
   DIRS_QUERY_KEY,
   LIBRARIES_QUERY_KEY,
 } from '@/lib/query-keys'
-import { getAuthHeaders, unwrapSdkResult } from '@/lib/api-client'
+import { getAuthHeaders } from '@/lib/api-client'
 import { UPLOAD_PATH } from '@/lib/constants'
-import { batchFailureReason } from '@/lib/batch'
 import { composeUploadName, extensionOf } from '@/lib/upload-naming'
 import { uploadTargetFromRelativePath } from '@/lib/folder-upload'
 import { buildUploadQuery } from '@/lib/upload-params'
 import { randomUUID } from '@/lib/uuid'
 import { runChunkedUpload, useChunkedSession } from '@/lib/upload-chunked'
+import { postUploadOutcome, type UploadAttach } from '@/lib/upload-attach'
 import { decideResume, toRestoredEntry, type PersistedUploadItem } from '@/lib/upload-queue-persist'
 import { getUploadQueueStorage } from '@/lib/upload-queue-persist-instance'
+
+// 挂靠载荷类型随挂靠服务迁移（单一来源在 lib/upload-attach）；此处 re-export
+// 维持既有 import 路径稳定（hooks/use-upload 再转出，消费组件零改动）
+export type { UploadAttach }
 
 /** MB → 字节换算（与服务端 config 口径一致：1MB = 1<<20，见 upload.go kvMax）。
  *  组件层「开始上传」超限前置拦截与 store 内兜底拦截共用本常量，禁止散抄 */
@@ -78,15 +79,6 @@ export type UploadStatus =
   | 'failed'
   | 'canceled'
   | 'attach-failed'
-
-/** 201 后自动挂靠载荷（作者必填、来源可选；来源挂靠以作者块为前提，服务端口径） */
-export interface UploadAttach {
-  authorId: string
-  /** 作者展示名（纯 UI 展示；服务端只认 authorId） */
-  authorName: string
-  /** 并入作者来源区的来源词（mode=append；空数组 = 不动来源） */
-  sources: string[]
-}
 
 /** 入队载荷：选文件时刻的形态（file 句柄只在 store 内消费） */
 export interface StagedFileInput {
@@ -243,19 +235,6 @@ function patchProgress(id: string, percent: number): void {
   patchEntry(id, { percent })
 }
 
-/**
- * 201 响应体 → 资产 id（挂靠目标）。协议 201 必回 AssetDetail；解析失败返回
- * null（挂靠缺目标，落 attach-failed 专项态——文件已入库，绝不因此重传）。
- */
-function parseUploadedAssetId(body: string): string | null {
-  try {
-    const parsed = JSON.parse(body) as { id?: unknown }
-    return typeof parsed.id === 'string' && parsed.id !== '' ? parsed.id : null
-  } catch {
-    return null
-  }
-}
-
 /** 4xx/5xx 响应体透传：服务端 {code,message} 的 message 是唯一口径；解析失败兜底状态码文案 */
 function serverErrorText(xhr: XMLHttpRequest): string {
   try {
@@ -275,35 +254,6 @@ function invalidateUploaded(): void {
   if (!queryClientRef) return
   for (const key of [ASSETS_QUERY_KEY, LIBRARIES_QUERY_KEY, DIRS_QUERY_KEY, AUTHORS_QUERY_KEY]) {
     void queryClientRef.invalidateQueries({ queryKey: key })
-  }
-}
-
-/**
- * 自动挂靠序列（同 App UploadAttacher）：先 PUT /assets/{id}/authors 单项
- * 整体替换（新上传资产零关联、传单项安全），后 PUT /authors/{authorId}/sources
- * mode=append（并入去重永不覆盖既有来源）——顺序固定（authors 可能触发服务端
- * 建作者块，sources append 依赖块存在）。返回 null = 全部挂上；否则为失败文案。
- * 走生成 SDK（挂靠无进度诉求，token/baseUrl 随全局 client）；任何失败不重试。
- */
-async function attachSequence(assetId: string, attach: UploadAttach): Promise<string | null> {
-  try {
-    await unwrapSdkResult(
-      putApiV1AssetsByAssetIdAuthors({
-        path: { assetId },
-        body: { authorIds: [attach.authorId] },
-      }),
-    )
-    if (attach.sources.length > 0) {
-      await unwrapSdkResult(
-        putApiV1AuthorsByAuthorIdSources({
-          path: { authorId: attach.authorId },
-          body: { sources: attach.sources, mode: 'append' },
-        }),
-      )
-    }
-    return null
-  } catch (err) {
-    return batchFailureReason(err)
   }
 }
 
@@ -336,25 +286,11 @@ function uploadOne(item: QueueEntry): Promise<void> {
       return
     }
 
-    /** 201 → 挂靠序列 → 终态（挂靠完成才 resolve，串行泵才拾取下一条） */
+    /** 201 → 挂靠服务（lib/upload-attach：响应资产 id 解析 + 先替换作者再
+     *  append 来源，任何挂靠错误转「已入库待挂靠」；不持队列状态）→ 终态
+     *  补丁落回本条（挂靠完成才 resolve，串行泵才拾取下一条） */
     const attachThenSettle = async (body: string): Promise<void> => {
-      const attach = item.attach
-      if (attach === undefined || attach.authorId === '') {
-        settle({ status: 'done', percent: 100 })
-        return
-      }
-      const assetId = parseUploadedAssetId(body)
-      if (assetId === null) {
-        settle({
-          status: 'attach-failed',
-          percent: 100,
-          errorText: '文件已入库，但响应缺少资产 ID，未能自动挂靠',
-        })
-        return
-      }
-      const attachErr = await attachSequence(assetId, attach)
-      if (attachErr === null) settle({ status: 'done', percent: 100 })
-      else settle({ status: 'attach-failed', percent: 100, errorText: `文件已入库，但挂靠失败：${attachErr}` })
+      settle(await postUploadOutcome(body, item.attach))
     }
 
     // ≥16MB 走分片会话流（ADR-0028，阈值与状态机在 lib/upload-chunked，XHR 直连

@@ -462,16 +462,19 @@ class AssetEditViewModel @Inject constructor(
             return
         }
         nameSuggestJob = viewModelScope.launch {
-            delay(200L) // 200ms 防抖，与 UploadViewModel 保持一致
-            runCatching { uploadRepository.suggestNames(libId, trimmed) }
-                .onSuccess { suggestions ->
-                    if (_uiState.value.currentBaseName.trim() == trimmed) {
-                        _uiState.update { it.copy(nameSuggestions = suggestions) }
-                    }
+            delay(AUTHOR_SUGGEST_DEBOUNCE_MS)
+            try {
+                val suggestions = uploadRepository.suggestNames(libId, trimmed)
+                if (_uiState.value.currentBaseName.trim() == trimmed) {
+                    _uiState.update { it.copy(nameSuggestions = suggestions) }
                 }
-                .onFailure {
-                    _uiState.update { it.copy(nameSuggestions = emptyList()) }
-                }
+            } catch (cancel: CancellationException) {
+                // 输入变化时旧防抖任务被 cancel：取消不是业务失败，必须重新抛出——
+                // 否则旧任务的取消会在新任务联想已回填后把 nameSuggestions 误清空
+                throw cancel
+            } catch (error: Exception) {
+                _uiState.update { it.copy(nameSuggestions = emptyList()) }
+            }
         }
     }
 

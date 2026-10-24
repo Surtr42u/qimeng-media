@@ -35,6 +35,7 @@ src/
 - 组件内出现 `fetch/axios/api.` = 违规
 - `tests/architecture.test.ts` 随 `npm test` 用 TypeScript AST 自动检查 pages/components 的运行时 API 导入与直接请求；SDK 纯类型导入和非 API 组件懒加载允许。Node 源码检查/桌面契约测试位于 tests/，由 tsconfig.node 类型检查，不向浏览器代码引入 Node 全局类型。不把静态检查当作全调用链业务规则证明。
 - 例外：`lib/upload-chunked.ts` 传输层 XHR 直连不走生成 SDK（abort 支持缺失+403 拦截器误伤，ADR-0028 记档）
+- 上传链路 lib 内分工（2026-10-24 提取批）：队列状态（entries/XHR 句柄/取消旗标/恢复/订阅/终态推进）唯一持有在 `lib/upload-queue-store.ts`；「上传成功后挂靠」无状态服务（响应资产 id 解析、先 authors 替换后 sources append、失败转「已入库待挂靠」）在 `lib/upload-attach.ts`；分片传输在 `lib/upload-chunked.ts`；刷新持久化在 `lib/upload-queue-persist*.ts`。纯提取，交互行为不变。
 - 出现硬编码颜色 = 违规（一律 `var(--qm-*)`）
 - 数据转换/业务判断放 hooks 或服务端，不进组件
 - 开发代理目标默认 8420；隔离调试实例可用 `QIMENG_DEV_PROXY_TARGET=http://127.0.0.1:<port>` 覆盖

@@ -116,7 +116,14 @@ func copyFile(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	defer func() { _ = in.Close() }()
+	// 只读源句柄：数据成败由 copyBody 与 out.Close 决定，in 的 Close 失败不
+	// 影响任何数据结果（Q6 忽略错误清理批登记的豁免——读句柄无落盘语义），
+	// Debug 级留痕即可。
+	defer func() {
+		if err := in.Close(); err != nil {
+			slog.Debug("filing: 关闭复制源句柄失败（只读句柄，不影响结果）", "error", err)
+		}
+	}()
 	info, err := in.Stat()
 	if err != nil {
 		return err

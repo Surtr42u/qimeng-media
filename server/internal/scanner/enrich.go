@@ -160,7 +160,13 @@ func (s *Scanner) runAssetTx(ctx context.Context, fn func(qx *db.Queries) error)
 	if err != nil {
 		return fmt.Errorf("scanner: 开启单资产事务: %w", err)
 	}
-	defer func() { _ = tx.Rollback() }() // 提交后 Rollback 是无害 no-op
+	defer func() {
+		// 提交后 Rollback 返回 ErrTxDone，是预期 no-op；真实回滚失败记录
+		// 告警（Q6 忽略错误清理批），不覆盖已上抛的业务错误。
+		if err := tx.Rollback(); err != nil && !errors.Is(err, sql.ErrTxDone) {
+			s.logger.WarnContext(ctx, "scanner: 单资产事务回滚失败", "error", err)
+		}
+	}()
 	if err := fn(s.q.WithTx(tx)); err != nil {
 		return err
 	}

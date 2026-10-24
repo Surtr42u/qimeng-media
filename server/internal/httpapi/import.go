@@ -273,7 +273,7 @@ func (imp *legacyImport) importSegment(stage string, fn func(qx *db.Queries)) {
 		imp.fail("开启"+stage+"事务", err)
 		return
 	}
-	defer func() { _ = tx.Rollback() }() // 提交成功后 Rollback 是无害 no-op
+	defer func() { imp.s.rollbackTx(imp.ctx, "导入"+stage, tx) }()
 	fn(imp.s.q.WithTx(tx))
 	if imp.aborted {
 		return

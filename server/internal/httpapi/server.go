@@ -16,6 +16,7 @@ import (
 
 	"qimeng-media/server/internal/auth"
 	"qimeng-media/server/internal/authorattach"
+	"qimeng-media/server/internal/authoredit"
 	"qimeng-media/server/internal/authorimport"
 	"qimeng-media/server/internal/backup"
 	"qimeng-media/server/internal/config"
@@ -168,6 +169,12 @@ type Deps struct {
 	// Mirror 作者总表镜像写入器；nil 时同上构造缺省实例（尽力而为投影，
 	// 失败只告警）。组合根（main）显式装配是规范形态（ADR-0019 DI 在 main）。
 	Mirror *authorattach.MirrorWriter
+	// AuthorEdit 作者编辑用例服务（authoredit.Service，Q1 事务下沉）：在
+	// 单事务内编排 authorattach 原语并在提交成功后刷新镜像。nil 时 New
+	// 内部用同源 Conn/Queries/Attach/Mirror/Now/Logger 构造缺省实例——
+	// 服务只依赖注入的原语，缺省即生产实现，不创建第二套权威状态；
+	// 生产 main 显式装配是规范形态。
+	AuthorEdit *authoredit.Service
 	// Revision 库内容修订号服务（GET /api/v1/library/revision 与 bump 链
 	// 的唯一读写通道，libraryrevision 包）；nil 时 New 内部用 deps.Queries
 	// 构造缺省实例并引导基线——Service 只依赖 store，缺省即生产实现。
@@ -210,6 +217,9 @@ type Server struct {
 	attach *authorattach.Service
 	// mirror 作者总表镜像写入器（Deps.Mirror 的落位）。
 	mirror *authorattach.MirrorWriter
+	// authorEdit 作者编辑用例服务（Deps.AuthorEdit 的落位）：作者管理/
+	// 来源区/资产作者替换/词表预填的事务宿主（Q1 事务下沉）。
+	authorEdit *authoredit.Service
 	// rev 库内容修订号服务（Deps.Revision 的落位；handler 与 bump 链共用）。
 	rev *libraryrevision.Service
 	// uploads 断点续传上传会话管理器（uploadsess 包，ADR-0028；New 内按
@@ -273,6 +283,16 @@ func New(deps Deps) (*Server, error) {
 	if mirror == nil {
 		mirror = &authorattach.MirrorWriter{Logger: logger}
 	}
+	// 作者编辑用例缺省兜底：复用上面同源解析的 attach/mirror/logger/now，
+	// 不另建第二套权威状态；生产 main 显式注入同一实例（ADR-0019 DI 在
+	// main，缺省仅兼容既有隔离测试装配）。
+	authorEdit := deps.AuthorEdit
+	if authorEdit == nil {
+		authorEdit = authoredit.New(authoredit.Options{
+			Conn: deps.Conn, Queries: deps.Queries,
+			Attach: attach, Mirror: mirror, Now: now, Logger: logger,
+		})
+	}
 	rev := deps.Revision
 	if rev == nil {
 		rev = libraryrevision.NewService(deps.Queries, logger, now)
@@ -293,6 +313,7 @@ func New(deps Deps) (*Server, error) {
 		logger:         logger,
 		attach:         attach,
 		mirror:         mirror,
+		authorEdit:     authorEdit,
 		rev:            rev,
 		authState:      newAuthState(),
 		authLimit:      newAuthLimiter(authRateLimitMax, authRateLimitWindow),
@@ -479,6 +500,16 @@ func (s *Server) hostAllowed(host string) bool {
 
 // Handler 返回完整路由与鉴权链的 http.Handler。
 func (s *Server) Handler() http.Handler { return s.handler }
+
+// rollbackTx 事务收尾回滚的统一口（Q6 忽略错误清理批）：Commit 之后的
+// Rollback 返回 sql.ErrTxDone，属事务已正常结束的预期 no-op，静默；真实
+// 回滚失败记录告警留痕，不覆盖调用方已上抛/已记录的业务错误。同包多处
+// 同语义收口于此；authoredit 等其他包各持同款纪律，不做跨包万能件。
+func (s *Server) rollbackTx(ctx context.Context, what string, tx *sql.Tx) {
+	if err := tx.Rollback(); err != nil && !errors.Is(err, sql.ErrTxDone) {
+		s.logger.WarnContext(ctx, what+": 事务回滚失败", "error", err)
+	}
+}
 
 // SetScanner 在组装期替换扫描器实现（main 先 New 出 Server——因为适配器
 // 需要 Server.FinishScan 钩子——再回填真扫描器，解除构造循环依赖）。

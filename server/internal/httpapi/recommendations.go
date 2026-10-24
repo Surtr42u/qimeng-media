@@ -165,7 +165,7 @@ func (s *Server) recordDailyShownBatch(ctx context.Context, assetIDs []string, d
 	for _, id := range assetIDs {
 		if err := qtx.IncrementDailyShown(ctx, db.IncrementDailyShownParams{AssetID: id, Day: day}); err != nil {
 			s.logger.Warn("推荐展示计数写入失败（忽略，可丢弃重建）", "err", err, "asset_id", id)
-			_ = tx.Rollback()
+			s.rollbackTx(ctx, "推荐展示计数", tx)
 			return
 		}
 	}

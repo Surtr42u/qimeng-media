@@ -17,8 +17,9 @@
  * Access API 句柄恢复：现有拾取链路不基于它，按行为目标不做新拾取机制。
  */
 
-/** 持久化的挂靠载荷（与 store 的 UploadAttach 结构同形；独立声明避免 store↔
- *  本模块类型循环依赖，结构化兼容由 TS 保证） */
+/** 持久化的挂靠载荷（与 lib/upload-attach 的 UploadAttach 结构同形——该类型
+ *  2026-10-24 随挂靠服务自 store 迁出；独立声明避免本纯函数模块反向耦合
+ *  挂靠服务的 api-client/生成 SDK import 链，结构化兼容由 TS 保证） */
 interface PersistedAttach {
   authorId: string
   authorName: string

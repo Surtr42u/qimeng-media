@@ -19,8 +19,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import media.qimeng.sdk.models.CustomSourceGroup
-import media.qimeng.sdk.models.CustomSourceCharacter
+import media.qimeng.app.core.model.VocabularyCharacter
+import media.qimeng.app.core.model.VocabularyGroup
 
 /** 卡与小节文案（新增/改名对话框标题由 Screen 层构建 VocabularyPrompt 时提供） */
 private const val CARD_TITLE = "自定义出处组"
@@ -50,7 +50,7 @@ private val ExpandedIndent = 20.dp
  */
 @Composable
 internal fun VocabularyGroupsCard(
-    groups: List<CustomSourceGroup>,
+    groups: List<VocabularyGroup>,
     busy: Boolean,
     onAddGroup: () -> Unit,
     onRemoveGroup: (Int) -> Unit,
@@ -136,7 +136,7 @@ internal fun VocabularyGroupsCard(
 /** 组行：规范名 + 词条计数（点按展开）；改名/移除常驻行尾 */
 @Composable
 private fun GroupRow(
-    group: CustomSourceGroup,
+    group: VocabularyGroup,
     expanded: Boolean,
     busy: Boolean,
     onToggle: () -> Unit,
@@ -183,9 +183,9 @@ private fun GroupRow(
 }
 
 /** 组词条计数副行（变体/角色数；空组给「无词条」占位） */
-private fun groupSubtitle(group: CustomSourceGroup): String {
-    val variantCount = group.variants.orEmpty().size
-    val characterCount = group.characters.orEmpty().size
+private fun groupSubtitle(group: VocabularyGroup): String {
+    val variantCount = group.variants.size
+    val characterCount = group.characters.size
     if (variantCount == 0 && characterCount == 0) {
         return SUBTITLE_NONE
     }
@@ -195,7 +195,7 @@ private fun groupSubtitle(group: CustomSourceGroup): String {
 /** 组展开区：变体写法小节 + 角色小节（角色行可再展开别名小节） */
 @Composable
 private fun GroupDetail(
-    group: CustomSourceGroup,
+    group: VocabularyGroup,
     groupIndex: Int,
     busy: Boolean,
     expandedCharacter: Int,
@@ -216,10 +216,10 @@ private fun GroupDetail(
     ) {
         SectionHeader(
             title = SECTION_VARIANTS,
-            addEnabled = !busy && group.variants.orEmpty().size < VocabularyLimits.VARIANTS_MAX,
+            addEnabled = !busy && group.variants.size < VocabularyLimits.VARIANTS_MAX,
             onAdd = onAddVariant,
         )
-        val variants = group.variants.orEmpty()
+        val variants = group.variants
         if (variants.isEmpty()) {
             SmallNoteInline("暂无变体（规范名自身恒参与前缀匹配与剥离）")
         } else {
@@ -230,10 +230,10 @@ private fun GroupDetail(
 
         SectionHeader(
             title = SECTION_CHARACTERS,
-            addEnabled = !busy && group.characters.orEmpty().size < VocabularyLimits.CHARACTERS_MAX,
+            addEnabled = !busy && group.characters.size < VocabularyLimits.CHARACTERS_MAX,
             onAdd = onAddCharacter,
         )
-        val characters = group.characters.orEmpty()
+        val characters = group.characters
         if (characters.isEmpty()) {
             SmallNoteInline("暂无角色（兜底提取可按命名规约自动出角色）")
         } else {
@@ -262,7 +262,7 @@ private fun GroupDetail(
 /** 角色行：规范名（点按展开别名）；改名/移除常驻行尾 */
 @Composable
 private fun CharacterRow(
-    character: CustomSourceCharacter,
+    character: VocabularyCharacter,
     expanded: Boolean,
     busy: Boolean,
     onToggle: () -> Unit,
@@ -293,7 +293,7 @@ private fun CharacterRow(
 /** 别名小节（角色展开区）：别名清单逐行移除 + 新增入口 */
 @Composable
 private fun AliasSection(
-    character: CustomSourceCharacter,
+    character: VocabularyCharacter,
     busy: Boolean,
     onAdd: () -> Unit,
     onRemove: (Int) -> Unit,
@@ -306,10 +306,10 @@ private fun AliasSection(
     ) {
         SectionHeader(
             title = SECTION_ALIASES,
-            addEnabled = !busy && character.aliases.orEmpty().size < VocabularyLimits.ALIASES_MAX,
+            addEnabled = !busy && character.aliases.size < VocabularyLimits.ALIASES_MAX,
             onAdd = onAdd,
         )
-        val aliases = character.aliases.orEmpty()
+        val aliases = character.aliases
         if (aliases.isEmpty()) {
             SmallNoteInline("暂无别名（规范名自身恒参与子串匹配）")
         } else {
