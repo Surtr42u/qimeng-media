@@ -65,6 +65,8 @@ jobs:
         run: go test ./internal/scanner -run '^$' -bench '^BenchmarkScanSnapshotIndex$' -benchmem -count=3
       - name: 缩略图覆盖检查基准（合成缓存，仅测已缓存检查）
         run: go test ./internal/thumbnail -run '^$' -bench '^BenchmarkThumbnailCoverageChecks$' -benchmem -count=3
+      - name: 双 seed 推荐启动预热基准（合成数据库，保留两次评分）
+        run: go test ./internal/recommendfeed -run '^$' -bench '^BenchmarkRecommendationPrewarmSeeds$' -benchmem -benchtime=300ms -count=3
       - run: go build ./...
 
   server-windows-filing:

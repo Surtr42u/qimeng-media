@@ -119,6 +119,23 @@ func TestQueueBackpressureAndBootWaitCancel(t *testing.T) {
 	s.Run(ctx)
 }
 
+func TestAcceptedTaskDoesNotWaitForFixedPause(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	calls := 0
+	s := New(nil, fakeThumbs{submit: func(thumbnail.Task) error { calls++; cancel(); return nil }}, nil, time.Time{})
+	// 队列已接受即成功，取消只阻止后续投递；不能再经过固定睡眠变成失败。
+	if err := s.submit(ctx, thumbnail.Task{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.submit(ctx, thumbnail.Task{}); !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Fatal("取消后仍继续提交")
+	}
+}
+
 func TestNotificationDuringReconciliationRunsAnotherPass(t *testing.T) {
 	entered := make(chan struct{}, 2)
 	release := make(chan struct{})

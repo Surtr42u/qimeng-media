@@ -105,9 +105,9 @@ func NewGenerator(dataDir string, logger *slog.Logger, opts Options) *Generator 
 // httpapi 分发侧用它拼 ThumbPath 的扩展名与 ServeContent 的文件名。
 func (g *Generator) StillFormat() StillFormat { return g.stillFormat }
 
-// handle 把池任务转成 Ensure 调用（WorkerPool 的 handle 签名）。
+// handle 标记工作池任务为后台；前台 Ensure/EnsureDetached 使用同一生成体并可提升它。
 func (g *Generator) handle(ctx context.Context, t Task) error {
-	return g.Ensure(ctx, t.AssetID, t.SourcePath, t.Kind, t.Sizes)
+	return g.ensure(ctx, t.AssetID, t.SourcePath, t.Kind, t.Sizes, false)
 }
 
 // Submit 非阻塞提交一个生成任务（ErrQueueFull/ErrPoolClosed 语义见 WorkerPool）。
@@ -129,12 +129,16 @@ func (g *Generator) GridLongSide() int { return g.longSide }
 // M3 预留——本批保持懒生成统一管线（首请求同步生成），届时首帧走快速档、
 // 代表帧走工作池预热，本函数的分派点不变。
 func (g *Generator) Ensure(ctx context.Context, assetID, srcPath string, kind Kind, sizes []Size) error {
+	return g.ensure(ctx, assetID, srcPath, kind, sizes, true)
+}
+
+func (g *Generator) ensure(ctx context.Context, assetID, srcPath string, kind Kind, sizes []Size, foreground bool) error {
 	version, err := g.sourceVersion(srcPath)
 	if err != nil {
 		return err
 	}
 	for _, size := range sizes {
-		if err := g.ensureOne(ctx, assetID, srcPath, kind, size, version); err != nil {
+		if err := g.ensureOne(ctx, assetID, srcPath, kind, size, version, foreground); err != nil {
 			return fmt.Errorf("生成 %s 的 %d 缩略图: %w", assetID, int(size), err)
 		}
 	}
@@ -156,7 +160,7 @@ func (g *Generator) thumbDst(assetID string, size Size, versions ...string) stri
 	return ThumbPath(g.dataDir, CacheKey(assetID, size), g.stillFormat.Ext())
 }
 
-func (g *Generator) ensureOne(ctx context.Context, assetID, srcPath string, kind Kind, size Size, version string) error {
+func (g *Generator) ensureOne(ctx context.Context, assetID, srcPath string, kind Kind, size Size, version string, foreground bool) error {
 	// 档位归一化必须在取 dst 与缩放前完成：md 档（SizeGrid）的像素由
 	// LongSide 配置决定（构造时 <=0 已回落 SizeGrid）。此前只有 thumbDst
 	// 的缓存键做了换算、scaleStill 仍用 512 占位值——long_side≠512 时
@@ -167,9 +171,9 @@ func (g *Generator) ensureOne(ctx context.Context, assetID, srcPath string, kind
 		size = Size(g.longSide)
 	}
 	dst := g.thumbDst(assetID, size, version)
-	return g.generating.do(dst, ctx, func() error {
+	return g.generating.doPriority(dst, ctx, foreground, func(priority <-chan struct{}) error {
 		// 验证必须在续生体内：浏览取消后也不能留下生成期间已失效的缓存。
-		if err := g.generateOne(context.Background(), srcPath, kind, size, dst); err != nil {
+		if err := g.generateOne(context.Background(), srcPath, kind, size, dst, priority); err != nil {
 			return err
 		}
 		if current, err := g.sourceVersion(srcPath); err != nil || current != version {
@@ -192,7 +196,7 @@ func cacheExists(dst string) (bool, error) {
 	return false, nil
 }
 
-func (g *Generator) generateOne(ctx context.Context, srcPath string, kind Kind, size Size, dst string) error {
+func (g *Generator) generateOne(ctx context.Context, srcPath string, kind Kind, size Size, dst string, priority <-chan struct{}) error {
 	if exists, err := cacheExists(dst); err != nil || exists {
 		return err
 	}
@@ -206,7 +210,7 @@ func (g *Generator) generateOne(ctx context.Context, srcPath string, kind Kind, 
 	// 但不失败）；排队期间 ctx 取消（客户端断开/超时）立即中断。排队只受上游 ctx
 	// 约束、不占 frameTimeout——后者衡量的是拿到闸位后的生成全流程。缓存命中路径
 	// 不进闸（不消耗 ffmpeg 预算）；release 经 defer 保证成功/失败/panic 都归还。
-	if !genSlots.acquire(ctx) {
+	if !genSlots.acquirePriority(ctx, priority) {
 		return fmt.Errorf("排队等待缩略图生成闸位时上游已取消: %w", ctx.Err())
 	}
 	defer genSlots.release()

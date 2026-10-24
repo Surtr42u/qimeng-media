@@ -19,11 +19,10 @@ import (
 const (
 	// 候选与缺图任务只保留一页，历史回填仍覆盖全部启用库。
 	pageSize = 256
-	// 保留外部删除缓存后的兜底期限和投递节流，本批不调整资源优先级。
+	// 保留外部删除缓存后的兜底期限；投递由队列背压与生成侧优先准入限流。
 	reconcileInterval = 10 * time.Minute
 	// 连续上传/扫描通知不能把整库缓存检查变成高频轮询。
 	changeInterval = 30 * time.Second
-	submitPause    = 200 * time.Millisecond
 	retryPause     = 250 * time.Millisecond
 	progressTTL    = 30 * time.Second
 )
@@ -208,9 +207,6 @@ func (s *Service) submit(ctx context.Context, task thumbnail.Task) error {
 		}
 		err := s.thumbs.Submit(task)
 		if err == nil {
-			if !wait(ctx, submitPause) {
-				return ctx.Err()
-			}
 			return nil
 		}
 		if !errors.Is(err, thumbnail.ErrQueueFull) {

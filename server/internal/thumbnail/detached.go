@@ -34,8 +34,10 @@ type detachedGroup struct {
 // detachedCall 一次进行中的生成：done 关闭即完成（err 为最终结果）。
 // err 先写后 close——close 建立 happen-before，等待者收到关闭即可安全读 err。
 type detachedCall struct {
-	done chan struct{}
-	err  error
+	done     chan struct{}
+	err      error
+	priority chan struct{}
+	promote  sync.Once
 }
 
 func newDetachedGroup() *detachedGroup {
@@ -50,8 +52,16 @@ func newDetachedGroup() *detachedGroup {
 // 重新发起，与 x/sync/singleflight 同款语义；真链路无重跑成本——EnsureDetached
 // 先查磁盘缓存，落盘后的请求走快路径根本不进 do。
 func (dg *detachedGroup) do(key string, ctx context.Context, fn func() error) error {
+	return dg.doPriority(key, ctx, false, func(<-chan struct{}) error { return fn() })
+}
+
+// 前台加入已有后台调用时提升同一生成体，不另建转码任务或旁路并发预算。
+func (dg *detachedGroup) doPriority(key string, ctx context.Context, foreground bool, fn func(<-chan struct{}) error) error {
 	dg.mu.Lock()
 	if call, ok := dg.terms[key]; ok {
+		if foreground {
+			call.promote.Do(func() { close(call.priority) })
+		}
 		dg.mu.Unlock()
 		select {
 		case <-call.done:
@@ -60,7 +70,10 @@ func (dg *detachedGroup) do(key string, ctx context.Context, fn func() error) er
 			return ctx.Err()
 		}
 	}
-	call := &detachedCall{done: make(chan struct{})}
+	call := &detachedCall{done: make(chan struct{}), priority: make(chan struct{})}
+	if foreground {
+		call.promote.Do(func() { close(call.priority) })
+	}
 	dg.terms[key] = call
 	dg.mu.Unlock()
 
@@ -79,7 +92,7 @@ func (dg *detachedGroup) do(key string, ctx context.Context, fn func() error) er
 			delete(dg.terms, key)
 			dg.mu.Unlock()
 		}()
-		call.err = fn()
+		call.err = fn(call.priority)
 	}()
 
 	select {

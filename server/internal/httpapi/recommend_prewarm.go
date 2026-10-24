@@ -4,6 +4,7 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"qimeng-media/server/internal/recommendfeed"
@@ -28,17 +29,21 @@ func (s *Server) StartRecommendPrewarm() {
 // prewarmRecommend 预热一轮：构造与 App 首屏请求同键的缓存键并走单飞计算。
 // 失败只警告——预热是纯优化，失败后退化为既有「首条请求现场计算」路径。
 func (s *Server) prewarmRecommend() {
-	day := store.FormatDay(s.now())
+	now := s.now()
+	day := store.FormatDay(now)
 	prefs := s.recommendPrefsFromSettings(context.Background())
 	start := time.Now()
 	// App 初始 1/200，Web HomePage 初始 0/DEFAULT_PAGE_SIZE=60；不改变客户端语义。
 	// 顺序预热不保存页摘要，真实请求仍校验资格并且只对返回页计数。
-	for _, seed := range []int{recommendPrewarmSeed, recommendWebPrewarmSeed} {
-		if err := s.recommendCache.order.Warm(context.Background(), s.q, recommendfeed.Key{
-			Revision: s.recommendCache.revision(), Day: day, Seed: seed, Prefs: recommendPrefsFingerprint(prefs),
-		}, prefs, s.now()); err != nil {
-			s.logger.Warn("推荐顺序预热失败", "seed", seed, "err", err)
+	if err := s.recommendCache.order.WarmSeeds(context.Background(), s.q, recommendfeed.Key{
+		Revision: s.recommendCache.revision(), Day: day, Prefs: recommendPrefsFingerprint(prefs),
+	}, []int{recommendPrewarmSeed, recommendWebPrewarmSeed}, prefs, now); err != nil {
+		if errors.Is(err, recommendfeed.ErrWarmupInvalidated) {
+			s.logger.Debug("推荐预热因库变更中止，按需重算")
+		} else {
+			s.logger.Warn("推荐顺序预热失败", "err", err)
 		}
+		return
 	}
 	s.logger.Info("推荐顺序预热完成", "elapsed", time.Since(start).Round(time.Millisecond).String())
 }
