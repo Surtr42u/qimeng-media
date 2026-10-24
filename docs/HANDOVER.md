@@ -1,6 +1,6 @@
 # HANDOVER - 当前工作交接
 
-> 只记录当前形态、近期交付边界和下一步。能力缺口见 [能力地图](CAPABILITY_MAP.md)，架构见 [ARCHITECTURE](ARCHITECTURE.md)，规则按 [AGENTS](../AGENTS.md) 路由读取。维护日期：2026-10-24。
+> 只记录当前形态、近期交付边界和下一步。能力缺口见 [能力地图](CAPABILITY_MAP.md)，架构见 [ARCHITECTURE](ARCHITECTURE.md)，规则按 [AGENTS](../AGENTS.md) 路由读取。维护日期：2026-10-25。
 
 ## 1. 当前使用形态
 
@@ -15,6 +15,8 @@
 | 本机同步（可选） | `local-sync/<库名>/`；开启条件、成功移走语义见 API files 专题 |
 
 ## 2. 当前源码、运行包与验证边界
+
+- **媒体扫描优化（2026-10-24～25，源码交付，未部署）**：按用户授权补齐动态库监听/失败重试，已有文件写入单路径更新，结构事件合并整库对账以保留移动身份；事件批次有界，后台全扫跨库串行，路径索引改用快照下标。新增启动配置（默认监听开启、轮询仍 5m）和分库工作量/耗时日志，零变更完成日志降 debug。无协议/schema/依赖变化；文档同步 server README、文件规则、安全、架构、监控、部署、能力地图及 ADR-0025 的现行监听边界。首轮基线 **f9ed404b** 的[完整 CI](https://github.com/Surtr42u/qimeng-media/actions/runs/40108840986)、[安全](https://github.com/Surtr42u/qimeng-media/actions/runs/40108840937)和[文档](https://github.com/Surtr42u/qimeng-media/actions/runs/40108841013)全部通过，含 Linux race/lint/vet/build、Windows 扫描/配置回归及三端构建。两万合成记录路径索引三轮中位数：3.267ms→0.754ms，额外分配 7,273,733B→873,728B；仅索引构建，不含 SQL/遍历/探测。随后收紧写事件的词法过滤，实际访问仍做链接检查，并将忙时单文件更新转为可取消对账，补独立手动扫描持锁时的取消回归；进一步将连续事件按短静默/最长 30s 合并，同根注册失败冷却 5min，补持续事件不饥饿与冷却回归；最终提交验证以[草稿 PR #7 当前 head](https://github.com/Surtr42u/qimeng-media/pull/7)为准，不用首轮结果替代后续检查。按用户约定只在云端构建/测试/跑文档门禁，本地仅编辑/格式化/静态审查。现用 PC/手机仍为下条已交付包，未更换程序、未接触真实媒体/8420 测试写入，未做 NAS 验收。
 
 - **PC 与手机云端更新完成（2026-10-24）**：用户授权先更新电脑，手机连接后保留数据安装。共同产物来源为 **25e65e12**；其[完整 CI](https://github.com/Surtr42u/qimeng-media/actions/runs/40090455688)、[安全](https://github.com/Surtr42u/qimeng-media/actions/runs/40090455722)和[文档](https://github.com/Surtr42u/qimeng-media/actions/runs/40090455744)全部通过，[PC 出包](https://github.com/Surtr42u/qimeng-media/actions/runs/40090459681)及[Android Release/单测](https://github.com/Surtr42u/qimeng-media/actions/runs/40090471274)均成功（Release 与单测日志分别 BUILD SUCCESSFUL）。
   - PC：GitHub artifact ZIP 摘要、发布清单、0.2.1 / 25e65e12 / 非 dirty 身份、schema 20 与 87 个 Web 文件逐项核对后整体更新。安装程序 SHA-256 `81c69821103fdb2e76226e35094b6ee24c2022099c9b710c54d0f7848da77509`；8420 监听程序匹配，healthz/readyz 200，HTTP 首页与全部 87 个静态文件字节匹配。沿用原配置、DataDir、媒体根和日常 dev/本机同步环境，保留普通后端控制台、旧程序/Web/配置；本次无 schema/持久化格式变化，未重建全量媒体备份或向真库写测试数据。

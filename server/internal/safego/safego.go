@@ -16,6 +16,7 @@
 package safego
 
 import (
+	"fmt"
 	"log/slog"
 	"runtime/debug"
 )
@@ -25,17 +26,28 @@ import (
 // name 是任务名（日志字段 task），调用方给稳定的短名（如"扫描轮询"），
 // 便于日志检索与告警聚合。logger 为 nil 时回落 slog.Default()。
 func Go(logger *slog.Logger, name string, fn func()) {
-	if logger == nil {
-		logger = slog.Default()
-	}
 	go func() {
-		defer func() {
-			if p := recover(); p != nil {
-				// debug.Stack 在 recover 的 defer 内仍能取到崩溃点堆栈。
-				logger.Error("后台任务 panic 已恢复（进程继续运行）",
-					"task", name, "panic", p, "stack", string(debug.Stack()))
-			}
-		}()
+		defer recoverTask(logger, name, nil)
 		fn()
 	}()
+}
+
+// Run 在当前 goroutine 执行带错误返回的后台任务，供 errgroup 管理生命周期。
+// panic 转成错误以取消同组任务、交主管重试；普通错误原样返回。
+func Run(logger *slog.Logger, name string, fn func() error) (err error) {
+	defer recoverTask(logger, name, &err)
+	return fn()
+}
+
+func recoverTask(logger *slog.Logger, name string, taskErr *error) {
+	if p := recover(); p != nil {
+		if logger == nil {
+			logger = slog.Default()
+		}
+		logger.Error("后台任务 panic 已恢复（进程继续运行）",
+			"task", name, "panic", p, "stack", string(debug.Stack()))
+		if taskErr != nil {
+			*taskErr = fmt.Errorf("后台任务 %s panic: %v", name, p)
+		}
+	}
 }

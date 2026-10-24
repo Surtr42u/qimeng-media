@@ -107,7 +107,7 @@ func (s *Scanner) ensureLibraryRoot(ctx context.Context, lib *db.Library) error 
 // 并发语义：Scan 侧调用点在 beginScan CAS 闸之后，同一库不会有并发重挂；
 // Watch 启动期调用点不持闸，理论上可与轮询 Scan 同时发现根丢失而双写——
 // 两侧对同一文件系统独立探测、写同一组值，单行 UPDATE 幂等，后果良性
-// （Watch 尚未接线，接线时按 ADR-0025 已知限制段处理）。
+// （根路径变化后后台主管会取消旧监听并重建，见 background.go）。
 func (s *Scanner) tryRelinkRoot(ctx context.Context, lib *db.Library) bool {
 	oldRoot := lib.RootPath
 	parent := filepath.Dir(oldRoot)

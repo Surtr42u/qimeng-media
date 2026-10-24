@@ -583,7 +583,9 @@ func startWatch(t *testing.T, s *Scanner, lib db.Library, debounce time.Duration
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		_ = s.Watch(ctx, lib)
+		if err := s.Watch(ctx, lib); err != nil {
+			t.Errorf("Watch: %v", err)
+		}
 	}()
 	// LIFO：本 cleanup 晚于 newTestEnv 注册 → 先执行，保证句柄先释放。
 	t.Cleanup(func() {
@@ -625,10 +627,8 @@ func TestWatchDebounceCoalesces(t *testing.T) {
 
 // TestWatchDetectsNewDirectory：Watch 启动后新建的子目录动态加入监听，
 // 其中落盘的新文件能被增量入库。
-// 注意测试的时序前提：目录先建并等 Watch 侧注册完成，再写文件——
-// "建目录+立刻写入"的窄窗口内事件会丢（fsnotify 只通知已注册目录，
-// 子目录注册前的内容变更无从感知），该缺口是监听机制的固有属性，
-// 生产上由轮询兜底（ARCHITECTURE §3），不由本测试覆盖。
+// 整体移入预填目录由 TestWatchImportsPrepopulatedDirectory 覆盖；
+// 本用例另外验证新目录完成注册后仍能接收后续文件事件。
 func TestWatchDetectsNewDirectory(t *testing.T) {
 	probe := newProbeStub(&thumbnail.ProbeResult{}, nil)
 	env := newTestEnv(t, probe.call)
@@ -647,8 +647,7 @@ func TestWatchDetectsNewDirectory(t *testing.T) {
 	}
 }
 
-// TestWatchDetectsRemoval：Watch 模式下删除文件 → 增量删除记录
-// （不做移动合并——合并是全量扫描职责，见 watch.go 注释）。
+// TestWatchDetectsRemoval：删除事件触发完整对账，确认消失后再删除记录。
 func TestWatchDetectsRemoval(t *testing.T) {
 	probe := newProbeStub(&thumbnail.ProbeResult{}, nil)
 	env := newTestEnv(t, probe.call)
