@@ -29,6 +29,8 @@ EmbeddedServerController 注入点）+ 设置页本机模式切换与壳层冷�
 `make app-embedded-*`（供应链哈希锁见 deploy/embedded/README.md，jniLibs 不入 git）。
 M6 基座历史验收已完成；近期变更未因此自动取得新版本实机验收，当前范围见 HANDOVER。
 
+媒体扫描由同一 Go 服务端负责：手机本机模式更新内嵌 APK 后使用扫描优化；连接电脑/NAS 时由对端执行扫描，客户端不重复遍历或计算。调度、周期配置和资源边界统一见 [服务端扫描说明](../server/README.md#媒体库后台扫描)，当前装机来源及验证范围见 [HANDOVER](../docs/HANDOVER.md)。
+
 ## 缩略图表示版本与备份兼容
 
 稳定键继续只剥 exp/sig，保留 size/v。预取 revision 快照携带 thumbnailVersion，DataStore 与上次完成 revision 同次写入；策略指纹变化或旧记录无指纹时重拉，避免策略升级后错误跳过。v2 备份新字段经生成 SDK 透传；勿用旧版 App 转存 v2。

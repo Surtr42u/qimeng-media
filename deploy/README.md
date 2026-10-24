@@ -7,7 +7,7 @@
 
 当前 PC 的 Windows 服务端与 Web 使用 [build-pc.yml](../.github/workflows/build-pc.yml)，手动触发或推送 `codex/build-pc/**` 专用分支即可出 `pc-windows-amd64` artifact（7 天保留），包含 `qimeng-server.exe`、`web-dist/` 和 `release-manifest.json`，不包含用户数据、配置、FFmpeg 或桌面连接壳。此通道只出包，完整 CI/安全/文档门禁仍须按同一来源提交核对。
 
-AI 下载后核对 GitHub artifact 摘要、清单逐文件哈希和服务端 `-version` 的版本/提交/非 dirty 身份，按 [升级清单](../docs/RESTORE.md#ai-升级与回退执行清单)判断兼容性与副本需求。正常停服后保留旧程序和 Web，整体替换到 `server/qimeng-server.exe` 与 `web/dist`，保持原配置、DataDir 和媒体根，再以原日常环境启动并核对监听进程、健康/就绪、Web 实际资源。根目录三份启动 bat 只运行已安装程序，不再触发本地编译；这些操作由 AI 完成，下载成功不等于已经部署。
+AI 下载后核对 GitHub artifact 摘要、清单逐文件哈希和服务端 `-version` 的版本/提交/非 dirty 身份，按 [升级清单](../docs/RESTORE.md#ai-升级与回退执行清单)判断兼容性与副本需求。正常停服后保留旧程序和 Web，整体替换到 `server/qimeng-server.exe` 与 `web/dist`，保持原配置、DataDir 和媒体根，再以原日常环境启动并核对监听进程、健康/就绪、Web 实际资源。根目录三份启动 bat 只运行已安装程序，不再触发本地编译；这些操作由 AI 完成，下载成功不等于已经部署。 当前 PC 与手机安装包的来源、实际安装字节和现场健康验证统一见 [HANDOVER](../docs/HANDOVER.md#2-当前源码运行包与验证边界)，后补文档提交不重标产物来源。
 
 无头快捷方式连接的是这套共享启动脚本，不保留独立旧程序；它保留普通黑色后端控制台和任务栏入口，不打开浏览器或桌面端，也不另建图形状态窗。已有健康后端时只读显示状态，不再启动重复实例；控制台生命周期与输出约定见 [服务端入口](../server/README.md#构建身份)。
 
