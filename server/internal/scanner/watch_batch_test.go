@@ -123,6 +123,7 @@ func TestWatchBatchBoundsAndFilters(t *testing.T) {
 	e.s.dataDir = e.abs("private")
 	w := watcher{s: e.s, lib: e.lib}
 	for _, event := range []fsnotify.Event{
+		{Name: filepath.Join(t.TempDir(), "outside.jpg"), Op: fsnotify.Create},
 		{Name: e.abs("private/cache.webp"), Op: fsnotify.Create},
 		{Name: e.abs(".hidden.jpg"), Op: fsnotify.Write},
 		{Name: e.abs("notes.txt"), Op: fsnotify.Write},
@@ -216,6 +217,48 @@ func TestBackgroundScanWaitIsCancellable(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("后台扫描等待泄漏")
+	}
+}
+
+func TestWatchCancelWhileManualScanOwnsGate(t *testing.T) {
+	e := newTestEnv(t, newProbeStub(nil, nil).call)
+	e.writeFile(t, "a.jpg", 17)
+	e.s.watchDebounce = 20 * time.Millisecond
+	sub := drainTopic(t, e.bus, events.TopicScanProgress)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		if err := e.s.Watch(ctx, e.lib); err != nil {
+			t.Errorf("Watch: %v", err)
+		}
+	}()
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(3 * time.Second):
+			t.Error("监听清理超时")
+		}
+	})
+	eventually(t, 3*time.Second, "监听初次对账", func() bool {
+		for _, event := range collect(sub) {
+			if progress, ok := event.Payload.(scanProgressPayload); ok && progress.Phase == phaseReconciling {
+				return true
+			}
+		}
+		return false
+	})
+	g := e.s.gate(e.lib.ID)
+	eventually(t, time.Second, "模拟独立的手动扫描持锁", g.beginScan)
+	defer g.endScan()
+	e.writeFile(t, "a.jpg", 29)
+	time.Sleep(100 * time.Millisecond) // 让写事件进入处理，此时手动扫描尚未结束。
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("取消不应等待独立手动扫描释放库闸门")
 	}
 }
 

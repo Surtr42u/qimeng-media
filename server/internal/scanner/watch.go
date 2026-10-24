@@ -153,7 +153,9 @@ func (w *watcher) classify(ctx context.Context, ev fsnotify.Event) (full, releva
 	if w.s.dataDir != "" && w.s.pathInsideDataDir(ev.Name) {
 		return false, false, nil
 	}
-	if !filing.PathWithinRoot(w.lib.RootPath, ev.Name) {
+	// 事件风暴这里只做词法过滤，避免每条 Write 都逐段 Stat/Readlink。
+	// 链接检查在注册目录、单文件更新和全量扫描真正访问时执行。
+	if _, inside := relWithin(w.lib.RootPath, ev.Name); !inside && !samePath(w.lib.RootPath, ev.Name) {
 		return false, false, nil
 	}
 	if ev.Has(fsnotify.Create) {

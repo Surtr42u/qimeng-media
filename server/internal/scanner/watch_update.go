@@ -16,7 +16,11 @@ import (
 // 返回 true 表示需要对账；绝不在单事件视角删除记录或创建移动目标的新身份。
 func (w *watcher) updateKnownFile(ctx context.Context, absPath string) bool {
 	g := w.s.gate(w.lib.ID)
-	g.mu.Lock()
+	// 全量扫描可能持锁很久；转为可取消的对账等待，不能让监听关停
+	// 或根路径切换被一个独立的手动扫描阻塞在 Mutex.Lock 上。
+	if !g.mu.TryLock() {
+		return true
+	}
 	defer g.mu.Unlock()
 	if ctx.Err() != nil {
 		return false
