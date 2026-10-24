@@ -48,7 +48,7 @@ type Generator struct {
 	// 是内嵌形态的正常档）。进程生命周期内固定，缓存扩展名与 HTTP 侧同源。
 	stillFormat StillFormat
 	// pool 是本编排器自建的工作池（workers 来自 config.Thumbnail.Workers，
-	// <=0 按 CPU 核数，见 NewWorkerPool）。懒生成/首屏预热经 Submit 提交；
+	// <=0 按 CPU 核数，见 NewWorkerPool）。后台回填经 Submit 提交，前台走 EnsureDetached；
 	// 应用停机路径必须调用 Close 优雅收池。
 	pool *WorkerPool
 	// detached 是懒生成端点的「单飞+后台续生」组（detached.go，2026-09-15 批）：
@@ -56,6 +56,8 @@ type Generator struct {
 	detached *detachedGroup
 	// generating 按最终缓存路径合并前台、后台及重叠尺寸集合，等待取消不杀生成。
 	generating *detachedGroup
+	// 生产构造统一注入进程预算；生成全过程使用同一个实例，隔离测试可用独立预算。
+	slots *semaphore
 }
 
 // Options 是 Generator 的构造配置。字段语义与 config.ThumbnailConfig 对应，
@@ -95,6 +97,7 @@ func NewGenerator(dataDir string, logger *slog.Logger, opts Options) *Generator 
 		ffprobeBin: resolveBin(opts.FFprobePath, DefaultFFprobeBin),
 		detached:   newDetachedGroup(),
 		generating: newDetachedGroup(),
+		slots:      genSlots,
 	}
 	g.stillFormat = probeStillFormat(g.ffmpegBin, logger)
 	g.pool = NewWorkerPool(context.Background(), opts.Workers, 0, g.handle, logger)
@@ -111,7 +114,7 @@ func (g *Generator) handle(ctx context.Context, t Task) error {
 }
 
 // Submit 非阻塞提交一个生成任务（ErrQueueFull/ErrPoolClosed 语义见 WorkerPool）。
-// 懒生成端点与扫描入库的预热接线经此入口；任务幂等（Ensure 命中缓存即跳过）。
+// 后台回填经此入口；前台直接走 Ensure/EnsureDetached，才能标记/提升优先级。
 func (g *Generator) Submit(t Task) error { return g.pool.Submit(t) }
 
 // Close 优雅关闭内置工作池（等已入队任务执行完；重复调用安全）。
@@ -210,10 +213,10 @@ func (g *Generator) generateOne(ctx context.Context, srcPath string, kind Kind, 
 	// 但不失败）；排队期间 ctx 取消（客户端断开/超时）立即中断。排队只受上游 ctx
 	// 约束、不占 frameTimeout——后者衡量的是拿到闸位后的生成全流程。缓存命中路径
 	// 不进闸（不消耗 ffmpeg 预算）；release 经 defer 保证成功/失败/panic 都归还。
-	if !genSlots.acquirePriority(ctx, priority) {
+	if !g.slots.acquirePriority(ctx, priority) {
 		return fmt.Errorf("排队等待缩略图生成闸位时上游已取消: %w", ctx.Err())
 	}
-	defer genSlots.release()
+	defer g.slots.release()
 	// 等待资源闸期间，缓存可能由其他 Generator/外部回填写好，不能重复抽帧。
 	if exists, err := cacheExists(dst); err != nil || exists {
 		return err

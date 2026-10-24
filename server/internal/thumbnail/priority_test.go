@@ -9,6 +9,23 @@ import (
 	"time"
 )
 
+func waitForeground(t *testing.T, s *semaphore) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for {
+		s.mu.Lock()
+		waiting := s.foregroundWaiting
+		s.mu.Unlock()
+		if waiting > 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("前台未进入等候")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
 func TestBackgroundReservesForegroundCapacityAndPromotes(t *testing.T) {
 	s := newSemaphore(2)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -47,19 +64,7 @@ func TestSingleCoreWaitsForRunningWorkThenPrefersForeground(t *testing.T) {
 	go func() { bg <- s.acquirePriority(ctx, nil) }()
 	fg := make(chan bool, 1)
 	go func() { fg <- s.acquire(ctx) }()
-	deadline := time.Now().Add(time.Second)
-	for {
-		s.mu.Lock()
-		waiting := s.foregroundWaiting
-		s.mu.Unlock()
-		if waiting == 1 {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("前台未进入等候")
-		}
-		time.Sleep(time.Millisecond)
-	}
+	waitForeground(t, s)
 	s.release()
 	if ok := <-fg; !ok {
 		t.Fatal("前台未优先获准入")
@@ -83,8 +88,12 @@ func TestCancelledForegroundDoesNotBlockBackground(t *testing.T) {
 	s := newSemaphore(1)
 	s.acquire(context.Background())
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan bool, 1)
+	go func() { done <- s.acquire(ctx) }()
+	waitForeground(t, s)
 	cancel()
-	if s.acquire(ctx) {
+	if <-done {
 		t.Fatal("取消后仍准入")
 	}
 	s.release()
@@ -95,16 +104,15 @@ func TestCancelledForegroundDoesNotBlockBackground(t *testing.T) {
 }
 
 func TestForegroundPromotesSharedGeneratorWaitingInBackground(t *testing.T) {
-	old := genSlots
-	genSlots = newSemaphore(2)
-	t.Cleanup(func() { genSlots = old })
+	slots := newSemaphore(2)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	if !genSlots.acquirePriority(ctx, nil) {
+	if !slots.acquirePriority(ctx, nil) {
 		t.Fatal("无法占后台名额")
 	}
-	defer genSlots.release()
+	defer slots.release()
 	g := bareGenerator(t, int(SizeGrid))
+	g.slots = slots
 	src := filepath.Join(t.TempDir(), "source.bin")
 	writeTestFile(t, src, "source")
 	version, err := g.sourceVersion(src)

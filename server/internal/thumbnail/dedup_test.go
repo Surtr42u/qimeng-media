@@ -13,7 +13,7 @@ import (
 func bareGenerator(t *testing.T, longSide int) *Generator {
 	t.Helper()
 	return &Generator{dataDir: t.TempDir(), longSide: longSide, logger: slog.Default(),
-		detached: newDetachedGroup(), generating: newDetachedGroup()}
+		detached: newDetachedGroup(), generating: newDetachedGroup(), slots: genSlots}
 }
 
 func writeTestFile(t *testing.T, path, data string) {
@@ -41,19 +41,35 @@ func waitGenerating(t *testing.T, g *Generator, dst string) {
 	t.Fatal("生成未进入共用单飞")
 }
 
+func waitGroupIdle(t *testing.T, dg *detachedGroup) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for {
+		dg.mu.Lock()
+		idle := len(dg.terms) == 0
+		dg.mu.Unlock()
+		if idle {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("续生任务未结束")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
 func TestForegroundAndPoolShareEffectiveSizeAndRecheckCache(t *testing.T) {
-	old := genSlots
-	genSlots = newSemaphore(1)
-	t.Cleanup(func() { genSlots = old })
-	genSlots.acquire(context.Background())
+	slots := newSemaphore(1)
+	slots.acquire(context.Background())
 	// 未放行前测试失败也归还闸，避免工作池清理阻塞。
 	released := false
 	t.Cleanup(func() {
 		if !released {
-			genSlots.release()
+			slots.release()
 		}
 	})
 	g := bareGenerator(t, int(SizeSmall))
+	g.slots = slots
 	src := filepath.Join(t.TempDir(), "source.bin")
 	writeTestFile(t, src, "source")
 	version, err := g.sourceVersion(src)
@@ -81,12 +97,15 @@ func TestForegroundAndPoolShareEffectiveSizeAndRecheckCache(t *testing.T) {
 	}
 	// 在等闸期间发布缓存，同一次实际像素生成不能再起转码。
 	writeTestFile(t, dst, "cached")
-	genSlots.release()
+	slots.release()
 	released = true
 	if err := <-workerDone; err != nil {
 		t.Fatal(err)
 	}
 	g.Close()
+	// 请求已取消仍可能续生后续尺寸，结束前收齐外层调用，再等实际生成组清理。
+	waitGroupIdle(t, g.detached)
+	waitGroupIdle(t, g.generating)
 	if err := g.EnsureDetached(context.Background(), "asset", src, "invalid", []Size{SizeGrid, SizeSmall}); err != nil {
 		t.Fatal(err)
 	}
@@ -97,11 +116,10 @@ func TestForegroundAndPoolShareEffectiveSizeAndRecheckCache(t *testing.T) {
 }
 
 func TestDetachedGenerationStillRemovesChangedSourceVersion(t *testing.T) {
-	old := genSlots
-	genSlots = newSemaphore(1)
-	t.Cleanup(func() { genSlots = old })
-	genSlots.acquire(context.Background())
+	slots := newSemaphore(1)
+	slots.acquire(context.Background())
 	g := bareGenerator(t, int(SizeGrid))
+	g.slots = slots
 	src := filepath.Join(t.TempDir(), "source.bin")
 	writeTestFile(t, src, "source")
 	version, err := g.sourceVersion(src)
@@ -114,7 +132,7 @@ func TestDetachedGenerationStillRemovesChangedSourceVersion(t *testing.T) {
 	waitGenerating(t, g, dst)
 	writeTestFile(t, dst, "stale")
 	writeTestFile(t, src, "replacement-longer")
-	genSlots.release()
+	slots.release()
 	if err := <-done; err == nil {
 		t.Fatal("原件换代必须失败")
 	}
