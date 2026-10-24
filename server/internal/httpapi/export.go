@@ -88,7 +88,7 @@ func (exp *legacyExport) build() (*gen.LegacyBackupFile, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer func() { exp.s.rollbackTx(exp.ctx, "导出备份快照", tx) }()
 	exp.q = exp.s.q.WithTx(tx)
 	file, err := exp.buildSnapshot()
 	if err != nil {

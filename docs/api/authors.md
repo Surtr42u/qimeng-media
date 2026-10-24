@@ -4,6 +4,8 @@
 
 ## 作者
 
+TXT 导入/保护/移除/统一重建事务在 authorimport，手动、备份与本机同步入口共用；HTTP 只校验参数、映射领域结果和冲突载荷，协议字段不变。
+
 端点：GET /authors、**POST /authors、PUT/DELETE /authors/{id}**、**GET /authors/suggest、GET/PUT /authors/source-vocabulary、GET/PUT /authors/{id}/sources**、POST/GET/DELETE /authors/import-txt、**GET /authors/import-txt/export**、POST /authors/import-txt/rebuild、**GET/PUT /authors/mirror**、PUT /authors/{id}/follow
 
 常规/COS 双体系（type 区分）；

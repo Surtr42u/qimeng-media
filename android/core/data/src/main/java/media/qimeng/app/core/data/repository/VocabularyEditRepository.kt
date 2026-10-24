@@ -1,6 +1,6 @@
 package media.qimeng.app.core.data.repository
 
-import media.qimeng.sdk.models.CustomSourceGroups
+import media.qimeng.app.core.model.EditableVocabulary
 
 /**
  * 词表维护端口（ADR-0035，2026-10-04 用户拍板）：本机内嵌库检索词表（自定义出处组 +
@@ -14,15 +14,18 @@ import media.qimeng.sdk.models.CustomSourceGroups
  * 语义），保存后服务端规范化（trim/去空/去重/canonical 自并入变体别名）并自动后台
  * 全库重算。协议零改动——只消费既有 GET/PUT /sources/custom-groups（ADR-0033）。
  *
- * 错误分类复用 [VocabularySyncError]（同一底层通道 LocalVocabularyChannel、同一失败
- * 模式，不另立平行枚举）：本端口只产生 LocalServerUnavailable（通道/本地 GET 失败）
- * 与 LocalApplyFailed（保存 PUT 失败）两支，其余三支不会出现。
+ * 端口签名自 2026-10-24 SDK 隔离批起只出入端内域模型（[EditableVocabulary]）；SDK
+ * 生成物（CustomSourceGroups 族）的双向映射唯一收口在实现侧 VocabularyEditMappers，
+ * feature 层零 SDK 引用（铁律 7）。错误分类复用 [VocabularySyncError]（同一底层通道
+ * LocalVocabularyChannel、同一失败模式，不另立平行枚举）：本端口只产生
+ * LocalServerUnavailable（通道/本地 GET 失败）与 LocalApplyFailed（保存 PUT 失败）
+ * 两支，其余三支不会出现；取消异常（CancellationException）原样上抛、不收作失败。
  */
 interface VocabularyEditRepository {
 
-    /** 加载本机当前词表（服务端规范化后的生效形态） */
-    suspend fun load(): Result<CustomSourceGroups>
+    /** 加载本机当前词表（服务端规范化后的生效形态；可省子列表已归一为端内空表） */
+    suspend fun load(): Result<EditableVocabulary>
 
     /** 整体保存编辑结果（groups+stopWords 恒显式数组，整体替换语义） */
-    suspend fun save(payload: CustomSourceGroups): Result<Unit>
+    suspend fun save(payload: EditableVocabulary): Result<Unit>
 }

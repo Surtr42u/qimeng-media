@@ -24,10 +24,10 @@ import type { AssetFacets, FacetBucket, Partition } from '@/api/generated'
 export type { AssetFacets, FacetBucket, Partition }
 import { getEventLedger } from '@/lib/ledger-instance'
 import type { MediaCardProps } from '@/components/media/MediaCard'
-import { unwrapSdkResult } from '@/lib/api-client'
+import { unwrapOffsetPage, unwrapSdkResult } from '@/lib/api-client'
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants'
 import { deviceTzOffsetMinutes, formatCardUp, formatDuration, formatShortDate } from '@/lib/format'
-import { lengthCursorNext } from '@/lib/pagination'
+import { offsetPageItems } from '@/lib/pagination'
 import {
   ASSETS_LIST_QUERY_KEY,
   ASSETS_QUERY_KEY,
@@ -85,14 +85,15 @@ export interface AssetListParams {
  *  TanStack 惯例存于 pageParams 而非缓存键——seed/根键变化（换一批、
  *  AppShell 刷新信号、SSE 失效）时整条流重置回第一页，正是旧版 refreshSeed++
  *  全量重排语义。
- *  续页判据 hasNextPage 口径单源在 lib/pagination.ts（lengthCursorNext）。 */
+ *  续页按响应头推进，短页/空页不代表到底；旧服务端才按页长兼容。 */
 export function useRecommendations(limit = DEFAULT_PAGE_SIZE, seed = 0, cosOnly = false, offset = 0) {
   return useInfiniteQuery({
     queryKey: [...RECOMMENDATIONS_QUERY_KEY, limit, seed, cosOnly],
     queryFn: ({ pageParam }) =>
-      unwrapSdkResult(getApiV1Recommendations({ query: { limit, seed, cosOnly, offset: pageParam } })),
+      unwrapOffsetPage(getApiV1Recommendations({ query: { limit, seed, cosOnly, offset: pageParam } }), pageParam, limit),
     initialPageParam: offset,
-    getNextPageParam: lengthCursorNext(limit),
+    getNextPageParam: (last) => last.nextOffset,
+    select: offsetPageItems,
     // E1（次生根因）：换键重取期间保留旧流占位（TanStack 官方 keepPreviousData
     // 模式）——换一批/壳层刷新信号与返回首页时不得整流闪「加载中…」
     placeholderData: keepPreviousData,

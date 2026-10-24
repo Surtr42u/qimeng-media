@@ -87,7 +87,7 @@ class AuthorCollectionViewModelTest {
             return facetsResult
         }
 
-        override suspend fun recommendations(seed: Long, limit: Int, mediaType: MediaKind?): List<MediaAsset> = emptyList()
+        override suspend fun recommendations(seed: Long, limit: Int, mediaType: MediaKind?, cosOnly: Boolean): List<MediaAsset> = emptyList()
 
         override suspend fun rankings(period: RankingPeriod, limit: Int, offset: Int): List<MediaAsset> = emptyList()
 

@@ -4,8 +4,7 @@
 //
 // 边界：本包无自有 IO 状态（ScanTree/RootOverlapError 的文件系统访问是
 // 无状态只读调用，入参出参即全部），不做导入编排、不碰数据库——编排与
-// 运行态（观测/失败记录/状态端点）在 httpapi/localsync.go 与
-// localsync_runner.go。编排不上收进本包的原因：importTxt 与上传策略
-// （resolveUploadPolicy）是 httpapi 私有逻辑，编排依赖它们；同
-// trash_sweeper 先例（清扫编排放 httpapi，判定纯函数下沉 filing）。
+// 运行态（观测/失败记录）在 syncchannel，状态协议适配在 httpapi。
+// syncchannel 复用 mediawrite 入库/策略与 authorimport TXT 事务，
+// 本包维持无状态扫描/匹配边界。
 package localsync

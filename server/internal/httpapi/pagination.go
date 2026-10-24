@@ -7,7 +7,22 @@ package httpapi
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 )
+
+// 与 OpenAPI components.headers.NextOffset 双向同步；-1 表示原始顺序到底。
+const (
+	nextOffsetHeader = "X-Qimeng-Next-Offset"
+	endOffset        = -1
+)
+
+func writeNextOffset(w http.ResponseWriter, next *int) {
+	value := endOffset
+	if next != nil {
+		value = *next
+	}
+	w.Header().Set(nextOffsetHeader, strconv.Itoa(value))
+}
 
 const (
 	// defaultPageLimit 列表/推荐流端点的默认分页大小（openapi limit default）。

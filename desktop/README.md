@@ -76,19 +76,17 @@ desktop/
 
 ## 跨仓契约：Web TopBar ↔ titlebar.js
 
-主窗口无边框（decorations=false），顶栏三枚窗口控件（最小化/最大化/关闭）由
-Web UI 的 `web/src/components/shell/TopBar.tsx` 渲染，桌面壳经 `titlebar.js`
-注入后按 **`button.win-btn` 类名 + 中文 `title` 属性值**（最小化/最大化/关闭）
-分发窗口操作，拖动判定依赖 TopBar 的 `<header>` 元素。改动 TopBar 时**必须**
-保持这三个按钮的类名与 title 文案、以及 `<header>` 元素，否则桌面壳的窗口
-操作与拖动会静默失效（无边框窗口无系统边框兜底，只能靠托盘退出）。
-TopBar.tsx 内已有单向注释提示；本节为 desktop 侧的逆向记档。
+主窗口无边框（decorations=false），窗口按钮由 `web/src/components/shell/TopBar.tsx` 渲染，`titlebar.js` 以 `data-qimeng-window-action` 的 minimize/maximize/close 值分派动作，拖动区标记 `data-qimeng-titlebar`。未知新动作不回退文案，避免误触发。样式类和中文 title 不再是新壳的主分派协议。
+
+兼容期：新壳继续识别旧 Web 的 `button.win-btn` + 中文 title + header；新 Web 保留这些旧属性，兼容未更新的旧壳。两端尚未全部部署前仍不得修改旧 title/header。双向注释互指；`web/tests/desktop-titlebar.test.ts` 执行实际注入脚本，验证文案独立、新壳读旧 Web、未知动作拒绝和旧壳所需属性保留。自动化不替代原生窗口验收。
 
 ## 媒体播放
 
 桌面壳（Tauri 2 连接模式）通过 WebView2 呈现服务端 Web UI，媒体播放全端统一使用标准 **ArtPlayer（HTML5 `<video>`）**：
 - 与浏览器模式/PWA 端共享完全一致的播控逻辑、交互体验与设计语言；
 - 进度、断点续播、倍速、时间轴打点、全屏展示均由 Web 前端同一套组件驱动，无额外的原生内核桥接与多头维护负担。
+
+当前未接入视频超分、HDR 增强或插帧 SDK；WebView2 的实际增强支持须单独验证，不能以 Edge 浏览器支持推定本壳支持。视频增强属于解码/帧/GPU 管线适配；Go 可调度外部处理，不提供直接加载 GPU 增强算法的通用能力。用户已决定暂缓，当前不安排实现；状态与触发条件见 [能力地图](../docs/CAPABILITY_MAP.md)，未更换播放内核。
 
 ## 已知限制（记档，暂不处理）
 

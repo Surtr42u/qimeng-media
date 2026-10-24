@@ -60,7 +60,9 @@ limit 缺省 50、协议已声明 minimum 1/maximum 200 越界 400（2026-09-20 
 2026-09-03 起响应填充 viewCount/playCount 供卡片角标）；
 8 个加权维度 + 随机扰动上限，共 9 项偏好
 
-排行榜使用 ranking 专用装载与选页，周期榜热度取日物化统计/窗口点赞，响应 viewCount/playCount 仍为累计值；仅返回页装配元数据及累计计数，并发失去资格可不足一页。范围见 [排行策略](../domain/recommendation.md#排行执行策略与性能边界)。
+推荐和排行成功响应恒带 `X-Qimeng-Next-Offset`：非负值为下一段原始顺序偏移，-1 到底。资格复核可使中间页缩短甚至为空，客户端仍须按头继续，不能按条数提前结束。响应数组结构保留；新客户端对无该头的旧服务端才回退页长判断，新服务端须配套更新 Web，旧 Web 不具备短页续载能力。
+
+排行榜使用 ranking 专用装载与选页，周期榜热度取日物化统计/窗口点赞，响应 viewCount/playCount 仍为累计值；仅返回页装配元数据及累计计数，额外选取一个热度键判断续页，不读取额外摘要。并发失去资格可不足一页。范围见 [排行策略](../domain/recommendation.md#排行执行策略与性能边界)。
 
 推荐输入装载由 store 按候选规模选择计划，完整候选与评分不变；60s 顺序快照跨分页复用，展示计数仍只对实际返回项回写；策略、额外 COUNT 代价和测量范围见 [推荐专题](../domain/recommendation.md#16-输入装载策略与性能边界)。
 
@@ -71,7 +73,7 @@ seed>0 的同分打散按桶首最高分限制 0.05 跨度，避免相邻小分�
 端点：GET /stats/overview、GET /stats/trends、**GET /stats/most-viewed、GET /stats/top-authors、GET /stats/top-tags**
 
 总览面板（animated_image 计入 imageCount；
-计数直接数事件流，含已删资产历史——事件流无 FK 设计；
+旧字段 todayViews/totalViews 直接数 open 事件流，含已删资产历史——事件流无 FK 设计；新窗口汇总只计现存资产，与趋势日统计同源，具体口径见 [统计消费约束](../domain/statistics.md#统计数据消费约束)；
 **2026-09-09 协议批 P2 扩展**（#31）：响应增 `sourceNormalCount`/`sourceCosCount`（来源库存，normal+cos=totalFiles）与可空 `avgViewsPerFile`（窗口内 open 总数÷有 open 的不同现存文件数，range 参数定窗口缺省 all、分母 0→null）；
 **2026-09-14 响应再增分类型/分来源大小**：`per_type_size_bytes`（image/video/animated_image 各自 size_bytes 求和，image 不含动图——物理占用口径与 imageCount 计数不同）与 `per_source_size_bytes`（normal/cos，谓词同来源库存），两组各键之和 = totalSizeBytes，无资产的键=0（DOMAIN_RULES §5））；
 趋势按 asset_daily_stats 物化表（仅现存资产，随资产删除级联清理、可由事件流全量重建），**P2 增可选 `source=normal|cos` 来源桶过滤**（口径同 §6 分区判定）；
@@ -80,6 +82,8 @@ seed>0 的同分打散按桶首最高分限制 0.05 跨度，避免相邻小分�
 秒数全链路整数口径（2026-09-20 R7 闭环）：客户端可上报小数秒、服务端逐事件向零截断入库，物化/榜单/趋势聚合全整数（DOMAIN_RULES §5）
 
 作者/标签热榜先按资产汇总 open 后展开关联，避免共享作品放大事件中间行；窗口、共享归属与同分顺序仍按 [统计专题](../domain/statistics.md#热榜查询策略与性能边界)。
+
+统计总览新增互斥静图/动图数量、有浏览文件/作者/标签全量数、窗口总量及类型/来源汇总，均由服务端给出，客户端不以均值或 Top N 反推。趋势每桶携带同轴的 mediaTypes/sources 维度计数；双端通过一次未过滤趋势请求绘制多系列，不再各拉各自粒度的数据后按下标拼接。旧字段/数组形态保持兼容。
 
 ## 标签排序
 

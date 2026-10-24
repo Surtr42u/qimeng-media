@@ -82,9 +82,9 @@ func (h *spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if statErr != nil || info.IsDir() {
 			// 目录：关闭句柄，按"未命中"走回退（/assets/ 不带文件名的
 			// 请求不会发生在真实页面里，回退兜底即可）。
-			_ = f.Close()
+			h.closeOpened(f, rel)
 		} else {
-			defer func() { _ = f.Close() }()
+			defer func() { h.closeOpened(f, rel) }()
 			h.serveFile(w, r, rel, f)
 			return
 		}
@@ -133,7 +133,7 @@ func spaCacheControl(rel string) string {
 func (h *spaHandler) serveIndexFallback(w http.ResponseWriter, r *http.Request) {
 	f, err := h.root.Open("index.html")
 	if err == nil {
-		defer func() { _ = f.Close() }()
+		defer func() { h.closeOpened(f, "index.html") }()
 		w.Header().Set("Cache-Control", noCacheControl)
 		http.ServeContent(w, r, "index.html", time.Time{}, f)
 		return
@@ -142,4 +142,13 @@ func (h *spaHandler) serveIndexFallback(w http.ResponseWriter, r *http.Request) 
 		h.logger.Warn("SPA 回退页读取失败，使用内嵌验收页", "err", err)
 	}
 	serveIndex(w, r)
+}
+
+// closeOpened SPA 静态文件句柄收尾口（Q6 忽略错误清理批）：只读句柄且响应
+// 已/将由 ServeContent 写出，Close 失败不影响结果，但句柄泄漏在 Windows 下
+// 会挂住 web 目录，告警留痕。
+func (h *spaHandler) closeOpened(f fs.File, rel string) {
+	if err := f.Close(); err != nil {
+		h.logger.Warn("SPA 静态文件句柄关闭失败", "path", rel, "error", err)
+	}
 }

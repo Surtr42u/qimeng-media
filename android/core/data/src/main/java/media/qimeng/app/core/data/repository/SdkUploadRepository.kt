@@ -9,7 +9,6 @@ import java.io.File
 import androidx.work.BackoffPolicy
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.WorkRequest
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -18,6 +17,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.withContext
+import media.qimeng.app.core.data.upload.UploadQueuePresenter
 import media.qimeng.app.core.data.upload.UploadCancelRegistry
 import media.qimeng.app.core.data.upload.UploadWorker
 import media.qimeng.app.core.data.upload.UploadWorkSpec
@@ -28,7 +28,6 @@ import media.qimeng.app.core.model.UploadItem
 import media.qimeng.app.core.model.UploadLimits
 import media.qimeng.app.core.model.UploadQueueEntry
 import media.qimeng.app.core.model.UploadRules
-import media.qimeng.app.core.model.UploadStatus
 import media.qimeng.sdk.models.ApiV1DirsPostRequest
 import java.util.UUID
 import javax.inject.Inject
@@ -44,13 +43,8 @@ class SdkUploadRepository @Inject constructor(
     @ApplicationContext private val context: Context,
     private val apiFactory: BusinessApiFactory,
     private val cancelRegistry: UploadCancelRegistry,
+    private val queuePresenter: UploadQueuePresenter,
 ) : UploadRepository {
-
-    /** localId -> 展示名（本会话入队记忆；进程重启后由 worker 进度数据补齐） */
-    private val knownNames = LinkedHashMap<String, String>()
-
-    /** 入队顺序（WorkInfo 流无顺序保证，按此排序还原队列时间线） */
-    private val queueOrder = mutableListOf<String>()
 
     override suspend fun libraries(): List<LibraryChoice> {
         Log.d(SdkMediaRepository.LOG_TAG, "GET /libraries")
@@ -116,14 +110,14 @@ class SdkUploadRepository @Inject constructor(
         val targetServerUrl = apiFactory.currentBaseUrl()
         return items.map { item ->
             val localId = UUID.randomUUID().toString()
-            knownNames[localId] = item.displayName
-            queueOrder.add(localId)
+            queuePresenter.remember(localId, item.displayName)
             // U10-6c：per-item dir = 页面已选目录 + 该文件相对子目录（选文件夹上传时
             // relativeDir 非空；文件级上传为空串，join 结果即原 dir，行为不变）
             val itemDir = UploadRules.joinUploadDirPath(dir, item.relativeDir)
             val spec = UploadWorkSpec.UploadRequestSpec(
                 localId = localId,
                 targetServerUrl = targetServerUrl,
+                sourceMtime = item.sourceMtime,
                 uri = item.uri,
                 libraryId = libraryId,
                 dir = itemDir,
@@ -141,6 +135,7 @@ class SdkUploadRepository @Inject constructor(
             val request = OneTimeWorkRequestBuilder<UploadWorker>()
                 .setInputData(UploadWorkSpec.itemToInputData(spec))
                 .addTag(UploadWorkSpec.TAG_UPLOAD)
+                .addTag(UploadWorkSpec.displayNameTag(item.displayName))
                 .addTag(UploadWorkSpec.TAG_ITEM_PREFIX + localId)
                 // 断网/中断恢复走 WorkManager 官方 retry 语义（冻结口径）：任务立即执行，
                 // 网络不通时上传抛 IOException → Result.retry() 指数退避，恢复后续跑。
@@ -171,7 +166,7 @@ class SdkUploadRepository @Inject constructor(
 
     /** 单任务取消（C-2）：协作式置标记；worker 自行终止并以 success+取消标志落终态
      *  （failure 会级联杀链，342 笔返工修正）——链上其余任务不受影响。 */
-    override fun cancel(localId: String) {
+    override suspend fun cancel(localId: String) {
         Log.i(SdkMediaRepository.LOG_TAG, "cancel upload localId=$localId")
         cancelRegistry.cancel(localId)
     }
@@ -183,57 +178,11 @@ class SdkUploadRepository @Inject constructor(
             // 取消标记版本流：标记置位即刻重算（不等 WorkManager 状态轮转），UI 立即翻「已取消」
             cancelRegistry.updates,
         ) { infos, _ ->
-            infos.mapNotNull(::toEntry).sortedBy { entry ->
-                queueOrder.indexOf(entry.localId).let { if (it < 0) Int.MAX_VALUE else it }
-            }
+            cancelRegistry.load()
+            cancelRegistry.forgetCompleted(infos.filter { it.state.isFinished }
+                .mapNotNull { UploadWorkSpec.localIdFromTag(it.tags) }.toSet())
+            queuePresenter.entries(infos)
         }
-
-    private fun toEntry(info: WorkInfo): UploadQueueEntry? {
-        val localId = UploadWorkSpec.localIdFromTag(info.tags) ?: return null
-        val displayName = info.progress.getString(UploadWorkSpec.KEY_DISPLAY_NAME)
-            ?: knownNames[localId]
-            ?: "上传任务"
-        // 取消标志两侧识别（342 笔返工）：取消终态走 success 载荷（failure 会级联杀链，
-        // 见 UploadWorkSpec.outcomeToResult）——SUCCEEDED+标志=CANCELLED；FAILED+标志
-        // 保留兜底（防旧数据/其他路径）。WorkManager 的 State.CANCELLED 是引擎自身
-        // 取消态，客户端从不主动触发（见 UploadCancelRegistry），出现时按失败兜底
-        // 挂靠批：SUCCEEDED+挂靠失败标志=ATTACH_FAILED（文件已入库、挂靠未成的专项态，
-        // 同样走 success 通道——failure 会级联杀链，重试路径被挂靠批失败语义红线禁用）
-        val output = info.outputData
-        val cancelledByUser = output.getBoolean(UploadWorkSpec.KEY_CANCELLED, false)
-        val attachFailed = output.getBoolean(UploadWorkSpec.KEY_ATTACH_FAILED, false)
-        val status = when (info.state) {
-            WorkInfo.State.ENQUEUED, WorkInfo.State.BLOCKED -> UploadStatus.QUEUED
-            WorkInfo.State.RUNNING -> UploadStatus.UPLOADING
-            WorkInfo.State.SUCCEEDED ->
-                when {
-                    output.getBoolean(UploadWorkSpec.KEY_TARGET_REJECTED, false) -> UploadStatus.FAILED
-                    cancelledByUser -> UploadStatus.CANCELLED
-                    attachFailed -> UploadStatus.ATTACH_FAILED
-                    else -> UploadStatus.SUCCEEDED
-                }
-            WorkInfo.State.FAILED, WorkInfo.State.CANCELLED ->
-                if (cancelledByUser) UploadStatus.CANCELLED else UploadStatus.FAILED
-        }
-        // 取消标记已置位但 WorkManager 终态未落（排队中刚点取消）：立即展示「已取消」，
-        // 等任务轮到时 worker 短路落终态，状态不回跳（终态映射与标记一致）
-        val effectiveStatus = if (status != UploadStatus.SUCCEEDED && status != UploadStatus.FAILED &&
-            cancelRegistry.isCancelled(localId)
-        ) {
-            UploadStatus.CANCELLED
-        } else {
-            status
-        }
-        return UploadQueueEntry(
-            localId = localId,
-            displayName = displayName,
-            status = effectiveStatus,
-            progressPercent = info.progress.getInt(UploadWorkSpec.KEY_PROGRESS_PERCENT, -1)
-                .takeIf { it >= 0 },
-            finalFileName = info.outputData.getString(UploadWorkSpec.KEY_FINAL_FILE_NAME),
-            errorMessage = info.outputData.getString(UploadWorkSpec.KEY_ERROR_MESSAGE),
-        )
-    }
 
     private suspend fun describeOne(uri: Uri): UploadItem {
         var rawName: String? = null
@@ -308,7 +257,8 @@ class SdkUploadRepository @Inject constructor(
             fallbackBaseName = "upload_${System.currentTimeMillis()}",
         )
 
-        return UploadItem(uri = uri.toString(), displayName = displayName, sizeBytes = sizeBytes)
+        return UploadItem(uri = uri.toString(), displayName = displayName, sizeBytes = sizeBytes,
+            sourceMtime = media.qimeng.app.core.data.upload.UploadSourceMetadata.modifiedAt(context, uri))
     }
 }
 

@@ -1,9 +1,9 @@
 // 绮梦影库桌面壳 · 主窗口无边框注入（B 站客户端同款形态）
 //
 // 作用域：仅主窗口（open_main_window 的 initialization_script）；设置窗保持系统边框。
-// 原则：web/ 零改动 —— 顶栏与 .win-btn 三按钮是 Web UI 既有装饰件（浏览器环境无行为，
+// 顶栏与窗口三按钮是 Web UI 装饰件（浏览器环境无行为，
 // 见 web/src/components/shell/TopBar.tsx），本脚本在运行时给它们接上真实窗口行为：
-//   ① 顶栏三按钮 → 最小化/最大化/关闭（以中文 title 为稳定标识）
+//   ① 顶栏三按钮 → 最小化/最大化/关闭（以 data-qimeng-window-action 为稳定标识）
 //   ② 顶栏空白处按住拖动 = 移动窗口，严格判定双击 = 最大化/还原
 // 权限依赖（capabilities/default.json）：allow-minimize / allow-toggle-maximize /
 // allow-close / allow-start-dragging。
@@ -13,6 +13,12 @@
   // SPA 路由切换不重载页面、本脚本不会重跑；整页刷新后监听器随页面销毁、重新注入
   if (window.__QIMENG_TITLEBAR__) return;
   window.__QIMENG_TITLEBAR__ = true;
+
+  // 双向契约：web/src/components/shell/TopBar.tsx。旧服务端尚无 data 属性时
+  // 回退 class/title/header；新属性即使未知也不回退文案，避免误触发其他动作。
+  var WINDOW_BUTTON_SELECTOR = 'button[data-qimeng-window-action],button.win-btn';
+  var TITLEBAR_SELECTOR = '[data-qimeng-titlebar],header';
+  var LEGACY_ACTIONS = { '最小化': 'minimize', '最大化': 'maximize', '关闭': 'close' };
 
   // 惰性解析窗口句柄：初始化脚本可能先于 Tauri 内部 __TAURI__ 注入执行
   // （此前脚本顶部直接读 __TAURI__，取不到就整体退出 → 三按钮永远无反应）。
@@ -48,7 +54,7 @@
   document.addEventListener(
     'click',
     function (e) {
-      var btn = e.target && e.target.closest && e.target.closest('button.win-btn');
+      var btn = e.target && e.target.closest && e.target.closest(WINDOW_BUTTON_SELECTOR);
       if (!btn) return;
       e.preventDefault();
       e.stopPropagation();
@@ -56,10 +62,11 @@
       resetDoubleTap(COOLDOWN_MS);
       var aw = getAppWindow();
       if (!aw) return;
-      var t = btn.getAttribute('title');
-      if (t === '最小化') aw.minimize();
-      else if (t === '最大化') aw.toggleMaximize();
-      else if (t === '关闭') aw.close();
+      var action = btn.getAttribute('data-qimeng-window-action');
+      if (action === null) action = LEGACY_ACTIONS[btn.getAttribute('title')];
+      if (action === 'minimize') aw.minimize();
+      else if (action === 'maximize') aw.toggleMaximize();
+      else if (action === 'close') aw.close();
     },
     true
   );
@@ -83,7 +90,7 @@
       }
 
       // 1. 点击落在 header 外部（如全屏查看器、弹窗、内容卡片等）
-      var header = target.closest('header');
+      var header = target.closest(TITLEBAR_SELECTOR);
       if (!header) {
         if (target.closest('.img-viewer__close') || target.closest('[data-no-maximize]')) {
           resetDoubleTap(COOLDOWN_MS);
@@ -95,7 +102,7 @@
 
       // 2. 点击落在 header 内的交互元素（按钮、搜索框、Tab 等）
       if (target.closest(INTERACTIVE_SELECTOR)) {
-        if (target.closest('button.win-btn')) {
+        if (target.closest(WINDOW_BUTTON_SELECTOR)) {
           resetDoubleTap(COOLDOWN_MS);
         } else {
           resetDoubleTap();

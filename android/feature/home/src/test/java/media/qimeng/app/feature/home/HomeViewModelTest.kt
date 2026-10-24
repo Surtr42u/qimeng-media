@@ -33,6 +33,7 @@ import media.qimeng.app.core.model.LIST_UP_TO_DATE_MESSAGE
 import media.qimeng.app.core.model.MediaAsset
 import media.qimeng.app.core.model.MediaKind
 import media.qimeng.app.core.model.NameSuggestion
+import media.qimeng.app.core.model.RecommendPaging
 import media.qimeng.app.core.model.RankingPeriod
 import media.qimeng.app.core.network.AuthApi
 import media.qimeng.app.core.network.AuthApiFactory
@@ -82,6 +83,10 @@ class HomeViewModelTest {
 
         /** 推荐流调用记录（seed 序列，I1 刷新/指纹重拉断言用） */
         val recommendationsCalls = mutableListOf<Long>()
+        val cosRecommendationsCalls = mutableListOf<Long>()
+        var cosRecommendationsResult: List<MediaAsset> = emptyList()
+        var cosRecommendationsGated = false
+        val cosRecommendationGates = mutableListOf<CompletableDeferred<List<MediaAsset>>>()
 
         /** COS 流调用记录（I1 刷新懒重拉断言用） */
         val assetsCalls = mutableListOf<AssetQuery>()
@@ -124,7 +129,14 @@ class HomeViewModelTest {
         override suspend fun facets(query: FacetsQuery): FacetsResult =
             FacetsResult(partitions = emptyList(), authors = emptyList(), characters = emptyList(), types = emptyList())
 
-    override suspend fun recommendations(seed: Long, limit: Int, mediaType: MediaKind?): List<MediaAsset> {
+    override suspend fun recommendations(seed: Long, limit: Int, mediaType: MediaKind?, cosOnly: Boolean): List<MediaAsset> {
+        if (cosOnly) {
+            cosRecommendationsCalls += seed
+            if (!cosRecommendationsGated) return cosRecommendationsResult
+            val gate = CompletableDeferred<List<MediaAsset>>()
+            cosRecommendationGates += gate
+            return gate.await()
+        }
         recommendationsCalls += seed
         if (recommendationsFailFirstN > 0) {
             recommendationsFailFirstN--
@@ -339,7 +351,7 @@ class HomeViewModelTest {
     // 返回同页同序数据、界面零变化，用户无法区分「没反应」和「没新的」） ----------
 
     @Test
-    fun `刷新同内容轻提示 - COS刷新返回与刷新前一致的内容亮提示，超时自动消退`() =
+    fun `刷新同内容轻提示 - 筛选COS刷新返回与刷新前一致的内容亮提示，超时自动消退`() =
         runTest(mainDispatcherRule.testDispatcher) {
             val repo = FakeMediaRepository()
             repo.assetsResult = AssetPageResult(
@@ -349,6 +361,8 @@ class HomeViewModelTest {
             )
             val viewModel = viewModel(repo)
             advanceUntilIdle()
+            viewModel.updatePanelDraft(AlbumPanelDraft(sort = AssetSort.FILE_DATE))
+            viewModel.applyPanelDraft()
             viewModel.switchTab(HomeTab.COS)
             advanceUntilIdle()
             assertEquals(listOf("c1", "c2"), viewModel.uiState.value.cos.items.map { it.id })
@@ -369,12 +383,14 @@ class HomeViewModelTest {
         }
 
     @Test
-    fun `刷新同内容轻提示 - COS刷新返回新内容不亮提示`() = runTest(mainDispatcherRule.testDispatcher) {
+    fun `刷新同内容轻提示 - 筛选COS刷新返回新内容不亮提示`() = runTest(mainDispatcherRule.testDispatcher) {
         val repo = FakeMediaRepository()
         repo.assetsResult = AssetPageResult(items = listOf(asset("c1")), nextCursor = "cur", totalMatched = 1)
         val viewModel = viewModel(repo)
         advanceUntilIdle()
-        viewModel.switchTab(HomeTab.COS)
+        viewModel.updatePanelDraft(AlbumPanelDraft(sort = AssetSort.FILE_DATE))
+            viewModel.applyPanelDraft()
+            viewModel.switchTab(HomeTab.COS)
         advanceUntilIdle()
         assertEquals(listOf("c1"), viewModel.uiState.value.cos.items.map { it.id })
 
@@ -397,7 +413,7 @@ class HomeViewModelTest {
         runTest(mainDispatcherRule.testDispatcher) {
             val repo = FakeMediaRepository()
             repo.recommendationsResult = listOf(asset("r1"), asset("r2"))
-            repo.assetsResult = AssetPageResult(items = listOf(asset("c1")), nextCursor = "cur", totalMatched = 1)
+            repo.cosRecommendationsResult = listOf(asset("c1"))
             val viewModel = viewModel(repo)
             advanceUntilIdle()
             assertEquals(listOf("r1", "r2"), viewModel.uiState.value.recommend.pulled.map { it.id })
@@ -405,7 +421,7 @@ class HomeViewModelTest {
             // 三 tab 都加载过：COS、RANK 各自切入加载
             viewModel.switchTab(HomeTab.COS)
             advanceUntilIdle()
-            assertEquals(listOf("c1"), viewModel.uiState.value.cos.items.map { it.id })
+            assertEquals(listOf("c1"), viewModel.uiState.value.cosRecommendation.pulled.map { it.id })
             viewModel.switchTab(HomeTab.RANK)
             advanceUntilIdle()
             repo.rankingsCalls[0].gate.complete(listOf(asset("k1")))
@@ -423,17 +439,17 @@ class HomeViewModelTest {
                 repo.recommendationsCalls[0] + 1,
                 repo.recommendationsCalls.last(),
             ) // 刷新路径换 seed（B 站式）
-            assertFalse(viewModel.uiState.value.cos.loaded) // 另两 tab 标脏
-            assertTrue(viewModel.uiState.value.cos.items.isEmpty())
+            assertFalse(viewModel.uiState.value.cosRecommendation.loaded) // 另两 tab 标脏
+            assertTrue(viewModel.uiState.value.cosRecommendation.pulled.isEmpty())
             assertFalse(viewModel.uiState.value.rank.loaded)
             assertTrue(viewModel.uiState.value.rank.items.isEmpty())
 
             // 切入 COS：懒重拉（不复用旧缓存）
-            val assetsCallsBefore = repo.assetsCalls.size
+            val assetsCallsBefore = repo.cosRecommendationsCalls.size
             viewModel.switchTab(HomeTab.COS)
             advanceUntilIdle()
-            assertEquals(assetsCallsBefore + 1, repo.assetsCalls.size)
-            assertTrue(viewModel.uiState.value.cos.loaded)
+            assertEquals(assetsCallsBefore + 1, repo.cosRecommendationsCalls.size)
+            assertTrue(viewModel.uiState.value.cosRecommendation.loaded)
 
             // 切入 RANK：懒重拉并落地新数据
             viewModel.switchTab(HomeTab.RANK)
@@ -448,7 +464,7 @@ class HomeViewModelTest {
     fun `下拉刷新在榜单tab - 推荐与COS缓存标脏，榜单照常刷新`() = runTest(mainDispatcherRule.testDispatcher) {
         val repo = FakeMediaRepository()
         repo.recommendationsResult = listOf(asset("r1"))
-        repo.assetsResult = AssetPageResult(items = listOf(asset("c1")), nextCursor = null, totalMatched = 1)
+        repo.cosRecommendationsResult = listOf(asset("c1"))
         val viewModel = viewModel(repo)
         advanceUntilIdle()
         viewModel.switchTab(HomeTab.COS)
@@ -462,7 +478,7 @@ class HomeViewModelTest {
         advanceUntilIdle()
         assertFalse(viewModel.uiState.value.recommend.loaded) // 推荐缓存标脏
         assertTrue(viewModel.uiState.value.recommend.pulled.isEmpty())
-        assertFalse(viewModel.uiState.value.cos.loaded) // COS 缓存标脏
+        assertFalse(viewModel.uiState.value.cosRecommendation.loaded) // COS 缓存标脏
         assertEquals(2, repo.rankingsCalls.size) // 当前 tab（榜单）立即重拉
 
         repo.rankingsCalls[1].gate.complete(listOf(asset("k2")))
@@ -803,6 +819,9 @@ class HomeViewModelTest {
             // COS 首页落地（gen 快照=0；翻页/刷新不递增代际）
             viewModel.switchTab(HomeTab.COS)
             advanceUntilIdle()
+            viewModel.updatePanelDraft(AlbumPanelDraft(sort = AssetSort.FILE_DATE))
+            viewModel.applyPanelDraft()
+            advanceUntilIdle()
             assertEquals(1, repo.assetsGateCalls.size)
             repo.assetsGateCalls[0].gate.complete(
                 AssetPageResult(items = listOf(asset("c1")), nextCursor = "cur1", totalMatched = 1),
@@ -850,49 +869,135 @@ class HomeViewModelTest {
         }
 
     @Test
-    fun `重置面板走同一应用链 - 草稿回默认代际推进，在途旧筛选响应被丢弃`() =
+    fun `重置筛选恢复COS推荐 - 旧资产列表迟到不能污染新推荐`() =
         runTest(mainDispatcherRule.testDispatcher) {
-            val repo = FakeMediaRepository()
-            repo.assetsGated = true
+            val repo = FakeMediaRepository().apply {
+                assetsGated = true
+                cosRecommendationsGated = true
+            }
             val viewModel = viewModel(repo)
             advanceUntilIdle()
-
-            // 先应用筛选A（在途挂闸门）
-            viewModel.openFilterSheet()
             viewModel.updatePanelDraft(AlbumPanelDraft(sort = AssetSort.VIEW_COUNT))
             viewModel.applyPanelDraft()
             advanceUntilIdle()
-            assertEquals(AssetSort.VIEW_COUNT, viewModel.uiState.value.cosFilter.sort)
-
-            // 面板里再改成B后点「重置」：草稿回默认 + 走 applyPanelDraft 同链
-            //（代际+1 + 已应用态写默认 + 重拉 + 关面板三合一）
-            viewModel.openFilterSheet()
-            viewModel.updatePanelDraft(AlbumPanelDraft(sort = AssetSort.NAME))
+            assertEquals(1, repo.assetsGateCalls.size)
             viewModel.resetPanelDraft()
             advanceUntilIdle()
-            assertEquals(2, repo.assetsGateCalls.size)
-            // 2026-09-17 晚拍板+ebc87c0：草稿/已应用态休息档=DEFAULT（面板选中判定），
-            // 但出参经 withPanelDraft 单源翻译为 FILE_DATE（协议 default=入库时间）
-            assertEquals(AssetSort.FILE_DATE, repo.assetsGateCalls[1].query.sort)
-            assertEquals(AlbumPanelDraft(), viewModel.uiState.value.cosFilter) // 已应用态=默认草稿
-            assertEquals(AlbumPanelDraft(), viewModel.uiState.value.filterPanel.draft)
+            assertTrue(viewModel.uiState.value.usesCosRecommendation)
+            assertEquals(AlbumPanelDraft(), viewModel.uiState.value.cosFilter)
             assertFalse(viewModel.uiState.value.filterPanel.visible)
-
-            // 旧代A响应迟到：被代际校验丢弃
+            assertEquals(listOf(1L), repo.cosRecommendationsCalls)
             repo.assetsGateCalls[0].gate.complete(
-                AssetPageResult(items = listOf(asset("stale-a")), nextCursor = null, totalMatched = 1),
+                AssetPageResult(items = listOf(asset("stale")), nextCursor = null, totalMatched = 1),
             )
             advanceUntilIdle()
             assertTrue(viewModel.uiState.value.cos.items.isEmpty())
-            assertTrue(viewModel.uiState.value.cos.isLoading)
-
-            // 新代（默认筛选）落地
-            repo.assetsGateCalls[1].gate.complete(
-                AssetPageResult(items = listOf(asset("default")), nextCursor = null, totalMatched = 1),
-            )
+            assertTrue(viewModel.uiState.value.cosRecommendation.isLoading)
+            repo.cosRecommendationGates[0].complete(listOf(asset("default")))
             advanceUntilIdle()
-            assertEquals(listOf("default"), viewModel.uiState.value.cos.items.map { it.id })
-            assertFalse(viewModel.uiState.value.cos.isLoading)
+            assertEquals(listOf("default"), viewModel.uiState.value.cosRecommendation.pulled.map { it.id })
+            assertFalse(viewModel.uiState.value.cosRecommendation.isLoading)
+        }
+
+    @Test
+    fun `默认COS与常规推荐隔离 - 切回不重拉下拉换seed且同序不报已是最新`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val repo = FakeMediaRepository().apply {
+                recommendationsResult = listOf(asset("regular"))
+                cosRecommendationsResult = listOf(asset("cos"))
+            }
+            val viewModel = viewModel(repo)
+            advanceUntilIdle()
+            viewModel.switchTab(HomeTab.COS)
+            advanceUntilIdle()
+            assertTrue(repo.assetsCalls.isEmpty())
+            assertEquals(listOf("cos"), viewModel.uiState.value.cosRecommendation.pulled.map { it.id })
+            assertEquals(listOf("regular"), viewModel.uiState.value.recommend.pulled.map { it.id })
+            viewModel.switchTab(HomeTab.RECOMMEND)
+            viewModel.switchTab(HomeTab.COS)
+            advanceUntilIdle()
+            assertEquals(listOf(1L), repo.cosRecommendationsCalls)
+            viewModel.refresh()
+            runCurrent()
+            assertEquals(listOf(1L, 2L), repo.cosRecommendationsCalls)
+            assertNull(viewModel.uiState.value.infoMessage)
+            assertFalse(viewModel.uiState.value.cosRecommendation.isRefreshing)
+        }
+
+    @Test
+    fun `COS推荐刷新后旧响应丢弃 - 再切筛选也不会被旧推荐覆盖`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val repo = FakeMediaRepository().apply { cosRecommendationsGated = true }
+            val viewModel = viewModel(repo)
+            advanceUntilIdle()
+            viewModel.switchTab(HomeTab.COS)
+            runCurrent()
+            viewModel.refresh()
+            runCurrent()
+            repo.cosRecommendationGates[0].complete(listOf(asset("stale")))
+            runCurrent()
+            assertTrue(viewModel.uiState.value.cosRecommendation.pulled.isEmpty())
+            assertTrue(viewModel.uiState.value.cosRecommendation.isRefreshing)
+            viewModel.updatePanelDraft(AlbumPanelDraft(sort = AssetSort.NAME))
+            viewModel.applyPanelDraft()
+            runCurrent()
+            repo.cosRecommendationGates[1].complete(listOf(asset("also-stale")))
+            advanceUntilIdle()
+            assertFalse(viewModel.uiState.value.usesCosRecommendation)
+            assertTrue(viewModel.uiState.value.cosRecommendation.pulled.isEmpty())
+            assertEquals(AssetSort.NAME, repo.assetsCalls.last().sort)
+        }
+
+    @Test
+    fun `刷新其他分区作废在途COS - 切回重新加载不复用旧响应`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val repo = FakeMediaRepository().apply { cosRecommendationsGated = true }
+            val viewModel = viewModel(repo)
+            advanceUntilIdle()
+            viewModel.switchTab(HomeTab.COS)
+            runCurrent()
+            viewModel.switchTab(HomeTab.RECOMMEND)
+            viewModel.refresh()
+            runCurrent()
+            repo.cosRecommendationGates[0].complete(listOf(asset("stale")))
+            runCurrent()
+            assertFalse(viewModel.uiState.value.cosRecommendation.loaded)
+            assertFalse(viewModel.uiState.value.cosRecommendation.isLoading)
+            viewModel.switchTab(HomeTab.COS)
+            runCurrent()
+            assertEquals(2, repo.cosRecommendationGates.size)
+            repo.cosRecommendationGates[1].complete(listOf(asset("fresh")))
+            advanceUntilIdle()
+            assertEquals(listOf("fresh"), viewModel.uiState.value.cosRecommendation.pulled.map { it.id })
+        }
+
+    @Test
+    fun `COS推荐分批揭示并触底换轮 - 全重复有界停止且详情只含可见COS`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val repo = FakeMediaRepository().apply {
+                cosRecommendationsResult = (0 until RecommendPaging.BATCH_SIZE + 1).map { asset("cos-$it") }
+            }
+            val index = MediaBatchIndex()
+            val viewModel = HomeViewModel(repo, FakeGridPrefsRepository(), index,
+                LikeMutationTracker(DataFreshnessSignal()), stubReadinessProbe(true), NoopPrefetchThrottle,
+                object : AssetOrigUrlResolver { override suspend fun origUrl(assetId: String): String? = null })
+            advanceUntilIdle()
+            viewModel.clockMs = { 1000L }
+            viewModel.switchTab(HomeTab.COS)
+            advanceUntilIdle()
+            assertEquals(RecommendPaging.BATCH_SIZE, viewModel.uiState.value.cosRecommendation.revealed)
+            viewModel.enterDetail("cos-0")
+            assertEquals(RecommendPaging.BATCH_SIZE, index.size())
+            viewModel.clockMs = { 1000L + HomeViewModel.SENTINEL_SUPPRESS_AFTER_TAB_SWITCH_MS }
+            viewModel.onNearBottom()
+            advanceUntilIdle()
+            assertEquals(repo.cosRecommendationsResult.size, viewModel.uiState.value.cosRecommendation.revealed)
+            viewModel.onNearBottom()
+            advanceUntilIdle()
+            assertTrue(viewModel.uiState.value.cosRecommendation.exhausted)
+            assertEquals(1 + HomeViewModel.MAX_EMPTY_SEED_ROUNDS, repo.cosRecommendationsCalls.size)
+            assertEquals(repo.cosRecommendationsResult.size, viewModel.uiState.value.cosRecommendation.pulled.size)
+            assertTrue(repo.assetsCalls.isEmpty())
         }
 
     // ---------- 首屏失败静默自动重试（2026-09-17 用户反馈「每次进入首页都闪加载失败」） ----------

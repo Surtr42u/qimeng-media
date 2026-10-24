@@ -12,26 +12,8 @@ import media.qimeng.app.core.model.TopAuthorEntry
 import media.qimeng.app.core.model.TopTagEntry
 import media.qimeng.app.core.model.TrendPoint
 
-/**
- * 统计页数据端口（M4-6；任务I I3 增补 mediaType 维度趋势取数口；N4 消费批 I3b 增补
- * 常看族三端点 + overview range 维度——N3 协议批 #31 解冻的 GET /stats/most-viewed、
- * /stats/top-authors、/stats/top-tags 与 /stats/overview 的 range 参数）。
- * range 参数只经 [media.qimeng.app.core.model.StatsRangeOption.apiRange] 产出，
- * 实现层不拼字符串（C1 映射单点收口）。
- *
- * 【边界注（I3 执行披露）】mediaType 形参为本批为清偿「分类型趋势按 mediaType 单值参数取数」
- * 裁定（口径现记 docs/DOMAIN_RULES.md §5；历史裁定出处见 CHANGELOG）
- * （详情页分类型趋势「mediaType 单值三次调用拼系列——按协议 /stats/trends mediaType 参数」）
- * 增补的加参改动：core:data 原不在 I3 授权共享文件清单，已向主会话报备未获回复，
- * 按裁定 6 的明示要求以「默认方法重载」最小面落地——单参方法保留为抽象（既有实现/调用零感知），
- * 双参默认实现委托单参，仅 SdkStatsRepository 覆写实传。如裁决另议，回退仅动本文件两处。
- *
- * 【边界注（N4 I3b）】本批新增四方法沿用同款「默认方法重载」先例：既有抽象方法不动
- * （既有实现/调用零感知），新增重载给默认实现（overview(range) 委托无参版、其余返回空表），
- * 仅 SdkStatsRepository 覆写实传——feature:stats 消费端经此四口取数。
- *
- * 【边界注（2026-09-18 内容榜批）】新增 [StatsRepository.rankings] 沿用同款先例：
- * 默认空表（既有实现零感知），仅 SdkStatsRepository 覆写实传。
+/** 统计数据端口：窗口总量/精确计数读 overview(range)，多系列同轴数据读 trends(range)。
+ * 单类型/来源的旧重载仅保留协议兼容；统计页面不再逐维请求或反推数量。
  */
 interface StatsRepository {
 

@@ -5,10 +5,11 @@
  */
 
 import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query'
-import { getApiV1Rankings, getApiV1StatsOverview, getApiV1StatsTrends } from '@/api/generated'
-import { unwrapSdkResult } from '@/lib/api-client'
+import { getApiV1Rankings, getApiV1StatsOverview, getApiV1StatsTrends, getApiV1StatsTopAuthors, getApiV1StatsTopTags } from '@/api/generated'
+import { unwrapOffsetPage, unwrapSdkResult } from '@/lib/api-client'
 import { MAX_PAGE_SIZE } from '@/lib/constants'
-import { lengthCursorNext } from '@/lib/pagination'
+import { requireStatsOverview, requireStatsTrends } from '@/lib/stats-contract'
+import { offsetPageItems } from '@/lib/pagination'
 import { RANKINGS_QUERY_KEY, STATS_QUERY_KEY } from '@/lib/query-keys'
 import type { MediaType } from './use-assets'
 
@@ -19,10 +20,10 @@ export type TrendsRange = '7d' | 'day' | 'week' | 'month' | 'quarter' | 'year' |
 export type RankingPeriod = 'day' | 'week' | 'month' | 'quarter' | 'year' | 'all'
 
 /** 总览（文件数/类型分布/容量/今日与累计浏览；animated_image 计入 imageCount） */
-export function useStatsOverview() {
+export function useStatsOverview(range: TrendsRange = 'all') {
   return useQuery({
-    queryKey: [...STATS_QUERY_KEY, 'overview'],
-    queryFn: () => unwrapSdkResult(getApiV1StatsOverview()),
+    queryKey: [...STATS_QUERY_KEY, 'overview', range],
+    queryFn: async () => requireStatsOverview(await unwrapSdkResult(getApiV1StatsOverview({ query: { range } }))),
   })
 }
 
@@ -33,7 +34,7 @@ export function useStatsOverview() {
 export function useTrends(range: TrendsRange, mediaType?: MediaType) {
   return useQuery({
     queryKey: [...STATS_QUERY_KEY, 'trends', range, mediaType ?? 'all'],
-    queryFn: () => unwrapSdkResult(getApiV1StatsTrends({ query: { range, mediaType } })),
+    queryFn: async () => requireStatsTrends(await unwrapSdkResult(getApiV1StatsTrends({ query: { range, mediaType } }))),
   })
 }
 
@@ -59,7 +60,7 @@ export function useRankings(period: RankingPeriod | undefined, limit?: number, o
  * - reloadKey 进 queryKey：AppShell 刷新信号收到后 +1 → 整条流重置回第一页重拉
  *   （「重置分页重拉」语义；排行榜是确定性排序，不需要 seed 打散）。
  * - period 变化即 queryKey 换档，分页天然重置，无需额外 state。
- * - hasNextPage 判据同推荐流，口径单源在 lib/pagination.ts（lengthCursorNext）。
+ * - hasNextPage 同推荐流按权威响应头判断；资格变化造成短页仍可继续。
  * - E2（首页加载/刷新过渡）：换键重取期间保留旧榜单占位（TanStack 官方
  *   keepPreviousData 模式，与 use-assets.ts 推荐流同款）——刷新信号换
  *   reloadKey 与 period 换档期间旧榜保留，消费方 isLoading 只在真首屏为 true，
@@ -73,9 +74,22 @@ export function useRankingsInfinite(
   return useInfiniteQuery({
     queryKey: [...RANKINGS_QUERY_KEY, 'paged', period ?? 'all', limit, reloadKey],
     queryFn: ({ pageParam }) =>
-      unwrapSdkResult(getApiV1Rankings({ query: { period, limit, offset: pageParam || undefined } })),
+      unwrapOffsetPage(getApiV1Rankings({ query: { period, limit, offset: pageParam || undefined } }), pageParam, limit),
     initialPageParam: 0,
-    getNextPageParam: lengthCursorNext(limit),
+    getNextPageParam: (last) => last.nextOffset,
+    select: offsetPageItems,
     placeholderData: keepPreviousData,
+  })
+}
+
+/** 作者/标签统计榜复用服务端窗口排序，不再在页面从管理数据另算一套。 */
+export function useStatsTopAuthors(range: TrendsRange, limit: number) {
+  return useQuery({ queryKey: [...STATS_QUERY_KEY, 'top-authors', range, limit],
+    queryFn: () => unwrapSdkResult(getApiV1StatsTopAuthors({ query: { range, limit } })),
+  })
+}
+export function useStatsTopTags(range: TrendsRange, limit: number) {
+  return useQuery({ queryKey: [...STATS_QUERY_KEY, 'top-tags', range, limit],
+    queryFn: () => unwrapSdkResult(getApiV1StatsTopTags({ query: { range, limit } })),
   })
 }

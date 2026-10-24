@@ -6,7 +6,7 @@
 ## 全局约定
 
 - 前缀 `/api/v1`；免 Bearer 面共 7 处 `security: []`：探针 2（`/healthz`、`/readyz`）+ 认证 3（`/auth/setup`、`/auth/login`、`/auth/dev-login`——未设密前 setup 可达，登录后自然受保护）+ 签名直链 2（`/media/**` 走 HMAC 签名 URL，见下）；其余端点全部要求 `Authorization: Bearer <token>`（继承全局 bearerAuth；根路径 `/healthz`、`/readyz` 是运维探针别名，行为一致，不入协议面）
-- 分页统一 cursor 式：响应带 `nextCursor`，为 null 表示到底
+- 资产/历史等游标列表响应带 `nextCursor`，为 null 表示到底；推荐/排行使用 offset，续页按 `X-Qimeng-Next-Offset`（-1 到底）判断，不能用资格复核后的页长代替，详见 engagement 专题。
 - 错误统一 `Error{code, message}`；`code` 机器可读（如 PATH_ESCAPE / TOO_LARGE / INVALID_TYPE）
 - 媒体直链（/media/**）不走 header 鉴权，用短期 HMAC 签名 URL（默认 6h），参数 `exp`（过期时间戳）+ `sig`；**exp 按窗口对齐**（ADR-0027，2026-10-01 起）：exp = 下一窗口上界 + TTL（窗长=token_ttl 缺省 6h），同一窗口内所有响应签出**逐字节相同**的 URL（浏览器 HTTP 缓存/ETag 可命中），有效期恒 ∈ (6h, 12h]——URL 格式与参数未变，客户端零适配
 - **页面投放**：服务端存在 Web 构建产物（`web.static_dir`，默认 `../web/dist`）时 `/` 与 `/index.html` 托管 SPA（静态资源直发 + 前端路由回退）；产物缺失时回退内嵌验收页。内嵌验收页另挂 `/_debug/`（永远可访问，调试用）。页面均为免鉴权静态资源，页面内数据请求照常走 Bearer

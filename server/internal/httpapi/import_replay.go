@@ -62,7 +62,7 @@ func (imp *legacyImport) replayEvents(req *gen.LegacyBackupImport) {
 		imp.fail("开启回放事务", err)
 		return
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer func() { imp.s.rollbackTx(imp.ctx, "回放导入", tx) }()
 	qx := imp.s.q.WithTx(tx)
 
 	n += imp.replayDailyBrowse(qx, req)

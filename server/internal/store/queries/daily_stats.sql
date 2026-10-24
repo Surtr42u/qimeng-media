@@ -83,6 +83,8 @@ SELECT asset_id FROM assets;
 -- name: SummarizeAssets :one
 SELECT
     COUNT(*) AS total_files,
+    CAST(COALESCE(SUM(CASE WHEN assets.media_type = 'image' THEN 1 ELSE 0 END), 0) AS INTEGER) AS still_image_count,
+    CAST(COALESCE(SUM(CASE WHEN assets.media_type = 'animated_image' THEN 1 ELSE 0 END), 0) AS INTEGER) AS animated_image_count,
     CAST(COALESCE(SUM(CASE WHEN assets.media_type IN ('image', 'animated_image') THEN 1 ELSE 0 END), 0) AS INTEGER) AS image_count,
     CAST(COALESCE(SUM(CASE WHEN assets.media_type = 'video' THEN 1 ELSE 0 END), 0) AS INTEGER) AS video_count,
     CAST(COALESCE(SUM(assets.size_bytes), 0) AS INTEGER) AS total_size_bytes,
@@ -131,3 +133,26 @@ WHERE NOT EXISTS (
     SELECT 1 FROM asset_authors aa
     JOIN authors au ON au.id = aa.author_id
     WHERE aa.asset_id = a.asset_id AND au.type = 'cos');
+
+-- One read produces every trend dimension. Group before transporting rows;
+-- output grows with calendar days and dimensions, not assets or events.
+-- name: ListDailyStatsDimensions :many
+WITH dimensions AS (
+    SELECT d.day, a.media_type,
+           CASE WHEN EXISTS (
+               SELECT 1 FROM asset_authors aa JOIN authors au ON au.id = aa.author_id
+               WHERE aa.asset_id = a.asset_id AND au.type = 'cos'
+           ) THEN 'cos' ELSE 'normal' END AS source_bucket,
+           d.view_count, d.play_count, d.browse_seconds
+    FROM asset_daily_stats d JOIN assets a ON a.asset_id = d.asset_id
+    WHERE d.day >= sqlc.arg(from_day) AND d.day <= sqlc.arg(to_day)
+      AND (CAST(sqlc.arg(media_type) AS TEXT) = '' OR a.media_type = sqlc.arg(media_type))
+)
+SELECT day, media_type, CAST(source_bucket AS TEXT) AS source_bucket,
+       CAST(SUM(view_count) AS INTEGER) AS view_count,
+       CAST(SUM(play_count) AS INTEGER) AS play_count,
+       CAST(SUM(browse_seconds) AS INTEGER) AS browse_seconds
+FROM dimensions
+WHERE (CAST(sqlc.arg(source_bucket) AS TEXT) = '' OR source_bucket = sqlc.arg(source_bucket))
+GROUP BY day, media_type, source_bucket
+ORDER BY day, media_type, source_bucket;

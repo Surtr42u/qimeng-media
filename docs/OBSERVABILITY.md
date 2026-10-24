@@ -45,10 +45,10 @@
 | media_bytes_total{kind} | httpapi/media.go 两处直链（orig/thumb）`http.ServeContent` 外套字节计数 | 每次直链输出后按实发字节 |
 | sse_connections | events/sse.go `WithConnectionGauge` 回调（server.go 装配期注入） | 连接建立/断开时 Set 绝对值 |
 | scan_duration_seconds | scanner/scanner.go `Scan` 成功返回前 | 每次全量扫描成功 |
-| upload_total / upload_bytes_total | httpapi/upload.go（M2 已接） | 上传成功/失败时 |
-| library_files{type} | httpapi/libraries.go `refreshLibraryFileMetrics` | 变更点推送刷新（见下） |
+| upload_total / upload_bytes_total | mediawrite 上传/入库（HTTP 只适配，2026-10-21 下沉） | 保留既有计量时机；未把全部失败分类重新定义 |
+| library_files{type} | mediawrite `RefreshLibraryFileMetrics`，HTTP/扫描适配共用 | 变更点推送刷新（见下） |
 | thumb_queue_depth | thumbnail/pool.go Submit 入队/work 取任务 | 队列每变化一次 |
-| trash_items / trash_bytes | httpapi/trash.go `refreshTrashMetrics` | 变更点推送刷新（见下） |
+| trash_items / trash_bytes | mediawrite `RefreshTrashMetrics` | 变更点推送刷新（见下） |
 | backup_last_success_timestamp | backup 包 `OnSuccess` 回调（main 装配期接 `sysmon.Default.SetBackupLastSuccess`，backup 包自身不感知 sysmon） | 每次快照成功后 |
 
 **口径注记（改动埋点或解读指标前必读）**：
@@ -75,7 +75,9 @@
 
 ## 健康检查
 
-`GET /api/v1/healthz`（免鉴权，`api/openapi.yaml` 标 `security: []`）：进程存活；`GET /api/v1/readyz`（免鉴权，同样 `security: []`）：**当前实现只检查数据库可达**（PingContext，httpapi/server.go GetApiV1Readyz；媒体库目录可达/磁盘余量告警为规划扩展，接入时需同步更新本节与协议描述）。服务端同时保留根路径 `/healthz`、`/readyz` 作为运维探针别名（docker/k8s 惯例，行为一致，不属于 API 协议面）——根路径别名可用；deploy 样例实际用 /api/v1/healthz。
+`GET /api/v1/healthz`（免鉴权，`api/openapi.yaml` 标 `security: []`）：进程存活；`GET /api/v1/readyz`（免鉴权，同样 `security: []`）：检查数据库、数据目录及全部启用媒体根的可读性与最小剩余空间；任一异常返回 503（存储错误为 STORAGE_UNAVAILABLE，响应不含路径）。存储探测只读、不写探针文件，不证明卷可写或可抵御外部占盘；底层文件系统阻塞不保证能被请求超时立即中止。服务端同时保留根路径 `/healthz`、`/readyz` 作为运维探针别名（docker/k8s 惯例，行为一致，不属于 API 协议面）——根路径别名可用；deploy 样例实际用 /api/v1/healthz。
+
+历史资产/事件/统计一致性可由 AI 在用户授权后运行[只读对账工具](../tools/README.md#历史数据只读对账)：数据库同一只读快照核对关联和事件→日统计，文件仅 stat，可选便携 v2 备份逐条比对。结果须保留检查范围与目标增量，不能从 readyz 200 或一次对账外推全部同步异常场景、全部媒体字节或手机待传队列通过；在线文件变化与时区差异须先排除。报告与备份只放忽略目录，不展示私人媒体。
 
 ## 后置可选：Grafana 增强包（不进默认部署）
 

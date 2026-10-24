@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -438,13 +439,16 @@ class AlbumViewModel @Inject constructor(
         }
         authorSuggestJob = viewModelScope.launch {
             delay(AUTHOR_SUGGEST_DEBOUNCE_MS)
-            runCatching { uploadRepository.suggestAuthors(query) }
-                .onSuccess { suggestions ->
-                    _batchAuthorState.update { it.copy(suggestions = suggestions) }
-                }
-                .onFailure {
-                    _batchAuthorState.update { it.copy(suggestions = emptyList()) }
-                }
+            try {
+                val suggestions = uploadRepository.suggestAuthors(query)
+                _batchAuthorState.update { it.copy(suggestions = suggestions) }
+            } catch (cancel: CancellationException) {
+                // 输入变化时旧防抖任务被 cancel：取消不是业务失败，必须重新抛出——
+                // 否则旧任务的取消会在新任务联想已回填后把 suggestions 误清空
+                throw cancel
+            } catch (error: Exception) {
+                _batchAuthorState.update { it.copy(suggestions = emptyList()) }
+            }
         }
     }
 

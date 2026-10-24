@@ -105,6 +105,9 @@ func TestStatsOverviewCounts(t *testing.T) {
 	postViewEvent(t, env, c.id, gen.Open, "ov-s3", env.clock.Now().Add(-24*time.Hour))
 
 	o := getOverview(t, env)
+	if o.StillImageCount == nil || *o.StillImageCount != 2 || o.AnimatedImageCount == nil || *o.AnimatedImageCount != 1 {
+		t.Fatalf("exclusive image counts lost animation: %+v", o)
+	}
 	if o.TotalFiles == nil || *o.TotalFiles != 4 {
 		t.Fatalf("totalFiles 期望 4，得到 %v", o.TotalFiles)
 	}

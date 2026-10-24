@@ -1,22 +1,22 @@
 // author_edit.go：资产编辑端点（ADR-0024）——通用来源词表（GET/PUT
 // /authors/source-vocabulary）、单作者片段来源区（GET/PUT
 // /authors/{authorId}/sources）、资产作者关联整体替换（PUT
-// /assets/{assetId}/authors）。片段手术与编排收敛在 authorattach/authoring
-// 包（ADR-0019：编排不堆 httpapi），本文件只做 HTTP 接线、参数校验与
-// 事务边界。核心语义：TXT 片段本体是唯一真相，编辑写进片段原地更新。
+// /assets/{assetId}/authors）。多步事务与片段/关联编排收敛在 authoredit
+// 用例包（Q1 事务下沉；ADR-0019：HTTP 不持有多步事务），本文件只做 HTTP
+// 接线、纯协议校验与哨兵错误映射。核心语义：TXT 片段本体是唯一真相，
+// 编辑写进片段原地更新。
 package httpapi
 
 import (
-	"database/sql"
 	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 
 	"qimeng-media/server/internal/authorattach"
+	"qimeng-media/server/internal/authoredit"
 	"qimeng-media/server/internal/authoring"
 	"qimeng-media/server/internal/httpapi/gen"
-	"qimeng-media/server/internal/scanner"
 )
 
 // maxSourceVocabularyItems 是来源词表项数上限。与 api/openapi.yaml
@@ -82,14 +82,19 @@ func validateNewAuthorNames(w http.ResponseWriter, names []string) bool {
 	return true
 }
 
-// writeAuthorEditErr 作者编辑端点的哨兵错误映射：不存在 404、COS 作者 400、
-// 其余内部错误。
+// writeAuthorEditErr 作者编辑端点的哨兵错误映射：作者不存在 404、COS 作者
+// 400、资产不存在 404、不支持挂靠的库类型 400（后两者由 authoredit 用例在
+// 事务内判出）、其余内部错误。
 func (s *Server) writeAuthorEditErr(w http.ResponseWriter, what string, err error) {
 	switch {
 	case errors.Is(err, authorattach.ErrAuthorNotFound):
 		writeErr(w, http.StatusNotFound, codeNotFound, msgAuthorNotFound)
 	case errors.Is(err, authorattach.ErrAuthorNotRegular):
 		writeErr(w, http.StatusBadRequest, codeInvalidParam, "COS 作者不支持来源编辑")
+	case errors.Is(err, authoredit.ErrAssetNotFound):
+		writeErr(w, http.StatusNotFound, codeNotFound, "资产不存在")
+	case errors.Is(err, authoredit.ErrUnsupportedLibraryKind):
+		writeErr(w, http.StatusBadRequest, codeInvalidParam, "该库类型不支持作者挂靠")
 	default:
 		s.internalErr(w, what, err)
 	}
@@ -99,21 +104,11 @@ func (s *Server) writeAuthorEditErr(w http.ResponseWriter, what string, err erro
 // = 空数组）。kv 键不存在（出厂态：从未预填且用户从未 PUT——PUT 恒写键，
 // 清空也写空数组）时执行一次性自动预填：从全部已导入片段统计被多位作者
 // 共用的通用平台名（authorattach.PrefillSourceVocabulary 口径），有结果才
-// 写键并返回预填结果；键存在即用户已表态，永不再预填。事务包住「查键→
-// 统计→写键」，并发读取不会交叉覆盖窗口期内的用户 PUT。
+// 写键并返回预填结果；键存在即用户已表态，永不再预填。「查键→统计→写键」
+// 的单事务与并发安全由 authoredit 用例持有。
 func (s *Server) GetApiV1AuthorsSourceVocabulary(w http.ResponseWriter, r *http.Request) {
-	tx, err := s.conn.BeginTx(r.Context(), nil)
+	list, err := s.authorEdit.EnsureSourceVocabulary(r.Context())
 	if err != nil {
-		s.internalErr(w, "读取来源词表", err)
-		return
-	}
-	defer func() { _ = tx.Rollback() }()
-	list, err := authorattach.EnsureSourceVocabulary(r.Context(), s.q.WithTx(tx), s.now())
-	if err != nil {
-		s.internalErr(w, "读取来源词表", err)
-		return
-	}
-	if err := tx.Commit(); err != nil {
 		s.internalErr(w, "读取来源词表", err)
 		return
 	}
@@ -160,8 +155,9 @@ func (s *Server) GetApiV1AuthorsAuthorIdSources(w http.ResponseWriter, r *http.R
 // 编辑页保存语义）块命中→原地整体替换、无块→最近导入片段新建作者块、
 // 库中无片段→自动创建「上传自动挂靠.txt」；mode=append（上传流程自动挂靠）
 // 并入去重、永不覆盖既有来源（ADR-0023 原上传来源口径）。校验同通用来源
-// 词表；片段内容变化后同步修剪上传条目元数据（防重导入 409 误报）。
-// 200 回显写入后来源区（replace=提交值；append=并入结果）。
+// 词表。「解析作者 → 写片段 → 修剪上传条目」的单事务与提交后镜像刷新由
+// authoredit 用例持有（失败不刷新）。200 回显写入后来源区（replace=提交值；
+// append=并入结果）。
 func (s *Server) PutApiV1AuthorsAuthorIdSources(w http.ResponseWriter, r *http.Request, authorId string) {
 	var body gen.PutApiV1AuthorsAuthorIdSourcesJSONRequestBody
 	if !decodeJSON(w, r, &body) {
@@ -175,30 +171,11 @@ func (s *Server) PutApiV1AuthorsAuthorIdSources(w http.ResponseWriter, r *http.R
 	if !ok {
 		return
 	}
-	tx, err := s.conn.BeginTx(r.Context(), nil)
-	if err != nil {
-		s.internalErr(w, "替换作者来源区", err)
-		return
-	}
-	defer func() { _ = tx.Rollback() }()
-	qtx := s.q.WithTx(tx)
-	displayName, err := s.attach.ResolveRegularAuthor(r.Context(), qtx, authorId)
+	saved, err := s.authorEdit.ReplaceAuthorSources(r.Context(), authorId, sources, mode)
 	if err != nil {
 		s.writeAuthorEditErr(w, "替换作者来源区", err)
 		return
 	}
-	saved, err := s.attach.ReplaceAuthorSources(r.Context(), qtx, s.now(), authorId, displayName, sources, mode)
-	if err != nil {
-		s.internalErr(w, "替换作者来源区", err)
-		return
-	}
-	if err := tx.Commit(); err != nil {
-		s.internalErr(w, "替换作者来源区", err)
-		return
-	}
-	// 片段内容已变：同步刷新本地镜像（尽力而为，REQ §3.4——失败不影响
-	// 编辑结果，事务已提交）。
-	s.mirror.Refresh(r.Context(), s.q)
 	writeJSON(w, http.StatusOK, gen.SourceVocabulary{Sources: saved})
 }
 
@@ -224,9 +201,11 @@ func parseSourcesWriteMode(w http.ResponseWriter, raw *gen.AuthorSourcesWriteReq
 // 空 authorIds + 无新名 = 解除全部常规作者关联）。newAuthorNames 是编辑页
 // 「新建：xxx」通道：规范身份命中已有常规作者复用、未命中才新建（解析口径
 // 见 authorattach.ResolveOrCreateAuthors）；nil/空时行为与旧协议完全一致
-// （老客户端零感知）。片段真相原地更新（新增=作品行并入作者块、移除=遍历
-// 全部片段删作品行）与关联表 swap 同事务（ADR-0024）。响应复用详情端点的
-// 完整装配路径（authors=替换后全集）。
+// （老客户端零感知）。资产行、所在库类型与当前文件名都在用例事务内读取；
+// 片段真相原地更新（新增=作品行并入作者块、移除=遍历全部片段删作品行）
+// 与关联表 swap 同事务，提交成功后镜像刷新——以上编排由 authoredit 用例
+// 持有（ADR-0024、Q1 事务下沉）。响应复用详情端点的完整装配路径
+// （authors=替换后全集）。
 func (s *Server) PutApiV1AssetsAssetIdAuthors(w http.ResponseWriter, r *http.Request, assetId gen.AssetId) {
 	var body gen.PutApiV1AssetsAssetIdAuthorsJSONRequestBody
 	if !decodeJSON(w, r, &body) {
@@ -237,66 +216,18 @@ func (s *Server) PutApiV1AssetsAssetIdAuthors(w http.ResponseWriter, r *http.Req
 	if body.NewAuthorNames != nil {
 		newNames = *body.NewAuthorNames
 	}
-	// 名字校验是纯函数（不触库），先于事务与资产查询执行：非法输入不产生
-	// 任何副作用（也避免为必败请求开事务）。
+	// 名字校验是纯函数（不触库），先于用例执行：非法输入不产生任何副作用
+	// （也避免为必败请求开事务）。
 	if !validateNewAuthorNames(w, newNames) {
 		return
 	}
-	ctx := r.Context()
-	row, err := s.q.GetAssetWithLibrary(ctx, assetId.String())
-	if errors.Is(err, sql.ErrNoRows) {
-		writeErr(w, http.StatusNotFound, codeNotFound, "资产不存在")
-		return
-	}
-	if err != nil {
-		s.internalErr(w, "查询资产", err)
-		return
-	}
-	lib, err := s.q.GetLibrary(ctx, row.LibraryID)
-	if err != nil {
-		s.internalErr(w, "查询资产所在库", err)
-		return
-	}
-	if !scanner.SupportsAuthorAttach(lib.Kind) {
-		writeErr(w, http.StatusBadRequest, codeInvalidParam, "该库类型不支持作者挂靠")
-		return
-	}
-	tx, err := s.conn.BeginTx(ctx, nil)
-	if err != nil {
-		s.internalErr(w, "替换资产作者关联", err)
-		return
-	}
-	defer func() { _ = tx.Rollback() }()
-	qtx := s.q.WithTx(tx)
-	names, err := s.attach.ResolveRegularAuthors(ctx, qtx, ids)
-	if err != nil {
+	if err := s.authorEdit.ReplaceAssetAuthors(r.Context(), assetId.String(), ids, newNames); err != nil {
 		s.writeAuthorEditErr(w, "替换资产作者关联", err)
 		return
 	}
-	refs := make([]authorattach.AuthorRef, 0, len(ids)+len(newNames))
-	for _, id := range ids {
-		refs = append(refs, authorattach.AuthorRef{ID: id, DisplayName: names[id]})
-	}
-	if len(newNames) > 0 {
-		created, err := s.attach.ResolveOrCreateAuthors(ctx, qtx, newNames, s.now())
-		if err != nil {
-			s.writeAuthorEditErr(w, "替换资产作者关联", err)
-			return
-		}
-		refs = authorattach.MergeAuthorRefs(refs, created)
-	}
-	if err := s.attach.ReplaceAssetAuthors(ctx, qtx, s.now(), row.AssetID, row.FileName, refs); err != nil {
-		s.internalErr(w, "替换资产作者关联", err)
-		return
-	}
-	if err := tx.Commit(); err != nil {
-		s.internalErr(w, "替换资产作者关联", err)
-		return
-	}
-	// 作者-文件关联变了（推荐输入变化）与片段内容变了（镜像尽力而为刷新）
-	// 各自独立：缓存失效是确定性动作，镜像失败只告警。
+	// 作者-文件关联变了（推荐输入变化）：缓存失效是确定性动作；镜像已由
+	// 用例在提交成功后刷新，这里不重复刷（失败只告警、不影响结果）。
 	s.invalidateRecommendCache()
-	s.mirror.Refresh(ctx, s.q)
 	// 200 回资产详情（authors=替换后全集）：直接复用详情端点装配路径，
 	// 保证与 GET /assets/{assetId} 的字段口径永不漂移。
 	s.GetApiV1AssetsAssetId(w, r, assetId)

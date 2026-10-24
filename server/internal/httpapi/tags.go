@@ -143,7 +143,7 @@ func (s *Server) PutApiV1AssetsAssetIdTags(w http.ResponseWriter, r *http.Reques
 		s.internalErr(w, "开启事务", err)
 		return
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer func() { s.rollbackTx(r.Context(), "替换资产标签", tx) }()
 	qtx := s.q.WithTx(tx)
 	if err := qtx.DeleteAssetTags(r.Context(), assetID.String()); err != nil {
 		s.internalErr(w, "清空资产标签", err)

@@ -41,6 +41,7 @@ GET 新→旧（维护页排查表数据源，Web 上报器 lib/client-logs.ts�
 
 探针协议面为 `/api/v1/healthz`、`/api/v1/readyz`（免鉴权，openapi.yaml `security: []`；
 根路径 `/healthz` `/readyz` 是运维探针别名——docker/k8s 惯例，行为一致，不入协议面）；
+readyz 检查数据库、数据目录与启用媒体根可读性/余量，失败 503；healthz 仅存活检查，不能用 readyz 失败直接推断进程崩溃。配置与边界见 [监控](../OBSERVABILITY.md#健康检查)。
 /metrics 与 /system/status 要求管理 token；
 负载/流量面板；
 status 含 `devMode`（auth_dev_mode 透出，2026-09-30 批A——Web 维护页「开发模式未关」提醒条数据源）；
@@ -55,3 +56,5 @@ Android 预取同时比较 revision、thumbnailVersion 与服务器身份；策�
 ## 库修订号与预取策略指纹
 
 thumbnailVersion 表示策略/格式/配置指纹，预取判断见上文系统端点；原件变更经 library.changed 推进 revision。
+
+系统 status 的既有 version 字符串与 SSE hello 共用 `发布版本+提交短号[.dirty]`，缺 VCS 数据显式显示 unknown；只供识别运行包，不作为跨版本兼容判定。离线二进制身份检查见 [服务端入口](../../server/README.md#构建身份)。本轮不新增字段或改变 SDK。

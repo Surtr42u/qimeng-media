@@ -85,7 +85,13 @@ func verifySnapshotIntegrity(destPath string) error {
 		if err != nil {
 			return nil, fmt.Errorf("打开快照校验连接失败: %w", err)
 		}
-		defer func() { _ = check.Close() }()
+		defer func() {
+			// 校验连接只读快照；Close 失败（句柄未释放，Windows 下会挡住
+			// 后续 Remove）记录告警留痕（Q6 忽略错误清理批）。
+			if err := check.Close(); err != nil {
+				slog.Warn("store: 关闭快照校验连接失败", "error", err)
+			}
+		}()
 		return collectQuickCheck(check)
 	}()
 	if qerr != nil {
@@ -108,7 +114,13 @@ func collectQuickCheck(db *sql.DB) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("执行 quick_check 失败: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
+	defer func() {
+		// 完整迭代后的 Rows.Close 是预期 no-op；中途路径的 Close 失败随
+		// rows.Err() 一并可见，此处告警留痕兜底（Q6 忽略错误清理批）。
+		if err := rows.Close(); err != nil {
+			slog.Warn("store: 关闭 quick_check 结果集失败", "error", err)
+		}
+	}()
 	var problems []string
 	for rows.Next() {
 		var line string

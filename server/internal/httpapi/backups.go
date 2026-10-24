@@ -175,7 +175,13 @@ func (s *Server) GetApiV1BackupsNameFile(w http.ResponseWriter, r *http.Request,
 		s.internalErr(w, "打开备份快照", err)
 		return
 	}
-	defer func() { _ = f.Close() }()
+	defer func() {
+		// 只读快照句柄，ServeContent 已完成响应；Close 失败不影响下载结果，
+		// 告警留痕（句柄泄漏在 Windows 下会挡住备份目录轮转）。
+		if err := f.Close(); err != nil {
+			s.logger.Warn("关闭备份快照句柄失败", "error", err)
+		}
+	}()
 	w.Header().Set("Content-Type", "application/octet-stream")
 	// name 已过 ^qimeng-\d{8}-\d{6}\.db$ 白名单，字符域受限，无注入面。
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", name))

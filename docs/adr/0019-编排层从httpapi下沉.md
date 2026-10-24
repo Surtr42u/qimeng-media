@@ -19,6 +19,8 @@ Accepted
 
 ## 后果（Consequences）
 
+现行实现补记（2026-10-21）：mediawrite 是新增等价编排包，上传、回收站/恢复/清扫及共用入库已迁入；生产由 main 显式装配，返回领域对象，HTTP 错误和签名响应留在接口层。syncchannel 已迁入本机同步轮询/状态/媒体搬运/TXT 归档，authorimport 承接跨手动/备份/同步入口的 TXT 导入/保护/移除/统一重建事务；移动/改名也迁至 mediawrite，失败补偿可脱离 HTTP 测试；其他存量 handler 按触碰继续迁移，当前边界以 ARCHITECTURE §5.1 为准；上面的 2026-10-04 记录保留当时背景，不表示上传/回收站/同步/TXT/移动仍在 HTTP 编排。
+
 - **积极**：httpapi 回归薄壳，多步流可脱离 HTTP 单测；god package 增长止血。
 - **代价**：迁移期同一业务流可能暂存两处（handler 旧路径 / 新包），触碰时须尽快收敛。
 - **约束**：新代码若在 httpapi 写多步编排，自审/评审直接打回（`AI_README_FIRST.md` 自审清单「架构边界」行）。

@@ -8,7 +8,7 @@ rem
 rem Usage:   _server-common.cmd [console^|nobrowser^|desktop]
 rem   console   = visible window, banner + ready-to-copy LAN URLs,
 rem               auto-open browser once port 8420 answers.
-rem   nobrowser = HEADLESS backend: minimized, no browser; a start
+rem   nobrowser = visible backend console, no browser; a start
 rem               banner (timestamp + LAN URLs) is appended to
 rem               server\console.log, then server output appends
 rem               there too (background use).
@@ -47,7 +47,7 @@ echo ================================================================
 echo   Qimeng Media Server (port 8420)
 echo ================================================================
 echo.
-echo  Starting... (first run needs compiling, please wait
+echo  Starting the installed cloud-built backend (please wait
 echo  until you see the JSON log line with "HTTP" below)
 echo.
 echo  The web UI will OPEN AUTOMATICALLY in your browser when
@@ -71,12 +71,12 @@ echo  To stop the server: close this window (or press Ctrl+C)
 echo ================================================================
 echo.
 
-rem Watcher: silently wait until port 8420 is reachable (server compiled and
+rem Watcher: silently wait until port 8420 is reachable (server started and
 rem listening), then open the web UI in your default browser automatically.
-rem Gives up after ~60s without opening anything (e.g. compile error).
+rem Gives up after ~60s without opening anything (e.g. startup error).
 start "" /min powershell -NoProfile -WindowStyle Hidden -Command "$ok=$false; for($i=0;$i -lt 120;$i++){try{$c=New-Object Net.Sockets.TcpClient; $c.Connect('127.0.0.1',8420); $c.Close(); $ok=$true; break}catch{Start-Sleep -m 500}}; if($ok){Start-Process 'http://127.0.0.1:8420'}"
 
-call :build
+call :ensure_binary
 if errorlevel 1 pause
 if errorlevel 1 exit /b 1
 qimeng-server.exe
@@ -85,11 +85,34 @@ exit /b 0
 
 rem ---------------- nobrowser mode (headless backend) -----------------
 :nobrowser
-echo [start] qimeng-server.exe (headless, log: server\console.log)
-call :build
+title Qimeng Backend
+set "QIMENG_BACKEND_READY_URL=http://127.0.0.1:8420/readyz"
+call :ensure_binary
 if errorlevel 1 exit /b 1
+rem Repeated shortcut clicks must reuse the healthy backend, not start a
+rem second process against the same data directory and listening port.
+rem /readyz is the root probe alias documented in api/openapi.yaml.
+powershell -NoProfile -Command "try { $r=Invoke-WebRequest -UseBasicParsing $env:QIMENG_BACKEND_READY_URL -TimeoutSec 2; if($r.StatusCode -eq 200){exit 0} } catch {}; exit 1"
+if not errorlevel 1 (
+    echo [headless] backend already running; no second process started.
+    goto backend_monitor
+)
+echo [start] qimeng-server.exe - keep this console open for backend output.
 call :log_banner
-start "qimeng-server" /min cmd /c "qimeng-server.exe >> console.log 2>&1"
+qimeng-server.exe
+set "BACKEND_EXIT_CODE=%errorlevel%"
+title Qimeng Backend - STOPPED
+echo.
+echo [stopped] Backend exited. Exit code: %BACKEND_EXIT_CODE%
+pause
+exit /b %BACKEND_EXIT_CODE%
+
+:backend_monitor
+rem An already-running backend may have no console of its own. Keep this
+rem plain console visible and show readiness without restarting the server.
+echo [status] This console monitors the existing backend.
+echo [status] Closing this monitor does not stop the existing backend.
+powershell -NoProfile -Command "$pollSeconds=3; $previous=''; while($true){ $state='NOT READY'; try { if((Invoke-WebRequest -UseBasicParsing $env:QIMENG_BACKEND_READY_URL -TimeoutSec 2).StatusCode -eq 200){$state='RUNNING'} } catch {}; if($state -ne $previous){Write-Host ('[backend] '+$state); $previous=$state}; Start-Sleep -Seconds $pollSeconds }"
 exit /b 0
 
 rem ---------------- desktop mode (Tauri shell) ----------------
@@ -97,7 +120,7 @@ rem ---------------- desktop mode (Tauri shell) ----------------
 netstat -ano | findstr ":8420" | findstr "LISTENING" >nul 2>&1
 if errorlevel 1 (
     echo [desktop] backend not running - starting headless backend...
-    call :build
+    call :ensure_binary
     if errorlevel 1 (
         pause
         exit /b 1
@@ -129,17 +152,14 @@ start "" "%DESKTOP_EXE%"
 exit /b 0
 
 rem ---------------- shared helpers ----------------
-rem Build ALWAYS (2026-10-03): skipping the build when the exe exists
-rem let a stale binary keep serving after source changes - correctness
-rem beats fast-start. Fixed output path (not "go run") keeps Windows
-rem Firewall from re-prompting per random temp binary.
-:build
-"C:\Program Files\Go\bin\go.exe" build -o qimeng-server.exe ./cmd/qimeng
-if errorlevel 1 (
-  echo.
-  echo [ERROR] Build failed - read the Go errors above, fix and retry.
-)
-exit /b %errorlevel%
+rem Builds run in GitHub Actions (build-pc.yml), per the user's cloud-only
+rem build agreement. Launch the verified installed exe; never rebuild here.
+rem AI updates the exe AND web/dist together and records the exact revision.
+:ensure_binary
+if exist "qimeng-server.exe" exit /b 0
+echo.
+echo [ERROR] Cloud-built backend is missing. Ask AI to deploy the PC bundle.
+exit /b 1
 
 rem log_banner appends a start banner (timestamp + ready-to-copy URLs)
 rem to server\console.log so the headless backend "outputs" the LAN

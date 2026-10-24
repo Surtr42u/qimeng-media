@@ -22,6 +22,11 @@ coverage.out
 # SQLite 本地开发库与数据
 *.sqlite
 *.sqlite3
+*.db
+*.db-journal
+*.sqlite*-wal
+*.sqlite*-shm
+*.sqlite*-journal
 *.db-wal
 *.db-shm
 /data/
@@ -50,7 +55,6 @@ android/local.properties
 *.apk
 *.aab
 *.keystore
-!debug.keystore
 
 # IDE 与系统
 .idea/
@@ -61,6 +65,19 @@ Thumbs.db
 
 # 环境与密钥（配置模板可提交，真实配置不提交）
 .env
+.env.*
+!.env.example
+!.env.template
+!.env.sample
+*.pem
+*.key
+*.jks
+*.p12
+*.pfx
+qimeng_backup.json
+*-private.*
+*.private.*
+*.local.json
 config/*.local.yaml
 
 # 日志

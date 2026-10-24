@@ -44,11 +44,12 @@ data class UploadItem(
     val libraryName: String = "",
     /**
      * 源文件已在归档根标志（2026-10-01 归档一键上传）：true = 条目来自归档文件夹一键上传，
-     * worker 上传成功后跳过归档移动——源文件本就在 <归档根>/<库名>/ 内，重复归档会把
-     * 同一路径走「删旧放新」冲突路径（先删目标位再落新），源与目标同路径时等于删源，必须整体跳过。
+     * worker 不再二次归档；外部服务器确认入库后安全清理副本，本机上传继续保留。
      * 默认 false = 既有归档行为不变。
      */
     val alreadyArchived: Boolean = false,
+    /** 可选源文件修改时间（Unix 毫秒）；未知时由服务端使用接收时间。 */
+    val sourceMtime: Long? = null,
 ) {
     /** 展示名锁定的扩展名（含点；无扩展名/点前缀隐藏文件 = 空串） */
     val extension: String

@@ -24,6 +24,13 @@ object UploadWorkSpec {
     /** 单任务 tag 前缀 + localId（WorkInfo 反查客户端任务标识） */
     const val TAG_ITEM_PREFIX = "qm-upload-item:"
 
+    // 展示名在 WorkManager tag 持久化，进程重建后尚未执行的任务也能显示原名。
+    // 只放文件名，不放源 URI、路径或 token；旧任务无 tag 沿用通用名回退。
+    private const val TAG_DISPLAY_NAME_PREFIX = "qm-upload-name:"
+    fun displayNameTag(name: String): String = TAG_DISPLAY_NAME_PREFIX + name
+    fun displayNameFromTags(tags: Set<String>): String? =
+        tags.firstOrNull { it.startsWith(TAG_DISPLAY_NAME_PREFIX) }?.removePrefix(TAG_DISPLAY_NAME_PREFIX)
+
     // ---- 输入 Data 键位（enqueue 写入，worker 读取） ----
     const val KEY_LOCAL_ID = "localId"
     const val KEY_URI = "uri"
@@ -47,9 +54,8 @@ object UploadWorkSpec {
 
     /**
      * 源文件已在归档根标志（2026-10-01 归档一键上传）：true = 条目来自归档文件夹一键上传，
-     * worker 上传成功后跳过归档移动——源文件本就在归档根的库文件夹内，重复归档会对同
-     * 一路径走 archiveToLibraryRoot 的同名同内容「删旧放新」路径（先删目标位再落新），
-     * 源与目标是同一路径时等于删源。仅 true 时写键（可空键同款口径），旧在途载荷缺键
+     * worker 不再二次归档；外部服务器确认入库后清理该归档副本，本机上传继续保留。
+     * 清理前复核归档范围与入队 size/mtime。仅 true 时写键，旧在途载荷缺键
      * 反解回退 false（既有归档行为不变）。
      */
     const val KEY_ALREADY_ARCHIVED = "alreadyArchived"
@@ -80,6 +86,7 @@ object UploadWorkSpec {
      * UploadStatus.CANCELLED。
      */
     const val KEY_CANCELLED = "cancelled"
+    const val KEY_SOURCE_MTIME = "source_mtime"
 
     /**
      * 重试上限（次）。第 1 次执行 + 最多 3 次重试 = 4 次尝试；超过即终局失败
@@ -106,10 +113,11 @@ object UploadWorkSpec {
         val attachSources: List<String>? = null,
         /** 目标库展示名（空串 = 未解析到/旧载荷，worker 归档分派回退 uploaded/） */
         val libraryName: String = "",
-        /** 源文件已在归档根（一键上传条目）：true 时 worker 上传成功后跳过归档移动 */
+        /** 源已在归档根：外部服务器确认入库后安全清理，本机上传保留。 */
         val alreadyArchived: Boolean = false,
         /** 入队地址身份；旧载荷缺省须拒绝发送，不猜当前目标。 */
         val targetServerUrl: String? = null,
+        val sourceMtime: Long? = null,
     )
 
     fun itemToInputData(spec: UploadRequestSpec): Data = Data.Builder()
@@ -122,6 +130,7 @@ object UploadWorkSpec {
         .putLong(KEY_SIZE_BYTES, spec.sizeBytes)
         .putString(KEY_UPLOAD_FILE_NAME, spec.uploadFileName)
         .apply {
+            spec.sourceMtime?.let { putLong(KEY_SOURCE_MTIME, it) }
             // 可空键不写（缺键 = 不带挂靠/无库名；写 null 值会被 Data 拒绝）
             spec.attachAuthorId?.let { putString(KEY_ATTACH_AUTHOR_ID, it) }
             spec.attachSources?.takeIf { it.isNotEmpty() }?.let { putStringArray(KEY_ATTACH_SOURCES, it.toTypedArray()) }
@@ -146,6 +155,7 @@ object UploadWorkSpec {
         return UploadRequestSpec(
             localId = localId,
             targetServerUrl = data.getString(KEY_TARGET_SERVER_URL),
+            sourceMtime = data.getLong(KEY_SOURCE_MTIME, -1L).takeIf { it >= 0 },
             uri = uri,
             libraryId = libraryId,
             dir = dir,
@@ -184,10 +194,11 @@ object UploadWorkSpec {
      *   （重试耗尽的 failure 同样会级联杀链——既有行为，串行队列全链共享同一
      *   重试命运在「耗尽」场景可接受；单任务取消场景已由 success 通道避开）。
      */
-    fun outcomeToResult(outcome: UploadOutcome, runAttemptCount: Int): ListenableWorker.Result =
+    fun outcomeToResult(outcome: UploadOutcome, runAttemptCount: Int, completionNote: String = ""): ListenableWorker.Result =
         when (outcome) {
             is UploadOutcome.Success -> ListenableWorker.Result.success(
-                workDataOf(KEY_FINAL_FILE_NAME to outcome.finalFileName),
+                workDataOf(KEY_FINAL_FILE_NAME to outcome.finalFileName,
+                    KEY_ERROR_MESSAGE to completionNote.takeIf { it.isNotBlank() }),
             )
 
             is UploadOutcome.AttachFailed ->
@@ -197,7 +208,7 @@ object UploadWorkSpec {
                     workDataOf(
                         KEY_FINAL_FILE_NAME to outcome.finalFileName,
                         KEY_ATTACH_FAILED to true,
-                        KEY_ERROR_MESSAGE to attachFailedMessage(outcome.attachMessage),
+                        KEY_ERROR_MESSAGE to (attachFailedMessage(outcome.attachMessage) + completionNote),
                     ),
                 )
 

@@ -172,11 +172,11 @@ class SdkMediaRepository @Inject constructor(
         )
     }
 
-    override suspend fun recommendations(seed: Long, limit: Int, mediaType: MediaKind?): List<MediaAsset> {
+    override suspend fun recommendations(seed: Long, limit: Int, mediaType: MediaKind?, cosOnly: Boolean): List<MediaAsset> {
         val api = apiFactory.create()
         logRequest("GET /recommendations", "seed=$seed limit=$limit${mediaType?.let { " mediaType=$it" } ?: ""}")
         val items = withContext(Dispatchers.IO) {
-            api.apiV1RecommendationsGet(seed = seed, limit = limit, mediaType = mediaType?.toSdk())
+            api.apiV1RecommendationsGet(seed = seed, limit = limit, mediaType = mediaType?.toSdk(), cosOnly = cosOnly)
         }
         val baseUrl = apiFactory.currentBaseUrl()
         return items.map { SdkMappers.toMediaAsset(it, baseUrl) }

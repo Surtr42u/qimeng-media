@@ -10,7 +10,7 @@ import java.io.InputStream
  *
  * 状态设计（任务书口径）：断点 offset 以服务端为唯一真相源，本地不存断点——每轮
  * WorkManager 重试（含首次）都先 GET 探测再续传，天然幂等；会话 id 经
- * [UploadSessionRegistry] 进程内记忆（丢表 = 重建会话的最后手段）。
+ * [UploadSessionRegistry] 持久化（服务端会话 404 才重建）。
  * 全部传输错误经 [SessionCall] 收敛，本类无 IO 细节（readChunk 由调用方注入），
  * 纯 JVM 单测锁定时序（ChunkedUploadSessionTest）。
  */
@@ -27,7 +27,7 @@ internal class ChunkedUploadSession(
     /** 上一轮尝试遗留的会话 id（null = 无记忆 → 创建新会话） */
     private val previousSessionId: String?,
     /** 新建/重建会话后的记忆回调（[UploadSessionRegistry.remember]） */
-    private val onSessionCreated: (String) -> Unit,
+    private val onSessionCreated: suspend (String) -> Unit,
     /** 单片大小（默认 [UploadRouting.CHUNK_BYTES]；测试注入小片长锁定分片序列） */
     private val chunkBytes: Long = UploadRouting.CHUNK_BYTES,
     /** 分片粒度进度回调（每片成功推进一次，参数 = 服务端权威 offset） */
@@ -35,7 +35,7 @@ internal class ChunkedUploadSession(
 ) {
 
     suspend fun run(): UploadOutcome {
-        // 续传优先：有进程内会话记忆直接探测续传；无记忆才创建新会话（创建即做服务端
+        // 续传优先：有持久会话把手直接探测续传；无记忆才创建新会话（创建即做服务端
         // 可前置校验——白名单/超限/上传关闭，4xx 直接落既有 Permanent 失败路径）
         var sessionId = previousSessionId ?: when (val created = client.create(libraryId, fileName, dir, totalBytes)) {
             is SessionCall.Ok -> {

@@ -5,7 +5,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
 import media.qimeng.app.core.data.di.IoDispatcher
 import media.qimeng.app.core.data.embedded.LocalVocabularyChannel
-import media.qimeng.sdk.models.CustomSourceGroups
+import media.qimeng.app.core.model.EditableVocabulary
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -13,6 +13,10 @@ import javax.inject.Singleton
  * [VocabularyEditRepository] 实现（ADR-0035）：本机词表读写的编排单点。链路全在
  * LocalVocabularyChannel（拉起内嵌服务端 → 端口就绪 → dev-login → 接线 → 收尾停回），
  * 本类只补请求本身与错误归类——无远端参与、无门禁（编辑对象恒为本机内嵌库）。
+ *
+ * SDK 双向映射（toEditableVocabulary/toSdk，VocabularyEditMappers）只发生在 API 调用
+ * 边缘（2026-10-24 SDK 隔离批）：端口外不见生成物，本机通道/IO 调度器与错误分类
+ * （VocabularySyncException + 取消上抛）均不变。
  */
 @Singleton
 class VocabularyEditRepositoryImpl @Inject constructor(
@@ -20,7 +24,7 @@ class VocabularyEditRepositoryImpl @Inject constructor(
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) : VocabularyEditRepository {
 
-    override suspend fun load(): Result<CustomSourceGroups> = runMapped {
+    override suspend fun load(): Result<EditableVocabulary> = runMapped {
         localChannel.use { api ->
             try {
                 withContext(ioDispatcher) { api.apiV1SourcesCustomGroupsGet() }
@@ -29,13 +33,13 @@ class VocabularyEditRepositoryImpl @Inject constructor(
             } catch (e: Exception) {
                 throw VocabularySyncException(VocabularySyncError.LocalServerUnavailable, e)
             }
-        }
+        }.toEditableVocabulary()
     }
 
-    override suspend fun save(payload: CustomSourceGroups): Result<Unit> = runMapped {
+    override suspend fun save(payload: EditableVocabulary): Result<Unit> = runMapped {
         localChannel.use { api ->
             try {
-                withContext(ioDispatcher) { api.apiV1SourcesCustomGroupsPut(payload) }
+                withContext(ioDispatcher) { api.apiV1SourcesCustomGroupsPut(payload.toSdk()) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

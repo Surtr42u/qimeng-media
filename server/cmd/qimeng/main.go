@@ -10,6 +10,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -24,21 +25,26 @@ import (
 	"time"
 
 	"qimeng-media/server/internal/authorattach"
+	"qimeng-media/server/internal/authoredit"
+	"qimeng-media/server/internal/authorimport"
 	"qimeng-media/server/internal/backup"
+	"qimeng-media/server/internal/buildinfo"
 	"qimeng-media/server/internal/config"
 	"qimeng-media/server/internal/events"
 	"qimeng-media/server/internal/httpapi"
+	"qimeng-media/server/internal/libraryrevision"
+	"qimeng-media/server/internal/mediawrite"
 	"qimeng-media/server/internal/safego"
 	"qimeng-media/server/internal/scanner"
 	"qimeng-media/server/internal/store"
 	"qimeng-media/server/internal/store/db"
+	"qimeng-media/server/internal/syncchannel"
 	"qimeng-media/server/internal/sysmon"
 	"qimeng-media/server/internal/thumbnail"
 )
 
-// version 是服务版本号的唯一来源：SSE hello 帧回显、系统面板 version
-// 字段共用它（M5 镜像交付时改为 -ldflags 注入点，消费方零改动）。
-const version = "0.1.0"
+// system/status 与 SSE hello 共用发布版本和编译期提交身份。
+var version = buildinfo.Current().Display()
 
 // shutdownTimeout 是优雅退出的最长等待时间。
 // 为什么定 10s：覆盖慢客户端把响应读完 + 在途缩略图任务让出，
@@ -82,7 +88,15 @@ func main() {
 	bootLogger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 
 	configPath := flag.String("config", "config.yaml", "配置文件路径（yaml，可不存在；环境变量始终优先于文件）")
+	showVersion := flag.Bool("version", false, "输出构建身份 JSON 后退出；不加载配置、不创建数据目录")
 	flag.Parse()
+	if *showVersion {
+		if err := json.NewEncoder(os.Stdout).Encode(buildinfo.Current()); err != nil {
+			bootLogger.Error("输出构建身份失败", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	cfg, err := config.Load(*configPath)
 	if err != nil {
@@ -197,7 +211,36 @@ func main() {
 		os.Exit(1)
 	}
 
+	// 真扫描器：同步实现 + 异步适配器（触发即返回，终态回写 Server）。
+	// dataDir 传入做自噬防御（缩略图缓存是 webp 白名单格式，数据目录若被
+	// 配置进库内绝不能扫进库）。探测函数注入 thumbs.ProbeVideo：扫描探测的
+	// ffprobe 路径与缩略图管线同源（thumbnail.ffprobe_path 单点解析）。
+	scan := scanner.New(queries, bus, logger, cfg.DataDir, thumbs.ProbeVideo)
+	// 缩略图失效钩子接线：扫描重探测发现内容变更（size/mtime 变化）时删旧
+	// 缓存，外部原地换文件后海报帧按新内容重建（生产装配单点，漏接线=
+	// 缩略图陈旧不自愈，见 scanner.invalidateThumbs）。
+	scan.SetThumbsInvalidator(thumbs.DeleteAssetThumbs)
+	// 事务宿主接线：富化写入（资产+角色行）单资产单事务的 BeginTx 宿主，
+	// 漏接线会退回逐语句 autocommit（中间态窗口回归，见 scanner.SetConn）。
+	scan.SetConn(conn)
+
+	revisionService := libraryrevision.NewService(queries, logger, time.Now)
+	writeService := mediawrite.New(mediawrite.Options{Conn: conn, Queries: queries, Bus: bus,
+		Config: cfg, Thumbs: thumbs, Logger: logger, Now: time.Now, Enrich: scan.EnrichAsset, Revision: revisionService})
+	txtService := authorimport.New(conn, queries, time.Now, logger)
+	// 作者编辑三服务显式装配（ADR-0019：DI 在 main）：attach/mirror 是无外部
+	// 依赖的低层原语宿主，authorEdit 在单事务内组合它们承接作者编辑类用例
+	//（Q1 事务下沉），三者与 HTTP/syncchannel 共享同一实例，不建第二套状态。
+	attachService := &authorattach.Service{Logger: logger}
+	mirrorWriter := &authorattach.MirrorWriter{Logger: logger}
+	authorEditService := authoredit.New(authoredit.Options{
+		Conn: conn, Queries: queries, Attach: attachService, Mirror: mirrorWriter,
+		Now: time.Now, Logger: logger,
+	})
+	syncService := syncchannel.New(syncchannel.Options{Config: cfg, Queries: queries, Writes: writeService,
+		TXT: txtService, Mirror: mirrorWriter, Logger: logger, Now: time.Now})
 	apiSrv, err := httpapi.New(httpapi.Deps{
+		Revision: revisionService, Writes: writeService, TXT: txtService, Sync: syncService,
 		Conn:        conn,
 		Queries:     queries,
 		Bus:         bus,
@@ -211,37 +254,32 @@ func main() {
 		TokenTTL:    cfg.TokenTTL,
 		Logger:      logger,
 		Version:     version,
-		// 上传挂靠编排 + 作者总表镜像（ADR-0019：DI 在 main；两服务无
-		// 外部依赖，缺省实例即生产实现，这里显式装配是规范形态）。
-		Attach: &authorattach.Service{Logger: logger},
-		Mirror: &authorattach.MirrorWriter{Logger: logger},
+		// 上传挂靠编排 + 作者总表镜像 + 作者编辑用例（ADR-0019：DI 在
+		// main；三服务无额外外部依赖，缺省实例即生产实现，这里显式装配是
+		// 规范形态）。
+		Attach:     attachService,
+		Mirror:     mirrorWriter,
+		AuthorEdit: authorEditService,
 	})
 	if err != nil {
 		logger.Error("组装 HTTP 服务失败", "error", err)
 		os.Exit(1)
 	}
 
-	// 真扫描器：同步实现 + 异步适配器（触发即返回，终态回写 Server）。
-	// dataDir 传入做自噬防御（缩略图缓存是 webp 白名单格式，数据目录若被
-	// 配置进库内绝不能扫进库）。探测函数注入 thumbs.ProbeVideo：扫描探测的
-	// ffprobe 路径与缩略图管线同源（thumbnail.ffprobe_path 单点解析）。
-	scan := scanner.New(queries, bus, logger, cfg.DataDir, thumbs.ProbeVideo)
-	// 缩略图失效钩子接线：扫描重探测发现内容变更（size/mtime 变化）时删旧
-	// 缓存，外部原地换文件后海报帧按新内容重建（生产装配单点，漏接线=
-	// 缩略图陈旧不自愈，见 scanner.invalidateThumbs）。
-	scan.SetThumbsInvalidator(thumbs.DeleteAssetThumbs)
-	// 事务宿主接线：富化写入（资产+角色行）单资产单事务的 BeginTx 宿主，
-	// 漏接线会退回逐语句 autocommit（中间态窗口回归，见 scanner.SetConn）。
-	scan.SetConn(conn)
 	// 富化引擎版本自愈重算（DOMAIN_RULES §4）：引擎升级后存量资产的富化结果
 	// 不会随扫描自然刷新（size+mtime 未变即跳过重 ingest），kv 版本标记落后
 	// 时在后台对全部常规库重算一次。goroutine 起它是因为大库重算可能数十秒，
-	// 不能阻塞监听启动；内嵌/桌面壳/NAS 各形态统一受益。方法内部失败只 warn
-	// 不返回致命错，返回值在此显式弃置（错误已在方法内留痕）。
+	// 不能阻塞监听启动；内嵌/桌面壳/NAS 各形态统一受益。返回错误在下方
+	// goroutine 内单点记录。
 	// 后台任务统一走 safego（panic 兜底）：单个任务崩溃只留错误日志，
 	// 不终止整个服务进程（2026-10-17 可靠性加固）。
 	safego.Go(logger, "富化自愈重算", func() {
-		_ = scan.SelfHealEnrichmentIfNeeded(context.Background())
+		// 返回错误是这里唯一的失败信号（方法内部只记进度日志，个别错误
+		// 路径不落日志），因此在此单点记录（Q6：后台任务错误明确单点，
+		// 不依赖被调方留痕假设）。重算幂等，失败下个启动周期自然重试。
+		if err := scan.SelfHealEnrichmentIfNeeded(context.Background()); err != nil {
+			logger.Warn("富化自愈重算失败（不影响启动，幂等可重试）", "error", err)
+		}
 	})
 	apiSrv.SetScanner(newScannerAdapter(scan, queries, apiSrv, logger))
 	// 自动预生成缩略图（2026-09-15 批）：开机回填历史积压 + 周期兜底（daemon）

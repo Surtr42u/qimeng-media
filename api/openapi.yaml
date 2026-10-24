@@ -478,6 +478,8 @@ paths:
         - { name: libraryId, in: query, required: true, schema: { type: string }, description: 目标库 ID（多库场景必须显式指定） }
         - { name: dir, in: query, required: true, schema: { type: string }, description: 目标目录（库内相对路径；空 = 库根） }
         - { name: filename, in: query, required: true, schema: { type: string } }
+        - { name: uploadId, in: query, schema: { type: string, format: uuid }, description: '客户端持久任务 ID；相同参数重试在完成后 7 天内返回同一资产，参数不一致 409，原资产已删除 410。缺省兼容旧客户端，不保证直传重试去重' }
+        - { name: sourceMtime, in: query, schema: { type: integer, format: int64, minimum: 0, maximum: 253402300799999 }, description: '源文件修改时间（Unix 毫秒）；可选，缺省使用接收时间；不作为拍摄时间，资产 addedAt 仍是入库时间' }
       requestBody:
         required: true
         content:
@@ -488,12 +490,15 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "403": { description: 上传已关闭（PUT /config 的 upload.autoAccept=false）, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
         "413": { description: 超过大小上限 }
+        "409": { $ref: "#/components/responses/UploadConflict" }
+        "410": { $ref: "#/components/responses/UploadedAssetGone" }
+        "507": { $ref: "#/components/responses/StorageUnavailable" }
 
   # ---------- 断点续传上传（tus 1.0 核心语义极简子集，ADR-0028） ----------
   # 会话由服务端持有（内存注册表 + DataDir/uploads-tmp 临时文件），客户端无状态：
   # 中断后凭会话 id 先 GET 探测权威 offset，再从断点 PATCH 续传。
   # 同名冲突语义与直传通道（POST /assets/upload）一致：complete 时自动重命名
-  # "基名 (2).ext"，永不 409（DOMAIN_RULES §9）；小文件直传通道保留（双端
+  # "基名 (2).ext"，同名本身不报 409；任务 ID 参数冲突另报 409。小文件直传保留（双端
   # 按 size 阈值分流，Android/Web 双端已接入）。
   /api/v1/uploads:
     post:
@@ -509,7 +514,8 @@ paths:
         未过四道校验的半成品不进库目录。contentType 仅作客户端提示，服务端
         不信任该声明（MIME 以 complete 终检的魔数嗅探为准）。
         同名冲突语义与直传通道逐字一致：complete 时自动重命名 "基名 (2).ext"、
-        永不 409（DOMAIN_RULES §9）。
+        同名本身不报 409（DOMAIN_RULES §9）。可选 uploadId 复用活动会话或完成凭据，参数不一致 409。
+        在途会话数量和声明总字节有界，孤儿分片按实际大小计入同一暂存预算；超额 429，目录不可用或剩余空间不足 507。
       requestBody:
         required: true
         content:
@@ -520,10 +526,13 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "403": { description: 上传已关闭（PUT /config 的 upload.autoAccept=false，与直传通道同闸）, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
         "413": { description: 声明的 size 超过单文件大小上限, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { $ref: "#/components/responses/UploadConflict" }
+        "429": { $ref: "#/components/responses/UploadCapacity" }
+        "507": { $ref: "#/components/responses/StorageUnavailable" }
   /api/v1/uploads/{id}:
     get:
       summary: 断点探测（客户端重试/续传前先问服务端"传到哪了"）
-      description: 返回服务端持有的权威 offset；未知或已过期（无活动超时被清扫）的会话一律 404。
+      description: 返回服务端持有的权威 offset；已完成的会话在完成后 7 天内返回 offset=size，可再次 complete 取得原资产；未知或已过期的会话 404。
       parameters: [ { $ref: "#/components/parameters/UploadId" } ]
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/UploadSession" } } } }
@@ -569,7 +578,7 @@ paths:
         自动重命名 "基名 (2).ext"、永不 409。成功走与直传完全相同的入库
         管线（library.changed 事件照发、库内容修订号照 bump、upload.done
         照发、富化照跑），201 返回与 POST /assets/upload 同构的资产详情；
-        临时文件与会话随即删除。
+        临时文件与内存会话随即删除，完成凭据与资产行同事务保存 7 天；重复 complete 返回原资产，不重复入库或发送事件，原资产已删除返回 410。
         校验失败/库已删除时：400/404 返回且临时文件与会话保留（可修正后
         重试 complete），但计入过期时钟（24h 兜底回收）。
       parameters: [ { $ref: "#/components/parameters/UploadId" } ]
@@ -578,6 +587,8 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "403": { description: 上传已关闭（PUT /config 的 upload.autoAccept=false）, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
         "404": { description: 会话不存在/已过期，或会话所属库已被删除, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "410": { $ref: "#/components/responses/UploadedAssetGone" }
+        "507": { $ref: "#/components/responses/StorageUnavailable" }
 
   # ---------- 本机文件夹自动同步通道（ADR-0030） ----------
   /api/v1/local-sync/status:
@@ -1049,7 +1060,11 @@ paths:
         - { name: mediaType, in: query, schema: { $ref: "#/components/schemas/MediaType" } }
         - { name: cosOnly, in: query, schema: { type: boolean, default: false }, description: 'COS 推荐模式（首页 cos tab，对齐旧版「COS 推荐模式」语义）：true=候选集限定 COS 关联资产，同一套十维打分/权重回收/每日惩罚照跑；false=常规流（缺省排除 COS，DOMAIN_RULES §6 隔离）' }
       responses:
-        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/AssetSummary" } } } } }
+        "200":
+          description: OK
+          headers:
+            X-Qimeng-Next-Offset: { $ref: "#/components/headers/NextOffset" }
+          content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/AssetSummary" } } } }
   /api/v1/rankings:
     get:
       summary: 排行榜（热度=view+play+like；周期过滤）
@@ -1058,7 +1073,11 @@ paths:
         - { name: limit,  in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
         - { name: offset, in: query, schema: { type: integer, default: 0, minimum: 0 }, description: '与 limit 组合做翻页切片：返回热度降序的 [offset, offset+limit) 切片（越界为空数组）' }
       responses:
-        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/AssetSummary" } } } } }
+        "200":
+          description: OK
+          headers:
+            X-Qimeng-Next-Offset: { $ref: "#/components/headers/NextOffset" }
+          content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/AssetSummary" } } } }
   /api/v1/stats/overview:
     get:
       summary: 总览（文件数/类型分布/累计浏览/今日浏览/库容量/来源库存等）
@@ -1191,6 +1210,7 @@ paths:
       description: |
         免鉴权探活。根路径 /healthz /readyz 是运维探针别名（docker/k8s 惯例），
         不属于 API 协议面；两边行为一致。
+        readyz 检查数据库、数据目录与启用媒体根可读，以及各卷最小剩余空间；异常返回 503，响应不暴露路径。healthz 只检查进程存活，不因存储故障触发重启。
       security: []
       responses:
         "200": { description: ready }
@@ -1328,6 +1348,10 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
 
 components:
+  headers:
+    NextOffset:
+      description: '成功响应恒带。下一页的原始顺序偏移；-1 表示本轮顺序已扫描到底。当前页重新校验资格后可能变短或为空，客户端必须按本头续页，不能按数组长度判断到底。旧服务端无本头时才回退页长判据。'
+      schema: { type: integer, minimum: -1 }
   securitySchemes:
     bearerAuth: { type: http, scheme: bearer, bearerFormat: "QM token" }
 
@@ -1344,6 +1368,10 @@ components:
     NotFound:    { description: 不存在,   content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
     Conflict:    { description: 冲突,     content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
     RateLimited: { description: 尝试过于频繁（auth 端点进程内限速）, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    UploadConflict: { description: 'UPLOAD_ID_CONFLICT：上传任务 ID 已用于不同目标、名称、大小、源时间或传输通道', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    UploadedAssetGone: { description: 'UPLOAD_ASSET_GONE：任务已经完成但资产已删除，拒绝自动重新上传', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    UploadCapacity: { description: 'UPLOAD_CAPACITY：在途会话数量或暂存总预算达到上限', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    StorageUnavailable: { description: 'STORAGE_UNAVAILABLE：目录不可访问或剩余空间不足，不暴露内部路径', content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
 
   schemas:
     Error:
@@ -1398,6 +1426,8 @@ components:
       description: 断点续传上传会话创建请求（POST /api/v1/uploads，ADR-0028）
       required: [libraryId, fileName, size]
       properties:
+        uploadId: { type: string, format: uuid, description: '客户端持久任务 ID；可选。相同目标/名称/大小/源时间复用活动会话或 7 天内的完成凭据；参数冲突 409。缺省由服务端分配会话 ID' }
+        sourceMtime: { type: integer, format: int64, minimum: 0, maximum: 253402300799999, description: '源文件修改时间（Unix 毫秒）；可选，缺省使用接收时间，addedAt 仍记录入库时间' }
         libraryId: { type: string, description: 目标库 ID（必填；须为已注册且启用的库，否则 400） }
         fileName:  { type: string, description: 文件名（创建时按直传同规则清洗并做扩展名白名单校验；路径分隔符/控制字符/Windows 非法字符剥除，保留设备名拒绝） }
         size:      { type: integer, format: int64, minimum: 1, description: 文件总字节数（必填正整数；超上传上限 413；complete 终检以拼装落盘事实为准） }
@@ -1406,7 +1436,7 @@ components:
 
     UploadSession:
       type: object
-      description: 断点续传上传会话状态（POST/GET /api/v1/uploads* 的 2xx 载荷，也是 PATCH offset 不符时 409 的响应体）。会话由服务端持有（内存注册表 + 临时文件），服务端重启即全部失效（未完成分片作废，客户端重新创建会话）；断点以服务端 offset 为准，客户端无状态
+      description: 断点续传上传会话状态（POST/GET /api/v1/uploads* 的 2xx 载荷，也是 PATCH offset 不符时 409 的响应体）。未完成会话由服务端持有（内存注册表 + 临时文件），重启失效后重新创建；完成凭据持久保存 7 天且跨重启有效，返回 offset=size 后调用 complete 取得原资产。断点以服务端 offset 为准。
       required: [id, offset, size]
       properties:
         id:     { type: string, format: uuid, description: 会话 ID（PATCH/complete/DELETE 携带） }
@@ -1897,6 +1927,14 @@ components:
         totalViews:  { type: integer, format: int64 }
         sourceNormalCount: { type: integer, description: '常规来源库存：不关联 COS 作者的现存资产数（谓词同 §6 分区判定）' }
         sourceCosCount: { type: integer, description: 'COS 来源库存：关联 COS 作者的现存资产数' }
+        stillImageCount: { type: integer, description: 静态图片数量（不含动图） }
+        animatedImageCount: { type: integer, description: 动图数量；与 stillImageCount/videoCount 构成互斥分类 }
+        viewedFilesCount: { type: integer, description: 窗口内至少一次 open 的不同现存文件数，未截断 }
+        viewedAuthorsCount: { type: integer, description: 窗口内有 open 的现存资产关联作者总数，未截断 }
+        viewedTagsCount: { type: integer, description: 窗口内有 open 的现存资产关联标签总数，未截断 }
+        windowTotals: { $ref: "#/components/schemas/StatsTotals" }
+        mediaTypeWindowTotals: { type: object, additionalProperties: { $ref: "#/components/schemas/StatsTotals" }, description: '当前窗口各类型汇总，恒带 image/video/animated_image 三键' }
+        sourceWindowTotals: { type: object, additionalProperties: { $ref: "#/components/schemas/StatsTotals" }, description: '当前窗口各来源汇总，恒带 normal/cos 两键' }
         avgViewsPerFile: { type: [number, "null"], format: double, description: '平均浏览次数 = 窗口内现存资产 open 事件总数 ÷ 窗口内至少一次 open 的不同现存文件数；窗口由本端点 range 参数决定（缺省 all=全时段）；分母 0 → null' }
         per_type_size_bytes: { $ref: "#/components/schemas/StatsSizeByType" }
         per_source_size_bytes: { $ref: "#/components/schemas/StatsSizeBySource" }
@@ -1941,9 +1979,19 @@ components:
         tag:   { type: string, description: 标签名（tags.name，全局唯一） }
         views: { type: integer, description: 窗口内带该标签资产的 open 事件次数 }
 
+    StatsTotals:
+      type: object
+      required: [viewCount, playCount, seconds]
+      properties:
+        viewCount: { type: integer }
+        playCount: { type: integer }
+        seconds: { type: integer, description: 整数停留秒数 }
+
     TrendBucket:
       type: object
       properties:
+        mediaTypes: { type: object, additionalProperties: { $ref: "#/components/schemas/StatsTotals" }, description: '本桶各类型计数，恒带 image/video/animated_image；所有系列与本桶 start/end 对齐，缺失活动为 0' }
+        sources: { type: object, additionalProperties: { $ref: "#/components/schemas/StatsTotals" }, description: '本桶各来源计数，恒带 normal/cos；与本桶 start/end 同粒度同日期轴' }
         label:     { type: string, description: 周/月/季标签（口径见 DOMAIN_RULES §5） }
         start:     { type: string, format: date }
         end:       { type: string, format: date }

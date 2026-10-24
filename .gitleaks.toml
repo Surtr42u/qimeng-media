@@ -1,0 +1,8 @@
+title = "Qimeng repository secret scanning"
+[extend]
+useDefault = true
+
+# 仅放行 auth 合成测试中的这一条固定 token；不豁免测试目录或整个规则。
+[allowlist]
+description = "Exact synthetic auth fixture, never a deployed credential"
+regexes = ['''^a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2$''']

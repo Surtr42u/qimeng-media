@@ -4,7 +4,6 @@ import androidx.compose.animation.core.snap
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.calculateEndPadding
@@ -12,14 +11,9 @@ import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -40,7 +34,6 @@ import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -52,7 +45,6 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.navigation.NavBackStackEntry
-import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -66,11 +58,7 @@ import media.qimeng.app.core.ui.glass.FloatingTabDock
 import media.qimeng.app.core.ui.glass.GlassNavItem
 import media.qimeng.app.core.ui.glass.qimengBackdropSource
 import media.qimeng.app.core.ui.glass.rememberQimengBackdropState
-import media.qimeng.app.core.ui.theme.QimengBrandColors
 import media.qimeng.app.core.ui.theme.softDaylightBackground
-import media.qimeng.app.core.ui.theme.isQimengDarkTheme
-import media.qimeng.app.feature.all.AllScreen
-import media.qimeng.app.session.AppearanceViewModel
 import media.qimeng.app.feature.author.AuthorCollectionRoutes
 import media.qimeng.app.feature.author.AuthorCollectionScreen
 import media.qimeng.app.feature.author.AuthorScreen
@@ -80,7 +68,6 @@ import media.qimeng.app.feature.detail.DetailRoutes
 import media.qimeng.app.feature.detail.DetailScreen
 import media.qimeng.app.feature.favorite.FavoriteScreen
 import media.qimeng.app.feature.history.HistoryScreen
-import media.qimeng.app.feature.home.HomeScreen
 import media.qimeng.app.feature.login.LoginScreen
 import media.qimeng.app.feature.manage.AuthorTxtImportScreen
 import media.qimeng.app.feature.manage.BackupScreen
@@ -91,85 +78,12 @@ import media.qimeng.app.feature.manage.VocabularyEditScreen
 import media.qimeng.app.feature.search.SearchScreen
 import media.qimeng.app.feature.settings.InboxSettingsScreen
 import media.qimeng.app.feature.settings.ServerSettingsScreen
-import media.qimeng.app.feature.settings.SettingsScreen
 import media.qimeng.app.feature.stats.StatsDetailRoutes
 import media.qimeng.app.feature.stats.StatsDetailScreen
-import media.qimeng.app.feature.stats.StatsScreen
 import media.qimeng.app.feature.upload.UploadScreen
+import media.qimeng.app.session.AppearanceViewModel
 import media.qimeng.app.session.MainViewModel
 import media.qimeng.app.session.SessionState
-
-/** 导航路由契约（壳层独占；feature 只暴露 Screen+回调。例外：详情路由串/参数键单源在
- *  feature:detail 的 [DetailRoutes]——feature 禁依赖 :app，壳层反向引用此处合法） */
-object Routes {
-    /**
-     * 覆盖页面：搜索（首页搜索框进入；GUIDE_UI §导航结构 入栈隐藏底栏）。
-     * 任务I I3 加可选携词参数（GUIDE_UI §统计详情页「标签 → 搜索页携词跳转」管道）：
-     * 未带词的入口仍 navigate 到 [SEARCH_NAV]（可选参数缺省走 defaultValue）。
-     */
-    const val SEARCH = "search?q={q}"
-
-    /** 搜索页无参导航地址（q 可选参数缺省空串=入口态，行为与旧无参路由一致） */
-    const val SEARCH_NAV = "search"
-
-    /** 搜索携词参数键（[SEARCH] 路由占位符） */
-    const val KEY_SEARCH_QUERY = "q"
-
-    /**
-     * 搜索携词导航地址（任务J J1 接线：统计常看标签条目→搜索页携词，GUIDE_UI §统计详情页）：
-     * query 必须 URL 编码——标签可含中文/空格/&/# 等，裸拼会劈裂 query 或吞掉后续参数。
-     */
-    fun searchRoute(query: String): String = "$SEARCH_NAV?$KEY_SEARCH_QUERY=${encodeQueryValue(query)}"
-
-    /** 覆盖页面：收藏（我的页入口行；M4-6 完整我的页前的临时入口） */
-    const val FAVORITE = "favorite"
-
-    /** 覆盖页面：浏览历史 */
-    const val HISTORY = "history"
-
-    /** 覆盖页面：作者管理 */
-    const val AUTHORS = "authors"
-
-    /** 覆盖页面：上传（M4-5；入口 = 系统分享接收 / 后续设置页入口，不进底栏） */
-    const val UPLOAD = "upload"
-
-    /** 覆盖页面：服务器设置（U10-4：设置页「服务器」入口行 → 地址修改/本机模式/换址说明子页） */
-    const val SERVER = "server"
-
-    /**
-     * 覆盖页面：上传收件箱与归档设置（2026-09-25 暂存区重做：收件箱路径选择子页，路径
-     * 持久化后作为上传页「从收件箱导入」的扫描源；2026-09-28 归档文件夹批：子页扩归档
-     * 文件夹双设定并改由数据管理 hub 进入——路由串不变，仅入口行搬家）
-     */
-    const val INBOX = "inbox"
-
-    /**
-     * 覆盖页面：数据管理 hub（U10-6：我的页「数据管理」合并入口 → 上传文件/库管理
-     * 二级分类入口；上传页复用既有 [UPLOAD] 路由不搬家）
-     */
-    const val DATA_MANAGE = "dataManage"
-
-    /** 覆盖页面：库管理（U10-6：数据管理 hub → 库列表/注册媒体目录，信息架构对齐 Web 文件管理页） */
-    const val LIBRARY_MANAGE = "libraryManage"
-
-    /** 覆盖页面：作者 TXT 导入（U10-6b：数据管理 hub → 片段列表/导入/移除/重放，
-     *  对齐 Web 文件管理页 TxtAuthorImportCard） */
-    const val AUTHOR_TXT_IMPORT = "authorTxtImport"
-
-    /** 覆盖页面：备份导入导出（U10-6b：数据管理 hub → 全量备份导出/qimeng_backup.json 幂等导入恢复） */
-    const val BACKUP = "backup"
-
-    /** 覆盖页面：缩略图缓存（2026-09-16 用户反馈：缩略图生成进度 + 缓存上限合并页，
-     *  自我的页「缓存区」退役迁入，经数据管理 hub 二级入口可达） */
-    const val THUMBNAIL_CACHE = "thumbnail_cache"
-
-    /**
-     * 覆盖页面：词表维护（ADR-0035，2026-10-04：数据管理 hub → 本机内嵌库词表直接编辑
-     * 子页——出处组/变体/角色/别名/停用词内存编辑 + 整体保存；协议零改动。词表合并同步
-     * 不设子页——用户拍板入口迁入备份页 VocabularyMergeSyncCard，随 ADR-0035 定稿）
-     */
-    const val VOCABULARY_EDIT = "vocabularyEdit"
-}
 
 /**
  * 壳根：登录态分支（M4-1）——未登录渲染登录页，已登录进四 Tab 主壳，Loading 渲染空白防误闪。
@@ -261,9 +175,8 @@ fun QimengNavRoot(modifier: Modifier = Modifier) {
  * 覆盖页面入栈隐藏底部导航、返回恢复（GUIDE_UI §导航结构）：按当前路由切换悬浮坞显隐
  * （条件与主线 bottomBar 时代逐字相同）。
  *
- * 超文件警戒线理由：全 App 的导航装配单文件——每个路由目的地（composable 声明、
- * 实参与回调桥接）只在本文件出现一次且彼此同构，拆多文件只会按路由域切开同构装配段
- * 并增加跨文件共享段的搬运，收益为负；警戒线特此记档。
+ * 路由编码、点击策略、常驻屏和底栏分开维护；本宿主统一持有生命周期 owner
+ * 与 saveable 状态，避免跨宿主状态副本。
  */
 @Composable
 fun QimengNavHost(
@@ -879,14 +792,14 @@ private val topLevelRoutes = TopLevelDestination.entries.map { it.route }.toSet(
  * 统计族（统计页/统计详情页）详情跳转回调组（RES R1 去重）：两页的三回调接线原本逐字重复，
  * 收敛为参数对象单源构造——后续统计族新增跳转链只改 [statsNavLinks] 一处。
  */
-private data class StatsNavLinks(
+internal data class StatsNavLinks(
     val onOpenAsset: (assetId: String) -> Unit,
     val onOpenAuthor: (authorId: String, displayName: String) -> Unit,
     val onOpenTagSearch: (tag: String) -> Unit,
 )
 
 /** 以 navController 构造统计族跳转回调组（路由串单源：DetailRoutes/AuthorCollectionRoutes/Routes） */
-private fun statsNavLinks(navController: NavHostController): StatsNavLinks = StatsNavLinks(
+internal fun statsNavLinks(navController: NavHostController): StatsNavLinks = StatsNavLinks(
     onOpenAsset = { assetId -> navController.navigate(DetailRoutes.detailRoute(assetId)) },
     onOpenAuthor = { authorId, displayName ->
         navController.navigate(AuthorCollectionRoutes.authorCollectionRoute(authorId, displayName))
@@ -895,205 +808,3 @@ private fun statsNavLinks(navController: NavHostController): StatsNavLinks = Sta
     // 单顶把重复导航收敛到既有栈顶实例
     onOpenTagSearch = { tag -> navController.navigate(Routes.searchRoute(tag)) { launchSingleTop = true } },
 )
-
-/**
- * query 值百分号编码（[Routes.searchRoute] 专用；RFC 3986 unreserved 之外一律 %XX）。
- * 为什么自持编码器而不用 android.net.Uri.encode：与 feature:author 的 encodeRouteSegment
- * 同款理由——行为确定性优先（Uri.encode 的默认保留集含 &/= 等 query 结构字符的版本行为
- * 不做记忆依赖），且本地 JVM 单测跑在 android.jar stub 上平台 API 不可用。不复用
- * encodeRouteSegment 本体：internal 跨模块不可见，query/路径段语义略异——两处注释互指，
- * 标签词表变更时同步自查。internal 供同模块单测锁定（encodeRouteSegment 同款处置）。
- */
-internal fun encodeQueryValue(value: String): String = buildString {
-    for (byte in value.toByteArray(Charsets.UTF_8)) {
-        val c = byte.toInt() and 0xFF
-        val unreserved = c < QUERY_ASCII_BOUNDARY &&
-            (c.toChar().isLetterOrDigit() || c.toChar() in QUERY_UNRESERVED_SYMBOLS)
-        if (unreserved) append(c.toChar()) else {
-            append('%')
-            append(QUERY_HEX_DIGITS[c ushr 4])
-            append(QUERY_HEX_DIGITS[c and 0xF])
-        }
-    }
-}
-
-/** ASCII 单字节边界（≥128 的多字节 UTF-8 序列成分，恒编码） */
-private const val QUERY_ASCII_BOUNDARY = 0x80
-
-/** RFC 3986 unreserved 符号集（字母数字之外；与 feature:author encodeRouteSegment 同集） */
-private const val QUERY_UNRESERVED_SYMBOLS = "-_.~"
-
-private const val QUERY_HEX_DIGITS = "0123456789ABCDEF"
-
-/** 双击回顶判定窗口（GUIDE_UI §导航结构：400ms 内同一 Tab 二击）。internal 供单测锁定 */
-internal const val DOUBLE_TAP_WINDOW_MS = 400L
-
-/**
- * 顶层导航防抖窗（任务L L2，拍板 #2：150~250ms 窗口内只认一次，取中档 200ms）。
- * 用户实测（#37 同源反馈）：快速连点不同 Tab 时每次点击都触发 saveState/restoreState
- * 重建链，观感为「叠屏/延迟消失」——窗口内忽略后续点击，只认窗后首击。
- * 与 [DOUBLE_TAP_WINDOW_MS] 的关系：双击回顶判定先行且不受此窗限制（同 Tab 二击
- * 200~400ms 区间仍能回顶），防抖只拦「导航」不拦「回顶」。internal 供单测锁定
- */
-internal const val TAB_NAVIGATE_DEBOUNCE_MS = 200L
-
-/** Tab 点击决策结果（[resolveTabTapAction] 纯函数输出；壳层 onClick 按分支执行） */
-internal sealed interface TabTapAction {
-    /** 双击回顶：广播 [TabScrollController.requestScrollToTop]，不导航不重置防抖计时 */
-    data object ScrollToTop : TabTapAction
-
-    /** 执行顶层导航（更新防抖时间戳） */
-    data object Navigate : TabTapAction
-
-    /** 防抖窗内忽略本次点击 */
-    data object Ignore : TabTapAction
-}
-
-/**
- * Tab 点击决策纯函数（任务L L2；抽出便于 JVM 单测锁定时序语义）。
- * 优先级：双击回顶 > 防抖导航 > 忽略——双击回顶不受防抖窗限制（拍板 #2「语义保留且优先」）。
- *
- * @param isCurrentRoute 点击的 Tab 是否就是当前所在 Tab（双击回顶的必要条件）
- * @param nowMs 本次点击时刻
- * @param lastTapMs 上一次任意 Tab 点击时刻（双击窗基准；任意 Tab 共享，与既有行为一致）
- * @param lastNavigateMs 上一次**实际执行**顶层导航的时刻（防抖窗基准；回顶不重置）
- */
-internal fun resolveTabTapAction(
-    isCurrentRoute: Boolean,
-    nowMs: Long,
-    lastTapMs: Long,
-    lastNavigateMs: Long,
-): TabTapAction = when {
-    isCurrentRoute && nowMs - lastTapMs <= DOUBLE_TAP_WINDOW_MS -> TabTapAction.ScrollToTop
-    nowMs - lastNavigateMs >= TAB_NAVIGATE_DEBOUNCE_MS -> TabTapAction.Navigate
-    else -> TabTapAction.Ignore
-}
-
-/** 四 Tab 切换统一走此函数：单顶 + 保存/恢复状态（见主壳注释的保活语义说明） */
-private fun navigateTopLevel(navController: NavHostController, destination: TopLevelDestination) {
-    navController.navigate(destination.route) {
-        popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-        launchSingleTop = true
-        restoreState = true
-    }
-}
-
-/**
- * 常驻层按 route 渲染的 Tab 真身。回调接线逐字自原 NavHost 四个 Tab composable 迁移
- * （2026-09-13 常驻层改造，屏与跳转目标均不动）；NavHost 内同路由为空壳跳板，本函数仅
- * 由常驻层调用。
- */
-@Composable
-private fun ResidentTabScreen(
-    route: String,
-    navController: NavHostController,
-    // 性能联动（2026-10-03 帧实测批）：首页顶行真采样跟随坞材质档传入（玻璃档才捕获）
-    glassEnabled: Boolean,
-) {
-    when (route) {
-        TopLevelDestination.HOME.route -> HomeScreen(
-            glassEnabled = glassEnabled,
-            onOpenSearch = { navController.navigate(Routes.SEARCH_NAV) },
-            onOpenAsset = { assetId ->
-                navController.navigate(DetailRoutes.detailRoute(assetId))
-            },
-        )
-        TopLevelDestination.ALL.route -> AllScreen(
-            onOpenAsset = { assetId ->
-                navController.navigate(DetailRoutes.detailRoute(assetId))
-            },
-        )
-        TopLevelDestination.STATS.route -> {
-            // 统计族跳转回调组单源（RES R1 去重，构造见 [statsNavLinks]）
-            val links = statsNavLinks(navController)
-            StatsScreen(
-                // 趋势卡/分布入口卡点击进统计详情页（任务I I3；GUIDE_UI §数据统计页
-                // L213-214，携带当前时间范围——GUIDE §交互设计「进入详情携带当前时间范围」）
-                onOpenDetail = { mode, range ->
-                    navController.navigate(StatsDetailRoutes.statsDetailRoute(mode, range))
-                },
-                // 任务J J1 详情页跳转链（GUIDE_UI L218-224）：常看文件条目→详情页（批次
-                // 上下文已由 StatsViewModel.enterDetail 写入）、作者条目→作者集合页、
-                // 标签条目→搜索页携词（query 编码见 Routes.searchRoute）
-                onOpenAsset = links.onOpenAsset,
-                onOpenAuthor = links.onOpenAuthor,
-                onOpenTagSearch = links.onOpenTagSearch,
-            )
-        }
-        TopLevelDestination.SETTINGS.route -> SettingsScreen(
-            onOpenFavorite = { navController.navigate(Routes.FAVORITE) },
-            onOpenHistory = { navController.navigate(Routes.HISTORY) },
-            // X5 批 2026-09-12：作者总览改收藏同款入口行，onOpenAuthors=唯一作者入口；
-            // 原总览卡 Top5 直达作者集合页的参数随内嵌卡退役，行级直达
-            // 统一走 AuthorScreen 的 onAuthorClick（Routes.AUTHORS 组合内）
-            onOpenAuthors = { navController.navigate(Routes.AUTHORS) },
-            // U10-6：原「上传文件」行升级为「数据管理」合并入口行（上传/注册媒体目录/
-            // 库管理进 hub 二级页；上传页本身复用 Routes.UPLOAD 不搬路由）
-            onOpenDataManage = { navController.navigate(Routes.DATA_MANAGE) },
-            // 2026-09-28 归档文件夹批：原 onOpenInbox（下载收件箱行）随入口迁入数据管理
-            // hub 退役——接线改在上方 Routes.DATA_MANAGE 组合处
-            // U10-4：「服务器」入口行 → 地址修改/本机模式/换址说明子页
-            onOpenServerDetail = { navController.navigate(Routes.SERVER) },
-        )
-        else -> Unit // 不可达：route 恒来自 visitedTabs（仅含 Tab 路由）；兜底防脏键
-    }
-}
-
-/**
- * 触摸死层 modifier：把落在本层的触摸整段（按下→移动→抬起）全量消费。服务「保持组合但
- * 不可交互」的隔离场景（常驻层隐藏 Tab 的兜底层、pushed 屏幕帘）——命中测试层面它带
- * pointer input 节点，触摸沿 z 序命中即止（不再下探）；事件层面 consume 保证无漏网。
- * 只承接「上层没接住的穿透触摸」，这类触摸在改前同样无处可去（落到 Scaffold 背景），
- * 吞掉即行为等价。
- */
-private fun Modifier.blockTouches(): Modifier = pointerInput(Unit) {
-    awaitEachGesture {
-        while (true) {
-            val event = awaitPointerEvent()
-            event.changes.forEach { change -> change.consume() }
-            if (event.changes.none { it.pressed }) break
-        }
-    }
-}
-
-/**
- * CLASSIC 材质档的底栏：主线现行 M3 [NavigationBar] 逐字迁移（2026-10-03 悬浮坞改造，
- * 视觉/行为零回归的保底回退档——选它即回到改前观感）。唯一变化 = 宿主从 Scaffold
- * bottomBar 槽改为悬浮层（坞显隐条件与点击链路逐字共用）。
- *
- * 选中指示器色（F 批 2026-09-09 接线，逐字保留）：旧版 styles.xml BottomNavigationView
- * ActiveIndicator = qm_primary_soft 浅色 #123A3A3A / 夜间 #1AC8C8C8（QimengBrandColors
- * 兼容别名 token，新色板退役旧灰板后仅为本档保留）——此前默认 indicator=secondaryContainer
- * (=ChipBg) 与底栏背景色差仅 2/255，选中胶囊肉眼不可见（用户反馈「没做的圆润边角」）；
- * 选中 icon/label 同步取 onSurface（旧版选中图标=主色深灰，默认 onSecondaryContainer
- * 次级灰观感偏淡）。
- */
-@Composable
-private fun ClassicBottomBar(
-    currentRoute: String?,
-    onSelect: (TopLevelDestination) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    // 暗色判定走主题解析单源 isQimengDarkTheme()（colorScheme 背景亮度，评审必修 2）：
-    // 本批起有手动外观模式（MainActivity 解析 AppearanceMode 后定深浅），本组件若绕开
-    // 主题直查系统夜间档，手动浅色 × 系统深色组合下会用夜间指示器色画在浅色坞上
-    //（PrimarySoftDark 不可见）——isQimengDarkTheme 与 QimengTheme 实际生效的色板同源
-    val darkTheme = isQimengDarkTheme()
-    val indicatorColor =
-        if (darkTheme) QimengBrandColors.PrimarySoftDark else QimengBrandColors.PrimarySoftLight
-    NavigationBar(modifier = modifier) {
-        TopLevelDestination.entries.forEach { destination ->
-            NavigationBarItem(
-                selected = currentRoute == destination.route,
-                onClick = { onSelect(destination) },
-                icon = { Icon(imageVector = destination.icon, contentDescription = null) },
-                label = { Text(text = stringResource(destination.labelRes)) },
-                colors = NavigationBarItemDefaults.colors(
-                    indicatorColor = indicatorColor,
-                    selectedIconColor = MaterialTheme.colorScheme.onSurface,
-                    selectedTextColor = MaterialTheme.colorScheme.onSurface,
-                ),
-            )
-        }
-    }
-}

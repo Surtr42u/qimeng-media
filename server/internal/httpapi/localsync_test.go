@@ -22,9 +22,9 @@ import (
 	"qimeng-media/server/internal/authoring"
 	"qimeng-media/server/internal/config"
 	"qimeng-media/server/internal/httpapi/gen"
-	"qimeng-media/server/internal/localsync"
 	"qimeng-media/server/internal/store"
 	"qimeng-media/server/internal/store/db"
+	"qimeng-media/server/internal/syncchannel"
 
 	"github.com/google/uuid"
 )
@@ -52,13 +52,13 @@ func lsSetupSyncRoot(t *testing.T, e *testEnv) string {
 func lsRunCycles(t *testing.T, e *testEnv, n int) {
 	t.Helper()
 	for i := 0; i < n; i++ {
-		e.s.runLocalSyncCycleOnce(context.Background())
+		e.s.sync.RunOnce(context.Background())
 	}
 }
 
 // lsStatus 取当前状态面板载荷（与 GET 端点同一装配函数）。
 func lsStatus(e *testEnv) gen.LocalSyncStatus {
-	return e.s.lsSnapshot(e.cfg.LocalSync.Root, e.s.localSyncInterval())
+	return e.s.lsSnapshot()
 }
 
 // lsItemOf 在 items/recentSynced 里找指定路径条目。
@@ -160,7 +160,7 @@ func TestLocalSyncMediaSuccess(t *testing.T) {
 	if !ok {
 		t.Fatal("recentSynced 应含成功条目")
 	}
-	if got := lsItemState(t, it); got != localSyncStateSynced {
+	if got := lsItemState(t, it); got != syncchannel.StateSynced {
 		t.Fatalf("条目状态 = %q，期望 synced", got)
 	}
 	if st.Items != nil && len(*st.Items) != 0 {
@@ -221,7 +221,7 @@ func TestLocalSyncTxtSuccess(t *testing.T) {
 		t.Fatalf("imported_txt_sources 应含 作者清单.txt：%+v", sources)
 	}
 	st := lsStatus(e)
-	if it, ok := lsItemOf(st, "作者清单.txt"); !ok || lsItemState(t, it) != localSyncStateSynced {
+	if it, ok := lsItemOf(st, "作者清单.txt"); !ok || lsItemState(t, it) != syncchannel.StateSynced {
 		t.Fatal("recentSynced 应含 TXT 成功条目")
 	}
 }
@@ -278,7 +278,7 @@ func TestLocalSyncLibraryNotFound(t *testing.T) {
 	if !ok {
 		t.Fatal("items 应含失败条目")
 	}
-	if got := lsItemState(t, it); got != localSyncStateFailed {
+	if got := lsItemState(t, it); got != syncchannel.StateFailed {
 		t.Fatalf("状态 = %q，期望 failed", got)
 	}
 	if msg := lsItemError(t, it); !strings.Contains(msg, "未找到") {
@@ -303,7 +303,7 @@ func TestLocalSyncNonMediaIgnored(t *testing.T) {
 	lsRequireFile(t, src, true)
 	st := lsStatus(e)
 	it, ok := lsItemOf(st, "note.pdf")
-	if !ok || lsItemState(t, it) != localSyncStateIgnored {
+	if !ok || lsItemState(t, it) != syncchannel.StateIgnored {
 		t.Fatal("note.pdf 应为 ignored")
 	}
 	if msg := lsItemError(t, it); !strings.Contains(msg, "非媒体扩展名") {
@@ -325,7 +325,7 @@ func TestLocalSyncRootLevelMediaIgnored(t *testing.T) {
 	lsRequireFile(t, src, true)
 	st := lsStatus(e)
 	it, ok := lsItemOf(st, "loose.mp4")
-	if !ok || lsItemState(t, it) != localSyncStateIgnored {
+	if !ok || lsItemState(t, it) != syncchannel.StateIgnored {
 		t.Fatal("根级媒体应为 ignored")
 	}
 	if msg := lsItemError(t, it); !strings.Contains(msg, "需放入以库名命名的子文件夹") {
@@ -345,14 +345,14 @@ func TestLocalSyncStableGate(t *testing.T) {
 	lsRunCycles(t, e, 1)
 	lsRequireFile(t, src, true)
 	st := lsStatus(e)
-	if it, ok := lsItemOf(st, "测试库/fresh.jpg"); !ok || lsItemState(t, it) != localSyncStateWaitingStable {
+	if it, ok := lsItemOf(st, "测试库/fresh.jpg"); !ok || lsItemState(t, it) != syncchannel.StateWaitingStable {
 		t.Fatal("首轮应 waiting-stable")
 	}
 	// 第 2 轮：观测相等但 mtime 年龄 < 60s → 仍 waiting（年龄门）。
 	lsRunCycles(t, e, 1)
 	lsRequireFile(t, src, true)
 	st = lsStatus(e)
-	if it, ok := lsItemOf(st, "测试库/fresh.jpg"); !ok || lsItemState(t, it) != localSyncStateWaitingStable {
+	if it, ok := lsItemOf(st, "测试库/fresh.jpg"); !ok || lsItemState(t, it) != syncchannel.StateWaitingStable {
 		t.Fatal("年龄不足应保持 waiting-stable")
 	}
 	// 拨旧后：第 3 轮观测到新 mtime（与上轮不等）→ waiting；第 4 轮相等 → 入库。
@@ -468,7 +468,7 @@ func TestLocalSyncCosKindReject(t *testing.T) {
 	lsRequireFile(t, src, true) // COS 拒绝，原地保留
 	st := lsStatus(e)
 	it, ok := lsItemOf(st, "coslib/z.jpg")
-	if !ok || lsItemState(t, it) != localSyncStateFailed {
+	if !ok || lsItemState(t, it) != syncchannel.StateFailed {
 		t.Fatal("COS 条目应为 failed")
 	}
 	if msg := lsItemError(t, it); !strings.Contains(msg, "COS 库") {
@@ -508,10 +508,10 @@ func TestLocalSyncPausedKeepsMediaWaiting(t *testing.T) {
 	if st.Paused == nil || !*st.Paused {
 		t.Fatal("paused 应为 true")
 	}
-	if it, ok := lsItemOf(st, "测试库/p.jpg"); !ok || lsItemState(t, it) != localSyncStateWaitingStable {
+	if it, ok := lsItemOf(st, "测试库/p.jpg"); !ok || lsItemState(t, it) != syncchannel.StateWaitingStable {
 		t.Fatal("媒体应保持 waiting-stable（不判失败）")
 	}
-	if it, ok := lsItemOf(st, "作者.txt"); !ok || lsItemState(t, it) != localSyncStateSynced {
+	if it, ok := lsItemOf(st, "作者.txt"); !ok || lsItemState(t, it) != syncchannel.StateSynced {
 		t.Fatal("TXT 应已成功同步")
 	}
 }
@@ -521,107 +521,6 @@ func bytesRepeat(n int) []byte {
 	return bytes.Repeat([]byte{'x'}, n)
 }
 
-// TestLocalSyncMediaPreCheckSkip 落位前预复核：直接调用 processLocalSyncMedia
-// 注入伪造 Entry（Size 与磁盘实际不符、首段命中既有库文件夹）→ 不搬动，
-// 源文件原地保留、未入库、条目 failed（源还在同步根，下轮重新观测）。
-func TestLocalSyncMediaPreCheckSkip(t *testing.T) {
-	e := newTestEnvRaw(t)
-	root := lsSetupSyncRoot(t, e)
-	src := filepath.Join(root, "测试库", "skip.jpg")
-	lsWriteJPG(t, src, 320, 240)
-	info, err := os.Stat(src)
-	if err != nil {
-		t.Fatalf("stat 源文件失败: %v", err)
-	}
-	libs, err := e.q.ListLibraries(context.Background())
-	if err != nil {
-		t.Fatalf("查库列表失败: %v", err)
-	}
-	var lib db.Library
-	for _, l := range libs {
-		if l.Name == "测试库" {
-			lib = l
-		}
-	}
-	if lib.ID == "" {
-		t.Fatal("默认测试库「测试库」应存在")
-	}
-	// Entry.Size 与磁盘实际不符（差 123 字节，仍在上传上限内过四道校验，
-	// 让流程走到落位前预复核）；ModTime 任意（预复核只看 size）。
-	entry := localsync.Entry{RelPath: "测试库/skip.jpg", Size: info.Size() + 123, ModTime: info.ModTime()}
-	e.s.processLocalSyncMedia(context.Background(), entry, lib, "测试库", e.s.resolveUploadPolicy(context.Background()))
-
-	lsRequireFile(t, src, true) // 预复核不符：未搬动，源原地
-	lsRequireFile(t, filepath.Join(e.media, "skip.jpg"), false)
-	if _, aerr := e.q.GetAssetByPath(context.Background(), db.GetAssetByPathParams{LibraryID: lib.ID, RelPath: "skip.jpg"}); aerr == nil {
-		t.Fatal("预复核跳过后不应有资产行")
-	}
-	st := lsStatus(e)
-	it, ok := lsItemOf(st, "测试库/skip.jpg")
-	if !ok || lsItemState(t, it) != localSyncStateFailed {
-		t.Fatal("条目应为 failed")
-	}
-	if msg := lsItemError(t, it); !strings.Contains(msg, "文件在处理间隙发生变化") {
-		t.Fatalf("错误文案应含「文件在处理间隙发生变化」：%q", msg)
-	}
-	if it.Attempts == nil || *it.Attempts < 1 {
-		t.Fatal("attempts 应 >= 1（折进 lsMarkFailed 的一次完整尝试）")
-	}
-}
-
-// TestLsReconcilePlacedSize 落位后 size 复核处置（函数级）：一致放行 /
-// 不符移回源 / 移回失败保留库位三分支，任何分支绝不删除落位文件。
-func TestLsReconcilePlacedSize(t *testing.T) {
-	e := newTestEnvRaw(t)
-	dir := t.TempDir()
-	mkTen := func(p string) {
-		t.Helper()
-		if err := os.WriteFile(p, []byte("0123456789"), 0o644); err != nil {
-			t.Fatalf("写 10 字节文件失败: %v", err)
-		}
-	}
-
-	// 分支一：实际 10 字节 = 声明 → 放行（proceed），文件原地。
-	src := filepath.Join(dir, "ok-src.bin")
-	target := filepath.Join(dir, "ok-target.bin")
-	mkTen(target)
-	disp, reason := e.s.lsReconcilePlacedSize(src, target, 10)
-	if disp != lsPlaceProceed || reason != nil {
-		t.Fatalf("size 一致应 proceed（reason=%v），得到 %v", reason, disp)
-	}
-	lsRequireFile(t, target, true)
-
-	// 分支二：不符且移回可行——A(10 字节) 手动挪到 B 后按 expect=999 复核，
-	// 应移回 A、B 消失（B 未被删除，是被移回）。
-	src = filepath.Join(dir, "back-src.bin")
-	target = filepath.Join(dir, "back-target.bin")
-	mkTen(src)
-	if err := os.Rename(src, target); err != nil {
-		t.Fatalf("模拟搬移 A→B 失败: %v", err)
-	}
-	disp, reason = e.s.lsReconcilePlacedSize(src, target, 999)
-	if disp != lsPlaceMovedBack {
-		t.Fatalf("移回可行应 movedBack（reason=%v），得到 %v", reason, disp)
-	}
-	lsRequireFile(t, src, true)
-	lsRequireFile(t, target, false)
-
-	// 分支三：不符且移回失败（源路径被目录占用，rename 必败）——保留库位，
-	// 绝不删除（库位件是全项目唯一副本）。
-	src = filepath.Join(dir, "stuck-src.bin")
-	target = filepath.Join(dir, "stuck-target.bin")
-	if err := os.Mkdir(src, 0o755); err != nil {
-		t.Fatalf("建占用目录失败: %v", err)
-	}
-	mkTen(target)
-	disp, reason = e.s.lsReconcilePlacedSize(src, target, 999)
-	if disp != lsPlaceKeptInLibrary {
-		t.Fatalf("移回失败应 keptInLibrary（reason=%v），得到 %v", reason, disp)
-	}
-	lsRequireFile(t, target, true)
-	lsRequireFile(t, src, true) // 占用目录未被动过
-}
-
 // TestLocalSyncTriggerSecurityCheckFailed 安全校验未通过（同步根与库根重叠
 // → 通道级 lastErr 非空）：trigger 409 LOCAL_SYNC_DISABLED，响应体用固定
 // 文案且**不得回显内部绝对路径**（SECURITY 红线 7；2026-10-17 起 lastErr
@@ -629,7 +528,7 @@ func TestLsReconcilePlacedSize(t *testing.T) {
 func TestLocalSyncTriggerSecurityCheckFailed(t *testing.T) {
 	e := newTestEnv(t)                                      // 走 setup 拿 token
 	e.cfg.LocalSync = config.LocalSyncConfig{Root: e.media} // 指到库根（相等即重叠）
-	e.s.runLocalSyncCycleOnce(context.Background())         // 置通道级 lastErr
+	e.s.sync.RunOnce(context.Background())                  // 置通道级 lastErr
 
 	resp := e.do(t, http.MethodPost, "/api/v1/local-sync/trigger", "")
 	defer func() { _ = resp.Body.Close() }()

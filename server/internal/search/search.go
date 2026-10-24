@@ -3,7 +3,9 @@ package search
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"qimeng-media/server/internal/store/db"
@@ -23,9 +25,11 @@ func RebuildIndex(ctx context.Context, conn *sql.DB) error {
 		return fmt.Errorf("search: 开启重建事务: %w", err)
 	}
 	defer func() {
-		// Commit 之后的 Rollback 返回 ErrTxDone，是预期内的 no-op
-		// （与 recommendations.go 的事务惯用法同款）。
-		_ = tx.Rollback()
+		// Commit 之后的 Rollback 返回 ErrTxDone，是预期内的 no-op；真实回滚
+		// 失败记录告警（Q6 忽略错误清理批），不覆盖已上抛的业务错误。
+		if err := tx.Rollback(); err != nil && !errors.Is(err, sql.ErrTxDone) {
+			slog.WarnContext(ctx, "search: 重建索引事务回滚失败", "error", err)
+		}
 	}()
 	q := db.New(tx)
 	if _, err := q.RebuildAssetsFtsClear(ctx); err != nil {

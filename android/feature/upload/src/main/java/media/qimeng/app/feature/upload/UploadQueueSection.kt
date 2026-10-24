@@ -76,10 +76,12 @@ private fun QueueRow(entry: UploadQueueEntry, onCancel: (UploadQueueEntry) -> Un
                 )
             }
 
-            UploadStatus.SUCCEEDED -> StatusText(
-                "上传成功：${entry.finalFileName ?: entry.displayName}",
-                MaterialTheme.colorScheme.primary,
-            )
+            UploadStatus.SUCCEEDED -> {
+                StatusText("上传成功：${entry.finalFileName ?: entry.displayName}", MaterialTheme.colorScheme.primary)
+                entry.errorMessage?.takeIf { it.isNotBlank() }?.let {
+                    StatusText(it, MaterialTheme.colorScheme.tertiary)
+                }
+            }
 
             // 挂靠批专项态：文件已入库（finalFileName 在），失败的是 201 之后的挂靠调用
             UploadStatus.ATTACH_FAILED -> {

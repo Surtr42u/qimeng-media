@@ -76,6 +76,9 @@ jobs:
       # move_windows.go 使用 windows build tag，Linux server job 不会编译它；
       # 在 Windows 原生 runner 上验证专属 errno 实现可编译、错误分类与复制主体单测可运行（真实跨盘布局仍需部署环境端到端验证）。
       - run: go test ./internal/filing -count=1
+      - name: 无头快捷启动回归（隔离合成程序，不访问真实库）
+        working-directory: .
+        run: ./tools/test_windows_launcher.ps1
 
   web:
     name: Web（tsc + build）
@@ -104,6 +107,7 @@ jobs:
       # 前置约束）；豁免清单与口径见 web/knip.ts 头注。
       - run: npx knip --include dependencies,devDependencies,unlisted,binaries,unresolved,files
       - run: npx tsc --noEmit
+      - run: npm run lint
       - run: npm run build
       - run: npm test
 

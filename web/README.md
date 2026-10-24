@@ -33,7 +33,9 @@ src/
 ```
 
 - 组件内出现 `fetch/axios/api.` = 违规
+- `tests/architecture.test.ts` 随 `npm test` 用 TypeScript AST 自动检查 pages/components 的运行时 API 导入与直接请求；SDK 纯类型导入和非 API 组件懒加载允许。Node 源码检查/桌面契约测试位于 tests/，由 tsconfig.node 类型检查，不向浏览器代码引入 Node 全局类型。不把静态检查当作全调用链业务规则证明。
 - 例外：`lib/upload-chunked.ts` 传输层 XHR 直连不走生成 SDK（abort 支持缺失+403 拦截器误伤，ADR-0028 记档）
+- 上传链路 lib 内分工（2026-10-24 提取批）：队列状态（entries/XHR 句柄/取消旗标/恢复/订阅/终态推进）唯一持有在 `lib/upload-queue-store.ts`；「上传成功后挂靠」无状态服务（响应资产 id 解析、先 authors 替换后 sources append、失败转「已入库待挂靠」）在 `lib/upload-attach.ts`；分片传输在 `lib/upload-chunked.ts`；刷新持久化在 `lib/upload-queue-persist*.ts`。纯提取，交互行为不变。
 - 出现硬编码颜色 = 违规（一律 `var(--qm-*)`）
 - 数据转换/业务判断放 hooks 或服务端，不进组件
 - 开发代理目标默认 8420；隔离调试实例可用 `QIMENG_DEV_PROXY_TARGET=http://127.0.0.1:<port>` 覆盖
@@ -50,4 +52,12 @@ shadcn/ui 组件及 components.json 保留；将唯一被构建消费的 dist/ta
 
 ## 数据新鲜度
 
-库变更、成功备份导入及 SSE 重连共用 query-invalidation 的失效映射，统计/排行/历史与推荐、资产同时校验。staleTime 只标陈旧，不是定时轮询。推荐初始 seed=0 与服务端 Web 预热互指；60 条分页共享最多 60 秒的顺序快照，跨失效边界仍按 ID 去重。
+库变更、成功备份导入及 SSE 重连共用 query-invalidation 的失效映射，统计/排行/历史与推荐、资产同时校验。staleTime 只标陈旧，不是定时轮询。推荐初始 seed=0 与服务端 Web 预热互指；60 条分页共享最多 60 秒的顺序快照，跨失效边界仍按 ID 去重。推荐/排行按 `X-Qimeng-Next-Offset` 续页（-1 到底），短页/空页仍可继续；仅旧服务端无头时回退页长。每页完成后恢复触底观察，空页/全重复页不依赖网格高度变化才能继续；元数据留 hooks，页面仍消费数组。
+
+## 上传任务恢复
+
+新队列项独立持久化 UUID uploadId 和 File.lastModified；直传/分片创建均透传，刷新恢复和会话重建保持任务 ID。重选文件校验名称、大小和已有修改时间；同 size/mtime 的内容替换仍不能检出。旧队列缺字段保持接收时间，并补一个新的任务 ID；旧请求成功窗口不能据此追溯去重。服务端重放期限及错误语义见 [上传 API](../docs/api/files.md#上传任务重放源时间与容量adr-0049)。IndexedDB 不可用或写入失败仍是最佳努力降级，不能承诺刷新恢复。用户本轮恢复现有云端完整门禁与双端更新，补源时间恢复/新任务参数回归；未接入 Playwright，实际结果见 HANDOVER。
+
+## 统计消费
+
+数据页按所选窗口读取 overview 汇总与同轴 trends；静图/动图/视频数量互斥，窗口浏览/播放分列。作者/标签统计榜调用服务端窗口端点，不从管理列表重排；查看榜单沿用窗口并标明上限。失败与真实空数据分开，新统计字段缺失明确提示服务端升级。口径与 Android 共用 [统计专题](../docs/domain/statistics.md#统计数据消费约束)。

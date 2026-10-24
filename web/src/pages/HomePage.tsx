@@ -103,7 +103,8 @@ function dedupeByAssetId(pages: AssetSummary[][]): AssetSummary[] {
 function useRecommendationStream(seed: number, cosOnly: boolean) {
   const q = useRecommendations(DEFAULT_PAGE_SIZE, seed, cosOnly)
   const items = useMemo(() => dedupeByAssetId(q.data?.pages ?? []), [q.data])
-  const sentinelRef = useAutoMore(q.hasNextPage, () => {
+  // 每页完成后重新观察：空页/全重复页不改变网格高度，仍须继续下一个 offset。
+  const sentinelRef = useAutoMore(q.hasNextPage && !q.isFetchingNextPage && !q.isPlaceholderData, () => {
     if (!q.isFetchingNextPage) void q.fetchNextPage()
   })
   return {
@@ -192,7 +193,7 @@ function StreamCards({ stream, onOpen, emptyHint, footer, endHint, gridClassName
         />
       ) : (
         <>
-          {!isLoading && items.length === 0 && <p className="grid-empty">{emptyHint}</p>}
+          {!isLoading && !hasNextPage && items.length === 0 && <p className="grid-empty">{emptyHint}</p>}
           {!isLoading && items.length > 0 && footer}
           {/* P3.1：占位窗口（换 seed 重取中）hasNextPage 是旧流的，可能假性
               false——到底提示须等新流到货再判 */}
@@ -263,7 +264,8 @@ function HotRankTab({ period, onOpen }: { period: HomeRankPeriod; onOpen: (id?: 
   useShellRefresh(() => setReloadKey((n) => n + 1))
   const q = useRankingsInfinite(period, DEFAULT_PAGE_SIZE, reloadKey)
   const items = useMemo(() => dedupeByAssetId(q.data?.pages ?? []), [q.data])
-  const sentinelRef = useAutoMore(q.hasNextPage, () => {
+  // 与推荐流同一触发契约：即使本页全被资格复核移除，也要恢复触底观察。
+  const sentinelRef = useAutoMore(q.hasNextPage && !q.isFetchingNextPage && !q.isPlaceholderData, () => {
     if (!q.isFetchingNextPage) void q.fetchNextPage()
   })
   const stream: RecommendationStream = {

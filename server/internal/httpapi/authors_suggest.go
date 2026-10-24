@@ -110,8 +110,9 @@ func (s *Server) GetApiV1AuthorsImportTxtExport(w http.ResponseWriter, r *http.R
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("Content-Disposition", "attachment; filename*=UTF-8''"+url.PathEscape(downloadName))
 	w.WriteHeader(http.StatusOK)
-	// 写失败只可能发生在客户端断开时（导出是终端响应），无补救动作。
-	_, _ = w.Write([]byte(content))
+	if _, err := w.Write([]byte(content)); err != nil {
+		s.logger.WarnContext(r.Context(), "写出作者片段失败", "error", err)
+	}
 }
 
 // mirrorFieldMaxLen 镜像配置两字段的长度上限（服务端防御性上限，500 与

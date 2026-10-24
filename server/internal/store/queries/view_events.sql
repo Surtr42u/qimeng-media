@@ -207,9 +207,15 @@ LIMIT sqlc.arg(lim);
 -- 5: denominator 0 -> null is decided by the caller).
 
 -- name: SummarizeOpenWindow :one
-SELECT CAST(COUNT(*) AS INTEGER) AS opens,
-       CAST(COUNT(DISTINCT v.asset_id) AS INTEGER) AS files
-FROM view_events v
-JOIN assets a ON a.asset_id = v.asset_id
-WHERE v.kind = 'open'
-  AND (CAST(sqlc.arg(from_ts) AS TEXT) = '' OR v.started_at >= sqlc.arg(from_ts));
+WITH opened AS (
+    SELECT v.asset_id, COUNT(*) AS opens
+    FROM view_events v JOIN assets a ON a.asset_id = v.asset_id
+    WHERE v.kind = 'open'
+      AND (CAST(sqlc.arg(from_ts) AS TEXT) = '' OR v.started_at >= sqlc.arg(from_ts))
+    GROUP BY v.asset_id
+)
+SELECT CAST(COALESCE(SUM(opens), 0) AS INTEGER) AS opens,
+       CAST(COUNT(*) AS INTEGER) AS files,
+       CAST((SELECT COUNT(DISTINCT aa.author_id) FROM opened o JOIN asset_authors aa ON aa.asset_id = o.asset_id) AS INTEGER) AS authors,
+       CAST((SELECT COUNT(DISTINCT at.tag_id) FROM opened o JOIN asset_tags at ON at.asset_id = o.asset_id) AS INTEGER) AS tags
+FROM opened;

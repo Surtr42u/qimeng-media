@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"io"
+	"log/slog"
 	"os"
 )
 
@@ -98,7 +99,11 @@ func jpegOrientationOf(srcPath string) exifOrientation {
 	if err != nil {
 		return orientationNormal
 	}
-	defer func() { _ = f.Close() }()
+	defer func() {
+		if err := f.Close(); err != nil {
+			slog.Warn("关闭 EXIF 只读文件失败", "error", err)
+		}
+	}()
 	return parseJPEGOrientation(f)
 }
 

@@ -174,14 +174,14 @@ private const val ARCHIVE_BATCH_SCANNING_TEXT = "正在扫描归档文件夹…"
 
 /** 按钮下说明（行为口径：逐条按文件夹匹配库；成功后不重复归档） */
 private const val ARCHIVE_BATCH_HINT =
-    "按归档文件夹的库名子文件夹逐条匹配目标库并上传；上传完成后文件保留原位，不再重复归档"
+    "按库名子文件夹匹配目标库；成功上传到 PC/NAS 后清理手机归档，本机上传保留"
 
 /** 确认弹窗标题 */
 private const val ARCHIVE_BATCH_DIALOG_TITLE = "确认一键上传"
 
 /** 确认弹窗正文：不重复归档口径说明 */
 private const val ARCHIVE_BATCH_DIALOG_SKIP_ARCHIVE_NOTE =
-    "上传完成后文件保留在归档文件夹内（不再重复归档）"
+    "成功上传到 PC/NAS 后删除已上传的手机归档文件；失败或文件变化时保留，本机上传保留"
 
 /**
  * 防重复上传警示（区块与确认弹窗共用同一措辞；审查修整项 2026-10-01）：一键入队成功后

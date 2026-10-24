@@ -90,6 +90,81 @@ func (q *Queries) ListAllAssetIDs(ctx context.Context) ([]string, error) {
 	return items, nil
 }
 
+const listDailyStatsDimensions = `-- name: ListDailyStatsDimensions :many
+WITH dimensions AS (
+    SELECT d.day, a.media_type,
+           CASE WHEN EXISTS (
+               SELECT 1 FROM asset_authors aa JOIN authors au ON au.id = aa.author_id
+               WHERE aa.asset_id = a.asset_id AND au.type = 'cos'
+           ) THEN 'cos' ELSE 'normal' END AS source_bucket,
+           d.view_count, d.play_count, d.browse_seconds
+    FROM asset_daily_stats d JOIN assets a ON a.asset_id = d.asset_id
+    WHERE d.day >= ?2 AND d.day <= ?3
+      AND (CAST(?4 AS TEXT) = '' OR a.media_type = ?4)
+)
+SELECT day, media_type, CAST(source_bucket AS TEXT) AS source_bucket,
+       CAST(SUM(view_count) AS INTEGER) AS view_count,
+       CAST(SUM(play_count) AS INTEGER) AS play_count,
+       CAST(SUM(browse_seconds) AS INTEGER) AS browse_seconds
+FROM dimensions
+WHERE (CAST(?1 AS TEXT) = '' OR source_bucket = ?1)
+GROUP BY day, media_type, source_bucket
+ORDER BY day, media_type, source_bucket
+`
+
+type ListDailyStatsDimensionsParams struct {
+	SourceBucket string
+	FromDay      string
+	ToDay        string
+	MediaType    string
+}
+
+type ListDailyStatsDimensionsRow struct {
+	Day           string
+	MediaType     string
+	SourceBucket  string
+	ViewCount     int64
+	PlayCount     int64
+	BrowseSeconds int64
+}
+
+// One read produces every trend dimension. Group before transporting rows;
+// output grows with calendar days and dimensions, not assets or events.
+func (q *Queries) ListDailyStatsDimensions(ctx context.Context, arg ListDailyStatsDimensionsParams) ([]ListDailyStatsDimensionsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listDailyStatsDimensions,
+		arg.SourceBucket,
+		arg.FromDay,
+		arg.ToDay,
+		arg.MediaType,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListDailyStatsDimensionsRow
+	for rows.Next() {
+		var i ListDailyStatsDimensionsRow
+		if err := rows.Scan(
+			&i.Day,
+			&i.MediaType,
+			&i.SourceBucket,
+			&i.ViewCount,
+			&i.PlayCount,
+			&i.BrowseSeconds,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const sumDailyStatsBetween = `-- name: SumDailyStatsBetween :many
 
 SELECT asset_daily_stats.day                AS day,
@@ -179,6 +254,8 @@ const summarizeAssets = `-- name: SummarizeAssets :one
 
 SELECT
     COUNT(*) AS total_files,
+    CAST(COALESCE(SUM(CASE WHEN assets.media_type = 'image' THEN 1 ELSE 0 END), 0) AS INTEGER) AS still_image_count,
+    CAST(COALESCE(SUM(CASE WHEN assets.media_type = 'animated_image' THEN 1 ELSE 0 END), 0) AS INTEGER) AS animated_image_count,
     CAST(COALESCE(SUM(CASE WHEN assets.media_type IN ('image', 'animated_image') THEN 1 ELSE 0 END), 0) AS INTEGER) AS image_count,
     CAST(COALESCE(SUM(CASE WHEN assets.media_type = 'video' THEN 1 ELSE 0 END), 0) AS INTEGER) AS video_count,
     CAST(COALESCE(SUM(assets.size_bytes), 0) AS INTEGER) AS total_size_bytes,
@@ -190,6 +267,8 @@ FROM assets
 
 type SummarizeAssetsRow struct {
 	TotalFiles             int64
+	StillImageCount        int64
+	AnimatedImageCount     int64
 	ImageCount             int64
 	VideoCount             int64
 	TotalSizeBytes         int64
@@ -210,6 +289,8 @@ func (q *Queries) SummarizeAssets(ctx context.Context) (SummarizeAssetsRow, erro
 	var i SummarizeAssetsRow
 	err := row.Scan(
 		&i.TotalFiles,
+		&i.StillImageCount,
+		&i.AnimatedImageCount,
 		&i.ImageCount,
 		&i.VideoCount,
 		&i.TotalSizeBytes,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { lengthCursorNext } from './pagination'
+import { lengthCursorNext, NEXT_OFFSET_HEADER, offsetPage, offsetPageItems } from './pagination'
 
 describe('lengthCursorNext', () => {
   it('页长 === limit：判有下页，续游标 = lastPageParam + limit', () => {
@@ -24,5 +24,27 @@ describe('lengthCursorNext', () => {
     expect(next(Array.from({ length: 5 }, (_, i) => i), [], 0)).toBe(5)
     expect(next(Array.from({ length: 5 }, (_, i) => i), [], 5)).toBe(10)
     expect(next([0], [], 10)).toBeUndefined() // 末页不足 → 停止续页
+  })
+})
+
+describe('权威 offset 分页', () => {
+  it('中间空页仍可续页，满末页按 -1 停止', () => {
+    const pages = [
+      offsetPage(['first'], new Headers({ [NEXT_OFFSET_HEADER]: '1' }), 0, 1),
+      offsetPage([], new Headers({ [NEXT_OFFSET_HEADER]: '2' }), 1, 1),
+      offsetPage(['tail'], new Headers({ [NEXT_OFFSET_HEADER]: '-1' }), 2, 1),
+    ]
+    expect(pages.map((page) => page.nextOffset)).toEqual([1, 2, undefined])
+    expect(offsetPageItems({ pages, pageParams: [0, 1, 2] }).pages.flat()).toEqual(['first', 'tail'])
+  })
+
+  it('旧服务端无头才回退页长，不能让 -1 回退成还有下一页', () => {
+    expect(offsetPage(['a'], new Headers(), 0, 1).nextOffset).toBe(1)
+    expect(offsetPage([], undefined, 0, 1).nextOffset).toBeUndefined()
+    expect(offsetPage(['a'], new Headers({ [NEXT_OFFSET_HEADER]: '-1' }), 0, 1).nextOffset).toBeUndefined()
+  })
+
+  it.each(['', 'bad', '0', '1', '-2', '1.5', '9007199254740992'])('拒绝不前进或非法的续页头 %s', (value) => {
+    expect(() => offsetPage([], new Headers({ [NEXT_OFFSET_HEADER]: value }), 1, 1)).toThrow()
   })
 })

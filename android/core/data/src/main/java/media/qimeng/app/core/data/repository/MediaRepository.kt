@@ -20,7 +20,7 @@ import media.qimeng.app.core.model.TxtImportSummary
 /**
  * 列表族数据端口（M4-2）：资产/候选/推荐/排行榜/搜索建议。
  * 实现经生成 SDK 访问服务端（UI 禁直调 SDK/网络，ADR-0008 铁律 7）。
- * COS 流独立入口（拍板 A3）= [assets] 带 cosOnly=true，不走推荐算法。
+ * 首页默认 COS 走 [recommendations] 的 COS 子集；显式筛选/排序走 [assets]。
  */
 interface MediaRepository {
 
@@ -41,7 +41,7 @@ interface MediaRepository {
     suspend fun facets(query: FacetsQuery): FacetsResult
 
     /** 推荐流（服务端已完成混合/打散/惩罚后处理；客户端一次拉满本地分批） */
-    suspend fun recommendations(seed: Long, limit: Int, mediaType: MediaKind?): List<MediaAsset>
+    suspend fun recommendations(seed: Long, limit: Int, mediaType: MediaKind?, cosOnly: Boolean = false): List<MediaAsset>
 
     /** 排行榜（周期四档；协议缺省 week，客户端缺省必须显式传 day——拍板口径） */
     suspend fun rankings(period: RankingPeriod, limit: Int, offset: Int): List<MediaAsset>

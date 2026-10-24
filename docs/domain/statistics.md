@@ -23,6 +23,17 @@
 - **分类型大小**（/stats/overview 的 per_type_size_bytes，2026-09-14 新增）：现存资产按 media_type 分组各求和 size_bytes，键=image/video/animated_image 三协议值；image 键**不含** animated_image（与 imageCount「动图并入图片」的计数口径不同——大小是物理占用，动图独立成键才可与分类型行各值对账，per_type 各键之和 = totalSizeBytes）；空库/该类型无资产 → 0。
 - **分来源大小**（/stats/overview 的 per_source_size_bytes，2026-09-14 新增）：现存资产按来源分区各求和 size_bytes，键=normal/cos；**引用 §6 既有分区判定，不新造口径**（与 sourceNormalCount/sourceCosCount 同谓词：normal=不关联 COS 作者、cos=关联 COS 作者），两键之和 = totalSizeBytes；空库/该来源无资产 → 0。
 
+### 统计数据消费约束
+
+Web/Android 共用服务端 `statsread` 装载与 `stats` 纯函数，不维护独立的统计计算：
+
+- `overview.imageCount` 保留包含动图的旧兼容语义。新增 `stillImageCount`（静图）与 `animatedImageCount`（动图）；与 videoCount 构成互斥分类，数量、物理大小及窗口浏览按相同媒体键展示，不用 total-image-video 反推。
+- `viewedFilesCount/viewedAuthorsCount/viewedTagsCount` 分别是窗口内至少一次 open 的不同现存文件及其当前关联作者/标签全量数；与平均浏览的分子/分母在同一 SQL 语句求得，独立于榜单 limit。客户端不以均值或 Top N 长度反推。零活动返回精确 0，平均值分母 0 仍为 null。
+- `windowTotals/mediaTypeWindowTotals/sourceWindowTotals` 由服务端日统计按窗口汇总，类型恒带 image/video/animated_image，来源恒带 normal/cos；`viewCount` 只计 open，`playCount` 单列播放，`seconds` 是整数停留秒数。「浏览」字段不再与播放混加。库存与窗口选择正交。
+- `trends` 每桶增加 `mediaTypes/sources`，一次未过滤请求提供全部同轴维度。服务端只选一次整体数据的日期轴及 all 动态粒度，各维度按真实 start/end 归桶并补零；不逐维选择粒度、按下标拼不同响应。原过滤参数与数组响应仍兼容，过滤后的维度之和等于该响应总量。没有日统计时返回 []。
+- `statsread` 按天/类型/来源读取 SQL 聚合行，不装载全量资产或原始事件；窗口及日界由同一入口供总览、趋势、各榜单复用。为避免现有数据库 immediate 事务取得写锁，只读多查询不另开事务；不承诺总览、趋势与榜单跨请求的严格快照，同一窗口持续写入时允许正常变化。
+- 双端请求失败显示明确错误和同档重试，不把故障显示成零值/空态。新版客户端遇旧服务端缺少新字段时明确提示同步更新服务端；不回退错误反推。旧客户端仍可消费原字段，新服务端无需修改事件/schema 或重建历史。
+
 ### 热榜查询策略与性能边界
 
 作者/标签热榜先对有关联的资产按窗口聚合 open，再连接现存 assets 与作者/标签，求各自计数之和；避免每条事件先按关联数展开再 GROUP。仍对每位关联者完整计数，窗口起点含边界，零事件不入榜、已删资产不入榜、同分按主键升序。停用库资产仍按原热榜口径参与，不能套用推荐的启用库过滤。复用既有索引，无 schema/协议/缓存变化（ADR-0044）。

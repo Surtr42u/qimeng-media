@@ -3,6 +3,7 @@ package events
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -145,11 +146,12 @@ type deadlineWriter interface {
 }
 
 // setSSEFrameDeadline 每帧写前重置写截止（审计 R9）：把「僵死对端占连接槽」
-// 的上限压到 sseFrameWriteTimeout。SetWriteDeadline 失败仅意味着该 writer
-// 不支持超时，放弃即可（_ = 为审计已论证的惯例豁免形态）。
+// 的上限压到 sseFrameWriteTimeout。不支持 deadline 时保留兼容，其他失败须留痕。
 func setSSEFrameDeadline(w http.ResponseWriter) {
 	if dw, ok := w.(deadlineWriter); ok {
-		_ = dw.SetWriteDeadline(time.Now().Add(sseFrameWriteTimeout))
+		if err := dw.SetWriteDeadline(time.Now().Add(sseFrameWriteTimeout)); err != nil && !errors.Is(err, http.ErrNotSupported) {
+			slog.Warn("设置 SSE 写截止失败", "error", err)
+		}
 	}
 }
 

@@ -70,6 +70,13 @@ type UploadConfig struct {
 	// MaxBytes 是单文件大小上限（字节）；0 = 用 defaultUploadMaxBytes。
 	// 上限只在"下载上传流"路径强制（MaxBytesReader），不影响其他端点。
 	MaxBytes int64 `yaml:"max_bytes"`
+	// 以下非正值使用消费端安全默认值；环境变量只能设置正整数。
+	// MaxSessions 限制活动分片会话数（默认见 uploadsess.DefaultMaxSessions）。
+	MaxSessions int `yaml:"max_sessions"`
+	// MaxTempBytes 按活动声明字节加孤儿实际占用预留（uploadsess.DefaultMaxReservedBytes）。
+	MaxTempBytes int64 `yaml:"max_temp_bytes"`
+	// MinFreeBytes 是上传与就绪检查的卷余量下限（sysmon.DefaultMinFreeBytes）。
+	MinFreeBytes int64 `yaml:"min_free_bytes"`
 }
 
 // 备份热备默认值（任务Q 批B v1 冻结口径）。三个常量是 backup 包与
@@ -391,6 +398,25 @@ func applyThumbnailEnv(cfg *Config) error {
 
 // applyUploadEnv 覆盖上传上限。
 func applyUploadEnv(cfg *Config) error {
+	for name, target := range map[string]*int64{
+		"QIMENG_UPLOAD_MAX_TEMP_BYTES": &cfg.Upload.MaxTempBytes,
+		"QIMENG_UPLOAD_MIN_FREE_BYTES": &cfg.Upload.MinFreeBytes,
+	} {
+		if v := os.Getenv(name); v != "" {
+			n, err := strconv.ParseInt(v, 10, 64)
+			if err != nil || n < 1 {
+				return fmt.Errorf("环境变量 %s 须为正整数", name)
+			}
+			*target = n
+		}
+	}
+	if v := os.Getenv("QIMENG_UPLOAD_MAX_SESSIONS"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 {
+			return errors.New("QIMENG_UPLOAD_MAX_SESSIONS 须为正整数")
+		}
+		cfg.Upload.MaxSessions = n
+	}
 	if v := os.Getenv("QIMENG_UPLOAD_MAX_BYTES"); v != "" {
 		n, err := strconv.ParseInt(v, 10, 64)
 		// 分支拆开：n<1 时 err==nil，%w 包 nil 会渲染成 %!w(<nil>) 畸形消息。

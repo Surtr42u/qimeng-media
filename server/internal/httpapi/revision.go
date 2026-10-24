@@ -12,7 +12,6 @@
 package httpapi
 
 import (
-	"context"
 	"net/http"
 
 	"qimeng-media/server/internal/httpapi/gen"
@@ -34,7 +33,5 @@ func (s *Server) GetApiV1LibraryRevision(w http.ResponseWriter, r *http.Request)
 // 后果是客户端多做一轮本可跳过的同步（安全方向的失败）；调用方不得因
 // 本函数失败而改变自身操作的成功语义。
 func (s *Server) bumpLibraryRevision() {
-	if _, err := s.rev.Increment(context.Background()); err != nil {
-		s.logger.Warn("推进库内容修订号失败（客户端可能多拉一轮列表，下次变更自愈）", "err", err)
-	}
+	s.rev.Advance()
 }

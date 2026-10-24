@@ -14,7 +14,6 @@ import com.patrykandpatrick.vico.compose.cartesian.layer.point
 import com.patrykandpatrick.vico.compose.cartesian.layer.rememberLine
 import com.patrykandpatrick.vico.compose.cartesian.layer.rememberLineCartesianLayer
 import com.patrykandpatrick.vico.compose.cartesian.rememberCartesianChart
-import com.patrykandpatrick.vico.compose.common.component.rememberLineComponent
 import com.patrykandpatrick.vico.compose.common.component.rememberTextComponent
 import com.patrykandpatrick.vico.compose.common.component.shapeComponent
 import com.patrykandpatrick.vico.compose.common.fill
@@ -49,8 +48,8 @@ data class QimengTrendSeries(val values: List<Number>)
  * 视觉口径（2026-09-13 用户终裁对齐旧版截图，旧 Canvas 版 LineChartView 参数同源）：
  * 平涂面积（主色 [AREA_FILL_ALPHA] 恒定透明度，旧版 LinearGradient 双端同色+paint alpha=40
  * 的等效平涂——「渐变面积」旧口径废止）+ 折线 + 空心数据点（外圈主色环 + 内圈卡底色，
- * 旧版 pointPaint/pointFillPaint 同构）+ 4 条水平网格线（旧版 GRID_LINE_COUNT=3 的
- * startAxis guideline 近似，Vico 刻度取整值位）+ X 轴标签次色（旧 qmColorTextSecondary 档）；
+ * 旧版 pointPaint/pointFillPaint 同构）+ X 轴标签次色（旧 qmColorTextSecondary 档）；
+ * 按用户 2026-10-22 要求不画背景网格线，主页与详情页共用此约束；
  * X 轴标签防重叠抽稀由 Vico ItemPlacer 内置（替代旧 Canvas labelStep 手工截断）；
  * 不画 Y 轴标签（旧版无轴文字）。
  *
@@ -83,7 +82,7 @@ fun QimengTrendLineChart(
             series.forEach { line -> add(LineCartesianLayerModel.partial { series(line.values) }) }
         }
     }
-    // 空心点内圈与网格线取色（旧版 pointFillPaint=背景色/gridPaint=divider 的主题槽位等价）：
+    // 空心点内圈取色（旧版 pointFillPaint=背景色的主题槽位等价）：
     // 图表恒铺在 surfaceVariant 统计卡上（StatsScreen/StatsDetailScreen 三个调用点同底），
     // 内圈随卡底色才能呈现「镂空」观感
     val pointInnerColor = MaterialTheme.colorScheme.surfaceVariant
@@ -116,14 +115,11 @@ fun QimengTrendLineChart(
                 ),
             ),
             startAxis = VerticalAxis.rememberStart(
-                // 旧版 4 条水平网格线的近似：隐藏轴线/刻度/标签，只留 guideline（刻度取整值位）
+                // 只保留折线和数据点：轴线/刻度/标签/背景参考线全部隐藏。
                 line = null,
                 tick = null,
                 label = null,
-                guideline = rememberLineComponent(
-                    fill = fill(MaterialTheme.colorScheme.outlineVariant),
-                    thickness = GRID_LINE_THICKNESS,
-                ),
+                guideline = null,
             ),
             bottomAxis = HorizontalAxis.rememberBottom(
                 // 旧版为无轴线的悬浮日期标签：隐藏轴线/刻度/参考线，只留标签（次色 10sp 档）
@@ -156,6 +152,3 @@ private val POINT_RING_THICKNESS = 2.dp
 
 /** 数据点圆角百分比（CorneredShape.rounded(50) 对方形边界 = 正圆） */
 private const val POINT_CORNER_PERCENT = 50
-
-/** 水平网格线厚度（旧版 gridPaint strokeWidth=1px 的近似档） */
-private val GRID_LINE_THICKNESS = 1.dp

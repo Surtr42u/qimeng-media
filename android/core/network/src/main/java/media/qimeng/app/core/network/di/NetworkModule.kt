@@ -132,10 +132,9 @@ object NetworkModule {
     /**
      * SSE 长流通道专用客户端（ADR-0029，2026-10-01）：同样从全局单例派生（newBuilder 共享
      * AuthInterceptor 与连接池——**token 注入零第二份逻辑**，SSE 请求鉴权与业务请求同一条
-     * 拦截器链），只禁用读超时。为什么：SSE 是服务端持续推流的长响应，保活靠服务端心跳帧
-     * （server/internal/events/sse.go DefaultHeartbeat=15s，注释改动须双向同步），主客户端
-     * 10s 读超时会周期性把空闲等待掐成 SocketTimeout（永远活不过两个心跳）；读超时置 0 =
-     * OkHttp 语义「不设超时」，断线检测交给 TCP 层错误（对端断开/网络切换即 onFailure）。
+     * 拦截器链）。服务端每 15 秒发心跳（server/internal/events/sse.go DefaultHeartbeat，
+     * 两侧改动须同步）；读空闲上限为四个周期。注释心跳同样是字节读取，健康空闲连接
+     * 不会因没有业务事件而超时；静默黑洞超过该窗口会走 onFailure、退避重连和缓存失效。
      * callTimeout 不另设：RealEventSource 连接成功后本就取消 call 超时（okhttp-sse 官方行为，
      * sources jar 实读确认），且总时限对长流语义同样错误。写超时继承不动：GET 无请求体。
      */
@@ -144,7 +143,7 @@ object NetworkModule {
     @SseClient
     fun provideSseOkHttpClient(okHttpClient: OkHttpClient): OkHttpClient =
         okHttpClient.newBuilder()
-            .readTimeout(CALL_TIMEOUT_DISABLED, TimeUnit.MILLISECONDS)
+            .readTimeout(SSE_IDLE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .build()
 
     /**
@@ -227,6 +226,9 @@ object NetworkModule {
 
     /** 读超时（秒）：覆盖登录/探活这类小响应足够；大流量通道单独设置（上传走 UploadClient 客户端、缩略图走 CoilModule）。 */
     private const val READ_TIMEOUT_SECONDS = 10L
+
+    /** 服务端 DefaultHeartbeat=15s 的四个周期；注释心跳也会重置底层读空闲计时。 */
+    private const val SSE_IDLE_TIMEOUT_SECONDS = 60L
 
     /** 写超时（秒）：与读对称。 */
     private const val WRITE_TIMEOUT_SECONDS = 10L

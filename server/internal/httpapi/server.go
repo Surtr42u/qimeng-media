@@ -16,14 +16,18 @@ import (
 
 	"qimeng-media/server/internal/auth"
 	"qimeng-media/server/internal/authorattach"
+	"qimeng-media/server/internal/authoredit"
+	"qimeng-media/server/internal/authorimport"
 	"qimeng-media/server/internal/backup"
 	"qimeng-media/server/internal/config"
 	"qimeng-media/server/internal/events"
 	"qimeng-media/server/internal/httpapi/gen"
 	"qimeng-media/server/internal/libraryrevision"
+	"qimeng-media/server/internal/mediawrite"
 	"qimeng-media/server/internal/safego"
 	"qimeng-media/server/internal/sourcematcher"
 	"qimeng-media/server/internal/store/db"
+	"qimeng-media/server/internal/syncchannel"
 	"qimeng-media/server/internal/sysmon"
 	"qimeng-media/server/internal/thumbnail"
 	"qimeng-media/server/internal/uploadsess"
@@ -120,6 +124,10 @@ const dirPerm = 0o755
 // Deps 是组装 httpapi.Server 的全部外部依赖（依赖注入只在 main 发生，
 // 业务包之间禁止互相 new——ARCHITECTURE §5）。
 type Deps struct {
+	TXT  *authorimport.Service
+	Sync *syncchannel.Service
+	// Writes 是媒体写入编排服务；生产组合根显式提供，缺省仅兼容隔离测试装配。
+	Writes *mediawrite.Service
 	// Conn 原始数据库连接（readyz 的 PingContext、事务兜底用）。
 	Conn *sql.DB
 	// Queries 是 sqlc 生成的类型安全查询集。
@@ -161,6 +169,12 @@ type Deps struct {
 	// Mirror 作者总表镜像写入器；nil 时同上构造缺省实例（尽力而为投影，
 	// 失败只告警）。组合根（main）显式装配是规范形态（ADR-0019 DI 在 main）。
 	Mirror *authorattach.MirrorWriter
+	// AuthorEdit 作者编辑用例服务（authoredit.Service，Q1 事务下沉）：在
+	// 单事务内编排 authorattach 原语并在提交成功后刷新镜像。nil 时 New
+	// 内部用同源 Conn/Queries/Attach/Mirror/Now/Logger 构造缺省实例——
+	// 服务只依赖注入的原语，缺省即生产实现，不创建第二套权威状态；
+	// 生产 main 显式装配是规范形态。
+	AuthorEdit *authoredit.Service
 	// Revision 库内容修订号服务（GET /api/v1/library/revision 与 bump 链
 	// 的唯一读写通道，libraryrevision 包）；nil 时 New 内部用 deps.Queries
 	// 构造缺省实例并引导基线——Service 只依赖 store，缺省即生产实现。
@@ -169,6 +183,7 @@ type Deps struct {
 
 // Server 实现 gen.ServerInterface，并持有跨 handler 共享的状态。
 type Server struct {
+	writes    *mediawrite.Service
 	conn      *sql.DB
 	q         *db.Queries
 	bus       *events.Bus
@@ -202,14 +217,17 @@ type Server struct {
 	attach *authorattach.Service
 	// mirror 作者总表镜像写入器（Deps.Mirror 的落位）。
 	mirror *authorattach.MirrorWriter
+	// authorEdit 作者编辑用例服务（Deps.AuthorEdit 的落位）：作者管理/
+	// 来源区/资产作者替换/词表预填的事务宿主（Q1 事务下沉）。
+	authorEdit *authoredit.Service
 	// rev 库内容修订号服务（Deps.Revision 的落位；handler 与 bump 链共用）。
 	rev *libraryrevision.Service
 	// uploads 断点续传上传会话管理器（uploadsess 包，ADR-0028；New 内按
 	// Cfg.DataDir 构造，时钟/日志与 Server 同源注入）。
 	uploads *uploadsess.Manager
-	// localSync 本机自动同步通道运行态（localsync.go，ADR-0030）：观测/失败
-	// 记录/状态端点共享的内存态，全部访问经其 mu 保护。
-	localSync *localSyncState
+	// sync 持有本机同步业务，HTTP 只读快照和触发；txt 为跨入口共用作者导入服务。
+	sync *syncchannel.Service
+	txt  *authorimport.Service
 	// thumbProgress 缩略图覆盖进度缓存（thumbnail_warmup.go，2026-10-04 批）：
 	// 进度页轮询的分子=覆盖资产数，需对全库逐资产 Stat（v4 换代期 thumbs 目录
 	// 混有旧键孤儿文件，目录计数口径失真）；30s TTL 缓存把秒级轮询的稳态成本
@@ -265,6 +283,16 @@ func New(deps Deps) (*Server, error) {
 	if mirror == nil {
 		mirror = &authorattach.MirrorWriter{Logger: logger}
 	}
+	// 作者编辑用例缺省兜底：复用上面同源解析的 attach/mirror/logger/now，
+	// 不另建第二套权威状态；生产 main 显式注入同一实例（ADR-0019 DI 在
+	// main，缺省仅兼容既有隔离测试装配）。
+	authorEdit := deps.AuthorEdit
+	if authorEdit == nil {
+		authorEdit = authoredit.New(authoredit.Options{
+			Conn: deps.Conn, Queries: deps.Queries,
+			Attach: attach, Mirror: mirror, Now: now, Logger: logger,
+		})
+	}
 	rev := deps.Revision
 	if rev == nil {
 		rev = libraryrevision.NewService(deps.Queries, logger, now)
@@ -285,9 +313,8 @@ func New(deps Deps) (*Server, error) {
 		logger:         logger,
 		attach:         attach,
 		mirror:         mirror,
+		authorEdit:     authorEdit,
 		rev:            rev,
-		uploads:        uploadsess.New(deps.Cfg.DataDir, now, logger),
-		localSync:      newLocalSyncState(),
 		authState:      newAuthState(),
 		authLimit:      newAuthLimiter(authRateLimitMax, authRateLimitWindow),
 		scanStates:     newScanStateMap(),
@@ -295,6 +322,29 @@ func New(deps Deps) (*Server, error) {
 		dirs:           newDirsCache(now),
 		startedAt:      now(),
 	}
+	s.writes = deps.Writes
+	if s.writes == nil {
+		s.writes = mediawrite.New(mediawrite.Options{Conn: deps.Conn, Queries: deps.Queries,
+			Bus: deps.Bus, Config: deps.Cfg, Thumbs: deps.Thumbs, Logger: logger, Now: now,
+			Revision: rev, MoveFile: func(src, dst string) error { return moveFile(src, dst) },
+			Enrich: func(ctx context.Context, libraryID, assetID string) error {
+				err := s.scanner.EnrichAsset(ctx, libraryID, assetID)
+				if errors.Is(err, ErrScannerUnavailable) {
+					return nil
+				}
+				return err
+			}})
+	}
+	s.txt = deps.TXT
+	if s.txt == nil {
+		s.txt = authorimport.New(deps.Conn, deps.Queries, now, logger)
+	}
+	s.sync = deps.Sync
+	if s.sync == nil {
+		s.sync = syncchannel.New(syncchannel.Options{Config: deps.Cfg, Queries: deps.Queries, Writes: s.writes, TXT: s.txt, Mirror: mirror, Logger: logger, Now: now})
+	}
+
+	s.uploads = s.writes.UploadSessions()
 	// 服务重启后 Bearer token 仍有效：从库加载首行 token 哈希到内存
 	//（SECURITY「鉴权设计」：库中只存哈希，明文 token 永不落库）。
 	if err := s.authState.load(context.Background(), s.q); err != nil {
@@ -451,6 +501,16 @@ func (s *Server) hostAllowed(host string) bool {
 // Handler 返回完整路由与鉴权链的 http.Handler。
 func (s *Server) Handler() http.Handler { return s.handler }
 
+// rollbackTx 事务收尾回滚的统一口（Q6 忽略错误清理批）：Commit 之后的
+// Rollback 返回 sql.ErrTxDone，属事务已正常结束的预期 no-op，静默；真实
+// 回滚失败记录告警留痕，不覆盖调用方已上抛/已记录的业务错误。同包多处
+// 同语义收口于此；authoredit 等其他包各持同款纪律，不做跨包万能件。
+func (s *Server) rollbackTx(ctx context.Context, what string, tx *sql.Tx) {
+	if err := tx.Rollback(); err != nil && !errors.Is(err, sql.ErrTxDone) {
+		s.logger.WarnContext(ctx, what+": 事务回滚失败", "error", err)
+	}
+}
+
 // SetScanner 在组装期替换扫描器实现（main 先 New 出 Server——因为适配器
 // 需要 Server.FinishScan 钩子——再回填真扫描器，解除构造循环依赖）。
 // 只应在启动阶段、开始服务前调用；并发请求期间换扫描器属未定义行为。
@@ -553,7 +613,7 @@ func (s *Server) mediaSignature(next http.Handler) http.Handler {
 }
 
 // GetApiV1Readyz 就绪探针（协议面 GET /api/v1/readyz；根路径 /readyz 为
-// 运维别名，共用本 handler）：检查数据库可达（SECURITY：探针不放行无鉴权
+// 运维别名，共用本 handler）：检查数据库与存储可达/余量（SECURITY：探针不放行无鉴权
 // 业务流量，只回答"依赖是否健康"）。
 func (s *Server) GetApiV1Readyz(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), readyzTimeout)
@@ -562,10 +622,14 @@ func (s *Server) GetApiV1Readyz(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusServiceUnavailable, codeDbUnreachable, "数据库不可达")
 		return
 	}
+	if err := s.writes.CheckStorage(ctx); err != nil {
+		writeErr(w, http.StatusServiceUnavailable, codeStorageUnavailable, "存储目录不可用或剩余空间不足")
+		return
+	}
 	w.Header().Set("Content-Type", contentTypeJSON)
-	// 写失败只可能发生在探针调用方已断开时（探针本就是调用方主动轮询，
-	// 无补救动作），忽略即可。
-	_, _ = w.Write([]byte(`{"status":"ready"}`))
+	if _, err := w.Write([]byte(`{"status":"ready"}`)); err != nil {
+		s.logger.WarnContext(r.Context(), "写出就绪探针响应失败", "error", err)
+	}
 }
 
 // GetApiV1Healthz 存活探针（复用既有实现，语义见 healthz.go）。

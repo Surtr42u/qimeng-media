@@ -20,9 +20,9 @@ NAS 未就位过渡期，手机与电脑各自存有同一批文件，双份靠�
 2. **结构与库名自动匹配**：同步根直接子文件夹名 = 库名。对每个库的 name 做与 Android 归档**逐字相同**的 sanitize（trim + `\/:*?"<>|` 九字符→`_`，锚点 Android `InboxFileStore.sanitizeLibraryDirName`，纯函数单测对齐），再与文件夹名精确比对（大小写敏感）；0 命中/多命中/库停用/COS 库 = 该文件夹失败原地保留（宁可不动，绝不猜）。文件夹内媒体**递归**处理，子目录相对路径映射库内子目录（与 Web 拖拽目录上传同型）。
 3. **入库语义与直传完全一致**：`filing.ValidateUpload` 四道校验同一函数、`upload.autoAccept` 同一道闸（false 时媒体暂停处理，TXT 导入不受影响）、`upload.max_bytes` 同一上限、`ResolveConflict` 同名自动改名 "名 (2).ext" 永不 409（DOMAIN_RULES §9 既有口径，不另设规则）、`WithLibraryGate` 库锁内落位 + 落位后 size 复核（对齐第四百一十九笔 Seal 落位复核硬化）、成功走 `ingestPlacedUpload`（sysmon/upload.done/library.changed/修订号/富化全同款）——自动通道不是旁路，是直传管线的第三个入口。
 4. **成功移走、失败保留**：媒体成功后源文件 move 入库根（从同步源消失）；TXT 成功后移 `<同步根>/.synced/`（点前缀内部目录，扫描与同步均不处理；**同名只留最新**——2026-10-11 修订1，原「同名加序号绝不覆盖」废止，见文末修订记录）；失败文件原地保留、每轮自动重试。可见性 = `GET /api/v1/local-sync/status`（enabled/root/intervalSeconds/paused/lastError/lastCycleAt/syncedTotal/counts{waitingStable,failed,ignored}/items 上限 500/recentSynced 最近 20）；另有 `POST /api/v1/local-sync/trigger` 手动触发一轮（202 异步；未启用 409 code=`LOCAL_SYNC_DISABLED`）。
-5. **TXT keep 语义**：同步根直接下 `*.txt` 走既有 `POST /authors/import-txt` 统一重建语义，`conflictResolution` 恒 **keep**（无人值守通道绝不 remove——重导入保护语义下永远并回，不静默丢弃既有上传条目）；仅 UTF-8（剥 BOM），10MB 护栏；导入成功但归档移动失败不算失败，下轮幂等自愈。
+5. **TXT keep 语义**：同步根直接下 `*.txt` 走既有 `POST /authors/import-txt` 统一重建语义，`conflictResolution` 恒 **keep**（无人值守通道绝不 remove——重导入保护语义下永远并回，不静默丢弃既有上传条目）；仅 UTF-8（剥 BOM），10MB 护栏；导入成功但归档移动失败标记 failed 备注，保留源文件，下轮幂等自愈，不回滚导入事务。
 6. **安全**：通道由 `QIMENG_LOCAL_SYNC_ROOT` 显式配置启用（空=关，唯一开关形态，不设独立 enabled 开关防矛盾组合）；同步根与任何库根/DataDir **双向重叠禁令**（一方包含另一方或相等一律拒绝，防两套写管线互相搬动对方文件）；隐藏条目（点前缀，含 `.synced`）与符号链接不处理；子路径经 NormalizeRelPath + PathWithinRoot 规范化并限制在同步根内；同步根不存在 = 通道级错误（status lastError 可见），**绝不代建目录**。
-7. **实现落位**：库名匹配/目录扫描/重叠检查为纯逻辑进 `server/internal/localsync/`（带单测）；轮询编排与运行态进 `server/internal/httpapi/`（trash_sweeper 同型先例）；无 DB 迁移、无新依赖；App 端零改动。
+7. **实现落位**：库名匹配/目录扫描/重叠检查为纯逻辑进 `server/internal/localsync/`（带单测）；轮询编排与运行态在 `server/internal/syncchannel/`（2026-10-21 按 ADR-0019 从 HTTP 迁出）；TXT 导入事务复用 `authorimport`，媒体入库复用 `mediawrite`，HTTP 仅触发和快照协议映射；无 DB 迁移、无新依赖；App 端零改动。
 
 配置三键（yaml `local_sync.root/interval/stable_age` / env 同名 `QIMENG_*`，间隔值非法启动即报错）：`QIMENG_LOCAL_SYNC_ROOT`（空=关）、`QIMENG_LOCAL_SYNC_INTERVAL`（默认 30s）、`QIMENG_LOCAL_SYNC_STABLE_AGE`（默认 60s——文件 mtime 年龄≥门槛且跨轮 size/mtime 不变才处理，防半截拷贝入库）。
 
@@ -33,8 +33,8 @@ Accepted（2026-10-01）
 ## 后果（Consequences）
 
 - **积极**：双份手工搬运消除，同步源即"已入库"的镜像；App 零改动且手动上传保留为备选安全通道；入库走同一管线，SSE `library.changed` 广播后 Web/Android 双端自动刷新；失败自愈——文件被占用（Windows 独占打开）、半截拷贝等下轮重试即可，不需人工干预。
-- **负面权衡（接受并记档）**：① 运行态在内存，服务端重启后一轮内重建（attempts 等归零重来，行为幂等无实害），`syncedTotal` 归零；② 崩溃窗口——源文件 move 已完成但资产注册未落库时文件已在库外，由扫描器 ≤5min 全量轮询兜底补登记（ADR-0004 既有机制）；③ GBK/GB18030 TXT 不支持（仅 UTF-8，解码需新依赖 x/text，触发再议）；④ `upload.autoAccept=false` 期间媒体暂停处理，且此前失败条目的失败原因被 waiting 覆盖（TXT 不受影响）。
-- **后置项（触发再立项）**：importTxt 编排按 ADR-0019 下沉后本通道 runner 随迁 + `.synced` 目录名/根级 TXT 判定跨包双常量收敛；GB18030 解码（需新依赖 x/text 再决策）；fsnotify 秒级响应；sysmon 指标化；同步配置编辑 UI（v1 走 yaml/env+重启，同备份调度先例）。
+- **负面权衡（接受并记档）**：① 运行态在内存，服务端重启后一轮内重建（attempts 等归零重来，行为幂等无实害），`syncedTotal` 归零；② 崩溃窗口——源文件 move 已完成但资产注册未落库时文件已在库位，由扫描器 ≤5min 全量轮询兜底补登记（ADR-0004 既有机制）；③ GBK/GB18030 TXT 不支持（仅 UTF-8，解码需新依赖 x/text，触发再议）；④ `upload.autoAccept=false` 期间媒体暂停处理，且此前失败条目的失败原因被 waiting 覆盖（TXT 不受影响）。
+- **后置项（触发再立项）**：GB18030 解码（需新依赖 x/text 再决策）；fsnotify 秒级响应；sysmon 指标化；同步配置编辑 UI（v1 走 yaml/env+重启，同备份调度先例）。
 - **联动文件**：`api/openapi.yaml`（2 路径 + LocalSyncStatus/LocalSyncItem 两 schema）、`server/internal/localsync/`（match.go/scan.go/doc.go + 单测）、`server/internal/httpapi/`（localsync.go、localsync_runner.go、localsync_test.go）、`server/internal/config/config.go`、`server/cmd/qimeng/main.go`（接线）、`web/src/components/manage/LocalSyncCard.tsx`、`web/src/hooks/use-local-sync.ts`、`web/src/pages/MaintenancePage.tsx`、`docs/GUIDE_API.md`、`docs/SECURITY.md`、`docs/DOMAIN_RULES.md`（§9 括注）、`docs/HANDOVER.md`、`deploy/README.md`、`docs/CHANGELOG.md`（第四百二十四笔）、`docs/adr/INDEX.md`。
 
 ## 修订记录（2026-10-11，归档区同名只留最新）
@@ -44,3 +44,7 @@ Accepted（2026-10-01）
 修订（决策 4 的 TXT 归档段）：TXT 归档目标恒为 `<同步根>/.synced/<原文件名>`——同名重导时先移除旧归档副本再落位新文件（覆盖语义），不再生成「同名加序号」副本；清理/移动失败仍只标记 failed 备注、源文件留在同步根，下轮幂等重导 + 重归档自愈（导入事务不受影响）。**媒体归档语义不动**（`ResolveConflict` 同名改名永不 409——媒体双份是不同文件，不可覆盖）。存量：`.synced/` 5 份副本已收敛为 1 份（保留最新一次投放内容、改名回原名）。
 
 联动：`server/internal/httpapi/localsync_runner.go`（`processLocalSyncTxt` 归档段）、`localsync_test.go`（新增 `TestLocalSyncTxtArchiveKeepsLatest` 锁定新语义）、`docs/HANDOVER.md`（§4/§6 口径）、`docs/CHANGELOG.md`（第五百二十八笔）。
+
+## 实现同步（2026-10-21）
+
+轮询/观测/状态快照、媒体搬移与 TXT 归档已迁入 syncchannel；TXT 事务共用 authorimport，HTTP 不再向业务层提供反向回调。手动执行与轮询同一轮锁串行，快照按值复制；实际 TXT 读取也限于 10MB 加一字节探测，避免扫描后增长绕过护栏。`.synced` 名与分类规则复用 localsync。既有同名归档最新、keep、失败保源/库位语义保持，静态链接与外部换链边界仍见 SECURITY。

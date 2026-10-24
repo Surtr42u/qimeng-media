@@ -205,7 +205,7 @@ func (m *Manager) rotate() error {
 	if err != nil {
 		return fmt.Errorf("backup: 打开备份目录 %s: %w", m.dir, err)
 	}
-	defer func() { _ = root.Close() }()
+	defer func() { m.closeRoot(root) }()
 	// list 已按名字升序（最旧在前）；从队首删到只剩 retention 份。
 	for _, info := range infos[:len(infos)-retention] {
 		if err := root.Remove(info.Name); err != nil {
@@ -277,7 +277,7 @@ func (m *Manager) Delete(name string) error {
 		}
 		return fmt.Errorf("backup: 打开备份目录 %s: %w", m.dir, err)
 	}
-	defer func() { _ = root.Close() }()
+	defer func() { m.closeRoot(root) }()
 	if err := root.Remove(name); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return ErrNotFound
@@ -305,7 +305,7 @@ func (m *Manager) OpenFile(name string) (*os.File, fs.FileInfo, error) {
 	// 返回的 *os.File 生命周期归调用方。
 	f, err := root.Open(name)
 	if err != nil {
-		_ = root.Close()
+		m.closeRoot(root)
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, nil, ErrNotFound
 		}
@@ -313,14 +313,29 @@ func (m *Manager) OpenFile(name string) (*os.File, fs.FileInfo, error) {
 	}
 	st, err := f.Stat()
 	if err != nil {
-		_ = f.Close()
-		_ = root.Close()
+		m.closeFile(f)
+		m.closeRoot(root)
 		return nil, nil, fmt.Errorf("backup: 读取快照信息 %s: %w", name, err)
 	}
 	// Root 句柄用完即关：它只锚定"打开"这一动作，已返回的 *os.File 独立
 	// 有效（Windows 下不关会挂住目录句柄，TempDir/删除目录时撞占用）。
-	_ = root.Close()
+	m.closeRoot(root)
 	return f, st, nil
+}
+
+// closeRoot/closeFile 备份目录根/文件句柄的收尾口（Q6 忽略错误清理批）：
+// 只读锚定句柄的 Close 失败不影响主结果，但 Windows 下句柄未释放会挂住
+// 目录（TempDir/删除目录撞占用），失败必须可观察，不留静默泄漏。
+func (m *Manager) closeRoot(root *os.Root) {
+	if err := root.Close(); err != nil {
+		m.logger.Warn("backup: 关闭目录根句柄失败", "error", err)
+	}
+}
+
+func (m *Manager) closeFile(f *os.File) {
+	if err := f.Close(); err != nil {
+		m.logger.Warn("backup: 关闭文件句柄失败", "error", err)
+	}
 }
 
 // StartScheduling 挂调度循环生命周期根并应用初始调度参数（装配根 main 在
