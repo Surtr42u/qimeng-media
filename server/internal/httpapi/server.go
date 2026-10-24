@@ -627,9 +627,9 @@ func (s *Server) GetApiV1Readyz(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", contentTypeJSON)
-	// 写失败只可能发生在探针调用方已断开时（探针本就是调用方主动轮询，
-	// 无补救动作），忽略即可。
-	_, _ = w.Write([]byte(`{"status":"ready"}`))
+	if _, err := w.Write([]byte(`{"status":"ready"}`)); err != nil {
+		s.logger.WarnContext(r.Context(), "写出就绪探针响应失败", "error", err)
+	}
 }
 
 // GetApiV1Healthz 存活探针（复用既有实现，语义见 healthz.go）。

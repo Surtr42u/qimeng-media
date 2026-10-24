@@ -2,7 +2,10 @@ package media.qimeng.app.feature.manage
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
 import media.qimeng.app.core.data.repository.VocabularyEditRepository
 import media.qimeng.app.core.data.repository.VocabularySyncError
 import media.qimeng.app.core.data.repository.VocabularySyncException
@@ -228,6 +231,47 @@ class VocabularyEditViewModelTest {
     }
 
     // ---- 草稿代际与取消纪律（2026-10-24 修复批核心回归） ----
+
+    @Test
+    fun `立即完成的回读仍能回填保存后的规范化结果`() = runTest {
+        Dispatchers.setMain(UnconfinedTestDispatcher(mainDispatcherRule.testDispatcher.scheduler))
+        try {
+            val repo = FakeVocabularyEditRepository()
+            val vm = VocabularyEditViewModel(repo)
+            vm.addGroup("原组")
+            repo.loadQueue.add(
+                Result.success(EditableVocabulary(groups = listOf(VocabularyGroup("规范化组")))),
+            )
+
+            vm.save()
+
+            assertEquals("规范化组", vm.uiState.value.groups.single().canonical)
+            assertFalse(vm.uiState.value.saving)
+            assertFalse(vm.uiState.value.dirty)
+            assertNotNull(vm.uiState.value.noticeMessage)
+        } finally {
+            Dispatchers.setMain(mainDispatcherRule.testDispatcher)
+        }
+    }
+
+    @Test
+    fun `加载期间的新编辑不被初始响应覆盖`() = runTest {
+        val repo = GatedVocabularyEditRepository()
+        val vm = VocabularyEditViewModel(repo)
+        val gate = CompletableDeferred<Result<EditableVocabulary>>()
+        repo.loadGates.add(gate)
+        vm.load()
+        driveIdle()
+        assertTrue(vm.uiState.value.loading)
+
+        vm.addGroup("新草稿")
+        gate.complete(Result.success(samplePayload()))
+        driveIdle()
+
+        assertEquals("新草稿", vm.uiState.value.groups.single().canonical)
+        assertTrue(vm.uiState.value.dirty)
+        assertFalse(vm.uiState.value.loading)
+    }
 
     @Test
     fun `保存后慢回读不得覆盖继续编辑的新草稿`() = runTest {

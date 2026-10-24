@@ -28,6 +28,8 @@
 
 仓库根 `make server-run`、`make server-test`、`make lint`，具体目标以 Makefile 为准。先按 AGENTS 读取适用协作规则；广泛服务端影响跑 `go test ./...`，文件平台行为需对应 CI/目标环境。生成接口层不可手改；SDK 生成见根入口。
 
+事务正常结束的 ErrTxDone 与真实回滚失败区别处理；响应已开始后的写失败只留日志，不重复响应或重试业务。复制/数据库打开失败中的关闭错误与主错误保留在同一错误链，不能用注释豁免吞错。
+
 测试只用临时数据库、合成媒体、临时目录及隔离端口，禁止写入 8420 真库。扫描差集/恢复/续传失败重试边界见 [文件规则](../docs/domain/files.md) 与 [SECURITY](../docs/SECURITY.md)，便携 v1/v2 兼容见 [迁移](../docs/domain/migration.md)。
 
 ## 数据库持久性

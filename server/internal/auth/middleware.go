@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strings"
 )
@@ -93,7 +94,7 @@ const (
 func writeUnauthorized(w http.ResponseWriter, message string) {
 	w.Header().Set("Content-Type", contentTypeJSON)
 	w.WriteHeader(http.StatusUnauthorized)
-	// 响应体写失败（客户端已断开）无补救动作，net/http 会关连接；
-	// 此处为终端错误响应，忽略写错误即可。
-	_ = json.NewEncoder(w).Encode(unauthorizedBody{Code: codeUnauthorized, Message: message})
+	if err := json.NewEncoder(w).Encode(unauthorizedBody{Code: codeUnauthorized, Message: message}); err != nil {
+		slog.Warn("写出鉴权响应失败", "error", err)
+	}
 }

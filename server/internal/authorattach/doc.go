@@ -22,7 +22,8 @@
 //
 // 边界（docs/ARCHITECTURE.md §5，ADR-0019 编排层下沉 / ADR-0023 上传挂靠）：
 //   - 依赖 store（kv/表读写）与 authoring（文本手术纯函数）；
-//   - 被 httpapi 调用，禁止反向依赖 httpapi（depguard 红线）；
+//   - 事务内原语由 authoredit/authorimport 等传入同一 qtx；HTTP 只作适配，
+//     禁止反向依赖 httpapi（depguard 红线）；
 //   - 文本格式规则全部在 authoring 纯函数层，本包不做行级手术、不改解析
 //     语义；时间一律由调用方传入 time.Time（可测性），包内不调 time.Now。
 package authorattach

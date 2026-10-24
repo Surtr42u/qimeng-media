@@ -16,7 +16,6 @@ import (
 	"net/http"
 
 	"qimeng-media/server/internal/authorattach"
-	"qimeng-media/server/internal/authoredit"
 	"qimeng-media/server/internal/authoring"
 	"qimeng-media/server/internal/httpapi/gen"
 	"qimeng-media/server/internal/store/db"

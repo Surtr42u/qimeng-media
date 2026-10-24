@@ -190,7 +190,7 @@
   1. `openapi`：redocly 协议校验（error 失败，warning 不阻塞）
   2. `server`：Linux runner 上重建 Go 接口层 → golangci-lint（静态检查 + depguard 模块边界）→ go vet → go test（-race）→ go build
   3. `server-windows-filing`：Windows 原生 runner 上运行 `go test ./internal/filing -count=1`，覆盖 Linux job 不会编译的 `move_windows.go` build-tag 路径
-  4. `web`：npm ci → openapi-ts 重建 TS 客户端 → tsc --noEmit → npm run build → npm test（vitest，ADR-0017）
+  4. `web`：npm ci → openapi-ts 重建 TS 客户端 → knip → tsc --noEmit → oxlint → npm run build → npm test（vitest，ADR-0017）
   5. `sdk-chain`：`make sdk` 三端生成链可重建（生成物防漂移的结构性门禁，ADR-0009）
   6. `android`：复用 sdk-chain 生成的 android/sdk → temurin 21 + gradle wrapper 缓存 → assembleDebug + testDebugUnitTest + lintDebug（M4-0 起）
   7. `desktop`：Tauri 2 壳 cargo test + build（windows runner + rust-cache，debug 链不出安装包；第四端门禁，ADR-0020，2026-10-03 补）

@@ -88,6 +88,7 @@ class VocabularyEditViewModel @Inject constructor(
      */
     fun load() {
         if (_uiState.value.loading || _uiState.value.saving) return
+        val expectedRevision = _uiState.value.draftRevision
         val generation = invalidateReadbacks()
         _uiState.update { it.copy(loading = true, errorMessage = null) }
         viewModelScope.launch {
@@ -95,7 +96,10 @@ class VocabularyEditViewModel @Inject constructor(
                 request { repository.load() }.fold(
                     onSuccess = { payload ->
                         _uiState.update { current ->
-                            if (readGeneration != generation || current.saving) {
+                            if (
+                                readGeneration != generation || current.saving ||
+                                current.draftRevision != expectedRevision || current.dirty
+                            ) {
                                 // 代际已被新 load/save 接管或另有保存：旧响应不回填
                                 current
                             } else {
@@ -147,6 +151,8 @@ class VocabularyEditViewModel @Inject constructor(
                                 current
                             } else {
                                 current.copy(
+                                    // Main.immediate 下回读可能同步完成，必须先结束保存态。
+                                    saving = false,
                                     // 仅当草稿修订号仍等于保存快照时清 dirty；保存期间的
                                     // 新编辑保持脏态等下一轮保存。提示计数用快照
                                     dirty = current.dirty && current.draftRevision != expectedRevision,

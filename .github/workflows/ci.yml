@@ -107,6 +107,7 @@ jobs:
       # 前置约束）；豁免清单与口径见 web/knip.ts 头注。
       - run: npx knip --include dependencies,devDependencies,unlisted,binaries,unresolved,files
       - run: npx tsc --noEmit
+      - run: npm run lint
       - run: npm run build
       - run: npm test
 

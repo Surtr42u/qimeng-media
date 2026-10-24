@@ -139,10 +139,10 @@ func copyFile(src, dst string) error {
 	}
 	if _, err := copyBody(out, in); err != nil {
 		// 先关句柄再删（Windows 上未关闭的句柄会挡住 os.Remove）；
-		// 收尾关闭已无意义，主错误是复制失败，保留它上抛。
-		_ = out.Close()
+		// 同时保留复制与收尾错误，不因关闭失败丢失最初的复制错误。
+		copyErr := errors.Join(err, out.Close())
 		cleanupFailedCopy(dst)
-		return err
+		return copyErr
 	}
 	if err := out.Close(); err != nil {
 		cleanupFailedCopy(dst)

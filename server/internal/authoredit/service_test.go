@@ -95,7 +95,7 @@ func seedLibrary(t *testing.T, q *db.Queries, id, kind string) {
 // （与 authorattach 测试同款前提）。
 func seedAsset(t *testing.T, q *db.Queries, id, libID, name string) {
 	t.Helper()
-	if err := q.UpsertAsset(context.Background(), db.UpsertAssetParams{
+	if _, err := q.UpsertAsset(context.Background(), db.UpsertAssetParams{
 		AssetID: id, LibraryID: libID, RelPath: name, FileName: name,
 		MediaType: "image", SizeBytes: 1, Mtime: store.FormatTimestamp(testNow),
 		CreatedAt: store.FormatTimestamp(testNow), UpdatedAt: store.FormatTimestamp(testNow),
@@ -501,7 +501,6 @@ func TestSentinelErrorIdentities(t *testing.T) {
 // context.Canceled，不得被误映射为任何 4xx 哨兵语义，且零副作用。
 func TestCanceledContextPropagatesWithoutSideEffects(t *testing.T) {
 	e := newEnv(t)
-	ctx := context.Background()
 	seedLibrary(t, e.q, "lib-1", "normal")
 	seedAsset(t, e.q, "asset-1", "lib-1", "f.jpg")
 	idA := authoring.GenerateAuthorID("作者甲")

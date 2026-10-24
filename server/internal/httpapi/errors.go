@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"mime"
 	"net/http"
 
@@ -67,13 +68,13 @@ const (
 // 手抄即违例——代码卫生约束 2）。
 const contentTypeJSON = "application/json; charset=utf-8"
 
-// writeJSON 输出统一 JSON 响应。写失败只可能发生在客户端断开时，
-// 无补救动作；调用方不需要处理该错误。
+// writeJSON 输出统一 JSON 响应。编码/写失败只记录，不重复响应或重试业务。
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", contentTypeJSON)
 	w.WriteHeader(status)
-	// 编码/写失败即客户端已断开，此处已是终端响应，无补救动作，忽略。
-	_ = json.NewEncoder(w).Encode(v)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		slog.Warn("编码或写出 JSON 响应失败", "error", err)
+	}
 }
 
 // writeErr 输出与 openapi components.Error 一致的错误响应。

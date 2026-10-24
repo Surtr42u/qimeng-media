@@ -119,10 +119,7 @@ func Open(path string) (*sql.DB, error) {
 	// sql.Open 是惰性的：立即 Ping 触发真实连接，把 DSN/路径错误暴露在此处
 	// 而不是推迟到第一次查询（那时定位困难）。
 	if err := db.Ping(); err != nil {
-		// 已携主错误（Ping 失败）上抛；刚 Open 的空连接池 Close 不会产生
-		// 需要处理的次生错误，不覆盖主错误（Q6 忽略错误清理批登记豁免）。
-		_ = db.Close()
-		return nil, fmt.Errorf("store: 连接数据库 %s: %w", path, err)
+		return nil, fmt.Errorf("store: 连接数据库 %s: %w", path, errors.Join(err, db.Close()))
 	}
 	return db, nil
 }
