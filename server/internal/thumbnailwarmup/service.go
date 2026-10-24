@@ -21,9 +21,11 @@ const (
 	pageSize = 256
 	// 保留外部删除缓存后的兜底期限和投递节流，本批不调整资源优先级。
 	reconcileInterval = 10 * time.Minute
-	submitPause       = 200 * time.Millisecond
-	retryPause        = 250 * time.Millisecond
-	progressTTL       = 30 * time.Second
+	// 连续上传/扫描通知不能把整库缓存检查变成高频轮询。
+	changeInterval = 30 * time.Second
+	submitPause    = 200 * time.Millisecond
+	retryPause     = 250 * time.Millisecond
+	progressTTL    = 30 * time.Second
 )
 
 type Candidates interface {
@@ -73,9 +75,15 @@ func (s *Service) Notify() {
 
 // Run 由组合根仅启动一次，等待、SQL 与队列背压均随停机取消。
 func (s *Service) Run(ctx context.Context) {
+	s.run(ctx, changeInterval)
+}
+
+func (s *Service) run(ctx context.Context, changeDelay time.Duration) {
 	if !wait(ctx, time.Until(s.readyAt)) {
 		return
 	}
+	lastStart := time.Now()
+	s.drainWake()
 	s.reconcile(ctx)
 	timer := time.NewTimer(reconcileInterval)
 	defer timer.Stop()
@@ -84,10 +92,23 @@ func (s *Service) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-s.wake:
+			if !wait(ctx, time.Until(lastStart.Add(changeDelay))) {
+				return
+			}
+			s.drainWake()
 		case <-timer.C:
+			s.drainWake()
 		}
+		lastStart = time.Now()
 		s.reconcile(ctx)
 		timer.Reset(reconcileInterval)
+	}
+}
+
+func (s *Service) drainWake() {
+	select {
+	case <-s.wake:
+	default:
 	}
 }
 

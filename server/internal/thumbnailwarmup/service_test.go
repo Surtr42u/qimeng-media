@@ -139,7 +139,7 @@ func TestNotificationDuringReconciliationRunsAnotherPass(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan struct{})
-	go func() { s.Run(ctx); close(done) }()
+	go func() { s.run(ctx, time.Millisecond); close(done) }()
 	select {
 	case <-entered:
 	case <-time.After(time.Second):
@@ -162,6 +162,43 @@ func TestNotificationDuringReconciliationRunsAnotherPass(t *testing.T) {
 	}
 	if calls != 2 {
 		t.Fatalf("通知未合并: %d", calls)
+	}
+}
+
+func TestChangeCooldownMergesAndCancelsWithoutAnotherQuery(t *testing.T) {
+	entered := make(chan struct{}, 2)
+	q := candidateFunc(func(context.Context, db.ListThumbnailWarmupPageParams) ([]db.ListThumbnailWarmupPageRow, error) {
+		entered <- struct{}{}
+		return nil, nil
+	})
+	s := New(q, fakeThumbs{}, nil, time.Time{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() { s.Run(ctx); close(done) }()
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("未启动")
+	}
+	for i := 0; i < 100; i++ {
+		s.Notify()
+	}
+	select {
+	case <-entered:
+		t.Fatal("冷却窗内重复扫描")
+	case <-time.After(20 * time.Millisecond):
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("冷却等待未取消")
+	}
+	select {
+	case <-entered:
+		t.Fatal("取消后仍查询")
+	default:
 	}
 }
 
