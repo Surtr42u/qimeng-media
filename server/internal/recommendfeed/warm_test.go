@@ -10,6 +10,37 @@ import (
 	"qimeng-media/server/internal/recommend"
 )
 
+func TestForegroundSharingWarmupStillSucceedsAfterInvalidation(t *testing.T) {
+	c := NewCache()
+	key := Key{Seed: 1}
+	started, release := make(chan struct{}), make(chan struct{})
+	warmDone := make(chan error, 1)
+	go func() {
+		warmDone <- c.warmSeeds(Key{}, []int{1, 0}, nil, time.Now(), func() ([]recommend.Item, error) {
+			close(started)
+			<-release
+			return warmItems(), nil
+		})
+	}()
+	<-started
+	// DoChan 同步加入 ordered 使用的同飞键，确保前台已共享正在装载的预热。
+	foreground := c.sf.DoChan(orderFlightKey(c.currentGeneration(), key), func() (any, error) {
+		return nil, errors.New("foreground unexpectedly started a second computation")
+	})
+	c.Clear()
+	close(release)
+	result := <-foreground
+	if result.Err != nil || len(result.Val.([]string)) != len(warmItems()) {
+		t.Fatalf("前台收到预热专用错误: %v", result.Err)
+	}
+	if err := <-warmDone; !errors.Is(err, ErrWarmupInvalidated) {
+		t.Fatalf("预热未停止后续 seed: %v", err)
+	}
+	if _, ok := c.get(key); ok {
+		t.Fatal("迟到计算发布到新一代缓存")
+	}
+}
+
 func warmItems() []recommend.Item {
 	items := make([]recommend.Item, 32)
 	for i := range items {

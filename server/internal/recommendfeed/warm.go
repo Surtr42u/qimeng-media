@@ -21,24 +21,17 @@ func (c *Cache) WarmSeeds(ctx context.Context, q *db.Queries, base Key, seeds []
 	})
 }
 
-func (c *Cache) currentGeneration() uint64 {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.generation
-}
-
 func (c *Cache) warmSeeds(base Key, seeds []int, prefs *recommend.Weights, now time.Time, load func() ([]recommend.Item, error)) error {
 	generation := c.currentGeneration()
 	var items []recommend.Item
 	loaded := false
 	for _, seed := range seeds {
+		if generation != c.currentGeneration() {
+			return ErrWarmupInvalidated
+		}
 		key := base
 		key.Seed = seed
-		_, err := c.order(key, func() ([]string, error) {
-			// order 自身防止本次计算迟到回填；这里另防止下一 seed 在新一代复用旧输入。
-			if generation != c.currentGeneration() {
-				return nil, ErrWarmupInvalidated
-			}
+		_, err := c.orderInGeneration(key, generation, func() ([]string, error) {
 			if !loaded {
 				start := time.Now()
 				var err error
@@ -49,13 +42,14 @@ func (c *Cache) warmSeeds(base Key, seeds []int, prefs *recommend.Weights, now t
 				loaded = true
 				slog.Info("推荐预热共享输入装载完成", "candidates", len(items), "elapsedMs", time.Since(start).Milliseconds())
 			}
-			if generation != c.currentGeneration() {
-				return nil, ErrWarmupInvalidated
-			}
 			return orderItems(items, seed, prefs, now), nil
 		})
 		if err != nil {
 			return err
+		}
+		// 预热专用中止信号只能在共享计算外返回，不能让前台同飞请求收到它。
+		if generation != c.currentGeneration() {
+			return ErrWarmupInvalidated
 		}
 	}
 	return nil
