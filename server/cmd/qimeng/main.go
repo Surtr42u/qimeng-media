@@ -305,12 +305,13 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// 轮询兜底：定时全量扫描全部注册库（fsnotify 的 Windows 行为差异与
-	// "建目录+立即写入"事件缺口由它补齐，见 scanner/watch.go 注释）。
-	// M1 只挂轮询；按库 Watch 在 M2 文件管理接线时挂（新注册库动态加入）。
-	safego.Go(logger, "轮询扫描", func() {
-		if err := scan.StartBackground(ctx, scanner.DefaultPollInterval); err != nil && ctx.Err() == nil {
-			logger.Error("轮询扫描退出", "err", err)
+	// 动态管理库监听与轮询兜底；事件新增/删除/改名合并后整库对账，
+	// 保留移动身份；后台全扫跨库串行，避免启动时争抢磁盘与大快照内存。
+	safego.Go(logger, "媒体库扫描调度", func() {
+		if err := scan.Start(ctx, scanner.BackgroundOptions{
+			PollInterval: cfg.Scanner.PollInterval, WatchEnabled: cfg.Scanner.WatchEnabled,
+		}); err != nil && ctx.Err() == nil {
+			logger.Error("媒体库扫描调度退出", "err", err)
 		}
 	})
 

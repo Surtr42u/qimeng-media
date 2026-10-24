@@ -235,6 +235,8 @@ type Config struct {
 	Trash TrashConfig `yaml:"trash"`
 	// LocalSync 是本机文件夹自动同步通道配置（ADR-0030）。
 	LocalSync LocalSyncConfig `yaml:"local_sync"`
+	// Scanner 是后台文件监听及全量对账调度配置。
+	Scanner ScannerConfig `yaml:"scanner"`
 }
 
 // Load 按优先级加载配置：内置默认值 < yaml 文件 < 环境变量。
@@ -247,6 +249,7 @@ func Load(path string) (*Config, error) {
 		Listen:    defaultListen,
 		DataDir:   defaultDataDir,
 		LogLevel:  "info",
+		Scanner:   ScannerConfig{PollInterval: DefaultScannerPollInterval, WatchEnabled: true},
 		Thumbnail: ThumbnailConfig{Workers: 0, LongSide: 0, WarmupDelay: DefaultThumbnailWarmupDelay},
 		Upload:    UploadConfig{MaxBytes: DefaultUploadMaxBytes},
 		Web:       WebConfig{StaticDir: defaultWebStaticDir},
@@ -311,6 +314,9 @@ func Load(path string) (*Config, error) {
 	if cfg.LocalSync.StableAge <= 0 {
 		cfg.LocalSync.StableAge = DefaultLocalSyncStableAge
 	}
+	if cfg.Scanner.PollInterval <= 0 {
+		cfg.Scanner.PollInterval = DefaultScannerPollInterval
+	}
 	return cfg, nil
 }
 
@@ -328,6 +334,7 @@ func applyEnv(cfg *Config) error {
 		applyBackupEnv,
 		applyTrashEnv,
 		applyLocalSyncEnv,
+		applyScannerEnv,
 	} {
 		if err := section(cfg); err != nil {
 			return err
