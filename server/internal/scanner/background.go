@@ -13,7 +13,7 @@ import (
 )
 
 // defaultWatchRefreshInterval 仅查库列表，管理新增/移除/重挂与失败重试；
-// 不遍历媒体树。目录监听失效时最迟下一管理周期重新注册。
+// 不遍历媒体树。失效监听在冷却到期后的管理周期重新注册。
 const defaultWatchRefreshInterval = 30 * time.Second
 
 // defaultWatchRetryInterval 目录数量超 OS 句柄上限时，反复递归注册也很贵；
