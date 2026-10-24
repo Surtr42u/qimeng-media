@@ -16,6 +16,10 @@ import (
 // 不遍历媒体树。目录监听失效时最迟下一管理周期重新注册。
 const defaultWatchRefreshInterval = 30 * time.Second
 
+// defaultWatchRetryInterval 目录数量超 OS 句柄上限时，反复递归注册也很贵；
+// 同根失败至多每 5min 重试，根路径变化或新注册库不受冷却限制。
+const defaultWatchRetryInterval = 5 * time.Minute
+
 // BackgroundOptions 后台扫描配置；轮询独立于监听，网络盘漏事件仍可补齐。
 type BackgroundOptions struct {
 	PollInterval time.Duration
@@ -37,9 +41,10 @@ func (s *Scanner) Start(ctx context.Context, options BackgroundOptions) error {
 }
 
 type activeWatch struct {
-	lib    db.Library
-	cancel context.CancelFunc
-	done   <-chan struct{}
+	lib     db.Library
+	cancel  context.CancelFunc
+	done    <-chan struct{}
+	retryAt time.Time
 }
 
 func (s *Scanner) watchLibraries(ctx context.Context, interval time.Duration) error {
@@ -79,6 +84,10 @@ func (s *Scanner) syncWatches(ctx context.Context, workers *errgroup.Group, acti
 		select {
 		case <-watch.done:
 			watch.cancel()
+			lib, exists := desired[id]
+			if exists && lib.RootPath == watch.lib.RootPath && lib.Kind == watch.lib.Kind && time.Now().Before(watch.retryAt) {
+				continue
+			}
 			delete(active, id)
 		default:
 			lib, exists := desired[id]
@@ -93,7 +102,7 @@ func (s *Scanner) syncWatches(ctx context.Context, workers *errgroup.Group, acti
 		}
 		watchCtx, cancel := context.WithCancel(ctx)
 		done := make(chan struct{})
-		active[lib.ID] = activeWatch{lib: lib, cancel: cancel, done: done}
+		active[lib.ID] = activeWatch{lib: lib, cancel: cancel, done: done, retryAt: time.Now().Add(defaultWatchRetryInterval)}
 		workers.Go(func() error {
 			defer close(done)
 			err := safego.Run(s.logger, "单库监听", func() error { return s.Watch(watchCtx, lib) })

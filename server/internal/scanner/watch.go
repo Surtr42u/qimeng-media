@@ -27,6 +27,9 @@ const (
 	DefaultPollInterval = config.DefaultScannerPollInterval
 	// maxPendingPaths 大批复制时退回一次全量对账，限制事件队列内存。
 	maxPendingPaths = 256
+	// maxWatchBatchDelay 连续拷贝时最多每 30s 处理一批；平时等短暂静默，
+	// 避免持续写入大视频时每 300ms 重扫全库/重跑 ffprobe。
+	maxWatchBatchDelay = 30 * time.Second
 )
 
 type watchBatch struct {
@@ -101,14 +104,19 @@ func (s *Scanner) Watch(ctx context.Context, lib db.Library) error {
 	return err
 }
 
-// receive 只在此 goroutine 管理防抖状态。固定窗口保证连续写入也不会
-// 永远推迟处理；worker 忙时待处理批次留在本地合并，不增加 goroutine。
+// receive 只在此 goroutine 管理防抖状态。短静默期合并批量写入，但同批
+// 最长等待有上限；worker 忙时批次继续合并，不增加 goroutine。
 func (w *watcher) receive(ctx context.Context, batches chan<- watchBatch) error {
 	debounce := w.s.watchDebounce
 	if debounce <= 0 {
 		debounce = DefaultDebounce
 	}
-	timer := time.NewTimer(debounce)
+	maxDelay := w.s.watchMaxDelay
+	if maxDelay <= 0 {
+		maxDelay = maxWatchBatchDelay
+	}
+	deadline := time.Now().Add(maxDelay)
+	timer := time.NewTimer(min(debounce, maxDelay))
 	defer timer.Stop()
 	// 注册后对账一次，补进程停机期间及目录注册窗口内的变化。
 	pending := watchBatch{full: true}
@@ -140,9 +148,15 @@ func (w *watcher) receive(ctx context.Context, batches chan<- watchBatch) error 
 				continue
 			}
 			if pending.empty() {
-				timer.Reset(debounce)
+				deadline = time.Now().Add(maxDelay)
 			}
 			pending.add(ev.Name, full)
+			if remaining := time.Until(deadline); remaining > 0 {
+				timer.Reset(min(debounce, remaining))
+				send = nil
+			} else {
+				send = batches // 连续写入不能反复重置最大等待期限。
+			}
 		}
 	}
 }

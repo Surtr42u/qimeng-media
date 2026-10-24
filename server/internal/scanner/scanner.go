@@ -126,6 +126,8 @@ type Scanner struct {
 	progressMinEvery time.Duration
 	// watchDebounce Watch 防抖窗口（默认 DefaultDebounce，测试缩短用）。
 	watchDebounce time.Duration
+	// watchMaxDelay 是连续事件的最大合并等待（0 用默认，测试可缩短）。
+	watchMaxDelay time.Duration
 	// dataDir 服务端数据目录（DB/缩略图缓存/回收站）。若它被配置在某个库
 	// 根内部，walk 与 watch 都必须跳过它——否则缩略图缓存（webp 是白名单
 	// 格式）会被自己扫进库，系统自噬（M1 集成验收实测发现）。空串=不排除。

@@ -189,9 +189,15 @@ func TestBackgroundWatchLifecycleAndRetry(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("不可用根监听应返回，等待重试")
 	}
+	e.s.syncWatches(workerCtx, workers, active, []db.Library{missing})
+	if active[e.lib.ID].done != failed.done {
+		t.Fatal("失败冷却期间不能重复遍历注册")
+	}
 	if err := os.Mkdir(missing.RootPath, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	failed.retryAt = time.Time{} // 模拟冷却已到期，不实际等待 5 分钟。
+	active[e.lib.ID] = failed
 	e.s.syncWatches(workerCtx, workers, active, []db.Library{missing})
 	if active[e.lib.ID].done == failed.done {
 		t.Fatal("根恢复后应重建监听")
@@ -200,6 +206,42 @@ func TestBackgroundWatchLifecycleAndRetry(t *testing.T) {
 		t.Fatal(err)
 	}
 	eventually(t, 3*time.Second, "重建后的监听必须实际处理文件", func() bool { return e.assetCount(t) == 1 })
+}
+
+func TestWatchContinuousEventsHaveBoundedDelay(t *testing.T) {
+	e := newTestEnv(t, newProbeStub(nil, nil).call)
+	e.s.watchDebounce = time.Hour // 不会自然进入静默，必须受最大期限约束。
+	e.s.watchMaxDelay = 20 * time.Millisecond
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	eventsCh := make(chan fsnotify.Event)
+	w := watcher{s: e.s, lib: e.lib, fw: &fsnotify.Watcher{Events: eventsCh, Errors: make(chan error)}}
+	batches := make(chan watchBatch)
+	group, workCtx := errgroup.WithContext(ctx)
+	group.Go(func() error { return w.receive(workCtx, batches) })
+	select {
+	case <-batches: // 注册后的初次对账也不能被异常防抖值拖住。
+	case <-ctx.Done():
+		t.Fatal("初次批次未受最大等待约束")
+	}
+	group.Go(func() error {
+		for {
+			select {
+			case eventsCh <- fsnotify.Event{Name: e.abs("a.jpg"), Op: fsnotify.Write}:
+			case <-workCtx.Done():
+				return workCtx.Err()
+			}
+		}
+	})
+	select {
+	case <-batches:
+	case <-ctx.Done():
+		t.Error("持续事件不能无限推迟处理")
+	}
+	cancel()
+	if err := group.Wait(); !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("取消应结束所有事件任务: %v", err)
+	}
 }
 
 func TestBackgroundScanWaitIsCancellable(t *testing.T) {
