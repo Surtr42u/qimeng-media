@@ -87,6 +87,21 @@ go test ./internal/store/db -run 'TestHotAggregates|TestRecommendCandidate|TestC
 go test ./internal/store -run TestRecommendationInputPlan -bench '^BenchmarkRecommendationInputLoading$' -benchtime=1s -count=3
 ```
 
+#### 双 seed 启动预热合成验证（2026-10-25，Linux 云端）
+
+2 万候选、40 万事件；同一生产输入装载器对比分别装载与本轮输入复用，两种方案均完整评分 seed=1/0，不截断候选。源码 50e1f3c2 的云端 CI 三轮 `-benchtime=300ms -count=3` 中位数：
+
+| 双 seed 预热 | 总耗时 | 累计堆分配 B/op |
+|---|---:|---:|
+| 分别装载 | 833.78ms | 134,630,728 |
+| 共享本轮输入 | 435.45ms | 77,339,200 |
+
+该合成负载耗时约减 47.8%、累计分配约减 42.6%。同进程重复读取，不代表磁盘冷读、真实库或手机/NAS 性能；不含 HTTP/首屏装配/展示计数/媒体/网络，B/op 不是峰值内存或 RSS。预热无额外持久候选缓存，两个 seed 各自评分及失效规则见 §1.5。
+
+```bash
+go test ./internal/recommendfeed -run '^$' -bench '^BenchmarkRecommendationPrewarmSeeds$' -benchmem -benchtime=300ms -count=3
+```
+
 ### 1.7 算法评估与本轮调整
 
 当前是单用户、无需训练的可解释规则推荐，适合少反馈的自托管媒体库。标签兴趣、熟悉内容、新内容、发现与每日去重都有独立信号；暂未有点击/长停留等离线对照结果证明改权重会改善体验。本轮保持评分公式、固定阈值、权重预设和缓存纪律，修正同分桶链式延伸，并减少标签重复计算/中间切片（ADR-0045）。评分后兼顾新鲜度与多样性的分层方式可参考 [Google 重排说明](https://developers.google.com/machine-learning/recommendation/dnn/re-ranking)；本项目适用性是代码审查判断，不是质量指标证明。
