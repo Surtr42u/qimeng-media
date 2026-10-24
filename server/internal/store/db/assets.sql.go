@@ -26,21 +26,6 @@ func (q *Queries) AssetExists(ctx context.Context, assetID string) (int64, error
 	return column_1, err
 }
 
-const countEnabledLibraryAssets = `-- name: CountEnabledLibraryAssets :one
-SELECT COUNT(*) AS total FROM assets a
-JOIN libraries l ON l.id = a.library_id
-WHERE l.enabled = 1
-`
-
-// Thumbnail coverage progress denominator (2026-09-15 batch). Same WHERE as
-// ListThumbnailWarmup candidates; keep both in sync.
-func (q *Queries) CountEnabledLibraryAssets(ctx context.Context) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countEnabledLibraryAssets)
-	var total int64
-	err := row.Scan(&total)
-	return total, err
-}
-
 const getAsset = `-- name: GetAsset :one
 SELECT asset_id, library_id, rel_path, file_name, media_type, size_bytes, mtime, duration_ms, width, height, source, created_at, updated_at, last_position_seconds, video_codec, audio_codec, cos_work, tag_set_updated_at FROM assets WHERE asset_id = ?
 `
@@ -313,40 +298,48 @@ func (q *Queries) ListCosWorkForAssets(ctx context.Context, assetIdsJson interfa
 	return items, nil
 }
 
-const listThumbnailWarmup = `-- name: ListThumbnailWarmup :many
-SELECT a.asset_id, l.root_path, a.rel_path, a.media_type
+const listThumbnailWarmupPage = `-- name: ListThumbnailWarmupPage :many
+SELECT a.asset_id, l.root_path, a.rel_path, a.media_type, a.size_bytes, a.mtime
 FROM assets a
 JOIN libraries l ON l.id = a.library_id
-WHERE l.enabled = 1
-ORDER BY a.created_at ASC, a.asset_id ASC
+WHERE l.enabled = 1 AND a.asset_id > ?1
+ORDER BY a.asset_id ASC
+LIMIT ?2
 `
 
-type ListThumbnailWarmupRow struct {
+type ListThumbnailWarmupPageParams struct {
+	AfterID  string
+	PageSize int64
+}
+
+type ListThumbnailWarmupPageRow struct {
 	AssetID   string
 	RootPath  string
 	RelPath   string
 	MediaType string
+	SizeBytes int64
+	Mtime     string
 }
 
-// Warmup candidates for automatic thumbnail pre-generation (2026-09-15 batch,
-// mirrors the legacy app "thumbs exist right after scan" experience): all
-// assets of enabled libraries + library root + media type. "Which thumbnails
-// are missing" is decided in Go (cache key = SHA-256, see cachekey.go; SQL
-// cannot express it) via os.Stat on the thumb destination path.
-func (q *Queries) ListThumbnailWarmup(ctx context.Context) ([]ListThumbnailWarmupRow, error) {
-	rows, err := q.db.QueryContext(ctx, listThumbnailWarmup)
+// Keyset paging bounds both candidate memory and queued work. Stored source
+// metadata selects the current representation without reopening every original;
+// generation and media delivery still validate the live source.
+func (q *Queries) ListThumbnailWarmupPage(ctx context.Context, arg ListThumbnailWarmupPageParams) ([]ListThumbnailWarmupPageRow, error) {
+	rows, err := q.db.QueryContext(ctx, listThumbnailWarmupPage, arg.AfterID, arg.PageSize)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListThumbnailWarmupRow
+	var items []ListThumbnailWarmupPageRow
 	for rows.Next() {
-		var i ListThumbnailWarmupRow
+		var i ListThumbnailWarmupPageRow
 		if err := rows.Scan(
 			&i.AssetID,
 			&i.RootPath,
 			&i.RelPath,
 			&i.MediaType,
+			&i.SizeBytes,
+			&i.Mtime,
 		); err != nil {
 			return nil, err
 		}

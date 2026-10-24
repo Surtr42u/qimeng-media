@@ -16,6 +16,8 @@
 
 ## 2. 当前源码、运行包与验证边界
 
+- **缩略图前两项优化实施中（2026-10-25）**：按用户要求处理前后台重复生成及整库预热检查，已接入按最终表示路径的共用生成、闸后缓存复查，以及每页 256 条的独立回填/进度服务；命中时不再逐资产探测原件和祖先，缺图流式提交。库变更通知有界合并，保留开机静默窗/10min 兜底/200ms 节流；扫描元数据进度的短暂延迟明确记入缩略图专题。云端基线 master 的 CI 40122507803 已通过，SQL/三端 SDK 最终云端生成 [40124807431](https://github.com/Surtr42u/qimeng-media/actions/runs/40124807431) 成功，生成链自带 Go build 通过；过渡提交因旧 HTTP 尚未迁移导致两次生成链构建失败，已随完整编排提交修正，生成物与锁原样取回；新增并发、分页、取消、安全路径、版本/孤儿口径与合成缓存基准待最终 head 云端验证。现用 PC/手机仍为 38da5c3d；本轮不操作真库或设备，测试/构建/文档门禁仍只走云端。
+
 - **扫描优化双端云端部署完成（2026-10-25）**：用户授权云端构建后部署电脑和手机并同步文档。共同产物来源为 **38da5c3d**；其[完整 CI](https://github.com/Surtr42u/qimeng-media/actions/runs/40120348586)、[安全](https://github.com/Surtr42u/qimeng-media/actions/runs/40120348664)和[文档](https://github.com/Surtr42u/qimeng-media/actions/runs/40120348661)全部通过，[PC 出包](https://github.com/Surtr42u/qimeng-media/actions/runs/40120395582)及[Android Release/单测](https://github.com/Surtr42u/qimeng-media/actions/runs/40120400583)成功；Release 日志核对两次 BUILD SUCCESSFUL，未把 continue-on-error 的工作流结论当作单测成功证据。
   - PC：artifact ZIP 摘要、发布清单逐文件哈希、0.2.1 / 38da5c3d / 非 dirty 身份与 schema 20 已核对；正常发送中断并确认旧后端退出后整体替换服务端/Web。新程序 SHA-256 `3fb79314434496ebd907031701de7ed8efd7d70987b66f28967a5e3ed69e4799`，8420 实际监听进程对应已核验程序，healthz/readyz 200，HTTP 首页及全部 87 个 Web 静态文件与候选字节一致。保留普通后端控制台、原配置/DataDir/媒体根、dev/本机同步日常环境和旧程序/Web。
   - 手机：显式锁定原物理设备，重新拉取 code 5 已装 APK 核对同签名后保留数据覆盖到 **0.2.1 / code 6**；非 Debug、仅 arm64、三件套/FFmpeg 锁定哈希与内嵌 Go 的干净 38da5c3d 身份已核对。安装后 APK 与候选逐字节一致，SHA-256 `66e76f980a1e57ad01ec565a141d04dddf2de9756464fee5bcf5f0798d5bab4c`；首次安装记录保留，冷启动成功，内嵌 healthz/readyz 200，临时端口转发已移除。未卸载或清数据。

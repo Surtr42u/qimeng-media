@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"qimeng-media/server/internal/auth"
@@ -30,6 +29,7 @@ import (
 	"qimeng-media/server/internal/syncchannel"
 	"qimeng-media/server/internal/sysmon"
 	"qimeng-media/server/internal/thumbnail"
+	"qimeng-media/server/internal/thumbnailwarmup"
 	"qimeng-media/server/internal/uploadsess"
 )
 
@@ -226,18 +226,9 @@ type Server struct {
 	// Cfg.DataDir 构造，时钟/日志与 Server 同源注入）。
 	uploads *uploadsess.Manager
 	// sync 持有本机同步业务，HTTP 只读快照和触发；txt 为跨入口共用作者导入服务。
-	sync *syncchannel.Service
-	txt  *authorimport.Service
-	// thumbProgress 缩略图覆盖进度缓存（thumbnail_warmup.go，2026-10-04 批）：
-	// 进度页轮询的分子=覆盖资产数，需对全库逐资产 Stat（v4 换代期 thumbs 目录
-	// 混有旧键孤儿文件，目录计数口径失真）；30s TTL 缓存把秒级轮询的稳态成本
-	// 摊薄到可忽略。访问全部经 thumbProgressMu 双检保护。
-	thumbProgressMu    sync.Mutex
-	thumbProgressCache *thumbnailProgressSnapshot
-	// warmupMu 是缩略图预热的单飞闸（thumbnail_warmup.go runWarmupOnce，
-	// 2026-10-17 加固）：周期兜底与扫描后触发互斥，避免并发整库 os.Stat
-	// 与重复 Submit（工作池不按 assetID 去重）。
-	warmupMu sync.Mutex
+	sync        *syncchannel.Service
+	txt         *authorimport.Service
+	thumbWarmup *thumbnailwarmup.Service
 }
 
 // New 组装 HTTP 服务。返回 *Server；main 用 Handler() 拿到带完整
@@ -323,6 +314,7 @@ func New(deps Deps) (*Server, error) {
 		startedAt:      now(),
 	}
 	s.writes = deps.Writes
+	s.thumbWarmup = thumbnailwarmup.New(s.q, s.thumbs, logger, s.startedAt.Add(s.cfg.Thumbnail.WarmupDelay))
 	if s.writes == nil {
 		s.writes = mediawrite.New(mediawrite.Options{Conn: deps.Conn, Queries: deps.Queries,
 			Bus: deps.Bus, Config: deps.Cfg, Thumbs: deps.Thumbs, Logger: logger, Now: now,
@@ -372,6 +364,7 @@ func New(deps Deps) (*Server, error) {
 			for range sub.C {
 				s.invalidateRecommendCache()
 				s.bumpLibraryRevision()
+				s.WarmupAfterScan()
 			}
 		})
 	}

@@ -74,6 +74,8 @@
 - 等级：默认 info；`QIMENG_LOG_LEVEL=debug` 排障；循环内禁止逐条日志（旧项目"50 次记 1 条采样"经验保留）。
 - 后台轮询和事件触发的整库扫描完成日志包含 `libraryId/scanned/elapsedMs/added/updated/moved/removed`；耗时不含等待跨库后台扫描名额的时间。四个变更计数全零时为 debug，有变化时为 info；错误仍为 warn/error，不能从控制台不再刷空扫推断扫描已停止。`scan_duration_seconds` 的“上次成功全量扫描”口径保持，新增日志提供分库证据，不新增带库 ID 标签的指标序列。
 
+缩略图回填仅在有实际投递时记录 Info：`candidates` 为本轮分页检查资产数、`submitted` 为成功投递数、`elapsedMs` 为整轮耗时（含节流/背压，不等于全部生成完成）。空轮不记 Info，查询或投递失败记 Warn，下轮重试；停机取消/池关闭不作为业务故障。队列指标继续沿用既有出口。
+
 ## 健康检查
 
 `GET /api/v1/healthz`（免鉴权，`api/openapi.yaml` 标 `security: []`）：进程存活；`GET /api/v1/readyz`（免鉴权，同样 `security: []`）：检查数据库、数据目录及全部启用媒体根的可读性与最小剩余空间；任一异常返回 503（存储错误为 STORAGE_UNAVAILABLE，响应不含路径）。存储探测只读、不写探针文件，不证明卷可写或可抵御外部占盘；底层文件系统阻塞不保证能被请求超时立即中止。服务端同时保留根路径 `/healthz`、`/readyz` 作为运维探针别名（docker/k8s 惯例，行为一致，不属于 API 协议面）——根路径别名可用；deploy 样例实际用 /api/v1/healthz。

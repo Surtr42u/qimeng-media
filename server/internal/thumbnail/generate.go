@@ -54,6 +54,8 @@ type Generator struct {
 	// detached 是懒生成端点的「单飞+后台续生」组（detached.go，2026-09-15 批）：
 	// 同键请求合并为一次生成，且客户端取消只结束等待不杀生成。
 	detached *detachedGroup
+	// generating 按最终缓存路径合并前台、后台及重叠尺寸集合，等待取消不杀生成。
+	generating *detachedGroup
 }
 
 // Options 是 Generator 的构造配置。字段语义与 config.ThumbnailConfig 对应，
@@ -92,6 +94,7 @@ func NewGenerator(dataDir string, logger *slog.Logger, opts Options) *Generator 
 		ffmpegBin:  resolveBin(opts.FFmpegPath, DefaultFFmpegBin),
 		ffprobeBin: resolveBin(opts.FFprobePath, DefaultFFprobeBin),
 		detached:   newDetachedGroup(),
+		generating: newDetachedGroup(),
 	}
 	g.stillFormat = probeStillFormat(g.ffmpegBin, logger)
 	g.pool = NewWorkerPool(context.Background(), opts.Workers, 0, g.handle, logger)
@@ -134,13 +137,6 @@ func (g *Generator) Ensure(ctx context.Context, assetID, srcPath string, kind Ki
 		if err := g.ensureOne(ctx, assetID, srcPath, kind, size, version); err != nil {
 			return fmt.Errorf("生成 %s 的 %d 缩略图: %w", assetID, int(size), err)
 		}
-		current, err := g.sourceVersion(srcPath)
-		if err != nil || current != version {
-			if rmErr := os.Remove(g.thumbDst(assetID, size, version)); rmErr != nil && !errors.Is(rmErr, fs.ErrNotExist) {
-				g.logger.Warn("清理生成期间失效的缩略图失败", "err", rmErr)
-			}
-			return errors.New("生成期间原件发生变化，请重试")
-		}
 	}
 	return nil
 }
@@ -171,11 +167,34 @@ func (g *Generator) ensureOne(ctx context.Context, assetID, srcPath string, kind
 		size = Size(g.longSide)
 	}
 	dst := g.thumbDst(assetID, size, version)
+	return g.generating.do(dst, ctx, func() error {
+		// 验证必须在续生体内：浏览取消后也不能留下生成期间已失效的缓存。
+		if err := g.generateOne(context.Background(), srcPath, kind, size, dst); err != nil {
+			return err
+		}
+		if current, err := g.sourceVersion(srcPath); err != nil || current != version {
+			if rmErr := os.Remove(dst); rmErr != nil && !errors.Is(rmErr, fs.ErrNotExist) {
+				g.logger.Warn("清理生成期间失效的缩略图失败", "err", rmErr)
+			}
+			return errors.New("生成期间原件发生变化，请重试")
+		}
+		return nil
+	})
+}
+
+func cacheExists(dst string) (bool, error) {
 	if _, err := os.Stat(dst); err == nil {
-		return nil // 缓存命中
+		return true, nil
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		// 权限等真实错误必须暴露，静默跳过会让"以为生成了其实没有"难以排查。
-		return fmt.Errorf("检查缓存文件 %s: %w", dst, err)
+		return false, fmt.Errorf("检查缓存文件 %s: %w", dst, err)
+	}
+	return false, nil
+}
+
+func (g *Generator) generateOne(ctx context.Context, srcPath string, kind Kind, size Size, dst string) error {
+	if exists, err := cacheExists(dst); err != nil || exists {
+		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return fmt.Errorf("创建缓存目录 %s: %w", filepath.Dir(dst), err)
@@ -191,6 +210,10 @@ func (g *Generator) ensureOne(ctx context.Context, assetID, srcPath string, kind
 		return fmt.Errorf("排队等待缩略图生成闸位时上游已取消: %w", ctx.Err())
 	}
 	defer genSlots.release()
+	// 等待资源闸期间，缓存可能由其他 Generator/外部回填写好，不能重复抽帧。
+	if exists, err := cacheExists(dst); err != nil || exists {
+		return err
+	}
 
 	ctx, cancel := context.WithTimeout(ctx, frameTimeout)
 	defer cancel()
@@ -266,6 +289,13 @@ func (g *Generator) HasThumbnail(assetID string, size Size, srcPaths ...string) 
 		versions = []string{version}
 	}
 	_, err := os.Stat(g.thumbDst(assetID, size, versions...))
+	return err == nil
+}
+
+// HasStoredThumbnail 仅检查扫描元数据所指向的表示，用于低开销回填/覆盖统计。
+// 不用作媒体出口鉴权或版本校验；真实生成仍从原件重新取得版本。
+func (g *Generator) HasStoredThumbnail(assetID string, size Size, sizeBytes int64, mtime string) bool {
+	_, err := os.Stat(g.thumbDst(assetID, size, g.RepresentationVersion(sizeBytes, mtime)))
 	return err == nil
 }
 

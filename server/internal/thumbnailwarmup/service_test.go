@@ -1,0 +1,203 @@
+package thumbnailwarmup
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"path/filepath"
+	"strconv"
+	"sync"
+	"testing"
+	"time"
+
+	"qimeng-media/server/internal/store/db"
+	"qimeng-media/server/internal/thumbnail"
+)
+
+type candidateFunc func(context.Context, db.ListThumbnailWarmupPageParams) ([]db.ListThumbnailWarmupPageRow, error)
+
+func (fn candidateFunc) ListThumbnailWarmupPage(ctx context.Context, p db.ListThumbnailWarmupPageParams) ([]db.ListThumbnailWarmupPageRow, error) {
+	return fn(ctx, p)
+}
+
+type fakeThumbs struct {
+	has    func(string, int64, string) bool
+	submit func(thumbnail.Task) error
+}
+
+func (f fakeThumbs) HasStoredThumbnail(id string, _ thumbnail.Size, bytes int64, mtime string) bool {
+	return f.has(id, bytes, mtime)
+}
+func (f fakeThumbs) Submit(task thumbnail.Task) error { return f.submit(task) }
+
+func TestProgressPagesEntireLibraryAndSharesReconciliationSnapshot(t *testing.T) {
+	const total = 20000
+	calls, checks := 0, 0
+	q := candidateFunc(func(ctx context.Context, p db.ListThumbnailWarmupPageParams) ([]db.ListThumbnailWarmupPageRow, error) {
+		calls++
+		if p.PageSize != pageSize {
+			t.Fatal("查询未限制批大小")
+		}
+		start := 0
+		if p.AfterID != "" {
+			var err error
+			start, err = strconv.Atoi(p.AfterID)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		var rows []db.ListThumbnailWarmupPageRow
+		for i := start + 1; i <= total && len(rows) < pageSize; i++ {
+			rows = append(rows, db.ListThumbnailWarmupPageRow{AssetID: fmt.Sprintf("%06d", i), RootPath: "root-does-not-exist", SizeBytes: int64(i), Mtime: "stored"})
+		}
+		return rows, nil
+	})
+	thumbs := fakeThumbs{has: func(id string, bytes int64, mtime string) bool {
+		checks++
+		if bytes == 0 || mtime != "stored" {
+			t.Fatal("元数据未传递")
+		}
+		return true
+	}, submit: func(thumbnail.Task) error { t.Fatal("已覆盖资产不应投递"); return nil }}
+	s := New(q, thumbs, nil, time.Time{})
+	s.reconcile(context.Background())
+	snap, err := s.Progress(context.Background())
+	if err != nil || snap.Total != total || snap.Covered != total {
+		t.Fatalf("覆盖: %+v %v", snap, err)
+	}
+	if calls != (total+pageSize-1)/pageSize || checks != total {
+		t.Fatalf("缓存未复用或遗漏分页: calls=%d checks=%d", calls, checks)
+	}
+	// 变更后不能继续发布旧统计；通知缓冲必须有界。
+	for i := 0; i < 1000; i++ {
+		s.Notify()
+	}
+	if len(s.wake) != 1 {
+		t.Fatal("通知未合并")
+	}
+	if _, ok := s.fresh(); ok {
+		t.Fatal("旧进度未失效")
+	}
+	if _, err := s.Progress(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if checks != total*2 {
+		t.Fatal("变更未重新统计")
+	}
+}
+
+func TestMissingTasksStreamSafelyAndClosedPoolStops(t *testing.T) {
+	root := t.TempDir()
+	q := candidateFunc(func(context.Context, db.ListThumbnailWarmupPageParams) ([]db.ListThumbnailWarmupPageRow, error) {
+		return []db.ListThumbnailWarmupPageRow{
+			{AssetID: "unsafe", RootPath: root, RelPath: "../escape.bin"},
+			{AssetID: "safe", RootPath: root, RelPath: "image.png", MediaType: "image"},
+			{AssetID: "later", RootPath: root, RelPath: "later.png"},
+		}, nil
+	})
+	submitted := 0
+	s := New(q, fakeThumbs{has: func(string, int64, string) bool { return false }, submit: func(task thumbnail.Task) error {
+		submitted++
+		if task.AssetID != "safe" || task.SourcePath != filepath.Join(root, "image.png") || task.Kind != thumbnail.KindImage {
+			t.Fatalf("不安全或错误任务: %+v", task)
+		}
+		return thumbnail.ErrPoolClosed
+	}}, nil, time.Time{})
+	_, _, err := s.inspect(context.Background(), true)
+	if !errors.Is(err, thumbnail.ErrPoolClosed) || submitted != 1 {
+		t.Fatalf("关闭后继续投递: %v %d", err, submitted)
+	}
+}
+
+func TestQueueBackpressureAndBootWaitCancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	s := New(nil, fakeThumbs{submit: func(thumbnail.Task) error { cancel(); return thumbnail.ErrQueueFull }}, nil, time.Now().Add(time.Hour))
+	if err := s.submit(ctx, thumbnail.Task{}); !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+	// 已取消的开机静默窗不能开始查库。
+	s.Run(ctx)
+}
+
+func TestNotificationDuringReconciliationRunsAnotherPass(t *testing.T) {
+	entered := make(chan struct{}, 2)
+	release := make(chan struct{})
+	calls := 0
+	q := candidateFunc(func(ctx context.Context, _ db.ListThumbnailWarmupPageParams) ([]db.ListThumbnailWarmupPageRow, error) {
+		calls++
+		entered <- struct{}{}
+		if calls == 1 {
+			select {
+			case <-release:
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+		return nil, nil
+	})
+	s := New(q, fakeThumbs{}, nil, time.Time{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() { s.Run(ctx); close(done) }()
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("未启动回填")
+	}
+	for i := 0; i < 10; i++ {
+		s.Notify()
+	}
+	close(release)
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("运行中的变更被丢弃")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("主管未随停机退出")
+	}
+	if calls != 2 {
+		t.Fatalf("通知未合并: %d", calls)
+	}
+}
+
+func TestConcurrentProgressFailureAndNotifyDuringRead(t *testing.T) {
+	var s *Service
+	calls := 0
+	q := candidateFunc(func(context.Context, db.ListThumbnailWarmupPageParams) ([]db.ListThumbnailWarmupPageRow, error) {
+		calls++
+		if calls == 1 {
+			return nil, errors.New("query failed")
+		}
+		if calls == 2 {
+			s.Notify()
+		}
+		return nil, nil
+	})
+	s = New(q, fakeThumbs{}, nil, time.Time{})
+	if _, err := s.Progress(context.Background()); err == nil {
+		t.Fatal("查询失败被吞掉")
+	}
+	if _, err := s.Progress(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := s.fresh(); ok {
+		t.Fatal("扫描中变更仍发布了旧快照")
+	}
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Go(func() {
+			if _, err := s.Progress(context.Background()); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+	wg.Wait()
+	if calls != 3 {
+		t.Fatalf("并发进度未合并: %d", calls)
+	}
+}

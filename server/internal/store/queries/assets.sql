@@ -96,24 +96,16 @@ FROM assets a
 WHERE a.cos_work IS NOT NULL
   AND a.asset_id IN (SELECT value FROM json_each(sqlc.narg(asset_ids_json)));
 
--- name: CountEnabledLibraryAssets :one
--- Thumbnail coverage progress denominator (2026-09-15 batch). Same WHERE as
--- ListThumbnailWarmup candidates; keep both in sync.
-SELECT COUNT(*) AS total FROM assets a
-JOIN libraries l ON l.id = a.library_id
-WHERE l.enabled = 1;
-
--- name: ListThumbnailWarmup :many
--- Warmup candidates for automatic thumbnail pre-generation (2026-09-15 batch,
--- mirrors the legacy app "thumbs exist right after scan" experience): all
--- assets of enabled libraries + library root + media type. "Which thumbnails
--- are missing" is decided in Go (cache key = SHA-256, see cachekey.go; SQL
--- cannot express it) via os.Stat on the thumb destination path.
-SELECT a.asset_id, l.root_path, a.rel_path, a.media_type
+-- name: ListThumbnailWarmupPage :many
+-- Keyset paging bounds both candidate memory and queued work. Stored source
+-- metadata selects the current representation without reopening every original;
+-- generation and media delivery still validate the live source.
+SELECT a.asset_id, l.root_path, a.rel_path, a.media_type, a.size_bytes, a.mtime
 FROM assets a
 JOIN libraries l ON l.id = a.library_id
-WHERE l.enabled = 1
-ORDER BY a.created_at ASC, a.asset_id ASC;
+WHERE l.enabled = 1 AND a.asset_id > sqlc.arg(after_id)
+ORDER BY a.asset_id ASC
+LIMIT sqlc.arg(page_size);
 
 -- name: AssetExists :one
 -- Cross-library view-event remap fallback (ADR-0037): does the reported
