@@ -224,7 +224,7 @@ func (g *Generator) ensureOne(ctx context.Context, assetID, srcPath string, kind
 	dst := g.thumbDst(assetID, size, version)
 	g.initLifecycle()
 	if _, err := os.Stat(dst); err == nil {
-		return nil
+		return g.checkGeneratedSource(srcPath, version, dst)
 	}
 	admission, cancel := context.WithTimeout(ctx, frameTimeout)
 	defer cancel()
@@ -240,14 +240,20 @@ func (g *Generator) ensureOne(ctx context.Context, assetID, srcPath string, kind
 			}
 			return err
 		}
-		if current, err := g.sourceVersion(srcPath); err != nil || current != version {
-			if rmErr := os.Remove(dst); rmErr != nil && !errors.Is(rmErr, fs.ErrNotExist) {
-				g.logger.Warn("清理生成期间失效的缩略图失败", "err", rmErr)
-			}
-			return errors.New("生成期间原件发生变化，请重试")
-		}
-		return nil
+		return g.checkGeneratedSource(srcPath, version, dst)
 	})
+}
+
+// 排队版本固定后，命中缓存和真实生成都复核原件；只清理这个失效版本。
+func (g *Generator) checkGeneratedSource(srcPath, version, dst string) error {
+	if current, err := g.sourceVersion(srcPath); err != nil || current != version {
+		if rmErr := os.Remove(dst); rmErr != nil && !errors.Is(rmErr, fs.ErrNotExist) {
+			g.logger.Warn("清理生成期间失效的缩略图失败", "err", rmErr)
+		}
+		sysmon.Default.IncThumbWork("failed")
+		return errors.New("生成期间原件发生变化，请重试")
+	}
+	return nil
 }
 
 func cacheExists(dst string) (bool, error) {

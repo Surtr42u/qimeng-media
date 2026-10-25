@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -193,5 +194,34 @@ func TestSubmitClassifiesUnavailableSourceBeforeAdmission(t *testing.T) {
 	}
 	if len(g.budget.refs) != 0 {
 		t.Fatal("unavailable source reserved budget")
+	}
+}
+
+func TestQueuedVersionCacheHitStillChecksSourceAndKeepsCurrentCache(t *testing.T) {
+	g := bareGenerator(t, int(SizeSmall))
+	defer g.Close()
+	src := filepath.Join(t.TempDir(), "source.bin")
+	writeTestFile(t, src, "old")
+	old, err := g.sourceVersion(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldDst := g.thumbDst("asset", SizeGrid, old)
+	writeTestFile(t, oldDst, "old-cache")
+	writeTestFile(t, src, "new-longer")
+	current, err := g.sourceVersion(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	currentDst := g.thumbDst("asset", SizeGrid, current)
+	writeTestFile(t, currentDst, "current-cache")
+	if err := g.ensureVersion(t.Context(), "asset", src, "invalid", []Size{SizeGrid}, old, false); err == nil {
+		t.Fatal("stale queued cache bypassed source check")
+	}
+	if _, err := os.Stat(oldDst); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("stale cache remains", err)
+	}
+	if raw, err := os.ReadFile(currentDst); err != nil || string(raw) != "current-cache" {
+		t.Fatal("current cache removed", err)
 	}
 }
