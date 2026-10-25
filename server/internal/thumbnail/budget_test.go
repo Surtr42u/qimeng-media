@@ -47,6 +47,37 @@ func TestRepresentationBudgetCountsOverlapOnceAndRetries(t *testing.T) {
 	}
 }
 
+func TestRepresentationBudgetReservesForegroundAdmission(t *testing.T) {
+	b := newRepresentationBudget(2)
+	background, err := b.acquirePriority(t.Context(), []string{"background"}, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer background.release()
+	if _, err := b.acquirePriority(t.Context(), []string{"another-background"}, false, false); !errors.Is(err, ErrQueueFull) {
+		t.Fatal("background consumed foreground reserve", err)
+	}
+	foreground, err := b.acquirePriority(t.Context(), []string{"foreground"}, false, true)
+	if err != nil {
+		t.Fatal("reserved foreground admission unavailable", err)
+	}
+	defer foreground.release()
+	joined, err := b.acquirePriority(t.Context(), []string{"foreground"}, false, false)
+	if err != nil {
+		t.Fatal("same representation charged again at full capacity", err)
+	}
+	joined.release()
+	if len(b.refs) != 2 {
+		t.Fatal("representation total exceeded")
+	}
+	single := newRepresentationBudget(1)
+	one, err := single.acquirePriority(t.Context(), []string{"background"}, false, false)
+	if err != nil {
+		t.Fatal("single slot starved background", err)
+	}
+	one.release()
+}
+
 func TestRepresentationAdmissionCancelsWithoutCreatingWork(t *testing.T) {
 	b := newRepresentationBudget(1)
 	a, err := b.acquire(t.Context(), []string{"a"}, false)

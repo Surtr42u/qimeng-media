@@ -364,7 +364,7 @@
 
 同语义常量继续复用MediaTypeKeys/SourceKeys/核心分页/播放器数学与现有纯函数；本轮不扩大knip未用导出阻断面。source_groups_data是静态词表，不以行数拆分。新增纯展示文件无IO，新增业务包不引用gen；请求中间件只持Server引用，不复制配置或鉴权状态。
 
-Q06补充：`tools/test_release_gate.py`在既有云端docs unittest中检查候选上传顺序、完整Gradle命令和默认success条件，并用内存中的受控错误配置（吞退出码、continue-on-error、always上传、上传提前）验证拒绝。只支持本仓固定模板，不能替代GitHub解析、Release整包运行或同SHA完整门禁；本轮没有制造真实签名失败包或部署任何候选包。
+Q06补充：`tools/test_release_gate.py`在既有云端docs unittest中检查候选上传顺序、完整Gradle命令和默认success条件，并用内存中的受控错误配置（吞退出码、continue-on-error、always上传、上传提前）验证拒绝。只支持本仓固定模板，不能替代GitHub解析、Release整包运行或同SHA完整门禁；后续已用隔离单测失败分支验证真实Release候选阻断（§11），未改签名或部署任何候选包。
 
 
 ## 11. 实施与验收清单
@@ -375,14 +375,14 @@ Q06补充：`tools/test_release_gate.py`在既有云端docs unittest中检查候
 | S02 | 单worker/脏位合并，不因通知风暴滑动延期；失败保留gauge并重试，关闭收齐 | 手工等待闸/查询闸覆盖百次通知、查询期间再变更、失败/关闭 |
 | S03 | 五列专用扫描快照，未变文件零逐项SQL，短锁重读实时完整行 | 身份/移动/部分失败回归与SQL装载+索引对照；Linux race/Windows；无schema/索引变化 |
 | S04 | 内部资产/库/全量范围，256键合并/超限提升，独立10min全量兜底；局部不发布全库覆盖 | 精确子集/混合/溢出/处理期间新范围/独立tick/实际SQLite资格与游标 |
-| S07 | 统一256不同表示引用预算与有界集合元数据；请求可取消限时准入、已接纳服务级续生、关闭收齐；原件错误单资产隔离 | 重叠/满载重试/2000不同键拒绝/等待后取消/单多核/提升/关闭/panic/源变化；仅清旧版本缓存；低基数指标 |
+| S07 | 统一256不同表示引用预算（后台新增最多255、预留新前台1格）与有界集合元数据；请求可取消限时准入、已接纳服务级续生、关闭收齐；原件错误单资产隔离 | 重叠/满载重试/2000不同键拒绝/等待后取消/单多核/提升/关闭/panic/源变化；仅清旧版本缓存；低基数指标 |
 | S08 | 推荐服务级DoChan计算与请求等待分离，不同键min(2,GOMAXPROCS)准入；进度可取消闸 | 一个/全部等待者取消、取消与完成竞争、Clear不回填、关闭取消SQL；实际进入闸后取消。CI另以verbose记录响应微秒和不同键峰值（非SLO/硬件保证） |
 | Q01–Q03 | 保存快照/草稿修订保护、Android取消与代际写回、SAF/实际JSON双重有界TXT | 慢保存A后继续编辑B、失败重试/迟到GET；确定性取消/前台恢复；声明及真实流/JSON转义边界 |
 | Q04 | portablebackup持领域文件DTO、写前校验/身份/分段事务/回放/汇总/提交后通知与同事务导出 | v1/v2回环/重复/A→B→A/实时补传/歧义/非法v2/TXT keep；故障后重试、写前取消/分段提交后取消、字段/开放偏好JSON契约 |
-| Q05–Q07 | Redocly固定2.71.0且Makefile/CI复用；单测/Release Lint在候选上传前阻断；现行注释/Close豁免清理 | 干净云端协议/SDK锁/Lint；固定模板受控错误配置回归；真实Release失败注入40174082810待结果 |
+| Q05–Q07 | Redocly固定2.71.0且Makefile/CI复用；单测/Release Lint在候选上传前阻断；现行注释/Close豁免清理 | 干净云端协议/SDK锁/Lint；固定模板受控错误配置回归；真实Release失败注入40174082810：Release构建/三件套成功，唯一注入测试失败后上传skipped、artifact=0；正常路径40174932988核验中 |
 | Q08 | 九个文件逐项owner评估，提取无状态统计展示与Server请求管线，其余保留依据见§10 | 既有行为/策略/AST/depguard/SDK隔离继续执行，不新增状态副本或扩张knip阻断范围 |
 | Q09/Q10 | 四个Playwright真实DOM合成场景；上传存储降级/恢复可见，串行IO意图、事务complete、终态防复活与UUID | 345项Web单测及4个浏览器场景；Android为单测/构建/Lint。其他建议路径及设备窗口动作未假称验收；双重存储失败残余风险已记SECURITY |
 
-生成与验证：SQL分别取回云端codegen 40164563955/40168795821产物，SDK锁逐字节相同，未手改生成物。全部构建/测试/基准/文档门禁在GitHub云端，所有数据均合成/临时，不写8420真库。46c879cf完整门禁通过，85d7f70e及最终head收尾状态只看HANDOVER与PR检查，不以本表替代检查结果。三条Codex有效P2均已修复并在相关回归通过后解决；最终head审查结论尚缺，曾有额度限制提示，不自动改用户信用偏好。
+生成与验证：SQL分别取回云端codegen 40164563955/40168795821产物，SDK锁逐字节相同，未手改生成物。全部构建/测试/基准/文档门禁在GitHub云端，所有数据均合成/临时，不写8420真库。46c879cf、85d7f70e及5eaa181c完整必需门禁通过，末次前台准入保留修正与最终head状态只看HANDOVER与PR检查，不以本表替代检查结果。三条Codex有效P2均已修复并在相关回归通过后解决；最终head审查结论尚缺，曾有额度限制提示，不自动改用户信用偏好。
 
 本轮实际读取：AGENTS.md、AI_README_FIRST.md、本任务书、HANDOVER、CAPABILITY_MAP、DOMAIN_RULES目录与domain/recommendation、files、thumbnails、authors、migration对应专题；api/openapi相关schema、api/authors与files专题；GUIDE_UI；SECURITY、OBSERVABILITY、ARCHITECTURE§5/§5.1/§10；ADR索引与0003/0004/0011；server/web/android/desktop入口README、tools/README、deploy/README、deploy/embedded/README；本轮修改的CHANGELOG与历史索引/归档。没有把历史设备验收当作本轮设备证据。

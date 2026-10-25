@@ -140,7 +140,7 @@ func (g *Generator) Submit(t Task) error {
 	if len(keys) == 0 {
 		return nil
 	}
-	lease, err := g.budget.acquire(context.Background(), keys, false)
+	lease, err := g.budget.acquirePriority(context.Background(), keys, false, false)
 	if err != nil {
 		return err
 	}
@@ -228,7 +228,7 @@ func (g *Generator) ensureOne(ctx context.Context, assetID, srcPath string, kind
 	}
 	admission, cancel := context.WithTimeout(ctx, frameTimeout)
 	defer cancel()
-	lease, err := g.budget.acquire(admission, []string{dst}, true)
+	lease, err := g.budget.acquirePriority(admission, []string{dst}, true, foreground)
 	if err != nil {
 		return err
 	}

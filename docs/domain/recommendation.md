@@ -108,6 +108,19 @@ go test ./internal/store -run TestRecommendationInputPlan -bench '^BenchmarkReco
 go test ./internal/recommendfeed -run '^$' -bench '^BenchmarkRecommendationPrewarmSeeds$' -benchmem -benchtime=300ms -count=3
 ```
 
+#### 直接ID与本轮准备复用的合成验证（2026-10-25）
+
+[85d7f70e云端基准](https://github.com/Surtr42u/qimeng-media/actions/runs/40173573197/job/121109405280)，两万合成候选、同一runner三轮中位数：
+
+| 对照 | 时间 | 每轮累计分配 |
+|---|---|---|
+| 完整Item再取ID → 直接ID | 27.537ms → 26.059ms | 11,259,145B → 7,417,096B（约少34%） |
+| 双seed各自准备 → 共用本轮准备 | 52.696ms → 35.282ms | 14,828,800B → 8,241,664B（约少44%） |
+
+这些是完整顺序/双seed的纯算法分项，不是HTTP首屏、RSS、真实库或NAS结果。评分/浮点求和/RNG/平衡排序仍同一核心，固定输出摘要覆盖Item、ID及Prepared各路线；准备仅持本轮seed无关数据，不能跨修订常驻或截断候选。实际收益以目标设备端点另测。
+
+[5eaa181c云端取消记录](https://github.com/Surtr42u/qimeng-media/actions/runs/40174423243/job/121111920130)在实际进入被占用闸之后取消：共享结果等待29µs（计算仍为1），不同键准入等待14/15µs（预算/峰值分别1/1、2/2）；进度闸等待20µs（原查询仍为1）。这是单次合成调度观测，排除网络/客户端/真实SQL，不能据此承诺p95或SLO。
+
 ### 1.7 算法评估与本轮调整
 
 当前是单用户、无需训练的可解释规则推荐，适合少反馈的自托管媒体库。标签兴趣、熟悉内容、新内容、发现与每日去重都有独立信号；暂未有点击/长停留等离线对照结果证明改权重会改善体验。本轮保持评分公式、固定阈值、权重预设和缓存纪律，修正同分桶链式延伸，并减少标签重复计算/中间切片（ADR-0045）。评分后兼顾新鲜度与多样性的分层方式可参考 [Google 重排说明](https://developers.google.com/machine-learning/recommendation/dnn/re-ranking)；本项目适用性是代码审查判断，不是质量指标证明。

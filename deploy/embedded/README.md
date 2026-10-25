@@ -79,4 +79,4 @@ arm64 内嵌 Release 经云端出包后，已验证三件套/锁定哈希、提�
 
 ## 候选上传门禁的回归边界
 
-APK候选仍须单测/Release Lint成功后才上传，之后还需同SHA完整CI/安全/文档与审查资格。`tools/test_release_gate.py`在云端docs检查中对固定模板锁定顺序及失败阻断，并拒绝四类受控错误配置；没有用真实签名APK执行失败注入，也没有替代内嵌三件套、SDK锁和版本/签名核验。
+APK候选仍须单测/Release Lint成功后才上传，之后还需同SHA完整CI/安全/文档与审查资格。`tools/test_release_gate.py`在云端docs检查中对固定模板锁定顺序及失败阻断，并拒绝四类受控错误配置；隔离真实运行40174082810已确认Release构建/三件套成功后，唯一注入测试失败会跳过上传且无artifact（详见HANDOVER）。它不替代正常产物的同SHA门禁、内嵌三件套、SDK锁和版本/签名核验。

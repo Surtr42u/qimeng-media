@@ -29,6 +29,12 @@ func newRepresentationBudget(limit int) *representationBudget {
 }
 
 func (b *representationBudget) acquire(ctx context.Context, keys []string, wait bool) (*representationLease, error) {
+	return b.acquirePriority(ctx, keys, wait, true)
+}
+
+// 与执行闸同样给新前台保留一格；同键加入不受分类影响，也不另收预算。
+// 单格隔离测试允许后台使用这一格，前台只能等当前任务结束。
+func (b *representationBudget) acquirePriority(ctx context.Context, keys []string, wait, foreground bool) (*representationLease, error) {
 	unique := make(map[string]struct{}, len(keys))
 	for _, key := range keys {
 		unique[key] = struct{}{}
@@ -48,7 +54,11 @@ func (b *representationBudget) acquire(ctx context.Context, keys []string, wait 
 				missing++
 			}
 		}
-		if len(b.refs)+missing <= b.limit {
+		limit := b.limit
+		if !foreground && limit > 1 {
+			limit--
+		}
+		if missing == 0 || len(b.refs)+missing <= limit {
 			lease := &representationLease{budget: b, keys: make([]string, 0, len(unique))}
 			for key := range unique {
 				b.refs[key]++
@@ -60,7 +70,7 @@ func (b *representationBudget) acquire(ctx context.Context, keys []string, wait 
 		}
 		changed := b.changed
 		b.mu.Unlock()
-		if !wait || len(unique) > b.limit {
+		if !wait || len(unique) > limit {
 			sysmon.Default.IncThumbWork("rejected")
 			return nil, ErrQueueFull
 		}
