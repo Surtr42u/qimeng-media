@@ -116,3 +116,35 @@ func TestSnapshotErrorPanicAndBudget(t *testing.T) {
 		t.Fatal("budget exceeded")
 	}
 }
+
+func TestCompletedUncachedOrderStartsFreshBuild(t *testing.T) {
+	for _, kind := range []string{"error", "oversize"} {
+		t.Run(kind, func(t *testing.T) {
+			c := NewCache()
+			t.Cleanup(c.Close)
+			failure := errors.New("synthetic computation failure")
+			ids := make([]string, maxCachedIDs+1)
+			calls := 0
+			// 相同键连续冷算：返回完成后不能再次加入上一轮未退役的同飞体。
+			for i := 0; i < 256; i++ {
+				got, err := c.order(Key{}, func() ([]string, error) {
+					calls++
+					if kind == "error" {
+						return nil, failure
+					}
+					return ids, nil
+				})
+				if calls != i+1 {
+					t.Fatalf("rejoined completed build: calls=%d, want=%d", calls, i+1)
+				}
+				if kind == "error" {
+					if !errors.Is(err, failure) {
+						t.Fatalf("failure changed: %v", err)
+					}
+				} else if err != nil || len(got) != len(ids) {
+					t.Fatalf("oversized result truncated: len=%d, err=%v", len(got), err)
+				}
+			}
+		})
+	}
+}

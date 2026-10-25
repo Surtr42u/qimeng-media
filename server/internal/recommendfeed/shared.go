@@ -125,10 +125,11 @@ func (c *Cache) buildOrder(flightKey string, key Key, generation uint64, call *s
 	if result.Err == nil {
 		call.ids = result.Val.([]string)
 	}
-	close(call.done)
+	// 先退役同飞体再通知完成；错误/超预算结果不缓存，下一请求必须能重新计算。
 	c.mu.Lock()
 	delete(c.builds, flightKey)
 	close(c.changed)
 	c.changed = make(chan struct{})
 	c.mu.Unlock()
+	close(call.done)
 }
