@@ -44,7 +44,11 @@ export function useSaveConfig() {
     mutationFn: (cfg: ClientConfig) => unwrapSdkResult(putApiV1Config({ body: cfg })),
     // 作废保存前的 GET，避免迟到旧值在 PUT 成功后覆盖缓存。
     onMutate: () => qc.cancelQueries({ queryKey: CONFIG_QUERY_KEY }),
-    onSuccess: (saved) => qc.setQueryData(CONFIG_QUERY_KEY, saved),
+    onSuccess: async (saved) => {
+      // 保存期间也可能因焦点/SSE 再发 GET，确认响应前再次作废旧读取。
+      await qc.cancelQueries({ queryKey: CONFIG_QUERY_KEY })
+      qc.setQueryData(CONFIG_QUERY_KEY, saved)
+    },
   })
 }
 

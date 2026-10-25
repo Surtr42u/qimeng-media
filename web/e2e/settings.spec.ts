@@ -10,7 +10,7 @@ async function openSettings(page: Page, onConfig: (route: Route) => Promise<void
     // 其余列表/偏好/事件全在隔离浏览器内响应；未放行到任何后端。
     await route.fulfill({ json: [] })
   })
-  await page.goto('/settings')
+  await page.goto('/app/settings')
 }
 
 test('慢保存 A 完成后保留新草稿 B，连续保存发送 B', async ({ page }) => {
