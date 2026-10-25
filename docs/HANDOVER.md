@@ -20,6 +20,7 @@
 
 ### 2.1 当前源码、双端安装与本次验收
 
+- **本次安装授权（2026-10-26）**：用户已要求将精简版安装电脑和原手机，Android安装序号8→9。017b03d2的16类完整云端检查已全部成功；新安装序号提交另核对同源完整门禁与PC/Release出包。当前仅准备，尚未替换旧包；完成后更新本节实际来源和验证。保留数据/同签名覆盖，不开电脑前台、不写真库测试数据、不再等新增机器人审查；不扩入NAS/手机备份恢复或合并PR。
 - **本次v1兼容精简源码**：用户确认旧纯本地项目停用后要求精简。按[ADR-0050](adr/0050-退役旧项目v1备份导入.md)，移除v1聚合造事件/批次锚/旧文件匹配，其他版本写前400；Web/Android前置明确拒绝，只接收当前v2。保留现有历史身份及v2导入导出/分段通知/统计重建，不改历史迁移或清理真库。OpenAPI先改、SDK锁由云端生成；a704cae3首轮15类检查通过，服务端lint发现删除回放后残留的未使用val函数，已移除；首轮服务端race因此未执行，修正提交的结果仍按当前head检查核对，不把前置检查冒充完整验收。本次尚未构建安装新运行包，PC/手机实际仍是下述8f6a3a3c/code8，因此不得宣称现用包已经移除v1。
 - **同源云端更新已安装（PR #12）**：PC服务端/Web与原arm64手机均为 **8f6a3a3c**、发布版本0.2.1，手机安装序号 **8**；PR #12仍叠在未合并的PR #11上，本次没有合并PR。S01–S08/Q01–Q10代码/职责工作与首批自动化的实施范围见[任务书](OPTIMIZATION_TASKBOOK_20261025.md)§10/§11；不能把装机成功写成全部原验收销项。
 - **同SHA云端门禁**：[完整CI](https://github.com/Surtr42u/qimeng-media/actions/runs/40193735499)、[安全](https://github.com/Surtr42u/qimeng-media/actions/runs/40193735496)、[文档/同步责任](https://github.com/Surtr42u/qimeng-media/actions/runs/40193735516)全部成功（16类必需检查），[PC出包](https://github.com/Surtr42u/qimeng-media/actions/runs/40193837660)与[arm64 Release构建/单测/Lint](https://github.com/Surtr42u/qimeng-media/actions/runs/40193844577)也均成功。后补文档提交不改变安装包来源；其检查另按[当前PR](https://github.com/Surtr42u/qimeng-media/pull/12/checks)核对。8f6a3a3c安装批次未改协议/schema/SDK锁/依赖或公式，仅将既有Android安装序号7→8；后续说明与SDK摘要修订另见下条。
