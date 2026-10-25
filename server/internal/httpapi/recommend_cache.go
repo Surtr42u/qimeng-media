@@ -29,3 +29,6 @@ func (s *Server) invalidateRecommendCache() {
 		s.recommendCache.invalidate()
 	}
 }
+
+// CloseRecommendCache 由组合根在 HTTP 停接后、数据库关闭前收齐共享计算。
+func (s *Server) CloseRecommendCache() { s.recommendCache.order.Close() }

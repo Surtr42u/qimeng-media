@@ -13,7 +13,7 @@ import (
 	"qimeng-media/server/internal/store/db"
 )
 
-// LoadPage 共享完整顺序，分页只读当前页；WithoutCancel 仅覆盖无副作用的共享计算。
+// LoadPage 共享完整顺序，分页只读当前页；请求取消只退出等待，计算由服务生命周期管理。
 // 第二返回值是原始顺序的下一 offset，nil 表示到底；不依赖资格复核后的条数。
 func (c *Cache) LoadPage(ctx context.Context, q *db.Queries, key Key, prefs *recommend.Weights, now time.Time, offset, limit int) ([]db.ListRecommendationPageSummariesRow, *int, error) {
 	if offset < 0 || limit <= 0 {
@@ -51,8 +51,8 @@ func (c *Cache) Warm(ctx context.Context, q *db.Queries, key Key, prefs *recomme
 }
 
 func (c *Cache) ordered(ctx context.Context, q *db.Queries, key Key, prefs *recommend.Weights, now time.Time) ([]string, error) {
-	return c.order(key, func() ([]string, error) {
-		return loadOrder(context.WithoutCancel(ctx), q, key, prefs, now)
+	return c.orderContext(ctx, key, c.currentGeneration(), func(buildCtx context.Context) ([]string, error) {
+		return loadOrder(buildCtx, q, key, prefs, now)
 	})
 }
 

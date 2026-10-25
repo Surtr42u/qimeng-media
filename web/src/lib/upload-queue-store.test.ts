@@ -239,7 +239,7 @@ describe('uploadQueueStore 刷新恢复（IndexedDB 持久化）', () => {
     expect((await storage.getAll()).some((it) => it.id === 'upload-900' || it.id === 'upload-901')).toBe(false)
   })
 
-  it('恢复条目 id 序号让位：新入队 id 不与恢复 id 冲突', async () => {
+  it('新入队 UUID 键不与恢复的数字 id 冲突', async () => {
     const storage = await getUploadQueueStorage()
     await storage.put(seedRecord({ id: 'upload-950' }))
     await uploadQueueStore.restorePersisted()
@@ -250,7 +250,8 @@ describe('uploadQueueStore 刷新恢复（IndexedDB 持久化）', () => {
 
     const fresh = uploadQueueStore.getItems().find((it) => it.name === 'fresh.mp4')
     expect(fresh).toBeDefined()
-    expect(Number(fresh?.id.slice('upload-'.length))).toBeGreaterThan(950) // 序号已让位
+    expect(fresh?.id).not.toBe('upload-950')
+    expect(fresh?.id).toMatch(/^upload-[0-9a-f]{8}-[0-9a-f-]{27}$/i)
 
     // 清场：新条目送达终态 + 移除恢复条目（不留跨用例残留）
     FakeXHR.instances.at(-1)?.succeed('{"id":"asset-950"}')

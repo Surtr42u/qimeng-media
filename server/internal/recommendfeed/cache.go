@@ -1,6 +1,7 @@
 package recommendfeed
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"runtime/debug"
@@ -42,10 +43,21 @@ type Cache struct {
 	count       int
 	generation  uint64
 	useSequence uint64
+	life        context.Context
+	cancel      context.CancelFunc
+	closed      bool
+	builds      map[string]*sharedOrder
+	changed     chan struct{}
+	maxBuilds   int
+	workers     sync.WaitGroup
 	sf          singleflight.Group
 }
 
-func NewCache() *Cache { return &Cache{entries: make(map[Key]entry)} }
+func NewCache() *Cache {
+	c := &Cache{entries: make(map[Key]entry)}
+	c.initLifecycle()
+	return c
+}
 
 // Clear 与迟到的计算登记互斥，防止失效后旧计算重新占用预算。
 func (c *Cache) Clear() {
@@ -59,6 +71,9 @@ func (c *Cache) Clear() {
 func (c *Cache) get(key Key) ([]string, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.closed {
+		return nil, false
+	}
 	e, ok := c.entries[key]
 	if !ok {
 		return nil, false
@@ -94,52 +109,41 @@ func orderFlightKey(generation uint64, key Key) string {
 
 // 固定本轮计算所属代次；失效仅阻止发布，已经共享该计算的前台仍能取得结果。
 func (c *Cache) orderInGeneration(key Key, generation uint64, compute func() ([]string, error)) ([]string, error) {
-	sfKey := orderFlightKey(generation, key)
-	value, err, _ := c.sf.Do(sfKey, func() (any, error) {
-		if ids, ok := c.get(key); ok {
-			return ids, nil
-		}
-		ids, err := safeCompute(compute)
-		if err != nil {
-			return nil, err
-		}
-		c.mu.Lock()
-		defer c.mu.Unlock()
-		if generation != c.generation || len(ids) > maxCachedIDs {
-			return ids, nil
-		}
-		for k, e := range c.entries {
-			if time.Since(e.at) >= TTL {
-				c.count -= len(e.ids)
-				delete(c.entries, k)
-			}
-		}
-		if previous, ok := c.entries[key]; ok {
-			c.count -= len(previous.ids)
-			delete(c.entries, key)
-		}
-		// 最多 32 项，线性选冷项比另维护链表更简单；仅淘汰满足预算所需的项。
-		for len(c.entries) >= maxEntries || c.count+len(ids) > maxCachedIDs {
-			var cold Key
-			var oldest uint64
-			found := false
-			for k, e := range c.entries {
-				if !found || e.used < oldest {
-					cold, oldest, found = k, e.used, true
-				}
-			}
-			c.count -= len(c.entries[cold].ids)
-			delete(c.entries, cold)
-		}
-		c.useSequence++
-		c.entries[key] = entry{ids: ids, at: time.Now(), used: c.useSequence}
-		c.count += len(ids)
-		return ids, nil
-	})
-	if err != nil {
-		return nil, err
+	return c.orderContext(context.Background(), key, generation, func(context.Context) ([]string, error) { return compute() })
+}
+
+func (c *Cache) publishOrder(key Key, generation uint64, ids []string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed || generation != c.generation || len(ids) > maxCachedIDs {
+		return
 	}
-	return value.([]string), nil
+	for k, e := range c.entries {
+		if time.Since(e.at) >= TTL {
+			c.count -= len(e.ids)
+			delete(c.entries, k)
+		}
+	}
+	if previous, ok := c.entries[key]; ok {
+		c.count -= len(previous.ids)
+		delete(c.entries, key)
+	}
+	// 最多 32 项，线性选冷项比另维护链表更简单；仅淘汰满足预算所需的项。
+	for len(c.entries) >= maxEntries || c.count+len(ids) > maxCachedIDs {
+		var cold Key
+		var oldest uint64
+		found := false
+		for k, e := range c.entries {
+			if !found || e.used < oldest {
+				cold, oldest, found = k, e.used, true
+			}
+		}
+		c.count -= len(c.entries[cold].ids)
+		delete(c.entries, cold)
+	}
+	c.useSequence++
+	c.entries[key] = entry{ids: ids, at: time.Now(), used: c.useSequence}
+	c.count += len(ids)
 }
 
 func safeCompute(compute func() ([]string, error)) (ids []string, err error) {

@@ -51,6 +51,8 @@
 
 扫描仍逐目录/媒体文件读取元数据，整轮快照只装载 asset_id/rel_path/size_bytes/mtime/updated_at 五列；路径索引仅保存快照下标，短提交锁内重新读取完整实时行。保留整库差集视野、未变文件零逐项 SQL、size+mtime 与 updated_at 复核、候选 tie-break 和部分失败保护。完整行查询保留给其他调用者；没有 schema/索引变化。`BenchmarkScanSnapshotLoad` 对比相同两万合成行的 SQL 装载与索引构建，与只测索引及完整扫描的口径分开。`BenchmarkScanSnapshotIndex` 以两万合成记录比较旧索引与新索引，只测索引构建的时间/分配，不包含 SQL、磁盘遍历或探测。云端 CI 运行该基准以及 Linux race、Windows 原生扫描回归；实库/NAS 性能须另验，不能从索引比例推算整个扫描加速比例。日志级别和耗时字段见 [监控](../docs/OBSERVABILITY.md#日志)。 首轮 f9ed404b 的[云端基准](https://github.com/Surtr42u/qimeng-media/actions/runs/40108840986/job/120916094406)三轮中位数为 3.267ms→0.754ms、额外分配 7,273,733B→873,728B（约减少 88%），分配次数 20,065→65；硬件/缓存与整库成本不包含在该比例内。
 
+推荐顺序的请求等待可取消，计算不再依附首个 HTTP 请求。服务最多同时接纳 min(2,GOMAXPROCS) 个不同键，同键共享，其他请求可取消地等候准入；main 在 HTTP 停接后、关库前调用 CloseRecommendCache，取消 SQL 并收齐已接纳计算。结构失效继续只阻止旧结果发布，不使共享前台收到预热中止错误；无新增响应码、公式或 TTL 变化。
+
 ## 库文件指标刷新
 
 上传/回收站/恢复及 library.changed（含后台扫描、监听和库操作）只投递一个脏位；mediawrite 单 worker 在首个信号后一秒合并查询，不因连续通知滑动延期。开机立即查询，查询期间的新变更留到下一轮；单次仍限三秒，失败保留上次 gauge 并按相同节奏重试，不改变业务成功结果。main 显式启动，关闭时取消并等待在途查询后才关数据库；无变更不执行轮询 SQL。计数继续从数据库分组真相读取，不靠内存加减估计。
