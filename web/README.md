@@ -64,3 +64,8 @@ shadcn/ui 组件及 components.json 保留；将唯一被构建消费的 dist/ta
 ## 统计消费
 
 数据页按所选窗口读取 overview 汇总与同轴 trends；静图/动图/视频数量互斥，窗口浏览/播放分列。作者/标签统计榜调用服务端窗口端点，不从管理列表重排；查看榜单沿用窗口并标明上限。失败与真实空数据分开，新统计字段缺失明确提示服务端升级。口径与 Android 共用 [统计专题](../docs/domain/statistics.md#统计数据消费约束)。
+
+
+## 规模与状态所有权审查
+
+上传队列保持模块级唯一传输/XHR/pump owner，挂靠和持久化IO分别复用独立服务；图片查看器已区分外层portal/焦点/chrome与ViewerCanvas手势现场，数学公式独立。Q08当前规模/保留依据和实际测试边界见[任务书结构结论](../docs/OPTIMIZATION_TASKBOOK_20261025.md)。不为行数增加同步状态，不扩张knip未用导出阻断范围。

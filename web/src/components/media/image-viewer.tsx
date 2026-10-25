@@ -1,4 +1,5 @@
 /**
+ * 规模例外：外层独占portal/焦点/chrome，ViewerCanvas独占手势现场；公式在image-viewer-math。
  * 自研图片查看器（E5）：详情页图片/动图的全屏查看覆盖层——纯 UI 组件，手势
  * 自理（Pointer Events + CSS transform，零新依赖）；换件回调由页面注入，
  * 本组件不发任何网络请求、不含业务规则（铁律 7 / ADR-0008 逻辑 UI 分层）。

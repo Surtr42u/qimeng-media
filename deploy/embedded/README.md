@@ -75,3 +75,8 @@ arm64 内嵌 Release 经云端出包后，已验证三件套/锁定哈希、提�
   可替换性=按上表换投新成品即可（fetch 脚本哈希锁同步更新）。
 - 真机 18430 端口若被 Termux 形态 A 占用，Service 子进程秒退并通知
   （详见 `EmbeddedServerService` KDoc「重启语义」）。
+
+
+## 候选上传门禁的回归边界
+
+APK候选仍须单测/Release Lint成功后才上传，之后还需同SHA完整CI/安全/文档与审查资格。`tools/test_release_gate.py`在云端docs检查中对固定模板锁定顺序及失败阻断，并拒绝四类受控错误配置；没有用真实签名APK执行失败注入，也没有替代内嵌三件套、SDK锁和版本/签名核验。

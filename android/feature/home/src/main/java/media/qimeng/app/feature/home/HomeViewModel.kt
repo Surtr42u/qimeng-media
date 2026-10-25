@@ -127,6 +127,8 @@ data class HomeUiState(
  * 三 tab 各自的取数段与共享翻页机，警戒线特此记档。
  */
 @HiltViewModel
+// 规模例外：三Tab的代际、刷新/续页、筛选草稿与唯一StateFlow一起裁决；拆成多个VM会增加同步owner。
+// 无状态分页/预取策略已在core中，取消和前台恢复由HomeViewModelTest覆盖。
 class HomeViewModel @Inject constructor(
     private val mediaRepository: MediaRepository,
     private val gridPrefs: GridPrefsRepository,

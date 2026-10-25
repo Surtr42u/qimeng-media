@@ -70,3 +70,8 @@ Go 安全扫描及各构建工作流的 Go 版本来自 server/go.mod；lint 固
 `python tools/check_glib_patch.py` 校验官方快照的全部原始文件（含两行已修复源码）及桌面 Cargo 的本地补丁来源，拒绝文件漂移和重新引入注册表 glib；自测与文档工具共用 unittest discover。第三方 README 的 rustdoc 符号链接不按本地路径解析，普通失效链接仍检查。
 
 安全 CI 在 Linux/Rust 1.98.1 下执行上游 `variant_iter::tests` 的 release 优化测试：临时恢复经哈希核实的原始源码确认运行时失败，再恢复固定补丁并运行相同测试；网络/编译失败不算缺陷复现。快照许可、锁文件及整件退役规则见 [补丁说明](../desktop/vendor/README.md)。
+
+
+## 候选包门禁回归
+
+`test_release_gate.py`随既有docs云端unittest运行，固定检查APK模板的完整单测/Lint命令、默认success条件和上传先后；受控错误配置覆盖吞退出码、continue-on-error、always上传和提前上传。它是本仓文本契约，不是YAML通用解析器，也不等于Release整包失败注入；正式交付继续核对同SHA完整检查、签名/内嵌哈希与自动审查。

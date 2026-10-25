@@ -179,6 +179,8 @@ fun QimengNavRoot(modifier: Modifier = Modifier) {
  * 与 saveable 状态，避免跨宿主状态副本。
  */
 @Composable
+// 规模例外：路由表共用唯一NavController/驻留Tab条目及返回结果交接，不能复制导航状态。
+// 纯路由参数/Tab点击决策已有同包函数与单测；窗口动作仍需目标设备验证。
 fun QimengNavHost(
     modifier: Modifier = Modifier,
     navController: NavHostController = rememberNavController(),

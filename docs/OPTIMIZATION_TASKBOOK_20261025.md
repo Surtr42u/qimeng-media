@@ -342,3 +342,24 @@
 实施时按任务更新推荐/缩略图/文件/迁移、SECURITY、OBSERVABILITY、模块 README 和必要 API 专题；重大架构决策再补 ADR 与索引。普通内部提取不伪造协议/schema 更新。每批代码与受影响文档同批交付。
 
 本轮实际交付仅为本文、HANDOVER/能力地图的提案入口、llms 导航和 CHANGELOG/历史轮转。现行领域、安全、UI、协议与架构机制没有变化，因此不修改对应规范正文。本地只进行了源码/文档静态阅读与差异核对；未运行构建、业务测试、基准、文档门禁，也未推送、部署或操作真库/设备。
+
+
+## 10. 结构审查与验证结论（Q08）
+
+2026-10-25 实施快照；行数含注释/空行，仅作重新评估触发器，不作拆分指标。下表的验证名称指实际纳入云端的现有回归；46c879cf前置16项门禁已通过，Q04/Q08后续head仍需完整通过，不能把策略单测写成窗口/手势实机验收。
+
+| 文件（当前行数） | 状态/资源归属与结论 | 实际验证及边界 |
+|---|---|---|
+| BiliPlayerView（1285） | 保留一个View持有Player.Listener、手势、PopupWindow与回调释放；无状态时长/倍速/全屏策略已在PlayerMath/状态机。保留已登记AndroidView桥接及参数冻结，不复制播放器owner | PlayerMathTest、VideoStageStateMachineTest、VideoFullscreenStateMachineTest；编译/Lint。播放器手势/浮层设备验证未新增 |
+| StatsDetailScreen（822） | 拆出240行StatsDetailPresentation（摘要/洞察/排行/分布展示行与文案）；VM继续持加载/失败，页面继续独占趋势选择/排序，卡片渲染靠近样式常量保留 | StatsDetailViewModelTest、StatsViewModelTest、StatsFormattersTest；编译/Lint。没有重算服务端领域统计；视觉设备验证未新增 |
+| DetailScreen（883） | 保留播放器/缩放沉浸/系统栏及预载的同一页面生命周期；无状态系统栏、亮度、viewport、预载、滑动策略已独立并有回归。拆散Effect会增加窗口写回竞争 | DetailViewModelTest、DetailPreloadPolicyTest、SystemBarIconAppearanceTest、InstantSystemBarsTest、StageViewportHeightTest等；设备窗口验收未新增 |
+| HomeViewModel（873） | 保留唯一StateFlow裁决三Tab请求代际、刷新/续页、筛选草稿；分页/预取策略已复用core。Q02已修取消传播和generation守卫，不能按Tab再造VM副本 | HomeViewModelTest含确定性取消/前台恢复与独立seed/刷新回归；SDK隔离与Lint |
+| QimengNavHost（812） | 单NavController、驻留Tab条目与返回结果交接保持一个owner；纯路由编码/Tab点击决策已提取。声明式路由表不机械拆成同步管理器 | TopLevelDestinationTest、TabTapDecisionTest、EncodeQueryValueTest；编译/Lint。系统返回/窗口设备验证未新增 |
+| httpapi/import.go（39） | Q04已迁入portablebackup，HTTP仅有界解码/错误与结果映射；业务import.go 599行保留分段过程的共享计数/映射owner，具体事务不再持HTTP响应 | v1/v2往返、A→B→A/实时补传、歧义、TXT keep、标签组时间、故障重试、取消及契约回归；Linux race/Windows |
+| httpapi/server.go（492） | 拆出163行middleware.go负责Host/安全头/鉴权/媒体签名管线；Server.New保留显式装配顺序和唯一依赖对象，不引入服务容器或隐藏状态 | HTTP完整集成、鉴权/签名/Host/安全头/健康探针与协议回归；Go lint/depguard/race |
+| upload-queue-store（622） | 传输队列/XHR/pump唯一owner保留；挂靠已在upload-attach，Q10把持久化IO/健康放upload-persistence，未给后者传输状态决策权 | 上传队列、分片、挂靠/恢复、IDB提交失败、写删竞争与UUID防碰撞单测；浏览器降级/重试场景。真实刷新重选流程仍独立验收 |
+| image-viewer（508） | 外层portal/焦点/chrome与内部ViewerCanvas手势现场职责已明确，换src重挂canvas重置手势；缩放/坐标公式已在image-viewer-math，无另建状态owner的收益 | image-viewer-math与Web AST/构建；完整触摸手势/桌面全屏动作未新增现场验收 |
+
+同语义常量继续复用MediaTypeKeys/SourceKeys/核心分页/播放器数学与现有纯函数；本轮不扩大knip未用导出阻断面。source_groups_data是静态词表，不以行数拆分。新增纯展示文件无IO，新增业务包不引用gen；请求中间件只持Server引用，不复制配置或鉴权状态。
+
+Q06补充：`tools/test_release_gate.py`在既有云端docs unittest中检查候选上传顺序、完整Gradle命令和默认success条件，并用内存中的受控错误配置（吞退出码、continue-on-error、always上传、上传提前）验证拒绝。只支持本仓固定模板，不能替代GitHub解析、Release整包运行或同SHA完整门禁；本轮没有制造真实签名失败包或部署任何候选包。

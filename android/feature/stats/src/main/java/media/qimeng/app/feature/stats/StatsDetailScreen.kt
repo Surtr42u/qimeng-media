@@ -71,6 +71,7 @@ import media.qimeng.app.core.ui.icon.BackIcon
  * 把共享组件拖成跨文件 internal 面，拆分收益为负，警戒线特此记档。
  */
 @Composable
+// 保留一个页面交互owner；无状态展示映射在StatsDetailPresentation中。
 fun StatsDetailScreen(
     onBack: () -> Unit,
     onOpenAsset: (assetId: String) -> Unit,
@@ -233,7 +234,7 @@ private fun StatCard(modifier: Modifier = Modifier, content: @Composable ColumnS
 }
 
 /** 摘要格数据（旧版 SummaryItem 同构） */
-private data class SummaryCellUi(val label: String, val value: String)
+
 
 /** 摘要卡：2 列网格，列间 4dp 行间 8dp；每格独立白卡（旧版 renderSummary chunked(2) 同构） */
 @Composable
@@ -420,15 +421,7 @@ private fun DetailTrendCard(
 // ==================== 排行卡（旧版 rankListContainer + item_rank_list.xml 同构） ====================
 
 /** 排行行数据（占位行 rank=null；进度百分比渲染时经 [rankProgressPercent] 统一算） */
-private data class RankRowUi(
-    val rank: Int?,
-    val title: String,
-    val subtitle: String?,
-    val valueText: String?,
-    val progressValue: Long,
-    val progressMax: Long,
-    val onClick: (() -> Unit)? = null,
-)
+
 
 /** 空态占位行（陷阱#12：名次「—」+「暂无数据」+ 无数值 + 不可点，旧版 EMPTY_PLACEHOLDER 同构） */
 private val RANK_EMPTY_ROW = RankRowUi(
@@ -590,10 +583,10 @@ private fun SortCapsule(text: String, onClick: () -> Unit) {
 // ==================== 分布对比卡（旧版 createDistributionCard/createDistributionRow 同构） ====================
 
 /** 分布单指标（percent 渲染前算好；数量/浏览用 [rankProgressPercent] 同一口径） */
-private data class DistributionMetricUi(val name: String, val valueText: String, val percent: Int)
+
 
 /** 分布行：行标签 + 三指标（数量/大小/浏览）等重横排 */
-private data class DistributionRowUi(val label: String, val metrics: List<DistributionMetricUi>)
+
 
 /**
  * 分布对比卡：标题 14sp Bold + 副标题 11sp 次色（topMargin 2dp）→ 逐行
@@ -652,222 +645,6 @@ private fun DistributionCard(title: String, subtitle: String, rows: List<Distrib
                 }
             }
         }
-    }
-}
-
-// ==================== 模式内容装配（旧版 renderFavorites/renderAuthorsTags/renderDistribution 数据口径） ====================
-
-/** 档位 → 洞察行「近X」用字（旧版 rangeLabel 逐字：7天/30天/全部时间，注意「全部时间」非「全部」） */
-private fun rangeLabel(range: StatsRangeOption): String = when (range) {
-    StatsRangeOption.SEVEN_DAYS -> "7天"
-    StatsRangeOption.THIRTY_DAYS -> "30天"
-    StatsRangeOption.ALL -> "全部时间"
-}
-
-/** 常看文件摘要格（旧版 renderFavorites renderSummary 四格：总浏览/浏览时长/常看文件/平均浏览次数） */
-private fun mostViewedSummaryCells(state: StatsDetailUiState): List<SummaryCellUi> = listOf(
-    SummaryCellUi("总浏览", formatCountDetail(state.windowViewCount)),
-    SummaryCellUi("浏览时长", formatDurationDetail(state.windowSeconds)),
-    SummaryCellUi("常看文件", formatCountDetail(state.filesWithViewRecords)),
-    SummaryCellUi(
-        "平均浏览次数",
-        // 旧版恒 "%.1f"（无数据给 0.0）；协议分母 0 → null，与主页同语义给「—」占位
-        state.overviewValues?.avgViewsPerFile?.let { formatAvgViewsDetail(it) } ?: DETAIL_UNAVAILABLE_TEXT,
-    ),
-)
-
-/** 常看文件洞察行（旧版逐字：「近X共浏览 N 次，停留 D」） */
-private fun mostViewedInsightLines(state: StatsDetailUiState, range: StatsRangeOption): List<String> = listOf(
-    "近${rangeLabel(range)}共浏览 ${state.windowViewCount} 次，" +
-        "停留 ${formatDurationDetail(state.windowSeconds)}",
-)
-
-/**
- * 常看文件排行行（热度/时长双档同构）：
- * 按热度=内容榜 GET /rankings（2026-09-18 批换源：原 most-viewed views 榜——值=累计浏览次数
- * 「N 次」，副标题「浏览 N 次 · 停留 D」，热度排序口径=浏览+播放+点赞累计）；按时长=seconds 榜
- * （值=人读时长，副标题「浏览 N 次」）。停留时长按 assetId 从 seconds 榜 join——协议无单文件
- * dwell 直出，Top20 之外的文件 join 不到则省略「· 停留」段（记档交付报告）。
- * 回调只携带 assetId：双榜条目类型不同（RankingEntry vs MostViewedEntry），跳转只需 id。
- */
-private fun mostViewedRankRows(
-    state: StatsDetailUiState,
-    sortByHeat: Boolean,
-    onEntryClick: (String) -> Unit,
-): List<RankRowUi> {
-    val dwellByAsset = state.secondsRanking.associate { it.assetId to it.value }
-    val viewsByAsset = state.contentRanking.associate { it.assetId to it.viewCount }
-    return if (sortByHeat) {
-        val maxValue = state.contentRanking.firstOrNull()?.viewCount ?: 0
-        state.contentRanking.mapIndexed { index, entry ->
-            val dwell = dwellByAsset[entry.assetId]
-            RankRowUi(
-                rank = index + 1,
-                title = entry.title,
-                subtitle = "浏览 ${entry.viewCount} 次" +
-                    dwell?.takeIf { it > 0 }?.let { " · 停留 ${formatDurationDetail(it.toLong())}" }.orEmpty(),
-                valueText = "${entry.viewCount} 次",
-                progressValue = entry.viewCount.toLong(),
-                progressMax = maxValue.toLong(),
-                onClick = { onEntryClick(entry.assetId) },
-            )
-        }
-    } else {
-        val maxValue = state.secondsRanking.firstOrNull()?.value ?: 0
-        state.secondsRanking.mapIndexed { index, entry ->
-            RankRowUi(
-                rank = index + 1,
-                title = entry.fileName,
-                subtitle = "浏览 ${viewsByAsset[entry.assetId] ?: 0} 次",
-                valueText = formatDurationDetail(entry.value.toLong()),
-                progressValue = entry.value.toLong(),
-                progressMax = maxValue.toLong(),
-                onClick = { onEntryClick(entry.assetId) },
-            )
-        }
-    }
-}
-
-/** 常看作者与标签摘要格（旧版 renderAuthorsTags 四格：作者/标签/浏览总次数/Top 作者） */
-private fun authorsTagsSummaryCells(state: StatsDetailUiState): List<SummaryCellUi> = listOf(
-    // 全量窗口计数由服务端给出，与展示的 Top N 条数分开。
-    SummaryCellUi("作者", formatCountDetail(state.overviewValues?.viewedAuthorsCount ?: 0)),
-    SummaryCellUi("标签", formatCountDetail(state.overviewValues?.viewedTagsCount ?: 0)),
-    SummaryCellUi("浏览总次数", formatCountDetail(state.windowViewCount)),
-    SummaryCellUi("Top 作者", state.topAuthors.firstOrNull()?.displayName ?: DETAIL_UNAVAILABLE_TEXT),
-)
-
-/** 常看作者与标签洞察行（旧版逐字：「最常看作者「X」，浏览 N 次」/「最常看标签「Y」，浏览 M 次」） */
-private fun authorsTagsInsightLines(state: StatsDetailUiState): List<String> = buildList {
-    state.topAuthors.firstOrNull()?.let { add("最常看作者「${it.displayName}」，浏览 ${it.views} 次") }
-    state.topTags.firstOrNull()?.let { add("最常看标签「${it.tag}」，浏览 ${it.views} 次") }
-}
-
-/** 常看作者排行行（旧版同构：副标题「作者」、值「N 次」、进度相对第一名） */
-private fun authorRankRows(
-    state: StatsDetailUiState,
-    onEntryClick: (TopAuthorEntry) -> Unit,
-): List<RankRowUi> {
-    val maxValue = state.topAuthors.firstOrNull()?.views ?: 0
-    return state.topAuthors.mapIndexed { index, entry ->
-        RankRowUi(
-            rank = index + 1,
-            title = entry.displayName,
-            subtitle = "作者",
-            valueText = "${entry.views} 次",
-            progressValue = entry.views.toLong(),
-            progressMax = maxValue.toLong(),
-            onClick = { onEntryClick(entry) },
-        )
-    }
-}
-
-/** 常看标签排行行（旧版同构：副标题「标签」） */
-private fun tagRankRows(
-    state: StatsDetailUiState,
-    onEntryClick: (TopTagEntry) -> Unit,
-): List<RankRowUi> {
-    val maxValue = state.topTags.firstOrNull()?.views ?: 0
-    return state.topTags.mapIndexed { index, entry ->
-        RankRowUi(
-            rank = index + 1,
-            title = entry.tag,
-            subtitle = "标签",
-            valueText = "${entry.views} 次",
-            progressValue = entry.views.toLong(),
-            progressMax = maxValue.toLong(),
-            onClick = { onEntryClick(entry) },
-        )
-    }
-}
-
-/** 分布摘要格 8 项（旧版 renderDistribution renderSummary 逐字：图片/视频/动图各含整数百分比、
- *  常规 / COS、图片总大小、视频总大小、总占用、窗口浏览；百分比=整数除法 count*100/total） */
-private fun distributionSummaryCells(state: StatsDetailUiState): List<SummaryCellUi> {
-    val overview = state.overviewValues ?: return emptyList()
-    val total = overview.totalFiles.coerceAtLeast(1)
-    val animatedCount = overview.animatedImageCount
-    val windowViews = overview.windowTotals.viewCount
-    return listOf(
-        SummaryCellUi(IMAGE_DISPLAY_NAME, "${overview.stillImageCount} (${overview.stillImageCount * 100 / total}%)"),
-        SummaryCellUi(VIDEO_DISPLAY_NAME, "${overview.videoCount} (${overview.videoCount * 100 / total}%)"),
-        SummaryCellUi(ANIMATED_DISPLAY_NAME, "$animatedCount (${animatedCount * 100 / total}%)"),
-        SummaryCellUi(
-            "常规 / COS",
-            "${overview.sourceNormalCount} / ${overview.sourceCosCount}",
-        ),
-        // 分类型大小直出（2026-09-14 协议批 per_type_size_bytes；image 不含动图）
-        SummaryCellUi("图片总大小", formatSizeDetail(overview.imageSizeBytes)),
-        SummaryCellUi("视频总大小", formatSizeDetail(overview.videoSizeBytes)),
-        SummaryCellUi("总占用", formatSizeDetail(overview.totalSizeBytes)),
-        SummaryCellUi("窗口浏览", formatCountDetail(windowViews)),
-    )
-}
-
-/** 分布洞察行（旧版逐字：类型浏览行恒出；COS 行仅 cosCount>0 时出） */
-private fun distributionInsightLines(state: StatsDetailUiState, range: StatsRangeOption): List<String> {
-    val overview = state.overviewValues ?: return emptyList()
-    val total = overview.totalFiles.coerceAtLeast(1)
-    val imageViews = state.typeWindowViews[KEY_MEDIA_TYPE_IMAGE] ?: 0
-    val videoViews = state.typeWindowViews[KEY_MEDIA_TYPE_VIDEO] ?: 0
-    val animatedViews = state.typeWindowViews[KEY_MEDIA_TYPE_ANIMATED] ?: 0
-    return buildList {
-        add("近${rangeLabel(range)}图片被浏览 $imageViews 次，视频 $videoViews 次，动图 $animatedViews 次")
-        if (overview.sourceCosCount > 0) {
-            add(
-                "COS 文件 ${overview.sourceCosCount} 个（${overview.sourceCosCount * 100 / total}%），" +
-                    "窗口浏览 ${state.sourceWindowViews[KEY_SOURCE_COS] ?: 0} 次",
-            )
-        }
-    }
-}
-
-/** 类型分布行（图片/视频/动图 × 数量/大小/浏览；最大值=行内三档各自取最大，旧版 maxCount/maxViews 同口径） */
-private fun typeDistributionRows(state: StatsDetailUiState): List<DistributionRowUi> {
-    val overview = state.overviewValues ?: return emptyList()
-    val animatedCount = overview.animatedImageCount
-    return buildDistributionRows(
-        listOf(
-            DistRowInput(IMAGE_DISPLAY_NAME, overview.stillImageCount, overview.imageSizeBytes, state.typeWindowViews[KEY_MEDIA_TYPE_IMAGE] ?: 0),
-            DistRowInput(VIDEO_DISPLAY_NAME, overview.videoCount, overview.videoSizeBytes, state.typeWindowViews[KEY_MEDIA_TYPE_VIDEO] ?: 0),
-            DistRowInput(ANIMATED_DISPLAY_NAME, animatedCount, overview.animatedImageSizeBytes, state.typeWindowViews[KEY_MEDIA_TYPE_ANIMATED] ?: 0),
-        ),
-    )
-}
-
-/** 来源分布行（常规/COS × 数量/大小/浏览，旧版来源卡同构） */
-private fun sourceDistributionRows(state: StatsDetailUiState): List<DistributionRowUi> {
-    val overview = state.overviewValues ?: return emptyList()
-    return buildDistributionRows(
-        listOf(
-            DistRowInput(SOURCE_NORMAL_DISPLAY_NAME, overview.sourceNormalCount, overview.normalSizeBytes, state.sourceWindowViews[KEY_SOURCE_NORMAL] ?: 0),
-            DistRowInput(SOURCE_COS_DISPLAY_NAME, overview.sourceCosCount, overview.cosSizeBytes, state.sourceWindowViews[KEY_SOURCE_COS] ?: 0),
-        ),
-    )
-}
-
-/**
- * 分布行装配：数量/浏览/大小进度均相对本卡（组内）最大值。大小指标走协议
- * per_type/per_source_size_bytes 直出（2026-09-14 协议批）。
- * 偏离记档：旧版（StatsDetailFragment.kt L685/L693）来源行进度 maxBytes 用
- * 全库总占用，两行比例失真（各自最多只到总占比的百分位）；本版改组内最大值
- * 口径 = 与数量/浏览档及排行卡「相对第一名」一致。
- */
-private data class DistRowInput(val label: String, val count: Int, val sizeBytes: Long, val views: Int)
-
-private fun buildDistributionRows(entries: List<DistRowInput>): List<DistributionRowUi> {
-    val maxCount = entries.maxOf { it.count }.coerceAtLeast(1)
-    val maxSize = entries.maxOf { it.sizeBytes }.coerceAtLeast(1)
-    val maxViews = entries.maxOf { it.views }.coerceAtLeast(1)
-    return entries.map { (label, count, sizeBytes, views) ->
-        DistributionRowUi(
-            label = label,
-            metrics = listOf(
-                DistributionMetricUi("数量", count.toString(), rankProgressPercent(count, maxCount)),
-                DistributionMetricUi("大小", formatSizeDetail(sizeBytes), rankProgressPercent(sizeBytes, maxSize)),
-                DistributionMetricUi("浏览", views.toString(), rankProgressPercent(views, maxViews)),
-            ),
-        )
     }
 }
 
@@ -988,13 +765,13 @@ private const val DISTRIBUTION_METRIC_VALUE_SP = 12
 private const val TOP_RANK_HIGHLIGHT = 3
 
 /** 分布模式协议 mediaType key（openapi MediaType 枚举三值，键单源 MediaTypeKeys） */
-private const val KEY_MEDIA_TYPE_IMAGE = MediaTypeKeys.IMAGE
-private const val KEY_MEDIA_TYPE_VIDEO = MediaTypeKeys.VIDEO
-private const val KEY_MEDIA_TYPE_ANIMATED = MediaTypeKeys.ANIMATED_IMAGE
+internal const val KEY_MEDIA_TYPE_IMAGE = MediaTypeKeys.IMAGE
+internal const val KEY_MEDIA_TYPE_VIDEO = MediaTypeKeys.VIDEO
+internal const val KEY_MEDIA_TYPE_ANIMATED = MediaTypeKeys.ANIMATED_IMAGE
 
 /** 分布模式协议 source key（openapi /stats/trends source 枚举 normal|cos，键单源 SourceKeys） */
-private const val KEY_SOURCE_NORMAL = SourceKeys.NORMAL
-private const val KEY_SOURCE_COS = SourceKeys.COS
+internal const val KEY_SOURCE_NORMAL = SourceKeys.NORMAL
+internal const val KEY_SOURCE_COS = SourceKeys.COS
 
 /** 类型趋势卡标题（旧版顶栏与卡标题同字） */
 private const val TYPE_TREND_CARD_TITLE = "类型浏览趋势"
@@ -1036,7 +813,7 @@ private const val INSIGHT_TITLE = "数据洞察"
 private const val RANK_PLACEHOLDER_TEXT = "—"
 
 /** 协议缺字段占位（与主页冻结占位「—」同语义） */
-private const val DETAIL_UNAVAILABLE_TEXT = "—"
+internal const val DETAIL_UNAVAILABLE_TEXT = "—"
 
 /** 加载中文案 */
 private const val LOADING_TEXT = "加载中…"

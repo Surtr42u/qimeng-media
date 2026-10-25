@@ -129,6 +129,8 @@ import kotlin.math.min
  * 再点播放 seekTo(0)）。
  */
 @UnstableApi
+// 规模例外：同一View独占Player.Listener、手势与PopupWindow/回调释放；不能另造播放器状态owner。
+// 无状态数值/时长/倍速/全屏决策已有PlayerMath与状态机，桥接例外见本类文档。
 class BiliPlayerView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,

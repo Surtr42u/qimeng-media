@@ -95,3 +95,8 @@ mediawrite 把完成凭据与资产行同事务提交（migration 0020），七�
 `mediawrite` 是媒体写入的业务编排入口，生产在 main 注入数据库、配置、视频探测、扫描富化及与 HTTP 共享的 libraryrevision 服务；不依赖 HTTP 或 SDK 对象。上传/移动/改名/回收站/恢复/清扫在此编排；直传/会话完成/本机同步共用其 IngestPlacedUpload 和实时 UploadPolicy。HTTP 层仅解码、调用和协议错误/签名响应映射；syncchannel 持有同步运行态/调度/搬移/归档，复用 authorimport TXT 事务；HTTP 只读快照/触发，main 显式共享依赖。移动/改名也由该服务编排，库锁内实时复核后执行，前向/回滚都拒绝已有目标；SQL 失败不发成功通知，回滚受阻保留原件供核对。其他存量 handler 仍按实际任务迁移，不据此宣称所有写入已下沉。
 
 云端生成：向 `codex/codegen/**` 专用分支推送协议/SQL 后，codegen workflow 固定版本执行 sqlc 和 make sdk，下载 generated-sources artifact 取回生成物与 sdk.lock，禁止手改生成文件。随后把锁和受版本控制的 sqlc 输出与实现同批交付，现有完整 CI 仍重算校验；未绕过生成锁门禁。
+
+
+## 规模与所有权审查
+
+Q04便携备份业务已下沉，Q08将Server的安全/鉴权请求管线移到middleware.go，保留唯一Server与显式装配顺序；原阶段输入/错误/响应与中间件顺序保持。各超线文件的保留/提取理由和云端验证边界见[任务书结构结论](../docs/OPTIMIZATION_TASKBOOK_20261025.md)。
