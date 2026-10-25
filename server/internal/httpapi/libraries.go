@@ -330,7 +330,7 @@ func (s *Server) DeleteApiV1LibrariesLibraryId(w http.ResponseWriter, r *http.Re
 	s.dirs.invalidate(libraryID)
 	s.scanStates.set(libraryID, gen.LibraryScanStateIdle)
 	// 删库改变推荐候选集：推荐缓存失效经下方 library.changed 事件的装配期订阅统一触发
-	if err := s.bus.Publish(events.Event{Topic: events.TopicLibraryChanged}); err != nil {
+	if err := s.bus.Publish(events.Event{Topic: events.TopicLibraryChanged, LibraryChange: &events.LibraryChangeScope{LibraryID: libraryID}}); err != nil {
 		s.logger.Warn("广播 library.changed 失败", "err", err)
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -369,7 +369,7 @@ func (s *Server) PutApiV1LibrariesLibraryIdEnabled(w http.ResponseWriter, r *htt
 	}
 	// enabled 是推荐候选查询的 WHERE 条件（recommend.sql kill-switch）：
 	// 推荐缓存失效经下方 library.changed 事件的装配期订阅统一触发
-	if err := s.bus.Publish(events.Event{Topic: events.TopicLibraryChanged}); err != nil {
+	if err := s.bus.Publish(events.Event{Topic: events.TopicLibraryChanged, LibraryChange: &events.LibraryChangeScope{LibraryID: libraryID}}); err != nil {
 		s.logger.Warn("广播 library.changed 失败", "err", err)
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -389,12 +389,12 @@ func (s *Server) FinishScan(libraryID string, failed bool) {
 	//（成败都刷：失败时磁盘现状同样变了，刷新反而更准）。推荐流缓存失效
 	// 由该事件的装配期订阅统一触发（server.go New）。
 	s.refreshLibraryFileMetrics()
-	if err := s.bus.Publish(events.Event{Topic: events.TopicLibraryChanged}); err != nil {
+	if err := s.bus.Publish(events.Event{Topic: events.TopicLibraryChanged, LibraryChange: &events.LibraryChangeScope{LibraryID: libraryID}}); err != nil {
 		s.logger.Warn("广播 library.changed 失败", "err", err)
 	}
 	// 自动预生成缩略图（2026-09-15 批）：扫描终态后异步补齐新增/变更资产的
 	// 缩略图（对齐旧版「扫描完即有缩略图」；后台 goroutine，不阻塞终态回写）
-	s.WarmupAfterScan()
+	s.thumbWarmup.NotifyLibrary(libraryID)
 }
 
 // refreshLibraryFileMetrics 仅标脏，由 mediawrite 单 worker 合并分组查询。

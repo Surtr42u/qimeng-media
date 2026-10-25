@@ -9,6 +9,7 @@ import (
 	"path"
 	"path/filepath"
 
+	"qimeng-media/server/internal/events"
 	"qimeng-media/server/internal/eventstats"
 	"qimeng-media/server/internal/filing"
 	"qimeng-media/server/internal/store"
@@ -57,7 +58,7 @@ func (s *Service) RestoreTrash(ctx context.Context, trashID string) error {
 		s.logger.Warn("回收站恢复后富化重算失败（待重扫自愈）",
 			"assetId", e.Meta.AssetID, "err", err)
 	}
-	s.PublishLibraryChanged()
+	s.PublishLibraryChanged(events.LibraryChangeScope{LibraryID: lib.ID, AssetID: e.Meta.AssetID})
 	// 恢复改变了库内文件数与回收站占用：两个指标在此刷新（变更点推送）。
 	s.RefreshLibraryFileMetrics()
 	s.RefreshTrashMetrics()

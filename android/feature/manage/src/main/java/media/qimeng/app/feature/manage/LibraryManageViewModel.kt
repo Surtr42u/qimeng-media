@@ -11,6 +11,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
 import media.qimeng.app.core.data.repository.LibraryRepository
 import media.qimeng.app.core.model.LibraryKind
 import media.qimeng.app.core.model.LibrarySummary
@@ -54,6 +56,8 @@ class LibraryManageViewModel @Inject constructor(
     val uiState: StateFlow<LibraryManageUiState> = _uiState.asStateFlow()
 
     private var refreshJob: Job? = null
+    private var refreshQueued = false
+    private var queuedClearError = true
 
     init {
         refresh()
@@ -66,7 +70,12 @@ class LibraryManageViewModel @Inject constructor(
      * 默认的清错误会把刚设置的横幅吞掉（时序上 refresh 的首个 update 后执行）。
      */
     fun refresh(clearError: Boolean = true) {
-        if (refreshJob?.isActive == true) return
+        if (refreshJob?.isActive == true) {
+            // 写入成功后的复核不能被在途旧 GET 吞掉；最多合并一轮后续刷新。
+            refreshQueued = true
+            queuedClearError = queuedClearError && clearError
+            return
+        }
         val silent = _uiState.value.libraries.isNotEmpty()
         refreshJob = viewModelScope.launch {
             _uiState.update {
@@ -81,6 +90,12 @@ class LibraryManageViewModel @Inject constructor(
                 _uiState.update { it.copy(errorMessage = ERROR_LOAD) }
             } finally {
                 _uiState.update { it.copy(loading = false) }
+                refreshJob = null
+                val again = refreshQueued
+                val clearNext = queuedClearError
+                refreshQueued = false
+                queuedClearError = true
+                if (again && currentCoroutineContext().isActive) refresh(clearNext)
             }
         }
     }

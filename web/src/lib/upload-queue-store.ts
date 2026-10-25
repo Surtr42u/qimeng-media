@@ -132,8 +132,7 @@ export interface UploadQueueOptions {
   onItemSettled?: (item: UploadItem) => void
 }
 
-/** 队列条目 id 前缀（生成与恢复解析共用单一来源——恢复侧按序号让位 uploadSeq
- *  防 id 冲突；不进协议） */
+/** 本地队列 ID 使用 UUID，刷新残留/异步恢复均不能与新任务复用键。旧数字 ID 仍可恢复。 */
 const UPLOAD_ID_PREFIX = 'upload-'
 
 /** 队列内部条目 = 渲染契约 UploadItem + 传输所需的 File 句柄（file 不进组件层；
@@ -166,7 +165,6 @@ const canceledIds = new Set<string>()
 /** 串行泵在跑标志：enqueue 只负责把条目写进权威副本再唤泵，泵自身保证单路 */
 let draining = false
 /** 队列条目 id 序号（页面生命周期内唯一即可，不进协议） */
-let uploadSeq = 0
 /** 订阅者集合（useSyncExternalStore 的 listener） */
 const listeners = new Set<() => void>()
 let options: UploadQueueOptions = { maxBytesMb: null }
@@ -407,7 +405,7 @@ function enqueue(inputs: readonly StagedFileInput[], batch: UploadBatchTarget): 
         : ''
       const uploadName = edited !== '' ? edited : originalName
       return {
-        id: `${UPLOAD_ID_PREFIX}${++uploadSeq}`,
+        id: `${UPLOAD_ID_PREFIX}${randomUUID()}`,
         uploadId: randomUUID(),
         sourceMtime: it.file.lastModified >= 0 ? it.file.lastModified : undefined,
         name: uploadName,
@@ -492,7 +490,7 @@ let restoring: Promise<void> | null = null
 /**
  * 刷新恢复：读取持久化记录还原为 needs-file 条目（文件句柄已随页面失效——
  * 平台客观限制，不伪造续传假象，等用户重选）。幂等可重触发：单飞闸合并并发，
- * 已在队列的记录 id 跳过；新入队 id 序号让位恢复 id（防 `${PREFIX}${n}` 冲突）。
+ * 已在队列的记录 id 跳过；新任务 UUID 键不依赖恢复完成时序。
  * 存储不可用 = 无恢复（按现状丢队列，与持久化写入同款降级口径）。
  */
 function restorePersisted(): Promise<void> {
@@ -522,8 +520,6 @@ function restorePersisted(): Promise<void> {
         chunkOffset: restored.chunkOffset,
         createdAt: restored.createdAt,
       })
-      const seq = Number.parseInt(record.id.slice(UPLOAD_ID_PREFIX.length), 10)
-      if (!Number.isNaN(seq) && seq >= uploadSeq) uploadSeq = seq + 1
     }
     if (fresh.length === 0) return
     writeItems((prev) => [...prev, ...fresh])

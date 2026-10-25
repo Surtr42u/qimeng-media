@@ -89,6 +89,22 @@ function fakeFile(name: string, size = 1): File {
 /** 微任务/定时器排空：串行泵的 await 链全部落地后再断言 */
 const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0))
 
+it('终态数字旧ID恢复过滤后，新任务仍有独立可持久化键', async () => {
+  const storage = await getUploadQueueStorage()
+  await storage.put(seedRecord({ id: 'upload-1', terminal: true }))
+  await uploadQueueStore.restorePersisted()
+  uploadQueueStore.setOptions({ maxBytesMb: null })
+  uploadQueueStore.enqueue([{ file: fakeFile('uuid-key.jpg') }], { libraryId: 'synthetic', dir: '' })
+  await tick()
+  const active = uploadQueueStore.getItems().find((it) => it.name === 'uuid-key.jpg')!
+  expect(active.id).not.toBe('upload-1')
+  expect((await storage.getAll()).some((row) => row.id === active.id && row.uploadId !== undefined)).toBe(true)
+  expect(uploadQueueStore.getItems().some((it) => it.id === 'upload-1')).toBe(false)
+  uploadQueueStore.cancelAll()
+  await tick()
+  uploadQueueStore.clearFinished()
+})
+
 describe('uploadQueueStore.enqueue 校验拦截', () => {
   it('未选库整批拦截：全部落 failed、零 XHR、逐条回调 onItemSettled', () => {
     const settled: string[] = []

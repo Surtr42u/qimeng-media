@@ -307,7 +307,7 @@ export function UploadWorkbench({ libraries }: { libraries: Library[] }) {
             {queue.persistenceHealth.retrying ? '重试中…' : '重试队列存储'}
           </button>
         </div>
-      )
+      )}
       {queue.items.length === 0 ? (
         <p className="grid-empty">暂无上传任务——在上方添加文件后，逐条进度与结果在这里显示。</p>
       ) : (

@@ -38,6 +38,14 @@ type Event struct {
 	Topic   string
 	Payload any
 	At      time.Time
+	// 内部回填范围；SSE 仅序列化 Payload，此字段不进入对外事件载荷。
+	LibraryChange *LibraryChangeScope `json:"-"`
+}
+
+// LibraryChangeScope 信息缺失时由消费方提升全量；仅内部资源调度，不替代业务真相。
+type LibraryChangeScope struct {
+	LibraryID string
+	AssetID   string
 }
 
 // Subscription 一次订阅的句柄。C 只读；用完必须 Close，

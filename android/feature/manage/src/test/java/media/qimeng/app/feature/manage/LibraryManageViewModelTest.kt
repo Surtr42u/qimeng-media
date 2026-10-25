@@ -1,5 +1,6 @@
 package media.qimeng.app.feature.manage
 
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.Flow
 import media.qimeng.app.core.data.repository.LibraryRepository
 import media.qimeng.app.core.model.LibraryKind
@@ -18,6 +19,23 @@ import org.junit.Test
  * fake 只在测试源集内（不进 core:testing：本任务文件集外，且当前仅本模块消费）。
  */
 class LibraryManageViewModelTest {
+
+    @Test
+    fun `后台旧列表在途时删除成功保留后续刷新`() {
+        val (vm,repo)=newViewModel(FakeLibraryRepository().apply { seed.add(libraryA) })
+        val gate=CompletableDeferred<List<LibrarySummary>>()
+        repo.librariesGate=gate
+        vm.refresh()
+        mainDispatcherRule.testDispatcher.scheduler.runCurrent()
+        vm.requestDelete(libraryA)
+        vm.confirmDelete()
+        mainDispatcherRule.testDispatcher.scheduler.runCurrent()
+        assertEquals(1,repo.deleteCalls.size)
+        gate.complete(listOf(libraryA)) // 旧 GET 返回删除前的快照。
+        driveIdle()
+        assertTrue(vm.uiState.value.libraries.isEmpty())
+        assertEquals(3,repo.libraryFetches) // 初载、旧静默刷新、合并后的写后复核。
+    }
 
     @Test
     fun `加载取消不显示失败且释放loading`() {
@@ -290,6 +308,8 @@ private class FakeLibraryRepository : LibraryRepository {
     val seed = mutableListOf<LibrarySummary>()
 
     var librariesError: Exception? = null
+    var librariesGate: CompletableDeferred<List<LibrarySummary>>? = null
+    var libraryFetches = 0
 
     /** POST /libraries 响应给出的 id（null = 模拟响应缺 id，调用方应跳过续接扫描） */
     var registerResultId: String? = "new-id"
@@ -304,6 +324,10 @@ private class FakeLibraryRepository : LibraryRepository {
     val setEnabledCalls = mutableListOf<Pair<String, Boolean>>()
 
     override suspend fun libraries(): List<LibrarySummary> {
+        libraryFetches++
+        val gate=librariesGate
+        librariesGate=null
+        if (gate!=null) return gate.await()
         librariesError?.let { throw it }
         return seed.toList()
     }

@@ -107,6 +107,28 @@ WHERE l.enabled = 1 AND a.asset_id > sqlc.arg(after_id)
 ORDER BY a.asset_id ASC
 LIMIT sqlc.arg(page_size);
 
+-- name: ListThumbnailWarmupLibraryPage :many
+-- A typed library change must not probe unrelated libraries' thumbnail caches.
+SELECT a.asset_id, l.root_path, a.rel_path, a.media_type, a.size_bytes, a.mtime
+FROM assets a
+JOIN libraries l ON l.id = a.library_id
+WHERE l.enabled = 1 AND a.library_id = sqlc.arg(library_id)
+  AND a.asset_id > sqlc.arg(after_id)
+ORDER BY a.asset_id ASC
+LIMIT sqlc.arg(page_size);
+
+-- name: ListThumbnailWarmupAssetsPage :many
+-- Small, bounded JSON ID sets allow primary-key probes; no all-library filter
+-- with an OR branch that could force a full scan for each uploaded asset.
+SELECT a.asset_id, l.root_path, a.rel_path, a.media_type, a.size_bytes, a.mtime
+FROM assets a
+JOIN libraries l ON l.id = a.library_id
+WHERE l.enabled = 1
+  AND a.asset_id IN (SELECT CAST(value AS TEXT) FROM json_each(sqlc.arg(asset_ids_json)))
+  AND a.asset_id > sqlc.arg(after_id)
+ORDER BY a.asset_id ASC
+LIMIT sqlc.arg(page_size);
+
 -- name: AssetExists :one
 -- Cross-library view-event remap fallback (ADR-0037): does the reported
 -- asset_id exist in this library? Only the rare miss path (locally queued

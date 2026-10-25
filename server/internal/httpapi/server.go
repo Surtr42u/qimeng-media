@@ -361,10 +361,14 @@ func New(deps Deps) (*Server, error) {
 		logger.Warn("推荐缓存失效订阅失败（仅影响缓存新鲜度，TTL 兜底）", "err", err)
 	} else {
 		safego.Go(logger, "库变更订阅", func() {
-			for range sub.C {
+			for event := range sub.C {
 				s.invalidateRecommendCache()
 				s.bumpLibraryRevision()
-				s.WarmupAfterScan()
+				if event.LibraryChange == nil {
+					s.WarmupAfterScan()
+				} else {
+					s.thumbWarmup.NotifyAsset(event.LibraryChange.LibraryID, event.LibraryChange.AssetID)
+				}
 				s.writes.RefreshLibraryFileMetrics()
 			}
 		})

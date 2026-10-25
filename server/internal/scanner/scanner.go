@@ -520,8 +520,17 @@ func (s *Scanner) publishProgress(libraryID string, res ScanResult, total int, p
 	})
 }
 
-func (s *Scanner) publish(topic string, payload any) {
-	if err := s.bus.Publish(events.Event{Topic: topic, Payload: payload}); err != nil {
+func (s *Scanner) publish(topic string, payload any, assetIDs ...string) {
+	event := events.Event{Topic: topic, Payload: payload}
+	if topic == events.TopicLibraryChanged {
+		if result, ok := payload.(ScanResult); ok {
+			event.LibraryChange = &events.LibraryChangeScope{LibraryID: result.LibraryID}
+			if len(assetIDs) > 0 {
+				event.LibraryChange.AssetID = assetIDs[0]
+			}
+		}
+	}
+	if err := s.bus.Publish(event); err != nil {
 		s.logger.Warn("scanner: 进度事件发布失败（尽力而为，不影响扫描）",
 			"topic", topic, "err", err)
 	}

@@ -76,7 +76,7 @@
 - 等级：默认 info；`QIMENG_LOG_LEVEL=debug` 排障；循环内禁止逐条日志（旧项目"50 次记 1 条采样"经验保留）。
 - 后台轮询和事件触发的整库扫描完成日志包含 `libraryId/scanned/elapsedMs/added/updated/moved/removed`；耗时不含等待跨库后台扫描名额的时间。四个变更计数全零时为 debug，有变化时为 info；错误仍为 warn/error，不能从控制台不再刷空扫推断扫描已停止。`scan_duration_seconds` 的“上次成功全量扫描”口径保持，新增日志提供分库证据，不新增带库 ID 标签的指标序列。
 
-缩略图回填仅在有实际投递时记录 Info：`candidates` 为本轮分页检查资产数、`submitted` 为成功投递数、`elapsedMs` 为整轮耗时（含队列背压，不等于全部生成完成）。空轮不记 Info，查询或投递失败记 Warn，下轮重试；停机取消/池关闭不作为业务故障。队列指标继续沿用既有出口。
+缩略图回填仅在有实际投递时记录 Info：`candidates` 为本轮分页检查资产数、`submitted` 为成功投递数、`full` 区分全量和局部范围、`elapsedMs` 为整轮耗时（含队列背压，不等于全部生成完成）。局部 candidates 不作为覆盖进度分母；空轮不记 Info，查询或投递失败记 Warn，保留范围待办按变更合并间隔重试；停机取消/池关闭不作为业务故障。队列指标继续沿用既有出口。
 
 ## 健康检查
 

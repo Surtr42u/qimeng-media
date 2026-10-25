@@ -101,8 +101,12 @@ func (s *Service) enrichAsset(ctx context.Context, libraryID, assetID string) er
 }
 
 // PublishLibraryChanged 广播统一变更信号，客户端刷新及修订号订阅保持原语义。
-func (s *Service) PublishLibraryChanged() {
-	if err := s.bus.Publish(events.Event{Topic: events.TopicLibraryChanged}); err != nil {
+func (s *Service) PublishLibraryChanged(scopes ...events.LibraryChangeScope) {
+	event := events.Event{Topic: events.TopicLibraryChanged}
+	if len(scopes) > 0 {
+		event.LibraryChange = &scopes[0]
+	}
+	if err := s.bus.Publish(event); err != nil {
 		s.logger.Warn("发布库变更事件失败", "err", err)
 	}
 }

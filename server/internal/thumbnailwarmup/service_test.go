@@ -7,12 +7,58 @@ import (
 	"path/filepath"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"qimeng-media/server/internal/store/db"
 	"qimeng-media/server/internal/thumbnail"
 )
+
+type observedWaitContext struct {
+	context.Context
+	entered chan struct{}
+	once    sync.Once
+}
+
+func (c *observedWaitContext) Done() <-chan struct{} {
+	c.once.Do(func() { close(c.entered) })
+	return c.Context.Done()
+}
+
+func TestProgressWaiterCancellationDoesNotWaitForActiveQuery(t *testing.T) {
+	entered, release := make(chan struct{}), make(chan struct{})
+	var calls atomic.Int32
+	q := candidateFunc(func(ctx context.Context, p db.ListThumbnailWarmupPageParams) ([]db.ListThumbnailWarmupPageRow, error) {
+		calls.Add(1)
+		close(entered)
+		<-release
+		return nil, nil
+	})
+	s := New(q, fakeThumbs{}, nil, time.Now())
+	first := make(chan error, 1)
+	go func() { _, err := s.Progress(t.Context()); first <- err }()
+	<-entered
+	ctx, cancel := context.WithCancel(t.Context())
+	waiting := &observedWaitContext{Context: ctx, entered: make(chan struct{})}
+	second := make(chan error, 1)
+	go func() { _, err := s.Progress(waiting); second <- err }()
+	<-waiting.entered // 已实际进入被占用闸的 select，再取消，而非预先传已取消 context。
+	cancel()
+	if err := <-second; !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancel did not leave waiting gate: %v", err)
+	}
+	if calls.Load() != 1 {
+		t.Fatal("canceled waiter started another query")
+	}
+	close(release)
+	if err := <-first; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Progress(t.Context()); err != nil || calls.Load() != 1 {
+		t.Fatal("waiter cancellation disturbed shared successful snapshot")
+	}
+}
 
 type candidateFunc func(context.Context, db.ListThumbnailWarmupPageParams) ([]db.ListThumbnailWarmupPageRow, error)
 
