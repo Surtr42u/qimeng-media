@@ -301,3 +301,25 @@ func TestConcurrentProgressFailureAndNotifyDuringRead(t *testing.T) {
 		t.Fatalf("并发进度未合并: %d", calls)
 	}
 }
+
+func TestUnavailableSourceDoesNotStarveLaterWarmupAssets(t *testing.T) {
+	root := t.TempDir()
+	q := candidateFunc(func(context.Context, db.ListThumbnailWarmupPageParams) ([]db.ListThumbnailWarmupPageRow, error) {
+		return []db.ListThumbnailWarmupPageRow{
+			{AssetID: "a-offline", RootPath: root, RelPath: "offline.jpg"},
+			{AssetID: "b-healthy", RootPath: root, RelPath: "healthy.jpg"},
+		}, nil
+	})
+	var visited []string
+	s := New(q, fakeThumbs{has: func(string, int64, string) bool { return false }, submit: func(task thumbnail.Task) error {
+		visited = append(visited, task.AssetID)
+		if task.AssetID == "a-offline" {
+			return fmt.Errorf("synthetic stat: %w", thumbnail.ErrSourceUnavailable)
+		}
+		return nil
+	}}, nil, time.Now())
+	snap, submitted, err := s.inspect(t.Context(), true)
+	if err != nil || snap.Total != 2 || submitted != 1 || len(visited) != 2 || visited[1] != "b-healthy" {
+		t.Fatalf("offline asset blocked traversal: %+v %d %v %v", snap, submitted, visited, err)
+	}
+}

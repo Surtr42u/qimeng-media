@@ -133,7 +133,8 @@ func (g *Generator) Submit(t Task) error {
 	g.initLifecycle()
 	version, err := g.sourceVersion(t.SourcePath)
 	if err != nil {
-		return err
+		sysmon.Default.IncThumbWork("failed")
+		return fmt.Errorf("%w: %w", ErrSourceUnavailable, err)
 	}
 	keys := g.missingRepresentations(t.AssetID, version, t.Sizes)
 	if len(keys) == 0 {

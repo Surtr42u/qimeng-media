@@ -31,7 +31,7 @@
 | library_files{type=image\|video}（Gauge） | 库内文件数 |
 | thumb_queue_depth（Gauge） | 待生成缩略图队列深度 |
 | thumb_work（Gauge，state） | admitted：持引用的不同表示；waiting：等待执行闸的单表示体；running：持执行闸体。admitted 含集合尚未释放的已完成尺寸引用，不能直接相减推导排队数 |
-| thumb_work_events_total（Counter，result） | merged/rejected/failed；合并包括集合/尺寸层；拒绝为预算满，failed 为生成错误（服务取消不计）。标签不含资产或路径 |
+| thumb_work_events_total（Counter，result） | merged/rejected/failed；合并包括集合/尺寸层；拒绝为预算满，failed 为单资产准备或生成错误（服务取消不计）。标签不含资产或路径 |
 | trash_items / trash_bytes（Gauge） | 回收站条目数与占用 |
 | backup_last_success_timestamp（Gauge） | 最近一次成功备份快照的完成时刻（Unix 秒；0=进程内尚无成功快照，2026-09-19 任务Q 批B 起） |
 

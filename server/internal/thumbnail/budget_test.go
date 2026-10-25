@@ -183,3 +183,15 @@ func TestPanicReturnsRepresentationLease(t *testing.T) {
 		t.Fatal("panic leaked lease")
 	}
 }
+
+func TestSubmitClassifiesUnavailableSourceBeforeAdmission(t *testing.T) {
+	g := bareGenerator(t, int(SizeSmall))
+	defer g.Close()
+	err := g.Submit(Task{AssetID: "offline", SourcePath: filepath.Join(t.TempDir(), "missing.jpg"), Sizes: []Size{SizeGrid}})
+	if !errors.Is(err, ErrSourceUnavailable) {
+		t.Fatal("unclassified source failure", err)
+	}
+	if len(g.budget.refs) != 0 {
+		t.Fatal("unavailable source reserved budget")
+	}
+}

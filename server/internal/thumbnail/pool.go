@@ -22,6 +22,8 @@ var (
 	ErrQueueFull = errors.New("thumbnail: 工作池队列已满，任务被丢弃")
 	// ErrPoolClosed 池已关闭，不再接收任务。
 	ErrPoolClosed = errors.New("thumbnail: 工作池已关闭")
+	// ErrSourceUnavailable 是单资产准备失败；回填应跳过该资产而非中止整轮。
+	ErrSourceUnavailable = errors.New("thumbnail: 原件暂不可用")
 )
 
 // Task 一个缩略图生成任务：对某资产生成一组尺寸的缩略图。

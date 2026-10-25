@@ -228,6 +228,11 @@ func (s *Service) inspectScope(ctx context.Context, submit bool, scope workScope
 			}
 			task := thumbnail.Task{AssetID: r.AssetID, SourcePath: src, Kind: thumbnail.Kind(r.MediaType), Sizes: []thumbnail.Size{thumbnail.SizeGrid}}
 			if err := s.submit(ctx, task); err != nil {
+				if errors.Is(err, thumbnail.ErrSourceUnavailable) {
+					// 删除/离线挂载等单资产失败不阻塞后续健康资产；周期全量仍会重试。
+					s.logger.Warn("缩略图原件暂不可用，跳过本轮", "assetId", r.AssetID, "err", err)
+					continue
+				}
 				return snap, submitted, err
 			}
 			submitted++
