@@ -16,7 +16,9 @@
 
 ## 2. 当前源码、运行包与验证边界
 
-- **Release 资格门禁收紧（Q06，2026-10-25）**：第一批当前源码已通过全套 Debug 单测，旧出包豁免不再有保留依据。build-apk 移除 continue-on-error，将 Debug/Release 单测、core:model 测试和 Release Lint 放在候选 APK 上传前；常规 CI 同步覆盖 Release 单测/Lint。任一失败不上传安装包，失败日志仍保留。部署前仍必须核对同 SHA 的 ci/security/docs 全部必需检查、Codex 审查及签名/身份/摘要。仅完成配置编辑；新版 Release workflow、受控失败出包场景和设备未执行，不宣称已有新版安装包或部署资格。
+- **第二批云端修复中**：98756858 的 Web/SDK/桌面/安全/文档通过，Go Linux/Windows 的新增窄快照测试使用了无探测替身的视频夹具而崩溃，已改为不依赖视频探测的合成图片；Android 在任务选择阶段确认当前配置没有 testReleaseUnitTest，撤回该额外调用，保留既有完整 Debug 单测及新增 Release Lint 阻断。未降低原门禁，后续当前 head 须重新验证。
+
+- **Release 资格门禁收紧（Q06，2026-10-25）**：第一批当前源码已通过全套 Debug 单测，旧出包豁免不再有保留依据。build-apk 移除 continue-on-error，将 Debug 单测、core:model 测试和 Release Lint 放在候选 APK 上传前；常规 CI 同步覆盖 Release Lint（当前配置仅提供 Debug 单测任务）。任一失败不上传安装包，失败日志仍保留。部署前仍必须核对同 SHA 的 ci/security/docs 全部必需检查、Codex 审查及签名/身份/摘要。仅完成配置编辑；新版 Release workflow、受控失败出包场景和设备未执行，不宣称已有新版安装包或部署资格。
 
 - **优化第二批准备（2026-10-25）**：第一批 Q01–Q03 的 92161b3c 完整 16 项云端检查已通过，含真实 Chromium 设置交互、Android 构建/单测/Lint、Linux 全量 race 和 Windows；没有设备验收。开始 S01/S02/S03/S05/S06 及 Q05/Q07：推荐直接 ID 出口及本轮准备复用、冷项逐个淘汰、库文件指标单 worker 合并、扫描五列窄快照；保留完整候选/公式/RNG/TTL/身份与路径保护。sqlc 已由 [云端生成 40164563955](https://github.com/Surtr42u/qimeng-media/actions/runs/40164563955) 完成，仅 scanner.sql.go 改变、SDK 锁逐字节相同；取回生成物后与实现同批交付。第二批仅静态自查，新增基准和当前提交完整门禁待运行，不外推第一批结果。R01–R07 未实施，尚未合并/部署。
 

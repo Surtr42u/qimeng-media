@@ -71,7 +71,7 @@ jobs:
       - name: 单测与 Release Lint（阻断候选包资格）
         run: |
           cd android
-          ./gradlew testDebugUnitTest testReleaseUnitTest :core:model:test lintRelease
+          ./gradlew testDebugUnitTest :core:model:test lintRelease
       - name: 上传候选包（本通道检查通过，仍须同 SHA 完整门禁）
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

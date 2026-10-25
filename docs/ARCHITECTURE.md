@@ -193,7 +193,7 @@
   3. `server-windows-filing`：Windows 原生 runner 上运行 filing/scanner/config 包测试，覆盖 Windows 文件操作、fsnotify 生命周期/身份保护及配置；不代表真实网络盘验收
   4. `web`：npm ci → openapi-ts 重建 TS 客户端 → knip → tsc --noEmit → oxlint → npm run build → npm test（vitest，ADR-0017）→ 锁定 Playwright/Chromium 的合成 API 浏览器交互回归
   5. `sdk-chain`：`make sdk` 三端生成链可重建（生成物防漂移的结构性门禁，ADR-0009）
-  6. `android`：复用 sdk-chain 生成的 android/sdk → temurin 21 + gradle wrapper 缓存 → assembleDebug + Debug/Release 单测 + core:model:test + Debug/Release Lint；Release 出包同样以单测/Lint 成功作为候选包上传前提
+  6. `android`：复用 sdk-chain 生成的 android/sdk → temurin 21 + gradle wrapper 缓存 → assembleDebug + Debug 单测 + core:model:test + Debug/Release Lint；Release 出包同样以单测/Lint 成功作为候选包上传前提
   7. `desktop`：Tauri 2 壳 cargo test + build（windows runner + rust-cache，debug 链不出安装包；第四端门禁，ADR-0020，2026-10-03 补）
 - **安全与文档流水线**：安全行为用例仍随 server 的 go test 运行；`security.yml` 另做 govulncheck、Web/desktop npm audit、桌面/补丁测试 Cargo audit、glib 上游源码核验及 Linux release 原版/修复版迭代器回归，以及 PR dependency-review（high 起阻断），`docs.yml` 检查链接/ADR/归档/入口/Actions 固定与权限、PR 专题同步。配置已落地不等于本地/远端扫描全绿；当前结果见 HANDOVER。所有外部 Actions 固定完整 SHA，顶层 contents: read，checkout 不保留写凭据。
 - **镜像构建**：`make docker-build` 构建 amd64 镜像（debian-slim + ffmpeg + 静态二进制 + SPA，deploy/Dockerfile），2026-09-22 fnOS 虚拟机彩排记录保留；当前无 NAS 硬件，未来设备另行验收；CI 暂无镜像 job，基础镜像已固定清单 digest，arm64/当前镜像实际构建和 CI 镜像产出仍待验收

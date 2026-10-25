@@ -8,7 +8,7 @@ import (
 func TestNarrowSnapshotMatchesFullRows(t *testing.T) {
 	e := newTestEnv(t, nil)
 	e.writeFile(t, "a.jpg", 10)
-	e.writeFile(t, "dir/b.mp4", 20)
+	e.writeFile(t, "dir/b.jpg", 20)
 	if _, err := e.s.Scan(t.Context(), e.lib); err != nil {
 		t.Fatal(err)
 	}
