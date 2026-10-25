@@ -57,6 +57,8 @@ type BusinessMetrics struct {
 	scanDuration      prometheus.Gauge
 	libraryFiles      *prometheus.GaugeVec
 	thumbQueue        prometheus.Gauge
+	thumbWork         *prometheus.GaugeVec
+	thumbWorkEvents   *prometheus.CounterVec
 	trashItems        prometheus.Gauge
 	trashBytes        prometheus.Gauge
 	backupLastSuccess prometheus.Gauge
@@ -119,6 +121,9 @@ func NewBusinessMetrics() *BusinessMetrics {
 			Name: "thumb_queue_depth",
 			Help: "待生成缩略图的队列深度",
 		}),
+		thumbWork:       f.NewGaugeVec(prometheus.GaugeOpts{Name: "thumb_work", Help: "缩略图工作量：admitted 不同表示引用、waiting 等闸体、running 持闸体"}, []string{"state"}),
+		thumbWorkEvents: f.NewCounterVec(prometheus.CounterOpts{Name: "thumb_work_events_total", Help: "缩略图合并、拒绝及生成失败次数"}, []string{"result"}),
+
 		trashItems: f.NewGauge(prometheus.GaugeOpts{
 			Name: "trash_items",
 			Help: "回收站当前条目数",
@@ -209,4 +214,14 @@ func (m *BusinessMetrics) SetTrashBytes(n int64) {
 // itoa 只是 strconv.Itoa 的本地别名，统一 code label 的字符串化入口。
 func itoa(code int) string {
 	return strconv.Itoa(code)
+}
+
+// AddThumbWork 的 state 仅使用 admitted/waiting/running，禁止资产或路径标签。
+func (m *BusinessMetrics) AddThumbWork(state string, delta int) {
+	m.thumbWork.WithLabelValues(state).Add(float64(delta))
+}
+
+// IncThumbWork 的 result 仅使用 merged/rejected/failed。
+func (m *BusinessMetrics) IncThumbWork(result string) {
+	m.thumbWorkEvents.WithLabelValues(result).Inc()
 }

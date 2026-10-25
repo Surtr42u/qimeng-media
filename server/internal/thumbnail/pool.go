@@ -27,10 +27,12 @@ var (
 // Task 一个缩略图生成任务：对某资产生成一组尺寸的缩略图。
 // 入库触发/懒生成端点（后续接线任务）负责构造并提交。
 type Task struct {
-	AssetID    string
-	SourcePath string
-	Kind       Kind
-	Sizes      []Size
+	AssetID     string
+	SourcePath  string
+	Kind        Kind
+	Sizes       []Size
+	reservation *representationLease
+	version     string
 }
 
 // WorkerPool 固定 worker + 带界队列的缩略图工作池。
@@ -94,6 +96,7 @@ func (p *WorkerPool) work() {
 // 崩溃退出（否则池逐步失去 worker、队列永远不消化），进程也不因后台
 // 任务 panic 退出。任务级 recover 后继续处理后续任务。
 func (p *WorkerPool) handleTask(task Task) {
+	defer task.reservation.release()
 	defer func() {
 		if r := recover(); r != nil {
 			p.logger.Error("缩略图任务 panic 已恢复",
