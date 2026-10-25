@@ -47,6 +47,8 @@ src/
 
 ## 开发依赖安全
 
+本轮收敛既有Dependabot候选：Vitest及配套mocker/spy 5.0.0→5.0.5（[上游修复说明](https://github.com/vitest-dev/vitest/releases/tag/v5.0.5)），锁文件同时采用其匹配的传递依赖；fast-uri 3.1.8→3.1.9（[URI解析安全修复](https://github.com/fastify/fast-uri/releases/tag/v3.1.9)），serialize-javascript 7.1.0→7.1.4（[序列化修复](https://github.com/yahoo/serialize-javascript/releases/tag/v7.1.4)）。均属现有开发/构建链，不增加应用运行时依赖，不改接口、UI或业务规则；合并后的锁文件须通过当前head的干净安装、SDK生成、Web构建/单测/浏览器及安全门禁。
+
 新增 `npm run test:e2e` 使用锁定的 Playwright 1.64.1 和配套 Chromium，仅属开发依赖，不进入应用运行时；按 [官方 webServer](https://playwright.dev/docs/test-webserver) 与 [网络拦截](https://playwright.dev/docs/network) 使用静态预览、合成 API，无真实后端。CI在构建后运行慢保存、失败重试、迟到查询/焦点刷新和上传存储初始化失败→本地IO重试的四个DOM场景，失败保留trace/截图；其他交互矩阵见任务书§11。当前会话约定构建/测试只走云端；浏览器验证、纯函数单测与设备验收分别记录。保留现有 Vitest/AST 门禁，未覆盖交互见 HANDOVER。
 
 PWA 图标生成器 2.x 与 vite-plugin-pwa 2.x 配套升级；后者的 peer 范围才接受生成器 2.x（[上游发布说明](https://github.com/vite-pwa/vite-plugin-pwa/releases/tag/v2.0.0)）。保留现有 ESM 配置、图标预设、manifest 与自动更新规则，升级后验证干净安装、SDK 生成、构建和隔离目录图标生成；不使用 force/legacy-peer-deps 绕过不兼容的 peer 约束。
