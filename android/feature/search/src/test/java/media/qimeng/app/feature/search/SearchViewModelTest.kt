@@ -56,7 +56,7 @@ class SearchViewModelTest {
         vm.submit("second")
         advanceUntilIdle()
         vm.handleBack()
-        repo.assetsCalls.last().gate.complete(AssetPageResult(items = listOf(asset("late")), nextCursor = null))
+        repo.assetsCalls.last().gate.complete(AssetPageResult(items = listOf(asset("late")), nextCursor = null, totalMatched = 1))
         advanceUntilIdle()
         assertEquals(SearchPhase.EMPTY, vm.uiState.value.phase)
         assertTrue(vm.uiState.value.items.isEmpty())
