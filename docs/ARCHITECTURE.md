@@ -94,10 +94,11 @@
 | `syncchannel` | 本机同步轮询/触发、稳定观测/状态快照、媒体落位与 TXT 归档；复用 mediawrite/authorimport，main 显式装配 | HTTP/SDK 类型、复制入库或 TXT 规则 |
 | `authorimport` | 作者 TXT 导入/重导保护/移除/统一重建事务；手动、备份和同步共用，片段存取复用 authorattach | HTTP/SDK 类型、修改解析与匹配算法 |
 | `scanner` | 全量/增量扫描、变更检测、移动合并、动态监听生命周期及后台全扫跨库限并发；配置/成本边界见 server README | 直接写库（经 store） |
-| `thumbnail` | 缩略图生成队列（工作池、懒生成、缓存键、静图输出格式自适应：libwebp 缺失时 mjpeg 降级——内嵌形态，U11 批次D） | 阻塞 API 请求 |
+| `thumbnail` | 缩略图生成队列（有界工作池、前台优先准入/同任务提升、懒生成、缓存键、静图输出格式自适应：libwebp 缺失时 mjpeg 降级——内嵌形态，U11 批次D） | 阻塞 API 请求 |
+| `thumbnailwarmup` | 开机/库变更/周期回填，游标批读与版本缓存覆盖进度；HTTP 仅通知及协议映射 | 媒体出口授权、原件变化发现、无界候选/缺图清单 |
 | `search` | FTS5 索引维护与查询 | — |
 | `recommend` | 推荐/排行算法 | **任何 IO**（纯函数，输入输出领域结构体） |
-| `recommendfeed` | 推荐输入装载、调用纯函数评分、限容量短期 ID 顺序快照及当前页资格/元数据装载 | HTTP/协议对象、写入业务数据、修改评分公式 |
+| `recommendfeed` | 推荐输入装载、启动多 seed 复用本轮输入并独立评分、限容量短期 ID 顺序快照及当前页资格/元数据装载 | HTTP/协议对象、写入业务数据、修改评分公式 |
 | `ranking` | 只读排行榜热度键装载、调用 recommend 选页、按页装配元数据/累计计数；httpapi 仅适配协议 | 写入业务数据、HTTP 依赖、复制热度公式 |
 | `stats` | 统计聚合、趋势分桶、同轴维度补零与总量守恒 | **任何 IO** |
 | `statsread` | 统计总览/日维度只读装载与共用窗口；精确全量数，客户端不反推 | HTTP/SDK 类型、写入、重复领域公式 |
@@ -122,7 +123,7 @@
 ### 5.1 模块边界强制与防漂移（ADR-0010 / ADR-0009 / ADR-0011 / ADR-0019）
 
 **编排下沉（ADR-0019）**：多步业务编排（上传落盘入库、移动先文件后库行、统计事件重建等）必须放在专职编排包（`server/internal/orchestration/` 或等价 app 层），`httpapi` 禁止业务编排，只保留鉴权、参数校验、序列化与对编排入口的一次调用。既有厚 handler 增量迁移；新增多步流一律不得在 httpapi 落地。不引入编排框架，`cmd/qimeng` 仍为唯一组合根。
-**当前迁移状态（2026-10-24）**：以等价业务包落实编排层，不要求固定 orchestration 目录。authorattach/eventstats 已承载相应业务；authoredit 已承接作者编辑类六用例的事务宿主（词表预填/来源区/作者建改删/资产作者替换，2026-10-24 Q1 批，author_edit.go/authors_manage.go 不再持事务，AST 门禁防回流）；mediawrite 已迁入上传、回收站删除/恢复/物理清理及到期清扫，httpapi/upload(s)/trash(_sweeper).go 只保留协议与生命周期适配。恢复分为文件落点/意图复核、原身份/日统计同事务提交、提交后通知；修订号与 HTTP 共享唯一服务。syncchannel 已承接本机同步调度/运行态/搬移与归档，authorimport 承接跨入口 TXT 导入/保护/移除/重建事务，HTTP 只触发和映射值快照。移动/改名已迁入 mediawrite，HTTP filing.go 只作存在性/JSON 校验及错误映射；业务在库锁内复核身份/路径/根，文件先行、库行失败无覆盖回滚，提交后才富化与通知。其他存量 handler（engagement/tags 单对读写、portable import/export 多步流）按触碰继续收敛，不据此宣称全部 HTTP 编排已清空。ADR-0042 的 localsync.PlanScan 仍负责安全扫描计划，不据局部完成宣称全层迁移完毕。
+**当前迁移状态（2026-10-25）**：以等价业务包落实编排层，不要求固定 orchestration 目录。authorattach/eventstats 已承载相应业务；authoredit 已承接作者编辑类六用例的事务宿主（词表预填/来源区/作者建改删/资产作者替换，2026-10-24 Q1 批，author_edit.go/authors_manage.go 不再持事务，AST 门禁防回流）；mediawrite 已迁入上传、回收站删除/恢复/物理清理及到期清扫，httpapi/upload(s)/trash(_sweeper).go 只保留协议与生命周期适配。恢复分为文件落点/意图复核、原身份/日统计同事务提交、提交后通知；修订号与 HTTP 共享唯一服务。syncchannel 已承接本机同步调度/运行态/搬移与归档，authorimport 承接跨入口 TXT 导入/保护/移除/重建事务，HTTP 只触发和映射值快照。移动/改名已迁入 mediawrite，HTTP filing.go 只作存在性/JSON 校验及错误映射；业务在库锁内复核身份/路径/根，文件先行、库行失败无覆盖回滚，提交后才富化与通知。缩略图回填和覆盖统计已迁入 thumbnailwarmup，HTTP 只映射生命周期、通知和进度响应；业务复用扫描元数据及有界游标查询，thumbnail 负责实际生成时的原件校验。其他存量 handler（engagement/tags 单对读写、portable import/export 多步流）按触碰继续收敛，不据此宣称全部 HTTP 编排已清空。ADR-0042 的 localsync.PlanScan 仍负责安全扫描计划，不据局部完成宣称全层迁移完毕。
 
 边界不是口头约定，是**三层机器强制**（决策见 ADR-0010）：
 

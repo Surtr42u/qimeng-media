@@ -282,8 +282,6 @@ func main() {
 		}
 	})
 	apiSrv.SetScanner(newScannerAdapter(scan, queries, apiSrv, logger))
-	// 自动预生成缩略图（2026-09-15 批）：开机回填历史积压 + 周期兜底（daemon）
-	apiSrv.StartThumbnailWarmup()
 	// 推荐流缓存开机预热（2026-09-18 性能批二段）：后台预计算 App 首屏同键
 	// 默认流（seed=1&limit=200），首条请求经单飞共享同一次计算
 	apiSrv.StartRecommendPrewarm()
@@ -304,6 +302,8 @@ func main() {
 	// signal.NotifyContext：Ctrl+C / SIGTERM 时 ctx 取消，主流程进入优雅关闭。
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	// 回填主管随进程取消；开机静默窗、变更通知及周期兜底由业务服务统一处理。
+	apiSrv.StartThumbnailWarmup(ctx)
 
 	// 动态管理库监听与轮询兜底；事件新增/删除/改名合并后整库对账，
 	// 保留移动身份；后台全扫跨库串行，避免启动时争抢磁盘与大快照内存。

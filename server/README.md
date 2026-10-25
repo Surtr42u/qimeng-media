@@ -14,7 +14,7 @@
 | 文件操作/恢复意图 | internal/filing/；SECURITY 文件边界、领域 files |
 | 移动/改名 | internal/mediawrite/move.go；先文件后库行、冲突拒绝、失败无覆盖回滚，根内改名保护在 filing/move_root.go |
 | 回收站/恢复/清扫 | internal/mediawrite/trash_*；HTTP 只协议适配，filing 保留低层路径/意图机制 |
-| 推荐流装载 | internal/recommendfeed/；限容量 ID 顺序快照跨页共享、取页重新校验资格；返回原始下一 offset（-1 到底），短页不截断续页，见推荐专题与 ADR-0046 |
+| 推荐流装载 | internal/recommendfeed/；限容量 ID 顺序快照跨页共享、取页重新校验资格；双 seed 启动预热仅本轮复用输入，独立评分；返回原始下一 offset（-1 到底），短页不截断续页，见推荐专题与 ADR-0046 |
 | 排行页装载 | internal/ranking/；专用热度键 → recommend 纯函数选页 → 当前页元数据/累计计数，见推荐专题 |
 | 作者 TXT 导入/保护/重建 | internal/authorimport/；跨手动/备份/同步入口复用事务，片段存取在 authorattach |
 | 作者编辑用例 | internal/authoredit/；词表预填/来源区替换/作者建改删/资产作者替换六用例的单事务编排，Commit 成功后才刷新镜像（2026-10-24 Q1 事务下沉）；HTTP 只协议校验与哨兵映射 |
@@ -31,6 +31,10 @@
 事务正常结束的 ErrTxDone 与真实回滚失败区别处理；响应已开始后的写失败只留日志，不重复响应或重试业务。复制/数据库打开失败中的关闭错误与主错误保留在同一错误链，不能用注释豁免吞错。
 
 测试只用临时数据库、合成媒体、临时目录及隔离端口，禁止写入 8420 真库。扫描差集/恢复/续传失败重试边界见 [文件规则](../docs/domain/files.md) 与 [SECURITY](../docs/SECURITY.md)，便携 v1/v2 兼容见 [迁移](../docs/domain/migration.md)。
+
+## 缩略图回填
+
+`thumbnail` 统一合并前台/后台的同表示生成，拿到生成闸位后再查缓存；`thumbnailwarmup` 负责库变更通知（对账起点至少间隔 30s）、开机/周期回填和进度，HTTP 只做生命周期及响应映射。候选按 ID 每页 256 条，已缓存资产仅检查扫描元数据对应的文件，缺图时校验安全路径后流式投递，队列满时可取消背压重试；生成侧保留多核前台余量，单核优先前台等候者，同表示后台任务可被提升，总并发仍受 GOMAXPROCS 限制。覆盖口径、扫描延迟及优先调度边界见[缩略图专题](../docs/domain/thumbnails.md#回填与并发)。
 
 ## 媒体库后台扫描
 

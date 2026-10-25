@@ -58,7 +58,7 @@
 3. **http 指标不覆盖三类请求**：参数绑定失败的 400（gen 绑定层在中间件之前短路返回）、未匹配路由的 404（ServeMux 直接兜底）与方法不匹配的 405（同为 ServeMux 兜底，不经包装器）。三者均不产生 http_requests_total / duration 序列，属既定口径而非缺陷。
 4. **scan_duration_seconds 仅在扫描成功返回时 Set**（与 help「上次全量扫描耗时」一致）：失败路径保留上次成功值。API 触发与 watch 轮询两条扫描入口汇聚在 `Scanner.Scan`，单点覆盖。
 5. **library_files 与 trash_items/trash_bytes 是变更点推送刷新**，不是定时采样：library_files 刷新时机 = 扫描完成（FinishScan）/上传入库/删除进回收站/回收站恢复四处；trash 刷新时机 = 删除入站/恢复/单条物理删除/清空回收站四处 + 到期清扫有清除时（trash_sweeper.go，2026-09-22 起；零清除的巡检不刷）。两次变更之间指标保持上次值（秒级陈旧可接受）。trash 的真实数据源是磁盘 meta 文件遍历，不是库表（trash_items 表为历史迁移遗留，只留不读）。
-6. **thumb_queue_depth 已接线**：已随缩略图预热接入出数（开机回填/按需生成经 Submit 提交时实时刷新）。
+6. **thumb_queue_depth 已接线**：表示经 Submit 提交的后台队列长度；前台 Ensure/EnsureDetached 绕过工作池队列并共用生成预算，其在途任务数不由此指标表示。
 
 ### 展示（两种）
 
@@ -69,10 +69,14 @@
 
 - `slog` 结构化 JSON 日志：时间/级别/模块/事件/关键字段（直写 stdout；容器部署的落盘轮转已实现——`deploy/docker-compose.yml` 对服务配置 json-file 驱动，max-size 10MB × max-file 3 封顶，2026-10-01 第四百一十九笔；非 Docker 形态的应用层自行落盘仍为规划项）。
 - 访问日志（方法/路径/状态/耗时/token 前 4 位）为规划项未实现：当前请求级可观测性由 http_requests_total / http_request_duration_seconds 指标覆盖（计数与延迟，不含逐请求日志）。实现时须遵守 SECURITY 红线 7 脱敏口径。
-- `推荐顺序冷算分段耗时`：仅顺序快照未命中时记录 seed/candidates/query/algorithm。query 包含规模观察、事件/标签查询、行解码与标签映射；algorithm 包含行到 Item 转换、完整评分/混合及提取 ID。命中取页仍查询元数据、装配作者/COS 字段并回写展示计数，这些及单飞等待/HTTP 编码/网络不计入该日志。完整请求延迟使用 HTTP 指标，旧限量页算法日志不可直接与完整顺序计算比较。
+- `推荐顺序冷算分段耗时`：仅顺序快照未命中时记录 seed/candidates/query/algorithm。query 包含规模观察、事件/标签查询、行解码、标签映射及 Item 转换；algorithm 包含完整评分/混合及提取 ID。输入复用拆分后 Item 转换从 algorithm 移至 query，比较旧分段数据时需考虑该边界变化。命中取页仍查询元数据、装配作者/COS 字段并回写展示计数，这些及单飞等待/HTTP 编码/网络不计入该日志。完整请求延迟使用 HTTP 指标，旧限量页算法日志不可直接与完整顺序计算比较。
+
+- `推荐预热共享输入装载完成`：本轮首次需要冷算时记录 candidates/elapsedMs（查询、映射及 Item 转换），两个 seed 独立评分，完成日志统计整轮耗时；全命中不记录装载日志。结构性失效中止预热记 Debug，读取/计算错误记 Warn，不写展示计数。
 
 - 等级：默认 info；`QIMENG_LOG_LEVEL=debug` 排障；循环内禁止逐条日志（旧项目"50 次记 1 条采样"经验保留）。
 - 后台轮询和事件触发的整库扫描完成日志包含 `libraryId/scanned/elapsedMs/added/updated/moved/removed`；耗时不含等待跨库后台扫描名额的时间。四个变更计数全零时为 debug，有变化时为 info；错误仍为 warn/error，不能从控制台不再刷空扫推断扫描已停止。`scan_duration_seconds` 的“上次成功全量扫描”口径保持，新增日志提供分库证据，不新增带库 ID 标签的指标序列。
+
+缩略图回填仅在有实际投递时记录 Info：`candidates` 为本轮分页检查资产数、`submitted` 为成功投递数、`elapsedMs` 为整轮耗时（含队列背压，不等于全部生成完成）。空轮不记 Info，查询或投递失败记 Warn，下轮重试；停机取消/池关闭不作为业务故障。队列指标继续沿用既有出口。
 
 ## 健康检查
 

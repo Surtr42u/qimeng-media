@@ -68,11 +68,22 @@ func cosOnly(key Key) int64 {
 
 func loadOrder(ctx context.Context, q *db.Queries, key Key, prefs *recommend.Weights, now time.Time) ([]string, error) {
 	start := time.Now()
-	input, err := store.LoadRecommendationInputs(ctx, q, key.Day, mediaType(key), cosOnly(key))
+	items, err := loadItems(ctx, q, key)
 	if err != nil {
 		return nil, err
 	}
 	queryElapsed := time.Since(start)
+	ids := orderItems(items, key.Seed, prefs, now)
+	slog.Info("推荐顺序冷算分段耗时", "seed", key.Seed, "candidates", len(ids),
+		"query", queryElapsed.Round(time.Millisecond).String(), "algorithm", (time.Since(start) - queryElapsed).Round(time.Millisecond).String())
+	return ids, nil
+}
+
+func loadItems(ctx context.Context, q *db.Queries, key Key) ([]recommend.Item, error) {
+	input, err := store.LoadRecommendationInputs(ctx, q, key.Day, mediaType(key), cosOnly(key))
+	if err != nil {
+		return nil, err
+	}
 	items := make([]recommend.Item, len(input.Rows))
 	for i, row := range input.Rows {
 		items[i] = recommend.Item{
@@ -82,14 +93,17 @@ func loadOrder(ctx context.Context, q *db.Queries, key Key, prefs *recommend.Wei
 			Stats: recommend.Stats{ViewCount: int(row.ViewCount), PlayCount: int(row.PlayCount), BrowseSeconds: int64(number(row.BrowseSeconds)), LastViewedAt: lastViewed(row.LastViewedAt)},
 		}
 	}
-	ordered := recommend.Recommend(items, recommend.Params{Limit: len(items), Seed: key.Seed, Prefs: prefs, Now: now})
+	return items, nil
+}
+
+// Recommend 保持输入只读；同一输入供不同 seed 各自完整评分，顺序不混用。
+func orderItems(items []recommend.Item, seed int, prefs *recommend.Weights, now time.Time) []string {
+	ordered := recommend.Recommend(items, recommend.Params{Limit: len(items), Seed: seed, Prefs: prefs, Now: now})
 	ids := make([]string, len(ordered))
 	for i := range ordered {
 		ids[i] = ordered[i].AssetID
 	}
-	slog.Info("推荐顺序冷算分段耗时", "seed", key.Seed, "candidates", len(ids),
-		"query", queryElapsed.Round(time.Millisecond).String(), "algorithm", (time.Since(start) - queryElapsed).Round(time.Millisecond).String())
-	return ids, nil
+	return ids
 }
 
 func parseTime(raw string) time.Time {

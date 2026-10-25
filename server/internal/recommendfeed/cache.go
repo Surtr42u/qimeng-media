@@ -66,10 +66,22 @@ func (c *Cache) order(key Key, compute func() ([]string, error)) ([]string, erro
 	if ids, ok := c.get(key); ok {
 		return ids, nil
 	}
+	return c.orderInGeneration(key, c.currentGeneration(), compute)
+}
+
+func (c *Cache) currentGeneration() uint64 {
 	c.mu.Lock()
-	generation := c.generation
-	c.mu.Unlock()
-	sfKey := fmt.Sprintf("%d|%d|%q|%d|%q|%t|%q", generation, key.Revision, key.Day, key.Seed, key.MediaType, key.CosOnly, key.Prefs)
+	defer c.mu.Unlock()
+	return c.generation
+}
+
+func orderFlightKey(generation uint64, key Key) string {
+	return fmt.Sprintf("%d|%d|%q|%d|%q|%t|%q", generation, key.Revision, key.Day, key.Seed, key.MediaType, key.CosOnly, key.Prefs)
+}
+
+// 固定本轮计算所属代次；失效仅阻止发布，已经共享该计算的前台仍能取得结果。
+func (c *Cache) orderInGeneration(key Key, generation uint64, compute func() ([]string, error)) ([]string, error) {
+	sfKey := orderFlightKey(generation, key)
 	value, err, _ := c.sf.Do(sfKey, func() (any, error) {
 		if ids, ok := c.get(key); ok {
 			return ids, nil

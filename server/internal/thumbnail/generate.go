@@ -48,12 +48,16 @@ type Generator struct {
 	// 是内嵌形态的正常档）。进程生命周期内固定，缓存扩展名与 HTTP 侧同源。
 	stillFormat StillFormat
 	// pool 是本编排器自建的工作池（workers 来自 config.Thumbnail.Workers，
-	// <=0 按 CPU 核数，见 NewWorkerPool）。懒生成/首屏预热经 Submit 提交；
+	// <=0 按 CPU 核数，见 NewWorkerPool）。后台回填经 Submit 提交，前台走 EnsureDetached；
 	// 应用停机路径必须调用 Close 优雅收池。
 	pool *WorkerPool
 	// detached 是懒生成端点的「单飞+后台续生」组（detached.go，2026-09-15 批）：
 	// 同键请求合并为一次生成，且客户端取消只结束等待不杀生成。
 	detached *detachedGroup
+	// generating 按最终缓存路径合并前台、后台及重叠尺寸集合，等待取消不杀生成。
+	generating *detachedGroup
+	// 生产构造统一注入进程预算；生成全过程使用同一个实例，隔离测试可用独立预算。
+	slots *semaphore
 }
 
 // Options 是 Generator 的构造配置。字段语义与 config.ThumbnailConfig 对应，
@@ -92,6 +96,8 @@ func NewGenerator(dataDir string, logger *slog.Logger, opts Options) *Generator 
 		ffmpegBin:  resolveBin(opts.FFmpegPath, DefaultFFmpegBin),
 		ffprobeBin: resolveBin(opts.FFprobePath, DefaultFFprobeBin),
 		detached:   newDetachedGroup(),
+		generating: newDetachedGroup(),
+		slots:      genSlots,
 	}
 	g.stillFormat = probeStillFormat(g.ffmpegBin, logger)
 	g.pool = NewWorkerPool(context.Background(), opts.Workers, 0, g.handle, logger)
@@ -102,13 +108,13 @@ func NewGenerator(dataDir string, logger *slog.Logger, opts Options) *Generator 
 // httpapi 分发侧用它拼 ThumbPath 的扩展名与 ServeContent 的文件名。
 func (g *Generator) StillFormat() StillFormat { return g.stillFormat }
 
-// handle 把池任务转成 Ensure 调用（WorkerPool 的 handle 签名）。
+// handle 标记工作池任务为后台；前台 Ensure/EnsureDetached 使用同一生成体并可提升它。
 func (g *Generator) handle(ctx context.Context, t Task) error {
-	return g.Ensure(ctx, t.AssetID, t.SourcePath, t.Kind, t.Sizes)
+	return g.ensure(ctx, t.AssetID, t.SourcePath, t.Kind, t.Sizes, false)
 }
 
 // Submit 非阻塞提交一个生成任务（ErrQueueFull/ErrPoolClosed 语义见 WorkerPool）。
-// 懒生成端点与扫描入库的预热接线经此入口；任务幂等（Ensure 命中缓存即跳过）。
+// 后台回填经此入口；前台直接走 Ensure/EnsureDetached，才能标记/提升优先级。
 func (g *Generator) Submit(t Task) error { return g.pool.Submit(t) }
 
 // Close 优雅关闭内置工作池（等已入队任务执行完；重复调用安全）。
@@ -126,20 +132,17 @@ func (g *Generator) GridLongSide() int { return g.longSide }
 // M3 预留——本批保持懒生成统一管线（首请求同步生成），届时首帧走快速档、
 // 代表帧走工作池预热，本函数的分派点不变。
 func (g *Generator) Ensure(ctx context.Context, assetID, srcPath string, kind Kind, sizes []Size) error {
+	return g.ensure(ctx, assetID, srcPath, kind, sizes, true)
+}
+
+func (g *Generator) ensure(ctx context.Context, assetID, srcPath string, kind Kind, sizes []Size, foreground bool) error {
 	version, err := g.sourceVersion(srcPath)
 	if err != nil {
 		return err
 	}
 	for _, size := range sizes {
-		if err := g.ensureOne(ctx, assetID, srcPath, kind, size, version); err != nil {
+		if err := g.ensureOne(ctx, assetID, srcPath, kind, size, version, foreground); err != nil {
 			return fmt.Errorf("生成 %s 的 %d 缩略图: %w", assetID, int(size), err)
-		}
-		current, err := g.sourceVersion(srcPath)
-		if err != nil || current != version {
-			if rmErr := os.Remove(g.thumbDst(assetID, size, version)); rmErr != nil && !errors.Is(rmErr, fs.ErrNotExist) {
-				g.logger.Warn("清理生成期间失效的缩略图失败", "err", rmErr)
-			}
-			return errors.New("生成期间原件发生变化，请重试")
 		}
 	}
 	return nil
@@ -160,7 +163,7 @@ func (g *Generator) thumbDst(assetID string, size Size, versions ...string) stri
 	return ThumbPath(g.dataDir, CacheKey(assetID, size), g.stillFormat.Ext())
 }
 
-func (g *Generator) ensureOne(ctx context.Context, assetID, srcPath string, kind Kind, size Size, version string) error {
+func (g *Generator) ensureOne(ctx context.Context, assetID, srcPath string, kind Kind, size Size, version string, foreground bool) error {
 	// 档位归一化必须在取 dst 与缩放前完成：md 档（SizeGrid）的像素由
 	// LongSide 配置决定（构造时 <=0 已回落 SizeGrid）。此前只有 thumbDst
 	// 的缓存键做了换算、scaleStill 仍用 512 占位值——long_side≠512 时
@@ -171,11 +174,34 @@ func (g *Generator) ensureOne(ctx context.Context, assetID, srcPath string, kind
 		size = Size(g.longSide)
 	}
 	dst := g.thumbDst(assetID, size, version)
+	return g.generating.doPriority(dst, ctx, foreground, func(priority <-chan struct{}) error {
+		// 验证必须在续生体内：浏览取消后也不能留下生成期间已失效的缓存。
+		if err := g.generateOne(context.Background(), srcPath, kind, size, dst, priority); err != nil {
+			return err
+		}
+		if current, err := g.sourceVersion(srcPath); err != nil || current != version {
+			if rmErr := os.Remove(dst); rmErr != nil && !errors.Is(rmErr, fs.ErrNotExist) {
+				g.logger.Warn("清理生成期间失效的缩略图失败", "err", rmErr)
+			}
+			return errors.New("生成期间原件发生变化，请重试")
+		}
+		return nil
+	})
+}
+
+func cacheExists(dst string) (bool, error) {
 	if _, err := os.Stat(dst); err == nil {
-		return nil // 缓存命中
+		return true, nil
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		// 权限等真实错误必须暴露，静默跳过会让"以为生成了其实没有"难以排查。
-		return fmt.Errorf("检查缓存文件 %s: %w", dst, err)
+		return false, fmt.Errorf("检查缓存文件 %s: %w", dst, err)
+	}
+	return false, nil
+}
+
+func (g *Generator) generateOne(ctx context.Context, srcPath string, kind Kind, size Size, dst string, priority <-chan struct{}) error {
+	if exists, err := cacheExists(dst); err != nil || exists {
+		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return fmt.Errorf("创建缓存目录 %s: %w", filepath.Dir(dst), err)
@@ -187,10 +213,14 @@ func (g *Generator) ensureOne(ctx context.Context, assetID, srcPath string, kind
 	// 但不失败）；排队期间 ctx 取消（客户端断开/超时）立即中断。排队只受上游 ctx
 	// 约束、不占 frameTimeout——后者衡量的是拿到闸位后的生成全流程。缓存命中路径
 	// 不进闸（不消耗 ffmpeg 预算）；release 经 defer 保证成功/失败/panic 都归还。
-	if !genSlots.acquire(ctx) {
+	if !g.slots.acquirePriority(ctx, priority) {
 		return fmt.Errorf("排队等待缩略图生成闸位时上游已取消: %w", ctx.Err())
 	}
-	defer genSlots.release()
+	defer g.slots.release()
+	// 等待资源闸期间，缓存可能由其他 Generator/外部回填写好，不能重复抽帧。
+	if exists, err := cacheExists(dst); err != nil || exists {
+		return err
+	}
 
 	ctx, cancel := context.WithTimeout(ctx, frameTimeout)
 	defer cancel()
@@ -266,6 +296,13 @@ func (g *Generator) HasThumbnail(assetID string, size Size, srcPaths ...string) 
 		versions = []string{version}
 	}
 	_, err := os.Stat(g.thumbDst(assetID, size, versions...))
+	return err == nil
+}
+
+// HasStoredThumbnail 仅检查扫描元数据所指向的表示，用于低开销回填/覆盖统计。
+// 不用作媒体出口鉴权或版本校验；真实生成仍从原件重新取得版本。
+func (g *Generator) HasStoredThumbnail(assetID string, size Size, sizeBytes int64, mtime string) bool {
+	_, err := os.Stat(g.thumbDst(assetID, size, g.RepresentationVersion(sizeBytes, mtime)))
 	return err == nil
 }
 
