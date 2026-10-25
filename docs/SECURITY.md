@@ -2,7 +2,7 @@
 
 > 威胁模型：纯内网单用户起步。防御目标 = 局域网内误访问与横向渗透（访客 WiFi、被入侵的智能设备）+ 未来远程访问的暴露面。不防御公网级 DDoS/爬虫。
 > 安全要求通过机制与门禁验证，测试要求见本文「安全测试」；实际覆盖及未验收边界如实记录，不将文档声明当测试证据。
-> 维护日期：2026-10-23。变更经过见 CHANGELOG 与 git 历史。
+> 维护日期：2026-10-25。变更经过见 CHANGELOG 与 git 历史。
 
 ## 按任务读取
 
@@ -17,7 +17,7 @@
 | 3 | 媒体误删 | DELETE 一律进回收站；物理删除仅在回收站内显式操作；Docker 中媒体目录挂载可写但回收站兜底 |
 | 4 | 上传滥用 | 四道校验：扩展名白名单 + MIME 嗅探（读文件头）+ 单文件大小上限 + 目标路径穿越检查。写入用临时文件 + 原子 rename |
 | 5 | 无鉴权访问 | 除健康检查与认证端点（setup/login/dev-login）外全部 API 要求 Bearer token；媒体直链用短期 HMAC 签名 URL（默认 6h 有效），禁止裸直链 |
-| 6 | 请求体滥用 | JSON body 上限 1MB（例外：旧版备份导入 64MB，errors.go decodeJSONWithLimit / legacyImportMaxBody，单文件全量备份随库规模增长）；分页 size 上限；SSE 连接数上限。**2026-10-17 起全部 JSON 端点强制 `Content-Type: application/json`**：跨站"简单请求"（no-cors + text/plain 等 safelisted 类型）无需 preflight 即可打内网地址，不校验则任意网页可向免鉴权 setup 投递 JSON 抢注密码；强制后跨域请求触发 preflight 被无 CORS 的服务端拒绝（合法 SDK 本就声明 JSON，零行为变化） |
+| 6 | 请求体滥用 | JSON body 上限 1MB（例外：旧版备份导入 64MB，httpapi/errors.go 的 decodeJSONWithLimit / portablebackup.ImportMaxBody，单文件全量备份随库规模增长）；分页 size 上限；SSE 连接数上限。**2026-10-17 起全部 JSON 端点强制 `Content-Type: application/json`**：跨站"简单请求"（no-cors + text/plain 等 safelisted 类型）无需 preflight 即可打内网地址，不校验则任意网页可向免鉴权 setup 投递 JSON 抢注密码；强制后跨域请求触发 preflight 被无 CORS 的服务端拒绝（合法 SDK 本就声明 JSON，零行为变化） |
 | 7 | 信息泄露 | 错误响应不含内部路径/堆栈（已实现）；访问日志脱敏（token 只记前 4 位）为规划项——访问日志本身尚未实现，见 OBSERVABILITY；/metrics 随全局 Bearer 门禁。**2026-10-17 修复一处例外**：`POST /local-sync/trigger` 的 409 不再透传含绝对路径的通道级 lastErr，固定文案 + 详情只进服务端日志 |
 | 8 | 公网暴露 | 永不开公网端口；远程访问只走 Tailscale/WireGuard 隧道（服务端零改动） |
 

@@ -90,7 +90,8 @@ func buildTxtImportConflict(e *authorimport.Conflict) gen.TxtImportConflict {
 	return gen.TxtImportConflict{Filename: &filename, Authors: &authors}
 }
 
-// importTxt 供现存备份导入适配复用；业务事务在 authorimport。
+// importTxt 映射手动TXT导入的HTTP结果；事务在authorimport。
+// 便携备份由portablebackup直接复用authorimport，不经过本协议适配。
 func (s *Server) importTxt(ctx context.Context, filename *string, content, resolution, origin string) (gen.TxtImportResult, error) {
 	result, err := s.txt.Import(ctx, filename, content, resolution, origin)
 	return txtResultToGen(result), err

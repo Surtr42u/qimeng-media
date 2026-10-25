@@ -1,12 +1,12 @@
 # OBSERVABILITY - 监控与仪表盘
 
 > 对应用户需求 #9：「NAS 后端要有统计，比如负载、流量那种」。
-> 方案定论：**服务端内置轻量监控**（零外部依赖），Prometheus/Grafana 全家桶作为后置可选增强。
+> 方案定论：**服务端内置轻量监控**（无需外置监控服务），Prometheus/Grafana 全家桶作为后置可选增强。
 > 维护日期：2026-10-25。变更经过见 CHANGELOG 与 git 历史。
 
 ## 内置监控（M2 交付）
 
-### 系统指标（gopsutil 采集，跨平台：PC 开发与 NAS 运行行为一致）
+### 系统指标（gopsutil跨平台采集；目标NAS的权限、挂载与硬件仍需验收）
 
 | 指标 | 说明 |
 |---|---|
@@ -37,9 +37,9 @@
 
 系统快照 `sysmon.Collector.Snapshot()` 输出与 openapi SystemStatus 对齐；PerCore（按核 CPU 明细）已补进协议并接线 `/api/v1/system/status` 与 `/metrics`（Bearer 鉴权，httpapi/system.go，2026-08-27 M2 后端）。
 
-### 指标埋点接线与口径注记（2026-09-06，9 族全量接线）
+### 指标埋点接线与口径注记
 
-埋点落位（除 upload 族 M2 已接外，其余于 2026-09-06 全部接线完毕）：
+当前埋点落位；新增指标与已有指标分别按下表更新，不以早期接线数量概括现状：
 
 | 指标族 | 埋点位置 | 更新时机 |
 |---|---|---|
@@ -50,6 +50,7 @@
 | upload_total / upload_bytes_total | mediawrite 上传/入库（HTTP 只适配，2026-10-21 下沉） | 保留既有计量时机；未把全部失败分类重新定义 |
 | library_files{type} | mediawrite 单 worker，HTTP/扫描/库事件只标脏 | 启动立即查询、变更有界合并（见下） |
 | thumb_queue_depth | thumbnail/pool.go Submit 入队/work 取任务 | 队列每变化一次 |
+| thumb_work / thumb_work_events_total | thumbnail/budget.go、generate.go、detached.go | 表示引用变化、等闸/持闸变化及合并/拒绝/活动期失败；不把正常关停计failed |
 | trash_items / trash_bytes | mediawrite `RefreshTrashMetrics` | 变更点推送刷新（见下） |
 | backup_last_success_timestamp | backup 包 `OnSuccess` 回调（main 装配期接 `sysmon.Default.SetBackupLastSuccess`，backup 包自身不感知 sysmon） | 每次快照成功后 |
 
@@ -60,7 +61,7 @@
 3. **http 指标不覆盖三类请求**：参数绑定失败的 400（gen 绑定层在中间件之前短路返回）、未匹配路由的 404（ServeMux 直接兜底）与方法不匹配的 405（同为 ServeMux 兜底，不经包装器）。三者均不产生 http_requests_total / duration 序列，属既定口径而非缺陷。
 4. **scan_duration_seconds 仅在扫描成功返回时 Set**（与 help「上次全量扫描耗时」一致）：失败路径保留上次成功值。API 触发与 watch 轮询两条扫描入口汇聚在 `Scanner.Scan`，单点覆盖。
 5. **library_files 合并刷新，trash_items/trash_bytes 仍按变更点推送**：library_files 开机立即读取一次；上传/扫描完成/回收站/恢复及 library.changed 只标脏，由一个 worker 在首个信号后一秒查询（固定合并窗，不随连续上传延期）。查询仍限三秒；期间新变更进入下一轮，失败保留上次成功值并按同节奏再试，停机取消并收齐查询后再关库。无脏位不查询，正常收敛时间包括一秒等待与本次 SQL，故障期间可能更陈旧。此为监控近似新鲜度，不影响已提交业务成功。trash 刷新时机仍为删除入站/恢复/物理删除/清空四处及到期清扫有清除时；真实源仍为磁盘 meta，trash_items 历史表不读。
-6. **thumb_queue_depth 已接线**：表示经 Submit 提交的后台队列长度；前台 Ensure/EnsureDetached 绕过工作池队列并共用生成预算，其在途任务数不由此指标表示。
+6. **缩略图指标分工**：thumb_queue_depth仅表示Submit后台队列长度；thumb_work分别记录共用表示预算、等闸与持闸体，前台不由队列长度代表。admitted包含集合未释放的已完成尺寸引用，不能据此相减推算等待数；产品页面尚未完整呈现这些内部指标。
 
 ### 展示（两种）
 
@@ -88,8 +89,8 @@
 
 ## 后置可选：Grafana 增强包（不进默认部署）
 
-想看长期历史曲线（7 天/30 天）时：docker-compose 追加 Prometheus + Grafana 两个容器，抓取 /metrics，导入预置 Dashboard JSON（接入本增强包时随包交付，当前仓库未内置）。默认不装——单用户内网场景内置面板覆盖 95% 需求，全家桶只服务"想折腾"的场景。
+想看长期历史曲线（7 天/30 天）时：docker-compose 追加 Prometheus + Grafana 两个容器，抓取 /metrics，导入预置 Dashboard JSON（接入本增强包时随包交付，当前仓库未内置）。默认不装；内置面板覆盖基础系统/业务指标，长期历史曲线需要另行接入采集与存储。
 
 ## 事件推送（SSE）与监控的关系
 
-扫描进度、缩略图队列进度、上传进度走 SSE 实时推到客户端 UI（进度条）；系统监控面板数据由前端 2 秒轮询专用轻量接口（`STATUS_POLL_INTERVAL_MS=2000`，web/src/lib/constants.ts——不塞进 SSE，职责分离）。
+当前SSE发布扫描进度（scan.progress）、库内容变更（library.changed）、上传完成（upload.done）及收藏/点赞变更信号。上传传输进度由客户端自身的XHR/Worker更新，upload.done不是逐字节进度。thumbnail.progress仅预留主题，尚无生产发布者；缩略图覆盖通过GET /api/v1/thumbnails/progress读取，不能称其已接SSE。系统监控面板仍由use-system-status按STATUS_POLL_INTERVAL_MS=2000轮询专用接口；内部指标不自动成为SSE载荷。

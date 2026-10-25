@@ -1,14 +1,14 @@
 # 性能、可靠性与代码规范改进任务书（2026-10-25）
 
-> 用户要求：把凌晨优化思路写成详细任务书，并进一步检查项目需求、实现和代码规范。基线：`b13bb21a`。本文是实施提案与源码审查记录；**本轮只交付文档，没有实施下列代码任务，也没有运行构建、测试或设备验收**。实施前重新核对 HEAD 与相关调用链。
+> **当前结论：A–E 的 S01–S08、Q01–Q10 已完成代码实施或职责审查；不能据此称所有验收要求全部完成。** 运行代码基线 `08a15e9b` 已通过16类云端必需检查。Q09只完成首批最小交互场景；专项性能量化、逐阶段故障矩阵与最终提交的新增自动审查等缺口见§11。源码尚未合并/部署，R01–R07未选定、未实施。
 >
-> 当前状态只维护在 [HANDOVER](HANDOVER.md)，能力状态只维护在 [CAPABILITY_MAP](CAPABILITY_MAP.md)。本文不覆盖领域、安全、协议或架构规范，也不代表用户已经授权所有候选产品功能。此前 [代码质量任务书](CODE_QUALITY_TASKBOOK.md) 的已交付 Q1–Q7 不重复立项。
+> 初稿以 `b13bb21a` 为静态审查基线。§4–§5的“基线证据”描述实施前的触发条件，原要求和验收标准保留；每项“当前实现”及§10/§11记录后续结果，不能把初稿证据当作现有缺陷重新立项。当前源码/运行包与审查状态见[HANDOVER](HANDOVER.md)，能力状态见[CAPABILITY_MAP](CAPABILITY_MAP.md)。此前[代码质量任务书](CODE_QUALITY_TASKBOOK.md)的已交付Q1–Q7不重复执行。
 
 ## 1. 目标与审查口径
 
 延续凌晨三条主线：减少重复计算/遍历、限制后台资源占用、保护前台响应与数据一致性。进一步收敛异步草稿、取消传播、导入边界、发布门禁和职责分层。
 
-本轮进行了受控源码清单与规模扫描，并沿扫描、缩略图、推荐、上传、设置保存、Android 导入/列表、便携迁移、桌面配置和 CI 的关键路径静态检查。没有逐行审查所有源文件、复现所有交互或读取真实库；“全项目覆盖”指检查面覆盖各模块，不等于全仓无缺陷证明。
+初稿审查进行了受控源码清单与规模扫描，并沿扫描、缩略图、推荐、上传、设置保存、Android 导入/列表、便携迁移、桌面配置和 CI 的关键路径静态检查。没有逐行审查所有源文件、复现所有交互或读取真实库；“全项目覆盖”指检查面覆盖各模块，不等于全仓无缺陷证明。
 
 证据分类：
 
@@ -30,9 +30,9 @@
 7. 不把当前未跟踪文件或无关工作纳入交付。不自动部署、合并 PR、修改现用包或清理媒体；代码实施与最终发布分别按会话授权执行。
 8. 新预算、超时、退避值须具名并说明依据；不能在本任务书中凭空确定生产值。预算默认值以合成负载与目标用途验证后决定。
 
-## 3. 排期总表
+## 3. 批次与实施范围
 
-| 批次 | 任务 | 建议 | 通过后才能推进的事项 |
+| 批次 | 任务 | 原排期 | 对应验收要求 |
 |---|---|---|---|
 | A 用户输入与导入边界 | Q01、Q02、Q03 | 优先；各自小批提交 | 慢响应/取消/超限的行为回归 |
 | B 明确的重复工作 | S01、S02、S03、S06 | 第一批性能优化 | 相同输出、查询次数/分配基准、当前 head 门禁 |
@@ -41,13 +41,15 @@
 | E 工程门禁与结构 | Q04–Q10 | 按影响逐项处理 | 保留既有能力、异常行为和可验证边界 |
 | F 产品增强 | R01–R07 | 待用户选择 | 不自动排入 A–E 的实施范围 |
 
-每项状态起始均为“提案待实施”。执行者在各自交付记录中填写事实，不直接把本表当自动授权的全仓重构清单。
+初稿排期已执行A–E；当前完成度逐项见§11。F仍是待选产品范围，本表不自动授权新增产品功能或现场部署。
 
 ## 4. 八项性能与并发任务
 
 ### S01 推荐顺序直接输出 ID（P2）
 
-**证据与入口**：[recommendfeed/page.go](../server/internal/recommendfeed/page.go) 的 `orderItems` 用完整候选长度调用 `Recommend`，再提取 ID；[recommend/mixing.go](../server/internal/recommend/mixing.go) 先分配并填充完整 `[]Item`。
+**当前实现**：已实现直接ID装配与唯一评分/混合核心，Item接口/完整顺序保持；输出与合成基准通过，真实端点前后对比未量化。
+
+**基线证据与入口（实施前）**：[recommendfeed/page.go](https://github.com/Surtr42u/qimeng-media/blob/b13bb21a8b36e93d6b8896e81da46ef3efd9ab10/server/internal/recommendfeed/page.go) 的 `orderItems` 用完整候选长度调用 `Recommend`，再提取 ID；[recommend/mixing.go](https://github.com/Surtr42u/qimeng-media/blob/b13bb21a8b36e93d6b8896e81da46ef3efd9ab10/server/internal/recommend/mixing.go) 先分配并填充完整 `[]Item`。
 
 **实施要求**：
 
@@ -61,7 +63,9 @@
 
 ### S02 合并上传等变更后的指标统计（P2）
 
-**证据与入口**：[mediawrite/ingest.go](../server/internal/mediawrite/ingest.go) 每项成功后调用 [service.go](../server/internal/mediawrite/service.go) 的 `RefreshLibraryFileMetrics`，同步执行全部库分组计数，独立超时为 3 秒。[监控规则](OBSERVABILITY.md) 允许指标秒级陈旧。
+**当前实现**：已实现单worker/脏位合并、失败保值重试与关停收齐；百次通知和在查询中再变更回归通过，批量上传延迟专项报告未完成。
+
+**基线证据与入口（实施前）**：[mediawrite/ingest.go](https://github.com/Surtr42u/qimeng-media/blob/b13bb21a8b36e93d6b8896e81da46ef3efd9ab10/server/internal/mediawrite/ingest.go) 每项成功后调用 [service.go](https://github.com/Surtr42u/qimeng-media/blob/b13bb21a8b36e93d6b8896e81da46ef3efd9ab10/server/internal/mediawrite/service.go) 的 `RefreshLibraryFileMetrics`，同步执行全部库分组计数，独立超时为 3 秒。[监控规则](https://github.com/Surtr42u/qimeng-media/blob/b13bb21a8b36e93d6b8896e81da46ef3efd9ab10/docs/OBSERVABILITY.md) 允许指标秒级陈旧。
 
 **实施要求**：
 
@@ -76,7 +80,9 @@
 
 ### S03 扫描专用窄快照（P2）
 
-**证据与入口**：[queries/scanner.sql](../server/internal/store/queries/scanner.sql) 的 `ListAssetsByLibrary` 仍 `SELECT *`；[scanner.go](../server/internal/scanner/scanner.go) 已改下标索引，但完整行快照、knownIDs、seen 仍驻留整轮。
+**当前实现**：已使用五列扫描投影及短锁实时完整行复核；SQL装载/索引基准与平台回归通过，完整空扫/批量改名端到端性能未量化。
+
+**基线证据与入口（实施前）**：[queries/scanner.sql](https://github.com/Surtr42u/qimeng-media/blob/b13bb21a8b36e93d6b8896e81da46ef3efd9ab10/server/internal/store/queries/scanner.sql) 的 `ListAssetsByLibrary` 仍 `SELECT *`；[scanner.go](https://github.com/Surtr42u/qimeng-media/blob/b13bb21a8b36e93d6b8896e81da46ef3efd9ab10/server/internal/scanner/scanner.go) 已改下标索引，但完整行快照、knownIDs、seen 仍驻留整轮。
 
 **实施要求**：
 
@@ -91,7 +97,9 @@
 
 ### S04 缩略图按变更范围回填（P2）
 
-**证据与入口**：[thumbnailwarmup/service.go](../server/internal/thumbnailwarmup/service.go) 的 `Notify` 只有信号，`inspect` 每轮读取全部启用库；[httpapi/server.go](../server/internal/httpapi/server.go) 消费 library.changed 后统一通知。
+**当前实现**：已实现内部资产/库/全量范围、有界提升和独立全量兜底；局部不发布全库覆盖，对外SSE载荷未变。
+
+**基线证据与入口（实施前）**：[thumbnailwarmup/service.go](https://github.com/Surtr42u/qimeng-media/blob/b13bb21a8b36e93d6b8896e81da46ef3efd9ab10/server/internal/thumbnailwarmup/service.go) 的 `Notify` 只有信号，`inspect` 每轮读取全部启用库；[httpapi/server.go](https://github.com/Surtr42u/qimeng-media/blob/b13bb21a8b36e93d6b8896e81da46ef3efd9ab10/server/internal/httpapi/server.go) 消费 library.changed 后统一通知。
 
 **实施要求**：
 
@@ -107,7 +115,9 @@
 
 ### S05 双 seed 复用算法准备结果（P2）
 
-**证据与入口**：[recommend/recommend.go](../server/internal/recommend/recommend.go) 每次都构建 tagsByItem、标签相关度、topTags、归一化分母；[recommendfeed/warm.go](../server/internal/recommendfeed/warm.go) 当前仅复用 Item 输入。
+**当前实现**：已复用本轮seed无关准备，每个seed独立评分/随机/排序；固定输出和拆分基准通过，不建立常驻候选缓存。
+
+**基线证据与入口（实施前）**：[recommend/recommend.go](https://github.com/Surtr42u/qimeng-media/blob/b13bb21a8b36e93d6b8896e81da46ef3efd9ab10/server/internal/recommend/recommend.go) 每次都构建 tagsByItem、标签相关度、topTags、归一化分母；[recommendfeed/warm.go](https://github.com/Surtr42u/qimeng-media/blob/b13bb21a8b36e93d6b8896e81da46ef3efd9ab10/server/internal/recommendfeed/warm.go) 当前仅复用 Item 输入。
 
 **实施要求**：
 
@@ -122,7 +132,9 @@
 
 ### S06 推荐缓存按预算逐项淘汰（P2）
 
-**证据与入口**：[recommendfeed/cache.go](../server/internal/recommendfeed/cache.go) 超过 32 流或 100000 ID 时清空整个 entries。
+**当前实现**：已实现过期优先、逐项LRU、原TTL及超预算单流不缓存；功能/race回归通过，命中率/锁竞争专项负载对比未完成。
+
+**基线证据与入口（实施前）**：[recommendfeed/cache.go](https://github.com/Surtr42u/qimeng-media/blob/b13bb21a8b36e93d6b8896e81da46ef3efd9ab10/server/internal/recommendfeed/cache.go) 超过 32 流或 100000 ID 时清空整个 entries。
 
 **实施要求**：
 
@@ -137,7 +149,9 @@
 
 ### S07 缩略图有界等待与完整生命周期（P2，压力场景重点）
 
-**证据与入口**：[thumbnail/detached.go](../server/internal/thumbnail/detached.go) 按不同键注册并起续生 goroutine；生成闸只限执行数；[generate.go](../server/internal/thumbnail/generate.go) 的 Close 仅等待 pool。
+**当前实现**：已实现统一表示预算、前台准入保留、可取消等待、服务级关闭收齐及低基数指标；正常关停与资产故障区分，资源边界/平台回归通过。
+
+**基线证据与入口（实施前）**：[thumbnail/detached.go](https://github.com/Surtr42u/qimeng-media/blob/b13bb21a8b36e93d6b8896e81da46ef3efd9ab10/server/internal/thumbnail/detached.go) 按不同键注册并起续生 goroutine；生成闸只限执行数；[generate.go](https://github.com/Surtr42u/qimeng-media/blob/b13bb21a8b36e93d6b8896e81da46ef3efd9ab10/server/internal/thumbnail/generate.go) 的 Close 仅等待 pool。
 
 **实施要求**：
 
@@ -153,7 +167,9 @@
 
 ### S08 共享计算与可取消等待分离（P2）
 
-**证据与入口**：[recommendfeed/cache.go](../server/internal/recommendfeed/cache.go) 同步 `singleflight.Do`；[page.go](../server/internal/recommendfeed/page.go) 去掉请求取消；[thumbnailwarmup/service.go](../server/internal/thumbnailwarmup/service.go) 的 Progress 在 mutex 上等待。
+**当前实现**：已分离推荐DoChan共享计算与请求等待，进度使用可取消闸；关闭/失效/取消竞争回归及合成响应时间/峰值记录通过。
+
+**基线证据与入口（实施前）**：[recommendfeed/cache.go](https://github.com/Surtr42u/qimeng-media/blob/b13bb21a8b36e93d6b8896e81da46ef3efd9ab10/server/internal/recommendfeed/cache.go) 同步 `singleflight.Do`；[page.go](https://github.com/Surtr42u/qimeng-media/blob/b13bb21a8b36e93d6b8896e81da46ef3efd9ab10/server/internal/recommendfeed/page.go) 去掉请求取消；[thumbnailwarmup/service.go](https://github.com/Surtr42u/qimeng-media/blob/b13bb21a8b36e93d6b8896e81da46ef3efd9ab10/server/internal/thumbnailwarmup/service.go) 的 Progress 在 mutex 上等待。
 
 **实施要求**：
 
@@ -170,7 +186,9 @@
 
 ### Q01 Web 设置保存不能清掉后续草稿（P1，实现已确认）
 
-**证据**：[SettingsPage.tsx](../web/src/pages/SettingsPage.tsx) 保存期间只禁用保存按钮，输入框/开关可继续编辑；成功回调无条件 `setCfgDraft(null)`。[use-config.ts](../web/src/hooks/use-config.ts) 先把旧提交的结果写入查询缓存。触发序列：提交 A → 编辑为 B → A 成功 → B 草稿被清掉。
+**当前实现**：已由use-config-form持草稿修订和提交快照，查询/保存响应不覆盖新输入；三个设置浏览器场景通过。
+
+**基线证据（实施前）**：[SettingsPage.tsx](https://github.com/Surtr42u/qimeng-media/blob/b13bb21a8b36e93d6b8896e81da46ef3efd9ab10/web/src/pages/SettingsPage.tsx) 保存期间只禁用保存按钮，输入框/开关可继续编辑；成功回调无条件 `setCfgDraft(null)`。[use-config.ts](https://github.com/Surtr42u/qimeng-media/blob/b13bb21a8b36e93d6b8896e81da46ef3efd9ab10/web/src/hooks/use-config.ts) 先把旧提交的结果写入查询缓存。触发序列：提交 A → 编辑为 B → A 成功 → B 草稿被清掉。
 
 **任务**：优先采用草稿修订号与提交快照；成功只确认本次提交，修订未变时才清草稿/回填规范化值。也可选择保存时锁定完整表单，但须统一交互，不只锁按钮。业务转换/校验收敛在 hook/纯辅助模块，页面只负责渲染和动作。
 
@@ -178,7 +196,9 @@
 
 ### Q02 Android 取消传播和异步状态写回（P2，实现已确认；影响逐入口验证）
 
-**证据**：[LibraryManageViewModel.kt](../android/feature/manage/src/main/java/media/qimeng/app/feature/manage/LibraryManageViewModel.kt) 的 refresh/registerAndScan 等直接捕获 Exception；[HomeViewModel.kt](../android/feature/home/src/main/java/media/qimeng/app/feature/home/HomeViewModel.kt) 和 [SearchViewModel.kt](../android/feature/search/src/main/java/media/qimeng/app/feature/search/SearchViewModel.kt) 多处 suspend 调用使用 runCatching 后写失败态。已有代际校验能阻止部分旧响应，但不能代替取消传播。
+**当前实现**：已处理任务命中的首页/搜索/管理/导入及扫描调用链取消与代际清理；确定性单测通过，不声称所有设备生命周期场景已验收。
+
+**基线证据（实施前）**：[LibraryManageViewModel.kt](https://github.com/Surtr42u/qimeng-media/blob/b13bb21a8b36e93d6b8896e81da46ef3efd9ab10/android/feature/manage/src/main/java/media/qimeng/app/feature/manage/LibraryManageViewModel.kt) 的 refresh/registerAndScan 等直接捕获 Exception；[HomeViewModel.kt](https://github.com/Surtr42u/qimeng-media/blob/b13bb21a8b36e93d6b8896e81da46ef3efd9ab10/android/feature/home/src/main/java/media/qimeng/app/feature/home/HomeViewModel.kt) 和 [SearchViewModel.kt](https://github.com/Surtr42u/qimeng-media/blob/b13bb21a8b36e93d6b8896e81da46ef3efd9ab10/android/feature/search/src/main/java/media/qimeng/app/feature/search/SearchViewModel.kt) 多处 suspend 调用使用 runCatching 后写失败态。已有代际校验能阻止部分旧响应，但不能代替取消传播。
 
 **任务**：按调用链区分纯解析/平台探测和 suspend 业务调用，只为后者显式重新抛出 CancellationException；防止取消触发“失败”提示、普通重试或覆盖新代状态。审核 finally 中 loading/busy 的 owner，避免旧请求取消清掉新请求状态。已提交操作与后续刷新分别记账。
 
@@ -186,7 +206,9 @@
 
 ### Q03 Android TXT 导入前有界读取（P1，实现已确认）
 
-**证据**：[AuthorTxtImportScreen.kt](../android/feature/manage/src/main/java/media/qimeng/app/feature/manage/AuthorTxtImportScreen.kt) 的 `readUtf8` 直接 `stream.readBytes()`；选文件后先读完整内容，扩展名判断在之后的 [AuthorTxtImportViewModel.kt](../android/feature/manage/src/main/java/media/qimeng/app/feature/manage/AuthorTxtImportViewModel.kt)。大文件/未知长度 provider 会先占满内存，服务端体积拒绝来不及保护客户端。
+**当前实现**：已把SAF读取下沉可注入辅助件，扩展名/声明大小预检、流上限+1和实际SDK JSON字节双重保护；合成流/序列化回归通过，真实provider未验收。
+
+**基线证据（实施前）**：[AuthorTxtImportScreen.kt](https://github.com/Surtr42u/qimeng-media/blob/b13bb21a8b36e93d6b8896e81da46ef3efd9ab10/android/feature/manage/src/main/java/media/qimeng/app/feature/manage/AuthorTxtImportScreen.kt) 的 `readUtf8` 直接 `stream.readBytes()`；选文件后先读完整内容，扩展名判断在之后的 [AuthorTxtImportViewModel.kt](https://github.com/Surtr42u/qimeng-media/blob/b13bb21a8b36e93d6b8896e81da46ef3efd9ab10/android/feature/manage/src/main/java/media/qimeng/app/feature/manage/AuthorTxtImportViewModel.kt)。大文件/未知长度 provider 会先占满内存，服务端体积拒绝来不及保护客户端。
 
 **任务**：平台读取进入可注入的数据层辅助件；先做文件名/声明大小预检，实际流读取仍按上限+1 截止，不能相信 provider 声明。上限必须与作者导入 JSON 请求的真实字节限制、转义开销及 Web 入口对齐；不要套用本机同步 10MB 或便携备份 64MB 的其他通道口径。UTF-8/BOM/无效字节策略先对照权威规则，不能悄悄增加编码支持。
 
@@ -194,7 +216,9 @@
 
 ### Q04 便携导入导出编排继续下沉（P2，结构改进）
 
-**证据**：[httpapi/import.go](../server/internal/httpapi/import.go) 的 legacyImport 持有 Server、ResponseWriter、aborted，分阶段业务步骤直接决定 HTTP 错误；[export.go](../server/internal/httpapi/export.go) 在协议层持事务和备份装配。当前架构允许存量渐进迁移，不把现状误报为新边界违规。
+**当前实现**：已迁入portablebackup，HTTP不持导入分段或导出快照事务；契约、往返、部分提交失败/取消及重试回归通过，尚未穷举每个阶段故障。
+
+**基线证据（实施前）**：[httpapi/import.go](https://github.com/Surtr42u/qimeng-media/blob/b13bb21a8b36e93d6b8896e81da46ef3efd9ab10/server/internal/httpapi/import.go) 的 legacyImport 持有 Server、ResponseWriter、aborted，分阶段业务步骤直接决定 HTTP 错误；[export.go](https://github.com/Surtr42u/qimeng-media/blob/b13bb21a8b36e93d6b8896e81da46ef3efd9ab10/server/internal/httpapi/export.go) 在协议层持事务和备份装配。当前架构允许存量渐进迁移，不把现状误报为新边界违规。
 
 **任务**：按 v1/v2 解析校验、身份匹配、分段写入、结果汇总、提交后通知提取专职服务；传域输入/结果，不能让新业务包依赖 gen。导出保持同一事务快照。不得借提取更改部分成功、幂等、TXT keep、事件身份或错误响应。
 
@@ -202,7 +226,9 @@
 
 ### Q05 固定协议检查工具版本（P2，工程缺口）
 
-**证据**：[Makefile](../Makefile) 的 REDOCLY 与 [.github/workflows/ci.yml](../.github/workflows/ci.yml) 的协议检查使用未指定版本的 `npx -y @redocly/cli`；同一源码不同日期可能使用不同校验器。
+**当前实现**：已固定Redocly 2.71.0并由Makefile/CI共用，其他主动下载工具核对锁/摘要；干净云端校验和SDK锁检查通过。
+
+**基线证据（实施前）**：[Makefile](https://github.com/Surtr42u/qimeng-media/blob/b13bb21a8b36e93d6b8896e81da46ef3efd9ab10/Makefile) 的 REDOCLY 与 [.github/workflows/ci.yml](https://github.com/Surtr42u/qimeng-media/blob/b13bb21a8b36e93d6b8896e81da46ef3efd9ab10/.github/workflows/ci.yml) 的协议检查使用未指定版本的 `npx -y @redocly/cli`；同一源码不同日期可能使用不同校验器。
 
 **任务**：核对现用兼容版本后固定，复用一个可追踪版本来源或增加同步断言；不在本任务书猜版本、不顺带升级 OpenAPI 生成器。检查其他构建工具的明确版本/锁与自动下载行为，区分平台提供的工具和项目主动拉取的包。
 
@@ -210,21 +236,27 @@
 
 ### Q06 出包成功与可发布资格自动区分（P2，工程缺口）
 
-**证据**：[build-apk.yml](../.github/workflows/build-apk.yml) 先上传 APK，再执行带 `continue-on-error: true` 的单测；HANDOVER 依赖发布者单独核对日志。凌晨记录单测通过，不代表配置中的非阻塞行为已经移除。
+**当前实现**：已让单测/Release Lint阻断候选上传；真实失败注入确认无artifact，正常同SHA路径确认成功上传，详见HANDOVER。
+
+**基线证据（实施前）**：[build-apk.yml](https://github.com/Surtr42u/qimeng-media/blob/b13bb21a8b36e93d6b8896e81da46ef3efd9ab10/.github/workflows/build-apk.yml) 先上传 APK，再执行带 `continue-on-error: true` 的单测；HANDOVER 依赖发布者单独核对日志。凌晨记录单测通过，不代表配置中的非阻塞行为已经移除。
 
 **任务**：确认旧失败用例在当前 head 的结果；把正式交付所需单测设为阻断，或明确保留“诊断产物”与“可发布产物”两种资格。只有完整必需检查通过的同 SHA 产物可进入部署流程，不能仅根据 artifact 存在或总 workflow 绿色判断。原始失败证据和调试包可保留，但标签不得混淆。
 
-**验收**：合成/受控测试失败时发布资格失败；成功时才放行。同源提交、签名、版本、内嵌三件套和哈希校验保持。当前未查询远端工作流，不声称线上已失败。同步部署入口与 HANDOVER 的发布核验要求。
+**验收**：合成/受控测试失败时发布资格失败；成功时才放行。同源提交、签名、版本、内嵌三件套和哈希校验保持。初稿未查询远端工作流；后续真实正反运行证据见§11及HANDOVER。同步部署入口与 HANDOVER 的发布核验要求。
 
 ### Q07 清理会误导实施的现行注释与豁免（P2/P3，已确认示例）
 
-**证据**：[use-config.ts](../web/src/hooks/use-config.ts) 头注写 scan 参数“重启后生效”，与 OpenAPI、页面和服务端“预留，重启也不生效”冲突。[scanner.go](../server/internal/scanner/scanner.go) 的 gate 注释仍描述旧 processFile 阻塞路径，现入口为 TryLock 的 updateKnownFile。[server/.golangci.yml](../server/.golangci.yml) 保留 fsnotify.Close 排除，而当前 watch.go 已显式处理关闭错误。
+**当前实现**：已修正命中的预留配置/扫描入口注释并移除失效Close豁免，Lint通过；历史日志与旧决策正文保留。
+
+**基线证据（实施前）**：[use-config.ts](https://github.com/Surtr42u/qimeng-media/blob/b13bb21a8b36e93d6b8896e81da46ef3efd9ab10/web/src/hooks/use-config.ts) 头注写 scan 参数“重启后生效”，与 OpenAPI、页面和服务端“预留，重启也不生效”冲突。[scanner.go](https://github.com/Surtr42u/qimeng-media/blob/b13bb21a8b36e93d6b8896e81da46ef3efd9ab10/server/internal/scanner/scanner.go) 的 gate 注释仍描述旧 processFile 阻塞路径，现入口为 TryLock 的 updateKnownFile。[server/.golangci.yml](https://github.com/Surtr42u/qimeng-media/blob/b13bb21a8b36e93d6b8896e81da46ef3efd9ab10/server/.golangci.yml) 保留 fsnotify.Close 排除，而当前 watch.go 已显式处理关闭错误。
 
 **任务**：以当前调用链为依据修正注释、过时路径引用、已完成 TODO 与能撤回的豁免；检查豁免是否还有其他生产调用后再移除。不改历史日志/旧 ADR 正文来制造“从未存在问题”。历史经过放 CHANGELOG，头注只保留现行职责、约束和非显然原因。
 
 **验收**：跨端相同契约描述一致；移除豁免后 lint 仍通过；不得把所有注释当冗余删除。按实际影响同步专题，纯注释说明无运行语义影响。
 
 ### Q08 大文件和重复逻辑按 ownership 收敛（P3，审查线索）
+
+**当前实现**：九个规模线索已逐项评估；提取统计展示映射与请求中间件，其余单一状态/资源owner保留依据及测试见§10。
 
 基线受控生产源码规模：BiliPlayerView 1283 行、StatsDetailScreen 1045、DetailScreen 881、HomeViewModel 854、QimengNavHost 810；Go import.go 645、server.go 637；Web upload-queue-store 626、image-viewer 507。行数会变化，实施前重算。source_groups_data 的大体积静态词表不因行数拆分。
 
@@ -234,7 +266,9 @@
 
 ### Q09 补关键用户路径的实际交互验证（P2，验证缺口）
 
-**证据**：当前 Web 测试以 Vitest 纯函数/源码架构/桌面脚本契约为主，Web README 明确尚未接入 Playwright；Android CI 为构建/单测/Lint，桌面为 Rust test/build。它们都不能证明真实 DOM、生命周期或窗口动作已验收。
+**当前实现**：首批最小范围已完成：四个真实DOM合成场景及Android确定性取消/恢复单测；建议交互矩阵尚未全部覆盖，缺口见§11。
+
+**基线证据（实施前）**：当前 Web 测试以 Vitest 纯函数/源码架构/桌面脚本契约为主，Web README 明确尚未接入 Playwright；Android CI 为构建/单测/Lint，桌面为 Rust test/build。它们都不能证明真实 DOM、生命周期或窗口动作已验收。
 
 **任务**：先选择最小关键场景，优先复用现有工具；是否引入浏览器自动化开发依赖另按选型约束评估，不在本任务书预先指定版本。场景包括 Q01 慢保存、推荐空页/重复页继续加载、SSE 断线恢复、上传刷新重选/取消/挂靠失败、统计失败与真实空态、桌面标题栏/浮层/全屏。Android 增加请求取消和前台恢复的确定性单测，设备验收只按明确目标另执行。
 
@@ -242,7 +276,9 @@
 
 ### Q10 Web 上传持久化降级可见（P2，现行为已确认，增强提案）
 
-**证据**：[upload-queue-store.ts](../web/src/lib/upload-queue-store.ts) 的 persistPut/persistDelete 静默 catch；Web README 已接受 IndexedDB 不可用时最佳努力降级，但用户当前队列不会据此知道刷新恢复失去保障。删除失败也不总等于“原记录不存在”。
+**当前实现**：已显示存储健康和本地IO重试，处理提交期abort/写删竞争/终态防复活与UUID键；单测及降级浏览器场景通过，双重存储失败边界保留。
+
+**基线证据（实施前）**：[upload-queue-store.ts](https://github.com/Surtr42u/qimeng-media/blob/b13bb21a8b36e93d6b8896e81da46ef3efd9ab10/web/src/lib/upload-queue-store.ts) 的 persistPut/persistDelete 静默 catch；Web README 已接受 IndexedDB 不可用时最佳努力降级，但用户当前队列不会据此知道刷新恢复失去保障。删除失败也不总等于“原记录不存在”。
 
 **任务**：记录一次可恢复的持久化健康状态，提示“本次任务仅当前页面有效/刷新可能无法恢复”，提供重试或自动恢复；不阻塞已经进行的传输，不把持久化失败误报成服务端上传失败。恢复和终态删除失败分别处理，复核旧记录是否可能重新显示，保持 uploadId 与后处理事实。
 
@@ -250,20 +286,22 @@
 
 ## 6. 全项目覆盖结论
 
-| 检查面 | 本轮依据 | 结论与下一步 |
+此表是当前结论；初稿静态依据保留在§4–§5，未执行的验收不销项。
+
+| 检查面 | 当前实现/结果 | 保留边界 |
 |---|---|---|
-| Go 扫描/推荐/缩略图 | 凌晨提交、当前源码、领域/安全规则 | S01–S08；目前优化收益未实测 |
-| Go 写入/统计 | mediawrite 上传链与分组统计 | S02；保留事务提交和上传重放机制 |
-| Go 导入导出 | legacyImport/legacyExport、迁移规则 | Q04；渐进迁移存量编排，不重复此前 authoredit/authorimport 工作 |
-| Web 页面/hooks/状态 | Settings、use-config、上传持久化、架构测试 | Q01、Q07、Q09、Q10；没有证据认为全部页面均违反分层 |
-| Android feature | 列表/管理/导入 VM、导入屏幕、规模清单 | Q02、Q03、Q08；已有请求代际与 SDK 隔离应保留 |
-| Android 运行/上传 | Android README、既有 HANDOVER 边界 | 后台冻结、切服/重启/归档释放属待验收，不宣称本次复现或修复；Q09 按需覆盖 |
-| Desktop | README、server_config.rs、CI、Web 标题栏契约测试 | 薄壳路线保留；配置直接 fs::write 可另做中断保旧值的小型增强，低于 A–D 优先级。导航按同主机放行和 remote 权限为既有接受边界，不擅改 |
-| 协议/SDK/数据库 | OpenAPI 命中字段、SQL 源、生成/迁移纪律 | 本轮未发现需要立刻新增 schema 的证据；相关任务按实际改动触发生成 |
-| 安全/文件操作 | SECURITY、文件专题、现有隔离与门禁 | 保留根内操作、回收站、恢复意图、上传校验、WAL/FULL；不以性能名义削弱 |
-| CI/发布/工具 | ci.yml、build-apk.yml、Makefile、tools README | Q05、Q06；未运行或查询当前远端门禁，不宣称当前全部绿色 |
-| 代码规范/门禁 | Go lint、Web AST、Android SDK 隔离约定 | Q07、Q08；已有基础较完整，补具体缺口而非重建通用规范系统 |
-| 产品/验收/文档 | CAPABILITY_MAP、GUIDE_UI、三端入口 | R01–R07 是候选；未逐项运行全部功能，实机/NAS/恢复验收边界继续独立 |
+| Go扫描/推荐/缩略图 | S01–S08已实现，功能/并发/平台回归与部分合成基准通过 | 专项量化未齐；合成收益不外推端点/设备/NAS |
+| Go写入/统计 | S02合并指标刷新，保持业务事务与上传重放 | 没有完整批量上传延迟/收敛实测报告 |
+| Go导入导出 | Q04已进入portablebackup，域DTO不依赖gen，同事务快照导出 | 部分提交/通知/取消已测，逐阶段故障矩阵未穷举 |
+| Web页面/hooks/状态 | Q01/Q07/Q10实现，Q09接入四个合成DOM场景 | 其他推荐/SSE/上传/统计/键盘路径未完整浏览器验收 |
+| Android feature | Q02/Q03及Q08评估完成，保留SDK隔离/请求代际 | 真SAF provider、设备生命周期与窗口手势未新增验收 |
+| Android运行/上传 | 保留既有目标绑定/恢复与内嵌守护 | 后台冻结来源、切服/重启/归档现场矩阵未据此关闭 |
+| Desktop | 薄壳及现有配置/脚本/构建回归保留 | 标题栏/浮层/全屏现场未新增；配置原子写为独立候选 |
+| 协议/SDK/数据库 | 本轮未改协议/schema；SQL由锁定云端生成，SDK锁未变 | DTO契约回归不等于任意旧客户端均能无损转存v2 |
+| 安全/文件操作 | 路径/链接/回收站/恢复意图/上传/WAL-FULL约束保留 | 已接受的外部换链/相同size+mtime/硬件持久性边界不消失 |
+| CI/发布/工具 | Q05/Q06完成；08a15e9b完整16类必需检查通过，Release正反门禁验证通过 | 源码、同SHA产物、实际安装和业务验收分别记录 |
+| 代码规范/门禁 | Q07/Q08完成，复用Go/Web AST、depguard和SDK隔离 | 大文件保留依据不代表播放器/导航可省现场验收 |
+| 产品/文档 | R01–R07未选定；现行文档与基线/历史分开标识 | 最终提交新增自动审查尚缺，未合并/部署 |
 
 ## 7. 产品需求候选：先选择，不自动实施
 
@@ -283,7 +321,7 @@
 
 ### R03 后台任务状态与失败重试入口（建议优先）
 
-现有覆盖进度与队列长度不能区分等待、运行、持续失败或降级；S07 可先补内部低基数指标。产品层可进一步展示缩略图失败数/最近原因、扫描监听是否降级轮询、上传已入库待挂靠和服务端身份。
+S07已提供内部低基数的表示占用/等闸/运行与合并/拒绝/失败指标；现行产品页尚未完整呈现这些状态或持续失败原因。产品层候选仍是进一步展示缩略图失败数/最近原因、扫描监听是否降级轮询、上传已入库待挂靠和服务端身份。
 
 验收目标：明确“已投递/已生成/失败/等待”，重试是有界且幂等的；错误不暴露路径/令牌，不能靠页面频繁整库统计。新端点/字段需协议先行，UI 不计算业务真相。
 
@@ -341,14 +379,14 @@
 
 > 本节记录任务书初稿的文档交付；后续代码实施结论见§10/§11，当前状态见HANDOVER。
 
-实施时按任务更新推荐/缩略图/文件/迁移、SECURITY、OBSERVABILITY、模块 README 和必要 API 专题；重大架构决策再补 ADR 与索引。普通内部提取不伪造协议/schema 更新。每批代码与受影响文档同批交付。
+代码实施已按任务更新推荐/缩略图/文件/迁移、SECURITY、OBSERVABILITY、模块 README 和必要 API 专题；重大架构决策再补 ADR 与索引。普通内部提取不伪造协议/schema 更新。每批代码与受影响文档同批交付。
 
-本轮实际交付仅为本文、HANDOVER/能力地图的提案入口、llms 导航和 CHANGELOG/历史轮转。现行领域、安全、UI、协议与架构机制没有变化，因此不修改对应规范正文。本地只进行了源码/文档静态阅读与差异核对；未运行构建、业务测试、基准、文档门禁，也未推送、部署或操作真库/设备。
+初稿编写阶段仅交付本文、HANDOVER/能力地图入口、llms导航与CHANGELOG/历史轮转，当时未实施代码或执行门禁。此为初稿历史，不是当前状态；后续代码、云端检查和Release正反验证已完成的范围见§10/§11，设备/部署边界仍保留。
 
 
 ## 10. 结构审查与验证结论（Q08）
 
-2026-10-25 实施快照；行数含注释/空行，仅作重新评估触发器，不作拆分指标。下表的验证名称指实际纳入云端的现有回归；46c879cf前置16项门禁已通过，Q04/Q08后续head仍需完整通过，不能把策略单测写成窗口/手势实机验收。
+2026-10-25 实施快照；行数含注释/空行，仅作重新评估触发器，不作拆分指标。下表的验证名称指实际纳入云端的现有回归；08a15e9b已通过包含Q04/Q08的16类必需门禁，不能把策略单测写成窗口/手势实机验收。
 
 | 文件（当前行数） | 状态/资源归属与结论 | 实际验证及边界 |
 |---|---|---|
@@ -367,22 +405,38 @@
 Q06补充：`tools/test_release_gate.py`在既有云端docs unittest中检查候选上传顺序、完整Gradle命令和默认success条件，并用内存中的受控错误配置（吞退出码、continue-on-error、always上传、上传提前）验证拒绝。只支持本仓固定模板，不能替代GitHub解析、Release整包运行或同SHA完整门禁；后续已用隔离单测失败分支验证真实Release候选阻断（§11），未改签名或部署任何候选包。
 
 
-## 11. 实施与验收清单
+## 11. 当前实现与验收清单
 
-| 项目 | 已落实 | 验证口径 |
-|---|---|---|
-| S01/S05/S06 | 共用评分/平衡排序直接ID出口；本轮seed无关准备复用；过期优先及逐项LRU淘汰 | 固定输出摘要/字段、seed只读/失效/容量/TTL；合成完整Item→ID、直接ID、双seed准备/排序分项基准 |
-| S02 | 单worker/脏位合并，不因通知风暴滑动延期；失败保留gauge并重试，关闭收齐 | 手工等待闸/查询闸覆盖百次通知、查询期间再变更、失败/关闭 |
-| S03 | 五列专用扫描快照，未变文件零逐项SQL，短锁重读实时完整行 | 身份/移动/部分失败回归与SQL装载+索引对照；Linux race/Windows；无schema/索引变化 |
-| S04 | 内部资产/库/全量范围，256键合并/超限提升，独立10min全量兜底；局部不发布全库覆盖 | 精确子集/混合/溢出/处理期间新范围/独立tick/实际SQLite资格与游标 |
-| S07 | 统一256不同表示引用预算（后台新增最多255、预留新前台1格）与有界集合元数据；请求可取消限时准入、已接纳服务级续生、关闭收齐；原件错误单资产隔离 | 重叠/满载重试/2000不同键拒绝/等待后取消/单多核/提升/关闭/panic/源变化；仅清旧版本缓存；低基数指标 |
-| S08 | 推荐服务级DoChan计算与请求等待分离，不同键min(2,GOMAXPROCS)准入；进度可取消闸 | 一个/全部等待者取消、取消与完成竞争、Clear不回填、关闭取消SQL；实际进入闸后取消。CI另以verbose记录响应微秒和不同键峰值（非SLO/硬件保证） |
-| Q01–Q03 | 保存快照/草稿修订保护、Android取消与代际写回、SAF/实际JSON双重有界TXT | 慢保存A后继续编辑B、失败重试/迟到GET；确定性取消/前台恢复；声明及真实流/JSON转义边界 |
-| Q04 | portablebackup持领域文件DTO、写前校验/身份/分段事务/回放/汇总/提交后通知与同事务导出 | v1/v2回环/重复/A→B→A/实时补传/歧义/非法v2/TXT keep；故障后重试、写前取消/分段提交后取消、字段/开放偏好JSON契约 |
-| Q05–Q07 | Redocly固定2.71.0且Makefile/CI复用；单测/Release Lint在候选上传前阻断；现行注释/Close豁免清理 | 干净云端协议/SDK锁/Lint；固定模板受控错误配置回归；真实Release失败注入40174082810：Release构建/三件套成功，唯一注入测试失败后上传skipped、artifact=0；正常路径40174932988在5eaa181c构建/单测/Lint/上传成功（不替代后续源码的同SHA资格） |
-| Q08 | 九个文件逐项owner评估，提取无状态统计展示与Server请求管线，其余保留依据见§10 | 既有行为/策略/AST/depguard/SDK隔离继续执行，不新增状态副本或扩张knip阻断范围 |
-| Q09/Q10 | 四个Playwright真实DOM合成场景；上传存储降级/恢复可见，串行IO意图、事务complete、终态防复活与UUID | 345项Web单测及4个浏览器场景；Android为单测/构建/Lint。其他建议路径及设备窗口动作未假称验收；双重存储失败残余风险已记SECURITY |
+**结论口径**：代码或职责审查已落实，不等于原验收栏每项测量/现场交互全部完成。`08a15e9b`是本轮已验证运行代码基线，16类必需云端检查全绿；此后纯文档修订的检查记录独立采集。最终提交尚无新增Codex审查结论，不能写为“最终审批通过”。
 
-生成与验证：SQL分别取回云端codegen 40164563955/40168795821产物，SDK锁逐字节相同，未手改生成物。全部构建/测试/基准/文档门禁在GitHub云端，所有数据均合成/临时，不写8420真库。46c879cf、85d7f70e及5eaa181c完整必需门禁通过，末次前台准入保留修正与最终head状态只看HANDOVER与PR检查，不以本表替代检查结果。三条Codex有效P2均已修复并在相关回归通过后解决；最终head审查结论尚缺，曾有额度限制提示，不自动改用户信用偏好。
+| 项目 | 实现状态 | 已完成验证 | 尚未完成/未覆盖 |
+|---|---|---|---|
+| S01 | 已实现直接ID与唯一评分/混合核心 | 固定完整输出、seed/limit/只读与分项/冷首屏基准 | 无同环境旧/新HTTP端点延迟对照，分配不是RSS |
+| S02 | 已实现单worker脏位合并/失败重试/关闭 | 百次通知、查询中再变更、失败保值、重复启动/取消回归 | 批量上传路径延迟及真实查询收敛专项报告 |
+| S03 | 已实现五列快照/短锁实时复核 | 身份/移动/并发/部分失败回归；两万行SQL+索引及纯索引基准 | 完整空扫/批量改名端到端性能量化 |
+| S04 | 已实现范围待办/超限提升/独立全量兜底 | 精确子集/混合/溢出/执行中通知/独立tick、SQLite资格/游标 | 真实多库负载及外删缓存的现场演练 |
+| S05 | 已实现本轮准备复用，seed独立计算 | 完整顺序/输入只读/命中/错误/失效及拆分基准 | 目标设备整轮预热测量 |
+| S06 | 已实现过期优先/逐项LRU/原TTL/超大流不缓存 | 热冷交替、计数/容量/替换/失效与race回归 | 命中率、重算次数和锁竞争专项负载对比 |
+| S07 | 已实现256表示预算（后台新增255、前台保留1）、关闭回收/指标 | 大量不同键拒绝/同键与重叠/单多核/提升/取消/关闭/panic/源变化，Linux/Windows通过 | 目标设备压力/停机现场数据；OS不可中止文件调用的边界仍在 |
+| S08 | 已实现服务级DoChan/可取消准入与进度闸 | 双/全部取消、完成竞争、Clear/关闭、预算峰值1/2；真实入闸后取消微秒记录 | 不构成真实网络/SQL端点p95或SLO |
+| Q01 | 已实现草稿修订/提交快照保护 | 三个设置DOM场景：慢保存后编辑、失败重试/规范化、迟到查询/焦点刷新 | 更完整键盘/对话框矩阵见Q09 |
+| Q02 | 已修任务指定调用链的取消/代际写回 | 首页/搜索/管理/导入及扫描相关确定性回归、SDK隔离 | 非所有页面/设备生命周期的穷举证明 |
+| Q03 | 已实现SAF预检/有界流/实际JSON双重限制 | 合成流、未知/假报大小、超限、取消和转义序列化边界 | 真实SAF provider及设备文件选择流程 |
+| Q04 | 已下沉portablebackup与提交后通知 | v1/v2、重复、A→B→A/实时补传、歧义/非法v2、TXT keep、部分提交失败/取消/重试、DTO契约 | 未对作者/标签/事件/点赞收藏/时间轴/关注/偏好每阶段逐一故障注入 |
+| Q05 | 已固定Redocly并复用版本源 | 干净云端校验/SDK锁与工具版本审查 | 不包含主栈或依赖批量升级 |
+| Q06 | 已阻断失败候选上传 | 固定模板四类错误配置；真实失败40174082810无artifact，正常40174932988成功上传 | 正常工件仅对应5eaa181c；不是后续源码的同源包，未部署 |
+| Q07 | 已清理命中注释/失效豁免 | 当前调用链核对、Lint/既有守卫通过 | 不改写历史记录以抹掉旧问题 |
+| Q08 | 已完成九文件职责评估与必要提取 | §10逐文件保留/提取理由、现有行为/格式化/AST/depguard/SDK隔离回归 | 原生窗口/手势验收不由这些测试替代 |
+| Q09 | **首批最小场景完成，扩展矩阵未全覆盖** | 4个Chromium DOM合成场景及Android确定性取消/前台恢复单测 | 推荐空/重复页、SSE断线恢复、上传刷新重选/取消/挂靠失败、统计失败/真空态、键盘/对话框和桌面窗口动作未完整浏览器/现场验收 |
+| Q10 | 已实现存储健康/串行IO意图/终态防复活与UUID | 初始化/写删/提交期abort/竞争/恢复单测及存储降级DOM | 真刷新重选完整流程见Q09；双重存储失败仍可能残留旧条目 |
 
-本轮实际读取：AGENTS.md、AI_README_FIRST.md、本任务书、HANDOVER、CAPABILITY_MAP、DOMAIN_RULES目录与domain/recommendation、files、thumbnails、authors、migration对应专题；api/openapi相关schema、api/authors与files专题；GUIDE_UI；SECURITY、OBSERVABILITY、ARCHITECTURE§5/§5.1/§10；ADR索引与0003/0004/0011；server/web/android/desktop入口README、tools/README、deploy/README、deploy/embedded/README；本轮修改的CHANGELOG与历史索引/归档。没有把历史设备验收当作本轮设备证据。
+### 不应写成完成的事项
+
+- **补充量化**：S02上传/收敛、S03整轮扫描、S06缓存负载的专项对比未形成报告；现有分项基准不代替这些结果。
+- **补充故障与交互矩阵**：Q04未穷举每个分段故障，Q09仅首批范围完成；已有测试通过不能扩写为全功能验收。
+- **自动审查/发布**：三条已出现的Codex有效P2已修复并解决；最终提交新增审查尚缺，曾提示额度限制。未合并/部署，未改用户信用偏好。
+- **范围外**：R01–R07未选定；NAS硬件、手机备份恢复、原件释放和新实机/窗口现场操作不在本轮已执行范围。不得为销项自动启动这些工作。
+
+SQL取回云端codegen 40164563955/40168795821产物，SDK锁未变；构建/测试/基准/文档门禁均在云端，仅用合成/临时数据，没有8420真库测试写入。性能与取消原始证据见推荐/文件专题，合成分配与耗时不冒充RSS、整机或NAS收益。当前源码/运行包与逐次PR检查见HANDOVER。
+
+实施与文档复核实际读取：AGENTS.md、AI_README_FIRST.md、本任务书、HANDOVER、CAPABILITY_MAP、DOMAIN_RULES目录与domain/recommendation、files、thumbnails、authors、migration对应专题；api/openapi相关schema、api/authors与files专题；GUIDE_UI；SECURITY、OBSERVABILITY、ARCHITECTURE§5/§5.1/§10；ADR索引与0003/0004/0011（实施期）、0039/0042的后果与现行索引（文档复核）；server/web/android/desktop入口README、tools/README、deploy/README、deploy/embedded/README；README、备份API、RESTORE、PROJECT_PLAN与旧质量/外观任务记录的命中范围；本轮修改的CHANGELOG与历史索引/归档。没有把历史设备验收当作本轮设备证据。

@@ -1,7 +1,7 @@
 # ARCHITECTURE - 架构总纲
 
 > 本文维护当前系统结构与模块边界。协议、安全、领域分别由各自规范负责；不以本文覆盖其语义。技术选型的"为什么"见 `docs/adr/`，业务规则见 `docs/DOMAIN_RULES.md`。
-> 维护日期：2026-10-21。变更经过见 CHANGELOG 与 git 历史。
+> 维护日期：2026-10-25。变更经过见 CHANGELOG 与 git 历史。
 
 ## 阅读范围
 
@@ -95,7 +95,7 @@
 | `portablebackup` | 便携v1/v2文件DTO、写前校验/身份匹配/分段导入/事件回放/结果汇总与提交后通知；同一事务快照导出，复用 authorimport/eventstats | HTTP/SDK依赖、媒体原件写入、改变备份身份与部分提交语义 |
 | `authorimport` | 作者 TXT 导入/重导保护/移除/统一重建事务；手动、备份和同步共用，片段存取复用 authorattach | HTTP/SDK 类型、修改解析与匹配算法 |
 | `scanner` | 全量/增量扫描、变更检测、移动合并、动态监听生命周期及后台全扫跨库限并发；配置/成本边界见 server README | 直接写库（经 store） |
-| `thumbnail` | 缩略图生成队列（队列/集合/尺寸统一256表示预算、服务级关闭收齐续生、有界工作池、前台优先准入/同任务提升、懒生成、缓存键、静图输出格式自适应：libwebp 缺失时 mjpeg 降级——内嵌形态，U11 批次D） | 阻塞 API 请求 |
+| `thumbnail` | 缩略图生成队列（队列/集合/尺寸统一256表示预算、服务级关闭收齐续生、有界工作池、前台优先准入/同任务提升、懒生成、缓存键、静图输出格式自适应：libwebp 缺失时 mjpeg 降级——内嵌形态，U11 批次D） | 无界接纳；后台Submit阻塞业务请求（前台图片请求可限时等待自身生成） |
 | `thumbnailwarmup` | 开机/库变更/周期回填，游标批读与版本缓存覆盖进度；HTTP 仅通知及协议映射 | 媒体出口授权、原件变化发现、无界候选/缺图清单 |
 | `search` | FTS5 索引维护与查询 | — |
 | `recommend` | 推荐/排行算法 | **任何 IO**（纯函数，输入输出领域结构体） |
@@ -191,7 +191,7 @@
 - **CI（GitHub Actions，`.github/workflows/ci.yml`）七 job**，push/PR 全绿才许合并：
   1. `openapi`：redocly 协议校验（error 失败，warning 不阻塞）
   2. `server`：Linux runner 上重建 Go 接口层 → golangci-lint（静态检查 + depguard 模块边界）→ go vet → go test（-race）→ 两万合成记录的扫描路径索引基准（仅索引构建）→ go build
-  3. `server-windows-filing`：Windows 原生 runner 上运行 filing/scanner/config 包测试，覆盖 Windows 文件操作、fsnotify 生命周期/身份保护及配置；不代表真实网络盘验收
+  3. `server-windows-filing`：Windows 原生 runner 上运行 filing/scanner/config/thumbnail/thumbnailwarmup 包测试及隔离启动脚本回归，覆盖文件操作、fsnotify 生命周期/身份保护、配置和缩略图资源边界；不代表真实网络盘验收
   4. `web`：npm ci → openapi-ts 重建 TS 客户端 → knip → tsc --noEmit → oxlint → npm run build → npm test（vitest，ADR-0017）→ 锁定 Playwright/Chromium 的合成 API 浏览器交互回归
   5. `sdk-chain`：`make sdk` 三端生成链可重建（生成物防漂移的结构性门禁，ADR-0009）
   6. `android`：复用 sdk-chain 生成的 android/sdk → temurin 21 + gradle wrapper 缓存 → assembleDebug + Debug 单测 + core:model:test + Debug/Release Lint；Release 出包同样以单测/Lint 成功作为候选包上传前提

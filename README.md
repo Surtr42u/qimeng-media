@@ -12,11 +12,11 @@
 
 一个自托管的家庭媒体库系统：
 
-- **服务端**（Go 单体，跑在 NAS 的 Docker 里）：扫描媒体目录、生成缩略图、存储索引与行为数据、计算推荐、提供 API 与媒体直链
+- **服务端**（Go模块化单体，可部署NAS/常开PC，Android也可内嵌）：扫描媒体目录、生成缩略图、存储索引与行为数据、计算推荐、提供 API 与媒体直链
 - **Web 端**（React PWA）：电脑浏览器打开即用，手机可"安装"到桌面
-- **Android 端**（Kotlin + Compose 薄客户端）：原生体验，直链播放
+- **Android端**（Kotlin + Compose）：可连接服务端，也可运行内嵌服务端单机使用；直链播放
 - **桌面壳**（Tauri 2）：复用同一套 Web UI 的原生桌面应用
-- **使用场景**：媒体文件全部放在 NAS（或任何常开电脑）上，手机下载的资源通过 App 直传 NAS 后删除本地，解放手机与电脑存储
+- **使用场景**：支持集中存储和手机单机/PC过渡形态。上传后需按独立副本与恢复核对要求再释放原机文件，不能把上传成功当作灾备已具备
 
 ## 核心特性
 
@@ -71,7 +71,7 @@ make sdk           # 从 openapi.yaml 重新生成三端 SDK（生成物不入�
 make server-run    # 本地跑服务端（:8420）
 make server-test   # 服务端全部测试（go test ./...）
 make web-dev       # 本地跑 Web 开发服务器
-make web-test      # Web 检查（tsc 类型检查 + lint）
+make web-test      # Web 构建/类型检查 + oxlint（不含 Vitest/Playwright）
 make lint          # 全部静态检查（redocly + golangci-lint + TS）
 make docker-build  # amd64 镜像（deploy/Dockerfile；构建全流程见 deploy/README.md，arm64 为按需储备）
 ```
@@ -92,7 +92,8 @@ CI 覆盖协议、多平台服务端、Web、SDK 生成链、Android 与桌面�
 | `docs/OBSERVABILITY.md` | 监控与仪表盘 |
 | `docs/PROJECT_PLAN.md` | 已收官里程碑与未来储备，按需追溯 |
 | [GUIDE_UI](docs/GUIDE_UI.md) | 本仓现行交互约束与各端入口 |
-| [HANDOVER](docs/HANDOVER.md) | 当前事项与验证边界 |
+| [HANDOVER](docs/HANDOVER.md) | 当前源码、运行包与验证边界 |
+| [性能与可靠性任务书](docs/OPTIMIZATION_TASKBOOK_20261025.md) | 已实施范围、基线审查与未完成验收清单 |
 | [RESTORE](docs/RESTORE.md) | 备份类型、停服恢复与隔离演练 |
 | [历史索引](docs/history/INDEX.md) | 近期/分期 CHANGELOG，按编号关键词查 |
 | `docs/adr/` | 架构决策记录（每个重大决策的"为什么"，索引见 `docs/adr/INDEX.md`） |

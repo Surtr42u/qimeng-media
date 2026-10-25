@@ -47,7 +47,7 @@ src/
 
 ## 开发依赖安全
 
-新增 `npm run test:e2e` 使用锁定的 Playwright 1.64.1 和配套 Chromium，仅属开发依赖，不进入应用运行时；按 [官方 webServer](https://playwright.dev/docs/test-webserver) 与 [网络拦截](https://playwright.dev/docs/network) 使用静态预览、合成 API，无真实后端。CI 在构建后运行慢保存/失败重试/初次查询草稿验证，失败保留 trace/截图。当前会话约定构建/测试只走云端；浏览器验证、纯函数单测与设备验收分别记录。保留现有 Vitest/AST 门禁，未覆盖交互见 HANDOVER。
+新增 `npm run test:e2e` 使用锁定的 Playwright 1.64.1 和配套 Chromium，仅属开发依赖，不进入应用运行时；按 [官方 webServer](https://playwright.dev/docs/test-webserver) 与 [网络拦截](https://playwright.dev/docs/network) 使用静态预览、合成 API，无真实后端。CI在构建后运行慢保存、失败重试、迟到查询/焦点刷新和上传存储初始化失败→本地IO重试的四个DOM场景，失败保留trace/截图；其他交互矩阵见任务书§11。当前会话约定构建/测试只走云端；浏览器验证、纯函数单测与设备验收分别记录。保留现有 Vitest/AST 门禁，未覆盖交互见 HANDOVER。
 
 PWA 图标生成器 2.x 与 vite-plugin-pwa 2.x 配套升级；后者的 peer 范围才接受生成器 2.x（[上游发布说明](https://github.com/vite-pwa/vite-plugin-pwa/releases/tag/v2.0.0)）。保留现有 ESM 配置、图标预设、manifest 与自动更新规则，升级后验证干净安装、SDK 生成、构建和隔离目录图标生成；不使用 force/legacy-peer-deps 绕过不兼容的 peer 约束。
 
