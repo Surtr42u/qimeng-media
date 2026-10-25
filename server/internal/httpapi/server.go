@@ -365,6 +365,7 @@ func New(deps Deps) (*Server, error) {
 				s.invalidateRecommendCache()
 				s.bumpLibraryRevision()
 				s.WarmupAfterScan()
+				s.writes.RefreshLibraryFileMetrics()
 			}
 		})
 	}

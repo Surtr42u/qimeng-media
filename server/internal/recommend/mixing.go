@@ -43,11 +43,11 @@ func shuffleBuckets(scored []scoredItem, seed int) {
 // 本来就是牺牲精度换多样性的有意为之，DOMAIN_RULES §1.4）。
 // 完整排序和桶洗牌后，按全量剩余比例生成所需前缀；不生成被 Limit 丢弃
 // 的尾部。两组只保存下标，比例/RNG 调用顺序和先混合全量再截断完全一致。
-func balanceVideoImage(items []Item, ordered []scoredItem, seed, limit int) []Item {
+func balanceOrder[T any](items []Item, ordered []scoredItem, seed, limit int, value func(int) T) []T {
 	if limit <= 0 || limit > len(ordered) {
 		limit = len(ordered)
 	}
-	out := make([]Item, 0, limit)
+	out := make([]T, 0, limit)
 	videoCount := 0
 	for _, si := range ordered {
 		if items[si.index].MediaType == mediaTypeVideo {
@@ -57,7 +57,7 @@ func balanceVideoImage(items []Item, ordered []scoredItem, seed, limit int) []It
 	// 单一类型只装配所需前缀，不持有整库大小的返回缓冲。
 	if videoCount == 0 || videoCount == len(ordered) {
 		for _, si := range ordered[:limit] {
-			out = append(out, items[si.index])
+			out = append(out, value(si.index))
 		}
 		return out
 	}
@@ -83,10 +83,10 @@ func balanceVideoImage(items []Item, ordered []scoredItem, seed, limit int) []It
 			pickVideo = rng.Float64() < float64(len(videos)-vi)/float64(len(videos)-vi+len(images)-ii)
 		}
 		if pickVideo {
-			out = append(out, items[videos[vi]])
+			out = append(out, value(videos[vi]))
 			vi++
 		} else {
-			out = append(out, items[images[ii]])
+			out = append(out, value(images[ii]))
 			ii++
 		}
 	}

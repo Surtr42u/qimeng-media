@@ -30,7 +30,7 @@ jobs:
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with: { node-version: 24 }
       - name: redocly lint（error 失败，warning 不阻塞）
-        run: npx -y @redocly/cli lint api/openapi.yaml
+        run: make openapi-lint
 
   server:
     name: 服务端（Go vet + test + build）
@@ -67,6 +67,12 @@ jobs:
         run: go test ./internal/thumbnail -run '^$' -bench '^BenchmarkThumbnailCoverageChecks$' -benchmem -count=3
       - name: 双 seed 推荐启动预热基准（合成数据库，保留两次评分）
         run: go test ./internal/recommendfeed -run '^$' -bench '^BenchmarkRecommendationPrewarmSeeds$' -benchmem -benchtime=300ms -count=3
+      - name: 完整 ID 顺序与 seed 准备基准（同输出合成候选）
+        run: go test ./internal/recommend -run '^$' -bench '^BenchmarkRecommend(IDOrder|PreparedSeeds)$' -benchmem -benchtime=300ms -count=3
+      - name: 窄扫描快照与冷首屏（含 SQL 装载）
+        run: |
+          go test ./internal/scanner -run '^$' -bench '^BenchmarkScanSnapshotLoad$' -benchmem -benchtime=300ms -count=3
+          go test ./internal/recommendfeed -run '^$' -bench '^BenchmarkRecommendationSnapshot$' -benchmem -benchtime=300ms -count=3
       - run: go build ./...
 
   server-windows-filing:

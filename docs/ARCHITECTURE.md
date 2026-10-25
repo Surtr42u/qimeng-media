@@ -90,7 +90,7 @@
 | 包 | 职责 | 禁止 |
 |---|---|---|
 | `httpapi` | 请求校验、鉴权、调编排服务、序列化 | 业务规则 |
-| `mediawrite` | 上传、移动/改名与回收站/恢复/到期清扫、共用入库、实时上传策略、完成凭据同事务提交、存储诊断、库变更指标/事件；生产在 main 显式装配并与 HTTP 共用修订号服务 | HTTP/SDK 类型、领域公式、第二份业务数据 |
+| `mediawrite` | 上传、移动/改名与回收站/恢复/到期清扫、共用入库、实时上传策略、完成凭据同事务提交、存储诊断、库变更事件及单 worker 的脏位合并指标刷新（main 启停/关库前收齐）；生产在 main 显式装配并与 HTTP 共用修订号服务 | HTTP/SDK 类型、领域公式、第二份业务数据 |
 | `syncchannel` | 本机同步轮询/触发、稳定观测/状态快照、媒体落位与 TXT 归档；复用 mediawrite/authorimport，main 显式装配 | HTTP/SDK 类型、复制入库或 TXT 规则 |
 | `authorimport` | 作者 TXT 导入/重导保护/移除/统一重建事务；手动、备份和同步共用，片段存取复用 authorattach | HTTP/SDK 类型、修改解析与匹配算法 |
 | `scanner` | 全量/增量扫描、变更检测、移动合并、动态监听生命周期及后台全扫跨库限并发；配置/成本边界见 server README | 直接写库（经 store） |
@@ -98,7 +98,7 @@
 | `thumbnailwarmup` | 开机/库变更/周期回填，游标批读与版本缓存覆盖进度；HTTP 仅通知及协议映射 | 媒体出口授权、原件变化发现、无界候选/缺图清单 |
 | `search` | FTS5 索引维护与查询 | — |
 | `recommend` | 推荐/排行算法 | **任何 IO**（纯函数，输入输出领域结构体） |
-| `recommendfeed` | 推荐输入装载、启动多 seed 复用本轮输入并独立评分、限容量短期 ID 顺序快照及当前页资格/元数据装载 | HTTP/协议对象、写入业务数据、修改评分公式 |
+| `recommendfeed` | 推荐输入装载、启动多 seed 复用本轮输入及 seed 无关准备并独立评分、限容量短期 ID 顺序快照及当前页资格/元数据装载 | HTTP/协议对象、写入业务数据、修改评分公式 |
 | `ranking` | 只读排行榜热度键装载、调用 recommend 选页、按页装配元数据/累计计数；httpapi 仅适配协议 | 写入业务数据、HTTP 依赖、复制热度公式 |
 | `stats` | 统计聚合、趋势分桶、同轴维度补零与总量守恒 | **任何 IO** |
 | `statsread` | 统计总览/日维度只读装载与共用窗口；精确全量数，客户端不反推 | HTTP/SDK 类型、写入、重复领域公式 |
@@ -191,7 +191,7 @@
   1. `openapi`：redocly 协议校验（error 失败，warning 不阻塞）
   2. `server`：Linux runner 上重建 Go 接口层 → golangci-lint（静态检查 + depguard 模块边界）→ go vet → go test（-race）→ 两万合成记录的扫描路径索引基准（仅索引构建）→ go build
   3. `server-windows-filing`：Windows 原生 runner 上运行 filing/scanner/config 包测试，覆盖 Windows 文件操作、fsnotify 生命周期/身份保护及配置；不代表真实网络盘验收
-  4. `web`：npm ci → openapi-ts 重建 TS 客户端 → knip → tsc --noEmit → oxlint → npm run build → npm test（vitest，ADR-0017）
+  4. `web`：npm ci → openapi-ts 重建 TS 客户端 → knip → tsc --noEmit → oxlint → npm run build → npm test（vitest，ADR-0017）→ 锁定 Playwright/Chromium 的合成 API 浏览器交互回归
   5. `sdk-chain`：`make sdk` 三端生成链可重建（生成物防漂移的结构性门禁，ADR-0009）
   6. `android`：复用 sdk-chain 生成的 android/sdk → temurin 21 + gradle wrapper 缓存 → assembleDebug + testDebugUnitTest + lintDebug（M4-0 起）
   7. `desktop`：Tauri 2 壳 cargo test + build（windows runner + rust-cache，debug 链不出安装包；第四端门禁，ADR-0020，2026-10-03 补）

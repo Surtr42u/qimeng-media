@@ -302,6 +302,7 @@ func main() {
 	// signal.NotifyContext：Ctrl+C / SIGTERM 时 ctx 取消，主流程进入优雅关闭。
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	writeService.StartLibraryMetrics(ctx)
 	// 回填主管随进程取消；开机静默窗、变更通知及周期兜底由业务服务统一处理。
 	apiSrv.StartThumbnailWarmup(ctx)
 
@@ -376,6 +377,7 @@ func main() {
 	// 的遗留由下轮孤儿清理兜底；须在 HTTP 已 Shutdown（无在途 PATCH）后执行。
 	apiSrv.CloseUploadSessions()
 	bus.Close()
+	writeService.CloseLibraryMetrics()
 	if err := conn.Close(); err != nil {
 		logger.Error("关闭数据库失败", "error", err)
 	}

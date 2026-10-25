@@ -33,10 +33,31 @@ type scoredItem struct {
 // （替代旧项目 String.hashCode——语言无关、跨平台稳定），RNG 一律以
 // seed 初始化（seed=0 跳过打散但混合仍确定性），同 seed 输出必可复现。
 func Recommend(items []Item, p Params) []Item {
-	if len(items) == 0 {
-		return nil
-	}
+	return Prepare(items, p).Items(p.Seed, p.Limit)
+}
 
+// RecommendIDs 共享同一评分/混合核心，直接装配完整或限量 ID，不复制 Item。
+func RecommendIDs(items []Item, p Params) []string {
+	return Prepare(items, p).IDs(p.Seed, p.Limit)
+}
+
+// Prepared 仅由调用者在本轮固定输入/偏好/时刻中复用。输入及标签必须保持只读；
+// 每个 seed 独立评分、排序、洗牌与混合，不缓存或合并浮点维度求和结果。
+type Prepared struct {
+	items      []Item
+	params     Params
+	tagsByItem [][]string
+	weights    weightedScore
+	relevance  map[string]float64
+	topTags    map[string]bool
+	norms      normDenominators
+}
+
+// Prepare 只做与 seed 无关的准备；空输入不分配，权重解析立即固定偏好值。
+func Prepare(items []Item, p Params) *Prepared {
+	if len(items) == 0 {
+		return &Prepared{params: p}
+	}
 	// 数据状态检测（有任意一条即视为有，缺数据才触发回收，语义照旧项目：
 	// hasTags 只看库内手动标签；hasHistory 只看 viewCount>0——play 而无
 	// open 不算历史，因 engagement 维度强依赖 open 计数）。
@@ -63,9 +84,16 @@ func Recommend(items []Item, p Params) []Item {
 	topTags := topTagsOf(relevance)
 	norms := computeNormDenominators(items)
 
-	scored := make([]scoredItem, len(items))
-	for i := range items {
-		scored[i] = scoredItem{index: i, score: scoreItem(&items[i], tagsByItem[i], weights, relevance, topTags, norms, p)}
+	return &Prepared{items: items, params: p, tagsByItem: tagsByItem, weights: weights, relevance: relevance, topTags: topTags, norms: norms}
+}
+
+func (r *Prepared) order(seed int) []scoredItem {
+	p := r.params
+	p.Seed = seed
+
+	scored := make([]scoredItem, len(r.items))
+	for i := range r.items {
+		scored[i] = scoredItem{index: i, score: scoreItem(&r.items[i], r.tagsByItem[i], r.weights, r.relevance, r.topTags, r.norms, p)}
 	}
 	slices.SortStableFunc(scored, func(a, b scoredItem) int {
 		switch {
@@ -81,7 +109,23 @@ func Recommend(items []Item, p Params) []Item {
 	if p.Seed > 0 {
 		shuffleBuckets(scored, p.Seed)
 	}
-	return balanceVideoImage(items, scored, p.Seed, p.Limit)
+	return scored
+}
+
+// Items 保留原 Recommend 的完整字段及 Limit 语义。
+func (r *Prepared) Items(seed, limit int) []Item {
+	if len(r.items) == 0 {
+		return nil
+	}
+	return balanceOrder(r.items, r.order(seed), seed, limit, func(index int) Item { return r.items[index] })
+}
+
+// IDs 与 Items 使用唯一排序与混合实现，仅最终装配类型不同。
+func (r *Prepared) IDs(seed, limit int) []string {
+	if len(r.items) == 0 {
+		return nil
+	}
+	return balanceOrder(r.items, r.order(seed), seed, limit, func(index int) string { return r.items[index].AssetID })
 }
 
 // scoreItem 是单个条目的十维打分（公式与常量逐字遵守 DOMAIN_RULES §1.1）：

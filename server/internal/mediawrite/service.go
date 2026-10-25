@@ -40,19 +40,20 @@ type Options struct {
 
 // Service 持有写入流程依赖，不持有请求/协议对象或第二份业务数据。
 type Service struct {
-	uploadGates [uploadGateCount]sync.Mutex // 不持库锁等待网络收流。
-	conn        *sql.DB
-	q           *db.Queries
-	bus         *events.Bus
-	cfg         *config.Config
-	thumbs      *thumbnail.Generator
-	logger      *slog.Logger
-	now         func() time.Time
-	enrich      func(context.Context, string, string) error
-	uploads     *uploadsess.Manager
-	revision    *libraryrevision.Service
-	moveFile    func(string, string) error
-	renameFile  func(*os.Root, string, string) error
+	uploadGates    [uploadGateCount]sync.Mutex // 不持库锁等待网络收流。
+	conn           *sql.DB
+	q              *db.Queries
+	bus            *events.Bus
+	cfg            *config.Config
+	thumbs         *thumbnail.Generator
+	logger         *slog.Logger
+	now            func() time.Time
+	enrich         func(context.Context, string, string) error
+	uploads        *uploadsess.Manager
+	revision       *libraryrevision.Service
+	moveFile       func(string, string) error
+	libraryMetrics *libraryMetricsRefresher
+	renameFile     func(*os.Root, string, string) error
 }
 
 func New(opts Options) *Service {
@@ -73,10 +74,12 @@ func New(opts Options) *Service {
 	}
 	manager := uploadsess.New(opts.Config.DataDir, opts.Now, opts.Logger)
 	manager.SetLimits(uploadsess.Limits{MaxSessions: opts.Config.Upload.MaxSessions, MaxReservedBytes: opts.Config.Upload.MaxTempBytes})
-	return &Service{conn: opts.Conn, q: opts.Queries, bus: opts.Bus, cfg: opts.Config,
+	service := &Service{conn: opts.Conn, q: opts.Queries, bus: opts.Bus, cfg: opts.Config,
 		thumbs: opts.Thumbs, logger: opts.Logger, now: opts.Now, enrich: opts.Enrich,
 		uploads: manager, revision: opts.Revision,
 		moveFile: opts.MoveFile, renameFile: opts.RenameFile}
+	service.libraryMetrics = newLibraryMetricsRefresher(service.refreshLibraryFileMetrics, opts.Logger)
+	return service
 }
 
 func (s *Service) bumpLibraryRevision() { s.revision.Advance() }
@@ -104,18 +107,15 @@ func (s *Service) PublishLibraryChanged() {
 	}
 }
 
-// libraryMetricsRefreshTimeout 独立于探针超时，限制请求路径上的后台计数刷新。
-const libraryMetricsRefreshTimeout = 3 * time.Second
+// RefreshLibraryFileMetrics 仅标脏；成功业务不再同步等待全库计数。
+func (s *Service) RefreshLibraryFileMetrics() { s.libraryMetrics.notify() }
 
-// RefreshLibraryFileMetrics 复用一次分组查询，不在多个写入流程复制指标口径。
-func (s *Service) RefreshLibraryFileMetrics() {
-	ctx, cancel := context.WithTimeout(context.Background(), libraryMetricsRefreshTimeout)
-	defer cancel()
+func (s *Service) refreshLibraryFileMetrics(ctx context.Context) error {
 	rows, err := s.q.CountAllLibrariesMedia(ctx)
 	if err != nil {
-		s.logger.Warn("刷新 library_files 指标失败", "err", err)
-		return
+		return err
 	}
+
 	var image, video int64
 	for _, row := range rows {
 		switch row.MediaType {
@@ -127,6 +127,7 @@ func (s *Service) RefreshLibraryFileMetrics() {
 	}
 	sysmon.Default.SetLibraryFiles(sysmon.FileImage, image)
 	sysmon.Default.SetLibraryFiles(sysmon.FileVideo, video)
+	return nil
 }
 
 // CleanupMoveResidue 只清理由失败移动创建的半截副本，完整副本宁留勿删。

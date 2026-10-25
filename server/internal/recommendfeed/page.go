@@ -98,12 +98,7 @@ func loadItems(ctx context.Context, q *db.Queries, key Key) ([]recommend.Item, e
 
 // Recommend 保持输入只读；同一输入供不同 seed 各自完整评分，顺序不混用。
 func orderItems(items []recommend.Item, seed int, prefs *recommend.Weights, now time.Time) []string {
-	ordered := recommend.Recommend(items, recommend.Params{Limit: len(items), Seed: seed, Prefs: prefs, Now: now})
-	ids := make([]string, len(ordered))
-	for i := range ordered {
-		ids[i] = ordered[i].AssetID
-	}
-	return ids
+	return recommend.RecommendIDs(items, recommend.Params{Seed: seed, Prefs: prefs, Now: now})
 }
 
 func parseTime(raw string) time.Time {

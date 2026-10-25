@@ -43,6 +43,12 @@ PR CI 额外运行 `python tools/check_docs.py --base <base-sha> --event-path <e
 
 本地不指定 --base 只做静态检查；base 模式比较已提交的 base..HEAD，不包含工作区未提交改动。CI 使用 pull_request 事件、只读权限，不执行 pull_request_target、不写评论或外部消息。项目语义与验证边界仍须按 AI_README_FIRST 复核。
 
+## 协议检查工具来源
+
+Redocly CLI 固定为 Makefile 的 `REDOCLY_VERSION`（2.71.0）；CI、sdk-validate、lint 共用该值。CI 直接调用 `make openapi-lint`，保留 error 阻断和 warning 级别；完整输出留日志，下载/校验失败不会被过滤掉。版本由 npm 官方包元数据核对，Node 24 满足其 engines；使用方式见 [官方说明](https://redocly.com/docs/cli/installation)。生成器版本与 SDK 锁不随此项改变。其余主动下载工具继续固定版本/摘要，npm 工具走对应锁文件；runner 的 Node/JDK/系统软件是平台工具链来源，不把它们误作未锁的项目运行时包。
+
+Go 合成基准分开输出完整 ID 出口、seed 准备/每 seed 排序/整轮、实际 LoadPage 冷首屏与命中续页、扫描 SQL 快照装载和纯索引构建；分配是每次累计 B/op，不是 RSS。相同运行中的旧 Item 出口与新 ID 出口、逐 seed 准备与复用准备可直接对照；跨 SHA/历史硬件的数据不得据此推算同环境端点加速比例。
+
 ## 其他可靠性门禁
 
 Web CI 在 build/Vitest 后运行锁定 Playwright 的 Chromium 交互回归；静态预览只监听隔离回环端口，测试拦截全部 API 为合成响应，不连接 8420 或真实数据。失败上传 trace/截图到短期 artifact，定位信息与场景见 [Web 入口](../web/README.md#开发依赖安全)。此项是实际浏览器验证，Android/原生窗口/设备验收仍单独记录；不降低现有检查。

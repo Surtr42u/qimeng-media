@@ -397,12 +397,6 @@ func (s *Server) FinishScan(libraryID string, failed bool) {
 	s.WarmupAfterScan()
 }
 
-// refreshLibraryFileMetrics 把 library_files{type} gauge 刷新为库内现状：
-// CountAllLibrariesMedia 一次分组取回全部库的 media_type 计数（原先
-// ListLibraries + 逐库 CountLibraryMedia 的 N+1 已合并），image/
-// animated_image 归 image 档——与 GetApiV1Libraries 的映射口径一致，
-// 两侧改动须双同步。变更点推送刷新（扫描完成/上传入库/删除进回收站/
-// 恢复四个时机各调一次），不做定时轮询：治理面板数据允许秒级陈旧，
-// 不值得为它加常驻扫描。失败只记日志：指标刷新失败不影响业务路径的
-// 成功响应。
+// refreshLibraryFileMetrics 仅标脏，由 mediawrite 单 worker 合并分组查询。
+// image/animated_image 合为 image，真相仍来自数据库，不推算增减计数。
 func (s *Server) refreshLibraryFileMetrics() { s.writes.RefreshLibraryFileMetrics() }

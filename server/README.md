@@ -14,7 +14,7 @@
 | 文件操作/恢复意图 | internal/filing/；SECURITY 文件边界、领域 files |
 | 移动/改名 | internal/mediawrite/move.go；先文件后库行、冲突拒绝、失败无覆盖回滚，根内改名保护在 filing/move_root.go |
 | 回收站/恢复/清扫 | internal/mediawrite/trash_*；HTTP 只协议适配，filing 保留低层路径/意图机制 |
-| 推荐流装载 | internal/recommendfeed/；限容量 ID 顺序快照跨页共享、取页重新校验资格；双 seed 启动预热仅本轮复用输入，独立评分；返回原始下一 offset（-1 到底），短页不截断续页，见推荐专题与 ADR-0046 |
+| 推荐流装载 | internal/recommendfeed/；限容量 ID 顺序快照跨页共享、取页重新校验资格；双 seed 启动预热仅本轮复用输入和 seed 无关准备，独立评分；返回原始下一 offset（-1 到底），短页不截断续页，见推荐专题与 ADR-0046 |
 | 排行页装载 | internal/ranking/；专用热度键 → recommend 纯函数选页 → 当前页元数据/累计计数，见推荐专题 |
 | 作者 TXT 导入/保护/重建 | internal/authorimport/；跨手动/备份/同步入口复用事务，片段存取在 authorattach |
 | 作者编辑用例 | internal/authoredit/；词表预填/来源区替换/作者建改删/资产作者替换六用例的单事务编排，Commit 成功后才刷新镜像（2026-10-24 Q1 事务下沉）；HTTP 只协议校验与哨兵映射 |
@@ -47,7 +47,11 @@
 
 文件监听可能在网络挂载上静默失效，所以注册成功不代表事件可靠，默认不自动延长轮询。确认本地监听可靠且能接受漏事件后更晚发现时，可显式设置如 `30m`，全量轮询次数由每小时 12 次降为 2 次；这是延迟与 I/O 的取舍，不是自动性能保证。应用上传即时入库、手动扫描不等此周期。配置值格式非法会报错；关闭监听不关闭轮询。
 
-扫描仍逐目录/媒体文件读取元数据，并一次装载该库资产记录；路径索引仅保存快照下标，避免另复制整行资产。`BenchmarkScanSnapshotIndex` 以两万合成记录比较旧索引与新索引，只测索引构建的时间/分配，不包含 SQL、磁盘遍历或探测。云端 CI 运行该基准以及 Linux race、Windows 原生扫描回归；实库/NAS 性能须另验，不能从索引比例推算整个扫描加速比例。日志级别和耗时字段见 [监控](../docs/OBSERVABILITY.md#日志)。 首轮 f9ed404b 的[云端基准](https://github.com/Surtr42u/qimeng-media/actions/runs/40108840986/job/120916094406)三轮中位数为 3.267ms→0.754ms、额外分配 7,273,733B→873,728B（约减少 88%），分配次数 20,065→65；硬件/缓存与整库成本不包含在该比例内。
+扫描仍逐目录/媒体文件读取元数据，整轮快照只装载 asset_id/rel_path/size_bytes/mtime/updated_at 五列；路径索引仅保存快照下标，短提交锁内重新读取完整实时行。保留整库差集视野、未变文件零逐项 SQL、size+mtime 与 updated_at 复核、候选 tie-break 和部分失败保护。完整行查询保留给其他调用者；没有 schema/索引变化。`BenchmarkScanSnapshotLoad` 对比相同两万合成行的 SQL 装载与索引构建，与只测索引及完整扫描的口径分开。`BenchmarkScanSnapshotIndex` 以两万合成记录比较旧索引与新索引，只测索引构建的时间/分配，不包含 SQL、磁盘遍历或探测。云端 CI 运行该基准以及 Linux race、Windows 原生扫描回归；实库/NAS 性能须另验，不能从索引比例推算整个扫描加速比例。日志级别和耗时字段见 [监控](../docs/OBSERVABILITY.md#日志)。 首轮 f9ed404b 的[云端基准](https://github.com/Surtr42u/qimeng-media/actions/runs/40108840986/job/120916094406)三轮中位数为 3.267ms→0.754ms、额外分配 7,273,733B→873,728B（约减少 88%），分配次数 20,065→65；硬件/缓存与整库成本不包含在该比例内。
+
+## 库文件指标刷新
+
+上传/回收站/恢复及 library.changed（含后台扫描、监听和库操作）只投递一个脏位；mediawrite 单 worker 在首个信号后一秒合并查询，不因连续通知滑动延期。开机立即查询，查询期间的新变更留到下一轮；单次仍限三秒，失败保留上次 gauge 并按相同节奏重试，不改变业务成功结果。main 显式启动，关闭时取消并等待在途查询后才关数据库；无变更不执行轮询 SQL。计数继续从数据库分组真相读取，不靠内存加减估计。
 
 ## 数据库持久性
 

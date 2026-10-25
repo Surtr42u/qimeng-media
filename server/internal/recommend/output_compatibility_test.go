@@ -49,6 +49,18 @@ func TestRecommendOutputCompatibility(t *testing.T) {
 			if got != tc.want {
 				t.Fatalf("推荐全量顺序改变: got %s want %s", got, tc.want)
 			}
+			prepared := Prepare(items, p)
+			wantIDs := make([]string, len(full))
+			for i, it := range full {
+				wantIDs[i] = it.AssetID
+			}
+			if got := prepared.IDs(p.Seed, 0); !reflect.DeepEqual(got, wantIDs) {
+				t.Fatal("ID 出口改变已锁定完整顺序")
+			}
+			if got := prepared.Items(p.Seed, 0); !reflect.DeepEqual(got, full) {
+				t.Fatal("复用准备改变完整 Item")
+			}
+
 			for _, limit := range []int{-1, 1, 2, 200, len(items), len(items) + 1} {
 				p.Limit = limit
 				wantLen := len(full)
@@ -58,6 +70,13 @@ func TestRecommendOutputCompatibility(t *testing.T) {
 				if got := Recommend(items, p); !reflect.DeepEqual(got, full[:wantLen]) {
 					t.Fatalf("limit=%d 未保留全量结果前缀及完整字段", limit)
 				}
+				if got := RecommendIDs(items, p); !reflect.DeepEqual(got, wantIDs[:wantLen]) {
+					t.Fatalf("ID limit=%d 未保留全量前缀", limit)
+				}
+				if got := prepared.IDs(p.Seed, p.Limit); !reflect.DeepEqual(got, wantIDs[:wantLen]) {
+					t.Fatal("重复使用准备改变顺序")
+				}
+
 			}
 		})
 	}

@@ -23,8 +23,7 @@ func (c *Cache) WarmSeeds(ctx context.Context, q *db.Queries, base Key, seeds []
 
 func (c *Cache) warmSeeds(base Key, seeds []int, prefs *recommend.Weights, now time.Time, load func() ([]recommend.Item, error)) error {
 	generation := c.currentGeneration()
-	var items []recommend.Item
-	loaded := false
+	var prepared *recommend.Prepared
 	for _, seed := range seeds {
 		if generation != c.currentGeneration() {
 			return ErrWarmupInvalidated
@@ -32,17 +31,18 @@ func (c *Cache) warmSeeds(base Key, seeds []int, prefs *recommend.Weights, now t
 		key := base
 		key.Seed = seed
 		_, err := c.orderInGeneration(key, generation, func() ([]string, error) {
-			if !loaded {
+			if prepared == nil {
 				start := time.Now()
-				var err error
-				items, err = load()
+				items, err := load()
 				if err != nil {
 					return nil, err
 				}
-				loaded = true
-				slog.Info("推荐预热共享输入装载完成", "candidates", len(items), "elapsedMs", time.Since(start).Milliseconds())
+				queryElapsed := time.Since(start)
+				prepared = recommend.Prepare(items, recommend.Params{Prefs: prefs, Now: now})
+				slog.Info("推荐预热共享输入装载完成", "candidates", len(items), "elapsedMs", queryElapsed.Milliseconds(),
+					"prepareMs", (time.Since(start) - queryElapsed).Milliseconds())
 			}
-			return orderItems(items, seed, prefs, now), nil
+			return prepared.IDs(seed, 0), nil
 		})
 		if err != nil {
 			return err

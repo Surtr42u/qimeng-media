@@ -29,18 +29,20 @@ type Key struct {
 }
 
 type entry struct {
-	ids []string
-	at  time.Time
+	ids  []string
+	at   time.Time
+	used uint64 // 仅控制淘汰，不续期快照 TTL。
 }
 
 // Cache 使用既有 singleflight 与 mutex；无后台清扫线程或额外依赖。
 // 若未来采用共享缓存基础设施可整体替换；预算不足只放弃缓存，不改变候选。
 type Cache struct {
-	mu         sync.Mutex
-	entries    map[Key]entry
-	count      int
-	generation uint64
-	sf         singleflight.Group
+	mu          sync.Mutex
+	entries     map[Key]entry
+	count       int
+	generation  uint64
+	useSequence uint64
+	sf          singleflight.Group
 }
 
 func NewCache() *Cache { return &Cache{entries: make(map[Key]entry)} }
@@ -58,7 +60,18 @@ func (c *Cache) get(key Key) ([]string, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	e, ok := c.entries[key]
-	return e.ids, ok && time.Since(e.at) < TTL
+	if !ok {
+		return nil, false
+	}
+	if time.Since(e.at) >= TTL {
+		c.count -= len(e.ids)
+		delete(c.entries, key)
+		return nil, false
+	}
+	c.useSequence++
+	e.used = c.useSequence
+	c.entries[key] = e
+	return e.ids, true
 }
 
 // order 的结果只读；singleflight 内再次检查缓存，避免刚完成时重复冷算。
@@ -101,11 +114,25 @@ func (c *Cache) orderInGeneration(key Key, generation uint64, compute func() ([]
 				delete(c.entries, k)
 			}
 		}
-		if len(c.entries) >= maxEntries || c.count+len(ids) > maxCachedIDs {
-			c.entries = make(map[Key]entry)
-			c.count = 0
+		if previous, ok := c.entries[key]; ok {
+			c.count -= len(previous.ids)
+			delete(c.entries, key)
 		}
-		c.entries[key] = entry{ids: ids, at: time.Now()}
+		// 最多 32 项，线性选冷项比另维护链表更简单；仅淘汰满足预算所需的项。
+		for len(c.entries) >= maxEntries || c.count+len(ids) > maxCachedIDs {
+			var cold Key
+			var oldest uint64
+			found := false
+			for k, e := range c.entries {
+				if !found || e.used < oldest {
+					cold, oldest, found = k, e.used, true
+				}
+			}
+			c.count -= len(c.entries[cold].ids)
+			delete(c.entries, cold)
+		}
+		c.useSequence++
+		c.entries[key] = entry{ids: ids, at: time.Now(), used: c.useSequence}
 		c.count += len(ids)
 		return ids, nil
 	})

@@ -87,8 +87,8 @@ type ProbeFunc func(ctx context.Context, path string) (*thumbnail.ProbeResult, e
 //   - Scan（全量）：busy.CAS(idle→scanning) 抢不到立刻 ErrAlreadyScanning
 //     （防重入是任务规格：同一库扫描进行中再触发必须立刻返回，不能排队——
 //     轮询 ticker 与 Watch 触发若排队会积压出一串无用扫描）；
-//   - processFile（Watch 增量单文件）：mu.Lock 阻塞等待——增量事件丢了
-//     这一次就没了（fsnotify 不重放），必须等当前持闸者完成后补处理。
+//   - updateKnownFile（Watch 增量单文件）：TryLock 失败即转入可取消的整库
+//     对账；不让监听关闭/换根阻塞在手动扫描持有的 Mutex 上（watch_update.go）。
 //
 // 二者互斥的根因：移动合并依赖"扫描周期差集"的完整视野，增量 upsert 与
 // 全量扫描并发写库会让差集计算看到中间态（如合并中途的新旧双记录）。
@@ -265,12 +265,12 @@ func (s *Scanner) Scan(ctx context.Context, lib db.Library) (ScanResult, error) 
 	}
 
 	// 库内现存记录快照：变更检测查内存（每文件 0 次 SQL），差集也算它。
-	existing, err := s.q.ListAssetsByLibrary(ctx, lib.ID)
+	existing, err := s.q.ListScanAssetSnapshots(ctx, lib.ID)
 	if err != nil {
 		return res, fmt.Errorf("scanner: 载入库 %s 现存资产: %w", lib.ID, err)
 	}
-	// 仅索引快照下标：Asset 含大量字符串/可空元数据，逐行复制到 map
-	// 会再分配一整套大对象；保留同一份快照供变更检测与差集共用。
+	// 窄快照只保留变更检测/差集复核需要的五列，索引仍只保存下标。
+	// 短提交点重新读完整实时行，未变文件依然零次逐文件 SQL。
 	known := indexScanAssets(existing)
 	knownIDs := make(map[string]struct{}, len(existing))
 	for _, a := range existing {
@@ -407,7 +407,7 @@ func (s *Scanner) Scan(ctx context.Context, lib db.Library) (ScanResult, error) 
 	return res, nil
 }
 
-func indexScanAssets(assets []db.Asset) map[string]int {
+func indexScanAssets(assets []db.ListScanAssetSnapshotsRow) map[string]int {
 	index := make(map[string]int, len(assets))
 	for i := range assets {
 		index[assets[i].RelPath] = i
@@ -435,7 +435,7 @@ func (s *Scanner) invalidateThumbs(assetID, rel string) {
 // ingestFile 探测并入库单个文件（UpsertAsset 的身份保持语义——冲突时
 // asset_id/created_at 不覆盖——在 SQL 内实现，这里只负责组装参数），并按
 // 库类型分派作者体系富化（enrich.go：normal=SourceMatcher 出处/角色，
-// cos=COS 作者目录映射）。全量扫描（Scan）与增量处理（watch.processFile）
+// cos=COS 作者目录映射）。全量扫描（Scan）与增量处理（watch.updateKnownFile）
 // 共用本路径，两条入口的富化行为天然一致。
 //
 // 元数据探测策略（M1）：
