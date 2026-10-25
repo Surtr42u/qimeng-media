@@ -44,10 +44,12 @@ func TestProgressWaiterCancellationDoesNotWaitForActiveQuery(t *testing.T) {
 	second := make(chan error, 1)
 	go func() { _, err := s.Progress(waiting); second <- err }()
 	<-waiting.entered // 已实际进入被占用闸的 select，再取消，而非预先传已取消 context。
+	cancelStarted := time.Now()
 	cancel()
 	if err := <-second; !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancel did not leave waiting gate: %v", err)
 	}
+	t.Logf("progress_cancel_wait_us=%d active_queries=%d", time.Since(cancelStarted).Microseconds(), calls.Load())
 	if calls.Load() != 1 {
 		t.Fatal("canceled waiter started another query")
 	}

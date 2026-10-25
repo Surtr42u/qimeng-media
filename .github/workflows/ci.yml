@@ -61,6 +61,11 @@ jobs:
       - name: gofmt 格式校验
         run: test -z "$(gofmt -l .)"
       - run: go test ./... -race -count=1
+      - name: 取消响应与不同键预算记录（确定性在途闸，非SLO基准）
+        run: |
+          go test ./internal/recommendfeed -race -count=1 -v -run '^Test(SharedOrderCancellationOnlyLeavesOneWaiter|DifferentKeyBuildBudgetAndCanceledAdmission)$'
+          go test ./internal/thumbnailwarmup -race -count=1 -v -run '^TestProgressWaiterCancellationDoesNotWaitForActiveQuery$'
+
       - name: 扫描快照路径索引基准（合成记录，仅测索引构建）
         run: go test ./internal/scanner -run '^$' -bench '^BenchmarkScanSnapshotIndex$' -benchmem -count=3
       - name: 缩略图覆盖检查基准（合成缓存，仅测已缓存检查）

@@ -339,6 +339,8 @@
 
 ## 9. 文档同步与本轮实际交付
 
+> 本节记录任务书初稿的文档交付；后续代码实施结论见§10/§11，当前状态见HANDOVER。
+
 实施时按任务更新推荐/缩略图/文件/迁移、SECURITY、OBSERVABILITY、模块 README 和必要 API 专题；重大架构决策再补 ADR 与索引。普通内部提取不伪造协议/schema 更新。每批代码与受影响文档同批交付。
 
 本轮实际交付仅为本文、HANDOVER/能力地图的提案入口、llms 导航和 CHANGELOG/历史轮转。现行领域、安全、UI、协议与架构机制没有变化，因此不修改对应规范正文。本地只进行了源码/文档静态阅读与差异核对；未运行构建、业务测试、基准、文档门禁，也未推送、部署或操作真库/设备。
@@ -356,10 +358,31 @@
 | HomeViewModel（873） | 保留唯一StateFlow裁决三Tab请求代际、刷新/续页、筛选草稿；分页/预取策略已复用core。Q02已修取消传播和generation守卫，不能按Tab再造VM副本 | HomeViewModelTest含确定性取消/前台恢复与独立seed/刷新回归；SDK隔离与Lint |
 | QimengNavHost（812） | 单NavController、驻留Tab条目与返回结果交接保持一个owner；纯路由编码/Tab点击决策已提取。声明式路由表不机械拆成同步管理器 | TopLevelDestinationTest、TabTapDecisionTest、EncodeQueryValueTest；编译/Lint。系统返回/窗口设备验证未新增 |
 | httpapi/import.go（39） | Q04已迁入portablebackup，HTTP仅有界解码/错误与结果映射；业务import.go 599行保留分段过程的共享计数/映射owner，具体事务不再持HTTP响应 | v1/v2往返、A→B→A/实时补传、歧义、TXT keep、标签组时间、故障重试、取消及契约回归；Linux race/Windows |
-| httpapi/server.go（492） | 拆出163行middleware.go负责Host/安全头/鉴权/媒体签名管线；Server.New保留显式装配顺序和唯一依赖对象，不引入服务容器或隐藏状态 | HTTP完整集成、鉴权/签名/Host/安全头/健康探针与协议回归；Go lint/depguard/race |
+| httpapi/server.go（491） | 拆出163行middleware.go负责Host/安全头/鉴权/媒体签名管线；Server.New保留显式装配顺序和唯一依赖对象，不引入服务容器或隐藏状态 | HTTP完整集成、鉴权/签名/Host/安全头/健康探针与协议回归；Go lint/depguard/race |
 | upload-queue-store（622） | 传输队列/XHR/pump唯一owner保留；挂靠已在upload-attach，Q10把持久化IO/健康放upload-persistence，未给后者传输状态决策权 | 上传队列、分片、挂靠/恢复、IDB提交失败、写删竞争与UUID防碰撞单测；浏览器降级/重试场景。真实刷新重选流程仍独立验收 |
 | image-viewer（508） | 外层portal/焦点/chrome与内部ViewerCanvas手势现场职责已明确，换src重挂canvas重置手势；缩放/坐标公式已在image-viewer-math，无另建状态owner的收益 | image-viewer-math与Web AST/构建；完整触摸手势/桌面全屏动作未新增现场验收 |
 
 同语义常量继续复用MediaTypeKeys/SourceKeys/核心分页/播放器数学与现有纯函数；本轮不扩大knip未用导出阻断面。source_groups_data是静态词表，不以行数拆分。新增纯展示文件无IO，新增业务包不引用gen；请求中间件只持Server引用，不复制配置或鉴权状态。
 
 Q06补充：`tools/test_release_gate.py`在既有云端docs unittest中检查候选上传顺序、完整Gradle命令和默认success条件，并用内存中的受控错误配置（吞退出码、continue-on-error、always上传、上传提前）验证拒绝。只支持本仓固定模板，不能替代GitHub解析、Release整包运行或同SHA完整门禁；本轮没有制造真实签名失败包或部署任何候选包。
+
+
+## 11. 实施与验收清单
+
+| 项目 | 已落实 | 验证口径 |
+|---|---|---|
+| S01/S05/S06 | 共用评分/平衡排序直接ID出口；本轮seed无关准备复用；过期优先及逐项LRU淘汰 | 固定输出摘要/字段、seed只读/失效/容量/TTL；合成完整Item→ID、直接ID、双seed准备/排序分项基准 |
+| S02 | 单worker/脏位合并，不因通知风暴滑动延期；失败保留gauge并重试，关闭收齐 | 手工等待闸/查询闸覆盖百次通知、查询期间再变更、失败/关闭 |
+| S03 | 五列专用扫描快照，未变文件零逐项SQL，短锁重读实时完整行 | 身份/移动/部分失败回归与SQL装载+索引对照；Linux race/Windows；无schema/索引变化 |
+| S04 | 内部资产/库/全量范围，256键合并/超限提升，独立10min全量兜底；局部不发布全库覆盖 | 精确子集/混合/溢出/处理期间新范围/独立tick/实际SQLite资格与游标 |
+| S07 | 统一256不同表示引用预算与有界集合元数据；请求可取消限时准入、已接纳服务级续生、关闭收齐；原件错误单资产隔离 | 重叠/满载重试/2000不同键拒绝/等待后取消/单多核/提升/关闭/panic/源变化；仅清旧版本缓存；低基数指标 |
+| S08 | 推荐服务级DoChan计算与请求等待分离，不同键min(2,GOMAXPROCS)准入；进度可取消闸 | 一个/全部等待者取消、取消与完成竞争、Clear不回填、关闭取消SQL；实际进入闸后取消。CI另以verbose记录响应微秒和不同键峰值（非SLO/硬件保证） |
+| Q01–Q03 | 保存快照/草稿修订保护、Android取消与代际写回、SAF/实际JSON双重有界TXT | 慢保存A后继续编辑B、失败重试/迟到GET；确定性取消/前台恢复；声明及真实流/JSON转义边界 |
+| Q04 | portablebackup持领域文件DTO、写前校验/身份/分段事务/回放/汇总/提交后通知与同事务导出 | v1/v2回环/重复/A→B→A/实时补传/歧义/非法v2/TXT keep；故障后重试、写前取消/分段提交后取消、字段/开放偏好JSON契约 |
+| Q05–Q07 | Redocly固定2.71.0且Makefile/CI复用；单测/Release Lint在候选上传前阻断；现行注释/Close豁免清理 | 干净云端协议/SDK锁/Lint；固定模板受控错误配置回归；真实Release失败注入40174082810待结果 |
+| Q08 | 九个文件逐项owner评估，提取无状态统计展示与Server请求管线，其余保留依据见§10 | 既有行为/策略/AST/depguard/SDK隔离继续执行，不新增状态副本或扩张knip阻断范围 |
+| Q09/Q10 | 四个Playwright真实DOM合成场景；上传存储降级/恢复可见，串行IO意图、事务complete、终态防复活与UUID | 345项Web单测及4个浏览器场景；Android为单测/构建/Lint。其他建议路径及设备窗口动作未假称验收；双重存储失败残余风险已记SECURITY |
+
+生成与验证：SQL分别取回云端codegen 40164563955/40168795821产物，SDK锁逐字节相同，未手改生成物。全部构建/测试/基准/文档门禁在GitHub云端，所有数据均合成/临时，不写8420真库。46c879cf完整门禁通过，85d7f70e及最终head收尾状态只看HANDOVER与PR检查，不以本表替代检查结果。三条Codex有效P2均已修复并在相关回归通过后解决；最终head审查结论尚缺，曾有额度限制提示，不自动改用户信用偏好。
+
+本轮实际读取：AGENTS.md、AI_README_FIRST.md、本任务书、HANDOVER、CAPABILITY_MAP、DOMAIN_RULES目录与domain/recommendation、files、thumbnails、authors、migration对应专题；api/openapi相关schema、api/authors与files专题；GUIDE_UI；SECURITY、OBSERVABILITY、ARCHITECTURE§5/§5.1/§10；ADR索引与0003/0004/0011；server/web/android/desktop入口README、tools/README、deploy/README、deploy/embedded/README；本轮修改的CHANGELOG与历史索引/归档。没有把历史设备验收当作本轮设备证据。

@@ -8,6 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 type observeOrderWait struct {
@@ -48,10 +49,12 @@ func TestSharedOrderCancellationOnlyLeavesOneWaiter(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { _, err := waitOrder(waiting, call); done <- err }()
 	<-waiting.entered
+	cancelStarted := time.Now()
 	cancel()
 	if err := <-done; !errors.Is(err, context.Canceled) {
 		t.Fatal("wait did not cancel", err)
 	}
+	t.Logf("cancel_wait_us=%d shared_builds=%d", time.Since(cancelStarted).Microseconds(), calls.Load())
 	unblock()
 	ids, err := waitOrder(t.Context(), joined)
 	if err != nil || !slices.Equal(ids, []string{"complete"}) || calls.Load() != 1 {
@@ -131,10 +134,12 @@ func TestDifferentKeyBuildBudgetAndCanceledAdmission(t *testing.T) {
 				done <- err
 			}()
 			<-waiting.entered
+			cancelStarted := time.Now()
 			cancel()
 			if err := <-done; !errors.Is(err, context.Canceled) {
 				t.Fatal("budget wait did not cancel", err)
 			}
+			t.Logf("cancel_admission_us=%d budget=%d peak_builds=%d", time.Since(cancelStarted).Microseconds(), budget, peak.Load())
 			if peak.Load() != int32(budget) {
 				t.Fatal("different-key budget exceeded")
 			}
