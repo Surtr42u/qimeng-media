@@ -2,7 +2,7 @@
 
 > 威胁模型：纯内网单用户起步。防御目标 = 局域网内误访问与横向渗透（访客 WiFi、被入侵的智能设备）+ 未来远程访问的暴露面。不防御公网级 DDoS/爬虫。
 > 安全要求通过机制与门禁验证，测试要求见本文「安全测试」；实际覆盖及未验收边界如实记录，不将文档声明当测试证据。
-> 维护日期：2026-10-25。变更经过见 CHANGELOG 与 git 历史。
+> 维护日期：2026-10-26。变更经过见 CHANGELOG 与 git 历史。
 
 ## 按任务读取
 
@@ -152,19 +152,20 @@ Android 持久上传任务在入队固化服务器 base URL；分片会话把手
 - 按用户 2026-10-20 最新要求恢复 Dependabot 每周版本升级候选及自动安全升级 PR；覆盖 Docker、Go、Web/desktop npm、桌面 Cargo 和 GitHub Actions，每个更新配置（生态 + 目录）最多 1 个常规待处理 PR（安全更新使用 GitHub 独立额度）。只自动提出 PR，仓库不启用自动合并；合并须审阅兼容性并通过当前 head 的完整门禁；GitHub 自动生成的 PR 正文不豁免文档影响说明，必要时由维护者补齐后重新检查。保留 Dependency Graph、漏洞告警及人工安全修复。security.yml 扫描 Go、Web/desktop npm、桌面/补丁测试 Cargo 锁文件与 PR 依赖变化，并对 glib 回移植补丁做来源校验和 Linux release 回归。npm/Cargo 按锁文件，扫描工具固定版本，high 起阻断，不自动忽略既有漏洞；实际扫描结果及受限状态见 HANDOVER；不能仅凭配置存在声称检查通过，告警清零也不表示没有未知漏洞。Actions 固定完整 SHA，顶层 contents: read，checkout 不保留凭据；规则由文档门禁检查。
 - Debian bookworm-slim 基础镜像已固定官方 registry 清单 SHA-256 digest，并核对响应内容哈希；apt 包仍随仓库更新，完整镜像复现与 CI 镜像构建为待办；旧 fnOS 记录仅虚拟机彩排。基础 compose 维持原权限，新增显式 hardened 叠加配置要求部署者指定 UID/GID，并 cap_drop ALL/no-new-privileges；先核对挂载卷权限，见 deploy/README。配置不等于目标 NAS 已验收。
 - GTK3 链的 glib 0.18 使用官方归档加上游 #1343 两行回移植（[ADR-0047](adr/0047-glib安全补丁回移植.md)）；不伪造版本、不配置告警忽略或手工 dismiss。CI 验证快照及 Cargo 实际来源，原版运行时失败和修复版优化测试通过共同构成修复证据；不能仅凭注册表来源消失或扫描不再提示宣称修复。来源、许可及退役条件见 [补丁说明](../desktop/vendor/README.md)。
-- 引入任何新依赖必须：官方文档确认维护状态 + 无已知 CVE + 写 ADR。
+- 引入依赖先核对官方维护/兼容信息和已知漏洞，再按 [AI_README_FIRST「选型约束」](../AI_README_FIRST.md#选型约束) 区分重大选型与轻量通道；不把所有补丁/开发工具更新一律要求为新 ADR，也不豁免现有安全门禁。
+- Android 云端同签名构建使用仓库级 GitHub Actions 加密 Secret `QIMENG_DEBUG_KEYSTORE_B64` 还原既有 keystore；Base64 只是编码，保密性来自 Secrets 的存储与访问控制。真实值不得提交、回显（含 `set -x`）或作为日志/artifact 上传；候选包上传路径不得包含还原目录或其他密钥材料。Secret 名称、变量引用和公开证书指纹不等于私钥泄露，不能据此删除正常签名接线。普通审查/文档维护不默认创建、更换或重新上传密钥。
 
 ## 仓库卫生（密钥与隐私不入库，2026-09-30 开源前审计建立）
 
 - **红线**：明文口令/令牌/密钥/共享密钥、设备序列号、内网拓扑细节、含用户名的本机绝对路径，一律不得进入任何被跟踪文件——代码、配置、测试、文档（CHANGELOG/HANDOVER 等记录性文档一视同仁）。
 - **正确姿势**：密钥只经 `QIMENG_*` 环境变量注入或运行时生成并持久化到数据目录（如 media-secret、`QIMENG_AUTH_DEV_SHARED_SECRET`）；部署差异走 gitignore 的 `*.local`；测试口令必须是明显合成值（如 `test-password-001`）。
-- **提交前自查**：`git grep` 扫敏感模式（`password|secret|token` 的字面量赋值、`C:\Users\<user>`、私网 IP 与真机序列号、`eyJ` 开头长串）；发现自己或 AI 写入立即脱敏，**已提交/已推送的必须 `git filter-repo --replace-text` 全历史重写后强制推送**，再考虑公开。
+- **提交前自查**：使用下述隐私 hook/Gitleaks 及相关改动的人工核对，输出只保留脱敏类别/计数，不把匹配正文再复制进报告或审查意见。真实凭据若已外传，先撤销/轮换，再清理文件并核对 Git 历史、PR、日志与产物；历史重写不等于凭据失效。需要改写远端历史时先明确范围并取得相应授权，遵守分支保护，不把强推当普通维护步骤；未确认隔离/移除前不恢复公开。
 - 2026-09-30 开源前审计实录：CHANGELOG 曾明文记录真实管理口令与真机序列号（连同全部历史版本），已 filter-repo 全历史重写清除；测试口令换合成值。
 
 - **个人使用数据同等保护**：原始媒体、数据库、便携备份、文件/作者明细、现场审计报告以及实际库规模/行为数量等汇总只保存在忽略的本地目录。公开交付记录只写检查范围和定性结论，不复制用户数据或精确使用统计；Git 作者/提交者使用 GitHub noreply 身份，个人邮箱也属于历史审计范围。
 - **防止再次入库**：`.gitignore` 补充数据库/旁文件、私人备份/报告、环境配置变体和私钥容器；已跟踪文件及 `git add -f` 仍需门禁。AI 在本机设置 `core.hooksPath=.githooks`：pre-commit 检查真正的 staged 内容并调用 Gitleaks，pre-push 检查工作区候选文件、全部可达历史和作者元数据。扫描器固定版本和摘要，安装路径/本机额外敏感标识只存 Git 本地配置及忽略的 `.privacy-policy.local.json`，不复制入库；方法见 [工具入口](../tools/README.md#隐私与密钥门禁)。缺少扫描器或扫描不完整时拒绝提交/推送，命中只输出类别与数量。
-- **GitHub 身份与仓库保护**：账号同时开启“Keep my email addresses private”和“Block command line pushes that expose my email”，本机作者使用该账号 noreply；创建 PR 后仍须扫描 GitHub 自动生成的合并检查提交，不能只检查本地作者。master 要求 privacy/docs 通过且禁止强推/删除；同名公开仓库启用 GitHub 密钥扫描与推送保护。当前防护代码在维护草稿中，分支保护与本机 hook 已启用；未安装 hook 的其他克隆仍须自行接线，不能用一次扫描代替长期门禁。
-- **云端兜底与边界**：security workflow 的 privacy job 只读检出源码，执行合成回归及 Gitleaks/隐私检查，不上传命中报告或私人材料；扫描结果不能保证未知格式或人为绕过 hook 绝不泄露。本地隐私运维扫描按用户本轮明确授权执行，合成测试/文档门禁仍仅在云端。公开后移除敏感数据须审计分支、标签、PR 引用、作者信息、讨论及产物；force push 不能清理 GitHub 的只读旧 PR/缓存，未确认隔离或移除前不恢复公开，也不能声称抹掉他人既有副本。
+- **GitHub 身份与仓库保护**：账号同时开启“Keep my email addresses private”和“Block command line pushes that expose my email”，本机作者使用该账号 noreply；创建 PR 后仍须扫描 GitHub 自动生成的合并检查提交，不能只检查本地作者。master 要求 privacy/docs 通过且禁止强推/删除；同名公开仓库启用 GitHub 密钥扫描与推送保护。防护代码已合入主分支，分支保护与本机 hook 已启用；未安装 hook 的其他克隆仍须自行接线，不能用一次扫描代替长期门禁。
+- **云端兜底与边界**：security workflow 的 privacy job 只读检出源码，执行合成回归及 Gitleaks/隐私检查，不上传命中报告或私人材料；扫描结果不能保证未知格式或人为绕过 hook 绝不泄露。本地只读隐私运维、提交/推送 hook 和文档静态检查的执行范围见 [协作规范](../AI_README_FIRST.md#验证与交付)，自动构建/单测/基准仍走云端。公开后移除敏感数据须审计分支、标签、PR 引用、作者信息、讨论及产物；force push 不能清理 GitHub 的只读旧 PR/缓存，未确认隔离或移除前不恢复公开，也不能声称抹掉他人既有副本。
 
 ## 通用响应与后台可靠性
 

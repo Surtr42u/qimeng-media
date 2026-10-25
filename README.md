@@ -1,11 +1,11 @@
-# 绮梦影库·NAS 多端版（qimeng-media）
+# 绮梦影库（qimeng-media）
 
-**媒体全存 NAS，手机电脑零负担 —— 内网直连的多端媒体库**
+**支持手机单机、PC 与 NAS 的自托管多端媒体库**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) [![Go](https://img.shields.io/badge/Go-1.27-00ADD8.svg)](https://go.dev) [![Node](https://img.shields.io/badge/Node-24%20LTS-339933.svg)](https://nodejs.org)
 
-> 本项目 100% 由 AI 生成：以协议先行（`openapi.yaml`）+ 文档驱动的工程体系组织 AI 协作开发，每个重大决策都有 ADR 可追溯（`docs/adr/`）。
-> 前身：绮梦影库（Android 单机版，已退役）；现行领域规则见专题目录。
+> 本项目由 AI 实施维护，以协议先行（`api/openapi.yaml`）和文档驱动组织开发；重大技术决策见 `docs/adr/`。
+> 旧 Android 单机项目已停用，仅提供历史交互/领域依据；本项目 Android 的内嵌单机模式仍在使用。
 > 当前以手机单机与 PC 过渡使用，未来 NAS 硬件须重新部署验收。AI 工作先读 [AGENTS.md](AGENTS.md)，再按任务补读，不默认通读文档。
 
 ## 这是什么
@@ -31,8 +31,8 @@
 ## 技术架构（一图流）
 
 ```
-手机 App (Compose) ─┐                      ┌─ 扫描器 (fsnotify 增量)
-浏览器/PWA (React) ─┼──► Go 服务端 (Docker) ─┼─ 缩略图管线 (ffmpeg)
+手机 App (Compose) ─┐                      ┌─ 扫描器 (fsnotify + 轮询)
+浏览器/PWA (React) ─┼──► Go 服务端          ┼─ 缩略图管线 (ffmpeg)
 桌面壳 (Tauri)     ─┤    SQLite + REST/SSE  ├─ 推荐与统计 (纯函数)
 未来: TV           ─┘                       └─ 媒体直链 (HTTP Range)
                           ▲
@@ -40,7 +40,11 @@
                     openapi.yaml ← 协议宪法，三端 SDK 自动生成
 ```
 
+服务端可在 PC 原生运行、通过 Docker 部署，或内嵌到 Android。Android 单机模式在手机保存媒体和数据并调用本机服务端；连接模式调用 PC/未来 NAS。原件释放条件见[恢复与备份](docs/RESTORE.md)，上传成功不代表已具备独立备份。
+
 ## 快速开始（Docker）
+
+以下是集中部署示例，不代表当前已在 NAS 硬件验收。现用 PC/Android 的入口、安装来源与限制见 [HANDOVER](docs/HANDOVER.md)，完整部署前提见 [deploy/README](deploy/README.md)。
 
 ```bash
 git clone https://github.com/Surtr42u/qimeng-media.git
@@ -49,7 +53,7 @@ make docker-build                     # 构建 amd64 镜像（完整流程见 de
 cd deploy && docker compose up -d     # 按注释修改媒体目录挂载
 ```
 
-浏览器打开 `http://NAS_IP:8420` 注册管理员账号即可使用。免密开发模式（dev-login）默认关闭，仅限本机调试临时开启。
+浏览器打开 `http://NAS_IP:8420` 注册管理员账号即可使用。默认部署关闭免密开发模式（dev-login）；当前 PC 启动脚本的受信家庭内网例外见 [SECURITY](docs/SECURITY.md#开发模式红线-5-的受限例外)，生产或远程访问须关闭。
 
 ## 仓库结构
 
@@ -58,12 +62,14 @@ qimeng-media/
 ├── api/openapi.yaml     协议宪法（先改协议，再生成代码）
 ├── server/              Go 服务端（模块化单体）
 ├── web/                 React + Vite + shadcn/ui (PWA)
-├── android/             Kotlin + Compose 薄客户端
+├── android/             Kotlin + Compose（连接模式 / 内嵌服务端单机模式）
 ├── desktop/             Tauri 2 桌面壳（连接模式：加载服务端 Web UI，ADR-0020）
 └── docs/                架构、领域规则、安全、监控、计划、ADR
 ```
 
 ## 开发
+
+以下列出命令用途。AI 默认将构建、自动单测和基准放到云端；本地检查边界见 [协作规范](AI_README_FIRST.md#验证与交付)，代码审查见 [Review guidelines](AGENTS.md#review-guidelines)。`make server-run` 的默认 8420 是日常真库端口，不能用于测试；隔离验证必须另选端口与临时 DataDir。
 
 ```bash
 make help          # 查看全部命令
@@ -82,7 +88,7 @@ CI 覆盖协议、多平台服务端、Web、SDK 生成链、Android 与桌面�
 
 | 文档 | 内容 |
 |---|---|
-| [AGENTS.md](AGENTS.md) | 唯一强制入口：任务路由与短红线 |
+| [AGENTS.md](AGENTS.md) | 唯一强制入口：任务路由、短红线与代码审查指南 |
 | [AI_README_FIRST.md](AI_README_FIRST.md) | 按需协作细则、验证与文档维护 |
 | `llms.txt` | 文档导航总索引（只导航，不增加必读项） |
 | `docs/ARCHITECTURE.md` | 架构总纲与技术选型 |
