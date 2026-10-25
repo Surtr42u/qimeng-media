@@ -133,7 +133,9 @@ func (g *Generator) Submit(t Task) error {
 	g.initLifecycle()
 	version, err := g.sourceVersion(t.SourcePath)
 	if err != nil {
-		sysmon.Default.IncThumbWork("failed")
+		if g.life.Err() == nil {
+			sysmon.Default.IncThumbWork("failed")
+		}
 		return fmt.Errorf("%w: %w", ErrSourceUnavailable, err)
 	}
 	keys := g.missingRepresentations(t.AssetID, version, t.Sizes)
@@ -235,7 +237,7 @@ func (g *Generator) ensureOne(ctx context.Context, assetID, srcPath string, kind
 	return g.generating.doOwned(dst, admission, foreground, lease, func(priority <-chan struct{}) error {
 		// 验证必须在续生体内：浏览取消后也不能留下生成期间已失效的缓存。
 		if err := g.generateOne(g.life, srcPath, kind, size, dst, priority); err != nil {
-			if !errors.Is(err, context.Canceled) {
+			if g.life.Err() == nil {
 				sysmon.Default.IncThumbWork("failed")
 			}
 			return err
@@ -250,7 +252,9 @@ func (g *Generator) checkGeneratedSource(srcPath, version, dst string) error {
 		if rmErr := os.Remove(dst); rmErr != nil && !errors.Is(rmErr, fs.ErrNotExist) {
 			g.logger.Warn("清理生成期间失效的缩略图失败", "err", rmErr)
 		}
-		sysmon.Default.IncThumbWork("failed")
+		if g.life.Err() == nil {
+			sysmon.Default.IncThumbWork("failed")
+		}
 		return errors.New("生成期间原件发生变化，请重试")
 	}
 	return nil

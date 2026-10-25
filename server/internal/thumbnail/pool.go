@@ -107,6 +107,11 @@ func (p *WorkerPool) handleTask(task Task) {
 		}
 	}()
 	if err := p.handle(p.ctx, task); err != nil {
+		if p.ctx.Err() != nil {
+			// 外部进程在服务取消时可能只报 signal killed；正常停机不冒充资产故障。
+			p.logger.Debug("缩略图任务随服务停止", "assetId", task.AssetID, "err", err)
+			return
+		}
 		p.logger.Error("缩略图任务失败",
 			"assetId", task.AssetID, "source", task.SourcePath, "err", err)
 	}
