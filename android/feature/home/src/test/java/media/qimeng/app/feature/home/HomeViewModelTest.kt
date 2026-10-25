@@ -65,6 +65,19 @@ private const val TEST_FAKE_SERVER_URL = "http://qimeng.test"
  */
 class HomeViewModelTest {
 
+    @Test
+    fun `榜单取消不发布失败且同代loading释放`() = runTest(mainDispatcherRule.testDispatcher) {
+        val repo = FakeMediaRepository()
+        val vm = viewModel(repo)
+        vm.switchTab(HomeTab.RANK)
+        advanceUntilIdle()
+        repo.rankingsCalls.single().gate.completeExceptionally(kotlinx.coroutines.CancellationException("synthetic cancel"))
+        advanceUntilIdle()
+        assertNull(vm.uiState.value.errorMessage)
+        assertFalse(vm.uiState.value.rank.isLoading)
+        assertEquals(1, repo.rankingsCalls.size)
+    }
+
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
 

@@ -116,6 +116,17 @@ jobs:
       - run: npm run lint
       - run: npm run build
       - run: npm test
+      - name: 安装锁定的 Chromium（仅云端浏览器行为验证）
+        run: npx playwright install --with-deps chromium
+      - name: Web 实际交互（合成 API，无后端）
+        run: npm run test:e2e
+      - name: 浏览器失败证据
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: web-browser-failure
+          path: web/test-results/
+          if-no-files-found: ignore
 
   sdk-chain:
     name: SDK 生成链（make sdk 三端可重建）

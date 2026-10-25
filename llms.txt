@@ -8,7 +8,8 @@
 - [AI_README_FIRST.md](AI_README_FIRST.md)：按任务读取的协作、验证和文档维护规范
 - [README.md](README.md)：产品总览与常用命令
 - [HANDOVER](docs/HANDOVER.md)：当前形态、工作事项与验证边界
-- [本轮代码质量任务书](docs/CODE_QUALITY_TASKBOOK.md)：用户交给 GLM-5.3 独立实施的范围、参考代码和验收标准；不新增默认必读项
+- [性能与质量改进任务书](docs/OPTIMIZATION_TASKBOOK_20261025.md)：凌晨优化后续八项、全项目扩查、需求候选与验收标准；提案范围，不新增默认必读项
+- [此前代码质量任务书](docs/CODE_QUALITY_TASKBOOK.md)：用户交给 GLM-5.3 独立实施的范围、参考代码和验收标准；交付状态查 HANDOVER，不重复立项
 
 ## 当前规范
 

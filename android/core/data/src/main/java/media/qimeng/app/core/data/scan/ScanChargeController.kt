@@ -86,6 +86,8 @@ class DataStoreScanChargeController @Inject constructor(
             return try {
                 libraryRepository.scan(libraryId)
                 RescanDecision.STARTED
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 RescanDecision.FAILED
             }
@@ -127,6 +129,8 @@ class DataStoreScanChargeController @Inject constructor(
                     prefs[KEY_DEFERRED_IDS] = (prefs[KEY_DEFERRED_IDS] ?: emptySet()) - libraryId
                 }
                 Log.i(LOG_TAG, "deferred scan flushed libraryId=$libraryId")
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.w(LOG_TAG, "deferred scan failed, kept pending libraryId=$libraryId", e)
             }

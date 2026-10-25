@@ -38,6 +38,7 @@ src/
 - 上传链路 lib 内分工（2026-10-24 提取批）：队列状态（entries/XHR 句柄/取消旗标/恢复/订阅/终态推进）唯一持有在 `lib/upload-queue-store.ts`；「上传成功后挂靠」无状态服务（响应资产 id 解析、先 authors 替换后 sources append、失败转「已入库待挂靠」）在 `lib/upload-attach.ts`；分片传输在 `lib/upload-chunked.ts`；刷新持久化在 `lib/upload-queue-persist*.ts`。纯提取，交互行为不变。
 - 出现硬编码颜色 = 违规（一律 `var(--qm-*)`）
 - 数据转换/业务判断放 hooks 或服务端，不进组件
+- 设置的配置草稿/修订/提交快照由 `use-config-form` 单独持有；慢 PUT 只确认自己的版本，保存期间的新输入保留。保存前作废在途旧 GET，扫描参数仍仅持久化预留。
 - 开发代理目标默认 8420；隔离调试实例可用 `QIMENG_DEV_PROXY_TARGET=http://127.0.0.1:<port>` 覆盖
 
 ## 开发与验证
@@ -45,6 +46,8 @@ src/
 仓库根 `make web-dev`、`make web-test`，测试/构建脚本以 package.json 与 Makefile 为准。日常由后端托管 web/dist，交付本地可见改动前 `npm --prefix web run build`。只验证受影响页面和行为；API/领域变化另补相关专题。修改 TopBar 时读 [desktop README](../desktop/README.md) 的 titlebar.js 类名/title/header 契约。
 
 ## 开发依赖安全
+
+新增 `npm run test:e2e` 使用锁定的 Playwright 1.64.1 和配套 Chromium，仅属开发依赖，不进入应用运行时；按 [官方 webServer](https://playwright.dev/docs/test-webserver) 与 [网络拦截](https://playwright.dev/docs/network) 使用静态预览、合成 API，无真实后端。CI 在构建后运行慢保存/失败重试/初次查询草稿验证，失败保留 trace/截图。当前会话约定构建/测试只走云端；浏览器验证、纯函数单测与设备验收分别记录。保留现有 Vitest/AST 门禁，未覆盖交互见 HANDOVER。
 
 PWA 图标生成器 2.x 与 vite-plugin-pwa 2.x 配套升级；后者的 peer 范围才接受生成器 2.x（[上游发布说明](https://github.com/vite-pwa/vite-plugin-pwa/releases/tag/v2.0.0)）。保留现有 ESM 配置、图标预设、manifest 与自动更新规则，升级后验证干净安装、SDK 生成、构建和隔离目录图标生成；不使用 force/legacy-peer-deps 绕过不兼容的 peer 约束。
 

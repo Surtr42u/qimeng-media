@@ -36,6 +36,7 @@ import {
   type SourceVocabulary,
 } from '@/api/generated'
 import { unwrapSdkResult } from '@/lib/api-client'
+import { validateAuthorTxtRequest } from '@/lib/author-txt'
 import { authorsReplaceBody } from '@/lib/asset-authors'
 import { downloadBlob } from '@/lib/download'
 import {
@@ -139,8 +140,9 @@ export function useImportAuthorTxt() {
       filename: string
       content: string
       conflictResolution?: 'keep' | 'remove'
-    }) =>
-      unwrapSdkResult(
+    }) => {
+      validateAuthorTxtRequest(args)
+      return unwrapSdkResult(
         postApiV1AuthorsImportTxt({
           body: {
             filename: args.filename,
@@ -148,7 +150,8 @@ export function useImportAuthorTxt() {
             conflictResolution: args.conflictResolution,
           },
         }),
-      ),
+      )
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: TXT_FILES_QUERY_KEY })
       qc.invalidateQueries({ queryKey: AUTHORS_QUERY_KEY })

@@ -26,7 +26,9 @@ class AuthorTxtImportViewModelTest {
     private val importResult = TxtImportSummary(authorsImported = 3, filesMatched = 2)
 
     private fun newViewModel(repository: FakeAuthorRepository = FakeAuthorRepository()) =
-        Pair(AuthorTxtImportViewModel(repository).also { driveIdle() }, repository)
+        Pair(AuthorTxtImportViewModel(repository, object : media.qimeng.app.core.data.authorimport.AuthorTxtReader {
+            override suspend fun read(uri: android.net.Uri): media.qimeng.app.core.data.authorimport.AuthorTxtDocument = error("unused reader")
+        }).also { driveIdle() }, repository)
 
     @Test
     fun `init加载片段列表无错误`() {

@@ -7,6 +7,7 @@ import {
 import { UploadDropIcon } from '@/components/manage/UploadDropIcon'
 import { LoadingHint } from '@/components/ui/loading-hint'
 import { batchFailureReason } from '@/lib/batch'
+import { validateAuthorTxtFile } from '@/lib/author-txt'
 
 /**
  * 作者 TXT 导入卡（旧版数据管理「TXT导入作者」的 web 对等物）：
@@ -54,8 +55,10 @@ export function TxtAuthorImportCard() {
     const f = e.target.files?.[0]
     e.target.value = '' // 置空以允许连续导入同名文件
     if (!f) return
-    if (!/\.txt$/i.test(f.name)) {
-      toast.error('仅支持 .txt 作者清单文件')
+    try {
+      validateAuthorTxtFile(f)
+    } catch (err) {
+      toast.error(batchFailureReason(err))
       return
     }
     const reader = new FileReader()

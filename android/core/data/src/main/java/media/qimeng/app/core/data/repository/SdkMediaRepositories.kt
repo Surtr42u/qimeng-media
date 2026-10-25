@@ -331,6 +331,7 @@ class SdkAuthorRepository @Inject constructor(
     }
 
     override suspend fun importTxt(filename: String, content: String): TxtImportSummary {
+        media.qimeng.app.core.data.authorimport.validateAuthorTxtRequest(filename, content)
         // 只记片段名与字符量，不打全文（内容可达 MB 级，logcat 单行溢出无意义）
         Log.d(SdkMediaRepository.LOG_TAG, "POST /authors/import-txt filename=$filename chars=${content.length}")
         return withContext(Dispatchers.IO) {

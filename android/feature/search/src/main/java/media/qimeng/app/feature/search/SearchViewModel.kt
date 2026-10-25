@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import media.qimeng.app.core.data.util.runSuspendCatching
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -135,7 +136,7 @@ class SearchViewModel @Inject constructor(
         }
         suggestJob = viewModelScope.launch {
             delay(SUGGEST_DEBOUNCE_MS)
-            runCatching {
+            runSuspendCatching {
                 mediaRepository.suggestions(q = query.trim(), limit = SUGGEST_LIMIT, recommend = false)
             }.onSuccess { list ->
                 // 只在仍处于建议态且词条未变时回填（防竞态旧词覆盖新词）
@@ -216,7 +217,9 @@ class SearchViewModel @Inject constructor(
         val current = _uiState.value
         if (current.phase == SearchPhase.EMPTY) return
         suggestJob?.cancel()
+        queryGeneration++ // 离开结果态后旧结果/重试也失去写回资格
         _uiState.value = current.copy(
+            isLoading = false,
             phase = SearchPhase.EMPTY,
             query = "",
             suggestions = emptyList(),
@@ -281,7 +284,7 @@ class SearchViewModel @Inject constructor(
 
     private fun loadRecommendWords() {
         viewModelScope.launch {
-            runCatching {
+            runSuspendCatching {
                 mediaRepository.suggestions(q = "", limit = SUGGEST_LIMIT, recommend = true)
             }.onSuccess { list ->
                 _uiState.value = _uiState.value.copy(recommendWords = list.sortedShortestFirst())
@@ -298,55 +301,59 @@ class SearchViewModel @Inject constructor(
         val gen = queryGeneration
         _uiState.value = state.copy(isLoading = true)
         viewModelScope.launch {
-            var retryAttempt = 0
-            while (true) {
-                // 分区三态（DOMAIN_RULES §6）：常规=不传（服务端默认排除 COS）、
-                // COS=cosOnly、全部=includeCos；服务端 cosOnly 优先于 includeCos
-                val (includeCos, cosOnly) = when (state.selectedZone) {
-                    Zone.ALL -> true to null
-                    Zone.REGULAR -> null to null
-                    Zone.COS -> null to true
-                }
-                val page = runCatching {
-                    mediaRepository.assets(
-                        AssetQuery(
-                            cursor = cursor,
-                            limit = LIST_PAGE_SIZE,
-                            includeCos = includeCos,
-                            cosOnly = cosOnly,
-                            mediaType = state.selectedMediaType.kind,
-                            q = state.submittedQuery,
-                            // 日期组头精确计数（服务端仅首屏计算，翻页传了也忽略）
-                            dateCounts = true,
-                        ),
-                    )
-                }.getOrElse {
-                    if (gen != queryGeneration) return@launch // 旧代失败不污染新查询态
-                    // 翻页失败自动重试（问题A 2026-09-28，范围/取舍见 APPEND_RETRY_DELAYS_MS KDoc；
-                    // 重试期间 isLoading 保持 true 不阻塞提交重载（代际绕过拦截），同 AlbumViewModel）
-                    if (append && retryAttempt < APPEND_RETRY_DELAYS_MS.size) {
-                        delay(APPEND_RETRY_DELAYS_MS[retryAttempt])
-                        retryAttempt++
-                        if (gen != queryGeneration) return@launch // 退避期间新查询已接管，弃残局
-                        continue
+            try {
+                var retryAttempt = 0
+                while (true) {
+                    // 分区三态（DOMAIN_RULES §6）：常规=不传（服务端默认排除 COS）、
+                    // COS=cosOnly、全部=includeCos；服务端 cosOnly 优先于 includeCos
+                    val (includeCos, cosOnly) = when (state.selectedZone) {
+                        Zone.ALL -> true to null
+                        Zone.REGULAR -> null to null
+                        Zone.COS -> null to true
                     }
+                    val page = runSuspendCatching {
+                        mediaRepository.assets(
+                            AssetQuery(
+                                cursor = cursor,
+                                limit = LIST_PAGE_SIZE,
+                                includeCos = includeCos,
+                                cosOnly = cosOnly,
+                                mediaType = state.selectedMediaType.kind,
+                                q = state.submittedQuery,
+                                // 日期组头精确计数（服务端仅首屏计算，翻页传了也忽略）
+                                dateCounts = true,
+                            ),
+                        )
+                    }.getOrElse {
+                        if (gen != queryGeneration) return@launch // 旧代失败不污染新查询态
+                        // 翻页失败自动重试（问题A 2026-09-28，范围/取舍见 APPEND_RETRY_DELAYS_MS KDoc；
+                        // 重试期间 isLoading 保持 true 不阻塞提交重载（代际绕过拦截），同 AlbumViewModel）
+                        if (append && retryAttempt < APPEND_RETRY_DELAYS_MS.size) {
+                            delay(APPEND_RETRY_DELAYS_MS[retryAttempt])
+                            retryAttempt++
+                            if (gen != queryGeneration) return@launch // 退避期间新查询已接管，弃残局
+                            continue
+                        }
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            errorMessage = LOAD_FAILED_MESSAGE,
+                        )
+                        return@launch
+                    }
+                    if (gen != queryGeneration) return@launch // 旧代迟到响应，丢弃
                     _uiState.value = _uiState.value.copy(
+                        items = if (append) _uiState.value.items + page.items else page.items,
+                        nextCursor = page.nextCursor,
+                        // dateCounts 仅首屏返回，翻页继承首屏分桶（服务端忽略翻页请求的同名参数）
+                        dateCounts = if (append) _uiState.value.dateCounts else page.dateCounts,
                         isLoading = false,
-                        errorMessage = LOAD_FAILED_MESSAGE,
+                        // 问题A：成功结束 bump 哨兵重评估信号（KDoc 见 SearchUiState.reloadTick）
+                        reloadTick = _uiState.value.reloadTick + 1,
                     )
                     return@launch
                 }
-                if (gen != queryGeneration) return@launch // 旧代迟到响应，丢弃
-                _uiState.value = _uiState.value.copy(
-                    items = if (append) _uiState.value.items + page.items else page.items,
-                    nextCursor = page.nextCursor,
-                    // dateCounts 仅首屏返回，翻页继承首屏分桶（服务端忽略翻页请求的同名参数）
-                    dateCounts = if (append) _uiState.value.dateCounts else page.dateCounts,
-                    isLoading = false,
-                    // 问题A：成功结束 bump 哨兵重评估信号（KDoc 见 SearchUiState.reloadTick）
-                    reloadTick = _uiState.value.reloadTick + 1,
-                )
-                return@launch
+            } finally {
+                if (gen == queryGeneration) _uiState.value = _uiState.value.copy(isLoading = false)
             }
         }
     }

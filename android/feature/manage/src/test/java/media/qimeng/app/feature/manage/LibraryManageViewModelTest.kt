@@ -19,6 +19,31 @@ import org.junit.Test
  */
 class LibraryManageViewModelTest {
 
+    @Test
+    fun `加载取消不显示失败且释放loading`() {
+        val (vm, _) = newViewModel(FakeLibraryRepository().apply {
+            librariesError = kotlinx.coroutines.CancellationException("synthetic cancel")
+        })
+        assertNull(vm.uiState.value.errorMessage)
+        assertTrue(!vm.uiState.value.loading)
+    }
+
+    @Test
+    fun `注册已提交后扫描取消保留成功且不重试注册`() {
+        val (vm, repo) = newViewModel(FakeLibraryRepository().apply {
+            scanError = kotlinx.coroutines.CancellationException("synthetic cancel after commit")
+        })
+        vm.updateFormName("synthetic")
+        vm.updateFormRootPath("/synthetic/library")
+        vm.registerAndScan()
+        driveIdle()
+        assertEquals(1, repo.registerCalls.size)
+        assertEquals("", vm.uiState.value.formName)
+        assertNotNull(vm.uiState.value.noticeMessage)
+        assertNull(vm.uiState.value.errorMessage)
+        assertTrue(!vm.uiState.value.registering)
+    }
+
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
 
