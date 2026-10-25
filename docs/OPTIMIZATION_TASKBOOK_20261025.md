@@ -441,8 +441,10 @@ Q06补充：`tools/test_release_gate.py`在既有云端docs unittest中检查候
 - **自动审查/发布**：三条已出现的Codex有效P2已修复并解决；无最终新增结论，用户明确不再等机器人，未改信用偏好。PC/手机已用8f6a3a3c同源云端包更新，未合并PR；不是“最终审批通过”或全功能验收。
 - **范围外**：R01–R07未选定；NAS硬件、手机备份恢复、原件释放及窗口/手势业务现场操作不在本轮已执行范围；本次仅新增原手机覆盖安装/冷启动/健康核验。不得为销项自动启动这些工作。
 
-SQL取回云端codegen 40164563955/40168795821产物，SDK锁未变；自动构建/单测/基准/文档门禁均在云端。本次用户另授权本机运行云端产物做隔离后端验证，仅用合成/临时数据；8420只有部署与只读核验，没有真库测试写入。性能与取消原始证据见推荐/文件专题，合成分配与耗时不冒充RSS、整机或NAS收益。当前源码/运行包与逐次PR检查见HANDOVER。
+SQL取回云端codegen 40164563955/40168795821产物，优化实施期SDK锁未变；最终文档复核另修正OpenAPI既有v2说明，SDK锁由云端40196110847重新生成，接口结构不变。自动构建/单测/基准/文档门禁均在云端。本次用户另授权本机运行云端产物做隔离后端验证，仅用合成/临时数据；8420只有部署与只读核验，没有真库测试写入。性能与取消原始证据见推荐/文件专题，合成分配与耗时不冒充RSS、整机或NAS收益。当前源码/运行包与逐次PR检查见HANDOVER。
 
 实施与文档复核实际读取：AGENTS.md、AI_README_FIRST.md、本任务书、HANDOVER、CAPABILITY_MAP、DOMAIN_RULES目录与domain/recommendation、files、thumbnails、authors、migration对应专题；api/openapi相关schema、api/authors与files专题；GUIDE_UI；SECURITY、OBSERVABILITY、ARCHITECTURE§5/§5.1/§10；ADR索引与0003/0004/0011（实施期）、0039/0042的后果与现行索引（文档复核）；server/web/android/desktop入口README、tools/README、deploy/README、deploy/embedded/README；README、备份API、RESTORE、PROJECT_PLAN与旧质量/外观任务记录的命中范围；本轮修改的CHANGELOG与历史索引/归档。没有把历史设备验收当作本轮设备证据。
 
 本次安装与后端运行另实际读取：AGENTS.md、AI_README_FIRST.md开发/交付/维护相关节、HANDOVER、CAPABILITY_MAP、任务书§2/§11、RESTORE升级清单、SECURITY红线/开发模式/文件恢复与上传边界、OBSERVABILITY指标口径、DOMAIN_RULES目录及files恢复/迁移v2/推荐分页专题、api/openapi对应端点与schema、api/backup、server/android入口、deploy/README与embedded/README、tools/README和CHANGELOG/归档索引。
+
+最终文档规范复核另实际读取：AGENTS、AI_README_FIRST维护/交付节、README与llms导航、GUIDE_API、OpenAPI便携迁移端点/信封、api/backup与domain/migration、HANDOVER/能力地图/本任务书、ARCHITECTURE工程门禁、ADR及历史索引、PROJECT_PLAN和旧任务记录的状态头、tools/README、云端codegen/security配置与Makefile SDK锁规则；便携导入/导出源码仅用于核对说明。已核对文档分工/当前与历史/链接索引归档口径，未以自动化门禁代替全仓逐句语义证明。

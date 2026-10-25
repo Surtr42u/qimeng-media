@@ -7,6 +7,7 @@
 端点：POST /import/qimeng-backup、GET /export/qimeng-backup
 
 当前导出 schemaVersion=2；
+OpenAPI的导入/导出及信封说明与此一致；保留Legacy类型名用于SDK兼容，不表示当前仍导出v1或保证旧客户端无损转存。
 v2 按原始事件身份合并，v1 按聚合兼容回放。导入只关联既有媒体，不创建/删除媒体资产或主动清理历史事件；标签组按改动时间裁决，TXT按keep规则重建关联，不表示所有元数据都只增不减；
 原件先行。完整版本化映射与幂等边界见 [迁移领域规则](../domain/migration.md)。
 

@@ -1,6 +1,6 @@
 # 维护与验证工具
 
-测试/门禁只处理源码、文档或隔离合成数据，不访问 8420 真库。下述历史对账工具是用户授权后的只读运维例外，不通过 API 写入数据。
+测试/门禁只处理源码、文档或隔离合成数据，不访问8420真库。以下命令是工具用法；自动构建/单测/基准及文档门禁按当前用户要求在云端执行，不授权在本机运行。用户本次另授权的电脑隔离后端产物运行验证与历史只读运维例外，范围/证据见[HANDOVER](../docs/HANDOVER.md)，不通过API向真库写测试数据。
 
 ## 历史数据只读对账
 
@@ -61,7 +61,7 @@ Web CI 在 build/Vitest 后运行锁定 Playwright 的 Chromium 交互回归；�
 
 Go `go test ./internal/architecture` 和 Web `npm test` 的 architecture 测试负责直接依赖边界，口径见 ARCHITECTURE §5.1。执行模型无可靠完整名称/变体时，交付记录如实标记未知，不沿用旧署名。当前维护状态见 [HANDOVER](../docs/HANDOVER.md)。
 
-security.yml 固定 govulncheck v1.9.0/cargo-audit 0.22.2；后者 MSRV 1.88，扫描 job 使用 Rust 1.90。npm audit high 起阻断，不用 force 或统一忽略压下失败。可本地按 workflow 同命令执行；网络失败不是扫描通过。恢复和真实跨卷命令见 [RESTORE](../docs/RESTORE.md)。
+security.yml固定govulncheck v1.9.0/cargo-audit 0.22.2；后者MSRV 1.88，Cargo扫描job使用Rust 1.90，glib回归job的工具链另见下节。npm audit high起阻断，不用force或统一忽略压下失败。这些检查按当前约定走云端；网络失败不是扫描通过。恢复和真实跨卷命令见[RESTORE](../docs/RESTORE.md)。
 
 Go 安全扫描及各构建工作流的 Go 版本来自 server/go.mod；lint 固定版本源码在该工具链下执行。Dependabot 已按用户最新要求恢复每周升级候选与自动安全升级 PR；每个更新配置（生态 + 目录）最多 1 个常规待处理 PR，不自动合并。机器人或人工发起的依赖更新均需逐项审查并提供具体文档影响说明，不绕过门禁。
 
@@ -74,4 +74,4 @@ Go 安全扫描及各构建工作流的 Go 版本来自 server/go.mod；lint 固
 
 ## 候选包门禁回归
 
-`test_release_gate.py`随既有docs云端unittest运行，固定检查APK模板的完整单测/Lint命令、默认success条件和上传先后；受控错误配置覆盖吞退出码、continue-on-error、always上传和提前上传。它是本仓文本契约，不是YAML通用解析器，也不等于Release整包失败注入；正式交付继续核对同SHA完整检查、签名/内嵌哈希与自动审查。
+`test_release_gate.py`随既有docs云端unittest运行，固定检查APK模板的完整单测/Lint命令、默认success条件和上传先后；受控错误配置覆盖吞退出码、continue-on-error、always上传和提前上传。它是本仓文本契约，不是YAML通用解析器，也不等于Release整包失败注入；交付继续核对同SHA完整检查、签名/内嵌哈希，新增自动审查边界按用户当前授权和[部署入口](../deploy/README.md#android-候选包与发布资格)处理。

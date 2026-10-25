@@ -1,18 +1,17 @@
-// import.go：旧版数据迁移端点（qimeng_backup.json → 新库，DOMAIN_RULES §10）。
+// import.go：便携备份导入（qimeng_backup.json → 新库，DOMAIN_RULES §10）。
 //
-// 映射总纲：作者/标签/关联/时间轴/收藏按唯一键 upsert（重复导入天然不翻倍）；
-// mediaStats/dailyBrowse/history/likes/favorites 转换为 ViewEvent 回放与
-// likes/favorites 行，统计从事件重建。批次标记 = kv_settings 的
-// exportedAtMillis：同批次重复导入时事件回放整体跳过（快速路径；跨批次
-// 幂等由事件内容键 client_event_id 保证，见 import_replay.go），段级
-// upsert 照常执行。
+// v2 按原事件身份幂等合并 viewEvents，不回放聚合段或按 exportedAtMillis
+// 跳过整份备份；非法 v2 在任何写入前拒绝。v1 才使用下述聚合兼容路径：
+// mediaStats/dailyBrowse/history 转为事件回放，likes/favorites 落对应行；
+// exportedAtMillis 批次标记只用于 v1 快速跳过，跨批次以内容键去重。
+// 作者/标签/关联/时间轴/收藏沿既有分段合并，标签按改动时间裁决，TXT 按 keep。
 //
 // TXT 片段段（§10「TXT 片段」）在 authors/authorMediaRefs 段之前处理：
 // 片段导入触发统一重建（重建只删「片段涉及作者」的关联），若放在后处理
 // 位置会冲掉备份携带的 authorMediaRefs 关联；同名内容相同幂等跳过、内容
 // 不同走 keep 保护（绝不 remove），单片段失败 Warn 跳过不中止整体。
 //
-// 事件回放口径（总量守恒，与旧库数字一致）：
+// v1 聚合回放口径（不能外推为旧格式可保留原始事件身份）：
 //   - dailyBrowse 是旧库「每文件每天」明细（唯一真相源）→ 全量回放；
 //   - mediaStats 只补差额（累计值 − dailyBrowse 之和，dailyBrowse 行缺失的
 //     旧版本备份由此保总量）；history 仅当该文件在 dailyBrowse 无任何行时

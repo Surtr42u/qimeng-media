@@ -1,5 +1,5 @@
 // export.go：便携 v2 备份导出（新库 → qimeng_backup.json，DOMAIN_RULES §10
-// 逆向映射，格式权威 = 旧仓库 DATA_MIGRATION_SPEC v1）。
+// 映射见当前 OpenAPI/DOMAIN_RULES §10；旧 DATA_MIGRATION_SPEC 仅作 v1 历史依据）。
 //
 // 段级口径（与 import.go 的导入映射互为镜像，回环经 POST /import/qimeng-backup
 // 身份合并；v1 聚合回放仅用于兼容）：
