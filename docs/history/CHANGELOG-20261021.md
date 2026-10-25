@@ -1,6 +1,6 @@
 # CHANGELOG 历史归档：2026-10-21
 
-> 第五百六十三至五百八十七笔，完整原文迁入；现行状态见 HANDOVER。
+> 第五百六十三至五百八十八笔，完整原文迁入；现行状态见 HANDOVER。
 
 ## chore(docs): 删除已结项改进清单并记录用户手机自测（2026-10-21 第五百七十四笔）
 
@@ -234,3 +234,15 @@
 - 按用户最新要求停止本对话派发；用户已暂停最新 zcode 任务，改为将任务书交给 GLM-5.3 独立实施后再复核。任务书覆盖全仓规范、七项已确认问题/门禁与职责改进、其余范围审查要求、参考实现、合成回归、云端验收和禁止事项，区分计划与实际完成；纠正旧服务提案中不存在的构造函数，不把提案记作可编译成品。
 - 仅保留此前 GLM-5.3 出具、主审静态核对后落盘的单行防抖常量复用，值仍为 200ms；作者事务、词表模型/竞态和 Web 改进尚未实施。未提交/推送、未运行构建或业务测试、未改现用包/真实数据/设备。
 - 本地文档检查通过（112 文件，0 错误）及 diff --check 通过；不代替参考代码编译、行为验证或最终审批。文档影响：新增 CODE_QUALITY_TASKBOOK，HANDOVER 记录待实施状态，llms 增加可选导航；没有实际模块/API/schema/领域语义变化，不提前修改架构总纲或领域正文。最旧完整条目原样归档并同步历史索引。
+
+## refactor(repo): 实施全项目代码质量任务书 Q1–Q7 与全范围审查（2026-10-24 第五百八十八笔）
+
+执行 AI：GLM-5.3（zcode 会话核实 modelId；主代理前台调度并完成核验/补全/Q5/Q6/审查/文档，执行子代理完成 Q1/Q3+Q2/Q7 主体——平台并发受限且部分派发被拦截后仍实际运行，主代理逐文件核验收口）
+
+- Q1 作者编辑事务下沉：新增 internal/authoredit（六用例单事务编排，Commit 成功后才刷镜像，哨兵仅新增资产 404/不支持库 400）；main 显式装配、httpapi Deps 注入，author_edit/authors_manage 移除事务并贯穿 r.Context()；补 A.1 合成库事务行为测试（触发器注入回滚/镜像不可写仍成功/取消/COS/身份冲突）与 AST 事务边界回归（含检查器正反例）。
+- Q3+Q2 词表：ViewModel 并入草稿修订号+请求代际+回读代际守卫与取消传播（可控延迟 fake 行为测试覆盖慢回读覆盖/反序/取消三景）；core:model 新增 EditableVocabulary 域模型，SDK 双向映射唯一收口 core:data mapper（空↔可省语义冻结，mapper 单测锁定），feature 零 SDK 引用并新增 :app FeatureSdkIsolationTest 源依赖守卫。
+- Q5 Web AST 门禁扩充：运行时 API 值重导出、字符串方括号成员调用、import-equals 禁止；type-only 与组件懒加载放行，fixtures 正反例齐。
+- Q6 Go 忽略错误清理：httpapi 六处回滚收口 rollbackTx（ErrTxDone 静默、真实失败告警）；search/eventstats/scanner 回滚补日志；backup 句柄收尾带日志；spa/backups/filing/store 只读句柄留痕；main 自愈重算改单点记录；响应写失败等已文档化豁免逐点登记。
+- Q7 上传挂靠提取：lib/upload-attach.ts 无状态挂靠服务（id 解析+先 authors 后 sources append+失败转已入库待挂靠），队列状态唯一持有不变，行为回归随迁。
+- 第 6 节全范围审查完成（Android VM/UI/数据、Go 厚 handler/组合根/纯算法包/文件上传/数据访问、Web hooks/页面、桌面、脚本/CI、重复死代码）：结论与证据在交付报告，均“已审查保留”或登记后续项；portable import/export 编排厚度列为主审关注点未强迁。
+- 文档影响：server README/ARCHITECTURE §5 表与迁移状态、android README（SDK 隔离与守卫）、GUIDE_UI（词表保存回读约束）、web README（上传 lib 分工，随 Q7）同步；HANDOVER 更新实施状态。本地仅 gofmt/rg/静态核对与文档检查，业务测试/构建全部待云端草稿 PR 门禁验证；未提交前不宣称通过。无协议/schema/migration/领域公式/依赖变化。最旧完整条目原样归档并更新索引。
