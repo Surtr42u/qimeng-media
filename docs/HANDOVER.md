@@ -1,6 +1,6 @@
 # HANDOVER - 当前工作交接
 
-> 只记录当前形态、近期交付边界和下一步。能力缺口见 [能力地图](CAPABILITY_MAP.md)，架构见 [ARCHITECTURE](ARCHITECTURE.md)，规则按 [AGENTS](../AGENTS.md) 路由读取。维护日期：2026-10-25。
+> 只记录当前形态、近期交付边界和下一步。能力缺口见 [能力地图](CAPABILITY_MAP.md)，架构见 [ARCHITECTURE](ARCHITECTURE.md)，规则按 [AGENTS](../AGENTS.md) 路由读取。维护日期：2026-10-26。
 
 ## 1. 当前使用形态
 
@@ -20,7 +20,7 @@
 
 ### 2.1 当前源码、双端安装与本次验收
 
-- **本次v1兼容精简源码**：用户确认旧纯本地项目停用后要求精简。按[ADR-0050](adr/0050-退役旧项目v1备份导入.md)，移除v1聚合造事件/批次锚/旧文件匹配，其他版本写前400；Web/Android前置明确拒绝，只接收当前v2。保留现有历史身份及v2导入导出/分段通知/统计重建，不改历史迁移或清理真库。OpenAPI先改、SDK锁由云端生成；本批回归结果以当前head检查为准，未完成前不写验收通过。本次尚未构建安装新运行包，PC/手机实际仍是下述8f6a3a3c/code8，因此不得宣称现用包已经移除v1。
+- **本次v1兼容精简源码**：用户确认旧纯本地项目停用后要求精简。按[ADR-0050](adr/0050-退役旧项目v1备份导入.md)，移除v1聚合造事件/批次锚/旧文件匹配，其他版本写前400；Web/Android前置明确拒绝，只接收当前v2。保留现有历史身份及v2导入导出/分段通知/统计重建，不改历史迁移或清理真库。OpenAPI先改、SDK锁由云端生成；a704cae3首轮15类检查通过，服务端lint发现删除回放后残留的未使用val函数，已移除；首轮服务端race因此未执行，修正提交的结果仍按当前head检查核对，不把前置检查冒充完整验收。本次尚未构建安装新运行包，PC/手机实际仍是下述8f6a3a3c/code8，因此不得宣称现用包已经移除v1。
 - **同源云端更新已安装（PR #12）**：PC服务端/Web与原arm64手机均为 **8f6a3a3c**、发布版本0.2.1，手机安装序号 **8**；PR #12仍叠在未合并的PR #11上，本次没有合并PR。S01–S08/Q01–Q10代码/职责工作与首批自动化的实施范围见[任务书](OPTIMIZATION_TASKBOOK_20261025.md)§10/§11；不能把装机成功写成全部原验收销项。
 - **同SHA云端门禁**：[完整CI](https://github.com/Surtr42u/qimeng-media/actions/runs/40193735499)、[安全](https://github.com/Surtr42u/qimeng-media/actions/runs/40193735496)、[文档/同步责任](https://github.com/Surtr42u/qimeng-media/actions/runs/40193735516)全部成功（16类必需检查），[PC出包](https://github.com/Surtr42u/qimeng-media/actions/runs/40193837660)与[arm64 Release构建/单测/Lint](https://github.com/Surtr42u/qimeng-media/actions/runs/40193844577)也均成功。后补文档提交不改变安装包来源；其检查另按[当前PR](https://github.com/Surtr42u/qimeng-media/pull/12/checks)核对。8f6a3a3c安装批次未改协议/schema/SDK锁/依赖或公式，仅将既有Android安装序号7→8；后续说明与SDK摘要修订另见下条。
 - **最终文档规范复核**：文档已推送PR #12，未合并主分支；复核入口/权威归属、当前状态与历史记录、链接/ADR/归档和隐私口径。发现OpenAPI导入/导出与信封仍有旧v1/旧App无损回灌说明，现已对齐既有v2实现、部分提交通知与旧客户端转存边界；同批由[云端生成40196110847](https://github.com/Surtr42u/qimeng-media/actions/runs/40196110847)取回sdk.lock，不手改生成物。仅说明/注释/摘要同步，接口结构与运行语句未变，不重新安装或重标8f6a3a3c包身份。工具入口统一当前云端检查与已授权本机后端验证边界，API导读不再重复维护端点计数；后补文档门禁按当前head核对。

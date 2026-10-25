@@ -61,15 +61,6 @@ func (imp *backupImport) warn(format string, args ...any) {
 	imp.warnings = append(imp.warnings, msg)
 }
 
-// val 可选计数解引用（生成物把未标 required 的数字字段全部生成为
-// 指针；旧备份「可选字段缺省」语义统一按零值处理）。
-func val(p *int) int {
-	if p == nil {
-		return 0
-	}
-	return *p
-}
-
 // sliceOrEmpty nil 指针安全解引用（旧备份可选段缺省语义，协议约定
 // 导入端不假设全字段存在）。
 func sliceOrEmpty[T any](p *[]T) []T {
