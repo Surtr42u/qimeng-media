@@ -6,9 +6,9 @@
 
 端点：POST /import/qimeng-backup、GET /export/qimeng-backup
 
-当前导出 schemaVersion=2；
-v2 按原始事件身份合并，v1 按聚合兼容回放。导入只关联既有媒体，不创建资产、不删除既有数据；
-原件先行。完整版本化映射与幂等边界见 [迁移领域规则](../domain/migration.md)。
+仅接受本项目当前schemaVersion=2的备份；旧纯本地项目的v1导入已按用户要求退役（[ADR-0050](../adr/0050-退役旧项目v1备份导入.md)），其他版本在任何写入前400。Web/Android选旧文件时即明确拒绝，不自动转换。端点和Legacy类型名保留以稳定当前v2接口，不表示仍支持v1。
+
+v2按原事件身份合并，必须携带viewEvents（可为空），不把mediaStats/dailyBrowse/history重新造为事件。作者/TXT/标签/点赞收藏/时间轴/关注与偏好继续导入；分段提交及失败后通知不变。导入不创建/删除媒体资产或主动清理历史，已经迁入的legacy/无键事件继续原样往返。备份不含原件，原件先行；完整规则见[便携备份专题](../domain/migration.md)。
 
 ## 备份热备
 
@@ -28,18 +28,18 @@ DELETE 删除单份（物理删除，204；
 
 ## 跨端迁移工作流（备份导入导出，2026-10-01 语义澄清）
 
-本机模式导出（备份 qimeng_backup.json 落手机 SAF 目录）→ App 登录 NAS 服务器 → 导入即幂等合并（不创建资产、不删除既有数据，语义见「迁移」行与 DOMAIN_RULES §10）；
+本机模式导出（备份 qimeng_backup.json 落手机 SAF 目录）→ App 登录 NAS 服务器 → 按v2事件身份规则幂等合并（不创建/删除媒体资产；标签替换/TXT keep等规则见「迁移」行与DOMAIN_RULES §10）；
 前提=媒体文件本体先行（走上传通道或 ADR-0030 本机同步通道入库，备份不含文件本体）；
 TXT 作者片段已随备份迁移（keep 合并，2026-10-01 起；
 import-txt 手动通道保留为备用）。
 
 ## 当前便携格式 v2
 
-- GET `/export/qimeng-backup` 当前输出 schemaVersion=2；`data.viewEvents` 为事件真相（原身份/会话/时间/秒数/日键），旧聚合段保留给工具查看，history 全量、无 500 截断。POST 接受旧 v1 聚合回放与新 v2 身份合并；v2 必须携带事件数组（可为空），缺段或引用非法在任何写入前 400。已有事件按身份跳过，新事件按原始内容写入，`eventsReplayed` 仅计实际新增；不使用旧 exportedAtMillis 快速跳过，以免漏掉同时间导出的独立数据。
+- GET `/export/qimeng-backup` 当前输出 schemaVersion=2；`data.viewEvents` 为事件真相（原身份/会话/时间/秒数/日键），旧聚合段保留给工具查看，history 全量、无 500 截断。POST仅接受v2身份合并；v2 必须携带事件数组（可为空），缺段或引用非法在任何写入前 400。已有事件按身份跳过，新事件按原始内容写入，`eventsReplayed` 仅计实际新增；不使用旧 exportedAtMillis 快速跳过，以免漏掉同时间导出的独立数据。
 
-- v2 `mediaFiles` 新增 assetId/libraryName/relPath，recordKey 全份唯一；本库ID优先，跨库唯一匹配才导入，歧义/多对一跳过并 warnings 提示。v1 保持旧文件名/父目录/最早规则。未匹配条目仍跳过、不创建媒体。升级服务端及客户端后再导出 v2；旧客户端可能在转存时丢新字段，不能据其转存文件证明身份守恒。
+- v2 `mediaFiles` 新增 assetId/libraryName/relPath，recordKey 全份唯一；本库ID优先，跨库唯一匹配才导入，歧义/多对一跳过并 warnings 提示。旧v1的文件名/父目录/取最早规则已删除。未匹配条目仍跳过、不创建媒体。升级服务端及客户端后再导出 v2；旧客户端可能在转存时丢新字段，不能据其转存文件证明身份守恒。
 
-成功导入后推进库修订号并广播 library.changed；包括其他设备和标签页在内的 Web 客户端据此重新校验缓存，失败导入不发布成功信号。
+导入由portablebackup编排。完整成功，或前段已提交而后段失败/取消时，都会推进库修订号、失效推荐并广播library.changed，使其他设备/标签页重校验已持久数据；该事件是变更通知，不代表整份导入成功。写前校验失败或取消且没有已提交段时不通知。HTTP仍返回原阶段错误，已提交段保留并可幂等重试；导出查询绑定同一事务快照。
 
 ## 快照调度与 UI 状态
 

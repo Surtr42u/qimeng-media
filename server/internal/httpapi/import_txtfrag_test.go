@@ -19,8 +19,11 @@ import (
 
 // newBackupReq 组装最小合法备份信封（format 校验通过即可，段按用例填）。
 func newBackupReq(data gen.LegacyBackupData) gen.LegacyBackupImport {
+	if data.ViewEvents == nil {
+		data.ViewEvents = &[]gen.PortableViewEvent{}
+	}
 	return gen.LegacyBackupImport{
-		Format: "qimeng_backup", SchemaVersion: 1, AppIdentifier: "com.qimeng.media",
+		Format: "qimeng_backup", SchemaVersion: portableSchemaVersion, AppIdentifier: "com.qimeng.media",
 		ExportedAtMillis: ptr(int64(1756400000000)),
 		Data:             data,
 	}

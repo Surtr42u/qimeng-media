@@ -14,5 +14,5 @@
 // 边界（见 docs/ARCHITECTURE.md §5）：
 //   - 职责：全量/增量扫描、变更检测、移动合并
 //   - 禁止：直接写库（一切持久化必须经 store 包；本包所需的
-//     ListAssetsByLibrary/DeleteAsset/MoveAssetPath 已入 queries 并生成）
+//     ListScanAssetSnapshots/DeleteAsset/MoveAssetPath 已入 queries 并生成）
 package scanner

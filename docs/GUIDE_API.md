@@ -5,7 +5,7 @@
 
 ## 全局约定
 
-- 前缀 `/api/v1`；免 Bearer 面共 7 处 `security: []`：探针 2（`/healthz`、`/readyz`）+ 认证 3（`/auth/setup`、`/auth/login`、`/auth/dev-login`——未设密前 setup 可达，登录后自然受保护）+ 签名直链 2（`/media/**` 走 HMAC 签名 URL，见下）；其余端点全部要求 `Authorization: Bearer <token>`（继承全局 bearerAuth；根路径 `/healthz`、`/readyz` 是运维探针别名，行为一致，不入协议面）
+- 前缀 `/api/v1`；免Bearer端点由OpenAPI各处 `security: []` 明确列出：健康/就绪探针、setup/login/dev-login及HMAC签名媒体直链（见下），其余端点继承全局bearerAuth。根路径 `/healthz`、`/readyz` 是运维探针别名，行为一致，不入协议面；setup仅未初始化时可用，dev-login仅开发模式开启时可用。
 - 资产/历史等游标列表响应带 `nextCursor`，为 null 表示到底；推荐/排行使用 offset，续页按 `X-Qimeng-Next-Offset`（-1 到底）判断，不能用资格复核后的页长代替，详见 engagement 专题。
 - 错误统一 `Error{code, message}`；`code` 机器可读（如 PATH_ESCAPE / TOO_LARGE / INVALID_TYPE）
 - 媒体直链（/media/**）不走 header 鉴权，用短期 HMAC 签名 URL（默认 6h），参数 `exp`（过期时间戳）+ `sig`；**exp 按窗口对齐**（ADR-0027，2026-10-01 起）：exp = 下一窗口上界 + TTL（窗长=token_ttl 缺省 6h），同一窗口内所有响应签出**逐字节相同**的 URL（浏览器 HTTP 缓存/ETag 可命中），有效期恒 ∈ (6h, 12h]——URL 格式与参数未变，客户端零适配
@@ -24,7 +24,7 @@
 
 ## 关键机制定位
 
-筛选/COS 隔离/缩略图缓存见 browse；会话去重/事件幂等/播放进度见 engagement；TXT 真相/来源词表见 authors；文件恢复/续传重试见 files；v1/v2 兼容与快照见 backup。领域语义另查 [DOMAIN_RULES](DOMAIN_RULES.md)，安全限制另查 [SECURITY](SECURITY.md)。
+筛选/COS 隔离/缩略图缓存见 browse；会话去重/事件幂等/播放进度见 engagement；TXT 真相/来源词表见 authors；文件恢复/续传重试见 files；v2备份与退役版本拒绝/快照见 backup。领域语义另查 [DOMAIN_RULES](DOMAIN_RULES.md)，安全限制另查 [SECURITY](SECURITY.md)。
 
 ## 维护
 

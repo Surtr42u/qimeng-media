@@ -11,9 +11,9 @@
 #   kotlin/ksp     https://github.com/JetBrains/kotlin/releases/tag/v2.4.20（2.4 线最新 stable，repo1
 #                  maven-metadata 实存核查 2026-09-13：2.4.0/2.4.10/2.4.20；S3 第 3 步随 Coil 3.6.2
 #                  解锁升级——Coil 3.5.0 起以 Kotlin 2.4 编译。KGP 2.4.20 含 gradle96 变体（构建于
-#                  Gradle 9.5.1），但该变体 org.gradle.plugin.api-version=9.6，本工程 Gradle 9.5.0
-#                  按属性匹配仍选 gradle813 变体（同 2.3.21 时代的官方矩阵外回退路径，实测可工作；
-#                  彻底对齐需 Gradle ≥9.6，wrapper 升级留后续批））
+#                  Gradle 9.5.1）；2026-09-13当时wrapper为9.5.0，按属性匹配选gradle813
+#                  的回退记录不代表当前状态。当前wrapper已锁9.7.0，版本唯一来源为
+#                  gradle/wrapper/gradle-wrapper.properties；不再列为待升级事项。
 #                  https://repo1.maven.org/maven2/com/google/devtools/ksp/symbol-processing-api/
 #                  （KSP 2.3.0 起与 Kotlin 编译器版本解耦，2.3.12 为当前稳定，随本批配套升级）
 #   composeBom     https://developer.android.com/develop/ui/compose/bom/bom-mapping（BOM 2026.09.00

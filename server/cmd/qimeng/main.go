@@ -302,6 +302,7 @@ func main() {
 	// signal.NotifyContext：Ctrl+C / SIGTERM 时 ctx 取消，主流程进入优雅关闭。
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	writeService.StartLibraryMetrics(ctx)
 	// 回填主管随进程取消；开机静默窗、变更通知及周期兜底由业务服务统一处理。
 	apiSrv.StartThumbnailWarmup(ctx)
 
@@ -371,11 +372,13 @@ func main() {
 	}
 	// 工作池先收：等在途缩略图任务排空；再关总线让 SSE 订阅者收流结束，
 	// 最后关库连接——顺序反了会出现"关库后任务/总线还在投递"的竞态窗口。
+	apiSrv.CloseRecommendCache()
 	thumbs.Close()
 	// 在途上传会话与临时分片文件的关停清理（ADR-0028）：尽力而为，删不掉
 	// 的遗留由下轮孤儿清理兜底；须在 HTTP 已 Shutdown（无在途 PATCH）后执行。
 	apiSrv.CloseUploadSessions()
 	bus.Close()
+	writeService.CloseLibraryMetrics()
 	if err := conn.Close(); err != nil {
 		logger.Error("关闭数据库失败", "error", err)
 	}

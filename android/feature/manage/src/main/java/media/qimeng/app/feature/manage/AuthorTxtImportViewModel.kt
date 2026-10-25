@@ -1,14 +1,19 @@
 package media.qimeng.app.feature.manage
 
+import android.net.Uri
+import media.qimeng.app.core.data.authorimport.AuthorTxtReader
+import media.qimeng.app.core.data.authorimport.AuthorTxtReadException
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import media.qimeng.app.core.data.util.runSuspendCatching
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 import media.qimeng.app.core.data.repository.AuthorRepository
 import media.qimeng.app.core.model.AuthorMirrorConfig
 
@@ -47,6 +52,7 @@ data class AuthorTxtImportUiState(
 @HiltViewModel
 class AuthorTxtImportViewModel @Inject constructor(
     private val authorRepository: AuthorRepository,
+    private val txtReader: AuthorTxtReader,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AuthorTxtImportUiState())
@@ -70,7 +76,7 @@ class AuthorTxtImportViewModel @Inject constructor(
             }
             try {
                 val names = authorRepository.importedTxtFileNames()
-                val mirror = runCatching { authorRepository.authorMirror() }.getOrDefault(AuthorMirrorConfig())
+                val mirror = runSuspendCatching { authorRepository.authorMirror() }.getOrDefault(AuthorMirrorConfig())
                 _uiState.update {
                     it.copy(
                         loading = false,
@@ -79,18 +85,33 @@ class AuthorTxtImportViewModel @Inject constructor(
                         mirrorFragmentFilename = mirror.fragmentFilename,
                     )
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _uiState.update { it.copy(loading = false, errorMessage = ERROR_LOAD) }
             }
         }
     }
 
-    /**
-     * 屏幕层 SAF 选完文件后回调（读文件是平台胶水，屏幕层 UTF-8 解码后进这里）。
-     * 前置拦截两道：非 .txt 扩展名（Web L49 口径）与空内容（拍板：空 content 不出网，
-     * Web 的 FileReader 无此闸、App 侧读空文件常为选错的占位文件，静默忽略防脏写）。
-     * 导入无确认弹窗（Web 同口径：选择即导入）。
-     */
+    /** 读取与出网共用 importing owner，读取失败不提交片段，取消不变成失败提示。 */
+    fun onFileSelected(uri: Uri) {
+        if (_uiState.value.importing) return
+        _uiState.update { it.copy(importing = true, errorMessage = null, noticeMessage = null) }
+        viewModelScope.launch {
+            try {
+                val document = txtReader.read(uri)
+                importDocument(document.filename, document.content)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = if (e is AuthorTxtReadException) e.message else ERROR_READ_FILE) }
+            } finally {
+                _uiState.update { it.copy(importing = false) }
+            }
+        }
+    }
+
+    /** 已读取内容入口（同样保留扩展名和空文件保护）。 */
     fun onFilePicked(filename: String, content: String) {
         if (_uiState.value.importing) return
         if (!TXT_EXTENSION.containsMatchIn(filename)) {
@@ -98,37 +119,47 @@ class AuthorTxtImportViewModel @Inject constructor(
             return
         }
         if (content.isEmpty()) return
+        _uiState.update { it.copy(importing = true, errorMessage = null, noticeMessage = null) }
         viewModelScope.launch {
-            _uiState.update { it.copy(importing = true, errorMessage = null, noticeMessage = null) }
             try {
-                val result = authorRepository.importTxt(filename, content)
-                _uiState.update {
-                    it.copy(
-                        importing = false,
-                        noticeMessage = NOTICE_IMPORT.format(filename, result.authorsImported ?: 0, result.filesMatched ?: 0),
-                    )
-                }
-                refresh()
-            } catch (e: Exception) {
-                _uiState.update { it.copy(importing = false, errorMessage = ERROR_IMPORT) }
+                importDocument(filename, content)
+            } finally {
+                _uiState.update { it.copy(importing = false) }
             }
+        }
+    }
+
+    private suspend fun importDocument(filename: String, content: String) {
+        if (content.isEmpty()) return
+        val result = runSuspendCatching { authorRepository.importTxt(filename, content) }
+        result.onSuccess { saved ->
+            _uiState.update {
+                it.copy(noticeMessage = NOTICE_IMPORT.format(filename, saved.authorsImported ?: 0, saved.filesMatched ?: 0))
+            }
+            refresh()
+        }.onFailure {
+            _uiState.update { it.copy(errorMessage = ERROR_IMPORT) }
         }
     }
 
     /** 移除一个片段并从剩余片段重建（成功反馈 Web L70 逐字；失败后刷新还原列表） */
     fun remove(filename: String) {
         if (_uiState.value.removing) return
+        _uiState.update { it.copy(removing = true, errorMessage = null, noticeMessage = null) }
         viewModelScope.launch {
-            _uiState.update { it.copy(removing = true, errorMessage = null, noticeMessage = null) }
             try {
                 authorRepository.removeImportedTxt(filename)
                 _uiState.update {
                     it.copy(removing = false, noticeMessage = NOTICE_REMOVE.format(filename))
                 }
                 refresh()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _uiState.update { it.copy(removing = false, errorMessage = ERROR_REMOVE) }
                 refresh(clearError = false)
+            } finally {
+                _uiState.update { it.copy(removing = false) }
             }
         }
     }
@@ -137,8 +168,8 @@ class AuthorTxtImportViewModel @Inject constructor(
     fun rebuild() {
         val current = _uiState.value
         if (!current.canRebuild) return
+        _uiState.update { it.copy(rebuilding = true, errorMessage = null, noticeMessage = null) }
         viewModelScope.launch {
-            _uiState.update { it.copy(rebuilding = true, errorMessage = null, noticeMessage = null) }
             try {
                 val result = authorRepository.rebuildTxt()
                 _uiState.update {
@@ -147,8 +178,12 @@ class AuthorTxtImportViewModel @Inject constructor(
                         noticeMessage = NOTICE_REBUILD.format(result.authorsImported ?: 0, result.filesMatched ?: 0),
                     )
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _uiState.update { it.copy(rebuilding = false, errorMessage = ERROR_REBUILD) }
+            } finally {
+                _uiState.update { it.copy(rebuilding = false) }
             }
         }
     }
@@ -166,8 +201,8 @@ class AuthorTxtImportViewModel @Inject constructor(
     /** 保存作者总表镜像配置（PUT /authors/mirror） */
     fun saveMirror() {
         if (_uiState.value.mirrorSaving) return
+        _uiState.update { it.copy(mirrorSaving = true, errorMessage = null, noticeMessage = null) }
         viewModelScope.launch {
-            _uiState.update { it.copy(mirrorSaving = true, errorMessage = null, noticeMessage = null) }
             try {
                 val saved = authorRepository.saveAuthorMirror(
                     AuthorMirrorConfig(
@@ -183,6 +218,8 @@ class AuthorTxtImportViewModel @Inject constructor(
                         noticeMessage = NOTICE_MIRROR_SAVED,
                     )
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _uiState.update {
                     it.copy(
@@ -190,6 +227,8 @@ class AuthorTxtImportViewModel @Inject constructor(
                         errorMessage = "${ERROR_MIRROR_SAVE}：${e.message ?: e.javaClass.simpleName}",
                     )
                 }
+            } finally {
+                _uiState.update { it.copy(mirrorSaving = false) }
             }
         }
     }

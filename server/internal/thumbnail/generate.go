@@ -8,8 +8,11 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"qimeng-media/server/internal/store"
+	"sync"
 	"time"
+
+	"qimeng-media/server/internal/store"
+	"qimeng-media/server/internal/sysmon"
 )
 
 // Kind 媒体类型（DOMAIN_RULES §11：IMAGE / ANIMATED_IMAGE(gif) / VIDEO）。
@@ -57,7 +60,13 @@ type Generator struct {
 	// generating 按最终缓存路径合并前台、后台及重叠尺寸集合，等待取消不杀生成。
 	generating *detachedGroup
 	// 生产构造统一注入进程预算；生成全过程使用同一个实例，隔离测试可用独立预算。
-	slots *semaphore
+	slots     *semaphore
+	lifecycle sync.Once
+	life      context.Context
+	cancel    context.CancelFunc
+	budget    *representationBudget
+	closing   sync.Once
+	closed    chan struct{}
 }
 
 // Options 是 Generator 的构造配置。字段语义与 config.ThumbnailConfig 对应，
@@ -100,7 +109,8 @@ func NewGenerator(dataDir string, logger *slog.Logger, opts Options) *Generator 
 		slots:      genSlots,
 	}
 	g.stillFormat = probeStillFormat(g.ffmpegBin, logger)
-	g.pool = NewWorkerPool(context.Background(), opts.Workers, 0, g.handle, logger)
+	g.initLifecycle()
+	g.pool = NewWorkerPool(g.life, opts.Workers, 0, g.handle, logger)
 	return g
 }
 
@@ -110,15 +120,51 @@ func (g *Generator) StillFormat() StillFormat { return g.stillFormat }
 
 // handle 标记工作池任务为后台；前台 Ensure/EnsureDetached 使用同一生成体并可提升它。
 func (g *Generator) handle(ctx context.Context, t Task) error {
+	defer t.reservation.release()
+	if t.version != "" {
+		return g.ensureVersion(ctx, t.AssetID, t.SourcePath, t.Kind, t.Sizes, t.version, false)
+	}
 	return g.ensure(ctx, t.AssetID, t.SourcePath, t.Kind, t.Sizes, false)
 }
 
 // Submit 非阻塞提交一个生成任务（ErrQueueFull/ErrPoolClosed 语义见 WorkerPool）。
 // 后台回填经此入口；前台直接走 Ensure/EnsureDetached，才能标记/提升优先级。
-func (g *Generator) Submit(t Task) error { return g.pool.Submit(t) }
+func (g *Generator) Submit(t Task) error {
+	g.initLifecycle()
+	version, err := g.sourceVersion(t.SourcePath)
+	if err != nil {
+		if g.life.Err() == nil {
+			sysmon.Default.IncThumbWork("failed")
+		}
+		return fmt.Errorf("%w: %w", ErrSourceUnavailable, err)
+	}
+	keys := g.missingRepresentations(t.AssetID, version, t.Sizes)
+	if len(keys) == 0 {
+		return nil
+	}
+	lease, err := g.budget.acquirePriority(context.Background(), keys, false, false)
+	if err != nil {
+		return err
+	}
+	t.reservation = lease
+	t.version = version
+	// 调用方可复用自己的切片，排队数据必须自有。
+	t.Sizes = append([]Size(nil), t.Sizes...)
+	if err := g.pool.Submit(t); err != nil {
+		lease.release()
+		return err
+	}
+	return nil
+}
 
-// Close 优雅关闭内置工作池（等已入队任务执行完；重复调用安全）。
-func (g *Generator) Close() { g.pool.Close() }
+// Close 停止准入并取消全部服务级生成，至多等待一个 frameTimeout；重复调用安全。
+func (g *Generator) Close() {
+	ctx, cancel := context.WithTimeout(context.Background(), frameTimeout)
+	defer cancel()
+	if err := g.CloseContext(ctx); err != nil {
+		g.logger.Error("缩略图关闭未在期限内完成", "err", err)
+	}
+}
 
 // GridLongSide 返回网格默认档（md）当前生效的像素：LongSide 配置的接线出口，
 // HTTP 侧把 openapi size=md 换算成它，保证请求缓存键与生成尺寸一致。
@@ -140,6 +186,10 @@ func (g *Generator) ensure(ctx context.Context, assetID, srcPath string, kind Ki
 	if err != nil {
 		return err
 	}
+	return g.ensureVersion(ctx, assetID, srcPath, kind, sizes, version, foreground)
+}
+
+func (g *Generator) ensureVersion(ctx context.Context, assetID, srcPath string, kind Kind, sizes []Size, version string, foreground bool) error {
 	for _, size := range sizes {
 		if err := g.ensureOne(ctx, assetID, srcPath, kind, size, version, foreground); err != nil {
 			return fmt.Errorf("生成 %s 的 %d 缩略图: %w", assetID, int(size), err)
@@ -174,19 +224,40 @@ func (g *Generator) ensureOne(ctx context.Context, assetID, srcPath string, kind
 		size = Size(g.longSide)
 	}
 	dst := g.thumbDst(assetID, size, version)
-	return g.generating.doPriority(dst, ctx, foreground, func(priority <-chan struct{}) error {
+	g.initLifecycle()
+	if _, err := os.Stat(dst); err == nil {
+		return g.checkGeneratedSource(srcPath, version, dst)
+	}
+	admission, cancel := context.WithTimeout(ctx, frameTimeout)
+	defer cancel()
+	lease, err := g.budget.acquirePriority(admission, []string{dst}, true, foreground)
+	if err != nil {
+		return err
+	}
+	return g.generating.doOwned(dst, admission, foreground, lease, func(priority <-chan struct{}) error {
 		// 验证必须在续生体内：浏览取消后也不能留下生成期间已失效的缓存。
-		if err := g.generateOne(context.Background(), srcPath, kind, size, dst, priority); err != nil {
+		if err := g.generateOne(g.life, srcPath, kind, size, dst, priority); err != nil {
+			if g.life.Err() == nil {
+				sysmon.Default.IncThumbWork("failed")
+			}
 			return err
 		}
-		if current, err := g.sourceVersion(srcPath); err != nil || current != version {
-			if rmErr := os.Remove(dst); rmErr != nil && !errors.Is(rmErr, fs.ErrNotExist) {
-				g.logger.Warn("清理生成期间失效的缩略图失败", "err", rmErr)
-			}
-			return errors.New("生成期间原件发生变化，请重试")
-		}
-		return nil
+		return g.checkGeneratedSource(srcPath, version, dst)
 	})
+}
+
+// 排队版本固定后，命中缓存和真实生成都复核原件；只清理这个失效版本。
+func (g *Generator) checkGeneratedSource(srcPath, version, dst string) error {
+	if current, err := g.sourceVersion(srcPath); err != nil || current != version {
+		if rmErr := os.Remove(dst); rmErr != nil && !errors.Is(rmErr, fs.ErrNotExist) {
+			g.logger.Warn("清理生成期间失效的缩略图失败", "err", rmErr)
+		}
+		if g.life.Err() == nil {
+			sysmon.Default.IncThumbWork("failed")
+		}
+		return errors.New("生成期间原件发生变化，请重试")
+	}
+	return nil
 }
 
 func cacheExists(dst string) (bool, error) {
@@ -213,10 +284,15 @@ func (g *Generator) generateOne(ctx context.Context, srcPath string, kind Kind, 
 	// 但不失败）；排队期间 ctx 取消（客户端断开/超时）立即中断。排队只受上游 ctx
 	// 约束、不占 frameTimeout——后者衡量的是拿到闸位后的生成全流程。缓存命中路径
 	// 不进闸（不消耗 ffmpeg 预算）；release 经 defer 保证成功/失败/panic 都归还。
-	if !g.slots.acquirePriority(ctx, priority) {
+	sysmon.Default.AddThumbWork("waiting", 1)
+	acquired := g.slots.acquirePriority(ctx, priority)
+	sysmon.Default.AddThumbWork("waiting", -1)
+	if !acquired {
 		return fmt.Errorf("排队等待缩略图生成闸位时上游已取消: %w", ctx.Err())
 	}
 	defer g.slots.release()
+	sysmon.Default.AddThumbWork("running", 1)
+	defer sysmon.Default.AddThumbWork("running", -1)
 	// 等待资源闸期间，缓存可能由其他 Generator/外部回填写好，不能重复抽帧。
 	if exists, err := cacheExists(dst); err != nil || exists {
 		return err

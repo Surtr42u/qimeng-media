@@ -57,6 +57,6 @@ func (w *watcher) updateKnownFile(ctx context.Context, absPath string) bool {
 		return true
 	}
 	w.s.invalidateThumbs(asset.AssetID, rel)
-	w.s.publish(events.TopicLibraryChanged, ScanResult{LibraryID: w.lib.ID, Updated: 1})
+	w.s.publish(events.TopicLibraryChanged, ScanResult{LibraryID: w.lib.ID, Updated: 1}, asset.AssetID)
 	return false
 }

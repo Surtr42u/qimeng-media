@@ -18,7 +18,7 @@ import (
 // reconcile 扫描收尾对账：对"库内有记录但文件树没看到"的消失集执行
 // 移动合并或删除，计数直接累计进 res（合并会把 walk 阶段预记的 Added
 // 回退——被合并的新路径不是"新增"，是老身份换了住址）。
-func (s *Scanner) reconcile(ctx context.Context, lib db.Library, existing []db.Asset, seen map[string]struct{}, added []db.Asset, res *ScanResult) error {
+func (s *Scanner) reconcile(ctx context.Context, lib db.Library, existing []db.ListScanAssetSnapshotsRow, seen map[string]struct{}, added []db.Asset, res *ScanResult) error {
 	// 候选按size+mtime分桶并预排序；每个候选最多复核一次，避免批量改名N²次SQL/Stat。
 	buckets := make(map[mergeKey][]db.Asset)
 	for _, cand := range added {
@@ -57,13 +57,13 @@ func (s *Scanner) reconcile(ctx context.Context, lib db.Library, existing []db.A
 				return err
 			}
 			if !found {
-				if err := s.deleteGone(ctx, lib, gone); err != nil {
+				if err := s.deleteGone(ctx, lib, current); err != nil {
 					return err
 				}
 				res.Removed++
 				return nil
 			}
-			if err := s.applyMoveMerge(ctx, lib, gone, cand); err != nil {
+			if err := s.applyMoveMerge(ctx, lib, current, cand); err != nil {
 				return err
 			}
 			res.Moved++
@@ -83,7 +83,7 @@ type mergeKey struct {
 }
 
 // takeLiveMergeCandidate 只从匹配桶按既有tie-break消费，锁内复核候选仍是同一身份/路径。
-func (s *Scanner) takeLiveMergeCandidate(ctx context.Context, lib db.Library, gone db.Asset, buckets map[mergeKey][]db.Asset) (db.Asset, bool, error) {
+func (s *Scanner) takeLiveMergeCandidate(ctx context.Context, lib db.Library, gone db.ListScanAssetSnapshotsRow, buckets map[mergeKey][]db.Asset) (db.Asset, bool, error) {
 	key := mergeKey{gone.SizeBytes, gone.Mtime}
 	for len(buckets[key]) > 0 {
 		bucket := buckets[key]

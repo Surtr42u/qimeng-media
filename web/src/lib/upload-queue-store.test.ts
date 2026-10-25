@@ -89,6 +89,22 @@ function fakeFile(name: string, size = 1): File {
 /** 微任务/定时器排空：串行泵的 await 链全部落地后再断言 */
 const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0))
 
+it('终态数字旧ID恢复过滤后，新任务仍有独立可持久化键', async () => {
+  const storage = await getUploadQueueStorage()
+  await storage.put(seedRecord({ id: 'upload-1', terminal: true }))
+  await uploadQueueStore.restorePersisted()
+  uploadQueueStore.setOptions({ maxBytesMb: null })
+  uploadQueueStore.enqueue([{ file: fakeFile('uuid-key.jpg') }], { libraryId: 'synthetic', dir: '' })
+  await tick()
+  const active = uploadQueueStore.getItems().find((it) => it.name === 'uuid-key.jpg')!
+  expect(active.id).not.toBe('upload-1')
+  expect((await storage.getAll()).some((row) => row.id === active.id && row.uploadId !== undefined)).toBe(true)
+  expect(uploadQueueStore.getItems().some((it) => it.id === 'upload-1')).toBe(false)
+  uploadQueueStore.cancelAll()
+  await tick()
+  uploadQueueStore.clearFinished()
+})
+
 describe('uploadQueueStore.enqueue 校验拦截', () => {
   it('未选库整批拦截：全部落 failed、零 XHR、逐条回调 onItemSettled', () => {
     const settled: string[] = []
@@ -223,7 +239,7 @@ describe('uploadQueueStore 刷新恢复（IndexedDB 持久化）', () => {
     expect((await storage.getAll()).some((it) => it.id === 'upload-900' || it.id === 'upload-901')).toBe(false)
   })
 
-  it('恢复条目 id 序号让位：新入队 id 不与恢复 id 冲突', async () => {
+  it('新入队 UUID 键不与恢复的数字 id 冲突', async () => {
     const storage = await getUploadQueueStorage()
     await storage.put(seedRecord({ id: 'upload-950' }))
     await uploadQueueStore.restorePersisted()
@@ -234,7 +250,8 @@ describe('uploadQueueStore 刷新恢复（IndexedDB 持久化）', () => {
 
     const fresh = uploadQueueStore.getItems().find((it) => it.name === 'fresh.mp4')
     expect(fresh).toBeDefined()
-    expect(Number(fresh?.id.slice('upload-'.length))).toBeGreaterThan(950) // 序号已让位
+    expect(fresh?.id).not.toBe('upload-950')
+    expect(fresh?.id).toMatch(/^upload-[0-9a-f]{8}-[0-9a-f-]{27}$/i)
 
     // 清场：新条目送达终态 + 移除恢复条目（不留跨用例残留）
     FakeXHR.instances.at(-1)?.succeed('{"id":"asset-950"}')

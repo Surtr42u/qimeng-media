@@ -1240,11 +1240,15 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/SystemStatus" } } } }
   /api/v1/import/qimeng-backup:
     post:
-      summary: 旧版数据迁移（qimeng_backup.json，映射见 DOMAIN_RULES §10，幂等）
+      summary: 导入当前 v2 便携备份（映射见 DOMAIN_RULES §10）
       description: |
-        按「文件名匹配」把旧备份的作者/标签/统计/时间轴导入新库：mediaStats/dailyBrowse/likes/favorites/history
-        转换为 ViewEvent 回放（统计从事件重建）；幂等语义 = 同一 exportedAtMillis 批次只回放一次事件，
-        作者/标签/关联按唯一键 upsert 天然幂等，重复导入不翻倍。
+        仅接受 schemaVersion=2；旧纯本地项目的 v1 备份已停止接收，其他版本在任何写入前返回400。
+        导入只关联已有媒体，不创建媒体资产；必须携带 data.viewEvents（可为空），按原事件身份幂等合并，
+        不回放同份 mediaStats/dailyBrowse/history，也不按 exportedAtMillis 快速跳过整份备份。
+        v2 文件映射优先本库 assetId，跨库按文件名/相对路径/库名逐层唯一消歧；歧义跳过告警。
+        非法 v2 在任何写入前拒绝；通过校验后各段独立提交，后段失败保留前段并返回错误，
+        已提交变更仍推进修订号/失效推荐并发布 library.changed，不表示整份导入成功。
+        作者/标签/关联沿既有合并规则，标签按改动时间裁决、TXT 按 keep 重建关联。
         scanSources/settings 段不导入（SAF 目录概念不存在，响应 warnings 提示重新配置库）；
         albumRules 段无对应能力，忽略。
       requestBody:
@@ -1259,19 +1263,16 @@ paths:
 
   /api/v1/export/qimeng-backup:
     get:
-      summary: 导出旧版格式备份（qimeng_backup.json，DOMAIN_RULES §10 逆向映射）
+      summary: 导出 v2 便携备份（qimeng_backup.json，DOMAIN_RULES §10）
       description: |
-        把当前库导出为旧版「绮梦影库」单文件全量备份（DATA_MIGRATION_SPEC v1 格式），
-        可回灌旧版 App 或经 POST /import/qimeng-backup 幂等回环到其他新实例。
-        段级口径（与 §10 导入映射互为镜像）：settings/scanSources/albumRules/cosWorks
-        导出为空数组（SAF 目录为设备本机概念、COS 作品目录与出处均为派生信息）；
-        dailyBrowse 由事件流物化表（asset x day）导出；mediaStats 由事件流按资产聚合；
-        history 导出全部 open 事件倒序（2026-10-04 起无上限，原「最近 500 条对齐旧库
-        view_history」兼容截取废止——用户拍板所有数据长期持久，事件行百字节级、全量
-        仅 MB 级备份增量）；点赞按点赞行
-        聚合为 { 累计次数, 最后点赞日 }；recommendationPrefs 从 kv_settings 原样导出。
-        recordKey 生成镜像导入消歧规则：文件名唯一 = 文件名；同名 = 「文件名 @ 文件夹名」；
-        同名同文件夹（跨库）再追加 #路径哈希。响应带 Content-Disposition: attachment。
+        当前恒导出 schemaVersion=2 的单文件备份，同一数据库事务读取各段，响应带附件头。
+        data.viewEvents 保留原事件身份/会话/时间/秒数/日键，是 v2 导入的事件真相；
+        mediaStats/dailyBrowse/history 为兼容查看保留，history 全量且不截断。
+        mediaFiles 携带 assetId/libraryName/relPath，recordKey 全份唯一；TXT 原文与显式偏好随包导出。
+        settings/scanSources/albumRules/cosWorks 为空；点赞保留累计次数及最后点赞日。
+        备份不含媒体原件、设备配置或密钥，跨实例须先导入媒体再导入此文件。
+        本项目仅支持当前 v2 备份导出/导入；旧纯本地项目的 v1 导入已退役，
+        已迁入的历史事件及其身份继续原样导出，不重新合成或删除，边界见 DOMAIN_RULES §10。
       responses:
         "200":
           description: qimeng_backup.json 全量备份
@@ -2136,22 +2137,22 @@ components:
         version:       { type: string }
         devMode:       { type: boolean, description: 开发模式（auth_dev_mode 免密登录）是否开启——Web 维护页「开发模式未关」提醒条数据源（2026-09-30 批A）；生产部署应为 false }
 
-    # ---- 旧版迁移（qimeng_backup.json）：字段级权威定义在旧仓库 DATA_MIGRATION_SPEC.md，
+    # ---- 便携迁移（qimeng_backup.json）：字段以本协议为准，旧 DATA_MIGRATION_SPEC 仅作 v1 历史依据，
     # ---- 段级映射见 DOMAIN_RULES §10；可选字段缺省语义（旧备份可能缺后加字段），导入端不假设全字段存在。
     LegacyBackupImport:
       type: object
       required: [format, schemaVersion, appIdentifier, data]
       properties:
         format:           { type: string, description: 恒为 qimeng_backup，不符则 400 }
-        schemaVersion:    { type: integer }
+        schemaVersion:    { type: integer, minimum: 2, maximum: 2, description: 仅接受当前便携格式2；旧v1及其他版本在任何写入前拒绝 }
         appIdentifier:    { type: string }
-        exportedAtMillis: { type: integer, format: int64, description: 导出时刻毫秒，幂等批次键 }
+        exportedAtMillis: { type: integer, format: int64, description: 导出时刻毫秒；仅作文件元信息，事件按原身份合并，不作为整批跳过依据 }
         data:             { $ref: "#/components/schemas/LegacyBackupData" }
 
     LegacyBackupData:
       type: object
       properties:
-        viewEvents: { type: array, items: { $ref: "#/components/schemas/PortableViewEvent" }, description: schemaVersion=2 必须携带（可为空）；事件身份为唯一合并依据，忽略 mediaStats/dailyBrowse/history 的聚合回放；旧 v1 缺省沿用原兼容回放 }
+        viewEvents: { type: array, items: { $ref: "#/components/schemas/PortableViewEvent" }, description: 当前v2必须携带（可为空）；仅按原事件身份合并，mediaStats/dailyBrowse/history仅作展示，不用于合成事件；不再接收v1 }
         mediaFiles:        { type: array, items: { $ref: "#/components/schemas/LegacyMediaFile" } }
         txtFragments:      { type: array, items: { $ref: "#/components/schemas/LegacyTxtFragment" }, description: TXT 作者片段逐字载荷（2026-10-01 起；旧备份无此段向后兼容，导入端零处理）。导入按 DOMAIN_RULES §10「TXT 片段」口径合并，处理顺序在 authors/authorMediaRefs 段之前（片段导入触发统一重建，后处理会冲掉备份携带的关联数据） }
         settings:          { type: array, items: { $ref: "#/components/schemas/LegacySetting" } }
@@ -2371,11 +2372,11 @@ components:
 
     LegacyBackupFile:
       type: object
-      description: 旧版格式备份信封（GET /export/qimeng-backup 响应；与 LegacyBackupImport 同构，独立命名避免读写混用）
+      description: v2 便携备份信封（GET /export/qimeng-backup 响应；保留 Legacy 类型名与信封字段兼容既有 SDK）
       required: [format, schemaVersion, appIdentifier, data]
       properties:
         format:           { type: string, description: 恒为 qimeng_backup }
-        schemaVersion:    { type: integer, description: 当前导出恒为 2（原生事件身份）；导入继续接受旧 v1 聚合格式，v2 必须含 data.viewEvents }
+        schemaVersion:    { type: integer, minimum: 2, maximum: 2, description: 当前导出和导入均为2（原生事件身份），必须含data.viewEvents }
         appIdentifier:    { type: string, description: 恒为 com.qimeng.media（旧版格式标识） }
-        exportedAtMillis: { type: integer, format: int64, description: 导出时刻毫秒（导入端幂等批次键） }
+        exportedAtMillis: { type: integer, format: int64, description: 导出时刻毫秒；v2 导入按事件身份合并，不作为整批跳过依据 }
         data:             { $ref: "#/components/schemas/LegacyBackupData" }

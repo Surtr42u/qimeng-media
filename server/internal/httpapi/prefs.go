@@ -11,6 +11,7 @@ import (
 	"net/http"
 
 	"qimeng-media/server/internal/httpapi/gen"
+	"qimeng-media/server/internal/portablebackup"
 	"qimeng-media/server/internal/recommend"
 	"qimeng-media/server/internal/store"
 	"qimeng-media/server/internal/store/db"
@@ -18,7 +19,7 @@ import (
 
 // settingKeyRecommendPrefs 是推荐偏好在 kv_settings 表的键名。
 // 取值范围约定见 migrations/0003_settings_kv.up.sql（<功能点>_<设置名>）。
-const settingKeyRecommendPrefs = "recommend_prefs"
+const settingKeyRecommendPrefs = portablebackup.RecommendPrefsKey
 
 // clampWeightRange 权重值域上限（DOMAIN_RULES §1.3：权重是"分配比例"，
 // 允许超过 1 会破坏"权重合计收敛"的假设，故钳制而非仅校验）。

@@ -148,7 +148,7 @@ func requireJSONContentType(w http.ResponseWriter, r *http.Request) bool {
 }
 
 // decodeJSONWithLimit per-route 上限版本：大载荷端点（旧版备份导入，
-// legacyImportMaxBody）按自身限额放行，其余端点仍走 maxJSONBody 红线。
+// portablebackup.ImportMaxBody）按自身限额放行，其余端点仍走 maxJSONBody 红线。
 // 超限返回 413 TOO_LARGE（区别于格式错误的 400）；Content-Type 非
 // application/json → 400 INVALID_BODY（跨站简单请求防线，见
 // requireJSONContentType 注释）。

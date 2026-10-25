@@ -174,6 +174,52 @@ func (q *Queries) ListLibraryRelinkSamples(ctx context.Context, arg ListLibraryR
 	return items, nil
 }
 
+const listScanAssetSnapshots = `-- name: ListScanAssetSnapshots :many
+SELECT asset_id, rel_path, size_bytes, mtime, updated_at
+FROM assets WHERE library_id = ?
+`
+
+type ListScanAssetSnapshotsRow struct {
+	AssetID   string
+	RelPath   string
+	SizeBytes int64
+	Mtime     string
+	UpdatedAt string
+}
+
+// ListScanAssetSnapshots: only change detection and stale-row protection fields
+// survive the walking phase. Reconciliation re-reads the full live row under
+// the library gate before matching/moving/deleting. Do not use this projection
+// as an authoritative current row or introduce per-unchanged-file SQL reads.
+func (q *Queries) ListScanAssetSnapshots(ctx context.Context, libraryID string) ([]ListScanAssetSnapshotsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listScanAssetSnapshots, libraryID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListScanAssetSnapshotsRow
+	for rows.Next() {
+		var i ListScanAssetSnapshotsRow
+		if err := rows.Scan(
+			&i.AssetID,
+			&i.RelPath,
+			&i.SizeBytes,
+			&i.Mtime,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const moveAssetPath = `-- name: MoveAssetPath :one
 
 UPDATE assets

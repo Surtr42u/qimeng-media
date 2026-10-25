@@ -9,6 +9,7 @@ import (
 	"path"
 	"path/filepath"
 
+	"qimeng-media/server/internal/events"
 	"qimeng-media/server/internal/filing"
 	"qimeng-media/server/internal/store"
 	"qimeng-media/server/internal/store/db"
@@ -56,7 +57,7 @@ func (s *Service) MoveAsset(ctx context.Context, assetID string, req MoveRequest
 	if err := s.enrichAsset(ctx, row.LibraryID, row.AssetID); err != nil {
 		s.logger.Warn("移动后重算出处失败（可重扫自愈）", "err", err, "assetId", row.AssetID)
 	}
-	s.PublishLibraryChanged()
+	s.PublishLibraryChanged(events.LibraryChangeScope{LibraryID: row.LibraryID, AssetID: row.AssetID})
 	return nil
 }
 

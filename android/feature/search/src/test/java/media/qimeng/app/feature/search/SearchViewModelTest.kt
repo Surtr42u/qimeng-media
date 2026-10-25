@@ -40,6 +40,28 @@ import media.qimeng.app.core.testing.MainDispatcherRule
 @OptIn(ExperimentalCoroutinesApi::class) // runTest(TestDispatcher) 重载（P3-5 显式声明消除警告）
 class SearchViewModelTest {
 
+    @Test
+    fun `查询取消不重试不发布失败且返回后旧响应不复活`() = runTest(mainDispatcherRule.testDispatcher) {
+        val repo = FakeMediaRepository()
+        val vm = SearchViewModel(repo, FakeSearchHistoryRepository(), MediaBatchIndex(), object : AssetOrigUrlResolver {
+            override suspend fun origUrl(assetId: String): String? = null
+        })
+        vm.submit("synthetic")
+        advanceUntilIdle()
+        repo.assetsCalls.single().gate.completeExceptionally(kotlinx.coroutines.CancellationException("synthetic cancel"))
+        advanceUntilIdle()
+        assertNull(vm.uiState.value.errorMessage)
+        assertFalse(vm.uiState.value.isLoading)
+        assertEquals(1, repo.assetsCalls.size)
+        vm.submit("second")
+        advanceUntilIdle()
+        vm.handleBack()
+        repo.assetsCalls.last().gate.complete(AssetPageResult(items = listOf(asset("late")), nextCursor = null, totalMatched = 1))
+        advanceUntilIdle()
+        assertEquals(SearchPhase.EMPTY, vm.uiState.value.phase)
+        assertTrue(vm.uiState.value.items.isEmpty())
+    }
+
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
 

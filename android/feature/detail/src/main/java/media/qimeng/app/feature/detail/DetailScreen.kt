@@ -137,6 +137,8 @@ import media.qimeng.app.core.ui.theme.QimengDimens
  * 警戒线特此记档。
  */
 @Composable
+// 规模例外：单页面协调播放器/缩放沉浸与系统栏生命周期；无状态策略已下沉同包纯函数。
+// 不把Window/播放器写回拆成多个Effect owner；原件、预载与关闭资源仍在同一生命周期。
 fun DetailScreen(
     assetId: String,
     onBack: () -> Unit,

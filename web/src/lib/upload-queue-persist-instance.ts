@@ -25,6 +25,8 @@ function openQueueStorage(): Promise<UploadQueueStorage> {
       db.createObjectStore(STORE_NAME, { keyPath: 'id' })
     }
   }).then((db) => ({
+    durable: true,
+    close: () => db.close(),
     async getAll() {
       return runTx(db, STORE_NAME, 'readonly', (store) => store.getAll())
     },
@@ -41,6 +43,7 @@ function openQueueStorage(): Promise<UploadQueueStorage> {
 function createMemoryQueueStorage(): UploadQueueStorage {
   const rows = new Map<string, PersistedUploadItem>()
   return {
+    durable: false,
     async put(item) {
       rows.set(item.id, item)
     },
@@ -67,4 +70,11 @@ export function getUploadQueueStorage(): Promise<UploadQueueStorage> {
         : Promise.resolve(createMemoryQueueStorage())
   }
   return storagePromise
+}
+
+/** 用户明确重试时重新打开 IndexedDB；未确认的写/删由 persistence journal 重放。 */
+export async function retryUploadQueueStorage(): Promise<void> {
+  const previous = storagePromise
+  storagePromise = null
+  if (previous) (await previous).close?.()
 }

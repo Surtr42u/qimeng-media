@@ -9,6 +9,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
 import media.qimeng.app.core.data.repository.LibraryRepository
 import media.qimeng.app.core.model.LibraryKind
 import media.qimeng.app.core.model.LibrarySummary
@@ -51,6 +55,10 @@ class LibraryManageViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(LibraryManageUiState())
     val uiState: StateFlow<LibraryManageUiState> = _uiState.asStateFlow()
 
+    private var refreshJob: Job? = null
+    private var refreshQueued = false
+    private var queuedClearError = true
+
     init {
         refresh()
     }
@@ -62,17 +70,32 @@ class LibraryManageViewModel @Inject constructor(
      * 默认的清错误会把刚设置的横幅吞掉（时序上 refresh 的首个 update 后执行）。
      */
     fun refresh(clearError: Boolean = true) {
-        if (_uiState.value.loading) return
+        if (refreshJob?.isActive == true) {
+            // 写入成功后的复核不能被在途旧 GET 吞掉；最多合并一轮后续刷新。
+            refreshQueued = true
+            queuedClearError = queuedClearError && clearError
+            return
+        }
         val silent = _uiState.value.libraries.isNotEmpty()
-        viewModelScope.launch {
+        refreshJob = viewModelScope.launch {
             _uiState.update {
                 it.copy(loading = !silent, errorMessage = if (clearError) null else it.errorMessage)
             }
             try {
                 val libs = libraryRepository.libraries()
                 _uiState.update { it.copy(loading = false, libraries = libs) }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                _uiState.update { it.copy(loading = false, errorMessage = ERROR_LOAD) }
+                _uiState.update { it.copy(errorMessage = ERROR_LOAD) }
+            } finally {
+                _uiState.update { it.copy(loading = false) }
+                refreshJob = null
+                val again = refreshQueued
+                val clearNext = queuedClearError
+                refreshQueued = false
+                queuedClearError = true
+                if (again && currentCoroutineContext().isActive) refresh(clearNext)
             }
         }
     }
@@ -103,34 +126,31 @@ class LibraryManageViewModel @Inject constructor(
         }
         val name = current.formName.trim()
         val rootPath = current.formRootPath.trim()
+        _uiState.update { it.copy(registering = true, errorMessage = null) }
         viewModelScope.launch {
-            _uiState.update { it.copy(registering = true, errorMessage = null) }
             try {
                 val created = libraryRepository.register(name, rootPath, current.formKind)
-                var scanFailed = false
+                // 写入已确认就先记账；后续扫描取消/失败不能让用户重复注册。
+                _uiState.update {
+                    it.copy(formName = "", formRootPath = "", formKind = LibraryKind.NORMAL,
+                        noticeMessage = NOTICE_REGISTER_SUCCESS.format(name))
+                }
                 created?.id?.let {
                     try {
                         libraryRepository.scan(it)
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (e: Exception) {
-                        scanFailed = true
+                        _uiState.update { state -> state.copy(noticeMessage = NOTICE_REGISTER_SCAN_FAILED.format(name)) }
                     }
                 }
-                _uiState.update {
-                    it.copy(
-                        registering = false,
-                        formName = "",
-                        formRootPath = "",
-                        formKind = LibraryKind.NORMAL,
-                        noticeMessage = if (scanFailed) {
-                            NOTICE_REGISTER_SCAN_FAILED.format(name)
-                        } else {
-                            NOTICE_REGISTER_SUCCESS.format(name)
-                        },
-                    )
-                }
                 refresh()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                _uiState.update { it.copy(registering = false, errorMessage = ERROR_REGISTER) }
+                _uiState.update { it.copy(errorMessage = ERROR_REGISTER) }
+            } finally {
+                _uiState.update { it.copy(registering = false) }
             }
         }
     }
@@ -178,6 +198,8 @@ class LibraryManageViewModel @Inject constructor(
                 libraryRepository.delete(target.id)
                 _uiState.update { it.copy(noticeMessage = NOTICE_DELETE_SUCCESS.format(target.name)) }
                 refresh()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = ERROR_DELETE) }
             }
@@ -199,6 +221,8 @@ class LibraryManageViewModel @Inject constructor(
                     )
                 }
                 refresh()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _uiState.update { it.copy(errorMessage = ERROR_SET_ENABLED) }
                 refresh(clearError = false)

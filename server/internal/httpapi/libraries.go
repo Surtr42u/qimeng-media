@@ -330,7 +330,7 @@ func (s *Server) DeleteApiV1LibrariesLibraryId(w http.ResponseWriter, r *http.Re
 	s.dirs.invalidate(libraryID)
 	s.scanStates.set(libraryID, gen.LibraryScanStateIdle)
 	// 删库改变推荐候选集：推荐缓存失效经下方 library.changed 事件的装配期订阅统一触发
-	if err := s.bus.Publish(events.Event{Topic: events.TopicLibraryChanged}); err != nil {
+	if err := s.bus.Publish(events.Event{Topic: events.TopicLibraryChanged, LibraryChange: &events.LibraryChangeScope{LibraryID: libraryID}}); err != nil {
 		s.logger.Warn("广播 library.changed 失败", "err", err)
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -369,7 +369,7 @@ func (s *Server) PutApiV1LibrariesLibraryIdEnabled(w http.ResponseWriter, r *htt
 	}
 	// enabled 是推荐候选查询的 WHERE 条件（recommend.sql kill-switch）：
 	// 推荐缓存失效经下方 library.changed 事件的装配期订阅统一触发
-	if err := s.bus.Publish(events.Event{Topic: events.TopicLibraryChanged}); err != nil {
+	if err := s.bus.Publish(events.Event{Topic: events.TopicLibraryChanged, LibraryChange: &events.LibraryChangeScope{LibraryID: libraryID}}); err != nil {
 		s.logger.Warn("广播 library.changed 失败", "err", err)
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -389,20 +389,14 @@ func (s *Server) FinishScan(libraryID string, failed bool) {
 	//（成败都刷：失败时磁盘现状同样变了，刷新反而更准）。推荐流缓存失效
 	// 由该事件的装配期订阅统一触发（server.go New）。
 	s.refreshLibraryFileMetrics()
-	if err := s.bus.Publish(events.Event{Topic: events.TopicLibraryChanged}); err != nil {
+	if err := s.bus.Publish(events.Event{Topic: events.TopicLibraryChanged, LibraryChange: &events.LibraryChangeScope{LibraryID: libraryID}}); err != nil {
 		s.logger.Warn("广播 library.changed 失败", "err", err)
 	}
 	// 自动预生成缩略图（2026-09-15 批）：扫描终态后异步补齐新增/变更资产的
 	// 缩略图（对齐旧版「扫描完即有缩略图」；后台 goroutine，不阻塞终态回写）
-	s.WarmupAfterScan()
+	s.thumbWarmup.NotifyLibrary(libraryID)
 }
 
-// refreshLibraryFileMetrics 把 library_files{type} gauge 刷新为库内现状：
-// CountAllLibrariesMedia 一次分组取回全部库的 media_type 计数（原先
-// ListLibraries + 逐库 CountLibraryMedia 的 N+1 已合并），image/
-// animated_image 归 image 档——与 GetApiV1Libraries 的映射口径一致，
-// 两侧改动须双同步。变更点推送刷新（扫描完成/上传入库/删除进回收站/
-// 恢复四个时机各调一次），不做定时轮询：治理面板数据允许秒级陈旧，
-// 不值得为它加常驻扫描。失败只记日志：指标刷新失败不影响业务路径的
-// 成功响应。
+// refreshLibraryFileMetrics 仅标脏，由 mediawrite 单 worker 合并分组查询。
+// image/animated_image 合为 image，真相仍来自数据库，不推算增减计数。
 func (s *Server) refreshLibraryFileMetrics() { s.writes.RefreshLibraryFileMetrics() }

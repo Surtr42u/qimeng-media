@@ -1,7 +1,7 @@
 # ARCHITECTURE - 架构总纲
 
 > 本文维护当前系统结构与模块边界。协议、安全、领域分别由各自规范负责；不以本文覆盖其语义。技术选型的"为什么"见 `docs/adr/`，业务规则见 `docs/DOMAIN_RULES.md`。
-> 维护日期：2026-10-21。变更经过见 CHANGELOG 与 git 历史。
+> 维护日期：2026-10-25。变更经过见 CHANGELOG 与 git 历史。
 
 ## 阅读范围
 
@@ -90,15 +90,16 @@
 | 包 | 职责 | 禁止 |
 |---|---|---|
 | `httpapi` | 请求校验、鉴权、调编排服务、序列化 | 业务规则 |
-| `mediawrite` | 上传、移动/改名与回收站/恢复/到期清扫、共用入库、实时上传策略、完成凭据同事务提交、存储诊断、库变更指标/事件；生产在 main 显式装配并与 HTTP 共用修订号服务 | HTTP/SDK 类型、领域公式、第二份业务数据 |
+| `mediawrite` | 上传、移动/改名与回收站/恢复/到期清扫、共用入库、实时上传策略、完成凭据同事务提交、存储诊断、库变更事件及单 worker 的脏位合并指标刷新（main 启停/关库前收齐）；生产在 main 显式装配并与 HTTP 共用修订号服务 | HTTP/SDK 类型、领域公式、第二份业务数据 |
 | `syncchannel` | 本机同步轮询/触发、稳定观测/状态快照、媒体落位与 TXT 归档；复用 mediawrite/authorimport，main 显式装配 | HTTP/SDK 类型、复制入库或 TXT 规则 |
+| `portablebackup` | 当前v2便携文件DTO、写前校验/身份匹配/分段导入/事件回放/结果汇总与提交后通知；同一事务快照导出，复用 authorimport/eventstats | HTTP/SDK依赖、媒体原件写入、改变备份身份与部分提交语义 |
 | `authorimport` | 作者 TXT 导入/重导保护/移除/统一重建事务；手动、备份和同步共用，片段存取复用 authorattach | HTTP/SDK 类型、修改解析与匹配算法 |
 | `scanner` | 全量/增量扫描、变更检测、移动合并、动态监听生命周期及后台全扫跨库限并发；配置/成本边界见 server README | 直接写库（经 store） |
-| `thumbnail` | 缩略图生成队列（有界工作池、前台优先准入/同任务提升、懒生成、缓存键、静图输出格式自适应：libwebp 缺失时 mjpeg 降级——内嵌形态，U11 批次D） | 阻塞 API 请求 |
+| `thumbnail` | 缩略图生成队列（队列/集合/尺寸统一256表示预算、服务级关闭收齐续生、有界工作池、前台优先准入/同任务提升、懒生成、缓存键、静图输出格式自适应：libwebp 缺失时 mjpeg 降级——内嵌形态，U11 批次D） | 无界接纳；后台Submit阻塞业务请求（前台图片请求可限时等待自身生成） |
 | `thumbnailwarmup` | 开机/库变更/周期回填，游标批读与版本缓存覆盖进度；HTTP 仅通知及协议映射 | 媒体出口授权、原件变化发现、无界候选/缺图清单 |
 | `search` | FTS5 索引维护与查询 | — |
 | `recommend` | 推荐/排行算法 | **任何 IO**（纯函数，输入输出领域结构体） |
-| `recommendfeed` | 推荐输入装载、启动多 seed 复用本轮输入并独立评分、限容量短期 ID 顺序快照及当前页资格/元数据装载 | HTTP/协议对象、写入业务数据、修改评分公式 |
+| `recommendfeed` | 推荐输入装载、启动多 seed 复用本轮输入及 seed 无关准备并独立评分、有限不同键准入/服务级计算生命周期、可取消等待、限容量短期 ID 顺序快照及当前页资格/元数据装载 | HTTP/协议对象、写入业务数据、修改评分公式 |
 | `ranking` | 只读排行榜热度键装载、调用 recommend 选页、按页装配元数据/累计计数；httpapi 仅适配协议 | 写入业务数据、HTTP 依赖、复制热度公式 |
 | `stats` | 统计聚合、趋势分桶、同轴维度补零与总量守恒 | **任何 IO** |
 | `statsread` | 统计总览/日维度只读装载与共用窗口；精确全量数，客户端不反推 | HTTP/SDK 类型、写入、重复领域公式 |
@@ -123,7 +124,7 @@
 ### 5.1 模块边界强制与防漂移（ADR-0010 / ADR-0009 / ADR-0011 / ADR-0019）
 
 **编排下沉（ADR-0019）**：多步业务编排（上传落盘入库、移动先文件后库行、统计事件重建等）必须放在专职编排包（`server/internal/orchestration/` 或等价 app 层），`httpapi` 禁止业务编排，只保留鉴权、参数校验、序列化与对编排入口的一次调用。既有厚 handler 增量迁移；新增多步流一律不得在 httpapi 落地。不引入编排框架，`cmd/qimeng` 仍为唯一组合根。
-**当前迁移状态（2026-10-25）**：以等价业务包落实编排层，不要求固定 orchestration 目录。authorattach/eventstats 已承载相应业务；authoredit 已承接作者编辑类六用例的事务宿主（词表预填/来源区/作者建改删/资产作者替换，2026-10-24 Q1 批，author_edit.go/authors_manage.go 不再持事务，AST 门禁防回流）；mediawrite 已迁入上传、回收站删除/恢复/物理清理及到期清扫，httpapi/upload(s)/trash(_sweeper).go 只保留协议与生命周期适配。恢复分为文件落点/意图复核、原身份/日统计同事务提交、提交后通知；修订号与 HTTP 共享唯一服务。syncchannel 已承接本机同步调度/运行态/搬移与归档，authorimport 承接跨入口 TXT 导入/保护/移除/重建事务，HTTP 只触发和映射值快照。移动/改名已迁入 mediawrite，HTTP filing.go 只作存在性/JSON 校验及错误映射；业务在库锁内复核身份/路径/根，文件先行、库行失败无覆盖回滚，提交后才富化与通知。缩略图回填和覆盖统计已迁入 thumbnailwarmup，HTTP 只映射生命周期、通知和进度响应；业务复用扫描元数据及有界游标查询，thumbnail 负责实际生成时的原件校验。其他存量 handler（engagement/tags 单对读写、portable import/export 多步流）按触碰继续收敛，不据此宣称全部 HTTP 编排已清空。ADR-0042 的 localsync.PlanScan 仍负责安全扫描计划，不据局部完成宣称全层迁移完毕。
+**当前迁移状态（2026-10-25）**：以等价业务包落实编排层，不要求固定 orchestration 目录。authorattach/eventstats 已承载相应业务；authoredit 已承接作者编辑类六用例的事务宿主（词表预填/来源区/作者建改删/资产作者替换，2026-10-24 Q1 批，author_edit.go/authors_manage.go 不再持事务，AST 门禁防回流）；mediawrite 已迁入上传、回收站删除/恢复/物理清理及到期清扫，httpapi/upload(s)/trash(_sweeper).go 只保留协议与生命周期适配。恢复分为文件落点/意图复核、原身份/日统计同事务提交、提交后通知；修订号与 HTTP 共享唯一服务。syncchannel 已承接本机同步调度/运行态/搬移与归档，authorimport 承接跨入口 TXT 导入/保护/移除/重建事务，HTTP 只触发和映射值快照。移动/改名已迁入 mediawrite，HTTP filing.go 只作存在性/JSON 校验及错误映射；业务在库锁内复核身份/路径/根，文件先行、库行失败无覆盖回滚，提交后才富化与通知。缩略图回填和覆盖统计已迁入 thumbnailwarmup，HTTP 只映射生命周期、通知和进度响应；业务复用扫描元数据及有界资产/库/全量范围待办和游标查询，内部事件范围不进入 SSE 载荷；全量兜底独立计时，局部结果不发布全库覆盖，thumbnail 负责实际生成时的原件校验。便携 import/export 已迁入 portablebackup，HTTP 只保留有界解码/错误映射/序列化；领域文件DTO与协议通过边界契约测试同步，服务本身不依赖 gen。导入仍分段提交，失败后的已提交段同样通知读侧失效；导出仍只读同一事务快照。其他存量 handler（engagement/tags 单对读写）按触碰继续收敛，不据此宣称全部 HTTP 编排已清空。ADR-0042 的 localsync.PlanScan 仍负责安全扫描计划，不据局部完成宣称全层迁移完毕。
 
 边界不是口头约定，是**三层机器强制**（决策见 ADR-0010）：
 
@@ -190,10 +191,10 @@
 - **CI（GitHub Actions，`.github/workflows/ci.yml`）七 job**，push/PR 全绿才许合并：
   1. `openapi`：redocly 协议校验（error 失败，warning 不阻塞）
   2. `server`：Linux runner 上重建 Go 接口层 → golangci-lint（静态检查 + depguard 模块边界）→ go vet → go test（-race）→ 两万合成记录的扫描路径索引基准（仅索引构建）→ go build
-  3. `server-windows-filing`：Windows 原生 runner 上运行 filing/scanner/config 包测试，覆盖 Windows 文件操作、fsnotify 生命周期/身份保护及配置；不代表真实网络盘验收
-  4. `web`：npm ci → openapi-ts 重建 TS 客户端 → knip → tsc --noEmit → oxlint → npm run build → npm test（vitest，ADR-0017）
+  3. `server-windows-filing`：Windows 原生 runner 上运行 filing/scanner/config/thumbnail/thumbnailwarmup 包测试及隔离启动脚本回归，覆盖文件操作、fsnotify 生命周期/身份保护、配置和缩略图资源边界；不代表真实网络盘验收
+  4. `web`：npm ci → openapi-ts 重建 TS 客户端 → knip → tsc --noEmit → oxlint → npm run build → npm test（vitest，ADR-0017）→ 锁定 Playwright/Chromium 的合成 API 浏览器交互回归
   5. `sdk-chain`：`make sdk` 三端生成链可重建（生成物防漂移的结构性门禁，ADR-0009）
-  6. `android`：复用 sdk-chain 生成的 android/sdk → temurin 21 + gradle wrapper 缓存 → assembleDebug + testDebugUnitTest + lintDebug（M4-0 起）
+  6. `android`：复用 sdk-chain 生成的 android/sdk → temurin 21 + gradle wrapper 缓存 → assembleDebug + Debug 单测 + core:model:test + Debug/Release Lint；Release 出包同样以单测/Lint 成功作为候选包上传前提
   7. `desktop`：Tauri 2 壳 cargo test + build（windows runner + rust-cache，debug 链不出安装包；第四端门禁，ADR-0020，2026-10-03 补）
 - **安全与文档流水线**：安全行为用例仍随 server 的 go test 运行；`security.yml` 另做 govulncheck、Web/desktop npm audit、桌面/补丁测试 Cargo audit、glib 上游源码核验及 Linux release 原版/修复版迭代器回归，以及 PR dependency-review（high 起阻断），`docs.yml` 检查链接/ADR/归档/入口/Actions 固定与权限、PR 专题同步。配置已落地不等于本地/远端扫描全绿；当前结果见 HANDOVER。所有外部 Actions 固定完整 SHA，顶层 contents: read，checkout 不保留写凭据。
 - **镜像构建**：`make docker-build` 构建 amd64 镜像（debian-slim + ffmpeg + 静态二进制 + SPA，deploy/Dockerfile），2026-09-22 fnOS 虚拟机彩排记录保留；当前无 NAS 硬件，未来设备另行验收；CI 暂无镜像 job，基础镜像已固定清单 digest，arm64/当前镜像实际构建和 CI 镜像产出仍待验收
@@ -205,6 +206,6 @@
 
 SQLite 业务库默认 WAL/FULL（ADR-0048），以每次提交同步 WAL 换取提交持久性；连接池新连接和重连均由 DSN 保持。原件/回收站 meta 与 DB 不因此成为跨系统原子事务，真实掉电/设备验证单列。
 
-便携 JSON 迁移不含媒体原件，只合并目标库既有资产。当前导出 v2，以原始事件身份合并；旧 v1 保持聚合回放兼容，两版本映射/去重边界独立定义在 [迁移专题](domain/migration.md)。TXT 片段随备份 keep 合并，先行传输原件。禁止声称旧聚合身份可逆或所有迁移均零损失；必须同步升级客户端与服务端。
+便携 JSON 迁移不含媒体原件，只合并目标库既有资产。当前导出 v2，以原始事件身份合并；旧v1导入已按ADR-0050退役，删除聚合回放/批次锚，v2映射/去重边界定义在 [迁移专题](domain/migration.md)。TXT 片段随备份 keep 合并，先行传输原件。禁止声称旧聚合身份可逆或所有迁移均零损失；必须同步升级客户端与服务端。
 
 eventstats 编排在写事务内读取真相并重建派生统计；stats/materialize 保持纯函数。回收站恢复在原资产事务内调用单资产重建；portable_backup.go 适配既有导入/导出，migration 0019 只加无键身份旁表与触发器（ADR-0040）。缩略图表示版本贯通 URL/磁盘/客户端预取，规则见 [缩略图专题](domain/thumbnails.md)。

@@ -47,9 +47,11 @@ func TestPortableBackupConservesEventsAcrossRoundTrips(t *testing.T) {
 	aid := queryAssetID(t, a, "a.jpg")
 	report := gen.ViewEventReport{AssetId: uuid.MustParse(aid), Kind: gen.Open, SessionId: "roundtrip", StartedAt: a.clock.Now(), ClientEventId: uuid.New()}
 	postViewReport(t, a, report)
-	legacy := traversalPayload(a.clock.Now().UnixMilli())
-	if code, _ := importBackup(t, a, legacy); code != http.StatusOK {
-		t.Fatal(code)
+	if _, err := a.q.InsertViewEventIdempotent(t.Context(), db.InsertViewEventIdempotentParams{
+		AssetID: aid, Kind: "open", SessionID: "legacy-import", StartedAt: store.FormatTimestamp(a.clock.Now()),
+		ClientEventID: sql.NullString{String: "legacy:d:" + aid + ":open:historic:0", Valid: true},
+	}); err != nil {
+		t.Fatal(err)
 	}
 	if err := a.q.InsertViewEvent(t.Context(), db.InsertViewEventParams{AssetID: aid, Kind: "dwell", SessionID: "pre-key-source", StartedAt: store.FormatTimestamp(a.clock.Now()), Seconds: sql.NullInt64{Int64: 17, Valid: true}}); err != nil {
 		t.Fatal(err)
@@ -213,34 +215,6 @@ func TestRestoreStatsFailureKeepsRetryIntent(t *testing.T) {
 	var views int
 	if err := e.conn.QueryRow(`SELECT SUM(view_count) FROM asset_daily_stats WHERE asset_id=?`, id).Scan(&views); err != nil || views != 1 {
 		t.Fatalf("retry views=%d err=%v", views, err)
-	}
-}
-
-func TestRecordKeysStableAndUniqueEvenWithLiteralSuffix(t *testing.T) {
-	rows := []db.ExportListAssetsRow{
-		{AssetID: "a", FileName: "same.jpg", RelPath: "folder/same.jpg"},
-		{AssetID: "b", FileName: "same.jpg", RelPath: "folder/same.jpg"},
-		{AssetID: "c", FileName: "same.jpg", RelPath: "folder/same.jpg"},
-		{AssetID: "d", FileName: "same.jpg @ folder#b#1", RelPath: "same.jpg @ folder#b#1"},
-	}
-	keys := func(rows []db.ExportListAssetsRow) map[string]string {
-		seen := map[string]bool{}
-		result := map[string]string{}
-		for _, a := range assignRecordKeys(rows) {
-			if seen[a.recordKey] {
-				t.Fatal("collision")
-			}
-			seen[a.recordKey] = true
-			result[a.row.AssetID] = a.recordKey
-		}
-		return result
-	}
-	want := keys(rows)
-	for i, j := 0, len(rows)-1; i < j; i, j = i+1, j-1 {
-		rows[i], rows[j] = rows[j], rows[i]
-	}
-	if !reflect.DeepEqual(want, keys(rows)) {
-		t.Fatal("input ordering changed keys")
 	}
 }
 

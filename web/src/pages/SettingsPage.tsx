@@ -1,16 +1,10 @@
-import { useState } from 'react'
 import { toast } from 'sonner'
 import { batchFailureReason } from '@/lib/batch'
-import type { ClientConfig, RecommendPrefs } from '@/api/generated'
+import type { RecommendPrefs } from '@/api/generated'
 import { Pill } from '@/components/ui/pill'
 import { Switch } from '@/components/ui/switch'
-import {
-  CONFIG_BOUNDS,
-  DEFAULT_CLIENT_CONFIG,
-  mergeClientConfig,
-  useConfig,
-  useSaveConfig,
-} from '@/hooks/use-config'
+import { CONFIG_BOUNDS } from '@/hooks/use-config'
+import { useConfigForm } from '@/hooks/use-config-form'
 import {
   DEFAULT_PREFS,
   PREFS_KEYS,
@@ -22,26 +16,7 @@ import { useAuthLogout } from '@/hooks/use-session'
 import { useThumbSize } from '@/hooks/use-thumb-size'
 import { THUMB_SIZE_OPTIONS } from '@/lib/thumb-size'
 
-/**
- * 设置页（原型 #page-settings 移植）。
- * 阶段 B：新增「推荐偏好」卡（9 维权重，GET/PUT /recommendations/prefs，全量整体替换）——
- * 预设点击即保存；GET 失败兜底「均衡推荐」默认（DOMAIN_RULES §1.3）。
- * 阶段 C（2026-09-04）：扫描/上传两卡接 GET/PUT /api/v1/config 真实持久化——
- * 全量替换语义（四字段一并提交）；upload 两项服务端实时生效，scan 两项仅
- * 持久化、重启后生效（保存 toast 与输入提示注明，不假装实时）；
- * 界面卡维持静态说明。
- * 阶段 E4（2026-09-07）：推荐偏好只留 4 预设（口径对齐旧版 GUIDE_UI:255）——
- * 移除 9 维滑杆/保存按钮/本地草稿，点击预设即 PUT；激活态对服务端保存值逐维比较。
- * 2026-09-28：「作者总表镜像」「通用来源词表」两卡迁往文件管理域（数据管理 →
- * 上传文件，与上传挂靠工作台同页维护），此处只留指引文案。
- */
-
-/** 越界提示（协议 400 之前本地先拦，文案与 CONFIG_BOUNDS 对齐） */
-const BOUND_HINTS = {
-  workers: `扫描并发数须在 ${CONFIG_BOUNDS.workers.min}–${CONFIG_BOUNDS.workers.max}`,
-  thumbEdge: `缩略图长边须在 ${CONFIG_BOUNDS.thumbEdge.min}–${CONFIG_BOUNDS.thumbEdge.max} px`,
-  maxBytesMb: `单文件上限须在 ${CONFIG_BOUNDS.maxBytesMb.min}–${CONFIG_BOUNDS.maxBytesMb.max} MB`,
-} as const
+/** 设置页只渲染配置与触发动作；草稿修订和提交快照由 useConfigForm 持有。 */
 
 /** 缩略图档位 Pill 组（客户端本地偏好，点击即存 lib/thumb-size 持久化） */
 function ThumbSizePills() {
@@ -63,52 +38,7 @@ export default function SettingsPage() {
   // 登出（ADR-0021 多会话）：吊销本设备会话后清本地态，AuthGate 切回登录门禁
   const logout = useAuthLogout()
 
-  // 客户端配置（扫描/上传卡）：GET 回填 + 本地草稿；保存按钮一次 PUT 全量四字段
-  const { data: cfgData } = useConfig()
-  const saveConfig = useSaveConfig()
-  const [cfgDraft, setCfgDraft] = useState<ClientConfig | null>(null)
-  const cfg: ClientConfig = cfgDraft ?? (cfgData ? mergeClientConfig(cfgData) : DEFAULT_CLIENT_CONFIG)
-
-  const setScan = (key: keyof ClientConfig['scan'], raw: string): void => {
-    // 清空/非法输入不更新草稿（受控值维持原样，用户续输即可覆盖）
-    const n = Number(raw)
-    if (raw.trim() === '' || !Number.isFinite(n)) return
-    setCfgDraft({ ...cfg, scan: { ...cfg.scan, [key]: n } })
-  }
-
-  const setUpload = (key: keyof ClientConfig['upload'], raw: string): void => {
-    const n = Number(raw)
-    if (raw.trim() === '' || !Number.isFinite(n)) return
-    setCfgDraft({ ...cfg, upload: { ...cfg.upload, [key]: n } })
-  }
-
-  const doSaveConfig = (): void => {
-    // 本地范围校验先拦（与服务端 400 INVALID_PARAM 同口径，省一次白打请求）
-    if (cfg.scan.workers < CONFIG_BOUNDS.workers.min || cfg.scan.workers > CONFIG_BOUNDS.workers.max) {
-      toast.error(BOUND_HINTS.workers)
-      return
-    }
-    if (cfg.scan.thumbEdge < CONFIG_BOUNDS.thumbEdge.min || cfg.scan.thumbEdge > CONFIG_BOUNDS.thumbEdge.max) {
-      toast.error(BOUND_HINTS.thumbEdge)
-      return
-    }
-    if (cfg.upload.maxBytesMb < CONFIG_BOUNDS.maxBytesMb.min || cfg.upload.maxBytesMb > CONFIG_BOUNDS.maxBytesMb.max) {
-      toast.error(BOUND_HINTS.maxBytesMb)
-      return
-    }
-    const scanChanged = cfgData !== undefined &&
-      (cfg.scan.workers !== cfgData.scan.workers || cfg.scan.thumbEdge !== cfgData.scan.thumbEdge)
-    saveConfig.mutate(cfg, {
-      onSuccess: () => {
-        setCfgDraft(null)
-        // scan 两项是预留字段（未接入扫描器/缩略图管线，暂不生效）——
-        // 变更时明确告知，绝不说"重启后生效"（那是假的）
-        toast.success(scanChanged ? '设置已保存（扫描参数为预留字段，暂不生效）' : '设置已保存')
-      },
-      onError: (err) =>
-        toast.error(`设置保存失败：${batchFailureReason(err)}`),
-    })
-  }
+  const { cfg, isPending, save, setScan, setUpload, setAutoAccept } = useConfigForm()
 
   // 作者总表镜像卡与通用来源词表卡已迁往「数据管理 → 上传文件」（组件 =
   // components/manage/AuthorMirrorCard.tsx / SourceVocabularyCard.tsx，零逻辑改动）
@@ -172,7 +102,7 @@ export default function SettingsPage() {
             max={CONFIG_BOUNDS.maxBytesMb.max}
             step={1}
             value={cfg.upload.maxBytesMb}
-            onChange={(e) => setUpload('maxBytesMb', e.target.value)}
+            onChange={(e) => setUpload(e.target.value)}
           />
           <small>{CONFIG_BOUNDS.maxBytesMb.min}–{CONFIG_BOUNDS.maxBytesMb.max} MB（与配置文件上限取更严者）</small>
         </label>
@@ -181,9 +111,7 @@ export default function SettingsPage() {
               .settings-switch-track（复刻原隐藏 checkbox+<i>）；label 文字点击仍联动 */}
           <Switch
             checked={cfg.upload.autoAccept}
-            onCheckedChange={(checked) =>
-              setCfgDraft({ ...cfg, upload: { ...cfg.upload, autoAccept: checked } })
-            }
+            onCheckedChange={setAutoAccept}
           />
           <span>自动接收上传</span>
         </label>
@@ -227,10 +155,10 @@ export default function SettingsPage() {
         <button
           className="save-btn"
           type="button"
-          disabled={saveConfig.isPending}
-          onClick={doSaveConfig}
+          disabled={isPending}
+          onClick={save}
         >
-          {saveConfig.isPending ? '保存中…' : '保存设置'}
+          {isPending ? '保存中…' : '保存设置'}
         </button>
         <button
           className="save-btn"

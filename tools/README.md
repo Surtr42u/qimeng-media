@@ -1,6 +1,6 @@
 # 维护与验证工具
 
-测试/门禁只处理源码、文档或隔离合成数据，不访问 8420 真库。下述历史对账工具是用户授权后的只读运维例外，不通过 API 写入数据。
+测试/门禁只处理源码、文档或隔离合成数据，不访问8420真库。以下命令是工具用法；自动构建/单测/基准及文档门禁按当前用户要求在云端执行，不授权在本机运行。用户本次另授权的电脑隔离后端产物运行验证与历史只读运维例外，范围/证据见[HANDOVER](../docs/HANDOVER.md)，不通过API向真库写测试数据。
 
 ## 历史数据只读对账
 
@@ -43,7 +43,15 @@ PR CI 额外运行 `python tools/check_docs.py --base <base-sha> --event-path <e
 
 本地不指定 --base 只做静态检查；base 模式比较已提交的 base..HEAD，不包含工作区未提交改动。CI 使用 pull_request 事件、只读权限，不执行 pull_request_target、不写评论或外部消息。项目语义与验证边界仍须按 AI_README_FIRST 复核。
 
+## 协议检查工具来源
+
+Redocly CLI 固定为 Makefile 的 `REDOCLY_VERSION`（2.71.0）；CI、sdk-validate、lint 共用该值。CI 直接调用 `make openapi-lint`，保留 error 阻断和 warning 级别；完整输出留日志，下载/校验失败不会被过滤掉。版本由 npm 官方包元数据核对，Node 24 满足其 engines；使用方式见 [官方说明](https://redocly.com/docs/cli/installation)。生成器版本与 SDK 锁不随此项改变。其余主动下载工具继续固定版本/摘要，npm 工具走对应锁文件；runner 的 Node/JDK/系统软件是平台工具链来源，不把它们误作未锁的项目运行时包。
+
+Go 合成基准分开输出完整 ID 出口、seed 准备/每 seed 排序/整轮、实际 LoadPage 冷首屏与命中续页、扫描 SQL 快照装载和纯索引构建；分配是每次累计 B/op，不是 RSS。相同运行中的旧 Item 出口与新 ID 出口、逐 seed 准备与复用准备可直接对照；跨 SHA/历史硬件的数据不得据此推算同环境端点加速比例。
+
 ## 其他可靠性门禁
+
+Web CI 在 build/Vitest 后运行锁定 Playwright 的 Chromium 交互回归；静态预览只监听隔离回环端口，测试拦截全部 API 为合成响应，不连接 8420 或真实数据。失败上传 trace/截图到短期 artifact，定位信息与场景见 [Web 入口](../web/README.md#开发依赖安全)。此项是实际浏览器验证，Android/原生窗口/设备验收仍单独记录；不降低现有检查。
 
 `test_windows_launcher.ps1` 只允许在 GitHub Actions 的 Windows runner 执行：把真实无头启动脚本复制到临时目录，编译无数据库的合成 HTTP 程序，检查冷启动就绪且控制台保持、重复调用显示 RUNNING 并只保留一个后端。运行前拒绝已占用端口，结束时仅清理本轮合成程序与启动器进程树；CI 的 Windows 文件操作 job 同批执行。不在开发机运行，不访问现用数据，也不把合成回归当本机 `.lnk` 双击验收。
 
@@ -53,7 +61,7 @@ PR CI 额外运行 `python tools/check_docs.py --base <base-sha> --event-path <e
 
 Go `go test ./internal/architecture` 和 Web `npm test` 的 architecture 测试负责直接依赖边界，口径见 ARCHITECTURE §5.1。执行模型无可靠完整名称/变体时，交付记录如实标记未知，不沿用旧署名。当前维护状态见 [HANDOVER](../docs/HANDOVER.md)。
 
-security.yml 固定 govulncheck v1.9.0/cargo-audit 0.22.2；后者 MSRV 1.88，扫描 job 使用 Rust 1.90。npm audit high 起阻断，不用 force 或统一忽略压下失败。可本地按 workflow 同命令执行；网络失败不是扫描通过。恢复和真实跨卷命令见 [RESTORE](../docs/RESTORE.md)。
+security.yml固定govulncheck v1.9.0/cargo-audit 0.22.2；后者MSRV 1.88，Cargo扫描job使用Rust 1.90，glib回归job的工具链另见下节。npm audit high起阻断，不用force或统一忽略压下失败。这些检查按当前约定走云端；网络失败不是扫描通过。恢复和真实跨卷命令见[RESTORE](../docs/RESTORE.md)。
 
 Go 安全扫描及各构建工作流的 Go 版本来自 server/go.mod；lint 固定版本源码在该工具链下执行。Dependabot 已按用户最新要求恢复每周升级候选与自动安全升级 PR；每个更新配置（生态 + 目录）最多 1 个常规待处理 PR，不自动合并。机器人或人工发起的依赖更新均需逐项审查并提供具体文档影响说明，不绕过门禁。
 
@@ -62,3 +70,8 @@ Go 安全扫描及各构建工作流的 Go 版本来自 server/go.mod；lint 固
 `python tools/check_glib_patch.py` 校验官方快照的全部原始文件（含两行已修复源码）及桌面 Cargo 的本地补丁来源，拒绝文件漂移和重新引入注册表 glib；自测与文档工具共用 unittest discover。第三方 README 的 rustdoc 符号链接不按本地路径解析，普通失效链接仍检查。
 
 安全 CI 在 Linux/Rust 1.98.1 下执行上游 `variant_iter::tests` 的 release 优化测试：临时恢复经哈希核实的原始源码确认运行时失败，再恢复固定补丁并运行相同测试；网络/编译失败不算缺陷复现。快照许可、锁文件及整件退役规则见 [补丁说明](../desktop/vendor/README.md)。
+
+
+## 候选包门禁回归
+
+`test_release_gate.py`随既有docs云端unittest运行，固定检查APK模板的完整单测/Lint命令、默认success条件和上传先后；受控错误配置覆盖吞退出码、continue-on-error、always上传和提前上传。它是本仓文本契约，不是YAML通用解析器，也不等于Release整包失败注入；交付继续核对同SHA完整检查、签名/内嵌哈希，新增自动审查边界按用户当前授权和[部署入口](../deploy/README.md#android-候选包与发布资格)处理。

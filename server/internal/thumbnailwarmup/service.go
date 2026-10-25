@@ -44,33 +44,29 @@ type Snapshot struct {
 }
 
 type Service struct {
-	q       Candidates
-	thumbs  Thumbnails
-	logger  *slog.Logger
-	readyAt time.Time
-	wake    chan struct{}
-	epoch   atomic.Uint64
+	q         Candidates
+	thumbs    Thumbnails
+	logger    *slog.Logger
+	readyAt   time.Time
+	wake      chan struct{}
+	pendingMu sync.Mutex
+	pending   changeScope
+	epoch     atomic.Uint64
 	// 回填和统计各自有界，慢速投递期间不锁住进度请求。
-	progressMu sync.Mutex
-	cacheMu    sync.Mutex
-	cache      *Snapshot
+	progressGate chan struct{}
+	cacheMu      sync.Mutex
+	cache        *Snapshot
 }
 
 func New(q Candidates, thumbs Thumbnails, logger *slog.Logger, readyAt time.Time) *Service {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Service{q: q, thumbs: thumbs, logger: logger, readyAt: readyAt, wake: make(chan struct{}, 1)}
+	return &Service{q: q, thumbs: thumbs, logger: logger, readyAt: readyAt, wake: make(chan struct{}, 1), progressGate: make(chan struct{}, 1)}
 }
 
 // Notify 合并突发变更；当前回填期间的通知保留为下一轮，补游标前的新行。
-func (s *Service) Notify() {
-	s.epoch.Add(1)
-	select {
-	case s.wake <- struct{}{}:
-	default:
-	}
-}
+func (s *Service) Notify() { s.notifyScope(changeScope{all: true}) }
 
 // Run 由组合根仅启动一次，等待、SQL 与队列背压均随停机取消。
 func (s *Service) Run(ctx context.Context) {
@@ -81,26 +77,37 @@ func (s *Service) run(ctx context.Context, changeDelay time.Duration) {
 	if !wait(ctx, time.Until(s.readyAt)) {
 		return
 	}
-	lastStart := time.Now()
-	s.drainWake()
+	s.takePending()
 	s.reconcile(ctx)
+	// 独立全量兜底时钟；局部变更不能不断延期十分钟的外删缓存修复。
 	timer := time.NewTimer(reconcileInterval)
 	defer timer.Stop()
+	s.runLoop(ctx, changeDelay, timer.C, func() { timer.Reset(reconcileInterval) })
+}
+
+func (s *Service) runLoop(ctx context.Context, changeDelay time.Duration, fullTick <-chan time.Time, resetFull func()) {
+	lastStart := time.Now()
 	for {
+		full := false
 		select {
 		case <-ctx.Done():
 			return
 		case <-s.wake:
-			if !wait(ctx, time.Until(lastStart.Add(changeDelay))) {
-				return
-			}
-			s.drainWake()
-		case <-timer.C:
-			s.drainWake()
+		case <-fullTick:
+			full = true
+		}
+		if !wait(ctx, time.Until(lastStart.Add(changeDelay))) {
+			return
+		}
+		scope := s.takePending()
+		if full {
+			scope = changeScope{all: true}
 		}
 		lastStart = time.Now()
-		s.reconcile(ctx)
-		timer.Reset(reconcileInterval)
+		s.reconcileScope(ctx, scope)
+		if full {
+			resetFull()
+		}
 	}
 }
 
@@ -111,28 +118,50 @@ func (s *Service) drainWake() {
 	}
 }
 
-func (s *Service) reconcile(ctx context.Context) {
-	start := time.Now()
-	snap, submitted, err := s.inspect(ctx, true)
-	if err != nil {
-		if ctx.Err() == nil && !errors.Is(err, thumbnail.ErrPoolClosed) {
-			s.logger.Warn("缩略图回填失败（下轮重试）", "err", err)
-		}
-		return
+func (s *Service) reconcile(ctx context.Context) { s.reconcileScope(ctx, changeScope{all: true}) }
+
+func (s *Service) reconcileScope(ctx context.Context, scope changeScope) {
+	if _, ok := s.q.(ScopedCandidates); !ok {
+		scope = changeScope{all: true}
 	}
-	s.publish(snap)
+	start := time.Now()
+	candidates, submitted := 0, 0
+	for _, work := range scope.work() {
+		snap, n, err := s.inspectScope(ctx, true, work)
+		if err != nil {
+			if ctx.Err() == nil && !errors.Is(err, thumbnail.ErrPoolClosed) {
+				s.logger.Warn("缩略图回填失败（保留范围待办）", "err", err)
+				s.retryScope(scope)
+			}
+			return
+		}
+		candidates += snap.Total
+		submitted += n
+		if scope.all {
+			s.publish(snap)
+		} // 局部数不能冒充全库覆盖快照。
+	}
 	if submitted > 0 {
-		s.logger.Info("缩略图预热投递完成", "candidates", snap.Total,
-			"submitted", submitted, "elapsedMs", time.Since(start).Milliseconds())
+		s.logger.Info("缩略图预热投递完成", "candidates", candidates, "submitted", submitted, "full", scope.all, "elapsedMs", time.Since(start).Milliseconds())
 	}
 }
 
 func (s *Service) Progress(ctx context.Context) (Snapshot, error) {
+	if err := ctx.Err(); err != nil {
+		return Snapshot{}, err
+	}
 	if snap, ok := s.fresh(); ok {
 		return snap, nil
 	}
-	s.progressMu.Lock()
-	defer s.progressMu.Unlock()
+	select {
+	case s.progressGate <- struct{}{}:
+		defer func() { <-s.progressGate }()
+	case <-ctx.Done():
+		return Snapshot{}, ctx.Err()
+	}
+	if err := ctx.Err(); err != nil {
+		return Snapshot{}, err
+	}
 	if snap, ok := s.fresh(); ok {
 		return snap, nil
 	}
@@ -162,12 +191,22 @@ func (s *Service) publish(snap Snapshot) {
 }
 
 func (s *Service) inspect(ctx context.Context, submit bool) (Snapshot, int, error) {
+	return s.inspectScope(ctx, submit, workScope{})
+}
+
+func (s *Service) inspectScope(ctx context.Context, submit bool, scope workScope) (Snapshot, int, error) {
 	snap := Snapshot{at: time.Now(), epoch: s.epoch.Load()}
 	after := ""
 	submitted := 0
 	for {
-		rows, err := s.q.ListThumbnailWarmupPage(ctx, db.ListThumbnailWarmupPageParams{AfterID: after, PageSize: pageSize})
+		if err := ctx.Err(); err != nil {
+			return snap, submitted, err
+		}
+		rows, err := s.rowsInScope(ctx, scope, after)
 		if err != nil {
+			return snap, submitted, err
+		}
+		if err := ctx.Err(); err != nil {
 			return snap, submitted, err
 		}
 		for _, r := range rows {
@@ -189,6 +228,11 @@ func (s *Service) inspect(ctx context.Context, submit bool) (Snapshot, int, erro
 			}
 			task := thumbnail.Task{AssetID: r.AssetID, SourcePath: src, Kind: thumbnail.Kind(r.MediaType), Sizes: []thumbnail.Size{thumbnail.SizeGrid}}
 			if err := s.submit(ctx, task); err != nil {
+				if errors.Is(err, thumbnail.ErrSourceUnavailable) {
+					// 删除/离线挂载等单资产失败不阻塞后续健康资产；周期全量仍会重试。
+					s.logger.Warn("缩略图原件暂不可用，跳过本轮", "assetId", r.AssetID, "err", err)
+					continue
+				}
 				return snap, submitted, err
 			}
 			submitted++

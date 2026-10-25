@@ -63,8 +63,8 @@ class BackupViewModelTest {
 
     /** 合法信封字节（经 BackupValidator 真·前置校验，mock 不掺进校验链） */
     private val validBytes = """
-        {"format": "qimeng_backup", "schemaVersion": 1, "appIdentifier": "com.qimeng.media",
-         "data": {"authors": [{"authorId": "A1", "displayName": "作者一"}]}}
+        {"format": "qimeng_backup", "schemaVersion": 2, "appIdentifier": "com.qimeng.media",
+         "data": {"viewEvents": [], "authors": [{"authorId": "A1", "displayName": "作者一"}]}}
     """.trimIndent().toByteArray()
 
     private fun newViewModel(
@@ -476,7 +476,7 @@ private class FakeBackupRepository : BackupRepository {
 
     /** GET /export 的信封（moshi 紧凑序列化同款无空格格式，写盘断言子串口径不变） */
     private val exportEnvelopeJson =
-        """{"format":"qimeng_backup","schemaVersion":1,"appIdentifier":"com.qimeng.media","data":{}}"""
+        """{"format":"qimeng_backup","schemaVersion":2,"appIdentifier":"com.qimeng.media","data":{"viewEvents":[]}}"""
 
     override suspend fun exportJson(): String {
         exportCalls.add(Unit)

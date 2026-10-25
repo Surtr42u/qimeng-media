@@ -66,6 +66,8 @@ export function useUploadQueue(options: UploadQueueOptions) {
   // 引用变化可感知），订阅/解绑由 React 托管——卸载只是停止订阅，不碰传输
   const items = useSyncExternalStore(uploadQueueStore.subscribe, uploadQueueStore.getItems)
 
+  const persistenceHealth = useSyncExternalStore(uploadQueueStore.subscribePersistence, uploadQueueStore.getPersistenceHealth)
+
   const isBusy = items.some((it) => it.status === 'queued' || it.status === 'uploading')
   const hasFinished = items.some(
     (it: UploadItem) =>
@@ -74,6 +76,8 @@ export function useUploadQueue(options: UploadQueueOptions) {
 
   return {
     items,
+    persistenceHealth,
+    retryPersistence: uploadQueueStore.retryPersistence,
     enqueue: uploadQueueStore.enqueue,
     cancelAll: uploadQueueStore.cancelAll,
     clearFinished: uploadQueueStore.clearFinished,

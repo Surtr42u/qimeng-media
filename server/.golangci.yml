@@ -23,12 +23,6 @@ linters:
     - gocritic
 
   settings:
-    errcheck:
-      # 生产代码的 Close 错误无法恢复，检查了也只能 log（与历史默认一致）；
-      # 测试代码的 Close 噪音由下方 exclusions 处理。其余错误检查全部保留。
-      exclude-functions:
-        - "(*github.com/fsnotify/fsnotify.Watcher).Close" # errcheck verbose 显示的 FuncName 全限定形式
-
     gosec:
       # 排除与现状设计冲突的规则（详见每行注释）；其余安全规则（G201/G202/G401/G501 等）全部保留。
       excludes:

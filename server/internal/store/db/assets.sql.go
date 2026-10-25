@@ -298,6 +298,120 @@ func (q *Queries) ListCosWorkForAssets(ctx context.Context, assetIdsJson interfa
 	return items, nil
 }
 
+const listThumbnailWarmupAssetsPage = `-- name: ListThumbnailWarmupAssetsPage :many
+SELECT a.asset_id, l.root_path, a.rel_path, a.media_type, a.size_bytes, a.mtime
+FROM assets a
+JOIN libraries l ON l.id = a.library_id
+WHERE l.enabled = 1
+  AND a.asset_id IN (SELECT CAST(value AS TEXT) FROM json_each(?1))
+  AND a.asset_id > ?2
+ORDER BY a.asset_id ASC
+LIMIT ?3
+`
+
+type ListThumbnailWarmupAssetsPageParams struct {
+	AssetIdsJson interface{}
+	AfterID      string
+	PageSize     int64
+}
+
+type ListThumbnailWarmupAssetsPageRow struct {
+	AssetID   string
+	RootPath  string
+	RelPath   string
+	MediaType string
+	SizeBytes int64
+	Mtime     string
+}
+
+// Small, bounded JSON ID sets allow primary-key probes; no all-library filter
+// with an OR branch that could force a full scan for each uploaded asset.
+func (q *Queries) ListThumbnailWarmupAssetsPage(ctx context.Context, arg ListThumbnailWarmupAssetsPageParams) ([]ListThumbnailWarmupAssetsPageRow, error) {
+	rows, err := q.db.QueryContext(ctx, listThumbnailWarmupAssetsPage, arg.AssetIdsJson, arg.AfterID, arg.PageSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListThumbnailWarmupAssetsPageRow
+	for rows.Next() {
+		var i ListThumbnailWarmupAssetsPageRow
+		if err := rows.Scan(
+			&i.AssetID,
+			&i.RootPath,
+			&i.RelPath,
+			&i.MediaType,
+			&i.SizeBytes,
+			&i.Mtime,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listThumbnailWarmupLibraryPage = `-- name: ListThumbnailWarmupLibraryPage :many
+SELECT a.asset_id, l.root_path, a.rel_path, a.media_type, a.size_bytes, a.mtime
+FROM assets a
+JOIN libraries l ON l.id = a.library_id
+WHERE l.enabled = 1 AND a.library_id = ?1
+  AND a.asset_id > ?2
+ORDER BY a.asset_id ASC
+LIMIT ?3
+`
+
+type ListThumbnailWarmupLibraryPageParams struct {
+	LibraryID string
+	AfterID   string
+	PageSize  int64
+}
+
+type ListThumbnailWarmupLibraryPageRow struct {
+	AssetID   string
+	RootPath  string
+	RelPath   string
+	MediaType string
+	SizeBytes int64
+	Mtime     string
+}
+
+// A typed library change must not probe unrelated libraries' thumbnail caches.
+func (q *Queries) ListThumbnailWarmupLibraryPage(ctx context.Context, arg ListThumbnailWarmupLibraryPageParams) ([]ListThumbnailWarmupLibraryPageRow, error) {
+	rows, err := q.db.QueryContext(ctx, listThumbnailWarmupLibraryPage, arg.LibraryID, arg.AfterID, arg.PageSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListThumbnailWarmupLibraryPageRow
+	for rows.Next() {
+		var i ListThumbnailWarmupLibraryPageRow
+		if err := rows.Scan(
+			&i.AssetID,
+			&i.RootPath,
+			&i.RelPath,
+			&i.MediaType,
+			&i.SizeBytes,
+			&i.Mtime,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listThumbnailWarmupPage = `-- name: ListThumbnailWarmupPage :many
 SELECT a.asset_id, l.root_path, a.rel_path, a.media_type, a.size_bytes, a.mtime
 FROM assets a

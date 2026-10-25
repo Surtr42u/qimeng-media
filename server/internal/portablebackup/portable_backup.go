@@ -1,27 +1,27 @@
-package httpapi
+package portablebackup
 
 import (
 	"database/sql"
 	"fmt"
 	"time"
 
-	"qimeng-media/server/internal/httpapi/gen"
+	"qimeng-media/server/internal/eventstats"
 	"qimeng-media/server/internal/store/db"
 )
 
-// fillPortableEvents 保留原始身份、时刻、秒数和来源；聚合段仅供旧工具读取。
-func (exp *legacyExport) fillPortableEvents(data *gen.LegacyBackupData, byID map[string]*exportAsset) error {
+// fillPortableEvents 保留原始身份、时刻、秒数和来源；聚合段只作查看，不作为导入事件源。
+func (exp *backupExport) fillPortableEvents(data *BackupData, byID map[string]*exportAsset) error {
 	rows, err := exp.q.ExportPortableEvents(exp.ctx)
 	if err != nil {
 		return err
 	}
-	events := make([]gen.PortableViewEvent, 0, len(rows))
+	events := make([]ViewEvent, 0, len(rows))
 	for _, row := range rows {
 		a := byID[row.AssetID]
 		if a == nil {
 			continue
 		}
-		events = append(events, gen.PortableViewEvent{
+		events = append(events, ViewEvent{
 			EventId: row.EventKey, RecordKey: a.recordKey,
 			Kind: row.Kind, SessionId: row.SessionID,
 			StartedAt: row.StartedAt, Seconds: nullInt64ToPtr(row.Seconds), Day: nullStringPtr(row.Day),
@@ -39,12 +39,9 @@ func nullStringPtr(v sql.NullString) *string {
 }
 
 // validatePortableBackup 在任何写入前拒绝不完整的新格式，禁止静默降级聚合回放。
-func validatePortableBackup(req *gen.LegacyBackupImport) error {
-	if req.SchemaVersion != legacySchemaVersion && req.SchemaVersion != portableSchemaVersion {
-		return fmt.Errorf("不支持的备份版本")
-	}
-	if req.SchemaVersion != portableSchemaVersion {
-		return nil
+func validatePortableBackup(req *BackupImport) error {
+	if req.SchemaVersion != SchemaVersion {
+		return fmt.Errorf("仅支持本项目的 v%d 备份，旧版及未知版本不再导入", SchemaVersion)
 	}
 	if req.Data.ViewEvents == nil {
 		return fmt.Errorf("v2 备份缺少 viewEvents")
@@ -62,7 +59,7 @@ func validatePortableBackup(req *gen.LegacyBackupImport) error {
 		if err != nil || at.IsZero() || e.EventId == "" || !keys[e.RecordKey] {
 			return fmt.Errorf("无效的事件身份、引用或时刻")
 		}
-		if e.Kind != string(gen.Open) && e.Kind != string(gen.Play) && e.Kind != string(gen.Dwell) {
+		if e.Kind != eventOpen && e.Kind != eventPlay && e.Kind != eventDwell {
 			return fmt.Errorf("无效的事件类型")
 		}
 		if e.Seconds != nil && *e.Seconds < 0 {
@@ -76,7 +73,10 @@ func validatePortableBackup(req *gen.LegacyBackupImport) error {
 	return nil
 }
 
-func (imp *legacyImport) replayPortableEvents(req *gen.LegacyBackupImport) {
+func (imp *backupImport) replayPortableEvents(req *BackupImport) {
+	if imp.err != nil {
+		return
+	}
 	n := 0
 	imp.importSegment("原生事件", func(q *db.Queries) {
 		for _, e := range *req.Data.ViewEvents {
@@ -117,7 +117,7 @@ func (imp *legacyImport) replayPortableEvents(req *gen.LegacyBackupImport) {
 }
 
 // pickPortableAsset 本地身份优先；跨库逐层消歧，无唯一证据绝不取最早行。
-func pickPortableAsset(f gen.LegacyMediaFile, rows []db.ListAssetNameIndexRow, byID map[string]string) string {
+func pickPortableAsset(f MediaFile, rows []db.ListAssetNameIndexRow, byID map[string]string) string {
 	if f.AssetId != nil && byID[*f.AssetId] != "" {
 		return *f.AssetId
 	}
@@ -146,4 +146,14 @@ func pickPortableAsset(f gen.LegacyMediaFile, rows []db.ListAssetNameIndexRow, b
 		}
 	}
 	return found
+}
+
+// rebuildDailyStats 依据现有事件重建派生统计，不改变事件真相或旧身份。
+func (imp *backupImport) rebuildDailyStats() {
+	if imp.err != nil {
+		return
+	}
+	if err := eventstats.Rebuild(imp.ctx, imp.s.conn); err != nil {
+		imp.fail("重建按天统计物化表", err)
+	}
 }

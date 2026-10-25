@@ -3,7 +3,7 @@
  * 数据源 GET/PUT /api/v1/config：PUT 为全量整体替换语义，成功响应返回
  * 存储后全量（直写缓存省一轮 GET）。
  * 生效口径（openapi description 同步写明）：upload 两项实时生效；
- * scan 两项仅持久化、重启后生效（UI 文案需注明，不假装实时）。
+ * scan 两项仅持久化预留，重启也不生效（与 OpenAPI ClientConfig 同步）。
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -42,7 +42,13 @@ export function useSaveConfig() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (cfg: ClientConfig) => unwrapSdkResult(putApiV1Config({ body: cfg })),
-    onSuccess: (saved) => qc.setQueryData(CONFIG_QUERY_KEY, saved),
+    // 作废保存前的 GET，避免迟到旧值在 PUT 成功后覆盖缓存。
+    onMutate: () => qc.cancelQueries({ queryKey: CONFIG_QUERY_KEY }),
+    onSuccess: async (saved) => {
+      // 保存期间也可能因焦点/SSE 再发 GET，确认响应前再次作废旧读取。
+      await qc.cancelQueries({ queryKey: CONFIG_QUERY_KEY })
+      qc.setQueryData(CONFIG_QUERY_KEY, saved)
+    },
   })
 }
 

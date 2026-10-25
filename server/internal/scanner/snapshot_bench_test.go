@@ -25,10 +25,14 @@ func BenchmarkScanSnapshotIndex(b *testing.B) {
 			runtime.KeepAlive(known)
 		}
 	})
+	snapshots := make([]db.ListScanAssetSnapshotsRow, len(assets))
+	for i, a := range assets {
+		snapshots[i] = db.ListScanAssetSnapshotsRow{AssetID: a.AssetID, RelPath: a.RelPath, SizeBytes: a.SizeBytes, Mtime: a.Mtime, UpdatedAt: a.UpdatedAt}
+	}
 	b.Run("snapshot-index", func(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
-			runtime.KeepAlive(indexScanAssets(assets))
+			runtime.KeepAlive(indexScanAssets(snapshots))
 		}
 	})
 }

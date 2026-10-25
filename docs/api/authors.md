@@ -8,6 +8,8 @@ TXT 导入/保护/移除/统一重建事务在 authorimport，手动、备份与
 
 端点：GET /authors、**POST /authors、PUT/DELETE /authors/{id}**、**GET /authors/suggest、GET/PUT /authors/source-vocabulary、GET/PUT /authors/{id}/sources**、POST/GET/DELETE /authors/import-txt、**GET /authors/import-txt/export**、POST /authors/import-txt/rebuild、**GET/PUT /authors/mirror**、PUT /authors/{id}/follow
 
+作者 TXT 手动导入沿用普通 JSON 请求 **1 MiB** 上限（`httpapi.maxJSONBody`），不是同步通道或便携备份上限；限制包含 filename/content/conflictResolution 的整个 UTF-8 JSON 及转义开销。Android 在数据层先校验文件名/声明大小，再按原始字节上限+1 截止并核对实际 SDK 序列化大小；Web 读前检查 File 大小、出网前核对 JSON 字节。超限不提交片段，失败可重选。保留各端既有 UTF-8 解码策略，不增加编码支持；服务端拒绝仍为最后防线。本项澄清已有上限，不新增协议字段/schema 或限制。
+
 常规/COS 双体系（type 区分）；
 TXT 三格式自动识别统一重建（GET=已导入片段列表〔**2026-09-25 起条目带 `importedAt`**（RFC3339，旧数据零值=最旧）〕、DELETE=移除片段并从剩余片段重建〔204/404〕，第五笔（历史档）新增——旧版数据管理「TXT导入作者」卡数据源；
 POST …/rebuild=用已存片段幂等重放重建关联〔不增删片段，2026-09-04 新增——库重建后常规关联丢失的自救入口〕）；

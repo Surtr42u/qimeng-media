@@ -1,7 +1,5 @@
 package media.qimeng.app.feature.manage
 
-import android.net.Uri
-import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -26,18 +24,13 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import media.qimeng.app.core.ui.component.QimengCapsuleTextField
 import media.qimeng.app.core.ui.component.QimengTopBar
 import media.qimeng.app.core.ui.theme.QimengDimens
@@ -81,7 +74,7 @@ private val TXT_MIME_TYPES = arrayOf("text/plain")
 /**
  * 作者 TXT 导入页（U10-6b）：片段列表 + 虚线导入区卡化（点击=选文件）+ 三行规则说明
  * + 重新匹配钮。信息架构基准 = Web TxtAuthorImportCard，视觉/交互基准 = App 库管理子页。
- * 业务全在 ViewModel（铁律 7）；SAF 读文件是屏幕层平台胶水（SettingsScreen 先例口径）。
+ * 业务在 ViewModel（铁律 7），SAF 有界读取在 core:data。
  */
 @Composable
 fun AuthorTxtImportScreen(
@@ -91,26 +84,11 @@ fun AuthorTxtImportScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
-    // SAF 选文件（OpenDocument）：选择器回调里读文件名与 UTF-8 内容（拍板：只支持
-    // UTF-8，BOM 不特判——与 Web readAsText 默认 UTF-8 同口径，Web 也无 BOM 剥离），
-    // 业务校验/出网全在 VM；uri=null=用户取消，静默
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
+    // UI 只转交 URI；元数据、读取上限与 UTF-8 解码由数据层 reader 负责。
     val pickTxtLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
     ) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        scope.launch {
-            // 读文件走 IO（平台胶水），完成后回主线程进 VM
-            val filename = resolveDisplayName(context, uri) ?: uri.lastPathSegment ?: ""
-            val content = readUtf8(context, uri)
-            if (content == null) {
-                // 读取失败文案复用 Web reader.onerror 逐字（走错误横幅通道）
-                viewModel.onReadFailed()
-            } else {
-                viewModel.onFilePicked(filename, content)
-            }
-        }
+        if (uri != null) viewModel.onFileSelected(uri)
     }
 
     Column(modifier = modifier.fillMaxSize()) {
@@ -302,23 +280,6 @@ internal fun StatusMessageCard(text: String, container: Color, onDismiss: () -> 
             modifier = Modifier.padding(QimengDimens.SpaceL),
         )
     }
-}
-
-/** SAF 显示名解析（OpenDocument 回调只给 uri；查询失败返回 null 让调用方兜底） */
-private fun resolveDisplayName(
-    context: android.content.Context,
-    uri: Uri,
-): String? = runCatching {
-    context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
-        if (cursor.moveToFirst()) cursor.getString(0) else null
-    }
-}.getOrNull()
-
-/** SAF 读文件 → UTF-8 字符串（屏幕层平台胶水；失败返回 null。只支持 UTF-8，拍板口径） */
-private suspend fun readUtf8(context: android.content.Context, uri: Uri): String? = withContext(Dispatchers.IO) {
-    runCatching {
-        context.contentResolver.openInputStream(uri)?.use { stream -> stream.readBytes().toString(Charsets.UTF_8) }
-    }.getOrNull()
 }
 
 /**

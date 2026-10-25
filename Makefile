@@ -11,7 +11,8 @@ export PATH := /c/Program Files/Go/bin:$(PATH)
 GOBIN_DIR ?= $(HOME)/go/bin
 
 # 协议校验工具与生成器版本（协议宪法 api/openapi.yaml 的三端生成链，见 AI_README_FIRST「协议先行」）
-REDOCLY := npx -y @redocly/cli
+REDOCLY_VERSION := 2.71.0
+REDOCLY := npx -y @redocly/cli@$(REDOCLY_VERSION)
 OAPI_CODEGEN_VERSION := v2.8.0
 # Kotlin 生成链版本锁定（2026-10-01 CI 指纹锁从未绿排查批）：npm CLI 包
 # @openapitools/openapi-generator-cli（版本体系 2.x）内嵌绑定的 Java 生成器版本
@@ -97,15 +98,12 @@ sdk-clean:
 	rm -rf android/sdk web/src/api/generated
 	rm -f server/internal/httpapi/gen/*.gen.go
 
-sdk-validate:
-	@echo "==> [2/5] validate api/openapi.yaml (redocly; struct errors fail the build)"
-	@if $(REDOCLY) lint api/openapi.yaml > /tmp/redocly-sdk.log 2>&1; then \
-		echo "    spec OK"; \
-	else \
-		echo "    spec has errors (full detail: make lint):"; \
-		grep -E "Error was generated|Validation failed" /tmp/redocly-sdk.log | head -8; \
-		exit 1; \
-	fi
+sdk-validate: openapi-lint
+
+.PHONY: openapi-lint
+openapi-lint:
+	@echo "==> validate api/openapi.yaml (redocly $(REDOCLY_VERSION); errors fail the build)"
+	$(REDOCLY) lint api/openapi.yaml
 
 sdk-go:
 	@echo "==> [3/5] generate Go server interface (oapi-codegen $(OAPI_CODEGEN_VERSION) -> server/internal/httpapi/gen/)"

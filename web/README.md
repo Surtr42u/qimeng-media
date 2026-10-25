@@ -35,9 +35,10 @@ src/
 - 组件内出现 `fetch/axios/api.` = 违规
 - `tests/architecture.test.ts` 随 `npm test` 用 TypeScript AST 自动检查 pages/components 的运行时 API 导入与直接请求；SDK 纯类型导入和非 API 组件懒加载允许。Node 源码检查/桌面契约测试位于 tests/，由 tsconfig.node 类型检查，不向浏览器代码引入 Node 全局类型。不把静态检查当作全调用链业务规则证明。
 - 例外：`lib/upload-chunked.ts` 传输层 XHR 直连不走生成 SDK（abort 支持缺失+403 拦截器误伤，ADR-0028 记档）
-- 上传链路 lib 内分工（2026-10-24 提取批）：队列状态（entries/XHR 句柄/取消旗标/恢复/订阅/终态推进）唯一持有在 `lib/upload-queue-store.ts`；「上传成功后挂靠」无状态服务（响应资产 id 解析、先 authors 替换后 sources append、失败转「已入库待挂靠」）在 `lib/upload-attach.ts`；分片传输在 `lib/upload-chunked.ts`；刷新持久化在 `lib/upload-queue-persist*.ts`。纯提取，交互行为不变。
+- 上传链路 lib 内分工（2026-10-24 提取批）：队列状态（entries/XHR 句柄/取消旗标/恢复/订阅/终态推进）唯一持有在 `lib/upload-queue-store.ts`；「上传成功后挂靠」无状态服务（响应资产 id 解析、先 authors 替换后 sources append、失败转「已入库待挂靠」）在 `lib/upload-attach.ts`；分片传输在 `lib/upload-chunked.ts`；刷新持久化端口/装配在 `lib/upload-queue-persist*.ts`，IO 合并、失败重试与健康在 `lib/upload-persistence.ts`（不持传输状态）。纯提取，交互行为不变。
 - 出现硬编码颜色 = 违规（一律 `var(--qm-*)`）
 - 数据转换/业务判断放 hooks 或服务端，不进组件
+- 设置的配置草稿/修订/提交快照由 `use-config-form` 单独持有；慢 PUT 只确认自己的版本，保存期间的新输入保留。保存前作废在途旧 GET，扫描参数仍仅持久化预留。
 - 开发代理目标默认 8420；隔离调试实例可用 `QIMENG_DEV_PROXY_TARGET=http://127.0.0.1:<port>` 覆盖
 
 ## 开发与验证
@@ -45,6 +46,10 @@ src/
 仓库根 `make web-dev`、`make web-test`，测试/构建脚本以 package.json 与 Makefile 为准。日常由后端托管 web/dist，交付本地可见改动前 `npm --prefix web run build`。只验证受影响页面和行为；API/领域变化另补相关专题。修改 TopBar 时读 [desktop README](../desktop/README.md) 的 titlebar.js 类名/title/header 契约。
 
 ## 开发依赖安全
+
+本轮收敛既有Dependabot候选：Vitest及配套mocker/spy 5.0.0→5.0.5（[上游修复说明](https://github.com/vitest-dev/vitest/releases/tag/v5.0.5)），锁文件同时采用其匹配的传递依赖；fast-uri 3.1.8→3.1.9（[URI解析安全修复](https://github.com/fastify/fast-uri/releases/tag/v3.1.9)），serialize-javascript 7.1.0→7.1.4（[序列化修复](https://github.com/yahoo/serialize-javascript/releases/tag/v7.1.4)）。均属现有开发/构建链，不增加应用运行时依赖，不改接口、UI或业务规则；合并后的锁文件须通过当前head的干净安装、SDK生成、Web构建/单测/浏览器及安全门禁。
+
+新增 `npm run test:e2e` 使用锁定的 Playwright 1.64.1 和配套 Chromium，仅属开发依赖，不进入应用运行时；按 [官方 webServer](https://playwright.dev/docs/test-webserver) 与 [网络拦截](https://playwright.dev/docs/network) 使用静态预览、合成 API，无真实后端。CI在构建后运行慢保存、失败重试、迟到查询/焦点刷新和上传存储初始化失败→本地IO重试的四个DOM场景，失败保留trace/截图；其他交互矩阵见任务书§11。当前会话约定构建/测试只走云端；浏览器验证、纯函数单测与设备验收分别记录。保留现有 Vitest/AST 门禁，未覆盖交互见 HANDOVER。
 
 PWA 图标生成器 2.x 与 vite-plugin-pwa 2.x 配套升级；后者的 peer 范围才接受生成器 2.x（[上游发布说明](https://github.com/vite-pwa/vite-plugin-pwa/releases/tag/v2.0.0)）。保留现有 ESM 配置、图标预设、manifest 与自动更新规则，升级后验证干净安装、SDK 生成、构建和隔离目录图标生成；不使用 force/legacy-peer-deps 绕过不兼容的 peer 约束。
 
@@ -54,10 +59,19 @@ shadcn/ui 组件及 components.json 保留；将唯一被构建消费的 dist/ta
 
 库变更、成功备份导入及 SSE 重连共用 query-invalidation 的失效映射，统计/排行/历史与推荐、资产同时校验。staleTime 只标陈旧，不是定时轮询。推荐初始 seed=0 与服务端 Web 预热互指；60 条分页共享最多 60 秒的顺序快照，跨失效边界仍按 ID 去重。推荐/排行按 `X-Qimeng-Next-Offset` 续页（-1 到底），短页/空页仍可继续；仅旧服务端无头时回退页长。每页完成后恢复触底观察，空页/全重复页不依赖网格高度变化才能继续；元数据留 hooks，页面仍消费数组。
 
+## 当前备份格式
+
+仅接收本项目v2备份，旧v1/缺版本/未知版本在lib解析阶段拒绝；v2必须带viewEvents数组（可为空）。确认摘要只数原始事件，展示用聚合段不重复计数；页面不承诺无损回灌旧App。服务端同样写前拒绝，当前合并/标签替换与历史身份保留规则见[备份专题](../docs/api/backup.md)和ADR-0050，不由UI重算。
+
 ## 上传任务恢复
 
-新队列项独立持久化 UUID uploadId 和 File.lastModified；直传/分片创建均透传，刷新恢复和会话重建保持任务 ID。重选文件校验名称、大小和已有修改时间；同 size/mtime 的内容替换仍不能检出。旧队列缺字段保持接收时间，并补一个新的任务 ID；旧请求成功窗口不能据此追溯去重。服务端重放期限及错误语义见 [上传 API](../docs/api/files.md#上传任务重放源时间与容量adr-0049)。IndexedDB 不可用或写入失败仍是最佳努力降级，不能承诺刷新恢复。用户本轮恢复现有云端完整门禁与双端更新，补源时间恢复/新任务参数回归；未接入 Playwright，实际结果见 HANDOVER。
+新队列项使用 UUID 本地键（兼容旧数字键），不依赖恢复完成先后，避免终态旧键过滤后被新任务复用；独立持久化 UUID uploadId 和 File.lastModified；直传/分片创建均透传，刷新恢复和会话重建保持任务 ID。重选文件校验名称、大小和已有修改时间；同 size/mtime 的内容替换仍不能检出。旧队列缺字段保持接收时间，并补一个新的任务 ID；旧请求成功窗口不能据此追溯去重。服务端重放期限及错误语义见 [上传 API](../docs/api/files.md#上传任务重放源时间与容量adr-0049)。IndexedDB 不可用或写入失败会在队列显示“本次任务仅当前页面有效/刷新可能无法恢复”，提供重试存储入口，不中断传输或重发业务请求。`upload-persistence` 只持 IO 意图/健康：单排空体按 ID 合并写删，终态删除排在旧写后，较晚进度不能复活；删除失败保留待删意图，尽力写 `terminal` 标记，恢复跳过并清理该标记。删除与标记均失败时，刷新仍可能出现旧条目，明确提示先核对入库事实；不可据此承诺永远恰好一次。重试恢复沿用 uploadId，七天完成凭据边界不变。共享 `idb.runTx` 只在事务 complete 后确认，request 成功后的 abort 仍拒绝；这也用于事件账本，浏览器回收/清理存储仍属平台边界。Playwright 的设置与队列降级场景使用合成 API，实际结果见 HANDOVER。
 
 ## 统计消费
 
 数据页按所选窗口读取 overview 汇总与同轴 trends；静图/动图/视频数量互斥，窗口浏览/播放分列。作者/标签统计榜调用服务端窗口端点，不从管理列表重排；查看榜单沿用窗口并标明上限。失败与真实空数据分开，新统计字段缺失明确提示服务端升级。口径与 Android 共用 [统计专题](../docs/domain/statistics.md#统计数据消费约束)。
+
+
+## 规模与状态所有权审查
+
+上传队列保持模块级唯一传输/XHR/pump owner，挂靠和持久化IO分别复用独立服务；图片查看器已区分外层portal/焦点/chrome与ViewerCanvas手势现场，数学公式独立。Q08当前规模/保留依据和实际测试边界见[任务书结构结论](../docs/OPTIMIZATION_TASKBOOK_20261025.md)。不为行数增加同步状态，不扩张knip未用导出阻断范围。

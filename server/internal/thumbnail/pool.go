@@ -22,15 +22,19 @@ var (
 	ErrQueueFull = errors.New("thumbnail: 工作池队列已满，任务被丢弃")
 	// ErrPoolClosed 池已关闭，不再接收任务。
 	ErrPoolClosed = errors.New("thumbnail: 工作池已关闭")
+	// ErrSourceUnavailable 是单资产准备失败；回填应跳过该资产而非中止整轮。
+	ErrSourceUnavailable = errors.New("thumbnail: 原件暂不可用")
 )
 
 // Task 一个缩略图生成任务：对某资产生成一组尺寸的缩略图。
 // 入库触发/懒生成端点（后续接线任务）负责构造并提交。
 type Task struct {
-	AssetID    string
-	SourcePath string
-	Kind       Kind
-	Sizes      []Size
+	AssetID     string
+	SourcePath  string
+	Kind        Kind
+	Sizes       []Size
+	reservation *representationLease
+	version     string
 }
 
 // WorkerPool 固定 worker + 带界队列的缩略图工作池。
@@ -94,6 +98,7 @@ func (p *WorkerPool) work() {
 // 崩溃退出（否则池逐步失去 worker、队列永远不消化），进程也不因后台
 // 任务 panic 退出。任务级 recover 后继续处理后续任务。
 func (p *WorkerPool) handleTask(task Task) {
+	defer task.reservation.release()
 	defer func() {
 		if r := recover(); r != nil {
 			p.logger.Error("缩略图任务 panic 已恢复",
@@ -102,6 +107,11 @@ func (p *WorkerPool) handleTask(task Task) {
 		}
 	}()
 	if err := p.handle(p.ctx, task); err != nil {
+		if p.ctx.Err() != nil {
+			// 外部进程在服务取消时可能只报 signal killed；正常停机不冒充资产故障。
+			p.logger.Debug("缩略图任务随服务停止", "assetId", task.AssetID, "err", err)
+			return
+		}
 		p.logger.Error("缩略图任务失败",
 			"assetId", task.AssetID, "source", task.SourcePath, "err", err)
 	}

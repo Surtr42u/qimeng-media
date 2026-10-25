@@ -76,7 +76,7 @@ func TestImportPublishesContentChangeOnlyOnSuccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer sub.Close()
-	status, _ := importBackup(t, env, gen.LegacyBackupImport{Format: "wrong", Data: gen.LegacyBackupData{}})
+	status, _ := importBackup(t, env, gen.LegacyBackupImport{Format: "wrong", Data: gen.LegacyBackupData{ViewEvents: &[]gen.PortableViewEvent{}}})
 	if status != http.StatusBadRequest {
 		t.Fatal("invalid import accepted")
 	}
@@ -85,7 +85,7 @@ func TestImportPublishesContentChangeOnlyOnSuccess(t *testing.T) {
 		t.Fatal("invalid import published content change")
 	default:
 	}
-	status, _ = importBackup(t, env, gen.LegacyBackupImport{Format: "qimeng_backup", SchemaVersion: 1, Data: gen.LegacyBackupData{}})
+	status, _ = importBackup(t, env, gen.LegacyBackupImport{Format: "qimeng_backup", SchemaVersion: portableSchemaVersion, Data: gen.LegacyBackupData{ViewEvents: &[]gen.PortableViewEvent{}}})
 	if status != http.StatusOK {
 		t.Fatal("valid import failed")
 	}

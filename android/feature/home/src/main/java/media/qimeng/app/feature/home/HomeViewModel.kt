@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import media.qimeng.app.core.data.util.runSuspendCatching
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -126,6 +127,8 @@ data class HomeUiState(
  * 三 tab 各自的取数段与共享翻页机，警戒线特此记档。
  */
 @HiltViewModel
+// 规模例外：三Tab的代际、刷新/续页、筛选草稿与唯一StateFlow一起裁决；拆成多个VM会增加同步owner。
+// 无状态分页/预取策略已在core中，取消和前台恢复由HomeViewModelTest覆盖。
 class HomeViewModel @Inject constructor(
     private val mediaRepository: MediaRepository,
     private val gridPrefs: GridPrefsRepository,
@@ -456,7 +459,7 @@ class HomeViewModel @Inject constructor(
             return
         }
         viewModelScope.launch {
-            runCatching { mediaRepository.createTag(trimmed) }
+            runSuspendCatching { mediaRepository.createTag(trimmed) }
                 .onSuccess {
                     setPanelFeedback(null)
                     loadTags()
@@ -475,7 +478,7 @@ class HomeViewModel @Inject constructor(
      */
     fun deleteTag(tagId: String) {
         viewModelScope.launch {
-            runCatching { mediaRepository.deleteTag(tagId) }
+            runSuspendCatching { mediaRepository.deleteTag(tagId) }
                 .onSuccess {
                     val draft = _uiState.value.filterPanel.draft
                     if (tagId in draft.tagIds) {
@@ -494,7 +497,7 @@ class HomeViewModel @Inject constructor(
 
     private fun loadTags() {
         viewModelScope.launch {
-            runCatching { mediaRepository.tags() }
+            runSuspendCatching { mediaRepository.tags() }
                 .onSuccess {
                     _uiState.value = _uiState.value.copy(
                         filterPanel = _uiState.value.filterPanel.copy(tags = it),
@@ -606,28 +609,32 @@ class HomeViewModel @Inject constructor(
         val seed = if (isRefresh || !isInitial) state.seed + 1 else state.seed
         setRecommendation(tab, state.copy(isLoading = true, isRefreshing = isRefresh, seed = seed))
         viewModelScope.launch {
-            runCatching {
-                mediaRepository.recommendations(seed, RecommendPaging.PULL_LIMIT, null, cosOnly = tab == HomeTab.COS)
-            }.onSuccess { items ->
-                if (gen != recommendationGeneration(tab)) return@onSuccess
-                initialRetryAttempts.remove(tab)
-                val latest = _uiState.value.recommendation(tab)
-                setRecommendation(tab, latest.copy(
-                    pulled = items,
-                    revealed = minOf(items.size, RecommendPaging.BATCH_SIZE),
-                    isLoading = false,
-                    isRefreshing = false,
-                    loaded = true,
-                    exhausted = false,
-                    reloadTick = latest.reloadTick + 1,
-                ), error = null)
-                likeMutationTracker.noteListFetchCompleted()
-            }.onFailure {
-                if (gen != recommendationGeneration(tab)) return@onFailure
-                val retryScheduled = isInitial && !isRefresh &&
-                    !_uiState.value.recommendation(tab).loaded && scheduleInitialRetry(tab)
-                setRecommendation(tab, _uiState.value.recommendation(tab).copy(isLoading = false, isRefreshing = false),
-                    error = if (retryScheduled) null else LIST_LOAD_FAILED_MESSAGE)
+            try {
+                runSuspendCatching {
+                    mediaRepository.recommendations(seed, RecommendPaging.PULL_LIMIT, null, cosOnly = tab == HomeTab.COS)
+                }.onSuccess { items ->
+                    if (gen != recommendationGeneration(tab)) return@onSuccess
+                    initialRetryAttempts.remove(tab)
+                    val latest = _uiState.value.recommendation(tab)
+                    setRecommendation(tab, latest.copy(
+                        pulled = items,
+                        revealed = minOf(items.size, RecommendPaging.BATCH_SIZE),
+                        isLoading = false,
+                        isRefreshing = false,
+                        loaded = true,
+                        exhausted = false,
+                        reloadTick = latest.reloadTick + 1,
+                    ), error = null)
+                    likeMutationTracker.noteListFetchCompleted()
+                }.onFailure {
+                    if (gen != recommendationGeneration(tab)) return@onFailure
+                    val retryScheduled = isInitial && !isRefresh &&
+                        !_uiState.value.recommendation(tab).loaded && scheduleInitialRetry(tab)
+                    setRecommendation(tab, _uiState.value.recommendation(tab).copy(isLoading = false, isRefreshing = false),
+                        error = if (retryScheduled) null else LIST_LOAD_FAILED_MESSAGE)
+                }
+            } finally {
+                if (gen == recommendationGeneration(tab)) setRecommendation(tab, _uiState.value.recommendation(tab).copy(isLoading = false, isRefreshing = false))
             }
         }
     }
@@ -640,36 +647,40 @@ class HomeViewModel @Inject constructor(
         var seed = state.seed + 1
         setRecommendation(tab, state.copy(isLoading = true, seed = seed))
         viewModelScope.launch {
-            var emptyRounds = 0
-            while (true) {
-                val items = runCatching {
-                    mediaRepository.recommendations(seed, RecommendPaging.PULL_LIMIT, null, cosOnly = tab == HomeTab.COS)
-                }.getOrElse {
+            try {
+                var emptyRounds = 0
+                while (true) {
+                    val items = runSuspendCatching {
+                        mediaRepository.recommendations(seed, RecommendPaging.PULL_LIMIT, null, cosOnly = tab == HomeTab.COS)
+                    }.getOrElse {
+                        if (gen != recommendationGeneration(tab)) return@launch
+                        setRecommendation(tab, _uiState.value.recommendation(tab).copy(isLoading = false), LIST_LOAD_FAILED_MESSAGE)
+                        return@launch
+                    }
                     if (gen != recommendationGeneration(tab)) return@launch
-                    setRecommendation(tab, _uiState.value.recommendation(tab).copy(isLoading = false), LIST_LOAD_FAILED_MESSAGE)
-                    return@launch
+                    val latest = _uiState.value.recommendation(tab)
+                    val seen = latest.pulled.map { it.id }.toHashSet()
+                    val fresh = items.filterNot { it.id in seen }
+                    if (fresh.isNotEmpty()) {
+                        val pulled = latest.pulled + fresh
+                        setRecommendation(tab, latest.copy(
+                            pulled = pulled,
+                            revealed = minOf(pulled.size, latest.revealed + RecommendPaging.BATCH_SIZE),
+                            isLoading = false,
+                            reloadTick = latest.reloadTick + 1,
+                        ), error = null)
+                        return@launch
+                    }
+                    emptyRounds++
+                    if (emptyRounds >= MAX_EMPTY_SEED_ROUNDS) {
+                        setRecommendation(tab, latest.copy(isLoading = false, exhausted = true))
+                        return@launch
+                    }
+                    seed++
+                    setRecommendation(tab, latest.copy(seed = seed))
                 }
-                if (gen != recommendationGeneration(tab)) return@launch
-                val latest = _uiState.value.recommendation(tab)
-                val seen = latest.pulled.map { it.id }.toHashSet()
-                val fresh = items.filterNot { it.id in seen }
-                if (fresh.isNotEmpty()) {
-                    val pulled = latest.pulled + fresh
-                    setRecommendation(tab, latest.copy(
-                        pulled = pulled,
-                        revealed = minOf(pulled.size, latest.revealed + RecommendPaging.BATCH_SIZE),
-                        isLoading = false,
-                        reloadTick = latest.reloadTick + 1,
-                    ), error = null)
-                    return@launch
-                }
-                emptyRounds++
-                if (emptyRounds >= MAX_EMPTY_SEED_ROUNDS) {
-                    setRecommendation(tab, latest.copy(isLoading = false, exhausted = true))
-                    return@launch
-                }
-                seed++
-                setRecommendation(tab, latest.copy(seed = seed))
+            } finally {
+                if (gen == recommendationGeneration(tab)) setRecommendation(tab, _uiState.value.recommendation(tab).copy(isLoading = false))
             }
         }
     }
@@ -685,71 +696,75 @@ class HomeViewModel @Inject constructor(
         // 筛选重载与 tab 首次揭示照旧不受 isLoading 拦截——在途的是旧代请求，其响应会被
         // 代际校验丢弃；同代重复触发会多发一次请求但整页等价替换，无数据损害（Y7 审查 P2-1 记档）
         if (!isInitial && !isRefresh && current.cos.isLoading) return
-        val gen = if (isRefresh) ++cosGeneration else cosGeneration
+        val gen = ++cosGeneration // 本请求拥有 loading，迟到请求不清新 owner 状态
         val isPagination = !isInitial && !isRefresh // 翻页形态：失败启用自动重试（范围见 APPEND_RETRY_DELAYS_MS KDoc）
         _uiState.value = current.copy(cos = current.cos.copy(isLoading = true, isRefreshing = isRefresh))
         viewModelScope.launch {
-            var retryAttempt = 0
-            while (true) {
-                val page = runCatching {
-                    mediaRepository.assets(
-                        // 任务Y Y4b：排序/顺位/观看/点击/大小/时间/标签由已应用面板草稿经
-                        // AssetQuery.withPanelDraft 展开（core/model 单源）。显式筛选才走此分支；
-                        // cursor/limit/cosOnly 由本调用方持有，覆写不触碰。
-                        AssetQuery(
-                            cursor = if (isRefresh || isInitial) null else _uiState.value.cos.nextCursor,
-                            limit = COS_PAGE_SIZE,
-                            cosOnly = true,
-                        ).withPanelDraft(_uiState.value.cosFilter),
-                    )
-                }.getOrElse {
-                    if (gen != cosGeneration) return@launch // 旧代失败不污染新筛选态
-                    // 翻页失败自动重试（问题A「翻页失败即卡死」，2026-09-28）：钉底用户等在底部，
-                    // 不重试就必须上滚 6 项再回滚才能再触发。重试期间 isLoading 保持 true——
-                    // 不阻塞其它操作（刷新/筛选/首载路径均已绕过 isLoading 拦截），翻页防重
-                    // 顺延到重试结束。首载/刷新失败不重试（各有静默重试/立即反馈语义）
-                    if (isPagination && retryAttempt < APPEND_RETRY_DELAYS_MS.size) {
-                        delay(APPEND_RETRY_DELAYS_MS[retryAttempt])
-                        retryAttempt++
-                        if (gen != cosGeneration) return@launch // 退避期间刷新/筛选已接管，弃残局
-                        continue
+            try {
+                var retryAttempt = 0
+                while (true) {
+                    val page = runSuspendCatching {
+                        mediaRepository.assets(
+                            // 任务Y Y4b：排序/顺位/观看/点击/大小/时间/标签由已应用面板草稿经
+                            // AssetQuery.withPanelDraft 展开（core/model 单源）。显式筛选才走此分支；
+                            // cursor/limit/cosOnly 由本调用方持有，覆写不触碰。
+                            AssetQuery(
+                                cursor = if (isRefresh || isInitial) null else _uiState.value.cos.nextCursor,
+                                limit = COS_PAGE_SIZE,
+                                cosOnly = true,
+                            ).withPanelDraft(_uiState.value.cosFilter),
+                        )
+                    }.getOrElse {
+                        if (gen != cosGeneration) return@launch // 旧代失败不污染新筛选态
+                        // 翻页失败自动重试（问题A「翻页失败即卡死」，2026-09-28）：钉底用户等在底部，
+                        // 不重试就必须上滚 6 项再回滚才能再触发。重试期间 isLoading 保持 true——
+                        // 不阻塞其它操作（刷新/筛选/首载路径均已绕过 isLoading 拦截），翻页防重
+                        // 顺延到重试结束。首载/刷新失败不重试（各有静默重试/立即反馈语义）
+                        if (isPagination && retryAttempt < APPEND_RETRY_DELAYS_MS.size) {
+                            delay(APPEND_RETRY_DELAYS_MS[retryAttempt])
+                            retryAttempt++
+                            if (gen != cosGeneration) return@launch // 退避期间刷新/筛选已接管，弃残局
+                            continue
+                        }
+                        val retryScheduled = isInitial && !isRefresh &&
+                            !_uiState.value.cos.loaded &&
+                            scheduleInitialRetry(HomeTab.COS)
+                        _uiState.value = _uiState.value.copy(
+                            // 静默重试在途不亮牌 / 预算耗尽或用户主动路径失败立即亮（口径同 loadRecommend）
+                            errorMessage = if (retryScheduled) null else LIST_LOAD_FAILED_MESSAGE,
+                            cos = _uiState.value.cos.copy(isLoading = false, isRefreshing = false),
+                        )
+                        return@launch
                     }
-                    val retryScheduled = isInitial && !isRefresh &&
-                        !_uiState.value.cos.loaded &&
-                        scheduleInitialRetry(HomeTab.COS)
+                    if (gen != cosGeneration) return@launch // 旧代迟到响应，丢弃
+                    // 自愈即清账：横幅清空 + 重试预算归零（同 loadRecommend onSuccess 注释）
+                    initialRetryAttempts.remove(HomeTab.COS)
+                    // 刷新同内容轻提示：旧清单 id 快照须在整体替换前抓取（下方 copy 即覆盖）
+                    val oldIds = if (isRefresh) _uiState.value.cos.items.map { it.id } else null
                     _uiState.value = _uiState.value.copy(
-                        // 静默重试在途不亮牌 / 预算耗尽或用户主动路径失败立即亮（口径同 loadRecommend）
-                        errorMessage = if (retryScheduled) null else LIST_LOAD_FAILED_MESSAGE,
-                        cos = _uiState.value.cos.copy(isLoading = false, isRefreshing = false),
+                        errorMessage = null,
+                        cos = _uiState.value.cos.copy(
+                            items = if (isRefresh || isInitial) {
+                                page.items
+                            } else {
+                                _uiState.value.cos.items + page.items
+                            },
+                            nextCursor = page.nextCursor,
+                            exhausted = page.nextCursor == null,
+                            isLoading = false,
+                            isRefreshing = false,
+                            loaded = true,
+                            // 问题A：成功结束 bump 哨兵重评估信号（KDoc 见 CosState.reloadTick）
+                            reloadTick = _uiState.value.cos.reloadTick + 1,
+                        ),
                     )
+                    if (oldIds != null) reportRefreshOutcome(oldIds, page.items.map { it.id })
+                    // 列表成功落地：打点跳过门 TTL 计时起点（loadRecommend 同款注释，失败不打点）
+                    likeMutationTracker.noteListFetchCompleted()
                     return@launch
                 }
-                if (gen != cosGeneration) return@launch // 旧代迟到响应，丢弃
-                // 自愈即清账：横幅清空 + 重试预算归零（同 loadRecommend onSuccess 注释）
-                initialRetryAttempts.remove(HomeTab.COS)
-                // 刷新同内容轻提示：旧清单 id 快照须在整体替换前抓取（下方 copy 即覆盖）
-                val oldIds = if (isRefresh) _uiState.value.cos.items.map { it.id } else null
-                _uiState.value = _uiState.value.copy(
-                    errorMessage = null,
-                    cos = _uiState.value.cos.copy(
-                        items = if (isRefresh || isInitial) {
-                            page.items
-                        } else {
-                            _uiState.value.cos.items + page.items
-                        },
-                        nextCursor = page.nextCursor,
-                        exhausted = page.nextCursor == null,
-                        isLoading = false,
-                        isRefreshing = false,
-                        loaded = true,
-                        // 问题A：成功结束 bump 哨兵重评估信号（KDoc 见 CosState.reloadTick）
-                        reloadTick = _uiState.value.cos.reloadTick + 1,
-                    ),
-                )
-                if (oldIds != null) reportRefreshOutcome(oldIds, page.items.map { it.id })
-                // 列表成功落地：打点跳过门 TTL 计时起点（loadRecommend 同款注释，失败不打点）
-                likeMutationTracker.noteListFetchCompleted()
-                return@launch
+            } finally {
+                if (gen == cosGeneration) _uiState.value = _uiState.value.copy(cos = _uiState.value.cos.copy(isLoading = false, isRefreshing = false))
             }
         }
     }
@@ -759,43 +774,47 @@ class HomeViewModel @Inject constructor(
         // 问题B（2026-09-28）：下拉刷新立即受理——受理即递增代际作废在途旧周期响应，原「刷新
         // 在途被 isLoading 拦截丢弃」退役；首载/切周期路径本就不受 isLoading 拦截（代际防乱序
         // 兜底，同代重复触发整页等价替换无数据损害），故本函数不再有 isLoading 拦截
-        val gen = if (isRefresh) ++rankGeneration else rankGeneration
+        val gen = ++rankGeneration // 同周期的重入同样只允许最新请求写回
         _uiState.value = current.copy(rank = current.rank.copy(isLoading = true, isRefreshing = isRefresh))
         viewModelScope.launch {
-            runCatching {
-                mediaRepository.rankings(
-                    period = _uiState.value.rank.period,
-                    limit = RANK_PULL_LIMIT,
-                    offset = RANK_OFFSET_INITIAL,
-                )
-            }.onSuccess { items ->
-                if (gen != rankGeneration) return@onSuccess // 旧代迟到响应，丢弃
-                // 自愈即清账：横幅清空 + 重试预算归零（同 loadRecommend onSuccess 注释）
-                initialRetryAttempts.remove(HomeTab.RANK)
-                // 刷新同内容轻提示：旧清单 id 快照须在整体替换前抓取（口径同 loadCosPage）
-                val oldIds = if (isRefresh) _uiState.value.rank.items.map { it.id } else null
-                _uiState.value = _uiState.value.copy(
-                    errorMessage = null,
-                    rank = _uiState.value.rank.copy(
-                        items = items,
-                        isLoading = false,
-                        isRefreshing = false,
-                        loaded = true,
-                    ),
-                )
-                if (oldIds != null) reportRefreshOutcome(oldIds, items.map { it.id })
-                // 列表成功落地：打点跳过门 TTL 计时起点（loadRecommend 同款注释，失败不打点）
-                likeMutationTracker.noteListFetchCompleted()
-            }.onFailure {
-                if (gen != rankGeneration) return@onFailure // 旧代失败不污染新周期
-                val retryScheduled = isInitial && !isRefresh &&
-                    !_uiState.value.rank.loaded &&
-                    scheduleInitialRetry(HomeTab.RANK)
-                _uiState.value = _uiState.value.copy(
-                    // 静默重试在途不亮牌 / 预算耗尽或用户主动路径失败立即亮（口径同 loadRecommend）
-                    errorMessage = if (retryScheduled) null else LIST_LOAD_FAILED_MESSAGE,
-                    rank = _uiState.value.rank.copy(isLoading = false, isRefreshing = false),
-                )
+            try {
+                runSuspendCatching {
+                    mediaRepository.rankings(
+                        period = _uiState.value.rank.period,
+                        limit = RANK_PULL_LIMIT,
+                        offset = RANK_OFFSET_INITIAL,
+                    )
+                }.onSuccess { items ->
+                    if (gen != rankGeneration) return@onSuccess // 旧代迟到响应，丢弃
+                    // 自愈即清账：横幅清空 + 重试预算归零（同 loadRecommend onSuccess 注释）
+                    initialRetryAttempts.remove(HomeTab.RANK)
+                    // 刷新同内容轻提示：旧清单 id 快照须在整体替换前抓取（口径同 loadCosPage）
+                    val oldIds = if (isRefresh) _uiState.value.rank.items.map { it.id } else null
+                    _uiState.value = _uiState.value.copy(
+                        errorMessage = null,
+                        rank = _uiState.value.rank.copy(
+                            items = items,
+                            isLoading = false,
+                            isRefreshing = false,
+                            loaded = true,
+                        ),
+                    )
+                    if (oldIds != null) reportRefreshOutcome(oldIds, items.map { it.id })
+                    // 列表成功落地：打点跳过门 TTL 计时起点（loadRecommend 同款注释，失败不打点）
+                    likeMutationTracker.noteListFetchCompleted()
+                }.onFailure {
+                    if (gen != rankGeneration) return@onFailure // 旧代失败不污染新周期
+                    val retryScheduled = isInitial && !isRefresh &&
+                        !_uiState.value.rank.loaded &&
+                        scheduleInitialRetry(HomeTab.RANK)
+                    _uiState.value = _uiState.value.copy(
+                        // 静默重试在途不亮牌 / 预算耗尽或用户主动路径失败立即亮（口径同 loadRecommend）
+                        errorMessage = if (retryScheduled) null else LIST_LOAD_FAILED_MESSAGE,
+                        rank = _uiState.value.rank.copy(isLoading = false, isRefreshing = false),
+                    )
+                }
+            } finally {
+                if (gen == rankGeneration) _uiState.value = _uiState.value.copy(rank = _uiState.value.rank.copy(isLoading = false, isRefreshing = false))
             }
         }
     }

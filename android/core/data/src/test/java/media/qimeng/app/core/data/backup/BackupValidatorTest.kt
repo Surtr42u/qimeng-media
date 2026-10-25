@@ -6,7 +6,7 @@ import org.junit.Test
 
 /**
  * 备份文件前置校验锁定（U10-6b）：超限/坏 JSON/格式不符/摘要计数。判定顺序与文案
- * 逐字对齐 web/src/lib/backup.ts parseLegacyBackupFile（含 64MB 双写常量）。
+ * 逐字对齐 web/src/lib/backup.ts parseBackupFile（含 64MB 双写常量）。
  * 2026-10-03 随校验器自 feature:manage 整体搬入本包（撤 :sdk 直依赖批；逻辑零变化，
  * 载荷 format 断言改经 internal sdkPayload——测试同模块可见）。
  */
@@ -27,9 +27,10 @@ class BackupValidatorTest {
     private val validEnvelopeJson = """
         {
           "format": "qimeng_backup",
-          "schemaVersion": 1,
+          "schemaVersion": 2,
           "appIdentifier": "com.qimeng.media",
           "data": {
+            "viewEvents": [{"eventId":"summary-event","recordKey":"r1","kind":"open","sessionId":"summary","startedAt":"2026-10-25T00:00:00Z","seconds":null}],
             "mediaFiles": [
               {"recordKey": "r1", "fileName": "a.jpg", "mediaType": "image", "sizeBytes": 1, "modifiedAtMillis": 1},
               {"recordKey": "r2", "fileName": "b.mp4", "mediaType": "video", "sizeBytes": 2, "modifiedAtMillis": 2}
@@ -87,7 +88,7 @@ class BackupValidatorTest {
     fun `format不符报格式文案`() {
         val result = BackupValidator.validate(
             "qimeng_backup.json",
-            """{"format": "not_backup", "data": {}}""".toByteArray(),
+            """{"format": "not_backup", "data": {"viewEvents": []}}""".toByteArray(),
         )
         assertEquals(
             BackupValidator.MESSAGE_FORMAT_MISMATCH,
@@ -124,13 +125,13 @@ class BackupValidatorTest {
         val ok = result as BackupValidator.Result.Ok
         // 载荷原样透传（供 POST /import/qimeng-backup；SDK 模型字段经 internal 句柄取）
         assertEquals("qimeng_backup", ok.payload.sdkPayload.format)
-        // 摘要计数 = 备份内原始条数；统计条 = mediaStats + dailyBrowse（Web 同口径）
+        // 摘要计数 = 备份内原始条数；事件条=viewEvents（Web 同口径）
         val summary = ok.summary
         assertEquals("qimeng_backup.json", summary.fileName)
         assertEquals(2, summary.mediaFiles)
         assertEquals(3, summary.authors)
         assertEquals(1, summary.tags)
-        assertEquals(12, summary.statsRows)
+        assertEquals(1, summary.eventRows)
     }
 
     @Test
@@ -140,12 +141,12 @@ class BackupValidatorTest {
             mediaFiles = 2,
             authors = 3,
             tags = 1,
-            statsRows = 12,
+            eventRows = 12,
         )
         // Web backupSummaryText 逐字（toLocaleString 小数值无千分位分隔）
         assertEquals(
-            "检测到备份数据：2 个媒体文件 / 3 位作者 / 1 个标签 / 12 条统计。" +
-                "导入按唯一键合并、不删除现有数据，是否导入恢复？",
+            "检测到备份数据：2 个媒体文件 / 3 位作者 / 1 个标签 / 12 条事件。" +
+                "导入按事件身份和关联规则合并、不删除媒体原件，是否导入恢复？",
             BackupValidator.summaryText(summary),
         )
         // 千分位：%,d 与 toLocaleString 同语义
@@ -156,11 +157,31 @@ class BackupValidatorTest {
     @Test
     fun `数组缺项摘要计零`() {
         val json = """
-            {"format": "qimeng_backup", "schemaVersion": 1, "appIdentifier": "com.qimeng.media", "data": {}}
+            {"format": "qimeng_backup", "schemaVersion": 2, "appIdentifier": "com.qimeng.media", "data": {"viewEvents": []}}
         """.trimIndent()
         val result = BackupValidator.validate("qimeng_backup.json", json.toByteArray())
         val ok = result as BackupValidator.Result.Ok
         assertEquals(0, ok.summary.mediaFiles)
-        assertEquals(0, ok.summary.statsRows)
+        assertEquals(0, ok.summary.eventRows)
     }
+    @Test
+    fun `退役版本缺失版本未知版本都在前置校验拒绝`() {
+        listOf("1", "0", "3", "2.5", "\"2\"", "null").forEach { version ->
+            val json = """{"format":"qimeng_backup","schemaVersion":$version,"data":{"viewEvents":[]}}"""
+            val result = BackupValidator.validate("backup.json", json.toByteArray())
+            assertEquals(BackupValidator.MESSAGE_UNSUPPORTED_VERSION, (result as BackupValidator.Result.Invalid).message)
+        }
+        val missing = BackupValidator.validate("backup.json", """{"format":"qimeng_backup","data":{"viewEvents":[]}}""".toByteArray())
+        assertEquals(BackupValidator.MESSAGE_UNSUPPORTED_VERSION, (missing as BackupValidator.Result.Invalid).message)
+    }
+
+    @Test
+    fun `v2事件段缺失或非数组拒绝而空数组有效`() {
+        listOf("{}", "{\"viewEvents\":null}", "{\"viewEvents\":{}}").forEach { data ->
+            val json = """{"format":"qimeng_backup","schemaVersion":2,"data":$data}"""
+            val result = BackupValidator.validate("backup.json", json.toByteArray())
+            assertEquals(BackupValidator.MESSAGE_MISSING_EVENTS, (result as BackupValidator.Result.Invalid).message)
+        }
+    }
+
 }

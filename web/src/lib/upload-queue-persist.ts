@@ -29,6 +29,8 @@ interface PersistedAttach {
 /** 持久化队列条目（可序列化纯数据；不含 File 句柄与运行态 status——恢复条目
  *  一律按 needs-file 落位，percent 由 chunkOffset 推导不双写） */
 export interface PersistedUploadItem {
+  /** 删除失败时尽力写入终态标记，跨刷新不再作为待上传任务恢复。旧记录缺省非终态。 */
+  terminal?: boolean
   uploadId?: string
   sourceMtime?: number
   /** 队列条目 id（= IndexedDB 主键；恢复后沿用原 id，持久化更新可原位覆盖） */
@@ -56,6 +58,9 @@ export interface PersistedUploadItem {
 
 /** 存储端口：浏览器实现 = IndexedDB（keyPath id），单测与降级 = 内存 Map */
 export interface UploadQueueStorage {
+  /** false=只保当前页面的内存降级，不可作为刷新恢复成功凭据。 */
+  durable?: boolean
+  close?(): void
   getAll(): Promise<PersistedUploadItem[]>
   put(item: PersistedUploadItem): Promise<void>
   delete(id: string): Promise<void>

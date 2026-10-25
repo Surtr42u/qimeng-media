@@ -91,7 +91,7 @@ func (s *Service) ingestPlacedUpload(ctx context.Context, libraryID, finalPath, 
 	if err := s.bus.Publish(events.Event{Topic: events.TopicUploadDone, Payload: events.UploadDoneEvent{AssetID: asset.AssetID}}); err != nil {
 		s.logger.Warn("发布上传完成事件失败", "err", err)
 	}
-	s.PublishLibraryChanged()
+	s.PublishLibraryChanged(events.LibraryChangeScope{LibraryID: libraryID, AssetID: asset.AssetID})
 	// 上传成功改变了库内文件数：library_files 指标在此刷新（变更点推送，
 	// 其余三个时机见 refreshLibraryFileMetrics 注释）。
 	s.RefreshLibraryFileMetrics()

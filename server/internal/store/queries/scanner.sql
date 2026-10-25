@@ -13,6 +13,14 @@
 -- name: ListAssetsByLibrary :many
 SELECT * FROM assets WHERE library_id = ?;
 
+-- ListScanAssetSnapshots: only change detection and stale-row protection fields
+-- survive the walking phase. Reconciliation re-reads the full live row under
+-- the library gate before matching/moving/deleting. Do not use this projection
+-- as an authoritative current row or introduce per-unchanged-file SQL reads.
+-- name: ListScanAssetSnapshots :many
+SELECT asset_id, rel_path, size_bytes, mtime, updated_at
+FROM assets WHERE library_id = ?;
+
 -- DeleteAsset: removes one asset row. FK ON DELETE CASCADE wipes
 -- dependent rows (likes/favorites/tags/characters/authors/daily_shown);
 -- view_events is deliberately FK-free (adr/0005) so the append-only

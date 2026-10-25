@@ -140,7 +140,7 @@ function dispatch(handlers: SSEEventHandlers, msg: SSEMessage): void {
       break
     }
     case EVENT_TOPIC_THUMBNAIL_PROGRESS: {
-      // 无发布者：显式忽略（不回调），仅存档防未来误用
+      // 当前无生产发布者；保留原始载荷兼容回调，现行页面不依赖此主题。
       handlers.onThumbnailProgress?.(msg.data)
       break
     }

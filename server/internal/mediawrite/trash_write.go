@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"qimeng-media/server/internal/events"
 	"qimeng-media/server/internal/filing"
 )
 
@@ -92,7 +93,7 @@ func (s *Service) MoveToTrash(ctx context.Context, assetID string) error {
 		s.logger.Error("删除库行失败（待扫描器清理）", "err", err, "assetId", row.AssetID)
 		return fail(InternalFailure, "删除资产记录", err)
 	}
-	s.PublishLibraryChanged()
+	s.PublishLibraryChanged(events.LibraryChangeScope{LibraryID: row.LibraryID, AssetID: row.AssetID})
 	// 删除落站改变了库内文件数与回收站占用：两个指标在此刷新（变更点推送）。
 	s.RefreshLibraryFileMetrics()
 	s.RefreshTrashMetrics()
