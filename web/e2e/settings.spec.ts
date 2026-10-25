@@ -66,6 +66,6 @@ test('初次查询迟到和焦点刷新不会覆盖本地输入', async ({ page 
   await limit.fill('512')
   await expect.poll(() => get !== undefined).toBe(true)
   await get!.fulfill({ json: initial })
-  await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+  await page.evaluate('document.dispatchEvent(new Event("visibilitychange"))')
   await expect(limit).toHaveValue('512')
 })

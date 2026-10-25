@@ -45,6 +45,8 @@ PR CI 额外运行 `python tools/check_docs.py --base <base-sha> --event-path <e
 
 ## 其他可靠性门禁
 
+Web CI 在 build/Vitest 后运行锁定 Playwright 的 Chromium 交互回归；静态预览只监听隔离回环端口，测试拦截全部 API 为合成响应，不连接 8420 或真实数据。失败上传 trace/截图到短期 artifact，定位信息与场景见 [Web 入口](../web/README.md#开发依赖安全)。此项是实际浏览器验证，Android/原生窗口/设备验收仍单独记录；不降低现有检查。
+
 `test_windows_launcher.ps1` 只允许在 GitHub Actions 的 Windows runner 执行：把真实无头启动脚本复制到临时目录，编译无数据库的合成 HTTP 程序，检查冷启动就绪且控制台保持、重复调用显示 RUNNING 并只保留一个后端。运行前拒绝已占用端口，结束时仅清理本轮合成程序与启动器进程树；CI 的 Windows 文件操作 job 同批执行。不在开发机运行，不访问现用数据，也不把合成回归当本机 `.lnk` 双击验收。
 
 `release_manifest.py` 校验本机服务端 `-version` 与当前 Git/发布版本身份，生成 schema/协议/SDK 锁及产物哈希清单，默认拒绝 dirty 正式交付；`--development` 仅记录工作区验证。`cold_backup.py create/verify/restore` 复用标准库复制/哈希，停写确认后创建副本并只恢复到不存在的目录。执行顺序、安全边界与命令见 [恢复与升级](../docs/RESTORE.md#ai-升级与回退执行清单)，均不自动部署或操作运行库。自测只使用合成临时目录。
