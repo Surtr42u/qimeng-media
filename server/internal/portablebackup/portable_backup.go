@@ -1,27 +1,26 @@
-package httpapi
+package portablebackup
 
 import (
 	"database/sql"
 	"fmt"
 	"time"
 
-	"qimeng-media/server/internal/httpapi/gen"
 	"qimeng-media/server/internal/store/db"
 )
 
 // fillPortableEvents 保留原始身份、时刻、秒数和来源；聚合段仅供旧工具读取。
-func (exp *legacyExport) fillPortableEvents(data *gen.LegacyBackupData, byID map[string]*exportAsset) error {
+func (exp *legacyExport) fillPortableEvents(data *BackupData, byID map[string]*exportAsset) error {
 	rows, err := exp.q.ExportPortableEvents(exp.ctx)
 	if err != nil {
 		return err
 	}
-	events := make([]gen.PortableViewEvent, 0, len(rows))
+	events := make([]ViewEvent, 0, len(rows))
 	for _, row := range rows {
 		a := byID[row.AssetID]
 		if a == nil {
 			continue
 		}
-		events = append(events, gen.PortableViewEvent{
+		events = append(events, ViewEvent{
 			EventId: row.EventKey, RecordKey: a.recordKey,
 			Kind: row.Kind, SessionId: row.SessionID,
 			StartedAt: row.StartedAt, Seconds: nullInt64ToPtr(row.Seconds), Day: nullStringPtr(row.Day),
@@ -39,11 +38,11 @@ func nullStringPtr(v sql.NullString) *string {
 }
 
 // validatePortableBackup 在任何写入前拒绝不完整的新格式，禁止静默降级聚合回放。
-func validatePortableBackup(req *gen.LegacyBackupImport) error {
-	if req.SchemaVersion != legacySchemaVersion && req.SchemaVersion != portableSchemaVersion {
+func validatePortableBackup(req *BackupImport) error {
+	if req.SchemaVersion != legacySchemaVersion && req.SchemaVersion != SchemaVersion {
 		return fmt.Errorf("不支持的备份版本")
 	}
-	if req.SchemaVersion != portableSchemaVersion {
+	if req.SchemaVersion != SchemaVersion {
 		return nil
 	}
 	if req.Data.ViewEvents == nil {
@@ -62,7 +61,7 @@ func validatePortableBackup(req *gen.LegacyBackupImport) error {
 		if err != nil || at.IsZero() || e.EventId == "" || !keys[e.RecordKey] {
 			return fmt.Errorf("无效的事件身份、引用或时刻")
 		}
-		if e.Kind != string(gen.Open) && e.Kind != string(gen.Play) && e.Kind != string(gen.Dwell) {
+		if e.Kind != eventOpen && e.Kind != eventPlay && e.Kind != eventDwell {
 			return fmt.Errorf("无效的事件类型")
 		}
 		if e.Seconds != nil && *e.Seconds < 0 {
@@ -76,7 +75,7 @@ func validatePortableBackup(req *gen.LegacyBackupImport) error {
 	return nil
 }
 
-func (imp *legacyImport) replayPortableEvents(req *gen.LegacyBackupImport) {
+func (imp *legacyImport) replayPortableEvents(req *BackupImport) {
 	n := 0
 	imp.importSegment("原生事件", func(q *db.Queries) {
 		for _, e := range *req.Data.ViewEvents {
@@ -117,7 +116,7 @@ func (imp *legacyImport) replayPortableEvents(req *gen.LegacyBackupImport) {
 }
 
 // pickPortableAsset 本地身份优先；跨库逐层消歧，无唯一证据绝不取最早行。
-func pickPortableAsset(f gen.LegacyMediaFile, rows []db.ListAssetNameIndexRow, byID map[string]string) string {
+func pickPortableAsset(f MediaFile, rows []db.ListAssetNameIndexRow, byID map[string]string) string {
 	if f.AssetId != nil && byID[*f.AssetId] != "" {
 		return *f.AssetId
 	}

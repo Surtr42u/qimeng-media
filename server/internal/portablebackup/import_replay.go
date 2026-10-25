@@ -2,7 +2,7 @@
 // 拆出的组成部分）——dailyBrowse/mediaStats/history → view_events 的
 // 转换、批次幂等锚点与物化表重建。映射口径总纲见 import.go 文件头；
 // 语义唯一权威是 docs/DOMAIN_RULES §10。
-package httpapi
+package portablebackup
 
 import (
 	"database/sql"
@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"time"
 
-	"qimeng-media/server/internal/httpapi/gen"
+	"qimeng-media/server/internal/eventstats"
 	"qimeng-media/server/internal/store"
 	"qimeng-media/server/internal/store/db"
 )
@@ -30,11 +30,11 @@ const (
 // 批次标记只是快速路径：同批次重复导入整体跳过；跨批次幂等由事件内容键
 // 保证（insertEvent 写 client_event_id 唯一索引拦重，§10）。回放与批次
 // 标记同事务，中途失败重跑不翻倍。
-func (imp *legacyImport) replayEvents(req *gen.LegacyBackupImport) {
-	if imp.aborted {
+func (imp *legacyImport) replayEvents(req *BackupImport) {
+	if imp.err != nil {
 		return
 	}
-	if req.SchemaVersion == portableSchemaVersion {
+	if req.SchemaVersion == SchemaVersion {
 		imp.replayPortableEvents(req)
 		return
 	}
@@ -42,7 +42,7 @@ func (imp *legacyImport) replayEvents(req *gen.LegacyBackupImport) {
 	if req.ExportedAtMillis != nil {
 		batch = strconv.FormatInt(*req.ExportedAtMillis, 10)
 	}
-	prev, err := imp.s.q.GetSetting(imp.ctx, settingKeyLegacyImportBatch)
+	prev, err := imp.s.q.GetSetting(imp.ctx, ImportBatchKey)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		imp.fail("读取迁移批次标记", err)
 		return
@@ -66,28 +66,29 @@ func (imp *legacyImport) replayEvents(req *gen.LegacyBackupImport) {
 	qx := imp.s.q.WithTx(tx)
 
 	n += imp.replayDailyBrowse(qx, req)
-	if !imp.aborted {
+	if imp.err == nil {
 		n += imp.replayStatsGap(qx, req)
 	}
-	if !imp.aborted {
+	if imp.err == nil {
 		n += imp.replayHistory(qx, req)
 	}
-	if !imp.aborted {
+	if imp.err == nil {
 		err := qx.UpsertSetting(imp.ctx, db.UpsertSettingParams{
-			Key: settingKeyLegacyImportBatch, Value: batch,
+			Key: ImportBatchKey, Value: batch,
 			UpdatedAt: store.FormatTimestamp(imp.s.now()),
 		})
 		if err != nil {
 			imp.fail("写入迁移批次标记", err)
 		}
 	}
-	if imp.aborted {
+	if imp.err != nil {
 		return
 	}
 	if err := tx.Commit(); err != nil {
 		imp.fail("提交事件回放", err)
 		return
 	}
+	imp.committed = true
 	imp.res.EventsReplayed = ptr(n)
 	// 物化表同步：回放只写事件流，asset_daily_stats（趋势/统计的数据源）
 	// 若不同步，导入后 /stats/trends 对全部历史返回空、与数字卡口径分叉。
@@ -97,10 +98,10 @@ func (imp *legacyImport) replayEvents(req *gen.LegacyBackupImport) {
 
 // rebuildDailyStats 物化表全量重建（失败即中止导入响应；幂等可重跑）。
 func (imp *legacyImport) rebuildDailyStats() {
-	if imp.aborted {
+	if imp.err != nil {
 		return
 	}
-	if err := imp.s.RebuildAssetDailyStatsFromEvents(imp.ctx); err != nil {
+	if err := eventstats.Rebuild(imp.ctx, imp.s.conn); err != nil {
 		imp.fail("重建按天统计物化表", err)
 	}
 }
@@ -110,15 +111,15 @@ func (imp *legacyImport) rebuildDailyStats() {
 // client_event_id——撞唯一索引（migration 0010
 // idx_view_events_client_event_id，ON CONFLICT DO NOTHING 返回 0 行）按
 // 已存在处理：跳过不报错、不计入回放计数，同一来源换新批次再导入只增量
-// 补写新事件（DOMAIN_RULES §10）。返回是否实际写入。kind 用协议枚举常量
-// （gen.Open/Play/Dwell），与真实上报通道（engagement.go）同一来源，
+// 补写新事件（DOMAIN_RULES §10）。返回是否实际写入。kind 用与协议同步的领域词表常量
+// （eventOpen/eventPlay/eventDwell），由边界契约对照真实上报通道的枚举，
 // 禁止手抄字符串（代码卫生约束 1/2）。
-func (imp *legacyImport) insertEvent(qx *db.Queries, dedupeKey, assetID string, kind gen.ViewEventReportKind, at time.Time, seconds int64) bool {
+func (imp *legacyImport) insertEvent(qx *db.Queries, dedupeKey, assetID string, kind string, at time.Time, seconds int64) bool {
 	if assetID == "" {
 		return false
 	}
 	inserted, err := qx.InsertViewEventIdempotent(imp.ctx, db.InsertViewEventIdempotentParams{
-		AssetID: assetID, Kind: string(kind), SessionID: legacyImportSession,
+		AssetID: assetID, Kind: kind, SessionID: ImportSession,
 		StartedAt:     store.FormatTimestamp(at),
 		Seconds:       sql.NullInt64{Int64: seconds, Valid: seconds > 0},
 		ClientEventID: sql.NullString{String: dedupeKey, Valid: dedupeKey != ""},
@@ -140,9 +141,9 @@ func (imp *legacyImport) insertEvent(qx *db.Queries, dedupeKey, assetID string, 
 // 原两处逐字重复循环抽此共享）。keyPrefix 是内容键前缀（不含序号段），
 // 序号 i 追加为末段——同序号跨批次同键被唯一索引拦重，缺口增长时只补
 // 新增尾巴。
-func (imp *legacyImport) replayKind(qx *db.Queries, keyPrefix, assetID string, kind gen.ViewEventReportKind, base time.Time, count int) int {
+func (imp *legacyImport) replayKind(qx *db.Queries, keyPrefix, assetID string, kind string, base time.Time, count int) int {
 	n := 0
-	for i := 0; i < count && !imp.aborted; i++ {
+	for i := 0; i < count && imp.err == nil; i++ {
 		if imp.insertEvent(qx, keyPrefix+":"+strconv.Itoa(i), assetID, kind, base.Add(time.Duration(i)*replayStagger), 0) {
 			n++
 		}
@@ -153,22 +154,22 @@ func (imp *legacyImport) replayKind(qx *db.Queries, keyPrefix, assetID string, k
 // replayDailyBrowse 天明细全量回放：viewCount 条 open、playCount 条 play
 // （同日内按秒错开），浏览秒数合成为一条 dwell；返回写入条数。内容键含
 // dayStart（天明细的天然稳定标识）——换批次再导出同日数据不重复累计。
-func (imp *legacyImport) replayDailyBrowse(qx *db.Queries, req *gen.LegacyBackupImport) int {
+func (imp *legacyImport) replayDailyBrowse(qx *db.Queries, req *BackupImport) int {
 	n := 0
 	for _, row := range sliceOrEmpty(req.Data.DailyBrowse) {
 		assetID := imp.keyToAsset[row.RecordKey]
 		base := time.UnixMilli(row.DayStartMillis).Add(replayNoonOffset)
 		day := strconv.FormatInt(row.DayStartMillis, 10)
 		prefix := legacyKeyDaily + assetID + ":"
-		n += imp.replayKind(qx, prefix+string(gen.Open)+":"+day, assetID, gen.Open, base, val(row.ViewCount))
-		n += imp.replayKind(qx, prefix+string(gen.Play)+":"+day, assetID, gen.Play, base, val(row.PlayCount))
-		if secs := val64(row.TotalBrowseSeconds); secs > 0 && !imp.aborted {
+		n += imp.replayKind(qx, prefix+eventOpen+":"+day, assetID, eventOpen, base, val(row.ViewCount))
+		n += imp.replayKind(qx, prefix+eventPlay+":"+day, assetID, eventPlay, base, val(row.PlayCount))
+		if secs := val64(row.TotalBrowseSeconds); secs > 0 && imp.err == nil {
 			// dwell 键 = legacy:dw:<asset>:<dayStart>：同日一条，秒数取首写值。
-			if imp.insertEvent(qx, legacyKeyDailyDwell+assetID+":"+day, assetID, gen.Dwell, base, secs) {
+			if imp.insertEvent(qx, legacyKeyDailyDwell+assetID+":"+day, assetID, eventDwell, base, secs) {
 				n++
 			}
 		}
-		if imp.aborted {
+		if imp.err != nil {
 			return n
 		}
 	}
@@ -176,7 +177,7 @@ func (imp *legacyImport) replayDailyBrowse(qx *db.Queries, req *gen.LegacyBackup
 }
 
 // daySums 按 recordKey 汇总 dailyBrowse 明细（mediaStats 差额的扣减基数）。
-func daySums(req *gen.LegacyBackupImport) map[string][3]int64 {
+func daySums(req *BackupImport) map[string][3]int64 {
 	sums := make(map[string][3]int64)
 	for _, row := range sliceOrEmpty(req.Data.DailyBrowse) {
 		prev := sums[row.RecordKey]
@@ -196,11 +197,11 @@ func daySums(req *gen.LegacyBackupImport) map[string][3]int64 {
 // （LastOpenedAt 再导出会漂移）：open/play = legacy:g:<asset>:<kind>:<i>
 // 按『路径:资产:类:序号』稳定复用——缺口增长只补新增尾巴、收窄时旧事件
 // 不回收（宁少勿重）；dwell = legacy:gd:<asset> 一资产一条，秒数取首写值。
-func (imp *legacyImport) replayStatsGap(qx *db.Queries, req *gen.LegacyBackupImport) int {
+func (imp *legacyImport) replayStatsGap(qx *db.Queries, req *BackupImport) int {
 	n := 0
 	sums := daySums(req)
 	for _, st := range sliceOrEmpty(req.Data.MediaStats) {
-		if imp.aborted {
+		if imp.err != nil {
 			return n
 		}
 		assetID := imp.keyToAsset[st.RecordKey]
@@ -211,13 +212,13 @@ func (imp *legacyImport) replayStatsGap(qx *db.Queries, req *gen.LegacyBackupImp
 		}
 		base := time.UnixMilli(atMs)
 		prefix := legacyKeyGap + assetID + ":"
-		n += imp.replayKind(qx, prefix+string(gen.Open), assetID, gen.Open, base, int(int64(val(st.ViewCount))-sum[0]))
-		n += imp.replayKind(qx, prefix+string(gen.Play), assetID, gen.Play, base, int(int64(val(st.PlayCount))-sum[1]))
-		if imp.aborted {
+		n += imp.replayKind(qx, prefix+eventOpen, assetID, eventOpen, base, int(int64(val(st.ViewCount))-sum[0]))
+		n += imp.replayKind(qx, prefix+eventPlay, assetID, eventPlay, base, int(int64(val(st.PlayCount))-sum[1]))
+		if imp.err != nil {
 			return n
 		}
 		if gap := val64(st.TotalBrowseSeconds) - sum[2]; gap > 0 {
-			if imp.insertEvent(qx, legacyKeyGapDwell+assetID, assetID, gen.Dwell, base, gap) {
+			if imp.insertEvent(qx, legacyKeyGapDwell+assetID, assetID, eventDwell, base, gap) {
 				n++
 			}
 		}
@@ -239,14 +240,14 @@ func fallbackMillis(vals ...*int64) int64 {
 // 明细转为 open 事件（§10「截取导入」；有明细的文件再回放会重复计数）。
 // 内容键 = legacy:h:<asset>:<openedAtMillis>（时间戳取自旧库明细，跨批次
 // 稳定）。
-func (imp *legacyImport) replayHistory(qx *db.Queries, req *gen.LegacyBackupImport) int {
+func (imp *legacyImport) replayHistory(qx *db.Queries, req *BackupImport) int {
 	n := 0
 	hasBrowse := make(map[string]bool, len(sliceOrEmpty(req.Data.DailyBrowse)))
 	for _, row := range sliceOrEmpty(req.Data.DailyBrowse) {
 		hasBrowse[row.RecordKey] = true
 	}
 	for _, h := range sliceOrEmpty(req.Data.History) {
-		if imp.aborted {
+		if imp.err != nil {
 			return n
 		}
 		if hasBrowse[h.RecordKey] {
@@ -254,7 +255,7 @@ func (imp *legacyImport) replayHistory(qx *db.Queries, req *gen.LegacyBackupImpo
 		}
 		assetID := imp.keyToAsset[h.RecordKey]
 		key := legacyKeyHistory + assetID + ":" + strconv.FormatInt(h.OpenedAtMillis, 10)
-		if imp.insertEvent(qx, key, assetID, gen.Open, time.UnixMilli(h.OpenedAtMillis), 0) {
+		if imp.insertEvent(qx, key, assetID, eventOpen, time.UnixMilli(h.OpenedAtMillis), 0) {
 			n++
 		}
 	}

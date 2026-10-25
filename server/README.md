@@ -16,6 +16,7 @@
 | 回收站/恢复/清扫 | internal/mediawrite/trash_*；HTTP 只协议适配，filing 保留低层路径/意图机制 |
 | 推荐流装载 | internal/recommendfeed/；限容量 ID 顺序快照跨页共享、取页重新校验资格；双 seed 启动预热仅本轮复用输入和 seed 无关准备，独立评分；返回原始下一 offset（-1 到底），短页不截断续页，见推荐专题与 ADR-0046 |
 | 排行页装载 | internal/ranking/；专用热度键 → recommend 纯函数选页 → 当前页元数据/累计计数，见推荐专题 |
+| 便携备份导入/导出 | internal/portablebackup/；v1/v2写前校验、身份匹配、分段提交、事件幂等、同事务快照导出；HTTP只有有界解码与错误映射，格式DTO以边界契约测试对照协议 |
 | 作者 TXT 导入/保护/重建 | internal/authorimport/；跨手动/备份/同步入口复用事务，片段存取在 authorattach |
 | 作者编辑用例 | internal/authoredit/；词表预填/来源区替换/作者建改删/资产作者替换六用例的单事务编排，Commit 成功后才刷新镜像（2026-10-24 Q1 事务下沉）；HTTP 只协议校验与哨兵映射 |
 | 统计只读装载 | internal/statsread/；总览/趋势/榜单共用窗口；日/类型/来源聚合及精确全量数，stats 仍为纯函数 |

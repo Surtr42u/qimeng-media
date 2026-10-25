@@ -23,6 +23,7 @@ import (
 	"qimeng-media/server/internal/httpapi/gen"
 	"qimeng-media/server/internal/libraryrevision"
 	"qimeng-media/server/internal/mediawrite"
+	"qimeng-media/server/internal/portablebackup"
 	"qimeng-media/server/internal/safego"
 	"qimeng-media/server/internal/sourcematcher"
 	"qimeng-media/server/internal/store/db"
@@ -228,6 +229,7 @@ type Server struct {
 	// sync 持有本机同步业务，HTTP 只读快照和触发；txt 为跨入口共用作者导入服务。
 	sync        *syncchannel.Service
 	txt         *authorimport.Service
+	portable    *portablebackup.Service
 	thumbWarmup *thumbnailwarmup.Service
 }
 
@@ -331,6 +333,8 @@ func New(deps Deps) (*Server, error) {
 	if s.txt == nil {
 		s.txt = authorimport.New(deps.Conn, deps.Queries, now, logger)
 	}
+	s.portable = portablebackup.New(portablebackup.Options{Conn: s.conn, Queries: s.q, TXT: s.txt, Mirror: s.mirror, Now: s.now, Logger: s.logger, Changed: s.notifyPortableImport})
+
 	s.sync = deps.Sync
 	if s.sync == nil {
 		s.sync = syncchannel.New(syncchannel.Options{Config: deps.Cfg, Queries: deps.Queries, Writes: s.writes, TXT: s.txt, Mirror: mirror, Logger: logger, Now: now})
