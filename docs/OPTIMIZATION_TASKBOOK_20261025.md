@@ -379,7 +379,7 @@ Q06补充：`tools/test_release_gate.py`在既有云端docs unittest中检查候
 | S08 | 推荐服务级DoChan计算与请求等待分离，不同键min(2,GOMAXPROCS)准入；进度可取消闸 | 一个/全部等待者取消、取消与完成竞争、Clear不回填、关闭取消SQL；实际进入闸后取消。CI另以verbose记录响应微秒和不同键峰值（非SLO/硬件保证） |
 | Q01–Q03 | 保存快照/草稿修订保护、Android取消与代际写回、SAF/实际JSON双重有界TXT | 慢保存A后继续编辑B、失败重试/迟到GET；确定性取消/前台恢复；声明及真实流/JSON转义边界 |
 | Q04 | portablebackup持领域文件DTO、写前校验/身份/分段事务/回放/汇总/提交后通知与同事务导出 | v1/v2回环/重复/A→B→A/实时补传/歧义/非法v2/TXT keep；故障后重试、写前取消/分段提交后取消、字段/开放偏好JSON契约 |
-| Q05–Q07 | Redocly固定2.71.0且Makefile/CI复用；单测/Release Lint在候选上传前阻断；现行注释/Close豁免清理 | 干净云端协议/SDK锁/Lint；固定模板受控错误配置回归；真实Release失败注入40174082810：Release构建/三件套成功，唯一注入测试失败后上传skipped、artifact=0；正常路径40174932988核验中 |
+| Q05–Q07 | Redocly固定2.71.0且Makefile/CI复用；单测/Release Lint在候选上传前阻断；现行注释/Close豁免清理 | 干净云端协议/SDK锁/Lint；固定模板受控错误配置回归；真实Release失败注入40174082810：Release构建/三件套成功，唯一注入测试失败后上传skipped、artifact=0；正常路径40174932988在5eaa181c构建/单测/Lint/上传成功（不替代后续源码的同SHA资格） |
 | Q08 | 九个文件逐项owner评估，提取无状态统计展示与Server请求管线，其余保留依据见§10 | 既有行为/策略/AST/depguard/SDK隔离继续执行，不新增状态副本或扩张knip阻断范围 |
 | Q09/Q10 | 四个Playwright真实DOM合成场景；上传存储降级/恢复可见，串行IO意图、事务complete、终态防复活与UUID | 345项Web单测及4个浏览器场景；Android为单测/构建/Lint。其他建议路径及设备窗口动作未假称验收；双重存储失败残余风险已记SECURITY |
 
