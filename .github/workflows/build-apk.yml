@@ -2,7 +2,7 @@ name: 云端出包（内嵌 arm64 release 包）
 
 # 手动 release 出包；与常规 CI 共用 make sdk 的校验/生成/指纹纪律。
 # Go 补丁版本与 CI、lint 保持一致。签名 Secret 缺失时无法保证覆盖安装。
-# 本通道单测失败仍单独可见；正式合入必须查看常规 CI，不以 APK artifact 替代。
+# 单测必须成功后才能上传候选包；正式交付仍核对同 SHA 的完整 CI/安全/文档与审查。
 permissions:
   contents: read
 
@@ -67,18 +67,14 @@ jobs:
       # 产物完整性门禁（口径同 ci.yml android 作业）：内嵌三件套必须随包
       - name: 断言内嵌三件套随包
         run: bash deploy/embedded/assert-apk-embedded.sh android/app/build/outputs/apk/release/app-release.apk
-      - name: 上传装机包（artifact：app-release-apk-embedded）
+      # 不再接受单测失败的安装包；原始失败证据仍由 Actions 日志保留。
+      - name: 单测与 Release Lint（阻断候选包资格）
+        run: |
+          cd android
+          ./gradlew testDebugUnitTest testReleaseUnitTest :core:model:test lintRelease
+      - name: 上传候选包（本通道检查通过，仍须同 SHA 完整门禁）
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: app-release-apk-embedded
           path: android/app/build/outputs/apk/release/app-release.apk
           retention-days: 7
-      # 单测排在出包之后且不阻塞（continue-on-error）：本通道职责是「出一张能装的包」，
-      # 既有失败用例（:feature:manage BackupViewModelTest「目录有文件导入走校验确认链路」，
-      # 属数据管理重构批遗留，见 CHANGELOG 第五百一十一笔遗留项）不该把装机包一起扣住；
-      # 失败仍留在日志与步骤状态里可见，修好后摘掉 continue-on-error。
-      - name: 单测（testDebugUnitTest + :core:model:test，不阻塞出包）
-        continue-on-error: true
-        run: |
-          cd android
-          ./gradlew testDebugUnitTest :core:model:test

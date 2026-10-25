@@ -5,6 +5,8 @@
 > 正常 NAS 客户端，本机模式点开时 Service 会以「未随包打包」通知明确告知）；
 > 出内嵌终包前必须先跑 `make app-embedded-*`。
 
+Release 云端出包的 Debug/Release 单测、core:model 测试及 Release Lint 现在阻断候选 APK 上传；仍须通过同 SHA 完整门禁及审查才能部署。资格与执行边界见 [部署入口](../README.md#android-候选包与发布资格)，不以旧装机记录外推新版结果。
+
 ## 三件套
 
 | jniLibs 文件 | 来源 | 说明 |

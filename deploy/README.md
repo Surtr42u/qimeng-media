@@ -11,6 +11,12 @@ AI 下载后核对 GitHub artifact 摘要、清单逐文件哈希和服务端 `-
 
 无头快捷方式连接的是这套共享启动脚本，不保留独立旧程序；它保留普通黑色后端控制台和任务栏入口，不打开浏览器或桌面端，也不另建图形状态窗。已有健康后端时只读显示状态，不再启动重复实例；控制台生命周期与输出约定见 [服务端入口](../server/README.md#构建身份)。
 
+## Android 候选包与发布资格
+
+[build-apk](../.github/workflows/build-apk.yml) 先构建并检查内嵌三件套，再执行 Debug/Release 单测、core:model 测试和 Release Lint；任一失败直接阻断安装包 artifact 上传，移除旧 continue-on-error。签名、版本号、应用 ID 和三件套锁不因此改变。
+
+artifact 仅为候选包。AI 部署前必须核对产物来源 SHA 对应的 ci/security/docs 全部必需检查和 Codex 审查线程，再核对签名/内嵌身份/摘要；缺少检查、失败或过期结果均不取得发布资格。工作流绿色或 artifact 存在不能单独放行，不自动部署。当前实际执行范围见 HANDOVER；配置变更不等同于新版 Release/设备验收。
+
 ## NAS 文件清单
 
 | 文件 | 用途 |
