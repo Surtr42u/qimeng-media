@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"reflect"
 	"testing"
+	"time"
 
 	"qimeng-media/server/internal/httpapi/gen"
 	"qimeng-media/server/internal/portablebackup"
@@ -130,5 +131,33 @@ func TestPortableCanceledBeforeWritesDoesNotNotify(t *testing.T) {
 	after, err := e.s.rev.Get(t.Context())
 	if err != nil || after != before {
 		t.Fatal("uncommitted cancellation notified", after, before, err)
+	}
+}
+
+func TestPortableCancellationAfterCommittedAuthorStillNotifies(t *testing.T) {
+	e := newTestEnv(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	calls, notified := 0, 0
+	service := portablebackup.New(portablebackup.Options{Conn: e.conn, Queries: e.q, TXT: e.s.txt, Mirror: e.s.mirror, Now: func() time.Time {
+		calls++
+		// 一作者一标签：第二次取写入时刻已进入标签事务，作者段已提交。
+		if calls == 2 {
+			cancel()
+		}
+		return e.clock.Now()
+	}, Changed: func() { notified++ }})
+	_, err := service.Import(ctx, &portablebackup.BackupImport{Format: portablebackup.Format, SchemaVersion: portablebackup.SchemaVersion, Data: portablebackup.BackupData{
+		ViewEvents: &[]portablebackup.ViewEvent{}, Authors: &[]portablebackup.Author{{AuthorId: "cancel-partial", DisplayName: "synthetic"}}, Tags: &[]portablebackup.Tag{{Name: "cancel-next-stage"}},
+	}})
+	if !errors.Is(err, context.Canceled) || notified != 1 {
+		t.Fatal("partial cancellation notification lost", err, notified)
+	}
+	var authors, tags int
+	if err := e.conn.QueryRow(`SELECT COUNT(*) FROM authors WHERE id='cancel-partial'`).Scan(&authors); err != nil || authors != 1 {
+		t.Fatal("committed author lost", authors, err)
+	}
+	if err := e.conn.QueryRow(`SELECT COUNT(*) FROM tags WHERE name='cancel-next-stage'`).Scan(&tags); err != nil || tags != 0 {
+		t.Fatal("canceled stage committed", tags, err)
 	}
 }

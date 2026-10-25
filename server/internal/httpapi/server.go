@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"time"
 
-	"qimeng-media/server/internal/auth"
 	"qimeng-media/server/internal/authorattach"
 	"qimeng-media/server/internal/authoredit"
 	"qimeng-media/server/internal/authorimport"
