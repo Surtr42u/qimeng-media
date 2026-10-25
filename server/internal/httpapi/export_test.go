@@ -1,4 +1,4 @@
-// export_test.go：旧版格式备份导出端点测试（DOMAIN_RULES §10 逆向映射 + 回环）。
+// export_test.go：v2便携备份导出端点测试（DOMAIN_RULES §10 逆向映射 + 回环）。
 // 主用例造数覆盖全部可导出段 → GET /export/qimeng-backup 断言信封与段级内容
 // （recordKey 同名消歧、last_opened_at NULL 分支、空段恒空数组）→ 导出 JSON
 // 原样回灌 POST /import/qimeng-backup 断言段级计数与事件总量守恒 → 同批次
@@ -341,8 +341,8 @@ func TestImportBodyAboveGlobalLimit(t *testing.T) {
 		})
 	}
 	code, res := importBackup(t, e, gen.LegacyBackupImport{
-		Format: "qimeng_backup", SchemaVersion: 1, AppIdentifier: "com.qimeng.media",
-		Data: gen.LegacyBackupData{MediaFiles: &files},
+		Format: "qimeng_backup", SchemaVersion: portableSchemaVersion, AppIdentifier: "com.qimeng.media",
+		Data: gen.LegacyBackupData{MediaFiles: &files, ViewEvents: &[]gen.PortableViewEvent{}},
 	})
 	if code != http.StatusOK {
 		t.Fatalf("大备份导入应成功，状态 %d", code)

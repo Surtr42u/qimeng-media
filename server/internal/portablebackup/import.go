@@ -1,27 +1,6 @@
-// import.go：便携备份导入（qimeng_backup.json → 新库，DOMAIN_RULES §10）。
-//
-// v2 按原事件身份幂等合并 viewEvents，不回放聚合段或按 exportedAtMillis
-// 跳过整份备份；非法 v2 在任何写入前拒绝。v1 才使用下述聚合兼容路径：
-// mediaStats/dailyBrowse/history 转为事件回放，likes/favorites 落对应行；
-// exportedAtMillis 批次标记只用于 v1 快速跳过，跨批次以内容键去重。
-// 作者/标签/关联/时间轴/收藏沿既有分段合并，标签按改动时间裁决，TXT 按 keep。
-//
-// TXT 片段段（§10「TXT 片段」）在 authors/authorMediaRefs 段之前处理：
-// 片段导入触发统一重建（重建只删「片段涉及作者」的关联），若放在后处理
-// 位置会冲掉备份携带的 authorMediaRefs 关联；同名内容相同幂等跳过、内容
-// 不同走 keep 保护（绝不 remove），单片段失败 Warn 跳过不中止整体。
-//
-// v1 聚合回放口径（不能外推为旧格式可保留原始事件身份）：
-//   - dailyBrowse 是旧库「每文件每天」明细（唯一真相源）→ 全量回放；
-//   - mediaStats 只补差额（累计值 − dailyBrowse 之和，dailyBrowse 行缺失的
-//     旧版本备份由此保总量）；history 仅当该文件在 dailyBrowse 无任何行时
-//     回放（§10「截取导入」的补漏语义，避免与天明细重复计数）；
-//   - 旧 likes 只有累计次数与最后点赞日，无法还原逐日记录 → 只落最后
-//     一天一行，差额计入 warnings（热度口径按回放后 likes 行数计）。
-//
-// 段级去向不导入的：settings/scanSources（SAF 目录概念不存在，提示重新
-// 注册库）、albumRules（新架构无对应能力）、appPrefs 除 recommendationPrefs
-// 外的字段——全部进 warnings。
+// import.go：当前v2便携备份分段导入。原生事件按身份合并；不合成旧聚合事件。
+// TXT→作者→标签→事件→点赞收藏→时间轴→关注→偏好顺序及部分提交语义保留。
+// 格式与合并口径见OpenAPI、DOMAIN_RULES §10、ADR-0050。
 package portablebackup
 
 import (
@@ -30,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"path"
 	"time"
 
 	"github.com/google/uuid"
@@ -42,21 +20,6 @@ import (
 )
 
 const (
-	// 与 prefs.go 的 RecommendPrefsKey 同包共用；本文件新增批次标记。
-	// 批次锚点（快速路径）：值 = 上次成功导入的 exportedAtMillis（十进制
-	// 字符串），同批次整体跳过回放；跨批次幂等由事件内容键保证。
-	ImportBatchKey = "legacy_import_batch"
-
-	// 回放事件会话标识：标记数据来源是旧备份迁移（区别于真实浏览会话）。
-	ImportSession = "legacy-import"
-
-	// 旧备份只有天粒度时间（dayStartMillis=当天零点），统一偏移到当天正午
-	// 回放，避免按零点落事件时因时区解读差异漂到相邻日界；同日多条
-	// open/play 再按 1 秒错开保持事件顺序可区分（按分钟错开在大 viewCount
-	// 下会跨入相邻日界，秒级在日粒度聚合下无歧义）。
-	replayNoonOffset = 12 * time.Hour
-	replayStagger    = time.Second
-
 	// 旧版备份导入的请求体上限：单文件全量 JSON 随库规模增长（实测 6325
 	// 文件 ≈ 2.9MB，已超全局 maxJSONBody 1MB——用户实测表现为浏览器侧
 	// "Failed to fetch"），故本端点单独放宽到 64MB（约可容纳数十万文件级
@@ -66,8 +29,8 @@ const (
 	ImportMaxBody = 64 << 20
 )
 
-// legacyImport 持有一次导入的资产映射、计数和首个阶段错误，无 HTTP 状态。
-type legacyImport struct {
+// backupImport 持有一次导入的资产映射、计数和首个阶段错误，无 HTTP 状态。
+type backupImport struct {
 	s          *Service
 	ctx        context.Context
 	err        error
@@ -81,14 +44,14 @@ type legacyImport struct {
 }
 
 // fail 保留首个阶段错误；已提交分段不回滚，失败后可幂等重试。
-func (imp *legacyImport) fail(stage string, err error) {
+func (imp *backupImport) fail(stage string, err error) {
 	if imp.err == nil {
 		imp.err = &StageError{Stage: stage, Err: err}
 	}
 }
 
 // warn 追加一条提示（去重：同文案只记一次，回放差额类提示按类聚合）。
-func (imp *legacyImport) warn(format string, args ...any) {
+func (imp *backupImport) warn(format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	for _, w := range imp.warnings {
 		if w == msg {
@@ -98,16 +61,9 @@ func (imp *legacyImport) warn(format string, args ...any) {
 	imp.warnings = append(imp.warnings, msg)
 }
 
-// val / val64 可选计数解引用（生成物把未标 required 的数字字段全部生成为
+// val 可选计数解引用（生成物把未标 required 的数字字段全部生成为
 // 指针；旧备份「可选字段缺省」语义统一按零值处理）。
 func val(p *int) int {
-	if p == nil {
-		return 0
-	}
-	return *p
-}
-
-func val64(p *int64) int64 {
 	if p == nil {
 		return 0
 	}
@@ -135,12 +91,8 @@ func nowOrMillis(m *int64, now time.Time) string {
 	return store.FormatTimestamp(time.UnixMilli(*m))
 }
 
-// matchFiles 按文件名精确匹配建 recordKey→asset 映射（§10）。同名多命中
-// 时用旧 folderName 与 rel_path 的父目录段消歧，仍无法区分取最早入库行。
-// R1（审计 2026-09-20）：旧实现按备份文件逐条 ListAssetsByFileName 查库
-// （N+1，数千文件=数千次 SQL）；改一次全表建 fileName→行集 内存索引，
-// 消歧与 tie-break 语义不变（ORDER BY created_at 保持最早入库行优先）。
-func (imp *legacyImport) matchBackupFiles(files *[]MediaFile, portable bool) {
+// matchBackupFiles 按本库身份/跨库唯一证据关联资产，歧义与多对一均跳过。
+func (imp *backupImport) matchBackupFiles(files *[]MediaFile) {
 	if imp.err != nil {
 		return
 	}
@@ -160,52 +112,27 @@ func (imp *legacyImport) matchBackupFiles(files *[]MediaFile, portable bool) {
 		byName[row.FileName] = append(byName[row.FileName], row)
 	}
 	for _, f := range list {
-		assetID := pickAssetByFolder(byName[f.FileName], f.FolderName)
-		if portable {
-			assetID = pickPortableAsset(f, byName[f.FileName], byID)
-		}
-		if assetID != "" {
+		if assetID := pickPortableAsset(f, byName[f.FileName], byID); assetID != "" {
 			imp.keyToAsset[f.RecordKey] = assetID
-		} else if portable {
+		} else {
 			imp.warn("文件 %s 未唯一匹配，关联与事件已跳过", f.RecordKey)
 		}
 		imp.keyToTagsTime[f.RecordKey] = f.TagsUpdatedAtMillis
 	}
-	if portable {
-		counts := make(map[string]int)
-		for _, id := range imp.keyToAsset {
-			counts[id]++
-		}
-		for key, id := range imp.keyToAsset {
-			if counts[id] > 1 {
-				delete(imp.keyToAsset, key)
-				imp.warn("文件 %s 与其他备份条目指向同一目标，已跳过以免串文件", key)
-			}
+	counts := make(map[string]int)
+	for _, id := range imp.keyToAsset {
+		counts[id]++
+	}
+	for key, id := range imp.keyToAsset {
+		if counts[id] > 1 {
+			delete(imp.keyToAsset, key)
+			imp.warn("文件 %s 与其他备份条目指向同一目标，已跳过以免串文件", key)
 		}
 	}
 	imp.res.AssetsMatched = ptr(len(imp.keyToAsset))
 }
 
-// pickAssetByFolder 唯一命中直接用；多命中优先父目录段等于旧 folderName
-// 的行（recordKey 规则「文件名 @ 文件夹」的等价消歧）。
-func pickAssetByFolder(rows []db.ListAssetNameIndexRow, folderName *string) string {
-	switch {
-	case len(rows) == 0:
-		return ""
-	case len(rows) == 1:
-		return rows[0].AssetID
-	}
-	if folderName != nil {
-		for _, row := range rows {
-			if path.Base(path.Dir(row.RelPath)) == *folderName {
-				return row.AssetID
-			}
-		}
-	}
-	return rows[0].AssetID
-}
-
-// importSegment 段级事务骨架（WithTx 模式照抄同包 import_replay.go 先例）：
+// importSegment 共用分段事务骨架：
 // fn 拿到事务绑定的 Queries 执行整段写入，段内任一语句失败经 imp.fail 记
 // 段名返回、整段回滚；全部成功才提交。**段级原子而非整个导入一个事务**：
 // 段间独立（作者段成功、标签段失败重跑只补标签段），配合各段幂等 upsert
@@ -213,7 +140,7 @@ func pickAssetByFolder(rows []db.ListAssetNameIndexRow, folderName *string) stri
 // 本函数只补开/提交两个新事务边界段名。importTxtFragments 不走本骨架：
 // authorimport.Import 内部自开事务，外层再包会同连接嵌套取写锁自死锁
 // （_txlock=immediate + busy_timeout 等自己），且单片段失败本就是跳过不中止。
-func (imp *legacyImport) importSegment(stage string, fn func(qx *db.Queries)) {
+func (imp *backupImport) importSegment(stage string, fn func(qx *db.Queries)) {
 	if imp.err != nil {
 		return
 	}
@@ -238,7 +165,7 @@ func (imp *legacyImport) importSegment(stage string, fn func(qx *db.Queries)) {
 // 推导，§6/§10）+ 关联写入（资产未匹配的计入 skipped）。整段单事务（原先
 // 逐行 autocommit，中途失败会留下作者已建而关联缺失的半段状态，重跑虽可
 // 幂等补齐但中间窗口内读侧看到半成品；段级原子后窗口消除）。
-func (imp *legacyImport) importAuthors(authors *[]Author, refs *[]AuthorMediaRef) {
+func (imp *backupImport) importAuthors(authors *[]Author, refs *[]AuthorMediaRef) {
 	imp.importSegment("作者", func(qx *db.Queries) {
 		for _, a := range sliceOrEmpty(authors) {
 			authorType := "regular"
@@ -290,7 +217,7 @@ func hasCosPrefix(id string) bool {
 // （目标端上传写入条目并回后替换重建，绝不 remove）。单片段失败记 Warn 跳
 // 过，不中止整体导入（对齐备份导入对未匹配数据的宽容姿态）。旧备份无该段
 // （nil）→ 零处理、响应计数缺省（向后兼容）。
-func (imp *legacyImport) importTxtFragments(frags *[]TxtFragment) {
+func (imp *backupImport) importTxtFragments(frags *[]TxtFragment) {
 	if imp.err != nil || frags == nil {
 		return
 	}
@@ -331,7 +258,7 @@ func (imp *legacyImport) importTxtFragments(frags *[]TxtFragment) {
 }
 
 // bump 计数指针安全自增（兼容文件格式计数字段 *int 可选）。
-func (imp *legacyImport) bump(p **int) {
+func (imp *backupImport) bump(p **int) {
 	if *p == nil {
 		*p = ptr(0)
 	}
@@ -344,7 +271,7 @@ func (imp *legacyImport) bump(p **int) {
 // 其余情况并集合并（只增不删）且不改库内时间——并集结果没有单一来源时刻，
 // 宁可保留「未知」也不造假版本。整段单事务（替换路径的清空+重挂+改时间是
 // 三步联动写，autocommit 下中途失败会留下清空未挂回的半段状态）。
-func (imp *legacyImport) importTags(tags *[]Tag, refs *[]MediaTagRef) {
+func (imp *backupImport) importTags(tags *[]Tag, refs *[]MediaTagRef) {
 	imp.importSegment("标签", func(qx *db.Queries) {
 		tagIDs := make(map[string]string, len(sliceOrEmpty(tags)))
 		for _, t := range sliceOrEmpty(tags) {
@@ -446,7 +373,7 @@ func (imp *legacyImport) importTags(tags *[]Tag, refs *[]MediaTagRef) {
 
 // upsertTag 按 name 查重，缺则建（id 用新 UUID，旧 tagId 不迁移）。
 // qx 是段事务绑定的 Queries（importTags 整段单事务，见 importSegment）。
-func (imp *legacyImport) upsertTag(qx *db.Queries, t Tag) (string, error) {
+func (imp *backupImport) upsertTag(qx *db.Queries, t Tag) (string, error) {
 	existing, err := qx.GetTagByName(imp.ctx, t.Name)
 	if err == nil {
 		return existing.ID, nil
@@ -467,7 +394,7 @@ func (imp *legacyImport) upsertTag(qx *db.Queries, t Tag) (string, error) {
 
 // importLikesFavorites：likes 落最后点赞日一行（累计次数差额进 warnings，
 // 旧备份只有 lastLikeDate 无逐日记录）；favorites 幂等 upsert。整段单事务。
-func (imp *legacyImport) importLikesFavorites(likes *[]Like, favorites *[]string) {
+func (imp *backupImport) importLikesFavorites(likes *[]Like, favorites *[]string) {
 	imp.importSegment("点赞收藏", func(qx *db.Queries) {
 		largeLike := 0
 		for _, l := range sliceOrEmpty(likes) {
@@ -511,7 +438,7 @@ func (imp *legacyImport) importLikesFavorites(likes *[]Like, favorites *[]string
 
 // importTimelineTags：时间轴标签（§10 timelineTags → timeline_tags）。
 // 整段单事务。
-func (imp *legacyImport) importTimelineTags(tags *[]TimelineTag) {
+func (imp *backupImport) importTimelineTags(tags *[]TimelineTag) {
 	imp.importSegment("时间轴标签", func(qx *db.Queries) {
 		for _, t := range sliceOrEmpty(tags) {
 			assetID := imp.keyToAsset[t.RecordKey]
@@ -535,7 +462,7 @@ func (imp *legacyImport) importTimelineTags(tags *[]TimelineTag) {
 
 // markFollowed：关注标记（§6 布尔量；未知 authorId 计数进 warnings）。
 // 整段单事务。
-func (imp *legacyImport) markFollowed(ids *[]string) {
+func (imp *backupImport) markFollowed(ids *[]string) {
 	imp.importSegment("关注标记", func(qx *db.Queries) {
 		unknown := 0
 		for _, id := range sliceOrEmpty(ids) {
@@ -558,7 +485,7 @@ func (imp *legacyImport) markFollowed(ids *[]string) {
 
 // importPrefs：recommendationPrefs 写入 kv_settings（与 PUT /recommendations/
 // prefs 同键同格式）；appPrefs 其余字段忽略。
-func (imp *legacyImport) importPrefs(prefs *AppPrefs) {
+func (imp *backupImport) importPrefs(prefs *AppPrefs) {
 	if imp.err != nil || prefs == nil || prefs.RecommendationPrefs == nil {
 		return
 	}
@@ -581,7 +508,7 @@ func (imp *legacyImport) importPrefs(prefs *AppPrefs) {
 
 // staticWarnings：不导入段的提示（§10：settings/scanSources 提示重新配置；
 // albumRules 无对应能力；TXT 分片引导走 import-txt 端点）。
-func (imp *legacyImport) staticWarnings(data BackupData) {
+func (imp *backupImport) staticWarnings(data BackupData) {
 	if n := len(sliceOrEmpty(data.ScanSources)); n > 0 {
 		imp.warn("scanSources %d 条不导入（SAF 目录概念不存在），请重新注册媒体库；旧 COS 目录请以 kind=cos 注册", n)
 	}

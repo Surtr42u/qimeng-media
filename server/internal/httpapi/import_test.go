@@ -1,13 +1,11 @@
-// import_test.go：旧版迁移端点测试（DOMAIN_RULES §10 映射 + 幂等批次）。
-// 用例语义对照：段级计数、总量守恒回放（dailyBrowse 全量 + mediaStats 差额
-// + history 补漏）、同批次快速跳过、换批次内容键增量合并（不重复累计）、
-// cos_ 前缀保留、可选段缺省。
+// import_test.go：v2分段合并、写前拒绝与事件身份幂等回归。
 package httpapi
 
 import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -28,7 +26,7 @@ func queryAssetID(t *testing.T, e *testEnv, fileName string) string {
 	return id
 }
 
-// seedLegacyFiles 手工再造两行同名资产（不同子目录），验证 folderName 消歧。
+// seedLegacyFiles 手工再造两行同名资产（不同子目录），验证v2相对路径唯一消歧。
 func seedLegacyFiles(t *testing.T, e *testEnv) (sub1ID, sub2ID string) {
 	t.Helper()
 	sub1ID, sub2ID = "01900000-0000-7000-8000-00000000aa01", "01900000-0000-7000-8000-00000000aa02"
@@ -97,7 +95,8 @@ func sumDwellSeconds(t *testing.T, e *testEnv) int64 {
 // TestImport_formatMismatch_returns400：format 校验（协议 400 语义）。
 func TestImport_formatMismatch_returns400(t *testing.T) {
 	e := newTestEnv(t)
-	code, _ := importBackup(t, e, gen.LegacyBackupImport{Format: "other", Data: gen.LegacyBackupData{}})
+	code, _ := importBackup(t, e, gen.LegacyBackupImport{Format: "other", Data: gen.LegacyBackupData{
+		ViewEvents: &[]gen.PortableViewEvent{}}})
 	if code != http.StatusBadRequest {
 		t.Fatalf("format 不符应 400，got %d", code)
 	}
@@ -109,15 +108,16 @@ func TestImport_fullPipeline(t *testing.T) {
 	sub1, sub2 := seedLegacyFiles(t, e)
 
 	req := gen.LegacyBackupImport{
-		Format: "qimeng_backup", SchemaVersion: 1, AppIdentifier: "com.qimeng.media",
+		Format: "qimeng_backup", SchemaVersion: portableSchemaVersion, AppIdentifier: "com.qimeng.media",
 		ExportedAtMillis: ptr(int64(1756400000000)),
 		Data: gen.LegacyBackupData{
+			ViewEvents: &[]gen.PortableViewEvent{},
 			MediaFiles: &[]gen.LegacyMediaFile{
 				{RecordKey: "a.jpg", FileName: "a.jpg", MediaType: "image", SizeBytes: 100, ModifiedAtMillis: 1},
 				{RecordKey: "b.jpg", FileName: "b.jpg", MediaType: "image", SizeBytes: 100, ModifiedAtMillis: 2},
 				{RecordKey: "c.mp4", FileName: "c.mp4", MediaType: "video", SizeBytes: 100, ModifiedAtMillis: 3},
-				{RecordKey: "dup.jpg @ sub1", FileName: "dup.jpg", FolderName: ptr("sub1"), MediaType: "image", SizeBytes: 1, ModifiedAtMillis: 4},
-				{RecordKey: "dup.jpg @ sub2", FileName: "dup.jpg", FolderName: ptr("sub2"), MediaType: "image", SizeBytes: 1, ModifiedAtMillis: 5},
+				{RecordKey: "dup.jpg @ sub1", FileName: "dup.jpg", FolderName: ptr("sub1"), RelPath: ptr("sub1/dup.jpg"), MediaType: "image", SizeBytes: 1, ModifiedAtMillis: 4},
+				{RecordKey: "dup.jpg @ sub2", FileName: "dup.jpg", FolderName: ptr("sub2"), RelPath: ptr("sub2/dup.jpg"), MediaType: "image", SizeBytes: 1, ModifiedAtMillis: 5},
 				{RecordKey: "missing.jpg", FileName: "missing.jpg", MediaType: "image", SizeBytes: 1, ModifiedAtMillis: 6},
 			},
 			Authors: &[]gen.LegacyAuthor{
@@ -127,7 +127,7 @@ func TestImport_fullPipeline(t *testing.T) {
 			AuthorMediaRefs: &[]gen.LegacyAuthorMediaRef{
 				{AuthorId: "author_a", RecordKey: "a.jpg", FileName: "a.jpg", IsMatched: ptr(true)},
 				{AuthorId: "cos_author_b", RecordKey: "c.mp4", FileName: "c.mp4"},
-				{AuthorId: "author_a", RecordKey: "dup.jpg @ sub2", FileName: "dup.jpg"},  // folderName 消歧 → sub2
+				{AuthorId: "author_a", RecordKey: "dup.jpg @ sub2", FileName: "dup.jpg"},  // v2 relPath消歧 → sub2
 				{AuthorId: "author_a", RecordKey: "missing.jpg", FileName: "missing.jpg"}, // 资产未匹配 → skipped
 			},
 			Tags: &[]gen.LegacyTag{{Name: "风景"}, {Name: "人像"}},
@@ -164,6 +164,16 @@ func TestImport_fullPipeline(t *testing.T) {
 			AlbumRules:  &[]map[string]any{{"rule": 1}},
 		},
 	}
+	events := make([]gen.PortableViewEvent, 0, 10)
+	for i := range 5 {
+		events = append(events, portableFixtureEvent("a.jpg", "open", i, nil))
+	}
+	events = append(events, portableFixtureEvent("b.jpg", "open", 0, nil))
+	for i := range 2 {
+		events = append(events, portableFixtureEvent("c.mp4", "play", i, nil))
+	}
+	events = append(events, portableFixtureEvent("a.jpg", "dwell", 0, ptr(int64(30))), portableFixtureEvent("c.mp4", "dwell", 0, ptr(int64(120))))
+	req.Data.ViewEvents = &events
 	code, res := importBackup(t, e, req)
 	if code != http.StatusOK {
 		t.Fatalf("迁移应 200，got %d", code)
@@ -191,7 +201,7 @@ func TestImport_fullPipeline(t *testing.T) {
 	if got := derefVal(res.TagRefsImported); got != 1 || derefVal(res.TagRefsSkipped) != 1 {
 		t.Errorf("TagRefs = %d/%d, want 1/1", derefVal(res.TagRefsImported), derefVal(res.TagRefsSkipped))
 	}
-	// 总量守恒：open = 明细 3 + 差额 2 + 补漏 1 = 6；play = 明细 2；dwell 2 条（a 30s + c 120s）
+	// 只计十条显式原生事件；上面的聚合展示段不得生成额外事件。
 	if got := countEvents(t, e, "open"); got != 6 {
 		t.Errorf("open 事件 = %d, want 6", got)
 	}
@@ -288,9 +298,10 @@ func authorRefAsset(t *testing.T, e *testEnv, authorID string) string {
 func TestImport_nonPositiveMillisFallbacksToNow(t *testing.T) {
 	e := newTestEnv(t)
 	req := gen.LegacyBackupImport{
-		Format: "qimeng_backup", SchemaVersion: 1, AppIdentifier: "com.qimeng.media",
+		Format: "qimeng_backup", SchemaVersion: portableSchemaVersion, AppIdentifier: "com.qimeng.media",
 		ExportedAtMillis: ptr(int64(1756400000000)),
 		Data: gen.LegacyBackupData{
+			ViewEvents: &[]gen.PortableViewEvent{},
 			Authors: &[]gen.LegacyAuthor{
 				{AuthorId: "author_zero", DisplayName: "零值作者", CreatedAtMillis: ptr(int64(0))},
 			},
@@ -314,13 +325,14 @@ func TestImport_nonPositiveMillisFallbacksToNow(t *testing.T) {
 	}
 }
 
-// TestImport_idempotentReplay：同批次重复导入——事件零回放、关联不翻倍。
+// TestImport_idempotentReplay：同身份重复导入——事件零回放、关联不翻倍。
 func TestImport_idempotentReplay(t *testing.T) {
 	e := newTestEnv(t)
 	req := gen.LegacyBackupImport{
-		Format: "qimeng_backup", SchemaVersion: 1, AppIdentifier: "com.qimeng.media",
+		Format: "qimeng_backup", SchemaVersion: portableSchemaVersion, AppIdentifier: "com.qimeng.media",
 		ExportedAtMillis: ptr(int64(1756400000000)),
 		Data: gen.LegacyBackupData{
+			ViewEvents: &[]gen.PortableViewEvent{},
 			MediaFiles: &[]gen.LegacyMediaFile{
 				{RecordKey: "a.jpg", FileName: "a.jpg", MediaType: "image", SizeBytes: 100, ModifiedAtMillis: 1},
 			},
@@ -339,6 +351,7 @@ func TestImport_idempotentReplay(t *testing.T) {
 			},
 		},
 	}
+	req.Data.ViewEvents = &[]gen.PortableViewEvent{portableFixtureEvent("a.jpg", "open", 0, nil), portableFixtureEvent("a.jpg", "open", 1, nil)}
 	if code, _ := importBackup(t, e, req); code != http.StatusOK {
 		t.Fatalf("首次导入应 200")
 	}
@@ -355,7 +368,7 @@ func TestImport_idempotentReplay(t *testing.T) {
 		t.Fatalf("重复导入应 200")
 	}
 	if got := derefVal(res.EventsReplayed); got != 0 {
-		t.Errorf("同批次重复导入 EventsReplayed = %d, want 0", got)
+		t.Errorf("同身份重复导入 EventsReplayed = %d, want 0", got)
 	}
 	if got := countEvents(t, e, ""); got != first {
 		t.Errorf("重复导入后事件数 %d 变化了，want %d（幂等）", got, first)
@@ -373,15 +386,13 @@ func TestImport_idempotentReplay(t *testing.T) {
 	}
 }
 
-// TestImport_newBatchIdenticalContent_dedup：同一内容换新批次（新
-// exportedAtMillis）再导入——确定性内容键相同，事件零回放零新增（跨批次
-// 幂等由内容键保证，批次锚点只是快速路径；§10 语义变更前此场景全量重放
-// 会导致浏览统计翻倍）。
+// 导出时间仅作元信息；同一事件换导出时间不重复入库。
 func TestImport_newBatchIdenticalContent_dedup(t *testing.T) {
 	e := newTestEnv(t)
 	base := gen.LegacyBackupImport{
-		Format: "qimeng_backup", SchemaVersion: 1, AppIdentifier: "com.qimeng.media",
+		Format: "qimeng_backup", SchemaVersion: portableSchemaVersion, AppIdentifier: "com.qimeng.media",
 		Data: gen.LegacyBackupData{
+			ViewEvents: &[]gen.PortableViewEvent{},
 			MediaFiles: &[]gen.LegacyMediaFile{
 				{RecordKey: "a.jpg", FileName: "a.jpg", MediaType: "image", SizeBytes: 100, ModifiedAtMillis: 1},
 			},
@@ -390,6 +401,7 @@ func TestImport_newBatchIdenticalContent_dedup(t *testing.T) {
 			},
 		},
 	}
+	base.Data.ViewEvents = &[]gen.PortableViewEvent{portableFixtureEvent("a.jpg", "open", 0, nil)}
 	req1, req2 := base, base
 	req1.ExportedAtMillis = ptr(int64(1000))
 	req2.ExportedAtMillis = ptr(int64(2000))
@@ -409,98 +421,27 @@ func TestImport_newBatchIdenticalContent_dedup(t *testing.T) {
 	}
 }
 
-// TestImport_newBatchIncrementalMerge：同一来源两次导出（批次号不同），
-// 第二次日明细与统计缺口增长——首次全量入库，二次仅补写新增事件（内容键
-// 拦重），浏览统计不重复累计、dwell 秒数取首写值（DOMAIN_RULES §10）。
-func TestImport_newBatchIncrementalMerge(t *testing.T) {
+func TestImportSameExportTimeAddsOnlyNewEventIdentity(t *testing.T) {
 	e := newTestEnv(t)
-	day := int64(1756377600000)
-	base := gen.LegacyBackupImport{
-		Format: "qimeng_backup", SchemaVersion: 1, AppIdentifier: "com.qimeng.media",
-		Data: gen.LegacyBackupData{
-			MediaFiles: &[]gen.LegacyMediaFile{
-				{RecordKey: "a.jpg", FileName: "a.jpg", MediaType: "image", SizeBytes: 100, ModifiedAtMillis: 1},
-			},
-			DailyBrowse: &[]gen.LegacyDailyBrowse{
-				{RecordKey: "a.jpg", FileName: "a.jpg", MediaType: "image", DayStartMillis: day, ViewCount: ptr(2), PlayCount: ptr(0), TotalBrowseSeconds: ptr(int64(20))},
-			},
-			MediaStats: &[]gen.LegacyMediaStats{
-				{RecordKey: "a.jpg", FileName: "a.jpg", ViewCount: ptr(3), PlayCount: ptr(0), TotalBrowseSeconds: ptr(int64(50)), LastOpenedAtMillis: ptr(int64(1756460000000))},
-			},
-		},
-	}
-	req1 := base
-	req1.ExportedAtMillis = ptr(int64(1000))
-	code, res1 := importBackup(t, e, req1)
-	if code != http.StatusOK {
-		t.Fatalf("首次导入应 200，got %d", code)
-	}
-	// 首次全量：日明细 open 2 + dwell 1（20s），缺口 open 1 + dwell 1（30s）= 5 条。
-	if got := derefVal(res1.EventsReplayed); got != 5 {
-		t.Fatalf("首次导入 EventsReplayed = %d, want 5", got)
-	}
-	if got := countEvents(t, e, "open"); got != 3 {
-		t.Fatalf("首次 open = %d, want 3（明细 2 + 缺口 1）", got)
-	}
-	if got := countEvents(t, e, "dwell"); got != 2 {
-		t.Fatalf("首次 dwell = %d, want 2", got)
-	}
-	if got := sumDwellSeconds(t, e); got != 50 {
-		t.Fatalf("首次停留秒 = %d, want 50", got)
-	}
-
-	// 第二次导出：日明细 open 2→3、play 0→1、秒 20→40；累计 view 3→5、
-	// play 0→2、秒 50→80；LastOpenedAtMillis 漂移（内容键不含时间戳）。
-	req2 := base
-	req2.ExportedAtMillis = ptr(int64(2000))
-	req2.Data.DailyBrowse = &[]gen.LegacyDailyBrowse{
-		{RecordKey: "a.jpg", FileName: "a.jpg", MediaType: "image", DayStartMillis: day, ViewCount: ptr(3), PlayCount: ptr(1), TotalBrowseSeconds: ptr(int64(40))},
-	}
-	req2.Data.MediaStats = &[]gen.LegacyMediaStats{
-		{RecordKey: "a.jpg", FileName: "a.jpg", ViewCount: ptr(5), PlayCount: ptr(2), TotalBrowseSeconds: ptr(int64(80)), LastOpenedAtMillis: ptr(int64(1756500000000))},
-	}
-	code, res2 := importBackup(t, e, req2)
-	if code != http.StatusOK {
-		t.Fatalf("二次导入应 200，got %d", code)
-	}
-	// 二次仅补增量：明细 open 序号 2（+1）、play 序号 0（+1）；缺口 open
-	// 序号 1（+1）、play 序号 0（+1）= 4 条；两条 dwell 键已存在（秒数取
-	// 首写值）不重复累计。
-	if got := derefVal(res2.EventsReplayed); got != 4 {
-		t.Errorf("二次导入 EventsReplayed = %d, want 4（仅新增事件）", got)
-	}
-	if got := countEvents(t, e, "open"); got != 5 {
-		t.Errorf("二次后 open = %d, want 5（明细 3 + 缺口 2，无重复累计）", got)
-	}
-	if got := countEvents(t, e, "play"); got != 2 {
-		t.Errorf("二次后 play = %d, want 2（明细 1 + 缺口 1）", got)
-	}
-	if got := countEvents(t, e, "dwell"); got != 2 {
-		t.Errorf("二次后 dwell = %d, want 2（不翻倍）", got)
-	}
-	if got := sumDwellSeconds(t, e); got != 50 {
-		t.Errorf("二次后停留秒 = %d, want 50（dwell 秒数取首写值）", got)
-	}
-	// 落点核验：全部事件带 legacy: 内容键；gap dwell identity 稳定复用
-	//（一资产一条，不随批次增长）。
-	assetID := queryAssetID(t, e, "a.jpg")
-	var total, withKey int
-	if err := e.conn.QueryRow(`SELECT COUNT(*) FROM view_events`).Scan(&total); err != nil {
-		t.Fatalf("统计事件失败: %v", err)
-	}
-	if err := e.conn.QueryRow(`SELECT COUNT(*) FROM view_events WHERE client_event_id LIKE 'legacy:%'`).Scan(&withKey); err != nil {
-		t.Fatalf("统计内容键失败: %v", err)
-	}
-	if total != 9 || withKey != total {
-		t.Errorf("内容键覆盖 = %d/%d, want 9/9", withKey, total)
-	}
-	var gd int
-	if err := e.conn.QueryRow(`SELECT COUNT(*) FROM view_events WHERE client_event_id = ?`, "legacy:gd:"+assetID).Scan(&gd); err != nil || gd != 1 {
-		t.Errorf("gap dwell 键 legacy:gd:<asset> = %d err=%v, want 1（identity 稳定复用）", gd, err)
+	req := newBackupReq(gen.LegacyBackupData{
+		MediaFiles: &[]gen.LegacyMediaFile{{RecordKey: "a.jpg", FileName: "a.jpg", MediaType: "image", SizeBytes: 1, ModifiedAtMillis: 1}},
+		ViewEvents: &[]gen.PortableViewEvent{portableFixtureEvent("a.jpg", "open", 0, nil)},
+	})
+	requireImport(t, e, req, 1)
+	*req.Data.ViewEvents = append(*req.Data.ViewEvents, portableFixtureEvent("a.jpg", "open", 1, nil))
+	requireImport(t, e, req, 1)
+	requireImport(t, e, req, 0)
+	if countEvents(t, e, "") != 2 {
+		t.Fatal("same export time lost or duplicated native event")
 	}
 }
 
-// derefVal *int 安全取值（nil = 0，便于断言）。
+// 夹具显式提供v2事件时刻与身份，不通过旧聚合规则重构。
+func portableFixtureEvent(key, kind string, index int, seconds *int64) gen.PortableViewEvent {
+	return gen.PortableViewEvent{RecordKey: key, EventId: fmt.Sprintf("fixture:%s:%s:%d", key, kind, index),
+		Kind: kind, SessionId: "portable-fixture", StartedAt: "2026-08-28T12:00:00Z", Seconds: seconds}
+}
+
 func derefVal(p *int) int {
 	if p == nil {
 		return 0

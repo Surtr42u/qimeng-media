@@ -24,7 +24,7 @@
 
 ## 关键机制定位
 
-筛选/COS 隔离/缩略图缓存见 browse；会话去重/事件幂等/播放进度见 engagement；TXT 真相/来源词表见 authors；文件恢复/续传重试见 files；v1/v2 兼容与快照见 backup。领域语义另查 [DOMAIN_RULES](DOMAIN_RULES.md)，安全限制另查 [SECURITY](SECURITY.md)。
+筛选/COS 隔离/缩略图缓存见 browse；会话去重/事件幂等/播放进度见 engagement；TXT 真相/来源词表见 authors；文件恢复/续传重试见 files；v2备份与退役版本拒绝/快照见 backup。领域语义另查 [DOMAIN_RULES](DOMAIN_RULES.md)，安全限制另查 [SECURITY](SECURITY.md)。
 
 ## 维护
 

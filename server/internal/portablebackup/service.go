@@ -84,19 +84,19 @@ func (s *Service) Import(ctx context.Context, req *BackupImport) (ImportResult, 
 	if err := validatePortableBackup(req); err != nil {
 		return ImportResult{}, &invalidBackup{cause: err}
 	}
-	imp := &legacyImport{s: s, ctx: ctx}
-	imp.matchBackupFiles(req.Data.MediaFiles, req.SchemaVersion == SchemaVersion)
+	imp := &backupImport{s: s, ctx: ctx}
+	imp.matchBackupFiles(req.Data.MediaFiles)
 	imp.importTxtFragments(req.Data.TxtFragments)
 	imp.importAuthors(req.Data.Authors, req.Data.AuthorMediaRefs)
 	imp.importTags(req.Data.Tags, req.Data.MediaTagRefs)
-	imp.replayEvents(req)
+	imp.replayPortableEvents(req)
 	imp.importLikesFavorites(req.Data.Likes, req.Data.Favorites)
 	imp.importTimelineTags(req.Data.TimelineTags)
 	imp.markFollowed(req.Data.FollowedAuthorIds)
 	imp.importPrefs(req.Data.AppPrefs)
 	imp.staticWarnings(req.Data)
 	for _, warn := range imp.warnings {
-		s.logger.Warn("旧版迁移提示", "warning", warn)
+		s.logger.Warn("备份导入提示", "warning", warn)
 	}
 	if imp.err == nil || imp.committed {
 		if s.changed != nil {
@@ -111,7 +111,7 @@ func (s *Service) Import(ctx context.Context, req *BackupImport) (ImportResult, 
 }
 
 func (s *Service) Export(ctx context.Context) (*BackupFile, error) {
-	return (&legacyExport{s: s, ctx: ctx}).build()
+	return (&backupExport{s: s, ctx: ctx}).build()
 }
 
 func (s *Service) rollbackTx(ctx context.Context, stage string, tx *sql.Tx) {

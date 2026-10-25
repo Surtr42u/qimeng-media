@@ -11,6 +11,8 @@
 - 常规/COS 分区、同维 OR/跨维 AND、收藏与历史默认范围按 [筛选](domain/filtering.md)、[作者隔离](domain/authors.md)及 API browse，不在组件复制规则。
 - 资产编辑负责作者关联/来源维护；来源=获取渠道，与作品出处不同。作者管理保留媒体文件，COS 作者由目录扫描管理。
 
+- 备份仅接收本项目当前v2；选旧v1/缺版本/未知版本时明确拒绝，缺viewEvents数组不发请求。两端确认摘要按原生事件数，不把聚合统计当事件回放；提示按事件身份/关联规则合并、不删除媒体原件，不笼统承诺全部元数据只增不减。
+
 ## Web/PWA
 
 定位：[web/README](../web/README.md)。React 页面经 hooks 获取数据；Aurora Glass 的 token/主题/降级、zoom 补偿只在该 README 维护。

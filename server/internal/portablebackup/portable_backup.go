@@ -5,11 +5,12 @@ import (
 	"fmt"
 	"time"
 
+	"qimeng-media/server/internal/eventstats"
 	"qimeng-media/server/internal/store/db"
 )
 
-// fillPortableEvents 保留原始身份、时刻、秒数和来源；聚合段仅供旧工具读取。
-func (exp *legacyExport) fillPortableEvents(data *BackupData, byID map[string]*exportAsset) error {
+// fillPortableEvents 保留原始身份、时刻、秒数和来源；聚合段只作查看，不作为导入事件源。
+func (exp *backupExport) fillPortableEvents(data *BackupData, byID map[string]*exportAsset) error {
 	rows, err := exp.q.ExportPortableEvents(exp.ctx)
 	if err != nil {
 		return err
@@ -39,11 +40,8 @@ func nullStringPtr(v sql.NullString) *string {
 
 // validatePortableBackup 在任何写入前拒绝不完整的新格式，禁止静默降级聚合回放。
 func validatePortableBackup(req *BackupImport) error {
-	if req.SchemaVersion != legacySchemaVersion && req.SchemaVersion != SchemaVersion {
-		return fmt.Errorf("不支持的备份版本")
-	}
 	if req.SchemaVersion != SchemaVersion {
-		return nil
+		return fmt.Errorf("仅支持本项目的 v%d 备份，旧版及未知版本不再导入", SchemaVersion)
 	}
 	if req.Data.ViewEvents == nil {
 		return fmt.Errorf("v2 备份缺少 viewEvents")
@@ -75,7 +73,10 @@ func validatePortableBackup(req *BackupImport) error {
 	return nil
 }
 
-func (imp *legacyImport) replayPortableEvents(req *BackupImport) {
+func (imp *backupImport) replayPortableEvents(req *BackupImport) {
+	if imp.err != nil {
+		return
+	}
 	n := 0
 	imp.importSegment("原生事件", func(q *db.Queries) {
 		for _, e := range *req.Data.ViewEvents {
@@ -145,4 +146,14 @@ func pickPortableAsset(f MediaFile, rows []db.ListAssetNameIndexRow, byID map[st
 		}
 	}
 	return found
+}
+
+// rebuildDailyStats 依据现有事件重建派生统计，不改变事件真相或旧身份。
+func (imp *backupImport) rebuildDailyStats() {
+	if imp.err != nil {
+		return
+	}
+	if err := eventstats.Rebuild(imp.ctx, imp.s.conn); err != nil {
+		imp.fail("重建按天统计物化表", err)
+	}
 }

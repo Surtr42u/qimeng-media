@@ -16,7 +16,7 @@
 | §7 标签/收藏/点赞/时间轴 | [engagement](domain/engagement.md) |
 | §8 浏览与分组展示规则 | [browsing](domain/browsing.md) |
 | §9 文件操作规则（新需求，2026-08-22 确认） | [files](domain/files.md) |
-| §10 旧数据迁移映射（qimeng_backup.json → 新库） | [migration](domain/migration.md) |
+| §10 当前v2便携备份导入导出 | [migration](domain/migration.md) |
 | §11 媒体类型与缩略图 | [thumbnails](domain/thumbnails.md) |
 
 ## 读取与维护

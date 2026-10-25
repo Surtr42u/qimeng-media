@@ -6,7 +6,7 @@ import "net/http"
 func (s *Server) GetApiV1ExportQimengBackup(w http.ResponseWriter, r *http.Request) {
 	file, err := s.portable.Export(r.Context())
 	if err != nil {
-		s.internalErr(w, "导出旧版格式备份", err)
+		s.internalErr(w, "导出v2便携备份", err)
 		return
 	}
 	w.Header().Set("Content-Disposition", `attachment; filename="qimeng_backup.json"`)

@@ -47,9 +47,11 @@ func TestPortableBackupConservesEventsAcrossRoundTrips(t *testing.T) {
 	aid := queryAssetID(t, a, "a.jpg")
 	report := gen.ViewEventReport{AssetId: uuid.MustParse(aid), Kind: gen.Open, SessionId: "roundtrip", StartedAt: a.clock.Now(), ClientEventId: uuid.New()}
 	postViewReport(t, a, report)
-	legacy := traversalPayload(a.clock.Now().UnixMilli())
-	if code, _ := importBackup(t, a, legacy); code != http.StatusOK {
-		t.Fatal(code)
+	if _, err := a.q.InsertViewEventIdempotent(t.Context(), db.InsertViewEventIdempotentParams{
+		AssetID: aid, Kind: "open", SessionID: "legacy-import", StartedAt: store.FormatTimestamp(a.clock.Now()),
+		ClientEventID: sql.NullString{String: "legacy:d:" + aid + ":open:historic:0", Valid: true},
+	}); err != nil {
+		t.Fatal(err)
 	}
 	if err := a.q.InsertViewEvent(t.Context(), db.InsertViewEventParams{AssetID: aid, Kind: "dwell", SessionID: "pre-key-source", StartedAt: store.FormatTimestamp(a.clock.Now()), Seconds: sql.NullInt64{Int64: 17, Valid: true}}); err != nil {
 		t.Fatal(err)

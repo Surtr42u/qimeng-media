@@ -23,7 +23,7 @@ func (s *Server) PostApiV1ImportQimengBackup(w http.ResponseWriter, r *http.Requ
 		if errors.As(err, &stage) {
 			s.internalErr(w, stage.Stage, stage.Err)
 		} else {
-			s.internalErr(w, "导入旧版格式备份", err)
+			s.internalErr(w, "导入v2便携备份", err)
 		}
 		return
 	}

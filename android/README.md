@@ -33,7 +33,7 @@ M6 基座历史验收已完成；近期变更未因此自动取得新版本实�
 
 ## 缩略图表示版本与备份兼容
 
-稳定键继续只剥 exp/sig，保留 size/v。预取 revision 快照携带 thumbnailVersion，DataStore 与上次完成 revision 同次写入；策略指纹变化或旧记录无指纹时重拉，避免策略升级后错误跳过。v2 备份新字段经生成 SDK 透传；勿用旧版 App 转存 v2。
+稳定键继续只剥 exp/sig，保留 size/v。预取 revision 快照携带 thumbnailVersion，DataStore 与上次完成 revision 同次写入；策略指纹变化或旧记录无指纹时重拉，避免策略升级后错误跳过。当前仅接收v2备份，BackupValidator写前拦住旧v1/缺失/未知版本及缺事件数组，确认摘要按原始事件数展示；生成SDK和域句柄透传不变。旧聚合回放已退役（ADR-0050），已有legacy/无键历史身份仍保留；当前安装版本仍看HANDOVER，本次源码调整未重新装机。
 
 ## 构建与设备验证
 

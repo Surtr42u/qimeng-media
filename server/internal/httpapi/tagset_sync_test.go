@@ -76,9 +76,10 @@ func tagSetTimeRaw(t *testing.T, e *testEnv, assetID string) string {
 // tagsBackup 构造只带标签段的最小备份请求。
 func tagsBackup(ms int64, tag string, fileName string) gen.LegacyBackupImport {
 	return gen.LegacyBackupImport{
-		Format: "qimeng_backup", SchemaVersion: 1, AppIdentifier: "com.qimeng.media",
+		Format: "qimeng_backup", SchemaVersion: portableSchemaVersion, AppIdentifier: "com.qimeng.media",
 		ExportedAtMillis: ptr(int64(1756400000000)),
 		Data: gen.LegacyBackupData{
+			ViewEvents: &[]gen.PortableViewEvent{},
 			MediaFiles: &[]gen.LegacyMediaFile{
 				{RecordKey: fileName, FileName: fileName, MediaType: "image", SizeBytes: 1,
 					ModifiedAtMillis: 1, TagsUpdatedAtMillis: ptr(ms)},

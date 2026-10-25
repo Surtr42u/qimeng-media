@@ -131,8 +131,8 @@ func (s *Server) PostApiV1EventsView(w http.ResponseWriter, r *http.Request) {
 		Seconds:       seconds,
 		ClientEventID: clientEventID,
 		// R10（审计 2026-09-20）：本地日历日，与物化表 delta.Day 同源同值；
-		// 会话去重部分唯一索引（migration 0014）的判重键。导入回放侧
-		// 显式写 NULL（见 import_replay.go）。
+		// 会话去重部分唯一索引（migration 0014）的判重键。便携导入按原始
+		// 事件透传day，已入库历史的NULL继续保留（portablebackup/portable_backup.go）。
 		Day: sql.NullString{String: store.FormatDay(req.StartedAt), Valid: true},
 	})
 	if err != nil {

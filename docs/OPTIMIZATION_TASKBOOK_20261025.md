@@ -4,6 +4,8 @@
 >
 > 初稿以 `b13bb21a` 为静态审查基线。§4–§5的“基线证据”描述实施前的触发条件，原要求和验收标准保留；每项“当前实现”及§10/§11记录后续结果，不能把初稿证据当作现有缺陷重新立项。当前源码/运行包与审查状态见[HANDOVER](HANDOVER.md)，能力状态见[CAPABILITY_MAP](CAPABILITY_MAP.md)。此前[代码质量任务书](CODE_QUALITY_TASKBOOK.md)的已交付Q1–Q7不重复执行。
 
+> 后续用户要求（ADR-0050）：另一个纯本地旧项目已停用，当前源码退役v1备份导入；初期Q04中的v1/v2支持与回归记录为当时范围，v1继续导入要求已被替代。必须保留已导入历史在v2中的原身份往返；此精简批次的拒绝写前/原生事件/跨实例回环/两端提示回归结果按当前PR核对，现用安装包仍为8f6a3a3c/code8。
+
 ## 1. 目标与审查口径
 
 延续凌晨三条主线：减少重复计算/遍历、限制后台资源占用、保护前台响应与数据一致性。进一步收敛异步草稿、取消传播、导入边界、发布门禁和职责分层。
@@ -448,3 +450,5 @@ SQL取回云端codegen 40164563955/40168795821产物，优化实施期SDK锁未�
 本次安装与后端运行另实际读取：AGENTS.md、AI_README_FIRST.md开发/交付/维护相关节、HANDOVER、CAPABILITY_MAP、任务书§2/§11、RESTORE升级清单、SECURITY红线/开发模式/文件恢复与上传边界、OBSERVABILITY指标口径、DOMAIN_RULES目录及files恢复/迁移v2/推荐分页专题、api/openapi对应端点与schema、api/backup、server/android入口、deploy/README与embedded/README、tools/README和CHANGELOG/归档索引。
 
 最终文档规范复核另实际读取：AGENTS、AI_README_FIRST维护/交付节、README与llms导航、GUIDE_API、OpenAPI便携迁移端点/信封、api/backup与domain/migration、HANDOVER/能力地图/本任务书、ARCHITECTURE工程门禁、ADR及历史索引、PROJECT_PLAN和旧任务记录的状态头、tools/README、云端codegen/security配置与Makefile SDK锁规则；便携导入/导出源码仅用于核对说明。已核对文档分工/当前与历史/链接索引归档口径，未以自动化门禁代替全仓逐句语义证明。
+
+本次v1退役实际读取：AGENTS、AI_README_FIRST开发/卫生/交付/维护节、server/web/android入口、GUIDE_UI备份/分层约束、SECURITY红线/便携边界、DOMAIN_RULES目录与migration专题、api/backup/OpenAPI导入导出及信封schema、ADR索引/0040/模板与新增0050、HANDOVER/能力地图/本任务书、ARCHITECTURE§5/§11、CHANGELOG/历史索引及旧v1归档。

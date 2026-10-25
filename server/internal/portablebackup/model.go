@@ -1,4 +1,4 @@
-// Package portablebackup 编排便携 v1/v2 文件格式、身份合并与分段导入/快照导出。
+// Package portablebackup 编排当前v2便携文件格式、身份合并与分段导入/快照导出。
 // 文件 DTO 与 OpenAPI 对应 schema 同步，由 HTTP 边界契约测试比较字段；不依赖 gen。
 package portablebackup
 

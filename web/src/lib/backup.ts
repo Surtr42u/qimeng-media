@@ -1,32 +1,29 @@
-/**
- * 旧版格式备份（qimeng_backup.json）文件解析与校验（DOMAIN_RULES §10）。
- * 逻辑层职责：读文件文本 → JSON 解析 → 格式前置校验（与后端 BAD_REQUEST
- * 同口径，早失败省一次上传）→ 生成确认弹窗摘要计数（对齐旧版 App「检测到
- * 备份数据：X 个媒体文件 / Y 位作者 / Z 个标签 / W 条统计」的确认语义）。
- * 页面组件不内嵌这些规则（铁律 7）。
- */
+/** 当前v2便携备份的文件校验与确认摘要；页面只负责选择/确认。 */
 
 import type { LegacyBackupImport } from '@/api/generated'
 
-/** 备份导入大小上限（与服务端 legacyImportMaxBody 双写，改动须两侧同步）：
+/** 与OpenAPI的schemaVersion及portablebackup.SchemaVersion同步，协议变化须同批更新。 */
+const BACKUP_SCHEMA_VERSION = 2
+
+/** 备份导入大小上限（与portablebackup.ImportMaxBody同步）：
  * 服务端超限回 413，但浏览器在上传中途被掐断时只能看到 "Failed to fetch"，
  * 这里前置拦截给可读文案 */
 export const BACKUP_MAX_BYTES = 64 * 1024 * 1024
 
-/** 导入确认摘要（计数取备份内原始条数，与旧版恢复确认弹窗同口径） */
-export interface LegacyBackupSummary {
+/** 导入确认摘要（计数取备份内原始条数，用于当前v2确认弹窗） */
+export interface BackupSummary {
   fileName: string
   mediaFiles: number
   authors: number
   tags: number
-  /** 统计条数 = mediaStats + dailyBrowse（导入侧转换回放的两大来源） */
-  statsRows: number
+  /** 实际原生事件条数，不把展示用聚合段当作导入事件来源 */
+  eventRows: number
 }
 
-/** 解析并校验旧版备份文件；格式不符/JSON 损坏抛出中文错误信息 */
-export async function parseLegacyBackupFile(file: File): Promise<{
+/** 解析并校验当前v2备份文件；格式不符/JSON 损坏抛出中文错误信息 */
+export async function parseBackupFile(file: File): Promise<{
   payload: LegacyBackupImport
-  summary: LegacyBackupSummary
+  summary: BackupSummary
 }> {
   if (file.size > BACKUP_MAX_BYTES) {
     throw new Error(`备份文件超过 ${(BACKUP_MAX_BYTES / 1024 / 1024).toFixed(0)}MB 上限，请确认导出的是完整备份`)
@@ -38,11 +35,15 @@ export async function parseLegacyBackupFile(file: File): Promise<{
   } catch {
     throw new Error('文件不是合法 JSON，请确认选择的是 qimeng_backup.json 备份文件')
   }
+  const formatError = '备份格式不符：format 必须为 qimeng_backup，data 必须为对象'
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) throw new Error(formatError)
   const envelope = parsed as Partial<LegacyBackupImport>
-  if (envelope.format !== 'qimeng_backup' || !envelope.data) {
-    throw new Error('备份格式不符：format 必须为 qimeng_backup（旧版「绮梦影库」全量备份）')
+  if (envelope.format !== 'qimeng_backup' || typeof envelope.data !== 'object' || !envelope.data || Array.isArray(envelope.data)) throw new Error(formatError)
+  if (envelope.schemaVersion !== BACKUP_SCHEMA_VERSION) {
+    throw new Error(`仅支持本项目的 v${BACKUP_SCHEMA_VERSION} 备份，旧版及未知版本不再导入`)
   }
   const data = envelope.data
+  if (!Array.isArray(data.viewEvents)) throw new Error('备份格式不完整：v2 必须包含 viewEvents 数组')
   return {
     payload: envelope as LegacyBackupImport,
     summary: {
@@ -50,22 +51,22 @@ export async function parseLegacyBackupFile(file: File): Promise<{
       mediaFiles: data.mediaFiles?.length ?? 0,
       authors: data.authors?.length ?? 0,
       tags: data.tags?.length ?? 0,
-      statsRows: (data.mediaStats?.length ?? 0) + (data.dailyBrowse?.length ?? 0),
+      eventRows: data.viewEvents.length,
     },
   }
 }
 
-/** 确认弹窗描述文案（旧版恢复确认语义） */
-export function backupSummaryText(s: LegacyBackupSummary): string {
+/** 确认弹窗描述文案 */
+export function backupSummaryText(s: BackupSummary): string {
   return (
     `检测到备份数据：${s.mediaFiles.toLocaleString()} 个媒体文件 / ` +
     `${s.authors.toLocaleString()} 位作者 / ${s.tags.toLocaleString()} 个标签 / ` +
-    `${s.statsRows.toLocaleString()} 条统计。导入按唯一键合并、不删除现有数据，是否导入恢复？`
+    `${s.eventRows.toLocaleString()} 条事件。导入按事件身份和关联规则合并、不删除媒体原件，是否导入恢复？`
   )
 }
 
 // ---- 库文件快照调度参数（PUT /api/v1/backups/schedule，2026-10-03 热生效批）----
-// 与上面旧版 JSON 备份同属备份域逻辑层：校验规则在 lib、组件只渲染（铁律 7）。
+// 与上面v2 JSON备份同属备份域逻辑层：校验规则在 lib、组件只渲染（铁律 7）。
 
 /** 调度参数合法范围。三处同值：openapi BackupSchedule minimum/maximum、
  * 服务端 backup 包 Min/Max 常量、此处——协议侧改动须三处同步，反之亦然 */
