@@ -69,3 +69,22 @@ test('初次查询迟到和焦点刷新不会覆盖本地输入', async ({ page 
   await page.evaluate('document.dispatchEvent(new Event("visibilitychange"))')
   await expect(limit).toHaveValue('512')
 })
+
+test('上传存储初始化失败显示降级，重试恢复且不发送文件', async ({ page }) => {
+  await page.addInitScript(() => {
+    const factory = Reflect.get(globalThis, 'indexedDB') as { open: (...args: unknown[]) => unknown }
+    const realOpen = factory.open.bind(factory)
+    let fail = true
+    factory.open = (...args: unknown[]) => {
+      if (args[0] === 'qimeng_upload_queue' && fail) { fail = false; throw new Error('synthetic storage unavailable') }
+      return realOpen(...args)
+    }
+  })
+  await openSettings(page, async (route) => route.fulfill({ json: initial }))
+  await page.goto('/app/maintenance/files/upload')
+  const warning = page.getByText(/上传队列存储不可用，本次任务仅当前页面有效/)
+  await expect(warning).toBeVisible()
+  await page.getByRole('button', { name: '重试队列存储', exact: true }).click()
+  await expect(warning).toBeHidden()
+  await expect(page.getByText('暂无上传任务', { exact: false })).toBeVisible()
+})

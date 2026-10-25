@@ -297,6 +297,17 @@ export function UploadWorkbench({ libraries }: { libraries: Library[] }) {
 
       {/* —— 上传队列（常驻；逐条串行，挂靠在每条 201 之后自动执行） —— */}
       <div className="upload-subhead">上传队列</div>
+      {(queue.persistenceHealth.unavailable || queue.persistenceHealth.restoreFailed || queue.persistenceHealth.failedWrites > 0 || queue.persistenceHealth.failedDeletes > 0) && (
+        <div role="status" className="rank-note">
+          {queue.persistenceHealth.failedDeletes > 0
+            ? '上传结果不受影响，但旧任务记录删除失败；刷新可能再次显示旧任务，请先核对已入库文件。'
+            : '上传队列存储不可用，本次任务仅当前页面有效，刷新可能无法恢复。'}
+          <button type="button" className="secondary-btn" disabled={queue.persistenceHealth.retrying}
+            onClick={() => { void queue.retryPersistence() }}>
+            {queue.persistenceHealth.retrying ? '重试中…' : '重试队列存储'}
+          </button>
+        </div>
+      )
       {queue.items.length === 0 ? (
         <p className="grid-empty">暂无上传任务——在上方添加文件后，逐条进度与结果在这里显示。</p>
       ) : (

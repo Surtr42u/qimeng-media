@@ -35,7 +35,7 @@ src/
 - 组件内出现 `fetch/axios/api.` = 违规
 - `tests/architecture.test.ts` 随 `npm test` 用 TypeScript AST 自动检查 pages/components 的运行时 API 导入与直接请求；SDK 纯类型导入和非 API 组件懒加载允许。Node 源码检查/桌面契约测试位于 tests/，由 tsconfig.node 类型检查，不向浏览器代码引入 Node 全局类型。不把静态检查当作全调用链业务规则证明。
 - 例外：`lib/upload-chunked.ts` 传输层 XHR 直连不走生成 SDK（abort 支持缺失+403 拦截器误伤，ADR-0028 记档）
-- 上传链路 lib 内分工（2026-10-24 提取批）：队列状态（entries/XHR 句柄/取消旗标/恢复/订阅/终态推进）唯一持有在 `lib/upload-queue-store.ts`；「上传成功后挂靠」无状态服务（响应资产 id 解析、先 authors 替换后 sources append、失败转「已入库待挂靠」）在 `lib/upload-attach.ts`；分片传输在 `lib/upload-chunked.ts`；刷新持久化在 `lib/upload-queue-persist*.ts`。纯提取，交互行为不变。
+- 上传链路 lib 内分工（2026-10-24 提取批）：队列状态（entries/XHR 句柄/取消旗标/恢复/订阅/终态推进）唯一持有在 `lib/upload-queue-store.ts`；「上传成功后挂靠」无状态服务（响应资产 id 解析、先 authors 替换后 sources append、失败转「已入库待挂靠」）在 `lib/upload-attach.ts`；分片传输在 `lib/upload-chunked.ts`；刷新持久化端口/装配在 `lib/upload-queue-persist*.ts`，IO 合并、失败重试与健康在 `lib/upload-persistence.ts`（不持传输状态）。纯提取，交互行为不变。
 - 出现硬编码颜色 = 违规（一律 `var(--qm-*)`）
 - 数据转换/业务判断放 hooks 或服务端，不进组件
 - 设置的配置草稿/修订/提交快照由 `use-config-form` 单独持有；慢 PUT 只确认自己的版本，保存期间的新输入保留。保存前作废在途旧 GET，扫描参数仍仅持久化预留。
@@ -59,7 +59,7 @@ shadcn/ui 组件及 components.json 保留；将唯一被构建消费的 dist/ta
 
 ## 上传任务恢复
 
-新队列项独立持久化 UUID uploadId 和 File.lastModified；直传/分片创建均透传，刷新恢复和会话重建保持任务 ID。重选文件校验名称、大小和已有修改时间；同 size/mtime 的内容替换仍不能检出。旧队列缺字段保持接收时间，并补一个新的任务 ID；旧请求成功窗口不能据此追溯去重。服务端重放期限及错误语义见 [上传 API](../docs/api/files.md#上传任务重放源时间与容量adr-0049)。IndexedDB 不可用或写入失败仍是最佳努力降级，不能承诺刷新恢复。用户本轮恢复现有云端完整门禁与双端更新，补源时间恢复/新任务参数回归；未接入 Playwright，实际结果见 HANDOVER。
+新队列项独立持久化 UUID uploadId 和 File.lastModified；直传/分片创建均透传，刷新恢复和会话重建保持任务 ID。重选文件校验名称、大小和已有修改时间；同 size/mtime 的内容替换仍不能检出。旧队列缺字段保持接收时间，并补一个新的任务 ID；旧请求成功窗口不能据此追溯去重。服务端重放期限及错误语义见 [上传 API](../docs/api/files.md#上传任务重放源时间与容量adr-0049)。IndexedDB 不可用或写入失败会在队列显示“本次任务仅当前页面有效/刷新可能无法恢复”，提供重试存储入口，不中断传输或重发业务请求。`upload-persistence` 只持 IO 意图/健康：单排空体按 ID 合并写删，终态删除排在旧写后，较晚进度不能复活；删除失败保留待删意图，尽力写 `terminal` 标记，恢复跳过并清理该标记。删除与标记均失败时，刷新仍可能出现旧条目，明确提示先核对入库事实；不可据此承诺永远恰好一次。重试恢复沿用 uploadId，七天完成凭据边界不变。共享 `idb.runTx` 只在事务 complete 后确认，request 成功后的 abort 仍拒绝；这也用于事件账本，浏览器回收/清理存储仍属平台边界。Playwright 的设置与队列降级场景使用合成 API，实际结果见 HANDOVER。
 
 ## 统计消费
 

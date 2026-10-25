@@ -25,9 +25,8 @@ export function openDatabase(
 
 /**
  * 单事务封装：promise 化 request（结果经 request 取回，事务随请求落定）。
- * best-effort 口径：resolve 发生在 request 成功时——若事务在其后的 commit 期
- * abort（如配额不足），promise 已 resolve、写入丢失不报错（与打点账本同行为，
- * 持久化属尽力而为面）；request 期失败或事务显式 abort 才走 reject。
+ * 只在 transaction.complete 后确认；request 成功后提交期仍可能因配额等原因
+ * abort，不能提前报告持久化成功。上传队列与打点账本共用此确认边界。
  */
 export function runTx<T>(
   db: IDBDatabase,
@@ -38,7 +37,7 @@ export function runTx<T>(
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(storeName, mode)
     const request = run(transaction.objectStore(storeName))
-    request.onsuccess = () => resolve(request.result)
+    transaction.oncomplete = () => resolve(request.result)
     request.onerror = () => reject(request.error ?? new Error('indexedDB request failed'))
     transaction.onabort = () => reject(transaction.error ?? new Error('indexedDB transaction aborted'))
   })

@@ -20,7 +20,7 @@
  * 大小判定在纯函数 decideResume）后才恢复传输：分片条目按持久化会话 id 走既有
  * GET 探测→PATCH 续传（服务端 offset 唯一真相源），直传条目与无会话分片从头
  * 重传。终态（done/failed/attach-failed/canceled）/移除/清空完成时同步删除
- * 持久化记录，不留孤儿。
+ * 持久化记录；失败保留本地待删意图并提示刷新可能出现旧条目。
  *
  * 订阅-通知（纯 TS 零新依赖）：状态写入口统一 notify，React 侧
  * useSyncExternalStore 订阅（api-client token store 同款模式）。
@@ -57,7 +57,10 @@ import { randomUUID } from '@/lib/uuid'
 import { runChunkedUpload, useChunkedSession } from '@/lib/upload-chunked'
 import { postUploadOutcome, type UploadAttach } from '@/lib/upload-attach'
 import { decideResume, toRestoredEntry, type PersistedUploadItem } from '@/lib/upload-queue-persist'
-import { getUploadQueueStorage } from '@/lib/upload-queue-persist-instance'
+import { getUploadQueueStorage, retryUploadQueueStorage } from '@/lib/upload-queue-persist-instance'
+import { UploadPersistence } from '@/lib/upload-persistence'
+
+const persistence = new UploadPersistence(getUploadQueueStorage, retryUploadQueueStorage)
 
 // 挂靠载荷类型随挂靠服务迁移（单一来源在 lib/upload-attach）；此处 re-export
 // 维持既有 import 路径稳定（hooks/use-upload 再转出，消费组件零改动）
@@ -178,7 +181,7 @@ function notify(): void {
 
 // ---- 刷新持久化（未终态条目 → IndexedDB；最佳努力不阻断传输）----
 
-/** 持久化写路径统一收口：存储失败静默（持久化是增强能力，传输主链路不受影响
+/** 持久化写路径统一收口：存储失败发布健康状态（持久化是增强能力，传输主链路不受影响
  *  ——同打点账本降级口径）；fire-and-forget，不进传输 await 链 */
 function persistPut(entry: QueueEntry): void {
   const record: PersistedUploadItem = {
@@ -196,20 +199,12 @@ function persistPut(entry: QueueEntry): void {
     createdAt: entry.createdAt,
     updatedAt: Date.now(),
   }
-  void getUploadQueueStorage()
-    .then((storage) => storage.put(record))
-    .catch(() => {
-      // 存储不可用（隐私模式等）：放弃本条持久化，刷新后该条按现状丢失
-    })
+  persistence.put(record)
 }
 
-/** 持久化删路径（终态/移除/清空完成时调用，不留孤儿记录）；同样静默兜底 */
+/** 终态删除失败保留 IO 意图和警告，不把入库成功变成传输失败。 */
 function persistDelete(id: string): void {
-  void getUploadQueueStorage()
-    .then((storage) => storage.delete(id))
-    .catch(() => {
-      // 存储不可用：无可删（下次 restore 时记录本就不存在）
-    })
+  persistence.delete(id)
 }
 
 /** 权威副本变更的唯一写入口（替换数组引用——useSyncExternalStore 靠引用
@@ -503,12 +498,7 @@ let restoring: Promise<void> | null = null
 function restorePersisted(): Promise<void> {
   if (restoring) return restoring
   restoring = (async () => {
-    let records: PersistedUploadItem[]
-    try {
-      records = await (await getUploadQueueStorage()).getAll()
-    } catch {
-      return
-    }
+    const records = await persistence.read()
     const existing = new Set(entries.map((it) => it.id))
     const fresh: QueueEntry[] = []
     for (const record of records) {
@@ -611,6 +601,12 @@ function attachQueryClient(client: QueryClient): void {
   queryClientRef = client
 }
 
+/** 重试只重放本地 IO，不调用传输泵或新建 uploadId。 */
+async function retryPersistence(): Promise<void> {
+  await persistence.retry()
+  await restorePersisted()
+}
+
 /** 单例出口（hook 层唯一消费；测试经本对象驱动） */
 export const uploadQueueStore = {
   subscribe,
@@ -623,4 +619,7 @@ export const uploadQueueStore = {
   resumeWithFile,
   setOptions,
   attachQueryClient,
+  getPersistenceHealth: persistence.getHealth,
+  subscribePersistence: persistence.subscribe,
+  retryPersistence,
 } as const
