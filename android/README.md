@@ -41,7 +41,7 @@ M6 基座历史验收已完成；近期变更未因此自动取得新版本实�
 
 外观优化见 [Android 背景对比度记录](../docs/ANDROID_UI_TASKBOOK.md)：日间页面与卡面均为均匀 #FFFFFF，移除冷灰渐变和双向高光，SoftDaylight 只保留低强度中性灰影（Compose 原生 API，无新依赖），辅助面使用中性灰；两档次级文字提高可读性，系统栏跟随 App 主题。首页顶行三处入口、推荐/COS/排行榜三胶囊及相册维度/值胶囊仅复用日间卡片轻影，恢复原白色玻璃，撤去灰色染色与硬描边；真采样/静态分支共用修饰符，其他玻璃件不变。统计详情的摘要、洞察、分布/榜单外卡及内部排行行同样复用轻影，避免白卡融入白底。仅保留“外观”改名，布局/比例/动效改造已取消；不改原件或服务端缩略图。
 
-现用arm64手机安装包的历史记录包含同源CI/安全/文档、Release构建/单测、同签名保留数据安装及字节/内嵌身份/健康检查；它不表示当前优化分支已装机。本轮优化源码未安装，现用版本、来源与现场证据统一见[HANDOVER](../docs/HANDOVER.md)。真实媒体未用于删除测试；qimeng_api35 保持关闭，x86_64 SQLite SIGSYS 未修复，手机备份恢复、业务全回归、长期后台和 NAS 未验收。
+现用arm64手机已用8f6a3a3c同源云端Release保留数据更新至0.2.1/code8，同源CI/安全/文档与Release单测/Lint、签名/内嵌身份/三件套/安装字节、首次安装时间保留、冷启动和健康均已核验；用户本次不等待新增Codex审查，不等于最终审批通过或手机业务全回归。现用版本与现场证据统一见[HANDOVER](../docs/HANDOVER.md)。真实媒体未用于删除测试；qimeng_api35 保持关闭，x86_64 SQLite SIGSYS 未修复，手机备份恢复、业务全回归、长期后台和 NAS 未验收。
 
 内嵌装配见 [deploy/embedded](../deploy/embedded/README.md)，模拟器见 [emulator-verify](../deploy/emulator-verify/README.md)。必须显式指定 `qimeng_api35` 或用户指定真机；严禁向雷电 `emulator-5554` 安装/启动本项目或执行 wm/settings。编译、单测、实机/NAS 验收分别记录，平台测试限制见 HANDOVER。
 
