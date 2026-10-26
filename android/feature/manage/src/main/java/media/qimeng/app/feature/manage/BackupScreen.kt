@@ -131,6 +131,15 @@ fun BackupScreen(
                 WarningsCard(warnings = state.warnings, onDismiss = viewModel::dismissWarnings)
             }
 
+            // 先设置共享的备份目录，再执行导入/导出；原自动备份状态与动作仍由 VM 持有。
+            AutoBackupCard(
+                enabled = state.autoBackupEnabled,
+                dirUri = state.autoBackupDirUri,
+                lastRunMillis = state.autoBackupLastRunMillis,
+                onToggle = viewModel::setAutoBackupEnabled,
+                onPickDir = { dirPickerLauncher.launch(pickerStartUri) },
+            )
+
             // 卡1：导入导出（直读直写备份目录 qimeng_backup.json；确认弹窗见页尾）
             ImportExportCard(
                 dirSet = state.autoBackupDirUri != null,
@@ -169,14 +178,7 @@ fun BackupScreen(
 
             BackupRuleNotes()
 
-            // 卡2：自动备份（开关/目录/上次备份时间；「立即备份」随任务S 收敛删除）
-            AutoBackupCard(
-                enabled = state.autoBackupEnabled,
-                dirUri = state.autoBackupDirUri,
-                lastRunMillis = state.autoBackupLastRunMillis,
-                onToggle = viewModel::setAutoBackupEnabled,
-                onPickDir = { dirPickerLauncher.launch(pickerStartUri) },
-            )
+
 
             Spacer(modifier = Modifier.height(ScreenBottomSpacing))
         }

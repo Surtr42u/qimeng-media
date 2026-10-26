@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
@@ -26,6 +25,7 @@ import media.qimeng.app.core.ui.component.DirectoryBrowserCard
 import media.qimeng.app.core.ui.component.DirectoryBrowserEntry
 import media.qimeng.app.core.ui.component.QimengMessageCard
 import media.qimeng.app.core.ui.component.QimengPageIntro
+import media.qimeng.app.core.ui.component.QimengSettingsCard
 import media.qimeng.app.core.ui.theme.QimengDimens
 import media.qimeng.app.core.ui.theme.softDaylightBackground
 import media.qimeng.app.core.ui.component.QimengTopBar
@@ -143,7 +143,7 @@ fun InboxSettingsScreen(
 /** 授权状态卡（未授权 = 引导按钮去系统设置；已授权 = 纯说明行） */
 @Composable
 private fun PermissionGuideCard(text: String, onGrant: (() -> Unit)?) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    QimengSettingsCard(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(text = text, style = MaterialTheme.typography.bodyMedium)
             if (onGrant != null) {
@@ -168,7 +168,7 @@ private fun CurrentValueCard(
     onClear: () -> Unit,
     onReselect: () -> Unit,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    QimengSettingsCard(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(text = sectionTitle, style = MaterialTheme.typography.titleMedium)
             Text(

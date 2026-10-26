@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -55,12 +57,22 @@ fun QimengSettingsGroup(
                 bottom = QimengDimens.SpaceM,
             ),
         )
-        Surface(
-            shape = RoundedCornerShape(QimengDimens.CardCornerRadius),
-            color = MaterialTheme.colorScheme.surface,
-            modifier = Modifier.fillMaxWidth().softDaylightShadow(),
-        ) { Column(content = content) }
+        QimengSettingsCard(content = content)
     }
+}
+
+/** 管理表单与设置分组共用卡面，错误/结果横幅仍用各自的语义颜色。 */
+@Composable
+fun QimengSettingsCard(
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = RoundedCornerShape(QimengDimens.CardCornerRadius),
+        modifier = modifier.fillMaxWidth().softDaylightShadow(),
+        content = content,
+    )
 }
 
 /** 整行触控/键盘入口；装饰图标不重复朗读，长副标题自然换行。 */

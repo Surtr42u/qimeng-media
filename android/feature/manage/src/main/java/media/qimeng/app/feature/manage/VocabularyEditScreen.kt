@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -27,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import media.qimeng.app.core.ui.component.QimengTopBar
+import media.qimeng.app.core.ui.component.QimengSettingsCard
 import media.qimeng.app.core.ui.theme.QimengDimens
 
 /** 页面文案（页标题取 hub 行名） */
@@ -112,7 +112,7 @@ fun VocabularyEditScreen(
                 }
             }
             if (state.loading) {
-                Card(modifier = Modifier.fillMaxWidth()) {
+                QimengSettingsCard(modifier = Modifier.fillMaxWidth()) {
                     Text(
                         text = LOADING_NOTE,
                         style = MaterialTheme.typography.bodySmall,
@@ -200,7 +200,7 @@ private fun StopWordsCard(
     onAdd: () -> Unit,
     onRemove: (Int) -> Unit,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    QimengSettingsCard(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()

@@ -14,7 +14,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
@@ -37,6 +36,7 @@ import media.qimeng.app.core.model.LibrarySummary
 import media.qimeng.app.core.model.displayLabel
 import media.qimeng.app.core.ui.component.QimengPageIntro
 import media.qimeng.app.core.ui.component.QimengTopBar
+import media.qimeng.app.core.ui.component.QimengSettingsCard
 import media.qimeng.app.core.ui.theme.QimengDimens
 
 /** 页面文案（对齐 Web 文件管理页库表区块：媒体库 N 个库/空态提示/行操作两钮/删除确认弹窗） */
@@ -203,7 +203,7 @@ private fun LibraryRow(
     onRequestDelete: () -> Unit,
     onToggleEnabled: (Boolean) -> Unit,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    QimengSettingsCard(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()

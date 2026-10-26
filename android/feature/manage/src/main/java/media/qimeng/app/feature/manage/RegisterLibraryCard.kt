@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -16,6 +15,7 @@ import media.qimeng.app.core.model.LibraryKind
 import media.qimeng.app.core.ui.component.QimengCapsuleTextField
 import media.qimeng.app.core.ui.component.QimengSegPill
 import media.qimeng.app.core.ui.theme.qimengFilledButtonColors
+import media.qimeng.app.core.ui.component.QimengSettingsCard
 
 /** 注册新库卡文案（对齐 Web LibraryManagePage.tsx 注册表单 settings-card 的字段与提示逐字） */
 private const val REGISTER_TITLE = "注册新库"
@@ -60,7 +60,7 @@ internal fun RegisterLibraryCard(
     onSubmit: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Card(modifier = modifier.fillMaxWidth()) {
+    QimengSettingsCard(modifier = modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
