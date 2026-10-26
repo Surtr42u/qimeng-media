@@ -43,6 +43,7 @@ export function AuthorSuggestField({
   attachedHint = '已选作者——保存后关联到本作品',
   allowCreate = false,
   disabled = false,
+  avoidCollisions = false,
 }: {
   value: AuthorAttachValue | null
   onChange: (next: AuthorAttachValue | null) => void
@@ -54,6 +55,8 @@ export function AuthorSuggestField({
   allowCreate?: boolean
   /** 保存等不可变更阶段禁用输入、清空与联想选项 */
   disabled?: boolean
+  /** 上传折叠卡可能位于视口底部，允许建议面板自动翻到上方；其他既有入口保持原定位。 */
+  avoidCollisions?: boolean
 }) {
   const [text, setText] = useState('')
   const [popOpen, setPopOpen] = useState(false)
@@ -134,7 +137,7 @@ export function AuthorSuggestField({
               side="bottom"
               align="start"
               sideOffset={8}
-              avoidCollisions={false}
+              avoidCollisions={avoidCollisions}
               // 打开不抢焦点：焦点留在输入框继续打字（同 TopBar 口径）
               onOpenAutoFocus={(e) => e.preventDefault()}
               // 输入框区域内点击（定位光标/清空按钮）不关面板
