@@ -69,7 +69,7 @@ export function MaintenanceOverview({ monitor, trashLabel, syncLabel, logsLabel 
       </section>
       <section className="chart-card monitor-memory">
         <CardHeading icon={<MemoryStick aria-hidden="true" />}>系统内存</CardHeading>
-        <div className="monitor-value">{resources.memory == null ? '—' : resources.memory.toFixed(1)}<small>%</small></div>
+        <div className="monitor-value">{resources.memory == null ? '—' : <>{resources.memory.toFixed(1)}<small>%</small></>}</div>
         <ResourceBar value={resources.memory} label="系统内存使用率" secondary />
         <p>{resources.memoryCaption}</p>
       </section>
@@ -106,7 +106,7 @@ export function MaintenanceOverview({ monitor, trashLabel, syncLabel, logsLabel 
       </section>
     </div>
     <details className="chart-card monitor-network-details">
-      <summary><span>网络负载 · 实时</span><span className="monitor-muted">展开双向曲线</span></summary>
+      <summary><span>网络负载 · 实时</span><span className="monitor-muted">最近 2 分钟 · 双向曲线</span></summary>
       <p className="monitor-muted">全机网卡聚合 · 2s 轮询 · 最近 2 分钟有效采样{monitor.points.length < 2 ? '（采样中…）' : ''}</p>
       <TrendLegend items={[{ label: '接收 / 下行', color: 'var(--qm-chart-1)' }, { label: '发送 / 上行', color: 'var(--qm-chart-2)' }]} />
       <ResponsiveContainer width="100%" height={200}>

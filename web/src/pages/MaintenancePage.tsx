@@ -23,7 +23,7 @@ export default function MaintenancePage() {
   const clientLogs = logs.data ?? []
   const [logsExpanded, setLogsExpanded] = useState(false)
   const trashLabel = trash.isError ? '条目数暂不可用' : trash.data ? `${trash.data.length} 条待处理` : '正在读取…'
-  const logsLabel = logs.isError ? '记录暂不可用' : logs.data ? `保留 ${clientLogs.length} 条上报` : '正在读取…'
+  const logsLabel = logs.isError ? '更新失败，查看详情' : logs.data ? `保留 ${clientLogs.length} 条上报` : '正在读取…'
   const syncLabel = sync.isError ? '状态暂不可用' : !sync.data ? '正在读取…'
     : sync.data.lastError ? '通道异常，查看详情' : sync.data.paused ? '上传闸门暂停中'
       : sync.data.enabled ? `已启用 · 失败 ${sync.data.counts?.failed ?? 0}` : '未启用'
@@ -46,8 +46,8 @@ export default function MaintenancePage() {
       <section className="chart-card monitor-detail-section" id={MAINTENANCE_LOGS_ID} aria-label="客户端异常详情">
         <h3>用户端崩溃 / 错误日志</h3>
         <p>客户端异常上报 · 服务端保留最新 200 条 · 新在上</p>
-        {logs.isError ? <div className="monitor-query-error" role="alert"><span>客户端异常记录读取失败</span><Pill onClick={() => { void logs.refetch() }}>重试日志</Pill></div>
-          : !logs.data ? <p className="grid-empty">客户端异常记录加载中…</p>
+        {logs.isError && <div className="monitor-query-error" role="alert"><span>客户端异常记录读取失败{logs.data ? '，以下保留上次成功记录' : ''}</span><Pill onClick={() => { void logs.refetch() }}>重试日志</Pill></div>}
+        {!logs.data ? <p className="grid-empty">{logs.isError ? '暂无可用的客户端异常记录' : '客户端异常记录加载中…'}</p>
             : clientLogs.length === 0 ? <p className="grid-empty">暂无客户端异常上报</p> : <>
               <div className="monitor-log-scroll">
                 <table className="log-table">

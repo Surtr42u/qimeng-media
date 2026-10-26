@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 
 /** 所有请求都在浏览器拦截；合成路径/日志不含真实媒体或环境。 */
-async function openMaintenance(page: Page, options: { unavailable?: boolean; narrow?: boolean } = {}) {
+async function openMaintenance(page: Page, options: { unavailable?: boolean; narrow?: boolean; logsUnavailable?: boolean } = {}) {
   let triggers = 0
   let frames = 0
   await page.addInitScript(() => {
@@ -29,7 +29,10 @@ async function openMaintenance(page: Page, options: { unavailable?: boolean; nar
       triggers++
       return route.fulfill({ status: 202, json: {} })
     }
-    if (path === '/api/v1/client-logs') return route.fulfill({ json: { items: Array.from({ length: 7 }, (_, i) => ({ ts: 1_700_000_000_000 + i, level: 'error', message: `synthetic log ${i}`, page: '/app/maintenance' })) } })
+    if (path === '/api/v1/client-logs') {
+      if (options.logsUnavailable) return route.fulfill({ status: 503, json: { message: 'synthetic unavailable' } })
+      return route.fulfill({ json: { items: Array.from({ length: 7 }, (_, i) => ({ ts: 1_700_000_000_000 + i, level: 'error', message: `synthetic log ${i}`, page: '/app/maintenance' })) } })
+    }
     await route.fulfill({ json: [] })
   })
   await page.goto('/app/maintenance')
@@ -73,4 +76,18 @@ test('窄屏及监控失败不阻断维护入口，不把缺失数据显示为�
   await expect(page.getByRole('button', { name: '立即同步', exact: true })).toBeEnabled()
   const overflow = await page.locator('.monitor-grid').evaluate(el => el.scrollWidth > el.clientWidth)
   expect(overflow).toBe(false)
+})
+
+test('刷新日志失败仍可查上次记录，重试恢复原列表', async ({ page }) => {
+  const options = { logsUnavailable: false }
+  await openMaintenance(page, options)
+  await expect(page.locator('.log-table tbody tr')).toHaveCount(5)
+  options.logsUnavailable = true
+  await page.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect(page.getByText(/以下保留上次成功记录/)).toBeVisible({ timeout: 10000 })
+  await expect(page.locator('.log-table tbody tr')).toHaveCount(5)
+  options.logsUnavailable = false
+  await page.getByRole('button', { name: '重试日志', exact: true }).click()
+  await expect(page.getByText(/客户端异常记录读取失败/)).toBeHidden()
+  await expect(page.locator('.log-table tbody tr')).toHaveCount(5)
 })
