@@ -2866,9 +2866,9 @@ li.dir-file-row.ms-row-selected { background: var(--qm-hover); }
 .mine-content-tabs > button.active { background: var(--qm-primary-soft); color: var(--qm-primary); font-weight: 600; }
 .mine-content-tabs > button:hover { background: var(--qm-hover); }
 .mine-content-tabs > button.active:hover { background: var(--qm-primary-soft); }
-.mine-pane { min-width: 0; }
-.mine-pane > .workspace-card-head { margin-bottom: 20px; }
-.mine-pane > .query-notice { margin-bottom: 18px; }
+.mine-pane { min-width: 0; gap: 18px; }
+.mine-pane > .workspace-card-head, .mine-pane > .query-notice { margin-bottom: 0; }
+.mine-pane .workspace-load-more { margin-top: 0; }
 .mine-follow-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
 .mine-follow-grid .follow-card { padding: 17px; gap: 12px; min-width: 0; }
 .mine-follow-content { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; text-decoration: none; color: inherit; }
@@ -2879,9 +2879,8 @@ li.dir-file-row.ms-row-selected { background: var(--qm-hover); }
 .mine-history-search { width: 280px; max-width: 100%; }
 .mine-history-search input { height: 38px; padding-left: 34px; padding-right: 14px; }
 .mine-history-search svg { left: 12px; right: auto; }
-.mine-history-filter { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; padding: 12px 15px; background: var(--qm-hover); border-radius: var(--qm-radius-sm); margin-bottom: 18px; }
+.mine-history-filter { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; padding: 12px 15px; background: var(--qm-hover); border-radius: var(--qm-radius-sm); }
 .mine-history-filter p { font-size: 12px; color: var(--qm-text-muted); }
-.mine-pane .hist-group2 { margin-top: 22px; }
 .mine-pane .hist-group2 > h3 { display: flex; align-items: center; gap: 9px; }
 .mine-pane .hist-group2 > h3 > span { font-size: 11px; font-weight: 400; color: var(--qm-text-muted); padding: 3px 8px; background: var(--qm-hover); border-radius: var(--qm-radius-full); }
 .mine-pane .hist-card { padding: 10px; border: 1px solid var(--qm-border); border-radius: var(--qm-radius); background: var(--qm-surface); transition: border-color var(--qm-duration-fast); }
