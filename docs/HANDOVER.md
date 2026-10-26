@@ -52,6 +52,8 @@
 
 ## 3. 当前维护结果与后续边界
 
+- **Android 我的与管理 UI 分支（2026-10-27）**：`codex/app-mine-ui` 承接近期 Web 的任务分组和反馈层级，整理我的/数据管理、外观返回与单选、推荐弹层、服务器及归档页交互，补备份/库/缓存简介。源码已实现，当前云端构建/单测/Lint及可见设备验证待执行；未合并、未更新现用手机/电脑，不以既有安装或历史门禁作为本轮证据。现用包仍按§2。
+
 - **界面统一已合入并安装电脑（2026-10-27）**：[PR #16](https://github.com/Surtr42u/qimeng-media/pull/16)的紧凑维护、管理/上传内部重组、数据/我的及三栏对齐已进入主分支；[PR #17](https://github.com/Surtr42u/qimeng-media/pull/17)仅修正扫描测试时序及云端依赖准备。安装来源816e8eb1同SHA完整门禁/主分支PC包与后台现场核验见§2；既有接口/领域及真实数据保留，手机未操作，原生桌面/NAS/业务全回归边界不扩大。
 
 - **功能已合入主线**：PR #8～#14已全部合并至master；已合并工作分支随本轮交付清理，当前发布工作见§2。整合来源e15d6c41的[完整CI](https://github.com/Surtr42u/qimeng-media/actions/runs/40222780144)、[安全](https://github.com/Surtr42u/qimeng-media/actions/runs/40222780139)和[文档](https://github.com/Surtr42u/qimeng-media/actions/runs/40222925088)共16类检查通过，Codex自动审查无新增发现。历史整合不重标§2的实际安装来源；PR #13缓存修复已合并为b491534f，PR #14署名/指引已合并为bc82ec8c。

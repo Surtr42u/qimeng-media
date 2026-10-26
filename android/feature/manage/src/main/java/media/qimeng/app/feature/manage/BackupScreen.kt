@@ -28,6 +28,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import media.qimeng.app.core.data.backup.AutoBackupRunner
 import media.qimeng.app.core.data.backup.BackupValidator
+import media.qimeng.app.core.ui.component.QimengPageIntro
 import media.qimeng.app.core.ui.component.QimengTopBar
 import media.qimeng.app.core.ui.theme.QimengDimens
 
@@ -110,6 +111,7 @@ fun BackupScreen(
                 .padding(horizontal = ScreenContentPadding),
             verticalArrangement = Arrangement.spacedBy(QimengDimens.SpaceL),
         ) {
+            QimengPageIntro("备份用于恢复与迁移；浏览记录补传、词表合并可分别操作。")
             state.errorMessage?.let { message ->
                 StatusMessageCard(text = message, container = MaterialTheme.colorScheme.errorContainer) {
                     viewModel.dismissError()

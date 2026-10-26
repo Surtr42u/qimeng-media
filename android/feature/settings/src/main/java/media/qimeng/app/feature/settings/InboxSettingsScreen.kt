@@ -25,6 +25,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import media.qimeng.app.core.ui.component.DirectoryBrowserCard
 import media.qimeng.app.core.ui.component.DirectoryBrowserEntry
 import media.qimeng.app.core.ui.component.QimengMessageCard
+import media.qimeng.app.core.ui.component.QimengPageIntro
+import media.qimeng.app.core.ui.theme.QimengDimens
+import media.qimeng.app.core.ui.theme.softDaylightBackground
 import media.qimeng.app.core.ui.component.QimengTopBar
 
 // ---------- 页面文案（模块惯例：展示文案在代码常量） ----------
@@ -68,68 +71,70 @@ fun InboxSettingsScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
+    Column(modifier = modifier.fillMaxSize().softDaylightBackground()) {
         QimengTopBar(title = PAGE_TITLE, onBack = onBack)
+        Column(
+            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+                .padding(horizontal = QimengDimens.ScreenPaddingHorizontal)
+                .padding(bottom = QimengDimens.EmptyStateVerticalPadding),
+            verticalArrangement = Arrangement.spacedBy(QimengDimens.SpaceL),
+        ) {
+            QimengPageIntro("选择归档目录后，可在上传页按库名一键上传。")
 
-        if (state.loading) {
-            LoadingIndicator(modifier = Modifier.padding(24.dp))
-        }
-
-        state.errorMessage?.let { message ->
-            QimengMessageCard(text = message, container = MaterialTheme.colorScheme.errorContainer) {
-                viewModel.dismissError()
+            if (state.loading) {
+                LoadingIndicator(modifier = Modifier.padding(24.dp))
             }
-        }
 
-        if (!state.allFilesGranted) {
-            PermissionGuideCard(
-                text = PERM_MISSING_TEXT,
-                onGrant = { openAllFilesAccessSettings(context) },
-            )
-        } else {
-            PermissionGuideCard(text = PERM_GRANTED_TEXT, onGrant = null)
-            CurrentValueCard(
-                sectionTitle = SECTION_ARCHIVE,
-                selectedPath = state.selectedArchivePath,
-                clearButtonText = BUTTON_CLEAR_ARCHIVE,
-                onClear = viewModel::clearArchive,
-                onReselect = viewModel::reopenBrowser,
-            )
-            Text(
-                text = HINT_ARCHIVE_SEMANTICS,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            // 浏览器可见性决策在 VM（init 回放 + 选定收起 + 清空重开，2026-09-29 回显修复
-            // 语义保留：未设归档文件夹时默认展开）：browserVisible=false 时浏览器/设为按钮
-            // 整组隐藏，再入口在上方当前值卡的「重新选择」；未设置时浏览器必然可见（唯一再选入口）
-            if (state.browserVisible) {
-                // 目录浏览器（2026-09-28 上提 core:ui 单源，本页只保留标题与 ViewModel
-                // 状态注入）。组件内建「选用当前目录」按钮保持隐藏（onSelectCurrent=null），
-                // 由下方「设为归档文件夹」单按钮承接选定动作
-                DirectoryBrowserCard(
-                    title = SECTION_BROWSER,
-                    currentPath = state.browsingPath,
-                    storageRoot = state.storageRoot,
-                    entries = state.entries.map { DirectoryBrowserEntry(name = it.name, path = it.path) },
-                    loading = state.loading,
-                    selectedPath = null,
-                    onEnter = viewModel::enter,
-                    onGoUp = viewModel::goUp,
-                    onSelectCurrent = null,
+            state.errorMessage?.let { message ->
+                QimengMessageCard(text = message, container = MaterialTheme.colorScheme.errorContainer) {
+                    viewModel.dismissError()
+                }
+            }
+
+            if (!state.allFilesGranted) {
+                PermissionGuideCard(
+                    text = PERM_MISSING_TEXT,
+                    onGrant = { openAllFilesAccessSettings(context) },
                 )
-                Button(
-                    onClick = viewModel::selectCurrentAsArchive,
-                    // 与 DirectoryBrowserCard 内建按钮同一启用口径：未进入任何目录不可选定
-                    enabled = state.browsingPath.isNotEmpty(),
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text(BUTTON_SELECT_ARCHIVE) }
+            } else {
+                PermissionGuideCard(text = PERM_GRANTED_TEXT, onGrant = null)
+                CurrentValueCard(
+                    sectionTitle = SECTION_ARCHIVE,
+                    selectedPath = state.selectedArchivePath,
+                    clearButtonText = BUTTON_CLEAR_ARCHIVE,
+                    onClear = viewModel::clearArchive,
+                    onReselect = viewModel::reopenBrowser,
+                )
+                Text(
+                    text = HINT_ARCHIVE_SEMANTICS,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                // 浏览器可见性决策在 VM（init 回放 + 选定收起 + 清空重开，2026-09-29 回显修复
+                // 语义保留：未设归档文件夹时默认展开）：browserVisible=false 时浏览器/设为按钮
+                // 整组隐藏，再入口在上方当前值卡的「重新选择」；未设置时浏览器必然可见（唯一再选入口）
+                if (state.browserVisible) {
+                    // 目录浏览器（2026-09-28 上提 core:ui 单源，本页只保留标题与 ViewModel
+                    // 状态注入）。组件内建「选用当前目录」按钮保持隐藏（onSelectCurrent=null），
+                    // 由下方「设为归档文件夹」单按钮承接选定动作
+                    DirectoryBrowserCard(
+                        title = SECTION_BROWSER,
+                        currentPath = state.browsingPath,
+                        storageRoot = state.storageRoot,
+                        entries = state.entries.map { DirectoryBrowserEntry(name = it.name, path = it.path) },
+                        loading = state.loading,
+                        selectedPath = null,
+                        onEnter = viewModel::enter,
+                        onGoUp = viewModel::goUp,
+                        onSelectCurrent = null,
+                    )
+                    Button(
+                        onClick = viewModel::selectCurrentAsArchive,
+                        // 与 DirectoryBrowserCard 内建按钮同一启用口径：未进入任何目录不可选定
+                        enabled = state.browsingPath.isNotEmpty(),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text(BUTTON_SELECT_ARCHIVE) }
+                }
             }
         }
     }

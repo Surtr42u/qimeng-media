@@ -35,6 +35,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import media.qimeng.app.core.model.LibraryScanState
 import media.qimeng.app.core.model.LibrarySummary
 import media.qimeng.app.core.model.displayLabel
+import media.qimeng.app.core.ui.component.QimengPageIntro
 import media.qimeng.app.core.ui.component.QimengTopBar
 import media.qimeng.app.core.ui.theme.QimengDimens
 
@@ -110,6 +111,7 @@ fun LibraryManageScreen(
                 .imePadding(),
             verticalArrangement = Arrangement.spacedBy(QimengDimens.SpaceL),
         ) {
+            QimengPageIntro("管理已登记的媒体目录，也可以注册新目录后发起扫描。")
             state.errorMessage?.let { message ->
                 StatusMessageCard(text = message, container = MaterialTheme.colorScheme.errorContainer) {
                     viewModel.dismissError()

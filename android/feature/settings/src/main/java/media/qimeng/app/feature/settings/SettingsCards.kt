@@ -2,15 +2,21 @@ package media.qimeng.app.feature.settings
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.ui.semantics.Role
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -50,15 +56,6 @@ private const val COUNT_UNKNOWN = "—"
 /** 写失败横幅消除按钮文案（P2-3） */
 private const val WRITE_ERROR_DISMISS = "知道了"
 
-// ---------- 页首数量卡尺寸（旧版我的页运行时规格实录，随 CountCard 迁入） ----------
-
-/** 96dp：页首数量卡高（旧版运行时两卡等宽等高 96dp） */
-private val CountCardHeight = 96.dp
-
-/** 20dp：数量卡圆角（旧版运行时；与统计页 bg_stat_card 20dp 圆角同档异源，不并档——
- *  统计页档位在 feature/stats 私有，本页不跨 feature 引用） */
-private val CountCardCornerRadius = 20.dp
-
 // ---------- 推荐偏好 BottomSheet 尺寸与文案（旧版运行时规格逐段实录，随 Sheet 迁入） ----------
 
 /** Sheet 容器 padding（旧版运行时 padding(20,18,20,28) 逐段：左右 20 / 上 18 / 下 28） */
@@ -91,22 +88,18 @@ private fun presetDescription(preset: RecommendPreset): String = when (preset) {
     RecommendPreset.FRESH_FIRST -> "强化新鲜度和发现，优先展示最新入库内容"
 }
 
-/**
- * 页首数量卡（I4，GUIDE_UI L252 + 实录 mine.txt；视觉复刻批对齐旧版运行时：
- * 高 96dp、圆角 20dp、纯白 surface 底、单块两行文本「图片\nN」16sp Bold 双向居中）。
- * count=null（未就绪或读失败）→ 数字位显「—」降级，不崩、不弹横幅。
- */
+/** 服务端库存计数；未取得值显示缺省，不把失败伪装成零。 */
 @Composable
 internal fun CountCard(title: String, count: Int?, modifier: Modifier = Modifier) {
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         shape = RoundedCornerShape(16.dp),
         shadowElevation = if (isQimengDarkTheme()) 1.dp else 0.dp,
-        modifier = modifier.height(88.dp).softDaylightShadow(),
+        modifier = modifier.heightIn(min = CountCardMinHeight).softDaylightShadow(),
     ) {
         Column(
             modifier = Modifier
-                .fillMaxSize()
+                .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.Center,
         ) {
@@ -151,19 +144,9 @@ internal fun WriteErrorBanner(message: String, onDismiss: () -> Unit, modifier: 
     }
 }
 
-/**
- * 推荐偏好 BottomSheet（C4；2026-09-13 视觉复刻批对齐旧版运行时规格）：
- * - 容器：顶部圆角 28dp、surface 底、padding(20,18,20,28)；
- * - 标题 18sp Bold 居中（pb10）、副文 13sp 次色（pb12）、分组标签「预设方案」12sp 次色（t12/b6）；
- * - 四预设行：上下 padding 12dp 左右 16dp、行距 6dp、名称 14sp 主色、描述 12sp 次色（上距 2dp）；
- * - 选中态（陷阱#5 以运行时代码为准）：28dp 圆角 surface 填充 + 1dp 描边——选中描边 primary、
- *   未选描边 divider（outlineVariant 槽），非胶囊实底反白；
- * - 「点击无反应」修复：显式持有 sheetState（material3 1.5.0-alpha28 上未显式传 state 的
- *   ModalBottomSheet 点击行后不弹出——S3 Step3 升级引入的 expressive motion 回归区；
- *   同库 QimengFilterSheet/DetailTagSheet 显式传 state 均正常，与其对齐）；
- *   预设四行恒渲染（选项不依赖网络），appliedPreset 依赖偏好状态，加载失败进重试态。
- * 预设→9 维映射在 :core:model（DOMAIN_RULES §1.3 预设表逐字）。
- * 标题复用主文件 ROW_PREFS（入口行与 Sheet 标题同串「推荐偏好」单源，同包 internal）。
+/** 推荐偏好沿用四预设和原应用链路；弹层自身承载加载/保存/失败反馈。
+ * 显式 sheetState 保持现有 Material3 弹层行为，大字体和横屏可滚动查看全部选项。
+ * 预设权重仍由 core:model 单点定义。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -172,6 +155,7 @@ internal fun PrefsBottomSheet(
     applying: Boolean,
     loading: Boolean,
     loadFailed: Boolean,
+    writeError: String?,
     onRetryLoad: () -> Unit,
     onApply: (RecommendPreset) -> Unit,
     onDismiss: () -> Unit,
@@ -186,6 +170,7 @@ internal fun PrefsBottomSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .padding(PrefsSheetPadding),
         ) {
             Text(
@@ -227,7 +212,18 @@ internal fun PrefsBottomSheet(
                     }
                 }
             }
+            if (applying) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                Text("正在保存推荐偏好…", style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(vertical = QimengDimens.SpaceM))
+            }
+            writeError?.let { message ->
+                Text(message, color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(vertical = QimengDimens.SpaceM))
+            }
             Column(
+                modifier = Modifier.selectableGroup(),
                 verticalArrangement = Arrangement.spacedBy(QimengDimens.SpaceS),
             ) {
                 RecommendPreset.entries.forEach { preset ->
@@ -262,22 +258,27 @@ private fun PresetRow(
                 border = BorderStroke(width = QimengDimens.DividerThickness, color = presetBorderColor(applied)),
                 shape = rowShape,
             )
-            .clickable(enabled = enabled) { onApply(preset) },
+            .selectable(selected = applied, enabled = enabled, role = Role.RadioButton) { onApply(preset) },
     ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+        Row(
+            modifier = Modifier.heightIn(min = QimengDimens.ProfileRowHeight)
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = preset.label,
-                style = MaterialTheme.typography.labelLarge.copy(fontSize = 14.sp),
-                color = MaterialTheme.colorScheme.primary,
-            )
-            Text(
-                text = presetDescription(preset),
-                style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = PresetDescTopSpacing),
-            )
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = preset.label,
+                    style = MaterialTheme.typography.labelLarge.copy(fontSize = 14.sp),
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Text(
+                    text = presetDescription(preset),
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = PresetDescTopSpacing),
+                )
+            }
+            RadioButton(selected = applied, onClick = null, enabled = enabled)
         }
     }
 }
@@ -286,3 +287,6 @@ private fun PresetRow(
 @Composable
 private fun presetBorderColor(selected: Boolean) =
     if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+
+/** 库存卡最小高度，大字体可随内容增长。 */
+private val CountCardMinHeight = 88.dp
