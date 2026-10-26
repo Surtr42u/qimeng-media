@@ -29,6 +29,8 @@ import media.qimeng.app.core.ui.glass.TabDockDefaults
 import media.qimeng.app.core.ui.theme.QimengDimens
 import media.qimeng.app.core.ui.theme.softDaylightBackground
 
+internal const val APPEARANCE_TITLE = "外观"
+
 /** 外观沿用原偏好流，选择即生效；纵向选项兼容窄屏和大字体。 */
 @Composable
 internal fun AppearanceScreen(
@@ -39,7 +41,7 @@ internal fun AppearanceScreen(
     onBack: () -> Unit,
 ) {
     Column(Modifier.fillMaxSize().softDaylightBackground()) {
-        QimengTopBar(title = "外观", onBack = onBack)
+        QimengTopBar(title = APPEARANCE_TITLE, onBack = onBack)
         Column(
             modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())
                 .padding(horizontal = QimengDimens.ScreenPaddingHorizontal)

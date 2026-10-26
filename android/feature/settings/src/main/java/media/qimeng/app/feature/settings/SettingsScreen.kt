@@ -112,7 +112,7 @@ fun SettingsScreen(
             }
             item(key = "preferences") {
                 QimengSettingsGroup("使用偏好") {
-                    QimengSettingsRow(PaletteColorIcon, "外观", "主题与底部导航材质", { showThemePage = true })
+                    QimengSettingsRow(PaletteColorIcon, APPEARANCE_TITLE, "主题与底部导航材质", { showThemePage = true })
                     QimengSettingsRow(TuneSlidersIcon, ROW_PREFS, "选择适合自己的推荐方式", viewModel::openPrefsSheet)
                 }
             }
@@ -136,7 +136,9 @@ fun SettingsScreen(
             title = { Text("退出当前登录？") },
             text = { Text("退出后可重新连接服务器，已保存的服务器地址会保留。") },
             confirmButton = {
-                TextButton(onClick = { confirmLogout = false; viewModel.logout() }) { Text("退出登录") }
+                TextButton(onClick = { confirmLogout = false; viewModel.logout() }) {
+                    Text(stringResource(R.string.settings_logout))
+                }
             },
             dismissButton = { TextButton(onClick = { confirmLogout = false }) { Text("取消") } },
         )
