@@ -49,11 +49,17 @@ jobs:
           QIMENG_CI_APT_RETRIES: '2'
           QIMENG_CI_APT_TIMEOUT_SECONDS: '30'
         run: |
-          while IFS= read -r -d '' source; do
-            sudo sed -i -E 's|https?://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' "$source"
-          done < <(find /etc/apt -maxdepth 2 -type f \( -name '*.list' -o -name '*.sources' \) -print0)
+          # runner的mirror+file源把实际地址放在apt-mirrors.txt，须一并处理。
+          while IFS= read -r -d '' apt_source_file; do
+            sudo sed -i -E 's|https?://azure\.archive\.ubuntu\.com/ubuntu/?|https://archive.ubuntu.com/ubuntu/|g' "$apt_source_file"
+            if grep -Fq 'azure.archive.ubuntu.com' "$apt_source_file"; then
+              echo "Ubuntu source still uses the slow Azure mirror: $apt_source_file" >&2
+              exit 1
+            fi
+          done < <(find /etc/apt -maxdepth 2 -type f \( -name '*.list' -o -name '*.sources' -o -name 'apt-mirrors*.txt' \) -print0)
           apt_options=(-o Acquire::ForceIPv4=true -o "Acquire::Retries=$QIMENG_CI_APT_RETRIES" -o "Acquire::http::Timeout=$QIMENG_CI_APT_TIMEOUT_SECONDS" -o "Acquire::https::Timeout=$QIMENG_CI_APT_TIMEOUT_SECONDS")
           sudo apt-get "${apt_options[@]}" update
+          apt-get "${apt_options[@]}" --print-uris --yes --download-only --no-install-recommends install ffmpeg
           sudo apt-get "${apt_options[@]}" install -y --no-install-recommends ffmpeg
           ffmpeg -version
           ffprobe -version
