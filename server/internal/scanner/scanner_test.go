@@ -599,25 +599,27 @@ func startWatch(t *testing.T, s *Scanner, lib db.Library, debounce time.Duration
 	time.Sleep(100 * time.Millisecond) // 等初始子树注册完成
 }
 
-// TestWatchDebounceCoalesces：快速连续写同一路径（模拟大文件写入风暴的
-// create+write 事件串）只触发一次处理——以探测计数为证。
-func TestWatchDebounceCoalesces(t *testing.T) {
+// TestWatchIngestsLatestWrite 保留真实文件监听集成验证。真实调度可能让两次
+// 写入跨过防抖窗口；严格合批次数另由虚拟时钟的 TestWatchDebounceCoalesces 验证。
+func TestWatchIngestsLatestWrite(t *testing.T) {
 	probe := newProbeStub(&thumbnail.ProbeResult{Duration: time.Second, Width: 2, Height: 2}, nil)
 	env := newTestEnv(t, probe.call)
 	startWatch(t, env.s, env.lib, 50*time.Millisecond)
 
-	// 3 次快速写入（总时长 20ms << 50ms 窗口）应合并为一次处理。
+	// 不把 Sleep 的最短等待当作最大间隔：race/繁忙 runner 上可能产生多批。
 	for i := 0; i < 3; i++ {
 		env.writeFile(t, "v.mp4", 100*(i+1))
 		time.Sleep(10 * time.Millisecond)
 	}
-	eventually(t, 2*time.Second, "增量入库 v.mp4", func() bool {
-		return env.assetCount(t) == 1
+	eventually(t, 2*time.Second, "增量入库最后一次写入的 v.mp4", func() bool {
+		a, err := env.q.GetAssetByPath(context.Background(), db.GetAssetByPathParams{LibraryID: env.lib.ID, RelPath: "v.mp4"})
+		return err == nil && a.SizeBytes == 300
 	})
-	// 再等两个防抖窗口，确认没有第二波处理。
-	time.Sleep(150 * time.Millisecond)
-	if got := probe.calls.Load(); got != 1 {
-		t.Errorf("防抖后探测 %d 次, want 1（同路径事件风暴必须合并）", got)
+	if got := probe.calls.Load(); got == 0 {
+		t.Error("视频增量入库必须经过探测")
+	}
+	if got := env.assetCount(t); got != 1 {
+		t.Errorf("同路径最终应只有一条资产, got %d", got)
 	}
 	a := env.assetByPath(t, "v.mp4")
 	if a.SizeBytes != 300 {
