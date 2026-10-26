@@ -43,7 +43,20 @@ jobs:
         with: { persist-credentials: false }
       # 端到端测试需要真实 ffmpeg 生成视频缩略图（生产镜像同样内置 ffmpeg）
       - name: 安装 ffmpeg（缩略图端到端测试依赖）
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+        # Azure镜像慢下载曾耗尽45分钟；依赖准备单独有界，不能挤掉代码检查。
+        timeout-minutes: 8
+        env:
+          QIMENG_CI_APT_RETRIES: '2'
+          QIMENG_CI_APT_TIMEOUT_SECONDS: '30'
+        run: |
+          while IFS= read -r -d '' source; do
+            sudo sed -i -E 's|https?://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' "$source"
+          done < <(find /etc/apt -maxdepth 2 -type f \( -name '*.list' -o -name '*.sources' \) -print0)
+          apt_options=(-o Acquire::ForceIPv4=true -o "Acquire::Retries=$QIMENG_CI_APT_RETRIES" -o "Acquire::http::Timeout=$QIMENG_CI_APT_TIMEOUT_SECONDS" -o "Acquire::https::Timeout=$QIMENG_CI_APT_TIMEOUT_SECONDS")
+          sudo apt-get "${apt_options[@]}" update
+          sudo apt-get "${apt_options[@]}" install -y --no-install-recommends ffmpeg
+          ffmpeg -version
+          ffprobe -version
       # 安全补丁版本唯一源为 server/go.mod；lint 同工具链从锁定源码构建。
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with: { go-version-file: server/go.mod, cache-dependency-path: server/go.sum }

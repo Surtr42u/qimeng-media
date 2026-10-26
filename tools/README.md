@@ -51,6 +51,8 @@ Go 合成基准分开输出完整 ID 出口、seed 准备/每 seed 排序/整轮
 
 ## 其他可靠性门禁
 
+服务端CI的FFmpeg依赖准备有独立下载预算，失败仍阻断后续完整静态/race/构建检查；真实ffmpeg/ffprobe验证与仅云端生效的下载策略见[服务端构建身份](../server/README.md#构建身份)。不把依赖下载成功当作代码门禁通过，也不修改日常服务器的软件源。
+
 Web CI 在 build/Vitest 后运行锁定 Playwright 的 Chromium 交互回归；静态预览只监听隔离回环端口，测试拦截全部 API 为合成响应，不连接 8420 或真实数据。失败上传 trace/截图到短期 artifact，定位信息与场景见 [Web 入口](../web/README.md#开发依赖安全)。此项是实际浏览器验证，Android/原生窗口/设备验收仍单独记录；不降低现有检查。
 
 `test_windows_launcher.ps1` 只允许在 GitHub Actions 的 Windows runner 执行：把真实无头启动脚本复制到临时目录，编译无数据库的合成 HTTP 程序，检查冷启动就绪且控制台保持、重复调用显示 RUNNING 并只保留一个后端。运行前拒绝已占用端口，结束时仅清理本轮合成程序与启动器进程树；CI 的 Windows 文件操作 job 同批执行。不在开发机运行，不访问现用数据，也不把合成回归当本机 `.lnk` 双击验收。

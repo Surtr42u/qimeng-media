@@ -82,6 +82,8 @@ mediawrite 把完成凭据与资产行同事务提交（migration 0020），七�
 
 ## 构建身份
 
+完整CI的FFmpeg依赖准备使用Ubuntu官方archive源替换runner的Azure镜像，保留APT签名校验，仅安装必需依赖并检查ffmpeg/ffprobe均可执行；IPv4下载、30秒连接/数据超时和2次重试、单步8分钟上限用于避免镜像慢下载耗尽45分钟服务端检查预算。任何依赖准备失败仍阻断后续门禁，不降级或跳过race/静态检查；配置仅作用云端runner，不修改日常服务器或生产镜像的软件源。
+
 日常 PC 出包走 [.github/workflows/build-pc.yml](../.github/workflows/build-pc.yml)：手动触发或推送 `codex/build-pc/**` 专用分支，在 Windows runner 生成 Windows amd64 服务端、Web 和发布清单，下载后由 AI 核对同一提交的完整门禁并整体部署。根目录三份启动 bat 共用 `_server-common.cmd`，只检查并运行已安装程序，不再启动时本地编译；产物缺失时由 AI 补交云端包。部署保留原数据、配置与旧程序，实际包身份见 HANDOVER。
 
 “无头后端”入口保留普通黑色后端控制台及任务栏入口，不打开浏览器或 Tauri 桌面端，不新增图形状态窗口。未运行时在控制台直接运行服务端并显示输出；退出后保留停止/退出码提示。已有健康后端时复用该进程，控制台只读监测 RUNNING/NOT READY，不重复打开数据目录/抢占端口；关闭这个监测窗口不停止原有后台进程。新启动服务所在的控制台则遵循通常的 Ctrl+C/关闭语义。健康探测不提供同时首次启动的原子互斥；启动横幅仍追加到 `server/console.log`，本入口的新服务输出直接显示在控制台。
