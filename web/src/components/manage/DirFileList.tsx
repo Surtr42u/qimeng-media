@@ -17,6 +17,7 @@ import { useDeleteAsset, useMoveAsset } from '@/hooks/use-file-ops'
 import { useMultiSelect } from '@/hooks/use-multi-select'
 import { runBatchWithToast } from '@/lib/batch-run'
 import { dirLabel, formatBytes } from '@/lib/format'
+import { ManageQueryError } from './ManagePageHeader'
 
 /**
  * 目录树选中目录的直接子文件行（B-5 目录树文件行接线）：数据源
@@ -47,10 +48,10 @@ const NO_TARGET: FileOpsTarget = { assetId: '', libraryId: '', directory: '', fi
 type BatchDialog = 'none' | 'delete' | 'move'
 
 export function DirFileList({ libraryId, directory }: { libraryId: string; directory: string }) {
-  // isLoading（非 isFetching，B-8 P3 清偿）：失效重取/切目录换键期间保留旧列表
-  // （hook 配 placeholderData: keepPreviousData），不再整段替换成「加载中…」闪烁；
-  // 仅首次无数据时显示加载态
-  const { data: files = [], isLoading } = useAssetsInDirectory(libraryId, directory, true)
+  // 同目录刷新保留原列表，切换目录等待新快照，不把旧行当作新目录里的文件。
+  const query = useAssetsInDirectory(libraryId, directory, true)
+  const { data: files = [], isLoading } = query
+  const unavailable = isLoading || query.isError
   // 行内操作的打开弹窗态：mode + 操作目标（打开时刻快照，与上传队列表同口径）
   const [ops, setOps] = useState<{ mode: FileOpsMode; target: FileOpsTarget } | null>(null)
   // 批量弹窗态（删除确认 / 移动目标目录）
@@ -61,7 +62,7 @@ export function DirFileList({ libraryId, directory }: { libraryId: string; direc
   const runner = useBatchRunner()
 
   // 批量执行期/批量弹窗展开期冻结选集：checkbox/全选禁改，计数与提交目标一致
-  const selectionLocked = runner.state.running || batchDialog !== 'none'
+  const selectionLocked = runner.state.running || batchDialog !== 'none' || unavailable
   // 弹窗展开期间 Esc 让位给弹窗自身的关闭，不叠加退出多选态
   const escEnabled = ops === null && batchDialog === 'none'
   const select = useMultiSelect({ locked: selectionLocked, escEnabled })
@@ -84,6 +85,7 @@ export function DirFileList({ libraryId, directory }: { libraryId: string; direc
   }, [ids, prune])
 
   const openOps = (mode: FileOpsMode, f: AssetSummary): void => {
+    if (unavailable || runner.state.running) return
     setOps({
       mode,
       target: { assetId: f.id ?? '', libraryId, directory, fileName: f.fileName ?? '' },
@@ -93,6 +95,7 @@ export function DirFileList({ libraryId, directory }: { libraryId: string; direc
   // 批量执行胶水收敛（lib/batch-run.ts）：id 守卫/toast/selectOnly 收口共享，
   // 调用点只留差异部分（action 文案 + 单条 mutateAsync）；targets = 选集快照
   const runBatchDelete = (): void => {
+    if (unavailable || runner.state.running) return
     const targets = selectedFiles
     setBatchDialog('none')
     runBatchWithToast(runner, {
@@ -104,6 +107,7 @@ export function DirFileList({ libraryId, directory }: { libraryId: string; direc
   }
 
   const runBatchMove = (targetDir: string): void => {
+    if (unavailable || runner.state.running) return
     const targets = selectedFiles
     runBatchWithToast(runner, {
       action: '批量移动',
@@ -119,7 +123,7 @@ export function DirFileList({ libraryId, directory }: { libraryId: string; direc
     <div className="dir-files">
       <p className="dir-files-title">
         「{dirLabel(directory)}」的直接子文件
-        <b>{files.length}</b>
+        <b>已加载 {files.length} 项</b>
         <button
           className={`pill${select.active ? ' active' : ''}`}
           type="button"
@@ -136,14 +140,14 @@ export function DirFileList({ libraryId, directory }: { libraryId: string; direc
           totalCount={ids.length}
           allSelected={allSelected}
           locked={selectionLocked}
-          selectAllLabel="全选本目录"
+          selectAllLabel="全选已加载"
           onToggleAll={() => (allSelected ? select.clear() : select.selectAll(ids))}
           onExit={select.exit}
         >
           <button
             className="pill"
             type="button"
-            disabled={selectedFiles.length === 0 || runner.state.running}
+            disabled={selectedFiles.length === 0 || runner.state.running || unavailable}
             onClick={() => setBatchDialog('move')}
           >
             批量移动
@@ -151,16 +155,17 @@ export function DirFileList({ libraryId, directory }: { libraryId: string; direc
           <button
             className="pill"
             type="button"
-            disabled={selectedFiles.length === 0 || runner.state.running}
+            disabled={selectedFiles.length === 0 || runner.state.running || unavailable}
             onClick={() => setBatchDialog('delete')}
           >
             批量删除
           </button>
         </MultiSelectBar>
       )}
+      {query.isError && <ManageQueryError retry={() => { void query.refetch() }}>文件列表读取失败{query.data ? '，上次列表保留，操作暂不可用' : '，不能据此判断目录为空'}</ManageQueryError>}
       {isLoading ? (
         <LoadingHint />
-      ) : files.length === 0 ? (
+      ) : query.isError && !query.data ? null : files.length === 0 ? (
         <p className="grid-empty">该目录下暂无文件。</p>
       ) : (
         <ul className="dir-file-list">
@@ -192,6 +197,7 @@ export function DirFileList({ libraryId, directory }: { libraryId: string; direc
                       className="dir-action-btn"
                       type="button"
                       title="移动或重命名"
+                      disabled={unavailable || runner.state.running}
                       onClick={() => openOps('move', f)}
                     >
                       <FolderInput width={14} height={14} />
@@ -201,6 +207,7 @@ export function DirFileList({ libraryId, directory }: { libraryId: string; direc
                       className="dir-action-btn"
                       type="button"
                       title="移入回收站（可在维护页恢复）"
+                      disabled={unavailable || runner.state.running}
                       onClick={() => openOps('delete', f)}
                     >
                       <Trash2 width={14} height={14} />
@@ -214,6 +221,7 @@ export function DirFileList({ libraryId, directory }: { libraryId: string; direc
         </ul>
       )}
 
+      {query.hasNextPage && <div className="settings-actions"><button className="pill" type="button" disabled={query.isFetchingNextPage || query.isError} onClick={() => { void query.fetchNextPage() }}>{query.isFetchingNextPage ? '读取中…' : '加载更多文件'}</button><span className="rank-note">批量操作仅作用于已加载并选中的文件。</span></div>}
       {/* 批量删除确认（danger；文案明示数量与去向=移入回收站，铁律 4 语义，逐条 DELETE） */}
       <ConfirmDialog
         open={batchDialog === 'delete'}

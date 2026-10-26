@@ -6,6 +6,8 @@ import {
 } from '@/hooks/use-authors'
 import { UploadDropIcon } from '@/components/manage/UploadDropIcon'
 import { LoadingHint } from '@/components/ui/loading-hint'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { ManageQueryError } from './ManagePageHeader'
 import { batchFailureReason } from '@/lib/batch'
 import { validateAuthorTxtFile } from '@/lib/author-txt'
 
@@ -39,13 +41,18 @@ interface TxtConflictState {
 type TxtConflictError = Partial<TxtImportConflict> & { status?: number }
 
 export function TxtAuthorImportCard() {
-  const { data: files = [], isLoading } = useTxtImportedFiles()
+  const query = useTxtImportedFiles()
+  const { data: files = [], isLoading } = query
   const importTxt = useImportAuthorTxt()
   const deleteTxt = useDeleteImportedTxt()
   const rebuildTxt = useRebuildAuthorTxt()
   const exportTxt = useExportTxtSource()
   const inputRef = useRef<HTMLInputElement>(null)
   const [conflict, setConflict] = useState<TxtConflictState | null>(null)
+  const [reading, setReading] = useState(false)
+  const readingLock = useRef(false)
+  const [removeTarget, setRemoveTarget] = useState<string | null>(null)
+  const busy = reading || importTxt.isPending || deleteTxt.isPending || rebuildTxt.isPending
 
   // 失败原因文案统一走 batchFailureReason（lib/batch.ts）：4xx 时 unwrapSdkResult
   // 抛的是 {code,message,status} 错误体（非 Error 实例），弱模式会落成
@@ -55,6 +62,7 @@ export function TxtAuthorImportCard() {
     const f = e.target.files?.[0]
     e.target.value = '' // 置空以允许连续导入同名文件
     if (!f) return
+    if (busy || readingLock.current || conflict) return
     try {
       validateAuthorTxtFile(f)
     } catch (err) {
@@ -62,6 +70,9 @@ export function TxtAuthorImportCard() {
       return
     }
     const reader = new FileReader()
+    readingLock.current = true
+    setReading(true)
+    reader.onloadend = () => { readingLock.current = false; setReading(false) }
     reader.onload = () => {
       const content = String(reader.result ?? '')
       importTxt.mutate(
@@ -96,7 +107,7 @@ export function TxtAuthorImportCard() {
 
   /** 冲突二选一：带 conflictResolution 重发被 409 打断的原 body（原文不重读文件） */
   const resolveConflict = (resolution: 'keep' | 'remove'): void => {
-    if (!conflict) return
+    if (!conflict || busy) return
     importTxt.mutate(
       { filename: conflict.filename, content: conflict.content, conflictResolution: resolution },
       {
@@ -115,13 +126,15 @@ export function TxtAuthorImportCard() {
   }
 
   const onDelete = (name: string): void => {
+    if (busy || query.isError || conflict) return
     deleteTxt.mutate(name, {
-      onSuccess: () => toast.success(`已移除「${name}」，并从剩余片段重建作者关联`),
+      onSuccess: () => { setRemoveTarget(null); toast.success(`已移除「${name}」，并从剩余片段重建作者关联`) },
       onError: (err) => toast.error(`移除失败：${batchFailureReason(err)}`),
     })
   }
 
   const onRebuild = (): void => {
+    if (busy || query.isError || conflict) return
     rebuildTxt.mutate(undefined, {
       onSuccess: (res) =>
         toast.success(`重放完成：${res.authorsImported ?? 0} 位作者 · 关联 ${res.filesMatched ?? 0} 个文件`),
@@ -142,27 +155,28 @@ export function TxtAuthorImportCard() {
         <h3>作者 TXT 导入</h3>
         <span className="rank-note">{files.length} 份片段</span>
       </div>
+      {query.isError && <ManageQueryError retry={() => { void query.refetch() }}>已导入片段读取失败，请重新读取后核对。</ManageQueryError>}
       {/* 导入动作视觉焦点：复用上传卡 .upload-drop 虚线导入区（点击=打开文件选择）。
           空态/有片段态提示文案不同；pending 复用 .disabled 视觉并拦截点击（对齐原按钮 disabled） */}
       <div
-        className={`upload-drop${importTxt.isPending ? ' disabled' : ''}`}
+        className={`upload-drop${busy || conflict ? ' disabled' : ''}`}
         role="button"
-        tabIndex={importTxt.isPending ? -1 : 0}
-        aria-disabled={importTxt.isPending}
+        tabIndex={busy || conflict ? -1 : 0}
+        aria-disabled={busy || conflict !== null}
         aria-label="选择作者清单 TXT 并导入"
         onClick={() => {
-          if (!importTxt.isPending) inputRef.current?.click()
+          if (!busy && !conflict) inputRef.current?.click()
         }}
         onKeyDown={(e) => {
           // 导入区现在是唯一入口（下方重复按钮已删），键盘可达性补齐：
           // Enter/Space 触发文件选择，对齐原生 button 语义
-          if (importTxt.isPending || (e.key !== 'Enter' && e.key !== ' ')) return
+          if (busy || conflict || (e.key !== 'Enter' && e.key !== ' ')) return
           e.preventDefault()
           inputRef.current?.click()
         }}
       >
-        {importTxt.isPending ? (
-          <b>导入中…</b>
+        {reading || importTxt.isPending ? (
+          <b>{reading ? '读取清单中…' : '导入中…'}</b>
         ) : (
           <>
             <UploadDropIcon />
@@ -236,7 +250,7 @@ export function TxtAuthorImportCard() {
         <button
           className="pill"
           type="button"
-          disabled={rebuildTxt.isPending || files.length === 0}
+          disabled={busy || conflict !== null || query.isError || files.length === 0}
           title="按已导入片段全量重放作者-文件关联（片段不变，幂等）"
           onClick={onRebuild}
         >
@@ -253,7 +267,7 @@ export function TxtAuthorImportCard() {
       </div>
       {isLoading ? (
         <LoadingHint />
-      ) : files.length === 0 ? (
+      ) : query.isError && query.data === undefined ? <p className="grid-empty">片段列表暂不可用。</p> : files.length === 0 ? (
         <p className="grid-empty">还没有导入片段——从上方选择 .txt 开始。</p>
       ) : (
         <table className="log-table">
@@ -269,7 +283,7 @@ export function TxtAuthorImportCard() {
                   <button
                     className="pill"
                     type="button"
-                    disabled={exportTxt.isPending}
+                    disabled={exportTxt.isPending || busy}
                     title="下载该片段原文（导出文件可原样再导入）"
                     onClick={() => onExport(f.filename)}
                   >
@@ -278,8 +292,8 @@ export function TxtAuthorImportCard() {
                   <button
                     className="pill"
                     type="button"
-                    disabled={deleteTxt.isPending}
-                    onClick={() => onDelete(f.filename)}
+                    disabled={busy || conflict !== null || query.isError}
+                    onClick={() => setRemoveTarget(f.filename)}
                   >
                     移除
                   </button>
@@ -289,6 +303,7 @@ export function TxtAuthorImportCard() {
           </tbody>
         </table>
       )}
+      <ConfirmDialog open={removeTarget !== null} title={`移除片段「${removeTarget || '匿名导入'}」？`} description="将从剩余片段重新计算作者与文件关联；作者行与媒体文件保留。请先核对是否仍需要这份清单。" confirmText={deleteTxt.isPending ? '移除中…' : '确认移除片段'} cancelText="取消" busy={deleteTxt.isPending} keepOpenOnConfirm onConfirm={() => { if (removeTarget !== null) onDelete(removeTarget) }} onOpenChange={open => { if (!open && !deleteTxt.isPending) setRemoveTarget(null) }} />
     </div>
   )
 }

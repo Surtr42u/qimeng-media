@@ -1,5 +1,5 @@
 /**
- * 本机自动同步通道 hooks（维护页「本机同步」卡消费；铁律 7：组件不直接调 API）。
+ * 服务器目录自动导入 hooks（上传页高级入口消费；组件不直接调 API）。
  *
  * 数据源：GET /api/v1/local-sync/status（通道状态 + 同步源内条目 + 最近成功）、
  * POST /api/v1/local-sync/trigger（手动触发一轮扫描，202 异步受理）。
@@ -20,14 +20,13 @@ const TRIGGER_REFRESH_DELAY_MS = 1200
 
 /**
  * 通道状态（SSE 桥不失效本族：轮询 + 手动触发驱动）。
- * refetchInterval 对齐维护页既有轮询先例 useSystemStatus（STATUS_POLL_INTERVAL_MS，
- * 2s）——失败文件靠下轮自动重试自愈，状态卡驻留时需自刷才能看见状态迁移。
+ * 展开高级入口时 2s 轮询；折叠时仅普通查询生命周期刷新，避免维护首页多余轮询。
  */
-export function useLocalSyncStatus() {
+export function useLocalSyncStatus(poll = true) {
   return useQuery({
     queryKey: LOCAL_SYNC_QUERY_KEY,
     queryFn: () => unwrapSdkResult(getApiV1LocalSyncStatus()),
-    refetchInterval: STATUS_POLL_INTERVAL_MS,
+    refetchInterval: poll ? STATUS_POLL_INTERVAL_MS : false,
   })
 }
 

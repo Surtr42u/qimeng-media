@@ -140,8 +140,7 @@ function toSdkAssetListQuery(params: AssetListParams) {
   }
 }
 
-/** 目录树文件行单页上限：协议 GET /assets 的 limit 上限=200（openapi limit
- *  maximum）。目录内直接子文件量级小，一次拉全不分页（协议侧改动须同步此处）。 */
+/** 目录整理单页上限：协议 GET /assets limit.maximum=200；手动续页，不再截断整个目录。 */
 const DIR_FILES_LIMIT = 200
 
 /**
@@ -151,23 +150,22 @@ const DIR_FILES_LIMIT = 200
  * queryKey 含 libraryId+directory：切目录即换键重取；挂在 ASSETS_QUERY_KEY
  * 根键下，useMoveAsset/useDeleteAsset 的根键失效直接命中本清单（文件行
  * 随操作结果即时刷新，目录树计数由 DIRS 失效同步）。enabled=false（未选库）
- * 挂起不发请求（同 useDirTree 口径）。totalMatched>limit 的目录不翻页——
- * 目录内文件量级远小于协议上限，超出属异常规模，暂按前 200 条展示。
+ * 挂起不发请求。手动按 nextCursor 续页；换库/目录不保留旧目录占位，避免旧行套用新目录动作。
+ * includeCos=true 仅用于显式 libraryId 的整理上下文，不改变浏览面的分区默认值。
  */
 export function useAssetsInDirectory(libraryId: string, directory: string, enabled: boolean) {
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: [...ASSETS_QUERY_KEY, 'dir-files', libraryId, directory],
-    queryFn: () =>
+    queryFn: ({ pageParam }) =>
       unwrapSdkResult(
         getApiV1Assets({
-          query: { libraryId, directory, limit: DIR_FILES_LIMIT, tzOffsetMinutes: deviceTzOffsetMinutes() },
+          query: { libraryId, directory, cursor: pageParam, includeCos: true, limit: DIR_FILES_LIMIT, tzOffsetMinutes: deviceTzOffsetMinutes() },
         }),
       ),
     enabled,
-    // B-8（reviewer P3 清偿）：query key 含 directory——切目录换键、失效重取期间
-    // 保留旧列表占位（TanStack 官方模式），消费方配 isLoading 只在真正无数据时显示加载态
-    placeholderData: keepPreviousData,
-    select: (page) => page.items ?? [],
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: page => page.nextCursor ?? undefined,
+    select: data => data.pages.flatMap(page => page.items ?? []),
   })
 }
 

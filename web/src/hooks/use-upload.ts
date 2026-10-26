@@ -25,7 +25,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { uploadQueueStore } from '@/lib/upload-queue-store'
 
 // 类型与换算常量随实现迁至 store（单一来源）；此处 re-export 保持既有
-// import 路径不变（UploadWorkbench/UploadQueueTable 零改动）。
+// import 路径不变（UploadWorkbench/UploadQueueList 零改动）。
 export { BYTES_PER_MB } from '@/lib/upload-queue-store'
 export type {
   UploadStatus,

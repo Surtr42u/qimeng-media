@@ -4,6 +4,11 @@ import type { StatsOverview, TrendBucket } from '@/api/generated'
 export const STATS_RANK_LIMIT = 50
 export const STATS_LOAD_FAILED_MESSAGE = '统计加载失败，请检查连接后重试'
 export const STATS_PROTOCOL_MESSAGE = '服务端统计协议较旧，请同步更新服务端'
+
+/** 分板块反馈仍保留旧协议提示，不能将兼容问题伪装成真实空统计。 */
+export function statsReadMessage(error: Error | null, section: string): string {
+  return error?.message === STATS_PROTOCOL_MESSAGE ? STATS_PROTOCOL_MESSAGE : `${section}读取失败，请检查连接后重试`
+}
 export const STATS_MEDIA_TYPES = ['image', 'video', 'animated_image'] as const
 export const STATS_SOURCES = ['normal', 'cos'] as const
 export const STATS_SEGMENTS = [

@@ -1,7 +1,5 @@
-import { useNavigate } from 'react-router'
 import { BackupCard } from '@/components/manage/BackupCard'
-import { Pill } from '@/components/ui/pill'
-import { MAINTENANCE_FILES_PATH } from '@/lib/route-keys'
+import { ManagePageHeader } from '@/components/manage/ManagePageHeader'
 
 /**
  * 备份导入导出子页（数据管理 hub「备份导入导出」卡 →
@@ -9,17 +7,9 @@ import { MAINTENANCE_FILES_PATH } from '@/lib/route-keys'
  * hub 拆分零改动），卡片职责见组件自身注释。
  */
 export default function BackupImportExportPage() {
-  const navigate = useNavigate()
-
   return (
-    <div className="page" id="page-maintenance-files-backup">
-      <div className="settings-actions">
-        <Pill onClick={() => navigate(MAINTENANCE_FILES_PATH)}>← 返回数据管理</Pill>
-      </div>
-      <div className="page-head">
-        <h2>备份导入导出</h2>
-        <p>备份导入恢复与浏览数据同步</p>
-      </div>
+    <div className="page manage-workspace" id="page-maintenance-files-backup">
+      <ManagePageHeader title="备份导入导出" description="先传媒体原件，再合并当前 v2 的记录与关联；备份文件不包含媒体本体" />
 
       <BackupCard />
     </div>

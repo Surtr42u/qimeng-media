@@ -23,7 +23,7 @@ export function ContentRankGrid({
   return (
     <div className="rank-cards">
       {items.map((a) => (
-        <div className="rank-item" key={a.id} onClick={() => onOpen(a)} role="button">
+        <div className="rank-item" key={a.id} onClick={() => onOpen(a)} role="button" tabIndex={0} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen(a) } }}>
           <div className="rank-cover">
             <img src={applyThumbSize(a.thumbUrl ?? '', thumbSize)} alt="" loading="lazy" />
           </div>

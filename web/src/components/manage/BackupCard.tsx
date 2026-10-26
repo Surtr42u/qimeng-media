@@ -14,8 +14,12 @@ export function BackupCard() {
   const inputRef = useRef<HTMLInputElement>(null)
   // 待确认的导入载荷：非 null 即打开确认弹窗（旧版语义：确认后才真正上传导入）
   const [pending, setPending] = useState<{ payload: LegacyBackupImport; summary: BackupSummary } | null>(null)
+  const [reading, setReading] = useState(false)
+  const readingLock = useRef(false)
+  const busy = reading || importBackup.isPending || exportBackup.isPending
 
   const onExport = (): void => {
+    if (busy) return
     exportBackup.mutate(undefined, {
       onSuccess: ({ sizeBytes }) =>
         toast.success(`已导出 qimeng_backup.json（${(sizeBytes / 1024).toFixed(0)} KB）`),
@@ -27,10 +31,16 @@ export function BackupCard() {
     const f = e.target.files?.[0]
     e.target.value = '' // 置空以允许连续导入同名文件
     if (!f) return
+    if (readingLock.current || busy || pending) return
+    readingLock.current = true
+    setReading(true)
     try {
       setPending(await parseBackupFile(f))
     } catch (err) {
       toast.error(batchFailureReason(err))
+    } finally {
+      readingLock.current = false
+      setReading(false)
     }
   }
 
@@ -63,29 +73,29 @@ export function BackupCard() {
         <span className="rank-note">本项目v2备份 qimeng_backup.json</span>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <button className="pill" type="button" disabled={exportBackup.isPending} onClick={onExport}>
+        <button className="pill" type="button" disabled={busy} onClick={onExport}>
           {exportBackup.isPending ? '导出中…' : '导出全量备份'}
         </button>
         <span className="rank-note">当前库全量（文件清单/作者/标签/统计/收藏点赞），可导入本项目其他实例；不含媒体原件</span>
       </div>
       <div
-        className={`upload-drop${importBackup.isPending ? ' disabled' : ''}`}
+        className={`upload-drop${busy ? ' disabled' : ''}`}
         role="button"
-        tabIndex={importBackup.isPending ? -1 : 0}
-        aria-disabled={importBackup.isPending}
+        tabIndex={busy ? -1 : 0}
+        aria-disabled={busy}
         aria-label="选择本项目v2备份 qimeng_backup.json 并导入恢复"
         style={{ marginTop: 12 }}
         onClick={() => {
-          if (!importBackup.isPending) inputRef.current?.click()
+          if (!busy) inputRef.current?.click()
         }}
         onKeyDown={(e) => {
-          if (importBackup.isPending || (e.key !== 'Enter' && e.key !== ' ')) return
+          if (busy || (e.key !== 'Enter' && e.key !== ' ')) return
           e.preventDefault()
           inputRef.current?.click()
         }}
       >
-        {importBackup.isPending ? (
-          <b>导入中…</b>
+        {busy ? (
+          <b>{reading ? '正在读取备份…' : importBackup.isPending ? '导入中…' : '导出中…'}</b>
         ) : (
           <>
             <UploadDropIcon />

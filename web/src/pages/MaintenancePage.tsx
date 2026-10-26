@@ -1,270 +1,59 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router'
-import { FolderMonitorIcon, TrashIcon } from '@/components/shell/icons'
-import { LocalSyncCard } from '@/components/manage/LocalSyncCard'
+import { useState } from 'react'
+import { ShieldAlert } from 'lucide-react'
+import { MaintenanceOverview, MAINTENANCE_LOGS_ID } from '@/components/manage/MaintenanceOverview'
 import { Pill } from '@/components/ui/pill'
 import { useClientLogs } from '@/hooks/use-client-logs'
-import { useSystemStatus } from '@/hooks/use-system-status'
+import { useMaintenanceMonitor } from '@/hooks/use-maintenance-monitor'
 import { useTrash } from '@/hooks/use-trash'
-import { STATUS_POLL_INTERVAL_MS } from '@/lib/constants'
+import { formatDateTime } from '@/lib/format'
 
-/** 客户端日志卡折叠态可见条数（服务端环形缓冲 200 条全渲染会刷屏淹没页面） */
+/** 折叠态仍显示最近 5 条；服务端环形缓冲 200 条，避免日志淹没操作区。 */
 const CLIENT_LOGS_PREVIEW_COUNT = 5
-import { formatBytes, formatDateTime } from '@/lib/format'
-import { Line, LineChart, ResponsiveContainer, Tooltip, YAxis } from 'recharts'
-import { TIP_STYLE, TrendLegend } from '@/components/data/chart-shared'
-import { MAINTENANCE_FILES_PATH } from '@/lib/route-keys'
+const LOG_LEVEL_LABELS: Record<string, string> = { error: '错误', warn: '警告', info: '信息' }
 
-/** 曲线采样：最近 2 分钟、每 2 秒一点（60 点）；与轮询周期（2s）耦合 */
-const RATE_WINDOW = 60
-/** 速率差分除数（秒）：两帧字节差 ÷ 轮询间隔秒数 = B/s——与 STATUS_POLL_INTERVAL_MS
- *  同源派生，轮询周期若调整，差分口径自动跟随，纵轴仍是 B/s */
-const RATE_DIVISOR_S = STATUS_POLL_INTERVAL_MS / 1000
-/** 原型 gauge 视口：圆心 50/50、半径 44 → 周长 2πr（dash 基数） */
-const GAUGE_CIRC = 2 * Math.PI * 44
-
-interface RatePoint {
-  rx: number
-  tx: number
-}
-
-/**
- * 维护页（原型 #page-maintenance 移植，2026-09-03 性能监控接真）。
- * 监控数据 = GET /system/status（2s 轮询）：4 圆环卡（CPU/内存/系统盘/存储合计）、
- * 4 指标卡（上下行速率=轮询差分本地计算、存储合计、运行时长）、网络负载曲线
- * （本地 60 点环形采样）；「客户端异常」表 = GET /client-logs（上报器写入，
- * 服务端环形缓冲最新 200 条，2026-09-04 接真）；「本机同步」卡 =
- * /local-sync/status + /trigger（本机自动同步通道，渲染在 LocalSyncCard 共享组件）。
- * 「库文件快照备份」卡已移除（2026-10-04 用户拍板「用不到」）——服务端 /backups
- * 端点与自动备份调度原样运行，仅 Web 管理面撤下（下载/删快照走 NAS 文件系统，
- * 调度参数走 QIMENG_BACKUP_* 环境变量；恢复本卡 = git 还原 DbBackupCard 接线）。
- */
-
-/** 客户端异常级别中文标签（协议 level 枚举 error/warn/info） */
-const LOG_LEVEL_LABELS: Record<string, string> = {
-  error: '错误',
-  warn: '警告',
-  info: '信息',
-}
+/** 紧凑概览与完整维护操作共存；原有接口/路由/本机同步行为保持，快照调度卡仍不展示。 */
 export default function MaintenancePage() {
-  const navigate = useNavigate()
-  const { data: status } = useSystemStatus()
-  // 回收站入口卡计数用真实数据
-  const { data: trashItems = [] } = useTrash()
-  // 客户端异常排查表（新→旧，环形缓冲最新 200 条）
-  const { data: clientLogs = [] } = useClientLogs()
-
-  // 速率环形缓冲：每帧拿 netRx/netTx 与上一帧累计值差分 ÷ 轮询间隔秒 → B/s
-  const [rates, setRates] = useState<RatePoint[]>([])
-  /** 客户端日志卡默认折叠（只显最近几条；同质错误刷屏淹没维护页，2026-09-29 用户反馈） */
+  const monitor = useMaintenanceMonitor()
+  const trash = useTrash()
+  const logs = useClientLogs()
+  const clientLogs = logs.data ?? []
   const [logsExpanded, setLogsExpanded] = useState(false)
-  const accumRef = useRef<{ rx: number; tx: number } | null>(null)
-  useEffect(() => {
-    if (!status || !status.netRxBytes || !status.netTxBytes) return
-    const cur = { rx: status.netRxBytes, tx: status.netTxBytes }
-    const prev = accumRef.current
-    accumRef.current = cur
-    if (!prev) return // 首帧只记基线，下一帧起差分
-    setRates((r) => [
-      ...r.slice(-(RATE_WINDOW - 1)),
-      {
-        rx: Math.max(0, cur.rx - prev.rx) / RATE_DIVISOR_S,
-        tx: Math.max(0, cur.tx - prev.tx) / RATE_DIVISOR_S,
-      },
-    ])
-  }, [status])
-
-  const memPct = useMemo(() => {
-    if (!status?.memTotalBytes || !status.memUsedBytes) return 0
-    return (status.memUsedBytes / status.memTotalBytes) * 100
-  }, [status])
-
-  const diskTotal = useMemo(
-    () => (status?.disks ?? []).reduce((a, d) => a + (d.totalBytes ?? 0), 0),
-    [status],
-  )
-  const diskUsed = useMemo(
-    () => (status?.disks ?? []).reduce((a, d) => a + (d.usedBytes ?? 0), 0),
-    [status],
-  )
-  const diskPct = diskTotal > 0 ? (diskUsed / diskTotal) * 100 : 0
-  const sysDisk = status?.disks?.[0]
-  const sysDiskPct =
-    sysDisk && sysDisk.totalBytes ? ((sysDisk.usedBytes ?? 0) / sysDisk.totalBytes) * 100 : 0
-
-  /** 4 圆环卡的百分比与副标题（顺序固定：CPU/内存/系统盘/存储合计） */
-  const gauges = useMemo(() => {
-    const pcts = [status?.cpuPercent ?? 0, memPct, sysDiskPct, diskPct]
-    const subs = [
-      `使用率 ${pcts[0].toFixed(0)}%`,
-      status ? `${formatBytes(status.memUsedBytes ?? 0)} / ${formatBytes(status.memTotalBytes ?? 0)}` : '—',
-      sysDisk ? `${formatBytes(sysDisk.usedBytes ?? 0)} / ${formatBytes(sysDisk.totalBytes ?? 0)} · ${sysDisk.mount}` : '—',
-      `${formatBytes(diskUsed)} / ${formatBytes(diskTotal)}`,
-    ]
-    return [
-      { label: 'CPU', arc: 'arc-1', value: pcts[0], sub: subs[0] },
-      { label: '内存', arc: 'arc-2', value: pcts[1], sub: subs[1] },
-      { label: '系统盘', arc: 'arc-1', value: pcts[2], sub: subs[2] },
-      { label: '存储合计', arc: 'arc-2', value: pcts[3], sub: subs[3] },
-    ]
-  }, [status, memPct, sysDisk, sysDiskPct, diskUsed, diskTotal, diskPct])
-
-  /** 指标卡（速率=窗口内最后一帧；峰值=窗口最大；运行时长=uptime） */
-  const metrics = useMemo(() => {
-    const rxs = rates.map((r) => r.rx)
-    const txs = rates.map((r) => r.tx)
-    const up = status?.uptimeSeconds ?? 0
-    const days = Math.floor(up / 86400)
-    const hours = Math.floor((up % 86400) / 3600)
-    return [
-      { label: '下行', value: rates.length ? `${formatBytes(rxs[rxs.length - 1])}/s` : '采样中…', sub: `窗口峰值 ${formatBytes(Math.max(0, ...rxs))}/s` },
-      { label: '上行', value: rates.length ? `${formatBytes(txs[txs.length - 1])}/s` : '采样中…', sub: `窗口峰值 ${formatBytes(Math.max(0, ...txs))}/s` },
-      { label: '存储', value: formatBytes(diskUsed), sub: `${formatBytes(diskTotal)} 合计 · ${diskPct.toFixed(1)}% 已用` },
-      { label: '运行时长', value: `${days} 天`, sub: `${days} 天 ${hours} 时` },
-    ]
-  }, [rates, status?.uptimeSeconds, diskUsed, diskTotal, diskPct])
-
-  // 网络负载图已换 recharts（ADR-0016），悬停提示/参考线/高亮点库内置
+  const trashLabel = trash.isError ? '条目数暂不可用' : trash.data ? `${trash.data.length} 条待处理` : '正在读取…'
+  const logsLabel = logs.isError ? '更新失败，查看详情' : logs.data ? `保留 ${clientLogs.length} 条上报` : '正在读取…'
 
   return (
     <div className="page" id="page-maintenance">
-      {/* 服务端报告 dev 模式开启时置顶提醒（纯可见性：只读 /system/status 的 devMode 字段，
-          不动任何鉴权/免密逻辑；严格 === true，关闭/未知时零渲染零占位） */}
-      {status?.devMode === true && (
-        <div className="dev-mode-banner" role="alert">
-          开发模式未关：此服务器免密登录已开启，请勿暴露到公网/隧道
-        </div>
+      {monitor.data?.devMode === true && (
+        <div className="dev-mode-banner" role="alert"><ShieldAlert aria-hidden="true" /><span>开发模式未关：此服务器免密登录已开启，请勿暴露到公网/隧道</span></div>
       )}
-      <div className="page-head">
-        <h2>性能监控</h2>
-        <p>服务器硬件实时状态 · 每 2 秒自动刷新</p>
+      <div className="page-head monitor-page-head">
+        <div><h2>服务与维护</h2><p>运行概况、资源使用与常用维护</p></div>
+        <span className="monitor-update" role="status">{monitor.stateLabel} · 每 2 秒</span>
       </div>
-      <div className="gauge-grid">
-        {gauges.map((g) => (
-          <div key={g.label} className="gauge-card">
-            <svg className="gauge" viewBox="0 0 100 100" aria-hidden="true">
-              <circle cx="50" cy="50" r="44" className="ring" />
-              <circle
-                cx="50"
-                cy="50"
-                r="44"
-                className={`${g.arc} gauge-arc`}
-                strokeDasharray={`${(Math.min(100, Math.max(0, g.value)) * (GAUGE_CIRC / 100)).toFixed(1)} ${GAUGE_CIRC.toFixed(1)}`}
-              />
-            </svg>
-            <p className="gauge-label">{g.label}</p>
-            <p className="gauge-sub">{g.sub}</p>
-          </div>
-        ))}
-      </div>
-      <div className="metric-grid">
-        {metrics.map((m) => (
-          <div key={m.label} className="metric-card">
-            <p className="m-label">{m.label}</p>
-            <p className="m-value">{m.value}</p>
-            <p className="m-sub">{m.sub}</p>
-          </div>
-        ))}
-      </div>
-      <div className="chart-card">
-        <h3>网络负载 · 实时</h3>
-        <p>浏览流量上下行曲线 · 2s 采样 · 最近 2 分钟{rates.length < 2 ? '（采样中…）' : ''}</p>
-        <TrendLegend
-          items={[
-            { label: '下行', color: 'var(--qm-primary)' },
-            { label: '上行', color: 'var(--trend-line-sub)' },
-          ]}
-        />
-        {/* recharts 实现（ADR-0016）：悬停提示/参考线/高亮点库内置；
-            isAnimationActive=false——2s 滚动刷新重放动画会持续闪烁 */}
-        <ResponsiveContainer width="100%" height={200}>
-          <LineChart data={rates.map((r) => ({ 下行: r.rx, 上行: r.tx }))} margin={{ top: 6, right: 8, left: 8, bottom: 0 }}>
-            <YAxis hide />
-            <Tooltip {...TIP_STYLE} formatter={(value) => `${formatBytes(Number(value))}/s`} />
-            <Line
-              type="monotone"
-              dataKey="下行"
-              name="下行"
-              stroke="var(--qm-primary)"
-              strokeWidth={2}
-              dot={false}
-              activeDot={{ r: 4, fill: 'var(--qm-primary)' }}
-              isAnimationActive={false}
-            />
-            <Line
-              type="monotone"
-              dataKey="上行"
-              name="上行"
-              stroke="var(--trend-line-sub)"
-              strokeWidth={2}
-              strokeDasharray="4 4"
-              dot={false}
-              activeDot={{ r: 4, fill: 'var(--trend-line-sub)' }}
-              isAnimationActive={false}
-            />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
-      <div className="page-head">
-        <h2>维护工具</h2>
-        <p>文件管理、本机同步与客户端异常排查</p>
-      </div>
-      <div className="entry-grid">
-        <div className="entry-card entry-card--link" onClick={() => navigate(MAINTENANCE_FILES_PATH)}>
-          <div className="entry-head">
-            <FolderMonitorIcon />
-            <h3>文件管理</h3>
-          </div>
-          <p>管理文件库：注册/删除媒体目录、触发扫描、浏览目录结构</p>
-        </div>
-        <div className="entry-card entry-card--link" onClick={() => navigate('/app/maintenance/trash')}>
-          <div className="entry-head">
-            <TrashIcon />
-            <h3>回收站</h3>
-          </div>
-          <p className="entry-count">
-            <b>{trashItems.length}</b> 条待处理
-          </p>
-          <p className="entry-sub">恢复或彻底清除都在回收站页</p>
-        </div>
-      </div>
-      <LocalSyncCard />
-      <div className="chart-card">
+      {monitor.isError && <div className="monitor-query-error" role="alert">
+        <span>{monitor.data ? '监控更新失败，以下保留上次成功读数。' : '暂时无法读取监控状态，维护工具仍可使用。'}</span>
+        <Pill onClick={() => { void monitor.refetch() }} disabled={monitor.isFetching}>重试监控</Pill>
+      </div>}
+      <MaintenanceOverview monitor={monitor} trashLabel={trashLabel} logsLabel={logsLabel} />
+      <section className="chart-card monitor-detail-section" id={MAINTENANCE_LOGS_ID} aria-label="客户端异常详情">
         <h3>用户端崩溃 / 错误日志</h3>
         <p>客户端异常上报 · 服务端保留最新 200 条 · 新在上</p>
-        {clientLogs.length === 0 ? (
-          <p className="grid-empty">暂无客户端异常上报（环形缓冲为空——没出错就是好消息）</p>
-        ) : (
-          <>
-            <table className="log-table">
-              <thead>
-                <tr>
-                  <th style={{ width: 110 }}>时间</th>
-                  <th style={{ width: 60 }}>级别</th>
-                  <th>消息</th>
-                  <th style={{ width: 180 }}>页面</th>
-                </tr>
-              </thead>
-              <tbody>
-                {/* 默认只显最近几条（2026-09-29 用户反馈同质刷屏淹没页面），按需展开全量 */}
-                {(logsExpanded ? clientLogs : clientLogs.slice(0, CLIENT_LOGS_PREVIEW_COUNT)).map((e, i) => (
-                  <tr key={`${e.ts}-${i}`}>
-                    <td>{formatDateTime(e.ts)}</td>
-                    <td>{LOG_LEVEL_LABELS[e.level] ?? e.level}</td>
-                    <td>{e.message}</td>
-                    <td>{e.page || '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {clientLogs.length > CLIENT_LOGS_PREVIEW_COUNT && (
-              <Pill onClick={() => setLogsExpanded((v) => !v)}>
+        {logs.isError && <div className="monitor-query-error" role="alert"><span>客户端异常记录读取失败{logs.data ? '，以下保留上次成功记录' : ''}</span><Pill onClick={() => { void logs.refetch() }}>重试日志</Pill></div>}
+        {!logs.data ? <p className="grid-empty">{logs.isError ? '暂无可用的客户端异常记录' : '客户端异常记录加载中…'}</p>
+            : clientLogs.length === 0 ? <p className="grid-empty">暂无客户端异常上报</p> : <>
+              <div className="monitor-log-scroll">
+                <table className="log-table">
+                  <thead><tr><th>时间</th><th>级别</th><th>消息</th><th>页面</th></tr></thead>
+                  <tbody>{(logsExpanded ? clientLogs : clientLogs.slice(0, CLIENT_LOGS_PREVIEW_COUNT)).map((entry, index) => (
+                    <tr key={`${entry.ts}-${index}`}><td>{formatDateTime(entry.ts)}</td><td>{LOG_LEVEL_LABELS[entry.level] ?? entry.level}</td><td>{entry.message}</td><td>{entry.page || '—'}</td></tr>
+                  ))}</tbody>
+                </table>
+              </div>
+              {clientLogs.length > CLIENT_LOGS_PREVIEW_COUNT && <Pill onClick={() => setLogsExpanded(value => !value)}>
                 {logsExpanded ? `收起（只看最近 ${CLIENT_LOGS_PREVIEW_COUNT} 条）` : `查看全部 ${clientLogs.length} 条`}
-              </Pill>
-            )}
-          </>
-        )}
-      </div>
+              </Pill>}
+            </>}
+      </section>
     </div>
   )
 }

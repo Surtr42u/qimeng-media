@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useBlocker, useNavigate } from 'react-router'
+import { useBlocker } from 'react-router'
 import { VocabularyGroupsCard } from '@/components/manage/VocabularyGroupsCard'
 import {
   VocabularyPromptDialog,
@@ -7,10 +7,9 @@ import {
 } from '@/components/manage/VocabularyEditDialogs'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { LoadingHint } from '@/components/ui/loading-hint'
-import { Pill } from '@/components/ui/pill'
+import { ManagePageHeader } from '@/components/manage/ManagePageHeader'
 import { useSaveSourceGroups, useSourceGroups } from '@/hooks/use-source-groups'
 import { batchFailureReason } from '@/lib/batch'
-import { MAINTENANCE_FILES_PATH } from '@/lib/route-keys'
 import {
   addAlias,
   addCharacter,
@@ -80,7 +79,6 @@ const RULE_LINES = [
 ]
 
 export default function VocabularyEditPage() {
-  const navigate = useNavigate()
   const { data, isLoading, isError, refetch } = useSourceGroups()
   const saveGroups = useSaveSourceGroups()
 
@@ -138,14 +136,8 @@ export default function VocabularyEditPage() {
   }, [dirty])
 
   return (
-    <div className="page" id="page-maintenance-files-vocabulary-edit">
-      <div className="settings-actions">
-        <Pill onClick={() => navigate(MAINTENANCE_FILES_PATH)}>← 返回数据管理</Pill>
-      </div>
-      <div className="page-head">
-        <h2>{SCREEN_TITLE}</h2>
-        <p>{SCREEN_DESC}</p>
-      </div>
+    <div className="page manage-workspace" id="page-maintenance-files-vocabulary-edit">
+      <ManagePageHeader title={SCREEN_TITLE} description={SCREEN_DESC} />
 
       {errorMsg !== null ? (
         <div className="vocab-banner vocab-banner--error">

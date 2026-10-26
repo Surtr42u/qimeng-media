@@ -1,14 +1,16 @@
 import { useMemo } from 'react'
-import { useNavigate, useParams, useSearchParams } from 'react-router'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { ContentRankGrid } from '@/components/data/ContentRankGrid'
 import { RankRowList } from '@/components/data/RankRowList'
+import { StatsQueryContent } from '@/components/data/StatsQueryContent'
+import { PageHeading } from '@/components/ui/page-heading'
 import { useRankings, useStatsTopAuthors, useStatsTopTags } from '@/hooks/use-stats'
-import { STATS_SEGMENTS, STATS_RANK_LIMIT, STATS_LOAD_FAILED_MESSAGE } from '@/lib/stats-contract'
-import { LoadingHint } from '@/components/ui/loading-hint'
+import { STATS_SEGMENTS, STATS_RANK_LIMIT } from '@/lib/stats-contract'
 import { MAX_PAGE_SIZE } from '@/lib/constants'
 import { authorRankRows, tagRankRows } from '@/lib/rank-rows'
 import {
   assetDetail,
+  DATA_PATH,
   COLLECTION_AUTHOR,
   COLLECTION_TAG,
   RANK_AUTHORS,
@@ -42,18 +44,14 @@ export default function RanksPage() {
   const authors = authorsQuery.data ?? []
   const active = key === RANK_CONTENT ? contentRank : key === RANK_TAGS ? tagsQuery : authorsQuery
 
-  // 标签/作者行加工口径单源在 lib/rank-rows.ts（DOMAIN_RULES 口径）；完整榜单页全量展示
+  // 标签/作者行加工口径单源在 lib/rank-rows.ts（DOMAIN_RULES 口径）；完整榜单页按协议上限展示
   const tagRows = useMemo(() => tagRankRows(tags), [tags])
   const authorRows = useMemo(() => authorRankRows(authors), [authors])
 
   return (
-    <div className="page" id="page-ranks">
-      <div className="page-head">
-        <h2>{RANK_PAGE_TITLES[key]}</h2>
-        <p>{segment.label} · {key === RANK_CONTENT ? `前 ${MAX_PAGE_SIZE}` : `前 ${STATS_RANK_LIMIT}`} 项</p>
-      </div>
-      {active.isError ? <div role="alert"><p>{STATS_LOAD_FAILED_MESSAGE}</p><button type="button" className="pill" onClick={() => void active.refetch()}>重试</button></div>
-        : active.isPending ? <LoadingHint /> : key === RANK_CONTENT ? (
+    <div className="page personal-workspace data-workspace" id="page-ranks">
+      <PageHeading title={RANK_PAGE_TITLES[key]} description={`${segment.label} · ${key === RANK_CONTENT ? `前 ${MAX_PAGE_SIZE}` : `前 ${STATS_RANK_LIMIT}`} 项`} actions={<Link className="workspace-link" to={`${DATA_PATH}?${new URLSearchParams({ range: segment.trends })}`}>返回数据</Link>} />
+      <StatsQueryContent query={active} label={RANK_PAGE_TITLES[key]}>{key === RANK_CONTENT ? (
         <div className="rank-card">
           <p className="rank-note">按热度</p>
           <ContentRankGrid
@@ -73,7 +71,7 @@ export default function RanksPage() {
             }
           />
         </div>
-      )}
+      )}</StatsQueryContent>
     </div>
   )
 }

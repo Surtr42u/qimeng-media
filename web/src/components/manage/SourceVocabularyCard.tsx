@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 import { Pill } from '@/components/ui/pill'
 import { useSaveSourceVocabulary, useSourceVocabulary } from '@/hooks/use-authors'
 import { batchFailureReason } from '@/lib/batch'
+import { ManageQueryError } from './ManagePageHeader'
 
 /**
  * 通用来源词表卡（2026-09-28 自设置页迁入文件管理域——词表服务上传挂靠场景，
@@ -11,30 +12,37 @@ import { batchFailureReason } from '@/lib/batch'
  * （trim 非空、重复不加——与服务端 400 去重口径对齐，省一次白打请求）。
  * 资产编辑页来源区（SourceSelectField）的快捷选项共用本词表。
  */
-export function SourceVocabularyCard() {
-  const { data: vocabData, isLoading } = useSourceVocabulary()
+export function SourceVocabularyCard({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => void }) {
+  const query = useSourceVocabulary()
+  const { data: vocabData, isLoading } = query
   const saveVocab = useSaveSourceVocabulary()
   const [vocabDraft, setVocabDraft] = useState<string[] | null>(null)
   const [vocabInput, setVocabInput] = useState('')
   const vocab: string[] = vocabDraft ?? vocabData?.sources ?? []
+  const busy = saveVocab.isPending || isLoading || query.isError || vocabData === undefined
 
   const addVocabWord = (): void => {
+    if (busy) return
     const word = vocabInput.trim()
     if (word === '') return
-    if (!vocab.includes(word)) setVocabDraft([...vocab, word])
+    if (!vocab.includes(word)) { setVocabDraft([...vocab, word]); onDirtyChange(true) }
     setVocabInput('')
   }
 
   const removeVocabWord = (word: string): void => {
+    if (busy) return
     setVocabDraft(vocab.filter((w) => w !== word))
+    onDirtyChange(true)
   }
 
   const doSaveVocab = (): void => {
+    if (busy || vocabDraft === null) return
     saveVocab.mutate(
       { sources: vocab },
       {
         onSuccess: () => {
           setVocabDraft(null)
+          onDirtyChange(false)
           toast.success('通用来源词表已保存')
         },
         onError: (err) => toast.error(`通用来源词表保存失败：${batchFailureReason(err)}`),
@@ -46,12 +54,13 @@ export function SourceVocabularyCard() {
     <div className="settings-card">
       <h3>通用来源词表</h3>
       <p>资产编辑页来源区与上传挂靠来源区的建议词（获取渠道/平台名，如「forum-c」）· 全员共享，服务端统一保存</p>
+      {query.isError && <ManageQueryError retry={() => { void query.refetch() }}>来源词表读取失败，草稿保留；重新读取后再保存。</ManageQueryError>}
       <div className="source-chips">
         {vocab.map((word) => (
           <Pill
             key={word}
             active
-            disabled={saveVocab.isPending}
+            disabled={busy}
             onClick={() => removeVocabWord(word)}
             title="点击移除该建议词"
           >
@@ -72,6 +81,7 @@ export function SourceVocabularyCard() {
           placeholder="新来源词，回车加入词表草稿"
           autoComplete="off"
           value={vocabInput}
+          disabled={busy}
           onChange={(e) => setVocabInput(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
@@ -86,11 +96,12 @@ export function SourceVocabularyCard() {
         <button
           className="save-btn"
           type="button"
-          disabled={saveVocab.isPending || (vocabDraft === null && vocab.length === 0)}
+          disabled={busy || vocabDraft === null}
           onClick={doSaveVocab}
         >
           {saveVocab.isPending ? '保存中…' : '保存来源词表'}
         </button>
+        <Pill disabled={busy || vocabDraft === null} onClick={() => { setVocabDraft(null); setVocabInput(''); onDirtyChange(false) }}>放弃修改</Pill>
       </div>
     </div>
   )

@@ -1,38 +1,25 @@
-import { memo, useCallback, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router'
+import { memo, useCallback } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router'
+import { BarChart3, Database, Heart, History, Settings, Users, X } from 'lucide-react'
+import { toast } from 'sonner'
 import type { HistoryItem } from '@/api/generated'
 import { MediaCard } from '@/components/media/MediaCard'
 import { InfiniteTail } from '@/components/media/InfiniteTail'
+import { MineContentTabs } from '@/components/shell/MineContentTabs'
 import { SearchIcon } from '@/components/shell/icons'
 import { LoadingHint } from '@/components/ui/loading-hint'
+import { PageHeading } from '@/components/ui/page-heading'
+import { QueryNotice } from '@/components/ui/query-notice'
 import { SkeletonGrid } from '@/components/ui/skeleton-grid'
-import { useAutoMore } from '@/hooks/use-auto-more'
-import { assetToCard, useAssetsInfinite } from '@/hooks/use-assets'
-import { useAuthors, useToggleFollow } from '@/hooks/use-authors'
-import { useHistoryInfinite } from '@/hooks/use-history'
-import { useLibraries } from '@/hooks/use-libraries'
-import { useStatsOverview } from '@/hooks/use-stats'
+import { assetToCard } from '@/hooks/use-assets'
+import { useMineWorkspace, type MineTab } from '@/hooks/use-mine-workspace'
 import { useThumbSize } from '@/hooks/use-thumb-size'
-import { DEFAULT_PAGE_SIZE, LOCALE_ZH } from '@/lib/constants'
-import { formatBytes, formatDateTime, formatDuration } from '@/lib/format'
-import { groupHistory } from '@/lib/history-grouping'
-import { assetDetail } from '@/lib/route-keys'
+import { LOCALE_ZH } from '@/lib/constants'
+import { authorDisplayName, formatBytes, formatDateTime, formatDuration } from '@/lib/format'
+import { batchFailureReason } from '@/lib/batch'
+import { statsReadMessage } from '@/lib/stats-contract'
+import { assetDetail, AUTHORS_PATH, COLLECTION_AUTHOR, DATA_PATH, HOME_PATH, MAINTENANCE_LIBRARIES_PATH, SETTINGS_PATH, collectionPath } from '@/lib/route-keys'
 import { applyThumbSize } from '@/lib/thumb-size'
-
-/**
- * 我的页（原型 #page-mine 移植）：资料卡 + 三 Tab（关注/收藏/历史），阶段 B 已接真实数据。
- * 关注列表 = GET /authors 过滤 followed（用户拍板：只显示已关注，全部作者在作者管理页）；
- * 收藏 = GET /assets favorite 筛选（favoriteAt 倒序）；历史 = GET /history 按 lastViewedAt
- * 分「今天/昨天/更早」三组（已看完 = lastPositionSeconds >= durationMs/1000，GUIDE_API 口径）。
- */
-
-type MineTab = 'follow' | 'fav' | 'history'
-
-const TABS: { key: MineTab; label: string }[] = [
-  { key: 'follow', label: '关注作者' },
-  { key: 'fav', label: '收藏作品' },
-  { key: 'history', label: '浏览历史' },
-]
 
 /** 历史卡渲染项：协议 HistoryItem + 客户端推导的「已看完」徽标 */
 type HistRenderItem = HistoryItem & { isDone?: boolean }
@@ -46,7 +33,7 @@ function HistCardItemImpl({ item, onOpen }: { item: HistRenderItem; onOpen?: (id
   const [thumbSize] = useThumbSize()
   const handleClick = onOpen ? () => onOpen(item.id) : undefined
   return (
-    <article className="hist-card" onClick={handleClick} role={handleClick ? 'button' : undefined}>
+    <article className="hist-card" onClick={handleClick} role={handleClick ? 'button' : undefined} tabIndex={handleClick ? 0 : undefined} aria-label={item.fileName} onKeyDown={event => { if (handleClick && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); handleClick() } }}>
       <div className="hc-cover">
         {/* 与 MediaCard 同款优化口径：lazy + 异步解码避免滚动掉帧 */}
         <img src={applyThumbSize(item.thumbUrl ?? '', thumbSize)} alt="" loading="lazy" decoding="async" />
@@ -65,200 +52,52 @@ function HistCardItemImpl({ item, onOpen }: { item: HistRenderItem; onOpen?: (id
  *  引用稳定（isDone 盖章在 useMemo 派生层）+ onOpen 页面级 useCallback。 */
 const HistCardItem = memo(HistCardItemImpl)
 
+/** 个人内容分区独立反馈；标签及历史筛选写入URL，切回时不丢当前位置。 */
 export default function MinePage() {
   const navigate = useNavigate()
-  const [tab, setTab] = useState<MineTab>('follow')
-  const [query, setQuery] = useState('')
+  const [params, setParams] = useSearchParams()
+  const tab: MineTab = params.get('tab') === 'fav' ? 'fav' : params.get('tab') === 'history' ? 'history' : 'follow'
+  const query = params.get('q') ?? ''
+  const changeParam = (key: string, value: string) => setParams(previous => { const next = new URLSearchParams(previous); if (value) next.set(key, value); else next.delete(key); return next }, { replace: true })
+  const data = useMineWorkspace(tab, query)
+  const { librariesQuery, overviewQuery, authorsQuery, toggleFollow, favQuery, histQuery, favItems, histItems, followedAuthors, histRenderGroups } = data
+  const overview = overviewQuery.data
+  const openCard = useCallback((id?: string) => { if (id) navigate(assetDetail(id)) }, [navigate])
+  const retryFav = () => { if (favQuery.isFetchNextPageError) void favQuery.fetchNextPage({ cancelRefetch: false }); else void favQuery.refetch() }
+  const retryHist = () => { if (histQuery.isFetchNextPageError) void histQuery.fetchNextPage({ cancelRefetch: false }); else void histQuery.refetch() }
 
-  // 稳定打开回调（MediaCard/历史卡 memo 生效前提，2026-09-20 全库审查）
-  const openCard = useCallback(
-    (id?: string) => {
-      if (id) navigate(assetDetail(id))
-    },
-    [navigate],
-  )
-
-  const { data: libraries } = useLibraries()
-  const { data: overview } = useStatsOverview()
-  const { data: authors = [], isLoading: authorsLoading } = useAuthors()
-  const toggleFollow = useToggleFollow()
-
-  // 收藏：favoriteAt 倒序（协议 sort=favoriteAt 仅在收藏筛选下语义成立，DOMAIN_RULES §3）。
-  // enabled 按 tab 挂起（2026-09-20 审查：此前进页即三连发——默认关注 tab 下
-  // 收藏 60 条+历史 60 条白打；切换时再拉，缓存命中即时显示）
-  const favQuery = useAssetsInfinite({ favorite: true, sort: 'favoriteAt', order: 'desc' }, tab === 'fav')
-  const favItems = useMemo(() => favQuery.data?.pages.flatMap((p) => p.items ?? []) ?? [], [favQuery.data])
-
-  const histQuery = useHistoryInfinite(DEFAULT_PAGE_SIZE, tab === 'history')
-  const histItems = useMemo(
-    () => histQuery.data?.pages.flatMap((p) => p.items ?? []) ?? [],
-    [histQuery.data],
-  )
-
-  // E3 无感加载哨兵 ×2（收藏/历史两 pane 各自，对齐首页 use-auto-more 语义：
-  // 触底提前 6 项拉下一页）。onHit 双守卫：isFetchingNextPage 防重复拉页；
-  // isPlaceholderData 前瞻防混拼（useAssetsInfinite 已配 keepPreviousData，
-  // 守卫在换键期间真实生效；useHistoryInfinite 无换键场景恒 false）。
-  // pane 切换走 hidden 属性——display:none 下 IO 恒不相交，隐藏 pane 不会误拉。
-  const favSentinelRef = useAutoMore(favQuery.hasNextPage, () => {
-    if (!favQuery.isFetchingNextPage && !favQuery.isPlaceholderData) void favQuery.fetchNextPage()
-  })
-  const histSentinelRef = useAutoMore(histQuery.hasNextPage, () => {
-    if (!histQuery.isFetchingNextPage && !histQuery.isPlaceholderData) void histQuery.fetchNextPage()
-  })
-
-  // 仅显示已关注（用户拍板语义：未关注作者在作者管理页处理）
-  const followedAuthors = useMemo(() => authors.filter((a) => a.followed), [authors])
-
-  // 分组：口径单源 lib/history-grouping.ts（今天/昨天/更早 + 标题子串过滤，ADR-0008 抽离）
-  const histGroups = useMemo(() => groupHistory(histItems, query), [histItems, query])
-
-  // isDone 盖章在 useMemo 派生层（memo 化 HistCardItem 的前置配套）：渲染处
-  // 逐条新建 {…h, isDone} 对象会让每张卡每渲染收到新引用（浅等恒 false、
-  // memo 失效）——派生层只在分组数据变化时重建，卡片 props 引用随分组稳定
-  const histRenderGroups = useMemo(
-    () =>
-      histGroups.map((g) => ({
-        ...g,
-        items: g.items.map(
-          (h): HistRenderItem => ({
-            ...h,
-            isDone:
-              h.durationMs != null && h.lastPositionSeconds != null
-              && h.lastPositionSeconds * 1000 >= h.durationMs,
-          }),
-        ),
-      })),
-    [histGroups],
-  )
-
-  return (
-    <div className="page" id="page-mine">
-      <section className="profile-card">
-        <div className="profile-main">
-          <h2>绮梦</h2>
-          <p>本地管理员</p>
-        </div>
-        <dl className="profile-stats">
-          <div>
-            <dd>{libraries?.length ?? 0}</dd>
-            <dt>媒体库</dt>
-          </div>
-          <div>
-            <dd>{(overview?.totalFiles ?? 0).toLocaleString(LOCALE_ZH)}</dd>
-            <dt>文件总数</dt>
-          </div>
-          <div>
-            <dd>{formatBytes(overview?.totalSizeBytes ?? 0)}</dd>
-            <dt>总大小</dt>
-          </div>
-        </dl>
-      </section>
-      <div className="tabs" role="tablist">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            className={tab === t.key ? 'tab-btn active' : 'tab-btn'}
-            data-mtab={t.key}
-            type="button"
-            onClick={() => setTab(t.key)}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-      {/* pane 显隐沿用原型 hidden 属性（CSS .m-pane[hidden] 已兜底 display:none） */}
-      <div className="m-pane" id="mpane-follow" hidden={tab !== 'follow'}>
-        {authorsLoading ? (
-          <LoadingHint className="a-empty" />
-        ) : followedAuthors.length ? (
-          <div className="follow-list">
-            {followedAuthors.map((a) => (
-              <article className="follow-card" key={a.id}>
-                <div className="follow-info">
-                  <p className="follow-name">{a.displayName}</p>
-                  <p className="follow-sub">{a.fileCount ?? 0} 个文件</p>
-                </div>
-                <button
-                  className={`follow-btn${a.followed ? '' : ' follow-btn--idle'}`}
-                  type="button"
-                  disabled={toggleFollow.isPending}
-                  onClick={() => a.id && toggleFollow.mutate({ authorId: a.id, follow: !a.followed })}
-                >
-                  {a.followed ? '已关注' : '关注'}
-                </button>
-              </article>
-            ))}
-          </div>
-        ) : (
-          <p className="a-empty">暂无关注作者</p>
-        )}
-      </div>
-      <div className="m-pane" id="mpane-fav" hidden={tab !== 'fav'}>
-        <div className="hist-toolbar">
-          <p className="m-note">收藏 · {favQuery.data?.pages[0]?.totalMatched ?? 0}</p>
-        </div>
-        {favQuery.isLoading && favItems.length === 0 ? (
-          <SkeletonGrid className="media-grid" count={8} />
-        ) : (
-          <div className="media-grid" id="favGrid">
-            {favItems.map((f) => (
-              <MediaCard key={f.id} {...assetToCard(f)} onOpen={openCard} />
-            ))}
-            {favItems.length === 0 ? (
-              <p className="grid-empty">暂无收藏内容</p>
-            ) : null}
-          </div>
-        )}
-        {/* E3 无感加载尾部（三件套见 components/media/InfiniteTail） */}
-        <InfiniteTail
-          isFetchingNextPage={favQuery.isFetchingNextPage}
-          hasNextPage={favQuery.hasNextPage}
-          itemCount={favItems.length}
-          sentinelRef={favSentinelRef}
-        />
-      </div>
-      <div className="m-pane" id="mpane-history" hidden={tab !== 'history'}>
-        <div className="hist-toolbar">
-          <p className="m-note">按观看时间分组</p>
-          <div className="hist-search">
-            <input
-              type="text"
-              id="histSearch"
-              placeholder="搜索你的历史记录"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-            <SearchIcon />
-          </div>
-        </div>
-        {histRenderGroups.map((g) => (
-          <div className="hist-group2" key={g.key}>
-            <h3>
-              {g.label} · {g.items.length}
-            </h3>
-            <div className="hist-grid">
-              {g.items.map((h) => (
-                <HistCardItem key={h.id} item={h} onOpen={openCard} />
-              ))}
-            </div>
-          </div>
-        ))}
-        {/* 首拉加载提示：同收藏 pane（isLoading = 无数据且在拉取，切换 tab 才
-            enabled 拉取，慢查询时此前整 pane 空白无反馈） */}
-        {histQuery.isLoading ? (
-          <LoadingHint />
-        ) : histGroups.length === 0 ? (
-          <p className="grid-empty">{query.trim() ? '没有匹配的历史记录' : '暂无浏览记录'}</p>
-        ) : null}
-        {/* E3 无感加载尾部（三件套见 components/media/InfiniteTail） */}
-        <InfiniteTail
-          isFetchingNextPage={histQuery.isFetchingNextPage}
-          hasNextPage={histQuery.hasNextPage}
-          itemCount={histItems.length}
-          sentinelRef={histSentinelRef}
-        />
-      </div>
-    </div>
-  )
+  return <div className="page personal-workspace mine-workspace" id="page-mine">
+    <PageHeading title="我的" description="关注的作者、收藏的作品与最近的浏览足迹" actions={<><Link className="workspace-link" to={DATA_PATH}><BarChart3 aria-hidden="true" />查看数据</Link><Link className="workspace-link" to={SETTINGS_PATH}><Settings aria-hidden="true" />设置</Link></>} />
+    <section className="profile-card mine-hero">
+      <div className="mine-hero-main"><span className="mine-hero-icon"><Database aria-hidden="true" /></span><div><h3>我的媒体空间</h3><p>当前服务器的媒体库与内容</p><Link to={MAINTENANCE_LIBRARIES_PATH}>管理媒体库</Link></div></div>
+      <dl className="profile-stats"><div><dd>{librariesQuery.data == null ? '—' : librariesQuery.data.length.toLocaleString(LOCALE_ZH)}</dd><dt>已登记媒体库</dt></div><div><dd>{overview?.totalFiles == null ? '—' : overview.totalFiles.toLocaleString(LOCALE_ZH)}</dd><dt>文件总数</dt></div><div><dd>{overview?.totalSizeBytes == null ? '—' : formatBytes(overview.totalSizeBytes)}</dd><dt>总大小</dt></div></dl>
+    </section>
+    {librariesQuery.isError && <QueryNotice message="媒体库列表读取失败" retained={librariesQuery.data != null} busy={librariesQuery.isFetching} onRetry={() => { void librariesQuery.refetch() }} />}
+    {overviewQuery.isError && <QueryNotice message={statsReadMessage(overviewQuery.error, '媒体库概览')} retained={!!overview} busy={overviewQuery.isFetching} onRetry={() => { void overviewQuery.refetch() }} />}
+    <MineContentTabs tab={tab} onChange={next => changeParam('tab', next)} />
+    <section className="m-pane mine-pane" role="tabpanel" id="mine-panel-follow" aria-labelledby="mine-tab-follow" hidden={tab !== 'follow'} tabIndex={0}>
+      <div className="workspace-card-head"><div><h3><Users aria-hidden="true" />关注作者</h3><p className="rank-note">{authorsQuery.data ? `已关注 ${followedAuthors.length} 位作者 · 点名字查看作品` : '集中查看你关注的创作者'}</p></div><Link to={AUTHORS_PATH}>管理作者</Link></div>
+      {authorsQuery.isError && <QueryNotice message="关注作者读取失败" retained={authorsQuery.data != null} busy={authorsQuery.isFetching} onRetry={() => { void authorsQuery.refetch() }} />}
+      {authorsQuery.isPending ? <LoadingHint /> : followedAuthors.length ? <div className="follow-list mine-follow-grid">{followedAuthors.map(author => {
+        const name = authorDisplayName(author)
+        return <article className="follow-card" key={author.id}><Link className="mine-follow-content" to={collectionPath(COLLECTION_AUTHOR, name)}><span className="mine-author-avatar" aria-hidden="true">{name.slice(0, 1)}</span><div className="follow-info"><p className="follow-name">{name}</p><p className="follow-sub">{(author.fileCount ?? 0).toLocaleString(LOCALE_ZH)} 个文件</p></div></Link><button className="follow-btn" type="button" disabled={!author.id || toggleFollow.isPending || authorsQuery.isError} aria-label={`取消关注 ${name}`} onClick={() => { if (author.id) toggleFollow.mutate({ authorId: author.id, follow: false }, { onError: error => toast.error(`取消关注失败：${batchFailureReason(error)}`) }) }}>{toggleFollow.isPending && toggleFollow.variables?.authorId === author.id ? '处理中…' : '已关注'}</button></article>
+      })}</div> : !authorsQuery.isError && <div className="workspace-empty"><Users aria-hidden="true" /><h4>暂无关注作者</h4><p>关注后，作者和作品入口会集中显示在这里。</p><Link to={AUTHORS_PATH}>去管理作者</Link></div>}
+    </section>
+    <section className="m-pane mine-pane" role="tabpanel" id="mine-panel-fav" aria-labelledby="mine-tab-fav" hidden={tab !== 'fav'} tabIndex={0}>
+      <div className="workspace-card-head"><div><h3><Heart aria-hidden="true" />收藏作品</h3><p className="rank-note">按收藏时间从新到旧 · {favQuery.data ? `已加载 ${favItems.length} 项${favQuery.data.pages[0]?.totalMatched != null ? ` / 共 ${favQuery.data.pages[0].totalMatched} 项` : ''}` : '选择喜欢的作品，方便下次找到'}</p></div></div>
+      {favQuery.isError && <QueryNotice message="收藏读取失败，不能据此判断没有收藏" retained={favItems.length > 0} busy={favQuery.isFetching} onRetry={retryFav} />}
+      {favQuery.isLoading && favItems.length === 0 ? <SkeletonGrid className="media-grid" count={8} /> : favItems.length ? <div className="media-grid" id="favGrid">{favItems.map(item => <MediaCard key={item.id} {...assetToCard(item)} onOpen={openCard} />)}</div> : !favQuery.isError && <div className="workspace-empty"><Heart aria-hidden="true" /><h4>暂无收藏内容</h4><p>浏览作品时收藏，喜欢的内容就会留在这里。</p><Link to={HOME_PATH}>去浏览作品</Link></div>}
+      <InfiniteTail isFetchingNextPage={favQuery.isFetchingNextPage} hasNextPage={favQuery.hasNextPage} itemCount={favItems.length} sentinelRef={data.favSentinelRef} />
+      {favQuery.hasNextPage && <div className="workspace-load-more"><button className="pill" type="button" disabled={favQuery.isFetching} onClick={() => { void favQuery.fetchNextPage({ cancelRefetch: false }) }}>{favQuery.isFetchingNextPage ? '加载中…' : '加载更多收藏'}</button></div>}
+    </section>
+    <section className="m-pane mine-pane" role="tabpanel" id="mine-panel-history" aria-labelledby="mine-tab-history" hidden={tab !== 'history'} tabIndex={0}>
+      <div className="workspace-card-head"><div><h3><History aria-hidden="true" />浏览历史</h3><p className="rank-note">每个文件最近一次浏览 · 已加载 {histItems.length} 项</p></div><div className="hist-search mine-history-search"><input type="search" aria-label="筛选已加载历史" placeholder="筛选已加载记录的文件名" value={query} onChange={event => changeParam('q', event.target.value)} /><SearchIcon /></div></div>
+      {query.trim() && <div className="mine-history-filter"><p>仅筛选已加载的记录，可继续加载查找更多。</p><button className="workspace-link" type="button" onClick={() => changeParam('q', '')}><X aria-hidden="true" />清空筛选</button></div>}
+      {histQuery.isError && <QueryNotice message="浏览历史读取失败，不能据此判断没有记录" retained={histItems.length > 0} busy={histQuery.isFetching} onRetry={retryHist} />}
+      {histRenderGroups.map(group => <div className="hist-group2" key={group.key}><h3>{group.label}<span>{group.items.length} 项</span></h3><div className="hist-grid">{group.items.map(item => <HistCardItem key={item.id} item={item} onOpen={openCard} />)}</div></div>)}
+      {histQuery.isLoading && histItems.length === 0 ? <LoadingHint /> : histRenderGroups.length === 0 && !histQuery.isError && <div className="workspace-empty"><History aria-hidden="true" /><h4>{query.trim() ? '已加载记录中没有匹配项' : '暂无浏览记录'}</h4><p>{query.trim() ? '换个文件名关键词，或继续加载更多历史。' : '打开作品后，最近浏览的内容会出现在这里。'}</p>{!query.trim() && <Link to={HOME_PATH}>去浏览作品</Link>}</div>}
+      {!query.trim() ? <InfiniteTail isFetchingNextPage={histQuery.isFetchingNextPage} hasNextPage={histQuery.hasNextPage} itemCount={histItems.length} sentinelRef={data.histSentinelRef} /> : histQuery.data != null && <p className="rank-note">筛选匹配 {data.histFilteredCount} 项 · 已加载 {histItems.length} 项</p>}
+      {histQuery.hasNextPage && <div className="workspace-load-more"><button className="pill" type="button" disabled={histQuery.isFetching} onClick={() => { void histQuery.fetchNextPage({ cancelRefetch: false }) }}>{histQuery.isFetchingNextPage ? '加载中…' : '加载更多历史'}</button></div>}
+    </section>
+  </div>
 }

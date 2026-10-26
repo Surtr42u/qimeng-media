@@ -1,8 +1,8 @@
-import { useNavigate } from 'react-router'
 import { AuthorMirrorCard } from '@/components/manage/AuthorMirrorCard'
 import { SourceVocabularyCard } from '@/components/manage/SourceVocabularyCard'
-import { Pill } from '@/components/ui/pill'
-import { MAINTENANCE_FILES_PATH } from '@/lib/route-keys'
+import { ManagePageHeader } from '@/components/manage/ManagePageHeader'
+import { ManageUnsavedGuard } from '@/components/manage/ManageUnsavedGuard'
+import { useState } from 'react'
 
 /**
  * 来源词表子页（数据管理 hub「来源词表」卡 → /app/maintenance/files/vocabulary）。
@@ -12,20 +12,15 @@ import { MAINTENANCE_FILES_PATH } from '@/lib/route-keys'
  * 来源区快捷联想、镜像即挂靠作者清单真相），经 hub 入口卡进入。
  */
 export default function LibraryVocabularyPage() {
-  const navigate = useNavigate()
-
+  const [sourceDirty, setSourceDirty] = useState(false)
+  const [mirrorDirty, setMirrorDirty] = useState(false)
   return (
-    <div className="page" id="page-maintenance-files-vocabulary">
-      <div className="settings-actions">
-        <Pill onClick={() => navigate(MAINTENANCE_FILES_PATH)}>← 返回数据管理</Pill>
-      </div>
-      <div className="page-head">
-        <h2>来源词表</h2>
-        <p>通用来源建议词与作者总表镜像维护，服务上传挂靠与资产编辑来源区</p>
-      </div>
+    <div className="page manage-workspace" id="page-maintenance-files-vocabulary">
+      <ManagePageHeader title="来源词表与镜像" description="来源词表用于获取渠道建议；镜像用于导出作者清单，两者分别保存" />
 
-      <SourceVocabularyCard />
-      <AuthorMirrorCard />
+      <SourceVocabularyCard onDirtyChange={setSourceDirty} />
+      <AuthorMirrorCard onDirtyChange={setMirrorDirty} />
+      <ManageUnsavedGuard dirty={sourceDirty || mirrorDirty} />
     </div>
   )
 }

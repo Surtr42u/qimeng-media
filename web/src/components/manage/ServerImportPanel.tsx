@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { toast } from 'sonner'
 import type { LocalSyncItem, LocalSyncStatus } from '@/api/generated'
 import { batchFailureReason } from '@/lib/batch'
@@ -92,9 +93,11 @@ function ListSections({ items, recentSynced }: { items: LocalSyncItem[]; recentS
   )
 }
 
-/** 本机同步卡（维护页维护工具区，渲染在库文件快照备份卡之后） */
-export function LocalSyncCard() {
-  const { data: status, isLoading } = useLocalSyncStatus()
+/** 高级目录投放与手动上传不同；展开时才持续轮询，折叠只保留初次状态查询。 */
+export function ServerImportPanel() {
+  const [expanded, setExpanded] = useState(false)
+  const query = useLocalSyncStatus(expanded)
+  const { data: status, isLoading } = query
   const trigger = useTriggerLocalSync()
 
   const enabled = status?.enabled === true
@@ -105,9 +108,10 @@ export function LocalSyncCard() {
   const recentSynced = status?.recentSynced ?? []
   /** 未配置同步根：按钮禁用并提示服务端配置入口 */
   const unconfigured = !enabled && root === ''
-  const triggerDisabled = trigger.isPending || !enabled || lastError !== ''
+  const triggerDisabled = trigger.isPending || query.isError || !enabled || lastError !== ''
 
   const onTrigger = (): void => {
+    if (triggerDisabled) return
     trigger.mutate(undefined, {
       onSuccess: () => toast.success('已触发同步扫描，结果稍后自动刷新'),
       onError: (err) => toast.error(batchFailureReason(err)),
@@ -115,12 +119,11 @@ export function LocalSyncCard() {
   }
 
   return (
-    <div className="chart-card">
-      <h3>
-        本机同步
-        {status && <StatusBadges status={status} />}
-      </h3>
-      <p>同步根目录文件自动匹配入库 · 媒体走直传同款校验，作者 TXT 走片段导入</p>
+    <details className="chart-card server-import-panel" onToggle={event => setExpanded(event.currentTarget.open)}>
+      <summary><span><strong>服务器目录自动导入</strong><small>高级入口 · 成功后移走同步源文件</small></span>{status && <StatusBadges status={status} />}</summary>
+      <div className="server-import-body">
+      <p className="rank-note">用于无人值守投放，不是上传文件夹选择器。按服务器目录名匹配库，提取媒体信息并处理作者 TXT；不提供逐批作者与来源选择。</p>
+      {query.isError && <div className="ls-warn" role="alert">通道状态更新失败{status ? '，以下为上次读数' : ''}<button className="pill" type="button" onClick={() => { void query.refetch() }}>重新读取</button></div>}
       {status ? (
         <>
           <div className="ls-info">
@@ -144,13 +147,14 @@ export function LocalSyncCard() {
               {trigger.isPending ? '触发中…' : '立即同步'}
             </button>
             {unconfigured && (
-              <span className="ls-hint">未配置同步根（服务端 QIMENG_LOCAL_SYNC_ROOT）</span>
+              <span className="ls-hint">尚未配置服务器自动导入目录，日常使用上方手动上传即可。</span>
             )}
           </div>
         </>
       ) : (
         <p className="grid-empty">{isLoading ? '通道状态加载中…' : '通道状态暂不可用'}</p>
       )}
-    </div>
+      </div>
+    </details>
   )
 }
