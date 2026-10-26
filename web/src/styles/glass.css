@@ -2843,7 +2843,8 @@ li.dir-file-row.ms-row-selected { background: var(--qm-hover); }
 .data-rank-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
 .data-workspace .rank-card > .query-notice, .data-workspace .chart-card > .query-notice { margin-top: 16px; }
 .data-rank-grid .rank-card > ul { margin-top: 14px; }
-.data-rank-grid .rank-card ul > li { padding: 12px 0; min-height: 45px; }
+/* 三张榜单共用双行容量，单行指标垂直居中，避免作者副标题撑高后逐行错位。 */
+.data-rank-grid .rank-card ul > li { padding: 12px 10px; min-height: 72px; align-content: center; }
 .data-secondary-grid .donut-row { flex-direction: column; gap: 14px; }
 .data-secondary-grid .legend { width: 100%; }
 .donut-visual { position: relative; flex-shrink: 0; }
