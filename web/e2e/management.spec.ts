@@ -77,7 +77,7 @@ test('管理入口按任务分组；上传与文件整理分别进入独立页�
   for (const card of await page.locator('.manage-hub-entry').all()) {
     await expect(card.locator('.manage-entry-top > svg')).toHaveCount(1)
     // 全局 zoom=1.1 会让浏览器回传亚像素值（约35.994px），验证尺寸而非字符串舍入。
-    expect(await card.locator('.manage-entry-top > svg').evaluate(icon => parseFloat(getComputedStyle(icon).width))).toBeCloseTo(36, 1)
+    expect(await card.locator('.manage-entry-top > svg').evaluate('icon => parseFloat(getComputedStyle(icon).width)')).toBeCloseTo(36, 1)
   }
   await page.getByRole('link', { name: /上传文件/ }).click()
   await expect(page.getByRole('heading', { name: '上传文件', exact: true })).toBeVisible()
