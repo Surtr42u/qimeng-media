@@ -2,7 +2,7 @@ import { toast } from 'sonner'
 import type { LocalSyncItem, LocalSyncStatus } from '@/api/generated'
 import { batchFailureReason } from '@/lib/batch'
 import { LOCALE_ZH } from '@/lib/constants'
-import { useLocalSyncStatus, useTriggerLocalSync } from '@/hooks/use-local-sync'
+import { useTriggerLocalSync } from '@/hooks/use-local-sync'
 
 /**
  * 本机同步卡（维护页）：通道状态徽标 + 信息行 + 通道警示条 + 同步源条目
@@ -92,9 +92,8 @@ function ListSections({ items, recentSynced }: { items: LocalSyncItem[]; recentS
   )
 }
 
-/** 本机同步卡（维护页维护工具区，渲染在库文件快照备份卡之后） */
-export function LocalSyncCard() {
-  const { data: status, isLoading } = useLocalSyncStatus()
+/** 页面持有唯一状态轮询，概览与完整操作区共享，避免重复订阅各自开定时器。 */
+export function LocalSyncCard({ status, isLoading }: { status?: LocalSyncStatus; isLoading: boolean }) {
   const trigger = useTriggerLocalSync()
 
   const enabled = status?.enabled === true

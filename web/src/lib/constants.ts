@@ -54,9 +54,8 @@ export const SSE_MAX_RECONNECT_DELAY_MS = 30_000
 /** 中文排序 locale（相册按名称排序/搜索标签池升序共用——与旧项目排序口径一致） */
 export const LOCALE_ZH = 'zh-Hans-CN'
 
-/** 系统状态轮询间隔（ms）：维护页性能监控 2s 轮询（曲线需连续采样，速率差分按此周期折算 B/s）。
- *  消费方 hooks/use-system-status.ts（refetchInterval）与 pages/MaintenancePage.tsx（差分除数），
- *  两端同源引用，改周期须意识到速率曲线纵轴随之变化。 */
+/** 系统状态轮询间隔（ms）：维护页 2s 轮询；use-maintenance-monitor 持有曲线窗口。
+ *  lib/system-monitor 的两分钟窗口由该周期 × 60 派生，速率除以实际成功采样时间差。 */
 export const STATUS_POLL_INTERVAL_MS = 2000
 
 /** TanStack Query 全局 staleTime（ms）：数据一致性主要由 SSE 事件桥主动失效保证，

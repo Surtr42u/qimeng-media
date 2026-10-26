@@ -812,16 +812,89 @@ button.seg,
 .a-sub, .rank-sub2 { display: block; flex-basis: 100%; font-size: 12px; line-height: 1.4; color: var(--qm-text-muted); margin-top: 2px; }
 .a-list .a-sub { order: 1; }
 
-/* 性能圆环 */
-.gauge-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
-.gauge-card { display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; }
-.gauge { width: 104px; height: 104px; transform: rotate(-90deg); }
-.gauge .ring { fill: none; stroke: var(--qm-border); stroke-width: 10; }
-.gauge-arc { fill: none; stroke-width: 10; stroke-linecap: round; }
-.arc-1.gauge-arc { stroke: var(--qm-chart-1); }
-.arc-2.gauge-arc { stroke: var(--qm-chart-2); }
-.gauge-label { font-size: 14px; font-weight: 500; }
-.gauge-sub { font-size: 12px; color: var(--qm-text-muted); }
+/* 紧凑维护仪表盘：复用玻璃基元与品牌 token，密度按内容区而非外窗宽度适配。 */
+#page-maintenance { container-type: inline-size; }
+.monitor-page-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.monitor-update { color: var(--qm-text-soft); background: var(--qm-chip-bg); border-radius: var(--qm-radius-full); padding: 5px 12px; font-size: 12px; }
+.monitor-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--qm-space-3); }
+.monitor-grid > .chart-card { margin: 0; padding: 20px; min-width: 0; }
+.monitor-span-2 { grid-column: span 2; }
+.monitor-card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+.monitor-card-head > svg { width: 18px; height: 18px; flex-shrink: 0; color: var(--qm-text-soft); }
+.monitor-value { font-size: 30px; line-height: 1.25; font-weight: 650; letter-spacing: -0.6px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.monitor-value small { margin-left: 4px; font-size: 14px; font-weight: 500; letter-spacing: 0; color: var(--qm-text-soft); }
+.monitor-grid .monitor-server { background: linear-gradient(110deg, transparent 40%, var(--qm-primary-soft)), var(--qm-surface); }
+.monitor-server > p { overflow-wrap: anywhere; }
+.monitor-server-meta { display: flex; gap: 20px; flex-wrap: wrap; margin-top: 24px; }
+.monitor-server-meta > div { display: grid; gap: 4px; }
+.monitor-server-meta span, .monitor-muted { color: var(--qm-text-muted); font-size: 12px; }
+.monitor-server-meta strong { font-size: 12px; font-weight: 500; }
+.monitor-update--error { color: var(--qm-warn-text); }
+.monitor-sparkline { height: 54px; margin-top: 10px; }
+.monitor-grid .monitor-footnote { font-size: 11px; margin-top: 3px; }
+.monitor-resource { display: flex; gap: 14px; align-items: center; }
+.monitor-resource p { font-size: 12px; }
+.monitor-gauge { width: 72px; height: 72px; position: relative; flex-shrink: 0; }
+.monitor-gauge svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.monitor-gauge-track, .monitor-gauge-fill { fill: none; stroke-width: 10; }
+.monitor-gauge-track { stroke: var(--qm-border); }
+.monitor-gauge-fill { stroke: var(--qm-chart-1); stroke-linecap: round; }
+.monitor-gauge strong { position: absolute; inset: 0; display: grid; place-items: center; font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.monitor-bar { margin: 12px 0 9px; height: 7px; background: var(--qm-hover-strong); border-radius: var(--qm-radius-full); overflow: hidden; }
+.monitor-bar i { display: block; height: 100%; border-radius: inherit; background: var(--qm-chart-1); }
+.monitor-bar--secondary i { background: var(--qm-chart-2); }
+.monitor-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 12px; }
+.monitor-row strong { font-weight: 500; }
+.monitor-disks { border-top: 1px solid var(--qm-border); margin-top: 14px; padding-top: 6px; }
+.monitor-disks summary { display: list-item; color: var(--qm-text-soft); font-size: 12px; padding: 8px 0; cursor: pointer; }
+.monitor-disks summary span { margin-left: 8px; color: var(--qm-text-muted); }
+.monitor-disks > p, .monitor-volume p { font-size: 12px; }
+.monitor-volume { margin-top: 16px; }
+.monitor-mount { overflow-wrap: anywhere; margin-top: 4px; color: var(--qm-text-muted); }
+.monitor-shortcuts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.monitor-shortcut { display: flex; align-items: center; gap: 10px; border-radius: var(--qm-radius); background: var(--qm-hover); padding: 14px 12px; min-width: 0; color: var(--qm-text); text-decoration: none; transition: background var(--qm-duration-fast) var(--qm-ease-out); }
+.monitor-shortcut:hover { background: var(--qm-hover-strong); }
+.monitor-shortcut > svg { width: 20px; height: 20px; color: var(--qm-primary); flex-shrink: 0; }
+.monitor-shortcut > svg:last-child { width: 14px; height: 14px; margin-left: auto; color: var(--qm-text-muted); }
+.monitor-shortcut > span { min-width: 0; }
+.monitor-shortcut strong { display: block; font-size: 13px; font-weight: 600; }
+.monitor-shortcut small { display: block; font-size: 11px; color: var(--qm-text-soft); overflow-wrap: anywhere; margin-top: 2px; }
+.monitor-network-details { margin-top: var(--qm-space-3); }
+.monitor-network-details > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; min-height: 30px; font-size: 14px; font-weight: 600; cursor: pointer; list-style: none; }
+.monitor-network-details > summary::after { content: '+'; color: var(--qm-text-soft); }
+.monitor-network-details[open] > summary::after { content: '−'; }
+.monitor-network-details > p { margin-top: 12px; }
+.monitor-detail-section { scroll-margin-top: 16px; margin-top: var(--qm-space-3); min-width: 0; }
+.monitor-query-error { display: flex; gap: 12px; justify-content: space-between; align-items: center; flex-wrap: wrap; background: var(--qm-warn-bg); color: var(--qm-warn-text); border-radius: var(--qm-radius); padding: 10px 14px; margin-bottom: 14px; font-size: 12px; }
+.monitor-log-scroll { overflow-x: auto; }
+.monitor-log-scroll .log-table { table-layout: fixed; min-width: 560px; }
+.monitor-log-scroll th:nth-child(1) { width: 100px; }
+.monitor-log-scroll th:nth-child(2) { width: 60px; }
+.monitor-log-scroll th:nth-child(4) { width: 180px; }
+.monitor-log-scroll td { overflow-wrap: anywhere; }
+#page-maintenance summary:focus-visible { outline: 2px solid var(--qm-primary); outline-offset: 2px; border-radius: var(--qm-radius-sm); }
+#page-maintenance .dev-mode-banner { display: flex; align-items: center; gap: 10px; }
+#page-maintenance .dev-mode-banner > svg { flex-shrink: 0; width: 18px; height: 18px; }
+@container (max-width: 940px) {
+  .monitor-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .monitor-server { grid-column: span 2; }
+}
+@container (max-width: 520px) {
+  .monitor-grid { grid-template-columns: minmax(0, 1fr); }
+  .monitor-span-2 { grid-column: auto; }
+  .monitor-shortcuts { grid-template-columns: minmax(0, 1fr); }
+  .monitor-grid > .chart-card { padding: 16px; }
+  .monitor-value { font-size: 28px; }
+  .monitor-server-meta { margin-top: 18px; }
+}
+/* 较矮的桌面窗口收紧垂直留白，保留系统缩放与字号可读性。 */
+@media (max-height: 850px) and (min-width: 1100px) {
+  .monitor-grid { gap: 12px; }
+  .monitor-grid > .chart-card { padding: 16px; }
+  .monitor-card-head { margin-bottom: 10px; }
+  .monitor-server-meta { margin-top: 16px; }
+  .monitor-sparkline { height: 40px; }
+}
 
 /* 维护工具入口卡 + 日志表 */
 .entry-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
