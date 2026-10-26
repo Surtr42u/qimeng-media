@@ -7,6 +7,7 @@
 import { useLocation, useNavigate } from 'react-router'
 import { ALBUMS_PATH, DATA_PATH, HOME_PATH, MAINTENANCE_PATH, MINE_PATH, SETTINGS_PATH } from '@/lib/route-keys'
 import { toggleTheme } from '@/lib/theme'
+import { useSidebarBack } from '@/hooks/use-sidebar-back'
 import {
   AlbumsIcon, BackIcon, DataIcon, HomeIcon, MineIcon, MoonIcon, SettingsIcon, WrenchIcon,
 } from './icons'
@@ -23,14 +24,17 @@ const MAIN_NAV = [
 export function Sidebar() {
   const navigate = useNavigate()
   const { pathname } = useLocation()
+  const { atHome, back } = useSidebarBack()
 
   return (
     <aside className="sidebar">
       <button
         className="sidebar--back"
-        title="返回"
+        title={atHome ? '已在首页' : '返回'}
+        aria-label="返回"
         type="button"
-        onClick={() => navigate(-1)}
+        disabled={atHome}
+        onClick={back}
       >
         <BackIcon />
       </button>

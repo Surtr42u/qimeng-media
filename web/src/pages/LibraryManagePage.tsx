@@ -1,5 +1,5 @@
 import { Link } from 'react-router'
-import { ArchiveRestore, ArrowUpRight, BookOpen, Database, FolderOpen, FolderSearch, Tags, Upload, Users } from 'lucide-react'
+import { ArchiveRestore, BookOpen, Database, FolderOpen, FolderSearch, Tags, Upload, Users } from 'lucide-react'
 import { ManagePageHeader } from '@/components/manage/ManagePageHeader'
 import { MAINTENANCE_FILES_BROWSER_PATH, MAINTENANCE_FILES_VOCAB_EDIT_PATH, MAINTENANCE_FILES_VOCABULARY_PATH, MAINTENANCE_LIBRARIES_PATH, MAINTENANCE_UPLOAD_PATH } from '@/lib/route-keys'
 
@@ -28,7 +28,7 @@ export default function LibraryManagePage() {
     {GROUPS.map(group => <section className="manage-hub-group" key={group.title}>
       <div className="manage-group-head"><h3>{group.title}</h3><p>{group.note}</p></div>
       <div className={`manage-hub-grid${'intake' in group ? ' manage-hub-grid--intake' : ''}`}>{group.entries.map(entry => <Link className={`entry-card manage-hub-entry${'primary' in entry ? ' manage-hub-entry--primary' : ''}`} key={entry.to} to={entry.to}>
-        <div className="manage-entry-top"><entry.Icon aria-hidden="true" />{'badge' in entry && <span className="monitor-update">{entry.badge}</span>}<ArrowUpRight aria-hidden="true" /></div>
+        <div className="manage-entry-top"><entry.Icon aria-hidden="true" />{'badge' in entry && <span className="monitor-update">{entry.badge}</span>}</div>
         <h3>{entry.title}</h3><p>{entry.sub}</p>
       </Link>)}</div>
     </section>)}

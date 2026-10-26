@@ -73,12 +73,45 @@ test('管理入口按任务分组；上传与文件整理分别进入独立页�
   await setup(page)
   await page.goto('/app/maintenance/files')
   for (const name of ['入库与整理', '作者与词表', '迁移与恢复']) await expect(page.getByRole('heading', { name, exact: true })).toBeVisible()
+  // 每张卡仅保留左侧语义图标；删除箭头后不能留下会缩小该图标的 :last-child 样式。
+  for (const card of await page.locator('.manage-hub-entry').all()) {
+    await expect(card.locator('.manage-entry-top > svg')).toHaveCount(1)
+    await expect(card.locator('.manage-entry-top > svg')).toHaveCSS('width', '36px')
+  }
   await page.getByRole('link', { name: /上传文件/ }).click()
   await expect(page.getByRole('heading', { name: '上传文件', exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: '目录浏览', exact: true })).toHaveCount(0)
   await page.getByRole('link', { name: '整理已入库文件 →', exact: true }).click()
   await expect(page).toHaveURL(/\/maintenance\/files\/browse$/)
   await expect(page.getByRole('heading', { name: '目录浏览', exact: true })).toBeVisible()
+})
+
+test('侧栏返回沿壳内历史回到首页后停止；直达和刷新不退到站外', async ({ page }) => {
+  await setup(page)
+  // 模拟从应用外进入，浏览器全局 history.length 不能作为是否可返回的依据。
+  await page.goto('/outside-app')
+  await page.goto('/app/maintenance/files')
+  const back = page.locator('.sidebar--back')
+  await back.click()
+  await expect(page).toHaveURL(/\/app\/home$/)
+  await expect(back).toBeDisabled()
+  await back.dispatchEvent('click')
+  await expect(page).toHaveURL(/\/app\/home$/)
+  await page.locator('.settings-item[title="维护"]').click()
+  await page.getByRole('link', { name: /文件管理/ }).click()
+  await page.getByRole('link', { name: /上传文件/ }).click()
+  await back.click()
+  await expect(page).toHaveURL(/\/maintenance\/files$/)
+  await back.click()
+  await expect(page).toHaveURL(/\/maintenance$/)
+  await back.click()
+  await expect(page).toHaveURL(/\/app\/home$/)
+  await expect(back).toBeDisabled()
+  await page.locator('.settings-item[title="设置"]').click()
+  await page.reload()
+  await back.click()
+  await expect(page).toHaveURL(/\/app\/home$/)
+  await expect(back).toBeDisabled()
 })
 
 test('登记成功扫描失败只重试扫描，不重复注册', async ({ page }) => {
@@ -174,6 +207,13 @@ test('来源查询失败禁止空值覆盖，恢复读取后保存期间不可�
   await expect(page.getByRole('alertdialog')).toContainText('来源词表或镜像配置')
   await page.getByRole('button', { name: '继续编辑', exact: true }).click()
   await expect(page.getByRole('button', { name: 'unsaved-site', exact: true })).toBeVisible()
+  await page.locator('.sidebar--back').click()
+  await expect(page.getByRole('alertdialog')).toContainText('来源词表或镜像配置')
+  await page.getByRole('button', { name: '继续编辑', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'unsaved-site', exact: true })).toBeVisible()
+  await page.locator('.sidebar--back').click()
+  await page.getByRole('button', { name: '放弃并离开', exact: true }).click()
+  await expect(page).toHaveURL(/\/app\/home$/)
 })
 
 test('回收站失败不是空站；TXT移除先确认；旧v1备份仍在客户端拒绝', async ({ page }) => {
