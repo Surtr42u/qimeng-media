@@ -32,5 +32,6 @@ export function useMineWorkspace(tab: MineTab, filter: string) {
   const histSentinelRef = useAutoMore(histQuery.hasNextPage && !histQuery.isError && !filter.trim(), () => {
     if (!histQuery.isFetching && !histQuery.isPlaceholderData) void histQuery.fetchNextPage({ cancelRefetch: false })
   })
-  return { librariesQuery, overviewQuery, authorsQuery, toggleFollow, favQuery, histQuery, favItems, histItems, followedAuthors, histRenderGroups, favSentinelRef, histSentinelRef }
+  const histFilteredCount = histRenderGroups.reduce((count, group) => count + group.items.length, 0)
+  return { librariesQuery, overviewQuery, authorsQuery, toggleFollow, favQuery, histQuery, favItems, histItems, followedAuthors, histRenderGroups, histFilteredCount, favSentinelRef, histSentinelRef }
 }

@@ -96,7 +96,7 @@ export default function MinePage() {
       {histQuery.isError && <QueryNotice message="浏览历史读取失败，不能据此判断没有记录" retained={histItems.length > 0} busy={histQuery.isFetching} onRetry={retryHist} />}
       {histRenderGroups.map(group => <div className="hist-group2" key={group.key}><h3>{group.label}<span>{group.items.length} 项</span></h3><div className="hist-grid">{group.items.map(item => <HistCardItem key={item.id} item={item} onOpen={openCard} />)}</div></div>)}
       {histQuery.isLoading && histItems.length === 0 ? <LoadingHint /> : histRenderGroups.length === 0 && !histQuery.isError && <div className="workspace-empty"><History aria-hidden="true" /><h4>{query.trim() ? '已加载记录中没有匹配项' : '暂无浏览记录'}</h4><p>{query.trim() ? '换个文件名关键词，或继续加载更多历史。' : '打开作品后，最近浏览的内容会出现在这里。'}</p>{!query.trim() && <Link to={HOME_PATH}>去浏览作品</Link>}</div>}
-      <InfiniteTail isFetchingNextPage={histQuery.isFetchingNextPage} hasNextPage={histQuery.hasNextPage} itemCount={histItems.length} sentinelRef={data.histSentinelRef} />
+      {!query.trim() ? <InfiniteTail isFetchingNextPage={histQuery.isFetchingNextPage} hasNextPage={histQuery.hasNextPage} itemCount={histItems.length} sentinelRef={data.histSentinelRef} /> : histQuery.data != null && <p className="rank-note">筛选匹配 {data.histFilteredCount} 项 · 已加载 {histItems.length} 项</p>}
       {histQuery.hasNextPage && <div className="workspace-load-more"><button className="pill" type="button" disabled={histQuery.isFetching} onClick={() => { void histQuery.fetchNextPage({ cancelRefetch: false }) }}>{histQuery.isFetchingNextPage ? '加载中…' : '加载更多历史'}</button></div>}
     </section>
   </div>

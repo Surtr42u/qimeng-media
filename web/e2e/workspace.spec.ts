@@ -145,6 +145,7 @@ test('历史明确筛选已加载记录，手动续页及离开返回不丢分�
   const card = pane.getByRole('button', { name: 'needle-海边.mp4', exact: true })
   await expect(card).toBeVisible()
   await expect(pane.getByText('已看完', { exact: true })).toBeVisible()
+  await expect(pane.getByText('筛选匹配 1 项 · 已加载 2 项', { exact: true })).toBeVisible()
   expect(state.historyRequests).toBe(2)
   await page.getByRole('link', { name: '设置', exact: true }).click()
   await expect(page).toHaveURL(/\/app\/settings$/)
