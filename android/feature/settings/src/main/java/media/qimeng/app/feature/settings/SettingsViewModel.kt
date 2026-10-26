@@ -167,7 +167,7 @@ class SettingsViewModel @Inject constructor(
 
     /** 整行点击应用预设（C4）：PUT 9 维载荷后本地推导高亮态（预设值即载荷值，无需重拉）；失败给反馈且高亮保持原项 */
     fun applyPreset(preset: RecommendPreset) {
-        if (_uiState.value.prefsApplying) return
+        if (_uiState.value.prefsApplying || _uiState.value.appliedPreset == preset) return
         _uiState.update { it.copy(prefsApplying = true) }
         viewModelScope.launch {
             val updated = runCatching {

@@ -148,6 +148,17 @@ class SettingsViewModelTest {
         assertNull(settingsViewModel.uiState.value.writeError)
     }
 
+    @Test
+    fun `点击已应用预设不重复保存或进入等待态`() = runTest {
+        val prefs = FakePrefsRepository()
+        val settingsViewModel = viewModel(prefs = prefs)
+        advanceUntilIdle()
+        settingsViewModel.applyPreset(RecommendPreset.BALANCED)
+        advanceUntilIdle()
+        assertTrue(prefs.putCalls.isEmpty())
+        assertFalse(settingsViewModel.uiState.value.prefsApplying)
+    }
+
     // ---------- 推荐偏好加载失败/重试（2026-09-13「点击无反应」修复批回归锁定） ----------
 
     @Test

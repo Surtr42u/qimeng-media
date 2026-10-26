@@ -462,6 +462,8 @@ fun QimengNavHost(
                     sharedUris = sharedUris,
                     onSharedConsumed = onSharedConsumed,
                     onDone = { navController.popBackStack() },
+                    onOpenLibraries = { navController.navigate(Routes.LIBRARY_MANAGE) },
+                    onOpenArchiveSettings = { navController.navigate(Routes.INBOX) },
                 )
             }
             // 服务器设置子页（U10-4）：设置页「服务器」入口行进本页；pushed 覆盖页——

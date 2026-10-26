@@ -212,15 +212,23 @@ internal fun PrefsBottomSheet(
                     }
                 }
             }
-            if (applying) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                Text("正在保存推荐偏好…", style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(vertical = QimengDimens.SpaceM))
-            }
-            writeError?.let { message ->
-                Text(message, color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(vertical = QimengDimens.SpaceM))
+            // 状态占位常驻，保存开始/结束不改变选项位置与弹层高度。
+            Box(Modifier.fillMaxWidth().heightIn(min = PrefsStatusMinHeight)) {
+                Text(
+                    text = when {
+                        applying -> "正在保存推荐偏好…"
+                        writeError != null -> writeError
+                        else -> "点选方案后自动保存"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (!applying && writeError != null) MaterialTheme.colorScheme.error
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.align(Alignment.CenterStart)
+                        .padding(bottom = QimengDimens.SpaceM),
+                )
+                if (applying) {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth().align(Alignment.BottomCenter))
+                }
             }
             Column(
                 modifier = Modifier.selectableGroup(),
@@ -290,3 +298,6 @@ private fun presetBorderColor(selected: Boolean) =
 
 /** 库存卡最小高度，大字体可随内容增长。 */
 private val CountCardMinHeight = 88.dp
+
+/** 容纳一行保存提示和进度条，大字体仍允许内容自然增长。 */
+private val PrefsStatusMinHeight = 40.dp

@@ -64,6 +64,8 @@ internal fun <T> blockText(limits: UploadLimits?, blocked: List<T>, nameOf: (T) 
 data class UploadUiState(
     /** 首屏库列表加载中 */
     val loading: Boolean = false,
+    /** 目标列表读取失败与真实空库分开，供上传位置卡就地重试。 */
+    val librariesLoadFailed: Boolean = false,
     /** 可选目标库（GET /libraries） */
     val libraries: List<LibraryChoice> = emptyList(),
     /** 批次默认库 id（持久化配置；null = 未选） */
