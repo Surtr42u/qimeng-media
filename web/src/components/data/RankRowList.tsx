@@ -25,7 +25,7 @@ export function RankRowList({
   return (
     <ul>
       {rows.map((r) => (
-        <li key={r.name} onClick={onSelect ? () => onSelect(r.name) : undefined}>
+        <li key={r.name} role={onSelect ? 'button' : undefined} tabIndex={onSelect ? 0 : undefined} onClick={onSelect ? () => onSelect(r.name) : undefined} onKeyDown={event => { if (onSelect && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onSelect(r.name) } }}>
           <span className="rank-name">{r.name}</span>
           {r.count ? <b>{r.count}</b> : null}
           {r.sub ? <span className="rank-sub2">{r.sub}</span> : null}

@@ -20,6 +20,9 @@ export const MINE_PATH = '/app/mine'
 /** 数据页路由（Sidebar 主导航第四项） */
 export const DATA_PATH = '/app/data'
 
+/** 作者管理入口；与按名字浏览作者作品的集合路由不同。 */
+export const AUTHORS_PATH = '/app/authors'
+
 /** 维护页路由（Sidebar 底部图标组入口） */
 export const MAINTENANCE_PATH = '/app/maintenance'
 
@@ -194,6 +197,11 @@ export function readBackdropKey(state: unknown): string | null {
 export const RANK_CONTENT = 'content'
 export const RANK_TAGS = 'tags'
 export const RANK_AUTHORS = 'authors'
+
+/** 数据页榜单链接沿用所选窗口；真正链接支持键盘及新标签打开。 */
+export function rankPath(rank: string, range: string): string {
+  return `${generatePath('/app/ranks/:rank', { rank })}?${new URLSearchParams({ range })}`
+}
 
 /** 完整榜单页标题映射（数据页「查看全部」按 data-rank 进入对应榜） */
 export const RANK_PAGE_TITLES: Record<string, string> = {
