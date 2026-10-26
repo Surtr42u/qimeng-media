@@ -232,6 +232,27 @@ class SettingsViewModelTest {
         assertEquals("v0.9.0", settingsViewModel.uiState.value.serverVersion)
     }
 
+    @Test
+    fun `保存失败后重试成功清除旧错误并更新选中项`() = runTest {
+        val prefs = FakePrefsRepository().apply { putError = RuntimeException("synthetic failure") }
+        val settingsViewModel = viewModel(prefs = prefs)
+        advanceUntilIdle()
+        settingsViewModel.openPrefsSheet()
+
+        settingsViewModel.applyPreset(RecommendPreset.FRESH_FIRST)
+        advanceUntilIdle()
+        assertEquals(SAVE_FAILED_TEXT, settingsViewModel.uiState.value.writeError)
+        assertEquals(RecommendPreset.BALANCED, settingsViewModel.uiState.value.appliedPreset)
+
+        prefs.putError = null
+        settingsViewModel.applyPreset(RecommendPreset.FRESH_FIRST)
+        advanceUntilIdle()
+        assertNull(settingsViewModel.uiState.value.writeError)
+        assertEquals(RecommendPreset.FRESH_FIRST, settingsViewModel.uiState.value.appliedPreset)
+        assertTrue(settingsViewModel.uiState.value.prefsSheetOpen)
+        assertEquals(listOf(RecommendPreset.FRESH_FIRST.toPrefsValues()), prefs.putCalls)
+    }
+
     // ---------- P2-3 写失败反馈（原实现静默吞错的回归锁定） ----------
 
     @Test

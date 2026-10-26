@@ -183,6 +183,8 @@ class SettingsViewModel @Inject constructor(
                         prefsApplying = false,
                         prefsValues = updated,
                         appliedPreset = preset,
+                        // 重试成功即撤掉旧失败，弹层与我的页共用同一反馈状态。
+                        writeError = null,
                         // PUT 成功即持有权威值，此前的 GET 失败态随之消除（Sheet 撤重试态）
                         prefsLoadFailed = false,
                     )
