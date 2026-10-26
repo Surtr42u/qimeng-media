@@ -706,10 +706,11 @@ button.seg,
 .donut { width: 120px; height: 120px; flex-shrink: 0; transform: rotate(-90deg); }
 .donut .ring { fill: none; stroke: var(--qm-border); stroke-width: 12; }
 .donut .arc { fill: none; stroke-width: 12; stroke-linecap: round; }
-.donut .arc-1 { stroke: var(--qm-chart-1); stroke-dasharray: 173 277; }
-.donut .arc-2 { stroke: var(--qm-chart-2); stroke-dasharray: 79 277; }
-.donut .arc-3 { stroke: var(--qm-chart-3); stroke-dasharray: 13 277; }
-.donut .arc-4 { stroke: var(--qm-chart-4); stroke-dasharray: 172 277; }
+/* 弧长只由DonutCard的统计占比决定，不能再用原型固定dasharray覆盖SVG属性。 */
+.donut .arc-1 { stroke: var(--qm-chart-1); }
+.donut .arc-2 { stroke: var(--qm-chart-2); }
+.donut .arc-3 { stroke: var(--qm-chart-3); }
+.donut .arc-4 { stroke: var(--qm-chart-4); }
 .legend { list-style: none; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
 .legend li { display: flex; align-items: center; gap: 8px; }
 .legend .dot { width: 9px; height: 9px; border-radius: 3px; flex-shrink: 0; }

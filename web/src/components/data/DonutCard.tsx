@@ -74,7 +74,7 @@ export function DonutCard({
       <div className="donut-row">
         <div className="donut-visual"><svg className="donut" viewBox="0 0 120 120" aria-hidden="true">
           <circle cx="60" cy="60" r="44" className="ring" />
-          {arcs.map((s) => (
+          {arcs.filter(slice => slice.pct > 0).map((s) => (
             <circle
               key={s.name}
               cx="60"

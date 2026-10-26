@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 
 /** 全部API与封面在浏览器拦截；不访问真实库，也不改变统计/历史领域算法。 */
-async function setup(page: Page, options: { tagFails?: boolean; oldOverview?: boolean; authorsFail?: boolean; followFails?: boolean; favoritesFail?: boolean } = {}) {
+async function setup(page: Page, options: { tagFails?: boolean; oldOverview?: boolean; authorsFail?: boolean; followFails?: boolean; favoritesFail?: boolean; onlyImageViews?: boolean } = {}) {
   const state = { ...options, ranges: [] as string[], favoriteRequests: 0, historyRequests: 0, followRequests: 0,
     authors: [{ id: 'author-a', displayName: '青禾', fileCount: 18, followed: true }, { id: 'author-b', displayName: '星野', fileCount: 32, followed: false }] }
   const totals = (viewCount = 0, playCount = 0, seconds = 0) => ({ viewCount, playCount, seconds })
@@ -18,8 +18,8 @@ async function setup(page: Page, options: { tagFails?: boolean; oldOverview?: bo
       if (state.oldOverview) return route.fulfill({ json: { totalFiles: 100, totalSizeBytes: 123456 } })
       return route.fulfill({ json: { totalFiles: 100, stillImageCount: 60, imageCount: 70, animatedImageCount: 10, videoCount: 30, totalSizeBytes: 10737418240,
         viewedFilesCount: 7, viewedAuthorsCount: 3, viewedTagsCount: 4, avgViewsPerFile: 6 * scale,
-        windowTotals: totals(42 * scale, 8 * scale, 3600 * scale),
-        mediaTypeWindowTotals: { image: totals(24 * scale), video: totals(12 * scale, 8 * scale), animated_image: totals(6 * scale) },
+        windowTotals: totals(42 * scale, state.onlyImageViews ? 0 : 8 * scale, 3600 * scale),
+        mediaTypeWindowTotals: state.onlyImageViews ? { image: totals(42 * scale, 0, 3600 * scale), video: totals(), animated_image: totals() } : { image: totals(24 * scale, 0, 1200 * scale), video: totals(12 * scale, 8 * scale, 2100 * scale), animated_image: totals(6 * scale, 0, 300 * scale) },
         sourceWindowTotals: { normal: totals(30 * scale), cos: totals(12 * scale) } } })
     }
     if (path === '/api/v1/stats/trends') return route.fulfill({ json: ['2026-10-25', '2026-10-26'].map(date => ({ start: date, end: date, label: date.slice(5), ...totals(21 * scale, 4 * scale, 1800 * scale), mediaTypes: { image: totals(12 * scale), video: totals(6 * scale, 4 * scale), animated_image: totals(3 * scale) }, sources: { normal: totals(15 * scale), cos: totals(6 * scale) } })) })
@@ -54,6 +54,8 @@ test('数据板块独立失败；窗口、库存与完整榜单保持各自口�
   const state = await setup(page, { tagFails: true })
   await page.goto('/app/data')
   await expect(page.locator('.data-metric--views')).toContainText('42')
+  // 图片24/42对应约158px弧长，不能被旧原型CSS固定为79px。
+  await expect(page.locator('.donut .arc-2')).toHaveCSS('stroke-dasharray', /^15[78](?:\.\d+)?px/)
   await expect(page.getByRole('region', { name: '媒体库概况', exact: true })).toContainText('100')
   const tags = page.getByRole('region', { name: '标签榜', exact: true })
   await expect(tags.getByRole('alert')).toContainText('标签榜读取失败', { timeout: 10000 })
@@ -83,6 +85,15 @@ test('旧统计协议不伪装成零数据，其他统计区域保持可访问',
   await expect(page.locator('.data-metric--views strong')).toHaveText('—')
   await expect(page.getByRole('heading', { name: '内容榜', exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: '作者榜', exact: true })).toBeVisible()
+})
+
+test('零浏览类型保留数字图例，但不画误导性的彩色圆点', async ({ page }) => {
+  await setup(page, { onlyImageViews: true })
+  await page.goto('/app/data')
+  await expect(page.locator('.donut .arc')).toHaveCount(1)
+  const legend = page.locator('.data-secondary-grid .donut-card .legend')
+  await expect(legend.locator('li').nth(1)).toContainText('视频')
+  await expect(legend.locator('li').nth(1)).toContainText('0.0%')
 })
 
 test('我的分区按需加载，收藏失败不是空收藏；键盘切换可用', async ({ page }) => {
