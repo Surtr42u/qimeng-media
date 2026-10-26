@@ -7,6 +7,8 @@ async function setup(page: Page, initial: { scanFails?: boolean; deleteFails?: b
     registrations: 0, scans: 0, deletes: 0, toggles: 0, txtDeletes: 0, backupImports: 0, sourceSaves: 0,
     sources: ['site-a'], pendingSource: undefined as Route | undefined, pendingDirectory: undefined as Route | undefined,
     includeCos: '', cursor: '',
+    uploads: [] as Array<{ libraryId: string | null; dir: string | null }>,
+    attachments: [] as Array<{ authorIds: string[] }>,
   }
   await page.addInitScript(() => { localStorage.setItem('qimeng_token', 'synthetic-browser-session'); localStorage.setItem('qimeng_theme', 'light') })
   await page.route('**/api/**', async route => {
@@ -38,6 +40,14 @@ async function setup(page: Page, initial: { scanFails?: boolean; deleteFails?: b
       return route.fulfill({ status: 204 })
     }
     if (url.pathname === '/api/v1/config') return route.fulfill({ json: { scan: { workers: 2, thumbEdge: 800 }, upload: { maxBytesMb: 2048, autoAccept: true } } })
+    if (url.pathname === '/api/v1/assets/upload' && method === 'POST') {
+      state.uploads.push({ libraryId: url.searchParams.get('libraryId'), dir: url.searchParams.get('dir') })
+      return route.fulfill({ status: 201, json: { id: 'synthetic-uploaded' } })
+    }
+    if (url.pathname === '/api/v1/assets/synthetic-uploaded/authors' && method === 'PUT') {
+      state.attachments.push(route.request().postDataJSON())
+      return route.fulfill({ status: 204 })
+    }
     if (url.pathname === '/api/v1/dirs') return route.fulfill({ json: { path: '', fileCount: 2, dirs: [{ path: 'next', fileCount: 1, dirs: [] }] } })
     if (url.pathname === '/api/v1/assets') {
       state.includeCos = url.searchParams.get('includeCos') ?? ''
@@ -157,14 +167,56 @@ test('停用库不能作为上传目标，切换作者清空上一作者的批�
   await expect(page.getByRole('button', { name: '停用图库 · 已停用', exact: true })).toBeDisabled()
   await page.getByRole('button', { name: '运行图库', exact: true }).click()
   await expect(addFiles).toBeEnabled()
+  await page.getByText('作者与来源', { exact: true }).click()
   const author = page.getByLabel('批次作者（可选，联想选择）', { exact: false })
   await author.fill('作者甲')
   await page.getByRole('button', { name: /作者甲.*个文件/ }).click()
   await page.getByRole('button', { name: 'site-a', exact: true }).click()
   await expect(page.getByRole('button', { name: 'site-a', exact: true })).toHaveClass(/active/)
+  await page.getByText('作者与来源', { exact: true }).click()
+  await expect(author).toBeHidden()
+  await expect(page.getByLabel('本批上传摘要')).toContainText('作者甲')
+  await expect(page.getByLabel('本批上传摘要')).toContainText('site-a')
+  await page.getByText('作者与来源', { exact: true }).click()
   await author.fill('作者乙')
   await page.getByRole('button', { name: /作者乙.*个文件/ }).click()
   await expect(page.getByRole('button', { name: 'site-a', exact: true })).not.toHaveClass(/active/)
+})
+
+test('上传目录按需选择，任务保留入队位置与作者；未选定作者不静默丢关联', async ({ page }) => {
+  const state = await setup(page)
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/app/maintenance/files/upload')
+  const addFiles = page.getByRole('button', { name: '选择文件并立即上传', exact: true })
+  await page.getByRole('button', { name: '运行图库', exact: true }).click()
+  await expect(page.getByRole('button', { name: /^next/ })).toHaveCount(0)
+  await page.getByRole('button', { name: '选择目录', exact: true }).click()
+  await page.getByRole('button', { name: /^next/ }).click()
+  await expect(page.getByLabel('本批上传摘要')).toContainText('next')
+  await page.getByText('作者与来源', { exact: true }).click()
+  const author = page.getByLabel('批次作者（可选，联想选择）', { exact: false })
+  await author.fill('尚未登记的作者')
+  await author.press('Enter')
+  await expect(addFiles).toBeDisabled()
+  await expect(page.getByText('作者尚未选定，请从联想结果选择，或清空作者后上传', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '清除已选作者', exact: true }).click()
+  await expect(addFiles).toBeEnabled()
+  await author.fill('作者甲')
+  await page.getByRole('button', { name: /作者甲.*个文件/ }).click()
+  await page.getByLabel('选择要上传的文件', { exact: true }).setInputFiles({ name: 'synthetic-image.png', mimeType: 'image/png', buffer: Buffer.from('synthetic-browser-upload') })
+  const task = page.locator('.upload-task')
+  await expect(task).toContainText('已完成')
+  expect(state.uploads).toEqual([{ libraryId: 'active', dir: 'next' }])
+  expect(state.attachments).toEqual([{ authorIds: ['甲'] }])
+  await page.getByRole('button', { name: '选择目录', exact: true }).click()
+  await page.getByRole('button', { name: /^库根/ }).click()
+  await page.getByRole('button', { name: '清除已选作者', exact: true }).click()
+  await expect(page.getByLabel('本批上传摘要')).toContainText('不指定作者')
+  await expect(task).toContainText('运行图库 / next')
+  await expect(task).toContainText('作者：作者甲')
+  await page.getByRole('button', { name: '清理已结束记录', exact: true }).click()
+  await expect(task).toHaveCount(0)
+  expect(state.uploads).toHaveLength(1)
 })
 
 test('目录续页不截断，切目录慢请求不展示可操作的旧目录文件', async ({ page }) => {

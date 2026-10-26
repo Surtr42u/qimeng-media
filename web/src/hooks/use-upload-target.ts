@@ -20,9 +20,10 @@ export function useUploadTarget(libraries: Library[], targetsReady: boolean) {
         : library.enabled === false ? '所选目标库已停用，请启用或选择其他库'
           : config.isError ? '上传设置读取失败，请重新读取'
             : !upload ? '正在读取上传设置…'
-              : !upload.autoAccept ? '服务器已暂停接收上传，请先在设置中开启' : null
+              : !upload.autoAccept ? '服务器已暂停接收上传，请先在设置中开启'
+                : canAttach && batchAuthor && !batchAuthor.authorId ? '作者尚未选定，请从联想结果选择，或清空作者后上传' : null
   return {
-    libId, dir, setDir, batchAuthor, batchSources, setBatchSources, enabled, canAttach,
+    libId, dir, setDir, batchAuthor, batchSources, setBatchSources, enabled, canAttach, targetsReady,
     canAdd: blockedReason === null, blockedReason,
     maxBytesMb: upload?.maxBytesMb ?? null,
     libraryName: library?.name ?? '尚未选择目标库',
@@ -38,3 +39,5 @@ export function useUploadTarget(libraries: Library[], targetsReady: boolean) {
     },
   }
 }
+
+export type UploadTarget = ReturnType<typeof useUploadTarget>

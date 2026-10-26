@@ -6,6 +6,8 @@
 
 当前实现：`mediawrite` 负责直传/会话创建/完成的文件、事务、富化和通知，httpapi 负责请求/响应/错误映射；会话注册表仍为 uploadsess，协议与重启失效边界不变。此处不将结构调整描述为新增 API 能力。
 
+Web工作台将位置/可选关联、添加文件及任务结果分区，目录选择按需展开，折叠设置不清除批次值，上传区常显本批摘要。作者关联仍只接受已有作者ID：未匹配的回车文本不会静默按无作者上传，须先联想选定或清空。任务列表显示入队目标/作者/来源快照，换当前设置不改旧任务；清理已结束记录不删除服务端媒体。直传/分片、超限拦截、选入即上传、刷新重选和失败保留语义不变。
+
 端点：POST /assets/upload、**POST /uploads、GET/PATCH/DELETE /uploads/{id}、POST /uploads/{id}/complete**、POST /assets/{id}/move、GET/POST /dirs
 
 直传 NAS（流式；
