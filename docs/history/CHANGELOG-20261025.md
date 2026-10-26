@@ -3,6 +3,15 @@
 > 完整条目由近期CHANGELOG原样归档。
 
 
+## ci(app): 单测与Lint阻断Release候选包上传（2026-10-25 第六百笔）
+
+执行 AI：GPT-6.1 Sol（主代理；工具 Codex）。
+
+- Q06：以首批 92161b3c 全套 Debug 单测通过为依据撤销旧 continue-on-error；Release 候选包必须先通过 Debug/Release 单测、core:model 测试与 Release Lint 才上传。常规 CI 同步增加 Release 单测/Lint，原产物完整性、签名、版本和哈希要求不变。
+- 文档影响：部署/内嵌入口、架构工程门禁、HANDOVER 明确候选包与同 SHA 完整检查/审查后的可部署资格；不以 artifact 存在或一个 workflow 绿色自动发布。无应用业务、API/schema 或领域语义变化。
+- 仅静态检查工作流顺序和失败条件；新 head 云端 CI/Release 出包与受控失败出包场景未执行，未生成已验收的新安装包，也未部署或操作设备/真库。当前安装包保持原来源。同期性能批仍待其当前 head 的完整验证。
+
+
 ## perf(server): 收敛推荐装配、扫描快照与指标重复查询（2026-10-25 第五百九十九笔）
 
 执行 AI：GPT-6.1 Sol（主代理；工具 Codex）。

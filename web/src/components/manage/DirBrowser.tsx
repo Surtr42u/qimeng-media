@@ -7,6 +7,7 @@ import { DirFileList } from '@/components/manage/DirFileList'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
 import { LoadingHint } from '@/components/ui/loading-hint'
 import { useDirTree } from '@/hooks/use-libraries'
+import { ManageQueryError } from './ManagePageHeader'
 
 /**
  * 目录浏览卡（B-1 从 LibraryManagePage 拆出独立组件——页面已超 500 行
@@ -25,7 +26,8 @@ export function DirBrowser({ libraries }: { libraries: Library[] }) {
   // 选中目录（库内相对路径，'' = 库根）：缺省库根，换库时一并复位
   const [selectedDir, setSelectedDir] = useState('')
   // /dirs 的 libraryId 协议必填：未选库 enabled=false 挂起查询（挂起语义见 useDirTree）
-  const { data: tree, isFetching } = useDirTree(libId, enabled)
+  const treeQuery = useDirTree(libId, enabled)
+  const { data: tree, isFetching } = treeQuery
 
   // 待创建子目录的父目录（非 null 即打开 CreateDirDialog）
   const [createUnder, setCreateUnder] = useState<string | null>(null)
@@ -55,10 +57,10 @@ export function DirBrowser({ libraries }: { libraries: Library[] }) {
           </Select>
         </span>
       </div>
-      <p className="rank-note">点击目录查看其中的文件；目录行可新建子目录，文件行 hover 可重命名/移动/删除</p>
+      <p className="rank-note">选择目录查看文件；目录可新建子目录，文件操作支持重命名、移动和移入回收站。</p>
       {!enabled ? (
         <p className="grid-empty">先在上方选择一个库。</p>
-      ) : isFetching ? (
+      ) : treeQuery.isError ? <ManageQueryError retry={() => { void treeQuery.refetch() }}>目录读取失败，请重新读取；这不代表目录为空。</ManageQueryError> : isFetching ? (
         <LoadingHint />
       ) : tree ? (
         // .dir-tree-list（B-8）：与 DirTree.tsx 嵌套层共用——顶层 li 横向 padding

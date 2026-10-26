@@ -1,11 +1,9 @@
 import { useState } from 'react'
 import { ShieldAlert } from 'lucide-react'
-import { LocalSyncCard } from '@/components/manage/LocalSyncCard'
-import { MaintenanceOverview, MAINTENANCE_LOGS_ID, MAINTENANCE_SYNC_ID } from '@/components/manage/MaintenanceOverview'
+import { MaintenanceOverview, MAINTENANCE_LOGS_ID } from '@/components/manage/MaintenanceOverview'
 import { Pill } from '@/components/ui/pill'
 import { useClientLogs } from '@/hooks/use-client-logs'
 import { useMaintenanceMonitor } from '@/hooks/use-maintenance-monitor'
-import { useLocalSyncStatus } from '@/hooks/use-local-sync'
 import { useTrash } from '@/hooks/use-trash'
 import { formatDateTime } from '@/lib/format'
 
@@ -18,15 +16,10 @@ export default function MaintenancePage() {
   const monitor = useMaintenanceMonitor()
   const trash = useTrash()
   const logs = useClientLogs()
-  // 页面只开一次轮询；完整操作区通过 props 消费同一状态快照。
-  const sync = useLocalSyncStatus()
   const clientLogs = logs.data ?? []
   const [logsExpanded, setLogsExpanded] = useState(false)
   const trashLabel = trash.isError ? '条目数暂不可用' : trash.data ? `${trash.data.length} 条待处理` : '正在读取…'
   const logsLabel = logs.isError ? '更新失败，查看详情' : logs.data ? `保留 ${clientLogs.length} 条上报` : '正在读取…'
-  const syncLabel = sync.isError ? '状态暂不可用' : !sync.data ? '正在读取…'
-    : sync.data.lastError ? '通道异常，查看详情' : sync.data.paused ? '上传闸门暂停中'
-      : sync.data.enabled ? `已启用 · 失败 ${sync.data.counts?.failed ?? 0}` : '未启用'
 
   return (
     <div className="page" id="page-maintenance">
@@ -41,8 +34,7 @@ export default function MaintenancePage() {
         <span>{monitor.data ? '监控更新失败，以下保留上次成功读数。' : '暂时无法读取监控状态，维护工具仍可使用。'}</span>
         <Pill onClick={() => { void monitor.refetch() }} disabled={monitor.isFetching}>重试监控</Pill>
       </div>}
-      <MaintenanceOverview monitor={monitor} trashLabel={trashLabel} syncLabel={syncLabel} logsLabel={logsLabel} />
-      <section id={MAINTENANCE_SYNC_ID} className="monitor-detail-section" aria-label="本机同步详情"><LocalSyncCard status={sync.data} isLoading={sync.isLoading} /></section>
+      <MaintenanceOverview monitor={monitor} trashLabel={trashLabel} logsLabel={logsLabel} />
       <section className="chart-card monitor-detail-section" id={MAINTENANCE_LOGS_ID} aria-label="客户端异常详情">
         <h3>用户端崩溃 / 错误日志</h3>
         <p>客户端异常上报 · 服务端保留最新 200 条 · 新在上</p>

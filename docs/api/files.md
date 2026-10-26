@@ -67,7 +67,7 @@ syncchannel 持有轮询/观测/状态快照、媒体搬移与 TXT 归档，auth
 媒体走直传同款四道校验 + autoAccept 闸（false 时媒体暂停、TXT 不受影响）+ maxBytes，同名自动改名 "名 (2).ext" 同名不报 409（任务 ID 参数冲突另报 409）（DOMAIN_RULES §9 同款复用），成功调用 mediawrite.IngestPlacedUpload（sysmon/upload.done/library.changed/修订号/富化全同款）；
 失败 = 文件原地保留每轮重试、status items 可见；
 TXT 恒 keep（无人值守绝不 remove）、仅 UTF-8（剥 BOM）、10MB 护栏（实际读取也有界，防扫描后增长）；
-安全 = 同步根与库根/DataDir 双向重叠禁令、隐藏条目与符号链接不处理、根不存在不建目录（详见 SECURITY.md「本机同步通道」）。**配置三键**：`QIMENG_LOCAL_SYNC_ROOT`（空=关）/ `QIMENG_LOCAL_SYNC_INTERVAL`（默认 30s）/ `QIMENG_LOCAL_SYNC_STABLE_AGE`（默认 60s），yaml `local_sync.root/interval/stable_age` 同名。**错误码**：`LOCAL_SYNC_DISABLED`（trigger 在未启用时 409）。**维护页入口**：Web 维护页「本机同步」卡（DbBackupCard 之后：状态徽标/信息行/lastError 警示/失败·忽略·最近成功三段列表/立即同步按钮）
+安全 = 同步根与库根/DataDir 双向重叠禁令、隐藏条目与符号链接不处理、根不存在不建目录（详见 SECURITY.md「本机同步通道」）。**配置三键**：`QIMENG_LOCAL_SYNC_ROOT`（空=关）/ `QIMENG_LOCAL_SYNC_INTERVAL`（默认 30s）/ `QIMENG_LOCAL_SYNC_STABLE_AGE`（默认 60s），yaml `local_sync.root/interval/stable_age` 同名。**错误码**：`LOCAL_SYNC_DISABLED`（trigger 在未启用时 409）。**Web入口**：上传页高级「服务器目录自动导入」（状态/失败/忽略/最近成功/立即同步），折叠停止前端定时轮询；维护首页不再常驻。它是无人值守目录投放通道，成功后移走源文件，能提取媒体信息/处理作者TXT，但不提供手动上传的逐批作者/来源选择。后端配置、轮询与安全语义未退役。
 
 ## 文件操作失败重试
 

@@ -31,6 +31,11 @@ export const SETTINGS_PATH = '/app/settings'
  *  子页路径字面量归 router.tsx） */
 export const MAINTENANCE_FILES_PATH = '/app/maintenance/files'
 
+/** 入库和整理分开；上传页不再挂第二套目录浏览选择器。 */
+export const MAINTENANCE_FILES_BROWSER_PATH = '/app/maintenance/files/browse'
+export const MAINTENANCE_UPLOAD_PATH = '/app/maintenance/files/upload'
+export const MAINTENANCE_LIBRARIES_PATH = '/app/maintenance/files/libraries'
+
 /** 来源词表子页路由（2026-09-29 自上传文件页拆出独立页；上传页指引链接与
  *  hub 入口卡共用此常量） */
 export const MAINTENANCE_FILES_VOCABULARY_PATH = '/app/maintenance/files/vocabulary'

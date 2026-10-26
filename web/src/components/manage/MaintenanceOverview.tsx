@@ -1,15 +1,15 @@
 import type { ReactNode } from 'react'
 import { Link } from 'react-router'
-import { Activity, ArrowDown, ArrowUp, ChevronRight, Cpu, FileWarning, FolderSearch, HardDrive, MemoryStick, RefreshCw, Server, Trash2 } from 'lucide-react'
-import { Area, AreaChart, Line, LineChart, ResponsiveContainer, Tooltip, YAxis } from 'recharts'
-import { TrendLegend, TIP_STYLE } from '@/components/data/chart-shared'
+import { Activity, ArrowDown, ArrowUp, ChevronRight, Cpu, FileWarning, FolderSearch, HardDrive, MemoryStick, Server, Trash2, Upload } from 'lucide-react'
+import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis } from 'recharts'
+import { TIP_STYLE } from '@/components/data/chart-shared'
 import type { useMaintenanceMonitor } from '@/hooks/use-maintenance-monitor'
 import { formatBytes } from '@/lib/format'
-import { MAINTENANCE_FILES_PATH } from '@/lib/route-keys'
+import { MAINTENANCE_FILES_PATH, MAINTENANCE_UPLOAD_PATH } from '@/lib/route-keys'
+import { LOCALE_ZH } from '@/lib/constants'
 
 type Monitor = ReturnType<typeof useMaintenanceMonitor>
 /** 锚点只跳到仍常驻的完整操作区，不卸载同步查询或改变操作行为。 */
-export const MAINTENANCE_SYNC_ID = 'maintenance-sync'
 export const MAINTENANCE_LOGS_ID = 'maintenance-logs'
 const GAUGE_CIRC = 2 * Math.PI * 44
 
@@ -29,10 +29,12 @@ function TrafficCard({ traffic, points }: { traffic: Monitor['traffic'][number];
   return <section className={`chart-card monitor-traffic monitor-traffic--${traffic.direction}`} aria-label={traffic.label}>
     <CardHeading icon={receive ? <ArrowDown aria-hidden="true" /> : <ArrowUp aria-hidden="true" />}>{traffic.label}</CardHeading>
     <div className="monitor-value">{traffic.value ?? '采样中…'}{traffic.value && <small>/s</small>}</div>
-    <p>窗口峰值 {traffic.peak}</p>
+    <p>近 2 分钟峰值 {traffic.peak}</p>
     <div className="monitor-sparkline" aria-hidden="true">
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={points} margin={{ top: 8, right: 0, left: 0, bottom: 0 }}>
+          <XAxis dataKey="at" type="number" domain={['dataMin', 'dataMax']} hide />
+          <Tooltip {...TIP_STYLE} labelFormatter={value => new Date(Number(value)).toLocaleTimeString(LOCALE_ZH)} formatter={value => [`${formatBytes(Number(value))}/s`, traffic.label]} />
           <Area type="monotone" dataKey={traffic.direction} stroke={color} fill={color} fillOpacity={0.1} strokeWidth={2} isAnimationActive={false} />
         </AreaChart>
       </ResponsiveContainer>
@@ -41,8 +43,8 @@ function TrafficCard({ traffic, points }: { traffic: Monitor['traffic'][number];
   </section>
 }
 
-export function MaintenanceOverview({ monitor, trashLabel, syncLabel, logsLabel }: {
-  monitor: Monitor; trashLabel: string; syncLabel: string; logsLabel: string
+export function MaintenanceOverview({ monitor, trashLabel, logsLabel }: {
+  monitor: Monitor; trashLabel: string; logsLabel: string
 }) {
   const { resources, data: status } = monitor
   return <>
@@ -98,25 +100,12 @@ export function MaintenanceOverview({ monitor, trashLabel, syncLabel, logsLabel 
         </div>
       </section>
       <section className="chart-card monitor-span-2">
-        <CardHeading icon={<Activity aria-hidden="true" />}>同步与异常</CardHeading>
+        <CardHeading icon={<Activity aria-hidden="true" />}>入库与异常</CardHeading>
         <div className="monitor-shortcuts">
-          <a className="monitor-shortcut" href={`#${MAINTENANCE_SYNC_ID}`}><RefreshCw aria-hidden="true" /><span><strong>本机同步</strong><small>{syncLabel}</small></span><ChevronRight aria-hidden="true" /></a>
+          <Link className="monitor-shortcut" to={MAINTENANCE_UPLOAD_PATH}><Upload aria-hidden="true" /><span><strong>上传文件</strong><small>指定作者与来源</small></span><ChevronRight aria-hidden="true" /></Link>
           <a className="monitor-shortcut" href={`#${MAINTENANCE_LOGS_ID}`}><FileWarning aria-hidden="true" /><span><strong>客户端异常</strong><small>{logsLabel}</small></span><ChevronRight aria-hidden="true" /></a>
         </div>
       </section>
     </div>
-    <details className="chart-card monitor-network-details">
-      <summary><span>网络负载 · 实时</span><span className="monitor-muted">最近 2 分钟 · 双向曲线</span></summary>
-      <p className="monitor-muted">全机网卡聚合 · 2s 轮询 · 最近 2 分钟有效采样{monitor.points.length < 2 ? '（采样中…）' : ''}</p>
-      <TrendLegend items={[{ label: '接收 / 下行', color: 'var(--qm-chart-1)' }, { label: '发送 / 上行', color: 'var(--qm-chart-2)' }]} />
-      <ResponsiveContainer width="100%" height={200}>
-        <LineChart data={monitor.points} margin={{ top: 6, right: 8, left: 8, bottom: 0 }}>
-          <YAxis hide />
-          <Tooltip {...TIP_STYLE} labelFormatter={() => ''} formatter={value => `${formatBytes(Number(value))}/s`} />
-          <Line type="monotone" dataKey="rx" name="接收 / 下行" stroke="var(--qm-chart-1)" strokeWidth={2} dot={false} activeDot={{ r: 4 }} isAnimationActive={false} />
-          <Line type="monotone" dataKey="tx" name="发送 / 上行" stroke="var(--qm-chart-2)" strokeWidth={2} strokeDasharray="4 4" dot={false} activeDot={{ r: 4 }} isAnimationActive={false} />
-        </LineChart>
-      </ResponsiveContainer>
-    </details>
   </>
 }

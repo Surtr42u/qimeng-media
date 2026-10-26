@@ -7,6 +7,7 @@ import { BatchOpsPanel } from '@/components/ui/batch-ops-panel'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { MultiSelectBar } from '@/components/ui/multi-select-bar'
 import { LoadingHint } from '@/components/ui/loading-hint'
+import { ManagePageHeader, ManageQueryError } from '@/components/manage/ManagePageHeader'
 import {
   useDeleteTrashItem, useEmptyTrash, useRestoreTrash, useTrash,
 } from '@/hooks/use-trash'
@@ -32,14 +33,15 @@ const SELECT_COL_PX = 36
 const PATH_COL_MAX_PX = 300
 
 export default function TrashPage() {
-  const { data: items = [], isLoading } = useTrash()
+  const query = useTrash()
+  const { data: items = [], isLoading } = query
   const restore = useRestoreTrash()
   const removeOne = useDeleteTrashItem()
   const emptyAll = useEmptyTrash()
   const runner = useBatchRunner()
   // 单条操作互斥：恢复/彻底删除/清空三者任一在途时，其余入口（含下方批量按钮与清空）一并禁用，
   // 防同一 id 被并发的单条与批量操作重复提交（单条失败重试语义见 doRemoveOne/doEmpty 回调）。
-  const singleOpPending = restore.isPending || removeOne.isPending || emptyAll.isPending
+  const singleOpPending = restore.isPending || removeOne.isPending || emptyAll.isPending || query.isError
 
   const doRestore = (it: TrashItem): void => {
     if (singleOpPending) return
@@ -104,6 +106,7 @@ export default function TrashPage() {
   // 批量执行胶水收敛（lib/batch-run.ts）：id 守卫/toast/selectOnly 收口共享，
   // 调用点只留差异部分（action 文案 + 单条 mutateAsync）；targets = 选集快照
   const runBatchRestore = (): void => {
+    if (singleOpPending || runner.state.running) return
     const targets = selectedItems
     runBatchWithToast(runner, {
       action: '批量恢复',
@@ -114,6 +117,7 @@ export default function TrashPage() {
   }
 
   const runBatchPurge = (): void => {
+    if (singleOpPending || runner.state.running) return
     const targets = selectedItems
     setBatchPurgeOpen(false)
     runBatchWithToast(runner, {
@@ -128,15 +132,14 @@ export default function TrashPage() {
   const allSelected = ids.length > 0 && selectedItems.length === ids.length
 
   return (
-    <div className="page" id="page-maintenance-trash">
-      <div className="page-head">
-        <h2>回收站</h2>
-        <p>删除的文件先进回收站；恢复或彻底清除都在这里 · 共 {items.length} 项 / {formatBytes(totalBytes)}</p>
-      </div>
+    <div className="page manage-workspace" id="page-maintenance-trash">
+      <ManagePageHeader title="回收站" description="先核对并恢复需要的文件；彻底删除与清空仍需独立确认" />
+      <div className="manage-summary"><span>{query.data ? `${items.length} 项待处理` : '条目数待读取'}</span><span>{query.data ? formatBytes(totalBytes) : '容量待读取'}</span><span>恢复冲突时自动重命名</span></div>
+      {query.isError && <ManageQueryError retry={() => { void query.refetch() }}>回收站读取失败{query.data ? '，保留上次列表，恢复/清理暂不可用' : '，不能据此判断回收站为空'}</ManageQueryError>}
 
       <div className="settings-actions">
         <button
-          className="save-btn"
+          className="pill manage-danger-action"
           type="button"
           onClick={() => setEmptyConfirmOpen(true)}
           disabled={singleOpPending || runner.state.running || items.length === 0}
@@ -187,10 +190,10 @@ export default function TrashPage() {
       {/* 批量进度/失败汇总（上传队列同款交互语言；失败明细页内可滚动核对） */}
       <BatchOpsPanel state={runner.state} onDismiss={runner.reset} />
 
-      <div className="rank-card">
+      <div className="rank-card manage-table-scroll">
         {isLoading ? (
           <LoadingHint />
-        ) : items.length === 0 ? (
+        ) : query.isError && query.data === undefined ? <p className="grid-empty">请重新读取回收站。</p> : items.length === 0 ? (
           <p className="grid-empty">回收站是空的——删除资产后会出现在这里。</p>
         ) : (
           <table className="log-table">
@@ -226,15 +229,15 @@ export default function TrashPage() {
                       <button
                         className="pill"
                         type="button"
-                        disabled={restore.isPending || removeOne.isPending || emptyAll.isPending || runner.state.running}
+                        disabled={singleOpPending || runner.state.running}
                         onClick={() => doRestore(it)}
                       >
-                        {restore.isPending ? '恢复中…' : '恢复'}
+                        {restore.isPending && restore.variables === it.id ? '恢复中…' : '恢复'}
                       </button>
                       <button
                         className="pill"
                         type="button"
-                        disabled={restore.isPending || removeOne.isPending || emptyAll.isPending || runner.state.running}
+                        disabled={singleOpPending || runner.state.running}
                         onClick={() => setRemoveTarget(it)}
                       >
                         {removeOne.isPending && removeTarget?.id === it.id ? '删除中…' : '彻底删除'}

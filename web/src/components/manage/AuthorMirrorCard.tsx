@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 import type { AuthorMirrorConfig } from '@/api/generated'
 import { useAuthorMirror, useSaveAuthorMirror } from '@/hooks/use-authors'
 import { batchFailureReason } from '@/lib/batch'
+import { ManageQueryError } from './ManagePageHeader'
 
 /**
  * 作者总表镜像卡（REQ-上传指定作者与来源 §3.4 自动镜像；2026-09-28 自设置页
@@ -10,25 +11,30 @@ import { batchFailureReason } from '@/lib/batch'
  * 同页维护）：GET /authors/mirror 回填 + 本地草稿，保存一次 PUT 两字段
  * （path 空=关闭）；保存成功即触发一次镜像刷新（服务端尽力而为）。
  */
-export function AuthorMirrorCard() {
-  const { data: mirrorData } = useAuthorMirror()
+export function AuthorMirrorCard({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => void }) {
+  const query = useAuthorMirror()
+  const { data: mirrorData } = query
   const saveMirror = useSaveAuthorMirror()
   const [mirrorDraft, setMirrorDraft] = useState<AuthorMirrorConfig | null>(null)
   const mirror: AuthorMirrorConfig = mirrorDraft ?? {
     path: mirrorData?.path ?? '',
     fragmentFilename: mirrorData?.fragmentFilename ?? '',
   }
+  const busy = saveMirror.isPending || query.isLoading || query.isError || mirrorData === undefined
 
   const setMirrorField = (key: keyof AuthorMirrorConfig, raw: string): void => {
     setMirrorDraft({ ...mirror, [key]: raw })
+    onDirtyChange(true)
   }
 
   const doSaveMirror = (): void => {
+    if (busy || mirrorDraft === null) return
     saveMirror.mutate(
       { path: mirror.path ?? '', fragmentFilename: mirror.fragmentFilename ?? '' },
       {
         onSuccess: () => {
           setMirrorDraft(null)
+          onDirtyChange(false)
           // 保存成功即尝试一次镜像刷新（服务端尽力而为）
           toast.success('镜像配置已保存')
         },
@@ -44,6 +50,7 @@ export function AuthorMirrorCard() {
     <div className="settings-card">
       <h3>作者总表镜像</h3>
       <p>服务端把作者总表片段自动镜像到该路径 · 保存即生效</p>
+      {query.isError && <ManageQueryError retry={() => { void query.refetch() }}>镜像配置读取失败，草稿保留；重新读取后再保存。</ManageQueryError>}
       <div className="settings-grid">
         <label className="settings-field">
           <span>镜像文件路径</span>
@@ -52,6 +59,7 @@ export function AuthorMirrorCard() {
             placeholder="服务端可写的绝对路径；留空 = 关闭"
             autoComplete="off"
             value={mirror.path ?? ''}
+            disabled={busy}
             onChange={(e) => setMirrorField('path', e.target.value)}
           />
           <small>须为服务端文件系统内的绝对路径（相对路径被拒绝）；留空 = 关闭镜像</small>
@@ -63,6 +71,7 @@ export function AuthorMirrorCard() {
             placeholder="留空=最近导入的片段"
             autoComplete="off"
             value={mirror.fragmentFilename ?? ''}
+            disabled={busy}
             onChange={(e) => setMirrorField('fragmentFilename', e.target.value)}
           />
           <small>多片段场景指明镜像哪份片段</small>
@@ -76,11 +85,12 @@ export function AuthorMirrorCard() {
         <button
           className="save-btn"
           type="button"
-          disabled={saveMirror.isPending}
+          disabled={busy || mirrorDraft === null}
           onClick={doSaveMirror}
         >
           {saveMirror.isPending ? '保存中…' : '保存镜像配置'}
         </button>
+        <button className="pill" type="button" disabled={busy || mirrorDraft === null} onClick={() => { setMirrorDraft(null); onDirtyChange(false) }}>放弃修改</button>
       </div>
     </div>
   )

@@ -30,6 +30,7 @@ const AssetDetailPage = lazy(() => import('@/pages/AssetDetailPage'))
 const AssetEditPage = lazy(() => import('@/pages/AssetEditPage'))
 const LibraryManagePage = lazy(() => import('@/pages/LibraryManagePage'))
 const LibraryUploadPage = lazy(() => import('@/pages/LibraryUploadPage'))
+const LibraryFilesPage = lazy(() => import('@/pages/LibraryFilesPage'))
 const LibraryVocabularyPage = lazy(() => import('@/pages/LibraryVocabularyPage'))
 const VocabularyEditPage = lazy(() => import('@/pages/VocabularyEditPage'))
 const LibraryRegistryPage = lazy(() => import('@/pages/LibraryRegistryPage'))
@@ -90,6 +91,7 @@ export const router = createBrowserRouter([
               // 2026-09-29 增 vocabulary 子页：来源词表/作者镜像自上传页再拆独立页）
               { path: 'maintenance/files', element: <Suspense fallback={null}><LibraryManagePage /></Suspense> },
               { path: 'maintenance/files/upload', element: <Suspense fallback={null}><LibraryUploadPage /></Suspense> },
+              { path: 'maintenance/files/browse', element: <Suspense fallback={null}><LibraryFilesPage /></Suspense> },
               { path: 'maintenance/files/vocabulary', element: <Suspense fallback={null}><LibraryVocabularyPage /></Suspense> },
               { path: 'maintenance/files/vocabulary-edit', element: <Suspense fallback={null}><VocabularyEditPage /></Suspense> },
               { path: 'maintenance/files/libraries', element: <Suspense fallback={null}><LibraryRegistryPage /></Suspense> },

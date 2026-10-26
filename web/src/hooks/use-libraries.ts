@@ -14,6 +14,8 @@ import {
 } from '@/api/generated'
 import { unwrapSdkResult } from '@/lib/api-client'
 import { DIRS_QUERY_KEY, LIBRARIES_QUERY_KEY } from '@/lib/query-keys'
+import { invalidateLibraryContent } from '@/lib/query-invalidation'
+import { batchFailureReason } from '@/lib/batch'
 
 /** 库列表（含文件计数与扫描态） */
 export function useLibraries() {
@@ -36,13 +38,21 @@ export function useDirTree(libraryId: string, enabled: boolean) {
   })
 }
 
-/** 注册媒体库（name/rootPath 必填，kind 缺省 normal；成功后服务端自动扫描） */
-export function useRegisterLibrary() {
+/** 注册与触发扫描是两步；第二步失败仍返回已注册事实，禁止让用户重复注册。 */
+export function useRegisterAndScanLibrary() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (body: { name: string; rootPath: string; kind?: 'normal' | 'cos' }) =>
-      unwrapSdkResult(postApiV1Libraries({ body })),
-    onSuccess: () => qc.invalidateQueries({ queryKey: LIBRARIES_QUERY_KEY }),
+    mutationFn: async (body: { name: string; rootPath: string; kind?: 'normal' | 'cos' }) => {
+      const library = await unwrapSdkResult(postApiV1Libraries({ body }))
+      if (!library.id) return { library, scanError: '注册响应缺少库 ID，请刷新列表后单独扫描' }
+      try {
+        await unwrapSdkResult(postApiV1LibrariesByLibraryIdScan({ path: { libraryId: library.id } }))
+        return { library, scanError: null }
+      } catch (error) {
+        return { library, scanError: batchFailureReason(error) }
+      }
+    },
+    onSuccess: () => invalidateLibraryContent(qc),
   })
 }
 
@@ -62,7 +72,7 @@ export function useDeleteLibrary() {
   return useMutation({
     mutationFn: (libraryId: string) =>
       unwrapSdkResult(deleteApiV1LibrariesByLibraryId({ path: { libraryId } })),
-    onSuccess: () => qc.invalidateQueries({ queryKey: LIBRARIES_QUERY_KEY }),
+    onSuccess: () => invalidateLibraryContent(qc),
   })
 }
 
@@ -77,6 +87,6 @@ export function useSetLibraryEnabled() {
           body: { enabled: args.enabled },
         }),
       ),
-    onSuccess: () => qc.invalidateQueries({ queryKey: LIBRARIES_QUERY_KEY }),
+    onSuccess: () => invalidateLibraryContent(qc),
   })
 }

@@ -1,13 +1,13 @@
 import { useRef, useState, type ChangeEvent, type DragEvent } from 'react'
 import { toast } from 'sonner'
 import type { Library } from '@/api/generated'
-import { AuthorSuggestField, type AuthorAttachValue } from '@/components/manage/AuthorSuggestField'
+import { AuthorSuggestField } from '@/components/manage/AuthorSuggestField'
 import { CreateDirDialog } from '@/components/manage/CreateDirDialog'
 import { DirTreeNodes } from '@/components/manage/DirTree'
 import { SourceSelectField } from '@/components/manage/SourceSelectField'
 import { UploadQueueTable } from '@/components/manage/UploadQueueTable'
 import { Pill } from '@/components/ui/pill'
-import { mergeClientConfig, useConfig } from '@/hooks/use-config'
+import { useUploadTarget } from '@/hooks/use-upload-target'
 import { useDirTree } from '@/hooks/use-libraries'
 import { BYTES_PER_MB, useUploadQueue, type StagedFileInput } from '@/hooks/use-upload'
 import { batchFailureReason } from '@/lib/batch'
@@ -48,14 +48,9 @@ function fileOf(input: File | DroppedFile): File {
   return input instanceof File ? input : input.file
 }
 
-export function UploadWorkbench({ libraries }: { libraries: Library[] }) {
-  // ---- 批次目标（会话态；选文件时刻随 enqueue 快照进每条队列条目）----
-  const [libId, setLibId] = useState('')
-  // 目标目录 = 库内相对路径（协议 dir 参数，'' = 库根）；切库必须重选（旧库路径对新库无意义）
-  const [dir, setDir] = useState('')
-  // ---- 批次默认挂靠（新进文件选入时继承源）----
-  const [batchAuthor, setBatchAuthor] = useState<AuthorAttachValue | null>(null)
-  const [batchSources, setBatchSources] = useState<string[]>([])
+export function UploadWorkbench({ libraries, targetsReady = true }: { libraries: Library[]; targetsReady?: boolean }) {
+  const target = useUploadTarget(libraries, targetsReady)
+  const { libId, dir, setDir, batchAuthor, batchSources, setBatchSources, enabled, maxBytesMb, onLibChange } = target
   const [dragOver, setDragOver] = useState(false)
   const [blockMsg, setBlockMsg] = useState<string | null>(null)
   const [createDirOpen, setCreateDirOpen] = useState(false)
@@ -64,12 +59,10 @@ export function UploadWorkbench({ libraries }: { libraries: Library[] }) {
   const [resumePickId, setResumePickId] = useState<string | null>(null)
   const resumeInputRef = useRef<HTMLInputElement>(null)
 
-  const enabled = libId !== ''
   const hasBatchAuthor = !!batchAuthor?.authorId
   // 目录树复用既有数据源（GET /dirs）；未选库时挂起不发请求
-  const { data: tree } = useDirTree(libId, enabled)
-  const { data: config } = useConfig()
-  const maxBytesMb = config ? mergeClientConfig(config).upload.maxBytesMb : null
+  const treeQuery = useDirTree(libId, enabled)
+  const tree = treeQuery.data
 
   const queue = useUploadQueue({
     maxBytesMb,
@@ -84,7 +77,7 @@ export function UploadWorkbench({ libraries }: { libraries: Library[] }) {
 
   /** 队列入队载荷（挂靠只在作者已定时带上；来源以作者为前提，快照批次默认） */
   const toUploadInput = (input: File | DroppedFile): StagedFileInput => {
-    const author = batchAuthor
+    const author = target.canAttach ? batchAuthor : null
     return {
       file: fileOf(input),
       relativePath: input instanceof File ? undefined : input.relativePath,
@@ -102,8 +95,8 @@ export function UploadWorkbench({ libraries }: { libraries: Library[] }) {
   /** 直传入队（点击选择 / 拖文件 / 拖目录三管道统一入口；继承批次默认挂靠） */
   const ingest = (inputs: readonly (File | DroppedFile)[]): void => {
     if (inputs.length === 0) return
-    if (!enabled) {
-      setBlockMsg('先选择目标库——本次选中的文件未上传')
+    if (!target.canAdd) {
+      setBlockMsg(`${target.blockedReason}——本次选中的文件未上传`)
       return
     }
     // 超限本地拦截在入队前判：拦下的不传、给横幅提示；全部超限则整批不入队
@@ -131,6 +124,7 @@ export function UploadWorkbench({ libraries }: { libraries: Library[] }) {
   const onDrop = (e: DragEvent<HTMLDivElement>): void => {
     e.preventDefault()
     setDragOver(false)
+    if (!target.canAdd) { setBlockMsg(target.blockedReason); return }
     const dt = e.dataTransfer
     // entry 提取必须在本事件回调内同步完成（DataTransferItem 派发结束即失效，
     // 见 lib/folder-upload.ts）；空列表 = 环境不支持 webkitGetAsEntry 或拖的
@@ -151,12 +145,6 @@ export function UploadWorkbench({ libraries }: { libraries: Library[] }) {
         toast.error(`读取拖入的文件夹失败：${batchFailureReason(err)}`)
       }
     })()
-  }
-
-  /** 切库同时清空已选目录：目录是库内相对路径，跨库残留会指到错误位置 */
-  const onLibChange = (next: string): void => {
-    setLibId(next)
-    setDir('')
   }
 
   /** 恢复条目「重选文件」：记住条目 id 后唤起隐藏 file input（拾取链路与
@@ -183,12 +171,12 @@ export function UploadWorkbench({ libraries }: { libraries: Library[] }) {
   const needsFileCount = queue.items.filter((it) => it.status === 'needs-file').length
 
   return (
-    <div className="rank-card">
+    <div className="rank-card upload-workbench">
       <div className="rank-head">
         <h3>上传</h3>
       </div>
       <p className="rank-note">
-        动线：选库 → 选目录 → 添加文件（选择后立即上传）→ 队列看进度
+        目标 → 作者与来源 → 添加文件 → 查看结果
         {maxBytesMb != null ? ` · 单文件上限 ${maxBytesMb} MB，超限文件拦截不传` : ' · 类型与大小校验以服务端为准'}
       </p>
 
@@ -199,8 +187,8 @@ export function UploadWorkbench({ libraries }: { libraries: Library[] }) {
           // 守卫内先取常量：TS 收窄不进 onClick 闭包，避免闭包内非空断言
           const id = l.id
           return id ? (
-            <Pill key={id} active={libId === id} onClick={() => onLibChange(id)}>
-              {l.name}
+            <Pill key={id} active={libId === id} disabled={l.enabled === false} onClick={() => onLibChange(id)}>
+              {l.name}{l.enabled === false ? ' · 已停用' : ''}
             </Pill>
           ) : null
         })}
@@ -209,7 +197,7 @@ export function UploadWorkbench({ libraries }: { libraries: Library[] }) {
       <div className="upload-subhead">
         目标目录 <small className="staged-sub">已选：{dir === '' ? '库根' : dir}</small>
       </div>
-      {enabled && tree ? (
+      {enabled && treeQuery.isError ? <div className="manage-notice manage-notice--warning" role="alert"><span>目录读取失败，可重试；新上传仍使用上方明确选定的目录。</span><Pill onClick={() => { void treeQuery.refetch() }}>重试目录</Pill></div> : enabled && tree ? (
         <>
           <div className="dir-tree">
             <ul>
@@ -237,24 +225,23 @@ export function UploadWorkbench({ libraries }: { libraries: Library[] }) {
         label="批次作者（可选，联想选择）"
         attachedHint="已选批次作者——之后选入的文件上传成功后自动挂靠"
         value={batchAuthor}
-        onChange={setBatchAuthor}
+        disabled={!target.canAttach}
+        onChange={target.onAuthorChange}
       />
       <SourceSelectField
         label="批次来源（可选）"
         hint="留空 = 不改动该作者既有来源；已选来源上传后并入其来源记录（不覆盖）"
         disabledHint="先选择批次作者后才能设置来源"
-        disabled={!hasBatchAuthor}
+        disabled={!target.canAttach || !hasBatchAuthor}
         selected={batchSources}
         onChange={setBatchSources}
       />
+      {!target.canAttach && <p className="rank-note">{enabled ? '当前库不支持手动作者挂靠；作者关系由目录结构或服务端规则维护。' : '选择支持作者挂靠的目标库后，可设置批次作者与来源。'}</p>}
 
       {/* —— 添加文件：点击/拖拽统一入口（常驻），选完立即入队直传 —— */}
       <div className="upload-subhead">添加文件 <small className="staged-sub">目录递归展开，上传到上方所选库/目录</small></div>
       <div
         className={`upload-drop${dragOver ? ' over' : ''}`}
-        role="button"
-        aria-label="选择或拖入要上传的文件或文件夹"
-        onClick={() => inputRef.current?.click()}
         onDragOver={(e) => {
           e.preventDefault()
           setDragOver(true)
@@ -262,7 +249,10 @@ export function UploadWorkbench({ libraries }: { libraries: Library[] }) {
         onDragLeave={() => setDragOver(false)}
         onDrop={onDrop}
       >
-        点击选择文件，或把文件/文件夹拖到这里——选择后立即上传
+        <div className="upload-target-summary"><strong>{target.libraryName}</strong><span>{dir || '库根目录'}</span><span>{target.canAttach ? (batchAuthor?.displayName ?? batchAuthor?.authorName ?? '不指定批次作者') : '按库规则关联作者'}</span></div>
+        <button className="save-btn" type="button" disabled={!target.canAdd} onClick={() => inputRef.current?.click()}>选择文件并立即上传</button>
+        <p>{target.blockedReason ?? '也可以拖入文件或文件夹；之后修改设置只影响下一批文件。'}</p>
+        {target.configError && <Pill onClick={() => { void target.retryConfig() }}>重新读取上传设置</Pill>}
       </div>
       <input ref={inputRef} type="file" multiple hidden onChange={pickFiles} aria-label="选择要上传的文件" />
       <input

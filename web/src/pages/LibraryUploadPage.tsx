@@ -1,40 +1,17 @@
-import { useNavigate } from 'react-router'
-import { DirBrowser } from '@/components/manage/DirBrowser'
+import { Link } from 'react-router'
+import { ManagePageHeader, ManageQueryError } from '@/components/manage/ManagePageHeader'
+import { ServerImportPanel } from '@/components/manage/ServerImportPanel'
 import { UploadWorkbench } from '@/components/manage/UploadWorkbench'
-import { Pill } from '@/components/ui/pill'
 import { useLibraries } from '@/hooks/use-libraries'
-import { MAINTENANCE_FILES_PATH, MAINTENANCE_FILES_VOCABULARY_PATH } from '@/lib/route-keys'
+import { MAINTENANCE_FILES_BROWSER_PATH, MAINTENANCE_FILES_VOCABULARY_PATH } from '@/lib/route-keys'
 
-/**
- * 上传子页（数据管理 hub「上传文件」卡 → /app/maintenance/files/upload）。
- * 2026-09-28 重排：UploadCard 升级为 UploadWorkbench（交互同构 App 上传页：
- * 批次库/目录 + 批次挂靠默认 + 门禁上传递，配置区常驻）。2026-09-29 去暂存化
- * （用户拍板「暂存了没意义，去掉」）：暂存列表/逐项编辑/开始上传按钮退役，
- * 选完文件立即上传。
- * 2026-09-29 再拆：通用来源词表与作者总表镜像迁出为独立页（用户拍板「拆成
- * 两个」——本页只留上传动线），页顶留一行指引链接；目录浏览卡保留在后
- * （文件整理动线，与上传无耦合）。libraries 同源取数（useLibraries）。
- */
 export default function LibraryUploadPage() {
-  const navigate = useNavigate()
-  const { data: libraries = [] } = useLibraries()
-
-  return (
-    <div className="page" id="page-maintenance-files-upload">
-      <div className="settings-actions">
-        <Pill onClick={() => navigate(MAINTENANCE_FILES_PATH)}>← 返回数据管理</Pill>
-      </div>
-      <div className="page-head">
-        <h2>上传文件</h2>
-        <p>选择本地图片和视频上传到媒体库，可指定作者与来源自动挂靠</p>
-        <p className="rank-note">
-          来源词表与作者镜像已拆到独立页维护：
-          <Pill onClick={() => navigate(MAINTENANCE_FILES_VOCABULARY_PATH)}>来源词表与作者镜像 →</Pill>
-        </p>
-      </div>
-
-      <UploadWorkbench libraries={libraries} />
-      <DirBrowser libraries={libraries} />
-    </div>
-  )
+  const query = useLibraries()
+  return <div className="page manage-workspace" id="page-maintenance-files-upload">
+    <ManagePageHeader title="上传文件" description="先确认目标，再设置作者与来源；选择文件后立即上传" actions={<Link className="manage-text-link" to={MAINTENANCE_FILES_BROWSER_PATH}>整理已入库文件 →</Link>} />
+    {query.isError && <ManageQueryError retry={() => { void query.refetch() }} busy={query.isFetching}>目标库列表读取失败，新文件暂不入队；正在进行的上传继续。</ManageQueryError>}
+    <UploadWorkbench libraries={query.data ?? []} targetsReady={!query.isError && query.data !== undefined} />
+    <p className="manage-helper">需要修改建议词或作者清单镜像？<Link to={MAINTENANCE_FILES_VOCABULARY_PATH}>来源词表与镜像</Link></p>
+    <ServerImportPanel />
+  </div>
 }
