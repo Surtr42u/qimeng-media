@@ -233,31 +233,22 @@ body::before {
 .tabs[hidden] { display: none; }
 .rank-panel[hidden] { display: none; }
 
-.tab {
-  position: relative;
-  font-size: 17px;
-  font-weight: 500;
-  color: var(--qm-text-muted);
-  padding: 0 var(--qm-space-3);
-  height: 44px;
-  border-radius: var(--qm-radius-sm);
-  transition: color var(--qm-duration-fast) var(--qm-ease-out);
-}
-.tab:hover { color: var(--qm-text); }
-.tab.active { color: var(--qm-primary); font-weight: 600; }
-/* 激活指示：短发光横条（带主色光晕） */
-.tab.active::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  bottom: 2px;
-  transform: translateX(-50%);
-  width: 22px;
-  height: 3px;
+/* 首页分类成组呈现；限定 header，避免改变“我的”页同名 tabs。 */
+.header .tabs { height: 42px; padding: 4px; gap: 2px; border: 1px solid var(--qm-border); border-radius: var(--qm-radius-full); background: var(--qm-surface-soft); }
+.header .tab {
+  min-width: 60px;
+  height: 32px;
+  padding: 0 16px;
   border-radius: var(--qm-radius-full);
-  background: var(--qm-primary);
-  box-shadow: 0 0 8px color-mix(in oklab, var(--qm-primary) 65%, transparent);
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--qm-text-muted);
+  transition: color var(--qm-duration-fast) var(--qm-ease-out), background var(--qm-duration-fast) var(--qm-ease-out);
 }
+.header .tab:hover { color: var(--qm-text); background: var(--qm-hover); }
+.header .tab.active { color: var(--qm-primary); background: var(--qm-primary-soft); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--qm-primary) 26%, transparent); }
+.header .tab:focus-visible { outline: 2px solid var(--qm-primary); outline-offset: 2px; }
 
 .header--right {
   display: flex;
@@ -1358,6 +1349,17 @@ button.save-btn {
   .donut-grid, .rank-grid, .entry-grid, .settings-grid { grid-template-columns: 1fr; }
   .rank-cards { grid-template-columns: 1fr; }
   .search { width: 200px; }
+  /* 窄窗口让搜索独占一行，避免分类与居中搜索框重叠；保留原生窗口按钮。 */
+  .header[data-home] { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: 58px auto; height: auto; }
+  .header[data-home] .header--left { grid-area: 1 / 1; }
+  .header[data-home] .header--right { grid-area: 1 / 2; }
+  .header[data-home] .search { grid-area: 2 / 1 / 3 / -1; position: relative; top: auto; left: auto; transform: none; width: calc(100% - var(--qm-space-4)); margin-bottom: 12px; }
+}
+@media (max-width: 560px) {
+  /* 最窄窗口将分类放第二行，搜索与窗口按钮分列，三项入口仍完整显示。 */
+  .header[data-home] { padding-left: 12px; column-gap: 8px; }
+  .header[data-home] .search { grid-area: 1 / 1; width: 100%; min-width: 0; margin-bottom: 0; }
+  .header[data-home] .header--left { grid-area: 2 / 1 / 3 / -1; padding-bottom: 12px; }
 }
 
 /* ============ §8-1 搜索结果页 ============ */

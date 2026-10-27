@@ -8,7 +8,7 @@
 /** 顶栏分类 tab（key 即 URL ?tab= 值；缺省 recommend 时 URL 不带 tab） */
 export const HOME_TABS = [
   { key: 'recommend', label: '推荐' },
-  { key: 'cos', label: 'cos' },
+  { key: 'cos', label: 'COS' },
   { key: 'hot', label: '排行榜' },
 ] as const
 export type HomeTabKey = (typeof HOME_TABS)[number]['key']

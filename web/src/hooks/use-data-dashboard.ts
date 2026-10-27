@@ -7,14 +7,15 @@ import { authorDisplayName, formatBytes, formatDurationSeconds } from '@/lib/for
 import { authorRankRows, tagRankRows } from '@/lib/rank-rows'
 import { STATS_SEGMENTS } from '@/lib/stats-contract'
 
-/** 首屏榜单及作者管理预览各取五项；完整榜单仍走原独立页面。 */
+/** 内容榜取六项填满三列两排；其他榜单及作者管理预览仍取五项。 */
+const CONTENT_RANK_PREVIEW_COUNT = 6
 const RANK_TOP_PREVIEW_COUNT = 5
 
 /** 仅组织服务端统计及展示格式；不计算领域指标，不用管理列表代替窗口榜单。 */
 export function useDataDashboard(current: typeof STATS_SEGMENTS[number]) {
   const overviewQuery = useStatsOverview(current.trends)
   const trendQuery = useTrends(current.trends)
-  const contentRank = useRankings(current.period, RANK_TOP_PREVIEW_COUNT)
+  const contentRank = useRankings(current.period, CONTENT_RANK_PREVIEW_COUNT)
   const tagQuery = useStatsTopTags(current.trends, RANK_TOP_PREVIEW_COUNT)
   const authorQuery = useStatsTopAuthors(current.trends, RANK_TOP_PREVIEW_COUNT)
   const authorsQuery = useAuthors()
@@ -51,7 +52,7 @@ export function useDataDashboard(current: typeof STATS_SEGMENTS[number]) {
     .sort((a, b) => (b.fileCount ?? 0) - (a.fileCount ?? 0)).slice(0, RANK_TOP_PREVIEW_COUNT)
     .map(author => ({ name: authorDisplayName(author), count: '' })), [authorsQuery.data])
   return {
-    overviewQuery, trendQuery, contentRank, tagQuery, authorQuery, authorsQuery, overview,
+    overviewQuery, trendQuery, contentRank, contentPreviewCount: CONTENT_RANK_PREVIEW_COUNT, tagQuery, authorQuery, authorsQuery, overview,
     metrics, typeSlices, viewSlices, tagRows, authorRows, authorOverviewRows,
     inventoryFiles: overview?.totalFiles == null ? '—' : overview.totalFiles.toLocaleString(LOCALE_ZH),
     inventoryBytes: overview?.totalSizeBytes == null ? '—' : formatBytes(overview.totalSizeBytes),

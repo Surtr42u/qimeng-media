@@ -157,14 +157,15 @@ export function TopBar() {
 
   return (
     <>
-      <header className="header" data-qimeng-titlebar>
+      <header className="header" data-qimeng-titlebar data-home={isHome ? '' : undefined}>
         <div className="header--left">
-          <nav className="tabs" hidden={!isHome}>
+          <nav className="tabs" aria-label="首页内容" hidden={!isHome}>
             {HOME_TABS.map((t) => (
               <button
                 key={t.key}
                 className={`tab${activeTab === t.key ? ' active' : ''}`}
                 type="button"
+                aria-pressed={activeTab === t.key}
                 onClick={() => switchTab(t.key)}
               >
                 {t.label}
