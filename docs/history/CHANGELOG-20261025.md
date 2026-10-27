@@ -3,6 +3,13 @@
 > 完整条目由近期CHANGELOG原样归档。
 
 
+## fix(server): 区分服务关停与缩略图生成故障（2026-10-25 第六百一十三笔）
+
+执行 AI：GPT-6.1 Sol（主代理；工具 Codex）。
+
+- 关闭路径静态复核：ffmpeg被服务根取消时可能只返回signal killed而不包装context.Canceled，原判断会误增failed。现统一看服务根生命周期，关停后不计单资产准备/生成/源复核失败；工作池改Debug记录关停，不批量刷Error，panic仍Error。活动期的真实失败和单尺寸超时仍记失败。
+- 文档影响：OBSERVABILITY与HANDOVER同步停机口径，资源释放/缓存清理/协议与画质不变。复用既有关闭/取消/异常回归及完整云端门禁；本地只格式化和静态审查，无本地测试/部署。
+
 ## docs(docs): 记录Release正反验证并完成优化交付说明（2026-10-25 第六百一十二笔）
 
 执行 AI：GPT-6.1 Sol（主代理；工具 Codex）。
