@@ -94,6 +94,14 @@ test('详情推荐在卡片内滚动，换批回到顶部且标题操作保持�
   expect(await list.locator('.upnext-row').count()).toBeLessThanOrEqual(12)
   await list.scrollIntoViewIfNeeded()
   expect(await list.evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true)
+  const alignment = await page.locator('.detail-layout--video').evaluate(el => {
+    const stage = el.querySelector('.asset-stage')!.getBoundingClientRect()
+    const side = el.querySelector('.detail-side')!.getBoundingClientRect()
+    const card = el.querySelector('.upnext-card')!.getBoundingClientRect()
+    return { top: Math.abs(stage.top - side.top), bottom: Math.abs(stage.bottom - card.bottom) }
+  })
+  expect(alignment.top).toBeLessThanOrEqual(1)
+  expect(alignment.bottom).toBeLessThanOrEqual(1)
   await list.press('End')
   await expect.poll(() => list.evaluate(el => el.scrollTop)).toBeGreaterThan(0)
   const shuffle = page.locator('.upnext-head').getByRole('button', { name: '换一批', exact: true })

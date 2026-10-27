@@ -201,7 +201,7 @@ export default function AssetDetailPage() {
 
   return (
     <div ref={overlayRef} className="page asset-overlay" id="page-asset">
-      <div className="detail-layout">
+      <div className={`detail-layout${isVideo ? ' detail-layout--video' : ''}`}>
         <div className="detail-main">
           <div className="asset-stage">
             {isVideo ? (

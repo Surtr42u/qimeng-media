@@ -1689,6 +1689,9 @@ li.dir-file-row:hover { background: var(--qm-hover); }
 /* ============ §8-4 资产详情页（双栏 = 主列 + 右栏） ============ */
 
 .detail-layout {
+  /* 播放舞台与桌面右栏共用高度，避免分别限高后底边错位。 */
+  --stage-max-h: 68vh;
+  --stage-min-h: 360px;
   display: flex;
   align-items: flex-start;
   gap: 20px;
@@ -1698,6 +1701,14 @@ li.dir-file-row:hover { background: var(--qm-hover); }
 }
 .detail-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
 .detail-side { width: clamp(340px, 22vw, 400px); flex: none; display: flex; flex-direction: column; gap: 16px; }
+.detail-layout--video .asset-stage { height: var(--stage-max-h); }
+@media (min-width: 1001px) {
+  .detail-layout--video .detail-side { height: max(var(--stage-min-h), var(--stage-max-h)); min-height: 0; }
+  .detail-layout--video .detail-side > :not(.upnext-card) { flex: none; max-height: 40%; overflow-y: auto; }
+  .detail-layout--video .upnext-card { flex: 1; min-height: 0; overflow: hidden; }
+  .detail-layout--video .upnext-head, .detail-layout--video .upnext-card > .query-notice { flex-shrink: 0; }
+  .detail-layout--video .upnext-list { flex: 1; min-height: 0; max-height: none; }
+}
 
 .detail-title { font-size: 18px; line-height: 26px; font-weight: 600; color: var(--qm-text); word-break: break-all; }
 .detail-meta { display: flex; flex-wrap: wrap; align-items: center; font-size: 13px; color: var(--qm-text-muted); font-variant-numeric: tabular-nums; }
@@ -1844,17 +1855,16 @@ button.pill.detail-tag-manage { cursor: pointer; }
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 360px;
-  max-height: 68vh;
+  min-height: var(--stage-min-h);
+  max-height: var(--stage-max-h);
   overflow: hidden;
   position: relative;
-  --stage-max-h: 68vh;
   box-shadow: var(--qm-shadow-2);
 }
 .asset-stage img,
 .asset-stage video {
   max-width: 100%;
-  max-height: 68vh;
+  max-height: var(--stage-max-h);
   object-fit: contain;
   display: block;
 }
