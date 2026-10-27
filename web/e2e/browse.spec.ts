@@ -10,7 +10,9 @@ async function setup(page: Page) {
   await page.route('**/preview/cover.svg*', route => route.fulfill({ contentType: 'image/svg+xml', body: coverSvg() }))
   await page.route('**/api/**', async route => {
     const request = route.request(), url = new URL(request.url())
-    if (url.pathname === '/api/v1/events') return route.fulfill({ contentType: 'text/event-stream', body: ': synthetic preview\n\n' })
+    // 本场景不测SSE。短的200响应会被视为反复开流/断流，周期性失效查询并抢走重试状态；
+    // 阻断连接避免制造假重连。人工预览server.mjs提供真正保持打开的事件流。
+    if (url.pathname === '/api/v1/events') return route.abort()
     if (url.pathname === '/api/v1/recommendations') state.seeds.push(url.searchParams.get('seed') ?? '0')
     if (url.pathname === '/api/v1/assets' && (state.failAssets || state.failNext && url.searchParams.has('cursor'))) return route.fulfill({ status: 503, json: { code: 'SYNTHETIC_FAILURE', message: '合成读取故障' } })
     const result = api(url.pathname, request.method(), url.searchParams, request.postData() ? request.postDataJSON() : {})
@@ -68,4 +70,17 @@ test('相册读取故障不伪装为空；续页失败重试保留已有条目',
   await page.getByRole('button', { name: '重新读取', exact: true }).click()
   await expect.poll(() => cards.count()).toBeGreaterThanOrEqual(120)
   await expect(cards.first()).toHaveAttribute('data-id', first!)
+})
+
+test('窄屏首页与相册不横向溢出，批次和筛选入口保持可见', async ({ page }) => {
+  await setup(page)
+  await page.setViewportSize({ width: 390, height: 844 })
+  for (const route of ['home', 'albums']) {
+    await page.goto(`/app/${route}`)
+    await expect(page.locator(`#page-${route} .card`).first()).toBeVisible()
+    expect(await page.locator(`#page-${route}`).evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
+    await expect(page.getByRole('heading', { name: route === 'home' ? '为你推荐' : '相册', exact: true })).toBeVisible()
+    if (route === 'home') await expect(page.getByRole('button', { name: '换一批', exact: true })).toBeVisible()
+    else await expect(page.getByRole('button', { name: '更多筛选', exact: true })).toBeVisible()
+  }
 })

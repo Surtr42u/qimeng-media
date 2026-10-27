@@ -320,10 +320,13 @@ export default function AlbumsPage() {
     />
   )
 
+  // 首次失败在顶部；续页失败紧跟已有列表，避免滚动到底后找不到重试入口。
+  const queryNotice = isError && <QueryNotice message={isFetchNextPageError ? '更多相册内容读取失败' : '相册读取失败'} retained={items.length > 0} busy={isFetching} onRetry={() => { if (isFetchNextPageError) void fetchNextPage({ cancelRefetch: false }); else void refetch() }} />
+
   return (
     <div className="page" id="page-albums">
       <BrowseToolbar title="相册" summary={isPlaceholderData ? '正在切换筛选…' : isError ? `已加载 ${items.length} 项 · 读取失败` : pages?.pages[0]?.totalMatched == null ? '按日期浏览媒体' : `匹配 ${pages.pages[0].totalMatched.toLocaleString(LOCALE_ZH)} 项 · 已加载 ${items.length} 项`} actions={hasFilter && <button className="browse-action" type="button" onClick={resetFilters}><X aria-hidden="true" />清空筛选</button>} />
-      {isError && <QueryNotice message={isFetchNextPageError ? '更多相册内容读取失败' : '相册读取失败'} retained={items.length > 0} busy={isFetching} onRetry={() => { if (isFetchNextPageError) void fetchNextPage({ cancelRefetch: false }); else void refetch() }} />}
+      {!isFetchNextPageError && queryNotice}
       <section className="filter-card">
         {/* 维度行：分区 / 作者 / 角色 / 类型（徽标=各维排自身候选数）+ 最右侧筛选开合 */}
         <div className="pill-row" role="group" aria-label="筛选维度">
@@ -405,6 +408,7 @@ export default function AlbumsPage() {
       {items.length === 0 && !isFetching && !isError ? (
         <p className="grid-empty">{hasFilter ? '该筛选组合下暂无内容，可以清空筛选后再试。' : '相册里还没有内容。'}</p>
       ) : null}
+      {isFetchNextPageError && queryNotice}
       {/* E3 无感加载尾部（三件套见 components/media/InfiniteTail） */}
       <InfiniteTail
         isFetchingNextPage={isFetchingNextPage}
