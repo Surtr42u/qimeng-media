@@ -154,4 +154,6 @@ test('历史明确筛选已加载记录，手动续页及离开返回不丢分�
   await expect(page.getByRole('searchbox', { name: '筛选已加载历史', exact: true })).toHaveValue('needle')
   await card.press('Enter')
   await expect(page).toHaveURL(/\/app\/asset\/history-b$/)
+  await expect(page.locator('.asset-stage')).toBeVisible()
+  await expect(page.locator('.asset-stage').getByText('已看完', { exact: true })).toHaveCount(0)
 })

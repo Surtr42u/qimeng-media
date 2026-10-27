@@ -80,7 +80,7 @@ export default function AssetDetailPage() {
   // 档位偏好接入选点（与 MediaCard 同口径；auto=服务端下发原样）——视频海报帧跟随
   const [thumbSize] = useThumbSize()
 
-  // 已看完徽标与续播起点渲染期直接推导（协议明文口径，客户端推导）；
+  // 完成判定仅决定续播起点；播放器不再显示已看完角标。
   // 起点的「定格防 refetch 重建」由 VideoPlayer 挂载时冻结 + key 绑定资产实现
   const watched = !!d && isWatched(d.lastPositionSeconds, d.durationMs)
   const startTime = watched ? 0 : (d?.lastPositionSeconds ?? 0)
@@ -204,7 +204,6 @@ export default function AssetDetailPage() {
       <div className="detail-layout">
         <div className="detail-main">
           <div className="asset-stage">
-            {watched ? <span className="watched-badge">已看完</span> : null}
             {isVideo ? (
               // F2·P1-1 挂载闸：tags isPending || isPlaceholderData 不挂播放器
               // （防新播放器以旧资产 tags 首挂定格，契约见 useTimelineTags 注释）；

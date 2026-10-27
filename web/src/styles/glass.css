@@ -2050,21 +2050,7 @@ button.pill.detail-tag-manage { cursor: pointer; }
   z-index: 99999 !important;
 }
 
-.watched-badge {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  z-index: 12; /* 高于 ArtPlayer .art-video(10)/.art-poster(11) */
-  pointer-events: none;
-  padding: 3px 10px;
-  border-radius: var(--qm-radius-full);
-  background: color-mix(in oklab, var(--qm-primary) 82%, transparent);
-  color: var(--qm-on-accent);
-  font-size: 12px;
-  font-weight: 600;
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
-}
+
 
 /* 视频全屏修正（v1 实证修复，勿删）：全屏内解除 68vh 上限 + zoom 归一 */
 .asset-stage :fullscreen video { max-height: none; }
@@ -2827,18 +2813,18 @@ li.dir-file-row.ms-row-selected { background: var(--qm-hover); }
 .data-metric > strong { font-size: 30px; line-height: 1.2; font-weight: 650; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .data-metric > small { color: var(--qm-text-muted); font-size: 11px; line-height: 1.5; }
 .data-primary-grid, .data-secondary-grid { display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr); gap: 20px; }
-.data-secondary-grid { align-items: stretch; }
+.data-secondary-grid { align-items: start; }
 .data-workspace .chart-card, .data-workspace .rank-card, .data-workspace .donut-card { padding: 22px; min-width: 0; }
-/* 两列横向小封面榜单保留Top5，缩短三排的高度，使同排占比卡自然接近等高。 */
+/* 保留原大封面卡片样式，仅收紧网格与标题间距，不再改成横向榜单。 */
 .data-content-panel { container: data-content / inline-size; }
-.data-content-panel .rank-cards { grid-template-columns: minmax(0, 1fr); gap: 10px; counter-reset: content-position; }
-.data-content-panel .rank-item { display: grid; grid-template-columns: 18px 88px minmax(0, 1fr); align-items: center; gap: 10px; padding: 8px 4px; border-radius: var(--qm-radius-sm); }
-.data-content-panel .rank-item::before { counter-increment: content-position; content: counter(content-position, decimal-leading-zero); color: var(--qm-primary); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.data-content-panel .rank-item:hover { background: var(--qm-hover); }
-.data-content-panel .rank-title { margin-top: 0; min-height: 0; font-size: 13px; }
+.data-content-panel .rank-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.data-content-panel .rank-title { margin-top: 8px; }
 .data-content-panel .rank-item:focus-visible { outline: 2px solid var(--qm-primary); outline-offset: 4px; border-radius: var(--qm-radius-sm); }
 @container data-content (min-width: 480px) {
-  .data-content-panel .rank-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .data-content-panel .rank-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@container data-content (max-width: 239px) {
+  .data-content-panel .rank-cards { grid-template-columns: minmax(0, 1fr); }
 }
 .data-coverage { display: flex; flex-wrap: wrap; gap: 7px; margin: 15px 0; }
 .data-coverage > span { display: inline-flex; align-items: center; gap: 4px; padding: 5px 9px; border-radius: var(--qm-radius-sm); font-size: 11px; color: var(--qm-text-muted); background: var(--qm-hover); }
@@ -2861,8 +2847,7 @@ li.dir-file-row.ms-row-selected { background: var(--qm-hover); }
 .data-rank-grid .rank-card > ul { margin-top: 14px; }
 /* 三张榜单均为单行信息：保留点击高度，无需为已移除的作者文件数预留第二行。 */
 .data-rank-grid .rank-card ul > li { padding: 10px 8px; min-height: 44px; line-height: 20px; }
-.data-secondary-grid > .donut-card { display: flex; flex-direction: column; }
-.data-secondary-grid .donut-row { flex: 1; flex-direction: column; justify-content: center; gap: 14px; }
+.data-secondary-grid .donut-row { flex-direction: column; gap: 14px; }
 .data-secondary-grid .legend { width: 100%; }
 .donut-visual { position: relative; flex-shrink: 0; }
 .donut-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; pointer-events: none; }
