@@ -49,7 +49,7 @@ export function useDataDashboard(current: typeof STATS_SEGMENTS[number]) {
   const authorRows = useMemo(() => authorRankRows(authorQuery.data ?? []), [authorQuery.data])
   const authorOverviewRows = useMemo(() => (authorsQuery.data ?? []).slice()
     .sort((a, b) => (b.fileCount ?? 0) - (a.fileCount ?? 0)).slice(0, RANK_TOP_PREVIEW_COUNT)
-    .map(author => ({ name: authorDisplayName(author), count: '', sub: `${author.fileCount ?? 0} 个文件` })), [authorsQuery.data])
+    .map(author => ({ name: authorDisplayName(author), count: '' })), [authorsQuery.data])
   return {
     overviewQuery, trendQuery, contentRank, tagQuery, authorQuery, authorsQuery, overview,
     metrics, typeSlices, viewSlices, tagRows, authorRows, authorOverviewRows,

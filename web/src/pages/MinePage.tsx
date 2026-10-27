@@ -33,16 +33,16 @@ function HistCardItemImpl({ item, onOpen }: { item: HistRenderItem; onOpen?: (id
   const [thumbSize] = useThumbSize()
   const handleClick = onOpen ? () => onOpen(item.id) : undefined
   return (
-    <article className="hist-card" onClick={handleClick} role={handleClick ? 'button' : undefined} tabIndex={handleClick ? 0 : undefined} aria-label={item.fileName} onKeyDown={event => { if (handleClick && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); handleClick() } }}>
-      <div className="hc-cover">
+    <article className="hist-card card" onClick={handleClick} role={handleClick ? 'button' : undefined} tabIndex={handleClick ? 0 : undefined} aria-label={item.fileName} onKeyDown={event => { if (handleClick && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); handleClick() } }}>
+      <div className="hc-cover card--cover">
         {/* 与 MediaCard 同款优化口径：lazy + 异步解码避免滚动掉帧 */}
         <img src={applyThumbSize(item.thumbUrl ?? '', thumbSize)} alt="" loading="lazy" decoding="async" />
         {item.isDone ? <span className="hc-done">已看完</span> : null}
         <span className="hc-time">{formatDateTime(item.lastViewedAt)}</span>
         {item.durationMs ? <span className="hc-duration">{formatDuration(item.durationMs)}</span> : null}
       </div>
-      <p className="hc-title">{item.fileName ?? ''}</p>
-      <p className="hc-up">{item.source ? `@ ${item.source}` : ''}</p>
+      <p className="card--title">{item.fileName ?? ''}</p>
+      {item.source && <p className="card--meta"><span className="card--up">@ {item.source}</span></p>}
     </article>
   )
 }
