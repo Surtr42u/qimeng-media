@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 import type { Author } from '@/api/generated'
 import { SearchIcon } from '@/components/shell/icons'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { ManagePageHeader } from '@/components/manage/ManagePageHeader'
 import { PromptDialog } from '@/components/ui/prompt-dialog'
 import { LoadingHint } from '@/components/ui/loading-hint'
 import {
@@ -132,10 +133,7 @@ export default function AuthorsPage() {
 
   return (
     <div className="page" id="page-authors">
-      <div className="page-head">
-        <h2>作者管理</h2>
-        <p>全部作者 · {authors.length} 位</p>
-      </div>
+      <ManagePageHeader title="作者管理" description={`全部作者 · ${authors.length} 位`} />
       <div className="a-toolbar">
         <div className="a-zones">
           {ZONES.map((z) => (

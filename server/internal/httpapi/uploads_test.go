@@ -251,8 +251,8 @@ func TestUploadSessionCreateRejects(t *testing.T) {
 	env.cfg.Upload.MaxBytes = 1024 // 本用例限 1KB（Server 与 Manager 共用同一 cfg 指针）
 	resp = env.createUploadSessionRaw(t, fmt.Sprintf(`{"libraryId":%q,"fileName":"big.jpg","size":2048}`, env.libID))
 	_ = resp.Body.Close()
-	if resp.StatusCode != http.StatusRequestEntityTooLarge {
-		t.Errorf("声明 size 超上限期望 413，得到 %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusCreated {
+		t.Errorf("旧上限退役后应创建会话201，得到 %d", resp.StatusCode)
 	}
 	env.cfg.Upload.MaxBytes = 0 // 恢复默认
 

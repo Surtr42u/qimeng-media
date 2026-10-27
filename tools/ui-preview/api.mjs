@@ -10,6 +10,7 @@ export function createPreviewApi(now = Date.now()) {
   const catalog = createCatalog(now)
   const people = authors.map(author => ({ ...author, fileCount: catalog.filter(asset => asset.authorId === author.id).length }))
   let statusFrames = 0
+  let clientConfig = { scan: { workers: 0, thumbEdge: 800 }, upload: { maxBytesMb: 2147483647, autoAccept: true } }
   let prefs = { ...balanced }
   const overview = range => {
     const points = trends(range, now)
@@ -46,7 +47,10 @@ export function createPreviewApi(now = Date.now()) {
     if (pathname === '/api/v1/stats/trends' && method === 'GET') return reply(trends(params.get('range'), now))
     if (pathname === '/api/v1/stats/top-tags' && method === 'GET') return reply(tags.map((tag, index) => ({ tag: tag.name, views: 90 - index * 13 })))
     if (pathname === '/api/v1/stats/top-authors' && method === 'GET') return reply(people.slice(0, 5).map((author, index) => ({ authorId: author.id, displayName: author.displayName, views: 116 - index * 13 })))
-    if (pathname === '/api/v1/config' && method === 'GET') return reply({ scan: { workers: 2, thumbEdge: 800 }, upload: { maxBytesMb: 2048, autoAccept: true } })
+    if (pathname === '/api/v1/config') {
+      if (method === 'GET') return reply(clientConfig)
+      if (method === 'PUT') { clientConfig = { ...body, upload: { ...body.upload, maxBytesMb: 2147483647 } }; return reply(clientConfig) }
+    }
     if (pathname === '/api/v1/search/suggestions' && method === 'GET') return reply(people.filter(author => !params.get('q') || author.displayName.includes(params.get('q'))).map(author => ({ type: author.type === 'cos' ? 'cosAuthor' : 'author', name: author.displayName })))
     if (pathname === '/api/v1/sources' && method === 'GET') return reply([...new Set(catalog.filter(asset => !asset.cos).map(asset => asset.source))].map(name => ({ name, fileCount: catalog.filter(asset => !asset.cos && asset.source === name).length })))
     if (pathname === '/api/v1/system/status' && method === 'GET') {

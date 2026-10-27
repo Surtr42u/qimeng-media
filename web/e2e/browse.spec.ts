@@ -111,3 +111,20 @@ test('详情推荐在卡片内滚动，换批回到顶部且标题操作保持�
   await expect(list.locator('.upnext-row').first()).toBeVisible()
   await expect.poll(() => list.evaluate(el => el.scrollTop)).toBe(0)
 })
+
+
+test('上传返回实际来源工作区，作者管理有小返回且刷新后保留', async ({ page }) => {
+  await setup(page)
+  await page.goto('/app/maintenance')
+  await page.getByRole('link', { name: /^上传文件/ }).click()
+  await expect(page.getByRole('link', { name: '服务与维护', exact: true })).toHaveAttribute('href', '/app/maintenance')
+  await page.reload()
+  await page.getByRole('link', { name: '服务与维护', exact: true }).click()
+  await expect(page).toHaveURL(/\/app\/maintenance$/)
+  await page.goto('/app/maintenance/files')
+  await page.getByRole('link', { name: /^上传文件/ }).click()
+  await expect(page.getByRole('link', { name: '数据管理', exact: true })).toHaveAttribute('href', '/app/maintenance/files')
+  await page.getByRole('link', { name: '数据管理', exact: true }).click()
+  await page.getByRole('link', { name: /^作者管理/ }).click()
+  await expect(page.getByRole('link', { name: '数据管理', exact: true })).toHaveAttribute('href', '/app/maintenance/files')
+})

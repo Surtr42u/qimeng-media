@@ -24,9 +24,11 @@
 
 端点：GET/PUT /config
 
-设置页扫描/上传卡持久化（kv_settings `client_config`）：GET 无记录回缺省（workers 2 / thumbEdge 800 / maxBytesMb 2048 / autoAccept true）；
-PUT 全量替换、须提交完整对象（四叶子键缺任一 400 INVALID_PARAM——防缺 autoAccept 被 bool 零值 false 静默关闸）、越界 400 INVALID_PARAM、成功回存储后全量。**生效范围**：upload.maxBytesMb（与配置文件 upload.max_bytes 取 min）、upload.autoAccept（false 时上传 403 UPLOAD_DISABLED）实时生效；
-scan.workers / scan.thumbEdge 为**预留字段**（暂未接入扫描器/缩略图管线，保存后暂不生效）
+设置页配置持久化于kv_settings.client_config；GET无记录默认workers=0（自动）、thumbEdge=800、autoAccept=true。PUT仍须四个叶子齐全，缺键/越界400；响应返回规范化全量。
+
+workers=0按runtime可用CPU并发和可用内存保守分配1–8个同时扫描的媒体库，手动1–32。后续全量扫描准入读取最新配置，手动/轮询/监听共用名额，等待可取消；降低并发不打断运行任务。单库文件顺序不变，thumbEdge仍是预留。
+
+maxBytesMb已退役为旧SDK必填兼容字段；PUT接受0–2147483647，服务端忽略具体值并固定回显2147483647。采用正数哨兵避免旧客户端把0视为全部超限；新客户端不据此限制单文件。upload.autoAccept实时开关保留，详情见[上传专题](files.md#上传整理)；分片暂存总预算/会话数及物理空间检查仍有效。
 
 ## 客户端异常
 

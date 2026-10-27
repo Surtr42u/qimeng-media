@@ -21,11 +21,7 @@ export function useMineWorkspace(tab: MineTab, filter: string) {
   const favItems = useMemo(() => favQuery.data?.pages.flatMap(page => page.items ?? []) ?? [], [favQuery.data])
   const histItems = useMemo(() => histQuery.data?.pages.flatMap(page => page.items ?? []) ?? [], [histQuery.data])
   const followedAuthors = useMemo(() => (authorsQuery.data ?? []).filter(author => author.followed), [authorsQuery.data])
-  const histRenderGroups = useMemo(() => groupHistory(histItems, filter).map(group => ({ ...group, items: group.items.map(item => ({
-    ...item,
-    // 与既有完成徽标逐字同义：仅在视频时长/播放位置都存在时比较。
-    isDone: item.durationMs != null && item.lastPositionSeconds != null && item.lastPositionSeconds * 1000 >= item.durationMs,
-  })) })), [histItems, filter])
+  const histRenderGroups = useMemo(() => groupHistory(histItems, filter), [histItems, filter])
   const favSentinelRef = useAutoMore(favQuery.hasNextPage && !favQuery.isError, () => {
     if (!favQuery.isFetching && !favQuery.isPlaceholderData) void favQuery.fetchNextPage({ cancelRefetch: false })
   })

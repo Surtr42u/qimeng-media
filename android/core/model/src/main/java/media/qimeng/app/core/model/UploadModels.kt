@@ -139,16 +139,18 @@ data class DirNode(
 
 /** 客户端配置 upload 组（GET /api/v1/config；超限本地拦截的唯一口径来源） */
 data class UploadLimits(
-    /** 单文件上限 MB（协议 64–8192，缺省 2048） */
+    /** 旧服务端上限MB；新服务端回显Int.MAX_VALUE兼容值表示不限。 */
     val maxBytesMb: Long,
     /** 服务端自动接收开关；false 时上传 403 UPLOAD_DISABLED（文案透传展示） */
     val autoAccept: Boolean,
 ) {
     /** 超限判定（sizeBytes 未知 = -1 时不拦，交给服务端 413 兜底） */
     fun overLimit(sizeBytes: Long): Boolean =
-        sizeBytes >= 0 && sizeBytes > maxBytesMb * BYTES_PER_MB
+        maxBytesMb < UNLIMITED_UPLOAD_MB && sizeBytes >= 0 && sizeBytes > maxBytesMb * BYTES_PER_MB
 
     private companion object {
+        /** OpenAPI ClientConfigUpload.maxBytesMb兼容哨兵，旧SDK也可安全反序列化。 */
+        const val UNLIMITED_UPLOAD_MB = 2_147_483_647L
         /** MB -> 字节换算（协议 maxBytesMb 单位为 MB） */
         const val BYTES_PER_MB = 1024L * 1024L
     }

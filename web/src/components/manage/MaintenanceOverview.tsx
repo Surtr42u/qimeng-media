@@ -7,6 +7,7 @@ import type { useMaintenanceMonitor } from '@/hooks/use-maintenance-monitor'
 import { formatBytes } from '@/lib/format'
 import { MAINTENANCE_FILES_PATH, MAINTENANCE_UPLOAD_PATH } from '@/lib/route-keys'
 import { LOCALE_ZH } from '@/lib/constants'
+import { serviceUploadPath } from '@/lib/manage-origin'
 
 type Monitor = ReturnType<typeof useMaintenanceMonitor>
 /** 锚点只跳到仍常驻的完整操作区，不卸载同步查询或改变操作行为。 */
@@ -102,7 +103,7 @@ export function MaintenanceOverview({ monitor, trashLabel, logsLabel }: {
       <section className="chart-card monitor-span-2">
         <CardHeading icon={<Activity aria-hidden="true" />}>入库与异常</CardHeading>
         <div className="monitor-shortcuts">
-          <Link className="monitor-shortcut" to={MAINTENANCE_UPLOAD_PATH}><Upload aria-hidden="true" /><span><strong>上传文件</strong><small>指定作者与来源</small></span><ChevronRight aria-hidden="true" /></Link>
+          <Link className="monitor-shortcut" to={serviceUploadPath(MAINTENANCE_UPLOAD_PATH)}><Upload aria-hidden="true" /><span><strong>上传文件</strong><small>指定作者与来源</small></span><ChevronRight aria-hidden="true" /></Link>
           <a className="monitor-shortcut" href={`#${MAINTENANCE_LOGS_ID}`}><FileWarning aria-hidden="true" /><span><strong>客户端异常</strong><small>{logsLabel}</small></span><ChevronRight aria-hidden="true" /></a>
         </div>
       </section>

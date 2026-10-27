@@ -6,6 +6,7 @@ import (
 	"errors"
 	"image"
 	"image/png"
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -84,12 +85,13 @@ func TestDirectUploadBusinessWithoutHTTP(t *testing.T) {
 	}
 	svc.cfg.Upload.MaxBytes = int64(len(body))
 	_, err = svc.Direct(ctx, DirectUpload{LibraryID: library, Filename: "oversize.png", ContentLength: -1, Body: bytes.NewReader(append(append([]byte{}, body...), 1))})
-	if !errors.Is(err, filing.ErrUploadTooLarge) {
-		t.Fatalf("未知长度流未限额: %v", err)
+	if err != nil {
+		t.Fatalf("旧上限应被忽略: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(media, "oversize.png")); !os.IsNotExist(err) {
-		t.Fatal("超限文件不应发布")
+	if _, err := os.Stat(filepath.Join(media, "oversize.png")); err != nil {
+		t.Fatal(err)
 	}
+
 }
 
 func TestCompleteRetriesPublishedPathWithoutDuplicate(t *testing.T) {
@@ -156,10 +158,10 @@ func TestUploadPolicyCorruptionAndCap(t *testing.T) {
 		cap      int64
 		disabled bool
 	}{
-		{`{"upload":{"maxBytesMb":64,"autoAccept":true}}`, 64 << 20, false},
-		{`{"upload":{"maxBytesMb":8192,"autoAccept":false}}`, 128 << 20, true},
-		{`{"scan":{"workers":"corrupt"},"upload":{"autoAccept":false}}`, 128 << 20, false},
-		{`corrupt`, 128 << 20, false},
+		{`{"upload":{"maxBytesMb":64,"autoAccept":true}}`, math.MaxInt64, false},
+		{`{"upload":{"maxBytesMb":8192,"autoAccept":false}}`, math.MaxInt64, true},
+		{`{"scan":{"workers":"corrupt"},"upload":{"autoAccept":false}}`, math.MaxInt64, false},
+		{`corrupt`, math.MaxInt64, false},
 	} {
 		if err := svc.q.UpsertSetting(ctx, db.UpsertSettingParams{Key: authoring.SettingKeyClientConfig, Value: input.json, UpdatedAt: store.FormatTimestamp(time.Now())}); err != nil {
 			t.Fatal(err)

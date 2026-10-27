@@ -204,18 +204,18 @@ func TestUploadBadExtension(t *testing.T) {
 	}
 }
 
-// TestUploadTooLarge：Content-Length 超限 → 413 且不落盘。
+// TestUploadTooLarge：旧部署大小上限已退役，合法文件仍可上传。
 func TestUploadTooLarge(t *testing.T) {
 	env := newTestEnv(t)
 	env.cfg.Upload.MaxBytes = 1024 // 本用例限 1KB（Server 持有同一 cfg 指针）
 	jpg := makeJPG(t, t.TempDir(), 320, 240)
 	resp := env.uploadBytes(t, env.libID, "", "big.jpg", jpg)
 	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusRequestEntityTooLarge {
-		t.Fatalf("超限上传期望 413，得到 %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("合法上传期望 201，得到 %d", resp.StatusCode)
 	}
-	if _, err := os.Stat(filepath.Join(env.media, "big.jpg")); !os.IsNotExist(err) {
-		t.Error("超限上传不应留文件")
+	if _, err := os.Stat(filepath.Join(env.media, "big.jpg")); err != nil {
+		t.Error("合法文件应入库")
 	}
 	env.cfg.Upload.MaxBytes = 0 // 恢复默认，避免影响同 env 的其他断言
 }

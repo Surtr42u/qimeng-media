@@ -507,8 +507,7 @@ paths:
         创建即做可前置校验：fileName 清洗（与直传同规则，禁止路径穿越）、
         dir 目标目录（可选，与直传同一 NormalizeRelPath 校验规范化规则，
         空/缺省 = 库根，非法路径 400）、
-        扩展名白名单、size ≤ 上传大小上限（upload.max_bytes 与 PUT /config
-        的 maxBytesMb 取小者）、库存在且启用、upload.autoAccept 开关（false
+        扩展名白名单、正数声明长度与实际可用空间/分片暂存总预算、库存在且启用、upload.autoAccept 开关（false
         时 403 UPLOAD_DISABLED，与直传通道同闸）。
         会话与已收字节只存服务端（内存注册表 + DataDir/uploads-tmp 临时文件）；
         未过四道校验的半成品不进库目录。contentType 仅作客户端提示，服务端
@@ -1149,11 +1148,9 @@ paths:
     get:
       summary: 读取客户端配置（设置页扫描/上传卡的持久化值）
       description: |
-        无存储记录时返回缺省值：scan.workers=2、scan.thumbEdge=800、
-        upload.maxBytesMb=2048、upload.autoAccept=true。
-        生效范围（诚实口径）：upload.maxBytesMb 与 upload.autoAccept
-        实时生效（上传端点每次请求时读取）；scan.workers / scan.thumbEdge
-        为预留字段——暂未接入扫描器/缩略图管线，保存后暂不生效
+        无存储记录时返回缺省值：scan.workers=0（自动）、scan.thumbEdge=800、
+        upload.maxBytesMb=2147483647（旧SDK兼容值，实际不限）、upload.autoAccept=true。
+        生效范围（诚实口径）：upload.autoAccept实时生效，maxBytesMb只作旧SDK兼容（上传端点每次请求时读取）；scan.workers为实际并发控制（0自动、1–32手动），用于后续全库扫描；scan.thumbEdge仍为预留，保存不改变缩略图管线
         （接入管线前连重启也不生效，客户端 UI 不得宣传"重启后生效"）。
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ClientConfig" } } } }
@@ -2055,15 +2052,15 @@ components:
 
     ClientConfigScan:
       type: object
-      description: 扫描管线参数（预留字段：暂未接入扫描器/缩略图管线，保存后暂不生效）
+      description: 扫描并发控制与缩略图预留参数；workers实时用于后续全库扫描准入，thumbEdge仍为预留
       required: [workers, thumbEdge]
       properties:
         workers:
           type: integer
-          minimum: 1
-          maximum: 4
-          default: 2
-          description: 扫描并发数（1–4，缺省 2，超出可能加重 NAS 负载）。预留字段：暂未接入扫描器管线，保存后暂不生效
+          minimum: 0
+          maximum: 32
+          default: 0
+          description: 同时扫描的媒体库数；0为自动（按CPU可用并发和可用内存保守分配1–8），手动1–32；每次准入读取，不中断已运行扫描，单库文件处理顺序不变
         thumbEdge:
           type: integer
           minimum: 200
@@ -2078,10 +2075,11 @@ components:
       properties:
         maxBytesMb:
           type: integer
-          minimum: 64
-          maximum: 8192
-          default: 2048
-          description: 单文件上传上限（MB，64–8192，缺省 2048）。实时生效：与配置文件 upload.max_bytes 取小者（min），部署方配置文件收紧时以更严者为准
+          minimum: 0
+          maximum: 2147483647
+          default: 2147483647
+          deprecated: true
+          description: 旧SDK必填字段兼容；服务端忽略提交值并固定回显2147483647表示不限，新客户端不据此设置单文件上限。类型/MIME/路径/声明长度和存储空间及分片临时预算检查继续生效
         autoAccept:
           type: boolean
           default: true

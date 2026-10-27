@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import type { Library } from '@/api/generated'
 import type { AuthorAttachValue } from '@/components/manage/AuthorSuggestField'
-import { mergeClientConfig, useConfig } from './use-config'
+import { LEGACY_UNLIMITED_UPLOAD_MB, mergeClientConfig, useConfig } from './use-config'
 
 export function useUploadTarget(libraries: Library[], targetsReady: boolean) {
   const [libId, setLibId] = useState('')
@@ -25,7 +25,7 @@ export function useUploadTarget(libraries: Library[], targetsReady: boolean) {
   return {
     libId, dir, setDir, batchAuthor, batchSources, setBatchSources, enabled, canAttach, targetsReady,
     canAdd: blockedReason === null, blockedReason,
-    maxBytesMb: upload?.maxBytesMb ?? null,
+    maxBytesMb: upload && upload.maxBytesMb < LEGACY_UNLIMITED_UPLOAD_MB ? upload.maxBytesMb : null,
     libraryName: library?.name ?? '尚未选择目标库',
     retryConfig: config.refetch,
     configError: config.isError,

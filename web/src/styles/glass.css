@@ -994,15 +994,7 @@ button.follow-btn--idle:hover { filter: brightness(1.08); color: var(--qm-on-acc
   transition: box-shadow var(--qm-duration-fast) var(--qm-ease-out);
 }
 .hist-card:hover .hc-cover { box-shadow: var(--qm-shadow-lift); }
-.hc-done {
-  position: absolute; top: 6px; left: 6px; z-index: 2;
-  padding: 2px 8px;
-  border-radius: var(--qm-radius-sm);
-  background: var(--qm-scrim-chip); color: var(--qm-on-cover);
-  font-size: 11px;
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
-}
+
 .hc-time {
   position: absolute; left: 8px; bottom: 6px; z-index: 2;
   font-size: 12px; font-weight: 500; letter-spacing: 0.02em; line-height: 1;
