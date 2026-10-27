@@ -63,3 +63,23 @@ test('合成窗口扩大保留已有活动，全量与覆盖全部夹具日期�
   assert.equal(views('day'), views('90d'))
   assert.equal(views('all'), views('90d'))
 })
+
+test('趋势分类字段完整，分类计数与窗口汇总同源守恒', () => {
+  const api = createPreviewApi(now)
+  for (const range of ['7d', 'day', '90d', 'all']) {
+    const params = new URLSearchParams({ range })
+    const points = api('/api/v1/stats/trends', 'GET', params).body
+    const overview = api('/api/v1/stats/overview', 'GET', params).body
+    for (const metric of ['viewCount', 'playCount', 'seconds']) {
+      assert.equal(points.reduce((sum, point) => sum + point[metric], 0), overview.windowTotals[metric])
+      for (const point of points) {
+        assert.deepEqual(Object.keys(point.mediaTypes).sort(), ['animated_image', 'image', 'video'])
+        assert.deepEqual(Object.keys(point.sources).sort(), ['cos', 'normal'])
+        assert.equal(Object.values(point.mediaTypes).reduce((sum, value) => sum + value[metric], 0), point[metric])
+        assert.equal(Object.values(point.sources).reduce((sum, value) => sum + value[metric], 0), point[metric])
+      }
+      for (const key of ['image', 'video', 'animated_image']) assert.equal(points.reduce((sum, point) => sum + point.mediaTypes[key][metric], 0), overview.mediaTypeWindowTotals[key][metric])
+      for (const key of ['normal', 'cos']) assert.equal(points.reduce((sum, point) => sum + point.sources[key][metric], 0), overview.sourceWindowTotals[key][metric])
+    }
+  }
+})

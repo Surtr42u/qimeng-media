@@ -77,6 +77,16 @@ export function trends(range, now = Date.now()) {
   return Array.from({ length: count }, (_, index) => {
     const date = new Date(now - (count - index - 1) * DAY_MS).toISOString().slice(0, 10)
     const age = count - index - 1, active = age < 12
-    return { start: date, end: date, label: date.slice(5), viewCount: active ? 80 + age % 7 * 11 : 0, playCount: active ? 8 + age % 5 : 0, seconds: active ? 1200 + age % 7 * 180 : 0 }
+    const total = { viewCount: active ? 80 + age % 7 * 11 : 0, playCount: active ? 8 + age % 5 : 0, seconds: active ? 1200 + age % 7 * 180 : 0 }
+    return { start: date, end: date, label: date.slice(5), ...total, ...previewBreakdown(total) }
   })
+}
+
+/** 分类只用于夹具展示，汇总与趋势共用，避免漏字段触发现有统计协议门禁。 */
+export function previewBreakdown(total) {
+  const imageViews = Math.floor(total.viewCount * .6), videoViews = Math.floor(total.viewCount * .3)
+  const imageSeconds = Math.floor(total.seconds * .3), videoSeconds = Math.floor(total.seconds * .6)
+  const totals = (viewCount = 0, playCount = 0, seconds = 0) => ({ viewCount, playCount, seconds })
+  const normal = totals(Math.floor(total.viewCount * .7), Math.floor(total.playCount * .7), Math.floor(total.seconds * .7))
+  return { mediaTypes: { image: totals(imageViews, 0, imageSeconds), video: totals(videoViews, total.playCount, videoSeconds), animated_image: totals(total.viewCount - imageViews - videoViews, 0, total.seconds - imageSeconds - videoSeconds) }, sources: { normal, cos: totals(total.viewCount - normal.viewCount, total.playCount - normal.playCount, total.seconds - normal.seconds) } }
 }

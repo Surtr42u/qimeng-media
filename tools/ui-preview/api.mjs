@@ -11,12 +11,15 @@ export function createPreviewApi(now = Date.now()) {
   const people = authors.map(author => ({ ...author, fileCount: catalog.filter(asset => asset.authorId === author.id).length }))
   let prefs = { ...balanced }
   const overview = range => {
-    const window = trends(range, now).reduce((sum, item) => totals(sum.viewCount + item.viewCount, sum.playCount + item.playCount, sum.seconds + item.seconds), totals())
-    const imageViews = Math.floor(window.viewCount * .6), videoViews = Math.floor(window.viewCount * .3)
+    const points = trends(range, now)
+    const sum = items => items.reduce((result, item) => totals(result.viewCount + item.viewCount, result.playCount + item.playCount, result.seconds + item.seconds), totals())
+    const window = sum(points)
+    const mediaTypeWindowTotals = Object.fromEntries(['image', 'video', 'animated_image'].map(key => [key, sum(points.map(point => point.mediaTypes[key]))]))
+    const sourceWindowTotals = Object.fromEntries(['normal', 'cos'].map(key => [key, sum(points.map(point => point.sources[key]))]))
     return { totalFiles: catalog.length, totalSizeBytes: catalog.reduce((sum, asset) => sum + asset.sizeBytes, 0), stillImageCount: catalog.filter(asset => asset.mediaType === 'image').length,
       imageCount: catalog.filter(asset => asset.mediaType !== 'video').length, animatedImageCount: catalog.filter(asset => asset.mediaType === 'animated_image').length, videoCount: catalog.filter(asset => asset.mediaType === 'video').length,
-      windowTotals: window, mediaTypeWindowTotals: { image: totals(imageViews, 0, Math.floor(window.seconds * .3)), video: totals(videoViews, window.playCount, Math.floor(window.seconds * .6)), animated_image: totals(window.viewCount - imageViews - videoViews, 0, window.seconds - Math.floor(window.seconds * .3) - Math.floor(window.seconds * .6)) },
-      sourceWindowTotals: { normal: totals(window.viewCount, window.playCount, window.seconds), cos: totals() }, viewedFilesCount: 61, viewedAuthorsCount: 6, viewedTagsCount: 4, avgViewsPerFile: window.viewCount / 61 }
+      windowTotals: window, mediaTypeWindowTotals,
+      sourceWindowTotals, viewedFilesCount: 61, viewedAuthorsCount: 6, viewedTagsCount: 4, avgViewsPerFile: window.viewCount / 61 }
   }
   return (pathname, method = 'GET', params = new URLSearchParams(), body = {}) => {
     if (pathname === '/api/v1/auth/dev-login' && method === 'POST') return reply({ token: 'preview-session' })
