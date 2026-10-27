@@ -42,6 +42,9 @@ function MediaCardImpl({ id, cover, title, duration, up, date, onClick, onOpen }
       data-id={id}
       onClick={handleClick}
       role={handleClick ? 'button' : undefined}
+      tabIndex={handleClick ? 0 : undefined}
+      aria-label={handleClick ? title : undefined}
+      onKeyDown={event => { if (handleClick && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); handleClick() } }}
     >
       <div className="card--cover">
         {/* decoding=async：缩略图解码移出主线程（滚动中大量卡片时避免掉帧） */}

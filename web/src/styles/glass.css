@@ -534,7 +534,7 @@ body::before {
 /* 网格（首页卡片流）：大屏信息密度 */
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr));
   gap: 24px 20px;
 }
 
@@ -620,8 +620,8 @@ button.pill,
 /* 媒体卡网格（相册 / 收藏共用） */
 .media-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr));
+  gap: 24px 20px;
 }
 
 /* 我的页：资料卡 + Tabs */
@@ -2781,6 +2781,17 @@ li.dir-file-row.ms-row-selected { background: var(--qm-hover); }
 
 /* 数据 / 我的：共享维护工作区的标题、玻璃卡和紫青色，窗口与库存口径分区。 */
 .personal-workspace { display: grid; gap: 22px; min-width: 0; }
+/* 浏览页把批次/筛选操作放到内容上方；长标题与窄屏均可自然换行。 */
+.browse-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; min-width: 0; }
+.browse-toolbar-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px 14px; min-width: 0; }
+.browse-toolbar-heading h2 { font-size: 19px; font-weight: 600; }
+.browse-toolbar-heading > span { color: var(--qm-text-muted); font-size: 12px; }
+.browse-toolbar-actions { display: flex; align-items: center; gap: 8px; }
+.layout button.browse-action { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; padding: 7px 12px; border: 1px solid var(--qm-border); border-radius: var(--qm-radius-full); background: var(--qm-surface); color: var(--qm-primary); font-size: 12px; }
+.browse-action svg { width: 15px; height: 15px; }
+.layout button.browse-action:hover { background: var(--qm-primary-soft); }
+.layout button.browse-action:disabled { opacity: .6; cursor: wait; }
+.browse-action:focus-visible, .card:focus-visible { outline: 2px solid var(--qm-primary); outline-offset: 4px; border-radius: var(--qm-radius-sm); }
 .workspace-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
 .workspace-heading h2 { font-size: 27px; font-weight: 650; letter-spacing: -.02em; }
 .workspace-heading p { color: var(--qm-text-muted); font-size: 13px; margin-top: 6px; }
@@ -2816,18 +2827,18 @@ li.dir-file-row.ms-row-selected { background: var(--qm-hover); }
 .data-metric > strong { font-size: 30px; line-height: 1.2; font-weight: 650; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .data-metric > small { color: var(--qm-text-muted); font-size: 11px; line-height: 1.5; }
 .data-primary-grid, .data-secondary-grid { display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr); gap: 20px; }
-.data-secondary-grid { align-items: start; }
+.data-secondary-grid { align-items: stretch; }
 .data-workspace .chart-card, .data-workspace .rank-card, .data-workspace .donut-card { padding: 22px; min-width: 0; }
-/* 按卡片可用宽度分列，避免侧栏/窗口缩放后五列封面拥挤，也不被占比卡拉高。 */
+/* 两列横向小封面榜单保留Top5，缩短三排的高度，使同排占比卡自然接近等高。 */
 .data-content-panel { container: data-content / inline-size; }
-.data-content-panel .rank-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-.data-content-panel .rank-title { margin-top: 8px; min-height: 40px; }
+.data-content-panel .rank-cards { grid-template-columns: minmax(0, 1fr); gap: 10px; counter-reset: content-position; }
+.data-content-panel .rank-item { display: grid; grid-template-columns: 18px 88px minmax(0, 1fr); align-items: center; gap: 10px; padding: 8px 4px; border-radius: var(--qm-radius-sm); }
+.data-content-panel .rank-item::before { counter-increment: content-position; content: counter(content-position, decimal-leading-zero); color: var(--qm-primary); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.data-content-panel .rank-item:hover { background: var(--qm-hover); }
+.data-content-panel .rank-title { margin-top: 0; min-height: 0; font-size: 13px; }
 .data-content-panel .rank-item:focus-visible { outline: 2px solid var(--qm-primary); outline-offset: 4px; border-radius: var(--qm-radius-sm); }
 @container data-content (min-width: 480px) {
-  .data-content-panel .rank-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-}
-@container data-content (max-width: 239px) {
-  .data-content-panel .rank-cards { grid-template-columns: minmax(0, 1fr); }
+  .data-content-panel .rank-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 .data-coverage { display: flex; flex-wrap: wrap; gap: 7px; margin: 15px 0; }
 .data-coverage > span { display: inline-flex; align-items: center; gap: 4px; padding: 5px 9px; border-radius: var(--qm-radius-sm); font-size: 11px; color: var(--qm-text-muted); background: var(--qm-hover); }
@@ -2850,7 +2861,8 @@ li.dir-file-row.ms-row-selected { background: var(--qm-hover); }
 .data-rank-grid .rank-card > ul { margin-top: 14px; }
 /* 三张榜单均为单行信息：保留点击高度，无需为已移除的作者文件数预留第二行。 */
 .data-rank-grid .rank-card ul > li { padding: 10px 8px; min-height: 44px; line-height: 20px; }
-.data-secondary-grid .donut-row { flex-direction: column; gap: 14px; }
+.data-secondary-grid > .donut-card { display: flex; flex-direction: column; }
+.data-secondary-grid .donut-row { flex: 1; flex-direction: column; justify-content: center; gap: 14px; }
 .data-secondary-grid .legend { width: 100%; }
 .donut-visual { position: relative; flex-shrink: 0; }
 .donut-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; pointer-events: none; }

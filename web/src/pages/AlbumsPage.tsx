@@ -2,6 +2,9 @@ import { useCallback, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import type { AssetSummary } from '@/api/generated'
 import { MediaCard } from '@/components/media/MediaCard'
+import { BrowseToolbar } from '@/components/media/BrowseToolbar'
+import { QueryNotice } from '@/components/ui/query-notice'
+import { X } from 'lucide-react'
 import { InfiniteTail } from '@/components/media/InfiniteTail'
 import { PanelFilters } from '@/components/filters/PanelFilters'
 import { Pill } from '@/components/ui/pill'
@@ -78,8 +81,7 @@ export default function AlbumsPage() {
   const [characterSel, setCharacterSel] = useState<RowSel>(null)
   const [mediaType, setMediaType] = useState<MediaType | null>(null)
   const [expanded, setExpanded] = useState(false)
-  // 筛选值行默认收起（2026-09-17 用户拍板「元素1默认收起，最右侧加筛选」）：
-  // 有选中值时自动展开并点亮按钮（不做筛选=默认列表），手动开合走 filterOpen
+  // 值行独立开合：选中筛选不再强制撑开，生效结果与清空入口由顶部摘要体现。
   const [filterOpen, setFilterOpen] = useState(false)
   // 「更多筛选」面板开合：面板=与搜索页同一共享组件 PanelFilters（首行排序三档，
   // 其后 顺位/播放次数/文件大小/时间范围/标签模式/标签），状态在 usePanelFilters
@@ -87,8 +89,7 @@ export default function AlbumsPage() {
 
   const panel = usePanelFilters()
 
-  // 是否有筛选生效（分区「全部」为缺省不算筛选）：页面维或面板任一非缺省即
-  // 值行自动展开、筛选钮点亮（面板口径单源 isPanelActive）
+  // 是否有筛选生效（分区「全部」为缺省不算筛选），仅控制摘要与清空入口。
   const hasFilter =
     partition !== DEFAULT_PARTITION ||
     authorSel !== null ||
@@ -141,7 +142,7 @@ export default function AlbumsPage() {
   )
 
   const {
-    data: pages, isFetching, isFetchingNextPage, isPlaceholderData, fetchNextPage, hasNextPage,
+    data: pages, isFetching, isFetchingNextPage, isPlaceholderData, fetchNextPage, hasNextPage, isError, isFetchNextPageError, refetch,
   } = useAssetsInfinite(listParams)
   const items = useMemo(() => pages?.pages.flatMap((p) => p.items ?? []) ?? [], [pages])
 
@@ -155,7 +156,7 @@ export default function AlbumsPage() {
   // E3 无感加载哨兵（对齐首页 use-auto-more 语义：触底提前 6 项拉下一页）。
   // onHit 双守卫：isFetchingNextPage 防重复拉页；isPlaceholderData 前瞻防混拼
   // （useAssetsInfinite 已配 keepPreviousData，换键占位期间守卫真实生效）。
-  const sentinelRef = useAutoMore(hasNextPage, () => {
+  const sentinelRef = useAutoMore(hasNextPage && !isError, () => {
     if (!isFetchingNextPage && !isPlaceholderData) void fetchNextPage()
   })
 
@@ -244,9 +245,9 @@ export default function AlbumsPage() {
       case 'type':
         return (mediaType ?? 'all') === v.value
       case 'author':
-        return authorSel !== null && authorSel.value === v.value && authorSel.kind === v.kind
+        return v.value === '' ? authorSel === null : authorSel !== null && authorSel.value === v.value && authorSel.kind === v.kind
       case 'character':
-        return characterSel !== null && characterSel.value === v.value && characterSel.kind === v.kind
+        return v.value === '' ? characterSel === null : characterSel !== null && characterSel.value === v.value && characterSel.kind === v.kind
     }
   }
 
@@ -268,17 +269,14 @@ export default function AlbumsPage() {
     setExpanded(false)
   }
 
-  // 维度胶囊 = 手风琴（2026-09-17 用户澄清「点击胶囊会自己弹开，手机的那种」）：
-  // 换维度必展开值行；同维度再点一下开合切换。开合按值行当前可见态
-  // （filterOpen || hasFilter，与筛选钮箭头同口径）判定；hasFilter 常驻展开时
-  // 收起仍走 filterOpen=false，值行是否隐藏由既有可见规则（filterOpen||hasFilter）决定。
+  // 换维度展开，同一维度可再次收起；展开状态与已生效筛选相互独立。
   const toggleDim = (next: DimKey): void => {
     if (next !== dim) {
       setDim(next)
       setFilterOpen(true)
       return
     }
-    setFilterOpen(!(filterOpen || hasFilter))
+    setFilterOpen(!filterOpen)
   }
 
   const pickValue = (opt: { value: string; kind?: FacetOptionKind }): void => {
@@ -301,6 +299,18 @@ export default function AlbumsPage() {
     }
   }
 
+  const resetFilters = (): void => {
+    setPartition(DEFAULT_PARTITION)
+    setAuthorSel(null)
+    setCharacterSel(null)
+    setMediaType(null)
+    panel.reset()
+    setDimState('partition')
+    setFilterOpen(false)
+    setPanelOpen(false)
+    setExpanded(false)
+  }
+
   // 卡片渲染（各组网格共用；调用形式与平铺版一致）
   const renderCard = (a: AssetSummary) => (
     <MediaCard
@@ -312,13 +322,15 @@ export default function AlbumsPage() {
 
   return (
     <div className="page" id="page-albums">
+      <BrowseToolbar title="相册" summary={isPlaceholderData ? '正在切换筛选…' : isError ? `已加载 ${items.length} 项 · 读取失败` : pages?.pages[0]?.totalMatched == null ? '按日期浏览媒体' : `匹配 ${pages.pages[0].totalMatched.toLocaleString(LOCALE_ZH)} 项 · 已加载 ${items.length} 项`} actions={hasFilter && <button className="browse-action" type="button" onClick={resetFilters}><X aria-hidden="true" />清空筛选</button>} />
+      {isError && <QueryNotice message={isFetchNextPageError ? '更多相册内容读取失败' : '相册读取失败'} retained={items.length > 0} busy={isFetching} onRetry={() => { if (isFetchNextPageError) void fetchNextPage({ cancelRefetch: false }); else void refetch() }} />}
       <section className="filter-card">
         {/* 维度行：分区 / 作者 / 角色 / 类型（徽标=各维排自身候选数）+ 最右侧筛选开合 */}
         <div className="pill-row" role="group" aria-label="筛选维度">
           {(Object.keys(DIM_LABELS) as DimKey[]).map((d, i) => (
             <span key={d} className="pill-row-item">
               {i > 0 ? <span className="pill-divider" aria-hidden="true" /> : null}
-              <Pill active={dim === d} onClick={() => toggleDim(d)}>
+              <Pill active={dim === d} expanded={dim === d && filterOpen} controls="album-filter-values" onClick={() => toggleDim(d)}>
                 {DIM_LABELS[d]} <span className="pill-count">{badgeCount(d)}</span>
               </Pill>
             </span>
@@ -333,8 +345,8 @@ export default function AlbumsPage() {
             <ChevronDownIcon />
           </button>
         </div>
-        {/* 值行：当前维度值胶囊（超阈值默认收起两行）；无筛选且未点开时整行隐藏 */}
-        <div className={`pill-row value-row${expanded ? ' expanded' : ''}${filterOpen || panelOpen || hasFilter ? '' : ' collapsed'}`}>
+        {/* 值行超过阈值默认两行，手动开合不影响已生效的筛选。 */}
+        <div id="album-filter-values" role="group" aria-label={`${DIM_LABELS[dim]}选项`} className={`pill-row value-row${expanded ? ' expanded' : ''}${filterOpen ? '' : ' collapsed'}`}>
           {dimValues.map(({ label, count, ...opt }) => (
             <Pill
               key={`${opt.kind ?? ''}:${opt.value}`}
@@ -348,7 +360,7 @@ export default function AlbumsPage() {
             </Pill>
           ))}
         </div>
-        {dimValues.length > VALUE_COLLAPSE_THRESHOLD ? (
+        {filterOpen && dimValues.length > VALUE_COLLAPSE_THRESHOLD ? (
           <div className="expand-row">
             <button className="expand-btn" type="button" onClick={() => setExpanded((v) => !v)}>
               {expanded ? '收起 ⌃' : '展开 ⌄'}
@@ -390,8 +402,8 @@ export default function AlbumsPage() {
           </section>
         ))
       )}
-      {items.length === 0 && !isFetching ? (
-        <p className="grid-empty">该筛选组合下暂无内容，换个胶囊试试。</p>
+      {items.length === 0 && !isFetching && !isError ? (
+        <p className="grid-empty">{hasFilter ? '该筛选组合下暂无内容，可以清空筛选后再试。' : '相册里还没有内容。'}</p>
       ) : null}
       {/* E3 无感加载尾部（三件套见 components/media/InfiniteTail） */}
       <InfiniteTail
