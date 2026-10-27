@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router'
 import { Shuffle } from 'lucide-react'
 import type { AssetSummary } from '@/api/generated'
@@ -7,6 +7,7 @@ import { useThumbSize } from '@/hooks/use-thumb-size'
 import { applyThumbSize } from '@/lib/thumb-size'
 import { formatDuration } from '@/lib/format'
 import { assetDetailWithSearch, readBackdropKey, type OverlayDetailState } from '@/lib/route-keys'
+import { QueryNotice } from '@/components/ui/query-notice'
 
 /**
  * 详情页「接下来播放」推荐栏（B站式右栏下部）：同类型推荐流（推荐算法 +
@@ -25,6 +26,8 @@ export function UpNextList({
   cosWork?: string | null
 }) {
   const [seed, setSeed] = useState(0)
+  const listRef = useRef<HTMLDivElement>(null)
+  useEffect(() => { listRef.current?.scrollTo({ top: 0 }) }, [assetId, seed])
   // P1（E1 返工）：行跳转原样携带当前查询串（?tab/?period）——叠加组导航
   // 统一走 assetDetailWithSearch，否则详情→详情丢查询串，底衬 HomePage 翻回
   // recommend、CosRecommendTab 卸载（换一批 seed 丢失），返回时流已重置
@@ -33,7 +36,7 @@ export function UpNextList({
   // 换件后返回仍回相册，否则布局按缺省 home 重挂底衬）。null = home 链入口
   // 未携带该字段 → 不写，state 与 E1 现状逐字节一致（零回归）
   const backdrop = readBackdropKey(locationState)
-  const { data, isFetching } = useUpNextList({
+  const { data, isFetching, isPending, isError, refetch } = useUpNextList({
     mediaType,
     // COS 资产的推荐流同区收窄（与首页 cos tab 同参数语义）
     cosOnly: !!cosWork,
@@ -57,7 +60,8 @@ export function UpNextList({
           换一批
         </button>
       </div>
-      <div className="upnext-list">
+      {isError && <QueryNotice message="推荐读取失败" retained={items.length > 0} busy={isFetching} onRetry={() => { void refetch() }} />}
+      <div className="upnext-list" ref={listRef} tabIndex={0} role="region" aria-label="接下来播放列表" aria-busy={isFetching}>
         {items.map((a, i) => (
           <Link
             className="upnext-row"
@@ -72,12 +76,12 @@ export function UpNextList({
               ) : null}
             </span>
             <span className="upnext-info">
-              <span className="upnext-title">{a.cosWork ?? a.fileName}</span>
+              <span className="upnext-title" title={a.cosWork ?? a.fileName}>{a.cosWork ?? a.fileName}</span>
               <span className="upnext-up">{a.authorNames?.[0] ?? a.source ?? ''}</span>
             </span>
           </Link>
         ))}
-        {items.length === 0 ? <p className="grid-empty">暂无推荐</p> : null}
+        {items.length === 0 && !isError ? <p className="grid-empty">{isPending ? '推荐加载中…' : '暂无推荐'}</p> : null}
       </div>
     </div>
   )

@@ -43,7 +43,7 @@ GET 新→旧（维护页排查表数据源，Web 上报器 lib/client-logs.ts�
 根路径 `/healthz` `/readyz` 是运维探针别名——docker/k8s 惯例，行为一致，不入协议面）；
 readyz 检查数据库、数据目录与启用媒体根可读性/余量，失败 503；healthz 仅存活检查，不能用 readyz 失败直接推断进程崩溃。配置与边界见 [监控](../OBSERVABILITY.md#健康检查)。
 /metrics 与 /system/status 要求管理 token；
-负载/流量面板；
+负载/流量面板；新增appRxBytes/appTxBytes为本服务实例实际读取/输出的HTTP正文字节（重启归零），Web只采样这两个字段；netRxBytes/netTxBytes保留全机网卡口径。HEAD不计响应正文，ReaderFrom在输出结束后累计，不含HTTP头/TLS/其他进程或服务主动出站请求，详见[采样范围](../OBSERVABILITY.md#影库服务流量范围)。旧服务端缺应用字段须提示升级，不回退全机流量。
 status 含 `devMode`（auth_dev_mode 透出，2026-09-30 批A——Web 维护页「开发模式未关」提醒条数据源）；
 **GET /library/revision（2026-09-30 ADR-0026）**：全局库内容修订号及预取指纹 `{revision: int64, thumbnailVersion?: string}`（kv_settings 键 `library_revision`，Bearer 鉴权）——资产集合任何变更（扫描/上传/回收站/整理移动/标签/库删除/库开关/导入）单调 +1，事件订阅一处收口 + 物删/清空/清扫/导入四条不发事件路径显式 bump；
 只保证资产集合面（收藏/进度/作者展示字段不保证）；

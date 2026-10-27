@@ -14,21 +14,28 @@ describe('维护页资源与流量展示', () => {
     expect(view.disks[2].percent).toBeNull()
   })
   it('累计为零仍开始采样；延迟响应按真实时间差计算，并忽略重复帧', () => {
-    const first = sampleNetwork({ baseline: null, points: [] }, { netRxBytes: 0, netTxBytes: 0 }, 1000)
-    const next = sampleNetwork(first, { netRxBytes: 6000, netTxBytes: 0 }, 7000)
+    const first = sampleNetwork({ baseline: null, points: [] }, { appRxBytes: 0, appTxBytes: 0 }, 1000)
+    const next = sampleNetwork(first, { appRxBytes: 6000, appTxBytes: 0 }, 7000)
     expect(next.points).toEqual([{ at: 7000, rx: 1000, tx: 0 }])
-    expect(sampleNetwork(next, { netRxBytes: 6000, netTxBytes: 0 }, 7000)).toBe(next)
+    expect(sampleNetwork(next, { appRxBytes: 6000, appTxBytes: 0 }, 7000)).toBe(next)
+  })
+  it('全机网卡变化不能混入应用流量，旧服务端不回退到全机口径', () => {
+    const initial = { baseline: null, points: [] }
+    expect(sampleNetwork(initial, { netRxBytes: 99999, netTxBytes: 99999 }, 1000)).toBe(initial)
+    const first = sampleNetwork(initial, { appRxBytes: 0, appTxBytes: 0, netRxBytes: 1000 }, 1000)
+    const next = sampleNetwork(first, { appRxBytes: 0, appTxBytes: 400, netRxBytes: 99999 }, 3000)
+    expect(next.points).toEqual([{ at: 3000, rx: 0, tx: 200 }])
   })
   it('重启或计数器回退重新取基线，历史点不跨进程串联', () => {
-    let samples = sampleNetwork({ baseline: null, points: [] }, { netRxBytes: 100, netTxBytes: 100, uptimeSeconds: 10 }, 1000)
-    samples = sampleNetwork(samples, { netRxBytes: 200, netTxBytes: 200, uptimeSeconds: 12 }, 3000)
-    expect(sampleNetwork(samples, { netRxBytes: 10, netTxBytes: 20, uptimeSeconds: 1 }, 5000).points).toEqual([])
+    let samples = sampleNetwork({ baseline: null, points: [] }, { appRxBytes: 100, appTxBytes: 100, uptimeSeconds: 10 }, 1000)
+    samples = sampleNetwork(samples, { appRxBytes: 200, appTxBytes: 200, uptimeSeconds: 12 }, 3000)
+    expect(sampleNetwork(samples, { appRxBytes: 10, appTxBytes: 20, uptimeSeconds: 1 }, 5000).points).toEqual([])
   })
   it('窗口最多 60 点，断流后的旧采样不冒充最近两分钟', () => {
     let samples: NetworkSamples = { baseline: null, points: [] }
-    for (let i = 0; i < 100; i++) samples = sampleNetwork(samples, { netRxBytes: i * 100, netTxBytes: i * 100 }, i * 2000)
+    for (let i = 0; i < 100; i++) samples = sampleNetwork(samples, { appRxBytes: i * 100, appTxBytes: i * 100 }, i * 2000)
     expect(samples.points).toHaveLength(60)
-    samples = sampleNetwork(samples, { netRxBytes: 20000, netTxBytes: 20000 }, 400000)
+    samples = sampleNetwork(samples, { appRxBytes: 20000, appTxBytes: 20000 }, 400000)
     expect(samples.points).toHaveLength(1)
   })
 })

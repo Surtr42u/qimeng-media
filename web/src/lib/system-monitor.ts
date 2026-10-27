@@ -14,8 +14,8 @@ export interface NetworkPoint { at: number; rx: number; tx: number }
 export interface NetworkSamples { baseline: NetworkBaseline | null; points: NetworkPoint[] }
 
 export function sampleNetwork(previous: NetworkSamples, status: SystemStatus, at: number): NetworkSamples {
-  if (status.netRxBytes == null || status.netTxBytes == null) return previous
-  const current = { at, rx: status.netRxBytes, tx: status.netTxBytes, uptime: status.uptimeSeconds ?? 0 }
+  if (status.appRxBytes == null || status.appTxBytes == null) return previous
+  const current = { at, rx: status.appRxBytes, tx: status.appTxBytes, uptime: status.uptimeSeconds ?? 0 }
   const baseline = previous.baseline
   if (baseline && at <= baseline.at) return previous
   // 服务端重启/计数器回退只重建基线，不把旧服务器的尾帧画进本轮曲线。

@@ -2133,6 +2133,8 @@ components:
         disks:         { type: array, items: { type: object, properties: { mount: { type: string }, usedBytes: { type: integer, format: int64 }, totalBytes: { type: integer, format: int64 } } } }
         netRxBytes:    { type: integer, format: int64, description: 自启动累计下行 }
         netTxBytes:    { type: integer, format: int64, description: 自启动累计上行（媒体流量主项） }
+        appRxBytes:    { type: integer, format: int64, minimum: 0, description: 本影库服务实例累计实际读取的HTTP请求正文字节；包括上传和API，不含请求头/TLS/其他进程，重启归零 }
+        appTxBytes:    { type: integer, format: int64, minimum: 0, description: 本影库服务实例累计实际输出的HTTP响应正文字节；包括媒体/API/Web/SSE，不含响应头/TLS/其他进程；HEAD不计正文，零拷贝传输在本次输出结束后累计，重启归零 }
         uptimeSeconds: { type: integer, format: int64 }
         version:       { type: string }
         devMode:       { type: boolean, description: 开发模式（auth_dev_mode 免密登录）是否开启——Web 维护页「开发模式未关」提醒条数据源（2026-09-30 批A）；生产部署应为 false }

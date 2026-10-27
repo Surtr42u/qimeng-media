@@ -80,6 +80,8 @@ mediawrite 把完成凭据与资产行同事务提交（migration 0020），七�
 
 环境变量必须为正整数；配置启动生效，不加入客户端设置页。单文件 max_bytes 与设置页限制取小者的原行为不变。预算不包含目标卷临时复制、直传临时件或其他进程占用，空间预检不等同于磁盘预留。readyz 只读检查，healthz 不受存储状态影响。
 
+HTTP入口的应用流量计数由单个Server持有，原子累计实际读取/写出的正文，经SystemStatus的appRxBytes/appTxBytes提供；保留全机net字段，计量与ReaderFrom/Flusher边界见[监控](../docs/OBSERVABILITY.md#影库服务流量范围)。
+
 ## 构建身份
 
 完整CI的FFmpeg依赖准备使用Ubuntu官方archive源替换runner的Azure镜像，覆盖普通源文件及mirror+file使用的apt-mirrors列表；检查无Azure残留并输出下载计划，保留APT签名校验，仅安装必需依赖并检查ffmpeg/ffprobe均可执行。IPv4下载、30秒连接/数据超时和2次重试、单步8分钟上限用于避免镜像慢下载耗尽45分钟服务端检查预算。任何依赖准备失败仍阻断后续门禁，不降级或跳过race/静态检查；配置仅作用云端runner，不修改日常服务器或生产镜像的软件源。

@@ -9,6 +9,7 @@ const reply = (body, status = 200, headers = {}) => ({ status, body, headers })
 export function createPreviewApi(now = Date.now()) {
   const catalog = createCatalog(now)
   const people = authors.map(author => ({ ...author, fileCount: catalog.filter(asset => asset.authorId === author.id).length }))
+  let statusFrames = 0
   let prefs = { ...balanced }
   const overview = range => {
     const points = trends(range, now)
@@ -48,7 +49,12 @@ export function createPreviewApi(now = Date.now()) {
     if (pathname === '/api/v1/config' && method === 'GET') return reply({ scan: { workers: 2, thumbEdge: 800 }, upload: { maxBytesMb: 2048, autoAccept: true } })
     if (pathname === '/api/v1/search/suggestions' && method === 'GET') return reply(people.filter(author => !params.get('q') || author.displayName.includes(params.get('q'))).map(author => ({ type: author.type === 'cos' ? 'cosAuthor' : 'author', name: author.displayName })))
     if (pathname === '/api/v1/sources' && method === 'GET') return reply([...new Set(catalog.filter(asset => !asset.cos).map(asset => asset.source))].map(name => ({ name, fileCount: catalog.filter(asset => !asset.cos && asset.source === name).length })))
-    if (pathname === '/api/v1/system/status' && method === 'GET') return reply({ devMode: true, version: '虚拟数据预览', uptimeSeconds: 300, cpuPercent: 12, memUsedBytes: 2 ** 30, memTotalBytes: 8 * 2 ** 30, disks: [] })
+    if (pathname === '/api/v1/system/status' && method === 'GET') {
+      statusFrames++
+      return reply({ devMode: false, version: '虚拟数据预览', uptimeSeconds: 300 + statusFrames * 2, cpuPercent: 12, memUsedBytes: 2 ** 30, memTotalBytes: 8 * 2 ** 30, appRxBytes: statusFrames * 512, appTxBytes: statusFrames * 131072, netRxBytes: statusFrames * 2 ** 20, netTxBytes: statusFrames * 2 ** 21, disks: [] })
+    }
+    if (pathname === '/api/v1/trash' && method === 'GET') return reply([])
+    if (pathname === '/api/v1/client-logs' && method === 'GET') return reply({ items: [] })
     const authorFollow = pathname.match(/^\/api\/v1\/authors\/([^/]+)\/follow$/)
     if (authorFollow && method === 'PUT') { const author = people.find(item => item.id === authorFollow[1]); if (author) { author.followed = !!body.follow; return reply(undefined, 204) } }
     const match = pathname.match(/^\/api\/v1\/assets\/([^/]+)(?:\/(favorite|like|progress|timeline-tags))?$/)

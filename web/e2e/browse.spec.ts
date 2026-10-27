@@ -84,3 +84,22 @@ test('窄屏首页与相册不横向溢出，批次和筛选入口保持可见',
     else await expect(page.getByRole('button', { name: '更多筛选', exact: true })).toBeVisible()
   }
 })
+
+
+test('详情推荐在卡片内滚动，换批回到顶部且标题操作保持可见', async ({ page }) => {
+  await setup(page)
+  await page.goto('/app/asset/10000000-0000-4000-8000-000000000001')
+  const list = page.getByRole('region', { name: '接下来播放列表', exact: true })
+  await expect(list.locator('.upnext-row').first()).toBeVisible()
+  expect(await list.locator('.upnext-row').count()).toBeLessThanOrEqual(12)
+  await list.scrollIntoViewIfNeeded()
+  expect(await list.evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true)
+  await list.press('End')
+  await expect.poll(() => list.evaluate(el => el.scrollTop)).toBeGreaterThan(0)
+  const shuffle = page.locator('.upnext-head').getByRole('button', { name: '换一批', exact: true })
+  await expect(shuffle).toBeVisible()
+  await shuffle.click()
+  await expect(list).toHaveAttribute('aria-busy', 'false')
+  await expect(list.locator('.upnext-row').first()).toBeVisible()
+  await expect.poll(() => list.evaluate(el => el.scrollTop)).toBe(0)
+})

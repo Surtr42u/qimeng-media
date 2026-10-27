@@ -28,7 +28,7 @@ function TrafficCard({ traffic, points }: { traffic: Monitor['traffic'][number];
   const color = receive ? 'var(--qm-chart-1)' : 'var(--qm-chart-2)'
   return <section className={`chart-card monitor-traffic monitor-traffic--${traffic.direction}`} aria-label={traffic.label}>
     <CardHeading icon={receive ? <ArrowDown aria-hidden="true" /> : <ArrowUp aria-hidden="true" />}>{traffic.label}</CardHeading>
-    <div className="monitor-value">{traffic.value ?? '采样中…'}{traffic.value && <small>/s</small>}</div>
+    <div className={`monitor-value${traffic.value == null ? ' monitor-value--waiting' : ''}`}>{traffic.value ?? traffic.waiting}{traffic.value && <small>/s</small>}</div>
     <p>近 2 分钟峰值 {traffic.peak}</p>
     <div className="monitor-sparkline" aria-hidden="true">
       <ResponsiveContainer width="100%" height="100%">
@@ -39,7 +39,7 @@ function TrafficCard({ traffic, points }: { traffic: Monitor['traffic'][number];
         </AreaChart>
       </ResponsiveContainer>
     </div>
-    <p className="monitor-footnote">累计 {traffic.cumulative == null ? '—' : formatBytes(traffic.cumulative)}</p>
+    <p className="monitor-footnote" title="影库服务收发的HTTP正文；重启后重新累计">本服务累计 {traffic.cumulative == null ? '—' : formatBytes(traffic.cumulative)}</p>
   </section>
 }
 
@@ -55,7 +55,7 @@ export function MaintenanceOverview({ monitor, trashLabel, logsLabel }: {
         <p>当前连接的服务器 · {resources.version}</p>
         <div className="monitor-server-meta">
           <div><span>状态更新</span><strong className={monitor.isError ? 'monitor-update--error' : ''}>{monitor.stateLabel}</strong></div>
-          <div><span>采样范围</span><strong>系统资源 / 全机网卡聚合</strong></div>
+          <div><span>采样范围</span><strong>系统资源 / 影库服务流量</strong></div>
         </div>
       </section>
       {monitor.traffic.map(traffic => <TrafficCard key={traffic.direction} traffic={traffic} points={monitor.points} />)}
