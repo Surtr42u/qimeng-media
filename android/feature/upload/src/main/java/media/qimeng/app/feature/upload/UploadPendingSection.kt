@@ -14,9 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -31,7 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import media.qimeng.app.core.ui.component.QimengAuthorSuggestSection
 import media.qimeng.app.core.ui.component.QimengSourceSection
-import media.qimeng.app.core.ui.theme.QimengDimens
+import media.qimeng.app.core.ui.component.QimengSettingsCard
 
 /**
  * 上传页批次默认区（2026-10-08 体验重构）：
@@ -42,13 +40,9 @@ import media.qimeng.app.core.ui.theme.QimengDimens
 @Composable
 internal fun BatchDefaultSection(state: UploadUiState, viewModel: UploadViewModel) {
     val hasConfiguredAuthor = state.batchAuthorName != null
-    var expanded by rememberSaveable { mutableStateOf(true) }
+    var expanded by rememberSaveable { mutableStateOf(false) }
 
-    Surface(
-        color = MaterialTheme.colorScheme.surface,
-        shape = RoundedCornerShape(QimengDimens.CardCornerRadius),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
+    QimengSettingsCard {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(
                 modifier = Modifier
@@ -60,7 +54,7 @@ internal fun BatchDefaultSection(state: UploadUiState, viewModel: UploadViewMode
                 Column(modifier = Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = "批次作者与来源（可选）",
+                            text = "作者与来源",
                             style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Medium),
                             color = MaterialTheme.colorScheme.onSurface,
                         )
@@ -81,7 +75,7 @@ internal fun BatchDefaultSection(state: UploadUiState, viewModel: UploadViewMode
                             } else ""
                             "$authorText$sourcesText"
                         } else {
-                            "多张图属同一作者时可展开预设；杂图无需设置，直接上传即可"
+                            "可选 · 同一作者的作品可预设，散图可跳过。"
                         },
                         style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
                         color = if (hasConfiguredAuthor) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,

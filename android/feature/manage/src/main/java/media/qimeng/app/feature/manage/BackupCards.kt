@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -21,6 +20,7 @@ import java.util.Locale
 import kotlin.math.roundToInt
 import media.qimeng.app.core.data.backup.AutoBackupRunner
 import media.qimeng.app.core.data.backup.BackupFileStatus
+import media.qimeng.app.core.ui.component.QimengSettingsCard
 import media.qimeng.app.core.ui.theme.QimengDimens
 
 /**
@@ -32,8 +32,8 @@ import media.qimeng.app.core.ui.theme.QimengDimens
 // ---------- 导入导出卡文案（任务S 2026-09-19 拍板：直接读写备份目录的固定名文件，
 // 不弹 SAF 选择器；作用于当前连接的端） ----------
 private const val IMPORT_EXPORT_TITLE = "导入导出"
-private const val IMPORT_EXPORT_SUBTITLE =
-    "作用于当前连接的端：直接读写自动备份所选目录的 qimeng_backup.json（固定文件名覆盖式，永远最新）"
+private val IMPORT_EXPORT_SUBTITLE =
+    "备份当前连接的服务端，读写所选备份目录的 ${AutoBackupRunner.BACKUP_FILE_NAME}；导出会覆盖该文件。"
 private const val IMPORT_EXPORT_EXPORT = "导出"
 private const val IMPORT_EXPORT_EXPORT_BUSY = "导出中…"
 private const val IMPORT_EXPORT_IMPORT = "导入"
@@ -46,7 +46,7 @@ private const val FILE_TIME_UNKNOWN = "—"
 
 // ---------- 自动备份卡文案（2026-09-16 用户反馈：开关 + SAF 目录 + 上次备份时间；
 // 任务S：「立即备份」按钮删除——与卡1「导出」重复） ----------
-private const val AUTO_TITLE = "自动备份"
+private const val AUTO_TITLE = "备份目录与自动备份"
 private const val AUTO_SUBTITLE = "每日一次，打开应用时写入所选目录（备份当前连接的服务端）"
 private const val AUTO_DIR_LABEL = "目录"
 private const val AUTO_DIR_SET = "已选择目录"
@@ -59,12 +59,12 @@ private const val AUTO_LAST_NEVER = "未运行"
  *  这条约束在 App 里无处可见，只能写在这（选择器本身只给「为保护您的隐私」一句） */
 private const val AUTO_DIR_HINT = "受系统隐私限制：只能选子目录，不能选内部存储根目录 / Download"
 
-/** 规则说明四条（Web L297-299 逐字；2026-09-16 置主卡下方；任务S：暂存措辞改导出口径） */
+/** 文案消费当前 v2 规则（docs/domain/migration.md），不再沿用 v1 聚合回放提示。 */
 private val RULE_LINES = listOf(
-    "· 导入幂等：同一备份重复导入不翻倍（作者/标签/关联按唯一键合并）",
-    "· 统计/历史按事件回放重建；mediaFiles 仅在文件名能匹配到库内文件时建立关联",
-    "· 扫描源等设备本机段不迁移，导入后请核对库注册与根路径",
-    "· 导入后浏览统计按批次回放——重新导出再导入会重复累计浏览统计",
+    "· 仅支持本项目 v2 备份；备份不包含媒体原件",
+    "· 浏览记录按事件身份合并，同一事件往返导入不重复累计",
+    "· 文件按身份与路径信息匹配，未匹配或有歧义的条目跳过并提示",
+    "· 标签组与作者关联按各自合并规则处理，导入后请核对结果",
 )
 
 /** 8dp：卡内元素纵向节奏（LibraryManageScreen RowInnerSpacing 同值） */
@@ -77,7 +77,7 @@ internal val BackupCardInnerPadding = 12.dp
 internal val BackupSubtitleTopSpacing = 2.dp
 
 /**
- * 备份入口通用卡（浏览数据同步等单行入口复用）：左标题+副标题小字、右动作钮。
+ * 备份入口通用卡（浏览数据同步等单行入口复用）：标题/说明在上，独立动作在下，窄屏不挤压正文。
  */
 @Composable
 internal fun BackupActionCard(
@@ -85,26 +85,15 @@ internal fun BackupActionCard(
     subtitle: String,
     action: @Composable () -> Unit,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(BackupCardInnerPadding),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(BackupRowInnerSpacing),
+    QimengSettingsCard(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(BackupCardInnerPadding),
+            verticalArrangement = Arrangement.spacedBy(BackupRowInnerSpacing),
         ) {
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(BackupSubtitleTopSpacing),
-            ) {
-                Text(text = title, style = MaterialTheme.typography.titleSmall)
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            action()
+            Text(text = title, style = MaterialTheme.typography.titleSmall)
+            Text(text = subtitle, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(Modifier.align(Alignment.End)) { action() }
         }
     }
 }
@@ -133,7 +122,7 @@ internal fun ImportExportCard(
             formatTimestamp(fileStatus.lastModifiedMillis, FILE_TIME_UNKNOWN),
         )
     }
-    Card(modifier = Modifier.fillMaxWidth()) {
+    QimengSettingsCard(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -154,10 +143,10 @@ internal fun ImportExportCard(
             Row(
                 horizontalArrangement = Arrangement.spacedBy(BackupRowInnerSpacing),
             ) {
-                Button(onClick = onExport, enabled = !exporting) {
+                Button(onClick = onExport, enabled = dirSet && !exporting && !importing) {
                     Text(if (exporting) IMPORT_EXPORT_EXPORT_BUSY else IMPORT_EXPORT_EXPORT)
                 }
-                Button(onClick = onImport, enabled = !importing) {
+                Button(onClick = onImport, enabled = dirSet && !exporting && !importing) {
                     Text(if (importing) IMPORT_EXPORT_IMPORT_BUSY else IMPORT_EXPORT_IMPORT)
                 }
             }
@@ -179,7 +168,7 @@ internal fun AutoBackupCard(
     onToggle: (Boolean) -> Unit,
     onPickDir: () -> Unit,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    QimengSettingsCard(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()

@@ -32,15 +32,14 @@ internal fun QueueSection(
     summary: String?,
     onCancel: (UploadQueueEntry) -> Unit,
 ) {
-    SectionTitle("上传队列")
-    summary?.let {
-        Text(
-            text = it,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+    UploadPanel("上传任务", summary) {
+        if (queue.isEmpty()) {
+            Text("开始上传后，在这里查看进度和结果。", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            queue.forEach { entry -> QueueRow(entry, onCancel) }
+        }
     }
-    queue.forEach { entry -> QueueRow(entry, onCancel) }
 }
 
 /** 队列行：文件名 + 状态 + 取消控件（排队中/上传中可取消；C-2 冻结语义「皆可取消」） */
