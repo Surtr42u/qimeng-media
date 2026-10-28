@@ -12,6 +12,9 @@ import media.qimeng.app.core.model.StatsRangeOption
  */
 enum class StatsDetailMode(val title: String) {
 
+    /** 首次/再次浏览、兴趣变化与活跃时段；只读报告。 */
+    REVIEW("浏览回顾"),
+
     /** 分类型趋势（图片/视频/动图多系列折线 + 来源浏览趋势 常规/COS 双系列） */
     TYPE_TREND("分类型趋势"),
 

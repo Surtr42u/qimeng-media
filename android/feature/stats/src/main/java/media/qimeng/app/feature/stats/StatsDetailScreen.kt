@@ -97,6 +97,7 @@ fun StatsDetailScreen(
                 verticalArrangement = Arrangement.spacedBy(SECTION_SPACING_DP.dp),
             ) {
                 when (viewModel.mode) {
+                    StatsDetailMode.REVIEW -> item { state.review?.let { BrowsingReviewContent(it) } }
                     StatsDetailMode.TYPE_TREND -> {
                         item {
                             DetailTrendCard(
@@ -214,7 +215,7 @@ private fun DetailTopBar(title: String, onBack: () -> Unit) {
  *  TYPE_TREND 标题「类型浏览趋势」逐字取旧版（enum.title「分类型趋势」是入口卡文案，与旧版顶栏不同字） */
 private fun detailTitle(mode: StatsDetailMode, range: StatsRangeOption): String = when (mode) {
     StatsDetailMode.TYPE_TREND -> "$TYPE_TREND_CARD_TITLE · ${range.detailTitleSuffix}"
-    StatsDetailMode.MOST_VIEWED -> "${mode.title} · ${range.detailTitleSuffix}"
+    StatsDetailMode.REVIEW, StatsDetailMode.MOST_VIEWED -> "${mode.title} · ${range.detailTitleSuffix}"
     StatsDetailMode.AUTHORS_TAGS -> "${mode.title} · ${range.detailTitleSuffix}"
     StatsDetailMode.DISTRIBUTION -> DISTRIBUTION_DETAIL_TITLE
 }

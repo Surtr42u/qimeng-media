@@ -164,6 +164,29 @@ class SdkStatsRepository @Inject constructor(
         }
     }
 
+    override suspend fun browsingReview(range: String): media.qimeng.app.core.model.BrowsingReviewValues {
+        val api = withContext(Dispatchers.IO) { apiFactory.create() }
+        val sdkRange = when (range) {
+            "7d" -> media.qimeng.sdk.apis.DefaultApi.RangeApiV1StatsReviewGet._7d
+            "day" -> media.qimeng.sdk.apis.DefaultApi.RangeApiV1StatsReviewGet.day
+            "90d" -> media.qimeng.sdk.apis.DefaultApi.RangeApiV1StatsReviewGet._90d
+            "all" -> media.qimeng.sdk.apis.DefaultApi.RangeApiV1StatsReviewGet.all
+            else -> error("Unsupported browsing review range")
+        }
+        val review = withContext(Dispatchers.IO) { api.apiV1StatsReviewGet(range = sdkRange) }
+        return media.qimeng.app.core.model.BrowsingReviewValues(
+            range = review.range.value, fromDay = review.fromDay, toDay = review.toDay,
+            previousFromDay = review.previousFromDay, previousToDay = review.previousToDay,
+            viewCount = review.viewCount, uniqueFiles = review.uniqueFiles, firstViews = review.firstViews,
+            repeatViews = review.repeatViews, activeDays = review.activeDays, previousViewCount = review.previousViewCount,
+            comparisonAvailable = review.comparisonAvailable,
+            interests = review.interests.map { media.qimeng.app.core.model.ReviewInterestValues(
+                it.kind.value, it.id, it.name, it.currentViews, it.previousViews, it.currentShare, it.previousShare, it.changePoints,
+            ) },
+            hours = review.hours.map { media.qimeng.app.core.model.ReviewHourValues(it.hour, it.views) },
+        )
+    }
+
     /** 独立混合发现；签名相对地址绑定本次API实例，避免切服后接错来源。 */
     override suspend fun discoveries(seed: Long, limit: Int): List<media.qimeng.app.core.model.DiscoveryEntry> {
         val api = withContext(Dispatchers.IO) { apiFactory.create() }

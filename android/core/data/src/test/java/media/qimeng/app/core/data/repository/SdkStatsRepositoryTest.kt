@@ -10,6 +10,21 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SdkStatsRepositoryTest {
+    @Test fun `浏览回顾通过真实SDK保留服务端窗口与份额变化`() = runTest {
+        val hours = (0..23).joinToString(",") { """{"hour":$it,"views":${if (it == 12) 6 else 0}}""" }
+        val body = """{"range":"day","fromDay":"2026-09-29","toDay":"2026-10-28",
+          "previousFromDay":"2026-08-30","previousToDay":"2026-09-28","viewCount":6,"uniqueFiles":3,
+          "firstViews":2,"repeatViews":4,"activeDays":3,"previousViewCount":4,"comparisonAvailable":true,
+          "interests":[{"kind":"author","id":"synthetic","name":"甲","currentViews":3,"previousViews":4,"currentShare":50,"previousShare":100,"changePoints":-50}],"hours":[$hours]}"""
+        val value = repository(body) { assertTrue(it.contains("/stats/review?range=day")) }.browsingReview("day")
+        assertEquals("2026-08-30", value.previousFromDay)
+        assertEquals(2L, value.firstViews)
+        assertEquals(4L, value.repeatViews)
+        assertEquals(-50.0, value.interests.single().changePoints, 0.0)
+        assertEquals(24, value.hours.size)
+        assertEquals(6L, value.hours[12].views)
+    }
+
     @Test fun `发现SDK保留理由并以请求来源补全签名缩略图地址`() = runTest {
         val path = "/media/thumb/synthetic?size=md&v=v4&exp=9&sig=synthetic"
         val body = """[{"asset":{"id":"10000000-0000-4000-8000-000000000001","fileName":"合成作品","thumbUrl":"$path"},"reason":"rediscover"}]"""

@@ -1,6 +1,6 @@
 import type { QueryClient } from '@tanstack/react-query'
 import {
-  ASSETS_QUERY_KEY, AUTHORS_QUERY_KEY, DIRS_QUERY_KEY, HISTORY_QUERY_KEY, DISCOVERIES_QUERY_KEY,
+  ASSETS_QUERY_KEY, AUTHORS_QUERY_KEY, DIRS_QUERY_KEY, HISTORY_QUERY_KEY,
   LIBRARIES_QUERY_KEY, RANKINGS_QUERY_KEY, RECOMMENDATIONS_QUERY_KEY,
   SOURCES_QUERY_KEY, STATS_QUERY_KEY, TAGS_QUERY_KEY, TRASH_QUERY_KEY,
 } from './query-keys'
@@ -11,13 +11,13 @@ export function invalidateLibraryContent(queryClient: QueryClient): void {
   for (const key of [
     ASSETS_QUERY_KEY, LIBRARIES_QUERY_KEY, DIRS_QUERY_KEY, TAGS_QUERY_KEY,
     AUTHORS_QUERY_KEY, SOURCES_QUERY_KEY, TRASH_QUERY_KEY,
-    RECOMMENDATIONS_QUERY_KEY, STATS_QUERY_KEY, RANKINGS_QUERY_KEY, HISTORY_QUERY_KEY, DISCOVERIES_QUERY_KEY,
+    RECOMMENDATIONS_QUERY_KEY, STATS_QUERY_KEY, RANKINGS_QUERY_KEY, HISTORY_QUERY_KEY,
   ]) {
     void queryClient.invalidateQueries({ queryKey: key })
   }
 }
 
-/** 本端浏览事件确认后更新统计/周期榜/历史；不失效推荐顺序与当前发现组。 */
+/** 本端浏览事件确认后更新统计/周期榜/历史；不失效推荐顺序。 */
 export function invalidateActivityData(queryClient: QueryClient): void {
   for (const key of [STATS_QUERY_KEY, RANKINGS_QUERY_KEY, HISTORY_QUERY_KEY]) {
     void queryClient.invalidateQueries({ queryKey: key })

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { createPreviewApi } from '../../tools/ui-preview/api.mjs'
+import { createPreviewApi, reviewFixture } from '../../tools/ui-preview/api.mjs'
 import { coverSvg } from '../../tools/ui-preview/fixtures/catalog.mjs'
 
 /** 与人工预览共享同一纯合成API；仅拦截浏览器请求，不启动后端或接触真实库。 */
@@ -51,19 +51,37 @@ test('长搜索词避开清空按钮，清空后仍可继续输入', async ({ pa
   await expect(input).toBeFocused()
 })
 
-test('此刻发现只展示封面标题并独立换组，不随统计窗口切换', async ({ page }) => {
+test('浏览回顾与榜单分开，进入报告保留窗口并呈现服务端比较值', async ({ page }) => {
   await setup(page)
-  await page.goto('/app/data')
-  const panel = page.getByRole('region', { name: '此刻发现', exact: true })
-  await expect(panel.locator('.rank-item')).toHaveCount(6)
-  await expect(panel.locator('.rank-cover img')).toHaveCount(6)
-  await expect(panel.locator('.rank-title')).toHaveCount(6)
-  await expect(panel).not.toContainText(/未看发现|久别重逢|近期兴趣/)
-  const first = await panel.locator('.rank-title').allTextContents()
-  await page.getByRole('button', { name: '近 30 天', exact: true }).click()
-  expect(await panel.locator('.rank-title').allTextContents()).toEqual(first)
-  await panel.getByRole('button', { name: '换一组', exact: true }).click()
-  await expect.poll(() => panel.locator('.rank-title').allTextContents()).not.toEqual(first)
+  await page.goto('/app/data?range=day')
+  const panel = page.getByRole('region', { name: '浏览回顾', exact: true })
+  await expect(panel).toContainText('首次浏览')
+  await expect(panel.locator('.rank-item')).toHaveCount(0)
+  await panel.getByRole('link', { name: '查看回顾' }).click()
+  await expect(page).toHaveURL(/\/app\/data\/review\?range=day/)
+  await expect(page.getByRole('region', { name: '探索与回访', exact: true })).toContainText('2026-09-29')
+  await expect(page.getByRole('region', { name: '兴趣变化', exact: true })).toContainText('+25.0')
+  await expect(page.getByRole('listitem', { name: '21时，20次', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '全部', exact: true }).click()
+  await expect(page.getByRole('region', { name: '兴趣变化', exact: true })).toContainText('选择近7天')
+  await page.getByRole('link', { name: '返回数据' }).click()
+  await expect(page).toHaveURL(/\/app\/data\?range=all/)
+})
+
+test('浏览回顾请求失败明确重试，零记录不冒充比较结果', async ({ page }) => {
+  await setup(page)
+  let broken = true
+  await page.route('**/api/v1/stats/review*', route => route.fulfill(broken ? { status: 503, json: { message: 'synthetic review failure' } } : {
+    json: { ...reviewFixture(), viewCount: 0, uniqueFiles: 0, firstViews: 0, repeatViews: 0, activeDays: 0, previousViewCount: 0, comparisonAvailable: false, interests: [], hours: Array.from({ length: 24 }, (_, hour) => ({ hour, views: 0 })) },
+  }))
+  await page.goto('/app/data/review')
+  await expect(page.getByRole('alert')).toContainText('浏览回顾读取失败', { timeout: 15000 })
+  await expect(page.getByRole('region', { name: '探索与回访', exact: true })).toHaveCount(0)
+  broken = false
+  await page.getByRole('button', { name: '重新读取', exact: true }).click()
+  await expect(page.getByRole('region', { name: '探索与回访', exact: true })).toContainText('这个时段还没有浏览记录')
+  await expect(page.getByRole('region', { name: '兴趣变化', exact: true })).toContainText('前后两个时段都有浏览记录后')
+  await expect(page.getByRole('listitem')).toHaveCount(24)
 })
 
 test('视频网页全屏保留退出入口，底边鼠标可唤出控制栏，Esc可退出', async ({ page }) => {

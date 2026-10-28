@@ -47,6 +47,7 @@ data class TypeStockEntry(
  * （全部经现有端点 trends/overview 派生，无新增协议端点）。
  */
 data class StatsDetailUiState(
+    val review: media.qimeng.app.core.model.BrowsingReviewValues? = null,
     val loading: Boolean = true,
     val typeSeries: List<TypeTrendSeries> = emptyList(),
     /** 来源浏览趋势两系列（常规/COS；与 typeSeries 同一渲染封装） */
@@ -80,7 +81,7 @@ data class StatsDetailUiState(
 ) {
     /** 数据全空（加载完且无任何可展示内容）→ 空态文案 */
     val isEmpty: Boolean
-        get() = !loading && !loadFailed &&
+        get() = !loading && !loadFailed && review == null &&
             typeSeries.all { it.values.isEmpty() } &&
             sourceSeries.all { it.values.isEmpty() } &&
             distribution.isEmpty() && sourceDistribution.isEmpty() &&
@@ -116,6 +117,7 @@ class StatsDetailViewModel @Inject constructor(
         requestJob = viewModelScope.launch {
             try {
                 val result = when (mode) {
+                    StatsDetailMode.REVIEW -> StatsDetailUiState(loading = false, review = statsRepository.browsingReview(range.apiRange))
                     StatsDetailMode.TYPE_TREND -> loadTypeTrend()
                     StatsDetailMode.MOST_VIEWED -> loadMostViewed()
                     StatsDetailMode.AUTHORS_TAGS -> loadAuthorsTags()

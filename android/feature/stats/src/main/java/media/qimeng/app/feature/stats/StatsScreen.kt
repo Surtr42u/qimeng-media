@@ -49,18 +49,12 @@ import media.qimeng.app.core.ui.glass.TabDockDefaults
  * - 浏览趋势卡（L213）：点击数据点高亮+数值气泡（Vico DefaultCartesianMarker，
  *   rememberTrendValueMarker + rememberToggleOnTap）；点击卡片/右上「分类型趋势 ›」进统计详情页；
  * - 分布统计小入口卡（L214）：纯文字卡，点击进分布统计详情（来源构成 N3 #31b 解冻，详情页呈现）；
- * - 此刻发现：独立混合候选、理由与换组，服务端负责选池
- *   （GET /rankings，Web 数据页同款口径——热度=浏览+播放+点赞累计、period 准入、排除 COS），
- *   点击进常看文件详情（默认按热度档=本榜）；常看作者与标签卡（L216）：作者/标签混合 Top3
- *   （/stats/top-authors + /stats/top-tags），点击进常看作者标签详情——空数据卡内空态保留；
- * - 详情页跳转链（任务J J1，GUIDE_UI L218-224）：内容榜**条目**→详情页（榜单作批次
- *   上下文，[StatsViewModel.enterDetail] 写快照清单）；常看作者条目→作者集合页（真实
- *   authorId）；常看标签条目→搜索页携词——均经回调上抛壳层导航，本层零路由耦合。
+ * - 浏览回顾仅显示标题入口，点击后按所选窗口加载独立报告；主页面不预取报告或候选。
+ * - 常看作者与标签保留原有窗口与跳转。
  */
 @Composable
 fun StatsScreen(
     onOpenDetail: (mode: StatsDetailMode, range: StatsRangeOption) -> Unit,
-    onOpenAsset: (assetId: String) -> Unit,
     onOpenAuthor: (authorId: String, displayName: String) -> Unit,
     onOpenTagSearch: (tag: String) -> Unit,
     viewModel: StatsViewModel = hiltViewModel(),
@@ -113,15 +107,7 @@ fun StatsScreen(
             )
         }
         item {
-            DiscoveryCard(
-                state = state,
-                onChange = viewModel::changeDiscoveries,
-                onEntryClick = { entry ->
-                    // 榜单作批次上下文（J1）：先写快照清单再导航，详情页 i/N 与滑动链以 Top3 榜为批次
-                    viewModel.enterDetail(entry.assetId)
-                    onOpenAsset(entry.assetId)
-                },
-            )
+            BrowsingReviewEntry(onOpen = { onOpenDetail(StatsDetailMode.REVIEW, state.selectedRange) })
         }
         item {
             TopAuthorsTagsCard(

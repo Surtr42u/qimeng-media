@@ -1,12 +1,12 @@
 import { QueryClient, QueryObserver } from '@tanstack/react-query'
 import { describe, expect, it } from 'vitest'
 import { invalidateLibraryContent, invalidateActivityData } from './query-invalidation'
-import { HISTORY_QUERY_KEY, RANKINGS_QUERY_KEY, STATS_QUERY_KEY } from './query-keys'
+import { HISTORY_QUERY_KEY, RANKINGS_QUERY_KEY, STATS_QUERY_KEY, RECOMMENDATIONS_QUERY_KEY } from './query-keys'
 
 describe('库内容变更缓存刷新', () => {
-  it('浏览事件确认后使统计、周期榜与历史陈旧，当前发现组保持稳定', () => {
+  it('浏览事件确认后使回顾、周期榜与历史陈旧，推荐顺序保持稳定', () => {
     const client = new QueryClient()
-    const keys = [STATS_QUERY_KEY, RANKINGS_QUERY_KEY, HISTORY_QUERY_KEY, ['api/v1/discoveries', 42]]
+    const keys = [[...STATS_QUERY_KEY, 'review', '7d'], RANKINGS_QUERY_KEY, HISTORY_QUERY_KEY, RECOMMENDATIONS_QUERY_KEY]
     keys.forEach(key => client.setQueryData(key, []))
     invalidateActivityData(client)
     keys.slice(0, 3).forEach(key => expect(client.getQueryState(key)?.isInvalidated).toBe(true))

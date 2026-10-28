@@ -15,8 +15,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
 import media.qimeng.app.core.model.STATS_LOAD_FAILED_MESSAGE
 import media.qimeng.app.core.model.STATS_PROTOCOL_UPDATE_MESSAGE
-import media.qimeng.app.core.data.repository.MediaBatchIndex
-import media.qimeng.app.core.model.DiscoveryEntry
 import media.qimeng.app.core.data.repository.StatsRepository
 import media.qimeng.app.core.model.DEFAULT_STATS_RANGE
 import media.qimeng.app.core.model.StatsOverviewValues
@@ -52,9 +50,6 @@ data class StatsUiState(
     val selectedRange: StatsRangeOption = DEFAULT_STATS_RANGE,
     val trends: List<TrendPoint> = emptyList(),
     val trendsLoading: Boolean = true,
-    val discoveries: List<DiscoveryEntry> = emptyList(),
-    val discoveriesLoading: Boolean = true,
-    val discoveriesError: String? = null,
     /** 常看作者卡数据源（详情页 Top15 亦用本通道，主页面只取前 3 混排） */
     val topAuthors: List<TopAuthorEntry> = emptyList(),
     /** 常看标签卡数据源 */
@@ -100,7 +95,6 @@ data class StatsUiState(
 @HiltViewModel
 class StatsViewModel @Inject constructor(
     private val statsRepository: StatsRepository,
-    private val batchIndex: MediaBatchIndex,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(StatsUiState())
@@ -111,33 +105,11 @@ class StatsViewModel @Inject constructor(
 
     private var requestJob: Job? = null
 
-    private var discoveryJob: Job? = null
-    private var discoveryRequestId = 0L
-    private var discoverySeed = System.currentTimeMillis()
+    init { loadRange(DEFAULT_STATS_RANGE) }
+
     private var hasBeenVisible = false
-
-    init { loadRange(DEFAULT_STATS_RANGE); changeDiscoveries() }
-
     fun onVisible() {
-        if (hasBeenVisible) changeDiscoveries() else hasBeenVisible = true
-    }
-
-    /** 独立于统计窗口；新请求取消旧请求，拒绝迟到覆盖，失败保留上一组并提示重试。 */
-    fun changeDiscoveries() {
-        discoveryJob?.cancel()
-        val requestId = ++discoveryRequestId
-        discoverySeed = maxOf(System.currentTimeMillis(), discoverySeed + 1)
-        val seed = discoverySeed
-        _uiState.update { it.copy(discoveriesLoading = true, discoveriesError = null) }
-        discoveryJob = viewModelScope.launch {
-            try {
-                val items = statsRepository.discoveries(seed, DISCOVERY_LIMIT)
-                if (requestId == discoveryRequestId) _uiState.update { it.copy(discoveries = items, discoveriesLoading = false) }
-            } catch (error: CancellationException) { throw error
-            } catch (error: Exception) {
-                if (requestId == discoveryRequestId) _uiState.update { it.copy(discoveriesLoading = false, discoveriesError = "发现加载失败，请重试") }
-            }
-        }
+        if (hasBeenVisible) retry() else hasBeenVisible = true
     }
 
     fun selectRange(option: StatsRangeOption) {
@@ -182,13 +154,7 @@ class StatsViewModel @Inject constructor(
         }
     }
 
-    /** 发现组作为详情批次；导航期间保留当前响应的身份与顺序。 */
-    fun enterDetail(assetId: String) {
-        batchIndex.ids = _uiState.value.discoveries.map { it.assetId }
-    }
 }
-
-private const val DISCOVERY_LIMIT = 6
 
 internal fun statsFailureMessage(error: Exception): String =
     if (error.message == STATS_PROTOCOL_UPDATE_MESSAGE) STATS_PROTOCOL_UPDATE_MESSAGE else STATS_LOAD_FAILED_MESSAGE

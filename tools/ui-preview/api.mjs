@@ -24,12 +24,7 @@ export function createPreviewApi(now = Date.now()) {
       sourceWindowTotals, viewedFilesCount: 61, viewedAuthorsCount: 6, viewedTagsCount: 4, avgViewsPerFile: window.viewCount / 61 }
   }
   return (pathname, method = 'GET', params = new URLSearchParams(), body = {}) => {
-    // 展示夹具只轮换合成条目，不复制生产选池算法。
-    if (pathname === '/api/v1/discoveries' && method === 'GET') {
-      const start = Number(params.get('seed') ?? 0) % catalog.length
-      const count = Math.min(12, Math.max(1, Number(params.get('limit') ?? 6)))
-      return reply(Array.from({ length: count }, (_, index) => ({ asset: catalog[(start + index) % catalog.length], reason: ['unseen', 'rediscover', 'interest'][index % 3] })))
-    }
+    if (pathname === '/api/v1/stats/review' && method === 'GET') return reply(reviewFixture(params.get('range') ?? '7d'))
     if (pathname === '/api/v1/auth/dev-login' && method === 'POST') return reply({ token: 'preview-session' })
     if (pathname === '/api/v1/events/view' && method === 'POST') return reply({ outcome: 'ok' }, 202)
     if (pathname === '/api/v1/recommendations/prefs') {
@@ -80,4 +75,16 @@ export function createPreviewApi(now = Date.now()) {
     }
     return reply({ code: 'PREVIEW_UNSUPPORTED', message: '此操作未纳入虚拟数据预览，不会连接真实后端。' }, method === 'GET' ? 404 : 405)
   }
+}
+
+/** 固定演示结果，不复制生产统计公式。日期只用于隔离预览。 */
+export function reviewFixture(range = '7d') {
+  return { range, fromDay: range === 'all' ? '' : range === 'day' ? '2026-09-29' : range === '90d' ? '2026-07-31' : '2026-10-22', toDay: '2026-10-28',
+    previousFromDay: range === 'all' ? '' : range === 'day' ? '2026-08-30' : range === '90d' ? '2026-05-02' : '2026-10-15',
+    previousToDay: range === 'all' ? '' : range === 'day' ? '2026-09-28' : range === '90d' ? '2026-07-30' : '2026-10-21',
+    viewCount: 42, uniqueFiles: 24, firstViews: 18, repeatViews: 24, activeDays: 5, previousViewCount: range === 'all' ? 0 : 40,
+    comparisonAvailable: range !== 'all', interests: range === 'all' ? [] : [
+      { kind: 'author', id: 'synthetic-author', name: '青禾', currentViews: 21, previousViews: 10, currentShare: 50, previousShare: 25, changePoints: 25 },
+      { kind: 'tag', id: 'synthetic-tag', name: '风景', currentViews: 7, previousViews: 20, currentShare: 16.6666666667, previousShare: 50, changePoints: -33.3333333333 },
+    ], hours: Array.from({ length: 24 }, (_, hour) => ({ hour, views: hour === 21 ? 20 : hour === 12 ? 12 : hour === 9 ? 10 : 0 })) }
 }

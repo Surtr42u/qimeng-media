@@ -20,6 +20,7 @@ import { HOME_PATH } from '@/lib/route-keys'
 
 const MinePage = lazy(() => import('@/pages/MinePage'))
 const DataPage = lazy(() => import('@/pages/DataPage'))
+const BrowsingReviewPage = lazy(() => import('@/pages/BrowsingReviewPage'))
 const MaintenancePage = lazy(() => import('@/pages/MaintenancePage'))
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'))
 const SearchPage = lazy(() => import('@/pages/SearchPage'))
@@ -72,6 +73,7 @@ export const router = createBrowserRouter([
                 ],
               },
               { path: 'mine', element: <Suspense fallback={null}><MinePage /></Suspense> },
+              { path: 'data/review', element: <Suspense fallback={null}><BrowsingReviewPage /></Suspense> },
               { path: 'data', element: <Suspense fallback={null}><DataPage /></Suspense> },
               { path: 'maintenance', element: <Suspense fallback={null}><MaintenancePage /></Suspense> },
               { path: 'settings', element: <Suspense fallback={null}><SettingsPage /></Suspense> },
