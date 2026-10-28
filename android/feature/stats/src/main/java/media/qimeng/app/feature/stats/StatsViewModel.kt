@@ -114,8 +114,13 @@ class StatsViewModel @Inject constructor(
     private var discoveryJob: Job? = null
     private var discoveryRequestId = 0L
     private var discoverySeed = System.currentTimeMillis()
+    private var hasBeenVisible = false
 
     init { loadRange(DEFAULT_STATS_RANGE); changeDiscoveries() }
+
+    fun onVisible() {
+        if (hasBeenVisible) changeDiscoveries() else hasBeenVisible = true
+    }
 
     /** 独立于统计窗口；新请求取消旧请求，拒绝迟到覆盖，失败保留上一组并提示重试。 */
     fun changeDiscoveries() {

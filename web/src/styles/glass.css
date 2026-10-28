@@ -2064,7 +2064,7 @@ button.pill.detail-tag-manage { cursor: pointer; }
 .art-video-player:is(.art-fullscreen-web, :fullscreen) .art-video { max-height: none; }
 .art-video-player:is(.art-fullscreen-web, :fullscreen) .art-layers { display: flex !important; }
 .art-video-player .art-layer-fullscreen-exit { position: absolute; top: 12px; right: 14px; }
-.video-fullscreen-exit { position: relative; width: 34px; height: 34px; font-size: 26px; line-height: 1; opacity: 0.65; }
+.art-video-player .video-fullscreen-exit { position: relative; width: 34px; height: 34px; font-size: 26px; line-height: 1; opacity: 0.65; }
 .video-fullscreen-exit[hidden] { display: none; }
 .art-control-show .video-fullscreen-exit, .qimeng-paused .video-fullscreen-exit,
 .video-fullscreen-exit:hover, .video-fullscreen-exit:focus-visible { opacity: 1; }

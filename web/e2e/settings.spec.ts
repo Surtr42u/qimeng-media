@@ -128,7 +128,7 @@ test('自动模式保存失败保留草稿，切页前明确提示并可继续�
   await automatic.click()
   await expect(page.getByText(/设置保存失败/)).toBeVisible()
   await expect(automatic).toBeChecked()
-  await page.getByRole('link', { name: '首页', exact: true }).click()
+  await page.locator('.sidebar--pages').getByText('首页', { exact: true }).click()
   await expect(page.getByRole('dialog')).toContainText('放弃未保存的修改')
   await page.getByRole('button', { name: '继续编辑', exact: true }).click()
   fail = false

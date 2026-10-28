@@ -61,6 +61,7 @@ class StatsViewModelTest {
         val repository = StatsTestRepository()
         val vm = StatsViewModel(repository, MediaBatchIndex())
         advanceUntilIdle()
+        vm.onVisible()
         vm.selectRange(StatsRangeOption.SEVEN_DAYS)
         advanceUntilIdle()
         vm.selectRange(StatsRangeOption.THIRTY_DAYS)
@@ -71,6 +72,9 @@ class StatsViewModelTest {
         assertEquals(listOf("7d", "day", "all"), repository.trendCalls)
         assertTrue(repository.rankingCalls.isEmpty())
         assertEquals(1, repository.discoverySeeds.size)
+        vm.onVisible()
+        advanceUntilIdle()
+        assertEquals(2, repository.discoverySeeds.size)
     }
 
     @Test fun `迟到旧档请求不得覆盖新档含忽略取消的底层请求`() = runTest {

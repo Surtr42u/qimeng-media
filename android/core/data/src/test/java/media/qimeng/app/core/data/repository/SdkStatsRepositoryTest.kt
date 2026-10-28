@@ -10,6 +10,17 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SdkStatsRepositoryTest {
+    @Test fun `发现SDK保留理由并以请求来源补全签名缩略图地址`() = runTest {
+        val path = "/media/thumb/synthetic?size=md&v=v4&exp=9&sig=synthetic"
+        val body = """[{"asset":{"id":"10000000-0000-4000-8000-000000000001","fileName":"合成作品","thumbUrl":"$path"},"reason":"rediscover"}]"""
+        val entry = repository(body) { url ->
+            assertTrue(url.contains("/discoveries"))
+            assertTrue(url.contains("seed=42"))
+        }.discoveries(42, 6).single()
+        assertEquals("rediscover", entry.reason)
+        assertEquals("合成作品", entry.title)
+        assertEquals(ReadOnlyTestServerConfig().currentServerUrl()!!.trimEnd('/') + path, entry.thumbUrl)
+    }
     private val total = """{"viewCount":8,"playCount":2,"seconds":90}"""
     private val types = """{"image":$total,"video":$total,"animated_image":$total}"""
     private val sources = """{"normal":$total,"cos":$total}"""
