@@ -110,6 +110,12 @@ func TestSystemStatusOK(t *testing.T) {
 	if v, ok := got["cpuPercent"].(float64); !ok || v != 12.5 {
 		t.Errorf("cpuPercent = %v, 期望 12.5", got["cpuPercent"])
 	}
+	for _, key := range []string{"appRxBytes", "appTxBytes"} {
+		if value, ok := got[key].(float64); !ok || value < 0 {
+			t.Errorf("missing nonnegative application traffic: %s=%v", key, got[key])
+		}
+	}
+
 	perCore, ok := got["perCore"].([]any)
 	if !ok || len(perCore) != 3 || perCore[0].(float64) != 10 || perCore[2].(float64) != 7.5 {
 		t.Errorf("perCore = %v, 期望 [10 20 7.5]", got["perCore"])

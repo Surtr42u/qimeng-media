@@ -29,6 +29,12 @@ class UploadModelsTest {
         assertFalse(limits.overLimit(-1))
     }
 
+    @Test
+    fun `不限大小哨兵不在客户端拦截大文件`() {
+        val limits = UploadLimits(maxBytesMb = Int.MAX_VALUE.toLong(), autoAccept = true)
+        assertFalse(limits.overLimit(Long.MAX_VALUE))
+    }
+
     // ---- UploadItem.effectiveUploadName（挂靠批：编辑后落库名回退口径） ----
 
     @Test

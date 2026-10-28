@@ -3,12 +3,12 @@ package mediawrite
 import (
 	"context"
 	"encoding/json"
+	"math"
 
 	"qimeng-media/server/internal/authoring"
-	"qimeng-media/server/internal/config"
 )
 
-// UploadPolicy 为上传及本机同步共用的实时配置投影，不缓存、不放大部署上限。
+// UploadPolicy 为上传及本机同步共用的实时接收开关；文件大小不设业务上限，类型/路径/空间检查继续生效。
 type UploadPolicy struct {
 	MaxBytes int64
 	Disabled bool
@@ -28,11 +28,7 @@ type storedClientConfig struct {
 }
 
 func (s *Service) UploadPolicy(ctx context.Context) UploadPolicy {
-	maxBytes := s.cfg.Upload.MaxBytes
-	if maxBytes <= 0 {
-		maxBytes = config.DefaultUploadMaxBytes
-	}
-	p := UploadPolicy{MaxBytes: maxBytes}
+	p := UploadPolicy{MaxBytes: math.MaxInt64}
 	value, err := s.q.GetSetting(ctx, authoring.SettingKeyClientConfig)
 	if err != nil {
 		return p
@@ -42,8 +38,6 @@ func (s *Service) UploadPolicy(ctx context.Context) UploadPolicy {
 		return p
 	}
 	p.Disabled = !stored.Upload.AutoAccept
-	if limit := int64(stored.Upload.MaxBytesMb) << 20; limit > 0 && limit < maxBytes {
-		p.MaxBytes = limit
-	}
+
 	return p
 }

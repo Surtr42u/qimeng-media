@@ -246,8 +246,13 @@ func TestWatchContinuousEventsHaveBoundedDelay(t *testing.T) {
 
 func TestBackgroundScanWaitIsCancellable(t *testing.T) {
 	e := newTestEnv(t, newProbeStub(nil, nil).call)
-	e.s.backgroundScan <- struct{}{}
-	defer func() { <-e.s.backgroundScan }()
+	for range 32 {
+		release, err := e.s.admission.acquire(context.Background(), func(context.Context) int { return 32 })
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer release()
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- e.s.scanBackground(ctx, e.lib, "测试") }()
@@ -305,10 +310,17 @@ func TestWatchCancelWhileManualScanOwnsGate(t *testing.T) {
 }
 
 // 同时启动两个库的后台全扫，首个探测被阻塞时第二个不能开始探测。
-func TestBackgroundScansShareOneSlot(t *testing.T) {
+func TestBackgroundScansShareOneSlot(t *testing.T) { checkBackgroundScanConcurrency(t, 1) }
+
+func TestBackgroundScansRunTogether(t *testing.T) { checkBackgroundScanConcurrency(t, 2) }
+
+func checkBackgroundScanConcurrency(t *testing.T, workers int) {
 	probe := newProbeStub(nil, nil)
 	probe.block = make(chan struct{})
 	e := newTestEnv(t, probe.call)
+	if err := e.q.UpsertSetting(context.Background(), db.UpsertSettingParams{Key: "client_config", Value: fmt.Sprintf(`{"scan":{"workers":%d}}`, workers), UpdatedAt: store.FormatTimestamp(time.Now())}); err != nil {
+		t.Fatal(err)
+	}
 	e.writeFile(t, "a.mp4", 17)
 	other := e.lib
 	other.ID, other.RootPath = "synthetic-other", t.TempDir()
@@ -325,10 +337,18 @@ func TestBackgroundScansShareOneSlot(t *testing.T) {
 	group.Go(func() error { return e.s.scanBackground(ctx, e.lib, "测试") })
 	<-probe.entered
 	group.Go(func() error { return e.s.scanBackground(ctx, other, "测试") })
-	select {
-	case <-probe.entered:
-		t.Error("第二个库不应并发开始后台扫描")
-	case <-time.After(50 * time.Millisecond):
+	if workers == 1 {
+		select {
+		case <-probe.entered:
+			t.Error("单名额时第二个库不应开始")
+		case <-time.After(50 * time.Millisecond):
+		}
+	} else {
+		select {
+		case <-probe.entered:
+		case <-time.After(time.Second):
+			t.Error("并发设置没有实际放行第二个库")
+		}
 	}
 	close(probe.block)
 	if err := group.Wait(); err != nil {

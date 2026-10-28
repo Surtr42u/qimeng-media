@@ -85,7 +85,7 @@ func (s *Service) direct(ctx context.Context, input DirectUpload, receipt *db.Sa
 	if err := root.MkdirAll(filepath.FromSlash(path.Join(".", dir)), dirPerm); err != nil {
 		return db.Asset{}, fail(InternalFailure, "创建目标目录", err)
 	}
-	tmp, err := s.receiveUploadToRoot(root, dir, input.Filename, input.Body, input.ContentLength, policy.MaxBytes)
+	tmp, err := s.receiveUploadToRoot(ctx, root, dir, input.Filename, input.Body, input.ContentLength, policy.MaxBytes)
 	if err != nil {
 		return db.Asset{}, err
 	}

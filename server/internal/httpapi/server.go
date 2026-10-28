@@ -188,6 +188,7 @@ type Server struct {
 	thumbs    *thumbnail.Generator
 	scanner   Scanner
 	sysStatus func(ctx context.Context) (sysmon.SystemStatus, error)
+	traffic   applicationTraffic
 	backup    *backup.Manager
 	metrics   http.HandlerFunc
 	secret    []byte
@@ -432,7 +433,7 @@ func New(deps Deps) (*Server, error) {
 	mux.HandleFunc("GET /readyz", s.GetApiV1Readyz)
 	// 中间件链（外→内）：安全响应头 → Host 校验（DNS rebinding 防御，
 	// 403 响应也带安全头）→ 鉴权分发。
-	s.handler = securityHeaders(s.hostCheck(&topRouter{s: s, api: api}))
+	s.handler = s.traffic.wrap(securityHeaders(s.hostCheck(&topRouter{s: s, api: api})))
 	return s, nil
 }
 

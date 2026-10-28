@@ -2,11 +2,10 @@ package httpapi
 
 // config.go（客户端配置 GET/PUT /api/v1/config）测试：
 // GET 无记录回缺省、PUT 落库回读、PUT 越界 400、
-// upload.maxBytesMb 覆盖生效（min 语义）、autoAccept=false 上传 403、无 token 401。
+// upload.maxBytesMb兼容归一化、autoAccept=false 上传 403、无 token 401。
 
 import (
 	"encoding/json"
-	"io"
 	"net/http"
 	"testing"
 
@@ -34,16 +33,16 @@ func (e *testEnv) putConfig(t *testing.T, body string) *http.Response {
 	return e.do(t, http.MethodPut, "/api/v1/config", body)
 }
 
-// TestClientConfigDefault：无存储记录 → 缺省值（workers 2 / thumbEdge 800 /
-// maxBytesMb 2048 / autoAccept true，openapi ClientConfig default 字段）。
+// TestClientConfigDefault：无存储记录 → 缺省值（workers自动 / thumbEdge 800 /
+// maxBytesMb不限兼容值 / autoAccept true，openapi ClientConfig default 字段）。
 func TestClientConfigDefault(t *testing.T) {
 	env := newTestEnv(t)
 	cfg := getConfig(t, env)
-	if cfg.Scan.Workers != 2 || cfg.Scan.ThumbEdge != 800 {
-		t.Errorf("扫描缺省 = %+v, want {workers:2 thumbEdge:800}", cfg.Scan)
+	if cfg.Scan.Workers != 0 || cfg.Scan.ThumbEdge != 800 {
+		t.Errorf("扫描缺省 = %+v, want {workers:0 thumbEdge:800}", cfg.Scan)
 	}
-	if cfg.Upload.MaxBytesMb != 2048 || !cfg.Upload.AutoAccept {
-		t.Errorf("上传缺省 = %+v, want {maxBytesMb:2048 autoAccept:true}", cfg.Upload)
+	if cfg.Upload.MaxBytesMb != defaultUploadMaxMB || !cfg.Upload.AutoAccept {
+		t.Errorf("上传缺省 = %+v, want {maxBytesMb:不限兼容值 autoAccept:true}", cfg.Upload)
 	}
 }
 
@@ -61,12 +60,12 @@ func TestClientConfigPutRoundtrip(t *testing.T) {
 		t.Fatalf("解析 PUT 响应失败: %v", err)
 	}
 	if echo.Scan.Workers != 4 || echo.Scan.ThumbEdge != 1200 ||
-		echo.Upload.MaxBytesMb != 512 || echo.Upload.AutoAccept {
+		echo.Upload.MaxBytesMb != defaultUploadMaxMB || echo.Upload.AutoAccept {
 		t.Errorf("PUT 回显 ≠ 提交值: %+v", echo)
 	}
 	cfg := getConfig(t, env)
 	if cfg.Scan.Workers != 4 || cfg.Scan.ThumbEdge != 1200 ||
-		cfg.Upload.MaxBytesMb != 512 || cfg.Upload.AutoAccept {
+		cfg.Upload.MaxBytesMb != defaultUploadMaxMB || cfg.Upload.AutoAccept {
 		t.Errorf("GET 回读不一致: %+v", cfg)
 	}
 }
@@ -79,12 +78,12 @@ func TestClientConfigPutOutOfRange(t *testing.T) {
 		name string
 		body string
 	}{
-		{"workers 低于下限", `{"scan":{"workers":0,"thumbEdge":800},"upload":{"maxBytesMb":2048,"autoAccept":true}}`},
-		{"workers 高于上限", `{"scan":{"workers":5,"thumbEdge":800},"upload":{"maxBytesMb":2048,"autoAccept":true}}`},
+		{"workers 低于下限", `{"scan":{"workers":-1,"thumbEdge":800},"upload":{"maxBytesMb":2048,"autoAccept":true}}`},
+		{"workers 高于上限", `{"scan":{"workers":33,"thumbEdge":800},"upload":{"maxBytesMb":2048,"autoAccept":true}}`},
 		{"thumbEdge 低于下限", `{"scan":{"workers":2,"thumbEdge":100},"upload":{"maxBytesMb":2048,"autoAccept":true}}`},
 		{"thumbEdge 高于上限", `{"scan":{"workers":2,"thumbEdge":1601},"upload":{"maxBytesMb":2048,"autoAccept":true}}`},
-		{"maxBytesMb 低于下限", `{"scan":{"workers":2,"thumbEdge":800},"upload":{"maxBytesMb":63,"autoAccept":true}}`},
-		{"maxBytesMb 高于上限", `{"scan":{"workers":2,"thumbEdge":800},"upload":{"maxBytesMb":8193,"autoAccept":true}}`},
+		{"maxBytesMb 低于下限", `{"scan":{"workers":2,"thumbEdge":800},"upload":{"maxBytesMb":-1,"autoAccept":true}}`},
+		{"maxBytesMb 高于上限", `{"scan":{"workers":2,"thumbEdge":800},"upload":{"maxBytesMb":2147483648,"autoAccept":true}}`},
 	}
 	for _, c := range cases {
 		resp := env.putConfig(t, c.body)
@@ -94,7 +93,7 @@ func TestClientConfigPutOutOfRange(t *testing.T) {
 		}
 	}
 	cfg := getConfig(t, env)
-	if cfg.Scan.Workers != 2 || cfg.Upload.MaxBytesMb != 2048 {
+	if cfg.Scan.Workers != 0 || cfg.Upload.MaxBytesMb != defaultUploadMaxMB {
 		t.Errorf("越界 PUT 不应落库，GET = %+v", cfg)
 	}
 }
@@ -147,36 +146,24 @@ func TestClientConfigPutBoundaries(t *testing.T) {
 	}
 }
 
-// TestUploadMaxBytesMbOverride：PUT maxBytesMb=64 后上传实时收到 64MB 上限
-// ——小文件 201；ContentLength 谎报 65MB → 413（覆盖前默认 2GB 不会拦）。
-// min 语义：kv 提到 8192MB 时配置文件默认 2GB 仍更严，3GB 谎报照拦。
+// 旧大小配置不再收紧上传；兼容字段固定为不限哨兵，类型/空间检查独立保留。
 func TestUploadMaxBytesMbOverride(t *testing.T) {
 	env := newTestEnv(t)
+	env.cfg.Upload.MaxBytes = 1
+	response := env.putConfig(t, `{"scan":{"workers":0,"thumbEdge":800},"upload":{"maxBytesMb":64,"autoAccept":true}}`)
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != http.StatusOK {
+		t.Fatal(response.StatusCode)
+	}
+	cfg := getConfig(t, env)
+	if cfg.Upload.MaxBytesMb != defaultUploadMaxMB {
+		t.Fatal(cfg.Upload.MaxBytesMb)
+	}
 	jpg := makeJPG(t, t.TempDir(), 32, 32)
-
-	// 覆盖上限到 64MB：小文件照常 201
-	resp := env.putConfig(t, `{"scan":{"workers":2,"thumbEdge":800},"upload":{"maxBytesMb":64,"autoAccept":true}}`)
-	_ = resp.Body.Close()
-	ok := env.uploadBytes(t, env.libID, "", "within-override.jpg", jpg)
-	defer func() { _ = ok.Body.Close() }()
-	if ok.StatusCode != http.StatusCreated {
-		t.Fatalf("64MB 上限内上传期望 201，得到 %d", ok.StatusCode)
-	}
-
-	// ContentLength 谎报 65MB（body 实际 1 字节）：第一道 ContentLength 判定即 413
-	over := env.uploadFakeLength(t, env.libID, "", "fake-65m.jpg", 65<<20)
-	defer func() { _ = over.Body.Close() }()
-	if over.StatusCode != http.StatusRequestEntityTooLarge {
-		t.Fatalf("覆盖后 65MB 期望 413，得到 %d", over.StatusCode)
-	}
-
-	// min 语义：kv 放大到 8192MB 也不能越过配置文件默认 2GB
-	resp = env.putConfig(t, `{"scan":{"workers":2,"thumbEdge":800},"upload":{"maxBytesMb":8192,"autoAccept":true}}`)
-	_ = resp.Body.Close()
-	over2 := env.uploadFakeLength(t, env.libID, "", "fake-3g.jpg", 3<<30)
-	defer func() { _ = over2.Body.Close() }()
-	if over2.StatusCode != http.StatusRequestEntityTooLarge {
-		t.Fatalf("kv 放大后 3GB 仍应被配置文件 2GB 拦下（413），得到 %d", over2.StatusCode)
+	uploaded := env.uploadBytes(t, env.libID, "", "unlimited.jpg", jpg)
+	defer func() { _ = uploaded.Body.Close() }()
+	if uploaded.StatusCode != http.StatusCreated {
+		t.Fatal(uploaded.StatusCode)
 	}
 }
 
@@ -215,35 +202,4 @@ func TestConfigUnauthorized(t *testing.T) {
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("无 token GET /config 期望 401，得到 %d", resp.StatusCode)
 	}
-}
-
-// zeroReader 恒输出零字节（配合 LimitReader 控流，不预分配大缓冲）。
-type zeroReader struct{}
-
-func (zeroReader) Read(p []byte) (int, error) {
-	for i := range p {
-		p[i] = 0
-	}
-	return len(p), nil
-}
-
-// uploadFakeLength 发起 ContentLength 谎报的上传：零字节流现生成（无大分配）
-// + Expect: 100-continue——服务端在第一道 ContentLength 判定即回 413，
-// 客户端收到最终响应后不再发送 body，测试无真实大流量。
-// （直接对已知长度 reader 改 ContentLength 会被 Go http 客户端本地校验拒绝：
-// "ContentLength=... with Body length ..."，故用不透明 reader + Expect。）
-func (e *testEnv) uploadFakeLength(t *testing.T, libraryID, dir, filename string, fakeLen int64) *http.Response {
-	t.Helper()
-	url := e.ts.URL + "/api/v1/assets/upload?libraryId=" + libraryID +
-		"&dir=" + dir + "&filename=" + filename
-	req, err := http.NewRequest(http.MethodPost, url,
-		io.NopCloser(io.LimitReader(zeroReader{}, fakeLen)))
-	if err != nil {
-		t.Fatalf("构造请求失败: %v", err)
-	}
-	req.ContentLength = fakeLen
-	req.Header.Set("Expect", "100-continue")
-	req.Header.Set("Authorization", "Bearer "+e.token)
-	req.Header.Set("Content-Type", "application/octet-stream")
-	return e.doRaw(t, req)
 }

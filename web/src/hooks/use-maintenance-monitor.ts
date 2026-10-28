@@ -16,12 +16,13 @@ export function useMaintenanceMonitor() {
     const values = samples.points.map(p => p[direction])
     return {
       direction,
+      waiting: !status ? (query.isError ? '暂无读数' : '正在读取…') : status.appRxBytes == null || status.appTxBytes == null ? '需升级服务端' : '采样中…',
       label: direction === 'rx' ? '接收 / 下行' : '发送 / 上行',
       value: values.length ? formatBytes(values[values.length - 1]) : null,
       peak: values.length ? `${formatBytes(Math.max(...values))}/s` : '—',
-      cumulative: status?.[direction === 'rx' ? 'netRxBytes' : 'netTxBytes'],
+      cumulative: status?.[direction === 'rx' ? 'appRxBytes' : 'appTxBytes'],
     }
-  }), [samples.points, status])
+  }), [samples.points, status, query.isError])
   const stateLabel = query.isError
     ? (status ? '更新失败 · 保留上次读数' : '监控暂不可用')
     : status ? '正在自动更新' : '正在读取状态'

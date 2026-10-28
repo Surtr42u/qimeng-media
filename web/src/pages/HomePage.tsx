@@ -3,6 +3,8 @@ import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 import type { AssetSummary } from '@/api/generated'
 import { MediaCard } from '@/components/media/MediaCard'
+import { BrowseToolbar } from '@/components/media/BrowseToolbar'
+import { RefreshCw } from 'lucide-react'
 import { LoadingHint } from '@/components/ui/loading-hint'
 import { SkeletonGrid } from '@/components/ui/skeleton-grid'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -130,12 +132,13 @@ type RecommendationStream = ReturnType<typeof useRecommendationStream>
  *  F7：本组件持有 .grid 容器（ HomePage 不再包网格）——网格内只渲染卡片，
  *  全部提示行（加载中/空态/页脚/到底了）与哨兵移到网格之下作全宽独立行
  *  （.page 为纵向 flex，直挂子元素自动撑满内容区宽），不再与缩略图抢格位。 */
-function StreamCards({ stream, onOpen, emptyHint, footer, endHint, gridClassName = 'grid' }: {
+function StreamCards({ stream, onOpen, emptyHint, title, onRefresh, refreshLabel = '换一批', endHint, gridClassName = 'grid' }: {
   stream: RecommendationStream
   onOpen: (id?: string, nav?: AssetNavState) => void
   emptyHint: string
-  /** 常驻页脚（cos：换一批 + 计数），首屏加载完即显示 */
-  footer?: ReactNode
+  title: string
+  onRefresh: () => void
+  refreshLabel?: string
   /** 到底提示（无下一页且非空时显示） */
   endHint?: ReactNode
   /** 网格容器类（热榜传 'grid grid--hot'，缺省 'grid'） */
@@ -168,17 +171,14 @@ function StreamCards({ stream, onOpen, emptyHint, footer, endHint, gridClassName
     [onOpen, navContext],
   )
 
-  if (isLoading && items.length === 0) {
-    return <SkeletonGrid className={gridClassName} count={12} />
-  }
-
   return (
     <>
-      <div className={gridClassName}>
+      <BrowseToolbar title={title} summary={isLoading ? '正在读取…' : isPlaceholderData ? '正在更新这一批…' : isError ? `读取失败 · 已加载 ${items.length} 项` : `已加载 ${items.length} 项`} actions={<button className="browse-action" type="button" disabled={isLoading || isPlaceholderData} onClick={onRefresh}><RefreshCw aria-hidden="true" />{refreshLabel}</button>} />
+      {isLoading && items.length === 0 ? <SkeletonGrid className={gridClassName} count={12} /> : <div className={gridClassName}>
         {items.map((a) => (
           <MediaCard key={a.id} {...assetToCard(a)} onOpen={openCard} />
         ))}
-      </div>
+      </div>}
       {/* 提示行区（网格之下全宽直挂）：翻页在途/错误/空态/页脚/到底了/哨兵 */}
       {!isError && isFetchingNextPage && <LoadingHint />}
       {isError ? (
@@ -194,7 +194,6 @@ function StreamCards({ stream, onOpen, emptyHint, footer, endHint, gridClassName
       ) : (
         <>
           {!isLoading && !hasNextPage && items.length === 0 && <p className="grid-empty">{emptyHint}</p>}
-          {!isLoading && items.length > 0 && footer}
           {/* P3.1：占位窗口（换 seed 重取中）hasNextPage 是旧流的，可能假性
               false——到底提示须等新流到货再判 */}
           {!isLoading && !isPlaceholderData && items.length > 0 && !hasNextPage && endHint}
@@ -216,8 +215,10 @@ function RecommendTab({ onOpen }: { onOpen: (id?: string, nav?: AssetNavState) =
     <StreamCards
       stream={stream}
       onOpen={onOpen}
+      title="为你推荐"
+      onRefresh={() => setSeed(Date.now())}
       emptyHint="还没有内容——先到「维护 → 文件管理」注册一个媒体库并扫描。"
-      endHint={<p className="grid-empty">到底了</p>}
+      endHint={<p className="grid-empty">这一批已浏览完，可以换一批继续发现。</p>}
     />
   )
 }
@@ -234,23 +235,10 @@ function CosRecommendTab({ onOpen }: { onOpen: (id?: string, nav?: AssetNavState
     <StreamCards
       stream={stream}
       onOpen={onOpen}
+      title="COS 推荐"
+      onRefresh={() => setSeed(Date.now())}
       emptyHint="暂无 COS 内容——先到「维护 → 文件管理」注册 COS 媒体库并扫描。"
-      footer={(
-        <p className="grid-empty">
-          <button
-            className="pill"
-            type="button"
-            onClick={() => setSeed(Date.now())}
-          >
-            换一批
-          </button>
-          <span className="pill-count">
-            共 {stream.items.length} 项
-            {/* P3.1：占位窗口 hasNextPage 取自旧流，「到底了」后缀同 endHint 口径抑制 */}
-            {stream.hasNextPage || stream.isPlaceholderData ? '' : ' · 到底了'}
-          </span>
-        </p>
-      )}
+      endHint={<p className="grid-empty">这一批已浏览完，可以换一批继续发现。</p>}
     />
   )
 }
@@ -285,6 +273,9 @@ function HotRankTab({ period, onOpen }: { period: HomeRankPeriod; onOpen: (id?: 
     <StreamCards
       stream={stream}
       onOpen={onOpen}
+      title="内容热榜"
+      onRefresh={() => setReloadKey(value => value + 1)}
+      refreshLabel="刷新榜单"
       gridClassName="grid grid--hot"
       emptyHint="暂无上榜内容。"
       endHint={<p className="grid-empty">到底了</p>}

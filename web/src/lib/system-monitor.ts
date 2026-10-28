@@ -14,8 +14,8 @@ export interface NetworkPoint { at: number; rx: number; tx: number }
 export interface NetworkSamples { baseline: NetworkBaseline | null; points: NetworkPoint[] }
 
 export function sampleNetwork(previous: NetworkSamples, status: SystemStatus, at: number): NetworkSamples {
-  if (status.netRxBytes == null || status.netTxBytes == null) return previous
-  const current = { at, rx: status.netRxBytes, tx: status.netTxBytes, uptime: status.uptimeSeconds ?? 0 }
+  if (status.appRxBytes == null || status.appTxBytes == null) return previous
+  const current = { at, rx: status.appRxBytes, tx: status.appTxBytes, uptime: status.uptimeSeconds ?? 0 }
   const baseline = previous.baseline
   if (baseline && at <= baseline.at) return previous
   // 服务端重启/计数器回退只重建基线，不把旧服务器的尾帧画进本轮曲线。
@@ -23,7 +23,8 @@ export function sampleNetwork(previous: NetworkSamples, status: SystemStatus, at
     return { baseline: current, points: [] }
   }
   const seconds = (at - baseline.at) / MS_PER_SECOND
-  const point = { at, rx: (current.rx - baseline.rx) / seconds, tx: (current.tx - baseline.tx) / seconds }
+  // 展示精度为整B/s，避免低速流量的长小数挤破卡片；累计计数与采样时间不变。
+  const point = { at, rx: Math.round((current.rx - baseline.rx) / seconds), tx: Math.round((current.tx - baseline.tx) / seconds) }
   const points = previous.points.filter(p => p.at > at - SAMPLE_WINDOW_MS).slice(-(SAMPLE_LIMIT - 1))
   return { baseline: current, points: [...points, point] }
 }

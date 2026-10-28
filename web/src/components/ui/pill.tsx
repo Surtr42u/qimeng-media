@@ -15,6 +15,8 @@ export function Pill({
   onClick,
   title,
   className,
+  expanded,
+  controls,
   children,
 }: {
   active?: boolean
@@ -23,6 +25,8 @@ export function Pill({
   title?: string
   /** 变体类名（如 pill-tag/pill-add），与 base 类拼接；不含 active 态 */
   className?: string
+  expanded?: boolean
+  controls?: string
   children: ReactNode
 }) {
   return (
@@ -30,6 +34,9 @@ export function Pill({
       className={`pill${className ? ` ${className}` : ''}${active ? ' active' : ''}`}
       type="button"
       disabled={disabled}
+      aria-pressed={active}
+      aria-expanded={expanded}
+      aria-controls={controls}
       onClick={onClick}
       title={title}
     >

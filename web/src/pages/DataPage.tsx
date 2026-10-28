@@ -48,7 +48,7 @@ export default function DataPage() {
     </div>
     <div className="data-secondary-grid">
       <section className="rank-card data-content-panel" aria-label="内容榜">
-        <div className="workspace-card-head"><h3><Flame aria-hidden="true" />内容榜</h3><Link to={rankPath(RANK_CONTENT, current.trends)}>查看全部</Link></div><p className="rank-note">Top 5 · 按热度排序 · {current.label}</p>
+        <div className="workspace-card-head"><h3><Flame aria-hidden="true" />内容榜</h3><Link to={rankPath(RANK_CONTENT, current.trends)}>查看全部</Link></div><p className="rank-note">Top {data.contentPreviewCount} · 按热度排序 · {current.label}</p>
         <StatsQueryContent query={contentRank} label="内容榜"><ContentRankGrid items={contentRank.data ?? []} onOpen={asset => { if (asset.id) navigate(assetDetail(asset.id)) }} /></StatsQueryContent>
       </section>
       {overview || overviewQuery.isPending ? <DonutCard title="浏览量占比" sub={`按类型的浏览次数 · ${current.label}`} slices={data.viewSlices} loading={overviewQuery.isPending} emptyText="此窗口暂无浏览记录" centerValue={overview?.windowTotals.viewCount.toLocaleString(LOCALE_ZH)} centerLabel="浏览次数" /> : <section className="donut-card"><h3>浏览量占比</h3><p className="rank-note">统计概览尚不可用，恢复读取后显示。</p></section>}

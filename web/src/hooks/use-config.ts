@@ -2,8 +2,8 @@
  * 客户端配置 hooks（设置页扫描/上传卡消费；铁律 7：组件不直接调 API）。
  * 数据源 GET/PUT /api/v1/config：PUT 为全量整体替换语义，成功响应返回
  * 存储后全量（直写缓存省一轮 GET）。
- * 生效口径（openapi description 同步写明）：upload 两项实时生效；
- * scan 两项仅持久化预留，重启也不生效（与 OpenAPI ClientConfig 同步）。
+ * 生效口径（openapi description 同步写明）：autoAccept实时生效；maxBytesMb为旧SDK兼容。
+ * workers接入实际跨库并发，0为自动；thumbEdge仍为预留（与 OpenAPI ClientConfig 同步）。
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -16,17 +16,19 @@ import { unwrapSdkResult } from '@/lib/api-client'
 
 export const CONFIG_QUERY_KEY = ['api/v1/config'] as const
 
+/** OpenAPI ClientConfigUpload.maxBytesMb旧SDK兼容哨兵，与服务端config常量双向同步。 */
+export const LEGACY_UNLIMITED_UPLOAD_MB = 2147483647
+
 /** 服务端缺省（openapi ClientConfig 各字段 default；与 server config.go 对齐） */
 export const DEFAULT_CLIENT_CONFIG: ClientConfig = {
-  scan: { workers: 2, thumbEdge: 800 },
-  upload: { maxBytesMb: 2048, autoAccept: true },
+  scan: { workers: 0, thumbEdge: 800 },
+  upload: { maxBytesMb: LEGACY_UNLIMITED_UPLOAD_MB, autoAccept: true },
 }
 
 /** 协议允许范围（openapi minimum/maximum；保存前本地校验用） */
 export const CONFIG_BOUNDS = {
-  workers: { min: 1, max: 4 },
+  workers: { min: 0, max: 32 },
   thumbEdge: { min: 200, max: 1600 },
-  maxBytesMb: { min: 64, max: 8192 },
 } as const
 
 /** 读取当前客户端配置（服务端无记录时回缺省值） */

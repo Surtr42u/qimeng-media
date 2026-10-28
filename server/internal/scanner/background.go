@@ -134,25 +134,33 @@ func (s *Scanner) StartBackground(ctx context.Context, interval time.Duration) e
 				}
 				continue
 			}
-			for _, lib := range libs {
-				if err := s.scanBackground(ctx, lib, "轮询扫描"); err != nil &&
-					!errors.Is(err, ErrAlreadyScanning) && ctx.Err() == nil {
-					s.logger.Warn("scanner: 轮询扫描库失败", "libraryId", lib.ID, "err", err)
-				}
+			if err := s.pollLibraries(ctx, libs); err != nil {
+				return err
 			}
 		}
 	}
 }
 
-// scanBackground 全部库共享一个后台全扫名额，避免启动/事件风暴时多库
-// 同时装载大快照、争抢磁盘；等待可取消，不影响 API 手动扫描原有语义。
-func (s *Scanner) scanBackground(ctx context.Context, lib db.Library, reason string) error {
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case s.backgroundScan <- struct{}{}:
+// pollLibraries对每个子任务独立兜底，单库panic不杀进程，也不取消其他库。
+func (s *Scanner) pollLibraries(ctx context.Context, libs []db.Library) error {
+	var batch errgroup.Group
+	batch.SetLimit(s.scanWorkerLimit(ctx))
+	for _, lib := range libs {
+		batch.Go(func() error {
+			err := safego.Run(s.logger, "单库轮询", func() error {
+				return s.scanBackground(ctx, lib, "轮询扫描")
+			})
+			if err != nil && !errors.Is(err, ErrAlreadyScanning) && ctx.Err() == nil {
+				s.logger.Warn("scanner: 轮询扫描库失败", "libraryId", lib.ID, "err", err)
+			}
+			return nil // 下一轮可重试；不把单库故障扩散到整批。
+		})
 	}
-	defer func() { <-s.backgroundScan }()
+	return batch.Wait()
+}
+
+// scanBackground复用Scan的全局并发闸门，手动/轮询/监听均受同一配置约束。
+func (s *Scanner) scanBackground(ctx context.Context, lib db.Library, reason string) error {
 	start := time.Now()
 	res, err := s.Scan(ctx, lib)
 	if err == nil {

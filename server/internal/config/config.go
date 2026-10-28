@@ -67,8 +67,8 @@ type ThumbnailConfig struct {
 
 // UploadConfig 上传管线配置（DOMAIN_RULES §9：单文件大小上限可配置）。
 type UploadConfig struct {
-	// MaxBytes 是单文件大小上限（字节）；0 = 用 defaultUploadMaxBytes。
-	// 上限只在"下载上传流"路径强制（MaxBytesReader），不影响其他端点。
+	// MaxBytes仅保留旧配置解析兼容，实际上传不再按单文件业务大小限额。
+	// 类型/路径/可用空间与分片暂存总预算检查独立保留。
 	MaxBytes int64 `yaml:"max_bytes"`
 	// 以下非正值使用消费端安全默认值；环境变量只能设置正整数。
 	// MaxSessions 限制活动分片会话数（默认见 uploadsess.DefaultMaxSessions）。
