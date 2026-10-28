@@ -10,8 +10,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -26,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import java.util.Locale
 import media.qimeng.app.core.model.BrowsingReviewValues
 import media.qimeng.app.core.ui.theme.softDaylightShadow
+import media.qimeng.app.core.ui.icon.ChevronRightIcon
 
 /** 手机主页只显示名称；进入详情前不请求回顾接口。 */
 @Composable
@@ -36,7 +35,7 @@ internal fun BrowsingReviewEntry(onOpen: () -> Unit) {
         Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 16.dp),
             horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text("浏览回顾", style = MaterialTheme.typography.titleMedium)
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
+            Icon(ChevronRightIcon, contentDescription = null)
         }
     }
 }

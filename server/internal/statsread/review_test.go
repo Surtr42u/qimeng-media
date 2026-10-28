@@ -35,7 +35,7 @@ func TestReviewWindowsPartitionsAndReadOnly(t *testing.T) {
 		`INSERT INTO libraries(id,name,root_path,created_at) VALUES('on','synthetic','/synthetic','2026-01-01'),('off','off','/off','2026-01-01')`,
 		`UPDATE libraries SET enabled=0 WHERE id='off'`,
 		`INSERT INTO assets(asset_id,library_id,rel_path,file_name,media_type,size_bytes,mtime,created_at,updated_at) VALUES('old','on','old.jpg','old.jpg','image',1,'2026-01-01','2026-01-01','2026-01-01'),('new','on','new.jpg','new.jpg','image',1,'2026-01-01','2026-01-01','2026-01-01'),('off','off','off.mp4','off.mp4','video',1,'2026-01-01','2026-01-01','2026-01-01')`,
-		`INSERT INTO authors(id,display_name,type,created_at) VALUES('old-author','Old','normal','2026-01-01'),('cos_new','New','cos','2026-01-01')`,
+		`INSERT INTO authors(id,display_name,type,created_at) VALUES('old-author','Old','regular','2026-01-01'),('cos_new','New','cos','2026-01-01')`,
 		`INSERT INTO asset_authors(asset_id,author_id) VALUES('old','old-author'),('new','cos_new')`,
 		`INSERT INTO tags(id,name,created_at) VALUES('tag','Landscape','2026-01-01')`,
 		`INSERT INTO asset_tags(asset_id,tag_id) VALUES('new','tag')`,
