@@ -2,9 +2,9 @@
 
 > [API 目录与全局约定](../GUIDE_API.md)。本页解释用法，字段/路径/schema 以 [OpenAPI](../../api/openapi.yaml) 为准；正文日期只标记机制来源。
 
-## 此刻发现
+## 此刻发现（旧客户端兼容）
 
-`GET /discoveries?seed=...&limit=6` 为数据页提供独立混合发现，不替代 `/rankings` 周期榜。返回资产和发现理由；常规/COS 均可入选，规则见[推荐专题](../domain/recommendation.md)。客户端每次进入或换组使用新 seed，同一组内保留响应顺序，不自行评分。该只读端点不写展示或浏览记录。
+`GET /discoveries?seed=...&limit=6` 已弃用，仅兼容已安装旧客户端；新数据页使用浏览回顾。旧端点返回资产和发现理由，常规/COS 均可入选，保留规则见[推荐专题](../domain/recommendation.md)。该只读端点不写展示或浏览记录。
 
 ## 行为上报
 

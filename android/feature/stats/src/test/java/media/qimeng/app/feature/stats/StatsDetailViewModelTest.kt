@@ -98,7 +98,7 @@ class StatsDetailViewModelTest {
 
     @Test fun `浏览回顾按入口时段独立加载且零记录仍显示报告`() = runTest {
         val repository = StatsTestRepository().apply {
-            reviewProvider = { statsReview(it).copy(viewCount = 0, firstViews = 0, repeatViews = 0, uniqueFiles = 0, activeDays = 0, comparisonAvailable = false) }
+            reviewProvider = { statsReview(it).copy(viewCount = 0, firstViews = 0, repeatViews = 0, uniqueFiles = 0, activeDays = 0, comparisonAvailable = false, hours = (0..23).map { ReviewHourValues(it, 0) }) }
         }
         val vm = StatsDetailViewModel(handle(StatsDetailMode.REVIEW, StatsRangeOption.THIRTY_DAYS), repository, MediaBatchIndex())
         advanceUntilIdle()

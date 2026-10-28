@@ -81,6 +81,8 @@ internal fun BrowsingReviewContent(review: BrowsingReviewValues) {
                     }
                 }
             }
+            Text("份额按关联浏览占本期全部浏览计算，同一内容可关联多个作者或标签。",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         ReviewSection {
             Text("活跃时段", style = MaterialTheme.typography.titleMedium)
