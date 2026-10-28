@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -17,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import media.qimeng.app.core.ui.component.QimengSettingsCard
 
 /** 卡文案（语义权威口径 DOMAIN_RULES §4 / ADR-0035） */
 private const val CARD_TITLE = "词表合并同步"
@@ -51,29 +51,17 @@ internal fun VocabularyMergeSyncCard(
     onDismissError: () -> Unit,
     onDismissNotice: () -> Unit,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    QimengSettingsCard(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(CardInnerPadding),
             verticalArrangement = Arrangement.spacedBy(StatusLineSpacing),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(StatusLineSpacing),
-                ) {
-                    Text(text = CARD_TITLE, style = MaterialTheme.typography.titleSmall)
-                    Text(
-                        text = CARD_SUBTITLE,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+            Text(text = CARD_TITLE, style = MaterialTheme.typography.titleSmall)
+            Text(text = CARD_SUBTITLE, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(Modifier.align(Alignment.End)) {
                 TextButton(onClick = onSync, enabled = !syncing) {
                     Text(if (syncing) ACTION_SYNC_BUSY else ACTION_SYNC)
                 }

@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Card
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -27,8 +26,10 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import media.qimeng.app.core.data.prefetch.PrefetchUiState
 import media.qimeng.app.core.network.ServerAddress
+import media.qimeng.app.core.ui.component.QimengPageIntro
 import media.qimeng.app.core.ui.component.QimengTopBar
 import media.qimeng.app.core.ui.component.formatBytesHumanReadable
+import media.qimeng.app.core.ui.component.QimengSettingsCard
 import media.qimeng.app.core.ui.theme.QimengDimens
 
 /**
@@ -118,6 +119,7 @@ fun ThumbnailCacheScreen(
                 .padding(horizontal = ScreenContentPadding),
             verticalArrangement = Arrangement.spacedBy(QimengDimens.SpaceL),
         ) {
+            QimengPageIntro("按连接端分别管理缓存。清理缩略图缓存不会删除媒体原件。")
             // 条目一：服务器缓存（NAS 池）；预取进度区跟随实际写入池——仅 NAS 模式挂本卡
             // （2026-10-04 批：本地端预取实际写本地池〔第四百一十一笔路由〕，进度区却恒挂
             //  本卡，用户误读为「没连 PC 服务器缓存在动」；归属与 CachePoolBinder 同源判定）
@@ -172,7 +174,7 @@ private fun ServerCacheCard(
     modifier: Modifier = Modifier,
 ) {
     var clearing by remember { mutableStateOf(false) }
-    Card(modifier = modifier.fillMaxWidth()) {
+    QimengSettingsCard(modifier = modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -230,7 +232,7 @@ private fun LocalCacheCard(
     modifier: Modifier = Modifier,
 ) {
     var clearing by remember { mutableStateOf(false) }
-    Card(modifier = modifier.fillMaxWidth()) {
+    QimengSettingsCard(modifier = modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()

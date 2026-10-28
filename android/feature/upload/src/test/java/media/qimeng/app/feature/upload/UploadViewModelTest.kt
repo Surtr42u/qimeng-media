@@ -82,6 +82,34 @@ class UploadViewModelTest {
         assertNull(state.errorMessage)
     }
 
+    @Test
+    fun `库列表读取失败区别空库且可以重试`() {
+        val repository = FakeUploadRepository().apply { librariesError = RuntimeException("synthetic unavailable") }
+        val (viewModel) = newViewModel(repository = repository)
+        assertTrue(viewModel.uiState.value.librariesLoadFailed)
+        assertFalse(viewModel.uiState.value.loading)
+        repository.librariesError = null
+        viewModel.refreshLibraries()
+        driveIdle()
+        assertFalse(viewModel.uiState.value.librariesLoadFailed)
+        assertTrue(viewModel.uiState.value.libraries.isEmpty())
+        assertNull(viewModel.uiState.value.errorMessage)
+    }
+
+    @Test
+    fun `刷新目标列表不清空已选目录和待传文件`() {
+        val (viewModel) = newViewModel()
+        selectDefaultLibrary(viewModel)
+        viewModel.selectDir("selected-folder")
+        viewModel.onFilesSelected(listOf("content://synthetic/one"))
+        driveIdle()
+        val before = viewModel.uiState.value.selectedFiles
+        viewModel.refreshLibraries()
+        driveIdle()
+        assertEquals("selected-folder", viewModel.uiState.value.selectedDirPath)
+        assertEquals(before, viewModel.uiState.value.selectedFiles)
+    }
+
     // ---- 来源词表建议过滤（2026-09-28：仅单独词，组合条目不出现在快捷 chip） ----
 
     @Test

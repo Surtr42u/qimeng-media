@@ -33,6 +33,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import media.qimeng.app.core.ui.component.QimengCapsuleTextField
 import media.qimeng.app.core.ui.component.QimengTopBar
+import media.qimeng.app.core.ui.component.QimengSettingsCard
 import media.qimeng.app.core.ui.theme.QimengDimens
 
 /** 页面文案（对齐 Web LibraryManagePage.tsx TxtAuthorImportCard L84-187 逐字） */
@@ -232,7 +233,7 @@ private fun RuleNotes() {
 /** 片段行卡：文件名（空串=匿名导入）+ 行内「移除」（删除进行中全行禁用，Web 同口径） */
 @Composable
 private fun ImportedFileRow(displayName: String, removing: Boolean, onRemove: () -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    QimengSettingsCard(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -296,7 +297,7 @@ private fun AuthorMirrorCard(
     onFragmentChange: (String) -> Unit,
     onSave: () -> Unit,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    QimengSettingsCard(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()

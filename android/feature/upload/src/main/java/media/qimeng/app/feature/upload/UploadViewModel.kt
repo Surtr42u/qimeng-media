@@ -111,23 +111,32 @@ class UploadViewModel @Inject constructor(
      * 直传化：不自动选库——批次库由用户手选并持久化；库列表就绪后回放持久化的批次库
      * 目录树（库已被删则静默留空，提交门禁会拦）。limits 与库列表同批拉取。
      */
-    private fun refreshLibraries() {
+    fun refreshLibraries() {
+        if (form.value.loading) return
+        form.update { it.copy(loading = true) }
         viewModelScope.launch {
-            form.update { it.copy(loading = true, errorMessage = null) }
-            try {
-                val libs = uploadRepository.libraries()
-                form.update { it.copy(loading = false, libraries = libs) }
-                refreshLimits()
-                val persistedLibraryId = stagingRepository.batchConfig.first().libraryId
-                if (persistedLibraryId != null && libs.any { it.id == persistedLibraryId }) {
-                    loadDirTree(persistedLibraryId)
-                }
+            val libs = try {
+                uploadRepository.libraries()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
-                form.update { it.copy(loading = false, errorMessage = LOAD_FAILED_MESSAGE) }
+                form.update { it.copy(loading = false, librariesLoadFailed = true, errorMessage = LOAD_FAILED_MESSAGE) }
+                refreshArchiveBatch()
+                return@launch
             }
-            // 归档一键重传扫描（2026-10-01）：在库加载 try/catch 之外独立执行——库列表加载
-            // 失败也让它跑（失败时空库列表会如实落「未找到同名库」未匹配清单，不静默隐藏
-            // 归档区现状），不等待 limits 网络往返
+            form.update { it.copy(libraries = libs, librariesLoadFailed = false, errorMessage = null) }
+            refreshLimits()
+            val persistedLibraryId = stagingRepository.batchConfig.first().libraryId
+            if (persistedLibraryId != null && libs.any { it.id == persistedLibraryId } && form.value.dirTree == null) {
+                try {
+                    loadDirTree(persistedLibraryId)
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    form.update { it.copy(errorMessage = DIR_LOAD_FAILED_MESSAGE) }
+                }
+            }
+            form.update { it.copy(loading = false) }
             refreshArchiveBatch()
         }
     }

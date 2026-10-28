@@ -28,6 +28,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import media.qimeng.app.core.data.backup.AutoBackupRunner
 import media.qimeng.app.core.data.backup.BackupValidator
+import media.qimeng.app.core.ui.component.QimengPageIntro
 import media.qimeng.app.core.ui.component.QimengTopBar
 import media.qimeng.app.core.ui.theme.QimengDimens
 
@@ -110,6 +111,7 @@ fun BackupScreen(
                 .padding(horizontal = ScreenContentPadding),
             verticalArrangement = Arrangement.spacedBy(QimengDimens.SpaceL),
         ) {
+            QimengPageIntro("备份用于恢复与迁移；浏览记录补传、词表合并可分别操作。")
             state.errorMessage?.let { message ->
                 StatusMessageCard(text = message, container = MaterialTheme.colorScheme.errorContainer) {
                     viewModel.dismissError()
@@ -128,6 +130,15 @@ fun BackupScreen(
             if (state.warnings.isNotEmpty()) {
                 WarningsCard(warnings = state.warnings, onDismiss = viewModel::dismissWarnings)
             }
+
+            // 先设置共享的备份目录，再执行导入/导出；原自动备份状态与动作仍由 VM 持有。
+            AutoBackupCard(
+                enabled = state.autoBackupEnabled,
+                dirUri = state.autoBackupDirUri,
+                lastRunMillis = state.autoBackupLastRunMillis,
+                onToggle = viewModel::setAutoBackupEnabled,
+                onPickDir = { dirPickerLauncher.launch(pickerStartUri) },
+            )
 
             // 卡1：导入导出（直读直写备份目录 qimeng_backup.json；确认弹窗见页尾）
             ImportExportCard(
@@ -167,14 +178,7 @@ fun BackupScreen(
 
             BackupRuleNotes()
 
-            // 卡2：自动备份（开关/目录/上次备份时间；「立即备份」随任务S 收敛删除）
-            AutoBackupCard(
-                enabled = state.autoBackupEnabled,
-                dirUri = state.autoBackupDirUri,
-                lastRunMillis = state.autoBackupLastRunMillis,
-                onToggle = viewModel::setAutoBackupEnabled,
-                onPickDir = { dirPickerLauncher.launch(pickerStartUri) },
-            )
+
 
             Spacer(modifier = Modifier.height(ScreenBottomSpacing))
         }

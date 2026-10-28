@@ -9,10 +9,7 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -22,20 +19,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -43,7 +34,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -52,13 +42,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import media.qimeng.app.core.model.DirNode
 import media.qimeng.app.core.model.UploadItem
-import media.qimeng.app.core.model.UploadRules
 import media.qimeng.app.core.ui.component.QimengCapsuleTextField
 import media.qimeng.app.core.ui.component.QimengMessageCard
 import media.qimeng.app.core.ui.component.QimengSegPill
+import media.qimeng.app.core.ui.component.QimengPageIntro
+import media.qimeng.app.core.ui.component.QimengSettingsCard
 import media.qimeng.app.core.ui.component.QimengTopBar
+import media.qimeng.app.core.ui.theme.softDaylightBackground
 import media.qimeng.app.core.ui.theme.QimengDimens
 
 /**
@@ -86,6 +77,8 @@ fun UploadScreen(
     sharedUris: List<String>,
     onSharedConsumed: () -> Unit,
     onDone: () -> Unit,
+    onOpenLibraries: () -> Unit,
+    onOpenArchiveSettings: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: UploadViewModel = hiltViewModel(),
 ) {
@@ -140,15 +133,8 @@ fun UploadScreen(
         viewModel.onFilesSelected(uris.map { it.toString() })
     }
 
-    Column(modifier = modifier.fillMaxSize()) {
+    Column(modifier = modifier.fillMaxSize().softDaylightBackground()) {
         QimengTopBar(title = "上传", onBack = onDone)
-
-        if (state.loading) {
-            // V6：expressive LoadingIndicator 替换（仅控件替换，padding 原样）。
-            // V8 #5 口径：页级加载无并排文字，保持组件默认 48dp（ButtonLoadingIndicatorSize
-            // 20dp 档仅限按钮内嵌 loading，页级不共用）
-            LoadingIndicator(modifier = Modifier.padding(24.dp))
-        }
 
         UploadForm(
             state = state,
@@ -156,6 +142,8 @@ fun UploadScreen(
             onSystemFiles = { systemFilesLauncher.launch(SYSTEM_FILES_MIME_TYPES) },
             onCreateDir = { showCreateDirDialog = true },
             onArchiveBatchUpload = { showArchiveBatchDialog = true },
+            onOpenLibraries = onOpenLibraries,
+            onOpenArchiveSettings = onOpenArchiveSettings,
         )
     }
 
@@ -197,15 +185,18 @@ private fun UploadForm(
     onSystemFiles: () -> Unit,
     onCreateDir: () -> Unit,
     onArchiveBatchUpload: () -> Unit,
+    onOpenLibraries: () -> Unit,
+    onOpenArchiveSettings: () -> Unit,
 ) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp)
+            .padding(horizontal = QimengDimens.ScreenPaddingHorizontal)
             .imePadding(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        QimengPageIntro("选好上传位置，再添加你想收藏的作品。")
         state.errorMessage?.let { message ->
             QimengMessageCard(text = message, container = MaterialTheme.colorScheme.errorContainer) {
                 viewModel.dismissError()
@@ -222,17 +213,12 @@ private fun UploadForm(
             }
         }
 
-        // —— 选库：目标库（必选）→ 目标目录（选库后展示目录树），常驻 ——
-        LibrarySection(state = state, viewModel = viewModel)
-        state.dirTree?.let { tree ->
-            SectionTitle("目标目录")
-            DirTreePanel(
-                tree = tree,
-                selectedDirPath = state.selectedDirPath,
-                onSelect = viewModel::selectDir,
-                onCreateDir = onCreateDir,
-            )
-        }
+        UploadDestinationSection(
+            state = state,
+            viewModel = viewModel,
+            onCreateDir = onCreateDir,
+            onOpenLibraries = onOpenLibraries,
+        )
 
         // —— 批次默认区（挂靠批）：新进文件自动继承 ——
         BatchDefaultSection(state = state, viewModel = viewModel)
@@ -240,9 +226,7 @@ private fun UploadForm(
         // —— 放文件：唯一入口「系统文件」（SAF，2026-09-29 用户拍板精简：相册/收件箱
         // 导入/浏览文件三入口退役——SAF 隐藏目录可见 + 免存储授权，一口全覆盖），选完
         // 先进预览编辑文件名（2026-10-07 加回）再上传 ——
-        SectionTitle("添加文件")
-        AddSourcesRow(onSystemFiles = onSystemFiles)
-        DirectUploadGuide()
+        AddSourcesRow(onSystemFiles = onSystemFiles, busy = state.describing || state.submitting)
 
         // —— 选中文件预览/编辑文件名（2026-10-07 加回文件名编辑）：选文件后展示待传列表，
         // 用户可编辑落库基名（扩展名锁定），点击「开始上传」后入队 ——
@@ -259,12 +243,10 @@ private fun UploadForm(
 
         // —— 归档一键上传（2026-10-01）：归档根已配置时展示扫描摘要与一键入口，确认弹窗
         // 在壳层（与新建目录弹层同位置）；扫描/匹配/入队规则全在 core 与 VM ——
-        ArchiveBatchSection(state = state, onUploadClick = onArchiveBatchUpload)
+        ArchiveBatchSection(state = state, onUploadClick = onArchiveBatchUpload, onOpenSettings = onOpenArchiveSettings)
 
         // —— 上传队列 ——
-        if (state.queue.isNotEmpty()) {
-            QueueSection(queue = state.queue, summary = state.queueSummary, onCancel = viewModel::cancel)
-        }
+        QueueSection(queue = state.queue, summary = state.queueSummary, onCancel = viewModel::cancel)
 
         Spacer(modifier = Modifier.height(24.dp))
     }
@@ -276,35 +258,22 @@ private fun UploadForm(
  * 「所有文件访问」授权，一口覆盖三个退役入口的全部场景。
  */
 @Composable
-private fun AddSourcesRow(onSystemFiles: () -> Unit) {
-    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Button(onClick = onSystemFiles, modifier = Modifier.fillMaxWidth()) {
-            Text(SYSTEM_FILES_BUTTON_TEXT)
+private fun AddSourcesRow(onSystemFiles: () -> Unit, busy: Boolean) {
+    var showGuide by rememberSaveable { mutableStateOf(false) }
+    UploadPanel(title = "添加文件", subtitle = DIRECT_UPLOAD_GUIDE) {
+        Button(onClick = onSystemFiles, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+            Text(if (busy) "正在处理文件…" else SYSTEM_FILES_BUTTON_TEXT)
         }
-        Text(
-            text = SYSTEM_FILES_HINT,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Text(
-            text = ADD_FILES_FORMAT_HINT,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        TextButton(onClick = { showGuide = !showGuide }) {
+            Text(if (showGuide) "收起选择说明" else "权限与格式说明")
+        }
+        if (showGuide) {
+            Text(SYSTEM_FILES_HINT, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(ADD_FILES_FORMAT_HINT, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
-}
-
-/**
- * 直传说明（2026-09-29 直传化：暂存区退役，原「暂存空态引导」改为添加文件区常驻说明）：
- * 选完文件立即上传，自动继承批次作者与来源。
- */
-@Composable
-private fun DirectUploadGuide() {
-    Text(
-        text = DIRECT_UPLOAD_GUIDE,
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
 }
 
 /**
@@ -314,7 +283,7 @@ private fun DirectUploadGuide() {
  */
 @Composable
 private fun SelectedFilesCard(state: UploadUiState, viewModel: UploadViewModel) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    QimengSettingsCard(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -416,168 +385,6 @@ private fun SelectedFileRow(
     }
 }
 
-/** 目标库选择（页面配置区首行，必选、常驻；复用页面原库 pills 控件与 VM 数据源） */
-@Composable
-private fun LibrarySection(state: UploadUiState, viewModel: UploadViewModel) {
-    SectionTitle("目标库（必选）")
-    if (state.libraries.isEmpty()) {
-        Text("暂无可选库", style = MaterialTheme.typography.bodyMedium)
-    } else {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            state.libraries.forEach { library ->
-                QimengSegPill(
-                    text = library.name,
-                    selected = state.selectedLibrary?.id == library.id,
-                    onClick = { viewModel.selectLibrary(library) },
-                )
-            }
-        }
-    }
-}
-
-/** 目标目录面板：目录树卡片 + 已选目录提示 + 新建子目录入口（目录树已加载时展示） */
-@Composable
-private fun DirTreePanel(
-    tree: DirNode,
-    selectedDirPath: String,
-    onSelect: (String) -> Unit,
-    onCreateDir: () -> Unit,
-) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(8.dp)) {
-            val expanded = remember(tree) { mutableStateOf(setOf(ROOT_PATH)) }
-            // 根行固定展示（path = "" 即库根，协议口径）
-            DirRow(
-                label = DIR_ROOT_LABEL,
-                detail = "${tree.fileCount} 个文件",
-                selected = selectedDirPath == ROOT_PATH,
-                expanded = true,
-                hasChildren = tree.children.isNotEmpty(),
-                onClick = { onSelect(ROOT_PATH) },
-                onToggle = { },
-            )
-            tree.children.forEach { child ->
-                DirNodeRows(
-                    node = child,
-                    depth = 1,
-                    selectedPath = selectedDirPath,
-                    expandedPaths = expanded.value,
-                    onToggle = { path ->
-                        expanded.value =
-                            if (path in expanded.value) expanded.value - path
-                            else expanded.value + path
-                    },
-                    onSelect = onSelect,
-                )
-            }
-        }
-    }
-    Text(
-        text = "已选目录：${selectedDirPath.ifEmpty { DIR_ROOT_LABEL }}",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-    OutlinedButton(onClick = onCreateDir) {
-        Text("在当前目录下新建子目录")
-    }
-}
-
-@Composable
-internal fun SectionTitle(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.titleMedium,
-        modifier = Modifier.padding(top = 8.dp),
-    )
-}
-
-/** 目录树行（递归渲染；深度缩进 + 展开/收起 + 点选为目标目录） */
-@Composable
-private fun DirNodeRows(
-    node: DirNode,
-    depth: Int,
-    selectedPath: String,
-    expandedPaths: Set<String>,
-    onToggle: (String) -> Unit,
-    onSelect: (String) -> Unit,
-) {
-    val hasChildren = node.children.isNotEmpty()
-    val expanded = node.path in expandedPaths
-    DirRow(
-        label = node.path.substringAfterLast('/', node.path),
-        detail = "${node.fileCount} 个文件",
-        selected = selectedPath == node.path,
-        expanded = expanded,
-        hasChildren = hasChildren,
-        onClick = {
-            // V7：点行 = 选中并进入（有子级且未展开时同时展开）——
-            // COS 等层级库点行直达子文件夹，收起仍走 ▾ 箭头（规则见 UploadRules）
-            onSelect(node.path)
-            if (UploadRules.shouldExpandOnSelect(hasChildren, expanded)) onToggle(node.path)
-        },
-        onToggle = { onToggle(node.path) },
-        depth = depth,
-    )
-    if (expanded) {
-        node.children.forEach { child ->
-            DirNodeRows(child, depth + 1, selectedPath, expandedPaths, onToggle, onSelect)
-        }
-    }
-}
-
-@Composable
-private fun DirRow(
-    label: String,
-    detail: String,
-    selected: Boolean,
-    expanded: Boolean,
-    hasChildren: Boolean,
-    onClick: () -> Unit,
-    onToggle: () -> Unit,
-    depth: Int = 0,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onClick() }
-            .padding(start = (depth * INDENT_STEP_DP).dp, top = 6.dp, bottom = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (hasChildren) {
-            // V8 #1：折叠箭头不再用 TextButton——M3 TextButton 自带约 40dp 最小高度，
-            // 会把「有子级的行」撑到叶子行（Spacer 占位）的约 1.3 倍，COS 树与 normal 树
-            // 切换时密度跳变。改为与叶子占位同宽、与整行约等高（20sp 行高+12dp 行距）
-            // 的可点击区，行高仍与叶子行同档、由行内文字+padding 单源决定
-            // （点击语义不变：仍只在此区域触发折叠）。
-            Box(
-                modifier = Modifier
-                    .size(width = DIR_TOGGLE_AREA_WIDTH_DP.dp, height = DIR_TOGGLE_AREA_HEIGHT_DP.dp)
-                    .clickable(onClick = onToggle),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(if (expanded) "▾" else "▸", style = MaterialTheme.typography.bodyMedium)
-            }
-        } else {
-            Spacer(modifier = Modifier.width(DIR_TOGGLE_AREA_WIDTH_DP.dp))
-        }
-        Text(
-            text = if (selected) "● $label" else "○ $label",
-            style = MaterialTheme.typography.bodyMedium,
-        )
-        Spacer(modifier = Modifier.weight(1f))
-        Text(
-            text = detail,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
 @Composable
 private fun CreateDirDialog(
     creating: Boolean,
@@ -626,8 +433,6 @@ private fun requestNotificationPermissionIfNeeded(context: Context, launcher: Ac
 //    暂存列表/逐项编辑器（StagedItemRow/StagedItemEditor）同日随暂存区退役删除——
 //    选完文件即传，无暂存、无逐项校对、无「开始上传」按钮。
 
-/** 目录树根路径（协议口径：空串 = 库根） */
-private const val ROOT_PATH = ""
 
 // ---------- 「系统文件」唯一入口（2026-09-29）：SAF 文档选择器，隐藏目录可见 + 免存储授权 ----------
 // launcher 与持久授权链见 UploadScreen 内 systemFilesLauncher 注释；管道落点 submitUris
@@ -644,7 +449,7 @@ private const val SYSTEM_FILES_HINT =
 
 /** 直传说明（2026-10-08 体验优化：选文件后可修改文件名，消除多作者强绑定的心理负担） */
 private const val DIRECT_UPLOAD_GUIDE =
-    "选择文件后可修改落库文件名，点击「开始上传」入队传输；多作者或杂图无需预设，上传后可随时整理"
+    "选择后可修改文件名，确认后点「开始上传」。作者与来源可稍后整理。"
 
 /** 作品名输入占位符（SelectedFileRow 基名编辑输入框） */
 private const val UPLOAD_NAME_PLACEHOLDER = "作品名"
@@ -654,18 +459,3 @@ private const val LOCKED_BADGE_TEXT = "锁定"
 
 /** 添加文件入口的格式说明（超限拦截口径在 VM/服务端） */
 private const val ADD_FILES_FORMAT_HINT = "支持图片/视频常见格式；类型与大小校验在服务端，超限项本地拦截"
-
-private const val DIR_ROOT_LABEL = "（库根）"
-
-/** 树行每层缩进（dp） */
-private const val INDENT_STEP_DP = 20
-
-/** 目录树行折叠区宽度（dp）：有子级的箭头区与叶子占位同宽，两树文字起点对齐（V8 #1） */
-private const val DIR_TOGGLE_AREA_WIDTH_DP = 48
-
-/**
- * 目录树行折叠区高度（dp）：与整行约等高（bodyMedium 20sp 行高+上下各 6dp 行距≈32dp），
- * 不高于叶子行——行高与叶子行同档、不被折叠区撑破（V8 #1）；V8 二轮从 20 提到 32：
- * 点击热区翻倍至 48×32（Material 密集列表 32dp 档），清偿「收起热区低于最小触摸目标」审查回退。
- */
-private const val DIR_TOGGLE_AREA_HEIGHT_DP = 32

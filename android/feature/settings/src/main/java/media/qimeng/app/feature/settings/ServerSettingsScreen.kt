@@ -5,6 +5,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
@@ -50,6 +54,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import media.qimeng.app.core.network.DefaultEndpoint
 import media.qimeng.app.core.network.ServerAddress
 import media.qimeng.app.core.ui.component.QimengCapsuleTextField
+import media.qimeng.app.core.ui.component.QimengPageIntro
+import media.qimeng.app.core.ui.theme.softDaylightBackground
+import media.qimeng.app.core.ui.theme.softDaylightShadow
 import media.qimeng.app.core.ui.component.QimengTopBar
 import media.qimeng.app.core.ui.theme.QimengDimens
 
@@ -160,14 +167,19 @@ fun ServerSettingsScreen(
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(modifier = Modifier.fillMaxSize().softDaylightBackground()) {
         QimengTopBar(title = TITLE_SERVER, onBack = onBack)
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = QimengDimens.ScreenPaddingHorizontal),
+                .padding(horizontal = QimengDimens.ScreenPaddingHorizontal)
+                .imePadding(),
         ) {
+            QimengPageIntro(
+                if (state.isLocalMode) "当前使用本机模式，媒体库由这台设备管理。"
+                else "当前连接远端服务器，可在这里管理地址和登录偏好。",
+            )
             ServerUrlEditCard(
                 currentUrl = state.currentUrl,
                 urlInput = state.urlInput,
@@ -175,7 +187,7 @@ fun ServerSettingsScreen(
                 invalid = state.urlInvalid,
                 onUrlChange = viewModel::onUrlChange,
                 onSave = viewModel::saveAndRelogin,
-                modifier = Modifier.padding(top = QimengDimens.SpaceL, bottom = QimengDimens.SpaceL),
+                modifier = Modifier.padding(bottom = QimengDimens.SpaceL),
             )
             LocalModeCard(
                 localUrlInput = state.localUrlInput,
@@ -286,18 +298,20 @@ private fun DefaultEndpointCard(
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        EndpointRow(
-            label = LABEL_ENDPOINT_NAS,
-            inUse = activeEndpoint == DefaultEndpoint.NAS,
-            selected = selected == DefaultEndpoint.NAS,
-            onClick = { onSelect(DefaultEndpoint.NAS) },
-        )
-        EndpointRow(
-            label = LABEL_ENDPOINT_LOCAL,
-            inUse = activeEndpoint == DefaultEndpoint.LOCAL,
-            selected = selected == DefaultEndpoint.LOCAL,
-            onClick = { onSelect(DefaultEndpoint.LOCAL) },
-        )
+        Column(Modifier.selectableGroup()) {
+            EndpointRow(
+                label = LABEL_ENDPOINT_NAS,
+                inUse = activeEndpoint == DefaultEndpoint.NAS,
+                selected = selected == DefaultEndpoint.NAS,
+                onClick = { onSelect(DefaultEndpoint.NAS) },
+            )
+            EndpointRow(
+                label = LABEL_ENDPOINT_LOCAL,
+                inUse = activeEndpoint == DefaultEndpoint.LOCAL,
+                selected = selected == DefaultEndpoint.LOCAL,
+                onClick = { onSelect(DefaultEndpoint.LOCAL) },
+            )
+        }
     }
 }
 
@@ -312,11 +326,12 @@ private fun EndpointRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick),
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
+            .heightIn(min = QimengDimens.ProfileRowHeight),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         RadioButton(selected = selected, onClick = null)
-        Text(text = label, style = MaterialTheme.typography.bodyMedium)
+        Text(text = label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
         if (inUse) {
             ActiveEndpointBadge(modifier = Modifier.padding(start = BadgeSpacing))
         }
@@ -400,14 +415,19 @@ private fun ChargeOnlyScanCard(
 ) {
     CardContainer(modifier = modifier) {
         Text(text = SECTION_CHARGE_ONLY_SCAN, style = MaterialTheme.typography.titleSmall)
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.fillMaxWidth()
+                .toggleable(value = enabled, role = Role.Switch, onValueChange = onEnabledChange)
+                .heightIn(min = QimengDimens.ProfileRowHeight),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Text(
                 text = SUBTITLE_CHARGE_ONLY_SCAN,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f),
             )
-            Switch(checked = enabled, onCheckedChange = onEnabledChange)
+            Switch(checked = enabled, onCheckedChange = null)
         }
     }
 }
@@ -449,7 +469,7 @@ private fun CardContainer(modifier: Modifier = Modifier, content: @Composable ()
     Surface(
         color = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(QimengDimens.CardCornerRadius),
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth().softDaylightShadow(),
     ) {
         Column(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),

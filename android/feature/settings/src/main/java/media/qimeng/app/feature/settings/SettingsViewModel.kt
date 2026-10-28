@@ -167,7 +167,7 @@ class SettingsViewModel @Inject constructor(
 
     /** 整行点击应用预设（C4）：PUT 9 维载荷后本地推导高亮态（预设值即载荷值，无需重拉）；失败给反馈且高亮保持原项 */
     fun applyPreset(preset: RecommendPreset) {
-        if (_uiState.value.prefsApplying) return
+        if (_uiState.value.prefsApplying || _uiState.value.appliedPreset == preset) return
         _uiState.update { it.copy(prefsApplying = true) }
         viewModelScope.launch {
             val updated = runCatching {
@@ -183,6 +183,8 @@ class SettingsViewModel @Inject constructor(
                         prefsApplying = false,
                         prefsValues = updated,
                         appliedPreset = preset,
+                        // 重试成功即撤掉旧失败，弹层与我的页共用同一反馈状态。
+                        writeError = null,
                         // PUT 成功即持有权威值，此前的 GET 失败态随之消除（Sheet 撤重试态）
                         prefsLoadFailed = false,
                     )

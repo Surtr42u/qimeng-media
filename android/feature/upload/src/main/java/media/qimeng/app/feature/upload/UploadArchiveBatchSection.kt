@@ -32,51 +32,52 @@ import androidx.compose.ui.unit.dp
 internal fun ArchiveBatchSection(
     state: UploadUiState,
     onUploadClick: () -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
-    SectionTitle(ARCHIVE_BATCH_SECTION_TITLE)
-    val scan = state.archiveBatch
-    when {
-        // 扫描中（含归档根已配置但首扫未完成的窗口）
-        state.archiveBatchLoading ->
-            Text(
-                text = ARCHIVE_BATCH_SCANNING_TEXT,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+    UploadPanel(ARCHIVE_BATCH_SECTION_TITLE, "按库名批量上传已归档的文件。") {
+        val scan = state.archiveBatch
+        when {
+            // 扫描中（含归档根已配置但首扫未完成的窗口）
+            state.archiveBatchLoading ->
+                Text(
+                    text = ARCHIVE_BATCH_SCANNING_TEXT,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
 
-        // 归档根未配置：只指路不强跳
-        scan == null ->
-            Text(
-                text = ARCHIVE_BATCH_NOT_CONFIGURED_HINT,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-
-        else -> {
-            Text(
-                text = state.archiveBatchSummary.orEmpty(),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Button(
-                onClick = onUploadClick,
-                // 置门口径：无待传条目 / 提交中 / 本会话已成功入队过一轮且扫描未变化
-                // （防整批重入队——源文件上传成功前仍在归档根，重复确认 = 服务端同名副本）
-                enabled = scan.items.isNotEmpty() && !state.submitting && !state.archiveBatchEnqueued,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(ARCHIVE_BATCH_BUTTON_TEXT)
+            // 归档根未配置：只指路不强跳
+            scan == null -> {
+                Text(ARCHIVE_BATCH_NOT_CONFIGURED_HINT, style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                TextButton(onClick = onOpenSettings) { Text("设置归档文件夹") }
             }
-            Text(
-                text = ARCHIVE_BATCH_REUPLOAD_WARNING,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-            )
-            Text(
-                text = ARCHIVE_BATCH_HINT,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+
+            else -> {
+                Text(
+                    text = state.archiveBatchSummary.orEmpty(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Button(
+                    onClick = onUploadClick,
+                    // 置门口径：无待传条目 / 提交中 / 本会话已成功入队过一轮且扫描未变化
+                    // （防整批重入队——源文件上传成功前仍在归档根，重复确认 = 服务端同名副本）
+                    enabled = scan.items.isNotEmpty() && !state.submitting && !state.archiveBatchEnqueued,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(ARCHIVE_BATCH_BUTTON_TEXT)
+                }
+                Text(
+                    text = ARCHIVE_BATCH_REUPLOAD_WARNING,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+                Text(
+                    text = ARCHIVE_BATCH_HINT,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }
@@ -160,14 +161,14 @@ internal fun ArchiveBatchConfirmDialog(
 // ---------- 文案常量（单文件单源；修改须知确认弹窗与入口区共用同一套措辞） ----------
 
 /** 入口区标题 */
-private const val ARCHIVE_BATCH_SECTION_TITLE = "从归档文件夹一键上传"
+private const val ARCHIVE_BATCH_SECTION_TITLE = "归档文件夹"
 
 /** 一键上传按钮文案 */
 private const val ARCHIVE_BATCH_BUTTON_TEXT = "一键上传"
 
 /** 归档根未配置引导文案（指到数据管理/归档文件夹设置页，不强跳） */
 private const val ARCHIVE_BATCH_NOT_CONFIGURED_HINT =
-    "尚未设置归档文件夹：到 数据管理 → 归档文件夹 设置后，可把归档区里已按库名分好类的存量文件一键重传到当前服务器"
+    "还未设置归档目录。设置后，可将按库名归档的文件一键上传到当前服务器。"
 
 /** 扫描进行中文案 */
 private const val ARCHIVE_BATCH_SCANNING_TEXT = "正在扫描归档文件夹…"
