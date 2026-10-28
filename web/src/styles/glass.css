@@ -25,7 +25,7 @@ html { zoom: 1.1; }
 /* zoom 全局放大对 body 级 fixed 弹层（radix Portal 的 popper wrapper）会二次应用——
    Floating UI 给的是视觉坐标，写进 zoom 上下文又乘一遍 1.1。包装层反向缩放抵消。
    同类弹层（Popover/Select/DropdownMenu）全部受益；html zoom 改动须同步本处与
-   §10 .img-viewer 的 --zoom-inverse，反之亦然 */
+   §10 .img-viewer 的 --zoom-inverse 及网页全屏 .art-fullscreen-web，反之亦然 */
 body > [data-radix-popper-content-wrapper] { zoom: 0.9090909; }
 
 html, body { height: 100%; overflow: hidden; }

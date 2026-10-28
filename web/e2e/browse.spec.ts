@@ -41,8 +41,8 @@ test('长搜索词避开清空按钮，清空后仍可继续输入', async ({ pa
   const word = '合成超长搜索标题 '.repeat(16)
   await input.fill(word)
   const gap = await input.evaluate(el => {
-    const style = getComputedStyle(el)
-    const clear = document.querySelector('.search-clear')!.getBoundingClientRect()
+    const style = el.ownerDocument.defaultView!.getComputedStyle(el)
+    const clear = el.ownerDocument.querySelector('.search-clear')!.getBoundingClientRect()
     return el.getBoundingClientRect().right - parseFloat(style.paddingRight) - clear.left
   })
   expect(gap).toBeLessThanOrEqual(0)

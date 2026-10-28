@@ -19,6 +19,7 @@
 
 /** 资产族根键（覆盖 list/total/detail/facets/timeline-tags 全部子键） */
 export const ASSETS_QUERY_KEY = ['api/v1/assets'] as const
+export const DISCOVERIES_QUERY_KEY = ['api/v1/discoveries'] as const
 
 /** 资产列表（无限滚动；params 追加为第三段） */
 export const ASSETS_LIST_QUERY_KEY = [...ASSETS_QUERY_KEY, 'list'] as const

@@ -31,7 +31,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.patrykandpatrick.vico.compose.cartesian.marker.rememberToggleOnTap
 import com.patrykandpatrick.vico.core.cartesian.marker.CartesianMarker
 import com.patrykandpatrick.vico.core.cartesian.marker.CartesianMarkerController
-import media.qimeng.app.core.model.RankingEntry
 import media.qimeng.app.core.model.StatsRangeOption
 import media.qimeng.app.core.model.TrendPoint
 import media.qimeng.app.core.ui.component.Dimens
@@ -49,7 +48,7 @@ import media.qimeng.app.core.ui.glass.TabDockDefaults
  * - 浏览趋势卡（L213）：点击数据点高亮+数值气泡（Vico DefaultCartesianMarker，
  *   rememberTrendValueMarker + rememberToggleOnTap）；点击卡片/右上「分类型趋势 ›」进统计详情页；
  * - 分布统计小入口卡（L214）：纯文字卡，点击进分布统计详情（来源构成 N3 #31b 解冻，详情页呈现）；
- * - 内容榜卡（L215，2026-09-18 批换源：原「常看文件」卡）：文件名+浏览次数紧凑 Top3
+ * - 此刻发现：独立混合候选、理由与换组，服务端负责选池
  *   （GET /rankings，Web 数据页同款口径——热度=浏览+播放+点赞累计、period 准入、排除 COS），
  *   点击进常看文件详情（默认按热度档=本榜）；常看作者与标签卡（L216）：作者/标签混合 Top3
  *   （/stats/top-authors + /stats/top-tags），点击进常看作者标签详情——空数据卡内空态保留；
@@ -321,13 +320,6 @@ private fun DistributionEntryCard(onOpen: () -> Unit) {
     }
 }
 
-/**
- * 内容榜卡（2026-09-18 批换源：原「常看文件」卡 /stats/most-viewed metric=views →
- * GET /rankings，Web 数据页同款口径——热度=浏览+播放+点赞累计倒序、period 只做准入过滤、
- * 排除 COS；角标=累计浏览次数「N 次」）：文件名 + 浏览次数紧凑文本列表 Top 3，
- * 随档位联动（period 经 rankingsPeriod 映射），点击进常看文件详情（默认按热度档=本榜）。
- * 加载中/空数据卡内文案占位（空态保留，不隐藏卡）。
- */
 /**
  * 常看作者与标签卡（GUIDE_UI L216）：作者/标签按窗口浏览聚合混合 Top 3
  * （/stats/top-authors + /stats/top-tags），点击进常看作者标签详情（双排行卡）。

@@ -66,9 +66,6 @@ data class StatsUiState(
     /** 趋势空态（规格 §数据统计页：空态文案「暂无趋势数据」） */
     val trendsEmpty: Boolean get() = !loadFailed && !trendsLoading && trends.isEmpty()
 
-    /** 内容榜卡空态（加载完且无数据——空态保留口径） */
-    val rankingsEmpty: Boolean get() = !discoveriesLoading && discoveriesError == null && discoveries.isEmpty()
-
     /** 常看作者与标签卡空态 */
     val topAuthorsTagsEmpty: Boolean get() = !loadFailed && !trendsLoading && topAuthors.isEmpty() && topTags.isEmpty()
 
@@ -180,12 +177,7 @@ class StatsViewModel @Inject constructor(
         }
     }
 
-    /**
-     * 内容榜条目进详情前的批次上下文写入（任务J J1，GUIDE_UI L218-224 跳转链；
-     * HomeViewModel/FavoriteViewModel 的 enterDetail 同款范式）：「已加载=当前显示清单」
-     * 口径——主页面内容榜卡即 Top3 榜单，快照式整体替换 [MediaBatchIndex.ids]，
-     * DetailViewModel 既有消费零改动。参数保留 assetId 与同款签名对齐（触发时机语义）。
-     */
+    /** 发现组作为详情批次；导航期间保留当前响应的身份与顺序。 */
     fun enterDetail(assetId: String) {
         batchIndex.ids = _uiState.value.discoveries.map { it.assetId }
     }

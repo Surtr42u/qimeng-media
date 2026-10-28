@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { getApiV1Discoveries } from '@/api/generated'
 import { unwrapSdkResult } from '@/lib/api-client'
+import { DISCOVERIES_QUERY_KEY } from '@/lib/query-keys'
 
 const DISCOVERY_COUNT = 6
 const DISCOVERY_LABELS = { unseen: '未看发现', rediscover: '久别重逢', interest: '近期兴趣' } as const
@@ -10,7 +11,7 @@ const DISCOVERY_LABELS = { unseen: '未看发现', rediscover: '久别重逢', i
 export function useDiscoveries() {
   const [seed, setSeed] = useState(Date.now)
   const query = useQuery({
-    queryKey: ['api/v1/discoveries', seed],
+    queryKey: [...DISCOVERIES_QUERY_KEY, seed],
     queryFn: () => unwrapSdkResult(getApiV1Discoveries({ query: { seed, limit: DISCOVERY_COUNT } })),
     placeholderData: keepPreviousData,
   })
