@@ -19,7 +19,7 @@
 | 便携备份导入/导出 | internal/portablebackup/；仅v2写前校验，其他版本写前拒绝、身份匹配、分段提交、事件幂等、同事务快照导出；HTTP只有有界解码与错误映射，格式DTO以边界契约测试对照协议 |
 | 作者 TXT 导入/保护/重建 | internal/authorimport/；跨手动/备份/同步入口复用事务，片段存取在 authorattach |
 | 作者编辑用例 | internal/authoredit/；词表预填/来源区替换/作者建改删/资产作者替换六用例的单事务编排，Commit 成功后才刷新镜像（2026-10-24 Q1 事务下沉）；HTTP 只协议校验与哨兵映射 |
-| 统计只读装载 | internal/statsread/；总览/趋势/榜单共用窗口；日/类型/来源聚合及精确全量数，stats 仍为纯函数 |
+| 统计只读装载 | internal/statsread/；总览/趋势/榜单/浏览回顾共用窗口；日/类型/来源聚合及精确全量数，stats 仍为纯函数 |
 | 事件统计编排 | internal/eventstats/；事务内读真相/重建，stats 保持纯函数（ADR-0040） |
 | 上传/本机同步 | mediawrite 负责编排直传、会话创建/完成与共用入库；uploadsess 管会话；syncchannel 编排同步，localsync 只读扫描计划，见 §5.1 |
 
