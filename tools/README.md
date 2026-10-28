@@ -39,7 +39,7 @@ Windows 的 Git hook 子进程若不能正确定位 Python 标准库，AI 在 Gi
 
 ## 文档门禁
 
-仓库根执行 `python -X utf8 tools/check_docs.py`；自测执行 `python -m unittest discover -s tools -p 'test_*.py'`。无需安装 Python 运行时依赖。
+文档交付在仓库根执行 `python -X utf8 tools/check_docs.py`。仅修改检查工具实现或相关行为时，按云端自动测试约定运行适用自测（全套命令为 `python -m unittest discover -s tools -p 'test_*.py'`）；普通文档修改不要求运行工具单测。无需安装 Python 运行时依赖。
 
 检查本地内联 Markdown 链接/章节、ADR 唯一编号和索引、AGENTS 路径、近期 CHANGELOG 上限、外部 Actions 完整 SHA 与顶层只读权限基线；后两项是文本规则，不替代 YAML/actionlint 或 GitHub 执行。支持本仓现用语法，不解析所有 Markdown 扩展；不证明正文语义准确。
 

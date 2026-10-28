@@ -43,7 +43,7 @@ src/
 
 ## 开发与验证
 
-仓库根 `make web-dev`、`make web-test`，测试/构建脚本以 package.json 与 Makefile 为准。日常由后端托管 web/dist，交付本地可见改动前 `npm --prefix web run build`。只验证受影响页面和行为；API/领域变化另补相关专题。修改 TopBar 时读 [desktop README](../desktop/README.md) 的 titlebar.js 类名/title/header 契约。
+仓库根 `make web-dev`、`make web-test`，测试/构建脚本以 package.json 与 Makefile 为准；执行位置和验证范围见[协作规范](../AI_README_FIRST.md#验证与交付)。自动测试与构建走云端，日常后端托管的 web/dist 使用对应云端产物；仅在已授权范围内更新预览或部署，不因修改页面自行本地编译。验证受影响页面和行为；API/领域变化另补相关专题。修改 TopBar 时读 [desktop README](../desktop/README.md) 的 titlebar.js 类名/title/header 契约。
 
 ## 开发依赖安全
 
