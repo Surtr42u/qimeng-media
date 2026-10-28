@@ -120,35 +120,37 @@ export default function SettingsPage() {
         <h3>来源与镜像</h3>
         <p>通用来源词表与作者总表镜像已移至「数据管理 → 上传文件」页维护（与上传挂靠同页）。</p>
       </div>
-      <div className="settings-card">
-        <h3>界面</h3>
-        <p>外观与主题</p>
-        <div className="settings-muted">
-          <span>主题模式</span>
-          {/* ADR-0031 暗色优先：无手动选择时默认深色；月亮按钮切换后持久化 */}
-          <span>默认深色（侧栏月亮按钮切换并记忆）</span>
+      <div className="settings-preferences">
+        <div className="settings-card">
+          <h3>界面</h3>
+          <p>外观与主题</p>
+          <div className="settings-muted">
+            <span>主题模式</span>
+            {/* ADR-0031 暗色优先：无手动选择时默认深色；月亮按钮切换后持久化 */}
+            <span>默认深色（侧栏月亮按钮切换并记忆）</span>
+          </div>
+          {/* 缩略图档位偏好（HANDOVER §5④）：localStorage 客户端持久化，
+              点击即存全站生效；改写 size 查询参数语义见 lib/thumb-size.ts */}
+          <p>缩略图清晰度（全站图片，点击即生效并记忆）</p>
+          <div className="settings-options">
+            <ThumbSizePills />
+          </div>
         </div>
-        {/* 缩略图档位偏好（HANDOVER §5④）：localStorage 客户端持久化，
-            点击即存全站生效；改写 size 查询参数语义见 lib/thumb-size.ts */}
-        <p>缩略图清晰度（全站图片，点击即生效并记忆）</p>
-        <div className="settings-grid">
-          <ThumbSizePills />
-        </div>
-      </div>
-      <div className="settings-card">
-        <h3>推荐偏好</h3>
-        <p>作用于首页推荐流的 9 维权重；点击预设立即保存生效</p>
-        <div className="settings-grid">
-          {RECOMMEND_PRESETS.map((p) => (
-            <Pill
-              key={p.label}
-              active={isActivePreset(p.prefs)}
-              disabled={savePrefs.isPending}
-              onClick={() => applyPreset(p.prefs)}
-            >
-              {p.label}
-            </Pill>
-          ))}
+        <div className="settings-card">
+          <h3>推荐偏好</h3>
+          <p>作用于首页推荐流的 9 维权重；点击预设立即保存生效</p>
+          <div className="settings-options">
+            {RECOMMEND_PRESETS.map((p) => (
+              <Pill
+                key={p.label}
+                active={isActivePreset(p.prefs)}
+                disabled={savePrefs.isPending}
+                onClick={() => applyPreset(p.prefs)}
+              >
+                {p.label}
+              </Pill>
+            ))}
+          </div>
         </div>
       </div>
       <div className="settings-actions">
