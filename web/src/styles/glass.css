@@ -1471,7 +1471,6 @@ button.more-filter,
   transition: background var(--qm-duration-fast) var(--qm-ease-out);
 }
 .search-clear svg { width: 10px; height: 10px; }
-.discovery-reason { align-self: flex-start; display: inline-flex; margin-top: 4px; padding: 2px 8px; border-radius: var(--qm-radius-full); background: var(--qm-primary-soft); color: var(--qm-primary-strong); font-size: 11px; line-height: 1.5; }
 .search-clear:hover { background: var(--qm-text-soft); }
 .search-clear[hidden] { display: none; }
 

@@ -13,11 +13,9 @@ import { applyThumbSize } from '@/lib/thumb-size'
 export function ContentRankGrid({
   items,
   onOpen,
-  notes,
 }: {
   items: AssetSummary[]
   onOpen: (a: AssetSummary) => void
-  notes?: Record<string, string>
 }) {
   // 档位偏好接入选点（与 MediaCard 同口径；auto=服务端下发原样）
   const [thumbSize] = useThumbSize()
@@ -30,7 +28,6 @@ export function ContentRankGrid({
             <img src={applyThumbSize(a.thumbUrl ?? '', thumbSize)} alt="" loading="lazy" />
           </div>
           <p className="rank-title">{a.fileName ?? ''}</p>
-          {a.id && notes?.[a.id] ? <span className="discovery-reason">{notes[a.id]}</span> : null}
         </div>
       ))}
     </div>

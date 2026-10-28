@@ -35,7 +35,7 @@ internal fun DiscoveryCard(state: StatsUiState, onChange: () -> Unit, onEntryCli
                     Text(if (state.discoveriesLoading) "正在换组…" else "换一组")
                 }
             }
-            Text("未看发现 · 久别重逢 · 近期兴趣", style = MaterialTheme.typography.bodySmall,
+            Text("换个角度逛影库", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             state.discoveriesError?.let { message ->
                 TextButton(onClick = onChange) { Text(message) }
@@ -46,11 +46,8 @@ internal fun DiscoveryCard(state: StatsUiState, onChange: () -> Unit, onEntryCli
                 Row(Modifier.fillMaxWidth().clickable { onEntryClick(entry) }.padding(vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     QimengThumbnail(model = entry.thumbUrl, modifier = Modifier.size(64.dp, 44.dp).clip(RoundedCornerShape(8.dp)))
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(entry.title, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
-                        Text(when (entry.reason) { "unseen" -> "未看发现"; "rediscover" -> "久别重逢"; else -> "近期兴趣" },
-                            color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelSmall)
-                    }
+                    Text(entry.title, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.bodyMedium)
                 }
             }
         }

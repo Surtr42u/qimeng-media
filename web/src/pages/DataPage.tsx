@@ -50,8 +50,8 @@ export default function DataPage() {
     </div>
     <div className="data-secondary-grid">
       <section className="rank-card data-content-panel" aria-label="此刻发现">
-        <div className="workspace-card-head"><h3><Flame aria-hidden="true" />此刻发现</h3><button type="button" className="browse-action" disabled={discovery.query.isFetching} onClick={discovery.change}>{discovery.query.isFetching ? '正在换组…' : '换一组'}</button></div><p className="rank-note">未看发现 · 久别重逢 · 近期兴趣，换个角度逛影库</p>
-        <StatsQueryContent query={discovery.query} label="此刻发现"><ContentRankGrid items={discovery.items} notes={discovery.notes} onOpen={asset => { if (asset.id) navigate(assetDetail(asset.id)) }} /></StatsQueryContent>
+        <div className="workspace-card-head"><h3><Flame aria-hidden="true" />此刻发现</h3><button type="button" className="browse-action" disabled={discovery.query.isFetching} onClick={discovery.change}>{discovery.query.isFetching ? '正在换组…' : '换一组'}</button></div><p className="rank-note">换个角度逛影库</p>
+        <StatsQueryContent query={discovery.query} label="此刻发现"><ContentRankGrid items={discovery.items} onOpen={asset => { if (asset.id) navigate(assetDetail(asset.id)) }} /></StatsQueryContent>
       </section>
       {overview || overviewQuery.isPending ? <DonutCard title="浏览量占比" sub={`按类型的浏览次数 · ${current.label}`} slices={data.viewSlices} loading={overviewQuery.isPending} emptyText="此窗口暂无浏览记录" centerValue={overview?.windowTotals.viewCount.toLocaleString(LOCALE_ZH)} centerLabel="浏览次数" /> : <section className="donut-card"><h3>浏览量占比</h3><p className="rank-note">统计概览尚不可用，恢复读取后显示。</p></section>}
     </div>

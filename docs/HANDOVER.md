@@ -20,6 +20,8 @@
 
 ### 此刻发现与交互修正候选（2026-10-28，尚未安装）
 
+- **用户后续外观调整**：Web/桌面与Android去掉每项标题下的未看/久别/近期理由标签，区块说明简化为“换个角度逛影库”；保留服务端三池混合与换组。此调整的云端构建/回归及可见核验待当前提交结果，不能沿用下列旧产物外观作为新证据。
+
 - 用户操作监测后反馈长搜索词覆盖清空按钮、全屏退出/底边唤醒和扫描模式切页丢草稿；另明确要求数据页原内容榜区别于周期榜、混合发现并同步Android。
 - 候选实现“此刻发现”：未看/久别/近期三池服务端混合、理由与换组；OpenAPI先行，云端sqlc/三端SDK生成，同批维护sdk.lock。Web/Android各自消费结果与防迟到，原周期排行公式保留。
 - **验证来源**：代码048b9a3a的[CI40671374179](https://github.com/Surtr42u/qimeng-media/actions/runs/40671374179)七项全部成功（含Web浏览器34场景、Go race/边界和Android构建/单测/Lint），[安全40671374068](https://github.com/Surtr42u/qimeng-media/actions/runs/40671374068)及[文档40671374244](https://github.com/Surtr42u/qimeng-media/actions/runs/40671374244)全部成功。对应生产代码的PC/Web与模拟器APK来源05bedcd3，后续048b9a3a仅修正浏览器回归的AlertDialog角色定位，不改产物代码；后补文档不重标候选身份。PR为[草稿#24](https://github.com/Surtr42u/qimeng-media/pull/24)，未合并。
