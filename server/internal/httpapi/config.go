@@ -3,12 +3,8 @@
 // 存储：kv_settings 表，键 authoring.SettingKeyClientConfig，值为
 // gen.ClientConfig 的 JSON（与 openapi ClientConfig 结构一致）。
 //
-// 生效范围（诚实口径，openapi description 同步写明）：
-//   - upload.maxBytesMb / upload.autoAccept：实时生效——上传端点
-//     （upload.go）每次请求时读取覆盖值，不做任何缓存；
-//   - scan.workers / scan.thumbEdge：预留字段——全库无任何消费点
-//     （尚未接入扫描器/缩略图管线），保存后暂不生效（含重启也不生效，
-//     接入管线前不得向用户宣传"重启后生效"）。本文件不实现任何重配。
+// workers=0自动、1–32手动，扫描准入从持久化配置读取；thumbEdge仍为预留。
+// upload.autoAccept实时生效；maxBytesMb仅兼容旧SDK，固定回显不限哨兵。
 package httpapi
 
 import (
@@ -21,6 +17,7 @@ import (
 	"net/http"
 
 	"qimeng-media/server/internal/authoring"
+	"qimeng-media/server/internal/config"
 	"qimeng-media/server/internal/httpapi/gen"
 	"qimeng-media/server/internal/store"
 	"qimeng-media/server/internal/store/db"
@@ -29,16 +26,16 @@ import (
 // 客户端配置缺省值（openapi ClientConfig 各字段 default 的服务端单一来源；
 // Web 端 use-config.ts 的 DEFAULT_CLIENT_CONFIG 与此对齐）。
 const (
-	defaultScanWorkers   = 2
+	defaultScanWorkers   = config.ClientScanWorkersDefault
 	defaultScanThumbEdge = 800
-	defaultUploadMaxMB   = 2048
+	defaultUploadMaxMB   = config.LegacyUnlimitedUploadMB
 )
 
 // 客户端配置允许范围（openapi 各字段 minimum/maximum 的服务端校验锚点）。
 const (
-	scanWorkersMin, scanWorkersMax     = 1, 4
+	scanWorkersMin, scanWorkersMax     = config.ClientScanWorkersMin, config.ClientScanWorkersMax
 	scanThumbEdgeMin, scanThumbEdgeMax = 200, 1600
-	uploadMaxMbMin, uploadMaxMbMax     = 64, 8192
+	uploadMaxMbMin, uploadMaxMbMax     = 0, config.LegacyUnlimitedUploadMB
 )
 
 // clientConfigKeys 是 PUT 请求体的键存在性影子结构：组与叶子全用指针，
@@ -93,6 +90,7 @@ func (s *Server) GetApiV1Config(w http.ResponseWriter, r *http.Request) {
 	if stored := s.storedClientConfig(r.Context()); stored != nil {
 		cfg = *stored
 	}
+	cfg.Upload.MaxBytesMb = defaultUploadMaxMB // 旧必填字段兼容回显；实际上传不再按它限额。
 	writeJSON(w, http.StatusOK, cfg)
 }
 
@@ -143,6 +141,7 @@ func (s *Server) PutApiV1Config(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("upload.maxBytesMb 须在 %d–%d", uploadMaxMbMin, uploadMaxMbMax))
 		return
 	}
+	body.Upload.MaxBytesMb = defaultUploadMaxMB
 	out, err := json.Marshal(body)
 	if err != nil {
 		s.internalErr(w, "序列化客户端配置", err)

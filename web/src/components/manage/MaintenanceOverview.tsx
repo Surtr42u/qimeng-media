@@ -7,6 +7,7 @@ import type { useMaintenanceMonitor } from '@/hooks/use-maintenance-monitor'
 import { formatBytes } from '@/lib/format'
 import { MAINTENANCE_FILES_PATH, MAINTENANCE_UPLOAD_PATH } from '@/lib/route-keys'
 import { LOCALE_ZH } from '@/lib/constants'
+import { serviceUploadPath } from '@/lib/manage-origin'
 
 type Monitor = ReturnType<typeof useMaintenanceMonitor>
 /** 锚点只跳到仍常驻的完整操作区，不卸载同步查询或改变操作行为。 */
@@ -28,7 +29,7 @@ function TrafficCard({ traffic, points }: { traffic: Monitor['traffic'][number];
   const color = receive ? 'var(--qm-chart-1)' : 'var(--qm-chart-2)'
   return <section className={`chart-card monitor-traffic monitor-traffic--${traffic.direction}`} aria-label={traffic.label}>
     <CardHeading icon={receive ? <ArrowDown aria-hidden="true" /> : <ArrowUp aria-hidden="true" />}>{traffic.label}</CardHeading>
-    <div className="monitor-value">{traffic.value ?? '采样中…'}{traffic.value && <small>/s</small>}</div>
+    <div className={`monitor-value${traffic.value == null ? ' monitor-value--waiting' : ''}`}>{traffic.value ?? traffic.waiting}{traffic.value && <small>/s</small>}</div>
     <p>近 2 分钟峰值 {traffic.peak}</p>
     <div className="monitor-sparkline" aria-hidden="true">
       <ResponsiveContainer width="100%" height="100%">
@@ -39,7 +40,7 @@ function TrafficCard({ traffic, points }: { traffic: Monitor['traffic'][number];
         </AreaChart>
       </ResponsiveContainer>
     </div>
-    <p className="monitor-footnote">累计 {traffic.cumulative == null ? '—' : formatBytes(traffic.cumulative)}</p>
+    <p className="monitor-footnote" title="影库服务收发的HTTP正文；重启后重新累计">本服务累计 {traffic.cumulative == null ? '—' : formatBytes(traffic.cumulative)}</p>
   </section>
 }
 
@@ -55,7 +56,7 @@ export function MaintenanceOverview({ monitor, trashLabel, logsLabel }: {
         <p>当前连接的服务器 · {resources.version}</p>
         <div className="monitor-server-meta">
           <div><span>状态更新</span><strong className={monitor.isError ? 'monitor-update--error' : ''}>{monitor.stateLabel}</strong></div>
-          <div><span>采样范围</span><strong>系统资源 / 全机网卡聚合</strong></div>
+          <div><span>采样范围</span><strong>系统资源 / 影库服务流量</strong></div>
         </div>
       </section>
       {monitor.traffic.map(traffic => <TrafficCard key={traffic.direction} traffic={traffic} points={monitor.points} />)}
@@ -102,7 +103,7 @@ export function MaintenanceOverview({ monitor, trashLabel, logsLabel }: {
       <section className="chart-card monitor-span-2">
         <CardHeading icon={<Activity aria-hidden="true" />}>入库与异常</CardHeading>
         <div className="monitor-shortcuts">
-          <Link className="monitor-shortcut" to={MAINTENANCE_UPLOAD_PATH}><Upload aria-hidden="true" /><span><strong>上传文件</strong><small>指定作者与来源</small></span><ChevronRight aria-hidden="true" /></Link>
+          <Link className="monitor-shortcut" to={serviceUploadPath(MAINTENANCE_UPLOAD_PATH)}><Upload aria-hidden="true" /><span><strong>上传文件</strong><small>指定作者与来源</small></span><ChevronRight aria-hidden="true" /></Link>
           <a className="monitor-shortcut" href={`#${MAINTENANCE_LOGS_ID}`}><FileWarning aria-hidden="true" /><span><strong>客户端异常</strong><small>{logsLabel}</small></span><ChevronRight aria-hidden="true" /></a>
         </div>
       </section>

@@ -17,10 +17,10 @@ export function useConfigForm() {
     setDraft(next)
   }
 
-  function setNumber(group: 'scan' | 'upload', key: 'workers' | 'thumbEdge' | 'maxBytesMb', raw: string) {
+  function setNumber(key: keyof ClientConfig['scan'], raw: string) {
     const n = Number(raw)
     if (raw.trim() === '' || !Number.isFinite(n)) return
-    edit({ ...cfg, [group]: { ...cfg[group], [key]: n } })
+    edit({ ...cfg, scan: { ...cfg.scan, [key]: n } })
   }
 
   function save() {
@@ -28,7 +28,6 @@ export function useConfigForm() {
     const fields = [
       ['workers', cfg.scan.workers, '扫描并发数', ''],
       ['thumbEdge', cfg.scan.thumbEdge, '缩略图长边', ' px'],
-      ['maxBytesMb', cfg.upload.maxBytesMb, '单文件上限', ' MB'],
     ] as const
     for (const [key, value, label, unit] of fields) {
       const { min, max } = CONFIG_BOUNDS[key]
@@ -43,7 +42,7 @@ export function useConfigForm() {
     mutation.mutate(cfg, {
       onSuccess: () => {
         if (revision.current === submittedRevision) setDraft(null)
-        toast.success(scanChanged ? '设置已保存（扫描参数为预留字段，暂不生效）' : '设置已保存')
+        toast.success(scanChanged ? '设置已保存，并发设置用于后续扫描；缩略图长边仍为预留' : '设置已保存')
       },
       onError: (err) => toast.error(`设置保存失败：${batchFailureReason(err)}`),
     })
@@ -53,8 +52,7 @@ export function useConfigForm() {
     cfg,
     isPending: mutation.isPending,
     save,
-    setScan: (key: keyof ClientConfig['scan'], raw: string) => setNumber('scan', key, raw),
-    setUpload: (raw: string) => setNumber('upload', 'maxBytesMb', raw),
+    setScan: setNumber,
     setAutoAccept: (checked: boolean) => edit({ ...cfg, upload: { ...cfg.upload, autoAccept: checked } }),
   }
 }

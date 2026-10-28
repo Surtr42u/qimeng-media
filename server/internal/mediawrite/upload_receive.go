@@ -1,6 +1,7 @@
 package mediawrite
 
 import (
+	"context"
 	"errors"
 	"io"
 	"math"
@@ -19,7 +20,7 @@ const UploadTmpPrefix = ".qm-upload-"
 const uploadTmpSuffix = ".tmp"
 const dirPerm = 0o755
 
-func (s *Service) receiveUploadToRoot(root *os.Root, dir, filename string, body io.Reader, length, maxBytes int64) (string, error) {
+func (s *Service) receiveUploadToRoot(ctx context.Context, root *os.Root, dir, filename string, body io.Reader, length, maxBytes int64) (string, error) {
 	limit := maxBytes
 	if limit < math.MaxInt64 {
 		limit++
@@ -47,7 +48,8 @@ func (s *Service) receiveUploadToRoot(root *os.Root, dir, filename string, body 
 	}
 	_, err = file.Write(head)
 	if err == nil && n == filing.RecommendedHeadBytes {
-		_, err = io.Copy(file, limited)
+		guard := &uploadSpaceWriter{destination: file, check: func() error { return s.checkUploadStorage(ctx, root.Name(), 0) }}
+		_, err = io.Copy(guard, limited)
 	}
 	if err == nil && limit-limited.N > maxBytes {
 		err = filing.ErrUploadTooLarge
@@ -58,9 +60,34 @@ func (s *Service) receiveUploadToRoot(root *os.Root, dir, filename string, body 
 	if err != nil {
 		sysmon.Default.IncUpload(sysmon.UploadFail)
 		s.cleanStaging(root, rel)()
+		var failure *Failure
+		if errors.As(err, &failure) && failure.Kind == StorageUnavailable {
+			return "", err
+		}
 		return "", fail(ReadStreamFailure, "接收上传流", err)
 	}
 	return target, nil
+}
+
+// 去除单文件上限后，流式接收每8MiB复核磁盘安全余量，未知长度也不会一直写到磁盘耗尽。
+const uploadSpaceCheckEvery = 8 << 20
+
+type uploadSpaceWriter struct {
+	destination io.Writer
+	check       func() error
+	unchecked   int64
+}
+
+func (w *uploadSpaceWriter) Write(p []byte) (int, error) {
+	if w.unchecked == 0 || w.unchecked >= uploadSpaceCheckEvery {
+		if err := w.check(); err != nil {
+			return 0, err
+		}
+		w.unchecked = 0
+	}
+	n, err := w.destination.Write(p)
+	w.unchecked += int64(n)
+	return n, err
 }
 
 func (s *Service) cleanStaging(root *os.Root, rel string) func() {

@@ -16,7 +16,7 @@ async function openMaintenance(page: Page, options: { unavailable?: boolean; nar
       frames++
       return route.fulfill({ json: {
         cpuPercent: 11, memUsedBytes: 14, memTotalBytes: 32, uptimeSeconds: 2517 + frames * 2,
-        netRxBytes: 0, netTxBytes: frames * 2048, version: 'synthetic-preview', devMode: true,
+        netRxBytes: frames * 1048576, netTxBytes: frames * 2097152, appRxBytes: 0, appTxBytes: frames * 2048, version: 'synthetic-preview', devMode: true,
         disks: [{ mount: '/synthetic/data', usedBytes: 64, totalBytes: 100 }, { mount: '/synthetic/media', usedBytes: 80, totalBytes: 100 }],
       } })
     }

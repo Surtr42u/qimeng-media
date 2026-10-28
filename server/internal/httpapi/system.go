@@ -23,7 +23,10 @@ func (s *Server) GetApiV1SystemStatus(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.logger.Warn("系统快照部分采集失败", "err", err)
 	}
-	writeJSON(w, http.StatusOK, toGenSystemStatus(st, s.cfg.AuthDevMode))
+	result := toGenSystemStatus(st, s.cfg.AuthDevMode)
+	rx, tx := s.traffic.rx.Load(), s.traffic.tx.Load()
+	result.AppRxBytes, result.AppTxBytes = &rx, &tx
+	writeJSON(w, http.StatusOK, result)
 }
 
 // GetMetrics 代理 Prometheus 文本输出。指标集的注册与命名全在 sysmon

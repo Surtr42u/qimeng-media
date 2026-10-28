@@ -18,6 +18,8 @@ import { THUMB_SIZE_OPTIONS } from '@/lib/thumb-size'
 
 /** 设置页只渲染配置与触发动作；草稿修订和提交快照由 useConfigForm 持有。 */
 
+const DEFAULT_MANUAL_SCAN_WORKERS = 4
+
 /** 缩略图档位 Pill 组（客户端本地偏好，点击即存 lib/thumb-size 持久化） */
 function ThumbSizePills() {
   const [thumbSize, setThumbSize] = useThumbSize()
@@ -38,7 +40,7 @@ export default function SettingsPage() {
   // 登出（ADR-0021 多会话）：吊销本设备会话后清本地态，AuthGate 切回登录门禁
   const logout = useAuthLogout()
 
-  const { cfg, isPending, save, setScan, setUpload, setAutoAccept } = useConfigForm()
+  const { cfg, isPending, save, setScan, setAutoAccept } = useConfigForm()
 
   // 作者总表镜像卡与通用来源词表卡已迁往「数据管理 → 上传文件」（组件 =
   // components/manage/AuthorMirrorCard.tsx / SourceVocabularyCard.tsx，零逻辑改动）
@@ -63,20 +65,25 @@ export default function SettingsPage() {
     <div className="page" id="page-settings">
       <div className="settings-card">
         <h3>扫描</h3>
-        <p>媒体库扫描与缩略图生成 · 参数为预留字段，暂不生效</p>
+        <p>媒体库扫描并发 · 保存后用于后续扫描</p>
         <div className="settings-grid">
-          <label className="settings-field">
+          <div className="settings-field">
             <span>扫描并发数</span>
-            <input
+            <span className="settings-switch">
+              <Switch checked={cfg.scan.workers === 0} onCheckedChange={checked => setScan('workers', checked ? '0' : String(DEFAULT_MANUAL_SCAN_WORKERS))} aria-label="自动调整扫描并发" />自动调整
+            </span>
+            {cfg.scan.workers !== 0 && <input
+              id="scan-workers"
+              aria-label="扫描并发数"
               type="number"
-              min={CONFIG_BOUNDS.workers.min}
+              min={1}
               max={CONFIG_BOUNDS.workers.max}
               step={1}
               value={cfg.scan.workers}
               onChange={(e) => setScan('workers', e.target.value)}
-            />
-            <small>{CONFIG_BOUNDS.workers.min}–{CONFIG_BOUNDS.workers.max}，超出可能加重 NAS 负载 · 预留字段，暂不生效</small>
-          </label>
+            />}
+            <small>手动1–{CONFIG_BOUNDS.workers.max}个媒体库同时扫描；自动按CPU与可用内存分配</small>
+          </div>
           <label className="settings-field">
             <span>缩略图长边</span>
             <input
@@ -94,18 +101,7 @@ export default function SettingsPage() {
       <div className="settings-card">
         <h3>上传</h3>
         <p>客户端上传行为约束 · 保存即生效</p>
-        <label className="settings-field settings-single">
-          <span>单文件上限</span>
-          <input
-            type="number"
-            min={CONFIG_BOUNDS.maxBytesMb.min}
-            max={CONFIG_BOUNDS.maxBytesMb.max}
-            step={1}
-            value={cfg.upload.maxBytesMb}
-            onChange={(e) => setUpload(e.target.value)}
-          />
-          <small>{CONFIG_BOUNDS.maxBytesMb.min}–{CONFIG_BOUNDS.maxBytesMb.max} MB（与配置文件上限取更严者）</small>
-        </label>
+        <p>不设单文件大小上限；保留类型、路径、可用空间与暂存总预算检查</p>
         <label className="settings-switch">
           {/* radix Switch 接管行为（Space 切换/aria-checked/焦点环），滑块视觉走
               .settings-switch-track（复刻原隐藏 checkbox+<i>）；label 文字点击仍联动 */}
@@ -120,35 +116,37 @@ export default function SettingsPage() {
         <h3>来源与镜像</h3>
         <p>通用来源词表与作者总表镜像已移至「数据管理 → 上传文件」页维护（与上传挂靠同页）。</p>
       </div>
-      <div className="settings-card">
-        <h3>界面</h3>
-        <p>外观与主题</p>
-        <div className="settings-muted">
-          <span>主题模式</span>
-          {/* ADR-0031 暗色优先：无手动选择时默认深色；月亮按钮切换后持久化 */}
-          <span>默认深色（侧栏月亮按钮切换并记忆）</span>
+      <div className="settings-preferences">
+        <div className="settings-card">
+          <h3>界面</h3>
+          <p>外观与主题</p>
+          <div className="settings-muted">
+            <span>主题模式</span>
+            {/* ADR-0031 暗色优先：无手动选择时默认深色；月亮按钮切换后持久化 */}
+            <span>默认深色（侧栏月亮按钮切换并记忆）</span>
+          </div>
+          {/* 缩略图档位偏好（HANDOVER §5④）：localStorage 客户端持久化，
+              点击即存全站生效；改写 size 查询参数语义见 lib/thumb-size.ts */}
+          <p>缩略图清晰度（全站图片，点击即生效并记忆）</p>
+          <div className="settings-options">
+            <ThumbSizePills />
+          </div>
         </div>
-        {/* 缩略图档位偏好（HANDOVER §5④）：localStorage 客户端持久化，
-            点击即存全站生效；改写 size 查询参数语义见 lib/thumb-size.ts */}
-        <p>缩略图清晰度（全站图片，点击即生效并记忆）</p>
-        <div className="settings-grid">
-          <ThumbSizePills />
-        </div>
-      </div>
-      <div className="settings-card">
-        <h3>推荐偏好</h3>
-        <p>作用于首页推荐流的 9 维权重；点击预设立即保存生效</p>
-        <div className="settings-grid">
-          {RECOMMEND_PRESETS.map((p) => (
-            <Pill
-              key={p.label}
-              active={isActivePreset(p.prefs)}
-              disabled={savePrefs.isPending}
-              onClick={() => applyPreset(p.prefs)}
-            >
-              {p.label}
-            </Pill>
-          ))}
+        <div className="settings-card">
+          <h3>推荐偏好</h3>
+          <p>作用于首页推荐流的 9 维权重；点击预设立即保存生效</p>
+          <div className="settings-options">
+            {RECOMMEND_PRESETS.map((p) => (
+              <Pill
+                key={p.label}
+                active={isActivePreset(p.prefs)}
+                disabled={savePrefs.isPending}
+                onClick={() => applyPreset(p.prefs)}
+              >
+                {p.label}
+              </Pill>
+            ))}
+          </div>
         </div>
       </div>
       <div className="settings-actions">

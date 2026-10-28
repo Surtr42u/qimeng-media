@@ -192,6 +192,8 @@
 
 ## 10. 工程基础设施
 
+以下记录已配置的 CI 与合并/发布门禁，不要求每次编辑后手动重跑全套。任务内验证的选择、停止条件和本地/云端执行边界统一见[协作规范](../AI_README_FIRST.md#验证与交付)；不因此跳过必需门禁或修改现有工作流。
+
 - **CI（GitHub Actions，`.github/workflows/ci.yml`）七 job**，push/PR 全绿才许合并：
   1. `openapi`：redocly 协议校验（error 失败，warning 不阻塞）
   2. `server`：Linux runner 上重建 Go 接口层 → golangci-lint（静态检查 + depguard 模块边界）→ go vet → go test（-race）→ 两万合成记录的扫描路径索引基准（仅索引构建）→ go build

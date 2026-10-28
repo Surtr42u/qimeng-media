@@ -42,7 +42,7 @@ export function useTrends(range: TrendsRange, mediaType?: MediaType) {
  * 热度排行（响应 AssetSummary[] 已填充 viewCount/playCount 供角标）。
  * limit 缺省取协议单页上限（MAX_PAGE_SIZE，同步责任见 constants.ts）。
  * offset 单页切片偏移（协议 GET /rankings query.offset，默认 0 向后兼容
- * ——数据页 Top5/完整榜单页整表一次拉取的既有调用点不传即行为不变，
+ * ——数据页预览/完整榜单页整表一次拉取的既有调用点不传即行为不变，
  * offset=0 不上线路，请求与改前逐字节一致）。
  */
 export function useRankings(period: RankingPeriod | undefined, limit?: number, offset = 0) {

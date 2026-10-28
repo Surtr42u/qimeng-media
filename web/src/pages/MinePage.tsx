@@ -21,10 +21,10 @@ import { statsReadMessage } from '@/lib/stats-contract'
 import { assetDetail, AUTHORS_PATH, COLLECTION_AUTHOR, DATA_PATH, HOME_PATH, MAINTENANCE_LIBRARIES_PATH, SETTINGS_PATH, collectionPath } from '@/lib/route-keys'
 import { applyThumbSize } from '@/lib/thumb-size'
 
-/** 历史卡渲染项：协议 HistoryItem + 客户端推导的「已看完」徽标 */
-type HistRenderItem = HistoryItem & { isDone?: boolean }
+/** 历史卡渲染项：协议 HistoryItem，仅展示历史与时长信息 */
+type HistRenderItem = HistoryItem
 
-/** 历史卡数据（结构照原型 HistCard：封面/标题/已看完徽标/观看时间/视频时长/出处）。
+/** 历史卡数据（结构照原型 HistCard：封面/标题/观看时间/视频时长/出处）。
  *  onOpen 稳定回调模式（MediaCard 2026-09-20 审查同款口径）：本组件已 memo 化
  *  只认浅等 props，调用方逐条新建 onClick 闭包会让 memo 形同虚设——id 绑定
  *  移进卡片内部，页面级 onOpen 用 useCallback 稳定后全列表共用。 */
@@ -33,23 +33,22 @@ function HistCardItemImpl({ item, onOpen }: { item: HistRenderItem; onOpen?: (id
   const [thumbSize] = useThumbSize()
   const handleClick = onOpen ? () => onOpen(item.id) : undefined
   return (
-    <article className="hist-card" onClick={handleClick} role={handleClick ? 'button' : undefined} tabIndex={handleClick ? 0 : undefined} aria-label={item.fileName} onKeyDown={event => { if (handleClick && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); handleClick() } }}>
-      <div className="hc-cover">
+    <article className="hist-card card" onClick={handleClick} role={handleClick ? 'button' : undefined} tabIndex={handleClick ? 0 : undefined} aria-label={item.fileName} onKeyDown={event => { if (handleClick && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); handleClick() } }}>
+      <div className="hc-cover card--cover">
         {/* 与 MediaCard 同款优化口径：lazy + 异步解码避免滚动掉帧 */}
         <img src={applyThumbSize(item.thumbUrl ?? '', thumbSize)} alt="" loading="lazy" decoding="async" />
-        {item.isDone ? <span className="hc-done">已看完</span> : null}
         <span className="hc-time">{formatDateTime(item.lastViewedAt)}</span>
         {item.durationMs ? <span className="hc-duration">{formatDuration(item.durationMs)}</span> : null}
       </div>
-      <p className="hc-title">{item.fileName ?? ''}</p>
-      <p className="hc-up">{item.source ? `@ ${item.source}` : ''}</p>
+      <p className="card--title">{item.fileName ?? ''}</p>
+      {item.source && <p className="card--meta"><span className="card--up">@ {item.source}</span></p>}
     </article>
   )
 }
 
 /** memo 隔离（MediaCard 同款，2026-09-20 审查模式）：历史长列表中兄弟 state
  *  变化（tab 切换/搜索框输入）按 props 浅等跳过未变卡片。生效前提 = item
- *  引用稳定（isDone 盖章在 useMemo 派生层）+ onOpen 页面级 useCallback。 */
+ *  引用稳定（历史列表在 useMemo 派生层）+ onOpen 页面级 useCallback。 */
 const HistCardItem = memo(HistCardItemImpl)
 
 /** 个人内容分区独立反馈；标签及历史筛选写入URL，切回时不丢当前位置。 */

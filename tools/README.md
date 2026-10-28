@@ -2,6 +2,10 @@
 
 测试/门禁只处理源码、文档或隔离合成数据，不访问8420真库。以下命令是工具用法；执行位置以 [AI_README_FIRST「验证与交付」](../AI_README_FIRST.md#验证与交付) 为准：自动构建/单测/基准走云端，本地允许文档静态检查和只读隐私扫描/hook。电脑隔离后端产物运行验证与历史只读运维的授权/证据见[HANDOVER](../docs/HANDOVER.md)，不通过API向真库写测试数据。
 
+## 虚拟UI预览
+
+UI虚拟数据与独立预览服务器固定维护在[ui-preview](ui-preview/README.md)，与真实库完全隔离；夹具可供人工预览和Web浏览器回归共同复用。云端产物、当前候选清单和截图固定放忽略的`build/ui-preview.local/`，不再为每次视觉调整复制一套测试数据。
+
 ## 历史数据只读对账
 
 Python 3.13 标准库工具 `audit_library.py` 检查 SQLite quick_check/外键、全部登记资产的路径安全/普通文件/大小、事件便携身份和事件→日统计的一致性，并计数上传暂存文件。通过 `mode=ro`、`query_only=ON` 和 deferred 读事务读取包含已提交 WAL 的同一快照，在文件属性检查前关闭数据库连接；不修复数据、不重扫入库、不启动界面，也不读取或解码媒体内容。请在用户上传/移动完成后执行；在线文件属性与数据库不是跨介质原子快照，变化时需等待操作完成后复核。统计日界使用执行机本地时区，必须与服务端一致。
@@ -35,7 +39,7 @@ Windows 的 Git hook 子进程若不能正确定位 Python 标准库，AI 在 Gi
 
 ## 文档门禁
 
-仓库根执行 `python -X utf8 tools/check_docs.py`；自测执行 `python -m unittest discover -s tools -p 'test_*.py'`。无需安装 Python 运行时依赖。
+文档交付在仓库根执行 `python -X utf8 tools/check_docs.py`。仅修改检查工具实现或相关行为时，按云端自动测试约定运行适用自测（全套命令为 `python -m unittest discover -s tools -p 'test_*.py'`）；普通文档修改不要求运行工具单测。无需安装 Python 运行时依赖。
 
 检查本地内联 Markdown 链接/章节、ADR 唯一编号和索引、AGENTS 路径、近期 CHANGELOG 上限、外部 Actions 完整 SHA 与顶层只读权限基线；后两项是文本规则，不替代 YAML/actionlint 或 GitHub 执行。支持本仓现用语法，不解析所有 Markdown 扩展；不证明正文语义准确。
 

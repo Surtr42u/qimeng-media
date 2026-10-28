@@ -146,6 +146,8 @@ jobs:
       - run: npm run lint
       - run: npm run build
       - run: npm test
+      - name: 可复用虚拟预览夹具（内存API，不连接真实后端）
+        run: node --test ../tools/ui-preview/preview.test.mjs ../tools/ui-preview/server.test.mjs
       - name: 安装锁定的 Chromium（仅云端浏览器行为验证）
         run: npx playwright install --with-deps chromium
       - name: Web 实际交互（合成 API，无后端）
