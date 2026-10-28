@@ -1064,6 +1064,20 @@ paths:
           headers:
             X-Qimeng-Next-Offset: { $ref: "#/components/headers/NextOffset" }
           content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/AssetSummary" } } } }
+  /api/v1/discoveries:
+    get:
+      summary: 此刻发现（未看发现、久别重逢、近期兴趣混合）
+      description: |
+        独立于周期热度榜，覆盖全部启用库（含常规与COS）。按最近一次open/play分为
+        从未看过、超过30天、近30天三池，按seed各自打散后轮流取项；不足由其他池补齐。
+        不计推荐展示次数，不写浏览事件。同seed及同候选状态可复现；客户端每次进入或换组使用新seed。
+      parameters:
+        - { name: seed, in: query, schema: { type: integer, format: int64, minimum: 0, default: 0 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 12, default: 6 } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/DiscoveryItem" } } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
   /api/v1/rankings:
     get:
       summary: 排行榜（热度=view+play+like；周期过滤）
@@ -1554,6 +1568,13 @@ components:
       properties:
         thumbnailVersion: { type: string, description: 缩略图策略/格式/配置指纹；客户端预取必须与 revision 一起比较，策略变化也须重拉列表 }
         revision: { type: integer, format: int64, description: 单调递增的库内容版本号；与上次取值相同即可跳过全量列表拉取 }
+
+    DiscoveryItem:
+      type: object
+      required: [asset, reason]
+      properties:
+        asset: { $ref: "#/components/schemas/AssetSummary" }
+        reason: { type: string, enum: [unseen, rediscover, interest], description: '未看发现 / 久别重逢 / 近期兴趣；仅说明候选池，不代表质量评价' }
 
     AssetSummary:
       type: object
