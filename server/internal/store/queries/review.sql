@@ -3,16 +3,16 @@
 
 -- name: SummarizeBrowsingReview :one
 WITH opened AS (
-    SELECT d.asset_id, SUM(d.view_count) AS views,
-           (SELECT MIN(first.day) FROM asset_daily_stats first
-            WHERE first.asset_id = d.asset_id AND first.view_count > 0) AS first_day
+    SELECT d.asset_id, SUM(d.view_count) AS views
     FROM asset_daily_stats d JOIN assets a ON a.asset_id = d.asset_id
     WHERE d.day >= sqlc.arg(from_day) AND d.day <= sqlc.arg(to_day) AND d.view_count > 0
     GROUP BY d.asset_id
 )
 SELECT CAST(COALESCE(SUM(views), 0) AS INTEGER) AS view_count,
        COUNT(*) AS unique_files,
-       CAST(COALESCE(SUM(CASE WHEN first_day >= sqlc.arg(from_day) THEN 1 ELSE 0 END), 0) AS INTEGER) AS first_views,
+       CAST(COALESCE(SUM(CASE WHEN (SELECT MIN(first.day) FROM asset_daily_stats first
+            WHERE first.asset_id = opened.asset_id AND first.view_count > 0) >= sqlc.arg(from_day)
+            THEN 1 ELSE 0 END), 0) AS INTEGER) AS first_views,
        (SELECT COUNT(DISTINCT d.day) FROM asset_daily_stats d JOIN assets a ON a.asset_id = d.asset_id
         WHERE d.day >= sqlc.arg(from_day) AND d.day <= sqlc.arg(to_day) AND d.view_count > 0) AS active_days,
        CAST((SELECT COALESCE(SUM(d.view_count), 0) FROM asset_daily_stats d JOIN assets a ON a.asset_id = d.asset_id
