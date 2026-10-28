@@ -51,12 +51,14 @@ test('长搜索词避开清空按钮，清空后仍可继续输入', async ({ pa
   await expect(input).toBeFocused()
 })
 
-test('此刻发现提供理由与独立换组，不随统计窗口切换', async ({ page }) => {
+test('此刻发现只展示封面标题并独立换组，不随统计窗口切换', async ({ page }) => {
   await setup(page)
   await page.goto('/app/data')
   const panel = page.getByRole('region', { name: '此刻发现', exact: true })
   await expect(panel.locator('.rank-item')).toHaveCount(6)
-  await expect(panel.locator('.discovery-reason')).toHaveCount(6)
+  await expect(panel.locator('.rank-cover img')).toHaveCount(6)
+  await expect(panel.locator('.rank-title')).toHaveCount(6)
+  await expect(panel).not.toContainText(/未看发现|久别重逢|近期兴趣/)
   const first = await panel.locator('.rank-title').allTextContents()
   await page.getByRole('button', { name: '近 30 天', exact: true }).click()
   expect(await panel.locator('.rank-title').allTextContents()).toEqual(first)
